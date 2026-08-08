@@ -70,6 +70,84 @@ export interface LearnerUpsertInput {
   confidenceValue?: number | null;
 }
 
+
+
+export interface OnboardingKnowledgePoint {
+  id: string;
+  name: string;
+  en: string;
+  weight: number;
+  targetLevel: number;
+  coverage: number;
+  description: string;
+  coreTopics: string[];
+}
+
+export interface OnboardingQuestion {
+  id: string;
+  kpId: string;
+  level: 'basic' | 'advanced' | 'challenge';
+  stars: number;
+  stem: string;
+  options: string[];
+  answerIndex: number;
+  analysis: string;
+  kbRefs: string[];
+}
+
+export interface OnboardingMeta {
+  knowledgePoints: OnboardingKnowledgePoint[];
+  tags: string[];
+  edu: string[];
+  jobs: string[];
+  styles: string[];
+  selfLevels: string[];
+  questions: OnboardingQuestion[];
+}
+
+export interface OnboardingAnswerInput {
+  questionId: string;
+  result: 'correct' | 'wrong' | 'uncertain';
+  attribution?: 'guess' | 'concept' | 'careless' | null;
+  extra?: boolean;
+  reason?: string | null;
+}
+
+export interface OnboardingAnswerRequest {
+  tag: string;
+  education: string;
+  selfLevels: Record<string, number>;
+  answers: OnboardingAnswerInput[];
+  queueIds: string[];
+}
+
+export interface OnboardingAnswerResponse {
+  estimates: Record<string, number>;
+  confidence: Record<string, number>;
+  averageConfidence: number;
+  comment: string;
+  nextQuestion: OnboardingQuestion | null;
+  nextReason: string | null;
+  quizDone: boolean;
+}
+
+export interface OnboardingDiagnoseRequest {
+  tag: string;
+  education: string;
+  targetJob: string;
+  selfLevels: Record<string, number>;
+  answers: OnboardingAnswerInput[];
+}
+
+export interface OnboardingDiagnoseResponse {
+  scores: Record<string, number>;
+  confidence: Record<string, number>;
+  averageConfidence: number;
+  blindSpots: string[];
+  goal: string;
+  diagnosisSummary: string;
+}
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 export const TOKEN_KEY = 'lf.token';
 
@@ -166,6 +244,17 @@ export const api = {
   updateLearner: (id: string, body: LearnerUpsertInput) =>
     request<LearnerProfileData>(`/api/v1/learners/${encodeURIComponent(id)}`, {
       method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+  getOnboardingMeta: () => request<OnboardingMeta>('/api/v1/onboarding/meta'),
+  answerOnboarding: (body: OnboardingAnswerRequest) =>
+    request<OnboardingAnswerResponse>('/api/v1/onboarding/answer', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  diagnoseOnboarding: (body: OnboardingDiagnoseRequest) =>
+    request<OnboardingDiagnoseResponse>('/api/v1/onboarding/diagnose', {
+      method: 'POST',
       body: JSON.stringify(body),
     }),
   getTutoringScript: (learnerCode: string) =>

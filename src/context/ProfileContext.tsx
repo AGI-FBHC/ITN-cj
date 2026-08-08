@@ -43,6 +43,8 @@ export interface LearnerDraft {
   scores: Record<string, number>;
   blindSpots: string[];
   goal: string;
+  /** 后端诊断摘要，未传时由后端建档接口按分数生成 */
+  diagnosisSummary?: string;
 }
 
 /** 逐字段编辑覆盖 */
@@ -231,7 +233,7 @@ function draftToUpsert(draft: LearnerDraft, confidence: ProfileConfidence): Lear
     goal: draft.goal,
     blindSpots: draft.blindSpots,
     preferredFormat: '按画像自适应',
-    diagnosisSummary: diagnosisFromScores(draft.scores),
+    diagnosisSummary: draft.diagnosisSummary || diagnosisFromScores(draft.scores),
     confidenceMethod: confidence.method,
     confidenceValue: confidence.value,
   };
