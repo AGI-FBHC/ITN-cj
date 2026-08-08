@@ -12,6 +12,7 @@ import {
   Building2,
   Loader2,
   Mail,
+  KeyRound,
   MessageSquareText,
   QrCode,
   ScanLine,
@@ -83,6 +84,13 @@ export default function Login() {
   const [regEnterprise, setRegEnterprise] = useState('');
   const [regCountdown, setRegCountdown] = useState(0);
 
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetCountdown, setResetCountdown] = useState(0);
+  const [resetting, setResetting] = useState(false);
+
   useEffect(() => {
     if (countdown <= 0) return;
     const t = setTimeout(() => setCountdown((v) => v - 1), 1000);
@@ -93,6 +101,11 @@ export default function Login() {
     const t = setTimeout(() => setRegCountdown((v) => v - 1), 1000);
     return () => clearTimeout(t);
   }, [regCountdown]);
+  useEffect(() => {
+    if (resetCountdown <= 0) return;
+    const t = setTimeout(() => setResetCountdown((v) => v - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resetCountdown]);
 
   const [wxScanned, setWxScanned] = useState(false);
   const wxTimer = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -201,6 +214,55 @@ export default function Login() {
     }
   };
 
+
+  const sendResetCode = async () => {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(resetEmail.trim())) {
+      toast('请输入正确的邮箱地址');
+      return;
+    }
+    setResetting(true);
+    try {
+      await api.sendCode(resetEmail.trim(), 'PASSWORD_RESET');
+      setResetCountdown(60);
+      toast.success('验证码已发送', { description: `已发送至 ${resetEmail.trim()}` });
+    } catch (err) {
+      toast.error('验证码发送失败', { description: err instanceof Error ? err.message : '请稍后重试' });
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  const submitReset = async () => {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(resetEmail.trim())) {
+      toast('请输入正确的邮箱地址');
+      return;
+    }
+    if (!/^\d{6}$/.test(resetCode.trim())) {
+      toast('请输入 6 位验证码');
+      return;
+    }
+    if (!/^(?=.*[A-Za-z])(?=.*\d).{8,64}$/.test(resetPassword)) {
+      toast('新密码至少 8 位，且同时包含字母和数字');
+      return;
+    }
+    setResetting(true);
+    try {
+      await api.resetPassword({
+        email: resetEmail.trim(),
+        verificationCode: resetCode.trim(),
+        newPassword: resetPassword,
+      });
+      toast.success('密码已重置', { description: '请使用新密码重新登录' });
+      setForgotOpen(false);
+      setResetEmail('');
+      setResetCode('');
+      setResetPassword('');
+    } catch (err) {
+      toast.error('密码重置失败', { description: err instanceof Error ? err.message : '请稍后重试' });
+    } finally {
+      setResetting(false);
+    }
+  };
 
   const inputClass = 'w-full rounded-[10px] border border-hairline bg-paper px-3.5 py-2.5 text-[14px] text-ink outline-none transition-colors focus:border-brand/50';
   const loginAsPersona = (id: string) => {
@@ -322,6 +384,10 @@ export default function Login() {
                   <div className="lf-anim-in-up mt-5 space-y-3">
                     <input value={account} onChange={(e) => setAccount(e.target.value)} placeholder="工号/邮箱（如 LF-0917 或 user@example.com）" className={inputClass} />
                     <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submitSso()} placeholder="密码" className={inputClass} />
+                    <button type="button" onClick={() => setForgotOpen(true)} className="ml-auto flex items-center gap-1 text-[12px] font-medium text-brand transition-colors hover:underline">
+                      <KeyRound size={12} />
+                      忘记密码？
+                    </button>
                     <button type="button" disabled={busy} onClick={submitSso} className={primaryClass}>
                       {busy ? <Loader2 size={15} className="animate-spin" /> : <Building2 size={15} />}
                       登录
@@ -420,6 +486,38 @@ export default function Login() {
               </motion.div>
             </div>
           </div>
+        {forgotOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 px-4" role="dialog" aria-modal="true" onClick={() => setForgotOpen(false)}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              className="lf-card w-full max-w-[420px] p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="font-serif text-[19px] font-semibold text-ink">重置密码</h2>
+                  <p className="mt-1 text-[12px] text-ink-muted">通过邮箱验证码设置新密码</p>
+                </div>
+                <button type="button" onClick={() => setForgotOpen(false)} className="text-[13px] font-medium text-ink-muted transition-colors hover:text-ink">关闭</button>
+              </div>
+              <div className="mt-4 space-y-3">
+                <input type="email" value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} placeholder="邮箱" className={inputClass} />
+                <div className="flex gap-2">
+                  <input value={resetCode} onChange={(e) => setResetCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="验证码" inputMode="numeric" className={cn(inputClass, 'min-w-0 flex-1')} />
+                  <button type="button" disabled={resetting || resetCountdown > 0} onClick={sendResetCode} className={cn('shrink-0 rounded-[10px] border px-3 py-2.5 text-[12.5px] font-medium transition-all', resetCountdown > 0 ? 'border-hairline bg-paper-deep text-ink-muted/60' : 'border-brand/40 bg-brand-tint text-brand hover:border-brand/60')}>
+                    {resetCountdown > 0 ? `${resetCountdown}s 后重发` : '获取验证码'}
+                  </button>
+                </div>
+                <input type="password" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} placeholder="新密码（至少 8 位，含字母和数字）" className={inputClass} />
+                <button type="button" disabled={resetting} onClick={submitReset} className={primaryClass}>
+                  {resetting ? <Loader2 size={15} className="animate-spin" /> : <KeyRound size={15} />}
+                  确认重置
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
         </div>
       </div>
     </div>

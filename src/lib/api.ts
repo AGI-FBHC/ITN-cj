@@ -213,7 +213,7 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(body),
   }),
-  sendCode: (email: string, purpose: 'REGISTER' | 'LOGIN') =>
+  sendCode: (email: string, purpose: 'REGISTER' | 'LOGIN' | 'PASSWORD_RESET') =>
     request<{ email: string; expiresInSeconds: number; retryAfterSeconds: number }>('/api/v1/auth/send-code', {
       method: 'POST',
       body: JSON.stringify({ email, purpose }),
@@ -244,6 +244,11 @@ export const api = {
   updateLearner: (id: string, body: LearnerUpsertInput) =>
     request<LearnerProfileData>(`/api/v1/learners/${encodeURIComponent(id)}`, {
       method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+  resetPassword: (body: { email: string; verificationCode: string; newPassword: string }) =>
+    request<Record<string, unknown>>('/api/v1/auth/reset-password', {
+      method: 'POST',
       body: JSON.stringify(body),
     }),
   getOnboardingMeta: () => request<OnboardingMeta>('/api/v1/onboarding/meta'),
