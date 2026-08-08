@@ -1,6 +1,6 @@
 /**
  * AuthContext — 登录态
- * 优先调用后端；后端不可用时保留本地演示登录，便于前端独立开发。
+ * 统一通过后端接口登录；演示画像也必须是数据库种子中的 learner。
  */
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -52,6 +52,7 @@ function readJSON<T>(key: string, fallback: T): T {
   }
 }
 
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<AuthSession | null>(() => readJSON<AuthSession | null>(K_AUTH, null));
   const [known, setKnown] = useState<Record<string, KnownRecord>>(() =>
@@ -83,8 +84,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loginRemote: async (method, account, label, learnerId, secret) => {
       try {
         let result;
-        if (method === 'guest' || method === 'persona') {
+        if (method === 'guest') {
           result = await api.guestLogin();
+        } else if (method === 'persona') {
+          result = await api.demoLogin(learnerId ?? account.replace(/^persona:/, ''));
         } else if (method === 'sso') {
           const value = account.replace(/^sso:/, '');
           result = value.includes('@')

@@ -60,7 +60,7 @@ function FakeQr({ scanned }: { scanned: boolean }) {
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login, loginRemote, knownOf } = useAuth();
+  const { loginRemote } = useAuth();
   const { learners, setCurrentLearnerId, setViewMode } = useProfile();
   const presets = learners.filter((l) => !l.custom);
 
@@ -100,11 +100,12 @@ export default function Login() {
   const doLogin = async (method: LoginMethod, account: string, label: string, learnerId?: string, secret?: string) => {
     setBusy(true);
     const ok = await loginRemote(method, account, label, learnerId, secret);
-    if (!ok) login(method, account, label, learnerId);
-    const resolved = knownOf(account) ?? (learnerId ? { learnerId, lastAt: Date.now() } : null);
-    if (resolved) setCurrentLearnerId(resolved.learnerId);
     setBusy(false);
-    toast.success(`${label}，登录成功`, { description: resolved ? '检测到已有画像，直接继续' : '首次登录，先建一份学情画像' });
+    if (!ok) {
+      toast.error('登录失败', { description: '账号或验证码不正确，请检查后重试' });
+      return;
+    }
+    toast.success(`${label}，登录成功`);
     navigate('/welcome');
   };
 
@@ -188,7 +189,10 @@ export default function Login() {
         description: `企业：${result.organizationName} · 工号：${result.employeeNo}`,
       });
       const ok = await loginRemote('sso', `sso:${result.employeeNo}`, regEmail.trim(), undefined, regPassword);
-      if (!ok) login('sso', `sso:${result.employeeNo}`, regEmail.trim());
+      if (!ok) {
+        toast.error('注册成功，但自动登录失败', { description: '请使用新工号或邮箱重新登录' });
+        return;
+      }
       navigate('/welcome');
     } catch (err) {
       toast.error('注册失败', { description: err instanceof Error ? err.message : '请稍后重试' });
@@ -197,6 +201,8 @@ export default function Login() {
     }
   };
 
+
+  const inputClass = 'w-full rounded-[10px] border border-hairline bg-paper px-3.5 py-2.5 text-[14px] text-ink outline-none transition-colors focus:border-brand/50';
   const loginAsPersona = (id: string) => {
     const l = presets.find((p) => p.id === id);
     if (!l) return;
@@ -217,14 +223,12 @@ export default function Login() {
   };
 
   const enterJudge = () => {
-    login('guest', 'judge', '评委演示');
-    setViewMode('expert');
-    toast('已进入系统透视 / 评委视角');
-    startDemoTour();
-    navigate('/');
+    doLogin('guest', 'judge', '评委演示').then(() => {
+      setViewMode('expert');
+      startDemoTour();
+      navigate('/');
+    });
   };
-
-  const inputClass = 'w-full rounded-[10px] border border-hairline bg-paper px-3.5 py-2.5 text-[14px] text-ink outline-none transition-colors focus:border-brand/50';
   const primaryClass = 'lf-btn-primary w-full justify-center !py-2.5';
 
   return (
@@ -377,6 +381,7 @@ export default function Login() {
                     评委 / 访客演示通道
                   </button>
                 </div>
+
               </motion.div>
             </div>
 

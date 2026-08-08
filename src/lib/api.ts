@@ -81,6 +81,11 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   guestLogin: () => request<LoginResult>('/api/v1/auth/guest-login', { method: 'POST' }),
+  demoLogin: (learnerCode: string) =>
+    request<LoginResult>('/api/v1/auth/demo-login', {
+      method: 'POST',
+      body: JSON.stringify({ learnerCode }),
+    }),
   identityLogin: (body: {
     identityType: 'ENTERPRISE' | 'WECHAT';
     identityValue: string;
