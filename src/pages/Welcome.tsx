@@ -150,6 +150,7 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
     }
     /* 先让后端生成真实画像轨迹，再播放锻造动画 */
     let forgeSteps;
+    let forgeBlindSpots;
     let forgeEvidence = [`身份「${tag}」`, `学历「${edu}」`, `目标「${job}」`, '背景先验 → 六维起点'];
     try {
       const generated = await api.generateProfile({
@@ -165,6 +166,7 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
       });
       forgeSteps = generated.steps;
       forgeEvidence = generated.evidence;
+      forgeBlindSpots = generated.blindSpots;
     } catch {
       /* 后端不可用时保留前端兜底文案 */
     }
@@ -176,6 +178,7 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
       method: 'quick',
       evidence: forgeEvidence,
       steps: forgeSteps,
+      blindSpots: forgeBlindSpots,
     });
   };
 

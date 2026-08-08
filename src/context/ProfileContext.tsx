@@ -99,6 +99,19 @@ function readInitialMode(): ViewMode {
   return window.localStorage.getItem(K_VIEW) === 'expert' ? 'expert' : 'learner';
 }
 
+const NEW_KP_NAMES: Record<string, string> = {
+  'kp-ds': '数据结构与算法',
+  'kp-co': '计算机组成原理',
+  'kp-os': '操作系统',
+  'kp-network': '计算机网络',
+  'kp-db': '数据库',
+  'kp-agent': '智能体与大模型',
+};
+
+function kpName(id: string): string {
+  return NEW_KP_NAMES[id] ?? getKnowledgePoint(id).name ?? id;
+}
+
 const clamp = (n: number) => Math.max(12, Math.min(96, Math.round(n)));
 
 /** 自建画像借用最相近预设的富内容 */
@@ -129,8 +142,8 @@ function tagFromRole(role?: string | null, education?: string | null): string {
 function diagnosisFromScores(scores: Record<string, number>): string {
   const entries = Object.entries(scores);
   const sorted = [...entries].sort((a, b) => b[1] - a[1]);
-  const strongest = getKnowledgePoint(sorted[0]?.[0] ?? 'kp-plc').name;
-  const weakest = getKnowledgePoint(sorted[sorted.length - 1]?.[0] ?? 'kp-plc').name;
+  const strongest = kpName(sorted[0]?.[0] ?? 'kp-ds');
+  const weakest = kpName(sorted[sorted.length - 1]?.[0] ?? 'kp-ds');
   const strongScore = sorted[0]?.[1] ?? 50;
   const weakScore = sorted[sorted.length - 1]?.[1] ?? 50;
   return `DIA-01 诊断：最强「${strongest}」${strongScore} 分，最弱「${weakest}」${weakScore} 分。建议从「${weakest}」切入，用分阶题巩固优势维度。`;
@@ -146,10 +159,13 @@ function confidenceOf(remote: LearnerProfileData): ProfileConfidence | undefined
 function toUiLearner(remote: LearnerProfileData): Learner {
   const preset = presetLearners.find((p) => p.id === remote.code || p.id === remote.id);
   const scores = remote.scores ?? {};
+  if (Object.keys(scores).length === 0) {
+    for (const kpId of Object.keys(NEW_KP_NAMES)) scores[kpId] = 50;
+  }
   const entries = Object.entries(scores);
   const sorted = [...entries].sort((a, b) => b[1] - a[1]);
-  const strongest = getKnowledgePoint(sorted[0]?.[0] ?? 'kp-plc').name;
-  const weakest = getKnowledgePoint(sorted[sorted.length - 1]?.[0] ?? 'kp-plc').name;
+  const strongest = kpName(sorted[0]?.[0] ?? 'kp-ds');
+  const weakest = kpName(sorted[sorted.length - 1]?.[0] ?? 'kp-ds');
 
   if (preset) {
     return {
@@ -190,7 +206,7 @@ function toUiLearner(remote: LearnerProfileData): Learner {
     learningStyle: remote.learningStyle?.length ? remote.learningStyle : ['综合'],
     weeklyHours: remote.weeklyHours ?? 8,
     scores,
-    strengths: sorted.slice(0, 2).map(([kp]) => getKnowledgePoint(kp).name),
+    strengths: sorted.slice(0, 2).map(([kp]) => kpName(kp)),
     blindSpots: remote.blindSpots?.length ? remote.blindSpots : [],
     preferredFormat: remote.preferredFormat || '按画像自适应',
     goal: remote.goal || '',

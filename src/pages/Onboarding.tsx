@@ -150,6 +150,17 @@ export default function Onboarding() {
     baseQueue.map((q) => ({ q })),
   );
   const [answers, setAnswers] = useState<AnswerRecord[]>([]);
+
+  useEffect(() => {
+    if (!meta || answers.length > 0) return;
+    const nextQueue = meta.knowledgePoints
+      .map((kp) => meta.questions.find((q) => q.kpId === kp.id && q.level === 'basic') ?? meta.questions.find((q) => q.kpId === kp.id))
+      .filter((q): q is OnboardingQuestion => Boolean(q))
+      .map((q) => ({ q }));
+    if (nextQueue.length === 0) return;
+    setQueue(nextQueue);
+    setSelfLevels((prev) => Object.fromEntries(meta.knowledgePoints.map((kp) => [kp.id, prev[kp.id] ?? 2])));
+  }, [meta, answers.length]);
   const [picked, setPicked] = useState<number | null>(null);
   /** 答错后待归因：记录挂起，归因（或跳过）后才正式提交，避免题卡提前跳题 */
   const [pendingWrong, setPendingWrong] = useState<AnswerRecord | null>(null);
@@ -183,6 +194,7 @@ export default function Onboarding() {
     );
     setEstimates(nextEstimates);
     setAvgConf(33);
+    setConfidence(Object.fromEntries(knowledgePoints.map((kp) => [kp.id, 33])));
   }, [tag, education, selfLevels, answers.length, knowledgePoints]);
 
   /* ---- 作答处理 ---- */
@@ -364,6 +376,7 @@ export default function Onboarding() {
         return;
       }
       let forgeSteps;
+      let forgeBlindSpots;
       let forgeEvidence = [
         `身份「${tag}」· ${education}`,
         '六维自评完成',
@@ -386,6 +399,7 @@ export default function Onboarding() {
         });
         forgeSteps = generated.steps;
         forgeEvidence = generated.evidence;
+        forgeBlindSpots = generated.blindSpots;
       } catch {
         /* 后端不可用时保留前端兜底文案 */
       }
@@ -397,6 +411,7 @@ export default function Onboarding() {
         method: 'full',
         evidence: forgeEvidence,
         steps: forgeSteps,
+        blindSpots: forgeBlindSpots,
       });
     } catch {
       toast.error('精准诊断失败', { description: '请稍后重试' });

@@ -20,6 +20,7 @@ export interface ForgeData {
   /** 证据行（如：身份「转岗工程师」/ 理论自测 9 题） */
   evidence: string[];
   steps?: ProfileForgeStep[];
+  blindSpots?: string[];
 }
 
 const CX = 180;
@@ -52,8 +53,10 @@ export default function ProfileForge({ data, onDone }: { data: ForgeData; onDone
   }, [data.scores]);
 
   const weakestNames = useMemo(
-    () => weakest.map((id) => knowledgePoints.find((kp) => kp.id === id)?.name).filter(Boolean).join('、'),
-    [weakest],
+    () => data.blindSpots?.length
+      ? data.blindSpots.join('、')
+      : weakest.map((id) => knowledgePoints.find((kp) => kp.id === id)?.name).filter(Boolean).join('、'),
+    [data.blindSpots, weakest],
   );
 
   useEffect(() => {

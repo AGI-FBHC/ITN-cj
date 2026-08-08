@@ -134,8 +134,8 @@ export const getLearner = (id: string): Learner =>
 
 /** 最薄弱知识点 id */
 export const weakestKpOf = (learner: Learner): string =>
-  Object.entries(learner.scores).sort((a, b) => a[1] - b[1])[0][0];
+  Object.entries(learner.scores).sort((a, b) => a[1] - b[1])[0]?.[0] ?? 'kp-ds';
 
 /** 最强知识点 id */
 export const strongestKpOf = (learner: Learner): string =>
-  Object.entries(learner.scores).sort((a, b) => b[1] - a[1])[0][0];
+  Object.entries(learner.scores).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'kp-ds';
