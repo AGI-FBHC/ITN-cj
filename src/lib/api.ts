@@ -116,4 +116,22 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  getTutoringScript: (learnerCode: string) =>
+    request<Record<string, unknown>>(`/v1/tutoring/scripts/${encodeURIComponent(learnerCode)}`),
+  createTutoringSession: (learnerCode: string) =>
+    request<Record<string, unknown>>('/v1/tutoring/sessions', {
+      method: 'POST',
+      body: JSON.stringify({ learnerCode }),
+    }),
+  getTutoringSession: (sessionId: string) =>
+    request<Record<string, unknown>>(`/v1/tutoring/sessions/${encodeURIComponent(sessionId)}`),
+  answerTutoringSession: (sessionId: string, body: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/v1/tutoring/sessions/${encodeURIComponent(sessionId)}/answer`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  completeTutoringSession: (sessionId: string) =>
+    request<Record<string, unknown>>(`/v1/tutoring/sessions/${encodeURIComponent(sessionId)}/complete`, {
+      method: 'POST',
+    }),
 };
