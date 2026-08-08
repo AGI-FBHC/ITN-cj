@@ -1,7 +1,7 @@
 /**
  * Login `/login` — 登录与注册共用一张翻转卡片
  * - 正面：工号/邮箱 + 密码、邮箱验证码、微信扫码
- * - 背面：企业注册，自动生成 9 位工号
+ * - 背面：注册，自动生成 9 位工号
  */
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -184,7 +184,7 @@ export default function Login() {
         verificationCode: regCode.trim(),
         enterpriseName: regEnterprise.trim(),
       });
-      toast.success('企业注册成功', {
+      toast.success('注册成功', {
         description: `企业：${result.organizationName} · 工号：${result.employeeNo}`,
       });
       const ok = await loginRemote('sso', `sso:${result.employeeNo}`, regEmail.trim(), undefined, regPassword);
@@ -280,13 +280,13 @@ export default function Login() {
           <span className="font-serif text-[18px] font-bold text-ink">智训云枢</span>
         </div>
 
-        <div className="relative w-full max-w-[400px] [perspective:1200px]" style={{ minHeight: 560 }}>
+        <div className="relative w-full max-w-[400px]" style={{ minHeight: 600, height: 600, perspective: '1200px' }}>
           <div
             className="relative h-full w-full transition-transform duration-700 [transform-style:preserve-3d]"
             style={{ transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)' }}
           >
             {/* 登录面 */}
-            <div className="absolute inset-0 [backface-visibility:hidden]">
+            <div className="absolute inset-0" style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -381,7 +381,7 @@ export default function Login() {
             </div>
 
             {/* 注册面 */}
-            <div className="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)]">
+            <div className="absolute inset-0" style={{ transform: 'rotateY(180deg)', backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -390,8 +390,8 @@ export default function Login() {
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <h2 className="font-serif text-[20px] font-semibold text-ink">企业注册</h2>
-                    <p className="mt-1 text-[12px] text-ink-muted">注册后自动生成 9 位企业工号</p>
+                    <h2 className="font-serif text-[20px] font-semibold text-ink">注册</h2>
+                    <p className="mt-1 text-[12px] text-ink-muted">注册后自动生成 9 位工号</p>
                   </div>
                   <button type="button" onClick={() => setFlipped(false)} className="text-[13px] font-medium text-brand hover:underline">返回登录</button>
                 </div>
