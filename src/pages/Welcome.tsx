@@ -5,7 +5,7 @@
  *   ⚡ 精简建档（约 30 秒）：称呼/身份 → 学历 → 目标岗位，只用背景先验 → 置信度低，边学边校准
  *   🎯 精准定制（约 5 分钟）：跳转 /onboarding 五步初诊（自评 + 自适应测题）→ 建档即高置信
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useProfile } from '@/context/ProfileContext';
+import { api } from '@/lib/api';
 import type { LearnerDraft } from '@/context/ProfileContext';
 import { knowledgePoints, getKnowledgePoint } from '@/data/knowledgePoints';
 import { activePathNode } from '@/data/reportData';
@@ -73,6 +74,13 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
   const { bindAccount, session } = useAuth();
   const { createLearner } = useProfile();
   const [step, setStep] = useState(0);
+  const [jobOptions, setJobOptions] = useState<string[]>(JOBS);
+
+  useEffect(() => {
+    api.listJobOptions()
+      .then((options) => setJobOptions(options.map((option) => option.name)))
+      .catch(() => {});
+  }, []);
   const [name, setName] = useState('');
   const [tag, setTag] = useState<string | null>(null);
   const [edu, setEdu] = useState<string | null>(null);
@@ -297,7 +305,7 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
                 <p className="mt-1 text-[11.5px] leading-[18px] text-ink-muted">我们会优先安排与目标岗位关联度最高的内容。</p>
               </div>
               <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                {JOBS.map((item) => (
+                {jobOptions.map((item) => (
                   <button
                     key={item}
                     type="button"

@@ -109,7 +109,7 @@ export default function Onboarding() {
   const knowledgePoints = meta?.knowledgePoints ?? localKnowledgePoints;
   const tags = meta?.tags ?? TAGS;
   const edu = meta?.edu ?? EDU;
-  const jobs = meta?.jobs ?? JOBS;
+  const jobs = meta?.jobs.map((j) => j.name) ?? JOBS;
   const styleOptions = meta?.styles ?? STYLES;
   const getKnowledgePoint = useCallback(
     (id: string) => knowledgePoints.find((kp) => kp.id === id) ?? localGetKnowledgePoint(id),

@@ -95,11 +95,20 @@ export interface OnboardingQuestion {
   kbRefs: string[];
 }
 
+export interface OnboardingJobOption {
+  id: number;
+  code: string;
+  name: string;
+  description: string | null;
+  sortOrder: number;
+  enabled: boolean;
+}
+
 export interface OnboardingMeta {
   knowledgePoints: OnboardingKnowledgePoint[];
   tags: string[];
   edu: string[];
-  jobs: string[];
+  jobs: OnboardingJobOption[];
   styles: string[];
   selfLevels: string[];
   questions: OnboardingQuestion[];
@@ -252,6 +261,7 @@ export const api = {
       body: JSON.stringify(body),
     }),
   getOnboardingMeta: () => request<OnboardingMeta>('/api/v1/onboarding/meta'),
+  listJobOptions: () => request<OnboardingJobOption[]>('/api/v1/onboarding/jobs'),
   answerOnboarding: (body: OnboardingAnswerRequest) =>
     request<OnboardingAnswerResponse>('/api/v1/onboarding/answer', {
       method: 'POST',
