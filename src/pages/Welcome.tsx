@@ -23,9 +23,9 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
-import type { OnboardingTargetCategory, OnboardingTargetOption } from '@/lib/api';
+import type { OnboardingKnowledgePoint, OnboardingTargetCategory, OnboardingTargetOption } from '@/lib/api';
 import type { LearnerDraft } from '@/context/ProfileContext';
-import { knowledgePoints, getKnowledgePoint } from '@/data/knowledgePoints';
+import { knowledgePoints } from '@/data/knowledgePoints';
 import { activePathNode } from '@/data/reportData';
 import { reportForLearner } from '@/data/reportBuilder';
 import { AVATARS, TAGS, EDU, JOBS, priorOf, priorLine } from '@/data/priors';
@@ -79,13 +79,15 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
   const [targetOptions, setTargetOptions] = useState<OnboardingTargetOption[]>([]);
   const [targetCategoryCode, setTargetCategoryCode] = useState('JOB');
   const [jobOptions, setJobOptions] = useState<string[]>(JOBS);
+  const [quickKnowledgePoints, setQuickKnowledgePoints] = useState<OnboardingKnowledgePoint[]>([]);
 
   useEffect(() => {
-    Promise.all([api.listTargetCategories(), api.listTargetOptions()])
-      .then(([categories, options]) => {
-        setTargetCategories(categories);
-        setTargetOptions(options);
-        setJobOptions(options.map((option) => option.name));
+    api.getOnboardingMeta()
+      .then((meta) => {
+        setTargetCategories(meta.targetCategories);
+        setTargetOptions(meta.targetOptions);
+        setJobOptions(meta.targetOptions.map((option) => option.name));
+        setQuickKnowledgePoints(meta.knowledgePoints);
       })
       .catch(() => {});
   }, []);
@@ -118,12 +120,13 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
   const finish = async () => {
     if (!tag || !edu || !job || forge) return;
     const prior = priorOf(tag, edu);
+    const kps = quickKnowledgePoints.length ? quickKnowledgePoints : knowledgePoints;
     const scores: Record<string, number> = {};
-    knowledgePoints.forEach((kp) => { scores[kp.id] = clampScore(50 + (prior[kp.id] ?? 0)); });
-    const blind = [...knowledgePoints]
+    kps.forEach((kp) => { scores[kp.id] = clampScore(50 + (prior[kp.id] ?? 0)); });
+    const blind = [...kps]
       .sort((a, b) => (scores[a.id] ?? 50) - (scores[b.id] ?? 50))
       .slice(0, 2)
-      .map((kp) => getKnowledgePoint(kp.id).name);
+      .map((kp) => kps.find((item) => item.id === kp.id)?.name ?? kp.id);
     const draft: LearnerDraft = {
       name: name.trim(),
       avatar: AVATARS[name.trim().length % AVATARS.length],
