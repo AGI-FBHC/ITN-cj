@@ -20,7 +20,6 @@ import Report from '@/pages/Report';
 import Tutoring from '@/pages/Tutoring';
 import Knowledge from '@/pages/Knowledge';
 import Login from '@/pages/Login';
-import Register from '@/pages/Register';
 import Welcome from '@/pages/Welcome';
 import { useAuth } from '@/context/AuthContext';
 
@@ -71,7 +70,6 @@ export default function App() {
       <ScrollToTop />
       <Routes>
         <Route path="login" element={<Login />} />
-        <Route path="register" element={<Register />} />
         <Route element={<RequireAuth />}>
         <Route path="welcome" element={<Welcome />} />
         <Route element={<AppShell />}>
