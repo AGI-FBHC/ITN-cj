@@ -135,7 +135,7 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
       learningStyle: [],
       scores,
       blindSpots: blind,
-      goal: `拿下「${job}」${targetCategoryCode === 'EXAM' ? '考试科目' : targetCategoryCode === 'COURSE' ? '课程知识' : '岗位'}所需的核心技能——画像先按背景估，边学边测准。`,
+      goal: `拿下「${job}」${targetCategoryCode === 'EXAM' ? '考试科目' : targetCategoryCode === 'CERT' ? '证书考核' : '岗位'}所需的核心技能——画像先按背景估，边学边测准。`,
     };
     let id: string;
     try {

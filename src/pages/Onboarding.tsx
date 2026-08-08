@@ -315,7 +315,7 @@ export default function Onboarding() {
   const enterConfirm = () => {
     setEditScores({ ...estimates });
     setBlindIds([...defaultBlindIds]);
-    const targetSuffix = targetCategoryCode === 'EXAM' ? '考试科目要求' : targetCategoryCode === 'COURSE' ? '课程知识体系' : '目标能力';
+    const targetSuffix = targetCategoryCode === 'EXAM' ? '考试科目要求' : targetCategoryCode === 'CERT' ? '证书考核要求' : '目标能力';
     setGoal(`3 个月内补齐「${weakest?.kp.name}」等短板，对齐「${targetJob}」${targetSuffix}。`);
     setStep(4);
   };
