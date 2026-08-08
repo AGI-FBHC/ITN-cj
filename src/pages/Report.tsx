@@ -154,7 +154,7 @@ export default function Report() {
             <SectionHeader
               en={isLearner ? undefined : 'BLIND-SPOT LOCALIZATION'}
               title={isLearner ? '我的知识盲区' : '知识盲区定位'}
-              desc={isLearner ? undefined : '当前能力与岗位目标的六维缺口：雷达缺口区域砖红强调，右侧按缺口降序给出消解计划。'}
+              desc={isLearner ? undefined : '当前能力与目标要求的六维缺口：雷达缺口区域砖红强调，右侧按缺口降序给出消解计划。'}
             />
             <GapSection learner={currentLearner} report={report} />
           </div>

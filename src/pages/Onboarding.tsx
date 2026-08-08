@@ -67,14 +67,14 @@ function radarOption(estimates: Record<string, number>, confidence?: Record<stri
       splitArea: { areaStyle: { color: ['rgba(253,252,249,0)', 'rgba(240,235,224,0.5)'] } },
       axisLine: { lineStyle: { color: '#DCE6DE' } },
     },
-    legend: { bottom: 0, icon: 'roundRect', itemWidth: 12, itemHeight: 8, data: ['当前估计', '岗位目标'] },
+    legend: { bottom: 0, icon: 'roundRect', itemWidth: 12, itemHeight: 8, data: ['当前估计', '目标要求'] },
     series: [
       {
         type: 'radar' as const,
         data: [
           {
             value: knowledgePoints.map((kp) => kp.targetLevel),
-            name: '岗位目标',
+            name: '目标要求',
             symbol: 'none',
             lineStyle: { color: '#E7B45A', width: 1.5, type: 'dashed' as const },
             itemStyle: { color: '#E7B45A' },
@@ -109,7 +109,9 @@ export default function Onboarding() {
   const knowledgePoints = meta?.knowledgePoints ?? localKnowledgePoints;
   const tags = meta?.tags ?? TAGS;
   const edu = meta?.edu ?? EDU;
-  const jobs = meta?.jobs.map((j) => j.name) ?? JOBS;
+  const targetCategories = meta?.targetCategories ?? [];
+  const targetOptions = meta?.targetOptions ?? [];
+  const jobs = targetOptions.length ? targetOptions.map((option) => option.name) : JOBS;
   const styleOptions = meta?.styles ?? STYLES;
   const getKnowledgePoint = useCallback(
     (id: string) => knowledgePoints.find((kp) => kp.id === id) ?? localGetKnowledgePoint(id),
@@ -126,6 +128,7 @@ export default function Onboarding() {
   const [tag, setTag] = useState(TAGS[0]);
   const [education, setEducation] = useState(EDU[0]);
   const [targetJob, setTargetJob] = useState(JOBS[0]);
+  const [targetCategoryCode, setTargetCategoryCode] = useState('JOB');
   const [weeklyHours, setWeeklyHours] = useState(10);
   const [styles, setStyles] = useState<string[]>([STYLES[0]]);
   const [addingStyle, setAddingStyle] = useState(false);
@@ -292,13 +295,28 @@ export default function Onboarding() {
     return `「${w.kp.name}」你调得比我测到的高 ${Math.round(w.over)} 分——先按你说的建档，但之后我会用两道题核实，谈不拢再谈。`;
   }, [editScores, estimates]);
 
+  const pickTarget = (name: string) => {
+    setTargetJob(name);
+    const option = targetOptions.find((item) => item.name === name);
+    if (option) setTargetCategoryCode(option.categoryCode);
+  };
+
+  const pickTargetCategory = (categoryName: string) => {
+    const category = targetCategories.find((item) => item.name === categoryName);
+    if (!category) return;
+    setTargetCategoryCode(category.code);
+    const first = targetOptions.find((item) => item.categoryCode === category.code);
+    if (first) setTargetJob(first.name);
+  };
+
   const toggleStyle = (s: string) =>
     setStyles((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
 
   const enterConfirm = () => {
     setEditScores({ ...estimates });
     setBlindIds([...defaultBlindIds]);
-    setGoal(`3 个月内补齐「${weakest?.kp.name}」等短板，向「${targetJob}」岗位能力对齐。`);
+    const targetSuffix = targetCategoryCode === 'EXAM' ? '考试科目要求' : targetCategoryCode === 'COURSE' ? '课程知识体系' : '目标能力';
+    setGoal(`3 个月内补齐「${weakest?.kp.name}」等短板，对齐「${targetJob}」${targetSuffix}。`);
     setStep(4);
   };
 
@@ -312,6 +330,7 @@ export default function Onboarding() {
         tag,
         education,
         targetJob,
+        targetCategoryCode,
         selfLevels,
         answers: answers.map(toBackendAnswer),
       });
@@ -436,7 +455,8 @@ export default function Onboarding() {
 
                 <ChipRow label="身份" options={tags} value={tag} onPick={setTag} />
                 <ChipRow label="学历" options={edu} value={education} onPick={setEducation} />
-                <ChipRow label="目标岗位" options={jobs} value={targetJob} onPick={setTargetJob} />
+                <ChipRow label="目标类型" options={targetCategories.map((category) => category.name)} value={targetCategories.find((category) => category.code === targetCategoryCode)?.name ?? ''} onPick={pickTargetCategory} />
+                <ChipRow label="目标方向" options={jobs} value={targetJob} onPick={pickTarget} />
 
                 <div>
                   <div className="lf-mono-label mb-2 !text-[11px]">学习偏好（可多选）</div>

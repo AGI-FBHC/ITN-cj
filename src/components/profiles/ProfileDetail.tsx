@@ -1,6 +1,6 @@
 /**
  * ProfileDetail — 选中画像详情区（profiles.md S3，双栏 7:5）
- * 左：知识雷达（当前水平 vs 岗位目标）+ 先验知识档案
+ * 左：知识雷达（当前水平 vs 目标要求）+ 先验知识档案
  * 右：技能盲区标签墙 + DIA-01 诊断报告摘要（打字机）
  */
 import { useMemo } from 'react';
@@ -132,7 +132,7 @@ export default function ProfileDetail({ learner }: { learner: Learner }) {
         icon: 'roundRect',
         itemWidth: 12,
         itemHeight: 8,
-        data: ['当前水平', '岗位目标'],
+        data: ['当前水平', '目标要求'],
       },
       radar: {
         indicator: knowledgePoints.map((kp) => ({ name: kp.name, max: 100 })),
@@ -157,7 +157,7 @@ export default function ProfileDetail({ learner }: { learner: Learner }) {
             },
             {
               value: targets,
-              name: '岗位目标',
+              name: '目标要求',
               lineStyle: { color: '#E7B45A', width: 2, type: 'dashed' as const },
               itemStyle: { color: '#E7B45A' },
               areaStyle: { color: 'rgba(231, 180, 90,0)' },

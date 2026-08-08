@@ -139,7 +139,7 @@ export default function Profiles() {
         <SectionHeader
           en="SELECTED PROFILE"
           title={`画像详情 · ${selectedLearner.name}`}
-          desc="知识雷达对照岗位目标，盲区标签墙与 DIA-01 诊断报告随画像切换即时重算。"
+          desc="知识雷达对照目标要求，盲区标签墙与 DIA-01 诊断报告随画像切换即时重算。"
         />
         <AnimatePresence mode="wait">
           <motion.div

@@ -278,7 +278,7 @@ const loopSteps = [
     name: '学情画像构建',
     en: 'PROFILE',
     desc: '整合学历背景与理论测试，锚定理论强项与技能盲区，输出六维画像向量。',
-    detail: 'DIA-01 汇聚 6 维理论测试、学习行为与岗位目标，生成可追溯的画像向量 —— 这是一切个性化的输入。',
+    detail: 'DIA-01 汇聚 6 维理论测试、学习行为与目标要求，生成可追溯的画像向量 —— 这是一切个性化的输入。',
     href: '/profiles',
   },
   {
@@ -840,7 +840,7 @@ function DomainCard() {
         ))}
       </div>
       <p className="mt-3 text-[13px] leading-[20px] text-ink-muted">
-        对接岗位能力模型 · 国赛/1+X 证书标准对齐
+        对接目标能力模型 · 国赛/1+X 证书标准对齐
       </p>
       <button type="button" onClick={() => navigate('/knowledge')} className="lf-btn-ghost mt-3 w-full !py-2 text-[13.5px]">
         进入知识库

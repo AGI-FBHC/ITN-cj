@@ -35,14 +35,14 @@ function radarOption(scores: Record<string, number>, confidence?: Record<string,
       splitArea: { areaStyle: { color: ['rgba(253,252,249,0)', 'rgba(240,235,224,0.5)'] } },
       axisLine: { lineStyle: { color: '#DCE6DE' } },
     },
-    legend: { bottom: 0, icon: 'roundRect', itemWidth: 12, itemHeight: 8, data: ['当前能力', '岗位目标'] },
+    legend: { bottom: 0, icon: 'roundRect', itemWidth: 12, itemHeight: 8, data: ['当前能力', '目标要求'] },
     series: [
       {
         type: 'radar' as const,
         data: [
           {
             value: knowledgePoints.map((kp) => kp.targetLevel),
-            name: '岗位目标',
+            name: '目标要求',
             symbol: 'none',
             lineStyle: { color: '#E7B45A', width: 1.5, type: 'dashed' as const },
             itemStyle: { color: '#E7B45A' },

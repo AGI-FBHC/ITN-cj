@@ -193,7 +193,7 @@ export default function ScoreBand({ report }: { report: LearnerReport }) {
         decimals={1}
         suffix="%"
         name="知识覆盖率"
-        note="6 大知识点 · 岗位能力模型对齐"
+        note="6 大知识点 · 目标能力模型对齐"
         badge="达标 ≥ 90%"
         badgeTone="green"
       />

@@ -216,7 +216,7 @@ export default function ScoreTable({ learner }: { learner: Learner }) {
             </thead>
             <tbody>
               <tr className="border-b border-hairline/70">
-                <td className="py-3.5 pr-4 text-[14px] font-medium text-ink">理论测试卷 A（岗位能力模型对齐）</td>
+                <td className="py-3.5 pr-4 text-[14px] font-medium text-ink">理论测试卷 A（目标能力模型对齐）</td>
                 <td className="py-3.5 pr-4 font-mono text-[13px] text-ink-2">2025-11-28</td>
                 <td className="py-3.5 pr-4 text-[13px] text-ink-2">6 大知识点 · 36 题</td>
                 <td className="py-3.5 pr-4 font-mono text-[14px] font-semibold text-brand tabular">

@@ -95,9 +95,19 @@ export interface OnboardingQuestion {
   kbRefs: string[];
 }
 
-export interface OnboardingJobOption {
+export interface OnboardingTargetCategory {
   id: number;
   code: string;
+  name: string;
+  description: string | null;
+  sortOrder: number;
+  enabled: boolean;
+}
+
+export interface OnboardingTargetOption {
+  id: number;
+  code: string;
+  categoryCode: string;
   name: string;
   description: string | null;
   sortOrder: number;
@@ -108,7 +118,8 @@ export interface OnboardingMeta {
   knowledgePoints: OnboardingKnowledgePoint[];
   tags: string[];
   edu: string[];
-  jobs: OnboardingJobOption[];
+  targetCategories: OnboardingTargetCategory[];
+  targetOptions: OnboardingTargetOption[];
   styles: string[];
   selfLevels: string[];
   questions: OnboardingQuestion[];
@@ -144,6 +155,7 @@ export interface OnboardingDiagnoseRequest {
   tag: string;
   education: string;
   targetJob: string;
+  targetCategoryCode: string;
   selfLevels: Record<string, number>;
   answers: OnboardingAnswerInput[];
 }
@@ -261,7 +273,9 @@ export const api = {
       body: JSON.stringify(body),
     }),
   getOnboardingMeta: () => request<OnboardingMeta>('/api/v1/onboarding/meta'),
-  listJobOptions: () => request<OnboardingJobOption[]>('/api/v1/onboarding/jobs'),
+  listTargetCategories: () => request<OnboardingTargetCategory[]>('/api/v1/onboarding/target-categories'),
+  listTargetOptions: () => request<OnboardingTargetOption[]>('/api/v1/onboarding/targets'),
+  listJobOptions: () => request<OnboardingTargetOption[]>('/api/v1/onboarding/jobs'),
   answerOnboarding: (body: OnboardingAnswerRequest) =>
     request<OnboardingAnswerResponse>('/api/v1/onboarding/answer', {
       method: 'POST',
