@@ -30,6 +30,46 @@ export interface EnterpriseRegisterResult {
   organizationName: string;
 }
 
+export interface LearnerProfileData {
+  id: string;
+  code: string | null;
+  name: string;
+  avatar: string | null;
+  role: string | null;
+  education: string | null;
+  targetJob: string | null;
+  weeklyHours: number | null;
+  learningStyle: string[];
+  scores: Record<string, number>;
+  goal: string | null;
+  blindSpots: string[];
+  preferredFormat: string | null;
+  diagnosisSummary: string | null;
+  confidenceMethod: 'quick' | 'full' | null;
+  confidenceValue: number | null;
+  overallMastery: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LearnerUpsertInput {
+  code?: string | null;
+  name?: string | null;
+  avatar?: string | null;
+  role?: string | null;
+  education?: string | null;
+  targetJob?: string | null;
+  weeklyHours?: number | null;
+  learningStyle?: string[];
+  scores?: Record<string, number>;
+  goal?: string | null;
+  blindSpots?: string[];
+  preferredFormat?: string | null;
+  diagnosisSummary?: string | null;
+  confidenceMethod?: 'quick' | 'full' | null;
+  confidenceValue?: number | null;
+}
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 export const TOKEN_KEY = 'lf.token';
 
@@ -114,6 +154,18 @@ export const api = {
   }) =>
     request<EnterpriseRegisterResult>('/api/v1/auth/register-enterprise', {
       method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  listLearners: () => request<LearnerProfileData[]>('/api/v1/learners'),
+  getLearner: (id: string) => request<LearnerProfileData>(`/api/v1/learners/${encodeURIComponent(id)}`),
+  createLearner: (body: LearnerUpsertInput) =>
+    request<LearnerProfileData>('/api/v1/learners', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  updateLearner: (id: string, body: LearnerUpsertInput) =>
+    request<LearnerProfileData>(`/api/v1/learners/${encodeURIComponent(id)}`, {
+      method: 'PUT',
       body: JSON.stringify(body),
     }),
   getTutoringScript: (learnerCode: string) =>

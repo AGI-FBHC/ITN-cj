@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240" fill="none">
+  <g stroke="#D8D2C2">
+    <!-- sub grid 6px -->
+    <g stroke-width="0.5" opacity="0.45">
+      <path d="M6 0V240M18 0V240M30 0V240M42 0V240M54 0V240M66 0V240M78 0V240M90 0V240M102 0V240M114 0V240M126 0V240M138 0V240M150 0V240M162 0V240M174 0V240M186 0V240M198 0V240M210 0V240M222 0V240M234 0V240"/>
+      <path d="M0 6H240M0 18H240M0 30H240M0 42H240M0 54H240M0 66H240M0 78H240M0 90H240M0 102H240M0 114H240M0 126H240M0 138H240M0 150H240M0 162H240M0 174H240M0 186H240M0 198H240M0 210H240M0 222H240M0 234H240"/>
+    </g>
+    <!-- main grid 24px -->
+    <g stroke-width="1" opacity="0.8">
+      <path d="M24 0V240M48 0V240M72 0V240M96 0V240M120 0V240M144 0V240M168 0V240M192 0V240M216 0V240"/>
+      <path d="M0 24H240M0 48H240M0 72H240M0 96H240M0 120H240M0 144H240M0 168H240M0 192H240M0 216H240"/>
+    </g>
+    <!-- corner registration crosses -->
+    <g stroke-width="1.25" opacity="0.9">
+      <path d="M-8 0H8M0 -8V8"/>
+      <path d="M232 0H248M240 -8V8"/>
+      <path d="M-8 240H8M0 232V248"/>
+      <path d="M232 240H248M240 232V248"/>
+      <path d="M112 0H128M120 -6V6" opacity="0.6"/>
+      <path d="M112 240H128M120 234V246" opacity="0.6"/>
+      <path d="M-6 120H6M0 112V128" opacity="0.6"/>
+      <path d="M234 120H246M240 112V128" opacity="0.6"/>
+    </g>
+  </g>
+</svg>
