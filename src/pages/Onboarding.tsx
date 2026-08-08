@@ -363,18 +363,40 @@ export default function Onboarding() {
         toast.error('建档失败', { description: '请稍后重试' });
         return;
       }
+      let forgeSteps;
+      let forgeEvidence = [
+        `身份「${tag}」· ${education}`,
+        '六维自评完成',
+        `理论自测 ${answers.length} 题`,
+        `目标「${targetJob}」`,
+      ];
+      try {
+        const generated = await api.generateProfile({
+          method: 'full',
+          name: draft.name,
+          avatar: draft.avatar,
+          tag,
+          education,
+          targetJob,
+          targetCategoryCode,
+          scores,
+          confidence: diag.averageConfidence,
+          selfLevels,
+          answers: answers.map(toBackendAnswer),
+        });
+        forgeSteps = generated.steps;
+        forgeEvidence = generated.evidence;
+      } catch {
+        /* 后端不可用时保留前端兜底文案 */
+      }
       setForge({
         name: draft.name,
         avatar: draft.avatar,
         scores,
         confidence: diag.averageConfidence,
         method: 'full',
-        evidence: [
-          `身份「${tag}」· ${education}`,
-          '六维自评完成',
-          `理论自测 ${answers.length} 题`,
-          `目标「${targetJob}」`,
-        ],
+        evidence: forgeEvidence,
+        steps: forgeSteps,
       });
     } catch {
       toast.error('精准诊断失败', { description: '请稍后重试' });

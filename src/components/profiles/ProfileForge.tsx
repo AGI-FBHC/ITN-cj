@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Brain, Check, Crosshair, Gauge, Sparkles } from 'lucide-react';
 import { knowledgePoints } from '@/data/knowledgePoints';
+import type { ProfileForgeStep } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 export interface ForgeData {
@@ -18,6 +19,7 @@ export interface ForgeData {
   method: 'quick' | 'full';
   /** 证据行（如：身份「转岗工程师」/ 理论自测 9 题） */
   evidence: string[];
+  steps?: ProfileForgeStep[];
 }
 
 const CX = 180;
@@ -79,12 +81,20 @@ export default function ProfileForge({ data, onDone }: { data: ForgeData; onDone
     return () => clearInterval(timer);
   }, [phase, data.confidence]);
 
-  const stepLines = [
-    { icon: Brain, text: '汇总建档信息', detail: '构建学习背景先验', at: 0 },
-    { icon: Sparkles, text: '生成能力向量', detail: '计算六维能力起点', at: 1 },
-    { icon: Crosshair, text: '定位提升重点', detail: '安排优先学习路径', at: 2 },
-    { icon: Gauge, text: '评估画像置信度', detail: '设置后续校准节奏', at: 3 },
-  ];
+  const stepIcons = [Brain, Sparkles, Crosshair, Gauge];
+  const stepLines = data.steps && data.steps.length
+    ? data.steps.map((step, index) => ({
+        icon: stepIcons[index] ?? Gauge,
+        text: step.text,
+        detail: step.detail,
+        at: index,
+      }))
+    : [
+        { icon: Brain, text: '汇总建档信息', detail: '构建学习背景先验', at: 0 },
+        { icon: Sparkles, text: '生成能力向量', detail: '计算六维能力起点', at: 1 },
+        { icon: Crosshair, text: '定位提升重点', detail: '安排优先学习路径', at: 2 },
+        { icon: Gauge, text: '评估画像置信度', detail: '设置后续校准节奏', at: 3 },
+      ];
 
   const phaseText = phase === 4 ? '画像已准备好' : stepLines[Math.min(phase, 3)].detail;
   const progress = phase === 4 ? 100 : [18, 42, 68, 86][phase];

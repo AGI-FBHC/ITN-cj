@@ -148,14 +148,34 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
       toast.error('建档失败', { description: '请稍后重试' });
       return;
     }
-    /* 先锻造，后进门 */
+    /* 先让后端生成真实画像轨迹，再播放锻造动画 */
+    let forgeSteps;
+    let forgeEvidence = [`身份「${tag}」`, `学历「${edu}」`, `目标「${job}」`, '背景先验 → 六维起点'];
+    try {
+      const generated = await api.generateProfile({
+        method: 'quick',
+        name: draft.name,
+        avatar: draft.avatar,
+        tag,
+        education: edu,
+        targetJob: job,
+        targetCategoryCode,
+        scores,
+        confidence: 33,
+      });
+      forgeSteps = generated.steps;
+      forgeEvidence = generated.evidence;
+    } catch {
+      /* 后端不可用时保留前端兜底文案 */
+    }
     setForge({
       name: draft.name,
       avatar: draft.avatar,
       scores,
       confidence: 33,
       method: 'quick',
-      evidence: [`身份「${tag}」`, `学历「${edu}」`, `目标「${job}」`, '背景先验 → 六维起点'],
+      evidence: forgeEvidence,
+      steps: forgeSteps,
     });
   };
 

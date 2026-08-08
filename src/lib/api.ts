@@ -169,6 +169,38 @@ export interface OnboardingDiagnoseResponse {
   diagnosisSummary: string;
 }
 
+
+export interface ProfileForgeStep {
+  text: string;
+  detail: string;
+}
+
+export interface GenerateProfileRequest {
+  method: 'quick' | 'full';
+  name: string;
+  avatar: string;
+  tag: string;
+  education: string;
+  targetJob: string;
+  targetCategoryCode: string;
+  scores: Record<string, number>;
+  confidence: number;
+  selfLevels?: Record<string, number>;
+  answers?: OnboardingAnswerInput[];
+}
+
+export interface GenerateProfileResponse {
+  name: string;
+  avatar: string;
+  scores: Record<string, number>;
+  confidence: number;
+  method: 'quick' | 'full';
+  steps: ProfileForgeStep[];
+  evidence: string[];
+  blindSpots: string[];
+  goal: string;
+  diagnosisSummary: string;
+}
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 export const TOKEN_KEY = 'lf.token';
 
@@ -273,6 +305,11 @@ export const api = {
       body: JSON.stringify(body),
     }),
   getOnboardingMeta: () => request<OnboardingMeta>('/api/v1/onboarding/meta'),
+  generateProfile: (body: GenerateProfileRequest) =>
+    request<GenerateProfileResponse>('/api/v1/onboarding/generate-profile', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   listTargetCategories: () => request<OnboardingTargetCategory[]>('/api/v1/onboarding/target-categories'),
   listTargetOptions: () => request<OnboardingTargetOption[]>('/api/v1/onboarding/targets'),
   listJobOptions: () => request<OnboardingTargetOption[]>('/api/v1/onboarding/jobs'),
