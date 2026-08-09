@@ -10,6 +10,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useProfile } from '@/context/ProfileContext';
 import { getCollabScript } from '@/data/collabScript';
@@ -26,6 +27,8 @@ import SummaryBanner from '@/components/agents/SummaryBanner';
 import { usePlayback } from '@/components/agents/usePlayback';
 import { getScriptIndices, getStages, scenarioMeta } from '@/components/agents/scriptModel';
 import type { Scenario } from '@/components/agents/scriptModel';
+import RealTeachingRunView from '@/components/agents/RealTeachingRunView';
+import type { TeachingGroupRunPayload } from '@/lib/api';
 
 const validAgentId = (v: string | null): AgentId | null =>
   v && agents.some((a) => a.id === v) ? (v as AgentId) : null;
@@ -35,6 +38,8 @@ export default function Agents() {
   const autoplay = searchParams.get('autoplay') === '1';
   const agentParam = validAgentId(searchParams.get('agent'));
   const { currentLearner, currentLearnerId, demoMode } = useProfile();
+  const location = useLocation();
+  const teachingRun = (location.state as { teachingRun?: TeachingGroupRunPayload } | null)?.teachingRun;
 
   /* 画像驱动脚本（知识点/标题/事件内容全部随学习者重导） */
   const script = useMemo(() => getCollabScript(currentLearnerId), [currentLearnerId]);
@@ -116,6 +121,10 @@ export default function Agents() {
   const blockedCount = script.events.filter(
     (e) => e.content.includes('幻觉拦截') || (e.payload ?? '').includes('hallucination_blocked'),
   ).length;
+
+  if (teachingRun && teachingRun.events.length > 0) {
+    return <RealTeachingRunView run={teachingRun} learnerName={currentLearner.name} />;
+  }
 
   return (
     <div className="mx-auto max-w-[1320px] px-8 pb-16 pt-6">

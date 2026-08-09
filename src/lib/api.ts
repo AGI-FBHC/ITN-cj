@@ -192,6 +192,11 @@ export interface TeachingGroupEvent {
   data: Record<string, unknown>;
 }
 
+export interface TeachingGroupRunPayload {
+  events: TeachingGroupEvent[];
+  result?: Record<string, unknown> | null;
+}
+
 
 export interface ProfileForgeStep {
   text: string;

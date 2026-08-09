@@ -65,6 +65,7 @@ export default function TeachingGroup({
   const [finalResult, setFinalResult] = useState<Record<string, unknown> | null>(null);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [runEvents, setRunEvents] = useState<TeachingGroupEvent[]>([]);
 
   const weakest = useMemo(() => {
     if (!currentLearner.custom || domainKnowledgePoints.length === 0) return null;
@@ -82,6 +83,13 @@ export default function TeachingGroup({
     navigate(to);
   };
 
+  const openRealAgents = () => {
+    setOpen(false);
+    navigate('/agents?run=real', {
+      state: { teachingRun: { events: runEvents, result: finalResult } },
+    });
+  };
+
   const handleEvent = (event: TeachingGroupEvent) => {
     if (event.type === 'run_started') {
       setRunning(true);
@@ -90,7 +98,9 @@ export default function TeachingGroup({
       setStatuses({});
       setOutputs({});
       return;
+      setRunEvents([]);
     }
+    setRunEvents((prev) => [...prev, event]);
     if (event.type === 'agent_started' && event.agent) {
       setStatuses((prev) => ({ ...prev, [event.agent!]: 'running' }));
       return;
@@ -249,8 +259,8 @@ export default function TeachingGroup({
               <div className="flex items-start gap-3 rounded-[12px] border border-brand-amber/40 bg-brand-amber-tint/60 px-4 py-3">
                 <ShieldCheck size={20} className="shrink-0 text-ochre" />
                 <p className="text-[12.5px] leading-[19px] text-ink-2">
-                  {review?.passed === false
-                    ? '审核未通过：教研方案需要补充依据或修正内容。'
+                  {review?.passed === false || decision?.decision === 'reject'
+                    ? '审核发现风险，ARB-05 已退回修订。'
                     : `审核通过 · 本次命中 ${evidence.length} 条知识库依据。`}
                 </p>
               </div>
@@ -319,8 +329,9 @@ export default function TeachingGroup({
           <div className="space-y-2 border-t border-hairline bg-card-warm px-5 py-4">
             <button
               type="button"
-              onClick={() => go('/agents?autoplay=1')}
+              onClick={openRealAgents}
               className="lf-btn-primary w-full !py-2.5 text-[14px]"
+              disabled={!finalResult}
             >
               看 AI 完整协同与辩论过程
               <ArrowRight size={15} />
