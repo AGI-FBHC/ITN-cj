@@ -39,10 +39,7 @@ export default function CourseRunView({
       const agent = String(event.agent ?? '');
       if (agent && statuses[agent] !== undefined) statuses[agent] = 'done';
     }
-    if (chapters.some((chapter) => Object.values(chapter.resources ?? {}).some((r) => r.status === 'completed'))) {
-      statuses['GEN-03'] = 'done';
-      statuses['VER-04'] = 'done';
-    }
+    if (chapters.some((chapter) => Object.values(chapter.resources ?? {}).some((r) => r.status === 'completed'))) statuses['GEN-03'] = 'done';
     if (course.status === 'completed') statuses['ARB-05'] = 'done';
     if (course.status === 'planning' || course.status === 'generating') {
       statuses['ARB-05'] = 'running';
@@ -51,10 +48,10 @@ export default function CourseRunView({
   }, [course, events, chapters]);
 
   const outputByAgent: Record<string, string> = {
-    'DIA-01': String(events.find((event) => event.agent === 'DIA-01')?.detail ?? '已读取用户目标与画像'),
-    'RET-02': String(events.find((event) => event.agent === 'RET-02')?.detail ?? '正在检索知识库证据'),
+    'DIA-01': String(events.find((event) => event.agent === 'DIA-01')?.detail ?? '后端未记录独立诊断事件'),
+    'RET-02': String(events.find((event) => event.agent === 'RET-02')?.detail ?? '后端未记录独立检索事件'),
     'GEN-03': `已生成 ${chapters.length} 个动态章节，正文资源按需生成`,
-    'VER-04': '章节资源生成后会执行溯源与质量审核',
+    'VER-04': String(events.find((event) => event.agent === 'VER-04')?.detail ?? '后端未记录独立审核事件'),
     'ARB-05': course.stageMessage || course.status,
   };
 
@@ -196,7 +193,7 @@ export default function CourseRunView({
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[
                 ['章节', String(chapters.length)],
-                ['完成资源', String(completedResources)],
+                ['已生成资源', String(completedResources)],
                 ['失败资源', String(failedResources)],
                 ['进度', `${course.progress}%`],
               ].map(([label, value]) => (
