@@ -1,21 +1,30 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
 import type { Course, CourseChapter, LearningResourceSummary } from '@/lib/api';
 
 const typeOrder = { lecture: 0, practice: 1, quiz: 2 } as const;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function learningResourcePath(resource: LearningResourceSummary): string {
   return `/learn/resource/${encodeURIComponent(resource.id)}`;
 }
 
 export function useCourseLearning() {
+  const { currentLearnerId } = useProfile();
   const [course, setCourse] = useState<Course | null>(null);
   const [resources, setResources] = useState<LearningResourceSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!UUID_PATTERN.test(currentLearnerId)) {
+      setLoading(true);
+      setCourse(null);
+      setResources([]);
+      return;
+    }
     let cancelled = false;
-    api.listCourses()
+    api.listCourses(currentLearnerId)
       .then(async ({ courses }) => {
         const latest = courses?.[0] ?? null;
         if (!latest) return { latest, resources: [] as LearningResourceSummary[] };
@@ -32,7 +41,7 @@ export function useCourseLearning() {
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [currentLearnerId]);
 
   return useMemo(() => {
     const chapterOrder = new Map((course?.chapters ?? []).map((chapter, index) => [chapter.id, index]));

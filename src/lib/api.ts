@@ -332,6 +332,7 @@ export interface CourseChapter {
 
 export interface Course {
   id: string;
+  learnerId: string | null;
   title: string;
   description: string;
   prompt: string;
@@ -685,6 +686,12 @@ async function requestDirect<T>(path: string, init: RequestInit = {}): Promise<T
   return (await res.json()) as T;
 }
 
+const BACKEND_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isBackendId(value?: string | null): value is string {
+  return Boolean(value && BACKEND_UUID_PATTERN.test(value));
+}
+
 export async function streamTeachingGroup(
   body: TeachingGroupRunInput,
   onEvent: (event: TeachingGroupEvent) => void,
@@ -898,13 +905,22 @@ export const api = {
     }),
   listTeachingGroupAgents: () =>
     requestDirect<{ agents: TeachingGroupAgentDef[] }>('/v1/teaching-group/agents'),
-  listTeachingGroupRuns: (limit = 30) =>
-    requestDirect<{ runs: TeachingGroupRunSummary[] }>(`/v1/teaching-group/runs?limit=${encodeURIComponent(limit)}`),
+  listTeachingGroupRuns: (limit = 30, learnerId?: string | null) => {
+    if (learnerId && !isBackendId(learnerId)) return Promise.resolve({ runs: [] });
+    return requestDirect<{ runs: TeachingGroupRunSummary[] }>(
+      `/v1/teaching-group/runs?limit=${encodeURIComponent(limit)}${learnerId ? `&learnerId=${encodeURIComponent(learnerId)}` : ''}`,
+    );
+  },
   getTeachingGroupRun: (runId: string) =>
     requestDirect<TeachingGroupRunRecord>(`/v1/teaching-group/runs/${encodeURIComponent(runId)}`),
   runTeachingGroupStream: (body: TeachingGroupRunInput, onEvent: (event: TeachingGroupEvent) => void) =>
     streamTeachingGroup(body, onEvent),
-  listCourses: () => requestDirect<{ courses: Course[] }>('/v1/courses'),
+  listCourses: (learnerId?: string | null) => {
+    if (learnerId && !isBackendId(learnerId)) return Promise.resolve({ courses: [] });
+    return requestDirect<{ courses: Course[] }>(
+      `/v1/courses${learnerId ? `?learnerId=${encodeURIComponent(learnerId)}` : ''}`,
+    );
+  },
   createCourse: (body: CreateCourseInput) =>
     requestDirect<Course>('/v1/courses', {
       method: 'POST',

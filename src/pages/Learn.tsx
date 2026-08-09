@@ -177,23 +177,33 @@ export default function Learn() {
   const [editingCourseTitle, setEditingCourseTitle] = useState(false);
   const [courseTitleDraft, setCourseTitleDraft] = useState('');
   const [savingCourseTitle, setSavingCourseTitle] = useState(false);
-  const autoCreateRef = useRef(false);
+  const [loadedLearnerId, setLoadedLearnerId] = useState<string | null>(null);
+  const loadSequenceRef = useRef(0);
+  const autoCreateForRef = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
+    const learnerId = currentLearner.id;
+    const sequence = ++loadSequenceRef.current;
+    setLoading(true);
     try {
-      const result = await api.listCourses();
+      const result = await api.listCourses(learnerId);
+      if (sequence !== loadSequenceRef.current) return;
       setCourses(result.courses ?? []);
       setError(null);
     } catch (err) {
+      if (sequence !== loadSequenceRef.current) return;
       setError(err instanceof Error ? err.message : '课程加载失败');
     } finally {
-      setLoading(false);
+      if (sequence === loadSequenceRef.current) {
+        setLoadedLearnerId(learnerId);
+        setLoading(false);
+      }
     }
-  }, []);
+  }, [currentLearner.id]);
 
   const createOutline = useCallback(async () => {
-    if (!currentLearner.custom || !currentLearner.id || autoCreateRef.current) return;
-    autoCreateRef.current = true;
+    if (!currentLearner.custom || !currentLearner.id || autoCreateForRef.current === currentLearner.id) return;
+    autoCreateForRef.current = currentLearner.id;
     setCreating(true);
     try {
       const prompt = [
@@ -220,15 +230,17 @@ export default function Learn() {
   }, [currentLearner, refresh]);
 
   useEffect(() => {
+    setCourses([]);
+    setLoadedLearnerId(null);
     const timer = window.setTimeout(() => void refresh(), 0);
     return () => window.clearTimeout(timer);
   }, [refresh]);
 
   useEffect(() => {
-    if (loading || courses.length > 0 || !currentLearner.custom) return;
+    if (loading || loadedLearnerId !== currentLearner.id || courses.length > 0 || !currentLearner.custom) return;
     const timer = window.setTimeout(() => void createOutline(), 0);
     return () => window.clearTimeout(timer);
-  }, [loading, courses.length, currentLearner.custom, createOutline]);
+  }, [loading, loadedLearnerId, courses.length, currentLearner.id, currentLearner.custom, createOutline]);
 
   useEffect(() => {
     const active = courses.find((course) => course.status === 'planning' || course.status === 'generating');

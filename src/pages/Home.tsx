@@ -96,7 +96,7 @@ interface HomeSnapshot {
   loading: boolean;
 }
 
-function useHomeSnapshot(): HomeSnapshot {
+function useHomeSnapshot(learnerId: string): HomeSnapshot {
   const [snapshot, setSnapshot] = useState<HomeSnapshot>({ domains: [], agentDefs: [], runs: [], latestRun: null, analytics: null, loading: true });
 
   useEffect(() => {
@@ -104,7 +104,7 @@ function useHomeSnapshot(): HomeSnapshot {
     Promise.all([
       api.listRagDomains().catch(() => []),
       api.listTeachingGroupAgents().then((result) => result.agents).catch(() => []),
-      api.listTeachingGroupRuns(12).then((result) => result.runs).catch(() => []),
+      api.listTeachingGroupRuns(12, learnerId).then((result) => result.runs).catch(() => []),
       api.getLearnerAnalyticsProfile().catch(() => null),
     ]).then(async ([domains, agentDefs, runs, analytics]) => {
       const latestRun = runs[0] ? await api.getTeachingGroupRun(runs[0].id).catch(() => null) : null;
@@ -113,7 +113,7 @@ function useHomeSnapshot(): HomeSnapshot {
       if (!cancelled) setSnapshot((current) => ({ ...current, loading: false }));
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [learnerId]);
 
   return snapshot;
 }
@@ -244,7 +244,7 @@ function OutputsSection({
 export default function Home() {
   const { currentLearner, domainKnowledgePoints } = useProfile();
   const learning = useCourseLearning();
-  const snapshot = useHomeSnapshot();
+  const snapshot = useHomeSnapshot(currentLearner.id);
 
   const ragStats = useMemo(() => snapshot.domains.reduce((totals, domain) => ({ documents: totals.documents + domain.documentCount, chunks: totals.chunks + domain.chunkCount }), { documents: 0, chunks: 0 }), [snapshot.domains]);
   const studyMinutes = snapshot.analytics?.stats.totalStudyMinutes ?? 0;

@@ -277,7 +277,9 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth();
   const [currentLearnerId, setCurrentLearnerId] = useState<string>(() => {
     const stored = typeof window !== 'undefined' ? window.localStorage.getItem(K_CURRENT) : null;
-    if (stored && presetLearners.some((l) => l.id === stored)) return stored;
+    // Backend learner ids are UUIDs and must survive a full-page reload. Validation
+    // happens after the authenticated learner list arrives.
+    if (stored) return stored;
     return presetLearners[0].id;
   });
   const [demoMode, setDemoMode] = useState<boolean>(false);

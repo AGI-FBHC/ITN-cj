@@ -122,7 +122,10 @@ export default function Agents() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    Promise.allSettled([api.listCourses(), api.listTeachingGroupRuns()])
+    Promise.allSettled([
+      api.listCourses(currentLearner.id),
+      api.listTeachingGroupRuns(30, currentLearner.id),
+    ])
       .then(async ([courseResult, runResult]) => {
         if (cancelled) return;
         if (courseResult.status === 'fulfilled') setCourse(courseResult.value.courses?.[0] ?? null);
@@ -138,7 +141,7 @@ export default function Agents() {
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [navigationRun, requestedRunId, selectRun]);
+  }, [currentLearner.id, navigationRun, requestedRunId, selectRun]);
 
   const activeRun = navigationRun?.events.length ? navigationRun : selectedRun;
   const activeId = navigationRunId || selectedRun?.id;

@@ -212,7 +212,7 @@ export default function Resources() {
       let selectedCourseId = courseId;
       let selectedChapterId = chapterId;
       if (!selectedCourseId || !selectedChapterId) {
-        const listed = await api.listCourses();
+        const listed = await api.listCourses(currentLearner.id);
         const latest = listed.courses?.[0];
         const firstChapter = latest?.chapters?.[0];
         if (!latest || !firstChapter) { setCourse(latest ?? null); setResources([]); return; }
@@ -224,6 +224,19 @@ export default function Resources() {
         api.getCourse(selectedCourseId),
         api.listLearningResources({ courseId: selectedCourseId, chapterId: selectedChapterId }),
       ]);
+      if (selectedCourse.learnerId && selectedCourse.learnerId !== currentLearner.id) {
+        const listedCourses = await api.listCourses(currentLearner.id);
+        const latest = listedCourses.courses?.[0];
+        const firstChapter = latest?.chapters?.[0];
+        if (!latest || !firstChapter) {
+          setCourse(null);
+          setResources([]);
+          setSearchParams({}, { replace: true });
+          return;
+        }
+        setSearchParams({ courseId: latest.id, chapterId: firstChapter.id }, { replace: true });
+        return;
+      }
       const full = await Promise.all((listed.resources ?? []).map((item) => api.getLearningResource(String(item.id))));
       setCourse(selectedCourse);
       setResources(full);
@@ -233,7 +246,7 @@ export default function Resources() {
     } finally {
       setLoading(false);
     }
-  }, [courseId, chapterId, setSearchParams]);
+  }, [courseId, chapterId, currentLearner.id, setSearchParams]);
 
   useEffect(() => { void load(); }, [load]);
 

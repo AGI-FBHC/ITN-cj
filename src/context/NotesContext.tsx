@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { toast } from 'sonner';
 import { useProfile } from '@/context/ProfileContext';
 import { useAgent } from '@/context/AgentContext';
+import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
 import type { LearningNoteRecord } from '@/lib/api';
 
@@ -44,17 +45,22 @@ function toNote(record: LearningNoteRecord): Note {
 }
 
 export function NotesProvider({ children }: { children: ReactNode }) {
+  const { session } = useAuth();
   const { currentLearnerId } = useProfile();
   const { pushSignal } = useAgent();
   const [notes, setNotes] = useState<Note[]>([]);
 
   useEffect(() => {
+    if (!session?.token) {
+      setNotes([]);
+      return undefined;
+    }
     let cancelled = false;
     api.listNotes()
       .then(({ notes: records }) => { if (!cancelled) setNotes(records.map(toNote)); })
       .catch(() => { if (!cancelled) setNotes([]); });
     return () => { cancelled = true; };
-  }, [currentLearnerId]);
+  }, [currentLearnerId, session?.token]);
 
   const value = useMemo<NotesContextValue>(() => {
     const countByKp: Record<string, number> = {};
