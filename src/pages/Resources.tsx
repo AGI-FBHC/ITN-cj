@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, ChevronDown, Link2, RotateCcw, ShieldCheck, Sparkles } from 'lucide-react';
+import { Check, ChevronDown, FileText, Link2, ListChecks, Loader2, PenLine, RotateCcw, ShieldCheck, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   DropdownMenu,
@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/sheet';
 import { useProfile, dataIdOf } from '@/context/ProfileContext';
 import { getResource } from '@/data/resources';
+import { api } from '@/lib/api';
 import type { ResourceForm } from '@/data/resources';
 import { getKnowledgePoint } from '@/data/knowledgePoints';
 import { getKBSlice } from '@/data/kbSlices';
@@ -63,6 +64,10 @@ export default function Resources() {
   const [tab, setTab] = useState<ResourceForm>(
     paramTab && tabs.some((t) => t.form === paramTab) ? paramTab : 'lecture',
   );
+  const courseId = searchParams.get('courseId');
+  const chapterId = searchParams.get('chapterId');
+  const [realResources, setRealResources] = useState<Record<string, unknown>[]>([]);
+  const [realLoading, setRealLoading] = useState(Boolean(courseId && chapterId));
   const [streamKey, setStreamKey] = useState(0);
   const [traceOpen, setTraceOpen] = useState(false);
   /* 讲义的溯源侧栏要 xl(≥1280) 才显示；窄屏时必须给一个替代入口，
@@ -76,6 +81,25 @@ export default function Resources() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paramTab]);
+
+  useEffect(() => {
+    if (!courseId || !chapterId) return;
+    let cancelled = false;
+    setRealLoading(true);
+    api.listLearningResources({ courseId, chapterId })
+      .then((result) => {
+        if (!cancelled) setRealResources(result.resources ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setRealResources([]);
+      })
+      .finally(() => {
+        if (!cancelled) setRealLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [courseId, chapterId]);
 
   const switchTab = (f: ResourceForm) => {
     setTab(f);
@@ -136,6 +160,55 @@ export default function Resources() {
   };
 
   const quizCount = quiz?.quizIds?.length ?? 0;
+
+  if (courseId && chapterId) {
+    const meta = {
+      lecture: { label: '定制讲义', Icon: FileText }, practice: { label: '实操指南', Icon: ListChecks }, quiz: { label: '分阶测试题', Icon: PenLine },
+    } as const;
+    return (
+      <div className="mx-auto max-w-[980px] px-5 pb-24 pt-8 md:px-6">
+        <PageBack parent={{ label: '我的课程', to: '/learn' }} current="章节资源" />
+        <h1 className="mt-2 font-serif text-[26px] font-semibold text-ink">章节资源</h1>
+        <p className="mt-1 text-[13.5px] text-ink-muted">当前章节由目标驱动生成，资源按章节独立生成。</p>
+
+        {realLoading && (
+          <div className="mt-6 flex items-center justify-center gap-2 rounded-[14px] border border-hairline bg-card-warm py-12 text-[13.5px] text-ink-muted">
+            <Loader2 size={16} className="animate-spin" />
+            正在读取章节资源…
+          </div>
+        )}
+
+        {!realLoading && realResources.length === 0 && (
+          <div className="mt-6 rounded-[14px] border border-hairline bg-card-warm px-6 py-10 text-center text-[13.5px] text-ink-muted">
+            该章节正文资源尚未生成，后续会在这里按章节生成讲义、实操和分阶题。
+          </div>
+        )}
+
+        <div className="mt-6 space-y-3">
+          {realResources.map((resource) => {
+            const type = String(resource.type ?? '');
+            const Icon = meta[type as keyof typeof meta]?.Icon ?? FileText;
+            return (
+              <motion.div
+                key={String(resource.id)}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-start gap-3 rounded-[14px] border border-hairline bg-card-warm p-5"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-brand-tint text-brand">
+                  <Icon size={18} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[15px] font-semibold text-ink">{String(resource.title ?? '未命名资源')}</span>
+                  <span className="mt-0.5 block font-mono text-[11px] text-ink-muted">{String(resource.type ?? '')}</span>
+                </span>
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`mx-auto ${isLearner ? 'max-w-[960px] px-5 md:px-6' : 'max-w-[1320px] px-8'} py-10`}>

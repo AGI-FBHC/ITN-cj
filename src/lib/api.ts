@@ -197,6 +197,60 @@ export interface TeachingGroupRunPayload {
   result?: Record<string, unknown> | null;
 }
 
+export interface CourseChapterResource {
+  id?: string | null;
+  status: string;
+  progress?: number;
+  title?: string | null;
+  error?: string | null;
+}
+
+export interface CourseChapter {
+  id: string;
+  index: number;
+  title: string;
+  summary: string;
+  objectives: string[];
+  sections: { title: string; summary?: string; keyTopics?: string[] }[];
+  status: string;
+  progress: number;
+  resources: Record<string, CourseChapterResource>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Course {
+  id: string;
+  title: string;
+  description: string;
+  prompt: string;
+  learningGoalId: string | null;
+  learningGoalIds: string[];
+  domainName: string;
+  depth: string;
+  scale: string;
+  courseStyle: string;
+  resourceTypes: string[];
+  status: string;
+  progress: number;
+  stageMessage: string;
+  errorMessage: string | null;
+  currentChapterId: string | null;
+  events: Record<string, unknown>[];
+  chapters: CourseChapter[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateCourseInput {
+  learnerId?: string | null;
+  prompt: string;
+  resourceTypes: string[];
+  depth: 'introductory' | 'systematic' | 'advanced';
+  scale: 'compact' | 'standard' | 'complete';
+  courseStyle?: string;
+}
+
 
 export interface ProfileForgeStep {
   text: string;
@@ -438,4 +492,20 @@ export const api = {
     requestDirect<{ agents: TeachingGroupAgentDef[] }>('/v1/teaching-group/agents'),
   runTeachingGroupStream: (body: TeachingGroupRunInput, onEvent: (event: TeachingGroupEvent) => void) =>
     streamTeachingGroup(body, onEvent),
+  listCourses: () => requestDirect<{ courses: Course[] }>('/v1/courses'),
+  createCourse: (body: CreateCourseInput) =>
+    requestDirect<Course>('/v1/courses', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  getCourse: (courseId: string) =>
+    requestDirect<Course>(`/v1/courses/${encodeURIComponent(courseId)}`),
+  listLearningResources: (params?: { courseId?: string; chapterId?: string; resourceType?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.courseId) query.set('courseId', params.courseId);
+    if (params?.chapterId) query.set('chapterId', params.chapterId);
+    if (params?.resourceType) query.set('resourceType', params.resourceType);
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return requestDirect<{ resources: Record<string, unknown>[] }>(`/v1/learning-resources${suffix}`);
+  },
 };
