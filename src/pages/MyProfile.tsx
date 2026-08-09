@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 import { Save, Sparkles, Brain, History, PlusCircle, RotateCcw, HelpCircle, Clock3, Flame, ClipboardCheck, ArrowRight } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
-import type { LearnerAnalyticsProfile, LearningJournal, OnboardingKnowledgePoint } from '@/lib/api';
+import type { LearnerAnalyticsProfile, LearnerGrowth, LearningJournal, OnboardingKnowledgePoint } from '@/lib/api';
 import { weightedScore } from '@/components/profiles/profileMeta';
 import { ReactECharts } from '@/components/ChartCard';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -89,6 +89,10 @@ function evidenceTime(value: string): string {
   }).format(date);
 }
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 const LEGACY_KP_IDS: Record<string, string> = {
   'kp-ds': 'kp-plc',
   'kp-co': 'kp-kinematics',
@@ -102,6 +106,7 @@ export default function MyProfile() {
   const { currentLearner, patchLearner, domainKnowledgePoints } = useProfile();
   const [analytics, setAnalytics] = useState<LearnerAnalyticsProfile | null>(null);
   const [journals, setJournals] = useState<LearningJournal[]>([]);
+  const [growth, setGrowth] = useState<LearnerGrowth | null>(null);
   const [evidenceLoading, setEvidenceLoading] = useState(true);
   const [evidenceError, setEvidenceError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -111,18 +116,20 @@ export default function MyProfile() {
     setEvidenceError('');
     try {
       const dates = Array.from({ length: 7 }, (_, index) => localDateKey(index));
-      const [profile, ...recentJournals] = await Promise.all([
+      const [profile, learnerGrowth, recentJournals] = await Promise.all([
         api.getLearnerAnalyticsProfile(),
-        ...dates.map((date) => api.getLearningJournal(date)),
+        isUuid(currentLearner.id) ? api.getLearnerGrowth(currentLearner.id) : Promise.resolve(null),
+        Promise.all(dates.map((date) => api.getLearningJournal(date))),
       ]);
       setAnalytics(profile);
+      setGrowth(learnerGrowth);
       setJournals(recentJournals);
     } catch (reason) {
       setEvidenceError(reason instanceof Error ? reason.message : '学习证据读取失败');
     } finally {
       setEvidenceLoading(false);
     }
-  }, []);
+  }, [currentLearner.id]);
 
   useEffect(() => {
     void loadEvidence();
@@ -155,10 +162,21 @@ export default function MyProfile() {
     setGoal(currentLearner.goal);
   }, [currentLearner.id, kps, normalizedScores]);
 
-  const evidence = useMemo(
-    () => journals.flatMap((journal) => journal.timeline).sort((left, right) => right.occurredAt.localeCompare(left.occurredAt)),
-    [journals],
-  );
+  const evidence = useMemo(() => {
+    const journalEvidence = journals.flatMap((journal) => journal.timeline);
+    const profileEvidence = (growth?.events ?? []).map((event, index) => ({
+      id: `growth-${event.createdAt}-${index}`,
+      occurredAt: event.createdAt,
+      kind: 'knowledge',
+      title: event.title,
+      description: event.amount ? `成长能量 ${event.amount > 0 ? '+' : ''}${event.amount}` : '画像字段已保存到后端',
+      durationSeconds: null,
+      knowledgeName: null,
+      correctCount: null,
+      wrongCount: null,
+    }));
+    return [...journalEvidence, ...profileEvidence].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
+  }, [growth, journals]);
 
   const deltas = useMemo(
     () =>
@@ -188,15 +206,17 @@ export default function MyProfile() {
         blindSpots: blind.map((id) => getKp(id)?.name ?? id),
       });
       try {
-        await api.recordLearningEvent({
-          eventType: 'KP_MASTERY_CHECK',
-          sourceType: 'WORKFLOW',
-          sourceId: currentLearner.id,
-          metadata: JSON.stringify({
+        if (isUuid(currentLearner.id)) {
+          await api.recordLearnerGrowthEvent({
+            learnerId: currentLearner.id,
+            eventType: 'profile_edit',
             title: '手动更新学情画像',
-            description: deltas.length ? `调整 ${deltas.length} 个能力维度，并重新确认目标与盲区` : '重新确认学习目标与知识盲区',
-          }),
-        });
+            amount: 0,
+            metadata: {
+              description: deltas.length ? `调整 ${deltas.length} 个能力维度，并重新确认目标与盲区` : '重新确认学习目标与知识盲区',
+            },
+          });
+        }
       } catch {
         toast.warning('画像已保存，但学习时间线暂未写入');
       }

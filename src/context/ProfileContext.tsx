@@ -111,6 +111,15 @@ const NEW_KP_NAMES: Record<string, string> = {
   'kp-agent': '智能体与大模型',
 };
 
+const LEGACY_SCORE_IDS: Record<string, string> = {
+  'kp-ds': 'kp-plc',
+  'kp-co': 'kp-kinematics',
+  'kp-os': 'kp-sensor',
+  'kp-network': 'kp-vision',
+  'kp-db': 'kp-safety',
+  'kp-agent': 'kp-diagnosis',
+};
+
 function kpName(id: string): string {
   return NEW_KP_NAMES[id] ?? getKnowledgePoint(id).name ?? id;
 }
@@ -162,6 +171,9 @@ function confidenceOf(remote: LearnerProfileData): ProfileConfidence | undefined
 function toUiLearner(remote: LearnerProfileData): Learner {
   const preset = presetLearners.find((p) => p.id === remote.code || p.id === remote.id);
   const scores = { ...(remote.scores ?? {}) };
+  for (const [currentId, legacyId] of Object.entries(LEGACY_SCORE_IDS)) {
+    if (scores[currentId] == null && scores[legacyId] != null) scores[currentId] = scores[legacyId];
+  }
   if (Object.keys(scores).length === 0) {
     for (const kpId of Object.keys(NEW_KP_NAMES)) scores[kpId] = 50;
   }

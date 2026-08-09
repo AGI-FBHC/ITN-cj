@@ -147,6 +147,18 @@ export interface RecordLearningEventInput {
   metadata?: string | null;
 }
 
+export interface LearnerGrowth {
+  orb: number;
+  watered: number;
+  stage: string;
+  events: {
+    eventType: string;
+    title: string;
+    amount: number;
+    createdAt: string;
+  }[];
+}
+
 
 
 export interface OnboardingKnowledgePoint {
@@ -738,6 +750,13 @@ export const api = {
   generateLearningJournalSummary: (date?: string) =>
     request<LearningJournal>(`/api/v1/learner-profile/journal/summary${date ? `?date=${encodeURIComponent(date)}` : ''}`, {
       method: 'POST',
+    }),
+  getLearnerGrowth: (learnerId?: string) =>
+    request<LearnerGrowth>(`/api/v1/learner-profile/growth${learnerId ? `?learnerId=${encodeURIComponent(learnerId)}` : ''}`),
+  recordLearnerGrowthEvent: (body: { learnerId: string; eventType: string; title: string; amount: number; metadata?: Record<string, unknown> }) =>
+    request<LearnerGrowth>('/api/v1/learner-profile/growth-events', {
+      method: 'POST',
+      body: JSON.stringify(body),
     }),
   resetPassword: (body: { email: string; verificationCode: string; newPassword: string }) =>
     request<Record<string, unknown>>('/api/v1/auth/reset-password', {
