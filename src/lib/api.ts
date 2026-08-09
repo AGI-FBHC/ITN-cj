@@ -251,6 +251,26 @@ export interface CreateCourseInput {
   courseStyle?: string;
 }
 
+export interface LearningResourceSummary {
+  id: string;
+  type: 'lecture' | 'practice' | 'quiz';
+  title: string;
+  topic: string;
+  courseId: string | null;
+  chapterId: string | null;
+  sources: Record<string, unknown>[];
+  state?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LearningResource extends LearningResourceSummary {
+  content: Record<string, unknown>;
+  state: Record<string, unknown>;
+  context: Record<string, unknown>;
+  decision: Record<string, unknown>;
+}
+
 
 export interface ProfileForgeStep {
   text: string;
@@ -527,4 +547,15 @@ export const api = {
     const suffix = query.toString() ? `?${query.toString()}` : '';
     return requestDirect<{ resources: Record<string, unknown>[] }>(`/v1/learning-resources${suffix}`);
   },
+  getLearningResource: (resourceId: string) =>
+    requestDirect<LearningResource>(`/v1/learning-resources/${encodeURIComponent(resourceId)}`),
+  completeLearningResource: (resourceId: string) =>
+    requestDirect<{ learned: boolean; resource: LearningResource }>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/complete`, {
+      method: 'POST',
+    }),
+  answerLearningQuiz: (resourceId: string, body: { questionId: string; answer: string; durationSeconds?: number }) =>
+    requestDirect<Record<string, unknown>>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/answers`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 };
