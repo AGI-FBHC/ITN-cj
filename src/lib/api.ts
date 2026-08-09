@@ -169,6 +169,29 @@ export interface OnboardingDiagnoseResponse {
   diagnosisSummary: string;
 }
 
+export interface TeachingGroupAgentDef {
+  id: string;
+  name: string;
+  status: 'idle' | 'running' | 'done' | 'failed';
+  duty: string;
+}
+
+export interface TeachingGroupRunInput {
+  learnerId: string;
+  knowledgePointId?: string | null;
+  mode: 'prepare_next' | 'diagnose' | 'explain';
+  prompt?: string | null;
+}
+
+export interface TeachingGroupEvent {
+  type: 'run_started' | 'agent_started' | 'agent_output' | 'agent_completed' | 'agent_failed' | 'run_completed' | 'run_failed';
+  agent?: string;
+  runId?: string;
+  learnerId?: string;
+  success?: boolean;
+  data: Record<string, unknown>;
+}
+
 
 export interface ProfileForgeStep {
   text: string;
@@ -244,6 +267,71 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (body.code !== 0) throw new Error(body.message);
   return body.data;
 }
+
+async function requestDirect<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+  if (!res.ok) {
+    let message = `请求失败 (${res.status})`;
+    try {
+      const parsed = (await res.json()) as { detail?: string; message?: string };
+      message = parsed.detail ?? parsed.message ?? message;
+    } catch { /* keep status */ }
+    throw new Error(message);
+  }
+  return (await res.json()) as T;
+}
+
+export async function streamTeachingGroup(
+  body: TeachingGroupRunInput,
+  onEvent: (event: TeachingGroupEvent) => void,
+): Promise<void> {
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const res = await fetch(`${API_BASE}/v1/teaching-group/runs/stream`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (!res.ok || !res.body) {
+    let message = `请求失败 (${res.status})`;
+    try {
+      const parsed = (await res.json()) as { detail?: string; message?: string };
+      message = parsed.detail ?? parsed.message ?? message;
+    } catch { /* keep status */ }
+    throw new Error(message);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  const consume = () => {
+    let sep = buffer.indexOf('\n\n');
+    while (sep >= 0) {
+      const block = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      for (const line of block.split('\n')) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          onEvent(JSON.parse(line.slice(6)) as TeachingGroupEvent);
+        } catch { /* ignore malformed event */ }
+      }
+      sep = buffer.indexOf('\n\n');
+    }
+  };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    consume();
+  }
+  buffer += decoder.decode();
+  consume();
+}
+
 
 export const api = {
   login: (email: string, password: string) =>
@@ -341,4 +429,8 @@ export const api = {
     request<Record<string, unknown>>(`/v1/tutoring/sessions/${encodeURIComponent(sessionId)}/complete`, {
       method: 'POST',
     }),
+  listTeachingGroupAgents: () =>
+    requestDirect<{ agents: TeachingGroupAgentDef[] }>('/v1/teaching-group/agents'),
+  runTeachingGroupStream: (body: TeachingGroupRunInput, onEvent: (event: TeachingGroupEvent) => void) =>
+    streamTeachingGroup(body, onEvent),
 };
