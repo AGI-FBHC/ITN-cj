@@ -50,7 +50,6 @@ import { useAuth } from '@/context/AuthContext';
 import { useNotes } from '@/context/NotesContext';
 import { useGrowth } from '@/context/GrowthContext';
 import TeachingGroup from './TeachingGroup';
-import AgentDock from './agent/AgentDock';
 import ResumeLearningFab from './ResumeLearningFab';
 import { SparkField } from './heal/Flora';
 import { cn } from '@/lib/utils';
@@ -401,9 +400,6 @@ export default function AppShell() {
             </div>
           </main>
 
-          {/* 阿诊 · 常驻画像助手（专注时收起） */}
-          {!focusMode && <AgentDock />}
-
           {/* 全局「继续学习」浮标 · 左下角，随时回到当前路径节点 */}
           <ResumeLearningFab />
 
@@ -543,8 +539,6 @@ export default function AppShell() {
             </main>
           </div>
 
-          {/* DIA-01 决策日志（评委透视） */}
-          <AgentDock />
         </div>
       )}
 
