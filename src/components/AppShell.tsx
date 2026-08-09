@@ -51,17 +51,15 @@ import type { ViewMode } from '@/context/ProfileContext';
 import { useAuth } from '@/context/AuthContext';
 import { useNotes } from '@/context/NotesContext';
 import { useGrowth } from '@/context/GrowthContext';
-import { kbSlices } from '@/data/kbSlices';
-import { resources } from '@/data/resources';
 import { globalStats } from '@/data/metrics';
 import LiveDot from './LiveDot';
-import KBDrawer from './KBDrawer';
 import TeachingGroup from './TeachingGroup';
 import AgentDock from './agent/AgentDock';
 import ResumeLearningFab from './ResumeLearningFab';
 import { SparkField } from './heal/Flora';
 import DemoTour, { startDemoTour } from './tour/DemoTour';
 import { cn } from '@/lib/utils';
+import { learningResourcePath, useCourseLearning } from '@/hooks/useCourseLearning';
 
 type NavItem = {
   path: string;
@@ -262,7 +260,7 @@ function SideNavRow({ item, collapsed }: { item: NavItem; collapsed: boolean }) 
 export default function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [drawerKb, setDrawerKb] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const {
     currentLearner,
     currentLearnerId,
@@ -276,6 +274,7 @@ export default function AppShell() {
   const { notes } = useNotes();
   const { focusMode } = useGrowth();
   const { logout } = useAuth();
+  const courseLearning = useCourseLearning();
   const location = useLocation();
   const navigate = useNavigate();
   const isLearner = viewMode === 'learner';
@@ -592,41 +591,30 @@ export default function AppShell() {
 
       {/* ⌘K 检索弹层（两种布局共用） */}
       <CommandDialog open={searchOpen} onOpenChange={setSearchOpen}>
-        <CommandInput placeholder="检索知识库 / 资源 / 标准号…" />
+        <CommandInput value={searchQuery} onValueChange={setSearchQuery} placeholder="检索真实知识库或当前课程资源…" />
         <CommandList>
           <CommandEmpty>未找到匹配结果</CommandEmpty>
-          <CommandGroup heading="知识切片">
-            {kbSlices.slice(0, 8).map((k) => (
-              <CommandItem
-                key={k.id}
-                value={`${k.id} ${k.title} ${k.standardNo ?? ''}`}
-                onSelect={() => {
-                  setSearchOpen(false);
-                  setDrawerKb(k.id);
-                }}
-              >
-                <Database size={14} className="mr-2 text-brand" />
-                <span className="font-mono text-[12px] text-brand">{k.id}</span>
-                <span className="ml-2 truncate">{k.title}</span>
-              </CommandItem>
-            ))}
+          <CommandGroup heading="真实知识库">
+            <CommandItem value={`搜索真实知识库 ${searchQuery}`} onSelect={() => { const query = searchQuery.trim(); setSearchOpen(false); navigate(query ? `/knowledge?q=${encodeURIComponent(query)}` : '/knowledge'); }}>
+              <Database size={14} className="mr-2 text-brand" />
+              <span className="truncate">{searchQuery.trim() ? `在 RAG 知识库搜索“${searchQuery.trim()}”` : '打开 RAG 知识库'}</span>
+            </CommandItem>
           </CommandGroup>
-          <CommandGroup heading="生成资源">
-            {resources.map((r) => (
+          {courseLearning.resources.length > 0 && <CommandGroup heading="当前课程资源">
+            {courseLearning.resources.slice(0, 12).map((resource) => (
               <CommandItem
-                key={`${r.learnerId}-${r.form}`}
-                value={r.title}
+                key={resource.id}
+                value={`${resource.title} ${resource.topic}`}
                 onSelect={() => {
                   setSearchOpen(false);
-                  /* 带上形态，否则搜到 A 却打开 B */
-                  navigate(`/resources?tab=${r.form}`);
+                  navigate(learningResourcePath(resource));
                 }}
               >
                 <PenLine size={14} className="mr-2 text-ochre" />
-                <span className="truncate">{r.title}</span>
+                <span className="truncate">{resource.title}</span>
               </CommandItem>
             ))}
-          </CommandGroup>
+          </CommandGroup>}
           {notes.length > 0 && (
             <CommandGroup heading="我的笔记 · 个人知识库">
               {notes.slice(0, 6).map((n) => (
@@ -661,8 +649,6 @@ export default function AppShell() {
           </CommandGroup>
         </CommandList>
       </CommandDialog>
-
-      <KBDrawer sliceId={drawerKb} open={drawerKb !== null} onOpenChange={(o) => !o && setDrawerKb(null)} />
 
       {/* 评委一键导览：挂载在 Router 内部，跨路由不卸载，进度存 sessionStorage */}
       <DemoTour />
