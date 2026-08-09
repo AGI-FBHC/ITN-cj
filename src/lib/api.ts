@@ -500,6 +500,10 @@ export const api = {
     }),
   getCourse: (courseId: string) =>
     requestDirect<Course>(`/v1/courses/${encodeURIComponent(courseId)}`),
+  generateChapterResource: (courseId: string, chapterId: string, resourceType: string) =>
+    requestDirect<Course>(`/v1/courses/${encodeURIComponent(courseId)}/chapters/${encodeURIComponent(chapterId)}/resources/${encodeURIComponent(resourceType)}/retry`, {
+      method: 'POST',
+    }),
   listLearningResources: (params?: { courseId?: string; chapterId?: string; resourceType?: string }) => {
     const query = new URLSearchParams();
     if (params?.courseId) query.set('courseId', params.courseId);

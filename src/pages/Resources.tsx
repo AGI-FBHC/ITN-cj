@@ -68,6 +68,7 @@ export default function Resources() {
   const chapterId = searchParams.get('chapterId');
   const [realResources, setRealResources] = useState<Record<string, unknown>[]>([]);
   const [realLoading, setRealLoading] = useState(Boolean(courseId && chapterId));
+  const [generatingChapter, setGeneratingChapter] = useState(false);
   const [streamKey, setStreamKey] = useState(0);
   const [traceOpen, setTraceOpen] = useState(false);
   /* 讲义的溯源侧栏要 xl(≥1280) 才显示；窄屏时必须给一个替代入口，
@@ -100,6 +101,32 @@ export default function Resources() {
       cancelled = true;
     };
   }, [courseId, chapterId]);
+
+  const generateChapterResources = async () => {
+    if (!courseId || !chapterId) return;
+    setGeneratingChapter(true);
+    try {
+      await Promise.all(
+        ['lecture', 'practice', 'quiz'].map((type) => api.generateChapterResource(courseId, chapterId, type)),
+      );
+      const result = await api.listLearningResources({ courseId, chapterId });
+      setRealResources(result.resources ?? []);
+    } catch {
+      /* 生成异步返回后资源仍在后台生成，稍后刷新即可 */
+    } finally {
+      setGeneratingChapter(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!generatingChapter || !courseId || !chapterId) return undefined;
+    const timer = window.setInterval(() => {
+      api.listLearningResources({ courseId, chapterId })
+        .then((result) => setRealResources(result.resources ?? []))
+        .catch(() => undefined);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [generatingChapter, courseId, chapterId]);
 
   const switchTab = (f: ResourceForm) => {
     setTab(f);
@@ -170,6 +197,14 @@ export default function Resources() {
         <PageBack parent={{ label: '我的课程', to: '/learn' }} current="章节资源" />
         <h1 className="mt-2 font-serif text-[26px] font-semibold text-ink">章节资源</h1>
         <p className="mt-1 text-[13.5px] text-ink-muted">当前章节由目标驱动生成，资源按章节独立生成。</p>
+        <button
+          type="button"
+          onClick={generateChapterResources}
+          disabled={generatingChapter}
+          className="lf-btn-primary mt-4 !px-4 !py-2 text-[13.5px]"
+        >
+          {generatingChapter ? (<><Loader2 size={14} className="animate-spin" /> 正在生成章节资源…</>) : '生成讲义 / 实操 / 分阶题'}
+        </button>
 
         {realLoading && (
           <div className="mt-6 flex items-center justify-center gap-2 rounded-[14px] border border-hairline bg-card-warm py-12 text-[13.5px] text-ink-muted">
