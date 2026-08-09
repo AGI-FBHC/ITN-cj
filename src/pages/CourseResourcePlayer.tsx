@@ -1,21 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
+import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-  ArrowLeft, ArrowRight, BookOpen, Bot, Check, CheckCircle2, ChevronRight,
-  Circle, Clock3, ExternalLink, FileText, Focus, Headphones, ListChecks,
-  Loader2, MessageCircleQuestion, NotebookPen, Pause, PenLine, Play, Send,
-  Sparkles, X,
+  ArrowLeft, ArrowRight, BookOpen, Bot, Check, CheckCircle2, ChevronLeft,
+  ChevronRight, Circle, Clock3, CloudRain, ExternalLink, FileText, Focus,
+  Gauge, Headphones, ListChecks, Loader2, MessageCircleQuestion, NotebookPen,
+  Pause, PenLine, Play, Presentation, Send, Sparkles, Trees, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { api } from '@/lib/api';
+import { api, streamAssistantTts } from '@/lib/api';
 import type {
   Course, CourseChapter, LearningResource, LearningResourceMessage,
-  LearningResourceProgress, LearningResourceSummary, LearningResourceTrace,
+  LearningResourceProgress, LearningResourceSummary, LearningResourceTrace, TtsSpeed,
 } from '@/lib/api';
 import { useGrowth } from '@/context/GrowthContext';
+import { useAmbient } from '@/components/heal/useAmbient';
 import { cn } from '@/lib/utils';
 
 type ResourceKind = 'lecture' | 'practice' | 'quiz';
@@ -38,6 +40,15 @@ const resourceMeta: Record<ResourceKind, { label: string; Icon: typeof FileText 
   practice: { label: '实操指南', Icon: ListChecks },
   quiz: { label: '分阶测试', Icon: PenLine },
 };
+
+const speedMeta: Record<TtsSpeed, { label: string; rate: number }> = {
+  very_slow: { label: '0.8×', rate: 0.8 },
+  slow: { label: '0.9×', rate: 0.9 },
+  normal: { label: '1.0×', rate: 1 },
+  fast: { label: '1.1×', rate: 1.1 },
+  very_fast: { label: '1.2×', rate: 1.2 },
+};
+const speedOrder = Object.keys(speedMeta) as TtsSpeed[];
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -138,6 +149,124 @@ function BlockSources({ citations, resource }: { citations: number[]; resource: 
   })}</div>;
 }
 
+function narrationText(block: LearningBlock): string {
+  return `${block.title}。${block.body ?? ''}`
+    .replace(/```[\s\S]*?```/g, ' 代码示例请看屏幕。')
+    .replace(/[#*_`>\-[\]]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 2900);
+}
+
+function useResourceNarration() {
+  const [speaking, setSpeaking] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const contextRef = useRef<AudioContext | null>(null);
+  const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const timerRef = useRef<number | null>(null);
+  const generationRef = useRef(0);
+
+  const stop = useCallback(() => {
+    generationRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    if (timerRef.current) window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+    sourcesRef.current.forEach((source) => { try { source.stop(); } catch { /* already ended */ } });
+    sourcesRef.current.clear();
+    window.speechSynthesis?.cancel();
+    setSpeaking(false);
+  }, []);
+
+  const browserFallback = useCallback((text: string, speed: TtsSpeed, generation: number) => {
+    if (!('speechSynthesis' in window) || generation !== generationRef.current) {
+      setSpeaking(false);
+      toast.error('当前设备暂时无法播放语音');
+      return;
+    }
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = 'zh-CN';
+    utterance.rate = speedMeta[speed].rate;
+    utterance.onend = () => { if (generation === generationRef.current) setSpeaking(false); };
+    utterance.onerror = () => { if (generation === generationRef.current) setSpeaking(false); };
+    window.speechSynthesis.speak(utterance);
+  }, []);
+
+  const play = useCallback(async (text: string, speed: TtsSpeed) => {
+    stop();
+    if (!text) return;
+    const generation = generationRef.current;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setSpeaking(true);
+    try {
+      const response = await streamAssistantTts(text, speed, controller.signal);
+      const reader = response.body!.getReader();
+      const AudioContextCtor = window.AudioContext ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextCtor) throw new Error('AudioContext unavailable');
+      contextRef.current ??= new AudioContextCtor({ sampleRate: 24_000 });
+      const context = contextRef.current;
+      await context.resume();
+      let nextStart = context.currentTime + 0.06;
+      let pending = new Uint8Array();
+      let scheduled = 0;
+      const chunkBytes = 3_840;
+      const initialBufferBytes = chunkBytes * 2;
+      const schedule = (pcm: Uint8Array) => {
+        const usable = pcm.length - (pcm.length % 2);
+        if (!usable || generation !== generationRef.current) return;
+        const samples = new Float32Array(usable / 2);
+        const view = new DataView(pcm.buffer, pcm.byteOffset, usable);
+        for (let index = 0; index < samples.length; index += 1) samples[index] = view.getInt16(index * 2, true) / 32768;
+        const buffer = context.createBuffer(1, samples.length, 24_000);
+        buffer.copyToChannel(samples, 0);
+        const source = context.createBufferSource();
+        source.buffer = buffer;
+        source.connect(context.destination);
+        sourcesRef.current.add(source);
+        source.onended = () => sourcesRef.current.delete(source);
+        source.start(nextStart);
+        nextStart += buffer.duration;
+        scheduled += 1;
+      };
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (generation !== generationRef.current) { await reader.cancel(); return; }
+        if (!value?.length) continue;
+        const merged = new Uint8Array(pending.length + value.length);
+        merged.set(pending); merged.set(value, pending.length);
+        if (!scheduled && merged.length < initialBufferBytes) {
+          pending = merged;
+          continue;
+        }
+        let offset = 0;
+        while (merged.length - offset >= chunkBytes) {
+          schedule(merged.slice(offset, offset + chunkBytes));
+          offset += chunkBytes;
+        }
+        pending = merged.slice(offset);
+      }
+      schedule(pending);
+      if (!scheduled) throw new Error('empty audio stream');
+      const remainingMs = Math.max(50, Math.ceil((nextStart - context.currentTime) * 1000) + 80);
+      timerRef.current = window.setTimeout(() => {
+        if (generation === generationRef.current) setSpeaking(false);
+      }, remainingMs);
+    } catch (reason) {
+      if ((reason as Error).name === 'AbortError' || generation !== generationRef.current) return;
+      browserFallback(text, speed, generation);
+    }
+  }, [browserFallback, stop]);
+
+  useEffect(() => () => {
+    stop();
+    if (contextRef.current) void contextRef.current.close();
+  }, [stop]);
+
+  return { speaking, play, stop };
+}
+
 function QuizBlock({
   block, resource, onResourceState,
 }: {
@@ -189,6 +318,8 @@ export default function CourseResourcePlayer() {
   const { resourceId = '' } = useParams();
   const navigate = useNavigate();
   const { focusMode, setFocusMode } = useGrowth();
+  const narration = useResourceNarration();
+  const ambient = useAmbient();
   const [resource, setResource] = useState<LearningResource | null>(null);
   const [course, setCourse] = useState<Course | null>(null);
   const [chapterResources, setChapterResources] = useState<LearningResourceSummary[]>([]);
@@ -208,12 +339,12 @@ export default function CourseResourcePlayer() {
   const [question, setQuestion] = useState('');
   const [followUps, setFollowUps] = useState<string[]>([]);
   const [asking, setAsking] = useState(false);
-  const [speaking, setSpeaking] = useState(false);
+  const [speechSpeed, setSpeechSpeed] = useState<TtsSpeed>('normal');
+  const [slideMode, setSlideMode] = useState(false);
   const [completing, setCompleting] = useState(false);
   const blockRefs = useRef<Record<string, HTMLElement | null>>({});
   const saveTimer = useRef<number | null>(null);
   const sessionSecondsRef = useRef(0);
-  const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -291,9 +422,9 @@ export default function CourseResourcePlayer() {
 
   useEffect(() => () => {
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    window.speechSynthesis?.cancel();
+    narration.stop();
     setFocusMode(false);
-  }, [setFocusMode]);
+  }, [narration.stop, setFocusMode]);
 
   const goBlock = (id: string) => {
     setCurrentBlockId(id);
@@ -316,17 +447,28 @@ export default function CourseResourcePlayer() {
   };
 
   const speakCurrent = () => {
-    if (!('speechSynthesis' in window)) { toast.error('当前浏览器不支持语音讲播'); return; }
-    if (speaking) { window.speechSynthesis.cancel(); setSpeaking(false); return; }
+    if (narration.speaking) { narration.stop(); return; }
     const block = blocks[currentIndex];
     if (!block) return;
-    const utterance = new SpeechSynthesisUtterance(`${block.title}。${block.body ?? ''}`.replace(/[#*_`>\-[\]]/g, ' '));
-    utterance.lang = 'zh-CN'; utterance.rate = 0.92;
-    utterance.onend = () => setSpeaking(false);
-    utterance.onerror = () => setSpeaking(false);
-    speechRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
-    setSpeaking(true);
+    void narration.play(narrationText(block), speechSpeed);
+  };
+
+  const cycleSpeed = () => {
+    const index = speedOrder.indexOf(speechSpeed);
+    const next = speedOrder[(index + 1) % speedOrder.length];
+    setSpeechSpeed(next);
+    if (narration.speaking) narration.stop();
+  };
+
+  const toggleFocus = () => {
+    const next = !focusMode;
+    setFocusMode(next);
+    narration.stop();
+    if (!next) ambient.setKind('off');
+  };
+
+  const cycleAmbient = () => {
+    ambient.setKind(ambient.kind === 'off' ? 'rain' : ambient.kind === 'rain' ? 'forest' : 'off');
   };
 
   const saveNote = async () => {
@@ -391,7 +533,7 @@ export default function CourseResourcePlayer() {
   const resourceIndex = sortedResources.findIndex((item) => item.id === resource.id);
   const nextResource = resourceIndex >= 0 ? sortedResources[resourceIndex + 1] : undefined;
 
-  return <div className={cn('mx-auto max-w-[1260px] px-4 pb-40 pt-6 md:px-6', focusMode && 'max-w-[1040px]')}>
+  return <div className={cn('mx-auto max-w-[1260px] px-4 pb-40 pt-6 md:px-6', focusMode && 'max-w-[1040px]', (noteFor || chatOpen) && 'relative z-50')}>
     {!focusMode && <div className="mb-5 flex flex-wrap items-center gap-2 text-[12px] text-ink-muted"><button type="button" onClick={() => navigate('/learn')} className="inline-flex items-center gap-1 hover:text-brand"><ArrowLeft size={13} />我的课程</button><ChevronRight size={12} /><Link to={`/resources?courseId=${encodeURIComponent(resource.courseId ?? '')}&chapterId=${encodeURIComponent(resource.chapterId ?? '')}`} className="hover:text-brand">{chapter?.title ?? '章节资源'}</Link><ChevronRight size={12} /><span className="truncate text-ink-2">{resourceMeta[resource.type].label}</span></div>}
 
     <header className="relative overflow-hidden rounded-[20px] border border-brand/20 bg-gradient-to-br from-brand-tint/70 via-card-warm to-paper p-6 md:p-8">
@@ -404,8 +546,10 @@ export default function CourseResourcePlayer() {
 
     {!focusMode && sortedResources.length > 1 && <nav className="mt-4 flex gap-2 overflow-x-auto pb-1">{sortedResources.map((item) => { const Meta = resourceMeta[item.type]; return <Link key={item.id} to={`/learn/resource/${item.id}`} className={cn('flex shrink-0 items-center gap-2 rounded-[11px] border px-3.5 py-2 text-[12.5px] transition', item.id === resource.id ? 'border-brand bg-brand text-paper' : 'border-hairline bg-card-warm text-ink-2 hover:border-brand/40')}><Meta.Icon size={13} />{Meta.label}{item.learned && <Check size={12} />}</Link>; })}</nav>}
 
+    {!focusMode && <div className="mt-4 flex items-start gap-3 rounded-[13px] border border-brand/20 bg-brand-tint/30 px-4 py-3"><Sparkles size={15} className="mt-0.5 shrink-0 text-brand" /><div><div className="text-[12.5px] font-medium text-ink">学习现场会随真实进度持续更新</div><p className="mt-0.5 text-[11.5px] leading-5 text-ink-muted">当前断点、阅读段落、实操完成情况、作答和学习时长都会写回后端；幻灯、语音与专注模式只是不同的学习呈现方式。</p></div></div>}
+
     <div className="mt-7 grid gap-7 lg:grid-cols-[250px_minmax(0,1fr)]">
-      {!focusMode && <aside className="self-start lg:sticky lg:top-[76px]"><div className="rounded-[16px] border border-hairline bg-card-warm p-3"><div className="px-2 pb-2"><div className="lf-mono-label">LEARNING PATH</div><div className="mt-1 text-[13px] font-semibold text-ink">本讲目录</div></div><div className="max-h-[58vh] space-y-1 overflow-y-auto">{blocks.map((block, index) => { const done = visited.includes(block.id) || resource.learned; return <button key={block.id} type="button" onClick={() => goBlock(block.id)} className={cn('flex w-full items-start gap-2.5 rounded-[10px] px-2.5 py-2.5 text-left transition', block.id === currentBlockId ? 'bg-brand-tint text-brand' : 'text-ink-2 hover:bg-paper-deep')}><span className={cn('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border font-mono text-[9px]', done ? 'border-brand bg-brand text-paper' : 'border-hairline bg-paper text-ink-muted')}>{done ? <Check size={10} /> : index + 1}</span><span className="min-w-0"><span className="block text-[10px] opacity-65">{block.eyebrow}</span><span className="mt-0.5 block text-[12px] font-medium leading-[17px]">{block.title}</span></span></button>; })}</div></div>{progressOf(resource).lastOpenedAt && <p className="mt-3 px-2 text-[10.5px] leading-5 text-ink-muted">已从后端恢复上次断点：{new Date(progressOf(resource).lastOpenedAt!).toLocaleString()}</p>}</aside>}
+      {!focusMode && <aside className="min-w-0 self-start lg:sticky lg:top-[76px]"><div className="rounded-[16px] border border-hairline bg-card-warm p-3"><div className="px-2 pb-2"><div className="lf-mono-label">LEARNING PATH</div><div className="mt-1 text-[13px] font-semibold text-ink">本讲目录</div></div><div className="flex gap-1 overflow-x-auto pb-1 lg:block lg:max-h-[58vh] lg:space-y-1 lg:overflow-y-auto lg:pb-0">{blocks.map((block, index) => { const done = visited.includes(block.id) || resource.learned; return <button key={block.id} type="button" onClick={() => goBlock(block.id)} className={cn('flex w-[210px] shrink-0 items-start gap-2.5 rounded-[10px] px-2.5 py-2.5 text-left transition lg:w-full', block.id === currentBlockId ? 'bg-brand-tint text-brand' : 'text-ink-2 hover:bg-paper-deep')}><span className={cn('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border font-mono text-[9px]', done ? 'border-brand bg-brand text-paper' : 'border-hairline bg-paper text-ink-muted')}>{done ? <Check size={10} /> : index + 1}</span><span className="min-w-0"><span className="block text-[10px] opacity-65">{block.eyebrow}</span><span className="mt-0.5 block text-[12px] font-medium leading-[17px]">{block.title}</span></span></button>; })}</div></div>{progressOf(resource).lastOpenedAt && <p className="mt-3 hidden px-2 text-[10.5px] leading-5 text-ink-muted lg:block">已从后端恢复上次断点：{new Date(progressOf(resource).lastOpenedAt!).toLocaleString()}</p>}</aside>}
 
       <main className="min-w-0 space-y-6">{blocks.length === 0 ? <div className="rounded-[16px] border border-dashed border-hairline p-12 text-center"><p className="text-[14px] text-ink-muted">当前资源没有可学习的正文。</p><Link to={`/resources?courseId=${resource.courseId}&chapterId=${resource.chapterId}`} className="lf-btn-primary mt-4 inline-flex">重新生成资源</Link></div> : blocks.map((block, index) => <motion.section key={block.id} ref={(element) => { blockRefs.current[block.id] = element; }} data-block-id={block.id} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-80px' }} className={cn('scroll-mt-28 rounded-[18px] border bg-card-warm p-5 shadow-xs transition md:p-7', block.id === currentBlockId ? 'border-brand/35 shadow-warm' : 'border-hairline')}>
         <div className="flex items-start gap-4"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-brand-tint font-mono text-[11px] font-semibold text-brand">{String(index + 1).padStart(2, '0')}</span><div className="min-w-0 flex-1"><div className="lf-mono-label !text-[10px]">{block.eyebrow}</div><h2 className="mt-1 font-serif text-[22px] font-semibold leading-tight text-ink md:text-[25px]">{block.title}</h2></div>{block.kind === 'practice' && <button type="button" onClick={() => toggleStep(block.id)} className={cn('flex shrink-0 items-center gap-1.5 rounded-[10px] border px-3 py-2 text-[11.5px]', completedSteps.includes(block.id) ? 'border-brand bg-brand text-paper' : 'border-hairline bg-paper text-ink-muted hover:border-brand/40')} >{completedSteps.includes(block.id) ? <CheckCircle2 size={14} /> : <Circle size={14} />}完成步骤</button>}</div>
@@ -422,10 +566,25 @@ export default function CourseResourcePlayer() {
 
     <footer className="mt-8 flex flex-col items-center justify-between gap-4 rounded-[18px] border border-brand/20 bg-brand-tint/30 p-5 sm:flex-row"><div><div className="text-[13px] font-semibold text-ink">{resource.learned ? '本项资源已经学完' : '完成本项学习后，进度会写入画像与报告'}</div><p className="mt-1 text-[11.5px] text-ink-muted">阅读 {resource.learned ? blocks.length : unique(visited).length}/{blocks.length} 段 · 学习 {formatDuration(elapsedBase + sessionSeconds)}</p></div><div className="flex gap-2">{nextResource && <Link to={`/learn/resource/${nextResource.id}`} className="lf-btn-ghost">下一项：{resourceMeta[nextResource.type].label}<ArrowRight size={14} /></Link>}<button type="button" disabled={resource.learned || completing} onClick={() => void markComplete()} className="lf-btn-primary">{completing ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}{resource.learned ? '已完成' : '完成本项学习'}</button></div></footer>
 
-    <div className="fixed inset-x-0 bottom-[58px] z-40 mx-auto flex w-[min(760px,calc(100%-24px))] items-center gap-2 rounded-[17px] border border-hairline bg-paper/95 p-2.5 shadow-warm-lg backdrop-blur-md md:bottom-4"><button type="button" onClick={speakCurrent} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand text-paper" title="讲这一段">{speaking ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}</button><div className="min-w-0 flex-1"><div className="truncate text-[12.5px] font-medium text-ink">{activeBlock?.title ?? resource.title}</div><div className="mt-0.5 flex items-center gap-2 font-mono text-[9.5px] text-ink-muted"><span><Headphones size={10} className="mr-1 inline" />{speaking ? '正在讲播' : '点击播放当前段落'}</span><span>{currentIndex + 1}/{blocks.length}</span></div></div><button type="button" onClick={() => { setFocusMode(!focusMode); if (speaking) { window.speechSynthesis.cancel(); setSpeaking(false); } }} className={cn('flex h-9 items-center gap-1.5 rounded-[10px] border px-3 text-[11px]', focusMode ? 'border-brand bg-brand-tint text-brand' : 'border-hairline text-ink-muted')}><Focus size={13} /><span className="hidden sm:inline">{focusMode ? '退出专注' : '专注'}</span></button><button type="button" onClick={() => void openChat()} className="flex h-9 items-center gap-1.5 rounded-[10px] border border-hairline px-3 text-[11px] text-ink-muted"><Bot size={13} /><span className="hidden sm:inline">提问</span></button><button type="button" onClick={() => activeBlock && setNoteFor(activeBlock)} className="flex h-9 items-center gap-1.5 rounded-[10px] border border-hairline px-3 text-[11px] text-ink-muted"><NotebookPen size={13} /><span className="hidden sm:inline">笔记</span></button></div>
+    <div className="fixed inset-x-0 bottom-[58px] z-40 mx-auto flex w-[min(920px,calc(100%-24px))] items-center gap-1.5 rounded-[17px] border border-hairline bg-paper/95 p-2.5 shadow-warm-lg backdrop-blur-md md:bottom-4 md:gap-2">
+      <button type="button" onClick={speakCurrent} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand text-paper" title="用真实 MiMo 音色讲这一段">{narration.speaking ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}</button>
+      <div className="hidden min-w-0 flex-1 sm:block"><div className="truncate text-[12.5px] font-medium text-ink">{activeBlock?.title ?? resource.title}</div><div className="mt-0.5 flex items-center gap-2 font-mono text-[9.5px] text-ink-muted"><span><Headphones size={10} className="mr-1 inline" />{narration.speaking ? 'MiMo 正在讲播' : '点击播放当前段落'}</span><span>{currentIndex + 1}/{blocks.length}</span></div></div>
+      <button type="button" onClick={cycleSpeed} className="flex h-9 shrink-0 items-center gap-1 rounded-[10px] border border-hairline px-2.5 text-[10.5px] text-ink-muted" title="切换语速"><Gauge size={13} /><span>{speedMeta[speechSpeed].label}</span></button>
+      <button type="button" onClick={() => setSlideMode(true)} className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted" title="幻灯模式：一段一页"><Presentation size={13} /><span className="hidden md:inline">幻灯</span></button>
+      <button type="button" onClick={toggleFocus} aria-label={focusMode ? '退出专注' : '进入专注'} className={cn('flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border px-2.5 text-[11px]', focusMode ? 'border-brand bg-brand-tint text-brand' : 'border-hairline text-ink-muted')}><Focus size={13} /><span className="hidden md:inline">{focusMode ? '退出专注' : '专注'}</span></button>
+      {focusMode && ambient.supported && <button type="button" onClick={cycleAmbient} className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border', ambient.kind === 'off' ? 'border-hairline text-ink-muted' : 'border-brand bg-brand-tint text-brand')} title={ambient.kind === 'off' ? '开启细雨环境音' : ambient.kind === 'rain' ? '切换林间环境音' : '关闭环境音'}>{ambient.kind === 'forest' ? <Trees size={13} /> : <CloudRain size={13} />}</button>}
+      <button type="button" onClick={() => void openChat()} aria-label="向章节导学老师提问" className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted"><Bot size={13} /><span className="hidden lg:inline">提问</span></button>
+      <button type="button" onClick={() => activeBlock && setNoteFor(activeBlock)} aria-label="记录当前段落笔记" className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted"><NotebookPen size={13} /><span className="hidden lg:inline">笔记</span></button>
+    </div>
 
-    <AnimatePresence>{noteFor && <><motion.button type="button" aria-label="关闭笔记" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setNoteFor(null)} className="fixed inset-0 z-[70] bg-ink/20 backdrop-blur-[2px]" /><motion.aside initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} className="fixed inset-y-0 right-0 z-[80] flex w-full max-w-[460px] flex-col border-l border-hairline bg-paper shadow-2xl"><div className="flex items-start gap-3 border-b border-hairline p-5"><NotebookPen size={18} className="mt-1 text-brand" /><div className="min-w-0 flex-1"><div className="lf-mono-label">PERSONAL NOTE</div><h2 className="mt-1 truncate font-serif text-[20px] font-semibold text-ink">{noteFor.title}</h2></div><button type="button" onClick={() => setNoteFor(null)} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep"><X size={16} /></button></div><div className="flex-1 p-5"><p className="text-[12px] leading-5 text-ink-muted">笔记会关联当前课程、资源段落和引用来源，保存到“我的笔记”。</p><textarea autoFocus value={noteText} onChange={(event) => setNoteText(event.target.value)} placeholder="写下你的理解、疑问或总结…" className="mt-4 min-h-[260px] w-full resize-none rounded-[13px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-6 text-ink outline-none focus:border-brand/45" /></div><div className="border-t border-hairline p-4"><button type="button" disabled={!noteText.trim() || savingNote} onClick={() => void saveNote()} className="lf-btn-primary w-full justify-center">{savingNote && <Loader2 size={14} className="animate-spin" />}保存到个人知识库</button></div></motion.aside></>}</AnimatePresence>
+    {createPortal(<AnimatePresence>{slideMode && activeBlock && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[9999] flex flex-col bg-paper">
+      <header className="flex items-center gap-3 border-b border-hairline bg-card-warm px-4 py-3 md:px-6"><Presentation size={17} className="text-brand" /><div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold text-ink">幻灯模式 · {resource.title}</div><div className="font-mono text-[9.5px] text-ink-muted">真实课程内容 · 第 {currentIndex + 1}/{blocks.length} 段</div></div><button type="button" onClick={() => setSlideMode(false)} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep" title="退出幻灯"><X size={17} /></button></header>
+      <main className="flex flex-1 items-center justify-center overflow-y-auto px-4 py-8 md:px-12"><motion.article key={activeBlock.id} initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} className="w-full max-w-[980px] rounded-[22px] border border-brand/20 bg-card-warm p-6 shadow-warm-lg md:p-10"><div className="lf-mono-label">{activeBlock.eyebrow}</div><h2 className="mt-2 font-serif text-[28px] font-bold leading-tight text-ink md:text-[38px]">{activeBlock.title}</h2>{activeBlock.body && <div className="prose mt-7 max-w-none text-[15px] leading-8 text-ink-2 prose-headings:font-serif prose-headings:text-ink prose-a:text-brand md:text-[17px]"><ReactMarkdown remarkPlugins={[remarkGfm]}>{activeBlock.body}</ReactMarkdown></div>}{activeBlock.code && <pre className="mt-6 overflow-x-auto rounded-[14px] bg-ink p-5 text-[13px] leading-6 text-paper"><code>{activeBlock.code}</code></pre>}{activeBlock.expectedOutput && <div className="mt-5 rounded-[13px] border border-brand/20 bg-brand-tint/40 p-4 text-[14px] leading-6 text-ink-2"><strong className="text-brand">预期结果：</strong>{activeBlock.expectedOutput}</div>}{activeBlock.kind === 'quiz' && <QuizBlock block={activeBlock} resource={resource} onResourceState={(state) => setResource((current) => current ? { ...current, state, learned: Boolean(state.learned || state.completed) } : current)} />}<BlockSources citations={activeBlock.citations} resource={resource} /></motion.article></main>
+      <footer className="flex items-center justify-center gap-3 border-t border-hairline bg-card-warm px-4 py-3"><button type="button" disabled={currentIndex === 0} onClick={() => goBlock(blocks[currentIndex - 1].id)} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="上一页"><ChevronLeft size={17} /></button><button type="button" onClick={speakCurrent} className="flex h-11 items-center gap-2 rounded-full bg-brand px-5 text-[12.5px] font-medium text-paper">{narration.speaking ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}{narration.speaking ? '暂停讲播' : '讲这一页'}</button><button type="button" onClick={cycleSpeed} className="h-10 rounded-full border border-hairline px-4 font-mono text-[11px] text-ink-muted">{speedMeta[speechSpeed].label}</button><button type="button" disabled={currentIndex >= blocks.length - 1} onClick={() => goBlock(blocks[currentIndex + 1].id)} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="下一页"><ChevronRight size={17} /></button></footer>
+    </motion.div>}</AnimatePresence>, document.body)}
 
-    <AnimatePresence>{chatOpen && <><motion.button type="button" aria-label="关闭提问" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setChatOpen(false)} className="fixed inset-0 z-[70] bg-ink/20 backdrop-blur-[2px]" /><motion.aside initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} className="fixed inset-y-0 right-0 z-[80] flex w-full max-w-[500px] flex-col border-l border-hairline bg-paper shadow-2xl"><div className="flex items-center gap-3 border-b border-hairline bg-card-warm p-4"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand text-paper"><Bot size={17} /></span><div className="min-w-0 flex-1"><h2 className="text-[14px] font-semibold text-ink">章节导学老师</h2><p className="truncate text-[10.5px] text-ink-muted">正在结合本资源正文、作答状态和真实来源回答</p></div><button type="button" onClick={() => setChatOpen(false)} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep"><X size={16} /></button></div><div className="flex-1 space-y-3 overflow-y-auto p-4">{messages.length === 0 && <div className="rounded-[13px] border border-brand/20 bg-brand-tint/35 p-4 text-[12.5px] leading-6 text-ink-2">我已经读过这项资源和它引用的知识库、网页来源。你可以让我解释当前段落、检查理解，或根据作答记录生成巩固建议。</div>}{messages.map((message, index) => <div key={`${message.createdAt}-${index}`} className={cn('w-fit max-w-[90%] rounded-[13px] px-3.5 py-2.5 text-[12.5px] leading-6', message.role === 'user' ? 'ml-auto rounded-br-sm bg-brand text-paper' : 'rounded-tl-sm border border-hairline bg-card-warm text-ink-2')}><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>)}{asking && <div className="flex items-center gap-2 text-[11.5px] text-ink-muted"><Loader2 size={13} className="animate-spin" />正在结合内容与来源思考…</div>}{followUps.length > 0 && <div className="flex flex-wrap gap-1.5">{followUps.map((item) => <button key={item} type="button" onClick={() => void ask(item)} className="rounded-lg border border-hairline bg-card-warm px-2.5 py-1.5 text-left text-[10.5px] text-brand hover:border-brand/40">{item}</button>)}</div>}</div><div className="border-t border-hairline bg-card-warm p-3"><div className="flex items-end gap-2"><textarea value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void ask(); } }} placeholder="问当前内容，Enter 发送…" className="max-h-28 min-h-10 flex-1 resize-none rounded-[11px] border border-hairline bg-paper px-3 py-2.5 text-[12.5px] outline-none focus:border-brand/45" /><button type="button" disabled={!question.trim() || asking} onClick={() => void ask()} className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-brand text-paper disabled:opacity-40"><Send size={15} /></button></div></div></motion.aside></>}</AnimatePresence>
+    <AnimatePresence>{noteFor && <><motion.button type="button" aria-label="关闭笔记面板背景" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setNoteFor(null)} className="fixed inset-0 z-[70] bg-ink/20 backdrop-blur-[2px]" /><motion.aside initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} className="fixed inset-y-0 right-0 z-[80] flex w-full max-w-[460px] flex-col border-l border-hairline bg-paper shadow-2xl"><div className="flex items-start gap-3 border-b border-hairline p-5"><NotebookPen size={18} className="mt-1 text-brand" /><div className="min-w-0 flex-1"><div className="lf-mono-label">PERSONAL NOTE</div><h2 className="mt-1 truncate font-serif text-[20px] font-semibold text-ink">{noteFor.title}</h2></div><button type="button" aria-label="关闭笔记" onClick={() => setNoteFor(null)} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep"><X size={16} /></button></div><div className="flex-1 p-5"><p className="text-[12px] leading-5 text-ink-muted">笔记会关联当前课程、资源段落和引用来源，保存到“我的笔记”。</p><textarea autoFocus value={noteText} onChange={(event) => setNoteText(event.target.value)} placeholder="写下你的理解、疑问或总结…" className="mt-4 min-h-[260px] w-full resize-none rounded-[13px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-6 text-ink outline-none focus:border-brand/45" /></div><div className="border-t border-hairline p-4"><button type="button" disabled={!noteText.trim() || savingNote} onClick={() => void saveNote()} className="lf-btn-primary w-full justify-center">{savingNote && <Loader2 size={14} className="animate-spin" />}保存到个人知识库</button></div></motion.aside></>}</AnimatePresence>
+
+    <AnimatePresence>{chatOpen && <><motion.button type="button" aria-label="关闭提问面板背景" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setChatOpen(false)} className="fixed inset-0 z-[70] bg-ink/20 backdrop-blur-[2px]" /><motion.aside initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} className="fixed inset-y-0 right-0 z-[80] flex w-full max-w-[500px] flex-col border-l border-hairline bg-paper shadow-2xl"><div className="flex items-center gap-3 border-b border-hairline bg-card-warm p-4"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand text-paper"><Bot size={17} /></span><div className="min-w-0 flex-1"><h2 className="text-[14px] font-semibold text-ink">章节导学老师</h2><p className="truncate text-[10.5px] text-ink-muted">正在结合本资源正文、作答状态和真实来源回答</p></div><button type="button" aria-label="关闭提问" onClick={() => setChatOpen(false)} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep"><X size={16} /></button></div><div className="flex-1 space-y-3 overflow-y-auto p-4">{messages.length === 0 && <div className="rounded-[13px] border border-brand/20 bg-brand-tint/35 p-4 text-[12.5px] leading-6 text-ink-2">我已经读过这项资源和它引用的知识库、网页来源。你可以让我解释当前段落、检查理解，或根据作答记录生成巩固建议。</div>}{messages.map((message, index) => <div key={`${message.createdAt}-${index}`} className={cn('w-fit max-w-[90%] rounded-[13px] px-3.5 py-2.5 text-[12.5px] leading-6', message.role === 'user' ? 'ml-auto rounded-br-sm bg-brand text-paper' : 'rounded-tl-sm border border-hairline bg-card-warm text-ink-2')}><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>)}{asking && <div className="flex items-center gap-2 text-[11.5px] text-ink-muted"><Loader2 size={13} className="animate-spin" />正在结合内容与来源思考…</div>}{followUps.length > 0 && <div className="flex flex-wrap gap-1.5">{followUps.map((item) => <button key={item} type="button" onClick={() => void ask(item)} className="rounded-lg border border-hairline bg-card-warm px-2.5 py-1.5 text-left text-[10.5px] text-brand hover:border-brand/40">{item}</button>)}</div>}</div><div className="border-t border-hairline bg-card-warm p-3"><div className="flex items-end gap-2"><textarea value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void ask(); } }} placeholder="问当前内容，Enter 发送…" className="max-h-28 min-h-10 flex-1 resize-none rounded-[11px] border border-hairline bg-paper px-3 py-2.5 text-[12.5px] outline-none focus:border-brand/45" /><button type="button" disabled={!question.trim() || asking} onClick={() => void ask()} className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-brand text-paper disabled:opacity-40"><Send size={15} /></button></div></div></motion.aside></>}</AnimatePresence>
   </div>;
 }

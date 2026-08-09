@@ -408,6 +408,8 @@ export interface LearningResourceTrace {
   url?: string | null;
 }
 
+export type TtsSpeed = 'very_slow' | 'slow' | 'normal' | 'fast' | 'very_fast';
+
 export interface RagDomain {
   id: number;
   code: string;
@@ -728,6 +730,32 @@ export async function streamTeachingGroup(
   }
   buffer += decoder.decode();
   consume();
+}
+
+export async function streamAssistantTts(
+  text: string,
+  speed: TtsSpeed = 'normal',
+  signal?: AbortSignal,
+): Promise<Response> {
+  const headers = new Headers({ 'Content-Type': 'application/json', Accept: 'audio/L16' });
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const response = await fetch(`${API_BASE}/v1/assistant/tts`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ text, speed }),
+    signal,
+  });
+  if (!response.ok) {
+    let message = `语音生成失败 (${response.status})`;
+    try {
+      const parsed = JSON.parse(await response.text()) as { detail?: string; message?: string };
+      message = parsed.detail ?? parsed.message ?? message;
+    } catch { /* keep status */ }
+    throw new Error(message);
+  }
+  if (!response.body) throw new Error('浏览器没有收到语音流');
+  return response;
 }
 
 
