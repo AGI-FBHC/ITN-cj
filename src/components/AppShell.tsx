@@ -25,7 +25,6 @@ import {
   Cpu,
   NotebookPen,
   LogOut,
-  Compass,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -44,20 +43,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useProfile } from '@/context/ProfileContext';
 import type { ViewMode } from '@/context/ProfileContext';
 import { useAuth } from '@/context/AuthContext';
 import { useNotes } from '@/context/NotesContext';
 import { useGrowth } from '@/context/GrowthContext';
-import { globalStats } from '@/data/metrics';
-import LiveDot from './LiveDot';
 import TeachingGroup from './TeachingGroup';
 import AgentDock from './agent/AgentDock';
 import ResumeLearningFab from './ResumeLearningFab';
 import { SparkField } from './heal/Flora';
-import DemoTour, { startDemoTour } from './tour/DemoTour';
 import { cn } from '@/lib/utils';
 import { learningResourcePath, useCourseLearning } from '@/hooks/useCourseLearning';
 
@@ -266,8 +261,6 @@ export default function AppShell() {
     currentLearnerId,
     setCurrentLearnerId,
     learners,
-    demoMode,
-    setDemoMode,
     viewMode,
     setViewMode,
   } = useProfile();
@@ -483,18 +476,9 @@ export default function AppShell() {
                   collapsed && 'justify-center px-0',
                 )}
               >
-                <LiveDot status="running" />
+                <Database size={14} className="shrink-0 text-brand" />
                 {!collapsed && (
-                  <span className="relative flex-1 overflow-hidden">
-                    <span className="flex w-max animate-marquee gap-8 font-mono text-[10.5px] whitespace-nowrap text-ink-muted">
-                      <span>
-                        {globalStats.agentsOnline} AGENTS ONLINE · 今日协同 {globalStats.todayCollabCount} 次
-                      </span>
-                      <span aria-hidden>
-                        {globalStats.agentsOnline} AGENTS ONLINE · 今日协同 {globalStats.todayCollabCount} 次
-                      </span>
-                    </span>
-                  </span>
+                  <span className="flex-1 font-mono text-[10.5px] text-ink-muted">BACKEND DATA MODE</span>
                 )}
               </div>
               <button
@@ -534,32 +518,7 @@ export default function AppShell() {
                   </kbd>
                 </button>
 
-                {/* 评委一键导览：5 分钟自动串场，把五步闭环叙事喂到评委嘴边 */}
-                <button
-                  type="button"
-                  onClick={() => startDemoTour()}
-                  title="评委一键导览 · 5 分钟串场演示"
-                  className="flex items-center gap-1.5 rounded-[10px] border border-brand-amber/45 bg-brand-amber-tint px-3 py-1.5 text-[12.5px] font-medium text-ochre transition-all duration-200 hover:border-brand-amber/70"
-                >
-                  <Compass size={14} />
-                  <span className="hidden sm:inline">评委导览</span>
-                </button>
-
                 <LiveClock />
-                <label className="hidden items-center gap-2 rounded-[10px] border border-hairline bg-card-warm px-3 py-1.5 lg:flex">
-                  <span className={cn('text-[12.5px] font-medium', demoMode ? 'text-brand' : 'text-ink-muted')}>
-                    演示模式
-                  </span>
-                  <Switch
-                    checked={demoMode}
-                    onCheckedChange={(v) => {
-                      setDemoMode(v);
-                      toast(v ? '演示模式已开启' : '演示模式已关闭', {
-                        description: v ? '各页面将自动播放模拟脚本' : '自动播放已停止',
-                      });
-                    }}
-                  />
-                </label>
 
                 <ModeToggle mode={viewMode} onChange={changeMode} />
                 <ProfileSwitcher
@@ -650,8 +609,6 @@ export default function AppShell() {
         </CommandList>
       </CommandDialog>
 
-      {/* 评委一键导览：挂载在 Router 内部，跨路由不卸载，进度存 sessionStorage */}
-      <DemoTour />
     </>
   );
 }
