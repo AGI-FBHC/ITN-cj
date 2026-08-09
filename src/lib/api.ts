@@ -372,6 +372,47 @@ export interface WrongAnswerRecord {
   updatedAt: string;
 }
 
+export interface TutoringMessage {
+  kind: 'tutor' | 'learner' | 'feedback' | 'backstage' | 'decision' | 'summary';
+  text?: string;
+  stage?: '引导' | '追问' | '确认';
+  kbRefs?: string[];
+  verdict?: 'correct' | 'wrong';
+  notes?: { agent: 'DIA-01' | 'RET-02' | 'GEN-03' | 'VER-04' | 'ARB-05'; content: string }[];
+  type?: 'simplify' | 'challenge';
+  reason?: string;
+  accuracy?: number;
+  asked?: number;
+}
+
+export interface TutoringDecision {
+  id: string;
+  type: 'simplify' | 'challenge';
+  label: string;
+  reason: string;
+  confidence: number;
+}
+
+export interface TutoringSession {
+  id: string;
+  learnerCode: string;
+  resourceId: string | null;
+  kpId: string;
+  scriptTitle: string;
+  status: 'running' | 'completed';
+  currentNodeId: string | null;
+  currentNode: { id: string; stage?: '引导' | '追问' | '确认'; options: { label: string }[] } | null;
+  level: number;
+  messages: TutoringMessage[];
+  answers: boolean[];
+  decisions: TutoringDecision[];
+  topics: { id: string; name: string; description: string; kbRef?: string | null }[];
+  scoreBefore: number;
+  scoreAfter: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 
 export interface ProfileForgeStep {
   text: string;
@@ -610,21 +651,21 @@ export const api = {
     requestDirect<WrongAnswerRecord>(`/v1/wrong-answers/${encodeURIComponent(wrongId)}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteWrongAnswer: (wrongId: string) => requestDirect<void>(`/v1/wrong-answers/${encodeURIComponent(wrongId)}`, { method: 'DELETE' }),
   getTutoringScript: (learnerCode: string) =>
-    request<Record<string, unknown>>(`/v1/tutoring/scripts/${encodeURIComponent(learnerCode)}`),
-  createTutoringSession: (learnerCode: string) =>
-    request<Record<string, unknown>>('/v1/tutoring/sessions', {
+    requestDirect<Record<string, unknown>>(`/v1/tutoring/scripts/${encodeURIComponent(learnerCode)}`),
+  createTutoringSession: (body: { learnerCode?: string; resourceId?: string }) =>
+    requestDirect<TutoringSession>('/v1/tutoring/sessions', {
       method: 'POST',
-      body: JSON.stringify({ learnerCode }),
+      body: JSON.stringify(body),
     }),
   getTutoringSession: (sessionId: string) =>
-    request<Record<string, unknown>>(`/v1/tutoring/sessions/${encodeURIComponent(sessionId)}`),
-  answerTutoringSession: (sessionId: string, body: Record<string, unknown>) =>
-    request<Record<string, unknown>>(`/v1/tutoring/sessions/${encodeURIComponent(sessionId)}/answer`, {
+    requestDirect<TutoringSession>(`/v1/tutoring/sessions/${encodeURIComponent(sessionId)}`),
+  answerTutoringSession: (sessionId: string, body: { optionIndex?: number; optionLabel?: string; freeText?: string }) =>
+    requestDirect<TutoringSession>(`/v1/tutoring/sessions/${encodeURIComponent(sessionId)}/answer`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),
   completeTutoringSession: (sessionId: string) =>
-    request<Record<string, unknown>>(`/v1/tutoring/sessions/${encodeURIComponent(sessionId)}/complete`, {
+    requestDirect<TutoringSession>(`/v1/tutoring/sessions/${encodeURIComponent(sessionId)}/complete`, {
       method: 'POST',
     }),
   listTeachingGroupAgents: () =>
