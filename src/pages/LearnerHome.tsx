@@ -6,6 +6,10 @@ import ConfidenceBadge from '@/components/ConfidenceBadge';
 import { useProfile } from '@/context/ProfileContext';
 import { learningResourcePath, useCourseLearning } from '@/hooks/useCourseLearning';
 import { cn } from '@/lib/utils';
+import FirstRunGuide from '@/components/heal/FirstRunGuide';
+import GardenCard from '@/components/heal/GardenCard';
+import WeekReview from '@/components/heal/WeekReview';
+import { LeafDivider } from '@/components/heal/Flora';
 
 const resourceMeta = {
   lecture: { label: '讲义', Icon: BookOpen },
@@ -35,6 +39,13 @@ export default function LearnerHome() {
         <div className="ml-auto flex flex-wrap gap-2"><Link to="/me/wrong" className="lf-btn-ghost !px-3 !py-1.5 text-[12px]"><X size={14} />错题本</Link><Link to="/me/notes" className="lf-btn-ghost !px-3 !py-1.5 text-[12px]"><NotebookPen size={14} />个人知识库</Link><Link to="/me/profile" className="lf-btn-ghost !px-3 !py-1.5 text-[12px]"><UserRoundCog size={14} />我的画像</Link></div>
       </section>
 
+      <FirstRunGuide />
+      <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-5 px-0.5 text-[14px] leading-relaxed text-ink-2">
+        <span className="mr-0.5 align-[-2px] text-[20px] text-ochre">「</span>
+        每学一点，都是给未来的自己，浇一次水。
+        <span className="ml-0.5 align-[-2px] text-[20px] text-ochre">」</span>
+      </motion.p>
+
       {learning.loading && <div className="mt-8 flex items-center justify-center gap-2 rounded-[14px] border border-hairline bg-card-warm py-14 text-[13px] text-ink-muted"><Loader2 size={16} className="animate-spin" />正在读取真实学习进度…</div>}
 
       {!learning.loading && !learning.course && <section className="mt-8 rounded-[16px] border border-brand/20 bg-brand-tint/30 p-8 text-center"><h2 className="font-serif text-[21px] font-semibold text-ink">还没有属于你的课程</h2><p className="mt-2 text-[13px] text-ink-muted">完成画像后，让 AI 根据你的目标生成课程和章节资源。</p><Link to="/learn" className="lf-btn-primary mt-5 inline-flex">生成我的课程<ArrowRight size={14} /></Link></section>}
@@ -47,6 +58,12 @@ export default function LearnerHome() {
           </div>
           {learning.nextResource && learning.nextChapter ? <div className="mt-6 rounded-[13px] border border-hairline bg-card-warm p-5"><span className="text-[11px] font-medium text-brand">接下来学习</span><h3 className="mt-1 text-[16px] font-semibold text-ink">第 {learning.nextChapter.index} 章 · {learning.nextChapter.title}</h3><p className="mt-1 text-[13px] text-ink-muted">{resourceMeta[learning.nextResource.type].label}：{learning.nextResource.title}</p><Link to={learningResourcePath(learning.nextResource)} className="lf-btn-primary mt-4 inline-flex"><Play size={14} fill="currentColor" />继续学习</Link></div> : <div className="mt-5 flex items-center gap-2 rounded-[12px] bg-card-warm p-4 text-[13px] text-brand"><CheckCircle2 size={17} />当前课程资源已经全部学完</div>}
         </motion.section>
+
+        <motion.section initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="mt-5">
+          <GardenCard course={learning.course} resources={learning.resources} />
+        </motion.section>
+        <section className="mt-4"><WeekReview /></section>
+        <LeafDivider className="mt-8" />
 
         <section className="mt-7"><div className="mb-3 flex items-center gap-2"><Target size={16} className="text-ochre" /><h3 className="font-serif text-[18px] font-semibold text-ink">画像中的优先补强方向</h3></div><div className="grid gap-3 sm:grid-cols-2">{gaps.map((gap) => <div key={gap.id} className="rounded-[14px] border border-hairline bg-card-warm p-5"><div className="flex items-center justify-between"><span className="font-semibold text-ink">{gap.name}</span><span className={cn('font-mono text-[11px]', gap.gap > 20 ? 'text-brand-danger' : 'text-ochre')}>差距 {Math.max(0, gap.gap)}</span></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-paper-deep"><div className="h-full rounded-full bg-brand" style={{ width: `${Math.max(0, Math.min(100, gap.score))}%` }} /></div><p className="mt-2 text-[12px] text-ink-muted">当前 {gap.score} · 目标 {gap.targetLevel}</p></div>)}</div></section>
 

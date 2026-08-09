@@ -15,6 +15,8 @@ export interface Note {
   blockAnchor?: string;
   kbRefs: string[];
   time: string;
+  /** 后端记录时间，供周回顾等真实时间统计使用。 */
+  createdAt?: string;
 }
 
 interface NotesContextValue {
@@ -37,6 +39,7 @@ function toNote(record: LearningNoteRecord): Note {
     blockAnchor: record.sourceRef ?? undefined,
     kbRefs: record.kbRefs ?? [],
     time: new Date(record.updatedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    createdAt: record.createdAt,
   };
 }
 
