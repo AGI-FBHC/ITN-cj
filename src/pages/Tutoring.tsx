@@ -1,384 +1,63 @@
-/**
- * 交互导学 `/tutoring`（tutoring.md）
- * 苏格拉底式追问对话（tutoringScript.ts 脚本图解释执行）
- * 快答 chips / 自由输入 / 幕后协商卡 / 答题正确率实时回流 →
- * ARB-05「降维解释 · 进阶挑战」全宽决策横幅 → 课后小结回写画像（闭环）
- */
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowDown, RotateCcw, SendHorizonal } from 'lucide-react';
-import { useProfile, dataIdOf } from '@/context/ProfileContext';
-import { useAgent } from '@/context/AgentContext';
-import { useReview } from '@/context/ReviewContext';
-import { getTutoringScript } from '@/data/tutoringScript';
-import { getKnowledgePoint } from '@/data/knowledgePoints';
-import AgentChip from '@/components/AgentChip';
-import { Vine } from '@/components/heal/Flora';
-import { useTutoringEngine } from '@/components/tutoring/engine';
-import {
-  TutorBubble,
-  LearnerBubble,
-  TypingIndicator,
-  BackstageCard,
-  ArbitrateRow,
-  AnswerCard,
-  FeedbackBubble,
-} from '@/components/tutoring/bubbles';
-import DecisionBlock from '@/components/tutoring/DecisionBlock';
-import SidePanel from '@/components/tutoring/SidePanel';
-import type { KpTopic } from '@/components/tutoring/SidePanel';
-import SummaryCard from '@/components/tutoring/SummaryCard';
-import PageTip from '@/components/heal/PageTip';
-import { cn } from '@/lib/utils';
-
-/** 知识点复述文案（page-local，按脚本差异化） */
-const recapTexts: Record<string, { text: string; kb: string }[]> = {
-  lin: [
-    { text: '回零准备 → 粗对零 → 精对零 → 写入零点 → 复测验证，每步都有量化判据，错一步就回到上一步。', kb: 'KB-018' },
-    { text: '位姿准确度是指令位姿与实到位姿集群重心的偏差；试验须在额定负载下对立方体五点位姿各测 30 次。', kb: 'KB-007' },
-    { text: '线性补偿 Δθ=k(T−T₀) 只在 10–35℃ 验证过，k 由五点恒温实验拟合，超出区间必须重新拟合。', kb: 'KB-014' },
-  ],
-  chen: [
-    { text: '四个参数 ai-1、αi-1、di、θi 唯一确定一个连杆变换 —— 就像万用表的四个档位刻度。', kb: 'KB-009' },
-    { text: '正解是六个变换矩阵连乘；满足 Pieper 准则的六轴臂可位姿分离，共 8 组解按最短行程取舍。', kb: 'KB-022' },
-    { text: 'TCP 原点定义在工具中心点，绕 X/Y/Z 的旋转命名 RX/RY/RZ，正方向遵从右手定则。', kb: 'KB-002' },
-  ],
-  zhao: [
-    { text: '采集 12–20 组姿态、旋转大于 30°，避免纯平移导致旋转分量无法约束、解退化。', kb: 'KB-011' },
-    { text: '来料偏差 ±15 mm 用模板匹配粗定位 + 边缘精定位两级消化，与分段排查思路同构。', kb: 'KB-016' },
-    { text: '像素 ↔ 毫米的翻译官是手眼矩阵；相机丢帧排查链与你的 PROFINET 丢站排查链同构。', kb: 'KB-026' },
-  ],
-};
+import { Link } from 'react-router-dom';
+import { ArrowRight, CheckCircle2, CircleDashed, Dumbbell } from 'lucide-react';
+import PageBack from '@/components/PageBack';
+import { learningResourcePath, useCourseLearning } from '@/hooks/useCourseLearning';
 
 export default function Tutoring() {
-  const { currentLearner, viewMode } = useProfile();
-  const { pushSignal } = useAgent();
-  const { markStudied } = useReview();
-  const isLearner = viewMode === 'learner';
-  const script = getTutoringScript(dataIdOf(currentLearner));
-  const kp = getKnowledgePoint(script.kpId);
-  const engine = useTutoringEngine(script, currentLearner);
-  const {
-    msgs,
-    awaitingNode,
-    typing,
-    streaming,
-    answers,
-    decisions,
-    level,
-    finished,
-    accepted,
-    sendOption,
-    sendFreeText,
-    acceptChallenge,
-    recap,
-    reset,
-    notifyStreamDone,
-  } = engine;
+  const { loading, course, resources } = useCourseLearning();
+  const quizzes = resources.filter((resource) => resource.type === 'quiz');
+  const nextQuiz = quizzes.find((resource) => !resource.learned) ?? quizzes[0] ?? null;
+  const learnedCount = quizzes.filter((resource) => resource.learned).length;
 
-  const [input, setInput] = useState('');
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const nearBottomRef = useRef(true);
-  const [showBackBottom, setShowBackBottom] = useState(false);
-
-  const asked = answers.length;
-  const correct = answers.filter(Boolean).length;
-
-  /* 本节知识点 chips：掌握度由画像分数派生 */
-  const topics = useMemo<KpTopic[]>(() => {
-    const base = currentLearner.scores[script.kpId] ?? 50;
-    const texts = recapTexts[currentLearner.id] ?? recapTexts.lin;
-    return kp.coreTopics.slice(0, 3).map((topic, i) => ({
-      topic,
-      mastery: Math.min(96, Math.max(10, base + [14, 3, -9][i])),
-      recapText: texts[i]?.text ?? kp.description,
-      kbRef: texts[i]?.kb,
-    }));
-  }, [currentLearner, script.kpId, kp]);
-
-  /* ---------- 自动滚动 ---------- */
-  const scrollToBottom = (smooth: boolean) => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
-  };
-  useEffect(() => {
-    if (nearBottomRef.current) scrollToBottom(true);
-  }, [msgs, typing]);
-  /* 流式期间持续跟底 */
-  useEffect(() => {
-    if (!streaming) return;
-    const t = setInterval(() => {
-      if (nearBottomRef.current) scrollToBottom(false);
-    }, 200);
-    return () => clearInterval(t);
-  }, [streaming]);
-
-  const onScroll = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    nearBottomRef.current = near;
-    setShowBackBottom(!near);
-  };
-
-  const submit = () => {
-    if (!input.trim() || !awaitingNode) return;
-    sendFreeText(input);
-    setInput('');
-    nearBottomRef.current = true;
-  };
-
-  /* 回写钩子：本节结束 → 交给阿诊(DIA-01)推理回写（画像 + 时间线 + 对话消息，闭环成环） */
-  const wroteForRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!finished) return;
-    if (wroteForRef.current === currentLearner.id) return;
-    wroteForRef.current = currentLearner.id;
-    pushSignal({ type: 'tutoring-finished', kpId: script.kpId, title: script.title, asked, correct });
-    /* 遗忘曲线：练过一节 = 给这株浇了水 */
-    markStudied(script.kpId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [finished, currentLearner.id]);
+  if (loading) {
+    return <div className="mx-auto max-w-[920px] px-6 py-16 text-center text-[14px] text-ink-muted">正在读取真实练习…</div>;
+  }
 
   return (
-    <div className={`mx-auto ${isLearner ? 'max-w-[1080px] px-5 md:px-6' : 'max-w-[1320px] px-8'} py-10`}>
-      {/* ---------- S1 页头 ---------- */}
-      <motion.div
-        initial={{ opacity: 0, y: 24 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-        className="flex flex-wrap items-end justify-between gap-4"
-      >
-        <div>
-          <div className="lf-mono-label flex items-center gap-2">
-            <span className="inline-block h-px w-6 bg-brand/40" />
-            {isLearner ? '边问边练 · 练' : 'SOCRATIC TUTORING'}
-          </div>
-          <h1 className="mt-2 font-serif text-[36px] font-bold leading-[44px] text-ink">
-            {isLearner ? 'AI 老师陪你练一节' : '交互导学'}
-          </h1>
-          <div className="mt-3 flex flex-wrap items-center gap-2.5">
-            <span className="lf-chip !py-1.5">
-              {isLearner ? `今天练：${kp.name}` : `本节主题：${kp.name} · 为${currentLearner.tag}设计`}
-            </span>
-            <span className="rounded-lg border border-brand/25 bg-brand-tint px-2.5 py-1.5 font-mono text-[11.5px] text-brand">
-              {script.title}
-            </span>
-          </div>
-        </div>
-        {/* 刚进来时说「重开」很怪（还没开始过）——按进度换措辞 */}
-        <button
-          type="button"
-          onClick={reset}
-          title={asked === 0 ? '换一节内容' : '从头再练一遍这一节'}
-          className="lf-btn-ghost !px-4 !py-2 text-[13.5px]"
-        >
-          <RotateCcw size={14} /> {asked === 0 ? '换一节' : '重新练一遍'}
-        </button>
-      </motion.div>
-
-      {isLearner && (
-        <PageTip id="tutoring" className="mt-5">
-          这是<span className="font-medium text-ink">对话式</span>练习：可以点快答，也能直接打字说你的想法。
-          答不上来就说「不会」——AI 会换个更简单的问法，不会扣分。
-        </PageTip>
-      )}
-
-      <div className="mt-6 grid grid-cols-12 gap-6">
-        {/* ---------- S2 对话区 ---------- */}
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.55, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
-          className="relative col-span-12 lg:col-span-8"
-        >
-          {/* 练页植物：垂藤（从对话区上缘垂下） */}
-          {isLearner && (
-            <Vine className="pointer-events-none absolute -top-3 right-10 z-10 hidden h-[96px] w-[48px] opacity-85 sm:block" />
-          )}
-          <div className="lf-card relative flex h-[640px] flex-col overflow-hidden">
-            {/* 对话标题条 */}
-            <div className="flex items-center justify-between border-b border-hairline bg-paper px-5 py-3">
-              {isLearner ? (
-                <span className="flex items-center gap-2">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-[12px] font-bold text-paper">诊</span>
-                  <span className="text-[13.5px] font-semibold text-ink">阿诊老师</span>
-                </span>
-              ) : (
-                <>
-                  <AgentChip agentId="DIA-01" size="sm" showStatus={false} />
-                  <span className="font-mono text-[10.5px] text-ink-muted">
-                    苏格拉底三阶法 · 引导 → 追问 → 确认
-                  </span>
-                </>
-              )}
-              <span className="flex items-center gap-1.5 font-mono text-[10.5px] text-brand">
-                <span className="h-1.5 w-1.5 animate-ping rounded-full bg-brand" />
-                {isLearner ? '在线' : 'LIVE'}
-              </span>
-            </div>
-
-            {/* 消息流 */}
-            <div
-              ref={scrollRef}
-              onScroll={onScroll}
-              className="flex-1 space-y-4 overflow-y-auto px-5 py-5"
-            >
-              {msgs.map((m) => {
-                switch (m.kind) {
-                  case 'tutor':
-                    /* 置信度为演示值：基础 0.92，若该气泡带 KB 溯源则 +0.05，上限 0.97 */
-                    return (
-                      <TutorBubble
-                        key={m.id}
-                        id={m.id}
-                        text={m.text}
-                        stage={m.stage}
-                        kbRefs={m.kbRefs}
-                        confidence={Math.min(0.97, 0.92 + (m.kbRefs?.length ? 0.05 : 0))}
-                        onStreamDone={notifyStreamDone}
-                      />
-                    );
-                  case 'feedback':
-                    return <FeedbackBubble key={m.id} verdict={m.verdict} text={m.text} />;
-                  case 'learner':
-                    return (
-                      <LearnerBubble
-                        key={m.id}
-                        text={m.text}
-                        avatar={currentLearner.avatar}
-                        name={currentLearner.name}
-                      />
-                    );
-                  case 'backstage':
-                    return <BackstageCard key={m.id} notes={m.notes} />;
-                  case 'arbitrate':
-                    return <ArbitrateRow key={m.id} />;
-                  case 'decision':
-                    return (
-                      <DecisionBlock
-                        key={m.id}
-                        type={m.type}
-                        reason={m.reason}
-                        accuracy={m.accuracy}
-                        asked={m.asked}
-                        learnerId={currentLearner.id}
-                        accepted={accepted}
-                        onAccept={acceptChallenge}
-                      />
-                    );
-                  case 'summary':
-                    return (
-                      <SummaryCard
-                        key={m.id}
-                        learner={currentLearner}
-                        script={script}
-                        topics={topics}
-                        asked={asked}
-                        correct={correct}
-                        decisionCount={decisions.length}
-                        isLearner={isLearner}
-                      />
-                    );
-                  default:
-                    return null;
-                }
-              })}
-              {typing && <TypingIndicator />}
-              {/* 答题卡气泡（随当前问题出现） */}
-              <AnimatePresence>
-                {awaitingNode?.options && !typing && !streaming && (
-                  <AnswerCard
-                    key={`ans-${awaitingNode.id}`}
-                    options={awaitingNode.options}
-                    onPick={(o) => {
-                      sendOption(o);
-                      nearBottomRef.current = true;
-                    }}
-                  />
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* 回到底部 */}
-            <AnimatePresence>
-              {showBackBottom && (
-                <motion.button
-                  type="button"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 10 }}
-                  onClick={() => {
-                    nearBottomRef.current = true;
-                    scrollToBottom(true);
-                  }}
-                  className="absolute bottom-[132px] left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full border border-hairline bg-card-warm px-3 py-1.5 text-[12px] font-medium text-brand shadow-warm"
-                >
-                  <ArrowDown size={13} /> 回到底部
-                </motion.button>
-              )}
-            </AnimatePresence>
-
-            {/* 输入条 */}
-            <div className="border-t border-hairline bg-paper px-5 py-3.5">
-              <div className="flex items-center gap-2.5">
-                <input
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') submit();
-                  }}
-                  disabled={!awaitingNode}
-                  placeholder={
-                    finished
-                      ? '本节已结束，可点击右上角「重开一节」'
-                      : awaitingNode
-                        ? '输入你的回答，或选择上方快答…'
-                        : '导师思考中…'
-                  }
-                  className={cn(
-                    'h-10 flex-1 rounded-[10px] border border-hairline bg-card-warm px-3.5 text-[13.5px] text-ink outline-none transition-colors placeholder:text-ink-muted/70 focus:border-brand/50',
-                    !awaitingNode && 'cursor-not-allowed opacity-60',
-                  )}
-                />
-                <button
-                  type="button"
-                  onClick={submit}
-                  disabled={!awaitingNode || !input.trim()}
-                  className={cn(
-                    'flex h-10 w-10 items-center justify-center rounded-[10px] transition-all duration-200',
-                    awaitingNode && input.trim()
-                      ? 'bg-brand text-paper hover:bg-brand-hover hover:shadow-warm'
-                      : 'cursor-not-allowed bg-paper-deep text-ink-muted/50',
-                  )}
-                  aria-label="发送"
-                >
-                  <SendHorizonal size={16} />
-                </button>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-
-        {/* ---------- S4 右栏 ---------- */}
-        <motion.aside
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.55, delay: 0.22, ease: [0.22, 1, 0.36, 1] }}
-          className="col-span-12 lg:col-span-4 lg:sticky lg:top-24 lg:self-start"
-        >
-          <SidePanel
-            asked={asked}
-            correct={correct}
-            level={level}
-            decisions={decisions}
-            topics={topics}
-            answers={answers}
-            onRecap={(t) => recap(t.topic, t.recapText, t.kbRef)}
-          />
-        </motion.aside>
+    <div className="mx-auto max-w-[960px] px-5 py-10 md:px-8">
+      <PageBack parent={{ label: '我的学习', to: '/me' }} current="练习中心" />
+      <div className="mb-8">
+        <div className="lf-mono-label mb-2">COURSE PRACTICE</div>
+        <h1 className="font-serif text-[34px] font-bold text-ink">练习中心</h1>
+        <p className="mt-2 text-[14px] leading-6 text-ink-muted">题目来自当前课程的后端生成资源，作答结果会写回服务器。这里不再播放前端预设的导学脚本。</p>
       </div>
+
+      {course && nextQuiz ? (
+        <>
+          <Link to={learningResourcePath(nextQuiz)} className="group flex items-center gap-4 rounded-[14px] border border-brand/25 bg-brand-tint/45 p-5 transition hover:bg-brand-tint">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-brand text-paper"><Dumbbell size={21} /></span>
+            <span className="min-w-0 flex-1">
+              <span className="text-[11px] font-semibold text-ochre">下一组真实题目</span>
+              <span className="mt-0.5 block truncate text-[16px] font-semibold text-ink">{nextQuiz.title}</span>
+              <span className="mt-1 block text-[12px] text-ink-muted">{course.title} · 已完成 {learnedCount}/{quizzes.length} 组</span>
+            </span>
+            <span className="inline-flex items-center gap-1 text-[13px] font-medium text-brand">开始作答 <ArrowRight size={15} className="transition group-hover:translate-x-0.5" /></span>
+          </Link>
+
+          <section className="mt-8">
+            <h2 className="mb-3 text-[17px] font-semibold text-ink">按章节练习</h2>
+            <div className="lf-card divide-y divide-hairline overflow-hidden">
+              {course.chapters.map((chapter) => {
+                const quiz = quizzes.find((resource) => resource.chapterId === chapter.id);
+                return (
+                  <div key={chapter.id} className="flex items-center gap-3 px-5 py-4">
+                    {quiz?.learned ? <CheckCircle2 size={18} className="shrink-0 text-brand" /> : <CircleDashed size={18} className="shrink-0 text-ink-muted" />}
+                    <div className="min-w-0 flex-1"><div className="text-[14px] font-medium text-ink">{chapter.index}. {chapter.title}</div><div className="mt-0.5 text-[12px] text-ink-muted">{quiz ? (quiz.learned ? '已完成并写回' : '题目已生成，等待作答') : '后端尚未生成分阶题'}</div></div>
+                    {quiz ? <Link to={learningResourcePath(quiz)} className="lf-btn-ghost !px-3 !py-1.5 !text-[12px]">{quiz.learned ? '再次练习' : '去作答'}</Link> : <Link to={`/resources?courseId=${encodeURIComponent(course.id)}&chapterId=${encodeURIComponent(chapter.id)}&tab=quiz`} className="lf-btn-ghost !px-3 !py-1.5 !text-[12px]">生成题目</Link>}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        </>
+      ) : (
+        <div className="lf-card p-8 text-center">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-brand-tint text-brand"><Dumbbell size={21} /></span>
+          <h2 className="mt-4 text-[18px] font-semibold text-ink">还没有可练习的真实题目</h2>
+          <p className="mt-2 text-[13px] text-ink-muted">请先生成课程，并在章节资源中生成分阶题。</p>
+          <Link to="/learn" className="lf-btn-primary mt-5 inline-flex">进入我的课程</Link>
+        </div>
+      )}
     </div>
   );
 }
