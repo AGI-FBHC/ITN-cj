@@ -1,178 +1,34 @@
-/**
- * 学情画像 `/profiles`（profiles.md）
- * S1 页面头 + 当前画像状态卡 / S2 三张画像卡 / S3 选中画像详情（雷达+档案+盲区墙+诊断）
- * S4 理论测试成绩明细 / S5 画像对比视图
- * 「设为当前画像」调用 ProfileContext.setCurrentLearnerId 驱动全站取数
- */
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
-import { toast } from 'sonner';
+import { useMemo, useState } from 'react';
+import { Check, Target, UserRound } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
-import { getLearner } from '@/data/learners';
-import SectionHeader from '@/components/SectionHeader';
-import LiveDot from '@/components/LiveDot';
-import ProfileCard from '@/components/profiles/ProfileCard';
-import ProfileDetail from '@/components/profiles/ProfileDetail';
-import ScoreTable from '@/components/profiles/ScoreTable';
-import CompareRadar from '@/components/profiles/CompareRadar';
 
 export default function Profiles() {
-  const { learners, currentLearner, currentLearnerId, setCurrentLearnerId } = useProfile();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const detailRef = useRef<HTMLDivElement>(null);
+  const { learners, currentLearnerId, setCurrentLearnerId, domainKnowledgePoints } = useProfile();
+  const [selectedId, setSelectedId] = useState(currentLearnerId);
+  const selected = learners.find((learner) => learner.id === selectedId) ?? learners[0];
 
-  const paramId = searchParams.get('learner');
-  const validParam = learners.some((l) => l.id === paramId) ? paramId : null;
-  const [selectedId, setSelectedId] = useState<string>(validParam ?? currentLearnerId);
-
-  /* 全局画像切换（顶栏/画像卡 CTA）→ 详情区跟随；初次挂载保留 URL 深链 ?learner= */
-  const prevCurrentIdRef = useRef(currentLearnerId);
-  useEffect(() => {
-    if (prevCurrentIdRef.current === currentLearnerId) return;
-    prevCurrentIdRef.current = currentLearnerId;
-    setSelectedId(currentLearnerId);
-    setSearchParams({ learner: currentLearnerId }, { replace: true });
-  }, [currentLearnerId, setSearchParams]);
-
-  const selectedLearner = useMemo(() => getLearner(selectedId), [selectedId]);
-
-  /** 点击卡片空白：定位详情区 + 刷新 URL 深链（不改变全局画像） */
-  const handleSelect = (id: string) => {
-    setSelectedId(id);
-    setSearchParams({ learner: id }, { replace: true });
-    requestAnimationFrame(() => {
-      detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  };
-
-  /** 设为当前画像：驱动全站 */
-  const handleSetCurrent = (id: string) => {
-    if (id === currentLearnerId) return;
-    setCurrentLearnerId(id);
-    setSearchParams({ learner: id }, { replace: true });
-    const l = getLearner(id);
-    toast.success(`已切换为 ${l.name}，全站数据已更新`, {
-      description: '画像 / 报告 / 资源 / 导学 / 协同五页已重新取数',
-    });
-  };
+  const orderedScores = useMemo(() => domainKnowledgePoints.map((point) => ({
+    ...point,
+    score: selected?.scores[point.id] ?? 0,
+  })).sort((left, right) => right.score - left.score), [domainKnowledgePoints, selected]);
 
   return (
-    <div className="mx-auto max-w-[1320px] px-8 py-10">
-      {/* ============ S1 页面头 ============ */}
-      <div className="mb-10 flex flex-wrap items-end justify-between gap-6">
-        <div className="max-w-[640px]">
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.4 }}
-            className="lf-mono-label mb-3 flex items-center gap-2"
-          >
-            <span className="inline-block h-px w-6 bg-brand/40" />
-            LEARNER PROFILES · 3 CASES
-          </motion.div>
-          <h1 className="font-serif text-[36px] font-bold leading-[44px] text-ink">
-            {'学情画像'.split('').map((ch, i) => (
-              <motion.span
-                key={i}
-                className="inline-block"
-                initial={{ opacity: 0, y: 28 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.04, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-              >
-                {ch}
-              </motion.span>
-            ))}
-          </h1>
-          <motion.p
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15, duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-            className="mt-3 text-[14.5px] leading-[24px] text-ink-muted"
-          >
-            整合学习者先验知识（学历背景、理论测试成绩）与领域专业知识库，由学情诊断 Agent
-            构建可计算的画像向量。切换画像，全站资源与决策即时重排。
-          </motion.p>
-        </div>
+    <div className="mx-auto max-w-[1180px] px-6 py-10">
+      <div className="mb-8"><div className="lf-mono-label mb-2">PERSISTED LEARNER PROFILES</div><h1 className="font-serif text-[34px] font-bold text-ink">学情画像</h1><p className="mt-2 text-[14px] text-ink-muted">当前账号在后端保存了 {learners.length} 份画像；分数与诊断均来自建档接口。</p></div>
 
-        {/* 当前画像状态卡 */}
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15, duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-          className="lf-card flex items-center gap-3 px-4 py-3"
-        >
-          <img
-            src={currentLearner.avatar}
-            alt={currentLearner.name}
-            className="h-11 w-11 rounded-full border border-hairline object-cover"
-          />
-          <div className="leading-tight">
-            <div className="lf-mono-label !text-[10px]">当前画像</div>
-            <div className="mt-0.5 text-[15px] font-semibold text-ink">{currentLearner.name}</div>
-            <div className="text-[11.5px] text-ink-muted">{currentLearner.tag}</div>
-          </div>
-          <span className="ml-2 flex items-center gap-1.5 rounded-lg border border-brand/25 bg-brand-tint px-2 py-1">
-            <LiveDot status="running" />
-            <span className="font-mono text-[10.5px] font-medium text-brand">驱动全站中</span>
-          </span>
-        </motion.div>
-      </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{learners.map((learner) => {
+        const isCurrent = learner.id === currentLearnerId;
+        return <button key={learner.id} type="button" onClick={() => setSelectedId(learner.id)} className={`lf-card p-5 text-left transition ${selected?.id === learner.id ? 'border-brand shadow-warm' : 'hover:border-brand/35'}`}>
+          <div className="flex items-center gap-3"><img src={learner.avatar} alt={learner.name} className="h-12 w-12 rounded-full border border-hairline object-cover" /><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><span className="text-[16px] font-semibold text-ink">{learner.name}</span>{isCurrent && <span className="rounded bg-brand px-1.5 py-0.5 font-mono text-[9px] text-paper">CURRENT</span>}</div><div className="mt-0.5 truncate text-[12px] text-ink-muted">{learner.targetJob || learner.goal || '尚未设置目标'}</div></div></div>
+          <div className="mt-4 grid grid-cols-3 gap-2"><div className="rounded bg-card-warm p-2"><div className="font-mono text-[14px] text-ink">{learner.confidence ? `${Math.round(learner.confidence.value * (learner.confidence.value <= 1 ? 100 : 1))}%` : '—'}</div><div className="text-[9.5px] text-ink-muted">置信度</div></div><div className="rounded bg-card-warm p-2"><div className="font-mono text-[14px] text-ink">{Object.keys(learner.scores).length}</div><div className="text-[9.5px] text-ink-muted">评分维度</div></div><div className="rounded bg-card-warm p-2"><div className="font-mono text-[14px] text-ink">{learner.weeklyHours}h</div><div className="text-[9.5px] text-ink-muted">每周学习</div></div></div>
+        </button>;
+      })}</div>
 
-      {/* ============ S2 三张画像卡 ============ */}
-      <div className="grid gap-5 md:grid-cols-3">
-        {learners.map((l, i) => (
-          <ProfileCard
-            key={l.id}
-            learner={l}
-            index={i}
-            isCurrent={l.id === currentLearnerId}
-            isSelected={l.id === selectedId}
-            onSelect={() => handleSelect(l.id)}
-            onSetCurrent={() => handleSetCurrent(l.id)}
-          />
-        ))}
-      </div>
+      {selected && <div className="mt-8 grid gap-6 lg:grid-cols-12">
+        <section className="lf-card p-6 lg:col-span-5"><div className="flex items-center gap-2"><UserRound size={18} className="text-brand" /><h2 className="text-[18px] font-semibold text-ink">{selected.name} · 后端档案</h2></div><dl className="mt-5 space-y-3 text-[13px]">{[['目标岗位', selected.targetJob], ['教育背景', selected.education], ['学习风格', selected.learningStyle.join(' / ')], ['每周投入', `${selected.weeklyHours} 小时`], ['目标描述', selected.goal]].map(([label, value]) => <div key={label} className="flex gap-4 border-b border-hairline pb-3"><dt className="w-20 shrink-0 text-ink-muted">{label}</dt><dd className="text-ink-2">{value || '后端未填写'}</dd></div>)}</dl><div className="mt-5 rounded-[10px] bg-card-warm p-4"><div className="text-[11px] font-medium text-brand">DIA-01 诊断摘要</div><p className="mt-1 text-[12.5px] leading-6 text-ink-2">{selected.diagnosisSummary || '后端尚未生成诊断摘要'}</p></div>{selected.id !== currentLearnerId && <button type="button" onClick={() => setCurrentLearnerId(selected.id)} className="lf-btn-primary mt-5 w-full">设为当前画像</button>}{selected.id === currentLearnerId && <div className="mt-5 flex items-center justify-center gap-1.5 text-[12px] text-brand"><Check size={14} />正在驱动当前页面</div>}</section>
 
-      {/* ============ S3 选中画像详情区 ============ */}
-      <div ref={detailRef} className="mt-16 scroll-mt-20">
-        <SectionHeader
-          en="SELECTED PROFILE"
-          title={`画像详情 · ${selectedLearner.name}`}
-          desc="知识雷达对照目标要求，盲区标签墙与 DIA-01 诊断报告随画像切换即时重算。"
-        />
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={selectedId}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <ProfileDetail learner={selectedLearner} />
-          </motion.div>
-        </AnimatePresence>
-      </div>
-
-      {/* ============ S4 理论测试成绩明细 ============ */}
-      <div className="mt-14">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={selectedId}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <ScoreTable learner={selectedLearner} />
-          </motion.div>
-        </AnimatePresence>
-      </div>
-
-      {/* ============ S5 画像对比视图 ============ */}
-      <div className="mt-14">
-        <CompareRadar />
-      </div>
+        <section className="lf-card p-6 lg:col-span-7"><div className="flex items-center gap-2"><Target size={18} className="text-brand" /><h2 className="text-[18px] font-semibold text-ink">六维评分与目标线</h2></div><div className="mt-5 space-y-4">{orderedScores.map((point) => <div key={point.id}><div className="flex items-center justify-between text-[12.5px]"><span className="font-medium text-ink">{point.name}</span><span className="font-mono text-ink-muted">当前 {point.score} · 目标 {point.targetLevel}</span></div><div className="relative mt-1.5 h-2 overflow-hidden rounded-full bg-hairline"><div className="absolute inset-y-0 left-0 rounded-full bg-brand/25" style={{ width: `${Math.min(100, point.targetLevel)}%` }} /><div className="absolute inset-y-0 left-0 rounded-full bg-brand" style={{ width: `${Math.min(100, point.score)}%` }} /></div></div>)}</div></section>
+      </div>}
     </div>
   );
 }
