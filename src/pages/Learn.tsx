@@ -35,6 +35,12 @@ function ChapterCard({
   const [saving, setSaving] = useState(false);
   const resourceKinds = Object.keys(chapter.resources ?? {});
   const done = resourceKinds.filter((kind) => chapter.resources[kind]?.status === 'completed');
+  const firstResourceId = ['lecture', 'practice', 'quiz']
+    .map((kind) => chapter.resources[kind])
+    .find((item) => item?.status === 'completed' && item.id)?.id;
+  const chapterTarget = firstResourceId
+    ? `/learn/resource/${encodeURIComponent(firstResourceId)}`
+    : `/resources?courseId=${encodeURIComponent(courseId)}&chapterId=${encodeURIComponent(chapter.id)}`;
 
   const cancelEditing = () => {
     setDraftTitle(chapter.title);
@@ -62,12 +68,12 @@ function ChapterCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: chapter.index * 0.05 }}
       onClick={() => {
-        if (!editing) navigate(`/resources?courseId=${encodeURIComponent(courseId)}&chapterId=${encodeURIComponent(chapter.id)}`);
+        if (!editing) navigate(chapterTarget);
       }}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget || editing || !['Enter', ' '].includes(event.key)) return;
         event.preventDefault();
-        navigate(`/resources?courseId=${encodeURIComponent(courseId)}&chapterId=${encodeURIComponent(chapter.id)}`);
+        navigate(chapterTarget);
       }}
       role="link"
       tabIndex={editing ? -1 : 0}

@@ -362,6 +362,30 @@ export interface LearningResource extends LearningResourceSummary {
   decision: Record<string, unknown>;
 }
 
+export interface LearningResourceProgress {
+  currentBlockId: string | null;
+  visitedBlockIds: string[];
+  completedStepIds: string[];
+  elapsedSeconds: number;
+  lastOpenedAt?: string | null;
+}
+
+export interface LearningResourceMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: string;
+}
+
+export interface LearningResourceTrace {
+  id: number | string;
+  title: string;
+  type: string;
+  credibility: number;
+  excerpt: string;
+  positions: string[];
+  url?: string | null;
+}
+
 export interface RagDomain {
   id: number;
   code: string;
@@ -867,6 +891,27 @@ export const api = {
     requestDirect<{ learned: boolean; resource: LearningResource }>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/complete`, {
       method: 'POST',
     }),
+  updateLearningResourceProgress: (resourceId: string, body: {
+    currentBlockId?: string | null;
+    visitedBlockIds?: string[];
+    completedStepIds?: string[];
+    elapsedSeconds?: number;
+  }) => requestDirect<{ resource: LearningResource }>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/progress`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  }),
+  listLearningResourceMessages: (resourceId: string) =>
+    requestDirect<{ messages: LearningResourceMessage[] }>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/messages`),
+  chatLearningResource: (resourceId: string, body: {
+    message: string;
+    history?: { role: 'user' | 'assistant'; content: string }[];
+    currentQuestionId?: string | null;
+  }) => requestDirect<{ reply: string; followUps: string[] }>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/chat`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }),
+  getLearningResourceTraceability: (resourceId: string) =>
+    requestDirect<{ items: LearningResourceTrace[] }>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/traceability`),
   answerLearningQuiz: (resourceId: string, body: { questionId: string; answer: string; durationSeconds?: number }) =>
     requestDirect<Record<string, unknown>>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/answers`, {
       method: 'POST',

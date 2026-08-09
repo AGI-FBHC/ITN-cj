@@ -5,8 +5,7 @@ import type { Course, CourseChapter, LearningResourceSummary } from '@/lib/api';
 const typeOrder = { lecture: 0, practice: 1, quiz: 2 } as const;
 
 export function learningResourcePath(resource: LearningResourceSummary): string {
-  if (!resource.courseId || !resource.chapterId) return '/resources';
-  return `/resources?courseId=${encodeURIComponent(resource.courseId)}&chapterId=${encodeURIComponent(resource.chapterId)}&tab=${encodeURIComponent(resource.type)}`;
+  return `/learn/resource/${encodeURIComponent(resource.id)}`;
 }
 
 export function useCourseLearning() {
