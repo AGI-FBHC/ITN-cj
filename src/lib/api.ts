@@ -319,7 +319,48 @@ export interface RagChunkSummary {
   documentCode: string;
   documentTitle: string;
   documentSourceName: string | null;
+  documentType: string | null;
+  standardNumber: string | null;
+  publishYear: number | null;
+  reliabilityScore: number | null;
   categories: { id: number; nodeCode: string; name: string; fullPath: string }[];
+}
+
+export interface RagDocumentSummary {
+  id: number;
+  documentCode: string;
+  title: string;
+  documentType: string | null;
+  sourceType: string | null;
+  sourceName: string | null;
+  publisher: string | null;
+  standardNumber: string | null;
+  publishYear: number | null;
+  version: string | null;
+  language: string | null;
+  reliabilityScore: number | null;
+  summary: string | null;
+  keywords: string[];
+  status: string;
+  chunkCount: number;
+  figureCount: number;
+  describedFigureCount: number;
+}
+
+export interface RagChunkDetail {
+  id: number;
+  chunkCode: string;
+  chunkIndex: number;
+  sectionTitle: string | null;
+  titlePath: string | null;
+  content: string;
+  tokenCount: number | null;
+  pageStart: number | null;
+  pageEnd: number | null;
+  charStart: number | null;
+  charEnd: number | null;
+  document: RagDocumentSummary;
+  categories: RagChunkSummary['categories'];
 }
 
 export interface RagChunkPage {
@@ -636,6 +677,9 @@ export const api = {
   listRagDomains: () => request<RagDomain[]>('/api/v1/rag/domains'),
   getRagTree: (domainCode: string) =>
     request<RagTree>(`/api/v1/rag/tree/${encodeURIComponent(domainCode)}`),
+  listRagChunksByCategory: (categoryId: number, page = 0, size = 50) =>
+    request<RagChunkPage>(`/api/v1/rag/categories/${categoryId}/chunks?page=${page}&size=${size}`),
+  getRagChunk: (chunkId: number) => request<RagChunkDetail>(`/api/v1/rag/chunks/${chunkId}`),
   searchRagChunks: (query: string, page = 0, size = 20) => {
     const params = new URLSearchParams({ q: query, page: String(page), size: String(size) });
     return request<RagChunkPage>(`/api/v1/rag/chunks/search?${params.toString()}`);

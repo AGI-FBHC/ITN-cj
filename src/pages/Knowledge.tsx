@@ -1,12 +1,58 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { FormEvent } from 'react';
-import { Database, FileText, Layers3, Search } from 'lucide-react';
+import type { FormEvent, ReactNode } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { BookOpen, ChevronRight, Database, FileText, Landmark, LayoutGrid, Search, SearchX, Table2, X } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
+import CountUp from '@/components/knowledge/CountUp';
 import { api } from '@/lib/api';
-import type { RagChunkSummary, RagDomain, RagTree, RagTreeNode } from '@/lib/api';
+import type { RagChunkDetail, RagChunkSummary, RagDomain, RagTree, RagTreeNode } from '@/lib/api';
+import { cn } from '@/lib/utils';
+
+type SortKey = 'reliability' | 'year' | 'page';
 
 function flattenTree(nodes: RagTreeNode[], depth = 0): { node: RagTreeNode; depth: number }[] {
   return nodes.flatMap((node) => [{ node, depth }, ...flattenTree(node.children ?? [], depth + 1)]);
+}
+
+function highlight(text: string, query: string): ReactNode {
+  const q = query.trim();
+  if (!q) return text;
+  const index = text.toLowerCase().indexOf(q.toLowerCase());
+  if (index < 0) return text;
+  return <>{text.slice(0, index)}<mark className="rounded bg-brand-amber-tint px-0.5 text-ochre">{text.slice(index, index + q.length)}</mark>{text.slice(index + q.length)}</>;
+}
+
+function typeLabel(type: string | null) {
+  const value = (type || '文档').toLowerCase();
+  if (value === 'course_markdown' || value.includes('course')) return '课程资料';
+  if (value.includes('standard') || value.includes('标准')) return '标准';
+  if (value.includes('paper') || value.includes('论文')) return '论文';
+  if (value.includes('book') || value.includes('教材')) return '教材';
+  if (value.includes('case') || value.includes('案例')) return '案例';
+  return type || '文档';
+}
+
+function ChunkCard({ item, index, query, onOpen, onCategory }: { item: RagChunkSummary; index: number; query: string; onOpen: () => void; onCategory: (id: number) => void }) {
+  const reliability = Math.round((item.reliabilityScore ?? 0) * 100);
+  return <motion.button type="button" layout initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(index, 8) * 0.04 }} onClick={onOpen} className="group flex flex-col rounded-[14px] border border-hairline bg-card-warm p-4 text-left transition-all hover:-translate-y-0.5 hover:border-brand/35 hover:shadow-warm">
+    <div className="flex items-center justify-between gap-2"><span className="font-mono text-[11.5px] font-semibold text-brand">{item.chunkCode}</span><span className="rounded-md border border-brand/25 bg-brand-tint px-1.5 py-px text-[10.5px] text-brand">{typeLabel(item.documentType)}</span></div>
+    <h3 className="mt-2 line-clamp-2 min-h-[42px] text-[14.5px] font-semibold leading-[21px] text-ink">{highlight(item.sectionTitle || item.titlePath || item.documentTitle, query)}</h3>
+    <p className="mt-1 line-clamp-3 min-h-[57px] text-[12.5px] leading-[19px] text-ink-muted">{item.summary || '该切片暂无摘要，打开后可查看知识库正文。'}</p>
+    <div className="mt-3 flex flex-wrap gap-1.5">{item.categories.slice(0, 3).map((tag) => <span key={tag.id} role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); onCategory(tag.id); }} className="rounded-md border border-hairline bg-paper px-1.5 py-px text-[10.5px] text-ink-2 hover:border-brand/40 hover:text-brand">{tag.name}</span>)}</div>
+    <div className="mt-auto flex items-center gap-2 border-t border-hairline/70 pt-3"><div className="h-1 flex-1 overflow-hidden rounded-full bg-paper-deep"><div className="h-full rounded-full bg-brand" style={{ width: `${reliability}%` }} /></div><span className="font-mono text-[10.5px] text-ink-muted">可信度 {reliability || '—'}</span><span className="ml-auto font-mono text-[10.5px] text-ink-muted">{item.pageStart != null ? `P.${item.pageStart}` : `${item.tokenCount ?? 0} tokens`}</span></div>
+  </motion.button>;
+}
+
+function DetailDrawer({ detail, open, onClose }: { detail: RagChunkDetail | null; open: boolean; onClose: () => void }) {
+  return <AnimatePresence>{open && <><motion.button type="button" aria-label="关闭详情遮罩" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 z-[80] bg-ink/20 backdrop-blur-[2px]" /><motion.aside initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }} className="fixed inset-y-0 right-0 z-[90] w-full max-w-[620px] overflow-y-auto border-l border-hairline bg-paper p-6 shadow-2xl">
+    <div className="flex items-start gap-3"><div className="min-w-0 flex-1"><div className="lf-mono-label">KNOWLEDGE TRACE · {detail?.chunkCode || '加载中'}</div><h2 className="mt-2 font-serif text-[24px] font-semibold text-ink">{detail?.sectionTitle || detail?.titlePath || '知识切片详情'}</h2></div><button type="button" aria-label="关闭知识切片" onClick={onClose} className="rounded-lg border border-hairline p-2 text-ink-muted hover:text-ink"><X size={17} /></button></div>
+    {!detail ? <div className="py-20 text-center text-[13px] text-ink-muted">正在读取切片正文…</div> : <>
+      <div className="mt-5 flex flex-wrap gap-2">{detail.categories.map((tag) => <span key={tag.id} className="rounded-full border border-brand/25 bg-brand-tint px-2.5 py-1 text-[11px] text-brand">{tag.fullPath || tag.name}</span>)}</div>
+      <div className="mt-5 rounded-[12px] border border-hairline bg-card-warm p-4"><div className="text-[13px] font-semibold text-ink">{detail.document.title}</div><div className="mt-1 font-mono text-[10.5px] leading-5 text-ink-muted">{detail.document.standardNumber || detail.document.documentCode}{detail.document.publisher ? ` · ${detail.document.publisher}` : ''}{detail.document.publishYear ? ` · ${detail.document.publishYear}` : ''}</div><div className="mt-2 flex gap-4 text-[11.5px] text-ink-muted"><span>可信度 {Math.round((detail.document.reliabilityScore ?? 0) * 100) || '—'}</span><span>{detail.document.chunkCount} 个切片</span><span>{detail.document.figureCount} 幅图</span></div></div>
+      <div className="mt-5"><div className="lf-mono-label">ORIGINAL CONTENT · 原始正文</div><div className="mt-3 whitespace-pre-wrap rounded-[12px] border border-hairline bg-white/60 p-5 text-[13.5px] leading-7 text-ink-2">{detail.content}</div></div>
+      <div className="mt-5 flex flex-wrap gap-2 text-[11px] text-ink-muted"><span>字符 {detail.charStart ?? '—'}–{detail.charEnd ?? '—'}</span><span>·</span><span>{detail.tokenCount ?? 0} tokens</span>{detail.pageStart != null && <><span>·</span><span>第 {detail.pageStart}{detail.pageEnd && detail.pageEnd !== detail.pageStart ? `–${detail.pageEnd}` : ''} 页</span></>}</div>
+    </>}
+  </motion.aside></>}</AnimatePresence>;
 }
 
 export default function Knowledge() {
@@ -15,110 +61,76 @@ export default function Knowledge() {
   const [domains, setDomains] = useState<RagDomain[]>([]);
   const [domainCode, setDomainCode] = useState('');
   const [tree, setTree] = useState<RagTree | null>(null);
+  const [categoryId, setCategoryId] = useState<number | null>(null);
   const [query, setQuery] = useState(initialQuery);
-  const [results, setResults] = useState<RagChunkSummary[] | null>(null);
-  const [resultTotal, setResultTotal] = useState(0);
+  const [items, setItems] = useState<RagChunkSummary[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [view, setView] = useState<'grid' | 'table'>('grid');
+  const [types, setTypes] = useState<string[]>([]);
+  const [standard, setStandard] = useState<string | null>(null);
+  const [minReliability, setMinReliability] = useState(0);
+  const [sort, setSort] = useState<SortKey>('reliability');
+  const [detail, setDetail] = useState<RagChunkDetail | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
-    api.listRagDomains()
-      .then((items) => {
-        if (cancelled) return;
-        setDomains(items);
-        setDomainCode((current) => current || items[0]?.code || '');
-      })
-      .catch((reason) => { if (!cancelled) setError(reason instanceof Error ? reason.message : '知识库读取失败'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+    api.listRagDomains().then((result) => { setDomains(result); setDomainCode(result[0]?.code || ''); }).catch((reason) => setError(reason instanceof Error ? reason.message : '知识库读取失败'));
   }, []);
 
   useEffect(() => {
     if (!domainCode) return;
-    let cancelled = false;
     setLoading(true);
-    api.getRagTree(domainCode)
-      .then((value) => { if (!cancelled) { setTree(value); setError(''); } })
-      .catch((reason) => { if (!cancelled) { setTree(null); setError(reason instanceof Error ? reason.message : '知识树读取失败'); } })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+    api.getRagTree(domainCode).then((result) => {
+      const available = flattenTree(result.nodes).filter(({ node }) => (node.chunkCount ?? 0) > 0).sort((a, b) => (b.node.chunkCount ?? 0) - (a.node.chunkCount ?? 0));
+      setTree(result);
+      setItems([]);
+      setTotal(0);
+      setCategoryId(available[0]?.node.id ?? null);
+      setError('');
+    }).catch((reason) => setError(reason instanceof Error ? reason.message : '知识树读取失败')).finally(() => setLoading(false));
   }, [domainCode]);
 
   useEffect(() => {
+    if (!categoryId || initialQuery) return;
+    setLoading(true);
+    api.listRagChunksByCategory(categoryId).then((page) => { setItems(page.items); setTotal(page.total); }).catch((reason) => setError(reason instanceof Error ? reason.message : '知识切片读取失败')).finally(() => setLoading(false));
+  }, [categoryId, initialQuery]);
+
+  useEffect(() => {
     if (!initialQuery) return;
-    api.searchRagChunks(initialQuery).then((page) => { setResults(page.items); setResultTotal(page.total); }).catch(() => undefined);
+    api.searchRagChunks(initialQuery).then((page) => { setItems(page.items); setTotal(page.total); }).catch(() => undefined).finally(() => setLoading(false));
   }, [initialQuery]);
 
   const flatNodes = useMemo(() => flattenTree(tree?.nodes ?? []), [tree]);
   const selectedDomain = domains.find((domain) => domain.code === domainCode) ?? null;
+  const actualTypes = useMemo(() => [...new Set(items.map((item) => typeLabel(item.documentType)))], [items]);
+  const standards = useMemo(() => [...new Set(items.map((item) => item.standardNumber).filter((value): value is string => Boolean(value)))].slice(0, 6), [items]);
+  const filtered = useMemo(() => [...items].filter((item) => (!types.length || types.includes(typeLabel(item.documentType))) && (!standard || item.standardNumber === standard) && (item.reliabilityScore ?? 0) >= minReliability).sort((a, b) => sort === 'year' ? (b.publishYear ?? 0) - (a.publishYear ?? 0) : sort === 'page' ? (a.pageStart ?? 99999) - (b.pageStart ?? 99999) : (b.reliabilityScore ?? 0) - (a.reliabilityScore ?? 0)), [items, minReliability, sort, standard, types]);
 
-  const submitSearch = async (event: FormEvent) => {
-    event.preventDefault();
-    const text = query.trim();
-    if (!text) { setResults(null); setResultTotal(0); return; }
-    setLoading(true);
-    try {
-      const page = await api.searchRagChunks(text);
-      setResults(page.items);
-      setResultTotal(page.total);
-      setError('');
-    } catch (reason) {
-      setResults([]);
-      setResultTotal(0);
-      setError(reason instanceof Error ? reason.message : '切片搜索失败');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const selectCategory = (id: number) => { setQuery(''); setStandard(null); setTypes([]); setCategoryId(id); };
+  const submitSearch = async (event: FormEvent) => { event.preventDefault(); const text = query.trim(); if (!text) { if (categoryId) selectCategory(categoryId); return; } setLoading(true); try { const page = await api.searchRagChunks(text); setItems(page.items); setTotal(page.total); setError(''); } catch (reason) { setError(reason instanceof Error ? reason.message : '知识检索失败'); } finally { setLoading(false); } };
+  const openDetail = async (id: number) => { setDetail(null); setDrawerOpen(true); try { setDetail(await api.getRagChunk(id)); } catch (reason) { setDrawerOpen(false); setError(reason instanceof Error ? reason.message : '切片详情读取失败'); } };
 
-  return (
-    <div className="mx-auto max-w-[1180px] px-5 py-10 md:px-8">
-      <div className="mb-7">
-        <div className="lf-mono-label mb-2">RAG KNOWLEDGE BASE</div>
-        <h1 className="font-serif text-[34px] font-bold text-ink">知识库</h1>
-        <p className="mt-2 text-[14px] leading-6 text-ink-muted">领域、知识树、文档与切片统计均直接来自 MySQL 中同步的 RAG 知识库。</p>
-      </div>
+  return <div className="mx-auto max-w-[1320px] px-5 py-10 md:px-8">
+    <motion.header initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}><div className="lf-mono-label flex items-center gap-2"><span className="h-px w-6 bg-brand/40" />RAG KNOWLEDGE BASE · 真实知识库</div><h1 className="mt-2 font-serif text-[36px] font-bold text-ink">领域知识库</h1><p className="mt-2 max-w-[720px] text-[14.5px] leading-6 text-ink-muted">每条课程内容都可以回到真实文档与知识切片。当前页面直接读取 MySQL 中同步的 RAG 分类、文档与正文。</p></motion.header>
 
-      <form onSubmit={submitSearch} className="flex gap-2">
-        <label className="relative min-w-0 flex-1">
-          <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-muted" />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索真实知识切片" className="h-11 w-full rounded-[11px] border border-hairline bg-paper pl-10 pr-4 text-[14px] outline-none transition focus:border-brand" />
-        </label>
-        <button type="submit" className="lf-btn-primary">搜索</button>
-        {results !== null && <button type="button" className="lf-btn-ghost" onClick={() => { setQuery(''); setResults(null); setResultTotal(0); }}>返回知识树</button>}
-      </form>
+    <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">{[[Database, '知识节点', selectedDomain?.knowledgePointCount ?? 0], [FileText, '来源文档', selectedDomain?.documentCount ?? 0], [BookOpen, '知识切片', selectedDomain?.chunkCount ?? 0], [Landmark, '知识配图', selectedDomain?.figureCount ?? 0]].map(([Icon, label, value], index) => { const C = Icon as typeof Database; return <motion.div key={String(label)} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.06 }} className="lf-card p-4"><div className="flex items-center gap-2 text-brand"><C size={16} /><span className="lf-mono-label !text-[10px]">LIVE DATA</span></div><CountUp to={Number(value)} className="mt-2 block font-display text-[30px] font-semibold leading-none text-ink" /><div className="mt-1.5 text-[12.5px] text-ink-muted">{String(label)}</div></motion.div>; })}</div>
 
-      {error && <div className="mt-4 rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">{error}</div>}
+    <div className="mt-7 flex gap-2 overflow-x-auto pb-1">{domains.map((domain) => <button key={domain.code} type="button" onClick={() => { setQuery(''); setTypes([]); setStandard(null); setMinReliability(0); setDomainCode(domain.code); }} className={cn('shrink-0 rounded-[10px] border px-4 py-2 text-[13px] transition', domain.code === domainCode ? 'border-brand bg-brand text-paper' : 'border-hairline bg-card-warm text-ink-muted hover:border-brand/40')}>{domain.name}<span className="ml-2 font-mono text-[10px] opacity-70">{domain.chunkCount}</span></button>)}</div>
 
-      {results === null && (
-        <>
-          <div className="mt-7 flex gap-2 overflow-x-auto pb-1">
-            {domains.map((domain) => <button key={domain.code} type="button" onClick={() => setDomainCode(domain.code)} className={`shrink-0 rounded-[10px] border px-4 py-2 text-[13px] transition ${domain.code === domainCode ? 'border-brand bg-brand-tint font-medium text-brand' : 'border-hairline bg-paper text-ink-muted hover:border-brand/40'}`}>{domain.name}</button>)}
-          </div>
+    {!!standards.length && <section className="mt-7 rounded-[14px] border border-hairline bg-card-warm p-4"><div className="lf-mono-label">VERIFIABLE SOURCES · 可信来源精选</div><div className="mt-3 flex flex-wrap gap-2">{standards.map((number) => <button key={number} type="button" onClick={() => setStandard((current) => current === number ? null : number)} className={cn('rounded-[10px] border px-3 py-2 font-mono text-[12px]', standard === number ? 'border-ochre bg-brand-amber-tint text-ochre' : 'border-hairline bg-paper text-ink-2 hover:border-ochre/40')}><Landmark size={13} className="mr-1.5 inline" />{number}</button>)}</div></section>}
 
-          {selectedDomain && <div className="mt-5 grid gap-3 sm:grid-cols-4">
-            {[
-              [Layers3, '知识节点', selectedDomain.knowledgePointCount],
-              [FileText, '文档', selectedDomain.documentCount],
-              [Database, '切片', selectedDomain.chunkCount],
-              [FileText, '图像', selectedDomain.figureCount],
-            ].map(([Icon, label, value]) => {
-              const IconView = Icon as typeof Database;
-              return <div key={String(label)} className="lf-card flex items-center gap-3 p-4"><span className="flex h-9 w-9 items-center justify-center rounded-[9px] bg-brand-tint text-brand"><IconView size={17} /></span><div><div className="font-mono text-[19px] font-semibold text-ink">{String(value)}</div><div className="text-[11px] text-ink-muted">{String(label)}</div></div></div>;
-            })}
-          </div>}
-
-          <div className="mt-7 lf-card overflow-hidden">
-            <div className="border-b border-hairline px-5 py-4"><h2 className="text-[16px] font-semibold text-ink">{tree?.domain.name ?? '领域'}知识树</h2><p className="mt-1 text-[12px] text-ink-muted">{tree?.domain.description || '后端尚未填写领域说明'}</p></div>
-            {loading ? <div className="p-8 text-center text-[13px] text-ink-muted">正在读取知识树…</div> : flatNodes.length ? <div className="divide-y divide-hairline">
-              {flatNodes.map(({ node, depth }) => <div key={node.id} className="flex items-start gap-3 px-5 py-3" style={{ paddingLeft: `${20 + depth * 22}px` }}><span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand/60" /><div className="min-w-0 flex-1"><div className="text-[13.5px] font-medium text-ink">{node.name}</div>{node.description && <p className="mt-0.5 line-clamp-2 text-[12px] leading-5 text-ink-muted">{node.description}</p>}</div><span className="shrink-0 font-mono text-[10.5px] text-ink-muted">{node.chunkCount ?? 0} 切片</span></div>)}
-            </div> : <div className="p-8 text-center text-[13px] text-ink-muted">该领域还没有知识节点。</div>}
-          </div>
-        </>
-      )}
-
-      {results !== null && <section className="mt-7"><div className="mb-3 text-[13px] text-ink-muted">后端共匹配 {resultTotal} 个切片，当前显示 {results.length} 个</div>{loading ? <div className="lf-card p-8 text-center text-[13px] text-ink-muted">正在搜索…</div> : results.length ? <div className="space-y-3">{results.map((item) => <article key={item.id} className="lf-card p-5"><div className="flex flex-wrap items-center gap-2"><span className="rounded bg-brand-tint px-2 py-0.5 font-mono text-[10px] text-brand">{item.documentCode}</span><h2 className="text-[14.5px] font-semibold text-ink">{item.sectionTitle || item.titlePath || item.documentTitle}</h2></div><p className="mt-2 text-[13px] leading-6 text-ink-2">{item.summary || '该切片尚无摘要，可通过资源生成流程检索正文。'}</p><div className="mt-3 flex flex-wrap gap-1.5">{item.categories.map((tag) => <span key={tag.id} className="rounded-full border border-hairline px-2 py-0.5 text-[10.5px] text-ink-muted">{tag.fullPath || tag.name}</span>)}</div><div className="mt-3 font-mono text-[10.5px] text-ink-muted">来源：{item.documentTitle}{item.documentSourceName ? ` · ${item.documentSourceName}` : ''}{item.pageStart != null ? ` · 第 ${item.pageStart}${item.pageEnd && item.pageEnd !== item.pageStart ? `-${item.pageEnd}` : ''} 页` : ''}</div></article>)}</div> : <div className="lf-card p-8 text-center text-[13px] text-ink-muted">知识库中没有匹配切片。</div>}</section>}
+    <div className="sticky top-[72px] z-30 mt-7 rounded-[14px] border border-hairline bg-paper/90 p-3.5 shadow-xs backdrop-blur"><form onSubmit={submitSearch} className="flex flex-wrap items-center gap-2.5"><label className="relative min-w-[240px] flex-1"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="检索标题、标准号或正文关键词" className="h-10 w-full rounded-[10px] border border-hairline bg-card-warm pl-9 pr-8 text-[13.5px] outline-none focus:border-brand/50" />{query && <button type="button" onClick={() => setQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-muted"><X size={14} /></button>}</label><button type="submit" className="lf-btn-primary !h-10">检索</button><select value={sort} onChange={(event) => setSort(event.target.value as SortKey)} className="h-10 rounded-[10px] border border-hairline bg-card-warm px-3 text-[12.5px] text-ink-2"><option value="reliability">可信度排序</option><option value="year">年份排序</option><option value="page">页码排序</option></select><div className="flex rounded-[10px] border border-hairline bg-card-warm p-0.5"><button type="button" onClick={() => setView('grid')} className={cn('rounded-lg px-3 py-2', view === 'grid' ? 'bg-brand text-paper' : 'text-ink-muted')}><LayoutGrid size={14} /></button><button type="button" onClick={() => setView('table')} className={cn('rounded-lg px-3 py-2', view === 'table' ? 'bg-brand text-paper' : 'text-ink-muted')}><Table2 size={14} /></button></div><span className="font-mono text-[11px] text-ink-muted">显示 {filtered.length} / {total}</span></form>
+      <div className="mt-2.5 flex flex-wrap items-center gap-2 border-t border-hairline/70 pt-2.5"><span className="lf-mono-label !text-[10px]">类型</span>{actualTypes.map((type) => <button key={type} type="button" onClick={() => setTypes((current) => current.includes(type) ? current.filter((item) => item !== type) : [...current, type])} className={cn('rounded-lg border px-2.5 py-1 text-[11.5px]', types.includes(type) ? 'border-brand bg-brand text-paper' : 'border-hairline bg-card-warm text-ink-muted')}>{type}</button>)}<span className="lf-mono-label ml-2 !text-[10px]">可信度 ≥ {Math.round(minReliability * 100)}</span><input aria-label="最低可信度" type="range" min="0" max="1" step="0.05" value={minReliability} onChange={(event) => setMinReliability(Number(event.target.value))} className="w-[130px] accent-[#4E7860]" />{(types.length > 0 || standard || minReliability > 0) && <button type="button" onClick={() => { setTypes([]); setStandard(null); setMinReliability(0); }} className="ml-auto text-[11.5px] text-ink-muted hover:text-brand">清除过滤</button>}</div>
     </div>
-  );
+
+    {error && <div className="mt-4 rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">{error}</div>}
+    <div className="mt-6 grid gap-5 lg:grid-cols-[250px_minmax(0,1fr)]"><aside className="self-start rounded-[14px] border border-hairline bg-card-warm p-3 lg:sticky lg:top-[190px]"><div className="px-2 pb-2"><div className="lf-mono-label">KNOWLEDGE TREE</div><div className="mt-1 text-[13px] font-semibold text-ink">{tree?.domain.name || '知识分类'}</div></div><div className="max-h-[560px] overflow-y-auto">{flatNodes.map(({ node, depth }) => <button key={node.id} type="button" onClick={() => selectCategory(node.id)} className={cn('flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[12px] transition', categoryId === node.id ? 'bg-brand-tint font-medium text-brand' : 'text-ink-2 hover:bg-paper-deep')} style={{ paddingLeft: 8 + depth * 13 }}><ChevronRight size={11} className="shrink-0 opacity-50" /><span className="min-w-0 flex-1 truncate">{node.name}</span><span className="font-mono text-[9.5px] text-ink-muted">{node.chunkCount ?? 0}</span></button>)}</div></aside>
+      <main className="min-h-[360px]">{loading ? <div className="lf-card p-12 text-center text-[13px] text-ink-muted">正在读取真实知识切片…</div> : !flatNodes.length ? <div className="flex flex-col items-center rounded-[14px] border border-dashed border-hairline py-20 text-center"><Database size={34} className="text-ink-muted" /><p className="mt-3 text-[14px] font-medium text-ink">该领域尚未建立知识分类</p><p className="mt-1 max-w-[440px] text-[12px] leading-5 text-ink-muted">数据库中已经有“{selectedDomain?.name}”领域，但还没有关联知识节点与切片。这里如实显示待建设状态，不用其他领域内容冒充。</p>{domains.some((domain) => domain.chunkCount > 0) && <button type="button" onClick={() => setDomainCode(domains.find((domain) => domain.chunkCount > 0)!.code)} className="lf-btn-ghost mt-4">查看已有知识内容</button>}</div> : !filtered.length ? <div className="flex flex-col items-center rounded-[14px] border border-dashed border-hairline py-20 text-center"><SearchX size={34} className="text-ink-muted" /><p className="mt-3 text-[14px] font-medium text-ink">当前条件没有匹配切片</p><button type="button" onClick={() => { setTypes([]); setStandard(null); setMinReliability(0); }} className="lf-btn-ghost mt-4">清除过滤</button></div> : view === 'grid' ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{filtered.map((item, index) => <ChunkCard key={item.id} item={item} index={index} query={query} onOpen={() => void openDetail(item.id)} onCategory={selectCategory} />)}</div> : <div className="overflow-x-auto rounded-[14px] border border-hairline bg-card-warm"><table className="w-full text-left"><thead className="bg-paper-deep/70 text-[11px] text-ink-muted"><tr><th className="px-4 py-3">切片</th><th className="px-4 py-3">标题</th><th className="px-4 py-3">来源</th><th className="px-4 py-3">知识点</th><th className="px-4 py-3 text-right">可信度</th></tr></thead><tbody>{filtered.map((item) => <tr key={item.id} onClick={() => void openDetail(item.id)} className="cursor-pointer border-t border-hairline text-[12.5px] hover:bg-brand-tint/35"><td className="px-4 py-3 font-mono text-brand">{item.chunkCode}</td><td className="max-w-[340px] px-4 py-3 font-medium text-ink">{item.sectionTitle || item.titlePath}</td><td className="px-4 py-3 text-ink-muted">{item.standardNumber || item.documentTitle}</td><td className="px-4 py-3 text-ink-2">{item.categories[0]?.name || '—'}</td><td className="px-4 py-3 text-right font-mono text-brand">{Math.round((item.reliabilityScore ?? 0) * 100) || '—'}</td></tr>)}</tbody></table></div>}</main></div>
+
+    <div className="mt-14 text-center"><p className="font-serif text-[18px] italic text-ink-2">“知识的每一条来路，都应该被看见。”</p><p className="mt-2 font-mono text-[11px] text-ink-muted">真实分类 · 原文切片 · 文档级可信度 · 可核验溯源</p></div>
+    <DetailDrawer detail={detail} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+  </div>;
 }
