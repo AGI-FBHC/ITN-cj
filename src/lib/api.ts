@@ -498,6 +498,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  regenerateCourse: (courseId: string, body: { learnerId?: string; resourceTypes?: string[] }) =>
+    requestDirect<Course>(`/v1/courses/${encodeURIComponent(courseId)}/regenerate`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   getCourse: (courseId: string) =>
     requestDirect<Course>(`/v1/courses/${encodeURIComponent(courseId)}`),
   updateCourse: (courseId: string, body: { title?: string; description?: string }) =>

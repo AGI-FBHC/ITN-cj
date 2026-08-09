@@ -166,6 +166,7 @@ export default function Learn() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingCourseTitle, setEditingCourseTitle] = useState(false);
   const [courseTitleDraft, setCourseTitleDraft] = useState('');
@@ -199,7 +200,7 @@ export default function Learn() {
       await api.createCourse({
         learnerId: currentLearner.id,
         prompt,
-        resourceTypes: [],
+        resourceTypes: ['lecture', 'practice', 'quiz'],
         depth: 'systematic',
         scale: 'standard',
         courseStyle: 'none',
@@ -272,6 +273,24 @@ export default function Learn() {
     }
   };
 
+  const regenerateCourse = async () => {
+    if (!course || !currentLearner.id || regenerating) return;
+    if (!window.confirm('将保留当前课程，并重新生成一套大纲、讲义、实操和分阶题。是否继续？')) return;
+    setRegenerating(true);
+    try {
+      const replacement = await api.regenerateCourse(course.id, {
+        learnerId: currentLearner.id,
+        resourceTypes: ['lecture', 'practice', 'quiz'],
+      });
+      setCourses((prev) => [replacement, ...prev.filter((item) => item.id !== replacement.id)]);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '课程重新生成失败');
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-[980px] px-5 pb-24 pt-8 md:px-6">
       <PageBack parent={{ label: '我的学习', to: '/me' }} current="我的课程" />
@@ -288,14 +307,25 @@ export default function Learn() {
           </p>
         </div>
         {course && (
-          <button
-            type="button"
-            onClick={() => navigate('/agents?run=course')}
-            className="lf-btn-ghost !px-4 !py-2 text-[13px]"
-          >
-            <Sparkles size={14} />
-            看 AI 如何生成这门课
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={regenerating || course.status === 'planning' || course.status === 'generating'}
+              onClick={() => void regenerateCourse()}
+              className="lf-btn-ghost !px-4 !py-2 text-[13px] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {regenerating ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              重新生成课程
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/agents?run=course')}
+              className="lf-btn-ghost !px-4 !py-2 text-[13px]"
+            >
+              <Sparkles size={14} />
+              看 AI 如何生成这门课
+            </button>
+          </div>
         )}
       </div>
 
