@@ -94,6 +94,15 @@ const expertNavGroups: { heading?: string; items: NavItem[] }[] = [
   },
 ];
 
+/** 系统透视移动端：保留最核心的五个真实工作区，完整分组仍在桌面侧栏。 */
+const expertMobileNav: NavItem[] = [
+  { path: '/', label: '总览', icon: LayoutDashboard, end: true },
+  { path: '/profiles', label: '画像', icon: Users },
+  { path: '/resources', label: '资源', icon: PenLine },
+  { path: '/agents', label: '协同', icon: Network },
+  { path: '/knowledge', label: '知识库', icon: Database },
+];
+
 const pageTitleMap: Record<string, { title: string; crumb: string }> = {
   '/': { title: '总览 Dashboard', crumb: 'LEARNFORGE / OVERVIEW' },
   '/me': { title: '我的学习', crumb: 'LEARNFORGE / MY LEARNING' },
@@ -431,7 +440,7 @@ export default function AppShell() {
           {/* 左侧导航 */}
           <aside
             className={cn(
-              'sticky top-0 z-40 flex h-[100dvh] shrink-0 flex-col border-r border-hairline bg-paper transition-[width] duration-300 ease-lf',
+              'sticky top-0 z-40 hidden h-[100dvh] shrink-0 flex-col border-r border-hairline bg-paper transition-[width] duration-300 ease-lf md:flex',
               collapsed ? 'w-[72px]' : 'w-[248px]',
             )}
           >
@@ -493,15 +502,18 @@ export default function AppShell() {
 
           {/* 主区 */}
           <div className="flex min-w-0 flex-1 flex-col">
-            <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b border-hairline bg-paper/85 px-6 backdrop-blur-md">
-              <div className="min-w-0">
+            <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-2 border-b border-hairline bg-paper/85 px-3 backdrop-blur-md md:gap-4 md:px-6">
+              <div className="flex min-w-0 items-center gap-2">
+                <img src="/logo.svg" alt="智训云枢" className="h-7 w-7 shrink-0 md:hidden" />
+                <div className="min-w-0">
                 <h1 className="truncate font-serif text-[17px] font-semibold leading-[24px] text-ink">
                   {pageInfo.title}
                 </h1>
-                <div className="font-mono text-[10.5px] tracking-[0.12em] text-ink-muted">{pageInfo.crumb}</div>
+                <div className="hidden font-mono text-[10.5px] tracking-[0.12em] text-ink-muted sm:block">{pageInfo.crumb}</div>
+                </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 md:gap-3">
                 <button
                   type="button"
                   onClick={() => setSearchOpen(true)}
@@ -527,16 +539,30 @@ export default function AppShell() {
                   type="button"
                   onClick={doLogout}
                   title="退出登录"
-                  className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-hairline bg-card-warm text-ink-muted transition-all duration-200 hover:border-brand/35 hover:text-ink"
+                  className="hidden h-9 w-9 items-center justify-center rounded-[10px] border border-hairline bg-card-warm text-ink-muted transition-all duration-200 hover:border-brand/35 hover:text-ink sm:flex"
                 >
                   <LogOut size={14} />
                 </button>
               </div>
             </header>
 
-            <main className="min-w-0 flex-1">
+            <main className="min-w-0 flex-1 pb-20 md:pb-0">
               <Outlet />
             </main>
+
+            <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-hairline bg-paper/95 backdrop-blur-md md:hidden">
+              {expertMobileNav.map((item) => (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  end={item.end}
+                  className={({ isActive }) => cn('flex flex-col items-center gap-1 py-2.5 text-[10.5px] font-medium transition-colors', isActive ? 'text-brand' : 'text-ink-muted')}
+                >
+                  <item.icon size={18} strokeWidth={1.85} />
+                  {item.label}
+                </NavLink>
+              ))}
+            </nav>
           </div>
 
         </div>
