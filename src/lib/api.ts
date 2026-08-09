@@ -938,6 +938,14 @@ export const api = {
   }),
   getLearningResourceTraceability: (resourceId: string) =>
     requestDirect<{ items: LearningResourceTrace[] }>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/traceability`),
+  submitLearningResourceSourceFeedback: (resourceId: string, body: {
+    sourceId: string;
+    issueType?: 'needs_review' | 'mismatch' | 'outdated' | 'broken_link' | 'other';
+    note?: string | null;
+  }) => requestDirect<{ feedback: { id: string; status: string } }>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/source-feedback`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }),
   answerLearningQuiz: (resourceId: string, body: { questionId: string; answer: string; durationSeconds?: number }) =>
     requestDirect<Record<string, unknown>>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/answers`, {
       method: 'POST',
