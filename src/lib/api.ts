@@ -273,6 +273,62 @@ export interface LearningResource extends LearningResourceSummary {
   decision: Record<string, unknown>;
 }
 
+export interface RagDomain {
+  id: number;
+  code: string;
+  name: string;
+  description: string;
+  icon: string | null;
+  categoryCount: number;
+  knowledgePointCount: number;
+  documentCount: number;
+  chunkCount: number;
+  figureCount: number;
+}
+
+export interface RagTreeNode {
+  id: number;
+  parentId: number | null;
+  nodeCode: string;
+  name: string;
+  level: number;
+  nodeType: string;
+  sortOrder: number;
+  description: string | null;
+  chunkCount: number | null;
+  children: RagTreeNode[];
+}
+
+export interface RagTree {
+  domain: RagDomain;
+  nodes: RagTreeNode[];
+  totalKnowledgePoints: number;
+  totalChunks: number;
+}
+
+export interface RagChunkSummary {
+  id: number;
+  chunkCode: string;
+  chunkIndex: number;
+  sectionTitle: string | null;
+  titlePath: string | null;
+  summary: string | null;
+  tokenCount: number | null;
+  pageStart: number | null;
+  pageEnd: number | null;
+  documentCode: string;
+  documentTitle: string;
+  documentSourceName: string | null;
+  categories: { id: number; nodeCode: string; name: string; fullPath: string }[];
+}
+
+export interface RagChunkPage {
+  total: number;
+  page: number;
+  size: number;
+  items: RagChunkSummary[];
+}
+
 
 export interface ProfileForgeStep {
   text: string;
@@ -492,6 +548,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  listRagDomains: () => request<RagDomain[]>('/api/v1/rag/domains'),
+  getRagTree: (domainCode: string) =>
+    request<RagTree>(`/api/v1/rag/tree/${encodeURIComponent(domainCode)}`),
+  searchRagChunks: (query: string, page = 0, size = 20) => {
+    const params = new URLSearchParams({ q: query, page: String(page), size: String(size) });
+    return request<RagChunkPage>(`/api/v1/rag/chunks/search?${params.toString()}`);
+  },
   getTutoringScript: (learnerCode: string) =>
     request<Record<string, unknown>>(`/v1/tutoring/scripts/${encodeURIComponent(learnerCode)}`),
   createTutoringSession: (learnerCode: string) =>
