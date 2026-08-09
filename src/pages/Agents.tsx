@@ -29,6 +29,9 @@ import { getScriptIndices, getStages, scenarioMeta } from '@/components/agents/s
 import type { Scenario } from '@/components/agents/scriptModel';
 import RealTeachingRunView from '@/components/agents/RealTeachingRunView';
 import type { TeachingGroupRunPayload } from '@/lib/api';
+import CourseRunView from '@/components/agents/CourseRunView';
+import { api } from '@/lib/api';
+import type { Course } from '@/lib/api';
 
 const validAgentId = (v: string | null): AgentId | null =>
   v && agents.some((a) => a.id === v) ? (v as AgentId) : null;
@@ -40,6 +43,17 @@ export default function Agents() {
   const { currentLearner, currentLearnerId, demoMode } = useProfile();
   const location = useLocation();
   const teachingRun = (location.state as { teachingRun?: TeachingGroupRunPayload } | null)?.teachingRun;
+  const courseMode = searchParams.get('run') === 'course';
+  const [course, setCourse] = useState<Course | null>(null);
+  const [courseLoading, setCourseLoading] = useState(courseMode);
+
+  useEffect(() => {
+    if (!courseMode) return;
+    api.listCourses()
+      .then((result) => setCourse(result.courses?.[0] ?? null))
+      .catch(() => setCourse(null))
+      .finally(() => setCourseLoading(false));
+  }, [courseMode]);
 
   /* 画像驱动脚本（知识点/标题/事件内容全部随学习者重导） */
   const script = useMemo(() => getCollabScript(currentLearnerId), [currentLearnerId]);
@@ -124,6 +138,18 @@ export default function Agents() {
 
   if (teachingRun && teachingRun.events.length > 0) {
     return <RealTeachingRunView run={teachingRun} learnerName={currentLearner.name} />;
+  }
+
+  if (courseMode && courseLoading) {
+    return <div className="mx-auto max-w-[980px] px-6 py-16 text-center text-[14px] text-ink-muted">正在读取真实课程生成记录…</div>;
+  }
+
+  if (courseMode && course) {
+    return <CourseRunView course={course} learnerName={currentLearner.name} />;
+  }
+
+  if (courseMode && !course) {
+    return <div className="mx-auto max-w-[980px] px-6 py-16 text-center text-[14px] text-ink-muted">还没有生成课程，请先进入“学”页生成我的课程。</div>;
   }
 
   return (
