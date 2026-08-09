@@ -116,8 +116,11 @@ export const compareColors: Record<string, string> = {
 };
 
 /** 目标能力模型加权综合分（可计算画像向量），权重取 knowledgePoints.weight */
-export function weightedScore(learner: { scores: Record<string, number> }): number {
-  const total = knowledgePoints.reduce(
+export function weightedScore(
+  learner: { scores: Record<string, number> },
+  points: { id: string; weight: number }[] = knowledgePoints,
+): number {
+  const total = points.reduce(
     (acc, kp) => acc + (learner.scores[kp.id] ?? 0) * kp.weight,
     0,
   );

@@ -3,7 +3,7 @@
  * 可编辑：六维滑杆 / 盲区 chip / 目标 → 保存即 DIA-01 重诊断 + 写入变更时间线
  * 变更时间线：建档 / 手动编辑 / 学习回写，均可溯源；含「模拟一次练习回写」演示
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -11,7 +11,7 @@ import { Save, Sparkles, Brain, History, Wand2, PlusCircle, RotateCcw, HelpCircl
 import { useProfile } from '@/context/ProfileContext';
 import type { ProfileEvent } from '@/context/ProfileContext';
 import { useAgent } from '@/context/AgentContext';
-import { knowledgePoints, getKnowledgePoint } from '@/data/knowledgePoints';
+import type { OnboardingKnowledgePoint } from '@/lib/api';
 import { weightedScore } from '@/components/profiles/profileMeta';
 import { ReactECharts } from '@/components/ChartCard';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -19,11 +19,15 @@ import PageBack from '@/components/PageBack';
 import ConfidenceBadge from '@/components/ConfidenceBadge';
 import { cn } from '@/lib/utils';
 
-function radarOption(scores: Record<string, number>, confidence?: Record<string, number>) {
+function radarOption(
+  kps: OnboardingKnowledgePoint[],
+  scores: Record<string, number>,
+  confidence?: Record<string, number>,
+) {
   return {
     animationDuration: 500,
     radar: {
-      indicator: knowledgePoints.map((kp) => {
+      indicator: kps.map((kp) => {
         const c = confidence?.[kp.id] ?? 100;
         /* 标签实度 = 阿诊对该维判断的置信度（弱证据维度淡显） */
         return { name: kp.name, max: 100, color: `rgba(70, 100, 80,${(0.3 + 0.7 * (c / 100)).toFixed(2)})` };
@@ -41,7 +45,7 @@ function radarOption(scores: Record<string, number>, confidence?: Record<string,
         type: 'radar' as const,
         data: [
           {
-            value: knowledgePoints.map((kp) => kp.targetLevel),
+            value: kps.map((kp) => kp.targetLevel),
             name: '目标要求',
             symbol: 'none',
             lineStyle: { color: '#E7B45A', width: 1.5, type: 'dashed' as const },
@@ -49,7 +53,7 @@ function radarOption(scores: Record<string, number>, confidence?: Record<string,
             areaStyle: { color: 'rgba(231, 180, 90,0)' },
           },
           {
-            value: knowledgePoints.map((kp) => scores[kp.id] ?? 50),
+            value: kps.map((kp) => scores[kp.id] ?? 50),
             name: '当前能力',
             symbolSize: 4,
             lineStyle: { color: '#4E7860', width: 2.5 },
@@ -68,46 +72,70 @@ const kindMeta: Record<ProfileEvent['kind'], { label: string; cls: string }> = {
   writeback: { label: '学习回写', cls: 'border-brand-amber/50 bg-brand-amber-tint text-ochre' },
 };
 
+const LEGACY_KP_IDS: Record<string, string> = {
+  'kp-ds': 'kp-plc',
+  'kp-co': 'kp-kinematics',
+  'kp-os': 'kp-sensor',
+  'kp-network': 'kp-vision',
+  'kp-db': 'kp-safety',
+  'kp-agent': 'kp-diagnosis',
+};
+
 export default function MyProfile() {
-  const { currentLearner, patchLearner, applyWriteback, getEvents } = useProfile();
+  const { currentLearner, patchLearner, applyWriteback, getEvents, domainKnowledgePoints } = useProfile();
   const { confidence } = useAgent();
 
-  const [scores, setScores] = useState<Record<string, number>>({ ...currentLearner.scores });
+  const kps = domainKnowledgePoints;
+  const getKp = useCallback(
+    (id: string) => kps.find((kp) => kp.id === id),
+    [kps],
+  );
+
+  const normalizedScores = useMemo(() => {
+    const base = currentLearner.scores;
+    return kps.reduce((acc, kp) => {
+      acc[kp.id] = base[kp.id] ?? base[LEGACY_KP_IDS[kp.id] ?? ''] ?? 50;
+      return acc;
+    }, {} as Record<string, number>);
+  }, [currentLearner, kps]);
+
+  const [scores, setScores] = useState<Record<string, number>>(normalizedScores);
   const [blind, setBlind] = useState<string[]>(
-    knowledgePoints.filter((kp) => currentLearner.blindSpots.includes(kp.name)).map((kp) => kp.id),
+    kps.filter((kp) => currentLearner.blindSpots.includes(kp.name)).map((kp) => kp.id),
   );
   const [goal, setGoal] = useState(currentLearner.goal);
 
-  /* 切换学习者时重置编辑态 */
+  /* 切换学习者或知识维度时重置编辑态 */
   useEffect(() => {
-    setScores({ ...currentLearner.scores });
-    setBlind(knowledgePoints.filter((kp) => currentLearner.blindSpots.includes(kp.name)).map((kp) => kp.id));
+    setScores(normalizedScores);
+    setBlind(kps.filter((kp) => currentLearner.blindSpots.includes(kp.name)).map((kp) => kp.id));
     setGoal(currentLearner.goal);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentLearner.id]);
+  }, [currentLearner.id, kps, normalizedScores]);
 
   const events = getEvents(currentLearner.id);
 
   const deltas = useMemo(
     () =>
-      knowledgePoints
+      kps
         .map((kp) => ({ kpId: kp.id, from: currentLearner.scores[kp.id] ?? 50, to: scores[kp.id] ?? 50 }))
         .filter((d) => d.from !== d.to),
-    [scores, currentLearner],
+    [kps, scores, currentLearner],
   );
   const dirty = deltas.length > 0 || goal !== currentLearner.goal;
 
-  const sorted = [...knowledgePoints].map((kp) => ({ kp, s: scores[kp.id] ?? 50 })).sort((a, b) => a.s - b.s);
+  const sorted = [...kps].map((kp) => ({ kp, s: scores[kp.id] ?? 50 })).sort((a, b) => a.s - b.s);
   const weakest = sorted[0];
 
-  const diaLine = `当前最弱「${weakest.kp.name}」${weakest.s} 分，距目标 ${Math.max(0, weakest.kp.targetLevel - weakest.s)} 分。${
-    dirty ? '保存后我会据此重排学习路径。' : '画像与路径已同步。'
-  }`;
+  const diaLine = weakest
+    ? `当前最弱「${weakest.kp.name}」${weakest.s} 分，距目标 ${Math.max(0, weakest.kp.targetLevel - weakest.s)} 分。${
+        dirty ? '保存后我会据此重排学习路径。' : '画像与路径已同步。'
+      }`
+    : '';
 
   const save = () => {
     patchLearner(
       currentLearner.id,
-      { scores, goal, blindSpots: blind.map((id) => getKnowledgePoint(id).name) },
+      { scores, goal, blindSpots: blind.map((id) => getKp(id)?.name ?? id) },
       {
         week: '手动',
         kind: 'edit',
@@ -120,6 +148,7 @@ export default function MyProfile() {
   };
 
   const simulate = () => {
+    if (!weakest) return;
     applyWriteback(currentLearner.id, [{ kpId: weakest.kp.id, delta: 4 }], {
       week: '本次',
       title: `模拟完成《${weakest.kp.name}》练习`,
@@ -127,6 +156,17 @@ export default function MyProfile() {
     });
     toast.success('画像已更新', { description: `「${weakest.kp.name}」+4 分 · 见变更时间线` });
   };
+
+  if (kps.length === 0) {
+    return (
+      <div className="mx-auto max-w-[980px] px-5 pb-24 pt-8 md:px-6">
+        <PageBack parent={{ label: '我的学习', to: '/me' }} current="我的画像" />
+        <div className="lf-card mt-6 p-8 text-center text-[13.5px] text-ink-muted">
+          画像知识维度加载中，请稍候…
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-[980px] px-5 pb-24 pt-8 md:px-6">
@@ -145,7 +185,7 @@ export default function MyProfile() {
             )}
           </h1>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-ink-muted">
-            <span>{currentLearner.tag} · {currentLearner.targetJob} · 综合适配 {weightedScore({ scores })} 分</span>
+            <span>{currentLearner.tag} · {currentLearner.targetJob} · 综合适配 {weightedScore({ scores }, kps)} 分</span>
             <ConfidenceBadge learnerId={currentLearner.id} />
           </p>
         </div>
@@ -163,7 +203,7 @@ export default function MyProfile() {
               <div className="lf-mono-label !text-[11px]">六维能力（拖动调整）</div>
               {dirty && <span className="font-mono text-[11px] text-ochre">未保存</span>}
             </div>
-            {knowledgePoints.map((kp) => (
+            {kps.map((kp) => (
               <div key={kp.id}>
                 <div className="mb-1 flex items-center justify-between text-[12.5px]">
                   <span className="text-ink-2">{kp.name}</span>
@@ -187,7 +227,7 @@ export default function MyProfile() {
           <div className="lf-card p-5">
             <div className="lf-mono-label mb-2 !text-[11px]">盲区标签（点选增删）</div>
             <div className="flex flex-wrap gap-2">
-              {knowledgePoints.map((kp) => {
+              {kps.map((kp) => {
                 const on = blind.includes(kp.id);
                 return (
                   <button
@@ -247,7 +287,7 @@ export default function MyProfile() {
         <div className="space-y-5">
           <div className="lf-card p-5">
             <div className="lf-mono-label mb-1 !text-[11px]">画像向量 · 当前 vs 目标</div>
-            <ReactECharts option={radarOption(scores, confidence)} height={320} />
+            <ReactECharts option={radarOption(kps, scores, confidence)} height={320} />
             <p className="mt-1 border-t border-hairline pt-2 text-[11px] leading-[16px] text-ink-muted">
               维度标签越实，阿诊对该维的判断越有把握（置信度随答题、阅读等证据积累）；淡显的维度多做两组题即可提升。
             </p>
@@ -291,7 +331,7 @@ export default function MyProfile() {
                         <div className="mt-1.5 flex flex-wrap gap-1.5">
                           {ev.deltas.map((d) => (
                             <span key={d.kpId} className="inline-flex items-center gap-1 rounded-md bg-paper-deep px-1.5 py-0.5 font-mono text-[10.5px]">
-                              {getKnowledgePoint(d.kpId).name}
+                              {getKp(d.kpId)?.name ?? d.kpId}
                               <span className={cn(d.to >= d.from ? 'text-brand-success' : 'text-brand-danger')}>
                                 {d.from}→{d.to}
                               </span>

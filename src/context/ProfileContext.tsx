@@ -10,6 +10,7 @@ import type { KnowledgePoint } from '@/data/knowledgePoints';
 import { knowledgePoints, getKnowledgePoint } from '@/data/knowledgePoints';
 import { api } from '@/lib/api';
 import type { LearnerProfileData, LearnerUpsertInput } from '@/lib/api';
+import type { OnboardingKnowledgePoint } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 
 export type ViewMode = 'learner' | 'expert';
@@ -57,6 +58,8 @@ interface Override {
 interface ProfileContextValue {
   /** 生效画像列表（后端 learners + 本地预设展示元数据） */
   learners: Learner[];
+  /** 后端画像知识维度（数据结构/组成原理/操作系统/网络/数据库/智能体） */
+  domainKnowledgePoints: OnboardingKnowledgePoint[];
   currentLearnerId: string;
   setCurrentLearnerId: (id: string) => void;
   currentLearner: Learner;
@@ -271,6 +274,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   const [events, setEvents] = useState<Record<string, ProfileEvent[]>>(() =>
     readJSON<Record<string, ProfileEvent[]>>(K_EVENTS, {}),
   );
+  const [domainKnowledgePoints, setDomainKnowledgePoints] = useState<OnboardingKnowledgePoint[]>([]);
 
   useEffect(() => {
     if (!session) {
@@ -291,6 +295,24 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => {
         if (!cancelled) setLearners(presetLearners);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
+  useEffect(() => {
+    if (!session) {
+      setDomainKnowledgePoints([]);
+      return;
+    }
+    let cancelled = false;
+    api.getOnboardingMeta()
+      .then((meta) => {
+        if (!cancelled) setDomainKnowledgePoints(meta.knowledgePoints);
+      })
+      .catch(() => {
+        if (!cancelled) setDomainKnowledgePoints([]);
       });
     return () => {
       cancelled = true;
@@ -404,6 +426,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       currentLearner,
       weakestKp: getKnowledgePoint(weakestKpOf(currentLearner)),
       strongestKp: getKnowledgePoint(strongestKpOf(currentLearner)),
+      domainKnowledgePoints,
       demoMode,
       setDemoMode,
       viewMode,
@@ -414,7 +437,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       bumpConfidence,
       getEvents,
     };
-  }, [currentLearnerId, demoMode, viewMode, learners, events]);
+  }, [currentLearnerId, demoMode, viewMode, learners, events, domainKnowledgePoints]);
 
   return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>;
 }
