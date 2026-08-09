@@ -97,8 +97,8 @@ export default function TeachingGroup({
       setFinalResult(null);
       setStatuses({});
       setOutputs({});
+      setRunEvents([event]);
       return;
-      setRunEvents([]);
     }
     setRunEvents((prev) => [...prev, event]);
     if (event.type === 'agent_started' && event.agent) {

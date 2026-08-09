@@ -37,7 +37,7 @@ function textOf(agentId: string, data: Record<string, unknown>): string {
   }
   if (agentId === 'RET-02') {
     const evidence = (data.evidence ?? []) as unknown[];
-    return `检索「${String(data.query ?? '')}」 · 命中 ${evidence.length} 条知识库依据`;
+    return `检索「${String(data.query ?? '')}」 · 命中 ${evidence.length} 条可追溯依据`;
   }
   if (agentId === 'GEN-03') {
     return `${String(data.title ?? '')}：${String(data.summary ?? '')}`;
@@ -140,26 +140,31 @@ export default function RealTeachingRunView({
 
   const decision = run.result?.decision as Record<string, unknown> | undefined;
   const review = run.result?.review as Record<string, unknown> | undefined;
-  const evidence = (run.result?.evidence ?? []) as { kbId?: string; title?: string }[];
+  const evidence = (run.result?.evidence ?? []) as { kbId?: string; title?: string; source?: string; sourceType?: string }[];
   const plan = run.result?.plan as Record<string, unknown> | undefined;
+  const failed = run.status === 'failed' || run.status === 'interrupted'
+    || run.events.some((event) => event.type === 'run_failed');
+  const completed = run.status === 'completed' || run.events.some((event) => event.type === 'run_completed');
+  const sourceNames = [...new Set(evidence.map((item) => item.source || (item.sourceType === 'web' ? 'WebSearch' : 'RAGFlow')).filter(Boolean))];
+  const evidenceLabel = sourceNames.length ? sourceNames.join(' + ') : '可追溯来源';
 
   return (
-    <div className="mx-auto max-w-[1320px] px-8 pb-16 pt-6">
+    <div className="mx-auto max-w-[1320px] px-4 pb-16 pt-6 sm:px-8">
       <div className="rounded-[14px] border border-brand/25 bg-brand-tint/40 p-5">
         <div className="flex flex-wrap items-center gap-4">
           <span className="flex h-11 w-11 items-center justify-center rounded-[11px] bg-brand text-paper">
             <Sparkles size={20} />
           </span>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-[200px] flex-1">
             <div className="lf-mono-label !text-[10.5px]">REAL TEACHING RUN</div>
             <h1 className="font-serif text-[22px] font-semibold text-ink">AI 教研组真实协同</h1>
             <p className="mt-1 text-[13px] text-ink-muted">
-              {learnerName} · {script.kpName} · 非演示脚本，数据来自本次教研组 SSE 运行
+              {learnerName} · {script.kpName} · 非演示脚本，数据来自{run.id ? '后端持久化运行档案' : '本次教研组 SSE 运行'}
             </p>
           </div>
-          <span className="inline-flex items-center gap-1.5 rounded-lg border border-brand/40 bg-brand-tint px-2.5 py-1.5 font-mono text-[11px] text-brand">
-            <LiveDot status="running" />
-            真实运行已收敛
+          <span className="ml-[55px] inline-flex items-center gap-1.5 rounded-lg border border-brand/40 bg-brand-tint px-2.5 py-1.5 font-mono text-[11px] text-brand sm:ml-0">
+            <LiveDot status={failed ? 'error' : completed ? 'running' : 'idle'} />
+            {failed ? '真实运行未完成' : completed ? '真实运行已收敛' : '真实运行进行中'}
           </span>
         </div>
       </div>
@@ -212,7 +217,7 @@ export default function RealTeachingRunView({
           <MessageTimeline
             events={script.events}
             cursor={script.events.length}
-            base={Date.now()}
+            base={run.createdAt ? new Date(run.createdAt).getTime() : Date.now()}
             filter={filter}
             onFilterChange={setFilter}
             autoScroll={autoScroll}
@@ -261,7 +266,7 @@ export default function RealTeachingRunView({
             <div className="lf-mono-label mb-2 !text-[10.5px]">EVIDENCE</div>
             <div className="flex items-center gap-2.5">
               <Database size={18} className="shrink-0 text-brand" />
-              <span className="text-[13px] text-ink-2">命中 {evidence.length} 条知识库依据</span>
+              <span className="text-[13px] text-ink-2">命中 {evidence.length} 条依据 · {evidenceLabel}</span>
             </div>
             <div className="mt-3 flex flex-wrap gap-1.5">
               {evidence.slice(0, 5).map((item) => (

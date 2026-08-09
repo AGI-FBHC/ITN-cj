@@ -284,7 +284,29 @@ export interface TeachingGroupEvent {
 export interface TeachingGroupRunPayload {
   events: TeachingGroupEvent[];
   result?: Record<string, unknown> | null;
+  id?: string;
+  runId?: string;
+  status?: 'running' | 'completed' | 'failed' | 'interrupted';
+  createdAt?: string;
 }
+
+export interface TeachingGroupRunRecord extends TeachingGroupRunPayload {
+  id: string;
+  runId: string;
+  learnerId: string;
+  knowledgePointId?: string | null;
+  mode: TeachingGroupRunInput['mode'];
+  prompt?: string | null;
+  status: 'running' | 'completed' | 'failed' | 'interrupted';
+  eventCount: number;
+  focus?: string;
+  nextAction?: string;
+  errorCode?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TeachingGroupRunSummary = Omit<TeachingGroupRunRecord, 'events'> & { events?: TeachingGroupEvent[] };
 
 export interface CourseChapterResource {
   id?: string | null;
@@ -848,6 +870,10 @@ export const api = {
     }),
   listTeachingGroupAgents: () =>
     requestDirect<{ agents: TeachingGroupAgentDef[] }>('/v1/teaching-group/agents'),
+  listTeachingGroupRuns: (limit = 30) =>
+    requestDirect<{ runs: TeachingGroupRunSummary[] }>(`/v1/teaching-group/runs?limit=${encodeURIComponent(limit)}`),
+  getTeachingGroupRun: (runId: string) =>
+    requestDirect<TeachingGroupRunRecord>(`/v1/teaching-group/runs/${encodeURIComponent(runId)}`),
   runTeachingGroupStream: (body: TeachingGroupRunInput, onEvent: (event: TeachingGroupEvent) => void) =>
     streamTeachingGroup(body, onEvent),
   listCourses: () => requestDirect<{ courses: Course[] }>('/v1/courses'),
