@@ -70,6 +70,83 @@ export interface LearnerUpsertInput {
   confidenceValue?: number | null;
 }
 
+export interface LearnerAnalyticsProfile {
+  profile: {
+    educationLevel: string | null;
+    major: string | null;
+    learningPreference: string | null;
+    technicalFoundation: string | null;
+  };
+  currentGoal: {
+    title: string;
+    goalType: string;
+    expectedLevel: string;
+    progress: number;
+  } | null;
+  stats: {
+    totalStudyMinutes: number;
+    totalDays: number;
+    streakDays: number;
+    weeklyMinutes: number[];
+    eventDistribution: Record<string, number>;
+  };
+  mastery: {
+    overall: number;
+    categories: {
+      id: number;
+      name: string;
+      score: number;
+      attempts: number;
+    }[];
+    strongPoints: string[];
+    weakPoints: string[];
+  };
+  recentQuizzes: {
+    quizType: string;
+    score: number | null;
+    categoryName: string | null;
+    createdAt: string;
+  }[];
+}
+
+export interface LearningJournal {
+  date: string;
+  stats: {
+    focusSeconds: number;
+    totalDurationSeconds: number;
+    resourceCount: number;
+    knowledgeCount: number;
+    questionCount: number;
+    correctCount: number;
+    wrongCount: number;
+  };
+  timeline: {
+    id: string;
+    occurredAt: string;
+    kind: 'focus' | 'resource' | 'knowledge' | 'chat' | 'quiz' | string;
+    title: string;
+    description: string;
+    durationSeconds: number | null;
+    knowledgeName: string | null;
+    correctCount: number | null;
+    wrongCount: number | null;
+  }[];
+  summary: {
+    content: string;
+    metricsJson: string;
+    generatedAt: string;
+  } | null;
+}
+
+export interface RecordLearningEventInput {
+  eventType: 'STUDY_START' | 'STUDY_END' | 'QUIZ_SUBMIT' | 'RESOURCE_VIEW' | 'CHAT_INTERACTION' | 'KP_MASTERY_CHECK';
+  sourceType: 'CHAT' | 'RESOURCE' | 'QUIZ' | 'KNOWLEDGE_BASE' | 'WORKFLOW';
+  sourceId?: string | null;
+  knowledgeCategoryId?: number | null;
+  durationSeconds?: number | null;
+  metadata?: string | null;
+}
+
 
 
 export interface OnboardingKnowledgePoint {
@@ -649,6 +726,18 @@ export const api = {
     request<LearnerProfileData>(`/api/v1/learners/${encodeURIComponent(id)}`, {
       method: 'PUT',
       body: JSON.stringify(body),
+    }),
+  getLearnerAnalyticsProfile: () => request<LearnerAnalyticsProfile>('/api/v1/learner-profile'),
+  recordLearningEvent: (body: RecordLearningEventInput) =>
+    request<void>('/api/v1/learner-profile/events', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  getLearningJournal: (date?: string) =>
+    request<LearningJournal>(`/api/v1/learner-profile/journal${date ? `?date=${encodeURIComponent(date)}` : ''}`),
+  generateLearningJournalSummary: (date?: string) =>
+    request<LearningJournal>(`/api/v1/learner-profile/journal/summary${date ? `?date=${encodeURIComponent(date)}` : ''}`, {
+      method: 'POST',
     }),
   resetPassword: (body: { email: string; verificationCode: string; newPassword: string }) =>
     request<Record<string, unknown>>('/api/v1/auth/reset-password', {

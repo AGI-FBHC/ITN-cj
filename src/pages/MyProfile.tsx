@@ -1,17 +1,15 @@
 /**
  * MyProfile `/me/profile` — 「我的画像」活页
- * 可编辑：六维滑杆 / 盲区 chip / 目标 → 保存即 DIA-01 重诊断 + 写入变更时间线
- * 变更时间线：建档 / 手动编辑 / 学习回写，均可溯源；含「模拟一次练习回写」演示
+ * 可编辑：六维滑杆 / 盲区 chip / 目标；学习证据与时间线读取 Spring 学习分析数据。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { Save, Sparkles, Brain, History, Wand2, PlusCircle, RotateCcw, HelpCircle } from 'lucide-react';
+import { Save, Sparkles, Brain, History, PlusCircle, RotateCcw, HelpCircle, Clock3, Flame, ClipboardCheck, ArrowRight } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
-import type { ProfileEvent } from '@/context/ProfileContext';
-import { useAgent } from '@/context/AgentContext';
-import type { OnboardingKnowledgePoint } from '@/lib/api';
+import { api } from '@/lib/api';
+import type { LearnerAnalyticsProfile, LearningJournal, OnboardingKnowledgePoint } from '@/lib/api';
 import { weightedScore } from '@/components/profiles/profileMeta';
 import { ReactECharts } from '@/components/ChartCard';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -66,11 +64,30 @@ function radarOption(
   };
 }
 
-const kindMeta: Record<ProfileEvent['kind'], { label: string; cls: string }> = {
-  create: { label: '建档', cls: 'border-brand/30 bg-brand-tint text-brand' },
-  edit: { label: '手动编辑', cls: 'border-ochre/40 bg-ochre-tint text-ochre' },
-  writeback: { label: '学习回写', cls: 'border-brand-amber/50 bg-brand-amber-tint text-ochre' },
+const evidenceMeta: Record<string, { label: string; cls: string }> = {
+  focus: { label: '专注', cls: 'border-brand/30 bg-brand-tint text-brand' },
+  resource: { label: '资源', cls: 'border-ochre/40 bg-ochre-tint text-ochre' },
+  quiz: { label: '测评', cls: 'border-brand-amber/50 bg-brand-amber-tint text-ochre' },
+  chat: { label: '导学', cls: 'border-brand/30 bg-brand-tint text-brand' },
+  knowledge: { label: '画像', cls: 'border-hairline bg-paper-deep text-ink-muted' },
 };
+
+function localDateKey(daysAgo: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() - daysAgo);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function evidenceTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(date);
+}
 
 const LEGACY_KP_IDS: Record<string, string> = {
   'kp-ds': 'kp-plc',
@@ -82,8 +99,34 @@ const LEGACY_KP_IDS: Record<string, string> = {
 };
 
 export default function MyProfile() {
-  const { currentLearner, patchLearner, applyWriteback, getEvents, domainKnowledgePoints } = useProfile();
-  const { confidence } = useAgent();
+  const { currentLearner, patchLearner, domainKnowledgePoints } = useProfile();
+  const [analytics, setAnalytics] = useState<LearnerAnalyticsProfile | null>(null);
+  const [journals, setJournals] = useState<LearningJournal[]>([]);
+  const [evidenceLoading, setEvidenceLoading] = useState(true);
+  const [evidenceError, setEvidenceError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const loadEvidence = useCallback(async () => {
+    setEvidenceLoading(true);
+    setEvidenceError('');
+    try {
+      const dates = Array.from({ length: 7 }, (_, index) => localDateKey(index));
+      const [profile, ...recentJournals] = await Promise.all([
+        api.getLearnerAnalyticsProfile(),
+        ...dates.map((date) => api.getLearningJournal(date)),
+      ]);
+      setAnalytics(profile);
+      setJournals(recentJournals);
+    } catch (reason) {
+      setEvidenceError(reason instanceof Error ? reason.message : '学习证据读取失败');
+    } finally {
+      setEvidenceLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadEvidence();
+  }, [currentLearner.id, loadEvidence]);
 
   const kps = domainKnowledgePoints;
   const getKp = useCallback(
@@ -112,14 +155,17 @@ export default function MyProfile() {
     setGoal(currentLearner.goal);
   }, [currentLearner.id, kps, normalizedScores]);
 
-  const events = getEvents(currentLearner.id);
+  const evidence = useMemo(
+    () => journals.flatMap((journal) => journal.timeline).sort((left, right) => right.occurredAt.localeCompare(left.occurredAt)),
+    [journals],
+  );
 
   const deltas = useMemo(
     () =>
       kps
-        .map((kp) => ({ kpId: kp.id, from: currentLearner.scores[kp.id] ?? 50, to: scores[kp.id] ?? 50 }))
+        .map((kp) => ({ kpId: kp.id, from: normalizedScores[kp.id] ?? 50, to: scores[kp.id] ?? 50 }))
         .filter((d) => d.from !== d.to),
-    [kps, scores, currentLearner],
+    [kps, scores, normalizedScores],
   );
   const dirty = deltas.length > 0 || goal !== currentLearner.goal;
 
@@ -132,29 +178,35 @@ export default function MyProfile() {
       }`
     : '';
 
-  const save = () => {
-    patchLearner(
-      currentLearner.id,
-      { scores, goal, blindSpots: blind.map((id) => getKp(id)?.name ?? id) },
-      {
-        week: '手动',
-        kind: 'edit',
-        title: '手动调整画像',
-        detail: `${deltas.length ? `${deltas.length} 维改动` : '目标/盲区调整'} · DIA-01 已重排学习路径`,
-        deltas: deltas.length ? deltas : undefined,
-      },
-    );
-    toast.success('画像已保存', { description: 'DIA-01 已据新画像重排学习路径' });
-  };
-
-  const simulate = () => {
-    if (!weakest) return;
-    applyWriteback(currentLearner.id, [{ kpId: weakest.kp.id, delta: 4 }], {
-      week: '本次',
-      title: `模拟完成《${weakest.kp.name}》练习`,
-      detail: `后测提升 · ARB-05 回写「${weakest.kp.name}」`,
-    });
-    toast.success('画像已更新', { description: `「${weakest.kp.name}」+4 分 · 见变更时间线` });
+  const save = async () => {
+    if (!dirty || saving) return;
+    setSaving(true);
+    try {
+      await patchLearner(currentLearner.id, {
+        scores,
+        goal,
+        blindSpots: blind.map((id) => getKp(id)?.name ?? id),
+      });
+      try {
+        await api.recordLearningEvent({
+          eventType: 'KP_MASTERY_CHECK',
+          sourceType: 'WORKFLOW',
+          sourceId: currentLearner.id,
+          metadata: JSON.stringify({
+            title: '手动更新学情画像',
+            description: deltas.length ? `调整 ${deltas.length} 个能力维度，并重新确认目标与盲区` : '重新确认学习目标与知识盲区',
+          }),
+        });
+      } catch {
+        toast.warning('画像已保存，但学习时间线暂未写入');
+      }
+      await loadEvidence();
+      toast.success('画像已保存', { description: '修改已持久化，后续真实练习会继续补充诊断证据' });
+    } catch (reason) {
+      toast.error('画像保存失败', { description: reason instanceof Error ? reason.message : '请稍后重试' });
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (kps.length === 0) {
@@ -269,17 +321,17 @@ export default function MyProfile() {
           <div className="flex flex-wrap gap-2.5">
             <button
               type="button"
-              onClick={save}
-              disabled={!dirty}
-              className={cn('lf-btn-primary !py-2 text-[13.5px]', !dirty && 'cursor-not-allowed opacity-50')}
+              onClick={() => void save()}
+              disabled={!dirty || saving}
+              className={cn('lf-btn-primary !py-2 text-[13.5px]', (!dirty || saving) && 'cursor-not-allowed opacity-50')}
             >
               <Save size={15} />
-              保存修改
+              {saving ? '正在保存…' : '保存修改'}
             </button>
-            <button type="button" onClick={simulate} className="lf-btn-ghost !py-2 text-[13.5px]">
-              <Wand2 size={15} />
-              模拟一次练习回写
-            </button>
+            <Link to="/tutoring" className="lf-btn-ghost !py-2 text-[13.5px]">
+              <Sparkles size={15} />
+              用真实练习校准画像
+            </Link>
           </div>
         </div>
 
@@ -287,29 +339,59 @@ export default function MyProfile() {
         <div className="space-y-5">
           <div className="lf-card p-5">
             <div className="lf-mono-label mb-1 !text-[11px]">画像向量 · 当前 vs 目标</div>
-            <ReactECharts option={radarOption(kps, scores, confidence)} height={320} />
+            <ReactECharts option={radarOption(kps, scores)} height={320} />
             <p className="mt-1 border-t border-hairline pt-2 text-[11px] leading-[16px] text-ink-muted">
-              维度标签越实，阿诊对该维的判断越有把握（置信度随答题、阅读等证据积累）；淡显的维度多做两组题即可提升。
+              当前能力来自已保存画像；下方实测掌握度与诊断证据只统计后端已经记录的真实学习和测评行为。
             </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="lf-card p-3.5">
+              <Clock3 size={15} className="text-brand" />
+              <div className="mt-2 font-mono text-[20px] font-semibold text-ink">{analytics?.stats.totalStudyMinutes ?? 0}<span className="ml-1 text-[10px] font-normal text-ink-muted">min</span></div>
+              <div className="mt-0.5 text-[11px] text-ink-muted">累计学习</div>
+            </div>
+            <div className="lf-card p-3.5">
+              <Flame size={15} className="text-ochre" />
+              <div className="mt-2 font-mono text-[20px] font-semibold text-ink">{analytics?.stats.streakDays ?? 0}<span className="ml-1 text-[10px] font-normal text-ink-muted">天</span></div>
+              <div className="mt-0.5 text-[11px] text-ink-muted">连续学习</div>
+            </div>
+            <div className="lf-card p-3.5">
+              <ClipboardCheck size={15} className="text-brand" />
+              <div className="mt-2 font-mono text-[20px] font-semibold text-ink">{analytics?.recentQuizzes.length ?? 0}</div>
+              <div className="mt-0.5 text-[11px] text-ink-muted">近期测评</div>
+            </div>
+            <div className="lf-card p-3.5">
+              <Brain size={15} className="text-brand" />
+              <div className="mt-2 font-mono text-[20px] font-semibold text-ink">{Math.round((analytics?.mastery.overall ?? 0) * 100)}<span className="ml-1 text-[10px] font-normal text-ink-muted">%</span></div>
+              <div className="mt-0.5 text-[11px] text-ink-muted">实测掌握度</div>
+            </div>
           </div>
 
           <div className="lf-card p-5">
             <div className="mb-3 flex items-center gap-2">
               <History size={16} className="text-brand" />
-              <span className="text-[15px] font-semibold text-ink">画像变更时间线</span>
+              <span className="text-[15px] font-semibold text-ink">近 7 天诊断证据</span>
             </div>
-            {events.length === 0 ? (
+            {evidenceLoading ? (
+              <div className="py-8 text-center text-[13px] text-ink-muted">正在读取后端学习记录…</div>
+            ) : evidenceError ? (
+              <div className="py-7 text-center">
+                <p className="text-[13px] text-brand-danger">{evidenceError}</p>
+                <button type="button" onClick={() => void loadEvidence()} className="lf-btn-ghost mt-3 !px-3 !py-1.5 text-[12px]">重新读取</button>
+              </div>
+            ) : evidence.length === 0 ? (
               <div className="flex flex-col items-center gap-3 py-8 text-center">
-                <p className="text-[13px] text-ink-muted">这个画像还没有变更记录。</p>
-                <Link to="/onboarding" className="lf-btn-ghost !px-4 !py-2 text-[13px]">
+                <p className="max-w-[360px] text-[13px] leading-5 text-ink-muted">近 7 天还没有学习证据。完成真实讲义、练习或导学后，记录会自动出现在这里。</p>
+                <Link to="/learn" className="lf-btn-ghost !px-4 !py-2 text-[13px]">
                   <Sparkles size={14} />
-                  用向导建立我的画像
+                  开始真实课程
                 </Link>
               </div>
             ) : (
               <div className="space-y-3">
-                {events.map((ev, i) => {
-                  const meta = kindMeta[ev.kind];
+                {evidence.slice(0, 12).map((ev, i) => {
+                  const meta = evidenceMeta[ev.kind] ?? evidenceMeta.knowledge;
                   return (
                     <motion.div
                       key={ev.id}
@@ -323,20 +405,14 @@ export default function MyProfile() {
                         <span className={cn('rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-medium', meta.cls)}>
                           {meta.label}
                         </span>
-                        <span className="font-mono text-[10.5px] text-ink-muted">{ev.week}</span>
+                        <span className="font-mono text-[10.5px] text-ink-muted">{evidenceTime(ev.occurredAt)}</span>
                       </div>
                       <div className="mt-1 text-[13.5px] font-medium text-ink">{ev.title}</div>
-                      {ev.detail && <div className="mt-0.5 text-[12px] leading-[18px] text-ink-muted">{ev.detail}</div>}
-                      {ev.deltas && ev.deltas.length > 0 && (
-                        <div className="mt-1.5 flex flex-wrap gap-1.5">
-                          {ev.deltas.map((d) => (
-                            <span key={d.kpId} className="inline-flex items-center gap-1 rounded-md bg-paper-deep px-1.5 py-0.5 font-mono text-[10.5px]">
-                              {getKp(d.kpId)?.name ?? d.kpId}
-                              <span className={cn(d.to >= d.from ? 'text-brand-success' : 'text-brand-danger')}>
-                                {d.from}→{d.to}
-                              </span>
-                            </span>
-                          ))}
+                      <div className="mt-0.5 text-[12px] leading-[18px] text-ink-muted">{ev.description}</div>
+                      {(ev.knowledgeName || ev.correctCount != null) && (
+                        <div className="mt-1.5 flex flex-wrap gap-1.5 font-mono text-[10.5px] text-ink-muted">
+                          {ev.knowledgeName && <span className="rounded-md bg-paper-deep px-1.5 py-0.5">{ev.knowledgeName}</span>}
+                          {ev.correctCount != null && <span className="rounded-md bg-paper-deep px-1.5 py-0.5">答对 {ev.correctCount} · 答错 {ev.wrongCount ?? 0}</span>}
                         </div>
                       )}
                     </motion.div>
@@ -344,6 +420,9 @@ export default function MyProfile() {
                 })}
               </div>
             )}
+            <Link to="/report" className="mt-4 flex items-center justify-center gap-1 border-t border-hairline pt-3 text-[12.5px] font-medium text-brand">
+              查看完整学情报告 <ArrowRight size={13} />
+            </Link>
           </div>
 
           <div className="space-y-2">

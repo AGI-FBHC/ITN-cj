@@ -1,6 +1,6 @@
 /**
  * ProfileContext — 全局学习者画像状态 + 视图模式 + 画像生命周期
- * 画像数据以后端 /api/v1/learners 为唯一数据源；本地仅保存当前选中项与展示时间线。
+ * 画像数据以后端 /api/v1/learners 为唯一数据源；本地只保存 UI 偏好与当前选中项。
  */
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -71,7 +71,7 @@ interface ProfileContextValue {
   setViewMode: (v: ViewMode) => void;
   /** 画像生命周期 */
   createLearner: (draft: LearnerDraft, confidence: ProfileConfidence) => Promise<string>;
-  patchLearner: (id: string, patch: Override, event?: Omit<ProfileEvent, 'id'>) => void;
+  patchLearner: (id: string, patch: Override, event?: Omit<ProfileEvent, 'id'>) => Promise<Learner>;
   applyWriteback: (
     id: string,
     deltas: { kpId: string; delta: number }[],
@@ -161,7 +161,7 @@ function confidenceOf(remote: LearnerProfileData): ProfileConfidence | undefined
 
 function toUiLearner(remote: LearnerProfileData): Learner {
   const preset = presetLearners.find((p) => p.id === remote.code || p.id === remote.id);
-  const scores = remote.scores ?? {};
+  const scores = { ...(remote.scores ?? {}) };
   if (Object.keys(scores).length === 0) {
     for (const kpId of Object.keys(NEW_KP_NAMES)) scores[kpId] = 50;
   }
@@ -353,25 +353,20 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       return learner.id;
     };
 
-    const patchLearner = (id: string, patch: Override, event?: Omit<ProfileEvent, 'id'>) => {
+    const patchLearner = async (id: string, patch: Override, event?: Omit<ProfileEvent, 'id'>): Promise<Learner> => {
       const base = byId(id);
-      if (!base) return;
+      if (!base) throw new Error('当前画像不存在或尚未加载完成');
       const next = {
         ...base,
         scores: patch.scores ? { ...base.scores, ...patch.scores } : base.scores,
         goal: patch.goal ?? base.goal,
         blindSpots: patch.blindSpots ?? base.blindSpots,
       };
-      void (async () => {
-        try {
-          const remote = await api.updateLearner(id, toUpsertInput(next));
-          const updated = toUiLearner(remote);
-          setLearners((prev) => prev.map((l) => (l.id === id ? updated : l)));
-          if (event) addEvent(id, event);
-        } catch {
-          /* 后端更新失败时保留本地展示状态，等待下一次同步 */
-        }
-      })();
+      const remote = await api.updateLearner(id, toUpsertInput(next));
+      const updated = toUiLearner(remote);
+      setLearners((prev) => prev.map((l) => (l.id === id ? updated : l)));
+      if (event) addEvent(id, event);
+      return updated;
     };
 
     const applyWriteback = (
@@ -392,7 +387,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         }
       });
       if (evDeltas.length === 0) return;
-      patchLearner(id, { scores: scorePatch }, {
+      void patchLearner(id, { scores: scorePatch }, {
         week: meta.week,
         kind: 'writeback',
         title: meta.title,
