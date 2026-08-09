@@ -260,6 +260,8 @@ export interface LearningResourceSummary {
   chapterId: string | null;
   sources: Record<string, unknown>[];
   state?: Record<string, unknown>;
+  learned: boolean;
+  learnedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -545,7 +547,7 @@ export const api = {
     if (params?.chapterId) query.set('chapterId', params.chapterId);
     if (params?.resourceType) query.set('resourceType', params.resourceType);
     const suffix = query.toString() ? `?${query.toString()}` : '';
-    return requestDirect<{ resources: Record<string, unknown>[] }>(`/v1/learning-resources${suffix}`);
+    return requestDirect<{ resources: LearningResourceSummary[] }>(`/v1/learning-resources${suffix}`);
   },
   getLearningResource: (resourceId: string) =>
     requestDirect<LearningResource>(`/v1/learning-resources/${encodeURIComponent(resourceId)}`),
