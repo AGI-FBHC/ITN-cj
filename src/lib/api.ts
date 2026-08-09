@@ -329,6 +329,49 @@ export interface RagChunkPage {
   items: RagChunkSummary[];
 }
 
+export interface LearningNoteRecord {
+  id: string;
+  title: string;
+  content: string;
+  status: string;
+  sourceType: string;
+  sourceRef: string | null;
+  sourceContext: string | null;
+  learnerId: string | null;
+  kpId: string | null;
+  sourceKind: string | null;
+  kbRefs: string[];
+  knowledgeCategoryId: number | null;
+  knowledgeCategoryName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WrongAnswerRecord {
+  id: string;
+  resourceId: string | null;
+  questionId: string;
+  stem: string;
+  learnerId: string | null;
+  kpId: string | null;
+  fromSource: string | null;
+  firstAt: string;
+  streak: number;
+  lastPick: number | null;
+  mastered: boolean;
+  kbRefs: string[];
+  options: string[];
+  userAnswer: number;
+  correctAnswer: number;
+  explanation: string;
+  difficulty: string;
+  knowledgeCategoryName: string | null;
+  reviewStatus: string;
+  reviewCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 
 export interface ProfileForgeStep {
   text: string;
@@ -419,6 +462,7 @@ async function requestDirect<T>(path: string, init: RequestInit = {}): Promise<T
     } catch { /* keep status */ }
     throw new Error(message);
   }
+  if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
@@ -555,6 +599,16 @@ export const api = {
     const params = new URLSearchParams({ q: query, page: String(page), size: String(size) });
     return request<RagChunkPage>(`/api/v1/rag/chunks/search?${params.toString()}`);
   },
+  listNotes: () => requestDirect<{ notes: LearningNoteRecord[] }>('/v1/notes'),
+  createNote: (body: {
+    title: string; content: string; learnerId?: string; kpId?: string;
+    sourceKind?: string; sourceType?: string; sourceRef?: string; sourceContext?: string; kbRefs?: string[];
+  }) => requestDirect<LearningNoteRecord>('/v1/notes', { method: 'POST', body: JSON.stringify(body) }),
+  deleteNote: (noteId: string) => requestDirect<void>(`/v1/notes/${encodeURIComponent(noteId)}`, { method: 'DELETE' }),
+  listWrongAnswers: () => requestDirect<{ items: WrongAnswerRecord[] }>('/v1/wrong-answers'),
+  updateWrongAnswer: (wrongId: string, body: { reviewStatus?: string; mastered?: boolean; streak?: number; lastPick?: number }) =>
+    requestDirect<WrongAnswerRecord>(`/v1/wrong-answers/${encodeURIComponent(wrongId)}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteWrongAnswer: (wrongId: string) => requestDirect<void>(`/v1/wrong-answers/${encodeURIComponent(wrongId)}`, { method: 'DELETE' }),
   getTutoringScript: (learnerCode: string) =>
     request<Record<string, unknown>>(`/v1/tutoring/scripts/${encodeURIComponent(learnerCode)}`),
   createTutoringSession: (learnerCode: string) =>
