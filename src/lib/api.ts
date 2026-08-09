@@ -500,6 +500,16 @@ export const api = {
     }),
   getCourse: (courseId: string) =>
     requestDirect<Course>(`/v1/courses/${encodeURIComponent(courseId)}`),
+  updateCourse: (courseId: string, body: { title?: string; description?: string }) =>
+    requestDirect<Course>(`/v1/courses/${encodeURIComponent(courseId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+  updateCourseChapter: (courseId: string, chapterId: string, body: { title?: string; summary?: string }) =>
+    requestDirect<Course>(`/v1/courses/${encodeURIComponent(courseId)}/chapters/${encodeURIComponent(chapterId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
   generateChapterResource: (courseId: string, chapterId: string, resourceType: string) =>
     requestDirect<Course>(`/v1/courses/${encodeURIComponent(courseId)}/chapters/${encodeURIComponent(chapterId)}/resources/${encodeURIComponent(resourceType)}/retry`, {
       method: 'POST',

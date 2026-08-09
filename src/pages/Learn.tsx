@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { BookOpen, Loader2, Play, RefreshCw, Sparkles } from 'lucide-react';
+import { BookOpen, Check, Loader2, Pencil, Play, RefreshCw, Sparkles, X } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
 import type { Course, CourseChapter } from '@/lib/api';
@@ -20,25 +20,91 @@ const resourceLabels: Record<string, string> = {
   ppt: 'PPT',
 };
 
-function ChapterCard({ courseId, chapter }: { courseId: string; chapter: CourseChapter }) {
+function ChapterCard({
+  courseId,
+  chapter,
+  onRename,
+}: {
+  courseId: string;
+  chapter: CourseChapter;
+  onRename: (chapterId: string, title: string) => Promise<boolean>;
+}) {
   const navigate = useNavigate();
+  const [editing, setEditing] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(chapter.title);
+  const [saving, setSaving] = useState(false);
   const resourceKinds = Object.keys(chapter.resources ?? {});
   const done = resourceKinds.filter((kind) => chapter.resources[kind]?.status === 'completed');
+
+  const cancelEditing = () => {
+    setDraftTitle(chapter.title);
+    setEditing(false);
+  };
+
+  const saveTitle = async () => {
+    const title = draftTitle.trim();
+    if (!title || saving) return;
+    if (title === chapter.title) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      if (await onRename(chapter.id, title)) setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
-    <motion.button
-      type="button"
+    <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: chapter.index * 0.05 }}
-      onClick={() => navigate(`/resources?courseId=${encodeURIComponent(courseId)}&chapterId=${encodeURIComponent(chapter.id)}`)}
-      className="group flex w-full items-start gap-4 rounded-[14px] border border-hairline bg-card-warm p-5 text-left transition-all hover:border-brand/40 hover:shadow-warm"
+      onClick={() => {
+        if (!editing) navigate(`/resources?courseId=${encodeURIComponent(courseId)}&chapterId=${encodeURIComponent(chapter.id)}`);
+      }}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget || editing || !['Enter', ' '].includes(event.key)) return;
+        event.preventDefault();
+        navigate(`/resources?courseId=${encodeURIComponent(courseId)}&chapterId=${encodeURIComponent(chapter.id)}`);
+      }}
+      role="link"
+      tabIndex={editing ? -1 : 0}
+      className={cn(
+        'group flex w-full items-start gap-4 rounded-[14px] border border-hairline bg-card-warm p-5 text-left transition-all hover:border-brand/40 hover:shadow-warm',
+        editing ? 'cursor-default' : 'cursor-pointer',
+      )}
     >
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-brand-tint font-mono text-[14px] font-semibold text-brand">
         {chapter.index}
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-2">
-          <span className="text-[15px] font-semibold text-ink">{chapter.title}</span>
+          {editing ? (
+            <span className="flex min-w-[240px] flex-1 items-center gap-1.5" onClick={(event) => event.stopPropagation()}>
+              <input
+                value={draftTitle}
+                maxLength={200}
+                autoFocus
+                onChange={(event) => setDraftTitle(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void saveTitle();
+                  if (event.key === 'Escape') cancelEditing();
+                }}
+                className="min-w-0 flex-1 rounded-lg border border-brand/40 bg-paper px-2.5 py-1.5 text-[14px] font-semibold text-ink outline-none focus:ring-2 focus:ring-brand/20"
+                aria-label={`编辑第 ${chapter.index} 章标题`}
+              />
+              <button type="button" disabled={!draftTitle.trim() || saving} onClick={() => void saveTitle()} className="rounded-md p-1.5 text-brand hover:bg-brand-tint disabled:opacity-40" aria-label="保存章节标题">
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              </button>
+              <button type="button" disabled={saving} onClick={cancelEditing} className="rounded-md p-1.5 text-ink-muted hover:bg-paper" aria-label="取消编辑">
+                <X size={14} />
+              </button>
+            </span>
+          ) : (
+            <span className="text-[15px] font-semibold text-ink">{chapter.title}</span>
+          )}
           <span
             className={cn(
               'rounded-md border px-1.5 py-px font-mono text-[10px] font-medium',
@@ -73,10 +139,24 @@ function ChapterCard({ courseId, chapter }: { courseId: string; chapter: CourseC
           )}
         </span>
       </span>
+      {!editing && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setDraftTitle(chapter.title);
+            setEditing(true);
+          }}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-hairline text-ink-muted opacity-60 transition-all hover:border-brand/40 hover:text-brand md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+          aria-label={`编辑第 ${chapter.index} 章标题`}
+        >
+          <Pencil size={14} />
+        </button>
+      )}
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-hairline text-ink-muted transition-colors group-hover:border-brand/40 group-hover:text-brand">
         <Play size={15} />
       </span>
-    </motion.button>
+    </motion.div>
   );
 }
 
@@ -87,6 +167,9 @@ export default function Learn() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingCourseTitle, setEditingCourseTitle] = useState(false);
+  const [courseTitleDraft, setCourseTitleDraft] = useState('');
+  const [savingCourseTitle, setSavingCourseTitle] = useState(false);
   const autoCreateRef = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -130,12 +213,14 @@ export default function Learn() {
   }, [currentLearner, refresh]);
 
   useEffect(() => {
-    refresh();
+    const timer = window.setTimeout(() => void refresh(), 0);
+    return () => window.clearTimeout(timer);
   }, [refresh]);
 
   useEffect(() => {
     if (loading || courses.length > 0 || !currentLearner.custom) return;
-    createOutline();
+    const timer = window.setTimeout(() => void createOutline(), 0);
+    return () => window.clearTimeout(timer);
   }, [loading, courses.length, currentLearner.custom, createOutline]);
 
   useEffect(() => {
@@ -150,6 +235,42 @@ export default function Learn() {
   }, [courses]);
 
   const course = courses[0];
+
+  const replaceCourse = useCallback((updated: Course) => {
+    setCourses((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+  }, []);
+
+  const saveCourseTitle = async () => {
+    if (!course || savingCourseTitle) return;
+    const title = courseTitleDraft.trim();
+    if (!title) return;
+    if (title === course.title) {
+      setEditingCourseTitle(false);
+      return;
+    }
+    setSavingCourseTitle(true);
+    try {
+      replaceCourse(await api.updateCourse(course.id, { title }));
+      setEditingCourseTitle(false);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '课程标题保存失败');
+    } finally {
+      setSavingCourseTitle(false);
+    }
+  };
+
+  const renameChapter = async (chapterId: string, title: string) => {
+    if (!course) return false;
+    try {
+      replaceCourse(await api.updateCourseChapter(course.id, chapterId, { title }));
+      setError(null);
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '章节标题保存失败');
+      return false;
+    }
+  };
 
   return (
     <div className="mx-auto max-w-[980px] px-5 pb-24 pt-8 md:px-6">
@@ -220,7 +341,43 @@ export default function Learn() {
                 <BookOpen size={20} />
               </span>
               <div className="min-w-0 flex-1">
-                <h2 className="font-serif text-[22px] font-semibold text-ink">{course.title}</h2>
+                {editingCourseTitle ? (
+                  <div className="flex max-w-[620px] items-center gap-2">
+                    <input
+                      value={courseTitleDraft}
+                      maxLength={160}
+                      autoFocus
+                      onChange={(event) => setCourseTitleDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') void saveCourseTitle();
+                        if (event.key === 'Escape' && !savingCourseTitle) setEditingCourseTitle(false);
+                      }}
+                      className="min-w-0 flex-1 rounded-lg border border-brand/40 bg-paper px-3 py-1.5 font-serif text-[20px] font-semibold text-ink outline-none focus:ring-2 focus:ring-brand/20"
+                      aria-label="编辑课程标题"
+                    />
+                    <button type="button" disabled={!courseTitleDraft.trim() || savingCourseTitle} onClick={() => void saveCourseTitle()} className="rounded-lg p-2 text-brand hover:bg-brand-tint disabled:opacity-40" aria-label="保存课程标题">
+                      {savingCourseTitle ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
+                    </button>
+                    <button type="button" disabled={savingCourseTitle} onClick={() => setEditingCourseTitle(false)} className="rounded-lg p-2 text-ink-muted hover:bg-paper" aria-label="取消编辑">
+                      <X size={16} />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="group/title flex items-center gap-2">
+                    <h2 className="font-serif text-[22px] font-semibold text-ink">{course.title}</h2>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCourseTitleDraft(course.title);
+                        setEditingCourseTitle(true);
+                      }}
+                      className="rounded-lg p-1.5 text-ink-muted opacity-60 transition-all hover:bg-paper hover:text-brand md:opacity-0 md:group-hover/title:opacity-100 md:focus:opacity-100"
+                      aria-label="编辑课程标题"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                  </div>
+                )}
                 {course.description && (
                   <p className="mt-1 text-[13px] leading-[20px] text-ink-muted">{course.description}</p>
                 )}
@@ -236,7 +393,7 @@ export default function Learn() {
             <div className="space-y-3">
               <div className="lf-mono-label !text-[10.5px]">课程章节</div>
               {course.chapters.map((chapter) => (
-                <ChapterCard key={chapter.id} courseId={course.id} chapter={chapter} />
+                <ChapterCard key={chapter.id} courseId={course.id} chapter={chapter} onRename={renameChapter} />
               ))}
             </div>
           )}
