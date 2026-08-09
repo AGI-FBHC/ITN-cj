@@ -649,6 +649,8 @@ export const api = {
   listWrongAnswers: () => requestDirect<{ items: WrongAnswerRecord[] }>('/v1/wrong-answers'),
   updateWrongAnswer: (wrongId: string, body: { reviewStatus?: string; mastered?: boolean; streak?: number; lastPick?: number }) =>
     requestDirect<WrongAnswerRecord>(`/v1/wrong-answers/${encodeURIComponent(wrongId)}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  reviewWrongAnswer: (wrongId: string, answer: number) =>
+    requestDirect<{ item: WrongAnswerRecord; correct: boolean }>(`/v1/wrong-answers/${encodeURIComponent(wrongId)}/review`, { method: 'POST', body: JSON.stringify({ answer }) }),
   deleteWrongAnswer: (wrongId: string) => requestDirect<void>(`/v1/wrong-answers/${encodeURIComponent(wrongId)}`, { method: 'DELETE' }),
   getTutoringScript: (learnerCode: string) =>
     requestDirect<Record<string, unknown>>(`/v1/tutoring/scripts/${encodeURIComponent(learnerCode)}`),
