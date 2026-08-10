@@ -9,16 +9,15 @@
  * 测量思路：先验（背景+自评）+ 少量高信息量题目（似然）= 带置信度的后验；
  * 题量不足不靠堆题解决，靠"测到确信为止 + 建档后持续回写"。
  */
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { Check, ChevronRight, ChevronLeft, Sparkles, Brain, Target, HelpCircle, PlusCircle } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
 import type { LearnerDraft } from '@/context/ProfileContext';
-import { knowledgePoints, getKnowledgePoint } from '@/data/knowledgePoints';
-import { quizByKp } from '@/data/quizBank';
-import type { QuizLevel, QuizQuestion } from '@/data/quizBank';
+import { knowledgePoints as localKnowledgePoints, getKnowledgePoint as localGetKnowledgePoint } from '@/data/knowledgePoints';
+import { quizByKp as localQuizByKp } from '@/data/quizBank';
 import { ReactECharts } from '@/components/ChartCard';
 import Typewriter from '@/components/profiles/Typewriter';
 import ProfileForge from '@/components/profiles/ProfileForge';
@@ -29,58 +28,27 @@ import { cn } from '@/lib/utils';
 /* ================= 选项与先验（与 /welcome 精简建档共用一套模型） ================= */
 import { AVATARS, TAGS, EDU, JOBS, STYLES, priorOf, priorLine } from '@/data/priors';
 import { useAuth } from '@/context/AuthContext';
+import { api } from '@/lib/api';
+import type { OnboardingMeta, OnboardingQuestion, OnboardingAnswerInput } from '@/lib/api';
+
+const knowledgePoints = localKnowledgePoints;
 
 /* ================= 自评五档 ================= */
 const SELF_LEVELS = ['完全不会', '听说过', '了解', '熟练', '精通'];
 const selfScoreOf = (level: number) => 20 + level * 15; // 20/35/50/65/80
 
-/* ================= 测量模型 ================= */
 const clampScore = (n: number) => Math.max(20, Math.min(92, Math.round(n)));
 const MAX_TOTAL = 14;
-const MAX_EXTRA_PER_KP = 2;
 
 type AnswerResult = 'correct' | 'wrong' | 'uncertain';
 type Attribution = 'guess' | 'concept' | 'careless';
 
 interface AnswerRecord {
-  q: QuizQuestion;
+  q: OnboardingQuestion;
   result: AnswerResult;
   attribution?: Attribution;
-  /** 是否是加测题 */
   extra?: boolean;
   reason?: string;
-}
-
-function answerDelta(a: AnswerRecord): number {
-  let d = 0;
-  if (a.result === 'correct') d = a.q.level === 'basic' ? 10 : a.q.level === 'advanced' ? 14 : 18;
-  else if (a.result === 'wrong') d = a.q.level === 'basic' ? -10 : -6;
-  else d = -6; // uncertain
-  if (a.attribution === 'concept') d -= 3;
-  if (a.attribution === 'careless') d += 5;
-  return d;
-}
-
-function confDelta(a: AnswerRecord): number {
-  let c = a.result === 'uncertain' ? 8 : a.q.level === 'basic' ? 18 : 22;
-  if (a.attribution) c += 4;
-  return c;
-}
-
-/** 每题作答后阿诊的点评 */
-function commentOf(a: AnswerRecord, est: number): string {
-  const kp = getKnowledgePoint(a.q.kpId).name;
-  const lv = a.q.level === 'basic' ? '基础' : a.q.level === 'advanced' ? '进阶' : '挑战';
-  if (a.result === 'uncertain') return `诚实比蒙对更有用——「${kp}」我先按偏弱记，之后再核。`;
-  if (a.result === 'correct')
-    return a.q.level === 'basic'
-      ? `「${kp}」基础题稳稳拿下，先标到 ${est}。`
-      : `${lv}题也接住了，「${kp}」上调到 ${est}——不是新手水平。`;
-  return a.attribution === 'careless'
-    ? `粗心不算不会，「${kp}」我只轻微下调。`
-    : a.attribution === 'concept'
-      ? `概念混了是真盲区，「${kp}」标到 ${est}，讲义我会重点讲这块。`
-      : `这道错得很典型，「${kp}」先标 ${est}——疑似盲区。`;
 }
 
 /* ================= 雷达 ================= */
@@ -99,14 +67,14 @@ function radarOption(estimates: Record<string, number>, confidence?: Record<stri
       splitArea: { areaStyle: { color: ['rgba(253,252,249,0)', 'rgba(240,235,224,0.5)'] } },
       axisLine: { lineStyle: { color: '#DCE6DE' } },
     },
-    legend: { bottom: 0, icon: 'roundRect', itemWidth: 12, itemHeight: 8, data: ['当前估计', '岗位目标'] },
+    legend: { bottom: 0, icon: 'roundRect', itemWidth: 12, itemHeight: 8, data: ['当前估计', '目标要求'] },
     series: [
       {
         type: 'radar' as const,
         data: [
           {
             value: knowledgePoints.map((kp) => kp.targetLevel),
-            name: '岗位目标',
+            name: '目标要求',
             symbol: 'none',
             lineStyle: { color: '#E7B45A', width: 1.5, type: 'dashed' as const },
             itemStyle: { color: '#E7B45A' },
@@ -134,12 +102,33 @@ export default function Onboarding() {
   const { session, bindAccount } = useAuth();
   const [step, setStep] = useState(0);
 
+  const [meta, setMeta] = useState<OnboardingMeta | null>(null);
+  useEffect(() => {
+    api.getOnboardingMeta().then(setMeta).catch(() => {});
+  }, []);
+  const knowledgePoints = meta?.knowledgePoints ?? localKnowledgePoints;
+  const tags = meta?.tags ?? TAGS;
+  const edu = meta?.edu ?? EDU;
+  const targetCategories = meta?.targetCategories ?? [];
+  const targetOptions = meta?.targetOptions ?? [];
+  const jobs = targetOptions.length ? targetOptions.map((option) => option.name) : JOBS;
+  const styleOptions = meta?.styles ?? STYLES;
+  const getKnowledgePoint = useCallback(
+    (id: string) => knowledgePoints.find((kp) => kp.id === id) ?? localGetKnowledgePoint(id),
+    [knowledgePoints],
+  );
+  const quizByKp = useCallback(
+    (id: string) => meta?.questions.filter((q) => q.kpId === id) ?? localQuizByKp(id),
+    [meta],
+  );
+
   /* ---- ① 背景 ---- */
   const [name, setName] = useState('');
   const [avatar, setAvatar] = useState(AVATARS[0]);
   const [tag, setTag] = useState(TAGS[0]);
   const [education, setEducation] = useState(EDU[0]);
   const [targetJob, setTargetJob] = useState(JOBS[0]);
+  const [targetCategoryCode, setTargetCategoryCode] = useState('JOB');
   const [weeklyHours, setWeeklyHours] = useState(10);
   const [styles, setStyles] = useState<string[]>([STYLES[0]]);
   const [addingStyle, setAddingStyle] = useState(false);
@@ -154,13 +143,24 @@ export default function Onboarding() {
     () =>
       knowledgePoints
         .map((kp) => quizByKp(kp.id).find((q) => q.level === 'basic') ?? quizByKp(kp.id)[0])
-        .filter((q): q is QuizQuestion => Boolean(q)),
-    [],
+        .filter((q): q is OnboardingQuestion => Boolean(q)),
+    [knowledgePoints, quizByKp],
   );
-  const [queue, setQueue] = useState<{ q: QuizQuestion; extra?: boolean; reason?: string }[]>(() =>
+  const [queue, setQueue] = useState<{ q: OnboardingQuestion; extra?: boolean; reason?: string }[]>(() =>
     baseQueue.map((q) => ({ q })),
   );
   const [answers, setAnswers] = useState<AnswerRecord[]>([]);
+
+  useEffect(() => {
+    if (!meta || answers.length > 0) return;
+    const nextQueue = meta.knowledgePoints
+      .map((kp) => meta.questions.find((q) => q.kpId === kp.id && q.level === 'basic') ?? meta.questions.find((q) => q.kpId === kp.id))
+      .filter((q): q is OnboardingQuestion => Boolean(q))
+      .map((q) => ({ q }));
+    if (nextQueue.length === 0) return;
+    setQueue(nextQueue);
+    setSelfLevels((prev) => Object.fromEntries(meta.knowledgePoints.map((kp) => [kp.id, prev[kp.id] ?? 2])));
+  }, [meta, answers.length]);
   const [picked, setPicked] = useState<number | null>(null);
   /** 答错后待归因：记录挂起，归因（或跳过）后才正式提交，避免题卡提前跳题 */
   const [pendingWrong, setPendingWrong] = useState<AnswerRecord | null>(null);
@@ -170,69 +170,64 @@ export default function Onboarding() {
   const current = queue[answers.length];
   const quizDone = answers.length >= queue.length;
 
-  /* ---- 估计与置信度（先验 + 自评 + 作答） ---- */
-  const prior = useMemo(() => priorOf(tag, education), [tag, education]);
+  /* ---- 估计与置信度（先验 + 自评 + 作答，由后端持续更新） ---- */
+  const [estimates, setEstimates] = useState<Record<string, number>>(() =>
+    Object.fromEntries(
+      knowledgePoints.map((kp) => [
+        kp.id,
+        clampScore(50 + (priorOf(tag, education)[kp.id] ?? 0) + (selfScoreOf(selfLevels[kp.id] ?? 2) - 50) * 0.4),
+      ]),
+    ),
+  );
+  const [confidence, setConfidence] = useState<Record<string, number>>(() =>
+    Object.fromEntries(knowledgePoints.map((kp) => [kp.id, 33])),
+  );
+  const [avgConf, setAvgConf] = useState(33);
 
-  const estimates = useMemo(() => {
-    const e: Record<string, number> = {};
-    knowledgePoints.forEach((kp) => {
-      const self = (selfScoreOf(selfLevels[kp.id] ?? 2) - 50) * 0.4;
-      e[kp.id] = clampScore(50 + (prior[kp.id] ?? 0) + self);
-    });
-    answers.forEach((a) => {
-      e[a.q.kpId] = clampScore(e[a.q.kpId] + answerDelta(a));
-    });
-    return e;
-  }, [prior, selfLevels, answers]);
-
-  const confidence = useMemo(() => {
-    const c: Record<string, number> = {};
-    knowledgePoints.forEach((kp) => (c[kp.id] = 25 + 8)); // 背景 25 + 自评 8
-    answers.forEach((a) => {
-      c[a.q.kpId] = Math.min(92, (c[a.q.kpId] ?? 33) + confDelta(a));
-    });
-    return c;
-  }, [answers]);
-
-  const avgConf = Math.round(knowledgePoints.reduce((s, kp) => s + (confidence[kp.id] ?? 33), 0) / knowledgePoints.length);
-
-  /* ---- 自适应加测决策 ---- */
-  const maybeEnqueue = (a: AnswerRecord, curQueue: typeof queue): typeof queue => {
-    if (curQueue.length >= MAX_TOTAL) return curQueue;
-    const kpId = a.q.kpId;
-    const extraCount = curQueue.filter((i) => i.extra && i.q.kpId === kpId).length;
-    if (extraCount >= MAX_EXTRA_PER_KP) return curQueue;
-    const used = new Set(curQueue.map((i) => i.q.id));
-    const pool = quizByKp(kpId).filter((q) => !used.has(q.id));
-    const pick = (lv: QuizLevel) => pool.find((q) => q.level === lv) ?? pool[0];
-    const kp = getKnowledgePoint(kpId);
-
-    let q: QuizQuestion | undefined;
-    let reason = '';
-    if (a.result === 'wrong' && !a.extra) {
-      q = pick('basic');
-      reason = `「${kp.name}」答错了，我再确认一道`;
-    } else if (a.result === 'uncertain') {
-      q = pick('basic');
-      reason = `不确定没关系，「${kp.name}」换道题再试`;
-    } else if (a.result === 'correct' && (selfLevels[kpId] ?? 2) >= 3 && !a.extra) {
-      q = pick('advanced');
-      reason = `你自评「${SELF_LEVELS[selfLevels[kpId]]}」，上道进阶题验证`;
-    } else if (a.result === 'correct' && kp.weight >= 0.17 && !a.extra) {
-      q = pick('advanced');
-      reason = `这维对「${targetJob}」很重要，多测一题`;
-    }
-    if (!q) return curQueue;
-    return [...curQueue, { q, extra: true, reason }];
-  };
+  useEffect(() => {
+    if (answers.length > 0) return;
+    const nextEstimates = Object.fromEntries(
+      knowledgePoints.map((kp) => [
+        kp.id,
+        clampScore(50 + (priorOf(tag, education)[kp.id] ?? 0) + (selfScoreOf(selfLevels[kp.id] ?? 2) - 50) * 0.4),
+      ]),
+    );
+    setEstimates(nextEstimates);
+    setAvgConf(33);
+    setConfidence(Object.fromEntries(knowledgePoints.map((kp) => [kp.id, 33])));
+  }, [tag, education, selfLevels, answers.length, knowledgePoints]);
 
   /* ---- 作答处理 ---- */
-  /** 正式提交一条作答：入列 + 决定加测 + 阿诊点评 */
-  const commitAnswer = (rec: AnswerRecord) => {
-    const estAfter = clampScore((estimates[rec.q.kpId] ?? 50) + answerDelta(rec));
-    setAnswers((prev) => [...prev, rec]);
-    setQueue((prevQ) => maybeEnqueue(rec, prevQ));
-    setAgentLine(commentOf(rec, estAfter));
+  const toBackendAnswer = (a: AnswerRecord): OnboardingAnswerInput => ({
+    questionId: a.q.id,
+    result: a.result,
+    attribution: a.attribution ?? null,
+    extra: a.extra,
+    reason: a.reason ?? null,
+  });
+
+  /** 正式提交一条作答：后端负责评分、加测与阿诊点评 */
+  const commitAnswer = async (rec: AnswerRecord) => {
+    const nextAnswers = [...answers, rec];
+    setAnswers(nextAnswers);
+    try {
+      const response = await api.answerOnboarding({
+        tag,
+        education,
+        selfLevels,
+        answers: nextAnswers.map(toBackendAnswer),
+        queueIds: queue.map((item) => item.q.id),
+      });
+      setEstimates(response.estimates);
+      setConfidence(response.confidence);
+      setAvgConf(response.averageConfidence);
+      setAgentLine(response.comment);
+      if (response.nextQuestion) {
+        setQueue((prev) => [...prev, { q: response.nextQuestion!, extra: true, reason: response.nextReason ?? '' }]);
+      }
+    } catch {
+      setAgentLine('诊断服务暂不可用，请稍后重试');
+    }
     setPicked(null);
     setPendingWrong(null);
   };
@@ -312,13 +307,28 @@ export default function Onboarding() {
     return `「${w.kp.name}」你调得比我测到的高 ${Math.round(w.over)} 分——先按你说的建档，但之后我会用两道题核实，谈不拢再谈。`;
   }, [editScores, estimates]);
 
+  const pickTarget = (name: string) => {
+    setTargetJob(name);
+    const option = targetOptions.find((item) => item.name === name);
+    if (option) setTargetCategoryCode(option.categoryCode);
+  };
+
+  const pickTargetCategory = (categoryName: string) => {
+    const category = targetCategories.find((item) => item.name === categoryName);
+    if (!category) return;
+    setTargetCategoryCode(category.code);
+    const first = targetOptions.find((item) => item.categoryCode === category.code);
+    if (first) setTargetJob(first.name);
+  };
+
   const toggleStyle = (s: string) =>
     setStyles((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
 
   const enterConfirm = () => {
     setEditScores({ ...estimates });
     setBlindIds([...defaultBlindIds]);
-    setGoal(`3 个月内补齐「${weakest?.kp.name}」等短板，向「${targetJob}」岗位能力对齐。`);
+    const targetSuffix = targetCategoryCode === 'EXAM' ? '考试科目要求' : targetCategoryCode === 'CERT' ? '证书考核要求' : '目标能力';
+    setGoal(`3 个月内补齐「${weakest?.kp.name}」等短板，对齐「${targetJob}」${targetSuffix}。`);
     setStep(4);
   };
 
@@ -327,43 +337,86 @@ export default function Onboarding() {
 
   const submit = async () => {
     if (forge) return;
-    const scores = editScores ?? estimates;
-    const draft: LearnerDraft = {
-      name: name.trim() || '我',
-      avatar,
-      tag,
-      role: `${education} · ${tag}`,
-      education,
-      targetJob,
-      weeklyHours,
-      learningStyle: styles,
-      scores,
-      blindSpots: (blindIds ?? defaultBlindIds).map((id) => getKnowledgePoint(id).name),
-      goal,
-    };
-    let id: string;
     try {
-      id = await createLearner(draft, { method: 'full', value: avgConf });
-    } catch {
-      toast.error('建档失败', { description: '后端暂不可用，请稍后重试' });
-      return;
-    }
-    if (session) bindAccount(id);
-    setForge({
-      name: draft.name,
-      avatar: draft.avatar,
-      scores,
-      confidence: avgConf,
-      method: 'full',
-      evidence: [
+      const diag = await api.diagnoseOnboarding({
+        tag,
+        education,
+        targetJob,
+        targetCategoryCode,
+        selfLevels,
+        answers: answers.map(toBackendAnswer),
+      });
+      const scores = editScores ?? diag.scores;
+      const finalGoal = goal.trim() || diag.goal;
+      const finalBlindSpots = blindIds
+        ? blindIds.map((id) => getKnowledgePoint(id).name)
+        : diag.blindSpots.length
+          ? diag.blindSpots
+          : defaultBlindIds.map((id) => getKnowledgePoint(id).name);
+      const draft: LearnerDraft = {
+        name: name.trim() || '我',
+        avatar,
+        tag,
+        role: `${education} · ${tag}`,
+        education,
+        targetJob,
+        weeklyHours,
+        learningStyle: styles,
+        scores,
+        blindSpots: finalBlindSpots,
+        goal: finalGoal,
+        diagnosisSummary: diag.diagnosisSummary,
+      };
+      let id: string;
+      try {
+        id = await createLearner(draft, { method: 'full', value: diag.averageConfidence });
+        if (session) bindAccount(id);
+      } catch {
+        toast.error('建档失败', { description: '请稍后重试' });
+        return;
+      }
+      let forgeSteps;
+      let forgeBlindSpots;
+      let forgeEvidence = [
         `身份「${tag}」· ${education}`,
         '六维自评完成',
         `理论自测 ${answers.length} 题`,
         `目标「${targetJob}」`,
-      ],
-    });
+      ];
+      try {
+        const generated = await api.generateProfile({
+          method: 'full',
+          name: draft.name,
+          avatar: draft.avatar,
+          tag,
+          education,
+          targetJob,
+          targetCategoryCode,
+          scores,
+          confidence: diag.averageConfidence,
+          selfLevels,
+          answers: answers.map(toBackendAnswer),
+        });
+        forgeSteps = generated.steps;
+        forgeEvidence = generated.evidence;
+        forgeBlindSpots = generated.blindSpots;
+      } catch {
+        /* 后端不可用时保留前端兜底文案 */
+      }
+      setForge({
+        name: draft.name,
+        avatar: draft.avatar,
+        scores,
+        confidence: diag.averageConfidence,
+        method: 'full',
+        evidence: forgeEvidence,
+        steps: forgeSteps,
+        blindSpots: forgeBlindSpots,
+      });
+    } catch {
+      toast.error('精准诊断失败', { description: '请稍后重试' });
+    }
   };
-
   const forgeDone = () => {
     toast.success(`「${forge?.name}」初稿画像已建档`, {
       description: `平均置信度 ${avgConf}% · 阿诊将随你的学习持续校准`,
@@ -437,14 +490,15 @@ export default function Onboarding() {
                   />
                 </div>
 
-                <ChipRow label="身份" options={TAGS} value={tag} onPick={setTag} />
-                <ChipRow label="学历" options={EDU} value={education} onPick={setEducation} />
-                <ChipRow label="目标岗位" options={JOBS} value={targetJob} onPick={setTargetJob} />
+                <ChipRow label="身份" options={tags} value={tag} onPick={setTag} />
+                <ChipRow label="学历" options={edu} value={education} onPick={setEducation} />
+                <ChipRow label="目标类型" options={targetCategories.map((category) => category.name)} value={targetCategories.find((category) => category.code === targetCategoryCode)?.name ?? ''} onPick={pickTargetCategory} />
+                <ChipRow label="目标方向" options={jobs} value={targetJob} onPick={pickTarget} />
 
                 <div>
                   <div className="lf-mono-label mb-2 !text-[11px]">学习偏好（可多选）</div>
                   <div className="flex flex-wrap gap-2">
-                    {STYLES.map((s) => (
+                    {styleOptions.map((s) => (
                       <button
                         key={s}
                         type="button"
@@ -459,7 +513,7 @@ export default function Onboarding() {
                       </button>
                     ))}
                     {styles
-                      .filter((s) => !STYLES.includes(s))
+                      .filter((s) => !styleOptions.includes(s))
                       .map((s) => (
                         <button
                           key={s}
@@ -931,7 +985,7 @@ function CustomChipInput({
   onCancel: () => void;
 }) {
   const [text, setText] = useState('');
-  const submit = () => {
+  const submit = async () => {
     const v = text.trim();
     if (v) onConfirm(v);
     else onCancel();
