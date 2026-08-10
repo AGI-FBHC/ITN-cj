@@ -90,6 +90,8 @@ export const presentationApi = {
     ),
   completePresentation: (taskId: string) =>
     request<{ learned: boolean }>(`/v1/presentations/${encodeURIComponent(taskId)}/complete`, { method: 'POST' }),
+  startPresentationGeneration: (taskId: string) =>
+    request<PresentationTask>(`/v1/presentations/${encodeURIComponent(taskId)}/generate`, { method: 'POST' }),
   getSlideshowSlides: (taskId: string) =>
     request<PresentationSlideshow>(`/v1/presentations/${encodeURIComponent(taskId)}/slides`),
 };

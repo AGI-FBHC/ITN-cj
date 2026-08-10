@@ -37,11 +37,20 @@ export default function PptPlayer({
   const [error, setError] = useState('');
   const [audioPlaying, setAudioPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const outlineConfirmedRef = useRef(false);
 
   const loadTask = useCallback(async () => {
     try {
       const next = await presentationApi.getPresentation(taskId);
       setTask(next);
+      if (next.status === 'outline_review' && !outlineConfirmedRef.current) {
+        outlineConfirmedRef.current = true;
+        try {
+          await presentationApi.startPresentationGeneration(taskId);
+          setTask((prev) => prev ? { ...prev, status: 'generating', progress: 40, stageMessage: '提纲已确认，正在设计幻灯片' } : prev);
+          setLoading(true);
+        } catch { /* 忽略并发确认 */ }
+      }
       if (next.status === 'completed') {
         const meta = await presentationApi.getSlideshowSlides(taskId);
         setSlides(meta);
@@ -66,6 +75,16 @@ export default function PptPlayer({
       const next = await presentationApi.getPresentation(taskId);
       if (cancelled) return;
       setTask(next);
+      if (next.status === 'outline_review' && !outlineConfirmedRef.current) {
+        outlineConfirmedRef.current = true;
+        try {
+          await presentationApi.startPresentationGeneration(taskId);
+          if (!cancelled) {
+            setTask((prev) => prev ? { ...prev, status: 'generating', progress: 40, stageMessage: '提纲已确认，正在设计幻灯片' } : prev);
+            setLoading(true);
+          }
+        } catch { /* 其他请求已确认或状态已变化时忽略 */ }
+      }
       if (next.status === 'completed') {
         try {
           const meta = await presentationApi.getSlideshowSlides(taskId);
