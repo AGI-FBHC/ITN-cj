@@ -5,8 +5,10 @@
  * 移动端：图谱隐藏，单元卡片作为小屏布局。
  */
 import { useState } from 'react';
+import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { ArrowRight, Loader2 } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
 import { useLearningMap } from '@/hooks/useLearningMap';
@@ -39,6 +41,14 @@ export default function Learn() {
   const activeKp = map.activeKp ?? knowledgePoints[0]?.id ?? null;
   const [selectedKp, setSelectedKp] = useState<string>(activeKp);
   const [selectedTopic, setSelectedTopic] = useState<number | null>(null);
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    const kpParam = searchParams.get('kp');
+    if (kpParam && knowledgePoints.some((kp) => kp.id === kpParam)) {
+      setSelectedKp(kpParam);
+      setSelectedTopic(null);
+    }
+  }, [searchParams, knowledgePoints]);
 
   const pathStatusOf = (kpId: string): string | null => {
     const nodes = reportPath.filter((n) => n.kpId === kpId);
@@ -133,8 +143,8 @@ export default function Learn() {
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.06, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-              onClick={() => navigate(`/learn/${kp.id}`)}
-              onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/learn/${kp.id}`); }}
+              onClick={() => navigate(`/learn?kp=${kp.id}`)}
+              onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/learn?kp=${kp.id}`); }}
               className="lf-card lf-card-hover flex flex-col p-5"
             >
               <div className="flex items-start justify-between gap-2">
