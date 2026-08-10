@@ -113,3 +113,54 @@ export async function fetchSlideAsset(taskId: string, index: number, kind: 'slid
   if (res.status === 401) throw new Error('登录状态已失效，请重新登录后重试');
   return res.blob();
 }
+
+
+export type PresentationAudioEvent = {
+  type: 'control' | 'reply_delta' | 'result' | 'error';
+  content?: string;
+  transcript?: string;
+  action?: 'none' | 'play' | 'pause' | 'next' | 'previous' | 'restart' | 'goto';
+  page?: number | null;
+  resume?: boolean;
+  sessionId?: string | null;
+  message?: string;
+};
+
+export async function streamPresentationChatAudio(
+  taskId: string,
+  audio: Blob,
+  slideIndex: number,
+  sessionId: string,
+  onEvent: (event: PresentationAudioEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const form = new FormData();
+  form.append('audio', audio, 'presentation-question.wav');
+  form.append('slide_index', String(slideIndex));
+  form.append('session_id', sessionId);
+  const headers = new Headers({ Accept: 'text/event-stream' });
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const response = await fetch(`/v1/presentations/${encodeURIComponent(taskId)}/chat/audio-stream`, {
+    method: 'POST',
+    headers,
+    body: form,
+    signal,
+  });
+  if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+  if (!response.body) throw new Error('浏览器没有收到演示语音回复流');
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const blocks = buffer.split(/\r?\n\r?\n/);
+    buffer = blocks.pop() || '';
+    for (const block of blocks) {
+      const line = block.split(/\r?\n/).find((item) => item.startsWith('data:'));
+      if (line) onEvent(JSON.parse(line.slice(5).trim()) as PresentationAudioEvent);
+    }
+  }
+}

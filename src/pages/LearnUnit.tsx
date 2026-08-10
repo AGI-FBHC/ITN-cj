@@ -77,6 +77,9 @@ import SafetyLoopDemo from '@/components/learn/SafetyLoopDemo';
 import VisionGuideDemo from '@/components/learn/VisionGuideDemo';
 import FaultTreeDemo from '@/components/learn/FaultTreeDemo';
 import PptPlayer from '@/components/learn/PptPlayer';
+import { startWavRecording } from '@/lib/voiceRecorder';
+import type { WavRecorder } from '@/lib/voiceRecorder';
+import { streamPresentationChatAudio } from '@/lib/presentationApi';
 import PathProgressBar from '@/components/learn/PathProgressBar';
 import { GrassTuft, Sprout } from '@/components/heal/Flora';
 import { useAmbient } from '@/components/heal/useAmbient';
@@ -682,6 +685,7 @@ export default function LearnUnit() {
   const [interim, setInterim] = useState('');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recRef = useRef<any>(null);
+  const pptVoiceRef = useRef<WavRecorder | null>(null);
   /** 笔记附图（纯演示：正文里留文本标记，不把 base64 塞进 localStorage） */
   const [noteImg, setNoteImg] = useState<{ name: string; url: string } | null>(null);
   const noteImgInputRef = useRef<HTMLInputElement>(null);
@@ -1089,6 +1093,83 @@ export default function LearnUnit() {
     }, correct ? 900 : 2100);
   };
 
+
+  /** PPT 模式下「说」：WAV 录音 -> MiMo audio-stream -> 转写+回答，说完自动发送 */
+  const startPptVoiceAsk = async () => {
+    if (pptVoiceRef.current) {
+      await pptVoiceRef.current.cancel().catch(() => { /* ignore */ });
+      pptVoiceRef.current = null;
+      setListening(null);
+      return;
+    }
+    setAsking(true);
+    stopPlayback();
+    hitSpot('modal');
+    setListening('ask');
+    try {
+      const recorder = await startWavRecording({
+        silenceMs: 1200,
+        maxDurationMs: 15000,
+        onSilence: () => { if (pptVoiceRef.current) void finishPptVoiceAsk(); },
+      });
+      pptVoiceRef.current = recorder;
+    } catch (reason) {
+      setListening(null);
+      toast(reason instanceof Error ? reason.message : '无法开始录音');
+    }
+  };
+
+  const finishPptVoiceAsk = async () => {
+    const recorder = pptVoiceRef.current;
+    if (!recorder) return;
+    pptVoiceRef.current = null;
+    setListening(null);
+    let audio: Blob;
+    try {
+      audio = await recorder.stop();
+    } catch (reason) {
+      toast(reason instanceof Error ? reason.message : '没有检测到有效语音');
+      return;
+    }
+    let transcript = '';
+    let reply = '';
+    let streamError = '';
+    try {
+      await streamPresentationChatAudio(
+        pptTaskId ?? '',
+        audio,
+        pptRef.current?.current ?? 0,
+        '',
+        (event) => {
+          if (event.type === 'reply_delta' && event.content) reply += event.content;
+          else if (event.type === 'result') {
+            transcript = event.transcript || transcript;
+            if (event.content) reply = event.content;
+          } else if (event.type === 'error') {
+            streamError = event.message || 'MiMo 语音理解失败';
+          }
+        },
+      );
+    } catch (reason) {
+      streamError = reason instanceof Error ? reason.message : 'MiMo 语音理解失败';
+    }
+    if (!transcript) {
+      toast(streamError || '没有识别到有效语音');
+      return;
+    }
+    const finalReply = reply.trim() || '我听到了你的问题，但 MiMo 暂未返回可展示回答，请稍后重试。';
+    setQaLog((prev) => [...prev, { q: transcript, a: finalReply }]);
+    setQuestion('');
+    tts.speak(finalReply, speechRate, () => undefined, voiceStyle.pitch);
+    addNote({
+      kpId,
+      text: `问：${transcript}\n答：${finalReply}`,
+      source: `${kp.name} · 举手提问`,
+      sourceKind: 'qa',
+      kbRefs: [],
+    });
+  };
+
   const submitQuestion = (override?: string) => {
     const q = (override ?? question).trim();
     if (!q && !askPhoto) return;
@@ -1121,6 +1202,10 @@ export default function LearnUnit() {
 
   /** 停止/取消录音（听的过程中再点一次麦克风 = 撤回，不发送） */
   const stopListening = () => {
+    if (pptVoiceRef.current) {
+      void pptVoiceRef.current.cancel().catch(() => { /* ignore */ });
+      pptVoiceRef.current = null;
+    }
     try { recRef.current?.abort(); } catch { /* ignore */ }
     recRef.current = null;
     setListening(null);
@@ -1181,13 +1266,15 @@ export default function LearnUnit() {
   /** 三大模态提问入口（直接挂在播放条上，不藏进二级面板） */
   const askBy = (mode: 'voice' | 'photo' | 'text') => {
     /* 正在听时再点「说」= 取消，立即生效（不要排进 setTimeout，否则连点会叠出两个识别器） */
-    if (mode === 'voice' && recRef.current) { stopListening(); return; }
+    if (mode === 'voice' && (recRef.current || pptVoiceRef.current)) { stopListening(); return; }
     stopPlayback();
     setAsking(true);
     hitSpot('modal');
     setTimeout(() => {
-      if (mode === 'voice') startListening('ask');
-      else if (mode === 'photo') photoInputRef.current?.click();
+      if (mode === 'voice') {
+        if (pptTaskId) void startPptVoiceAsk();
+        else startListening('ask');
+      } else if (mode === 'photo') photoInputRef.current?.click();
       else askInputRef.current?.focus();
     }, 260);
   };
