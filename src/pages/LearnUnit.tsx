@@ -588,6 +588,13 @@ export default function LearnUnit() {
 
   /* 图谱深链：?block=cN → 定位并闪烁对应概念块 */
   const [searchParams] = useSearchParams();
+  /* PPT 深链：?ppt=1 → 进入即幻灯模式 */
+  useEffect(() => {
+    if (searchParams.get('ppt') === '1') {
+      setSlideMode(true);
+      setSlideIdx(0);
+    }
+  }, [searchParams]);
   const [flashId, setFlashId] = useState<string | null>(null);
   useEffect(() => {
     const target = searchParams.get('block');

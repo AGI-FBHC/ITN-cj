@@ -40,7 +40,20 @@ export function useCourseLearning() {
         if (!cancelled) { setCourse(null); setResources([]); }
       })
       .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+    // 后台生成完成后自动拉取最新课程与资源
+    const poll = window.setInterval(() => {
+      api.listCourses(currentLearnerId)
+        .then(async ({ courses }) => {
+          const latest = courses?.[0] ?? null;
+          if (cancelled) return;
+          const listed = latest ? await api.listLearningResources({ courseId: latest.id }) : { resources: [] as LearningResourceSummary[] };
+          if (cancelled) return;
+          setCourse(latest);
+          setResources(listed.resources ?? []);
+        })
+        .catch(() => undefined);
+    }, 20_000);
+    return () => { cancelled = true; window.clearInterval(poll); };
   }, [currentLearnerId]);
 
   return useMemo(() => {

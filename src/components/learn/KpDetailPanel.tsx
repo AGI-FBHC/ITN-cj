@@ -110,7 +110,6 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
   const res: Array<GeneratedResource & { id?: string }> = resourcesProp ?? resourcesForKp(dataId, kpId);
   const reportPath = pathProp ?? report.path;
   const [generating, setGenerating] = useState<ResourceForm | null>(null);
-  const [generatingCourse, setGeneratingCourse] = useState(false);
   const generateResource = async (form: ResourceForm) => {
     if (generating) return;
     setGenerating(form);
@@ -136,28 +135,6 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
       toast.error(error instanceof Error ? error.message : '资源生成失败');
     } finally {
       setGenerating(null);
-    }
-  };
-  const generateCourse = async () => {
-    if (generatingCourse) return;
-    setGeneratingCourse(true);
-    try {
-      const selectedTopicName = topicIndex != null ? kp.coreTopics[topicIndex] : null;
-      const focus = selectedTopicName ? `重点攻克「${kp.name}」中的「${selectedTopicName}」` : `重点攻克「${kp.name}」及相关知识领域`;
-      const prompt = `${currentLearner.tag} · ${currentLearner.education} · ${currentLearner.targetJob}——${focus}。`;
-      const course = await api.createCourse({
-        learnerId: currentLearner.id,
-        prompt,
-        resourceTypes: ['ppt', 'lecture', 'practice', 'quiz'],
-        depth: 'systematic',
-        scale: 'compact',
-      });
-      toast.success('课程已开始生成，资源将陆续出现在知识地图中');
-      navigate(`/resources?courseId=${course.id}`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '课程创建失败');
-    } finally {
-      setGeneratingCourse(false);
     }
   };
   const pathNodes = reportPath.filter((n) => n.kpId === kpId);
@@ -266,8 +243,7 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
           {/* 交互课件（始终可进；无预制资源时作为主入口高亮） */}
           <button
             type="button"
-            onClick={generateCourse}
-            disabled={generatingCourse}
+            onClick={() => navigate(`/learn/${kpId}?ppt=1`)}
             className={cn(
               'group flex w-full items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left transition-all',
               res.length
@@ -276,11 +252,11 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
             )}
           >
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand text-paper">
-              {generatingCourse ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+              <Sparkles size={15} />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-medium text-ink">{res.length ? '生成补充课程' : 'AI 生成完整课程'}</span>
-              <span className="block text-[11px] text-ink-muted">{generatingCourse ? '正在调用 AI 规划章节…' : '含讲义/实操/分阶题 · 支持语音讲课'}</span>
+              <span className="block text-[13px] font-medium text-ink">进入交互课件</span>
+              <span className="block text-[11px] text-ink-muted">PPT 形式 · 随语音逐页讲解</span>
             </span>
             <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
           </button>

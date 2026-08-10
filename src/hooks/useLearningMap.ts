@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useRef } from 'react';
 import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
 import type { LearningMapOverview } from '@/lib/api';
@@ -61,6 +62,8 @@ export function useLearningMap(): LearningMapView {
   const [map, setMap] = useState<LearningMapOverview | null>(() => readLearningMapCache(currentLearnerId)?.overview ?? null);
   const [loading, setLoading] = useState(true);
   const [resources, setResources] = useState<LearningResourceSummary[]>(() => readLearningMapCache(currentLearnerId)?.resources ?? []);
+  const mapRef = useRef<LearningMapOverview | null>(map);
+  mapRef.current = map;
 
   useEffect(() => {
     if (!UUID_PATTERN.test(currentLearnerId)) {
@@ -94,7 +97,20 @@ export function useLearningMap(): LearningMapView {
       })
       .catch(() => { if (!cancelled && !cached) setMap(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+    // 后台课程/资源生成完成后自动刷新，避免用户停留在知识地图时看不到新资源
+    const poll = window.setInterval(() => {
+      api.listLearningResources()
+        .then((listed) => {
+          if (cancelled) return;
+          const latestResources = listed.resources ?? [];
+          setResources(latestResources);
+          if (mapRef.current) {
+            writeLearningMapCache(currentLearnerId, { overview: mapRef.current, resources: latestResources });
+          }
+        })
+        .catch(() => undefined);
+    }, 20_000);
+    return () => { cancelled = true; window.clearInterval(poll); };
   }, [currentLearnerId]);
 
   return useMemo<LearningMapView>(() => {
