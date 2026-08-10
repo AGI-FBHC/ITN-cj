@@ -135,8 +135,8 @@ export default function PptPlayer({
         }
         await audio.play();
         setAudioPlaying(true);
-      } catch {
-        setError('音频暂不可用，请稍后重试');
+      } catch (reason) {
+        setError(reason instanceof Error ? `音频加载失败：${reason.message}` : '音频暂不可用，请稍后重试');
       }
     })();
   };
@@ -167,7 +167,7 @@ export default function PptPlayer({
           return objectUrl;
         });
       })
-      .catch(() => { if (!cancelled) setError('幻灯片图片加载失败'); });
+      .catch((reason) => { if (!cancelled) setError(reason instanceof Error ? `幻灯片图片加载失败：${reason.message}` : '幻灯片图片加载失败'); });
     return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [taskId, current, slides]);
   const note = slides?.speakerNotes[current] ?? '';
@@ -265,7 +265,6 @@ export default function PptPlayer({
               </div>
               <audio
                 ref={audioRef}
-                src={audioSrc}
                 onPlay={() => setAudioPlaying(true)}
                 onPause={() => setAudioPlaying(false)}
                 onEnded={() => setAudioPlaying(false)}

@@ -118,6 +118,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           });
         }
         // 后端 issueLogin 总是把 user.getId() 当成 learnerId 返回，需要从 /learners 取出真实 learner UUID
+        // 先写入 token，否则后续 /learners 请求仍带旧 token 会 401，导致 known 绑定失败
+        setToken(result.accessToken);
         let realLearnerId: string | null = learnerId ?? null;
         try {
           const learnedList = await api.listLearners();

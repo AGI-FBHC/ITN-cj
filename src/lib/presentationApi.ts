@@ -110,5 +110,6 @@ export async function fetchSlideAsset(taskId: string, index: number, kind: 'slid
   if (token) headers.set('Authorization', `Bearer ${token}`);
   const res = await fetch(`/v1/presentations/${encodeURIComponent(taskId)}/${kind}/${index}`, { headers });
   if (!res.ok) throw new Error(`PPT 资源加载失败 (${res.status})`);
+  if (res.status === 401) throw new Error('登录状态已失效，请重新登录后重试');
   return res.blob();
 }
