@@ -7,8 +7,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  ArrowLeft, ArrowRight, CheckCircle2, FileText,
-  Hand, Loader2, MoreHorizontal, Pause, PenLine, Play, RefreshCw,
+  ArrowLeft, ArrowRight, Camera, CheckCircle2, FileText,
+  Loader2, MessageSquare, Mic, MoreHorizontal, Pause, PenLine, Play, RefreshCw,
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { fetchSlideAsset, presentationApi } from '@/lib/presentationApi';
@@ -421,15 +421,43 @@ export default function PptPlayer({
                   <span className="shrink-0 font-mono text-[10.5px] text-ink-muted tabular">{current + 1}/{slideCount}</span>
                 </div>
 
-                <button type="button" onClick={() => setNoteOpen(true)} title="记笔记（自动关联当前页）" className={cn('inline-flex shrink-0 items-center gap-1.5 rounded-[10px] bg-brand text-paper shadow-warm transition-all hover:bg-brand-hover hover:shadow-warm-lg', barExpanded ? 'px-3.5 py-2 text-[13px] font-semibold' : 'rounded-full p-2.5')}>
+                <button type="button" onClick={() => setNoteOpen(true)} title="记笔记（自动关联你正在看的那一段）" className={cn('inline-flex shrink-0 items-center gap-1.5 rounded-[10px] bg-brand text-paper shadow-warm transition-all hover:bg-brand-hover hover:shadow-warm-lg', barExpanded ? 'px-3.5 py-2 text-[13px] font-semibold' : 'rounded-full p-2.5')}>
                   <PenLine size={14} />
                   {barExpanded && '记笔记'}
                 </button>
 
-                <button type="button" onClick={() => setAskOpen(true)} title="举手提问" className={cn('inline-flex shrink-0 items-center gap-1.5 border border-brand-amber/50 bg-brand-amber-tint text-ochre transition-all hover:border-brand-amber', barExpanded ? 'rounded-[10px] px-3 py-2 text-[13px] font-medium' : 'rounded-full p-2.5')}>
-                  <Hand size={14} />
-                  {barExpanded && <span className="hidden sm:inline">举手提问</span>}
-                </button>
+                {/* ---- 举手提问的三大模态：说 / 拍 / 写 直接摆在条上（不藏进二级面板） ---- */}
+                <span
+                  className={cn(
+                    'flex shrink-0 items-center gap-0.5 border border-brand-amber/50 bg-brand-amber-tint p-0.5',
+                    barExpanded ? 'rounded-[11px]' : 'rounded-full',
+                  )}
+                >
+                  {([
+                    { m: 'voice', icon: Mic, label: '说', tip: '说：语音提问 · 说完自动发送，再点一次可取消' },
+                    { m: 'photo', icon: Camera, label: '拍', tip: '拍：拍张现场照片一起问' },
+                    { m: 'text', icon: MessageSquare, label: '写', tip: '写：打字提问' },
+                  ] as const).map(({ m, icon: MIcon, label, tip }) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        if (m === 'voice') toast.info('语音提问暂用文字输入，可在面板中描述问题');
+                        else setAskOpen(true);
+                      }}
+                      title={tip}
+                      aria-label={tip}
+                      className={cn(
+                        'inline-flex items-center gap-1 font-medium transition-all',
+                        barExpanded ? 'rounded-[9px] px-2 py-1.5 text-[12.5px]' : 'rounded-full p-2',
+                        'text-ochre hover:bg-brand-amber/25',
+                      )}
+                    >
+                      <MIcon size={14} />
+                      {barExpanded && label}
+                    </button>
+                  ))}
+                </span>
 
                 <Popover>
                   <PopoverTrigger asChild>
