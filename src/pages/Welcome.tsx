@@ -36,6 +36,46 @@ import ProfileForge from '@/components/profiles/ProfileForge';
 import type { ForgeData } from '@/components/profiles/ProfileForge';
 import { cn } from '@/lib/utils';
 
+/** 行内自定义输入（chip 组的兜底） */
+function CustomChipInput({
+  placeholder,
+  onConfirm,
+  onCancel,
+}: {
+  placeholder: string;
+  onConfirm: (v: string) => void;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState('');
+  const submit = () => {
+    const v = text.trim();
+    if (v) onConfirm(v);
+    else onCancel();
+  };
+  return (
+    <span className="inline-flex items-center gap-1 rounded-lg border border-brand/45 bg-paper pl-2">
+      <input
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') submit();
+          if (e.key === 'Escape') onCancel();
+        }}
+        placeholder={placeholder}
+        className="w-[150px] bg-transparent py-1.5 text-[13px] text-ink outline-none placeholder:text-ink-muted/60"
+      />
+      <button
+        type="button"
+        onClick={submit}
+        className="rounded-r-[7px] bg-brand px-2 py-1.5 text-[12px] font-medium text-paper hover:bg-brand-hover"
+      >
+        确定
+      </button>
+    </span>
+  );
+}
+
 const clampScore = (n: number) => Math.max(20, Math.min(92, Math.round(n)));
 
 function miniRadar(scores: Record<string, number>) {
@@ -92,6 +132,10 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
       .catch(() => {});
   }, []);
   const [name, setName] = useState('');
+  const [customIdentity, setCustomIdentity] = useState<string | null>(null);
+  const [showCustomIdentity, setShowCustomIdentity] = useState(false);
+  const [customEdu, setCustomEdu] = useState<string | null>(null);
+  const [showCustomEdu, setShowCustomEdu] = useState(false);
   const [tag, setTag] = useState<string | null>(null);
   const [edu, setEdu] = useState<string | null>(null);
   const [job, setJob] = useState<string | null>(null);
@@ -118,8 +162,10 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
   const canNext = step === 0 ? name.trim().length > 0 && tag !== null : step === 1 ? edu !== null : job !== null;
 
   const finish = async () => {
-    if (!tag || !edu || !job || forge) return;
-    const prior = priorOf(tag, edu);
+    const effectiveTag = customIdentity ?? tag;
+    const effectiveEdu = customEdu ?? edu;
+    if (!effectiveTag || !effectiveEdu || !job || forge) return;
+    const prior = (TAGS.includes(effectiveTag) && EDU.includes(effectiveEdu)) ? priorOf(effectiveTag, effectiveEdu) : {};
     const kps = quickKnowledgePoints.length ? quickKnowledgePoints : knowledgePoints;
     const scores: Record<string, number> = {};
     kps.forEach((kp) => { scores[kp.id] = clampScore(50 + (prior[kp.id] ?? 0)); });
@@ -130,9 +176,9 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
     const draft: LearnerDraft = {
       name: name.trim(),
       avatar: AVATARS[name.trim().length % AVATARS.length],
-      tag,
-      role: `${tag} · 精简建档`,
-      education: edu,
+      tag: effectiveTag,
+      role: `${effectiveTag} · 精简建档`,
+      education: effectiveEdu,
       targetJob: job,
       weeklyHours: 8,
       learningStyle: [],
@@ -151,21 +197,21 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
     /* 先让后端生成真实画像轨迹，再播放锻造动画 */
     let forgeSteps;
     let forgeBlindSpots;
-    let forgeEvidence = [`身份「${tag}」`, `学历「${edu}」`, `目标「${job}」`, '背景先验 → 六维起点'];
+    let forgeEvidenceFinal = [`身份「${effectiveTag}」`, `学历「${effectiveEdu}」`, `目标「${job}」`, '背景先验 → 六维起点'];
     try {
       const generated = await api.generateProfile({
         method: 'quick',
         name: draft.name,
         avatar: draft.avatar,
-        tag,
-        education: edu,
+        tag: effectiveTag,
+        education: effectiveEdu,
         targetJob: job,
         targetCategoryCode,
         scores,
         confidence: 33,
       });
       forgeSteps = generated.steps;
-      forgeEvidence = generated.evidence;
+      forgeEvidenceFinal = generated.evidence;
       forgeBlindSpots = generated.blindSpots;
     } catch {
       /* 后端不可用时保留前端兜底文案 */
@@ -176,7 +222,7 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
       scores,
       confidence: 33,
       method: 'quick',
-      evidence: forgeEvidence,
+      evidence: forgeEvidenceFinal,
       steps: forgeSteps,
       blindSpots: forgeBlindSpots,
     });
@@ -291,6 +337,31 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
                       {item}
                     </button>
                   ))}
+                  {customIdentity && (
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomIdentity(true)}
+                      className="rounded-full border border-brand bg-brand-tint px-3.5 py-2 text-[12.5px] font-medium text-brand shadow-[0_3px_10px_rgba(78,120,96,0.1)]"
+                    >
+                      <Check size={12} className="mr-1 inline" />
+                      {customIdentity}
+                    </button>
+                  )}
+                  {showCustomIdentity ? (
+                    <CustomChipInput
+                      placeholder="你的身份"
+                      onConfirm={(v) => { setCustomIdentity(v); setTag(v); setShowCustomIdentity(false); }}
+                      onCancel={() => { setCustomIdentity(null); setTag(null); setShowCustomIdentity(false); }}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => { setTag(null); setShowCustomIdentity(true); }}
+                      className="rounded-full border border-hairline bg-white/35 px-3.5 py-2 text-[12.5px] font-medium text-ink-muted transition-all hover:border-brand/35 hover:bg-white/60"
+                    >
+                      + 自己输入
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -339,6 +410,31 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
                     {item}
                   </button>
                 ))}
+                {customEdu && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomEdu(true)}
+                    className="relative rounded-[13px] border border-brand bg-brand-tint px-3 py-3.5 text-center text-[13px] font-medium text-brand shadow-[0_5px_14px_rgba(78,120,96,0.1)]"
+                  >
+                    <Check size={13} className="absolute right-2.5 top-2.5" />
+                    {customEdu}
+                  </button>
+                )}
+                {showCustomEdu ? (
+                  <CustomChipInput
+                    placeholder="学历"
+                    onConfirm={(v) => { setCustomEdu(v); setEdu(v); setShowCustomEdu(false); }}
+                    onCancel={() => { setCustomEdu(null); setEdu(null); setShowCustomEdu(false); }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => { setEdu(null); setShowCustomEdu(true); }}
+                    className="relative rounded-[13px] border border-hairline bg-white/35 px-3 py-3.5 text-center text-[13px] font-medium text-ink-muted transition-all hover:-translate-y-0.5 hover:border-brand/35 hover:bg-white/60"
+                  >
+                    + 自己输入
+                  </button>
+                )}
               </div>
             </motion.div>
           )}
@@ -444,6 +540,8 @@ export default function Welcome() {
   if (!session) return <Navigate to="/login" replace />;
 
   const isBack = mode === 'auto' && knownLearner !== null;
+  // session.learnerId 存在说明登入时已确认画像存在，前端 learners 列表在异步加载中
+  const profilesPending = mode === 'auto' && session.learnerId != null && knownLearner === null;
   const report = knownLearner ? reportForLearner(knownLearner) : null;
   const nextNode = report ? activePathNode(report) : null;
 
@@ -456,6 +554,12 @@ export default function Welcome() {
       </div>
 
       {/* ============ 老用户：欢迎回来 ============ */}
+      {profilesPending && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="lf-card w-full max-w-[560px] p-8 text-center">
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-[3px] border-brand-tint border-t-brand" />
+          <p className="mt-3 text-[13px] text-ink-muted">正在载入你的画像…</p>
+        </motion.div>
+      )}
       {isBack && knownLearner && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }} className="lf-card w-full max-w-[560px] p-6">
           <div className="flex items-center gap-4">
@@ -510,7 +614,7 @@ export default function Welcome() {
       )}
 
       {/* ============ 新用户：建档方式二选一 ============ */}
-      {!isBack && mode !== 'quick' && (
+      {!isBack && !profilesPending && mode !== 'quick' && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }} className="w-full max-w-[720px]">
           <div className="text-center">
             <h1 className="font-serif text-[26px] font-semibold text-ink">先建一份你的学情画像</h1>

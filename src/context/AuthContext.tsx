@@ -117,18 +117,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             verificationCode: secret || 'demo',
           });
         }
-        let lid = learnerId ?? result.learnerId;
-        if (!lid) {
-          try {
-            const learnedList = await api.listLearners();
-            if (learnedList.length > 0) lid = learnedList[0].id;
-          } catch { /* ignore */ }
-        }
+        // 后端 issueLogin 总是把 user.getId() 当成 learnerId 返回，需要从 /learners 取出真实 learner UUID
+        let realLearnerId: string | null = learnerId ?? null;
+        try {
+          const learnedList = await api.listLearners();
+          if (learnedList.length > 0) realLearnerId = learnedList[0].id;
+          else realLearnerId = null;
+        } catch { /* keep existing */ }
         persistSession({
           method, account, label, at: Date.now(), token: result.accessToken,
-          learnerId: lid ?? undefined,
+          learnerId: realLearnerId ?? undefined,
         });
-        if (lid) persistKnown({ ...known, [account]: { learnerId: lid, lastAt: Date.now() } });
+        if (realLearnerId) persistKnown({ ...known, [account]: { learnerId: realLearnerId, lastAt: Date.now() } });
         return true;
       } catch {
         return false;
