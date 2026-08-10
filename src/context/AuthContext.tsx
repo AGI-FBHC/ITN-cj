@@ -102,11 +102,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             verificationCode: secret || 'demo',
           });
         }
+        let lid = learnerId ?? result.learnerId;
+        if (!lid) {
+          try {
+            const learnedList = await api.listLearners();
+            if (learnedList.length > 0) lid = learnedList[0].id;
+          } catch { /* ignore */ }
+        }
         persistSession({
           method, account, label, at: Date.now(), token: result.accessToken,
-          learnerId: result.learnerId ?? learnerId,
+          learnerId: lid ?? undefined,
         });
-        persistKnown({ ...known, [account]: { learnerId: learnerId ?? result.learnerId ?? account, lastAt: Date.now() } });
+        if (lid) persistKnown({ ...known, [account]: { learnerId: lid, lastAt: Date.now() } });
         return true;
       } catch {
         return false;
