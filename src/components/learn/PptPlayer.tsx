@@ -1,12 +1,23 @@
 /**
- * PptPlayer - PPT content renderer (image + notes) only.
- * All player bars, note editors, and raise-hand panels are provided by LearnUnit.
+ * PptPlayer - PPT content renderer with audio playback and page navigation.
+ * The LearnUnit page provides the bottom player bar for appearance;
+ * this component provides the actual slide content and playback controls.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Loader2, RefreshCw, FileText } from 'lucide-react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, FileText, Loader2, Pause, Play, RefreshCw } from 'lucide-react';
 import { fetchSlideAsset, presentationApi } from '@/lib/presentationApi';
 import type { PresentationSlideshow, PresentationTask } from '@/lib/presentationApi';
 import { cn } from '@/lib/utils';
+
+export interface PptPlayerRef {
+  current: number;
+  slideCount: number;
+  audioPlaying: boolean;
+  goNext: () => void;
+  goPrev: () => void;
+  goTo: (index: number) => void;
+  togglePlay: () => void;
+}
 
 const PROGRESS_LABEL: Record<PresentationTask['status'], string> = {
   queued: '排队中',
@@ -19,14 +30,68 @@ const PROGRESS_LABEL: Record<PresentationTask['status'], string> = {
   cancelled: '已取消',
 };
 
-export default function PptPlayer({ taskId }: { taskId: string }) {
+const PptPlayer = forwardRef<PptPlayerRef, { taskId: string }>(function PptPlayer({ taskId }, ref) {
   const [task, setTask] = useState<PresentationTask | null>(null);
   const [slides, setSlides] = useState<PresentationSlideshow | null>(null);
   const [current, setCurrent] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [slideSrc, setSlideSrc] = useState('');
+  const [audioPlaying, setAudioPlaying] = useState(false);
+  const [audioSrc, setAudioSrc] = useState('');
   const outlineConfirmedRef = useRef(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const currentRef = useRef(0);
+  const audioSrcRef = useRef('');
+  currentRef.current = current;
+  audioSrcRef.current = audioSrc;
+
+  const slideCount = slides?.slideCount ?? 0;
+
+  const playAudio = async (index: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    try {
+      if (!audioSrcRef.current) {
+        const blob = await fetchSlideAsset(taskId, index, 'audio');
+        const url = URL.createObjectURL(blob);
+        setAudioSrc(url);
+        audioSrcRef.current = url;
+        audio.src = url;
+      }
+      await audio.play();
+      setAudioPlaying(true);
+    } catch (reason) {
+      setError(reason instanceof Error ? `音频加载失败：${reason.message}` : '音频暂不可用');
+    }
+  };
+
+  const togglePlay = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audioPlaying) { audio.pause(); setAudioPlaying(false); }
+    else void playAudio(currentRef.current);
+  };
+
+  const goTo = (index: number, continuePlaying = false) => {
+    if (index < 0 || index >= slideCount) return;
+    if (index === currentRef.current) { if (continuePlaying) void playAudio(index); return; }
+    setCurrent(index);
+    if (continuePlaying) window.setTimeout(() => void playAudio(index), 700);
+  };
+
+  const goNext = () => goTo(currentRef.current + 1);
+  const goPrev = () => goTo(currentRef.current - 1);
+
+  useImperativeHandle(ref, () => ({
+    get current() { return currentRef.current; },
+    get slideCount() { return slideCount; },
+    get audioPlaying() { return audioPlaying; },
+    goNext,
+    goPrev,
+    goTo,
+    togglePlay,
+  }), [slideCount, audioPlaying]);
 
   const loadTask = useCallback(async () => {
     try {
@@ -83,7 +148,18 @@ export default function PptPlayer({ taskId }: { taskId: string }) {
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [taskId]);
 
-  const slideCount = slides?.slideCount ?? 0;
+  const handleAudioEnded = () => {
+    if (currentRef.current < slideCount - 1) goTo(currentRef.current + 1, true);
+    else setAudioPlaying(false);
+  };
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (audio) { audio.pause(); audio.removeAttribute('src'); audio.load(); }
+    setAudioPlaying(false);
+    setAudioSrc((prev) => { if (prev) URL.revokeObjectURL(prev); return ''; });
+    audioSrcRef.current = '';
+  }, [current]);
 
   useEffect(() => {
     if (!slides || slides.slideCount === 0) return;
@@ -142,10 +218,23 @@ export default function PptPlayer({ taskId }: { taskId: string }) {
   return (
     <div className="space-y-4">
       <div className="lf-anim-in-up rounded-[18px] border border-hairline bg-paper p-7 shadow-warm-lg md:p-10">
-        {slideSrc ? (
-          <img src={slideSrc} alt={`第 ${current + 1} 页`} className="mx-auto max-h-[58vh] w-auto max-w-full rounded-md object-contain shadow-sm" />
-        ) : (
-          <div className="flex min-h-[40vh] items-center justify-center"><Loader2 size={22} className="animate-spin text-brand" /></div>
+        <div className="flex items-center justify-center gap-4">
+          <button type="button" disabled={current <= 0} onClick={goPrev} className="flex h-9 w-9 items-center justify-center rounded-full border border-hairline text-ink-muted transition hover:border-brand/40 hover:text-brand disabled:opacity-25" title="上一页"><ChevronLeft size={18} /></button>
+          {slideSrc ? (
+            <img src={slideSrc} alt={`第 ${current + 1} 页`} className="max-h-[58vh] w-auto max-w-full rounded-md object-contain shadow-sm" />
+          ) : (
+            <div className="flex min-h-[40vh] items-center justify-center"><Loader2 size={22} className="animate-spin text-brand" /></div>
+          )}
+          <button type="button" disabled={current >= slideCount - 1} onClick={goNext} className="flex h-9 w-9 items-center justify-center rounded-full border border-hairline text-ink-muted transition hover:border-brand/40 hover:text-brand disabled:opacity-25" title="下一页"><ChevronRight size={18} /></button>
+        </div>
+        {slideCount > 1 && (
+          <div className="mt-3 flex items-center justify-center gap-3">
+            <button type="button" onClick={togglePlay} className="flex h-9 items-center gap-1.5 rounded-full bg-brand px-5 text-[12.5px] font-medium text-paper transition hover:bg-brand-hover" title={audioPlaying ? '暂停' : '语音授课'}>
+              {audioPlaying ? <Pause size={14} /> : <Play size={14} fill="currentColor" />}
+              {audioPlaying ? '暂停' : '语音授课'}
+            </button>
+            <span className="font-mono text-[11px] text-ink-muted">{current + 1} / {slideCount}</span>
+          </div>
         )}
         {note && (
           <div className="mt-6 border-t border-hairline pt-5">
@@ -157,6 +246,9 @@ export default function PptPlayer({ taskId }: { taskId: string }) {
           </div>
         )}
       </div>
+      <audio ref={audioRef} onPlay={() => setAudioPlaying(true)} onPause={() => setAudioPlaying(false)} onEnded={handleAudioEnded} className="hidden" preload="none" />
     </div>
   );
-}
+});
+
+export default PptPlayer;

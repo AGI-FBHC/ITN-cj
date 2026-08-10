@@ -45,6 +45,8 @@ import {
   ChevronDown,
   GraduationCap,
   ImagePlus,
+  Camera,
+  MessageSquare,
   MoreHorizontal,
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -64,6 +66,7 @@ import { loadProgress, saveProgress, clearProgress } from '@/data/learnProgress'
 import { recordHarvest, speciesOf } from '@/data/garden';
 import { buildUnit, remedialBlockOf, variantBlockOf, drawQuestions, matchQA, fallbackAnswer, cuesOf, qaBank, STYLE_LABELS } from '@/data/courseware';
 import type { CourseBlock, PresetQA, StageItem, StyleLabel } from '@/data/courseware';
+import { canStartChallenge, CHALLENGE_THRESHOLD, CHALLENGE_MAX_WRONG } from '@/agent/arbiter';
 import TraceBadge from '@/components/TraceBadge';
 import InlineTutor from '@/components/learn/InlineTutor';
 import type { TutorMsg } from '@/components/learn/InlineTutor';
@@ -73,8 +76,8 @@ import PlcLadderDemo from '@/components/learn/PlcLadderDemo';
 import SafetyLoopDemo from '@/components/learn/SafetyLoopDemo';
 import VisionGuideDemo from '@/components/learn/VisionGuideDemo';
 import FaultTreeDemo from '@/components/learn/FaultTreeDemo';
-import PathProgressBar from '@/components/learn/PathProgressBar';
 import PptPlayer from '@/components/learn/PptPlayer';
+import PathProgressBar from '@/components/learn/PathProgressBar';
 import { GrassTuft, Sprout } from '@/components/heal/Flora';
 import { useAmbient } from '@/components/heal/useAmbient';
 import { cn } from '@/lib/utils';
@@ -589,13 +592,8 @@ export default function LearnUnit() {
 
   /* 图谱深链：?block=cN → 定位并闪烁对应概念块 */
   const [searchParams] = useSearchParams();
-  /* PPT 深链：?ppt=1 → 进入即幻灯模式 */
-  useEffect(() => {
-    if (searchParams.get('ppt') === '1') {
-      setSlideMode(true);
-      setSlideIdx(0);
-    }
-  }, [searchParams]);
+  const pptTaskId = searchParams.get('ppt');
+  const pptRef = useRef<any>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
   useEffect(() => {
     const target = searchParams.get('block');
@@ -620,6 +618,8 @@ export default function LearnUnit() {
   const [playing, setPlaying] = useState(false);
   const playingRef = useRef(false);
   const [cursor, setCursor] = useState(0);
+  /** 当前正在讲的句子下标（块内"跟读流"用：语音讲到哪，文稿高亮到哪） */
+  const [cueIdx, setCueIdx] = useState(0);
   const [subtitle, setSubtitle] = useState<string | null>(null);
   const [kbGlow, setKbGlow] = useState(false);
   const [rateIdx, setRateIdx] = useState(2);
@@ -632,6 +632,8 @@ export default function LearnUnit() {
   const cancelRef = useRef<(() => void) | null>(null);
   const posRef = useRef<{ b: number; c: number }>({ b: 0, c: 0 });
   const blockRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  /** 跟读流里"正在讲的那句"的 DOM，长文稿时把它带进视野 */
+  const cueRefs = useRef<Record<string, HTMLElement | null>>({});
 
   const [cpPicks, setCpPicks] = useState<Record<string, number>>({});
   /** 答对庆祝：叶子飘落挂在该检查点块上 */
@@ -672,8 +674,17 @@ export default function LearnUnit() {
   /** 提问附图：车间里真实的问法是"我们这台报这个警（拍张照）怎么回事" */
   const [askPhoto, setAskPhoto] = useState<{ name: string; url: string } | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const askInputRef = useRef<HTMLInputElement>(null);
   const [qaLog, setQaLog] = useState<{ q: string; a: string; kbRef?: string; photo?: string }[]>([]);
-  const [listening, setListening] = useState(false);
+  /** 语音输入目标：ask=提问（说完自动发送）/ note=笔记（转写填入待编辑） */
+  const [listening, setListening] = useState<null | 'ask' | 'note'>(null);
+  /** 实时转写预览：说到哪看到哪，用户才敢让它自动发 */
+  const [interim, setInterim] = useState('');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recRef = useRef<any>(null);
+  /** 笔记附图（纯演示：正文里留文本标记，不把 base64 塞进 localStorage） */
+  const [noteImg, setNoteImg] = useState<{ name: string; url: string } | null>(null);
+  const noteImgInputRef = useRef<HTMLInputElement>(null);
   const [finished, setFinished] = useState(false);
   const finishedSignalRef = useRef(false);
 
@@ -963,6 +974,7 @@ export default function LearnUnit() {
     }
     posRef.current = { b, c };
     setCursor(b);
+    setCueIdx(c);   // 块内跟读流要知道"正在讲第几句"
     /* 讲播推进 = 课堂推进：播到哪块解锁哪块（块刚解锁时 ref 尚未挂载，延迟滚动） */
     setUnlocked((u) => Math.max(u, b + 1));
     if (c === 0) setTimeout(() => scrollToBlock(b), 180);
@@ -1041,7 +1053,7 @@ export default function LearnUnit() {
     /* 进阶挑战护栏：学习者越权上调时约定"两错接回"——ARB-05 兑现承诺 */
     if (challengeIdsRef.current.has(b.id) && !correct) {
       challengeWrongRef.current += 1;
-      if (challengeWrongRef.current >= 2) {
+      if (challengeWrongRef.current >= CHALLENGE_MAX_WRONG) {
         const pending = new Set(challengeIdsRef.current);
         pending.delete(b.id); // 当前这道保留（刚作答完要显示解析）
         challengeIdsRef.current.clear();
@@ -1077,14 +1089,8 @@ export default function LearnUnit() {
     }, correct ? 900 : 2100);
   };
 
-  /* ---- 举手提问 ---- */
-  const raiseHand = () => {
-    stopPlayback();
-    setAsking(true);
-  };
-
-  const submitQuestion = () => {
-    const q = question.trim();
+  const submitQuestion = (override?: string) => {
+    const q = (override ?? question).trim();
     if (!q && !askPhoto) return;
     const hit = q ? matchQA(kpId, q) : null;
     /* 带图但没匹配到预置 QA：按"看图答疑"给一句可信的兜底（真实版由多模态模型接管） */
@@ -1113,20 +1119,78 @@ export default function LearnUnit() {
     e.target.value = '';
   };
 
-  const startListening = () => {
+  /** 停止/取消录音（听的过程中再点一次麦克风 = 撤回，不发送） */
+  const stopListening = () => {
+    try { recRef.current?.abort(); } catch { /* ignore */ }
+    recRef.current = null;
+    setListening(null);
+    setInterim('');
+  };
+
+  /**
+   * 语音输入。两个目标的语义不同：
+   * - ask：说完（识别到 final）**自动发送**——语音的价值就在手不空的场景（车间/戴手套/边操作边问），
+   *   还要再点一次发送等于废掉一半；实时转写预览 + 再点一次可取消，兜住误识别。
+   * - note：转写填进笔记草稿，不自动保存——笔记要归档，得让人改完再存。
+   */
+  const startListening = (target: 'ask' | 'note') => {
     const SR = getRecognizer();
-    if (!SR) return;
+    if (!SR) {
+      toast('这个浏览器不支持语音输入', { description: '换 Chrome / Edge 试试，或直接打字' });
+      return;
+    }
+    /* 用 ref 判断"是否正在听"，不能用 state——本函数常在 setTimeout 里跑，闭包里的 state 是过期的 */
+    if (recRef.current) { stopListening(); return; }
     const rec = new SR();
+    recRef.current = rec;
     rec.lang = 'zh-CN';
-    rec.interimResults = false;
+    rec.interimResults = true;   // 实时预览：说到哪看到哪
+    rec.continuous = false;
+    /** 已被取消或替换掉的识别器，其回调一律作废——否则孤立的识别器会在稍后偷偷发出一次提问 */
+    const isStale = () => recRef.current !== rec;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rec.onresult = (e: any) => { setQuestion(e.results[0][0].transcript); setListening(false); };
-    rec.onerror = () => setListening(false);
-    rec.onend = () => setListening(false);
-    setListening(true);
+    rec.onresult = (e: any) => {
+      if (isStale()) return;
+      let finalText = '';
+      let partial = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const seg = e.results[i];
+        if (seg.isFinal) finalText += seg[0].transcript;
+        else partial += seg[0].transcript;
+      }
+      setInterim(partial);
+      if (!finalText) return;
+      recRef.current = null;
+      setListening(null);
+      setInterim('');
+      if (target === 'ask') submitQuestion(finalText);
+      else setNoteText((prev) => (prev ? `${prev} ${finalText}` : finalText));
+    };
+    rec.onerror = () => { if (!isStale()) stopListening(); };
+    rec.onend = () => {
+      if (isStale()) return;
+      recRef.current = null;
+      setListening(null);
+      setInterim('');
+    };
+    setListening(target);
     rec.start();
   };
   const srAvailable = getRecognizer() !== null;
+
+  /** 三大模态提问入口（直接挂在播放条上，不藏进二级面板） */
+  const askBy = (mode: 'voice' | 'photo' | 'text') => {
+    /* 正在听时再点「说」= 取消，立即生效（不要排进 setTimeout，否则连点会叠出两个识别器） */
+    if (mode === 'voice' && recRef.current) { stopListening(); return; }
+    stopPlayback();
+    setAsking(true);
+    hitSpot('modal');
+    setTimeout(() => {
+      if (mode === 'voice') startListening('ask');
+      else if (mode === 'photo') photoInputRef.current?.click();
+      else askInputRef.current?.focus();
+    }, 260);
+  };
 
   /* 演示导览：正在讲播该块时，最后点亮的下标即导览步 */
   const tourStepOf = (b: CourseBlock, i: number): number | null => {
@@ -1217,7 +1281,18 @@ export default function LearnUnit() {
     toast('已标记存疑', { description: `园子里的「${kp.name}」会提前"口渴"，提醒你回来再过一遍` });
   };
   const kpScore = currentLearner.scores[kpId] ?? 50;
-  const challengeReady = kpScore >= 66;
+  const challengeReady = canStartChallenge(kpScore);
+
+  /* 跟读流：正在讲的那句若滑出视野（长文稿 / 用户手动滚动过），把它轻轻带回来 */
+  useEffect(() => {
+    if (!playing) return;
+    const el = cueRefs.current[blocksRef.current[cursor]?.id ?? ''];
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (r.top < 88 || r.bottom > window.innerHeight - 130) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [cueIdx, cursor, playing]);
 
   /* ---- 断点续学：进课件时恢复上次学到的位置与本节涨跌；推进时随手存；完课清除 ---- */
   const resumedRef = useRef<string | null>(null);
@@ -1325,10 +1400,6 @@ export default function LearnUnit() {
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canAdvance, curIdx, playing]);
-
-  /* PPT 播放模式：从知识地图进入时，直接播放后台生成的真实 PPT */
-  const pptTaskId = searchParams.get('ppt');
-  // PptPlayer is embedded in content area below; LearnUnit provides the player bar and panels.
 
   return (
     <div className="mx-auto max-w-[760px] px-5 pb-48 pt-6 md:px-6">
@@ -1439,14 +1510,16 @@ export default function LearnUnit() {
             {freeBrowse ? '回到课堂推进' : '自由浏览'}
           </button>
         </div>
-        {pptTaskId ? <PptPlayer taskId={pptTaskId} /> : (blocks.map((b, i) => {
+        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} ref={pptRef} /> : (blocks.map((b, i) => {
           const active = i === cursor && playing;
           /* ---- 课堂推进三态：完整（当前/回看/自由浏览）· 摘要行（已完成）· 不渲染（未解锁） ---- */
           const effUnlocked = Math.min(unlocked, blocks.length);
           const isCurrent = i === effUnlocked - 1;
           const isCompleted = !freeBrowse && i < effUnlocked - 1;
+          /* 正在讲播的块永远完整展开——否则回听旧段时只剩一行摘要，声音在响却什么都看不到 */
+          const isNarrating = playing && cursor === i;
           if (!freeBrowse && i >= effUnlocked) return null;
-          if (isCompleted && !reviewOpen[b.id]) {
+          if (isCompleted && !reviewOpen[b.id] && !isNarrating) {
             const pick = b.kind === 'checkpoint' ? cpPicks[b.id] : undefined;
             const answered = pick !== undefined;
             const wasCorrect = b.kind === 'checkpoint' && answered && pick === b.q.answerIndex;
@@ -1769,6 +1842,44 @@ export default function LearnUnit() {
                 </>
               )}
 
+              {/* ---- 讲播跟读流：语音讲到哪，文稿高亮到哪（音频对应的文本流，不再只有底部一行字幕）
+                      整段句子一次性铺出（布局稳定、能前后回看），已讲过转淡、正在讲高亮、未讲到更淡 ---- */}
+              {playing && cursor === i && !audioMode && (() => {
+                const cues = cuesOf(b);
+                if (cues.length === 0) return null;
+                return (
+                  <div className="mt-3.5 rounded-[10px] border border-brand/25 bg-paper/70 p-3">
+                    <div className="mb-2 flex items-center gap-1.5 font-mono text-[10px] tracking-wide text-ink-muted">
+                      <Volume2 size={10} className="text-brand" />
+                      讲播文稿 · 第 {Math.min(cueIdx + 1, cues.length)}/{cues.length} 句
+                      <span className="ml-auto flex items-end gap-[2px]" aria-hidden>
+                        {[0, 1, 2].map((k) => (
+                          <span key={k} className="w-[2px] animate-breathe rounded-full bg-brand" style={{ height: 9, animationDelay: `${k * 0.18}s` }} />
+                        ))}
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      {cues.map((c, ci) => (
+                        <p
+                          key={ci}
+                          ref={(el) => { if (ci === cueIdx && el) cueRefs.current[b.id] = el; }}
+                          className={cn(
+                            'text-[13.5px] leading-[22px] transition-colors duration-300',
+                            ci === cueIdx
+                              ? 'font-medium text-ink'
+                              : ci < cueIdx
+                                ? 'text-ink-muted/70'
+                                : 'text-ink-muted/35',
+                          )}
+                        >
+                          {c.say}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* 块内追问「问一问」：就地展开在这段正下方，聊完收起，人还在原地 */}
               {tutorFor?.blockId === b.id && (
                 <div className="mt-3.5">
@@ -1832,22 +1943,81 @@ export default function LearnUnit() {
                         value={noteText}
                         onChange={(e) => setNoteText(e.target.value)}
                         rows={2}
-                        placeholder="用自己的话记下这一段的要点…"
+                        placeholder="用自己的话记下这一段的要点…（也可以说，或拍张图）"
                         className="w-full resize-none bg-transparent text-[13px] leading-[20px] text-ink outline-none placeholder:text-ink-muted/60"
                       />
-                      <div className="mt-1.5 flex items-center justify-between">
-                        <span className="font-mono text-[10px] text-ink-muted">
-                          自动携带来源{'kbRefs' in b && b.kbRefs.length > 0 ? ' + KB 溯源' : ''} → 个人知识库
-                        </span>
-                        <span className="flex gap-1.5">
-                          <button type="button" onClick={() => { setNoteFor(null); setNoteText(''); }} className="rounded-md px-2 py-1 text-[12px] text-ink-muted hover:text-ink">取消</button>
+
+                      {/* 语音实时转写预览：笔记不自动保存——要归档的东西得让人改完再存 */}
+                      {listening === 'note' && (
+                        <div className="mt-1 flex items-center gap-1.5 text-[11.5px] text-brand-danger">
+                          <span className="h-1.5 w-1.5 animate-ping rounded-full bg-brand-danger" />
+                          正在听…{interim || '（说完自动填进上面）'}
+                        </div>
+                      )}
+                      {/* 笔记附图缩略图 */}
+                      {noteImg && (
+                        <div className="mt-1.5 flex items-center gap-2 rounded-[8px] border border-hairline bg-card-warm p-1.5">
+                          <img src={noteImg.url} alt="" className="h-9 w-9 rounded-[6px] object-cover" />
+                          <span className="min-w-0 flex-1 truncate text-[11px] text-ink-2">{noteImg.name}</span>
+                          <button type="button" onClick={() => setNoteImg(null)} aria-label="移除图片" className="text-ink-muted hover:text-brand-danger">
+                            <X size={12} />
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="mt-1.5 flex items-center gap-2">
+                        {/* 三大模态：说 / 拍 / 写（写 = 上面的文本域本身） */}
+                        <span className="flex shrink-0 items-center gap-1">
+                          {srAvailable && (
+                            <button
+                              type="button"
+                              onClick={() => (listening === 'note' ? stopListening() : startListening('note'))}
+                              title={listening === 'note' ? '再点一次停止' : '说：语音转文字填进笔记'}
+                              aria-label="语音记笔记"
+                              className={cn(
+                                'flex h-7 w-7 items-center justify-center rounded-full border transition-all',
+                                listening === 'note'
+                                  ? 'animate-pulse border-brand-danger bg-brand-danger text-paper'
+                                  : 'border-hairline bg-card-warm text-ink-2 hover:border-brand/40 hover:text-brand',
+                              )}
+                            >
+                              <Mic size={13} />
+                            </button>
+                          )}
+                          <input
+                            ref={noteImgInputRef}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f) setNoteImg({ name: f.name, url: URL.createObjectURL(f) });
+                              e.target.value = '';
+                            }}
+                          />
                           <button
                             type="button"
-                            disabled={!noteText.trim()}
+                            onClick={() => noteImgInputRef.current?.click()}
+                            title="拍：给这条笔记配张现场图"
+                            aria-label="给笔记配图"
+                            className="flex h-7 w-7 items-center justify-center rounded-full border border-hairline bg-card-warm text-ink-2 transition-all hover:border-brand/40 hover:text-brand"
+                          >
+                            <Camera size={13} />
+                          </button>
+                        </span>
+                        <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-ink-muted">
+                          自动携带来源{'kbRefs' in b && b.kbRefs.length > 0 ? ' + KB 溯源' : ''} → 个人知识库
+                        </span>
+                        <span className="flex shrink-0 gap-1.5">
+                          <button type="button" onClick={() => { stopListening(); setNoteFor(null); setNoteText(''); setNoteImg(null); }} className="rounded-md px-2 py-1 text-[12px] text-ink-muted hover:text-ink">取消</button>
+                          <button
+                            type="button"
+                            disabled={!noteText.trim() && !noteImg}
                             onClick={() => {
+                              stopListening();
                               addNote({
                                 kpId,
-                                text: noteText.trim(),
+                                text: `${noteText.trim()}${noteImg ? `\n【图片 · ${noteImg.name}】` : ''}`.trim(),
                                 source: `${kp.name} · ${'title' in b && b.title ? b.title : b.kind === 'summary' ? '本讲小结' : '课件'}`,
                                 sourceKind: 'course',
                                 blockAnchor: b.id,
@@ -1855,8 +2025,9 @@ export default function LearnUnit() {
                               });
                               setNoteFor(null);
                               setNoteText('');
+                              setNoteImg(null);
                             }}
-                            className={cn('rounded-md px-2.5 py-1 text-[12px] font-medium', noteText.trim() ? 'bg-brand text-paper' : 'bg-paper-deep text-ink-muted/50')}
+                            className={cn('rounded-md px-2.5 py-1 text-[12px] font-medium', noteText.trim() || noteImg ? 'bg-brand text-paper' : 'bg-paper-deep text-ink-muted/50')}
                           >
                             存入知识库
                           </button>
@@ -2034,7 +2205,7 @@ export default function LearnUnit() {
                         <Scale size={11} /> ARB-05 · 调度协商
                       </div>
                       <p className="mt-1.5 text-[13px] leading-[21px] text-ink-2">
-                        你的「{kp.name}」当前 {kpScore} 分，还没到进阶线（66）。想试可以——但我盯着：
+                        你的「{kp.name}」当前 {kpScore} 分，还没到进阶线（{CHALLENGE_THRESHOLD}）。想试可以——但我盯着：
                         <span className="font-semibold text-ink">两错就接你回来</span>，先补降维讲解再说。
                       </p>
                       <div className="mt-2.5 flex flex-wrap gap-2">
@@ -2222,8 +2393,10 @@ export default function LearnUnit() {
           <div className={cn('lf-glass pointer-events-auto overflow-hidden', barExpanded ? 'rounded-[16px]' : 'rounded-full shadow-warm-lg')}>
           {/* 字幕（一体化顶条；通勤模式下已在上方大字显示，这里不再重复）。
               条件渲染而非 AnimatePresence：后者靠 rAF 完成 exit 才卸载，页面在后台时会卡住不消失 */}
+          {/* 注意：bg-ink/90 里的透明度只能取 Tailwind 刻度上的值（5 的倍数）。
+              曾写成 bg-ink/88 —— 类名压根不会生成，背景透明 + 近白文字 = 字幕彻底隐形。 */}
           {subtitle && !audioMode && barExpanded && (
-            <div className="lf-fade-in border-b border-ink/20 bg-ink/88 px-4 py-2.5 text-center text-[14px] font-medium leading-[22px] text-paper">
+            <div className="lf-fade-in border-b border-ink/20 bg-ink/90 px-4 py-2.5 text-center text-[14px] font-medium leading-[22px] text-paper">
               {subtitle}
             </div>
           )}
@@ -2342,18 +2515,38 @@ export default function LearnUnit() {
               {barExpanded && '记笔记'}
             </button>
 
-            <button
-              type="button"
-              onClick={raiseHand}
-              title="举手提问"
+            {/* ---- 举手提问的三大模态：说 / 拍 / 写 直接摆在条上（不藏进二级面板） ---- */}
+            <span
               className={cn(
-                'inline-flex shrink-0 items-center gap-1.5 border border-brand-amber/50 bg-brand-amber-tint text-ochre transition-all hover:border-brand-amber',
-                barExpanded ? 'rounded-[10px] px-3 py-2 text-[13px] font-medium' : 'rounded-full p-2.5',
+                'flex shrink-0 items-center gap-0.5 border border-brand-amber/50 bg-brand-amber-tint p-0.5',
+                barExpanded ? 'rounded-[11px]' : 'rounded-full',
               )}
             >
-              <Hand size={14} />
-              {barExpanded && <span className="hidden sm:inline">举手提问</span>}
-            </button>
+              {([
+                { m: 'voice', icon: Mic, label: '说', tip: '说：语音提问 · 说完自动发送，再点一次可取消' },
+                { m: 'photo', icon: Camera, label: '拍', tip: '拍：拍张现场照片一起问' },
+                { m: 'text', icon: MessageSquare, label: '写', tip: '写：打字提问' },
+              ] as const).map(({ m, icon: MIcon, label, tip }) => {
+                const live = m === 'voice' && listening === 'ask';
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => (live ? stopListening() : askBy(m))}
+                    title={tip}
+                    aria-label={tip}
+                    className={cn(
+                      'inline-flex items-center gap-1 font-medium transition-all',
+                      barExpanded ? 'rounded-[9px] px-2 py-1.5 text-[12.5px]' : 'rounded-full p-2',
+                      live ? 'animate-pulse bg-brand-danger text-paper' : 'text-ochre hover:bg-brand-amber/25',
+                    )}
+                  >
+                    <MIcon size={14} />
+                    {barExpanded && label}
+                  </button>
+                );
+              })}
+            </span>
 
             {focusMode ? (
               <>
@@ -2607,26 +2800,37 @@ export default function LearnUnit() {
               {srAvailable && (
                 <button
                   type="button"
-                  onClick={startListening}
-                  title="语音提问"
+                  onClick={() => (listening === 'ask' ? stopListening() : startListening('ask'))}
+                  title={listening === 'ask' ? '再点一次取消（不发送）' : '语音提问 · 说完自动发送'}
                   className={cn(
                     'flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-all',
-                    listening ? 'animate-pulse border-brand-danger bg-brand-danger text-paper' : 'border-hairline bg-paper text-ink-2 hover:border-brand/40',
+                    listening === 'ask' ? 'animate-pulse border-brand-danger bg-brand-danger text-paper' : 'border-hairline bg-paper text-ink-2 hover:border-brand/40',
                   )}
                 >
                   <Mic size={15} />
                 </button>
               )}
               <input
-                value={question}
+                ref={askInputRef}
+                value={listening === 'ask' ? interim : question}
                 onChange={(e) => setQuestion(e.target.value)}
+                readOnly={listening === 'ask'}
                 onKeyDown={(e) => { if (e.key === 'Enter') submitQuestion(); }}
-                placeholder={listening ? '正在听…' : askPhoto ? '这张图想问什么？（可不填）' : '输入问题，或点麦克风说'}
-                className="h-9 min-w-0 flex-1 rounded-[10px] border border-hairline bg-paper px-3 text-[13px] text-ink outline-none focus:border-brand/50"
+                placeholder={
+                  listening === 'ask'
+                    ? '正在听…说完自动发送'
+                    : askPhoto
+                      ? '这张图想问什么？（可不填）'
+                      : '输入问题，或点麦克风说'
+                }
+                className={cn(
+                  'h-9 min-w-0 flex-1 rounded-[10px] border bg-paper px-3 text-[13px] outline-none focus:border-brand/50',
+                  listening === 'ask' ? 'border-brand-danger/50 text-ink-muted' : 'border-hairline text-ink',
+                )}
               />
               <button
                 type="button"
-                onClick={submitQuestion}
+                onClick={() => submitQuestion()}
                 disabled={!question.trim() && !askPhoto}
                 className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]', question.trim() || askPhoto ? 'bg-brand text-paper' : 'bg-paper-deep text-ink-muted/50')}
               >
