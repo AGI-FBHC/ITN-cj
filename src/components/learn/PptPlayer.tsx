@@ -7,11 +7,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import {
-  ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, FileText, Loader2, Pause, Play, RefreshCw, X,
+  ArrowLeft, ArrowRight, CheckCircle2, ChevronLeft, FileText, Hand, Loader2, MoreHorizontal, Pause, PenLine, Play, RefreshCw,
 } from 'lucide-react';
 import { fetchSlideAsset, presentationApi } from '@/lib/presentationApi';
 import type { PresentationSlideshow, PresentationTask } from '@/lib/presentationApi';
 import { cn } from '@/lib/utils';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 const PROGRESS_LABEL: Record<PresentationTask['status'], string> = {
   queued: '排队中',
@@ -219,6 +220,7 @@ export default function PptPlayer({
     return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [taskId, current, slides]);
   const note = slides?.speakerNotes[current] ?? '';
+  const barExpanded = audioPlaying || Boolean(note);
 
   return (
     <div className="mx-auto min-h-[calc(100dvh-64px)] max-w-[1280px] px-5 pb-36 pt-6 md:px-6">
@@ -309,41 +311,83 @@ export default function PptPlayer({
 
       {/* 底部悬浮控制窗（原版新前端风格） */}
       {slides && slideCount > 0 && (
-        <div className="fixed inset-x-0 bottom-[58px] z-40 mx-auto flex w-[min(920px,calc(100%-24px))] flex-col gap-2 rounded-[17px] border border-hairline bg-paper/95 p-2.5 shadow-warm-lg backdrop-blur-md md:bottom-4">
-          <input
-            aria-label="幻灯片进度"
-            type="range"
-            min="0"
-            max={Math.max(0, slideCount - 1)}
-            value={current}
-            onChange={(event) => goTo(Number(event.target.value))}
-            className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-hairline accent-brand"
-          />
-          <div className="flex items-center gap-1.5 md:gap-2">
-            <button type="button" onClick={togglePlay} title={audioPlaying ? '暂停' : '播放'} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand text-paper">
-              {audioPlaying ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
-            </button>
-            <div className="hidden min-w-0 flex-1 sm:block">
-              <div className="truncate text-[12.5px] font-medium text-ink">{task?.title || '交互课件 · PPT'}</div>
-              <div className="mt-0.5 flex items-center gap-2 font-mono text-[9.5px] text-ink-muted">
-                <span>{audioPlaying ? '正在连播' : 'PPT 交互课件'}</span>
-                <span>{current + 1}/{slideCount}</span>
+        <div className="pointer-events-none fixed inset-x-0 bottom-16 z-40 md:bottom-0">
+          <div className={cn('mx-auto px-5 pb-3 md:px-6', barExpanded ? 'max-w-[760px]' : 'flex justify-center')}>
+            <div className={cn('lf-glass pointer-events-auto overflow-hidden', barExpanded ? 'rounded-[16px]' : 'rounded-full shadow-warm-lg')}>
+              {barExpanded && (
+                <div className="lf-fade-in border-b border-ink/20 bg-ink/88 px-4 py-2.5 text-center text-[14px] font-medium leading-[22px] text-paper">
+                  {note || `${task?.title || 'PPT'} · 第 ${current + 1} 页`}
+                </div>
+              )}
+
+              <div className={cn('flex items-center', barExpanded ? 'gap-3 px-4 py-3' : 'gap-1.5 px-3 py-2')}>
+                <button type="button" onClick={togglePlay} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand text-paper transition-transform hover:scale-105" title={audioPlaying ? '暂停' : '语音授课'}>
+                  {audioPlaying ? <Pause size={17} /> : <Play size={17} fill="currentColor" />}
+                </button>
+
+                <button type="button" disabled={current <= 0} onClick={() => goTo(current - 1)} title="上一页" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-hairline bg-paper text-ink-2 transition-all hover:border-brand/40 hover:text-brand disabled:cursor-not-allowed disabled:text-ink-muted/40">
+                  <ChevronLeft size={15} />
+                </button>
+
+                <button type="button" disabled={current >= slideCount - 1} onClick={() => goTo(current + 1)} title={current >= slideCount - 1 ? '已是最后一页' : '下一页'} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-brand/40 bg-paper text-brand transition-all hover:bg-brand-tint disabled:cursor-not-allowed disabled:border-hairline disabled:text-ink-muted/40">
+                  <ArrowRight size={15} />
+                </button>
+
+                {audioPlaying && barExpanded && (
+                  <span className="flex items-end gap-[3px]" aria-hidden>
+                    {[0, 1, 2].map((k) => (
+                      <span key={k} className="w-[3px] animate-breathe rounded-full bg-brand" style={{ height: 14, animationDelay: `${k * 0.18}s` }} />
+                    ))}
+                  </span>
+                )}
+
+                {barExpanded && (
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate whitespace-nowrap text-[13px] font-medium text-ink">{audioPlaying ? '正在讲播' : `${task?.title || 'PPT'} · 交互课件`}</div>
+                    <div className="flex min-w-0 items-center gap-2 whitespace-nowrap font-mono text-[10px] text-ink-muted">
+                      <span className="shrink-0">PPT 语音授课</span>
+                      <span className="truncate">{current + 1}/{slideCount} 页</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className={cn('min-w-[120px] flex-1 items-center gap-2', barExpanded ? 'hidden sm:flex' : 'hidden')}>
+                  <div className="flex h-4 flex-1 items-center gap-[3px]" role="group" aria-label="PPT 页进度">
+                    {Array.from({ length: slideCount }).map((_, bi) => (
+                      <button key={bi} type="button" onClick={() => goTo(bi)} title={`第 ${bi + 1} 页`} className={cn('flex-1 rounded-full transition-all', bi === current ? 'h-2.5' : 'h-1.5', bi === current ? 'bg-brand' : 'bg-brand/45 hover:bg-brand/70')} />
+                    ))}
+                  </div>
+                  <span className="shrink-0 font-mono text-[10.5px] text-ink-muted tabular">{current + 1}/{slideCount}</span>
+                </div>
+
+                <button type="button" onClick={() => toast.info('PPT 笔记暂未接入，可在学习资源中记录')} title="记笔记（自动关联当前页）" className={cn('inline-flex shrink-0 items-center gap-1.5 rounded-[10px] bg-brand text-paper shadow-warm transition-all hover:bg-brand-hover hover:shadow-warm-lg', barExpanded ? 'px-3.5 py-2 text-[13px] font-semibold' : 'rounded-full p-2.5')}>
+                  <PenLine size={14} />
+                  {barExpanded && '记笔记'}
+                </button>
+
+                <button type="button" onClick={() => toast.info('PPT 举手提问暂未接入')} title="举手提问" className={cn('inline-flex shrink-0 items-center gap-1.5 border border-brand-amber/50 bg-brand-amber-tint text-ochre transition-all hover:border-brand-amber', barExpanded ? 'rounded-[10px] px-3 py-2 text-[13px] font-medium' : 'rounded-full p-2.5')}>
+                  <Hand size={14} />
+                  {barExpanded && <span className="hidden sm:inline">举手提问</span>}
+                </button>
+
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button type="button" title="更多：完成学习 / 退出" aria-label="更多学习方式" className={cn('inline-flex shrink-0 items-center gap-1.5 border border-hairline bg-paper text-ink-2 transition-all hover:border-brand/40 hover:text-brand', barExpanded ? 'rounded-[10px] px-3 py-2 text-[13px] font-medium' : 'rounded-full p-2.5')}>
+                      <MoreHorizontal size={15} />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent side="top" align="end" className="w-52 border-hairline bg-card-warm p-3">
+                    <div className="lf-mono-label !text-[10px]">PPT · 更多</div>
+                    <div className="mt-2 space-y-1">
+                      <button type="button" disabled={completing} onClick={() => void markLearned()} className="flex w-full items-center gap-2 rounded-[9px] border px-3 py-2 text-[12.5px] text-brand hover:bg-brand-tint disabled:opacity-50">
+                        {completing ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />} 完成学习
+                      </button>
+                      <button type="button" onClick={onBack} className="flex w-full items-center gap-2 rounded-[9px] border px-3 py-2 text-[12.5px] text-ink-2 hover:bg-paper">退出 PPT</button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
-            <button type="button" disabled={current <= 0} onClick={() => goTo(current - 1)} title="上一页" className="flex h-9 shrink-0 items-center justify-center rounded-[10px] border border-hairline px-2.5 text-ink-muted disabled:opacity-30">
-              <ChevronLeft size={15} />
-            </button>
-            <button type="button" disabled={current >= slideCount - 1} onClick={() => goTo(current + 1)} title="下一页" className="flex h-9 shrink-0 items-center justify-center rounded-[10px] border border-hairline px-2.5 text-ink-muted disabled:opacity-30">
-              <ChevronRight size={15} />
-            </button>
-            <button type="button" title="完成学习" disabled={completing} onClick={() => void markLearned()} className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border px-2.5 text-[11px] text-brand hover:border-brand/40">
-              {completing ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
-              <span className="hidden lg:inline">完成学习</span>
-            </button>
-            <button type="button" title="退出演示" onClick={onBack} className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted hover:border-brand/40 hover:text-brand">
-              <X size={14} />
-              <span className="hidden lg:inline">退出</span>
-            </button>
           </div>
         </div>
       )}
