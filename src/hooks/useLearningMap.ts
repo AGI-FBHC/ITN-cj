@@ -12,6 +12,8 @@ import {
 } from '@/data/knowledgeGraph';
 import type { GraphEdge, GraphNode } from '@/data/knowledgeGraph';
 import type { PathNode } from '@/data/reportData';
+import type { LearningResourceSummary } from '@/lib/api';
+import type { GeneratedResource } from '@/data/resources';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -30,12 +32,14 @@ export interface LearningMapView {
   learned: Set<string>;
   status: Record<string, string>;
   activeKp: string | null;
+  resources: Record<string, Array<GeneratedResource & { id: string }>>;
 }
 
 export function useLearningMap(): LearningMapView {
   const { currentLearnerId, currentLearner } = useProfile();
   const [map, setMap] = useState<LearningMapOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [resources, setResources] = useState<LearningResourceSummary[]>([]);
 
   useEffect(() => {
     if (!UUID_PATTERN.test(currentLearnerId)) {
@@ -46,7 +50,15 @@ export function useLearningMap(): LearningMapView {
     let cancelled = false;
     setLoading(true);
     api.getLearningMap(currentLearnerId)
-      .then((overview) => { if (!cancelled) setMap(overview); })
+      .then(async (overview) => {
+        if (!cancelled) setMap(overview);
+        try {
+          const listed = await api.listLearningResources();
+          if (!cancelled) setResources(listed.resources ?? []);
+        } catch {
+          if (!cancelled) setResources([]);
+        }
+      })
       .catch(() => { if (!cancelled) setMap(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -79,6 +91,7 @@ export function useLearningMap(): LearningMapView {
         learned: new Set(fallbackPoints.filter((kp) => (currentLearner.scores[kp.id] ?? 0) >= 60).map((kp) => kp.id)),
         status: fallbackStatus,
         activeKp: fallbackPath.find((node) => node.status === 'active')?.kpId ?? fallbackPoints[0]?.id ?? null,
+        resources: {},
       };
     }
 
@@ -164,6 +177,22 @@ export function useLearningMap(): LearningMapView {
       .slice()
       .sort((a, b) => a.order - b.order)
       .map((column) => ({ label: column.label || COLUMN_LABELS[column.order] || `第${column.order}列`, x: COLUMN_X[column.order] ?? 150 }));
+    const resourceByKp: Record<string, Array<GeneratedResource & { id: string }>> = {};
+    resources.forEach((resource) => {
+      if (!resource.kpId) return;
+      const list = resourceByKp[resource.kpId] ??= [];
+      list.push({
+        id: resource.id,
+        learnerId: currentLearnerId,
+        form: resource.type === 'practice' ? 'guide' : resource.type,
+        title: resource.title,
+        levelTag: resource.topic,
+        kpId: resource.kpId,
+        version: '',
+        updatedAt: resource.updatedAt,
+        kbRefs: [],
+      });
+    });
 
     return {
       loading,
@@ -177,6 +206,7 @@ export function useLearningMap(): LearningMapView {
       learned,
       status,
       activeKp: path.find((node) => node.status === 'active')?.kpId ?? map.domains[0]?.code ?? null,
+      resources: resourceByKp,
     };
-  }, [map, loading, currentLearner]);
+  }, [map, loading, currentLearner, resources, currentLearnerId]);
 }

@@ -371,11 +371,24 @@ export interface LearningResourceSummary {
   courseId: string | null;
   chapterId: string | null;
   sources: Record<string, unknown>[];
+  learnerId?: string | null;
+  kpId?: string | null;
   state?: Record<string, unknown>;
   learned: boolean;
   learnedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface LearningResourceGenerateInput {
+  topic: string;
+  title?: string;
+  learnerId?: string | null;
+  kpId?: string | null;
+  learningGoalId?: string | null;
+  goalDriven?: boolean;
+  detailLevel?: 'concise' | 'balanced' | 'detailed';
+  questionCount?: number;
 }
 
 export interface LearningResource extends LearningResourceSummary {
@@ -1026,6 +1039,21 @@ export const api = {
     const suffix = query.toString() ? `?${query.toString()}` : '';
     return requestDirect<{ resources: LearningResourceSummary[] }>(`/v1/learning-resources${suffix}`);
   },
+  createLearningLecture: (body: LearningResourceGenerateInput) =>
+    requestDirect<LearningResource>('/v1/learning-resources/lectures', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  createLearningPractice: (body: LearningResourceGenerateInput) =>
+    requestDirect<LearningResource>('/v1/learning-resources/practices', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  createLearningQuiz: (body: LearningResourceGenerateInput) =>
+    requestDirect<LearningResource>('/v1/learning-resources/quizzes', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   getLearningResource: (resourceId: string) =>
     requestDirect<LearningResource>(`/v1/learning-resources/${encodeURIComponent(resourceId)}`),
   completeLearningResource: (resourceId: string) =>

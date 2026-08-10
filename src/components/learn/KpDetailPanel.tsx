@@ -5,9 +5,12 @@
  */
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { useState } from 'react';
 import { ArrowRight, BookOpen, Wrench, ListChecks, Sparkles, Target, Gauge, Route } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useProfile, dataIdOf } from '@/context/ProfileContext';
 import { useAgent } from '@/context/AgentContext';
+import { api } from '@/lib/api';
 import { reportForLearner } from '@/data/reportBuilder';
 import type { PathNodeStatus } from '@/data/reportData';
 import { getKnowledgePoint } from '@/data/knowledgePoints';
@@ -75,7 +78,7 @@ export default function KpDetailPanel({ kpId, kp: kpProp, mastery: masteryProp, 
   mastery?: Record<string, number>;
   confidence?: Record<string, number>;
   path?: PathNode[];
-  resources?: GeneratedResource[];
+  resources?: Array<GeneratedResource & { id?: string }>;
 }) {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
@@ -102,8 +105,33 @@ export default function KpDetailPanel({ kpId, kp: kpProp, mastery: masteryProp, 
   const score = (masteryProp ?? {})[kpId] ?? currentLearner.scores[kpId] ?? 50;
   const conf = (confidenceProp ?? confidence)[kpId] ?? 40;
   const gap = Math.max(0, kp.targetLevel - score);
-  const res = resourcesProp ?? resourcesForKp(dataId, kpId);
+  const res: Array<GeneratedResource & { id?: string }> = resourcesProp ?? resourcesForKp(dataId, kpId);
   const reportPath = pathProp ?? report.path;
+  const [generating, setGenerating] = useState<ResourceForm | null>(null);
+  const generateResource = async (form: ResourceForm) => {
+    if (generating) return;
+    setGenerating(form);
+    try {
+      const body = {
+        topic: kp.name,
+        title: `${kp.name} · ${FORM_META[form].label}`,
+        learnerId: currentLearner.id,
+        kpId,
+        goalDriven: true,
+      };
+      const resource = form === 'lecture'
+        ? await api.createLearningLecture(body)
+        : form === 'quiz'
+          ? await api.createLearningQuiz(body)
+          : await api.createLearningPractice(body);
+      toast.success('资源已生成，正在打开');
+      navigate(`/learn/resource/${resource.id}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '资源生成失败');
+    } finally {
+      setGenerating(null);
+    }
+  };
   const pathNodes = reportPath.filter((n) => n.kpId === kpId);
   const primaryStatus = pathNodes.find((n) => n.status === 'active')?.status
     ?? pathNodes.find((n) => n.status === 'todo')?.status
@@ -162,7 +190,7 @@ export default function KpDetailPanel({ kpId, kp: kpProp, mastery: masteryProp, 
                 <button
                   key={r.form}
                   type="button"
-                  onClick={() => navigate(`/resources?tab=${r.form}`)}
+                  onClick={() => navigate(r.id ? `/learn/resource/${r.id}` : `/resources?tab=${r.form}`)}
                   className="group flex w-full items-center gap-3 rounded-[10px] border border-hairline bg-paper px-3 py-2.5 text-left transition-all hover:border-brand/45 hover:bg-brand-tint/40"
                 >
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-tint text-brand">
@@ -186,22 +214,18 @@ export default function KpDetailPanel({ kpId, kp: kpProp, mastery: masteryProp, 
                 <button
                   key={f}
                   type="button"
-                  onClick={() => {
-                    toast.success('AI 开始现做', {
-                      description: `正在按你的水平现做《${kp.name} · ${meta.label}》`,
-                    });
-                    navigate(`/learn/${kpId}`);
-                  }}
+                  disabled={generating !== null}
+                  onClick={() => void generateResource(f)}
                   className="group flex w-full items-center gap-3 rounded-[10px] border border-dashed border-brand/35 bg-paper px-3 py-2.5 text-left transition-all hover:border-brand/60 hover:bg-brand-tint/40"
                 >
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-tint text-brand">
-                    <Icon size={16} strokeWidth={1.75} />
+                    {generating === f ? <Loader2 size={16} className="animate-spin" /> : <Icon size={16} strokeWidth={1.75} />}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] font-medium text-ink">生成{meta.label}</span>
-                    <span className="block truncate text-[11px] text-ink-muted">{meta.hint}</span>
+                    <span className="block truncate text-[11px] text-ink-muted">{generating === f ? '正在调用 AI 生成，请稍候…' : meta.hint}</span>
                   </span>
-                  <Sparkles size={13} className="shrink-0 text-brand/70 transition-transform group-hover:scale-110" />
+                  {generating === f ? <Loader2 size={13} className="shrink-0 animate-spin text-brand" /> : <Sparkles size={13} className="shrink-0 text-brand/70 transition-transform group-hover:scale-110" />}
                 </button>
               );
             })}
