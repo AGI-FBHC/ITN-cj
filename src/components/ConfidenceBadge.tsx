@@ -6,9 +6,12 @@
 import { Gauge } from 'lucide-react';
 import { getConfidence } from '@/data/confidence';
 import { cn } from '@/lib/utils';
+import { useProfile } from '@/context/ProfileContext';
 
 export default function ConfidenceBadge({ learnerId, className }: { learnerId: string; className?: string }) {
-  const conf = getConfidence(learnerId);
+  const { learners } = useProfile();
+  const learner = learners.find((item) => item.id === learnerId);
+  const conf = learner?.confidence ?? getConfidence(learnerId);
   if (!conf) return null;
   const calibrating = conf.value < 70;
   return (

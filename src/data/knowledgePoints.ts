@@ -1,5 +1,5 @@
 /**
- * 六大核心知识点 — 工业机器人运维岗位能力模型
+ * 六大核心知识点 — 工业机器人运维目标能力模型
  * 对齐国赛 / 1+X《工业机器人操作与运维》证书标准
  */
 
@@ -7,7 +7,7 @@ export interface KnowledgePoint {
   id: string;
   name: string;
   en: string;
-  /** 岗位能力模型权重 (0-1) */
+  /** 目标能力模型权重 (0-1) */
   weight: number;
   /** 目标掌握水平 (0-100) */
   targetLevel: number;

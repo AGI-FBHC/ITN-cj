@@ -78,7 +78,7 @@ export function buildReportFor(l: Learner): LearnerReport {
   const scores = l.scores;
   const base = getReportFor(l.dataBaseId ?? 'lin');
 
-  /* ============ 1. 盲区：自己的分数 vs 岗位目标 ============ */
+  /* ============ 1. 盲区：自己的分数 vs 目标要求 ============ */
   const spots: BlindSpot[] = knowledgePoints
     .map((kp) => {
       const score = scores[kp.id] ?? 50;
