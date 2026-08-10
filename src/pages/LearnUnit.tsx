@@ -1328,9 +1328,7 @@ export default function LearnUnit() {
 
   /* PPT 播放模式：从知识地图进入时，直接播放后台生成的真实 PPT */
   const pptTaskId = searchParams.get('ppt');
-  if (pptTaskId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(pptTaskId)) {
-    return <PptPlayer taskId={pptTaskId} kpId={kpId} onBack={() => navigate('/learn')} />;
-  }
+  // PptPlayer is embedded in content area below; LearnUnit provides the player bar and panels.
 
   return (
     <div className="mx-auto max-w-[760px] px-5 pb-48 pt-6 md:px-6">
@@ -1441,7 +1439,7 @@ export default function LearnUnit() {
             {freeBrowse ? '回到课堂推进' : '自由浏览'}
           </button>
         </div>
-        {blocks.map((b, i) => {
+        {pptTaskId ? <PptPlayer taskId={pptTaskId} /> : (blocks.map((b, i) => {
           const active = i === cursor && playing;
           /* ---- 课堂推进三态：完整（当前/回看/自由浏览）· 摘要行（已完成）· 不渲染（未解锁） ---- */
           const effUnlocked = Math.min(unlocked, blocks.length);
@@ -1916,7 +1914,7 @@ export default function LearnUnit() {
               )}
             </div>
           );
-        })}
+        }))}
 
         <AnimatePresence>
           {finished && (
