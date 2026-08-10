@@ -103,3 +103,12 @@ export function slideImageUrl(taskId: string, index: number): string {
 export function slideAudioUrl(taskId: string, index: number): string {
   return `/v1/presentations/${encodeURIComponent(taskId)}/audio/${index}`;
 }
+
+export async function fetchSlideAsset(taskId: string, index: number, kind: 'slides' | 'audio'): Promise<Blob> {
+  const headers = new Headers();
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const res = await fetch(`/v1/presentations/${encodeURIComponent(taskId)}/${kind}/${index}`, { headers });
+  if (!res.ok) throw new Error(`PPT 资源加载失败 (${res.status})`);
+  return res.blob();
+}

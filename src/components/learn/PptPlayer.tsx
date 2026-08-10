@@ -8,7 +8,7 @@ import {
   ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight,
   FileText, Loader2, Play, RefreshCw, Volume2, VolumeX,
 } from 'lucide-react';
-import { presentationApi, slideAudioUrl, slideImageUrl } from '@/lib/presentationApi';
+import { fetchSlideAsset, presentationApi } from '@/lib/presentationApi';
 import type { PresentationSlideshow, PresentationTask } from '@/lib/presentationApi';
 import { cn } from '@/lib/utils';
 
@@ -37,6 +37,8 @@ export default function PptPlayer({
   const [error, setError] = useState('');
   const [audioPlaying, setAudioPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [slideSrc, setSlideSrc] = useState('');
+  const [audioSrc, setAudioSrc] = useState('');
   const outlineConfirmedRef = useRef(false);
 
   const loadTask = useCallback(async () => {
@@ -121,15 +123,53 @@ export default function PptPlayer({
     if (audioPlaying) {
       audio.pause();
       setAudioPlaying(false);
-    } else {
-      void audio.play().catch(() => setError('音频暂不可用，请稍后重试'));
-      setAudioPlaying(true);
+      return;
     }
+    void (async () => {
+      try {
+        if (!audioSrc) {
+          const blob = await fetchSlideAsset(taskId, current, 'audio');
+          const url = URL.createObjectURL(blob);
+          setAudioSrc(url);
+          audio.src = url;
+        }
+        await audio.play();
+        setAudioPlaying(true);
+      } catch {
+        setError('音频暂不可用，请稍后重试');
+      }
+    })();
   };
 
   const slideCount = slides?.slideCount ?? 0;
-  const currentImage = slideCount > 0 ? slideImageUrl(taskId, current) : '';
-  const currentAudio = slideCount > 0 ? slideAudioUrl(taskId, current) : '';
+  /* 页面切换时停止上一页语音并释放 blob URL */
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (audio) audio.pause();
+    setAudioPlaying(false);
+    setAudioSrc((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return '';
+    });
+  }, [current]);
+
+  /* 当前页 PPT 图片需要通过带 JWT 的 fetch 拉取为 blob，<img> 无法带 Authorization */
+  useEffect(() => {
+    if (!slides || slides.slideCount === 0) return;
+    let cancelled = false;
+    let objectUrl = '';
+    fetchSlideAsset(taskId, current, 'slides')
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob);
+        setSlideSrc((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return objectUrl;
+        });
+      })
+      .catch(() => { if (!cancelled) setError('幻灯片图片加载失败'); });
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [taskId, current, slides]);
   const note = slides?.speakerNotes[current] ?? '';
 
   return (
@@ -192,7 +232,7 @@ export default function PptPlayer({
               <ChevronLeft size={18} />
             </button>
             <img
-              src={currentImage}
+              src={slideSrc}
               alt={`第 ${current + 1} 页`}
               className="max-h-[68vh] w-auto max-w-full rounded-md object-contain"
             />
@@ -225,7 +265,7 @@ export default function PptPlayer({
               </div>
               <audio
                 ref={audioRef}
-                src={currentAudio}
+                src={audioSrc}
                 onPlay={() => setAudioPlaying(true)}
                 onPause={() => setAudioPlaying(false)}
                 onEnded={() => setAudioPlaying(false)}
