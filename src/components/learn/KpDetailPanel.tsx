@@ -11,6 +11,7 @@ import { Loader2 } from 'lucide-react';
 import { useProfile, dataIdOf } from '@/context/ProfileContext';
 import { useAgent } from '@/context/AgentContext';
 import { api } from '@/lib/api';
+import { presentationApi } from '@/lib/presentationApi';
 import { reportForLearner } from '@/data/reportBuilder';
 import type { PathNodeStatus } from '@/data/reportData';
 import { getKnowledgePoint } from '@/data/knowledgePoints';
@@ -110,6 +111,7 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
   const res: Array<GeneratedResource & { id?: string }> = resourcesProp ?? resourcesForKp(dataId, kpId);
   const reportPath = pathProp ?? report.path;
   const [generating, setGenerating] = useState<ResourceForm | null>(null);
+  const [creatingPpt, setCreatingPpt] = useState(false);
   const generateResource = async (form: ResourceForm) => {
     if (generating) return;
     setGenerating(form);
@@ -135,6 +137,37 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
       toast.error(error instanceof Error ? error.message : '资源生成失败');
     } finally {
       setGenerating(null);
+    }
+  };
+  const openPptCourseware = async () => {
+    if (creatingPpt) return;
+    setCreatingPpt(true);
+    try {
+      const selectedTopicName = topicIndex != null ? kp.coreTopics[topicIndex] : null;
+      const focus = selectedTopicName ?? kpProp?.coreTopics[0] ?? kp.name;
+      const requirement = `面向${currentLearner.tag}（${currentLearner.education}）制作《${focus}》交互课件PPT，目标是${currentLearner.targetJob}。内容要覆盖核心概念、原理、方法、典型应用、练习检查与回顾，每一页有具体讲解，不用空泛标题；结合学习画像安排深度，适合课堂互动演示。`;
+      const task = await presentationApi.createPresentation({
+        requirement,
+        title: `${focus} · 交互课件`,
+        audience: 'students',
+        purpose: 'courseware',
+        style: 'academic',
+        backgroundStyle: 'blue-white-minimal',
+        language: 'zh-CN',
+        slideCount: 0,
+        aspectRatio: '16:9',
+        detailLevel: 'detailed',
+        includeSpeakerNotes: true,
+        modelProvider: 'mimo',
+        generationMode: 'template',
+        learningGoalId: goalId ?? undefined,
+      });
+      toast.success('PPT 已加入后台生成，正在进入交互课件');
+      navigate(`/learn/${kpId}?ppt=${task.id}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'PPT 创建失败');
+    } finally {
+      setCreatingPpt(false);
     }
   };
   const pathNodes = reportPath.filter((n) => n.kpId === kpId);
@@ -243,7 +276,8 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
           {/* 交互课件（始终可进；无预制资源时作为主入口高亮） */}
           <button
             type="button"
-            onClick={() => navigate(`/learn/${kpId}?ppt=1`)}
+            onClick={() => void openPptCourseware()}
+            disabled={creatingPpt}
             className={cn(
               'group flex w-full items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left transition-all',
               res.length
@@ -252,7 +286,7 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
             )}
           >
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand text-paper">
-              <Sparkles size={15} />
+              {creatingPpt ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
             </span>
             <span className="min-w-0 flex-1">
               <span className="block text-[13px] font-medium text-ink">进入交互课件</span>

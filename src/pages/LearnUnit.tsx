@@ -74,6 +74,7 @@ import SafetyLoopDemo from '@/components/learn/SafetyLoopDemo';
 import VisionGuideDemo from '@/components/learn/VisionGuideDemo';
 import FaultTreeDemo from '@/components/learn/FaultTreeDemo';
 import PathProgressBar from '@/components/learn/PathProgressBar';
+import PptPlayer from '@/components/learn/PptPlayer';
 import { GrassTuft, Sprout } from '@/components/heal/Flora';
 import { useAmbient } from '@/components/heal/useAmbient';
 import { cn } from '@/lib/utils';
@@ -1324,6 +1325,12 @@ export default function LearnUnit() {
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canAdvance, curIdx, playing]);
+
+  /* PPT 播放模式：从知识地图进入时，直接播放后台生成的真实 PPT */
+  const pptTaskId = searchParams.get('ppt');
+  if (pptTaskId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(pptTaskId)) {
+    return <PptPlayer taskId={pptTaskId} onBack={() => navigate('/learn')} />;
+  }
 
   return (
     <div className="mx-auto max-w-[760px] px-5 pb-48 pt-6 md:px-6">
