@@ -72,13 +72,14 @@ function MasteryRing({ score, target }: { score: number; target: number }) {
   );
 }
 
-export default function KpDetailPanel({ kpId, kp: kpProp, mastery: masteryProp, confidence: confidenceProp, path: pathProp, resources: resourcesProp }: {
+export default function KpDetailPanel({ kpId, kp: kpProp, mastery: masteryProp, confidence: confidenceProp, path: pathProp, resources: resourcesProp, goalId }: {
   kpId: string | null;
   kp?: KnowledgePoint | null;
   mastery?: Record<string, number>;
   confidence?: Record<string, number>;
   path?: PathNode[];
   resources?: Array<GeneratedResource & { id?: string }>;
+  goalId?: string | null;
 }) {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
@@ -113,11 +114,13 @@ export default function KpDetailPanel({ kpId, kp: kpProp, mastery: masteryProp, 
     setGenerating(form);
     try {
       const body = {
-        topic: kp.name,
-        title: `${kp.name} · ${FORM_META[form].label}`,
+        topic: kpProp?.coreTopics[0] ?? kp.name,
+        title: `${kpProp?.coreTopics[0] ?? kp.name} · ${FORM_META[form].label}`,
         learnerId: currentLearner.id,
         kpId,
         goalDriven: true,
+        learningGoalId: goalId,
+        detailLevel: 'detailed' as const,
       };
       const resource = form === 'lecture'
         ? await api.createLearningLecture(body)

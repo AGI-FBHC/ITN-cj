@@ -33,6 +33,7 @@ export interface LearningMapView {
   status: Record<string, string>;
   activeKp: string | null;
   resources: Record<string, Array<GeneratedResource & { id: string }>>;
+  goalId: string | null;
 }
 
 export function useLearningMap(): LearningMapView {
@@ -92,6 +93,7 @@ export function useLearningMap(): LearningMapView {
         status: fallbackStatus,
         activeKp: fallbackPath.find((node) => node.status === 'active')?.kpId ?? fallbackPoints[0]?.id ?? null,
         resources: {},
+        goalId: null,
       };
     }
 
@@ -207,6 +209,7 @@ export function useLearningMap(): LearningMapView {
       status,
       activeKp: path.find((node) => node.status === 'active')?.kpId ?? map.domains[0]?.code ?? null,
       resources: resourceByKp,
+      goalId: map.goalId ?? null,
     };
   }, [map, loading, currentLearner, resources, currentLearnerId]);
 }

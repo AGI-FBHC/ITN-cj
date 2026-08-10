@@ -10,6 +10,8 @@ import { Play, ArrowRight, BookOpen, Target, PenLine, ListChecks, UserRoundCog, 
 import { cn } from '@/lib/utils';
 import { useProfile, dataIdOf } from '@/context/ProfileContext';
 import { reportForLearner } from '@/data/reportBuilder';
+import { learningResourcePath, useCourseLearning } from '@/hooks/useCourseLearning';
+import { useLearningMap } from '@/hooks/useLearningMap';
 import { getResourcesFor } from '@/data/resources';
 import type { GeneratedResource } from '@/data/resources';
 import { getKnowledgePoint } from '@/data/knowledgePoints';
@@ -71,6 +73,13 @@ export default function LearnerHome() {
   const doneCount = path.filter((p) => p.status === 'done').length;
   const activeNode = path.find((p) => p.status === 'active') ?? path.find((p) => p.status === 'todo');
   const pathPct = Math.round((doneCount / path.length) * 100);
+  const learning = useCourseLearning();
+  const learningMap = useLearningMap();
+  const mapActive = learningMap.activeKp ? learningMap.domains.find((domain) => domain.id === learningMap.activeKp) : null;
+  const activeTitle = learning.nextChapter ? `第 ${learning.nextChapter.index} 章 · ${learning.nextChapter.title}` : mapActive ? mapActive.name : activeNode?.title ?? '开启你的第一课';
+  const activePath = learning.nextResource ? learningResourcePath(learning.nextResource) : mapActive ? `/learn/${mapActive.id}` : activeNode ? `/learn/${activeNode.kpId}` : '/learn';
+  const activeButton = learning.nextResource ? `继续：${learning.nextResource.title}` : mapActive ? `继续：${mapActive.name}` : activeNode ? `继续：${activeNode.resourceRef ?? activeNode.title}` : '开始学习';
+  const activeEst = learning.nextResource ? '后端资源' : activeNode?.est;
 
   const topGaps = report.blindSpots.filter((b) => b.priority === '高').slice(0, 2);
   /* 更多进展默认折叠：首屏只回答「现在做什么」 */
@@ -150,7 +159,7 @@ export default function LearnerHome() {
               今天就学这一件
             </div>
             <h2 className="font-serif text-[24px] font-semibold leading-[32px] text-ink">
-              {activeNode?.title ?? '开启你的第一课'}
+              {activeTitle}
             </h2>
             <p className="mt-2.5 text-[14.5px] leading-[24px] text-ink-2">
               {currentLearner.diagnosisSummary.replace(/^DIA-01 诊断：/, '')}
@@ -158,15 +167,15 @@ export default function LearnerHome() {
             <div className="mt-5 flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                onClick={() => navigate(activeNode ? `/learn/${activeNode.kpId}` : '/learn')}
+                onClick={() => navigate(activePath)}
                 className="lf-btn-primary group"
               >
                 <Play size={15} fill="currentColor" className="transition-transform group-hover:translate-x-[3px]" />
-                {activeNode ? `继续：${activeNode.resourceRef ?? activeNode.title}` : '开始学习'}
+                {activeButton}
               </button>
-              {activeNode?.est && (
+              {activeEst && (
                 <span className="lf-chip !py-1 font-mono text-[12px] text-ink-muted">
-                  {activeNode.est}
+                  {activeEst}
                 </span>
               )}
             </div>
