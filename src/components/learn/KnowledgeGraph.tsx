@@ -223,11 +223,14 @@ export default function KnowledgeGraph({
   confidence: confidenceProp,
   learned: learnedProp,
   activeKp: activeKpProp,
+  onSelectTopic,
 }: {
   /** 场景（由页面级分段控件切换）：order 学习顺序 / network 完整网络 / route 我的路线 */
   scene?: GraphScene;
   /** 提供后：点节点 = 选中（联动右栏详情），不直接跳转 */
   onSelectKp?: (kpId: string) => void;
+  /** 提供后：点击子知识点时回传其在所属领域内的索引（用于细化资源生成） */
+  onSelectTopic?: (topicIndex: number) => void;
   selectedKpId?: string | null;
   nodes?: GraphNode[];
   edges?: GraphEdge[];
@@ -327,6 +330,7 @@ export default function KnowledgeGraph({
     if (n.kind === 'domain') setExpandedKp((cur) => (cur === n.kpId ? null : n.kpId));
     if (onSelectKp) onSelectKp(n.kpId);
     else if (n.kind === 'topic') openUnit(n);
+    if (n.kind === 'topic' && onSelectTopic) onSelectTopic(n.topicIndex ?? 0);
   };
 
   /** 双击：直接进交互课件 —— 兑现「点一株即学」 */

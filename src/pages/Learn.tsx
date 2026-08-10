@@ -38,6 +38,7 @@ export default function Learn() {
   const [scene, setScene] = useState<GraphScene>('order');
   const activeKp = map.activeKp ?? knowledgePoints[0]?.id ?? null;
   const [selectedKp, setSelectedKp] = useState<string>(activeKp);
+  const [selectedTopic, setSelectedTopic] = useState<number | null>(null);
 
   const pathStatusOf = (kpId: string): string | null => {
     const nodes = reportPath.filter((n) => n.kpId === kpId);
@@ -104,13 +105,15 @@ export default function Learn() {
       >
         {/* 左栏 = 图谱 + 速览（左栏更长，右栏 sticky 跟随——短边放右侧才不会滚出空腔） */}
         <div className="min-w-0">
-          <KnowledgeGraph scene={scene} onSelectKp={setSelectedKp} selectedKpId={selectedKp} nodes={map.graphNodes} edges={map.graphEdges} columns={map.graphColumns} path={map.path} mastery={map.mastery} confidence={map.confidence} learned={map.learned} activeKp={map.activeKp} />
+<KnowledgeGraph scene={scene} onSelectKp={setSelectedKp} selectedKpId={selectedKp} nodes={map.graphNodes} edges={map.graphEdges} columns={map.graphColumns} path={map.path} mastery={map.mastery} confidence={map.confidence} learned={map.learned} activeKp={map.activeKp} />
+<KnowledgeGraph scene={scene} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} nodes={map.graphNodes} edges={map.graphEdges} columns={map.graphColumns} path={map.path} mastery={map.mastery} confidence={map.confidence} learned={map.learned} activeKp={map.activeKp} />
           <div className="mt-3 border-t border-hairline/60 pt-3">
             <UnitQuickList selectedKpId={selectedKp} onSelect={setSelectedKp} routeOrdered={scene === 'route'} columns items={knowledgePoints} path={map.path} learned={map.learned} mastery={map.mastery} />
           </div>
         </div>
         <div className="lg:sticky lg:top-6 lg:self-start">
-          <KpDetailPanel kpId={selectedKp} kp={knowledgePoints.find((kp) => kp.id === selectedKp) ?? null} mastery={map.mastery} confidence={map.confidence} path={map.path} resources={map.resources[selectedKp] ?? []} goalId={map.goalId} />
+<KpDetailPanel kpId={selectedKp} kp={knowledgePoints.find((kp) => kp.id === selectedKp) ?? null} mastery={map.mastery} confidence={map.confidence} path={map.path} resources={map.resources[selectedKp] ?? []} goalId={map.goalId} />
+<KpDetailPanel kpId={selectedKp} topicIndex={selectedTopic} kp={knowledgePoints.find((kp) => kp.id === selectedKp) ?? null} mastery={map.mastery} confidence={map.confidence} path={map.path} resources={map.resources[selectedKp] ?? []} goalId={map.goalId} />
         </div>
       </motion.div>
 
