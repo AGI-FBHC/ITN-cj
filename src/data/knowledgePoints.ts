@@ -1,6 +1,6 @@
 /**
- * 六大核心知识点 — 工业机器人运维目标能力模型
- * 对齐国赛 / 1+X《工业机器人操作与运维》证书标准
+ * 六大核心知识点 — 计算机与智能体方向
+ * 对齐知识库实际方向：数据结构、组成原理、操作系统、网络、数据库、智能体
  */
 
 export interface KnowledgePoint {
@@ -19,64 +19,64 @@ export interface KnowledgePoint {
 
 export const knowledgePoints: KnowledgePoint[] = [
   {
-    id: 'kp-plc',
-    name: 'PLC 编程',
-    en: 'PLC PROGRAMMING',
+    id: 'kp-ds',
+    name: '数据结构与算法',
+    en: 'DATA STRUCTURES AND ALGORITHMS',
     weight: 0.18,
     targetLevel: 80,
     coverage: 92,
-    description: '产线控制核心：梯形图/结构化文本编程、I/O 联锁、与机器人控制器的信号交互。',
-    coreTopics: ['梯形图与 ST 语言', 'I/O 映射与联锁', 'PROFINET/EtherCAT 通讯', '安全门回路'],
+    description: '线性表、栈、队列、树、图、排序、查找与算法分析。',
+    coreTopics: ['线性表与链表', '栈与队列', '树与图', '排序与查找', '复杂度分析'],
   },
   {
-    id: 'kp-kinematics',
-    name: '机器人运动学',
-    en: 'ROBOT KINEMATICS',
+    id: 'kp-co',
+    name: '计算机组成原理',
+    en: 'COMPUTER ORGANIZATION',
     weight: 0.2,
     targetLevel: 82,
     coverage: 88,
-    description: 'D-H 参数建模、正逆运动学求解、坐标系变换与奇异位形规避。',
-    coreTopics: ['D-H 参数建模', '正/逆运动学', '工件/工具坐标系', '奇异点规避'],
+    description: '冯诺依曼体系、CPU、存储层次、指令系统与输入输出。',
+    coreTopics: ['冯诺依曼体系', 'CPU 组成与指令周期', '存储层次与 Cache', '总线与 I/O'],
   },
   {
-    id: 'kp-sensor',
-    name: '传感器标定',
-    en: 'SENSOR CALIBRATION',
+    id: 'kp-os',
+    name: '操作系统',
+    en: 'OPERATING SYSTEMS',
     weight: 0.17,
     targetLevel: 85,
     coverage: 95,
-    description: '位姿准确度复现、零点标定、温度漂移补偿与激光跟踪仪比对测量。',
-    coreTopics: ['零点标定五步', '位姿准确度 GB/T 12642', '温度漂移补偿', '重复定位精度'],
+    description: '进程、内存、文件系统、设备管理与操作系统调度。',
+    coreTopics: ['进程与线程', '内存管理', '文件系统', '设备管理与调度'],
   },
   {
-    id: 'kp-vision',
-    name: '视觉引导',
-    en: 'VISION GUIDANCE',
+    id: 'kp-network',
+    name: '计算机网络',
+    en: 'COMPUTER NETWORKS',
     weight: 0.15,
     targetLevel: 78,
     coverage: 90,
-    description: '2D/3D 视觉定位、手眼标定（Eye-in-Hand / Eye-to-Hand）、分拣抓取位姿解算。',
-    coreTopics: ['手眼标定 AX=XB', '特征匹配定位', '抓取位姿解算', '光照与曝光控制'],
+    description: 'TCP/IP、HTTP、网络安全与网络编程基础。',
+    coreTopics: ['网络分层模型', 'TCP/IP 协议', 'HTTP/HTTPS', '网络编程与安全'],
   },
   {
-    id: 'kp-safety',
-    name: '安全规范',
-    en: 'SAFETY COMPLIANCE',
+    id: 'kp-db',
+    name: '数据库',
+    en: 'DATABASE SYSTEMS',
     weight: 0.16,
     targetLevel: 90,
     coverage: 96,
-    description: 'GB 11291.1 安全要求、风险评估、安全围栏/光幕/急停回路与协作边界。',
-    coreTopics: ['GB 11291.1 安全要求', '风险评估 GB/T 15706', '急停与安全回路', '协作运行边界'],
+    description: '关系模型、SQL、索引、事务、锁与数据库设计。',
+    coreTopics: ['关系模型与 SQL', '索引与 B+ 树', '事务与 MVCC', '锁与并发控制'],
   },
   {
-    id: 'kp-diagnosis',
-    name: '故障诊断',
-    en: 'FAULT DIAGNOSIS',
+    id: 'kp-agent',
+    name: '智能体与大模型',
+    en: 'AI AGENTS AND LLMS',
     weight: 0.14,
     targetLevel: 80,
     coverage: 89,
-    description: '报警代码解析、伺服/减速器/线缆典型故障树、预测性维护数据判读。',
-    coreTopics: ['报警代码解析', '故障树分析', '减速器磨损判读', '预测性维护'],
+    description: '智能体范式、LLM、RAG、上下文工程与多智能体应用。',
+    coreTopics: ['智能体范式', '大语言模型基础', 'RAG 与记忆', '多智能体与工具调用'],
   },
 ];
 
