@@ -7,10 +7,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Loader2 } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
-import { knowledgePoints as fallbackKnowledgePoints } from '@/data/knowledgePoints';
-import { reportForLearner } from '@/data/reportBuilder';
 import { useLearningMap } from '@/hooks/useLearningMap';
 import KnowledgeGraph from '@/components/learn/KnowledgeGraph';
 import type { GraphScene } from '@/components/learn/KnowledgeGraph';
@@ -35,10 +33,10 @@ export default function Learn() {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
   const map = useLearningMap();
-  const knowledgePoints = map.domains.length ? map.domains : fallbackKnowledgePoints;
-  const reportPath = map.path.length ? map.path : reportForLearner(currentLearner).path;
+  const knowledgePoints = map.domains;
+  const reportPath = map.path;
   const [scene, setScene] = useState<GraphScene>('order');
-  const activeKp = map.activeKp ?? reportPath.find((p) => p.status === 'active')?.kpId ?? knowledgePoints[0].id;
+  const activeKp = map.activeKp ?? knowledgePoints[0]?.id ?? null;
   const [selectedKp, setSelectedKp] = useState<string>(activeKp);
 
   const pathStatusOf = (kpId: string): string | null => {
@@ -87,6 +85,17 @@ export default function Learn() {
       </motion.div>
 
       {/* ============ 桌面端：地图（结构）+ 详情（操作）+ 速览（扫描），三向联动 ============ */}
+      {map.loading && knowledgePoints.length === 0 && (
+        <div className="mt-8 flex items-center justify-center gap-2 rounded-[14px] border border-hairline bg-card-warm py-12 text-[13.5px] text-ink-muted">
+          <Loader2 size={16} className="animate-spin" />
+          正在读取真实学习地图…
+        </div>
+      )}
+      {!map.loading && knowledgePoints.length === 0 && (
+        <div className="mt-8 rounded-[14px] border border-hairline bg-card-warm px-6 py-10 text-center text-[13.5px] text-ink-muted">
+          暂无学习地图，请先完成画像或等待后端数据。
+        </div>
+      )}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

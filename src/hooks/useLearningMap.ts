@@ -4,11 +4,7 @@ import { api } from '@/lib/api';
 import type { LearningMapOverview } from '@/lib/api';
 import type { LearningMapNode } from '@/lib/api';
 import type { KnowledgePoint } from '@/data/knowledgePoints';
-import { knowledgePoints as fallbackPoints } from '@/data/knowledgePoints';
 import {
-  graphNodes as fallbackGraphNodes,
-  graphEdges as fallbackGraphEdges,
-  graphColumns as fallbackGraphColumns,
 } from '@/data/knowledgeGraph';
 import type { GraphEdge, GraphNode } from '@/data/knowledgeGraph';
 import type { PathNode } from '@/data/reportData';
@@ -16,6 +12,30 @@ import type { LearningResourceSummary } from '@/lib/api';
 import type { GeneratedResource } from '@/data/resources';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const CACHE_PREFIX = 'lf.learningMapCache:';
+
+interface LearningMapCache {
+  overview: LearningMapOverview;
+  resources: LearningResourceSummary[];
+}
+
+function readLearningMapCache(learnerId: string): LearningMapCache | null {
+  try {
+    const raw = window.localStorage.getItem(`${CACHE_PREFIX}${learnerId}`);
+    return raw ? JSON.parse(raw) as LearningMapCache : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLearningMapCache(learnerId: string, cache: LearningMapCache) {
+  try {
+    window.localStorage.setItem(`${CACHE_PREFIX}${learnerId}`, JSON.stringify(cache));
+  } catch {
+    /* ignore */
+  }
+}
 
 const COLUMN_X: Record<number, number> = { 1: 150, 2: 448, 3: 748 };
 const COLUMN_LABELS: Record<number, string> = { 1: '基础层', 2: '核心方法', 3: '应用与进阶' };
@@ -25,7 +45,7 @@ export interface LearningMapView {
   domains: KnowledgePoint[];
   graphNodes: GraphNode[];
   graphEdges: GraphEdge[];
-  graphColumns: typeof fallbackGraphColumns;
+  graphColumns: { label: string; x: number }[];
   path: PathNode[];
   mastery: Record<string, number>;
   confidence: Record<string, number>;
@@ -38,9 +58,9 @@ export interface LearningMapView {
 
 export function useLearningMap(): LearningMapView {
   const { currentLearnerId, currentLearner } = useProfile();
-  const [map, setMap] = useState<LearningMapOverview | null>(null);
+  const [map, setMap] = useState<LearningMapOverview | null>(() => readLearningMapCache(currentLearnerId)?.overview ?? null);
   const [loading, setLoading] = useState(true);
-  const [resources, setResources] = useState<LearningResourceSummary[]>([]);
+  const [resources, setResources] = useState<LearningResourceSummary[]>(() => readLearningMapCache(currentLearnerId)?.resources ?? []);
 
   useEffect(() => {
     if (!UUID_PATTERN.test(currentLearnerId)) {
@@ -50,48 +70,47 @@ export function useLearningMap(): LearningMapView {
     }
     let cancelled = false;
     setLoading(true);
+    const cached = readLearningMapCache(currentLearnerId);
+    if (cached) {
+      setMap(cached.overview);
+      setResources(cached.resources);
+    }
     api.getLearningMap(currentLearnerId)
       .then(async (overview) => {
         if (!cancelled) setMap(overview);
         try {
           const listed = await api.listLearningResources();
-          if (!cancelled) setResources(listed.resources ?? []);
+          const latestResources = listed.resources ?? [];
+          if (!cancelled) {
+            setResources(latestResources);
+            writeLearningMapCache(currentLearnerId, { overview, resources: latestResources });
+          }
         } catch {
-          if (!cancelled) setResources([]);
+          if (!cancelled) {
+            setResources([]);
+            writeLearningMapCache(currentLearnerId, { overview, resources: [] });
+          }
         }
       })
-      .catch(() => { if (!cancelled) setMap(null); })
+      .catch(() => { if (!cancelled && !cached) setMap(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [currentLearnerId]);
 
   return useMemo<LearningMapView>(() => {
     if (!map || map.domains.length === 0) {
-      const fallbackStatus: Record<string, string> = {};
-      fallbackPoints.forEach((kp) => {
-        const score = currentLearner.scores[kp.id] ?? 50;
-        fallbackStatus[kp.id] = score >= kp.targetLevel ? 'done' : score >= 60 ? 'learning' : 'todo';
-      });
-      const fallbackPath: PathNode[] = fallbackPoints.map((kp, index) => ({
-        id: `${kp.id}-path`,
-        title: kp.name,
-        kpId: kp.id,
-        status: fallbackStatus[kp.id] === 'done' ? 'done' : index === 0 ? 'active' : 'todo',
-        est: `${Math.max(30, kp.targetLevel * 2)}分钟`,
-        resourceRef: `第${index + 1}章 · ${kp.name}`,
-      }));
       return {
         loading,
-        domains: fallbackPoints,
-        graphNodes: fallbackGraphNodes,
-        graphEdges: fallbackGraphEdges,
-        graphColumns: fallbackGraphColumns,
-        path: fallbackPath,
-        mastery: Object.fromEntries(fallbackPoints.map((kp) => [kp.id, currentLearner.scores[kp.id] ?? 50])),
-        confidence: Object.fromEntries(fallbackPoints.map((kp) => [kp.id, 40])),
-        learned: new Set(fallbackPoints.filter((kp) => (currentLearner.scores[kp.id] ?? 0) >= 60).map((kp) => kp.id)),
-        status: fallbackStatus,
-        activeKp: fallbackPath.find((node) => node.status === 'active')?.kpId ?? fallbackPoints[0]?.id ?? null,
+        domains: [],
+        graphNodes: [],
+        graphEdges: [],
+        graphColumns: [],
+        path: [],
+        mastery: {},
+        confidence: {},
+        learned: new Set<string>(),
+        status: {},
+        activeKp: null,
         resources: {},
         goalId: null,
       };
@@ -199,9 +218,9 @@ export function useLearningMap(): LearningMapView {
     return {
       loading,
       domains,
-      graphNodes: graphNodes.length ? graphNodes : fallbackGraphNodes,
-      graphEdges: graphEdges.length ? graphEdges : fallbackGraphEdges,
-      graphColumns: graphColumns.length ? graphColumns : fallbackGraphColumns,
+      graphNodes,
+      graphEdges,
+      graphColumns,
       path,
       mastery,
       confidence,
