@@ -55,7 +55,7 @@ export type Difficulty = '零基础' | '标准' | '进阶';
 export interface CourseUnit {
   kpId: string;
   difficulty: Difficulty;
-  styleLabel: string;
+  styleLabel: StyleLabel;
   blocks: CourseBlock[];
 }
 
@@ -167,7 +167,7 @@ export const qaBank: Record<string, PresetQA[]> = {
 
 /** 通用兜底回答 */
 export const fallbackAnswer =
-  '这个问题超出了本讲的预置范围——我已记入你的提问清单，导学 Agent 会在「练」环节展开讲。先回到课程，也可以换个问法再试试。';
+  '这个问题超出了本讲的预置范围——我已记入你的提问清单，之后的微练和追问环节会展开讲。先回到课程，也可以换个问法再试试。';
 
 /* ================= 精品演播块（P2 手写剧本：视听同步示范） ================= */
 const showcaseStage: Record<string, CourseBlock> = {
@@ -303,8 +303,15 @@ export function buildUnit(kpId: string, learner: Learner, styleOverride?: StyleL
   const style = styleOf(learner, styleOverride);
   const slices = slicesOf(kpId);
   const quizzes = quizByKp(kpId);
-  const checkpointQ = quizzes.find((q) => q.level === 'basic') ?? quizzes[0];
-  const checkpointQ2 = quizzes.filter((q) => q.id !== checkpointQ?.id).find((q) => (d === '进阶' ? q.level !== 'basic' : q.level === 'basic')) ?? quizzes[1];
+  /* 学练一体：题按"先基础后进阶"排好队，每讲完一个概念就近抽一道微练 */
+  const usedQ = new Set<string>();
+  const drawNext = (preferBasic: boolean): QuizQuestion | undefined => {
+    const pool = quizzes.filter((q) => !usedQ.has(q.id));
+    const pick =
+      (preferBasic ? pool.find((q) => q.level === 'basic') : pool.find((q) => q.level !== 'basic')) ?? pool[0];
+    if (pick) usedQ.add(pick.id);
+    return pick;
+  };
 
   const blocks: CourseBlock[] = [];
 
@@ -345,33 +352,27 @@ export function buildUnit(kpId: string, learner: Learner, styleOverride?: StyleL
         cues: demoCues[meta.demo],
       });
     }
-    /* 概念后插检查点 */
-    if (i === 0 && checkpointQ) {
+    /* 学练一体：每个概念讲完，紧跟一道微练（讲 1~2 分钟 → 练 1 题的固定节拍） */
+    const mq = drawNext(i === 0 || d === '零基础');
+    if (mq) {
       blocks.push({
         kind: 'checkpoint',
-        id: `${kpId}-cp0`,
-        q: checkpointQ,
-        script: '到检查点了。做一道题看看刚才的内容接住没有——答错也没关系，我会换个讲法。',
+        id: `${kpId}-cp${i}`,
+        q: mq,
+        script:
+          i === 0
+            ? '讲完就练——来一道小题，看看刚才的内容接住没有。答错也没关系，我会换个讲法。'
+            : '这段讲完了，趁热练一道。',
       });
     }
   });
-
-  /* 第二检查点（进阶/标准） */
-  if (d !== '零基础' && checkpointQ2) {
-    blocks.push({
-      kind: 'checkpoint',
-      id: `${kpId}-cp1`,
-      q: checkpointQ2,
-      script: '再来一道稍难的，验证一下这一讲的整体掌握。',
-    });
-  }
 
   /* 小结 */
   blocks.push({
     kind: 'summary',
     id: `${kpId}-sum`,
-    text: `本讲要点：${kp.coreTopics.slice(0, 3).join('；')}。学完建议：到「练」里做 ${kp.name} 的分阶题巩固，阿诊会根据你的表现更新画像。`,
-    script: `这一讲就到这里。要点回顾：${kp.coreTopics.slice(0, 3).join('，')}。建议接着去练一组分阶题，我会根据你的表现更新画像。`,
+    text: `本讲要点：${kp.coreTopics.slice(0, 3).join('；')}。这一讲学练已经打通——觉得不够稳，讲末可以直接「再练 3 题」，阿诊会根据你的表现更新画像。`,
+    script: `这一讲就到这里。要点回顾：${kp.coreTopics.slice(0, 3).join('，')}。觉得不够稳可以就地再练几道，我会根据你的表现更新画像。`,
   });
 
   return { kpId, difficulty: d, styleLabel: style.label, blocks };

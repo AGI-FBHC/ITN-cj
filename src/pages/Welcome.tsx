@@ -2,10 +2,10 @@
  * Welcome `/welcome` — 登录后分流
  * 老用户（账号已绑画像）：欢迎回来卡（雷达缩略 + 上次学到哪 + 继续学习）
  * 新用户：建档方式二选一
- *   ⚡ 精简建档（约 30 秒）：称呼/身份 → 学历 → 目标方向，只用背景先验 → 置信度低，边学边校准
+ *   ⚡ 精简建档（约 30 秒）：称呼/身份 → 学历 → 目标岗位，只用背景先验 → 置信度低，边学边校准
  *   🎯 精准定制（约 5 分钟）：跳转 /onboarding 五步初诊（自评 + 自适应测题）→ 建档即高置信
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { toast } from 'sonner';
@@ -22,10 +22,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useProfile } from '@/context/ProfileContext';
-import { api } from '@/lib/api';
-import type { OnboardingKnowledgePoint, OnboardingTargetCategory, OnboardingTargetOption } from '@/lib/api';
 import type { LearnerDraft } from '@/context/ProfileContext';
-import { knowledgePoints } from '@/data/knowledgePoints';
+import { knowledgePoints, getKnowledgePoint } from '@/data/knowledgePoints';
 import { activePathNode } from '@/data/reportData';
 import { reportForLearner } from '@/data/reportBuilder';
 import { AVATARS, TAGS, EDU, JOBS, priorOf, priorLine } from '@/data/priors';
@@ -75,22 +73,6 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
   const { bindAccount, session } = useAuth();
   const { createLearner } = useProfile();
   const [step, setStep] = useState(0);
-  const [targetCategories, setTargetCategories] = useState<OnboardingTargetCategory[]>([]);
-  const [targetOptions, setTargetOptions] = useState<OnboardingTargetOption[]>([]);
-  const [targetCategoryCode, setTargetCategoryCode] = useState('JOB');
-  const [jobOptions, setJobOptions] = useState<string[]>(JOBS);
-  const [quickKnowledgePoints, setQuickKnowledgePoints] = useState<OnboardingKnowledgePoint[]>([]);
-
-  useEffect(() => {
-    api.getOnboardingMeta()
-      .then((meta) => {
-        setTargetCategories(meta.targetCategories);
-        setTargetOptions(meta.targetOptions);
-        setJobOptions(meta.targetOptions.map((option) => option.name));
-        setQuickKnowledgePoints(meta.knowledgePoints);
-      })
-      .catch(() => {});
-  }, []);
   const [name, setName] = useState('');
   const [tag, setTag] = useState<string | null>(null);
   const [edu, setEdu] = useState<string | null>(null);
@@ -98,35 +80,17 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
   /** 建档锻造特效：createLearner 之后先播生成过程，播完再进主页 */
   const [forge, setForge] = useState<ForgeData | null>(null);
 
-  const visibleTargetOptions = targetCategoryCode && targetOptions.length
-    ? targetOptions.filter((option) => option.categoryCode === targetCategoryCode)
-    : [];
-  const visibleTargetNames = visibleTargetOptions.length ? visibleTargetOptions.map((option) => option.name) : jobOptions;
-
-  const pickTargetCategory = (categoryCode: string) => {
-    setTargetCategoryCode(categoryCode);
-    const first = targetOptions.find((option) => option.categoryCode === categoryCode);
-    if (first) setJob(first.name);
-  };
-
-  const pickTarget = (name: string) => {
-    setJob(name);
-    const option = targetOptions.find((item) => item.name === name);
-    if (option) setTargetCategoryCode(option.categoryCode);
-  };
-
   const canNext = step === 0 ? name.trim().length > 0 && tag !== null : step === 1 ? edu !== null : job !== null;
 
   const finish = async () => {
     if (!tag || !edu || !job || forge) return;
     const prior = priorOf(tag, edu);
-    const kps = quickKnowledgePoints.length ? quickKnowledgePoints : knowledgePoints;
     const scores: Record<string, number> = {};
-    kps.forEach((kp) => { scores[kp.id] = clampScore(50 + (prior[kp.id] ?? 0)); });
-    const blind = [...kps]
+    knowledgePoints.forEach((kp) => { scores[kp.id] = clampScore(50 + (prior[kp.id] ?? 0)); });
+    const blind = [...knowledgePoints]
       .sort((a, b) => (scores[a.id] ?? 50) - (scores[b.id] ?? 50))
       .slice(0, 2)
-      .map((kp) => kps.find((item) => item.id === kp.id)?.name ?? kp.id);
+      .map((kp) => getKnowledgePoint(kp.id).name);
     const draft: LearnerDraft = {
       name: name.trim(),
       avatar: AVATARS[name.trim().length % AVATARS.length],
@@ -138,47 +102,24 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
       learningStyle: [],
       scores,
       blindSpots: blind,
-      goal: `拿下「${job}」${targetCategoryCode === 'EXAM' ? '考试科目' : targetCategoryCode === 'CERT' ? '证书考核' : '岗位'}所需的核心技能——画像先按背景估，边学边测准。`,
+      goal: `拿下「${job}」岗位所需的核心技能——画像先按背景估，边学边测准。`,
     };
     let id: string;
     try {
       id = await createLearner(draft, { method: 'quick', value: 33 });
-      if (session) bindAccount(id);
     } catch {
-      toast.error('建档失败', { description: '请稍后重试' });
+      toast.error('建档失败', { description: '后端暂不可用，请稍后重试' });
       return;
     }
-    /* 先让后端生成真实画像轨迹，再播放锻造动画 */
-    let forgeSteps;
-    let forgeBlindSpots;
-    let forgeEvidence = [`身份「${tag}」`, `学历「${edu}」`, `目标「${job}」`, '背景先验 → 六维起点'];
-    try {
-      const generated = await api.generateProfile({
-        method: 'quick',
-        name: draft.name,
-        avatar: draft.avatar,
-        tag,
-        education: edu,
-        targetJob: job,
-        targetCategoryCode,
-        scores,
-        confidence: 33,
-      });
-      forgeSteps = generated.steps;
-      forgeEvidence = generated.evidence;
-      forgeBlindSpots = generated.blindSpots;
-    } catch {
-      /* 后端不可用时保留前端兜底文案 */
-    }
+    if (session) bindAccount(id);
+    /* 先锻造，后进门 */
     setForge({
       name: draft.name,
       avatar: draft.avatar,
       scores,
       confidence: 33,
       method: 'quick',
-      evidence: forgeEvidence,
-      steps: forgeSteps,
-      blindSpots: forgeBlindSpots,
+      evidence: [`身份「${tag}」`, `学历「${edu}」`, `目标「${job}」`, '背景先验 → 六维起点'],
     });
   };
 
@@ -352,36 +293,16 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
               transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
             >
               <div className="text-center sm:text-left">
-                <h2 className="font-serif text-[20px] font-semibold text-ink">你的主要学习目标是什么？</h2>
-                <p className="mt-1 text-[11.5px] leading-[18px] text-ink-muted">先选目标类型，再选具体方向；我们会按对应要求安排学习内容。</p>
+                <h2 className="font-serif text-[20px] font-semibold text-ink">你想往哪个岗位发展？</h2>
+                <p className="mt-1 text-[11.5px] leading-[18px] text-ink-muted">我们会优先安排与目标岗位关联度最高的内容。</p>
               </div>
-              {targetCategories.length > 0 && (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {targetCategories.map((category) => (
-                    <button
-                      key={category.code}
-                      type="button"
-                      aria-pressed={targetCategoryCode === category.code}
-                      onClick={() => pickTargetCategory(category.code)}
-                      className={cn(
-                        'rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition-all',
-                        targetCategoryCode === category.code
-                          ? 'border-brand bg-brand-tint text-brand'
-                          : 'border-hairline bg-white/45 text-ink-2 hover:border-brand/35',
-                      )}
-                    >
-                      {category.name}
-                    </button>
-                  ))}
-                </div>
-              )}
               <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                {visibleTargetNames.map((item) => (
+                {JOBS.map((item) => (
                   <button
                     key={item}
                     type="button"
                     aria-pressed={job === item}
-                    onClick={() => pickTarget(item)}
+                    onClick={() => setJob(item)}
                     className={cn(
                       'flex items-center justify-between rounded-[12px] border px-3.5 py-2.5 text-left text-[12.5px] font-medium transition-all',
                       job === item

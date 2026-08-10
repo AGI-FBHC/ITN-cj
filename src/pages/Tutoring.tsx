@@ -1,162 +1,550 @@
 /**
- * 交互导学 `/tutoring`
- * 保留同事设计的苏格拉底对话、幕后协商、答题走势和动态难度；
- * 会话、分支、答案与决策均由 FastAPI tutoring session 持久化。
+ * 交互导学 `/tutoring`（tutoring.md）
+ * 苏格拉底式追问对话（tutoringScript.ts 脚本图解释执行）
+ * 快答 chips / 自由输入 / 幕后协商卡 / 答题正确率实时回流 →
+ * ARB-05「降维解释 · 进阶挑战」全宽决策横幅 → 课后小结回写画像（闭环）
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowDown, CheckCircle2, Loader2, RotateCcw, SendHorizonal, Sparkles } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import AgentChip from '@/components/AgentChip';
-import PageTip from '@/components/heal/PageTip';
-import { Vine } from '@/components/heal/Flora';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Navigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
-  AnswerCard,
-  BackstageCard,
-  FeedbackBubble,
-  LearnerBubble,
+  ArrowDown,
+  FileText,
+  Image as ImageIcon,
+  Mic,
+  Presentation,
+  RotateCcw,
+  SendHorizonal,
+  X,
+} from 'lucide-react';
+import { useProfile, dataIdOf } from '@/context/ProfileContext';
+import { useAgent } from '@/context/AgentContext';
+import { useReview } from '@/context/ReviewContext';
+import { getTutoringScript } from '@/data/tutoringScript';
+import { getKnowledgePoint } from '@/data/knowledgePoints';
+import AgentChip from '@/components/AgentChip';
+import { Vine } from '@/components/heal/Flora';
+import { useTutoringEngine } from '@/components/tutoring/engine';
+import {
   TutorBubble,
+  LearnerBubble,
+  TypingIndicator,
+  BackstageCard,
+  ArbitrateRow,
+  AnswerCard,
+  FeedbackBubble,
 } from '@/components/tutoring/bubbles';
+import DecisionBlock from '@/components/tutoring/DecisionBlock';
 import SidePanel from '@/components/tutoring/SidePanel';
 import type { KpTopic } from '@/components/tutoring/SidePanel';
-import { useProfile } from '@/context/ProfileContext';
-import { useCourseLearning } from '@/hooks/useCourseLearning';
-import { api } from '@/lib/api';
-import type { LearningResourceSummary, TutoringDecision, TutoringSession } from '@/lib/api';
-import type { DecisionEvent } from '@/components/tutoring/engine';
-import type { TutorOption } from '@/data/tutoringScript';
+import SummaryCard from '@/components/tutoring/SummaryCard';
+import PageTip from '@/components/heal/PageTip';
 import { cn } from '@/lib/utils';
 
-function DecisionCard({ decision }: { decision: TutoringDecision }) {
-  const challenge = decision.type === 'challenge';
-  return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={cn('mx-auto w-full max-w-[560px] rounded-[14px] border p-4', challenge ? 'border-brand-amber/40 bg-brand-amber-tint/45' : 'border-brand/35 bg-brand-tint/45')}>
-      <div className="flex items-center gap-2"><Sparkles size={14} className={challenge ? 'text-ochre' : 'text-brand'} /><span className="font-mono text-[10.5px] font-semibold text-agent-arb">ARB-05 · {decision.label}</span><span className="ml-auto font-mono text-[10px] text-ink-muted">置信 {decision.confidence.toFixed(2)}</span></div>
-      <p className="mt-2 text-[12.5px] leading-5 text-ink-2">{decision.reason}</p>
-    </motion.div>
-  );
-}
-
-function SessionSummary({ session, resource }: { session: TutoringSession; resource: LearningResourceSummary }) {
-  const correct = session.answers.filter(Boolean).length;
-  return (
-    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mx-auto w-full max-w-[580px] rounded-[16px] border border-brand/30 bg-brand-tint/35 p-5">
-      <div className="flex items-center gap-2"><CheckCircle2 size={18} className="text-brand" /><h3 className="font-serif text-[18px] font-semibold text-ink">本轮导学完成</h3></div>
-      <p className="mt-2 text-[13px] leading-6 text-ink-2">围绕《{resource.title}》完成了 {session.answers.length} 次有效作答，答对 {correct} 次；会话、答题走势和 Agent 决策已经保存到后端。</p>
-      <div className="mt-4 grid grid-cols-3 gap-2 text-center"><div className="rounded-lg bg-paper p-2"><div className="font-display text-[18px] font-semibold text-brand">{correct}/{session.answers.length}</div><div className="text-[10.5px] text-ink-muted">本轮答题</div></div><div className="rounded-lg bg-paper p-2"><div className="font-display text-[18px] font-semibold text-brand">{session.decisions.length}</div><div className="text-[10.5px] text-ink-muted">动态决策</div></div><div className="rounded-lg bg-paper p-2"><div className="font-display text-[18px] font-semibold text-brand">L{session.level}</div><div className="text-[10.5px] text-ink-muted">结束难度</div></div></div>
-      <div className="mt-4 flex flex-wrap gap-2"><Link to="/learn" className="lf-btn-primary">继续课程</Link><Link to="/me/wrong" className="lf-btn-ghost">查看错题本</Link><Link to="/report" className="lf-btn-ghost">查看学习报告</Link></div>
-    </motion.div>
-  );
-}
+/** 知识点复述文案（page-local，按脚本差异化） */
+const recapTexts: Record<string, { text: string; kb: string }[]> = {
+  lin: [
+    { text: '回零准备 → 粗对零 → 精对零 → 写入零点 → 复测验证，每步都有量化判据，错一步就回到上一步。', kb: 'KB-018' },
+    { text: '位姿准确度是指令位姿与实到位姿集群重心的偏差；试验须在额定负载下对立方体五点位姿各测 30 次。', kb: 'KB-007' },
+    { text: '线性补偿 Δθ=k(T−T₀) 只在 10–35℃ 验证过，k 由五点恒温实验拟合，超出区间必须重新拟合。', kb: 'KB-014' },
+  ],
+  chen: [
+    { text: '四个参数 ai-1、αi-1、di、θi 唯一确定一个连杆变换 —— 就像万用表的四个档位刻度。', kb: 'KB-009' },
+    { text: '正解是六个变换矩阵连乘；满足 Pieper 准则的六轴臂可位姿分离，共 8 组解按最短行程取舍。', kb: 'KB-022' },
+    { text: 'TCP 原点定义在工具中心点，绕 X/Y/Z 的旋转命名 RX/RY/RZ，正方向遵从右手定则。', kb: 'KB-002' },
+  ],
+  zhao: [
+    { text: '采集 12–20 组姿态、旋转大于 30°，避免纯平移导致旋转分量无法约束、解退化。', kb: 'KB-011' },
+    { text: '来料偏差 ±15 mm 用模板匹配粗定位 + 边缘精定位两级消化，与分段排查思路同构。', kb: 'KB-016' },
+    { text: '像素 ↔ 毫米的翻译官是手眼矩阵；相机丢帧排查链与你的 PROFINET 丢站排查链同构。', kb: 'KB-026' },
+  ],
+};
 
 export default function Tutoring() {
   const { currentLearner, viewMode } = useProfile();
-  const learning = useCourseLearning();
-  const quizzes = learning.resources.filter((resource) => resource.type === 'quiz');
-  const recommended = quizzes.find((resource) => !resource.learned) ?? quizzes[0] ?? null;
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected = quizzes.find((resource) => resource.id === selectedId) ?? recommended;
-  const [session, setSession] = useState<TutoringSession | null>(null);
-  const [loadingSession, setLoadingSession] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
+  const { pushSignal } = useAgent();
+  const { markStudied } = useReview();
+  const isLearner = viewMode === 'learner';
+  const script = getTutoringScript(dataIdOf(currentLearner));
+  const kp = getKnowledgePoint(script.kpId);
+  const engine = useTutoringEngine(script, currentLearner);
+  const {
+    msgs,
+    awaitingNode,
+    typing,
+    streaming,
+    answers,
+    decisions,
+    level,
+    finished,
+    accepted,
+    sendOption,
+    sendFreeText,
+    acceptChallenge,
+    recap,
+    reset,
+    notifyStreamDone,
+  } = engine;
+
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [showBackBottom, setShowBackBottom] = useState(false);
   const nearBottomRef = useRef(true);
-  const startedResourceRef = useRef<string | null>(null);
-  const isLearner = viewMode === 'learner';
+  const [showBackBottom, setShowBackBottom] = useState(false);
 
-  const startSession = useCallback(async (resource: LearningResourceSummary, force = false) => {
-    if (!force && startedResourceRef.current === resource.id) return;
-    startedResourceRef.current = resource.id;
-    setLoadingSession(true);
-    setError('');
-    try {
-      setSession(await api.createTutoringSession({ resourceId: resource.id }));
-    } catch (reason) {
-      startedResourceRef.current = null;
-      setSession(null);
-      setError(reason instanceof Error ? reason.message : '真实导学会话创建失败');
-    } finally { setLoadingSession(false); }
-  }, []);
+  /* ---------- 多模态输入：语音 / 图片 / PPT / 文档 ---------- */
+  type Attachment = { id: string; kind: 'voice' | 'image' | 'ppt' | 'doc'; name: string };
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [recording, setRecording] = useState(false);
+  const recordStartRef = useRef(0);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const pptInputRef = useRef<HTMLInputElement>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (selected) void startSession(selected);
-  }, [selected, startSession]);
-
-  useEffect(() => {
-    if (nearBottomRef.current) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [session?.messages.length, submitting]);
-
-  const answer = async (body: { optionIndex?: number; freeText?: string }) => {
-    if (!session || submitting || session.status === 'completed') return;
-    setSubmitting(true);
-    setError('');
-    try {
-      setSession(await api.answerTutoringSession(session.id, body));
-      setInput('');
-      nearBottomRef.current = true;
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '回答提交失败');
-    } finally { setSubmitting(false); }
+  const attachmentLabel: Record<Attachment['kind'], string> = {
+    voice: '语音',
+    image: '图片',
+    ppt: 'PPT',
+    doc: '文档',
   };
 
-  const decisions = useMemo<DecisionEvent[]>(() => (session?.decisions ?? []).map((decision) => ({
-    ...decision,
-    time: new Date(session?.updatedAt ?? Date.now()).toLocaleTimeString('zh-CN', { hour12: false }),
-  })), [session]);
-  const topics = useMemo<KpTopic[]>(() => (session?.topics ?? []).map((topic) => ({
-    topic: topic.name,
-    mastery: currentLearner.scores[session?.kpId ?? ''] ?? session?.scoreBefore ?? 50,
-    recapText: topic.description,
-    kbRef: topic.kbRef ?? undefined,
-  })), [currentLearner.scores, session]);
-  const correct = session?.answers.filter(Boolean).length ?? 0;
+  const addFileAttachment = (kind: 'image' | 'ppt' | 'doc') => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setAttachments((prev) => [...prev, { id: `${kind}-${Date.now()}`, kind, name: file.name }]);
+    }
+    e.target.value = '';
+  };
 
-  if (learning.loading) return <div className="mx-auto max-w-[980px] px-6 py-16 text-center text-[14px] text-ink-muted">正在读取真实课程与导学题目…</div>;
+  const toggleRecording = () => {
+    if (!awaitingNode) return;
+    if (!recording) {
+      recordStartRef.current = Date.now();
+      setRecording(true);
+    } else {
+      const secs = Math.max(1, Math.round((Date.now() - recordStartRef.current) / 1000));
+      setAttachments((prev) => [
+        ...prev,
+        { id: `voice-${Date.now()}`, kind: 'voice', name: `0:${String(secs).padStart(2, '0')}` },
+      ]);
+      setRecording(false);
+    }
+  };
+
+  const asked = answers.length;
+  const correct = answers.filter(Boolean).length;
+
+  /* 本节知识点 chips：掌握度由画像分数派生 */
+  const topics = useMemo<KpTopic[]>(() => {
+    const base = currentLearner.scores[script.kpId] ?? 50;
+    const texts = recapTexts[currentLearner.id] ?? recapTexts.lin;
+    return kp.coreTopics.slice(0, 3).map((topic, i) => ({
+      topic,
+      mastery: Math.min(96, Math.max(10, base + [14, 3, -9][i])),
+      recapText: texts[i]?.text ?? kp.description,
+      kbRef: texts[i]?.kb,
+    }));
+  }, [currentLearner, script.kpId, kp]);
+
+  /* ---------- 自动滚动 ---------- */
+  const scrollToBottom = (smooth: boolean) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+  };
+  useEffect(() => {
+    if (nearBottomRef.current) scrollToBottom(true);
+  }, [msgs, typing]);
+  /* 流式期间持续跟底 */
+  useEffect(() => {
+    if (!streaming) return;
+    const t = setInterval(() => {
+      if (nearBottomRef.current) scrollToBottom(false);
+    }, 200);
+    return () => clearInterval(t);
+  }, [streaming]);
+
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    nearBottomRef.current = near;
+    setShowBackBottom(!near);
+  };
+
+  const submit = () => {
+    if ((!input.trim() && attachments.length === 0) || !awaitingNode) return;
+    /* 附件以「【图片 · xx.png】」前缀随文本一起进入消息流 */
+    const prefix = attachments
+      .map((a) => `【${attachmentLabel[a.kind]} · ${a.name}】`)
+      .join(' ');
+    sendFreeText([prefix, input.trim()].filter(Boolean).join(' '));
+    setInput('');
+    setAttachments([]);
+    setRecording(false);
+    nearBottomRef.current = true;
+  };
+
+  /* 回写钩子：本节结束 → 交给阿诊(DIA-01)推理回写（画像 + 时间线 + 对话消息，闭环成环） */
+  const wroteForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!finished) return;
+    if (wroteForRef.current === currentLearner.id) return;
+    wroteForRef.current = currentLearner.id;
+    pushSignal({ type: 'tutoring-finished', kpId: script.kpId, title: script.title, asked, correct });
+    /* 遗忘曲线：练过一节 = 给这株浇了水 */
+    markStudied(script.kpId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finished, currentLearner.id]);
+
+  /* 学练一体：学习者视角不再有独立「练」页——重定向到课件内就地开练（?drill=1）。
+     系统透视/评委视角保留本页，用于展示苏格拉底导学引擎全貌。 */
+  if (isLearner) return <Navigate to={`/learn/${script.kpId}?drill=1`} replace />;
 
   return (
     <div className={`mx-auto ${isLearner ? 'max-w-[1080px] px-5 md:px-6' : 'max-w-[1320px] px-8'} py-10`}>
-      <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap items-end justify-between gap-4">
-        <div><div className="lf-mono-label flex items-center gap-2"><span className="inline-block h-px w-6 bg-brand/40" />{isLearner ? '边问边练 · 练' : 'SOCRATIC TUTORING · PERSISTED SESSION'}</div><h1 className="mt-2 font-serif text-[36px] font-bold leading-[44px] text-ink">{isLearner ? 'AI 老师陪你练一节' : '交互导学'}</h1><div className="mt-3 flex flex-wrap items-center gap-2.5"><span className="lf-chip !py-1.5">{learning.course?.title ?? '当前课程'}</span>{selected && <span className="rounded-lg border border-brand/25 bg-brand-tint px-2.5 py-1.5 font-mono text-[11.5px] text-brand">{selected.title}</span>}</div></div>
-        {selected && <button type="button" onClick={() => void startSession(selected, true)} disabled={loadingSession || submitting} className="lf-btn-ghost !px-4 !py-2 text-[13.5px]"><RotateCcw size={14} />重新练一遍</button>}
+      {/* ---------- S1 页头 ---------- */}
+      <motion.div
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+        className="flex flex-wrap items-end justify-between gap-4"
+      >
+        <div>
+          <div className="lf-mono-label flex items-center gap-2">
+            <span className="inline-block h-px w-6 bg-brand/40" />
+            {isLearner ? '边问边练 · 练' : 'SOCRATIC TUTORING'}
+          </div>
+          <h1 className="mt-2 font-serif text-[36px] font-bold leading-[44px] text-ink">
+            {isLearner ? 'AI 老师陪你练一节' : '交互导学'}
+          </h1>
+          <div className="mt-3 flex flex-wrap items-center gap-2.5">
+            <span className="lf-chip !py-1.5">
+              {isLearner ? `今天练：${kp.name}` : `本节主题：${kp.name} · 为${currentLearner.tag}设计`}
+            </span>
+            <span className="rounded-lg border border-brand/25 bg-brand-tint px-2.5 py-1.5 font-mono text-[11.5px] text-brand">
+              {script.title}
+            </span>
+          </div>
+        </div>
+        {/* 刚进来时说「重开」很怪（还没开始过）——按进度换措辞 */}
+        <button
+          type="button"
+          onClick={reset}
+          title={asked === 0 ? '换一节内容' : '从头再练一遍这一节'}
+          className="lf-btn-ghost !px-4 !py-2 text-[13.5px]"
+        >
+          <RotateCcw size={14} /> {asked === 0 ? '换一节' : '重新练一遍'}
+        </button>
       </motion.div>
 
-      <PageTip id="tutoring-real" className="mt-5">这是后端持久化的<span className="font-medium text-ink">对话式导学</span>：可以点快答，也能直接说出你的想法。答错后，Agent 会切换到更细的解释路径。</PageTip>
+      {isLearner && (
+        <PageTip id="tutoring" className="mt-5">
+          这是<span className="font-medium text-ink">对话式</span>练习：可以点快答，也能直接打字说你的想法。
+          答不上来就说「不会」——AI 会换个更简单的问法，不会扣分。
+        </PageTip>
+      )}
 
-      {quizzes.length > 1 && <div className="mt-5 flex gap-2 overflow-x-auto pb-1">{quizzes.map((quiz) => <button key={quiz.id} type="button" onClick={() => { setSelectedId(quiz.id); startedResourceRef.current = null; }} className={cn('shrink-0 rounded-lg border px-3 py-2 text-[12px]', selected?.id === quiz.id ? 'border-brand bg-brand text-paper' : 'border-hairline bg-card-warm text-ink-2 hover:border-brand/40')}>{quiz.title}</button>)}</div>}
-
-      {!selected && <div className="lf-card mt-6 p-8 text-center"><h2 className="text-[18px] font-semibold text-ink">当前课程还没有分阶题</h2><p className="mt-2 text-[13px] text-ink-muted">先在章节资源中生成真实题目，导学老师会据此建立追问会话。</p><Link to="/learn" className="lf-btn-primary mt-5 inline-flex">进入我的课程</Link></div>}
-      {error && <div className="mt-5 rounded-[11px] border border-brand-danger/35 bg-brand-danger/10 px-4 py-3 text-[13px] text-brand-danger">{error}</div>}
-
-      {selected && <div className="mt-6 grid grid-cols-12 gap-6">
-        <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} className="relative col-span-12 lg:col-span-8">
-          {isLearner && <Vine className="pointer-events-none absolute -top-3 right-10 z-10 hidden h-[96px] w-[48px] opacity-85 sm:block" />}
+      <div className="mt-6 grid grid-cols-12 gap-6">
+        {/* ---------- S2 对话区 ---------- */}
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.55, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
+          className="relative col-span-12 lg:col-span-8"
+        >
+          {/* 练页植物：垂藤（从对话区上缘垂下） */}
+          {isLearner && (
+            <Vine className="pointer-events-none absolute -top-3 right-10 z-10 hidden h-[96px] w-[48px] opacity-85 sm:block" />
+          )}
           <div className="lf-card relative flex h-[640px] flex-col overflow-hidden">
-            <div className="flex items-center justify-between border-b border-hairline bg-paper px-5 py-3"><span className="flex items-center gap-2">{isLearner ? <><span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-[12px] font-bold text-paper">诊</span><span className="text-[13.5px] font-semibold text-ink">阿诊老师</span></> : <AgentChip agentId="DIA-01" size="sm" showStatus={false} />}</span><span className="flex items-center gap-1.5 font-mono text-[10.5px] text-brand"><span className="h-1.5 w-1.5 animate-ping rounded-full bg-brand" />{session?.status === 'completed' ? '已完成并保存' : 'LIVE · 后端会话'}</span></div>
-            <div ref={scrollRef} onScroll={() => { const el = scrollRef.current; if (!el) return; const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120; nearBottomRef.current = near; setShowBackBottom(!near); }} className="flex-1 space-y-4 overflow-y-auto px-5 py-5">
-              {loadingSession && <div className="flex h-full items-center justify-center gap-2 text-[13px] text-ink-muted"><Loader2 size={15} className="animate-spin" />正在创建真实导学会话…</div>}
-              {session?.messages.map((message, index) => {
-                const key = `${session.id}-${index}-${message.kind}`;
-                if (message.kind === 'tutor') return <TutorBubble key={key} id={key} text={message.text ?? ''} stage={message.stage} kbRefs={message.kbRefs} confidence={0.95} onStreamDone={() => undefined} />;
-                if (message.kind === 'learner') return <LearnerBubble key={key} text={message.text ?? ''} avatar={currentLearner.avatar} name={currentLearner.name} />;
-                if (message.kind === 'feedback') return <FeedbackBubble key={key} verdict={message.verdict ?? 'wrong'} text={message.text ?? ''} />;
-                if (message.kind === 'backstage' && message.notes) return <BackstageCard key={key} notes={message.notes} />;
-                if (message.kind === 'decision') { const decision = session.decisions.find((item) => item.type === message.type && item.reason === message.reason); return decision ? <DecisionCard key={key} decision={decision} /> : null; }
-                if (message.kind === 'summary') return <SessionSummary key={key} session={session} resource={selected} />;
-                return null;
-              })}
-              {submitting && <div className="flex items-center justify-center gap-2 font-mono text-[11px] text-agent-arb"><Loader2 size={13} className="animate-spin" />ARB-05 正在判定回答并选择下一条路径…</div>}
-              <AnimatePresence>{session?.currentNode?.options && !submitting && <AnswerCard key={`answer-${session.currentNode.id}`} options={session.currentNode.options.map((option) => ({ label: option.label, next: '' } as TutorOption))} onPick={(option) => { const optionIndex = session.currentNode?.options.findIndex((item) => item.label === option.label) ?? -1; if (optionIndex >= 0) void answer({ optionIndex }); }} />}</AnimatePresence>
+            {/* 对话标题条 */}
+            <div className="flex items-center justify-between border-b border-hairline bg-paper px-5 py-3">
+              {isLearner ? (
+                <span className="flex items-center gap-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-[12px] font-bold text-paper">诊</span>
+                  <span className="text-[13.5px] font-semibold text-ink">阿诊老师</span>
+                </span>
+              ) : (
+                <>
+                  <AgentChip agentId="DIA-01" size="sm" showStatus={false} />
+                  <span className="font-mono text-[10.5px] text-ink-muted">
+                    苏格拉底三阶法 · 引导 → 追问 → 确认
+                  </span>
+                </>
+              )}
+              <span className="flex items-center gap-1.5 font-mono text-[10.5px] text-brand">
+                <span className="h-1.5 w-1.5 animate-ping rounded-full bg-brand" />
+                {isLearner ? '在线' : 'LIVE'}
+              </span>
             </div>
-            <AnimatePresence>{showBackBottom && <motion.button type="button" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} onClick={() => { nearBottomRef.current = true; scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }); }} className="absolute bottom-[76px] left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full border border-hairline bg-card-warm px-3 py-1.5 text-[12px] font-medium text-brand shadow-warm"><ArrowDown size={13} />回到底部</motion.button>}</AnimatePresence>
-            <div className="border-t border-hairline bg-paper px-5 py-3.5"><div className="flex items-center gap-2.5"><input value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && input.trim()) void answer({ freeText: input.trim() }); }} disabled={!session?.currentNode || submitting} placeholder={session?.status === 'completed' ? '本节已完成，可重新练一遍或切换其他章节' : '输入你的想法，或选择上方快答…'} className="h-10 flex-1 rounded-[10px] border border-hairline bg-card-warm px-3.5 text-[13.5px] text-ink outline-none focus:border-brand/50 disabled:cursor-not-allowed disabled:opacity-60" /><button type="button" onClick={() => void answer({ freeText: input.trim() })} disabled={!session?.currentNode || !input.trim() || submitting} className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-brand text-paper transition hover:bg-brand-hover disabled:cursor-not-allowed disabled:bg-paper-deep disabled:text-ink-muted"><SendHorizonal size={16} /></button></div></div>
+
+            {/* 消息流 */}
+            <div
+              ref={scrollRef}
+              onScroll={onScroll}
+              className="flex-1 space-y-4 overflow-y-auto px-5 py-5"
+            >
+              {msgs.map((m) => {
+                switch (m.kind) {
+                  case 'tutor':
+                    /* 置信度为演示值：基础 0.92，若该气泡带 KB 溯源则 +0.05，上限 0.97 */
+                    return (
+                      <TutorBubble
+                        key={m.id}
+                        id={m.id}
+                        text={m.text}
+                        stage={m.stage}
+                        kbRefs={m.kbRefs}
+                        confidence={Math.min(0.97, 0.92 + (m.kbRefs?.length ? 0.05 : 0))}
+                        onStreamDone={notifyStreamDone}
+                      />
+                    );
+                  case 'feedback':
+                    return <FeedbackBubble key={m.id} verdict={m.verdict} text={m.text} />;
+                  case 'learner':
+                    return (
+                      <LearnerBubble
+                        key={m.id}
+                        text={m.text}
+                        avatar={currentLearner.avatar}
+                        name={currentLearner.name}
+                      />
+                    );
+                  case 'backstage':
+                    return <BackstageCard key={m.id} notes={m.notes} />;
+                  case 'arbitrate':
+                    return <ArbitrateRow key={m.id} />;
+                  case 'decision':
+                    return (
+                      <DecisionBlock
+                        key={m.id}
+                        type={m.type}
+                        reason={m.reason}
+                        accuracy={m.accuracy}
+                        asked={m.asked}
+                        learnerId={currentLearner.id}
+                        accepted={accepted}
+                        onAccept={acceptChallenge}
+                      />
+                    );
+                  case 'summary':
+                    return (
+                      <SummaryCard
+                        key={m.id}
+                        learner={currentLearner}
+                        script={script}
+                        topics={topics}
+                        asked={asked}
+                        correct={correct}
+                        decisionCount={decisions.length}
+                        isLearner={isLearner}
+                      />
+                    );
+                  default:
+                    return null;
+                }
+              })}
+              {typing && <TypingIndicator />}
+              {/* 答题卡气泡（随当前问题出现） */}
+              <AnimatePresence>
+                {awaitingNode?.options && !typing && !streaming && (
+                  <AnswerCard
+                    key={`ans-${awaitingNode.id}`}
+                    options={awaitingNode.options}
+                    onPick={(o) => {
+                      sendOption(o);
+                      nearBottomRef.current = true;
+                    }}
+                  />
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* 回到底部 */}
+            <AnimatePresence>
+              {showBackBottom && (
+                <motion.button
+                  type="button"
+                  /* 水平居中交给 framer 的 x —— motion 的内联 transform 会覆盖 Tailwind 的 -translate 类 */
+                  initial={{ opacity: 0, y: 10, x: '-50%' }}
+                  animate={{ opacity: 1, y: 0, x: '-50%' }}
+                  exit={{ opacity: 0, y: 10, x: '-50%' }}
+                  onClick={() => {
+                    nearBottomRef.current = true;
+                    scrollToBottom(true);
+                  }}
+                  className="absolute bottom-[132px] left-1/2 z-10 flex items-center gap-1 rounded-full border border-hairline bg-card-warm px-3 py-1.5 text-[12px] font-medium text-brand shadow-warm"
+                >
+                  <ArrowDown size={13} /> 回到底部
+                </motion.button>
+              )}
+            </AnimatePresence>
+
+            {/* 输入条（多模态：语音 / 图片 / PPT / 文档 + 文本） */}
+            <div className="border-t border-hairline bg-paper px-5 py-3.5">
+              {/* 待发送附件 chips */}
+              <AnimatePresence>
+                {attachments.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="mb-2 flex flex-wrap gap-1.5">
+                      {attachments.map((a) => (
+                        <span
+                          key={a.id}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-brand/30 bg-brand-tint/50 py-1 pl-2.5 pr-1.5 text-[11.5px] font-medium text-brand"
+                        >
+                          {a.kind === 'voice' && <Mic size={11} />}
+                          {a.kind === 'image' && <ImageIcon size={11} />}
+                          {a.kind === 'ppt' && <Presentation size={11} />}
+                          {a.kind === 'doc' && <FileText size={11} />}
+                          <span className="max-w-[140px] truncate">
+                            {attachmentLabel[a.kind]} · {a.name}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setAttachments((prev) => prev.filter((x) => x.id !== a.id))}
+                            aria-label={`移除${attachmentLabel[a.kind]}附件`}
+                            className="flex h-4 w-4 items-center justify-center rounded-full text-brand/70 transition-colors hover:bg-brand/15 hover:text-brand"
+                          >
+                            <X size={10} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div className="flex items-center gap-2.5">
+                {/* 多模态入口 */}
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={toggleRecording}
+                    disabled={!awaitingNode}
+                    title={recording ? '停止录音' : '语音输入'}
+                    aria-label={recording ? '停止录音' : '语音输入'}
+                    className={cn(
+                      'relative flex h-9 w-9 items-center justify-center rounded-[10px] border transition-all duration-200',
+                      recording
+                        ? 'border-brand-danger/50 bg-brand-danger/10 text-brand-danger'
+                        : 'border-hairline bg-card-warm text-ink-muted hover:border-brand/40 hover:text-brand',
+                      !awaitingNode && 'cursor-not-allowed opacity-50',
+                    )}
+                  >
+                    <Mic size={15} />
+                    {recording && (
+                      <span className="absolute -right-0.5 -top-0.5 h-2 w-2 animate-ping rounded-full bg-brand-danger" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => imageInputRef.current?.click()}
+                    disabled={!awaitingNode}
+                    title="发图片（题目照片 / 现场照片）"
+                    aria-label="上传图片"
+                    className={cn(
+                      'flex h-9 w-9 items-center justify-center rounded-[10px] border border-hairline bg-card-warm text-ink-muted transition-all duration-200 hover:border-brand/40 hover:text-brand',
+                      !awaitingNode && 'cursor-not-allowed opacity-50',
+                    )}
+                  >
+                    <ImageIcon size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => pptInputRef.current?.click()}
+                    disabled={!awaitingNode}
+                    title="发 PPT / 讲义"
+                    aria-label="上传 PPT"
+                    className={cn(
+                      'flex h-9 w-9 items-center justify-center rounded-[10px] border border-hairline bg-card-warm text-ink-muted transition-all duration-200 hover:border-brand/40 hover:text-brand',
+                      !awaitingNode && 'cursor-not-allowed opacity-50',
+                    )}
+                  >
+                    <Presentation size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => docInputRef.current?.click()}
+                    disabled={!awaitingNode}
+                    title="发文档 / 笔记"
+                    aria-label="上传文档"
+                    className={cn(
+                      'flex h-9 w-9 items-center justify-center rounded-[10px] border border-hairline bg-card-warm text-ink-muted transition-all duration-200 hover:border-brand/40 hover:text-brand',
+                      !awaitingNode && 'cursor-not-allowed opacity-50',
+                    )}
+                  >
+                    <FileText size={15} />
+                  </button>
+                </div>
+                <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={addFileAttachment('image')} />
+                <input ref={pptInputRef} type="file" accept=".ppt,.pptx,.pdf" className="hidden" onChange={addFileAttachment('ppt')} />
+                <input ref={docInputRef} type="file" accept=".txt,.md,.doc,.docx" className="hidden" onChange={addFileAttachment('doc')} />
+
+                <input
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') submit();
+                  }}
+                  disabled={!awaitingNode}
+                  placeholder={
+                    finished
+                      ? '本节已结束，可点击右上角「重开一节」'
+                      : recording
+                        ? '正在录音，再点一次麦克风结束…'
+                        : awaitingNode
+                          ? '输入你的回答，或用语音 / 图片提问…'
+                          : '导师思考中…'
+                  }
+                  className={cn(
+                    'h-10 min-w-0 flex-1 rounded-[10px] border border-hairline bg-card-warm px-3.5 text-[13.5px] text-ink outline-none transition-colors placeholder:text-ink-muted/70 focus:border-brand/50',
+                    !awaitingNode && 'cursor-not-allowed opacity-60',
+                  )}
+                />
+                <button
+                  type="button"
+                  onClick={submit}
+                  disabled={!awaitingNode || (!input.trim() && attachments.length === 0)}
+                  className={cn(
+                    'flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] transition-all duration-200',
+                    awaitingNode && (input.trim() || attachments.length > 0)
+                      ? 'bg-brand text-paper hover:bg-brand-hover hover:shadow-warm'
+                      : 'cursor-not-allowed bg-paper-deep text-ink-muted/50',
+                  )}
+                  aria-label="发送"
+                >
+                  <SendHorizonal size={16} />
+                </button>
+              </div>
+            </div>
           </div>
         </motion.div>
 
-        <motion.aside initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} className="col-span-12 lg:col-span-4 lg:sticky lg:top-24 lg:self-start"><SidePanel asked={session?.answers.length ?? 0} correct={correct} level={session?.level ?? 2} decisions={decisions} topics={topics} answers={session?.answers ?? []} showSeedDecision={false} onRecap={(topic) => setInput(`请用更简单的方式复述：${topic.topic}`)} /></motion.aside>
-      </div>}
+        {/* ---------- S4 右栏 ---------- */}
+        <motion.aside
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.55, delay: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          className="col-span-12 lg:col-span-4 lg:sticky lg:top-24 lg:self-start"
+        >
+          <SidePanel
+            asked={asked}
+            correct={correct}
+            level={level}
+            decisions={decisions}
+            topics={topics}
+            answers={answers}
+            kpId={script.kpId}
+            scores={currentLearner.scores}
+            onRecap={(t) => recap(t.topic, t.recapText, t.kbRef)}
+          />
+        </motion.aside>
+      </div>
     </div>
   );
 }

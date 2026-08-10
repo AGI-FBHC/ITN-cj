@@ -4,7 +4,7 @@
  * 系统透视(expert / 评委模式)：左侧栏仪表盘（完整 7 页分组 + 时钟 + 引擎 ticker + 演示模式）。
  * 两种视角是两种布局形态——学习 App vs 控制台。
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Home,
@@ -71,11 +71,10 @@ type NavItem = {
   end?: boolean;
 };
 
-/** 学习者视角：4 站旅程 */
+/** 学习者视角：3 站旅程（学练一体改版：原「学」「练」两页合并为一站） */
 const learnerNav: NavItem[] = [
   { path: '/me', label: '我的学习', icon: Home, end: true },
-  { path: '/learn', label: '学', icon: BookOpen },
-  { path: '/tutoring', label: '练', icon: MessagesSquare },
+  { path: '/learn', label: '学 · 练', icon: BookOpen },
   { path: '/report', label: '我的成长', icon: BarChart3 },
 ];
 
@@ -105,7 +104,7 @@ const expertNavGroups: { heading?: string; items: NavItem[] }[] = [
 const pageTitleMap: Record<string, { title: string; crumb: string }> = {
   '/': { title: '总览 Dashboard', crumb: 'LEARNFORGE / OVERVIEW' },
   '/me': { title: '我的学习', crumb: 'LEARNFORGE / MY LEARNING' },
-  '/learn': { title: '学 · 我的课程', crumb: 'LEARNFORGE / COURSE' },
+  '/learn': { title: '学 · 练 · 我的课程', crumb: 'LEARNFORGE / COURSE' },
   '/profiles': { title: '学情画像', crumb: 'LEARNFORGE / PROFILES' },
   '/agents': { title: '多智能体协同调度', crumb: 'LEARNFORGE / AGENTS' },
   '/resources': { title: '个性化资源生成', crumb: 'LEARNFORGE / RESOURCES' },
@@ -123,7 +122,7 @@ function LiveClock() {
   }, []);
   const text = now.toLocaleTimeString('zh-CN', { hour12: false });
   return (
-    <span className="hidden items-center gap-2 rounded-lg border border-hairline bg-paper px-2.5 py-1.5 font-mono text-[13px] font-medium text-ink-2 tabular md:inline-flex">
+    <span className="hidden h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-hairline bg-paper px-2 font-mono text-[12px] font-medium text-ink-2 tabular lg:inline-flex">
       <span className="h-1.5 w-1.5 rounded-full bg-brand-amber" />
       {text}
     </span>
@@ -143,7 +142,7 @@ function ModeToggle({
     { key: 'expert', label: '系统透视', icon: Cpu },
   ];
   return (
-    <div className="flex items-center gap-0.5 rounded-[11px] border border-hairline bg-paper p-0.5">
+    <div className="flex shrink-0 items-center gap-0.5 rounded-[11px] border border-hairline bg-paper p-0.5">
       {opts.map((o) => {
         const active = mode === o.key;
         return (
@@ -152,12 +151,13 @@ function ModeToggle({
             type="button"
             onClick={() => onChange(o.key)}
             title={o.key === 'expert' ? '系统透视 / 评委视角：展开完整多智能体机制' : '学习者视角'}
+            aria-label={o.label}
             className={cn(
-              'flex items-center gap-1.5 rounded-[9px] px-2.5 py-1.5 text-[12.5px] font-medium transition-all duration-200',
+              'flex h-7 items-center gap-1.5 whitespace-nowrap rounded-[8px] px-2 text-[12px] font-medium transition-all duration-200',
               active ? 'bg-brand text-paper shadow-warm' : 'text-ink-muted hover:text-ink',
             )}
           >
-            <o.icon size={14} />
+            <o.icon size={13} />
             <span className="hidden sm:inline">{o.label}</span>
           </button>
         );
@@ -183,16 +183,16 @@ function ProfileSwitcher({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="flex items-center gap-2 rounded-[10px] border border-hairline bg-card-warm py-1.5 pl-1.5 pr-2.5 transition-all duration-200 hover:border-brand/35"
+          className="flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] border border-hairline bg-card-warm pl-1 pr-2 transition-all duration-200 hover:border-brand/35"
         >
-          <Avatar className="h-7 w-7 border border-hairline">
+          <Avatar className="h-6 w-6 border border-hairline">
             <AvatarImage src={currentLearner.avatar} alt={currentLearner.name} />
             <AvatarFallback className="bg-brand-tint text-[11px] text-brand">
               {currentLearner.name.slice(0, 1)}
             </AvatarFallback>
           </Avatar>
-          <span className="hidden text-[13px] font-medium text-ink lg:inline">{currentLearner.name}</span>
-          <ChevronDown size={14} className="text-ink-muted" />
+          <span className="hidden whitespace-nowrap text-[12.5px] font-medium text-ink xl:inline">{currentLearner.name}</span>
+          <ChevronDown size={13} className="text-ink-muted" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64 border-hairline bg-card-warm">
@@ -294,6 +294,20 @@ export default function AppShell() {
     if (isLearner && location.pathname === '/') navigate('/me', { replace: true });
   }, [isLearner, location.pathname, navigate]);
 
+  /* 交互导学是沉浸式对话页：进入自动收起侧栏让位给对话区，离开时恢复原状 */
+  const collapsedBeforeTutoringRef = useRef<boolean | null>(null);
+  const onTutoring = base === '/tutoring';
+  useEffect(() => {
+    if (onTutoring) {
+      collapsedBeforeTutoringRef.current = collapsed;
+      setCollapsed(true);
+    } else if (collapsedBeforeTutoringRef.current !== null) {
+      setCollapsed(collapsedBeforeTutoringRef.current);
+      collapsedBeforeTutoringRef.current = null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onTutoring]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -365,7 +379,7 @@ export default function AppShell() {
             </nav>
 
             {/* 右侧集群（画像切换仅系统透视提供——学习者视角里"我"就是当前画像） */}
-            <div className="ml-auto flex items-center gap-2 md:ml-0">
+            <div className="ml-auto flex shrink-0 items-center gap-2 whitespace-nowrap md:ml-0">
               <TeachingGroup variant="compact" />
               <button
                 type="button"
@@ -387,7 +401,7 @@ export default function AppShell() {
                     {currentLearner.name.slice(0, 1)}
                   </AvatarFallback>
                 </Avatar>
-                <span className="hidden text-[13px] font-medium text-ink lg:inline">{currentLearner.name}</span>
+                <span className="hidden whitespace-nowrap text-[13px] font-medium text-ink lg:inline">{currentLearner.name}</span>
               </Link>
               <button
                 type="button"
@@ -514,25 +528,39 @@ export default function AppShell() {
 
           {/* 主区 */}
           <div className="flex min-w-0 flex-1 flex-col">
-            <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b border-hairline bg-paper/85 px-6 backdrop-blur-md">
-              <div className="min-w-0">
-                <h1 className="truncate font-serif text-[17px] font-semibold leading-[24px] text-ink">
+            <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-4 border-b border-hairline bg-paper/85 px-6 backdrop-blur-md">
+              {/* 左侧标题区：可压缩但只截断、不折行（面包屑逐字换行就是从这儿来的） */}
+              <div className="min-w-0 flex-1">
+                <h1 className="truncate font-serif text-[16px] font-semibold leading-[22px] text-ink">
                   {pageInfo.title}
                 </h1>
-                <div className="font-mono text-[10.5px] tracking-[0.12em] text-ink-muted">{pageInfo.crumb}</div>
+                <div className="truncate whitespace-nowrap font-mono text-[10px] tracking-[0.12em] text-ink-muted">
+                  {pageInfo.crumb}
+                </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              {/* 右侧控件群：整体不参与压缩，窄屏按重要度分级隐藏，杜绝挤压变形 */}
+              <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
                 <button
                   type="button"
                   onClick={() => setSearchOpen(true)}
-                  className="hidden items-center gap-2 rounded-[10px] border border-hairline bg-card-warm px-3 py-1.5 text-[13px] text-ink-muted transition-all duration-200 hover:border-brand/35 hover:text-ink sm:flex"
+                  className="hidden h-8 shrink-0 items-center gap-2 rounded-[9px] border border-hairline bg-card-warm px-2.5 text-[12.5px] text-ink-muted transition-all duration-200 hover:border-brand/35 hover:text-ink xl:flex"
                 >
-                  <Search size={14} />
-                  <span className="max-w-[180px] truncate">检索知识库 / 资源 / 标准号…</span>
+                  <Search size={13} />
+                  <span className="max-w-[170px] truncate">检索知识库 / 资源 / 标准号…</span>
                   <kbd className="rounded border border-hairline bg-paper px-1.5 py-px font-mono text-[10px] text-ink-muted">
                     ⌘K
                   </kbd>
+                </button>
+                {/* 中窄屏：检索降级为图标按钮，不再占一整条 */}
+                <button
+                  type="button"
+                  onClick={() => setSearchOpen(true)}
+                  title="检索（⌘K）"
+                  aria-label="检索知识库"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border border-hairline bg-card-warm text-ink-muted transition-all duration-200 hover:border-brand/35 hover:text-ink xl:hidden"
+                >
+                  <Search size={14} />
                 </button>
 
                 {/* 评委一键导览：5 分钟自动串场，把五步闭环叙事喂到评委嘴边 */}
@@ -540,15 +568,15 @@ export default function AppShell() {
                   type="button"
                   onClick={() => startDemoTour()}
                   title="评委一键导览 · 5 分钟串场演示"
-                  className="flex items-center gap-1.5 rounded-[10px] border border-brand-amber/45 bg-brand-amber-tint px-3 py-1.5 text-[12.5px] font-medium text-ochre transition-all duration-200 hover:border-brand-amber/70"
+                  className="flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] border border-brand-amber/45 bg-brand-amber-tint px-2.5 text-[12px] font-medium text-ochre transition-all duration-200 hover:border-brand-amber/70"
                 >
-                  <Compass size={14} />
-                  <span className="hidden sm:inline">评委导览</span>
+                  <Compass size={13} />
+                  <span className="hidden md:inline">评委导览</span>
                 </button>
 
                 <LiveClock />
-                <label className="hidden items-center gap-2 rounded-[10px] border border-hairline bg-card-warm px-3 py-1.5 lg:flex">
-                  <span className={cn('text-[12.5px] font-medium', demoMode ? 'text-brand' : 'text-ink-muted')}>
+                <label className="hidden h-8 shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap rounded-[9px] border border-hairline bg-card-warm px-2.5 xl:flex">
+                  <span className={cn('text-[12px] font-medium', demoMode ? 'text-brand' : 'text-ink-muted')}>
                     演示模式
                   </span>
                   <Switch
@@ -573,9 +601,10 @@ export default function AppShell() {
                   type="button"
                   onClick={doLogout}
                   title="退出登录"
-                  className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-hairline bg-card-warm text-ink-muted transition-all duration-200 hover:border-brand/35 hover:text-ink"
+                  aria-label="退出登录"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border border-hairline bg-card-warm text-ink-muted transition-all duration-200 hover:border-brand/35 hover:text-ink"
                 >
-                  <LogOut size={14} />
+                  <LogOut size={13} />
                 </button>
               </div>
             </header>

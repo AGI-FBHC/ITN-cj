@@ -37,13 +37,17 @@ import {
   Bookmark,
   AlignLeft,
   LayoutGrid,
-  ListChecks,
   Presentation,
   Brain,
   ShieldCheck,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  GraduationCap,
+  ImagePlus,
+  MoreHorizontal,
 } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
 import { useProfile, dataIdOf } from '@/context/ProfileContext';
 import { bumpConfidence } from '@/data/confidence';
@@ -56,9 +60,13 @@ import { getKnowledgePoint } from '@/data/knowledgePoints';
 import { nextPathNodeAfter } from '@/data/reportData';
 import { reportForLearner } from '@/data/reportBuilder';
 import { resolveLearnTarget } from '@/data/resources';
-import { buildUnit, remedialBlockOf, variantBlockOf, drawQuestions, matchQA, fallbackAnswer, cuesOf, STYLE_LABELS } from '@/data/courseware';
-import type { CourseBlock, StageItem, StyleLabel } from '@/data/courseware';
+import { loadProgress, saveProgress, clearProgress } from '@/data/learnProgress';
+import { recordHarvest, speciesOf } from '@/data/garden';
+import { buildUnit, remedialBlockOf, variantBlockOf, drawQuestions, matchQA, fallbackAnswer, cuesOf, qaBank, STYLE_LABELS } from '@/data/courseware';
+import type { CourseBlock, PresetQA, StageItem, StyleLabel } from '@/data/courseware';
 import TraceBadge from '@/components/TraceBadge';
+import InlineTutor from '@/components/learn/InlineTutor';
+import type { TutorMsg } from '@/components/learn/InlineTutor';
 import CalibrationSim from '@/components/learn/CalibrationSim';
 import FrameDemo from '@/components/learn/FrameDemo';
 import PlcLadderDemo from '@/components/learn/PlcLadderDemo';
@@ -67,17 +75,23 @@ import VisionGuideDemo from '@/components/learn/VisionGuideDemo';
 import FaultTreeDemo from '@/components/learn/FaultTreeDemo';
 import PathProgressBar from '@/components/learn/PathProgressBar';
 import { GrassTuft, Sprout } from '@/components/heal/Flora';
-import PageTip from '@/components/heal/PageTip';
 import { useAmbient } from '@/components/heal/useAmbient';
 import { cn } from '@/lib/utils';
 
 const letters = ['A', 'B', 'C', 'D'];
-const RATES = [0.85, 1.05, 1.3] as const;
+const RATES = [0.75, 0.85, 1.05, 1.3, 1.5] as const;
+
+/** 语音风格预设：音高 + 语速微调（浏览器 TTS 可控维度内做出可感知差异） */
+const VOICE_STYLES = [
+  { key: 'steady', label: '沉稳讲解', desc: '低音沉着 · 系统学习', pitch: 0.85, rateScale: 0.95 },
+  { key: 'standard', label: '标准播报', desc: '默认音色 · 均衡', pitch: 1, rateScale: 1 },
+  { key: 'lively', label: '亲切活泼', desc: '音调明快 · 提神醒脑', pitch: 1.2, rateScale: 1.08 },
+] as const;
 
 /* ---------- TTS（带看门狗：utterance 卡死/静音环境下超时强制推进，保证讲播永不挂起） ---------- */
 function useTts() {
   const supported = typeof window !== 'undefined' && 'speechSynthesis' in window;
-  const speak = (text: string, rate: number, onEnd: () => void) => {
+  const speak = (text: string, rate: number, onEnd: () => void, pitch = 1) => {
     /* 估算朗读时长：中文 ~0.28s/字，随语速缩放 */
     const est = Math.min(20000, Math.max(1600, (text.length * 280) / rate));
     if (!supported) {
@@ -96,6 +110,7 @@ function useTts() {
     if (zh) u.voice = zh;
     u.lang = 'zh-CN';
     u.rate = rate;
+    u.pitch = pitch;
     let started = false;
     u.onstart = () => { started = true; };
     u.onend = finish;
@@ -157,7 +172,7 @@ function getRecognizer(): (new () => any) | null {
 function Figure({ figure }: { figure: 'deviation' | 'chain' }) {
   if (figure === 'deviation') {
     return (
-      <svg viewBox="0 0 260 96" className="w-full max-w-[300px]">
+      <svg viewBox="0 0 260 96" className="max-h-[30vh] w-full max-w-[440px]">
         <circle cx="70" cy="48" r="6" fill="#6BA080" />
         <text x="70" y="30" fontSize="11" textAnchor="middle" fill="#6BA080" fontFamily="monospace">A（以为）</text>
         <circle cx="185" cy="62" r="6" fill="#B0483B" />
@@ -168,7 +183,7 @@ function Figure({ figure }: { figure: 'deviation' | 'chain' }) {
     );
   }
   return (
-    <svg viewBox="0 0 260 76" className="w-full max-w-[300px]">
+    <svg viewBox="0 0 260 76" className="max-h-[30vh] w-full max-w-[440px]">
       {[0, 1, 2, 3, 4, 5].map((i) => (
         <g key={i}>
           <circle cx={26 + i * 42} cy="38" r="8" fill="none" stroke="#4E7860" strokeWidth="2" />
@@ -187,7 +202,7 @@ function StageItemView({ item, visible, current }: { item: StageItem; visible: b
   return (
     <div
       className={cn(
-        'rounded-[10px] border p-3 transition-all duration-500 ease-lf',
+        'rounded-[10px] border px-3 py-2.5 transition-all duration-500 ease-lf',
         visible ? 'translate-y-0 opacity-100' : 'translate-y-1.5 opacity-[0.07]',
         current ? 'scale-[1.02] border-brand-amber bg-brand-amber-tint/60 shadow-warm' : 'scale-100 border-hairline bg-paper',
       )}
@@ -244,19 +259,28 @@ const SPOT_DEFS: { key: keyof SpotFlags; icon: typeof Sparkles; name: string; de
 ];
 
 function FeatureSpotlight({ flags }: { flags: SpotFlags }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   const hitCount = SPOT_DEFS.filter((d) => flags[d.key]).length;
+  /* 悬浮球形态：不再常驻侧栏——收起时只是右下角一枚计数球，点开才展开清单。
+     bottom-44：给下方的阿诊 FAB（bottom-6）和演示导览 FAB（md:bottom-24）让位，右下角三层不打架 */
   return (
-    <div className="fixed right-4 top-24 z-30 hidden w-[228px] xl:block">
-      <div className="rounded-[14px] border border-hairline bg-paper/92 shadow-warm backdrop-blur">
+    <div className="fixed bottom-44 right-5 z-30 hidden w-[240px] lg:block">
+      <div className={cn(!open && 'flex justify-end')}>
+      <div className={cn(open ? 'rounded-[14px] border border-hairline bg-paper/95 shadow-warm-lg backdrop-blur' : 'inline-block')}>
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left"
+          title="技术亮点 · 边用边看（实时点亮已演示的机制）"
+          className={cn(
+            'flex items-center gap-2 text-left',
+            open
+              ? 'w-full px-3.5 py-2.5'
+              : 'rounded-full border border-hairline bg-paper/95 px-3 py-2 shadow-warm backdrop-blur transition-all hover:border-brand/40',
+          )}
         >
           <Sparkles size={13} className="text-brand" />
-          <span className="text-[12.5px] font-semibold text-ink">技术亮点 · 边用边看</span>
-          <span className="ml-auto rounded-md bg-brand-tint px-1.5 py-0.5 font-mono text-[10px] font-semibold text-brand">
+          {open && <span className="text-[12.5px] font-semibold text-ink">技术亮点 · 边用边看</span>}
+          <span className={cn('rounded-md bg-brand-tint px-1.5 py-0.5 font-mono text-[10px] font-semibold text-brand', open && 'ml-auto')}>
             {hitCount}/{SPOT_DEFS.length}
           </span>
         </button>
@@ -303,6 +327,7 @@ function FeatureSpotlight({ flags }: { flags: SpotFlags }) {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );
@@ -358,7 +383,8 @@ function AdjustPipeline({ steps }: { steps: [string, string, string] }) {
   );
 }
 
-/* ---------- 开讲适配横幅：把"这讲是按你现做的"直接说出来（检测 → 定制 → 核验 逐步点亮） ---------- */
+/* ---------- 开讲适配横幅（可交互）：检测 → 定制 → 核验，三张卡都点得开 ----------
+ * 点「检测」看缺口从哪来；点「定制」当场换讲法（GEN-03 现场重拼）；点「核验」看溯源覆盖 */
 function AdaptiveBanner({
   kpName,
   score,
@@ -367,15 +393,22 @@ function AdaptiveBanner({
   difficulty,
   styleLabel,
   expert,
+  kbCount,
+  onPickStyle,
 }: {
   kpName: string;
   score: number;
   target: number;
   isWeakest: boolean;
   difficulty: string;
-  styleLabel: string;
+  styleLabel: StyleLabel;
   expert: boolean;
+  /** 本讲挂了多少处 KB 溯源角标 */
+  kbCount: number;
+  /** 当场切换讲法（GEN-03 重新拼装本讲） */
+  onPickStyle: (s: StyleLabel) => void;
 }) {
+  const [openIdx, setOpenIdx] = useState<number | null>(null);
   const gap = Math.max(0, target - score);
   const weak = difficulty === '零基础' || gap >= 25;
   const adjustLine =
@@ -422,12 +455,18 @@ function AdaptiveBanner({
       </div>
       <div className="grid gap-2 sm:grid-cols-3">
         {steps.map((s, i) => (
-          <motion.div
+          <motion.button
             key={s.label}
+            type="button"
+            onClick={() => setOpenIdx((v) => (v === i ? null : i))}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.15 + i * 0.4, duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-            className="flex items-start gap-2 rounded-[10px] border border-hairline/70 bg-paper/70 p-2.5"
+            className={cn(
+              'flex items-start gap-2 rounded-[10px] border p-2.5 text-left transition-all',
+              openIdx === i ? 'border-brand/45 bg-paper shadow-warm' : 'border-hairline/70 bg-paper/70 hover:border-brand/30',
+            )}
+            title={i === 0 ? '点开看：缺口从哪来' : i === 1 ? '点开换讲法：本讲当场重拼' : '点开看：溯源覆盖情况'}
           >
             <span
               className={cn(
@@ -437,15 +476,79 @@ function AdaptiveBanner({
             >
               <s.icon size={12} />
             </span>
-            <span className="min-w-0">
+            <span className="min-w-0 flex-1">
               <span className={cn('block font-mono text-[10px] font-semibold', s.tone === 'amber' ? 'text-ochre' : 'text-brand')}>
                 {s.label}
               </span>
               <span className="mt-0.5 block text-[12px] leading-[18px] text-ink-2">{s.text}</span>
             </span>
-          </motion.div>
+            <ChevronDown
+              size={12}
+              className={cn('mt-1 shrink-0 text-ink-muted transition-transform', openIdx === i && 'rotate-180')}
+            />
+          </motion.button>
         ))}
       </div>
+
+      {/* 展开详情：不再只是"陈述给你看"，而是能看证据、能动手改 */}
+      <AnimatePresence>
+        {openIdx !== null && (
+          <motion.div
+            key={openIdx}
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="mt-2 rounded-[10px] border border-hairline/70 bg-paper p-3">
+              {openIdx === 0 && (
+                <div className="space-y-1.5 text-[12.5px] leading-[19px] text-ink-2">
+                  <div className="font-mono text-[10px] font-semibold text-ink-muted">缺口 {gap} 分是这样算出来的</div>
+                  <div>· 画像基线：入学测评 + 历次答题回写 → 「{kpName}」当前 <span className="font-semibold text-ink">{score} 分</span></div>
+                  <div>· 岗位目标线：<span className="font-semibold text-ink">{target} 分</span>{isWeakest && '（这是你六维雷达的最弱项）'}</div>
+                  <div>· 本讲对策：检查点按"讲一段练一题"加密，答错就地补讲——右侧掌握度条实时看涨跌</div>
+                </div>
+              )}
+              {openIdx === 1 && (
+                <div>
+                  <div className="font-mono text-[10px] font-semibold text-ink-muted">
+                    讲法不合口味？点一个当场重拼（难度保持「{difficulty}」）
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {STYLE_LABELS.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => onPickStyle(s)}
+                        disabled={s === styleLabel}
+                        className={cn(
+                          'rounded-[9px] border px-2.5 py-1.5 text-[12px] font-medium transition-all',
+                          s === styleLabel
+                            ? 'border-brand bg-brand text-paper'
+                            : 'border-hairline bg-paper text-ink-2 hover:border-brand/45 hover:text-brand',
+                        )}
+                      >
+                        {s}
+                        {s === styleLabel && ' · 当前'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {openIdx === 2 && (
+                <div className="text-[12.5px] leading-[19px] text-ink-2">
+                  <div className="font-mono text-[10px] font-semibold text-ink-muted">零幻觉核验</div>
+                  <div className="mt-1">
+                    本讲共 <span className="font-semibold text-brand">{kbCount}</span> 处论断挂了 KB 溯源角标——正文里的{' '}
+                    <span className="font-mono text-brand">[KB-xxx]</span> 点开可看原文出处；语音讲到引用句时角标会发光。
+                    没有出处的内容，生成阶段就发不出来。
+                  </div>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -492,8 +595,10 @@ export default function LearnUnit() {
     const id = `${kpId}-${target}`;
     const idx = unit.blocks.findIndex((bb) => bb.id === id);
     if (idx < 0) return;
+    /* 深链目标可能还没解锁（课堂推进模式）：按用户意图直接解锁到该块 */
+    setUnlocked((u) => Math.max(u, idx + 1));
     const t = setTimeout(() => {
-      blockRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      blockRefs.current[idx]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       setFlashId(id);
       setTimeout(() => setFlashId(null), 2200);
     }, 350);
@@ -509,7 +614,11 @@ export default function LearnUnit() {
   const [cursor, setCursor] = useState(0);
   const [subtitle, setSubtitle] = useState<string | null>(null);
   const [kbGlow, setKbGlow] = useState(false);
-  const [rateIdx, setRateIdx] = useState(1);
+  const [rateIdx, setRateIdx] = useState(2);
+  const [voiceIdx, setVoiceIdx] = useState(1);
+  const voiceStyle = VOICE_STYLES[voiceIdx];
+  /** 实际朗读速率 = 档位语速 × 风格微调 */
+  const speechRate = RATES[rateIdx] * voiceStyle.rateScale;
   /** 每块已点亮的演播元素 */
   const [reveals, setReveals] = useState<Record<string, number[]>>({});
   const cancelRef = useRef<(() => void) | null>(null);
@@ -546,11 +655,16 @@ export default function LearnUnit() {
     if (i < 0) i = 0;
     setNoteFor(bl[i].id);
     setNoteText('');
+    /* 目标块若已折叠成摘要行（课堂推进模式），先展开回看再挂笔记编辑器 */
+    setReviewOpen((prev) => ({ ...prev, [bl[i].id]: true }));
     scrollToBlock(i);
   };
   const [asking, setAsking] = useState(false);
   const [question, setQuestion] = useState('');
-  const [qaLog, setQaLog] = useState<{ q: string; a: string; kbRef?: string }[]>([]);
+  /** 提问附图：车间里真实的问法是"我们这台报这个警（拍张照）怎么回事" */
+  const [askPhoto, setAskPhoto] = useState<{ name: string; url: string } | null>(null);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [qaLog, setQaLog] = useState<{ q: string; a: string; kbRef?: string; photo?: string }[]>([]);
   const [listening, setListening] = useState(false);
   const [finished, setFinished] = useState(false);
   const finishedSignalRef = useRef(false);
@@ -597,6 +711,112 @@ export default function LearnUnit() {
       next.splice(idx + 1, 0, ...bs);
       return next;
     });
+  };
+
+  /* ---- 本节掌握度（学练一体的实时反馈）：微练答对 +3 答错 −1，追问过关 +2 ---- */
+  const [sessionDelta, setSessionDelta] = useState(0);
+  /** 涨分飘字：反馈发生在动作发生的块上（blockId + 增量），1.4s 后自动消失 */
+  const [masteryFloat, setMasteryFloat] = useState<{ blockId: string; delta: number; seq: number } | null>(null);
+  const floatSeq = useRef(0);
+  const floatMastery = (blockId: string, delta: number) => {
+    setMasteryFloat({ blockId, delta, seq: floatSeq.current++ });
+    setTimeout(() => setMasteryFloat((cur) => (cur?.blockId === blockId ? null : cur)), 1400);
+  };
+
+  /* ---- 本讲情报条（路线 + ADAPTIVE 收进一行，点开才展开）---- */
+  const [briefOpen, setBriefOpen] = useState(false);
+
+  /* ---- 课堂推进模式：讲到哪开到哪，不一次摊开整讲 ----
+     unlocked = 已解锁块数：前面的块折叠成摘要行，当前块完整渲染，后面的块不渲染。
+     推进触发：签到 / 答完微练 / 点「下一段」/ 讲播播到。freeBrowse = 自由浏览（复习用，全展开）。 */
+  const [freeBrowse, setFreeBrowse] = useState(false);
+  const [unlocked, setUnlocked] = useState(1);
+  /** 已完成块的手动回看展开 */
+  const [reviewOpen, setReviewOpen] = useState<Record<string, boolean>>({});
+  /** 换讲法/换人重拼后回到第一段（续学恢复由下方 effect 负责，restoringRef 防止被这里清掉） */
+  const restoringRef = useRef(false);
+  useEffect(() => {
+    if (restoringRef.current) { restoringRef.current = false; return; }
+    setUnlocked(1);
+    setReviewOpen({});
+  }, [unit]);
+  const advanceTo = (next: number) => {
+    setUnlocked((u) => Math.max(u, next + 1));
+    /* 同步播放光标：否则手动推进后，分段进度条高亮停在旧段、专注聚光灯调暗当前块、
+       此时点播放会从旧块开始讲（定位类 bug，与"块顶对齐"同族） */
+    if (!playingRef.current) {
+      posRef.current = { b: next, c: 0 };
+      setCursor(next);
+    }
+    setTimeout(() => scrollToBlock(next), 250);
+  };
+
+  /* ---- 块内追问「跟老师过一遍」：把独立练页的苏格拉底对话，降级成课件现场的 2~3 轮追问 ---- */
+  const [tutorFor, setTutorFor] = useState<{ blockId: string; topic: string } | null>(null);
+  const [tutorMsgs, setTutorMsgs] = useState<TutorMsg[]>([]);
+  const [tutorStep, setTutorStep] = useState<'ask' | 'done'>('ask');
+  const tutorQaRef = useRef<PresetQA | null>(null);
+  const tutorSeqRef = useRef(0);
+
+  const nextTutorQa = (): PresetQA | null => {
+    const pool = qaBank[kpId] ?? [];
+    if (pool.length === 0) return null;
+    return pool[tutorSeqRef.current++ % pool.length];
+  };
+
+  const openTutor = (b: CourseBlock) => {
+    stopPlayback();
+    hitSpot('agency');
+    const qa = nextTutorQa();
+    tutorQaRef.current = qa;
+    const topic = 'title' in b && b.title ? b.title : kp.name;
+    setTutorFor({ blockId: b.id, topic });
+    setTutorMsgs([
+      {
+        role: 'tutor',
+        text: qa
+          ? `我们把这段就地过一遍，不用跳页。先考考你：${qa.q}`
+          : `我们把这段就地过一遍：用一句话说说，「${topic}」的关键是什么？`,
+      },
+    ]);
+    setTutorStep('ask');
+  };
+
+  const tutorAnswer = (text: string) => {
+    const qa = tutorQaRef.current;
+    setTutorMsgs((prev) => [...prev, { role: 'me', text }]);
+    const hit = qa ? qa.keywords.some((k) => text.toLowerCase().includes(k.toLowerCase())) : false;
+    const reply = qa
+      ? hit
+        ? `说到点子上了！完整版是：${qa.a}`
+        : `接近了，我补全一下：${qa.a}`
+      : '嗯，思路对——再对照上面这段的小结自查一遍。';
+    setTutorMsgs((prev) => [...prev, { role: 'tutor', text: reply, kbRef: qa?.kbRef }]);
+    setTutorStep('done');
+    setSessionDelta((v) => v + (hit ? 2 : 1));
+    if (tutorFor) floatMastery(tutorFor.blockId, hit ? 2 : 1);
+    if (hit) pushSignal({ type: 'self-report', kpId, feel: 'ok' });
+  };
+
+  const tutorReveal = () => {
+    const qa = tutorQaRef.current;
+    setTutorMsgs((prev) => [
+      ...prev,
+      { role: 'me', text: '不太会，直接讲吧' },
+      { role: 'tutor', text: qa ? `没关系，直接讲：${qa.a}` : '没关系——回头把这段正文再读一遍，重点看小结。', kbRef: qa?.kbRef },
+    ]);
+    setTutorStep('done');
+    pushSignal({ type: 'self-report', kpId, feel: 'unsure' });
+  };
+
+  const tutorMore = () => {
+    const qa = nextTutorQa();
+    tutorQaRef.current = qa;
+    setTutorMsgs((prev) => [
+      ...prev,
+      { role: 'tutor', text: qa ? `再来一轮：${qa.q}` : '这一节的追问题被你问完了——去讲末「再练 3 题」上强度。' },
+    ]);
+    setTutorStep(qa ? 'ask' : 'done');
   };
 
   /* ---- 专注模式：全屏 + 收 chrome + 聚光灯 + 计时 → 退出结算能量 ---- */
@@ -671,8 +891,10 @@ export default function LearnUnit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusMode, cursor]);
 
+  /* 定位限定：块顶对齐（配合块上的 scroll-mt 给导航留位）。
+     居中对齐对高块（演播块 ~800px）意味着头尾都在屏幕外，学习者永远从"半截"开始看。 */
   const scrollToBlock = (i: number) =>
-    blockRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    blockRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   const stopPlayback = () => {
     cancelRef.current?.();
@@ -680,6 +902,8 @@ export default function LearnUnit() {
     playingRef.current = false;
     setPlaying(false);
     setKbGlow(false);
+    /* 暂停即清残留字幕——否则胶囊播放条因"有字幕"一直缩不回去 */
+    setSubtitle(null);
   };
 
   const finish = () => {
@@ -690,6 +914,17 @@ export default function LearnUnit() {
     pushSignal({ type: 'lecture-read', kpId, title: `${kp.name} · 交互课件（${unit.difficulty}版）` });
     /* 遗忘曲线：这一株刚浇过水，重置保持率并 +1 次复习 */
     markStudied(kpId);
+    /* 学完即结课：断点清除，下次进来是新的一讲 */
+    clearProgress(currentLearner.id, kpId);
+    /* 园子：这一讲的分数过了目标线 → 记一次收获，陈列进「我的成长」的温室 */
+    const finalScore = Math.min(99, Math.max(0, (currentLearner.scores[kpId] ?? 50) + sessionDelta));
+    const rec = recordHarvest(currentLearner.id, kpId, finalScore, kp.targetLevel);
+    if (rec) {
+      const sp = speciesOf(kpId);
+      toast.success(rec.stage === 'fruit' ? `${sp.name}结果了！` : `${sp.name}开花了！`, {
+        description: `「${kp.name}」到 ${finalScore} 分 · 已收进「我的成长」的温室`,
+      });
+    }
     toast.success(`《${kp.name}》学完 · 阿诊已回写画像`, {
       description: nextNode ? `学习路径推进 → 下一步《${nextNode.title}》` : '本条学习路径已全部完成 🎉',
     });
@@ -720,7 +955,9 @@ export default function LearnUnit() {
     }
     posRef.current = { b, c };
     setCursor(b);
-    if (c === 0) scrollToBlock(b);
+    /* 讲播推进 = 课堂推进：播到哪块解锁哪块（块刚解锁时 ref 尚未挂载，延迟滚动） */
+    setUnlocked((u) => Math.max(u, b + 1));
+    if (c === 0) setTimeout(() => scrollToBlock(b), 180);
     const cue = cues[c];
     setSubtitle(cue.say);
     setKbGlow(Boolean(cue.kbFlash));
@@ -732,9 +969,9 @@ export default function LearnUnit() {
         return { ...prev, [block.id]: [...cur] };
       });
     }
-    cancelRef.current = tts.speak(cue.say, RATES[rateIdx], () => {
+    cancelRef.current = tts.speak(cue.say, speechRate, () => {
       if (playingRef.current) playCue(b, c + 1);
-    });
+    }, voiceStyle.pitch);
   };
 
   const cpPicksRef = useRef(cpPicks);
@@ -764,6 +1001,9 @@ export default function LearnUnit() {
     if (cpPicks[b.id] !== undefined) return;
     const correct = optIndex === b.q.answerIndex;
     setCpPicks((prev) => ({ ...prev, [b.id]: optIndex }));
+    /* 掌握度实时涨跌：练是涨分最快的路；飘字落在答题的块上 */
+    setSessionDelta((v) => v + (correct ? 3 : -1));
+    floatMastery(b.id, correct ? 3 : -1);
     if (correct) {
       snd.ding();
       setLeafFallFor(b.id);
@@ -788,6 +1028,8 @@ export default function LearnUnit() {
     pushSignal({ type: 'quiz-answer', kpId: b.q.kpId, level: b.q.level, correct });
     /* 每答一题都是一次画像校准证据（精简建档的低置信画像靠这个涨） */
     bumpConfidence(currentLearner.id);
+    /* 课堂推进：答完即解锁下一段（答错时下一段正是插入的补讲块） */
+    setTimeout(() => advanceTo(idx + 1), correct ? 700 : 1900);
     /* 进阶挑战护栏：学习者越权上调时约定"两错接回"——ARB-05 兑现承诺 */
     if (challengeIdsRef.current.has(b.id) && !correct) {
       challengeWrongRef.current += 1;
@@ -835,20 +1077,32 @@ export default function LearnUnit() {
 
   const submitQuestion = () => {
     const q = question.trim();
-    if (!q) return;
-    const hit = matchQA(kpId, q);
-    const a = hit ? hit.a : fallbackAnswer;
-    setQaLog((prev) => [...prev, { q, a, kbRef: hit?.kbRef }]);
+    if (!q && !askPhoto) return;
+    const hit = q ? matchQA(kpId, q) : null;
+    /* 带图但没匹配到预置 QA：按"看图答疑"给一句可信的兜底（真实版由多模态模型接管） */
+    const a = hit
+      ? hit.a
+      : askPhoto
+        ? `收到你的现场照片《${askPhoto.name}》。当前演示环境只做关键词答疑，看图诊断要接多模态模型；先按本讲的判据自查，也可以把报警号或读数打出来我再答。`
+        : fallbackAnswer;
+    setQaLog((prev) => [...prev, { q: q || '（看看这张图）', a, kbRef: hit?.kbRef, photo: askPhoto?.url }]);
     setQuestion('');
-    tts.speak(a, RATES[rateIdx], () => undefined);
+    setAskPhoto(null);
+    tts.speak(a, speechRate, () => undefined, voiceStyle.pitch);
     /* 提问沉淀进个人知识库：你问过什么本身就是学情，问完就丢太可惜 */
     addNote({
       kpId,
-      text: `问：${q}\n答：${a}`,
+      text: `问：${q || '（现场照片）'}${askPhoto ? `【图片 · ${askPhoto.name}】` : ''}\n答：${a}`,
       source: `${kp.name} · 课堂提问`,
       sourceKind: 'qa',
       kbRefs: hit?.kbRef ? [hit.kbRef] : [],
     });
+  };
+
+  const pickPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (f) setAskPhoto({ name: f.name, url: URL.createObjectURL(f) });
+    e.target.value = '';
   };
 
   const startListening = () => {
@@ -875,11 +1129,12 @@ export default function LearnUnit() {
   };
 
   /* ---- 段落签到：学习者按状态自选下一步 ---- */
-  const checkInOk = (b: CourseBlock) => {
+  const checkInOk = (b: CourseBlock, i: number) => {
     hitSpot('agency');
     setSelfCheck((prev) => ({ ...prev, [b.id]: 'ok' }));
     snd.chime();
     pushSignal({ type: 'self-report', kpId, feel: 'ok' });
+    advanceTo(i + 1);
   };
   const checkInVariant = (b: CourseBlock, i: number) => {
     hitSpot('agency');
@@ -889,37 +1144,41 @@ export default function LearnUnit() {
     const vb = variantBlockOf(kpId, variantSeq.current++);
     materialize(vb, ['信号：你签到「这段还虚」', 'ARB-05 裁定：换讲法', 'GEN-03 正在换问答体重讲…']);
     insertBlocksAfter(i, vb);
-    setTimeout(() => scrollToBlock(i + 1), 250);
+    advanceTo(i + 1);
   };
   const checkInQuiz = (b: CourseBlock, i: number) => {
     const [q] = drawQuestions(kpId, 1, { excludeIds: usedQuizIds() });
-    if (!q) { toast('这一讲的题都被你做完了', { description: '去「练」里有整套分阶题' }); return; }
+    if (!q) { toast('这一讲的题都被你做完了', { description: '试试块头上的「问一问」，换对话的方式再过一遍' }); return; }
     hitSpot('agency');
     setSelfCheck((prev) => ({ ...prev, [b.id]: 'quiz' }));
     stopPlayback();
     insertBlocksAfter(i, { kind: 'checkpoint', id: `${kpId}-extra-${q.id}`, q, script: '来，小试一道。' });
-    setTimeout(() => scrollToBlock(i + 1), 250);
+    advanceTo(i + 1);
   };
 
-  /* ---- 讲末强化菜单 ---- */
-  const relearnRestyled = () => {
+  /* ---- 换讲法重拼（讲末菜单 + 适配横幅「AI 定制」卡都走这里）---- */
+  const restyleTo = (next: StyleLabel) => {
+    if (next === unit.styleLabel) return;
     stopPlayback();
-    const options = STYLE_LABELS.filter((s) => s !== unit.styleLabel);
-    const next = options[relearnSeq.current++ % options.length];
     setStyleOverride(next);
     setCpPicks({});
     setReveals({});
     setSelfCheck({});
     setFinished(false);
+    setTutorFor(null);
     posRef.current = { b: 0, c: 0 };
     setCursor(0);
     window.scrollTo({ top: 0, behavior: 'smooth' });
     toast('GEN-03 正在重新拼装本讲', { description: `换成「${next}」风格——同样的知识点，另一种讲法` });
   };
+  const relearnRestyled = () => {
+    const options = STYLE_LABELS.filter((s) => s !== unit.styleLabel);
+    restyleTo(options[relearnSeq.current++ % options.length]);
+  };
   const startMiniTest = () => {
     const levels = unit.difficulty === '进阶' ? undefined : (['basic', 'advanced'] as const);
     const qs = drawQuestions(kpId, 3, { excludeIds: usedQuizIds(), levels: levels ? [...levels] : undefined });
-    if (qs.length === 0) { toast('题库里没有新题了', { description: '去「练」里做整套分阶题吧' }); return; }
+    if (qs.length === 0) { toast('题库里没有新题了', { description: '这一讲的题都被你练完了——试试「问一问」追问对话' }); return; }
     stopPlayback();
     setFinished(false);
     const startIdx = blocksRef.current.length - 1;
@@ -928,7 +1187,7 @@ export default function LearnUnit() {
       ...qs.map((q, qi) => ({ kind: 'checkpoint' as const, id: `${kpId}-mini-${q.id}`, q, script: qi === 0 ? '微测开始，三道题看看整体掌握。' : '下一道。' })),
     ]);
     toast(`微测 ${qs.length} 题已就位`, { description: '做完自动回到完课结算' });
-    setTimeout(() => scrollToBlock(startIdx + 1), 250);
+    advanceTo(startIdx + 1);
   };
   const startChallenge = () => {
     const qs = drawQuestions(kpId, 2, { excludeIds: usedQuizIds(), levels: ['advanced', 'challenge'] });
@@ -943,7 +1202,7 @@ export default function LearnUnit() {
       ...prev,
       ...qs.map((q, qi) => ({ kind: 'checkpoint' as const, id: `${kpId}-chal-${q.id}`, q, script: qi === 0 ? '进阶挑战，上强度了。' : '再来。' })),
     ]);
-    setTimeout(() => scrollToBlock(startIdx + 1), 250);
+    advanceTo(startIdx + 1);
   };
   const markDoubtHere = () => {
     markDoubt(kpId);
@@ -952,9 +1211,116 @@ export default function LearnUnit() {
   const kpScore = currentLearner.scores[kpId] ?? 50;
   const challengeReady = kpScore >= 66;
 
+  /* ---- 断点续学：进课件时恢复上次学到的位置与本节涨跌；推进时随手存；完课清除 ---- */
+  const resumedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const sig = `${currentLearner.id}:${kpId}`;
+    if (resumedRef.current === sig) return;
+    resumedRef.current = sig;
+    const p = loadProgress(currentLearner.id, kpId);
+    if (!p) return;
+    /* 上次换过讲法：先恢复同一版本的课件，unit 变化时不要把进度重置掉 */
+    if (p.style && p.style !== unit.styleLabel && (STYLE_LABELS as string[]).includes(p.style)) {
+      restoringRef.current = true;
+      setStyleOverride(p.style as StyleLabel);
+    }
+    setUnlocked(p.unlocked);
+    setSessionDelta(p.delta);
+    const at = Math.max(0, p.unlocked - 1);
+    posRef.current = { b: at, c: 0 };
+    setCursor(at);
+    setTimeout(() => scrollToBlock(at), 420);
+    toast('接着上次学', {
+      description: `从第 ${p.unlocked} 段继续${p.delta !== 0 ? ` · 本节已 ${p.delta > 0 ? '+' : ''}${p.delta} 掌握` : ''}`,
+      action: {
+        label: '从头学',
+        onClick: () => {
+          clearProgress(currentLearner.id, kpId);
+          setUnlocked(1);
+          setSessionDelta(0);
+          setCpPicks({});
+          posRef.current = { b: 0, c: 0 };
+          setCursor(0);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        },
+      },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentLearner.id, kpId]);
+
+  /** 推进/涨分即存断点（完课后不再存——finish 已清） */
+  useEffect(() => {
+    if (finished) return;
+    saveProgress(currentLearner.id, kpId, { unlocked, delta: sessionDelta, style: unit.styleLabel });
+  }, [unlocked, sessionDelta, finished, currentLearner.id, kpId, unit.styleLabel]);
+
+  /* ---- 学练一体入口：?drill=1（原独立「练」页重定向到这里，就地开题） ---- */
+  const drillDoneRef = useRef(false);
+  useEffect(() => {
+    if (drillDoneRef.current || searchParams.get('drill') !== '1') return;
+    drillDoneRef.current = true;
+    const t = setTimeout(() => {
+      startMiniTest();
+      toast('学和练已经合并在这一页', { description: '已按你的画像就地开出一组分阶题——练完直接回到讲解' });
+    }, 500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  /* ---- 分段进度条跳转（课堂推进模式下不能跳到未解锁段） ---- */
+  const jumpToBlock = (i: number) => {
+    if (!freeBrowse && i >= Math.min(unlocked, blocksRef.current.length)) return;
+    stopPlayback();
+    posRef.current = { b: i, c: 0 };
+    setCursor(i);
+    scrollToBlock(i);
+  };
+
+  /* 本讲 KB 溯源角标总数（适配横幅「已核验」卡展开用） */
+  const kbCount = useMemo(
+    () => blocks.reduce((n, b) => n + ('kbRefs' in b ? b.kbRefs.length : 0), 0),
+    [blocks],
+  );
+  const mastery = Math.min(99, Math.max(0, kpScore + sessionDelta));
+
+  /** 本讲答错的题（完课时就地复盘——错题本在 /me/wrong 太远，趁热过一遍价值最高） */
+  const wrongThisLesson = useMemo(
+    () =>
+      blocks.filter(
+        (b): b is Extract<CourseBlock, { kind: 'checkpoint' }> =>
+          b.kind === 'checkpoint' && cpPicks[b.id] !== undefined && cpPicks[b.id] !== b.q.answerIndex,
+      ),
+    [blocks, cpPicks],
+  );
+
+  /* ---- 播放条「下一段」：当前块是未作答检查点时不放行（练是必经的） ---- */
+  const curIdx = Math.min(unlocked, blocks.length) - 1;
+  const curBlk = blocks[curIdx];
+  const canAdvance =
+    !freeBrowse && curIdx < blocks.length - 1 && !(curBlk?.kind === 'checkpoint' && cpPicks[curBlk.id] === undefined);
+  /* 播放条两态：讲播中/有字幕/通勤/专注时展开完整控制台，否则收成小胶囊 */
+  const barExpanded = playing || subtitle !== null || audioMode || focusMode;
+
+  /* ---- 键盘：空格 播放/暂停 · → 下一段（输入框内不劫持） ---- */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+      if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault();
+        togglePlay();
+      } else if (e.key === 'ArrowRight') {
+        if (canAdvance) { e.preventDefault(); advanceTo(curIdx + 1); }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canAdvance, curIdx, playing]);
+
   return (
-    <div className="mx-auto max-w-[860px] px-5 pb-48 pt-6 md:px-6">
-      {/* 技术亮点导览：仅系统透视视角渲染，学习者视角不打扰 */}
+    <div className="mx-auto max-w-[760px] px-5 pb-48 pt-6 md:px-6">
+      {/* 技术亮点（系统透视）：右下角悬浮球，点开才展开 */}
       {viewMode !== 'learner' && <FeatureSpotlight flags={spotFlags} />}
 
       {/* 页头 */}
@@ -965,6 +1331,21 @@ export default function LearnUnit() {
         <span className="text-hairline">/</span>
         <h1 className="font-serif text-[20px] font-semibold text-ink">{kp.name}</h1>
         <span className="ml-auto flex items-center gap-2">
+          {/* 掌握度小徽标（伴学栏收起时也看得到，移动端唯一入口） */}
+          <span
+            title="本节掌握度：微练答对 +3、答错 −1，追问过关 +2"
+            className={cn(
+              'rounded-md border px-2 py-0.5 font-mono text-[10.5px] font-medium',
+              mastery >= kp.targetLevel ? 'border-brand/40 bg-brand-tint text-brand' : 'border-hairline bg-card-warm text-ink-2',
+            )}
+          >
+            掌握 {mastery}/{kp.targetLevel}
+            {sessionDelta !== 0 && (
+              <span className={sessionDelta > 0 ? 'ml-1 text-brand' : 'ml-1 text-brand-danger'}>
+                {sessionDelta > 0 ? `+${sessionDelta}` : sessionDelta}
+              </span>
+            )}
+          </span>
           <Link
             to="/me/notes"
             title="个人知识库"
@@ -980,44 +1361,155 @@ export default function LearnUnit() {
         </span>
       </div>
 
-      {/* 首次进课件：把不在明面上的能力说一句 */}
-      <PageTip id="learn-unit" className="mt-4">
-        听不懂随时点<span className="font-medium text-ink">举手提问</span>，AI 会停下来答；
-        还能调<span className="font-medium text-ink">语速</span>、开<span className="font-medium text-ink">专注模式</span>（带雨声/林间白噪）。
-        正文里的 <span className="font-mono text-brand">[KB-xxx]</span> 点开能看出处。
-      </PageTip>
-
-      {/* 路径进度（当前单元在整条学习路径的位置） */}
-      <div className="mt-3">
-        <PathProgressBar currentKpId={kpId} compact />
+      {/* ============ 本讲情报条：路线 + 检测/定制/核验 收进一行，点开才展开——第一屏让给正文 ============ */}
+      <div className="mt-4 rounded-[12px] border border-hairline bg-card-warm">
+        <button
+          type="button"
+          onClick={() => setBriefOpen((v) => !v)}
+          className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3.5 py-2 text-left"
+          title={briefOpen ? '收起本讲情报' : '展开：学习路线 + 检测/定制/核验详情'}
+        >
+          <span className="flex items-center gap-1.5 font-mono text-[10.5px] font-semibold tracking-wide text-brand">
+            <Brain size={11} />
+            ADAPTIVE
+          </span>
+          <span className="text-[12px] text-ink-2">
+            {Math.max(0, kp.targetLevel - kpScore) > 0
+              ? `缺口 ${Math.max(0, kp.targetLevel - kpScore)} 分 · 检查点已加密`
+              : '已过目标线'}
+          </span>
+          <span className="hidden text-[12px] text-ink-muted sm:inline">讲法「{unit.styleLabel}」· {unit.difficulty}版</span>
+          <span className="hidden text-[12px] text-ink-muted md:inline">溯源 {kbCount} 处</span>
+          <ChevronDown size={13} className={cn('ml-auto shrink-0 text-ink-muted transition-transform', briefOpen && 'rotate-180')} />
+        </button>
+        {briefOpen && (
+          <div className="border-t border-hairline/60 px-3.5 pb-4">
+            <div className="mt-3">
+              <PathProgressBar currentKpId={kpId} compact />
+            </div>
+            <AdaptiveBanner
+              kpName={kp.name}
+              score={currentLearner.scores[kpId] ?? 50}
+              target={kp.targetLevel}
+              isWeakest={weakestKp.id === kpId}
+              difficulty={unit.difficulty}
+              styleLabel={unit.styleLabel}
+              expert={viewMode === 'expert'}
+              kbCount={kbCount}
+              onPickStyle={restyleTo}
+            />
+          </div>
+        )}
       </div>
 
-      {/* 开讲适配横幅：把"检测到薄弱 → 内容已调整"直接亮给学习者看 */}
-      <AdaptiveBanner
-        kpName={kp.name}
-        score={currentLearner.scores[kpId] ?? 50}
-        target={kp.targetLevel}
-        isWeakest={weakestKp.id === kpId}
-        difficulty={unit.difficulty}
-        styleLabel={unit.styleLabel}
-        expert={viewMode === 'expert'}
-      />
-
-      {/* block 流 */}
-      <div className="mt-6 space-y-4">
+      {/* ============ 课堂单列：舞台化——阅读列收窄，当前块即舞台 ============ */}
+      <div className="mt-5 space-y-4">
+        {/* 课堂推进 / 自由浏览 模式条 */}
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11.5px] text-ink-muted">
+            {freeBrowse
+              ? '自由浏览 · 整讲展开，适合复习'
+              : `课堂推进 · 讲到哪开到哪（${Math.min(unlocked, blocks.length)}/${blocks.length} 段）`}
+          </span>
+          <button
+            type="button"
+            aria-pressed={freeBrowse}
+            onClick={() => setFreeBrowse((v) => !v)}
+            title={freeBrowse ? '回到课堂推进：只看讲到的段落' : '自由浏览：展开整讲（复习用）'}
+            className={cn(
+              'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11.5px] font-medium transition-all',
+              freeBrowse
+                ? 'border-brand/45 bg-brand-tint text-brand'
+                : 'border-hairline bg-paper text-ink-muted hover:border-brand/40 hover:text-brand',
+            )}
+          >
+            <AlignLeft size={11} />
+            {freeBrowse ? '回到课堂推进' : '自由浏览'}
+          </button>
+        </div>
         {blocks.map((b, i) => {
           const active = i === cursor && playing;
+          /* ---- 课堂推进三态：完整（当前/回看/自由浏览）· 摘要行（已完成）· 不渲染（未解锁） ---- */
+          const effUnlocked = Math.min(unlocked, blocks.length);
+          const isCurrent = i === effUnlocked - 1;
+          const isCompleted = !freeBrowse && i < effUnlocked - 1;
+          if (!freeBrowse && i >= effUnlocked) return null;
+          if (isCompleted && !reviewOpen[b.id]) {
+            const pick = b.kind === 'checkpoint' ? cpPicks[b.id] : undefined;
+            const answered = pick !== undefined;
+            const wasCorrect = b.kind === 'checkpoint' && answered && pick === b.q.answerIndex;
+            const rowTitle =
+              'title' in b && b.title
+                ? b.title.replace(/^跟我看一遍，再自己动手 · /, '')
+                : b.kind === 'checkpoint'
+                  ? `微练 · ${b.q.stem.slice(0, 24)}${b.q.stem.length > 24 ? '…' : ''}`
+                  : '本讲小结';
+            return (
+              <div
+                key={b.id}
+                ref={(el) => { blockRefs.current[i] = el; }}
+                className="flex scroll-mt-[88px] items-center gap-2.5 rounded-[12px] border border-hairline/70 bg-card-warm/60 px-4 py-2"
+              >
+                <span
+                  className={cn(
+                    'flex h-5 w-5 shrink-0 items-center justify-center rounded-full',
+                    b.kind === 'checkpoint'
+                      ? wasCorrect
+                        ? 'bg-brand-success/15 text-brand-success'
+                        : 'bg-brand-danger/10 text-brand-danger'
+                      : 'bg-brand-tint text-brand',
+                  )}
+                >
+                  {b.kind === 'checkpoint' ? (wasCorrect ? <Check size={11} /> : <X size={11} />) : <Check size={11} />}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-2">{rowTitle}</span>
+                <button
+                  type="button"
+                  onClick={() => setReviewOpen((prev) => ({ ...prev, [b.id]: true }))}
+                  className="shrink-0 text-[11.5px] font-medium text-ink-muted transition-colors hover:text-brand"
+                >
+                  展开回看
+                </button>
+              </div>
+            );
+          }
           const wrapCls = cn(
-            'relative overflow-hidden rounded-[14px] border p-5 transition-all duration-300',
+            'relative scroll-mt-[88px] overflow-hidden rounded-[14px] border p-5 transition-all duration-300',
             active ? 'border-brand/50 bg-brand-tint/30 shadow-warm' : 'border-hairline bg-card-warm',
+            /* 文窄图宽：演播/交互演示是宽内容，破格出窄阅读列消化宽屏空白（文本块保持窄列行长） */
+            (b.kind === 'stage' || b.kind === 'demo') && 'lg:-mx-16 xl:-mx-24',
             b.kind === 'remedial' && 'border-brand-amber/50 bg-brand-amber-tint/40',
             flashId === b.id && 'border-brand-amber ring-2 ring-brand-amber/60 shadow-warm-lg',
             /* 专注聚光灯：非当前块调暗 */
             focusMode && i !== cursor && 'opacity-30',
           );
           const glowBadges = active && kbGlow;
+          /* 签到行是否在场：在场时它就是推进动作，不再叠加"下一段"行 */
+          const signInVisible =
+            (b.kind === 'concept' || b.kind === 'stage' || b.kind === 'demo') &&
+            !b.id.endsWith('-intro') &&
+            !b.id.includes('-variant-') &&
+            !selfCheck[b.id];
           return (
             <div key={b.id} ref={(el) => { blockRefs.current[i] = el; }} className={wrapCls}>
+              {/* 涨分飘字：反馈落在动作发生的块上 */}
+              <AnimatePresence>
+                {masteryFloat?.blockId === b.id && (
+                  <motion.span
+                    key={masteryFloat.seq}
+                    initial={{ opacity: 0, y: 8, scale: 0.85 }}
+                    animate={{ opacity: 1, y: -10, scale: 1 }}
+                    exit={{ opacity: 0, y: -22 }}
+                    transition={{ duration: 0.7, ease: 'easeOut' }}
+                    className={cn(
+                      'pointer-events-none absolute right-4 top-4 z-10 font-mono text-[16px] font-bold',
+                      masteryFloat.delta > 0 ? 'text-brand' : 'text-brand-danger',
+                    )}
+                  >
+                    {masteryFloat.delta > 0 ? `+${masteryFloat.delta}` : masteryFloat.delta} 掌握
+                  </motion.span>
+                )}
+              </AnimatePresence>
               {materializing[b.id] ? (
                 <AdjustPipeline steps={materializing[b.id]} />
               ) : (
@@ -1034,6 +1526,15 @@ export default function LearnUnit() {
                     {'title' in b && b.title ? <h3 className="text-[16px] font-semibold text-ink">{b.title}</h3> : <span />}
                     {/* 模态切换：同一段内容，用你喜欢的方式学（读/看/听） */}
                     {b.kind === 'concept' && (
+                      <span className="flex shrink-0 items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => openTutor(b)}
+                        title="跟老师过一遍：就地展开追问对话，不用跳页"
+                        className="inline-flex items-center gap-1 rounded-md border border-brand/35 bg-paper px-1.5 py-1 text-[10.5px] font-medium text-brand transition-colors hover:bg-brand-tint"
+                      >
+                        <GraduationCap size={11} /> 问一问
+                      </button>
                       <span className="flex shrink-0 gap-0.5 rounded-[9px] border border-hairline bg-paper p-0.5">
                         {([
                           { m: 'read', icon: AlignLeft, label: '读' },
@@ -1063,10 +1564,26 @@ export default function LearnUnit() {
                           );
                         })}
                       </span>
+                      </span>
                     )}
                   </div>
                   {(b.kind !== 'concept' || (blockMode[b.id] ?? 'read') === 'read') && (
-                    <p className="mt-2 whitespace-pre-line text-[14px] leading-[25px] text-ink-2">{b.text}</p>
+                    <p className="mt-2 whitespace-pre-line text-[15px] leading-[28px] text-ink-2">
+                      {b.text}
+                      {/* 溯源内联：角标贴着论断走，不再沉到块底 */}
+                      {'kbRefs' in b &&
+                        b.kbRefs.map((id) => (
+                          <span
+                            key={id}
+                            className={cn(
+                              'ml-1.5 inline-flex -translate-y-[2px] align-middle',
+                              glowBadges && 'animate-pulse rounded-md ring-2 ring-brand-amber/70',
+                            )}
+                          >
+                            <TraceBadge kbId={id} />
+                          </span>
+                        ))}
+                    </p>
                   )}
                   {b.kind === 'concept' && blockMode[b.id] === 'cards' && (
                     <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -1101,15 +1618,6 @@ export default function LearnUnit() {
                       <span className="text-[11px] text-ink-muted">只用耳朵学这一段——正文已折叠，切回「读」随时展开</span>
                     </div>
                   )}
-                  {'kbRefs' in b && b.kbRefs.length > 0 && (
-                    <div className={cn('mt-3 flex flex-wrap gap-1.5 border-t border-hairline pt-2.5 transition-all', glowBadges && 'animate-pulse')}>
-                      {b.kbRefs.map((id) => (
-                        <span key={id} className={cn(glowBadges && 'rounded-md ring-2 ring-brand-amber/70')}>
-                          <TraceBadge kbId={id} />
-                        </span>
-                      ))}
-                    </div>
-                  )}
                 </>
               )}
 
@@ -1118,13 +1626,23 @@ export default function LearnUnit() {
                 <>
                   <div className="mb-3 flex items-center justify-between gap-2">
                     <h3 className="text-[16px] font-semibold text-ink">{b.title}</h3>
-                    <button
-                      type="button"
-                      onClick={() => { stopPlayback(); startPlay(i, 0); }}
-                      className="inline-flex shrink-0 items-center gap-1 rounded-md border border-brand/35 bg-paper px-2 py-1 text-[11.5px] font-medium text-brand hover:bg-brand-tint"
-                    >
-                      <Play size={11} fill="currentColor" /> 讲这一段
-                    </button>
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => openTutor(b)}
+                        title="跟老师过一遍：就地展开追问对话，不用跳页"
+                        className="inline-flex items-center gap-1 rounded-md border border-brand/35 bg-paper px-1.5 py-1 text-[10.5px] font-medium text-brand transition-colors hover:bg-brand-tint"
+                      >
+                        <GraduationCap size={11} /> 问一问
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { stopPlayback(); startPlay(i, 0); }}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-brand/35 bg-paper px-2 py-1 text-[11.5px] font-medium text-brand hover:bg-brand-tint"
+                      >
+                        <Play size={11} fill="currentColor" /> 讲这一段
+                      </button>
+                    </span>
                   </div>
                   <div className="grid gap-2.5 sm:grid-cols-2">
                     {b.items.map((item, ii) => {
@@ -1147,15 +1665,25 @@ export default function LearnUnit() {
                 <>
                   <div className="mb-3 flex items-center justify-between gap-2">
                     <h3 className="text-[16px] font-semibold text-ink">{b.title}</h3>
-                    {b.cues && (
+                    <span className="flex shrink-0 items-center gap-1.5">
                       <button
                         type="button"
-                        onClick={() => { stopPlayback(); startPlay(i, 0); }}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-brand-amber/50 bg-brand-amber-tint px-2 py-1 text-[11.5px] font-medium text-ochre hover:border-brand-amber"
+                        onClick={() => openTutor(b)}
+                        title="跟老师过一遍：就地展开追问对话，不用跳页"
+                        className="inline-flex items-center gap-1 rounded-md border border-brand/35 bg-paper px-1.5 py-1 text-[10.5px] font-medium text-brand transition-colors hover:bg-brand-tint"
                       >
-                        <Play size={11} fill="currentColor" /> 跟我看一遍
+                        <GraduationCap size={11} /> 问一问
                       </button>
-                    )}
+                      {b.cues && (
+                        <button
+                          type="button"
+                          onClick={() => { stopPlayback(); startPlay(i, 0); }}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-md border border-brand-amber/50 bg-brand-amber-tint px-2 py-1 text-[11.5px] font-medium text-ochre hover:border-brand-amber"
+                        >
+                          <Play size={11} fill="currentColor" /> 跟我看一遍
+                        </button>
+                      )}
+                    </span>
                   </div>
                   {b.demo === 'calibration' && <CalibrationSim tourStep={tourStepOf(b, i)} />}
                   {b.demo === 'frame' && <FrameDemo tourStage={tourStepOf(b, i)} />}
@@ -1229,6 +1757,21 @@ export default function LearnUnit() {
                 </>
               )}
 
+              {/* 块内追问「问一问」：就地展开在这段正下方，聊完收起，人还在原地 */}
+              {tutorFor?.blockId === b.id && (
+                <div className="mt-3.5">
+                  <InlineTutor
+                    topic={tutorFor.topic}
+                    msgs={tutorMsgs}
+                    step={tutorStep}
+                    onAnswer={tutorAnswer}
+                    onReveal={tutorReveal}
+                    onMore={tutorMore}
+                    onClose={() => setTutorFor(null)}
+                  />
+                </div>
+              )}
+
               {/* 段落签到：学习者按自己的状态选下一步——很稳 / 换讲法 / 出道题 */}
               {(b.kind === 'concept' || b.kind === 'stage' || b.kind === 'demo') &&
                 !b.id.endsWith('-intro') &&
@@ -1238,10 +1781,10 @@ export default function LearnUnit() {
                     <span className="mr-1 text-[11.5px] text-ink-muted">这段感觉如何？</span>
                     <button
                       type="button"
-                      onClick={() => checkInOk(b)}
-                      className="inline-flex items-center gap-1 rounded-md border border-brand/30 bg-brand-tint/50 px-2 py-1 text-[11.5px] font-medium text-brand transition-all hover:bg-brand-tint"
+                      onClick={() => checkInOk(b, i)}
+                      className="inline-flex items-center gap-1 rounded-md border border-brand/35 bg-brand px-2.5 py-1 text-[11.5px] font-semibold text-paper shadow-warm transition-all hover:bg-brand-hover"
                     >
-                      <Check size={11} /> 很稳，继续
+                      <Check size={11} /> 很稳，下一段
                     </button>
                     <button
                       type="button"
@@ -1316,6 +1859,45 @@ export default function LearnUnit() {
                   )}
                 </div>
               )}
+
+              {/* 课堂推进兜底：签到行不在场的块（开场/变式/补讲/已签到）才出现"下一段"；
+                  签到在场时它就是推进动作，一个块结尾只问一次话 */}
+              {!freeBrowse && isCurrent && !signInVisible && (b.kind !== 'checkpoint' || cpPicks[b.id] !== undefined) && (
+                <div className="mt-4 flex justify-end border-t border-hairline/60 pt-2.5">
+                  {i < blocks.length - 1 ? (
+                    <button
+                      type="button"
+                      onClick={() => advanceTo(i + 1)}
+                      className="inline-flex items-center gap-1.5 rounded-[10px] bg-brand px-3.5 py-1.5 text-[12.5px] font-semibold text-paper shadow-warm transition-all hover:bg-brand-hover"
+                    >
+                      继续 · 下一段 <ArrowRight size={13} />
+                    </button>
+                  ) : (
+                    !finished && (
+                      <button
+                        type="button"
+                        onClick={finish}
+                        className="inline-flex items-center gap-1.5 rounded-[10px] bg-brand px-3.5 py-1.5 text-[12.5px] font-semibold text-paper shadow-warm transition-all hover:bg-brand-hover"
+                      >
+                        完课结算 <Check size={13} />
+                      </button>
+                    )
+                  )}
+                </div>
+              )}
+
+              {/* 已完成块的回看态：可收起 */}
+              {isCompleted && reviewOpen[b.id] && (
+                <div className="mt-3 flex justify-end border-t border-hairline/60 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setReviewOpen((prev) => ({ ...prev, [b.id]: false }))}
+                    className="text-[11.5px] font-medium text-ink-muted transition-colors hover:text-brand"
+                  >
+                    收起回看
+                  </button>
+                </div>
+              )}
               </>
               )}
             </div>
@@ -1355,12 +1937,45 @@ export default function LearnUnit() {
                     <Route size={14} /> 继续路径 · 《{nextNode.title}》
                   </button>
                 )}
-                <button type="button" onClick={() => navigate('/tutoring')} className="lf-btn-ghost !py-2 text-[13.5px]">
-                  去练一节巩固 <ArrowRight size={14} />
+                <button type="button" onClick={startMiniTest} className="lf-btn-ghost !py-2 text-[13.5px]">
+                  就地再练 3 题巩固 <ArrowRight size={14} />
                 </button>
                 <Link to="/report" className="lf-btn-ghost !py-2 text-[13.5px]">看我的成长</Link>
                 <Link to="/learn" className="lf-btn-ghost !py-2 text-[13.5px]">回课程目录</Link>
               </div>
+
+              {/* ---- 本讲错题即时复盘：趁热把错的那一两道带解析再过一遍 ---- */}
+              {wrongThisLesson.length > 0 && (
+                <div className="mt-4 border-t border-brand/20 pt-3.5 text-left">
+                  <div className="mb-2 flex items-center gap-1.5">
+                    <Bookmark size={12} className="text-brand-danger" />
+                    <span className="text-[12.5px] font-medium text-ink-2">
+                      这一讲你错了 {wrongThisLesson.length} 道，趁热再看一眼
+                    </span>
+                    <Link to="/me/wrong" className="ml-auto text-[11.5px] text-ink-muted transition-colors hover:text-brand">
+                      错题本 →
+                    </Link>
+                  </div>
+                  <div className="space-y-2">
+                    {wrongThisLesson.map((wb) => (
+                      <div key={wb.id} className="rounded-[10px] border border-hairline bg-paper p-3">
+                        <p className="text-[12.5px] font-medium leading-[19px] text-ink">{wb.q.stem}</p>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]">
+                          <span className="text-brand-danger">
+                            你选了 {letters[cpPicks[wb.id]]}· {wb.q.options[cpPicks[wb.id]]}
+                          </span>
+                          <span className="text-brand-success">
+                            正确 {letters[wb.q.answerIndex]}· {wb.q.options[wb.q.answerIndex]}
+                          </span>
+                        </div>
+                        <p className="mt-1.5 border-t border-hairline/70 pt-1.5 text-[11.5px] leading-[17px] text-ink-muted">
+                          {wb.q.analysis}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* ---- 强化菜单：学习者自己决定"这一讲够不够" ---- */}
               <div className="mt-4 border-t border-brand/20 pt-3.5">
@@ -1372,13 +1987,6 @@ export default function LearnUnit() {
                     className="inline-flex items-center gap-1.5 rounded-[10px] border border-hairline bg-paper px-3 py-1.5 text-[12.5px] font-medium text-ink-2 transition-all hover:border-brand/40 hover:text-brand"
                   >
                     <RotateCcw size={13} /> 换个角度再学一遍
-                  </button>
-                  <button
-                    type="button"
-                    onClick={startMiniTest}
-                    className="inline-flex items-center gap-1.5 rounded-[10px] border border-hairline bg-paper px-3 py-1.5 text-[12.5px] font-medium text-ink-2 transition-all hover:border-brand/40 hover:text-brand"
-                  >
-                    <ListChecks size={13} /> 微测 3 题
                   </button>
                   <button
                     type="button"
@@ -1436,6 +2044,9 @@ export default function LearnUnit() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* 课堂推进模式的尾部滚动空间：当前块永远是最后一块，没有这段留白它就无法"块顶对齐"到视口上沿 */}
+        {!freeBrowse && <div aria-hidden className="h-[32vh]" />}
       </div>
 
       {/* ============ 字幕条 + 播放条 ============ */}
@@ -1591,24 +2202,21 @@ export default function LearnUnit() {
         );
       })()}
 
-      <div className="fixed inset-x-0 bottom-16 z-40 md:bottom-0">
-        <div className="mx-auto max-w-[860px] px-5 pb-3 md:px-6">
-          {/* 字幕（通勤模式下已在上方大字显示，这里不再重复） */}
-          <AnimatePresence>
-            {subtitle && !audioMode && (
-              <motion.div
-                key={subtitle}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                className="mb-2 rounded-[12px] border border-hairline bg-ink/90 px-4 py-2.5 text-center text-[14px] font-medium leading-[22px] text-paper backdrop-blur"
-              >
-                {subtitle}
-              </motion.div>
-            )}
-          </AnimatePresence>
+      {/* 播放条两态：闲时收成居中小胶囊（屏幕还给内容），讲播中才展开完整控制台。
+          字幕不再是独立悬浮黑条，而是贴合在控制台顶部的一体化条（悬浮层 2→1）。 */}
+      {/* 外层全宽容器不吃点击（否则胶囊态时两侧空白区会挡住其后内容的按钮），只有控制台本体可交互 */}
+      <div className="pointer-events-none fixed inset-x-0 bottom-16 z-40 md:bottom-0">
+        <div className={cn('mx-auto px-5 pb-3 md:px-6', barExpanded ? 'max-w-[760px]' : 'flex justify-center')}>
+          <div className={cn('lf-glass pointer-events-auto overflow-hidden', barExpanded ? 'rounded-[16px]' : 'rounded-full shadow-warm-lg')}>
+          {/* 字幕（一体化顶条；通勤模式下已在上方大字显示，这里不再重复）。
+              条件渲染而非 AnimatePresence：后者靠 rAF 完成 exit 才卸载，页面在后台时会卡住不消失 */}
+          {subtitle && !audioMode && barExpanded && (
+            <div className="lf-fade-in border-b border-ink/20 bg-ink/88 px-4 py-2.5 text-center text-[14px] font-medium leading-[22px] text-paper">
+              {subtitle}
+            </div>
+          )}
 
-          <div className="lf-glass flex items-center gap-3 rounded-[16px] px-4 py-3">
+          <div className={cn('flex items-center', barExpanded ? 'gap-3 px-4 py-3' : 'gap-1.5 px-3 py-2')}>
             <button
               type="button"
               onClick={togglePlay}
@@ -1618,8 +2226,26 @@ export default function LearnUnit() {
               {playing ? <Pause size={17} /> : <Play size={17} fill="currentColor" />}
             </button>
 
+            {/* 课堂节拍器：下一段（当前块是未作答检查点时禁用——练是必经的） */}
+            {!freeBrowse && (
+              <button
+                type="button"
+                disabled={!canAdvance}
+                onClick={() => canAdvance && advanceTo(curIdx + 1)}
+                title={canAdvance ? '下一段' : curBlk?.kind === 'checkpoint' ? '先答完这道微练' : '已是最后一段'}
+                className={cn(
+                  'flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-all',
+                  canAdvance
+                    ? 'border-brand/40 bg-paper text-brand hover:bg-brand-tint'
+                    : 'cursor-not-allowed border-hairline bg-paper text-ink-muted/40',
+                )}
+              >
+                <ArrowRight size={15} />
+              </button>
+            )}
+
             {/* 说话脉冲 */}
-            {playing && (
+            {playing && barExpanded && (
               <span className="flex items-end gap-[3px]" aria-hidden>
                 {[0, 1, 2].map((k) => (
                   <span
@@ -1631,126 +2257,91 @@ export default function LearnUnit() {
               </span>
             )}
 
+            {/* 标题区（仅展开态）：内容可截断但不换行——否则被进度条挤压时文字会一列一字竖排 */}
+            {barExpanded && (
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[13px] font-medium text-ink">
+              <div className="truncate whitespace-nowrap text-[13px] font-medium text-ink">
                 {playing ? '正在讲播' : `${kp.name} · 交互课件`}
               </div>
-              <div className="flex items-center gap-2 font-mono text-[10px] text-ink-muted">
-                {tts.supported ? <Volume2 size={10} /> : <VolumeX size={10} />}
-                {tts.supported ? '语音授课' : '默片模式（字幕+视觉照常）'}
+              <div className="flex min-w-0 items-center gap-2 whitespace-nowrap font-mono text-[10px] text-ink-muted">
+                <span className="shrink-0">{tts.supported ? <Volume2 size={10} /> : <VolumeX size={10} />}</span>
+                <span className="truncate">{tts.supported ? `语音授课 · ${voiceStyle.label}` : '默片模式（字幕+视觉照常）'}</span>
               </div>
             </div>
+            )}
 
-            {/* 语速 */}
-            <button
-              type="button"
-              onClick={() => setRateIdx((r) => (r + 1) % RATES.length)}
-              className="shrink-0 rounded-md border border-hairline bg-paper px-2 py-1 font-mono text-[11px] text-ink-2 hover:border-brand/40"
-              title="语速"
-            >
-              {RATES[rateIdx].toFixed(2).replace(/0$/, '')}×
-            </button>
-
-            {/* 进度条：一条可点击跳转的轨道（原来是 7 个小圆点） */}
-            <div className="hidden min-w-[110px] flex-1 items-center gap-2 sm:flex">
-              <div
-                role="slider"
-                tabIndex={0}
-                aria-label="讲解进度"
-                aria-valuemin={1}
-                aria-valuemax={blocks.length}
-                aria-valuenow={cursor + 1}
-                title={`第 ${cursor + 1} / ${blocks.length} 段 · 点击跳转`}
-                onClick={(e) => {
-                  const r = e.currentTarget.getBoundingClientRect();
-                  const i = Math.min(blocks.length - 1, Math.max(0, Math.floor(((e.clientX - r.left) / r.width) * blocks.length)));
-                  stopPlayback();
-                  posRef.current = { b: i, c: 0 };
-                  setCursor(i);
-                  scrollToBlock(i);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-                  const i = Math.min(blocks.length - 1, Math.max(0, cursor + (e.key === 'ArrowRight' ? 1 : -1)));
-                  stopPlayback();
-                  posRef.current = { b: i, c: 0 };
-                  setCursor(i);
-                  scrollToBlock(i);
-                }}
-                className="group relative h-4 flex-1 cursor-pointer"
-              >
-                <div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-hairline">
-                  <div
-                    className="h-full rounded-full bg-brand transition-all duration-300"
-                    style={{ width: `${((cursor + 1) / blocks.length) * 100}%` }}
-                  />
-                </div>
-                <span
-                  className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-paper bg-brand shadow-warm transition-transform group-hover:scale-125"
-                  style={{ left: `${((cursor + 1) / blocks.length) * 100}%` }}
-                />
+            {/* 分段进度条（仅展开态）：一段一节，练习段带对错色点，点击跳转 */}
+            <div className={cn('min-w-[120px] flex-1 items-center gap-2', barExpanded ? 'hidden sm:flex' : 'hidden')}>
+              <div className="flex h-4 flex-1 items-center gap-[3px]" role="group" aria-label="讲解进度（分段）">
+                {blocks.map((bb, bi) => {
+                  const effU = Math.min(unlocked, blocks.length);
+                  const segLocked = !freeBrowse && bi >= effU;
+                  const pick = bb.kind === 'checkpoint' ? cpPicks[bb.id] : undefined;
+                  const answered = pick !== undefined;
+                  const segCorrect = bb.kind === 'checkpoint' && answered && pick === bb.q.answerIndex;
+                  const segTitle =
+                    'title' in bb && bb.title
+                      ? bb.title.replace(/^跟我看一遍，再自己动手 · /, '')
+                      : bb.kind === 'checkpoint'
+                        ? '微练'
+                        : '小结';
+                  return (
+                    <button
+                      key={bb.id}
+                      type="button"
+                      disabled={segLocked}
+                      onClick={() => jumpToBlock(bi)}
+                      title={segLocked ? `${segTitle} · 未解锁` : `第 ${bi + 1} 段 · ${segTitle}`}
+                      className={cn(
+                        'flex-1 rounded-full transition-all',
+                        bi === cursor ? 'h-2.5' : 'h-1.5',
+                        segLocked
+                          ? 'cursor-not-allowed bg-hairline'
+                          : bb.kind === 'checkpoint'
+                            ? answered
+                              ? segCorrect
+                                ? 'bg-brand-success/80'
+                                : 'bg-brand-danger/70'
+                              : 'bg-brand-amber/80'
+                            : bi === cursor
+                              ? 'bg-brand'
+                              : 'bg-brand/45 hover:bg-brand/70',
+                      )}
+                    />
+                  );
+                })}
               </div>
               <span className="shrink-0 font-mono text-[10.5px] text-ink-muted tabular">
                 {cursor + 1}/{blocks.length}
               </span>
             </div>
 
-            {/* 记笔记：全页唯一入口，做成醒目主按钮，自动挂到你正在看的那一段 */}
+            {/* 记笔记：全页唯一入口，自动挂到你正在看的那一段（胶囊态只留图标） */}
             <button
               type="button"
               onClick={openNoteHere}
               title="记笔记（自动关联你正在看的那一段）"
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-[10px] bg-brand px-3.5 py-2 text-[13px] font-semibold text-paper shadow-warm transition-all hover:bg-brand-hover hover:shadow-warm-lg"
+              className={cn(
+                'inline-flex shrink-0 items-center gap-1.5 rounded-[10px] bg-brand text-paper shadow-warm transition-all hover:bg-brand-hover hover:shadow-warm-lg',
+                barExpanded ? 'px-3.5 py-2 text-[13px] font-semibold' : 'rounded-full p-2.5',
+              )}
             >
               <PenLine size={14} />
-              记笔记
+              {barExpanded && '记笔记'}
             </button>
 
             <button
               type="button"
               onClick={raiseHand}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-[10px] border border-brand-amber/50 bg-brand-amber-tint px-3 py-2 text-[13px] font-medium text-ochre transition-all hover:border-brand-amber"
+              title="举手提问"
+              className={cn(
+                'inline-flex shrink-0 items-center gap-1.5 border border-brand-amber/50 bg-brand-amber-tint text-ochre transition-all hover:border-brand-amber',
+                barExpanded ? 'rounded-[10px] px-3 py-2 text-[13px] font-medium' : 'rounded-full p-2.5',
+              )}
             >
               <Hand size={14} />
-              <span className="hidden sm:inline">举手提问</span>
+              {barExpanded && <span className="hidden sm:inline">举手提问</span>}
             </button>
-
-            {/* 幻灯模式：PPT 视图 */}
-            {!focusMode && (
-              <button
-                type="button"
-                onClick={() => (slideMode ? setSlideMode(false) : openSlides())}
-                title="幻灯模式：一段一页放大讲，随语音翻页"
-                className={cn(
-                  'inline-flex shrink-0 items-center gap-1.5 rounded-[10px] border px-3 py-2 text-[13px] font-medium transition-all',
-                  slideMode
-                    ? 'border-brand/45 bg-brand-tint text-brand'
-                    : 'border-hairline bg-paper text-ink-2 hover:border-brand/40 hover:text-brand',
-                )}
-              >
-                <Presentation size={14} />
-                <span className="hidden sm:inline">幻灯</span>
-              </button>
-            )}
-
-            {/* 专注模式 */}
-            {/* 通勤模式：只听不看 */}
-            {!focusMode && (
-              <button
-                type="button"
-                onClick={() => { setSlideMode(false); setAudioMode((v) => !v); if (!playing) startPlay(posRef.current.b, posRef.current.c); }}
-                title="只听不看（走路/坐车时用）"
-                className={cn(
-                  'inline-flex shrink-0 items-center gap-1.5 rounded-[10px] border px-3 py-2 text-[13px] font-medium transition-all',
-                  audioMode
-                    ? 'border-brand/45 bg-brand-tint text-brand'
-                    : 'border-hairline bg-paper text-ink-2 hover:border-brand/40 hover:text-brand',
-                )}
-              >
-                <Headphones size={14} />
-                <span className="hidden sm:inline">只听</span>
-              </button>
-            )}
 
             {focusMode ? (
               <>
@@ -1784,16 +2375,100 @@ export default function LearnUnit() {
                 </button>
               </>
             ) : (
-              <button
-                type="button"
-                onClick={enterFocus}
-                title="专注模式：全屏、收起干扰、结算能量加成"
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline bg-paper px-3 py-2 text-[13px] font-medium text-ink-2 transition-all hover:border-brand/40 hover:text-brand"
-              >
-                <Focus size={14} />
-                <span className="hidden sm:inline">专注</span>
-              </button>
+              /* 更多：次要模式与语音设置收进一个菜单——常驻只留 播放/下一段/记笔记/举手 */
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    title="更多：幻灯 / 只听 / 专注 / 语音设置"
+                    aria-label="更多学习方式与语音设置"
+                    className={cn(
+                      'inline-flex shrink-0 items-center gap-1.5 border border-hairline bg-paper text-ink-2 transition-all hover:border-brand/40 hover:text-brand',
+                      barExpanded ? 'rounded-[10px] px-3 py-2 text-[13px] font-medium' : 'rounded-full p-2.5',
+                    )}
+                  >
+                    <MoreHorizontal size={15} />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent side="top" align="end" className="w-72 border-hairline bg-card-warm p-4">
+                  <div className="lf-mono-label !text-[10px]">MODE · 换个方式学</div>
+                  <div className="mt-2 grid grid-cols-3 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => (slideMode ? setSlideMode(false) : openSlides())}
+                      title="一段一页放大讲，随语音翻页"
+                      className={cn(
+                        'flex flex-col items-center gap-1 rounded-[9px] border py-2 text-[11.5px] font-medium transition-all',
+                        slideMode ? 'border-brand/45 bg-brand-tint text-brand' : 'border-hairline bg-paper text-ink-2 hover:border-brand/40',
+                      )}
+                    >
+                      <Presentation size={14} /> 幻灯
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setSlideMode(false); setAudioMode((v) => !v); if (!playing) startPlay(posRef.current.b, posRef.current.c); }}
+                      title="只听不看（走路/坐车时用）"
+                      className={cn(
+                        'flex flex-col items-center gap-1 rounded-[9px] border py-2 text-[11.5px] font-medium transition-all',
+                        audioMode ? 'border-brand/45 bg-brand-tint text-brand' : 'border-hairline bg-paper text-ink-2 hover:border-brand/40',
+                      )}
+                    >
+                      <Headphones size={14} /> 只听
+                    </button>
+                    <button
+                      type="button"
+                      onClick={enterFocus}
+                      title="全屏、收起干扰、结算能量加成"
+                      className="flex flex-col items-center gap-1 rounded-[9px] border border-hairline bg-paper py-2 text-[11.5px] font-medium text-ink-2 transition-all hover:border-brand/40"
+                    >
+                      <Focus size={14} /> 专注
+                    </button>
+                  </div>
+
+                  <div className="lf-mono-label mt-4 !text-[10px]">VOICE · 语音风格</div>
+                  <div className="mt-2 space-y-1.5">
+                    {VOICE_STYLES.map((s, i) => (
+                      <button
+                        key={s.key}
+                        type="button"
+                        onClick={() => setVoiceIdx(i)}
+                        aria-pressed={i === voiceIdx}
+                        className={cn(
+                          'flex w-full items-center justify-between rounded-[9px] border px-3 py-1.5 text-left transition-all duration-200',
+                          i === voiceIdx
+                            ? 'border-brand/45 bg-brand-tint text-brand'
+                            : 'border-hairline bg-paper text-ink-2 hover:border-brand/30',
+                        )}
+                      >
+                        <span className="text-[12px] font-medium">{s.label}</span>
+                        {i === voiceIdx && <Check size={13} className="shrink-0" />}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="lf-mono-label mt-3 !text-[10px]">RATE · 语速</div>
+                  <div className="mt-2 flex gap-1">
+                    {RATES.map((r, i) => (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setRateIdx(i)}
+                        aria-pressed={i === rateIdx}
+                        className={cn(
+                          'flex-1 rounded-[8px] border px-1 py-1.5 font-mono text-[11px] transition-all duration-200',
+                          i === rateIdx
+                            ? 'border-brand bg-brand text-paper'
+                            : 'border-hairline bg-paper text-ink-2 hover:border-brand/40',
+                        )}
+                      >
+                        {r.toFixed(2).replace(/0$/, '')}×
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
             )}
+          </div>
           </div>
         </div>
       </div>
@@ -1859,7 +2534,7 @@ export default function LearnUnit() {
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 24 }}
-            className="fixed bottom-36 right-4 z-50 flex max-h-[min(480px,60dvh)] w-[min(380px,calc(100vw-32px))] flex-col overflow-hidden rounded-[16px] border border-hairline bg-paper shadow-warm-lg md:bottom-24 md:right-[max(16px,calc(50vw-430px))]"
+            className="fixed bottom-36 right-4 z-50 flex max-h-[min(480px,60dvh)] w-[min(380px,calc(100vw-32px))] flex-col overflow-hidden rounded-[16px] border border-hairline bg-paper shadow-warm-lg md:bottom-24 md:right-[max(16px,calc(50vw-380px))]"
           >
             <div className="flex items-center gap-2 border-b border-hairline bg-card-warm px-4 py-2.5">
               <Hand size={14} className="text-ochre" />
@@ -1874,6 +2549,13 @@ export default function LearnUnit() {
               )}
               {qaLog.map((qa, i) => (
                 <div key={i} className="space-y-1.5">
+                  {qa.photo && (
+                    <img
+                      src={qa.photo}
+                      alt="提问附图"
+                      className="ml-auto block max-h-[120px] w-fit rounded-[10px] border border-hairline object-cover"
+                    />
+                  )}
                   <div className="ml-auto w-fit max-w-[90%] rounded-[12px] rounded-br-[4px] bg-brand px-3 py-1.5 text-[12.5px] text-paper">{qa.q}</div>
                   <div className="w-fit max-w-[92%] rounded-[12px] rounded-tl-[4px] border border-hairline bg-card-warm px-3 py-2 text-[12.5px] leading-[19px] text-ink-2">
                     {qa.a}
@@ -1882,7 +2564,34 @@ export default function LearnUnit() {
                 </div>
               ))}
             </div>
+            {/* 待发送的现场照片 */}
+            {askPhoto && (
+              <div className="flex items-center gap-2 border-t border-hairline bg-card-warm px-3 pt-2.5">
+                <img src={askPhoto.url} alt="" className="h-10 w-10 rounded-[8px] border border-hairline object-cover" />
+                <span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-2">{askPhoto.name}</span>
+                <button
+                  type="button"
+                  onClick={() => setAskPhoto(null)}
+                  aria-label="移除照片"
+                  className="text-ink-muted transition-colors hover:text-brand-danger"
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            )}
+
             <div className="flex items-center gap-2 border-t border-hairline bg-card-warm px-3 py-2.5">
+              {/* 拍照/传图提问：车间场景的主力问法 */}
+              <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={pickPhoto} />
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                title="拍张现场照片一起问"
+                aria-label="上传现场照片"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-hairline bg-paper text-ink-2 transition-all hover:border-brand/40 hover:text-brand"
+              >
+                <ImagePlus size={15} />
+              </button>
               {srAvailable && (
                 <button
                   type="button"
@@ -1900,14 +2609,14 @@ export default function LearnUnit() {
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') submitQuestion(); }}
-                placeholder={listening ? '正在听…' : '输入问题，或点麦克风说'}
+                placeholder={listening ? '正在听…' : askPhoto ? '这张图想问什么？（可不填）' : '输入问题，或点麦克风说'}
                 className="h-9 min-w-0 flex-1 rounded-[10px] border border-hairline bg-paper px-3 text-[13px] text-ink outline-none focus:border-brand/50"
               />
               <button
                 type="button"
                 onClick={submitQuestion}
-                disabled={!question.trim()}
-                className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]', question.trim() ? 'bg-brand text-paper' : 'bg-paper-deep text-ink-muted/50')}
+                disabled={!question.trim() && !askPhoto}
+                className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]', question.trim() || askPhoto ? 'bg-brand text-paper' : 'bg-paper-deep text-ink-muted/50')}
               >
                 <Send size={14} />
               </button>

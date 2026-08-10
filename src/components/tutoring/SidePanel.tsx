@@ -7,10 +7,21 @@
  */
 import { useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { Link } from 'react-router-dom';
-import { ArrowRight, ChevronDown, Gauge, History, ListChecks, MessageCircle, Scale } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  ArrowRight,
+  BookOpen,
+  ChevronDown,
+  Gauge,
+  History,
+  ListChecks,
+  MessageCircle,
+  Scale,
+  Waypoints,
+} from 'lucide-react';
 import { ReactECharts } from '@/components/ChartCard';
 import TraceBadge from '@/components/TraceBadge';
+import { knowledgePoints } from '@/data/knowledgePoints';
 import type { DecisionEvent } from './engine';
 import { cn } from '@/lib/utils';
 
@@ -126,6 +137,190 @@ function AnswerTrend({ answers }: { answers?: boolean[] }) {
   );
 }
 
+/* ---------- 知识点图谱（可交互 SVG）：点节点选中 → 一键去学 ---------- */
+
+/** 六大知识点的领域关联边（岗位能力模型的天然依赖） */
+const KP_EDGES: [string, string][] = [
+  ['kp-plc', 'kp-diagnosis'],
+  ['kp-plc', 'kp-safety'],
+  ['kp-plc', 'kp-kinematics'],
+  ['kp-kinematics', 'kp-sensor'],
+  ['kp-kinematics', 'kp-vision'],
+  ['kp-sensor', 'kp-vision'],
+  ['kp-sensor', 'kp-diagnosis'],
+  ['kp-safety', 'kp-diagnosis'],
+];
+
+/** 六边形静态布局（viewBox 300x210），顺序与 knowledgePoints 一致 */
+const KP_POS: Record<string, { x: number; y: number }> = {
+  'kp-plc': { x: 150, y: 32 },
+  'kp-kinematics': { x: 252, y: 74 },
+  'kp-sensor': { x: 252, y: 148 },
+  'kp-vision': { x: 150, y: 186 },
+  'kp-safety': { x: 48, y: 148 },
+  'kp-diagnosis': { x: 48, y: 74 },
+};
+
+const masteryColor = (v: number) => (v >= 75 ? '#6BA080' : v >= 55 ? '#E7B45A' : '#B0483B');
+
+function KnowledgeGraphCard({
+  kpId,
+  scores,
+}: {
+  /** 本节正在练的知识点 */
+  kpId: string;
+  /** 当前学习者各知识点掌握度 */
+  scores: Record<string, number>;
+}) {
+  const navigate = useNavigate();
+  const [selectedId, setSelectedId] = useState<string>(kpId);
+  const selected = knowledgePoints.find((k) => k.id === selectedId) ?? knowledgePoints[0];
+  const selectedMastery = scores[selectedId] ?? 50;
+
+  return (
+    <div className="lf-card p-5">
+      <div className="lf-mono-label flex items-center gap-1.5">
+        <Waypoints size={12} /> GRAPH · 知识点图谱
+      </div>
+
+      <svg viewBox="0 0 300 210" className="mt-2 block w-full" role="group" aria-label="知识点关系图，点击节点选择要学的知识点">
+        {/* 关联边：选中节点的边加亮 */}
+        {KP_EDGES.map(([a, b]) => {
+          const pa = KP_POS[a];
+          const pb = KP_POS[b];
+          const hot = a === selectedId || b === selectedId;
+          return (
+            <line
+              key={`${a}-${b}`}
+              x1={pa.x}
+              y1={pa.y}
+              x2={pb.x}
+              y2={pb.y}
+              stroke={hot ? '#4E7860' : '#D8E2D5'}
+              strokeWidth={hot ? 1.6 : 1}
+              strokeOpacity={hot ? 0.7 : 0.8}
+              className="transition-all duration-300"
+            />
+          );
+        })}
+
+        {knowledgePoints.map((k) => {
+          const p = KP_POS[k.id];
+          const mastery = scores[k.id] ?? 50;
+          const color = masteryColor(mastery);
+          const isCurrent = k.id === kpId;
+          const isSelected = k.id === selectedId;
+          const r = 16;
+          return (
+            <g
+              key={k.id}
+              role="button"
+              tabIndex={0}
+              aria-label={`${k.name}，掌握度 ${Math.round(mastery)}${isCurrent ? '，本节正在练' : ''}`}
+              aria-pressed={isSelected}
+              onClick={() => setSelectedId(k.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setSelectedId(k.id);
+                }
+                if (e.key === 'Enter' && isSelected) navigate(`/learn/${k.id}`);
+              }}
+              className="cursor-pointer outline-none focus-visible:opacity-80"
+            >
+              {/* 选中光环 */}
+              {isSelected && (
+                <motion.circle
+                  cx={p.x}
+                  cy={p.y}
+                  r={r + 6}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={1.5}
+                  strokeOpacity={0.45}
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+                  transition={{ duration: 0.3, ease: easeLf }}
+                />
+              )}
+              {/* 本节标记：虚线外圈 */}
+              {isCurrent && (
+                <circle cx={p.x} cy={p.y} r={r + 3.5} fill="none" stroke="#B77552" strokeWidth={1.2} strokeDasharray="3 2.5" />
+              )}
+              <motion.circle
+                cx={p.x}
+                cy={p.y}
+                r={r}
+                fill={isSelected ? `${color}22` : '#FDFBF6'}
+                stroke={color}
+                strokeWidth={isSelected ? 2.2 : 1.5}
+                whileHover={{ scale: 1.12 }}
+                style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
+                transition={{ duration: 0.2, ease: easeLf }}
+              />
+              <text
+                x={p.x}
+                y={p.y + 3.5}
+                textAnchor="middle"
+                fontSize={10}
+                fontWeight={700}
+                fill={color}
+                fontFamily="ui-monospace, monospace"
+                pointerEvents="none"
+              >
+                {Math.round(mastery)}
+              </text>
+              <text
+                x={p.x}
+                y={p.y + r + (isCurrent ? 15 : 12)}
+                textAnchor="middle"
+                fontSize={10.5}
+                fill={isSelected ? '#3D4A3A' : '#8A927F'}
+                fontWeight={isSelected ? 600 : 400}
+                pointerEvents="none"
+              >
+                {k.name}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+
+      {/* 选中节点详情 + 去学 CTA */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={selectedId}
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.22, ease: easeLf }}
+          className="mt-2 rounded-[10px] border border-hairline bg-paper p-3"
+        >
+          <div className="flex items-center gap-2">
+            <MasteryRing value={selectedMastery} size={28} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13px] font-semibold text-ink">{selected.name}</span>
+              <span className="block font-mono text-[10px] text-ink-muted">
+                权重 {(selected.weight * 100).toFixed(0)}% · 目标 {selected.targetLevel}
+                {selected.id === kpId && ' · 本节正在练'}
+              </span>
+            </span>
+            <Link
+              to={`/learn/${selected.id}`}
+              className="inline-flex shrink-0 items-center gap-1 rounded-[9px] bg-brand px-2.5 py-1.5 text-[12px] font-medium text-paper transition-colors hover:bg-brand-hover"
+            >
+              <BookOpen size={12} /> 去学这个
+            </Link>
+          </div>
+          <p className="mt-2 line-clamp-2 text-[11.5px] leading-[17px] text-ink-muted">{selected.description}</p>
+        </motion.div>
+      </AnimatePresence>
+      <p className="mt-2 font-mono text-[10px] text-ink-muted">点节点选择想学的知识点 · 数字为你的掌握度</p>
+    </div>
+  );
+}
+
 export default function SidePanel({
   asked,
   correct,
@@ -134,7 +329,8 @@ export default function SidePanel({
   topics,
   onRecap,
   answers,
-  showSeedDecision = true,
+  kpId,
+  scores,
 }: {
   asked: number;
   correct: number;
@@ -144,13 +340,17 @@ export default function SidePanel({
   onRecap: (t: KpTopic) => void;
   /** 本轮答题对错序列（按作答顺序），供「答题走势」迷你图使用；未传则显示占位 */
   answers?: boolean[];
-  /** 旧演示脚本带一条预置决策；真实后端会话必须关闭。 */
-  showSeedDecision?: boolean;
+  /** 本节知识点 id（图谱高亮「本节」节点） */
+  kpId: string;
+  /** 学习者各知识点掌握度（图谱节点着色） */
+  scores: Record<string, number>;
 }) {
   const acc = asked > 0 ? Math.round((correct / asked) * 100) : 0;
   const accColor = acc >= 80 ? '#6BA080' : acc >= 60 ? '#E7B45A' : asked === 0 ? '#4E7860' : '#B0483B';
   /* 本节知识点卡：手风琴展开，同时只展开一个 */
   const [expandedTopic, setExpandedTopic] = useState<string | null>(null);
+  /* 决策历史：让位给知识点图谱，默认折叠 */
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const gaugeOption = {
     series: [
@@ -193,7 +393,7 @@ export default function SidePanel({
       live: true,
       tone: d.type === 'challenge' ? '#B77552' : '#4E7860',
     })),
-    ...(showSeedDecision ? [{
+    {
       id: 'seed-1',
       time: '10:31:40',
       label: '路径重排',
@@ -201,7 +401,7 @@ export default function SidePanel({
       confidence: 0.88,
       live: false,
       tone: '#5A6553',
-    }] : []),
+    },
   ];
 
   return (
@@ -251,45 +451,78 @@ export default function SidePanel({
         </div>
       </div>
 
-      {/* 决策历史 */}
+      {/* 知识点图谱：点节点快速选择想学的知识点（原「决策历史」升为图谱，历史折叠保留在下方） */}
+      <KnowledgeGraphCard kpId={kpId} scores={scores} />
+
+      {/* 决策历史（折叠） */}
       <div className="lf-card p-5">
-        <div className="lf-mono-label flex items-center gap-1.5">
-          <History size={12} /> DECISIONS · 决策历史
-        </div>
-        <ul className="mt-3 space-y-2">
-          {history.map((h) => (
-            <motion.li
-              key={h.id}
-              layout="position"
-              initial={{ opacity: 0, y: -10, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ type: 'spring', stiffness: 260, damping: 22 }}
-              className={cn(
-                'rounded-[10px] border p-2.5',
-                h.live ? 'border-brand/30 bg-brand-tint/40' : 'border-hairline bg-paper',
-              )}
+        <button
+          type="button"
+          onClick={() => setHistoryOpen((v) => !v)}
+          aria-expanded={historyOpen}
+          className="flex w-full items-center gap-1.5 text-left"
+        >
+          <span className="lf-mono-label flex flex-1 items-center gap-1.5">
+            <History size={12} /> DECISIONS · 决策历史
+            <span className="rounded-full bg-paper-deep px-1.5 font-mono text-[9.5px] text-ink-2 tabular">
+              {history.length}
+            </span>
+          </span>
+          <motion.span
+            animate={{ rotate: historyOpen ? 180 : 0 }}
+            transition={{ duration: 0.25, ease: easeLf }}
+            className="text-ink-muted"
+          >
+            <ChevronDown size={14} />
+          </motion.span>
+        </button>
+        <AnimatePresence initial={false}>
+          {historyOpen && (
+            <motion.div
+              key="history"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.3, ease: easeLf }}
+              className="overflow-hidden"
             >
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-[10.5px] text-ink-muted tabular">{h.time}</span>
-                <span
-                  className="rounded-md border px-1.5 py-px font-mono text-[10px] font-semibold"
-                  style={{ color: h.tone, borderColor: `${h.tone}50`, backgroundColor: `${h.tone}0D` }}
-                >
-                  {h.label}
-                </span>
-                {h.live && (
-                  <span className="ml-auto font-mono text-[9.5px] uppercase tracking-wider text-brand">
-                    LIVE
-                  </span>
-                )}
-              </div>
-              <p className="mt-1 text-[12px] leading-[18px] text-ink-2">{h.reason}</p>
-              <p className="mt-0.5 flex items-center gap-1 font-mono text-[10px] text-ink-muted">
-                <Scale size={10} /> 置信 {h.confidence.toFixed(2)}
-              </p>
-            </motion.li>
-          ))}
-        </ul>
+              <ul className="mt-3 space-y-2">
+                {history.map((h) => (
+                  <motion.li
+                    key={h.id}
+                    layout="position"
+                    initial={{ opacity: 0, y: -10, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ type: 'spring', stiffness: 260, damping: 22 }}
+                    className={cn(
+                      'rounded-[10px] border p-2.5',
+                      h.live ? 'border-brand/30 bg-brand-tint/40' : 'border-hairline bg-paper',
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[10.5px] text-ink-muted tabular">{h.time}</span>
+                      <span
+                        className="rounded-md border px-1.5 py-px font-mono text-[10px] font-semibold"
+                        style={{ color: h.tone, borderColor: `${h.tone}50`, backgroundColor: `${h.tone}0D` }}
+                      >
+                        {h.label}
+                      </span>
+                      {h.live && (
+                        <span className="ml-auto font-mono text-[9.5px] uppercase tracking-wider text-brand">
+                          LIVE
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-[12px] leading-[18px] text-ink-2">{h.reason}</p>
+                    <p className="mt-0.5 flex items-center gap-1 font-mono text-[10px] text-ink-muted">
+                      <Scale size={10} /> 置信 {h.confidence.toFixed(2)}
+                    </p>
+                  </motion.li>
+                ))}
+              </ul>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* 本节知识点：点击卡头展开复述全文（accordion，同时只展开一个） */}

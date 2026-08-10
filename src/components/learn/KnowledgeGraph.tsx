@@ -1,13 +1,16 @@
 /**
- * KnowledgeGraph — 知识图谱（学情可视化 + 自主选点入口）
- * 液面填充球：学过的按掌握度充液（达标转琥珀金），没学过灰色空球；
- * 目标水位刻线；置信度 = 描边实度；阿诊推荐节点呼吸光圈；
- * 语义边三态（前置实线箭头/相关虚线/应用细线）；hover 高亮前置链；
- * 路径叠加开关：ARB-05 学习路径在图上连成发光链。
+ * KnowledgeGraph — 知识图谱（学情可视化 + 自主选点入口）· 知识地图版
+ * 布局：按前置关系分三列（基础层 → 规范与应用 → 实操与运维），阅读顺序 = 学习顺序，列色带做阅读动线。
+ * 场景驱动（scene prop，由页面级分段控件切换）：
+ *   order   学习顺序（默认）—— 只画前置箭头；
+ *   network 完整网络 —— 三种关系全开，图例即控件（线型样本 chip，可单独隐藏）；
+ *   route   我的路线 —— 前置 + 学习路径叠加。
+ * 渐进披露：默认 6 域 + 域级聚合边；点域就地展开子知识点，其余域退为背景。
+ * 术语双标：先学它(prereq) / 互相印证(related) / 规范约束(applies)；边 hover 出玻璃浮层说明。
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Route, Info } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
 import { useAgent } from '@/context/AgentContext';
 import { useNotes } from '@/context/NotesContext';
@@ -17,65 +20,26 @@ import {
   graphNodes,
   graphEdges,
   graphViewBox,
+  graphColumns,
+  domainEdgesOf,
   getNode,
   prereqOf,
   learnedKpIds,
   topicMastery,
 } from '@/data/knowledgeGraph';
-import type { GraphNode } from '@/data/knowledgeGraph';
+import type { EdgeKind, GraphNode } from '@/data/knowledgeGraph';
+import { speciesOf } from '@/data/garden';
+import SpeciesPlant, { GardenDefs } from '@/components/heal/SpeciesPlant';
 import { cn } from '@/lib/utils';
 
-const EDGE_STYLE = {
-  prereq: { stroke: '#4E7860', width: 1.8, dash: undefined as string | undefined, opacity: 0.55 },
-  related: { stroke: '#B77552', width: 1.3, dash: '5 4', opacity: 0.45 },
-  applies: { stroke: '#66725E', width: 1, dash: '2 4', opacity: 0.4 },
+/** 术语双标：人话在前（label），行话在后（term，进 hover 提示） */
+const EDGE_STYLE: Record<EdgeKind, { stroke: string; width: number; dash?: string; opacity: number; label: string; term: string; hint: string }> = {
+  prereq: { stroke: '#4E7860', width: 2, opacity: 0.6, label: '先学它', term: 'prereq · 前置', hint: '箭头从 A 指向 B：先学 A 才好学 B' },
+  related: { stroke: '#B77552', width: 1.4, dash: '5 4', opacity: 0.5, label: '互相印证', term: 'related · 相关', hint: '两个知识互补或方法同构，一起看更通' },
+  applies: { stroke: '#66725E', width: 1.1, dash: '2 4', opacity: 0.45, label: '规范约束', term: 'applies · 应用', hint: '安全规范对实操动作的硬性约束' },
 };
 
-/** 花园共享渐变/滤镜（整张图只定义一次） */
-function GardenDefs() {
-  return (
-    <defs>
-      <linearGradient id="g-leaf" x1="0" y1="0" x2="0.35" y2="1">
-        <stop offset="0%" stopColor="#E3F4EA" stopOpacity="0.95" />
-        <stop offset="45%" stopColor="#A8D4BA" stopOpacity="0.9" />
-        <stop offset="100%" stopColor="#6FA98A" stopOpacity="0.8" />
-      </linearGradient>
-      <linearGradient id="g-leaf2" x1="0.2" y1="0" x2="0.8" y2="1">
-        <stop offset="0%" stopColor="#F0FAF3" stopOpacity="0.92" />
-        <stop offset="50%" stopColor="#BADEC8" stopOpacity="0.86" />
-        <stop offset="100%" stopColor="#84BC9C" stopOpacity="0.76" />
-      </linearGradient>
-      <radialGradient id="g-petal" cx="0.38" cy="0.32" r="0.8">
-        <stop offset="0%" stopColor="#FFF6F8" stopOpacity="0.98" />
-        <stop offset="55%" stopColor="#F2CBD6" stopOpacity="0.9" />
-        <stop offset="100%" stopColor="#E0A8BB" stopOpacity="0.76" />
-      </radialGradient>
-      <radialGradient id="g-gold" cx="0.38" cy="0.32" r="0.85">
-        <stop offset="0%" stopColor="#FFF3D0" />
-        <stop offset="60%" stopColor="#EFC169" />
-        <stop offset="100%" stopColor="#D9A247" />
-      </radialGradient>
-      <linearGradient id="g-stem" x1="0" y1="1" x2="0" y2="0">
-        <stop offset="0%" stopColor="#5E9377" stopOpacity="0.9" />
-        <stop offset="100%" stopColor="#9CC9AE" stopOpacity="0.8" />
-      </linearGradient>
-      <radialGradient id="g-soil" cx="0.5" cy="0.3" r="0.8">
-        <stop offset="0%" stopColor="#D8BFA4" stopOpacity="0.7" />
-        <stop offset="100%" stopColor="#B99372" stopOpacity="0.55" />
-      </radialGradient>
-      <filter id="g-glow" x="-60%" y="-60%" width="220%" height="220%">
-        <feGaussianBlur stdDeviation="2.6" result="b" />
-        <feComponentTransfer in="b" result="s">
-          <feFuncA type="linear" slope="0.7" />
-        </feComponentTransfer>
-        <feMerge>
-          <feMergeNode in="s" />
-          <feMergeNode in="SourceGraphic" />
-        </feMerge>
-      </filter>
-    </defs>
-  );
-}
+export type GraphScene = 'order' | 'network' | 'route';
 
 /** 生长阶段：0 种子 / 1 破土 / 2 长叶 / 3 花蕾 / 4 开花(达标) / 5 结果 */
 function growthStage(mastery: number, target: number, learned: boolean): number {
@@ -88,80 +52,6 @@ function growthStage(mastery: number, target: number, learned: boolean): number 
   return 1;
 }
 
-/** 一株植物（单位空间：地面 y=0，向上生长至 -56） */
-function Plant({ stage }: { stage: number }) {
-  const leaf = (cx: number, cy: number, rx: number, ry: number, rot: number, alt = false) => (
-    <g transform={`rotate(${rot} ${cx} ${cy})`}>
-      <ellipse cx={cx} cy={cy} rx={rx} ry={ry} fill={`url(#g-leaf${alt ? '2' : ''})`} />
-      <ellipse cx={cx - rx * 0.28} cy={cy - ry * 0.34} rx={rx * 0.32} ry={ry * 0.26} fill="#FFFFFF" opacity="0.38" />
-    </g>
-  );
-
-  /* 土壤 */
-  const soil = <ellipse cx="0" cy="0" rx="14" ry="3.4" fill="url(#g-soil)" />;
-
-  if (stage === 0) {
-    /* 未学：一粒种子 + 「将来能长成什么」的虚影轮廓。
-       否则 2/3 的节点只是个小土堆，花园看起来是空的、也看不出这里有东西可学。 */
-    return (
-      <g>
-        <g opacity="0.22">
-          <path d="M 0 -2 C -1.6 -11 1.6 -21 0 -30" stroke="#7FB295" strokeWidth="2" fill="none"
-            strokeDasharray="3 3.5" strokeLinecap="round" />
-          <ellipse cx="-8" cy="-13" rx="8.5" ry="4.2" transform="rotate(-28 -8 -13)"
-            fill="none" stroke="#7FB295" strokeWidth="1.5" strokeDasharray="2.5 2.5" />
-          <ellipse cx="8" cy="-16" rx="8.5" ry="4.2" transform="rotate(26 8 -16)"
-            fill="none" stroke="#7FB295" strokeWidth="1.5" strokeDasharray="2.5 2.5" />
-          <circle cx="0" cy="-32" r="3" fill="none" stroke="#E7B45A" strokeWidth="1.5" strokeDasharray="2 2" />
-        </g>
-        {soil}
-        <ellipse cx="0" cy="-3.5" rx="4.6" ry="3.6" fill="#C09A78" opacity="0.92" />
-        <ellipse cx="-1.2" cy="-4.8" rx="1.7" ry="1.2" fill="#FFFFFF" opacity="0.45" />
-      </g>
-    );
-  }
-
-  const stemTop = [0, -18, -30, -38, -43, -43][stage];
-  return (
-    <g>
-      {soil}
-      <path d={`M 0 -1 C -1.5 ${stemTop * 0.4} 1.5 ${stemTop * 0.7} 0 ${stemTop}`} stroke="url(#g-stem)" strokeWidth="2.6" strokeLinecap="round" fill="none" />
-      {/* 叶片：随阶段增多 */}
-      {stage >= 1 && leaf(-8, -12, 8, 4, -28)}
-      {stage >= 1 && leaf(8, -14, 8, 4, 26, true)}
-      {stage >= 2 && leaf(-10, -23, 9.5, 4.6, -24, true)}
-      {stage >= 2 && leaf(10, -25, 9.5, 4.6, 22)}
-      {stage >= 3 && leaf(-8, -33, 7.5, 3.6, -20)}
-      {stage >= 3 && leaf(8, -34, 7.5, 3.6, 18, true)}
-      {/* 花蕾 */}
-      {stage === 3 && (
-        <g>
-          <ellipse cx="0" cy="-42" rx="4.2" ry="6" fill="url(#g-petal)" />
-          <ellipse cx="-1.2" cy="-44" rx="1.4" ry="2" fill="#FFFFFF" opacity="0.45" />
-        </g>
-      )}
-      {/* 开花（达标） */}
-      {stage >= 4 && (
-        <g transform="translate(0 -46)">
-          <g fill="url(#g-petal)">
-            {[0, 72, 144, 216, 288].map((a) => (
-              <ellipse key={a} rx="5.2" ry="2.8" transform={`rotate(${a}) translate(7 0)`} />
-            ))}
-          </g>
-          <circle r="3.4" fill="url(#g-gold)" />
-        </g>
-      )}
-      {/* 结果 */}
-      {stage === 5 && (
-        <g>
-          <circle cx="-9" cy="-30" r="3.4" fill="url(#g-gold)" />
-          <circle cx="9.5" cy="-19" r="3" fill="url(#g-gold)" />
-        </g>
-      )}
-    </g>
-  );
-}
-
 /** 环形进度弧（保留精确掌握度） */
 function arcPath(cx: number, cy: number, R: number, pct: number): string {
   const p = Math.max(0.001, Math.min(0.999, pct));
@@ -171,123 +61,149 @@ function arcPath(cx: number, cy: number, R: number, pct: number): string {
   return `M ${cx} ${cy - R} A ${R} ${R} 0 ${a > Math.PI ? 1 : 0} 1 ${x2} ${y2}`;
 }
 
-/** 花坛节点：植物按掌握度生长 + 环形进度 + 目标刻度 */
-function PlantNode({
+/** 域节点：植物 + 进度弧 + 掌握度数字（植物隐喻只留在域上） */
+function DomainNode({
   n,
   mastery,
   target,
   learned,
-  conf,
-  highlight,
   recommended,
   dimmed,
   selected,
+  expanded,
 }: {
   n: GraphNode;
   mastery: number;
   target: number;
   learned: boolean;
-  conf: number;
-  highlight: boolean;
   recommended: boolean;
   dimmed: boolean;
   selected: boolean;
+  expanded: boolean;
 }) {
   const stage = growthStage(mastery, target, learned);
   const passed = learned && mastery >= target;
-  const isDomain = n.kind === 'domain';
-  /* 植物放大到略微探出花坛（破框感），小节点给更大的相对倍率才看得清长势 */
-  const scale = ((isDomain ? 1.85 : 2.4) * n.r) / 56;
-  const groundY = n.y + n.r * 0.5;
-  const ringR = n.r - 2;
-  const targetAngle = (target / 100) * 360 - 90;
-  const tx = n.x + ringR * Math.cos((targetAngle * Math.PI) / 180);
-  const ty = n.y + ringR * Math.sin((targetAngle * Math.PI) / 180);
-  const plotOp = 0.35 + 0.5 * (conf / 100);
+  const scale = (1.5 * n.r) / 56;
+  const groundY = n.y + n.r * 0.42;
+  const ringR = n.r - 3;
+  const targetAngle = (target / 100) * 2 * Math.PI;
 
   return (
-    <g className="cursor-pointer" opacity={dimmed ? 0.25 : 1} style={{ transition: 'opacity 0.25s' }}>
-      {/* 阿诊推荐：呼吸光圈 */}
+    <g className="cursor-pointer" opacity={dimmed ? 0.28 : 1} style={{ transition: 'opacity 0.25s' }}>
       {recommended && (
-        <circle cx={n.x} cy={n.y} r={n.r + 7} fill="none" stroke="#E7B45A" strokeWidth="2" opacity="0.7">
-          <animate attributeName="r" values={`${n.r + 5};${n.r + 10};${n.r + 5}`} dur="2s" repeatCount="indefinite" />
+        <circle cx={n.x} cy={n.y} r={n.r + 8} fill="none" stroke="#E7B45A" strokeWidth="2" opacity="0.7">
+          <animate attributeName="r" values={`${n.r + 6};${n.r + 11};${n.r + 6}`} dur="2s" repeatCount="indefinite" />
           <animate attributeName="opacity" values="0.7;0.15;0.7" dur="2s" repeatCount="indefinite" />
         </circle>
       )}
-      {/* 选中：旋转虚线环 */}
       {selected && (
         <circle cx={n.x} cy={n.y} r={n.r + 5} fill="none" stroke="#4E7860" strokeWidth="2.5" strokeDasharray="4 3" opacity="0.85">
           <animateTransform attributeName="transform" type="rotate" from={`0 ${n.x} ${n.y}`} to={`360 ${n.x} ${n.y}`} dur="9s" repeatCount="indefinite" />
         </circle>
       )}
-      {/* hover 前置链高亮 */}
-      {highlight && <circle cx={n.x} cy={n.y} r={n.r + 4} fill="none" stroke="#E7B45A" strokeWidth="2.5" opacity="0.9" />}
 
-      {/* 花坛（玻璃圆盘） */}
+      {/* 花坛 */}
       <circle
         cx={n.x}
         cy={n.y}
         r={n.r}
         fill={learned ? 'rgba(251,250,245,0.62)' : 'rgba(236,241,234,0.5)'}
-        stroke={passed ? '#E7B45A' : learned ? '#9BC5AC' : '#C4D3C8'}
-        strokeWidth={isDomain ? 1.6 : 1.2}
-        strokeOpacity={plotOp}
+        stroke={expanded ? '#4E7860' : passed ? '#E7B45A' : learned ? '#9BC5AC' : '#C4D3C8'}
+        strokeWidth={expanded ? 2.4 : 1.6}
       />
-      {/* 掌握度进度弧 + 目标刻度（域节点） */}
-      {isDomain && learned && (
+      {learned ? (
         <>
           <path
             d={arcPath(n.x, n.y, ringR, mastery / 100)}
             fill="none"
             stroke={passed ? '#E7B45A' : '#7FB295'}
-            strokeWidth="3"
+            strokeWidth="3.5"
             strokeLinecap="round"
-            opacity="0.85"
-            style={{ transition: 'd 0.8s cubic-bezier(0.22,1,0.36,1)' }}
+            opacity="0.9"
           />
-          <circle cx={tx} cy={ty} r="2.4" fill="#B0483B" opacity="0.85" />
+          {/* 目标刻度 */}
+          <circle
+            cx={n.x + ringR * Math.sin(targetAngle)}
+            cy={n.y - ringR * Math.cos(targetAngle)}
+            r="2.6"
+            fill="#B0483B"
+            opacity="0.85"
+          />
         </>
+      ) : (
+        /* 未学：一圈淡虚线（替代旧版"幽灵植物"，视觉重量降级） */
+        <circle cx={n.x} cy={n.y} r={ringR} fill="none" stroke="#C4D3C8" strokeWidth="1.2" strokeDasharray="3 4" opacity="0.7" />
       )}
 
-      {/* 植物 */}
-      <g
-        transform={`translate(${n.x} ${groundY}) scale(${scale})`}
-        filter={stage >= 4 ? 'url(#g-glow)' : undefined}
-        style={{ pointerEvents: 'none' }}
-      >
-        <Plant stage={stage} />
+      {/* 植物：一域一种（向日葵/鸢尾/松/牵牛/竹/薄荷），种子期也能靠幼苗轮廓区分 */}
+      <g transform={`translate(${n.x} ${groundY}) scale(${scale})`} filter={stage >= 4 ? 'url(#g-glow)' : undefined} style={{ pointerEvents: 'none' }}>
+        <SpeciesPlant species={speciesOf(n.kpId).key} stage={stage} />
       </g>
 
-      {/* 掌握度数字（域节点，落在花坛底部） */}
-      {isDomain && (
-        <text
-          x={n.x}
-          y={n.y + n.r - 5}
-          textAnchor="middle"
-          fontSize="11.5"
-          fontWeight="700"
-          fontFamily="'IBM Plex Mono', monospace"
-          fill={learned ? '#3D4A3A' : '#66725E'}
-          stroke="#FBFAF5"
-          strokeWidth="2.6"
-          strokeLinejoin="round"
-          paintOrder="stroke"
-          style={{ pointerEvents: 'none' }}
-        >
-          {learned ? mastery : '—'}
-        </text>
-      )}
+      {/* 掌握度数字 */}
+      <text
+        x={n.x}
+        y={n.y + n.r - 7}
+        textAnchor="middle"
+        fontSize="12.5"
+        fontWeight="700"
+        fontFamily="'IBM Plex Mono', monospace"
+        fill={learned ? '#3D4A3A' : '#66725E'}
+        stroke="#FBFAF5"
+        strokeWidth="2.6"
+        strokeLinejoin="round"
+        paintOrder="stroke"
+        style={{ pointerEvents: 'none' }}
+      >
+        {learned ? mastery : '—'}
+      </text>
 
-      {/* 标签 - 域节点居中于下方；子节点沿径向朝外，避免互相重叠 */}
+      {/* 标签 */}
       <text
         x={n.labelX}
         y={n.labelY}
         textAnchor={n.labelAnchor}
-        fontSize={n.kind === 'domain' ? 12.5 : 9.5}
-        fontWeight={n.kind === 'domain' ? 600 : 400}
-        fill={dimmed ? '#A9B6A0' : '#5A6553'}
+        fontSize="13"
+        fontWeight={600}
+        fill={dimmed ? '#A9B6A0' : '#4A5244'}
         stroke="#FBFAF5"
-        strokeWidth={n.kind === 'domain' ? 3 : 2.4}
+        strokeWidth="3"
+        strokeLinejoin="round"
+        paintOrder="stroke"
+        style={{ pointerEvents: 'none' }}
+      >
+        {n.label}
+      </text>
+    </g>
+  );
+}
+
+/** 子知识点：进度点（不再是迷你植物） */
+function TopicDot({ n, mastery, target, learned }: { n: GraphNode; mastery: number; target: number; learned: boolean }) {
+  const passed = learned && mastery >= target;
+  return (
+    <g className="cursor-pointer">
+      <circle cx={n.x} cy={n.y} r={n.r} fill="#FBFAF5" stroke={learned ? '#9BC5AC' : '#C4D3C8'} strokeWidth="1.4" />
+      {learned ? (
+        <path
+          d={arcPath(n.x, n.y, n.r - 3.5, mastery / 100)}
+          fill="none"
+          stroke={passed ? '#E7B45A' : '#4E7860'}
+          strokeWidth="5"
+          strokeLinecap="round"
+          opacity="0.85"
+        />
+      ) : (
+        <circle cx={n.x} cy={n.y} r={n.r - 4} fill="none" stroke="#C4D3C8" strokeWidth="1" strokeDasharray="2 3" opacity="0.8" />
+      )}
+      <text
+        x={n.labelX}
+        y={n.labelY}
+        textAnchor={n.labelAnchor}
+        fontSize="10.5"
+        fill="#5A6553"
+        stroke="#FBFAF5"
+        strokeWidth="2.6"
         strokeLinejoin="round"
         paintOrder="stroke"
         style={{ pointerEvents: 'none' }}
@@ -299,9 +215,12 @@ function PlantNode({
 }
 
 export default function KnowledgeGraph({
+  scene = 'order',
   onSelectKp,
   selectedKpId,
 }: {
+  /** 场景（由页面级分段控件切换）：order 学习顺序 / network 完整网络 / route 我的路线 */
+  scene?: GraphScene;
   /** 提供后：点节点 = 选中（联动右栏详情），不直接跳转 */
   onSelectKp?: (kpId: string) => void;
   selectedKpId?: string | null;
@@ -312,28 +231,44 @@ export default function KnowledgeGraph({
   const { countByKp } = useNotes();
   const report = reportForLearner(currentLearner);
   const [hover, setHover] = useState<GraphNode | null>(null);
-  const [showPath, setShowPath] = useState(false);
+  /** 边 hover 玻璃浮层（替代浏览器原生 title） */
+  const [edgeTip, setEdgeTip] = useState<{ x: number; y: number; kind: EdgeKind; notes: string[] } | null>(null);
+  /** 渐进披露：当前展开的域（null = 只看 6 域全景） */
+  const [expandedKp, setExpandedKp] = useState<string | null>(null);
+  /** 完整网络场景下被临时隐藏的关系类型（图例即控件） */
+  const [hiddenKinds, setHiddenKinds] = useState<Set<EdgeKind>>(new Set());
+  useEffect(() => { setHiddenKinds(new Set()); setEdgeTip(null); }, [scene]);
+
+  /* 场景 → 边图层 / 路径叠加 */
+  const layerOn = (k: EdgeKind): boolean =>
+    scene === 'network' ? !hiddenKinds.has(k) : k === 'prereq';
+  const showPath = scene === 'route';
 
   const pathDone = report.path.filter((p) => p.status === 'done').map((p) => p.kpId);
   const learned = useMemo(() => learnedKpIds(currentLearner, pathDone), [currentLearner, pathDone]);
   const activeKp = report.path.find((p) => p.status === 'active')?.kpId ?? null;
 
-  /* hover 前置链：来源节点 + 相连边 */
-  const chain = useMemo(() => {
-    if (!hover) return { nodes: new Set<string>(), edges: new Set<number>() };
-    const nodes = new Set<string>([hover.id]);
-    const edges = new Set<number>();
-    graphEdges.forEach((e, i) => {
-      if (e.to === hover.id || e.from === hover.id) {
-        edges.add(i);
-        nodes.add(e.from);
-        nodes.add(e.to);
-      }
-    });
-    return { nodes, edges };
-  }, [hover]);
+  const domains = useMemo(() => graphNodes.filter((n) => n.kind === 'domain'), []);
+  const expandedTopics = useMemo(
+    () => (expandedKp ? graphNodes.filter((n) => n.kind === 'topic' && n.kpId === expandedKp) : []),
+    [expandedKp],
+  );
 
-  const prereqs = hover ? prereqOf(hover.id) : [];
+  /* 展开域的子节点级明细边：另一端若在收拢的域里，锚到那个域的圆心 */
+  const detailEdges = useMemo(() => {
+    if (!expandedKp) return [];
+    return graphEdges
+      .filter((e) => (scene === 'network' ? !hiddenKinds.has(e.kind) : e.kind === 'prereq'))
+      .map((e) => {
+        const a = getNode(e.from)!;
+        const b = getNode(e.to)!;
+        if (a.kpId !== expandedKp && b.kpId !== expandedKp) return null;
+        const anchor = (node: GraphNode) =>
+          node.kind === 'topic' && node.kpId !== expandedKp ? getNode(node.kpId)! : node;
+        return { e, a: anchor(a), b: anchor(b) };
+      })
+      .filter(Boolean) as { e: (typeof graphEdges)[number]; a: GraphNode; b: GraphNode }[];
+  }, [expandedKp, scene, hiddenKinds]);
 
   /* 路径叠加：按路径顺序连接域节点（去重保序） */
   const pathChain = useMemo(() => {
@@ -344,85 +279,135 @@ export default function KnowledgeGraph({
     return seq.map((id) => getNode(id)!).filter(Boolean);
   }, [report]);
 
-  /** 单击：选中（右栏出详情）。无右栏时直接进课件 */
-  const go = (n: GraphNode) => {
-    if (onSelectKp) {
-      onSelectKp(n.kpId);
-      return;
-    }
-    openUnit(n);
+  /** 点域：展开/收拢 + 选中（右栏出详情）；点子节点：选中 */
+  const clickNode = (n: GraphNode) => {
+    if (n.kind === 'domain') setExpandedKp((cur) => (cur === n.kpId ? null : n.kpId));
+    if (onSelectKp) onSelectKp(n.kpId);
+    else if (n.kind === 'topic') openUnit(n);
   };
 
-  /** 双击：跳过选择，直接进交互课件 —— 兑现「点一株即学」 */
+  /** 双击：直接进交互课件 —— 兑现「点一株即学」 */
   const openUnit = (n: GraphNode) => {
     if (n.kind === 'domain') navigate(`/learn/${n.kpId}`);
     else navigate(`/learn/${n.kpId}?block=c${Math.min(n.topicIndex ?? 0, 2)}`);
   };
 
   return (
-    <div className="lf-card relative overflow-hidden p-4">
-      {/* 工具条 */}
-      <div className="mb-1 flex flex-wrap items-center justify-between gap-2 px-1">
-        <div className="text-[12px] text-ink-2">
-          <span className="font-medium text-ink">我的知识花园</span>
-          <span className="text-ink-muted"> · 植物长得越大 = 学得越好；点一株 → 右边选怎么学（双击直接进课件）</span>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowPath((v) => !v)}
-          className={cn(
-            'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11.5px] font-medium transition-all',
-            showPath ? 'border-brand-amber bg-brand-amber-tint text-ochre' : 'border-hairline bg-paper text-ink-muted hover:border-brand/40',
-          )}
-        >
-          <Route size={12} />
-          学习路径叠加
-        </button>
-      </div>
-
+    <div className="relative">
       <svg viewBox={`0 0 ${graphViewBox.w} ${graphViewBox.h}`} className="w-full">
-        {/* 花园渐变/滤镜 */}
         <GardenDefs />
         <defs>
           <marker id="kg-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M 0 0 L 8 4 L 0 8 z" fill="#4E7860" opacity="0.6" />
+            <path d="M 0 0 L 8 4 L 0 8 z" fill="#4E7860" opacity="0.65" />
           </marker>
         </defs>
-        {/* 边 = 藤蔓（弧线 + 中点小叶） */}
-        {graphEdges.map((e, i) => {
-          const a = getNode(e.from)!;
-          const b = getNode(e.to)!;
+
+        {/* 列色带：结构进底色，不进边框（去卡框后的阅读动线） */}
+        {graphColumns.map((c) => (
+          <rect
+            key={`band-${c.label}`}
+            x={c.x - 112}
+            y={14}
+            width={224}
+            height={graphViewBox.h - 24}
+            rx={16}
+            fill="#4E7860"
+            opacity="0.028"
+          />
+        ))}
+
+        {/* 列标注：学习顺序 */}
+        {graphColumns.map((c, i) => (
+          <g key={c.label}>
+            <text x={c.x} y={34} textAnchor="middle" fontSize="11" letterSpacing="2.5" fontFamily="'IBM Plex Mono', monospace" fill="#8A9580">
+              {`0${i + 1} · ${c.label}`}
+            </text>
+            <line x1={c.x - 62} y1={44} x2={c.x + 62} y2={44} stroke="#DDDCCE" strokeWidth="1" />
+          </g>
+        ))}
+
+        {/* 域级聚合边（默认视图的全部边） */}
+        {(Object.keys(EDGE_STYLE) as EdgeKind[]).map((kind) =>
+          layerOn(kind)
+            ? domainEdgesOf(kind).map((e) => {
+                const a = getNode(e.from)!;
+                const b = getNode(e.to)!;
+                const st = EDGE_STYLE[kind];
+                const dx = b.x - a.x, dy = b.y - a.y;
+                const len = Math.hypot(dx, dy) || 1;
+                const x1 = a.x + (dx / len) * (a.r + 5), y1 = a.y + (dy / len) * (a.r + 5);
+                const x2 = b.x - (dx / len) * (b.r + 8), y2 = b.y - (dy / len) * (b.r + 8);
+                /* 长距边（跨两列）拱高一点绕开中间列 */
+                const bow = len > 420 ? 60 : 16;
+                const qx = (x1 + x2) / 2 - (dy / len) * bow;
+                const qy = (y1 + y2) / 2 + (dx / len) * bow;
+                const dim = expandedKp !== null && e.from !== expandedKp && e.to !== expandedKp;
+                const mx = 0.25 * x1 + 0.5 * qx + 0.25 * x2;
+                const my = 0.25 * y1 + 0.5 * qy + 0.25 * y2;
+                return (
+                  <g
+                    key={`${kind}-${e.from}-${e.to}`}
+                    opacity={dim ? 0.12 : 1}
+                    style={{ transition: 'opacity 0.25s' }}
+                    onMouseEnter={() => setEdgeTip({ x: mx, y: my, kind, notes: e.notes })}
+                    onMouseLeave={() => setEdgeTip(null)}
+                  >
+                    {/* 加宽的透明命中区：细线也好 hover */}
+                    <path d={`M ${x1} ${y1} Q ${qx} ${qy} ${x2} ${y2}`} fill="none" stroke="transparent" strokeWidth="14" />
+                    <path
+                      d={`M ${x1} ${y1} Q ${qx} ${qy} ${x2} ${y2}`}
+                      fill="none"
+                      stroke={st.stroke}
+                      strokeWidth={st.width + (e.count - 1) * 1.1}
+                      strokeDasharray={st.dash}
+                      strokeLinecap="round"
+                      opacity={st.opacity + 0.1}
+                      markerEnd={kind === 'prereq' ? 'url(#kg-arrow)' : undefined}
+                      style={{ pointerEvents: 'none' }}
+                    />
+                    {e.count > 1 && (
+                      <>
+                        <circle cx={mx} cy={my} r="8" fill="#FBFAF5" stroke="#DDDCCE" />
+                        <text x={mx} y={my + 3.2} textAnchor="middle" fontSize="9" fontFamily="monospace" fill="#66725E">
+                          ×{e.count}
+                        </text>
+                      </>
+                    )}
+                  </g>
+                );
+              })
+            : null,
+        )}
+
+        {/* 展开域的子节点级明细边 */}
+        {detailEdges.map(({ e, a, b }, i) => {
           const st = EDGE_STYLE[e.kind];
-          const hot = chain.edges.has(i);
           const dx = b.x - a.x, dy = b.y - a.y;
           const len = Math.hypot(dx, dy) || 1;
           const x1 = a.x + (dx / len) * (a.r + 3), y1 = a.y + (dy / len) * (a.r + 3);
-          const x2 = b.x - (dx / len) * (b.r + 5), y2 = b.y - (dy / len) * (b.r + 5);
-          /* 藤蔓弯曲：沿垂直方向拱起 */
-          const bow = Math.min(26, len * 0.16);
-          const qx = (x1 + x2) / 2 + (-dy / len) * bow;
-          const qy = (y1 + y2) / 2 + (dx / len) * bow;
-          /* 弧线中点（t=0.5 的二次贝塞尔点），放一片小叶 */
-          const mx = 0.25 * x1 + 0.5 * qx + 0.25 * x2;
-          const my = 0.25 * y1 + 0.5 * qy + 0.25 * y2;
-          const leafRot = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
-          const op = hover && !hot ? 0.12 : hot ? 0.95 : st.opacity;
+          const x2 = b.x - (dx / len) * (b.r + 6), y2 = b.y - (dy / len) * (b.r + 6);
+          const qx = (x1 + x2) / 2 - (dy / len) * 14;
+          const qy = (y1 + y2) / 2 + (dx / len) * 14;
+          const dmx = 0.25 * x1 + 0.5 * qx + 0.25 * x2;
+          const dmy = 0.25 * y1 + 0.5 * qy + 0.25 * y2;
           return (
-            <g key={i} style={{ transition: 'opacity 0.25s' }} opacity={op}>
+            <g
+              key={`d-${i}`}
+              onMouseEnter={() => setEdgeTip({ x: dmx, y: dmy, kind: e.kind, notes: [e.note] })}
+              onMouseLeave={() => setEdgeTip(null)}
+            >
+              <path d={`M ${x1} ${y1} Q ${qx} ${qy} ${x2} ${y2}`} fill="none" stroke="transparent" strokeWidth="14" />
               <path
                 d={`M ${x1} ${y1} Q ${qx} ${qy} ${x2} ${y2}`}
                 fill="none"
-                stroke={hot ? '#E7B45A' : st.stroke}
-                strokeWidth={hot ? st.width + 1 : st.width}
-                strokeDasharray={st.dash}
+                stroke="#E7B45A"
+                strokeWidth={st.width}
+                strokeDasharray={e.kind === 'prereq' ? undefined : '4 3'}
                 strokeLinecap="round"
+                opacity="0.85"
                 markerEnd={e.kind === 'prereq' ? 'url(#kg-arrow)' : undefined}
+                style={{ pointerEvents: 'none' }}
               />
-              {e.kind === 'prereq' && (
-                <g transform={`rotate(${leafRot} ${mx} ${my})`}>
-                  <ellipse cx={mx} cy={my - 2.6} rx="5" ry="2.4" fill="url(#g-leaf)" opacity={hot ? 1 : 0.75} />
-                </g>
-              )}
             </g>
           );
         })}
@@ -437,7 +422,7 @@ export default function KnowledgeGraph({
               strokeWidth="3.5"
               strokeLinejoin="round"
               strokeDasharray="10 7"
-              opacity="0.65"
+              opacity="0.6"
             >
               <animate attributeName="stroke-dashoffset" values="0;-34" dur="1.6s" repeatCount="indefinite" />
             </polyline>
@@ -450,35 +435,35 @@ export default function KnowledgeGraph({
           </g>
         )}
 
-        {/* 节点 */}
-        {graphNodes.map((n) => {
+        {/* 域节点 */}
+        {domains.map((n) => {
           const isLearned = learned.has(n.kpId);
           const kp = getKnowledgePoint(n.kpId);
-          const mastery = n.kind === 'domain' ? currentLearner.scores[n.kpId] ?? 50 : topicMastery(currentLearner, n.kpId, n.topicIndex ?? 0);
+          const mastery = currentLearner.scores[n.kpId] ?? 50;
+          const dimmed = expandedKp !== null && expandedKp !== n.kpId;
           return (
             <g
               key={n.id}
               onMouseEnter={() => setHover(n)}
               onMouseLeave={() => setHover(null)}
-              onClick={() => go(n)}
+              onClick={() => clickNode(n)}
               onDoubleClick={() => openUnit(n)}
             >
-              <PlantNode
+              <DomainNode
                 n={n}
                 mastery={mastery}
                 target={kp.targetLevel}
                 learned={isLearned}
-                conf={confidence[n.kpId] ?? 40}
-                highlight={chain.nodes.has(n.id) && hover?.id !== n.id}
-                recommended={n.kind === 'domain' && n.kpId === activeKp}
-                dimmed={hover !== null && !chain.nodes.has(n.id)}
-                selected={n.kind === 'domain' && selectedKpId === n.kpId}
+                recommended={n.kpId === activeKp && !expandedKp}
+                dimmed={dimmed}
+                selected={selectedKpId === n.kpId}
+                expanded={expandedKp === n.kpId}
               />
-              {/* 笔记角标（个人知识库） */}
-              {n.kind === 'domain' && (countByKp[n.kpId] ?? 0) > 0 && (
-                <g opacity={hover !== null && !chain.nodes.has(n.id) ? 0.25 : 1}>
-                  <circle cx={n.x - n.r + 3} cy={n.y - n.r + 3} r="8.5" fill="#B77552" />
-                  <text x={n.x - n.r + 3} y={n.y - n.r + 6.5} textAnchor="middle" fontSize="9" fontWeight="700" fill="#FBFAF5" fontFamily="monospace">
+              {/* 笔记角标 */}
+              {(countByKp[n.kpId] ?? 0) > 0 && !dimmed && (
+                <g>
+                  <circle cx={n.x - n.r + 4} cy={n.y - n.r + 4} r="8.5" fill="#B77552" />
+                  <text x={n.x - n.r + 4} y={n.y - n.r + 7.5} textAnchor="middle" fontSize="9" fontWeight="700" fill="#FBFAF5" fontFamily="monospace">
                     {countByKp[n.kpId]}
                   </text>
                 </g>
@@ -486,39 +471,97 @@ export default function KnowledgeGraph({
             </g>
           );
         })}
+
+        {/* 展开域的子知识点（进度点） */}
+        {expandedTopics.map((n) => {
+          const isLearned = learned.has(n.kpId);
+          const kp = getKnowledgePoint(n.kpId);
+          return (
+            <g
+              key={n.id}
+              onMouseEnter={() => setHover(n)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => clickNode(n)}
+              onDoubleClick={() => openUnit(n)}
+            >
+              <TopicDot n={n} mastery={topicMastery(currentLearner, n.kpId, n.topicIndex ?? 0)} target={kp.targetLevel} learned={isLearned} />
+            </g>
+          );
+        })}
       </svg>
 
-      {/* 图例 */}
-      <div className="pointer-events-none absolute bottom-3 left-4 rounded-[10px] border border-hairline bg-paper/90 px-3 py-2 backdrop-blur">
-        <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[10.5px] text-ink-muted">
-          {/* 生长阶段图例 */}
-          <span className="flex items-center gap-1.5">
-            <svg width="14" height="16" viewBox="-20 -56 40 60">
-              <g opacity=".3"><path d="M0 -2 L0 -28" stroke="#7FB295" strokeWidth="2" strokeDasharray="3 3.5" /><ellipse cx="-8" cy="-13" rx="8.5" ry="4.2" transform="rotate(-28 -8 -13)" fill="none" stroke="#7FB295" strokeWidth="1.5" strokeDasharray="2.5 2.5" /></g>
-              <ellipse cx="0" cy="0" rx="14" ry="3.4" fill="#C09A78" opacity=".6" /><ellipse cx="0" cy="-3.5" rx="4.6" ry="3.6" fill="#C09A78" />
-            </svg>
-            种子·还没学（虚线=能长成的样子）
-          </span>
-          <span className="flex items-center gap-1.5">
-            <svg width="14" height="16" viewBox="-20 -56 40 60"><path d="M0 -1 L0 -26" stroke="#7FB295" strokeWidth="2.6" strokeLinecap="round" /><ellipse cx="-8" cy="-14" rx="8" ry="4" transform="rotate(-28 -8 -14)" fill="#9BC5AC" /><ellipse cx="8" cy="-18" rx="8" ry="4" transform="rotate(26 8 -18)" fill="#B4D6C1" /></svg>
-            长叶·在学
-          </span>
-          <span className="flex items-center gap-1.5">
-            <svg width="14" height="18" viewBox="-20 -56 40 60"><path d="M0 -1 L0 -40" stroke="#7FB295" strokeWidth="2.6" strokeLinecap="round" /><ellipse cx="-8" cy="-16" rx="8" ry="4" transform="rotate(-28 -8 -16)" fill="#9BC5AC" /><g transform="translate(0 -44)"><g fill="#F2CBD6">{[0, 72, 144, 216, 288].map((a) => <ellipse key={a} rx="5.2" ry="2.8" transform={`rotate(${a}) translate(7 0)`} />)}</g><circle r="3.4" fill="#EFC169" /></g></svg>
-            开花·达标
-          </span>
-          <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-5 rounded-full border-t-2 border-brand" />前置藤</span>
-          <span className="flex items-center gap-1.5"><span className="inline-block h-2 w-5 border-t-2 border-dashed border-ochre" />相关</span>
-          <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-3 animate-pulse rounded-full border-2 border-brand-amber" />阿诊推荐</span>
+      {/* 图例即控件：只在「完整网络」出现——chip 长成它控制的线的样子，点击隐藏该类 */}
+      {scene === 'network' && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-2 px-1">
+          {(Object.keys(EDGE_STYLE) as EdgeKind[]).map((k) => {
+            const st = EDGE_STYLE[k];
+            const on = !hiddenKinds.has(k);
+            return (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={on}
+                onClick={() =>
+                  setHiddenKinds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(k)) next.delete(k);
+                    else next.add(k);
+                    return next;
+                  })
+                }
+                title={`${st.hint}（${st.term}）· 点击${on ? '隐藏' : '显示'}这类线`}
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-all',
+                  on ? 'border-hairline bg-paper text-ink-2' : 'border-hairline/60 bg-paper-deep/40 text-ink-muted/60 line-through',
+                )}
+              >
+                <svg width="24" height="8" viewBox="0 0 24 8" aria-hidden>
+                  <line x1="0" y1="4" x2={k === 'prereq' ? 17 : 24} y2="4" stroke={st.stroke} strokeWidth={st.width + 0.6} strokeDasharray={st.dash} strokeLinecap="round" opacity={on ? 1 : 0.4} />
+                  {k === 'prereq' && <path d="M 17 0.5 L 24 4 L 17 7.5 Z" fill={st.stroke} opacity={on ? 1 : 0.4} />}
+                </svg>
+                {st.label}
+              </button>
+            );
+          })}
+          <span className="text-[10.5px] text-ink-muted">点线看关系说明 · 点开域看明细</span>
         </div>
-      </div>
+      )}
+
+      {/* 边 hover 玻璃浮层（替代浏览器原生 title 黄框） */}
+      {edgeTip && (
+        <div
+          className="lf-glass pointer-events-none absolute z-10 w-[230px] rounded-[12px] p-3"
+          style={{
+            left: `${Math.min(88, Math.max(8, (edgeTip.x / graphViewBox.w) * 100))}%`,
+            top: `${Math.max(2, (edgeTip.y / graphViewBox.h) * 100 - 4)}%`,
+            transform: 'translate(-50%, -100%)',
+          }}
+        >
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-ink">
+            <svg width="20" height="8" viewBox="0 0 24 8" aria-hidden>
+              <line x1="0" y1="4" x2={edgeTip.kind === 'prereq' ? 17 : 24} y2="4" stroke={EDGE_STYLE[edgeTip.kind].stroke} strokeWidth="2" strokeDasharray={EDGE_STYLE[edgeTip.kind].dash} />
+              {edgeTip.kind === 'prereq' && <path d="M 17 0.5 L 24 4 L 17 7.5 Z" fill={EDGE_STYLE[edgeTip.kind].stroke} />}
+            </svg>
+            {EDGE_STYLE[edgeTip.kind].label}
+            <span className="font-mono text-[9.5px] font-normal text-ink-muted">{EDGE_STYLE[edgeTip.kind].term}</span>
+          </div>
+          <div className="mt-1.5 space-y-1 text-[11.5px] leading-[17px] text-ink-2">
+            {edgeTip.notes.map((t) => (
+              <div key={t}>· {t}</div>
+            ))}
+          </div>
+          {edgeTip.notes.length > 1 && (
+            <div className="mt-1 text-[10px] text-ink-muted">共 {edgeTip.notes.length} 条关系 · 点开域看明细</div>
+          )}
+        </div>
+      )}
 
       {/* hover tooltip */}
       {hover && (
         <div
           className="lf-glass pointer-events-none absolute z-10 w-[240px] rounded-[12px] p-3"
           style={{
-            left: `${Math.min(92, Math.max(2, (hover.x / graphViewBox.w) * 100))}%`,
+            left: `${Math.min(88, Math.max(6, (hover.x / graphViewBox.w) * 100))}%`,
             top: `${Math.max(2, ((hover.y - hover.r) / graphViewBox.h) * 100 - 6)}%`,
             transform: 'translate(-50%, -100%)',
           }}
@@ -528,19 +571,21 @@ export default function KnowledgeGraph({
           </div>
           <div className="mt-1 font-mono text-[10.5px] text-ink-muted">
             {learned.has(hover.kpId)
-              ? `掌握 ${hover.kind === 'domain' ? currentLearner.scores[hover.kpId] ?? 50 : topicMastery(currentLearner, hover.kpId, hover.topicIndex ?? 0)} / 目标 ${getKnowledgePoint(hover.kpId).targetLevel} · 置信 ${confidence[hover.kpId] ?? 40}%`
+              ? `掌握 ${hover.kind === 'domain' ? currentLearner.scores[hover.kpId] ?? 50 : topicMastery(currentLearner, hover.kpId, hover.topicIndex ?? 0)} / 目标 ${getKnowledgePoint(hover.kpId).targetLevel} · 置信 ${confidence[hover.kpId] ?? 40}%${hover.kind === 'domain' && (countByKp[hover.kpId] ?? 0) > 0 ? ` · 笔记 ${countByKp[hover.kpId]} 条` : ''}`
               : '尚未学习 · 点击开始'}
           </div>
-          {prereqs.length > 0 && (
+          {hover.kind === 'topic' && prereqOf(hover.id).length > 0 && (
             <div className="mt-1.5 border-t border-hairline pt-1.5">
               <div className="flex items-center gap-1 text-[10.5px] font-medium text-ochre">
                 <Info size={10} />
-                建议先过：{prereqs.map((p) => p.node.label).join('、')}
+                建议先过：{prereqOf(hover.id).map((p) => p.node.label).join('、')}
               </div>
             </div>
           )}
           <div className="mt-1 text-[10.5px] text-brand">
-            点一下 → 右边选怎么学 · 双击 → 直接进课件{hover.kind === 'topic' ? '并定位到这个概念' : ''}
+            {hover.kind === 'domain'
+              ? `点一下 → ${expandedKp === hover.kpId ? '收起子知识点' : '展开子知识点'} · 双击 → 直接进课件`
+              : '点一下 → 右边选怎么学 · 双击 → 进课件并定位到这个概念'}
           </div>
         </div>
       )}

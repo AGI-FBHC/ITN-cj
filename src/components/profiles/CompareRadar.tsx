@@ -56,27 +56,24 @@ export default function CompareRadar() {
 
   return (
     <div className="lf-card p-5">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-3 text-left"
-      >
-        <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-hairline bg-paper text-brand">
+      {/* button 里不能再嵌 Switch（也是 button）——标题区独立成按钮，开关作并列控件 */}
+      <div className="flex w-full items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-hairline bg-paper text-brand">
             <GitCompare size={17} strokeWidth={1.75} />
           </span>
-          <div>
-            <div className="lf-mono-label mb-0.5">PROFILE COMPARISON</div>
+          <span className="min-w-0">
+            <span className="lf-mono-label mb-0.5 block">PROFILE COMPARISON</span>
             <h3 className="text-[16px] font-semibold leading-[24px] text-ink">对比三位学习者</h3>
-          </div>
-        </div>
-        <Switch
-          checked={open}
-          onCheckedChange={setOpen}
-          onClick={(e) => e.stopPropagation()}
-          aria-label="展开对比视图"
-        />
-      </button>
+          </span>
+        </button>
+        <Switch checked={open} onCheckedChange={setOpen} aria-label="展开对比视图" />
+      </div>
 
       <AnimatePresence initial={false}>
         {open && (

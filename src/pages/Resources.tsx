@@ -1,350 +1,375 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { Check, CheckCircle2, ExternalLink, FileText, Flag, Link2, ListChecks, Loader2, PenLine, PlayCircle, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
+/**
+ * 个性化资源生成 `/resources`（resources.md）
+ * S1 生成控制台（画像切换 / 目标知识点 / 重新生成 / 质量徽标）
+ * S2 三形态 Tabs：定制讲义（流式生成）/ 实操指南（LOTO 门控）/ 分阶测试题（内联判分）
+ * S3 溯源栏（讲义右侧 sticky；其余 Tab 抽屉）
+ * 支持深链 ?tab=lecture|guide|quiz（知识库溯源链回跳）
+ */
+import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Check, ChevronDown, Link2, RotateCcw, ShieldCheck, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
-import { api } from '@/lib/api';
-import type { Course, CourseChapter, LearningResource } from '@/lib/api';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { useProfile, dataIdOf } from '@/context/ProfileContext';
+import { getResource } from '@/data/resources';
+import type { ResourceForm } from '@/data/resources';
+import { getKnowledgePoint } from '@/data/knowledgePoints';
+import { getKBSlice } from '@/data/kbSlices';
 import PageBack from '@/components/PageBack';
 import PageTip from '@/components/heal/PageTip';
-import { useProfile } from '@/context/ProfileContext';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
+import LectureTab from '@/components/resources/LectureTab';
+import GuideTab from '@/components/resources/GuideTab';
+import QuizTab from '@/components/resources/QuizTab';
+import TraceRail from '@/components/resources/TraceRail';
 import { cn } from '@/lib/utils';
 
-type ResourceType = 'lecture' | 'practice' | 'quiz';
+const tabs: { form: ResourceForm; label: string }[] = [
+  { form: 'lecture', label: '定制讲义' },
+  { form: 'guide', label: '实操指南' },
+  { form: 'quiz', label: '分阶测试题' },
+];
 
-const resourceMeta: Record<ResourceType, { label: string; Icon: typeof FileText }> = {
-  lecture: { label: '定制讲义', Icon: FileText },
-  practice: { label: '实操指南', Icon: ListChecks },
-  quiz: { label: '分阶测试题', Icon: PenLine },
+const formMeta: Record<ResourceForm, string> = {
+  lecture: 'LECTURE · MARKDOWN',
+  guide: 'GUIDE · CHECKLIST',
+  quiz: 'QUIZ · TIERED',
 };
 
-const asRecord = (value: unknown): Record<string, unknown> =>
-  value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
-const asRecords = (value: unknown): Record<string, unknown>[] =>
-  Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object') : [];
-const asStrings = (value: unknown): string[] => Array.isArray(value) ? value.map(String) : [];
-const sourceConfidence = (source: Record<string, unknown>): number => {
-  const raw = Number(source.confidence ?? source.similarity ?? 0);
-  if (!Number.isFinite(raw) || raw <= 0) return 0;
-  return Math.min(1, raw > 1 ? raw / 100 : raw);
-};
-const isWebSource = (source: Record<string, unknown>): boolean => {
-  const kind = String(source.sourceType ?? source.type ?? '').toLowerCase();
-  return kind === 'web' || kind === 'websearch' || kind === 'web_search';
-};
+export default function Resources() {
+  const { currentLearner, learners, currentLearnerId, setCurrentLearnerId, viewMode } = useProfile();
+  const isLearner = viewMode === 'learner';
+  const dataId = dataIdOf(currentLearner);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const paramTab = searchParams.get('tab') as ResourceForm | null;
+  /* 题目深链（错题本重练等场景跳转 /resources?tab=quiz&focus=q-03） */
+  const focusQid = searchParams.get('focus') ?? undefined;
+  const [tab, setTab] = useState<ResourceForm>(
+    paramTab && tabs.some((t) => t.form === paramTab) ? paramTab : 'lecture',
+  );
+  const [streamKey, setStreamKey] = useState(0);
+  const [traceOpen, setTraceOpen] = useState(false);
+  /* 讲义的溯源侧栏要 xl(≥1280) 才显示；窄屏时必须给一个替代入口，
+     否则「可溯源」这个核心能力对用户等于不存在 */
+  const railVisible = useMediaQuery('(min-width: 1280px)');
 
-function Sources({ resource }: { resource: LearningResource }) {
-  const [reporting, setReporting] = useState('');
-  const [reported, setReported] = useState<Set<string>>(() => new Set());
-  if (!resource.sources.length) return null;
-  const report = async (sourceId: string, title: string) => {
-    if (reporting || reported.has(sourceId)) return;
-    setReporting(sourceId);
-    try {
-      await api.submitLearningResourceSourceFeedback(resource.id, {
-        sourceId,
-        issueType: 'needs_review',
-        note: `请 VER-04 复核来源「${title}」与当前资源内容的一致性。`,
-      });
-      setReported((current) => new Set(current).add(sourceId));
-      toast.success('已提交引用复核', { description: '反馈已写入后端，等待审核裁判 Agent 处理。' });
-    } catch (reason) {
-      toast.error(reason instanceof Error ? reason.message : '引用反馈提交失败');
-    } finally {
-      setReporting('');
+  /* 深链同步（知识库溯源链 → /resources?tab=guide 等） */
+  useEffect(() => {
+    if (paramTab && tabs.some((t) => t.form === paramTab) && paramTab !== tab) {
+      setTab(paramTab);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paramTab]);
+
+  const switchTab = (f: ResourceForm) => {
+    setTab(f);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', f);
+      return next;
+    }, { replace: true });
   };
-  return (
-    <aside className="rounded-[14px] border border-hairline bg-paper p-5 xl:sticky xl:top-24">
-      <div className="lf-mono-label !text-[10px]">TRACEABILITY</div>
-      <h3 className="mt-1 text-[14px] font-semibold text-ink">本资源使用的真实来源</h3>
-      <div className="mt-3 space-y-2">
-        {resource.sources.map((raw, index) => {
-          const source = asRecord(raw);
-          const url = typeof source.url === 'string' ? source.url : null;
-          const sourceId = String(source.id ?? source.kbId ?? `SOURCE-${index + 1}`);
-          const title = String(source.document ?? source.title ?? `来源 ${index + 1}`);
-          const confidence = sourceConfidence(source);
-          return (
-            <div key={`${sourceId}-${title}`} className="rounded-lg border border-hairline bg-card-warm px-3 py-2.5">
-              <div className="flex flex-wrap items-center gap-2 text-[12px]">
-                <span className="line-clamp-2 font-medium text-ink">{title}</span>
-                <span className="rounded bg-brand-tint px-1.5 py-0.5 font-mono text-[10px] text-brand">
-                  {isWebSource(source) ? 'WEB SEARCH' : 'KNOWLEDGE BASE'}
-                </span>
-                {confidence > 0 && <span className="font-mono text-[10px] text-ink-muted">置信度 {Math.round(confidence * 100)}%</span>}
-                {url && <a href={url} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-1 text-brand hover:underline"><ExternalLink size={11} />查看</a>}
-              </div>
-              {source.content ? <p className="mt-1 line-clamp-2 text-[11.5px] leading-[18px] text-ink-muted">{String(source.content)}</p> : null}
-              <button
-                type="button"
-                disabled={reporting === sourceId || reported.has(sourceId)}
-                onClick={() => void report(sourceId, title)}
-                className="mt-2 inline-flex items-center gap-1 text-[11px] text-ink-muted transition-colors hover:text-rust disabled:text-brand"
-              >
-                {reporting === sourceId ? <Loader2 size={11} className="animate-spin" /> : reported.has(sourceId) ? <Check size={11} /> : <Flag size={11} />}
-                {reported.has(sourceId) ? '已提交复核' : '引用有问题？提交复核'}
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </aside>
-  );
-}
 
-function LectureContent({ resource }: { resource: LearningResource }) {
-  const content = resource.content;
-  const chapters = asRecords(content.chapters);
+  const lecture = getResource(dataId, 'lecture');
+  const guide = getResource(dataId, 'guide');
+  const quiz = getResource(dataId, 'quiz');
+  const active = getResource(dataId, tab);
+
+  /* 质量徽标：跨 3 形态去重 KB 引用 */
+  const totalTraces = useMemo(() => {
+    const set = new Set<string>();
+    [lecture, guide, quiz].forEach((r) => r?.kbRefs.forEach((id) => set.add(id)));
+    return set.size;
+  }, [lecture, guide, quiz]);
+
+  /* 平均可信度：同一批去重引用对应的知识库切片可信度均值 */
+  const avgCredibility = useMemo(() => {
+    const set = new Set<string>();
+    [lecture, guide, quiz].forEach((r) => r?.kbRefs.forEach((id) => set.add(id)));
+    const creds = [...set].map((id) => getKBSlice(id)?.credibility).filter((c): c is number => typeof c === 'number');
+    return creds.length ? Math.round((creds.reduce((a, b) => a + b, 0) / creds.length) * 100) : 0;
+  }, [lecture, guide, quiz]);
+
+  /** 目标知识点选项：按形态去重（选择即切换到对应形态 Tab） */
+  const kpOptions = useMemo(() => {
+    const seen = new Map<string, ResourceForm>();
+    (['lecture', 'guide', 'quiz'] as ResourceForm[]).forEach((f) => {
+      const r = getResource(dataId, f);
+      if (r && !seen.has(r.kpId)) seen.set(r.kpId, f);
+    });
+    return [...seen.entries()].map(([kpId, form]) => ({
+      kp: getKnowledgePoint(kpId),
+      form,
+    }));
+  }, [currentLearner.id]);
+
+  const regenerate = () => {
+    setStreamKey((k) => k + 1);
+    toast.success('已为你重新生成', {
+      description: isLearner
+        ? '按你最新的学习情况重写了一份，出处都已核对'
+        : `基于 ${currentLearner.name} 的最新画像向量约束生成 · VER-04 复核通过`,
+    });
+  };
+
+  const switchLearner = (id: string) => {
+    if (id === currentLearnerId) return;
+    setCurrentLearnerId(id);
+    const l = learners.find((x) => x.id === id);
+    toast.success(`已切换为 ${l?.name}`, { description: '三种形态资源已按新画像重新生成' });
+  };
+
+  const quizCount = quiz?.quizIds?.length ?? 0;
+
   return (
-    <article className="space-y-6">
-      {content.summary ? <p className="rounded-[12px] border border-brand/20 bg-brand-tint/40 p-4 text-[14px] leading-7 text-ink-2">{String(content.summary)}</p> : null}
-      {asStrings(content.learningObjectives).length > 0 && (
-        <section><h3 className="font-serif text-[19px] font-semibold text-ink">学习目标</h3><ul className="mt-2 list-disc space-y-1 pl-5 text-[13.5px] leading-6 text-ink-2">{asStrings(content.learningObjectives).map((item) => <li key={item}>{item}</li>)}</ul></section>
+    <div className={`mx-auto ${isLearner ? 'max-w-[960px] px-5 md:px-6' : 'max-w-[1320px] px-8'} py-10`}>
+      {/* ---------- S1 页头 ---------- */}
+      <PageBack parent={{ label: '学', to: '/learn' }} current="AI 给我做的资料" />
+
+      {isLearner && (
+        <PageTip id="resources" className="mb-4">
+          这些资料是 AI 按你的水平现做的。每句话后面的 <span className="font-mono text-brand">[KB-xxx]</span> 都能
+          <span className="font-medium text-ink">点开看出处</span>——不放心的地方可以自己核对。
+        </PageTip>
       )}
-      {chapters.map((chapter, chapterIndex) => (
-        <section key={`${String(chapter.title)}-${chapterIndex}`} className="rounded-[14px] border border-hairline bg-card-warm p-5 md:p-6">
-          <h3 className="font-serif text-[20px] font-semibold text-ink">{String(chapter.title ?? `第 ${chapterIndex + 1} 单元`)}</h3>
-          {chapter.overview ? <p className="mt-1 text-[13px] text-ink-muted">{String(chapter.overview)}</p> : null}
-          <div className="mt-4 space-y-5">
-            {asRecords(chapter.sections).map((section, sectionIndex) => (
-              <div key={`${String(section.title)}-${sectionIndex}`}>
-                <h4 className="text-[15px] font-semibold text-ink">{String(section.title ?? `第 ${sectionIndex + 1} 节`)}</h4>
-                <div className="prose prose-sm mt-2 max-w-none text-ink-2 prose-headings:text-ink prose-code:text-brand">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{String(section.content ?? '')}</ReactMarkdown>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      ))}
-    </article>
-  );
-}
 
-function PracticeContent({ resource }: { resource: LearningResource }) {
-  const content = resource.content;
-  return (
-    <div className="space-y-5">
-      {content.objective ? <p className="rounded-[12px] border border-brand/20 bg-brand-tint/40 p-4 text-[14px] leading-7 text-ink-2">{String(content.objective)}</p> : null}
-      {(asStrings(content.prerequisites).length > 0 || asStrings(content.environment).length > 0) && (
-        <div className="grid gap-3 md:grid-cols-2">
-          {[['开始前准备', asStrings(content.prerequisites)], ['环境与工具', asStrings(content.environment)]].map(([title, items]) => (
-            <section key={title as string} className="rounded-[12px] border border-hairline bg-paper p-4"><h3 className="text-[14px] font-semibold text-ink">{title as string}</h3><ul className="mt-2 list-disc space-y-1 pl-5 text-[12.5px] leading-5 text-ink-2">{(items as string[]).map((item) => <li key={item}>{item}</li>)}</ul></section>
-          ))}
+      <motion.div
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+      >
+        <div className="lf-mono-label flex items-center gap-2">
+          <span className="inline-block h-px w-6 bg-brand/40" />
+          {isLearner ? '我的学习资源 · 学' : 'CONSTRAINED GENERATION'}
         </div>
-      )}
-      <div className="space-y-3">
-        {asRecords(content.steps).map((step, index) => (
-          <section key={`${String(step.title)}-${index}`} className="rounded-[14px] border border-hairline bg-card-warm p-5">
-            <div className="flex items-start gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand text-paper font-mono text-[12px]">{index + 1}</span><div><h3 className="text-[15px] font-semibold text-ink">{String(step.title ?? `步骤 ${index + 1}`)}</h3><p className="mt-1 whitespace-pre-wrap text-[13.5px] leading-6 text-ink-2">{String(step.instruction ?? '')}</p></div></div>
-            {step.code ? <pre className="mt-4 overflow-x-auto rounded-lg bg-ink px-4 py-3 text-[12px] leading-5 text-paper"><code>{String(step.code)}</code></pre> : null}
-            {step.expectedOutput ? <div className="mt-3 rounded-lg border border-brand/20 bg-brand-tint/40 px-3 py-2 text-[12.5px] text-ink-2"><span className="font-semibold text-brand">预期结果：</span>{String(step.expectedOutput)}</div> : null}
-          </section>
-        ))}
-      </div>
-      {asStrings(content.acceptanceCriteria).length > 0 && <section className="rounded-[14px] border border-brand/25 bg-brand-tint/30 p-5"><h3 className="flex items-center gap-2 text-[15px] font-semibold text-ink"><CheckCircle2 size={16} className="text-brand" />验收标准</h3><ul className="mt-2 space-y-1.5 text-[13px] text-ink-2">{asStrings(content.acceptanceCriteria).map((item) => <li key={item}>✓ {item}</li>)}</ul></section>}
-    </div>
-  );
-}
+        <h1 className="mt-2 font-serif text-[36px] font-bold leading-[44px] text-ink">
+          {isLearner ? '为你定制的学习资源' : '个性化资源生成'}
+        </h1>
+        <p className="mt-2 max-w-[720px] text-[14.5px] leading-[24px] text-ink-muted">
+          {isLearner ? (
+            <>
+              这些讲义、实操指南和分阶题，都是 AI 按你当前的水平现生成的。每个知识点旁都标了出处，可以点开核对；
+              想学别的知识点、或换一份，用下面的控制台随时调整。
+            </>
+          ) : (
+            <>
+              所有资源由内容生成 Agent 基于知识库切片约束生成，经审核裁判交叉验证，逐条可溯源。
+              切换全局画像，三种形态内容将随之改变 —— 这就是「个性化」的直接证据。
+            </>
+          )}
+        </p>
+      </motion.div>
 
-function QuizContent({ resource, onStateChange }: { resource: LearningResource; onStateChange: (state: Record<string, unknown>) => void }) {
-  const questions = asRecords(resource.content.questions);
-  const answeredRows = asRecords(resource.state.answered);
-  const initialAnswers = Object.fromEntries(answeredRows.map((row) => [String(row.questionId), Number(row.selectedIndex)]));
-  const [answers, setAnswers] = useState<Record<string, number>>(initialAnswers);
-  const [feedback, setFeedback] = useState<Record<string, Record<string, unknown>>>({});
-  const [submitting, setSubmitting] = useState<string | null>(null);
+      {/* ---------- S1 生成控制台 ---------- */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+        className="lf-card mt-6 flex flex-wrap items-center gap-x-5 gap-y-3 p-4"
+      >
+        {/* 当前画像（学习者视角隐藏，顶栏已有切换） */}
+        {!isLearner && (
+        <DropdownMenu>
+          <DropdownMenuTrigger className="flex items-center gap-2 rounded-[10px] border border-hairline bg-paper px-3 py-2 text-[13px] font-medium text-ink-2 transition-colors hover:border-brand/40 hover:text-brand">
+            <Avatar className="h-6 w-6 border border-hairline">
+              <AvatarImage src={currentLearner.avatar} alt={currentLearner.name} />
+              <AvatarFallback className="bg-brand-tint text-[10px] text-brand">
+                {currentLearner.name.slice(0, 1)}
+              </AvatarFallback>
+            </Avatar>
+            当前画像：{currentLearner.name}
+            <ChevronDown size={13} className="text-ink-muted" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-[220px] border-hairline bg-card-warm">
+            <DropdownMenuLabel className="lf-mono-label !text-[10px]">切换学习者画像</DropdownMenuLabel>
+            <DropdownMenuSeparator className="bg-hairline" />
+            {learners.map((l) => (
+              <DropdownMenuItem
+                key={l.id}
+                onClick={() => switchLearner(l.id)}
+                className="flex items-center gap-2.5 py-2"
+              >
+                <Avatar className="h-7 w-7 border border-hairline">
+                  <AvatarImage src={l.avatar} alt={l.name} />
+                  <AvatarFallback className="bg-brand-tint text-[10px] text-brand">
+                    {l.name.slice(0, 1)}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="flex-1">
+                  <span className="block text-[13px] font-medium text-ink">{l.name}</span>
+                  <span className="block text-[11px] text-ink-muted">{l.tag}</span>
+                </span>
+                {l.id === currentLearnerId && <Check size={14} className="text-brand" />}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        )}
 
-  const answer = async (questionId: string, optionIndex: number) => {
-    if (answers[questionId] !== undefined || submitting) return;
-    setSubmitting(questionId);
-    try {
-      const result = await api.answerLearningQuiz(resource.id, { questionId, answer: String(optionIndex) });
-      setAnswers((prev) => ({ ...prev, [questionId]: optionIndex }));
-      setFeedback((prev) => ({ ...prev, [questionId]: result }));
-      if (result.state && typeof result.state === 'object') onStateChange(result.state as Record<string, unknown>);
-    } finally {
-      setSubmitting(null);
-    }
-  };
+        {/* 目标知识点 */}
+        <DropdownMenu>
+          <DropdownMenuTrigger className="flex items-center gap-2 rounded-[10px] border border-hairline bg-paper px-3 py-2 text-[13px] font-medium text-ink-2 transition-colors hover:border-brand/40 hover:text-brand">
+            目标知识点：{active ? getKnowledgePoint(active.kpId).name : '—'}
+            <ChevronDown size={13} className="text-ink-muted" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-[240px] border-hairline bg-card-warm">
+            <DropdownMenuLabel className="lf-mono-label !text-[10px]">
+              {isLearner ? "AI 建议你优先学的" : "DIA-01 按画像锁定的优先知识点"}
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator className="bg-hairline" />
+            {kpOptions.map(({ kp, form }) => (
+              <DropdownMenuItem key={kp.id} onClick={() => switchTab(form)} className="py-2">
+                <span className="flex-1">
+                  <span className="block text-[13px] font-medium text-ink">{kp.name}</span>
+                  <span className="block font-mono text-[10px] text-ink-muted">
+                    {formMeta[form]}
+                  </span>
+                </span>
+                {active?.kpId === kp.id && <Check size={14} className="text-brand" />}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-  return <div className="space-y-4">{questions.map((question, index) => {
-    const id = String(question.id);
-    const selected = answers[id];
-    const result = feedback[id];
-    const correctIndex = typeof result?.correctIndex === 'number' ? result.correctIndex : undefined;
-    return (
-      <section key={id} className="rounded-[14px] border border-hairline bg-card-warm p-5">
-        <div className="flex items-start gap-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-paper-deep font-mono text-[11px] text-ink-2">{index + 1}</span><div className="min-w-0 flex-1"><p className="text-[14px] font-medium leading-6 text-ink">{String(question.stem)}</p><span className="mt-1 inline-block rounded bg-brand-tint px-1.5 py-0.5 font-mono text-[10px] text-brand">{String(question.difficulty ?? 'adaptive')}</span></div></div>
-        <div className="mt-4 grid gap-2">
-          {asStrings(question.options).map((option, optionIndex) => (
-            <button key={`${id}-${optionIndex}`} type="button" disabled={selected !== undefined || submitting === id} onClick={() => void answer(id, optionIndex)} className={cn('rounded-[10px] border px-4 py-3 text-left text-[13px] transition-colors', selected === undefined && 'border-hairline hover:border-brand/40', selected === optionIndex && (result?.correct ? 'border-brand bg-brand-tint text-brand' : 'border-brand-danger bg-brand-danger/10 text-brand-danger'), correctIndex === optionIndex && selected !== undefined && 'border-brand bg-brand-tint text-brand')}>
-              <span className="mr-2 font-mono text-[11px]">{String.fromCharCode(65 + optionIndex)}.</span>{option}
+        <span className="hidden items-center gap-2 font-mono text-[12px] text-ink-muted md:inline-flex">
+          <span className="h-1.5 w-1.5 rounded-full bg-brand-amber" />
+          生成时间 {active?.updatedAt.slice(5) ?? '—'}
+        </span>
+
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {/* 质量徽标组 */}
+          {(isLearner
+            ? [{ icon: ShieldCheck, text: '已核验 · 可溯源', tone: 'border-brand/30 bg-brand-tint text-brand' }]
+            : [
+                { icon: Link2, text: `${totalTraces} 处溯源 · 平均可信度 ${avgCredibility}%`, tone: 'border-brand/30 bg-brand-tint text-brand' },
+                { icon: Sparkles, text: '幻觉风险 0', tone: 'border-brand-amber/50 bg-brand-amber-tint text-ochre' },
+                { icon: ShieldCheck, text: 'VER 复核通过 ✓', tone: 'border-brand/30 bg-brand-tint text-brand' },
+              ]
+          ).map((b, i) => (
+            <motion.span
+              key={b.text}
+              initial={{ scale: 0.85, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.25 + 0.1 * i, type: 'spring', stiffness: 300, damping: 18 }}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-medium',
+                b.tone,
+              )}
+            >
+              <b.icon size={13} /> {b.text}
+            </motion.span>
+          ))}
+          <button type="button" onClick={regenerate} className="lf-btn-primary !px-4 !py-2 text-[13.5px]">
+            <RotateCcw size={14} /> 重新生成
+          </button>
+        </div>
+      </motion.div>
+
+      {/* ---------- S2 Tabs ---------- */}
+      <div className="mt-8 flex flex-wrap items-end justify-between gap-3 border-b border-hairline">
+        <div className="flex gap-1">
+          {tabs.map((t) => (
+            <button
+              key={t.form}
+              type="button"
+              onClick={() => switchTab(t.form)}
+              className={cn(
+                'relative px-4 pb-3 pt-2 text-[15px] font-medium transition-colors duration-200',
+                tab === t.form ? 'text-brand' : 'text-ink-muted hover:text-ink',
+              )}
+            >
+              {t.label}
+              {tab === t.form && (
+                <motion.span
+                  layoutId="resources-tab-underline"
+                  className="absolute inset-x-3 bottom-0 h-[2px] rounded-full bg-brand"
+                  transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                />
+              )}
             </button>
           ))}
         </div>
-        {submitting === id && <p className="mt-3 flex items-center gap-2 text-[12px] text-ink-muted"><Loader2 size={13} className="animate-spin" />正在判分并回写画像…</p>}
-        {result && <div className="mt-3 rounded-lg bg-paper px-3 py-2.5 text-[12.5px] leading-5 text-ink-2"><span className="font-semibold">{result.correct ? '回答正确。' : '回答错误。'}</span>{String(result.explanation ?? '')}</div>}
-      </section>
-    );
-  })}</div>;
-}
+        <div className="flex items-center gap-3 pb-2.5 font-mono text-[11.5px] text-ink-muted">
+          <span>
+            {tab === 'lecture' && `讲义 · ${lecture?.levelTag} · ${lecture?.version}`}
+            {tab === 'guide' && `实操 · 5 步 · 预计 35 分钟`}
+            {tab === 'quiz' && `分阶题 · ${quizCount} 题 · 基础${quiz?.quizSummary?.basic}/进阶${quiz?.quizSummary?.advanced}/挑战${quiz?.quizSummary?.challenge}`}
+          </span>
+          {/* 讲义 Tab 在宽屏有常驻溯源侧栏，此时不必重复；其余情况（含窄屏的讲义）都给按钮 */}
+          {(tab !== 'lecture' || !railVisible) && (
+            <button
+              type="button"
+              onClick={() => setTraceOpen(true)}
+              className="inline-flex items-center gap-1 rounded-md border border-brand/30 bg-brand-tint px-2 py-1 text-[11px] font-medium text-brand transition-colors hover:bg-brand hover:text-paper"
+            >
+              <Link2 size={11} /> 看这份资料的出处
+            </button>
+          )}
+        </div>
+      </div>
 
-export default function Resources() {
-  const { currentLearner, viewMode } = useProfile();
-  const isLearner = viewMode === 'learner';
-  const [searchParams, setSearchParams] = useSearchParams();
-  const courseId = searchParams.get('courseId');
-  const chapterId = searchParams.get('chapterId');
-  const requestedType = searchParams.get('tab') as ResourceType | null;
-  const [course, setCourse] = useState<Course | null>(null);
-  const [resources, setResources] = useState<LearningResource[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [regenerating, setRegenerating] = useState<ResourceType | null>(null);
-  const [error, setError] = useState<string | null>(null);
+      {/* ---------- Tab 内容（交叉淡入） ---------- */}
+      <div className="mt-6">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={`${currentLearner.id}-${tab}`}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {tab === 'lecture' && lecture && (
+              <LectureTab
+                key={`${currentLearner.id}-${streamKey}`}
+                resource={lecture}
+                learner={currentLearner}
+                onGotoGuide={guide ? () => switchTab('guide') : undefined}
+              />
+            )}
+            {tab === 'guide' && guide && (
+              <GuideTab
+                key={currentLearner.id}
+                resource={guide}
+                learner={currentLearner}
+                onGotoQuiz={() => switchTab('quiz')}
+              />
+            )}
+            {tab === 'quiz' && quiz && (
+              <QuizTab key={currentLearner.id} resource={quiz} focusQid={focusQid} />
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </div>
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      let selectedCourseId = courseId;
-      let selectedChapterId = chapterId;
-      if (!selectedCourseId || !selectedChapterId) {
-        const listed = await api.listCourses(currentLearner.id);
-        const latest = listed.courses?.[0];
-        const firstChapter = latest?.chapters?.[0];
-        if (!latest || !firstChapter) { setCourse(latest ?? null); setResources([]); return; }
-        selectedCourseId = latest.id;
-        selectedChapterId = firstChapter.id;
-        setSearchParams({ courseId: selectedCourseId, chapterId: selectedChapterId }, { replace: true });
-      }
-      const [selectedCourse, listed] = await Promise.all([
-        api.getCourse(selectedCourseId),
-        api.listLearningResources({ courseId: selectedCourseId, chapterId: selectedChapterId }),
-      ]);
-      if (selectedCourse.learnerId && selectedCourse.learnerId !== currentLearner.id) {
-        const listedCourses = await api.listCourses(currentLearner.id);
-        const latest = listedCourses.courses?.[0];
-        const firstChapter = latest?.chapters?.[0];
-        if (!latest || !firstChapter) {
-          setCourse(null);
-          setResources([]);
-          setSearchParams({}, { replace: true });
-          return;
-        }
-        setSearchParams({ courseId: latest.id, chapterId: firstChapter.id }, { replace: true });
-        return;
-      }
-      const full = await Promise.all((listed.resources ?? []).map((item) => api.getLearningResource(String(item.id))));
-      setCourse(selectedCourse);
-      setResources(full);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '章节资源加载失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [courseId, chapterId, currentLearner.id, setSearchParams]);
-
-  useEffect(() => { void load(); }, [load]);
-
-  const chapter = course?.chapters.find((item) => item.id === chapterId) ?? course?.chapters[0];
-  const byType = useMemo(() => Object.fromEntries(resources.map((item) => [item.type, item])) as Partial<Record<ResourceType, LearningResource>>, [resources]);
-  const availableTypes = (['lecture', 'practice', 'quiz'] as ResourceType[]).filter((type) => byType[type]);
-  const activeType = requestedType && byType[requestedType] ? requestedType : availableTypes[0] ?? 'lecture';
-  const active = byType[activeType];
-  const sourceQuality = useMemo(() => {
-    const sources = active?.sources.map(asRecord) ?? [];
-    const scores = sources
-      .map(sourceConfidence)
-      .filter((value) => Number.isFinite(value) && value > 0);
-    return {
-      count: sources.length,
-      average: scores.length ? Math.round(scores.reduce((sum, value) => sum + value, 0) / scores.length * 100) : 0,
-      web: sources.filter(isWebSource).length,
-    };
-  }, [active]);
-
-  const selectChapter = (next: CourseChapter) => {
-    if (!course) return;
-    setSearchParams({ courseId: course.id, chapterId: next.id }, { replace: true });
-  };
-  const selectType = (type: ResourceType) => {
-    if (!course || !chapter) return;
-    setSearchParams({ courseId: course.id, chapterId: chapter.id, tab: type }, { replace: true });
-  };
-  const regenerate = async (type: ResourceType) => {
-    if (!course || !chapter || regenerating) return;
-    setRegenerating(type);
-    try {
-      await api.generateChapterResource(course.id, chapter.id, type);
-      window.setTimeout(() => void load(), 3000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '资源重新生成失败');
-    } finally {
-      setRegenerating(null);
-    }
-  };
-  const markLearned = async () => {
-    if (!active) return;
-    const result = await api.completeLearningResource(active.id);
-    setResources((prev) => prev.map((item) => item.id === active.id ? result.resource : item));
-  };
-
-  return (
-    <div className={cn('mx-auto pb-24 pt-8', isLearner ? 'max-w-[1080px] px-5 md:px-6' : 'max-w-[1320px] px-5 md:px-8')}>
-      <PageBack parent={{ label: '我的课程', to: '/learn' }} current={chapter?.title ?? '章节资源'} />
-      {isLearner && (
-        <PageTip id="real-course-resources" className="mb-4">
-          这里是 AI 按你的目标生成的真实资源。每条来源都可以打开核对；发现不一致时，可直接提交给审核裁判 Agent 复核。
-        </PageTip>
-      )}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-        <div className="lf-mono-label flex items-center gap-2"><span className="inline-block h-px w-6 bg-brand/40" />{isLearner ? '我的学习资源 · 学' : 'CONSTRAINED GENERATION'}</div>
-        <h1 className="mt-2 font-serif text-[32px] font-bold leading-[40px] text-ink md:text-[36px]">
-          {isLearner ? '为你定制的学习资源' : '个性化资源生成'}
-        </h1>
-        <p className="mt-2 max-w-[760px] text-[14px] leading-6 text-ink-muted">
-          讲义、实操指南与分阶题均来自当前课程目标，并由真实知识库检索与 WebSearch 兜底提供依据。
-        </p>
-      </motion.div>
-      {loading && <div className="mt-8 flex items-center justify-center gap-2 rounded-[14px] border border-hairline bg-card-warm py-14 text-[13.5px] text-ink-muted"><Loader2 size={16} className="animate-spin" />正在读取真实课程资源…</div>}
-      {!loading && !course && <div className="mt-8 rounded-[14px] border border-hairline bg-card-warm p-8 text-center"><p className="text-ink-muted">还没有可学习的真实课程。</p><Link to="/learn" className="lf-btn-primary mt-4 inline-flex">去生成课程</Link></div>}
-      {error && <div className="mt-5 rounded-[12px] border border-brand-danger/40 bg-brand-danger/10 px-4 py-3 text-[13px] text-brand-danger">{error}</div>}
-      {!loading && course && chapter && <>
-        <motion.header initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className="lf-card mt-6 p-4 md:p-5">
-          <div className="flex flex-wrap items-start gap-4">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[11px] bg-brand-tint text-brand"><Sparkles size={19} /></span>
-            <div className="min-w-[220px] flex-1">
-              <div className="lf-mono-label !text-[10px]">{course.title} · 第 {chapter.index} 章</div>
-              <h2 className="mt-1 font-serif text-[23px] font-semibold text-ink">{chapter.title}</h2>
-              {chapter.summary && <p className="mt-1 max-w-[760px] text-[13px] leading-5 text-ink-muted">{chapter.summary}</p>}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-lg border border-brand/30 bg-brand-tint px-2.5 py-1.5 text-[11.5px] font-medium text-brand"><Link2 size={12} />{sourceQuality.count} 条依据{sourceQuality.average ? ` · 平均 ${sourceQuality.average}%` : ''}</span>
-              <span className="inline-flex items-center gap-1.5 rounded-lg border border-brand/30 bg-brand-tint px-2.5 py-1.5 text-[11.5px] font-medium text-brand"><ShieldCheck size={12} />可核验 · 可反馈</span>
-              {sourceQuality.web > 0 && <span className="inline-flex items-center gap-1.5 rounded-lg border border-brand-amber/50 bg-brand-amber-tint px-2.5 py-1.5 text-[11.5px] font-medium text-ochre">WebSearch 兜底 {sourceQuality.web} 条</span>}
-            </div>
-          </div>
-          <div className="mt-4 border-t border-hairline pt-3">
-            <div className="lf-mono-label mb-2 !text-[9.5px]">切换课程章节</div>
-            <div className="flex gap-2 overflow-x-auto pb-1">{course.chapters.map((item) => <button key={item.id} type="button" onClick={() => selectChapter(item)} className={cn('shrink-0 rounded-lg border px-3 py-1.5 text-[12px]', item.id === chapter.id ? 'border-brand bg-brand text-paper' : 'border-hairline bg-card-warm text-ink-2 hover:border-brand/40')}>{item.index}. {item.title}</button>)}</div>
-          </div>
-        </motion.header>
-        {resources.length === 0 ? <div className="mt-6 rounded-[14px] border border-hairline bg-card-warm p-8 text-center"><p className="text-[13.5px] text-ink-muted">本章还没有正文资源。</p><div className="mt-4 flex justify-center gap-2">{(['lecture', 'practice', 'quiz'] as ResourceType[]).map((type) => <button key={type} type="button" disabled={Boolean(regenerating)} onClick={() => void regenerate(type)} className="lf-btn-ghost !px-3 !py-2 text-[12px]">{regenerating === type ? <Loader2 size={13} className="animate-spin" /> : null}生成{resourceMeta[type].label}</button>)}</div></div> : <>
-          <div className="mt-7 flex flex-wrap items-end justify-between gap-3 border-b border-hairline">
-            <div className="flex max-w-full gap-1 overflow-x-auto">{availableTypes.map((type) => { const Meta = resourceMeta[type]; return <button key={type} type="button" onClick={() => selectType(type)} className={cn('flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 pb-3 pt-2 text-[14px] font-medium md:px-4', activeType === type ? 'border-brand text-brand' : 'border-transparent text-ink-muted hover:text-ink')}><Meta.Icon size={14} />{Meta.label}</button>; })}</div>
-            <div className="flex flex-wrap items-center gap-2 pb-2">
-              <button type="button" disabled={Boolean(regenerating)} onClick={() => void regenerate(activeType)} className="lf-btn-ghost !px-3 !py-1.5 text-[12px]">{regenerating === activeType ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}重新生成当前资源</button>
-              {active && <Link to={`/learn/resource/${encodeURIComponent(active.id)}`} className="lf-btn-primary !px-3 !py-1.5 text-[12px]"><PlayCircle size={13} />进入学习</Link>}
-              {active && !active.state.learned && <button type="button" onClick={() => void markLearned()} className="lf-btn-ghost !px-3 !py-1.5 text-[12px]"><Check size={13} />标记学完</button>}
-            </div>
-          </div>
-          {active && <div className="mt-6 grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_300px]"><main><div className="mb-5"><h2 className="font-serif text-[23px] font-semibold text-ink">{active.title}</h2><p className="mt-1 font-mono text-[10.5px] text-ink-muted">真实资源 · 更新于 {new Date(active.updatedAt).toLocaleString()} · {currentLearner.name}</p></div>{active.type === 'lecture' && <LectureContent resource={active} />}{active.type === 'practice' && <PracticeContent resource={active} />}{active.type === 'quiz' && <QuizContent resource={active} onStateChange={(state) => setResources((prev) => prev.map((item) => item.id === active.id ? { ...item, state } : item))} />}</main><Sources resource={active} /></div>}
-        </>}
-      </>}
+      {/* ---------- 溯源抽屉（实操/分阶题 Tab） ---------- */}
+      <Sheet open={traceOpen} onOpenChange={setTraceOpen}>
+        <SheetContent
+          side="right"
+          className="w-[380px] max-w-[92vw] overflow-y-auto border-l border-hairline bg-paper p-5 sm:max-w-[380px]"
+        >
+          <SheetHeader className="sr-only">
+            <SheetTitle>本资源溯源</SheetTitle>
+            <SheetDescription>当前资源的全部 KB 引用</SheetDescription>
+          </SheetHeader>
+          {active && <TraceRail entries={active.kbRefs.map((kbId) => ({ kbId }))} />}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

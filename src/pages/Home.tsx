@@ -604,14 +604,15 @@ function TopologySection() {
                 <motion.button
                   key={n.id}
                   type="button"
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  whileInView={{ scale: 1, opacity: 1 }}
+                  /* 居中位移交给 framer 的 x/y —— motion 的内联 transform 会覆盖 Tailwind 的 -translate 类 */
+                  initial={{ scale: 0.8, opacity: 0, x: '-50%', y: '-50%' }}
+                  whileInView={{ scale: 1, opacity: 1, x: '-50%', y: '-50%' }}
                   viewport={{ once: true }}
                   transition={{ delay: i * 0.1, type: 'spring', stiffness: 260, damping: 20 }}
                   onMouseEnter={() => setHoverAgent(n.id)}
                   onMouseLeave={() => setHoverAgent(null)}
                   onClick={() => navigate(`/agents?agent=${n.id}`)}
-                  className="group absolute -translate-x-1/2 -translate-y-1/2"
+                  className="group absolute"
                   style={{ left: `${n.x}%`, top: `${n.y}%` }}
                 >
                   <span

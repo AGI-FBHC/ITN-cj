@@ -2,9 +2,10 @@
  * AgentDock — 「阿诊」常驻化身（学习者模式全站可见）
  * FAB（未读角标 + 新推断冒泡）→ 对话面板：汇报流 / 证据问答 / 验证测验（讨价还价）
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Brain, X, Check, MessageCircleQuestion, Radio, GitBranch, Database } from 'lucide-react';
+import { Brain, X, Check, MessageCircleQuestion, Radio, GitBranch, Database, SendHorizonal } from 'lucide-react';
 import { useAgent } from '@/context/AgentContext';
 import type { AgentMessage, DecisionEntry } from '@/context/AgentContext';
 import { useProfile } from '@/context/ProfileContext';
@@ -165,10 +166,13 @@ function DecisionLogView() {
 }
 
 export default function AgentDock() {
-  const { messages, unread, open, setOpen, latestHint, ask, answerVerify } = useAgent();
+  const { messages, unread, open, setOpen, latestHint, ask, askFree, answerVerify } = useAgent();
+  const [draft, setDraft] = useState('');
   const { currentLearner, weakestKp, viewMode } = useProfile();
   const isExpert = viewMode === 'expert';
   const scrollRef = useRef<HTMLDivElement>(null);
+  /* 上课时降噪：课件页里学习者正在读正文，阿诊不主动弹泡打断——推断照常积累，靠角标提示 */
+  const inCourse = useLocation().pathname.startsWith('/learn/');
 
   useEffect(() => {
     if (!open) return;
@@ -188,7 +192,7 @@ export default function AgentDock() {
       <div className="fixed bottom-24 right-4 z-50 flex flex-col items-end gap-2 md:bottom-6 md:right-6">
         {/* 新推断冒泡（学习者） */}
         <AnimatePresence>
-          {!isExpert && !open && latestHint && (
+          {!isExpert && !open && !inCourse && latestHint && (
             <motion.button
               type="button"
               initial={{ opacity: 0, y: 8, scale: 0.9 }}
@@ -264,11 +268,11 @@ export default function AgentDock() {
                   ))}
                 </div>
 
-                {/* 问题 chips */}
+                {/* 问题 chips：阿诊只管学情（画像/路径/证据链），知识点问题归课件里的「问一问」 */}
                 <div className="border-t border-hairline bg-card-warm px-3 py-2.5">
                   <div className="mb-1.5 flex items-center gap-1 font-mono text-[9.5px] tracking-wide text-ink-muted">
                     <MessageCircleQuestion size={11} />
-                    问问阿诊
+                    问问阿诊 · 关于你的学情
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {chips.map((c) => (
@@ -282,6 +286,38 @@ export default function AgentDock() {
                       </button>
                     ))}
                   </div>
+                  {/* 自由提问：不能只给三个预设——想自己打字问却没有输入框，就等于"问不了" */}
+                  <div className="mt-2.5 flex items-center gap-2">
+                    <input
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key !== 'Enter' || !draft.trim()) return;
+                        askFree(draft);
+                        setDraft('');
+                      }}
+                      placeholder="也可以直接打字问我…"
+                      aria-label="向阿诊提问"
+                      className="h-9 min-w-0 flex-1 rounded-[10px] border border-hairline bg-paper px-3 text-[12.5px] text-ink outline-none transition-colors focus:border-brand/50"
+                    />
+                    <button
+                      type="button"
+                      disabled={!draft.trim()}
+                      onClick={() => { askFree(draft); setDraft(''); }}
+                      aria-label="发送"
+                      className={cn(
+                        'flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] transition-all',
+                        draft.trim() ? 'bg-brand text-paper hover:bg-brand-hover' : 'cursor-not-allowed bg-paper-deep text-ink-muted/50',
+                      )}
+                    >
+                      <SendHorizonal size={15} />
+                    </button>
+                  </div>
+                  <p className="mt-1.5 text-[10.5px] leading-[15px] text-ink-muted">
+                    知识点本身（比如"常闭触点是什么"）问课件里每段的
+                    <span className="mx-0.5 font-medium text-brand">问一问</span>
+                    更合适——那里带 KB 出处。
+                  </p>
                 </div>
               </>
             )}

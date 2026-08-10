@@ -227,11 +227,12 @@ export default function PathRoadmap({
                 <motion.button
                   type="button"
                   onClick={() => setSelected(s)}
-                  initial={{ scale: 0.8, opacity: 0 }}
-                  whileInView={{ scale: 1, opacity: 1 }}
+                  /* 居中位移交给 framer 的 x/y —— motion 的内联 transform 会覆盖 Tailwind 的 -translate 类 */
+                  initial={{ scale: 0.8, opacity: 0, x: '-50%', y: '-50%' }}
+                  whileInView={{ scale: 1, opacity: 1, x: '-50%', y: '-50%' }}
                   viewport={{ once: true, amount: 0.4 }}
                   transition={{ delay: 0.2 + i * 0.12, type: 'spring', stiffness: 260, damping: 18 }}
-                  className="absolute z-10 -translate-x-1/2 -translate-y-1/2 cursor-pointer"
+                  className="absolute z-10 cursor-pointer"
                   style={{ left: pct(s.x, VB_W), top: pct(s.y, VB_H) }}
                   aria-label={`阶段 ${s.num} ${s.name} 详情`}
                 >
@@ -269,12 +270,17 @@ export default function PathRoadmap({
 
                 {/* 阶段标签（圆下方） */}
                 <motion.div
-                  initial={{ opacity: 0, y: 12 }}
-                  whileInView={{ opacity: 1, y: 0 }}
+                  /* 水平居中交给 framer 的 x —— motion 的内联 transform 会覆盖 Tailwind 的 -translate 类 */
+                  initial={{ opacity: 0, y: 12, x: '-50%' }}
+                  whileInView={{ opacity: 1, y: 0, x: '-50%' }}
                   viewport={{ once: true, amount: 0.4 }}
                   transition={{ delay: 0.3 + i * 0.12, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-                  className="absolute w-[230px] -translate-x-1/2 text-center"
-                  style={{ left: pct(s.x, VB_W), top: `calc(${pct(s.y, VB_H)} + 38px)` }}
+                  className="absolute w-[230px] text-center"
+                  /* 边缘阶段（①/④）的标签钳制在容器内，不悬出路线图 */
+                  style={{
+                    left: `clamp(115px, ${pct(s.x, VB_W)}, calc(100% - 115px))`,
+                    top: `calc(${pct(s.y, VB_H)} + 38px)`,
+                  }}
                 >
                   <div className="text-[14px] font-semibold text-ink">
                     阶段 {s.num} {s.name}

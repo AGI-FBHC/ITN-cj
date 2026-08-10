@@ -65,6 +65,8 @@ interface AgentContextValue {
   decisions: DecisionEntry[];
   pushSignal: (s: Signal) => void;
   ask: (kind: AskKind) => void;
+  /** 自由提问：学情类问题就地答，知识点类问题引导回课件的「问一问」 */
+  askFree: (text: string) => void;
   answerVerify: (msgId: string, qIndex: number, optIndex: number) => void;
 }
 
@@ -298,6 +300,40 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       }
     };
 
+    /** 自由提问：先按意图路由到三种学情问答，知识点问题诚实地引导回课件「问一问」 */
+    const askFree = (raw: string) => {
+      const text = raw.trim();
+      if (!text) return;
+      const t = text.toLowerCase();
+      const has = (...ws: string[]) => ws.some((w) => t.includes(w));
+
+      if (has('盲区', '最弱', '为什么是', '凭什么', '依据', '证据')) return ask('why-blind');
+      if (has('下一步', '学什么', '接下来', '先学', '怎么安排', '计划', '路径')) return ask('what-next');
+      if (has('不止', '不服', '低了', '不准', '质疑', '凭啥', '重测', '再测')) return ask('challenge-score');
+
+      append({ id: mid(), kind: 'user', text, time: now() });
+
+      /* 问到具体知识点：说清楚分工——这里答学情，知识点去课件里就地追问 */
+      const hitKp = knowledgePoints.find((kp) => text.includes(kp.name) || kp.coreTopics.some((c) => text.includes(c)));
+      if (hitKp) {
+        const score = currentLearner.scores[hitKp.id] ?? 50;
+        append({
+          id: mid(),
+          kind: 'agent',
+          text: `「${hitKp.name}」你现在 ${score} 分 / 目标 ${hitKp.targetLevel} 分，置信度 ${confidence[hitKp.id] ?? 40}%。不过知识点本身怎么讲，我不如课件里的老师——进《${hitKp.name}》后点任意一段的「问一问」，能就地追问、每句都带 KB 出处。我这边只管你的学情：画像怎么来的、下一步学什么、分数不服可以找我重测。`,
+          time: now(),
+        });
+        return;
+      }
+
+      append({
+        id: mid(),
+        kind: 'agent',
+        text: '我是学情诊断，管的是你的画像、路径和分数依据——可以问我"为什么盲区是它""下一步学什么""我不止这个分"。要是想问知识点本身（比如某个术语怎么理解），在课件里点每段的「问一问」更合适，那里答得细、还带出处。',
+        time: now(),
+      });
+    };
+
     const answerVerify = (msgId: string, qIndex: number, optIndex: number) => {
       setMsgsAll((prev) => {
         const list = [...(prev[lid] ?? [])];
@@ -370,6 +406,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       decisions: decAll[lid] ?? [],
       pushSignal,
       ask,
+      askFree,
       answerVerify,
     };
   }, [msgsAll, confAll, logAll, decAll, seen, unread, open, latestHint, currentLearner, currentLearnerId, applyWriteback, weakestKp]);
