@@ -1,18 +1,19 @@
 /**
  * PptPlayer — 交互课件里的真实 PPT 播放器
  * 读取 agents /v1/presentations 后台任务，完成后按页展示渲染图片与讲稿。
- * 底部采用原版新前端风格的悬浮控制窗：进度条 + 页码 + 翻页 + 播放/暂停 + 完成学习 + 退出。
+ * 整体版式还原同事新前端 LearnUnit 的「幻灯模式」：全屏浅色渐变、顶部幻灯栏、
+ * 中间白色卡片 + 左右大箭头，底部为原版两态悬浮播放条。
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import {
-  ArrowLeft, ArrowRight, CheckCircle2, ChevronLeft, FileText, Hand, Loader2, MoreHorizontal, Pause, PenLine, Play, RefreshCw,
+  ArrowLeft, ArrowRight, CheckCircle2, FileText,
+  Hand, Loader2, MoreHorizontal, Pause, PenLine, Play, RefreshCw,
 } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { fetchSlideAsset, presentationApi } from '@/lib/presentationApi';
 import type { PresentationSlideshow, PresentationTask } from '@/lib/presentationApi';
 import { cn } from '@/lib/utils';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 const PROGRESS_LABEL: Record<PresentationTask['status'], string> = {
   queued: '排队中',
@@ -220,31 +221,26 @@ export default function PptPlayer({
     return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [taskId, current, slides]);
   const note = slides?.speakerNotes[current] ?? '';
-  const barExpanded = audioPlaying || Boolean(note);
+  // 部署版/原版行为：未播放时底部保持胶囊，开始语音授课才展开控制台
+  const barExpanded = audioPlaying;
 
   return (
-    <div className="mx-auto min-h-[calc(100dvh-64px)] max-w-[1280px] px-5 pb-36 pt-6 md:px-6">
-      {/* 顶栏 */}
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap items-center gap-3">
-        <button type="button" onClick={onBack} className="lf-btn-ghost !px-3 !py-2 text-[12.5px]">
-          <ArrowLeft size={14} />
-          返回知识地图
+    <div className="mx-auto min-h-[calc(100dvh-64px)] max-w-[760px] px-5 pb-44 pt-6 md:px-6">
+      {/* 页头 */}
+      <div className="flex flex-wrap items-center gap-3">
+        <button type="button" onClick={onBack} className="inline-flex items-center gap-1 text-[13px] text-ink-muted hover:text-brand">
+          <ArrowLeft size={14} /> 返回知识地图
         </button>
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate font-serif text-[22px] font-semibold text-ink">{task?.title || '交互课件 · PPT'}</h1>
-          <p className="mt-0.5 text-[12px] text-ink-muted">
-            {task ? `${PROGRESS_LABEL[task.status]} · ${task.progress}%` : '正在读取任务'}
-          </p>
-        </div>
-        <button type="button" onClick={() => void loadTask()} className="lf-btn-ghost !px-3 !py-2 text-[12px]" title="刷新状态">
-          <RefreshCw size={13} />
-          刷新
+        <span className="text-hairline">/</span>
+        <h1 className="font-serif text-[20px] font-semibold text-ink">{task?.title || '交互课件'}</h1>
+        <button type="button" onClick={() => void loadTask()} className="ml-auto inline-flex items-center gap-1 rounded-md border border-hairline bg-card-warm px-2 py-0.5 font-mono text-[10.5px] text-ink-2 transition-colors hover:border-brand/40 hover:text-brand">
+          <RefreshCw size={11} /> 刷新
         </button>
-      </motion.div>
+      </div>
 
       {/* 生成中 */}
       {loading && !slides && !error && (
-        <div className="mt-8 flex flex-col items-center justify-center rounded-[18px] border border-hairline bg-card-warm py-16 text-center">
+        <div className="mt-8 flex flex-col items-center justify-center rounded-[18px] border border-hairline bg-card-warm px-6 py-16 text-center">
           <Loader2 size={30} className="animate-spin text-brand" />
           <p className="mt-4 text-[14.5px] font-medium text-ink">{task?.stageMessage || 'PPT 正在后台生成'}</p>
           <p className="mt-1 text-[12px] text-ink-muted">生成完成后会自动进入播放页，无需刷新页面</p>
@@ -258,49 +254,44 @@ export default function PptPlayer({
 
       {/* 错误 */}
       {error && (
-        <div className="mt-8 rounded-[14px] border border-red-200 bg-red-50 px-5 py-4 text-[13.5px] text-red-700">
-          <p className="font-medium">PPT 生成暂时不可用</p>
-          <p className="mt-1">{error}</p>
-          <button type="button" onClick={() => { setError(''); setLoading(true); void loadTask(); }} className="lf-btn-primary mt-3 !py-2">
-            <RefreshCw size={13} />
-            重试
-          </button>
+        <div className="mt-8 flex items-center justify-center px-6">
+          <div className="w-full max-w-[520px] rounded-[14px] border border-red-200 bg-red-50 px-5 py-4 text-[13.5px] text-red-700">
+            <p className="font-medium">PPT 生成暂时不可用</p>
+            <p className="mt-1">{error}</p>
+            <button type="button" onClick={() => { setError(''); setLoading(true); void loadTask(); }} className="lf-btn-primary mt-3 !py-2">
+              <RefreshCw size={13} />
+              重试
+            </button>
+          </div>
         </div>
       )}
 
-      {/* 播放器主体 */}
+      {/* 幻灯主体 */}
       {slides && slideCount > 0 && (
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="relative flex min-h-[58vh] items-center justify-center overflow-hidden rounded-[18px] border border-hairline bg-ink/95 p-4 shadow-warm">
+        <div className="mt-6 space-y-4">
+          <div className="lf-anim-in-up rounded-[18px] border border-hairline bg-paper p-7 shadow-warm-lg md:p-10">
             {slideSrc ? (
               <img
                 src={slideSrc}
                 alt={`第 ${current + 1} 页`}
-                className="max-h-[72vh] w-auto max-w-full rounded-md object-contain"
+                className="mx-auto max-h-[62vh] w-auto max-w-full rounded-md object-contain shadow-sm"
               />
             ) : (
-              <Loader2 size={22} className="animate-spin text-paper/60" />
+              <div className="flex min-h-[40vh] items-center justify-center">
+                <Loader2 size={22} className="animate-spin text-brand" />
+              </div>
+            )}
+            {note && (
+              <div className="mt-6 border-t border-hairline pt-5">
+                <div className="flex items-center gap-2">
+                  <FileText size={14} className="text-brand" />
+                  <span className="lf-mono-label !text-[10px]">本页讲稿</span>
+                </div>
+                <p className="mt-3 whitespace-pre-wrap text-[15px] leading-[28px] text-ink-2">{note}</p>
+              </div>
             )}
           </div>
-
-          <aside className="flex flex-col gap-3">
-            <div className="rounded-[16px] border border-hairline bg-card-warm p-4">
-              <div className="flex items-center gap-2">
-                <FileText size={15} className="text-brand" />
-                <span className="lf-mono-label !text-[10px]">SPEAKER NOTES · 本页讲稿</span>
-              </div>
-              <p className="mt-3 whitespace-pre-wrap text-[13.5px] leading-6 text-ink-2">{note || '本页暂无讲稿。'}</p>
-            </div>
-            <div className="rounded-[16px] border border-hairline bg-card-warm p-4">
-              <div className="text-[12.5px] font-medium text-ink">自动连播</div>
-              <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">点击底部播放按钮，会按页自动播放语音并翻页。</p>
-            </div>
-            <div className="flex items-center gap-2 rounded-[16px] border border-hairline bg-card-warm p-4">
-              <CheckCircle2 size={15} className="text-brand" />
-              <span className="text-[12.5px] text-ink-2">PPT 已生成并保存到后端，可随时回来继续播放。</span>
-            </div>
-          </aside>
-        </motion.div>
+        </div>
       )}
 
       {slides && slideCount === 0 && !loading && !error && (
@@ -309,7 +300,7 @@ export default function PptPlayer({
         </div>
       )}
 
-      {/* 底部悬浮控制窗（原版新前端风格） */}
+      {/* 底部两态播放条（原版 LearnUnit） */}
       {slides && slideCount > 0 && (
         <div className="pointer-events-none fixed inset-x-0 bottom-16 z-40 md:bottom-0">
           <div className={cn('mx-auto px-5 pb-3 md:px-6', barExpanded ? 'max-w-[760px]' : 'flex justify-center')}>
@@ -323,10 +314,6 @@ export default function PptPlayer({
               <div className={cn('flex items-center', barExpanded ? 'gap-3 px-4 py-3' : 'gap-1.5 px-3 py-2')}>
                 <button type="button" onClick={togglePlay} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand text-paper transition-transform hover:scale-105" title={audioPlaying ? '暂停' : '语音授课'}>
                   {audioPlaying ? <Pause size={17} /> : <Play size={17} fill="currentColor" />}
-                </button>
-
-                <button type="button" disabled={current <= 0} onClick={() => goTo(current - 1)} title="上一页" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-hairline bg-paper text-ink-2 transition-all hover:border-brand/40 hover:text-brand disabled:cursor-not-allowed disabled:text-ink-muted/40">
-                  <ChevronLeft size={15} />
                 </button>
 
                 <button type="button" disabled={current >= slideCount - 1} onClick={() => goTo(current + 1)} title={current >= slideCount - 1 ? '已是最后一页' : '下一页'} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-brand/40 bg-paper text-brand transition-all hover:bg-brand-tint disabled:cursor-not-allowed disabled:border-hairline disabled:text-ink-muted/40">
