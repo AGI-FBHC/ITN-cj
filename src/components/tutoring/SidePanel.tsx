@@ -134,7 +134,6 @@ export default function SidePanel({
   topics,
   onRecap,
   answers,
-  showSeedDecision = true,
 }: {
   asked: number;
   correct: number;
@@ -144,8 +143,6 @@ export default function SidePanel({
   onRecap: (t: KpTopic) => void;
   /** 本轮答题对错序列（按作答顺序），供「答题走势」迷你图使用；未传则显示占位 */
   answers?: boolean[];
-  /** 旧演示脚本带一条预置决策；真实后端会话必须关闭。 */
-  showSeedDecision?: boolean;
 }) {
   const acc = asked > 0 ? Math.round((correct / asked) * 100) : 0;
   const accColor = acc >= 80 ? '#6BA080' : acc >= 60 ? '#E7B45A' : asked === 0 ? '#4E7860' : '#B0483B';
@@ -193,7 +190,7 @@ export default function SidePanel({
       live: true,
       tone: d.type === 'challenge' ? '#B77552' : '#4E7860',
     })),
-    ...(showSeedDecision ? [{
+    {
       id: 'seed-1',
       time: '10:31:40',
       label: '路径重排',
@@ -201,7 +198,7 @@ export default function SidePanel({
       confidence: 0.88,
       live: false,
       tone: '#5A6553',
-    }] : []),
+    },
   ];
 
   return (

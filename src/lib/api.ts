@@ -931,6 +931,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  retryCourse: (courseId: string) =>
+    requestDirect<Course>(`/v1/courses/${encodeURIComponent(courseId)}/retry`, { method: 'POST' }),
   getCourse: (courseId: string) =>
     requestDirect<Course>(`/v1/courses/${encodeURIComponent(courseId)}`),
   updateCourse: (courseId: string, body: { title?: string; description?: string }) =>

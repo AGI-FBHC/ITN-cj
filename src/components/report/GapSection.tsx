@@ -1,6 +1,6 @@
 /**
  * GapSection — 知识盲区定位（report.md S2，双栏 7:5）
- * 左：盲区雷达（当前能力 vs 目标要求，缺口区域砖红强调 + 最大盲区角标）
+ * 左：盲区雷达（当前能力 vs 岗位目标，缺口区域砖红强调 + 最大盲区角标）
  * 右：盲区排序列表（按严重度降序，可展开消解计划）
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -57,7 +57,7 @@ function GapRadar({
         icon: 'roundRect',
         itemWidth: 12,
         itemHeight: 8,
-        data: ['当前能力', '目标要求'],
+        data: ['当前能力', '岗位目标'],
       },
       radar: {
         indicator: knowledgePoints.map((kp) => ({ name: kp.name, max: 100 })),
@@ -126,7 +126,7 @@ function GapRadar({
             },
             {
               value: target,
-              name: '目标要求',
+              name: '岗位目标',
               lineStyle: { color: '#E7B45A', width: 2, type: 'dashed' as const },
               itemStyle: { color: '#E7B45A' },
               areaStyle: { color: 'rgba(231, 180, 90,0)' },

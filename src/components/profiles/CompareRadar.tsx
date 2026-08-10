@@ -111,7 +111,7 @@ export default function CompareRadar() {
                     'mt-5 border-l-[3px] border-l-brand-amber pl-3 text-[13px] italic leading-[22px] text-ink-muted',
                   )}
                 >
-                  同一目标要求，三条完全不同的路径——这正是个性化生成的意义。
+                  同一岗位目标，三条完全不同的路径——这正是个性化生成的意义。
                 </p>
               </div>
             </div>

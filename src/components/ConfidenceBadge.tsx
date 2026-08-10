@@ -4,13 +4,11 @@
  * 精准定制：高置信「已测准」（品牌绿）。预设画像无档案，不渲染。
  */
 import { Gauge } from 'lucide-react';
-import { useProfile } from '@/context/ProfileContext';
+import { getConfidence } from '@/data/confidence';
 import { cn } from '@/lib/utils';
 
 export default function ConfidenceBadge({ learnerId, className }: { learnerId: string; className?: string }) {
-  const { learners } = useProfile();
-  const learner = learners.find((l) => l.id === learnerId);
-  const conf = learner?.confidence;
+  const conf = getConfidence(learnerId);
   if (!conf) return null;
   const calibrating = conf.value < 70;
   return (

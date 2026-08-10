@@ -25,6 +25,7 @@ import {
   Cpu,
   NotebookPen,
   LogOut,
+  Compass,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -43,17 +44,24 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useProfile } from '@/context/ProfileContext';
 import type { ViewMode } from '@/context/ProfileContext';
 import { useAuth } from '@/context/AuthContext';
 import { useNotes } from '@/context/NotesContext';
 import { useGrowth } from '@/context/GrowthContext';
+import { kbSlices } from '@/data/kbSlices';
+import { resources } from '@/data/resources';
+import { globalStats } from '@/data/metrics';
+import LiveDot from './LiveDot';
+import KBDrawer from './KBDrawer';
 import TeachingGroup from './TeachingGroup';
+import AgentDock from './agent/AgentDock';
 import ResumeLearningFab from './ResumeLearningFab';
 import { SparkField } from './heal/Flora';
+import DemoTour, { startDemoTour } from './tour/DemoTour';
 import { cn } from '@/lib/utils';
-import { learningResourcePath, useCourseLearning } from '@/hooks/useCourseLearning';
 
 type NavItem = {
   path: string;
@@ -92,15 +100,6 @@ const expertNavGroups: { heading?: string; items: NavItem[] }[] = [
       { path: '/knowledge', label: '知识库', icon: Database },
     ],
   },
-];
-
-/** 系统透视移动端：保留最核心的五个真实工作区，完整分组仍在桌面侧栏。 */
-const expertMobileNav: NavItem[] = [
-  { path: '/', label: '总览', icon: LayoutDashboard, end: true },
-  { path: '/profiles', label: '画像', icon: Users },
-  { path: '/resources', label: '资源', icon: PenLine },
-  { path: '/agents', label: '协同', icon: Network },
-  { path: '/knowledge', label: '知识库', icon: Database },
 ];
 
 const pageTitleMap: Record<string, { title: string; crumb: string }> = {
@@ -263,19 +262,20 @@ function SideNavRow({ item, collapsed }: { item: NavItem; collapsed: boolean }) 
 export default function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [drawerKb, setDrawerKb] = useState<string | null>(null);
   const {
     currentLearner,
     currentLearnerId,
     setCurrentLearnerId,
     learners,
+    demoMode,
+    setDemoMode,
     viewMode,
     setViewMode,
   } = useProfile();
   const { notes } = useNotes();
   const { focusMode } = useGrowth();
   const { logout } = useAuth();
-  const courseLearning = useCourseLearning();
   const location = useLocation();
   const navigate = useNavigate();
   const isLearner = viewMode === 'learner';
@@ -409,6 +409,9 @@ export default function AppShell() {
             </div>
           </main>
 
+          {/* 阿诊 · 常驻画像助手（专注时收起） */}
+          {!focusMode && <AgentDock />}
+
           {/* 全局「继续学习」浮标 · 左下角，随时回到当前路径节点 */}
           <ResumeLearningFab />
 
@@ -440,7 +443,7 @@ export default function AppShell() {
           {/* 左侧导航 */}
           <aside
             className={cn(
-              'sticky top-0 z-40 hidden h-[100dvh] shrink-0 flex-col border-r border-hairline bg-paper transition-[width] duration-300 ease-lf md:flex',
+              'sticky top-0 z-40 flex h-[100dvh] shrink-0 flex-col border-r border-hairline bg-paper transition-[width] duration-300 ease-lf',
               collapsed ? 'w-[72px]' : 'w-[248px]',
             )}
           >
@@ -481,9 +484,18 @@ export default function AppShell() {
                   collapsed && 'justify-center px-0',
                 )}
               >
-                <Database size={14} className="shrink-0 text-brand" />
+                <LiveDot status="running" />
                 {!collapsed && (
-                  <span className="flex-1 font-mono text-[10.5px] text-ink-muted">BACKEND DATA MODE</span>
+                  <span className="relative flex-1 overflow-hidden">
+                    <span className="flex w-max animate-marquee gap-8 font-mono text-[10.5px] whitespace-nowrap text-ink-muted">
+                      <span>
+                        {globalStats.agentsOnline} AGENTS ONLINE · 今日协同 {globalStats.todayCollabCount} 次
+                      </span>
+                      <span aria-hidden>
+                        {globalStats.agentsOnline} AGENTS ONLINE · 今日协同 {globalStats.todayCollabCount} 次
+                      </span>
+                    </span>
+                  </span>
                 )}
               </div>
               <button
@@ -502,18 +514,15 @@ export default function AppShell() {
 
           {/* 主区 */}
           <div className="flex min-w-0 flex-1 flex-col">
-            <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-2 border-b border-hairline bg-paper/85 px-3 backdrop-blur-md md:gap-4 md:px-6">
-              <div className="flex min-w-0 items-center gap-2">
-                <img src="/logo.svg" alt="智训云枢" className="h-7 w-7 shrink-0 md:hidden" />
-                <div className="min-w-0">
+            <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b border-hairline bg-paper/85 px-6 backdrop-blur-md">
+              <div className="min-w-0">
                 <h1 className="truncate font-serif text-[17px] font-semibold leading-[24px] text-ink">
                   {pageInfo.title}
                 </h1>
-                <div className="hidden font-mono text-[10.5px] tracking-[0.12em] text-ink-muted sm:block">{pageInfo.crumb}</div>
-                </div>
+                <div className="font-mono text-[10.5px] tracking-[0.12em] text-ink-muted">{pageInfo.crumb}</div>
               </div>
 
-              <div className="flex items-center gap-1.5 md:gap-3">
+              <div className="flex items-center gap-3">
                 <button
                   type="button"
                   onClick={() => setSearchOpen(true)}
@@ -526,7 +535,32 @@ export default function AppShell() {
                   </kbd>
                 </button>
 
+                {/* 评委一键导览：5 分钟自动串场，把五步闭环叙事喂到评委嘴边 */}
+                <button
+                  type="button"
+                  onClick={() => startDemoTour()}
+                  title="评委一键导览 · 5 分钟串场演示"
+                  className="flex items-center gap-1.5 rounded-[10px] border border-brand-amber/45 bg-brand-amber-tint px-3 py-1.5 text-[12.5px] font-medium text-ochre transition-all duration-200 hover:border-brand-amber/70"
+                >
+                  <Compass size={14} />
+                  <span className="hidden sm:inline">评委导览</span>
+                </button>
+
                 <LiveClock />
+                <label className="hidden items-center gap-2 rounded-[10px] border border-hairline bg-card-warm px-3 py-1.5 lg:flex">
+                  <span className={cn('text-[12.5px] font-medium', demoMode ? 'text-brand' : 'text-ink-muted')}>
+                    演示模式
+                  </span>
+                  <Switch
+                    checked={demoMode}
+                    onCheckedChange={(v) => {
+                      setDemoMode(v);
+                      toast(v ? '演示模式已开启' : '演示模式已关闭', {
+                        description: v ? '各页面将自动播放模拟脚本' : '自动播放已停止',
+                      });
+                    }}
+                  />
+                </label>
 
                 <ModeToggle mode={viewMode} onChange={changeMode} />
                 <ProfileSwitcher
@@ -539,61 +573,60 @@ export default function AppShell() {
                   type="button"
                   onClick={doLogout}
                   title="退出登录"
-                  className="hidden h-9 w-9 items-center justify-center rounded-[10px] border border-hairline bg-card-warm text-ink-muted transition-all duration-200 hover:border-brand/35 hover:text-ink sm:flex"
+                  className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-hairline bg-card-warm text-ink-muted transition-all duration-200 hover:border-brand/35 hover:text-ink"
                 >
                   <LogOut size={14} />
                 </button>
               </div>
             </header>
 
-            <main className="min-w-0 flex-1 pb-20 md:pb-0">
+            <main className="min-w-0 flex-1">
               <Outlet />
             </main>
-
-            <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-hairline bg-paper/95 backdrop-blur-md md:hidden">
-              {expertMobileNav.map((item) => (
-                <NavLink
-                  key={item.path}
-                  to={item.path}
-                  end={item.end}
-                  className={({ isActive }) => cn('flex flex-col items-center gap-1 py-2.5 text-[10.5px] font-medium transition-colors', isActive ? 'text-brand' : 'text-ink-muted')}
-                >
-                  <item.icon size={18} strokeWidth={1.85} />
-                  {item.label}
-                </NavLink>
-              ))}
-            </nav>
           </div>
 
+          {/* DIA-01 决策日志（评委透视） */}
+          <AgentDock />
         </div>
       )}
 
       {/* ⌘K 检索弹层（两种布局共用） */}
       <CommandDialog open={searchOpen} onOpenChange={setSearchOpen}>
-        <CommandInput value={searchQuery} onValueChange={setSearchQuery} placeholder="检索真实知识库或当前课程资源…" />
+        <CommandInput placeholder="检索知识库 / 资源 / 标准号…" />
         <CommandList>
           <CommandEmpty>未找到匹配结果</CommandEmpty>
-          <CommandGroup heading="真实知识库">
-            <CommandItem value={`搜索真实知识库 ${searchQuery}`} onSelect={() => { const query = searchQuery.trim(); setSearchOpen(false); navigate(query ? `/knowledge?q=${encodeURIComponent(query)}` : '/knowledge'); }}>
-              <Database size={14} className="mr-2 text-brand" />
-              <span className="truncate">{searchQuery.trim() ? `在 RAG 知识库搜索“${searchQuery.trim()}”` : '打开 RAG 知识库'}</span>
-            </CommandItem>
-          </CommandGroup>
-          {courseLearning.resources.length > 0 && <CommandGroup heading="当前课程资源">
-            {courseLearning.resources.slice(0, 12).map((resource) => (
+          <CommandGroup heading="知识切片">
+            {kbSlices.slice(0, 8).map((k) => (
               <CommandItem
-                key={resource.id}
-                value={`${resource.title} ${resource.topic}`}
+                key={k.id}
+                value={`${k.id} ${k.title} ${k.standardNo ?? ''}`}
                 onSelect={() => {
                   setSearchOpen(false);
-                  navigate(learningResourcePath(resource));
+                  setDrawerKb(k.id);
+                }}
+              >
+                <Database size={14} className="mr-2 text-brand" />
+                <span className="font-mono text-[12px] text-brand">{k.id}</span>
+                <span className="ml-2 truncate">{k.title}</span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+          <CommandGroup heading="生成资源">
+            {resources.map((r) => (
+              <CommandItem
+                key={`${r.learnerId}-${r.form}`}
+                value={r.title}
+                onSelect={() => {
+                  setSearchOpen(false);
+                  /* 带上形态，否则搜到 A 却打开 B */
+                  navigate(`/resources?tab=${r.form}`);
                 }}
               >
                 <PenLine size={14} className="mr-2 text-ochre" />
-                <span className="truncate">{resource.title}</span>
+                <span className="truncate">{r.title}</span>
               </CommandItem>
             ))}
-          </CommandGroup>}
+          </CommandGroup>
           {notes.length > 0 && (
             <CommandGroup heading="我的笔记 · 个人知识库">
               {notes.slice(0, 6).map((n) => (
@@ -629,6 +662,10 @@ export default function AppShell() {
         </CommandList>
       </CommandDialog>
 
+      <KBDrawer sliceId={drawerKb} open={drawerKb !== null} onOpenChange={(o) => !o && setDrawerKb(null)} />
+
+      {/* 评委一键导览：挂载在 Router 内部，跨路由不卸载，进度存 sessionStorage */}
+      <DemoTour />
     </>
   );
 }

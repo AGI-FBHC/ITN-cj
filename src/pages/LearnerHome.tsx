@@ -1,74 +1,324 @@
-import { Link } from 'react-router-dom';
+/**
+ * LearnerHome `/me` — 学习者视角首页「我的学习」（单列聚焦版）
+ * 顶部导航外壳下的单列内容：问候 → 继续学习(焦点) → 进度条 → 接下来先补两块 → 学习资源列表
+ * 窄栏 + 大留白 + 一行一件事，去掉与导航/侧栏重复的板块。
+ */
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, BookOpen, CheckCircle2, ListChecks, Loader2, NotebookPen, PenLine, Play, Target, UserRoundCog, X } from 'lucide-react';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import ConfidenceBadge from '@/components/ConfidenceBadge';
-import { useProfile } from '@/context/ProfileContext';
-import { learningResourcePath, useCourseLearning } from '@/hooks/useCourseLearning';
+import { Link, useNavigate } from 'react-router-dom';
+import { Play, ArrowRight, BookOpen, Target, PenLine, ListChecks, UserRoundCog, NotebookPen, ChevronDown, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import FirstRunGuide from '@/components/heal/FirstRunGuide';
+import { useProfile, dataIdOf } from '@/context/ProfileContext';
+import { reportForLearner } from '@/data/reportBuilder';
+import { getResourcesFor } from '@/data/resources';
+import type { GeneratedResource } from '@/data/resources';
+import { getKnowledgePoint } from '@/data/knowledgePoints';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import TraceBadge from '@/components/TraceBadge';
+import { SprigTop, PottedPlant, LeafDivider } from '@/components/heal/Flora';
 import GardenCard from '@/components/heal/GardenCard';
+import { useWrongBook } from '@/context/WrongBookContext';
+import FirstRunGuide from '@/components/heal/FirstRunGuide';
 import WeekReview from '@/components/heal/WeekReview';
-import { LeafDivider } from '@/components/heal/Flora';
+import ConfidenceBadge from '@/components/ConfidenceBadge';
 
-const resourceMeta = {
-  lecture: { label: '讲义', Icon: BookOpen },
-  practice: { label: '实操', Icon: ListChecks },
-  quiz: { label: '分阶题', Icon: PenLine },
+const fadeUp = {
+  initial: { opacity: 0, y: 24 },
+  whileInView: { opacity: 1, y: 0 },
+  viewport: { once: true, amount: 0.2 },
+  transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] as const },
+};
+
+const formMeta = {
+  lecture: { label: '讲义', Icon: BookOpen, color: '#4E7860' },
+  guide: { label: '实操指南', Icon: ListChecks, color: '#B77552' },
+  quiz: { label: '分阶题', Icon: PenLine, color: '#E7B45A' },
 } as const;
 
-function ProgressRing({ value }: { value: number }) {
-  const radius = 25;
-  const circumference = 2 * Math.PI * radius;
-  return <svg width="58" height="58" className="-rotate-90"><circle cx="29" cy="29" r={radius} fill="none" stroke="#DCE6DE" strokeWidth="6" /><circle cx="29" cy="29" r={radius} fill="none" stroke="#4E7860" strokeWidth="6" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - value / 100)} /></svg>;
+/** 进度环 */
+function ProgressRing({ value, size = 60 }: { value: number; size?: number }) {
+  const stroke = 6;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const off = c * (1 - value / 100);
+  return (
+    <svg width={size} height={size} className="shrink-0 -rotate-90">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#DCE6DE" strokeWidth={stroke} />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke="#4E7860"
+        strokeWidth={stroke}
+        strokeLinecap="round"
+        strokeDasharray={c}
+        strokeDashoffset={off}
+        style={{ transition: 'stroke-dashoffset 0.9s cubic-bezier(0.22,1,0.36,1)' }}
+      />
+    </svg>
+  );
 }
 
 export default function LearnerHome() {
-  const { currentLearner, domainKnowledgePoints } = useProfile();
-  const learning = useCourseLearning();
-  const gaps = [...domainKnowledgePoints]
-    .map((point) => ({ ...point, score: currentLearner.scores[point.id] ?? 50, gap: point.targetLevel - (currentLearner.scores[point.id] ?? 50) }))
-    .sort((a, b) => b.gap - a.gap)
-    .slice(0, 2);
+  const navigate = useNavigate();
+  const { currentLearner } = useProfile();
+  const dataId = dataIdOf(currentLearner);
+  const report = reportForLearner(currentLearner);
+  const resources = getResourcesFor(dataId);
+
+  const path = report.path;
+  const doneCount = path.filter((p) => p.status === 'done').length;
+  const activeNode = path.find((p) => p.status === 'active') ?? path.find((p) => p.status === 'todo');
+  const pathPct = Math.round((doneCount / path.length) * 100);
+
+  const topGaps = report.blindSpots.filter((b) => b.priority === '高').slice(0, 2);
+  /* 更多进展默认折叠：首屏只回答「现在做什么」 */
+  const [moreOpen, setMoreOpen] = useState(false);
+  const { items: wrongItems } = useWrongBook();
+  const wrongCount = wrongItems.length;
 
   return (
-    <div className="mx-auto max-w-[900px] px-5 pb-24 pt-8 md:px-6">
-      <section className="flex flex-wrap items-center gap-4">
-        <Avatar className="h-14 w-14 border border-hairline shadow-warm"><AvatarImage src={currentLearner.avatar} alt={currentLearner.name} /><AvatarFallback className="bg-brand-tint text-brand">{currentLearner.name.slice(0, 1)}</AvatarFallback></Avatar>
-        <div className="min-w-0"><h1 className="font-serif text-[26px] font-semibold text-ink">你好，{currentLearner.name}</h1><p className="mt-0.5 flex flex-wrap items-center gap-2 text-[13px] text-ink-muted"><span>{currentLearner.targetJob} · 每周 {currentLearner.weeklyHours}h</span><ConfidenceBadge learnerId={currentLearner.id} /></p></div>
-        <div className="ml-auto flex flex-wrap gap-2"><Link to="/me/wrong" className="lf-btn-ghost !px-3 !py-1.5 text-[12px]"><X size={14} />错题本</Link><Link to="/me/notes" className="lf-btn-ghost !px-3 !py-1.5 text-[12px]"><NotebookPen size={14} />个人知识库</Link><Link to="/me/profile" className="lf-btn-ghost !px-3 !py-1.5 text-[12px]"><UserRoundCog size={14} />我的画像</Link></div>
-      </section>
+    <div className="mx-auto max-w-[840px] px-5 pb-24 pt-8 md:px-6">
+      {/* ============ 问候 ============ */}
+      <motion.section {...fadeUp} className="flex flex-wrap items-center gap-4">
+        <Avatar className="h-14 w-14 border border-hairline shadow-warm">
+          <AvatarImage src={currentLearner.avatar} alt={currentLearner.name} />
+          <AvatarFallback className="bg-brand-tint text-brand">
+            {currentLearner.name.slice(0, 1)}
+          </AvatarFallback>
+        </Avatar>
+        <div className="min-w-0">
+          <h1 className="font-serif text-[26px] font-semibold leading-[32px] text-ink">
+            你好，{currentLearner.name}
+          </h1>
+          <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13.5px] text-ink-muted">
+            <span>{currentLearner.tag} · {currentLearner.targetJob} · 每周可投入 {currentLearner.weeklyHours}h</span>
+            <ConfidenceBadge learnerId={currentLearner.id} />
+          </p>
+        </div>
+        <span className="ml-auto flex items-center gap-2">
+          <Link
+            to="/me/wrong"
+            className="inline-flex items-center gap-1.5 rounded-[10px] border border-hairline bg-card-warm px-3 py-1.5 text-[13px] font-medium text-ink-2 transition-all hover:border-brand/35 hover:text-brand"
+          >
+            <X size={15} className={wrongCount > 0 ? 'text-brand-danger' : undefined} />
+            错题本
+            {wrongCount > 0 && (
+              <span className="rounded bg-brand-danger/12 px-1.5 font-mono text-[11px] font-semibold text-brand-danger">
+                {wrongCount}
+              </span>
+            )}
+          </Link>
+          <Link
+            to="/me/notes"
+            className="inline-flex items-center gap-1.5 rounded-[10px] border border-hairline bg-card-warm px-3 py-1.5 text-[13px] font-medium text-ink-2 transition-all hover:border-brand/35 hover:text-brand"
+          >
+            <NotebookPen size={15} />
+            个人知识库
+          </Link>
+          <Link
+            to="/me/profile"
+            className="inline-flex items-center gap-1.5 rounded-[10px] border border-hairline bg-card-warm px-3 py-1.5 text-[13px] font-medium text-ink-2 transition-all hover:border-brand/35 hover:text-brand"
+          >
+            <UserRoundCog size={15} />
+            我的画像
+          </Link>
+        </span>
+      </motion.section>
 
+      {/* 首次使用引导：这是什么 / 你在哪 / 先做哪一步 */}
       <FirstRunGuide />
-      <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-5 px-0.5 text-[14px] leading-relaxed text-ink-2">
+
+      {/* 诗意标语（治愈 · 去焦虑） */}
+      <motion.p {...fadeUp} className="mt-5 px-0.5 text-[14px] leading-relaxed text-ink-2">
         <span className="mr-0.5 align-[-2px] text-[20px] text-ochre">「</span>
         每学一点，都是给未来的自己，浇一次水。
         <span className="ml-0.5 align-[-2px] text-[20px] text-ochre">」</span>
       </motion.p>
 
-      {learning.loading && <div className="mt-8 flex items-center justify-center gap-2 rounded-[14px] border border-hairline bg-card-warm py-14 text-[13px] text-ink-muted"><Loader2 size={16} className="animate-spin" />正在读取真实学习进度…</div>}
-
-      {!learning.loading && !learning.course && <section className="mt-8 rounded-[16px] border border-brand/20 bg-brand-tint/30 p-8 text-center"><h2 className="font-serif text-[21px] font-semibold text-ink">还没有属于你的课程</h2><p className="mt-2 text-[13px] text-ink-muted">完成画像后，让 AI 根据你的目标生成课程和章节资源。</p><Link to="/learn" className="lf-btn-primary mt-5 inline-flex">生成我的课程<ArrowRight size={14} /></Link></section>}
-
-      {!learning.loading && learning.course && <>
-        <motion.section initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="mt-8 rounded-[18px] border border-brand/25 bg-brand-tint/35 p-6 md:p-7">
-          <div className="flex items-start gap-4">
-            <div className="relative shrink-0"><ProgressRing value={learning.progress} /><span className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-semibold text-brand">{learning.progress}%</span></div>
-            <div className="min-w-0 flex-1"><div className="lf-mono-label">真实课程进度 · {learning.learnedCount}/{learning.totalCount} 项资源</div><h2 className="mt-1 font-serif text-[23px] font-semibold text-ink">{learning.course.title}</h2><p className="mt-1 text-[13px] leading-5 text-ink-muted">{learning.course.description}</p></div>
+      {/* ============ 今天就学这一件（唯一焦点） ============ */}
+      <motion.section {...fadeUp} className="relative mt-8">
+        {/* 破框植物：叶 + 浆果 + 金蕊小花 */}
+        <SprigTop className="absolute -top-11 right-7 z-10 h-[78px] w-[132px]" />
+        <div className="lf-card lf-glow-card relative p-7">
+          {/* 小盆栽（右下角，暖陶盆） */}
+          <PottedPlant className="absolute -bottom-1.5 right-8 hidden h-[66px] w-[56px] sm:block" />
+          <div className="relative">
+            <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-brand-tint px-2.5 py-1 text-[11.5px] font-semibold text-brand">
+              <span className="h-1.5 w-1.5 rounded-full bg-brand" />
+              今天就学这一件
+            </div>
+            <h2 className="font-serif text-[24px] font-semibold leading-[32px] text-ink">
+              {activeNode?.title ?? '开启你的第一课'}
+            </h2>
+            <p className="mt-2.5 text-[14.5px] leading-[24px] text-ink-2">
+              {currentLearner.diagnosisSummary.replace(/^DIA-01 诊断：/, '')}
+            </p>
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => navigate(activeNode ? `/learn/${activeNode.kpId}` : '/learn')}
+                className="lf-btn-primary group"
+              >
+                <Play size={15} fill="currentColor" className="transition-transform group-hover:translate-x-[3px]" />
+                {activeNode ? `继续：${activeNode.resourceRef ?? activeNode.title}` : '开始学习'}
+              </button>
+              {activeNode?.est && (
+                <span className="lf-chip !py-1 font-mono text-[12px] text-ink-muted">
+                  {activeNode.est}
+                </span>
+              )}
+            </div>
           </div>
-          {learning.nextResource && learning.nextChapter ? <div className="mt-6 rounded-[13px] border border-hairline bg-card-warm p-5"><span className="text-[11px] font-medium text-brand">接下来学习</span><h3 className="mt-1 text-[16px] font-semibold text-ink">第 {learning.nextChapter.index} 章 · {learning.nextChapter.title}</h3><p className="mt-1 text-[13px] text-ink-muted">{resourceMeta[learning.nextResource.type].label}：{learning.nextResource.title}</p><Link to={learningResourcePath(learning.nextResource)} className="lf-btn-primary mt-4 inline-flex"><Play size={14} fill="currentColor" />继续学习</Link></div> : <div className="mt-5 flex items-center gap-2 rounded-[12px] bg-card-warm p-4 text-[13px] text-brand"><CheckCircle2 size={17} />当前课程资源已经全部学完</div>}
-        </motion.section>
+        </div>
+      </motion.section>
 
-        <motion.section initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="mt-5">
-          <GardenCard course={learning.course} resources={learning.resources} />
-        </motion.section>
-        <section className="mt-4"><WeekReview /></section>
-        <LeafDivider className="mt-8" />
+      {/* ============ 我的园子（树 + 养分 + 该复习的，合为一条因果链） ============ */}
+      <motion.section {...fadeUp} className="mt-5">
+        <GardenCard />
+      </motion.section>
 
-        <section className="mt-7"><div className="mb-3 flex items-center gap-2"><Target size={16} className="text-ochre" /><h3 className="font-serif text-[18px] font-semibold text-ink">画像中的优先补强方向</h3></div><div className="grid gap-3 sm:grid-cols-2">{gaps.map((gap) => <div key={gap.id} className="rounded-[14px] border border-hairline bg-card-warm p-5"><div className="flex items-center justify-between"><span className="font-semibold text-ink">{gap.name}</span><span className={cn('font-mono text-[11px]', gap.gap > 20 ? 'text-brand-danger' : 'text-ochre')}>差距 {Math.max(0, gap.gap)}</span></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-paper-deep"><div className="h-full rounded-full bg-brand" style={{ width: `${Math.max(0, Math.min(100, gap.score))}%` }} /></div><p className="mt-2 text-[12px] text-ink-muted">当前 {gap.score} · 目标 {gap.targetLevel}</p></div>)}</div></section>
+      {/* ============ 本周回顾（去焦虑：只讲长进，不算欠账） ============ */}
+      <motion.section {...fadeUp} className="mt-4">
+        <WeekReview />
+      </motion.section>
 
-        <section className="mt-8"><div className="mb-3 flex items-center justify-between"><h3 className="font-serif text-[18px] font-semibold text-ink">最近的真实学习资源</h3><Link to="/resources" className="inline-flex items-center gap-1 text-[12px] text-brand hover:underline">查看全部<ArrowRight size={12} /></Link></div><div className="space-y-2.5">{learning.resources.slice(0, 5).map((resource) => { const Meta = resourceMeta[resource.type]; return <Link key={resource.id} to={learningResourcePath(resource)} className="group flex items-center gap-3 rounded-[13px] border border-hairline bg-card-warm p-4 transition-colors hover:border-brand/40"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand-tint text-brand"><Meta.Icon size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-[14px] font-medium text-ink">{resource.title}</span><span className="mt-0.5 block text-[11px] text-ink-muted">{Meta.label} · {resource.learned ? '已学完' : '待学习'}</span></span><ArrowRight size={14} className="text-ink-muted transition-transform group-hover:translate-x-1" /></Link>; })}</div></section>
-      </>}
+      {/* 叶形分割线 */}
+      <LeafDivider className="mt-8" />
+
+      {/* ============ 更多进展（默认折叠：少即是清楚） ============ */}
+      <motion.section {...fadeUp} className="mt-5">
+        <button
+          type="button"
+          onClick={() => setMoreOpen((v) => !v)}
+          className="flex w-full items-center gap-3 rounded-[14px] border border-hairline bg-card-warm/70 px-4 py-3 text-left transition-all hover:border-brand/40"
+        >
+          <span className="relative shrink-0">
+            <ProgressRing value={pathPct} size={40} />
+            <span className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-semibold text-ink tabular">
+              {pathPct}%
+            </span>
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[14px] font-medium text-ink">
+              更多进展：整体走到 {doneCount}/{path.length} 阶段
+            </span>
+            <span className="block text-[12px] text-ink-muted">
+              还需加强的 {topGaps.length} 块 · 为你做好的资料 {resources.length} 份
+            </span>
+          </span>
+          <ChevronDown size={16} className={cn('shrink-0 text-ink-muted transition-transform', moreOpen && 'rotate-180')} />
+        </button>
+      </motion.section>
+
+      {!moreOpen ? null : (
+      <>
+      {/* ============ 还需加强 ============ */}
+      <motion.section {...fadeUp} className="mt-5">
+        <div className="mb-3 flex items-center gap-2">
+          <Target size={17} className="text-ochre" />
+          <h3 className="font-serif text-[17px] font-semibold text-ink">还需加强的两块</h3>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {topGaps.map((g) => {
+            const kp = getKnowledgePoint(g.kpId);
+            const pct = Math.round((g.score / g.target) * 100);
+            return (
+              <div key={g.kpId} className="lf-card p-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[15px] font-semibold text-ink">{kp.name}</span>
+                  <span className="rounded-md bg-brand-danger/10 px-2 py-0.5 font-mono text-[11px] font-medium text-brand-danger">
+                    优先级 {g.priority}
+                  </span>
+                </div>
+                <div className="mt-3 flex items-center gap-2 font-mono text-[11.5px] text-ink-muted">
+                  <span>现在 {g.score}</span>
+                  <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-paper-deep">
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-full bg-ochre"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span>要到 {g.target}</span>
+                </div>
+                <p className="mt-3 text-[13px] leading-[20px] text-ink-2">{g.suggestion}</p>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/learn/${g.kpId}`)}
+                  className="lf-btn-ghost mt-4 !px-4 !py-1.5 text-[13px]"
+                >
+                  去学这块
+                  <ArrowRight size={13} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </motion.section>
+
+      {/* ============ 学习资源（列表式） ============ */}
+      <motion.section {...fadeUp} className="mt-8">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="font-serif text-[17px] font-semibold text-ink">AI 给你做好的资料</h3>
+          <Link
+            to="/resources"
+            className="inline-flex items-center gap-1 text-[13px] font-medium text-brand hover:underline"
+          >
+            看全部
+            <ArrowRight size={13} />
+          </Link>
+        </div>
+        <div className="space-y-2.5">
+          {resources.slice(0, 3).map((r: GeneratedResource) => {
+            const meta = formMeta[r.form];
+            const kp = getKnowledgePoint(r.kpId);
+            return (
+              <div
+                key={`${r.form}-${r.title}`}
+                role="button"
+                tabIndex={0}
+                /* 带上点的是哪一份，否则落地页会显示另一份资料 */
+                onClick={() => navigate(`/resources?tab=${r.form}`)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') navigate(`/resources?tab=${r.form}`);
+                }}
+                className="lf-card lf-card-hover group flex items-center gap-4 p-4 text-left"
+              >
+                <span
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[11px] border"
+                  style={{ color: meta.color, borderColor: `${meta.color}45`, backgroundColor: `${meta.color}0D` }}
+                >
+                  <meta.Icon size={19} strokeWidth={1.75} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h4 className="truncate text-[14.5px] font-semibold text-ink">{r.title}</h4>
+                  <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-ink-muted">
+                    <span
+                      className="font-medium"
+                      style={{ color: meta.color }}
+                    >
+                      {meta.label}
+                    </span>
+                    · {kp.name} · {r.levelTag}
+                    <span className="flex gap-1">
+                      {r.kbRefs.slice(0, 2).map((id) => (
+                        <TraceBadge key={id} kbId={id} />
+                      ))}
+                    </span>
+                  </p>
+                </div>
+                <ArrowRight
+                  size={15}
+                  className="shrink-0 text-ink-muted transition-transform duration-200 group-hover:translate-x-1 group-hover:text-brand"
+                />
+              </div>
+            );
+          })}
+        </div>
+      </motion.section>
+      </>
+      )}
     </div>
   );
 }

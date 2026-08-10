@@ -7,7 +7,7 @@ import { Toaster } from '@/components/ui/sonner';
 import AppShell from '@/components/AppShell';
 import Home from '@/pages/Home';
 import Learn from '@/pages/Learn';
-import CourseResourcePlayer from '@/pages/CourseResourcePlayer';
+import LearnUnit from '@/pages/LearnUnit';
 import LearnerHome from '@/pages/LearnerHome';
 import MyNotes from '@/pages/MyNotes';
 import WrongBook from '@/pages/WrongBook';
@@ -79,8 +79,7 @@ export default function App() {
           <Route path="me/notes" element={<MyNotes />} />
           <Route path="me/wrong" element={<WrongBook />} />
           <Route path="learn" element={<Learn />} />
-          <Route path="learn/resource/:resourceId" element={<CourseResourcePlayer />} />
-          <Route path="learn/:kpId" element={<Navigate to="/learn" replace />} />
+          <Route path="learn/:kpId" element={<LearnUnit />} />
           <Route path="onboarding" element={<Onboarding />} />
           <Route path="profiles" element={<Profiles />} />
           <Route path="agents" element={<Agents />} />

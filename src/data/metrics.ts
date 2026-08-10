@@ -69,11 +69,11 @@ export const coreMetrics: CoreMetric[] = [
     suffix: '%',
     thresholdText: '达标 ≥ 90%',
     badgeTone: 'green',
-    note: '6 大知识点 · 目标能力模型对齐',
+    note: '6 大知识点 · 岗位能力模型对齐',
     spark: [71, 74, 78, 81, 83, 85, 87, 89, 90.2, 91.1, 91.8, 92.4],
     thresholdLine: 90,
     href: '/report',
-    tooltip: '口径：已生成合格资源的知识点条目 ÷ 目标能力模型全部条目（对齐 1+X 标准）',
+    tooltip: '口径：已生成合格资源的知识点条目 ÷ 岗位能力模型全部条目（对齐 1+X 标准）',
   },
   {
     id: 'learners',

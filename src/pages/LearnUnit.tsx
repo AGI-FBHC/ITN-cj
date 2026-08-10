@@ -46,6 +46,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useProfile, dataIdOf } from '@/context/ProfileContext';
+import { bumpConfidence } from '@/data/confidence';
 import { useAgent } from '@/context/AgentContext';
 import { useNotes } from '@/context/NotesContext';
 import { useGrowth } from '@/context/GrowthContext';
@@ -452,7 +453,7 @@ function AdaptiveBanner({
 export default function LearnUnit() {
   const { kpId = 'kp-sensor' } = useParams();
   const navigate = useNavigate();
-  const { currentLearner, viewMode, weakestKp, bumpConfidence } = useProfile();
+  const { currentLearner, viewMode, weakestKp } = useProfile();
   const { pushSignal } = useAgent();
   const { markStudied, markDoubt } = useReview();
   const { addWrong } = useWrongBook();
@@ -786,7 +787,7 @@ export default function LearnUnit() {
     }
     pushSignal({ type: 'quiz-answer', kpId: b.q.kpId, level: b.q.level, correct });
     /* 每答一题都是一次画像校准证据（精简建档的低置信画像靠这个涨） */
-    void bumpConfidence(currentLearner.id);
+    bumpConfidence(currentLearner.id);
     /* 进阶挑战护栏：学习者越权上调时约定"两错接回"——ARB-05 兑现承诺 */
     if (challengeIdsRef.current.has(b.id) && !correct) {
       challengeWrongRef.current += 1;

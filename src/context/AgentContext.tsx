@@ -263,7 +263,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         const conf = confidence[weakestKp.id];
         const sigs = (logAll[lid] ?? []).filter((t) => t.includes(weakName)).slice(0, 3);
         const items = [
-          `理论测试「${weakName}」当前 ${score} 分，目标要求 ${weakestKp.targetLevel} 分，缺口 ${Math.max(0, weakestKp.targetLevel - score)} 分（六维中最大）`,
+          `理论测试「${weakName}」当前 ${score} 分，岗位目标 ${weakestKp.targetLevel} 分，缺口 ${Math.max(0, weakestKp.targetLevel - score)} 分（六维中最大）`,
           ...sigs.map((t) => `近期信号：${t}`),
           `我对这一维判断的置信度 ${conf}%${conf < 55 ? '（还偏低——多做两组题能让我更确定）' : ''}`,
         ];
@@ -279,7 +279,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         append({
           id: mid(),
           kind: 'agent',
-          text: `按当前画像，收益最高的是先攻「${weakName}」：它离目标要求最远，而且你最近的信号显示基础在松动。我已经让 GEN-03 按你的水平备好了讲义和分阶题——从「学」页进去就是。练完我会当场更新你的画像。`,
+          text: `按当前画像，收益最高的是先攻「${weakName}」：它离岗位目标最远，而且你最近的信号显示基础在松动。我已经让 GEN-03 按你的水平备好了讲义和分阶题——从「学」页进去就是。练完我会当场更新你的画像。`,
           time: now(),
         });
       } else {

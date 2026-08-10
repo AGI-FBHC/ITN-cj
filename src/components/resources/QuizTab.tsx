@@ -16,6 +16,7 @@ import { getKnowledgePoint } from '@/data/knowledgePoints';
 import { useAgent } from '@/context/AgentContext';
 import { useWrongBook } from '@/context/WrongBookContext';
 import { useProfile, dataIdOf } from '@/context/ProfileContext';
+import { bumpConfidence } from '@/data/confidence';
 import { cn } from '@/lib/utils';
 
 /** 答题进度持久化 key（按画像的资料底座 id 区分，隐私模式下读写失败静默兜底） */
@@ -320,7 +321,7 @@ export default function QuizTab({
   const questions = useMemo(() => getQuizByIds(resource.quizIds ?? []), [resource.quizIds]);
   const { pushSignal } = useAgent();
   const { addWrong } = useWrongBook();
-  const { currentLearner, bumpConfidence } = useProfile();
+  const { currentLearner } = useProfile();
   const dataId = dataIdOf(currentLearner);
 
   const [answers, setAnswers] = useState<Record<string, number>>(() => readStoredAnswers(dataId));
@@ -372,7 +373,7 @@ export default function QuizTab({
     /* 上报阿诊：每题即时进入信号流，3 题一结算 */
     pushSignal({ type: 'quiz-answer', kpId: q.kpId, level: q.level, correct });
     /* 每答一题都是一次画像校准证据（精简建档的低置信画像靠这个涨） */
-    void bumpConfidence(currentLearner.id);
+    bumpConfidence(currentLearner.id);
     /* 答错入错题本（题面从 quizBank 取，这里只存 id） */
     if (!correct) addWrong({ qid: q.id, kpId: q.kpId, from: 'quiz', pick: idx });
   };
