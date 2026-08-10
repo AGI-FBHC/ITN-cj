@@ -3,6 +3,7 @@
  * 统一通过后端接口登录；演示画像也必须是数据库种子中的 learner。
  */
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { api, setToken } from '@/lib/api';
 
@@ -58,6 +59,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [known, setKnown] = useState<Record<string, KnownRecord>>(() =>
     readJSON<Record<string, KnownRecord>>(K_KNOWN, {}),
   );
+
+  useEffect(() => {
+    if (!session || (session.method !== 'sso' && session.method !== 'sms')) return;
+    if (known[session.account]) return;
+    let cancelled = false;
+    api.listLearners()
+      .then((learners) => {
+        if (!cancelled && learners.length > 0) {
+          setKnown((prev) => ({ ...prev, [session.account]: { learnerId: learners[0].id, lastAt: Date.now() } }));
+        }
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [session, known]);
 
   const persistSession = useCallback((s: AuthSession | null) => {
     setSession(s);
