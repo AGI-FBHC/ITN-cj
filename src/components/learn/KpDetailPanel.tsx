@@ -145,10 +145,24 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
     try {
       const selectedTopicName = topicIndex != null ? kp.coreTopics[topicIndex] : null;
       const focus = selectedTopicName ?? kpProp?.coreTopics[0] ?? kp.name;
+      const wantedTitle = `${focus} · 交互课件`;
+      // 复用已有任务：已完成直接播放，生成中继续等待，避免每次点击都新建 PPT
+      try {
+        const listed = await presentationApi.listPresentationSummaries(50);
+        const match = (listed.tasks ?? [])
+          .filter((item) => item.title === wantedTitle || item.title.includes(focus))
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .find((item) => !['failed', 'cancelled'].includes(item.status));
+        if (match) {
+          toast.success(match.status === 'completed' ? '已找到已生成的 PPT，正在打开' : '已找到生成中的 PPT，继续等待');
+          navigate(`/learn/${kpId}?ppt=${match.id}`);
+          return;
+        }
+      } catch { /* 列表查询失败时允许直接创建 */ }
       const requirement = `面向${currentLearner.tag}（${currentLearner.education}）制作《${focus}》交互课件PPT，目标是${currentLearner.targetJob}。内容要覆盖核心概念、原理、方法、典型应用、练习检查与回顾，每一页有具体讲解，不用空泛标题；结合学习画像安排深度，适合课堂互动演示。`;
       const task = await presentationApi.createPresentation({
         requirement,
-        title: `${focus} · 交互课件`,
+        title: wantedTitle,
         audience: 'students',
         purpose: 'courseware',
         style: 'academic',
