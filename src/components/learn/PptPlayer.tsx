@@ -14,6 +14,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { fetchSlideAsset, presentationApi } from '@/lib/presentationApi';
 import type { PresentationSlideshow, PresentationTask } from '@/lib/presentationApi';
 import { cn } from '@/lib/utils';
+import { Send, X } from 'lucide-react';
+import { useProfile } from '@/context/ProfileContext';
+import { useNotes } from '@/context/NotesContext';
+import { api } from '@/lib/api';
+import type { TeachingGroupEvent } from '@/lib/api';
 
 const PROGRESS_LABEL: Record<PresentationTask['status'], string> = {
   queued: '排队中',
@@ -29,10 +34,14 @@ const PROGRESS_LABEL: Record<PresentationTask['status'], string> = {
 export default function PptPlayer({
   taskId,
   onBack,
+  kpId,
 }: {
   taskId: string;
   onBack?: () => void;
+  kpId?: string | null;
 }) {
+  const { currentLearner } = useProfile();
+  const { addNote } = useNotes();
   const [task, setTask] = useState<PresentationTask | null>(null);
   const [slides, setSlides] = useState<PresentationSlideshow | null>(null);
   const [current, setCurrent] = useState(0);
@@ -40,6 +49,12 @@ export default function PptPlayer({
   const [error, setError] = useState('');
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteText, setNoteText] = useState('');
+  const [askOpen, setAskOpen] = useState(false);
+  const [question, setQuestion] = useState('');
+  const [asking, setAsking] = useState(false);
+  const [answer, setAnswer] = useState('');
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [slideSrc, setSlideSrc] = useState('');
   const [audioSrc, setAudioSrc] = useState('');
@@ -184,6 +199,65 @@ export default function PptPlayer({
       toast.error(reason instanceof Error ? reason.message : '标记完成失败');
     } finally {
       setCompleting(false);
+    }
+  };
+
+  const saveNote = () => {
+    const text = noteText.trim();
+    if (!text) return;
+    addNote({
+      kpId: kpId ?? 'uncategorized',
+      text,
+      source: `${task?.title || 'PPT'} · 交互课件`,
+      sourceKind: 'manual',
+      kbRefs: [],
+      blockAnchor: `ppt-${current + 1}`,
+    });
+    setNoteOpen(false);
+    setNoteText('');
+  };
+
+  const submitQuestion = async () => {
+    const q = question.trim();
+    if (!q || asking) return;
+    setAsking(true);
+    setAnswer('');
+    const parts: string[] = [];
+    try {
+      await api.runTeachingGroupStream({
+        learnerId: currentLearner.id,
+        knowledgePointId: kpId ?? undefined,
+        mode: 'explain',
+        prompt: q,
+      }, (event: TeachingGroupEvent) => {
+        if (event.type === 'agent_output' && event.data) {
+          const data = event.data as Record<string, unknown>;
+          const text = [data.text, data.content, data.plan, data.summary].find((v) => typeof v === 'string' && Boolean((v as string).trim()));
+          if (text) parts.push(String(text));
+        }
+        if (event.type === 'run_completed' && event.data) {
+          const data = event.data as Record<string, unknown>;
+          const text = [data.plan, data.diagnosis, data.review, data.decision]
+            .map((v) => typeof v === 'string' ? v : v ? JSON.stringify(v, null, 2) : '')
+            .filter(Boolean).join('\n\n');
+          if (text) parts.push(text);
+        }
+      });
+      const finalAnswer = parts.join('\n\n').trim().slice(0, 4000) || 'AI 教研组已处理，但暂未返回可展示文本，请换一种问法再试。';
+      setAnswer(finalAnswer);
+      addNote({
+        kpId: kpId ?? 'uncategorized',
+        text: `问：${q}\n答：${finalAnswer}`,
+        source: `${task?.title || 'PPT'} · 举手提问`,
+        sourceKind: 'qa',
+        kbRefs: [],
+        blockAnchor: `ppt-${current + 1}`,
+      });
+      setQuestion('');
+    } catch (reason) {
+      setAnswer(reason instanceof Error ? `提问失败：${reason.message}` : '提问失败，请稍后重试');
+    } finally {
+      setAsking(false);
     }
   };
 
@@ -347,12 +421,12 @@ export default function PptPlayer({
                   <span className="shrink-0 font-mono text-[10.5px] text-ink-muted tabular">{current + 1}/{slideCount}</span>
                 </div>
 
-                <button type="button" onClick={() => toast.info('PPT 笔记暂未接入，可在学习资源中记录')} title="记笔记（自动关联当前页）" className={cn('inline-flex shrink-0 items-center gap-1.5 rounded-[10px] bg-brand text-paper shadow-warm transition-all hover:bg-brand-hover hover:shadow-warm-lg', barExpanded ? 'px-3.5 py-2 text-[13px] font-semibold' : 'rounded-full p-2.5')}>
+                <button type="button" onClick={() => setNoteOpen(true)} title="记笔记（自动关联当前页）" className={cn('inline-flex shrink-0 items-center gap-1.5 rounded-[10px] bg-brand text-paper shadow-warm transition-all hover:bg-brand-hover hover:shadow-warm-lg', barExpanded ? 'px-3.5 py-2 text-[13px] font-semibold' : 'rounded-full p-2.5')}>
                   <PenLine size={14} />
                   {barExpanded && '记笔记'}
                 </button>
 
-                <button type="button" onClick={() => toast.info('PPT 举手提问暂未接入')} title="举手提问" className={cn('inline-flex shrink-0 items-center gap-1.5 border border-brand-amber/50 bg-brand-amber-tint text-ochre transition-all hover:border-brand-amber', barExpanded ? 'rounded-[10px] px-3 py-2 text-[13px] font-medium' : 'rounded-full p-2.5')}>
+                <button type="button" onClick={() => setAskOpen(true)} title="举手提问" className={cn('inline-flex shrink-0 items-center gap-1.5 border border-brand-amber/50 bg-brand-amber-tint text-ochre transition-all hover:border-brand-amber', barExpanded ? 'rounded-[10px] px-3 py-2 text-[13px] font-medium' : 'rounded-full p-2.5')}>
                   <Hand size={14} />
                   {barExpanded && <span className="hidden sm:inline">举手提问</span>}
                 </button>
@@ -375,6 +449,78 @@ export default function PptPlayer({
                 </Popover>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+
+      {/* 记笔记面板 */}
+      {noteOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-ink/30 p-4 backdrop-blur-sm" onClick={() => setNoteOpen(false)}>
+          <div className="w-full max-w-[480px] rounded-[18px] border border-hairline bg-paper p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="lf-mono-label !text-[10px]">PERSONAL NOTE</div>
+                <h2 className="mt-1 text-[15px] font-semibold text-ink">记下这一页 · 第 {current + 1} 页</h2>
+              </div>
+              <button type="button" onClick={() => setNoteOpen(false)} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep" title="关闭">
+                <X size={16} />
+              </button>
+            </div>
+            <textarea
+              autoFocus
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="写下你的理解、疑问或总结…"
+              className="mt-4 min-h-[180px] w-full resize-none rounded-[13px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-6 text-ink outline-none focus:border-brand/45"
+            />
+            <button type="button" disabled={!noteText.trim()} onClick={saveNote} className="lf-btn-primary mt-3 w-full justify-center">
+              <CheckCircle2 size={14} />
+              保存到个人知识库
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 举手提问面板 */}
+      {askOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-ink/30 p-4 backdrop-blur-sm" onClick={() => setAskOpen(false)}>
+          <div className="flex max-h-[82vh] w-full max-w-[560px] flex-col rounded-[18px] border border-hairline bg-paper p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="lf-mono-label !text-[10px]">RAISE HAND · 举手提问</div>
+                <h2 className="mt-1 text-[15px] font-semibold text-ink">向 AI 教研组提问 · 第 {current + 1} 页</h2>
+              </div>
+              <button type="button" onClick={() => setAskOpen(false)} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep" title="关闭">
+                <X size={16} />
+              </button>
+            </div>
+            <textarea
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder="输入你对当前这一页的问题…"
+              className="mt-4 min-h-[90px] w-full resize-none rounded-[13px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-6 text-ink outline-none focus:border-brand/45"
+            />
+            {asking && (
+              <div className="mt-3 flex items-center gap-2 text-[12px] text-ink-muted">
+                <Loader2 size={13} className="animate-spin" />
+                正在调度 DIA/RET/GEN/VER/ARB 教研组…
+              </div>
+            )}
+            {answer && (
+              <div className="mt-3 max-h-[38vh] overflow-y-auto whitespace-pre-wrap rounded-[13px] border border-brand/20 bg-brand-tint/35 p-4 text-[13px] leading-6 text-ink-2">
+                {answer}
+              </div>
+            )}
+            <button
+              type="button"
+              disabled={!question.trim() || asking}
+              onClick={() => void submitQuestion()}
+              className="lf-btn-primary mt-4 justify-center"
+            >
+              <Send size={14} />
+              {asking ? '教研组处理中…' : '提问并沉淀笔记'}
+            </button>
           </div>
         </div>
       )}

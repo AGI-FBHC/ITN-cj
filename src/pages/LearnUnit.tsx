@@ -1329,7 +1329,7 @@ export default function LearnUnit() {
   /* PPT 播放模式：从知识地图进入时，直接播放后台生成的真实 PPT */
   const pptTaskId = searchParams.get('ppt');
   if (pptTaskId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(pptTaskId)) {
-    return <PptPlayer taskId={pptTaskId} onBack={() => navigate('/learn')} />;
+    return <PptPlayer taskId={pptTaskId} kpId={kpId} onBack={() => navigate('/learn')} />;
   }
 
   return (
