@@ -644,6 +644,75 @@ export function setToken(token: string | null) {
   }
 }
 
+export interface LearningMapTopic {
+  id: string;
+  kpId: string;
+  topicIndex: number;
+  name: string;
+  fullName?: string;
+}
+
+export interface LearningMapState {
+  mastery: number;
+  confidence: number;
+  learned: boolean;
+  status: string;
+  harvestStage?: string | null;
+  unlockedBlocks?: number;
+  progressDelta?: number;
+  styleOverride?: string | null;
+}
+
+export interface LearningMapPathItem {
+  kpId: string;
+  title: string;
+  status: string;
+  order: number;
+  estimatedMinutes: number;
+  resourceRef?: string;
+}
+
+export interface LearningMapDomain {
+  id: string;
+  code: string;
+  name: string;
+  en?: string;
+  weight: number;
+  targetLevel: number;
+  coverage: number;
+  description?: string;
+  topics: LearningMapTopic[];
+  state: LearningMapState;
+  path: LearningMapPathItem;
+  resources: { id?: string; type: string; title: string; status: string; path?: string }[];
+}
+
+export interface LearningMapNode {
+  id: string;
+  kpId: string;
+  kind: 'domain' | 'topic';
+  label: string;
+  order: number;
+  column: number;
+}
+
+export interface LearningMapEdge {
+  from: string;
+  to: string;
+  kind: 'prereq' | 'related' | 'applies';
+  note?: string;
+}
+
+export interface LearningMapOverview {
+  learnerId: string;
+  goalId?: string | null;
+  version: number;
+  generatedAt: string;
+  domains: LearningMapDomain[];
+  graph: { nodes: LearningMapNode[]; edges: LearningMapEdge[]; columns: { label: string; order: number }[] };
+  learningPath: LearningMapPathItem[];
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !headers.has('Content-Type')) {
@@ -997,4 +1066,26 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  getLearningMap: (learnerId?: string | null) => {
+    const suffix = learnerId && isBackendId(learnerId) ? `?learnerId=${encodeURIComponent(learnerId)}` : '';
+    return request<LearningMapOverview>(`/api/v1/learning-map${suffix}`);
+  },
+  getLearningMapDetail: (kpCode: string, learnerId?: string | null) => {
+    const suffix = learnerId && isBackendId(learnerId) ? `?learnerId=${encodeURIComponent(learnerId)}` : '';
+    return request<LearningMapDomain>(`/api/v1/learning-map/${encodeURIComponent(kpCode)}${suffix}`);
+  },
+  saveLearningMapProgress: (kpCode: string, body: { unlockedBlocks?: number; progressDelta?: number; styleOverride?: string }, learnerId?: string | null) => {
+    const suffix = learnerId && isBackendId(learnerId) ? `?learnerId=${encodeURIComponent(learnerId)}` : '';
+    return request<LearningMapDomain>(`/api/v1/learning-map/${encodeURIComponent(kpCode)}/progress${suffix}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  },
+  completeLearningMapUnit: (kpCode: string, learnerId?: string | null) => {
+    const suffix = learnerId && isBackendId(learnerId) ? `?learnerId=${encodeURIComponent(learnerId)}` : '';
+    return request<LearningMapDomain>(`/api/v1/learning-map/${encodeURIComponent(kpCode)}/complete${suffix}`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
 };

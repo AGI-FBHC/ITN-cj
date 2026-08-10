@@ -11,6 +11,8 @@ import { reportForLearner } from '@/data/reportBuilder';
 import { knowledgePoints } from '@/data/knowledgePoints';
 import { learnedKpIds } from '@/data/knowledgeGraph';
 import { cn } from '@/lib/utils';
+import type { KnowledgePoint } from '@/data/knowledgePoints';
+import type { PathNode } from '@/data/reportData';
 
 /** 状态点：达标=实心金，在学=左半绿，未学=空圈 */
 function StatusDot({ state }: { state: 'passed' | 'learning' | 'todo' }) {
@@ -33,6 +35,10 @@ export default function UnitQuickList({
   onSelect,
   routeOrdered = false,
   columns = false,
+  items: itemsProp,
+  path: pathProp,
+  learned: learnedProp,
+  mastery: masteryProp,
 }: {
   selectedKpId?: string | null;
   onSelect: (kpId: string) => void;
@@ -40,29 +46,38 @@ export default function UnitQuickList({
   routeOrdered?: boolean;
   /** 横向紧凑网格（放在图谱下方时用）：6 单元 2~3 列，压扁高度 */
   columns?: boolean;
+  items?: KnowledgePoint[];
+  path?: PathNode[];
+  learned?: Set<string>;
+  mastery?: Record<string, number>;
 }) {
   const { currentLearner } = useProfile();
   const report = reportForLearner(currentLearner);
-  const pathDone = report.path.filter((p) => p.status === 'done').map((p) => p.kpId);
-  const learned = useMemo(() => learnedKpIds(currentLearner, pathDone), [currentLearner, pathDone]);
+  const reportPath = pathProp ?? report.path;
+  const learned = learnedProp ?? useMemo(() => {
+    const pathDone = reportPath.filter((p) => p.status === 'done').map((p) => p.kpId);
+    return learnedKpIds(currentLearner, pathDone);
+  }, [currentLearner, reportPath]);
+  const mastery = masteryProp ?? {};
 
   /* 路径顺序（去重保序） */
   const pathSeq = useMemo(() => {
     const seq: string[] = [];
-    report.path.forEach((p) => {
+    reportPath.forEach((p) => {
       if (!seq.includes(p.kpId)) seq.push(p.kpId);
     });
     return seq;
-  }, [report]);
+  }, [reportPath]);
 
   const items = useMemo(() => {
-    if (!routeOrdered) return knowledgePoints;
-    return [...knowledgePoints].sort((a, b) => {
+    const source = itemsProp ?? knowledgePoints;
+    if (!routeOrdered) return source;
+    return [...source].sort((a, b) => {
       const ia = pathSeq.indexOf(a.id);
       const ib = pathSeq.indexOf(b.id);
       return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
     });
-  }, [routeOrdered, pathSeq]);
+  }, [routeOrdered, pathSeq, itemsProp]);
 
   return (
     <div>
@@ -72,7 +87,7 @@ export default function UnitQuickList({
       </div>
       <div className={cn('mt-1', columns ? 'grid gap-x-8 sm:grid-cols-2 xl:grid-cols-3' : 'divide-y divide-hairline/70')}>
         {items.map((kp) => {
-          const score = currentLearner.scores[kp.id] ?? 50;
+          const score = mastery[kp.id] ?? 50;
           const isLearned = learned.has(kp.id);
           const state: 'passed' | 'learning' | 'todo' =
             isLearned && score >= kp.targetLevel ? 'passed' : isLearned ? 'learning' : 'todo';

@@ -11,9 +11,12 @@ import { useAgent } from '@/context/AgentContext';
 import { reportForLearner } from '@/data/reportBuilder';
 import type { PathNodeStatus } from '@/data/reportData';
 import { getKnowledgePoint } from '@/data/knowledgePoints';
+import type { KnowledgePoint } from '@/data/knowledgePoints';
 import { resourcesForKp } from '@/data/resources';
+import type { GeneratedResource } from '@/data/resources';
 import type { ResourceForm } from '@/data/resources';
 import { Succulent, LeafSmall } from '@/components/heal/Flora';
+import type { PathNode } from '@/data/reportData';
 import { cn } from '@/lib/utils';
 
 const FORM_META: Record<ResourceForm, { label: string; icon: typeof BookOpen; hint: string }> = {
@@ -66,7 +69,14 @@ function MasteryRing({ score, target }: { score: number; target: number }) {
   );
 }
 
-export default function KpDetailPanel({ kpId }: { kpId: string | null }) {
+export default function KpDetailPanel({ kpId, kp: kpProp, mastery: masteryProp, confidence: confidenceProp, path: pathProp, resources: resourcesProp }: {
+  kpId: string | null;
+  kp?: KnowledgePoint | null;
+  mastery?: Record<string, number>;
+  confidence?: Record<string, number>;
+  path?: PathNode[];
+  resources?: GeneratedResource[];
+}) {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
   const { confidence } = useAgent();
@@ -88,12 +98,13 @@ export default function KpDetailPanel({ kpId }: { kpId: string | null }) {
     );
   }
 
-  const kp = getKnowledgePoint(kpId);
-  const score = currentLearner.scores[kpId] ?? 50;
-  const conf = confidence[kpId] ?? 40;
+  const kp = kpProp ?? getKnowledgePoint(kpId);
+  const score = (masteryProp ?? {})[kpId] ?? currentLearner.scores[kpId] ?? 50;
+  const conf = (confidenceProp ?? confidence)[kpId] ?? 40;
   const gap = Math.max(0, kp.targetLevel - score);
-  const res = resourcesForKp(dataId, kpId);
-  const pathNodes = report.path.filter((n) => n.kpId === kpId);
+  const res = resourcesProp ?? resourcesForKp(dataId, kpId);
+  const reportPath = pathProp ?? report.path;
+  const pathNodes = reportPath.filter((n) => n.kpId === kpId);
   const primaryStatus = pathNodes.find((n) => n.status === 'active')?.status
     ?? pathNodes.find((n) => n.status === 'todo')?.status
     ?? pathNodes[0]?.status

@@ -9,9 +9,9 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
-import { useAgent } from '@/context/AgentContext';
-import { knowledgePoints } from '@/data/knowledgePoints';
+import { knowledgePoints as fallbackKnowledgePoints } from '@/data/knowledgePoints';
 import { reportForLearner } from '@/data/reportBuilder';
+import { useLearningMap } from '@/hooks/useLearningMap';
 import KnowledgeGraph from '@/components/learn/KnowledgeGraph';
 import type { GraphScene } from '@/components/learn/KnowledgeGraph';
 import KpDetailPanel from '@/components/learn/KpDetailPanel';
@@ -34,14 +34,15 @@ const SCENES: { key: GraphScene; label: string; hint: string }[] = [
 export default function Learn() {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
-  const { confidence } = useAgent();
-  const report = reportForLearner(currentLearner);
+  const map = useLearningMap();
+  const knowledgePoints = map.domains.length ? map.domains : fallbackKnowledgePoints;
+  const reportPath = map.path.length ? map.path : reportForLearner(currentLearner).path;
   const [scene, setScene] = useState<GraphScene>('order');
-  const activeKp = report.path.find((p) => p.status === 'active')?.kpId ?? knowledgePoints[0].id;
+  const activeKp = map.activeKp ?? reportPath.find((p) => p.status === 'active')?.kpId ?? knowledgePoints[0].id;
   const [selectedKp, setSelectedKp] = useState<string>(activeKp);
 
   const pathStatusOf = (kpId: string): string | null => {
-    const nodes = report.path.filter((n) => n.kpId === kpId);
+    const nodes = reportPath.filter((n) => n.kpId === kpId);
     if (nodes.some((n) => n.status === 'active')) return 'active';
     if (nodes.some((n) => n.status === 'todo')) return 'todo';
     if (nodes.length && nodes.every((n) => n.status === 'done')) return 'done';
@@ -94,21 +95,21 @@ export default function Learn() {
       >
         {/* 左栏 = 图谱 + 速览（左栏更长，右栏 sticky 跟随——短边放右侧才不会滚出空腔） */}
         <div className="min-w-0">
-          <KnowledgeGraph scene={scene} onSelectKp={setSelectedKp} selectedKpId={selectedKp} />
+          <KnowledgeGraph scene={scene} onSelectKp={setSelectedKp} selectedKpId={selectedKp} nodes={map.graphNodes} edges={map.graphEdges} columns={map.graphColumns} path={map.path} mastery={map.mastery} confidence={map.confidence} learned={map.learned} activeKp={map.activeKp} />
           <div className="mt-3 border-t border-hairline/60 pt-3">
-            <UnitQuickList selectedKpId={selectedKp} onSelect={setSelectedKp} routeOrdered={scene === 'route'} columns />
+            <UnitQuickList selectedKpId={selectedKp} onSelect={setSelectedKp} routeOrdered={scene === 'route'} columns items={knowledgePoints} path={map.path} learned={map.learned} mastery={map.mastery} />
           </div>
         </div>
         <div className="lg:sticky lg:top-6 lg:self-start">
-          <KpDetailPanel kpId={selectedKp} />
+          <KpDetailPanel kpId={selectedKp} kp={knowledgePoints.find((kp) => kp.id === selectedKp) ?? null} mastery={map.mastery} confidence={map.confidence} path={map.path} />
         </div>
       </motion.div>
 
       {/* ============ 移动端：图谱不适合小屏，单元卡片作为移动布局 ============ */}
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:hidden">
         {knowledgePoints.map((kp, i) => {
-          const score = currentLearner.scores[kp.id] ?? 50;
-          const conf = confidence[kp.id] ?? 40;
+          const score = map.mastery[kp.id] ?? currentLearner.scores[kp.id] ?? 50;
+          const confidenceValue = map.confidence[kp.id] ?? 40;
           const st = pathStatusOf(kp.id);
           const meta = st ? statusMeta[st] : null;
           const gap = Math.max(0, kp.targetLevel - score);
@@ -145,7 +146,7 @@ export default function Learn() {
                 </div>
                 <div className="mt-1.5 flex items-center justify-between font-mono text-[10.5px] text-ink-muted">
                   <span>掌握 <span className="text-ink-2">{score}</span> · 距目标 <span className="text-ochre">{gap}</span></span>
-                  <span>置信 {conf}%</span>
+                  <span>置信 {confidenceValue}%</span>
                 </div>
               </div>
 

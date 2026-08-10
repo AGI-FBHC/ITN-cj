@@ -15,19 +15,16 @@ import { useProfile } from '@/context/ProfileContext';
 import { useAgent } from '@/context/AgentContext';
 import { useNotes } from '@/context/NotesContext';
 import { reportForLearner } from '@/data/reportBuilder';
+import type { PathNode } from '@/data/reportData';
 import { getKnowledgePoint } from '@/data/knowledgePoints';
 import {
   graphNodes,
   graphEdges,
   graphViewBox,
   graphColumns,
-  domainEdgesOf,
-  getNode,
-  prereqOf,
   learnedKpIds,
-  topicMastery,
 } from '@/data/knowledgeGraph';
-import type { EdgeKind, GraphNode } from '@/data/knowledgeGraph';
+import type { DomainEdge, EdgeKind, GraphEdge, GraphNode } from '@/data/knowledgeGraph';
 import { speciesOf } from '@/data/garden';
 import SpeciesPlant, { GardenDefs } from '@/components/heal/SpeciesPlant';
 import { cn } from '@/lib/utils';
@@ -218,12 +215,28 @@ export default function KnowledgeGraph({
   scene = 'order',
   onSelectKp,
   selectedKpId,
+  nodes: nodesProp,
+  edges: edgesProp,
+  columns: columnsProp,
+  path: pathProp,
+  mastery: masteryProp,
+  confidence: confidenceProp,
+  learned: learnedProp,
+  activeKp: activeKpProp,
 }: {
   /** 场景（由页面级分段控件切换）：order 学习顺序 / network 完整网络 / route 我的路线 */
   scene?: GraphScene;
   /** 提供后：点节点 = 选中（联动右栏详情），不直接跳转 */
   onSelectKp?: (kpId: string) => void;
   selectedKpId?: string | null;
+  nodes?: GraphNode[];
+  edges?: GraphEdge[];
+  columns?: { label: string; x: number }[];
+  path?: PathNode[];
+  mastery?: Record<string, number>;
+  confidence?: Record<string, number>;
+  learned?: Set<string>;
+  activeKp?: string | null;
 } = {}) {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
@@ -244,40 +257,70 @@ export default function KnowledgeGraph({
     scene === 'network' ? !hiddenKinds.has(k) : k === 'prereq';
   const showPath = scene === 'route';
 
-  const pathDone = report.path.filter((p) => p.status === 'done').map((p) => p.kpId);
-  const learned = useMemo(() => learnedKpIds(currentLearner, pathDone), [currentLearner, pathDone]);
-  const activeKp = report.path.find((p) => p.status === 'active')?.kpId ?? null;
-
-  const domains = useMemo(() => graphNodes.filter((n) => n.kind === 'domain'), []);
+  const dataNodes = nodesProp ?? graphNodes;
+  const dataEdges = edgesProp ?? graphEdges;
+  const dataColumns = columnsProp ?? graphColumns;
+  const reportPath = pathProp ?? report.path;
+  const masteryMap = masteryProp ?? {};
+  const confMap = confidenceProp ?? confidence;
+  const learned = learnedProp ?? useMemo(() => {
+    const pathDone = reportPath.filter((p) => p.status === 'done').map((p) => p.kpId);
+    return learnedKpIds(currentLearner, pathDone);
+  }, [currentLearner, reportPath]);
+  const activeKp = activeKpProp ?? reportPath.find((p) => p.status === 'active')?.kpId ?? null;
+  const nodeById = useMemo(() => new Map(dataNodes.map((node) => [node.id, node])), [dataNodes]);
+  const aggregatedEdges = useMemo(() => {
+    const map = new Map<string, DomainEdge>();
+    dataEdges.forEach((edge) => {
+      const a = nodeById.get(edge.from);
+      const b = nodeById.get(edge.to);
+      if (!a || !b || a.kind !== 'domain' || b.kind !== 'domain') return;
+      const key = `${edge.kind}:${a.kpId}>${b.kpId}`;
+      const current = map.get(key);
+      if (current) {
+        current.count += 1;
+        current.notes.push(edge.note ?? '');
+      } else {
+        map.set(key, { from: a.kpId, to: b.kpId, kind: edge.kind, count: 1, notes: edge.note ? [edge.note] : [] });
+      }
+    });
+    return map;
+  }, [dataEdges, nodeById]);
+  const domainEdgesOf = (kind: EdgeKind) => [...aggregatedEdges.values()].filter((edge) => edge.kind === kind);
+  const prereqOf = (nodeId: string) => dataEdges
+    .filter((edge) => edge.kind === 'prereq' && edge.to === nodeId)
+    .map((edge) => ({ node: nodeById.get(edge.from)!, note: edge.note ?? '' }))
+    .filter((item) => Boolean(item.node));
+  const domains = useMemo(() => dataNodes.filter((n) => n.kind === 'domain'), [dataNodes]);
   const expandedTopics = useMemo(
-    () => (expandedKp ? graphNodes.filter((n) => n.kind === 'topic' && n.kpId === expandedKp) : []),
-    [expandedKp],
+    () => (expandedKp ? dataNodes.filter((n) => n.kind === 'topic' && n.kpId === expandedKp) : []),
+    [expandedKp, dataNodes],
   );
 
   /* 展开域的子节点级明细边：另一端若在收拢的域里，锚到那个域的圆心 */
   const detailEdges = useMemo(() => {
     if (!expandedKp) return [];
-    return graphEdges
+    return dataEdges
       .filter((e) => (scene === 'network' ? !hiddenKinds.has(e.kind) : e.kind === 'prereq'))
       .map((e) => {
-        const a = getNode(e.from)!;
-        const b = getNode(e.to)!;
-        if (a.kpId !== expandedKp && b.kpId !== expandedKp) return null;
+        const a = nodeById.get(e.from)!;
+        const b = nodeById.get(e.to)!;
+        if (!a || !b || (a.kpId !== expandedKp && b.kpId !== expandedKp)) return null;
         const anchor = (node: GraphNode) =>
-          node.kind === 'topic' && node.kpId !== expandedKp ? getNode(node.kpId)! : node;
+          node.kind === 'topic' && node.kpId !== expandedKp ? nodeById.get(node.kpId)! : node;
         return { e, a: anchor(a), b: anchor(b) };
       })
-      .filter(Boolean) as { e: (typeof graphEdges)[number]; a: GraphNode; b: GraphNode }[];
-  }, [expandedKp, scene, hiddenKinds]);
+      .filter(Boolean) as { e: GraphEdge; a: GraphNode; b: GraphNode }[];
+  }, [expandedKp, scene, hiddenKinds, dataEdges, nodeById]);
 
   /* 路径叠加：按路径顺序连接域节点（去重保序） */
   const pathChain = useMemo(() => {
     const seq: string[] = [];
-    report.path.forEach((p) => {
+    reportPath.forEach((p) => {
       if (!seq.includes(p.kpId)) seq.push(p.kpId);
     });
-    return seq.map((id) => getNode(id)!).filter(Boolean);
-  }, [report]);
+    return seq.map((id) => nodeById.get(id)!).filter(Boolean);
+  }, [reportPath, nodeById]);
 
   /** 点域：展开/收拢 + 选中（右栏出详情）；点子节点：选中 */
   const clickNode = (n: GraphNode) => {
@@ -303,7 +346,7 @@ export default function KnowledgeGraph({
         </defs>
 
         {/* 列色带：结构进底色，不进边框（去卡框后的阅读动线） */}
-        {graphColumns.map((c) => (
+        {dataColumns.map((c) => (
           <rect
             key={`band-${c.label}`}
             x={c.x - 112}
@@ -317,7 +360,7 @@ export default function KnowledgeGraph({
         ))}
 
         {/* 列标注：学习顺序 */}
-        {graphColumns.map((c, i) => (
+        {dataColumns.map((c, i) => (
           <g key={c.label}>
             <text x={c.x} y={34} textAnchor="middle" fontSize="11" letterSpacing="2.5" fontFamily="'IBM Plex Mono', monospace" fill="#8A9580">
               {`0${i + 1} · ${c.label}`}
@@ -330,8 +373,8 @@ export default function KnowledgeGraph({
         {(Object.keys(EDGE_STYLE) as EdgeKind[]).map((kind) =>
           layerOn(kind)
             ? domainEdgesOf(kind).map((e) => {
-                const a = getNode(e.from)!;
-                const b = getNode(e.to)!;
+                const a = nodeById.get(e.from)!;
+                const b = nodeById.get(e.to)!;
                 const st = EDGE_STYLE[kind];
                 const dx = b.x - a.x, dy = b.y - a.y;
                 const len = Math.hypot(dx, dy) || 1;
@@ -439,7 +482,7 @@ export default function KnowledgeGraph({
         {domains.map((n) => {
           const isLearned = learned.has(n.kpId);
           const kp = getKnowledgePoint(n.kpId);
-          const mastery = currentLearner.scores[n.kpId] ?? 50;
+          const mastery = masteryMap[n.kpId] ?? 50;
           const dimmed = expandedKp !== null && expandedKp !== n.kpId;
           return (
             <g
@@ -484,7 +527,7 @@ export default function KnowledgeGraph({
               onClick={() => clickNode(n)}
               onDoubleClick={() => openUnit(n)}
             >
-              <TopicDot n={n} mastery={topicMastery(currentLearner, n.kpId, n.topicIndex ?? 0)} target={kp.targetLevel} learned={isLearned} />
+              <TopicDot n={n} mastery={masteryMap[n.kpId] ?? 50} target={kp.targetLevel} learned={isLearned} />
             </g>
           );
         })}
@@ -571,7 +614,7 @@ export default function KnowledgeGraph({
           </div>
           <div className="mt-1 font-mono text-[10.5px] text-ink-muted">
             {learned.has(hover.kpId)
-              ? `掌握 ${hover.kind === 'domain' ? currentLearner.scores[hover.kpId] ?? 50 : topicMastery(currentLearner, hover.kpId, hover.topicIndex ?? 0)} / 目标 ${getKnowledgePoint(hover.kpId).targetLevel} · 置信 ${confidence[hover.kpId] ?? 40}%${hover.kind === 'domain' && (countByKp[hover.kpId] ?? 0) > 0 ? ` · 笔记 ${countByKp[hover.kpId]} 条` : ''}`
+              ? `掌握 ${masteryMap[hover.kpId] ?? 50} / 目标 ${getKnowledgePoint(hover.kpId).targetLevel} · 置信 ${confMap[hover.kpId] ?? 40}%${hover.kind === 'domain' && (countByKp[hover.kpId] ?? 0) > 0 ? ` · 笔记 ${countByKp[hover.kpId]} 条` : ''}`
               : '尚未学习 · 点击开始'}
           </div>
           {hover.kind === 'topic' && prereqOf(hover.id).length > 0 && (
