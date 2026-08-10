@@ -48,6 +48,8 @@ import {
   Camera,
   MessageSquare,
   MoreHorizontal,
+  FileText,
+  Loader2,
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
@@ -678,13 +680,28 @@ export default function LearnUnit() {
   const [askPhoto, setAskPhoto] = useState<{ name: string; url: string } | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const askInputRef = useRef<HTMLInputElement>(null);
-  const [qaLog, setQaLog] = useState<{ q: string; a: string; kbRef?: string; photo?: string }[]>([]);
+  interface QaEntry {
+    q: string;
+    a: string;
+    kbRef?: string;
+    photo?: string;
+    voice?: boolean;
+    transcript?: string;
+    duration?: number;
+    converting?: boolean;
+    id?: string;
+  }
+  const [qaLog, setQaLog] = useState<QaEntry[]>([]);
   /** 语音输入目标：ask=提问（说完自动发送）/ note=笔记（转写填入待编辑） */
   const [listening, setListening] = useState<null | 'ask' | 'note'>(null);
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [voiceTranscriptOpen, setVoiceTranscriptOpen] = useState<Record<string, boolean>>({});
   /** 实时转写预览：说到哪看到哪，用户才敢让它自动发 */
   const [interim, setInterim] = useState('');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recRef = useRef<any>(null);
+  const voiceBusyRef = useRef(false);
+  const voiceSeqRef = useRef(0);
   const pptVoiceRef = useRef<WavRecorder | null>(null);
   /** 笔记附图（纯演示：正文里留文本标记，不把 base64 塞进 localStorage） */
   const [noteImg, setNoteImg] = useState<{ name: string; url: string } | null>(null);
@@ -1106,6 +1123,8 @@ export default function LearnUnit() {
     stopPlayback();
     hitSpot('modal');
     setListening('ask');
+    voiceBusyRef.current = true;
+    setVoiceBusy(true);
     try {
       const recorder = await startWavRecording({
         silenceMs: 1200,
@@ -1115,6 +1134,8 @@ export default function LearnUnit() {
       pptVoiceRef.current = recorder;
     } catch (reason) {
       setListening(null);
+      voiceBusyRef.current = false;
+      setVoiceBusy(false);
       toast(reason instanceof Error ? reason.message : '无法开始录音');
     }
   };
@@ -1128,9 +1149,16 @@ export default function LearnUnit() {
     try {
       audio = await recorder.stop();
     } catch (reason) {
+      voiceBusyRef.current = false;
+      setVoiceBusy(false);
       toast(reason instanceof Error ? reason.message : '没有检测到有效语音');
       return;
     }
+    const entryId = `voice-${voiceSeqRef.current++}`;
+    const durationSec = Math.max(1, Math.round(audio.size / 32000));
+    setQaLog((prev) => [...prev, {
+      id: entryId, q: '', a: '', voice: true, transcript: '', duration: durationSec, converting: true,
+    }]);
     let transcript = '';
     let reply = '';
     let streamError = '';
@@ -1141,10 +1169,13 @@ export default function LearnUnit() {
         pptRef.current?.current ?? 0,
         '',
         (event) => {
-          if (event.type === 'reply_delta' && event.content) reply += event.content;
-          else if (event.type === 'result') {
+          if (event.type === 'reply_delta' && event.content) {
+            reply += event.content;
+            setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: reply } : qa));
+          } else if (event.type === 'result') {
             transcript = event.transcript || transcript;
             if (event.content) reply = event.content;
+            setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, transcript, converting: false, q: transcript, a: reply } : qa));
           } else if (event.type === 'error') {
             streamError = event.message || 'MiMo 语音理解失败';
           }
@@ -1152,13 +1183,17 @@ export default function LearnUnit() {
       );
     } catch (reason) {
       streamError = reason instanceof Error ? reason.message : 'MiMo 语音理解失败';
+    } finally {
+      voiceBusyRef.current = false;
+      setVoiceBusy(false);
     }
     if (!transcript) {
+      setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, converting: false, transcript: '', q: streamError || '没有识别到有效语音' } : qa));
       toast(streamError || '没有识别到有效语音');
       return;
     }
     const finalReply = reply.trim() || '我听到了你的问题，但 MiMo 暂未返回可展示回答，请稍后重试。';
-    setQaLog((prev) => [...prev, { q: transcript, a: finalReply }]);
+    setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: finalReply } : qa));
     setQuestion('');
     tts.speak(finalReply, speechRate, () => undefined, voiceStyle.pitch);
     addNote({
@@ -1168,7 +1203,7 @@ export default function LearnUnit() {
       sourceKind: 'qa',
       kbRefs: [],
     });
-  };
+  };;
 
   const submitQuestion = (override?: string) => {
     const q = (override ?? question).trim();
@@ -1208,6 +1243,7 @@ export default function LearnUnit() {
     }
     try { recRef.current?.abort(); } catch { /* ignore */ }
     recRef.current = null;
+    setVoiceBusy(false);
     setListening(null);
     setInterim('');
   };
@@ -2840,7 +2876,7 @@ export default function LearnUnit() {
                 <p className="py-3 text-center text-[12px] text-ink-muted">问本讲相关的问题，比如"{qaBankHint(kpId)}"</p>
               )}
               {qaLog.map((qa, i) => (
-                <div key={i} className="space-y-1.5">
+                <div key={qa.id ?? i} className="space-y-1.5">
                   {qa.photo && (
                     <img
                       src={qa.photo}
@@ -2848,9 +2884,36 @@ export default function LearnUnit() {
                       className="ml-auto block max-h-[120px] w-fit rounded-[10px] border border-hairline object-cover"
                     />
                   )}
-                  <div className="ml-auto w-fit max-w-[90%] rounded-[12px] rounded-br-[4px] bg-brand px-3 py-1.5 text-[12.5px] text-paper">{qa.q}</div>
+                  {qa.voice ? (
+                    <div className="ml-auto w-fit max-w-[90%]">
+                      <div className="flex items-center gap-2 rounded-[12px] rounded-br-[4px] bg-brand px-3 py-2 text-paper">
+                        <Mic size={14} />
+                        <span className="font-mono text-[11.5px]">{qa.duration ?? 1}″</span>
+                        {qa.converting ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : qa.transcript ? (
+                          <button
+                            type="button"
+                            onClick={() => { if (qa.id) setVoiceTranscriptOpen((prev) => ({ ...prev, [String(qa.id)]: !prev[String(qa.id)] })); }}
+                            title="转文字"
+                            aria-label="转文字"
+                            className="ml-1 flex h-5 w-5 items-center justify-center rounded-full bg-paper/20 transition hover:bg-paper/30"
+                          >
+                            <FileText size={12} />
+                          </button>
+                        ) : null}
+                      </div>
+                      {qa.transcript && qa.id && voiceTranscriptOpen[qa.id] && (
+                        <div className="mt-1 ml-auto w-fit max-w-[92%] rounded-[10px] bg-paper px-3 py-1.5 text-[12px] leading-5 text-ink">
+                          {qa.transcript}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    qa.q && <div className="ml-auto w-fit max-w-[90%] rounded-[12px] rounded-br-[4px] bg-brand px-3 py-1.5 text-[12.5px] text-paper">{qa.q}</div>
+                  )}
                   <div className="w-fit max-w-[92%] rounded-[12px] rounded-tl-[4px] border border-hairline bg-card-warm px-3 py-2 text-[12.5px] leading-[19px] text-ink-2">
-                    {qa.a}
+                    {qa.a || (qa.voice && qa.converting ? '正在识别并回答…' : '')}
                     {qa.kbRef && <span className="ml-1.5"><TraceBadge kbId={qa.kbRef} /></span>}
                   </div>
                 </div>
@@ -2884,31 +2947,37 @@ export default function LearnUnit() {
               >
                 <ImagePlus size={15} />
               </button>
-              {srAvailable && (
-                <button
-                  type="button"
-                  onClick={() => (listening === 'ask' ? stopListening() : startListening('ask'))}
-                  title={listening === 'ask' ? '再点一次取消（不发送）' : '语音提问 · 说完自动发送'}
-                  className={cn(
-                    'flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-all',
-                    listening === 'ask' ? 'animate-pulse border-brand-danger bg-brand-danger text-paper' : 'border-hairline bg-paper text-ink-2 hover:border-brand/40',
-                  )}
-                >
-                  <Mic size={15} />
-                </button>
-              )}
+              <button
+                type="button"
+                disabled={voiceBusy}
+                onClick={() => {
+                  if (listening === 'ask' || pptVoiceRef.current) stopListening();
+                  else if (pptTaskId) void startPptVoiceAsk();
+                  else if (getRecognizer()) startListening('ask');
+                }}
+                title={voiceBusy ? '正在识别并回答，请稍候' : listening === 'ask' ? '再点一次取消（不发送）' : '语音提问 · 说完自动发送'}
+                className={cn(
+                  'flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-all',
+                  voiceBusy ? 'cursor-not-allowed opacity-40' : listening === 'ask' ? 'animate-pulse border-brand-danger bg-brand-danger text-paper' : 'border-hairline bg-paper text-ink-2 hover:border-brand/40',
+                )}
+              >
+                <Mic size={15} />
+              </button>
               <input
                 ref={askInputRef}
                 value={listening === 'ask' ? interim : question}
                 onChange={(e) => setQuestion(e.target.value)}
-                readOnly={listening === 'ask'}
+                readOnly={listening === 'ask' || voiceBusy}
+                disabled={voiceBusy}
                 onKeyDown={(e) => { if (e.key === 'Enter') submitQuestion(); }}
                 placeholder={
-                  listening === 'ask'
-                    ? '正在听…说完自动发送'
-                    : askPhoto
-                      ? '这张图想问什么？（可不填）'
-                      : '输入问题，或点麦克风说'
+                  voiceBusy
+                    ? '正在识别并回答，暂时不能输入'
+                    : listening === 'ask'
+                      ? '正在听…说完自动发送'
+                      : askPhoto
+                        ? '这张图想问什么？（可不填）'
+                        : '输入问题，或点麦克风说'
                 }
                 className={cn(
                   'h-9 min-w-0 flex-1 rounded-[10px] border bg-paper px-3 text-[13px] outline-none focus:border-brand/50',
@@ -2918,7 +2987,7 @@ export default function LearnUnit() {
               <button
                 type="button"
                 onClick={() => submitQuestion()}
-                disabled={!question.trim() && !askPhoto}
+                disabled={voiceBusy || (!question.trim() && !askPhoto)}
                 className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]', question.trim() || askPhoto ? 'bg-brand text-paper' : 'bg-paper-deep text-ink-muted/50')}
               >
                 <Send size={14} />
