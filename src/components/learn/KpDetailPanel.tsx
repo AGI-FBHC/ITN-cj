@@ -158,6 +158,39 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [currentLearner.id, kpId, kpProp, topicIndex]);
 
+  /* 同步后台个性资源任务：刷新或切回页面后，按钮仍显示真实生成状态。 */
+  useEffect(() => {
+    if (!kpId) return undefined;
+    const selectedKp = kpProp ?? getKnowledgePoint(kpId);
+    const focus = topicIndex != null ? selectedKp.coreTopics[topicIndex] : selectedKp.coreTopics[0] ?? selectedKp.name;
+    const scope = `${currentLearner.id}:${kpId}:${topicIndex != null ? focus : ''}`;
+    let cancelled = false;
+    let timer = 0;
+    const syncTasks = async () => {
+      try {
+        const { tasks } = await api.listLearningResourceTasks(50);
+        if (cancelled) return;
+        const nextGenerating = new Set<string>();
+        for (const task of tasks.filter((item) => item.title.startsWith(`${focus} · `))) {
+          const form: ResourceForm = task.resourceType === 'practice' ? 'guide' : task.resourceType;
+          const key = `${scope}:${form}`;
+          if (!['completed', 'failed', 'cancelled'].includes(task.status)) nextGenerating.add(key);
+          if (task.status === 'completed' && task.resourceId) {
+            setGeneratedResources((current) => ({ ...current, [scope]: { ...current[scope], [form]: { id: task.resourceId!, title: task.title } } }));
+          }
+        }
+        setGenerating((current) => {
+          const next = new Set([...current].filter((key) => !key.startsWith(`${scope}:`)));
+          nextGenerating.forEach((key) => next.add(key));
+          return next;
+        });
+        if (nextGenerating.size) timer = window.setTimeout(syncTasks, 1800);
+      } catch { /* 顶部任务中心仍会继续展示；这里不伪造状态。 */ }
+    };
+    void syncTasks();
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [currentLearner.id, kpId, kpProp, topicIndex]);
+
   if (!kpId) {
     return (
       <div className="lf-glass relative flex h-full min-h-[280px] flex-col items-center justify-center rounded-[18px] p-6 text-center">
@@ -215,11 +248,19 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
         learningGoalId: goalId,
         detailLevel: 'detailed' as const,
       };
-      const resource = form === 'lecture'
-        ? await api.createLearningLecture(body)
-        : form === 'quiz'
-          ? await api.createLearningQuiz(body)
-          : await api.createLearningPractice(body);
+      const resourceType = form === 'guide' ? 'practice' : form;
+      const listed = await api.listLearningResourceTasks(50).catch(() => ({ tasks: [] }));
+      let task = listed.tasks.find((item) => item.resourceType === resourceType && item.title === body.title && !['completed', 'failed', 'cancelled'].includes(item.status))
+        ?? await api.startLearningResourceTask(resourceType, body);
+      toast.success(`${meta.label}已加入后台教研组`, { description: '可在顶部“正在执行”查看多智能体生成与引用核验过程。' });
+      while (mounted.current && !['completed', 'failed', 'cancelled'].includes(task.status)) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1800));
+        task = await api.getLearningResourceTask(task.id);
+      }
+      if (task.status !== 'completed' || !task.resourceId) {
+        throw new Error(task.errorMessage || `${meta.label}未通过质量审查，请稍后重试`);
+      }
+      const resource = await api.getLearningResource(task.resourceId);
       setGeneratedResources((current) => ({
         ...current,
         [resourceScope]: {
@@ -227,7 +268,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           [form]: { id: resource.id, title: resource.title },
         },
       }));
-      toast.success(`${meta.label}已生成，可以打开`);
+      toast.success(`${meta.label}已通过多智能体审查，可以打开`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '资源生成失败');
     } finally {

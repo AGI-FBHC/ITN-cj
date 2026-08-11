@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Activity, ChevronDown, ChevronRight, LoaderCircle } from 'lucide-react';
-import { api, type Course, type TeachingGroupEvent } from '@/lib/api';
+import { api, type Course, type LearningResourceGenerationTask, type TeachingGroupEvent } from '@/lib/api';
 import { presentationApi, type PresentationTask } from '@/lib/presentationApi';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import LiveDot from '@/components/LiveDot';
@@ -8,7 +8,7 @@ import LiveDot from '@/components/LiveDot';
 type TaskEvent = { time?: string; title: string; detail?: string; agent?: string };
 type ActiveTask = {
   id: string;
-  kind: 'course' | 'presentation' | 'teaching';
+  kind: 'course' | 'presentation' | 'teaching' | 'resource';
   title: string;
   progress: number;
   stage: string;
@@ -63,6 +63,10 @@ function presentationTask(task: PresentationTask): ActiveTask {
   };
 }
 
+function resourceTask(task: LearningResourceGenerationTask): ActiveTask {
+  return { id: task.id, kind: 'resource', title: task.title, progress: task.progress, stage: task.stageMessage, updatedAt: task.updatedAt, events: task.events.map(eventOf) };
+}
+
 export default function ActiveTaskCenter({ learnerId }: { learnerId: string | null }) {
   const [open, setOpen] = useState(false);
   const [tasks, setTasks] = useState<ActiveTask[]>([]);
@@ -73,10 +77,11 @@ export default function ActiveTaskCenter({ learnerId }: { learnerId: string | nu
     let timer: number | undefined;
     const load = async () => {
       try {
-        const [courseResult, presentationResult, teachingResult] = await Promise.allSettled([
+        const [courseResult, presentationResult, teachingResult, resourceResult] = await Promise.allSettled([
           api.listCourses(learnerId),
           presentationApi.listPresentationSummaries(30),
           api.listTeachingGroupRuns(20, learnerId),
+          api.listLearningResourceTasks(40),
         ]);
         const courses = courseResult.status === 'fulfilled'
           ? courseResult.value.courses.filter((course) => ACTIVE_COURSE.has(course.status)).map(courseTask)
@@ -104,7 +109,10 @@ export default function ActiveTaskCenter({ learnerId }: { learnerId: string | nu
             events: (run.events ?? []).map(teachingEventOf),
           };
         }));
-        if (!disposed) setTasks([...courses, ...presentations, ...teaching].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')));
+        const resources = resourceResult.status === 'fulfilled'
+          ? resourceResult.value.tasks.filter((task) => !['completed', 'failed', 'cancelled'].includes(task.status)).map(resourceTask)
+          : [];
+        if (!disposed) setTasks([...courses, ...presentations, ...teaching, ...resources].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')));
       } finally {
         if (!disposed) timer = window.setTimeout(load, 1800);
       }
@@ -115,7 +123,7 @@ export default function ActiveTaskCenter({ learnerId }: { learnerId: string | nu
 
   const latest = tasks[0];
   const label = tasks.length > 0 ? `${tasks.length} 个任务执行中` : '正在执行';
-  const kindLabel = (kind: ActiveTask['kind']) => kind === 'course' ? '课程资源' : kind === 'presentation' ? '交互课件' : '教研协同';
+  const kindLabel = (kind: ActiveTask['kind']) => kind === 'course' ? '课程资源' : kind === 'presentation' ? '交互课件' : kind === 'resource' ? '个性资源' : '教研协同';
   const toggle = (id: string) => setExpanded((prev) => {
     const next = new Set(prev);
     if (next.has(id)) next.delete(id); else next.add(id);

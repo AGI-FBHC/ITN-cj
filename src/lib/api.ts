@@ -432,6 +432,20 @@ export interface UserProfileSettings {
   [key: string]: unknown;
 }
 
+export interface LearningResourceGenerationTask {
+  id: string;
+  resourceType: 'lecture' | 'practice' | 'quiz';
+  title: string;
+  status: 'queued' | 'retrieving' | 'planning' | 'generating' | 'verifying' | 'reviewing' | 'revising' | 'judging' | 'completed' | 'failed' | 'cancelled';
+  progress: number;
+  stageMessage: string;
+  events: Array<Record<string, unknown>>;
+  resourceId: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface RagDomain {
   id: number;
   code: string;
@@ -1088,6 +1102,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  startLearningResourceTask: (resourceType: 'lecture' | 'practice' | 'quiz', body: LearningResourceGenerateInput) =>
+    requestDirect<LearningResourceGenerationTask>(`/v1/learning-resource-tasks/${resourceType}`, {
+      method: 'POST', body: JSON.stringify(body),
+    }),
+  listLearningResourceTasks: (limit = 30) =>
+    requestDirect<{ tasks: LearningResourceGenerationTask[] }>(`/v1/learning-resource-tasks?limit=${limit}`),
+  getLearningResourceTask: (taskId: string) =>
+    requestDirect<LearningResourceGenerationTask>(`/v1/learning-resource-tasks/${encodeURIComponent(taskId)}`),
   getLearningResource: (resourceId: string) =>
     requestDirect<LearningResource>(`/v1/learning-resources/${encodeURIComponent(resourceId)}`),
   getPersonalizedLearningUnit: (kpId: string, topicId: string, learnerId: string) =>
