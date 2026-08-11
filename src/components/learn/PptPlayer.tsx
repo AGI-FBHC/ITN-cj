@@ -181,7 +181,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
     const audio = audioRef.current;
     if (audio) { audio.pause(); audio.removeAttribute('src'); audio.load(); }
     if (!switchingSlideRef.current) setAudioPlaying(false);
-    setNoteRevealCount(null);
+    setNoteRevealCount(0);
     if (!switchingSlideRef.current) onPlaybackChange?.(false);
     setAudioSrc((prev) => { if (prev) URL.revokeObjectURL(prev); return ''; });
     audioSrcRef.current = '';
@@ -201,7 +201,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
     return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [taskId, current, slides]);
   const note = slides?.speakerNotes[current] ?? '';
-  const visibleNote = noteRevealCount === null ? note : note.slice(0, noteRevealCount);
+  const visibleNote = note.slice(0, noteRevealCount ?? 0);
 
   useEffect(() => {
     if (!audioPlaying || noteRevealCount === null) return;

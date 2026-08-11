@@ -425,6 +425,13 @@ export interface LearningResourceTrace {
 
 export type TtsSpeed = 'very_slow' | 'slow' | 'normal' | 'fast' | 'very_fast';
 
+export interface UserProfileSettings {
+  profileCompleted: boolean;
+  ttsVoice: string;
+  ttsSpeed: TtsSpeed;
+  [key: string]: unknown;
+}
+
 export interface RagDomain {
   id: number;
   code: string;
@@ -879,6 +886,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ learnerCode }),
     }),
+  getUserProfile: () => request<UserProfileSettings>('/api/v1/profile'),
+  updateUserProfile: (body: UserProfileSettings) => request<UserProfileSettings>('/api/v1/profile', {
+    method: 'PUT', body: JSON.stringify(body),
+  }),
   identityLogin: (body: {
     identityType: 'ENTERPRISE' | 'WECHAT';
     identityValue: string;

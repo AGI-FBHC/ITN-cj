@@ -205,13 +205,15 @@ export async function streamPresentationChatText(
 export async function streamPresentationChatTts(
   taskId: string,
   text: string,
+  voice?: string,
+  speed?: string,
   signal?: AbortSignal,
 ): Promise<Response> {
   const headers = new Headers({ 'Content-Type': 'application/json', Accept: 'audio/L16' });
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
   const response = await fetch(`/v1/presentations/${encodeURIComponent(taskId)}/chat/tts`, {
-    method: 'POST', headers, signal, body: JSON.stringify({ text }),
+    method: 'POST', headers, signal, body: JSON.stringify({ text, voice, speed }),
   });
   if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
   if (!response.body) throw new Error('浏览器没有收到语音流');

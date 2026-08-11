@@ -91,7 +91,7 @@ import { GrassTuft, Sprout } from '@/components/heal/Flora';
 import { useAmbient } from '@/components/heal/useAmbient';
 import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
-import type { PersonalizedLearningUnit } from '@/lib/api';
+import type { PersonalizedLearningUnit, TtsSpeed } from '@/lib/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { lectureMdComponents } from '@/components/resources/lecture-markdown';
@@ -106,6 +106,14 @@ const VOICE_STYLES = [
   { key: 'standard', label: '标准播报', desc: '默认音色 · 均衡', pitch: 1, rateScale: 1 },
   { key: 'lively', label: '亲切活泼', desc: '音调明快 · 提神醒脑', pitch: 1.2, rateScale: 1.08 },
 ] as const;
+const MIMO_VOICES = ['冰糖', '茉莉', '苏打', '白桦', 'Mia', 'Chloe', 'Milo', 'Dean'] as const;
+const MIMO_SPEEDS: Array<{ value: TtsSpeed; label: string }> = [
+  { value: 'very_slow', label: '超慢' },
+  { value: 'slow', label: '慢' },
+  { value: 'normal', label: '正常' },
+  { value: 'fast', label: '快' },
+  { value: 'very_fast', label: '极速' },
+];
 
 /* ---------- TTS（带看门狗：utterance 卡死/静音环境下超时强制推进，保证讲播永不挂起） ---------- */
 function useTts() {
@@ -671,6 +679,9 @@ export default function LearnUnit() {
   const [kbGlow, setKbGlow] = useState(false);
   const [rateIdx, setRateIdx] = useState(2);
   const [voiceIdx, setVoiceIdx] = useState(1);
+  const [pptVoice, setPptVoice] = useState('苏打');
+  const [pptSpeed, setPptSpeed] = useState<TtsSpeed>('normal');
+  const [pptVoiceSaving, setPptVoiceSaving] = useState(false);
   const voiceStyle = VOICE_STYLES[voiceIdx];
   /** 实际朗读速率 = 档位语速 × 风格微调 */
   const speechRate = RATES[rateIdx] * voiceStyle.rateScale;
@@ -784,7 +795,7 @@ export default function LearnUnit() {
   const speakPptAnswer = async (text: string, signal?: AbortSignal) => {
     if (!pptTaskId || !text.trim()) return;
     stopAnswerAudio();
-    const response = await streamPresentationChatTts(pptTaskId, text, signal);
+    const response = await streamPresentationChatTts(pptTaskId, text, pptVoice, pptSpeed, signal);
     const context = new AudioContext({ sampleRate: 24_000 });
     await context.resume();
     const sources = new Set<AudioBufferSourceNode>();
@@ -841,6 +852,35 @@ export default function LearnUnit() {
     // Session lifetime is intentionally keyed only by the opened PPT task.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pptTaskId]);
+
+  useEffect(() => {
+    if (!pptTaskId) return;
+    void api.getUserProfile().then((profile) => {
+      if (MIMO_VOICES.includes(profile.ttsVoice as typeof MIMO_VOICES[number])) setPptVoice(profile.ttsVoice);
+      if (MIMO_SPEEDS.some((item) => item.value === profile.ttsSpeed)) setPptSpeed(profile.ttsSpeed);
+    }).catch(() => undefined);
+  }, [pptTaskId]);
+
+  const savePptVoiceSetting = async (next: { voice?: string; speed?: TtsSpeed }) => {
+    const voice = next.voice ?? pptVoice;
+    const speed = next.speed ?? pptSpeed;
+    setPptVoice(voice);
+    setPptSpeed(speed);
+    setPptVoiceSaving(true);
+    try {
+      const profile = await api.getUserProfile();
+      const payload: typeof profile & Record<string, unknown> = { ...profile, profileCompleted: profile.profileCompleted, ttsVoice: voice, ttsSpeed: speed };
+      delete payload.userId;
+      delete payload.currentGoalId;
+      delete payload.createdAt;
+      delete payload.updatedAt;
+      await api.updateUserProfile(payload);
+    } catch (reason) {
+      toast.error(reason instanceof Error ? reason.message : '音色设置保存失败');
+    } finally {
+      setPptVoiceSaving(false);
+    }
+  };
 
   useEffect(() => {
     qaScrollRef.current?.scrollTo({ top: qaScrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -1755,7 +1795,7 @@ export default function LearnUnit() {
   }
 
   return (
-    <div className={cn('mx-auto px-5 pt-6 transition-[max-width] duration-300 md:px-6', pptTaskId ? (pptWideMode ? 'max-w-[1180px] pb-24' : 'max-w-[760px] pb-24') : 'max-w-[760px] pb-48')}>
+    <div className={cn('mx-auto px-5 transition-[max-width] duration-300 md:px-6', pptTaskId ? (pptWideMode ? 'max-w-[1180px] pb-24 pt-2' : 'max-w-[760px] pb-24 pt-4') : 'max-w-[760px] pb-48 pt-6')}>
       {/* 技术亮点（系统透视）：右下角悬浮球，点开才展开 */}
       {viewMode !== 'learner' && <FeatureSpotlight flags={spotFlags} />}
 
@@ -1839,7 +1879,7 @@ export default function LearnUnit() {
       </div>}
 
       {/* ============ 课堂单列：舞台化——阅读列收窄，当前块即舞台 ============ */}
-      <div className={cn('space-y-4', pptTaskId ? 'mt-3' : 'mt-5')}>
+      <div className={cn('space-y-4', pptTaskId ? (pptWideMode ? 'mt-1.5' : 'mt-3') : 'mt-5')}>
         {/* 课堂推进 / 自由浏览 模式条 */}
         {!pptTaskId && <div className="flex items-center justify-between gap-2">
           <span className="text-[11.5px] text-ink-muted">
@@ -3051,9 +3091,24 @@ export default function LearnUnit() {
                     </button>
                   </div>
 
-                  <div className="lf-mono-label mt-4 !text-[10px]">VOICE · 语音风格</div>
-                  <div className="mt-2 space-y-1.5">
-                    {VOICE_STYLES.map((s, i) => (
+                  <div className="lf-mono-label mt-4 !text-[10px]">VOICE · {pptTaskId ? '音色' : '语音风格'}</div>
+                  <div className={cn('mt-2', pptTaskId ? 'grid grid-cols-2 gap-1.5' : 'space-y-1.5')}>
+                    {pptTaskId ? MIMO_VOICES.map((voice) => (
+                      <button
+                        key={voice}
+                        type="button"
+                        disabled={pptVoiceSaving}
+                        onClick={() => void savePptVoiceSetting({ voice })}
+                        aria-pressed={voice === pptVoice}
+                        className={cn(
+                          'flex w-full items-center justify-between rounded-[9px] border px-3 py-1.5 text-left transition-all duration-200 disabled:opacity-60',
+                          voice === pptVoice ? 'border-brand/45 bg-brand-tint text-brand' : 'border-hairline bg-paper text-ink-2 hover:border-brand/30',
+                        )}
+                      >
+                        <span className="text-[12px] font-medium">{voice}</span>
+                        {voice === pptVoice && <Check size={13} className="shrink-0" />}
+                      </button>
+                    )) : VOICE_STYLES.map((s, i) => (
                       <button
                         key={s.key}
                         type="button"
@@ -3074,7 +3129,21 @@ export default function LearnUnit() {
 
                   <div className="lf-mono-label mt-3 !text-[10px]">RATE · 语速</div>
                   <div className="mt-2 flex gap-1">
-                    {RATES.map((r, i) => (
+                    {pptTaskId ? MIMO_SPEEDS.map((item) => (
+                      <button
+                        key={item.value}
+                        type="button"
+                        disabled={pptVoiceSaving}
+                        onClick={() => void savePptVoiceSetting({ speed: item.value })}
+                        aria-pressed={item.value === pptSpeed}
+                        className={cn(
+                          'flex-1 rounded-[8px] border px-1 py-1.5 font-mono text-[11px] transition-all duration-200 disabled:opacity-60',
+                          item.value === pptSpeed ? 'border-brand bg-brand text-paper' : 'border-hairline bg-paper text-ink-2 hover:border-brand/40',
+                        )}
+                      >
+                        {item.label}
+                      </button>
+                    )) : RATES.map((r, i) => (
                       <button
                         key={r}
                         type="button"
