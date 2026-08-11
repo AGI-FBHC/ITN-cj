@@ -375,8 +375,12 @@ export default function KnowledgeGraph({
         };
       }
       const controlOffset = Math.max(24, (x2 - x1) * 0.46);
+      const sourceControlX = x1 + Math.cos(sourceAngle) * controlOffset;
+      const sourceControlY = y1 + Math.sin(sourceAngle) * controlOffset;
+      const targetControlX = x2 + Math.cos(targetAngle) * controlOffset;
+      const targetControlY = y2 + Math.sin(targetAngle) * controlOffset;
       return {
-        path: `M ${x1} ${y1} C ${x1 + controlOffset} ${y1}, ${x2 - controlOffset} ${y2}, ${x2} ${y2}`,
+        path: `M ${x1} ${y1} C ${sourceControlX} ${sourceControlY}, ${targetControlX} ${targetControlY}, ${x2} ${y2}`,
         mx: (x1 + x2) / 2,
         my: (y1 + y2) / 2,
       };
@@ -419,11 +423,11 @@ export default function KnowledgeGraph({
       <svg viewBox={`0 0 ${graphViewBox.w} ${graphViewBox.h}`} className="w-full">
         <GardenDefs />
         <defs>
-          <marker id="kg-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M 0 0 L 8 4 L 0 8 z" fill="#4E7860" opacity="0.65" />
+          <marker id="kg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+            <path d="M 0 1 L 9 5 L 0 9 Z" fill="#4E7860" opacity="0.68" />
           </marker>
-          <marker id="kg-arrow-active" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M 0 0 L 8 4 L 0 8 z" fill="#D99B31" opacity="0.9" />
+          <marker id="kg-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+            <path d="M 0 1 L 9 5 L 0 9 Z" fill="#D99B31" opacity="0.92" />
           </marker>
         </defs>
 
