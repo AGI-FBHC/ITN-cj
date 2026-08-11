@@ -8,7 +8,8 @@ import {
   ArrowLeft, ArrowRight, BookOpen, Bot, Check, CheckCircle2, ChevronLeft,
   ChevronRight, Circle, Clock3, CloudRain, ExternalLink, FileText, Focus,
   Gauge, Headphones, ListChecks, Loader2, MessageCircleQuestion, NotebookPen,
-  Pause, PenLine, Play, Presentation, Send, Sparkles, Trees, X,
+  Pause, PenLine, Play, Presentation, Send, ShieldAlert, ShieldCheck, Sparkles,
+  Star, Trees, TriangleAlert, Wrench, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, streamAssistantTts } from '@/lib/api';
@@ -32,6 +33,8 @@ interface LearningBlock {
   citations: number[];
   code?: string;
   expectedOutput?: string;
+  safety?: 'safe' | 'caution' | 'danger';
+  warning?: string;
   question?: Record<string, unknown>;
 }
 
@@ -112,6 +115,8 @@ function blocksOf(resource: LearningResource): LearningBlock[] {
       id: `practice-step-${index + 1}`, kind: 'practice', eyebrow: `实操步骤 ${index + 1}`, title: String(step.title ?? `步骤 ${index + 1}`),
       body: String(step.instruction ?? ''), citations: asNumbers(step.citations), code: step.code ? String(step.code) : undefined,
       expectedOutput: step.expectedOutput ? String(step.expectedOutput) : undefined,
+      safety: ['safe', 'caution', 'danger'].includes(String(step.safety)) ? String(step.safety) as LearningBlock['safety'] : 'safe',
+      warning: step.warning ? String(step.warning) : undefined,
     }));
     const criteria = asStrings(content.acceptanceCriteria);
     if (criteria.length) blocks.push({ id: 'practice-review', kind: 'review', eyebrow: '完成验收', title: '用结果判断是否真正完成', body: criteria.map((item) => `- ${item}`).join('\n'), citations: [] });
@@ -314,6 +319,16 @@ function QuizBlock({
   })}{submitting && <p className="flex items-center gap-2 text-[12px] text-ink-muted"><Loader2 size={13} className="animate-spin" />正在判分并更新学习记录…</p>}{feedback && <div className={cn('rounded-[12px] px-4 py-3 text-[13px] leading-6', feedback.correct ? 'bg-brand-tint text-brand' : 'bg-brand-danger/10 text-ink-2')}><strong>{feedback.correct ? '回答正确。' : '这次还没有答对。'}</strong>{feedback.explanation ? <span className="ml-1">{String(feedback.explanation)}</span> : persisted ? <span className="ml-1 text-ink-muted">作答结果已保存。</span> : null}{typeof feedback.masteryDelta === 'number' && <div className="mt-1 font-mono text-[10.5px] opacity-75">掌握度变化 {Number(feedback.masteryDelta) >= 0 ? '+' : ''}{Number(feedback.masteryDelta).toFixed(1)}%</div>}</div>}</div>;
 }
 
+const difficultyMeta = {
+  easy: { label: '基础', color: '#287a62', stars: 1 },
+  medium: { label: '进阶', color: '#b17818', stars: 2 },
+  hard: { label: '挑战', color: '#b94f45', stars: 3 },
+} as const;
+
+function DifficultyStars({ count, color }: { count: number; color: string }) {
+  return <span className="flex gap-0.5">{[1, 2, 3].map((item) => <Star key={item} size={12} fill={item <= count ? color : 'transparent'} stroke={color} className={item <= count ? '' : 'opacity-30'} />)}</span>;
+}
+
 export default function CourseResourcePlayer() {
   const { resourceId = '' } = useParams();
   const navigate = useNavigate();
@@ -329,6 +344,7 @@ export default function CourseResourcePlayer() {
   const [currentBlockId, setCurrentBlockId] = useState('');
   const [visited, setVisited] = useState<string[]>([]);
   const [completedSteps, setCompletedSteps] = useState<string[]>([]);
+  const [safetyChecks, setSafetyChecks] = useState<string[]>([]);
   const [elapsedBase, setElapsedBase] = useState(0);
   const [sessionSeconds, setSessionSeconds] = useState(0);
   const [noteFor, setNoteFor] = useState<LearningBlock | null>(null);
@@ -381,6 +397,13 @@ export default function CourseResourcePlayer() {
   const chapter = useMemo<CourseChapter | null>(() => course?.chapters.find((item) => item.id === resource?.chapterId) ?? null, [course, resource?.chapterId]);
   const currentIndex = Math.max(0, blocks.findIndex((block) => block.id === currentBlockId));
   const completionPercent = blocks.length ? Math.round((unique(visited).length / blocks.length) * 100) : 0;
+  const safetyChecklist = resource?.type === 'practice' ? asStrings(resource.content.safetyChecklist) : [];
+  const safetyReady = safetyChecklist.length === 0 || safetyChecklist.every((item) => safetyChecks.includes(item));
+  const quizTiers = resource?.type === 'quiz' ? (['easy', 'medium', 'hard'] as const).map((difficulty) => {
+    const tierBlocks = blocks.filter((block) => String(block.question?.difficulty ?? 'easy') === difficulty);
+    const answered = asRecords(resource.state.answered);
+    return { difficulty, total: tierBlocks.length, done: tierBlocks.filter((block) => answered.some((item) => String(item.questionId) === block.id)).length };
+  }) : [];
 
   useEffect(() => {
     if (!resource) return;
@@ -437,6 +460,10 @@ export default function CourseResourcePlayer() {
   };
 
   const toggleStep = (id: string) => {
+    if (!safetyReady && id === blocks.find((block) => block.kind === 'practice')?.id) {
+      toast.warning('请先完成安全检查清单', { description: '全部确认后，才可以打卡第一个实操步骤。' });
+      return;
+    }
     const next = completedSteps.includes(id) ? completedSteps.filter((item) => item !== id) : [...completedSteps, id];
     setCompletedSteps(next);
     setVisited((current) => {
@@ -551,11 +578,16 @@ export default function CourseResourcePlayer() {
     <div className="mt-7 grid gap-7 lg:grid-cols-[250px_minmax(0,1fr)]">
       {!focusMode && <aside className="min-w-0 self-start lg:sticky lg:top-[76px]"><div className="rounded-[16px] border border-hairline bg-card-warm p-3"><div className="px-2 pb-2"><div className="lf-mono-label">LEARNING PATH</div><div className="mt-1 text-[13px] font-semibold text-ink">本讲目录</div></div><div className="flex gap-1 overflow-x-auto pb-1 lg:block lg:max-h-[58vh] lg:space-y-1 lg:overflow-y-auto lg:pb-0">{blocks.map((block, index) => { const done = visited.includes(block.id) || resource.learned; return <button key={block.id} type="button" onClick={() => goBlock(block.id)} className={cn('flex w-[210px] shrink-0 items-start gap-2.5 rounded-[10px] px-2.5 py-2.5 text-left transition lg:w-full', block.id === currentBlockId ? 'bg-brand-tint text-brand' : 'text-ink-2 hover:bg-paper-deep')}><span className={cn('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border font-mono text-[9px]', done ? 'border-brand bg-brand text-paper' : 'border-hairline bg-paper text-ink-muted')}>{done ? <Check size={10} /> : index + 1}</span><span className="min-w-0"><span className="block text-[10px] opacity-65">{block.eyebrow}</span><span className="mt-0.5 block text-[12px] font-medium leading-[17px]">{block.title}</span></span></button>; })}</div></div>{progressOf(resource).lastOpenedAt && <p className="mt-3 hidden px-2 text-[10.5px] leading-5 text-ink-muted lg:block">已从后端恢复上次断点：{new Date(progressOf(resource).lastOpenedAt!).toLocaleString()}</p>}</aside>}
 
-      <main className="min-w-0 space-y-6">{blocks.length === 0 ? <div className="rounded-[16px] border border-dashed border-hairline p-12 text-center"><p className="text-[14px] text-ink-muted">当前资源没有可学习的正文。</p><Link to={`/resources?courseId=${resource.courseId}&chapterId=${resource.chapterId}`} className="lf-btn-primary mt-4 inline-flex">重新生成资源</Link></div> : blocks.map((block, index) => <motion.section key={block.id} ref={(element) => { blockRefs.current[block.id] = element; }} data-block-id={block.id} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-80px' }} className={cn('scroll-mt-28 rounded-[18px] border bg-card-warm p-5 shadow-xs transition md:p-7', block.id === currentBlockId ? 'border-brand/35 shadow-warm' : 'border-hairline')}>
-        <div className="flex items-start gap-4"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-brand-tint font-mono text-[11px] font-semibold text-brand">{String(index + 1).padStart(2, '0')}</span><div className="min-w-0 flex-1"><div className="lf-mono-label !text-[10px]">{block.eyebrow}</div><h2 className="mt-1 font-serif text-[22px] font-semibold leading-tight text-ink md:text-[25px]">{block.title}</h2></div>{block.kind === 'practice' && <button type="button" onClick={() => toggleStep(block.id)} className={cn('flex shrink-0 items-center gap-1.5 rounded-[10px] border px-3 py-2 text-[11.5px]', completedSteps.includes(block.id) ? 'border-brand bg-brand text-paper' : 'border-hairline bg-paper text-ink-muted hover:border-brand/40')} >{completedSteps.includes(block.id) ? <CheckCircle2 size={14} /> : <Circle size={14} />}完成步骤</button>}</div>
+      <main className="min-w-0 space-y-6">
+      {resource.type === 'practice' && <section className="rounded-[18px] border border-brand-amber/40 bg-brand-amber-tint p-5"><div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="flex items-center gap-2 text-[15px] font-semibold text-ochre"><ShieldAlert size={16} />开始前安全检查</h2><p className="mt-1 text-[11.5px] text-ochre/80">逐项确认后再开始操作；检查结果只用于本次学习进度。</p></div><span className="font-mono text-[11px] text-ochre">{safetyChecks.length}/{safetyChecklist.length} 已确认</span></div>{safetyChecklist.length ? <div className="mt-3 grid gap-2 sm:grid-cols-2">{safetyChecklist.map((item) => { const checked = safetyChecks.includes(item); return <button key={item} type="button" onClick={() => setSafetyChecks((current) => checked ? current.filter((value) => value !== item) : [...current, item])} className={cn('flex items-center gap-2 rounded-[10px] border bg-card-warm px-3 py-2.5 text-left text-[12.5px]', checked ? 'border-brand/45 text-brand' : 'border-hairline text-ink-2')} >{checked ? <ShieldCheck size={15} /> : <Circle size={15} className="text-ink-muted" />}<span>{item}</span></button>; })}</div> : <p className="mt-3 text-[12.5px] text-ink-muted">本任务未识别到额外的开始前检查项，请仍在隔离的练习环境中操作。</p>}{String(resource.content.safetyNotice ?? '') && <div className="mt-3 flex items-start gap-2 rounded-[10px] border border-brand-danger/25 bg-brand-danger/5 px-3 py-2.5 text-[12px] leading-5 text-ink-2"><TriangleAlert size={15} className="mt-0.5 shrink-0 text-brand-danger" />{String(resource.content.safetyNotice)}</div>}</section>}
+      {resource.type === 'practice' && <section className="grid gap-3 sm:grid-cols-3"><div className="lf-card p-4"><Clock3 size={15} className="text-brand" /><div className="mt-2 text-[18px] font-semibold text-ink">{Number(resource.content.estimatedMinutes) || blocks.length * 10} 分钟</div><div className="text-[10.5px] text-ink-muted">预计完成时间</div></div><div className="lf-card p-4 sm:col-span-2"><div className="flex items-center gap-2 text-[12px] font-semibold text-ink"><Wrench size={14} className="text-brand" />环境与工具</div><div className="mt-2 flex flex-wrap gap-1.5">{asStrings(resource.content.environment).map((item) => <span key={item} className="rounded-md border border-hairline bg-paper px-2 py-1 text-[10.5px] text-ink-2">{item}</span>)}</div></div></section>}
+      {resource.type === 'quiz' && <section className="grid gap-3 sm:grid-cols-3">{quizTiers.map((tier) => { const meta = difficultyMeta[tier.difficulty]; return <div key={tier.difficulty} className="lf-card p-4"><div className="flex items-center justify-between"><span className="text-[14px] font-semibold text-ink">{meta.label}阶</span><DifficultyStars count={meta.stars} color={meta.color} /></div><div className="mt-2 flex items-center justify-between font-mono text-[11px] text-ink-muted"><span>{tier.total} 题</span><span>{tier.done}/{tier.total} 已答</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-paper-deep"><div className="h-full rounded-full" style={{ width: `${tier.total ? tier.done / tier.total * 100 : 0}%`, backgroundColor: meta.color }} /></div></div>; })}</section>}
+      {blocks.length === 0 ? <div className="rounded-[16px] border border-dashed border-hairline p-12 text-center"><p className="text-[14px] text-ink-muted">当前资源没有可学习的正文。</p><Link to={`/resources?courseId=${resource.courseId}&chapterId=${resource.chapterId}`} className="lf-btn-primary mt-4 inline-flex">重新生成资源</Link></div> : blocks.map((block, index) => <motion.section key={block.id} ref={(element) => { blockRefs.current[block.id] = element; }} data-block-id={block.id} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-80px' }} className={cn('scroll-mt-28 rounded-[18px] border bg-card-warm p-5 shadow-xs transition md:p-7', block.id === currentBlockId ? 'border-brand/35 shadow-warm' : 'border-hairline', block.safety === 'danger' && 'border-l-2 border-l-brand-danger/60')}>
+        <div className="flex items-start gap-4"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-brand-tint font-mono text-[11px] font-semibold text-brand">{block.kind === 'practice' ? `S${index}` : String(index + 1).padStart(2, '0')}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><div className="lf-mono-label !text-[10px]">{block.eyebrow}</div>{block.kind === 'practice' && block.safety && <span className={cn('rounded-md border px-1.5 py-0.5 font-mono text-[9.5px]', block.safety === 'danger' ? 'border-brand-danger/35 bg-brand-danger/10 text-brand-danger' : block.safety === 'caution' ? 'border-brand-amber/40 bg-brand-amber-tint text-ochre' : 'border-brand/25 bg-brand-tint text-brand')}>{block.safety === 'danger' ? '高风险' : block.safety === 'caution' ? '需谨慎' : '常规操作'}</span>}{block.kind === 'quiz' && (() => { const meta = difficultyMeta[String(block.question?.difficulty ?? 'easy') as keyof typeof difficultyMeta] ?? difficultyMeta.easy; return <span className="flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[9.5px]" style={{ borderColor: `${meta.color}55`, color: meta.color }}><DifficultyStars count={meta.stars} color={meta.color} />{meta.label}阶</span>; })()}</div><h2 className="mt-1 font-serif text-[22px] font-semibold leading-tight text-ink md:text-[25px]">{block.title}</h2></div>{block.kind === 'practice' && <button type="button" onClick={() => toggleStep(block.id)} className={cn('flex shrink-0 items-center gap-1.5 rounded-[10px] border px-3 py-2 text-[11.5px]', completedSteps.includes(block.id) ? 'border-brand bg-brand text-paper' : !safetyReady && block.id === blocks.find((item) => item.kind === 'practice')?.id ? 'cursor-not-allowed border-hairline bg-paper-deep text-ink-muted' : 'border-hairline bg-paper text-ink-muted hover:border-brand/40')} >{completedSteps.includes(block.id) ? <CheckCircle2 size={14} /> : <Circle size={14} />}完成步骤</button>}</div>
         {block.body && <div className="prose prose-sm mt-5 max-w-none text-[14px] leading-7 text-ink-2 prose-headings:font-serif prose-headings:text-ink prose-a:text-brand prose-code:text-brand prose-li:my-1"><ReactMarkdown remarkPlugins={[remarkGfm]}>{block.body}</ReactMarkdown></div>}
         {block.code && <pre className="mt-5 overflow-x-auto rounded-[12px] bg-ink px-4 py-4 text-[12px] leading-6 text-paper"><code>{block.code}</code></pre>}
         {block.expectedOutput && <div className="mt-4 rounded-[12px] border border-brand/20 bg-brand-tint/35 px-4 py-3 text-[13px] leading-6 text-ink-2"><strong className="text-brand">预期结果：</strong>{block.expectedOutput}</div>}
+        {block.warning && <div className="mt-4 flex items-start gap-2 rounded-[12px] border border-brand-amber/40 bg-brand-amber-tint px-4 py-3 text-[12.5px] leading-5 text-ochre"><TriangleAlert size={15} className="mt-0.5 shrink-0" /><span><strong>操作提醒：</strong>{block.warning}</span></div>}
         {block.kind === 'quiz' && <QuizBlock block={block} resource={resource} onResourceState={(state) => setResource((current) => current ? { ...current, state, learned: Boolean(state.learned || state.completed) } : current)} />}
         <BlockSources citations={block.citations} resource={resource} />
         <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-hairline/70 pt-4"><button type="button" onClick={() => { setNoteFor(block); setNoteText(''); }} className="lf-btn-ghost !px-3 !py-1.5 text-[11.5px]"><NotebookPen size={13} />记这一段</button><button type="button" onClick={() => { setCurrentBlockId(block.id); void openChat(); }} className="lf-btn-ghost !px-3 !py-1.5 text-[11.5px]"><MessageCircleQuestion size={13} />向导学老师提问</button>{index < blocks.length - 1 && <button type="button" onClick={() => goBlock(blocks[index + 1].id)} className="ml-auto inline-flex items-center gap-1 text-[11.5px] text-brand hover:underline">下一段<ArrowRight size={12} /></button>}</div>
