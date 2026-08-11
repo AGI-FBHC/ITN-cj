@@ -294,14 +294,6 @@ export default function KnowledgeGraph({
       (outgoingOrder.get(edge.from) ?? outgoingOrder.set(edge.from, []).get(edge.from)!).push(edge);
       (incomingOrder.get(edge.to) ?? incomingOrder.set(edge.to, []).get(edge.to)!).push(edge);
     });
-    outgoingOrder.forEach((items) => items.sort((a, b) => (nodeById.get(a.to)?.y ?? 0) - (nodeById.get(b.to)?.y ?? 0)));
-    incomingOrder.forEach((items) => items.sort((a, b) => {
-      const vertical = (nodeById.get(a.from)?.y ?? 0) - (nodeById.get(b.from)?.y ?? 0);
-      if (Math.abs(vertical) > 1) return vertical;
-      // 同高度来源：近邻边先占上方端口，跨层边落到下方，避免汇入前互相穿越。
-      return (nodeById.get(b.from)?.x ?? 0) - (nodeById.get(a.from)?.x ?? 0);
-    }));
-
     const longEdges = edges
       .filter((edge) => {
         const from = nodeById.get(edge.from), to = nodeById.get(edge.to);
@@ -312,10 +304,22 @@ export default function KnowledgeGraph({
         const spanB = (nodeById.get(b.to)?.x ?? 0) - (nodeById.get(b.from)?.x ?? 0);
         return spanB - spanA;
       });
-    const laneOf = new Map(longEdges.map((edge, index) => [
+    const laneOf = new Map<string, { y: number; index: number }>(longEdges.map((edge, index) => [
       `${edge.kind}:${edge.from}>${edge.to}`,
       { y: 7 + index * 9, index },
     ] as const));
+    const edgeKey = (edge: DomainEdge) => `${edge.kind}:${edge.from}>${edge.to}`;
+    const departureY = (edge: DomainEdge) => laneOf.get(edgeKey(edge))?.y ?? nodeById.get(edge.to)?.y ?? 0;
+    const approachY = (edge: DomainEdge) => laneOf.get(edgeKey(edge))?.y ?? nodeById.get(edge.from)?.y ?? 0;
+    // 端口顺序跟随实际路由通道，而不是只看目标节点：上行线永远占上方端口。
+    outgoingOrder.forEach((items) => items.sort((a, b) =>
+      departureY(a) - departureY(b)
+      || (nodeById.get(a.to)?.x ?? 0) - (nodeById.get(b.to)?.x ?? 0),
+    ));
+    incomingOrder.forEach((items) => items.sort((a, b) =>
+      approachY(a) - approachY(b)
+      || (nodeById.get(b.from)?.x ?? 0) - (nodeById.get(a.from)?.x ?? 0),
+    ));
 
     return (edge: DomainEdge, a: GraphNode, b: GraphNode) => {
       const out = outgoingOrder.get(edge.from) ?? [edge];
@@ -338,7 +342,7 @@ export default function KnowledgeGraph({
       const y1 = a.y + Math.sin(sourceAngle) * sourcePortRadius;
       const x2 = b.x + Math.cos(targetAngle) * targetPortRadius;
       const y2 = b.y + Math.sin(targetAngle) * targetPortRadius;
-      const lane = laneOf.get(`${edge.kind}:${edge.from}>${edge.to}`);
+      const lane = laneOf.get(edgeKey(edge));
       if (lane !== undefined) {
         // 控制点靠近端口，使跨层边快速进入独立车道，避开中间层节点。
         const shoulder = 10 + lane.index * 1.25;
