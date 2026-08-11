@@ -30,7 +30,7 @@ const PROGRESS_LABEL: Record<PresentationTask['status'], string> = {
   cancelled: '已取消',
 };
 
-const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: (playing: boolean) => void; onSlideChange?: (current: number, count: number) => void }>(function PptPlayer({ taskId, onPlaybackChange, onSlideChange }, ref) {
+const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean; onPlaybackChange?: (playing: boolean) => void; onSlideChange?: (current: number, count: number) => void }>(function PptPlayer({ taskId, wideMode = true, onPlaybackChange, onSlideChange }, ref) {
   const [task, setTask] = useState<PresentationTask | null>(null);
   const [slides, setSlides] = useState<PresentationSlideshow | null>(null);
   const [current, setCurrent] = useState(0);
@@ -249,10 +249,17 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: 
 
   return (
     <div className="space-y-4">
-      <div className="lf-anim-in-up rounded-[16px] border border-hairline bg-paper p-4 shadow-warm-lg md:p-5">
+      <div className={cn('lf-anim-in-up rounded-[16px] border border-hairline bg-paper shadow-warm-lg', wideMode ? 'p-3 md:p-4' : 'p-4 md:p-5')}>
         <div className="flex items-center justify-center">
           {slideSrc ? (
-            <img src={slideSrc} alt={`第 ${current + 1} 页`} className="max-h-[48vh] w-auto max-w-full rounded-md object-contain shadow-sm" />
+            <img
+              src={slideSrc}
+              alt={`第 ${current + 1} 页`}
+              className={cn(
+                'w-auto max-w-full rounded-md object-contain shadow-sm transition-[max-height] duration-300',
+                wideMode ? 'max-h-[min(56vh,calc(100dvh-320px))]' : 'max-h-[48vh]',
+              )}
+            />
           ) : (
             <div className="flex min-h-[34vh] items-center justify-center"><Loader2 size={22} className="animate-spin text-brand" /></div>
           )}

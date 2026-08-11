@@ -48,6 +48,8 @@ import {
   Camera,
   MessageSquare,
   MoreHorizontal,
+  Maximize2,
+  Minimize2,
   FileText,
   Loader2,
 } from 'lucide-react';
@@ -634,6 +636,7 @@ export default function LearnUnit() {
   const pptTopic = searchParams.get('topic');
   const pptRef = useRef<PptPlayerRef>(null);
   const [pptSlide, setPptSlide] = useState({ current: 0, count: 0 });
+  const [pptWideMode, setPptWideMode] = useState(true);
   const syncPptSlide = useCallback((current: number, count: number) => setPptSlide((previous) => (
     previous.current === current && previous.count === count ? previous : { current, count }
   )), []);
@@ -1623,7 +1626,7 @@ export default function LearnUnit() {
   }
 
   return (
-    <div className={cn('mx-auto max-w-[760px] px-5 pt-6 md:px-6', pptTaskId ? 'pb-24' : 'pb-48')}>
+    <div className={cn('mx-auto px-5 pt-6 transition-[max-width] duration-300 md:px-6', pptTaskId ? (pptWideMode ? 'max-w-[1180px] pb-24' : 'max-w-[760px] pb-24') : 'max-w-[760px] pb-48')}>
       {/* 技术亮点（系统透视）：右下角悬浮球，点开才展开 */}
       {viewMode !== 'learner' && <FeatureSpotlight flags={spotFlags} />}
 
@@ -1731,7 +1734,7 @@ export default function LearnUnit() {
             {freeBrowse ? '回到课堂推进' : '自由浏览'}
           </button>
         </div>}
-        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} ref={pptRef} onPlaybackChange={setPlaying} onSlideChange={syncPptSlide} /> : (blocks.map((b, i) => {
+        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} wideMode={pptWideMode} ref={pptRef} onPlaybackChange={setPlaying} onSlideChange={syncPptSlide} /> : (blocks.map((b, i) => {
           const active = i === cursor && playing;
           /* ---- 课堂推进三态：完整（当前/回看/自由浏览）· 摘要行（已完成）· 不渲染（未解锁） ---- */
           const effUnlocked = Math.min(unlocked, blocks.length);
@@ -2772,6 +2775,23 @@ export default function LearnUnit() {
                 {cursor + 1}/{blocks.length}
               </span>
             </div>
+
+            {pptTaskId && (
+              <button
+                type="button"
+                onClick={() => setPptWideMode((wide) => !wide)}
+                title={pptWideMode ? '切换为窄屏' : '切换为宽屏'}
+                aria-label={pptWideMode ? '切换为窄屏' : '切换为宽屏'}
+                aria-pressed={pptWideMode}
+                className={cn(
+                  'inline-flex shrink-0 items-center gap-1.5 border border-hairline bg-paper text-ink-2 transition-all hover:border-brand/40 hover:text-brand',
+                  barExpanded ? 'rounded-[10px] px-3 py-2 text-[13px] font-medium' : 'rounded-full p-2.5',
+                )}
+              >
+                {pptWideMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                {barExpanded && (pptWideMode ? '窄屏' : '宽屏')}
+              </button>
+            )}
 
             {/* 记笔记：全页唯一入口，自动挂到你正在看的那一段（胶囊态只留图标） */}
             <button
