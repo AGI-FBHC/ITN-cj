@@ -30,7 +30,7 @@ import { cn } from '@/lib/utils';
 
 /** 术语双标：人话在前（label），行话在后（term，进 hover 提示） */
 const EDGE_STYLE: Record<EdgeKind, { stroke: string; width: number; dash?: string; opacity: number; label: string; term: string; hint: string }> = {
-  prereq: { stroke: '#4E7860', width: 2, opacity: 0.6, label: '先学它', term: 'prereq · 前置', hint: '箭头从 A 指向 B：先学 A 才好学 B' },
+  prereq: { stroke: '#5F8870', width: 1.55, opacity: 0.5, label: '先学它', term: 'prereq · 前置', hint: '箭头从 A 指向 B：先学 A 才好学 B' },
   related: { stroke: '#B77552', width: 1.4, dash: '5 4', opacity: 0.5, label: '互相印证', term: 'related · 相关', hint: '两个知识互补或方法同构，一起看更通' },
   applies: { stroke: '#66725E', width: 1.1, dash: '2 4', opacity: 0.45, label: '规范约束', term: 'applies · 应用', hint: '安全规范对实操动作的硬性约束' },
 };
@@ -286,6 +286,93 @@ export default function KnowledgeGraph({
     return map;
   }, [dataEdges, nodeById]);
   const domainEdgesOf = (kind: EdgeKind) => [...aggregatedEdges.values()].filter((edge) => edge.kind === kind);
+  const edgeRouting = useMemo(() => {
+    const edges = [...aggregatedEdges.values()];
+    const outgoingOrder = new Map<string, DomainEdge[]>();
+    const incomingOrder = new Map<string, DomainEdge[]>();
+    edges.forEach((edge) => {
+      (outgoingOrder.get(edge.from) ?? outgoingOrder.set(edge.from, []).get(edge.from)!).push(edge);
+      (incomingOrder.get(edge.to) ?? incomingOrder.set(edge.to, []).get(edge.to)!).push(edge);
+    });
+    outgoingOrder.forEach((items) => items.sort((a, b) => (nodeById.get(a.to)?.y ?? 0) - (nodeById.get(b.to)?.y ?? 0)));
+    incomingOrder.forEach((items) => items.sort((a, b) => {
+      const vertical = (nodeById.get(a.from)?.y ?? 0) - (nodeById.get(b.from)?.y ?? 0);
+      if (Math.abs(vertical) > 1) return vertical;
+      // 同高度来源：近邻边先占上方端口，跨层边落到下方，避免汇入前互相穿越。
+      return (nodeById.get(b.from)?.x ?? 0) - (nodeById.get(a.from)?.x ?? 0);
+    }));
+
+    const longEdges = edges
+      .filter((edge) => {
+        const from = nodeById.get(edge.from), to = nodeById.get(edge.to);
+        return Boolean(from && to && to.x - from.x > 150);
+      })
+      .sort((a, b) => {
+        const spanA = (nodeById.get(a.to)?.x ?? 0) - (nodeById.get(a.from)?.x ?? 0);
+        const spanB = (nodeById.get(b.to)?.x ?? 0) - (nodeById.get(b.from)?.x ?? 0);
+        return spanB - spanA;
+      });
+    const laneOf = new Map(longEdges.map((edge, index) => [
+      `${edge.kind}:${edge.from}>${edge.to}`,
+      { y: 7 + index * 9, index },
+    ] as const));
+
+    return (edge: DomainEdge, a: GraphNode, b: GraphNode) => {
+      const out = outgoingOrder.get(edge.from) ?? [edge];
+      const incoming = incomingOrder.get(edge.to) ?? [edge];
+      const angularOffset = (items: DomainEdge[], index: number) => (index - (items.length - 1) / 2) * 0.42;
+      const sourceAngle = out.length > 1
+        ? angularOffset(out, out.indexOf(edge))
+        : Math.max(-1.0, Math.min(1.0, Math.atan2(b.y - a.y, b.x - a.x)));
+      let targetAngle = Math.atan2(a.y - b.y, a.x - b.x);
+      if (targetAngle < 0) targetAngle += Math.PI * 2;
+      targetAngle = incoming.length > 1
+        ? Math.PI - angularOffset(incoming, incoming.indexOf(edge))
+        : Math.max(Math.PI - 1.0, Math.min(Math.PI + 1.0, targetAngle));
+      const x1 = a.x + Math.cos(sourceAngle) * (a.r + 4);
+      const y1 = a.y + Math.sin(sourceAngle) * (a.r + 4);
+      const x2 = b.x + Math.cos(targetAngle) * (b.r + 8);
+      const y2 = b.y + Math.sin(targetAngle) * (b.r + 8);
+      const lane = laneOf.get(`${edge.kind}:${edge.from}>${edge.to}`);
+      if (lane !== undefined) {
+        // 控制点靠近端口，使跨层边快速进入独立车道，避开中间层节点。
+        const shoulder = 10 + lane.index * 1.25;
+        const obstacleNodes = [...nodeById.values()].filter((node) =>
+          node.kind === 'domain' && node.id !== a.id && node.id !== b.id,
+        );
+        const collisionCount = (laneY: number) => {
+          let collisions = 0;
+          for (let step = 2; step < 39; step += 1) {
+            const t = step / 40, u = 1 - t;
+            const px = u ** 3 * x1 + 3 * u ** 2 * t * (x1 + shoulder) + 3 * u * t ** 2 * (x2 - shoulder) + t ** 3 * x2;
+            const py = u ** 3 * y1 + 3 * u ** 2 * t * laneY + 3 * u * t ** 2 * laneY + t ** 3 * y2;
+            if (obstacleNodes.some((node) => Math.hypot(px - node.x, py - node.y) < node.r + 5)) collisions += 1;
+          }
+          return collisions;
+        };
+        const candidates = [lane.y, 112 + lane.index * 7, 224 + lane.index * 7, 336 + lane.index * 7]
+          .filter((value) => value > 2 && value < graphViewBox.h - 2);
+        const laneY = candidates
+          .map((value) => ({ value, collisions: collisionCount(value) }))
+          .sort((left, right) => left.collisions - right.collisions || left.value - right.value)[0].value;
+        const sourceControlX = x1 + Math.cos(sourceAngle) * shoulder;
+        const sourceControlY = y1 + Math.sin(sourceAngle) * shoulder;
+        const targetControlX = x2 + Math.cos(targetAngle) * shoulder;
+        const targetControlY = y2 + Math.sin(targetAngle) * shoulder;
+        return {
+          path: `M ${x1} ${y1} C ${sourceControlX} ${sourceControlY}, ${x1 + shoulder} ${laneY}, ${(x1 + x2) / 2} ${laneY} S ${targetControlX} ${targetControlY}, ${x2} ${y2}`,
+          mx: (x1 + x2) / 2,
+          my: laneY,
+        };
+      }
+      const controlOffset = Math.max(24, (x2 - x1) * 0.46);
+      return {
+        path: `M ${x1} ${y1} C ${x1 + controlOffset} ${y1}, ${x2 - controlOffset} ${y2}, ${x2} ${y2}`,
+        mx: (x1 + x2) / 2,
+        my: (y1 + y2) / 2,
+      };
+    };
+  }, [aggregatedEdges, nodeById]);
   const prereqOf = (nodeId: string) => dataEdges
     .filter((edge) => edge.kind === 'prereq' && edge.to === nodeId)
     .map((edge) => ({ node: nodeById.get(edge.from)!, note: edge.note ?? '' }))
@@ -351,13 +438,11 @@ export default function KnowledgeGraph({
                 const a = nodeById.get(e.from)!;
                 const b = nodeById.get(e.to)!;
                 const st = EDGE_STYLE[kind];
-                const x1 = a.x + a.r + 4, y1 = a.y;
-                const x2 = b.x - b.r - 8, y2 = b.y;
-                const controlOffset = Math.max(28, (x2 - x1) * 0.46);
-                const edgePath = `M ${x1} ${y1} C ${x1 + controlOffset} ${y1}, ${x2 - controlOffset} ${y2}, ${x2} ${y2}`;
+                const route = edgeRouting(e, a, b);
+                const edgePath = route.path;
                 const dim = expandedKp !== null && e.from !== expandedKp && e.to !== expandedKp;
-                const mx = (x1 + x2) / 2;
-                const my = (y1 + y2) / 2;
+                const mx = route.mx;
+                const my = route.my;
                 return (
                   <g
                     key={`${kind}-${e.from}-${e.to}`}
@@ -369,6 +454,8 @@ export default function KnowledgeGraph({
                     {/* 加宽的透明命中区：细线也好 hover */}
                     <path d={edgePath} fill="none" stroke="transparent" strokeWidth="14" />
                     <path
+                      data-edge-from={e.from}
+                      data-edge-to={e.to}
                       d={edgePath}
                       fill="none"
                       stroke={st.stroke}
@@ -458,6 +545,7 @@ export default function KnowledgeGraph({
           return (
             <g
               key={n.id}
+              data-graph-node-id={n.id}
               onMouseEnter={() => setHover(n)}
               onMouseLeave={() => setHover(null)}
               onClick={() => clickNode(n)}

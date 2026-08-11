@@ -124,7 +124,9 @@ function layoutChapterDag(chapters: RagTree['nodes'][number][], edges: RagTree['
   groups.forEach((group, level) => {
     const x = maxLayer === 0 ? 460 : 65 + (level * 790) / maxLayer;
     group.forEach((code, index) => {
-      const y = 34 + ((index + 1) * 350) / (group.length + 1);
+      // 各层从顶部开始排列，主学习链稳定贴近左上角，分支向下展开。
+      const spacing = group.length <= 1 ? 0 : Math.min(112, 330 / (group.length - 1));
+      const y = 62 + index * spacing;
       positions.set(code, { x, y });
     });
   });
