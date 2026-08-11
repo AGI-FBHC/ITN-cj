@@ -2259,10 +2259,36 @@ export default function LearnUnit() {
         <AnimatePresence>
           {finished && (
             <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="relative rounded-[14px] border border-brand/35 bg-brand-tint/50 p-5 text-center"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[80] flex items-center justify-center p-4 sm:p-6"
             >
+              <button
+                type="button"
+                aria-label="关闭完课结算"
+                onClick={() => setFinished(false)}
+                className="absolute inset-0 cursor-default bg-ink/20 backdrop-blur-[6px]"
+              />
+              <motion.div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="lesson-complete-title"
+                initial={{ opacity: 0, y: 18, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.98 }}
+                transition={{ type: 'spring', stiffness: 360, damping: 30 }}
+                onClick={(event) => event.stopPropagation()}
+                className="relative max-h-[min(82vh,720px)] w-full max-w-[680px] overflow-y-auto rounded-[20px] border border-brand/35 bg-card-warm p-5 text-center shadow-[0_24px_80px_rgba(44,63,52,0.24)] sm:p-6"
+              >
+              <button
+                type="button"
+                aria-label="关闭"
+                onClick={() => setFinished(false)}
+                className="absolute right-3 top-3 z-10 grid h-8 w-8 place-items-center rounded-full border border-hairline bg-paper/80 text-ink-muted transition-colors hover:border-brand/40 hover:text-brand"
+              >
+                <X size={15} />
+              </button>
               {/* 完成卡草丛 */}
               <GrassTuft className="pointer-events-none absolute bottom-1 left-4 h-[40px] w-[56px] opacity-60" />
               <GrassTuft className="pointer-events-none absolute bottom-1 right-4 h-[40px] w-[56px] scale-x-[-1] opacity-50" />
@@ -2273,7 +2299,7 @@ export default function LearnUnit() {
                   <Check size={28} strokeWidth={2.5} className="text-paper drop-shadow" />
                 </span>
               </div>
-              <div className="text-[15px] font-semibold text-brand">本讲完成 · 阿诊已记录，画像已微调</div>
+              <div id="lesson-complete-title" className="text-[15px] font-semibold text-brand">本讲完成 · 阿诊已记录，画像已微调</div>
               {nextNode && (
                 <div className="mt-2 text-[12.5px] text-ink-muted">
                   学习路径推进 → 下一步《{nextNode.title}》 · {nextNode.est}
@@ -2393,6 +2419,7 @@ export default function LearnUnit() {
                   )}
                 </AnimatePresence>
               </div>
+              </motion.div>
             </motion.div>
           )}
         </AnimatePresence>
