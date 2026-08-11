@@ -390,10 +390,11 @@ export default function KnowledgeGraph({
       }
       // 相邻层使用短切线控制柄：只校正端点方向，不允许控制柄把整条曲线拉过相邻分支。
       const controlOffset = Math.min(11, Math.max(7, (x2 - x1) * 0.13));
+      const targetHandle = 15;
       const sourceControlX = x1 + Math.cos(sourceAngle) * controlOffset;
       const sourceControlY = y1 + Math.sin(sourceAngle) * controlOffset;
-      const targetControlX = x2 + Math.cos(targetAngle) * controlOffset;
-      const targetControlY = y2 + Math.sin(targetAngle) * controlOffset;
+      const targetControlX = x2 + Math.cos(targetAngle) * targetHandle;
+      const targetControlY = y2 + Math.sin(targetAngle) * targetHandle;
       return {
         path: `M ${x1} ${y1} C ${sourceControlX} ${sourceControlY}, ${targetControlX} ${targetControlY}, ${x2} ${y2}`,
         mx: (x1 + x2) / 2,
@@ -439,10 +440,10 @@ export default function KnowledgeGraph({
         <GardenDefs />
         <defs>
           <marker id="kg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
-            <path d="M 1 1.4 L 9 5 L 1 8.6 L 3.2 5 Z" fill="#4E7860" opacity="0.72" />
+            <path d="M 1 1.5 L 9 5 L 1 8.5" fill="none" stroke="#4E7860" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.78" />
           </marker>
           <marker id="kg-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
-            <path d="M 1 1.4 L 9 5 L 1 8.6 L 3.2 5 Z" fill="#D99B31" opacity="0.94" />
+            <path d="M 1 1.5 L 9 5 L 1 8.5" fill="none" stroke="#D99B31" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" opacity="0.96" />
           </marker>
         </defs>
 
