@@ -105,6 +105,7 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
   }
 
   const kp = kpProp ?? getKnowledgePoint(kpId);
+  const selectedTopicName = topicIndex != null ? kp.coreTopics[topicIndex] : null;
   const score = (masteryProp ?? {})[kpId] ?? currentLearner.scores[kpId] ?? 50;
   const conf = (confidenceProp ?? confidence)[kpId] ?? 40;
   const gap = Math.max(0, kp.targetLevel - score);
@@ -155,7 +156,7 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
           .find((item) => !['failed', 'cancelled'].includes(item.status));
         if (match) {
           toast.success(match.status === 'completed' ? '已找到已生成的 PPT，正在打开' : '已找到生成中的 PPT，继续等待');
-          navigate(`/learn/${kpId}?ppt=${match.id}`);
+          navigate(`/learn/${kpId}?ppt=${match.id}&topic=${encodeURIComponent(focus)}`);
           return;
         }
       } catch { /* 列表查询失败时允许直接创建 */ }
@@ -177,7 +178,7 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
         learningGoalId: goalId ?? undefined,
       });
       toast.success('PPT 已加入后台生成，正在进入交互课件');
-      navigate(`/learn/${kpId}?ppt=${task.id}`);
+      navigate(`/learn/${kpId}?ppt=${task.id}&topic=${encodeURIComponent(focus)}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'PPT 创建失败');
     } finally {
@@ -198,11 +199,11 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
       <div>
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h3 className="font-serif text-[18px] font-semibold text-ink">{kp.name}</h3>
-            <div className="mt-0.5 font-mono text-[9.5px] tracking-wide text-ink-muted">{kp.en}</div>
-            {topicIndex != null && kp.coreTopics[topicIndex] && (
+            <h3 className="font-serif text-[18px] font-semibold text-ink">{selectedTopicName || kp.name}</h3>
+            <div className="mt-0.5 font-mono text-[9.5px] tracking-wide text-ink-muted">{selectedTopicName ? kp.name : kp.en}</div>
+            {selectedTopicName && (
               <div className="mt-1 rounded-md bg-brand-tint/60 px-2 py-1 text-[11.5px] font-medium text-brand">
-                子知识点：{kp.coreTopics[topicIndex]}
+                所属章节：{kp.name} · 子章节课件
               </div>
             )}
           </div>
@@ -304,7 +305,7 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
             </span>
             <span className="min-w-0 flex-1">
               <span className="block text-[13px] font-medium text-ink">进入交互课件</span>
-              <span className="block text-[11px] text-ink-muted">PPT 形式 · 随语音逐页讲解</span>
+              <span className="block text-[11px] text-ink-muted">PPT 形式 · 按《{selectedTopicName || kp.name}》生成</span>
             </span>
             <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
           </button>

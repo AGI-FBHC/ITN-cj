@@ -598,6 +598,7 @@ export default function LearnUnit() {
   /* 图谱深链：?block=cN → 定位并闪烁对应概念块 */
   const [searchParams] = useSearchParams();
   const pptTaskId = searchParams.get('ppt');
+  const pptTopic = searchParams.get('topic');
   const pptRef = useRef<any>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
   useEffect(() => {
@@ -1199,7 +1200,7 @@ export default function LearnUnit() {
     addNote({
       kpId,
       text: `问：${transcript}\n答：${finalReply}`,
-      source: `${kp.name} · 举手提问`,
+      source: `${pptTopic || kp.name} · 举手提问`,
       sourceKind: 'qa',
       kbRefs: [],
     });
@@ -1223,7 +1224,7 @@ export default function LearnUnit() {
     addNote({
       kpId,
       text: `问：${q || '（现场照片）'}${askPhoto ? `【图片 · ${askPhoto.name}】` : ''}\n答：${a}`,
-      source: `${kp.name} · 课堂提问`,
+      source: `${pptTopic || kp.name} · 课堂提问`,
       sourceKind: 'qa',
       kbRefs: hit?.kbRef ? [hit.kbRef] : [],
     });
@@ -1535,7 +1536,7 @@ export default function LearnUnit() {
           <ArrowLeft size={14} /> 课程目录
         </Link>
         <span className="text-hairline">/</span>
-        <h1 className="font-serif text-[20px] font-semibold text-ink">{kp.name}</h1>
+        <h1 className="font-serif text-[20px] font-semibold text-ink">{pptTopic || kp.name}</h1>
         <span className="ml-auto flex items-center gap-2">
           {/* 掌握度小徽标（伴学栏收起时也看得到，移动端唯一入口） */}
           <span
@@ -2397,7 +2398,7 @@ export default function LearnUnit() {
             {/* 顶栏 */}
             <div className="flex items-center gap-3 border-b border-hairline/70 bg-paper/70 px-5 py-3 backdrop-blur">
               <Presentation size={15} className="text-brand" />
-              <span className="text-[13.5px] font-semibold text-ink">幻灯模式 · {kp.name}</span>
+              <span className="text-[13.5px] font-semibold text-ink">幻灯模式 · {pptTopic || kp.name}</span>
               <span className="font-mono text-[11px] text-ink-muted">第 {slideIdx + 1} / {blocks.length} 页</span>
               <button
                 type="button"
@@ -2569,7 +2570,7 @@ export default function LearnUnit() {
             {barExpanded && (
             <div className="min-w-0 flex-1">
               <div className="truncate whitespace-nowrap text-[13px] font-medium text-ink">
-                {playing ? '正在讲播' : `${kp.name} · 交互课件`}
+                {playing ? '正在讲播' : `${pptTopic || kp.name} · 交互课件`}
               </div>
               <div className="flex min-w-0 items-center gap-2 whitespace-nowrap font-mono text-[10px] text-ink-muted">
                 <span className="shrink-0">{tts.supported ? <Volume2 size={10} /> : <VolumeX size={10} />}</span>
