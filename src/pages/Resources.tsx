@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { lectureMdComponents } from '@/components/resources/lecture-markdown';
+import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
 import { Check, CheckCircle2, ExternalLink, FileText, Flag, Link2, ListChecks, Loader2, PenLine, PlayCircle, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
@@ -35,6 +36,8 @@ const isWebSource = (source: Record<string, unknown>): boolean => {
   const kind = String(source.sourceType ?? source.type ?? '').toLowerCase();
   return kind === 'web' || kind === 'websearch' || kind === 'web_search';
 };
+const sourceAnchorId = (resourceId: string, sourceId: string | number) =>
+  `resource-${resourceId}-source-${String(sourceId).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
 
 function Sources({ resource }: { resource: LearningResource }) {
   const [reporting, setReporting] = useState('');
@@ -69,7 +72,7 @@ function Sources({ resource }: { resource: LearningResource }) {
           const title = String(source.document ?? source.title ?? `来源 ${index + 1}`);
           const confidence = sourceConfidence(source);
           return (
-            <div key={`${sourceId}-${title}`} className="rounded-lg border border-hairline bg-card-warm px-3 py-2.5">
+            <div id={sourceAnchorId(resource.id, sourceId)} key={`${sourceId}-${title}`} className="scroll-mt-24 rounded-lg border border-hairline bg-card-warm px-3 py-2.5">
               <div className="flex flex-wrap items-center gap-2 text-[12px]">
                 <span className="line-clamp-2 font-medium text-ink">{title}</span>
                 <span className="rounded bg-brand-tint px-1.5 py-0.5 font-mono text-[10px] text-brand">
@@ -115,6 +118,7 @@ function LectureContent({ resource }: { resource: LearningResource }) {
                 <h4 className="text-[15px] font-semibold text-ink">{String(section.title ?? `第 ${sectionIndex + 1} 节`)}</h4>
                 <div className="mt-2 max-w-[760px]">
                   <ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{String(section.content ?? '')}</ReactMarkdown>
+                  <SourceCitationMarks citations={section.citations} resource={resource} />
                 </div>
               </div>
             ))}
@@ -140,7 +144,7 @@ function PracticeContent({ resource }: { resource: LearningResource }) {
       <div className="space-y-3">
         {asRecords(content.steps).map((step, index) => (
           <section key={`${String(step.title)}-${index}`} className="rounded-[14px] border border-hairline bg-card-warm p-5">
-            <div className="flex items-start gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand text-paper font-mono text-[12px]">{index + 1}</span><div className="min-w-0 flex-1"><h3 className="text-[15px] font-semibold text-ink">{String(step.title ?? `步骤 ${index + 1}`)}</h3><div className="mt-1"><ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{String(step.instruction ?? '')}</ReactMarkdown></div></div></div>
+            <div className="flex items-start gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand text-paper font-mono text-[12px]">{index + 1}</span><div className="min-w-0 flex-1"><h3 className="text-[15px] font-semibold text-ink">{String(step.title ?? `步骤 ${index + 1}`)}</h3><div className="mt-1"><ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{String(step.instruction ?? '')}</ReactMarkdown><SourceCitationMarks citations={step.citations} resource={resource} /></div></div></div>
             {step.code ? <pre className="mt-4 overflow-x-auto rounded-lg bg-ink px-4 py-3 text-[12px] leading-5 text-paper"><code>{String(step.code)}</code></pre> : null}
             {step.expectedOutput ? <div className="mt-3 rounded-lg border border-brand/20 bg-brand-tint/40 px-3 py-2 text-[12.5px] text-ink-2"><span className="font-semibold text-brand">预期结果：</span>{String(step.expectedOutput)}</div> : null}
           </section>
@@ -179,7 +183,7 @@ function QuizContent({ resource, onStateChange }: { resource: LearningResource; 
     const correctIndex = typeof result?.correctIndex === 'number' ? result.correctIndex : undefined;
     return (
       <section key={id} className="rounded-[14px] border border-hairline bg-card-warm p-5">
-        <div className="flex items-start gap-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-paper-deep font-mono text-[11px] text-ink-2">{index + 1}</span><div className="min-w-0 flex-1"><p className="text-[14px] font-medium leading-6 text-ink">{String(question.stem)}</p><span className="mt-1 inline-block rounded bg-brand-tint px-1.5 py-0.5 font-mono text-[10px] text-brand">{String(question.difficulty ?? 'adaptive')}</span></div></div>
+        <div className="flex items-start gap-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-paper-deep font-mono text-[11px] text-ink-2">{index + 1}</span><div className="min-w-0 flex-1"><p className="text-[14px] font-medium leading-6 text-ink">{String(question.stem)} <SourceCitationMarks citations={question.citations} resource={resource} compact /></p><span className="mt-1 inline-block rounded bg-brand-tint px-1.5 py-0.5 font-mono text-[10px] text-brand">{String(question.difficulty ?? 'adaptive')}</span></div></div>
         <div className="mt-4 grid gap-2">
           {asStrings(question.options).map((option, optionIndex) => (
             <button key={`${id}-${optionIndex}`} type="button" disabled={selected !== undefined || submitting === id} onClick={() => void answer(id, optionIndex)} className={cn('rounded-[10px] border px-4 py-3 text-left text-[13px] transition-colors', selected === undefined && 'border-hairline hover:border-brand/40', selected === optionIndex && (result?.correct ? 'border-brand bg-brand-tint text-brand' : 'border-brand-danger bg-brand-danger/10 text-brand-danger'), correctIndex === optionIndex && selected !== undefined && 'border-brand bg-brand-tint text-brand')}>
