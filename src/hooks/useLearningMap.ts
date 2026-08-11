@@ -53,7 +53,7 @@ export interface LearningMapView {
   learned: Set<string>;
   status: Record<string, string>;
   activeKp: string | null;
-  resources: Record<string, Array<GeneratedResource & { id: string }>>;
+  resources: Record<string, Array<GeneratedResource & { id: string; learned?: boolean }>>;
   goalId: string | null;
 }
 
@@ -214,7 +214,7 @@ export function useLearningMap(): LearningMapView {
       .slice()
       .sort((a, b) => a.order - b.order)
       .map((column) => ({ label: column.label || COLUMN_LABELS[column.order] || `第${column.order}列`, x: COLUMN_X[column.order] ?? 150 }));
-    const resourceByKp: Record<string, Array<GeneratedResource & { id: string }>> = {};
+    const resourceByKp: Record<string, Array<GeneratedResource & { id: string; learned?: boolean }>> = {};
     resources.forEach((resource) => {
       if (!resource.kpId) return;
       const list = resourceByKp[resource.kpId] ??= [];
@@ -227,6 +227,7 @@ export function useLearningMap(): LearningMapView {
         kpId: resource.kpId,
         version: '',
         updatedAt: resource.updatedAt,
+        learned: resource.learned,
         kbRefs: [],
       });
     });

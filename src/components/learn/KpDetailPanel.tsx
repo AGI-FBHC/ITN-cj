@@ -77,14 +77,15 @@ function MasteryRing({ score, target }: { score: number; target: number }) {
   );
 }
 
-export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: masteryProp, confidence: confidenceProp, path: pathProp, resources: resourcesProp, goalId }: {
+export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpProp, mastery: masteryProp, confidence: confidenceProp, path: pathProp, resources: resourcesProp, goalId }: {
   kpId: string | null;
   topicIndex?: number | null;
+  onSelectTopic?: (topicIndex: number) => void;
   kp?: KnowledgePoint | null;
   mastery?: Record<string, number>;
   confidence?: Record<string, number>;
   path?: PathNode[];
-  resources?: Array<GeneratedResource & { id?: string }>;
+  resources?: Array<GeneratedResource & { id?: string; learned?: boolean }>;
   goalId?: string | null;
 }) {
   const navigate = useNavigate();
@@ -126,7 +127,7 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
   const score = (masteryProp ?? {})[kpId] ?? currentLearner.scores[kpId] ?? 50;
   const conf = (confidenceProp ?? confidence)[kpId] ?? 40;
   const gap = Math.max(0, kp.targetLevel - score);
-  const res: Array<GeneratedResource & { id?: string }> = resourcesProp ?? resourcesForKp(dataId, kpId);
+  const res: Array<GeneratedResource & { id?: string; learned?: boolean }> = resourcesProp ?? resourcesForKp(dataId, kpId);
   const reportPath = pathProp ?? report.path;
   const resourceScope = `${currentLearner.id}:${kpId}:${selectedTopicName ?? ''}`;
   const generatedForScope = generatedResources[resourceScope] ?? {};
@@ -290,6 +291,16 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
     ?? pathNodes.find((n) => n.status === 'todo')?.status
     ?? pathNodes[0]?.status
     ?? null;
+  const unfinishedResources = [...res]
+    .filter((item) => item.id && !item.learned)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .slice(0, 4);
+  const recommendationCount = Math.max(0, 4 - unfinishedResources.length);
+  const topicRecommendations = Array.from({ length: recommendationCount }, (_, index) => {
+    const childIndex = index % Math.max(1, kp.coreTopics.length);
+    const forms = Object.keys(FORM_META) as ResourceForm[];
+    return { childIndex, topic: kp.coreTopics[childIndex] ?? kp.name, form: forms[index % forms.length] };
+  });
 
   return (
     <div className="lf-glass relative flex flex-col gap-4 rounded-[18px] p-5">
@@ -334,8 +345,25 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
         </div>
       </div>
 
-      {/* 资源入口 */}
-      <div>
+      {/* 书本级只做继续学习与子知识点推荐，不允许直接按整本生成。 */}
+      {!selectedTopicName && <div>
+        <div className="mb-2"><div className="text-[12px] font-medium text-ink-2">接下来学什么</div><p className="mt-0.5 text-[10.5px] leading-4 text-ink-muted">优先继续最近未完成的内容；要生成新内容，请先进入具体子知识点。</p></div>
+        <div className="space-y-2">
+          {unfinishedResources.map((item) => {
+            const meta = FORM_META[item.form];
+            const Icon = meta.icon;
+            return <button key={item.id} type="button" onClick={() => navigate(`/learn/resource/${item.id}`)} className="group flex w-full items-center gap-3 rounded-[10px] border border-hairline bg-paper px-3 py-2.5 text-left transition-all hover:border-brand/45 hover:bg-brand-tint/40"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-tint text-brand"><Icon size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium text-ink">继续学习 · {meta.label}</span><span className="block truncate text-[11px] text-ink-muted">{item.title}</span></span><ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" /></button>;
+          })}
+          {topicRecommendations.map((item, index) => {
+            const meta = FORM_META[item.form];
+            const Icon = meta.icon;
+            return <button key={`${item.topic}-${item.form}-${index}`} type="button" onClick={() => onSelectTopic?.(item.childIndex)} className="group flex w-full items-center gap-3 rounded-[10px] border border-dashed border-brand/35 bg-paper px-3 py-2.5 text-left transition-all hover:border-brand/60 hover:bg-brand-tint/40"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-paper-deep text-brand"><Icon size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium text-ink">推荐生成{meta.label}</span><span className="block truncate text-[11px] text-ink-muted">先进入子知识点「{item.topic}」</span></span><ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" /></button>;
+          })}
+        </div>
+      </div>}
+
+      {/* 子知识点资源入口 */}
+      {selectedTopicName && <div>
         <div className="mb-2 text-[12px] font-medium text-ink-2">
           {res.length ? `已经做好 ${res.length} 份，挑一个开始` : 'AI 可以现做，挑一种：'}
         </div>
@@ -409,7 +437,7 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
             {pptGenerating ? <Loader2 size={13} className="shrink-0 animate-spin text-brand" /> : pptForScope?.status === 'completed' ? <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" /> : <Sparkles size={13} className="shrink-0 text-brand/70 transition-transform group-hover:scale-110" />}
           </button>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
