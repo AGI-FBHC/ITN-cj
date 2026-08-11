@@ -101,6 +101,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
   const [generatedResources, setGeneratedResources] = useState<Record<string, Partial<Record<ResourceForm, GeneratedResourceLink>>>>({});
   const inFlightResources = useRef(new Set<string>());
   const [pptResources, setPptResources] = useState<Record<string, PptResourceLink>>({});
+  const [checkingPpt, setCheckingPpt] = useState(false);
   const [startingPpts, setStartingPpts] = useState<Set<string>>(() => new Set());
   const startingPptRefs = useRef(new Set<string>());
   const inFlightPpts = useRef(new Set<string>());
@@ -110,6 +111,52 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
     mounted.current = true;
     return () => { mounted.current = false; };
   }, []);
+
+  /* 进入子知识点时从真实 PPT 任务表恢复状态，不能只依赖本次页面会话里的 setState。 */
+  useEffect(() => {
+    if (!kpId) return undefined;
+    const selectedKp = kpProp ?? getKnowledgePoint(kpId);
+    const focus = topicIndex != null
+      ? selectedKp.coreTopics[topicIndex]
+      : selectedKp.coreTopics[0] ?? selectedKp.name;
+    const scope = `${currentLearner.id}:${kpId}:${topicIndex != null ? focus : ''}`;
+    const wantedTitle = `${focus} · 交互课件`;
+    let cancelled = false;
+    let timer = 0;
+
+    const restorePptStatus = async () => {
+      setCheckingPpt(true);
+      try {
+        const listed = await presentationApi.listPresentationSummaries(50);
+        if (cancelled) return;
+        const match = (listed.tasks ?? [])
+          .filter((item) => item.title === wantedTitle || item.title.includes(focus))
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .find((item) => !['failed', 'cancelled'].includes(item.status));
+        setPptResources((current) => {
+          if (!match) {
+            if (!current[scope]) return current;
+            const next = { ...current };
+            delete next[scope];
+            return next;
+          }
+          const previous = current[scope];
+          if (previous?.id === match.id && previous.status === match.status && previous.title === match.title) return current;
+          return { ...current, [scope]: { id: match.id, title: match.title, status: match.status } };
+        });
+        if (match && !['completed', 'failed', 'cancelled'].includes(match.status)) {
+          timer = window.setTimeout(restorePptStatus, 2500);
+        }
+      } catch {
+        /* 状态恢复失败不覆盖当前按钮；用户点击时仍会再次查询，避免误创建。 */
+      } finally {
+        if (!cancelled) setCheckingPpt(false);
+      }
+    };
+
+    void restorePptStatus();
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [currentLearner.id, kpId, kpProp, topicIndex]);
 
   if (!kpId) {
     return (
@@ -136,6 +183,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
   const resourceScope = `${currentLearner.id}:${kpId}:${selectedTopicName ?? ''}`;
   const generatedForScope = generatedResources[resourceScope] ?? {};
   const pptForScope = pptResources[resourceScope];
+  const pptChecking = checkingPpt && !pptForScope;
   const pptGenerating = startingPpts.has(resourceScope) || Boolean(pptForScope && ['queued', 'analyzing', 'outline_review', 'generating', 'reviewing'].includes(pptForScope.status));
   const existingResourceFor = (form: ResourceForm) => res.find((item) => (
     item.form === form
@@ -224,6 +272,10 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
   const openPptCourseware = async () => {
     const selectedTopicName = topicIndex != null ? kp.coreTopics[topicIndex] : null;
     const focus = selectedTopicName ?? kpProp?.coreTopics[0] ?? kp.name;
+    if (pptChecking) {
+      toast.info('正在检查已有交互课件');
+      return;
+    }
     if (pptForScope?.status === 'completed') {
       navigate(`/learn/${kpId}?ppt=${pptForScope.id}&topic=${encodeURIComponent(focus)}`);
       return;
@@ -453,8 +505,8 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           <button
             type="button"
             onClick={() => void openPptCourseware()}
-            aria-busy={pptGenerating}
-            title={pptGenerating ? '内容正在生成中' : pptForScope ? '打开交互课件' : '生成交互课件'}
+            aria-busy={pptGenerating || pptChecking}
+            title={pptChecking ? '正在检查已有课件' : pptGenerating ? '内容正在生成中' : pptForScope ? '打开交互课件' : '生成交互课件'}
             className={cn(
               'group flex w-full items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left transition-all',
               pptForScope?.status === 'completed'
@@ -467,13 +519,13 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
             )}
           >
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand text-paper">
-              {pptGenerating ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+              {pptGenerating || pptChecking ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-medium text-ink">{pptForScope?.status === 'completed' ? '打开交互课件' : pptGenerating ? '正在生成交互课件' : '生成交互课件'}</span>
-              <span className="block truncate text-[11px] text-ink-muted">{pptGenerating ? '正在后台生成，可继续生成其他内容' : pptForScope?.title ?? `PPT 形式 · 按《${selectedTopicName || kp.name}》生成`}</span>
+              <span className="block text-[13px] font-medium text-ink">{pptForScope?.status === 'completed' ? '打开交互课件' : pptGenerating ? '正在生成交互课件' : pptChecking ? '正在检查交互课件' : '生成交互课件'}</span>
+              <span className="block truncate text-[11px] text-ink-muted">{pptGenerating ? '正在后台生成，可继续生成其他内容' : pptChecking ? '正在查询已有生成记录' : pptForScope?.title ?? `PPT 形式 · 按《${selectedTopicName || kp.name}》生成`}</span>
             </span>
-            {pptGenerating ? <Loader2 size={13} className="shrink-0 animate-spin text-brand" /> : pptForScope?.status === 'completed' ? <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" /> : <Sparkles size={13} className="shrink-0 text-brand/70 transition-transform group-hover:scale-110" />}
+            {pptGenerating || pptChecking ? <Loader2 size={13} className="shrink-0 animate-spin text-brand" /> : pptForScope?.status === 'completed' ? <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" /> : <Sparkles size={13} className="shrink-0 text-brand/70 transition-transform group-hover:scale-110" />}
           </button>
         </div>
       </div>}
