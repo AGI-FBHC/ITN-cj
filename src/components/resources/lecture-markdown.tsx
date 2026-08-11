@@ -59,6 +59,10 @@ const domOnly = (props: MDProps): Omit<MDProps, 'node'> => {
 };
 
 export const lectureMdComponents = {
+  h1: (props: MDProps) => {
+    const { children, ...rest } = domOnly(props);
+    return <h1 className="mb-5 mt-8 font-serif text-[26px] font-semibold leading-[35px] tracking-[-0.01em] text-ink first:mt-0" {...rest}>{traceify(children)}</h1>;
+  },
   h2: (props: MDProps) => {
     const { children, ...rest } = domOnly(props);
     const id = headingId(flattenText(children));
@@ -73,6 +77,14 @@ export const lectureMdComponents = {
         {traceify(children)}
       </h2>
     );
+  },
+  h3: (props: MDProps) => {
+    const { children, ...rest } = domOnly(props);
+    return <h3 className="mb-2 mt-7 font-serif text-[18px] font-semibold leading-[27px] text-ink" {...rest}>{traceify(children)}</h3>;
+  },
+  h4: (props: MDProps) => {
+    const { children, ...rest } = domOnly(props);
+    return <h4 className="mb-1.5 mt-5 text-[15px] font-semibold leading-6 text-ink" {...rest}>{traceify(children)}</h4>;
   },
   p: (props: MDProps) => {
     const { children, ...rest } = domOnly(props);
@@ -229,6 +241,11 @@ export const lectureMdComponents = {
       </td>
     );
   },
+  img: (props: MDProps & { src?: string; alt?: string }) => {
+    const { node, ...rest } = props;
+    void node;
+    return <img className="my-5 max-h-[440px] w-full rounded-[12px] border border-hairline bg-paper-deep object-contain" loading="lazy" {...rest} />;
+  },
   hr: (props: MDProps) => <hr className="my-6 border-hairline" {...domOnly(props)} />,
   a: (props: MDProps) => {
     const { children, ...rest } = domOnly(props);
@@ -240,6 +257,47 @@ export const lectureMdComponents = {
         {children}
       </a>
     );
+  },
+};
+
+/** 幻灯片使用更大的字号和更强的内容分块，不直接套用长文排版。 */
+export const slideMdComponents = {
+  ...lectureMdComponents,
+  h1: (props: MDProps) => {
+    const { children, ...rest } = domOnly(props);
+    return <h1 className="mb-5 font-serif text-[30px] font-semibold leading-[38px] text-ink md:text-[38px] md:leading-[46px]" {...rest}>{traceify(children)}</h1>;
+  },
+  h2: (props: MDProps) => {
+    const { children, ...rest } = domOnly(props);
+    return <h2 className="mb-4 mt-7 border-l-4 border-brand pl-4 font-serif text-[24px] font-semibold leading-[34px] text-ink first:mt-0 md:text-[29px]" {...rest}>{traceify(children)}</h2>;
+  },
+  h3: (props: MDProps) => {
+    const { children, ...rest } = domOnly(props);
+    return <h3 className="mb-3 mt-6 text-[19px] font-semibold leading-7 text-ink md:text-[22px]" {...rest}>{traceify(children)}</h3>;
+  },
+  p: (props: MDProps) => {
+    const { children, ...rest } = domOnly(props);
+    return <p className="my-4 text-[17px] leading-8 text-ink-2 md:text-[19px] md:leading-9" {...rest}>{traceify(children)}</p>;
+  },
+  ul: (props: MDProps) => {
+    const { children, ...rest } = domOnly(props);
+    return <ul className="my-5 grid gap-2.5" {...rest}>{children}</ul>;
+  },
+  ol: (props: MDProps) => {
+    const { children, ...rest } = domOnly(props);
+    return <ol className="my-5 grid list-none gap-2.5 [counter-reset:slide-step]" {...rest}>{children}</ol>;
+  },
+  li: (props: MDProps) => {
+    const { children, ...rest } = domOnly(props);
+    return <li className="relative rounded-[13px] border border-hairline bg-paper/75 px-4 py-3 text-[16px] leading-7 text-ink-2 shadow-xs before:mr-2 before:text-brand before:content-['•'] md:text-[18px]" {...rest}>{traceify(children)}</li>;
+  },
+  pre: (props: MDProps) => {
+    const { children, ...rest } = domOnly(props);
+    return <pre className="my-5 max-h-[42vh] overflow-auto rounded-[14px] bg-ink p-5 font-mono text-[14px] leading-6 text-paper shadow-inner md:text-[16px]" {...rest}>{children}</pre>;
+  },
+  table: (props: MDProps) => {
+    const { children, ...rest } = domOnly(props);
+    return <div className="my-5 overflow-auto rounded-[14px] border border-hairline bg-paper"><table className="w-full min-w-[560px] border-collapse text-[15px] md:text-[17px]" {...rest}>{children}</table></div>;
   },
 };
 
