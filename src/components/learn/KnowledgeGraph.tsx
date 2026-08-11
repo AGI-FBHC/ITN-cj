@@ -335,7 +335,7 @@ export default function KnowledgeGraph({
   /** 双击：子知识点按自身 topic id 进入独立课件，不再压缩到父领域前三块。 */
   const openUnit = (n: GraphNode) => {
     if (n.kind === 'domain') return;
-    navigate(`/learn/${n.kpId}?topic=${encodeURIComponent(n.id)}`);
+    navigate(`/learn/${n.kpId}?unitTopic=${encodeURIComponent(n.id)}`);
   };
 
   return (
