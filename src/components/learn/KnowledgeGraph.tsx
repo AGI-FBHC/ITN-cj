@@ -367,7 +367,8 @@ export default function KnowledgeGraph({
         ? Math.PI - Math.max(-1.16, Math.min(1.16, angularOffset(incoming, incoming.indexOf(edge))))
         : Math.max(Math.PI - 1.0, Math.min(Math.PI + 1.0, targetAngle));
       const sourcePortRadius = a.r + (out.length > 2 ? 6 : 4);
-      const targetPortRadius = b.r + (incoming.length > 2 ? 11 : 8);
+      // 路径终点就是箭头尖端：贴近节点外缘，避免箭头悬浮在圆外。
+      const targetPortRadius = b.r + 2;
       const x1 = a.x + Math.cos(sourceAngle) * sourcePortRadius;
       const y1 = a.y + Math.sin(sourceAngle) * sourcePortRadius;
       const x2 = b.x + Math.cos(targetAngle) * targetPortRadius;
@@ -437,11 +438,11 @@ export default function KnowledgeGraph({
       <svg viewBox={`0 0 ${graphViewBox.w} ${graphViewBox.h}`} className="w-full">
         <GardenDefs />
         <defs>
-          <marker id="kg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
-            <path d="M 0 1 L 9 5 L 0 9 Z" fill="#4E7860" opacity="0.68" />
+          <marker id="kg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+            <path d="M 1 1.4 L 9 5 L 1 8.6 L 3.2 5 Z" fill="#4E7860" opacity="0.72" />
           </marker>
-          <marker id="kg-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
-            <path d="M 0 1 L 9 5 L 0 9 Z" fill="#D99B31" opacity="0.92" />
+          <marker id="kg-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+            <path d="M 1 1.4 L 9 5 L 1 8.6 L 3.2 5 Z" fill="#D99B31" opacity="0.94" />
           </marker>
         </defs>
 
