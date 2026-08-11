@@ -970,6 +970,7 @@ export default function LearnUnit() {
     blockRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   const stopPlayback = () => {
+    if (pptTaskId && pptRef.current?.audioPlaying) pptRef.current.togglePlay();
     cancelRef.current?.();
     tts.stop();
     playingRef.current = false;
@@ -1064,6 +1065,10 @@ export default function LearnUnit() {
   };
 
   const togglePlay = () => {
+    if (pptTaskId) {
+      pptRef.current?.togglePlay();
+      return;
+    }
     if (playing) stopPlayback();
     else startPlay(posRef.current.b, posRef.current.c);
   };
@@ -1673,7 +1678,7 @@ export default function LearnUnit() {
             {freeBrowse ? '回到课堂推进' : '自由浏览'}
           </button>
         </div>
-        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} ref={pptRef} /> : (blocks.map((b, i) => {
+        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} ref={pptRef} onPlaybackChange={setPlaying} /> : (blocks.map((b, i) => {
           const active = i === cursor && playing;
           /* ---- 课堂推进三态：完整（当前/回看/自由浏览）· 摘要行（已完成）· 不渲染（未解锁） ---- */
           const effUnlocked = Math.min(unlocked, blocks.length);
@@ -2614,7 +2619,7 @@ export default function LearnUnit() {
               </div>
               <div className="flex min-w-0 items-center gap-2 whitespace-nowrap font-mono text-[10px] text-ink-muted">
                 <span className="shrink-0">{tts.supported ? <Volume2 size={10} /> : <VolumeX size={10} />}</span>
-                <span className="truncate">{tts.supported ? `语音授课 · ${voiceStyle.label}` : '默片模式（字幕+视觉照常）'}</span>
+                <span className="truncate">{pptTaskId ? 'MiMo 演讲稿朗读 · 个人音色' : tts.supported ? `语音授课 · ${voiceStyle.label}` : '默片模式（字幕+视觉照常）'}</span>
               </div>
             </div>
             )}

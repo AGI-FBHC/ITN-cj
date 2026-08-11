@@ -30,7 +30,7 @@ const PROGRESS_LABEL: Record<PresentationTask['status'], string> = {
   cancelled: '已取消',
 };
 
-const PptPlayer = forwardRef<PptPlayerRef, { taskId: string }>(function PptPlayer({ taskId }, ref) {
+const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: (playing: boolean) => void }>(function PptPlayer({ taskId, onPlaybackChange }, ref) {
   const [task, setTask] = useState<PresentationTask | null>(null);
   const [slides, setSlides] = useState<PresentationSlideshow | null>(null);
   const [current, setCurrent] = useState(0);
@@ -61,7 +61,9 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string }>(function PptPlaye
       }
       await audio.play();
       setAudioPlaying(true);
+      onPlaybackChange?.(true);
     } catch (reason) {
+      onPlaybackChange?.(false);
       setError(reason instanceof Error ? `音频加载失败：${reason.message}` : '音频暂不可用');
     }
   };
@@ -69,7 +71,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string }>(function PptPlaye
   const togglePlay = () => {
     const audio = audioRef.current;
     if (!audio) return;
-    if (audioPlaying) { audio.pause(); setAudioPlaying(false); }
+    if (audioPlaying) { audio.pause(); setAudioPlaying(false); onPlaybackChange?.(false); }
     else void playAudio(currentRef.current);
   };
 
@@ -150,13 +152,14 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string }>(function PptPlaye
 
   const handleAudioEnded = () => {
     if (currentRef.current < slideCount - 1) goTo(currentRef.current + 1, true);
-    else setAudioPlaying(false);
+    else { setAudioPlaying(false); onPlaybackChange?.(false); }
   };
 
   useEffect(() => {
     const audio = audioRef.current;
     if (audio) { audio.pause(); audio.removeAttribute('src'); audio.load(); }
     setAudioPlaying(false);
+    onPlaybackChange?.(false);
     setAudioSrc((prev) => { if (prev) URL.revokeObjectURL(prev); return ''; });
     audioSrcRef.current = '';
   }, [current]);
@@ -246,7 +249,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string }>(function PptPlaye
           </div>
         )}
       </div>
-      <audio ref={audioRef} onPlay={() => setAudioPlaying(true)} onPause={() => setAudioPlaying(false)} onEnded={handleAudioEnded} className="hidden" preload="none" />
+      <audio ref={audioRef} onPlay={() => { setAudioPlaying(true); onPlaybackChange?.(true); }} onPause={() => { setAudioPlaying(false); onPlaybackChange?.(false); }} onEnded={handleAudioEnded} className="hidden" preload="none" />
     </div>
   );
 });
