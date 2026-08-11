@@ -1,5 +1,5 @@
 /**
- * UnitQuickList — 单元速览（学页信息架构改版新增）
+ * UnitQuickList — 章节速览（学页信息架构改版新增）
  * 承接原「单元列表」唯一的独有价值：一眼扫全 6 个单元。
  * 一行一单元：状态点（●达标金 / ◐在学绿 / ○未学）+ 名称 + 微型掌握条 + 分数；
  * 点行 = 选中图谱对应节点（与图谱、详情栏三向联动）；「我的路线」场景下按路径顺序重排带序号。
@@ -82,7 +82,7 @@ export default function UnitQuickList({
   return (
     <div>
       <div className="flex items-baseline justify-between px-1">
-        <span className="text-[12.5px] font-medium text-ink">单元速览</span>
+        <span className="text-[12.5px] font-medium text-ink">章节速览</span>
         <span className="text-[10.5px] text-ink-muted">点一行 · 图上看它的位置</span>
       </div>
       <div className={cn('mt-1', columns ? 'grid gap-x-8 sm:grid-cols-2 xl:grid-cols-3' : 'divide-y divide-hairline/70')}>

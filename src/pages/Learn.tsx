@@ -1,6 +1,6 @@
 /**
  * Learn `/learn` — 知识地图（学习者「学 · 练」主入口）· 一页三件套
- * 桌面端：左 = 知识图谱（结构唯一载体，场景控件驱动），右 = 单元详情（操作唯一载体）+ 单元速览（扫描唯一载体）。
+ * 桌面端：左 = 知识图谱（结构唯一载体，场景控件驱动），右 = 单元详情（操作唯一载体）+ 章节速览（扫描唯一载体）。
  * 三向联动：点图谱域 / 点速览行 → 选中同步 → 详情更新。「图谱/列表」视图切换已删除（信息只此一份）。
  * 移动端：图谱隐藏，单元卡片作为小屏布局。
  */
@@ -40,6 +40,7 @@ export default function Learn() {
   const [scene, setScene] = useState<GraphScene>('order');
   const activeKp = map.activeKp ?? knowledgePoints[0]?.id ?? null;
   const [selectedKp, setSelectedKp] = useState<string | null>(activeKp);
+  const [expandedKp, setExpandedKp] = useState<string | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<number | null>(null);
   const [searchParams] = useSearchParams();
   useEffect(() => {
@@ -115,9 +116,9 @@ export default function Learn() {
       >
         {/* 左栏 = 图谱 + 速览（左栏更长，右栏 sticky 跟随——短边放右侧才不会滚出空腔） */}
         <div className="min-w-0">
-<KnowledgeGraph scene={scene} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} confidence={map.confidence} learned={map.learned} activeKp={map.activeKp} />
+<KnowledgeGraph scene={scene} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpId={expandedKp} onExpandedKpChange={setExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} confidence={map.confidence} learned={map.learned} activeKp={map.activeKp} />
           <div className="mt-3 border-t border-hairline/60 pt-3">
-            <UnitQuickList selectedKpId={selectedKp} onSelect={setSelectedKp} routeOrdered={scene === 'route'} columns items={knowledgePoints} path={map.path} learned={map.learned} mastery={map.mastery} />
+            <UnitQuickList selectedKpId={selectedKp} onSelect={(kpId) => { setSelectedKp(kpId); setSelectedTopic(null); setExpandedKp(kpId); }} routeOrdered={scene === 'route'} columns items={knowledgePoints} path={map.path} learned={map.learned} mastery={map.mastery} />
           </div>
         </div>
         <div className="lg:sticky lg:top-6 lg:self-start">

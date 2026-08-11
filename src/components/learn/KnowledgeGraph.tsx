@@ -215,6 +215,8 @@ export default function KnowledgeGraph({
   learned: learnedProp,
   activeKp: activeKpProp,
   onSelectTopic,
+  expandedKpId,
+  onExpandedKpChange,
 }: {
   /** 场景（由页面级分段控件切换）：order 学习顺序 / network 完整网络 / route 我的路线 */
   scene?: GraphScene;
@@ -230,6 +232,9 @@ export default function KnowledgeGraph({
   confidence?: Record<string, number>;
   learned?: Set<string>;
   activeKp?: string | null;
+  /** 受控展开章节，用于与下方章节速览联动。 */
+  expandedKpId?: string | null;
+  onExpandedKpChange?: (kpId: string | null) => void;
 } = {}) {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
@@ -240,7 +245,12 @@ export default function KnowledgeGraph({
   /** 边 hover 玻璃浮层（替代浏览器原生 title） */
   const [edgeTip, setEdgeTip] = useState<{ x: number; y: number; kind: EdgeKind; notes: string[] } | null>(null);
   /** 渐进披露：当前展开的域（null = 只看 6 域全景） */
-  const [expandedKp, setExpandedKp] = useState<string | null>(null);
+  const [internalExpandedKp, setInternalExpandedKp] = useState<string | null>(null);
+  const expandedKp = expandedKpId !== undefined ? expandedKpId : internalExpandedKp;
+  const setExpandedKp = (kpId: string | null) => {
+    if (expandedKpId === undefined) setInternalExpandedKp(kpId);
+    onExpandedKpChange?.(kpId);
+  };
   /** 完整网络场景下被临时隐藏的关系类型（图例即控件） */
   const [hiddenKinds, setHiddenKinds] = useState<Set<EdgeKind>>(new Set());
   useEffect(() => { setHiddenKinds(new Set()); setEdgeTip(null); }, [scene]);
@@ -453,7 +463,7 @@ export default function KnowledgeGraph({
 
   /** 点域：展开/收拢 + 选中（右栏出详情）；点子节点：选中 */
   const clickNode = (n: GraphNode) => {
-    if (n.kind === 'domain') setExpandedKp((cur) => (cur === n.kpId ? null : n.kpId));
+    if (n.kind === 'domain') setExpandedKp(expandedKp === n.kpId ? null : n.kpId);
     if (onSelectKp) onSelectKp(n.kpId);
     if (n.kind === 'topic' && onSelectTopic) onSelectTopic(n.topicIndex ?? 0);
   };
