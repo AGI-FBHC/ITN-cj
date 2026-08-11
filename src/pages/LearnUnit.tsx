@@ -1795,7 +1795,7 @@ export default function LearnUnit() {
   }
 
   return (
-    <div className={cn('mx-auto px-5 transition-[max-width] duration-300 md:px-6', pptTaskId ? (pptWideMode ? 'max-w-[1180px] pb-24 pt-2' : 'max-w-[760px] pb-24 pt-4') : 'max-w-[760px] pb-48 pt-6')}>
+    <div className={cn('mx-auto px-5 transition-[max-width] duration-300 md:px-6', pptTaskId ? (pptWideMode ? 'max-w-[1500px] pb-24 pt-2' : 'max-w-[760px] pb-24 pt-4') : 'max-w-[760px] pb-48 pt-6')}>
       {/* 技术亮点（系统透视）：右下角悬浮球，点开才展开 */}
       {viewMode !== 'learner' && <FeatureSpotlight flags={spotFlags} />}
 
@@ -1903,7 +1903,7 @@ export default function LearnUnit() {
             {freeBrowse ? '回到课堂推进' : '自由浏览'}
           </button>
         </div>}
-        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} wideMode={pptWideMode} ref={pptRef} onPlaybackChange={setPlaying} onSlideChange={syncPptSlide} /> : (blocks.map((b, i) => {
+        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} wideMode={pptWideMode} ref={pptRef} onPlaybackChange={setPlaying} onSlideChange={syncPptSlide} onRequestNote={openNoteHere} /> : (blocks.map((b, i) => {
           const active = i === cursor && playing;
           /* ---- 课堂推进三态：完整（当前/回看/自由浏览）· 摘要行（已完成）· 不渲染（未解锁） ---- */
           const effUnlocked = Math.min(unlocked, blocks.length);

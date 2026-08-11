@@ -57,7 +57,23 @@ export interface PresentationSlideshow {
   audioUrl: string;
   speakerNotes: string[];
   audioAvailable: boolean[];
+  teachingMoments: PresentationTeachingMoment[][];
 }
+
+export type PresentationTeachingMoment = {
+  momentId: string;
+  type: 'quiz' | 'summary';
+  anchorText: string;
+  anchorChar: number;
+  anchorRatio: number;
+  title: string;
+  prompt?: string;
+  options?: string[];
+  answerIndex?: number;
+  explanation?: string;
+  points?: string[];
+  notePrompt?: string;
+};
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
