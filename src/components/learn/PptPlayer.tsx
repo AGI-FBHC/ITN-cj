@@ -44,6 +44,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const currentRef = useRef(0);
   const audioSrcRef = useRef('');
+  const switchingSlideRef = useRef(false);
   currentRef.current = current;
   audioSrcRef.current = audioSrc;
 
@@ -63,10 +64,13 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: 
         audio.src = url;
       }
       await audio.play();
+      switchingSlideRef.current = false;
       if (audio.currentTime < 0.1) setNoteRevealCount(0);
       setAudioPlaying(true);
       onPlaybackChange?.(true);
     } catch (reason) {
+      switchingSlideRef.current = false;
+      setAudioPlaying(false);
       onPlaybackChange?.(false);
       setError(reason instanceof Error ? `音频加载失败：${reason.message}` : '音频暂不可用');
     }
@@ -82,12 +86,13 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: 
   const goTo = (index: number, continuePlaying = false) => {
     if (index < 0 || index >= slideCount) return;
     if (index === currentRef.current) { if (continuePlaying) void playAudio(index); return; }
+    switchingSlideRef.current = continuePlaying;
     setCurrent(index);
     if (continuePlaying) window.setTimeout(() => void playAudio(index), 700);
   };
 
-  const goNext = () => goTo(currentRef.current + 1);
-  const goPrev = () => goTo(currentRef.current - 1);
+  const goNext = () => goTo(currentRef.current + 1, audioPlaying);
+  const goPrev = () => goTo(currentRef.current - 1, audioPlaying);
 
   useImperativeHandle(ref, () => ({
     get current() { return currentRef.current; },
@@ -170,9 +175,9 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: 
   useEffect(() => {
     const audio = audioRef.current;
     if (audio) { audio.pause(); audio.removeAttribute('src'); audio.load(); }
-    setAudioPlaying(false);
+    if (!switchingSlideRef.current) setAudioPlaying(false);
     setNoteRevealCount(null);
-    onPlaybackChange?.(false);
+    if (!switchingSlideRef.current) onPlaybackChange?.(false);
     setAudioSrc((prev) => { if (prev) URL.revokeObjectURL(prev); return ''; });
     audioSrcRef.current = '';
   }, [current]);
@@ -257,7 +262,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: 
           </div>
         )}
       </div>
-      <audio ref={audioRef} onPlay={() => { setAudioPlaying(true); onPlaybackChange?.(true); }} onPause={() => { setAudioPlaying(false); onPlaybackChange?.(false); }} onTimeUpdate={syncNoteToAudio} onEnded={handleAudioEnded} className="hidden" preload="none" />
+      <audio ref={audioRef} onPlay={() => { switchingSlideRef.current = false; setAudioPlaying(true); onPlaybackChange?.(true); }} onPause={() => { if (!switchingSlideRef.current) { setAudioPlaying(false); onPlaybackChange?.(false); } }} onTimeUpdate={syncNoteToAudio} onEnded={handleAudioEnded} className="hidden" preload="none" />
     </div>
   );
 });
