@@ -54,6 +54,95 @@ export interface LearningMapView {
   goalId: string | null;
 }
 
+/**
+ * 按最长前置路径给 DAG 分层，再用相邻层重心调整同层顺序。
+ * 目标是让先修关系整体从左向右流动，并减少同层节点造成的交叉边。
+ */
+function layoutChapterDag(chapters: RagTree['nodes'][number][], edges: RagTree['edges']): Map<string, { x: number; y: number }> {
+  const codes = new Set(chapters.map((chapter) => chapter.nodeCode));
+  const incoming = new Map<string, string[]>();
+  const outgoing = new Map<string, string[]>();
+  chapters.forEach((chapter) => {
+    incoming.set(chapter.nodeCode, []);
+    outgoing.set(chapter.nodeCode, []);
+  });
+  edges.forEach((edge) => {
+    if (!codes.has(edge.from) || !codes.has(edge.to)) return;
+    outgoing.get(edge.from)!.push(edge.to);
+    incoming.get(edge.to)!.push(edge.from);
+  });
+
+  const layer = new Map<string, number>();
+  const indegree = new Map(chapters.map((chapter) => [chapter.nodeCode, incoming.get(chapter.nodeCode)!.length]));
+  const queue = chapters.filter((chapter) => indegree.get(chapter.nodeCode) === 0).map((chapter) => chapter.nodeCode);
+  queue.forEach((code) => layer.set(code, 0));
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    const from = queue[cursor];
+    outgoing.get(from)!.forEach((to) => {
+      layer.set(to, Math.max(layer.get(to) ?? 0, (layer.get(from) ?? 0) + 1));
+      indegree.set(to, (indegree.get(to) ?? 1) - 1);
+      if (indegree.get(to) === 0) queue.push(to);
+    });
+  }
+  // 防御异常数据：若出现环，未参与拓扑排序的节点放到最后一层。
+  const resolvedMax = Math.max(0, ...layer.values());
+  chapters.forEach((chapter) => {
+    if (!layer.has(chapter.nodeCode)) layer.set(chapter.nodeCode, resolvedMax + 1);
+  });
+
+  const maxLayer = Math.max(0, ...layer.values());
+  const groups = Array.from({ length: maxLayer + 1 }, () => [] as string[]);
+  chapters.forEach((chapter) => groups[layer.get(chapter.nodeCode)!].push(chapter.nodeCode));
+  const order = new Map<string, number>();
+  const sourceIndex = new Map(chapters.map((chapter, index) => [chapter.nodeCode, index]));
+  const resetOrder = () => groups.forEach((group) => group.forEach((code, index) => order.set(code, index)));
+  const sortByNeighbours = (group: string[], neighboursOf: (code: string) => string[]) => {
+    group.sort((a, b) => {
+      const barycenter = (code: string) => {
+        const neighbours = neighboursOf(code).filter((item) => order.has(item));
+        return neighbours.length
+          ? neighbours.reduce((sum, item) => sum + order.get(item)!, 0) / neighbours.length
+          : sourceIndex.get(code) ?? 0;
+      };
+      return barycenter(a) - barycenter(b) || (sourceIndex.get(a) ?? 0) - (sourceIndex.get(b) ?? 0);
+    });
+  };
+  resetOrder();
+  // Sugiyama 风格的多轮重心扫描：正向贴近前置节点，反向贴近后继节点。
+  for (let sweep = 0; sweep < 6; sweep += 1) {
+    for (let level = 1; level < groups.length; level += 1) {
+      sortByNeighbours(groups[level], (code) => incoming.get(code) ?? []);
+      resetOrder();
+    }
+    for (let level = groups.length - 2; level >= 0; level -= 1) {
+      sortByNeighbours(groups[level], (code) => outgoing.get(code) ?? []);
+      resetOrder();
+    }
+  }
+
+  const positions = new Map<string, { x: number; y: number }>();
+  groups.forEach((group, level) => {
+    const x = maxLayer === 0 ? 460 : 65 + (level * 790) / maxLayer;
+    group.forEach((code, index) => {
+      const y = 34 + ((index + 1) * 350) / (group.length + 1);
+      positions.set(code, { x, y });
+    });
+  });
+  return positions;
+}
+
+function shortChapterLabel(name: string): string {
+  return name
+    .replace(/^第[一二三四五六七八九十]+章\s*/, '')
+    .replace('智能体经典范式构建', '经典范式构建')
+    .replace('低代码平台智能体搭建', '低代码平台搭建')
+    .replace('主流Agent框架实践', 'Agent框架实践')
+    .replace('自建HelloAgents框架', 'HelloAgents框架')
+    .replace('智能体通信协议', '通信协议')
+    .replace('智能体性能评估', '性能评估')
+    .replace('自动化深度研究智能体', '深度研究智能体');
+}
+
 export function useLearningMap(): LearningMapView {
   const { currentLearnerId, currentLearner } = useProfile();
   const [map, setMap] = useState<LearningMapOverview | null>(() => readLearningMapCache(currentLearnerId)?.overview ?? null);
@@ -171,10 +260,10 @@ export function useLearningMap(): LearningMapView {
       resourceRef: item.resourceRef,
     }));
 
-    const graphNodes: GraphNode[] = chapters.map((chapter, index) => {
-      const x = 100 + (index % 4) * 240;
-      const y = 58 + Math.floor(index / 4) * 106;
-      return { id: chapter.nodeCode, kpId: chapter.nodeCode, kind: 'domain', label: chapter.name, x, y, r: 30, labelX: x, labelY: y + 45, labelAnchor: 'middle' };
+    const chapterPositions = layoutChapterDag(chapters, tree.edges);
+    const graphNodes: GraphNode[] = chapters.map((chapter) => {
+      const { x, y } = chapterPositions.get(chapter.nodeCode) ?? { x: 460, y: 220 };
+      return { id: chapter.nodeCode, kpId: chapter.nodeCode, kind: 'domain', label: shortChapterLabel(chapter.name), x, y, r: 25, labelX: x, labelY: y + 37, labelAnchor: 'middle' };
     });
     chapters.forEach((chapter) => {
       const parent = graphNodes.find((node) => node.id === chapter.nodeCode)!;

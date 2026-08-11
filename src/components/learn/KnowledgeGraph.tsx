@@ -159,7 +159,7 @@ function DomainNode({
         x={n.labelX}
         y={n.labelY}
         textAnchor={n.labelAnchor}
-        fontSize="13"
+        fontSize={n.r <= 25 ? '10.5' : '13'}
         fontWeight={600}
         fill={dimmed ? '#A9B6A0' : '#4A5244'}
         stroke="#FBFAF5"
@@ -351,17 +351,13 @@ export default function KnowledgeGraph({
                 const a = nodeById.get(e.from)!;
                 const b = nodeById.get(e.to)!;
                 const st = EDGE_STYLE[kind];
-                const dx = b.x - a.x, dy = b.y - a.y;
-                const len = Math.hypot(dx, dy) || 1;
-                const x1 = a.x + (dx / len) * (a.r + 5), y1 = a.y + (dy / len) * (a.r + 5);
-                const x2 = b.x - (dx / len) * (b.r + 8), y2 = b.y - (dy / len) * (b.r + 8);
-                /* 长距边（跨两列）拱高一点绕开中间列 */
-                const bow = len > 420 ? 60 : 16;
-                const qx = (x1 + x2) / 2 - (dy / len) * bow;
-                const qy = (y1 + y2) / 2 + (dx / len) * bow;
+                const x1 = a.x + a.r + 4, y1 = a.y;
+                const x2 = b.x - b.r - 8, y2 = b.y;
+                const controlOffset = Math.max(28, (x2 - x1) * 0.46);
+                const edgePath = `M ${x1} ${y1} C ${x1 + controlOffset} ${y1}, ${x2 - controlOffset} ${y2}, ${x2} ${y2}`;
                 const dim = expandedKp !== null && e.from !== expandedKp && e.to !== expandedKp;
-                const mx = 0.25 * x1 + 0.5 * qx + 0.25 * x2;
-                const my = 0.25 * y1 + 0.5 * qy + 0.25 * y2;
+                const mx = (x1 + x2) / 2;
+                const my = (y1 + y2) / 2;
                 return (
                   <g
                     key={`${kind}-${e.from}-${e.to}`}
@@ -371,9 +367,9 @@ export default function KnowledgeGraph({
                     onMouseLeave={() => setEdgeTip(null)}
                   >
                     {/* 加宽的透明命中区：细线也好 hover */}
-                    <path d={`M ${x1} ${y1} Q ${qx} ${qy} ${x2} ${y2}`} fill="none" stroke="transparent" strokeWidth="14" />
+                    <path d={edgePath} fill="none" stroke="transparent" strokeWidth="14" />
                     <path
-                      d={`M ${x1} ${y1} Q ${qx} ${qy} ${x2} ${y2}`}
+                      d={edgePath}
                       fill="none"
                       stroke={st.stroke}
                       strokeWidth={st.width + (e.count - 1) * 1.1}
