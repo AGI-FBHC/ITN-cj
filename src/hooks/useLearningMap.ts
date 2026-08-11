@@ -14,7 +14,8 @@ import type { GeneratedResource } from '@/data/resources';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const CACHE_PREFIX = 'lf.learningMapCache:';
+// v2: 章节级建图，自动废弃旧账号保存的三层知识地图缓存。
+const CACHE_PREFIX = 'lf.learningMapCache:v2:';
 
 interface LearningMapCache {
   overview: LearningMapOverview;
