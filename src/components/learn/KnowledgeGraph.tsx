@@ -320,19 +320,24 @@ export default function KnowledgeGraph({
     return (edge: DomainEdge, a: GraphNode, b: GraphNode) => {
       const out = outgoingOrder.get(edge.from) ?? [edge];
       const incoming = incomingOrder.get(edge.to) ?? [edge];
-      const angularOffset = (items: DomainEdge[], index: number) => (index - (items.length - 1) / 2) * 0.42;
+      const angularOffset = (items: DomainEdge[], index: number) => {
+        const step = items.length > 2 ? 0.62 : items.length === 2 ? 0.48 : 0;
+        return (index - (items.length - 1) / 2) * step;
+      };
       const sourceAngle = out.length > 1
-        ? angularOffset(out, out.indexOf(edge))
+        ? Math.max(-1.16, Math.min(1.16, angularOffset(out, out.indexOf(edge))))
         : Math.max(-1.0, Math.min(1.0, Math.atan2(b.y - a.y, b.x - a.x)));
       let targetAngle = Math.atan2(a.y - b.y, a.x - b.x);
       if (targetAngle < 0) targetAngle += Math.PI * 2;
       targetAngle = incoming.length > 1
-        ? Math.PI - angularOffset(incoming, incoming.indexOf(edge))
+        ? Math.PI - Math.max(-1.16, Math.min(1.16, angularOffset(incoming, incoming.indexOf(edge))))
         : Math.max(Math.PI - 1.0, Math.min(Math.PI + 1.0, targetAngle));
-      const x1 = a.x + Math.cos(sourceAngle) * (a.r + 4);
-      const y1 = a.y + Math.sin(sourceAngle) * (a.r + 4);
-      const x2 = b.x + Math.cos(targetAngle) * (b.r + 8);
-      const y2 = b.y + Math.sin(targetAngle) * (b.r + 8);
+      const sourcePortRadius = a.r + (out.length > 2 ? 6 : 4);
+      const targetPortRadius = b.r + (incoming.length > 2 ? 11 : 8);
+      const x1 = a.x + Math.cos(sourceAngle) * sourcePortRadius;
+      const y1 = a.y + Math.sin(sourceAngle) * sourcePortRadius;
+      const x2 = b.x + Math.cos(targetAngle) * targetPortRadius;
+      const y2 = b.y + Math.sin(targetAngle) * targetPortRadius;
       const lane = laneOf.get(`${edge.kind}:${edge.from}>${edge.to}`);
       if (lane !== undefined) {
         // 控制点靠近端口，使跨层边快速进入独立车道，避开中间层节点。
