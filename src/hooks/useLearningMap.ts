@@ -2,8 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRef } from 'react';
 import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
-import type { LearningMapOverview } from '@/lib/api';
-import type { LearningMapNode } from '@/lib/api';
+import type { LearnerAnalyticsProfile, LearningMapOverview, RagTree } from '@/lib/api';
 import type { KnowledgePoint } from '@/data/knowledgePoints';
 import {
 } from '@/data/knowledgeGraph';
@@ -14,12 +13,13 @@ import type { GeneratedResource } from '@/data/resources';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-// v2: 章节级建图，自动废弃旧账号保存的三层知识地图缓存。
-const CACHE_PREFIX = 'lf.learningMapCache:v2:';
+// v3: 数据源切换到 knowledge_category，废弃仍包含旧六域的账号缓存。
+const CACHE_PREFIX = 'lf.learningMapCache:v3:';
 
 interface LearningMapCache {
   overview: LearningMapOverview;
   resources: LearningResourceSummary[];
+  tree?: RagTree;
 }
 
 function readLearningMapCache(learnerId: string): LearningMapCache | null {
@@ -38,8 +38,6 @@ function writeLearningMapCache(learnerId: string, cache: LearningMapCache) {
     /* ignore */
   }
 }
-
-const COLUMN_X: Record<number, number> = { 1: 150, 2: 448, 3: 748 };
 
 export interface LearningMapView {
   loading: boolean;
@@ -61,6 +59,8 @@ export function useLearningMap(): LearningMapView {
   const [map, setMap] = useState<LearningMapOverview | null>(() => readLearningMapCache(currentLearnerId)?.overview ?? null);
   const [loading, setLoading] = useState(true);
   const [resources, setResources] = useState<LearningResourceSummary[]>(() => readLearningMapCache(currentLearnerId)?.resources ?? []);
+  const [tree, setTree] = useState<RagTree | null>(() => readLearningMapCache(currentLearnerId)?.tree ?? null);
+  const [analytics, setAnalytics] = useState<LearnerAnalyticsProfile | null>(null);
   const mapRef = useRef<LearningMapOverview | null>(map);
   mapRef.current = map;
 
@@ -76,21 +76,24 @@ export function useLearningMap(): LearningMapView {
     if (cached) {
       setMap(cached.overview);
       setResources(cached.resources);
+      setTree(cached.tree ?? null);
     }
-    api.getLearningMap(currentLearnerId)
-      .then(async (overview) => {
+    Promise.all([api.getLearningMap(currentLearnerId), api.getRagTree('agent'), api.getLearnerAnalyticsProfile().catch(() => null)])
+      .then(async ([overview, latestTree, latestAnalytics]) => {
         if (!cancelled) setMap(overview);
+        if (!cancelled) setTree(latestTree);
+        if (!cancelled) setAnalytics(latestAnalytics);
         try {
           const listed = await api.listLearningResources();
           const latestResources = listed.resources ?? [];
           if (!cancelled) {
             setResources(latestResources);
-            writeLearningMapCache(currentLearnerId, { overview, resources: latestResources });
+            writeLearningMapCache(currentLearnerId, { overview, resources: latestResources, tree: latestTree });
           }
         } catch {
           if (!cancelled) {
             setResources([]);
-            writeLearningMapCache(currentLearnerId, { overview, resources: [] });
+            writeLearningMapCache(currentLearnerId, { overview, resources: [], tree: latestTree });
           }
         }
       })
@@ -104,7 +107,7 @@ export function useLearningMap(): LearningMapView {
           const latestResources = listed.resources ?? [];
           setResources(latestResources);
           if (mapRef.current) {
-            writeLearningMapCache(currentLearnerId, { overview: mapRef.current, resources: latestResources });
+            writeLearningMapCache(currentLearnerId, { overview: mapRef.current, resources: latestResources, tree: tree ?? undefined });
           }
         })
         .catch(() => undefined);
@@ -113,7 +116,7 @@ export function useLearningMap(): LearningMapView {
   }, [currentLearnerId]);
 
   return useMemo<LearningMapView>(() => {
-    if (!map || map.domains.length === 0) {
+    if (!map || !tree) {
       return {
         loading,
         domains: [],
@@ -130,27 +133,35 @@ export function useLearningMap(): LearningMapView {
       };
     }
 
-    const domains: KnowledgePoint[] = map.domains.map((domain) => ({
-      id: domain.code,
-      name: domain.name,
-      en: domain.en ?? domain.code.toUpperCase(),
-      weight: domain.weight,
-      targetLevel: domain.targetLevel,
-      coverage: domain.coverage,
-      description: domain.description ?? '',
-      coreTopics: domain.topics.map((topic) => topic.name),
+    // 一级目录仅用于数据库归档；知识地图从二级章节开始建图。
+    const chapters = tree.nodes.flatMap((root) => root.level === 2 ? [root] : root.children.filter((node) => node.level === 2));
+    const domains: KnowledgePoint[] = chapters.map((chapter) => ({
+      id: chapter.nodeCode,
+      name: chapter.name,
+      en: chapter.nodeCode.toUpperCase(),
+      weight: 1 / Math.max(1, chapters.length),
+      targetLevel: 80,
+      coverage: chapter.chunkCount ? 100 : 0,
+      description: chapter.description ?? '',
+      coreTopics: chapter.children.filter((node) => node.level === 3).map((node) => node.name),
     }));
 
     const mastery: Record<string, number> = {};
     const confidence: Record<string, number> = {};
     const status: Record<string, string> = {};
-    map.domains.forEach((domain) => {
-      mastery[domain.code] = domain.state.mastery;
-      confidence[domain.code] = domain.state.confidence;
-      status[domain.code] = domain.state.status;
+    const masteryByCategory = new Map((analytics?.mastery.categories ?? []).map((item) => [item.id, item]));
+    chapters.forEach((chapter) => {
+      const direct = masteryByCategory.get(chapter.id);
+      const children = chapter.children.map((child) => masteryByCategory.get(child.id)).filter(Boolean);
+      const samples = direct ? [direct] : children;
+      const score = samples.length ? samples.reduce((sum, item) => sum + item!.score, 0) / samples.length : 0;
+      const attempts = samples.reduce((sum, item) => sum + item!.attempts, 0);
+      mastery[chapter.nodeCode] = Math.round(score * 100);
+      confidence[chapter.nodeCode] = attempts > 0 ? Math.min(95, 40 + attempts * 5) : 0;
+      status[chapter.nodeCode] = attempts > 0 ? 'active' : 'locked';
     });
 
-    const learned = new Set(map.domains.filter((domain) => domain.state.learned).map((domain) => domain.code));
+    const learned = new Set(chapters.filter((chapter) => (mastery[chapter.nodeCode] ?? 0) > 0).map((chapter) => chapter.nodeCode));
     const path: PathNode[] = map.learningPath.map((item) => ({
       id: `${item.kpId}-path`,
       title: item.title,
@@ -160,70 +171,35 @@ export function useLearningMap(): LearningMapView {
       resourceRef: item.resourceRef,
     }));
 
-    const positionFor = (node: LearningMapNode, topicIndex?: number): GraphNode => {
-      const dx = COLUMN_X[node.column] ?? 460;
-      const orderIndex = node.order - 1;
-      const dy = orderIndex % 2 === 0 ? 148 : 345;
-      if (node.kind === 'domain') {
-        return {
-          id: node.kpId,
-          kpId: node.kpId,
-          kind: 'domain',
-          label: map.domains.find((d) => d.code === node.kpId)?.name ?? node.kpId,
-          x: dx,
-          y: dy,
-          r: 46,
-          labelX: dx,
-          labelY: dy + 65,
-          labelAnchor: 'middle',
-        };
-      }
-      const dir = dy < 250 ? 1 : -1;
-      const tx = dx - 99 + (topicIndex ?? 0) * 66;
-      const ty = dy + dir * 102;
-      return {
-        id: node.id,
-        kpId: node.kpId,
-        kind: 'topic',
-        label: map.domains.find((d) => d.code === node.kpId)?.topics[topicIndex ?? 0]?.name ?? node.label,
-        topicIndex,
-        x: tx,
-        y: ty,
-        r: 13,
-        labelX: tx,
-        labelY: dir === 1 ? ty + 27 : ty - 21,
-        labelAnchor: 'middle',
-      };
-    };
-
-    // 后端图只包含章节；知识点由章节 topics 在前端展开，不参与章节级建边。
-    const graphNodes: GraphNode[] = map.graph.nodes
-      .filter((node) => node.kind === 'domain')
-      .map((node) => positionFor(node));
-    map.domains.forEach((domain) => {
-      const parent = graphNodes.find((node) => node.kpId === domain.code && node.kind === 'domain');
-      if (!parent) return;
-      const dir = parent.y < 250 ? 1 : -1;
-      domain.topics.forEach((topic, topicIndex) => {
-        const tx = parent.x - 99 + topicIndex * 66;
-        const ty = parent.y + dir * 102;
+    const graphNodes: GraphNode[] = chapters.map((chapter, index) => {
+      const x = 100 + (index % 4) * 240;
+      const y = 58 + Math.floor(index / 4) * 106;
+      return { id: chapter.nodeCode, kpId: chapter.nodeCode, kind: 'domain', label: chapter.name, x, y, r: 30, labelX: x, labelY: y + 45, labelAnchor: 'middle' };
+    });
+    chapters.forEach((chapter) => {
+      const parent = graphNodes.find((node) => node.id === chapter.nodeCode)!;
+      const topics = chapter.children.filter((node) => node.level === 3);
+      topics.forEach((topic, topicIndex) => {
+        const angle = -Math.PI / 2 + (2 * Math.PI * topicIndex) / Math.max(1, topics.length);
+        const tx = parent.x + Math.cos(angle) * 64;
+        const ty = parent.y + Math.sin(angle) * 64;
         graphNodes.push({
-          id: topic.id,
-          kpId: domain.code,
+          id: topic.nodeCode,
+          kpId: chapter.nodeCode,
           kind: 'topic',
           label: topic.name,
           topicIndex,
           x: tx,
           y: ty,
-          r: 13,
+          r: 10,
           labelX: tx,
-          labelY: dir === 1 ? ty + 27 : ty - 21,
+          labelY: ty + (Math.sin(angle) >= 0 ? 22 : -16),
           labelAnchor: 'middle',
         });
       });
     });
 
-    const graphEdges: GraphEdge[] = map.graph.edges.map((edge) => ({
+    const graphEdges: GraphEdge[] = tree.edges.map((edge) => ({
       from: edge.from,
       to: edge.to,
       kind: edge.kind,
@@ -258,9 +234,9 @@ export function useLearningMap(): LearningMapView {
       confidence,
       learned,
       status,
-      activeKp: path.find((node) => node.status === 'active')?.kpId ?? map.domains[0]?.code ?? null,
+      activeKp: chapters.find((chapter) => status[chapter.nodeCode] === 'active')?.nodeCode ?? chapters[0]?.nodeCode ?? null,
       resources: resourceByKp,
       goalId: map.goalId ?? null,
     };
-  }, [map, loading, currentLearner, resources, currentLearnerId]);
+  }, [map, tree, analytics, loading, currentLearner, resources, currentLearnerId]);
 }

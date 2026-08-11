@@ -454,6 +454,12 @@ export interface RagTreeNode {
 export interface RagTree {
   domain: RagDomain;
   nodes: RagTreeNode[];
+  edges: {
+    from: string;
+    to: string;
+    kind: 'prereq' | 'related' | 'applies';
+    note: string | null;
+  }[];
   totalKnowledgePoints: number;
   totalChunks: number;
 }
