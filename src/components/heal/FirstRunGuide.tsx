@@ -1,42 +1,48 @@
 /**
- * FirstRunGuide — 首次使用引导（轻量，非全屏）
+ * FirstRunGuide — 登录后一分钟内显示的轻量引导。
  * 只回答三个问题：这是什么 / 你现在在哪 / 先做哪一步。
- * 关闭后写入 localStorage 不再出现；可从「我的画像」再次唤起（预留）。
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Sparkles, MapPin, Play } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
+import { useAuth } from '@/context/AuthContext';
 import { activePathNode } from '@/data/reportData';
 import { reportForLearner } from '@/data/reportBuilder';
 import { Sprout } from '@/components/heal/Flora';
 
-const K_SEEN = 'lf.guideSeen';
-
-/** 按学习者记录「已看过」——每个新建档的用户都应该看到一次引导 */
-function readSeen(): Record<string, 1> {
-  try {
-    const raw = window.localStorage.getItem(K_SEEN);
-    if (!raw || raw === '1') return {}; // '1' 是旧全局格式，弃用（引导会再各出现一次）
-    return JSON.parse(raw) as Record<string, 1>;
-  } catch {
-    return {};
-  }
-}
+const GUIDE_VISIBLE_MS = 60_000;
 
 export default function FirstRunGuide() {
   const { currentLearner } = useProfile();
-  const [seenMap, setSeenMap] = useState<Record<string, 1>>(readSeen);
-  const open = !seenMap[currentLearner.id];
+  const { session } = useAuth();
+  const [dismissedAt, setDismissedAt] = useState<number | null>(null);
+  const [withinWindow, setWithinWindow] = useState(() =>
+    Boolean(session && Date.now() - session.at < GUIDE_VISIBLE_MS),
+  );
+  const open = Boolean(session && dismissedAt !== session.at && withinWindow);
+
+  useEffect(() => {
+    if (!session) {
+      setWithinWindow(false);
+      return;
+    }
+    const remaining = GUIDE_VISIBLE_MS - (Date.now() - session.at);
+    if (remaining <= 0) {
+      setWithinWindow(false);
+      return;
+    }
+    setWithinWindow(true);
+    const timer = window.setTimeout(() => setWithinWindow(false), remaining);
+    return () => window.clearTimeout(timer);
+  }, [session]);
 
   const report = reportForLearner(currentLearner);
   const done = report.path.filter((p) => p.status === 'done').length;
   const node = activePathNode(report);
 
   const close = () => {
-    const next: Record<string, 1> = { ...seenMap, [currentLearner.id]: 1 };
-    setSeenMap(next);
-    try { window.localStorage.setItem(K_SEEN, JSON.stringify(next)); } catch { /* ignore */ }
+    if (session) setDismissedAt(session.at);
   };
 
   const steps = [
