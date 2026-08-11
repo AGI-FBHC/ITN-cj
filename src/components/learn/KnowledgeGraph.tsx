@@ -186,9 +186,9 @@ function TopicBranchNode({ n, mastery, target, learned }: { n: GraphNode; master
       <circle cx={n.x} cy={n.y} r="15" fill="#FBFAF5" stroke={passed ? '#D8A94E' : learned ? '#82A98F' : '#B9CABD'} strokeWidth={passed ? 2 : 1.6} />
       <circle cx={n.x} cy={n.y} r="5.5" fill={passed ? '#D8A94E' : learned ? '#5F8870' : '#D5DFD7'} />
       <text
-        x={n.x + 24}
+        x={n.labelX}
         y={n.y + 5.3}
-        textAnchor="start"
+        textAnchor={n.labelAnchor}
         fontSize="15.5"
         fontWeight="600"
         fill="#5A6553"
@@ -251,15 +251,9 @@ export default function KnowledgeGraph({
   const showPath = scene === 'route';
 
   const sourceNodes = nodesProp ?? graphNodes;
-  const expandedSourceParent = expandedKp ? sourceNodes.find((node) => node.kind === 'domain' && node.kpId === expandedKp) : null;
   const expandedSourceTopics = expandedKp ? sourceNodes.filter((node) => node.kind === 'topic' && node.kpId === expandedKp) : [];
   const longestTopicLabel = expandedSourceTopics.reduce((max, node) => Math.max(max, node.label.length), 0);
-  const expansionGap = expandedKp ? Math.max(210, Math.min(380, 126 + longestTopicLabel * 13.5)) : 0;
-  // 原图内展开：给父节点右侧插入一段空间，后续层级整体右移，边会基于新坐标自动重算。
-  const dataNodes = useMemo(() => sourceNodes.map((node) => {
-    if (!expandedSourceParent || node.kind !== 'domain' || node.x <= expandedSourceParent.x + 1) return node;
-    return { ...node, x: node.x + expansionGap, labelX: node.labelX + expansionGap };
-  }), [sourceNodes, expandedSourceParent, expansionGap]);
+  const dataNodes = sourceNodes;
   const dataEdges = edgesProp ?? graphEdges;
   const reportPath = pathProp ?? report.path;
   const masteryMap = masteryProp ?? {};
@@ -423,21 +417,30 @@ export default function KnowledgeGraph({
     const spacing = expandedTopics.length > 1 ? Math.min(38, (graphViewBox.h - 44) / (expandedTopics.length - 1)) : 0;
     const contentHeight = (expandedTopics.length - 1) * spacing;
     const top = Math.max(22, Math.min(graphViewBox.h - contentHeight - 22, parent.y - contentHeight / 2));
-    const childX = parent.x + 82;
+    const estimatedLabelWidth = Math.min(210, longestTopicLabel * 9.5);
+    const rightRequired = 104 + estimatedLabelWidth;
+    const rightSpace = graphViewBox.w - parent.x;
+    const leftSpace = parent.x;
+    const direction = rightSpace >= rightRequired || rightSpace >= leftSpace ? 1 : -1;
+    const childX = parent.x + direction * 82;
     const topics = expandedTopics.map((topic, index) => {
       const x = childX;
       const y = top + index * spacing;
-      return { ...topic, x, y, labelX: x, labelY: y, labelAnchor: 'middle' as const };
+      return {
+        ...topic,
+        x,
+        y,
+        labelX: x + direction * 24,
+        labelY: y,
+        labelAnchor: (direction > 0 ? 'start' : 'end') as 'start' | 'end',
+      };
     });
-    const rootX = parent.x + parent.r + 3;
+    const rootX = parent.x + direction * (parent.r + 3);
     const rootY = parent.y;
-    const trunkX = parent.x + parent.r + 32;
-    return { parent, topics, rootX, rootY, trunkX };
-  }, [expandedKp, expandedTopics, nodeById]);
-  const currentViewBox = useMemo(() => ({
-    w: graphViewBox.w + expansionGap,
-    h: graphViewBox.h,
-  }), [expansionGap]);
+    const trunkX = parent.x + direction * (parent.r + 32);
+    return { parent, topics, rootX, rootY, trunkX, direction };
+  }, [expandedKp, expandedTopics, nodeById, longestTopicLabel]);
+  const currentViewBox = graphViewBox;
 
   /* 路径叠加：按路径顺序连接域节点（去重保序） */
   const pathChain = useMemo(() => {
@@ -583,10 +586,10 @@ export default function KnowledgeGraph({
         {/* 展开章节的子知识点：原图内 XMind 式主干 + 圆形分支。 */}
         {expandedTopicLayout && (
           <g fill="none" stroke="#83A58F" strokeWidth="1.35" strokeLinecap="round" opacity="0.9" style={{ pointerEvents: 'none' }}>
-            <path d={`M ${expandedTopicLayout.rootX} ${expandedTopicLayout.rootY} C ${expandedTopicLayout.trunkX - 12} ${expandedTopicLayout.rootY}, ${expandedTopicLayout.trunkX} ${expandedTopicLayout.rootY}, ${expandedTopicLayout.trunkX} ${expandedTopicLayout.rootY}`} />
+            <path d={`M ${expandedTopicLayout.rootX} ${expandedTopicLayout.rootY} C ${expandedTopicLayout.trunkX - expandedTopicLayout.direction * 12} ${expandedTopicLayout.rootY}, ${expandedTopicLayout.trunkX} ${expandedTopicLayout.rootY}, ${expandedTopicLayout.trunkX} ${expandedTopicLayout.rootY}`} />
             {expandedTopicLayout.topics.map((topic) => {
-              const targetX = topic.x - 15;
-              return <path key={`branch-${topic.id}`} d={`M ${expandedTopicLayout.trunkX} ${expandedTopicLayout.rootY} C ${expandedTopicLayout.trunkX} ${topic.y}, ${expandedTopicLayout.trunkX + 12} ${topic.y}, ${targetX} ${topic.y}`} />;
+              const targetX = topic.x - expandedTopicLayout.direction * 15;
+              return <path key={`branch-${topic.id}`} d={`M ${expandedTopicLayout.trunkX} ${expandedTopicLayout.rootY} C ${expandedTopicLayout.trunkX} ${topic.y}, ${expandedTopicLayout.trunkX + expandedTopicLayout.direction * 12} ${topic.y}, ${targetX} ${topic.y}`} />;
             })}
           </g>
         )}
