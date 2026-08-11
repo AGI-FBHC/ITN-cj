@@ -309,8 +309,38 @@ export default function KnowledgeGraph({
       { y: 7 + index * 9, index },
     ] as const));
     const edgeKey = (edge: DomainEdge) => `${edge.kind}:${edge.from}>${edge.to}`;
-    const departureY = (edge: DomainEdge) => laneOf.get(edgeKey(edge))?.y ?? nodeById.get(edge.to)?.y ?? 0;
-    const approachY = (edge: DomainEdge) => laneOf.get(edgeKey(edge))?.y ?? nodeById.get(edge.from)?.y ?? 0;
+    const selectedLaneOf = new Map<string, number>();
+    longEdges.forEach((edge) => {
+      const lane = laneOf.get(edgeKey(edge))!;
+      const from = nodeById.get(edge.from)!, to = nodeById.get(edge.to)!;
+      const x1 = from.x + from.r + 4, y1 = from.y;
+      const x2 = to.x - to.r - 8, y2 = to.y;
+      const shoulder = 10 + lane.index * 1.25;
+      const obstacles = [...nodeById.values()].filter((node) =>
+        node.kind === 'domain' && node.id !== from.id && node.id !== to.id,
+      );
+      const collisionCount = (laneY: number) => {
+        let collisions = 0;
+        for (let step = 2; step < 39; step += 1) {
+          const t = step / 40, u = 1 - t;
+          const px = u ** 3 * x1 + 3 * u ** 2 * t * (x1 + shoulder) + 3 * u * t ** 2 * (x2 - shoulder) + t ** 3 * x2;
+          const py = u ** 3 * y1 + 3 * u ** 2 * t * laneY + 3 * u * t ** 2 * laneY + t ** 3 * y2;
+          if (obstacles.some((node) => Math.hypot(px - node.x, py - node.y) < node.r + 7)) collisions += 1;
+        }
+        return collisions;
+      };
+      const outerCandidates = [lane.y, graphViewBox.h - 7 - lane.index * 9];
+      const selected = outerCandidates
+        .map((value) => ({
+          value,
+          collisions: collisionCount(value),
+          detour: Math.abs(value - y1) + Math.abs(value - y2),
+        }))
+        .sort((left, right) => left.collisions - right.collisions || left.detour - right.detour)[0];
+      selectedLaneOf.set(edgeKey(edge), selected.value);
+    });
+    const departureY = (edge: DomainEdge) => selectedLaneOf.get(edgeKey(edge)) ?? nodeById.get(edge.to)?.y ?? 0;
+    const approachY = (edge: DomainEdge) => selectedLaneOf.get(edgeKey(edge)) ?? nodeById.get(edge.from)?.y ?? 0;
     // 端口顺序跟随实际路由通道，而不是只看目标节点：上行线永远占上方端口。
     outgoingOrder.forEach((items) => items.sort((a, b) =>
       departureY(a) - departureY(b)
@@ -346,24 +376,7 @@ export default function KnowledgeGraph({
       if (lane !== undefined) {
         // 控制点靠近端口，使跨层边快速进入独立车道，避开中间层节点。
         const shoulder = 10 + lane.index * 1.25;
-        const obstacleNodes = [...nodeById.values()].filter((node) =>
-          node.kind === 'domain' && node.id !== a.id && node.id !== b.id,
-        );
-        const collisionCount = (laneY: number) => {
-          let collisions = 0;
-          for (let step = 2; step < 39; step += 1) {
-            const t = step / 40, u = 1 - t;
-            const px = u ** 3 * x1 + 3 * u ** 2 * t * (x1 + shoulder) + 3 * u * t ** 2 * (x2 - shoulder) + t ** 3 * x2;
-            const py = u ** 3 * y1 + 3 * u ** 2 * t * laneY + 3 * u * t ** 2 * laneY + t ** 3 * y2;
-            if (obstacleNodes.some((node) => Math.hypot(px - node.x, py - node.y) < node.r + 5)) collisions += 1;
-          }
-          return collisions;
-        };
-        const candidates = [lane.y, 112 + lane.index * 7, 224 + lane.index * 7, 336 + lane.index * 7]
-          .filter((value) => value > 2 && value < graphViewBox.h - 2);
-        const laneY = candidates
-          .map((value) => ({ value, collisions: collisionCount(value) }))
-          .sort((left, right) => left.collisions - right.collisions || left.value - right.value)[0].value;
+        const laneY = selectedLaneOf.get(edgeKey(edge)) ?? lane.y;
         const sourceControlX = x1 + Math.cos(sourceAngle) * shoulder;
         const sourceControlY = y1 + Math.sin(sourceAngle) * shoulder;
         const targetControlX = x2 + Math.cos(targetAngle) * shoulder;
@@ -374,7 +387,8 @@ export default function KnowledgeGraph({
           my: laneY,
         };
       }
-      const controlOffset = Math.max(24, (x2 - x1) * 0.46);
+      // 相邻层使用短切线控制柄：只校正端点方向，不允许控制柄把整条曲线拉过相邻分支。
+      const controlOffset = Math.min(11, Math.max(7, (x2 - x1) * 0.13));
       const sourceControlX = x1 + Math.cos(sourceAngle) * controlOffset;
       const sourceControlY = y1 + Math.sin(sourceAngle) * controlOffset;
       const targetControlX = x2 + Math.cos(targetAngle) * controlOffset;
