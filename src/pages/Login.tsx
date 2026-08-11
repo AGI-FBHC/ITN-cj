@@ -1,21 +1,18 @@
 /**
  * Login `/login` — 登录与注册共用一张翻转卡片
- * - 正面：工号/邮箱 + 密码、邮箱验证码、微信扫码
+ * - 正面：工号/邮箱 + 密码、邮箱验证码
  * - 背面：注册，自动生成 9 位工号
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import {
-  BadgeCheck,
   Building2,
   Loader2,
   Mail,
   KeyRound,
   MessageSquareText,
-  QrCode,
-  ScanLine,
   Sparkles,
   UserRound,
 } from 'lucide-react';
@@ -30,34 +27,12 @@ import { cn } from '@/lib/utils';
 
 const LOOP_STEPS = ['画像建档', '协同调度', '个性化生成', '交互反馈', '动态更新'];
 
-type Tab = Extract<LoginMethod, 'sso' | 'sms' | 'wechat'>;
+type Tab = Extract<LoginMethod, 'sso' | 'sms'>;
 
 const TABS: { key: Tab; label: string; icon: typeof Building2 }[] = [
   { key: 'sso', label: '工号/邮箱', icon: Building2 },
   { key: 'sms', label: '邮箱验证码', icon: Mail },
-  { key: 'wechat', label: '微信扫码', icon: QrCode },
 ];
-
-function FakeQr({ scanned }: { scanned: boolean }) {
-  const cells: boolean[] = [];
-  let seed = 7;
-  for (let i = 0; i < 144; i++) {
-    seed = (seed * 137 + 11) % 199;
-    cells.push(seed % 3 !== 0);
-  }
-  return (
-    <div className={cn('relative grid h-40 w-40 grid-cols-12 gap-[2px] rounded-[12px] border border-hairline bg-paper p-2.5 transition-opacity', scanned && 'opacity-30')}>
-      {cells.map((on, i) => (
-        <span key={i} className={cn('rounded-[1px]', on ? 'bg-ink/85' : 'bg-transparent')} />
-      ))}
-      {scanned && (
-        <span className="absolute inset-0 flex items-center justify-center">
-          <BadgeCheck size={40} className="text-brand" />
-        </span>
-      )}
-    </div>
-  );
-}
 
 export default function Login() {
   const navigate = useNavigate();
@@ -107,9 +82,6 @@ export default function Login() {
     return () => clearTimeout(t);
   }, [resetCountdown]);
 
-  const [wxScanned, setWxScanned] = useState(false);
-  const wxTimer = useRef<ReturnType<typeof setTimeout>[]>([]);
-
   const doLogin = async (method: LoginMethod, account: string, label: string, learnerId?: string, secret?: string) => {
     setBusy(true);
     const ok = await loginRemote(method, account, label, learnerId, secret);
@@ -121,18 +93,6 @@ export default function Login() {
     toast.success(`${label}，登录成功`);
     navigate('/welcome');
   };
-
-  useEffect(() => {
-    wxTimer.current.forEach(clearTimeout);
-    wxTimer.current = [];
-    if (tab !== 'wechat') return;
-    wxTimer.current.push(
-      setTimeout(() => setWxScanned(true), 2200),
-      setTimeout(() => doLogin('wechat', 'wx:demo-user', '微信用户'), 3400),
-    );
-    return () => wxTimer.current.forEach(clearTimeout);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
 
   const submitSso = () => {
     if (!account.trim() || !password.trim()) {
@@ -368,10 +328,7 @@ export default function Login() {
                     <button
                       key={t.key}
                       type="button"
-                      onClick={() => {
-                        setTab(t.key);
-                        if (t.key !== 'wechat') setWxScanned(false);
-                      }}
+                      onClick={() => setTab(t.key)}
                       className={cn('flex flex-1 items-center justify-center gap-1.5 rounded-[9px] px-2 py-2 text-[12.5px] font-medium transition-all', tab === t.key ? 'bg-brand text-paper shadow-warm' : 'text-ink-muted hover:text-ink')}
                     >
                       <t.icon size={14} />
@@ -408,15 +365,6 @@ export default function Login() {
                       {busy ? <Loader2 size={15} className="animate-spin" /> : <MessageSquareText size={15} />}
                       验证并登录
                     </button>
-                  </div>
-                )}
-
-                {tab === 'wechat' && (
-                  <div className="lf-anim-in-up mt-5 flex flex-col items-center gap-3">
-                    <FakeQr scanned={wxScanned} />
-                    <p className="flex items-center gap-1.5 text-[12.5px] text-ink-muted">
-                      {wxScanned ? <><Loader2 size={13} className="animate-spin text-brand" />已扫码，请在手机上确认…</> : <><ScanLine size={13} className="text-brand" />打开微信「扫一扫」</>}
-                    </p>
                   </div>
                 )}
 
