@@ -181,8 +181,12 @@ function DomainNode({
 /** 子知识点：圆形节点 + 右侧文字，保持与原知识图一致的节点语言。 */
 function TopicBranchNode({ n, mastery, target, learned }: { n: GraphNode; mastery: number; target: number; learned: boolean }) {
   const passed = learned && mastery >= target;
+  const labelWidth = Math.min(240, Math.max(50, n.label.length * 16));
+  const hitX = n.labelAnchor === 'start' ? n.x - 17 : n.x - 24 - labelWidth;
   return (
     <g className="cursor-pointer">
+      {/* 圆点、文字及中间空隙使用同一个命中面，点击文字同样选中该知识点。 */}
+      <rect x={hitX} y={n.y - 19} width={labelWidth + 41} height="38" rx="7" fill="transparent" />
       <circle cx={n.x} cy={n.y} r="15" fill="#FBFAF5" stroke={passed ? '#D8A94E' : learned ? '#82A98F' : '#B9CABD'} strokeWidth={passed ? 2 : 1.6} />
       <circle cx={n.x} cy={n.y} r="5.5" fill={passed ? '#D8A94E' : learned ? '#5F8870' : '#D5DFD7'} />
       <text
