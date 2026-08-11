@@ -80,7 +80,7 @@ export default function LearnerHome() {
   const activeTitle = primaryLoading ? '正在读取真实学习进度…' : learning.nextChapter ? `第 ${learning.nextChapter.index} 章 · ${learning.nextChapter.title}` : mapActive ? mapActive.name : activeNode?.title ?? '开启你的第一课';
   const activePath = primaryLoading ? '/me' : learning.nextResource ? learningResourcePath(learning.nextResource) : mapActive ? `/learn/${mapActive.id}` : activeNode ? `/learn/${activeNode.kpId}` : '/learn';
   const activeButton = primaryLoading ? '加载中…' : learning.nextResource ? `继续：${learning.nextResource.title}` : mapActive ? `继续：${mapActive.name}` : activeNode ? `继续：${activeNode.resourceRef ?? activeNode.title}` : '开始学习';
-  const activeEst = learning.nextResource ? '后端资源' : activeNode?.est;
+  const activeEst = learning.nextResource ? undefined : activeNode?.est;
 
   const topGaps = report.blindSpots.filter((b) => b.priority === '高').slice(0, 2);
   /* 更多进展默认折叠：首屏只回答「现在做什么」 */
