@@ -5,13 +5,14 @@
  */
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, BookOpen, Wrench, ListChecks, Sparkles, Target, Gauge, Route } from 'lucide-react';
 import { Loader2 } from 'lucide-react';
 import { useProfile, dataIdOf } from '@/context/ProfileContext';
 import { useAgent } from '@/context/AgentContext';
 import { api } from '@/lib/api';
 import { presentationApi } from '@/lib/presentationApi';
+import type { PresentationTask } from '@/lib/presentationApi';
 import { reportForLearner } from '@/data/reportBuilder';
 import type { PathNodeStatus } from '@/data/reportData';
 import { getKnowledgePoint } from '@/data/knowledgePoints';
@@ -30,6 +31,7 @@ const FORM_META: Record<ResourceForm, { label: string; icon: typeof BookOpen; hi
 };
 
 type GeneratedResourceLink = { id: string; title: string };
+type PptResourceLink = GeneratedResourceLink & { status: PresentationTask['status'] };
 
 const PATH_STATUS: Record<PathNodeStatus, { label: string; cls: string }> = {
   done: { label: '已完成', cls: 'border-brand/30 bg-brand-tint text-brand' },
@@ -93,7 +95,16 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
   const [generating, setGenerating] = useState<Set<string>>(() => new Set());
   const [generatedResources, setGeneratedResources] = useState<Record<string, Partial<Record<ResourceForm, GeneratedResourceLink>>>>({});
   const inFlightResources = useRef(new Set<string>());
-  const [creatingPpt, setCreatingPpt] = useState(false);
+  const [pptResources, setPptResources] = useState<Record<string, PptResourceLink>>({});
+  const [startingPpts, setStartingPpts] = useState<Set<string>>(() => new Set());
+  const startingPptRefs = useRef(new Set<string>());
+  const inFlightPpts = useRef(new Set<string>());
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   if (!kpId) {
     return (
@@ -119,6 +130,8 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
   const reportPath = pathProp ?? report.path;
   const resourceScope = `${currentLearner.id}:${kpId}:${selectedTopicName ?? ''}`;
   const generatedForScope = generatedResources[resourceScope] ?? {};
+  const pptForScope = pptResources[resourceScope];
+  const pptGenerating = startingPpts.has(resourceScope) || Boolean(pptForScope && ['queued', 'analyzing', 'outline_review', 'generating', 'reviewing'].includes(pptForScope.status));
   const existingResourceFor = (form: ResourceForm) => res.find((item) => (
     item.form === form
     && item.id
@@ -173,14 +186,56 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
       });
     }
   };
-  const openPptCourseware = async () => {
-    if (creatingPpt) return;
-    setCreatingPpt(true);
+  const watchPpt = async (scope: string, taskId: string, focus: string) => {
+    const watchKey = `${scope}:${taskId}`;
+    if (inFlightPpts.current.has(watchKey)) return;
+    inFlightPpts.current.add(watchKey);
     try {
-      const selectedTopicName = topicIndex != null ? kp.coreTopics[topicIndex] : null;
-      const focus = selectedTopicName ?? kpProp?.coreTopics[0] ?? kp.name;
+      while (mounted.current) {
+        await new Promise((resolve) => window.setTimeout(resolve, 2500));
+        const task = await presentationApi.getPresentation(taskId);
+        if (!mounted.current) return;
+        if (task.status === 'failed' || task.status === 'cancelled') {
+          setPptResources((current) => {
+            const next = { ...current };
+            delete next[scope];
+            return next;
+          });
+          toast.error(task.errorMessage || '交互课件生成失败，请重试');
+          return;
+        }
+        setPptResources((current) => ({ ...current, [scope]: { id: task.id, title: task.title, status: task.status } }));
+        if (task.status === 'completed') {
+          toast.success('交互课件已生成，可以打开', { description: focus });
+          return;
+        }
+      }
+    } catch (error) {
+      if (mounted.current) toast.error(error instanceof Error ? error.message : '课件状态更新失败');
+    } finally {
+      inFlightPpts.current.delete(watchKey);
+    }
+  };
+  const openPptCourseware = async () => {
+    const selectedTopicName = topicIndex != null ? kp.coreTopics[topicIndex] : null;
+    const focus = selectedTopicName ?? kpProp?.coreTopics[0] ?? kp.name;
+    if (pptForScope?.status === 'completed') {
+      navigate(`/learn/${kpId}?ppt=${pptForScope.id}&topic=${encodeURIComponent(focus)}`);
+      return;
+    }
+    if (pptGenerating) {
+      toast.info('交互课件正在生成中');
+      return;
+    }
+    if (startingPptRefs.current.has(resourceScope)) {
+      toast.info('交互课件正在生成中');
+      return;
+    }
+    startingPptRefs.current.add(resourceScope);
+    setStartingPpts((current) => new Set(current).add(resourceScope));
+    try {
       const wantedTitle = `${focus} · 交互课件`;
-      // 复用已有任务：已完成直接播放，生成中继续等待，避免每次点击都新建 PPT
+      // 复用已有任务，并把进行中的任务留在当前页面后台轮询。
       try {
         const listed = await presentationApi.listPresentationSummaries(50);
         const match = (listed.tasks ?? [])
@@ -188,8 +243,14 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
           .find((item) => !['failed', 'cancelled'].includes(item.status));
         if (match) {
-          toast.success(match.status === 'completed' ? '已找到已生成的 PPT，正在打开' : '已找到生成中的 PPT，继续等待');
-          navigate(`/learn/${kpId}?ppt=${match.id}&topic=${encodeURIComponent(focus)}`);
+          if (match.status === 'completed') {
+            setPptResources((current) => ({ ...current, [resourceScope]: { id: match.id, title: match.title, status: 'completed' } }));
+            navigate(`/learn/${kpId}?ppt=${match.id}&topic=${encodeURIComponent(focus)}`);
+          } else {
+            setPptResources((current) => ({ ...current, [resourceScope]: { id: match.id, title: match.title, status: match.status } }));
+            toast.info('交互课件正在后台生成，可继续生成其他内容');
+            void watchPpt(resourceScope, match.id, focus);
+          }
           return;
         }
       } catch { /* 列表查询失败时允许直接创建 */ }
@@ -210,12 +271,18 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
         generationMode: 'template',
         learningGoalId: goalId ?? undefined,
       });
-      toast.success('PPT 已加入后台生成，正在进入交互课件');
-      navigate(`/learn/${kpId}?ppt=${task.id}&topic=${encodeURIComponent(focus)}`);
+      setPptResources((current) => ({ ...current, [resourceScope]: { id: task.id, title: task.title, status: task.status } }));
+      toast.success('交互课件已加入后台生成', { description: '可以继续生成讲义、实操指南或分阶测试题。' });
+      void watchPpt(resourceScope, task.id, focus);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'PPT 创建失败');
     } finally {
-      setCreatingPpt(false);
+      startingPptRefs.current.delete(resourceScope);
+      if (mounted.current) setStartingPpts((current) => {
+        const next = new Set(current);
+        next.delete(resourceScope);
+        return next;
+      });
     }
   };
   const pathNodes = reportPath.filter((n) => n.kpId === kpId);
@@ -315,26 +382,31 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
               );
             })}
 
-          {/* 交互课件（始终可进；无预制资源时作为主入口高亮） */}
+          {/* 交互课件与其他资源一致：后台独立生成，完成后原位切换为打开入口。 */}
           <button
             type="button"
             onClick={() => void openPptCourseware()}
-            disabled={creatingPpt}
+            aria-busy={pptGenerating}
+            title={pptGenerating ? '内容正在生成中' : pptForScope ? '打开交互课件' : '生成交互课件'}
             className={cn(
               'group flex w-full items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left transition-all',
-              res.length
+              pptForScope?.status === 'completed'
                 ? 'border-hairline bg-paper hover:border-brand/45 hover:bg-brand-tint/40'
-                : 'border-brand/35 bg-brand-tint/50 hover:border-brand/60',
+                : pptGenerating
+                  ? 'cursor-wait border-brand/45 bg-brand-tint/40'
+                  : res.length
+                    ? 'border-dashed border-brand/35 bg-paper hover:border-brand/60 hover:bg-brand-tint/40'
+                    : 'border-brand/35 bg-brand-tint/50 hover:border-brand/60',
             )}
           >
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand text-paper">
-              {creatingPpt ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+              {pptGenerating ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-medium text-ink">进入交互课件</span>
-              <span className="block text-[11px] text-ink-muted">PPT 形式 · 按《{selectedTopicName || kp.name}》生成</span>
+              <span className="block text-[13px] font-medium text-ink">{pptForScope?.status === 'completed' ? '打开交互课件' : pptGenerating ? '正在生成交互课件' : '生成交互课件'}</span>
+              <span className="block truncate text-[11px] text-ink-muted">{pptGenerating ? '正在后台生成，可继续生成其他内容' : pptForScope?.title ?? `PPT 形式 · 按《${selectedTopicName || kp.name}》生成`}</span>
             </span>
-            <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
+            {pptGenerating ? <Loader2 size={13} className="shrink-0 animate-spin text-brand" /> : pptForScope?.status === 'completed' ? <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" /> : <Sparkles size={13} className="shrink-0 text-brand/70 transition-transform group-hover:scale-110" />}
           </button>
         </div>
       </div>
