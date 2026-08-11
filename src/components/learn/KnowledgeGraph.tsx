@@ -439,11 +439,11 @@ export default function KnowledgeGraph({
       <svg viewBox={`0 0 ${graphViewBox.w} ${graphViewBox.h}`} className="w-full">
         <GardenDefs />
         <defs>
-          <marker id="kg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
-            <path d="M 1 1.5 L 9 5 L 1 8.5" fill="none" stroke="#4E7860" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.78" />
+          <marker id="kg-arrow" viewBox="-1 -5 10 10" refX="7" refY="0" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto" overflow="visible">
+            <path d="M 0 -4 L 7 0 L 0 4 Z" fill="#FBFAF5" stroke="#5F8870" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" opacity="0.9" />
           </marker>
-          <marker id="kg-arrow-active" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
-            <path d="M 1 1.5 L 9 5 L 1 8.5" fill="none" stroke="#D99B31" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" opacity="0.96" />
+          <marker id="kg-arrow-active" viewBox="-1 -5 10 10" refX="7" refY="0" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto" overflow="visible">
+            <path d="M 0 -4 L 7 0 L 0 4 Z" fill="#FBFAF5" stroke="#D99B31" strokeWidth="1.55" strokeLinecap="round" strokeLinejoin="round" opacity="0.98" />
           </marker>
         </defs>
 
