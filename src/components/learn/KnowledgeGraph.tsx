@@ -388,22 +388,6 @@ export default function KnowledgeGraph({
     [expandedKp, dataNodes],
   );
 
-  /* 展开域的子节点级明细边：另一端若在收拢的域里，锚到那个域的圆心 */
-  const detailEdges = useMemo(() => {
-    if (!expandedKp) return [];
-    return dataEdges
-      .filter((e) => (scene === 'network' ? !hiddenKinds.has(e.kind) : e.kind === 'prereq'))
-      .map((e) => {
-        const a = nodeById.get(e.from)!;
-        const b = nodeById.get(e.to)!;
-        if (!a || !b || (a.kpId !== expandedKp && b.kpId !== expandedKp)) return null;
-        const anchor = (node: GraphNode) =>
-          node.kind === 'topic' && node.kpId !== expandedKp ? nodeById.get(node.kpId)! : node;
-        return { e, a: anchor(a), b: anchor(b) };
-      })
-      .filter(Boolean) as { e: GraphEdge; a: GraphNode; b: GraphNode }[];
-  }, [expandedKp, scene, hiddenKinds, dataEdges, nodeById]);
-
   /* 路径叠加：按路径顺序连接域节点（去重保序） */
   const pathChain = useMemo(() => {
     const seq: string[] = [];
@@ -434,6 +418,9 @@ export default function KnowledgeGraph({
           <marker id="kg-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M 0 0 L 8 4 L 0 8 z" fill="#4E7860" opacity="0.65" />
           </marker>
+          <marker id="kg-arrow-active" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 8 4 L 0 8 z" fill="#D99B31" opacity="0.9" />
+          </marker>
         </defs>
 
         {/* 域级聚合边（默认视图的全部边） */}
@@ -445,6 +432,7 @@ export default function KnowledgeGraph({
                 const st = EDGE_STYLE[kind];
                 const route = edgeRouting(e, a, b);
                 const edgePath = route.path;
+                const highlighted = expandedKp !== null && (e.from === expandedKp || e.to === expandedKp);
                 const dim = expandedKp !== null && e.from !== expandedKp && e.to !== expandedKp;
                 const mx = route.mx;
                 const my = route.my;
@@ -463,12 +451,12 @@ export default function KnowledgeGraph({
                       data-edge-to={e.to}
                       d={edgePath}
                       fill="none"
-                      stroke={st.stroke}
-                      strokeWidth={st.width + (e.count - 1) * 1.1}
+                      stroke={highlighted ? '#D99B31' : st.stroke}
+                      strokeWidth={st.width + (e.count - 1) * 1.1 + (highlighted ? 0.45 : 0)}
                       strokeDasharray={st.dash}
                       strokeLinecap="round"
-                      opacity={st.opacity + 0.1}
-                      markerEnd={kind === 'prereq' ? 'url(#kg-arrow)' : undefined}
+                      opacity={highlighted ? 0.9 : st.opacity + 0.1}
+                      markerEnd={kind === 'prereq' ? `url(#${highlighted ? 'kg-arrow-active' : 'kg-arrow'})` : undefined}
                       style={{ pointerEvents: 'none' }}
                     />
                     {e.count > 1 && (
@@ -484,39 +472,6 @@ export default function KnowledgeGraph({
               })
             : null,
         )}
-
-        {/* 展开域的子节点级明细边 */}
-        {detailEdges.map(({ e, a, b }, i) => {
-          const st = EDGE_STYLE[e.kind];
-          const dx = b.x - a.x, dy = b.y - a.y;
-          const len = Math.hypot(dx, dy) || 1;
-          const x1 = a.x + (dx / len) * (a.r + 3), y1 = a.y + (dy / len) * (a.r + 3);
-          const x2 = b.x - (dx / len) * (b.r + 6), y2 = b.y - (dy / len) * (b.r + 6);
-          const qx = (x1 + x2) / 2 - (dy / len) * 14;
-          const qy = (y1 + y2) / 2 + (dx / len) * 14;
-          const dmx = 0.25 * x1 + 0.5 * qx + 0.25 * x2;
-          const dmy = 0.25 * y1 + 0.5 * qy + 0.25 * y2;
-          return (
-            <g
-              key={`d-${i}`}
-              onMouseEnter={() => setEdgeTip({ x: dmx, y: dmy, kind: e.kind, notes: [e.note] })}
-              onMouseLeave={() => setEdgeTip(null)}
-            >
-              <path d={`M ${x1} ${y1} Q ${qx} ${qy} ${x2} ${y2}`} fill="none" stroke="transparent" strokeWidth="14" />
-              <path
-                d={`M ${x1} ${y1} Q ${qx} ${qy} ${x2} ${y2}`}
-                fill="none"
-                stroke="#E7B45A"
-                strokeWidth={st.width}
-                strokeDasharray={e.kind === 'prereq' ? undefined : '4 3'}
-                strokeLinecap="round"
-                opacity="0.85"
-                markerEnd={e.kind === 'prereq' ? 'url(#kg-arrow)' : undefined}
-                style={{ pointerEvents: 'none' }}
-              />
-            </g>
-          );
-        })}
 
         {/* 路径叠加 */}
         {showPath && pathChain.length > 1 && (
