@@ -6,6 +6,7 @@ import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { GitCompare } from 'lucide-react';
 import { knowledgePoints } from '@/data/knowledgePoints';
+import { abilityName } from '@/data/abilityDimensions';
 import { useProfile } from '@/context/ProfileContext';
 import ChartCard, { ReactECharts } from '@/components/ChartCard';
 import { Switch } from '@/components/ui/switch';
@@ -28,7 +29,7 @@ export default function CompareRadar() {
         data: learners.map((l) => l.name),
       },
       radar: {
-        indicator: knowledgePoints.map((kp) => ({ name: kp.name, max: 100 })),
+        indicator: knowledgePoints.map((kp) => ({ name: abilityName(kp.id, kp.name), max: 100 })),
         radius: '64%',
         center: ['50%', '48%'] as [string, string],
         axisName: { color: '#5A6553', fontSize: 12, fontFamily: '"Noto Sans SC", sans-serif' },

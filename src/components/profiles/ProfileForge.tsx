@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Brain, Check, Crosshair, Gauge, Sparkles } from 'lucide-react';
 import { knowledgePoints } from '@/data/knowledgePoints';
+import { abilityName } from '@/data/abilityDimensions';
 import type { ProfileForgeStep } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
@@ -338,7 +339,7 @@ export default function ProfileForge({ data, onDone }: { data: ForgeData; onDone
                           fill={isWeak ? '#B77552' : '#5A6553'}
                           fontFamily='"Noto Sans SC", sans-serif'
                         >
-                          {kp.name} {value}
+                          {abilityName(kp.id, kp.name)} {value}
                         </motion.text>
                       </g>
                     );

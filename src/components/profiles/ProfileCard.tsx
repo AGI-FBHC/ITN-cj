@@ -7,6 +7,7 @@ import { motion, useInView } from 'framer-motion';
 import { Check } from 'lucide-react';
 import type { Learner } from '@/data/learners';
 import { knowledgePoints } from '@/data/knowledgePoints';
+import { abilityName } from '@/data/abilityDimensions';
 import { learnerUiMeta, weightedScore } from './profileMeta';
 import { useCountUp, formatNum } from './CountUp';
 import { cn } from '@/lib/utils';
@@ -37,7 +38,7 @@ export default function ProfileCard({
   const dist = useMemo(
     () =>
       knowledgePoints
-        .map((kp) => ({ name: kp.name, score: learner.scores[kp.id] ?? 0 }))
+        .map((kp) => ({ name: abilityName(kp.id, kp.name), score: learner.scores[kp.id] ?? 0 }))
         .sort((a, b) => b.score - a.score),
     [learner],
   );

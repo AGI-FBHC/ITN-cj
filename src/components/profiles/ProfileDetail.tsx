@@ -9,6 +9,7 @@ import { motion } from 'framer-motion';
 import { GraduationCap, BookOpen, Briefcase, BadgeCheck, ArrowUpRight } from 'lucide-react';
 import type { Learner } from '@/data/learners';
 import { knowledgePoints } from '@/data/knowledgePoints';
+import { abilityName } from '@/data/abilityDimensions';
 import ChartCard, { ReactECharts } from '@/components/ChartCard';
 import AgentChip from '@/components/AgentChip';
 import {
@@ -135,7 +136,7 @@ export default function ProfileDetail({ learner }: { learner: Learner }) {
         data: ['当前水平', '岗位目标'],
       },
       radar: {
-        indicator: knowledgePoints.map((kp) => ({ name: kp.name, max: 100 })),
+        indicator: knowledgePoints.map((kp) => ({ name: abilityName(kp.id, kp.name), max: 100 })),
         radius: '64%',
         center: ['50%', '48%'] as [string, string],
         axisName: { color: '#5A6553', fontSize: 12, fontFamily: '"Noto Sans SC", sans-serif' },

@@ -26,6 +26,7 @@ import { api } from '@/lib/api';
 import type { OnboardingKnowledgePoint, OnboardingTargetCategory, OnboardingTargetOption } from '@/lib/api';
 import type { LearnerDraft } from '@/context/ProfileContext';
 import { knowledgePoints } from '@/data/knowledgePoints';
+import { abilityName } from '@/data/abilityDimensions';
 import { activePathNode } from '@/data/reportData';
 import { reportForLearner } from '@/data/reportBuilder';
 import { AVATARS, TAGS, EDU, JOBS, priorOf, priorLine } from '@/data/priors';
@@ -82,7 +83,7 @@ function miniRadar(scores: Record<string, number>) {
   return {
     animationDuration: 500,
     radar: {
-      indicator: knowledgePoints.map((kp) => ({ name: kp.name, max: 100 })),
+      indicator: knowledgePoints.map((kp) => ({ name: abilityName(kp.id, kp.name), max: 100 })),
       radius: '62%',
       center: ['50%', '52%'] as [string, string],
       axisName: { fontSize: 10, color: '#8A8474', fontFamily: '"Noto Sans SC", sans-serif' },

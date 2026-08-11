@@ -30,8 +30,9 @@ import { AVATARS, TAGS, EDU, JOBS, STYLES, priorOf, priorLine } from '@/data/pri
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
 import type { OnboardingMeta, OnboardingQuestion, OnboardingAnswerInput } from '@/lib/api';
+import { abilityName } from '@/data/abilityDimensions';
 
-const knowledgePoints = localKnowledgePoints;
+const knowledgePoints = localKnowledgePoints.map((kp) => ({ ...kp, name: abilityName(kp.id, kp.name) }));
 
 /* ================= 自评五档 ================= */
 const SELF_LEVELS = ['完全不会', '听说过', '了解', '熟练', '精通'];
@@ -106,7 +107,8 @@ export default function Onboarding() {
   useEffect(() => {
     api.getOnboardingMeta().then(setMeta).catch(() => {});
   }, []);
-  const knowledgePoints = meta?.knowledgePoints ?? localKnowledgePoints;
+  const knowledgePoints = (meta?.knowledgePoints ?? localKnowledgePoints)
+    .map((kp) => ({ ...kp, name: abilityName(kp.id, kp.name) }));
   const tags = meta?.tags ?? TAGS;
   const edu = meta?.edu ?? EDU;
   const targetCategories = meta?.targetCategories ?? [];

@@ -12,6 +12,7 @@ import { api } from '@/lib/api';
 import type { LearnerProfileData, LearnerUpsertInput } from '@/lib/api';
 import type { OnboardingKnowledgePoint } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import { abilityName } from '@/data/abilityDimensions';
 
 export type ViewMode = 'learner' | 'expert';
 
@@ -121,7 +122,7 @@ const LEGACY_SCORE_IDS: Record<string, string> = {
 };
 
 function kpName(id: string): string {
-  return NEW_KP_NAMES[id] ?? getKnowledgePoint(id).name ?? id;
+  return abilityName(id, NEW_KP_NAMES[id] ?? getKnowledgePoint(id).name ?? id);
 }
 
 const clamp = (n: number) => Math.max(12, Math.min(96, Math.round(n)));
