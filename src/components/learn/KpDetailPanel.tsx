@@ -77,7 +77,7 @@ function MasteryRing({ score, target }: { score: number; target: number }) {
   );
 }
 
-export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpProp, mastery: masteryProp, confidence: confidenceProp, path: pathProp, resources: resourcesProp, goalId }: {
+export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpProp, mastery: masteryProp, confidence: confidenceProp, path: pathProp, resources: resourcesProp, goalId, knowledgeMap }: {
   kpId: string | null;
   topicIndex?: number | null;
   onSelectTopic?: (topicIndex: number) => void;
@@ -87,6 +87,10 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
   path?: PathNode[];
   resources?: Array<GeneratedResource & { id?: string; learned?: boolean }>;
   goalId?: string | null;
+  knowledgeMap?: {
+    chapters: Array<{ id: string; name: string; topics: string[] }>;
+    edges: Array<{ from: string; to: string; kind: string }>;
+  };
 }) {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
@@ -255,7 +259,30 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           return;
         }
       } catch { /* 列表查询失败时允许直接创建 */ }
-      const requirement = `面向${currentLearner.tag}（${currentLearner.education}）制作《${focus}》交互课件PPT，目标是${currentLearner.targetJob}。内容要覆盖核心概念、原理、方法、典型应用、练习检查与回顾，每一页有具体讲解，不用空泛标题；结合学习画像安排深度，适合课堂互动演示。`;
+      const chapters = knowledgeMap?.chapters ?? [{ id: kpId, name: kp.name, topics: kp.coreTopics }];
+      const chapterIndex = Math.max(0, chapters.findIndex((chapter) => chapter.id === kpId));
+      const currentChapter = chapters[chapterIndex] ?? chapters[0];
+      const currentTopicIndex = topicIndex ?? Math.max(0, currentChapter.topics.indexOf(focus));
+      const previousTopic = currentTopicIndex > 0
+        ? currentChapter.topics[currentTopicIndex - 1]
+        : chapters[chapterIndex - 1]?.topics.at(-1) ?? null;
+      const nextTopic = currentTopicIndex + 1 < currentChapter.topics.length
+        ? currentChapter.topics[currentTopicIndex + 1]
+        : chapters[chapterIndex + 1]?.topics[0] ?? null;
+      const mapPosition = {
+        chapterIndex,
+        chapterNumber: chapterIndex + 1,
+        chapterCount: chapters.length,
+        chapterId: currentChapter.id,
+        chapterName: currentChapter.name,
+        topicIndex: currentTopicIndex,
+        topicNumber: currentTopicIndex + 1,
+        topicCount: currentChapter.topics.length,
+        topicName: focus,
+        previousTopic,
+        nextTopic,
+      };
+      const requirement = `面向${currentLearner.tag}（${currentLearner.education}）制作《${focus}》交互课件PPT，目标是${currentLearner.targetJob}。本课件只深入当前最小知识点，不扩写成整章；内容要覆盖核心概念、原理、方法、典型应用、练习检查与回顾。讲解要自然承接知识地图中的前序内容，并为后续知识点留下必要接口，但不要机械复述地图或频繁预告下一页。`;
       const task = await presentationApi.createPresentation({
         requirement,
         title: wantedTitle,
@@ -271,6 +298,18 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
         modelProvider: 'mimo',
         generationMode: 'template',
         learningGoalId: goalId ?? undefined,
+        generationContext: {
+          contextType: 'knowledge-map-position',
+          instruction: '把知识地图作为课程上下文：默认学习者已经接触前序知识点；当前PPT只讲当前知识点；必要时自然引用前序概念，并说明它与后续知识的关系。不要把章节名称逐条念成目录，也不要把用户目标或写作要求当成知识章节。',
+          current: mapPosition,
+          chapters: chapters.map((chapter, index) => ({
+            order: index + 1,
+            id: chapter.id,
+            name: chapter.name,
+            topics: chapter.topics,
+          })),
+          prerequisiteEdges: (knowledgeMap?.edges ?? []).filter((edge) => edge.kind === 'prereq'),
+        },
       });
       setPptResources((current) => ({ ...current, [resourceScope]: { id: task.id, title: task.title, status: task.status } }));
       toast.success('交互课件已加入后台生成', { description: '可以继续生成讲义、实操指南或分阶测试题。' });

@@ -122,7 +122,7 @@ export default function Learn() {
           </div>
         </div>
         <div className="lg:sticky lg:top-6 lg:self-start">
-<KpDetailPanel kpId={selectedKp} topicIndex={selectedTopic} onSelectTopic={setSelectedTopic} kp={knowledgePoints.find((kp) => kp.id === selectedKp) ?? null} mastery={map.mastery} confidence={map.confidence} path={map.path} resources={selectedKp ? map.resources[selectedKp] ?? [] : []} goalId={map.goalId} />
+<KpDetailPanel kpId={selectedKp} topicIndex={selectedTopic} onSelectTopic={setSelectedTopic} kp={knowledgePoints.find((kp) => kp.id === selectedKp) ?? null} mastery={map.mastery} confidence={map.confidence} path={map.path} resources={selectedKp ? map.resources[selectedKp] ?? [] : []} goalId={map.goalId} knowledgeMap={{ chapters: knowledgePoints.map((chapter) => ({ id: chapter.id, name: chapter.name, topics: chapter.coreTopics })), edges: map.graphEdges }} />
         </div>
       </motion.div>
 
