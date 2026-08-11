@@ -30,7 +30,7 @@ import { AVATARS, TAGS, EDU, JOBS, STYLES, priorOf, priorLine } from '@/data/pri
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
 import type { OnboardingMeta, OnboardingQuestion, OnboardingAnswerInput } from '@/lib/api';
-import { ABILITY_SELF_PROMPTS, abilityName } from '@/data/abilityDimensions';
+import { ABILITY_SELF_PROMPTS, abilityName, abilityOrderForTarget } from '@/data/abilityDimensions';
 
 const knowledgePoints = localKnowledgePoints.map((kp) => ({ ...kp, name: abilityName(kp.id, kp.name) }));
 
@@ -110,9 +110,9 @@ export default function Onboarding() {
     .map((kp) => ({ ...kp, name: abilityName(kp.id, kp.name) }));
   const tags = meta?.tags ?? TAGS;
   const edu = meta?.edu ?? EDU;
-  const targetCategories = meta?.targetCategories ?? [];
   const targetOptions = meta?.targetOptions ?? [];
-  const jobs = targetOptions.length ? targetOptions.map((option) => option.name) : JOBS;
+  const backendJobs = targetOptions.map((option) => option.name).filter((name) => JOBS.includes(name));
+  const jobs = backendJobs.length > 1 ? backendJobs : JOBS;
   const styleOptions = meta?.styles ?? STYLES;
   const getKnowledgePoint = useCallback(
     (id: string) => knowledgePoints.find((kp) => kp.id === id) ?? localGetKnowledgePoint(id),
@@ -142,10 +142,11 @@ export default function Onboarding() {
   /* ---- ③ 自测：动态题目队列 ---- */
   const baseQueue = useMemo(
     () =>
-      knowledgePoints
+      [...knowledgePoints]
+        .sort((a, b) => abilityOrderForTarget(targetJob).indexOf(a.id) - abilityOrderForTarget(targetJob).indexOf(b.id))
         .map((kp) => quizByKp(kp.id).find((q) => q.level === 'basic') ?? quizByKp(kp.id)[0])
         .filter((q): q is OnboardingQuestion => Boolean(q)),
-    [knowledgePoints, quizByKp],
+    [knowledgePoints, quizByKp, targetJob],
   );
   const [queue, setQueue] = useState<{ q: OnboardingQuestion; extra?: boolean; reason?: string }[]>(() =>
     baseQueue.map((q) => ({ q })),
@@ -153,15 +154,10 @@ export default function Onboarding() {
   const [answers, setAnswers] = useState<AnswerRecord[]>([]);
 
   useEffect(() => {
-    if (!meta || answers.length > 0) return;
-    const nextQueue = meta.knowledgePoints
-      .map((kp) => meta.questions.find((q) => q.kpId === kp.id && q.level === 'basic') ?? meta.questions.find((q) => q.kpId === kp.id))
-      .filter((q): q is OnboardingQuestion => Boolean(q))
-      .map((q) => ({ q }));
-    if (nextQueue.length === 0) return;
-    setQueue(nextQueue);
+    if (!meta || answers.length > 0 || baseQueue.length === 0) return;
+    setQueue(baseQueue.map((q) => ({ q })));
     setSelfLevels((prev) => Object.fromEntries(meta.knowledgePoints.map((kp) => [kp.id, prev[kp.id] ?? 2])));
-  }, [meta, answers.length]);
+  }, [meta, answers.length, baseQueue]);
   const [picked, setPicked] = useState<number | null>(null);
   /** 答错后待归因：记录挂起，归因（或跳过）后才正式提交，避免题卡提前跳题 */
   const [pendingWrong, setPendingWrong] = useState<AnswerRecord | null>(null);
@@ -215,6 +211,7 @@ export default function Onboarding() {
       const response = await api.answerOnboarding({
         tag,
         education,
+        targetJob,
         selfLevels,
         answers: nextAnswers.map(toBackendAnswer),
         queueIds: queue.map((item) => item.q.id),
@@ -312,14 +309,6 @@ export default function Onboarding() {
     setTargetJob(name);
     const option = targetOptions.find((item) => item.name === name);
     if (option) setTargetCategoryCode(option.categoryCode);
-  };
-
-  const pickTargetCategory = (categoryName: string) => {
-    const category = targetCategories.find((item) => item.name === categoryName);
-    if (!category) return;
-    setTargetCategoryCode(category.code);
-    const first = targetOptions.find((item) => item.categoryCode === category.code);
-    if (first) setTargetJob(first.name);
   };
 
   const toggleStyle = (s: string) =>
@@ -494,8 +483,7 @@ export default function Onboarding() {
 
                 <ChipRow label="身份" options={tags} value={tag} onPick={setTag} />
                 <ChipRow label="学历" options={edu} value={education} onPick={setEducation} />
-                <ChipRow label="目标类型" options={targetCategories.map((category) => category.name)} value={targetCategories.find((category) => category.code === targetCategoryCode)?.name ?? ''} onPick={pickTargetCategory} />
-                <ChipRow label="目标方向" options={jobs} value={targetJob} onPick={pickTarget} />
+                <ChipRow label="Agent 目标方向" options={jobs} value={targetJob} onPick={pickTarget} />
 
                 <div>
                   <div className="lf-mono-label mb-2 !text-[11px]">学习偏好（可多选）</div>

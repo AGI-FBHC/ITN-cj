@@ -19,3 +19,13 @@ export const ABILITY_SELF_PROMPTS: Record<string, string> = {
 
 export const abilityName = (id: string, fallback = '综合能力') =>
   ABILITY_DIMENSION_NAMES[id] ?? fallback;
+
+const TARGET_ABILITY_PRIORITY: Record<string, string[]> = {
+  Agent工程师: ['kp-os', 'kp-agent', 'kp-co', 'kp-network', 'kp-db', 'kp-ds'],
+  RAG应用工程师: ['kp-ds', 'kp-db', 'kp-network', 'kp-os', 'kp-co', 'kp-agent'],
+  多智能体开发工程师: ['kp-co', 'kp-db', 'kp-network', 'kp-os', 'kp-agent', 'kp-ds'],
+  Agent平台工程师: ['kp-db', 'kp-network', 'kp-os', 'kp-co', 'kp-ds', 'kp-agent'],
+};
+
+export const abilityOrderForTarget = (targetJob: string) =>
+  TARGET_ABILITY_PRIORITY[targetJob] ?? TARGET_ABILITY_PRIORITY.Agent工程师;

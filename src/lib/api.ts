@@ -225,6 +225,7 @@ export interface OnboardingAnswerInput {
 export interface OnboardingAnswerRequest {
   tag: string;
   education: string;
+  targetJob: string;
   selfLevels: Record<string, number>;
   answers: OnboardingAnswerInput[];
   queueIds: string[];

@@ -23,7 +23,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
-import type { OnboardingKnowledgePoint, OnboardingTargetCategory, OnboardingTargetOption } from '@/lib/api';
+import type { OnboardingKnowledgePoint, OnboardingTargetOption } from '@/lib/api';
 import type { LearnerDraft } from '@/context/ProfileContext';
 import { knowledgePoints } from '@/data/knowledgePoints';
 import { abilityName } from '@/data/abilityDimensions';
@@ -116,18 +116,17 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
   const { bindAccount, session } = useAuth();
   const { createLearner } = useProfile();
   const [step, setStep] = useState(0);
-  const [targetCategories, setTargetCategories] = useState<OnboardingTargetCategory[]>([]);
   const [targetOptions, setTargetOptions] = useState<OnboardingTargetOption[]>([]);
-  const [targetCategoryCode, setTargetCategoryCode] = useState('JOB');
+  const targetCategoryCode = 'JOB';
   const [jobOptions, setJobOptions] = useState<string[]>(JOBS);
   const [quickKnowledgePoints, setQuickKnowledgePoints] = useState<OnboardingKnowledgePoint[]>([]);
 
   useEffect(() => {
     api.getOnboardingMeta()
       .then((meta) => {
-        setTargetCategories(meta.targetCategories);
         setTargetOptions(meta.targetOptions);
-        setJobOptions(meta.targetOptions.map((option) => option.name));
+        const supported = meta.targetOptions.map((option) => option.name).filter((name) => JOBS.includes(name));
+        setJobOptions(supported.length > 1 ? supported : JOBS);
         setQuickKnowledgePoints(meta.knowledgePoints);
       })
       .catch(() => {});
@@ -143,21 +142,11 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
   /** 建档锻造特效：createLearner 之后先播生成过程，播完再进主页 */
   const [forge, setForge] = useState<ForgeData | null>(null);
 
-  const visibleTargetOptions = targetCategoryCode && targetOptions.length
-    ? targetOptions.filter((option) => option.categoryCode === targetCategoryCode)
-    : [];
-  const visibleTargetNames = visibleTargetOptions.length ? visibleTargetOptions.map((option) => option.name) : jobOptions;
-
-  const pickTargetCategory = (categoryCode: string) => {
-    setTargetCategoryCode(categoryCode);
-    const first = targetOptions.find((option) => option.categoryCode === categoryCode);
-    if (first) setJob(first.name);
-  };
+  const visibleTargetOptions = targetOptions.filter((option) => option.categoryCode === 'JOB' && JOBS.includes(option.name));
+  const visibleTargetNames = visibleTargetOptions.length > 1 ? visibleTargetOptions.map((option) => option.name) : jobOptions;
 
   const pickTarget = (name: string) => {
     setJob(name);
-    const option = targetOptions.find((item) => item.name === name);
-    if (option) setTargetCategoryCode(option.categoryCode);
   };
 
   const canNext = step === 0 ? name.trim().length > 0 && tag !== null : step === 1 ? edu !== null : job !== null;
@@ -185,7 +174,7 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
       learningStyle: [],
       scores,
       blindSpots: blind,
-      goal: `拿下「${job}」${targetCategoryCode === 'EXAM' ? '考试科目' : targetCategoryCode === 'CERT' ? '证书考核' : '岗位'}所需的核心技能——画像先按背景估，边学边测准。`,
+      goal: `拿下「${job}」岗位所需的核心技能——画像先按背景估，边学边测准。`,
     };
     let id: string;
     try {
@@ -450,28 +439,8 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
             >
               <div className="text-center sm:text-left">
                 <h2 className="font-serif text-[20px] font-semibold text-ink">你的主要学习目标是什么？</h2>
-                <p className="mt-1 text-[11.5px] leading-[18px] text-ink-muted">先选目标类型，再选具体方向；我们会按对应要求安排学习内容。</p>
+                <p className="mt-1 text-[11.5px] leading-[18px] text-ink-muted">选择最接近的 Agent 岗位方向，我们会据此安排能力诊断与学习内容。</p>
               </div>
-              {targetCategories.length > 0 && (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {targetCategories.map((category) => (
-                    <button
-                      key={category.code}
-                      type="button"
-                      aria-pressed={targetCategoryCode === category.code}
-                      onClick={() => pickTargetCategory(category.code)}
-                      className={cn(
-                        'rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition-all',
-                        targetCategoryCode === category.code
-                          ? 'border-brand bg-brand-tint text-brand'
-                          : 'border-hairline bg-white/45 text-ink-2 hover:border-brand/35',
-                      )}
-                    >
-                      {category.name}
-                    </button>
-                  ))}
-                </div>
-              )}
               <div className="mt-4 grid gap-2 sm:grid-cols-2">
                 {visibleTargetNames.map((item) => (
                   <button
