@@ -39,6 +39,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: 
   const [slideSrc, setSlideSrc] = useState('');
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [audioSrc, setAudioSrc] = useState('');
+  const [noteRevealCount, setNoteRevealCount] = useState<number | null>(null);
   const outlineConfirmedRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const currentRef = useRef(0);
@@ -62,6 +63,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: 
         audio.src = url;
       }
       await audio.play();
+      if (audio.currentTime < 0.1) setNoteRevealCount(0);
       setAudioPlaying(true);
       onPlaybackChange?.(true);
     } catch (reason) {
@@ -153,14 +155,23 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: 
   }, [taskId]);
 
   const handleAudioEnded = () => {
+    setNoteRevealCount(note.length);
     if (currentRef.current < slideCount - 1) goTo(currentRef.current + 1, true);
     else { setAudioPlaying(false); onPlaybackChange?.(false); }
+  };
+
+  const syncNoteToAudio = () => {
+    const audio = audioRef.current;
+    if (!audio || !Number.isFinite(audio.duration) || audio.duration <= 0 || !note) return;
+    const progress = Math.min(1, Math.max(0, audio.currentTime / audio.duration));
+    setNoteRevealCount(Math.min(note.length, Math.ceil(note.length * progress)));
   };
 
   useEffect(() => {
     const audio = audioRef.current;
     if (audio) { audio.pause(); audio.removeAttribute('src'); audio.load(); }
     setAudioPlaying(false);
+    setNoteRevealCount(null);
     onPlaybackChange?.(false);
     setAudioSrc((prev) => { if (prev) URL.revokeObjectURL(prev); return ''; });
     audioSrcRef.current = '';
@@ -180,6 +191,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: 
     return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [taskId, current, slides]);
   const note = slides?.speakerNotes[current] ?? '';
+  const visibleNote = noteRevealCount === null ? note : note.slice(0, noteRevealCount);
 
   if (!task && loading) {
     return (
@@ -236,11 +248,16 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: 
               <FileText size={14} className="text-brand" />
               <span className="lf-mono-label !text-[10px]">本页讲稿</span>
             </div>
-            <p className="mt-2 max-h-[128px] overflow-y-auto whitespace-pre-wrap pr-2 text-[14px] leading-[24px] text-ink-2">{note}</p>
+            <p className="mt-2 max-h-[128px] overflow-y-auto whitespace-pre-wrap pr-2 text-[14px] leading-[24px] text-ink-2" aria-live="off">
+              {visibleNote}
+              {audioPlaying && noteRevealCount !== null && noteRevealCount < note.length && (
+                <span className="ml-0.5 inline-block h-[1em] w-[2px] animate-pulse align-[-0.12em] bg-brand" aria-hidden />
+              )}
+            </p>
           </div>
         )}
       </div>
-      <audio ref={audioRef} onPlay={() => { setAudioPlaying(true); onPlaybackChange?.(true); }} onPause={() => { setAudioPlaying(false); onPlaybackChange?.(false); }} onEnded={handleAudioEnded} className="hidden" preload="none" />
+      <audio ref={audioRef} onPlay={() => { setAudioPlaying(true); onPlaybackChange?.(true); }} onPause={() => { setAudioPlaying(false); onPlaybackChange?.(false); }} onTimeUpdate={syncNoteToAudio} onEnded={handleAudioEnded} className="hidden" preload="none" />
     </div>
   );
 });
