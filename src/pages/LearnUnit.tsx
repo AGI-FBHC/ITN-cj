@@ -1623,7 +1623,7 @@ export default function LearnUnit() {
   }
 
   return (
-    <div className="mx-auto max-w-[760px] px-5 pb-48 pt-6 md:px-6">
+    <div className={cn('mx-auto max-w-[760px] px-5 pt-6 md:px-6', pptTaskId ? 'pb-24' : 'pb-48')}>
       {/* 技术亮点（系统透视）：右下角悬浮球，点开才展开 */}
       {viewMode !== 'learner' && <FeatureSpotlight flags={spotFlags} />}
 
@@ -1666,7 +1666,7 @@ export default function LearnUnit() {
       </div>
 
       {/* ============ 本讲情报条：路线 + 检测/定制/核验 收进一行，点开才展开——第一屏让给正文 ============ */}
-      <div className="mt-4 rounded-[12px] border border-hairline bg-card-warm">
+      {!pptTaskId && <div className="mt-4 rounded-[12px] border border-hairline bg-card-warm">
         <button
           type="button"
           onClick={() => setBriefOpen((v) => !v)}
@@ -1704,12 +1704,12 @@ export default function LearnUnit() {
             />
           </div>
         )}
-      </div>
+      </div>}
 
       {/* ============ 课堂单列：舞台化——阅读列收窄，当前块即舞台 ============ */}
-      <div className="mt-5 space-y-4">
+      <div className={cn('space-y-4', pptTaskId ? 'mt-3' : 'mt-5')}>
         {/* 课堂推进 / 自由浏览 模式条 */}
-        <div className="flex items-center justify-between gap-2">
+        {!pptTaskId && <div className="flex items-center justify-between gap-2">
           <span className="text-[11.5px] text-ink-muted">
             {freeBrowse
               ? '自由浏览 · 整讲展开，适合复习'
@@ -1730,7 +1730,7 @@ export default function LearnUnit() {
             <AlignLeft size={11} />
             {freeBrowse ? '回到课堂推进' : '自由浏览'}
           </button>
-        </div>
+        </div>}
         {(pptTaskId) ? <PptPlayer taskId={pptTaskId} ref={pptRef} onPlaybackChange={setPlaying} onSlideChange={syncPptSlide} /> : (blocks.map((b, i) => {
           const active = i === cursor && playing;
           /* ---- 课堂推进三态：完整（当前/回看/自由浏览）· 摘要行（已完成）· 不渲染（未解锁） ---- */
@@ -2478,7 +2478,7 @@ export default function LearnUnit() {
         </AnimatePresence>
 
         {/* 课堂推进模式的尾部滚动空间：当前块永远是最后一块，没有这段留白它就无法"块顶对齐"到视口上沿 */}
-        {!freeBrowse && <div aria-hidden className="h-[32vh]" />}
+        {!pptTaskId && !freeBrowse && <div aria-hidden className="h-[32vh]" />}
       </div>
 
       {/* ============ 字幕条 + 播放条 ============ */}

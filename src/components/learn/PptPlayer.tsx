@@ -45,6 +45,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: 
   const currentRef = useRef(0);
   const audioSrcRef = useRef('');
   const switchingSlideRef = useRef(false);
+  const noteScrollRef = useRef<HTMLParagraphElement | null>(null);
   currentRef.current = current;
   audioSrcRef.current = audioSrc;
 
@@ -198,6 +199,15 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: 
   const note = slides?.speakerNotes[current] ?? '';
   const visibleNote = noteRevealCount === null ? note : note.slice(0, noteRevealCount);
 
+  useEffect(() => {
+    if (!audioPlaying || noteRevealCount === null) return;
+    const frame = window.requestAnimationFrame(() => {
+      const element = noteScrollRef.current;
+      if (element) element.scrollTop = element.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [audioPlaying, noteRevealCount]);
+
   if (!task && loading) {
     return (
       <div className="mt-4 flex flex-col items-center justify-center py-12 text-center">
@@ -253,7 +263,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: 
               <FileText size={14} className="text-brand" />
               <span className="lf-mono-label !text-[10px]">本页讲稿</span>
             </div>
-            <p className="mt-2 max-h-[128px] overflow-y-auto whitespace-pre-wrap pr-2 text-[14px] leading-[24px] text-ink-2" aria-live="off">
+            <p ref={noteScrollRef} className="mt-2 h-[120px] overflow-y-auto whitespace-pre-wrap pr-2 text-[14px] leading-[24px] text-ink-2" aria-live="off">
               {visibleNote}
               {audioPlaying && noteRevealCount !== null && noteRevealCount < note.length && (
                 <span className="ml-0.5 inline-block h-[1em] w-[2px] animate-pulse align-[-0.12em] bg-brand" aria-hidden />
