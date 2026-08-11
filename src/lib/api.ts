@@ -150,7 +150,7 @@ export interface RecordLearningEventInput {
 export interface LearnerGrowth {
   orb: number;
   watered: number;
-  stage: string;
+  stage: string | null;
   events: {
     eventType: string;
     title: string;
@@ -1043,6 +1043,10 @@ export const api = {
     requestDirect<LearningResource>('/v1/learning-resources/lectures', {
       method: 'POST',
       body: JSON.stringify(body),
+    }),
+  nourishLearnerGrowth: (learnerId?: string) =>
+    request<LearnerGrowth>(`/api/v1/learner-profile/growth/nourish${learnerId ? `?learnerId=${encodeURIComponent(learnerId)}` : ''}`, {
+      method: 'POST',
     }),
   createLearningPractice: (body: LearningResourceGenerateInput) =>
     requestDirect<LearningResource>('/v1/learning-resources/practices', {

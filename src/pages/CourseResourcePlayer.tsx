@@ -60,6 +60,7 @@ const asRecords = (value: unknown): Record<string, unknown>[] =>
 const asStrings = (value: unknown): string[] => Array.isArray(value) ? value.map(String).filter(Boolean) : [];
 const asNumbers = (value: unknown): number[] => Array.isArray(value) ? [...new Set(value.map(Number).filter(Number.isFinite))] : [];
 const unique = (values: string[]) => [...new Set(values.filter(Boolean))];
+const isUuid = (value?: string | null) => Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
 
 function progressOf(resource: LearningResource): LearningResourceProgress {
   const raw = asRecord(resource.state.progress);
@@ -297,6 +298,15 @@ function QuizBlock({
       setSelected(optionIndex);
       setFeedback(result);
       if (result.state && typeof result.state === 'object') onResourceState(result.state as Record<string, unknown>);
+      if (isUuid(resource.learnerId)) {
+        void api.recordLearnerGrowthEvent({
+          learnerId: resource.learnerId!,
+          eventType: result.correct ? 'quiz-answer-correct' : 'quiz-answer',
+          title: result.correct ? '答对一题' : '完成一道测试题',
+          amount: result.correct ? 5 : 1,
+          metadata: { resourceId: resource.id, questionId: id },
+        }).catch(() => undefined);
+      }
       const point = asRecord(result.knowledgePoint);
       void api.recordLearningEvent({
         eventType: 'QUIZ_SUBMIT', sourceType: 'QUIZ', sourceId: resource.id,
@@ -544,6 +554,17 @@ export default function CourseResourcePlayer() {
     try {
       const result = await api.completeLearningResource(resource.id);
       setResource(result.resource);
+      if (isUuid(resource.learnerId) && resource.type !== 'quiz') {
+        const eventType = resource.type === 'practice' ? 'guide-complete' : 'lecture-read';
+        const amount = resource.type === 'practice' ? 20 : 15;
+        await api.recordLearnerGrowthEvent({
+          learnerId: resource.learnerId!, eventType, title: `完成《${resource.title}》`, amount,
+          metadata: { resourceId: resource.id, kpId: resource.kpId, resourceType: resource.type },
+        });
+      }
+      if (resource.kpId && isUuid(resource.learnerId)) {
+        void api.completeLearningMapUnit(resource.kpId, resource.learnerId).catch(() => undefined);
+      }
       await api.updateLearningResourceProgress(resource.id, { currentBlockId, visitedBlockIds: blocks.map((block) => block.id), completedStepIds: completedSteps, elapsedSeconds: elapsedBase + sessionSecondsRef.current });
       void api.recordLearningEvent({ eventType: 'STUDY_END', sourceType: 'RESOURCE', sourceId: resource.id, durationSeconds: elapsedBase + sessionSecondsRef.current, metadata: JSON.stringify({ courseId: resource.courseId, chapterId: resource.chapterId, resourceType: resource.type, completed: true }) }).catch(() => undefined);
       setVisited(blocks.map((block) => block.id));

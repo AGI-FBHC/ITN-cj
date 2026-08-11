@@ -4,12 +4,14 @@
  * 能量先积在"能量球"，手动浇水才长树（养成仪式感）；树阶按累计浇灌量（演示阈值）。
  * focusMode 供外壳收起 chrome（专注上课），结算时能量加成回流。
  */
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { toast } from 'sonner';
 import { useProfile } from '@/context/ProfileContext';
 import { knowledgePoints } from '@/data/knowledgePoints';
 import type { Signal } from '@/agent/agentBrain';
+import { api } from '@/lib/api';
+import type { LearnerGrowth } from '@/lib/api';
 
 /* ================= 能量规则（演示数值） ================= */
 function energyOf(s: Signal): { amt: number; text: string } | null {
@@ -46,8 +48,6 @@ export function stageOf(watered: number): number {
 
 export interface EnergyEntry { text: string; amt: number; time: string }
 
-interface GrowthState { orb: number; watered: number; log: EnergyEntry[] }
-
 interface GrowthContextValue {
   /** 能量球（待浇） */
   orb: number;
@@ -65,23 +65,32 @@ interface GrowthContextValue {
 }
 
 const GrowthContext = createContext<GrowthContextValue | null>(null);
-const K_GROWTH = 'lf.growth';
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const now = () => new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+function logOf(growth: LearnerGrowth | null): EnergyEntry[] {
+  return (growth?.events ?? []).map((event) => ({
+    text: event.title,
+    amt: event.amount,
+    time: new Date(event.createdAt).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' }),
+  }));
+}
 
 export function GrowthProvider({ children }: { children: ReactNode }) {
   const { currentLearnerId, currentLearner } = useProfile();
-  const [all, setAll] = useState<Record<string, GrowthState>>(() => {
-    try {
-      const raw = window.localStorage.getItem(K_GROWTH);
-      return raw ? JSON.parse(raw) : {};
-    } catch { return {}; }
-  });
+  const [growth, setGrowth] = useState<LearnerGrowth | null>(null);
   const [focusMode, setFocusMode] = useState(false);
 
   useEffect(() => {
-    try { window.localStorage.setItem(K_GROWTH, JSON.stringify(all)); } catch { /* ignore */ }
-  }, [all]);
+    if (!UUID_PATTERN.test(currentLearnerId)) {
+      queueMicrotask(() => setGrowth(null));
+      return;
+    }
+    let cancelled = false;
+    api.getLearnerGrowth(currentLearnerId)
+      .then((result) => { if (!cancelled) setGrowth(result); })
+      .catch(() => { if (!cancelled) setGrowth(null); });
+    return () => { cancelled = true; };
+  }, [currentLearnerId]);
 
   /* 订阅信号总线 → 派生能量（解耦：AgentContext 只广播，不知道树的存在） */
   useEffect(() => {
@@ -89,79 +98,56 @@ export function GrowthProvider({ children }: { children: ReactNode }) {
       const { signal, learnerId } = (e as CustomEvent).detail as { signal: Signal; learnerId: string };
       const gain = energyOf(signal);
       if (!gain) return;
-      setAll((prev) => {
-        const cur = prev[learnerId] ?? { orb: 0, watered: 0, log: [] };
-        return {
-          ...prev,
-          [learnerId]: {
-            ...cur,
-            orb: cur.orb + gain.amt,
-            log: [{ text: gain.text, amt: gain.amt, time: now() }, ...cur.log].slice(0, 30),
-          },
-        };
-      });
+      if (!UUID_PATTERN.test(learnerId)) return;
+      const eventType = signal.type === 'quiz-answer' && signal.correct ? 'quiz-answer-correct' : signal.type;
+      void api.recordLearnerGrowthEvent({ learnerId, eventType, title: gain.text, amount: gain.amt })
+        .then((result) => { if (learnerId === currentLearnerId) setGrowth(result); })
+        .catch(() => toast.error('养分暂未同步', { description: '学习记录已保留，请稍后再试。' }));
     };
     window.addEventListener('lf-signal', onSignal);
     return () => window.removeEventListener('lf-signal', onSignal);
-  }, []);
+  }, [currentLearnerId]);
+
+  const earn = useCallback((amt: number, text: string) => {
+    if (amt <= 0 || !UUID_PATTERN.test(currentLearnerId)) return;
+    void api.recordLearnerGrowthEvent({ learnerId: currentLearnerId, eventType: 'focus-bonus', title: text, amount: amt })
+      .then(setGrowth)
+      .catch(() => toast.error('养分暂未同步'));
+  }, [currentLearnerId]);
+
+  const water = useCallback(() => {
+    if (!growth?.orb || !UUID_PATTERN.test(currentLearnerId)) return;
+    const before = stageOf(growth.watered);
+    void api.nourishLearnerGrowth(currentLearnerId)
+      .then((result) => {
+        setGrowth(result);
+        const after = stageOf(result.watered);
+        if (after > before) toast.success(`知识树长大了：${TREE_STAGES[after].name}！`, { description: TREE_STAGES[after].desc });
+        else toast.success('滋养完成', { description: `养分已写入园子，当前累计 ${result.watered}` });
+      })
+      .catch(() => toast.error('滋养失败', { description: '后端没有保存成功，请稍后重试。' }));
+  }, [currentLearnerId, growth]);
 
   const value = useMemo<GrowthContextValue>(() => {
-    const cur = all[currentLearnerId] ?? { orb: 0, watered: 0, log: [] };
-    /* 预设画像基线：老学员的树不该是种子（按平均分派生一次性基线） */
-    const avg = knowledgePoints.reduce((s, kp) => s + (currentLearner.scores[kp.id] ?? 50), 0) / knowledgePoints.length;
-    const baseline = Math.max(0, Math.round((avg - 40) * 4));
-    const watered = baseline + cur.watered;
-
-    const earn = (amt: number, text: string) => {
-      if (amt <= 0) return;
-      setAll((prev) => {
-        const c = prev[currentLearnerId] ?? { orb: 0, watered: 0, log: [] };
-        return {
-          ...prev,
-          [currentLearnerId]: { ...c, orb: c.orb + amt, log: [{ text, amt, time: now() }, ...c.log].slice(0, 30) },
-        };
-      });
-    };
-
-    const water = () => {
-      if (cur.orb <= 0) return;
-      const before = stageOf(watered);
-      const after = stageOf(watered + cur.orb);
-      setAll((prev) => {
-        const c = prev[currentLearnerId] ?? { orb: 0, watered: 0, log: [] };
-        return {
-          ...prev,
-          [currentLearnerId]: {
-            ...c,
-            watered: c.watered + c.orb,
-            orb: 0,
-            log: [{ text: '给知识树浇水', amt: -c.orb, time: now() }, ...c.log].slice(0, 30),
-          },
-        };
-      });
-      if (after > before) {
-        toast.success(`知识树长大了：${TREE_STAGES[after].name}！`, { description: TREE_STAGES[after].desc });
-      } else {
-        toast.success('浇水完成', { description: `距离「${TREE_STAGES[Math.min(after + 1, TREE_STAGES.length - 1)].name}」还差 ${Math.max(0, TREE_STAGES[Math.min(after + 1, TREE_STAGES.length - 1)].at - (watered + cur.orb))} 能量` });
-      }
-    };
+    const orb = growth?.orb ?? 0;
+    const watered = growth?.watered ?? 0;
 
     const fruits = knowledgePoints
       .filter((kp) => (currentLearner.scores[kp.id] ?? 0) >= kp.targetLevel)
       .map((kp) => ({ kpId: kp.id, name: kp.name }));
 
     return {
-      orb: cur.orb,
+      orb,
       watered,
       stage: stageOf(watered),
-      log: cur.log,
+      log: logOf(growth),
       fruits,
       earn,
       water,
       focusMode,
       setFocusMode,
     };
-  }, [all, currentLearnerId, currentLearner, focusMode]);
+  }, [growth, currentLearner, focusMode, earn, water]);
 
   return <GrowthContext.Provider value={value}>{children}</GrowthContext.Provider>;
 }
