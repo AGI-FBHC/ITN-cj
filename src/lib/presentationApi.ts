@@ -134,6 +134,37 @@ export type PresentationChatEvent = {
   code?: string;
 };
 
+export interface PresentationChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface PresentationChatSession {
+  id: string;
+  taskId: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PresentationChatHistoryMessage extends PresentationChatMessage {
+  id: string;
+  seq: number;
+  inputType: 'text' | 'voice';
+  createdAt: string;
+}
+
+export const createPresentationChatSession = (taskId: string) =>
+  request<PresentationChatSession>(`/v1/presentations/${encodeURIComponent(taskId)}/chat/sessions`, { method: 'POST' });
+
+export const listPresentationChatSessions = (taskId: string) =>
+  request<PresentationChatSession[]>(`/v1/presentations/${encodeURIComponent(taskId)}/chat/sessions`);
+
+export const getPresentationChatMessages = (taskId: string, sessionId: string) =>
+  request<PresentationChatHistoryMessage[]>(
+    `/v1/presentations/${encodeURIComponent(taskId)}/chat/sessions/${encodeURIComponent(sessionId)}/messages`,
+  );
+
 async function readSse(response: Response, onData: (payload: Record<string, unknown>) => void): Promise<void> {
   if (!response.body) throw new Error('浏览器没有收到流式响应');
   const reader = response.body.getReader();
@@ -154,8 +185,9 @@ async function readSse(response: Response, onData: (payload: Record<string, unkn
 
 export async function streamPresentationChatText(
   taskId: string,
-  question: string,
+  messages: PresentationChatMessage[],
   slideIndex: number,
+  sessionId: string,
   onEvent: (event: PresentationChatEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
@@ -164,10 +196,26 @@ export async function streamPresentationChatText(
   if (token) headers.set('Authorization', `Bearer ${token}`);
   const response = await fetch(`/v1/presentations/${encodeURIComponent(taskId)}/chat/stream`, {
     method: 'POST', headers, signal,
-    body: JSON.stringify({ messages: [{ role: 'user', content: question }], slideIndex, modelProvider: 'mimo' }),
+    body: JSON.stringify({ messages, slideIndex, sessionId, modelProvider: 'mimo' }),
   });
   if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
   await readSse(response, (payload) => onEvent(payload as PresentationChatEvent));
+}
+
+export async function streamPresentationChatTts(
+  taskId: string,
+  text: string,
+  signal?: AbortSignal,
+): Promise<Response> {
+  const headers = new Headers({ 'Content-Type': 'application/json', Accept: 'audio/L16' });
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const response = await fetch(`/v1/presentations/${encodeURIComponent(taskId)}/chat/tts`, {
+    method: 'POST', headers, signal, body: JSON.stringify({ text }),
+  });
+  if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+  if (!response.body) throw new Error('浏览器没有收到语音流');
+  return response;
 }
 
 export function draftPresentationNote(taskId: string, slideIndex: number, instruction: string, currentDraft = '') {

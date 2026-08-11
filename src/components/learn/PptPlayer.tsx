@@ -17,6 +17,8 @@ export interface PptPlayerRef {
   goPrev: () => void;
   goTo: (index: number) => void;
   togglePlay: () => void;
+  play: () => void;
+  pause: () => void;
 }
 
 const PROGRESS_LABEL: Record<PresentationTask['status'], string> = {
@@ -103,6 +105,8 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
     goPrev,
     goTo,
     togglePlay,
+    play: () => { if (!audioPlaying) void playAudio(currentRef.current); },
+    pause: () => { if (audioPlaying) togglePlay(); },
   }), [slideCount, audioPlaying]);
 
   const loadTask = useCallback(async () => {

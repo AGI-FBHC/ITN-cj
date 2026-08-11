@@ -84,7 +84,8 @@ import PptPlayer from '@/components/learn/PptPlayer';
 import type { PptPlayerRef } from '@/components/learn/PptPlayer';
 import { startWavRecording } from '@/lib/voiceRecorder';
 import type { WavRecorder } from '@/lib/voiceRecorder';
-import { draftPresentationNote, streamPresentationChatAudio, streamPresentationChatText } from '@/lib/presentationApi';
+import { createPresentationChatSession, getPresentationChatMessages, listPresentationChatSessions, draftPresentationNote, streamPresentationChatAudio, streamPresentationChatText, streamPresentationChatTts } from '@/lib/presentationApi';
+import type { PresentationAudioEvent } from '@/lib/presentationApi';
 import PathProgressBar from '@/components/learn/PathProgressBar';
 import { GrassTuft, Sprout } from '@/components/heal/Flora';
 import { useAmbient } from '@/components/heal/useAmbient';
@@ -747,6 +748,11 @@ export default function LearnUnit() {
     id?: string;
   }
   const [qaLog, setQaLog] = useState<QaEntry[]>([]);
+  const qaScrollRef = useRef<HTMLDivElement>(null);
+  const pptChatSessionRef = useRef('');
+  const pptAskAbortRef = useRef<AbortController | null>(null);
+  const pptWasPlayingRef = useRef(false);
+  const answerAudioRef = useRef<{ context: AudioContext; sources: Set<AudioBufferSourceNode> } | null>(null);
   /** 语音输入目标：ask=提问（说完自动发送）/ note=笔记（转写填入待编辑） */
   const [listening, setListening] = useState<null | 'ask' | 'note'>(null);
   const [voiceBusy, setVoiceBusy] = useState(false);
@@ -758,6 +764,87 @@ export default function LearnUnit() {
   const voiceBusyRef = useRef(false);
   const voiceSeqRef = useRef(0);
   const pptVoiceRef = useRef<WavRecorder | null>(null);
+
+  const stopAnswerAudio = () => {
+    const active = answerAudioRef.current;
+    answerAudioRef.current = null;
+    active?.sources.forEach((source) => { try { source.stop(); } catch { /* already stopped */ } });
+    void active?.context.close();
+  };
+
+  const ensurePptChatSession = async () => {
+    if (!pptTaskId) return '';
+    if (pptChatSessionRef.current) return pptChatSessionRef.current;
+    const sessions = await listPresentationChatSessions(pptTaskId);
+    const session = sessions[0] ?? await createPresentationChatSession(pptTaskId);
+    pptChatSessionRef.current = session.id;
+    return session.id;
+  };
+
+  const speakPptAnswer = async (text: string, signal?: AbortSignal) => {
+    if (!pptTaskId || !text.trim()) return;
+    stopAnswerAudio();
+    const response = await streamPresentationChatTts(pptTaskId, text, signal);
+    const context = new AudioContext({ sampleRate: 24_000 });
+    await context.resume();
+    const sources = new Set<AudioBufferSourceNode>();
+    answerAudioRef.current = { context, sources };
+    const reader = response.body!.getReader();
+    let pending = new Uint8Array(0);
+    let nextTime = context.currentTime + 0.08;
+    const schedule = (pcm: Uint8Array) => {
+      const usable = pcm.length - (pcm.length % 2);
+      if (!usable || signal?.aborted) return;
+      const samples = new Float32Array(usable / 2);
+      const view = new DataView(pcm.buffer, pcm.byteOffset, usable);
+      for (let index = 0; index < samples.length; index++) samples[index] = view.getInt16(index * 2, true) / 32768;
+      const buffer = context.createBuffer(1, samples.length, 24_000);
+      buffer.copyToChannel(samples, 0);
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      source.connect(context.destination);
+      sources.add(source);
+      source.onended = () => sources.delete(source);
+      source.start(Math.max(context.currentTime + 0.02, nextTime));
+      nextTime = Math.max(context.currentTime + 0.02, nextTime) + buffer.duration;
+    };
+    while (!signal?.aborted) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const combined = new Uint8Array(pending.length + (value?.length ?? 0));
+      combined.set(pending); if (value) combined.set(value, pending.length);
+      let offset = 0;
+      while (combined.length - offset >= 3840) { schedule(combined.slice(offset, offset + 3840)); offset += 3840; }
+      pending = combined.slice(offset);
+    }
+    schedule(pending);
+    const remainingMs = Math.max(0, (nextTime - context.currentTime) * 1000);
+    if (remainingMs) await new Promise<void>((resolve) => window.setTimeout(resolve, remainingMs));
+  };
+
+  useEffect(() => {
+    pptAskAbortRef.current?.abort();
+    stopAnswerAudio();
+    pptChatSessionRef.current = '';
+    queueMicrotask(() => setQaLog([]));
+    if (!pptTaskId) return;
+    void ensurePptChatSession().then(async (sessionId) => {
+      const history = await getPresentationChatMessages(pptTaskId, sessionId);
+      const restored: QaEntry[] = [];
+      for (const item of history) {
+        if (item.role === 'user') restored.push({ id: item.id, q: item.content, a: '', voice: item.inputType === 'voice', transcript: item.content });
+        else if (restored.length) restored[restored.length - 1].a = item.content;
+      }
+      setQaLog(restored);
+    }).catch(() => { /* a new session will be retried on first question */ });
+    return () => { pptAskAbortRef.current?.abort(); stopAnswerAudio(); };
+    // Session lifetime is intentionally keyed only by the opened PPT task.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pptTaskId]);
+
+  useEffect(() => {
+    qaScrollRef.current?.scrollTo({ top: qaScrollRef.current.scrollHeight, behavior: 'smooth' });
+  }, [qaLog, voiceBusy]);
   /** 笔记附图（纯演示：正文里留文本标记，不把 base64 塞进 localStorage） */
   const [noteImg, setNoteImg] = useState<{ name: string; url: string } | null>(null);
   const noteImgInputRef = useRef<HTMLInputElement>(null);
@@ -1180,7 +1267,9 @@ export default function LearnUnit() {
       return;
     }
     setAsking(true);
+    pptWasPlayingRef.current = Boolean(pptRef.current?.audioPlaying);
     stopPlayback();
+    stopAnswerAudio();
     hitSpot('modal');
     setListening('ask');
     voiceBusyRef.current = true;
@@ -1222,24 +1311,41 @@ export default function LearnUnit() {
     let transcript = '';
     let reply = '';
     let streamError = '';
+    let finalAction: NonNullable<PresentationAudioEvent['action']> | string = 'none';
+    let finalPage: number | null = null;
+    let finalResume = false;
+    const controller = new AbortController();
+    pptAskAbortRef.current?.abort();
+    pptAskAbortRef.current = controller;
     try {
+      const sessionId = await ensurePptChatSession();
       await streamPresentationChatAudio(
         pptTaskId ?? '',
         audio,
         pptRef.current?.current ?? 0,
-        '',
+        sessionId,
         (event) => {
-          if (event.type === 'reply_delta' && event.content) {
+          if (event.type === 'control' && event.action && event.action !== 'none') {
+            if (event.action === 'next') pptRef.current?.goNext();
+            else if (event.action === 'previous') pptRef.current?.goPrev();
+            else if (event.action === 'goto' && event.page) pptRef.current?.goTo(event.page - 1);
+            else if (event.action === 'play' || event.action === 'restart') pptRef.current?.play();
+            else if (event.action === 'pause') pptRef.current?.pause();
+          } else if (event.type === 'reply_delta' && event.content) {
             reply += event.content;
             setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: reply } : qa));
           } else if (event.type === 'result') {
             transcript = event.transcript || transcript;
             if (event.content) reply = event.content;
+            finalAction = event.action ?? 'none';
+            finalPage = event.page ?? null;
+            finalResume = Boolean(event.resume);
+            if (event.sessionId) pptChatSessionRef.current = event.sessionId;
             setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, transcript, converting: false, q: transcript, a: reply } : qa));
           } else if (event.type === 'error') {
             streamError = event.message || 'MiMo 语音理解失败';
           }
-        },
+        }, controller.signal,
       );
     } catch (reason) {
       streamError = reason instanceof Error ? reason.message : 'MiMo 语音理解失败';
@@ -1255,7 +1361,9 @@ export default function LearnUnit() {
     const finalReply = reply.trim() || '我听到了你的问题，但 MiMo 暂未返回可展示回答，请稍后重试。';
     setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: finalReply } : qa));
     setQuestion('');
-    tts.speak(finalReply, speechRate, () => undefined, voiceStyle.pitch);
+    await speakPptAnswer(finalReply, controller.signal).catch(() => undefined);
+    if (finalAction === 'goto' && finalPage) pptRef.current?.goTo(finalPage - 1);
+    if (finalResume || (finalAction === 'none' && pptWasPlayingRef.current)) pptRef.current?.play();
     addNote({
       kpId,
       text: `问：${transcript}\n答：${finalReply}`,
@@ -1273,10 +1381,22 @@ export default function LearnUnit() {
       setQaLog((prev) => [...prev, { id: entryId, q, a: '正在结合当前幻灯片回答…' }]);
       setQuestion('');
       setVoiceBusy(true);
+      pptWasPlayingRef.current = Boolean(pptRef.current?.audioPlaying);
+      pptRef.current?.pause();
+      stopAnswerAudio();
       let reply = '';
       let failed = '';
+      const controller = new AbortController();
+      pptAskAbortRef.current?.abort();
+      pptAskAbortRef.current = controller;
       try {
-        await streamPresentationChatText(pptTaskId, q, pptRef.current?.current ?? 0, (event) => {
+        const sessionId = await ensurePptChatSession();
+        const messages = qaLog.flatMap(({ q: previousQ, a }) => [
+          ...(previousQ ? [{ role: 'user' as const, content: previousQ }] : []),
+          ...(a ? [{ role: 'assistant' as const, content: a }] : []),
+        ]).slice(-14);
+        messages.push({ role: 'user', content: q });
+        await streamPresentationChatText(pptTaskId, messages, pptRef.current?.current ?? 0, sessionId, (event) => {
           if (event.type === 'chat_delta' && event.content) {
             reply += event.content;
             setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: reply } : qa));
@@ -1286,7 +1406,7 @@ export default function LearnUnit() {
           } else if (event.type === 'chat_failed') {
             failed = event.message || '回答生成失败，请稍后重试';
           }
-        });
+        }, controller.signal);
       } catch (reason) {
         failed = reason instanceof Error ? reason.message : '回答生成失败，请稍后重试';
       } finally {
@@ -1298,7 +1418,16 @@ export default function LearnUnit() {
         return;
       }
       if (reply.trim()) {
-        addNote({ kpId, text: `问：${q}\n答：${reply.trim()}`, source: `${pptTopic || kp.name} · 课堂提问`, sourceKind: 'qa', kbRefs: [] });
+        const slideMarker = reply.match(/\[\[SLIDE:(\d+)\]\]/);
+        const cleanReply = reply.replace(/\s*\[\[SLIDE:\d+\]\]\s*/g, '').trim();
+        if (slideMarker) {
+          const target = Number(slideMarker[1]) - 1;
+          if (target >= 0 && target < (pptRef.current?.slideCount ?? 0)) pptRef.current?.goTo(target);
+        }
+        setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: cleanReply } : qa));
+        await speakPptAnswer(cleanReply, controller.signal).catch(() => undefined);
+        if (pptWasPlayingRef.current) pptRef.current?.play();
+        addNote({ kpId, text: `问：${q}\n答：${cleanReply}`, source: `${pptTopic || kp.name} · 课堂提问`, sourceKind: 'qa', kbRefs: [] });
       }
       return;
     }
@@ -3093,11 +3222,11 @@ export default function LearnUnit() {
             <div className="flex items-center gap-2 border-b border-hairline bg-card-warm px-4 py-2.5">
               <Hand size={14} className="text-ochre" />
               <span className="text-[13.5px] font-semibold text-ink">课堂提问 · 已暂停授课</span>
-              <button type="button" onClick={() => setAsking(false)} className="ml-auto text-ink-muted hover:text-ink">
+              <button type="button" onClick={() => { pptAskAbortRef.current?.abort(); stopAnswerAudio(); setAsking(false); }} className="ml-auto text-ink-muted hover:text-ink">
                 <X size={15} />
               </button>
             </div>
-            <div className="flex-1 space-y-2.5 overflow-y-auto px-4 py-3">
+            <div ref={qaScrollRef} className="flex-1 space-y-2.5 overflow-y-auto px-4 py-3">
               {qaLog.length === 0 && (
                 <p className="py-3 text-center text-[12px] text-ink-muted">问本讲相关的问题，比如"{qaBankHint(kpId)}"</p>
               )}
@@ -3139,7 +3268,7 @@ export default function LearnUnit() {
                     qa.q && <div className="ml-auto w-fit max-w-[90%] rounded-[12px] rounded-br-[4px] bg-brand px-3 py-1.5 text-[12.5px] text-paper">{qa.q}</div>
                   )}
                   <div className="w-fit max-w-[92%] rounded-[12px] rounded-tl-[4px] border border-hairline bg-card-warm px-3 py-2 text-[12.5px] leading-[19px] text-ink-2">
-                    {qa.a || (qa.voice && qa.converting ? '正在识别并回答…' : '')}
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{qa.a || (qa.voice && qa.converting ? '正在识别并回答…' : '')}</ReactMarkdown>
                     {qa.kbRef && <span className="ml-1.5"><TraceBadge kbId={qa.kbRef} /></span>}
                   </div>
                 </div>
@@ -3221,7 +3350,7 @@ export default function LearnUnit() {
             </div>
             <button
               type="button"
-              onClick={() => { setAsking(false); if (pptTaskId) pptRef.current?.togglePlay(); else startPlay(posRef.current.b, posRef.current.c); }}
+              onClick={() => { pptAskAbortRef.current?.abort(); stopAnswerAudio(); setAsking(false); if (pptTaskId) pptRef.current?.play(); else startPlay(posRef.current.b, posRef.current.c); }}
               className="border-t border-hairline bg-brand-tint/60 py-2 text-[12.5px] font-medium text-brand transition-colors hover:bg-brand-tint"
             >
               ▶ 继续上课（从断点续播）
