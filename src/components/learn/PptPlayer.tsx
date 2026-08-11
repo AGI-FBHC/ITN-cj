@@ -222,21 +222,21 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: 
 
   return (
     <div className="space-y-4">
-      <div className="lf-anim-in-up rounded-[18px] border border-hairline bg-paper p-7 shadow-warm-lg md:p-10">
+      <div className="lf-anim-in-up rounded-[16px] border border-hairline bg-paper p-4 shadow-warm-lg md:p-5">
         <div className="flex items-center justify-center">
           {slideSrc ? (
-            <img src={slideSrc} alt={`第 ${current + 1} 页`} className="max-h-[58vh] w-auto max-w-full rounded-md object-contain shadow-sm" />
+            <img src={slideSrc} alt={`第 ${current + 1} 页`} className="max-h-[48vh] w-auto max-w-full rounded-md object-contain shadow-sm" />
           ) : (
-            <div className="flex min-h-[40vh] items-center justify-center"><Loader2 size={22} className="animate-spin text-brand" /></div>
+            <div className="flex min-h-[34vh] items-center justify-center"><Loader2 size={22} className="animate-spin text-brand" /></div>
           )}
         </div>
         {note && (
-          <div className="mt-6 border-t border-hairline pt-5">
+          <div className="mt-3 border-t border-hairline pt-3">
             <div className="flex items-center gap-2">
               <FileText size={14} className="text-brand" />
               <span className="lf-mono-label !text-[10px]">本页讲稿</span>
             </div>
-            <p className="mt-3 whitespace-pre-wrap text-[15px] leading-[28px] text-ink-2">{note}</p>
+            <p className="mt-2 max-h-[128px] overflow-y-auto whitespace-pre-wrap pr-2 text-[14px] leading-[24px] text-ink-2">{note}</p>
           </div>
         )}
       </div>
