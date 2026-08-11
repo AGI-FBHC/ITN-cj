@@ -5,7 +5,7 @@
  *   order   学习顺序（默认）—— 只画前置箭头；
  *   network 完整网络 —— 三种关系全开，图例即控件（线型样本 chip，可单独隐藏）；
  *   route   我的路线 —— 前置 + 学习路径叠加。
- * 渐进披露：默认 6 域 + 域级聚合边；点域就地展开子知识点，其余域退为背景。
+ * 渐进披露：默认展示章节图；点击章节后以 XMind 分支展开子知识点，其余章节保持可见。
  * 术语双标：先学它(prereq) / 互相印证(related) / 规范约束(applies)；边 hover 出玻璃浮层说明。
  */
 import { useEffect, useMemo, useState } from 'react';
@@ -85,7 +85,11 @@ function DomainNode({
   const targetAngle = (target / 100) * 2 * Math.PI;
 
   return (
-    <g className="cursor-pointer" opacity={dimmed ? 0.28 : 1} style={{ transition: 'opacity 0.25s' }}>
+    <g
+      className="cursor-pointer"
+      opacity={dimmed ? 0.5 : 1}
+      style={{ transition: 'opacity 0.25s, filter 0.25s', filter: dimmed ? 'blur(2px)' : 'none' }}
+    >
       {recommended && (
         <circle cx={n.x} cy={n.y} r={n.r + 8} fill="none" stroke="#E7B45A" strokeWidth="2" opacity="0.7">
           <animate attributeName="r" values={`${n.r + 6};${n.r + 11};${n.r + 6}`} dur="2s" repeatCount="indefinite" />
@@ -174,33 +178,22 @@ function DomainNode({
   );
 }
 
-/** 子知识点：进度点（不再是迷你植物） */
-function TopicDot({ n, mastery, target, learned }: { n: GraphNode; mastery: number; target: number; learned: boolean }) {
+/** 子知识点：圆形节点 + 右侧文字，保持与原知识图一致的节点语言。 */
+function TopicBranchNode({ n, mastery, target, learned }: { n: GraphNode; mastery: number; target: number; learned: boolean }) {
   const passed = learned && mastery >= target;
   return (
     <g className="cursor-pointer">
-      <circle cx={n.x} cy={n.y} r={n.r} fill="#FBFAF5" stroke={learned ? '#9BC5AC' : '#C4D3C8'} strokeWidth="1.4" />
-      {learned ? (
-        <path
-          d={arcPath(n.x, n.y, n.r - 3.5, mastery / 100)}
-          fill="none"
-          stroke={passed ? '#E7B45A' : '#4E7860'}
-          strokeWidth="5"
-          strokeLinecap="round"
-          opacity="0.85"
-        />
-      ) : (
-        <circle cx={n.x} cy={n.y} r={n.r - 4} fill="none" stroke="#C4D3C8" strokeWidth="1" strokeDasharray="2 3" opacity="0.8" />
-      )}
+      <circle cx={n.x} cy={n.y} r="15" fill="#FBFAF5" stroke={passed ? '#D8A94E' : learned ? '#82A98F' : '#B9CABD'} strokeWidth={passed ? 2 : 1.6} />
+      <circle cx={n.x} cy={n.y} r="5.5" fill={passed ? '#D8A94E' : learned ? '#5F8870' : '#D5DFD7'} />
       <text
-        x={n.labelX}
-        y={n.labelY}
-        textAnchor={n.labelAnchor}
-        fontSize="10.5"
+        x={n.x + 24}
+        y={n.y + 5.3}
+        textAnchor="start"
+        fontSize="15.5"
+        fontWeight="600"
         fill="#5A6553"
         stroke="#FBFAF5"
-        strokeWidth="2.6"
-        strokeLinejoin="round"
+        strokeWidth="2.5"
         paintOrder="stroke"
         style={{ pointerEvents: 'none' }}
       >
@@ -257,7 +250,16 @@ export default function KnowledgeGraph({
     scene === 'network' ? !hiddenKinds.has(k) : k === 'prereq';
   const showPath = scene === 'route';
 
-  const dataNodes = nodesProp ?? graphNodes;
+  const sourceNodes = nodesProp ?? graphNodes;
+  const expandedSourceParent = expandedKp ? sourceNodes.find((node) => node.kind === 'domain' && node.kpId === expandedKp) : null;
+  const expandedSourceTopics = expandedKp ? sourceNodes.filter((node) => node.kind === 'topic' && node.kpId === expandedKp) : [];
+  const longestTopicLabel = expandedSourceTopics.reduce((max, node) => Math.max(max, node.label.length), 0);
+  const expansionGap = expandedKp ? Math.max(210, Math.min(380, 126 + longestTopicLabel * 13.5)) : 0;
+  // 原图内展开：给父节点右侧插入一段空间，后续层级整体右移，边会基于新坐标自动重算。
+  const dataNodes = useMemo(() => sourceNodes.map((node) => {
+    if (!expandedSourceParent || node.kind !== 'domain' || node.x <= expandedSourceParent.x + 1) return node;
+    return { ...node, x: node.x + expansionGap, labelX: node.labelX + expansionGap };
+  }), [sourceNodes, expandedSourceParent, expansionGap]);
   const dataEdges = edgesProp ?? graphEdges;
   const reportPath = pathProp ?? report.path;
   const masteryMap = masteryProp ?? {};
@@ -267,6 +269,7 @@ export default function KnowledgeGraph({
     return learnedKpIds(currentLearner, pathDone);
   }, [currentLearner, reportPath]);
   const activeKp = activeKpProp ?? reportPath.find((p) => p.status === 'active')?.kpId ?? null;
+  const sourceNodeById = useMemo(() => new Map(sourceNodes.map((node) => [node.id, node])), [sourceNodes]);
   const nodeById = useMemo(() => new Map(dataNodes.map((node) => [node.id, node])), [dataNodes]);
   const aggregatedEdges = useMemo(() => {
     const map = new Map<string, DomainEdge>();
@@ -296,7 +299,8 @@ export default function KnowledgeGraph({
     });
     const longEdges = edges
       .filter((edge) => {
-        const from = nodeById.get(edge.from), to = nodeById.get(edge.to);
+        // 展开子树插入的临时间距不能把原本相邻层的边误判为跨层边。
+        const from = sourceNodeById.get(edge.from), to = sourceNodeById.get(edge.to);
         return Boolean(from && to && to.x - from.x > 150);
       })
       .sort((a, b) => {
@@ -312,11 +316,12 @@ export default function KnowledgeGraph({
     const selectedLaneOf = new Map<string, number>();
     longEdges.forEach((edge) => {
       const lane = laneOf.get(edgeKey(edge))!;
-      const from = nodeById.get(edge.from)!, to = nodeById.get(edge.to)!;
+      // 车道选择也固定依据展开前的图，避免插入空间后跨层边突然从上绕改成下绕。
+      const from = sourceNodeById.get(edge.from)!, to = sourceNodeById.get(edge.to)!;
       const x1 = from.x + from.r + 4, y1 = from.y;
       const x2 = to.x - to.r - 8, y2 = to.y;
       const shoulder = 10 + lane.index * 1.25;
-      const obstacles = [...nodeById.values()].filter((node) =>
+      const obstacles = [...sourceNodeById.values()].filter((node) =>
         node.kind === 'domain' && node.id !== from.id && node.id !== to.id,
       );
       const collisionCount = (laneY: number) => {
@@ -401,7 +406,7 @@ export default function KnowledgeGraph({
         my: (y1 + y2) / 2,
       };
     };
-  }, [aggregatedEdges, nodeById]);
+  }, [aggregatedEdges, nodeById, sourceNodeById]);
   const prereqOf = (nodeId: string) => dataEdges
     .filter((edge) => edge.kind === 'prereq' && edge.to === nodeId)
     .map((edge) => ({ node: nodeById.get(edge.from)!, note: edge.note ?? '' }))
@@ -411,6 +416,28 @@ export default function KnowledgeGraph({
     () => (expandedKp ? dataNodes.filter((n) => n.kind === 'topic' && n.kpId === expandedKp) : []),
     [expandedKp, dataNodes],
   );
+  const expandedTopicLayout = useMemo(() => {
+    if (!expandedKp || expandedTopics.length === 0) return null;
+    const parent = nodeById.get(expandedKp);
+    if (!parent) return null;
+    const spacing = expandedTopics.length > 1 ? Math.min(38, (graphViewBox.h - 44) / (expandedTopics.length - 1)) : 0;
+    const contentHeight = (expandedTopics.length - 1) * spacing;
+    const top = Math.max(22, Math.min(graphViewBox.h - contentHeight - 22, parent.y - contentHeight / 2));
+    const childX = parent.x + 82;
+    const topics = expandedTopics.map((topic, index) => {
+      const x = childX;
+      const y = top + index * spacing;
+      return { ...topic, x, y, labelX: x, labelY: y, labelAnchor: 'middle' as const };
+    });
+    const rootX = parent.x + parent.r + 3;
+    const rootY = parent.y;
+    const trunkX = parent.x + parent.r + 32;
+    return { parent, topics, rootX, rootY, trunkX };
+  }, [expandedKp, expandedTopics, nodeById]);
+  const currentViewBox = useMemo(() => ({
+    w: graphViewBox.w + expansionGap,
+    h: graphViewBox.h,
+  }), [expansionGap]);
 
   /* 路径叠加：按路径顺序连接域节点（去重保序） */
   const pathChain = useMemo(() => {
@@ -436,14 +463,11 @@ export default function KnowledgeGraph({
 
   return (
     <div className="relative">
-      <svg viewBox={`0 0 ${graphViewBox.w} ${graphViewBox.h}`} className="w-full">
+      <svg viewBox={`0 0 ${currentViewBox.w} ${currentViewBox.h}`} className="w-full">
         <GardenDefs />
         <defs>
           <marker id="kg-arrow" viewBox="-1 -5 10 10" refX="7" refY="0" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto" overflow="visible">
             <path d="M 0 -4 L 7 0 L 0 4 Z" fill="#FBFAF5" stroke="#5F8870" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" opacity="0.9" />
-          </marker>
-          <marker id="kg-arrow-active" viewBox="-1 -5 10 10" refX="7" refY="0" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto" overflow="visible">
-            <path d="M 0 -4 L 7 0 L 0 4 Z" fill="#FBFAF5" stroke="#D99B31" strokeWidth="1.55" strokeLinecap="round" strokeLinejoin="round" opacity="0.98" />
           </marker>
         </defs>
 
@@ -456,15 +480,13 @@ export default function KnowledgeGraph({
                 const st = EDGE_STYLE[kind];
                 const route = edgeRouting(e, a, b);
                 const edgePath = route.path;
-                const highlighted = expandedKp !== null && (e.from === expandedKp || e.to === expandedKp);
-                const dim = expandedKp !== null && e.from !== expandedKp && e.to !== expandedKp;
                 const mx = route.mx;
                 const my = route.my;
                 return (
                   <g
                     key={`${kind}-${e.from}-${e.to}`}
-                    opacity={dim ? 0.12 : 1}
-                    style={{ transition: 'opacity 0.25s' }}
+                    opacity={expandedKp ? 0.32 : 1}
+                    style={{ transition: 'opacity 0.25s, filter 0.25s', filter: expandedKp ? 'blur(1.6px)' : 'none' }}
                     onMouseEnter={() => setEdgeTip({ x: mx, y: my, kind, notes: e.notes })}
                     onMouseLeave={() => setEdgeTip(null)}
                   >
@@ -475,12 +497,12 @@ export default function KnowledgeGraph({
                       data-edge-to={e.to}
                       d={edgePath}
                       fill="none"
-                      stroke={highlighted ? '#D99B31' : st.stroke}
-                      strokeWidth={st.width + (e.count - 1) * 1.1 + (highlighted ? 0.45 : 0)}
+                      stroke={st.stroke}
+                      strokeWidth={st.width + (e.count - 1) * 1.1}
                       strokeDasharray={st.dash}
                       strokeLinecap="round"
-                      opacity={highlighted ? 0.9 : st.opacity + 0.1}
-                      markerEnd={kind === 'prereq' ? `url(#${highlighted ? 'kg-arrow-active' : 'kg-arrow'})` : undefined}
+                      opacity={st.opacity + 0.1}
+                      markerEnd={kind === 'prereq' ? 'url(#kg-arrow)' : undefined}
                       style={{ pointerEvents: 'none' }}
                     />
                     {e.count > 1 && (
@@ -558,8 +580,17 @@ export default function KnowledgeGraph({
           );
         })}
 
-        {/* 展开域的子知识点（进度点） */}
-        {expandedTopics.map((n) => {
+        {/* 展开章节的子知识点：原图内 XMind 式主干 + 圆形分支。 */}
+        {expandedTopicLayout && (
+          <g fill="none" stroke="#83A58F" strokeWidth="1.35" strokeLinecap="round" opacity="0.9" style={{ pointerEvents: 'none' }}>
+            <path d={`M ${expandedTopicLayout.rootX} ${expandedTopicLayout.rootY} C ${expandedTopicLayout.trunkX - 12} ${expandedTopicLayout.rootY}, ${expandedTopicLayout.trunkX} ${expandedTopicLayout.rootY}, ${expandedTopicLayout.trunkX} ${expandedTopicLayout.rootY}`} />
+            {expandedTopicLayout.topics.map((topic) => {
+              const targetX = topic.x - 15;
+              return <path key={`branch-${topic.id}`} d={`M ${expandedTopicLayout.trunkX} ${expandedTopicLayout.rootY} C ${expandedTopicLayout.trunkX} ${topic.y}, ${expandedTopicLayout.trunkX + 12} ${topic.y}, ${targetX} ${topic.y}`} />;
+            })}
+          </g>
+        )}
+        {expandedTopicLayout?.topics.map((n) => {
           const isLearned = learned.has(n.kpId);
           const kp = getKnowledgePoint(n.kpId);
           return (
@@ -570,7 +601,7 @@ export default function KnowledgeGraph({
               onClick={() => clickNode(n)}
               onDoubleClick={() => openUnit(n)}
             >
-              <TopicDot n={n} mastery={masteryMap[n.kpId] ?? 50} target={kp.targetLevel} learned={isLearned} />
+              <TopicBranchNode n={n} mastery={masteryMap[n.kpId] ?? 50} target={kp.targetLevel} learned={isLearned} />
             </g>
           );
         })}
@@ -618,8 +649,8 @@ export default function KnowledgeGraph({
         <div
           className="lf-glass pointer-events-none absolute z-10 w-[230px] rounded-[12px] p-3"
           style={{
-            left: `${Math.min(88, Math.max(8, (edgeTip.x / graphViewBox.w) * 100))}%`,
-            top: `${Math.max(2, (edgeTip.y / graphViewBox.h) * 100 - 4)}%`,
+            left: `${Math.min(88, Math.max(8, (edgeTip.x / currentViewBox.w) * 100))}%`,
+            top: `${Math.max(2, (edgeTip.y / currentViewBox.h) * 100 - 4)}%`,
             transform: 'translate(-50%, -100%)',
           }}
         >
@@ -647,8 +678,8 @@ export default function KnowledgeGraph({
         <div
           className="lf-glass pointer-events-none absolute z-10 w-[240px] rounded-[12px] p-3"
           style={{
-            left: `${Math.min(88, Math.max(6, (hover.x / graphViewBox.w) * 100))}%`,
-            top: `${Math.max(2, ((hover.y - hover.r) / graphViewBox.h) * 100 - 6)}%`,
+            left: `${Math.min(88, Math.max(6, (hover.x / currentViewBox.w) * 100))}%`,
+            top: `${Math.max(2, ((hover.y - hover.r) / currentViewBox.h) * 100 - 6)}%`,
             transform: 'translate(-50%, -100%)',
           }}
         >
