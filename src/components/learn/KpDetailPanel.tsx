@@ -5,7 +5,7 @@
  */
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ArrowRight, BookOpen, Wrench, ListChecks, Sparkles, Target, Gauge, Route } from 'lucide-react';
 import { Loader2 } from 'lucide-react';
 import { useProfile, dataIdOf } from '@/context/ProfileContext';
@@ -28,6 +28,8 @@ const FORM_META: Record<ResourceForm, { label: string; icon: typeof BookOpen; hi
   guide: { label: '实操指南', icon: Wrench, hint: '分步实操 + 安全门控' },
   quiz: { label: '分阶测试题', icon: ListChecks, hint: '基础/进阶/挑战三阶' },
 };
+
+type GeneratedResourceLink = { id: string; title: string };
 
 const PATH_STATUS: Record<PathNodeStatus, { label: string; cls: string }> = {
   done: { label: '已完成', cls: 'border-brand/30 bg-brand-tint text-brand' },
@@ -88,6 +90,10 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
   const { confidence } = useAgent();
   const dataId = dataIdOf(currentLearner);
   const report = reportForLearner(currentLearner);
+  const [generating, setGenerating] = useState<Set<string>>(() => new Set());
+  const [generatedResources, setGeneratedResources] = useState<Record<string, Partial<Record<ResourceForm, GeneratedResourceLink>>>>({});
+  const inFlightResources = useRef(new Set<string>());
+  const [creatingPpt, setCreatingPpt] = useState(false);
 
   if (!kpId) {
     return (
@@ -111,11 +117,27 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
   const gap = Math.max(0, kp.targetLevel - score);
   const res: Array<GeneratedResource & { id?: string }> = resourcesProp ?? resourcesForKp(dataId, kpId);
   const reportPath = pathProp ?? report.path;
-  const [generating, setGenerating] = useState<ResourceForm | null>(null);
-  const [creatingPpt, setCreatingPpt] = useState(false);
+  const resourceScope = `${currentLearner.id}:${kpId}:${selectedTopicName ?? ''}`;
+  const generatedForScope = generatedResources[resourceScope] ?? {};
+  const existingResourceFor = (form: ResourceForm) => res.find((item) => (
+    item.form === form
+    && item.id
+    && (!selectedTopicName || item.levelTag === selectedTopicName || item.title.includes(selectedTopicName))
+  ));
   const generateResource = async (form: ResourceForm) => {
-    if (generating) return;
-    setGenerating(form);
+    const meta = FORM_META[form];
+    const taskKey = `${resourceScope}:${form}`;
+    const existing = generatedForScope[form] ?? existingResourceFor(form);
+    if (existing?.id) {
+      navigate(`/learn/resource/${existing.id}`);
+      return;
+    }
+    if (inFlightResources.current.has(taskKey)) {
+      toast.info(`${meta.label}正在生成中`);
+      return;
+    }
+    inFlightResources.current.add(taskKey);
+    setGenerating((current) => new Set(current).add(taskKey));
     try {
       const selectedTopicName = topicIndex != null ? kp.coreTopics[topicIndex] : null;
       const body = {
@@ -132,12 +154,23 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
         : form === 'quiz'
           ? await api.createLearningQuiz(body)
           : await api.createLearningPractice(body);
-      toast.success('资源已生成，正在打开');
-      navigate(`/learn/resource/${resource.id}`);
+      setGeneratedResources((current) => ({
+        ...current,
+        [resourceScope]: {
+          ...current[resourceScope],
+          [form]: { id: resource.id, title: resource.title },
+        },
+      }));
+      toast.success(`${meta.label}已生成，可以打开`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '资源生成失败');
     } finally {
-      setGenerating(null);
+      inFlightResources.current.delete(taskKey);
+      setGenerating((current) => {
+        const next = new Set(current);
+        next.delete(taskKey);
+        return next;
+      });
     }
   };
   const openPptCourseware = async () => {
@@ -240,50 +273,44 @@ export default function KpDetailPanel({ kpId, topicIndex, kp: kpProp, mastery: m
           {res.length ? `已经做好 ${res.length} 份，挑一个开始` : 'AI 可以现做，挑一种：'}
         </div>
         <div className="space-y-2">
-          {res.length > 0 &&
-            res.map((r) => {
-              const meta = FORM_META[r.form];
-              const Icon = meta.icon;
-              return (
-                <button
-                  key={r.form}
-                  type="button"
-                  onClick={() => navigate(r.id ? `/learn/resource/${r.id}` : `/resources?tab=${r.form}`)}
-                  className="group flex w-full items-center gap-3 rounded-[10px] border border-hairline bg-paper px-3 py-2.5 text-left transition-all hover:border-brand/45 hover:bg-brand-tint/40"
-                >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-tint text-brand">
-                    <Icon size={16} strokeWidth={1.75} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium text-ink">{meta.label}</span>
-                    <span className="block truncate text-[11px] text-ink-muted">{r.title}</span>
-                  </span>
-                  <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
-                </button>
-              );
-            })}
-
-          {/* 无预制资源：三形态「点击生成」入口（GEN-03 按画像现场生成） */}
-          {res.length === 0 &&
-            (Object.keys(FORM_META) as ResourceForm[]).map((f) => {
+          {/* 三类资源彼此独立：可同时后台生成，完成后原位切换为打开入口。 */}
+          {(Object.keys(FORM_META) as ResourceForm[]).map((f) => {
               const meta = FORM_META[f];
               const Icon = meta.icon;
+              const completed = generatedForScope[f] ?? existingResourceFor(f);
+              const isGenerating = generating.has(`${resourceScope}:${f}`);
               return (
                 <button
                   key={f}
                   type="button"
-                  disabled={generating !== null}
                   onClick={() => void generateResource(f)}
-                  className="group flex w-full items-center gap-3 rounded-[10px] border border-dashed border-brand/35 bg-paper px-3 py-2.5 text-left transition-all hover:border-brand/60 hover:bg-brand-tint/40"
+                  aria-busy={isGenerating}
+                  title={isGenerating ? '内容正在生成中' : completed ? `打开${meta.label}` : `生成${meta.label}`}
+                  className={cn(
+                    'group flex w-full items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left transition-all',
+                    completed
+                      ? 'border-hairline bg-paper hover:border-brand/45 hover:bg-brand-tint/40'
+                      : isGenerating
+                        ? 'cursor-wait border-brand/45 bg-brand-tint/40'
+                        : 'border-dashed border-brand/35 bg-paper hover:border-brand/60 hover:bg-brand-tint/40',
+                  )}
                 >
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-tint text-brand">
-                    {generating === f ? <Loader2 size={16} className="animate-spin" /> : <Icon size={16} strokeWidth={1.75} />}
+                    {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Icon size={16} strokeWidth={1.75} />}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-medium text-ink">生成{meta.label}</span>
-                    <span className="block truncate text-[11px] text-ink-muted">{generating === f ? '正在调用 AI 生成，请稍候…' : meta.hint}</span>
+                    <span className="block truncate text-[13px] font-medium text-ink">
+                      {completed ? `打开${meta.label}` : isGenerating ? `正在生成${meta.label}` : `生成${meta.label}`}
+                    </span>
+                    <span className="block truncate text-[11px] text-ink-muted">
+                      {completed?.title ?? (isGenerating ? '正在后台生成，可继续生成其他内容' : meta.hint)}
+                    </span>
                   </span>
-                  {generating === f ? <Loader2 size={13} className="shrink-0 animate-spin text-brand" /> : <Sparkles size={13} className="shrink-0 text-brand/70 transition-transform group-hover:scale-110" />}
+                  {isGenerating
+                    ? <Loader2 size={13} className="shrink-0 animate-spin text-brand" />
+                    : completed
+                      ? <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
+                      : <Sparkles size={13} className="shrink-0 text-brand/70 transition-transform group-hover:scale-110" />}
                 </button>
               );
             })}
