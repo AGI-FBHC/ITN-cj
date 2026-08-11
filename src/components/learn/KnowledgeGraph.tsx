@@ -219,7 +219,7 @@ export default function KnowledgeGraph({
   /** 场景（由页面级分段控件切换）：order 学习顺序 / network 完整网络 / route 我的路线 */
   scene?: GraphScene;
   /** 提供后：点节点 = 选中（联动右栏详情），不直接跳转 */
-  onSelectKp?: (kpId: string) => void;
+  onSelectKp?: (kpId: string | null) => void;
   /** 提供后：点击子知识点时回传其在所属领域内的索引（用于细化资源生成） */
   onSelectTopic?: (topicIndex: number) => void;
   selectedKpId?: string | null;
@@ -458,6 +458,13 @@ export default function KnowledgeGraph({
     if (n.kind === 'topic' && onSelectTopic) onSelectTopic(n.topicIndex ?? 0);
   };
 
+  const clearSelection = () => {
+    setExpandedKp(null);
+    setHover(null);
+    setEdgeTip(null);
+    onSelectKp?.(null);
+  };
+
   /** 双击：子知识点按自身 topic id 进入独立课件，不再压缩到父领域前三块。 */
   const openUnit = (n: GraphNode) => {
     if (n.kind === 'domain') return;
@@ -473,6 +480,15 @@ export default function KnowledgeGraph({
             <path d="M 0 -4 L 7 0 L 0 4 Z" fill="#FBFAF5" stroke="#5F8870" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" opacity="0.9" />
           </marker>
         </defs>
+        <rect
+          data-graph-background="true"
+          x="0"
+          y="0"
+          width={currentViewBox.w}
+          height={currentViewBox.h}
+          fill="transparent"
+          onClick={clearSelection}
+        />
 
         {/* 域级聚合边（默认视图的全部边） */}
         {(Object.keys(EDGE_STYLE) as EdgeKind[]).map((kind) =>

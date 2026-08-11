@@ -39,7 +39,7 @@ export default function Learn() {
   const reportPath = map.path;
   const [scene, setScene] = useState<GraphScene>('order');
   const activeKp = map.activeKp ?? knowledgePoints[0]?.id ?? null;
-  const [selectedKp, setSelectedKp] = useState<string>(activeKp);
+  const [selectedKp, setSelectedKp] = useState<string | null>(activeKp);
   const [selectedTopic, setSelectedTopic] = useState<number | null>(null);
   const [searchParams] = useSearchParams();
   useEffect(() => {
@@ -121,7 +121,7 @@ export default function Learn() {
           </div>
         </div>
         <div className="lg:sticky lg:top-6 lg:self-start">
-<KpDetailPanel kpId={selectedKp} topicIndex={selectedTopic} onSelectTopic={setSelectedTopic} kp={knowledgePoints.find((kp) => kp.id === selectedKp) ?? null} mastery={map.mastery} confidence={map.confidence} path={map.path} resources={map.resources[selectedKp] ?? []} goalId={map.goalId} />
+<KpDetailPanel kpId={selectedKp} topicIndex={selectedTopic} onSelectTopic={setSelectedTopic} kp={knowledgePoints.find((kp) => kp.id === selectedKp) ?? null} mastery={map.mastery} confidence={map.confidence} path={map.path} resources={selectedKp ? map.resources[selectedKp] ?? [] : []} goalId={map.goalId} />
         </div>
       </motion.div>
 
