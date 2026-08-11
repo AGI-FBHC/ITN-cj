@@ -1,6 +1,6 @@
 /**
  * KnowledgeGraph — 知识图谱（学情可视化 + 自主选点入口）· 知识地图版
- * 布局：按前置关系分三列（基础层 → 规范与应用 → 实操与运维），阅读顺序 = 学习顺序，列色带做阅读动线。
+ * 布局：章节节点参与建图；点击章节后，前端就地展开其子知识点。
  * 场景驱动（scene prop，由页面级分段控件切换）：
  *   order   学习顺序（默认）—— 只画前置箭头；
  *   network 完整网络 —— 三种关系全开，图例即控件（线型样本 chip，可单独隐藏）；
@@ -21,7 +21,6 @@ import {
   graphNodes,
   graphEdges,
   graphViewBox,
-  graphColumns,
   learnedKpIds,
 } from '@/data/knowledgeGraph';
 import type { DomainEdge, EdgeKind, GraphEdge, GraphNode } from '@/data/knowledgeGraph';
@@ -217,7 +216,6 @@ export default function KnowledgeGraph({
   selectedKpId,
   nodes: nodesProp,
   edges: edgesProp,
-  columns: columnsProp,
   path: pathProp,
   mastery: masteryProp,
   confidence: confidenceProp,
@@ -234,7 +232,6 @@ export default function KnowledgeGraph({
   selectedKpId?: string | null;
   nodes?: GraphNode[];
   edges?: GraphEdge[];
-  columns?: { label: string; x: number }[];
   path?: PathNode[];
   mastery?: Record<string, number>;
   confidence?: Record<string, number>;
@@ -262,7 +259,6 @@ export default function KnowledgeGraph({
 
   const dataNodes = nodesProp ?? graphNodes;
   const dataEdges = edgesProp ?? graphEdges;
-  const dataColumns = columnsProp ?? graphColumns;
   const reportPath = pathProp ?? report.path;
   const masteryMap = masteryProp ?? {};
   const confMap = confidenceProp ?? confidence;
@@ -347,30 +343,6 @@ export default function KnowledgeGraph({
             <path d="M 0 0 L 8 4 L 0 8 z" fill="#4E7860" opacity="0.65" />
           </marker>
         </defs>
-
-        {/* 列色带：结构进底色，不进边框（去卡框后的阅读动线） */}
-        {dataColumns.map((c) => (
-          <rect
-            key={`band-${c.label}`}
-            x={c.x - 112}
-            y={14}
-            width={224}
-            height={graphViewBox.h - 24}
-            rx={16}
-            fill="#4E7860"
-            opacity="0.028"
-          />
-        ))}
-
-        {/* 列标注：学习顺序 */}
-        {dataColumns.map((c, i) => (
-          <g key={c.label}>
-            <text x={c.x} y={34} textAnchor="middle" fontSize="11" letterSpacing="2.5" fontFamily="'IBM Plex Mono', monospace" fill="#8A9580">
-              {`0${i + 1} · ${c.label}`}
-            </text>
-            <line x1={c.x - 62} y1={44} x2={c.x + 62} y2={44} stroke="#DDDCCE" strokeWidth="1" />
-          </g>
-        ))}
 
         {/* 域级聚合边（默认视图的全部边） */}
         {(Object.keys(EDGE_STYLE) as EdgeKind[]).map((kind) =>

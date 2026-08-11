@@ -115,7 +115,7 @@ export default function Learn() {
       >
         {/* 左栏 = 图谱 + 速览（左栏更长，右栏 sticky 跟随——短边放右侧才不会滚出空腔） */}
         <div className="min-w-0">
-<KnowledgeGraph scene={scene} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} nodes={map.graphNodes} edges={map.graphEdges} columns={map.graphColumns} path={map.path} mastery={map.mastery} confidence={map.confidence} learned={map.learned} activeKp={map.activeKp} />
+<KnowledgeGraph scene={scene} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} confidence={map.confidence} learned={map.learned} activeKp={map.activeKp} />
           <div className="mt-3 border-t border-hairline/60 pt-3">
             <UnitQuickList selectedKpId={selectedKp} onSelect={setSelectedKp} routeOrdered={scene === 'route'} columns items={knowledgePoints} path={map.path} learned={map.learned} mastery={map.mastery} />
           </div>

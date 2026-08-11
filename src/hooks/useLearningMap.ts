@@ -39,14 +39,12 @@ function writeLearningMapCache(learnerId: string, cache: LearningMapCache) {
 }
 
 const COLUMN_X: Record<number, number> = { 1: 150, 2: 448, 3: 748 };
-const COLUMN_LABELS: Record<number, string> = { 1: '基础层', 2: '核心方法', 3: '应用与进阶' };
 
 export interface LearningMapView {
   loading: boolean;
   domains: KnowledgePoint[];
   graphNodes: GraphNode[];
   graphEdges: GraphEdge[];
-  graphColumns: { label: string; x: number }[];
   path: PathNode[];
   mastery: Record<string, number>;
   confidence: Record<string, number>;
@@ -120,7 +118,6 @@ export function useLearningMap(): LearningMapView {
         domains: [],
         graphNodes: [],
         graphEdges: [],
-        graphColumns: [],
         path: [],
         mastery: {},
         confidence: {},
@@ -198,9 +195,31 @@ export function useLearningMap(): LearningMapView {
       };
     };
 
-    const graphNodes: GraphNode[] = [];
-    map.graph.nodes.forEach((node) => {
-      graphNodes.push(positionFor(node, node.kind === 'topic' ? node.order - 1 : undefined));
+    // 后端图只包含章节；知识点由章节 topics 在前端展开，不参与章节级建边。
+    const graphNodes: GraphNode[] = map.graph.nodes
+      .filter((node) => node.kind === 'domain')
+      .map((node) => positionFor(node));
+    map.domains.forEach((domain) => {
+      const parent = graphNodes.find((node) => node.kpId === domain.code && node.kind === 'domain');
+      if (!parent) return;
+      const dir = parent.y < 250 ? 1 : -1;
+      domain.topics.forEach((topic, topicIndex) => {
+        const tx = parent.x - 99 + topicIndex * 66;
+        const ty = parent.y + dir * 102;
+        graphNodes.push({
+          id: topic.id,
+          kpId: domain.code,
+          kind: 'topic',
+          label: topic.name,
+          topicIndex,
+          x: tx,
+          y: ty,
+          r: 13,
+          labelX: tx,
+          labelY: dir === 1 ? ty + 27 : ty - 21,
+          labelAnchor: 'middle',
+        });
+      });
     });
 
     const graphEdges: GraphEdge[] = map.graph.edges.map((edge) => ({
@@ -210,10 +229,6 @@ export function useLearningMap(): LearningMapView {
       note: edge.note ?? '',
     }));
 
-    const graphColumns = map.graph.columns
-      .slice()
-      .sort((a, b) => a.order - b.order)
-      .map((column) => ({ label: column.label || COLUMN_LABELS[column.order] || `第${column.order}列`, x: COLUMN_X[column.order] ?? 150 }));
     const resourceByKp: Record<string, Array<GeneratedResource & { id: string; learned?: boolean }>> = {};
     resources.forEach((resource) => {
       if (!resource.kpId) return;
@@ -237,7 +252,6 @@ export function useLearningMap(): LearningMapView {
       domains,
       graphNodes,
       graphEdges,
-      graphColumns,
       path,
       mastery,
       confidence,
