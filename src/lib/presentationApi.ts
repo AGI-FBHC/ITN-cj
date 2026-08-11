@@ -126,6 +126,57 @@ export type PresentationAudioEvent = {
   message?: string;
 };
 
+export type PresentationChatEvent = {
+  type: 'phase' | 'chat_delta' | 'chat_reasoning_delta' | 'chat_completed' | 'chat_failed' | 'refused';
+  content?: string;
+  message?: string;
+  banner?: string;
+  code?: string;
+};
+
+async function readSse(response: Response, onData: (payload: Record<string, unknown>) => void): Promise<void> {
+  if (!response.body) throw new Error('浏览器没有收到流式响应');
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const blocks = buffer.split(/\r?\n\r?\n/);
+    buffer = blocks.pop() || '';
+    for (const block of blocks) {
+      const line = block.split(/\r?\n/).find((item) => item.startsWith('data:'));
+      if (line) onData(JSON.parse(line.slice(5).trim()) as Record<string, unknown>);
+    }
+  }
+}
+
+export async function streamPresentationChatText(
+  taskId: string,
+  question: string,
+  slideIndex: number,
+  onEvent: (event: PresentationChatEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const headers = new Headers({ 'Content-Type': 'application/json', Accept: 'text/event-stream' });
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const response = await fetch(`/v1/presentations/${encodeURIComponent(taskId)}/chat/stream`, {
+    method: 'POST', headers, signal,
+    body: JSON.stringify({ messages: [{ role: 'user', content: question }], slideIndex, modelProvider: 'mimo' }),
+  });
+  if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+  await readSse(response, (payload) => onEvent(payload as PresentationChatEvent));
+}
+
+export function draftPresentationNote(taskId: string, slideIndex: number, instruction: string, currentDraft = '') {
+  return request<{ title: string; content: string; sourceType: string; sourceRef: string; sourceContext: string }>(
+    `/v1/presentations/${encodeURIComponent(taskId)}/notes/draft`,
+    { method: 'POST', body: JSON.stringify({ slideIndex, instruction, currentDraft }) },
+  );
+}
+
 export async function streamPresentationChatAudio(
   taskId: string,
   audio: Blob,
@@ -148,19 +199,5 @@ export async function streamPresentationChatAudio(
     signal,
   });
   if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
-  if (!response.body) throw new Error('浏览器没有收到演示语音回复流');
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const blocks = buffer.split(/\r?\n\r?\n/);
-    buffer = blocks.pop() || '';
-    for (const block of blocks) {
-      const line = block.split(/\r?\n/).find((item) => item.startsWith('data:'));
-      if (line) onEvent(JSON.parse(line.slice(5).trim()) as PresentationAudioEvent);
-    }
-  }
+  await readSse(response, (payload) => onEvent(payload as PresentationAudioEvent));
 }

@@ -6,7 +6,7 @@
  * - 字幕条 + 音效（对/错/换块）+ 语速切换 + 说话脉冲；无 TTS 自动降级"默片+字幕"
  * - 检查点答错 → ARB-05 插降维块；作答/完课回写阿诊信号
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -79,9 +79,10 @@ import SafetyLoopDemo from '@/components/learn/SafetyLoopDemo';
 import VisionGuideDemo from '@/components/learn/VisionGuideDemo';
 import FaultTreeDemo from '@/components/learn/FaultTreeDemo';
 import PptPlayer from '@/components/learn/PptPlayer';
+import type { PptPlayerRef } from '@/components/learn/PptPlayer';
 import { startWavRecording } from '@/lib/voiceRecorder';
 import type { WavRecorder } from '@/lib/voiceRecorder';
-import { streamPresentationChatAudio } from '@/lib/presentationApi';
+import { draftPresentationNote, streamPresentationChatAudio, streamPresentationChatText } from '@/lib/presentationApi';
 import PathProgressBar from '@/components/learn/PathProgressBar';
 import { GrassTuft, Sprout } from '@/components/heal/Flora';
 import { useAmbient } from '@/components/heal/useAmbient';
@@ -631,7 +632,11 @@ export default function LearnUnit() {
   /* 图谱深链：?block=cN → 定位并闪烁对应概念块 */
   const pptTaskId = searchParams.get('ppt');
   const pptTopic = searchParams.get('topic');
-  const pptRef = useRef<any>(null);
+  const pptRef = useRef<PptPlayerRef>(null);
+  const [pptSlide, setPptSlide] = useState({ current: 0, count: 0 });
+  const syncPptSlide = useCallback((current: number, count: number) => setPptSlide((previous) => (
+    previous.current === current && previous.count === count ? previous : { current, count }
+  )), []);
   const [flashId, setFlashId] = useState<string | null>(null);
   useEffect(() => {
     const target = searchParams.get('block');
@@ -680,6 +685,9 @@ export default function LearnUnit() {
   const { addNote, notes } = useNotes();
   const [noteFor, setNoteFor] = useState<string | null>(null);
   const [noteText, setNoteText] = useState('');
+  const [pptNoteOpen, setPptNoteOpen] = useState(false);
+  const [pptNoteTitle, setPptNoteTitle] = useState('');
+  const [pptNoteLoading, setPptNoteLoading] = useState(false);
 
   /**
    * 播放条全局记笔记 —— 现在是唯一入口，所以必须挂到「用户正在看的那一段」。
@@ -687,6 +695,17 @@ export default function LearnUnit() {
    * 那样会把笔记记到用户没在看的内容上）。
    */
   const openNoteHere = () => {
+    if (pptTaskId) {
+      setPptNoteOpen(true);
+      setPptNoteLoading(true);
+      setPptNoteTitle(`第 ${pptSlide.current + 1} 页笔记`);
+      setNoteText('');
+      void draftPresentationNote(pptTaskId, pptSlide.current, '请根据当前幻灯片和演讲稿整理学习笔记，突出核心概念、关键结论和实践提醒。')
+        .then((draft) => { setPptNoteTitle(draft.title); setNoteText(draft.content); })
+        .catch((reason) => toast.error(reason instanceof Error ? reason.message : '笔记草稿生成失败'))
+        .finally(() => setPptNoteLoading(false));
+      return;
+    }
     const bl = blocksRef.current;
     const mid = window.innerHeight / 2;
     let best = cursor;
@@ -1243,9 +1262,43 @@ export default function LearnUnit() {
     });
   };;
 
-  const submitQuestion = (override?: string) => {
+  const submitQuestion = async (override?: string) => {
     const q = (override ?? question).trim();
     if (!q && !askPhoto) return;
+    if (pptTaskId && q && !askPhoto) {
+      const entryId = `text-${voiceSeqRef.current++}`;
+      setQaLog((prev) => [...prev, { id: entryId, q, a: '正在结合当前幻灯片回答…' }]);
+      setQuestion('');
+      setVoiceBusy(true);
+      let reply = '';
+      let failed = '';
+      try {
+        await streamPresentationChatText(pptTaskId, q, pptRef.current?.current ?? 0, (event) => {
+          if (event.type === 'chat_delta' && event.content) {
+            reply += event.content;
+            setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: reply } : qa));
+          } else if (event.type === 'refused') {
+            reply = event.banner || '这个问题暂时无法回答。';
+            setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: reply } : qa));
+          } else if (event.type === 'chat_failed') {
+            failed = event.message || '回答生成失败，请稍后重试';
+          }
+        });
+      } catch (reason) {
+        failed = reason instanceof Error ? reason.message : '回答生成失败，请稍后重试';
+      } finally {
+        setVoiceBusy(false);
+      }
+      if (failed && !reply) {
+        setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: failed } : qa));
+        toast.error(failed);
+        return;
+      }
+      if (reply.trim()) {
+        addNote({ kpId, text: `问：${q}\n答：${reply.trim()}`, source: `${pptTopic || kp.name} · 课堂提问`, sourceKind: 'qa', kbRefs: [] });
+      }
+      return;
+    }
     const hit = q ? matchQA(kpId, q) : null;
     /* 带图但没匹配到预置 QA：按"看图答疑"给一句可信的兜底（真实版由多模态模型接管） */
     const a = hit
@@ -1678,7 +1731,7 @@ export default function LearnUnit() {
             {freeBrowse ? '回到课堂推进' : '自由浏览'}
           </button>
         </div>
-        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} ref={pptRef} onPlaybackChange={setPlaying} /> : (blocks.map((b, i) => {
+        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} ref={pptRef} onPlaybackChange={setPlaying} onSlideChange={syncPptSlide} /> : (blocks.map((b, i) => {
           const active = i === cursor && playing;
           /* ---- 课堂推进三态：完整（当前/回看/自由浏览）· 摘要行（已完成）· 不渲染（未解锁） ---- */
           const effUnlocked = Math.min(unlocked, blocks.length);
@@ -2598,6 +2651,17 @@ export default function LearnUnit() {
           )}
 
           <div className={cn('flex items-center', barExpanded ? 'gap-3 px-4 py-3' : 'gap-1.5 px-3 py-2')}>
+            {pptTaskId && (
+              <button
+                type="button"
+                disabled={pptSlide.current <= 0}
+                onClick={() => pptRef.current?.goPrev()}
+                title="上一页"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-hairline bg-paper text-brand transition-all hover:bg-brand-tint disabled:cursor-not-allowed disabled:text-ink-muted/35"
+              >
+                <ChevronLeft size={16} />
+              </button>
+            )}
             <button
               type="button"
               onClick={togglePlay}
@@ -2607,8 +2671,20 @@ export default function LearnUnit() {
               {playing ? <Pause size={17} /> : <Play size={17} fill="currentColor" />}
             </button>
 
+            {pptTaskId && (
+              <button
+                type="button"
+                disabled={pptSlide.current >= pptSlide.count - 1}
+                onClick={() => pptRef.current?.goNext()}
+                title="下一页"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-hairline bg-paper text-brand transition-all hover:bg-brand-tint disabled:cursor-not-allowed disabled:text-ink-muted/35"
+              >
+                <ChevronRight size={16} />
+              </button>
+            )}
+
             {/* 课堂节拍器：下一段（当前块是未作答检查点时禁用——练是必经的） */}
-            {!freeBrowse && (
+            {!pptTaskId && !freeBrowse && (
               <button
                 type="button"
                 disabled={!canAdvance}
@@ -2642,7 +2718,7 @@ export default function LearnUnit() {
             {barExpanded && (
             <div className="min-w-0 flex-1">
               <div className="truncate whitespace-nowrap text-[13px] font-medium text-ink">
-                {playing ? '正在讲播' : `${pptTopic || kp.name} · 交互课件`}
+                {playing ? '正在讲播' : pptTaskId ? `${pptTopic || kp.name} · ${pptSlide.current + 1}/${Math.max(1, pptSlide.count)} 页` : `${kp.name} · 交互课件`}
               </div>
               <div className="flex min-w-0 items-center gap-2 whitespace-nowrap font-mono text-[10px] text-ink-muted">
                 <span className="shrink-0">{tts.supported ? <Volume2 size={10} /> : <VolumeX size={10} />}</span>
@@ -2927,6 +3003,63 @@ export default function LearnUnit() {
         )}
       </AnimatePresence>
 
+      {/* PPT 当前页笔记：由后端结合幻灯片与演讲稿起草，用户确认后写入个人知识库。 */}
+      <AnimatePresence>
+        {pptTaskId && pptNoteOpen && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/25 p-4 backdrop-blur-sm"
+            onClick={() => setPptNoteOpen(false)}
+          >
+            <motion.div
+              role="dialog" aria-modal="true" aria-labelledby="ppt-note-title"
+              initial={{ opacity: 0, y: 16, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+              onClick={(event) => event.stopPropagation()}
+              className="w-full max-w-[620px] rounded-[18px] border border-hairline bg-paper p-5 shadow-warm-lg"
+            >
+              <div className="flex items-center gap-2">
+                <PenLine size={15} className="text-brand" />
+                <h3 id="ppt-note-title" className="text-[15px] font-semibold text-ink">当前页笔记</h3>
+                <span className="font-mono text-[10.5px] text-ink-muted">第 {pptSlide.current + 1} 页</span>
+                <button type="button" onClick={() => setPptNoteOpen(false)} className="ml-auto text-ink-muted hover:text-ink" aria-label="关闭笔记">
+                  <X size={16} />
+                </button>
+              </div>
+              <input
+                value={pptNoteTitle}
+                onChange={(event) => setPptNoteTitle(event.target.value)}
+                className="mt-4 h-10 w-full rounded-[10px] border border-hairline bg-card-warm px-3 text-[13.5px] font-medium text-ink outline-none focus:border-brand/50"
+                placeholder="笔记标题"
+              />
+              <textarea
+                value={noteText}
+                onChange={(event) => setNoteText(event.target.value)}
+                disabled={pptNoteLoading}
+                className="mt-2 min-h-[240px] w-full resize-y rounded-[10px] border border-hairline bg-card-warm p-3 text-[13px] leading-6 text-ink outline-none focus:border-brand/50 disabled:opacity-60"
+                placeholder={pptNoteLoading ? 'MiMo 正在结合当前页生成笔记草稿…' : '记录当前页的重点'}
+              />
+              <div className="mt-3 flex items-center justify-end gap-2">
+                <button type="button" onClick={() => setPptNoteOpen(false)} className="lf-btn-ghost !py-2 text-[13px]">取消</button>
+                <button
+                  type="button"
+                  disabled={pptNoteLoading || !noteText.trim()}
+                  onClick={() => {
+                    addNote({
+                      kpId, text: noteText.trim(), source: `${pptNoteTitle || `第 ${pptSlide.current + 1} 页笔记`} · ${pptTopic || kp.name}`,
+                      sourceKind: 'course', blockAnchor: `${pptTaskId}:slide:${pptSlide.current}`, kbRefs: [],
+                    });
+                    setPptNoteOpen(false);
+                  }}
+                  className="lf-btn-primary !py-2 text-[13px] disabled:opacity-50"
+                >
+                  {pptNoteLoading ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} 保存到个人知识库
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ============ 提问面板 ============ */}
       <AnimatePresence>
         {asking && (
@@ -3068,7 +3201,7 @@ export default function LearnUnit() {
             </div>
             <button
               type="button"
-              onClick={() => { setAsking(false); startPlay(posRef.current.b, posRef.current.c); }}
+              onClick={() => { setAsking(false); if (pptTaskId) pptRef.current?.togglePlay(); else startPlay(posRef.current.b, posRef.current.c); }}
               className="border-t border-hairline bg-brand-tint/60 py-2 text-[12.5px] font-medium text-brand transition-colors hover:bg-brand-tint"
             >
               ▶ 继续上课（从断点续播）

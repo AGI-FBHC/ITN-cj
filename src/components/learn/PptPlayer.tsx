@@ -4,7 +4,7 @@
  * this component provides the actual slide content and playback controls.
  */
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, FileText, Loader2, Pause, Play, RefreshCw } from 'lucide-react';
+import { FileText, Loader2, RefreshCw } from 'lucide-react';
 import { fetchSlideAsset, presentationApi } from '@/lib/presentationApi';
 import type { PresentationSlideshow, PresentationTask } from '@/lib/presentationApi';
 import { cn } from '@/lib/utils';
@@ -30,7 +30,7 @@ const PROGRESS_LABEL: Record<PresentationTask['status'], string> = {
   cancelled: '已取消',
 };
 
-const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: (playing: boolean) => void }>(function PptPlayer({ taskId, onPlaybackChange }, ref) {
+const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: (playing: boolean) => void; onSlideChange?: (current: number, count: number) => void }>(function PptPlayer({ taskId, onPlaybackChange, onSlideChange }, ref) {
   const [task, setTask] = useState<PresentationTask | null>(null);
   const [slides, setSlides] = useState<PresentationSlideshow | null>(null);
   const [current, setCurrent] = useState(0);
@@ -47,6 +47,8 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: 
   audioSrcRef.current = audioSrc;
 
   const slideCount = slides?.slideCount ?? 0;
+
+  useEffect(() => onSlideChange?.(current, slideCount), [current, slideCount, onSlideChange]);
 
   const playAudio = async (index: number) => {
     const audio = audioRef.current;
@@ -221,24 +223,13 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; onPlaybackChange?: 
   return (
     <div className="space-y-4">
       <div className="lf-anim-in-up rounded-[18px] border border-hairline bg-paper p-7 shadow-warm-lg md:p-10">
-        <div className="flex items-center justify-center gap-4">
-          <button type="button" disabled={current <= 0} onClick={goPrev} className="flex h-9 w-9 items-center justify-center rounded-full border border-hairline text-ink-muted transition hover:border-brand/40 hover:text-brand disabled:opacity-25" title="上一页"><ChevronLeft size={18} /></button>
+        <div className="flex items-center justify-center">
           {slideSrc ? (
             <img src={slideSrc} alt={`第 ${current + 1} 页`} className="max-h-[58vh] w-auto max-w-full rounded-md object-contain shadow-sm" />
           ) : (
             <div className="flex min-h-[40vh] items-center justify-center"><Loader2 size={22} className="animate-spin text-brand" /></div>
           )}
-          <button type="button" disabled={current >= slideCount - 1} onClick={goNext} className="flex h-9 w-9 items-center justify-center rounded-full border border-hairline text-ink-muted transition hover:border-brand/40 hover:text-brand disabled:opacity-25" title="下一页"><ChevronRight size={18} /></button>
         </div>
-        {slideCount > 1 && (
-          <div className="mt-3 flex items-center justify-center gap-3">
-            <button type="button" onClick={togglePlay} className="flex h-9 items-center gap-1.5 rounded-full bg-brand px-5 text-[12.5px] font-medium text-paper transition hover:bg-brand-hover" title={audioPlaying ? '暂停' : '语音授课'}>
-              {audioPlaying ? <Pause size={14} /> : <Play size={14} fill="currentColor" />}
-              {audioPlaying ? '暂停' : '语音授课'}
-            </button>
-            <span className="font-mono text-[11px] text-ink-muted">{current + 1} / {slideCount}</span>
-          </div>
-        )}
         {note && (
           <div className="mt-6 border-t border-hairline pt-5">
             <div className="flex items-center gap-2">
