@@ -3,8 +3,7 @@
  * ① 背景采集（选择即初始化先验，阿诊出声解释）
  * ② 自我评估（六维五档快评 → 弱先验 + 元认知对照素材）
  * ③ 理论自测（置信度驱动的自适应加测 6~14 题：每题点评 / 「不确定」/ 答错归因追问）
- * ④ AI 诊断（流式结论 + 自评 vs 实测对照 + 置信度标注）
- * ⑤ 确认建档（可微调，越权上调触发协商话术）→ 初稿画像，后续由学习信号持续校准
+ * ④ AI 诊断（流式结论 + 自评 vs 实测对照 + 置信度标注）→ 直接建档，后续由学习信号持续校准
  *
  * 测量思路：先验（背景+自评）+ 少量高信息量题目（似然）= 带置信度的后验；
  * 题量不足不靠堆题解决，靠"测到确信为止 + 建档后持续回写"。
@@ -13,7 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { Check, ChevronRight, ChevronLeft, Sparkles, Brain, Target, HelpCircle, PlusCircle } from 'lucide-react';
+import { Check, ChevronRight, ChevronLeft, Sparkles, Brain, HelpCircle, PlusCircle } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
 import type { LearnerDraft } from '@/context/ProfileContext';
 import { knowledgePoints as localKnowledgePoints, getKnowledgePoint as localGetKnowledgePoint } from '@/data/knowledgePoints';
@@ -94,7 +93,7 @@ function radarOption(estimates: Record<string, number>, confidence?: Record<stri
   };
 }
 
-const STEPS = ['背景', '自评', '理论自测', 'AI 诊断', '确认建档'];
+const STEPS = ['背景', '自评', '理论自测', 'AI 诊断'];
 
 export default function Onboarding() {
   const navigate = useNavigate();
@@ -251,11 +250,6 @@ export default function Onboarding() {
     commitAnswer({ ...pendingWrong, attribution: attr ?? undefined });
   };
 
-  /* ---- ⑤ 微调 ---- */
-  const [editScores, setEditScores] = useState<Record<string, number> | null>(null);
-  const [blindIds, setBlindIds] = useState<string[] | null>(null);
-  const [goal, setGoal] = useState('');
-
   const sorted = useMemo(
     () => knowledgePoints.map((kp) => ({ kp, s: estimates[kp.id] })).sort((a, b) => b.s - a.s),
     [estimates],
@@ -292,19 +286,6 @@ export default function Onboarding() {
     [estimates],
   );
 
-  /* 微调越权协商 */
-  const negotiation = useMemo(() => {
-    if (!editScores) return null;
-    let worst: { kp: (typeof knowledgePoints)[0]; over: number } | null = null;
-    knowledgePoints.forEach((kp) => {
-      const over = (editScores[kp.id] ?? 50) - (estimates[kp.id] ?? 50);
-      if (over > 8 && (!worst || over > worst.over)) worst = { kp, over };
-    });
-    if (!worst) return null;
-    const w = worst as { kp: (typeof knowledgePoints)[0]; over: number };
-    return `「${w.kp.name}」你调得比我测到的高 ${Math.round(w.over)} 分——先按你说的建档，但之后我会用两道题核实，谈不拢再谈。`;
-  }, [editScores, estimates]);
-
   const pickTarget = (name: string) => {
     setTargetJob(name);
     const option = targetOptions.find((item) => item.name === name);
@@ -313,14 +294,6 @@ export default function Onboarding() {
 
   const toggleStyle = (s: string) =>
     setStyles((prev) => (prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]));
-
-  const enterConfirm = () => {
-    setEditScores({ ...estimates });
-    setBlindIds([...defaultBlindIds]);
-    const targetSuffix = targetCategoryCode === 'EXAM' ? '考试科目要求' : targetCategoryCode === 'CERT' ? '证书考核要求' : '目标能力';
-    setGoal(`3 个月内补齐「${weakest?.kp.name}」等短板，对齐「${targetJob}」${targetSuffix}。`);
-    setStep(4);
-  };
 
   /** 建档锻造特效：createLearner 之后先播生成过程，播完再进主页 */
   const [forge, setForge] = useState<ForgeData | null>(null);
@@ -336,13 +309,11 @@ export default function Onboarding() {
         selfLevels,
         answers: answers.map(toBackendAnswer),
       });
-      const scores = editScores ?? diag.scores;
-      const finalGoal = goal.trim() || diag.goal;
-      const finalBlindSpots = blindIds
-        ? blindIds.map((id) => getKnowledgePoint(id).name)
-        : diag.blindSpots.length
-          ? diag.blindSpots
-          : defaultBlindIds.map((id) => getKnowledgePoint(id).name);
+      const scores = diag.scores;
+      const finalGoal = diag.goal;
+      const finalBlindSpots = diag.blindSpots.length
+        ? diag.blindSpots
+        : defaultBlindIds.map((id) => getKnowledgePoint(id).name);
       const draft: LearnerDraft = {
         name: name.trim() || '我',
         avatar,
@@ -796,23 +767,6 @@ export default function Onboarding() {
                   </div>
                 </div>
 
-                <div className="lf-card p-5">
-                  <div className="mb-2 flex items-center gap-2">
-                    <Target size={15} className="text-ochre" />
-                    <span className="text-[14px] font-semibold text-ink">锁定的优先盲区</span>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {defaultBlindIds.length ? (
-                      defaultBlindIds.map((id) => (
-                        <span key={id} className="rounded-lg border border-brand-danger/40 bg-brand-danger/10 px-2.5 py-1 text-[12.5px] font-medium text-brand-danger">
-                          {getKnowledgePoint(id).name}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-[13px] text-ink-muted">各维均接近目标，暂无高优先盲区。</span>
-                    )}
-                  </div>
-                </div>
               </div>
               <div className="lf-card h-fit p-5">
                 <div className="lf-mono-label mb-1 !text-[11px]">初稿画像 · 平均置信度 {avgConf}%</div>
@@ -824,99 +778,6 @@ export default function Onboarding() {
             </div>
           )}
 
-          {/* ============ ⑤ 确认建档 ============ */}
-          {step === 4 && editScores && blindIds && (
-            <div className="grid gap-6 lg:grid-cols-2">
-              <div className="space-y-5">
-                <div>
-                  <h1 className="font-serif text-[24px] font-semibold text-ink">确认并微调</h1>
-                  <p className="mt-1 text-[14px] text-ink-muted">你可以调整任一维度、增删盲区、修改目标，再建档。</p>
-                </div>
-
-                <div className="lf-card space-y-3 p-5">
-                  <div className="lf-mono-label !text-[11px]">六维能力（可调 · 实测参考已标注）</div>
-                  {knowledgePoints.map((kp) => (
-                    <div key={kp.id}>
-                      <div className="mb-1 flex items-center justify-between text-[12.5px]">
-                        <span className="text-ink-2">{kp.name}</span>
-                        <span className="font-mono">
-                          <span className="font-semibold text-brand">{editScores[kp.id]}</span>
-                          <span className="text-ink-muted"> / 实测 {estimates[kp.id]}</span>
-                        </span>
-                      </div>
-                      <input
-                        type="range"
-                        min={20}
-                        max={92}
-                        value={editScores[kp.id]}
-                        onChange={(e) => setEditScores((prev) => ({ ...prev!, [kp.id]: Number(e.target.value) }))}
-                        className="w-full accent-brand"
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                {/* 越权协商 */}
-                <AnimatePresence>
-                  {negotiation && (
-                    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-                      <DiaLine text={negotiation} />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                <div className="lf-card p-5">
-                  <div className="lf-mono-label mb-2 !text-[11px]">盲区标签（点选增删）</div>
-                  <div className="flex flex-wrap gap-2">
-                    {knowledgePoints.map((kp) => {
-                      const on = blindIds.includes(kp.id);
-                      return (
-                        <button
-                          key={kp.id}
-                          type="button"
-                          onClick={() => setBlindIds((prev) => (prev!.includes(kp.id) ? prev!.filter((x) => x !== kp.id) : [...prev!, kp.id]))}
-                          className={cn(
-                            'rounded-lg border px-2.5 py-1 text-[12.5px] font-medium transition-all',
-                            on ? 'border-brand-danger/50 bg-brand-danger/10 text-brand-danger' : 'border-hairline bg-paper text-ink-muted hover:border-brand/40',
-                          )}
-                        >
-                          {kp.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="lf-card p-5">
-                  <div className="lf-mono-label mb-2 !text-[11px]">学习目标</div>
-                  <textarea
-                    value={goal}
-                    onChange={(e) => setGoal(e.target.value)}
-                    rows={3}
-                    className="w-full resize-none rounded-[10px] border border-hairline bg-paper px-3 py-2 text-[13.5px] leading-[21px] text-ink outline-none focus:border-brand/50"
-                  />
-                </div>
-              </div>
-
-              <div className="lf-card h-fit p-5 lg:sticky lg:top-20">
-                <div className="lf-mono-label mb-1 !text-[11px]">画像预览 · 初稿</div>
-                <ReactECharts option={radarOption(editScores, confidence)} height={320} />
-                <div className="mt-3 flex items-center gap-3 border-t border-hairline pt-3">
-                  <Avatar className="h-10 w-10 border border-hairline">
-                    <AvatarImage src={avatar} />
-                    <AvatarFallback className="bg-brand-tint text-brand">{(name || '我').slice(0, 1)}</AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0">
-                    <div className="text-[14.5px] font-semibold text-ink">{name || '我'}</div>
-                    <div className="truncate text-[12px] text-ink-muted">{tag} · {targetJob}</div>
-                  </div>
-                  <span className="ml-auto rounded-md border border-brand/30 bg-brand-tint px-1.5 py-0.5 font-mono text-[10px] text-brand">
-                    置信 {avgConf}%
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
       </motion.div>
 
       {/* 底部导航 */}
@@ -930,20 +791,20 @@ export default function Onboarding() {
           {step === 0 ? '返回' : '上一步'}
         </button>
 
-        {step < 4 ? (
+        {step < 3 ? (
           <button
             type="button"
             disabled={!canNext}
-            onClick={() => (step === 3 ? enterConfirm() : setStep((s) => s + 1))}
+            onClick={() => setStep((s) => s + 1)}
             className={cn('lf-btn-primary', !canNext && 'cursor-not-allowed opacity-50')}
           >
-            {step === 0 ? '去自评' : step === 1 ? '开始自测' : step === 2 ? '生成诊断' : '去确认'}
+            {step === 0 ? '去自评' : step === 1 ? '开始自测' : '生成诊断'}
             <ChevronRight size={15} />
           </button>
         ) : (
           <button type="button" onClick={submit} className="lf-btn-primary">
             <Sparkles size={15} />
-            确认建档
+            完成建档
           </button>
         )}
       </div>
