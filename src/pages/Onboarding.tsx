@@ -30,16 +30,15 @@ import { AVATARS, TAGS, EDU, JOBS, STYLES, priorOf, priorLine } from '@/data/pri
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
 import type { OnboardingMeta, OnboardingQuestion, OnboardingAnswerInput } from '@/lib/api';
-import { abilityName } from '@/data/abilityDimensions';
+import { ABILITY_SELF_PROMPTS, abilityName } from '@/data/abilityDimensions';
 
 const knowledgePoints = localKnowledgePoints.map((kp) => ({ ...kp, name: abilityName(kp.id, kp.name) }));
 
 /* ================= 自评五档 ================= */
-const SELF_LEVELS = ['完全不会', '听说过', '了解', '熟练', '精通'];
+const SELF_LEVELS = ['未接触', '需要指导', '可独立完成', '能处理复杂情况', '能指导他人'];
 const selfScoreOf = (level: number) => 20 + level * 15; // 20/35/50/65/80
 
 const clampScore = (n: number) => Math.max(20, Math.min(92, Math.round(n)));
-const MAX_TOTAL = 14;
 
 type AnswerResult = 'correct' | 'wrong' | 'uncertain';
 type Attribution = 'guess' | 'concept' | 'careless';
@@ -568,9 +567,9 @@ export default function Onboarding() {
             <div className="grid gap-6 lg:grid-cols-2">
               <div className="space-y-5">
                 <div>
-                  <h1 className="font-serif text-[24px] font-semibold text-ink">你觉得自己什么水平？</h1>
+                  <h1 className="font-serif text-[24px] font-semibold text-ink">下面这些情况，你通常能做到哪一步？</h1>
                   <p className="mt-1 text-[14px] text-ink-muted">
-                    30 秒快评。别担心不准——待会儿的题目会校准它，而且"自评 vs 实测"的差值本身就是重要诊断。
+                    根据真实经历快速作答。随后会用跨领域情境题校准，并据此评估六维能力。
                   </p>
                 </div>
                 <div className="lf-card space-y-4 p-5">
@@ -580,6 +579,9 @@ export default function Onboarding() {
                         <span className="text-[13.5px] font-medium text-ink">{kp.name}</span>
                         <span className="font-mono text-[11px] text-brand">{SELF_LEVELS[selfLevels[kp.id] ?? 2]}</span>
                       </div>
+                      <p className="mb-2 text-[12px] leading-[18px] text-ink-muted">
+                        {ABILITY_SELF_PROMPTS[kp.id]}
+                      </p>
                       <div className="grid grid-cols-5 gap-1">
                         {SELF_LEVELS.map((lv, li) => (
                           <button
@@ -617,9 +619,9 @@ export default function Onboarding() {
             <div className="grid gap-6 lg:grid-cols-2">
               <div className="space-y-4">
                 <div>
-                  <h1 className="font-serif text-[24px] font-semibold text-ink">理论自测</h1>
+                  <h1 className="font-serif text-[24px] font-semibold text-ink">能力情境自测</h1>
                   <p className="mt-1 text-[14px] text-ink-muted">
-                    题量不固定（6~{MAX_TOTAL} 题）：哪一维不确定，阿诊就在哪一维加测——测到确信为止。
+                    题目来自编程、接口、数据库、系统运维和 AI 等领域；哪一维证据不足，阿诊就继续加测。
                   </p>
                 </div>
 
