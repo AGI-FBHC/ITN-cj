@@ -665,6 +665,18 @@ export interface LearningMapTopic {
   fullName?: string;
 }
 
+export interface PersonalizedLearningUnit {
+  kpId: string;
+  topicId: string;
+  topicName: string;
+  difficulty: '零基础' | '标准' | '进阶';
+  styleLabel: '实操导向' | '案例对照' | '图解优先' | '理论先行';
+  blocks: Record<string, unknown>[];
+  sources: Record<string, unknown>[];
+  cached: boolean;
+  updatedAt: string;
+}
+
 export interface LearningMapState {
   mastery: number;
   confidence: number;
@@ -1060,6 +1072,12 @@ export const api = {
     }),
   getLearningResource: (resourceId: string) =>
     requestDirect<LearningResource>(`/v1/learning-resources/${encodeURIComponent(resourceId)}`),
+  getPersonalizedLearningUnit: (kpId: string, topicId: string, learnerId: string) =>
+    requestDirect<PersonalizedLearningUnit>(`/v1/learning-units/${encodeURIComponent(kpId)}/topics/${encodeURIComponent(topicId)}?learnerId=${encodeURIComponent(learnerId)}`),
+  prewarmPersonalizedLearningUnits: (learnerId: string) =>
+    requestDirect<{ queued: number; granularity: string }>('/v1/learning-units/prewarm', {
+      method: 'POST', body: JSON.stringify({ learnerId }),
+    }),
   completeLearningResource: (resourceId: string) =>
     requestDirect<{ learned: boolean; resource: LearningResource }>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/complete`, {
       method: 'POST',

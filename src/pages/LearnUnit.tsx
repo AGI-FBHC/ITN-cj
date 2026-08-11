@@ -86,6 +86,12 @@ import PathProgressBar from '@/components/learn/PathProgressBar';
 import { GrassTuft, Sprout } from '@/components/heal/Flora';
 import { useAmbient } from '@/components/heal/useAmbient';
 import { cn } from '@/lib/utils';
+import { api } from '@/lib/api';
+import type { PersonalizedLearningUnit } from '@/lib/api';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { lectureMdComponents } from '@/components/resources/lecture-markdown';
+import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
 
 const letters = ['A', 'B', 'C', 'D'];
 const RATES = [0.75, 0.85, 1.05, 1.3, 1.5] as const;
@@ -572,10 +578,36 @@ export default function LearnUnit() {
   const kp = getKnowledgePoint(kpId);
   const dataId = dataIdOf(currentLearner);
   const nextNode = nextPathNodeAfter(reportForLearner(currentLearner), kpId);
+  const [searchParams] = useSearchParams();
+  const topicId = searchParams.get('topic');
+  const [generatedUnit, setGeneratedUnit] = useState<PersonalizedLearningUnit | null>(null);
+  const [unitLoading, setUnitLoading] = useState(Boolean(topicId));
+  const [unitError, setUnitError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!topicId) {
+      setGeneratedUnit(null);
+      setUnitLoading(false);
+      return;
+    }
+    setUnitLoading(true);
+    setUnitError('');
+    api.getPersonalizedLearningUnit(kpId, topicId, dataId)
+      .then((result) => { if (!cancelled) setGeneratedUnit(result); })
+      .catch((reason) => { if (!cancelled) setUnitError(reason instanceof Error ? reason.message : '个性化课件生成失败'); })
+      .finally(() => { if (!cancelled) setUnitLoading(false); });
+    return () => { cancelled = true; };
+  }, [dataId, kpId, topicId]);
 
   /* 「换个角度再学一遍」：强制换风格重拼本讲（GEN-03 现场重新生成） */
   const [styleOverride, setStyleOverride] = useState<StyleLabel | null>(null);
-  const unit = useMemo(() => buildUnit(kpId, currentLearner, styleOverride ?? undefined), [kpId, currentLearner, styleOverride]);
+  const unit = useMemo(() => generatedUnit ? {
+    kpId: generatedUnit.kpId,
+    difficulty: generatedUnit.difficulty,
+    styleLabel: generatedUnit.styleLabel,
+    blocks: generatedUnit.blocks as unknown as CourseBlock[],
+  } : buildUnit(kpId, currentLearner, styleOverride ?? undefined), [generatedUnit, kpId, currentLearner, styleOverride]);
   const [blocks, setBlocks] = useState<CourseBlock[]>(unit.blocks);
   useEffect(() => setBlocks(unit.blocks), [unit]);
   const blocksRef = useRef(blocks);
@@ -596,7 +628,6 @@ export default function LearnUnit() {
   useEffect(() => hitSpot('gen'), []);
 
   /* 图谱深链：?block=cN → 定位并闪烁对应概念块 */
-  const [searchParams] = useSearchParams();
   const pptTaskId = searchParams.get('ppt');
   const pptTopic = searchParams.get('topic');
   const pptRef = useRef<any>(null);
@@ -1525,6 +1556,13 @@ export default function LearnUnit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canAdvance, curIdx, playing]);
 
+  if (topicId && unitLoading) {
+    return <div className="mx-auto flex min-h-[58vh] max-w-[760px] items-center justify-center px-5"><div className="lf-card flex max-w-[460px] items-center gap-3 p-6"><Loader2 size={20} className="animate-spin text-brand" /><div><h1 className="text-[15px] font-semibold text-ink">正在准备这个最小知识点</h1><p className="mt-1 text-[12.5px] leading-5 text-ink-muted">后台正在结合你的画像、当前掌握度与真实来源生成独立学习内容。</p></div></div></div>;
+  }
+  if (topicId && unitError) {
+    return <div className="mx-auto flex min-h-[58vh] max-w-[760px] items-center justify-center px-5"><div className="lf-card max-w-[460px] p-6"><h1 className="text-[15px] font-semibold text-ink">这个知识点暂时没有生成成功</h1><p className="mt-2 text-[12.5px] leading-5 text-ink-muted">{unitError}</p><button type="button" onClick={() => window.location.reload()} className="lf-btn-primary mt-4">重新生成</button></div></div>;
+  }
+
   return (
     <div className="mx-auto max-w-[760px] px-5 pb-48 pt-6 md:px-6">
       {/* 技术亮点（系统透视）：右下角悬浮球，点开才展开 */}
@@ -1536,7 +1574,7 @@ export default function LearnUnit() {
           <ArrowLeft size={14} /> 课程目录
         </Link>
         <span className="text-hairline">/</span>
-        <h1 className="font-serif text-[20px] font-semibold text-ink">{pptTopic || kp.name}</h1>
+        <h1 className="font-serif text-[20px] font-semibold text-ink">{pptTopic || generatedUnit?.topicName || kp.name}</h1>
         <span className="ml-auto flex items-center gap-2">
           {/* 掌握度小徽标（伴学栏收起时也看得到，移动端唯一入口） */}
           <span
@@ -1777,8 +1815,8 @@ export default function LearnUnit() {
                     )}
                   </div>
                   {(b.kind !== 'concept' || (blockMode[b.id] ?? 'read') === 'read') && (
-                    <p className="mt-2 whitespace-pre-line text-[15px] leading-[28px] text-ink-2">
-                      {b.text}
+                    <div className="mt-2 text-[15px] leading-[28px] text-ink-2">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{b.text}</ReactMarkdown>
                       {/* 溯源内联：角标贴着论断走，不再沉到块底 */}
                       {'kbRefs' in b &&
                         b.kbRefs.map((id) => (
@@ -1792,7 +1830,8 @@ export default function LearnUnit() {
                             <TraceBadge kbId={id} />
                           </span>
                         ))}
-                    </p>
+                      {'citations' in b && generatedUnit && <SourceCitationMarks citations={b.citations} sources={generatedUnit.sources} />}
+                    </div>
                   )}
                   {b.kind === 'concept' && blockMode[b.id] === 'cards' && (
                     <div className="mt-3 grid gap-2 sm:grid-cols-2">

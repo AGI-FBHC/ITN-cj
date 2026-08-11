@@ -30,7 +30,7 @@ export type StageItem =
 
 /* ================= 课件 Block 模型 ================= */
 export type CourseBlock =
-  | { kind: 'concept'; id: string; title: string; text: string; kbRefs: string[]; script: string }
+  | { kind: 'concept'; id: string; title: string; text: string; kbRefs: string[]; citations?: number[]; script: string }
   | { kind: 'stage'; id: string; title: string; items: StageItem[]; cues: Cue[]; kbRefs: string[] }
   | { kind: 'demo'; id: string; demo: 'calibration' | 'frame' | 'plc' | 'safety' | 'vision' | 'fault'; title: string; script: string; cues?: Cue[] }
   | { kind: 'checkpoint'; id: string; q: QuizQuestion; script: string }

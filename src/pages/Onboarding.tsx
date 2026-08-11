@@ -397,6 +397,7 @@ export default function Onboarding() {
           selfLevels,
           answers: answers.map(toBackendAnswer),
         });
+        void api.prewarmPersonalizedLearningUnits(id).catch(() => undefined);
         forgeSteps = generated.steps;
         forgeEvidence = generated.evidence;
         forgeBlindSpots = generated.blindSpots;

@@ -329,14 +329,13 @@ export default function KnowledgeGraph({
   const clickNode = (n: GraphNode) => {
     if (n.kind === 'domain') setExpandedKp((cur) => (cur === n.kpId ? null : n.kpId));
     if (onSelectKp) onSelectKp(n.kpId);
-    else if (n.kind === 'topic') openUnit(n);
     if (n.kind === 'topic' && onSelectTopic) onSelectTopic(n.topicIndex ?? 0);
   };
 
-  /** 双击：直接进交互课件 —— 兑现「点一株即学」 */
+  /** 双击：子知识点按自身 topic id 进入独立课件，不再压缩到父领域前三块。 */
   const openUnit = (n: GraphNode) => {
-    if (n.kind === 'domain') navigate(`/learn/${n.kpId}`);
-    else navigate(`/learn/${n.kpId}?block=c${Math.min(n.topicIndex ?? 0, 2)}`);
+    if (n.kind === 'domain') return;
+    navigate(`/learn/${n.kpId}?topic=${encodeURIComponent(n.id)}`);
   };
 
   return (
@@ -631,8 +630,8 @@ export default function KnowledgeGraph({
           )}
           <div className="mt-1 text-[10.5px] text-brand">
             {hover.kind === 'domain'
-              ? `点一下 → ${expandedKp === hover.kpId ? '收起子知识点' : '展开子知识点'} · 双击 → 直接进课件`
-              : '点一下 → 右边选怎么学 · 双击 → 进课件并定位到这个概念'}
+              ? `点一下 → ${expandedKp === hover.kpId ? '收起子知识点' : '展开子知识点'} · 请选择小圆进入学习`
+              : '点一下 → 右边看详情 · 双击 → 直接学习这个最小知识点'}
           </div>
         </div>
       )}

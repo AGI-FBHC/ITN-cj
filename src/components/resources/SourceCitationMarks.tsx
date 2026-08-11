@@ -23,16 +23,18 @@ function sourceAnchorId(resourceId: string, sourceId: string | number) {
 export default function SourceCitationMarks({
   citations,
   resource,
+  sources,
   className,
   compact = false,
 }: {
   citations: unknown;
-  resource: LearningResource;
+  resource?: LearningResource;
+  sources?: Record<string, unknown>[];
   className?: string;
   compact?: boolean;
 }) {
   const sourceById = new Map<number, Record<string, unknown>>();
-  resource.sources.forEach((raw, index) => {
+  (resource?.sources ?? sources ?? []).forEach((raw, index) => {
     const source = asRecord(raw);
     const id = Number(source.id ?? index + 1);
     if (Number.isFinite(id)) sourceById.set(id, source);
@@ -54,8 +56,10 @@ export default function SourceCitationMarks({
         const label = <><span>[{id}]</span>{!compact && <span className="max-w-[180px] truncate font-sans font-normal">{title}</span>}{url && <ExternalLink size={9} />}</>;
         return url ? (
           <a key={id} href={url} target="_blank" rel="noreferrer" title={`来源 [${id}]：${title}`} className={style}>{label}</a>
-        ) : (
+        ) : resource ? (
           <a key={id} href={`#${sourceAnchorId(resource.id, id)}`} title={`来源 [${id}]：${title}`} className={style}>{label}</a>
+        ) : (
+          <span key={id} title={`来源 [${id}]：${title}`} className={style}>{label}</span>
         );
       })}
     </span>
