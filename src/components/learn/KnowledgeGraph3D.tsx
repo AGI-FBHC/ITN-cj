@@ -377,6 +377,27 @@ function Node3D({
   );
 }
 
+/** 方向指示小球 */
+function DirectionMarker({ position, color, visible }: { position: THREE.Vector3; color: string; visible: boolean }) {
+  const ref = useRef<THREE.Mesh>(null);
+  
+  useFrame((state) => {
+    if (ref.current) {
+      const scale = 0.3 + Math.sin(state.clock.elapsedTime * 3) * 0.1;
+      ref.current.scale.setScalar(scale);
+    }
+  });
+  
+  if (!visible) return null;
+  
+  return (
+    <mesh ref={ref} position={position}>
+      <sphereGeometry args={[1, 16, 16]} />
+      <meshBasicMaterial color={color} transparent opacity={0.8} />
+    </mesh>
+  );
+}
+
 /** 3D 连线 */
 function Edge3D({
   fromPos,
@@ -395,18 +416,50 @@ function Edge3D({
   dashed?: boolean;
   isChildLink?: boolean;
 }) {
-  const points = useMemo(() => [fromPos, toPos], [fromPos, toPos]);
+  // 方向指示点位置：在目标节点前方 20% 处
+  const markerPos = useMemo(() => {
+    const dir = toPos.clone().sub(fromPos).normalize();
+    return toPos.clone().sub(dir.multiplyScalar(3));
+  }, [fromPos, toPos]);
+  
+  // 渐变线段（模拟）
+  const segments = useMemo(() => {
+    const segs = [];
+    const numSegs = 8;
+    for (let i = 0; i < numSegs; i++) {
+      const t1 = i / numSegs;
+      const t2 = (i + 1) / numSegs;
+      const p1 = fromPos.clone().lerp(toPos, t1);
+      const p2 = fromPos.clone().lerp(toPos, t2);
+      segs.push({ p1, p2, t: (t1 + t2) / 2 });
+    }
+    return segs;
+  }, [fromPos, toPos]);
+  
   return (
-    <Line
-      points={points}
-      color={color}
-      lineWidth={isChildLink ? 2 : hovered ? 3.5 : 2}
-      transparent
-      opacity={dimmed ? 0.06 : hovered ? 0.9 : isChildLink ? 0.5 : 0.35}
-      dashed={dashed}
-      dashSize={1.5}
-      gapSize={0.8}
-    />
+    <group>
+      {/* 渐变线：从透明到实色 */}
+      {segments.map((seg, i) => (
+        <Line
+          key={i}
+          points={[seg.p1, seg.p2]}
+          color={color}
+          lineWidth={isChildLink ? 2 : hovered ? 3.5 : 2}
+          transparent
+          opacity={dimmed ? 0.06 : (hovered ? 0.9 : isChildLink ? 0.5 : 0.35) * (0.3 + seg.t * 0.7)}
+          dashed={dashed}
+          dashSize={1.5}
+          gapSize={0.8}
+        />
+      ))}
+      
+      {/* 方向指示小球 */}
+      <DirectionMarker
+        position={markerPos}
+        color={color}
+        visible={!dimmed && !isChildLink}
+      />
+    </group>
   );
 }
 
@@ -636,6 +689,8 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
+
+
 
 
 
