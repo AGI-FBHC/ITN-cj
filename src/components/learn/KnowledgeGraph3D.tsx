@@ -477,7 +477,7 @@ function ProgressRing({
   const arcLength = (progress / 100) * Math.PI * 2;
 
   return (
-    <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -0.3]}>
+    <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -0.3]} raycast={() => null} renderOrder={1}>
       <ringGeometry args={[radius + 0.4, radius + 0.7, 32, 1, 0, arcLength]} />
       <meshBasicMaterial
         color={color}
@@ -542,20 +542,24 @@ function ChildPlane({
   return (
     <Billboard ref={billboardRef} position={parentPos}>
       <group>
-        {/* 连线：从原点到各子节点（静态，不添加方向动效） */}
-        {childData.map(({ node, relPos }) => (
-          <Line
-            key={`line-${node.id}`}
-            points={[
-              new THREE.Vector3(0, 0, 0),
-              new THREE.Vector3(...relPos),
-            ]}
-            color="#4E7860"
-            lineWidth={3}
-            transparent
-            opacity={0.6}
-          />
-        ))}
+        {/* 连线：从父节点球面到子节点球面（不穿入球体内部，避免半透明时闪烁） */}
+        {childData.map(({ node, relPos }) => {
+          const end = new THREE.Vector3(...relPos);
+          const dir = end.clone().normalize();
+          const start = dir.clone().multiplyScalar(3.7);
+          const endTrim = end.clone().addScaledVector(dir, -1.95);
+          return (
+            <Line
+              key={`line-${node.id}`}
+              renderOrder={-1}
+              points={[start, endTrim]}
+              color="#4E7860"
+              lineWidth={3}
+              transparent
+              opacity={0.6}
+            />
+          );
+        })}
         
         {/* 子节点 */}
         {childData.map(({ node, relPos, direction }) => {
@@ -658,7 +662,7 @@ function ChildNode({
         <meshBasicMaterial color={getColor()} transparent={false} />
 
         {/* 内描边：球面边缘的亮环 */}
-        <mesh scale={1.015}>
+        <mesh scale={1.015} raycast={() => null} renderOrder={1}>
           <sphereGeometry args={[1, 64, 64]} />
           <shaderMaterial
             vertexShader={glowVertexShader}
@@ -673,7 +677,7 @@ function ChildNode({
         </mesh>
 
         {/* 外描边：紧贴球体轮廓外的蓝色发光，向外渐隐 */}
-        <mesh scale={1.16}>
+        <mesh scale={1.16} raycast={() => null} renderOrder={1}>
           <sphereGeometry args={[1, 48, 48]} />
           <shaderMaterial
             vertexShader={glowVertexShader}
@@ -695,6 +699,7 @@ function ChildNode({
 
       {/* 文字短线 */}
       <Line
+        raycast={() => null}
         points={[
           new THREE.Vector3(0, 0, 0.5),
           new THREE.Vector3(direction === 'left' ? -2 : 2, 0, 1),
@@ -707,6 +712,8 @@ function ChildNode({
 
       {/* 文字 */}
       <Text
+        raycast={() => null}
+        renderOrder={2}
         position={getTextPosition()}
         fontSize={1.2}
         color="#3D4A3A"
@@ -758,6 +765,16 @@ function Node3D({
   const textRef = useRef<THREE.Mesh | null>(null);
   const innerStrokeRef = useRef<THREE.ShaderMaterial | null>(null);
   const outerStrokeRef = useRef<THREE.ShaderMaterial | null>(null);
+  // uniforms 对象保持引用稳定，亮度只由 useFrame 逐帧写入，避免重渲染时闪烁
+  const innerUniforms = useMemo(() => ({
+    glowColor: { value: new THREE.Color(STROKE_COLORS.inner) },
+    intensity: { value: 1 },
+  }), []);
+  const outerUniforms = useMemo(() => ({
+    glowColor: { value: new THREE.Color(STROKE_COLORS.outer) },
+    intensity: { value: 1 },
+    innerF: { value: 0.49 },
+  }), []);
   const isDomain = node.kind === 'domain';
   const colors = isDomain ? NODE_COLORS.domain : NODE_COLORS.topic;
 
@@ -837,40 +854,29 @@ function Node3D({
       {/* 主球体 + 描边式内外发光（跟随球体缩放） */}
       <mesh ref={meshRef}>
         <sphereGeometry args={[1, 64, 64]} />
-        <meshBasicMaterial
-          color={getColor()}
-          transparent={dimmed}
-          opacity={dimmed ? 0.2 : 1}
-        />
+        <meshBasicMaterial color={getColor()} transparent opacity={1} />
 
         {/* 内描边：球面边缘的亮环 */}
-        <mesh scale={1.015}>
+        <mesh scale={1.015} raycast={() => null} renderOrder={1}>
           <sphereGeometry args={[1, 64, 64]} />
           <shaderMaterial
             ref={innerStrokeRef}
             vertexShader={glowVertexShader}
             fragmentShader={innerStrokeFragmentShader}
-            uniforms={{
-              glowColor: { value: new THREE.Color(STROKE_COLORS.inner) },
-              intensity: { value: dimmed ? 0.2 : hovered ? 1.3 : selected ? 1.15 : 1.0 },
-            }}
+            uniforms={innerUniforms}
             transparent
             depthWrite={false}
           />
         </mesh>
 
         {/* 外描边：紧贴球体轮廓外的蓝色发光，向外渐隐 */}
-        <mesh scale={1.16}>
+        <mesh scale={1.16} raycast={() => null} renderOrder={1}>
           <sphereGeometry args={[1, 48, 48]} />
           <shaderMaterial
             ref={outerStrokeRef}
             vertexShader={glowVertexShader}
             fragmentShader={outerStrokeFragmentShader}
-            uniforms={{
-              glowColor: { value: new THREE.Color(STROKE_COLORS.outer) },
-              intensity: { value: dimmed ? 0.15 : hovered ? 1.3 : selected ? 1.15 : 1.0 },
-              innerF: { value: 0.49 },
-            }}
+            uniforms={outerUniforms}
             transparent
             side={THREE.BackSide}
             depthWrite={false}
@@ -885,6 +891,8 @@ function Node3D({
       <Billboard>
         <Text
           ref={textRef}
+          raycast={() => null}
+          renderOrder={2}
           position={getTextPosition()}
           fontSize={isDomain ? 1.6 : 1.2}
           color={isDomain ? '#FFFFFF' : '#3D4A3A'}
@@ -943,10 +951,15 @@ function Edge3D({
     curTo.current.lerp(tt, 0.18);
     const line = lineRef.current;
     if (line) {
-      line.geometry.setPositions([
-        curFrom.current.x, curFrom.current.y, curFrom.current.z,
-        curTo.current.x, curTo.current.y, curTo.current.z,
-      ]);
+      // 线段裁剪到球体表面：不穿入节点内部，节点半透明时也不会看到线穿过球体
+      const dir = curTo.current.clone().sub(curFrom.current);
+      const len = Math.max(dir.length(), 0.001);
+      dir.normalize();
+      const startPad = Math.min(3.7, len * 0.15);
+      const endPad = Math.min(4.4, len * 0.25);
+      const start = curFrom.current.clone().addScaledVector(dir, startPad);
+      const end = curTo.current.clone().addScaledVector(dir, -endPad);
+      line.geometry.setPositions([start.x, start.y, start.z, end.x, end.y, end.z]);
       if (dashed) line.computeLineDistances();
       // 聚焦时无关连线同步淡出
       const focusFade = fadeOnFocus ? 1 - 0.65 * b : 1;
@@ -959,6 +972,7 @@ function Edge3D({
       {/* 单条连续直线，避免分段渲染产生接缝 */}
       <Line
         ref={lineRef}
+        renderOrder={-1}
         points={[fromPos, toPos]}
         color={color}
         lineWidth={isChildLink ? 3 : hovered ? 4.5 : 3}
@@ -1002,6 +1016,8 @@ function SceneContent({
   onTopicClick,
   animRef,
   focusId,
+  hoveredId,
+  onHoverNode,
 }: {
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -1018,8 +1034,9 @@ function SceneContent({
   topicMastery: Record<string, number>;
   topicProgress: Record<string, number>;
   onTopicClick?: (kpId: string, topicIndex: number, label: string) => void;
+  hoveredId: string | null;
+  onHoverNode: (id: string | null) => void;
 }) {
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const handleNodeClick = useCallback(
     (node: GraphNode) => {
@@ -1103,7 +1120,7 @@ function SceneContent({
             topicMastery={topicMastery}
             topicProgress={topicProgress}
             onNodeClick={handleNodeClick}
-            onNodeHover={setHoveredId}
+            onNodeHover={onHoverNode}
             parentOffset={layout.focusOffsets.get(kpId)}
             animRef={animRef}
           />
@@ -1136,7 +1153,7 @@ function SceneContent({
             learned={learned.has(node.kpId)}
             progress={progress}
             onClick={() => handleNodeClick(node)}
-            onHover={setHoveredId}
+            onHover={onHoverNode}
             focusOffset={layout.focusOffsets.get(node.id)}
             animRef={animRef}
             fadeOnFocus={focusId !== null && node.id !== focusId}
@@ -1175,6 +1192,8 @@ export default function KnowledgeGraph3D({
 
   const layout = use3DLayout(nodes, edges, expandedKpIds, focusId);
   const sceneRef = useRef<THREE.Group | null>(null);
+  // 悬停时暂停自动旋转，避免节点在光标下移动导致悬停闪烁
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
   // 每个章节的子节点数量（用于聚焦时自适应相机距离）
   const topicCountByKp = useMemo(() => {
@@ -1203,7 +1222,7 @@ export default function KnowledgeGraph3D({
           autoRotate={false}
         />
         <FocusDriver focusId={dimAnchorId} blendRef={blendRef} />
-        <RotatingScene shouldRotate={expandedKpIds.size === 0} outerRef={sceneRef}>
+        <RotatingScene shouldRotate={expandedKpIds.size === 0 && !hoveredNodeId} outerRef={sceneRef}>
           <SceneContent
             nodes={nodes}
             edges={edges}
@@ -1220,6 +1239,8 @@ export default function KnowledgeGraph3D({
             onTopicClick={onTopicClick}
             animRef={blendRef}
             focusId={dimAnchorId}
+            hoveredId={hoveredNodeId}
+            onHoverNode={setHoveredNodeId}
           />
         </RotatingScene>
         <CameraFocus focusTarget={focusTarget} layout={layout} sceneRef={sceneRef} blendRef={blendRef} topicCountByKp={topicCountByKp} />
