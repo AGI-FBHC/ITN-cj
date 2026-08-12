@@ -3,7 +3,7 @@
  * 子节点自动选择空旷方向展开，文字跟随方向
  */
 import { useRef, useMemo, useState, useCallback } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Text, Line, PerspectiveCamera, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 import type { GraphNode, GraphEdge, EdgeKind } from '@/data/knowledgeGraph';
@@ -236,7 +236,7 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpIds: Set<
   }, [nodes, expandedKpIds, domainLayout]);
 }
 
-/** 沿边涌动的方向脉冲：光点从源节点流向目标节点，表示有向边 */
+/** 沿边涌动的方向箭头：锐角符号像 > / < 一样从源节点流向目标节点 */
 function FlowPulses({
   fromPos,
   toPos,
@@ -254,9 +254,11 @@ function FlowPulses({
   count?: number;
   speed?: number;
 }) {
-  const refs = useRef<Array<THREE.Mesh | null>>([]);
+  const groupRefs = useRef<Array<THREE.Group | null>>([]);
+  const textRefs = useRef<Array<THREE.Mesh | null>>([]);
+  const camera = useThree((s) => s.camera);
 
-  // 两端各留出节点半径的空隙，脉冲只在边的可见部分流动
+  // 两端各留出节点半径的空隙，箭头只在边的可见部分流动
   const { start, end } = useMemo(() => {
     const dir = toPos.clone().sub(fromPos);
     const len = Math.max(dir.length(), 0.001);
@@ -268,27 +270,51 @@ function FlowPulses({
     };
   }, [fromPos, toPos]);
 
-  useFrame((state) => {
-    const time = state.clock.elapsedTime * speed;
+  useFrame(() => {
+    const time = performance.now() * 0.001 * speed;
+    // 计算边在屏幕空间中的方向角，让箭头始终顺着边指向目标
+    const pFrom = fromPos.clone().project(camera);
+    const pTo = toPos.clone().project(camera);
+    const angle = Math.atan2(pTo.y - pFrom.y, pTo.x - pFrom.x);
+
     for (let i = 0; i < count; i++) {
-      const mesh = refs.current[i];
-      if (!mesh) continue;
+      const g = groupRefs.current[i];
+      if (!g) continue;
       const t = (time + i / count) % 1;
-      mesh.position.copy(start).lerp(end, t);
-      // 两端淡入淡出，中段最亮，形成涌动节奏
+      // 位置
+      g.position.copy(start).lerp(end, t);
+      // 大小：两端淡入淡出，中段最亮
       const fade = Math.sin(t * Math.PI);
-      mesh.scale.setScalar(0.45 + fade * 0.3);
-      (mesh.material as THREE.MeshBasicMaterial).opacity = dimmed ? 0 : fade * (hovered ? 1 : 0.8);
+      g.scale.setScalar((0.5 + fade * 0.25) * (hovered ? 1.3 : 1));
+      // 始终面朝相机并旋转到边方向
+      g.lookAt(camera.position);
+      g.rotateZ(angle);
+
+      const mesh = textRefs.current[i];
+      if (mesh && (mesh.material as any).opacity !== undefined) {
+        (mesh.material as any).opacity = dimmed ? 0 : fade * (hovered ? 1 : 0.85);
+        (mesh.material as any).transparent = true;
+      }
     }
   });
 
   return (
     <group>
       {Array.from({ length: count }).map((_, i) => (
-        <mesh key={i} ref={(el) => { refs.current[i] = el; }}>
-          <sphereGeometry args={[1, 12, 12]} />
-          <meshBasicMaterial color={color} transparent depthWrite={false} />
-        </mesh>
+        <group key={i} ref={(el) => { groupRefs.current[i] = el; }}>
+          <Text
+            ref={(el) => { textRefs.current[i] = el; }}
+            fontSize={0.9}
+            color={color}
+            anchorX="center"
+            anchorY="middle"
+            outlineWidth={0.05}
+            outlineColor="#ffffff"
+            outlineOpacity={0.6}
+          >
+            ›
+          </Text>
+        </group>
       ))}
     </group>
   );
@@ -373,27 +399,19 @@ function ChildPlane({
   return (
     <Billboard position={parentPos}>
       <group>
-        {/* 连线：从原点到各子节点，蓝色光点流向子节点表示方向 */}
+        {/* 连线：从原点到各子节点（静态，不添加方向动效） */}
         {childData.map(({ node, relPos }) => (
-          <group key={`link-${node.id}`}>
-            <Line
-              points={[
-                new THREE.Vector3(0, 0, 0),
-                new THREE.Vector3(...relPos),
-              ]}
-              color="#4E7860"
-              lineWidth={3}
-              transparent
-              opacity={0.6}
-            />
-            <FlowPulses
-              fromPos={new THREE.Vector3(0, 0, 0)}
-              toPos={new THREE.Vector3(...relPos)}
-              color="#2E6BA8"
-              count={1}
-              speed={0.35}
-            />
-          </group>
+          <Line
+            key={`line-${node.id}`}
+            points={[
+              new THREE.Vector3(0, 0, 0),
+              new THREE.Vector3(...relPos),
+            ]}
+            color="#4E7860"
+            lineWidth={3}
+            transparent
+            opacity={0.6}
+          />
         ))}
         
         {/* 子节点 */}
