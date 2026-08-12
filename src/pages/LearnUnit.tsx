@@ -671,6 +671,8 @@ export default function LearnUnit() {
   const tts = useTts();
   const snd = useClassroomSound();
   const [playing, setPlaying] = useState(false);
+  /** 播放条展开/收起：默认收起，仅由明确的播放/暂停等用户动作驱动，换页不改变 */
+  const [barExpanded, setBarExpanded] = useState(false);
   const playingRef = useRef(false);
   const [cursor, setCursor] = useState(0);
   /** 当前正在讲的句子下标（块内"跟读流"用：语音讲到哪，文稿高亮到哪） */
@@ -1130,6 +1132,7 @@ export default function LearnUnit() {
   }, [focusMode]);
 
   const enterFocus = () => {
+    setBarExpanded(true);
     focusStartRef.current = Date.now();
     focusFromBlockRef.current = cursor;
     setElapsed(0);
@@ -1138,6 +1141,7 @@ export default function LearnUnit() {
   };
 
   const exitFocus = () => {
+    if (!playing) setBarExpanded(false);
     const sec = focusStartRef.current ? Math.floor((Date.now() - focusStartRef.current) / 1000) : 0;
     focusStartRef.current = null;
     setFocusMode(false);
@@ -1166,6 +1170,7 @@ export default function LearnUnit() {
     blockRefs.current[i]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   const stopPlayback = () => {
+    setBarExpanded(false);
     if (pptTaskId && pptRef.current?.audioPlaying) pptRef.current.togglePlay();
     cancelRef.current?.();
     tts.stop();
@@ -1249,6 +1254,7 @@ export default function LearnUnit() {
   cpPicksRef.current = cpPicks;
 
   const startPlay = (b: number, c: number) => {
+    setBarExpanded(true);
     hitSpot('av');
     playingRef.current = true;
     setPlaying(true);
@@ -1262,7 +1268,9 @@ export default function LearnUnit() {
 
   const togglePlay = () => {
     if (pptTaskId) {
+      const willPause = Boolean(pptRef.current?.audioPlaying);
       pptRef.current?.togglePlay();
+      setBarExpanded(!willPause);
       return;
     }
     if (playing) stopPlayback();
@@ -1416,7 +1424,7 @@ export default function LearnUnit() {
             if (event.action === 'next') pptRef.current?.goNext();
             else if (event.action === 'previous') pptRef.current?.goPrev();
             else if (event.action === 'goto' && event.page) pptRef.current?.goTo(event.page - 1);
-            else if (event.action === 'play' || event.action === 'restart') pptRef.current?.play();
+            else if (event.action === 'play' || event.action === 'restart') { setBarExpanded(true); pptRef.current?.play(); }
             else if (event.action === 'pause') pptRef.current?.pause();
           } else if (event.type === 'reply_delta' && event.content) {
             reply += event.content;
@@ -1450,7 +1458,7 @@ export default function LearnUnit() {
     setQuestion('');
     await speakPptAnswer(finalReply, controller.signal).catch(() => undefined);
     if (finalAction === 'goto' && finalPage) pptRef.current?.goTo(finalPage - 1);
-    if (finalResume || (finalAction === 'none' && pptWasPlayingRef.current)) pptRef.current?.play();
+    if (finalResume || (finalAction === 'none' && pptWasPlayingRef.current)) { setBarExpanded(true); pptRef.current?.play(); }
     addNote({
       kpId,
       text: `问：${transcript}\n答：${finalReply}`,
@@ -1513,7 +1521,7 @@ export default function LearnUnit() {
         }
         setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: cleanReply } : qa));
         await speakPptAnswer(cleanReply, controller.signal).catch(() => undefined);
-        if (pptWasPlayingRef.current) pptRef.current?.play();
+        if (pptWasPlayingRef.current) { setBarExpanded(true); pptRef.current?.play(); }
         addNote({ kpId, text: `问：${q}\n答：${cleanReply}`, source: `${pptTopic || kp.name} · 课堂提问`, sourceKind: 'qa', kbRefs: [] });
       }
       return;
@@ -1814,8 +1822,7 @@ export default function LearnUnit() {
   const curBlk = blocks[curIdx];
   const canAdvance =
     !freeBrowse && curIdx < blocks.length - 1 && !(curBlk?.kind === 'checkpoint' && cpPicks[curBlk.id] === undefined);
-  /* 播放条两态：讲播中/有字幕/通勤/专注时展开完整控制台，否则收成小胶囊 */
-  const barExpanded = playing || subtitle !== null || audioMode || focusMode;
+  /* 播放条两态：进入页面默认收起；播放/进入只听/进入专注时展开，主动暂停时收回，换页不改变 */
 
   /* ---- 键盘：空格 播放/暂停 · → 下一段（输入框内不劫持） ---- */
   useEffect(() => {
@@ -3145,7 +3152,7 @@ export default function LearnUnit() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setSlideMode(false); setAudioMode((v) => !v); if (!playing) startPlay(posRef.current.b, posRef.current.c); }}
+                      onClick={() => { const nextAudio = !audioMode; setSlideMode(false); setAudioMode(nextAudio); setBarExpanded(nextAudio || playing); if (!playing) startPlay(posRef.current.b, posRef.current.c); }}
                       title="只听不看（走路/坐车时用）"
                       className={cn(
                         'flex flex-col items-center gap-1 rounded-[9px] border py-2 text-[11.5px] font-medium transition-all',
@@ -3508,7 +3515,7 @@ export default function LearnUnit() {
             </div>
             <button
               type="button"
-              onClick={() => { pptAskAbortRef.current?.abort(); stopAnswerAudio(); setAsking(false); if (pptTaskId) pptRef.current?.play(); else startPlay(posRef.current.b, posRef.current.c); }}
+              onClick={() => { pptAskAbortRef.current?.abort(); stopAnswerAudio(); setAsking(false); if (pptTaskId) { setBarExpanded(true); pptRef.current?.play(); } else startPlay(posRef.current.b, posRef.current.c); }}
               className="border-t border-hairline bg-brand-tint/60 py-2 text-[12.5px] font-medium text-brand transition-colors hover:bg-brand-tint"
             >
               ▶ 继续上课（从断点续播）
