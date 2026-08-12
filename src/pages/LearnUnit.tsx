@@ -1791,14 +1791,6 @@ export default function LearnUnit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  /* ---- 分段进度条跳转（课堂推进模式下不能跳到未解锁段） ---- */
-  const jumpToBlock = (i: number) => {
-    if (!freeBrowse && i >= Math.min(unlocked, blocksRef.current.length)) return;
-    stopPlayback();
-    posRef.current = { b: i, c: 0 };
-    setCursor(i);
-    scrollToBlock(i);
-  };
 
   /* 本讲 KB 溯源角标总数（适配横幅「已核验」卡展开用） */
   const kbCount = useMemo(
@@ -2940,7 +2932,7 @@ export default function LearnUnit() {
               </span>
             )}
 
-            {/* 标题 + 分段进度独立一行，避免与右侧操作按钮互相挤压 */}
+            {/* 标题独立一行，避免与右侧操作按钮互相挤压 */}
             {barExpanded && (
               <div className="order-first flex w-full items-center gap-3">
                 <div className="min-w-0 flex-1">
@@ -2949,52 +2941,14 @@ export default function LearnUnit() {
                   </div>
                   <div className="flex min-w-0 items-center gap-2 whitespace-nowrap font-mono text-[10px] text-ink-muted">
                     <span className="shrink-0">{tts.supported ? <Volume2 size={10} /> : <VolumeX size={10} />}</span>
-                    <span className="truncate">{pptTaskId ? 'MiMo 演讲稿朗读 · 个人音色' : tts.supported ? `语音授课 · ${voiceStyle.label}` : '默片模式（字幕+视觉照常）'}</span>
+                    <span className="truncate">
+                      {pptTaskId
+                        ? `音色 ${pptVoice} · 语速 ${MIMO_SPEEDS.find((item) => item.value === pptSpeed)?.label ?? pptSpeed}`
+                        : tts.supported
+                          ? `语音授课 · ${voiceStyle.label} · ${RATES[rateIdx].toFixed(2).replace(/0$/, '')}×`
+                          : '默片模式（字幕+视觉照常）'}
+                    </span>
                   </div>
-                </div>
-                <div className="flex min-w-[120px] flex-1 items-center gap-2">
-                  <div className="flex h-4 flex-1 items-center gap-[3px]" role="group" aria-label="讲解进度（分段）">
-                    {blocks.map((bb, bi) => {
-                      const effU = Math.min(unlocked, blocks.length);
-                      const segLocked = !freeBrowse && bi >= effU;
-                      const pick = bb.kind === 'checkpoint' ? cpPicks[bb.id] : undefined;
-                      const answered = pick !== undefined;
-                      const segCorrect = bb.kind === 'checkpoint' && answered && pick === bb.q.answerIndex;
-                      const segTitle =
-                        'title' in bb && bb.title
-                          ? bb.title.replace(/^跟我看一遍，再自己动手 · /, '')
-                          : bb.kind === 'checkpoint'
-                            ? '微练'
-                            : '小结';
-                      return (
-                        <button
-                          key={bb.id}
-                          type="button"
-                          disabled={segLocked}
-                          onClick={() => jumpToBlock(bi)}
-                          title={segLocked ? `${segTitle} · 未解锁` : `第 ${bi + 1} 段 · ${segTitle}`}
-                          className={cn(
-                            'flex-1 rounded-full transition-all',
-                            bi === cursor ? 'h-2.5' : 'h-1.5',
-                            segLocked
-                              ? 'cursor-not-allowed bg-hairline'
-                              : bb.kind === 'checkpoint'
-                                ? answered
-                                  ? segCorrect
-                                    ? 'bg-brand-success/80'
-                                    : 'bg-brand-danger/70'
-                                  : 'bg-brand-amber/80'
-                                : bi === cursor
-                                  ? 'bg-brand'
-                                  : 'bg-brand/45 hover:bg-brand/70',
-                          )}
-                        />
-                      );
-                    })}
-                  </div>
-                  <span className="shrink-0 font-mono text-[10.5px] text-ink-muted tabular">
-                    {cursor + 1}/{blocks.length}
-                  </span>
                 </div>
               </div>
             )}
