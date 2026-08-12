@@ -270,12 +270,20 @@ function FlowPulses({
     };
   }, [fromPos, toPos]);
 
-  useFrame(() => {
-    const time = performance.now() * 0.001 * speed;
-    // 计算边在屏幕空间中的方向角，让箭头始终顺着边指向目标
-    const pFrom = fromPos.clone().project(camera);
-    const pTo = toPos.clone().project(camera);
-    const angle = Math.atan2(pTo.y - pFrom.y, pTo.x - pFrom.x);
+  useFrame((state) => {
+    const time = state.clock.elapsedTime * speed;
+    // 用相机坐标系把边方向投影到成像平面上，避免透视投影在近距离时端点反转
+    const m = camera.matrixWorld.elements;
+    const camRight = new THREE.Vector3(m[0], m[4], m[8]);
+    const camUp = new THREE.Vector3(m[1], m[5], m[9]);
+    const camDir = new THREE.Vector3(m[2], m[6], m[10]);
+    const edgeDir = toPos.clone().sub(fromPos).normalize();
+    const alongView = edgeDir.dot(camDir);
+    let angle = 0;
+    if (Math.abs(alongView) < 0.999) {
+      const proj = edgeDir.clone().sub(camDir.clone().multiplyScalar(alongView)).normalize();
+      angle = Math.atan2(proj.dot(camUp), proj.dot(camRight));
+    }
 
     for (let i = 0; i < count; i++) {
       const g = groupRefs.current[i];
