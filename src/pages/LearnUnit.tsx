@@ -682,6 +682,14 @@ export default function LearnUnit() {
   const [pptVoice, setPptVoice] = useState('苏打');
   const [pptSpeed, setPptSpeed] = useState<TtsSpeed>('normal');
   const [pptVoiceSaving, setPptVoiceSaving] = useState(false);
+  const [pptVolume, setPptVolume] = useState(() => {
+    try {
+      const saved = Number(window.localStorage.getItem('lf.pptVolume'));
+      return Number.isFinite(saved) && saved >= 0 && saved <= 1 ? saved : 1;
+    } catch {
+      return 1;
+    }
+  });
   const [voiceRestart, setVoiceRestart] = useState<'answer' | 'slide' | null>(null);
   const voiceStyle = VOICE_STYLES[voiceIdx];
   /** 实际朗读速率 = 档位语速 × 风格微调 */
@@ -764,7 +772,7 @@ export default function LearnUnit() {
   const pptChatSessionRef = useRef('');
   const pptAskAbortRef = useRef<AbortController | null>(null);
   const pptWasPlayingRef = useRef(false);
-  const answerAudioRef = useRef<{ context: AudioContext; sources: Set<AudioBufferSourceNode> } | null>(null);
+  const answerAudioRef = useRef<{ context: AudioContext; sources: Set<AudioBufferSourceNode>; gain?: GainNode } | null>(null);
   /** 语音输入目标：ask=提问（说完自动发送）/ note=笔记（转写填入待编辑） */
   const [listening, setListening] = useState<null | 'ask' | 'note'>(null);
   const [voiceBusy, setVoiceBusy] = useState(false);
@@ -784,6 +792,14 @@ export default function LearnUnit() {
     void active?.context.close();
   };
 
+  const changePptVolume = (value: number) => {
+    const next = Math.min(1, Math.max(0, value));
+    setPptVolume(next);
+    try { window.localStorage.setItem('lf.pptVolume', String(next)); } catch { /* ignore */ }
+    const active = answerAudioRef.current;
+    if (active?.gain) active.gain.gain.value = next;
+  };
+
   const ensurePptChatSession = async () => {
     if (!pptTaskId) return '';
     if (pptChatSessionRef.current) return pptChatSessionRef.current;
@@ -800,7 +816,10 @@ export default function LearnUnit() {
     const context = new AudioContext({ sampleRate: 24_000 });
     await context.resume();
     const sources = new Set<AudioBufferSourceNode>();
-    answerAudioRef.current = { context, sources };
+    const gain = context.createGain();
+    gain.gain.value = pptVolume;
+    gain.connect(context.destination);
+    answerAudioRef.current = { context, sources, gain };
     const reader = response.body!.getReader();
     let pending = new Uint8Array(0);
     let nextTime = context.currentTime + 0.08;
@@ -814,7 +833,7 @@ export default function LearnUnit() {
       buffer.copyToChannel(samples, 0);
       const source = context.createBufferSource();
       source.buffer = buffer;
-      source.connect(context.destination);
+      source.connect(gain);
       sources.add(source);
       source.onended = () => sources.delete(source);
       source.start(Math.max(context.currentTime + 0.02, nextTime));
@@ -1931,7 +1950,7 @@ export default function LearnUnit() {
             {freeBrowse ? '回到课堂推进' : '自由浏览'}
           </button>
         </div>}
-        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} wideMode={pptWideMode} speed={pptSpeed} ref={pptRef} onPlaybackChange={setPlaying} onSlideChange={syncPptSlide} onRequestNote={openNoteHere} /> : (blocks.map((b, i) => {
+        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} wideMode={pptWideMode} speed={pptSpeed} volume={pptVolume} ref={pptRef} onPlaybackChange={setPlaying} onSlideChange={syncPptSlide} onRequestNote={openNoteHere} /> : (blocks.map((b, i) => {
           const active = i === cursor && playing;
           /* ---- 课堂推进三态：完整（当前/回看/自由浏览）· 摘要行（已完成）· 不渲染（未解锁） ---- */
           const effUnlocked = Math.min(unlocked, blocks.length);
@@ -2972,6 +2991,32 @@ export default function LearnUnit() {
                 {cursor + 1}/{blocks.length}
               </span>
             </div>
+
+            {/* 音量：静音切换 + 滑杆（同时作用于幻灯片语音与 AI 回答） */}
+            {pptTaskId && (
+              <div className="flex shrink-0 items-center gap-1.5" title="播放音量">
+                <button
+                  type="button"
+                  onClick={() => changePptVolume(pptVolume === 0 ? 1 : 0)}
+                  aria-label={pptVolume === 0 ? '取消静音' : '静音'}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-hairline bg-paper text-ink-2 transition-colors hover:text-brand"
+                >
+                  {pptVolume === 0 ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                </button>
+                {barExpanded && (
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={pptVolume}
+                    onChange={(event) => changePptVolume(Number(event.target.value))}
+                    className="h-1 w-16 cursor-pointer accent-brand"
+                    aria-label="播放音量"
+                  />
+                )}
+              </div>
+            )}
 
             {pptTaskId && (
               <button

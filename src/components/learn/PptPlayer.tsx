@@ -43,7 +43,7 @@ const PROGRESS_LABEL: Record<PresentationTask['status'], string> = {
   cancelled: '已取消',
 };
 
-const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean; speed?: TtsSpeed; onPlaybackChange?: (playing: boolean) => void; onSlideChange?: (current: number, count: number) => void; onRequestNote?: () => void }>(function PptPlayer({ taskId, wideMode = true, speed = 'normal', onPlaybackChange, onSlideChange, onRequestNote }, ref) {
+const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean; speed?: TtsSpeed; volume?: number; onPlaybackChange?: (playing: boolean) => void; onSlideChange?: (current: number, count: number) => void; onRequestNote?: () => void }>(function PptPlayer({ taskId, wideMode = true, speed = 'normal', volume = 1, onPlaybackChange, onSlideChange, onRequestNote }, ref) {
   const [task, setTask] = useState<PresentationTask | null>(null);
   const [slides, setSlides] = useState<PresentationSlideshow | null>(null);
   const [current, setCurrent] = useState(0);
@@ -77,6 +77,11 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
     if (audio) audio.playbackRate = SPEED_RATE[speed];
   }, [speed]);
 
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (audio) audio.volume = volume;
+  }, [volume]);
+
   const playAudio = async (index: number) => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -89,6 +94,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
         audio.src = url;
       }
       audio.playbackRate = SPEED_RATE[speed];
+      audio.volume = volume;
       await audio.play();
       switchingSlideRef.current = false;
       if (audio.currentTime < 0.1) setNoteRevealCount(0);
@@ -146,7 +152,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
     play: () => { if (!audioPlaying) void playAudio(currentRef.current); },
     pause: () => { if (audioPlaying) togglePlay(); },
     restartPageAudio,
-  }), [slideCount, audioPlaying, speed]);
+  }), [slideCount, audioPlaying, speed, volume]);
 
   const loadTask = useCallback(async () => {
     try {
