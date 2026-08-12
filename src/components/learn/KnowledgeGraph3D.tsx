@@ -512,7 +512,11 @@ export default function KnowledgeGraph3D({
   const layout = use3DLayout(nodes, edges);
 
   return (
-    <div className={`relative h-[600px] w-full overflow-hidden rounded-2xl border border-hairline bg-gradient-to-br from-paper via-[#F5F3EA] to-brand-tint/20 ${className}`}>
+    <div
+      className={`relative h-[600px] w-full overflow-hidden rounded-2xl border border-hairline bg-gradient-to-br from-paper via-[#F5F3EA] to-brand-tint/20 ${className}`}
+      onWheel={(e) => e.stopPropagation()}
+      onTouchMove={(e) => e.stopPropagation()}
+    >
       <Canvas>
         <PerspectiveCamera makeDefault position={[0, 0, 75]} fov={45} />
         <OrbitControls
@@ -557,3 +561,4 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
+
