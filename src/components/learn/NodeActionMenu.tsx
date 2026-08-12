@@ -19,20 +19,21 @@ const FORM_META: Record<ResourceForm, { label: string; icon: typeof BookOpen; hi
 };
 
 interface NodeActionMenuProps {
+  label: string;
   kpId: string;
   topicIndex: number;
   onClose: () => void;
   goalId: string | null;
 }
 
-export default function NodeActionMenu({ kpId, topicIndex, onClose, goalId }: NodeActionMenuProps) {
+export default function NodeActionMenu({ kpId, topicIndex, label, onClose, goalId }: NodeActionMenuProps) {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
   const [generating, setGenerating] = useState<Set<string>>(new Set());
   const [checkingPpt, setCheckingPpt] = useState(false);
 
   const kp = getKnowledgePoint(kpId);
-  const topicName = kp.coreTopics[topicIndex] ?? kp.name;
+  const topicName = label || kp.coreTopics[topicIndex] || kp.name;
   const scope = `${currentLearner.id}:${kpId}:${topicName}`;
 
   const generateResource = async (form: ResourceForm) => {
@@ -194,5 +195,6 @@ export default function NodeActionMenu({ kpId, topicIndex, onClose, goalId }: No
     </div>
   );
 }
+
 
 

@@ -41,7 +41,7 @@ const PROGRESS_COLORS = {
 };
 
 interface KnowledgeGraph3DProps {
-  onTopicClick?: (kpId: string, topicIndex: number) => void;
+  onTopicClick?: (kpId: string, topicIndex: number, label: string) => void;
   nodes: GraphNode[];
   edges: GraphEdge[];
   selectedKpId: string | null;
@@ -390,7 +390,7 @@ function SceneContent({
   topicMastery,
   topicProgress,
 }: {
-  onTopicClick?: (kpId: string, topicIndex: number) => void;
+  onTopicClick?: (kpId: string, topicIndex: number, label: string) => void;
   nodes: GraphNode[];
   edges: GraphEdge[];
   layout: Map<string, THREE.Vector3>;
@@ -413,7 +413,7 @@ function SceneContent({
         onExpandedKpChange(expandedKpId === node.id ? null : node.id);
       } else {
         onSelectTopic(node.topicIndex ?? null);
-        onTopicClick?.(node.kpId, node.topicIndex ?? 0);
+        onTopicClick?.(node.kpId, node.topicIndex ?? 0, node.label);
       }
     },
     [expandedKpId, onSelectKp, onSelectTopic, onExpandedKpChange],
@@ -600,6 +600,7 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
+
 
 
 

@@ -38,7 +38,7 @@ export default function Learn() {
   const [selectedKp, setSelectedKp] = useState<string | null>(null);
   const [expandedKp, setExpandedKp] = useState<string | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<number | null>(null);
-  const [actionMenu, setActionMenu] = useState<{ kpId: string; topicIndex: number } | null>(null);
+  const [actionMenu, setActionMenu] = useState<{ kpId: string; topicIndex: number; label: string } | null>(null);
   const [searchParams] = useSearchParams();
   useEffect(() => {
     const kpParam = searchParams.get('kp');
@@ -149,7 +149,7 @@ export default function Learn() {
         <motion.div layout="position" className="min-w-0">
           {viewMode === '3d' ? (
             <KnowledgeGraph3D
-              onTopicClick={(kpId, topicIndex) => setActionMenu({ kpId, topicIndex })}
+              onTopicClick={(kpId, topicIndex, label) => setActionMenu({ kpId, topicIndex, label })}
               nodes={map.graphNodes}
               edges={map.graphEdges}
               selectedKpId={selectedKp}
@@ -251,6 +251,7 @@ export default function Learn() {
         <NodeActionMenu
           kpId={actionMenu.kpId}
           topicIndex={actionMenu.topicIndex}
+          label={actionMenu.label}
           onClose={() => setActionMenu(null)}
           goalId={map.goalId}
         />
@@ -258,4 +259,5 @@ export default function Learn() {
     </div>
   );
 }
+
 
