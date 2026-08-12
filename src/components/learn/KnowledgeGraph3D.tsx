@@ -1,6 +1,6 @@
 /**
- * KnowledgeGraph3D — Obsidian 风格 3D 知识图谱（XMind 分支版）
- * 子节点并列展开，文字在圆圈外部
+ * KnowledgeGraph3D — Obsidian 风格 3D 知识图谱（智能展开版）
+ * 子节点自动选择空旷方向展开，文字跟随方向
  */
 import { useRef, useMemo, useState, useCallback } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
@@ -40,6 +40,22 @@ const PROGRESS_COLORS = {
   high: '#6BA080',
 };
 
+interface KnowledgeGraph3DProps {
+  onTopicClick?: (kpId: string, topicIndex: number, label: string) => void;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  selectedKpId: string | null;
+  expandedKpId: string | null;
+  onSelectKp: (id: string | null) => void;
+  onSelectTopic: (index: number | null) => void;
+  onExpandedKpChange: (id: string | null) => void;
+  learned: Set<string>;
+  mastery: Record<string, number>;
+  topicMastery: Record<string, number>;
+  topicProgress: Record<string, number>;
+  className?: string;
+}
+
 /** 边缘发光 Shader */
 const glowVertexShader = `
   varying vec3 vNormal;
@@ -65,22 +81,6 @@ const innerGlowFragmentShader = `
   }
 `;
 
-interface KnowledgeGraph3DProps {
-  onTopicClick?: (kpId: string, topicIndex: number, label: string) => void;
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-  selectedKpId: string | null;
-  expandedKpId: string | null;
-  onSelectKp: (id: string | null) => void;
-  onSelectTopic: (index: number | null) => void;
-  onExpandedKpChange: (id: string | null) => void;
-  learned: Set<string>;
-  mastery: Record<string, number>;
-  topicMastery: Record<string, number>;
-  topicProgress: Record<string, number>;
-  className?: string;
-}
-
 /** 多轴随机缓慢旋转的场景容器 */
 function RotatingScene({ children, shouldRotate }: { children: React.ReactNode; shouldRotate: boolean }) {
   const groupRef = useRef<THREE.Group>(null);
@@ -96,7 +96,7 @@ function RotatingScene({ children, shouldRotate }: { children: React.ReactNode; 
   return <group ref={groupRef}>{children}</group>;
 }
 
-/** 域节点固定布局（只计算一次） */
+/** 域节点固定布局 */
 function useDomainLayout(nodes: GraphNode[], edges: GraphEdge[]) {
   return useMemo(() => {
     const positions = new Map<string, THREE.Vector3>();
@@ -105,15 +105,14 @@ function useDomainLayout(nodes: GraphNode[], edges: GraphEdge[]) {
     domainNodes.forEach((node, i) => {
       const phi = Math.acos(1 - 2 * (i + 0.5) / domainNodes.length);
       const theta = Math.PI * (1 + Math.sqrt(5)) * i;
-      const r = 28 + (i * 13 % 8); // 用固定值代替随机数
+      const r = 28 + (i * 13 % 8);
       positions.set(node.id, new THREE.Vector3(
         r * Math.sin(phi) * Math.cos(theta),
         r * Math.sin(phi) * Math.sin(theta),
-        r * Math.cos(phi) * (0.7 + (i * 7 % 3) * 0.1), // 固定值
+        r * Math.cos(phi) * (0.7 + (i * 7 % 3) * 0.1),
       ));
     });
 
-    // 力导向迭代（只影响域节点）
     for (let iter = 0; iter < 80; iter++) {
       const forces = new Map<string, THREE.Vector3>();
       positions.forEach((_, id) => forces.set(id, new THREE.Vector3()));
@@ -157,26 +156,83 @@ function useDomainLayout(nodes: GraphNode[], edges: GraphEdge[]) {
   }, [nodes, edges]);
 }
 
-/** 3D 布局：固定域节点 + 动态子节点 */
+/** 计算最空旷的展开方向 */
+function findBestDirection(
+  parentPos: THREE.Vector3,
+  allPositions: Map<string, THREE.Vector3>,
+  expandedKpId: string,
+): { direction: 'left' | 'right' | 'top' | 'bottom'; offset: THREE.Vector3 } {
+  const directions = [
+    { name: 'right' as const, offset: new THREE.Vector3(20, 0, 0) },
+    { name: 'left' as const, offset: new THREE.Vector3(-20, 0, 0) },
+    { name: 'top' as const, offset: new THREE.Vector3(0, 20, 0) },
+    { name: 'bottom' as const, offset: new THREE.Vector3(0, -20, 0) },
+  ];
+
+  let bestDirection = directions[0];
+  let minDensity = Infinity;
+
+  directions.forEach((dir) => {
+    const testPos = parentPos.clone().add(dir.offset);
+    let density = 0;
+
+    allPositions.forEach((pos, id) => {
+      if (id === expandedKpId) return;
+      const dist = testPos.distanceTo(pos);
+      if (dist < 25) {
+        density += 1 / Math.max(dist, 1);
+      }
+    });
+
+    if (density < minDensity) {
+      minDensity = density;
+      bestDirection = dir;
+    }
+  });
+
+  return { direction: bestDirection.name, offset: bestDirection.offset };
+}
+
+/** 3D 布局：固定域节点 + 智能子节点展开 */
 function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpId: string | null) {
   const domainLayout = useDomainLayout(nodes, edges);
 
   return useMemo(() => {
     const positions = new Map(domainLayout);
+    const childDirections = new Map<string, 'left' | 'right' | 'top' | 'bottom'>();
 
-    // 子节点：XMind 分支式排列
     if (expandedKpId) {
       const parentPos = positions.get(expandedKpId);
       if (parentPos) {
+        const { direction, offset } = findBestDirection(parentPos, positions, expandedKpId);
         const children = nodes.filter((n) => n.kind === 'topic' && n.kpId === expandedKpId);
-        const startX = parentPos.x + 18;
-        const startY = parentPos.y - (children.length - 1) * 4;
+        
+        // 根据方向计算子节点位置
+        const isHorizontal = direction === 'left' || direction === 'right';
+        const sign = direction === 'left' || direction === 'top' ? -1 : 1;
+        
         children.forEach((node, i) => {
-          positions.set(node.id, new THREE.Vector3(
-            startX + (i % 2) * 8,
-            startY + i * 8,
-            parentPos.z + 2,
-          ));
+          const basePos = parentPos.clone().add(offset);
+          let childPos: THREE.Vector3;
+          
+          if (isHorizontal) {
+            // 水平展开：垂直排列
+            childPos = new THREE.Vector3(
+              basePos.x + (i % 2) * 8 * sign,
+              basePos.y + (i - (children.length - 1) / 2) * 8,
+              basePos.z + 2,
+            );
+          } else {
+            // 垂直展开：水平排列
+            childPos = new THREE.Vector3(
+              basePos.x + (i - (children.length - 1) / 2) * 8,
+              basePos.y + (i % 2) * 8 * sign,
+              basePos.z + 2,
+            );
+          }
+          
+          positions.set(node.id, childPos);
+          childDirections.set(node.id, direction);
         });
       }
     }
@@ -192,9 +248,31 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpId: strin
       ));
     });
 
-    return positions;
+    return { positions, childDirections };
   }, [nodes, expandedKpId, domainLayout]);
 }
+
+/** 方向指示小球 */
+function DirectionMarker({ position, color, visible }: { position: THREE.Vector3; color: string; visible: boolean }) {
+  const ref = useRef<THREE.Mesh>(null);
+  
+  useFrame((state) => {
+    if (ref.current) {
+      const scale = 0.3 + Math.sin(state.clock.elapsedTime * 3) * 0.1;
+      ref.current.scale.setScalar(scale);
+    }
+  });
+  
+  if (!visible) return null;
+  
+  return (
+    <mesh ref={ref} position={position}>
+      <sphereGeometry args={[1, 16, 16]} />
+      <meshBasicMaterial color={color} transparent opacity={0.8} />
+    </mesh>
+  );
+}
+
 /** 进度环 */
 function ProgressRing({
   radius,
@@ -237,6 +315,7 @@ function ProgressRing({
 function Node3D({
   node,
   position,
+  direction,
   selected,
   hovered,
   dimmed,
@@ -247,6 +326,7 @@ function Node3D({
 }: {
   node: GraphNode;
   position: THREE.Vector3;
+  direction?: 'left' | 'right' | 'top' | 'bottom';
   selected: boolean;
   hovered: boolean;
   dimmed: boolean;
@@ -269,7 +349,6 @@ function Node3D({
     return colors.base;
   };
 
-  // 子节点圆圈增大
   const baseSize = isDomain ? 3 : 1.5;
   const targetScale = selected ? 1.3 : hovered ? 1.15 : 1;
   const glowColor = GLOW_COLORS[node.kind];
@@ -298,6 +377,34 @@ function Node3D({
       (glow3Ref.current.material as THREE.MeshBasicMaterial).opacity = 0.08 * glowIntensity;
     }
   });
+
+  // 根据方向计算文字位置
+  const getTextPosition = (): [number, number, number] => {
+    if (isDomain) return [0, 0, 4];
+    
+    switch (direction) {
+      case 'left': return [-3.5, 0, 3];
+      case 'right': return [3.5, 0, 3];
+      case 'top': return [0, 3.5, 3];
+      case 'bottom': return [0, -3.5, 3];
+      default: return [3.5, 0, 3];
+    }
+  };
+
+  // 根据方向计算文字锚点
+  const getTextAnchor = (): { x: 'left' | 'center' | 'right'; y: 'top' | 'middle' | 'bottom' } => {
+    if (isDomain) return { x: 'center', y: 'middle' };
+    
+    switch (direction) {
+      case 'left': return { x: 'right', y: 'middle' };
+      case 'right': return { x: 'left', y: 'middle' };
+      case 'top': return { x: 'center', y: 'bottom' };
+      case 'bottom': return { x: 'center', y: 'top' };
+      default: return { x: 'left', y: 'middle' };
+    }
+  };
+
+  const textAnchor = getTextAnchor();
 
   return (
     <group
@@ -340,7 +447,7 @@ function Node3D({
         />
       </mesh>
 
-      {/* 内发光：菲涅尔边缘 */}
+      {/* 内发光 */}
       <mesh scale={1.02}>
         <sphereGeometry args={[1, 64, 64]} />
         <shaderMaterial
@@ -358,43 +465,22 @@ function Node3D({
       {/* 进度描边 */}
       <ProgressRing radius={baseSize} progress={progress} hovered={hovered} selected={selected} />
 
-      {/* 标签：子节点文字放在圆圈外部（右侧），像 XMind */}
+      {/* 标签 */}
       <Billboard>
-      <Text
-        position={isDomain ? [0, 0, 4] : [3.5, 0, 3]}
-        fontSize={isDomain ? 1.6 : 1.2}
-        color={isDomain ? '#FFFFFF' : '#3D4A3A'}
-        anchorX={isDomain ? 'center' : 'left'}
-        anchorY="middle"
-        outlineWidth={0.1}
-        outlineColor={isDomain ? '#000000' : '#FFFFFF'}
-        outlineOpacity={0.3}
-      >
-        {node.label}
-      </Text>
-    </Billboard>
+        <Text
+          position={getTextPosition()}
+          fontSize={isDomain ? 1.6 : 1.2}
+          color={isDomain ? '#FFFFFF' : '#3D4A3A'}
+          anchorX={textAnchor.x}
+          anchorY={textAnchor.y}
+          outlineWidth={0.1}
+          outlineColor={isDomain ? '#000000' : '#FFFFFF'}
+          outlineOpacity={0.3}
+        >
+          {node.label}
+        </Text>
+      </Billboard>
     </group>
-  );
-}
-
-/** 方向指示小球 */
-function DirectionMarker({ position, color, visible }: { position: THREE.Vector3; color: string; visible: boolean }) {
-  const ref = useRef<THREE.Mesh>(null);
-  
-  useFrame((state) => {
-    if (ref.current) {
-      const scale = 0.3 + Math.sin(state.clock.elapsedTime * 3) * 0.1;
-      ref.current.scale.setScalar(scale);
-    }
-  });
-  
-  if (!visible) return null;
-  
-  return (
-    <mesh ref={ref} position={position}>
-      <sphereGeometry args={[1, 16, 16]} />
-      <meshBasicMaterial color={color} transparent opacity={0.8} />
-    </mesh>
   );
 }
 
@@ -416,13 +502,6 @@ function Edge3D({
   dashed?: boolean;
   isChildLink?: boolean;
 }) {
-  // 方向指示点位置：在目标节点前方 20% 处
-  const markerPos = useMemo(() => {
-    const dir = toPos.clone().sub(fromPos).normalize();
-    return toPos.clone().sub(dir.multiplyScalar(3));
-  }, [fromPos, toPos]);
-  
-  // 渐变线段（模拟）
   const segments = useMemo(() => {
     const segs = [];
     const numSegs = 8;
@@ -435,10 +514,14 @@ function Edge3D({
     }
     return segs;
   }, [fromPos, toPos]);
-  
+
+  const markerPos = useMemo(() => {
+    const dir = toPos.clone().sub(fromPos).normalize();
+    return toPos.clone().sub(dir.multiplyScalar(3));
+  }, [fromPos, toPos]);
+
   return (
     <group>
-      {/* 渐变线：从透明到实色 */}
       {segments.map((seg, i) => (
         <Line
           key={i}
@@ -453,7 +536,6 @@ function Edge3D({
         />
       ))}
       
-      {/* 方向指示小球 */}
       <DirectionMarker
         position={markerPos}
         color={color}
@@ -465,7 +547,6 @@ function Edge3D({
 
 /** 场景 */
 function SceneContent({
-  onTopicClick,
   nodes,
   edges,
   layout,
@@ -478,11 +559,11 @@ function SceneContent({
   mastery,
   topicMastery,
   topicProgress,
+  onTopicClick,
 }: {
-  onTopicClick?: (kpId: string, topicIndex: number, label: string) => void;
   nodes: GraphNode[];
   edges: GraphEdge[];
-  layout: Map<string, THREE.Vector3>;
+  layout: { positions: Map<string, THREE.Vector3>; childDirections: Map<string, 'left' | 'right' | 'top' | 'bottom'> };
   selectedKpId: string | null;
   expandedKpId: string | null;
   onSelectKp: (id: string | null) => void;
@@ -492,6 +573,7 @@ function SceneContent({
   mastery: Record<string, number>;
   topicMastery: Record<string, number>;
   topicProgress: Record<string, number>;
+  onTopicClick?: (kpId: string, topicIndex: number, label: string) => void;
 }) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
@@ -505,7 +587,7 @@ function SceneContent({
         onTopicClick?.(node.kpId, node.topicIndex ?? 0, node.label);
       }
     },
-    [expandedKpId, onSelectKp, onSelectTopic, onExpandedKpChange],
+    [expandedKpId, onSelectKp, onSelectTopic, onExpandedKpChange, onTopicClick],
   );
 
   const relatedEdges = useMemo(() => {
@@ -536,17 +618,17 @@ function SceneContent({
 
   const childLinks = useMemo(() => {
     if (!expandedKpId) return [];
-    const parentPos = layout.get(expandedKpId);
+    const parentPos = layout.positions.get(expandedKpId);
     if (!parentPos) return [];
     return nodes
       .filter((n) => n.kind === 'topic' && n.kpId === expandedKpId)
       .map((n) => ({
         id: `${expandedKpId}-${n.id}`,
         from: parentPos,
-        to: layout.get(n.id),
+        to: layout.positions.get(n.id),
       }))
       .filter((l) => l.to);
-  }, [expandedKpId, nodes, layout]);
+  }, [expandedKpId, nodes, layout.positions]);
 
   return (
     <>
@@ -555,8 +637,8 @@ function SceneContent({
 
       {/* 语义边 */}
       {edges.map((edge) => {
-        const p1 = layout.get(edge.from);
-        const p2 = layout.get(edge.to);
+        const p1 = layout.positions.get(edge.from);
+        const p2 = layout.positions.get(edge.to);
         if (!p1 || !p2) return null;
         const key = `${edge.from}-${edge.to}`;
         const isRelated = relatedEdges.has(key);
@@ -589,7 +671,7 @@ function SceneContent({
 
       {/* 节点 */}
       {visibleNodes.map((node) => {
-        const pos = layout.get(node.id);
+        const pos = layout.positions.get(node.id);
         if (!pos) return null;
         const isRelated = relatedNodes.has(node.id);
         const isDimmed = hoveredId && !isRelated;
@@ -606,6 +688,7 @@ function SceneContent({
             key={node.id}
             node={node}
             position={pos}
+            direction={layout.childDirections.get(node.id)}
             selected={selectedKpId === node.id || expandedKpId === node.id}
             hovered={hoveredId === node.id}
             dimmed={!!isDimmed}
@@ -655,7 +738,6 @@ export default function KnowledgeGraph3D({
         />
         <RotatingScene shouldRotate={!expandedKpId}>
           <SceneContent
-            onTopicClick={onTopicClick}
             nodes={nodes}
             edges={edges}
             layout={layout}
@@ -668,6 +750,7 @@ export default function KnowledgeGraph3D({
             mastery={mastery}
             topicMastery={topicMastery}
             topicProgress={topicProgress}
+            onTopicClick={onTopicClick}
           />
         </RotatingScene>
       </Canvas>
@@ -689,24 +772,3 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
