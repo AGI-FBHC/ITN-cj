@@ -165,7 +165,8 @@ function CameraFocus({
     // 节点世界坐标（旋转组刚停下，逐帧读取矩阵更稳妥）
     const world = anim.nodeLocal.clone();
     if (sceneRef.current) world.applyMatrix4(sceneRef.current.matrixWorld);
-    const camPos = world.clone().normalize().multiplyScalar(world.length() + 38);
+    // 距离要容纳整个子节点展开平面（水平 ~15+，纵向随子节点数量增加）
+    const camPos = world.clone().normalize().multiplyScalar(world.length() + 58);
 
     camera.position.lerpVectors(anim.fromPos, camPos, ease);
     controls.target.lerpVectors(anim.fromTarget, world, ease);
