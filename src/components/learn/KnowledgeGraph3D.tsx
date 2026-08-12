@@ -4,7 +4,7 @@
  */
 import { useRef, useMemo, useState, useCallback } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Text, Line, PerspectiveCamera } from '@react-three/drei';
+import { OrbitControls, Text, Line, PerspectiveCamera, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 import type { GraphNode, GraphEdge, EdgeKind } from '@/data/knowledgeGraph';
 
@@ -359,8 +359,9 @@ function Node3D({
       <ProgressRing radius={baseSize} progress={progress} hovered={hovered} selected={selected} />
 
       {/* 标签：子节点文字放在圆圈外部（右侧），像 XMind */}
+      <Billboard>
       <Text
-        position={isDomain ? [0, 0, 1.5] : [2.5, 0, 0]}
+        position={isDomain ? [0, 0, 4] : [3.5, 0, 3]}
         fontSize={isDomain ? 2 : 1.2}
         color={isDomain ? '#FFFFFF' : '#3D4A3A'}
         anchorX={isDomain ? 'center' : 'left'}
@@ -371,6 +372,7 @@ function Node3D({
       >
         {node.label}
       </Text>
+    </Billboard>
     </group>
   );
 }
@@ -634,6 +636,9 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
+
+
+
 
 
 
