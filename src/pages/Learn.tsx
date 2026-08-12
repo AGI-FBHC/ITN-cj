@@ -161,22 +161,27 @@ export default function Learn() {
         {/* 上层只承载图谱与按需详情；章节速览在下方独立占满全局宽度。 */}
         <motion.div layout="position" className="relative min-w-0">
           {viewMode === '3d' && (
-            <div className="absolute left-4 top-4 z-10 flex gap-2">
+            <div className="absolute left-4 top-4 z-10">
               <button
                 type="button"
-                onClick={() => setExpandedKpIds(new Set(map.graphNodes.filter((n) => n.kind === 'domain').map((n) => n.id)))}
+                onClick={() => {
+                  const allDomainIds = map.graphNodes.filter((n) => n.kind === 'domain').map((n) => n.id);
+                  const isAllExpanded = expandedKpIds.size === allDomainIds.length;
+                  setExpandedKpIds(isAllExpanded ? new Set() : new Set(allDomainIds));
+                }}
                 className="flex items-center gap-1.5 rounded-lg border border-hairline/50 bg-white/90 px-3 py-1.5 text-[11px] text-ink-2 backdrop-blur-sm transition-colors hover:bg-white hover:text-ink"
               >
-                <Expand size={12} />
-                展开全部
-              </button>
-              <button
-                type="button"
-                onClick={() => setExpandedKpIds(new Set())}
-                className="flex items-center gap-1.5 rounded-lg border border-hairline/50 bg-white/90 px-3 py-1.5 text-[11px] text-ink-2 backdrop-blur-sm transition-colors hover:bg-white hover:text-ink"
-              >
-                <Shrink size={12} />
-                收起全部
+                {expandedKpIds.size === map.graphNodes.filter((n) => n.kind === 'domain').length ? (
+                  <>
+                    <Shrink size={12} />
+                    隐藏全部
+                  </>
+                ) : (
+                  <>
+                    <Expand size={12} />
+                    展开全部
+                  </>
+                )}
               </button>
             </div>
           )}
