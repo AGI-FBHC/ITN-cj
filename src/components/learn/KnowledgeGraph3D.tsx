@@ -22,16 +22,16 @@ const NODE_COLORS = {
     learned: '#6BA080',
   },
   topic: {
-    base: '#D4E4D8',
-    hover: '#E8C9A0',
-    selected: '#9BC5AC',
-    learned: '#B8D4C0',
+    base: '#5B8DB8',
+    hover: '#E7B45A',
+    selected: '#3A6B8F',
+    learned: '#7EB6D9',
   },
 };
 
 const GLOW_COLORS = {
   domain: '#E7B45A',
-  topic: '#9BC5AC',
+  topic: '#7EB6D9',
 };
 
 const PROGRESS_COLORS = {
@@ -258,7 +258,7 @@ function DirectionMarker({ position, color, visible }: { position: THREE.Vector3
   
   useFrame((state) => {
     if (ref.current) {
-      const scale = 0.3 + Math.sin(state.clock.elapsedTime * 3) * 0.1;
+      const scale = 0.5 + Math.sin(state.clock.elapsedTime * 3) * 0.15;
       ref.current.scale.setScalar(scale);
     }
   });
@@ -407,6 +407,7 @@ function Node3D({
   const textAnchor = getTextAnchor();
 
   return (
+    <Billboard>
     <group
       position={position}
       onPointerEnter={(e) => {
@@ -480,7 +481,8 @@ function Node3D({
           {node.label}
         </Text>
       </Billboard>
-    </group>
+        </group>
+    </Billboard>
   );
 }
 
@@ -527,7 +529,7 @@ function Edge3D({
           key={i}
           points={[seg.p1, seg.p2]}
           color={color}
-          lineWidth={isChildLink ? 2 : hovered ? 3.5 : 2}
+          lineWidth={isChildLink ? 3 : hovered ? 4.5 : 3}
           transparent
           opacity={dimmed ? 0.06 : (hovered ? 0.9 : isChildLink ? 0.5 : 0.35) * (0.3 + seg.t * 0.7)}
           dashed={dashed}
@@ -662,7 +664,7 @@ function SceneContent({
           key={link.id}
           fromPos={link.from}
           toPos={link.to!}
-          color="#83A58F"
+          color="#4E7860"
           hovered={false}
           dimmed={false}
           isChildLink
@@ -772,3 +774,5 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
+
+
