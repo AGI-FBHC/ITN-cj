@@ -1,6 +1,6 @@
 /**
- * KnowledgeGraph3D — Obsidian 风格 3D 知识图谱（力导向网络版）
- * 修复：子节点连线、形变、进度描边
+ * KnowledgeGraph3D — Obsidian 风格 3D 知识图谱（平面发光版）
+ * 无反光，平面材质 + 边缘外发光
  */
 import { useRef, useMemo, useState, useCallback } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
@@ -12,6 +12,26 @@ const EDGE_COLORS: Record<EdgeKind, string> = {
   prereq: '#4E7860',
   related: '#B77552',
   applies: '#66725E',
+};
+
+const NODE_COLORS = {
+  domain: {
+    base: '#9BC5AC',
+    hover: '#E7B45A',
+    selected: '#4E7860',
+    learned: '#6BA080',
+  },
+  topic: {
+    base: '#B8D4C0',
+    hover: '#D4A373',
+    selected: '#83A58F',
+    learned: '#9BC5AC',
+  },
+};
+
+const GLOW_COLORS = {
+  domain: '#9BC5AC',
+  topic: '#B8D4C0',
 };
 
 const PROGRESS_COLORS = {
@@ -41,7 +61,6 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[]) {
     const positions = new Map<string, THREE.Vector3>();
     const domainNodes = nodes.filter((n) => n.kind === 'domain');
 
-    // 域节点球面分布
     domainNodes.forEach((node, i) => {
       const phi = Math.acos(1 - 2 * (i + 0.5) / domainNodes.length);
       const theta = Math.PI * (1 + Math.sqrt(5)) * i;
@@ -53,7 +72,6 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[]) {
       ));
     });
 
-    // 子节点围绕父节点，稍远一些
     nodes.filter((n) => n.kind === 'topic').forEach((node) => {
       const parentPos = positions.get(node.kpId);
       if (!parentPos) return;
@@ -66,12 +84,10 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[]) {
       ));
     });
 
-    // 力导向迭代
     for (let iter = 0; iter < 80; iter++) {
       const forces = new Map<string, THREE.Vector3>();
       positions.forEach((_, id) => forces.set(id, new THREE.Vector3()));
 
-      // 斥力
       const ids = Array.from(positions.keys());
       for (let i = 0; i < ids.length; i++) {
         for (let j = i + 1; j < ids.length; j++) {
@@ -85,7 +101,6 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[]) {
         }
       }
 
-      // 引力
       edges.forEach((edge) => {
         const p1 = positions.get(edge.from);
         const p2 = positions.get(edge.to);
@@ -97,7 +112,6 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[]) {
         forces.get(edge.to)!.sub(force);
       });
 
-      // 应用力
       positions.forEach((pos, id) => {
         const force = forces.get(id)!;
         pos.add(force.multiplyScalar(0.4));
@@ -110,7 +124,7 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[]) {
   }, [nodes, edges]);
 }
 
-/** 进度环组件 */
+/** 进度环 */
 function ProgressRing({
   radius,
   progress,
@@ -148,7 +162,7 @@ function ProgressRing({
   );
 }
 
-/** 3D 节点 */
+/** 3D 节点：平面材质 + 边缘外发光 */
 function Node3D({
   node,
   position,
@@ -171,29 +185,63 @@ function Node3D({
   onHover: (id: string | null) => void;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
+  const glowRef = useRef<THREE.Mesh>(null);
   const isDomain = node.kind === 'domain';
+  const colors = isDomain ? NODE_COLORS.domain : NODE_COLORS.topic;
 
   const getColor = () => {
-    if (selected) return '#4E7860';
-    if (hovered) return '#E7B45A';
-    if (learned) return '#6BA080';
-    return isDomain ? '#83A58F' : '#B8D4C0';
+    if (selected) return colors.selected;
+    if (hovered) return colors.hover;
+    if (learned) return colors.learned;
+    return colors.base;
   };
 
-  const baseSize = isDomain ? 2.2 : 1.1;
-  const targetScale = selected ? 1.3 : hovered ? 1.15 : 1;
+  const baseSize = isDomain ? 2.4 : 1.2;
+  const targetScale = selected ? 1.35 : hovered ? 1.2 : 1;
+  const glowColor = GLOW_COLORS[node.kind];
 
   useFrame((state) => {
     if (!meshRef.current) return;
-    const breathe = 1 + Math.sin(state.clock.elapsedTime * 1.5 + position.x * 0.1) * 0.04;
+    const breathe = 1 + Math.sin(state.clock.elapsedTime * 1.5 + position.x * 0.1) * 0.03;
     const current = meshRef.current.scale.x;
     const target = baseSize * breathe * targetScale;
     meshRef.current.scale.setScalar(THREE.MathUtils.lerp(current, target, 0.1));
+
+    // 光晕脉动
+    if (glowRef.current) {
+      const glowPulse = 1 + Math.sin(state.clock.elapsedTime * 2 + position.y) * 0.12;
+      glowRef.current.scale.setScalar(baseSize * 1.6 * glowPulse);
+      (glowRef.current.material as THREE.MeshBasicMaterial).opacity =
+        dimmed ? 0.03 : hovered ? 0.35 : selected ? 0.3 : 0.15;
+    }
   });
 
   return (
     <group position={position}>
-      {/* 主球体：高分段避免形变 */}
+      {/* 边缘外发光：多层光晕 */}
+      <mesh ref={glowRef}>
+        <sphereGeometry args={[1, 32, 32]} />
+        <meshBasicMaterial
+          color={glowColor}
+          transparent
+          opacity={0.15}
+          side={THREE.BackSide}
+          depthWrite={false}
+        />
+      </mesh>
+      {/* 外圈光晕 */}
+      <mesh scale={baseSize * 2}>
+        <sphereGeometry args={[1, 16, 16]} />
+        <meshBasicMaterial
+          color={glowColor}
+          transparent
+          opacity={dimmed ? 0.02 : hovered ? 0.2 : selected ? 0.15 : 0.06}
+          side={THREE.BackSide}
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* 主球体：纯平面材质，无反光 */}
       <mesh
         ref={meshRef}
         onClick={(e) => {
@@ -211,30 +259,26 @@ function Node3D({
         }}
       >
         <sphereGeometry args={[1, 64, 64]} />
-        <meshStandardMaterial
+        <meshBasicMaterial
           color={getColor()}
-          emissive={getColor()}
-          emissiveIntensity={hovered ? 0.7 : selected ? 0.5 : 0.25}
-          roughness={0.25}
-          metalness={0.5}
           transparent
-          opacity={dimmed ? 0.25 : 0.95}
+          opacity={dimmed ? 0.2 : 0.95}
         />
       </mesh>
 
       {/* 进度描边 */}
       <ProgressRing radius={baseSize} progress={progress} hovered={hovered} selected={selected} />
 
-      {/* 标签 */}
-      <Html distanceFactor={18} center>
+      {/* 标签：大号深色文字，高对比 */}
+      <Html distanceFactor={16} center>
         <div
-          className={`pointer-events-none select-none whitespace-nowrap text-center font-medium transition-all duration-200 ${
-            dimmed ? 'opacity-15' : hovered || selected ? 'opacity-100 scale-110' : 'opacity-85'
+          className={`pointer-events-none select-none whitespace-nowrap text-center font-semibold transition-all duration-200 ${
+            dimmed ? 'opacity-10' : hovered || selected ? 'opacity-100 scale-110' : 'opacity-90'
           }`}
           style={{
-            color: hovered || selected ? '#3D4A3A' : '#5A6553',
-            fontSize: isDomain ? '15px' : '12px',
-            textShadow: '0 1px 3px rgba(247,245,238,0.9), 0 0 10px rgba(247,245,238,0.6)',
+            color: '#3D4A3A',
+            fontSize: isDomain ? '18px' : '14px',
+            textShadow: '0 1px 2px rgba(247,245,238,0.8), 0 0 6px rgba(247,245,238,0.5)',
           }}
         >
           {node.label}
@@ -343,7 +387,6 @@ function SceneContent({
     });
   }, [nodes, expandedKpId]);
 
-  // 子节点到父节点的连线
   const childLinks = useMemo(() => {
     if (!expandedKpId) return [];
     const parentPos = layout.get(expandedKpId);
@@ -360,9 +403,8 @@ function SceneContent({
 
   return (
     <>
-      <ambientLight intensity={0.55} />
-      <directionalLight position={[25, 25, 25]} intensity={0.9} />
-      <directionalLight position={[-25, -25, 15]} intensity={0.4} color="#9BC5AC" />
+      <ambientLight intensity={0.7} />
+      <directionalLight position={[25, 25, 25]} intensity={0.6} />
 
       {/* 语义边 */}
       {edges.map((edge) => {
@@ -404,7 +446,6 @@ function SceneContent({
         const isRelated = relatedNodes.has(node.id);
         const isDimmed = hoveredId && !isRelated;
         
-        // 计算进度
         let progress = 0;
         if (node.kind === 'domain') {
           progress = mastery[node.kpId] ?? 0;
@@ -493,4 +534,3 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
-
