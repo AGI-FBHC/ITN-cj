@@ -91,7 +91,7 @@ import { GrassTuft, Sprout } from '@/components/heal/Flora';
 import { useAmbient } from '@/components/heal/useAmbient';
 import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
-import type { PersonalizedLearningUnit, TtsSpeed } from '@/lib/api';
+import type { PersonalizedLearningUnit, TtsSpeed, UserProfileSettings } from '@/lib/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { lectureMdComponents } from '@/components/resources/lecture-markdown';
@@ -868,13 +868,19 @@ export default function LearnUnit() {
     setPptSpeed(speed);
     setPptVoiceSaving(true);
     try {
-      const profile = await api.getUserProfile();
-      const payload: typeof profile & Record<string, unknown> = { ...profile, profileCompleted: profile.profileCompleted, ttsVoice: voice, ttsSpeed: speed };
-      delete payload.userId;
-      delete payload.currentGoalId;
-      delete payload.createdAt;
-      delete payload.updatedAt;
-      await api.updateUserProfile(payload);
+      let payload: Record<string, unknown>;
+      try {
+        const profile = await api.getUserProfile();
+        payload = { ...profile, profileCompleted: profile.profileCompleted, ttsVoice: voice, ttsSpeed: speed };
+        delete payload.userId;
+        delete payload.currentGoalId;
+        delete payload.createdAt;
+        delete payload.updatedAt;
+      } catch {
+        // 画像尚未创建（老前端先 GET 再 PUT 的流程对未建档账号不适用）：用最小 payload 走 PUT upsert，由后端自动创建画像行。
+        payload = { profileCompleted: false, ttsVoice: voice, ttsSpeed: speed };
+      }
+      await api.updateUserProfile(payload as UserProfileSettings);
     } catch (reason) {
       toast.error(reason instanceof Error ? reason.message : '音色设置保存失败');
     } finally {
