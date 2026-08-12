@@ -236,43 +236,38 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpIds: Set<
   }, [nodes, expandedKpIds, domainLayout]);
 }
 
-/** 沿边涌动的方向箭头：锐角符号像 > / < 一样从源节点流向目标节点 */
-function FlowPulses({
+/** 有向边末端的静态箭头：锐角符号 > 指向目标节点 */
+function EdgeArrow({
   fromPos,
   toPos,
   color,
   dimmed = false,
   hovered = false,
-  count = 3,
-  speed = 0.22,
 }: {
   fromPos: THREE.Vector3;
   toPos: THREE.Vector3;
   color: string;
   dimmed?: boolean;
   hovered?: boolean;
-  count?: number;
-  speed?: number;
 }) {
-  const groupRefs = useRef<Array<THREE.Group | null>>([]);
-  const textRefs = useRef<Array<THREE.Mesh | null>>([]);
+  const groupRef = useRef<THREE.Group | null>(null);
+  const textRef = useRef<THREE.Mesh | null>(null);
   const camera = useThree((s) => s.camera);
 
-  // 两端各留出节点半径的空隙，箭头只在边的可见部分流动
-  const { start, end } = useMemo(() => {
+  // 箭头放在目标节点前留出的空隙处
+  const position = useMemo(() => {
     const dir = toPos.clone().sub(fromPos);
     const len = Math.max(dir.length(), 0.001);
     dir.normalize();
     const pad = Math.min(4, len * 0.2);
-    return {
-      start: fromPos.clone().add(dir.clone().multiplyScalar(pad)),
-      end: toPos.clone().sub(dir.clone().multiplyScalar(pad)),
-    };
+    return toPos.clone().sub(dir.multiplyScalar(pad));
   }, [fromPos, toPos]);
 
-  useFrame((state) => {
-    const time = state.clock.elapsedTime * speed;
-    // 用相机坐标系把边方向投影到成像平面上，避免透视投影在近距离时端点反转
+  useFrame(() => {
+    const g = groupRef.current;
+    if (!g) return;
+
+    // 用相机坐标系把边方向投影到成像平面，让箭头始终顺着边指向目标
     const m = camera.matrixWorld.elements;
     const camRight = new THREE.Vector3(m[0], m[4], m[8]);
     const camUp = new THREE.Vector3(m[1], m[5], m[9]);
@@ -285,45 +280,32 @@ function FlowPulses({
       angle = Math.atan2(proj.dot(camUp), proj.dot(camRight));
     }
 
-    for (let i = 0; i < count; i++) {
-      const g = groupRefs.current[i];
-      if (!g) continue;
-      const t = (time + i / count) % 1;
-      // 位置
-      g.position.copy(start).lerp(end, t);
-      // 大小：两端淡入淡出，中段最亮
-      const fade = Math.sin(t * Math.PI);
-      g.scale.setScalar((0.5 + fade * 0.25) * (hovered ? 1.3 : 1));
-      // 始终面朝相机并旋转到边方向
-      g.lookAt(camera.position);
-      g.rotateZ(angle);
+    g.position.copy(position);
+    g.scale.setScalar(hovered ? 1.1 : 1);
+    g.lookAt(camera.position);
+    g.rotateZ(angle);
 
-      const mesh = textRefs.current[i];
-      if (mesh && (mesh.material as any).opacity !== undefined) {
-        (mesh.material as any).opacity = dimmed ? 0 : fade * (hovered ? 1 : 0.85);
-        (mesh.material as any).transparent = true;
-      }
+    const mesh = textRef.current;
+    if (mesh && (mesh.material as any).opacity !== undefined) {
+      (mesh.material as any).opacity = dimmed ? 0.15 : hovered ? 1 : 0.85;
+      (mesh.material as any).transparent = true;
     }
   });
 
   return (
-    <group>
-      {Array.from({ length: count }).map((_, i) => (
-        <group key={i} ref={(el) => { groupRefs.current[i] = el; }}>
-          <Text
-            ref={(el) => { textRefs.current[i] = el; }}
-            fontSize={0.9}
-            color={color}
-            anchorX="center"
-            anchorY="middle"
-            outlineWidth={0.05}
-            outlineColor="#ffffff"
-            outlineOpacity={0.6}
-          >
-            ›
-          </Text>
-        </group>
-      ))}
+    <group ref={(el) => { groupRef.current = el; }}>
+      <Text
+        ref={(el) => { textRef.current = el; }}
+        fontSize={0.9}
+        color={color}
+        anchorX="center"
+        anchorY="middle"
+        outlineWidth={0.05}
+        outlineColor="#ffffff"
+        outlineOpacity={0.6}
+      >
+        ›
+      </Text>
     </group>
   );
 }
@@ -812,8 +794,8 @@ function Edge3D({
         />
       ))}
 
-      {/* 方向涌动：光点持续从源节点流向目标节点 */}
-      <FlowPulses
+      {/* 末端静态箭头：指向目标节点 */}
+      <EdgeArrow
         fromPos={fromPos}
         toPos={toPos}
         color={color}
