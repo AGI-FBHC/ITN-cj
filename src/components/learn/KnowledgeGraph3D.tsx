@@ -1277,19 +1277,9 @@ export default function KnowledgeGraph3D({
         🖱️ 拖拽旋转 · 滚轮缩放 · 悬停查看关联 · 点击章节展开
       </div>
 
-      {/* 图例 */}
-      <div className="absolute right-4 top-4 flex flex-col gap-2 rounded-lg bg-white/90 p-3 backdrop-blur-sm border border-hairline/50">
-        {(Object.keys(EDGE_COLORS) as EdgeKind[]).map((kind) => (
-          <div key={kind} className="flex items-center gap-2 text-[11px] text-ink-2">
-            <div className="h-0.5 w-6 rounded-full" style={{ backgroundColor: EDGE_COLORS[kind] }} />
-            <span>{kind === 'prereq' ? '先学它' : kind === 'related' ? '互相印证' : '规范约束'}</span>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
-
 
 
 
