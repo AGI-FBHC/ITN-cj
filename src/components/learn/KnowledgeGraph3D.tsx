@@ -70,50 +70,20 @@ function RotatingScene({ children, shouldRotate }: { children: React.ReactNode; 
   return <group ref={groupRef}>{children}</group>;
 }
 
-/** 3D 力导向布局：子节点 XMind 分支式排列 */
-function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpId: string | null) {
+/** 域节点固定布局（只计算一次） */
+function useDomainLayout(nodes: GraphNode[], edges: GraphEdge[]) {
   return useMemo(() => {
     const positions = new Map<string, THREE.Vector3>();
     const domainNodes = nodes.filter((n) => n.kind === 'domain');
 
-    // 域节点球面分布
     domainNodes.forEach((node, i) => {
       const phi = Math.acos(1 - 2 * (i + 0.5) / domainNodes.length);
       const theta = Math.PI * (1 + Math.sqrt(5)) * i;
-      const r = 28 + Math.random() * 8;
+      const r = 28 + (i * 13 % 8); // 用固定值代替随机数
       positions.set(node.id, new THREE.Vector3(
         r * Math.sin(phi) * Math.cos(theta),
         r * Math.sin(phi) * Math.sin(theta),
-        r * Math.cos(phi) * (0.7 + Math.random() * 0.3),
-      ));
-    });
-
-    // 子节点：XMind 分支式排列（并列、靠近、文字在外部）
-    if (expandedKpId) {
-      const parentPos = positions.get(expandedKpId);
-      if (parentPos) {
-        const children = nodes.filter((n) => n.kind === 'topic' && n.kpId === expandedKpId);
-        // 子节点在父节点右侧垂直排列
-        const startX = parentPos.x + 18; // 更靠近
-        const startY = parentPos.y - (children.length - 1) * 4; // 垂直居中
-        children.forEach((node, i) => {
-          positions.set(node.id, new THREE.Vector3(
-            startX + (i % 2) * 8, // 两列交错，更紧凑
-            startY + i * 8, // 垂直间隔
-            parentPos.z + 2, // 稍微靠前
-          ));
-        });
-      }
-    }
-
-    // 其他未展开的子节点放在远处（不显示）
-    nodes.filter((n) => n.kind === 'topic' && n.kpId !== expandedKpId).forEach((node) => {
-      const parentPos = positions.get(node.kpId);
-      if (!parentPos) return;
-      positions.set(node.id, new THREE.Vector3(
-        parentPos.x + (Math.random() - 0.5) * 50,
-        parentPos.y + (Math.random() - 0.5) * 50,
-        parentPos.z + (Math.random() - 0.5) * 30,
+        r * Math.cos(phi) * (0.7 + (i * 7 % 3) * 0.1), // 固定值
       ));
     });
 
@@ -122,11 +92,7 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpId: strin
       const forces = new Map<string, THREE.Vector3>();
       positions.forEach((_, id) => forces.set(id, new THREE.Vector3()));
 
-      const ids = Array.from(positions.keys()).filter((id) => {
-        const node = nodes.find((n) => n.id === id);
-        return node?.kind === 'domain';
-      });
-
+      const ids = Array.from(positions.keys());
       for (let i = 0; i < ids.length; i++) {
         for (let j = i + 1; j < ids.length; j++) {
           const p1 = positions.get(ids[i])!;
@@ -154,8 +120,6 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpId: strin
       });
 
       positions.forEach((pos, id) => {
-        const node = nodes.find((n) => n.id === id);
-        if (node?.kind !== 'domain') return;
         const force = forces.get(id)!;
         pos.add(force.multiplyScalar(0.4));
         const maxR = 45;
@@ -164,9 +128,47 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpId: strin
     }
 
     return positions;
-  }, [nodes, edges, expandedKpId]);
+  }, [nodes, edges]);
 }
 
+/** 3D 布局：固定域节点 + 动态子节点 */
+function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpId: string | null) {
+  const domainLayout = useDomainLayout(nodes, edges);
+
+  return useMemo(() => {
+    const positions = new Map(domainLayout);
+
+    // 子节点：XMind 分支式排列
+    if (expandedKpId) {
+      const parentPos = positions.get(expandedKpId);
+      if (parentPos) {
+        const children = nodes.filter((n) => n.kind === 'topic' && n.kpId === expandedKpId);
+        const startX = parentPos.x + 18;
+        const startY = parentPos.y - (children.length - 1) * 4;
+        children.forEach((node, i) => {
+          positions.set(node.id, new THREE.Vector3(
+            startX + (i % 2) * 8,
+            startY + i * 8,
+            parentPos.z + 2,
+          ));
+        });
+      }
+    }
+
+    // 未展开的子节点放在父节点附近但不显示
+    nodes.filter((n) => n.kind === 'topic' && n.kpId !== expandedKpId).forEach((node) => {
+      const parentPos = positions.get(node.kpId);
+      if (!parentPos) return;
+      positions.set(node.id, new THREE.Vector3(
+        parentPos.x + 10,
+        parentPos.y,
+        parentPos.z,
+      ));
+    });
+
+    return positions;
+  }, [nodes, expandedKpId, domainLayout]);
+}
 /** 进度环 */
 function ProgressRing({
   radius,
@@ -592,3 +594,5 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
+
+
