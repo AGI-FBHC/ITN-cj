@@ -207,35 +207,24 @@ function Node3D({
     const target = baseSize * breathe * targetScale;
     meshRef.current.scale.setScalar(THREE.MathUtils.lerp(current, target, 0.1));
 
-    // 光晕脉动
+    // 光晕脉动：基于主球体大小，不是无限放大
     if (glowRef.current) {
-      const glowPulse = 1 + Math.sin(state.clock.elapsedTime * 2 + position.y) * 0.12;
-      glowRef.current.scale.setScalar(baseSize * 1.6 * glowPulse);
+      const glowPulse = 1 + Math.sin(state.clock.elapsedTime * 2 + position.y) * 0.1;
+      glowRef.current.scale.setScalar(1.3 * glowPulse);
       (glowRef.current.material as THREE.MeshBasicMaterial).opacity =
-        dimmed ? 0.03 : hovered ? 0.35 : selected ? 0.3 : 0.15;
+        dimmed ? 0.03 : hovered ? 0.4 : selected ? 0.35 : 0.2;
     }
   });
 
   return (
     <group position={position}>
-      {/* 边缘外发光：多层光晕 */}
-      <mesh ref={glowRef}>
+      {/* 边缘外发光：紧贴主球体的光晕 */}
+      <mesh ref={glowRef} scale={1.3}>
         <sphereGeometry args={[1, 32, 32]} />
         <meshBasicMaterial
           color={glowColor}
           transparent
-          opacity={0.15}
-          side={THREE.BackSide}
-          depthWrite={false}
-        />
-      </mesh>
-      {/* 外圈光晕 */}
-      <mesh scale={baseSize * 2}>
-        <sphereGeometry args={[1, 16, 16]} />
-        <meshBasicMaterial
-          color={glowColor}
-          transparent
-          opacity={dimmed ? 0.02 : hovered ? 0.2 : selected ? 0.15 : 0.06}
+          opacity={0.2}
           side={THREE.BackSide}
           depthWrite={false}
         />
