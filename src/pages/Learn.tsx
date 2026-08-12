@@ -1,18 +1,13 @@
-/**
- * Learn `/learn` — 知识地图（学习者「学 · 练」主入口）· 一页三件套
- * 桌面端：左 = 知识图谱（结构唯一载体，场景控件驱动），右 = 单元详情（操作唯一载体）+ 章节速览（扫描唯一载体）。
- * 三向联动：点图谱域 / 点速览行 → 选中同步 → 详情更新。「图谱/列表」视图切换已删除（信息只此一份）。
- * 移动端：图谱隐藏，单元卡片作为小屏布局。
- */
 import { useState } from 'react';
 import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowRight, Loader2 } from 'lucide-react';
+import { ArrowRight, Loader2, Box, Map } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
 import { useLearningMap } from '@/hooks/useLearningMap';
 import KnowledgeGraph from '@/components/learn/KnowledgeGraph';
+import KnowledgeGraph3D from '@/components/learn/KnowledgeGraph3D';
 import type { GraphScene } from '@/components/learn/KnowledgeGraph';
 import KpDetailPanel from '@/components/learn/KpDetailPanel';
 import UnitQuickList from '@/components/learn/UnitQuickList';
@@ -38,6 +33,7 @@ export default function Learn() {
   const knowledgePoints = map.domains;
   const reportPath = map.path;
   const [scene, setScene] = useState<GraphScene>('order');
+  const [viewMode, setViewMode] = useState<'2d' | '3d'>('3d');
   const [selectedKp, setSelectedKp] = useState<string | null>(null);
   const [expandedKp, setExpandedKp] = useState<string | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<number | null>(null);
@@ -76,22 +72,55 @@ export default function Learn() {
           </p>
         </div>
 
-        {/* 场景切换（图谱是桌面端形态，控件同样只在桌面端出现） */}
-        <div className="hidden items-center gap-0.5 rounded-[11px] border border-hairline bg-paper p-0.5 lg:inline-flex">
-          {SCENES.map((s) => (
+        {/* 场景切换 + 2D/3D 切换 */}
+        <div className="flex items-center gap-2">
+          {/* 2D/3D 切换 */}
+          <div className="hidden items-center gap-0.5 rounded-[11px] border border-hairline bg-paper p-0.5 lg:inline-flex">
             <button
-              key={s.key}
               type="button"
-              onClick={() => setScene(s.key)}
-              title={s.hint}
+              onClick={() => setViewMode('2d')}
+              title="2D 平面视图"
               className={cn(
-                'rounded-[9px] px-3 py-1.5 text-[12.5px] font-medium transition-all',
-                scene === s.key ? 'bg-card-warm text-ink shadow-xs ring-1 ring-hairline' : 'text-ink-muted hover:text-ink',
+                'rounded-[9px] px-3 py-1.5 text-[12.5px] font-medium transition-all flex items-center gap-1.5',
+                viewMode === '2d' ? 'bg-card-warm text-ink shadow-xs ring-1 ring-hairline' : 'text-ink-muted hover:text-ink',
               )}
             >
-              {s.label}
+              <Map size={14} />
+              2D
             </button>
-          ))}
+            <button
+              type="button"
+              onClick={() => setViewMode('3d')}
+              title="3D 立体视图（Obsidian 风格）"
+              className={cn(
+                'rounded-[9px] px-3 py-1.5 text-[12.5px] font-medium transition-all flex items-center gap-1.5',
+                viewMode === '3d' ? 'bg-card-warm text-ink shadow-xs ring-1 ring-hairline' : 'text-ink-muted hover:text-ink',
+              )}
+            >
+              <Box size={14} />
+              3D
+            </button>
+          </div>
+
+          {/* 场景切换（仅 2D 模式显示） */}
+          {viewMode === '2d' && (
+            <div className="hidden items-center gap-0.5 rounded-[11px] border border-hairline bg-paper p-0.5 lg:inline-flex">
+              {SCENES.map((s) => (
+                <button
+                  key={s.key}
+                  type="button"
+                  onClick={() => setScene(s.key)}
+                  title={s.hint}
+                  className={cn(
+                    'rounded-[9px] px-3 py-1.5 text-[12.5px] font-medium transition-all',
+                    scene === s.key ? 'bg-card-warm text-ink shadow-xs ring-1 ring-hairline' : 'text-ink-muted hover:text-ink',
+                  )}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </motion.div>
 
@@ -116,7 +145,21 @@ export default function Learn() {
       >
         {/* 上层只承载图谱与按需详情；章节速览在下方独立占满全局宽度。 */}
         <motion.div layout="position" className="min-w-0">
-<KnowledgeGraph scene={scene} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpId={expandedKp} onExpandedKpChange={setExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} />
+          {viewMode === '3d' ? (
+            <KnowledgeGraph3D
+              nodes={map.graphNodes}
+              edges={map.graphEdges}
+              selectedKpId={selectedKp}
+              expandedKpId={expandedKp}
+              onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }}
+              onSelectTopic={setSelectedTopic}
+              onExpandedKpChange={setExpandedKp}
+              learned={map.learned}
+              mastery={map.mastery}
+            />
+          ) : (
+            <KnowledgeGraph scene={scene} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpId={expandedKp} onExpandedKpChange={setExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} />
+          )}
         </motion.div>
         <AnimatePresence initial={false} mode="popLayout">
         {selectedKp && <motion.div
