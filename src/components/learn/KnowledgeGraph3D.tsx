@@ -362,7 +362,7 @@ function Node3D({
       <Billboard>
       <Text
         position={isDomain ? [0, 0, 4] : [3.5, 0, 3]}
-        fontSize={isDomain ? 2 : 1.2}
+        fontSize={isDomain ? 1.6 : 1.2}
         color={isDomain ? '#FFFFFF' : '#3D4A3A'}
         anchorX={isDomain ? 'center' : 'left'}
         anchorY="middle"
@@ -636,6 +636,7 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
+
 
 
 
