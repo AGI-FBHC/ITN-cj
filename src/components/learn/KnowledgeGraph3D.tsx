@@ -29,10 +29,17 @@ const NODE_COLORS = {
   },
 };
 
-// 描边发光配色：橙黄偏绿渐变，最里面颜色最深，由内而向外淡出
+// 描边发光配色：与节点同色系，最里面颜色最深，由内而向外淡出
+// 域节点（绿球）发翡翠绿光
 const STROKE_COLORS = {
-  inner: '#D68A22',
-  outer: '#AABD4E',
+  inner: '#2F6B4F',
+  outer: '#8FD3AE',
+};
+
+// 子节点（蓝球）发天蓝光
+const TOPIC_STROKE_COLORS = {
+  inner: '#2E6BA8',
+  outer: '#8FC3F2',
 };
 
 const PROGRESS_COLORS = {
@@ -657,7 +664,7 @@ function ChildNode({
             vertexShader={glowVertexShader}
             fragmentShader={innerStrokeFragmentShader}
             uniforms={{
-              glowColor: { value: new THREE.Color(STROKE_COLORS.inner) },
+              glowColor: { value: new THREE.Color(TOPIC_STROKE_COLORS.inner) },
               intensity: { value: hovered ? 1.3 : selected ? 1.15 : 1.0 },
             }}
             transparent
@@ -672,7 +679,7 @@ function ChildNode({
             vertexShader={glowVertexShader}
             fragmentShader={outerStrokeFragmentShader}
             uniforms={{
-              glowColor: { value: new THREE.Color(STROKE_COLORS.outer) },
+              glowColor: { value: new THREE.Color(TOPIC_STROKE_COLORS.outer) },
               intensity: { value: hovered ? 1.3 : selected ? 1.15 : 1.0 },
               innerF: { value: 0.49 },
             }}
