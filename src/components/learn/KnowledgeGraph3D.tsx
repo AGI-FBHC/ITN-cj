@@ -434,8 +434,9 @@ function EdgeArrow({
     const dir = curTo.current.clone().sub(curFrom.current);
     const len = Math.max(dir.length(), 0.001);
     dir.normalize();
-    // 节点选中时会放大到 1.3 倍（半径 3.9），箭头尖端要始终留在球外
-    const pad = Math.min(4.9, len * 0.22);
+    // 节点选中时会放大到 1.3 倍（半径 3.9），箭头尖端要始终留在球外；
+    // 间距不随边长缩小（短边也要固定在球外），只对极短边兜底
+    const pad = Math.min(4.9, len * 0.45);
     mesh.position.copy(curTo.current).addScaledVector(dir, -pad);
     // 圆锥默认沿 +Y 指向尖端，旋转到边的方向
     mesh.quaternion.setFromUnitVectors(upAxis, dir);
@@ -956,8 +957,8 @@ function Edge3D({
       const dir = curTo.current.clone().sub(curFrom.current);
       const len = Math.max(dir.length(), 0.001);
       dir.normalize();
-      const startPad = Math.min(3.7, len * 0.15);
-      const endPad = Math.min(5.0, len * 0.25);
+      const startPad = Math.min(3.7, len * 0.4);
+      const endPad = Math.min(5.0, len * 0.5);
       const start = curFrom.current.clone().addScaledVector(dir, startPad);
       const end = curTo.current.clone().addScaledVector(dir, -endPad);
       line.geometry.setPositions([start.x, start.y, start.z, end.x, end.y, end.z]);
