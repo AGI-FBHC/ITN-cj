@@ -29,10 +29,10 @@ const NODE_COLORS = {
   },
 };
 
-// 描边发光配色：蓝色系，最里面颜色最深，由内而向外淡出
+// 描边发光配色：橙黄偏绿渐变，最里面颜色最深，由内而向外淡出
 const STROKE_COLORS = {
-  inner: '#2E6BA8',
-  outer: '#5BA3E8',
+  inner: '#D68A22',
+  outer: '#AABD4E',
 };
 
 const PROGRESS_COLORS = {
@@ -395,6 +395,7 @@ function EdgeArrow({
   fromOffset,
   toOffset,
   animRef,
+  fadeOnFocus,
 }: {
   fromPos: THREE.Vector3;
   toPos: THREE.Vector3;
@@ -404,6 +405,7 @@ function EdgeArrow({
   fromOffset?: THREE.Vector3;
   toOffset?: THREE.Vector3;
   animRef: BlendRef;
+  fadeOnFocus?: boolean;
 }) {
   const meshRef = useRef<THREE.Mesh | null>(null);
   const curFrom = useRef(fromPos.clone());
@@ -429,7 +431,8 @@ function EdgeArrow({
     mesh.position.copy(curTo.current).addScaledVector(dir, -pad);
     // 圆锥默认沿 +Y 指向尖端，旋转到边的方向
     mesh.quaternion.setFromUnitVectors(upAxis, dir);
-    (mesh.material as THREE.MeshBasicMaterial).opacity = dimmed ? 0.12 : hovered ? 1 : 0.9;
+    const focusFade = fadeOnFocus ? 1 - 0.65 * b : 1;
+    (mesh.material as THREE.MeshBasicMaterial).opacity = (dimmed ? 0.12 : hovered ? 1 : 0.9) * focusFade;
     mesh.scale.setScalar(hovered ? 1.2 : 1);
   });
 
@@ -726,6 +729,7 @@ function Node3D({
   onHover,
   focusOffset,
   animRef,
+  fadeOnFocus,
 }: {
   node: GraphNode;
   position: THREE.Vector3;
@@ -739,9 +743,14 @@ function Node3D({
   onHover: (id: string | null) => void;
   focusOffset?: THREE.Vector3;
   animRef: BlendRef;
+  /** 聚焦其他节点时，本节点提高透明度退到背景 */
+  fadeOnFocus?: boolean;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group | null>(null);
+  const textRef = useRef<THREE.Mesh | null>(null);
+  const innerStrokeRef = useRef<THREE.ShaderMaterial | null>(null);
+  const outerStrokeRef = useRef<THREE.ShaderMaterial | null>(null);
   const isDomain = node.kind === 'domain';
   const colors = isDomain ? NODE_COLORS.domain : NODE_COLORS.topic;
 
@@ -760,9 +769,30 @@ function Node3D({
       groupRef.current.position.copy(position);
       if (focusOffset) groupRef.current.position.addScaledVector(focusOffset, animRef.current.blend);
     }
-    if (!meshRef.current) return;
-    const current = meshRef.current.scale.x;
-    meshRef.current.scale.setScalar(THREE.MathUtils.lerp(current, baseSize * targetScale, 0.1));
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    const current = mesh.scale.x;
+    mesh.scale.setScalar(THREE.MathUtils.lerp(current, baseSize * targetScale, 0.1));
+
+    // 聚焦时远处节点提高透明度退到背景，突出聚焦节点
+    const focusFade = fadeOnFocus ? 1 - 0.72 * animRef.current.blend : 1;
+    const mat = mesh.material as THREE.MeshBasicMaterial;
+    mat.transparent = true;
+    mat.opacity = (dimmed ? 0.2 : 1) * focusFade;
+
+    if (innerStrokeRef.current) {
+      innerStrokeRef.current.uniforms.intensity.value =
+        (dimmed ? 0.2 : hovered ? 1.3 : selected ? 1.15 : 1.0) * focusFade;
+    }
+    if (outerStrokeRef.current) {
+      outerStrokeRef.current.uniforms.intensity.value =
+        (dimmed ? 0.15 : hovered ? 1.3 : selected ? 1.15 : 1.0) * focusFade;
+    }
+    const text = textRef.current;
+    if (text && (text.material as any).opacity !== undefined) {
+      (text.material as any).transparent = true;
+      (text.material as any).opacity = focusFade;
+    }
   });
 
   // 根据方向计算文字位置（子节点仅左右展开）
@@ -810,6 +840,7 @@ function Node3D({
         <mesh scale={1.015}>
           <sphereGeometry args={[1, 64, 64]} />
           <shaderMaterial
+            ref={innerStrokeRef}
             vertexShader={glowVertexShader}
             fragmentShader={innerStrokeFragmentShader}
             uniforms={{
@@ -825,6 +856,7 @@ function Node3D({
         <mesh scale={1.16}>
           <sphereGeometry args={[1, 48, 48]} />
           <shaderMaterial
+            ref={outerStrokeRef}
             vertexShader={glowVertexShader}
             fragmentShader={outerStrokeFragmentShader}
             uniforms={{
@@ -845,6 +877,7 @@ function Node3D({
       {/* 标签 */}
       <Billboard>
         <Text
+          ref={textRef}
           position={getTextPosition()}
           fontSize={isDomain ? 1.6 : 1.2}
           color={isDomain ? '#FFFFFF' : '#3D4A3A'}
@@ -873,6 +906,7 @@ function Edge3D({
   fromOffset,
   toOffset,
   animRef,
+  fadeOnFocus,
 }: {
   fromPos: THREE.Vector3;
   toPos: THREE.Vector3;
@@ -884,6 +918,7 @@ function Edge3D({
   fromOffset?: THREE.Vector3;
   toOffset?: THREE.Vector3;
   animRef: BlendRef;
+  fadeOnFocus?: boolean;
 }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const lineRef = useRef<any>(null);
@@ -906,6 +941,9 @@ function Edge3D({
         curTo.current.x, curTo.current.y, curTo.current.z,
       ]);
       if (dashed) line.computeLineDistances();
+      // 聚焦时无关连线同步淡出
+      const focusFade = fadeOnFocus ? 1 - 0.65 * b : 1;
+      line.material.opacity = (dimmed ? 0.06 : hovered ? 0.9 : isChildLink ? 0.5 : 0.5) * focusFade;
     }
   });
 
@@ -934,6 +972,7 @@ function Edge3D({
         fromOffset={fromOffset}
         toOffset={toOffset}
         animRef={animRef}
+        fadeOnFocus={fadeOnFocus}
       />
     </group>
   );
@@ -955,6 +994,7 @@ function SceneContent({
   topicProgress,
   onTopicClick,
   animRef,
+  focusId,
 }: {
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -962,6 +1002,7 @@ function SceneContent({
   selectedKpId: string | null;
   expandedKpIds: Set<string>;
   animRef: BlendRef;
+  focusId: string | null;
   onSelectKp: (id: string | null) => void;
   onSelectTopic: (index: number | null) => void;
   onExpandedKpChange: (id: string) => void;
@@ -1034,6 +1075,7 @@ function SceneContent({
             fromOffset={layout.focusOffsets.get(edge.from)}
             toOffset={layout.focusOffsets.get(edge.to)}
             animRef={animRef}
+            fadeOnFocus={focusId !== null && edge.from !== focusId && edge.to !== focusId}
           />
         );
       })}
@@ -1090,6 +1132,7 @@ function SceneContent({
             onHover={setHoveredId}
             focusOffset={layout.focusOffsets.get(node.id)}
             animRef={animRef}
+            fadeOnFocus={focusId !== null && node.id !== focusId}
           />
         );
       })}
@@ -1166,6 +1209,7 @@ export default function KnowledgeGraph3D({
             topicProgress={topicProgress}
             onTopicClick={onTopicClick}
             animRef={blendRef}
+            focusId={focusId}
           />
         </RotatingScene>
         <CameraFocus focusTarget={focusTarget} layout={layout} sceneRef={sceneRef} blendRef={blendRef} topicCountByKp={topicCountByKp} />
