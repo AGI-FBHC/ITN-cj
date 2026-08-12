@@ -494,11 +494,17 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
     ?? pathNodes.find((n) => n.status === 'todo')?.status
     ?? pathNodes[0]?.status
     ?? null;
+  /* 四个推荐：优先展示最近已学内容（我的已学路径），不足用未学完资源补位，最后用子知识点生成推荐补满。 */
+  const learnedResources = [...res]
+    .filter((item) => item.id && item.learned)
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   const unfinishedResources = [...res]
     .filter((item) => item.id && !item.learned)
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
     .slice(0, 4);
-  const recommendationCount = Math.max(0, 4 - unfinishedResources.length);
+  const shownLearned = learnedResources.slice(0, 4);
+  const shownUnfinished = unfinishedResources.slice(0, Math.max(0, 4 - shownLearned.length));
+  const recommendationCount = Math.max(0, 4 - shownLearned.length - shownUnfinished.length);
   const topicRecommendations = Array.from({ length: recommendationCount }, (_, index) => {
     const childIndex = index % Math.max(1, kp.coreTopics.length);
     const forms = Object.keys(FORM_META) as ResourceForm[];
@@ -550,10 +556,16 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
 
       {/* 书本级只做继续学习与子知识点推荐，不允许直接按整本生成。 */}
       {!selectedTopicName && <div>
-        <div className="mb-2"><div className="text-[12px] font-medium text-ink-2">接下来学什么</div><p className="mt-0.5 text-[10.5px] leading-4 text-ink-muted">优先继续最近未完成的内容；要生成新内容，请先进入具体子知识点。</p></div>
+      {/* 书本级推荐：优先展示最近已学内容（我的已学路径），未学完资源自动补位。 */}
+        <div className="mb-2"><div className="text-[12px] font-medium text-ink-2">已学内容 · 我的已学路径</div><p className="mt-0.5 text-[10.5px] leading-4 text-ink-muted">最近学过的资源优先展示；未学完的内容自动排在后面。</p></div>
         <div className="space-y-2">
-          {unfinishedResources.map((item) => {
-            const meta = FORM_META[item.form];
+          {shownLearned.map((item) => {
+            const meta = FORM_META[item.form] ?? { label: '学习资源', icon: BookOpen };
+            const Icon = meta.icon;
+            return <button key={item.id} type="button" onClick={() => navigate(`/learn/resource/${item.id}`)} className="group flex w-full items-center gap-3 rounded-[10px] border border-brand/45 bg-brand-tint/40 px-3 py-2.5 text-left transition-all hover:border-brand/60 hover:bg-brand-tint"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand text-paper"><Icon size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium text-ink">已学 · {meta.label}</span><span className="block truncate text-[11px] text-ink-muted">{item.title}</span></span><ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" /></button>;
+          })}
+          {shownUnfinished.map((item) => {
+            const meta = FORM_META[item.form] ?? { label: '学习资源', icon: BookOpen };
             const Icon = meta.icon;
             return <button key={item.id} type="button" onClick={() => navigate(`/learn/resource/${item.id}`)} className="group flex w-full items-center gap-3 rounded-[10px] border border-hairline bg-paper px-3 py-2.5 text-left transition-all hover:border-brand/45 hover:bg-brand-tint/40"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-tint text-brand"><Icon size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium text-ink">继续学习 · {meta.label}</span><span className="block truncate text-[11px] text-ink-muted">{item.title}</span></span><ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" /></button>;
           })}

@@ -29,6 +29,9 @@ const NODE_COLORS = {
   },
 };
 
+// “我的已学路径”高亮环配色（醒目翠绿，与已学色区分）
+const LEARNED_HIGHLIGHT = '#2FBF71';
+
 // 描边发光配色：与节点同色系，最里面颜色最深，由内而向外淡出
 // 域节点（绿球）发翡翠绿光
 const STROKE_COLORS = {
@@ -63,6 +66,8 @@ interface KnowledgeGraph3DProps {
   topicProgress: Record<string, number>;
   /** 请求把某个域节点转到视野正前方（at 变化即重新触发） */
   focusTarget?: { id: string; at: number } | null;
+  /** 打开“我的已学路径”：高亮已学章节/子知识点 */
+  showLearned?: boolean;
   className?: string;
 }
 
@@ -495,6 +500,18 @@ function ProgressRing({
   );
 }
 
+/** “我的已学路径”高亮环：始终面向相机，环绕已学节点 */
+function LearnedHighlightRing({ radius }: { radius: number }) {
+  return (
+    <Billboard>
+      <mesh raycast={() => null} renderOrder={3} position={[0, 0, 0.02]}>
+        <ringGeometry args={[radius + 0.28, radius + 0.52, 64]} />
+        <meshBasicMaterial color={LEARNED_HIGHLIGHT} transparent opacity={0.95} side={THREE.DoubleSide} depthWrite={false} />
+      </mesh>
+    </Billboard>
+  );
+}
+
 /** 子节点平面：面向用户的纸面效果 */
 function ChildPlane({
   parentPos,
@@ -509,6 +526,7 @@ function ChildPlane({
   onNodeHover,
   parentOffset,
   animRef,
+  showLearned,
 }: {
   parentPos: THREE.Vector3;
   children: GraphNode[];
@@ -522,6 +540,7 @@ function ChildPlane({
   onNodeHover: (id: string | null) => void;
   parentOffset?: THREE.Vector3;
   animRef: BlendRef;
+  showLearned?: boolean;
 }) {
   const billboardRef = useRef<THREE.Group | null>(null);
 
@@ -585,6 +604,7 @@ function ChildPlane({
               progress={progress}
               onClick={() => onNodeClick(node)}
               onHover={onNodeHover}
+              showLearned={showLearned}
             />
           );
         })}
@@ -604,6 +624,7 @@ function ChildNode({
   progress,
   onClick,
   onHover,
+  showLearned,
 }: {
   node: GraphNode;
   position: [number, number, number];
@@ -614,6 +635,7 @@ function ChildNode({
   progress: number;
   onClick: () => void;
   onHover: (id: string | null) => void;
+  showLearned?: boolean;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const colors = NODE_COLORS.topic;
@@ -716,6 +738,8 @@ function ChildNode({
         opacity={0.85}
       />
 
+      {learned && showLearned && <LearnedHighlightRing radius={baseSize} />}
+
       {/* 文字 */}
       <Text
         raycast={() => null}
@@ -751,6 +775,7 @@ function Node3D({
   animRef,
   fadeOnFocus,
   nodeScaleRef,
+  showLearned,
 }: {
   node: GraphNode;
   position: THREE.Vector3;
@@ -768,6 +793,7 @@ function Node3D({
   fadeOnFocus?: boolean;
   /** 共享的节点实时缩放表，供箭头/连线按实际球体大小定位 */
   nodeScaleRef?: React.MutableRefObject<Map<string, number>>;
+  showLearned?: boolean;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group | null>(null);
@@ -915,6 +941,8 @@ function Node3D({
           {node.label}
         </Text>
       </Billboard>
+
+      {learned && showLearned && <LearnedHighlightRing radius={baseSize} />}
         </group>
   );
 }
@@ -1039,6 +1067,7 @@ function SceneContent({
   focusId,
   hoveredId,
   onHoverNode,
+  showLearned,
 }: {
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -1057,6 +1086,7 @@ function SceneContent({
   onTopicClick?: (kpId: string, topicIndex: number, label: string) => void;
   hoveredId: string | null;
   onHoverNode: (id: string | null) => void;
+  showLearned?: boolean;
 }) {
   const nodeScaleRef = useRef(new Map<string, number>());
 
@@ -1148,6 +1178,7 @@ function SceneContent({
             onNodeHover={onHoverNode}
             parentOffset={layout.focusOffsets.get(kpId)}
             animRef={animRef}
+            showLearned={showLearned}
           />
         );
       })}
@@ -1183,6 +1214,7 @@ function SceneContent({
             animRef={animRef}
             fadeOnFocus={focusId !== null && node.id !== focusId}
             nodeScaleRef={nodeScaleRef}
+            showLearned={showLearned}
           />
         );
       })}
@@ -1205,6 +1237,7 @@ export default function KnowledgeGraph3D({
   topicProgress,
   focusTarget,
   className,
+  showLearned = false,
 }: KnowledgeGraph3DProps) {
   // 聚焦的域节点（需仍处于展开状态才拉出）；同时展开多个章节时聚焦规则不生效
   const focusedId = focusTarget && expandedKpIds.has(focusTarget.id) ? focusTarget.id : null;
@@ -1267,6 +1300,7 @@ export default function KnowledgeGraph3D({
             focusId={dimAnchorId}
             hoveredId={hoveredNodeId}
             onHoverNode={setHoveredNodeId}
+            showLearned={showLearned}
           />
         </RotatingScene>
         <CameraFocus focusTarget={focusTarget} layout={layout} sceneRef={sceneRef} blendRef={blendRef} topicCountByKp={topicCountByKp} />
@@ -1280,13 +1314,3 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-

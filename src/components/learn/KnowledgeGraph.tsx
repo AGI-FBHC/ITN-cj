@@ -8,7 +8,7 @@
  * 渐进披露：默认展示章节图；点击章节后以 XMind 分支展开子知识点，其余章节保持可见。
  * 术语双标：先学它(prereq) / 互相印证(related) / 规范约束(applies)；边 hover 出玻璃浮层说明。
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProfile } from '@/context/ProfileContext';
 import { useNotes } from '@/context/NotesContext';
@@ -24,7 +24,6 @@ import {
 import type { DomainEdge, EdgeKind, GraphEdge, GraphNode } from '@/data/knowledgeGraph';
 import { speciesOf } from '@/data/garden';
 import SpeciesPlant, { GardenDefs } from '@/components/heal/SpeciesPlant';
-import { cn } from '@/lib/utils';
 
 /** 术语双标：人话在前（label），行话在后（term，进 hover 提示） */
 const EDGE_STYLE: Record<EdgeKind, { stroke: string; width: number; dash?: string; opacity: number; label: string; term: string; hint: string }> = {
@@ -33,7 +32,6 @@ const EDGE_STYLE: Record<EdgeKind, { stroke: string; width: number; dash?: strin
   applies: { stroke: '#66725E', width: 1.1, dash: '2 4', opacity: 0.45, label: '规范约束', term: 'applies · 应用', hint: '安全规范对实操动作的硬性约束' },
 };
 
-export type GraphScene = 'order' | 'network' | 'route';
 
 /** 生长阶段：0 种子 / 1 破土 / 2 长叶 / 3 花蕾 / 4 开花(达标) / 5 结果 */
 function growthStage(mastery: number, target: number, learned: boolean): number {
@@ -65,6 +63,7 @@ function DomainNode({
   dimmed,
   selected,
   expanded,
+  highlightLearned,
 }: {
   n: GraphNode;
   mastery: number;
@@ -74,6 +73,8 @@ function DomainNode({
   dimmed: boolean;
   selected: boolean;
   expanded: boolean;
+  /** 打开“我的已学路径”时高亮已学章节 */
+  highlightLearned: boolean;
 }) {
   const stage = growthStage(mastery, target, learned);
   const passed = learned && mastery >= target;
@@ -97,6 +98,12 @@ function DomainNode({
       {selected && (
         <circle cx={n.x} cy={n.y} r={n.r + 5} fill="none" stroke="#4E7860" strokeWidth="2.5" strokeDasharray="4 3" opacity="0.85">
           <animateTransform attributeName="transform" type="rotate" from={`0 ${n.x} ${n.y}`} to={`360 ${n.x} ${n.y}`} dur="9s" repeatCount="indefinite" />
+        </circle>
+      )}
+      {learned && highlightLearned && (
+        <circle cx={n.x} cy={n.y} r={n.r + 8} fill="none" stroke="#4E7860" strokeWidth="2.5" opacity="0.9">
+          <animate attributeName="r" values={`${n.r + 6};${n.r + 13};${n.r + 6}`} dur="2.2s" repeatCount="indefinite" />
+          <animate attributeName="opacity" values="0.9;0.25;0.9" dur="2.2s" repeatCount="indefinite" />
         </circle>
       )}
 
@@ -208,7 +215,6 @@ function TopicBranchNode({ n, mastery, progress }: { n: GraphNode; mastery: numb
 }
 
 export default function KnowledgeGraph({
-  scene = 'order',
   onSelectKp,
   selectedKpId,
   nodes: nodesProp,
@@ -222,9 +228,8 @@ export default function KnowledgeGraph({
   onSelectTopic,
   expandedKpIds,
   onExpandedKpChange,
+  showLearned = false,
 }: {
-  /** 场景（由页面级分段控件切换）：order 学习顺序 / network 完整网络 / route 我的路线 */
-  scene?: GraphScene;
   /** 提供后：点节点 = 选中（联动右栏详情），不直接跳转 */
   onSelectKp?: (kpId: string | null) => void;
   /** 提供后：点击子知识点时回传其在所属领域内的索引（用于细化资源生成） */
@@ -238,6 +243,8 @@ export default function KnowledgeGraph({
   topicProgress?: Record<string, number>;
   learned?: Set<string>;
   activeKp?: string | null;
+  /** 打开“我的已学路径”：高亮已学章节（不一定连续） */
+  showLearned?: boolean;
   /** 受控展开章节集合，用于与下方章节速览联动（2D 视图只展示最近展开的一个）。 */
   expandedKpIds?: Set<string>;
   onExpandedKpChange?: (kpId: string | null) => void;
@@ -255,14 +262,9 @@ export default function KnowledgeGraph({
     if (expandedKpIds === undefined) setInternalExpandedKp(kpId);
     onExpandedKpChange?.(kpId);
   };
-  /** 完整网络场景下被临时隐藏的关系类型（图例即控件） */
-  const [hiddenKinds, setHiddenKinds] = useState<Set<EdgeKind>>(new Set());
-  useEffect(() => { setHiddenKinds(new Set()); setEdgeTip(null); }, [scene]);
 
-  /* 场景 → 边图层 / 路径叠加 */
-  const layerOn = (k: EdgeKind): boolean =>
-    scene === 'network' ? !hiddenKinds.has(k) : k === 'prereq';
-  const showPath = scene === 'route';
+  /* 默认只展示“先学它”前置边，保持学习方向清晰 */
+  const layerOn = (k: EdgeKind): boolean => k === 'prereq';
 
   const sourceNodes = nodesProp ?? graphNodes;
   const expandedSourceTopics = expandedKp ? sourceNodes.filter((node) => node.kind === 'topic' && node.kpId === expandedKp) : [];
@@ -453,14 +455,6 @@ export default function KnowledgeGraph({
   }, [expandedKp, expandedTopics, nodeById, longestTopicLabel]);
   const currentViewBox = graphViewBox;
 
-  /* 路径叠加：按路径顺序连接域节点（去重保序） */
-  const pathChain = useMemo(() => {
-    const seq: string[] = [];
-    reportPath.forEach((p) => {
-      if (!seq.includes(p.kpId)) seq.push(p.kpId);
-    });
-    return seq.map((id) => nodeById.get(id)!).filter(Boolean);
-  }, [reportPath, nodeById]);
 
   /** 点域：展开/收拢 + 选中（右栏出详情）；点子节点：选中 */
   const clickNode = (n: GraphNode) => {
@@ -548,28 +542,6 @@ export default function KnowledgeGraph({
             : null,
         )}
 
-        {/* 路径叠加 */}
-        {showPath && pathChain.length > 1 && (
-          <g>
-            <polyline
-              points={pathChain.map((n) => `${n.x},${n.y}`).join(' ')}
-              fill="none"
-              stroke="#E7B45A"
-              strokeWidth="3.5"
-              strokeLinejoin="round"
-              strokeDasharray="10 7"
-              opacity="0.6"
-            >
-              <animate attributeName="stroke-dashoffset" values="0;-34" dur="1.6s" repeatCount="indefinite" />
-            </polyline>
-            {pathChain.map((n, i) => (
-              <g key={n.id}>
-                <circle cx={n.x + n.r - 4} cy={n.y - n.r + 2} r="9" fill="#E7B45A" />
-                <text x={n.x + n.r - 4} y={n.y - n.r + 5.5} textAnchor="middle" fontSize="10" fontWeight="700" fill="#FBFAF5" fontFamily="monospace">{i + 1}</text>
-              </g>
-            ))}
-          </g>
-        )}
 
         {/* 域节点 */}
         {domains.map((n) => {
@@ -593,6 +565,7 @@ export default function KnowledgeGraph({
                 dimmed={dimmed}
                 selected={selectedKpId === n.kpId}
                 expanded={expandedKp === n.kpId}
+                highlightLearned={showLearned}
               />
               {/* 笔记角标 */}
               {(countByKp[n.kpId] ?? 0) > 0 && !dimmed && (
@@ -630,42 +603,6 @@ export default function KnowledgeGraph({
         })}
       </svg>
 
-      {/* 图例即控件：只在「完整网络」出现——chip 长成它控制的线的样子，点击隐藏该类 */}
-      {scene === 'network' && (
-        <div className="mt-1.5 flex flex-wrap items-center gap-2 px-1">
-          {(Object.keys(EDGE_STYLE) as EdgeKind[]).map((k) => {
-            const st = EDGE_STYLE[k];
-            const on = !hiddenKinds.has(k);
-            return (
-              <button
-                key={k}
-                type="button"
-                aria-pressed={on}
-                onClick={() =>
-                  setHiddenKinds((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(k)) next.delete(k);
-                    else next.add(k);
-                    return next;
-                  })
-                }
-                title={`${st.hint}（${st.term}）· 点击${on ? '隐藏' : '显示'}这类线`}
-                className={cn(
-                  'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-all',
-                  on ? 'border-hairline bg-paper text-ink-2' : 'border-hairline/60 bg-paper-deep/40 text-ink-muted/60 line-through',
-                )}
-              >
-                <svg width="24" height="8" viewBox="0 0 24 8" aria-hidden>
-                  <line x1="0" y1="4" x2={k === 'prereq' ? 17 : 24} y2="4" stroke={st.stroke} strokeWidth={st.width + 0.6} strokeDasharray={st.dash} strokeLinecap="round" opacity={on ? 1 : 0.4} />
-                  {k === 'prereq' && <path d="M 17 0.5 L 24 4 L 17 7.5 Z" fill={st.stroke} opacity={on ? 1 : 0.4} />}
-                </svg>
-                {st.label}
-              </button>
-            );
-          })}
-          <span className="text-[10.5px] text-ink-muted">点线看关系说明 · 点开域看明细</span>
-        </div>
-      )}
 
       {/* 边 hover 玻璃浮层（替代浏览器原生 title 黄框） */}
       {edgeTip && (

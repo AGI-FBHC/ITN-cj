@@ -3,12 +3,11 @@ import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowRight, Loader2, Box, Map, Expand, Shrink } from 'lucide-react';
+import { ArrowRight, Loader2, Box, Map, Expand, Shrink, Route, Check } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
 import { useLearningMap } from '@/hooks/useLearningMap';
 import KnowledgeGraph from '@/components/learn/KnowledgeGraph';
 import KnowledgeGraph3D from '@/components/learn/KnowledgeGraph3D';
-import type { GraphScene } from '@/components/learn/KnowledgeGraph';
 import KpDetailPanel from '@/components/learn/KpDetailPanel';
 import NodeActionMenu from '@/components/learn/NodeActionMenu';
 import UnitQuickList from '@/components/learn/UnitQuickList';
@@ -21,11 +20,6 @@ const statusMeta: Record<string, { label: string; cls: string }> = {
   done: { label: '已完成', cls: 'border-brand/30 bg-brand-tint text-brand' },
 };
 
-const SCENES: { key: GraphScene; label: string; hint: string }[] = [
-  { key: 'order', label: '学习顺序', hint: '只看前置箭头：从左往右就是学的顺序' },
-  { key: 'network', label: '完整网络', hint: '三种知识关系全打开，图例可单独隐藏' },
-  { key: 'route', label: '我的路线', hint: '阿诊为你排的学习路径，叠加在地图上' },
-];
 
 export default function Learn() {
   const navigate = useNavigate();
@@ -33,7 +27,8 @@ export default function Learn() {
   const map = useLearningMap();
   const knowledgePoints = map.domains;
   const reportPath = map.path;
-  const [scene, setScene] = useState<GraphScene>('order');
+  /** “我的已学路径”：高亮已学章节/资源 */
+  const [showLearnedPath, setShowLearnedPath] = useState(false);
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('3d');
   const [selectedKp, setSelectedKp] = useState<string | null>(null);
   const [expandedKpIds, setExpandedKpIds] = useState<Set<string>>(new Set());
@@ -119,25 +114,6 @@ export default function Learn() {
             </button>
           </div>
 
-          {/* 场景切换（仅 2D 模式显示） */}
-          {viewMode === '2d' && (
-            <div className="hidden items-center gap-0.5 rounded-[11px] border border-hairline bg-paper p-0.5 lg:inline-flex">
-              {SCENES.map((s) => (
-                <button
-                  key={s.key}
-                  type="button"
-                  onClick={() => setScene(s.key)}
-                  title={s.hint}
-                  className={cn(
-                    'rounded-[9px] px-3 py-1.5 text-[12.5px] font-medium transition-all',
-                    scene === s.key ? 'bg-card-warm text-ink shadow-xs ring-1 ring-hairline' : 'text-ink-muted hover:text-ink',
-                  )}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
       </motion.div>
 
@@ -162,8 +138,8 @@ export default function Learn() {
       >
         {/* 上层只承载图谱与按需详情；章节速览在下方独立占满全局宽度。 */}
         <motion.div layout="position" className="relative min-w-0">
-          {viewMode === '3d' && (
-            <div className="absolute left-4 top-4 z-10">
+          <div className="absolute left-4 top-4 z-10 flex flex-col items-start gap-2">
+            {viewMode === '3d' && (
               <button
                 type="button"
                 onClick={() => {
@@ -185,8 +161,23 @@ export default function Learn() {
                   </>
                 )}
               </button>
-            </div>
-          )}
+            )}
+            <button
+              type="button"
+              onClick={() => setShowLearnedPath((v) => !v)}
+              aria-pressed={showLearnedPath}
+              title="高亮已学章节/资源，不一定连续"
+              className={cn(
+                'flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] backdrop-blur-sm transition-colors',
+                showLearnedPath
+                  ? 'border-brand/60 bg-brand-tint text-brand hover:bg-brand-tint'
+                  : 'border-hairline/50 bg-white/90 text-ink-2 hover:bg-white hover:text-ink',
+              )}
+            >
+              {showLearnedPath ? <Check size={12} /> : <Route size={12} />}
+              {showLearnedPath ? '隐藏已学路径' : '我的已学路径'}
+            </button>
+          </div>
           {viewMode === '3d' ? (
             <KnowledgeGraph3D
               onTopicClick={(kpId, topicIndex, label) => setActionMenu({ kpId, topicIndex, label })}
@@ -202,9 +193,10 @@ export default function Learn() {
               topicMastery={map.topicMastery}
               topicProgress={map.topicProgress}
               focusTarget={graphFocus}
+              showLearned={showLearnedPath}
             />
           ) : (
-            <KnowledgeGraph scene={scene} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpIds={expandedKpIds} onExpandedKpChange={setSingleExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} />
+            <KnowledgeGraph showLearned={showLearnedPath} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpIds={expandedKpIds} onExpandedKpChange={setSingleExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} />
           )}
         </motion.div>
         <AnimatePresence initial={false} mode="popLayout">
@@ -229,7 +221,7 @@ export default function Learn() {
           transition={{ duration: 0.35, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
           className="mt-4 hidden border-t border-hairline/60 pt-4 lg:block"
         >
-          <UnitQuickList selectedKpId={selectedKp} onSelect={(kpId) => { setSelectedKp(kpId); setSelectedTopic(null); setSingleExpandedKp(kpId); setGraphFocus({ id: kpId, at: Date.now() }); }} routeOrdered={scene === 'route'} columns items={knowledgePoints} path={map.path} learned={map.learned} mastery={map.mastery} />
+          <UnitQuickList selectedKpId={selectedKp} onSelect={(kpId) => { setSelectedKp(kpId); setSelectedTopic(null); setSingleExpandedKp(kpId); setGraphFocus({ id: kpId, at: Date.now() }); }} columns items={knowledgePoints} path={map.path} learned={map.learned} mastery={map.mastery} />
         </motion.div>
       )}
 
