@@ -40,6 +40,31 @@ const PROGRESS_COLORS = {
   high: '#6BA080',
 };
 
+/** 边缘发光 Shader */
+const glowVertexShader = `
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+  void main() {
+    vNormal = normalize(normalMatrix * normal);
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    vViewDir = normalize(-mvPosition.xyz);
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`;
+
+const innerGlowFragmentShader = `
+  uniform vec3 color;
+  uniform vec3 glowColor;
+  uniform float intensity;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+  void main() {
+    float fresnel = pow(1.0 - abs(dot(vNormal, vViewDir)), 3.0);
+    vec3 finalColor = mix(color, glowColor, fresnel * intensity);
+    gl_FragColor = vec4(finalColor, fresnel * 0.6 * intensity);
+  }
+`;
+
 interface KnowledgeGraph3DProps {
   onTopicClick?: (kpId: string, topicIndex: number, label: string) => void;
   nodes: GraphNode[];
@@ -310,8 +335,23 @@ function Node3D({
         <sphereGeometry args={[1, 64, 64]} />
         <meshBasicMaterial
           color={getColor()}
-          transparent
+          transparent={dimmed}
           opacity={dimmed ? 0.2 : 1}
+        />
+      </mesh>
+
+      {/* 内发光：菲涅尔边缘 */}
+      <mesh scale={1.02}>
+        <sphereGeometry args={[1, 64, 64]} />
+        <shaderMaterial
+          vertexShader={glowVertexShader}
+          fragmentShader={innerGlowFragmentShader}
+          uniforms={{
+            color: { value: new THREE.Color(getColor()) },
+            glowColor: { value: new THREE.Color(glowColor) },
+            intensity: { value: dimmed ? 0.1 : hovered ? 1.5 : selected ? 1.2 : 0.8 },
+          }}
+          transparent
         />
       </mesh>
 
@@ -600,6 +640,9 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
+
+
+
 
 
 
