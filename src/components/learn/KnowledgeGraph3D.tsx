@@ -1,6 +1,6 @@
 /**
- * KnowledgeGraph3D — Obsidian 风格 3D 知识图谱（外发光版）
- * 多层放大球体实现真正的外发光效果
+ * KnowledgeGraph3D — Obsidian 风格 3D 知识图谱（XMind 分支版）
+ * 子节点并列展开，文字在圆圈外部
  */
 import { useRef, useMemo, useState, useCallback } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
@@ -61,8 +61,7 @@ function RotatingScene({ children, shouldRotate }: { children: React.ReactNode; 
 
   useFrame((state) => {
     if (!groupRef.current || !shouldRotate) return;
-    const time = state.clock.elapsedTime * 0.05; // 非常慢的速度
-    // 多轴随机旋转：X、Y、Z 轴都有小幅度的缓慢旋转
+    const time = state.clock.elapsedTime * 0.05;
     groupRef.current.rotation.x = Math.sin(time * 0.7) * 0.15;
     groupRef.current.rotation.y = time * 0.3 + Math.sin(time * 0.5) * 0.1;
     groupRef.current.rotation.z = Math.cos(time * 0.6) * 0.08;
@@ -71,12 +70,13 @@ function RotatingScene({ children, shouldRotate }: { children: React.ReactNode; 
   return <group ref={groupRef}>{children}</group>;
 }
 
-/** 3D 力导向布局 */
-function use3DLayout(nodes: GraphNode[], edges: GraphEdge[]) {
+/** 3D 力导向布局：子节点 XMind 分支式排列 */
+function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpId: string | null) {
   return useMemo(() => {
     const positions = new Map<string, THREE.Vector3>();
     const domainNodes = nodes.filter((n) => n.kind === 'domain');
 
+    // 域节点球面分布
     domainNodes.forEach((node, i) => {
       const phi = Math.acos(1 - 2 * (i + 0.5) / domainNodes.length);
       const theta = Math.PI * (1 + Math.sqrt(5)) * i;
@@ -88,23 +88,45 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[]) {
       ));
     });
 
-    nodes.filter((n) => n.kind === 'topic').forEach((node) => {
+    // 子节点：XMind 分支式排列（并列、靠近、文字在外部）
+    if (expandedKpId) {
+      const parentPos = positions.get(expandedKpId);
+      if (parentPos) {
+        const children = nodes.filter((n) => n.kind === 'topic' && n.kpId === expandedKpId);
+        // 子节点在父节点右侧垂直排列
+        const startX = parentPos.x + 18; // 更靠近
+        const startY = parentPos.y - (children.length - 1) * 4; // 垂直居中
+        children.forEach((node, i) => {
+          positions.set(node.id, new THREE.Vector3(
+            startX + (i % 2) * 8, // 两列交错，更紧凑
+            startY + i * 8, // 垂直间隔
+            parentPos.z + 2, // 稍微靠前
+          ));
+        });
+      }
+    }
+
+    // 其他未展开的子节点放在远处（不显示）
+    nodes.filter((n) => n.kind === 'topic' && n.kpId !== expandedKpId).forEach((node) => {
       const parentPos = positions.get(node.kpId);
       if (!parentPos) return;
-      const angle = (node.topicIndex ?? 0) * (Math.PI * 2 / 4) + Math.random() * 0.5;
-      const dist = 14 + Math.random() * 4;
       positions.set(node.id, new THREE.Vector3(
-        parentPos.x + Math.cos(angle) * dist,
-        parentPos.y + Math.sin(angle) * dist,
-        parentPos.z + (Math.random() - 0.5) * 6,
+        parentPos.x + (Math.random() - 0.5) * 50,
+        parentPos.y + (Math.random() - 0.5) * 50,
+        parentPos.z + (Math.random() - 0.5) * 30,
       ));
     });
 
+    // 力导向迭代（只影响域节点）
     for (let iter = 0; iter < 80; iter++) {
       const forces = new Map<string, THREE.Vector3>();
       positions.forEach((_, id) => forces.set(id, new THREE.Vector3()));
 
-      const ids = Array.from(positions.keys());
+      const ids = Array.from(positions.keys()).filter((id) => {
+        const node = nodes.find((n) => n.id === id);
+        return node?.kind === 'domain';
+      });
+
       for (let i = 0; i < ids.length; i++) {
         for (let j = i + 1; j < ids.length; j++) {
           const p1 = positions.get(ids[i])!;
@@ -121,6 +143,9 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[]) {
         const p1 = positions.get(edge.from);
         const p2 = positions.get(edge.to);
         if (!p1 || !p2) return;
+        const node1 = nodes.find((n) => n.id === edge.from);
+        const node2 = nodes.find((n) => n.id === edge.to);
+        if (node1?.kind !== 'domain' || node2?.kind !== 'domain') return;
         const diff = p2.clone().sub(p1);
         const dist = diff.length();
         const force = diff.normalize().multiplyScalar(dist * 0.08);
@@ -129,6 +154,8 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[]) {
       });
 
       positions.forEach((pos, id) => {
+        const node = nodes.find((n) => n.id === id);
+        if (node?.kind !== 'domain') return;
         const force = forces.get(id)!;
         pos.add(force.multiplyScalar(0.4));
         const maxR = 45;
@@ -137,7 +164,7 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[]) {
     }
 
     return positions;
-  }, [nodes, edges]);
+  }, [nodes, edges, expandedKpId]);
 }
 
 /** 进度环 */
@@ -178,7 +205,7 @@ function ProgressRing({
   );
 }
 
-/** 3D 节点：多层外发光 */
+/** 3D 节点 */
 function Node3D({
   node,
   position,
@@ -214,7 +241,8 @@ function Node3D({
     return colors.base;
   };
 
-  const baseSize = isDomain ? 3 : 0.9;
+  // 子节点圆圈增大
+  const baseSize = isDomain ? 3 : 1.5;
   const targetScale = selected ? 1.3 : hovered ? 1.15 : 1;
   const glowColor = GLOW_COLORS[node.kind];
 
@@ -226,7 +254,6 @@ function Node3D({
     const target = baseSize * breathe * targetScale;
     meshRef.current.scale.setScalar(THREE.MathUtils.lerp(current, target, 0.1));
 
-    // 外发光层：逐渐变大，透明度逐渐降低，超出球体边界
     const glowIntensity = dimmed ? 0.1 : hovered ? 1 : selected ? 0.9 : 0.5;
     const pulse = 1 + Math.sin(time * 2 + position.y) * 0.05;
 
@@ -246,35 +273,18 @@ function Node3D({
 
   return (
     <group position={position}>
-      {/* 外发光层 1：紧贴球体，最明显 */}
+      {/* 外发光层 */}
       <mesh ref={glow1Ref}>
         <sphereGeometry args={[1, 32, 32]} />
-        <meshBasicMaterial
-          color={glowColor}
-          transparent
-          opacity={0.3}
-          depthWrite={false}
-        />
+        <meshBasicMaterial color={glowColor} transparent opacity={0.3} depthWrite={false} />
       </mesh>
-      {/* 外发光层 2：稍大，较淡 */}
       <mesh ref={glow2Ref}>
         <sphereGeometry args={[1, 32, 32]} />
-        <meshBasicMaterial
-          color={glowColor}
-          transparent
-          opacity={0.15}
-          depthWrite={false}
-        />
+        <meshBasicMaterial color={glowColor} transparent opacity={0.15} depthWrite={false} />
       </mesh>
-      {/* 外发光层 3：最大，最淡，形成光晕边界 */}
       <mesh ref={glow3Ref}>
         <sphereGeometry args={[1, 32, 32]} />
-        <meshBasicMaterial
-          color={glowColor}
-          transparent
-          opacity={0.08}
-          depthWrite={false}
-        />
+        <meshBasicMaterial color={glowColor} transparent opacity={0.08} depthWrite={false} />
       </mesh>
 
       {/* 主球体 */}
@@ -305,15 +315,19 @@ function Node3D({
       {/* 进度描边 */}
       <ProgressRing radius={baseSize} progress={progress} hovered={hovered} selected={selected} />
 
-      {/* 标签 */}
-      <Html distanceFactor={16} center>
+      {/* 标签：子节点文字放在圆圈外部（右侧），像 XMind */}
+      <Html
+        distanceFactor={16}
+        position={isDomain ? [0, 0, 0] : [2.5, 0, 0]} // 子节点文字在右侧
+        center={isDomain}
+      >
         <div
-          className={`pointer-events-none select-none whitespace-nowrap text-center font-semibold transition-all duration-200 ${
+          className={`pointer-events-none select-none whitespace-nowrap font-semibold transition-all duration-200 ${
             dimmed ? 'opacity-10' : hovered || selected ? 'opacity-100 scale-110' : 'opacity-90'
-          }`}
+          } ${isDomain ? 'text-center' : 'text-left'}`}
           style={{
             color: '#3D4A3A',
-            fontSize: isDomain ? '18px' : '13px',
+            fontSize: isDomain ? '18px' : '14px',
             textShadow: '0 1px 2px rgba(247,245,238,0.8), 0 0 6px rgba(247,245,238,0.5)',
           }}
         >
@@ -525,7 +539,7 @@ export default function KnowledgeGraph3D({
   topicProgress,
   className,
 }: KnowledgeGraph3DProps) {
-  const layout = use3DLayout(nodes, edges);
+  const layout = use3DLayout(nodes, edges, expandedKpId);
 
   return (
     <div
@@ -544,7 +558,7 @@ export default function KnowledgeGraph3D({
           autoRotate={false}
         />
         <RotatingScene shouldRotate={!expandedKpId}>
-                  <SceneContent
+          <SceneContent
             nodes={nodes}
             edges={edges}
             layout={layout}
@@ -578,8 +592,3 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
-
-
-
-
-
