@@ -353,7 +353,7 @@ function EdgeArrow({
 
   return (
     <mesh ref={meshRef} position={position} quaternion={quaternion}>
-      <coneGeometry args={[0.55, 1.4, 16]} />
+      <coneGeometry args={[0.38, 1.0, 16]} />
       <meshBasicMaterial color={color} transparent depthWrite={false} />
     </mesh>
   );
