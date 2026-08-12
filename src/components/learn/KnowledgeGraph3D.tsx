@@ -236,24 +236,61 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpIds: Set<
   }, [nodes, expandedKpIds, domainLayout]);
 }
 
-/** 方向指示小球 */
-function DirectionMarker({ position, color, visible }: { position: THREE.Vector3; color: string; visible: boolean }) {
-  const ref = useRef<THREE.Mesh>(null);
-  
+/** 沿边涌动的方向脉冲：光点从源节点流向目标节点，表示有向边 */
+function FlowPulses({
+  fromPos,
+  toPos,
+  color,
+  dimmed = false,
+  hovered = false,
+  count = 3,
+  speed = 0.22,
+}: {
+  fromPos: THREE.Vector3;
+  toPos: THREE.Vector3;
+  color: string;
+  dimmed?: boolean;
+  hovered?: boolean;
+  count?: number;
+  speed?: number;
+}) {
+  const refs = useRef<Array<THREE.Mesh | null>>([]);
+
+  // 两端各留出节点半径的空隙，脉冲只在边的可见部分流动
+  const { start, end } = useMemo(() => {
+    const dir = toPos.clone().sub(fromPos);
+    const len = Math.max(dir.length(), 0.001);
+    dir.normalize();
+    const pad = Math.min(4, len * 0.2);
+    return {
+      start: fromPos.clone().add(dir.clone().multiplyScalar(pad)),
+      end: toPos.clone().sub(dir.clone().multiplyScalar(pad)),
+    };
+  }, [fromPos, toPos]);
+
   useFrame((state) => {
-    if (ref.current) {
-      const scale = 0.5 + Math.sin(state.clock.elapsedTime * 3) * 0.15;
-      ref.current.scale.setScalar(scale);
+    const time = state.clock.elapsedTime * speed;
+    for (let i = 0; i < count; i++) {
+      const mesh = refs.current[i];
+      if (!mesh) continue;
+      const t = (time + i / count) % 1;
+      mesh.position.copy(start).lerp(end, t);
+      // 两端淡入淡出，中段最亮，形成涌动节奏
+      const fade = Math.sin(t * Math.PI);
+      mesh.scale.setScalar(0.45 + fade * 0.3);
+      (mesh.material as THREE.MeshBasicMaterial).opacity = dimmed ? 0 : fade * (hovered ? 1 : 0.8);
     }
   });
-  
-  if (!visible) return null;
-  
+
   return (
-    <mesh ref={ref} position={position}>
-      <sphereGeometry args={[1, 16, 16]} />
-      <meshBasicMaterial color={color} transparent opacity={0.8} />
-    </mesh>
+    <group>
+      {Array.from({ length: count }).map((_, i) => (
+        <mesh key={i} ref={(el) => { refs.current[i] = el; }}>
+          <sphereGeometry args={[1, 12, 12]} />
+          <meshBasicMaterial color={color} transparent depthWrite={false} />
+        </mesh>
+      ))}
+    </group>
   );
 }
 
@@ -336,19 +373,27 @@ function ChildPlane({
   return (
     <Billboard position={parentPos}>
       <group>
-        {/* 连线：从原点到各子节点 */}
+        {/* 连线：从原点到各子节点，蓝色光点流向子节点表示方向 */}
         {childData.map(({ node, relPos }) => (
-          <Line
-            key={`line-${node.id}`}
-            points={[
-              new THREE.Vector3(0, 0, 0),
-              new THREE.Vector3(...relPos),
-            ]}
-            color="#4E7860"
-            lineWidth={3}
-            transparent
-            opacity={0.6}
-          />
+          <group key={`link-${node.id}`}>
+            <Line
+              points={[
+                new THREE.Vector3(0, 0, 0),
+                new THREE.Vector3(...relPos),
+              ]}
+              color="#4E7860"
+              lineWidth={3}
+              transparent
+              opacity={0.6}
+            />
+            <FlowPulses
+              fromPos={new THREE.Vector3(0, 0, 0)}
+              toPos={new THREE.Vector3(...relPos)}
+              color="#2E6BA8"
+              count={1}
+              speed={0.35}
+            />
+          </group>
         ))}
         
         {/* 子节点 */}
@@ -725,11 +770,6 @@ function Edge3D({
     return segs;
   }, [fromPos, toPos]);
 
-  const markerPos = useMemo(() => {
-    const dir = toPos.clone().sub(fromPos).normalize();
-    return toPos.clone().sub(dir.multiplyScalar(3));
-  }, [fromPos, toPos]);
-
   return (
     <group>
       {segments.map((seg, i) => (
@@ -745,11 +785,14 @@ function Edge3D({
           gapSize={0.8}
         />
       ))}
-      
-      <DirectionMarker
-        position={markerPos}
+
+      {/* 方向涌动：光点持续从源节点流向目标节点 */}
+      <FlowPulses
+        fromPos={fromPos}
+        toPos={toPos}
         color={color}
-        visible={!dimmed && !isChildLink}
+        dimmed={dimmed}
+        hovered={hovered}
       />
     </group>
   );
