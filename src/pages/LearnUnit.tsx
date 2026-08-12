@@ -106,7 +106,7 @@ const VOICE_STYLES = [
   { key: 'standard', label: '标准播报', desc: '默认音色 · 均衡', pitch: 1, rateScale: 1 },
   { key: 'lively', label: '亲切活泼', desc: '音调明快 · 提神醒脑', pitch: 1.2, rateScale: 1.08 },
 ] as const;
-const MIMO_VOICES = ['冰糖', '茉莉', '苏打', '白桦', 'Mia', 'Chloe', 'Milo', 'Dean'] as const;
+const MIMO_VOICES = ['冰糖', '茉莉', '苏打', '白桦'] as const;
 const MIMO_SPEEDS: Array<{ value: TtsSpeed; label: string }> = [
   { value: 'very_slow', label: '超慢' },
   { value: 'slow', label: '慢' },
@@ -884,7 +884,8 @@ export default function LearnUnit() {
       await api.updateUserProfile(payload as UserProfileSettings);
       const answerActive = Boolean(answerAudioRef.current);
       const slideActive = Boolean(pptRef.current?.audioLoaded || playing);
-      if (answerActive || slideActive) setVoiceRestart(answerActive ? 'answer' : 'slide');
+      // 语速通过 playbackRate 实时生效，无需重读；只有音色切换才需要从当前页/当前回答重新合成。
+      if (next.voice !== undefined && (answerActive || slideActive)) setVoiceRestart(answerActive ? 'answer' : 'slide');
     } catch (reason) {
       toast.error(reason instanceof Error ? reason.message : '音色设置保存失败');
     } finally {
