@@ -45,10 +45,10 @@ interface KnowledgeGraph3DProps {
   nodes: GraphNode[];
   edges: GraphEdge[];
   selectedKpId: string | null;
-  expandedKpId: string | null;
+  expandedKpIds: Set<string>;
   onSelectKp: (id: string | null) => void;
   onSelectTopic: (index: number | null) => void;
-  onExpandedKpChange: (id: string | null) => void;
+  onExpandedKpChange: (id: string) => void;
   learned: Set<string>;
   mastery: Record<string, number>;
   topicMastery: Record<string, number>;
@@ -161,12 +161,11 @@ function findBestDirection(
   parentPos: THREE.Vector3,
   allPositions: Map<string, THREE.Vector3>,
   expandedKpId: string,
-): { direction: 'left' | 'right' | 'top' | 'bottom'; offset: THREE.Vector3 } {
+): { direction: 'left' | 'right'; offset: THREE.Vector3 } {
+  // 只向左右两侧展开，避免上下遮挡其他域节点
   const directions = [
     { name: 'right' as const, offset: new THREE.Vector3(20, 0, 0) },
     { name: 'left' as const, offset: new THREE.Vector3(-20, 0, 0) },
-    { name: 'top' as const, offset: new THREE.Vector3(0, 20, 0) },
-    { name: 'bottom' as const, offset: new THREE.Vector3(0, -20, 0) },
   ];
 
   let bestDirection = directions[0];
@@ -194,51 +193,36 @@ function findBestDirection(
 }
 
 /** 3D 布局：固定域节点 + 智能子节点展开 */
-function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpId: string | null) {
+function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpIds: Set<string>) {
   const domainLayout = useDomainLayout(nodes, edges);
 
   return useMemo(() => {
     const positions = new Map(domainLayout);
-    const childDirections = new Map<string, 'left' | 'right' | 'top' | 'bottom'>();
+    const childDirections = new Map<string, 'left' | 'right'>();
 
-    if (expandedKpId) {
-      const parentPos = positions.get(expandedKpId);
-      if (parentPos) {
-        const { direction, offset } = findBestDirection(parentPos, positions, expandedKpId);
-        const children = nodes.filter((n) => n.kind === 'topic' && n.kpId === expandedKpId);
-        
-        // 根据方向计算子节点位置
-        const isHorizontal = direction === 'left' || direction === 'right';
-        const sign = direction === 'left' || direction === 'top' ? -1 : 1;
-        
-        children.forEach((node, i) => {
-          const basePos = parentPos.clone().add(offset);
-          let childPos: THREE.Vector3;
-          
-          if (isHorizontal) {
-            // 水平展开：垂直排列
-            childPos = new THREE.Vector3(
-              basePos.x + (i % 2) * 8 * sign,
-              basePos.y + (i - (children.length - 1) / 2) * 8,
-              basePos.z + 2,
-            );
-          } else {
-            // 垂直展开：水平排列
-            childPos = new THREE.Vector3(
-              basePos.x + (i - (children.length - 1) / 2) * 8,
-              basePos.y + (i % 2) * 8 * sign,
-              basePos.z + 2,
-            );
-          }
-          
-          positions.set(node.id, childPos);
-          childDirections.set(node.id, direction);
-        });
-      }
-    }
+    // 支持多个章节同时展开；每个章节基于当前密度独立选择左/右空旷侧
+    expandedKpIds.forEach((kpId) => {
+      const parentPos = positions.get(kpId);
+      if (!parentPos) return;
+      const { direction, offset } = findBestDirection(parentPos, positions, kpId);
+      const children = nodes.filter((n) => n.kind === 'topic' && n.kpId === kpId);
+      const sign = direction === 'left' ? -1 : 1;
+
+      children.forEach((node, i) => {
+        const basePos = parentPos.clone().add(offset);
+        // 水平展开：垂直排列
+        const childPos = new THREE.Vector3(
+          basePos.x + (i % 2) * 8 * sign,
+          basePos.y + (i - (children.length - 1) / 2) * 8,
+          basePos.z + 2,
+        );
+        positions.set(node.id, childPos);
+        childDirections.set(node.id, direction);
+      });
+    });
 
     // 未展开的子节点放在父节点附近但不显示
-    nodes.filter((n) => n.kind === 'topic' && n.kpId !== expandedKpId).forEach((node) => {
+    nodes.filter((n) => n.kind === 'topic' && !expandedKpIds.has(n.kpId)).forEach((node) => {
       const parentPos = positions.get(node.kpId);
       if (!parentPos) return;
       positions.set(node.id, new THREE.Vector3(
@@ -249,7 +233,7 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpId: strin
     });
 
     return { positions, childDirections };
-  }, [nodes, expandedKpId, domainLayout]);
+  }, [nodes, expandedKpIds, domainLayout]);
 }
 
 /** 方向指示小球 */
@@ -318,7 +302,6 @@ function ChildPlane({
   layout,
   hoveredId,
   selectedKpId,
-  expandedKpId,
   learned,
   topicMastery,
   topicProgress,
@@ -327,10 +310,9 @@ function ChildPlane({
 }: {
   parentPos: THREE.Vector3;
   children: GraphNode[];
-  layout: { positions: Map<string, THREE.Vector3>; childDirections: Map<string, 'left' | 'right' | 'top' | 'bottom'> };
+  layout: { positions: Map<string, THREE.Vector3>; childDirections: Map<string, 'left' | 'right'> };
   hoveredId: string | null;
   selectedKpId: string | null;
-  expandedKpId: string | null;
   learned: Set<string>;
   topicMastery: Record<string, number>;
   topicProgress: Record<string, number>;
@@ -341,24 +323,12 @@ function ChildPlane({
   const childData = useMemo(() => {
     return children.map((node, i) => {
       const direction = layout.childDirections.get(node.id) || 'right';
-      const isHorizontal = direction === 'left' || direction === 'right';
-      const sign = direction === 'left' || direction === 'top' ? -1 : 1;
-      
-      let relPos: [number, number, number];
-      if (isHorizontal) {
-        relPos = [
-          15 * sign + (i % 2) * 6 * sign,
-          (i - (children.length - 1) / 2) * 8,
-          0,
-        ];
-      } else {
-        relPos = [
-          (i - (children.length - 1) / 2) * 8,
-          15 * sign + (i % 2) * 6 * sign,
-          0,
-        ];
-      }
-      
+      const sign = direction === 'left' ? -1 : 1;
+      const relPos: [number, number, number] = [
+        15 * sign + (i % 2) * 6 * sign,
+        (i - (children.length - 1) / 2) * 8,
+        0,
+      ];
       return { node, relPos, direction };
     });
   }, [children, layout.childDirections]);
@@ -384,7 +354,7 @@ function ChildPlane({
         {/* 子节点 */}
         {childData.map(({ node, relPos, direction }) => {
           const isHovered = hoveredId === node.id;
-          const isSelected = selectedKpId === node.id || expandedKpId === node.id;
+          const isSelected = selectedKpId === node.id;
           const progress = topicProgress[node.id] ?? topicMastery[node.id] ?? 0;
           
           return (
@@ -421,7 +391,7 @@ function ChildNode({
 }: {
   node: GraphNode;
   position: [number, number, number];
-  direction: 'left' | 'right' | 'top' | 'bottom';
+  direction: 'left' | 'right';
   selected: boolean;
   hovered: boolean;
   learned: boolean;
@@ -471,25 +441,13 @@ function ChildNode({
     }
   });
 
-  // 文字位置
+  // 文字位置（仅左右展开）
   const getTextPosition = (): [number, number, number] => {
-    switch (direction) {
-      case 'left': return [-3.5, 0, 1];
-      case 'right': return [3.5, 0, 1];
-      case 'top': return [0, 3.5, 1];
-      case 'bottom': return [0, -3.5, 1];
-      default: return [3.5, 0, 1];
-    }
+    return direction === 'left' ? [-3.5, 0, 1] : [3.5, 0, 1];
   };
 
   const getTextAnchor = (): { x: 'left' | 'center' | 'right'; y: 'top' | 'middle' | 'bottom' } => {
-    switch (direction) {
-      case 'left': return { x: 'right', y: 'middle' };
-      case 'right': return { x: 'left', y: 'middle' };
-      case 'top': return { x: 'center', y: 'bottom' };
-      case 'bottom': return { x: 'center', y: 'top' };
-      default: return { x: 'left', y: 'middle' };
-    }
+    return direction === 'left' ? { x: 'right', y: 'middle' } : { x: 'left', y: 'middle' };
   };
 
   const textAnchor = getTextAnchor();
@@ -553,16 +511,12 @@ function ChildNode({
       <Line
         points={[
           new THREE.Vector3(0, 0, 0.5),
-          new THREE.Vector3(
-            direction === 'left' ? -2 : direction === 'right' ? 2 : 0,
-            direction === 'top' ? 2 : direction === 'bottom' ? -2 : 0,
-            1,
-          ),
+          new THREE.Vector3(direction === 'left' ? -2 : 2, 0, 1),
         ]}
-        color="#4E7860"
-        lineWidth={1.5}
+        color="#4A90D9"
+        lineWidth={2}
         transparent
-        opacity={0.6}
+        opacity={0.85}
       />
 
       {/* 文字 */}
@@ -597,7 +551,7 @@ function Node3D({
 }: {
   node: GraphNode;
   position: THREE.Vector3;
-  direction?: 'left' | 'right' | 'top' | 'bottom';
+  direction?: 'left' | 'right';
   selected: boolean;
   hovered: boolean;
   dimmed: boolean;
@@ -649,30 +603,16 @@ function Node3D({
     }
   });
 
-  // 根据方向计算文字位置
+  // 根据方向计算文字位置（子节点仅左右展开）
   const getTextPosition = (): [number, number, number] => {
     if (isDomain) return [0, 0, 4];
-    
-    switch (direction) {
-      case 'left': return [-3.5, 0, 3];
-      case 'right': return [3.5, 0, 3];
-      case 'top': return [0, 3.5, 3];
-      case 'bottom': return [0, -3.5, 3];
-      default: return [3.5, 0, 3];
-    }
+    return direction === 'left' ? [-3.5, 0, 3] : [3.5, 0, 3];
   };
 
   // 根据方向计算文字锚点
   const getTextAnchor = (): { x: 'left' | 'center' | 'right'; y: 'top' | 'middle' | 'bottom' } => {
     if (isDomain) return { x: 'center', y: 'middle' };
-    
-    switch (direction) {
-      case 'left': return { x: 'right', y: 'middle' };
-      case 'right': return { x: 'left', y: 'middle' };
-      case 'top': return { x: 'center', y: 'bottom' };
-      case 'bottom': return { x: 'center', y: 'top' };
-      default: return { x: 'left', y: 'middle' };
-    }
+    return direction === 'left' ? { x: 'right', y: 'middle' } : { x: 'left', y: 'middle' };
   };
 
   const textAnchor = getTextAnchor();
@@ -821,7 +761,7 @@ function SceneContent({
   edges,
   layout,
   selectedKpId,
-  expandedKpId,
+  expandedKpIds,
   onSelectKp,
   onSelectTopic,
   onExpandedKpChange,
@@ -833,12 +773,12 @@ function SceneContent({
 }: {
   nodes: GraphNode[];
   edges: GraphEdge[];
-  layout: { positions: Map<string, THREE.Vector3>; childDirections: Map<string, 'left' | 'right' | 'top' | 'bottom'> };
+  layout: { positions: Map<string, THREE.Vector3>; childDirections: Map<string, 'left' | 'right'> };
   selectedKpId: string | null;
-  expandedKpId: string | null;
+  expandedKpIds: Set<string>;
   onSelectKp: (id: string | null) => void;
   onSelectTopic: (index: number | null) => void;
-  onExpandedKpChange: (id: string | null) => void;
+  onExpandedKpChange: (id: string) => void;
   learned: Set<string>;
   mastery: Record<string, number>;
   topicMastery: Record<string, number>;
@@ -851,13 +791,13 @@ function SceneContent({
     (node: GraphNode) => {
       if (node.kind === 'domain') {
         onSelectKp(node.id);
-        onExpandedKpChange(expandedKpId === node.id ? null : node.id);
+        onExpandedKpChange(node.id);
       } else {
         onSelectTopic(node.topicIndex ?? null);
         onTopicClick?.(node.kpId, node.topicIndex ?? 0, node.label);
       }
     },
-    [expandedKpId, onSelectKp, onSelectTopic, onExpandedKpChange, onTopicClick],
+    [onSelectKp, onSelectTopic, onExpandedKpChange, onTopicClick],
   );
 
   const relatedEdges = useMemo(() => {
@@ -909,22 +849,26 @@ function SceneContent({
         );
       })}
 
-      {/* 子节点平面 */}
-      {expandedKpId && layout.positions.get(expandedKpId) && (
-        <ChildPlane
-          parentPos={layout.positions.get(expandedKpId)!}
-          children={nodes.filter((n) => n.kind === 'topic' && n.kpId === expandedKpId)}
-          layout={layout}
-          hoveredId={hoveredId}
-          selectedKpId={selectedKpId}
-          expandedKpId={expandedKpId}
-          learned={learned}
-          topicMastery={topicMastery}
-          topicProgress={topicProgress}
-          onNodeClick={handleNodeClick}
-          onNodeHover={setHoveredId}
-        />
-      )}
+      {/* 子节点平面（支持多个章节同时展开） */}
+      {Array.from(expandedKpIds).map((kpId) => {
+        const parentPos = layout.positions.get(kpId);
+        if (!parentPos) return null;
+        return (
+          <ChildPlane
+            key={kpId}
+            parentPos={parentPos}
+            children={nodes.filter((n) => n.kind === 'topic' && n.kpId === kpId)}
+            layout={layout}
+            hoveredId={hoveredId}
+            selectedKpId={selectedKpId}
+            learned={learned}
+            topicMastery={topicMastery}
+            topicProgress={topicProgress}
+            onNodeClick={handleNodeClick}
+            onNodeHover={setHoveredId}
+          />
+        );
+      })}
 
       {/* 节点 */}
       {visibleNodes.map((node) => {
@@ -946,7 +890,7 @@ function SceneContent({
             node={node}
             position={pos}
             direction={layout.childDirections.get(node.id)}
-            selected={selectedKpId === node.id || expandedKpId === node.id}
+            selected={selectedKpId === node.id || expandedKpIds.has(node.id)}
             hovered={hoveredId === node.id}
             dimmed={!!isDimmed}
             learned={learned.has(node.kpId)}
@@ -965,7 +909,7 @@ export default function KnowledgeGraph3D({
   nodes,
   edges,
   selectedKpId,
-  expandedKpId,
+  expandedKpIds,
   onSelectKp,
   onSelectTopic,
   onExpandedKpChange,
@@ -975,7 +919,7 @@ export default function KnowledgeGraph3D({
   topicProgress,
   className,
 }: KnowledgeGraph3DProps) {
-  const layout = use3DLayout(nodes, edges, expandedKpId);
+  const layout = use3DLayout(nodes, edges, expandedKpIds);
 
   return (
     <div
@@ -993,13 +937,13 @@ export default function KnowledgeGraph3D({
           maxDistance={130}
           autoRotate={false}
         />
-        <RotatingScene shouldRotate={!expandedKpId}>
+        <RotatingScene shouldRotate={expandedKpIds.size === 0}>
           <SceneContent
             nodes={nodes}
             edges={edges}
             layout={layout}
             selectedKpId={selectedKpId}
-            expandedKpId={expandedKpId}
+            expandedKpIds={expandedKpIds}
             onSelectKp={onSelectKp}
             onSelectTopic={onSelectTopic}
             onExpandedKpChange={onExpandedKpChange}

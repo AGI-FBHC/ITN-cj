@@ -220,7 +220,7 @@ export default function KnowledgeGraph({
   learned: learnedProp,
   activeKp: activeKpProp,
   onSelectTopic,
-  expandedKpId,
+  expandedKpIds,
   onExpandedKpChange,
 }: {
   /** 场景（由页面级分段控件切换）：order 学习顺序 / network 完整网络 / route 我的路线 */
@@ -238,8 +238,8 @@ export default function KnowledgeGraph({
   topicProgress?: Record<string, number>;
   learned?: Set<string>;
   activeKp?: string | null;
-  /** 受控展开章节，用于与下方章节速览联动。 */
-  expandedKpId?: string | null;
+  /** 受控展开章节集合，用于与下方章节速览联动（2D 视图只展示最近展开的一个）。 */
+  expandedKpIds?: Set<string>;
   onExpandedKpChange?: (kpId: string | null) => void;
 } = {}) {
   const navigate = useNavigate();
@@ -250,9 +250,9 @@ export default function KnowledgeGraph({
   const [edgeTip, setEdgeTip] = useState<{ x: number; y: number; kind: EdgeKind; notes: string[] } | null>(null);
   /** 渐进披露：当前展开的域（null = 只看 6 域全景） */
   const [internalExpandedKp, setInternalExpandedKp] = useState<string | null>(null);
-  const expandedKp = expandedKpId !== undefined ? expandedKpId : internalExpandedKp;
+  const expandedKp = expandedKpIds !== undefined ? (Array.from(expandedKpIds).at(-1) ?? null) : internalExpandedKp;
   const setExpandedKp = (kpId: string | null) => {
-    if (expandedKpId === undefined) setInternalExpandedKp(kpId);
+    if (expandedKpIds === undefined) setInternalExpandedKp(kpId);
     onExpandedKpChange?.(kpId);
   };
   /** 完整网络场景下被临时隐藏的关系类型（图例即控件） */

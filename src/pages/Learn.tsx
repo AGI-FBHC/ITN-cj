@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowRight, Loader2, Box, Map } from 'lucide-react';
+import { ArrowRight, Loader2, Box, Map, Expand, Shrink } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
 import { useLearningMap } from '@/hooks/useLearningMap';
 import KnowledgeGraph from '@/components/learn/KnowledgeGraph';
@@ -36,7 +36,20 @@ export default function Learn() {
   const [scene, setScene] = useState<GraphScene>('order');
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('3d');
   const [selectedKp, setSelectedKp] = useState<string | null>(null);
-  const [expandedKp, setExpandedKp] = useState<string | null>(null);
+  const [expandedKpIds, setExpandedKpIds] = useState<Set<string>>(new Set());
+  /** 3D：点击章节切换展开/收起，可同时展开多个 */
+  const toggleExpandedKp = (id: string) => {
+    setExpandedKpIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  /** 2D：单展开语义（null = 全部收起） */
+  const setSingleExpandedKp = (id: string | null) => {
+    setExpandedKpIds(id === null ? new Set() : new Set([id]));
+  };
   const [selectedTopic, setSelectedTopic] = useState<number | null>(null);
   const [actionMenu, setActionMenu] = useState<{ kpId: string; topicIndex: number; label: string } | null>(null);
   const [searchParams] = useSearchParams();
@@ -146,24 +159,44 @@ export default function Learn() {
         className="mt-5 hidden lg:grid"
       >
         {/* 上层只承载图谱与按需详情；章节速览在下方独立占满全局宽度。 */}
-        <motion.div layout="position" className="min-w-0">
+        <motion.div layout="position" className="relative min-w-0">
+          {viewMode === '3d' && (
+            <div className="absolute left-4 top-4 z-10 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setExpandedKpIds(new Set(map.graphNodes.filter((n) => n.kind === 'domain').map((n) => n.id)))}
+                className="flex items-center gap-1.5 rounded-lg border border-hairline/50 bg-white/90 px-3 py-1.5 text-[11px] text-ink-2 backdrop-blur-sm transition-colors hover:bg-white hover:text-ink"
+              >
+                <Expand size={12} />
+                展开全部
+              </button>
+              <button
+                type="button"
+                onClick={() => setExpandedKpIds(new Set())}
+                className="flex items-center gap-1.5 rounded-lg border border-hairline/50 bg-white/90 px-3 py-1.5 text-[11px] text-ink-2 backdrop-blur-sm transition-colors hover:bg-white hover:text-ink"
+              >
+                <Shrink size={12} />
+                收起全部
+              </button>
+            </div>
+          )}
           {viewMode === '3d' ? (
             <KnowledgeGraph3D
               onTopicClick={(kpId, topicIndex, label) => setActionMenu({ kpId, topicIndex, label })}
               nodes={map.graphNodes}
               edges={map.graphEdges}
               selectedKpId={selectedKp}
-              expandedKpId={expandedKp}
+              expandedKpIds={expandedKpIds}
               onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }}
               onSelectTopic={setSelectedTopic}
-              onExpandedKpChange={setExpandedKp}
+              onExpandedKpChange={toggleExpandedKp}
               learned={map.learned}
               mastery={map.mastery}
               topicMastery={map.topicMastery}
               topicProgress={map.topicProgress}
             />
           ) : (
-            <KnowledgeGraph scene={scene} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpId={expandedKp} onExpandedKpChange={setExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} />
+            <KnowledgeGraph scene={scene} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpIds={expandedKpIds} onExpandedKpChange={setSingleExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} />
           )}
         </motion.div>
         <AnimatePresence initial={false} mode="popLayout">
@@ -188,7 +221,7 @@ export default function Learn() {
           transition={{ duration: 0.35, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
           className="mt-4 hidden border-t border-hairline/60 pt-4 lg:block"
         >
-          <UnitQuickList selectedKpId={selectedKp} onSelect={(kpId) => { setSelectedKp(kpId); setSelectedTopic(null); setExpandedKp(kpId); }} routeOrdered={scene === 'route'} columns items={knowledgePoints} path={map.path} learned={map.learned} mastery={map.mastery} />
+          <UnitQuickList selectedKpId={selectedKp} onSelect={(kpId) => { setSelectedKp(kpId); setSelectedTopic(null); setSingleExpandedKp(kpId); }} routeOrdered={scene === 'route'} columns items={knowledgePoints} path={map.path} learned={map.learned} mastery={map.mastery} />
         </motion.div>
       )}
 
@@ -259,5 +292,3 @@ export default function Learn() {
     </div>
   );
 }
-
-
