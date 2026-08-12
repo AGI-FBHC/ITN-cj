@@ -407,9 +407,7 @@ function Node3D({
   const textAnchor = getTextAnchor();
 
   return (
-    <Billboard>
-    <group
-      position={position}
+    <group position={position}
       onPointerEnter={(e) => {
         e.stopPropagation();
         onHover(node.id);
@@ -482,7 +480,6 @@ function Node3D({
         </Text>
       </Billboard>
         </group>
-    </Billboard>
   );
 }
 
@@ -774,5 +771,6 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
+
 
 
