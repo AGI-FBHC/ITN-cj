@@ -311,7 +311,7 @@ function Node3D({
         <meshBasicMaterial
           color={getColor()}
           transparent
-          opacity={dimmed ? 0.2 : 0.95}
+          opacity={dimmed ? 0.2 : 1}
         />
       </mesh>
 
@@ -329,8 +329,8 @@ function Node3D({
             dimmed ? 'opacity-10' : hovered || selected ? 'opacity-100 scale-110' : 'opacity-90'
           } ${isDomain ? 'text-center' : 'text-left'}`}
           style={{
-            color: '#3D4A3A',
-            fontSize: isDomain ? '24px' : '18px',
+            color: isDomain ? '#FFFFFF' : '#3D4A3A',
+            fontSize: isDomain ? '28px' : '20px',
             textShadow: '0 1px 2px rgba(247,245,238,0.8), 0 0 6px rgba(247,245,238,0.5)',
           }}
         >
@@ -600,6 +600,7 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
+
 
 
 
