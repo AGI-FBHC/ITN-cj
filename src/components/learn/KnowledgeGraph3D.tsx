@@ -55,6 +55,22 @@ interface KnowledgeGraph3DProps {
   className?: string;
 }
 
+/** 多轴随机缓慢旋转的场景容器 */
+function RotatingScene({ children, shouldRotate }: { children: React.ReactNode; shouldRotate: boolean }) {
+  const groupRef = useRef<THREE.Group>(null);
+
+  useFrame((state) => {
+    if (!groupRef.current || !shouldRotate) return;
+    const time = state.clock.elapsedTime * 0.05; // 非常慢的速度
+    // 多轴随机旋转：X、Y、Z 轴都有小幅度的缓慢旋转
+    groupRef.current.rotation.x = Math.sin(time * 0.7) * 0.15;
+    groupRef.current.rotation.y = time * 0.3 + Math.sin(time * 0.5) * 0.1;
+    groupRef.current.rotation.z = Math.cos(time * 0.6) * 0.08;
+  });
+
+  return <group ref={groupRef}>{children}</group>;
+}
+
 /** 3D 力导向布局 */
 function use3DLayout(nodes: GraphNode[], edges: GraphEdge[]) {
   return useMemo(() => {
@@ -525,23 +541,24 @@ export default function KnowledgeGraph3D({
           enableRotate
           minDistance={20}
           maxDistance={130}
-          autoRotate
-          autoRotateSpeed={0.35}
+          autoRotate={false}
         />
-        <SceneContent
-          nodes={nodes}
-          edges={edges}
-          layout={layout}
-          selectedKpId={selectedKpId}
-          expandedKpId={expandedKpId}
-          onSelectKp={onSelectKp}
-          onSelectTopic={onSelectTopic}
-          onExpandedKpChange={onExpandedKpChange}
-          learned={learned}
-          mastery={mastery}
-          topicMastery={topicMastery}
-          topicProgress={topicProgress}
-        />
+        <RotatingScene shouldRotate={!expandedKpId}>
+                  <SceneContent
+            nodes={nodes}
+            edges={edges}
+            layout={layout}
+            selectedKpId={selectedKpId}
+            expandedKpId={expandedKpId}
+            onSelectKp={onSelectKp}
+            onSelectTopic={onSelectTopic}
+            onExpandedKpChange={onExpandedKpChange}
+            learned={learned}
+            mastery={mastery}
+            topicMastery={topicMastery}
+            topicProgress={topicProgress}
+          />
+        </RotatingScene>
       </Canvas>
 
       {/* 提示 */}
@@ -561,4 +578,8 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
+
+
+
+
 
