@@ -330,7 +330,7 @@ function Node3D({
           } ${isDomain ? 'text-center' : 'text-left'}`}
           style={{
             color: '#3D4A3A',
-            fontSize: isDomain ? '18px' : '14px',
+            fontSize: isDomain ? '24px' : '18px',
             textShadow: '0 1px 2px rgba(247,245,238,0.8), 0 0 6px rgba(247,245,238,0.5)',
           }}
         >
@@ -600,6 +600,7 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
+
 
 
 
