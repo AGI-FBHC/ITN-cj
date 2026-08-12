@@ -4,7 +4,7 @@
  */
 import { useRef, useMemo, useState, useCallback } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Html, Line, PerspectiveCamera } from '@react-three/drei';
+import { OrbitControls, Text, Line, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import type { GraphNode, GraphEdge, EdgeKind } from '@/data/knowledgeGraph';
 
@@ -359,24 +359,18 @@ function Node3D({
       <ProgressRing radius={baseSize} progress={progress} hovered={hovered} selected={selected} />
 
       {/* 标签：子节点文字放在圆圈外部（右侧），像 XMind */}
-      <Html
-        distanceFactor={16}
-        position={isDomain ? [0, 0, 0] : [2.5, 0, 0]} // 子节点文字在右侧
-        center={isDomain}
+      <Text
+        position={isDomain ? [0, 0, 1.5] : [2.5, 0, 0]}
+        fontSize={isDomain ? 2 : 1.2}
+        color={isDomain ? '#FFFFFF' : '#3D4A3A'}
+        anchorX={isDomain ? 'center' : 'left'}
+        anchorY="middle"
+        outlineWidth={0.1}
+        outlineColor={isDomain ? '#000000' : '#FFFFFF'}
+        outlineOpacity={0.3}
       >
-        <div
-          className={`pointer-events-none select-none whitespace-nowrap font-semibold transition-all duration-200 ${
-            dimmed ? 'opacity-10' : hovered || selected ? 'opacity-100 scale-110' : 'opacity-90'
-          } ${isDomain ? 'text-center' : 'text-left'}`}
-          style={{
-            color: isDomain ? '#FFFFFF' : '#3D4A3A',
-            fontSize: isDomain ? '28px' : '20px',
-            textShadow: '0 1px 2px rgba(247,245,238,0.8), 0 0 6px rgba(247,245,238,0.5)',
-          }}
-        >
-          {node.label}
-        </div>
-      </Html>
+        {node.label}
+      </Text>
     </group>
   );
 }
@@ -640,6 +634,8 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
+
+
 
 
 
