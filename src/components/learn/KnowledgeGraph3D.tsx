@@ -1,37 +1,36 @@
 /**
- * KnowledgeGraph3D — Obsidian 风格 3D 知识图谱
+ * KnowledgeGraph3D — Obsidian 风格 3D 知识图谱（主题适配版）
  * 特性：
- * - 发光节点（球体）与发光连线（贝塞尔曲线）
- * - 力导向 3D 布局（节点自动分布）
- * - 鼠标交互：拖拽旋转、滚轮缩放、悬停高亮、点击选中
- * - 粒子星空背景
- * - 动态脉冲与呼吸动画
+ * - 奶油色背景，适配柔绿治愈系主题
+ * - 发光节点 + 直线连接，简洁不杂乱
+ * - 大号文字直接显示，无背景框
+ * - 交互：旋转、缩放、悬停高亮、点击展开
  */
 import { useRef, useMemo, useState, useCallback } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Html, Line, Stars, PerspectiveCamera } from '@react-three/drei';
+import { OrbitControls, Html, Line, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import type { GraphNode, GraphEdge, EdgeKind } from '@/data/knowledgeGraph';
 import { cn } from '@/lib/utils';
 
 const EDGE_COLORS: Record<EdgeKind, string> = {
-  prereq: '#5F8870',
+  prereq: '#4E7860',
   related: '#B77552',
   applies: '#66725E',
 };
 
 const NODE_COLORS = {
   domain: {
-    base: '#4E7860',
+    base: '#9BC5AC',
     hover: '#E7B45A',
-    selected: '#2D5A3D',
-    learned: '#9BC5AC',
+    selected: '#4E7860',
+    learned: '#6BA080',
   },
   topic: {
-    base: '#83A58F',
+    base: '#B8D4C0',
     hover: '#D4A373',
-    selected: '#5F8870',
-    learned: '#B8D4C0',
+    selected: '#83A58F',
+    learned: '#9BC5AC',
   },
 };
 
@@ -48,40 +47,42 @@ interface KnowledgeGraph3DProps {
   className?: string;
 }
 
-/** 将 2D 图谱坐标转换为 3D 球面分布 */
-function use3DLayout(nodes: GraphNode[]) {
+/** 3D 布局：域节点环形分布，子节点围绕父域 */
+function use3DLayout(nodes: GraphNode[], expandedKpId: string | null) {
   return useMemo(() => {
     const layout = new Map<string, { x: number; y: number; z: number }>();
     const domainNodes = nodes.filter((n) => n.kind === 'domain');
     const topicNodes = nodes.filter((n) => n.kind === 'topic');
 
-    // 域节点分布在球面上
-    const radius = 40;
+    // 域节点环形分布
+    const radius = 35;
     domainNodes.forEach((node, i) => {
-      const phi = Math.acos(-1 + (2 * i) / Math.max(1, domainNodes.length - 1));
-      const theta = Math.sqrt(domainNodes.length * Math.PI) * phi;
+      const angle = (i / domainNodes.length) * Math.PI * 2;
       layout.set(node.id, {
-        x: radius * Math.cos(theta) * Math.sin(phi),
-        y: radius * Math.sin(theta) * Math.sin(phi),
-        z: radius * Math.cos(phi),
+        x: Math.cos(angle) * radius,
+        y: Math.sin(angle) * radius,
+        z: 0,
       });
     });
 
-    // 子节点围绕父域节点
-    topicNodes.forEach((node) => {
-      const parentPos = layout.get(node.kpId);
-      if (!parentPos) return;
-      const angle = (node.topicIndex ?? 0) * Math.PI * 0.5;
-      const dist = 15;
-      layout.set(node.id, {
-        x: parentPos.x + Math.cos(angle) * dist,
-        y: parentPos.y + Math.sin(angle) * dist,
-        z: parentPos.z + (Math.random() - 0.5) * 10,
+    // 只显示展开域的子节点
+    if (expandedKpId) {
+      const parentPos = layout.get(expandedKpId);
+      const children = topicNodes.filter((n) => n.kpId === expandedKpId);
+      children.forEach((node, i) => {
+        if (!parentPos) return;
+        const angle = (i / children.length) * Math.PI * 2;
+        const dist = 18;
+        layout.set(node.id, {
+          x: parentPos.x + Math.cos(angle) * dist,
+          y: parentPos.y + Math.sin(angle) * dist,
+          z: parentPos.z + 5,
+        });
       });
-    });
+    }
 
     return layout;
-  }, [nodes]);
+  }, [nodes, expandedKpId]);
 }
 
 /** 3D 节点组件 */
@@ -105,24 +106,17 @@ function Node3D({
   onHover: (id: string | null) => void;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
-  const glowRef = useRef<THREE.Mesh>(null);
   const isDomain = node.kind === 'domain';
   const colors = isDomain ? NODE_COLORS.domain : NODE_COLORS.topic;
 
   const color = selected ? colors.selected : hovered ? colors.hover : learned ? colors.learned : colors.base;
-  const scale = isDomain ? 1.2 : 0.6;
-  const pulseScale = selected ? 1.3 : hovered ? 1.15 : 1;
+  const baseScale = isDomain ? 1.5 : 0.8;
+  const pulseScale = selected ? 1.2 : hovered ? 1.1 : 1;
 
   useFrame((state) => {
     if (!meshRef.current) return;
-    // 呼吸动画
     const breathe = 1 + Math.sin(state.clock.elapsedTime * 2 + position.x) * 0.03;
-    meshRef.current.scale.setScalar(scale * breathe * pulseScale);
-    
-    // 光晕旋转
-    if (glowRef.current) {
-      glowRef.current.rotation.z = state.clock.elapsedTime * 0.5;
-    }
+    meshRef.current.scale.setScalar(baseScale * breathe * pulseScale);
   });
 
   return (
@@ -140,51 +134,39 @@ function Node3D({
         }}
         onPointerOut={() => onHover(null)}
       >
-        <sphereGeometry args={[node.r * 0.08, 32, 32]} />
+        <sphereGeometry args={[node.r * 0.06, 32, 32]} />
         <meshStandardMaterial
           color={color}
           emissive={color}
-          emissiveIntensity={hovered ? 1.2 : selected ? 0.9 : 0.5}
-          roughness={0.15}
-          metalness={0.9}
-          transparent
-          opacity={0.95}
+          emissiveIntensity={hovered ? 0.8 : selected ? 0.6 : 0.3}
+          roughness={0.3}
+          metalness={0.2}
         />
       </mesh>
 
-      {/* 光晕层 */}
-      <mesh ref={glowRef} scale={1.4}>
-        <sphereGeometry args={[node.r * 0.08, 16, 16]} />
-        <meshBasicMaterial
-          color={color}
-          transparent
-          opacity={hovered ? 0.3 : selected ? 0.25 : 0.12}
-          side={THREE.BackSide}
-        />
-      </mesh>
-
-      {/* 选中脉冲环 */}
+      {/* 选中光环 */}
       {selected && (
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[node.r * 0.12, node.r * 0.15, 32]} />
+        <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, -0.5]}>
+          <ringGeometry args={[node.r * 0.08, node.r * 0.1, 32]} />
           <meshBasicMaterial color="#E7B45A" transparent opacity={0.6} side={THREE.DoubleSide} />
         </mesh>
       )}
 
-      {/* 标签 */}
-      <Html distanceFactor={25} center>
+      {/* 标签：大号文字，无背景框，深色高对比 */}
+      <Html distanceFactor={20} center>
         <div
           className={cn(
-            'pointer-events-none select-none whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-medium transition-all duration-200',
-            hovered || selected
-              ? 'bg-white/95 text-ink shadow-lg scale-110'
-              : 'bg-white/70 text-ink-2 shadow-sm',
+            'pointer-events-none select-none whitespace-nowrap text-center font-semibold transition-all duration-200',
+            hovered || selected ? 'text-[16px] text-ink scale-110' : 'text-[13px] text-ink-2',
           )}
-          style={{ fontFamily: 'DM Sans, sans-serif' }}
+          style={{ 
+            fontFamily: 'DM Sans, sans-serif',
+            textShadow: '0 1px 2px rgba(247, 245, 238, 0.8), 0 0 8px rgba(247, 245, 238, 0.6)',
+          }}
         >
           {node.label}
           {isDomain && mastery > 0 && (
-            <span className="ml-1 text-[9px] opacity-70">{mastery}%</span>
+            <div className="text-[11px] font-normal text-ink-muted">{mastery}%</div>
           )}
         </div>
       </Html>
@@ -192,7 +174,7 @@ function Node3D({
   );
 }
 
-/** 3D 连线组件 */
+/** 3D 连线组件（直线） */
 function Edge3D({
   edge,
   fromPos,
@@ -204,44 +186,23 @@ function Edge3D({
   toPos: { x: number; y: number; z: number };
   hovered: boolean;
 }) {
-  const points = useMemo(() => {
-    const start = new THREE.Vector3(fromPos.x, fromPos.y, fromPos.z);
-    const end = new THREE.Vector3(toPos.x, toPos.y, toPos.z);
-    const mid = start.clone().lerp(end, 0.5);
-    
-    // 向外弯曲，避免穿过节点
-    const dist = start.distanceTo(end);
-    mid.normalize().multiplyScalar(dist * 0.15);
-    
-    const curve = new THREE.QuadraticBezierCurve3(start, mid, end);
-    return curve.getPoints(32);
-  }, [fromPos, toPos]);
-
   const color = EDGE_COLORS[edge.kind];
+  const points = useMemo(() => [
+    new THREE.Vector3(fromPos.x, fromPos.y, fromPos.z),
+    new THREE.Vector3(toPos.x, toPos.y, toPos.z),
+  ], [fromPos, toPos]);
 
   return (
-    <group>
-      <Line
-        points={points}
-        color={color}
-        lineWidth={hovered ? 3 : 1.5}
-        transparent
-        opacity={hovered ? 0.9 : 0.4}
-        dashed={edge.kind === 'related'}
-        dashSize={2}
-        gapSize={1}
-      />
-      {/* 发光效果 */}
-      {hovered && (
-        <Line
-          points={points}
-          color={color}
-          lineWidth={6}
-          transparent
-          opacity={0.2}
-        />
-      )}
-    </group>
+    <Line
+      points={points}
+      color={color}
+      lineWidth={hovered ? 2.5 : 1.5}
+      transparent
+      opacity={hovered ? 0.9 : 0.5}
+      dashed={edge.kind === 'related'}
+      dashSize={1.5}
+      gapSize={0.8}
+    />
   );
 }
 
@@ -283,7 +244,6 @@ function SceneContent({
     [expandedKpId, onSelectKp, onSelectTopic, onExpandedKpChange],
   );
 
-  // 找到与悬停节点相关的边
   const connectedEdges = useMemo(() => {
     if (!hoveredId) return new Set<string>();
     const related = new Set<string>();
@@ -295,15 +255,17 @@ function SceneContent({
     return related;
   }, [hoveredId, edges]);
 
+  // 只渲染有位置的节点（展开的子节点）
+  const visibleNodes = useMemo(() => {
+    return nodes.filter((node) => layout.has(node.id));
+  }, [nodes, layout]);
+
   return (
     <>
       {/* 环境光 */}
-      <ambientLight intensity={0.4} />
-      <pointLight position={[50, 50, 50]} intensity={1} />
-      <pointLight position={[-50, -50, -50]} intensity={0.5} color="#9BC5AC" />
-
-      {/* 星空背景 */}
-      <Stars radius={100} depth={50} count={3000} factor={4} saturation={0} fade speed={1} />
+      <ambientLight intensity={0.6} />
+      <directionalLight position={[20, 20, 20]} intensity={0.8} />
+      <directionalLight position={[-20, -20, 10]} intensity={0.4} color="#9BC5AC" />
 
       {/* 渲染边 */}
       {edges.map((edge) => {
@@ -323,7 +285,7 @@ function SceneContent({
       })}
 
       {/* 渲染节点 */}
-      {nodes.map((node) => {
+      {visibleNodes.map((node) => {
         const position = layout.get(node.id);
         if (!position) return null;
         return (
@@ -356,20 +318,20 @@ export default function KnowledgeGraph3D({
   mastery,
   className,
 }: KnowledgeGraph3DProps) {
-  const layout = use3DLayout(nodes);
+  const layout = use3DLayout(nodes, expandedKpId);
 
   return (
-    <div className={cn('relative h-[600px] w-full overflow-hidden rounded-2xl bg-gradient-to-br from-[#0a0f0d] to-[#1a231f]', className)}>
+    <div className={cn('relative h-[600px] w-full overflow-hidden rounded-2xl border border-hairline bg-gradient-to-br from-paper via-paper-deep to-brand-tint/30', className)}>
       <Canvas>
-        <PerspectiveCamera makeDefault position={[0, 0, 80]} fov={60} />
+        <PerspectiveCamera makeDefault position={[0, 0, 70]} fov={50} />
         <OrbitControls
           enablePan
           enableZoom
           enableRotate
           minDistance={30}
-          maxDistance={150}
+          maxDistance={120}
           autoRotate
-          autoRotateSpeed={0.5}
+          autoRotateSpeed={0.3}
         />
         <SceneContent
           nodes={nodes}
@@ -386,14 +348,14 @@ export default function KnowledgeGraph3D({
       </Canvas>
 
       {/* 操作提示 */}
-      <div className="absolute bottom-4 left-4 rounded-lg bg-black/50 px-3 py-2 text-[11px] text-white/80 backdrop-blur-sm">
-        <div>🖱️ 拖拽旋转 · 滚轮缩放 · 点击节点展开</div>
+      <div className="absolute bottom-4 left-4 rounded-lg bg-white/80 px-3 py-2 text-[11px] text-ink-muted backdrop-blur-sm border border-hairline/50">
+        <div>🖱️ 拖拽旋转 · 滚轮缩放 · 点击章节展开子知识点</div>
       </div>
 
       {/* 图例 */}
-      <div className="absolute right-4 top-4 flex flex-col gap-2 rounded-lg bg-black/50 p-3 backdrop-blur-sm">
+      <div className="absolute right-4 top-4 flex flex-col gap-2 rounded-lg bg-white/80 p-3 backdrop-blur-sm border border-hairline/50">
         {(Object.keys(EDGE_COLORS) as EdgeKind[]).map((kind) => (
-          <div key={kind} className="flex items-center gap-2 text-[11px] text-white/90">
+          <div key={kind} className="flex items-center gap-2 text-[11px] text-ink-2">
             <div className="h-0.5 w-6 rounded-full" style={{ backgroundColor: EDGE_COLORS[kind] }} />
             <span>{kind === 'prereq' ? '先学它' : kind === 'related' ? '互相印证' : '规范约束'}</span>
           </div>
