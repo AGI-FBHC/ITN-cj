@@ -44,7 +44,7 @@ export default function UnitQuickList({
   onSelect: (kpId: string) => void;
   /** 「我的路线」场景：按学习路径顺序重排并带序号 */
   routeOrdered?: boolean;
-  /** 横向紧凑网格（放在图谱下方时用）：6 单元 2~3 列，压扁高度 */
+  /** 横向紧凑网格：全局宽度下按可用空间扩到 2~5 列。 */
   columns?: boolean;
   items?: KnowledgePoint[];
   path?: PathNode[];
@@ -85,7 +85,7 @@ export default function UnitQuickList({
         <span className="text-[12.5px] font-medium text-ink">章节速览</span>
         <span className="text-[10.5px] text-ink-muted">点一行 · 图上看它的位置</span>
       </div>
-      <div className={cn('mt-1', columns ? 'grid gap-x-8 sm:grid-cols-2 xl:grid-cols-3' : 'divide-y divide-hairline/70')}>
+      <div className={cn('mt-1', columns ? 'grid gap-x-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5' : 'divide-y divide-hairline/70')}>
         {items.map((kp) => {
           const score = mastery[kp.id] ?? 50;
           const isLearned = learned.has(kp.id);
@@ -108,11 +108,11 @@ export default function UnitQuickList({
                 <span className="w-4 shrink-0 font-mono text-[10.5px] font-semibold text-ochre">{seq + 1}</span>
               )}
               <StatusDot state={state} />
-              <span className={cn('min-w-0 flex-1 truncate text-[13px]', selected ? 'font-medium text-ink' : 'text-ink-2')}>
+              <span className={cn('min-w-0 flex-1 text-[13px] leading-[18px] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden', selected ? 'font-medium text-ink' : 'text-ink-2')} title={kp.name}>
                 {kp.name}
               </span>
               {/* 微型掌握条 + 目标刻度（未学的单元不画刻度——空条上飘孤立红点很怪） */}
-              <span className={cn('relative h-1 w-16 shrink-0 overflow-hidden rounded-full bg-paper-deep', !isLearned && 'opacity-50')}>
+              <span className={cn('relative h-1 w-10 shrink-0 overflow-hidden rounded-full bg-paper-deep xl:w-12', !isLearned && 'opacity-50')}>
                 {isLearned && (
                   <>
                     <span

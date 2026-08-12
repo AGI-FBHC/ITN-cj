@@ -114,12 +114,9 @@ export default function Learn() {
         transition={{ layout: { duration: 0.32, ease: [0.22, 1, 0.36, 1] }, gridTemplateColumns: { duration: 0.32, ease: [0.22, 1, 0.36, 1] }, columnGap: { duration: 0.28 } }}
         className="mt-5 hidden lg:grid"
       >
-        {/* 左栏 = 图谱 + 速览（左栏更长，右栏 sticky 跟随——短边放右侧才不会滚出空腔） */}
+        {/* 上层只承载图谱与按需详情；章节速览在下方独立占满全局宽度。 */}
         <motion.div layout="position" className="min-w-0">
 <KnowledgeGraph scene={scene} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpId={expandedKp} onExpandedKpChange={setExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} />
-          <div className="mt-3 border-t border-hairline/60 pt-3">
-            <UnitQuickList selectedKpId={selectedKp} onSelect={(kpId) => { setSelectedKp(kpId); setSelectedTopic(null); setExpandedKp(kpId); }} routeOrdered={scene === 'route'} columns items={knowledgePoints} path={map.path} learned={map.learned} mastery={map.mastery} />
-          </div>
         </motion.div>
         <AnimatePresence initial={false} mode="popLayout">
         {selectedKp && <motion.div
@@ -134,6 +131,18 @@ export default function Learn() {
         </motion.div>}
         </AnimatePresence>
       </motion.div>
+
+      {/* 全局章节速览不参与上方两栏动画，侧栏出现时不会被挤压或拉伸。 */}
+      {knowledgePoints.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
+          className="mt-4 hidden border-t border-hairline/60 pt-4 lg:block"
+        >
+          <UnitQuickList selectedKpId={selectedKp} onSelect={(kpId) => { setSelectedKp(kpId); setSelectedTopic(null); setExpandedKp(kpId); }} routeOrdered={scene === 'route'} columns items={knowledgePoints} path={map.path} learned={map.learned} mastery={map.mastery} />
+        </motion.div>
+      )}
 
       {/* ============ 移动端：图谱不适合小屏，单元卡片作为移动布局 ============ */}
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:hidden">
