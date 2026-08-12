@@ -11,6 +11,7 @@ import { Loader2 } from 'lucide-react';
 import { useProfile, dataIdOf } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
 import { presentationApi } from '@/lib/presentationApi';
+import { readResourceCache, removeResourceCache, upsertResourceCache } from '@/lib/resourceCache';
 import type { PresentationTask } from '@/lib/presentationApi';
 import { reportForLearner } from '@/data/reportBuilder';
 import type { PathNodeStatus } from '@/data/reportData';
@@ -126,6 +127,12 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
     let timer = 0;
 
     const restorePptStatus = async () => {
+      const cachedPpt = readResourceCache(scope)?.ppt;
+      if (cachedPpt?.id && cachedPpt.status === 'completed') {
+        setPptResources((current) => (current[scope]?.id === cachedPpt.id ? current : { ...current, [scope]: { id: cachedPpt.id, title: cachedPpt.title, status: 'completed' as const } }));
+        if (!cancelled) setCheckingPpt(false);
+        return;
+      }
       setCheckingPpt(true);
       try {
         const listed = await presentationApi.listPresentationSummaries(50);
@@ -145,8 +152,13 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           if (previous?.id === match.id && previous.status === match.status && previous.title === match.title) return current;
           return { ...current, [scope]: { id: match.id, title: match.title, status: match.status } };
         });
-        if (match && !['completed', 'failed', 'cancelled'].includes(match.status)) {
-          timer = window.setTimeout(restorePptStatus, 2500);
+        if (match) {
+          upsertResourceCache(scope, 'ppt', { id: match.id, title: match.title, status: match.status, updatedAt: new Date().toISOString() });
+          if (!['completed', 'failed', 'cancelled'].includes(match.status)) {
+            timer = window.setTimeout(restorePptStatus, 2500);
+          }
+        } else {
+          removeResourceCache(scope, 'ppt');
         }
       } catch {
         /* 状态恢复失败不覆盖当前按钮；用户点击时仍会再次查询，避免误创建。 */
@@ -168,6 +180,23 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
     let cancelled = false;
     let timer = 0;
     const syncTasks = async () => {
+      const resourceForms = Object.keys(FORM_META) as ResourceForm[];
+      const cached = readResourceCache(scope);
+      const cachedForms = resourceForms.filter((form) => Boolean(cached?.[form]?.id));
+      if (cachedForms.length === resourceForms.length) {
+        setGeneratedResources((current) => {
+          const links: Partial<Record<ResourceForm, GeneratedResourceLink>> = {};
+          cachedForms.forEach((form) => {
+            const entry = cached?.[form];
+            if (entry) links[form] = { id: entry.id, title: entry.title };
+          });
+          const next = { ...current };
+          if (!next[scope]) next[scope] = {};
+          Object.assign(next[scope], links);
+          return next;
+        });
+        return;
+      }
       try {
         const { tasks } = await api.listLearningResourceTasks(50);
         if (cancelled) return;
@@ -178,6 +207,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           if (!['completed', 'failed', 'cancelled'].includes(task.status)) nextGenerating.add(key);
           if (task.status === 'completed' && task.resourceId) {
             setGeneratedResources((current) => ({ ...current, [scope]: { ...current[scope], [form]: { id: task.resourceId!, title: task.title } } }));
+            upsertResourceCache(scope, form, { id: task.resourceId!, title: task.title, updatedAt: new Date().toISOString() });
           }
         }
         setGenerating((current) => {
@@ -273,6 +303,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           [form]: { id: resource.id, title: resource.title },
         },
       }));
+      upsertResourceCache(resourceScope, form, { id: resource.id, title: resource.title, updatedAt: new Date().toISOString() });
       toast.success(`${meta.label}已通过多智能体审查，可以打开`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '资源生成失败');
@@ -295,6 +326,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
         const task = await presentationApi.getPresentation(taskId);
         if (!mounted.current) return;
         if (task.status === 'failed' || task.status === 'cancelled') {
+          removeResourceCache(scope, 'ppt');
           setPptResources((current) => {
             const next = { ...current };
             delete next[scope];
@@ -304,6 +336,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           return;
         }
         setPptResources((current) => ({ ...current, [scope]: { id: task.id, title: task.title, status: task.status } }));
+        upsertResourceCache(scope, 'ppt', { id: task.id, title: task.title, status: task.status, updatedAt: new Date().toISOString() });
         if (task.status === 'completed') {
           toast.success('交互课件已生成，可以打开', { description: focus });
           return;
@@ -346,6 +379,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
           .find((item) => !['failed', 'cancelled'].includes(item.status));
         if (match) {
+          upsertResourceCache(resourceScope, 'ppt', { id: match.id, title: match.title, status: match.status, updatedAt: new Date().toISOString() });
           if (match.status === 'completed') {
             setPptResources((current) => ({ ...current, [resourceScope]: { id: match.id, title: match.title, status: 'completed' } }));
             navigate(`/learn/${kpId}?ppt=${match.id}&topic=${encodeURIComponent(focus)}`);
@@ -410,6 +444,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
         },
       });
       setPptResources((current) => ({ ...current, [resourceScope]: { id: task.id, title: task.title, status: task.status } }));
+      upsertResourceCache(resourceScope, 'ppt', { id: task.id, title: task.title, status: task.status, updatedAt: new Date().toISOString() });
       toast.success('交互课件已加入后台生成', { description: '可以继续生成讲义、实操指南或分阶测试题。' });
       void watchPpt(resourceScope, task.id, focus);
     } catch (error) {
