@@ -1017,6 +1017,7 @@ export default function KnowledgeGraph3D({
       <Canvas>
         <PerspectiveCamera makeDefault position={[0, 0, 75]} fov={45} />
         <OrbitControls
+          makeDefault
           enablePan
           enableZoom
           enableRotate
