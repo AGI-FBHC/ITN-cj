@@ -259,7 +259,7 @@ function EdgeArrow({
     const dir = toPos.clone().sub(fromPos);
     const len = Math.max(dir.length(), 0.001);
     dir.normalize();
-    const pad = Math.min(4, len * 0.2);
+    const pad = Math.min(5, len * 0.25);
     return toPos.clone().sub(dir.multiplyScalar(pad));
   }, [fromPos, toPos]);
 
@@ -268,26 +268,28 @@ function EdgeArrow({
     if (!g) return;
 
     // 用相机坐标系把边方向投影到成像平面，让箭头始终顺着边指向目标
-    const m = camera.matrixWorld.elements;
-    const camRight = new THREE.Vector3(m[0], m[4], m[8]);
-    const camUp = new THREE.Vector3(m[1], m[5], m[9]);
-    const camDir = new THREE.Vector3(m[2], m[6], m[10]);
+    // 注意 matrixWorld 是列主序：右轴取第 1 列、上轴取第 2 列
+    const e = camera.matrixWorld.elements;
+    const camRight = new THREE.Vector3(e[0], e[1], e[2]);
+    const camUp = new THREE.Vector3(e[4], e[5], e[6]);
+    const camBack = new THREE.Vector3(e[8], e[9], e[10]);
     const edgeDir = toPos.clone().sub(fromPos).normalize();
-    const alongView = edgeDir.dot(camDir);
+    const alongView = edgeDir.dot(camBack);
     let angle = 0;
-    if (Math.abs(alongView) < 0.999) {
-      const proj = edgeDir.clone().sub(camDir.clone().multiplyScalar(alongView)).normalize();
+    if (Math.abs(alongView) < 0.995) {
+      const proj = edgeDir.clone().sub(camBack.clone().multiplyScalar(alongView)).normalize();
       angle = Math.atan2(proj.dot(camUp), proj.dot(camRight));
     }
 
     g.position.copy(position);
-    g.scale.setScalar(hovered ? 1.1 : 1);
-    g.lookAt(camera.position);
+    // 直接对齐相机朝向，再绕视线轴旋转到边方向
+    g.quaternion.copy(camera.quaternion);
     g.rotateZ(angle);
+    g.scale.setScalar(hovered ? 1.2 : 1);
 
     const mesh = textRef.current;
     if (mesh && (mesh.material as any).opacity !== undefined) {
-      (mesh.material as any).opacity = dimmed ? 0.15 : hovered ? 1 : 0.85;
+      (mesh.material as any).opacity = dimmed ? 0.15 : hovered ? 1 : 0.9;
       (mesh.material as any).transparent = true;
     }
   });
@@ -296,13 +298,13 @@ function EdgeArrow({
     <group ref={(el) => { groupRef.current = el; }}>
       <Text
         ref={(el) => { textRef.current = el; }}
-        fontSize={0.9}
+        fontSize={2.2}
         color={color}
         anchorX="center"
         anchorY="middle"
-        outlineWidth={0.05}
+        outlineWidth={0.08}
         outlineColor="#ffffff"
-        outlineOpacity={0.6}
+        outlineOpacity={0.7}
       >
         ›
       </Text>
