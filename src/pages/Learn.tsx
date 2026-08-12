@@ -138,7 +138,7 @@ export default function Learn() {
       >
         {/* 上层只承载图谱与按需详情；章节速览在下方独立占满全局宽度。 */}
         <motion.div layout="position" className="relative min-w-0">
-          <div className="absolute left-4 top-4 z-10 flex flex-col items-start gap-2">
+          <div className={cn('absolute top-4 z-10 flex flex-col gap-2', viewMode === '3d' ? 'right-4 items-end' : 'left-4 items-start')}>
             {viewMode === '3d' && (
               <button
                 type="button"
@@ -175,7 +175,7 @@ export default function Learn() {
               )}
             >
               {showLearnedPath ? <Check size={12} /> : <Route size={12} />}
-              {showLearnedPath ? '隐藏已学路径' : '我的已学路径'}
+              {showLearnedPath ? '隐藏已学路径' : '已学路径'}
             </button>
           </div>
           {viewMode === '3d' ? (
