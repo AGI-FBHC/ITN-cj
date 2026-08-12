@@ -10,6 +10,7 @@ import KnowledgeGraph from '@/components/learn/KnowledgeGraph';
 import KnowledgeGraph3D from '@/components/learn/KnowledgeGraph3D';
 import type { GraphScene } from '@/components/learn/KnowledgeGraph';
 import KpDetailPanel from '@/components/learn/KpDetailPanel';
+import NodeActionMenu from '@/components/learn/NodeActionMenu';
 import UnitQuickList from '@/components/learn/UnitQuickList';
 import { Fern, GrassTuft } from '@/components/heal/Flora';
 import { cn } from '@/lib/utils';
@@ -37,6 +38,7 @@ export default function Learn() {
   const [selectedKp, setSelectedKp] = useState<string | null>(null);
   const [expandedKp, setExpandedKp] = useState<string | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<number | null>(null);
+  const [actionMenu, setActionMenu] = useState<{ kpId: string; topicIndex: number } | null>(null);
   const [searchParams] = useSearchParams();
   useEffect(() => {
     const kpParam = searchParams.get('kp');
@@ -147,6 +149,7 @@ export default function Learn() {
         <motion.div layout="position" className="min-w-0">
           {viewMode === '3d' ? (
             <KnowledgeGraph3D
+              onTopicClick={(kpId, topicIndex) => setActionMenu({ kpId, topicIndex })}
               nodes={map.graphNodes}
               edges={map.graphEdges}
               selectedKpId={selectedKp}
@@ -164,7 +167,7 @@ export default function Learn() {
           )}
         </motion.div>
         <AnimatePresence initial={false} mode="popLayout">
-        {selectedKp && <motion.div
+        {selectedKp && viewMode === '2d' && <motion.div
           key="knowledge-detail-panel"
           initial={{ opacity: 0, x: 26, scale: 0.975, filter: 'blur(4px)' }}
           animate={{ opacity: 1, x: 0, scale: 1, filter: 'blur(0px)' }}
@@ -243,7 +246,15 @@ export default function Learn() {
           );
         })}
       </div>
+          {/* 3D 模式下的节点操作菜单 */}
+      {actionMenu && viewMode === '3d' && (
+        <NodeActionMenu
+          kpId={actionMenu.kpId}
+          topicIndex={actionMenu.topicIndex}
+          onClose={() => setActionMenu(null)}
+          goalId={map.goalId}
+        />
+      )}
     </div>
   );
 }
-
