@@ -403,6 +403,8 @@ function EdgeArrow({
   toOffset,
   animRef,
   fadeOnFocus,
+  targetId,
+  nodeScaleRef,
 }: {
   fromPos: THREE.Vector3;
   toPos: THREE.Vector3;
@@ -413,6 +415,8 @@ function EdgeArrow({
   toOffset?: THREE.Vector3;
   animRef: BlendRef;
   fadeOnFocus?: boolean;
+  targetId?: string;
+  nodeScaleRef?: React.MutableRefObject<Map<string, number>>;
 }) {
   const meshRef = useRef<THREE.Mesh | null>(null);
   const curFrom = useRef(fromPos.clone());
@@ -434,9 +438,9 @@ function EdgeArrow({
     const dir = curTo.current.clone().sub(curFrom.current);
     const len = Math.max(dir.length(), 0.001);
     dir.normalize();
-    // 节点选中时会放大到 1.3 倍（半径 3.9），箭头尖端要始终留在球外；
-    // 间距不随边长缩小（短边也要固定在球外），只对极短边兜底
-    const pad = Math.min(4.9, len * 0.45);
+    // 箭头尖端贴着目标节点的实时表面（节点选中放大时自动让开），普通节点不留大缝
+    const targetScale = (targetId && nodeScaleRef?.current.get(targetId)) || 1;
+    const pad = Math.min(3 * targetScale + 0.85, len * 0.45);
     mesh.position.copy(curTo.current).addScaledVector(dir, -pad);
     // 圆锥默认沿 +Y 指向尖端，旋转到边的方向
     mesh.quaternion.setFromUnitVectors(upAxis, dir);
@@ -746,6 +750,7 @@ function Node3D({
   focusOffset,
   animRef,
   fadeOnFocus,
+  nodeScaleRef,
 }: {
   node: GraphNode;
   position: THREE.Vector3;
@@ -761,6 +766,8 @@ function Node3D({
   animRef: BlendRef;
   /** 聚焦其他节点时，本节点提高透明度退到背景 */
   fadeOnFocus?: boolean;
+  /** 共享的节点实时缩放表，供箭头/连线按实际球体大小定位 */
+  nodeScaleRef?: React.MutableRefObject<Map<string, number>>;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group | null>(null);
@@ -799,6 +806,7 @@ function Node3D({
     if (!mesh) return;
     const current = mesh.scale.x;
     mesh.scale.setScalar(THREE.MathUtils.lerp(current, baseSize * targetScale, 0.1));
+    nodeScaleRef?.current.set(node.id, mesh.scale.x / baseSize);
 
     // 聚焦时远处节点提高透明度退到背景，突出聚焦节点
     const focusFade = fadeOnFocus ? 1 - 0.72 * animRef.current.blend : 1;
@@ -924,6 +932,9 @@ function Edge3D({
   toOffset,
   animRef,
   fadeOnFocus,
+  sourceId,
+  targetId,
+  nodeScaleRef,
 }: {
   fromPos: THREE.Vector3;
   toPos: THREE.Vector3;
@@ -936,6 +947,9 @@ function Edge3D({
   toOffset?: THREE.Vector3;
   animRef: BlendRef;
   fadeOnFocus?: boolean;
+  sourceId?: string;
+  targetId?: string;
+  nodeScaleRef?: React.MutableRefObject<Map<string, number>>;
 }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const lineRef = useRef<any>(null);
@@ -953,12 +967,15 @@ function Edge3D({
     curTo.current.lerp(tt, 0.18);
     const line = lineRef.current;
     if (line) {
-      // 线段裁剪到球体表面：不穿入节点内部，节点半透明时也不会看到线穿过球体
+      // 线段裁剪到球体表面：不穿入节点内部，节点半透明时也不会看到线穿过球体；
+      // 两端裁剪距离跟随节点实时缩放（选中放大时自动让开）
       const dir = curTo.current.clone().sub(curFrom.current);
       const len = Math.max(dir.length(), 0.001);
       dir.normalize();
-      const startPad = Math.min(3.7, len * 0.4);
-      const endPad = Math.min(5.0, len * 0.5);
+      const sFrom = (sourceId && nodeScaleRef?.current.get(sourceId)) || 1;
+      const sTo = (targetId && nodeScaleRef?.current.get(targetId)) || 1;
+      const startPad = Math.min(3 * sFrom + 0.7, len * 0.4);
+      const endPad = Math.min(3 * sTo + 1.0, len * 0.5);
       const start = curFrom.current.clone().addScaledVector(dir, startPad);
       const end = curTo.current.clone().addScaledVector(dir, -endPad);
       line.geometry.setPositions([start.x, start.y, start.z, end.x, end.y, end.z]);
@@ -996,6 +1013,8 @@ function Edge3D({
         toOffset={toOffset}
         animRef={animRef}
         fadeOnFocus={fadeOnFocus}
+        targetId={targetId}
+        nodeScaleRef={nodeScaleRef}
       />
     </group>
   );
@@ -1039,6 +1058,7 @@ function SceneContent({
   hoveredId: string | null;
   onHoverNode: (id: string | null) => void;
 }) {
+  const nodeScaleRef = useRef(new Map<string, number>());
 
   const handleNodeClick = useCallback(
     (node: GraphNode) => {
@@ -1102,6 +1122,9 @@ function SceneContent({
             toOffset={layout.focusOffsets.get(edge.to)}
             animRef={animRef}
             fadeOnFocus={focusId !== null && edge.from !== focusId && edge.to !== focusId}
+            sourceId={edge.from}
+            targetId={edge.to}
+            nodeScaleRef={nodeScaleRef}
           />
         );
       })}
@@ -1159,6 +1182,7 @@ function SceneContent({
             focusOffset={layout.focusOffsets.get(node.id)}
             animRef={animRef}
             fadeOnFocus={focusId !== null && node.id !== focusId}
+            nodeScaleRef={nodeScaleRef}
           />
         );
       })}
