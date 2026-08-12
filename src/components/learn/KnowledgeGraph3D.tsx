@@ -1156,8 +1156,11 @@ export default function KnowledgeGraph3D({
   focusTarget,
   className,
 }: KnowledgeGraph3DProps) {
-  // 聚焦的域节点（需仍处于展开状态才拉出）
-  const focusId = focusTarget && expandedKpIds.has(focusTarget.id) ? focusTarget.id : null;
+  // 聚焦的域节点（需仍处于展开状态才拉出）；同时展开多个章节时聚焦规则不生效
+  const focusedId = focusTarget && expandedKpIds.has(focusTarget.id) ? focusTarget.id : null;
+  const focusId = expandedKpIds.size > 1 ? null : focusedId;
+  // 淡化锚点：快速列表聚焦的章节，或唯一展开的章节；同时展开多个时不淡化
+  const dimAnchorId = focusId ?? (expandedKpIds.size === 1 ? Array.from(expandedKpIds)[0] : null);
   // 聚焦动画进度用 ref 驱动（逐帧更新但不触发 React 重渲染，避免卡顿）
   const blendRef = useRef({ blend: 0 });
   // 切换聚焦目标时从头开始拉出
@@ -1192,7 +1195,7 @@ export default function KnowledgeGraph3D({
           maxDistance={130}
           autoRotate={false}
         />
-        <FocusDriver focusId={focusId} blendRef={blendRef} />
+        <FocusDriver focusId={dimAnchorId} blendRef={blendRef} />
         <RotatingScene shouldRotate={expandedKpIds.size === 0} outerRef={sceneRef}>
           <SceneContent
             nodes={nodes}
@@ -1209,7 +1212,7 @@ export default function KnowledgeGraph3D({
             topicProgress={topicProgress}
             onTopicClick={onTopicClick}
             animRef={blendRef}
-            focusId={focusId}
+            focusId={dimAnchorId}
           />
         </RotatingScene>
         <CameraFocus focusTarget={focusTarget} layout={layout} sceneRef={sceneRef} blendRef={blendRef} topicCountByKp={topicCountByKp} />
