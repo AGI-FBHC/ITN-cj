@@ -141,7 +141,7 @@ export default function Learn() {
       <motion.div
         initial={{ opacity: 0, y: 20, gridTemplateColumns: 'minmax(0, 1fr) 0px' }}
         layout
-        animate={{ opacity: 1, y: 0, gridTemplateColumns: selectedKp ? 'minmax(0, 1fr) 340px' : 'minmax(0, 1fr) 0px', columnGap: selectedKp ? 28 : 0 }}
+        animate={{ opacity: 1, y: 0, gridTemplateColumns: selectedKp && viewMode === '2d' ? 'minmax(0, 1fr) 340px' : 'minmax(0, 1fr) 0px', columnGap: selectedKp && viewMode === '2d' ? 28 : 0 }}
         transition={{ layout: { duration: 0.32, ease: [0.22, 1, 0.36, 1] }, gridTemplateColumns: { duration: 0.32, ease: [0.22, 1, 0.36, 1] }, columnGap: { duration: 0.28 } }}
         className="mt-5 hidden lg:grid"
       >
@@ -258,3 +258,4 @@ export default function Learn() {
     </div>
   );
 }
+
