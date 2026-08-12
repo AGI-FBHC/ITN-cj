@@ -223,16 +223,47 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
   }, [currentLearner.id, kpId, kpProp, topicIndex]);
 
   if (!kpId) {
+    /* 未选中章节：优先展示最近学习但未学完的资源，其次给继续学习建议。 */
+    const allResources = resourcesProp ?? [];
+    const recentUnfinished = [...allResources]
+      .filter((item) => item.id && !item.learned)
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .slice(0, 6);
     return (
-      <div className="lf-glass relative flex h-full min-h-[280px] flex-col items-center justify-center rounded-[18px] p-6 text-center">
+      <div className="lf-glass relative flex h-full min-h-[280px] flex-col gap-4 rounded-[18px] p-5">
         <Succulent className="pointer-events-none absolute -top-5 right-5 h-[52px] w-[44px]" />
-        <span className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-tint text-brand">
-          <Route size={20} />
-        </span>
-        <p className="mt-3 text-[13.5px] font-medium text-ink">点图谱上任一知识点</p>
-        <p className="mt-1 text-[12px] leading-[19px] text-ink-muted">
-          这里会显示它的掌握进度、路径位置，<br />以及为你生成的学习资源入口。
-        </p>
+        <div>
+          <h3 className="font-serif text-[18px] font-semibold text-ink">最近学习</h3>
+          <p className="mt-1 text-[12.5px] leading-[19px] text-ink-muted">优先继续最近没有学完的内容；点左侧章节可查看或生成该章资源。</p>
+        </div>
+        {recentUnfinished.length ? (
+          <div className="space-y-2">
+            {recentUnfinished.map((item) => {
+              const meta = FORM_META[item.form] ?? { label: '学习资源', icon: BookOpen };
+              const Icon = meta.icon;
+              return (
+                <button key={item.id} type="button" onClick={() => navigate(`/learn/resource/${item.id}`)} className="group flex w-full items-center gap-3 rounded-[10px] border border-hairline bg-paper px-3 py-2.5 text-left transition-all hover:border-brand/45 hover:bg-brand-tint/40">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-tint text-brand"><Icon size={16} /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-medium text-ink">继续学习 · {meta.label}</span>
+                    <span className="block truncate text-[11px] text-ink-muted">{item.title}</span>
+                  </span>
+                  <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="flex flex-1 flex-col items-center justify-center rounded-[12px] border border-dashed border-brand/35 bg-paper px-4 py-8 text-center">
+            <Route size={18} className="text-brand" />
+            <p className="mt-2 text-[13px] font-medium text-ink">还没有未学完的内容</p>
+            <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">点击左侧任一章节，就能开始生成并学习第一份资源。</p>
+          </div>
+        )}
+        <div className="mt-auto border-t border-hairline/70 pt-3">
+          <p className="font-mono text-[9.5px] tracking-wide text-ink-muted">NEXT · 从知识地图继续</p>
+          <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">页面下方的“章节速览”可直接聚焦任意章节。</p>
+        </div>
       </div>
     );
   }

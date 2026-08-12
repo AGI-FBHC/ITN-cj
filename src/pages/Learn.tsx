@@ -156,7 +156,7 @@ export default function Learn() {
       <motion.div
         initial={{ opacity: 0, y: 20, gridTemplateColumns: 'minmax(0, 1fr) 0px' }}
         layout
-        animate={{ opacity: 1, y: 0, gridTemplateColumns: selectedKp && viewMode === '2d' ? 'minmax(0, 1fr) 340px' : 'minmax(0, 1fr) 0px', columnGap: selectedKp && viewMode === '2d' ? 28 : 0 }}
+        animate={{ opacity: 1, y: 0, gridTemplateColumns: viewMode === '2d' ? 'minmax(0, 1fr) 340px' : 'minmax(0, 1fr) 0px', columnGap: viewMode === '2d' ? 28 : 0 }}
         transition={{ layout: { duration: 0.32, ease: [0.22, 1, 0.36, 1] }, gridTemplateColumns: { duration: 0.32, ease: [0.22, 1, 0.36, 1] }, columnGap: { duration: 0.28 } }}
         className="mt-5 hidden lg:grid"
       >
@@ -208,7 +208,7 @@ export default function Learn() {
           )}
         </motion.div>
         <AnimatePresence initial={false} mode="popLayout">
-        {selectedKp && viewMode === '2d' && <motion.div
+        {viewMode === '2d' && <motion.div
           key="knowledge-detail-panel"
           initial={{ opacity: 0, x: 26, scale: 0.975, filter: 'blur(4px)' }}
           animate={{ opacity: 1, x: 0, scale: 1, filter: 'blur(0px)' }}
@@ -216,7 +216,7 @@ export default function Learn() {
           transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
           className="min-w-0 lg:sticky lg:top-6 lg:self-start"
         >
-<KpDetailPanel kpId={selectedKp} topicIndex={selectedTopic} onSelectTopic={setSelectedTopic} kp={knowledgePoints.find((kp) => kp.id === selectedKp) ?? null} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} graphNodes={map.graphNodes} path={map.path} resources={map.resources[selectedKp] ?? []} goalId={map.goalId} knowledgeMap={{ chapters: knowledgePoints.map((chapter) => ({ id: chapter.id, name: chapter.name, topics: chapter.coreTopics })), edges: map.graphEdges }} />
+          <KpDetailPanel kpId={selectedKp} topicIndex={selectedTopic} onSelectTopic={setSelectedTopic} kp={knowledgePoints.find((kp) => kp.id === selectedKp) ?? null} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} graphNodes={map.graphNodes} path={map.path} resources={selectedKp ? map.resources[selectedKp] ?? [] : Object.values(map.resources).flat()} goalId={map.goalId} knowledgeMap={{ chapters: knowledgePoints.map((chapter) => ({ id: chapter.id, name: chapter.name, topics: chapter.coreTopics })), edges: map.graphEdges }} />
         </motion.div>}
         </AnimatePresence>
       </motion.div>
