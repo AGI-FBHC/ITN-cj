@@ -2857,7 +2857,7 @@ export default function LearnUnit() {
           字幕不再是独立悬浮黑条，而是贴合在控制台顶部的一体化条（悬浮层 2→1）。 */}
       {/* 外层全宽容器不吃点击（否则胶囊态时两侧空白区会挡住其后内容的按钮），只有控制台本体可交互 */}
       <div className="pointer-events-none fixed inset-x-0 bottom-16 z-40 md:bottom-0">
-        <div className={cn('mx-auto px-5 pb-3 md:px-6', barExpanded ? 'max-w-[760px]' : 'flex justify-center')}>
+        <div className={cn('mx-auto px-5 pb-3 md:px-6', barExpanded ? 'max-w-[820px]' : 'flex justify-center')}>
           <div className={cn('lf-glass pointer-events-auto overflow-hidden', barExpanded ? 'rounded-[16px]' : 'rounded-full shadow-warm-lg')}>
           {/* 字幕（一体化顶条；通勤模式下已在上方大字显示，这里不再重复）。
               条件渲染而非 AnimatePresence：后者靠 rAF 完成 exit 才卸载，页面在后台时会卡住不消失 */}
