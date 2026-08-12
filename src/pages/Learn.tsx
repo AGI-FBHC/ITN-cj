@@ -156,6 +156,8 @@ export default function Learn() {
               onExpandedKpChange={setExpandedKp}
               learned={map.learned}
               mastery={map.mastery}
+              topicMastery={map.topicMastery}
+              topicProgress={map.topicProgress}
             />
           ) : (
             <KnowledgeGraph scene={scene} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpId={expandedKp} onExpandedKpChange={setExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} />
@@ -244,3 +246,4 @@ export default function Learn() {
     </div>
   );
 }
+
