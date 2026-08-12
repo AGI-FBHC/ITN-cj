@@ -3,7 +3,7 @@
  * 子节点自动选择空旷方向展开，文字跟随方向
  */
 import { useRef, useMemo, useState, useCallback } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text, Line, PerspectiveCamera, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 import type { GraphNode, GraphEdge, EdgeKind } from '@/data/knowledgeGraph';
@@ -236,7 +236,7 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpIds: Set<
   }, [nodes, expandedKpIds, domainLayout]);
 }
 
-/** 有向边末端的静态箭头：锐角符号 > 指向目标节点 */
+/** 有向边末端的静态圆锥箭头：尖端指向目标节点 */
 function EdgeArrow({
   fromPos,
   toPos,
@@ -250,65 +250,31 @@ function EdgeArrow({
   dimmed?: boolean;
   hovered?: boolean;
 }) {
-  const groupRef = useRef<THREE.Group | null>(null);
-  const textRef = useRef<THREE.Mesh | null>(null);
-  const camera = useThree((s) => s.camera);
+  const meshRef = useRef<THREE.Mesh | null>(null);
 
-  // 箭头放在目标节点前留出的空隙处
-  const position = useMemo(() => {
-    const dir = toPos.clone().sub(fromPos);
-    const len = Math.max(dir.length(), 0.001);
-    dir.normalize();
-    const pad = Math.min(5, len * 0.25);
-    return toPos.clone().sub(dir.multiplyScalar(pad));
+  // 圆锥位置与朝向：沿边方向放置，尖端指向目标节点，不随相机变化
+  const { position, quaternion } = useMemo(() => {
+    const dir = toPos.clone().sub(fromPos).normalize();
+    const pad = Math.min(5, Math.max(toPos.distanceTo(fromPos), 0.001) * 0.25);
+    return {
+      position: toPos.clone().sub(dir.clone().multiplyScalar(pad)),
+      // 圆锥默认沿 +Y 指向尖端，旋转到边的方向
+      quaternion: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir),
+    };
   }, [fromPos, toPos]);
 
   useFrame(() => {
-    const g = groupRef.current;
-    if (!g) return;
-
-    // 用相机坐标系把边方向投影到成像平面，让箭头始终顺着边指向目标
-    // 注意 matrixWorld 是列主序：右轴取第 1 列、上轴取第 2 列
-    const e = camera.matrixWorld.elements;
-    const camRight = new THREE.Vector3(e[0], e[1], e[2]);
-    const camUp = new THREE.Vector3(e[4], e[5], e[6]);
-    const camBack = new THREE.Vector3(e[8], e[9], e[10]);
-    const edgeDir = toPos.clone().sub(fromPos).normalize();
-    const alongView = edgeDir.dot(camBack);
-    let angle = 0;
-    if (Math.abs(alongView) < 0.995) {
-      const proj = edgeDir.clone().sub(camBack.clone().multiplyScalar(alongView)).normalize();
-      angle = Math.atan2(proj.dot(camUp), proj.dot(camRight));
-    }
-
-    g.position.copy(position);
-    // 直接对齐相机朝向，再绕视线轴旋转到边方向
-    g.quaternion.copy(camera.quaternion);
-    g.rotateZ(angle);
-    g.scale.setScalar(hovered ? 1.2 : 1);
-
-    const mesh = textRef.current;
-    if (mesh && (mesh.material as any).opacity !== undefined) {
-      (mesh.material as any).opacity = dimmed ? 0.15 : hovered ? 1 : 0.9;
-      (mesh.material as any).transparent = true;
-    }
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    (mesh.material as THREE.MeshBasicMaterial).opacity = dimmed ? 0.12 : hovered ? 1 : 0.9;
+    mesh.scale.setScalar(hovered ? 1.2 : 1);
   });
 
   return (
-    <group ref={(el) => { groupRef.current = el; }}>
-      <Text
-        ref={(el) => { textRef.current = el; }}
-        fontSize={2.2}
-        color={color}
-        anchorX="center"
-        anchorY="middle"
-        outlineWidth={0.08}
-        outlineColor="#ffffff"
-        outlineOpacity={0.7}
-      >
-        ›
-      </Text>
-    </group>
+    <mesh ref={meshRef} position={position} quaternion={quaternion}>
+      <coneGeometry args={[0.7, 1.8, 16]} />
+      <meshBasicMaterial color={color} transparent depthWrite={false} />
+    </mesh>
   );
 }
 
@@ -767,34 +733,19 @@ function Edge3D({
   dashed?: boolean;
   isChildLink?: boolean;
 }) {
-  const segments = useMemo(() => {
-    const segs = [];
-    const numSegs = 8;
-    for (let i = 0; i < numSegs; i++) {
-      const t1 = i / numSegs;
-      const t2 = (i + 1) / numSegs;
-      const p1 = fromPos.clone().lerp(toPos, t1);
-      const p2 = fromPos.clone().lerp(toPos, t2);
-      segs.push({ p1, p2, t: (t1 + t2) / 2 });
-    }
-    return segs;
-  }, [fromPos, toPos]);
-
   return (
     <group>
-      {segments.map((seg, i) => (
-        <Line
-          key={i}
-          points={[seg.p1, seg.p2]}
-          color={color}
-          lineWidth={isChildLink ? 3 : hovered ? 4.5 : 3}
-          transparent
-          opacity={dimmed ? 0.06 : (hovered ? 0.9 : isChildLink ? 0.5 : 0.35) * (0.3 + seg.t * 0.7)}
-          dashed={dashed}
-          dashSize={1.5}
-          gapSize={0.8}
-        />
-      ))}
+      {/* 单条连续直线，避免分段渲染产生接缝 */}
+      <Line
+        points={[fromPos, toPos]}
+        color={color}
+        lineWidth={isChildLink ? 3 : hovered ? 4.5 : 3}
+        transparent
+        opacity={dimmed ? 0.06 : hovered ? 0.9 : isChildLink ? 0.5 : 0.5}
+        dashed={dashed}
+        dashSize={1.5}
+        gapSize={0.8}
+      />
 
       {/* 末端静态箭头：指向目标节点 */}
       <EdgeArrow
