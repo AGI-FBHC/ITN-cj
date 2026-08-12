@@ -1,6 +1,6 @@
 /**
- * KnowledgeGraph3D — Obsidian 风格 3D 知识图谱（边缘发光版）
- * 球体边缘贴边发光，菲涅尔效应
+ * KnowledgeGraph3D — Obsidian 风格 3D 知识图谱（外发光版）
+ * 多层放大球体实现真正的外发光效果
  */
 import { useRef, useMemo, useState, useCallback } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
@@ -54,33 +54,6 @@ interface KnowledgeGraph3DProps {
   topicProgress: Record<string, number>;
   className?: string;
 }
-
-/** 边缘发光 Shader */
-const glowVertexShader = `
-  varying vec3 vNormal;
-  varying vec3 vViewDir;
-  void main() {
-    vNormal = normalize(normalMatrix * normal);
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-    vViewDir = normalize(-mvPosition.xyz);
-    gl_Position = projectionMatrix * mvPosition;
-  }
-`;
-
-const glowFragmentShader = `
-  uniform vec3 color;
-  uniform vec3 glowColor;
-  uniform float opacity;
-  uniform float glowIntensity;
-  varying vec3 vNormal;
-  varying vec3 vViewDir;
-  void main() {
-    float fresnel = pow(1.0 - abs(dot(vNormal, vViewDir)), 2.0);
-    vec3 finalColor = mix(color, glowColor, fresnel * glowIntensity);
-    float alpha = opacity + fresnel * glowIntensity * 0.5;
-    gl_FragColor = vec4(finalColor, alpha);
-  }
-`;
 
 /** 3D 力导向布局 */
 function use3DLayout(nodes: GraphNode[], edges: GraphEdge[]) {
@@ -189,7 +162,7 @@ function ProgressRing({
   );
 }
 
-/** 3D 节点：边缘发光球体 */
+/** 3D 节点：多层外发光 */
 function Node3D({
   node,
   position,
@@ -212,7 +185,9 @@ function Node3D({
   onHover: (id: string | null) => void;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
-  const materialRef = useRef<THREE.ShaderMaterial>(null);
+  const glow1Ref = useRef<THREE.Mesh>(null);
+  const glow2Ref = useRef<THREE.Mesh>(null);
+  const glow3Ref = useRef<THREE.Mesh>(null);
   const isDomain = node.kind === 'domain';
   const colors = isDomain ? NODE_COLORS.domain : NODE_COLORS.topic;
 
@@ -229,32 +204,64 @@ function Node3D({
 
   useFrame((state) => {
     if (!meshRef.current) return;
-    const breathe = 1 + Math.sin(state.clock.elapsedTime * 1.5 + position.x * 0.1) * 0.02;
+    const time = state.clock.elapsedTime;
+    const breathe = 1 + Math.sin(time * 1.5 + position.x * 0.1) * 0.02;
     const current = meshRef.current.scale.x;
     const target = baseSize * breathe * targetScale;
     meshRef.current.scale.setScalar(THREE.MathUtils.lerp(current, target, 0.1));
 
-    // 更新 shader uniform
-    if (materialRef.current) {
-      materialRef.current.uniforms.glowIntensity.value =
-        dimmed ? 0.1 : hovered ? 1.5 : selected ? 1.2 : 0.6;
-      materialRef.current.uniforms.opacity.value = dimmed ? 0.2 : 0.9;
+    // 外发光层：逐渐变大，透明度逐渐降低，超出球体边界
+    const glowIntensity = dimmed ? 0.1 : hovered ? 1 : selected ? 0.9 : 0.5;
+    const pulse = 1 + Math.sin(time * 2 + position.y) * 0.05;
+
+    if (glow1Ref.current) {
+      glow1Ref.current.scale.setScalar(baseSize * 1.15 * pulse);
+      (glow1Ref.current.material as THREE.MeshBasicMaterial).opacity = 0.3 * glowIntensity;
+    }
+    if (glow2Ref.current) {
+      glow2Ref.current.scale.setScalar(baseSize * 1.35 * pulse);
+      (glow2Ref.current.material as THREE.MeshBasicMaterial).opacity = 0.15 * glowIntensity;
+    }
+    if (glow3Ref.current) {
+      glow3Ref.current.scale.setScalar(baseSize * 1.6 * pulse);
+      (glow3Ref.current.material as THREE.MeshBasicMaterial).opacity = 0.08 * glowIntensity;
     }
   });
 
-  const uniforms = useMemo(
-    () => ({
-      color: { value: new THREE.Color(getColor()) },
-      glowColor: { value: new THREE.Color(glowColor) },
-      opacity: { value: 0.9 },
-      glowIntensity: { value: 0.6 },
-    }),
-    [getColor(), glowColor],
-  );
-
   return (
     <group position={position}>
-      {/* 边缘发光球体 */}
+      {/* 外发光层 1：紧贴球体，最明显 */}
+      <mesh ref={glow1Ref}>
+        <sphereGeometry args={[1, 32, 32]} />
+        <meshBasicMaterial
+          color={glowColor}
+          transparent
+          opacity={0.3}
+          depthWrite={false}
+        />
+      </mesh>
+      {/* 外发光层 2：稍大，较淡 */}
+      <mesh ref={glow2Ref}>
+        <sphereGeometry args={[1, 32, 32]} />
+        <meshBasicMaterial
+          color={glowColor}
+          transparent
+          opacity={0.15}
+          depthWrite={false}
+        />
+      </mesh>
+      {/* 外发光层 3：最大，最淡，形成光晕边界 */}
+      <mesh ref={glow3Ref}>
+        <sphereGeometry args={[1, 32, 32]} />
+        <meshBasicMaterial
+          color={glowColor}
+          transparent
+          opacity={0.08}
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* 主球体 */}
       <mesh
         ref={meshRef}
         onClick={(e) => {
@@ -272,12 +279,10 @@ function Node3D({
         }}
       >
         <sphereGeometry args={[1, 64, 64]} />
-        <shaderMaterial
-          ref={materialRef}
-          vertexShader={glowVertexShader}
-          fragmentShader={glowFragmentShader}
-          uniforms={uniforms}
+        <meshBasicMaterial
+          color={getColor()}
           transparent
+          opacity={dimmed ? 0.2 : 0.95}
         />
       </mesh>
 
@@ -552,4 +557,3 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
-
