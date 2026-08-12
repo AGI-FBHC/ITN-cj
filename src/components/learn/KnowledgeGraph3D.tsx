@@ -127,15 +127,32 @@ function RotatingScene({
   );
 }
 
+/** 聚焦动画的共享进度（ref 驱动，不触发 React 重渲染，避免逐帧卡顿） */
+type BlendRef = React.MutableRefObject<{ blend: number }>;
+
+/** 聚焦拉出动画驱动：逐帧推进 blend，0 = 原始布局，1 = 聚焦布局 */
+function FocusDriver({ focusId, blendRef }: { focusId: string | null; blendRef: BlendRef }) {
+  useFrame(() => {
+    const target = focusId ? 1 : 0;
+    const cur = blendRef.current.blend;
+    if (cur === target) return;
+    const next = cur + (target - cur) * 0.09;
+    blendRef.current.blend = Math.abs(next - target) < 0.005 ? target : next;
+  });
+  return null;
+}
+
 /** 相机聚焦：把指定域节点平滑带到视野正前方 */
 function CameraFocus({
   focusTarget,
   layout,
   sceneRef,
+  blendRef,
 }: {
   focusTarget?: { id: string; at: number } | null;
-  layout: { positions: Map<string, THREE.Vector3> };
+  layout: { positions: Map<string, THREE.Vector3>; focusOffsets: Map<string, THREE.Vector3> };
   sceneRef: React.MutableRefObject<THREE.Group | null>;
+  blendRef: BlendRef;
 }) {
   const camera = useThree((s) => s.camera);
   const controls = useThree((s) => s.controls) as { target: THREE.Vector3; update: () => void; addEventListener: (t: string, cb: () => void) => void; removeEventListener: (t: string, cb: () => void) => void } | null;
@@ -173,10 +190,12 @@ function CameraFocus({
     anim.t = Math.min(anim.t + delta / 0.8, 1);
     const ease = anim.t * anim.t * (3 - 2 * anim.t);
 
-    // 节点世界坐标（节点可能正在被拉出，逐帧读取最新布局位置）
+    // 节点世界坐标（节点可能正在被拉出，逐帧按 blend 计算最新位置）
     const nodeLocal = layout.positions.get(anim.nodeId);
     if (!nodeLocal) { animRef.current = null; return; }
     const world = nodeLocal.clone();
+    const focusOff = layout.focusOffsets.get(anim.nodeId);
+    if (focusOff) world.addScaledVector(focusOff, blendRef.current.blend);
     if (sceneRef.current) world.applyMatrix4(sceneRef.current.matrixWorld);
     // 距离要容纳整个子节点展开平面（水平 ~15+，纵向随子节点数量增加）
     const camPos = world.clone().normalize().multiplyScalar(world.length() + 58);
@@ -288,27 +307,44 @@ function findBestDirection(
 }
 
 /** 3D 布局：固定域节点 + 智能子节点展开 */
-function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpIds: Set<string>, focusId: string | null, pullT: number) {
+function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpIds: Set<string>, focusId: string | null) {
   const domainLayout = useDomainLayout(nodes, edges);
 
   return useMemo(() => {
     const positions = new Map(domainLayout);
     const childDirections = new Map<string, 'left' | 'right'>();
+    const focusOffsets = new Map<string, THREE.Vector3>();
 
-    // 聚焦时把目标域节点沿径向拉向空旷处（球状布局外侧天然空旷）
-    if (focusId && pullT > 0) {
+    // 聚焦布局：目标节点沿径向多拉出，其余域节点向最终视角的左侧让位
+    // （相机最终沿径向从外侧看向节点，此时视角的“左” = nodeDir x 世界上方向）
+    if (focusId) {
       const p = positions.get(focusId);
       if (p) {
-        const ease = 1 - (1 - pullT) * (1 - pullT);
-        positions.set(focusId, p.clone().add(p.clone().normalize().multiplyScalar(14 * ease)));
+        const nodeDir = p.clone().normalize();
+        focusOffsets.set(focusId, nodeDir.clone().multiplyScalar(18));
+        let leftDir = new THREE.Vector3().crossVectors(nodeDir, new THREE.Vector3(0, 1, 0));
+        if (leftDir.lengthSq() < 1e-4) leftDir = new THREE.Vector3(1, 0, 0);
+        leftDir.normalize();
+        positions.forEach((_, id) => {
+          if (id !== focusId) focusOffsets.set(id, leftDir.clone().multiplyScalar(10));
+        });
       }
     }
 
-    // 支持多个章节同时展开；每个章节基于当前密度独立选择左/右空旷侧
+    // 支持多个章节同时展开；聚焦章节的子节点固定从右侧展开，其余按密度选侧
     expandedKpIds.forEach((kpId) => {
       const parentPos = positions.get(kpId);
       if (!parentPos) return;
-      const { direction, offset } = findBestDirection(parentPos, positions, kpId);
+      let direction: 'left' | 'right';
+      let offset: THREE.Vector3;
+      if (kpId === focusId) {
+        direction = 'right';
+        offset = new THREE.Vector3(20, 0, 0);
+      } else {
+        const found = findBestDirection(parentPos, positions, kpId);
+        direction = found.direction;
+        offset = found.offset;
+      }
       const children = nodes.filter((n) => n.kind === 'topic' && n.kpId === kpId);
       const sign = direction === 'left' ? -1 : 1;
 
@@ -336,8 +372,8 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpIds: Set<
       ));
     });
 
-    return { positions, childDirections };
-  }, [nodes, expandedKpIds, domainLayout, focusId, pullT]);
+    return { positions, childDirections, focusOffsets };
+  }, [nodes, expandedKpIds, domainLayout, focusId]);
 }
 
 /** 有向边末端的静态圆锥箭头：尖端指向目标节点 */
@@ -347,35 +383,49 @@ function EdgeArrow({
   color,
   dimmed = false,
   hovered = false,
+  fromOffset,
+  toOffset,
+  animRef,
 }: {
   fromPos: THREE.Vector3;
   toPos: THREE.Vector3;
   color: string;
   dimmed?: boolean;
   hovered?: boolean;
+  fromOffset?: THREE.Vector3;
+  toOffset?: THREE.Vector3;
+  animRef: BlendRef;
 }) {
   const meshRef = useRef<THREE.Mesh | null>(null);
-
-  // 圆锥位置与朝向：沿边方向放置，尖端指向目标节点，不随相机变化
-  const { position, quaternion } = useMemo(() => {
-    const dir = toPos.clone().sub(fromPos).normalize();
-    const pad = Math.min(4.2, Math.max(toPos.distanceTo(fromPos), 0.001) * 0.2);
-    return {
-      position: toPos.clone().sub(dir.clone().multiplyScalar(pad)),
-      // 圆锥默认沿 +Y 指向尖端，旋转到边的方向
-      quaternion: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir),
-    };
-  }, [fromPos, toPos]);
+  const curFrom = useRef(fromPos.clone());
+  const curTo = useRef(toPos.clone());
+  const upAxis = useMemo(() => new THREE.Vector3(0, 1, 0), []);
 
   useFrame(() => {
     const mesh = meshRef.current;
     if (!mesh) return;
+    // 聚焦动画期间逐帧弹性跟随端点
+    const b = animRef.current.blend;
+    const tf = fromPos.clone();
+    if (fromOffset) tf.addScaledVector(fromOffset, b);
+    const tt = toPos.clone();
+    if (toOffset) tt.addScaledVector(toOffset, b);
+    curFrom.current.lerp(tf, 0.18);
+    curTo.current.lerp(tt, 0.18);
+
+    const dir = curTo.current.clone().sub(curFrom.current);
+    const len = Math.max(dir.length(), 0.001);
+    dir.normalize();
+    const pad = Math.min(4.2, len * 0.2);
+    mesh.position.copy(curTo.current).addScaledVector(dir, -pad);
+    // 圆锥默认沿 +Y 指向尖端，旋转到边的方向
+    mesh.quaternion.setFromUnitVectors(upAxis, dir);
     (mesh.material as THREE.MeshBasicMaterial).opacity = dimmed ? 0.12 : hovered ? 1 : 0.9;
     mesh.scale.setScalar(hovered ? 1.2 : 1);
   });
 
   return (
-    <mesh ref={meshRef} position={position} quaternion={quaternion}>
+    <mesh ref={meshRef}>
       <coneGeometry args={[0.38, 1.0, 16]} />
       <meshBasicMaterial color={color} transparent depthWrite={false} />
     </mesh>
@@ -432,10 +482,12 @@ function ChildPlane({
   topicProgress,
   onNodeClick,
   onNodeHover,
+  parentOffset,
+  animRef,
 }: {
   parentPos: THREE.Vector3;
   children: GraphNode[];
-  layout: { positions: Map<string, THREE.Vector3>; childDirections: Map<string, 'left' | 'right'> };
+  layout: { positions: Map<string, THREE.Vector3>; childDirections: Map<string, 'left' | 'right'>; focusOffsets: Map<string, THREE.Vector3> };
   hoveredId: string | null;
   selectedKpId: string | null;
   learned: Set<string>;
@@ -443,7 +495,17 @@ function ChildPlane({
   topicProgress: Record<string, number>;
   onNodeClick: (node: GraphNode) => void;
   onNodeHover: (id: string | null) => void;
+  parentOffset?: THREE.Vector3;
+  animRef: BlendRef;
 }) {
+  const billboardRef = useRef<THREE.Group | null>(null);
+
+  // 聚焦动画期间子节点平面跟随父节点
+  useFrame(() => {
+    if (!billboardRef.current) return;
+    billboardRef.current.position.copy(parentPos);
+    if (parentOffset) billboardRef.current.position.addScaledVector(parentOffset, animRef.current.blend);
+  });
   // 计算子节点在平面上的相对位置
   const childData = useMemo(() => {
     return children.map((node, i) => {
@@ -459,7 +521,7 @@ function ChildPlane({
   }, [children, layout.childDirections]);
 
   return (
-    <Billboard position={parentPos}>
+    <Billboard ref={billboardRef} position={parentPos}>
       <group>
         {/* 连线：从原点到各子节点（静态，不添加方向动效） */}
         {childData.map(({ node, relPos }) => (
@@ -653,6 +715,8 @@ function Node3D({
   progress,
   onClick,
   onHover,
+  focusOffset,
+  animRef,
 }: {
   node: GraphNode;
   position: THREE.Vector3;
@@ -664,8 +728,11 @@ function Node3D({
   progress: number;
   onClick: () => void;
   onHover: (id: string | null) => void;
+  focusOffset?: THREE.Vector3;
+  animRef: BlendRef;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
+  const groupRef = useRef<THREE.Group | null>(null);
   const isDomain = node.kind === 'domain';
   const colors = isDomain ? NODE_COLORS.domain : NODE_COLORS.topic;
 
@@ -681,6 +748,10 @@ function Node3D({
   const glowColor = GLOW_COLORS[node.kind];
 
   useFrame(() => {
+    if (groupRef.current) {
+      groupRef.current.position.copy(position);
+      if (focusOffset) groupRef.current.position.addScaledVector(focusOffset, animRef.current.blend);
+    }
     if (!meshRef.current) return;
     const current = meshRef.current.scale.x;
     meshRef.current.scale.setScalar(THREE.MathUtils.lerp(current, baseSize * targetScale, 0.1));
@@ -701,7 +772,9 @@ function Node3D({
   const textAnchor = getTextAnchor();
 
   return (
-    <group position={position}
+    <group
+      ref={groupRef}
+      position={position}
       onPointerEnter={(e) => {
         e.stopPropagation();
         onHover(node.id);
@@ -788,6 +861,9 @@ function Edge3D({
   dimmed,
   dashed,
   isChildLink,
+  fromOffset,
+  toOffset,
+  animRef,
 }: {
   fromPos: THREE.Vector3;
   toPos: THREE.Vector3;
@@ -796,11 +872,39 @@ function Edge3D({
   dimmed: boolean;
   dashed?: boolean;
   isChildLink?: boolean;
+  fromOffset?: THREE.Vector3;
+  toOffset?: THREE.Vector3;
+  animRef: BlendRef;
 }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const lineRef = useRef<any>(null);
+  const curFrom = useRef(fromPos.clone());
+  const curTo = useRef(toPos.clone());
+
+  // 聚焦动画期间逐帧弹性跟随（lerp 产生橡皮筋效果），不触发 React 重渲染
+  useFrame(() => {
+    const b = animRef.current.blend;
+    const tf = fromPos.clone();
+    if (fromOffset) tf.addScaledVector(fromOffset, b);
+    const tt = toPos.clone();
+    if (toOffset) tt.addScaledVector(toOffset, b);
+    curFrom.current.lerp(tf, 0.18);
+    curTo.current.lerp(tt, 0.18);
+    const line = lineRef.current;
+    if (line) {
+      line.geometry.setPositions([
+        curFrom.current.x, curFrom.current.y, curFrom.current.z,
+        curTo.current.x, curTo.current.y, curTo.current.z,
+      ]);
+      if (dashed) line.computeLineDistances();
+    }
+  });
+
   return (
     <group>
       {/* 单条连续直线，避免分段渲染产生接缝 */}
       <Line
+        ref={lineRef}
         points={[fromPos, toPos]}
         color={color}
         lineWidth={isChildLink ? 3 : hovered ? 4.5 : 3}
@@ -818,6 +922,9 @@ function Edge3D({
         color={color}
         dimmed={dimmed}
         hovered={hovered}
+        fromOffset={fromOffset}
+        toOffset={toOffset}
+        animRef={animRef}
       />
     </group>
   );
@@ -838,12 +945,14 @@ function SceneContent({
   topicMastery,
   topicProgress,
   onTopicClick,
+  animRef,
 }: {
   nodes: GraphNode[];
   edges: GraphEdge[];
-  layout: { positions: Map<string, THREE.Vector3>; childDirections: Map<string, 'left' | 'right'> };
+  layout: { positions: Map<string, THREE.Vector3>; childDirections: Map<string, 'left' | 'right'>; focusOffsets: Map<string, THREE.Vector3> };
   selectedKpId: string | null;
   expandedKpIds: Set<string>;
+  animRef: BlendRef;
   onSelectKp: (id: string | null) => void;
   onSelectTopic: (index: number | null) => void;
   onExpandedKpChange: (id: string) => void;
@@ -913,6 +1022,9 @@ function SceneContent({
             hovered={isRelated}
             dimmed={!!isDimmed}
             dashed={edge.kind === 'related'}
+            fromOffset={layout.focusOffsets.get(edge.from)}
+            toOffset={layout.focusOffsets.get(edge.to)}
+            animRef={animRef}
           />
         );
       })}
@@ -934,6 +1046,8 @@ function SceneContent({
             topicProgress={topicProgress}
             onNodeClick={handleNodeClick}
             onNodeHover={setHoveredId}
+            parentOffset={layout.focusOffsets.get(kpId)}
+            animRef={animRef}
           />
         );
       })}
@@ -965,6 +1079,8 @@ function SceneContent({
             progress={progress}
             onClick={() => handleNodeClick(node)}
             onHover={setHoveredId}
+            focusOffset={layout.focusOffsets.get(node.id)}
+            animRef={animRef}
           />
         );
       })}
@@ -990,25 +1106,12 @@ export default function KnowledgeGraph3D({
 }: KnowledgeGraph3DProps) {
   // 聚焦的域节点（需仍处于展开状态才拉出）
   const focusId = focusTarget && expandedKpIds.has(focusTarget.id) ? focusTarget.id : null;
-  const [pullT, setPullT] = useState(0);
-  const pullTRef = useRef(0);
+  // 聚焦动画进度用 ref 驱动（逐帧更新但不触发 React 重渲染，避免卡顿）
+  const blendRef = useRef({ blend: 0 });
+  // 切换聚焦目标时从头开始拉出
+  useEffect(() => { blendRef.current.blend = 0; }, [focusId]);
 
-  // 拉出/收回的平滑动画（rAF 驱动，~0.5s）
-  useEffect(() => {
-    let raf = 0;
-    const target = focusId ? 1 : 0;
-    pullTRef.current = focusId ? 0 : pullTRef.current;
-    const step = () => {
-      pullTRef.current += (target - pullTRef.current) * 0.1;
-      if (Math.abs(target - pullTRef.current) < 0.005) pullTRef.current = target;
-      setPullT(pullTRef.current);
-      if (pullTRef.current !== target) raf = requestAnimationFrame(step);
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [focusId]);
-
-  const layout = use3DLayout(nodes, edges, expandedKpIds, focusId, pullT);
+  const layout = use3DLayout(nodes, edges, expandedKpIds, focusId);
   const sceneRef = useRef<THREE.Group | null>(null);
 
   return (
@@ -1028,6 +1131,7 @@ export default function KnowledgeGraph3D({
           maxDistance={130}
           autoRotate={false}
         />
+        <FocusDriver focusId={focusId} blendRef={blendRef} />
         <RotatingScene shouldRotate={expandedKpIds.size === 0} outerRef={sceneRef}>
           <SceneContent
             nodes={nodes}
@@ -1043,9 +1147,10 @@ export default function KnowledgeGraph3D({
             topicMastery={topicMastery}
             topicProgress={topicProgress}
             onTopicClick={onTopicClick}
+            animRef={blendRef}
           />
         </RotatingScene>
-        <CameraFocus focusTarget={focusTarget} layout={layout} sceneRef={sceneRef} />
+        <CameraFocus focusTarget={focusTarget} layout={layout} sceneRef={sceneRef} blendRef={blendRef} />
       </Canvas>
 
       {/* 提示 */}
