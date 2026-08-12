@@ -2864,7 +2864,7 @@ export default function LearnUnit() {
           字幕不再是独立悬浮黑条，而是贴合在控制台顶部的一体化条（悬浮层 2→1）。 */}
       {/* 外层全宽容器不吃点击（否则胶囊态时两侧空白区会挡住其后内容的按钮），只有控制台本体可交互 */}
       <div className="pointer-events-none fixed inset-x-0 bottom-16 z-40 md:bottom-0">
-        <div className={cn('mx-auto px-5 pb-3 md:px-6', barExpanded ? 'max-w-[820px]' : 'flex justify-center')}>
+        <div className={cn('mx-auto px-5 pb-3 md:px-6', barExpanded ? 'max-w-[760px]' : 'flex justify-center')}>
           <div className={cn('lf-glass pointer-events-auto overflow-hidden', barExpanded ? 'rounded-[16px]' : 'rounded-full shadow-warm-lg')}>
           {/* 字幕（一体化顶条；通勤模式下已在上方大字显示，这里不再重复）。
               条件渲染而非 AnimatePresence：后者靠 rAF 完成 exit 才卸载，页面在后台时会卡住不消失 */}
@@ -2876,7 +2876,7 @@ export default function LearnUnit() {
             </div>
           )}
 
-          <div className={cn('flex items-center', barExpanded ? 'gap-3 px-4 py-3' : 'gap-1.5 px-3 py-2')}>
+          <div className={cn('flex items-center', barExpanded ? 'flex-wrap gap-x-2 gap-y-1.5 px-4 py-2.5' : 'gap-1.5 px-3 py-2')}>
             {pptTaskId && (
               <button
                 type="button"
@@ -2940,64 +2940,65 @@ export default function LearnUnit() {
               </span>
             )}
 
-            {/* 标题区（仅展开态）：内容可截断但不换行——否则被进度条挤压时文字会一列一字竖排 */}
+            {/* 标题 + 分段进度独立一行，避免与右侧操作按钮互相挤压 */}
             {barExpanded && (
-            <div className="min-w-0 flex-1">
-              <div className="truncate whitespace-nowrap text-[13px] font-medium text-ink">
-                {playing ? '正在讲播' : pptTaskId ? `${pptTopic || kp.name} · ${pptSlide.current + 1}/${Math.max(1, pptSlide.count)} 页` : `${kp.name} · 交互课件`}
+              <div className="order-first flex w-full items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate whitespace-nowrap text-[13px] font-medium text-ink">
+                    {playing ? '正在讲播' : pptTaskId ? `${pptTopic || kp.name} · ${pptSlide.current + 1}/${Math.max(1, pptSlide.count)} 页` : `${kp.name} · 交互课件`}
+                  </div>
+                  <div className="flex min-w-0 items-center gap-2 whitespace-nowrap font-mono text-[10px] text-ink-muted">
+                    <span className="shrink-0">{tts.supported ? <Volume2 size={10} /> : <VolumeX size={10} />}</span>
+                    <span className="truncate">{pptTaskId ? 'MiMo 演讲稿朗读 · 个人音色' : tts.supported ? `语音授课 · ${voiceStyle.label}` : '默片模式（字幕+视觉照常）'}</span>
+                  </div>
+                </div>
+                <div className="flex min-w-[120px] flex-1 items-center gap-2">
+                  <div className="flex h-4 flex-1 items-center gap-[3px]" role="group" aria-label="讲解进度（分段）">
+                    {blocks.map((bb, bi) => {
+                      const effU = Math.min(unlocked, blocks.length);
+                      const segLocked = !freeBrowse && bi >= effU;
+                      const pick = bb.kind === 'checkpoint' ? cpPicks[bb.id] : undefined;
+                      const answered = pick !== undefined;
+                      const segCorrect = bb.kind === 'checkpoint' && answered && pick === bb.q.answerIndex;
+                      const segTitle =
+                        'title' in bb && bb.title
+                          ? bb.title.replace(/^跟我看一遍，再自己动手 · /, '')
+                          : bb.kind === 'checkpoint'
+                            ? '微练'
+                            : '小结';
+                      return (
+                        <button
+                          key={bb.id}
+                          type="button"
+                          disabled={segLocked}
+                          onClick={() => jumpToBlock(bi)}
+                          title={segLocked ? `${segTitle} · 未解锁` : `第 ${bi + 1} 段 · ${segTitle}`}
+                          className={cn(
+                            'flex-1 rounded-full transition-all',
+                            bi === cursor ? 'h-2.5' : 'h-1.5',
+                            segLocked
+                              ? 'cursor-not-allowed bg-hairline'
+                              : bb.kind === 'checkpoint'
+                                ? answered
+                                  ? segCorrect
+                                    ? 'bg-brand-success/80'
+                                    : 'bg-brand-danger/70'
+                                  : 'bg-brand-amber/80'
+                                : bi === cursor
+                                  ? 'bg-brand'
+                                  : 'bg-brand/45 hover:bg-brand/70',
+                          )}
+                        />
+                      );
+                    })}
+                  </div>
+                  <span className="shrink-0 font-mono text-[10.5px] text-ink-muted tabular">
+                    {cursor + 1}/{blocks.length}
+                  </span>
+                </div>
               </div>
-              <div className="flex min-w-0 items-center gap-2 whitespace-nowrap font-mono text-[10px] text-ink-muted">
-                <span className="shrink-0">{tts.supported ? <Volume2 size={10} /> : <VolumeX size={10} />}</span>
-                <span className="truncate">{pptTaskId ? 'MiMo 演讲稿朗读 · 个人音色' : tts.supported ? `语音授课 · ${voiceStyle.label}` : '默片模式（字幕+视觉照常）'}</span>
-              </div>
-            </div>
             )}
 
-            {/* 分段进度条（仅展开态）：一段一节，练习段带对错色点，点击跳转 */}
-            <div className={cn('min-w-[120px] flex-1 items-center gap-2', barExpanded ? 'hidden sm:flex' : 'hidden')}>
-              <div className="flex h-4 flex-1 items-center gap-[3px]" role="group" aria-label="讲解进度（分段）">
-                {blocks.map((bb, bi) => {
-                  const effU = Math.min(unlocked, blocks.length);
-                  const segLocked = !freeBrowse && bi >= effU;
-                  const pick = bb.kind === 'checkpoint' ? cpPicks[bb.id] : undefined;
-                  const answered = pick !== undefined;
-                  const segCorrect = bb.kind === 'checkpoint' && answered && pick === bb.q.answerIndex;
-                  const segTitle =
-                    'title' in bb && bb.title
-                      ? bb.title.replace(/^跟我看一遍，再自己动手 · /, '')
-                      : bb.kind === 'checkpoint'
-                        ? '微练'
-                        : '小结';
-                  return (
-                    <button
-                      key={bb.id}
-                      type="button"
-                      disabled={segLocked}
-                      onClick={() => jumpToBlock(bi)}
-                      title={segLocked ? `${segTitle} · 未解锁` : `第 ${bi + 1} 段 · ${segTitle}`}
-                      className={cn(
-                        'flex-1 rounded-full transition-all',
-                        bi === cursor ? 'h-2.5' : 'h-1.5',
-                        segLocked
-                          ? 'cursor-not-allowed bg-hairline'
-                          : bb.kind === 'checkpoint'
-                            ? answered
-                              ? segCorrect
-                                ? 'bg-brand-success/80'
-                                : 'bg-brand-danger/70'
-                              : 'bg-brand-amber/80'
-                            : bi === cursor
-                              ? 'bg-brand'
-                              : 'bg-brand/45 hover:bg-brand/70',
-                      )}
-                    />
-                  );
-                })}
-              </div>
-              <span className="shrink-0 font-mono text-[10.5px] text-ink-muted tabular">
-                {cursor + 1}/{blocks.length}
-              </span>
-            </div>
 
             {/* 音量：静音切换 + 滑杆（同时作用于幻灯片语音与 AI 回答） */}
             {pptTaskId && (
