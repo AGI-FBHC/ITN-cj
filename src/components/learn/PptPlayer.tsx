@@ -276,17 +276,21 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
   }
 
   if (!slides || slideCount === 0) {
-    if (task && task.status !== 'completed') {
+    const inProgress = Boolean(task && task.status !== 'completed');
+    const slidesLoading = Boolean(loading && !inProgress);
+    if (inProgress || slidesLoading) {
       return (
         <div className="mt-4 flex flex-col items-center justify-center py-12 text-center">
           <Loader2 size={24} className="animate-spin text-brand" />
-          <p className="mt-3 text-[13.5px] font-medium text-ink">{task.stageMessage || 'PPT 正在后台生成'}</p>
-          <p className="mt-1 text-[12px] text-ink-muted">生成完成后会自动进入播放页</p>
-          <div className="mt-3 flex items-center gap-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <span key={i} className={cn('h-1.5 w-10 rounded-full', (task.progress ?? 0) >= (i + 1) * 20 ? 'bg-brand' : 'bg-paper-deep')} />
-            ))}
-          </div>
+          <p className="mt-3 text-[13.5px] font-medium text-ink">{slidesLoading ? '正在加载幻灯片…' : (task?.stageMessage || 'PPT 正在后台生成')}</p>
+          <p className="mt-1 text-[12px] text-ink-muted">{slidesLoading ? '页面马上就好' : '生成完成后会自动进入播放页'}</p>
+          {inProgress && (
+            <div className="mt-3 flex items-center gap-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <span key={i} className={cn('h-1.5 w-10 rounded-full', (task?.progress ?? 0) >= (i + 1) * 20 ? 'bg-brand' : 'bg-paper-deep')} />
+              ))}
+            </div>
+          )}
         </div>
       );
     }
