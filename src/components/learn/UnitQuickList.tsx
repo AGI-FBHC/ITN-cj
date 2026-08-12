@@ -113,27 +113,31 @@ export default function UnitQuickList({
               )}
               <StatusDot state={state} />
               <span className="min-w-0 flex-1">
-                {chapterTag && (
-                  <span className="block text-[10.5px] font-medium leading-[14px] text-brand/70">{chapterTag}</span>
-                )}
+                {/* 第一行：章节标签 + 掌握条 + 分数，不挤压标题 */}
+                <span className="flex items-center gap-2">
+                  <span className="text-[10.5px] font-medium leading-[14px] text-brand/70">{chapterTag ?? ''}</span>
+                  <span className="ml-auto flex items-center gap-2">
+                    {/* 微型掌握条 + 目标刻度（未学的单元不画刻度——空条上飘孤立红点很怪） */}
+                    <span className={cn('relative h-1 w-10 shrink-0 overflow-hidden rounded-full bg-paper-deep xl:w-12', !isLearned && 'opacity-50')}>
+                      {isLearned && (
+                        <>
+                          <span
+                            className={cn('absolute inset-y-0 left-0 rounded-full', state === 'passed' ? 'bg-brand-amber' : 'bg-brand')}
+                            style={{ width: `${score}%` }}
+                          />
+                          <span className="absolute inset-y-0 w-[2px] bg-brand-danger/60" style={{ left: `${kp.targetLevel}%` }} />
+                        </>
+                      )}
+                    </span>
+                    <span className="w-6 shrink-0 text-right font-mono text-[10.5px] text-ink-muted tabular-nums">
+                      {isLearned ? score : '—'}
+                    </span>
+                  </span>
+                </span>
+                {/* 第二行：标题独占整行宽度 */}
                 <span className={cn('block text-[13px] leading-[17px] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden', selected ? 'font-medium text-ink' : 'text-ink-2')} title={kp.name}>
                   {title}
                 </span>
-              </span>
-              {/* 微型掌握条 + 目标刻度（未学的单元不画刻度——空条上飘孤立红点很怪） */}
-              <span className={cn('relative h-1 w-10 shrink-0 overflow-hidden rounded-full bg-paper-deep xl:w-12', !isLearned && 'opacity-50')}>
-                {isLearned && (
-                  <>
-                    <span
-                      className={cn('absolute inset-y-0 left-0 rounded-full', state === 'passed' ? 'bg-brand-amber' : 'bg-brand')}
-                      style={{ width: `${score}%` }}
-                    />
-                    <span className="absolute inset-y-0 w-[2px] bg-brand-danger/60" style={{ left: `${kp.targetLevel}%` }} />
-                  </>
-                )}
-              </span>
-              <span className="w-6 shrink-0 text-right font-mono text-[10.5px] text-ink-muted tabular-nums">
-                {isLearned ? score : '—'}
               </span>
             </button>
           );
