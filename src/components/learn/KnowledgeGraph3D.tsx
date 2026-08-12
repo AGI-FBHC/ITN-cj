@@ -1,6 +1,6 @@
 /**
- * KnowledgeGraph3D — Obsidian 风格 3D 知识图谱（明显光圈版）
- * 主节点大深色，子节点小浅色，明显环形光圈
+ * KnowledgeGraph3D — Obsidian 风格 3D 知识图谱（边缘发光版）
+ * 球体边缘贴边发光，菲涅尔效应
  */
 import { useRef, useMemo, useState, useCallback } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
@@ -54,6 +54,33 @@ interface KnowledgeGraph3DProps {
   topicProgress: Record<string, number>;
   className?: string;
 }
+
+/** 边缘发光 Shader */
+const glowVertexShader = `
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+  void main() {
+    vNormal = normalize(normalMatrix * normal);
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    vViewDir = normalize(-mvPosition.xyz);
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`;
+
+const glowFragmentShader = `
+  uniform vec3 color;
+  uniform vec3 glowColor;
+  uniform float opacity;
+  uniform float glowIntensity;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+  void main() {
+    float fresnel = pow(1.0 - abs(dot(vNormal, vViewDir)), 2.0);
+    vec3 finalColor = mix(color, glowColor, fresnel * glowIntensity);
+    float alpha = opacity + fresnel * glowIntensity * 0.5;
+    gl_FragColor = vec4(finalColor, alpha);
+  }
+`;
 
 /** 3D 力导向布局 */
 function use3DLayout(nodes: GraphNode[], edges: GraphEdge[]) {
@@ -124,64 +151,6 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[]) {
   }, [nodes, edges]);
 }
 
-/** 明显光圈：围绕节点的旋转光环 */
-function GlowRing({
-  radius,
-  color,
-  hovered,
-  selected,
-  isDomain,
-}: {
-  radius: number;
-  color: string;
-  hovered: boolean;
-  selected: boolean;
-  isDomain: boolean;
-}) {
-  const ringRef = useRef<THREE.Mesh>(null);
-  const ring2Ref = useRef<THREE.Mesh>(null);
-
-  useFrame((state) => {
-    const time = state.clock.elapsedTime;
-    if (ringRef.current) {
-      ringRef.current.rotation.z = time * 0.5;
-      ringRef.current.rotation.x = Math.sin(time * 0.3) * 0.2;
-    }
-    if (ring2Ref.current) {
-      ring2Ref.current.rotation.z = -time * 0.3;
-      ring2Ref.current.rotation.y = Math.cos(time * 0.4) * 0.15;
-    }
-  });
-
-  const opacity = selected ? 0.9 : hovered ? 0.7 : 0.4;
-  const scale = selected ? 1.2 : hovered ? 1.1 : 1;
-
-  return (
-    <group scale={scale}>
-      {/* 主光圈：明显的环形 */}
-      <mesh ref={ringRef}>
-        <torusGeometry args={[radius * 1.3, isDomain ? 0.15 : 0.08, 16, 64]} />
-        <meshBasicMaterial
-          color={color}
-          transparent
-          opacity={opacity}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-      {/* 第二层光圈：错位旋转，增加层次 */}
-      <mesh ref={ring2Ref} rotation={[Math.PI / 3, 0, 0]}>
-        <torusGeometry args={[radius * 1.5, isDomain ? 0.1 : 0.05, 16, 64]} />
-        <meshBasicMaterial
-          color={color}
-          transparent
-          opacity={opacity * 0.6}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
-    </group>
-  );
-}
-
 /** 进度环 */
 function ProgressRing({
   radius,
@@ -220,7 +189,7 @@ function ProgressRing({
   );
 }
 
-/** 3D 节点 */
+/** 3D 节点：边缘发光球体 */
 function Node3D({
   node,
   position,
@@ -243,6 +212,7 @@ function Node3D({
   onHover: (id: string | null) => void;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
+  const materialRef = useRef<THREE.ShaderMaterial>(null);
   const isDomain = node.kind === 'domain';
   const colors = isDomain ? NODE_COLORS.domain : NODE_COLORS.topic;
 
@@ -253,7 +223,6 @@ function Node3D({
     return colors.base;
   };
 
-  // 主节点大，子节点小，明显区分
   const baseSize = isDomain ? 3 : 0.9;
   const targetScale = selected ? 1.3 : hovered ? 1.15 : 1;
   const glowColor = GLOW_COLORS[node.kind];
@@ -264,20 +233,28 @@ function Node3D({
     const current = meshRef.current.scale.x;
     const target = baseSize * breathe * targetScale;
     meshRef.current.scale.setScalar(THREE.MathUtils.lerp(current, target, 0.1));
+
+    // 更新 shader uniform
+    if (materialRef.current) {
+      materialRef.current.uniforms.glowIntensity.value =
+        dimmed ? 0.1 : hovered ? 1.5 : selected ? 1.2 : 0.6;
+      materialRef.current.uniforms.opacity.value = dimmed ? 0.2 : 0.9;
+    }
   });
+
+  const uniforms = useMemo(
+    () => ({
+      color: { value: new THREE.Color(getColor()) },
+      glowColor: { value: new THREE.Color(glowColor) },
+      opacity: { value: 0.9 },
+      glowIntensity: { value: 0.6 },
+    }),
+    [getColor(), glowColor],
+  );
 
   return (
     <group position={position}>
-      {/* 明显光圈 */}
-      <GlowRing
-        radius={baseSize}
-        color={glowColor}
-        hovered={hovered}
-        selected={selected}
-        isDomain={isDomain}
-      />
-
-      {/* 主球体 */}
+      {/* 边缘发光球体 */}
       <mesh
         ref={meshRef}
         onClick={(e) => {
@@ -295,10 +272,12 @@ function Node3D({
         }}
       >
         <sphereGeometry args={[1, 64, 64]} />
-        <meshBasicMaterial
-          color={getColor()}
+        <shaderMaterial
+          ref={materialRef}
+          vertexShader={glowVertexShader}
+          fragmentShader={glowFragmentShader}
+          uniforms={uniforms}
           transparent
-          opacity={dimmed ? 0.15 : isDomain ? 0.95 : 0.85}
         />
       </mesh>
 
@@ -347,9 +326,9 @@ function Edge3D({
     <Line
       points={points}
       color={color}
-      lineWidth={isChildLink ? 0.6 : hovered ? 2.5 : 1}
+      lineWidth={isChildLink ? 2 : hovered ? 3.5 : 2}
       transparent
-      opacity={dimmed ? 0.06 : hovered ? 0.9 : isChildLink ? 0.25 : 0.35}
+      opacity={dimmed ? 0.06 : hovered ? 0.9 : isChildLink ? 0.5 : 0.35}
       dashed={dashed}
       dashSize={1.5}
       gapSize={0.8}
@@ -465,13 +444,13 @@ function SceneContent({
         );
       })}
 
-      {/* 子节点到父节点的连线：细浅色 */}
+      {/* 子节点到父节点的连线 */}
       {childLinks.map((link) => (
         <Edge3D
           key={link.id}
           fromPos={link.from}
           toPos={link.to!}
-          color="#C4D3C8"
+          color="#83A58F"
           hovered={false}
           dimmed={false}
           isChildLink
@@ -573,3 +552,4 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
+
