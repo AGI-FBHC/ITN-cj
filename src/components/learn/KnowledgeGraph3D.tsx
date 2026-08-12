@@ -2,8 +2,8 @@
  * KnowledgeGraph3D — Obsidian 风格 3D 知识图谱（智能展开版）
  * 子节点自动选择空旷方向展开，文字跟随方向
  */
-import { useRef, useMemo, useState, useCallback } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { useRef, useMemo, useState, useCallback, useEffect } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Text, Line, PerspectiveCamera, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 import type { GraphNode, GraphEdge, EdgeKind } from '@/data/knowledgeGraph';
@@ -53,6 +53,8 @@ interface KnowledgeGraph3DProps {
   mastery: Record<string, number>;
   topicMastery: Record<string, number>;
   topicProgress: Record<string, number>;
+  /** 请求把某个域节点转到视野正前方（at 变化即重新触发） */
+  focusTarget?: { id: string; at: number } | null;
   className?: string;
 }
 
@@ -82,8 +84,16 @@ const innerGlowFragmentShader = `
 `;
 
 /** 多轴随机缓慢旋转的场景容器 */
-function RotatingScene({ children, shouldRotate }: { children: React.ReactNode; shouldRotate: boolean }) {
-  const groupRef = useRef<THREE.Group>(null);
+function RotatingScene({
+  children,
+  shouldRotate,
+  outerRef,
+}: {
+  children: React.ReactNode;
+  shouldRotate: boolean;
+  outerRef?: React.MutableRefObject<THREE.Group | null>;
+}) {
+  const groupRef = useRef<THREE.Group | null>(null);
 
   useFrame((state) => {
     if (!groupRef.current || !shouldRotate) return;
@@ -93,7 +103,78 @@ function RotatingScene({ children, shouldRotate }: { children: React.ReactNode; 
     groupRef.current.rotation.z = Math.cos(time * 0.6) * 0.08;
   });
 
-  return <group ref={groupRef}>{children}</group>;
+  return (
+    <group
+      ref={(g) => {
+        groupRef.current = g;
+        if (outerRef) outerRef.current = g;
+      }}
+    >
+      {children}
+    </group>
+  );
+}
+
+/** 相机聚焦：把指定域节点平滑带到视野正前方 */
+function CameraFocus({
+  focusTarget,
+  layout,
+  sceneRef,
+}: {
+  focusTarget?: { id: string; at: number } | null;
+  layout: { positions: Map<string, THREE.Vector3> };
+  sceneRef: React.MutableRefObject<THREE.Group | null>;
+}) {
+  const camera = useThree((s) => s.camera);
+  const controls = useThree((s) => s.controls) as { target: THREE.Vector3; update: () => void; addEventListener: (t: string, cb: () => void) => void; removeEventListener: (t: string, cb: () => void) => void } | null;
+  const animRef = useRef<{
+    t: number;
+    fromPos: THREE.Vector3;
+    fromTarget: THREE.Vector3;
+    nodeLocal: THREE.Vector3;
+  } | null>(null);
+  const lastAtRef = useRef(0);
+
+  // 用户手动拖拽时立即取消聚焦动画
+  useEffect(() => {
+    if (!controls) return;
+    const cancel = () => { animRef.current = null; };
+    controls.addEventListener('start', cancel);
+    return () => controls.removeEventListener('start', cancel);
+  }, [controls]);
+
+  useFrame((_, delta) => {
+    if (focusTarget && focusTarget.at !== lastAtRef.current) {
+      lastAtRef.current = focusTarget.at;
+      const nodeLocal = layout.positions.get(focusTarget.id);
+      if (nodeLocal && controls) {
+        animRef.current = {
+          t: 0,
+          fromPos: camera.position.clone(),
+          fromTarget: controls.target.clone(),
+          nodeLocal: nodeLocal.clone(),
+        };
+      }
+    }
+
+    const anim = animRef.current;
+    if (!anim || !controls) return;
+    anim.t = Math.min(anim.t + delta / 0.8, 1);
+    const ease = anim.t * anim.t * (3 - 2 * anim.t);
+
+    // 节点世界坐标（旋转组刚停下，逐帧读取矩阵更稳妥）
+    const world = anim.nodeLocal.clone();
+    if (sceneRef.current) world.applyMatrix4(sceneRef.current.matrixWorld);
+    const camPos = world.clone().normalize().multiplyScalar(world.length() + 38);
+
+    camera.position.lerpVectors(anim.fromPos, camPos, ease);
+    controls.target.lerpVectors(anim.fromTarget, world, ease);
+    controls.update();
+
+    if (anim.t >= 1) animRef.current = null;
+  });
+
+  return null;
 }
 
 /** 域节点固定布局 */
@@ -255,7 +336,7 @@ function EdgeArrow({
   // 圆锥位置与朝向：沿边方向放置，尖端指向目标节点，不随相机变化
   const { position, quaternion } = useMemo(() => {
     const dir = toPos.clone().sub(fromPos).normalize();
-    const pad = Math.min(5, Math.max(toPos.distanceTo(fromPos), 0.001) * 0.25);
+    const pad = Math.min(4.2, Math.max(toPos.distanceTo(fromPos), 0.001) * 0.2);
     return {
       position: toPos.clone().sub(dir.clone().multiplyScalar(pad)),
       // 圆锥默认沿 +Y 指向尖端，旋转到边的方向
@@ -272,7 +353,7 @@ function EdgeArrow({
 
   return (
     <mesh ref={meshRef} position={position} quaternion={quaternion}>
-      <coneGeometry args={[0.7, 1.8, 16]} />
+      <coneGeometry args={[0.55, 1.4, 16]} />
       <meshBasicMaterial color={color} transparent depthWrite={false} />
     </mesh>
   );
@@ -921,9 +1002,11 @@ export default function KnowledgeGraph3D({
   mastery,
   topicMastery,
   topicProgress,
+  focusTarget,
   className,
 }: KnowledgeGraph3DProps) {
   const layout = use3DLayout(nodes, edges, expandedKpIds);
+  const sceneRef = useRef<THREE.Group | null>(null);
 
   return (
     <div
@@ -941,7 +1024,7 @@ export default function KnowledgeGraph3D({
           maxDistance={130}
           autoRotate={false}
         />
-        <RotatingScene shouldRotate={expandedKpIds.size === 0}>
+        <RotatingScene shouldRotate={expandedKpIds.size === 0} outerRef={sceneRef}>
           <SceneContent
             nodes={nodes}
             edges={edges}
@@ -958,6 +1041,7 @@ export default function KnowledgeGraph3D({
             onTopicClick={onTopicClick}
           />
         </RotatingScene>
+        <CameraFocus focusTarget={focusTarget} layout={layout} sceneRef={sceneRef} />
       </Canvas>
 
       {/* 提示 */}

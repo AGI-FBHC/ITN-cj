@@ -51,6 +51,8 @@ export default function Learn() {
     setExpandedKpIds(id === null ? new Set() : new Set([id]));
   };
   const [selectedTopic, setSelectedTopic] = useState<number | null>(null);
+  /** 章节速览点击后，请求 3D 相机把该域节点转到正前方 */
+  const [graphFocus, setGraphFocus] = useState<{ id: string; at: number } | null>(null);
   const [actionMenu, setActionMenu] = useState<{ kpId: string; topicIndex: number; label: string } | null>(null);
   const [searchParams] = useSearchParams();
   useEffect(() => {
@@ -199,6 +201,7 @@ export default function Learn() {
               mastery={map.mastery}
               topicMastery={map.topicMastery}
               topicProgress={map.topicProgress}
+              focusTarget={graphFocus}
             />
           ) : (
             <KnowledgeGraph scene={scene} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpIds={expandedKpIds} onExpandedKpChange={setSingleExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} />
@@ -226,7 +229,7 @@ export default function Learn() {
           transition={{ duration: 0.35, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
           className="mt-4 hidden border-t border-hairline/60 pt-4 lg:block"
         >
-          <UnitQuickList selectedKpId={selectedKp} onSelect={(kpId) => { setSelectedKp(kpId); setSelectedTopic(null); setSingleExpandedKp(kpId); }} routeOrdered={scene === 'route'} columns items={knowledgePoints} path={map.path} learned={map.learned} mastery={map.mastery} />
+          <UnitQuickList selectedKpId={selectedKp} onSelect={(kpId) => { setSelectedKp(kpId); setSelectedTopic(null); setSingleExpandedKp(kpId); setGraphFocus({ id: kpId, at: Date.now() }); }} routeOrdered={scene === 'route'} columns items={knowledgePoints} path={map.path} learned={map.learned} mastery={map.mastery} />
         </motion.div>
       )}
 
