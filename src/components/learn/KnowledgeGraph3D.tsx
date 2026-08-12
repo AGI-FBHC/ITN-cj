@@ -311,6 +311,277 @@ function ProgressRing({
   );
 }
 
+/** 子节点平面：面向用户的纸面效果 */
+function ChildPlane({
+  parentPos,
+  children,
+  layout,
+  hoveredId,
+  selectedKpId,
+  expandedKpId,
+  learned,
+  topicMastery,
+  topicProgress,
+  onNodeClick,
+  onNodeHover,
+}: {
+  parentPos: THREE.Vector3;
+  children: GraphNode[];
+  layout: { positions: Map<string, THREE.Vector3>; childDirections: Map<string, 'left' | 'right' | 'top' | 'bottom'> };
+  hoveredId: string | null;
+  selectedKpId: string | null;
+  expandedKpId: string | null;
+  learned: Set<string>;
+  topicMastery: Record<string, number>;
+  topicProgress: Record<string, number>;
+  onNodeClick: (node: GraphNode) => void;
+  onNodeHover: (id: string | null) => void;
+}) {
+  // 计算子节点在平面上的相对位置
+  const childData = useMemo(() => {
+    return children.map((node, i) => {
+      const direction = layout.childDirections.get(node.id) || 'right';
+      const isHorizontal = direction === 'left' || direction === 'right';
+      const sign = direction === 'left' || direction === 'top' ? -1 : 1;
+      
+      let relPos: [number, number, number];
+      if (isHorizontal) {
+        relPos = [
+          15 * sign + (i % 2) * 6 * sign,
+          (i - (children.length - 1) / 2) * 8,
+          0,
+        ];
+      } else {
+        relPos = [
+          (i - (children.length - 1) / 2) * 8,
+          15 * sign + (i % 2) * 6 * sign,
+          0,
+        ];
+      }
+      
+      return { node, relPos, direction };
+    });
+  }, [children, layout.childDirections]);
+
+  return (
+    <Billboard position={parentPos}>
+      <group>
+        {/* 连线：从原点到各子节点 */}
+        {childData.map(({ node, relPos }) => (
+          <Line
+            key={`line-${node.id}`}
+            points={[
+              new THREE.Vector3(0, 0, 0),
+              new THREE.Vector3(...relPos),
+            ]}
+            color="#4E7860"
+            lineWidth={3}
+            transparent
+            opacity={0.6}
+          />
+        ))}
+        
+        {/* 子节点 */}
+        {childData.map(({ node, relPos, direction }) => {
+          const isHovered = hoveredId === node.id;
+          const isSelected = selectedKpId === node.id || expandedKpId === node.id;
+          const progress = topicProgress[node.id] ?? topicMastery[node.id] ?? 0;
+          
+          return (
+            <ChildNode
+              key={node.id}
+              node={node}
+              position={relPos}
+              direction={direction}
+              selected={isSelected}
+              hovered={isHovered}
+              learned={learned.has(node.kpId)}
+              progress={progress}
+              onClick={() => onNodeClick(node)}
+              onHover={onNodeHover}
+            />
+          );
+        })}
+      </group>
+    </Billboard>
+  );
+}
+
+/** 子节点（平面内） */
+function ChildNode({
+  node,
+  position,
+  direction,
+  selected,
+  hovered,
+  learned,
+  progress,
+  onClick,
+  onHover,
+}: {
+  node: GraphNode;
+  position: [number, number, number];
+  direction: 'left' | 'right' | 'top' | 'bottom';
+  selected: boolean;
+  hovered: boolean;
+  learned: boolean;
+  progress: number;
+  onClick: () => void;
+  onHover: (id: string | null) => void;
+}) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const glow1Ref = useRef<THREE.Mesh>(null);
+  const glow2Ref = useRef<THREE.Mesh>(null);
+  const glow3Ref = useRef<THREE.Mesh>(null);
+  const colors = NODE_COLORS.topic;
+
+  const getColor = () => {
+    if (selected) return colors.selected;
+    if (hovered) return colors.hover;
+    if (learned) return colors.learned;
+    return colors.base;
+  };
+
+  const baseSize = 1.5;
+  const targetScale = selected ? 1.3 : hovered ? 1.15 : 1;
+  const glowColor = GLOW_COLORS.topic;
+
+  useFrame((state) => {
+    if (!meshRef.current) return;
+    const time = state.clock.elapsedTime;
+    const breathe = 1 + Math.sin(time * 1.5 + position[0] * 0.1) * 0.02;
+    const current = meshRef.current.scale.x;
+    const target = baseSize * breathe * targetScale;
+    meshRef.current.scale.setScalar(THREE.MathUtils.lerp(current, target, 0.1));
+
+    const glowIntensity = hovered ? 1 : selected ? 0.9 : 0.5;
+    const pulse = 1 + Math.sin(time * 2 + position[1]) * 0.05;
+
+    if (glow1Ref.current) {
+      glow1Ref.current.scale.setScalar(baseSize * 1.15 * pulse);
+      (glow1Ref.current.material as THREE.MeshBasicMaterial).opacity = 0.3 * glowIntensity;
+    }
+    if (glow2Ref.current) {
+      glow2Ref.current.scale.setScalar(baseSize * 1.35 * pulse);
+      (glow2Ref.current.material as THREE.MeshBasicMaterial).opacity = 0.15 * glowIntensity;
+    }
+    if (glow3Ref.current) {
+      glow3Ref.current.scale.setScalar(baseSize * 1.6 * pulse);
+      (glow3Ref.current.material as THREE.MeshBasicMaterial).opacity = 0.08 * glowIntensity;
+    }
+  });
+
+  // 文字位置
+  const getTextPosition = (): [number, number, number] => {
+    switch (direction) {
+      case 'left': return [-3.5, 0, 1];
+      case 'right': return [3.5, 0, 1];
+      case 'top': return [0, 3.5, 1];
+      case 'bottom': return [0, -3.5, 1];
+      default: return [3.5, 0, 1];
+    }
+  };
+
+  const getTextAnchor = (): { x: 'left' | 'center' | 'right'; y: 'top' | 'middle' | 'bottom' } => {
+    switch (direction) {
+      case 'left': return { x: 'right', y: 'middle' };
+      case 'right': return { x: 'left', y: 'middle' };
+      case 'top': return { x: 'center', y: 'bottom' };
+      case 'bottom': return { x: 'center', y: 'top' };
+      default: return { x: 'left', y: 'middle' };
+    }
+  };
+
+  const textAnchor = getTextAnchor();
+
+  return (
+    <group
+      position={position}
+      onPointerEnter={(e) => {
+        e.stopPropagation();
+        onHover(node.id);
+        document.body.style.cursor = 'pointer';
+      }}
+      onPointerLeave={() => {
+        onHover(null);
+        document.body.style.cursor = 'default';
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+    >
+      {/* 外发光 */}
+      <mesh ref={glow1Ref}>
+        <sphereGeometry args={[1, 32, 32]} />
+        <meshBasicMaterial color={glowColor} transparent opacity={0.3} depthWrite={false} />
+      </mesh>
+      <mesh ref={glow2Ref}>
+        <sphereGeometry args={[1, 32, 32]} />
+        <meshBasicMaterial color={glowColor} transparent opacity={0.15} depthWrite={false} />
+      </mesh>
+      <mesh ref={glow3Ref}>
+        <sphereGeometry args={[1, 32, 32]} />
+        <meshBasicMaterial color={glowColor} transparent opacity={0.08} depthWrite={false} />
+      </mesh>
+
+      {/* 主球体 */}
+      <mesh ref={meshRef}>
+        <sphereGeometry args={[1, 64, 64]} />
+        <meshBasicMaterial color={getColor()} transparent={false} />
+      </mesh>
+
+      {/* 内发光 */}
+      <mesh scale={1.02}>
+        <sphereGeometry args={[1, 64, 64]} />
+        <shaderMaterial
+          vertexShader={glowVertexShader}
+          fragmentShader={innerGlowFragmentShader}
+          uniforms={{
+            color: { value: new THREE.Color(getColor()) },
+            glowColor: { value: new THREE.Color(glowColor) },
+            intensity: { value: hovered ? 1.5 : selected ? 1.2 : 0.8 },
+          }}
+          transparent
+        />
+      </mesh>
+
+      {/* 进度环 */}
+      <ProgressRing radius={baseSize} progress={progress} hovered={hovered} selected={selected} />
+
+      {/* 文字短线 */}
+      <Line
+        points={[
+          new THREE.Vector3(0, 0, 0.5),
+          new THREE.Vector3(
+            direction === 'left' ? -2 : direction === 'right' ? 2 : 0,
+            direction === 'top' ? 2 : direction === 'bottom' ? -2 : 0,
+            1,
+          ),
+        ]}
+        color="#4E7860"
+        lineWidth={1.5}
+        transparent
+        opacity={0.6}
+      />
+
+      {/* 文字 */}
+      <Text
+        position={getTextPosition()}
+        fontSize={1.2}
+        color="#3D4A3A"
+        anchorX={textAnchor.x}
+        anchorY={textAnchor.y}
+        outlineWidth={0.1}
+        outlineColor="#FFFFFF"
+        outlineOpacity={0.3}
+      >
+        {node.label}
+      </Text>
+    </group>
+  );
+}
+
 /** 3D 节点 */
 function Node3D({
   node,
@@ -609,27 +880,10 @@ function SceneContent({
   }, [hoveredId, edges]);
 
   const visibleNodes = useMemo(() => {
-    return nodes.filter((n) => {
-      if (n.kind === 'domain') return true;
-      return expandedKpId === n.kpId;
-    });
-  }, [nodes, expandedKpId]);
+    return nodes.filter((n) => n.kind === 'domain');
+  }, [nodes]);
 
-  const childLinks = useMemo(() => {
-    if (!expandedKpId) return [];
-    const parentPos = layout.positions.get(expandedKpId);
-    if (!parentPos) return [];
-    return nodes
-      .filter((n) => n.kind === 'topic' && n.kpId === expandedKpId)
-      .map((n) => ({
-        id: `${expandedKpId}-${n.id}`,
-        from: parentPos,
-        to: layout.positions.get(n.id),
-      }))
-      .filter((l) => l.to);
-  }, [expandedKpId, nodes, layout.positions]);
-
-  return (
+    return (
     <>
       <ambientLight intensity={0.7} />
       <directionalLight position={[25, 25, 25]} intensity={0.6} />
@@ -655,18 +909,22 @@ function SceneContent({
         );
       })}
 
-      {/* 子节点到父节点的连线 */}
-      {childLinks.map((link) => (
-        <Edge3D
-          key={link.id}
-          fromPos={link.from}
-          toPos={link.to!}
-          color="#4E7860"
-          hovered={false}
-          dimmed={false}
-          isChildLink
+      {/* 子节点平面 */}
+      {expandedKpId && layout.positions.get(expandedKpId) && (
+        <ChildPlane
+          parentPos={layout.positions.get(expandedKpId)!}
+          children={nodes.filter((n) => n.kind === 'topic' && n.kpId === expandedKpId)}
+          layout={layout}
+          hoveredId={hoveredId}
+          selectedKpId={selectedKpId}
+          expandedKpId={expandedKpId}
+          learned={learned}
+          topicMastery={topicMastery}
+          topicProgress={topicProgress}
+          onNodeClick={handleNodeClick}
+          onNodeHover={setHoveredId}
         />
-      ))}
+      )}
 
       {/* 节点 */}
       {visibleNodes.map((node) => {
@@ -771,6 +1029,12 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
+
+
+
+
+
+
 
 
 
