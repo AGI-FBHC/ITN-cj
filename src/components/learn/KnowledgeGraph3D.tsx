@@ -300,7 +300,22 @@ function Node3D({
   });
 
   return (
-    <group position={position}>
+    <group
+      position={position}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        onHover(node.id);
+        document.body.style.cursor = 'pointer';
+      }}
+      onPointerOut={() => {
+        onHover(null);
+        document.body.style.cursor = 'default';
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+    >
       {/* 外发光层 */}
       <mesh ref={glow1Ref}>
         <sphereGeometry args={[1, 32, 32]} />
@@ -316,22 +331,7 @@ function Node3D({
       </mesh>
 
       {/* 主球体 */}
-      <mesh
-        ref={meshRef}
-        onClick={(e) => {
-          e.stopPropagation();
-          onClick();
-        }}
-        onPointerOver={(e) => {
-          e.stopPropagation();
-          onHover(node.id);
-          document.body.style.cursor = 'pointer';
-        }}
-        onPointerOut={() => {
-          onHover(null);
-          document.body.style.cursor = 'default';
-        }}
-      >
+      <mesh ref={meshRef}>
         <sphereGeometry args={[1, 64, 64]} />
         <meshBasicMaterial
           color={getColor()}
@@ -640,6 +640,8 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
+
+
 
 
 
