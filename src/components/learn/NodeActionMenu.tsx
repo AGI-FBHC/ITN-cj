@@ -10,6 +10,7 @@ import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
 import { presentationApi } from '@/lib/presentationApi';
 import type { ResourceForm } from '@/data/resources';
+import type { GeneratedResource } from '@/data/resources';
 import { getKnowledgePoint } from '@/data/knowledgePoints';
 
 const FORM_META: Record<ResourceForm, { label: string; icon: typeof BookOpen; hint: string }> = {
@@ -24,9 +25,11 @@ interface NodeActionMenuProps {
   topicIndex: number;
   onClose: () => void;
   goalId: string | null;
+  /** 该章节已有的资源，命中后直接打开，避免重复生成 */
+  existing?: Array<GeneratedResource & { id?: string; learned?: boolean }>;
 }
 
-export default function NodeActionMenu({ kpId, topicIndex, label, onClose, goalId }: NodeActionMenuProps) {
+export default function NodeActionMenu({ kpId, topicIndex, label, onClose, goalId, existing = [] }: NodeActionMenuProps) {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
   const [generating, setGenerating] = useState<Set<string>>(new Set());
@@ -37,6 +40,13 @@ export default function NodeActionMenu({ kpId, topicIndex, label, onClose, goalI
   const scope = `${currentLearner.id}:${kpId}:${topicName}`;
 
   const generateResource = async (form: ResourceForm) => {
+    /* 已存在同知识点同类型资源 → 直接打开，不重复生成 */
+    const existingResource = existing.find((item) => item.id && item.form === form && (item.levelTag === topicName || item.title.includes(topicName)));
+    if (existingResource?.id) {
+      navigate(`/learn/resource/${existingResource.id}`);
+      onClose();
+      return;
+    }
     const meta = FORM_META[form];
     const taskKey = `${scope}:${form}`;
     if (generating.has(taskKey)) {

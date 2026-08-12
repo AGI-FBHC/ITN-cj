@@ -287,6 +287,7 @@ export default function Learn() {
           label={actionMenu.label}
           onClose={() => setActionMenu(null)}
           goalId={map.goalId}
+          existing={map.resources[actionMenu.kpId] ?? []}
         />
       )}
     </div>
