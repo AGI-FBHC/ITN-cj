@@ -114,6 +114,25 @@ export default function Learn() {
             </button>
           </div>
 
+          {/* 已学路径（2D：放在 2D/3D 切换旁） */}
+          {viewMode === '2d' && (
+            <button
+              type="button"
+              onClick={() => setShowLearnedPath((v) => !v)}
+              aria-pressed={showLearnedPath}
+              title="高亮已学章节/资源，不一定连续"
+              className={cn(
+                'hidden items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] transition-colors lg:inline-flex',
+                showLearnedPath
+                  ? 'border-brand/60 bg-brand-tint text-brand hover:bg-brand-tint'
+                  : 'border-hairline/50 bg-white/90 text-ink-2 hover:bg-white hover:text-ink',
+              )}
+            >
+              {showLearnedPath ? <Check size={12} /> : <Route size={12} />}
+              {showLearnedPath ? '隐藏已学路径' : '已学路径'}
+            </button>
+          )}
+
         </div>
       </motion.div>
 
@@ -138,7 +157,8 @@ export default function Learn() {
       >
         {/* 上层只承载图谱与按需详情；章节速览在下方独立占满全局宽度。 */}
         <motion.div layout="position" className="relative min-w-0">
-          <div className={cn('absolute top-4 z-10 flex flex-col gap-2', viewMode === '3d' ? 'right-4 items-end' : 'left-4 items-start')}>
+          {viewMode === '3d' && (
+            <div className="absolute right-4 top-4 z-10 flex flex-col items-end gap-2">
             {viewMode === '3d' && (
               <button
                 type="button"
@@ -177,7 +197,8 @@ export default function Learn() {
               {showLearnedPath ? <Check size={12} /> : <Route size={12} />}
               {showLearnedPath ? '隐藏已学路径' : '已学路径'}
             </button>
-          </div>
+            </div>
+          )}
           {viewMode === '3d' ? (
             <KnowledgeGraph3D
               onTopicClick={(kpId, topicIndex, label) => setActionMenu({ kpId, topicIndex, label })}
