@@ -93,7 +93,7 @@ export default function App() {
         </Route>
         </Route>
       </Routes>
-      <Toaster position="top-right" richColors closeButton />
+      <Toaster position="top-right" richColors closeButton offset={72} />
     </BrowserRouter>
   );
 }
