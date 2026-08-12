@@ -70,16 +70,28 @@ const glowVertexShader = `
   }
 `;
 
-const innerGlowFragmentShader = `
-  uniform vec3 color;
+// 内描边：球面边缘一条清晰的高对比亮环
+const innerStrokeFragmentShader = `
   uniform vec3 glowColor;
   uniform float intensity;
   varying vec3 vNormal;
   varying vec3 vViewDir;
   void main() {
-    float fresnel = pow(1.0 - abs(dot(vNormal, vViewDir)), 3.0);
-    vec3 finalColor = mix(color, glowColor, fresnel * intensity);
-    gl_FragColor = vec4(finalColor, fresnel * 0.6 * intensity);
+    float f = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewDir))), 6.0);
+    float band = smoothstep(0.3, 0.7, f);
+    gl_FragColor = vec4(glowColor, min(band * intensity, 1.0));
+  }
+`;
+
+// 外描边：紧贴球体轮廓外侧的亮环（BackSide 球壳实现）
+const outerStrokeFragmentShader = `
+  uniform vec3 glowColor;
+  uniform float intensity;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+  void main() {
+    float f = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewDir))), 3.0);
+    gl_FragColor = vec4(glowColor, min(f * intensity, 1.0));
   }
 `;
 
@@ -513,9 +525,6 @@ function ChildNode({
   onHover: (id: string | null) => void;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
-  const glow1Ref = useRef<THREE.Mesh>(null);
-  const glow2Ref = useRef<THREE.Mesh>(null);
-  const glow3Ref = useRef<THREE.Mesh>(null);
   const colors = NODE_COLORS.topic;
 
   const getColor = () => {
@@ -529,29 +538,10 @@ function ChildNode({
   const targetScale = selected ? 1.3 : hovered ? 1.15 : 1;
   const glowColor = GLOW_COLORS.topic;
 
-  useFrame((state) => {
+  useFrame(() => {
     if (!meshRef.current) return;
-    const time = state.clock.elapsedTime;
-    const breathe = 1 + Math.sin(time * 1.5 + position[0] * 0.1) * 0.02;
     const current = meshRef.current.scale.x;
-    const target = baseSize * breathe * targetScale;
-    meshRef.current.scale.setScalar(THREE.MathUtils.lerp(current, target, 0.1));
-
-    const glowIntensity = hovered ? 1 : selected ? 0.9 : 0.5;
-    const pulse = 1 + Math.sin(time * 2 + position[1]) * 0.05;
-
-    if (glow1Ref.current) {
-      glow1Ref.current.scale.setScalar(baseSize * 1.15 * pulse);
-      (glow1Ref.current.material as THREE.MeshBasicMaterial).opacity = 0.3 * glowIntensity;
-    }
-    if (glow2Ref.current) {
-      glow2Ref.current.scale.setScalar(baseSize * 1.35 * pulse);
-      (glow2Ref.current.material as THREE.MeshBasicMaterial).opacity = 0.15 * glowIntensity;
-    }
-    if (glow3Ref.current) {
-      glow3Ref.current.scale.setScalar(baseSize * 1.6 * pulse);
-      (glow3Ref.current.material as THREE.MeshBasicMaterial).opacity = 0.08 * glowIntensity;
-    }
+    meshRef.current.scale.setScalar(THREE.MathUtils.lerp(current, baseSize * targetScale, 0.1));
   });
 
   // 文字位置（仅左右展开）
@@ -582,39 +572,41 @@ function ChildNode({
         onClick();
       }}
     >
-      {/* 外发光 */}
-      <mesh ref={glow1Ref}>
-        <sphereGeometry args={[1, 32, 32]} />
-        <meshBasicMaterial color={glowColor} transparent opacity={0.5} depthWrite={false} />
-      </mesh>
-      <mesh ref={glow2Ref}>
-        <sphereGeometry args={[1, 32, 32]} />
-        <meshBasicMaterial color={glowColor} transparent opacity={0.25} depthWrite={false} />
-      </mesh>
-      <mesh ref={glow3Ref}>
-        <sphereGeometry args={[1, 32, 32]} />
-        <meshBasicMaterial color={glowColor} transparent opacity={0.12} depthWrite={false} />
-      </mesh>
-
-      {/* 主球体 */}
+      {/* 主球体 + 描边式内外发光（跟随球体缩放） */}
       <mesh ref={meshRef}>
         <sphereGeometry args={[1, 64, 64]} />
         <meshBasicMaterial color={getColor()} transparent={false} />
-      </mesh>
 
-      {/* 内发光 */}
-      <mesh scale={1.02}>
-        <sphereGeometry args={[1, 64, 64]} />
-        <shaderMaterial
-          vertexShader={glowVertexShader}
-          fragmentShader={innerGlowFragmentShader}
-          uniforms={{
-            color: { value: new THREE.Color(getColor()) },
-            glowColor: { value: new THREE.Color(glowColor) },
-            intensity: { value: hovered ? 1.5 : selected ? 1.2 : 0.8 },
-          }}
-          transparent
-        />
+        {/* 内描边：球面边缘的亮环 */}
+        <mesh scale={1.015}>
+          <sphereGeometry args={[1, 64, 64]} />
+          <shaderMaterial
+            vertexShader={glowVertexShader}
+            fragmentShader={innerStrokeFragmentShader}
+            uniforms={{
+              glowColor: { value: new THREE.Color(glowColor) },
+              intensity: { value: hovered ? 1.3 : selected ? 1.15 : 1.0 },
+            }}
+            transparent
+            depthWrite={false}
+          />
+        </mesh>
+
+        {/* 外描边：紧贴球体轮廓外的亮环 */}
+        <mesh scale={1.12}>
+          <sphereGeometry args={[1, 48, 48]} />
+          <shaderMaterial
+            vertexShader={glowVertexShader}
+            fragmentShader={outerStrokeFragmentShader}
+            uniforms={{
+              glowColor: { value: new THREE.Color(glowColor) },
+              intensity: { value: hovered ? 1.4 : selected ? 1.2 : 1.0 },
+            }}
+            transparent
+            side={THREE.BackSide}
+            depthWrite={false}
+          />
+        </mesh>
       </mesh>
 
       {/* 进度环 */}
@@ -674,9 +666,6 @@ function Node3D({
   onHover: (id: string | null) => void;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
-  const glow1Ref = useRef<THREE.Mesh>(null);
-  const glow2Ref = useRef<THREE.Mesh>(null);
-  const glow3Ref = useRef<THREE.Mesh>(null);
   const isDomain = node.kind === 'domain';
   const colors = isDomain ? NODE_COLORS.domain : NODE_COLORS.topic;
 
@@ -691,29 +680,10 @@ function Node3D({
   const targetScale = selected ? 1.3 : hovered ? 1.15 : 1;
   const glowColor = GLOW_COLORS[node.kind];
 
-  useFrame((state) => {
+  useFrame(() => {
     if (!meshRef.current) return;
-    const time = state.clock.elapsedTime;
-    const breathe = 1 + Math.sin(time * 1.5 + position.x * 0.1) * 0.02;
     const current = meshRef.current.scale.x;
-    const target = baseSize * breathe * targetScale;
-    meshRef.current.scale.setScalar(THREE.MathUtils.lerp(current, target, 0.1));
-
-    const glowIntensity = dimmed ? 0.1 : hovered ? 1 : selected ? 0.9 : 0.5;
-    const pulse = 1 + Math.sin(time * 2 + position.y) * 0.05;
-
-    if (glow1Ref.current) {
-      glow1Ref.current.scale.setScalar(baseSize * 1.15 * pulse);
-      (glow1Ref.current.material as THREE.MeshBasicMaterial).opacity = 0.3 * glowIntensity;
-    }
-    if (glow2Ref.current) {
-      glow2Ref.current.scale.setScalar(baseSize * 1.35 * pulse);
-      (glow2Ref.current.material as THREE.MeshBasicMaterial).opacity = 0.15 * glowIntensity;
-    }
-    if (glow3Ref.current) {
-      glow3Ref.current.scale.setScalar(baseSize * 1.6 * pulse);
-      (glow3Ref.current.material as THREE.MeshBasicMaterial).opacity = 0.08 * glowIntensity;
-    }
+    meshRef.current.scale.setScalar(THREE.MathUtils.lerp(current, baseSize * targetScale, 0.1));
   });
 
   // 根据方向计算文字位置（子节点仅左右展开）
@@ -746,21 +716,7 @@ function Node3D({
         onClick();
       }}
     >
-      {/* 外发光层 */}
-      <mesh ref={glow1Ref}>
-        <sphereGeometry args={[1, 32, 32]} />
-        <meshBasicMaterial color={glowColor} transparent opacity={0.5} depthWrite={false} />
-      </mesh>
-      <mesh ref={glow2Ref}>
-        <sphereGeometry args={[1, 32, 32]} />
-        <meshBasicMaterial color={glowColor} transparent opacity={0.25} depthWrite={false} />
-      </mesh>
-      <mesh ref={glow3Ref}>
-        <sphereGeometry args={[1, 32, 32]} />
-        <meshBasicMaterial color={glowColor} transparent opacity={0.12} depthWrite={false} />
-      </mesh>
-
-      {/* 主球体 */}
+      {/* 主球体 + 描边式内外发光（跟随球体缩放） */}
       <mesh ref={meshRef}>
         <sphereGeometry args={[1, 64, 64]} />
         <meshBasicMaterial
@@ -768,21 +724,37 @@ function Node3D({
           transparent={dimmed}
           opacity={dimmed ? 0.2 : 1}
         />
-      </mesh>
 
-      {/* 内发光 */}
-      <mesh scale={1.02}>
-        <sphereGeometry args={[1, 64, 64]} />
-        <shaderMaterial
-          vertexShader={glowVertexShader}
-          fragmentShader={innerGlowFragmentShader}
-          uniforms={{
-            color: { value: new THREE.Color(getColor()) },
-            glowColor: { value: new THREE.Color(glowColor) },
-            intensity: { value: dimmed ? 0.2 : hovered ? 2.0 : selected ? 1.6 : 1.0 },
-          }}
-          transparent
-        />
+        {/* 内描边：球面边缘的亮环 */}
+        <mesh scale={1.015}>
+          <sphereGeometry args={[1, 64, 64]} />
+          <shaderMaterial
+            vertexShader={glowVertexShader}
+            fragmentShader={innerStrokeFragmentShader}
+            uniforms={{
+              glowColor: { value: new THREE.Color(glowColor) },
+              intensity: { value: dimmed ? 0.2 : hovered ? 1.3 : selected ? 1.15 : 1.0 },
+            }}
+            transparent
+            depthWrite={false}
+          />
+        </mesh>
+
+        {/* 外描边：紧贴球体轮廓外的亮环 */}
+        <mesh scale={1.12}>
+          <sphereGeometry args={[1, 48, 48]} />
+          <shaderMaterial
+            vertexShader={glowVertexShader}
+            fragmentShader={outerStrokeFragmentShader}
+            uniforms={{
+              glowColor: { value: new THREE.Color(glowColor) },
+              intensity: { value: dimmed ? 0.15 : hovered ? 1.4 : selected ? 1.2 : 1.0 },
+            }}
+            transparent
+            side={THREE.BackSide}
+            depthWrite={false}
+          />
+        </mesh>
       </mesh>
 
       {/* 进度描边 */}
