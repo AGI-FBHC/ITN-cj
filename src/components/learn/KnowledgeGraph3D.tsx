@@ -131,7 +131,7 @@ function CameraFocus({
     t: number;
     fromPos: THREE.Vector3;
     fromTarget: THREE.Vector3;
-    nodeLocal: THREE.Vector3;
+    nodeId: string;
   } | null>(null);
   const lastAtRef = useRef(0);
 
@@ -146,13 +146,12 @@ function CameraFocus({
   useFrame((_, delta) => {
     if (focusTarget && focusTarget.at !== lastAtRef.current) {
       lastAtRef.current = focusTarget.at;
-      const nodeLocal = layout.positions.get(focusTarget.id);
-      if (nodeLocal && controls) {
+      if (layout.positions.has(focusTarget.id) && controls) {
         animRef.current = {
           t: 0,
           fromPos: camera.position.clone(),
           fromTarget: controls.target.clone(),
-          nodeLocal: nodeLocal.clone(),
+          nodeId: focusTarget.id,
         };
       }
     }
@@ -162,8 +161,10 @@ function CameraFocus({
     anim.t = Math.min(anim.t + delta / 0.8, 1);
     const ease = anim.t * anim.t * (3 - 2 * anim.t);
 
-    // 节点世界坐标（旋转组刚停下，逐帧读取矩阵更稳妥）
-    const world = anim.nodeLocal.clone();
+    // 节点世界坐标（节点可能正在被拉出，逐帧读取最新布局位置）
+    const nodeLocal = layout.positions.get(anim.nodeId);
+    if (!nodeLocal) { animRef.current = null; return; }
+    const world = nodeLocal.clone();
     if (sceneRef.current) world.applyMatrix4(sceneRef.current.matrixWorld);
     // 距离要容纳整个子节点展开平面（水平 ~15+，纵向随子节点数量增加）
     const camPos = world.clone().normalize().multiplyScalar(world.length() + 58);
@@ -275,12 +276,21 @@ function findBestDirection(
 }
 
 /** 3D 布局：固定域节点 + 智能子节点展开 */
-function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpIds: Set<string>) {
+function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpIds: Set<string>, focusId: string | null, pullT: number) {
   const domainLayout = useDomainLayout(nodes, edges);
 
   return useMemo(() => {
     const positions = new Map(domainLayout);
     const childDirections = new Map<string, 'left' | 'right'>();
+
+    // 聚焦时把目标域节点沿径向拉向空旷处（球状布局外侧天然空旷）
+    if (focusId && pullT > 0) {
+      const p = positions.get(focusId);
+      if (p) {
+        const ease = 1 - (1 - pullT) * (1 - pullT);
+        positions.set(focusId, p.clone().add(p.clone().normalize().multiplyScalar(14 * ease)));
+      }
+    }
 
     // 支持多个章节同时展开；每个章节基于当前密度独立选择左/右空旷侧
     expandedKpIds.forEach((kpId) => {
@@ -315,7 +325,7 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpIds: Set<
     });
 
     return { positions, childDirections };
-  }, [nodes, expandedKpIds, domainLayout]);
+  }, [nodes, expandedKpIds, domainLayout, focusId, pullT]);
 }
 
 /** 有向边末端的静态圆锥箭头：尖端指向目标节点 */
@@ -1006,7 +1016,27 @@ export default function KnowledgeGraph3D({
   focusTarget,
   className,
 }: KnowledgeGraph3DProps) {
-  const layout = use3DLayout(nodes, edges, expandedKpIds);
+  // 聚焦的域节点（需仍处于展开状态才拉出）
+  const focusId = focusTarget && expandedKpIds.has(focusTarget.id) ? focusTarget.id : null;
+  const [pullT, setPullT] = useState(0);
+  const pullTRef = useRef(0);
+
+  // 拉出/收回的平滑动画（rAF 驱动，~0.5s）
+  useEffect(() => {
+    let raf = 0;
+    const target = focusId ? 1 : 0;
+    pullTRef.current = focusId ? 0 : pullTRef.current;
+    const step = () => {
+      pullTRef.current += (target - pullTRef.current) * 0.1;
+      if (Math.abs(target - pullTRef.current) < 0.005) pullTRef.current = target;
+      setPullT(pullTRef.current);
+      if (pullTRef.current !== target) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [focusId]);
+
+  const layout = use3DLayout(nodes, edges, expandedKpIds, focusId, pullT);
   const sceneRef = useRef<THREE.Group | null>(null);
 
   return (
