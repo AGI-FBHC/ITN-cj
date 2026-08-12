@@ -93,6 +93,10 @@ export default function UnitQuickList({
             isLearned && score >= kp.targetLevel ? 'passed' : isLearned ? 'learning' : 'todo';
           const seq = routeOrdered ? pathSeq.indexOf(kp.id) : -1;
           const selected = selectedKpId === kp.id;
+          // 数据库章节名自带「第X章」前缀，拆出来单独一行小字，主标题更清晰
+          const nameMatch = kp.name.match(/^(第[一二三四五六七八九十百零\d]+章)\s*(.*)$/);
+          const chapterTag = nameMatch ? nameMatch[1] : null;
+          const title = nameMatch && nameMatch[2] ? nameMatch[2] : kp.name;
           return (
             <button
               key={kp.id}
@@ -108,8 +112,13 @@ export default function UnitQuickList({
                 <span className="w-4 shrink-0 font-mono text-[10.5px] font-semibold text-ochre">{seq + 1}</span>
               )}
               <StatusDot state={state} />
-              <span className={cn('min-w-0 flex-1 text-[13px] leading-[18px] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden', selected ? 'font-medium text-ink' : 'text-ink-2')} title={kp.name}>
-                {kp.name}
+              <span className="min-w-0 flex-1">
+                {chapterTag && (
+                  <span className="block text-[10.5px] font-medium leading-[14px] text-brand/70">{chapterTag}</span>
+                )}
+                <span className={cn('block text-[13px] leading-[17px] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden', selected ? 'font-medium text-ink' : 'text-ink-2')} title={kp.name}>
+                  {title}
+                </span>
               </span>
               {/* 微型掌握条 + 目标刻度（未学的单元不画刻度——空条上飘孤立红点很怪） */}
               <span className={cn('relative h-1 w-10 shrink-0 overflow-hidden rounded-full bg-paper-deep xl:w-12', !isLearned && 'opacity-50')}>
