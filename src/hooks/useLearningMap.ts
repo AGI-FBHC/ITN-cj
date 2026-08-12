@@ -10,6 +10,8 @@ import type { GraphEdge, GraphNode } from '@/data/knowledgeGraph';
 import type { PathNode } from '@/data/reportData';
 import type { LearningResourceSummary } from '@/lib/api';
 import type { GeneratedResource } from '@/data/resources';
+import { presentationApi } from '@/lib/presentationApi';
+import type { PresentationTaskSummary } from '@/lib/presentationApi';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -47,6 +49,8 @@ export interface LearningMapView {
   path: PathNode[];
   mastery: Record<string, number>;
   confidence: Record<string, number>;
+  topicMastery: Record<string, number>;
+  topicProgress: Record<string, number>;
   learned: Set<string>;
   status: Record<string, string>;
   activeKp: string | null;
@@ -152,6 +156,7 @@ export function useLearningMap(): LearningMapView {
   const [resources, setResources] = useState<LearningResourceSummary[]>(() => readLearningMapCache(currentLearnerId)?.resources ?? []);
   const [tree, setTree] = useState<RagTree | null>(() => readLearningMapCache(currentLearnerId)?.tree ?? null);
   const [analytics, setAnalytics] = useState<LearnerAnalyticsProfile | null>(null);
+  const [presentations, setPresentations] = useState<PresentationTaskSummary[]>([]);
   const mapRef = useRef<LearningMapOverview | null>(map);
   mapRef.current = map;
 
@@ -169,11 +174,12 @@ export function useLearningMap(): LearningMapView {
       setResources(cached.resources);
       setTree(cached.tree ?? null);
     }
-    Promise.all([api.getLearningMap(currentLearnerId), api.getRagTree('agent'), api.getLearnerAnalyticsProfile().catch(() => null)])
-      .then(async ([overview, latestTree, latestAnalytics]) => {
+    Promise.all([api.getLearningMap(currentLearnerId), api.getRagTree('agent'), api.getLearnerAnalyticsProfile().catch(() => null), presentationApi.listPresentationSummaries(100).catch(() => ({ tasks: [] }))])
+      .then(async ([overview, latestTree, latestAnalytics, latestPresentations]) => {
         if (!cancelled) setMap(overview);
         if (!cancelled) setTree(latestTree);
         if (!cancelled) setAnalytics(latestAnalytics);
+        if (!cancelled) setPresentations(latestPresentations.tasks ?? []);
         try {
           const listed = await api.listLearningResources();
           const latestResources = listed.resources ?? [];
@@ -216,6 +222,8 @@ export function useLearningMap(): LearningMapView {
         path: [],
         mastery: {},
         confidence: {},
+        topicMastery: {},
+        topicProgress: {},
         learned: new Set<string>(),
         status: {},
         activeKp: null,
@@ -239,17 +247,26 @@ export function useLearningMap(): LearningMapView {
 
     const mastery: Record<string, number> = {};
     const confidence: Record<string, number> = {};
+    const topicMastery: Record<string, number> = {};
+    const topicProgress: Record<string, number> = {};
     const status: Record<string, string> = {};
-    const masteryByCategory = new Map((analytics?.mastery.categories ?? []).map((item) => [item.id, item]));
+    const masteryByCategory = new Map((analytics?.mastery.categories ?? []).map((item) => [String(item.id), item]));
     chapters.forEach((chapter) => {
-      const direct = masteryByCategory.get(chapter.id);
-      const children = chapter.children.map((child) => masteryByCategory.get(child.id)).filter(Boolean);
+      const direct = masteryByCategory.get(String(chapter.id));
+      const children = chapter.children.map((child) => masteryByCategory.get(String(child.id))).filter(Boolean);
       const samples = direct ? [direct] : children;
       const score = samples.length ? samples.reduce((sum, item) => sum + item!.score, 0) / samples.length : 0;
       const attempts = samples.reduce((sum, item) => sum + item!.attempts, 0);
       mastery[chapter.nodeCode] = Math.round(score * 100);
       confidence[chapter.nodeCode] = attempts > 0 ? Math.min(95, 40 + attempts * 5) : 0;
       status[chapter.nodeCode] = attempts > 0 ? 'active' : 'locked';
+      chapter.children.filter((child) => child.level === 3).forEach((child) => {
+        const category = masteryByCategory.get(String(child.id));
+        topicMastery[child.nodeCode] = category ? Math.round(category.score * 100) : 0;
+        const learnedForms = new Set(resources.filter((resource) => resource.kpId === chapter.nodeCode && resource.topic === child.name && resource.learned).map((resource) => resource.type));
+        const pptLearned = presentations.some((task) => task.learned && task.title.includes(child.name));
+        topicProgress[child.nodeCode] = Math.round(((learnedForms.size + (pptLearned ? 1 : 0)) / 4) * 100);
+      });
     });
 
     const learned = new Set(chapters.filter((chapter) => (mastery[chapter.nodeCode] ?? 0) > 0).map((chapter) => chapter.nodeCode));
@@ -323,11 +340,13 @@ export function useLearningMap(): LearningMapView {
       path,
       mastery,
       confidence,
+      topicMastery,
+      topicProgress,
       learned,
       status,
       activeKp: chapters.find((chapter) => status[chapter.nodeCode] === 'active')?.nodeCode ?? chapters[0]?.nodeCode ?? null,
       resources: resourceByKp,
       goalId: map.goalId ?? null,
     };
-  }, [map, tree, analytics, loading, currentLearner, resources, currentLearnerId]);
+  }, [map, tree, analytics, presentations, loading, currentLearner, resources, currentLearnerId]);
 }

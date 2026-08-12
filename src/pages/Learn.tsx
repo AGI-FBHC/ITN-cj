@@ -6,7 +6,7 @@
  */
 import { useState } from 'react';
 import { useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowRight, Loader2 } from 'lucide-react';
@@ -38,8 +38,7 @@ export default function Learn() {
   const knowledgePoints = map.domains;
   const reportPath = map.path;
   const [scene, setScene] = useState<GraphScene>('order');
-  const activeKp = map.activeKp ?? knowledgePoints[0]?.id ?? null;
-  const [selectedKp, setSelectedKp] = useState<string | null>(activeKp);
+  const [selectedKp, setSelectedKp] = useState<string | null>(null);
   const [expandedKp, setExpandedKp] = useState<string | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<number | null>(null);
   const [searchParams] = useSearchParams();
@@ -109,21 +108,31 @@ export default function Learn() {
         </div>
       )}
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.08 }}
-        className="mt-5 hidden gap-7 lg:grid lg:grid-cols-[minmax(0,1fr)_340px]"
+        initial={{ opacity: 0, y: 20, gridTemplateColumns: 'minmax(0, 1fr) 0px' }}
+        layout
+        animate={{ gridTemplateColumns: selectedKp ? 'minmax(0, 1fr) 340px' : 'minmax(0, 1fr) 0px', columnGap: selectedKp ? 28 : 0 }}
+        transition={{ layout: { duration: 0.32, ease: [0.22, 1, 0.36, 1] }, gridTemplateColumns: { duration: 0.32, ease: [0.22, 1, 0.36, 1] }, columnGap: { duration: 0.28 } }}
+        className="mt-5 hidden lg:grid"
       >
         {/* 左栏 = 图谱 + 速览（左栏更长，右栏 sticky 跟随——短边放右侧才不会滚出空腔） */}
-        <div className="min-w-0">
-<KnowledgeGraph scene={scene} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpId={expandedKp} onExpandedKpChange={setExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} confidence={map.confidence} learned={map.learned} activeKp={map.activeKp} />
+        <motion.div layout="position" className="min-w-0">
+<KnowledgeGraph scene={scene} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpId={expandedKp} onExpandedKpChange={setExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} />
           <div className="mt-3 border-t border-hairline/60 pt-3">
             <UnitQuickList selectedKpId={selectedKp} onSelect={(kpId) => { setSelectedKp(kpId); setSelectedTopic(null); setExpandedKp(kpId); }} routeOrdered={scene === 'route'} columns items={knowledgePoints} path={map.path} learned={map.learned} mastery={map.mastery} />
           </div>
-        </div>
-        <div className="lg:sticky lg:top-6 lg:self-start">
-<KpDetailPanel kpId={selectedKp} topicIndex={selectedTopic} onSelectTopic={setSelectedTopic} kp={knowledgePoints.find((kp) => kp.id === selectedKp) ?? null} mastery={map.mastery} confidence={map.confidence} path={map.path} resources={selectedKp ? map.resources[selectedKp] ?? [] : []} goalId={map.goalId} knowledgeMap={{ chapters: knowledgePoints.map((chapter) => ({ id: chapter.id, name: chapter.name, topics: chapter.coreTopics })), edges: map.graphEdges }} />
-        </div>
+        </motion.div>
+        <AnimatePresence initial={false} mode="popLayout">
+        {selectedKp && <motion.div
+          key="knowledge-detail-panel"
+          initial={{ opacity: 0, x: 26, scale: 0.975, filter: 'blur(4px)' }}
+          animate={{ opacity: 1, x: 0, scale: 1, filter: 'blur(0px)' }}
+          exit={{ opacity: 0, x: 20, scale: 0.985, filter: 'blur(3px)' }}
+          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+          className="min-w-0 lg:sticky lg:top-6 lg:self-start"
+        >
+<KpDetailPanel kpId={selectedKp} topicIndex={selectedTopic} onSelectTopic={setSelectedTopic} kp={knowledgePoints.find((kp) => kp.id === selectedKp) ?? null} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} graphNodes={map.graphNodes} path={map.path} resources={map.resources[selectedKp] ?? []} goalId={map.goalId} knowledgeMap={{ chapters: knowledgePoints.map((chapter) => ({ id: chapter.id, name: chapter.name, topics: chapter.coreTopics })), edges: map.graphEdges }} />
+        </motion.div>}
+        </AnimatePresence>
       </motion.div>
 
       {/* ============ 移动端：图谱不适合小屏，单元卡片作为移动布局 ============ */}

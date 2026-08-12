@@ -10,9 +10,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Info } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
-import { useAgent } from '@/context/AgentContext';
 import { useNotes } from '@/context/NotesContext';
 import { reportForLearner } from '@/data/reportBuilder';
 import type { PathNode } from '@/data/reportData';
@@ -179,16 +177,18 @@ function DomainNode({
 }
 
 /** 子知识点：圆形节点 + 右侧文字，保持与原知识图一致的节点语言。 */
-function TopicBranchNode({ n, mastery, target, learned }: { n: GraphNode; mastery: number; target: number; learned: boolean }) {
-  const passed = learned && mastery >= target;
+function TopicBranchNode({ n, mastery, progress }: { n: GraphNode; mastery: number; progress: number }) {
+  const passed = progress >= 100;
   const labelWidth = Math.min(240, Math.max(50, n.label.length * 16));
   const hitX = n.labelAnchor === 'start' ? n.x - 17 : n.x - 24 - labelWidth;
   return (
     <g className="cursor-pointer">
       {/* 圆点、文字及中间空隙使用同一个命中面，点击文字同样选中该知识点。 */}
       <rect x={hitX} y={n.y - 19} width={labelWidth + 41} height="38" rx="7" fill="transparent" />
-      <circle cx={n.x} cy={n.y} r="15" fill="#FBFAF5" stroke={passed ? '#D8A94E' : learned ? '#82A98F' : '#B9CABD'} strokeWidth={passed ? 2 : 1.6} />
-      <circle cx={n.x} cy={n.y} r="5.5" fill={passed ? '#D8A94E' : learned ? '#5F8870' : '#D5DFD7'} />
+      <circle cx={n.x} cy={n.y} r="15" fill="#FBFAF5" stroke="#DCE6DE" strokeWidth="2.2" />
+      {progress > 0 && <path d={arcPath(n.x, n.y, 15, progress / 100)} fill="none" stroke={passed ? '#D8A94E' : '#5F8870'} strokeWidth="3" strokeLinecap="round" />}
+      <circle cx={n.x} cy={n.y} r="5.5" fill={passed ? '#D8A94E' : progress > 0 ? '#5F8870' : '#D5DFD7'} />
+      <title>{`学习进度 ${progress}% · 实际掌握 ${mastery}%`}</title>
       <text
         x={n.labelX}
         y={n.y + 5.3}
@@ -215,7 +215,8 @@ export default function KnowledgeGraph({
   edges: edgesProp,
   path: pathProp,
   mastery: masteryProp,
-  confidence: confidenceProp,
+  topicMastery: topicMasteryProp,
+  topicProgress: topicProgressProp,
   learned: learnedProp,
   activeKp: activeKpProp,
   onSelectTopic,
@@ -233,7 +234,8 @@ export default function KnowledgeGraph({
   edges?: GraphEdge[];
   path?: PathNode[];
   mastery?: Record<string, number>;
-  confidence?: Record<string, number>;
+  topicMastery?: Record<string, number>;
+  topicProgress?: Record<string, number>;
   learned?: Set<string>;
   activeKp?: string | null;
   /** 受控展开章节，用于与下方章节速览联动。 */
@@ -242,10 +244,8 @@ export default function KnowledgeGraph({
 } = {}) {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
-  const { confidence } = useAgent();
   const { countByKp } = useNotes();
   const report = reportForLearner(currentLearner);
-  const [hover, setHover] = useState<GraphNode | null>(null);
   /** 边 hover 玻璃浮层（替代浏览器原生 title） */
   const [edgeTip, setEdgeTip] = useState<{ x: number; y: number; kind: EdgeKind; notes: string[] } | null>(null);
   /** 渐进披露：当前展开的域（null = 只看 6 域全景） */
@@ -271,7 +271,8 @@ export default function KnowledgeGraph({
   const dataEdges = edgesProp ?? graphEdges;
   const reportPath = pathProp ?? report.path;
   const masteryMap = masteryProp ?? {};
-  const confMap = confidenceProp ?? confidence;
+  const topicMasteryMap = topicMasteryProp ?? {};
+  const topicProgressMap = topicProgressProp ?? {};
   const learned = learnedProp ?? useMemo(() => {
     const pathDone = reportPath.filter((p) => p.status === 'done').map((p) => p.kpId);
     return learnedKpIds(currentLearner, pathDone);
@@ -415,10 +416,6 @@ export default function KnowledgeGraph({
       };
     };
   }, [aggregatedEdges, nodeById, sourceNodeById]);
-  const prereqOf = (nodeId: string) => dataEdges
-    .filter((edge) => edge.kind === 'prereq' && edge.to === nodeId)
-    .map((edge) => ({ node: nodeById.get(edge.from)!, note: edge.note ?? '' }))
-    .filter((item) => Boolean(item.node));
   const domains = useMemo(() => dataNodes.filter((n) => n.kind === 'domain'), [dataNodes]);
   const expandedTopics = useMemo(
     () => (expandedKp ? dataNodes.filter((n) => n.kind === 'topic' && n.kpId === expandedKp) : []),
@@ -474,7 +471,6 @@ export default function KnowledgeGraph({
 
   const clearSelection = () => {
     setExpandedKp(null);
-    setHover(null);
     setEdgeTip(null);
     onSelectKp?.(null);
   };
@@ -585,8 +581,6 @@ export default function KnowledgeGraph({
             <g
               key={n.id}
               data-graph-node-id={n.id}
-              onMouseEnter={() => setHover(n)}
-              onMouseLeave={() => setHover(null)}
               onClick={() => clickNode(n)}
               onDoubleClick={() => openUnit(n)}
             >
@@ -624,17 +618,13 @@ export default function KnowledgeGraph({
           </g>
         )}
         {expandedTopicLayout?.topics.map((n) => {
-          const isLearned = learned.has(n.kpId);
-          const kp = getKnowledgePoint(n.kpId);
           return (
             <g
               key={n.id}
-              onMouseEnter={() => setHover(n)}
-              onMouseLeave={() => setHover(null)}
               onClick={() => clickNode(n)}
               onDoubleClick={() => openUnit(n)}
             >
-              <TopicBranchNode n={n} mastery={masteryMap[n.kpId] ?? 50} target={kp.targetLevel} learned={isLearned} />
+              <TopicBranchNode n={n} mastery={topicMasteryMap[n.id] ?? 0} progress={topicProgressMap[n.id] ?? 0} />
             </g>
           );
         })}
@@ -706,39 +696,6 @@ export default function KnowledgeGraph({
         </div>
       )}
 
-      {/* hover tooltip */}
-      {hover && (
-        <div
-          className="lf-glass pointer-events-none absolute z-10 w-[240px] rounded-[12px] p-3"
-          style={{
-            left: `${Math.min(88, Math.max(6, (hover.x / currentViewBox.w) * 100))}%`,
-            top: `${Math.max(2, ((hover.y - hover.r) / currentViewBox.h) * 100 - 6)}%`,
-            transform: 'translate(-50%, -100%)',
-          }}
-        >
-          <div className="text-[13px] font-semibold text-ink">
-            {hover.kind === 'topic' ? getKnowledgePoint(hover.kpId).coreTopics[hover.topicIndex ?? 0] : hover.label}
-          </div>
-          <div className="mt-1 font-mono text-[10.5px] text-ink-muted">
-            {learned.has(hover.kpId)
-              ? `掌握 ${masteryMap[hover.kpId] ?? 50} / 目标 ${getKnowledgePoint(hover.kpId).targetLevel} · 置信 ${confMap[hover.kpId] ?? 40}%${hover.kind === 'domain' && (countByKp[hover.kpId] ?? 0) > 0 ? ` · 笔记 ${countByKp[hover.kpId]} 条` : ''}`
-              : '尚未学习 · 点击开始'}
-          </div>
-          {hover.kind === 'topic' && prereqOf(hover.id).length > 0 && (
-            <div className="mt-1.5 border-t border-hairline pt-1.5">
-              <div className="flex items-center gap-1 text-[10.5px] font-medium text-ochre">
-                <Info size={10} />
-                建议先过：{prereqOf(hover.id).map((p) => p.node.label).join('、')}
-              </div>
-            </div>
-          )}
-          <div className="mt-1 text-[10.5px] text-brand">
-            {hover.kind === 'domain'
-              ? `点一下 → ${expandedKp === hover.kpId ? '收起子知识点' : '展开子知识点'} · 请选择小圆进入学习`
-              : '点一下 → 右边看详情 · 双击 → 直接学习这个最小知识点'}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

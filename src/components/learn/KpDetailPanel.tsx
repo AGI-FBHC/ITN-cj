@@ -9,7 +9,6 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, BookOpen, Wrench, ListChecks, Sparkles, Target, Gauge, Route } from 'lucide-react';
 import { Loader2 } from 'lucide-react';
 import { useProfile, dataIdOf } from '@/context/ProfileContext';
-import { useAgent } from '@/context/AgentContext';
 import { api } from '@/lib/api';
 import { presentationApi } from '@/lib/presentationApi';
 import type { PresentationTask } from '@/lib/presentationApi';
@@ -22,6 +21,7 @@ import type { GeneratedResource } from '@/data/resources';
 import type { ResourceForm } from '@/data/resources';
 import { Succulent, LeafSmall } from '@/components/heal/Flora';
 import type { PathNode } from '@/data/reportData';
+import type { GraphNode } from '@/data/knowledgeGraph';
 import { cn } from '@/lib/utils';
 
 const FORM_META: Record<ResourceForm, { label: string; icon: typeof BookOpen; hint: string }> = {
@@ -77,13 +77,15 @@ function MasteryRing({ score, target }: { score: number; target: number }) {
   );
 }
 
-export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpProp, mastery: masteryProp, confidence: confidenceProp, path: pathProp, resources: resourcesProp, goalId, knowledgeMap }: {
+export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpProp, mastery: masteryProp, topicMastery, topicProgress, graphNodes, path: pathProp, resources: resourcesProp, goalId, knowledgeMap }: {
   kpId: string | null;
   topicIndex?: number | null;
   onSelectTopic?: (topicIndex: number) => void;
   kp?: KnowledgePoint | null;
   mastery?: Record<string, number>;
-  confidence?: Record<string, number>;
+  topicMastery?: Record<string, number>;
+  topicProgress?: Record<string, number>;
+  graphNodes?: GraphNode[];
   path?: PathNode[];
   resources?: Array<GeneratedResource & { id?: string; learned?: boolean }>;
   goalId?: string | null;
@@ -94,7 +96,6 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
 }) {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
-  const { confidence } = useAgent();
   const dataId = dataIdOf(currentLearner);
   const report = reportForLearner(currentLearner);
   const [generating, setGenerating] = useState<Set<string>>(() => new Set());
@@ -208,9 +209,13 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
 
   const kp = kpProp ?? getKnowledgePoint(kpId);
   const selectedTopicName = topicIndex != null ? kp.coreTopics[topicIndex] : null;
-  const score = (masteryProp ?? {})[kpId] ?? currentLearner.scores[kpId] ?? 50;
-  const conf = (confidenceProp ?? confidence)[kpId] ?? 40;
-  const gap = Math.max(0, kp.targetLevel - score);
+  const selectedTopicNode = topicIndex != null ? graphNodes?.find((node) => node.kind === 'topic' && node.kpId === kpId && node.topicIndex === topicIndex) : null;
+  const childScores = (graphNodes ?? []).filter((node) => node.kind === 'topic' && node.kpId === kpId).map((node) => topicMastery?.[node.id] ?? 0);
+  const score = selectedTopicNode ? (topicMastery?.[selectedTopicNode.id] ?? 0) : childScores.length ? Math.round(childScores.reduce((sum, value) => sum + value, 0) / childScores.length) : ((masteryProp ?? {})[kpId] ?? 0);
+  const learningProgress = selectedTopicNode ? (topicProgress?.[selectedTopicNode.id] ?? 0) : (() => {
+    const values = (graphNodes ?? []).filter((node) => node.kind === 'topic' && node.kpId === kpId).map((node) => topicProgress?.[node.id] ?? 0);
+    return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
+  })();
   const res: Array<GeneratedResource & { id?: string; learned?: boolean }> = resourcesProp ?? resourcesForKp(dataId, kpId);
   const reportPath = pathProp ?? report.path;
   const resourceScope = `${currentLearner.id}:${kpId}:${selectedTopicName ?? ''}`;
@@ -465,14 +470,14 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
         <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex items-center gap-1.5 text-[12px] text-ink-2">
             <Target size={12} className="text-brand-danger" />
-            距目标还差 <span className="font-display font-semibold text-ink">{gap}</span> 分
+            学习进度 <span className="font-display font-semibold text-ink">{learningProgress}%</span>
           </div>
           <div className="flex items-center gap-1.5 text-[12px] text-ink-2">
             <Gauge size={12} className="text-brand" />
-            AI 把握 <span className="font-display font-semibold text-ink">{conf}%</span>
+            实际掌握程度 <span className="font-display font-semibold text-ink">{score}%</span>
           </div>
           <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-paper-deep">
-            <div className="h-full rounded-full bg-brand" style={{ width: `${conf}%` }} />
+            <div className="h-full rounded-full bg-brand" style={{ width: `${score}%` }} />
           </div>
         </div>
       </div>

@@ -47,6 +47,7 @@ export interface PresentationTaskSummary {
   stageMessage: string;
   title: string;
   errorMessage?: string | null;
+  learned?: boolean;
   createdAt: string;
   updatedAt: string;
 }
