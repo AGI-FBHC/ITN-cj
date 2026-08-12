@@ -682,6 +682,7 @@ export default function LearnUnit() {
   const [pptVoice, setPptVoice] = useState('苏打');
   const [pptSpeed, setPptSpeed] = useState<TtsSpeed>('normal');
   const [pptVoiceSaving, setPptVoiceSaving] = useState(false);
+  const [voiceRestart, setVoiceRestart] = useState<'answer' | 'slide' | null>(null);
   const voiceStyle = VOICE_STYLES[voiceIdx];
   /** 实际朗读速率 = 档位语速 × 风格微调 */
   const speechRate = RATES[rateIdx] * voiceStyle.rateScale;
@@ -881,11 +882,31 @@ export default function LearnUnit() {
         payload = { profileCompleted: false, ttsVoice: voice, ttsSpeed: speed };
       }
       await api.updateUserProfile(payload as UserProfileSettings);
+      const answerActive = Boolean(answerAudioRef.current);
+      const slideActive = Boolean(pptRef.current?.audioLoaded || playing);
+      if (answerActive || slideActive) setVoiceRestart(answerActive ? 'answer' : 'slide');
     } catch (reason) {
       toast.error(reason instanceof Error ? reason.message : '音色设置保存失败');
     } finally {
       setPptVoiceSaving(false);
     }
+  };
+
+  const restartVoicePlayback = () => {
+    if (!voiceRestart) return;
+    pptAskAbortRef.current?.abort();
+    stopAnswerAudio();
+    if (voiceRestart === 'answer') {
+      const lastReply = [...qaLog].reverse().find((qa) => qa.a)?.a;
+      if (lastReply) {
+        const controller = new AbortController();
+        pptAskAbortRef.current = controller;
+        void speakPptAnswer(lastReply, controller.signal).catch(() => undefined);
+      }
+    } else {
+      pptRef.current?.restartPageAudio();
+    }
+    setVoiceRestart(null);
   };
 
   useEffect(() => {
@@ -1909,7 +1930,7 @@ export default function LearnUnit() {
             {freeBrowse ? '回到课堂推进' : '自由浏览'}
           </button>
         </div>}
-        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} wideMode={pptWideMode} ref={pptRef} onPlaybackChange={setPlaying} onSlideChange={syncPptSlide} onRequestNote={openNoteHere} /> : (blocks.map((b, i) => {
+        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} wideMode={pptWideMode} speed={pptSpeed} ref={pptRef} onPlaybackChange={setPlaying} onSlideChange={syncPptSlide} onRequestNote={openNoteHere} /> : (blocks.map((b, i) => {
           const active = i === cursor && playing;
           /* ---- 课堂推进三态：完整（当前/回看/自由浏览）· 摘要行（已完成）· 不渲染（未解锁） ---- */
           const effUnlocked = Math.min(unlocked, blocks.length);
@@ -3175,6 +3196,22 @@ export default function LearnUnit() {
       </div>
 
       {/* ============ 专注结算卡 ============ */}
+
+      {/* 音色/语速切换：当前讲解仍用旧设置时，确认是否从当前页/当前回答重新朗读 */}
+      {voiceRestart && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm" onClick={() => setVoiceRestart(null)}>
+          <div className="w-full max-w-sm rounded-[16px] border border-hairline bg-card-warm p-5 shadow-warm-lg" onClick={(event) => event.stopPropagation()}>
+            <h3 className="font-serif text-[16px] font-semibold text-ink">音色 / 语速已切换</h3>
+            <p className="mt-2 text-[12.5px] leading-5 text-ink-2">
+              当前讲解仍在使用旧设置朗读。是否从{voiceRestart === 'answer' ? '当前回答' : '当前页'}开头重新朗读？
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button type="button" onClick={restartVoicePlayback} className="lf-btn-primary flex-1 !py-2 text-[13px]">重新朗读</button>
+              <button type="button" onClick={() => setVoiceRestart(null)} className="lf-btn-ghost flex-1 !py-2 text-[13px]">仅下次生效</button>
+            </div>
+          </div>
+        </div>
+      )}
       <AnimatePresence>
         {settlement && (
           <motion.div

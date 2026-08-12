@@ -7,18 +7,29 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { BookOpenCheck, Check, FileText, Lightbulb, Loader2, RefreshCw, Sparkles } from 'lucide-react';
 import { fetchSlideAsset, presentationApi } from '@/lib/presentationApi';
 import type { PresentationSlideshow, PresentationTask, PresentationTeachingMoment } from '@/lib/presentationApi';
+import type { TtsSpeed } from '@/lib/api';
 import { cn } from '@/lib/utils';
+
+const SPEED_RATE: Record<TtsSpeed, number> = {
+  very_slow: 0.75,
+  slow: 0.85,
+  normal: 1,
+  fast: 1.15,
+  very_fast: 1.3,
+};
 
 export interface PptPlayerRef {
   current: number;
   slideCount: number;
   audioPlaying: boolean;
+  readonly audioLoaded: boolean;
   goNext: () => void;
   goPrev: () => void;
   goTo: (index: number) => void;
   togglePlay: () => void;
   play: () => void;
   pause: () => void;
+  restartPageAudio: () => void;
 }
 
 const PROGRESS_LABEL: Record<PresentationTask['status'], string> = {
@@ -32,7 +43,7 @@ const PROGRESS_LABEL: Record<PresentationTask['status'], string> = {
   cancelled: '已取消',
 };
 
-const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean; onPlaybackChange?: (playing: boolean) => void; onSlideChange?: (current: number, count: number) => void; onRequestNote?: () => void }>(function PptPlayer({ taskId, wideMode = true, onPlaybackChange, onSlideChange, onRequestNote }, ref) {
+const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean; speed?: TtsSpeed; onPlaybackChange?: (playing: boolean) => void; onSlideChange?: (current: number, count: number) => void; onRequestNote?: () => void }>(function PptPlayer({ taskId, wideMode = true, speed = 'normal', onPlaybackChange, onSlideChange, onRequestNote }, ref) {
   const [task, setTask] = useState<PresentationTask | null>(null);
   const [slides, setSlides] = useState<PresentationSlideshow | null>(null);
   const [current, setCurrent] = useState(0);
@@ -61,6 +72,11 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
 
   useEffect(() => onSlideChange?.(current, slideCount), [current, slideCount, onSlideChange]);
 
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (audio) audio.playbackRate = SPEED_RATE[speed];
+  }, [speed]);
+
   const playAudio = async (index: number) => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -72,6 +88,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
         audioSrcRef.current = url;
         audio.src = url;
       }
+      audio.playbackRate = SPEED_RATE[speed];
       await audio.play();
       switchingSlideRef.current = false;
       if (audio.currentTime < 0.1) setNoteRevealCount(0);
@@ -103,17 +120,33 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
   const goNext = () => goTo(currentRef.current + 1, audioPlaying);
   const goPrev = () => goTo(currentRef.current - 1, audioPlaying);
 
+  const restartPageAudio = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.pause();
+    if (audioSrcRef.current) {
+      URL.revokeObjectURL(audioSrcRef.current);
+      audioSrcRef.current = '';
+      setAudioSrc('');
+    }
+    audio.removeAttribute('src');
+    audio.load();
+    void playAudio(currentRef.current);
+  };
+
   useImperativeHandle(ref, () => ({
     get current() { return currentRef.current; },
     get slideCount() { return slideCount; },
     get audioPlaying() { return audioPlaying; },
+    get audioLoaded() { return Boolean(audioSrcRef.current); },
     goNext,
     goPrev,
     goTo,
     togglePlay,
     play: () => { if (!audioPlaying) void playAudio(currentRef.current); },
     pause: () => { if (audioPlaying) togglePlay(); },
-  }), [slideCount, audioPlaying]);
+    restartPageAudio,
+  }), [slideCount, audioPlaying, speed]);
 
   const loadTask = useCallback(async () => {
     try {
