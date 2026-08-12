@@ -17,21 +17,21 @@ const EDGE_COLORS: Record<EdgeKind, string> = {
 const NODE_COLORS = {
   domain: {
     base: '#4E7860',
-    hover: '#E7B45A',
+    hover: '#F0B35A',
     selected: '#2D5A3D',
     learned: '#6BA080',
   },
   topic: {
-    base: '#5B8DB8',
-    hover: '#E7B45A',
-    selected: '#3A6B8F',
-    learned: '#7EB6D9',
+    base: '#4A90D9',
+    hover: '#F0B35A',
+    selected: '#2E6BA8',
+    learned: '#5BA3E8',
   },
 };
 
 const GLOW_COLORS = {
   domain: '#E7B45A',
-  topic: '#7EB6D9',
+  topic: '#5BA3E8',
 };
 
 const PROGRESS_COLORS = {
@@ -514,15 +514,15 @@ function ChildNode({
       {/* 外发光 */}
       <mesh ref={glow1Ref}>
         <sphereGeometry args={[1, 32, 32]} />
-        <meshBasicMaterial color={glowColor} transparent opacity={0.3} depthWrite={false} />
+        <meshBasicMaterial color={glowColor} transparent opacity={0.5} depthWrite={false} />
       </mesh>
       <mesh ref={glow2Ref}>
         <sphereGeometry args={[1, 32, 32]} />
-        <meshBasicMaterial color={glowColor} transparent opacity={0.15} depthWrite={false} />
+        <meshBasicMaterial color={glowColor} transparent opacity={0.25} depthWrite={false} />
       </mesh>
       <mesh ref={glow3Ref}>
         <sphereGeometry args={[1, 32, 32]} />
-        <meshBasicMaterial color={glowColor} transparent opacity={0.08} depthWrite={false} />
+        <meshBasicMaterial color={glowColor} transparent opacity={0.12} depthWrite={false} />
       </mesh>
 
       {/* 主球体 */}
@@ -574,7 +574,7 @@ function ChildNode({
         anchorY={textAnchor.y}
         outlineWidth={0.1}
         outlineColor="#FFFFFF"
-        outlineOpacity={0.3}
+        outlineOpacity={0.5}
       >
         {node.label}
       </Text>
@@ -696,15 +696,15 @@ function Node3D({
       {/* 外发光层 */}
       <mesh ref={glow1Ref}>
         <sphereGeometry args={[1, 32, 32]} />
-        <meshBasicMaterial color={glowColor} transparent opacity={0.3} depthWrite={false} />
+        <meshBasicMaterial color={glowColor} transparent opacity={0.5} depthWrite={false} />
       </mesh>
       <mesh ref={glow2Ref}>
         <sphereGeometry args={[1, 32, 32]} />
-        <meshBasicMaterial color={glowColor} transparent opacity={0.15} depthWrite={false} />
+        <meshBasicMaterial color={glowColor} transparent opacity={0.25} depthWrite={false} />
       </mesh>
       <mesh ref={glow3Ref}>
         <sphereGeometry args={[1, 32, 32]} />
-        <meshBasicMaterial color={glowColor} transparent opacity={0.08} depthWrite={false} />
+        <meshBasicMaterial color={glowColor} transparent opacity={0.12} depthWrite={false} />
       </mesh>
 
       {/* 主球体 */}
@@ -726,7 +726,7 @@ function Node3D({
           uniforms={{
             color: { value: new THREE.Color(getColor()) },
             glowColor: { value: new THREE.Color(glowColor) },
-            intensity: { value: dimmed ? 0.1 : hovered ? 1.5 : selected ? 1.2 : 0.8 },
+            intensity: { value: dimmed ? 0.2 : hovered ? 2.0 : selected ? 1.6 : 1.0 },
           }}
           transparent
         />
@@ -745,7 +745,7 @@ function Node3D({
           anchorY={textAnchor.y}
           outlineWidth={0.1}
           outlineColor={isDomain ? '#000000' : '#FFFFFF'}
-          outlineOpacity={0.3}
+          outlineOpacity={0.5}
         >
           {node.label}
         </Text>
@@ -1029,6 +1029,8 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
+
+
 
 
 
