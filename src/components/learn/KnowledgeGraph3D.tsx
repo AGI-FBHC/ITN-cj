@@ -302,12 +302,12 @@ function Node3D({
   return (
     <group
       position={position}
-      onPointerOver={(e) => {
+      onPointerEnter={(e) => {
         e.stopPropagation();
         onHover(node.id);
         document.body.style.cursor = 'pointer';
       }}
-      onPointerOut={() => {
+      onPointerLeave={() => {
         onHover(null);
         document.body.style.cursor = 'default';
       }}
@@ -640,6 +640,7 @@ export default function KnowledgeGraph3D({
     </div>
   );
 }
+
 
 
 
