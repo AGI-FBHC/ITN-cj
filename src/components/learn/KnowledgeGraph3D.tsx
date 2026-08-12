@@ -29,9 +29,10 @@ const NODE_COLORS = {
   },
 };
 
-const GLOW_COLORS = {
-  domain: '#E7B45A',
-  topic: '#5BA3E8',
+// 描边发光配色：蓝色系，最里面颜色最深，由内而向外淡出
+const STROKE_COLORS = {
+  inner: '#2E6BA8',
+  outer: '#5BA3E8',
 };
 
 const PROGRESS_COLORS = {
@@ -83,15 +84,19 @@ const innerStrokeFragmentShader = `
   }
 `;
 
-// 外描边：紧贴球体轮廓外侧的亮环（BackSide 球壳实现）
+// 外描边：紧贴球体轮廓外侧的蓝色发光，内侧最亮、向外渐隐（无硬边外圈）
 const outerStrokeFragmentShader = `
   uniform vec3 glowColor;
   uniform float intensity;
+  uniform float innerF;
   varying vec3 vNormal;
   varying vec3 vViewDir;
   void main() {
-    float f = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewDir))), 3.0);
-    gl_FragColor = vec4(glowColor, min(f * intensity, 1.0));
+    float f = 1.0 - abs(dot(normalize(vNormal), normalize(vViewDir)));
+    // t: 0 = 贴近球面（最亮），1 = 光晕外缘（完全透明）
+    float t = clamp((f - innerF) / (1.0 - innerF), 0.0, 1.0);
+    float alpha = pow(1.0 - t, 1.8) * intensity;
+    gl_FragColor = vec4(glowColor, min(alpha, 1.0));
   }
 `;
 
@@ -148,11 +153,13 @@ function CameraFocus({
   layout,
   sceneRef,
   blendRef,
+  topicCountByKp,
 }: {
   focusTarget?: { id: string; at: number } | null;
   layout: { positions: Map<string, THREE.Vector3>; focusOffsets: Map<string, THREE.Vector3> };
   sceneRef: React.MutableRefObject<THREE.Group | null>;
   blendRef: BlendRef;
+  topicCountByKp: Map<string, number>;
 }) {
   const camera = useThree((s) => s.camera);
   const controls = useThree((s) => s.controls) as { target: THREE.Vector3; update: () => void; addEventListener: (t: string, cb: () => void) => void; removeEventListener: (t: string, cb: () => void) => void } | null;
@@ -197,8 +204,10 @@ function CameraFocus({
     const focusOff = layout.focusOffsets.get(anim.nodeId);
     if (focusOff) world.addScaledVector(focusOff, blendRef.current.blend);
     if (sceneRef.current) world.applyMatrix4(sceneRef.current.matrixWorld);
-    // 距离要容纳整个子节点展开平面（水平 ~15+，纵向随子节点数量增加）
-    const camPos = world.clone().normalize().multiplyScalar(world.length() + 58);
+    // 距离随子节点数量自适应：子节点多就拉远一些，少就靠近一些
+    const childCount = topicCountByKp.get(anim.nodeId) ?? 0;
+    const dist = THREE.MathUtils.clamp(30 + childCount * 8, 46, 100);
+    const camPos = world.clone().normalize().multiplyScalar(world.length() + dist);
 
     camera.position.lerpVectors(anim.fromPos, camPos, ease);
     controls.target.lerpVectors(anim.fromTarget, world, ease);
@@ -598,7 +607,6 @@ function ChildNode({
 
   const baseSize = 1.5;
   const targetScale = selected ? 1.3 : hovered ? 1.15 : 1;
-  const glowColor = GLOW_COLORS.topic;
 
   useFrame(() => {
     if (!meshRef.current) return;
@@ -646,7 +654,7 @@ function ChildNode({
             vertexShader={glowVertexShader}
             fragmentShader={innerStrokeFragmentShader}
             uniforms={{
-              glowColor: { value: new THREE.Color(glowColor) },
+              glowColor: { value: new THREE.Color(STROKE_COLORS.inner) },
               intensity: { value: hovered ? 1.3 : selected ? 1.15 : 1.0 },
             }}
             transparent
@@ -654,15 +662,16 @@ function ChildNode({
           />
         </mesh>
 
-        {/* 外描边：紧贴球体轮廓外的亮环 */}
-        <mesh scale={1.12}>
+        {/* 外描边：紧贴球体轮廓外的蓝色发光，向外渐隐 */}
+        <mesh scale={1.16}>
           <sphereGeometry args={[1, 48, 48]} />
           <shaderMaterial
             vertexShader={glowVertexShader}
             fragmentShader={outerStrokeFragmentShader}
             uniforms={{
-              glowColor: { value: new THREE.Color(glowColor) },
-              intensity: { value: hovered ? 1.4 : selected ? 1.2 : 1.0 },
+              glowColor: { value: new THREE.Color(STROKE_COLORS.outer) },
+              intensity: { value: hovered ? 1.3 : selected ? 1.15 : 1.0 },
+              innerF: { value: 0.49 },
             }}
             transparent
             side={THREE.BackSide}
@@ -745,7 +754,6 @@ function Node3D({
 
   const baseSize = isDomain ? 3 : 1.5;
   const targetScale = selected ? 1.3 : hovered ? 1.15 : 1;
-  const glowColor = GLOW_COLORS[node.kind];
 
   useFrame(() => {
     if (groupRef.current) {
@@ -805,7 +813,7 @@ function Node3D({
             vertexShader={glowVertexShader}
             fragmentShader={innerStrokeFragmentShader}
             uniforms={{
-              glowColor: { value: new THREE.Color(glowColor) },
+              glowColor: { value: new THREE.Color(STROKE_COLORS.inner) },
               intensity: { value: dimmed ? 0.2 : hovered ? 1.3 : selected ? 1.15 : 1.0 },
             }}
             transparent
@@ -813,15 +821,16 @@ function Node3D({
           />
         </mesh>
 
-        {/* 外描边：紧贴球体轮廓外的亮环 */}
-        <mesh scale={1.12}>
+        {/* 外描边：紧贴球体轮廓外的蓝色发光，向外渐隐 */}
+        <mesh scale={1.16}>
           <sphereGeometry args={[1, 48, 48]} />
           <shaderMaterial
             vertexShader={glowVertexShader}
             fragmentShader={outerStrokeFragmentShader}
             uniforms={{
-              glowColor: { value: new THREE.Color(glowColor) },
-              intensity: { value: dimmed ? 0.15 : hovered ? 1.4 : selected ? 1.2 : 1.0 },
+              glowColor: { value: new THREE.Color(STROKE_COLORS.outer) },
+              intensity: { value: dimmed ? 0.15 : hovered ? 1.3 : selected ? 1.15 : 1.0 },
+              innerF: { value: 0.49 },
             }}
             transparent
             side={THREE.BackSide}
@@ -1114,6 +1123,15 @@ export default function KnowledgeGraph3D({
   const layout = use3DLayout(nodes, edges, expandedKpIds, focusId);
   const sceneRef = useRef<THREE.Group | null>(null);
 
+  // 每个章节的子节点数量（用于聚焦时自适应相机距离）
+  const topicCountByKp = useMemo(() => {
+    const counts = new Map<string, number>();
+    nodes.forEach((n) => {
+      if (n.kind === 'topic') counts.set(n.kpId, (counts.get(n.kpId) ?? 0) + 1);
+    });
+    return counts;
+  }, [nodes]);
+
   return (
     <div
       className={`relative h-[600px] w-full overflow-hidden rounded-2xl border border-hairline bg-gradient-to-br from-paper via-[#F5F3EA] to-brand-tint/20 ${className}`}
@@ -1150,7 +1168,7 @@ export default function KnowledgeGraph3D({
             animRef={blendRef}
           />
         </RotatingScene>
-        <CameraFocus focusTarget={focusTarget} layout={layout} sceneRef={sceneRef} blendRef={blendRef} />
+        <CameraFocus focusTarget={focusTarget} layout={layout} sceneRef={sceneRef} blendRef={blendRef} topicCountByKp={topicCountByKp} />
       </Canvas>
 
       {/* 提示 */}
