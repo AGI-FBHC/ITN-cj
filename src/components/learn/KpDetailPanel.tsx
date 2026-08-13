@@ -181,34 +181,34 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
     let timer = 0;
     const syncTasks = async () => {
       const resourceForms = Object.keys(FORM_META) as ResourceForm[];
-      const cached = readResourceCache(scope);
-      const cachedForms = resourceForms.filter((form) => Boolean(cached?.[form]?.id));
-      if (cachedForms.length === resourceForms.length) {
-        setGeneratedResources((current) => {
-          const links: Partial<Record<ResourceForm, GeneratedResourceLink>> = {};
-          cachedForms.forEach((form) => {
-            const entry = cached?.[form];
-            if (entry) links[form] = { id: entry.id, title: entry.title };
-          });
-          const next = { ...current };
-          if (!next[scope]) next[scope] = {};
-          Object.assign(next[scope], links);
-          return next;
-        });
-        return;
-      }
       try {
-        const { tasks } = await api.listLearningResourceTasks(50);
+        const [{ tasks }, listed] = await Promise.all([
+          api.listLearningResourceTasks(50),
+          api.listLearningResources(),
+        ]);
         if (cancelled) return;
         const nextGenerating = new Set<string>();
+        const links: Partial<Record<ResourceForm, GeneratedResourceLink>> = {};
+        for (const resource of listed.resources ?? []) {
+          if (resource.kpId !== kpId || resource.topic !== focus) continue;
+          const form: ResourceForm = resource.type === 'practice' ? 'guide' : resource.type;
+          if (!resourceForms.includes(form)) continue;
+          links[form] = { id: resource.id, title: resource.title };
+          upsertResourceCache(scope, form, { id: resource.id, title: resource.title, updatedAt: resource.updatedAt });
+        }
+        resourceForms.forEach((form) => {
+          if (!links[form]) removeResourceCache(scope, form);
+        });
+        setGeneratedResources((current) => {
+          const next = { ...current };
+          if (Object.keys(links).length) next[scope] = links;
+          else delete next[scope];
+          return next;
+        });
         for (const task of tasks.filter((item) => item.title.startsWith(`${focus} · `))) {
           const form: ResourceForm = task.resourceType === 'practice' ? 'guide' : task.resourceType;
           const key = `${scope}:${form}`;
           if (!['completed', 'failed', 'cancelled'].includes(task.status)) nextGenerating.add(key);
-          if (task.status === 'completed' && task.resourceId) {
-            setGeneratedResources((current) => ({ ...current, [scope]: { ...current[scope], [form]: { id: task.resourceId!, title: task.title } } }));
-            upsertResourceCache(scope, form, { id: task.resourceId!, title: task.title, updatedAt: new Date().toISOString() });
-          }
         }
         setGenerating((current) => {
           const next = new Set([...current].filter((key) => !key.startsWith(`${scope}:`)));

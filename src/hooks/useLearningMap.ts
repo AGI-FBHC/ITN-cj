@@ -210,10 +210,11 @@ export function useLearningMap(): LearningMapView {
       setResources(cached.resources);
       setTree(cached.tree);
     }
-    // 缓存命中时资源状态不再请求后端（生成完成时由 refreshLearningMapResourceCache 写入），其余结构数据仍刷新
-    const resourcesPromise = cached
-      ? Promise.resolve(cached.resources)
-      : api.listLearningResources().then((listed) => listed.resources ?? []).catch(() => [] as LearningResourceSummary[]);
+    // 缓存只用于首屏快速回显；资源可能在其他页面或后台被删除，必须始终用服务端列表校准。
+    // 若校准失败才保留旧缓存，避免把已经删除的 resourceId 永久“复活”。
+    const resourcesPromise = api.listLearningResources()
+      .then((listed) => listed.resources ?? [])
+      .catch(() => cached?.resources ?? [] as LearningResourceSummary[]);
     const presentationsPromise = cached?.presentations
       ? Promise.resolve(cached.presentations)
       : presentationApi.listPresentationSummaries(100).then((listed) => listed.tasks ?? []).catch(() => [] as PresentationTaskSummary[]);
