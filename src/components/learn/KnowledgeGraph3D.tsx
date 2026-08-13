@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import type { GraphNode, GraphEdge, EdgeKind } from '@/data/knowledgeGraph';
 import type { ResourceForm, GeneratedResource } from '@/data/resources';
 import { FUNCTION_META, useTopicResourceActions } from '@/hooks/useTopicResourceActions';
+import cjkFontUrl from '@/assets/fonts/noto-sans-cjk-sc-gb2312.otf';
 
 const EDGE_COLORS: Record<EdgeKind, string> = {
   prereq: '#4E7860',
@@ -579,6 +580,7 @@ function FunctionButton({
         <meshBasicMaterial color="#6366F1" transparent opacity={busy ? 0.5 : 1} />
       </RoundedBox>
       <Text
+        font={cjkFontUrl}
         raycast={() => null}
         renderOrder={2}
         position={[0, 0, 0.16]}
@@ -603,7 +605,7 @@ function FunctionButton({
           <RoundedBox args={[2.7, 0.72, 0.14]} radius={0.36} smoothness={3}>
             <meshBasicMaterial color={tag.color} transparent opacity={0.96} />
           </RoundedBox>
-          <Text raycast={() => null} position={[0, 0, 0.09]} fontSize={0.5} color="#FFFFFF" anchorX="center" anchorY="middle">
+          <Text font={cjkFontUrl} raycast={() => null} position={[0, 0, 0.09]} fontSize={0.5} color="#FFFFFF" anchorX="center" anchorY="middle">
             {tag.label}
           </Text>
         </group>
@@ -914,6 +916,7 @@ function ChildNode({
 
       {/* 文字 */}
       <Text
+        font={cjkFontUrl}
         raycast={() => null}
         renderOrder={2}
         position={getTextPosition()}
@@ -1098,6 +1101,7 @@ function Node3D({
       {/* 标签 */}
       <Billboard>
         <Text
+          font={cjkFontUrl}
           ref={textRef}
           raycast={() => null}
           renderOrder={2}
