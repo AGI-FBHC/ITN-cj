@@ -583,6 +583,31 @@ function ProgressRing({
   );
 }
 
+function HoverCardTracker({ nodeId, layout, sceneRef, cardRef, animRef }: {
+  nodeId: string;
+  layout: { positions: Map<string, THREE.Vector3>; focusOffsets: Map<string, THREE.Vector3> };
+  sceneRef: React.MutableRefObject<THREE.Group | null>;
+  cardRef: React.MutableRefObject<HTMLDivElement | null>;
+  animRef: BlendRef;
+}) {
+  const { camera, size } = useThree();
+  const projected = useMemo(() => new THREE.Vector3(), []);
+  useFrame(() => {
+    const source = layout.positions.get(nodeId);
+    const card = cardRef.current;
+    if (!source || !card) return;
+    projected.copy(source);
+    const offset = layout.focusOffsets.get(nodeId);
+    if (offset) projected.addScaledVector(offset, animRef.current.blend);
+    sceneRef.current?.localToWorld(projected);
+    projected.project(camera);
+    card.style.left = `${(projected.x * 0.5 + 0.5) * size.width}px`;
+    card.style.top = `${Math.max(105, Math.min(size.height - 105, (-projected.y * 0.5 + 0.5) * size.height))}px`;
+    card.style.visibility = projected.z > 1 ? 'hidden' : 'visible';
+  });
+  return null;
+}
+
 /** “我的已学路径”高亮环：始终面向相机，环绕已学节点 */
 function LearnedHighlightRing({ radius }: { radius: number }) {
   return (
@@ -766,7 +791,7 @@ function ChildPlane({
   topicMastery: Record<string, number>;
   topicProgress: Record<string, number>;
   onNodeClick: (node: GraphNode) => void;
-  onNodeHover: (id: string | null) => void;
+  onNodeHover: (id: string | null, clientX?: number, clientY?: number) => void;
   parentOffset?: THREE.Vector3;
   animRef: BlendRef;
   showLearned?: boolean;
@@ -869,7 +894,7 @@ function ChildNode({
   progress: number;
   mastery: number;
   onClick: () => void;
-  onHover: (id: string | null) => void;
+  onHover: (id: string | null, clientX?: number, clientY?: number) => void;
   showLearned?: boolean;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
@@ -907,7 +932,7 @@ function ChildNode({
       position={position}
       onPointerEnter={(e) => {
         e.stopPropagation();
-        onHover(node.id);
+        onHover(node.id, e.clientX, e.clientY);
         document.body.style.cursor = 'pointer';
       }}
       onPointerLeave={() => {
@@ -1029,7 +1054,7 @@ function Node3D({
   progress: number;
   mastery: number;
   onClick: () => void;
-  onHover: (id: string | null) => void;
+  onHover: (id: string | null, clientX?: number, clientY?: number) => void;
   focusOffset?: THREE.Vector3;
   animRef: BlendRef;
   /** 聚焦其他节点时，本节点提高透明度退到背景 */
@@ -1118,7 +1143,7 @@ function Node3D({
       position={position}
       onPointerEnter={(e) => {
         e.stopPropagation();
-        onHover(node.id);
+        onHover(node.id, e.clientX, e.clientY);
         document.body.style.cursor = 'pointer';
       }}
       onPointerLeave={() => {
@@ -1338,7 +1363,7 @@ function SceneContent({
   expandedTopicId: string | null;
   onExpandedTopicChange: (id: string | null) => void;
   hoveredId: string | null;
-  onHoverNode: (id: string | null) => void;
+  onHoverNode: (id: string | null, clientX?: number, clientY?: number) => void;
   showLearned?: boolean;
 }) {
   const nodeScaleRef = useRef(new Map<string, number>());
@@ -1539,15 +1564,23 @@ export default function KnowledgeGraph3D({
   const layout = use3DLayout(nodes, edges, expandedKpIds, focusId);
   const sceneRef = useRef<THREE.Group | null>(null);
   // 悬停时暂停自动旋转，避免节点在光标下移动导致悬停闪烁
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
-  const hoveredNode = useMemo(() => nodes.find((node) => node.id === hoveredNodeId) ?? null, [nodes, hoveredNodeId]);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const hoverCardRef = useRef<HTMLDivElement | null>(null);
+  const [hoveredNode, setHoveredNode] = useState<{ id: string; x: number; y: number } | null>(null);
+  const hoveredNodeId = hoveredNode?.id ?? null;
+  const handleHoverNode = useCallback((id: string | null, clientX?: number, clientY?: number) => {
+    if (!id) { setHoveredNode(null); return; }
+    const rect = containerRef.current?.getBoundingClientRect();
+    setHoveredNode({ id, x: (clientX ?? 0) - (rect?.left ?? 0), y: (clientY ?? 0) - (rect?.top ?? 0) });
+  }, []);
+  const hoveredGraphNode = useMemo(() => nodes.find((node) => node.id === hoveredNodeId) ?? null, [nodes, hoveredNodeId]);
   const hoveredMetrics = useMemo(() => {
-    if (!hoveredNode) return null;
-    const metrics = hoveredNode.kind === 'domain'
-      ? { progress: chapterProgress[hoveredNode.kpId] ?? 0, mastery: mastery[hoveredNode.kpId] ?? 0 }
-      : { progress: topicProgress[hoveredNode.id] ?? 0, mastery: topicMastery[hoveredNode.id] ?? 0 };
+    if (!hoveredGraphNode || (expandedTopicId && hoveredGraphNode.kind === 'domain')) return null;
+    const metrics = hoveredGraphNode.kind === 'domain'
+      ? { progress: chapterProgress[hoveredGraphNode.kpId] ?? 0, mastery: mastery[hoveredGraphNode.kpId] ?? 0 }
+      : { progress: topicProgress[hoveredGraphNode.id] ?? 0, mastery: topicMastery[hoveredGraphNode.id] ?? 0 };
     return { ...metrics, overallMastery: Math.round(metrics.progress * metrics.mastery) / 100 };
-  }, [hoveredNode, chapterProgress, mastery, topicProgress, topicMastery]);
+  }, [hoveredGraphNode, expandedTopicId, chapterProgress, mastery, topicProgress, topicMastery]);
 
   // 每个章节的子节点数量（用于聚焦时自适应相机距离）
   const topicCountByKp = useMemo(() => {
@@ -1560,6 +1593,7 @@ export default function KnowledgeGraph3D({
 
   return (
     <div
+      ref={containerRef}
       className={`relative h-[600px] w-full overflow-hidden rounded-2xl border border-hairline bg-gradient-to-br from-paper via-[#F5F3EA] to-brand-tint/20 ${className}`}
       onWheel={(e) => e.stopPropagation()}
       onTouchMove={(e) => e.stopPropagation()}
@@ -1597,11 +1631,12 @@ export default function KnowledgeGraph3D({
             animRef={blendRef}
             focusId={dimAnchorId}
             hoveredId={hoveredNodeId}
-            onHoverNode={setHoveredNodeId}
+            onHoverNode={handleHoverNode}
             showLearned={showLearned}
           />
         </RotatingScene>
         <CameraFocus focusTarget={focusTarget} layout={layout} sceneRef={sceneRef} blendRef={blendRef} topicCountByKp={topicCountByKp} />
+        {hoveredNodeId && <HoverCardTracker nodeId={hoveredNodeId} layout={layout} sceneRef={sceneRef} cardRef={hoverCardRef} animRef={blendRef} />}
       </Canvas>
 
       {actionTopic && (
@@ -1615,12 +1650,12 @@ export default function KnowledgeGraph3D({
         />
       )}
 
-      {hoveredNode && hoveredMetrics && <div className="pointer-events-none absolute left-4 top-1/2 z-20 w-[230px] -translate-y-1/2 rounded-[16px] border border-white/70 bg-white/92 p-4 shadow-warm-lg backdrop-blur-md">
-        <div className="font-mono text-[9.5px] tracking-[0.14em] text-brand">{hoveredNode.kind === 'domain' ? '章节概览' : '知识点概览'}</div>
-        <div className="mt-1 line-clamp-2 font-serif text-[15px] font-semibold leading-5 text-ink">{hoveredNode.label}</div>
+      {hoveredNode && hoveredGraphNode && hoveredMetrics && <div ref={hoverCardRef} className="pointer-events-none absolute z-20 w-[230px] -translate-y-1/2 rounded-[16px] border border-white/70 bg-white/92 p-4 shadow-warm-lg backdrop-blur-md" style={{ left: hoveredNode.x, top: hoveredNode.y, transform: `translate(${layout.childDirections.get(hoveredGraphNode.id) === 'left' ? '28px' : 'calc(-100% - 28px)'}, -50%)` }}>
+        <div className="font-mono text-[9.5px] tracking-[0.14em] text-brand">{hoveredGraphNode.kind === 'domain' ? '章节概览' : '知识点概览'}</div>
+        <div className="mt-1 line-clamp-2 font-serif text-[15px] font-semibold leading-5 text-ink">{hoveredGraphNode.label}</div>
         <div className="mt-4 space-y-3">
           <div><div className="mb-1.5 flex items-center justify-between text-[11px]"><span className="text-ink-2">学习进度</span><span className="font-mono font-semibold text-brand">{hoveredMetrics.progress}%</span></div><div className="relative h-2 overflow-hidden rounded-full bg-[#D7DDD9]"><div className="absolute inset-y-0 left-0 rounded-full bg-[#55B9DC] transition-[width]" style={{ width: `${hoveredMetrics.progress}%` }} /><div className="absolute inset-y-[1px] left-0 rounded-full bg-[#155E9A] transition-[width]" style={{ width: `${hoveredMetrics.overallMastery}%` }} /></div><div className="mt-1.5 flex items-center gap-3 text-[9px] text-ink-muted"><span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#55B9DC]" />已学习</span><span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#155E9A]" />进度内已掌握</span></div></div>
-          <div className="flex items-center justify-between rounded-[10px] border border-[#155E9A]/20 bg-[#155E9A]/5 px-3 py-2.5"><div><div className="text-[11px] font-medium text-ink-2">{hoveredNode.kind === 'domain' ? '当前章节掌握程度' : '当前知识点掌握程度'}</div><div className="mt-0.5 text-[9px] text-ink-muted">按全部内容范围计算</div></div><span className="font-mono text-[17px] font-semibold text-[#155E9A]">{hoveredMetrics.overallMastery}%</span></div>
+          <div className="flex items-center justify-between rounded-[10px] border border-[#155E9A]/20 bg-[#155E9A]/5 px-3 py-2.5"><div><div className="text-[11px] font-medium text-ink-2">{hoveredGraphNode.kind === 'domain' ? '当前章节掌握程度' : '当前知识点掌握程度'}</div><div className="mt-0.5 text-[9px] text-ink-muted">按全部内容范围计算</div></div><span className="font-mono text-[17px] font-semibold text-[#155E9A]">{hoveredMetrics.overallMastery}%</span></div>
         </div>
         <p className="mt-3 text-[9.5px] leading-4 text-ink-muted">紫色部分由已学习范围内的自评与答题正确率计算，不会超过学习进度。</p>
       </div>}
