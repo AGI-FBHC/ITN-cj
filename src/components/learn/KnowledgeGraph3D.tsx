@@ -941,8 +941,8 @@ function ChildNode({
       <Line
         raycast={() => null}
         points={[
-          new THREE.Vector3(0, 0, 0.5),
-          new THREE.Vector3(direction === 'left' ? -2 : 2, 0, 1),
+          new THREE.Vector3(direction === 'left' ? -2.38 : 2.38, 0, 1),
+          new THREE.Vector3(direction === 'left' ? -3.2 : 3.2, 0, 1),
         ]}
         color="#4A90D9"
         lineWidth={2}
@@ -1596,9 +1596,9 @@ export default function KnowledgeGraph3D({
         <div className="mt-1 line-clamp-2 font-serif text-[15px] font-semibold leading-5 text-ink">{hoveredNode.label}</div>
         <div className="mt-4 space-y-3">
           <div><div className="mb-1.5 flex items-center justify-between text-[11px]"><span className="text-ink-2">学习完成度</span><span className="font-mono font-semibold text-brand">{hoveredMetrics.progress}%</span></div><div className="h-2 overflow-hidden rounded-full bg-[#D7DDD9]"><div className="h-full rounded-full bg-[#19A7CE] transition-[width]" style={{ width: `${hoveredMetrics.progress}%` }} /></div></div>
-          <div><div className="mb-1.5 flex items-center justify-between text-[11px]"><span className="text-ink-2">掌握程度</span><span className="font-mono font-semibold text-[#6D28D9]">{hoveredMetrics.mastery}%</span></div><div className="h-2 overflow-hidden rounded-full bg-[#E4DDF5]"><div className="h-full rounded-full bg-[#7C3AED] transition-[width]" style={{ width: `${hoveredMetrics.mastery}%` }} /></div></div>
+          <div><div className="mb-1.5 flex items-center justify-between text-[11px]"><span className="text-ink-2">进度内掌握程度</span><span className="font-mono font-semibold text-[#6D28D9]">{hoveredMetrics.mastery}%</span></div><div className="h-2 overflow-hidden rounded-full bg-[#E4DDF5]"><div className="h-full rounded-full bg-[#7C3AED] transition-[width]" style={{ width: `${hoveredMetrics.mastery}%` }} /></div></div>
         </div>
-        <p className="mt-3 text-[9.5px] leading-4 text-ink-muted">掌握程度基于已学习内容的自评与答题正确率计算。</p>
+        <p className="mt-3 text-[9.5px] leading-4 text-ink-muted">进度内掌握程度基于已学习内容的自评与答题正确率计算。</p>
       </div>}
 
       {/* 提示 */}
