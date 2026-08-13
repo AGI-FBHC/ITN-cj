@@ -375,7 +375,7 @@ function QuizBlock({
 }
 
 function InlineBlockCitations({ block, resource }: { block: LearningBlock; resource: LearningResource }) {
-  return <SourceCitationMarks citations={block.citations} resource={resource} className="mt-2" />;
+  return <SourceCitationMarks citations={block.citations} evidenceQuotes={asRecord(block.question).answerEvidenceQuotes} resource={resource} className="mt-2" />;
 }
 
 const difficultyMeta = {

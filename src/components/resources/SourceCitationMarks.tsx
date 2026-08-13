@@ -25,12 +25,14 @@ function sourceAnchorId(resourceId: string, sourceId: string | number) {
  */
 export default function SourceCitationMarks({
   citations,
+  evidenceQuotes,
   resource,
   sources,
   className,
   compact = false,
 }: {
   citations: unknown;
+  evidenceQuotes?: unknown;
   resource?: LearningResource;
   sources?: Record<string, unknown>[];
   className?: string;
@@ -68,6 +70,34 @@ export default function SourceCitationMarks({
     .map((id) => ({ id, source: sourceById.get(id) }))
     .filter((item): item is { id: number; source: Record<string, unknown> } => Boolean(item.source));
   if (!matched.length) return null;
+
+  const highlightQuotes = (sourceId: number) => (Array.isArray(evidenceQuotes) ? evidenceQuotes : [])
+    .map(asRecord)
+    .filter((item) => Number(item.chunk_id ?? item.chunkId) === sourceId)
+    .map((item) => String(item.quote ?? '').trim())
+    .filter(Boolean);
+
+  const highlightedContent = (content: string, sourceId: number) => {
+    const quotes = highlightQuotes(sourceId).sort((a, b) => b.length - a.length);
+    if (!quotes.length) return content;
+    const parts: Array<{ text: string; marked: boolean }> = [{ text: content, marked: false }];
+    quotes.forEach((quote) => {
+      for (let index = parts.length - 1; index >= 0; index -= 1) {
+        const part = parts[index];
+        if (part.marked) continue;
+        const offset = part.text.indexOf(quote);
+        if (offset < 0) continue;
+        parts.splice(index, 1,
+          { text: part.text.slice(0, offset), marked: false },
+          { text: quote, marked: true },
+          { text: part.text.slice(offset + quote.length), marked: false },
+        );
+      }
+    });
+    return parts.filter((part) => part.text).map((part, index) => part.marked
+      ? <mark key={index} className="rounded bg-brand-amber/25 px-0.5 text-ink ring-1 ring-brand-amber/35">{part.text}</mark>
+      : <span key={index}>{part.text}</span>);
+  };
 
   const openSource = async (id: number, source: Record<string, unknown>) => {
     setOpened({ id, source });
@@ -117,7 +147,7 @@ export default function SourceCitationMarks({
             <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-5">
               {loading ? <div className="flex items-center justify-center gap-2 py-16 text-[13px] text-ink-muted"><Loader2 size={16} className="animate-spin" />正在读取向量知识库原始切片…</div> : <>
                 {liveError && <div className="mb-3 rounded-xl border border-brand-amber/35 bg-brand-amber-tint px-3 py-2 text-[11.5px] text-ochre">实时原文读取失败，以下显示生成时保存的来源快照：{liveError}</div>}
-                <div className="whitespace-pre-wrap rounded-[14px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-7 text-ink-2">{chunk?.content ?? String(opened.source.content ?? '没有可显示的原文内容。')}</div>
+                <div className="whitespace-pre-wrap rounded-[14px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-7 text-ink-2">{highlightedContent(chunk?.content ?? String(opened.source.content ?? '没有可显示的原文内容。'), opened.id)}</div>
                 <div className="mt-3 flex flex-wrap gap-2 font-mono text-[10px] text-ink-muted"><span>chunkId: {String(opened.source.chunkId ?? '—')}</span>{chunk?.pageStart != null && <span>页码: {chunk.pageStart}{chunk.pageEnd && chunk.pageEnd !== chunk.pageStart ? `–${chunk.pageEnd}` : ''}</span>}<span>{chunk ? '实时读取' : '生成快照'}</span></div>
               </>}
             </div>
