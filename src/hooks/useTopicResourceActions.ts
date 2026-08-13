@@ -36,7 +36,7 @@ export function useTopicResourceActions({
 }) {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
-  const [generating, setGenerating] = useState<string | null>(null);
+  const [generating, setGenerating] = useState<Set<ResourceForm>>(() => new Set());
   const [checkingPpt, setCheckingPpt] = useState(false);
   const topicName = label;
 
@@ -53,8 +53,8 @@ export function useTopicResourceActions({
       navigate(`/learn/resource/${found.id}`);
       return;
     }
-    if (generating) return;
-    setGenerating(form);
+    if (generating.has(form)) return;
+    setGenerating((prev) => new Set(prev).add(form));
     try {
       const meta = FORM_LABEL[form];
       const body = {
@@ -85,7 +85,7 @@ export function useTopicResourceActions({
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '资源生成失败');
     } finally {
-      setGenerating(null);
+      setGenerating((prev) => { const next = new Set(prev); next.delete(form); return next; });
     }
   }, [existingFor, generating, navigate, currentLearner.id, kpId, topicName, goalId]);
 

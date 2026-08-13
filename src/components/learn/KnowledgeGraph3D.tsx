@@ -644,7 +644,7 @@ function FunctionLayer({
       {FUNCTION_META.map((fn, i) => {
         const res = fn.form !== 'ppt' ? existingFor(fn.form as ResourceForm) : undefined;
         const exists = Boolean(res?.id);
-        const busy = fn.form === 'ppt' ? checkingPpt : generating !== null;
+        const busy = fn.form === 'ppt' ? checkingPpt : generating.has(fn.form);
         const status: 'missing' | 'unlearned' | 'learned' = !exists
           ? 'missing'
           : (res?.learned ?? learned.has(node.kpId))
