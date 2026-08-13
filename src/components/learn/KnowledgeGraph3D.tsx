@@ -529,29 +529,22 @@ function ProgressRing({
   hovered: boolean;
   selected: boolean;
 }) {
-  const ringRef = useRef<THREE.Mesh>(null);
   const color = progress >= 80 ? PROGRESS_COLORS.high : progress >= 50 ? PROGRESS_COLORS.mid : PROGRESS_COLORS.low;
-
-  useFrame(() => {
-    if (ringRef.current) {
-      ringRef.current.rotation.z = -Math.PI / 2;
-    }
-  });
-
-  if (progress <= 0) return null;
-
-  const arcLength = (progress / 100) * Math.PI * 2;
+  const arcLength = (Math.max(0, Math.min(100, progress)) / 100) * Math.PI * 2;
+  const inner = radius + 0.32;
+  const outer = radius + 0.54;
 
   return (
-    <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -0.3]} raycast={() => null} renderOrder={1}>
-      <ringGeometry args={[radius + 0.4, radius + 0.7, 32, 1, 0, arcLength]} />
-      <meshBasicMaterial
-        color={color}
-        transparent
-        opacity={hovered || selected ? 0.9 : 0.7}
-        side={THREE.DoubleSide}
-      />
-    </mesh>
+    <Billboard>
+      <mesh raycast={() => null} renderOrder={3} position={[0, 0, 0.08]} rotation={[0, 0, -Math.PI / 2]}>
+        <ringGeometry args={[inner, outer, 96]} />
+        <meshBasicMaterial color="#D9DED8" transparent opacity={hovered || selected ? 0.78 : 0.58} side={THREE.DoubleSide} depthWrite={false} />
+      </mesh>
+      {arcLength > 0 && <mesh raycast={() => null} renderOrder={4} position={[0, 0, 0.1]} rotation={[0, 0, -Math.PI / 2]}>
+        <ringGeometry args={[inner, outer, 96, 1, 0, arcLength]} />
+        <meshBasicMaterial color={color} transparent opacity={hovered || selected ? 1 : 0.9} side={THREE.DoubleSide} depthWrite={false} />
+      </mesh>}
+    </Billboard>
   );
 }
 

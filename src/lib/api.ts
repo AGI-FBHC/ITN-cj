@@ -377,6 +377,7 @@ export interface LearningResourceSummary {
   state?: Record<string, unknown>;
   learned: boolean;
   started: boolean;
+  progressRatio: number;
   learnedAt?: string | null;
   createdAt: string;
   updatedAt: string;

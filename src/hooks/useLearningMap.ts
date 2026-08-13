@@ -287,10 +287,22 @@ export function useLearningMap(): LearningMapView {
       byDatabaseOrder(chapter.children.filter((child) => child.level === 3)).forEach((child) => {
         const category = masteryByCategory.get(String(child.id));
         topicMastery[child.nodeCode] = category ? Math.round(category.score * 100) : 0;
-        const learnedForms = new Set(resources.filter((resource) => resource.kpId === chapter.nodeCode && resource.topic === child.name && resource.learned).map((resource) => resource.type));
+        const childResources = resources.filter((resource) => resource.kpId === chapter.nodeCode && resource.topic === child.name);
+        const progressByForm = new Map(childResources.map((resource) => [resource.type, resource.progressRatio ?? (resource.learned ? 1 : 0)]));
         const pptLearned = presentations.some((task) => task.learned && task.title.includes(child.name));
-        topicProgress[child.nodeCode] = Math.round(((learnedForms.size + (pptLearned ? 1 : 0)) / 4) * 100);
+        topicProgress[child.nodeCode] = Math.round((
+          (progressByForm.get('lecture') ?? 0)
+          + (progressByForm.get('practice') ?? 0)
+          + (progressByForm.get('quiz') ?? 0)
+          + (pptLearned ? 1 : 0)
+        ) / 4 * 100);
       });
+      const topicScores = chapter.children
+        .filter((child) => child.level === 3)
+        .map((child) => topicProgress[child.nodeCode] ?? 0);
+      mastery[chapter.nodeCode] = topicScores.length
+        ? Math.round(topicScores.reduce((sum, value) => sum + value, 0) / topicScores.length)
+        : 0;
     });
 
     const learned = new Set(chapters.filter((chapter) => (mastery[chapter.nodeCode] ?? 0) > 0).map((chapter) => chapter.nodeCode));
