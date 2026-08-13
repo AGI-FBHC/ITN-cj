@@ -537,6 +537,17 @@ function ProgressRing({
   const masteryLength = arcLength * Math.max(0, Math.min(100, mastery)) / 100;
   const inner = radius + 0.3;
   const outer = radius + 0.68;
+  const progressMid = (inner + outer) / 2;
+  const progressCapRadius = (outer - inner) / 2;
+  const masteryInner = inner + 0.09;
+  const masteryOuter = outer - 0.09;
+  const masteryMid = (masteryInner + masteryOuter) / 2;
+  const masteryCapRadius = (masteryOuter - masteryInner) / 2;
+  const capPosition = (mid: number, angle: number, z: number): [number, number, number] => [
+    Math.cos(angle - Math.PI / 2) * mid,
+    Math.sin(angle - Math.PI / 2) * mid,
+    z,
+  ];
 
   return (
     <Billboard>
@@ -552,10 +563,22 @@ function ProgressRing({
         <ringGeometry args={[inner, outer, 96, 1, 0, arcLength]} />
         <meshBasicMaterial color={color} transparent opacity={1} side={THREE.DoubleSide} depthWrite={false} />
       </mesh>}
+      {arcLength > 0 && arcLength < Math.PI * 2 - 0.001 && <>
+        {[0, arcLength].map((angle) => <mesh key={`progress-cap-${angle}`} raycast={() => null} renderOrder={4} position={capPosition(progressMid, angle, 0.105)}>
+          <circleGeometry args={[progressCapRadius, 24]} />
+          <meshBasicMaterial color={color} transparent opacity={1} side={THREE.DoubleSide} depthWrite={false} />
+        </mesh>)}
+      </>}
       {masteryLength > 0 && <mesh raycast={() => null} renderOrder={5} position={[0, 0, 0.12]} rotation={[0, 0, -Math.PI / 2]}>
-        <ringGeometry args={[inner + 0.09, outer - 0.09, 96, 1, 0, masteryLength]} />
+        <ringGeometry args={[masteryInner, masteryOuter, 96, 1, 0, masteryLength]} />
         <meshBasicMaterial color="#155E9A" transparent opacity={1} side={THREE.DoubleSide} depthWrite={false} />
       </mesh>}
+      {masteryLength > 0 && masteryLength < Math.PI * 2 - 0.001 && <>
+        {[0, masteryLength].map((angle) => <mesh key={`mastery-cap-${angle}`} raycast={() => null} renderOrder={5} position={capPosition(masteryMid, angle, 0.125)}>
+          <circleGeometry args={[masteryCapRadius, 24]} />
+          <meshBasicMaterial color="#155E9A" transparent opacity={1} side={THREE.DoubleSide} depthWrite={false} />
+        </mesh>)}
+      </>}
     </Billboard>
   );
 }
