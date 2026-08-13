@@ -1992,26 +1992,28 @@ export default function LearnUnit() {
         <span className="text-hairline">/</span>
         <h1 className="font-serif text-[20px] font-semibold text-ink">{pptTopic || generatedUnit?.topicName || kp.name}</h1>
         {pptTaskId && (
-          <div className="flex items-center gap-1 rounded-full border border-hairline bg-card-warm p-1" aria-label="伴学方案">
-            <span className="pl-1.5 pr-1 font-mono text-[9.5px] text-ink-muted">伴学方案</span>
-            {(['mimo', 'qwen'] as const).map((model) => (
-              <button
-                key={model}
-                type="button"
-                disabled={voiceBusy}
-                onClick={() => void switchPptAudioModel(model)}
-                className={cn(
-                  'rounded-full px-2.5 py-1 font-mono text-[9.5px] transition-colors disabled:cursor-not-allowed disabled:opacity-50',
-                  pptAudioModel === model ? 'bg-brand text-paper shadow-sm' : 'text-ink-muted hover:text-ink',
-                )}
-                title={model === 'mimo' ? '经典伴学方案' : '实时伴学方案'}
-              >
-                {model === 'mimo' ? '经典' : '实时'}
-              </button>
-            ))}
+          <div className="ml-auto flex items-center gap-2" aria-label="Model">
+            <span className="font-mono text-[12px] font-semibold text-ink-muted">Model:</span>
+            <div className="flex rounded-full border border-hairline bg-card-warm p-1 shadow-sm">
+              {(['mimo', 'qwen'] as const).map((model) => (
+                <button
+                  key={model}
+                  type="button"
+                  disabled={voiceBusy}
+                  onClick={() => void switchPptAudioModel(model)}
+                  className={cn(
+                    'rounded-full px-4 py-1.5 font-mono text-[12px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                    pptAudioModel === model ? 'bg-brand text-paper shadow-sm' : 'text-ink-muted hover:text-ink',
+                  )}
+                  title={model === 'mimo' ? 'MiMo 版本' : 'Qwen 版本'}
+                >
+                  {model === 'mimo' ? 'MiMo' : 'Qwen'}
+                </button>
+              ))}
+            </div>
           </div>
         )}
-        <span className="ml-auto flex items-center gap-2">
+        <span className="flex items-center gap-2">
           {/* 掌握度小徽标（伴学栏收起时也看得到，移动端唯一入口） */}
           <span
             title="本节掌握度：微练答对 +3、答错 −1，追问过关 +2"
