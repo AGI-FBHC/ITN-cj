@@ -530,6 +530,15 @@ const STATUS_META: Record<'missing' | 'unlearned' | 'learned', { label: string; 
   learned: { label: '已学习', color: '#2F8F5B' },
 };
 
+/** 统一 3D 中文标签标点，避免半角窄标点在远景 SDF 采样中丢失。 */
+function format3DLabel(label: string): string {
+  return label
+    .trim()
+    .replace(/([\u3400-\u9fff]):(?=[\u3400-\u9fffA-Za-z0-9])/g, '$1：')
+    .replace(/([\u3400-\u9fff]);(?=[\u3400-\u9fffA-Za-z0-9])/g, '$1；')
+    .replace(/\s*([：；，。！？])\s*/g, '$1');
+}
+
 const FUNCTION_ICON = {
   lecture: BookOpen,
   guide: Wrench,
@@ -886,6 +895,7 @@ function ChildNode({
       {/* 文字 */}
       <Text
         font={cjkFontUrl}
+        sdfGlyphSize={128}
         raycast={() => null}
         renderOrder={2}
         position={getTextPosition()}
@@ -897,11 +907,11 @@ function ChildNode({
         color="#3D4A3A"
         anchorX={textAnchor.x}
         anchorY={textAnchor.y}
-        outlineWidth={0.055}
+        outlineWidth={0.025}
         outlineColor="#FFFFFF"
         outlineOpacity={0.82}
       >
-        {node.label.trim()}
+        {format3DLabel(node.label)}
       </Text>
     </group>
   );
@@ -1075,6 +1085,7 @@ function Node3D({
       <Billboard>
         <Text
           font={cjkFontUrl}
+          sdfGlyphSize={128}
           ref={textRef}
           raycast={() => null}
           renderOrder={2}
@@ -1087,11 +1098,11 @@ function Node3D({
           color={isDomain ? '#FFFFFF' : '#3D4A3A'}
           anchorX={textAnchor.x}
           anchorY={textAnchor.y}
-          outlineWidth={isDomain ? 0.07 : 0.05}
+          outlineWidth={isDomain ? 0.04 : 0.02}
           outlineColor={isDomain ? '#000000' : '#FFFFFF'}
           outlineOpacity={0.5}
         >
-          {node.label.trim()}
+          {format3DLabel(node.label)}
         </Text>
       </Billboard>
 
