@@ -901,7 +901,8 @@ function ChildNode({
   };
 
   const baseSize = 1.5;
-  const targetScale = selected ? 1.3 : hovered ? 1.15 : 1;
+  // 放大幅度受进度环内径约束，避免节点穿入环内形成额外深色圈。
+  const targetScale = selected ? 1.1 : hovered ? 1.07 : 1;
 
   useFrame(() => {
     if (!meshRef.current) return;
@@ -1064,7 +1065,8 @@ function Node3D({
   };
 
   const baseSize = isDomain ? 3 : 1.5;
-  const targetScale = selected ? 1.3 : hovered ? 1.15 : 1;
+  // 章节环内径仅比节点大 0.3，选中态只做轻微放大，视觉强调交给颜色与描边。
+  const targetScale = selected ? (isDomain ? 1.06 : 1.1) : hovered ? (isDomain ? 1.04 : 1.07) : 1;
 
   useFrame(() => {
     if (groupRef.current) {
