@@ -42,6 +42,17 @@ export function useTopicResourceActions({
   const [checkingPpt, setCheckingPpt] = useState(false);
   const topicName = label;
 
+  const watchPresentation = useCallback(async (taskId: string) => {
+    let task = await presentationApi.getPresentation(taskId);
+    while (!['completed', 'failed', 'cancelled'].includes(task.status)) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2500));
+      task = await presentationApi.getPresentation(taskId);
+    }
+    await refreshLearningMapPresentationCache(currentLearner.id);
+    if (task.status === 'completed') toast.success('交互课件已生成，卡片状态已更新');
+    else toast.error(task.errorMessage || '交互课件生成失败');
+  }, [currentLearner.id]);
+
   const existingFor = useCallback(
     (form: ResourceForm) => existing.find(
       (item) => item.id && item.form === form && (item.levelTag === topicName || item.title.includes(topicName)),
@@ -109,10 +120,11 @@ export function useTopicResourceActions({
           navigate(`/learn/${kpId}?ppt=${match.id}&topic=${encodeURIComponent(topicName)}`);
         } else {
           toast.info('交互课件正在生成中');
+          void watchPresentation(match.id);
         }
         return;
       }
-      await presentationApi.createPresentation({
+      const created = await presentationApi.createPresentation({
         requirement: topicName,
         title: wantedTitle,
         audience: 'students',
@@ -128,13 +140,15 @@ export function useTopicResourceActions({
         learningGoalId: goalId ?? undefined,
       });
       toast.success('交互课件已加入生成队列');
+      await refreshLearningMapPresentationCache(currentLearner.id);
+      void watchPresentation(created.id);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '课件操作失败');
     } finally {
       setCheckingPpt(false);
       void refreshLearningMapPresentationCache(currentLearner.id);
     }
-  }, [checkingPpt, navigate, kpId, topicName, goalId]);
+  }, [checkingPpt, navigate, kpId, topicName, goalId, currentLearner.id, watchPresentation]);
 
   return { existingFor, openOrGenerate, openOrCreatePpt, generating, checkingPpt };
 }

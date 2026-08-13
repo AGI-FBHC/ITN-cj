@@ -120,7 +120,6 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
     if (index === currentRef.current) { if (continuePlaying) void playAudio(index); return; }
     switchingSlideRef.current = continuePlaying;
     setCurrent(index);
-    if (continuePlaying) window.setTimeout(() => void playAudio(index), 700);
   };
 
   const goNext = () => goTo(currentRef.current + 1, audioPlaying);
@@ -246,6 +245,10 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
     if (!switchingSlideRef.current) onPlaybackChange?.(false);
     setAudioSrc((prev) => { if (prev) URL.revokeObjectURL(prev); return ''; });
     audioSrcRef.current = '';
+    // Start the next narration as soon as React has committed the new page.
+    // This removes the old fixed 700 ms pause while keeping the playing state
+    // stable, so the global control does not flash from pause to play.
+    if (switchingSlideRef.current) void playAudio(current);
   }, [current]);
 
   useEffect(() => {

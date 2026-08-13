@@ -1101,12 +1101,6 @@ export default function LearnUnit() {
   useEffect(() => {
     if (slideMode && playing) setSlideIdx(cursor);
   }, [slideMode, playing, cursor]);
-  const openSlides = () => {
-    hitSpot('modal');
-    setAudioMode(false);
-    setSlideIdx(playing ? cursor : posRef.current.b);
-    setSlideMode(true);
-  };
   const slideGo = (d: 1 | -1) => {
     const n = Math.min(blocksRef.current.length - 1, Math.max(0, slideIdx + d));
     if (n === slideIdx) return;
@@ -1131,15 +1125,6 @@ export default function LearnUnit() {
     }, 1000);
     return () => clearInterval(t);
   }, [focusMode]);
-
-  const enterFocus = () => {
-    setBarExpanded(true);
-    focusStartRef.current = Date.now();
-    focusFromBlockRef.current = cursor;
-    setElapsed(0);
-    setFocusMode(true);
-    document.documentElement.requestFullscreen?.().catch(() => undefined);
-  };
 
   const exitFocus = () => {
     if (!playing) setBarExpanded(false);
@@ -3093,41 +3078,7 @@ export default function LearnUnit() {
                   </button>
                 </PopoverTrigger>
                 <PopoverContent side="top" align="end" className="w-72 border-hairline bg-card-warm p-4">
-                  <div className="lf-mono-label !text-[10px]">MODE · 换个方式学</div>
-                  <div className="mt-2 grid grid-cols-3 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => (slideMode ? setSlideMode(false) : openSlides())}
-                      title="一段一页放大讲，随语音翻页"
-                      className={cn(
-                        'flex flex-col items-center gap-1 rounded-[9px] border py-2 text-[11.5px] font-medium transition-all',
-                        slideMode ? 'border-brand/45 bg-brand-tint text-brand' : 'border-hairline bg-paper text-ink-2 hover:border-brand/40',
-                      )}
-                    >
-                      <Presentation size={14} /> 幻灯
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { const nextAudio = !audioMode; setSlideMode(false); setAudioMode(nextAudio); setBarExpanded(nextAudio || playing); if (!playing) startPlay(posRef.current.b, posRef.current.c); }}
-                      title="只听不看（走路/坐车时用）"
-                      className={cn(
-                        'flex flex-col items-center gap-1 rounded-[9px] border py-2 text-[11.5px] font-medium transition-all',
-                        audioMode ? 'border-brand/45 bg-brand-tint text-brand' : 'border-hairline bg-paper text-ink-2 hover:border-brand/40',
-                      )}
-                    >
-                      <Headphones size={14} /> 只听
-                    </button>
-                    <button
-                      type="button"
-                      onClick={enterFocus}
-                      title="全屏、收起干扰、结算能量加成"
-                      className="flex flex-col items-center gap-1 rounded-[9px] border border-hairline bg-paper py-2 text-[11.5px] font-medium text-ink-2 transition-all hover:border-brand/40"
-                    >
-                      <Focus size={14} /> 专注
-                    </button>
-                  </div>
-
-                  <div className="lf-mono-label mt-4 !text-[10px]">VOICE · {pptTaskId ? '音色' : '语音风格'}</div>
+                  <div className="lf-mono-label !text-[10px]">VOICE · {pptTaskId ? '音色' : '语音风格'}</div>
                   <div className={cn('mt-2', pptTaskId ? 'grid grid-cols-2 gap-1.5' : 'space-y-1.5')}>
                     {pptTaskId ? MIMO_VOICES.map((voice) => (
                       <button

@@ -17,6 +17,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 // v4: 地图结构完全来自 RAG knowledge_category，旧版 overview 不再参与缓存。
 const CACHE_PREFIX = 'lf.learningMapCache:v4:';
 const RESOURCE_CACHE_UPDATED_EVENT = 'lf:learning-map-resources-updated';
+const PRESENTATION_CACHE_UPDATED_EVENT = 'lf:learning-map-presentations-updated';
 
 interface LearningMapCache {
   resources: LearningResourceSummary[];
@@ -63,7 +64,9 @@ export async function refreshLearningMapPresentationCache(learnerId: string): Pr
   if (!cache) return;
   try {
     const listed = await presentationApi.listPresentationSummaries(100);
-    writeLearningMapCache(learnerId, { resources: cache.resources, tree: cache.tree, presentations: listed.tasks ?? [] });
+    const presentations = listed.tasks ?? [];
+    writeLearningMapCache(learnerId, { resources: cache.resources, tree: cache.tree, presentations });
+    window.dispatchEvent(new CustomEvent(PRESENTATION_CACHE_UPDATED_EVENT, { detail: { learnerId, presentations } }));
   } catch {
     /* 刷新失败时保留原缓存 */
   }
@@ -197,6 +200,15 @@ export function useLearningMap(): LearningMapView {
     };
     window.addEventListener(RESOURCE_CACHE_UPDATED_EVENT, syncResources);
     return () => window.removeEventListener(RESOURCE_CACHE_UPDATED_EVENT, syncResources);
+  }, [currentLearnerId]);
+
+  useEffect(() => {
+    const syncPresentations = (event: Event) => {
+      const detail = (event as CustomEvent<{ learnerId?: string; presentations?: PresentationTaskSummary[] }>).detail;
+      if (detail?.learnerId === currentLearnerId && Array.isArray(detail.presentations)) setPresentations(detail.presentations);
+    };
+    window.addEventListener(PRESENTATION_CACHE_UPDATED_EVENT, syncPresentations);
+    return () => window.removeEventListener(PRESENTATION_CACHE_UPDATED_EVENT, syncPresentations);
   }, [currentLearnerId]);
 
   useEffect(() => {
