@@ -672,14 +672,13 @@ function TopicActionModal({
           <div className="min-w-0 flex-1">
             <p className="mb-1 text-[11px] font-semibold tracking-[0.16em] text-[#7A877F]">知识点学习</p>
             <h2 id="topic-action-title" className="break-words text-[21px] font-semibold leading-snug tracking-[-0.02em] text-[#24332B]">{node.label.trim()}</h2>
-            <p className="mt-1 text-[12px] text-[#78847C]">选择学习方式，已有内容会直接打开。</p>
           </div>
           <button type="button" aria-label="关闭" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#748078] transition hover:bg-[#EDF0EB] hover:text-[#24332B]">
             <X size={18} />
           </button>
         </header>
 
-        <div className="mx-5 mt-4 grid grid-cols-[1fr_auto] items-center gap-4 rounded-[14px] border border-[#DCE7E1] bg-[#F3F8F5] px-4 py-3"><div className="min-w-0"><div className="flex items-center justify-between text-[11px]"><span className="font-medium text-[#344A3E]">学习进度</span><span className="font-mono font-semibold text-[#287EA8]">{progress}%</span></div><div className="relative mt-2 h-2 overflow-hidden rounded-full bg-[#D7DDD9]"><div className="absolute inset-y-0 left-0 rounded-full bg-[#55B9DC]" style={{ width: `${progress}%` }} /><div className="absolute inset-y-[1px] left-0 rounded-full bg-[#155E9A]" style={{ width: `${overallMastery}%` }} /></div><div className="mt-1.5 flex gap-3 text-[9px] text-[#78847C]"><span>浅蓝 · 已学习</span><span>深蓝 · 已掌握</span></div></div><div className="flex items-center gap-2 border-l border-[#D8E4DD] pl-4"><span className="text-right text-[9px] leading-4 text-[#607168]">当前掌握<br />全部内容</span><div className="relative h-12 w-12"><svg viewBox="0 0 48 48" className="h-full w-full -rotate-90"><circle cx="24" cy="24" r="19" fill="none" stroke="#D8E5EF" strokeWidth="5" /><circle cx="24" cy="24" r="19" fill="none" stroke="#155E9A" strokeWidth="5" strokeLinecap="round" pathLength="100" strokeDasharray={`${overallMastery} 100`} /></svg><span className="absolute inset-0 flex items-center justify-center font-mono text-[10px] font-semibold text-[#155E9A]">{overallMastery}%</span></div></div></div>
+        <div className="mx-5 mt-4 grid min-h-[104px] grid-cols-[1fr_auto] items-center gap-5 rounded-[18px] border border-[#DCE7E1] bg-[#F3F8F5] px-5 py-4"><div className="min-w-0"><div className="flex items-center justify-between text-[12px]"><span className="font-medium text-[#344A3E]">学习进度</span><span className="font-mono text-[13px] font-semibold text-[#287EA8]">{progress}%</span></div><div className="relative mt-3 h-3 overflow-hidden rounded-full bg-[#D7DDD9]"><div className="absolute inset-y-0 left-0 rounded-full bg-[#55B9DC]" style={{ width: `${progress}%` }} /><div className="absolute inset-y-[1.5px] left-0 rounded-full bg-[#155E9A]" style={{ width: `${overallMastery}%` }} /></div><div className="mt-2 flex gap-4 text-[10px] text-[#78847C]"><span>浅蓝 · 已学习</span><span>深蓝 · 已掌握</span></div></div><div className="flex items-center gap-3 border-l border-[#D8E4DD] pl-5"><span className="text-right text-[10px] leading-4 text-[#607168]">当前掌握<br />全部内容</span><div className="relative h-16 w-16"><svg viewBox="0 0 48 48" className="h-full w-full -rotate-90"><circle cx="24" cy="24" r="19" fill="none" stroke="#D8E5EF" strokeWidth="5" /><circle cx="24" cy="24" r="19" fill="none" stroke="#155E9A" strokeWidth="5" strokeLinecap="round" pathLength="100" strokeDasharray={`${overallMastery} 100`} /></svg><span className="absolute inset-0 flex items-center justify-center font-mono text-[12px] font-semibold text-[#155E9A]">{overallMastery}%</span></div></div></div>
 
         <div className="grid grid-cols-2 gap-3 p-5 pt-4 sm:px-6 sm:pb-5">
           {FUNCTION_META.map((fn) => {
@@ -705,15 +704,15 @@ function TopicActionModal({
             key={fn.form}
             type="button"
             disabled={busy}
-            className="group h-[112px] rounded-[18px] border border-[#E1E6DF] bg-white/75 p-3.5 text-left shadow-[0_8px_22px_rgba(41,63,51,0.06)] transition duration-200 hover:-translate-y-0.5 hover:border-[#AFC3B5] hover:bg-white hover:shadow-[0_14px_32px_rgba(41,63,51,0.12)] disabled:cursor-progress disabled:opacity-60"
+            className="group h-[88px] rounded-[16px] border border-[#E1E6DF] bg-white/75 px-3.5 py-3 text-left shadow-[0_8px_22px_rgba(41,63,51,0.06)] transition duration-200 hover:-translate-y-0.5 hover:border-[#AFC3B5] hover:bg-white hover:shadow-[0_14px_32px_rgba(41,63,51,0.12)] disabled:cursor-progress disabled:opacity-60"
             onClick={() => {
               if (fn.form === 'ppt') void openOrCreatePpt();
               else void openOrGenerate(fn.form as ResourceForm);
             }}
           >
-            <span className="mb-3 flex items-center justify-between">
-              <span className="flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#EDF3EE] text-[#466C56] transition group-hover:bg-[#E2ECE5]">
-                <Icon size={19} strokeWidth={1.8} />
+            <span className="mb-2 flex items-center justify-between">
+              <span className="flex h-8 w-8 items-center justify-center rounded-[11px] bg-[#EDF3EE] text-[#466C56] transition group-hover:bg-[#E2ECE5]">
+                <Icon size={17} strokeWidth={1.8} />
               </span>
               <span className="flex items-center gap-1.5 text-[11px] font-medium text-[#6C7971]">
                 <i className="h-2 w-2 rounded-full" style={{ backgroundColor: busy ? '#D89238' : tag.color }} />
@@ -721,7 +720,6 @@ function TopicActionModal({
               </span>
             </span>
             <strong className="block text-[15px] font-semibold text-[#26352D]">{fn.label}</strong>
-            <small className="mt-1 block text-[11px] leading-5 text-[#879189]">{exists ? '打开已有内容继续学习' : '交给 Agent 生成专属内容'}</small>
           </button>
         );
           })}
