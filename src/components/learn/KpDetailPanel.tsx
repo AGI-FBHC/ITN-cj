@@ -6,7 +6,7 @@
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, BookOpen, Wrench, ListChecks, Sparkles, Target, Gauge, Route } from 'lucide-react';
+import { ArrowRight, BookOpen, Wrench, ListChecks, Sparkles, Route } from 'lucide-react';
 import { Loader2 } from 'lucide-react';
 import { useProfile, dataIdOf } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
@@ -41,15 +41,11 @@ const PATH_STATUS: Record<PathNodeStatus, { label: string; cls: string }> = {
   locked: { label: '未解锁', cls: 'border-hairline bg-paper-deep text-ink-muted' },
 };
 
-/** 掌握度环：当前分数填充 + 目标刻度 */
-function MasteryRing({ score, target }: { score: number; target: number }) {
+/** 当前知识点整体掌握度：按完整内容范围展示，不再混入目标刻度。 */
+function MasteryRing({ score }: { score: number }) {
   const R = 30;
   const C = 2 * Math.PI * R;
-  const passed = score >= target;
-  const color = passed ? '#E7B45A' : '#4E7860';
-  const targetAngle = (target / 100) * 360 - 90;
-  const tx = 40 + R * Math.cos((targetAngle * Math.PI) / 180);
-  const ty = 40 + R * Math.sin((targetAngle * Math.PI) / 180);
+  const color = '#155E9A';
   return (
     <svg viewBox="0 0 80 80" className="h-[80px] w-[80px] shrink-0">
       <circle cx="40" cy="40" r={R} fill="none" stroke="#ECF1EA" strokeWidth="7" />
@@ -66,13 +62,8 @@ function MasteryRing({ score, target }: { score: number; target: number }) {
         transform="rotate(-90 40 40)"
         style={{ transition: 'stroke-dashoffset 0.8s cubic-bezier(0.22,1,0.36,1)' }}
       />
-      {/* 目标刻度 */}
-      <circle cx={tx} cy={ty} r="3" fill="#B0483B" />
-      <text x="40" y="38" textAnchor="middle" className="font-display" fontSize="20" fontWeight="700" fill="#3D4A3A">
+      <text x="40" y="44" textAnchor="middle" className="font-display" fontSize="17" fontWeight="700" fill="#155E9A">
         {score}
-      </text>
-      <text x="40" y="52" textAnchor="middle" fontSize="8.5" fill="#99A78F" fontFamily="monospace">
-        /目标 {target}
       </text>
     </svg>
   );
@@ -540,19 +531,11 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
 
       {/* 掌握进度 */}
       <div className="flex items-center gap-4 rounded-[12px] border border-hairline bg-card-warm p-3">
-        <MasteryRing score={score} target={kp.targetLevel} />
-        <div className="min-w-0 flex-1 space-y-1.5">
-          <div className="flex items-center gap-1.5 text-[12px] text-ink-2">
-            <Target size={12} className="text-brand-danger" />
-            学习进度 <span className="font-display font-semibold text-ink">{learningProgress}%</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-[12px] text-ink-2">
-            <Gauge size={12} className="text-brand" />
-            实际掌握程度 <span className="font-display font-semibold text-ink">{score}%</span>
-          </div>
-          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-paper-deep">
-            <div className="h-full rounded-full bg-brand" style={{ width: `${score}%` }} />
-          </div>
+        <div className="text-center"><MasteryRing score={Math.round(learningProgress * score) / 100} /><div className="-mt-1 text-[9px] text-ink-muted">当前知识点掌握程度</div></div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between text-[12px] text-ink-2"><span>学习进度</span><span className="font-display font-semibold text-ink">{learningProgress}%</span></div>
+          <div className="relative mt-2 h-2 overflow-hidden rounded-full bg-paper-deep"><div className="absolute inset-y-0 left-0 rounded-full bg-[#55B9DC]" style={{ width: `${learningProgress}%` }} /><div className="absolute inset-y-[1px] left-0 rounded-full bg-[#155E9A]" style={{ width: `${Math.round(learningProgress * score) / 100}%` }} /></div>
+          <div className="mt-1.5 flex gap-3 text-[9px] text-ink-muted"><span>浅蓝 · 已学习</span><span>深蓝 · 进度内已掌握</span></div>
         </div>
       </div>
 
