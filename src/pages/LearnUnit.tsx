@@ -1501,6 +1501,7 @@ export default function LearnUnit() {
             setVoiceTranscriptOpen((prev) => ({ ...prev, [entryId]: true }));
             setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, transcript, q: transcript, converting: false } : qa));
           } else if (event.type === 'control' && event.action && event.action !== 'none') {
+            if (pptAudioModel === 'qwen') stopAnswerAudio();
             if (event.action === 'next') pptRef.current?.goNext();
             else if (event.action === 'previous') pptRef.current?.goPrev();
             else if (event.action === 'goto' && event.page) pptRef.current?.goTo(event.page - 1);
