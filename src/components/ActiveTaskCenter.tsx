@@ -16,6 +16,8 @@ type ActiveTask = {
   updatedAt?: string;
   events: TaskEvent[];
   kindName?: string;
+  status?: string;
+  errorMessage?: string | null;
 };
 
 const ACTIVE_PRESENTATION = new Set(['queued', 'analyzing', 'outline_review', 'generating', 'reviewing']);
@@ -74,7 +76,7 @@ function resourceTask(task: LearningResourceGenerationTask): ActiveTask {
   const title = task.title
     .replace(/\s*[·・]\s*(定制讲义|实操指南|分阶测试题?|分阶测试)\s*$/, '')
     .trim();
-  return { id: task.id, kind: 'resource', kindName, title: title || task.title, progress: task.progress, stage: task.stageMessage, updatedAt: task.updatedAt, events: task.events.map(eventOf) };
+  return { id: task.id, kind: 'resource', kindName, title: title || task.title, progress: task.progress, stage: task.stageMessage, updatedAt: task.updatedAt, events: task.events.map(eventOf), status: task.status, errorMessage: task.errorMessage };
 }
 
 export default function ActiveTaskCenter({ learnerId }: { learnerId: string | null }) {
@@ -120,7 +122,7 @@ export default function ActiveTaskCenter({ learnerId }: { learnerId: string | nu
           };
         }));
         const resources = resourceResult.status === 'fulfilled'
-          ? resourceResult.value.tasks.filter((task) => !['completed', 'failed', 'cancelled'].includes(task.status)).map(resourceTask)
+          ? resourceResult.value.tasks.filter((task) => !['completed', 'cancelled'].includes(task.status)).map(resourceTask)
           : [];
         if (!disposed) setTasks([...courses, ...presentations, ...teaching, ...resources].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')));
       } finally {
@@ -173,15 +175,16 @@ export default function ActiveTaskCenter({ learnerId }: { learnerId: string | nu
           {tasks.map((task) => {
             const isExpanded = expanded.has(task.id);
             const latestEvent = task.events[task.events.length - 1];
+            const isFailed = task.status === 'failed';
             return (
               <section key={`${task.kind}-${task.id}`} className="relative overflow-hidden rounded-[13px] border border-hairline bg-card-warm">
                 <button type="button" onClick={() => toggle(task.id)} className="w-full px-4 py-3.5 pr-12 text-left">
                   <div className="flex items-start gap-2.5">
-                    <LiveDot status="thinking" className="mt-1" />
+                    {isFailed ? <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-brand-danger" /> : <LiveDot status="thinking" className="mt-1" />}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2"><span className="rounded bg-paper-deep px-1.5 py-0.5 text-[10px] text-ink-muted">{kindLabel(task)}</span><span className="truncate text-[13px] font-semibold text-ink">{task.title}</span></div>
-                      <p className="mt-1.5 text-[12px] leading-5 text-ink-2">{latestEvent?.detail || latestEvent?.title || task.stage}</p>
-                      {task.kind !== 'teaching' && <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-paper-deep"><div className="h-full rounded-full bg-brand transition-[width] duration-500" style={{ width: `${Math.max(3, task.progress)}%` }} /></div>}
+                      <p className={`mt-1.5 text-[12px] leading-5 ${isFailed ? 'text-brand-danger' : 'text-ink-2'}`}>{task.errorMessage || latestEvent?.detail || latestEvent?.title || task.stage}</p>
+                      {task.kind !== 'teaching' && <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-paper-deep"><div className={`h-full rounded-full transition-[width] duration-500 ${isFailed ? 'bg-brand-danger' : 'bg-brand'}`} style={{ width: `${Math.max(3, task.progress)}%` }} /></div>}
                       <div className="mt-1 flex items-center justify-between font-mono text-[10px] text-ink-muted"><span>{task.stage}</span><span>{task.kind === 'teaching' ? `${task.events.length} 条事件` : `${task.progress}%`}</span></div>
                     </div>
                     {isExpanded ? <ChevronDown size={15} className="mt-1 text-ink-muted" /> : <ChevronRight size={15} className="mt-1 text-ink-muted" />}
