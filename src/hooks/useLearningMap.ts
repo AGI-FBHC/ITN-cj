@@ -83,7 +83,7 @@ export interface LearningMapView {
   learned: Set<string>;
   status: Record<string, string>;
   activeKp: string | null;
-  resources: Record<string, Array<GeneratedResource & { id: string; learned?: boolean }>>;
+  resources: Record<string, Array<GeneratedResource & { id: string; learned?: boolean; started?: boolean }>>;
   presentations: PresentationTaskSummary[];
   goalId: string | null;
 }
@@ -338,7 +338,7 @@ export function useLearningMap(): LearningMapView {
       note: edge.note ?? '',
     }));
 
-    const resourceByKp: Record<string, Array<GeneratedResource & { id: string; learned?: boolean }>> = {};
+    const resourceByKp: Record<string, Array<GeneratedResource & { id: string; learned?: boolean; started?: boolean }>> = {};
     resources.forEach((resource) => {
       if (!resource.kpId) return;
       const list = resourceByKp[resource.kpId] ??= [];
@@ -352,6 +352,7 @@ export function useLearningMap(): LearningMapView {
         version: '',
         updatedAt: resource.updatedAt,
         learned: resource.learned,
+        started: resource.started,
         kbRefs: [],
       });
     });

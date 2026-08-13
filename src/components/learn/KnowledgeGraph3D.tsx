@@ -76,7 +76,7 @@ interface KnowledgeGraph3DProps {
   /** 打开“我的已学路径”：高亮已学章节/子知识点 */
   showLearned?: boolean;
   /** 各章节已有资源（kpId → resources），功能节点据此显示“打开/生成” */
-  resources?: Record<string, Array<GeneratedResource & { id?: string; learned?: boolean }>>;
+  resources?: Record<string, Array<GeneratedResource & { id?: string; learned?: boolean; started?: boolean }>>;
   /** 课件任务列表，用于功能节点判断“交互课件”是否已生成 */
   presentations?: PresentationTaskSummary[];
   /** 生成资源时的学习目标 */
@@ -568,9 +568,10 @@ function LearnedHighlightRing({ radius }: { radius: number }) {
 }
 
 /** 页面级知识点操作弹窗：脱离 3D 世界坐标，确保尺寸与交互始终稳定。 */
-const STATUS_META: Record<'missing' | 'unlearned' | 'learned', { label: string; color: string }> = {
+const STATUS_META: Record<'missing' | 'unlearned' | 'incomplete' | 'learned', { label: string; color: string }> = {
   missing: { label: '未生成', color: '#9AA19A' },
   unlearned: { label: '未学习', color: '#D89238' },
+  incomplete: { label: '未学完', color: '#4B82B8' },
   learned: { label: '已学习', color: '#2F8F5B' },
 };
 
@@ -600,7 +601,7 @@ function TopicActionModal({
   onClose,
 }: {
   node: GraphNode;
-  resources?: Array<GeneratedResource & { id?: string; learned?: boolean }>;
+  resources?: Array<GeneratedResource & { id?: string; learned?: boolean; started?: boolean }>;
   presentations?: PresentationTaskSummary[];
   goalId?: string | null;
   learned: Set<string>;
@@ -670,13 +671,15 @@ function TopicActionModal({
           : undefined;
         const exists = fn.form === 'ppt' ? Boolean(pptTask && pptTask.status === 'completed') : Boolean(res?.id);
         const busy = fn.form === 'ppt' ? checkingPpt : generating.has(fn.form);
-        const status: 'missing' | 'unlearned' | 'learned' = !exists
+        const status: 'missing' | 'unlearned' | 'incomplete' | 'learned' = !exists
           ? 'missing'
           : fn.form === 'ppt'
             ? (pptTask?.learned ? 'learned' : 'unlearned')
             : (res?.learned ?? learned.has(node.kpId))
               ? 'learned'
-              : 'unlearned';
+              : res?.started
+                ? 'incomplete'
+                : 'unlearned';
         const Icon = FUNCTION_ICON[fn.form];
         const tag = STATUS_META[status];
         return (

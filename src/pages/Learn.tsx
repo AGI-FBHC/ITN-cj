@@ -59,8 +59,8 @@ function readLearnView(learnerId: string): LearnViewState | null {
 export default function Learn() {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
-  const restoredView = readLearnView(currentLearner.id);
-  const [restoreCamera] = useState(() => consumeCameraReturn(currentLearner.id));
+  const [restoreMapState] = useState(() => consumeCameraReturn(currentLearner.id));
+  const restoredView = restoreMapState ? readLearnView(currentLearner.id) : null;
   const map = useLearningMap();
   const knowledgePoints = map.domains;
   const reportPath = map.path;
@@ -266,7 +266,7 @@ export default function Learn() {
               goalId={map.goalId}
               presentations={map.presentations}
               persistenceKey={currentLearner.id}
-              restorePersistedCamera={restoreCamera}
+              restorePersistedCamera={restoreMapState}
             />
           ) : (
             <KnowledgeGraph showLearned={showLearnedPath} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpIds={expandedKpIds} onExpandedKpChange={setSingleExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} />

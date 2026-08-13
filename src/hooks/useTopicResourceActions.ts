@@ -34,7 +34,7 @@ export function useTopicResourceActions({
   kpId: string;
   label: string;
   goalId?: string | null;
-  existing?: Array<GeneratedResource & { id?: string; learned?: boolean }>;
+  existing?: Array<GeneratedResource & { id?: string; learned?: boolean; started?: boolean }>;
 }) {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();

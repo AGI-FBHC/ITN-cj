@@ -376,6 +376,7 @@ export interface LearningResourceSummary {
   kpId?: string | null;
   state?: Record<string, unknown>;
   learned: boolean;
+  started: boolean;
   learnedAt?: string | null;
   createdAt: string;
   updatedAt: string;
