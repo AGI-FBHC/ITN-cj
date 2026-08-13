@@ -51,9 +51,9 @@ const TOPIC_STROKE_COLORS = {
 };
 
 const PROGRESS_COLORS = {
-  low: '#B8D4C0',
-  mid: '#E7B45A',
-  high: '#6BA080',
+  low: '#19A7CE',
+  mid: '#F59E0B',
+  high: '#16A34A',
 };
 
 interface KnowledgeGraph3DProps {
@@ -531,18 +531,22 @@ function ProgressRing({
 }) {
   const color = progress >= 80 ? PROGRESS_COLORS.high : progress >= 50 ? PROGRESS_COLORS.mid : PROGRESS_COLORS.low;
   const arcLength = (Math.max(0, Math.min(100, progress)) / 100) * Math.PI * 2;
-  const inner = radius + 0.32;
-  const outer = radius + 0.54;
+  const inner = radius + 0.3;
+  const outer = radius + 0.68;
 
   return (
     <Billboard>
       <mesh raycast={() => null} renderOrder={3} position={[0, 0, 0.08]} rotation={[0, 0, -Math.PI / 2]}>
         <ringGeometry args={[inner, outer, 96]} />
-        <meshBasicMaterial color="#D9DED8" transparent opacity={hovered || selected ? 0.78 : 0.58} side={THREE.DoubleSide} depthWrite={false} />
+        <meshBasicMaterial color="#7B8780" transparent opacity={hovered || selected ? 0.72 : 0.48} side={THREE.DoubleSide} depthWrite={false} />
       </mesh>
+      {arcLength > 0 && <mesh raycast={() => null} renderOrder={3} position={[0, 0, 0.09]} rotation={[0, 0, -Math.PI / 2]}>
+        <ringGeometry args={[inner - 0.08, outer + 0.08, 96, 1, 0, arcLength]} />
+        <meshBasicMaterial color={color} transparent opacity={hovered || selected ? 0.34 : 0.22} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>}
       {arcLength > 0 && <mesh raycast={() => null} renderOrder={4} position={[0, 0, 0.1]} rotation={[0, 0, -Math.PI / 2]}>
         <ringGeometry args={[inner, outer, 96, 1, 0, arcLength]} />
-        <meshBasicMaterial color={color} transparent opacity={hovered || selected ? 1 : 0.9} side={THREE.DoubleSide} depthWrite={false} />
+        <meshBasicMaterial color={color} transparent opacity={1} side={THREE.DoubleSide} depthWrite={false} />
       </mesh>}
     </Billboard>
   );
