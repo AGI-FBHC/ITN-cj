@@ -9,7 +9,6 @@ import { useLearningMap } from '@/hooks/useLearningMap';
 import KnowledgeGraph from '@/components/learn/KnowledgeGraph';
 import KnowledgeGraph3D from '@/components/learn/KnowledgeGraph3D';
 import KpDetailPanel from '@/components/learn/KpDetailPanel';
-import NodeActionMenu from '@/components/learn/NodeActionMenu';
 import UnitQuickList from '@/components/learn/UnitQuickList';
 import { Fern, GrassTuft } from '@/components/heal/Flora';
 import { cn } from '@/lib/utils';
@@ -48,7 +47,6 @@ export default function Learn() {
   const [selectedTopic, setSelectedTopic] = useState<number | null>(null);
   /** 章节速览点击后，请求 3D 相机把该域节点转到正前方 */
   const [graphFocus, setGraphFocus] = useState<{ id: string; at: number } | null>(null);
-  const [actionMenu, setActionMenu] = useState<{ kpId: string; topicIndex: number; label: string } | null>(null);
   const [searchParams] = useSearchParams();
   useEffect(() => {
     const kpParam = searchParams.get('kp');
@@ -201,7 +199,6 @@ export default function Learn() {
           )}
           {viewMode === '3d' ? (
             <KnowledgeGraph3D
-              onTopicClick={(kpId, topicIndex, label) => setActionMenu({ kpId, topicIndex, label })}
               nodes={map.graphNodes}
               edges={map.graphEdges}
               selectedKpId={selectedKp}
@@ -215,6 +212,8 @@ export default function Learn() {
               topicProgress={map.topicProgress}
               focusTarget={graphFocus}
               showLearned={showLearnedPath}
+              resources={map.resources}
+              goalId={map.goalId}
             />
           ) : (
             <KnowledgeGraph showLearned={showLearnedPath} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpIds={expandedKpIds} onExpandedKpChange={setSingleExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} />
@@ -300,17 +299,6 @@ export default function Learn() {
           );
         })}
       </div>
-          {/* 3D 模式下的节点操作菜单 */}
-      {actionMenu && viewMode === '3d' && (
-        <NodeActionMenu
-          kpId={actionMenu.kpId}
-          topicIndex={actionMenu.topicIndex}
-          label={actionMenu.label}
-          onClose={() => setActionMenu(null)}
-          goalId={map.goalId}
-          existing={map.resources[actionMenu.kpId] ?? []}
-        />
-      )}
     </div>
   );
 }

@@ -7,6 +7,8 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Text, Line, PerspectiveCamera, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
 import type { GraphNode, GraphEdge, EdgeKind } from '@/data/knowledgeGraph';
+import type { ResourceForm, GeneratedResource } from '@/data/resources';
+import { FUNCTION_META, useTopicResourceActions } from '@/hooks/useTopicResourceActions';
 
 const EDGE_COLORS: Record<EdgeKind, string> = {
   prereq: '#4E7860',
@@ -68,6 +70,10 @@ interface KnowledgeGraph3DProps {
   focusTarget?: { id: string; at: number } | null;
   /** 打开“我的已学路径”：高亮已学章节/子知识点 */
   showLearned?: boolean;
+  /** 各章节已有资源（kpId → resources），功能节点据此显示“打开/生成” */
+  resources?: Record<string, Array<GeneratedResource & { id?: string; learned?: boolean }>>;
+  /** 生成资源时的学习目标 */
+  goalId?: string | null;
   className?: string;
 }
 
@@ -513,6 +519,72 @@ function LearnedHighlightRing({ radius }: { radius: number }) {
 }
 
 /** 子节点平面：面向用户的纸面效果 */
+
+/** 功能叶子层：每个子知识点展开 4 个功能叶子（讲义/实操/测试/课件），紧凑堆叠、短线相连 */
+const SHORT_LABEL: Record<string, string> = { lecture: '讲义', guide: '实操', quiz: '测试', ppt: '课件' };
+function FunctionLayer({
+  node,
+  relPos,
+  direction,
+  resources,
+  goalId,
+}: {
+  node: GraphNode;
+  relPos: [number, number, number];
+  direction: 'left' | 'right';
+  resources?: Array<GeneratedResource & { id?: string; learned?: boolean }>;
+  goalId?: string | null;
+}) {
+  const { existingFor, openOrGenerate, openOrCreatePpt, generating, checkingPpt } = useTopicResourceActions({
+    kpId: node.kpId,
+    label: node.label,
+    goalId,
+    existing: resources ?? [],
+  });
+  const dx = direction === 'left' ? -3.8 : 3.8;
+  // 紧凑 2×2 堆叠，贴近知识节点，连线尽量短
+  const positions: Array<[number, number, number]> = [
+    [dx - 0.7, 0.8, 0.15],
+    [dx + 0.7, 0.8, 0.15],
+    [dx - 0.7, -0.8, 0.15],
+    [dx + 0.7, -0.8, 0.15],
+  ];
+  return (
+    <group position={relPos}>
+      {FUNCTION_META.map((fn, i) => (
+        <Line key={`f-line-${fn.form}`} renderOrder={-1} points={[new THREE.Vector3(0, 0, 0), new THREE.Vector3(...positions[i])]} color={fn.color} lineWidth={2} transparent opacity={0.7} />
+      ))}
+      {FUNCTION_META.map((fn, i) => {
+        const exists = fn.form !== 'ppt' && Boolean(existingFor(fn.form as ResourceForm)?.id);
+        const busy = fn.form === 'ppt' ? checkingPpt : generating !== null;
+        return (
+          <group
+            key={fn.form}
+            position={positions[i]}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (fn.form === 'ppt') void openOrCreatePpt();
+              else void openOrGenerate(fn.form as ResourceForm);
+            }}
+            onPointerEnter={(event) => { event.stopPropagation(); document.body.style.cursor = 'pointer'; }}
+            onPointerLeave={() => { document.body.style.cursor = 'default'; }}
+          >
+            <mesh raycast={() => null}>
+              <circleGeometry args={[busy ? 0.7 : 0.6, 28]} />
+              <meshBasicMaterial color={exists ? '#2FBF71' : fn.color} transparent opacity={busy ? 0.4 : 0.95} />
+            </mesh>
+            <Billboard>
+              <Text raycast={() => null} position={[0, -0.85, 0]} fontSize={0.64} color={exists ? '#2FBF71' : '#EAF0EA'} anchorX="center" anchorY="top">
+                {busy ? '…' : exists ? '已' : SHORT_LABEL[fn.form]}
+              </Text>
+            </Billboard>
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
 function ChildPlane({
   parentPos,
   children,
@@ -527,6 +599,9 @@ function ChildPlane({
   parentOffset,
   animRef,
   showLearned,
+  expandedTopicId,
+  resources,
+  goalId,
 }: {
   parentPos: THREE.Vector3;
   children: GraphNode[];
@@ -541,6 +616,9 @@ function ChildPlane({
   parentOffset?: THREE.Vector3;
   animRef: BlendRef;
   showLearned?: boolean;
+  expandedTopicId?: string | null;
+  resources?: Record<string, Array<GeneratedResource & { id?: string; learned?: boolean }>>;
+  goalId?: string | null;
 }) {
   const billboardRef = useRef<THREE.Group | null>(null);
 
@@ -563,6 +641,7 @@ function ChildPlane({
       return { node, relPos, direction };
     });
   }, [children, layout.childDirections]);
+  const expandedChild = childData.find(({ node }) => node.id === expandedTopicId) ?? null;
 
   return (
     <Billboard ref={billboardRef} position={parentPos}>
@@ -608,6 +687,17 @@ function ChildPlane({
             />
           );
         })}
+
+        {/* 功能叶子层：点击子知识点后展开，与章节展开互不干扰 */}
+        {expandedChild && (
+          <FunctionLayer
+            node={expandedChild.node}
+            relPos={expandedChild.relPos}
+            direction={expandedChild.direction}
+            resources={resources?.[expandedChild.node.kpId] ?? []}
+            goalId={goalId}
+          />
+        )}
       </group>
     </Billboard>
   );
@@ -1062,7 +1152,10 @@ function SceneContent({
   mastery,
   topicMastery,
   topicProgress,
-  onTopicClick,
+  expandedTopicId,
+  onExpandedTopicChange,
+  resources,
+  goalId,
   animRef,
   focusId,
   hoveredId,
@@ -1083,7 +1176,10 @@ function SceneContent({
   mastery: Record<string, number>;
   topicMastery: Record<string, number>;
   topicProgress: Record<string, number>;
-  onTopicClick?: (kpId: string, topicIndex: number, label: string) => void;
+  expandedTopicId: string | null;
+  onExpandedTopicChange: (id: string | null) => void;
+  resources?: Record<string, Array<GeneratedResource & { id?: string; learned?: boolean }>>;
+  goalId?: string | null;
   hoveredId: string | null;
   onHoverNode: (id: string | null) => void;
   showLearned?: boolean;
@@ -1097,10 +1193,10 @@ function SceneContent({
         onExpandedKpChange(node.id);
       } else {
         onSelectTopic(node.topicIndex ?? null);
-        onTopicClick?.(node.kpId, node.topicIndex ?? 0, node.label);
+        onExpandedTopicChange(expandedTopicId === node.id ? null : node.id);
       }
     },
-    [onSelectKp, onSelectTopic, onExpandedKpChange, onTopicClick],
+    [onSelectKp, onSelectTopic, onExpandedKpChange, expandedTopicId, onExpandedTopicChange],
   );
 
   const relatedEdges = useMemo(() => {
@@ -1179,6 +1275,9 @@ function SceneContent({
             parentOffset={layout.focusOffsets.get(kpId)}
             animRef={animRef}
             showLearned={showLearned}
+            expandedTopicId={expandedTopicId}
+            resources={resources}
+            goalId={goalId}
           />
         );
       })}
@@ -1223,7 +1322,6 @@ function SceneContent({
 }
 
 export default function KnowledgeGraph3D({
-  onTopicClick,
   nodes,
   edges,
   selectedKpId,
@@ -1238,7 +1336,11 @@ export default function KnowledgeGraph3D({
   focusTarget,
   className,
   showLearned = false,
+  resources = {},
+  goalId = null,
 }: KnowledgeGraph3DProps) {
+  /** 当前展开“功能节点层”（定制讲义/实操指南/分阶测试题/交互课件）的子知识点，与章节展开互不干扰 */
+  const [expandedTopicId, setExpandedTopicId] = useState<string | null>(null);
   // 聚焦的域节点（需仍处于展开状态才拉出）；同时展开多个章节时聚焦规则不生效
   const focusedId = focusTarget && expandedKpIds.has(focusTarget.id) ? focusTarget.id : null;
   const focusId = expandedKpIds.size > 1 ? null : focusedId;
@@ -1295,7 +1397,10 @@ export default function KnowledgeGraph3D({
             mastery={mastery}
             topicMastery={topicMastery}
             topicProgress={topicProgress}
-            onTopicClick={onTopicClick}
+            expandedTopicId={expandedTopicId}
+            onExpandedTopicChange={setExpandedTopicId}
+            resources={resources}
+            goalId={goalId}
             animRef={blendRef}
             focusId={dimAnchorId}
             hoveredId={hoveredNodeId}
