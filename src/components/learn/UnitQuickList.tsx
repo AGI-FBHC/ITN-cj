@@ -1,7 +1,7 @@
 /**
  * UnitQuickList — 章节速览（学页信息架构改版新增）
  * 承接原「单元列表」唯一的独有价值：一眼扫全 6 个单元。
- * 一行一单元：状态点（●达标金 / ◐在学绿 / ○未学）+ 名称 + 微型掌握条 + 分数；
+ * 一行一单元：状态点 + 名称 + 微型学习进度条 + 进度值；
  * 点行 = 选中图谱对应节点（与图谱、详情栏三向联动）；「我的路线」场景下按路径顺序重排带序号。
  * 无卡框：divide-y 细分隔线（结构进分隔线，不进边框）。
  */
@@ -39,6 +39,7 @@ export default function UnitQuickList({
   path: pathProp,
   learned: learnedProp,
   mastery: masteryProp,
+  progress: progressProp,
 }: {
   selectedKpId?: string | null;
   onSelect: (kpId: string) => void;
@@ -50,6 +51,7 @@ export default function UnitQuickList({
   path?: PathNode[];
   learned?: Set<string>;
   mastery?: Record<string, number>;
+  progress?: Record<string, number>;
 }) {
   const { currentLearner } = useProfile();
   const report = reportForLearner(currentLearner);
@@ -59,6 +61,7 @@ export default function UnitQuickList({
     return learnedKpIds(currentLearner, pathDone);
   }, [currentLearner, reportPath]);
   const mastery = masteryProp ?? {};
+  const progress = progressProp ?? mastery;
 
   /* 路径顺序（去重保序） */
   const pathSeq = useMemo(() => {
@@ -88,6 +91,7 @@ export default function UnitQuickList({
       <div className={cn('mt-1', columns ? 'grid gap-x-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5' : 'divide-y divide-hairline/70')}>
         {items.map((kp) => {
           const score = mastery[kp.id] ?? 50;
+          const progressValue = progress[kp.id] ?? 0;
           const isLearned = learned.has(kp.id);
           const state: 'passed' | 'learning' | 'todo' =
             isLearned && score >= kp.targetLevel ? 'passed' : isLearned ? 'learning' : 'todo';
@@ -113,24 +117,15 @@ export default function UnitQuickList({
               )}
               <StatusDot state={state} />
               <span className="min-w-0 flex-1">
-                {/* 第一行：章节标签 + 掌握条 + 分数，不挤压标题 */}
+                {/* 第一行：章节标签 + 学习进度条 + 进度值，不挤压标题 */}
                 <span className="flex items-center gap-2">
                   <span className="text-[10.5px] font-medium leading-[14px] text-brand/70">{chapterTag ?? ''}</span>
                   <span className="ml-auto flex items-center gap-2">
-                    {/* 微型掌握条 + 目标刻度（未学的单元不画刻度——空条上飘孤立红点很怪） */}
-                    <span className={cn('relative h-1 w-10 shrink-0 overflow-hidden rounded-full bg-paper-deep xl:w-12', !isLearned && 'opacity-50')}>
-                      {isLearned && (
-                        <>
-                          <span
-                            className={cn('absolute inset-y-0 left-0 rounded-full', state === 'passed' ? 'bg-brand-amber' : 'bg-brand')}
-                            style={{ width: `${score}%` }}
-                          />
-                          <span className="absolute inset-y-0 w-[2px] bg-brand-danger/60" style={{ left: `${kp.targetLevel}%` }} />
-                        </>
-                      )}
+                    <span className="relative h-1 w-10 shrink-0 overflow-hidden rounded-full bg-paper-deep xl:w-12" title={`学习进度 ${progressValue}%`}>
+                      <span className="absolute inset-y-0 left-0 rounded-full bg-[#55B9DC]" style={{ width: `${progressValue}%` }} />
                     </span>
-                    <span className="w-6 shrink-0 text-right font-mono text-[10.5px] text-ink-muted tabular-nums">
-                      {isLearned ? score : '—'}
+                    <span className="w-8 shrink-0 text-right font-mono text-[10.5px] text-ink-muted tabular-nums">
+                      {progressValue}%
                     </span>
                   </span>
                 </span>
