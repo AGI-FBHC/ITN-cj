@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Activity, ChevronDown, ChevronRight, LoaderCircle } from 'lucide-react';
+import { Activity, ChevronDown, ChevronRight, LoaderCircle, Trash2 } from 'lucide-react';
 import { api, type Course, type LearningResourceGenerationTask, type TeachingGroupEvent } from '@/lib/api';
 import { presentationApi, type PresentationTask } from '@/lib/presentationApi';
+import { toast } from 'sonner';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import LiveDot from '@/components/LiveDot';
 
@@ -130,6 +131,20 @@ export default function ActiveTaskCenter({ learnerId }: { learnerId: string | nu
     return next;
   });
 
+  const cancelTask = async (task: ActiveTask) => {
+    try {
+      if (task.kind === 'resource') await api.cancelLearningResourceTask(task.id);
+      else if (task.kind === 'presentation') await presentationApi.cancelPresentation(task.id);
+      else if (task.kind === 'course') await api.deleteCourse(task.id);
+      else return;
+      setTasks((prev) => prev.filter((item) => !(item.kind === task.kind && item.id === task.id)));
+      setExpanded((prev) => { const next = new Set(prev); next.delete(task.id); return next; });
+      toast.success('任务已删除');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '删除任务失败');
+    }
+  };
+
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
@@ -150,8 +165,8 @@ export default function ActiveTaskCenter({ learnerId }: { learnerId: string | nu
             const isExpanded = expanded.has(task.id);
             const latestEvent = task.events[task.events.length - 1];
             return (
-              <section key={`${task.kind}-${task.id}`} className="overflow-hidden rounded-[13px] border border-hairline bg-card-warm">
-                <button type="button" onClick={() => toggle(task.id)} className="w-full px-4 py-3.5 text-left">
+              <section key={`${task.kind}-${task.id}`} className="relative overflow-hidden rounded-[13px] border border-hairline bg-card-warm">
+                <button type="button" onClick={() => toggle(task.id)} className="w-full px-4 py-3.5 pr-12 text-left">
                   <div className="flex items-start gap-2.5">
                     <LiveDot status="thinking" className="mt-1" />
                     <div className="min-w-0 flex-1">
@@ -163,6 +178,17 @@ export default function ActiveTaskCenter({ learnerId }: { learnerId: string | nu
                     {isExpanded ? <ChevronDown size={15} className="mt-1 text-ink-muted" /> : <ChevronRight size={15} className="mt-1 text-ink-muted" />}
                   </div>
                 </button>
+                {task.kind !== 'teaching' && (
+                  <button
+                    type="button"
+                    onClick={() => void cancelTask(task)}
+                    title="删除该任务"
+                    aria-label="删除该任务"
+                    className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full border border-hairline bg-paper text-ink-muted transition-colors hover:border-brand-danger/40 hover:text-brand-danger"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
                 {isExpanded && (
                   <div className="border-t border-hairline bg-paper/65 px-4 py-3">
                     <div className="space-y-3 border-l border-brand/25 pl-3">

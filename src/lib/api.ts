@@ -1061,6 +1061,8 @@ export const api = {
     requestDirect<Course>(`/v1/courses/${encodeURIComponent(courseId)}/retry`, { method: 'POST' }),
   getCourse: (courseId: string) =>
     requestDirect<Course>(`/v1/courses/${encodeURIComponent(courseId)}`),
+  deleteCourse: (courseId: string) =>
+    requestDirect<void>(`/v1/courses/${encodeURIComponent(courseId)}`, { method: 'DELETE' }),
   updateCourse: (courseId: string, body: { title?: string; description?: string }) =>
     requestDirect<Course>(`/v1/courses/${encodeURIComponent(courseId)}`, {
       method: 'PUT',
@@ -1110,6 +1112,8 @@ export const api = {
     requestDirect<{ tasks: LearningResourceGenerationTask[] }>(`/v1/learning-resource-tasks?limit=${limit}`),
   getLearningResourceTask: (taskId: string) =>
     requestDirect<LearningResourceGenerationTask>(`/v1/learning-resource-tasks/${encodeURIComponent(taskId)}`),
+  cancelLearningResourceTask: (taskId: string) =>
+    requestDirect<LearningResourceGenerationTask>(`/v1/learning-resource-tasks/${encodeURIComponent(taskId)}/cancel`, { method: 'POST' }),
   getLearningResource: (resourceId: string) =>
     requestDirect<LearningResource>(`/v1/learning-resources/${encodeURIComponent(resourceId)}`),
   getPersonalizedLearningUnit: (kpId: string, topicId: string, learnerId: string) =>

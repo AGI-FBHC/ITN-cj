@@ -109,6 +109,8 @@ export const presentationApi = {
     request<{ learned: boolean }>(`/v1/presentations/${encodeURIComponent(taskId)}/complete`, { method: 'POST' }),
   startPresentationGeneration: (taskId: string) =>
     request<PresentationTask>(`/v1/presentations/${encodeURIComponent(taskId)}/generate`, { method: 'POST' }),
+  cancelPresentation: (taskId: string) =>
+    request<PresentationTask>(`/v1/presentations/${encodeURIComponent(taskId)}/cancel`, { method: 'POST' }),
   getSlideshowSlides: (taskId: string) =>
     request<PresentationSlideshow>(`/v1/presentations/${encodeURIComponent(taskId)}/slides`),
 };
