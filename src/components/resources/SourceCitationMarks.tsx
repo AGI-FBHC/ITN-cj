@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ExternalLink, FileText, Loader2, X } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -40,6 +40,24 @@ export default function SourceCitationMarks({
   const [chunk, setChunk] = useState<RagChunkDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!opened) return undefined;
+    const body = document.body;
+    const previousOverflow = body.style.overflow;
+    const previousPaddingRight = body.style.paddingRight;
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    body.style.overflow = 'hidden';
+    if (scrollbarWidth > 0) body.style.paddingRight = `${scrollbarWidth}px`;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpened(null);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      window.removeEventListener('keydown', closeOnEscape);
+      body.style.overflow = previousOverflow;
+      body.style.paddingRight = previousPaddingRight;
+    };
+  }, [opened]);
   const sourceById = new Map<number, Record<string, unknown>>();
   (resource?.sources ?? sources ?? []).forEach((raw, index) => {
     const source = asRecord(raw);
@@ -89,14 +107,14 @@ export default function SourceCitationMarks({
         );
       })}
       {opened && createPortal(
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-ink/30 p-4 backdrop-blur-sm" onClick={() => setOpened(null)}>
-          <section role="dialog" aria-modal="true" aria-label={`引用 ${opened.id} 原文`} onClick={(event) => event.stopPropagation()} className="flex max-h-[82vh] w-full max-w-[720px] flex-col overflow-hidden rounded-[22px] border border-white/70 bg-paper shadow-2xl">
+        <div className="fixed inset-0 z-[120] flex touch-none items-center justify-center overflow-hidden bg-ink/30 p-4 backdrop-blur-sm" onClick={() => setOpened(null)} onWheel={(event) => event.stopPropagation()}>
+          <section role="dialog" aria-modal="true" aria-label={`引用 ${opened.id} 原文`} onClick={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()} onTouchMove={(event) => event.stopPropagation()} className="flex max-h-[82vh] w-full max-w-[720px] flex-col overflow-hidden rounded-[22px] border border-white/70 bg-paper shadow-2xl">
             <header className="flex items-start gap-3 border-b border-hairline bg-card-warm px-5 py-4">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-tint text-brand"><FileText size={17} /></span>
               <div className="min-w-0 flex-1"><div className="font-mono text-[10px] text-brand">RAG FLOW · [{opened.id}]</div><h2 className="mt-1 text-[15px] font-semibold text-ink">{chunk?.document.title ?? String(opened.source.document ?? opened.source.title ?? `来源 ${opened.id}`)}</h2>{chunk?.titlePath && <p className="mt-1 text-[11px] text-ink-muted">{chunk.titlePath}</p>}</div>
               <button type="button" aria-label="关闭原文" onClick={() => setOpened(null)} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep"><X size={17} /></button>
             </header>
-            <div className="overflow-y-auto p-5">
+            <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-5">
               {loading ? <div className="flex items-center justify-center gap-2 py-16 text-[13px] text-ink-muted"><Loader2 size={16} className="animate-spin" />正在读取向量知识库原始切片…</div> : <>
                 {liveError && <div className="mb-3 rounded-xl border border-brand-amber/35 bg-brand-amber-tint px-3 py-2 text-[11.5px] text-ochre">实时原文读取失败，以下显示生成时保存的来源快照：{liveError}</div>}
                 <div className="whitespace-pre-wrap rounded-[14px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-7 text-ink-2">{chunk?.content ?? String(opened.source.content ?? '没有可显示的原文内容。')}</div>
