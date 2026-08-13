@@ -592,7 +592,7 @@ function FunctionButton({
         outlineColor="#1E293B"
         outlineOpacity={0.28}
       >
-        {busy ? '生成中…' : fn.label}
+        {fn.label}
       </Text>
       {/* 悬浮状态标签：出现在按钮正下方，不占用按钮本体 */}
       {hovered && !busy && (

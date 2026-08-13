@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useRef } from 'react';
 import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
 import type { LearnerAnalyticsProfile, LearningMapOverview, RagTree } from '@/lib/api';
@@ -38,6 +37,18 @@ function writeLearningMapCache(learnerId: string, cache: LearningMapCache) {
     window.localStorage.setItem(`${CACHE_PREFIX}${learnerId}`, JSON.stringify(cache));
   } catch {
     /* ignore */
+  }
+}
+
+/** 生成完成后刷新资源缓存：仅请求一次资源列表并写回，下次打开地图直接命中缓存、不再请求后端 */
+export async function refreshLearningMapResourceCache(learnerId: string): Promise<void> {
+  const cache = readLearningMapCache(learnerId);
+  if (!cache) return;
+  try {
+    const listed = await api.listLearningResources();
+    writeLearningMapCache(learnerId, { overview: cache.overview, resources: listed.resources ?? [], tree: cache.tree });
+  } catch {
+    /* 刷新失败时保留原缓存 */
   }
 }
 
@@ -157,8 +168,6 @@ export function useLearningMap(): LearningMapView {
   const [tree, setTree] = useState<RagTree | null>(() => readLearningMapCache(currentLearnerId)?.tree ?? null);
   const [analytics, setAnalytics] = useState<LearnerAnalyticsProfile | null>(null);
   const [presentations, setPresentations] = useState<PresentationTaskSummary[]>([]);
-  const mapRef = useRef<LearningMapOverview | null>(map);
-  mapRef.current = map;
 
   useEffect(() => {
     if (!UUID_PATTERN.test(currentLearnerId)) {
@@ -174,42 +183,22 @@ export function useLearningMap(): LearningMapView {
       setResources(cached.resources);
       setTree(cached.tree ?? null);
     }
-    Promise.all([api.getLearningMap(currentLearnerId), api.getRagTree('agent'), api.getLearnerAnalyticsProfile().catch(() => null), presentationApi.listPresentationSummaries(100).catch(() => ({ tasks: [] }))])
-      .then(async ([overview, latestTree, latestAnalytics, latestPresentations]) => {
+    // 缓存命中时资源状态不再请求后端（生成完成时由 refreshLearningMapResourceCache 写入），其余结构数据仍刷新
+    const resourcesPromise = cached
+      ? Promise.resolve(cached.resources)
+      : api.listLearningResources().then((listed) => listed.resources ?? []).catch(() => [] as LearningResourceSummary[]);
+    Promise.all([api.getLearningMap(currentLearnerId), api.getRagTree('agent'), api.getLearnerAnalyticsProfile().catch(() => null), presentationApi.listPresentationSummaries(100).catch(() => ({ tasks: [] })), resourcesPromise])
+      .then(([overview, latestTree, latestAnalytics, latestPresentations, latestResources]) => {
         if (!cancelled) setMap(overview);
         if (!cancelled) setTree(latestTree);
         if (!cancelled) setAnalytics(latestAnalytics);
         if (!cancelled) setPresentations(latestPresentations.tasks ?? []);
-        try {
-          const listed = await api.listLearningResources();
-          const latestResources = listed.resources ?? [];
-          if (!cancelled) {
-            setResources(latestResources);
-            writeLearningMapCache(currentLearnerId, { overview, resources: latestResources, tree: latestTree });
-          }
-        } catch {
-          if (!cancelled) {
-            setResources([]);
-            writeLearningMapCache(currentLearnerId, { overview, resources: [], tree: latestTree });
-          }
-        }
+        if (!cancelled) setResources(latestResources);
+        if (!cancelled) writeLearningMapCache(currentLearnerId, { overview, resources: latestResources, tree: latestTree });
       })
       .catch(() => { if (!cancelled && !cached) setMap(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
-    // 后台课程/资源生成完成后自动刷新，避免用户停留在知识地图时看不到新资源
-    const poll = window.setInterval(() => {
-      api.listLearningResources()
-        .then((listed) => {
-          if (cancelled) return;
-          const latestResources = listed.resources ?? [];
-          setResources(latestResources);
-          if (mapRef.current) {
-            writeLearningMapCache(currentLearnerId, { overview: mapRef.current, resources: latestResources, tree: tree ?? undefined });
-          }
-        })
-        .catch(() => undefined);
-    }, 20_000);
-    return () => { cancelled = true; window.clearInterval(poll); };
+    return () => { cancelled = true; };
   }, [currentLearnerId]);
 
   return useMemo<LearningMapView>(() => {

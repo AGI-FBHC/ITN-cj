@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
 import { presentationApi } from '@/lib/presentationApi';
+import { refreshLearningMapResourceCache } from './useLearningMap';
 import type { GeneratedResource, ResourceForm } from '@/data/resources';
 
 export const FUNCTION_META: Array<{ form: ResourceForm | 'ppt'; label: string; color: string }> = [
@@ -77,6 +78,7 @@ export function useTopicResourceActions({
         task = await api.getLearningResourceTask(task.id);
       }
       if (task.status === 'completed' && task.resourceId) {
+        void refreshLearningMapResourceCache(currentLearner.id);
         toast.success(`${meta}已生成，可以打开`);
         navigate(`/learn/resource/${task.resourceId}`);
       } else {
