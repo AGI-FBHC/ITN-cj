@@ -1829,12 +1829,12 @@ export default function LearnUnit() {
   }
 
   return (
-    <div className={cn('mx-auto px-5 transition-[max-width] duration-300 md:px-6', pptTaskId ? (pptWideMode ? 'max-w-[1500px] pb-24 pt-2' : 'max-w-[760px] pb-24 pt-4') : 'max-w-[760px] pb-48 pt-6')}>
+    <div className={cn('mx-auto px-5 transition-[max-width] duration-300 md:px-6', pptTaskId ? (pptWideMode ? 'max-w-[1500px] pb-40 pt-5' : 'max-w-[900px] pb-40 pt-6') : 'max-w-[760px] pb-48 pt-6')}>
       {/* 技术亮点（系统透视）：右下角悬浮球，点开才展开 */}
       {viewMode !== 'learner' && <FeatureSpotlight flags={spotFlags} />}
 
       {/* 页头 */}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className={cn('flex flex-wrap items-center gap-3', pptTaskId && 'mb-5')}>
         <Link to="/learn" className="inline-flex items-center gap-1 text-[13px] text-ink-muted hover:text-brand">
           <ArrowLeft size={14} /> 课程目录
         </Link>
@@ -1913,7 +1913,7 @@ export default function LearnUnit() {
       </div>}
 
       {/* ============ 课堂单列：舞台化——阅读列收窄，当前块即舞台 ============ */}
-      <div className={cn('space-y-4', pptTaskId ? (pptWideMode ? 'mt-1.5' : 'mt-3') : 'mt-5')}>
+      <div className={cn('space-y-4', pptTaskId ? 'mt-0' : 'mt-5')}>
         {/* 课堂推进 / 自由浏览 模式条 */}
         {!pptTaskId && <div className="flex items-center justify-between gap-2">
           <span className="text-[11.5px] text-ink-muted">
