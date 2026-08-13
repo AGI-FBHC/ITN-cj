@@ -1420,17 +1420,24 @@ export default function LearnUnit() {
       // Start synthesis immediately. Playback remains ordered, so later sentences
       // are usually ready by the time the previous sentence finishes.
       const prepared = requestPptAnswerAudio(sentence, controller.signal);
+      void prepared.catch(() => undefined);
       speechChain = speechChain.then(() => playPptAnswerResponse(prepared, controller.signal));
     };
     const queueReadySentences = (flush = false) => {
       const pending = reply.slice(spokenLength);
       if (!pending.trim()) return;
-      const matches = [...pending.matchAll(/[^。！？!?；;]+[。！？!?；;]/g)];
       let consumed = 0;
-      for (const match of matches) {
-        const sentence = match[0].trim();
-        consumed = (match.index ?? 0) + match[0].length;
-        if (sentence) queueSentenceAudio(sentence);
+      const punctuation = /[，,：:。！？!?；;]/g;
+      for (const match of pending.matchAll(punctuation)) {
+        const end = (match.index ?? 0) + match[0].length;
+        const sentence = pending.slice(consumed, end).trim();
+        const isStrongBoundary = /[。！？!?；;]$/.test(sentence);
+        // Commas/colons lower time-to-first-speech, but very short fragments are
+        // retained until the next boundary so prosody does not become choppy.
+        if (sentence.length >= 6 || isStrongBoundary) {
+          queueSentenceAudio(sentence);
+          consumed = end;
+        }
       }
       if (flush) {
         const tail = pending.slice(consumed).trim();
