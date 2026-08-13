@@ -73,14 +73,17 @@ export function useTopicResourceActions({
       let task = listed.tasks.find(
         (item) => item.resourceType === resourceType && item.title === body.title && !['completed', 'failed', 'cancelled'].includes(item.status),
       ) ?? await api.startLearningResourceTask(resourceType, body);
-      toast.success(`${meta}已加入后台教研组`, { description: '可在顶部“正在执行”查看生成进度。' });
+      if (task.status !== 'completed') {
+        toast.success(`${meta}已加入后台教研组`, { description: '可在顶部“正在执行”查看生成进度。' });
+      }
       while (!['completed', 'failed', 'cancelled'].includes(task.status)) {
         await new Promise((resolve) => window.setTimeout(resolve, 1800));
         task = await api.getLearningResourceTask(task.id);
       }
       if (task.status === 'completed' && task.resourceId) {
-        void refreshLearningMapResourceCache(currentLearner.id);
-        toast.success(`${meta}已生成`, { description: '可在知识地图再次点击该资源直接打开。' });
+        await refreshLearningMapResourceCache(currentLearner.id);
+        toast.success(`${meta}已生成`, { description: '正在打开学习资源。' });
+        navigate(`/learn/resource/${task.resourceId}`);
       } else {
         throw new Error(task.errorMessage || `${meta}生成失败`);
       }
