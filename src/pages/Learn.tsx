@@ -258,6 +258,7 @@ export default function Learn() {
               onExpandedKpChange={toggleExpandedKp}
               learned={map.learned}
               mastery={map.mastery}
+              chapterProgress={map.chapterProgress}
               topicMastery={map.topicMastery}
               topicProgress={map.topicProgress}
               focusTarget={graphFocus}

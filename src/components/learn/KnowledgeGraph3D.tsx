@@ -69,6 +69,7 @@ interface KnowledgeGraph3DProps {
   onExpandedKpChange: (id: string) => void;
   learned: Set<string>;
   mastery: Record<string, number>;
+  chapterProgress: Record<string, number>;
   topicMastery: Record<string, number>;
   topicProgress: Record<string, number>;
   /** 请求把某个域节点转到视野正前方（at 变化即重新触发） */
@@ -521,16 +522,19 @@ function EdgeArrow({
 function ProgressRing({
   radius,
   progress,
+  mastery,
   hovered,
   selected,
 }: {
   radius: number;
   progress: number;
+  mastery: number;
   hovered: boolean;
   selected: boolean;
 }) {
   const color = progress >= 80 ? PROGRESS_COLORS.high : progress >= 50 ? PROGRESS_COLORS.mid : PROGRESS_COLORS.low;
   const arcLength = (Math.max(0, Math.min(100, progress)) / 100) * Math.PI * 2;
+  const masteryLength = arcLength * Math.max(0, Math.min(100, mastery)) / 100;
   const inner = radius + 0.3;
   const outer = radius + 0.68;
 
@@ -547,6 +551,10 @@ function ProgressRing({
       {arcLength > 0 && <mesh raycast={() => null} renderOrder={4} position={[0, 0, 0.1]} rotation={[0, 0, -Math.PI / 2]}>
         <ringGeometry args={[inner, outer, 96, 1, 0, arcLength]} />
         <meshBasicMaterial color={color} transparent opacity={1} side={THREE.DoubleSide} depthWrite={false} />
+      </mesh>}
+      {masteryLength > 0 && <mesh raycast={() => null} renderOrder={5} position={[0, 0, 0.12]} rotation={[0, 0, -Math.PI / 2]}>
+        <ringGeometry args={[inner + 0.09, outer - 0.09, 96, 1, 0, masteryLength]} />
+        <meshBasicMaterial color="#7C3AED" transparent opacity={1} side={THREE.DoubleSide} depthWrite={false} />
       </mesh>}
     </Billboard>
   );
@@ -791,6 +799,7 @@ function ChildPlane({
           const isHovered = hoveredId === node.id;
           const isSelected = selectedKpId === node.id;
           const progress = topicProgress[node.id] ?? topicMastery[node.id] ?? 0;
+          const mastery = topicMastery[node.id] ?? 0;
           
           return (
             <ChildNode
@@ -802,6 +811,7 @@ function ChildPlane({
               hovered={isHovered}
               learned={learned.has(node.kpId)}
               progress={progress}
+              mastery={mastery}
               onClick={() => onNodeClick(node)}
               onHover={onNodeHover}
               showLearned={showLearned}
@@ -822,6 +832,7 @@ function ChildNode({
   hovered,
   learned,
   progress,
+  mastery,
   onClick,
   onHover,
   showLearned,
@@ -833,6 +844,7 @@ function ChildNode({
   hovered: boolean;
   learned: boolean;
   progress: number;
+  mastery: number;
   onClick: () => void;
   onHover: (id: string | null) => void;
   showLearned?: boolean;
@@ -923,7 +935,7 @@ function ChildNode({
       </mesh>
 
       {/* 进度环 */}
-      <ProgressRing radius={baseSize} progress={progress} hovered={hovered} selected={selected} />
+      <ProgressRing radius={baseSize} progress={progress} mastery={mastery} hovered={hovered} selected={selected} />
 
       {/* 文字短线 */}
       <Line
@@ -975,6 +987,7 @@ function Node3D({
   dimmed,
   learned,
   progress,
+  mastery,
   onClick,
   onHover,
   focusOffset,
@@ -991,6 +1004,7 @@ function Node3D({
   dimmed: boolean;
   learned: boolean;
   progress: number;
+  mastery: number;
   onClick: () => void;
   onHover: (id: string | null) => void;
   focusOffset?: THREE.Vector3;
@@ -1127,7 +1141,7 @@ function Node3D({
       </mesh>
 
       {/* 进度描边 */}
-      <ProgressRing radius={baseSize} progress={progress} hovered={hovered} selected={selected} />
+      <ProgressRing radius={baseSize} progress={progress} mastery={mastery} hovered={hovered} selected={selected} />
 
       {/* 标签 */}
       <Billboard>
@@ -1272,6 +1286,7 @@ function SceneContent({
   onExpandedKpChange,
   learned,
   mastery,
+  chapterProgress,
   topicMastery,
   topicProgress,
   expandedTopicId,
@@ -1294,6 +1309,7 @@ function SceneContent({
   onExpandedKpChange: (id: string) => void;
   learned: Set<string>;
   mastery: Record<string, number>;
+  chapterProgress: Record<string, number>;
   topicMastery: Record<string, number>;
   topicProgress: Record<string, number>;
   expandedTopicId: string | null;
@@ -1405,10 +1421,13 @@ function SceneContent({
         const isDimmed = hoveredId && !isRelated;
         
         let progress = 0;
+        let nodeMastery = 0;
         if (node.kind === 'domain') {
-          progress = mastery[node.kpId] ?? 0;
+          progress = chapterProgress[node.kpId] ?? 0;
+          nodeMastery = mastery[node.kpId] ?? 0;
         } else {
           progress = topicProgress[node.id] ?? topicMastery[node.id] ?? 0;
+          nodeMastery = topicMastery[node.id] ?? 0;
         }
         
         return (
@@ -1422,6 +1441,7 @@ function SceneContent({
             dimmed={!!isDimmed}
             learned={learned.has(node.kpId)}
             progress={progress}
+            mastery={nodeMastery}
             onClick={() => handleNodeClick(node)}
             onHover={onHoverNode}
             focusOffset={layout.focusOffsets.get(node.id)}
@@ -1446,6 +1466,7 @@ export default function KnowledgeGraph3D({
   onExpandedKpChange,
   learned,
   mastery,
+  chapterProgress,
   topicMastery,
   topicProgress,
   focusTarget,
@@ -1496,6 +1517,13 @@ export default function KnowledgeGraph3D({
   const sceneRef = useRef<THREE.Group | null>(null);
   // 悬停时暂停自动旋转，避免节点在光标下移动导致悬停闪烁
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const hoveredNode = useMemo(() => nodes.find((node) => node.id === hoveredNodeId) ?? null, [nodes, hoveredNodeId]);
+  const hoveredMetrics = useMemo(() => {
+    if (!hoveredNode) return null;
+    return hoveredNode.kind === 'domain'
+      ? { progress: chapterProgress[hoveredNode.kpId] ?? 0, mastery: mastery[hoveredNode.kpId] ?? 0 }
+      : { progress: topicProgress[hoveredNode.id] ?? 0, mastery: topicMastery[hoveredNode.id] ?? 0 };
+  }, [hoveredNode, chapterProgress, mastery, topicProgress, topicMastery]);
 
   // 每个章节的子节点数量（用于聚焦时自适应相机距离）
   const topicCountByKp = useMemo(() => {
@@ -1537,6 +1565,7 @@ export default function KnowledgeGraph3D({
             onExpandedKpChange={onExpandedKpChange}
             learned={learned}
             mastery={mastery}
+            chapterProgress={chapterProgress}
             topicMastery={topicMastery}
             topicProgress={topicProgress}
             expandedTopicId={expandedTopicId}
@@ -1561,6 +1590,16 @@ export default function KnowledgeGraph3D({
           onClose={() => setExpandedTopicId(null)}
         />
       )}
+
+      {hoveredNode && hoveredMetrics && <div className="pointer-events-none absolute left-4 top-1/2 z-20 w-[230px] -translate-y-1/2 rounded-[16px] border border-white/70 bg-white/92 p-4 shadow-warm-lg backdrop-blur-md">
+        <div className="font-mono text-[9.5px] tracking-[0.14em] text-brand">{hoveredNode.kind === 'domain' ? '章节概览' : '知识点概览'}</div>
+        <div className="mt-1 line-clamp-2 font-serif text-[15px] font-semibold leading-5 text-ink">{hoveredNode.label}</div>
+        <div className="mt-4 space-y-3">
+          <div><div className="mb-1.5 flex items-center justify-between text-[11px]"><span className="text-ink-2">学习完成度</span><span className="font-mono font-semibold text-brand">{hoveredMetrics.progress}%</span></div><div className="h-2 overflow-hidden rounded-full bg-[#D7DDD9]"><div className="h-full rounded-full bg-[#19A7CE] transition-[width]" style={{ width: `${hoveredMetrics.progress}%` }} /></div></div>
+          <div><div className="mb-1.5 flex items-center justify-between text-[11px]"><span className="text-ink-2">掌握程度</span><span className="font-mono font-semibold text-[#6D28D9]">{hoveredMetrics.mastery}%</span></div><div className="h-2 overflow-hidden rounded-full bg-[#E4DDF5]"><div className="h-full rounded-full bg-[#7C3AED] transition-[width]" style={{ width: `${hoveredMetrics.mastery}%` }} /></div></div>
+        </div>
+        <p className="mt-3 text-[9.5px] leading-4 text-ink-muted">掌握程度基于已学习内容的自评与答题正确率计算。</p>
+      </div>}
 
       {/* 提示 */}
       <div className="absolute bottom-4 left-4 rounded-lg bg-white/90 px-3 py-2 text-[11px] text-ink-muted backdrop-blur-sm border border-hairline/50">

@@ -378,6 +378,11 @@ function InlineBlockCitations({ block, resource }: { block: LearningBlock; resou
   return <SourceCitationMarks citations={block.citations} evidenceQuotes={asRecord(block.question).answerEvidenceQuotes} resource={resource} className="mt-2" />;
 }
 
+function assessmentsOf(resource: LearningResource): Record<string, number> {
+  const raw = asRecord(resource.state.selfAssessments);
+  return Object.fromEntries(Object.entries(raw).map(([key, value]) => [key, Math.max(0, Math.min(1, Number(value) || 0))]));
+}
+
 const difficultyMeta = {
   easy: { label: '基础', color: '#287a62', stars: 1 },
   medium: { label: '进阶', color: '#b17818', stars: 2 },
@@ -518,6 +523,20 @@ export default function CourseResourcePlayer() {
       }).catch(() => undefined);
     }, 650);
   }, [resource]);
+
+  const assessBlock = useCallback(async (blockId: string, value: number) => {
+    if (!resource) return;
+    try {
+      const result = await api.updateLearningResourceProgress(resource.id, {
+        currentBlockId: currentBlockId || blockId, visitedBlockIds: unique([...visited, blockId]),
+        completedStepIds: completedSteps, elapsedSeconds: elapsedBase + sessionSecondsRef.current,
+        selfAssessments: { [blockId]: value },
+      });
+      setResource(result.resource);
+      setVisited((current) => unique([...current, blockId]));
+      toast.success(value === 1 ? '已记录：完全掌握' : '掌握程度已更新');
+    } catch { toast.error('掌握程度保存失败'); }
+  }, [resource, currentBlockId, visited, completedSteps, elapsedBase]);
 
   useEffect(() => {
     if (!blocks.length) return;
@@ -695,6 +714,7 @@ export default function CourseResourcePlayer() {
         {block.warning && <div className="mt-4 flex items-start gap-2 rounded-[12px] border border-brand-amber/40 bg-brand-amber-tint px-4 py-3 text-[12.5px] leading-5 text-ochre"><TriangleAlert size={15} className="mt-0.5 shrink-0" /><span><strong>操作提醒：</strong>{block.warning}</span></div>}
         {block.kind === 'quiz' && <QuizBlock block={block} resource={resource} onWritebackStatus={setWritebackStatus} onResourceState={(state) => setResource((current) => current ? { ...current, state, learned: Boolean(state.learned || state.completed) } : current)} />}
         <InlineBlockCitations block={block} resource={resource} />
+        {resource.type !== 'quiz' && <div className="mt-5 rounded-[12px] border border-brand/20 bg-brand-tint/25 p-3.5"><div className="flex flex-wrap items-center justify-between gap-2"><div><div className="text-[12px] font-semibold text-ink">这一块你掌握得怎么样？</div><div className="mt-0.5 text-[10.5px] text-ink-muted">自评会和答题正确率一起计算掌握程度，可随时修改。</div></div><div className="flex flex-wrap gap-1.5">{([{ label: '还需学习', value: 0.2 }, { label: '基本理解', value: 0.55 }, { label: '大体掌握', value: 0.8 }, { label: '我已经完全掌握', value: 1 }] as const).map((option) => { const selected = assessmentsOf(resource)[block.id] === option.value; return <button key={option.value} type="button" onClick={() => void assessBlock(block.id, option.value)} className={cn('rounded-full border px-3 py-1.5 text-[11px] transition', selected ? 'border-brand bg-brand text-paper' : 'border-hairline bg-paper text-ink-2 hover:border-brand/45')}>{selected && <Check size={11} className="mr-1 inline" />}{option.label}</button>; })}</div></div></div>}
         <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-hairline/70 pt-4"><button type="button" onClick={() => { setNoteFor(block); setNoteText(''); }} className="lf-btn-ghost !px-3 !py-1.5 text-[11.5px]"><NotebookPen size={13} />记这一段</button><button type="button" onClick={() => { setCurrentBlockId(block.id); void openChat(); }} className="lf-btn-ghost !px-3 !py-1.5 text-[11.5px]"><MessageCircleQuestion size={13} />向导学老师提问</button>{index < blocks.length - 1 && <button type="button" onClick={() => goBlock(blocks[index + 1].id)} className="ml-auto inline-flex items-center gap-1 text-[11.5px] text-brand hover:underline">下一段<ArrowRight size={12} /></button>}</div>
       </motion.section>)}</main>
     </div>

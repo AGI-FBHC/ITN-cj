@@ -378,6 +378,7 @@ export interface LearningResourceSummary {
   learned: boolean;
   started: boolean;
   progressRatio: number;
+  masteryRatio: number;
   learnedAt?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -1066,6 +1067,7 @@ export const api = {
     visitedBlockIds?: string[];
     completedStepIds?: string[];
     elapsedSeconds?: number;
+    selfAssessments?: Record<string, number>;
   }) => requestDirect<{ resource: LearningResource }>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/progress`, {
     method: 'PATCH',
     body: JSON.stringify(body),

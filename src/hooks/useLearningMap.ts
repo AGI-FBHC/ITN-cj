@@ -77,6 +77,7 @@ export interface LearningMapView {
   graphEdges: GraphEdge[];
   path: PathNode[];
   mastery: Record<string, number>;
+  chapterProgress: Record<string, number>;
   confidence: Record<string, number>;
   topicMastery: Record<string, number>;
   topicProgress: Record<string, number>;
@@ -240,6 +241,7 @@ export function useLearningMap(): LearningMapView {
         graphEdges: [],
         path: [],
         mastery: {},
+        chapterProgress: {},
         confidence: {},
         topicMastery: {},
         topicProgress: {},
@@ -270,6 +272,7 @@ export function useLearningMap(): LearningMapView {
     }));
 
     const mastery: Record<string, number> = {};
+    const chapterProgress: Record<string, number> = {};
     const confidence: Record<string, number> = {};
     const topicMastery: Record<string, number> = {};
     const topicProgress: Record<string, number> = {};
@@ -286,7 +289,6 @@ export function useLearningMap(): LearningMapView {
       status[chapter.nodeCode] = attempts > 0 ? 'active' : 'locked';
       byDatabaseOrder(chapter.children.filter((child) => child.level === 3)).forEach((child) => {
         const category = masteryByCategory.get(String(child.id));
-        topicMastery[child.nodeCode] = category ? Math.round(category.score * 100) : 0;
         const childResources = resources.filter((resource) => resource.kpId === chapter.nodeCode && resource.topic === child.name);
         const progressByForm = new Map(childResources.map((resource) => [resource.type, resource.progressRatio ?? (resource.learned ? 1 : 0)]));
         const pptLearned = presentations.some((task) => task.learned && task.title.includes(child.name));
@@ -296,12 +298,29 @@ export function useLearningMap(): LearningMapView {
           + (progressByForm.get('quiz') ?? 0)
           + (pptLearned ? 1 : 0)
         ) / 4 * 100);
+        const selfEvidence = childResources.filter((resource) => resource.type !== 'quiz' && resource.masteryRatio > 0);
+        const quizEvidence = childResources.filter((resource) => resource.type === 'quiz' && resource.masteryRatio > 0);
+        const weightedEvidence = [
+          ...selfEvidence.map((resource) => ({ score: resource.masteryRatio, weight: resource.type === 'practice' ? 0.2 : 0.15 })),
+          ...quizEvidence.map((resource) => ({ score: resource.masteryRatio, weight: 0.45 })),
+          ...(category && category.attempts > 0 ? [{ score: category.score, weight: 0.2 }] : []),
+        ];
+        const evidenceWeight = weightedEvidence.reduce((sum, item) => sum + item.weight, 0);
+        topicMastery[child.nodeCode] = evidenceWeight
+          ? Math.round(weightedEvidence.reduce((sum, item) => sum + item.score * item.weight, 0) / evidenceWeight * 100)
+          : 0;
       });
       const topicScores = chapter.children
         .filter((child) => child.level === 3)
         .map((child) => topicProgress[child.nodeCode] ?? 0);
-      mastery[chapter.nodeCode] = topicScores.length
+      chapterProgress[chapter.nodeCode] = topicScores.length
         ? Math.round(topicScores.reduce((sum, value) => sum + value, 0) / topicScores.length)
+        : 0;
+      const topicFill = chapter.children.filter((child) => child.level === 3).map((child) =>
+        (topicProgress[child.nodeCode] ?? 0) / 100 * (topicMastery[child.nodeCode] ?? 0) / 100);
+      const progressFraction = (chapterProgress[chapter.nodeCode] ?? 0) / 100;
+      mastery[chapter.nodeCode] = progressFraction > 0 && topicFill.length
+        ? Math.round(topicFill.reduce((sum, value) => sum + value, 0) / topicFill.length / progressFraction * 100)
         : 0;
     });
 
@@ -376,6 +395,7 @@ export function useLearningMap(): LearningMapView {
       graphEdges,
       path,
       mastery,
+      chapterProgress,
       confidence,
       topicMastery,
       topicProgress,
