@@ -385,7 +385,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
                 <img src={`/mascot/xiaoyuanlong-${mascotFrame}.png`} alt="正在演讲的小鼋龙" className="h-16 w-16 -scale-x-100 object-contain drop-shadow-[0_8px_14px_rgba(44,63,52,0.16)]" />
                 <span className="mt-1 whitespace-nowrap text-[10px] font-medium text-ink-muted">{audioPlaying ? '正在讲解' : '准备开讲'}</span>
               </div>
-              <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><span className="text-[12.5px] font-semibold text-ink">小鼋龙讲稿</span><span className="font-mono text-[9px] text-ink-muted">LIVE NARRATION</span></div><div ref={noteScrollRef} className="mt-1.5 max-h-[132px] overflow-y-auto pr-2 text-[13.5px] leading-6 text-ink-2" aria-live="off">{visibleNote ? <p className="whitespace-pre-wrap">{visibleNote}<span className={cn('ml-0.5 inline-block h-[1em] w-[2px] align-[-0.12em] bg-brand', audioPlaying && 'animate-pulse')} aria-hidden /></p> : <p className="text-ink-muted">开始播放后，讲稿会随演讲逐步显示。</p>}</div></div>
+              <div ref={noteScrollRef} className="min-w-0 flex-1 overflow-y-auto pr-2 text-[13.5px] leading-6 text-ink-2" aria-live="off">{visibleNote ? <p className="whitespace-pre-wrap">{visibleNote}<span className={cn('ml-0.5 inline-block h-[1em] w-[2px] align-[-0.12em] bg-brand', audioPlaying && 'animate-pulse')} aria-hidden /></p> : <p className="pt-5 text-ink-muted">准备开始</p>}</div>
             </div>
           )}
         </aside>
