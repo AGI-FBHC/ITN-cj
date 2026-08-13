@@ -610,9 +610,6 @@ export default function CourseResourcePlayer() {
           metadata: { resourceId: resource.id, kpId: resource.kpId, resourceType: resource.type },
         });
       }
-      if (resource.kpId && isUuid(resource.learnerId)) {
-        void api.completeLearningMapUnit(resource.kpId, resource.learnerId).catch(() => undefined);
-      }
       await api.updateLearningResourceProgress(resource.id, { currentBlockId, visitedBlockIds: blocks.map((block) => block.id), completedStepIds: completedSteps, elapsedSeconds: elapsedBase + sessionSecondsRef.current });
       void api.recordLearningEvent({ eventType: 'STUDY_END', sourceType: 'RESOURCE', sourceId: resource.id, durationSeconds: elapsedBase + sessionSecondsRef.current, metadata: JSON.stringify({ courseId: resource.courseId, chapterId: resource.chapterId, resourceType: resource.type, completed: true }) }).catch(() => undefined);
       setVisited(blocks.map((block) => block.id));

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
-import type { LearnerAnalyticsProfile, LearningMapOverview, RagTree } from '@/lib/api';
+import type { LearnerAnalyticsProfile, RagTree } from '@/lib/api';
 import type { KnowledgePoint } from '@/data/knowledgePoints';
 import {
 } from '@/data/knowledgeGraph';
@@ -14,13 +14,12 @@ import type { PresentationTaskSummary } from '@/lib/presentationApi';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-// v3: 数据源切换到 knowledge_category，废弃仍包含旧六域的账号缓存。
-const CACHE_PREFIX = 'lf.learningMapCache:v3:';
+// v4: 地图结构完全来自 RAG knowledge_category，旧版 overview 不再参与缓存。
+const CACHE_PREFIX = 'lf.learningMapCache:v4:';
 
 interface LearningMapCache {
-  overview: LearningMapOverview;
   resources: LearningResourceSummary[];
-  tree?: RagTree;
+  tree: RagTree;
   presentations?: PresentationTaskSummary[];
 }
 
@@ -47,7 +46,7 @@ export async function refreshLearningMapResourceCache(learnerId: string): Promis
   if (!cache) return;
   try {
     const listed = await api.listLearningResources();
-    writeLearningMapCache(learnerId, { overview: cache.overview, resources: listed.resources ?? [], tree: cache.tree, presentations: cache.presentations });
+    writeLearningMapCache(learnerId, { resources: listed.resources ?? [], tree: cache.tree, presentations: cache.presentations });
   } catch {
     /* 刷新失败时保留原缓存 */
   }
@@ -59,7 +58,7 @@ export async function refreshLearningMapPresentationCache(learnerId: string): Pr
   if (!cache) return;
   try {
     const listed = await presentationApi.listPresentationSummaries(100);
-    writeLearningMapCache(learnerId, { overview: cache.overview, resources: cache.resources, tree: cache.tree, presentations: listed.tasks ?? [] });
+    writeLearningMapCache(learnerId, { resources: cache.resources, tree: cache.tree, presentations: listed.tasks ?? [] });
   } catch {
     /* 刷新失败时保留原缓存 */
   }
@@ -177,7 +176,6 @@ function shortChapterLabel(name: string): string {
 
 export function useLearningMap(): LearningMapView {
   const { currentLearnerId, currentLearner } = useProfile();
-  const [map, setMap] = useState<LearningMapOverview | null>(() => readLearningMapCache(currentLearnerId)?.overview ?? null);
   const [loading, setLoading] = useState(true);
   const [resources, setResources] = useState<LearningResourceSummary[]>(() => readLearningMapCache(currentLearnerId)?.resources ?? []);
   const [tree, setTree] = useState<RagTree | null>(() => readLearningMapCache(currentLearnerId)?.tree ?? null);
@@ -186,7 +184,6 @@ export function useLearningMap(): LearningMapView {
 
   useEffect(() => {
     if (!UUID_PATTERN.test(currentLearnerId)) {
-      setMap(null);
       setLoading(false);
       return;
     }
@@ -194,9 +191,8 @@ export function useLearningMap(): LearningMapView {
     setLoading(true);
     const cached = readLearningMapCache(currentLearnerId);
     if (cached) {
-      setMap(cached.overview);
       setResources(cached.resources);
-      setTree(cached.tree ?? null);
+      setTree(cached.tree);
     }
     // 缓存命中时资源状态不再请求后端（生成完成时由 refreshLearningMapResourceCache 写入），其余结构数据仍刷新
     const resourcesPromise = cached
@@ -205,22 +201,21 @@ export function useLearningMap(): LearningMapView {
     const presentationsPromise = cached?.presentations
       ? Promise.resolve(cached.presentations)
       : presentationApi.listPresentationSummaries(100).then((listed) => listed.tasks ?? []).catch(() => [] as PresentationTaskSummary[]);
-    Promise.all([api.getLearningMap(currentLearnerId), api.getRagTree('agent'), api.getLearnerAnalyticsProfile().catch(() => null), presentationsPromise, resourcesPromise])
-      .then(([overview, latestTree, latestAnalytics, latestPresentations, latestResources]) => {
-        if (!cancelled) setMap(overview);
+    Promise.all([api.getRagTree('agent'), api.getLearnerAnalyticsProfile().catch(() => null), presentationsPromise, resourcesPromise])
+      .then(([latestTree, latestAnalytics, latestPresentations, latestResources]) => {
         if (!cancelled) setTree(latestTree);
         if (!cancelled) setAnalytics(latestAnalytics);
         if (!cancelled) setPresentations(latestPresentations);
         if (!cancelled) setResources(latestResources);
-        if (!cancelled) writeLearningMapCache(currentLearnerId, { overview, resources: latestResources, tree: latestTree, presentations: latestPresentations });
+        if (!cancelled) writeLearningMapCache(currentLearnerId, { resources: latestResources, tree: latestTree, presentations: latestPresentations });
       })
-      .catch(() => { if (!cancelled && !cached) setMap(null); })
+      .catch(() => undefined)
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [currentLearnerId]);
 
   return useMemo<LearningMapView>(() => {
-    if (!map || !tree) {
+    if (!tree) {
       return {
         loading,
         domains: [],
@@ -241,7 +236,11 @@ export function useLearningMap(): LearningMapView {
     }
 
     // 一级目录仅用于数据库归档；知识地图从二级章节开始建图。
-    const chapters = tree.nodes.flatMap((root) => root.level === 2 ? [root] : root.children.filter((node) => node.level === 2));
+    const byDatabaseOrder = <T extends { sortOrder: number; id: number }>(items: T[]) =>
+      [...items].sort((left, right) => left.sortOrder - right.sortOrder || left.id - right.id);
+    const chapters = byDatabaseOrder(tree.nodes).flatMap((root) =>
+      root.level === 2 ? [root] : byDatabaseOrder(root.children.filter((node) => node.level === 2)),
+    );
     const domains: KnowledgePoint[] = chapters.map((chapter) => ({
       id: chapter.nodeCode,
       name: chapter.name,
@@ -250,7 +249,7 @@ export function useLearningMap(): LearningMapView {
       targetLevel: 80,
       coverage: chapter.chunkCount ? 100 : 0,
       description: chapter.description ?? '',
-      coreTopics: chapter.children.filter((node) => node.level === 3).map((node) => node.name),
+      coreTopics: byDatabaseOrder(chapter.children.filter((node) => node.level === 3)).map((node) => node.name),
     }));
 
     const mastery: Record<string, number> = {};
@@ -268,7 +267,7 @@ export function useLearningMap(): LearningMapView {
       mastery[chapter.nodeCode] = Math.round(score * 100);
       confidence[chapter.nodeCode] = attempts > 0 ? Math.min(95, 40 + attempts * 5) : 0;
       status[chapter.nodeCode] = attempts > 0 ? 'active' : 'locked';
-      chapter.children.filter((child) => child.level === 3).forEach((child) => {
+      byDatabaseOrder(chapter.children.filter((child) => child.level === 3)).forEach((child) => {
         const category = masteryByCategory.get(String(child.id));
         topicMastery[child.nodeCode] = category ? Math.round(category.score * 100) : 0;
         const learnedForms = new Set(resources.filter((resource) => resource.kpId === chapter.nodeCode && resource.topic === child.name && resource.learned).map((resource) => resource.type));
@@ -278,13 +277,13 @@ export function useLearningMap(): LearningMapView {
     });
 
     const learned = new Set(chapters.filter((chapter) => (mastery[chapter.nodeCode] ?? 0) > 0).map((chapter) => chapter.nodeCode));
-    const path: PathNode[] = map.learningPath.map((item) => ({
-      id: `${item.kpId}-path`,
-      title: item.title,
-      kpId: item.kpId,
-      status: item.status as PathNode['status'],
-      est: `${item.estimatedMinutes}分钟`,
-      resourceRef: item.resourceRef,
+    const path: PathNode[] = chapters.map((chapter, index) => ({
+      id: `${chapter.nodeCode}-path`,
+      title: chapter.name,
+      kpId: chapter.nodeCode,
+      status: (status[chapter.nodeCode] === 'active' ? 'active' : index === 0 ? 'active' : 'locked') as PathNode['status'],
+      est: `${Math.max(30, chapter.children.filter((child) => child.level === 3).length * 20)}分钟`,
+      resourceRef: chapter.name,
     }));
 
     const chapterPositions = layoutChapterDag(chapters, tree.edges);
@@ -294,7 +293,7 @@ export function useLearningMap(): LearningMapView {
     });
     chapters.forEach((chapter) => {
       const parent = graphNodes.find((node) => node.id === chapter.nodeCode)!;
-      const topics = chapter.children.filter((node) => node.level === 3);
+      const topics = byDatabaseOrder(chapter.children.filter((node) => node.level === 3));
       topics.forEach((topic, topicIndex) => {
         const angle = -Math.PI / 2 + (2 * Math.PI * topicIndex) / Math.max(1, topics.length);
         const tx = parent.x + Math.cos(angle) * 64;
@@ -355,7 +354,7 @@ export function useLearningMap(): LearningMapView {
       activeKp: chapters.find((chapter) => status[chapter.nodeCode] === 'active')?.nodeCode ?? chapters[0]?.nodeCode ?? null,
       resources: resourceByKp,
       presentations,
-      goalId: map.goalId ?? null,
+      goalId: null,
     };
-  }, [map, tree, analytics, presentations, loading, currentLearner, resources, currentLearnerId]);
+  }, [tree, analytics, presentations, loading, currentLearner, resources, currentLearnerId]);
 }

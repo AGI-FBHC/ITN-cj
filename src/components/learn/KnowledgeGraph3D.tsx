@@ -706,12 +706,15 @@ function ChildPlane({
   });
   // 计算子节点在平面上的相对位置
   const childData = useMemo(() => {
-    return children.map((node, i) => {
+    const orderedChildren = [...children].sort((left, right) =>
+      (left.topicIndex ?? Number.MAX_SAFE_INTEGER) - (right.topicIndex ?? Number.MAX_SAFE_INTEGER),
+    );
+    return orderedChildren.map((node, i) => {
       const direction = layout.childDirections.get(node.id) || 'right';
       const sign = direction === 'left' ? -1 : 1;
       const relPos: [number, number, number] = [
         15 * sign + (i % 2) * 6 * sign,
-        (i - (children.length - 1) / 2) * 8,
+        ((orderedChildren.length - 1) / 2 - i) * 8,
         0,
       ];
       return { node, relPos, direction };
