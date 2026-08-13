@@ -1505,13 +1505,6 @@ export default function LearnUnit() {
     await speechChain.catch(() => undefined);
     if (finalAction === 'goto' && finalPage) pptRef.current?.goTo(finalPage - 1);
     if (finalResume || (finalAction === 'none' && pptWasPlayingRef.current)) { setBarExpanded(true); pptRef.current?.play(); }
-    addNote({
-      kpId,
-      text: `问：${transcript}\n答：${finalReply}`,
-      source: `${pptTopic || kp.name} · 举手提问`,
-      sourceKind: 'qa',
-      kbRefs: [],
-    });
   };;
 
   const submitQuestion = async (override?: string) => {
@@ -1568,7 +1561,6 @@ export default function LearnUnit() {
         setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: cleanReply } : qa));
         await speakPptAnswer(cleanReply, controller.signal).catch(() => undefined);
         if (pptWasPlayingRef.current) { setBarExpanded(true); pptRef.current?.play(); }
-        addNote({ kpId, text: `问：${q}\n答：${cleanReply}`, source: `${pptTopic || kp.name} · 课堂提问`, sourceKind: 'qa', kbRefs: [] });
       }
       return;
     }
@@ -1583,14 +1575,6 @@ export default function LearnUnit() {
     setQuestion('');
     setAskPhoto(null);
     tts.speak(a, speechRate, () => undefined, voiceStyle.pitch);
-    /* 提问沉淀进个人知识库：你问过什么本身就是学情，问完就丢太可惜 */
-    addNote({
-      kpId,
-      text: `问：${q || '（现场照片）'}${askPhoto ? `【图片 · ${askPhoto.name}】` : ''}\n答：${a}`,
-      source: `${pptTopic || kp.name} · 课堂提问`,
-      sourceKind: 'qa',
-      kbRefs: hit?.kbRef ? [hit.kbRef] : [],
-    });
   };
 
   const pickPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
