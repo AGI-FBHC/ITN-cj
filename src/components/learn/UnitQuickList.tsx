@@ -125,7 +125,7 @@ export default function UnitQuickList({
                       <span className="absolute inset-y-0 left-0 rounded-full bg-[#55B9DC]" style={{ width: `${progressValue}%` }} />
                     </span>
                     <span className="w-8 shrink-0 text-right font-mono text-[10.5px] text-ink-muted tabular-nums">
-                      {progressValue}%
+                      {progressValue > 0 ? `${progressValue}%` : '—'}
                     </span>
                   </span>
                 </span>
