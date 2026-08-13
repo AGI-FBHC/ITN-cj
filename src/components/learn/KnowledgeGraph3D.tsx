@@ -1638,7 +1638,9 @@ export default function KnowledgeGraph3D({
         />
       )}
 
-      {hoveredNode && hoveredGraphNode && hoveredMetrics && <div ref={hoverCardRef} className="pointer-events-none absolute z-20 w-[230px] -translate-y-1/2 rounded-[16px] border border-white/70 bg-white/92 p-4 shadow-warm-lg backdrop-blur-md" style={{ left: hoveredNode.x, top: hoveredNode.y, transform: `translate(${layout.childDirections.get(hoveredGraphNode.id) === 'left' ? '52px' : 'calc(-100% - 52px)'}, -50%)` }}>
+      {hoveredNode && hoveredGraphNode && hoveredMetrics && <div ref={hoverCardRef} className="pointer-events-none absolute z-20 w-[230px] -translate-y-1/2 rounded-[16px] border border-white/70 bg-white/92 p-4 shadow-warm-lg backdrop-blur-md" style={{ left: hoveredNode.x, top: hoveredNode.y, transform: hoveredGraphNode.kind === 'domain'
+        ? 'translate(calc(-100% - 92px), calc(-50% + 54px))'
+        : `translate(${layout.childDirections.get(hoveredGraphNode.id) === 'left' ? '52px' : 'calc(-100% - 52px)'}, -50%)` }}>
         <div className="font-mono text-[9.5px] tracking-[0.14em] text-brand">{hoveredGraphNode.kind === 'domain' ? '章节概览' : '知识点概览'}</div>
         <div className="mt-1 line-clamp-2 font-serif text-[15px] font-semibold leading-5 text-ink">{hoveredGraphNode.label}</div>
         <div className="mt-4 space-y-3">
