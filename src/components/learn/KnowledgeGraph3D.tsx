@@ -554,7 +554,7 @@ function ProgressRing({
       </mesh>}
       {masteryLength > 0 && <mesh raycast={() => null} renderOrder={5} position={[0, 0, 0.12]} rotation={[0, 0, -Math.PI / 2]}>
         <ringGeometry args={[inner + 0.09, outer - 0.09, 96, 1, 0, masteryLength]} />
-        <meshBasicMaterial color="#7C3AED" transparent opacity={1} side={THREE.DoubleSide} depthWrite={false} />
+        <meshBasicMaterial color="#155E9A" transparent opacity={1} side={THREE.DoubleSide} depthWrite={false} />
       </mesh>}
     </Billboard>
   );
@@ -1520,9 +1520,10 @@ export default function KnowledgeGraph3D({
   const hoveredNode = useMemo(() => nodes.find((node) => node.id === hoveredNodeId) ?? null, [nodes, hoveredNodeId]);
   const hoveredMetrics = useMemo(() => {
     if (!hoveredNode) return null;
-    return hoveredNode.kind === 'domain'
+    const metrics = hoveredNode.kind === 'domain'
       ? { progress: chapterProgress[hoveredNode.kpId] ?? 0, mastery: mastery[hoveredNode.kpId] ?? 0 }
       : { progress: topicProgress[hoveredNode.id] ?? 0, mastery: topicMastery[hoveredNode.id] ?? 0 };
+    return { ...metrics, overallMastery: Math.round(metrics.progress * metrics.mastery) / 100 };
   }, [hoveredNode, chapterProgress, mastery, topicProgress, topicMastery]);
 
   // 每个章节的子节点数量（用于聚焦时自适应相机距离）
@@ -1595,10 +1596,10 @@ export default function KnowledgeGraph3D({
         <div className="font-mono text-[9.5px] tracking-[0.14em] text-brand">{hoveredNode.kind === 'domain' ? '章节概览' : '知识点概览'}</div>
         <div className="mt-1 line-clamp-2 font-serif text-[15px] font-semibold leading-5 text-ink">{hoveredNode.label}</div>
         <div className="mt-4 space-y-3">
-          <div><div className="mb-1.5 flex items-center justify-between text-[11px]"><span className="text-ink-2">学习完成度</span><span className="font-mono font-semibold text-brand">{hoveredMetrics.progress}%</span></div><div className="h-2 overflow-hidden rounded-full bg-[#D7DDD9]"><div className="h-full rounded-full bg-[#19A7CE] transition-[width]" style={{ width: `${hoveredMetrics.progress}%` }} /></div></div>
-          <div><div className="mb-1.5 flex items-center justify-between text-[11px]"><span className="text-ink-2">进度内掌握程度</span><span className="font-mono font-semibold text-[#6D28D9]">{hoveredMetrics.mastery}%</span></div><div className="h-2 overflow-hidden rounded-full bg-[#E4DDF5]"><div className="h-full rounded-full bg-[#7C3AED] transition-[width]" style={{ width: `${hoveredMetrics.mastery}%` }} /></div></div>
+          <div><div className="mb-1.5 flex items-center justify-between text-[11px]"><span className="text-ink-2">学习进度</span><span className="font-mono font-semibold text-brand">{hoveredMetrics.progress}%</span></div><div className="relative h-2 overflow-hidden rounded-full bg-[#D7DDD9]"><div className="absolute inset-y-0 left-0 rounded-full bg-[#55B9DC] transition-[width]" style={{ width: `${hoveredMetrics.progress}%` }} /><div className="absolute inset-y-[1px] left-0 rounded-full bg-[#155E9A] transition-[width]" style={{ width: `${hoveredMetrics.overallMastery}%` }} /></div><div className="mt-1.5 flex items-center gap-3 text-[9px] text-ink-muted"><span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#55B9DC]" />已学习</span><span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#155E9A]" />进度内已掌握</span></div></div>
+          <div className="flex items-center justify-between rounded-[10px] border border-[#155E9A]/20 bg-[#155E9A]/5 px-3 py-2.5"><div><div className="text-[11px] font-medium text-ink-2">{hoveredNode.kind === 'domain' ? '当前章节掌握程度' : '当前知识点掌握程度'}</div><div className="mt-0.5 text-[9px] text-ink-muted">按全部内容范围计算</div></div><span className="font-mono text-[17px] font-semibold text-[#155E9A]">{hoveredMetrics.overallMastery}%</span></div>
         </div>
-        <p className="mt-3 text-[9.5px] leading-4 text-ink-muted">进度内掌握程度基于已学习内容的自评与答题正确率计算。</p>
+        <p className="mt-3 text-[9.5px] leading-4 text-ink-muted">紫色部分由已学习范围内的自评与答题正确率计算，不会超过学习进度。</p>
       </div>}
 
       {/* 提示 */}
