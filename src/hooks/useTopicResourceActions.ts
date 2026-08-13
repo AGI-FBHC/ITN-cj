@@ -11,10 +11,10 @@ import { presentationApi } from '@/lib/presentationApi';
 import type { GeneratedResource, ResourceForm } from '@/data/resources';
 
 export const FUNCTION_META: Array<{ form: ResourceForm | 'ppt'; label: string; color: string }> = [
-  { form: 'lecture', label: '定制讲义', color: '#4E7860' },
-  { form: 'guide', label: '实操指南', color: '#B77552' },
-  { form: 'quiz', label: '分阶测试题', color: '#C08A3E' },
-  { form: 'ppt', label: '交互课件', color: '#4A90D9' },
+  { form: 'lecture', label: '定制讲义', color: '#6366F1' },
+  { form: 'guide', label: '实操指南', color: '#6366F1' },
+  { form: 'quiz', label: '分阶测试题', color: '#6366F1' },
+  { form: 'ppt', label: '交互课件', color: '#6366F1' },
 ];
 
 const FORM_LABEL: Record<ResourceForm, string> = {

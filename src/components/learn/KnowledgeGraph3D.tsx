@@ -520,8 +520,66 @@ function LearnedHighlightRing({ radius }: { radius: number }) {
 
 /** 子节点平面：面向用户的纸面效果 */
 
-/** 功能叶子层：每个子知识点展开 4 个功能叶子（讲义/实操/测试/课件），仿子节点排成一列、短线相连 */
+/** 单个功能按钮：统一配色平面按钮 + 浅色描边 + 底部投影，紧贴知识节点下方 */
 const SHORT_LABEL: Record<string, string> = { lecture: '讲义', guide: '实操', quiz: '测试', ppt: '课件' };
+
+function FunctionButton({
+  fn,
+  exists,
+  busy,
+  position,
+  onOpen,
+}: {
+  fn: (typeof FUNCTION_META)[number];
+  exists: boolean;
+  busy: boolean;
+  position: [number, number, number];
+  onOpen: () => void;
+}) {
+  const buttonWidth = 5.4;
+  const buttonHeight = 1.6;
+  const fill = exists ? '#2FBF71' : fn.color;
+  return (
+    <group
+      position={position}
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen();
+      }}
+      onPointerEnter={(event) => { event.stopPropagation(); document.body.style.cursor = 'pointer'; }}
+      onPointerLeave={() => { document.body.style.cursor = 'default'; }}
+    >
+      {/* 底部投影：轻微下移的深色衬底，营造浮起感 */}
+      <RoundedBox args={[buttonWidth + 0.08, buttonHeight + 0.08, 0.2]} radius={0.36} smoothness={3} position={[0, -0.09, -0.06]}>
+        <meshBasicMaterial color="#334155" transparent opacity={0.16} />
+      </RoundedBox>
+      {/* 浅色描边：细亮边，替代之前的深色边框 */}
+      <RoundedBox args={[buttonWidth + 0.12, buttonHeight + 0.12, 0.2]} radius={0.4} smoothness={3} position={[0, 0, -0.02]}>
+        <meshBasicMaterial color="#FFFFFF" transparent opacity={0.55} />
+      </RoundedBox>
+      {/* 主体：统一配色的平面圆角按钮 */}
+      <RoundedBox args={[buttonWidth, buttonHeight, 0.18]} radius={0.34} smoothness={3}>
+        <meshBasicMaterial color={fill} transparent opacity={busy ? 0.5 : 1} />
+      </RoundedBox>
+      <Text
+        raycast={() => null}
+        renderOrder={2}
+        position={[0, 0, 0.16]}
+        fontSize={0.75}
+        color="#FFFFFF"
+        anchorX="center"
+        anchorY="middle"
+        outlineWidth={0.1}
+        outlineColor="#1E293B"
+        outlineOpacity={0.28}
+      >
+        {busy ? '生成中…' : exists ? `已 · ${SHORT_LABEL[fn.form]}` : `生成${SHORT_LABEL[fn.form]}`}
+      </Text>
+    </group>
+  );
+}
+
+/** 功能叶子层：每个子知识点展开 4 个功能叶子（讲义/实操/测试/课件），横向一行紧贴知识节点下方、无连接线、最左按钮与节点左缘对齐 */
 function FunctionLayer({
   node,
   relPos,
@@ -539,53 +597,36 @@ function FunctionLayer({
     goalId,
     existing: resources ?? [],
   });
-  // 圆角矩形按钮：文字在按钮内，四个按钮横向排成一行，位于知识节点下方，连线尽量短
   const buttonWidth = 4.6;
-  const buttonHeight = 1.35;
-  const rowY = -4.2;
-  const leafPositions: Array<[number, number, number]> = FUNCTION_META.map((_, i) => [(i - 1.5) * (buttonWidth + 0.5), rowY, 0.1]);
+  const nodeRadius = 1.5; // 与 ChildNode 球体半径一致
+  const rowY = -2.5; // 紧贴知识节点下缘
+  const gap = 0.5;
+  // 最左按钮的左缘与知识节点左缘对齐，按钮依次向右排布
+  const rowStartX = -nodeRadius + buttonWidth / 2;
+  const leafPositions: Array<[number, number, number]> = FUNCTION_META.map((_, i) => [rowStartX + i * (buttonWidth + gap), rowY, 0.1]);
   return (
     <group position={relPos}>
-      {/* 短线：知识节点 → 功能按钮 */}
-      {FUNCTION_META.map((fn, i) => (
-        <Line
-          key={`f-line-${fn.form}`}
-          renderOrder={-1}
-          points={[new THREE.Vector3(0, -2.6, 0), new THREE.Vector3(leafPositions[i][0], leafPositions[i][1] + buttonHeight / 2, 0.1)]}
-          color={fn.color}
-          lineWidth={2}
-          transparent
-          opacity={0.55}
-        />
-      ))}
       {FUNCTION_META.map((fn, i) => {
         const exists = fn.form !== 'ppt' && Boolean(existingFor(fn.form as ResourceForm)?.id);
         const busy = fn.form === 'ppt' ? checkingPpt : generating !== null;
-        const pos = leafPositions[i];
         return (
-          <group
+          <FunctionButton
             key={fn.form}
-            position={pos}
-            onClick={(event) => {
-              event.stopPropagation();
+            fn={fn}
+            exists={exists}
+            busy={busy}
+            position={leafPositions[i]}
+            onOpen={() => {
               if (fn.form === 'ppt') void openOrCreatePpt();
               else void openOrGenerate(fn.form as ResourceForm);
             }}
-            onPointerEnter={(event) => { event.stopPropagation(); document.body.style.cursor = 'pointer'; }}
-            onPointerLeave={() => { document.body.style.cursor = 'default'; }}
-          >
-            <RoundedBox args={[buttonWidth, buttonHeight, 0.18]} radius={0.3} smoothness={3}>
-              <meshBasicMaterial color={exists ? '#2FBF71' : fn.color} transparent opacity={busy ? 0.45 : 0.96} />
-            </RoundedBox>
-            <Text raycast={() => null} position={[0, 0, 0.12]} fontSize={0.68} color="#FFFFFF" anchorX="center" anchorY="middle">
-              {busy ? '生成中…' : exists ? `已 · ${SHORT_LABEL[fn.form]}` : `生成${SHORT_LABEL[fn.form]}`}
-            </Text>
-          </group>
+          />
         );
       })}
     </group>
   );
 }
+
 
 function ChildPlane({
   parentPos,
