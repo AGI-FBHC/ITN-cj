@@ -684,7 +684,14 @@ function TopicActionModal({
           {FUNCTION_META.map((fn) => {
         const res = fn.form !== 'ppt' ? existingFor(fn.form as ResourceForm) : undefined;
         const pptTask = fn.form === 'ppt'
-          ? (presentations ?? []).find((task) => task.title.includes(node.label) && !['failed', 'cancelled'].includes(task.status))
+          ? (presentations ?? [])
+              .filter((task) => !['failed', 'cancelled'].includes(task.status))
+              .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+              .find((task) => {
+                const taskTitle = task.title.replace(/\s*[·・]\s*交互课件\s*$/, '').trim();
+                const nodeTitle = node.label.trim();
+                return taskTitle === nodeTitle || task.title.includes(nodeTitle) || nodeTitle.includes(taskTitle);
+              })
           : undefined;
         const exists = fn.form === 'ppt' ? Boolean(pptTask && pptTask.status === 'completed') : Boolean(res?.id);
         const busy = fn.form === 'ppt' ? checkingPpt : generating.has(fn.form);

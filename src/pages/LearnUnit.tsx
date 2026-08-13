@@ -52,6 +52,7 @@ import {
   Minimize2,
   FileText,
   Loader2,
+  Lightbulb,
 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { toast } from 'sonner';
@@ -715,6 +716,7 @@ export default function LearnUnit() {
   const [pptNoteOpen, setPptNoteOpen] = useState(false);
   const [pptNoteTitle, setPptNoteTitle] = useState('');
   const [pptNoteLoading, setPptNoteLoading] = useState(false);
+  const [pptNoteMode, setPptNoteMode] = useState<'source' | 'preview' | 'pages'>('source');
 
   /**
    * 播放条全局记笔记 —— 现在是唯一入口，所以必须挂到「用户正在看的那一段」。
@@ -3224,7 +3226,7 @@ export default function LearnUnit() {
         )}
       </AnimatePresence>
 
-      {/* PPT 当前页笔记：由后端结合幻灯片与演讲稿起草，用户确认后写入个人知识库。 */}
+      {/* PPT 当前页笔记：Markdown 编辑并保存到“我的笔记”。 */}
       <AnimatePresence>
         {pptTaskId && pptNoteOpen && (
           <motion.div
@@ -3236,9 +3238,9 @@ export default function LearnUnit() {
               role="dialog" aria-modal="true" aria-labelledby="ppt-note-title"
               initial={{ opacity: 0, y: 16, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }}
               onClick={(event) => event.stopPropagation()}
-              className="w-full max-w-[620px] rounded-[18px] border border-hairline bg-paper p-5 shadow-warm-lg"
+              className="flex max-h-[82vh] w-full max-w-[760px] flex-col overflow-hidden rounded-[20px] border border-hairline bg-paper shadow-warm-lg"
             >
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 border-b border-hairline px-5 py-4">
                 <PenLine size={15} className="text-brand" />
                 <h3 id="ppt-note-title" className="text-[15px] font-semibold text-ink">当前页笔记</h3>
                 <span className="font-mono text-[10.5px] text-ink-muted">第 {pptSlide.current + 1} 页</span>
@@ -3246,20 +3248,29 @@ export default function LearnUnit() {
                   <X size={16} />
                 </button>
               </div>
+              <div className="flex items-center gap-1 border-b border-hairline bg-card-warm/55 px-5 py-2">
+                {([['source', '源码'], ['preview', '预览'], ['pages', '分页']] as const).map(([mode, label]) => <button key={mode} type="button" onClick={() => setPptNoteMode(mode)} className={cn('rounded-full px-3 py-1.5 text-[11.5px] font-medium', pptNoteMode === mode ? 'bg-ink text-paper' : 'text-ink-muted hover:bg-paper-deep')}>{label}</button>)}
+                <button type="button" disabled={pptNoteLoading} onClick={openNoteHere} className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-brand/25 bg-brand-tint px-3 py-1.5 text-[11.5px] font-medium text-brand hover:border-brand/45"><Lightbulb size={13} />总结本页</button>
+                <Link to="/me/notes" className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11.5px] text-ink-2 hover:bg-paper-deep"><NotebookPen size={13} />打开笔记本</Link>
+              </div>
+              <div className="flex-1 overflow-y-auto px-5 py-4">
               <input
                 value={pptNoteTitle}
                 onChange={(event) => setPptNoteTitle(event.target.value)}
                 className="mt-4 h-10 w-full rounded-[10px] border border-hairline bg-card-warm px-3 text-[13.5px] font-medium text-ink outline-none focus:border-brand/50"
                 placeholder="笔记标题"
               />
-              <textarea
+              {pptNoteMode === 'source' && <textarea
                 value={noteText}
                 onChange={(event) => setNoteText(event.target.value)}
                 disabled={pptNoteLoading}
                 className="mt-2 min-h-[240px] w-full resize-y rounded-[10px] border border-hairline bg-card-warm p-3 text-[13px] leading-6 text-ink outline-none focus:border-brand/50 disabled:opacity-60"
                 placeholder={pptNoteLoading ? 'MiMo 正在结合当前页生成笔记草稿…' : '记录当前页的重点'}
-              />
-              <div className="mt-3 flex items-center justify-end gap-2">
+              />}
+              {pptNoteMode === 'preview' && <article className="mt-2 min-h-[260px] rounded-[12px] border border-hairline bg-card-warm p-5"><ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{noteText || '*还没有内容*'}</ReactMarkdown></article>}
+              {pptNoteMode === 'pages' && <div className="mt-2 grid min-h-[260px] gap-3 md:grid-cols-2">{noteText.split(/\n(?=#{1,3}\s)/).filter(Boolean).map((page, index) => <article key={`${index}-${page.slice(0, 12)}`} className="rounded-[12px] border border-hairline bg-card-warm p-4 shadow-sm"><div className="mb-3 font-mono text-[9px] text-ink-muted">PAGE {String(index + 1).padStart(2, '0')}</div><ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{page}</ReactMarkdown></article>)}</div>}
+              </div>
+              <div className="flex items-center justify-end gap-2 border-t border-hairline px-5 py-3">
                 <button type="button" onClick={() => setPptNoteOpen(false)} className="lf-btn-ghost !py-2 text-[13px]">取消</button>
                 <button
                   type="button"
@@ -3273,7 +3284,7 @@ export default function LearnUnit() {
                   }}
                   className="lf-btn-primary !py-2 text-[13px] disabled:opacity-50"
                 >
-                  {pptNoteLoading ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} 保存到个人知识库
+                  {pptNoteLoading ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} 保存到我的笔记
                 </button>
               </div>
             </motion.div>

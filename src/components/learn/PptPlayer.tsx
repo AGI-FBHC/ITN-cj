@@ -4,7 +4,7 @@
  * this component provides the actual slide content and playback controls.
  */
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { BookOpenCheck, Check, FileText, Lightbulb, Loader2, RefreshCw, Sparkles } from 'lucide-react';
+import { BookOpenCheck, Check, Lightbulb, Loader2, RefreshCw, Sparkles } from 'lucide-react';
 import { fetchSlideAsset, presentationApi } from '@/lib/presentationApi';
 import type { PresentationSlideshow, PresentationTask, PresentationTeachingMoment } from '@/lib/presentationApi';
 import type { TtsSpeed } from '@/lib/api';
@@ -341,49 +341,29 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
 
   return (
     <div className="space-y-3">
-      <div className={cn(
-        'lf-anim-in-up grid items-stretch gap-3',
-        wideMode ? 'xl:grid-cols-[220px_minmax(0,1fr)_240px]' : 'grid-cols-1',
-      )}>
-        <aside className={cn(
-          'order-2 flex min-h-[190px] flex-col overflow-hidden rounded-[20px] border border-white/55 bg-card-warm/45 p-4 shadow-[0_18px_54px_rgba(44,63,52,0.09)] backdrop-blur-xl xl:order-1',
-          !wideMode && 'mx-auto w-full max-w-[760px]',
-        )}>
-          <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand/10 text-brand"><Sparkles size={13} /></span>
-            <div><div className="text-[12.5px] font-semibold text-ink">AI 导师</div><div className="font-mono text-[9px] text-ink-muted">LIVE NARRATION</div></div>
-          </div>
-          <div ref={noteScrollRef} className="mt-3 max-h-[min(58vh,560px)] flex-1 overflow-y-auto pr-1 text-[13.5px] leading-6 text-ink-2" aria-live="off">
-            {visibleNote ? <p className="whitespace-pre-wrap">{visibleNote}<span className={cn('ml-0.5 inline-block h-[1em] w-[2px] align-[-0.12em] bg-brand', audioPlaying && 'animate-pulse')} aria-hidden /></p> : (
-              <div className="flex h-full min-h-[130px] flex-col items-center justify-center text-center text-ink-muted/70">
-                <FileText size={18} /><span className="mt-2 text-[11.5px]">开始播放后，导师讲到哪里<br />文字就出现到哪里</span>
-              </div>
-            )}
-          </div>
-        </aside>
-
-        <div className={cn(
-          'order-1 flex items-center justify-center rounded-[18px] border border-hairline bg-paper shadow-warm-lg xl:order-2',
-          wideMode ? 'p-2' : 'mx-auto w-full max-w-[760px] p-3 md:p-4',
-        )}>
+      <div className="lf-anim-in-up mx-auto w-full max-w-[1180px]">
+        <div className="relative flex items-center justify-center rounded-[22px] border border-hairline bg-paper p-2 shadow-[0_24px_70px_rgba(35,52,43,0.13)] md:p-3">
           {slideSrc ? (
             <img
               src={slideSrc}
               alt={`第 ${current + 1} 页`}
               className={cn(
                 'w-auto max-w-full rounded-md object-contain shadow-sm transition-[max-height] duration-300',
-                wideMode ? 'max-h-[min(68vh,calc(100dvh-220px))]' : 'max-h-[52vh]',
+                wideMode ? 'max-h-[min(72vh,calc(100dvh-245px))]' : 'max-h-[58vh]',
               )}
             />
           ) : (
             <div className="flex min-h-[34vh] items-center justify-center"><Loader2 size={22} className="animate-spin text-brand" /></div>
           )}
+          {!activeMoment && (
+            <div className="pointer-events-none absolute bottom-2 left-3 flex items-end gap-2 md:bottom-3 md:left-4">
+              <img src={`/mascot/xiaoyuanlong-${mascotFrame}.png`} alt="正在演讲的小鼋龙" className="h-16 w-16 object-contain drop-shadow-[0_8px_14px_rgba(44,63,52,0.18)] md:h-20 md:w-20" />
+              <span className="mb-2 rounded-full border border-white/70 bg-paper/85 px-2.5 py-1 text-[10.5px] font-medium text-ink-2 shadow-sm backdrop-blur-md">{audioPlaying ? '正在讲解' : '准备开讲'}</span>
+            </div>
+          )}
         </div>
 
-        <aside className={cn(
-          'order-3 flex min-h-[190px] overflow-hidden rounded-[20px] border border-white/55 bg-card-warm/48 p-4 shadow-[0_18px_54px_rgba(44,63,52,0.09)] backdrop-blur-xl',
-          !wideMode && 'mx-auto w-full max-w-[760px]',
-        )}>
+        <aside className="mt-3 flex min-h-[118px] w-full overflow-hidden rounded-[18px] border border-white/60 bg-card-warm/55 p-4 shadow-[0_14px_40px_rgba(44,63,52,0.08)] backdrop-blur-xl md:px-5">
           {activeMoment?.type === 'quiz' ? (
             <div className="w-full">
               <div className="flex items-center gap-2 text-brand"><BookOpenCheck size={15} /><span className="font-mono text-[9.5px] tracking-wide">课堂检查点</span></div>
@@ -406,9 +386,9 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
               <div className="mt-auto pt-4"><p className="text-[10.5px] leading-4 text-ink-muted">{activeMoment.notePrompt || '需要把这一节的关键点记下来吗？'}</p><div className="mt-2 flex gap-2"><button type="button" onClick={onRequestNote} className="flex-1 rounded-[9px] bg-brand px-2 py-2 text-[11.5px] font-medium text-paper active:scale-[0.98]">记个笔记</button><button type="button" onClick={continueMoment} className="rounded-[9px] border border-hairline bg-paper/75 px-3 py-2 text-[11.5px] text-ink-2 active:scale-[0.98]">继续</button></div></div>
             </div>
           ) : (
-            <div className="flex w-full flex-col items-center justify-center text-center">
-              <img src={`/mascot/xiaoyuanlong-${mascotFrame}.png`} alt="正在陪你上课的小鼋龙" className="max-h-[190px] w-full object-contain drop-shadow-[0_12px_22px_rgba(44,63,52,0.14)]" />
-              <p className="mt-1 text-[11.5px] font-medium text-ink-2">{audioPlaying ? '小鼋龙正在陪 AI 导师讲课' : '准备好了，随时可以开始'}</p>
+            <div className="flex w-full gap-3">
+              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/10 text-brand"><Sparkles size={14} /></span>
+              <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><span className="text-[12.5px] font-semibold text-ink">小鼋龙讲稿</span><span className="font-mono text-[9px] text-ink-muted">LIVE NARRATION</span></div><div ref={noteScrollRef} className="mt-1.5 max-h-[132px] overflow-y-auto pr-2 text-[13.5px] leading-6 text-ink-2" aria-live="off">{visibleNote ? <p className="whitespace-pre-wrap">{visibleNote}<span className={cn('ml-0.5 inline-block h-[1em] w-[2px] align-[-0.12em] bg-brand', audioPlaying && 'animate-pulse')} aria-hidden /></p> : <p className="text-ink-muted">开始播放后，讲稿会随演讲逐步显示。</p>}</div></div>
             </div>
           )}
         </aside>

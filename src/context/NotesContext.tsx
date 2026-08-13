@@ -74,7 +74,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       }).then((created) => {
         setNotes((current) => [toNote(created), ...current.filter((item) => item.id !== created.id)]);
         pushSignal({ type: 'note-taken', kpId: note.kpId, title: note.source });
-        toast.success('已写入个人知识库');
+        toast.success('已保存到我的笔记');
       }).catch((reason) => toast.error(reason instanceof Error ? reason.message : '笔记保存失败'));
     };
 

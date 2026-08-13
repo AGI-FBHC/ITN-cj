@@ -228,9 +228,12 @@ export function useLearningMap(): LearningMapView {
     const resourcesPromise = api.listLearningResources()
       .then((listed) => listed.resources ?? [])
       .catch(() => cached?.resources ?? [] as LearningResourceSummary[]);
-    const presentationsPromise = cached?.presentations
-      ? Promise.resolve(cached.presentations)
-      : presentationApi.listPresentationSummaries(100).then((listed) => listed.tasks ?? []).catch(() => [] as PresentationTaskSummary[]);
+    // Presentation generation completes outside this page. Always reconcile
+    // against the server so historical completed tasks cannot stay "missing"
+    // forever because an older cache predates their completion.
+    const presentationsPromise = presentationApi.listPresentationSummaries(100)
+      .then((listed) => listed.tasks ?? [])
+      .catch(() => cached?.presentations ?? [] as PresentationTaskSummary[]);
     Promise.all([api.getRagTree('agent'), api.getLearnerAnalyticsProfile().catch(() => null), presentationsPromise, resourcesPromise])
       .then(([latestTree, latestAnalytics, latestPresentations, latestResources]) => {
         if (!cancelled) setTree(latestTree);
