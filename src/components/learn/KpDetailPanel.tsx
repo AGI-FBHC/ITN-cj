@@ -113,7 +113,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
       ? selectedKp.coreTopics[topicIndex]
       : selectedKp.coreTopics[0] ?? selectedKp.name;
     const scope = `${currentLearner.id}:${kpId}:${topicIndex != null ? focus : ''}`;
-    const wantedTitle = `${focus} · 交互课件`;
+    const wantedTitle = focus;
     let cancelled = false;
     let timer = 0;
 
@@ -394,7 +394,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
     startingPptRefs.current.add(resourceScope);
     setStartingPpts((current) => new Set(current).add(resourceScope));
     try {
-      const wantedTitle = `${focus} · 交互课件`;
+      const wantedTitle = focus;
       // 复用已有任务，并把进行中的任务留在当前页面后台轮询。
       try {
         const listed = await presentationApi.listPresentationSummaries(50);
@@ -438,7 +438,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
         previousTopic,
         nextTopic,
       };
-      const requirement = `面向${currentLearner.tag}（${currentLearner.education}）制作《${focus}》交互课件PPT，目标是${currentLearner.targetJob}。本课件只深入当前最小知识点，不扩写成整章；内容要覆盖核心概念、原理、方法、典型应用、练习检查与回顾。讲解要自然承接知识地图中的前序内容，并为后续知识点留下必要接口，但不要机械复述地图或频繁预告下一页。`;
+      const requirement = `面向${currentLearner.tag}（${currentLearner.education}）制作《${focus}》教学PPT，目标是${currentLearner.targetJob}。本课件只深入当前最小知识点，不扩写成整章；内容要覆盖核心概念、原理、方法、典型应用、练习检查与回顾。讲解要自然承接知识地图中的前序内容，并为后续知识点留下必要接口，但不要机械复述地图或频繁预告下一页。`;
       const task = await presentationApi.createPresentation({
         requirement,
         title: wantedTitle,
@@ -456,6 +456,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
         learningGoalId: goalId ?? undefined,
         generationContext: {
           contextType: 'knowledge-map-position',
+          kpId,
           instruction: '把知识地图作为课程上下文：默认学习者已经接触前序知识点；当前PPT只讲当前知识点；必要时自然引用前序概念，并说明它与后续知识的关系。不要把章节名称逐条念成目录，也不要把用户目标或写作要求当成知识章节。',
           current: mapPosition,
           chapters: chapters.map((chapter, index) => ({

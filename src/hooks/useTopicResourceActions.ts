@@ -109,7 +109,7 @@ export function useTopicResourceActions({
     if (checkingPpt) return;
     setCheckingPpt(true);
     try {
-      const wantedTitle = `${topicName} · 交互课件`;
+      const wantedTitle = topicName;
       const listed = await presentationApi.listPresentationSummaries(50);
       const match = (listed.tasks ?? [])
         .filter((item) => item.title === wantedTitle || item.title.includes(topicName))
@@ -138,6 +138,7 @@ export function useTopicResourceActions({
         includeSpeakerNotes: true,
         modelProvider: 'mimo',
         learningGoalId: goalId ?? undefined,
+        generationContext: { kpId, topicName },
       });
       toast.success('交互课件已加入生成队列');
       await refreshLearningMapPresentationCache(currentLearner.id);
