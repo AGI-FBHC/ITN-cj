@@ -94,6 +94,7 @@ import { api } from '@/lib/api';
 import type { PersonalizedLearningUnit, TtsSpeed, UserProfileSettings } from '@/lib/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkCitationMarks from '@/lib/remarkCitationMarks';
 import { lectureMdComponents } from '@/components/resources/lecture-markdown';
 import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
 
@@ -2093,7 +2094,7 @@ export default function LearnUnit() {
                   </div>
                   {(b.kind !== 'concept' || (blockMode[b.id] ?? 'read') === 'read') && (
                     <div className="mt-2 text-[15px] leading-[28px] text-ink-2">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{b.text}</ReactMarkdown>
+                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>{b.text}</ReactMarkdown>
                       {/* 溯源内联：角标贴着论断走，不再沉到块底 */}
                       {'kbRefs' in b &&
                         b.kbRefs.map((id) => (

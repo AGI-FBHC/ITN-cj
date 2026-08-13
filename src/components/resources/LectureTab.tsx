@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkCitationMarks from '@/lib/remarkCitationMarks';
 import { BadgeCheck, FastForward, ListTree, Printer, Download, CornerDownLeft, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import TraceBadge from '@/components/TraceBadge';
@@ -302,7 +303,7 @@ export default function LectureTab({
 
           {/* 正文（流式） */}
           <div className="px-7 py-6">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>
+            <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>
               {full.slice(0, shown)}
             </ReactMarkdown>
             {!done && (
