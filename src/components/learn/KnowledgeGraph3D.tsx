@@ -520,7 +520,7 @@ function LearnedHighlightRing({ radius }: { radius: number }) {
 
 /** 子节点平面：面向用户的纸面效果 */
 
-/** 功能叶子层：每个子知识点展开 4 个功能叶子（讲义/实操/测试/课件），紧凑堆叠、短线相连 */
+/** 功能叶子层：每个子知识点展开 4 个功能叶子（讲义/实操/测试/课件），仿子节点排成一列、短线相连 */
 const SHORT_LABEL: Record<string, string> = { lecture: '讲义', guide: '实操', quiz: '测试', ppt: '课件' };
 function FunctionLayer({
   node,
@@ -541,26 +541,32 @@ function FunctionLayer({
     goalId,
     existing: resources ?? [],
   });
-  const dx = direction === 'left' ? -3.8 : 3.8;
-  // 紧凑 2×2 堆叠，贴近知识节点，连线尽量短
-  const positions: Array<[number, number, number]> = [
-    [dx - 0.7, 0.8, 0.15],
-    [dx + 0.7, 0.8, 0.15],
-    [dx - 0.7, -0.8, 0.15],
-    [dx + 0.7, -0.8, 0.15],
-  ];
+  const sign = direction === 'left' ? -1 : 1;
+  // 仿子知识点展开：面向屏幕排成一列，圆点 + 短线 + 文字，颜色差异化，连线尽量短
+  const columnX = sign * 4.4;
+  const leafPositions: Array<[number, number, number]> = FUNCTION_META.map((_, i) => [columnX, (i - 1.5) * 2.1, 0.2]);
   return (
     <group position={relPos}>
+      {/* 短线：知识节点 → 功能叶子 */}
       {FUNCTION_META.map((fn, i) => (
-        <Line key={`f-line-${fn.form}`} renderOrder={-1} points={[new THREE.Vector3(0, 0, 0), new THREE.Vector3(...positions[i])]} color={fn.color} lineWidth={2} transparent opacity={0.7} />
+        <Line
+          key={`f-line-${fn.form}`}
+          renderOrder={-1}
+          points={[new THREE.Vector3(sign * 2.4, 0, 0.1), new THREE.Vector3(columnX - sign * 0.9, leafPositions[i][1], 0.2)]}
+          color={fn.color}
+          lineWidth={1.8}
+          transparent
+          opacity={0.55}
+        />
       ))}
       {FUNCTION_META.map((fn, i) => {
         const exists = fn.form !== 'ppt' && Boolean(existingFor(fn.form as ResourceForm)?.id);
         const busy = fn.form === 'ppt' ? checkingPpt : generating !== null;
+        const pos = leafPositions[i];
         return (
           <group
             key={fn.form}
-            position={positions[i]}
+            position={pos}
             onClick={(event) => {
               event.stopPropagation();
               if (fn.form === 'ppt') void openOrCreatePpt();
@@ -569,15 +575,31 @@ function FunctionLayer({
             onPointerEnter={(event) => { event.stopPropagation(); document.body.style.cursor = 'pointer'; }}
             onPointerLeave={() => { document.body.style.cursor = 'default'; }}
           >
+            {/* 迷你圆点：仿子节点球体 */}
             <mesh raycast={() => null}>
-              <circleGeometry args={[busy ? 0.7 : 0.6, 28]} />
+              <circleGeometry args={[busy ? 0.56 : 0.5, 28]} />
               <meshBasicMaterial color={exists ? '#2FBF71' : fn.color} transparent opacity={busy ? 0.4 : 0.95} />
             </mesh>
-            <Billboard>
-              <Text raycast={() => null} position={[0, -0.85, 0]} fontSize={0.64} color={exists ? '#2FBF71' : '#EAF0EA'} anchorX="center" anchorY="top">
-                {busy ? '…' : exists ? '已' : SHORT_LABEL[fn.form]}
-              </Text>
-            </Billboard>
+            {/* 短线：圆点 → 文字 */}
+            <Line
+              raycast={() => null}
+              points={[new THREE.Vector3(sign * 0.6, 0, 0.1), new THREE.Vector3(sign * 1.4, 0, 0.2)]}
+              color={fn.color}
+              lineWidth={1.5}
+              transparent
+              opacity={0.7}
+            />
+            {/* 文字 */}
+            <Text
+              raycast={() => null}
+              position={[sign * 1.85, 0, 0.25]}
+              fontSize={0.72}
+              color={exists ? '#2FBF71' : '#EAF0EA'}
+              anchorX={direction === 'left' ? 'right' : 'left'}
+              anchorY="middle"
+            >
+              {busy ? '…' : exists ? '已 · ' : ''}{SHORT_LABEL[fn.form]}
+            </Text>
           </group>
         );
       })}
