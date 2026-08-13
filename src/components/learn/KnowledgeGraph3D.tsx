@@ -937,43 +937,25 @@ function ChildNode({
         onClick();
       }}
     >
-      {/* 主球体 + 描边式内外发光（跟随球体缩放） */}
+      {/* 节点视觉始终正对相机，避免透视边缘把圆球拉成椭圆 */}
+      <Billboard>
       <mesh ref={meshRef}>
-        <sphereGeometry args={[1, 64, 64]} />
+        <circleGeometry args={[1, 64]} />
         <meshBasicMaterial color={getColor()} transparent={false} />
 
         {/* 内描边：球面边缘的亮环 */}
         <mesh scale={1.015} raycast={() => null} renderOrder={1}>
-          <sphereGeometry args={[1, 64, 64]} />
-          <shaderMaterial
-            vertexShader={glowVertexShader}
-            fragmentShader={innerStrokeFragmentShader}
-            uniforms={{
-              glowColor: { value: new THREE.Color(TOPIC_STROKE_COLORS.inner) },
-              intensity: { value: hovered ? 1.3 : selected ? 1.15 : 1.0 },
-            }}
-            transparent
-            depthWrite={false}
-          />
+          <circleGeometry args={[1, 64]} />
+          <meshBasicMaterial color={TOPIC_STROKE_COLORS.inner} transparent opacity={0.34} depthWrite={false} />
         </mesh>
 
         {/* 外描边：紧贴球体轮廓外的蓝色发光，向外渐隐 */}
         <mesh scale={1.16} raycast={() => null} renderOrder={1}>
-          <sphereGeometry args={[1, 48, 48]} />
-          <shaderMaterial
-            vertexShader={glowVertexShader}
-            fragmentShader={outerStrokeFragmentShader}
-            uniforms={{
-              glowColor: { value: new THREE.Color(TOPIC_STROKE_COLORS.outer) },
-              intensity: { value: hovered ? 1.3 : selected ? 1.15 : 1.0 },
-              innerF: { value: 0.49 },
-            }}
-            transparent
-            side={THREE.BackSide}
-            depthWrite={false}
-          />
+          <ringGeometry args={[0.86, 1, 64]} />
+          <meshBasicMaterial color={TOPIC_STROKE_COLORS.outer} transparent opacity={hovered ? 0.46 : selected ? 0.4 : 0.32} depthWrite={false} />
         </mesh>
       </mesh>
+      </Billboard>
 
       {/* 进度环 */}
       <ProgressRing radius={baseSize} progress={progress} mastery={mastery} hovered={hovered} selected={selected} />
@@ -1148,14 +1130,15 @@ function Node3D({
         onClick();
       }}
     >
-      {/* 主球体 + 描边式内外发光（跟随球体缩放） */}
+      {/* 节点视觉始终正对相机，避免透视边缘把圆球拉成椭圆 */}
+      <Billboard>
       <mesh ref={meshRef}>
-        <sphereGeometry args={[1, 64, 64]} />
+        <circleGeometry args={[1, 64]} />
         <meshBasicMaterial color={getColor()} transparent opacity={1} />
 
         {/* 内描边：球面边缘的亮环 */}
         <mesh scale={1.015} raycast={() => null} renderOrder={1}>
-          <sphereGeometry args={[1, 64, 64]} />
+          <circleGeometry args={[1, 64]} />
           <shaderMaterial
             ref={innerStrokeRef}
             vertexShader={glowVertexShader}
@@ -1168,7 +1151,7 @@ function Node3D({
 
         {/* 外描边：紧贴球体轮廓外的蓝色发光，向外渐隐 */}
         <mesh scale={1.16} raycast={() => null} renderOrder={1}>
-          <sphereGeometry args={[1, 48, 48]} />
+          <ringGeometry args={[0.86, 1, 64]} />
           <shaderMaterial
             ref={outerStrokeRef}
             vertexShader={glowVertexShader}
@@ -1180,6 +1163,7 @@ function Node3D({
           />
         </mesh>
       </mesh>
+      </Billboard>
 
       {/* 进度描边 */}
       <ProgressRing radius={baseSize} progress={progress} mastery={mastery} hovered={hovered} selected={selected} />
