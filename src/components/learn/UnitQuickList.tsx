@@ -9,23 +9,21 @@ import { useMemo } from 'react';
 import { useProfile } from '@/context/ProfileContext';
 import { reportForLearner } from '@/data/reportBuilder';
 import { knowledgePoints } from '@/data/knowledgePoints';
-import { learnedKpIds } from '@/data/knowledgeGraph';
 import { cn } from '@/lib/utils';
 import type { KnowledgePoint } from '@/data/knowledgePoints';
 import type { PathNode } from '@/data/reportData';
 
-/** 状态点：达标=实心金，在学=左半绿，未学=空圈 */
-function StatusDot({ state }: { state: 'passed' | 'learning' | 'todo' }) {
+const lerpChannel = (from: number, to: number, ratio: number) => Math.round(from + (to - from) * ratio);
+
+/** 状态点：未学为空心，开始后按真实进度从黄色连续过渡到绿色。 */
+function StatusDot({ progress }: { progress: number }) {
+  const normalized = Math.max(0, Math.min(100, progress)) / 100;
+  const color = `rgb(${lerpChannel(222, 47, normalized)}, ${lerpChannel(168, 143, normalized)}, ${lerpChannel(63, 91, normalized)})`;
   return (
     <svg width="12" height="12" viewBox="0 0 12 12" className="shrink-0" aria-hidden>
-      {state === 'passed' && <circle cx="6" cy="6" r="5" fill="#DEA83F" />}
-      {state === 'learning' && (
-        <>
-          <circle cx="6" cy="6" r="5" fill="none" stroke="#4E7860" strokeWidth="1.5" />
-          <path d="M 6 1 A 5 5 0 0 0 6 11 Z" fill="#4E7860" opacity="0.85" />
-        </>
-      )}
-      {state === 'todo' && <circle cx="6" cy="6" r="5" fill="none" stroke="#C4D3C8" strokeWidth="1.5" />}
+      {progress <= 0
+        ? <circle cx="6" cy="6" r="5" fill="none" stroke="#C4D3C8" strokeWidth="1.5" />
+        : <circle cx="6" cy="6" r="5" fill={color} stroke={color} strokeWidth="1.2" />}
     </svg>
   );
 }
@@ -37,7 +35,6 @@ export default function UnitQuickList({
   columns = false,
   items: itemsProp,
   path: pathProp,
-  learned: learnedProp,
   mastery: masteryProp,
   progress: progressProp,
 }: {
@@ -49,17 +46,12 @@ export default function UnitQuickList({
   columns?: boolean;
   items?: KnowledgePoint[];
   path?: PathNode[];
-  learned?: Set<string>;
   mastery?: Record<string, number>;
   progress?: Record<string, number>;
 }) {
   const { currentLearner } = useProfile();
   const report = reportForLearner(currentLearner);
   const reportPath = pathProp ?? report.path;
-  const learned = learnedProp ?? useMemo(() => {
-    const pathDone = reportPath.filter((p) => p.status === 'done').map((p) => p.kpId);
-    return learnedKpIds(currentLearner, pathDone);
-  }, [currentLearner, reportPath]);
   const mastery = masteryProp ?? {};
   const progress = progressProp ?? mastery;
 
@@ -90,11 +82,7 @@ export default function UnitQuickList({
       </div>
       <div className={cn('mt-1', columns ? 'grid gap-x-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5' : 'divide-y divide-hairline/70')}>
         {items.map((kp) => {
-          const score = mastery[kp.id] ?? 50;
           const progressValue = progress[kp.id] ?? 0;
-          const isLearned = learned.has(kp.id);
-          const state: 'passed' | 'learning' | 'todo' =
-            isLearned && score >= kp.targetLevel ? 'passed' : isLearned ? 'learning' : 'todo';
           const seq = routeOrdered ? pathSeq.indexOf(kp.id) : -1;
           const selected = selectedKpId === kp.id;
           // 数据库章节名自带「第X章」前缀，拆出来单独一行小字，主标题更清晰
@@ -115,7 +103,7 @@ export default function UnitQuickList({
               {seq >= 0 && (
                 <span className="w-4 shrink-0 font-mono text-[10.5px] font-semibold text-ochre">{seq + 1}</span>
               )}
-              <StatusDot state={state} />
+              <StatusDot progress={progressValue} />
               <span className="min-w-0 flex-1">
                 {/* 第一行：章节标签 + 学习进度条 + 进度值，不挤压标题 */}
                 <span className="flex items-center gap-2">

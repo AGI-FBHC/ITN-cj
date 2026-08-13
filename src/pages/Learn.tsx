@@ -295,7 +295,7 @@ export default function Learn() {
           transition={{ duration: 0.35, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
           className="mt-4 hidden border-t border-hairline/60 pt-4 lg:block"
         >
-          <UnitQuickList selectedKpId={selectedKp} onSelect={(kpId) => { setSelectedKp(kpId); setSelectedTopic(null); setSingleExpandedKp(kpId); setGraphFocus({ id: kpId, at: Date.now() }); }} columns items={knowledgePoints} path={map.path} learned={map.learned} mastery={map.mastery} progress={map.chapterProgress} />
+          <UnitQuickList selectedKpId={selectedKp} onSelect={(kpId) => { setSelectedKp(kpId); setSelectedTopic(null); setSingleExpandedKp(kpId); setGraphFocus({ id: kpId, at: Date.now() }); }} columns items={knowledgePoints} path={map.path} mastery={map.mastery} progress={map.chapterProgress} />
         </motion.div>
       )}
 
