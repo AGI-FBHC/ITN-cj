@@ -123,11 +123,12 @@ export function slideAudioUrl(taskId: string, index: number): string {
   return `/v1/presentations/${encodeURIComponent(taskId)}/audio/${index}`;
 }
 
-export async function fetchSlideAsset(taskId: string, index: number, kind: 'slides' | 'audio'): Promise<Blob> {
+export async function fetchSlideAsset(taskId: string, index: number, kind: 'slides' | 'audio', modelProvider: 'mimo' | 'qwen' = 'mimo', qwenVoice = ''): Promise<Blob> {
   const headers = new Headers();
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  const res = await fetch(`/v1/presentations/${encodeURIComponent(taskId)}/${kind}/${index}`, { headers });
+  const query = kind === 'audio' ? `?model_provider=${modelProvider}${qwenVoice ? `&qwen_voice=${encodeURIComponent(qwenVoice)}` : ''}` : '';
+  const res = await fetch(`/v1/presentations/${encodeURIComponent(taskId)}/${kind}/${index}${query}`, { headers });
   if (!res.ok) throw new Error(`PPT 资源加载失败 (${res.status})`);
   if (res.status === 401) throw new Error('登录状态已失效，请重新登录后重试');
   return res.blob();
@@ -260,6 +261,7 @@ export async function streamPresentationChatAudio(
   slideIndex: number,
   sessionId: string,
   audioModel: 'mimo' | 'qwen',
+  qwenVoice: string,
   onEvent: (event: PresentationAudioEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
@@ -268,6 +270,7 @@ export async function streamPresentationChatAudio(
   form.append('slide_index', String(slideIndex));
   form.append('session_id', sessionId);
   form.append('audio_model', audioModel);
+  form.append('qwen_voice', qwenVoice);
   const headers = new Headers({ Accept: 'text/event-stream' });
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);

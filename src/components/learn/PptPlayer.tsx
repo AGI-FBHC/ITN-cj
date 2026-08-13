@@ -43,7 +43,7 @@ const PROGRESS_LABEL: Record<PresentationTask['status'], string> = {
   cancelled: '已取消',
 };
 
-const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean; speed?: TtsSpeed; volume?: number; onPlaybackChange?: (playing: boolean) => void; onSlideChange?: (current: number, count: number) => void; onRequestNote?: () => void }>(function PptPlayer({ taskId, speed = 'normal', volume = 1, onPlaybackChange, onSlideChange, onRequestNote }, ref) {
+const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean; speed?: TtsSpeed; volume?: number; modelProvider?: 'mimo' | 'qwen'; qwenVoice?: string; onPlaybackChange?: (playing: boolean) => void; onSlideChange?: (current: number, count: number) => void; onRequestNote?: () => void }>(function PptPlayer({ taskId, speed = 'normal', volume = 1, modelProvider = 'mimo', qwenVoice = '', onPlaybackChange, onSlideChange, onRequestNote }, ref) {
   const [task, setTask] = useState<PresentationTask | null>(null);
   const [slides, setSlides] = useState<PresentationSlideshow | null>(null);
   const [current, setCurrent] = useState(0);
@@ -70,6 +70,16 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
 
   useEffect(() => { triggeredMomentsRef.current.clear(); }, [taskId]);
 
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (audio) { audio.pause(); audio.removeAttribute('src'); audio.load(); }
+    if (audioSrcRef.current) URL.revokeObjectURL(audioSrcRef.current);
+    audioSrcRef.current = '';
+    setAudioSrc('');
+    setAudioPlaying(false);
+    onPlaybackChange?.(false);
+  }, [modelProvider, qwenVoice, onPlaybackChange]);
+
   useEffect(() => onSlideChange?.(current, slideCount), [current, slideCount, onSlideChange]);
 
   useEffect(() => {
@@ -87,7 +97,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
     if (!audio) return;
     try {
       if (!audioSrcRef.current) {
-        const blob = await fetchSlideAsset(taskId, index, 'audio');
+        const blob = await fetchSlideAsset(taskId, index, 'audio', modelProvider, qwenVoice);
         const url = URL.createObjectURL(blob);
         setAudioSrc(url);
         audioSrcRef.current = url;

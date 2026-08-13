@@ -109,6 +109,10 @@ const VOICE_STYLES = [
   { key: 'lively', label: '亲切活泼', desc: '音调明快 · 提神醒脑', pitch: 1.2, rateScale: 1.08 },
 ] as const;
 const MIMO_VOICES = ['冰糖', '茉莉', '苏打', '白桦'] as const;
+const QWEN_VOICES = [
+  { value: 'longanlingxi', label: '龙安灵希' },
+  { value: 'longanxiaoxin', label: '龙安小昕' },
+] as const;
 const MIMO_SPEEDS: Array<{ value: TtsSpeed; label: string }> = [
   { value: 'very_slow', label: '超慢' },
   { value: 'slow', label: '慢' },
@@ -717,6 +721,18 @@ export default function LearnUnit() {
   const [pptNoteTitle, setPptNoteTitle] = useState('');
   const [pptNoteLoading, setPptNoteLoading] = useState(false);
   const [pptNoteMode, setPptNoteMode] = useState<'source' | 'preview' | 'pages'>('source');
+  const pptNoteDraftsRef = useRef(new Map<number, Promise<{ title: string; content: string }>>());
+
+  const preparePptNoteDraft = (slideIndex: number) => {
+    if (!pptTaskId) return null;
+    const cached = pptNoteDraftsRef.current.get(slideIndex);
+    if (cached) return cached;
+    const pending = draftPresentationNote(pptTaskId, slideIndex, '请根据当前幻灯片和演讲稿整理学习笔记，突出核心概念、关键结论和实践提醒。')
+      .then(({ title, content }) => ({ title, content }));
+    pptNoteDraftsRef.current.set(slideIndex, pending);
+    pending.catch(() => pptNoteDraftsRef.current.delete(slideIndex));
+    return pending;
+  };
 
   /**
    * 播放条全局记笔记 —— 现在是唯一入口，所以必须挂到「用户正在看的那一段」。
@@ -726,13 +742,10 @@ export default function LearnUnit() {
   const openNoteHere = () => {
     if (pptTaskId) {
       setPptNoteOpen(true);
-      setPptNoteLoading(true);
+      setPptNoteLoading(false);
       setPptNoteTitle(`第 ${pptSlide.current + 1} 页笔记`);
       setNoteText('');
-      void draftPresentationNote(pptTaskId, pptSlide.current, '请根据当前幻灯片和演讲稿整理学习笔记，突出核心概念、关键结论和实践提醒。')
-        .then((draft) => { setPptNoteTitle(draft.title); setNoteText(draft.content); })
-        .catch((reason) => toast.error(reason instanceof Error ? reason.message : '笔记草稿生成失败'))
-        .finally(() => setPptNoteLoading(false));
+      void preparePptNoteDraft(pptSlide.current);
       return;
     }
     const bl = blocksRef.current;
@@ -775,6 +788,7 @@ export default function LearnUnit() {
   }
   const [qaLog, setQaLog] = useState<QaEntry[]>([]);
   const [pptAudioModel, setPptAudioModel] = useState<'mimo' | 'qwen'>('mimo');
+  const [qwenVoice, setQwenVoice] = useState<(typeof QWEN_VOICES)[number]['value']>('longanxiaoxin');
   const [pptChatSessions, setPptChatSessions] = useState<PresentationChatSession[]>([]);
   const qaScrollRef = useRef<HTMLDivElement>(null);
   const pptChatSessionRefs = useRef<Record<'mimo' | 'qwen', string>>({ mimo: '', qwen: '' });
@@ -1539,6 +1553,7 @@ export default function LearnUnit() {
         pptRef.current?.current ?? 0,
         pptChatSessionRefs.current[pptAudioModel],
         pptAudioModel,
+        qwenVoice,
         (event) => {
           if (event.type === 'phase') {
             setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, converting: true } : qa));
@@ -1571,12 +1586,12 @@ export default function LearnUnit() {
             }
             setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, transcript, converting: false, q: transcript, a: reply } : qa));
           } else if (event.type === 'error') {
-            streamError = event.message || `${pptAudioModel === 'qwen' ? 'Qwen' : 'MiMo'} 语音理解失败`;
+            streamError = event.message || '语音理解失败';
           }
         }, controller.signal,
       );
     } catch (reason) {
-      streamError = reason instanceof Error ? reason.message : `${pptAudioModel === 'qwen' ? 'Qwen' : 'MiMo'} 语音理解失败`;
+      streamError = reason instanceof Error ? reason.message : '语音理解失败';
     } finally {
       voiceBusyRef.current = false;
       setVoiceBusy(false);
@@ -1586,7 +1601,7 @@ export default function LearnUnit() {
       toast(streamError || '没有识别到有效语音');
       return;
     }
-    const finalReply = reply.trim() || `我听到了你的问题，但 ${pptAudioModel === 'qwen' ? 'Qwen' : 'MiMo'} 暂未返回可展示回答，请稍后重试。`;
+    const finalReply = reply.trim() || '我听到了你的问题，但暂未返回可展示回答，请稍后重试。';
     setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: finalReply } : qa));
     setQuestion('');
     if (pptAudioModel === 'mimo') {
@@ -1602,7 +1617,7 @@ export default function LearnUnit() {
     if (!q && !askPhoto) return;
     if (pptTaskId && q && !askPhoto) {
       if (pptAudioModel === 'qwen') {
-        toast('Qwen 实时通道当前请使用语音提问；文字提问切回 MiMo。');
+        toast('当前伴学方案仅支持语音提问；如需文字提问，请切换另一方案。');
         return;
       }
       const entryId = `text-${voiceSeqRef.current++}`;
@@ -1977,8 +1992,8 @@ export default function LearnUnit() {
         <span className="text-hairline">/</span>
         <h1 className="font-serif text-[20px] font-semibold text-ink">{pptTopic || generatedUnit?.topicName || kp.name}</h1>
         {pptTaskId && (
-          <div className="flex items-center gap-1 rounded-full border border-hairline bg-card-warm p-1" aria-label="伴学模型">
-            <span className="pl-1.5 pr-1 font-mono text-[9.5px] text-ink-muted">伴学模型</span>
+          <div className="flex items-center gap-1 rounded-full border border-hairline bg-card-warm p-1" aria-label="伴学方案">
+            <span className="pl-1.5 pr-1 font-mono text-[9.5px] text-ink-muted">伴学方案</span>
             {(['mimo', 'qwen'] as const).map((model) => (
               <button
                 key={model}
@@ -1989,9 +2004,9 @@ export default function LearnUnit() {
                   'rounded-full px-2.5 py-1 font-mono text-[9.5px] transition-colors disabled:cursor-not-allowed disabled:opacity-50',
                   pptAudioModel === model ? 'bg-brand text-paper shadow-sm' : 'text-ink-muted hover:text-ink',
                 )}
-                title={model === 'mimo' ? 'MiMo 2.5' : 'Qwen Audio 3.0 Realtime'}
+                title={model === 'mimo' ? '经典伴学方案' : '实时伴学方案'}
               >
-                {model === 'mimo' ? 'MiMo' : 'Qwen'}
+                {model === 'mimo' ? '经典' : '实时'}
               </button>
             ))}
           </div>
@@ -2093,7 +2108,7 @@ export default function LearnUnit() {
             {freeBrowse ? '回到课堂推进' : '自由浏览'}
           </button>
         </div>}
-        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} wideMode={pptWideMode} speed={pptSpeed} volume={pptVolume} ref={pptRef} onPlaybackChange={setPlaying} onSlideChange={syncPptSlide} onRequestNote={openNoteHere} /> : (blocks.map((b, i) => {
+        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} wideMode={pptWideMode} speed={pptSpeed} volume={pptVolume} modelProvider={pptAudioModel} qwenVoice={qwenVoice} ref={pptRef} onPlaybackChange={setPlaying} onSlideChange={syncPptSlide} onRequestNote={openNoteHere} /> : (blocks.map((b, i) => {
           const active = i === cursor && playing;
           /* ---- 课堂推进三态：完整（当前/回看/自由浏览）· 摘要行（已完成）· 不渲染（未解锁） ---- */
           const effUnlocked = Math.min(unlocked, blocks.length);
@@ -3087,7 +3102,7 @@ export default function LearnUnit() {
                     <span className="shrink-0">{tts.supported ? <Volume2 size={10} /> : <VolumeX size={10} />}</span>
                     <span className="truncate">
                       {pptTaskId
-                        ? `音色 ${pptVoice} · 语速 ${MIMO_SPEEDS.find((item) => item.value === pptSpeed)?.label ?? pptSpeed}`
+                        ? `音色 ${pptAudioModel === 'qwen' ? QWEN_VOICES.find((item) => item.value === qwenVoice)?.label : pptVoice} · 语速 ${MIMO_SPEEDS.find((item) => item.value === pptSpeed)?.label ?? pptSpeed}`
                         : tts.supported
                           ? `语音授课 · ${voiceStyle.label} · ${RATES[rateIdx].toFixed(2).replace(/0$/, '')}×`
                           : '默片模式（字幕+视觉照常）'}
@@ -3238,7 +3253,7 @@ export default function LearnUnit() {
                 <PopoverContent side="top" align="end" className="w-72 border-hairline bg-card-warm p-4">
                   <div className="lf-mono-label !text-[10px]">VOICE · {pptTaskId ? '音色' : '语音风格'}</div>
                   <div className={cn('mt-2', pptTaskId ? 'grid grid-cols-2 gap-1.5' : 'space-y-1.5')}>
-                    {pptTaskId ? MIMO_VOICES.map((voice) => (
+                    {pptTaskId && pptAudioModel === 'mimo' ? MIMO_VOICES.map((voice) => (
                       <button
                         key={voice}
                         type="button"
@@ -3252,6 +3267,21 @@ export default function LearnUnit() {
                       >
                         <span className="text-[12px] font-medium">{voice}</span>
                         {voice === pptVoice && <Check size={13} className="shrink-0" />}
+                      </button>
+                    )) : pptTaskId ? QWEN_VOICES.map((voice) => (
+                      <button
+                        key={voice.value}
+                        type="button"
+                        disabled={voiceBusy}
+                        onClick={() => setQwenVoice(voice.value)}
+                        aria-pressed={voice.value === qwenVoice}
+                        className={cn(
+                          'flex w-full items-center justify-between rounded-[9px] border px-3 py-1.5 text-left transition-all duration-200 disabled:opacity-60',
+                          voice.value === qwenVoice ? 'border-brand/45 bg-brand-tint text-brand' : 'border-hairline bg-paper text-ink-2 hover:border-brand/30',
+                        )}
+                      >
+                        <span className="text-[12px] font-medium">{voice.label}</span>
+                        {voice.value === qwenVoice && <Check size={13} className="shrink-0" />}
                       </button>
                     )) : VOICE_STYLES.map((s, i) => (
                       <button
@@ -3406,7 +3436,14 @@ export default function LearnUnit() {
               </div>
               <div className="flex items-center gap-1 border-b border-hairline bg-card-warm/55 px-5 py-2">
                 {([['source', '源码'], ['preview', '预览'], ['pages', '分页']] as const).map(([mode, label]) => <button key={mode} type="button" onClick={() => setPptNoteMode(mode)} className={cn('rounded-full px-3 py-1.5 text-[11.5px] font-medium', pptNoteMode === mode ? 'bg-ink text-paper' : 'text-ink-muted hover:bg-paper-deep')}>{label}</button>)}
-                <button type="button" disabled={pptNoteLoading} onClick={openNoteHere} className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-brand/25 bg-brand-tint px-3 py-1.5 text-[11.5px] font-medium text-brand hover:border-brand/45"><Lightbulb size={13} />总结本页</button>
+                <button type="button" disabled={pptNoteLoading} onClick={() => {
+                  const pending = preparePptNoteDraft(pptSlide.current);
+                  if (!pending) return;
+                  setPptNoteLoading(true);
+                  void pending.then((draft) => { setPptNoteTitle(draft.title); setNoteText(draft.content); })
+                    .catch((reason) => toast.error(reason instanceof Error ? reason.message : '笔记草稿生成失败'))
+                    .finally(() => setPptNoteLoading(false));
+                }} className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-brand/25 bg-brand-tint px-3 py-1.5 text-[11.5px] font-medium text-brand hover:border-brand/45 disabled:opacity-60"><Lightbulb size={13} />{pptNoteLoading ? '整理中' : '灵感总结'}</button>
                 <Link to="/me/notes" className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11.5px] text-ink-2 hover:bg-paper-deep"><NotebookPen size={13} />打开笔记本</Link>
               </div>
               <div className="flex-1 overflow-y-auto px-5 py-4">
@@ -3419,9 +3456,8 @@ export default function LearnUnit() {
               {pptNoteMode === 'source' && <textarea
                 value={noteText}
                 onChange={(event) => setNoteText(event.target.value)}
-                disabled={pptNoteLoading}
                 className="mt-2 min-h-[240px] w-full resize-y rounded-[10px] border border-hairline bg-card-warm p-3 text-[13px] leading-6 text-ink outline-none focus:border-brand/50 disabled:opacity-60"
-                placeholder={pptNoteLoading ? 'MiMo 正在结合当前页生成笔记草稿…' : '记录当前页的重点'}
+                placeholder="从这里开始记录你的想法…"
               />}
               {pptNoteMode === 'preview' && <article className="mt-2 min-h-[260px] rounded-[12px] border border-hairline bg-card-warm p-5"><ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{noteText || '*还没有内容*'}</ReactMarkdown></article>}
               {pptNoteMode === 'pages' && <div className="mt-2 grid min-h-[260px] gap-3 md:grid-cols-2">{noteText.split(/\n(?=#{1,3}\s)/).filter(Boolean).map((page, index) => <article key={`${index}-${page.slice(0, 12)}`} className="rounded-[12px] border border-hairline bg-card-warm p-4 shadow-sm"><div className="mb-3 font-mono text-[9px] text-ink-muted">PAGE {String(index + 1).padStart(2, '0')}</div><ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{page}</ReactMarkdown></article>)}</div>}
@@ -3430,7 +3466,7 @@ export default function LearnUnit() {
                 <button type="button" onClick={() => setPptNoteOpen(false)} className="lf-btn-ghost !py-2 text-[13px]">取消</button>
                 <button
                   type="button"
-                  disabled={pptNoteLoading || !noteText.trim()}
+                  disabled={!noteText.trim()}
                   onClick={() => {
                     addNote({
                       kpId, text: noteText.trim(), source: `${pptNoteTitle || `第 ${pptSlide.current + 1} 页笔记`} · ${pptTopic || kp.name}`,
@@ -3440,7 +3476,7 @@ export default function LearnUnit() {
                   }}
                   className="lf-btn-primary !py-2 text-[13px] disabled:opacity-50"
                 >
-                  {pptNoteLoading ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} 保存到我的笔记
+                  <Check size={13} /> 保存到我的笔记
                 </button>
               </div>
             </motion.div>
@@ -3461,7 +3497,7 @@ export default function LearnUnit() {
             <div className="flex items-center gap-2 border-b border-hairline bg-card-warm px-4 py-2.5">
               <Hand size={14} className="text-ochre" />
               <span className="text-[13.5px] font-semibold text-ink">课堂提问 · 已暂停授课</span>
-              <span className="rounded-full bg-paper px-2 py-0.5 font-mono text-[9px] text-ink-muted">{pptAudioModel === 'mimo' ? 'MiMo' : 'Qwen'}</span>
+              <span className="rounded-full bg-paper px-2 py-0.5 font-mono text-[9px] text-ink-muted">{pptAudioModel === 'mimo' ? '经典' : '实时'}</span>
               <button type="button" disabled={voiceBusy} onClick={() => void createFreshPptChatSession()} className="ml-auto rounded-md px-1.5 py-1 font-mono text-[10px] text-ink-muted hover:bg-paper hover:text-brand disabled:opacity-50" title="新建会话">新建</button>
               <button type="button" onClick={() => { pptAskAbortRef.current?.abort(); stopAnswerAudio(); setAsking(false); }} className="text-ink-muted hover:text-ink">
                 <X size={15} />
