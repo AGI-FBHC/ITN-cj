@@ -1397,6 +1397,27 @@ export default function LearnUnit() {
     let finalAction: NonNullable<PresentationAudioEvent['action']> | string = 'none';
     let finalPage: number | null = null;
     let finalResume = false;
+    let spokenLength = 0;
+    let speechChain = Promise.resolve();
+    const queueReadySentences = (flush = false) => {
+      const pending = reply.slice(spokenLength);
+      if (!pending.trim()) return;
+      const matches = [...pending.matchAll(/[^。！？!?；;]+[。！？!?；;]/g)];
+      let consumed = 0;
+      for (const match of matches) {
+        const sentence = match[0].trim();
+        consumed = (match.index ?? 0) + match[0].length;
+        if (sentence) speechChain = speechChain.then(() => speakPptAnswer(sentence, controller.signal));
+      }
+      if (flush) {
+        const tail = pending.slice(consumed).trim();
+        if (tail) {
+          consumed = pending.length;
+          speechChain = speechChain.then(() => speakPptAnswer(tail, controller.signal));
+        }
+      }
+      spokenLength += consumed;
+    };
     const controller = new AbortController();
     pptAskAbortRef.current?.abort();
     pptAskAbortRef.current = controller;
@@ -1408,7 +1429,10 @@ export default function LearnUnit() {
         pptRef.current?.current ?? 0,
         sessionId,
         (event) => {
-          if (event.type === 'control' && event.action && event.action !== 'none') {
+          if (event.type === 'transcript' && event.transcript) {
+            transcript = event.transcript;
+            setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, transcript, q: transcript } : qa));
+          } else if (event.type === 'control' && event.action && event.action !== 'none') {
             if (event.action === 'next') pptRef.current?.goNext();
             else if (event.action === 'previous') pptRef.current?.goPrev();
             else if (event.action === 'goto' && event.page) pptRef.current?.goTo(event.page - 1);
@@ -1417,6 +1441,7 @@ export default function LearnUnit() {
           } else if (event.type === 'reply_delta' && event.content) {
             reply += event.content;
             setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: reply } : qa));
+            queueReadySentences();
           } else if (event.type === 'result') {
             transcript = event.transcript || transcript;
             if (event.content) reply = event.content;
@@ -1444,7 +1469,8 @@ export default function LearnUnit() {
     const finalReply = reply.trim() || '我听到了你的问题，但 MiMo 暂未返回可展示回答，请稍后重试。';
     setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: finalReply } : qa));
     setQuestion('');
-    await speakPptAnswer(finalReply, controller.signal).catch(() => undefined);
+    queueReadySentences(true);
+    await speechChain.catch(() => undefined);
     if (finalAction === 'goto' && finalPage) pptRef.current?.goTo(finalPage - 1);
     if (finalResume || (finalAction === 'none' && pptWasPlayingRef.current)) { setBarExpanded(true); pptRef.current?.play(); }
     addNote({
