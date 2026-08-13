@@ -538,9 +538,9 @@ const FUNCTION_ACCENT: Record<(typeof FUNCTION_META)[number]['form'], string> = 
   ppt: '#765F9D',
 };
 
-const FUNCTION_BUTTON_WIDTH = 4.8;
-const FUNCTION_BUTTON_HEIGHT = 1.5;
-const FUNCTION_BUTTON_GAP = 0.36;
+const FUNCTION_BUTTON_WIDTH = 5.5;
+const FUNCTION_BUTTON_HEIGHT = 1.82;
+const FUNCTION_BUTTON_GAP = 0.44;
 
 /** 单个功能按钮：浅色玻璃卡片 + 类型色标 + 常驻状态，弱化大色块带来的压迫感。 */
 function FunctionButton({
@@ -611,7 +611,7 @@ function FunctionButton({
           raycast={() => null}
           renderOrder={2}
           position={[0.18, 0.2, 0.17]}
-          fontSize={0.62}
+          fontSize={0.74}
           color="#26352E"
           anchorX="center"
           anchorY="middle"
@@ -629,7 +629,7 @@ function FunctionButton({
           raycast={() => null}
           renderOrder={2}
           position={[0.12, -0.42, 0.17]}
-          fontSize={0.42}
+          fontSize={0.48}
           color="#5F6B64"
           anchorX="center"
           anchorY="middle"
@@ -664,7 +664,7 @@ function FunctionLayer({
     existing: resources ?? [],
   });
   const nodeRadius = 1.5; // 与 ChildNode 球体半径一致
-  const rowY = -2.5; // 紧贴知识节点下缘
+  const rowY = -2.68; // 放大后仍与知识节点下缘保留舒适间距
   // 最左按钮的左缘与知识节点左缘对齐，按钮依次向右排布
   const rowStartX = -nodeRadius + FUNCTION_BUTTON_WIDTH / 2;
   const leafPositions: Array<[number, number, number]> = FUNCTION_META.map((_, i) => [rowStartX + i * (FUNCTION_BUTTON_WIDTH + FUNCTION_BUTTON_GAP), rowY, 0.1]);
