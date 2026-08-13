@@ -774,6 +774,7 @@ export default function LearnUnit() {
     id?: string;
   }
   const [qaLog, setQaLog] = useState<QaEntry[]>([]);
+  const [pptAudioModel, setPptAudioModel] = useState<'mimo' | 'qwen'>('mimo');
   const qaScrollRef = useRef<HTMLDivElement>(null);
   const pptChatSessionRef = useRef('');
   const pptAskAbortRef = useRef<AbortController | null>(null);
@@ -1416,6 +1417,40 @@ export default function LearnUnit() {
     let finalResume = false;
     let spokenLength = 0;
     let speechChain = Promise.resolve();
+    let qwenNextAudioTime = 0;
+    const playQwenAudioDelta = (encoded: string, sampleRate = 24000) => {
+      let active = answerAudioRef.current;
+      if (!active) {
+        const context = new AudioContext({ sampleRate });
+        const gain = context.createGain();
+        const sources = new Set<AudioBufferSourceNode>();
+        gain.gain.value = pptVolume;
+        gain.connect(context.destination);
+        active = { context, sources, gain };
+        answerAudioRef.current = active;
+        qwenNextAudioTime = context.currentTime + 0.06;
+        void context.resume();
+      }
+      const binary = atob(encoded);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+      const usable = bytes.length - (bytes.length % 2);
+      if (!usable) return;
+      const samples = new Float32Array(usable / 2);
+      const view = new DataView(bytes.buffer, bytes.byteOffset, usable);
+      for (let index = 0; index < samples.length; index++) samples[index] = view.getInt16(index * 2, true) / 32768;
+      const buffer = active.context.createBuffer(1, samples.length, sampleRate);
+      buffer.copyToChannel(samples, 0);
+      const source = active.context.createBufferSource();
+      source.buffer = buffer;
+      const gain = active.gain;
+      if (!gain) return;
+      source.connect(gain);
+      active.sources.add(source);
+      source.onended = () => active?.sources.delete(source);
+      source.start(Math.max(active.context.currentTime + 0.015, qwenNextAudioTime));
+      qwenNextAudioTime = Math.max(active.context.currentTime + 0.015, qwenNextAudioTime) + buffer.duration;
+    };
     const queueSentenceAudio = (sentence: string) => {
       // Start synthesis immediately. Playback remains ordered, so later sentences
       // are usually ready by the time the previous sentence finishes.
@@ -1457,6 +1492,7 @@ export default function LearnUnit() {
         audio,
         pptRef.current?.current ?? 0,
         pptChatSessionRef.current,
+        pptAudioModel,
         (event) => {
           if (event.type === 'phase') {
             setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, converting: true } : qa));
@@ -1473,7 +1509,9 @@ export default function LearnUnit() {
           } else if (event.type === 'reply_delta' && event.content) {
             reply += event.content;
             setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: reply } : qa));
-            queueReadySentences();
+            if (pptAudioModel === 'mimo') queueReadySentences();
+          } else if (event.type === 'audio_delta' && event.audio) {
+            playQwenAudioDelta(event.audio, event.sampleRate);
           } else if (event.type === 'result') {
             transcript = event.transcript || transcript;
             if (event.content) reply = event.content;
@@ -1501,8 +1539,10 @@ export default function LearnUnit() {
     const finalReply = reply.trim() || '我听到了你的问题，但 MiMo 暂未返回可展示回答，请稍后重试。';
     setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: finalReply } : qa));
     setQuestion('');
-    queueReadySentences(true);
-    await speechChain.catch(() => undefined);
+    if (pptAudioModel === 'mimo') {
+      queueReadySentences(true);
+      await speechChain.catch(() => undefined);
+    }
     if (finalAction === 'goto' && finalPage) pptRef.current?.goTo(finalPage - 1);
     if (finalResume || (finalAction === 'none' && pptWasPlayingRef.current)) { setBarExpanded(true); pptRef.current?.play(); }
   };;
@@ -3347,7 +3387,24 @@ export default function LearnUnit() {
             <div className="flex items-center gap-2 border-b border-hairline bg-card-warm px-4 py-2.5">
               <Hand size={14} className="text-ochre" />
               <span className="text-[13.5px] font-semibold text-ink">课堂提问 · 已暂停授课</span>
-              <button type="button" onClick={() => { pptAskAbortRef.current?.abort(); stopAnswerAudio(); setAsking(false); }} className="ml-auto text-ink-muted hover:text-ink">
+              <div className="ml-auto flex rounded-full border border-hairline bg-paper p-0.5" aria-label="语音回答模型">
+                {(['mimo', 'qwen'] as const).map((model) => (
+                  <button
+                    key={model}
+                    type="button"
+                    disabled={voiceBusy}
+                    onClick={() => setPptAudioModel(model)}
+                    className={cn(
+                      'rounded-full px-2 py-1 font-mono text-[9px] transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                      pptAudioModel === model ? 'bg-brand text-paper' : 'text-ink-muted hover:text-ink',
+                    )}
+                    title={model === 'mimo' ? 'MiMo 2.5 音频直答' : 'Qwen Audio 3.0 Realtime Plus'}
+                  >
+                    {model === 'mimo' ? 'MiMo' : 'Qwen'}
+                  </button>
+                ))}
+              </div>
+              <button type="button" onClick={() => { pptAskAbortRef.current?.abort(); stopAnswerAudio(); setAsking(false); }} className="text-ink-muted hover:text-ink">
                 <X size={15} />
               </button>
             </div>

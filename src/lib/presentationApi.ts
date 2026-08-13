@@ -135,7 +135,7 @@ export async function fetchSlideAsset(taskId: string, index: number, kind: 'slid
 
 
 export type PresentationAudioEvent = {
-  type: 'phase' | 'transcript' | 'control' | 'reply_delta' | 'result' | 'error';
+  type: 'phase' | 'transcript' | 'control' | 'reply_delta' | 'audio_delta' | 'result' | 'error';
   phase?: 'understanding' | 'answering';
   content?: string;
   transcript?: string;
@@ -144,6 +144,9 @@ export type PresentationAudioEvent = {
   resume?: boolean;
   sessionId?: string | null;
   message?: string;
+  model?: 'mimo' | 'qwen';
+  audio?: string;
+  sampleRate?: number;
 };
 
 export type PresentationChatEvent = {
@@ -252,6 +255,7 @@ export async function streamPresentationChatAudio(
   audio: Blob,
   slideIndex: number,
   sessionId: string,
+  audioModel: 'mimo' | 'qwen',
   onEvent: (event: PresentationAudioEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
@@ -259,6 +263,7 @@ export async function streamPresentationChatAudio(
   form.append('audio', audio, 'presentation-question.wav');
   form.append('slide_index', String(slideIndex));
   form.append('session_id', sessionId);
+  form.append('audio_model', audioModel);
   const headers = new Headers({ Accept: 'text/event-stream' });
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
