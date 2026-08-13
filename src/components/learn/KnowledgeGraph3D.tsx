@@ -536,7 +536,8 @@ function format3DLabel(label: string): string {
     .trim()
     .replace(/([\u3400-\u9fff]):(?=[\u3400-\u9fffA-Za-z0-9])/g, '$1：')
     .replace(/([\u3400-\u9fff]);(?=[\u3400-\u9fffA-Za-z0-9])/g, '$1；')
-    .replace(/\s*([：；，。！？])\s*/g, '$1');
+    .replace(/\s*([，。！？])\s*/g, '$1')
+    .replace(/\s*([：；])\s*/g, '$1 ');
 }
 
 const FUNCTION_ICON = {
@@ -900,7 +901,7 @@ function ChildNode({
         renderOrder={2}
         position={getTextPosition()}
         fontSize={1.32}
-        maxWidth={22}
+        maxWidth={14}
         lineHeight={1.28}
         letterSpacing={0.025}
         textAlign={direction === 'left' ? 'right' : 'left'}
@@ -1091,7 +1092,7 @@ function Node3D({
           renderOrder={2}
           position={getTextPosition()}
           fontSize={isDomain ? 1.6 : 1.2}
-          maxWidth={isDomain ? 16 : 22}
+          maxWidth={isDomain ? 12 : 14}
           lineHeight={1.28}
           letterSpacing={0.025}
           textAlign={isDomain ? 'center' : direction === 'left' ? 'right' : 'left'}
