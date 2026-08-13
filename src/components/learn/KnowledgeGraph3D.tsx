@@ -58,6 +58,7 @@ const PROGRESS_COLORS = {
 
 interface KnowledgeGraph3DProps {
   onTopicClick?: (kpId: string, topicIndex: number, label: string) => void;
+  persistenceKey?: string;
   nodes: GraphNode[];
   edges: GraphEdge[];
   selectedKpId: string | null;
@@ -80,6 +81,48 @@ interface KnowledgeGraph3DProps {
   /** 生成资源时的学习目标 */
   goalId?: string | null;
   className?: string;
+}
+
+interface CameraViewState {
+  position: [number, number, number];
+  target: [number, number, number];
+}
+
+function PersistedCamera({ storageKey }: { storageKey?: string }) {
+  const camera = useThree((state) => state.camera);
+  const controls = useThree((state) => state.controls) as {
+    target: THREE.Vector3;
+    update: () => void;
+    addEventListener: (type: string, callback: () => void) => void;
+    removeEventListener: (type: string, callback: () => void) => void;
+  } | null;
+
+  useEffect(() => {
+    if (!storageKey || !controls) return;
+    const key = `lf.knowledgeGraph3dCamera:v1:${storageKey}`;
+    try {
+      const saved = JSON.parse(window.sessionStorage.getItem(key) ?? 'null') as CameraViewState | null;
+      if (saved?.position?.length === 3 && saved?.target?.length === 3) {
+        camera.position.fromArray(saved.position);
+        controls.target.fromArray(saved.target);
+        controls.update();
+      }
+    } catch { /* 无效缓存回退默认相机 */ }
+    const save = () => {
+      try {
+        window.sessionStorage.setItem(key, JSON.stringify({
+          position: camera.position.toArray(),
+          target: controls.target.toArray(),
+        } satisfies CameraViewState));
+      } catch { /* ignore */ }
+    };
+    controls.addEventListener('end', save);
+    return () => {
+      save();
+      controls.removeEventListener('end', save);
+    };
+  }, [camera, controls, storageKey]);
+  return null;
 }
 
 /** 边缘发光 Shader */
@@ -1410,9 +1453,21 @@ export default function KnowledgeGraph3D({
   resources = {},
   presentations = [],
   goalId = null,
+  persistenceKey,
 }: KnowledgeGraph3DProps) {
   /** 当前展开“功能节点层”（定制讲义/实操指南/分阶测试题/交互课件）的子知识点，与章节展开互不干扰 */
-  const [expandedTopicId, setExpandedTopicId] = useState<string | null>(null);
+  const topicStorageKey = persistenceKey ? `lf.knowledgeGraph3dTopic:v1:${persistenceKey}` : null;
+  const [expandedTopicId, setExpandedTopicId] = useState<string | null>(() => {
+    if (!topicStorageKey) return null;
+    try { return window.sessionStorage.getItem(topicStorageKey); } catch { return null; }
+  });
+  useEffect(() => {
+    if (!topicStorageKey) return;
+    try {
+      if (expandedTopicId) window.sessionStorage.setItem(topicStorageKey, expandedTopicId);
+      else window.sessionStorage.removeItem(topicStorageKey);
+    } catch { /* ignore */ }
+  }, [expandedTopicId, topicStorageKey]);
   const actionTopic = useMemo(
     () => nodes.find((node) => node.kind === 'topic' && node.id === expandedTopicId) ?? null,
     [nodes, expandedTopicId],
@@ -1466,6 +1521,7 @@ export default function KnowledgeGraph3D({
           maxDistance={130}
           autoRotate={false}
         />
+        <PersistedCamera storageKey={persistenceKey} />
         <FocusDriver focusId={dimAnchorId} blendRef={blendRef} />
         <RotatingScene shouldRotate={expandedKpIds.size === 0 && !hoveredNodeId} outerRef={sceneRef}>
           <SceneContent

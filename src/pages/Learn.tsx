@@ -19,18 +19,44 @@ const statusMeta: Record<string, { label: string; cls: string }> = {
   done: { label: '已完成', cls: 'border-brand/30 bg-brand-tint text-brand' },
 };
 
+interface LearnViewState {
+  viewMode: '2d' | '3d';
+  selectedKp: string | null;
+  selectedTopic: number | null;
+  expandedKpIds: string[];
+  showLearnedPath: boolean;
+}
+
+const learnViewKey = (learnerId: string) => `lf.learnView:v1:${learnerId}`;
+
+function readLearnView(learnerId: string): LearnViewState | null {
+  if (!learnerId || typeof window === 'undefined') return null;
+  try {
+    const parsed = JSON.parse(window.sessionStorage.getItem(learnViewKey(learnerId)) ?? 'null') as Partial<LearnViewState> | null;
+    if (!parsed || !Array.isArray(parsed.expandedKpIds)) return null;
+    return {
+      viewMode: parsed.viewMode === '2d' ? '2d' : '3d',
+      selectedKp: typeof parsed.selectedKp === 'string' ? parsed.selectedKp : null,
+      selectedTopic: typeof parsed.selectedTopic === 'number' ? parsed.selectedTopic : null,
+      expandedKpIds: parsed.expandedKpIds.filter((id): id is string => typeof id === 'string'),
+      showLearnedPath: Boolean(parsed.showLearnedPath),
+    };
+  } catch { return null; }
+}
+
 
 export default function Learn() {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
+  const restoredView = readLearnView(currentLearner.id);
   const map = useLearningMap();
   const knowledgePoints = map.domains;
   const reportPath = map.path;
   /** “我的已学路径”：高亮已学章节/资源 */
-  const [showLearnedPath, setShowLearnedPath] = useState(false);
-  const [viewMode, setViewMode] = useState<'2d' | '3d'>('3d');
-  const [selectedKp, setSelectedKp] = useState<string | null>(null);
-  const [expandedKpIds, setExpandedKpIds] = useState<Set<string>>(new Set());
+  const [showLearnedPath, setShowLearnedPath] = useState(() => restoredView?.showLearnedPath ?? false);
+  const [viewMode, setViewMode] = useState<'2d' | '3d'>(() => restoredView?.viewMode ?? '3d');
+  const [selectedKp, setSelectedKp] = useState<string | null>(() => restoredView?.selectedKp ?? null);
+  const [expandedKpIds, setExpandedKpIds] = useState<Set<string>>(() => new Set(restoredView?.expandedKpIds ?? []));
   /** 3D：点击章节切换展开/收起，可同时展开多个 */
   const toggleExpandedKp = (id: string) => {
     setExpandedKpIds((prev) => {
@@ -44,10 +70,22 @@ export default function Learn() {
   const setSingleExpandedKp = (id: string | null) => {
     setExpandedKpIds(id === null ? new Set() : new Set([id]));
   };
-  const [selectedTopic, setSelectedTopic] = useState<number | null>(null);
+  const [selectedTopic, setSelectedTopic] = useState<number | null>(() => restoredView?.selectedTopic ?? null);
   /** 章节速览点击后，请求 3D 相机把该域节点转到正前方 */
   const [graphFocus, setGraphFocus] = useState<{ id: string; at: number } | null>(null);
   const [searchParams] = useSearchParams();
+  useEffect(() => {
+    if (!currentLearner.id || currentLearner.id === 'loading') return;
+    try {
+      window.sessionStorage.setItem(learnViewKey(currentLearner.id), JSON.stringify({
+        viewMode,
+        selectedKp,
+        selectedTopic,
+        expandedKpIds: Array.from(expandedKpIds),
+        showLearnedPath,
+      } satisfies LearnViewState));
+    } catch { /* sessionStorage 不可用时保持当前内存状态 */ }
+  }, [currentLearner.id, viewMode, selectedKp, selectedTopic, expandedKpIds, showLearnedPath]);
   useEffect(() => {
     const kpParam = searchParams.get('kp');
     if (kpParam && knowledgePoints.some((kp) => kp.id === kpParam)) {
@@ -215,6 +253,7 @@ export default function Learn() {
               resources={map.resources}
               goalId={map.goalId}
               presentations={map.presentations}
+              persistenceKey={currentLearner.id}
             />
           ) : (
             <KnowledgeGraph showLearned={showLearnedPath} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpIds={expandedKpIds} onExpandedKpChange={setSingleExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} />
