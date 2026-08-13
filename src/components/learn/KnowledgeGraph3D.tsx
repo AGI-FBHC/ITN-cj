@@ -536,7 +536,8 @@ function format3DLabel(label: string): string {
     .trim()
     .replace(/([\u3400-\u9fff]):(?=[\u3400-\u9fffA-Za-z0-9])/g, '$1：')
     .replace(/([\u3400-\u9fff]);(?=[\u3400-\u9fffA-Za-z0-9])/g, '$1；')
-    .replace(/\s*([：；，。！？])\s*/g, '$1');
+    .replace(/\s*([，。！？])\s*/g, '$1')
+    .replace(/\s*([：；])\s*/g, '$1 ');
 }
 
 const FUNCTION_ICON = {
