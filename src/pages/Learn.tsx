@@ -214,6 +214,7 @@ export default function Learn() {
               showLearned={showLearnedPath}
               resources={map.resources}
               goalId={map.goalId}
+              presentations={map.presentations}
             />
           ) : (
             <KnowledgeGraph showLearned={showLearnedPath} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpIds={expandedKpIds} onExpandedKpChange={setSingleExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} />

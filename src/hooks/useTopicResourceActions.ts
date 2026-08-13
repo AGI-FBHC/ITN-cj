@@ -9,6 +9,7 @@ import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
 import { presentationApi } from '@/lib/presentationApi';
 import { refreshLearningMapResourceCache } from './useLearningMap';
+import { refreshLearningMapPresentationCache } from './useLearningMap';
 import type { GeneratedResource, ResourceForm } from '@/data/resources';
 
 export const FUNCTION_META: Array<{ form: ResourceForm | 'ppt'; label: string; color: string }> = [
@@ -79,8 +80,7 @@ export function useTopicResourceActions({
       }
       if (task.status === 'completed' && task.resourceId) {
         void refreshLearningMapResourceCache(currentLearner.id);
-        toast.success(`${meta}已生成，可以打开`);
-        navigate(`/learn/resource/${task.resourceId}`);
+        toast.success(`${meta}已生成`, { description: '可在知识地图再次点击该资源直接打开。' });
       } else {
         throw new Error(task.errorMessage || `${meta}生成失败`);
       }
@@ -129,6 +129,7 @@ export function useTopicResourceActions({
       toast.error(error instanceof Error ? error.message : '课件操作失败');
     } finally {
       setCheckingPpt(false);
+      void refreshLearningMapPresentationCache(currentLearner.id);
     }
   }, [checkingPpt, navigate, kpId, topicName, goalId]);
 

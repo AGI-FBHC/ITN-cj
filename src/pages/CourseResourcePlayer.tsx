@@ -26,6 +26,39 @@ import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
 type ResourceKind = 'lecture' | 'practice' | 'quiz';
 type BlockKind = 'intro' | 'lecture' | 'practice' | 'quiz' | 'review';
 
+/** 资源播放页静态内容缓存：资源/章节资源短时缓存，减少重复网络请求 */
+const RESOURCE_CACHE_PREFIX = 'lf.resourcePlayer:v1:';
+const RESOURCE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+interface ResourcePlayerCache {
+  resource: LearningResource;
+  course: Course | null;
+  chapterResources: LearningResourceSummary[];
+  traces: LearningResourceTrace[];
+  savedAt: number;
+}
+
+function readResourcePlayerCache(resourceId: string): ResourcePlayerCache | null {
+  try {
+    const raw = window.localStorage.getItem(`${RESOURCE_CACHE_PREFIX}${resourceId}`);
+    if (!raw) return null;
+    const cache = JSON.parse(raw) as ResourcePlayerCache;
+    if (!cache.resource || Date.now() - cache.savedAt > RESOURCE_CACHE_TTL_MS) return null;
+    return cache;
+  } catch {
+    return null;
+  }
+}
+
+function writeResourcePlayerCache(resourceId: string, cache: Omit<ResourcePlayerCache, 'savedAt'>) {
+  try {
+    window.localStorage.setItem(`${RESOURCE_CACHE_PREFIX}${resourceId}`, JSON.stringify({ ...cache, savedAt: Date.now() }));
+  } catch {
+    /* ignore */
+  }
+}
+
+
 interface LearningBlock {
   id: string;
   kind: BlockKind;
@@ -371,26 +404,45 @@ export default function CourseResourcePlayer() {
     let cancelled = false;
     setLoading(true);
     setError('');
+
+    const applyLoaded = (loaded: LearningResource, traceResult: LearningResourceTrace[], loadedCourse: Course | null, loadedResources: LearningResourceSummary[]) => {
+      if (cancelled) return;
+      setResource(loaded);
+      setTraces(traceResult);
+      setCourse(loadedCourse);
+      setChapterResources(loadedResources);
+      const progress = progressOf(loaded);
+      const parsedBlocks = blocksOf(loaded);
+      setCurrentBlockId(progress.currentBlockId && parsedBlocks.some((block) => block.id === progress.currentBlockId) ? progress.currentBlockId : parsedBlocks[0]?.id ?? '');
+      setVisited(progress.visitedBlockIds);
+      setCompletedSteps(progress.completedStepIds);
+      setElapsedBase(progress.elapsedSeconds);
+      setSessionSeconds(0);
+      sessionSecondsRef.current = 0;
+      setLoading(false);
+    };
+
+    const cached = readResourcePlayerCache(resourceId);
+    if (cached) {
+      applyLoaded(cached.resource, cached.traces, cached.course, cached.chapterResources);
+      return () => { cancelled = true; };
+    }
+
     Promise.all([api.getLearningResource(resourceId), api.getLearningResourceTraceability(resourceId).catch(() => ({ items: [] }))])
       .then(async ([loaded, traceResult]) => {
         if (cancelled) return;
-        setResource(loaded);
-        setTraces(traceResult.items);
-        const progress = progressOf(loaded);
-        const parsedBlocks = blocksOf(loaded);
-        setCurrentBlockId(progress.currentBlockId && parsedBlocks.some((block) => block.id === progress.currentBlockId) ? progress.currentBlockId : parsedBlocks[0]?.id ?? '');
-        setVisited(progress.visitedBlockIds);
-        setCompletedSteps(progress.completedStepIds);
-        setElapsedBase(progress.elapsedSeconds);
-        setSessionSeconds(0);
-        sessionSecondsRef.current = 0;
+        let loadedCourse: Course | null = null;
+        let loadedResources: LearningResourceSummary[] = [];
         if (loaded.courseId && loaded.chapterId) {
-          const [loadedCourse, listed] = await Promise.all([
+          const [courseResult, listed] = await Promise.all([
             api.getCourse(loaded.courseId),
             api.listLearningResources({ courseId: loaded.courseId, chapterId: loaded.chapterId }),
           ]);
-          if (!cancelled) { setCourse(loadedCourse); setChapterResources(listed.resources ?? []); }
-        } else if (!cancelled) { setCourse(null); setChapterResources([]); }
+          loadedCourse = courseResult;
+          loadedResources = listed.resources ?? [];
+        }
+        applyLoaded(loaded, traceResult.items, loadedCourse, loadedResources);
+        writeResourcePlayerCache(resourceId, { resource: loaded, course: loadedCourse, chapterResources: loadedResources, traces: traceResult.items });
         void api.recordLearningEvent({ eventType: 'RESOURCE_VIEW', sourceType: 'RESOURCE', sourceId: loaded.id, metadata: JSON.stringify({ courseId: loaded.courseId, chapterId: loaded.chapterId, resourceType: loaded.type }) }).catch(() => undefined);
       })
       .catch((reason) => { if (!cancelled) setError(reason instanceof Error ? reason.message : '学习资源加载失败'); })
@@ -549,6 +601,7 @@ export default function CourseResourcePlayer() {
     try {
       const result = await api.completeLearningResource(resource.id);
       setResource(result.resource);
+      window.localStorage.removeItem(`${RESOURCE_CACHE_PREFIX}${resource.id}`);
       if (isUuid(resource.learnerId) && resource.type !== 'quiz') {
         const eventType = resource.type === 'practice' ? 'guide-complete' : 'lecture-read';
         const amount = resource.type === 'practice' ? 20 : 15;
@@ -577,7 +630,7 @@ export default function CourseResourcePlayer() {
   const nextResource = resourceIndex >= 0 ? sortedResources[resourceIndex + 1] : undefined;
 
   return <div className={cn('mx-auto max-w-[1260px] px-4 pb-40 pt-6 md:px-6', focusMode && 'max-w-[1040px]', (noteFor || chatOpen) && 'relative z-50')}>
-    {!focusMode && <div className="mb-5 flex flex-wrap items-center gap-2 text-[12px] text-ink-muted"><button type="button" onClick={() => navigate('/learn')} className="inline-flex items-center gap-1 hover:text-brand"><ArrowLeft size={13} />我的课程</button><ChevronRight size={12} /><Link to={`/resources?courseId=${encodeURIComponent(resource.courseId ?? '')}&chapterId=${encodeURIComponent(resource.chapterId ?? '')}`} className="hover:text-brand">{chapter?.title ?? '章节资源'}</Link><ChevronRight size={12} /><span className="truncate text-ink-2">{resourceMeta[resource.type].label}</span></div>}
+    {!focusMode && <div className="mb-5 flex flex-wrap items-center gap-2 text-[12px] text-ink-muted"><button type="button" onClick={() => navigate('/learn')} className="inline-flex items-center gap-1 hover:text-brand"><ArrowLeft size={13} />我的课程</button><ChevronRight size={12} />{resource.courseId && resource.chapterId ? <Link to={`/resources?courseId=${encodeURIComponent(resource.courseId)}&chapterId=${encodeURIComponent(resource.chapterId)}`} className="hover:text-brand">{chapter?.title ?? '章节资源'}</Link> : <span className="max-w-[260px] truncate text-ink-2">{resource.topic || '学习资源'}</span>}{resource.courseId && resource.chapterId ? <><ChevronRight size={12} /><span className="truncate text-ink-2">{resourceMeta[resource.type].label}</span></> : null}</div>}
 
     <header className="relative overflow-hidden rounded-[20px] border border-brand/20 bg-gradient-to-br from-brand-tint/70 via-card-warm to-paper p-6 md:p-8">
       <div className="absolute -right-14 -top-16 h-44 w-44 rounded-full bg-brand/5 blur-2xl" />
@@ -597,9 +650,9 @@ export default function CourseResourcePlayer() {
       <main className="min-w-0 space-y-6">
       {resource.type === 'practice' && <section className="rounded-[18px] border border-brand-amber/40 bg-brand-amber-tint p-5"><div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="flex items-center gap-2 text-[15px] font-semibold text-ochre"><ShieldAlert size={16} />开始前安全检查</h2><p className="mt-1 text-[11.5px] text-ochre/80">逐项确认后再开始操作；检查结果只用于本次学习进度。</p></div><span className="font-mono text-[11px] text-ochre">{safetyChecks.length}/{safetyChecklist.length} 已确认</span></div>{safetyChecklist.length ? <div className="mt-3 grid gap-2 sm:grid-cols-2">{safetyChecklist.map((item) => { const checked = safetyChecks.includes(item); return <button key={item} type="button" onClick={() => setSafetyChecks((current) => checked ? current.filter((value) => value !== item) : [...current, item])} className={cn('flex items-center gap-2 rounded-[10px] border bg-card-warm px-3 py-2.5 text-left text-[12.5px]', checked ? 'border-brand/45 text-brand' : 'border-hairline text-ink-2')} >{checked ? <ShieldCheck size={15} /> : <Circle size={15} className="text-ink-muted" />}<span>{item}</span></button>; })}</div> : <p className="mt-3 text-[12.5px] text-ink-muted">本任务未识别到额外的开始前检查项，请仍在隔离的练习环境中操作。</p>}{String(resource.content.safetyNotice ?? '') && <div className="mt-3 flex items-start gap-2 rounded-[10px] border border-brand-danger/25 bg-brand-danger/5 px-3 py-2.5 text-[12px] leading-5 text-ink-2"><TriangleAlert size={15} className="mt-0.5 shrink-0 text-brand-danger" />{String(resource.content.safetyNotice)}</div>}</section>}
       {resource.type === 'practice' && <section className="grid gap-3 sm:grid-cols-3"><div className="lf-card p-4"><Clock3 size={15} className="text-brand" /><div className="mt-2 text-[18px] font-semibold text-ink">{Number(resource.content.estimatedMinutes) || blocks.length * 10} 分钟</div><div className="text-[10.5px] text-ink-muted">预计完成时间</div></div><div className="lf-card p-4 sm:col-span-2"><div className="flex items-center gap-2 text-[12px] font-semibold text-ink"><Wrench size={14} className="text-brand" />环境与工具</div><div className="mt-2 flex flex-wrap gap-1.5">{asStrings(resource.content.environment).map((item) => <span key={item} className="rounded-md border border-hairline bg-paper px-2 py-1 text-[10.5px] text-ink-2">{item}</span>)}</div></div></section>}
-      {resource.type === 'quiz' && <section className="grid gap-3 sm:grid-cols-3">{quizTiers.map((tier) => { const meta = difficultyMeta[tier.difficulty]; return <div key={tier.difficulty} className="lf-card p-4"><div className="flex items-center justify-between"><span className="text-[14px] font-semibold text-ink">{meta.label}阶</span><DifficultyStars count={meta.stars} color={meta.color} /></div><div className="mt-2 flex items-center justify-between font-mono text-[11px] text-ink-muted"><span>{tier.total} 题</span><span>{tier.done}/{tier.total} 已答</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-paper-deep"><div className="h-full rounded-full" style={{ width: `${tier.total ? tier.done / tier.total * 100 : 0}%`, backgroundColor: meta.color }} /></div></div>; })}</section>}
+      {resource.type === 'quiz' && <section className="grid gap-3 sm:grid-cols-3">{quizTiers.map((tier) => { const meta = difficultyMeta[tier.difficulty]; return <div key={tier.difficulty} className="lf-card p-4"><div className="flex items-center justify-between"><span className="text-[14px] font-semibold text-ink">{meta.label}</span><DifficultyStars count={meta.stars} color={meta.color} /></div><div className="mt-2 flex items-center justify-between font-mono text-[11px] text-ink-muted"><span>{tier.total} 题</span><span>{tier.done}/{tier.total} 已答</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-paper-deep"><div className="h-full rounded-full" style={{ width: `${tier.total ? tier.done / tier.total * 100 : 0}%`, backgroundColor: meta.color }} /></div></div>; })}</section>}
       {blocks.length === 0 ? <div className="rounded-[16px] border border-dashed border-hairline p-12 text-center"><p className="text-[14px] text-ink-muted">当前资源没有可学习的正文。</p><Link to={`/resources?courseId=${resource.courseId}&chapterId=${resource.chapterId}`} className="lf-btn-primary mt-4 inline-flex">重新生成资源</Link></div> : blocks.map((block, index) => <motion.section key={block.id} ref={(element) => { blockRefs.current[block.id] = element; }} data-block-id={block.id} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-80px' }} className={cn('scroll-mt-28 rounded-[18px] border bg-card-warm p-5 shadow-xs transition md:p-7', block.id === currentBlockId ? 'border-brand/35 shadow-warm' : 'border-hairline', block.safety === 'danger' && 'border-l-2 border-l-brand-danger/60')}>
-        <div className="flex items-start gap-4"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-brand-tint font-mono text-[11px] font-semibold text-brand">{block.kind === 'practice' ? `S${index}` : String(index + 1).padStart(2, '0')}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><div className="lf-mono-label !text-[10px]">{block.eyebrow}</div>{block.kind === 'practice' && block.safety && <span className={cn('rounded-md border px-1.5 py-0.5 font-mono text-[9.5px]', block.safety === 'danger' ? 'border-brand-danger/35 bg-brand-danger/10 text-brand-danger' : block.safety === 'caution' ? 'border-brand-amber/40 bg-brand-amber-tint text-ochre' : 'border-brand/25 bg-brand-tint text-brand')}>{block.safety === 'danger' ? '高风险' : block.safety === 'caution' ? '需谨慎' : '常规操作'}</span>}{block.kind === 'quiz' && (() => { const meta = difficultyMeta[String(block.question?.difficulty ?? 'easy') as keyof typeof difficultyMeta] ?? difficultyMeta.easy; return <span className="flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[9.5px]" style={{ borderColor: `${meta.color}55`, color: meta.color }}><DifficultyStars count={meta.stars} color={meta.color} />{meta.label}阶</span>; })()}</div><h2 className="mt-1 font-serif text-[22px] font-semibold leading-tight text-ink md:text-[25px]">{block.title}</h2></div>{block.kind === 'practice' && <button type="button" onClick={() => toggleStep(block.id)} className={cn('flex shrink-0 items-center gap-1.5 rounded-[10px] border px-3 py-2 text-[11.5px]', completedSteps.includes(block.id) ? 'border-brand bg-brand text-paper' : !safetyReady && block.id === blocks.find((item) => item.kind === 'practice')?.id ? 'cursor-not-allowed border-hairline bg-paper-deep text-ink-muted' : 'border-hairline bg-paper text-ink-muted hover:border-brand/40')} >{completedSteps.includes(block.id) ? <CheckCircle2 size={14} /> : <Circle size={14} />}完成步骤</button>}</div>
+        <div className="flex items-start gap-4"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-brand-tint font-mono text-[11px] font-semibold text-brand">{block.kind === 'practice' ? `S${index}` : String(index + 1).padStart(2, '0')}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><div className="lf-mono-label !text-[10px]">{block.eyebrow}</div>{block.kind === 'practice' && block.safety && <span className={cn('rounded-md border px-1.5 py-0.5 font-mono text-[9.5px]', block.safety === 'danger' ? 'border-brand-danger/35 bg-brand-danger/10 text-brand-danger' : block.safety === 'caution' ? 'border-brand-amber/40 bg-brand-amber-tint text-ochre' : 'border-brand/25 bg-brand-tint text-brand')}>{block.safety === 'danger' ? '高风险' : block.safety === 'caution' ? '需谨慎' : '常规操作'}</span>}{block.kind === 'quiz' && (() => { const meta = difficultyMeta[String(block.question?.difficulty ?? 'easy') as keyof typeof difficultyMeta] ?? difficultyMeta.easy; return <span className="flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[9.5px]" style={{ borderColor: `${meta.color}55`, color: meta.color }}><DifficultyStars count={meta.stars} color={meta.color} />{meta.label}</span>; })()}</div><h2 className="mt-1 font-serif text-[22px] font-semibold leading-tight text-ink md:text-[25px]">{block.title}</h2></div>{block.kind === 'practice' && <button type="button" onClick={() => toggleStep(block.id)} className={cn('flex shrink-0 items-center gap-1.5 rounded-[10px] border px-3 py-2 text-[11.5px]', completedSteps.includes(block.id) ? 'border-brand bg-brand text-paper' : !safetyReady && block.id === blocks.find((item) => item.kind === 'practice')?.id ? 'cursor-not-allowed border-hairline bg-paper-deep text-ink-muted' : 'border-hairline bg-paper text-ink-muted hover:border-brand/40')} >{completedSteps.includes(block.id) ? <CheckCircle2 size={14} /> : <Circle size={14} />}完成步骤</button>}</div>
         {block.body && <div className="mt-5 max-w-[760px]"><ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{block.body}</ReactMarkdown></div>}
         {block.code && <pre className="mt-5 overflow-x-auto rounded-[12px] bg-ink px-4 py-4 text-[12px] leading-6 text-paper"><code>{block.code}</code></pre>}
         {block.expectedOutput && <div className="mt-4 rounded-[12px] border border-brand/20 bg-brand-tint/35 px-4 py-3 text-[13px] leading-6 text-ink-2"><strong className="text-brand">预期结果：</strong>{block.expectedOutput}</div>}

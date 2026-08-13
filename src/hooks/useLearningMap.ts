@@ -21,6 +21,7 @@ interface LearningMapCache {
   overview: LearningMapOverview;
   resources: LearningResourceSummary[];
   tree?: RagTree;
+  presentations?: PresentationTaskSummary[];
 }
 
 function readLearningMapCache(learnerId: string): LearningMapCache | null {
@@ -46,11 +47,24 @@ export async function refreshLearningMapResourceCache(learnerId: string): Promis
   if (!cache) return;
   try {
     const listed = await api.listLearningResources();
-    writeLearningMapCache(learnerId, { overview: cache.overview, resources: listed.resources ?? [], tree: cache.tree });
+    writeLearningMapCache(learnerId, { overview: cache.overview, resources: listed.resources ?? [], tree: cache.tree, presentations: cache.presentations });
   } catch {
     /* 刷新失败时保留原缓存 */
   }
 }
+
+/** PPT 生成后刷新课件缓存：请求一次课件任务列表并写回，供下次打开地图直接命中 */
+export async function refreshLearningMapPresentationCache(learnerId: string): Promise<void> {
+  const cache = readLearningMapCache(learnerId);
+  if (!cache) return;
+  try {
+    const listed = await presentationApi.listPresentationSummaries(100);
+    writeLearningMapCache(learnerId, { overview: cache.overview, resources: cache.resources, tree: cache.tree, presentations: listed.tasks ?? [] });
+  } catch {
+    /* 刷新失败时保留原缓存 */
+  }
+}
+
 
 export interface LearningMapView {
   loading: boolean;
@@ -66,6 +80,7 @@ export interface LearningMapView {
   status: Record<string, string>;
   activeKp: string | null;
   resources: Record<string, Array<GeneratedResource & { id: string; learned?: boolean }>>;
+  presentations: PresentationTaskSummary[];
   goalId: string | null;
 }
 
@@ -187,14 +202,17 @@ export function useLearningMap(): LearningMapView {
     const resourcesPromise = cached
       ? Promise.resolve(cached.resources)
       : api.listLearningResources().then((listed) => listed.resources ?? []).catch(() => [] as LearningResourceSummary[]);
-    Promise.all([api.getLearningMap(currentLearnerId), api.getRagTree('agent'), api.getLearnerAnalyticsProfile().catch(() => null), presentationApi.listPresentationSummaries(100).catch(() => ({ tasks: [] })), resourcesPromise])
+    const presentationsPromise = cached?.presentations
+      ? Promise.resolve(cached.presentations)
+      : presentationApi.listPresentationSummaries(100).then((listed) => listed.tasks ?? []).catch(() => [] as PresentationTaskSummary[]);
+    Promise.all([api.getLearningMap(currentLearnerId), api.getRagTree('agent'), api.getLearnerAnalyticsProfile().catch(() => null), presentationsPromise, resourcesPromise])
       .then(([overview, latestTree, latestAnalytics, latestPresentations, latestResources]) => {
         if (!cancelled) setMap(overview);
         if (!cancelled) setTree(latestTree);
         if (!cancelled) setAnalytics(latestAnalytics);
-        if (!cancelled) setPresentations(latestPresentations.tasks ?? []);
+        if (!cancelled) setPresentations(latestPresentations);
         if (!cancelled) setResources(latestResources);
-        if (!cancelled) writeLearningMapCache(currentLearnerId, { overview, resources: latestResources, tree: latestTree });
+        if (!cancelled) writeLearningMapCache(currentLearnerId, { overview, resources: latestResources, tree: latestTree, presentations: latestPresentations });
       })
       .catch(() => { if (!cancelled && !cached) setMap(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -217,6 +235,7 @@ export function useLearningMap(): LearningMapView {
         status: {},
         activeKp: null,
         resources: {},
+        presentations: [],
         goalId: null,
       };
     }
@@ -335,6 +354,7 @@ export function useLearningMap(): LearningMapView {
       status,
       activeKp: chapters.find((chapter) => status[chapter.nodeCode] === 'active')?.nodeCode ?? chapters[0]?.nodeCode ?? null,
       resources: resourceByKp,
+      presentations,
       goalId: map.goalId ?? null,
     };
   }, [map, tree, analytics, presentations, loading, currentLearner, resources, currentLearnerId]);

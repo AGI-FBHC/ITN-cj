@@ -8,6 +8,7 @@ import { OrbitControls, Text, Line, PerspectiveCamera, Billboard, RoundedBox } f
 import * as THREE from 'three';
 import type { GraphNode, GraphEdge, EdgeKind } from '@/data/knowledgeGraph';
 import type { ResourceForm, GeneratedResource } from '@/data/resources';
+import type { PresentationTaskSummary } from '@/lib/presentationApi';
 import { FUNCTION_META, useTopicResourceActions } from '@/hooks/useTopicResourceActions';
 import cjkFontUrl from '@/assets/fonts/noto-sans-cjk-sc-gb2312.otf';
 
@@ -73,6 +74,8 @@ interface KnowledgeGraph3DProps {
   showLearned?: boolean;
   /** 各章节已有资源（kpId → resources），功能节点据此显示“打开/生成” */
   resources?: Record<string, Array<GeneratedResource & { id?: string; learned?: boolean }>>;
+  /** 课件任务列表，用于功能节点判断“交互课件”是否已生成 */
+  presentations?: PresentationTaskSummary[];
   /** 生成资源时的学习目标 */
   goalId?: string | null;
   className?: string;
@@ -619,12 +622,14 @@ function FunctionLayer({
   node,
   relPos,
   resources,
+  presentations,
   goalId,
   learned,
 }: {
   node: GraphNode;
   relPos: [number, number, number];
   resources?: Array<GeneratedResource & { id?: string; learned?: boolean }>;
+  presentations?: PresentationTaskSummary[];
   goalId?: string | null;
   learned: Set<string>;
 }) {
@@ -643,13 +648,18 @@ function FunctionLayer({
     <group position={relPos}>
       {FUNCTION_META.map((fn, i) => {
         const res = fn.form !== 'ppt' ? existingFor(fn.form as ResourceForm) : undefined;
-        const exists = Boolean(res?.id);
+        const pptTask = fn.form === 'ppt'
+          ? (presentations ?? []).find((task) => task.title.includes(node.label) && !['failed', 'cancelled'].includes(task.status))
+          : undefined;
+        const exists = fn.form === 'ppt' ? Boolean(pptTask && pptTask.status === 'completed') : Boolean(res?.id);
         const busy = fn.form === 'ppt' ? checkingPpt : generating.has(fn.form);
         const status: 'missing' | 'unlearned' | 'learned' = !exists
           ? 'missing'
-          : (res?.learned ?? learned.has(node.kpId))
-            ? 'learned'
-            : 'unlearned';
+          : fn.form === 'ppt'
+            ? (pptTask?.learned ? 'learned' : 'unlearned')
+            : (res?.learned ?? learned.has(node.kpId))
+              ? 'learned'
+              : 'unlearned';
         return (
           <FunctionButton
             key={fn.form}
@@ -685,6 +695,7 @@ function ChildPlane({
   showLearned,
   expandedTopicId,
   resources,
+  presentations,
   goalId,
 }: {
   parentPos: THREE.Vector3;
@@ -702,6 +713,7 @@ function ChildPlane({
   showLearned?: boolean;
   expandedTopicId?: string | null;
   resources?: Record<string, Array<GeneratedResource & { id?: string; learned?: boolean }>>;
+  presentations?: PresentationTaskSummary[];
   goalId?: string | null;
 }) {
   const billboardRef = useRef<THREE.Group | null>(null);
@@ -778,6 +790,7 @@ function ChildPlane({
             node={expandedChild.node}
             relPos={expandedChild.relPos}
             resources={resources?.[expandedChild.node.kpId] ?? []}
+            presentations={presentations}
             goalId={goalId}
             learned={learned}
           />
@@ -920,13 +933,13 @@ function ChildNode({
         raycast={() => null}
         renderOrder={2}
         position={getTextPosition()}
-        fontSize={1.2}
+        fontSize={1.4}
         color="#3D4A3A"
         anchorX={textAnchor.x}
         anchorY={textAnchor.y}
-        outlineWidth={0.1}
+        outlineWidth={0.14}
         outlineColor="#FFFFFF"
-        outlineOpacity={0.5}
+        outlineOpacity={0.6}
       >
         {node.label}
       </Text>
@@ -1241,6 +1254,7 @@ function SceneContent({
   expandedTopicId,
   onExpandedTopicChange,
   resources,
+  presentations,
   goalId,
   animRef,
   focusId,
@@ -1265,6 +1279,7 @@ function SceneContent({
   expandedTopicId: string | null;
   onExpandedTopicChange: (id: string | null) => void;
   resources?: Record<string, Array<GeneratedResource & { id?: string; learned?: boolean }>>;
+  presentations?: PresentationTaskSummary[];
   goalId?: string | null;
   hoveredId: string | null;
   onHoverNode: (id: string | null) => void;
@@ -1363,6 +1378,7 @@ function SceneContent({
             showLearned={showLearned}
             expandedTopicId={expandedTopicId}
             resources={resources}
+            presentations={presentations}
             goalId={goalId}
           />
         );
@@ -1423,6 +1439,7 @@ export default function KnowledgeGraph3D({
   className,
   showLearned = false,
   resources = {},
+  presentations = [],
   goalId = null,
 }: KnowledgeGraph3DProps) {
   /** 当前展开“功能节点层”（定制讲义/实操指南/分阶测试题/交互课件）的子知识点，与章节展开互不干扰 */
@@ -1486,6 +1503,7 @@ export default function KnowledgeGraph3D({
             expandedTopicId={expandedTopicId}
             onExpandedTopicChange={setExpandedTopicId}
             resources={resources}
+            presentations={presentations}
             goalId={goalId}
             animRef={blendRef}
             focusId={dimAnchorId}
