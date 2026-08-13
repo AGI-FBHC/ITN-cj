@@ -127,47 +127,6 @@ function PersistedCamera({ storageKey, restore = false }: { storageKey?: string;
   return null;
 }
 
-/** 边缘发光 Shader */
-const glowVertexShader = `
-  varying vec3 vNormal;
-  varying vec3 vViewDir;
-  void main() {
-    vNormal = normalize(normalMatrix * normal);
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-    vViewDir = normalize(-mvPosition.xyz);
-    gl_Position = projectionMatrix * mvPosition;
-  }
-`;
-
-// 内描边：球面边缘一条清晰的高对比亮环
-const innerStrokeFragmentShader = `
-  uniform vec3 glowColor;
-  uniform float intensity;
-  varying vec3 vNormal;
-  varying vec3 vViewDir;
-  void main() {
-    float f = pow(1.0 - abs(dot(normalize(vNormal), normalize(vViewDir))), 6.0);
-    float band = smoothstep(0.3, 0.7, f);
-    gl_FragColor = vec4(glowColor, min(band * intensity, 1.0));
-  }
-`;
-
-// 外描边：紧贴球体轮廓外侧的蓝色发光，内侧最亮、向外渐隐（无硬边外圈）
-const outerStrokeFragmentShader = `
-  uniform vec3 glowColor;
-  uniform float intensity;
-  uniform float innerF;
-  varying vec3 vNormal;
-  varying vec3 vViewDir;
-  void main() {
-    float f = 1.0 - abs(dot(normalize(vNormal), normalize(vViewDir)));
-    // t: 0 = 贴近球面（最亮），1 = 光晕外缘（完全透明）
-    float t = clamp((f - innerF) / (1.0 - innerF), 0.0, 1.0);
-    float alpha = pow(1.0 - t, 1.8) * intensity;
-    gl_FragColor = vec4(glowColor, min(alpha, 1.0));
-  }
-`;
-
 /** 多轴随机缓慢旋转的场景容器 */
 function RotatingScene({
   children,
@@ -523,16 +482,22 @@ function ProgressRing({
   radius,
   progress,
   mastery,
+  variant = 'topic',
   hovered,
   selected,
 }: {
   radius: number;
   progress: number;
   mastery: number;
+  variant?: 'chapter' | 'topic';
   hovered: boolean;
   selected: boolean;
 }) {
-  const color = progress >= 80 ? PROGRESS_COLORS.high : progress >= 50 ? PROGRESS_COLORS.mid : PROGRESS_COLORS.low;
+  const chapterColors = { low: '#4F9D8A', mid: '#3F8F78', high: '#26715D' };
+  const palette = variant === 'chapter' ? chapterColors : PROGRESS_COLORS;
+  const color = progress >= 80 ? palette.high : progress >= 50 ? palette.mid : palette.low;
+  const trackColor = variant === 'chapter' ? '#71877D' : '#7B8780';
+  const masteryColor = variant === 'chapter' ? '#174E43' : '#155E9A';
   const arcLength = (Math.max(0, Math.min(100, progress)) / 100) * Math.PI * 2;
   const masteryLength = arcLength * Math.max(0, Math.min(100, mastery)) / 100;
   const inner = radius + 0.3;
@@ -553,7 +518,7 @@ function ProgressRing({
     <Billboard>
       <mesh raycast={() => null} renderOrder={3} position={[0, 0, 0.08]} rotation={[0, 0, -Math.PI / 2]}>
         <ringGeometry args={[inner, outer, 96]} />
-        <meshBasicMaterial color="#7B8780" transparent opacity={hovered || selected ? 0.72 : 0.48} side={THREE.DoubleSide} depthWrite={false} />
+        <meshBasicMaterial color={trackColor} transparent opacity={hovered || selected ? 0.72 : 0.48} side={THREE.DoubleSide} depthWrite={false} />
       </mesh>
       {arcLength > 0 && <mesh raycast={() => null} renderOrder={3} position={[0, 0, 0.09]} rotation={[0, 0, -Math.PI / 2]}>
         <ringGeometry args={[inner - 0.08, outer + 0.08, 96, 1, 0, arcLength]} />
@@ -571,12 +536,12 @@ function ProgressRing({
       </>}
       {masteryLength > 0 && <mesh raycast={() => null} renderOrder={5} position={[0, 0, 0.12]} rotation={[0, 0, -Math.PI / 2]}>
         <ringGeometry args={[masteryInner, masteryOuter, 96, 1, 0, masteryLength]} />
-        <meshBasicMaterial color="#155E9A" transparent opacity={1} side={THREE.DoubleSide} depthWrite={false} />
+        <meshBasicMaterial color={masteryColor} transparent opacity={1} side={THREE.DoubleSide} depthWrite={false} />
       </mesh>}
       {masteryLength > 0 && masteryLength < Math.PI * 2 - 0.001 && <>
         {[0, masteryLength].map((angle) => <mesh key={`mastery-cap-${angle}`} raycast={() => null} renderOrder={5} position={capPosition(masteryMid, angle, 0.125)}>
           <circleGeometry args={[masteryCapRadius, 24]} />
-          <meshBasicMaterial color="#155E9A" transparent opacity={1} side={THREE.DoubleSide} depthWrite={false} />
+          <meshBasicMaterial color={masteryColor} transparent opacity={1} side={THREE.DoubleSide} depthWrite={false} />
         </mesh>)}
       </>}
     </Billboard>
@@ -945,13 +910,13 @@ function ChildNode({
         <meshBasicMaterial color={getColor()} transparent={false} />
 
         {/* 内描边：球面边缘的亮环 */}
-        <mesh scale={1.015} raycast={() => null} renderOrder={1}>
-          <circleGeometry args={[1, 64]} />
+        <mesh scale={1.015} position={[0, 0, 0.012]} raycast={() => null} renderOrder={1}>
+          <ringGeometry args={[0.9, 1, 64]} />
           <meshBasicMaterial color={TOPIC_STROKE_COLORS.inner} transparent opacity={0.34} depthWrite={false} />
         </mesh>
 
         {/* 外描边：紧贴球体轮廓外的蓝色发光，向外渐隐 */}
-        <mesh scale={1.16} raycast={() => null} renderOrder={1}>
+        <mesh scale={1.16} position={[0, 0, 0.008]} raycast={() => null} renderOrder={1}>
           <ringGeometry args={[0.86, 1, 64]} />
           <meshBasicMaterial color={TOPIC_STROKE_COLORS.outer} transparent opacity={hovered ? 0.46 : selected ? 0.4 : 0.32} depthWrite={false} />
         </mesh>
@@ -959,7 +924,7 @@ function ChildNode({
       </Billboard>
 
       {/* 进度环 */}
-      <ProgressRing radius={baseSize} progress={progress} mastery={mastery} hovered={hovered} selected={selected} />
+      <ProgressRing radius={baseSize} progress={progress} mastery={mastery} variant="topic" hovered={hovered} selected={selected} />
 
       {/* 文字短线 */}
       <Line
@@ -1042,18 +1007,8 @@ function Node3D({
   const meshRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group | null>(null);
   const textRef = useRef<THREE.Mesh | null>(null);
-  const innerStrokeRef = useRef<THREE.ShaderMaterial | null>(null);
-  const outerStrokeRef = useRef<THREE.ShaderMaterial | null>(null);
-  // uniforms 对象保持引用稳定，亮度只由 useFrame 逐帧写入，避免重渲染时闪烁
-  const innerUniforms = useMemo(() => ({
-    glowColor: { value: new THREE.Color(STROKE_COLORS.inner) },
-    intensity: { value: 1 },
-  }), []);
-  const outerUniforms = useMemo(() => ({
-    glowColor: { value: new THREE.Color(STROKE_COLORS.outer) },
-    intensity: { value: 1 },
-    innerF: { value: 0.49 },
-  }), []);
+  const innerStrokeRef = useRef<THREE.MeshBasicMaterial | null>(null);
+  const outerStrokeRef = useRef<THREE.MeshBasicMaterial | null>(null);
   const isDomain = node.kind === 'domain';
   const colors = isDomain ? NODE_COLORS.domain : NODE_COLORS.topic;
 
@@ -1086,12 +1041,12 @@ function Node3D({
     mat.opacity = (dimmed ? 0.2 : 1) * focusFade;
 
     if (innerStrokeRef.current) {
-      innerStrokeRef.current.uniforms.intensity.value =
-        (dimmed ? 0.2 : hovered ? 1.3 : selected ? 1.15 : 1.0) * focusFade;
+      innerStrokeRef.current.opacity =
+        (dimmed ? 0.12 : hovered ? 0.52 : selected ? 0.46 : 0.34) * focusFade;
     }
     if (outerStrokeRef.current) {
-      outerStrokeRef.current.uniforms.intensity.value =
-        (dimmed ? 0.15 : hovered ? 1.3 : selected ? 1.15 : 1.0) * focusFade;
+      outerStrokeRef.current.opacity =
+        (dimmed ? 0.08 : hovered ? 0.4 : selected ? 0.36 : 0.26) * focusFade;
     }
     const text = textRef.current;
     if (text && (text.material as any).opacity !== undefined) {
@@ -1139,36 +1094,21 @@ function Node3D({
         <meshBasicMaterial color={getColor()} transparent opacity={1} />
 
         {/* 内描边：球面边缘的亮环 */}
-        <mesh scale={1.015} raycast={() => null} renderOrder={1}>
-          <circleGeometry args={[1, 64]} />
-          <shaderMaterial
-            ref={innerStrokeRef}
-            vertexShader={glowVertexShader}
-            fragmentShader={innerStrokeFragmentShader}
-            uniforms={innerUniforms}
-            transparent
-            depthWrite={false}
-          />
+        <mesh scale={1.015} position={[0, 0, 0.012]} raycast={() => null} renderOrder={1}>
+          <ringGeometry args={[0.9, 1, 64]} />
+          <meshBasicMaterial ref={innerStrokeRef} color={isDomain ? STROKE_COLORS.inner : TOPIC_STROKE_COLORS.inner} transparent opacity={hovered ? 0.52 : selected ? 0.46 : 0.34} depthWrite={false} />
         </mesh>
 
         {/* 外描边：紧贴球体轮廓外的蓝色发光，向外渐隐 */}
-        <mesh scale={1.16} raycast={() => null} renderOrder={1}>
+        <mesh scale={1.16} position={[0, 0, 0.008]} raycast={() => null} renderOrder={1}>
           <ringGeometry args={[0.86, 1, 64]} />
-          <shaderMaterial
-            ref={outerStrokeRef}
-            vertexShader={glowVertexShader}
-            fragmentShader={outerStrokeFragmentShader}
-            uniforms={outerUniforms}
-            transparent
-            side={THREE.BackSide}
-            depthWrite={false}
-          />
+          <meshBasicMaterial ref={outerStrokeRef} color={isDomain ? STROKE_COLORS.outer : TOPIC_STROKE_COLORS.outer} transparent opacity={hovered ? 0.4 : selected ? 0.36 : 0.26} depthWrite={false} />
         </mesh>
       </mesh>
       </Billboard>
 
       {/* 进度描边 */}
-      <ProgressRing radius={baseSize} progress={progress} mastery={mastery} hovered={hovered} selected={selected} />
+      <ProgressRing radius={baseSize} progress={progress} mastery={mastery} variant={isDomain ? 'chapter' : 'topic'} hovered={hovered} selected={selected} />
 
       {/* 标签 */}
       <Billboard>
