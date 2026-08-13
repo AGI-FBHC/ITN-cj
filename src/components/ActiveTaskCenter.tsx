@@ -15,6 +15,7 @@ type ActiveTask = {
   stage: string;
   updatedAt?: string;
   events: TaskEvent[];
+  kindName?: string;
 };
 
 const ACTIVE_PRESENTATION = new Set(['queued', 'analyzing', 'outline_review', 'generating', 'reviewing']);
@@ -65,7 +66,15 @@ function presentationTask(task: PresentationTask): ActiveTask {
 }
 
 function resourceTask(task: LearningResourceGenerationTask): ActiveTask {
-  return { id: task.id, kind: 'resource', title: task.title, progress: task.progress, stage: task.stageMessage, updatedAt: task.updatedAt, events: task.events.map(eventOf) };
+  const kindName = task.resourceType === 'lecture'
+    ? '定制讲义'
+    : task.resourceType === 'practice'
+      ? '实操指南'
+      : '分阶测试题';
+  const title = task.title
+    .replace(/\s*[·・]\s*(定制讲义|实操指南|分阶测试题?|分阶测试)\s*$/, '')
+    .trim();
+  return { id: task.id, kind: 'resource', kindName, title: title || task.title, progress: task.progress, stage: task.stageMessage, updatedAt: task.updatedAt, events: task.events.map(eventOf) };
 }
 
 export default function ActiveTaskCenter({ learnerId }: { learnerId: string | null }) {
@@ -124,7 +133,7 @@ export default function ActiveTaskCenter({ learnerId }: { learnerId: string | nu
 
   const latest = tasks[0];
   const label = tasks.length > 0 ? `${tasks.length} 个任务执行中` : '正在执行';
-  const kindLabel = (kind: ActiveTask['kind']) => kind === 'course' ? '课程资源' : kind === 'presentation' ? '交互课件' : kind === 'resource' ? '个性资源' : '教研协同';
+  const kindLabel = (task: ActiveTask) => task.kindName ?? (task.kind === 'course' ? '课程资源' : task.kind === 'presentation' ? '交互课件' : task.kind === 'resource' ? '学习资源' : '教研协同');
   const toggle = (id: string) => setExpanded((prev) => {
     const next = new Set(prev);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -170,7 +179,7 @@ export default function ActiveTaskCenter({ learnerId }: { learnerId: string | nu
                   <div className="flex items-start gap-2.5">
                     <LiveDot status="thinking" className="mt-1" />
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2"><span className="rounded bg-paper-deep px-1.5 py-0.5 text-[10px] text-ink-muted">{kindLabel(task.kind)}</span><span className="truncate text-[13px] font-semibold text-ink">{task.title}</span></div>
+                      <div className="flex items-center gap-2"><span className="rounded bg-paper-deep px-1.5 py-0.5 text-[10px] text-ink-muted">{kindLabel(task)}</span><span className="truncate text-[13px] font-semibold text-ink">{task.title}</span></div>
                       <p className="mt-1.5 text-[12px] leading-5 text-ink-2">{latestEvent?.detail || latestEvent?.title || task.stage}</p>
                       {task.kind !== 'teaching' && <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-paper-deep"><div className="h-full rounded-full bg-brand transition-[width] duration-500" style={{ width: `${Math.max(3, task.progress)}%` }} /></div>}
                       <div className="mt-1 flex items-center justify-between font-mono text-[10px] text-ink-muted"><span>{task.stage}</span><span>{task.kind === 'teaching' ? `${task.events.length} 条事件` : `${task.progress}%`}</span></div>

@@ -28,6 +28,17 @@ interface LearnViewState {
 }
 
 const learnViewKey = (learnerId: string) => `lf.learnView:v1:${learnerId}`;
+const cameraReturnKey = (learnerId: string) => `lf.knowledgeGraph3dReturn:v1:${learnerId}`;
+
+function consumeCameraReturn(learnerId: string): boolean {
+  if (!learnerId || typeof window === 'undefined') return false;
+  try {
+    const key = cameraReturnKey(learnerId);
+    const restore = window.sessionStorage.getItem(key) === 'breadcrumb';
+    window.sessionStorage.removeItem(key);
+    return restore;
+  } catch { return false; }
+}
 
 function readLearnView(learnerId: string): LearnViewState | null {
   if (!learnerId || typeof window === 'undefined') return null;
@@ -49,6 +60,7 @@ export default function Learn() {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
   const restoredView = readLearnView(currentLearner.id);
+  const [restoreCamera] = useState(() => consumeCameraReturn(currentLearner.id));
   const map = useLearningMap();
   const knowledgePoints = map.domains;
   const reportPath = map.path;
@@ -254,6 +266,7 @@ export default function Learn() {
               goalId={map.goalId}
               presentations={map.presentations}
               persistenceKey={currentLearner.id}
+              restorePersistedCamera={restoreCamera}
             />
           ) : (
             <KnowledgeGraph showLearned={showLearnedPath} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpIds={expandedKpIds} onExpandedKpChange={setSingleExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} />

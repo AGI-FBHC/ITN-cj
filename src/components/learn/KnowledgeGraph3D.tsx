@@ -59,6 +59,7 @@ const PROGRESS_COLORS = {
 interface KnowledgeGraph3DProps {
   onTopicClick?: (kpId: string, topicIndex: number, label: string) => void;
   persistenceKey?: string;
+  restorePersistedCamera?: boolean;
   nodes: GraphNode[];
   edges: GraphEdge[];
   selectedKpId: string | null;
@@ -88,7 +89,7 @@ interface CameraViewState {
   target: [number, number, number];
 }
 
-function PersistedCamera({ storageKey }: { storageKey?: string }) {
+function PersistedCamera({ storageKey, restore = false }: { storageKey?: string; restore?: boolean }) {
   const camera = useThree((state) => state.camera);
   const controls = useThree((state) => state.controls) as {
     target: THREE.Vector3;
@@ -101,7 +102,7 @@ function PersistedCamera({ storageKey }: { storageKey?: string }) {
     if (!storageKey || !controls) return;
     const key = `lf.knowledgeGraph3dCamera:v1:${storageKey}`;
     try {
-      const saved = JSON.parse(window.sessionStorage.getItem(key) ?? 'null') as CameraViewState | null;
+      const saved = restore ? JSON.parse(window.sessionStorage.getItem(key) ?? 'null') as CameraViewState | null : null;
       if (saved?.position?.length === 3 && saved?.target?.length === 3) {
         camera.position.fromArray(saved.position);
         controls.target.fromArray(saved.target);
@@ -1454,6 +1455,7 @@ export default function KnowledgeGraph3D({
   presentations = [],
   goalId = null,
   persistenceKey,
+  restorePersistedCamera = false,
 }: KnowledgeGraph3DProps) {
   /** 当前展开“功能节点层”（定制讲义/实操指南/分阶测试题/交互课件）的子知识点，与章节展开互不干扰 */
   const topicStorageKey = persistenceKey ? `lf.knowledgeGraph3dTopic:v1:${persistenceKey}` : null;
@@ -1521,7 +1523,7 @@ export default function KnowledgeGraph3D({
           maxDistance={130}
           autoRotate={false}
         />
-        <PersistedCamera storageKey={persistenceKey} />
+        <PersistedCamera storageKey={persistenceKey} restore={restorePersistedCamera} />
         <FocusDriver focusId={dimAnchorId} blendRef={blendRef} />
         <RotatingScene shouldRotate={expandedKpIds.size === 0 && !hoveredNodeId} outerRef={sceneRef}>
           <SceneContent
