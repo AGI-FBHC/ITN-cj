@@ -13,6 +13,7 @@ import type { LearnerProfileData, LearnerUpsertInput } from '@/lib/api';
 import type { OnboardingKnowledgePoint } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { abilityName } from '@/data/abilityDimensions';
+import { readProfileCache, writeProfileCache } from '@/lib/profileCache';
 
 export type ViewMode = 'learner' | 'expert';
 
@@ -86,7 +87,6 @@ const ProfileContext = createContext<ProfileContextValue | null>(null);
 
 const K_VIEW = 'lf.viewMode';
 const K_EVENTS = 'lf.events';
-const K_CURRENT = 'lf.currentLearnerId';
 
 function readJSON<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback;
@@ -276,16 +276,13 @@ const newEventId = () => `ev-${Date.now().toString(36)}-${(eventSeq++).toString(
 
 export function ProfileProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth();
+  const initialCache = readProfileCache(session?.account);
   const [currentLearnerId, setCurrentLearnerId] = useState<string>(() => {
-    const stored = typeof window !== 'undefined' ? window.localStorage.getItem(K_CURRENT) : null;
-    // Backend learner ids are UUIDs and must survive a full-page reload. Validation
-    // happens after the authenticated learner list arrives.
-    if (stored) return stored;
-    return presetLearners[0].id;
+    return initialCache?.currentLearnerId ?? session?.learnerId ?? '';
   });
   const [demoMode, setDemoMode] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<ViewMode>(readInitialMode);
-  const [learners, setLearners] = useState<Learner[]>(() => presetLearners);
+  const [learners, setLearners] = useState<Learner[]>(() => initialCache?.learners ?? []);
   const [events, setEvents] = useState<Record<string, ProfileEvent[]>>(() =>
     readJSON<Record<string, ProfileEvent[]>>(K_EVENTS, {}),
   );
@@ -293,24 +290,32 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!session) {
-      setLearners(presetLearners);
+      setLearners([]);
+      setCurrentLearnerId('');
       return;
+    }
+    const cached = readProfileCache(session.account);
+    if (cached?.learners.length) {
+      setLearners(cached.learners);
+      setCurrentLearnerId(cached.currentLearnerId ?? session.learnerId ?? cached.learners[0].id);
+    } else {
+      setLearners([]);
+      setCurrentLearnerId(session.learnerId ?? '');
     }
     let cancelled = false;
     api.listLearners()
       .then((list) => {
         if (cancelled) return;
         const mapped = list.map(toUiLearner);
-        setLearners(mapped.length ? mapped : presetLearners);
-        const stored = window.localStorage.getItem(K_CURRENT);
-        const target = [stored, session.learnerId]
-          .map((id) => id && (mapped.length ? mapped : presetLearners).some((l) => l.id === id) ? id : null)
+        setLearners(mapped);
+        const target = [cached?.currentLearnerId, session.learnerId, mapped[0]?.id]
+          .map((id) => id && mapped.some((l) => l.id === id) ? id : null)
           .find(Boolean);
-        if (target) setCurrentLearnerId(target);
+        const nextId = target ?? '';
+        setCurrentLearnerId(nextId);
+        writeProfileCache(session.account, mapped, nextId);
       })
-      .catch(() => {
-        if (!cancelled) setLearners(presetLearners);
-      });
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -340,15 +345,44 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     } catch { /* ignore */ }
   }, [viewMode]);
   useEffect(() => {
-    try { window.localStorage.setItem(K_CURRENT, currentLearnerId); } catch { /* ignore */ }
-  }, [currentLearnerId]);
-  useEffect(() => {
     try { window.localStorage.setItem(K_EVENTS, JSON.stringify(events)); } catch { /* ignore */ }
   }, [events]);
 
   const value = useMemo<ProfileContextValue>(() => {
     const byId = (id: string) => learners.find((l) => l.id === id);
-    const currentLearner = byId(currentLearnerId) ?? learners[0] ?? presetLearners[0];
+    const currentLearner = byId(currentLearnerId) ?? learners[0] ?? {
+      id: currentLearnerId || 'loading',
+      code: undefined,
+      name: session?.label || '正在加载',
+      custom: true,
+      dataBaseId: undefined,
+      avatar: '',
+      age: 0,
+      tag: '真实账号',
+      role: '',
+      education: '',
+      school: '',
+      background: '',
+      targetJob: '',
+      learningStyle: [],
+      weeklyHours: 0,
+      scores: Object.fromEntries(Object.keys(NEW_KP_NAMES).map((id) => [id, 50])),
+      strengths: [],
+      blindSpots: [],
+      preferredFormat: '',
+      goal: '',
+      diagnosisSummary: '',
+    };
+
+    const cacheLearners = (next: Learner[], selectedId = currentLearnerId) => {
+      writeProfileCache(session?.account, next, selectedId || next[0]?.id || null);
+      return next;
+    };
+
+    const selectCurrentLearner = (id: string) => {
+      setCurrentLearnerId(id);
+      cacheLearners(learners, id);
+    };
 
     const addEvent = (id: string, event: Omit<ProfileEvent, 'id'>) => {
       setEvents((prev) => ({ ...prev, [id]: [{ id: newEventId(), ...event }, ...(prev[id] ?? [])] }));
@@ -357,7 +391,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     const createLearner = async (draft: LearnerDraft, confidence: ProfileConfidence): Promise<string> => {
       const remote = await api.createLearner(draftToUpsert(draft, confidence));
       const learner = toUiLearner(remote);
-      setLearners((prev) => [...prev.filter((l) => l.id !== learner.id), learner]);
+      setLearners((prev) => cacheLearners([...prev.filter((l) => l.id !== learner.id), learner], learner.id));
       setCurrentLearnerId(learner.id);
       // 后台异步触发课程与资源生成（不阻塞画像创建响应）
       const prompt = `${draft.tag} · ${draft.education} · 目标「${draft.targetJob}」——系统性地覆盖六大知识领域:数据结构、组成原理、操作系统、网络、数据库、智能体。每章配讲义、实操指南、分阶测试题。`;
@@ -389,7 +423,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       };
       const remote = await api.updateLearner(id, toUpsertInput(next));
       const updated = toUiLearner(remote);
-      setLearners((prev) => prev.map((l) => (l.id === id ? updated : l)));
+      setLearners((prev) => cacheLearners(prev.map((l) => (l.id === id ? updated : l))));
       if (event) addEvent(id, event);
       return updated;
     };
@@ -431,7 +465,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       try {
         const remote = await api.updateLearner(id, toUpsertInput(next));
         const updated = toUiLearner(remote);
-        setLearners((prev) => prev.map((l) => (l.id === id ? updated : l)));
+        setLearners((prev) => cacheLearners(prev.map((l) => (l.id === id ? updated : l))));
       } catch {
         /* 忽略，下轮学习行为继续尝试 */
       }
@@ -442,7 +476,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     return {
       learners,
       currentLearnerId,
-      setCurrentLearnerId,
+      setCurrentLearnerId: selectCurrentLearner,
       currentLearner,
       weakestKp: getKnowledgePoint(weakestKpOf(currentLearner)),
       strongestKp: getKnowledgePoint(strongestKpOf(currentLearner)),
@@ -457,7 +491,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       bumpConfidence,
       getEvents,
     };
-  }, [currentLearnerId, demoMode, viewMode, learners, events, domainKnowledgePoints]);
+  }, [currentLearnerId, demoMode, viewMode, learners, events, domainKnowledgePoints, session]);
 
   return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>;
 }
