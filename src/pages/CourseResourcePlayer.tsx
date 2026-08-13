@@ -23,6 +23,8 @@ import { useAmbient } from '@/components/heal/useAmbient';
 import { cn } from '@/lib/utils';
 import { lectureMdComponents, slideMdComponents } from '@/components/resources/lecture-markdown';
 import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
+import { refreshLearningMapResourceCache } from '@/hooks/useLearningMap';
+import { useProfile } from '@/context/ProfileContext';
 
 type ResourceKind = 'lecture' | 'practice' | 'quiz';
 type BlockKind = 'intro' | 'lecture' | 'practice' | 'quiz' | 'review';
@@ -369,6 +371,7 @@ function DifficultyStars({ count, color }: { count: number; color: string }) {
 }
 
 export default function CourseResourcePlayer() {
+  const { currentLearnerId } = useProfile();
   const { resourceId = '' } = useParams();
   const navigate = useNavigate();
   const { focusMode, setFocusMode } = useGrowth();
@@ -614,7 +617,10 @@ export default function CourseResourcePlayer() {
       await api.updateLearningResourceProgress(resource.id, { currentBlockId, visitedBlockIds: blocks.map((block) => block.id), completedStepIds: completedSteps, elapsedSeconds: elapsedBase + sessionSecondsRef.current });
       void api.recordLearningEvent({ eventType: 'STUDY_END', sourceType: 'RESOURCE', sourceId: resource.id, durationSeconds: elapsedBase + sessionSecondsRef.current, metadata: JSON.stringify({ courseId: resource.courseId, chapterId: resource.chapterId, resourceType: resource.type, completed: true }) }).catch(() => undefined);
       setVisited(blocks.map((block) => block.id));
-      toast.success('学习进度已保存', { description: '画像、报告和继续学习会使用这次真实记录。' });
+      const mapLearnerId = isUuid(resource.learnerId) ? resource.learnerId! : currentLearnerId;
+      if (isUuid(mapLearnerId)) await refreshLearningMapResourceCache(mapLearnerId);
+      toast.success('学习进度已保存', { description: '正在返回知识地图。' });
+      navigate('/learn');
     } catch (reason) { toast.error(reason instanceof Error ? reason.message : '完成状态保存失败'); }
     finally { setCompleting(false); }
   };

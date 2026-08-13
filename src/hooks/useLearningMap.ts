@@ -43,10 +43,12 @@ function writeLearningMapCache(learnerId: string, cache: LearningMapCache) {
 /** 生成完成后刷新资源缓存：仅请求一次资源列表并写回，下次打开地图直接命中缓存、不再请求后端 */
 export async function refreshLearningMapResourceCache(learnerId: string): Promise<void> {
   const cache = readLearningMapCache(learnerId);
-  if (!cache) return;
   try {
-    const listed = await api.listLearningResources();
-    writeLearningMapCache(learnerId, { resources: listed.resources ?? [], tree: cache.tree, presentations: cache.presentations });
+    const [listed, tree] = await Promise.all([
+      api.listLearningResources(),
+      cache?.tree ? Promise.resolve(cache.tree) : api.getRagTree('agent'),
+    ]);
+    writeLearningMapCache(learnerId, { resources: listed.resources ?? [], tree, presentations: cache?.presentations });
   } catch {
     /* 刷新失败时保留原缓存 */
   }
