@@ -539,10 +539,11 @@ function FunctionLayer({
     goalId,
     existing: resources ?? [],
   });
-  // 圆角矩形按钮：文字在按钮内，从知识节点正下方展开（避免左右被节点文字遮挡），连线尽量短
-  const buttonWidth = 5.2;
+  // 圆角矩形按钮：文字在按钮内，四个按钮横向排成一行，位于知识节点下方，连线尽量短
+  const buttonWidth = 4.6;
   const buttonHeight = 1.35;
-  const leafPositions: Array<[number, number, number]> = FUNCTION_META.map((_, i) => [0, -(3.2 + i * (buttonHeight + 0.45)), 0.1]);
+  const rowY = -4.2;
+  const leafPositions: Array<[number, number, number]> = FUNCTION_META.map((_, i) => [(i - 1.5) * (buttonWidth + 0.5), rowY, 0.1]);
   return (
     <group position={relPos}>
       {/* 短线：知识节点 → 功能按钮 */}
@@ -550,7 +551,7 @@ function FunctionLayer({
         <Line
           key={`f-line-${fn.form}`}
           renderOrder={-1}
-          points={[new THREE.Vector3(0, -2.6, 0), new THREE.Vector3(0, leafPositions[i][1] + buttonHeight / 2, 0.1)]}
+          points={[new THREE.Vector3(0, -2.6, 0), new THREE.Vector3(leafPositions[i][0], leafPositions[i][1] + buttonHeight / 2, 0.1)]}
           color={fn.color}
           lineWidth={2}
           transparent
@@ -573,7 +574,7 @@ function FunctionLayer({
             onPointerEnter={(event) => { event.stopPropagation(); document.body.style.cursor = 'pointer'; }}
             onPointerLeave={() => { document.body.style.cursor = 'default'; }}
           >
-            <RoundedBox args={[buttonWidth, buttonHeight, 0.18]} radius={0.3} smoothness={3} raycast={() => null}>
+            <RoundedBox args={[buttonWidth, buttonHeight, 0.18]} radius={0.3} smoothness={3}>
               <meshBasicMaterial color={exists ? '#2FBF71' : fn.color} transparent opacity={busy ? 0.45 : 0.96} />
             </RoundedBox>
             <Text raycast={() => null} position={[0, 0, 0.12]} fontSize={0.68} color="#FFFFFF" anchorX="center" anchorY="middle">
