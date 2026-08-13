@@ -926,6 +926,8 @@ export const api = {
   listRagChunksByCategory: (categoryId: number, page = 0, size = 50) =>
     request<RagChunkPage>(`/api/v1/rag/categories/${categoryId}/chunks?page=${page}&size=${size}`),
   getRagChunk: (chunkId: number) => request<RagChunkDetail>(`/api/v1/rag/chunks/${chunkId}`),
+  getRagflowChunk: (ragflowChunkId: string) =>
+    request<RagChunkDetail>(`/api/v1/rag/chunks/ragflow/${encodeURIComponent(ragflowChunkId)}`),
   searchRagChunks: (query: string, page = 0, size = 20) => {
     const params = new URLSearchParams({ q: query, page: String(page), size: String(size) });
     return request<RagChunkPage>(`/api/v1/rag/chunks/search?${params.toString()}`);
@@ -1088,6 +1090,11 @@ export const api = {
   }),
   answerLearningQuiz: (resourceId: string, body: { questionId: string; answer: string; durationSeconds?: number }) =>
     requestDirect<Record<string, unknown>>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/answers`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  gradeLearningQuiz: (resourceId: string, body: { questionId: string; answer: string; durationSeconds?: number }) =>
+    requestDirect<Record<string, unknown>>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/answers/grade`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),

@@ -301,11 +301,12 @@ function useResourceNarration() {
 }
 
 function QuizBlock({
-  block, resource, onResourceState,
+  block, resource, onResourceState, onWritebackStatus,
 }: {
   block: LearningBlock;
   resource: LearningResource;
   onResourceState: (state: Record<string, unknown>) => void;
+  onWritebackStatus: (status: 'syncing' | 'synced' | 'failed') => void;
 }) {
   const question = block.question ?? {};
   const id = block.id;
@@ -319,12 +320,29 @@ function QuizBlock({
     if (selected !== null || submitting) return;
     setSubmitting(true);
     try {
-      const result = await api.answerLearningQuiz(resource.id, {
+      const durationSeconds = Math.max(1, Math.round((Date.now() - startedAt.current) / 1000));
+      const request = {
         questionId: id, answer: String(optionIndex), durationSeconds: Math.max(1, Math.round((Date.now() - startedAt.current) / 1000)),
-      });
+      };
+      const result = await api.gradeLearningQuiz(resource.id, request);
       setSelected(optionIndex);
       setFeedback(result);
-      if (result.state && typeof result.state === 'object') onResourceState(result.state as Record<string, unknown>);
+      const optimisticState = {
+        ...resource.state,
+        answered: [...asRecords(resource.state.answered), {
+          questionId: id, correct: Boolean(result.correct), selectedIndex: optionIndex, durationSeconds,
+        }],
+      };
+      onResourceState(optimisticState);
+      onWritebackStatus('syncing');
+      void api.answerLearningQuiz(resource.id, request).then((synced) => {
+        if (synced.state && typeof synced.state === 'object') onResourceState(synced.state as Record<string, unknown>);
+        setFeedback(synced);
+        onWritebackStatus('synced');
+      }).catch((reason) => {
+        onWritebackStatus('failed');
+        toast.error(reason instanceof Error ? reason.message : '学习记录同步失败，请稍后重试');
+      });
       if (isUuid(resource.learnerId)) {
         void api.recordLearnerGrowthEvent({
           learnerId: resource.learnerId!,
@@ -338,7 +356,7 @@ function QuizBlock({
       void api.recordLearningEvent({
         eventType: 'QUIZ_SUBMIT', sourceType: 'QUIZ', sourceId: resource.id,
         knowledgeCategoryId: Number(point.categoryId) || null,
-        durationSeconds: Math.max(1, Math.round((Date.now() - startedAt.current) / 1000)),
+        durationSeconds,
         metadata: JSON.stringify({ questionId: id, correct: Boolean(result.correct), courseId: resource.courseId, chapterId: resource.chapterId }),
       }).catch(() => undefined);
     } catch (reason) {
@@ -378,6 +396,7 @@ export default function CourseResourcePlayer() {
   const narration = useResourceNarration();
   const ambient = useAmbient();
   const [resource, setResource] = useState<LearningResource | null>(null);
+  const [writebackStatus, setWritebackStatus] = useState<'idle' | 'syncing' | 'synced' | 'failed'>('idle');
   const [course, setCourse] = useState<Course | null>(null);
   const [chapterResources, setChapterResources] = useState<LearningResourceSummary[]>([]);
   const [traces, setTraces] = useState<LearningResourceTrace[]>([]);
@@ -399,6 +418,12 @@ export default function CourseResourcePlayer() {
   const [asking, setAsking] = useState(false);
   const [speechSpeed, setSpeechSpeed] = useState<TtsSpeed>('normal');
   const [slideMode, setSlideMode] = useState(false);
+
+  useEffect(() => {
+    if (writebackStatus !== 'synced') return undefined;
+    const timer = window.setTimeout(() => setWritebackStatus('idle'), 1800);
+    return () => window.clearTimeout(timer);
+  }, [writebackStatus]);
   const [completing, setCompleting] = useState(false);
   const blockRefs = useRef<Record<string, HTMLElement | null>>({});
   const saveTimer = useRef<number | null>(null);
@@ -668,7 +693,7 @@ export default function CourseResourcePlayer() {
         {block.code && <pre className="mt-5 overflow-x-auto rounded-[12px] bg-ink px-4 py-4 text-[12px] leading-6 text-paper"><code>{block.code}</code></pre>}
         {block.expectedOutput && <div className="mt-4 rounded-[12px] border border-brand/20 bg-brand-tint/35 px-4 py-3 text-[13px] leading-6 text-ink-2"><strong className="text-brand">预期结果：</strong>{block.expectedOutput}</div>}
         {block.warning && <div className="mt-4 flex items-start gap-2 rounded-[12px] border border-brand-amber/40 bg-brand-amber-tint px-4 py-3 text-[12.5px] leading-5 text-ochre"><TriangleAlert size={15} className="mt-0.5 shrink-0" /><span><strong>操作提醒：</strong>{block.warning}</span></div>}
-        {block.kind === 'quiz' && <QuizBlock block={block} resource={resource} onResourceState={(state) => setResource((current) => current ? { ...current, state, learned: Boolean(state.learned || state.completed) } : current)} />}
+        {block.kind === 'quiz' && <QuizBlock block={block} resource={resource} onWritebackStatus={setWritebackStatus} onResourceState={(state) => setResource((current) => current ? { ...current, state, learned: Boolean(state.learned || state.completed) } : current)} />}
         <InlineBlockCitations block={block} resource={resource} />
         <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-hairline/70 pt-4"><button type="button" onClick={() => { setNoteFor(block); setNoteText(''); }} className="lf-btn-ghost !px-3 !py-1.5 text-[11.5px]"><NotebookPen size={13} />记这一段</button><button type="button" onClick={() => { setCurrentBlockId(block.id); void openChat(); }} className="lf-btn-ghost !px-3 !py-1.5 text-[11.5px]"><MessageCircleQuestion size={13} />向导学老师提问</button>{index < blocks.length - 1 && <button type="button" onClick={() => goBlock(blocks[index + 1].id)} className="ml-auto inline-flex items-center gap-1 text-[11.5px] text-brand hover:underline">下一段<ArrowRight size={12} /></button>}</div>
       </motion.section>)}</main>
@@ -689,9 +714,15 @@ export default function CourseResourcePlayer() {
       <button type="button" onClick={() => activeBlock && setNoteFor(activeBlock)} aria-label="记录当前段落笔记" className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted"><NotebookPen size={13} /><span className="hidden lg:inline">笔记</span></button>
     </div>
 
+    <AnimatePresence>{writebackStatus !== 'idle' && <motion.div initial={{ opacity: 0, y: -8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8, scale: 0.96 }} className={cn('fixed right-4 top-4 z-[110] flex items-center gap-2 rounded-full border px-3.5 py-2 text-[11.5px] shadow-warm backdrop-blur-md', writebackStatus === 'failed' ? 'border-brand-danger/30 bg-paper/95 text-brand-danger' : 'border-brand/25 bg-paper/95 text-brand')}>
+      {writebackStatus === 'syncing' ? <Loader2 size={13} className="animate-spin" /> : writebackStatus === 'synced' ? <Check size={13} /> : <X size={13} />}
+      <span>{writebackStatus === 'syncing' ? '正在同步学习记录' : writebackStatus === 'synced' ? '学习记录已同步' : '学习记录同步失败'}</span>
+      {writebackStatus !== 'syncing' && <button type="button" aria-label="关闭同步提示" onClick={() => setWritebackStatus('idle')} className="ml-0.5 opacity-60 hover:opacity-100"><X size={11} /></button>}
+    </motion.div>}</AnimatePresence>
+
     {createPortal(<AnimatePresence>{slideMode && activeBlock && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[9999] flex flex-col bg-paper">
       <header className="flex items-center gap-3 border-b border-hairline bg-card-warm px-4 py-3 md:px-6"><Presentation size={17} className="text-brand" /><div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold text-ink">幻灯模式 · {resource.title}</div><div className="font-mono text-[9.5px] text-ink-muted">真实课程内容 · 第 {currentIndex + 1}/{blocks.length} 段</div></div><button type="button" onClick={() => setSlideMode(false)} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep" title="退出幻灯"><X size={17} /></button></header>
-      <main className="flex flex-1 items-center justify-center overflow-y-auto bg-gradient-to-br from-brand-tint/25 via-paper to-card-warm px-4 py-8 md:px-12"><motion.article key={activeBlock.id} initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} className="relative w-full max-w-[1040px] overflow-hidden rounded-[24px] border border-brand/20 bg-card-warm/95 p-6 shadow-warm-lg md:p-10 lg:p-12"><div className="absolute right-0 top-0 h-32 w-32 rounded-bl-full bg-brand/5" /><div className="relative mx-auto max-w-[860px]"><div className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.12em] text-brand">{activeBlock.eyebrow}</div><h2 className="mt-4 max-w-[780px] font-serif text-[30px] font-semibold leading-tight tracking-[-0.015em] text-ink md:text-[42px]">{activeBlock.title}</h2><div className="mt-5 h-1 w-14 rounded-full bg-brand" />{activeBlock.body && <div className="mt-7"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{activeBlock.body}</ReactMarkdown></div>}<InlineBlockCitations block={activeBlock} resource={resource} />{activeBlock.code && <pre className="mt-6 max-h-[42vh] overflow-auto rounded-[14px] bg-ink p-5 text-[14px] leading-6 text-paper md:text-[16px]"><code>{activeBlock.code}</code></pre>}{activeBlock.expectedOutput && <div className="mt-5 rounded-[14px] border border-brand/25 bg-brand-tint/55 p-4 text-[15px] leading-7 text-ink-2 md:text-[17px]"><strong className="text-brand">预期结果</strong><span className="mx-2 text-brand/40">/</span>{activeBlock.expectedOutput}</div>}{activeBlock.kind === 'quiz' && <QuizBlock block={activeBlock} resource={resource} onResourceState={(state) => setResource((current) => current ? { ...current, state, learned: Boolean(state.learned || state.completed) } : current)} />}</div></motion.article></main>
+      <main className="flex flex-1 items-center justify-center overflow-y-auto bg-gradient-to-br from-brand-tint/25 via-paper to-card-warm px-4 py-8 md:px-12"><motion.article key={activeBlock.id} initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} className="relative w-full max-w-[1040px] overflow-hidden rounded-[24px] border border-brand/20 bg-card-warm/95 p-6 shadow-warm-lg md:p-10 lg:p-12"><div className="absolute right-0 top-0 h-32 w-32 rounded-bl-full bg-brand/5" /><div className="relative mx-auto max-w-[860px]"><div className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.12em] text-brand">{activeBlock.eyebrow}</div><h2 className="mt-4 max-w-[780px] font-serif text-[30px] font-semibold leading-tight tracking-[-0.015em] text-ink md:text-[42px]">{activeBlock.title}</h2><div className="mt-5 h-1 w-14 rounded-full bg-brand" />{activeBlock.body && <div className="mt-7"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{activeBlock.body}</ReactMarkdown></div>}<InlineBlockCitations block={activeBlock} resource={resource} />{activeBlock.code && <pre className="mt-6 max-h-[42vh] overflow-auto rounded-[14px] bg-ink p-5 text-[14px] leading-6 text-paper md:text-[16px]"><code>{activeBlock.code}</code></pre>}{activeBlock.expectedOutput && <div className="mt-5 rounded-[14px] border border-brand/25 bg-brand-tint/55 p-4 text-[15px] leading-7 text-ink-2 md:text-[17px]"><strong className="text-brand">预期结果</strong><span className="mx-2 text-brand/40">/</span>{activeBlock.expectedOutput}</div>}{activeBlock.kind === 'quiz' && <QuizBlock block={activeBlock} resource={resource} onWritebackStatus={setWritebackStatus} onResourceState={(state) => setResource((current) => current ? { ...current, state, learned: Boolean(state.learned || state.completed) } : current)} />}</div></motion.article></main>
       <footer className="flex items-center justify-center gap-3 border-t border-hairline bg-card-warm px-4 py-3"><button type="button" disabled={currentIndex === 0} onClick={() => goBlock(blocks[currentIndex - 1].id)} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="上一页"><ChevronLeft size={17} /></button><button type="button" onClick={speakCurrent} className="flex h-11 items-center gap-2 rounded-full bg-brand px-5 text-[12.5px] font-medium text-paper">{narration.speaking ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}{narration.speaking ? '暂停讲播' : '讲这一页'}</button><button type="button" onClick={cycleSpeed} className="h-10 rounded-full border border-hairline px-4 font-mono text-[11px] text-ink-muted">{speedMeta[speechSpeed].label}</button><button type="button" disabled={currentIndex >= blocks.length - 1} onClick={() => goBlock(blocks[currentIndex + 1].id)} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="下一页"><ChevronRight size={17} /></button></footer>
     </motion.div>}</AnimatePresence>, document.body)}
 
