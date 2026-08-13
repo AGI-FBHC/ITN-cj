@@ -4,7 +4,7 @@
  */
 import { useRef, useMemo, useState, useCallback, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, Text, Line, PerspectiveCamera, Billboard } from '@react-three/drei';
+import { OrbitControls, Text, Line, PerspectiveCamera, Billboard, RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
 import type { GraphNode, GraphEdge, EdgeKind } from '@/data/knowledgeGraph';
 import type { ResourceForm, GeneratedResource } from '@/data/resources';
@@ -525,13 +525,11 @@ const SHORT_LABEL: Record<string, string> = { lecture: '讲义', guide: '实操'
 function FunctionLayer({
   node,
   relPos,
-  direction,
   resources,
   goalId,
 }: {
   node: GraphNode;
   relPos: [number, number, number];
-  direction: 'left' | 'right';
   resources?: Array<GeneratedResource & { id?: string; learned?: boolean }>;
   goalId?: string | null;
 }) {
@@ -541,20 +539,20 @@ function FunctionLayer({
     goalId,
     existing: resources ?? [],
   });
-  const sign = direction === 'left' ? -1 : 1;
-  // 仿子知识点展开：面向屏幕排成一列，圆点 + 短线 + 文字，颜色差异化，连线尽量短
-  const columnX = sign * 4.4;
-  const leafPositions: Array<[number, number, number]> = FUNCTION_META.map((_, i) => [columnX, (i - 1.5) * 2.1, 0.2]);
+  // 圆角矩形按钮：文字在按钮内，从知识节点正下方展开（避免左右被节点文字遮挡），连线尽量短
+  const buttonWidth = 5.2;
+  const buttonHeight = 1.35;
+  const leafPositions: Array<[number, number, number]> = FUNCTION_META.map((_, i) => [0, -(3.2 + i * (buttonHeight + 0.45)), 0.1]);
   return (
     <group position={relPos}>
-      {/* 短线：知识节点 → 功能叶子 */}
+      {/* 短线：知识节点 → 功能按钮 */}
       {FUNCTION_META.map((fn, i) => (
         <Line
           key={`f-line-${fn.form}`}
           renderOrder={-1}
-          points={[new THREE.Vector3(sign * 2.4, 0, 0.1), new THREE.Vector3(columnX - sign * 0.9, leafPositions[i][1], 0.2)]}
+          points={[new THREE.Vector3(0, -2.6, 0), new THREE.Vector3(0, leafPositions[i][1] + buttonHeight / 2, 0.1)]}
           color={fn.color}
-          lineWidth={1.8}
+          lineWidth={2}
           transparent
           opacity={0.55}
         />
@@ -575,30 +573,11 @@ function FunctionLayer({
             onPointerEnter={(event) => { event.stopPropagation(); document.body.style.cursor = 'pointer'; }}
             onPointerLeave={() => { document.body.style.cursor = 'default'; }}
           >
-            {/* 迷你圆点：仿子节点球体 */}
-            <mesh raycast={() => null}>
-              <circleGeometry args={[busy ? 0.56 : 0.5, 28]} />
-              <meshBasicMaterial color={exists ? '#2FBF71' : fn.color} transparent opacity={busy ? 0.4 : 0.95} />
-            </mesh>
-            {/* 短线：圆点 → 文字 */}
-            <Line
-              raycast={() => null}
-              points={[new THREE.Vector3(sign * 0.6, 0, 0.1), new THREE.Vector3(sign * 1.4, 0, 0.2)]}
-              color={fn.color}
-              lineWidth={1.5}
-              transparent
-              opacity={0.7}
-            />
-            {/* 文字 */}
-            <Text
-              raycast={() => null}
-              position={[sign * 1.85, 0, 0.25]}
-              fontSize={0.72}
-              color={exists ? '#2FBF71' : '#EAF0EA'}
-              anchorX={direction === 'left' ? 'right' : 'left'}
-              anchorY="middle"
-            >
-              {busy ? '…' : exists ? '已 · ' : ''}{SHORT_LABEL[fn.form]}
+            <RoundedBox args={[buttonWidth, buttonHeight, 0.18]} radius={0.3} smoothness={3} raycast={() => null}>
+              <meshBasicMaterial color={exists ? '#2FBF71' : fn.color} transparent opacity={busy ? 0.45 : 0.96} />
+            </RoundedBox>
+            <Text raycast={() => null} position={[0, 0, 0.12]} fontSize={0.68} color="#FFFFFF" anchorX="center" anchorY="middle">
+              {busy ? '生成中…' : exists ? `已 · ${SHORT_LABEL[fn.form]}` : `生成${SHORT_LABEL[fn.form]}`}
             </Text>
           </group>
         );
@@ -715,7 +694,6 @@ function ChildPlane({
           <FunctionLayer
             node={expandedChild.node}
             relPos={expandedChild.relPos}
-            direction={expandedChild.direction}
             resources={resources?.[expandedChild.node.kpId] ?? []}
             goalId={goalId}
           />
