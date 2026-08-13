@@ -5,13 +5,15 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { BookOpen, Wrench, ListChecks, Sparkles, X, Loader2 } from 'lucide-react';
+import { BookOpen, Wrench, ListChecks, Sparkles, X, Loader2, Check } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
+import { motion } from 'framer-motion';
 import { api } from '@/lib/api';
 import { presentationApi } from '@/lib/presentationApi';
 import type { ResourceForm } from '@/data/resources';
 import type { GeneratedResource } from '@/data/resources';
 import { getKnowledgePoint } from '@/data/knowledgePoints';
+import { cn } from '@/lib/utils';
 
 const FORM_META: Record<ResourceForm, { label: string; icon: typeof BookOpen; hint: string }> = {
   lecture: { label: '定制讲义', icon: BookOpen, hint: '按你水平现写的讲义' },
@@ -38,6 +40,21 @@ export default function NodeActionMenu({ kpId, topicIndex, label, onClose, goalI
   const kp = getKnowledgePoint(kpId);
   const topicName = label || kp.coreTopics[topicIndex] || kp.name;
   const scope = `${currentLearner.id}:${kpId}:${topicName}`;
+
+  /** 与 2D 侧栏一致：同知识点同类型已有资源 → 按钮显示“打开”，点击直接打开不重复生成 */
+  const existingFor = (form: ResourceForm) => existing.find(
+    (item) => item.id && item.form === form && (item.levelTag === topicName || item.title.includes(topicName)),
+  );
+
+  const handleResourceClick = (form: ResourceForm) => {
+    const found = existingFor(form);
+    if (found?.id) {
+      navigate(`/learn/resource/${found.id}`);
+      onClose();
+      return;
+    }
+    void generateResource(form);
+  };
 
   const generateResource = async (form: ResourceForm) => {
     /* 已存在同知识点同类型资源 → 直接打开，不重复生成 */
@@ -145,63 +162,75 @@ export default function NodeActionMenu({ kpId, topicIndex, label, onClose, goalI
 
   return (
     <div className="absolute left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2">
-      <div className="relative rounded-2xl border border-hairline bg-white/95 p-4 shadow-xl backdrop-blur-sm">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 320, damping: 24 }}
+        className="relative w-[280px] overflow-hidden rounded-[22px] border border-white/15 bg-[#0E1720]/95 p-4 shadow-[0_24px_80px_rgba(3,8,12,0.55)] backdrop-blur-xl"
+      >
+        {/* 顶部氛围光 */}
+        <div className="pointer-events-none absolute -top-16 left-1/2 h-32 w-56 -translate-x-1/2 rounded-full bg-brand/25 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-14 -right-10 h-32 w-32 rounded-full bg-brand-amber/20 blur-3xl" />
+
         {/* 关闭按钮 */}
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full border border-hairline bg-white text-ink-muted hover:text-ink"
-        >
-          <X size={14} />
+        <button type="button" onClick={onClose} className="absolute right-3 top-3 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-white/15 bg-white/10 text-paper/70 transition-colors hover:bg-white/20 hover:text-paper">
+          <X size={13} />
         </button>
 
         {/* 标题 */}
-        <div className="mb-3 text-center">
-          <div className="text-[13px] font-semibold text-ink">{topicName}</div>
-          <div className="mt-0.5 text-[11px] text-ink-muted">选择要生成的学习资源</div>
+        <div className="relative text-center">
+          <div className="font-serif text-[15px] font-semibold leading-6 text-paper">{topicName}</div>
+          <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 font-mono text-[9.5px] tracking-wide text-paper/60">
+            <Sparkles size={10} className="text-brand-amber" />
+            {kp.name} · 学习资源
+          </div>
         </div>
 
-        {/* 4 个按钮 */}
-        <div className="grid grid-cols-2 gap-2">
+        {/* 资源按钮：已有 → 打开；否则 → 生成 */}
+        <div className="relative mt-3.5 grid grid-cols-2 gap-2">
           {(Object.keys(FORM_META) as ResourceForm[]).map((form) => {
             const meta = FORM_META[form];
             const Icon = meta.icon;
             const taskKey = `${scope}:${form}`;
             const isGenerating = generating.has(taskKey);
+            const found = existingFor(form);
+            const isOpen = Boolean(found?.id);
             return (
               <button
                 key={form}
                 type="button"
-                onClick={() => generateResource(form)}
+                onClick={() => handleResourceClick(form)}
                 disabled={isGenerating}
-                className="flex flex-col items-center gap-1.5 rounded-xl border border-hairline bg-paper px-3 py-2.5 text-[12px] font-medium text-ink-2 transition-all hover:border-brand hover:bg-brand-tint hover:text-brand disabled:opacity-50"
-              >
-                {isGenerating ? (
-                  <Loader2 size={18} className="animate-spin" />
-                ) : (
-                  <Icon size={18} />
+                title={meta.hint}
+                className={cn(
+                  'group flex flex-col items-center gap-1.5 rounded-[14px] border px-3 py-3 text-[12px] font-medium transition-all active:scale-[0.97]',
+                  isOpen
+                    ? 'border-brand/50 bg-brand/15 text-brand hover:bg-brand/25'
+                    : isGenerating
+                      ? 'cursor-wait border-white/10 bg-white/5 text-paper/70'
+                      : 'border-dashed border-white/20 bg-white/5 text-paper/80 hover:border-brand-amber/50 hover:bg-white/10 hover:text-brand-amber',
                 )}
-                <span>{meta.label}</span>
+              >
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl transition-transform group-hover:scale-105" style={{ background: isOpen ? 'rgba(78,120,96,0.28)' : 'rgba(255,255,255,0.08)' }}>
+                  {isGenerating ? <Loader2 size={17} className="animate-spin text-brand-amber" /> : isOpen ? <Check size={17} className="text-brand" /> : <Icon size={17} className="text-brand-amber" />}
+                </span>
+                <span>{isOpen ? `打开${meta.label}` : isGenerating ? '生成中…' : `生成${meta.label}`}</span>
               </button>
             );
           })}
-          
-          {/* 交互课件按钮 */}
+
+          {/* 交互课件 */}
           <button
             type="button"
-            onClick={openPptCourseware}
+            onClick={() => void openPptCourseware()}
             disabled={checkingPpt}
-            className="col-span-2 flex items-center justify-center gap-2 rounded-xl border border-brand-amber/50 bg-brand-amber-tint px-3 py-2.5 text-[12px] font-medium text-ochre transition-all hover:bg-brand-amber hover:text-white disabled:opacity-50"
+            className="col-span-2 mt-0.5 flex items-center justify-center gap-2 overflow-hidden rounded-[14px] border border-brand-amber/40 bg-gradient-to-r from-brand-amber/25 to-brand-amber/10 px-3 py-2.5 text-[12px] font-semibold text-brand-amber transition-all hover:from-brand-amber/40 hover:to-brand-amber/20 active:scale-[0.98] disabled:opacity-60"
           >
-            {checkingPpt ? (
-              <Loader2 size={18} className="animate-spin" />
-            ) : (
-              <Sparkles size={18} />
-            )}
-            <span>进入交互课件</span>
+            {checkingPpt ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+            进入交互课件
           </button>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }
