@@ -770,6 +770,7 @@ export default function LearnUnit() {
     transcript?: string;
     duration?: number;
     converting?: boolean;
+    audioUrl?: string;
     id?: string;
   }
   const [qaLog, setQaLog] = useState<QaEntry[]>([]);
@@ -789,6 +790,7 @@ export default function LearnUnit() {
   const voiceBusyRef = useRef(false);
   const voiceSeqRef = useRef(0);
   const pptVoiceRef = useRef<WavRecorder | null>(null);
+  const voiceAudioUrlsRef = useRef(new Set<string>());
 
   const stopAnswerAudio = () => {
     const active = answerAudioRef.current;
@@ -873,7 +875,12 @@ export default function LearnUnit() {
       }
       setQaLog(restored);
     }).catch(() => { /* a new session will be retried on first question */ });
-    return () => { pptAskAbortRef.current?.abort(); stopAnswerAudio(); };
+    return () => {
+      pptAskAbortRef.current?.abort();
+      stopAnswerAudio();
+      voiceAudioUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      voiceAudioUrlsRef.current.clear();
+    };
     // Session lifetime is intentionally keyed only by the opened PPT task.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pptTaskId]);
@@ -1359,7 +1366,7 @@ export default function LearnUnit() {
     setVoiceBusy(true);
     try {
       const recorder = await startWavRecording({
-        silenceMs: 1200,
+        silenceMs: 1050,
         maxDurationMs: 15000,
         onSilence: () => { if (pptVoiceRef.current) void finishPptVoiceAsk(); },
       });
@@ -1388,8 +1395,10 @@ export default function LearnUnit() {
     }
     const entryId = `voice-${voiceSeqRef.current++}`;
     const durationSec = Math.max(1, Math.round(audio.size / 32000));
+    const audioUrl = URL.createObjectURL(audio);
+    voiceAudioUrlsRef.current.add(audioUrl);
     setQaLog((prev) => [...prev, {
-      id: entryId, q: '', a: '', voice: true, transcript: '', duration: durationSec, converting: true,
+      id: entryId, q: '', a: '', voice: true, transcript: '', duration: durationSec, converting: true, audioUrl,
     }]);
     let transcript = '';
     let reply = '';
@@ -1422,16 +1431,18 @@ export default function LearnUnit() {
     pptAskAbortRef.current?.abort();
     pptAskAbortRef.current = controller;
     try {
-      const sessionId = await ensurePptChatSession();
       await streamPresentationChatAudio(
         pptTaskId ?? '',
         audio,
         pptRef.current?.current ?? 0,
-        sessionId,
+        pptChatSessionRef.current,
         (event) => {
-          if (event.type === 'transcript' && event.transcript) {
+          if (event.type === 'phase') {
+            setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, converting: true } : qa));
+          } else if (event.type === 'transcript' && event.transcript) {
             transcript = event.transcript;
-            setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, transcript, q: transcript } : qa));
+            setVoiceTranscriptOpen((prev) => ({ ...prev, [entryId]: true }));
+            setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, transcript, q: transcript, converting: false } : qa));
           } else if (event.type === 'control' && event.action && event.action !== 'none') {
             if (event.action === 'next') pptRef.current?.goNext();
             else if (event.action === 'previous') pptRef.current?.goPrev();
@@ -3351,7 +3362,7 @@ export default function LearnUnit() {
                   {qa.voice ? (
                     <div className="ml-auto w-fit max-w-[90%]">
                       <div className="flex items-center gap-2 rounded-[12px] rounded-br-[4px] bg-brand px-3 py-2 text-paper">
-                        <Mic size={14} />
+                        <button type="button" disabled={!qa.audioUrl} onClick={() => { if (qa.audioUrl) void new Audio(qa.audioUrl).play(); }} className="flex h-5 w-5 items-center justify-center rounded-full bg-paper/20 disabled:opacity-60" title="播放我的语音"><Play size={11} fill="currentColor" /></button>
                         <span className="font-mono text-[11.5px]">{qa.duration ?? 1}″</span>
                         {qa.converting ? (
                           <Loader2 size={13} className="animate-spin" />
@@ -3377,7 +3388,7 @@ export default function LearnUnit() {
                     qa.q && <div className="ml-auto w-fit max-w-[90%] rounded-[12px] rounded-br-[4px] bg-brand px-3 py-1.5 text-[12.5px] text-paper">{qa.q}</div>
                   )}
                   <div className="w-fit max-w-[92%] rounded-[12px] rounded-tl-[4px] border border-hairline bg-card-warm px-3 py-2 text-[12.5px] leading-[19px] text-ink-2">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{qa.a || (qa.voice && qa.converting ? '正在识别并回答…' : '')}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{qa.a || (qa.voice ? (qa.converting ? '正在识别语音…' : '已识别，正在回答…') : '')}</ReactMarkdown>
                     {qa.kbRef && <span className="ml-1.5"><TraceBadge kbId={qa.kbRef} /></span>}
                   </div>
                 </div>

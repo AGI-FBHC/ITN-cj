@@ -135,7 +135,8 @@ export async function fetchSlideAsset(taskId: string, index: number, kind: 'slid
 
 
 export type PresentationAudioEvent = {
-  type: 'transcript' | 'control' | 'reply_delta' | 'result' | 'error';
+  type: 'phase' | 'transcript' | 'control' | 'reply_delta' | 'result' | 'error';
+  phase?: 'understanding' | 'answering';
   content?: string;
   transcript?: string;
   action?: 'none' | 'play' | 'pause' | 'next' | 'previous' | 'restart' | 'goto';
