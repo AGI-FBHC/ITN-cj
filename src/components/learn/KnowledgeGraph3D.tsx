@@ -1543,9 +1543,11 @@ export default function KnowledgeGraph3D({
   // 悬停时暂停自动旋转，避免节点在光标下移动导致悬停闪烁
   const containerRef = useRef<HTMLDivElement | null>(null);
   const hoverCardRef = useRef<HTMLDivElement | null>(null);
+  const draggingRef = useRef(false);
   const [hoveredNode, setHoveredNode] = useState<{ id: string; x: number; y: number; object: THREE.Object3D } | null>(null);
   const hoveredNodeId = hoveredNode?.id ?? null;
   const handleHoverNode = useCallback((id: string | null, clientX?: number, clientY?: number, object?: THREE.Object3D) => {
+    if (draggingRef.current) return;
     if (!id) { setHoveredNode(null); return; }
     if (!object) return;
     const rect = containerRef.current?.getBoundingClientRect();
@@ -1596,6 +1598,15 @@ export default function KnowledgeGraph3D({
           minDistance={20}
           maxDistance={130}
           autoRotate={false}
+          onStart={() => {
+            draggingRef.current = true;
+            setHoveredNode(null);
+            document.body.style.cursor = 'grabbing';
+          }}
+          onEnd={() => {
+            draggingRef.current = false;
+            document.body.style.cursor = 'default';
+          }}
         />
         <PersistedCamera storageKey={persistenceKey} restore={restorePersistedCamera} />
         <FocusDriver focusId={dimAnchorId} blendRef={blendRef} />
