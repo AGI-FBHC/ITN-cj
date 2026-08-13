@@ -520,25 +520,35 @@ function LearnedHighlightRing({ radius }: { radius: number }) {
 
 /** 子节点平面：面向用户的纸面效果 */
 
-/** 单个功能按钮：统一配色平面按钮 + 浅色描边 + 底部投影，紧贴知识节点下方 */
-const SHORT_LABEL: Record<string, string> = { lecture: '讲义', guide: '实操', quiz: '测试', ppt: '课件' };
+/** 功能按钮状态：仅悬浮时在按钮下方以小标签展示，不在按钮本体体现 */
+const STATUS_META: Record<'missing' | 'unlearned' | 'learned', { label: string; color: string }> = {
+  missing: { label: '未生成', color: '#8A93A5' },
+  unlearned: { label: '未学习', color: '#E8A33D' },
+  learned: { label: '已学习', color: '#2FBF71' },
+};
 
+const FUNCTION_BUTTON_WIDTH = 5.4;
+const FUNCTION_BUTTON_HEIGHT = 1.6;
+const FUNCTION_BUTTON_GAP = 0.5;
+
+/** 单个功能按钮：统一配色平面按钮 + 浅色描边 + 底部投影，紧贴知识节点下方 */
 function FunctionButton({
   fn,
-  exists,
   busy,
+  status,
   position,
   onOpen,
 }: {
   fn: (typeof FUNCTION_META)[number];
-  exists: boolean;
   busy: boolean;
+  status: 'missing' | 'unlearned' | 'learned';
   position: [number, number, number];
   onOpen: () => void;
 }) {
-  const buttonWidth = 5.4;
-  const buttonHeight = 1.6;
-  const fill = exists ? '#2FBF71' : fn.color;
+  const [hovered, setHovered] = useState(false);
+  const buttonWidth = FUNCTION_BUTTON_WIDTH;
+  const buttonHeight = FUNCTION_BUTTON_HEIGHT;
+  const tag = STATUS_META[status];
   return (
     <group
       position={position}
@@ -546,20 +556,27 @@ function FunctionButton({
         event.stopPropagation();
         onOpen();
       }}
-      onPointerEnter={(event) => { event.stopPropagation(); document.body.style.cursor = 'pointer'; }}
-      onPointerLeave={() => { document.body.style.cursor = 'default'; }}
+      onPointerEnter={(event) => {
+        event.stopPropagation();
+        setHovered(true);
+        document.body.style.cursor = 'pointer';
+      }}
+      onPointerLeave={() => {
+        setHovered(false);
+        document.body.style.cursor = 'default';
+      }}
     >
       {/* 底部投影：轻微下移的深色衬底，营造浮起感 */}
       <RoundedBox args={[buttonWidth + 0.08, buttonHeight + 0.08, 0.2]} radius={0.36} smoothness={3} position={[0, -0.09, -0.06]}>
         <meshBasicMaterial color="#334155" transparent opacity={0.16} />
       </RoundedBox>
-      {/* 浅色描边：细亮边，替代之前的深色边框 */}
+      {/* 浅色描边：细亮边 */}
       <RoundedBox args={[buttonWidth + 0.12, buttonHeight + 0.12, 0.2]} radius={0.4} smoothness={3} position={[0, 0, -0.02]}>
         <meshBasicMaterial color="#FFFFFF" transparent opacity={0.55} />
       </RoundedBox>
-      {/* 主体：统一配色的平面圆角按钮 */}
+      {/* 主体：统一配色，按钮本体不展示具体状态 */}
       <RoundedBox args={[buttonWidth, buttonHeight, 0.18]} radius={0.34} smoothness={3}>
-        <meshBasicMaterial color={fill} transparent opacity={busy ? 0.5 : 1} />
+        <meshBasicMaterial color="#6366F1" transparent opacity={busy ? 0.5 : 1} />
       </RoundedBox>
       <Text
         raycast={() => null}
@@ -573,23 +590,41 @@ function FunctionButton({
         outlineColor="#1E293B"
         outlineOpacity={0.28}
       >
-        {busy ? '生成中…' : exists ? `已 · ${SHORT_LABEL[fn.form]}` : `生成${SHORT_LABEL[fn.form]}`}
+        {busy ? '生成中…' : fn.label}
       </Text>
+      {/* 悬浮状态标签：出现在按钮正下方，不占用按钮本体 */}
+      {hovered && !busy && (
+        <group position={[0, -0.85, 0.1]}>
+          {/* 隐形桥：按钮底部 → 标签，避免移动鼠标时悬停闪烁 */}
+          <mesh position={[0, 0.3, 0]}>
+            <boxGeometry args={[buttonWidth * 0.7, 0.6, 0.16]} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          </mesh>
+          <RoundedBox args={[2.7, 0.72, 0.14]} radius={0.36} smoothness={3}>
+            <meshBasicMaterial color={tag.color} transparent opacity={0.96} />
+          </RoundedBox>
+          <Text raycast={() => null} position={[0, 0, 0.09]} fontSize={0.5} color="#FFFFFF" anchorX="center" anchorY="middle">
+            {tag.label}
+          </Text>
+        </group>
+      )}
     </group>
   );
 }
 
-/** 功能叶子层：每个子知识点展开 4 个功能叶子（讲义/实操/测试/课件），横向一行紧贴知识节点下方、无连接线、最左按钮与节点左缘对齐 */
+/** 功能叶子层：每个子知识点展开 4 个功能叶子（定制讲义/实操指南/分阶测试题/交互课件），横向一行紧贴知识节点下方、无连接线、最左按钮与节点左缘对齐 */
 function FunctionLayer({
   node,
   relPos,
   resources,
   goalId,
+  learned,
 }: {
   node: GraphNode;
   relPos: [number, number, number];
   resources?: Array<GeneratedResource & { id?: string; learned?: boolean }>;
   goalId?: string | null;
+  learned: Set<string>;
 }) {
   const { existingFor, openOrGenerate, openOrCreatePpt, generating, checkingPpt } = useTopicResourceActions({
     kpId: node.kpId,
@@ -597,24 +632,28 @@ function FunctionLayer({
     goalId,
     existing: resources ?? [],
   });
-  const buttonWidth = 4.6;
   const nodeRadius = 1.5; // 与 ChildNode 球体半径一致
   const rowY = -2.5; // 紧贴知识节点下缘
-  const gap = 0.5;
   // 最左按钮的左缘与知识节点左缘对齐，按钮依次向右排布
-  const rowStartX = -nodeRadius + buttonWidth / 2;
-  const leafPositions: Array<[number, number, number]> = FUNCTION_META.map((_, i) => [rowStartX + i * (buttonWidth + gap), rowY, 0.1]);
+  const rowStartX = -nodeRadius + FUNCTION_BUTTON_WIDTH / 2;
+  const leafPositions: Array<[number, number, number]> = FUNCTION_META.map((_, i) => [rowStartX + i * (FUNCTION_BUTTON_WIDTH + FUNCTION_BUTTON_GAP), rowY, 0.1]);
   return (
     <group position={relPos}>
       {FUNCTION_META.map((fn, i) => {
-        const exists = fn.form !== 'ppt' && Boolean(existingFor(fn.form as ResourceForm)?.id);
+        const res = fn.form !== 'ppt' ? existingFor(fn.form as ResourceForm) : undefined;
+        const exists = Boolean(res?.id);
         const busy = fn.form === 'ppt' ? checkingPpt : generating !== null;
+        const status: 'missing' | 'unlearned' | 'learned' = !exists
+          ? 'missing'
+          : (res?.learned ?? learned.has(node.kpId))
+            ? 'learned'
+            : 'unlearned';
         return (
           <FunctionButton
             key={fn.form}
             fn={fn}
-            exists={exists}
             busy={busy}
+            status={status}
             position={leafPositions[i]}
             onOpen={() => {
               if (fn.form === 'ppt') void openOrCreatePpt();
@@ -738,6 +777,7 @@ function ChildPlane({
             relPos={expandedChild.relPos}
             resources={resources?.[expandedChild.node.kpId] ?? []}
             goalId={goalId}
+            learned={learned}
           />
         )}
       </group>
