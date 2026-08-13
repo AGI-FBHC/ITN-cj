@@ -524,18 +524,25 @@ function LearnedHighlightRing({ radius }: { radius: number }) {
 
 /** 子节点平面：面向用户的纸面效果 */
 
-/** 功能按钮状态：仅悬浮时在按钮下方以小标签展示，不在按钮本体体现 */
+/** 功能按钮状态：作为低干扰的辅助信息固定展示，避免悬浮标签跳动。 */
 const STATUS_META: Record<'missing' | 'unlearned' | 'learned', { label: string; color: string }> = {
-  missing: { label: '未生成', color: '#8A93A5' },
-  unlearned: { label: '未学习', color: '#E8A33D' },
-  learned: { label: '已学习', color: '#2FBF71' },
+  missing: { label: '未生成', color: '#9AA19A' },
+  unlearned: { label: '未学习', color: '#D89238' },
+  learned: { label: '已学习', color: '#2F8F5B' },
 };
 
-const FUNCTION_BUTTON_WIDTH = 5.4;
-const FUNCTION_BUTTON_HEIGHT = 1.6;
-const FUNCTION_BUTTON_GAP = 0.5;
+const FUNCTION_ACCENT: Record<(typeof FUNCTION_META)[number]['form'], string> = {
+  lecture: '#5576A8',
+  guide: '#4E846D',
+  quiz: '#B47A3D',
+  ppt: '#765F9D',
+};
 
-/** 单个功能按钮：统一配色平面按钮 + 浅色描边 + 底部投影，紧贴知识节点下方 */
+const FUNCTION_BUTTON_WIDTH = 4.8;
+const FUNCTION_BUTTON_HEIGHT = 1.5;
+const FUNCTION_BUTTON_GAP = 0.36;
+
+/** 单个功能按钮：浅色玻璃卡片 + 类型色标 + 常驻状态，弱化大色块带来的压迫感。 */
 function FunctionButton({
   fn,
   busy,
@@ -550,69 +557,86 @@ function FunctionButton({
   onOpen: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
+  const contentRef = useRef<THREE.Group>(null);
   const buttonWidth = FUNCTION_BUTTON_WIDTH;
   const buttonHeight = FUNCTION_BUTTON_HEIGHT;
   const tag = STATUS_META[status];
+  const accent = FUNCTION_ACCENT[fn.form];
+
+  useFrame(() => {
+    if (!contentRef.current) return;
+    const target = hovered && !busy ? 1.035 : 1;
+    const scale = THREE.MathUtils.lerp(contentRef.current.scale.x, target, 0.18);
+    contentRef.current.scale.setScalar(scale);
+    contentRef.current.position.y = THREE.MathUtils.lerp(contentRef.current.position.y, hovered && !busy ? 0.08 : 0, 0.18);
+  });
+
   return (
     <group
       position={position}
       onClick={(event) => {
         event.stopPropagation();
+        if (busy) return;
         onOpen();
       }}
       onPointerEnter={(event) => {
         event.stopPropagation();
         setHovered(true);
-        document.body.style.cursor = 'pointer';
+        document.body.style.cursor = busy ? 'progress' : 'pointer';
       }}
       onPointerLeave={() => {
         setHovered(false);
         document.body.style.cursor = 'default';
       }}
     >
-      {/* 底部投影：轻微下移的深色衬底，营造浮起感 */}
-      <RoundedBox args={[buttonWidth + 0.08, buttonHeight + 0.08, 0.2]} radius={0.36} smoothness={3} position={[0, -0.09, -0.06]}>
-        <meshBasicMaterial color="#334155" transparent opacity={0.16} />
-      </RoundedBox>
-      {/* 浅色描边：细亮边 */}
-      <RoundedBox args={[buttonWidth + 0.12, buttonHeight + 0.12, 0.2]} radius={0.4} smoothness={3} position={[0, 0, -0.02]}>
-        <meshBasicMaterial color="#FFFFFF" transparent opacity={0.55} />
-      </RoundedBox>
-      {/* 主体：统一配色，按钮本体不展示具体状态 */}
-      <RoundedBox args={[buttonWidth, buttonHeight, 0.18]} radius={0.34} smoothness={3}>
-        <meshBasicMaterial color="#6366F1" transparent opacity={busy ? 0.5 : 1} />
-      </RoundedBox>
-      <Text
-        font={cjkFontUrl}
-        raycast={() => null}
-        renderOrder={2}
-        position={[0, 0, 0.16]}
-        fontSize={0.75}
-        color="#FFFFFF"
-        anchorX="center"
-        anchorY="middle"
-        outlineWidth={0.1}
-        outlineColor="#1E293B"
-        outlineOpacity={0.28}
-      >
-        {fn.label}
-      </Text>
-      {/* 悬浮状态标签：出现在按钮正下方，不占用按钮本体 */}
-      {hovered && !busy && (
-        <group position={[0, -0.85, 0.1]}>
-          {/* 隐形桥：按钮底部 → 标签，避免移动鼠标时悬停闪烁 */}
-          <mesh position={[0, 0.3, 0]}>
-            <boxGeometry args={[buttonWidth * 0.7, 0.6, 0.16]} />
-            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-          </mesh>
-          <RoundedBox args={[2.7, 0.72, 0.14]} radius={0.36} smoothness={3}>
-            <meshBasicMaterial color={tag.color} transparent opacity={0.96} />
-          </RoundedBox>
-          <Text font={cjkFontUrl} raycast={() => null} position={[0, 0, 0.09]} fontSize={0.5} color="#FFFFFF" anchorX="center" anchorY="middle">
-            {tag.label}
-          </Text>
-        </group>
-      )}
+      <group ref={contentRef}>
+        {/* 柔和投影、细描边与暖白主体构成悬浮玻璃卡片。 */}
+        <RoundedBox args={[buttonWidth + 0.08, buttonHeight + 0.08, 0.18]} radius={0.42} smoothness={4} position={[0, -0.1, -0.08]}>
+          <meshBasicMaterial color="#24372E" transparent opacity={hovered ? 0.16 : 0.1} depthWrite={false} />
+        </RoundedBox>
+        <RoundedBox args={[buttonWidth + 0.08, buttonHeight + 0.08, 0.16]} radius={0.42} smoothness={4} position={[0, 0, -0.02]}>
+          <meshBasicMaterial color={hovered ? accent : '#D8DED7'} transparent opacity={hovered ? 0.9 : 0.82} />
+        </RoundedBox>
+        <RoundedBox args={[buttonWidth, buttonHeight, 0.18]} radius={0.38} smoothness={4}>
+          <meshBasicMaterial color={hovered ? '#FFFFFF' : '#FAFBF8'} transparent opacity={busy ? 0.62 : 0.97} />
+        </RoundedBox>
+
+        {/* 左侧类型色标。 */}
+        <mesh position={[-buttonWidth / 2 + 0.48, 0.12, 0.17]} raycast={() => null}>
+          <circleGeometry args={[0.16, 24]} />
+          <meshBasicMaterial color={accent} />
+        </mesh>
+        <Text
+          font={cjkFontUrl}
+          raycast={() => null}
+          renderOrder={2}
+          position={[0.18, 0.2, 0.17]}
+          fontSize={0.62}
+          color="#26352E"
+          anchorX="center"
+          anchorY="middle"
+        >
+          {fn.label}
+        </Text>
+
+        {/* 状态退居第二层级；圆点颜色让信息可快速扫读。 */}
+        <mesh position={[-0.48, -0.42, 0.17]} raycast={() => null}>
+          <circleGeometry args={[0.09, 20]} />
+          <meshBasicMaterial color={tag.color} />
+        </mesh>
+        <Text
+          font={cjkFontUrl}
+          raycast={() => null}
+          renderOrder={2}
+          position={[0.12, -0.42, 0.17]}
+          fontSize={0.42}
+          color="#5F6B64"
+          anchorX="center"
+          anchorY="middle"
+        >
+          {busy ? '处理中' : tag.label}
+        </Text>
+      </group>
     </group>
   );
 }
