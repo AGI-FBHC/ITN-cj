@@ -4,7 +4,8 @@
  */
 import { useRef, useMemo, useState, useCallback, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, Text, Line, PerspectiveCamera, Billboard, RoundedBox } from '@react-three/drei';
+import { OrbitControls, Text, Line, PerspectiveCamera, Billboard } from '@react-three/drei';
+import { BookOpen, ClipboardCheck, Presentation, Wrench, X } from 'lucide-react';
 import * as THREE from 'three';
 import type { GraphNode, GraphEdge, EdgeKind } from '@/data/knowledgeGraph';
 import type { ResourceForm, GeneratedResource } from '@/data/resources';
@@ -522,155 +523,93 @@ function LearnedHighlightRing({ radius }: { radius: number }) {
   );
 }
 
-/** 子节点平面：面向用户的纸面效果 */
-
-/** 功能按钮状态：作为低干扰的辅助信息固定展示，避免悬浮标签跳动。 */
+/** 页面级知识点操作弹窗：脱离 3D 世界坐标，确保尺寸与交互始终稳定。 */
 const STATUS_META: Record<'missing' | 'unlearned' | 'learned', { label: string; color: string }> = {
   missing: { label: '未生成', color: '#9AA19A' },
   unlearned: { label: '未学习', color: '#D89238' },
   learned: { label: '已学习', color: '#2F8F5B' },
 };
 
-const FUNCTION_ACCENT: Record<(typeof FUNCTION_META)[number]['form'], string> = {
-  lecture: '#5576A8',
-  guide: '#4E846D',
-  quiz: '#B47A3D',
-  ppt: '#765F9D',
+const FUNCTION_ICON = {
+  lecture: BookOpen,
+  guide: Wrench,
+  quiz: ClipboardCheck,
+  ppt: Presentation,
 };
 
-const FUNCTION_BUTTON_WIDTH = 5.5;
-const FUNCTION_BUTTON_HEIGHT = 1.82;
-const FUNCTION_BUTTON_GAP = 0.44;
-
-/** 单个功能按钮：浅色玻璃卡片 + 类型色标 + 常驻状态，弱化大色块带来的压迫感。 */
-function FunctionButton({
-  fn,
-  busy,
-  status,
-  position,
-  onOpen,
-}: {
-  fn: (typeof FUNCTION_META)[number];
-  busy: boolean;
-  status: 'missing' | 'unlearned' | 'learned';
-  position: [number, number, number];
-  onOpen: () => void;
-}) {
-  const [hovered, setHovered] = useState(false);
-  const contentRef = useRef<THREE.Group>(null);
-  const buttonWidth = FUNCTION_BUTTON_WIDTH;
-  const buttonHeight = FUNCTION_BUTTON_HEIGHT;
-  const tag = STATUS_META[status];
-  const accent = FUNCTION_ACCENT[fn.form];
-
-  useFrame(() => {
-    if (!contentRef.current) return;
-    const target = hovered && !busy ? 1.035 : 1;
-    const scale = THREE.MathUtils.lerp(contentRef.current.scale.x, target, 0.18);
-    contentRef.current.scale.setScalar(scale);
-    contentRef.current.position.y = THREE.MathUtils.lerp(contentRef.current.position.y, hovered && !busy ? 0.08 : 0, 0.18);
-  });
-
-  return (
-    <group
-      position={position}
-      onClick={(event) => {
-        event.stopPropagation();
-        if (busy) return;
-        onOpen();
-      }}
-      onPointerEnter={(event) => {
-        event.stopPropagation();
-        setHovered(true);
-        document.body.style.cursor = busy ? 'progress' : 'pointer';
-      }}
-      onPointerLeave={() => {
-        setHovered(false);
-        document.body.style.cursor = 'default';
-      }}
-    >
-      <group ref={contentRef}>
-        {/* 柔和投影、细描边与暖白主体构成悬浮玻璃卡片。 */}
-        <RoundedBox args={[buttonWidth + 0.08, buttonHeight + 0.08, 0.18]} radius={0.42} smoothness={4} position={[0, -0.1, -0.08]}>
-          <meshBasicMaterial color="#24372E" transparent opacity={hovered ? 0.16 : 0.1} depthWrite={false} />
-        </RoundedBox>
-        <RoundedBox args={[buttonWidth + 0.08, buttonHeight + 0.08, 0.16]} radius={0.42} smoothness={4} position={[0, 0, -0.02]}>
-          <meshBasicMaterial color={hovered ? accent : '#D8DED7'} transparent opacity={hovered ? 0.9 : 0.82} />
-        </RoundedBox>
-        <RoundedBox args={[buttonWidth, buttonHeight, 0.18]} radius={0.38} smoothness={4}>
-          <meshBasicMaterial color={hovered ? '#FFFFFF' : '#FAFBF8'} transparent opacity={busy ? 0.62 : 0.97} />
-        </RoundedBox>
-
-        {/* 左侧类型色标。 */}
-        <mesh position={[-buttonWidth / 2 + 0.48, 0.12, 0.17]} raycast={() => null}>
-          <circleGeometry args={[0.16, 24]} />
-          <meshBasicMaterial color={accent} />
-        </mesh>
-        <Text
-          font={cjkFontUrl}
-          raycast={() => null}
-          renderOrder={2}
-          position={[0.18, 0.2, 0.17]}
-          fontSize={0.74}
-          color="#26352E"
-          anchorX="center"
-          anchorY="middle"
-        >
-          {fn.label}
-        </Text>
-
-        {/* 状态退居第二层级；圆点颜色让信息可快速扫读。 */}
-        <mesh position={[-0.48, -0.42, 0.17]} raycast={() => null}>
-          <circleGeometry args={[0.09, 20]} />
-          <meshBasicMaterial color={tag.color} />
-        </mesh>
-        <Text
-          font={cjkFontUrl}
-          raycast={() => null}
-          renderOrder={2}
-          position={[0.12, -0.42, 0.17]}
-          fontSize={0.48}
-          color="#5F6B64"
-          anchorX="center"
-          anchorY="middle"
-        >
-          {busy ? '处理中' : tag.label}
-        </Text>
-      </group>
-    </group>
-  );
-}
-
-/** 功能叶子层：每个子知识点展开 4 个功能叶子（定制讲义/实操指南/分阶测试题/交互课件），横向一行紧贴知识节点下方、无连接线、最左按钮与节点左缘对齐 */
-function FunctionLayer({
+function TopicActionModal({
   node,
-  relPos,
   resources,
   presentations,
   goalId,
   learned,
+  onClose,
 }: {
   node: GraphNode;
-  relPos: [number, number, number];
   resources?: Array<GeneratedResource & { id?: string; learned?: boolean }>;
   presentations?: PresentationTaskSummary[];
   goalId?: string | null;
   learned: Set<string>;
+  onClose: () => void;
 }) {
+  const dialogRef = useRef<HTMLElement>(null);
   const { existingFor, openOrGenerate, openOrCreatePpt, generating, checkingPpt } = useTopicResourceActions({
     kpId: node.kpId,
     label: node.label,
     goalId,
     existing: resources ?? [],
   });
-  const nodeRadius = 1.5; // 与 ChildNode 球体半径一致
-  const rowY = -2.68; // 放大后仍与知识节点下缘保留舒适间距
-  // 最左按钮的左缘与知识节点左缘对齐，按钮依次向右排布
-  const rowStartX = -nodeRadius + FUNCTION_BUTTON_WIDTH / 2;
-  const leafPositions: Array<[number, number, number]> = FUNCTION_META.map((_, i) => [rowStartX + i * (FUNCTION_BUTTON_WIDTH + FUNCTION_BUTTON_GAP), rowY, 0.1]);
+  useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = dialogRef.current;
+    dialog?.focus();
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || !dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>('button:not(:disabled), [href], [tabindex]:not([tabindex="-1"])'));
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', trapFocus);
+    return () => {
+      document.removeEventListener('keydown', trapFocus);
+      previousFocus?.focus();
+    };
+  }, []);
   return (
-    <group position={relPos}>
-      {FUNCTION_META.map((fn, i) => {
+    <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#17231E]/20 p-5 backdrop-blur-[3px]" onClick={onClose}>
+      <section
+        ref={dialogRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="topic-action-title"
+        className="max-h-[calc(100%-32px)] w-full max-w-[560px] overflow-y-auto rounded-[28px] border border-white/80 bg-[#FCFDF9]/95 shadow-[0_28px_80px_rgba(28,45,36,0.24)] backdrop-blur-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="flex items-start gap-4 border-b border-[#E7EAE4] px-7 pb-5 pt-6">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#E8F0EA] text-[#426A54]">
+            <BookOpen size={21} strokeWidth={1.8} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="mb-1 text-[11px] font-semibold tracking-[0.16em] text-[#7A877F]">知识点学习</p>
+            <h2 id="topic-action-title" className="break-words text-[21px] font-semibold leading-snug tracking-[-0.02em] text-[#24332B]">{node.label.trim()}</h2>
+            <p className="mt-1 text-[13px] text-[#78847C]">选择一种学习方式，已有内容会直接打开。</p>
+          </div>
+          <button type="button" aria-label="关闭" onClick={onClose} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#748078] transition hover:bg-[#EDF0EB] hover:text-[#24332B]">
+            <X size={18} />
+          </button>
+        </header>
+
+        <div className="grid grid-cols-1 gap-3 p-5 min-[520px]:grid-cols-2 sm:p-6">
+          {FUNCTION_META.map((fn) => {
         const res = fn.form !== 'ppt' ? existingFor(fn.form as ResourceForm) : undefined;
         const pptTask = fn.form === 'ppt'
           ? (presentations ?? []).find((task) => task.title.includes(node.label) && !['failed', 'cancelled'].includes(task.status))
@@ -684,21 +623,36 @@ function FunctionLayer({
             : (res?.learned ?? learned.has(node.kpId))
               ? 'learned'
               : 'unlearned';
+        const Icon = FUNCTION_ICON[fn.form];
+        const tag = STATUS_META[status];
         return (
-          <FunctionButton
+          <button
             key={fn.form}
-            fn={fn}
-            busy={busy}
-            status={status}
-            position={leafPositions[i]}
-            onOpen={() => {
+            type="button"
+            disabled={busy}
+            className="group min-h-[112px] rounded-[20px] border border-[#E1E6DF] bg-white/75 p-4 text-left shadow-[0_8px_22px_rgba(41,63,51,0.06)] transition duration-200 hover:-translate-y-0.5 hover:border-[#AFC3B5] hover:bg-white hover:shadow-[0_14px_32px_rgba(41,63,51,0.12)] disabled:cursor-progress disabled:opacity-60"
+            onClick={() => {
               if (fn.form === 'ppt') void openOrCreatePpt();
               else void openOrGenerate(fn.form as ResourceForm);
             }}
-          />
+          >
+            <span className="mb-4 flex items-center justify-between">
+              <span className="flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#EDF3EE] text-[#466C56] transition group-hover:bg-[#E2ECE5]">
+                <Icon size={19} strokeWidth={1.8} />
+              </span>
+              <span className="flex items-center gap-1.5 text-[11px] font-medium text-[#6C7971]">
+                <i className="h-2 w-2 rounded-full" style={{ backgroundColor: busy ? '#D89238' : tag.color }} />
+                {busy ? '处理中' : tag.label}
+              </span>
+            </span>
+            <strong className="block text-[15px] font-semibold text-[#26352D]">{fn.label}</strong>
+            <small className="mt-1 block text-[11px] leading-5 text-[#879189]">{exists ? '打开已有内容继续学习' : '交给 Agent 生成专属内容'}</small>
+          </button>
         );
-      })}
-    </group>
+          })}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -717,10 +671,6 @@ function ChildPlane({
   parentOffset,
   animRef,
   showLearned,
-  expandedTopicId,
-  resources,
-  presentations,
-  goalId,
 }: {
   parentPos: THREE.Vector3;
   children: GraphNode[];
@@ -735,10 +685,6 @@ function ChildPlane({
   parentOffset?: THREE.Vector3;
   animRef: BlendRef;
   showLearned?: boolean;
-  expandedTopicId?: string | null;
-  resources?: Record<string, Array<GeneratedResource & { id?: string; learned?: boolean }>>;
-  presentations?: PresentationTaskSummary[];
-  goalId?: string | null;
 }) {
   const billboardRef = useRef<THREE.Group | null>(null);
 
@@ -761,8 +707,6 @@ function ChildPlane({
       return { node, relPos, direction };
     });
   }, [children, layout.childDirections]);
-  const expandedChild = childData.find(({ node }) => node.id === expandedTopicId) ?? null;
-
   return (
     <Billboard ref={billboardRef} position={parentPos}>
       <group>
@@ -807,18 +751,6 @@ function ChildPlane({
             />
           );
         })}
-
-        {/* 功能叶子层：点击子知识点后展开，与章节展开互不干扰 */}
-        {expandedChild && (
-          <FunctionLayer
-            node={expandedChild.node}
-            relPos={expandedChild.relPos}
-            resources={resources?.[expandedChild.node.kpId] ?? []}
-            presentations={presentations}
-            goalId={goalId}
-            learned={learned}
-          />
-        )}
       </group>
     </Billboard>
   );
@@ -957,15 +889,19 @@ function ChildNode({
         raycast={() => null}
         renderOrder={2}
         position={getTextPosition()}
-        fontSize={1.4}
+        fontSize={1.32}
+        maxWidth={14}
+        lineHeight={1.28}
+        letterSpacing={0.025}
+        textAlign={direction === 'left' ? 'right' : 'left'}
         color="#3D4A3A"
         anchorX={textAnchor.x}
         anchorY={textAnchor.y}
-        outlineWidth={0.14}
+        outlineWidth={0.055}
         outlineColor="#FFFFFF"
-        outlineOpacity={0.6}
+        outlineOpacity={0.82}
       >
-        {node.label}
+        {node.label.trim()}
       </Text>
     </group>
   );
@@ -1144,14 +1080,18 @@ function Node3D({
           renderOrder={2}
           position={getTextPosition()}
           fontSize={isDomain ? 1.6 : 1.2}
+          maxWidth={isDomain ? 12 : 14}
+          lineHeight={1.28}
+          letterSpacing={0.025}
+          textAlign={isDomain ? 'center' : direction === 'left' ? 'right' : 'left'}
           color={isDomain ? '#FFFFFF' : '#3D4A3A'}
           anchorX={textAnchor.x}
           anchorY={textAnchor.y}
-          outlineWidth={0.1}
+          outlineWidth={isDomain ? 0.07 : 0.05}
           outlineColor={isDomain ? '#000000' : '#FFFFFF'}
           outlineOpacity={0.5}
         >
-          {node.label}
+          {node.label.trim()}
         </Text>
       </Billboard>
 
@@ -1277,9 +1217,6 @@ function SceneContent({
   topicProgress,
   expandedTopicId,
   onExpandedTopicChange,
-  resources,
-  presentations,
-  goalId,
   animRef,
   focusId,
   hoveredId,
@@ -1302,9 +1239,6 @@ function SceneContent({
   topicProgress: Record<string, number>;
   expandedTopicId: string | null;
   onExpandedTopicChange: (id: string | null) => void;
-  resources?: Record<string, Array<GeneratedResource & { id?: string; learned?: boolean }>>;
-  presentations?: PresentationTaskSummary[];
-  goalId?: string | null;
   hoveredId: string | null;
   onHoverNode: (id: string | null) => void;
   showLearned?: boolean;
@@ -1400,10 +1334,6 @@ function SceneContent({
             parentOffset={layout.focusOffsets.get(kpId)}
             animRef={animRef}
             showLearned={showLearned}
-            expandedTopicId={expandedTopicId}
-            resources={resources}
-            presentations={presentations}
-            goalId={goalId}
           />
         );
       })}
@@ -1468,6 +1398,18 @@ export default function KnowledgeGraph3D({
 }: KnowledgeGraph3DProps) {
   /** 当前展开“功能节点层”（定制讲义/实操指南/分阶测试题/交互课件）的子知识点，与章节展开互不干扰 */
   const [expandedTopicId, setExpandedTopicId] = useState<string | null>(null);
+  const actionTopic = useMemo(
+    () => nodes.find((node) => node.kind === 'topic' && node.id === expandedTopicId) ?? null,
+    [nodes, expandedTopicId],
+  );
+  useEffect(() => {
+    if (!actionTopic) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setExpandedTopicId(null);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [actionTopic]);
   // 聚焦的域节点（需仍处于展开状态才拉出）；同时展开多个章节时聚焦规则不生效
   const focusedId = focusTarget && expandedKpIds.has(focusTarget.id) ? focusTarget.id : null;
   const focusId = expandedKpIds.size > 1 ? null : focusedId;
@@ -1526,9 +1468,6 @@ export default function KnowledgeGraph3D({
             topicProgress={topicProgress}
             expandedTopicId={expandedTopicId}
             onExpandedTopicChange={setExpandedTopicId}
-            resources={resources}
-            presentations={presentations}
-            goalId={goalId}
             animRef={blendRef}
             focusId={dimAnchorId}
             hoveredId={hoveredNodeId}
@@ -1538,6 +1477,17 @@ export default function KnowledgeGraph3D({
         </RotatingScene>
         <CameraFocus focusTarget={focusTarget} layout={layout} sceneRef={sceneRef} blendRef={blendRef} topicCountByKp={topicCountByKp} />
       </Canvas>
+
+      {actionTopic && (
+        <TopicActionModal
+          node={actionTopic}
+          resources={resources[actionTopic.kpId] ?? []}
+          presentations={presentations}
+          goalId={goalId}
+          learned={learned}
+          onClose={() => setExpandedTopicId(null)}
+        />
+      )}
 
       {/* 提示 */}
       <div className="absolute bottom-4 left-4 rounded-lg bg-white/90 px-3 py-2 text-[11px] text-ink-muted backdrop-blur-sm border border-hairline/50">
