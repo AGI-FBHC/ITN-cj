@@ -69,6 +69,7 @@ interface LearningBlock {
   title: string;
   body?: string;
   citations: number[];
+  evidenceQuotes?: unknown;
   code?: string;
   expectedOutput?: string;
   safety?: 'safe' | 'caution' | 'danger';
@@ -132,6 +133,7 @@ function blocksOf(resource: LearningResource): LearningBlock[] {
           title: String(section.title ?? `第 ${sectionIndex + 1} 节`),
           body: String(section.content ?? ''),
           citations: asNumbers(section.citations),
+          evidenceQuotes: section.evidenceQuotes,
         });
       });
     });
@@ -375,7 +377,7 @@ function QuizBlock({
 }
 
 function InlineBlockCitations({ block, resource }: { block: LearningBlock; resource: LearningResource }) {
-  return <SourceCitationMarks citations={block.citations} evidenceQuotes={asRecord(block.question).answerEvidenceQuotes} resource={resource} className="mt-2" />;
+  return <SourceCitationMarks citations={block.citations} evidenceQuotes={block.evidenceQuotes ?? asRecord(block.question).answerEvidenceQuotes} resource={resource} className="mt-2" />;
 }
 
 function assessmentsOf(resource: LearningResource): Record<string, number> {

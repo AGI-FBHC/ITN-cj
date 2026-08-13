@@ -14,10 +14,6 @@ function citationNumbers(value: unknown): number[] {
     : [];
 }
 
-function sourceAnchorId(resourceId: string, sourceId: string | number) {
-  return `resource-${resourceId}-source-${String(sourceId).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
-}
-
 /**
  * Render resource-owned citations at the exact content block that declared them.
  * Unknown ids are intentionally omitted: showing an unresolvable badge implies
@@ -73,7 +69,7 @@ export default function SourceCitationMarks({
 
   const highlightQuotes = (sourceId: number) => (Array.isArray(evidenceQuotes) ? evidenceQuotes : [])
     .map(asRecord)
-    .filter((item) => Number(item.chunk_id ?? item.chunkId) === sourceId)
+    .filter((item) => Number(item.sourceId ?? item.chunk_id ?? item.chunkId) === sourceId)
     .map((item) => String(item.quote ?? '').trim())
     .filter(Boolean);
 
@@ -125,30 +121,21 @@ export default function SourceCitationMarks({
           compact ? 'px-1.5 py-px text-[10px] leading-4' : 'px-2 py-0.5 text-[10.5px] leading-[18px]',
         );
         const label = <><span>[{id}]</span>{!compact && <span className="max-w-[180px] truncate font-sans font-normal">{title}</span>}{url && <ExternalLink size={9} />}</>;
-        const chunkId = String(source.chunkId ?? '').trim();
-        return chunkId ? (
-          <button key={id} type="button" onClick={() => void openSource(id, source)} title={`查看 RAG 原文 [${id}]：${title}`} className={style}>{label}</button>
-        ) : url ? (
-          <a key={id} href={url} target="_blank" rel="noreferrer" title={`来源 [${id}]：${title}`} className={style}>{label}</a>
-        ) : resource ? (
-          <a key={id} href={`#${sourceAnchorId(resource.id, id)}`} title={`来源 [${id}]：${title}`} className={style}>{label}</a>
-        ) : (
-          <span key={id} title={`来源 [${id}]：${title}`} className={style}>{label}</span>
-        );
+        return <button key={id} type="button" onClick={() => void openSource(id, source)} title={`查看引用原文 [${id}]：${title}`} className={style}>{label}</button>;
       })}
       {opened && createPortal(
         <div className="fixed inset-0 z-[120] flex touch-none items-center justify-center overflow-hidden bg-ink/30 p-4 backdrop-blur-sm" onClick={() => setOpened(null)} onWheel={(event) => event.stopPropagation()}>
           <section role="dialog" aria-modal="true" aria-label={`引用 ${opened.id} 原文`} onClick={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()} onTouchMove={(event) => event.stopPropagation()} className="flex max-h-[82vh] w-full max-w-[720px] flex-col overflow-hidden rounded-[22px] border border-white/70 bg-paper shadow-2xl">
             <header className="flex items-start gap-3 border-b border-hairline bg-card-warm px-5 py-4">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-tint text-brand"><FileText size={17} /></span>
-              <div className="min-w-0 flex-1"><div className="font-mono text-[10px] text-brand">RAG FLOW · [{opened.id}]</div><h2 className="mt-1 text-[15px] font-semibold text-ink">{chunk?.document.title ?? String(opened.source.document ?? opened.source.title ?? `来源 ${opened.id}`)}</h2>{chunk?.titlePath && <p className="mt-1 text-[11px] text-ink-muted">{chunk.titlePath}</p>}</div>
+              <div className="min-w-0 flex-1"><div className="font-mono text-[10px] text-brand">{String(opened.source.sourceType) === 'web' ? 'WEB SOURCE' : 'RAG FLOW'} · [{opened.id}]</div><h2 className="mt-1 text-[15px] font-semibold text-ink">{chunk?.document.title ?? String(opened.source.document ?? opened.source.title ?? `来源 ${opened.id}`)}</h2>{chunk?.titlePath && <p className="mt-1 text-[11px] text-ink-muted">{chunk.titlePath}</p>}</div>
               <button type="button" aria-label="关闭原文" onClick={() => setOpened(null)} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep"><X size={17} /></button>
             </header>
             <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-5">
               {loading ? <div className="flex items-center justify-center gap-2 py-16 text-[13px] text-ink-muted"><Loader2 size={16} className="animate-spin" />正在读取向量知识库原始切片…</div> : <>
                 {liveError && <div className="mb-3 rounded-xl border border-brand-amber/35 bg-brand-amber-tint px-3 py-2 text-[11.5px] text-ochre">实时原文读取失败，以下显示生成时保存的来源快照：{liveError}</div>}
                 <div className="whitespace-pre-wrap rounded-[14px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-7 text-ink-2">{highlightedContent(chunk?.content ?? String(opened.source.content ?? '没有可显示的原文内容。'), opened.id)}</div>
-                <div className="mt-3 flex flex-wrap gap-2 font-mono text-[10px] text-ink-muted"><span>chunkId: {String(opened.source.chunkId ?? '—')}</span>{chunk?.pageStart != null && <span>页码: {chunk.pageStart}{chunk.pageEnd && chunk.pageEnd !== chunk.pageStart ? `–${chunk.pageEnd}` : ''}</span>}<span>{chunk ? '实时读取' : '生成快照'}</span></div>
+                <div className="mt-3 flex flex-wrap items-center gap-2 font-mono text-[10px] text-ink-muted"><span>chunkId: {String(opened.source.chunkId ?? '—')}</span>{chunk?.pageStart != null && <span>页码: {chunk.pageStart}{chunk.pageEnd && chunk.pageEnd !== chunk.pageStart ? `–${chunk.pageEnd}` : ''}</span>}<span>{chunk ? '实时读取' : '生成快照'}</span>{typeof opened.source.url === 'string' && opened.source.url && <a href={opened.source.url} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-1 rounded-lg border border-brand/25 px-2.5 py-1.5 text-brand hover:bg-brand-tint">查看原网页<ExternalLink size={10} /></a>}</div>
               </>}
             </div>
           </section>
