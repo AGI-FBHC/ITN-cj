@@ -1521,12 +1521,12 @@ export default function LearnUnit() {
             if (event.sessionId) pptChatSessionRef.current = event.sessionId;
             setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, transcript, converting: false, q: transcript, a: reply } : qa));
           } else if (event.type === 'error') {
-            streamError = event.message || 'MiMo 语音理解失败';
+            streamError = event.message || `${pptAudioModel === 'qwen' ? 'Qwen' : 'MiMo'} 语音理解失败`;
           }
         }, controller.signal,
       );
     } catch (reason) {
-      streamError = reason instanceof Error ? reason.message : 'MiMo 语音理解失败';
+      streamError = reason instanceof Error ? reason.message : `${pptAudioModel === 'qwen' ? 'Qwen' : 'MiMo'} 语音理解失败`;
     } finally {
       voiceBusyRef.current = false;
       setVoiceBusy(false);
@@ -1536,7 +1536,7 @@ export default function LearnUnit() {
       toast(streamError || '没有识别到有效语音');
       return;
     }
-    const finalReply = reply.trim() || '我听到了你的问题，但 MiMo 暂未返回可展示回答，请稍后重试。';
+    const finalReply = reply.trim() || `我听到了你的问题，但 ${pptAudioModel === 'qwen' ? 'Qwen' : 'MiMo'} 暂未返回可展示回答，请稍后重试。`;
     setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: finalReply } : qa));
     setQuestion('');
     if (pptAudioModel === 'mimo') {
