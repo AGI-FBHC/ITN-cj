@@ -85,8 +85,8 @@ import PptPlayer from '@/components/learn/PptPlayer';
 import type { PptPlayerRef } from '@/components/learn/PptPlayer';
 import { startWavRecording } from '@/lib/voiceRecorder';
 import type { WavRecorder } from '@/lib/voiceRecorder';
-import { createPresentationChatSession, getPresentationChatMessages, listPresentationChatSessions, draftPresentationNote, streamPresentationChatAudio, streamPresentationChatText, streamPresentationChatTts } from '@/lib/presentationApi';
-import type { PresentationAudioEvent } from '@/lib/presentationApi';
+import { createPresentationChatSession, deletePresentationChatSession, getPresentationChatMessages, listPresentationChatSessions, draftPresentationNote, streamPresentationChatAudio, streamPresentationChatText, streamPresentationChatTts } from '@/lib/presentationApi';
+import type { PresentationAudioEvent, PresentationChatSession } from '@/lib/presentationApi';
 import PathProgressBar from '@/components/learn/PathProgressBar';
 import { GrassTuft, Sprout } from '@/components/heal/Flora';
 import { useAmbient } from '@/components/heal/useAmbient';
@@ -775,8 +775,9 @@ export default function LearnUnit() {
   }
   const [qaLog, setQaLog] = useState<QaEntry[]>([]);
   const [pptAudioModel, setPptAudioModel] = useState<'mimo' | 'qwen'>('mimo');
+  const [pptChatSessions, setPptChatSessions] = useState<PresentationChatSession[]>([]);
   const qaScrollRef = useRef<HTMLDivElement>(null);
-  const pptChatSessionRef = useRef('');
+  const pptChatSessionRefs = useRef<Record<'mimo' | 'qwen', string>>({ mimo: '', qwen: '' });
   const pptAskAbortRef = useRef<AbortController | null>(null);
   const pptWasPlayingRef = useRef(false);
   const answerAudioRef = useRef<{ context: AudioContext; sources: Set<AudioBufferSourceNode>; gain?: GainNode } | null>(null);
@@ -808,13 +809,65 @@ export default function LearnUnit() {
     if (active?.gain) active.gain.gain.value = next;
   };
 
-  const ensurePptChatSession = async () => {
+  const restorePptChatSession = async (sessionId: string) => {
+    if (!pptTaskId || !sessionId) { setQaLog([]); return; }
+    const history = await getPresentationChatMessages(pptTaskId, sessionId);
+    const restored: QaEntry[] = [];
+    for (const item of history) {
+      if (item.role === 'user') restored.push({ id: item.id, q: item.content, a: '', voice: item.inputType === 'voice', transcript: item.content });
+      else if (restored.length) restored[restored.length - 1].a = item.content;
+    }
+    setQaLog(restored);
+  };
+
+  const ensurePptChatSession = async (model: 'mimo' | 'qwen' = pptAudioModel) => {
     if (!pptTaskId) return '';
-    if (pptChatSessionRef.current) return pptChatSessionRef.current;
+    if (pptChatSessionRefs.current[model]) return pptChatSessionRefs.current[model];
     const sessions = await listPresentationChatSessions(pptTaskId);
-    const session = sessions[0] ?? await createPresentationChatSession(pptTaskId);
-    pptChatSessionRef.current = session.id;
+    setPptChatSessions(sessions);
+    const session = sessions.find((item) => item.modelProvider === model) ?? await createPresentationChatSession(pptTaskId, model);
+    pptChatSessionRefs.current[model] = session.id;
+    if (!sessions.some((item) => item.id === session.id)) setPptChatSessions((prev) => [session, ...prev]);
     return session.id;
+  };
+
+  const selectPptChatSession = async (sessionId: string) => {
+    pptAskAbortRef.current?.abort();
+    stopAnswerAudio();
+    pptChatSessionRefs.current[pptAudioModel] = sessionId;
+    await restorePptChatSession(sessionId);
+  };
+
+  const createFreshPptChatSession = async () => {
+    if (!pptTaskId || voiceBusy) return;
+    const session = await createPresentationChatSession(pptTaskId, pptAudioModel);
+    pptChatSessionRefs.current[pptAudioModel] = session.id;
+    setPptChatSessions((prev) => [session, ...prev]);
+    setQaLog([]);
+  };
+
+  const removeCurrentPptChatSession = async () => {
+    if (!pptTaskId || voiceBusy) return;
+    const sessionId = pptChatSessionRefs.current[pptAudioModel];
+    if (!sessionId) return;
+    await deletePresentationChatSession(pptTaskId, sessionId);
+    const remaining = pptChatSessions.filter((item) => item.id !== sessionId);
+    setPptChatSessions(remaining);
+    const next = remaining.find((item) => item.modelProvider === pptAudioModel);
+    pptChatSessionRefs.current[pptAudioModel] = next?.id ?? '';
+    if (next) await restorePptChatSession(next.id); else setQaLog([]);
+  };
+
+  const switchPptAudioModel = async (model: 'mimo' | 'qwen') => {
+    if (model === pptAudioModel || voiceBusy) return;
+    pptAskAbortRef.current?.abort();
+    stopAnswerAudio();
+    setPptAudioModel(model);
+    setQaLog([]);
+    try {
+      const sessionId = await ensurePptChatSession(model);
+      await restorePptChatSession(sessionId);
+    } catch { /* session creation is retried on the first question */ }
   };
 
   const requestPptAnswerAudio = (text: string, signal?: AbortSignal) => {
@@ -872,25 +925,18 @@ export default function LearnUnit() {
   useEffect(() => {
     pptAskAbortRef.current?.abort();
     stopAnswerAudio();
-    pptChatSessionRef.current = '';
+    pptChatSessionRefs.current = { mimo: '', qwen: '' };
+    setPptChatSessions([]);
     queueMicrotask(() => setQaLog([]));
     if (!pptTaskId) return;
-    void ensurePptChatSession().then(async (sessionId) => {
-      const history = await getPresentationChatMessages(pptTaskId, sessionId);
-      const restored: QaEntry[] = [];
-      for (const item of history) {
-        if (item.role === 'user') restored.push({ id: item.id, q: item.content, a: '', voice: item.inputType === 'voice', transcript: item.content });
-        else if (restored.length) restored[restored.length - 1].a = item.content;
-      }
-      setQaLog(restored);
-    }).catch(() => { /* a new session will be retried on first question */ });
+    void ensurePptChatSession(pptAudioModel).then(restorePptChatSession).catch(() => { /* retried on first question */ });
     return () => {
       pptAskAbortRef.current?.abort();
       stopAnswerAudio();
       voiceAudioUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
       voiceAudioUrlsRef.current.clear();
     };
-    // Session lifetime is intentionally keyed only by the opened PPT task.
+    // Each model owns an independent conversation within the opened PPT task.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pptTaskId]);
 
@@ -1491,7 +1537,7 @@ export default function LearnUnit() {
         pptTaskId ?? '',
         audio,
         pptRef.current?.current ?? 0,
-        pptChatSessionRef.current,
+        pptChatSessionRefs.current[pptAudioModel],
         pptAudioModel,
         (event) => {
           if (event.type === 'phase') {
@@ -1519,7 +1565,10 @@ export default function LearnUnit() {
             finalAction = event.action ?? 'none';
             finalPage = event.page ?? null;
             finalResume = Boolean(event.resume);
-            if (event.sessionId) pptChatSessionRef.current = event.sessionId;
+            if (event.sessionId) {
+              pptChatSessionRefs.current[pptAudioModel] = event.sessionId;
+              void listPresentationChatSessions(pptTaskId ?? '').then(setPptChatSessions).catch(() => undefined);
+            }
             setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, transcript, converting: false, q: transcript, a: reply } : qa));
           } else if (event.type === 'error') {
             streamError = event.message || `${pptAudioModel === 'qwen' ? 'Qwen' : 'MiMo'} 语音理解失败`;
@@ -1552,6 +1601,10 @@ export default function LearnUnit() {
     const q = (override ?? question).trim();
     if (!q && !askPhoto) return;
     if (pptTaskId && q && !askPhoto) {
+      if (pptAudioModel === 'qwen') {
+        toast('Qwen 实时通道当前请使用语音提问；文字提问切回 MiMo。');
+        return;
+      }
       const entryId = `text-${voiceSeqRef.current++}`;
       setQaLog((prev) => [...prev, { id: entryId, q, a: '正在结合当前幻灯片回答…' }]);
       setQuestion('');
@@ -1923,6 +1976,26 @@ export default function LearnUnit() {
         </Link>
         <span className="text-hairline">/</span>
         <h1 className="font-serif text-[20px] font-semibold text-ink">{pptTopic || generatedUnit?.topicName || kp.name}</h1>
+        {pptTaskId && (
+          <div className="flex items-center gap-1 rounded-full border border-hairline bg-card-warm p-1" aria-label="伴学模型">
+            <span className="pl-1.5 pr-1 font-mono text-[9.5px] text-ink-muted">伴学模型</span>
+            {(['mimo', 'qwen'] as const).map((model) => (
+              <button
+                key={model}
+                type="button"
+                disabled={voiceBusy}
+                onClick={() => void switchPptAudioModel(model)}
+                className={cn(
+                  'rounded-full px-2.5 py-1 font-mono text-[9.5px] transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                  pptAudioModel === model ? 'bg-brand text-paper shadow-sm' : 'text-ink-muted hover:text-ink',
+                )}
+                title={model === 'mimo' ? 'MiMo 2.5' : 'Qwen Audio 3.0 Realtime'}
+              >
+                {model === 'mimo' ? 'MiMo' : 'Qwen'}
+              </button>
+            ))}
+          </div>
+        )}
         <span className="ml-auto flex items-center gap-2">
           {/* 掌握度小徽标（伴学栏收起时也看得到，移动端唯一入口） */}
           <span
@@ -3388,26 +3461,25 @@ export default function LearnUnit() {
             <div className="flex items-center gap-2 border-b border-hairline bg-card-warm px-4 py-2.5">
               <Hand size={14} className="text-ochre" />
               <span className="text-[13.5px] font-semibold text-ink">课堂提问 · 已暂停授课</span>
-              <div className="ml-auto flex rounded-full border border-hairline bg-paper p-0.5" aria-label="语音回答模型">
-                {(['mimo', 'qwen'] as const).map((model) => (
-                  <button
-                    key={model}
-                    type="button"
-                    disabled={voiceBusy}
-                    onClick={() => setPptAudioModel(model)}
-                    className={cn(
-                      'rounded-full px-2 py-1 font-mono text-[9px] transition-colors disabled:cursor-not-allowed disabled:opacity-50',
-                      pptAudioModel === model ? 'bg-brand text-paper' : 'text-ink-muted hover:text-ink',
-                    )}
-                    title={model === 'mimo' ? 'MiMo 2.5 音频直答' : 'Qwen Audio 3.0 Realtime Plus'}
-                  >
-                    {model === 'mimo' ? 'MiMo' : 'Qwen'}
-                  </button>
-                ))}
-              </div>
+              <span className="rounded-full bg-paper px-2 py-0.5 font-mono text-[9px] text-ink-muted">{pptAudioModel === 'mimo' ? 'MiMo' : 'Qwen'}</span>
+              <button type="button" disabled={voiceBusy} onClick={() => void createFreshPptChatSession()} className="ml-auto rounded-md px-1.5 py-1 font-mono text-[10px] text-ink-muted hover:bg-paper hover:text-brand disabled:opacity-50" title="新建会话">新建</button>
               <button type="button" onClick={() => { pptAskAbortRef.current?.abort(); stopAnswerAudio(); setAsking(false); }} className="text-ink-muted hover:text-ink">
                 <X size={15} />
               </button>
+            </div>
+            <div className="flex items-center gap-2 border-b border-hairline bg-paper px-4 py-2">
+              <select
+                value={pptChatSessionRefs.current[pptAudioModel]}
+                onChange={(event) => void selectPptChatSession(event.target.value)}
+                disabled={voiceBusy}
+                className="min-w-0 flex-1 truncate bg-transparent text-[11px] text-ink-2 outline-none disabled:opacity-50"
+                aria-label="课堂提问会话"
+              >
+                {pptChatSessions.filter((item) => item.modelProvider === pptAudioModel).map((session) => (
+                  <option key={session.id} value={session.id}>{session.title || '新课堂会话'}</option>
+                ))}
+              </select>
+              <button type="button" disabled={voiceBusy || !pptChatSessionRefs.current[pptAudioModel]} onClick={() => void removeCurrentPptChatSession()} className="font-mono text-[10px] text-ink-muted hover:text-brand-danger disabled:opacity-40">删除</button>
             </div>
             <div ref={qaScrollRef} className="flex-1 space-y-2.5 overflow-y-auto px-4 py-3">
               {qaLog.length === 0 && (

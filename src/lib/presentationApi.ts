@@ -166,6 +166,7 @@ export interface PresentationChatSession {
   id: string;
   taskId: string;
   title: string;
+  modelProvider: 'mimo' | 'qwen';
   createdAt: string;
   updatedAt: string;
 }
@@ -177,8 +178,11 @@ export interface PresentationChatHistoryMessage extends PresentationChatMessage 
   createdAt: string;
 }
 
-export const createPresentationChatSession = (taskId: string) =>
-  request<PresentationChatSession>(`/v1/presentations/${encodeURIComponent(taskId)}/chat/sessions`, { method: 'POST' });
+export const createPresentationChatSession = (taskId: string, modelProvider: 'mimo' | 'qwen' = 'mimo') =>
+  request<PresentationChatSession>(`/v1/presentations/${encodeURIComponent(taskId)}/chat/sessions?model_provider=${modelProvider}`, { method: 'POST' });
+
+export const deletePresentationChatSession = (taskId: string, sessionId: string) =>
+  request<void>(`/v1/presentations/${encodeURIComponent(taskId)}/chat/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
 
 export const listPresentationChatSessions = (taskId: string) =>
   request<PresentationChatSession[]>(`/v1/presentations/${encodeURIComponent(taskId)}/chat/sessions`);
