@@ -816,10 +816,14 @@ export default function LearnUnit() {
     return session.id;
   };
 
-  const speakPptAnswer = async (text: string, signal?: AbortSignal) => {
-    if (!pptTaskId || !text.trim()) return;
+  const requestPptAnswerAudio = (text: string, signal?: AbortSignal) => {
+    if (!pptTaskId || !text.trim()) return Promise.reject(new Error('没有可合成的回答'));
+    return streamPresentationChatTts(pptTaskId, text, pptVoice, pptSpeed, signal);
+  };
+
+  const playPptAnswerResponse = async (responsePromise: Promise<Response>, signal?: AbortSignal) => {
     stopAnswerAudio();
-    const response = await streamPresentationChatTts(pptTaskId, text, pptVoice, pptSpeed, signal);
+    const response = await responsePromise;
     const context = new AudioContext({ sampleRate: 24_000 });
     await context.resume();
     const sources = new Set<AudioBufferSourceNode>();
@@ -858,6 +862,10 @@ export default function LearnUnit() {
     schedule(pending);
     const remainingMs = Math.max(0, (nextTime - context.currentTime) * 1000);
     if (remainingMs) await new Promise<void>((resolve) => window.setTimeout(resolve, remainingMs));
+  };
+
+  const speakPptAnswer = async (text: string, signal?: AbortSignal) => {
+    await playPptAnswerResponse(requestPptAnswerAudio(text, signal), signal);
   };
 
   useEffect(() => {
@@ -1408,6 +1416,12 @@ export default function LearnUnit() {
     let finalResume = false;
     let spokenLength = 0;
     let speechChain = Promise.resolve();
+    const queueSentenceAudio = (sentence: string) => {
+      // Start synthesis immediately. Playback remains ordered, so later sentences
+      // are usually ready by the time the previous sentence finishes.
+      const prepared = requestPptAnswerAudio(sentence, controller.signal);
+      speechChain = speechChain.then(() => playPptAnswerResponse(prepared, controller.signal));
+    };
     const queueReadySentences = (flush = false) => {
       const pending = reply.slice(spokenLength);
       if (!pending.trim()) return;
@@ -1416,13 +1430,13 @@ export default function LearnUnit() {
       for (const match of matches) {
         const sentence = match[0].trim();
         consumed = (match.index ?? 0) + match[0].length;
-        if (sentence) speechChain = speechChain.then(() => speakPptAnswer(sentence, controller.signal));
+        if (sentence) queueSentenceAudio(sentence);
       }
       if (flush) {
         const tail = pending.slice(consumed).trim();
         if (tail) {
           consumed = pending.length;
-          speechChain = speechChain.then(() => speakPptAnswer(tail, controller.signal));
+          queueSentenceAudio(tail);
         }
       }
       spokenLength += consumed;
