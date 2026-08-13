@@ -583,23 +583,16 @@ function ProgressRing({
   );
 }
 
-function HoverCardTracker({ nodeId, layout, sceneRef, cardRef, animRef }: {
-  nodeId: string;
-  layout: { positions: Map<string, THREE.Vector3>; focusOffsets: Map<string, THREE.Vector3> };
-  sceneRef: React.MutableRefObject<THREE.Group | null>;
+function HoverCardTracker({ object, cardRef }: {
+  object: THREE.Object3D;
   cardRef: React.MutableRefObject<HTMLDivElement | null>;
-  animRef: BlendRef;
 }) {
   const { camera, size } = useThree();
   const projected = useMemo(() => new THREE.Vector3(), []);
   useFrame(() => {
-    const source = layout.positions.get(nodeId);
     const card = cardRef.current;
-    if (!source || !card) return;
-    projected.copy(source);
-    const offset = layout.focusOffsets.get(nodeId);
-    if (offset) projected.addScaledVector(offset, animRef.current.blend);
-    sceneRef.current?.localToWorld(projected);
+    if (!card) return;
+    object.getWorldPosition(projected);
     projected.project(camera);
     card.style.left = `${(projected.x * 0.5 + 0.5) * size.width}px`;
     card.style.top = `${Math.max(105, Math.min(size.height - 105, (-projected.y * 0.5 + 0.5) * size.height))}px`;
@@ -791,7 +784,7 @@ function ChildPlane({
   topicMastery: Record<string, number>;
   topicProgress: Record<string, number>;
   onNodeClick: (node: GraphNode) => void;
-  onNodeHover: (id: string | null, clientX?: number, clientY?: number) => void;
+  onNodeHover: (id: string | null, clientX?: number, clientY?: number, object?: THREE.Object3D) => void;
   parentOffset?: THREE.Vector3;
   animRef: BlendRef;
   showLearned?: boolean;
@@ -894,7 +887,7 @@ function ChildNode({
   progress: number;
   mastery: number;
   onClick: () => void;
-  onHover: (id: string | null, clientX?: number, clientY?: number) => void;
+  onHover: (id: string | null, clientX?: number, clientY?: number, object?: THREE.Object3D) => void;
   showLearned?: boolean;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
@@ -932,7 +925,7 @@ function ChildNode({
       position={position}
       onPointerEnter={(e) => {
         e.stopPropagation();
-        onHover(node.id, e.clientX, e.clientY);
+        onHover(node.id, e.clientX, e.clientY, e.eventObject);
         document.body.style.cursor = 'pointer';
       }}
       onPointerLeave={() => {
@@ -1054,7 +1047,7 @@ function Node3D({
   progress: number;
   mastery: number;
   onClick: () => void;
-  onHover: (id: string | null, clientX?: number, clientY?: number) => void;
+  onHover: (id: string | null, clientX?: number, clientY?: number, object?: THREE.Object3D) => void;
   focusOffset?: THREE.Vector3;
   animRef: BlendRef;
   /** 聚焦其他节点时，本节点提高透明度退到背景 */
@@ -1143,7 +1136,7 @@ function Node3D({
       position={position}
       onPointerEnter={(e) => {
         e.stopPropagation();
-        onHover(node.id, e.clientX, e.clientY);
+        onHover(node.id, e.clientX, e.clientY, e.eventObject);
         document.body.style.cursor = 'pointer';
       }}
       onPointerLeave={() => {
@@ -1363,7 +1356,7 @@ function SceneContent({
   expandedTopicId: string | null;
   onExpandedTopicChange: (id: string | null) => void;
   hoveredId: string | null;
-  onHoverNode: (id: string | null, clientX?: number, clientY?: number) => void;
+  onHoverNode: (id: string | null, clientX?: number, clientY?: number, object?: THREE.Object3D) => void;
   showLearned?: boolean;
 }) {
   const nodeScaleRef = useRef(new Map<string, number>());
@@ -1566,12 +1559,13 @@ export default function KnowledgeGraph3D({
   // 悬停时暂停自动旋转，避免节点在光标下移动导致悬停闪烁
   const containerRef = useRef<HTMLDivElement | null>(null);
   const hoverCardRef = useRef<HTMLDivElement | null>(null);
-  const [hoveredNode, setHoveredNode] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [hoveredNode, setHoveredNode] = useState<{ id: string; x: number; y: number; object: THREE.Object3D } | null>(null);
   const hoveredNodeId = hoveredNode?.id ?? null;
-  const handleHoverNode = useCallback((id: string | null, clientX?: number, clientY?: number) => {
+  const handleHoverNode = useCallback((id: string | null, clientX?: number, clientY?: number, object?: THREE.Object3D) => {
     if (!id) { setHoveredNode(null); return; }
+    if (!object) return;
     const rect = containerRef.current?.getBoundingClientRect();
-    setHoveredNode({ id, x: (clientX ?? 0) - (rect?.left ?? 0), y: (clientY ?? 0) - (rect?.top ?? 0) });
+    setHoveredNode({ id, x: (clientX ?? 0) - (rect?.left ?? 0), y: (clientY ?? 0) - (rect?.top ?? 0), object });
   }, []);
   const hoveredGraphNode = useMemo(() => nodes.find((node) => node.id === hoveredNodeId) ?? null, [nodes, hoveredNodeId]);
   const hoveredMetrics = useMemo(() => {
@@ -1636,7 +1630,7 @@ export default function KnowledgeGraph3D({
           />
         </RotatingScene>
         <CameraFocus focusTarget={focusTarget} layout={layout} sceneRef={sceneRef} blendRef={blendRef} topicCountByKp={topicCountByKp} />
-        {hoveredNodeId && <HoverCardTracker nodeId={hoveredNodeId} layout={layout} sceneRef={sceneRef} cardRef={hoverCardRef} animRef={blendRef} />}
+        {hoveredNode && <HoverCardTracker object={hoveredNode.object} cardRef={hoverCardRef} />}
       </Canvas>
 
       {actionTopic && (
