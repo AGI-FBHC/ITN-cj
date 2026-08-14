@@ -363,7 +363,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
   }
 
   return (
-    <div className="flex min-h-[calc(100dvh-180px)] flex-col justify-center">
+    <div className="flex min-h-0 flex-1 flex-col justify-center">
       <div className="lf-anim-in-up mx-auto w-[min(100%,calc((100dvh-420px)*16/9))] min-w-[min(100%,720px)] overflow-hidden rounded-[22px] border border-hairline bg-paper shadow-[0_24px_70px_rgba(35,52,43,0.13)]">
         <div className="relative flex aspect-video w-full items-center justify-center overflow-hidden p-2 md:p-3">
           {slideSrc ? (
