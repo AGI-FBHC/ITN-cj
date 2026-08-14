@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Brain, X, Check, MessageCircleQuestion, Radio, GitBranch, Database, SendHorizonal } from 'lucide-react';
+import { Brain, X, Check, MessageCircleQuestion, Radio, GitBranch, Database, SendHorizonal, Plus, Trash2 } from 'lucide-react';
 import { useAgent } from '@/context/AgentContext';
 import type { AgentMessage, DecisionEntry } from '@/context/AgentContext';
 import { useProfile } from '@/context/ProfileContext';
@@ -166,7 +166,7 @@ function DecisionLogView() {
 }
 
 export default function AgentDock() {
-  const { messages, unread, open, setOpen, latestHint, ask, askFree, answerVerify } = useAgent();
+  const { messages, unread, open, setOpen, latestHint, ask, askFree, answerVerify, sessions, currentSessionId, createAgentSession, switchAgentSession, deleteAgentSession } = useAgent();
   const [draft, setDraft] = useState('');
   const { currentLearner, weakestKp, viewMode } = useProfile();
   const isExpert = viewMode === 'expert';
@@ -254,6 +254,23 @@ export default function AgentDock() {
                     ? `SIGNAL → INFER → WRITE · 学习者 ${currentLearner.name}`
                     : `DIA-01 学情诊断 · 正在跟进 ${currentLearner.name}`}
                 </div>
+                {!isExpert && (
+                  <div className="mt-1.5 flex items-center gap-1.5">
+                    <select
+                      value={currentSessionId ?? ''}
+                      onChange={(e) => { if (e.target.value) void switchAgentSession(e.target.value); }}
+                      aria-label="阿诊会话"
+                      className="min-w-0 flex-1 rounded-md border border-hairline bg-paper px-1.5 py-1 text-[10.5px] text-ink-2 outline-none"
+                    >
+                      {sessions.length === 0 && <option value="">暂无会话</option>}
+                      {sessions.map((s) => (
+                        <option key={s.id} value={s.id}>{s.title || '阿诊对话'} · {new Date(s.updatedAt).toLocaleDateString()}</option>
+                      ))}
+                    </select>
+                    <button type="button" onClick={() => void createAgentSession()} title="新建会话" aria-label="新建会话" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-hairline bg-paper text-ink-2 transition hover:border-brand/40 hover:text-brand"><Plus size={12} /></button>
+                    <button type="button" onClick={() => { if (currentSessionId) void deleteAgentSession(currentSessionId); }} disabled={!currentSessionId} title="删除当前会话" aria-label="删除当前会话" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-hairline bg-paper text-ink-muted transition hover:border-brand-danger/40 hover:text-brand-danger disabled:opacity-40"><Trash2 size={12} /></button>
+                  </div>
+                )}
               </div>
             </div>
 

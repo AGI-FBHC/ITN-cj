@@ -881,16 +881,25 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ learnerCode }),
     }),
-  agentInfer: (learnerId: string, signal: Record<string, unknown>) =>
+  agentInfer: (learnerId: string, signal: Record<string, unknown>, sessionId?: string) =>
     requestAgent<AgentInferResult>('/agent/infer', {
       method: 'POST',
-      body: JSON.stringify({ learnerId, signal }),
+      body: JSON.stringify({ learnerId, signal, sessionId }),
     }),
-  askAgent: (learnerId: string, askType: string, text: string, kpId?: string) =>
+  askAgent: (learnerId: string, askType: string, text: string, kpId?: string, sessionId?: string) =>
     requestAgent<{ reply: string; evidence: string[] }>('/agent/ask', {
       method: 'POST',
-      body: JSON.stringify({ learnerId, askType, text, kpId }),
+      body: JSON.stringify({ learnerId, askType, text, kpId, sessionId }),
     }),
+  createAgentSession: (learnerId: string) =>
+    requestAgent<AgentDockSession>('/agent-sessions', {
+      method: 'POST',
+      body: JSON.stringify({ learnerId, sessionType: 'agent-dock', title: '阿诊 · 学习诊断' }),
+    }),
+  deleteAgentSession: (sessionId: string) =>
+    requestAgent<void>(`/agent-sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
+  getAgentSessionMessages: (sessionId: string) =>
+    requestAgent<{ messages: AgentDockSessionMessage[] }>(`/agent-sessions/${encodeURIComponent(sessionId)}/messages`),
   listAgentSessions: () =>
     requestAgent<{ sessions: AgentDockSession[] }>('/agent-sessions'),
   getUserProfile: () => request<UserProfileSettings>('/api/v1/profile'),

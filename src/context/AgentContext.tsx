@@ -8,6 +8,7 @@ import type { ReactNode } from 'react';
 import { toast } from 'sonner';
 import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
+import type { AgentDockSession } from '@/lib/api';
 import { knowledgePoints, getKnowledgePoint } from '@/data/knowledgePoints';
 import type { QuizQuestion } from '@/data/quizBank';
 import {
@@ -69,6 +70,11 @@ interface AgentContextValue {
   /** 自由提问：学情类问题就地答，知识点类问题引导回课件的「问一问」 */
   askFree: (text: string) => void;
   answerVerify: (msgId: string, qIndex: number, optIndex: number) => void;
+  sessions: AgentDockSession[];
+  currentSessionId: string | null;
+  createAgentSession: () => Promise<void>;
+  switchAgentSession: (id: string) => Promise<void>;
+  deleteAgentSession: (id: string) => Promise<void>;
 }
 
 const AgentContext = createContext<AgentContextValue | null>(null);
@@ -100,6 +106,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const { currentLearner, currentLearnerId, applyWriteback, weakestKp } = useProfile();
 
   const [msgsAll, setMsgsAll] = useState<Record<string, AgentMessage[]>>(() => readJSON(K_MSGS, {}));
+  const [sessions, setSessions] = useState<AgentDockSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [confAll, setConfAll] = useState<Record<string, Record<string, number>>>(() => readJSON(K_CONF, {}));
   const [logAll, setLogAll] = useState<Record<string, string[]>>(() => readJSON(K_LOG, {}));
   const [decAll, setDecAll] = useState<Record<string, DecisionEntry[]>>(() => readJSON(K_DEC, {}));
@@ -120,17 +128,20 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   useEffect(() => save(K_DEC, decAll), [decAll]);
   useEffect(() => save(K_SEEN, seen), [seen]);
 
-  /* 阿诊会话恢复：从后端拉取该学习者最新的诊断消息（与本地消息去重合并） */
+  /* 阿诊会话管理：加载该学习者的 agent-dock 会话，默认选中最新一条并合并消息 */
   useEffect(() => {
     if (!currentLearnerId) return;
     let cancelled = false;
-    void api.listAgentSessions().then(({ sessions }) => {
+    void api.listAgentSessions().then(({ sessions: list }) => {
       if (cancelled) return;
-      const session = sessions.find(
+      const mine = list.filter(
         (s) => s.sessionType === 'agent-dock' && s.learnerId === currentLearnerId,
       );
-      if (!session || !session.messages?.length) return;
-      const remote: AgentMessage[] = session.messages
+      setSessions(mine);
+      if (!mine.length) return;
+      const latest = mine[0];
+      setCurrentSessionId(latest.id);
+      const remote: AgentMessage[] = (latest.messages ?? [])
         .filter((m) => m.agentId === 'DIA-01' && m.content)
         .map((m) => ({ id: `agent-${m.id}`, kind: 'agent', text: m.content, time: new Date(m.createdAt).toLocaleString() }));
       if (!remote.length) return;
@@ -217,7 +228,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       if (!sig) return;
       void (async () => {
         try {
-          const deep = await api.agentInfer(lid, sig as unknown as Record<string, unknown>);
+          const deep = await api.agentInfer(lid, sig as unknown as Record<string, unknown>, currentSessionId ?? undefined);
           const tail = deep.nextStep ? ` 下一步：${deep.nextStep}` : '';
           append({ id: mid(), kind: 'agent', text: `${deep.say}${tail}`, time: now() });
           record('inference', `DIA-01 深度诊断 → 「${getKnowledgePoint(kpId).name}」Δ${deep.delta} · 置信度 +${deep.confDelta} · 证据 ${deep.evidence.length} 条`);
@@ -300,13 +311,51 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         commit(s.kpId, inferTutoringFinished(s.kpId, s.title, s.asked, s.correct));
     };
 
+    /** 会话管理：新建 / 切换 / 删除（agent-dock 会话） */
+    const createAgentSession = async () => {
+      const created = await api.createAgentSession(lid);
+      setSessions((prev) => [created, ...prev.filter((s) => s.id !== created.id)]);
+      setCurrentSessionId(created.id);
+      setMsgsAll((prev) => ({ ...prev, [lid]: [] }));
+    };
+    const switchAgentSession = async (id: string) => {
+      if (id === currentSessionId) return;
+      setCurrentSessionId(id);
+      try {
+        const { messages: list } = await api.getAgentSessionMessages(id);
+        const remote: AgentMessage[] = (list ?? [])
+          .filter((m) => m.agentId === 'DIA-01' && m.content)
+          .map((m) => ({ id: `agent-${m.id}`, kind: 'agent', text: m.content, time: new Date(m.createdAt).toLocaleString() }));
+        setMsgsAll((prev) => ({ ...prev, [lid]: remote }));
+      } catch { /* 会话加载失败保持现状 */ }
+    };
+    const deleteAgentSession = async (id: string) => {
+      await api.deleteAgentSession(id);
+      const remaining = sessions.filter((s) => s.id !== id);
+      setSessions(remaining);
+      if (id === currentSessionId) {
+        const next = remaining[0];
+        setCurrentSessionId(next?.id ?? null);
+        setMsgsAll((prev) => ({ ...prev, [lid]: [] }));
+        if (next) {
+          try {
+            const { messages: list } = await api.getAgentSessionMessages(next.id);
+            const remote: AgentMessage[] = (list ?? [])
+              .filter((m) => m.agentId === 'DIA-01' && m.content)
+              .map((m) => ({ id: `agent-${m.id}`, kind: 'agent', text: m.content, time: new Date(m.createdAt).toLocaleString() }));
+            setMsgsAll((prev) => ({ ...prev, [lid]: remote }));
+          } catch { /* ignore */ }
+        }
+      }
+    };
+
     /** 真实学情问答：调后端 /agent/ask（MiMo），占位消息替换为真实回复 */
     const agentAsk = async (askType: string, userText: string, placeholder: string) => {
       append({ id: mid(), kind: 'user', text: userText, time: now() });
       const pendingId = mid();
       append({ id: pendingId, kind: 'agent', text: placeholder, time: now() });
       try {
-        const res = await api.askAgent(lid, askType, userText, askType === 'free' ? undefined : weakestKp.id);
+        const res = await api.askAgent(lid, askType, userText, askType === 'free' ? undefined : weakestKp.id, currentSessionId ?? undefined);
         setMsgsAll((prev) => ({
           ...prev,
           [lid]: (prev[lid] ?? []).map((m) => (
@@ -436,8 +485,13 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       ask,
       askFree,
       answerVerify,
+      sessions,
+      currentSessionId,
+      createAgentSession,
+      switchAgentSession,
+      deleteAgentSession,
     };
-  }, [msgsAll, confAll, logAll, decAll, seen, unread, open, latestHint, currentLearner, currentLearnerId, applyWriteback, weakestKp]);
+  }, [msgsAll, confAll, logAll, decAll, seen, unread, open, latestHint, currentLearner, currentLearnerId, applyWriteback, weakestKp, sessions, currentSessionId]);
 
   return <AgentContext.Provider value={value}>{children}</AgentContext.Provider>;
 }
