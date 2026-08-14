@@ -432,6 +432,7 @@ export default function CourseResourcePlayer() {
     return () => window.clearTimeout(timer);
   }, [writebackStatus]);
   const [completing, setCompleting] = useState(false);
+  const [completeConfirmOpen, setCompleteConfirmOpen] = useState(false);
   const blockRefs = useRef<Record<string, HTMLElement | null>>({});
   const saveTimer = useRef<number | null>(null);
   const sessionSecondsRef = useRef(0);
@@ -653,9 +654,33 @@ export default function CourseResourcePlayer() {
     finally { setAsking(false); }
   };
 
+  const unassessedCount = resource && resource.type !== 'quiz'
+    ? blocks.filter((block) => block.kind !== 'quiz' && assessmentsOf(resource)[block.id] == null).length
+    : 0;
+
   const markComplete = () => {
     if (!resource || completing) return;
+    if (unassessedCount > 0) {
+      setCompleteConfirmOpen(true);
+      return;
+    }
+    finishComplete({});
+  };
+
+  /** 确认完成：未选掌握程度的段落默认标记为「基本理解」（25% 掌握分） */
+  const confirmComplete = () => {
+    if (!resource) return;
+    const extra: Record<string, number> = {};
+    blocks.forEach((block) => {
+      if (block.kind !== 'quiz' && assessmentsOf(resource)[block.id] == null) extra[block.id] = 0.25;
+    });
+    finishComplete(extra);
+  };
+
+  const finishComplete = (extraAssessments: Record<string, number>) => {
+    if (!resource || completing) return;
     setCompleting(true);
+    setCompleteConfirmOpen(false);
     toast.success('已标记完成，正在后台同步学习记录');
     navigate('/learn');
     /* 后台隐式同步：不阻塞跳转；组件卸载后不再 setState */
@@ -671,7 +696,11 @@ export default function CourseResourcePlayer() {
             metadata: { resourceId: resource.id, kpId: resource.kpId, resourceType: resource.type },
           }).catch(() => undefined);
         }
-        await api.updateLearningResourceProgress(resource.id, { currentBlockId, visitedBlockIds: blocks.map((block) => block.id), completedStepIds: completedSteps, elapsedSeconds: elapsedBase + sessionSecondsRef.current }).catch(() => undefined);
+        await api.updateLearningResourceProgress(resource.id, {
+          currentBlockId, visitedBlockIds: blocks.map((block) => block.id),
+          completedStepIds: completedSteps, elapsedSeconds: elapsedBase + sessionSecondsRef.current,
+          selfAssessments: { ...assessmentsOf(resource), ...extraAssessments },
+        }).catch(() => undefined);
         void api.recordLearningEvent({ eventType: 'STUDY_END', sourceType: 'RESOURCE', sourceId: resource.id, durationSeconds: elapsedBase + sessionSecondsRef.current, metadata: JSON.stringify({ courseId: resource.courseId, chapterId: resource.chapterId, resourceType: resource.type, completed: true }) }).catch(() => undefined);
         const mapLearnerId = isUuid(resource.learnerId) ? resource.learnerId! : currentLearnerId;
         if (isUuid(mapLearnerId)) await refreshLearningMapResourceCache(mapLearnerId).catch(() => undefined);
@@ -751,5 +780,17 @@ export default function CourseResourcePlayer() {
     <AnimatePresence>{noteFor && <><motion.button type="button" aria-label="关闭笔记面板背景" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setNoteFor(null)} className="fixed inset-0 z-[70] bg-ink/20 backdrop-blur-[2px]" /><motion.aside initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} className="fixed inset-y-0 right-0 z-[80] flex w-full max-w-[460px] flex-col border-l border-hairline bg-paper shadow-2xl"><div className="flex items-start gap-3 border-b border-hairline p-5"><NotebookPen size={18} className="mt-1 text-brand" /><div className="min-w-0 flex-1"><div className="lf-mono-label">PERSONAL NOTE</div><h2 className="mt-1 truncate font-serif text-[20px] font-semibold text-ink">{noteFor.title}</h2></div><button type="button" aria-label="关闭笔记" onClick={() => setNoteFor(null)} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep"><X size={16} /></button></div><div className="flex-1 p-5"><p className="text-[12px] leading-5 text-ink-muted">笔记会关联当前课程、资源段落和引用来源，保存到“我的笔记”。</p><textarea autoFocus value={noteText} onChange={(event) => setNoteText(event.target.value)} placeholder="写下你的理解、疑问或总结…" className="mt-4 min-h-[260px] w-full resize-none rounded-[13px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-6 text-ink outline-none focus:border-brand/45" /></div><div className="border-t border-hairline p-4"><button type="button" disabled={!noteText.trim() || savingNote} onClick={() => void saveNote()} className="lf-btn-primary w-full justify-center">{savingNote && <Loader2 size={14} className="animate-spin" />}保存到个人知识库</button></div></motion.aside></>}</AnimatePresence>
 
     <AnimatePresence>{chatOpen && <><motion.button type="button" aria-label="关闭提问面板背景" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setChatOpen(false)} className="fixed inset-0 z-[70] bg-ink/20 backdrop-blur-[2px]" /><motion.aside initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} className="fixed inset-y-0 right-0 z-[80] flex w-full max-w-[500px] flex-col border-l border-hairline bg-paper shadow-2xl"><div className="flex items-center gap-3 border-b border-hairline bg-card-warm p-4"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand text-paper"><Bot size={17} /></span><div className="min-w-0 flex-1"><h2 className="text-[14px] font-semibold text-ink">章节导学老师</h2><p className="truncate text-[10.5px] text-ink-muted">正在结合本资源正文、作答状态和真实来源回答</p></div><button type="button" aria-label="关闭提问" onClick={() => setChatOpen(false)} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep"><X size={16} /></button></div><div className="flex-1 space-y-3 overflow-y-auto p-4">{messages.length === 0 && <div className="rounded-[13px] border border-brand/20 bg-brand-tint/35 p-4 text-[12.5px] leading-6 text-ink-2">我已经读过这项资源和它引用的知识库、网页来源。你可以让我解释当前段落、检查理解，或根据作答记录生成巩固建议。</div>}{messages.map((message, index) => <div key={`${message.createdAt}-${index}`} className={cn('w-fit max-w-[90%] rounded-[13px] px-3.5 py-2.5 text-[12.5px] leading-6', message.role === 'user' ? 'ml-auto rounded-br-sm bg-brand text-paper' : 'rounded-tl-sm border border-hairline bg-card-warm text-ink-2')}><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>)}{asking && <div className="flex items-center gap-2 text-[11.5px] text-ink-muted"><Loader2 size={13} className="animate-spin" />正在结合内容与来源思考…</div>}{followUps.length > 0 && <div className="flex flex-wrap gap-1.5">{followUps.map((item) => <button key={item} type="button" onClick={() => void ask(item)} className="rounded-lg border border-hairline bg-card-warm px-2.5 py-1.5 text-left text-[10.5px] text-brand hover:border-brand/40">{item}</button>)}</div>}</div><div className="border-t border-hairline bg-card-warm p-3"><div className="flex items-end gap-2"><textarea value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void ask(); } }} placeholder="问当前内容，Enter 发送…" className="max-h-28 min-h-10 flex-1 resize-none rounded-[11px] border border-hairline bg-paper px-3 py-2.5 text-[12.5px] outline-none focus:border-brand/45" /><button type="button" disabled={!question.trim() || asking} onClick={() => void ask()} className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-brand text-paper disabled:opacity-40"><Send size={15} /></button></div></div></motion.aside></>}</AnimatePresence>
+  {completeConfirmOpen && (
+      <div className="fixed inset-0 z-[110] flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm" onClick={() => setCompleteConfirmOpen(false)} role="dialog" aria-modal="true" aria-label="完成确认">
+        <div className="w-full max-w-[420px] rounded-[18px] border border-brand/30 bg-card-warm p-6 shadow-warm-lg" onClick={(event) => event.stopPropagation()}>
+          <h3 className="font-serif text-[18px] font-semibold text-ink">还有 {unassessedCount} 段没选掌握程度</h3>
+          <p className="mt-1.5 text-[12.5px] leading-5 text-ink-muted">未选择的段落将默认标记为「基本理解」（25% 掌握分），与你的选择一起计入掌握程度。确认后立即返回知识地图。</p>
+          <div className="mt-5 flex gap-2">
+            <button type="button" onClick={() => setCompleteConfirmOpen(false)} className="lf-btn-ghost flex-1 justify-center">再想想</button>
+            <button type="button" onClick={confirmComplete} className="lf-btn-primary flex-1 justify-center">确认完成并返回地图</button>
+          </div>
+        </div>
+      </div>
+    )}
   </div>;
 }
