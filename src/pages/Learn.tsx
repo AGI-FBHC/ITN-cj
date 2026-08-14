@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
@@ -98,16 +98,24 @@ export default function Learn() {
       } satisfies LearnViewState));
     } catch { /* sessionStorage 不可用时保持当前内存状态 */ }
   }, [currentLearner.id, viewMode, selectedKp, selectedTopic, expandedKpIds, showLearnedPath]);
+  // kp 参数只应用一次：地图数据分多次到达会导致本 effect 反复执行，
+  // 每次都重新触发相机聚焦会造成“展开后视角又变一次”，这里用 ref 去重。
+  const appliedKpParamRef = useRef<string | null>(null);
   useEffect(() => {
     const kpParam = searchParams.get('kp');
-    if (kpParam && knowledgePoints.some((kp) => kp.id === kpParam)) {
-      // 首页“今天就学这一件”进入：3D 视角 + 选中 + 展开该章节 + 相机聚焦（等价点击章节速览）
-      setViewMode('3d');
-      setSelectedKp(kpParam);
-      setSelectedTopic(null);
-      setExpandedKpIds(new Set([kpParam]));
-      setGraphFocus({ id: kpParam, at: Date.now() });
+    if (!kpParam) {
+      appliedKpParamRef.current = null;
+      return;
     }
+    if (!knowledgePoints.some((kp) => kp.id === kpParam)) return;
+    if (appliedKpParamRef.current === kpParam) return;
+    appliedKpParamRef.current = kpParam;
+    // 首页“今天就学这一件”进入：3D 视角 + 选中 + 展开该章节 + 相机聚焦（等价点击章节速览）
+    setViewMode('3d');
+    setSelectedKp(kpParam);
+    setSelectedTopic(null);
+    setExpandedKpIds(new Set([kpParam]));
+    setGraphFocus({ id: kpParam, at: Date.now() });
   }, [searchParams, knowledgePoints]);
 
   const pathStatusOf = (kpId: string): string | null => {
@@ -271,7 +279,7 @@ export default function Learn() {
               goalId={map.goalId}
               presentations={map.presentations}
               persistenceKey={currentLearner.id}
-              restorePersistedCamera={restoreMapState}
+              restorePersistedCamera={restoreMapState && !searchParams.get('kp')}
             />
           ) : (
             <KnowledgeGraph showLearned={showLearnedPath} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpIds={expandedKpIds} onExpandedKpChange={setSingleExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} />
