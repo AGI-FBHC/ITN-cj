@@ -84,8 +84,9 @@ import FaultTreeDemo from '@/components/learn/FaultTreeDemo';
 import PptPlayer from '@/components/learn/PptPlayer';
 import type { PptPlayerRef } from '@/components/learn/PptPlayer';
 import { startWavRecording } from '@/lib/voiceRecorder';
+import { audioBus } from '@/lib/audioBus';
 import type { WavRecorder } from '@/lib/voiceRecorder';
-import { createPresentationChatSession, deletePresentationChatSession, getPresentationChatMessages, listPresentationChatSessions, draftPresentationNote, streamPresentationChatAudio, streamPresentationChatText, streamPresentationChatTts } from '@/lib/presentationApi';
+import { createPresentationChatSession, deletePresentationChatSession, getPresentationChatMessages, listPresentationChatSessions, draftPresentationNote, streamPresentationChatAudio, streamPresentationChatImage, streamPresentationChatText, streamPresentationChatTts } from '@/lib/presentationApi';
 import type { PresentationAudioEvent, PresentationChatSession } from '@/lib/presentationApi';
 import PathProgressBar from '@/components/learn/PathProgressBar';
 import { GrassTuft, Sprout } from '@/components/heal/Flora';
@@ -122,6 +123,8 @@ const MIMO_SPEEDS: Array<{ value: TtsSpeed; label: string }> = [
 ];
 
 /* ---------- TTS（带看门狗：utterance 卡死/静音环境下超时强制推进，保证讲播永不挂起） ---------- */
+const stripControlMarkers = (text: string) => text.replace(/\[\[[^\]]*\]\]/g, '').trim();
+
 function useTts() {
   const supported = typeof window !== 'undefined' && 'speechSynthesis' in window;
   const speak = (text: string, rate: number, onEnd: () => void, pitch = 1) => {
@@ -807,6 +810,7 @@ export default function LearnUnit() {
   const voiceSeqRef = useRef(0);
   const pptVoiceRef = useRef<WavRecorder | null>(null);
   const voiceAudioUrlsRef = useRef(new Set<string>());
+  const userAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const stopAnswerAudio = () => {
     const active = answerAudioRef.current;
@@ -814,6 +818,9 @@ export default function LearnUnit() {
     active?.sources.forEach((source) => { try { source.stop(); } catch { /* already stopped */ } });
     void active?.context.close();
   };
+  const stopAnswerAudioRef = useRef<() => void>(() => {});
+  stopAnswerAudioRef.current = stopAnswerAudio;
+  useEffect(() => audioBus.register('agent', () => stopAnswerAudioRef.current()), []);
 
   const changePptVolume = (value: number) => {
     const next = Math.min(1, Math.max(0, value));
@@ -890,6 +897,7 @@ export default function LearnUnit() {
   };
 
   const playPptAnswerResponse = async (responsePromise: Promise<Response>, signal?: AbortSignal) => {
+    audioBus.stopAll();
     stopAnswerAudio();
     const response = await responsePromise;
     const context = new AudioContext({ sampleRate: 24_000 });
@@ -1309,6 +1317,7 @@ export default function LearnUnit() {
         return { ...prev, [block.id]: [...cur] };
       });
     }
+    audioBus.stopAll();
     cancelRef.current = tts.speak(cue.say, speechRate, () => {
       if (playingRef.current) playCue(b, c + 1);
     }, voiceStyle.pitch);
@@ -1341,7 +1350,7 @@ export default function LearnUnit() {
     else startPlay(posRef.current.b, posRef.current.c);
   };
 
-  useEffect(() => () => { cancelRef.current?.(); tts.stop(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { cancelRef.current?.(); tts.stop(); userAudioRef.current?.pause(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---- 检查点 ---- */
   const answerCheckpoint = (b: Extract<CourseBlock, { kind: 'checkpoint' }>, idx: number, optIndex: number) => {
@@ -1427,6 +1436,7 @@ export default function LearnUnit() {
     }
     setAsking(true);
     pptWasPlayingRef.current = Boolean(pptRef.current?.audioPlaying);
+    audioBus.stopAll();
     stopPlayback();
     stopAnswerAudio();
     hitSpot('modal');
@@ -1481,6 +1491,7 @@ export default function LearnUnit() {
     const playQwenAudioDelta = (encoded: string, sampleRate = 24000) => {
       let active = answerAudioRef.current;
       if (!active) {
+        audioBus.stopAll();
         const context = new AudioContext({ sampleRate });
         const gain = context.createGain();
         const sources = new Set<AudioBufferSourceNode>();
@@ -1601,7 +1612,7 @@ export default function LearnUnit() {
       toast(streamError || '没有识别到有效语音');
       return;
     }
-    const finalReply = reply.trim() || '我听到了你的问题，但暂未返回可展示回答，请稍后重试。';
+    const finalReply = stripControlMarkers(reply) || '我听到了你的问题，但暂未返回可展示回答，请稍后重试。';
     setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: finalReply } : qa));
     setQuestion('');
     if (pptAudioModel === 'mimo') {
@@ -1634,13 +1645,15 @@ export default function LearnUnit() {
       pptAskAbortRef.current = controller;
       try {
         const sessionId = await ensurePptChatSession();
-        const messages = qaLog.flatMap(({ q: previousQ, a }) => [
-          ...(previousQ ? [{ role: 'user' as const, content: previousQ }] : []),
-          ...(a ? [{ role: 'assistant' as const, content: a }] : []),
-        ]).slice(-14);
-        messages.push({ role: 'user', content: q });
+        const messages = [{ role: 'user' as const, content: q }];
         await streamPresentationChatText(pptTaskId, messages, pptRef.current?.current ?? 0, sessionId, (event) => {
-          if (event.type === 'chat_delta' && event.content) {
+          if (event.type === 'control' && event.action && event.action !== 'none') {
+            if (event.action === 'next') pptRef.current?.goNext();
+            else if (event.action === 'previous') pptRef.current?.goPrev();
+            else if (event.action === 'goto' && event.page) pptRef.current?.goTo(event.page - 1);
+            else if (event.action === 'play') { setBarExpanded(true); pptRef.current?.play(); }
+            else if (event.action === 'pause') pptRef.current?.pause();
+          } else if (event.type === 'chat_delta' && event.content) {
             reply += event.content;
             setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: reply } : qa));
           } else if (event.type === 'refused') {
@@ -1661,12 +1674,60 @@ export default function LearnUnit() {
         return;
       }
       if (reply.trim()) {
-        const slideMarker = reply.match(/\[\[SLIDE:(\d+)\]\]/);
-        const cleanReply = reply.replace(/\s*\[\[SLIDE:\d+\]\]\s*/g, '').trim();
-        if (slideMarker) {
-          const target = Number(slideMarker[1]) - 1;
-          if (target >= 0 && target < (pptRef.current?.slideCount ?? 0)) pptRef.current?.goTo(target);
-        }
+        const cleanReply = stripControlMarkers(reply);
+        setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: cleanReply } : qa));
+        await speakPptAnswer(cleanReply, controller.signal).catch(() => undefined);
+        if (pptWasPlayingRef.current) { setBarExpanded(true); pptRef.current?.play(); }
+      }
+      return;
+    }
+    if (pptTaskId && askPhoto) {
+      const entryId = `photo-${voiceSeqRef.current++}`;
+      setQaLog((prev) => [...prev, { id: entryId, q: q || '（看看这张图）', a: '正在结合图片与当前页回答…', photo: askPhoto.url }]);
+      const photoUrl = askPhoto.url;
+      setQuestion('');
+      setAskPhoto(null);
+      setVoiceBusy(true);
+      pptWasPlayingRef.current = Boolean(pptRef.current?.audioPlaying);
+      pptRef.current?.pause();
+      stopAnswerAudio();
+      let reply = '';
+      let failed = '';
+      const controller = new AbortController();
+      pptAskAbortRef.current?.abort();
+      pptAskAbortRef.current = controller;
+      try {
+        const sessionId = await ensurePptChatSession();
+        const imageBlob = await (await fetch(photoUrl)).blob();
+        await streamPresentationChatImage(pptTaskId, imageBlob, pptRef.current?.current ?? 0, q, sessionId, (event) => {
+          if (event.type === 'control' && event.action && event.action !== 'none') {
+            if (event.action === 'next') pptRef.current?.goNext();
+            else if (event.action === 'previous') pptRef.current?.goPrev();
+            else if (event.action === 'goto' && event.page) pptRef.current?.goTo(event.page - 1);
+            else if (event.action === 'play') { setBarExpanded(true); pptRef.current?.play(); }
+            else if (event.action === 'pause') pptRef.current?.pause();
+          } else if (event.type === 'reply_delta' && event.content) {
+            reply += event.content;
+            setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: reply } : qa));
+          } else if (event.type === 'result' && event.content) {
+            reply = event.content;
+            setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: reply } : qa));
+          } else if (event.type === 'error') {
+            failed = event.message || '图片问答失败，请稍后重试';
+          }
+        }, controller.signal);
+      } catch (reason) {
+        failed = reason instanceof Error ? reason.message : '图片问答失败，请稍后重试';
+      } finally {
+        setVoiceBusy(false);
+      }
+      if (failed && !reply) {
+        setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: failed } : qa));
+        toast.error(failed);
+        return;
+      }
+      if (reply.trim()) {
+        const cleanReply = stripControlMarkers(reply);
         setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: cleanReply } : qa));
         await speakPptAnswer(cleanReply, controller.signal).catch(() => undefined);
         if (pptWasPlayingRef.current) { setBarExpanded(true); pptRef.current?.play(); }
@@ -1683,6 +1744,7 @@ export default function LearnUnit() {
     setQaLog((prev) => [...prev, { q: q || '（看看这张图）', a, kbRef: hit?.kbRef, photo: askPhoto?.url }]);
     setQuestion('');
     setAskPhoto(null);
+    audioBus.stopAll();
     tts.speak(a, speechRate, () => undefined, voiceStyle.pitch);
   };
 
@@ -1693,6 +1755,16 @@ export default function LearnUnit() {
   };
 
   /** 停止/取消录音（听的过程中再点一次麦克风 = 撤回，不发送） */
+  const playUserAudio = (url: string) => {
+    audioBus.stopAll();
+    const el = new Audio(url);
+    userAudioRef.current?.pause();
+    userAudioRef.current = el;
+    const release = audioBus.register('user', () => { try { el.pause(); } catch { /* ignore */ } });
+    el.onended = () => release();
+    void el.play();
+  };
+
   const stopListening = () => {
     if (pptVoiceRef.current) {
       void pptVoiceRef.current.cancel().catch(() => { /* ignore */ });
@@ -3535,7 +3607,7 @@ export default function LearnUnit() {
                   {qa.voice ? (
                     <div className="ml-auto w-fit max-w-[90%]">
                       <div className="flex items-center gap-2 rounded-[12px] rounded-br-[4px] bg-brand px-3 py-2 text-paper">
-                        <button type="button" disabled={!qa.audioUrl} onClick={() => { if (qa.audioUrl) void new Audio(qa.audioUrl).play(); }} className="flex h-5 w-5 items-center justify-center rounded-full bg-paper/20 disabled:opacity-60" title="播放我的语音"><Play size={11} fill="currentColor" /></button>
+                        <button type="button" disabled={!qa.audioUrl} onClick={() => { if (qa.audioUrl) void playUserAudio(qa.audioUrl); }} className="flex h-5 w-5 items-center justify-center rounded-full bg-paper/20 disabled:opacity-60" title="播放我的语音"><Play size={11} fill="currentColor" /></button>
                         <span className="font-mono text-[11.5px]">{qa.duration ?? 1}″</span>
                         {qa.converting ? (
                           <Loader2 size={13} className="animate-spin" />

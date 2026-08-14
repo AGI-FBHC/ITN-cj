@@ -151,7 +151,9 @@ export type PresentationAudioEvent = {
 };
 
 export type PresentationChatEvent = {
-  type: 'phase' | 'chat_delta' | 'chat_reasoning_delta' | 'chat_completed' | 'chat_failed' | 'refused';
+  type: 'phase' | 'control' | 'chat_delta' | 'chat_reasoning_delta' | 'chat_completed' | 'chat_failed' | 'refused';
+  action?: 'none' | 'play' | 'pause' | 'next' | 'previous' | 'goto';
+  page?: number | null;
   content?: string;
   message?: string;
   banner?: string;
@@ -253,6 +255,33 @@ export function draftPresentationNote(taskId: string, slideIndex: number, instru
     `/v1/presentations/${encodeURIComponent(taskId)}/notes/draft`,
     { method: 'POST', body: JSON.stringify({ slideIndex, instruction, currentDraft }) },
   );
+}
+
+export async function streamPresentationChatImage(
+  taskId: string,
+  image: Blob,
+  slideIndex: number,
+  question: string,
+  sessionId: string,
+  onEvent: (event: PresentationAudioEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const form = new FormData();
+  form.append('image', image, 'presentation-question.png');
+  form.append('slide_index', String(slideIndex));
+  form.append('question', question);
+  form.append('session_id', sessionId);
+  const headers = new Headers({ Accept: 'text/event-stream' });
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const response = await fetch(`/v1/presentations/${encodeURIComponent(taskId)}/chat/image-stream`, {
+    method: 'POST',
+    headers,
+    body: form,
+    signal,
+  });
+  if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+  await readSse(response, (payload) => onEvent(payload as PresentationAudioEvent));
 }
 
 export async function streamPresentationChatAudio(

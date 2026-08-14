@@ -9,6 +9,7 @@ import { fetchSlideAsset, presentationApi } from '@/lib/presentationApi';
 import type { PresentationSlideshow, PresentationTask, PresentationTeachingMoment } from '@/lib/presentationApi';
 import type { TtsSpeed } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { audioBus } from '@/lib/audioBus';
 
 const SPEED_RATE: Record<TtsSpeed, number> = {
   very_slow: 0.75,
@@ -103,6 +104,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
         audioSrcRef.current = url;
         audio.src = url;
       }
+      audioBus.stopAll();
       audio.playbackRate = SPEED_RATE[speed];
       audio.volume = volume;
       await audio.play();
@@ -148,6 +150,17 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
     audio.load();
     void playAudio(currentRef.current);
   };
+
+  useEffect(() => {
+    const release = audioBus.register('lecture', () => {
+      const audio = audioRef.current;
+      if (audio && !audio.paused) audio.pause();
+      setAudioPlaying(false);
+      onPlaybackChange?.(false);
+    });
+    return release;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useImperativeHandle(ref, () => ({
     get current() { return currentRef.current; },
