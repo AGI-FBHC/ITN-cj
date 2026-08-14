@@ -51,12 +51,6 @@ const TOPIC_STROKE_COLORS = {
   outer: '#8FC3F2',
 };
 
-const PROGRESS_COLORS = {
-  low: '#19A7CE',
-  mid: '#F59E0B',
-  high: '#16A34A',
-};
-
 interface KnowledgeGraph3DProps {
   onTopicClick?: (kpId: string, topicIndex: number, label: string) => void;
   persistenceKey?: string;
@@ -510,21 +504,15 @@ function ProgressRing({
   selected: boolean;
   target?: number;
 }) {
-  const chapterColors = { low: '#4F9D8A', mid: '#3F8F78', high: '#26715D' };
-  const palette = variant === 'chapter' ? chapterColors : PROGRESS_COLORS;
-  const color = progress >= 80 ? palette.high : progress >= 50 ? palette.mid : palette.low;
+  /* 单层外圈：统一表示掌握程度（淡蓝），门槛用深蓝刻度线 */
+  void progress;
   const trackColor = variant === 'chapter' ? '#71877D' : '#7B8780';
-  const masteryColor = variant === 'chapter' ? '#174E43' : '#155E9A';
-  const arcLength = (Math.max(0, Math.min(100, progress)) / 100) * Math.PI * 2;
-  const masteryLength = arcLength * Math.max(0, Math.min(100, mastery)) / 100;
+  const masteryColor = variant === 'chapter' ? '#174E43' : '#7FB4D9';
+  const masteryArc = (Math.max(0, Math.min(100, mastery)) / 100) * Math.PI * 2;
   const inner = radius + 0.3;
   const outer = radius + 0.68;
-  const progressMid = (inner + outer) / 2;
-  const progressCapRadius = (outer - inner) / 2;
-  const masteryInner = inner + 0.09;
-  const masteryOuter = outer - 0.09;
-  const masteryMid = (masteryInner + masteryOuter) / 2;
-  const masteryCapRadius = (masteryOuter - masteryInner) / 2;
+  const masteryMid = (inner + outer) / 2;
+  const masteryCapRadius = (outer - inner) / 2;
   const capPosition = (mid: number, angle: number, z: number): [number, number, number] => [
     Math.cos(angle - Math.PI / 2) * mid,
     Math.sin(angle - Math.PI / 2) * mid,
@@ -533,46 +521,35 @@ function ProgressRing({
 
   return (
     <Billboard>
+      {/* 轨道 */}
       <mesh raycast={() => null} renderOrder={3} position={[0, 0, 0.08]} rotation={[0, 0, -Math.PI / 2]}>
         <ringGeometry args={[inner, outer, 96]} />
         <meshBasicMaterial color={trackColor} transparent opacity={hovered || selected ? 0.72 : 0.48} side={THREE.DoubleSide} depthWrite={false} />
       </mesh>
-      {arcLength > 0 && <mesh raycast={() => null} renderOrder={3} position={[0, 0, 0.09]} rotation={[0, 0, -Math.PI / 2]}>
-        <ringGeometry args={[inner - 0.08, outer + 0.08, 96, 1, 0, arcLength]} />
-        <meshBasicMaterial color={color} transparent opacity={hovered || selected ? 0.34 : 0.22} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
-      </mesh>}
-      {arcLength > 0 && <mesh raycast={() => null} renderOrder={4} position={[0, 0, 0.1]} rotation={[0, 0, -Math.PI / 2]}>
-        <ringGeometry args={[inner, outer, 96, 1, 0, arcLength]} />
-        <meshBasicMaterial color={color} transparent opacity={1} side={THREE.DoubleSide} depthWrite={false} />
-      </mesh>}
-      {arcLength > 0 && arcLength < Math.PI * 2 - 0.001 && <>
-        {[0, arcLength].map((angle) => <mesh key={`progress-cap-${angle}`} raycast={() => null} renderOrder={4} position={capPosition(progressMid, angle, 0.105)}>
-          <circleGeometry args={[progressCapRadius, 24]} />
-          <meshBasicMaterial color={color} transparent opacity={1} side={THREE.DoubleSide} depthWrite={false} />
-        </mesh>)}
-      </>}
-      {masteryLength > 0 && <mesh raycast={() => null} renderOrder={5} position={[0, 0, 0.12]} rotation={[0, 0, -Math.PI / 2]}>
-        <ringGeometry args={[masteryInner, masteryOuter, 96, 1, 0, masteryLength]} />
+      {/* 掌握程度弧（淡蓝） */}
+      {masteryArc > 0 && <mesh raycast={() => null} renderOrder={4} position={[0, 0, 0.1]} rotation={[0, 0, -Math.PI / 2]}>
+        <ringGeometry args={[inner, outer, 96, 1, 0, masteryArc]} />
         <meshBasicMaterial color={masteryColor} transparent opacity={1} side={THREE.DoubleSide} depthWrite={false} />
       </mesh>}
-      {masteryLength > 0 && masteryLength < Math.PI * 2 - 0.001 && <>
-        {[0, masteryLength].map((angle) => <mesh key={`mastery-cap-${angle}`} raycast={() => null} renderOrder={5} position={capPosition(masteryMid, angle, 0.125)}>
+      {masteryArc > 0 && masteryArc < Math.PI * 2 - 0.001 && <>
+        {[0, masteryArc].map((angle) => <mesh key={`mastery-cap-${angle}`} raycast={() => null} renderOrder={4} position={capPosition(masteryMid, angle, 0.105)}>
           <circleGeometry args={[masteryCapRadius, 24]} />
           <meshBasicMaterial color={masteryColor} transparent opacity={1} side={THREE.DoubleSide} depthWrite={false} />
         </mesh>)}
       </>}
-      {/* 目标岗位门槛刻度：环外短线段 */}
+      {/* 目标岗位门槛刻度：深蓝短线段 */}
       {target != null && target > 0 && (() => {
         const tickAngle = (Math.min(100, Math.max(0, target)) / 100) * Math.PI * 2 - Math.PI / 2;
         const r1 = outer + 0.14;
         const r2 = outer + 0.44;
         const p1: [number, number, number] = [Math.cos(tickAngle) * r1, Math.sin(tickAngle) * r1, 0.14];
         const p2: [number, number, number] = [Math.cos(tickAngle) * r2, Math.sin(tickAngle) * r2, 0.14];
-        return <Line points={[p1, p2]} color="#D8A94E" lineWidth={2} transparent opacity={0.95} depthTest={false} />;
+        return <Line points={[p1, p2]} color="#155E9A" lineWidth={2} transparent opacity={0.95} depthTest={false} />;
       })()}
     </Billboard>
   );
 }
+
 
 function HoverCardTracker({ object, cardRef }: {
   object: THREE.Object3D;
