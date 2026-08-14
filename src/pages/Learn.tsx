@@ -284,11 +284,13 @@ export default function Learn() {
               resources={map.resources}
               goalId={map.goalId}
               presentations={map.presentations}
+              nodeTargets={map.nodeTargets}
+              jobName={map.jobName}
               persistenceKey={currentLearner.id}
               restorePersistedCamera={restoreMapState && !searchParams.get('kp')}
             />
           ) : (
-            <KnowledgeGraph showLearned={showLearnedPath} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpIds={expandedKpIds} onExpandedKpChange={setSingleExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} />
+            <KnowledgeGraph showLearned={showLearnedPath} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpIds={expandedKpIds} onExpandedKpChange={setSingleExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} nodeTargets={map.nodeTargets} />
           )}
         </motion.div>
         <AnimatePresence initial={false} mode="popLayout">

@@ -184,7 +184,7 @@ function DomainNode({
 }
 
 /** 子知识点：圆形节点 + 右侧文字，保持与原知识图一致的节点语言。 */
-function TopicBranchNode({ n, mastery, progress }: { n: GraphNode; mastery: number; progress: number }) {
+function TopicBranchNode({ n, mastery, progress, target }: { n: GraphNode; mastery: number; progress: number; target?: number }) {
   const passed = progress >= 100;
   const labelWidth = Math.min(240, Math.max(50, n.label.length * 16));
   const hitX = n.labelAnchor === 'start' ? n.x - 17 : n.x - 24 - labelWidth;
@@ -194,8 +194,20 @@ function TopicBranchNode({ n, mastery, progress }: { n: GraphNode; mastery: numb
       <rect x={hitX} y={n.y - 19} width={labelWidth + 41} height="38" rx="7" fill="transparent" />
       <circle cx={n.x} cy={n.y} r="15" fill="#FBFAF5" stroke="#DCE6DE" strokeWidth="2.2" />
       {progress > 0 && <path d={arcPath(n.x, n.y, 15, progress / 100)} fill="none" stroke={passed ? '#D8A94E' : '#5F8870'} strokeWidth="3" strokeLinecap="round" />}
+      {target != null && target > 0 && (
+        <line
+          x1={n.x}
+          y1={n.y - 15}
+          x2={n.x}
+          y2={n.y - 21.5}
+          stroke="#F5A623"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          transform={`rotate(${target * 3.6} ${n.x} ${n.y})`}
+        />
+      )}
       <circle cx={n.x} cy={n.y} r="5.5" fill={passed ? '#D8A94E' : progress > 0 ? '#5F8870' : '#D5DFD7'} />
-      <title>{`学习进度 ${progress}% · 实际掌握 ${mastery}%`}</title>
+      <title>{`学习进度 ${progress}% · 实际掌握 ${mastery}%${target != null ? ` · 目标门槛 ${target}${mastery >= target ? '（已达标）' : ''}` : ''}`}</title>
       <text
         x={n.labelX}
         y={n.y + 5.3}
@@ -229,6 +241,7 @@ export default function KnowledgeGraph({
   expandedKpIds,
   onExpandedKpChange,
   showLearned = false,
+  nodeTargets,
 }: {
   /** 提供后：点节点 = 选中（联动右栏详情），不直接跳转 */
   onSelectKp?: (kpId: string | null) => void;
@@ -245,6 +258,8 @@ export default function KnowledgeGraph({
   activeKp?: string | null;
   /** 打开“我的已学路径”：高亮已学章节（不一定连续） */
   showLearned?: boolean;
+  /** 目标岗位门槛：nodeCode → { target, name } */
+  nodeTargets?: Record<string, { target: number; name?: string }>;
   /** 受控展开章节集合，用于与下方章节速览联动（2D 视图只展示最近展开的一个）。 */
   expandedKpIds?: Set<string>;
   onExpandedKpChange?: (kpId: string | null) => void;
@@ -597,7 +612,7 @@ export default function KnowledgeGraph({
               onClick={() => clickNode(n)}
               onDoubleClick={() => openUnit(n)}
             >
-              <TopicBranchNode n={n} mastery={topicMasteryMap[n.id] ?? 0} progress={topicProgressMap[n.id] ?? 0} />
+              <TopicBranchNode n={n} mastery={topicMasteryMap[n.id] ?? 0} progress={topicProgressMap[n.id] ?? 0} target={nodeTargets?.[n.id]?.target} />
             </g>
           );
         })}

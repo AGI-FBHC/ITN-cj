@@ -87,6 +87,10 @@ interface KnowledgeGraph3DProps {
 
   showProgressRings?: boolean;
 
+  /** 目标岗位门槛：nodeCode → { target, name } */
+  nodeTargets?: Record<string, { target: number; name?: string }>;
+  jobName?: string;
+
   /** 各章节已有资源（kpId → resources），功能节点据此显示“打开/生成” */
   resources?: Record<string, Array<GeneratedResource & { id?: string; learned?: boolean; started?: boolean }>>;
   /** 课件任务列表，用于功能节点判断“交互课件”是否已生成 */
@@ -503,6 +507,7 @@ function ProgressRing({
   variant?: 'chapter' | 'topic';
   hovered: boolean;
   selected: boolean;
+  target?: number;
 }) {
   const chapterColors = { low: '#4F9D8A', mid: '#3F8F78', high: '#26715D' };
   const palette = variant === 'chapter' ? chapterColors : PROGRESS_COLORS;
@@ -622,6 +627,8 @@ function TopicActionModal({
   learned,
   progress,
   mastery,
+  target,
+  jobName,
   onClose,
 }: {
   node: GraphNode;
@@ -631,6 +638,8 @@ function TopicActionModal({
   learned: Set<string>;
   progress: number;
   mastery: number;
+  target?: number;
+  jobName?: string;
   onClose: () => void;
 }) {
   const overallMastery = Math.round(progress * mastery) / 100;
@@ -689,7 +698,15 @@ function TopicActionModal({
           </button>
         </header>
 
-        <div className="mx-5 mt-4 grid min-h-[104px] grid-cols-[1fr_auto] items-center gap-5 rounded-[18px] border border-[#DCE7E1] bg-[#F3F8F5] px-5 py-4"><div className="min-w-0"><div className="flex items-center justify-between text-[12px]"><span className="font-medium text-[#344A3E]">学习进度</span><span className="font-mono text-[13px] font-semibold text-[#287EA8]">{progress}%</span></div><div className="relative mt-3 h-3 overflow-hidden rounded-full bg-[#D7DDD9]"><div className="absolute inset-y-0 left-0 rounded-full bg-[#55B9DC]" style={{ width: `${progress}%` }} /><div className="absolute inset-y-[1.5px] left-0 rounded-full bg-[#155E9A]" style={{ width: `${overallMastery}%` }} /></div><div className="mt-2 flex gap-4 text-[10px] text-[#78847C]"><span>浅蓝 · 已学习</span><span>深蓝 · 已掌握</span></div></div><div className="flex items-center gap-3 border-l border-[#D8E4DD] pl-5"><span className="text-right text-[10px] leading-4 text-[#607168]">当前掌握<br />全部内容</span><div className="relative h-16 w-16"><svg viewBox="0 0 48 48" className="h-full w-full -rotate-90"><circle cx="24" cy="24" r="19" fill="none" stroke="#D8E5EF" strokeWidth="5" /><circle cx="24" cy="24" r="19" fill="none" stroke="#155E9A" strokeWidth="5" strokeLinecap="round" pathLength="100" strokeDasharray={`${overallMastery} 100`} /></svg><span className="absolute inset-0 flex items-center justify-center font-mono text-[12px] font-semibold text-[#155E9A]">{overallMastery}%</span></div></div></div>
+        <div className="mx-5 mt-4 grid min-h-[104px] grid-cols-[1fr_auto] items-center gap-5 rounded-[18px] border border-[#DCE7E1] bg-[#F3F8F5] px-5 py-4"><div className="min-w-0"><div className="flex items-center justify-between text-[12px]"><span className="font-medium text-[#344A3E]">学习进度</span><span className="font-mono text-[13px] font-semibold text-[#287EA8]">{progress}%</span></div><div className="relative mt-3 h-3 overflow-hidden rounded-full bg-[#D7DDD9]"><div className="absolute inset-y-0 left-0 rounded-full bg-[#55B9DC]" style={{ width: `${progress}%` }} /><div className="absolute inset-y-[1.5px] left-0 rounded-full bg-[#155E9A]" style={{ width: `${overallMastery}%` }} /></div><div className="mt-2 flex gap-4 text-[10px] text-[#78847C]"><span>浅蓝 · 已学习</span><span>深蓝 · 已掌握</span></div></div><div className="flex items-center gap-3 border-l border-[#D8E4DD] pl-5"><span className="text-right text-[10px] leading-4 text-[#607168]">当前掌握<br />全部内容</span><div className="relative h-16 w-16"><svg viewBox="0 0 48 48" className="h-full w-full -rotate-90"><circle cx="24" cy="24" r="19" fill="none" stroke="#D8E5EF" strokeWidth="5" /><circle cx="24" cy="24" r="19" fill="none" stroke="#155E9A" strokeWidth="5" strokeLinecap="round" pathLength="100" strokeDasharray={`${overallMastery} 100`} /></svg><span className="absolute inset-0 flex items-center justify-center font-mono text-[12px] font-semibold text-[#155E9A]">{overallMastery}%</span></div>{target != null && target > 0 && <div className="absolute inset-0"><svg viewBox="0 0 48 48" className="h-full w-full -rotate-90"><line x1="24" y1="5" x2="24" y2="43" stroke="#F5A623" strokeWidth="3" strokeLinecap="round" transform={`rotate(${target * 3.6} 24 24)`} /></svg></div>}</div></div>
+      {target != null && target > 0 && (
+        <div className="mx-5 mt-2 flex items-center justify-between rounded-[12px] border border-[#F5A623]/40 bg-[#F5A623]/8 px-3 py-2">
+          <div className="text-[11px] font-medium text-[#7A5B12]">{jobName ? `目标门槛（${jobName}）` : '目标门槛'}</div>
+          <div className="font-mono text-[12px] font-semibold text-[#B57D12]">
+            {overallMastery >= target ? '✅ 已达标' : `${overallMastery} / ${target} · 还差 ${Math.max(0, target - overallMastery)}`}
+          </div>
+        </div>
+      )}
 
         <div className="grid grid-cols-2 gap-3 p-5 pt-4 sm:px-6 sm:pb-5">
           {FUNCTION_META.map((fn) => {
@@ -769,6 +786,7 @@ function ChildPlane({
   showLearned,
 
   showProgressRings,
+  nodeTargets,
 
 
 }: {
@@ -788,6 +806,7 @@ function ChildPlane({
   showLearned?: boolean;
 
   showProgressRings?: boolean;
+  nodeTargets?: Record<string, { target: number; name?: string }>;
 
 
 }) {
@@ -861,6 +880,7 @@ function ChildPlane({
               showLearned={showLearned}
 
               showProgressRings={showProgressRings}
+              target={nodeTargets?.[node.id]?.target}
 
             />
           );
@@ -886,6 +906,7 @@ function ChildNode({
   showLearned,
 
   showProgressRings,
+  target,
 
 }: {
   node: GraphNode;
@@ -902,6 +923,7 @@ function ChildNode({
   showLearned?: boolean;
 
   showProgressRings?: boolean;
+  target?: number;
 
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
@@ -973,7 +995,7 @@ function ChildNode({
       </Billboard>
 
       {/* 进度环 */}
-      {showProgressRings && <ProgressRing radius={baseSize} progress={progress} mastery={mastery} variant="topic" hovered={hovered} selected={selected} />}
+      {showProgressRings && <ProgressRing radius={baseSize} progress={progress} mastery={mastery} variant="topic" hovered={hovered} selected={selected} target={target} />}
 
       {/* 文字短线 */}
       <Line
@@ -1323,6 +1345,7 @@ function SceneContent({
   showLearned,
 
   showProgressRings,
+  nodeTargets,
 
 
 }: {
@@ -1349,6 +1372,7 @@ function SceneContent({
   showLearned?: boolean;
 
   showProgressRings?: boolean;
+  nodeTargets?: Record<string, { target: number; name?: string }>;
 
 
 }) {
@@ -1446,6 +1470,7 @@ function SceneContent({
             showLearned={showLearned}
 
             showProgressRings={showProgressRings}
+            nodeTargets={nodeTargets}
 
 
           />
@@ -1526,6 +1551,8 @@ export default function KnowledgeGraph3D({
   showActionDialog = true,
 
   showProgressRings = true,
+  nodeTargets,
+  jobName,
 
 }: KnowledgeGraph3DProps) {
   /** 当前展开“功能节点层”（领学讲义/实操指南/分阶测试题/交互课件）的子知识点，与章节展开互不干扰 */
@@ -1678,6 +1705,8 @@ export default function KnowledgeGraph3D({
           learned={learned}
           progress={topicProgress[actionTopic.id] ?? 0}
           mastery={topicMastery[actionTopic.id] ?? 0}
+          target={nodeTargets?.[actionTopic.id]?.target}
+          jobName={jobName}
           onClose={() => setExpandedTopicId(null)}
         />
       )}
@@ -1691,6 +1720,17 @@ export default function KnowledgeGraph3D({
           <div><div className="mb-1.5 flex items-center justify-between text-[11px]"><span className="text-ink-2">学习进度</span><span className="font-mono font-semibold text-brand">{hoveredMetrics.progress}%</span></div><div className="relative h-2 overflow-hidden rounded-full bg-[#D7DDD9]"><div className="absolute inset-y-0 left-0 rounded-full bg-[#55B9DC] transition-[width]" style={{ width: `${hoveredMetrics.progress}%` }} /><div className="absolute inset-y-[1px] left-0 rounded-full bg-[#155E9A] transition-[width]" style={{ width: `${hoveredMetrics.overallMastery}%` }} /></div><div className="mt-1.5 flex items-center gap-3 text-[9px] text-ink-muted"><span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#55B9DC]" />已学习</span><span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#155E9A]" />进度内已掌握</span></div></div>
           <div className="flex items-center justify-between gap-3 rounded-[10px] border border-[#155E9A]/20 bg-[#155E9A]/5 px-3 py-2.5"><div><div className="text-[11px] font-medium text-ink-2">{hoveredGraphNode.kind === 'domain' ? '当前章节掌握程度' : '当前知识点掌握程度'}</div><div className="mt-0.5 text-[9px] text-ink-muted">按全部内容范围计算</div></div><div className="relative h-12 w-12 shrink-0"><svg viewBox="0 0 48 48" className="h-full w-full -rotate-90" aria-hidden="true"><circle cx="24" cy="24" r="19" fill="none" stroke="#D8E5EF" strokeWidth="5" /><circle cx="24" cy="24" r="19" fill="none" stroke="#155E9A" strokeWidth="5" strokeLinecap="round" pathLength="100" strokeDasharray={`${hoveredMetrics.overallMastery} 100`} /></svg><span className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-semibold text-[#155E9A]">{hoveredMetrics.overallMastery}%</span></div></div>
         </div>
+        {(() => {
+          const ht = hoveredGraphNode ? nodeTargets?.[hoveredGraphNode.id] : undefined;
+          if (!ht) return null;
+          const hit = hoveredMetrics.overallMastery >= ht.target;
+          return (
+            <div className="flex items-center justify-between rounded-[10px] border border-[#F5A623]/45 bg-[#F5A623]/8 px-3 py-2">
+              <div className="text-[11px] font-medium text-[#7A5B12]">{jobName ? `目标门槛 ${ht.target}（${jobName}）` : `目标门槛 ${ht.target}`}</div>
+              <div className="font-mono text-[10.5px] font-semibold text-[#B57D12]">{hit ? '✅ 已达标' : `还差 ${Math.max(0, ht.target - hoveredMetrics.overallMastery)}`}</div>
+            </div>
+          );
+        })()}
         <p className="mt-3 text-[9.5px] leading-4 text-ink-muted">深蓝部分由已学习范围内的自评与答题正确率计算，不会超过学习进度。</p>
       </div>}
 

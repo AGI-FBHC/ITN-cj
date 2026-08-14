@@ -892,6 +892,17 @@ export interface AgentDockSession {
   updatedAt: string;
 }
 
+
+export interface JobTargetLevel {
+  id: number;
+  jobCode: string;
+  nodeCode: string;
+  nodeName?: string | null;
+  targetMastery: number;
+  priority: number;
+  sortOrder: number;
+}
+
 export const api = {
   login: (email: string, password: string) =>
     request<LoginResult>('/api/v1/auth/login', {
@@ -937,6 +948,8 @@ export const api = {
     requestAgent<{ messages: AgentDockSessionMessage[] }>(`/agent-sessions/${encodeURIComponent(sessionId)}/messages`),
   listAgentSessions: () =>
     requestAgent<{ sessions: AgentDockSession[] }>('/agent-sessions'),
+  getJobTargets: (job?: string) =>
+    request<JobTargetLevel[]>(`/api/v1/job-targets${job ? `?job=${encodeURIComponent(job)}` : ''}`),
   getUserProfile: () => request<UserProfileSettings>('/api/v1/profile'),
   updateUserProfile: (body: UserProfileSettings) => request<UserProfileSettings>('/api/v1/profile', {
     method: 'PUT', body: JSON.stringify(body),

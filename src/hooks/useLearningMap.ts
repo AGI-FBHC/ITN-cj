@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
-import type { LearnerAnalyticsProfile, RagTree } from '@/lib/api';
+import type { LearnerAnalyticsProfile, JobTargetLevel, RagTree } from '@/lib/api';
 import type { KnowledgePoint } from '@/data/knowledgePoints';
 import {
 } from '@/data/knowledgeGraph';
@@ -90,6 +90,9 @@ export interface LearningMapView {
   resources: Record<string, Array<GeneratedResource & { id: string; learned?: boolean; started?: boolean }>>;
   presentations: PresentationTaskSummary[];
   goalId: string | null;
+  /** 目标岗位门槛：nodeCode → { target, name }（知识点继承所属章节） */
+  nodeTargets: Record<string, { target: number; name?: string }>;
+  jobName?: string;
 }
 
 /**
@@ -190,6 +193,28 @@ export function useLearningMap(): LearningMapView {
   const [tree, setTree] = useState<RagTree | null>(() => readLearningMapCache(currentLearnerId)?.tree ?? null);
   const [analytics, setAnalytics] = useState<LearnerAnalyticsProfile | null>(null);
   const [presentations, setPresentations] = useState<PresentationTaskSummary[]>([]);
+  const [jobTargets, setJobTargets] = useState<JobTargetLevel[]>([]);
+
+  /* 目标岗位门槛：随画像目标岗位加载（岗位名 → target_options 的 code） */
+  useEffect(() => {
+    const job = currentLearner.targetJob;
+    if (!job) { setJobTargets([]); return; }
+    let cancelled = false;
+    void (async () => {
+      let jobCode = job;
+      if (!job.startsWith('job-')) {
+        try {
+          const meta = await api.getOnboardingMeta();
+          const option = meta.targetOptions.find((o) => o.name === job);
+          jobCode = option?.code ?? job;
+        } catch { /* 保留名称原样 */ }
+      }
+      const list = await api.getJobTargets(jobCode).catch(() => []);
+      if (!cancelled) setJobTargets(list);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentLearner.targetJob]);
 
   useEffect(() => {
     const syncResources = (event: Event) => {
@@ -266,6 +291,8 @@ export function useLearningMap(): LearningMapView {
         resources: {},
         presentations: [],
         goalId: null,
+        nodeTargets: {},
+        jobName: currentLearner.targetJob || undefined,
       };
     }
 
@@ -403,6 +430,18 @@ export function useLearningMap(): LearningMapView {
       });
     });
 
+    const targetByChapter = new Map(jobTargets.map((item) => [item.nodeCode, item]));
+    const nodeTargets: Record<string, { target: number; name?: string }> = {};
+    graphNodes.forEach((node) => {
+      if (node.kind === 'domain') {
+        const hit = targetByChapter.get(node.id);
+        if (hit) nodeTargets[node.id] = { target: hit.targetMastery, name: hit.nodeName ?? undefined };
+      } else if (node.kind === 'topic') {
+        const hit = targetByChapter.get(node.kpId);
+        if (hit) nodeTargets[node.id] = { target: hit.targetMastery, name: hit.nodeName ?? undefined };
+      }
+    });
+
     return {
       loading,
       domains,
@@ -420,6 +459,8 @@ export function useLearningMap(): LearningMapView {
       resources: resourceByKp,
       presentations,
       goalId: null,
+      nodeTargets,
+      jobName: currentLearner.targetJob || undefined,
     };
-  }, [tree, analytics, presentations, loading, currentLearner, resources, currentLearnerId]);
+  }, [tree, analytics, presentations, loading, currentLearner, resources, currentLearnerId, jobTargets]);
 }
