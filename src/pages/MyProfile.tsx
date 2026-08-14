@@ -138,10 +138,6 @@ export default function MyProfile() {
   }, [currentLearner.id, loadEvidence]);
 
   const kps = domainKnowledgePoints;
-  const getKp = useCallback(
-    (id: string) => kps.find((kp) => kp.id === id),
-    [kps],
-  );
 
   const normalizedScores = useMemo(() => {
     const base = currentLearner.scores;
@@ -154,6 +150,30 @@ export default function MyProfile() {
 
 
   const learningMap = useLearningMap();
+
+  // 盲区标签动态取“最近学习过的知识点”：有学习进度或掌握度即算学过，按进度降序
+
+  const recentTopics = useMemo(() => {
+
+    const learned = learningMap.graphNodes.filter(
+
+      (t) => t.kind === 'topic' && ((learningMap.topicProgress[t.id] ?? 0) > 0 || (learningMap.topicMastery[t.id] ?? 0) > 0),
+
+    );
+
+    return [...learned]
+
+      .sort(
+
+        (a, b) => (learningMap.topicProgress[b.id] ?? 0) - (learningMap.topicProgress[a.id] ?? 0)
+
+          || (learningMap.topicMastery[b.id] ?? 0) - (learningMap.topicMastery[a.id] ?? 0),
+
+      )
+
+      .slice(0, 12);
+
+  }, [learningMap]);
 
   // 六维能力 = 画像基础值 + 学习证据（章节/知识点 完成进度×掌握度 加权），只读展示
 
@@ -168,15 +188,15 @@ export default function MyProfile() {
 
 
   const [scores, setScores] = useState<Record<string, number>>(normalizedScores);
-  const [blind, setBlind] = useState<string[]>(
-    kps.filter((kp) => currentLearner.blindSpots.includes(kp.name)).map((kp) => kp.id),
-  );
+  const [blind, setBlind] = useState<string[]>(currentLearner.blindSpots);
   const [goal, setGoal] = useState(currentLearner.goal);
 
   /* 切换学习者或知识维度时重置编辑态 */
   useEffect(() => {
     setScores(normalizedScores);
-    setBlind(kps.filter((kp) => currentLearner.blindSpots.includes(kp.name)).map((kp) => kp.id));
+
+    setBlind(currentLearner.blindSpots);
+
     setGoal(currentLearner.goal);
   }, [currentLearner.id, kps, normalizedScores]);
 
@@ -221,7 +241,7 @@ export default function MyProfile() {
       await patchLearner(currentLearner.id, {
         scores,
         goal,
-        blindSpots: blind.map((id) => getKp(id)?.name ?? id),
+        blindSpots: blind,
       });
       try {
         if (isUuid(currentLearner.id)) {
@@ -328,22 +348,45 @@ export default function MyProfile() {
           <div className="lf-card p-5">
             <div className="lf-mono-label mb-2 !text-[11px]">盲区标签（点选增删）</div>
             <div className="flex flex-wrap gap-2">
-              {kps.map((kp) => {
-                const on = blind.includes(kp.id);
+
+              {recentTopics.length ? recentTopics.map((topic) => {
+
+                const name = topic.label;
+
+                const on = blind.includes(name);
+
                 return (
+
                   <button
-                    key={kp.id}
+
+                    key={topic.id}
+
                     type="button"
-                    onClick={() => setBlind((prev) => (prev.includes(kp.id) ? prev.filter((x) => x !== kp.id) : [...prev, kp.id]))}
+
+                    onClick={() => setBlind((prev) => (prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]))}
+
                     className={cn(
+
                       'rounded-lg border px-2.5 py-1 text-[12.5px] font-medium transition-all',
+
                       on ? 'border-brand-danger/50 bg-brand-danger/10 text-brand-danger' : 'border-hairline bg-paper text-ink-muted hover:border-brand/40',
+
                     )}
+
                   >
-                    {kp.name}
+
+                    {name}
+
                   </button>
+
                 );
-              })}
+
+              }) : (
+
+                <p className="text-[12px] leading-5 text-ink-muted">还没有学习记录，学过的知识点会动态出现在这里。</p>
+
+              )}
+
             </div>
           </div>
 
