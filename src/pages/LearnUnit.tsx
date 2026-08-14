@@ -2072,7 +2072,7 @@ export default function LearnUnit() {
   }
 
   return (
-    <div className={cn('mx-auto px-5 transition-[max-width] duration-300 md:px-6', pptTaskId ? (pptWideMode ? 'flex h-dvh max-w-[1500px] flex-col overflow-hidden pb-40 pt-5' : 'flex h-dvh max-w-[900px] flex-col overflow-hidden pb-40 pt-6') : 'max-w-[760px] pb-48 pt-6')}>
+    <div className={cn('mx-auto px-5 transition-[max-width] duration-300 md:px-6', pptTaskId ? (pptWideMode ? `fixed inset-x-0 bottom-0 ${focusMode ? 'top-0' : 'top-14'} z-10 mx-auto flex max-w-[1500px] flex-col overflow-hidden pb-40 pt-5` : `fixed inset-x-0 bottom-0 ${focusMode ? 'top-0' : 'top-14'} z-10 mx-auto flex max-w-[900px] flex-col overflow-hidden pb-40 pt-6`) : 'max-w-[760px] pb-48 pt-6')}>
       {/* 技术亮点（系统透视）：右下角悬浮球，点开才展开 */}
       {viewMode !== 'learner' && <FeatureSpotlight flags={spotFlags} />}
 
