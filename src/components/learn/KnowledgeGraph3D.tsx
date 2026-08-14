@@ -1044,6 +1044,7 @@ function Node3D({
   showLearned,
 
   showProgressRings,
+  target,
 
 }: {
   node: GraphNode;
@@ -1067,6 +1068,7 @@ function Node3D({
   showLearned?: boolean;
 
   showProgressRings?: boolean;
+  target?: number;
 
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
@@ -1173,7 +1175,7 @@ function Node3D({
       </Billboard>
 
       {/* 进度描边 */}
-      {showProgressRings && <ProgressRing radius={baseSize} progress={progress} mastery={mastery} variant={isDomain ? 'chapter' : 'topic'} hovered={hovered} selected={selected} />}
+      {showProgressRings && <ProgressRing radius={baseSize} progress={progress} mastery={mastery} variant={isDomain ? 'chapter' : 'topic'} hovered={hovered} selected={selected} target={target} />}
 
       {/* 标签 */}
       <Billboard>
@@ -1502,6 +1504,7 @@ function SceneContent({
             showLearned={showLearned}
 
             showProgressRings={showProgressRings}
+            target={nodeTargets?.[node.id]?.target}
 
           />
         );
@@ -1703,7 +1706,7 @@ export default function KnowledgeGraph3D({
         <div className="font-mono text-[9.5px] tracking-[0.14em] text-brand">{hoveredGraphNode.kind === 'domain' ? '章节概览' : '知识点概览'}</div>
         <div className="mt-1 line-clamp-2 font-serif text-[15px] font-semibold leading-5 text-ink">{hoveredGraphNode.label}</div>
         <div className="mt-4 space-y-3">
-          <div><div className="mb-1.5 flex items-center justify-between text-[11px]"><span className="text-ink-2">学习进度</span><span className="font-mono font-semibold text-brand">{hoveredMetrics.progress}%</span></div><div className="relative h-2 overflow-hidden rounded-full bg-[#D7DDD9]"><div className="absolute inset-y-0 left-0 rounded-full bg-[#3B82F6] transition-[width]" style={{ width: `${hoveredMetrics.progress}%` }} /></div><div className="mt-1.5 flex items-center gap-3 text-[9px] text-ink-muted"><span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#3B82F6]" />已学习</span></div></div>
+          <div><div className="mb-1.5 flex items-center justify-between text-[11px]"><span className="text-ink-2">学习进度</span><span className="font-mono font-semibold text-brand">{hoveredMetrics.progress}%</span></div><div className="relative h-2 overflow-hidden rounded-full bg-[#D7DDD9]"><div className="absolute inset-y-0 left-0 rounded-full transition-[width]" style={{ width: `${hoveredMetrics.progress}%`, backgroundColor: hoveredGraphNode.kind === 'domain' ? '#7FB295' : '#3B82F6' }} /></div><div className="mt-1.5 flex items-center gap-3 text-[9px] text-ink-muted"><span><i className="mr-1 inline-block h-1.5 w-1.5 rounded-full" style={{ backgroundColor: hoveredGraphNode.kind === 'domain' ? '#7FB295' : '#3B82F6' }} />已学习</span></div></div>
           <div className="flex items-center justify-between gap-3 rounded-[10px] border border-[#155E9A]/20 bg-[#155E9A]/5 px-3 py-2.5"><div><div className="text-[11px] font-medium text-ink-2">{hoveredGraphNode.kind === 'domain' ? '当前章节掌握程度' : '当前知识点掌握程度'}</div><div className="mt-0.5 text-[9px] text-ink-muted">{(() => { const ht = hoveredGraphNode ? nodeTargets?.[hoveredGraphNode.id] : undefined; if (!ht) return '按全部内容范围计算'; const hit = hoveredMetrics.mastery >= ht.target; return `${jobName ? `${jobName} · ` : ''}目标门槛 ${ht.target}% · ${hit ? '已达标' : `还差 ${Math.max(0, ht.target - hoveredMetrics.mastery)}%`}`; })()}</div></div><div className="relative h-12 w-12 shrink-0"><svg viewBox="0 0 48 48" className="h-full w-full -rotate-90" aria-hidden="true"><circle cx="24" cy="24" r="19" fill="none" stroke="#D8E5EF" strokeWidth="5" /><circle cx="24" cy="24" r="19" fill="none" stroke="#14B8A6" strokeWidth="5" strokeLinecap="round" pathLength="100" strokeDasharray={`${hoveredMetrics.mastery} 100`} />{(() => { const ht = hoveredGraphNode ? nodeTargets?.[hoveredGraphNode.id] : undefined; if (!ht) return null; return <line x1="24" y1="0.5" x2="24" y2="4.5" stroke="#155E9A" strokeWidth="2.5" strokeLinecap="round" transform={`rotate(${ht.target * 3.6} 24 24)`} />; })()}</svg><span className="absolute inset-0 flex items-center justify-center font-mono text-[11px] font-semibold text-[#14B8A6]">{hoveredMetrics.mastery}%</span></div></div>
         </div>
         <p className="mt-3 text-[9.5px] leading-4 text-ink-muted">深蓝部分由已学习范围内的自评与答题正确率计算，不会超过学习进度。</p>

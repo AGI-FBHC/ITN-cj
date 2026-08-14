@@ -115,7 +115,7 @@ export default function UnitQuickList({
                   <span className="text-[10.5px] font-medium leading-[14px] text-brand/70">{chapterTag ?? ''}</span>
                   <span className="ml-auto flex items-center gap-2">
                     <span className="relative h-1.5 w-10 shrink-0 overflow-hidden rounded-full border border-hairline/80 bg-paper-deep xl:w-12" title={`掌握程度 ${progressValue}%${threshold ? ` · 目标门槛 ${threshold}%` : ''}`}>
-                      <span className="absolute inset-y-0 left-0 rounded-full bg-[#55B9DC]" style={{ width: `${progressValue}%` }} />
+                      <span className="absolute inset-y-0 left-0 rounded-full bg-[#174E43]" style={{ width: `${progressValue}%` }} />
                       {threshold != null && threshold > 0 && (
                         <span className="absolute inset-y-[-1.5px] w-[2px] rounded-full bg-[#155E9A]" style={{ left: `${Math.min(100, threshold)}%` }} title={`目标门槛 ${threshold}%`} />
                       )}
