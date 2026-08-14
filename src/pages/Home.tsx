@@ -49,7 +49,7 @@ import { cn } from '@/lib/utils';
 
 gsap.registerPlugin(ScrollTrigger, SplitText);
 
-const HeroScene = lazy(() => import('@/components/home/HeroScene'));
+const KnowledgeMap3DPanel = lazy(() => import('@/components/learn/KnowledgeMap3DPanel'));
 
 const reducedMotion = () =>
   typeof window !== 'undefined' &&
@@ -229,7 +229,7 @@ function HeroSection() {
                   </div>
                 }
               >
-                <HeroScene />
+                <KnowledgeMap3DPanel className="!h-full" />
               </Suspense>
             ) : (
               <div className="relative h-full w-full overflow-hidden rounded-[16px]">
