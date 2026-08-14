@@ -811,6 +811,7 @@ export default function LearnUnit() {
   const pptVoiceRef = useRef<WavRecorder | null>(null);
   const voiceAudioUrlsRef = useRef(new Set<string>());
   const userAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
 
   const stopAnswerAudio = () => {
     const active = answerAudioRef.current;
@@ -1425,7 +1426,6 @@ export default function LearnUnit() {
     }, correct ? 900 : 2100);
   };
 
-
   /** PPT 模式下「说」：WAV 录音 -> MiMo audio-stream -> 转写+回答，说完自动发送 */
   const startPptVoiceAsk = async () => {
     if (pptVoiceRef.current) {
@@ -1700,7 +1700,10 @@ export default function LearnUnit() {
         const sessionId = await ensurePptChatSession();
         const imageBlob = await (await fetch(photoUrl)).blob();
         await streamPresentationChatImage(pptTaskId, imageBlob, pptRef.current?.current ?? 0, q, sessionId, (event) => {
-          if (event.type === 'control' && event.action && event.action !== 'none') {
+          if (event.type === 'phase') {
+            const label = event.phase === 'understanding' ? '正在分析图片…' : '已理解图片，正在生成回复…';
+            setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: label } : qa));
+          } else if (event.type === 'control' && event.action && event.action !== 'none') {
             if (event.action === 'next') pptRef.current?.goNext();
             else if (event.action === 'previous') pptRef.current?.goPrev();
             else if (event.action === 'goto' && event.page) pptRef.current?.goTo(event.page - 1);
@@ -2001,7 +2004,6 @@ export default function LearnUnit() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
-
 
   /* 本讲 KB 溯源角标总数（适配横幅「已核验」卡展开用） */
   const kbCount = useMemo(
@@ -3186,7 +3188,6 @@ export default function LearnUnit() {
               </div>
             )}
 
-
             {/* 音量：静音切换 + 滑杆（同时作用于幻灯片语音与 AI 回答） */}
             {pptTaskId && (
               <div className="flex shrink-0 items-center gap-1.5" title="播放音量">
@@ -3598,11 +3599,9 @@ export default function LearnUnit() {
               {qaLog.map((qa, i) => (
                 <div key={qa.id ?? i} className="space-y-1.5">
                   {qa.photo && (
-                    <img
-                      src={qa.photo}
-                      alt="提问附图"
-                      className="ml-auto block max-h-[120px] w-fit rounded-[10px] border border-hairline object-cover"
-                    />
+                    <button type="button" onClick={() => qa.photo && setPreviewPhoto(qa.photo)} title="点击查看大图" aria-label="点击查看大图" className="ml-auto block max-h-[120px] w-fit rounded-[10px] border border-hairline transition hover:opacity-85">
+                      <img src={qa.photo} alt="提问附图" className="max-h-[120px] w-fit rounded-[10px] object-cover" />
+                    </button>
                   )}
                   {qa.voice ? (
                     <div className="ml-auto w-fit max-w-[90%]">
@@ -3723,6 +3722,12 @@ export default function LearnUnit() {
           </motion.div>
         )}
       </AnimatePresence>
+      {previewPhoto && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-ink/80 p-6 backdrop-blur-sm" onClick={() => setPreviewPhoto(null)} role="dialog" aria-modal="true" aria-label="提问图片预览">
+          <img src={previewPhoto} alt="提问图片预览" className="max-h-[85vh] max-w-[90vw] rounded-[14px] object-contain shadow-2xl" />
+          <button type="button" onClick={() => setPreviewPhoto(null)} className="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-full bg-paper/10 text-paper backdrop-blur transition hover:bg-paper/20" aria-label="关闭预览"><X size={18} /></button>
+        </div>
+      )}
     </div>
   );
 }
