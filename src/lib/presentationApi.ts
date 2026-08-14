@@ -36,6 +36,14 @@ export interface PresentationTask {
   events?: Record<string, unknown>[];
   errorMessage?: string | null;
   downloadUrl?: string | null;
+  learned?: boolean;
+  learnedMeta?: {
+    learned?: boolean;
+    mastery?: number;
+    maxPageViewed?: number;
+    pageCount?: number;
+    learnedAt?: string;
+  } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -95,6 +103,17 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
+
+export const updatePptLearningProgress = (taskId: string, body: {
+  pageIndex?: number;
+  pageCount?: number;
+  learned?: boolean;
+  mastery?: number;
+}) =>
+  request<PresentationTask>(`/v1/presentations/${encodeURIComponent(taskId)}/progress`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
 
 export const presentationApi = {
   createPresentation: (body: PresentationRequest) =>

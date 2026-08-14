@@ -653,30 +653,30 @@ export default function CourseResourcePlayer() {
     finally { setAsking(false); }
   };
 
-  const markComplete = async () => {
+  const markComplete = () => {
     if (!resource || completing) return;
     setCompleting(true);
-    try {
-      const result = await api.completeLearningResource(resource.id);
-      setResource(result.resource);
-      window.localStorage.removeItem(`${RESOURCE_CACHE_PREFIX}${resource.id}`);
-      if (isUuid(resource.learnerId) && resource.type !== 'quiz') {
-        const eventType = resource.type === 'practice' ? 'guide-complete' : 'lecture-read';
-        const amount = resource.type === 'practice' ? 20 : 15;
-        await api.recordLearnerGrowthEvent({
-          learnerId: resource.learnerId!, eventType, title: `完成《${resource.title}》`, amount,
-          metadata: { resourceId: resource.id, kpId: resource.kpId, resourceType: resource.type },
-        });
-      }
-      await api.updateLearningResourceProgress(resource.id, { currentBlockId, visitedBlockIds: blocks.map((block) => block.id), completedStepIds: completedSteps, elapsedSeconds: elapsedBase + sessionSecondsRef.current });
-      void api.recordLearningEvent({ eventType: 'STUDY_END', sourceType: 'RESOURCE', sourceId: resource.id, durationSeconds: elapsedBase + sessionSecondsRef.current, metadata: JSON.stringify({ courseId: resource.courseId, chapterId: resource.chapterId, resourceType: resource.type, completed: true }) }).catch(() => undefined);
-      setVisited(blocks.map((block) => block.id));
-      const mapLearnerId = isUuid(resource.learnerId) ? resource.learnerId! : currentLearnerId;
-      if (isUuid(mapLearnerId)) await refreshLearningMapResourceCache(mapLearnerId);
-      toast.success('学习进度已保存', { description: '正在返回知识地图。' });
-      navigate('/learn');
-    } catch (reason) { toast.error(reason instanceof Error ? reason.message : '完成状态保存失败'); }
-    finally { setCompleting(false); }
+    toast.success('已标记完成，正在后台同步学习记录');
+    navigate('/learn');
+    /* 后台隐式同步：不阻塞跳转；组件卸载后不再 setState */
+    void (async () => {
+      try {
+        await api.completeLearningResource(resource.id).catch(() => null);
+        window.localStorage.removeItem(`${RESOURCE_CACHE_PREFIX}${resource.id}`);
+        if (isUuid(resource.learnerId) && resource.type !== 'quiz') {
+          const eventType = resource.type === 'practice' ? 'guide-complete' : 'lecture-read';
+          const amount = resource.type === 'practice' ? 20 : 15;
+          await api.recordLearnerGrowthEvent({
+            learnerId: resource.learnerId!, eventType, title: `完成《${resource.title}》`, amount,
+            metadata: { resourceId: resource.id, kpId: resource.kpId, resourceType: resource.type },
+          }).catch(() => undefined);
+        }
+        await api.updateLearningResourceProgress(resource.id, { currentBlockId, visitedBlockIds: blocks.map((block) => block.id), completedStepIds: completedSteps, elapsedSeconds: elapsedBase + sessionSecondsRef.current }).catch(() => undefined);
+        void api.recordLearningEvent({ eventType: 'STUDY_END', sourceType: 'RESOURCE', sourceId: resource.id, durationSeconds: elapsedBase + sessionSecondsRef.current, metadata: JSON.stringify({ courseId: resource.courseId, chapterId: resource.chapterId, resourceType: resource.type, completed: true }) }).catch(() => undefined);
+        const mapLearnerId = isUuid(resource.learnerId) ? resource.learnerId! : currentLearnerId;
+        if (isUuid(mapLearnerId)) await refreshLearningMapResourceCache(mapLearnerId).catch(() => undefined);
+      } catch { /* 后台失败静默，避免打扰已跳转用户 */ }
+    })();
   };
 
   if (loading) return <div className="mx-auto flex min-h-[62vh] max-w-[980px] items-center justify-center gap-2 px-5 text-[13px] text-ink-muted"><Loader2 size={17} className="animate-spin" />正在恢复你的学习现场…</div>;
