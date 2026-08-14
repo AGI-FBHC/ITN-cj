@@ -86,7 +86,7 @@ export default function LearnerHome() {
     const scored = learningMap.domains.map((c) => ({ name: c.name, score: learningMap.mastery[c.id] ?? 0 }));
     const strongest = scored.reduce((a, b) => (b.score > a.score ? b : a));
     const weakest = scored.reduce((a, b) => (b.score < a.score ? b : a));
-    return `最强「${strongest.name}」${strongest.score} 分，最弱「${weakest.name}」${weakest.score} 分。建议从「${weakest.name}」切入，用分阶题巩固优势维度。`;
+    return `你在「${strongest.name}」上掌握得最扎实，「${weakest.name}」还需要加强。建议从「${weakest.name}」继续，用分阶题巩固优势维度。`;
   })();
   const primaryLoading = learning.loading && !learning.course && learningMap.loading && !learningMap.activeKp;
   const activeTitle = primaryLoading ? '正在读取真实学习进度…' : todayChapter ? todayChapter.name : learning.nextChapter ? `第 ${learning.nextChapter.index} 章 · ${learning.nextChapter.title}` : activeNode?.title ?? '开启你的第一课';
