@@ -29,6 +29,7 @@ import { knowledgePoints } from '@/data/knowledgePoints';
 import { abilityName } from '@/data/abilityDimensions';
 import { activePathNode } from '@/data/reportData';
 import { reportForLearner } from '@/data/reportBuilder';
+import { useLearningMap } from '@/hooks/useLearningMap';
 import { AVATARS, TAGS, EDU, JOBS, priorOf, priorLine } from '@/data/priors';
 import { ReactECharts } from '@/components/ChartCard';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -498,6 +499,7 @@ export default function Welcome() {
   const navigate = useNavigate();
   const { session, knownOf, logout } = useAuth();
   const { learners } = useProfile();
+  const learningMap = useLearningMap();
   const [mode, setMode] = useState<'auto' | 'choice' | 'quick'>('auto');
 
   const knownLearner = useMemo(() => {
@@ -512,8 +514,13 @@ export default function Welcome() {
   const isBack = mode === 'auto' && knownLearner !== null;
   // session.learnerId 存在说明登入时已确认画像存在，前端 learners 列表在异步加载中
   const profilesPending = mode === 'auto' && session.learnerId != null && knownLearner === null;
-  const report = knownLearner ? reportForLearner(knownLearner) : null;
-  const nextNode = report ? activePathNode(report) : null;
+  const isPreset = knownLearner ? !knownLearner.custom : false;
+  const report = knownLearner && isPreset ? reportForLearner(knownLearner) : null;
+  const nextNode = isPreset && report
+    ? activePathNode(report)
+    : knownLearner && !isPreset
+      ? (learningMap.path.find((p) => p.status === 'active') ?? learningMap.path[0] ?? null)
+      : null;
 
   return (
     <div className="lf-learner flex min-h-[100dvh] flex-col items-center justify-center px-5 py-12">
@@ -553,10 +560,12 @@ export default function Welcome() {
                 <div className="rounded-[12px] border border-hairline bg-card-warm/70 px-3.5 py-3">
                   <div className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-ochre">
                     <Route size={12} />
-                    {report?.path.some((n) => n.status === 'done') ? '上次学到' : '从这里开始'}
+                    {isPreset && report ? (report.path.some((n) => n.status === 'done') ? '上次学到' : '从这里开始') : '继续学习'}
                   </div>
                   <div className="mt-1 text-[14px] font-medium leading-[21px] text-ink">{nextNode.title}</div>
-                  <div className="mt-0.5 text-[11.5px] text-ink-muted">{nextNode.est} · {nextNode.resourceRef}</div>
+                  <div className="mt-0.5 text-[11.5px] text-ink-muted">
+                    {isPreset ? `${nextNode.est} · ${nextNode.resourceRef}` : '从这一章继续学习'}
+                  </div>
                 </div>
               )}
               <p className="text-[12px] leading-[19px] text-ink-muted">

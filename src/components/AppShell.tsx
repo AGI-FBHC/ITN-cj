@@ -59,7 +59,6 @@ import KBDrawer from './KBDrawer';
 import TeachingGroup from './TeachingGroup';
 import AgentDock from './agent/AgentDock';
 import ResumeLearningFab from './ResumeLearningFab';
-import ActiveTaskCenter from './ActiveTaskCenter';
 import { SparkField } from './heal/Flora';
 import DemoTour, { startDemoTour } from './tour/DemoTour';
 import { cn } from '@/lib/utils';
@@ -382,7 +381,6 @@ export default function AppShell() {
             {/* 右侧集群（画像切换仅系统透视提供——学习者视角里"我"就是当前画像） */}
             <div className="ml-auto flex shrink-0 items-center gap-2 whitespace-nowrap md:ml-0">
               <TeachingGroup variant="compact" />
-              <ActiveTaskCenter learnerId={currentLearnerId} />
               <button
                 type="button"
                 onClick={() => setSearchOpen(true)}

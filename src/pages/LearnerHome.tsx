@@ -65,16 +65,20 @@ function ProgressRing({ value, size = 60 }: { value: number; size?: number }) {
 export default function LearnerHome() {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
-  const dataId = dataIdOf(currentLearner);
-  const report = reportForLearner(currentLearner);
-  const resources = getResourcesFor(dataId);
 
-  const path = report.path;
-  const doneCount = path.filter((p) => p.status === 'done').length;
-  const activeNode = path.find((p) => p.status === 'active') ?? path.find((p) => p.status === 'todo');
-  const pathPct = Math.round((doneCount / path.length) * 100);
   const learning = useCourseLearning();
   const learningMap = useLearningMap();
+  const isPreset = !currentLearner.custom;
+  const report = isPreset ? reportForLearner(currentLearner) : null;
+  const resources = isPreset ? getResourcesFor(dataIdOf(currentLearner)) : learning.resources;
+
+  /* 真实用户：路径/进度/盲区全部来自知识地图真实数据；预设画像保留原演示报告 */
+  const path = isPreset ? report!.path : learningMap.path;
+  const doneCount = isPreset ? path.filter((p) => p.status === 'done').length : learningMap.learned.size;
+  const activeNode = isPreset
+    ? path.find((p) => p.status === 'active') ?? path.find((p) => p.status === 'todo')
+    : path.find((p) => p.status === 'active') ?? path[0] ?? null;
+  const pathPct = path.length ? Math.round((doneCount / path.length) * 100) : 0;
   const mapActive = learningMap.activeKp ? learningMap.domains.find((domain) => domain.id === learningMap.activeKp) : null;
   // 与当前知识地图对齐：最近学习章节优先，否则取掌握度最低的章节作为推荐入口
   const weakestChapter = [...learningMap.domains].sort(
@@ -83,7 +87,11 @@ export default function LearnerHome() {
   const todayChapter = mapActive ?? weakestChapter ?? null;
   // 学情描述：基于该章节与其内部知识点的真实统计动态生成，不写死固定话术
   const todayDiagnosis = (() => {
-    if (!todayChapter) return currentLearner.diagnosisSummary.replace(/^DIA-01 诊断：/, '');
+    if (!todayChapter) {
+      return isPreset
+        ? currentLearner.diagnosisSummary.replace(/^DIA-01 诊断：/, '')
+        : '还没有学习记录，从知识地图选一个章节开始你的第一课。';
+    }
     const chapterId = todayChapter.id;
     const progress = learningMap.chapterProgress[chapterId] ?? 0;
     const mastery = learningMap.mastery[chapterId] ?? 0;
@@ -114,7 +122,25 @@ export default function LearnerHome() {
   const activeButton = primaryLoading ? '加载中…' : todayChapter ? `继续：${todayChapter.name}` : learning.nextResource ? `继续：${learning.nextResource.title}` : activeNode ? `继续：${activeNode.resourceRef ?? activeNode.title}` : '开始学习';
   const activeEst = todayChapter ? undefined : (learning.nextResource ? undefined : activeNode?.est);
 
-  const topGaps = report.blindSpots.filter((b) => b.priority === '高').slice(0, 2);
+  /* 真实用户：盲区 = 知识地图掌握度 vs 目标门槛，取缺口最大的两个章节 */
+  const topGaps = isPreset
+    ? report!.blindSpots.filter((b) => b.priority === '高').slice(0, 2)
+    : learningMap.domains
+        .map((d) => {
+          const score = learningMap.mastery[d.id] ?? 0;
+          const target = learningMap.nodeTargets[d.id]?.target ?? 80;
+          return {
+            kpId: d.id,
+            score,
+            target,
+            gap: target - score,
+            priority: '高' as const,
+            suggestion: `目标 ${target}，当前掌握度 ${score}，先从这里补齐。`,
+          };
+        })
+        .filter((g) => g.gap > 0)
+        .sort((a, b) => b.gap - a.gap)
+        .slice(0, 2);
   /* 更多进展默认折叠：首屏只回答「现在做什么」 */
   const [moreOpen, setMoreOpen] = useState(false);
   const { items: wrongItems } = useWrongBook();
@@ -244,7 +270,7 @@ export default function LearnerHome() {
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-[14px] font-medium text-ink">
-              更多进展：整体走到 {doneCount}/{path.length} 阶段
+              {path.length > 0 ? `更多进展：整体走到 ${doneCount}/${path.length} 阶段` : '更多进展：还没有学习记录'}
             </span>
             <span className="block text-[12px] text-ink-muted">
               还需加强的 {topGaps.length} 块 · 为你做好的资料 {resources.length} 份
@@ -264,14 +290,16 @@ export default function LearnerHome() {
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           {topGaps.map((g) => {
-            const kp = getKnowledgePoint(g.kpId);
+            const kpName = isPreset
+              ? getKnowledgePoint(g.kpId).name
+              : learningMap.domains.find((d) => d.id === g.kpId)?.name ?? g.kpId;
             const pct = Math.round((g.score / g.target) * 100);
             return (
               <div key={g.kpId} className="lf-card p-5">
                 <div className="flex items-center justify-between">
-                  <span className="text-[15px] font-semibold text-ink">{kp.name}</span>
+                  <span className="text-[15px] font-semibold text-ink">{kpName}</span>
                   <span className="rounded-md bg-brand-danger/10 px-2 py-0.5 font-mono text-[11px] font-medium text-brand-danger">
-                    优先级 {g.priority}
+                    {isPreset ? `优先级 ${g.priority}` : `缺口 ${g.gap}`}
                   </span>
                 </div>
                 <div className="mt-3 flex items-center gap-2 font-mono text-[11.5px] text-ink-muted">
@@ -284,7 +312,9 @@ export default function LearnerHome() {
                   </div>
                   <span>要到 {g.target}</span>
                 </div>
-                <p className="mt-3 text-[13px] leading-[20px] text-ink-2">{g.suggestion}</p>
+                <p className="mt-3 text-[13px] leading-[20px] text-ink-2">
+                  {isPreset ? g.suggestion : `目标 ${g.target}，当前掌握度 ${g.score}，先从这里补齐。`}
+                </p>
                 <button
                   type="button"
                   onClick={() => navigate(`/learn/${g.kpId}`)}
@@ -312,18 +342,25 @@ export default function LearnerHome() {
           </Link>
         </div>
         <div className="space-y-2.5">
-          {resources.slice(0, 3).map((r: GeneratedResource) => {
-            const meta = formMeta[r.form];
-            const kp = getKnowledgePoint(r.kpId);
+          {resources.slice(0, 3).map((r, index) => {
+            const real = r as import('@/lib/api').LearningResourceSummary;
+            const form = isPreset ? (r as GeneratedResource).form : (real.type === 'practice' ? 'guide' : real.type);
+            const meta = formMeta[form];
+            const title = isPreset ? (r as GeneratedResource).title : real.title;
+            const kpName = isPreset
+              ? getKnowledgePoint((r as GeneratedResource).kpId).name
+              : (learningMap.domains.find((d) => d.id === real.kpId)?.name ?? real.topic);
+            const to = isPreset
+              ? `/resources?tab=${form}`
+              : learningResourcePath(real);
             return (
               <div
-                key={`${r.form}-${r.title}`}
+                key={`${form}-${title}-${index}`}
                 role="button"
                 tabIndex={0}
-                /* 带上点的是哪一份，否则落地页会显示另一份资料 */
-                onClick={() => navigate(`/resources?tab=${r.form}`)}
+                onClick={() => navigate(to)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') navigate(`/resources?tab=${r.form}`);
+                  if (e.key === 'Enter') navigate(to);
                 }}
                 className="lf-card lf-card-hover group flex items-center gap-4 p-4 text-left"
               >
@@ -334,7 +371,7 @@ export default function LearnerHome() {
                   <meta.Icon size={19} strokeWidth={1.75} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <h4 className="truncate text-[14.5px] font-semibold text-ink">{r.title}</h4>
+                  <h4 className="truncate text-[14.5px] font-semibold text-ink">{title}</h4>
                   <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-ink-muted">
                     <span
                       className="font-medium"
@@ -342,9 +379,14 @@ export default function LearnerHome() {
                     >
                       {meta.label}
                     </span>
-                    · {kp.name} · {r.levelTag}
+                    · {kpName}
+                    {!isPreset && (
+                      <span className="rounded bg-brand-tint/60 px-1.5 py-0.5 font-mono text-[10.5px] text-brand">
+                        {real.learned ? '已学' : real.started ? '学习中' : '未学'}
+                      </span>
+                    )}
                     <span className="flex gap-1">
-                      {r.kbRefs.slice(0, 2).map((id) => (
+                      {!isPreset ? null : (r as GeneratedResource).kbRefs.slice(0, 2).map((id) => (
                         <TraceBadge key={id} kbId={id} />
                       ))}
                     </span>

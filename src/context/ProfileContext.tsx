@@ -393,16 +393,6 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       const learner = toUiLearner(remote);
       setLearners((prev) => cacheLearners([...prev.filter((l) => l.id !== learner.id), learner], learner.id));
       setCurrentLearnerId(learner.id);
-      // 后台异步触发课程与资源生成（不阻塞画像创建响应）
-      const prompt = `${draft.tag} · ${draft.education} · 目标「${draft.targetJob}」——系统性地覆盖六大知识领域:数据结构、组成原理、操作系统、网络、数据库、智能体。每章配讲义、实操指南、分阶测试题。`;
-      api.createCourse({
-        learnerId: learner.id,
-        prompt,
-        resourceTypes: ['ppt', 'lecture', 'practice', 'quiz'],
-        depth: 'systematic',
-        scale: 'standard',
-      }).then(() => console.log('[Profile] Course generation started for', learner.id))
-        .catch(() => {/* 课程生成失败不阻塞主流程 */});
       addEvent(learner.id, {
         week: '建档',
         kind: 'create',

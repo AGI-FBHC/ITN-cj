@@ -10,6 +10,7 @@ import { useAuth } from '@/context/AuthContext';
 import { activePathNode } from '@/data/reportData';
 import { reportForLearner } from '@/data/reportBuilder';
 import { Sprout } from '@/components/heal/Flora';
+import { useLearningMap } from '@/hooks/useLearningMap';
 
 const GUIDE_VISIBLE_MS = 60_000;
 
@@ -38,8 +39,12 @@ export default function FirstRunGuide() {
   }, [session]);
 
   const report = reportForLearner(currentLearner);
-  const done = report.path.filter((p) => p.status === 'done').length;
-  const node = activePathNode(report);
+  const learningMap = useLearningMap();
+  const isPreset = !currentLearner.custom;
+  const done = isPreset ? report.path.filter((p) => p.status === 'done').length : learningMap.learned.size;
+  const node = isPreset
+    ? activePathNode(report)
+    : (learningMap.path.find((p) => p.status === 'active') ?? learningMap.path[0] ?? null);
 
   const close = () => {
     if (session) setDismissedAt(session.at);
@@ -54,7 +59,11 @@ export default function FirstRunGuide() {
     {
       icon: MapPin,
       title: '你现在在哪',
-      text: `一共 6 个知识点、${report.path.length} 个阶段，你已经完成 ${done} 个。系统按你的强弱排好了先后顺序。`,
+      text: isPreset
+        ? `一共 6 个知识点、${report.path.length} 个阶段，你已经完成 ${done} 个。系统按你的强弱排好了先后顺序。`
+        : learningMap.domains.length
+          ? `知识地图共 ${learningMap.domains.length} 个章节，你已经完成 ${done} 个。系统按你的掌握度排好了先后顺序。`
+          : '从知识地图选一个章节开始，系统会按你的掌握度安排学习顺序。',
     },
     {
       icon: Play,

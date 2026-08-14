@@ -207,7 +207,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           return next;
         });
         if (nextGenerating.size) timer = window.setTimeout(syncTasks, 1800);
-      } catch { /* 顶部任务中心仍会继续展示；这里不伪造状态。 */ }
+      } catch { /* 资源任务状态异常时静默，不伪造状态。 */ }
     };
     void syncTasks();
     return () => { cancelled = true; window.clearTimeout(timer); };
