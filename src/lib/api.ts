@@ -760,6 +760,29 @@ async function requestAgent<T>(path: string, init: RequestInit = {}): Promise<T>
   return (await res.json()) as T;
 }
 
+async function readAgentSse(
+  res: Response,
+  onEvent: (payload: Record<string, unknown>) => void,
+): Promise<void> {
+  if (!res.body) throw new Error('没有收到流式响应');
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      try {
+        onEvent(JSON.parse(line.slice(6)) as Record<string, unknown>);
+      } catch { /* ignore malformed frame */ }
+    }
+  }
+}
+
 const BACKEND_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function isBackendId(value?: string | null): value is string {
@@ -886,6 +909,18 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ learnerId, signal, sessionId }),
     }),
+  askAgentStream: async (learnerId: string, askType: string, text: string, kpId: string | undefined, sessionId: string | undefined, onEvent: (payload: { type: string; content?: string; reply?: string; message?: string }) => void) => {
+    const headers = new Headers({ 'Content-Type': 'application/json', Accept: 'text/event-stream' });
+    const token = getToken();
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    const res = await fetch('/v1/agent/ask/stream', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ learnerId, askType, text, kpId, sessionId }),
+    });
+    if (!res.ok) throw new Error(`请求失败 (${res.status})`);
+    await readAgentSse(res, (payload) => onEvent(payload as { type: string; content?: string; reply?: string; message?: string }));
+  },
   askAgent: (learnerId: string, askType: string, text: string, kpId?: string, sessionId?: string) =>
     requestAgent<{ reply: string; evidence: string[] }>('/agent/ask', {
       method: 'POST',

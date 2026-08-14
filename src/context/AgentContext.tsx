@@ -354,17 +354,24 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       append({ id: mid(), kind: 'user', text: userText, time: now() });
       const pendingId = mid();
       append({ id: pendingId, kind: 'agent', text: placeholder, time: now() });
+      let acc = '';
       try {
-        const res = await api.askAgent(lid, askType, userText, askType === 'free' ? undefined : weakestKp.id, currentSessionId ?? undefined);
-        setMsgsAll((prev) => ({
-          ...prev,
-          [lid]: (prev[lid] ?? []).map((m) => (
-            m.id === pendingId ? { id: pendingId, kind: 'agent', text: res.reply, time: now() } : m
-          )),
-        }));
-        if (res.evidence?.length) {
-          append({ id: mid(), kind: 'evidence', text: '依据（来自你的真实学情）：', items: res.evidence, time: now() });
-        }
+        await api.askAgentStream(
+          lid, askType, userText,
+          askType === 'free' ? undefined : weakestKp.id,
+          currentSessionId ?? undefined,
+          (event) => {
+            if (event.type === 'reply_delta' && event.content) {
+              acc += event.content;
+              setMsgsAll((prev) => ({
+                ...prev,
+                [lid]: (prev[lid] ?? []).map((m) => (
+                  m.id === pendingId ? { id: pendingId, kind: 'agent', text: acc, time: now() } : m
+                )),
+              }));
+            }
+          },
+        );
       } catch {
         setMsgsAll((prev) => ({
           ...prev,
