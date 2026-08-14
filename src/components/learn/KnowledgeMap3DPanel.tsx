@@ -54,6 +54,9 @@ export default function KnowledgeMap3DPanel({ className = '' }: { className?: st
       resources={map.resources}
       goalId={map.goalId}
       presentations={map.presentations}
+      showHoverCards={false}
+      showActionDialog={false}
+      showProgressRings={false}
       className={`${className} !border-0 [mask-image:radial-gradient(ellipse_125%_125%_at_50%_50%,black_65%,transparent_98%)] [-webkit-mask-image:radial-gradient(ellipse_125%_125%_at_50%_50%,black_65%,transparent_98%)]`}
     />
   );

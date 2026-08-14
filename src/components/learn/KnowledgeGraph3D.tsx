@@ -76,7 +76,17 @@ interface KnowledgeGraph3DProps {
   /** 请求把某个域节点转到视野正前方（at 变化即重新触发） */
   focusTarget?: { id: string; at: number } | null;
   /** 打开“我的已学路径”：高亮已学章节/子知识点 */
+
   showLearned?: boolean;
+
+  /** 只读展示模式：禁用悬浮卡片/选项卡片/进度环（总览等场景） */
+
+  showHoverCards?: boolean;
+
+  showActionDialog?: boolean;
+
+  showProgressRings?: boolean;
+
   /** 各章节已有资源（kpId → resources），功能节点据此显示“打开/生成” */
   resources?: Record<string, Array<GeneratedResource & { id?: string; learned?: boolean; started?: boolean }>>;
   /** 课件任务列表，用于功能节点判断“交互课件”是否已生成 */
@@ -755,7 +765,12 @@ function ChildPlane({
   onNodeHover,
   parentOffset,
   animRef,
+
   showLearned,
+
+  showProgressRings,
+
+
 }: {
   parentPos: THREE.Vector3;
   children: GraphNode[];
@@ -769,7 +784,12 @@ function ChildPlane({
   onNodeHover: (id: string | null, clientX?: number, clientY?: number, object?: THREE.Object3D) => void;
   parentOffset?: THREE.Vector3;
   animRef: BlendRef;
+
   showLearned?: boolean;
+
+  showProgressRings?: boolean;
+
+
 }) {
   const billboardRef = useRef<THREE.Group | null>(null);
 
@@ -837,7 +857,11 @@ function ChildPlane({
               mastery={mastery}
               onClick={() => onNodeClick(node)}
               onHover={onNodeHover}
+
               showLearned={showLearned}
+
+              showProgressRings={showProgressRings}
+
             />
           );
         })}
@@ -858,7 +882,11 @@ function ChildNode({
   mastery,
   onClick,
   onHover,
+
   showLearned,
+
+  showProgressRings,
+
 }: {
   node: GraphNode;
   position: [number, number, number];
@@ -870,7 +898,11 @@ function ChildNode({
   mastery: number;
   onClick: () => void;
   onHover: (id: string | null, clientX?: number, clientY?: number, object?: THREE.Object3D) => void;
+
   showLearned?: boolean;
+
+  showProgressRings?: boolean;
+
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const colors = NODE_COLORS.topic;
@@ -941,7 +973,7 @@ function ChildNode({
       </Billboard>
 
       {/* 进度环 */}
-      <ProgressRing radius={baseSize} progress={progress} mastery={mastery} variant="topic" hovered={hovered} selected={selected} />
+      {showProgressRings && <ProgressRing radius={baseSize} progress={progress} mastery={mastery} variant="topic" hovered={hovered} selected={selected} />}
 
       {/* 文字短线 */}
       <Line
@@ -1000,7 +1032,11 @@ function Node3D({
   animRef,
   fadeOnFocus,
   nodeScaleRef,
+
   showLearned,
+
+  showProgressRings,
+
 }: {
   node: GraphNode;
   position: THREE.Vector3;
@@ -1019,7 +1055,11 @@ function Node3D({
   fadeOnFocus?: boolean;
   /** 共享的节点实时缩放表，供箭头/连线按实际球体大小定位 */
   nodeScaleRef?: React.MutableRefObject<Map<string, number>>;
+
   showLearned?: boolean;
+
+  showProgressRings?: boolean;
+
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group | null>(null);
@@ -1125,7 +1165,7 @@ function Node3D({
       </Billboard>
 
       {/* 进度描边 */}
-      <ProgressRing radius={baseSize} progress={progress} mastery={mastery} variant={isDomain ? 'chapter' : 'topic'} hovered={hovered} selected={selected} />
+      {showProgressRings && <ProgressRing radius={baseSize} progress={progress} mastery={mastery} variant={isDomain ? 'chapter' : 'topic'} hovered={hovered} selected={selected} />}
 
       {/* 标签 */}
       <Billboard>
@@ -1279,7 +1319,12 @@ function SceneContent({
   focusId,
   hoveredId,
   onHoverNode,
+
   showLearned,
+
+  showProgressRings,
+
+
 }: {
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -1300,7 +1345,12 @@ function SceneContent({
   onExpandedTopicChange: (id: string | null) => void;
   hoveredId: string | null;
   onHoverNode: (id: string | null, clientX?: number, clientY?: number, object?: THREE.Object3D) => void;
+
   showLearned?: boolean;
+
+  showProgressRings?: boolean;
+
+
 }) {
   const nodeScaleRef = useRef(new Map<string, number>());
 
@@ -1392,7 +1442,12 @@ function SceneContent({
             onNodeHover={onHoverNode}
             parentOffset={layout.focusOffsets.get(kpId)}
             animRef={animRef}
+
             showLearned={showLearned}
+
+            showProgressRings={showProgressRings}
+
+
           />
         );
       })}
@@ -1432,7 +1487,11 @@ function SceneContent({
             animRef={animRef}
             fadeOnFocus={focusId !== null && node.id !== focusId}
             nodeScaleRef={nodeScaleRef}
+
             showLearned={showLearned}
+
+            showProgressRings={showProgressRings}
+
           />
         );
       })}
@@ -1461,6 +1520,13 @@ export default function KnowledgeGraph3D({
   goalId = null,
   persistenceKey,
   restorePersistedCamera = false,
+
+  showHoverCards = true,
+
+  showActionDialog = true,
+
+  showProgressRings = true,
+
 }: KnowledgeGraph3DProps) {
   /** 当前展开“功能节点层”（定制讲义/实操指南/分阶测试题/交互课件）的子知识点，与章节展开互不干扰 */
   const topicStorageKey = persistenceKey ? `lf.knowledgeGraph3dTopic:v1:${persistenceKey}` : null;
@@ -1585,19 +1651,25 @@ export default function KnowledgeGraph3D({
             topicMastery={topicMastery}
             topicProgress={topicProgress}
             expandedTopicId={expandedTopicId}
-            onExpandedTopicChange={setExpandedTopicId}
+            onExpandedTopicChange={showActionDialog ? setExpandedTopicId : () => undefined}
             animRef={blendRef}
             focusId={dimAnchorId}
             hoveredId={hoveredNodeId}
             onHoverNode={handleHoverNode}
+
             showLearned={showLearned}
+
+            showProgressRings={showProgressRings}
+
+
           />
         </RotatingScene>
         <CameraFocus focusTarget={focusTarget} layout={layout} sceneRef={sceneRef} blendRef={blendRef} topicCountByKp={topicCountByKp} />
-        {hoveredNode && <HoverCardTracker object={hoveredNode.object} cardRef={hoverCardRef} />}
+        {showHoverCards && hoveredNode && <HoverCardTracker object={hoveredNode.object} cardRef={hoverCardRef} />}
       </Canvas>
 
-      {actionTopic && (
+      {showActionDialog && actionTopic && (
+
         <TopicActionModal
           node={actionTopic}
           resources={resources[actionTopic.kpId] ?? []}
@@ -1610,7 +1682,7 @@ export default function KnowledgeGraph3D({
         />
       )}
 
-      {hoveredNode && hoveredGraphNode && hoveredMetrics && <div ref={hoverCardRef} className="pointer-events-none absolute z-20 w-[230px] -translate-y-1/2 rounded-[16px] border border-white/70 bg-white/92 p-4 shadow-warm-lg backdrop-blur-md" style={{ left: hoveredNode.x, top: hoveredNode.y, transform: hoveredGraphNode.kind === 'domain'
+      {showHoverCards && hoveredNode && hoveredGraphNode && hoveredMetrics && <div ref={hoverCardRef} className="pointer-events-none absolute z-20 w-[230px] -translate-y-1/2 rounded-[16px] border border-white/70 bg-white/92 p-4 shadow-warm-lg backdrop-blur-md" style={{ left: hoveredNode.x, top: hoveredNode.y, transform: hoveredGraphNode.kind === 'domain'
         ? 'translate(calc(-100% - 92px), calc(-50% + 54px))'
         : `translate(${layout.childDirections.get(hoveredGraphNode.id) === 'left' ? '52px' : 'calc(-100% - 52px)'}, -50%)` }}>
         <div className="font-mono text-[9.5px] tracking-[0.14em] text-brand">{hoveredGraphNode.kind === 'domain' ? '章节概览' : '知识点概览'}</div>
