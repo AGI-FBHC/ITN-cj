@@ -148,9 +148,6 @@ export default function Learn() {
         <GrassTuft className="pointer-events-none absolute -top-2 right-[62px] hidden h-[36px] w-[50px] opacity-60 xl:block" />
         <div>
           <h1 className="font-serif text-[26px] font-bold leading-[36px] text-ink">我的知识地图</h1>
-          <p className="mt-1 text-[13.5px] leading-[22px] text-ink-muted">
-            沿箭头方向学：点一个域展开细看，双击直接开课。每一讲都按你的画像现做。
-          </p>
         </div>
 
         {/* 场景切换 + 2D/3D 切换 */}
