@@ -514,7 +514,7 @@ function ProgressRing({
   const palette = variant === 'chapter' ? chapterColors : PROGRESS_COLORS;
   const color = progress >= 80 ? palette.high : progress >= 50 ? palette.mid : palette.low;
   const trackColor = variant === 'chapter' ? '#71877D' : '#7B8780';
-  const masteryColor = variant === 'chapter' ? '#174E43' : '#D8A94E';
+  const masteryColor = variant === 'chapter' ? '#174E43' : '#155E9A';
   const arcLength = (Math.max(0, Math.min(100, progress)) / 100) * Math.PI * 2;
   const masteryLength = arcLength * Math.max(0, Math.min(100, mastery)) / 100;
   const inner = radius + 0.3;
@@ -568,7 +568,7 @@ function ProgressRing({
         const r2 = outer + 0.44;
         const p1: [number, number, number] = [Math.cos(tickAngle) * r1, Math.sin(tickAngle) * r1, 0.14];
         const p2: [number, number, number] = [Math.cos(tickAngle) * r2, Math.sin(tickAngle) * r2, 0.14];
-        return <Line points={[p1, p2]} color="#155E9A" lineWidth={2} transparent opacity={0.95} depthTest={false} />;
+        return <Line points={[p1, p2]} color="#D8A94E" lineWidth={2} transparent opacity={0.95} depthTest={false} />;
       })()}
     </Billboard>
   );
