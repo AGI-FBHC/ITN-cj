@@ -131,8 +131,8 @@ function DomainNode({
             cx={n.x + ringR * Math.sin(targetAngle)}
             cy={n.y - ringR * Math.cos(targetAngle)}
             r="2.6"
-            fill="#B0483B"
-            opacity="0.85"
+            fill="#155E9A"
+            opacity="0.9"
           />
         </>
       ) : (
@@ -574,7 +574,7 @@ export default function KnowledgeGraph({
               <DomainNode
                 n={n}
                 mastery={mastery}
-                target={kp.targetLevel}
+                target={nodeTargets?.[n.id]?.target ?? kp.targetLevel}
                 learned={isLearned}
                 recommended={n.kpId === activeKp && !expandedKp}
                 dimmed={dimmed}
