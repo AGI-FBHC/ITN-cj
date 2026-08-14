@@ -120,8 +120,11 @@ export default function UnitQuickList({
                         <span className="absolute inset-y-[-1.5px] w-[2px] rounded-full bg-[#155E9A]" style={{ left: `${Math.min(100, threshold)}%` }} title={`目标门槛 ${threshold}%`} />
                       )}
                     </span>
-                    <span className="w-8 shrink-0 text-right font-mono text-[10.5px] text-ink-muted tabular-nums">
-                      {progressValue}%
+                    <span className="w-12 shrink-0 text-right font-mono text-[10.5px] tabular-nums" title={`掌握程度 ${progressValue}%${threshold != null ? ` · 目标门槛 ${threshold}%` : ''}`}>
+                      <span className="text-[#174E43]">{progressValue}%</span>
+                      {threshold != null && threshold > 0 && (
+                        <span className="text-[#155E9A]">/{threshold}%</span>
+                      )}
                     </span>
                   </span>
                 </span>
