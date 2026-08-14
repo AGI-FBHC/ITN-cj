@@ -162,11 +162,15 @@ export default function GardenCard() {
       <div className="grid items-center gap-4 sm:grid-cols-2">
         {/* 园子全景 */}
         <div className="relative">
-          <div className={drop ? 'lf-shake-soft' : undefined}>
+          <div className={drop ? 'lf-grow-pop' : undefined}>
             <KnowledgeTree stage={stage} fruits={fruits} size={180} />
           </div>
           {drop && (
             <div className="pointer-events-none absolute inset-0" aria-hidden>
+              <span className="lf-nourish-ring" />
+              {[[-42, -52], [52, -38], [-30, -62], [46, -26], [-54, -40], [30, -18]].map(([dx, dy], i) => (
+                <span key={i} className="lf-sparkle" style={{ '--dx': `${dx}px`, '--dy': `${dy}px`, animationDelay: `${i * 0.08}s` } as React.CSSProperties} />
+              ))}
               {[{ l: '38%', d: '0s' }, { l: '48%', d: '.09s' }, { l: '58%', d: '.05s' }, { l: '44%', d: '.18s' }].map((s, i) => (
                 <span key={i} className="lf-drop" style={{ left: s.l, top: '14%', animationDelay: s.d }} />
               ))}
@@ -177,10 +181,17 @@ export default function GardenCard() {
         {/* 养分 + 滋养 */}
         <div className="space-y-3">
           <div className="flex items-center gap-3">
-            <div className={cn(
-              'relative flex h-14 w-14 items-center justify-center rounded-full border-2',
-              orb > 0 ? 'border-brand-amber bg-brand-amber-tint' : 'border-hairline bg-paper',
-            )}>
+            <div
+              role="button"
+              tabIndex={orb > 0 ? 0 : -1}
+              onClick={orb > 0 ? doNourish : undefined}
+              onKeyDown={orb > 0 ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doNourish(); } } : undefined}
+              title={orb > 0 ? '点击滋养园子' : '攒够养分后可点击滋养'}
+              className={cn(
+                'relative flex h-14 w-14 items-center justify-center rounded-full border-2 transition',
+                orb > 0 ? 'cursor-pointer border-brand-amber bg-brand-amber-tint hover:scale-105' : 'border-hairline bg-paper',
+              )}
+            >
               <Sun size={15} className={cn('absolute top-1.5', orb > 0 ? 'text-ochre/70' : 'text-ink-muted/50')} />
               <span className={cn('mt-3 font-display text-[18px] font-semibold', orb > 0 ? 'text-ochre' : 'text-ink-muted')}>{orb}</span>
               {orb > 0 && <span className="absolute inset-0 animate-pulse-ring rounded-full text-brand-amber" />}

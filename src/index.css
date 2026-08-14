@@ -334,3 +334,68 @@
     background: #fff !important;
   }
 }
+
+
+/* ================= 园子知识树动效 ================= */
+@keyframes kt-sway {
+  0%, 100% { transform: rotate(-1.4deg); }
+  50% { transform: rotate(1.4deg); }
+}
+.kt-sway {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: kt-sway 4.2s ease-in-out infinite;
+}
+@keyframes kt-fruit {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
+.kt-fruit {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: kt-fruit 2.1s ease-in-out infinite;
+}
+@keyframes kt-seed-breathe {
+  0%, 100% { opacity: 1; filter: drop-shadow(0 0 2px rgba(231,180,90,0.35)); }
+  50% { opacity: 0.72; filter: drop-shadow(0 0 6px rgba(231,180,90,0.55)); }
+}
+.kt-seed { animation: kt-seed-breathe 2.6s ease-in-out infinite; }
+
+/* 滋养：树长大弹一下 + 光晕扩散 + 星点 */
+@keyframes kt-grow-pop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.1) rotate(-1.2deg); }
+  60% { transform: scale(0.98); }
+  100% { transform: scale(1); }
+}
+.lf-grow-pop { animation: kt-grow-pop 0.8s ease-out; }
+@keyframes kt-nourish-ring {
+  0% { transform: scale(0.5); opacity: 0.9; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+.lf-nourish-ring {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 190px; height: 190px;
+  margin: -95px 0 0 -95px;
+  border-radius: 9999px;
+  border: 2px solid rgba(231, 180, 90, 0.75);
+  pointer-events: none;
+  animation: kt-nourish-ring 0.9s ease-out forwards;
+}
+@keyframes kt-sparkle {
+  0% { transform: translate(0, 0) scale(0.5); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(1); opacity: 0; }
+}
+.lf-sparkle {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 8px; height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 9999px;
+  background: #E7B45A;
+  box-shadow: 0 0 6px rgba(231, 180, 90, 0.8);
+  pointer-events: none;
+  animation: kt-sparkle 0.9s ease-out forwards;
+}
