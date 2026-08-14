@@ -790,7 +790,11 @@ export default function LearnUnit() {
     id?: string;
   }
   const [qaLog, setQaLog] = useState<QaEntry[]>([]);
-  const [pptAudioModel, setPptAudioModel] = useState<'mimo' | 'qwen'>('mimo');
+  const [pptAudioModel, setPptAudioModel] = useState<'mimo' | 'qwen'>(() => {
+    try {
+      return window.localStorage.getItem('lf.pptAudioModel') === 'qwen' ? 'qwen' : 'mimo';
+    } catch { return 'mimo'; }
+  });
   const [qwenVoice, setQwenVoice] = useState<(typeof QWEN_VOICES)[number]['value']>('longanxiaoxin');
   const [pptChatSessions, setPptChatSessions] = useState<PresentationChatSession[]>([]);
   const qaScrollRef = useRef<HTMLDivElement>(null);
@@ -902,6 +906,7 @@ export default function LearnUnit() {
     pptAskAbortRef.current?.abort();
     stopAnswerAudio();
     setPptAudioModel(model);
+    try { window.localStorage.setItem('lf.pptAudioModel', model); } catch { /* ignore */ }
     setQaLog([]);
     try {
       const sessionId = await ensurePptChatSession(model);
