@@ -8,6 +8,8 @@ import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { Save, Sparkles, Brain, History, PlusCircle, RotateCcw, HelpCircle, Clock3, Flame, ClipboardCheck, ArrowRight } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
+import { useLearningMap } from '@/hooks/useLearningMap';
+import { deriveAbilityScores } from '@/lib/abilityAdjust';
 import { api } from '@/lib/api';
 import type { LearnerAnalyticsProfile, LearnerGrowth, LearningJournal, OnboardingKnowledgePoint } from '@/lib/api';
 import { weightedScore } from '@/components/profiles/profileMeta';
@@ -149,6 +151,22 @@ export default function MyProfile() {
     }, {} as Record<string, number>);
   }, [currentLearner, kps]);
 
+
+
+  const learningMap = useLearningMap();
+
+  // 六维能力 = 画像基础值 + 学习证据（章节/知识点 完成进度×掌握度 加权），只读展示
+
+  const displayScores = useMemo(
+
+    () => deriveAbilityScores(learningMap, normalizedScores),
+
+    [learningMap, normalizedScores],
+
+  );
+
+
+
   const [scores, setScores] = useState<Record<string, number>>(normalizedScores);
   const [blind, setBlind] = useState<string[]>(
     kps.filter((kp) => currentLearner.blindSpots.includes(kp.name)).map((kp) => kp.id),
@@ -187,7 +205,7 @@ export default function MyProfile() {
   );
   const dirty = deltas.length > 0 || goal !== currentLearner.goal;
 
-  const sorted = [...kps].map((kp) => ({ kp, s: scores[kp.id] ?? 50 })).sort((a, b) => a.s - b.s);
+  const sorted = [...kps].map((kp) => ({ kp, s: displayScores[kp.id] ?? 50 })).sort((a, b) => a.s - b.s);
   const weakest = sorted[0];
 
   const diaLine = weakest
@@ -257,7 +275,7 @@ export default function MyProfile() {
             )}
           </h1>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-ink-muted">
-            <span>{currentLearner.tag} · {currentLearner.targetJob} · 综合适配 {weightedScore({ scores }, kps)} 分</span>
+            <span>{currentLearner.tag} · {currentLearner.targetJob} · 综合适配 {weightedScore({ scores: displayScores }, kps)} 分</span>
             <ConfidenceBadge learnerId={currentLearner.id} />
           </p>
         </div>
@@ -272,28 +290,39 @@ export default function MyProfile() {
         <div className="space-y-5">
           <div className="lf-card space-y-3 p-5">
             <div className="flex items-center justify-between">
-              <div className="lf-mono-label !text-[11px]">六维能力（拖动调整）</div>
+              <div className="lf-mono-label !text-[11px]">六维能力（随学习进度动态更新）</div>
               {dirty && <span className="font-mono text-[11px] text-ochre">未保存</span>}
             </div>
             {kps.map((kp) => (
               <div key={kp.id}>
                 <div className="mb-1 flex items-center justify-between text-[12.5px]">
+
                   <span className="text-ink-2">{kp.name}</span>
+
                   <span className="font-mono">
-                    <span className="font-semibold text-brand">{scores[kp.id] ?? 50}</span>
+
+                    <span className="font-semibold text-brand">{displayScores[kp.id] ?? 50}</span>
+
                     <span className="text-ink-muted"> / 目标 {kp.targetLevel}</span>
+
                   </span>
+
                 </div>
-                <input
-                  type="range"
-                  min={20}
-                  max={92}
-                  value={scores[kp.id] ?? 50}
-                  onChange={(e) => setScores((prev) => ({ ...prev, [kp.id]: Number(e.target.value) }))}
-                  className="w-full accent-brand"
-                />
+
+                <div className="relative h-2 w-full overflow-hidden rounded-full bg-paper-deep">
+
+                  <div className="absolute inset-y-0 left-0 rounded-full bg-brand" style={{ width: `${displayScores[kp.id] ?? 50}%` }} />
+
+                </div>
               </div>
             ))}
+
+            <p className="border-t border-hairline pt-2 text-[10.5px] leading-[15px] text-ink-muted">
+
+              六维能力 = 画像基础值 + 学习证据（各章节知识点「完成进度 × 掌握度」按维度权重折算），只读展示，随学习动态更新。
+
+            </p>
+
           </div>
 
           <div className="lf-card p-5">
@@ -359,7 +388,7 @@ export default function MyProfile() {
         <div className="space-y-5">
           <div className="lf-card p-5">
             <div className="lf-mono-label mb-1 !text-[11px]">画像向量 · 当前 vs 目标</div>
-            <ReactECharts option={radarOption(kps, scores)} height={320} />
+            <ReactECharts option={radarOption(kps, displayScores)} height={320} />
             <p className="mt-1 border-t border-hairline pt-2 text-[11px] leading-[16px] text-ink-muted">
               当前能力来自已保存画像；下方实测掌握度与诊断证据只统计后端已经记录的真实学习和测评行为。
             </p>
