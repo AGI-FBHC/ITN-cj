@@ -118,7 +118,7 @@ export default function SummaryBanner({
               <span className="font-mono text-[10.5px] tracking-[0.12em] text-ink-muted">
                 产出物已入库 · 当前场景：{scenarioLabel}
               </span>
-              {['本章讲义', '实操指南', '分阶测试题'].map((f) => (
+              {['领学讲义', '实操指南', '分阶测试题'].map((f) => (
                 <span
                   key={f}
                   className={cn(

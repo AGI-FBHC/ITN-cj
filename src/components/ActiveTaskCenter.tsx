@@ -69,12 +69,12 @@ function presentationTask(task: PresentationTask): ActiveTask {
 
 function resourceTask(task: LearningResourceGenerationTask): ActiveTask {
   const kindName = task.resourceType === 'lecture'
-    ? '本章讲义'
+    ? '领学讲义'
     : task.resourceType === 'practice'
       ? '实操指南'
       : '分阶测试题';
   const title = task.title
-    .replace(/\s*[·・]\s*(定制讲义|本章讲义|实操指南|分阶测试题?|分阶测试)\s*$/, '')
+    .replace(/\s*[·・]\s*(定制讲义|领学讲义|实操指南|分阶测试题?|分阶测试)\s*$/, '')
     .trim();
   return { id: task.id, kind: 'resource', kindName, title: title || task.title, progress: task.progress, stage: task.stageMessage, updatedAt: task.updatedAt, events: task.events.map(eventOf), status: task.status, errorMessage: task.errorMessage };
 }

@@ -110,7 +110,7 @@ export function stageState(stage: StageDef, cursor: number): StageState {
 export type Scenario = 'lecture' | 'guide' | 'quiz';
 
 export const scenarioMeta: Record<Scenario, { label: string; en: string }> = {
-  lecture: { label: '本章讲义', en: 'LECTURE' },
+  lecture: { label: '领学讲义', en: 'LECTURE' },
   guide: { label: '实操指南', en: 'GUIDE' },
   quiz: { label: '分阶测试题', en: 'QUIZ' },
 };

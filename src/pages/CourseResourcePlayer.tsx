@@ -78,7 +78,7 @@ interface LearningBlock {
 }
 
 const resourceMeta: Record<ResourceKind, { label: string; Icon: typeof FileText }> = {
-  lecture: { label: '本章讲义', Icon: FileText },
+  lecture: { label: '领学讲义', Icon: FileText },
   practice: { label: '实操指南', Icon: ListChecks },
   quiz: { label: '分阶测试', Icon: PenLine },
 };
