@@ -300,33 +300,38 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         commit(s.kpId, inferTutoringFinished(s.kpId, s.title, s.asked, s.correct));
     };
 
+    /** 真实学情问答：调后端 /agent/ask（MiMo），占位消息替换为真实回复 */
+    const agentAsk = async (askType: string, userText: string, placeholder: string) => {
+      append({ id: mid(), kind: 'user', text: userText, time: now() });
+      const pendingId = mid();
+      append({ id: pendingId, kind: 'agent', text: placeholder, time: now() });
+      try {
+        const res = await api.askAgent(lid, askType, userText, askType === 'free' ? undefined : weakestKp.id);
+        setMsgsAll((prev) => ({
+          ...prev,
+          [lid]: (prev[lid] ?? []).map((m) => (
+            m.id === pendingId ? { id: pendingId, kind: 'agent', text: res.reply, time: now() } : m
+          )),
+        }));
+        if (res.evidence?.length) {
+          append({ id: mid(), kind: 'evidence', text: '依据（来自你的真实学情）：', items: res.evidence, time: now() });
+        }
+      } catch {
+        setMsgsAll((prev) => ({
+          ...prev,
+          [lid]: (prev[lid] ?? []).map((m) => (
+            m.id === pendingId ? { id: pendingId, kind: 'agent', text: '网络开小差了，稍后再问我～', time: now() } : m
+          )),
+        }));
+      }
+    };
+
     const ask = (kind: AskKind) => {
       const weakName = weakestKp.name;
       if (kind === 'why-blind') {
-        append({ id: mid(), kind: 'user', text: `为什么说我的盲区是「${weakName}」？`, time: now() });
-        const score = currentLearner.scores[weakestKp.id] ?? 50;
-        const conf = confidence[weakestKp.id];
-        const sigs = (logAll[lid] ?? []).filter((t) => t.includes(weakName)).slice(0, 3);
-        const items = [
-          `理论测试「${weakName}」当前 ${score} 分，岗位目标 ${weakestKp.targetLevel} 分，缺口 ${Math.max(0, weakestKp.targetLevel - score)} 分（六维中最大）`,
-          ...sigs.map((t) => `近期信号：${t}`),
-          `我对这一维判断的置信度 ${conf}%${conf < 55 ? '（还偏低——多做两组题能让我更确定）' : ''}`,
-        ];
-        append({
-          id: mid(),
-          kind: 'evidence',
-          text: `不是拍脑袋——证据在这里：`,
-          items,
-          time: now(),
-        });
+        void agentAsk('why-blind', `为什么说我的盲区是「${weakName}」？`, '正在对照你的画像、测验和近期信号分析盲区依据…');
       } else if (kind === 'what-next') {
-        append({ id: mid(), kind: 'user', text: '我下一步该学什么？', time: now() });
-        append({
-          id: mid(),
-          kind: 'agent',
-          text: `按当前画像，收益最高的是先攻「${weakName}」：它离岗位目标最远，而且你最近的信号显示基础在松动。我已经让 GEN-03 按你的水平备好了讲义和分阶题——从「学」页进去就是。练完我会当场更新你的画像。`,
-          time: now(),
-        });
+        void agentAsk('what-next', '我下一步该学什么？', '正在结合画像与资源进度规划下一步…');
       } else {
         /* challenge-score：讨价还价 → 验证测验 */
         append({ id: mid(), kind: 'user', text: `我觉得我的「${weakName}」不止 ${currentLearner.scores[weakestKp.id] ?? 50} 分`, time: now() });
@@ -343,7 +348,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    /** 自由提问：先按意图路由到三种学情问答，知识点问题诚实地引导回课件「问一问」 */
+    /** 自由提问：学情类问题走真实问答（后端 MiMo），知识点讲解由阿诊引导回课件「问一问」 */
     const askFree = (raw: string) => {
       const text = raw.trim();
       if (!text) return;
@@ -354,27 +359,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       if (has('下一步', '学什么', '接下来', '先学', '怎么安排', '计划', '路径')) return ask('what-next');
       if (has('不止', '不服', '低了', '不准', '质疑', '凭啥', '重测', '再测')) return ask('challenge-score');
 
-      append({ id: mid(), kind: 'user', text, time: now() });
-
-      /* 问到具体知识点：说清楚分工——这里答学情，知识点去课件里就地追问 */
-      const hitKp = knowledgePoints.find((kp) => text.includes(kp.name) || kp.coreTopics.some((c) => text.includes(c)));
-      if (hitKp) {
-        const score = currentLearner.scores[hitKp.id] ?? 50;
-        append({
-          id: mid(),
-          kind: 'agent',
-          text: `「${hitKp.name}」你现在 ${score} 分 / 目标 ${hitKp.targetLevel} 分，置信度 ${confidence[hitKp.id] ?? 40}%。不过知识点本身怎么讲，我不如课件里的老师——进《${hitKp.name}》后点任意一段的「问一问」，能就地追问、每句都带 KB 出处。我这边只管你的学情：画像怎么来的、下一步学什么、分数不服可以找我重测。`,
-          time: now(),
-        });
-        return;
-      }
-
-      append({
-        id: mid(),
-        kind: 'agent',
-        text: '我是学情诊断，管的是你的画像、路径和分数依据——可以问我"为什么盲区是它""下一步学什么""我不止这个分"。要是想问知识点本身（比如某个术语怎么理解），在课件里点每段的「问一问」更合适，那里答得细、还带出处。',
-        time: now(),
-      });
+      void agentAsk('free', text, '正在结合你的学情回答…');
     };
 
     const answerVerify = (msgId: string, qIndex: number, optIndex: number) => {

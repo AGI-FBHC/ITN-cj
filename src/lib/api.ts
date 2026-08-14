@@ -886,6 +886,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ learnerId, signal }),
     }),
+  askAgent: (learnerId: string, askType: string, text: string, kpId?: string) =>
+    requestAgent<{ reply: string; evidence: string[] }>('/agent/ask', {
+      method: 'POST',
+      body: JSON.stringify({ learnerId, askType, text, kpId }),
+    }),
   listAgentSessions: () =>
     requestAgent<{ sessions: AgentDockSession[] }>('/agent-sessions'),
   getUserProfile: () => request<UserProfileSettings>('/api/v1/profile'),
