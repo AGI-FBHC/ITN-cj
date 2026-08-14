@@ -101,8 +101,12 @@ export default function Learn() {
   useEffect(() => {
     const kpParam = searchParams.get('kp');
     if (kpParam && knowledgePoints.some((kp) => kp.id === kpParam)) {
+      // 首页“今天就学这一件”进入：3D 视角 + 选中 + 展开该章节 + 相机聚焦（等价点击章节速览）
+      setViewMode('3d');
       setSelectedKp(kpParam);
       setSelectedTopic(null);
+      setExpandedKpIds(new Set([kpParam]));
+      setGraphFocus({ id: kpParam, at: Date.now() });
     }
   }, [searchParams, knowledgePoints]);
 

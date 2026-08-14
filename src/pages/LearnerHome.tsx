@@ -76,11 +76,23 @@ export default function LearnerHome() {
   const learning = useCourseLearning();
   const learningMap = useLearningMap();
   const mapActive = learningMap.activeKp ? learningMap.domains.find((domain) => domain.id === learningMap.activeKp) : null;
+  // 与当前知识地图对齐：最近学习章节优先，否则取掌握度最低的章节作为推荐入口
+  const weakestChapter = [...learningMap.domains].sort(
+    (a, b) => (learningMap.mastery[a.id] ?? 0) - (learningMap.mastery[b.id] ?? 0),
+  )[0];
+  const todayChapter = mapActive ?? weakestChapter ?? null;
+  const todayDiagnosis = (() => {
+    if (!learningMap.domains.length) return currentLearner.diagnosisSummary.replace(/^DIA-01 诊断：/, '');
+    const scored = learningMap.domains.map((c) => ({ name: c.name, score: learningMap.mastery[c.id] ?? 0 }));
+    const strongest = scored.reduce((a, b) => (b.score > a.score ? b : a));
+    const weakest = scored.reduce((a, b) => (b.score < a.score ? b : a));
+    return `最强「${strongest.name}」${strongest.score} 分，最弱「${weakest.name}」${weakest.score} 分。建议从「${weakest.name}」切入，用分阶题巩固优势维度。`;
+  })();
   const primaryLoading = learning.loading && !learning.course && learningMap.loading && !learningMap.activeKp;
-  const activeTitle = primaryLoading ? '正在读取真实学习进度…' : learning.nextChapter ? `第 ${learning.nextChapter.index} 章 · ${learning.nextChapter.title}` : mapActive ? mapActive.name : activeNode?.title ?? '开启你的第一课';
-  const activePath = primaryLoading ? '/me' : learning.nextResource ? learningResourcePath(learning.nextResource) : mapActive ? `/learn/${mapActive.id}` : activeNode ? `/learn/${activeNode.kpId}` : '/learn';
-  const activeButton = primaryLoading ? '加载中…' : learning.nextResource ? `继续：${learning.nextResource.title}` : mapActive ? `继续：${mapActive.name}` : activeNode ? `继续：${activeNode.resourceRef ?? activeNode.title}` : '开始学习';
-  const activeEst = learning.nextResource ? undefined : activeNode?.est;
+  const activeTitle = primaryLoading ? '正在读取真实学习进度…' : todayChapter ? todayChapter.name : learning.nextChapter ? `第 ${learning.nextChapter.index} 章 · ${learning.nextChapter.title}` : activeNode?.title ?? '开启你的第一课';
+  const activePath = primaryLoading ? '/me' : todayChapter ? `/learn?kp=${todayChapter.id}` : learning.nextResource ? learningResourcePath(learning.nextResource) : activeNode ? `/learn/${activeNode.kpId}` : '/learn';
+  const activeButton = primaryLoading ? '加载中…' : todayChapter ? `继续：${todayChapter.name}` : learning.nextResource ? `继续：${learning.nextResource.title}` : activeNode ? `继续：${activeNode.resourceRef ?? activeNode.title}` : '开始学习';
+  const activeEst = todayChapter ? undefined : (learning.nextResource ? undefined : activeNode?.est);
 
   const topGaps = report.blindSpots.filter((b) => b.priority === '高').slice(0, 2);
   /* 更多进展默认折叠：首屏只回答「现在做什么」 */
@@ -163,7 +175,7 @@ export default function LearnerHome() {
               {activeTitle}
             </h2>
             <p className="mt-2.5 text-[14.5px] leading-[24px] text-ink-2">
-              {currentLearner.diagnosisSummary.replace(/^DIA-01 诊断：/, '')}
+              {todayDiagnosis}
             </p>
             <div className="mt-5 flex flex-wrap items-center gap-3">
               <button
