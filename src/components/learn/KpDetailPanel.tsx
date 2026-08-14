@@ -559,7 +559,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           {topicRecommendations.map((item, index) => {
             const meta = FORM_META[item.form];
             const Icon = meta.icon;
-            return <button key={`${item.topic}-${item.form}-${index}`} type="button" onClick={() => onSelectTopic?.(item.childIndex)} className="group flex w-full items-center gap-3 rounded-[10px] border border-dashed border-brand/35 bg-paper px-3 py-2.5 text-left transition-all hover:border-brand/60 hover:bg-brand-tint/40"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-paper-deep text-brand"><Icon size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium text-ink">暂未完成 · {meta.label}</span><span className="block truncate text-[11px] text-ink-muted">先进入子知识点「{item.topic}」</span></span><ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" /></button>;
+            return <button key={`${item.topic}-${item.form}-${index}`} type="button" onClick={() => onSelectTopic?.(item.childIndex)} className="group flex w-full items-center gap-3 rounded-[10px] border border-dashed border-brand/35 bg-paper px-3 py-2.5 text-left transition-all hover:border-brand/60 hover:bg-brand-tint/40"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-paper-deep text-brand"><Icon size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium text-ink">暂无资源 · {meta.label}</span><span className="block truncate text-[11px] text-ink-muted">先进入子知识点「{item.topic}」</span></span><ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" /></button>;
           })}
         </div>
       </div>}
@@ -567,7 +567,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
       {/* 子知识点资源入口 */}
       {selectedTopicName && <div>
         <div className="mb-2 text-[12px] font-medium text-ink-2">
-          {res.length ? `已经做好 ${res.length} 份，挑一个开始` : '以下资源暂未完成：'}
+          {res.length ? `已经做好 ${res.length} 份，挑一个开始` : '以下资源暂无资源：'}
         </div>
         <div className="space-y-2">
           {/* 三类资源彼此独立：可同时后台生成，完成后原位切换为打开入口。 */}
@@ -580,9 +580,9 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
                 <button
                   key={f}
                   type="button"
-                  onClick={() => { if (!completed) { toast.info('该资源暂未完成'); return; } void generateResource(f); }}
+                  onClick={() => { if (!completed) { toast.info('该资源暂无资源'); return; } void generateResource(f); }}
                   aria-busy={isGenerating}
-                  title={isGenerating ? '内容正在生成中' : completed ? `打开${meta.label}` : '暂未完成'}
+                  title={isGenerating ? '内容正在生成中' : completed ? `打开${meta.label}` : '暂无资源'}
                   className={cn(
                     'group flex w-full items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left transition-all',
                     completed
@@ -597,10 +597,10 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] font-medium text-ink">
-                      {completed ? `打开${meta.label}` : isGenerating ? `正在生成${meta.label}` : `${meta.label} · 暂未完成`}
+                      {completed ? `打开${meta.label}` : isGenerating ? `正在生成${meta.label}` : `${meta.label} · 暂无资源`}
                     </span>
                     <span className="block truncate text-[11px] text-ink-muted">
-                      {completed?.title ?? (isGenerating ? '正在后台生成，可继续生成其他内容' : '暂未完成')}
+                      {completed?.title ?? (isGenerating ? '正在后台生成，可继续生成其他内容' : '暂无资源')}
                     </span>
                   </span>
                   {isGenerating
@@ -615,9 +615,9 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           {/* 交互课件与其他资源一致：后台独立生成，完成后原位切换为打开入口。 */}
           <button
             type="button"
-            onClick={() => { if (!pptForScope || pptForScope.status !== 'completed') { toast.info('交互课件暂未完成'); return; } void openPptCourseware(); }}
+            onClick={() => { if (!pptForScope || pptForScope.status !== 'completed') { toast.info('交互课件暂无资源'); return; } void openPptCourseware(); }}
             aria-busy={pptGenerating || pptChecking}
-            title={pptChecking ? '正在检查已有课件' : pptGenerating ? '内容正在生成中' : pptForScope ? '打开交互课件' : '暂未完成'}
+            title={pptChecking ? '正在检查已有课件' : pptGenerating ? '内容正在生成中' : pptForScope ? '打开交互课件' : '暂无资源'}
             className={cn(
               'group flex w-full items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left transition-all',
               pptForScope?.status === 'completed'
@@ -633,8 +633,8 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
               {pptGenerating || pptChecking ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-medium text-ink">{pptForScope?.status === 'completed' ? '打开交互课件' : pptGenerating ? '正在生成交互课件' : pptChecking ? '正在检查交互课件' : '交互课件 · 暂未完成'}</span>
-              <span className="block truncate text-[11px] text-ink-muted">{pptGenerating ? '正在后台生成，可继续生成其他内容' : pptChecking ? '正在查询已有生成记录' : pptForScope?.title ?? '暂未完成'}</span>
+              <span className="block text-[13px] font-medium text-ink">{pptForScope?.status === 'completed' ? '打开交互课件' : pptGenerating ? '正在生成交互课件' : pptChecking ? '正在检查交互课件' : '交互课件 · 暂无资源'}</span>
+              <span className="block truncate text-[11px] text-ink-muted">{pptGenerating ? '正在后台生成，可继续生成其他内容' : pptChecking ? '正在查询已有生成记录' : pptForScope?.title ?? '暂无资源'}</span>
             </span>
             {pptGenerating || pptChecking ? <Loader2 size={13} className="shrink-0 animate-spin text-brand" /> : pptForScope?.status === 'completed' ? <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" /> : <Sparkles size={13} className="shrink-0 text-brand/70 transition-transform group-hover:scale-110" />}
           </button>
