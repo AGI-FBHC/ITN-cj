@@ -113,10 +113,10 @@ export default function UnitQuickList({
                 <span className="flex items-center gap-2">
                   <span className="text-[10.5px] font-medium leading-[14px] text-brand/70">{chapterTag ?? ''}</span>
                   <span className="ml-auto flex items-center gap-2">
-                    <span className="relative h-1 w-10 shrink-0 overflow-hidden rounded-full bg-paper-deep xl:w-12" title={`学习进度 ${progressValue}%${threshold ? ` · 目标门槛 ${threshold}` : ''}`}>
+                    <span className="relative h-1.5 w-10 shrink-0 overflow-hidden rounded-full border border-hairline/80 bg-paper-deep xl:w-12" title={`学习进度 ${progressValue}%${threshold ? ` · 目标门槛 ${threshold}` : ''}`}>
                       <span className="absolute inset-y-0 left-0 rounded-full bg-[#55B9DC]" style={{ width: `${progressValue}%` }} />
                       {threshold != null && threshold > 0 && (
-                        <span className="absolute inset-y-[-1.5px] w-[2px] rounded-full bg-[#F5A623]" style={{ left: `${Math.min(100, threshold)}%` }} title={`目标门槛 ${threshold}`} />
+                        <span className="absolute inset-y-[-1.5px] w-[2px] rounded-full bg-[#B77552]" style={{ left: `${Math.min(100, threshold)}%` }} title={`目标门槛 ${threshold}`} />
                       )}
                     </span>
                     <span className="w-8 shrink-0 text-right font-mono text-[10.5px] text-ink-muted tabular-nums">
