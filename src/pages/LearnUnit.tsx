@@ -86,7 +86,7 @@ import type { PptPlayerRef } from '@/components/learn/PptPlayer';
 import { startWavRecording } from '@/lib/voiceRecorder';
 import { audioBus } from '@/lib/audioBus';
 import type { WavRecorder } from '@/lib/voiceRecorder';
-import { createPresentationChatSession, deletePresentationChatSession, getPresentationChatMessages, listPresentationChatSessions, draftPresentationNote, streamPresentationChatAudio, streamPresentationChatImage, streamPresentationChatText, streamPresentationChatTts } from '@/lib/presentationApi';
+import { createPresentationChatSession, deletePresentationChatSession, fetchChatAttachmentBlob, getPresentationChatMessages, listPresentationChatSessions, draftPresentationNote, streamPresentationChatAudio, streamPresentationChatImage, streamPresentationChatText, streamPresentationChatTts } from '@/lib/presentationApi';
 import type { PresentationAudioEvent, PresentationChatSession } from '@/lib/presentationApi';
 import PathProgressBar from '@/components/learn/PathProgressBar';
 import { GrassTuft, Sprout } from '@/components/heal/Flora';
@@ -836,8 +836,25 @@ export default function LearnUnit() {
     const history = await getPresentationChatMessages(pptTaskId, sessionId);
     const restored: QaEntry[] = [];
     for (const item of history) {
-      if (item.role === 'user') restored.push({ id: item.id, q: item.content, a: '', voice: item.inputType === 'voice', transcript: item.content });
-      else if (restored.length) restored[restored.length - 1].a = item.content;
+      if (item.role === 'user') {
+        const isImage = item.inputType === 'image';
+        const cleanQ = item.content.replace(/^\[图片\]\s*/, '').trim() || (isImage ? '（看看这张图）' : '');
+        let photoUrl: string | undefined;
+        if (isImage && item.attachmentId) {
+          try {
+            const blob = await fetchChatAttachmentBlob(item.attachmentId);
+            photoUrl = URL.createObjectURL(blob);
+          } catch { /* 附件加载失败时仅显示占位文本 */ }
+        }
+        restored.push({
+          id: item.id,
+          q: cleanQ,
+          a: '',
+          voice: item.inputType === 'voice',
+          transcript: item.inputType === 'voice' ? item.content : undefined,
+          photo: photoUrl,
+        });
+      } else if (restored.length) restored[restored.length - 1].a = item.content;
     }
     setQaLog(restored);
   };

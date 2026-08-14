@@ -177,7 +177,8 @@ export interface PresentationChatSession {
 export interface PresentationChatHistoryMessage extends PresentationChatMessage {
   id: string;
   seq: number;
-  inputType: 'text' | 'voice';
+  inputType: 'text' | 'voice' | 'image';
+  attachmentId?: string | null;
   createdAt: string;
 }
 
@@ -189,6 +190,15 @@ export const deletePresentationChatSession = (taskId: string, sessionId: string)
 
 export const listPresentationChatSessions = (taskId: string) =>
   request<PresentationChatSession[]>(`/v1/presentations/${encodeURIComponent(taskId)}/chat/sessions`);
+
+export async function fetchChatAttachmentBlob(attachmentId: string): Promise<Blob> {
+  const headers = new Headers();
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const res = await fetch(`/v1/chat/attachments/${encodeURIComponent(attachmentId)}`, { headers });
+  if (!res.ok) throw new Error(`附件加载失败 (${res.status})`);
+  return res.blob();
+}
 
 export const getPresentationChatMessages = (taskId: string, sessionId: string) =>
   request<PresentationChatHistoryMessage[]>(
