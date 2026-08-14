@@ -101,6 +101,7 @@ export default function Learn() {
   // kp 参数只应用一次：地图数据分多次到达会导致本 effect 反复执行，
   // 每次都重新触发相机聚焦会造成“展开后视角又变一次”，这里用 ref 去重。
   const appliedKpParamRef = useRef<string | null>(null);
+  const focusTimerRef = useRef<number | null>(null);
   useEffect(() => {
     const kpParam = searchParams.get('kp');
     if (!kpParam) {
@@ -110,13 +111,21 @@ export default function Learn() {
     if (!knowledgePoints.some((kp) => kp.id === kpParam)) return;
     if (appliedKpParamRef.current === kpParam) return;
     appliedKpParamRef.current = kpParam;
-    // 首页“今天就学这一件”进入：3D 视角 + 选中 + 展开该章节 + 相机聚焦（等价点击章节速览）
+    // 首页“今天就学这一件”进入：先跳转页面（默认 3D 视图），
+    // 页面就绪后再模拟点击“章节速览”对应章节（与真实点击同一套逻辑，相机只动一次）
     setViewMode('3d');
-    setSelectedKp(kpParam);
-    setSelectedTopic(null);
-    setExpandedKpIds(new Set([kpParam]));
-    setGraphFocus({ id: kpParam, at: Date.now() });
+    if (focusTimerRef.current !== null) window.clearTimeout(focusTimerRef.current);
+    focusTimerRef.current = window.setTimeout(() => {
+      focusTimerRef.current = null;
+      setSelectedKp(kpParam);
+      setSelectedTopic(null);
+      setSingleExpandedKp(kpParam);
+      setGraphFocus({ id: kpParam, at: Date.now() });
+    }, 450);
   }, [searchParams, knowledgePoints]);
+  useEffect(() => () => {
+    if (focusTimerRef.current !== null) window.clearTimeout(focusTimerRef.current);
+  }, []);
 
   const pathStatusOf = (kpId: string): string | null => {
     const nodes = reportPath.filter((n) => n.kpId === kpId);
