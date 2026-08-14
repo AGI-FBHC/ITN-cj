@@ -17,6 +17,8 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sun, Droplets, ChevronDown, ArrowRight } from 'lucide-react';
 import { useGrowth, TREE_STAGES } from '@/context/GrowthContext';
+
+import { useLearningMap } from '@/hooks/useLearningMap';
 import { useProfile, dataIdOf } from '@/context/ProfileContext';
 import { useReview } from '@/context/ReviewContext';
 import { getKnowledgePoint } from '@/data/knowledgePoints';
@@ -55,10 +57,29 @@ function MoistRing({ r, size = 38 }: { r: number; size?: number }) {
 
 export default function GardenCard() {
   const navigate = useNavigate();
-  const { orb, watered, stage, log, fruits, water } = useGrowth();
+  const { orb, watered, stage, log, water } = useGrowth();
+
   const { currentLearner } = useProfile();
+
+  const learningMap = useLearningMap();
   const { items, due } = useReview();
   const dataId = dataIdOf(currentLearner);
+
+  // 园子与学习进度关联：果实 = 当前知识地图中「掌握度达标或四类资源学完」的知识点
+
+  const mapTopics = learningMap.graphNodes.filter((n) => n.kind === 'topic');
+
+  const fruits = mapTopics.length
+
+    ? mapTopics
+
+        .filter((t) => (learningMap.topicMastery[t.id] ?? 0) >= 80 || (learningMap.topicProgress[t.id] ?? 0) >= 100)
+
+        .map((t) => ({ kpId: t.id, name: t.label }))
+
+    : [];
+
+  const fruitTotal = mapTopics.length || 6;
   const [drop, setDrop] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
 
@@ -131,7 +152,7 @@ export default function GardenCard() {
       {/* 标题 + 一句话解释这张卡在讲什么 */}
       <div className="mb-1 flex items-baseline justify-between gap-3">
         <h3 className="font-serif text-[16.5px] font-semibold text-ink">我的园子</h3>
-        <span className="font-mono text-[10.5px] text-ink-muted">结果 {fruits.length}/6 个知识点</span>
+        <span className="font-mono text-[10.5px] text-ink-muted">结果 {fruits.length}/{fruitTotal} 个知识点</span>
       </div>
       <p className="mb-3 text-[12px] leading-[19px] text-ink-muted">
         学习会攒下<span className="font-medium text-ochre">养分</span>，用养分<span className="font-medium text-brand">滋养园子</span>让它长大；
