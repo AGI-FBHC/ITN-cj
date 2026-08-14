@@ -190,7 +190,7 @@ export default function Tutoring() {
     if (!finished) return;
     if (wroteForRef.current === currentLearner.id) return;
     wroteForRef.current = currentLearner.id;
-    pushSignal({ type: 'tutoring-finished', kpId: script.kpId, title: script.title, asked, correct });
+    pushSignal({ type: 'tutoring-finished', kpId: script.kpId, title: script.title, asked, correct, value: asked > 0 ? Math.round((correct / asked) * 100) : 25 });
     /* 遗忘曲线：练过一节 = 给这株浇了水 */
     markStudied(script.kpId);
     // eslint-disable-next-line react-hooks/exhaustive-deps

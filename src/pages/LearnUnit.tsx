@@ -1250,7 +1250,7 @@ export default function LearnUnit() {
     /* 完课信号只发一次（重学/微测再次播到尾不重复回写） */
     if (finishedSignalRef.current) return;
     finishedSignalRef.current = true;
-    pushSignal({ type: 'lecture-read', kpId, title: `${kp.name} · 交互课件（${unit.difficulty}版）` });
+    pushSignal({ type: 'lecture-read', kpId, title: `${kp.name} · 交互课件（${unit.difficulty}版）`, value: 100 });
     /* 遗忘曲线：这一株刚浇过水，重置保持率并 +1 次复习 */
     markStudied(kpId);
     /* 学完即结课：断点清除，下次进来是新的一讲 */
@@ -1372,7 +1372,7 @@ export default function LearnUnit() {
         },
       });
     }
-    pushSignal({ type: 'quiz-answer', kpId: b.q.kpId, level: b.q.level, correct });
+    pushSignal({ type: 'quiz-answer', kpId: b.q.kpId, level: b.q.level, correct, value: correct ? ({ basic: 40, advanced: 70, challenge: 100 } as Record<string, number>)[b.q.level] ?? 40 : 8 });
     /* 每答一题都是一次画像校准证据（精简建档的低置信画像靠这个涨） */
     bumpConfidence(currentLearner.id);
     /* 课堂推进：答完即解锁下一段（答错时下一段正是插入的补讲块） */

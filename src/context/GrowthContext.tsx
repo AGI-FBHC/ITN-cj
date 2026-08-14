@@ -13,19 +13,27 @@ import type { Signal } from '@/agent/agentBrain';
 import { api } from '@/lib/api';
 import type { LearnerGrowth } from '@/lib/api';
 
-/* ================= 能量规则（演示数值） ================= */
+/* ================= 能量规则：只要有学习进度，就按对应分值攒养分 ================= */
+const QUIZ_LEVEL_VALUE: Record<string, number> = { basic: 40, advanced: 70, challenge: 100 };
 function energyOf(s: Signal): { amt: number; text: string } | null {
+  const value = (s as { value?: number }).value;
+  const amt = (n: number) => Math.max(1, Math.min(100, Math.round(n)));
   switch (s.type) {
     case 'quiz-answer':
-      return s.correct ? { amt: 5, text: '答对一题' } : { amt: 1, text: '答题（虽然错了，努力也算）' };
+      // 答对按难度分值（基础 40 / 进阶 70 / 挑战 100）；答错也按“有进步”给少量努力养分
+      return s.correct
+        ? { amt: amt(value ?? QUIZ_LEVEL_VALUE[s.level] ?? 40), text: `答对一道${s.level === 'basic' ? '基础' : s.level === 'advanced' ? '进阶' : '挑战'}题` }
+        : { amt: 8, text: '答题（虽然错了，努力也算）' };
     case 'lecture-read':
-      return { amt: 15, text: `读完《${s.title.slice(0, 12)}…》` };
+      // 读完一讲 = 该讲进度满分
+      return { amt: amt(value ?? 100), text: `读完《${s.title.slice(0, 12)}…》` };
     case 'guide-complete':
-      return { amt: 20, text: '实操五步打卡' };
+      return { amt: amt(value ?? 100), text: '实操五步打卡' };
     case 'tutoring-finished':
-      return { amt: 25, text: `完成《${s.title}》导学` };
+      // 按本次导学的正确率折算（0-100）
+      return { amt: amt(value ?? (s.asked > 0 ? (s.correct / s.asked) * 100 : 25)), text: `完成《${s.title}》导学` };
     case 'note-taken':
-      return { amt: 8, text: '记了一条笔记' };
+      return { amt: 20, text: '记了一条笔记' };
     default:
       return null;
   }

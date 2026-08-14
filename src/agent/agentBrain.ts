@@ -9,11 +9,11 @@ import { getKnowledgePoint } from '@/data/knowledgePoints';
 
 /* ================= 信号 ================= */
 export type Signal =
-  | { type: 'quiz-answer'; kpId: string; level: QuizLevel; correct: boolean }
-  | { type: 'lecture-read'; kpId: string; title: string }
-  | { type: 'guide-complete'; kpId: string; title: string }
-  | { type: 'tutoring-finished'; kpId: string; title: string; asked: number; correct: number }
-  | { type: 'note-taken'; kpId: string; title: string }
+  | { type: 'quiz-answer'; kpId: string; level: QuizLevel; correct: boolean; value?: number }
+  | { type: 'lecture-read'; kpId: string; title: string; value?: number }
+  | { type: 'guide-complete'; kpId: string; title: string; value?: number }
+  | { type: 'tutoring-finished'; kpId: string; title: string; asked: number; correct: number; value?: number }
+  | { type: 'note-taken'; kpId: string; title: string; value?: number }
   /* 课件段落签到：学习者主动自评（元认知证据，弱信号只动置信度） */
   | { type: 'self-report'; kpId: string; feel: 'ok' | 'unsure' }
   /* 模态切换：学习者用行为投票自己的学习风格 */
