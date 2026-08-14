@@ -489,7 +489,6 @@ function EdgeArrow({
 /** 进度环 */
 function ProgressRing({
   radius,
-  progress,
   mastery,
   variant = 'topic',
   hovered,
@@ -497,15 +496,13 @@ function ProgressRing({
   target,
 }: {
   radius: number;
-  progress: number;
   mastery: number;
   variant?: 'chapter' | 'topic';
   hovered: boolean;
   selected: boolean;
   target?: number;
 }) {
-  /* 单层外圈：统一表示掌握程度（淡蓝），门槛用深蓝刻度线 */
-  void progress;
+  /* 单层外圈：只表示掌握程度（章节深绿 / 知识点青色），门槛用深蓝刻度线 */
   const trackColor = variant === 'chapter' ? '#71877D' : '#7B8780';
   const masteryColor = variant === 'chapter' ? '#174E43' : '#14B8A6';
   const masteryArc = (Math.max(0, Math.min(100, mastery)) / 100) * Math.PI * 2;
@@ -763,7 +760,6 @@ function ChildPlane({
   selectedKpId,
   learned,
   topicMastery,
-  topicProgress,
   onNodeClick,
   onNodeHover,
   parentOffset,
@@ -846,7 +842,6 @@ function ChildPlane({
         {childData.map(({ node, relPos, direction }) => {
           const isHovered = hoveredId === node.id;
           const isSelected = selectedKpId === node.id;
-          const progress = topicProgress[node.id] ?? topicMastery[node.id] ?? 0;
           const mastery = topicMastery[node.id] ?? 0;
           
           return (
@@ -858,7 +853,6 @@ function ChildPlane({
               selected={isSelected}
               hovered={isHovered}
               learned={learned.has(node.kpId)}
-              progress={progress}
               mastery={mastery}
               onClick={() => onNodeClick(node)}
               onHover={onNodeHover}
@@ -884,7 +878,6 @@ function ChildNode({
   selected,
   hovered,
   learned,
-  progress,
   mastery,
   onClick,
   onHover,
@@ -901,7 +894,6 @@ function ChildNode({
   selected: boolean;
   hovered: boolean;
   learned: boolean;
-  progress: number;
   mastery: number;
   onClick: () => void;
   onHover: (id: string | null, clientX?: number, clientY?: number, object?: THREE.Object3D) => void;
@@ -981,7 +973,7 @@ function ChildNode({
       </Billboard>
 
       {/* 进度环 */}
-      {showProgressRings && <ProgressRing radius={baseSize} progress={progress} mastery={mastery} variant="topic" hovered={hovered} selected={selected} target={target} />}
+      {showProgressRings && <ProgressRing radius={baseSize} mastery={mastery} variant="topic" hovered={hovered} selected={selected} target={target} />}
 
       {/* 文字短线 */}
       <Line
@@ -1032,7 +1024,6 @@ function Node3D({
   hovered,
   dimmed,
   learned,
-  progress,
   mastery,
   onClick,
   onHover,
@@ -1054,7 +1045,6 @@ function Node3D({
   hovered: boolean;
   dimmed: boolean;
   learned: boolean;
-  progress: number;
   mastery: number;
   onClick: () => void;
   onHover: (id: string | null, clientX?: number, clientY?: number, object?: THREE.Object3D) => void;
@@ -1175,7 +1165,7 @@ function Node3D({
       </Billboard>
 
       {/* 进度描边 */}
-      {showProgressRings && <ProgressRing radius={baseSize} progress={progress} mastery={mastery} variant={isDomain ? 'chapter' : 'topic'} hovered={hovered} selected={selected} target={target} />}
+      {showProgressRings && <ProgressRing radius={baseSize} mastery={mastery} variant={isDomain ? 'chapter' : 'topic'} hovered={hovered} selected={selected} target={target} />}
 
       {/* 标签 */}
       <Billboard>
@@ -1320,7 +1310,6 @@ function SceneContent({
   onExpandedKpChange,
   learned,
   mastery,
-  chapterProgress,
   topicMastery,
   topicProgress,
   expandedTopicId,
@@ -1472,13 +1461,10 @@ function SceneContent({
         const isRelated = relatedNodes.has(node.id);
         const isDimmed = hoveredId && !isRelated;
         
-        let progress = 0;
         let nodeMastery = 0;
         if (node.kind === 'domain') {
-          progress = chapterProgress[node.kpId] ?? 0;
           nodeMastery = mastery[node.kpId] ?? 0;
         } else {
-          progress = topicProgress[node.id] ?? topicMastery[node.id] ?? 0;
           nodeMastery = topicMastery[node.id] ?? 0;
         }
         
@@ -1492,7 +1478,6 @@ function SceneContent({
             hovered={hoveredId === node.id}
             dimmed={!!isDimmed}
             learned={learned.has(node.kpId)}
-            progress={progress}
             mastery={nodeMastery}
             onClick={() => handleNodeClick(node)}
             onHover={onHoverNode}
