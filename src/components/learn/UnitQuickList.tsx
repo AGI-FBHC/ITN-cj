@@ -100,9 +100,13 @@ export default function UnitQuickList({
               type="button"
               onClick={() => onSelect(kp.id)}
               className={cn(
-                'flex w-full items-center gap-2.5 px-1.5 py-2.5 text-left transition-colors',
-                columns && 'rounded-[8px] border-b border-hairline/50',
-                selected ? 'bg-brand-tint/40' : 'hover:bg-paper-deep/40',
+                'group flex w-full items-center gap-2.5 px-2 py-3 text-left transition-all duration-200',
+                columns
+                  ? 'rounded-[12px] border bg-white/85 shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:-translate-y-0.5 hover:shadow-[0_6px_20px_rgba(0,0,0,0.08)]'
+                  : 'rounded-[10px] border border-transparent px-2.5',
+                selected
+                  ? 'border-[#2E6BA8]/35 bg-[#EAF3FB] shadow-[0_2px_10px_rgba(46,107,168,0.10)]'
+                  : cn('border-black/[0.04] hover:bg-black/[0.02]', columns && 'hover:border-black/10'),
               )}
             >
               {seq >= 0 && (
@@ -114,8 +118,8 @@ export default function UnitQuickList({
                 <span className="flex items-center gap-2">
                   <span className="text-[10.5px] font-medium leading-[14px] text-brand/70">{chapterTag ?? ''}</span>
                   <span className="ml-auto flex items-center gap-2">
-                    <span className="relative h-1.5 w-10 shrink-0 overflow-hidden rounded-full border border-hairline/80 bg-paper-deep xl:w-12" title={`掌握程度 ${progressValue}%${threshold ? ` · 目标门槛 ${threshold}%` : ''}`}>
-                      <span className="absolute inset-y-0 left-0 rounded-full bg-[#174E43]" style={{ width: `${progressValue}%` }} />
+                    <span className="relative h-1.5 w-10 shrink-0 overflow-hidden rounded-full border border-black/[0.06] bg-[#E8EDF2] xl:w-12" title={`掌握程度 ${progressValue}%${threshold ? ` · 目标门槛 ${threshold}%` : ''}`}>
+                      <span className="absolute inset-y-0 left-0 rounded-full bg-[#3B82F6]" style={{ width: `${progressValue}%` }} />
                       {threshold != null && threshold > 0 && (
                         <span className="absolute inset-y-[-1.5px] w-[2px] rounded-full bg-[#155E9A]" style={{ left: `${Math.min(100, threshold)}%` }} title={`目标门槛 ${threshold}%`} />
                       )}
