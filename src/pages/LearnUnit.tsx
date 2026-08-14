@@ -911,7 +911,7 @@ export default function LearnUnit() {
 
   const requestPptAnswerAudio = (text: string, signal?: AbortSignal) => {
     if (!pptTaskId || !text.trim()) return Promise.reject(new Error('没有可合成的回答'));
-    return streamPresentationChatTts(pptTaskId, text, pptVoice, pptSpeed, signal);
+    return streamPresentationChatTts(pptTaskId, text, pptVoice, pptSpeed, pptAudioModel, signal);
   };
 
   const playPptAnswerResponse = async (responsePromise: Promise<Response>, signal?: AbortSignal) => {
@@ -1644,10 +1644,6 @@ export default function LearnUnit() {
     const q = (override ?? question).trim();
     if (!q && !askPhoto) return;
     if (pptTaskId && q && !askPhoto) {
-      if (pptAudioModel === 'qwen') {
-        toast('当前伴学方案仅支持语音提问；如需文字提问，请切换另一方案。');
-        return;
-      }
       const entryId = `text-${voiceSeqRef.current++}`;
       setQaLog((prev) => [...prev, { id: entryId, q, a: '正在结合当前幻灯片回答…' }]);
       setQuestion('');
@@ -1663,7 +1659,7 @@ export default function LearnUnit() {
       try {
         const sessionId = await ensurePptChatSession();
         const messages = [{ role: 'user' as const, content: q }];
-        await streamPresentationChatText(pptTaskId, messages, pptRef.current?.current ?? 0, sessionId, (event) => {
+        await streamPresentationChatText(pptTaskId, messages, pptRef.current?.current ?? 0, sessionId, pptAudioModel, (event) => {
           if (event.type === 'control' && event.action && event.action !== 'none') {
             if (event.action === 'next') pptRef.current?.goNext();
             else if (event.action === 'previous') pptRef.current?.goPrev();
@@ -1716,7 +1712,7 @@ export default function LearnUnit() {
       try {
         const sessionId = await ensurePptChatSession();
         const imageBlob = await (await fetch(photoUrl)).blob();
-        await streamPresentationChatImage(pptTaskId, imageBlob, pptRef.current?.current ?? 0, q, sessionId, (event) => {
+        await streamPresentationChatImage(pptTaskId, imageBlob, pptRef.current?.current ?? 0, q, sessionId, pptAudioModel, (event) => {
           if (event.type === 'phase') {
             const label = event.phase === 'understanding' ? '正在分析图片…' : '已理解图片，正在生成回复…';
             setQaLog((prev) => prev.map((qa) => qa.id === entryId ? { ...qa, a: label } : qa));

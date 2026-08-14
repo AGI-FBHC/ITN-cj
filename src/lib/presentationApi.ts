@@ -228,6 +228,7 @@ export async function streamPresentationChatText(
   messages: PresentationChatMessage[],
   slideIndex: number,
   sessionId: string,
+  modelProvider: 'mimo' | 'qwen',
   onEvent: (event: PresentationChatEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
@@ -236,7 +237,7 @@ export async function streamPresentationChatText(
   if (token) headers.set('Authorization', `Bearer ${token}`);
   const response = await fetch(`/v1/presentations/${encodeURIComponent(taskId)}/chat/stream`, {
     method: 'POST', headers, signal,
-    body: JSON.stringify({ messages, slideIndex, sessionId, modelProvider: 'mimo' }),
+    body: JSON.stringify({ messages, slideIndex, sessionId, modelProvider }),
   });
   if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
   await readSse(response, (payload) => onEvent(payload as PresentationChatEvent));
@@ -247,13 +248,14 @@ export async function streamPresentationChatTts(
   text: string,
   voice?: string,
   speed?: string,
+  modelProvider: 'mimo' | 'qwen' = 'mimo',
   signal?: AbortSignal,
 ): Promise<Response> {
   const headers = new Headers({ 'Content-Type': 'application/json', Accept: 'audio/L16' });
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
   const response = await fetch(`/v1/presentations/${encodeURIComponent(taskId)}/chat/tts`, {
-    method: 'POST', headers, signal, body: JSON.stringify({ text, voice, speed }),
+    method: 'POST', headers, signal, body: JSON.stringify({ text, voice, speed, modelProvider }),
   });
   if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
   if (!response.body) throw new Error('浏览器没有收到语音流');
@@ -273,6 +275,7 @@ export async function streamPresentationChatImage(
   slideIndex: number,
   question: string,
   sessionId: string,
+  modelProvider: 'mimo' | 'qwen',
   onEvent: (event: PresentationAudioEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
@@ -281,6 +284,7 @@ export async function streamPresentationChatImage(
   form.append('slide_index', String(slideIndex));
   form.append('question', question);
   form.append('session_id', sessionId);
+  form.append('model_provider', modelProvider);
   const headers = new Headers({ Accept: 'text/event-stream' });
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
