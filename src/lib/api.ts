@@ -742,6 +742,24 @@ async function requestDirect<T>(path: string, init: RequestInit = {}): Promise<T
   return (await res.json()) as T;
 }
 
+async function requestAgent<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const res = await fetch(`/v1${path}`, { ...init, headers });
+  if (!res.ok) {
+    let message = `请求失败 (${res.status})`;
+    try {
+      const parsed = (await res.json()) as { detail?: string; message?: string };
+      message = parsed.detail ?? parsed.message ?? message;
+    } catch { /* keep status */ }
+    throw new Error(message);
+  }
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
+}
+
 const BACKEND_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function isBackendId(value?: string | null): value is string {
@@ -822,6 +840,35 @@ export async function streamAssistantTts(
 }
 
 
+
+export interface AgentInferResult {
+  say: string;
+  evidence: string[];
+  delta: number;
+  confDelta: number;
+  nextStep: string;
+  sessionId?: string;
+}
+
+export interface AgentDockSessionMessage {
+  id: string;
+  agentId?: string | null;
+  kind: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface AgentDockSession {
+  id: string;
+  learnerId?: string | null;
+  sessionType: string;
+  title?: string | null;
+  status?: string;
+  messages: AgentDockSessionMessage[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export const api = {
   login: (email: string, password: string) =>
     request<LoginResult>('/api/v1/auth/login', {
@@ -834,6 +881,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ learnerCode }),
     }),
+  agentInfer: (learnerId: string, signal: Record<string, unknown>) =>
+    requestAgent<AgentInferResult>('/agent/infer', {
+      method: 'POST',
+      body: JSON.stringify({ learnerId, signal }),
+    }),
+  listAgentSessions: () =>
+    requestAgent<{ sessions: AgentDockSession[] }>('/agent-sessions'),
   getUserProfile: () => request<UserProfileSettings>('/api/v1/profile'),
   updateUserProfile: (body: UserProfileSettings) => request<UserProfileSettings>('/api/v1/profile', {
     method: 'PUT', body: JSON.stringify(body),

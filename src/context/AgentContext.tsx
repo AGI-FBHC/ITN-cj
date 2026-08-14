@@ -7,6 +7,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import type { ReactNode } from 'react';
 import { toast } from 'sonner';
 import { useProfile } from '@/context/ProfileContext';
+import { api } from '@/lib/api';
 import { knowledgePoints, getKnowledgePoint } from '@/data/knowledgePoints';
 import type { QuizQuestion } from '@/data/quizBank';
 import {
@@ -119,9 +120,35 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   useEffect(() => save(K_DEC, decAll), [decAll]);
   useEffect(() => save(K_SEEN, seen), [seen]);
 
+  /* 阿诊会话恢复：从后端拉取该学习者最新的诊断消息（与本地消息去重合并） */
+  useEffect(() => {
+    if (!currentLearnerId) return;
+    let cancelled = false;
+    void api.listAgentSessions().then(({ sessions }) => {
+      if (cancelled) return;
+      const session = sessions.find(
+        (s) => s.sessionType === 'agent-dock' && s.learnerId === currentLearnerId,
+      );
+      if (!session || !session.messages?.length) return;
+      const remote: AgentMessage[] = session.messages
+        .filter((m) => m.agentId === 'DIA-01' && m.content)
+        .map((m) => ({ id: `agent-${m.id}`, kind: 'agent', text: m.content, time: new Date(m.createdAt).toLocaleString() }));
+      if (!remote.length) return;
+      setMsgsAll((prev) => {
+        const list = [...(prev[currentLearnerId] ?? [])];
+        const ids = new Set(list.map((m) => m.id));
+        const add = remote.filter((m) => !ids.has(m.id));
+        return add.length ? { ...prev, [currentLearnerId]: [...list, ...add] } : prev;
+      });
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentLearnerId]);
+
   const value = useMemo<AgentContextValue>(() => {
     const lid = currentLearnerId;
     const messages = msgsAll[lid] ?? [];
+    let lastSignal: Signal | null = null;
     const confidence: Record<string, number> = {};
     knowledgePoints.forEach((kp) => {
       confidence[kp.id] = confAll[lid]?.[kp.id] ?? 40;
@@ -181,9 +208,25 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         append({ id: mid(), kind: 'agent', text: inf.say, time: now() });
         notify('阿诊有话说');
       }
+      void deepDiagnose(kpId);
+    };
+
+    /** 深度诊断：真实学情 + MiMo 生成话术与证据（不重复写分，避免与规则双写） */
+    const deepDiagnose = (kpId: string) => {
+      const sig = lastSignal;
+      if (!sig) return;
+      void (async () => {
+        try {
+          const deep = await api.agentInfer(lid, sig as unknown as Record<string, unknown>);
+          const tail = deep.nextStep ? ` 下一步：${deep.nextStep}` : '';
+          append({ id: mid(), kind: 'agent', text: `${deep.say}${tail}`, time: now() });
+          record('inference', `DIA-01 深度诊断 → 「${getKnowledgePoint(kpId).name}」Δ${deep.delta} · 置信度 +${deep.confDelta} · 证据 ${deep.evidence.length} 条`);
+        } catch { /* 接口不可用时保留规则反馈 */ }
+      })();
     };
 
     const pushSignal = (s: Signal) => {
+      lastSignal = s;
       /* 广播给激励体系（能量账本等订阅方），与推理解耦 */
       try {
         window.dispatchEvent(new CustomEvent('lf-signal', { detail: { signal: s, learnerId: lid } }));
