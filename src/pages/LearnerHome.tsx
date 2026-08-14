@@ -81,12 +81,32 @@ export default function LearnerHome() {
     (a, b) => (learningMap.mastery[a.id] ?? 0) - (learningMap.mastery[b.id] ?? 0),
   )[0];
   const todayChapter = mapActive ?? weakestChapter ?? null;
+  // 学情描述：基于该章节与其内部知识点的真实统计动态生成，不写死固定话术
   const todayDiagnosis = (() => {
-    if (!learningMap.domains.length) return currentLearner.diagnosisSummary.replace(/^DIA-01 诊断：/, '');
-    const scored = learningMap.domains.map((c) => ({ name: c.name, score: learningMap.mastery[c.id] ?? 0 }));
-    const strongest = scored.reduce((a, b) => (b.score > a.score ? b : a));
-    const weakest = scored.reduce((a, b) => (b.score < a.score ? b : a));
-    return `你在「${strongest.name}」上掌握得最扎实，「${weakest.name}」还需要加强。建议从「${weakest.name}」继续，用分阶题巩固优势维度。`;
+    if (!todayChapter) return currentLearner.diagnosisSummary.replace(/^DIA-01 诊断：/, '');
+    const chapterId = todayChapter.id;
+    const progress = learningMap.chapterProgress[chapterId] ?? 0;
+    const mastery = learningMap.mastery[chapterId] ?? 0;
+    const topics = learningMap.graphNodes.filter((n) => n.kind === 'topic' && n.kpId === chapterId);
+    const topicStats = topics.map((t) => ({
+      name: t.label,
+      mastery: learningMap.topicMastery[t.id] ?? 0,
+      progress: learningMap.topicProgress[t.id] ?? 0,
+    }));
+    const started = topicStats.filter((t) => t.progress > 0 || t.mastery > 0).length;
+    if (progress <= 0 && mastery <= 0 && started === 0) {
+      return `本章「${todayChapter.name}」还没有学习记录，建议从这里开始第一课，用分阶题巩固掌握。`;
+    }
+    const strongest = [...topicStats].sort((a, b) => b.mastery - a.mastery || b.progress - a.progress)[0];
+    const weakest = [...topicStats].sort((a, b) => a.mastery - b.mastery || a.progress - b.progress)[0];
+    const parts = [`本章学习进度 ${Math.round(progress)}%，掌握度 ${Math.round(mastery)}%。`];
+    if (topicStats.length) parts.push(`已覆盖 ${started}/${topicStats.length} 个知识点。`);
+    if (strongest && weakest && strongest.name !== weakest.name) {
+      parts.push(`其中「${strongest.name}」掌握最好，「${weakest.name}」还需要加强，建议从「${weakest.name}」继续，用分阶题巩固。`);
+    } else if (strongest) {
+      parts.push(`当前可从「${strongest.name}」继续，用分阶题巩固掌握。`);
+    }
+    return parts.join(' ');
   })();
   const primaryLoading = learning.loading && !learning.course && learningMap.loading && !learningMap.activeKp;
   const activeTitle = primaryLoading ? '正在读取真实学习进度…' : todayChapter ? todayChapter.name : learning.nextChapter ? `第 ${learning.nextChapter.index} 章 · ${learning.nextChapter.title}` : activeNode?.title ?? '开启你的第一课';
