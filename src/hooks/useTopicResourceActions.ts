@@ -1,5 +1,5 @@
 /**
- * 知识点四类功能叶子（定制讲义/实操指南/分阶测试题/交互课件）的统一动作。
+ * 知识点四类功能叶子（本章讲义/实操指南/分阶测试题/交互课件）的统一动作。
  * 与 2D 侧栏一致：同知识点同类型已有资源 → 直接打开；没有 → 生成。
  */
 import { useCallback, useState } from 'react';
@@ -13,14 +13,14 @@ import { refreshLearningMapPresentationCache } from './useLearningMap';
 import type { GeneratedResource, ResourceForm } from '@/data/resources';
 
 export const FUNCTION_META: Array<{ form: ResourceForm | 'ppt'; label: string; color: string }> = [
-  { form: 'lecture', label: '定制讲义', color: '#6366F1' },
+  { form: 'lecture', label: '本章讲义', color: '#6366F1' },
   { form: 'guide', label: '实操指南', color: '#6366F1' },
   { form: 'quiz', label: '分阶测试题', color: '#6366F1' },
   { form: 'ppt', label: '交互课件', color: '#6366F1' },
 ];
 
 const FORM_LABEL: Record<ResourceForm, string> = {
-  lecture: '定制讲义',
+  lecture: '本章讲义',
   guide: '实操指南',
   quiz: '分阶测试题',
 };

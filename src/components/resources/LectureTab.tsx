@@ -1,5 +1,5 @@
 /**
- * LectureTab — 定制讲义（resources.md TAB 1）
+ * LectureTab — 本章讲义（resources.md TAB 1）
  * 流式生成动画（16ms tick 逐段物化 + 光标闪烁 + 跳过）· scroll-spy 目录 ·
  * 脚注引用区（定位回链）· 右侧溯源栏
  */

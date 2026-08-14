@@ -265,19 +265,19 @@ export const slideMdComponents = {
   ...lectureMdComponents,
   h1: (props: MDProps) => {
     const { children, ...rest } = domOnly(props);
-    return <h1 className="mb-5 font-serif text-[30px] font-semibold leading-[38px] text-ink md:text-[38px] md:leading-[46px]" {...rest}>{traceify(children)}</h1>;
+    return <h1 className="mb-5 font-serif text-[26px] font-semibold leading-[34px] text-ink md:text-[32px] md:leading-[40px]" {...rest}>{traceify(children)}</h1>;
   },
   h2: (props: MDProps) => {
     const { children, ...rest } = domOnly(props);
-    return <h2 className="mb-4 mt-7 border-l-4 border-brand pl-4 font-serif text-[24px] font-semibold leading-[34px] text-ink first:mt-0 md:text-[29px]" {...rest}>{traceify(children)}</h2>;
+    return <h2 className="mb-4 mt-7 border-l-4 border-brand pl-4 font-serif text-[21px] font-semibold leading-[30px] text-ink first:mt-0 md:text-[25px]" {...rest}>{traceify(children)}</h2>;
   },
   h3: (props: MDProps) => {
     const { children, ...rest } = domOnly(props);
-    return <h3 className="mb-3 mt-6 text-[19px] font-semibold leading-7 text-ink md:text-[22px]" {...rest}>{traceify(children)}</h3>;
+    return <h3 className="mb-3 mt-6 text-[17px] font-semibold leading-7 text-ink md:text-[19px]" {...rest}>{traceify(children)}</h3>;
   },
   p: (props: MDProps) => {
     const { children, ...rest } = domOnly(props);
-    return <p className="my-4 text-[17px] leading-8 text-ink-2 md:text-[19px] md:leading-9" {...rest}>{traceify(children)}</p>;
+    return <p className="my-4 text-[15px] leading-7 text-ink-2 md:text-[16.5px] md:leading-8" {...rest}>{traceify(children)}</p>;
   },
   ul: (props: MDProps) => {
     const { children, ...rest } = domOnly(props);
@@ -289,15 +289,15 @@ export const slideMdComponents = {
   },
   li: (props: MDProps) => {
     const { children, ...rest } = domOnly(props);
-    return <li className="relative rounded-[13px] border border-hairline bg-paper/75 px-4 py-3 text-[16px] leading-7 text-ink-2 shadow-xs before:mr-2 before:text-brand before:content-['•'] md:text-[18px]" {...rest}>{traceify(children)}</li>;
+    return <li className="relative rounded-[13px] border border-hairline bg-paper/75 px-4 py-3 text-[14px] leading-6 text-ink-2 shadow-xs before:mr-2 before:text-brand before:content-['•'] md:text-[15.5px]" {...rest}>{traceify(children)}</li>;
   },
   pre: (props: MDProps) => {
     const { children, ...rest } = domOnly(props);
-    return <pre className="my-5 max-h-[42vh] overflow-auto rounded-[14px] bg-ink p-5 font-mono text-[14px] leading-6 text-paper shadow-inner md:text-[16px]" {...rest}>{children}</pre>;
+    return <pre className="my-5 max-h-[42vh] overflow-auto rounded-[14px] bg-ink p-5 font-mono text-[13px] leading-6 text-paper shadow-inner md:text-[14px]" {...rest}>{children}</pre>;
   },
   table: (props: MDProps) => {
     const { children, ...rest } = domOnly(props);
-    return <div className="my-5 overflow-auto rounded-[14px] border border-hairline bg-paper"><table className="w-full min-w-[560px] border-collapse text-[15px] md:text-[17px]" {...rest}>{children}</table></div>;
+    return <div className="my-5 overflow-auto rounded-[14px] border border-hairline bg-paper"><table className="w-full min-w-[520px] border-collapse text-[13.5px] md:text-[15px]" {...rest}>{children}</table></div>;
   },
 };
 

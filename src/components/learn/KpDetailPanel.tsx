@@ -26,7 +26,7 @@ import type { GraphNode } from '@/data/knowledgeGraph';
 import { cn } from '@/lib/utils';
 
 const FORM_META: Record<ResourceForm, { label: string; icon: typeof BookOpen; hint: string }> = {
-  lecture: { label: '定制讲义', icon: BookOpen, hint: '按你水平现写的讲义' },
+  lecture: { label: '本章讲义', icon: BookOpen, hint: '按你水平现写的讲义' },
   guide: { label: '实操指南', icon: Wrench, hint: '分步实操 + 开始前确认' },
   quiz: { label: '分阶测试题', icon: ListChecks, hint: '基础/进阶/挑战三阶' },
 };
@@ -232,7 +232,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
             {recentUnfinished.map((item) => {
               const meta = FORM_META[item.form] ?? { label: '学习资源', icon: BookOpen };
               const Icon = meta.icon;
-              const topicName = item.levelTag || item.title.replace(/\s*·\s*(定制讲义|实操指南|分阶测试题)$/, '');
+              const topicName = item.levelTag || item.title.replace(/\s*·\s*(定制讲义|本章讲义|实操指南|分阶测试题)$/, '');
               const chapterName = item.kpId ? getKnowledgePoint(item.kpId)?.name : undefined;
               return (
                 <button key={item.id} type="button" onClick={() => navigate(`/learn/resource/${item.id}`)} className="group flex w-full items-center gap-3 rounded-[10px] border border-hairline bg-paper px-3 py-2.5 text-left transition-all hover:border-brand/45 hover:bg-brand-tint/40">
@@ -547,13 +547,13 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           {shownLearned.map((item) => {
             const meta = FORM_META[item.form] ?? { label: '学习资源', icon: BookOpen };
             const Icon = meta.icon;
-            const topicName = item.levelTag || item.title.replace(/\s*·\s*(定制讲义|实操指南|分阶测试题)$/, '');
+            const topicName = item.levelTag || item.title.replace(/\s*·\s*(定制讲义|本章讲义|实操指南|分阶测试题)$/, '');
             return <button key={item.id} type="button" onClick={() => navigate(`/learn/resource/${item.id}`)} className="group flex w-full items-center gap-3 rounded-[10px] border border-brand/45 bg-brand-tint/40 px-3 py-2.5 text-left transition-all hover:border-brand/60 hover:bg-brand-tint"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand text-paper"><Icon size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-[14px] font-semibold text-ink">{topicName}</span><span className="mt-0.5 block truncate text-[11px] text-ink-muted">已学 · {meta.label}</span></span><ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" /></button>;
           })}
           {shownUnfinished.map((item) => {
             const meta = FORM_META[item.form] ?? { label: '学习资源', icon: BookOpen };
             const Icon = meta.icon;
-            const topicName = item.levelTag || item.title.replace(/\s*·\s*(定制讲义|实操指南|分阶测试题)$/, '');
+            const topicName = item.levelTag || item.title.replace(/\s*·\s*(定制讲义|本章讲义|实操指南|分阶测试题)$/, '');
             return <button key={item.id} type="button" onClick={() => navigate(`/learn/resource/${item.id}`)} className="group flex w-full items-center gap-3 rounded-[10px] border border-hairline bg-paper px-3 py-2.5 text-left transition-all hover:border-brand/45 hover:bg-brand-tint/40"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-tint text-brand"><Icon size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-[14px] font-semibold text-ink">{topicName}</span><span className="mt-0.5 block truncate text-[11px] text-ink-muted">继续学习 · {meta.label}</span></span><ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" /></button>;
           })}
           {topicRecommendations.map((item, index) => {

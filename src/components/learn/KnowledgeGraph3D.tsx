@@ -1528,7 +1528,7 @@ export default function KnowledgeGraph3D({
   showProgressRings = true,
 
 }: KnowledgeGraph3DProps) {
-  /** 当前展开“功能节点层”（定制讲义/实操指南/分阶测试题/交互课件）的子知识点，与章节展开互不干扰 */
+  /** 当前展开“功能节点层”（本章讲义/实操指南/分阶测试题/交互课件）的子知识点，与章节展开互不干扰 */
   const topicStorageKey = persistenceKey ? `lf.knowledgeGraph3dTopic:v1:${persistenceKey}` : null;
   const [expandedTopicId, setExpandedTopicId] = useState<string | null>(() => {
     if (!topicStorageKey) return null;
