@@ -27,7 +27,7 @@ import { cn } from '@/lib/utils';
 
 const FORM_META: Record<ResourceForm, { label: string; icon: typeof BookOpen; hint: string }> = {
   lecture: { label: '定制讲义', icon: BookOpen, hint: '按你水平现写的讲义' },
-  guide: { label: '实操指南', icon: Wrench, hint: '分步实操 + 安全门控' },
+  guide: { label: '实操指南', icon: Wrench, hint: '分步实操 + 开始前确认' },
   quiz: { label: '分阶测试题', icon: ListChecks, hint: '基础/进阶/挑战三阶' },
 };
 

@@ -60,8 +60,8 @@ export const tourSteps: TourStep[] = [
     route: '/resources?tab=guide',
     icon: ShieldCheck,
     narration:
-      '实操指南内置 LOTO 安全门控与步骤安全分级，涉及高风险操作会强制提示；分阶题目则依据画像自动判定适配难度。',
-    highlights: ['安全徽标标出高 / 中 / 低风险步骤', '标准依据行标注每条操作对应的国标 / 行标条款'],
+      '实操指南内置开始前确认与步骤风险分级，涉及高风险操作会强制提示；分阶题目则依据画像自动判定适配难度。',
+    highlights: ['步骤徽标标出高 / 中 / 低风险步骤', '标准依据行标注每条操作对应的国标 / 行标条款'],
     badge: '实用价值',
   },
   {

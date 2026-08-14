@@ -110,7 +110,7 @@ export function inferGuideComplete(kpId: string, title: string): Inference {
   return {
     delta: 3,
     confDelta: 10,
-    say: `《${title}》五步全部打卡完成，实操留痕是硬证据，「${kp}」+3 分。安全清单也全过了，这个习惯很好。`,
+    say: `《${title}》五步全部打卡完成，实操留痕是硬证据，「${kp}」+3 分。开始前确认也全过了，这个习惯很好。`,
     eventTitle: `完成实操《${title}》`,
     eventDetail: `DIA-01 依据实操打卡上调「${kp}」`,
   };
