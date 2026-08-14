@@ -6,6 +6,7 @@ import { useRef, useMemo, useState, useCallback, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Text, Line, PerspectiveCamera, Billboard } from '@react-three/drei';
 import { BookOpen, ClipboardCheck, Presentation, Wrench, X } from 'lucide-react';
+import { toast } from 'sonner';
 import * as THREE from 'three';
 import type { GraphNode, GraphEdge, EdgeKind } from '@/data/knowledgeGraph';
 import type { ResourceForm, GeneratedResource } from '@/data/resources';
@@ -580,7 +581,7 @@ function LearnedHighlightRing({ radius }: { radius: number }) {
 
 /** 页面级知识点操作弹窗：脱离 3D 世界坐标，确保尺寸与交互始终稳定。 */
 const STATUS_META: Record<'missing' | 'unlearned' | 'incomplete' | 'learned', { label: string; color: string }> = {
-  missing: { label: '未生成', color: '#9AA19A' },
+  missing: { label: '暂未完成', color: '#9AA19A' },
   unlearned: { label: '未学习', color: '#D89238' },
   incomplete: { label: '未学完', color: '#4B82B8' },
   learned: { label: '已学习', color: '#2F8F5B' },
@@ -713,6 +714,10 @@ function TopicActionModal({
             disabled={busy}
             className="group h-[88px] rounded-[16px] border border-[#E1E6DF] bg-white/75 px-3.5 py-3 text-left shadow-[0_8px_22px_rgba(41,63,51,0.06)] transition duration-200 hover:-translate-y-0.5 hover:border-[#AFC3B5] hover:bg-white hover:shadow-[0_14px_32px_rgba(41,63,51,0.12)] disabled:cursor-progress disabled:opacity-60"
             onClick={() => {
+              if (!exists) {
+                toast.info('该资源暂未完成，请等待后续补齐');
+                return;
+              }
               if (fn.form === 'ppt') void openOrCreatePpt();
               else void openOrGenerate(fn.form as ResourceForm);
             }}
