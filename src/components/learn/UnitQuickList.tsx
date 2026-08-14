@@ -102,8 +102,8 @@ export default function UnitQuickList({
               className={cn(
                 'group flex w-full items-center gap-2.5 px-2 py-3 text-left transition-all duration-200',
                 columns
-                  ? 'rounded-[12px] border bg-white/60 shadow-[0_1px_2px_rgba(0,0,0,0.04)] backdrop-blur-sm hover:-translate-y-0.5 hover:bg-white/80 hover:shadow-[0_6px_20px_rgba(0,0,0,0.08)]'
-                  : 'rounded-[10px] border border-transparent bg-white/40 px-2.5 backdrop-blur-sm hover:bg-white/70',
+                  ? 'rounded-[12px] border bg-white/30 shadow-[0_1px_2px_rgba(0,0,0,0.03)] hover:-translate-y-0.5 hover:bg-white/70 hover:shadow-[0_6px_20px_rgba(0,0,0,0.08)]'
+                  : 'rounded-[10px] border border-transparent bg-white/20 px-2.5 hover:bg-white/60',
                 selected
                   ? 'border-[#2E6BA8]/35 bg-[#EAF3FB] shadow-[0_2px_10px_rgba(46,107,168,0.10)]'
                   : cn('border-black/[0.04] hover:bg-black/[0.02]', columns && 'hover:border-black/10'),
