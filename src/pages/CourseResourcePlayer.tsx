@@ -523,7 +523,7 @@ export default function CourseResourcePlayer() {
   const sectionRewardRef = useRef(0);
   const rewardedSectionRef = useRef<Set<string>>(new Set());
   /** 打开资源奖励：画像未就绪时先挂起，等 learnerId 可用再上报，避免竞态漏记 */
-  const pendingOpenRewardRef = useRef<{ id: string; title: string } | null>(null);
+  const [pendingOpenReward, setPendingOpenReward] = useState<{ id: string; title: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -551,7 +551,7 @@ export default function CourseResourcePlayer() {
         const openKey = `lf.growthOpen:v1:${loaded.id}`;
         if (!window.sessionStorage.getItem(openKey)) {
           window.sessionStorage.setItem(openKey, '1');
-          pendingOpenRewardRef.current = { id: loaded.id, title: loaded.title };
+          setPendingOpenReward({ id: loaded.id, title: loaded.title });
         }
       } catch { /* ignore */ }
     };
@@ -703,17 +703,17 @@ export default function CourseResourcePlayer() {
     narration.stop();
   }, [narration.stop]);
 
-  /* 打开资源奖励：等画像 learnerId 就绪后补发 */
+  /* 打开资源奖励：等画像 learnerId 就绪后补发（state 驱动，顺序无关） */
   useEffect(() => {
-    const pending = pendingOpenRewardRef.current;
+    const pending = pendingOpenReward;
     if (!pending || !currentLearnerId || !isUuid(currentLearnerId)) return;
-    pendingOpenRewardRef.current = null;
+    setPendingOpenReward(null);
     void api.recordLearnerGrowthEvent({
       learnerId: currentLearnerId, eventType: 'focus-bonus', title: `开始学习《${pending.title}》`, amount: 3,
       metadata: { resourceId: pending.id, source: 'resource-player' },
     }).catch(() => undefined);
     try { window.dispatchEvent(new CustomEvent('lf:growth-recorded', { detail: { learnerId: currentLearnerId } })); } catch { /* ignore */ }
-  }, [currentLearnerId]);
+  }, [currentLearnerId, pendingOpenReward]);
 
   const goBlock = (id: string, continueSpeaking = false) => {
     setCurrentBlockId(id);
