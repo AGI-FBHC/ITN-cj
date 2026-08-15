@@ -33,7 +33,7 @@ function levelFromScore(score: number | undefined): number {
 
 export default function Calibrate() {
   const navigate = useNavigate();
-  const { currentLearner, patchLearner, bumpConfidence } = useProfile();
+  const { currentLearner, patchLearner } = useProfile();
   const [meta, setMeta] = useState<OnboardingMeta | null>(null);
   const [targetOptions, setTargetOptions] = useState<{ name: string; categoryCode: string }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -172,7 +172,6 @@ export default function Calibrate() {
             detail: `重做 ${answers.length} 道画像例题后更新六维能力`,
           },
         );
-        void bumpConfidence(currentLearner.id, 5).catch(() => undefined);
       } catch {
         toast.error('画像写入失败', { description: '测评已完成，但画像更新时出错，请稍后重试。' });
       }
