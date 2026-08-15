@@ -26,18 +26,10 @@ export default defineConfig({
     strictPort: true,
   },
   build: {
-    /* 只预加载入口级 chunk，three/echarts 等重型分包按需加载，避免登录页预取 */
-    modulePreload: {
-      resolveDependencies: (_filename, deps) => deps.filter((dep) => dep.includes('index-') || dep.includes('.css')),
-    },
+    /* 依赖默认分包：three/echarts/markdown 随懒加载页面按需加载，
+       不手动分组（手动分组曾导致入口静态引用重型 vendor 块） */
     rollupOptions: {
-      output: {
-        manualChunks: {
-          'vendor-three': ['three', '@react-three/fiber', '@react-three/drei'],
-          'vendor-echarts': ['echarts', 'echarts-for-react', 'recharts'],
-          'vendor-markdown': ['react-markdown', 'remark-gfm'],
-        },
-      },
+      output: {},
     },
   },
   resolve: {
