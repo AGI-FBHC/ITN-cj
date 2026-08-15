@@ -122,20 +122,60 @@ export default function LearnerHome() {
   const activeButton = primaryLoading ? '加载中…' : todayChapter ? `继续：${todayChapter.name}` : learning.nextResource ? `继续：${learning.nextResource.title}` : activeNode ? `继续：${activeNode.resourceRef ?? activeNode.title}` : '开始学习';
   const activeEst = todayChapter ? undefined : (learning.nextResource ? undefined : activeNode?.est);
 
-  /* 真实用户：盲区 = 知识地图掌握度 vs 目标门槛，取缺口最大的两个章节 */
-  const topGaps = isPreset
-    ? report!.blindSpots.filter((b) => b.priority === '高').slice(0, 2)
-    : learningMap.domains
-        .map((d) => {
-          const score = learningMap.mastery[d.id] ?? 0;
-          const target = learningMap.nodeTargets[d.id]?.target ?? 80;
+  /* 真实用户：推荐 = 知识点级，按目标门槛与当前掌握度的差距取最需加强的两个子知识点 */
+  type TopicGap = {
+    kpId: string;
+    topicId: string;
+    topicIndex: number;
+    name: string;
+    chapterName: string;
+    score: number;
+    progress: number;
+    target: number;
+    gap: number;
+    priority: string;
+    suggestion: string;
+  };
+  const topGaps: TopicGap[] = isPreset
+    ? report!.blindSpots
+        .filter((b) => b.priority === '高')
+        .slice(0, 2)
+        .map((b) => ({
+          kpId: b.kpId,
+          topicId: b.kpId,
+          topicIndex: 0,
+          name: getKnowledgePoint(b.kpId).name,
+          chapterName: '',
+          score: b.score,
+          progress: 0,
+          target: b.target,
+          gap: b.gap,
+          priority: b.priority,
+          suggestion: b.suggestion,
+        }))
+    : learningMap.graphNodes
+        .filter((n) => n.kind === 'topic')
+        .map((n) => {
+          const chapter = learningMap.domains.find((d) => d.id === n.kpId);
+          const score = learningMap.topicMastery[n.id] ?? 0;
+          const progress = learningMap.topicProgress[n.id] ?? 0;
+          const target = learningMap.nodeTargets[n.id]?.target
+            ?? learningMap.nodeTargets[n.kpId]?.target
+            ?? 80;
           return {
-            kpId: d.id,
+            kpId: n.kpId,
+            topicId: n.id,
+            topicIndex: n.topicIndex ?? 0,
+            name: n.label,
+            chapterName: chapter?.name ?? n.kpId,
             score,
+            progress,
             target,
             gap: target - score,
             priority: '高' as const,
-            suggestion: `目标 ${target}，当前掌握度 ${score}，先从这里补齐。`,
+            suggestion: progress > 0 || score > 0
+              ? `已学部分内容，掌握度 ${Math.round(score)}%，建议继续巩固到目标 ${target}%。`
+              : '还没开始，建议从这里开始第一课。',
           };
         })
         .filter((g) => g.gap > 0)
@@ -292,32 +332,34 @@ export default function LearnerHome() {
           {topGaps.map((g) => {
             const kpName = isPreset
               ? getKnowledgePoint(g.kpId).name
-              : learningMap.domains.find((d) => d.id === g.kpId)?.name ?? g.kpId;
-            const pct = Math.round((g.score / g.target) * 100);
+              : `${g.chapterName} · ${g.name}`;
+            const pct = g.target > 0 ? Math.round((g.score / g.target) * 100) : 0;
             return (
-              <div key={g.kpId} className="lf-card p-5">
+              <div key={g.topicId ?? g.kpId} className="lf-card p-5">
                 <div className="flex items-center justify-between">
                   <span className="text-[15px] font-semibold text-ink">{kpName}</span>
-                  <span className="rounded-md bg-brand-danger/10 px-2 py-0.5 font-mono text-[11px] font-medium text-brand-danger">
-                    {isPreset ? `优先级 ${g.priority}` : `缺口 ${g.gap}`}
-                  </span>
+                  {!isPreset && (
+                    <span className="rounded-md bg-brand-tint/70 px-2 py-0.5 font-mono text-[11px] font-medium text-brand">
+                      目标 {Math.round(g.target)}%
+                    </span>
+                  )}
                 </div>
                 <div className="mt-3 flex items-center gap-2 font-mono text-[11.5px] text-ink-muted">
-                  <span>现在 {g.score}</span>
+                  <span>掌握度 {Math.round(g.score)}%</span>
                   <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-paper-deep">
                     <div
                       className="absolute inset-y-0 left-0 rounded-full bg-ochre"
-                      style={{ width: `${pct}%` }}
+                      style={{ width: `${Math.min(100, pct)}%` }}
                     />
                   </div>
-                  <span>要到 {g.target}</span>
+                  <span>进度 {Math.round(g.progress)}%</span>
                 </div>
                 <p className="mt-3 text-[13px] leading-[20px] text-ink-2">
-                  {isPreset ? g.suggestion : `目标 ${g.target}，当前掌握度 ${g.score}，先从这里补齐。`}
+                  {isPreset ? g.suggestion : g.suggestion}
                 </p>
                 <button
                   type="button"
-                  onClick={() => navigate(`/learn/${g.kpId}`)}
+                  onClick={() => navigate(isPreset ? `/learn/${g.kpId}` : `/learn?kp=${encodeURIComponent(g.kpId)}&unitTopic=${encodeURIComponent(g.topicId)}`)}
                   className="lf-btn-ghost mt-4 !px-4 !py-1.5 text-[13px]"
                 >
                   去学这块

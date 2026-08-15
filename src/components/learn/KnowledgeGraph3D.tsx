@@ -69,6 +69,8 @@ interface KnowledgeGraph3DProps {
   topicProgress: Record<string, number>;
   /** 请求把某个域节点转到视野正前方（at 变化即重新触发） */
   focusTarget?: { id: string; at: number } | null;
+  /** 深链请求展开某个子知识点的功能节点层（at 变化即重新触发） */
+  focusTopicTarget?: { id: string; at: number } | null;
   /** 打开“我的已学路径”：高亮已学章节/子知识点 */
 
   showLearned?: boolean;
@@ -1512,6 +1514,7 @@ export default function KnowledgeGraph3D({
   topicMastery,
   topicProgress,
   focusTarget,
+  focusTopicTarget,
   className,
   showLearned = false,
   resources = {},
@@ -1542,6 +1545,13 @@ export default function KnowledgeGraph3D({
       else window.sessionStorage.removeItem(topicStorageKey);
     } catch { /* ignore */ }
   }, [expandedTopicId, topicStorageKey]);
+  // 深链：外部请求展开某个子知识点（与用户点击知识点同一效果）
+  const appliedTopicTargetRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusTopicTarget || focusTopicTarget.id === appliedTopicTargetRef.current) return;
+    appliedTopicTargetRef.current = focusTopicTarget.id;
+    setExpandedTopicId(focusTopicTarget.id);
+  }, [focusTopicTarget]);
   const actionTopic = useMemo(
     () => nodes.find((node) => node.kind === 'topic' && node.id === expandedTopicId) ?? null,
     [nodes, expandedTopicId],

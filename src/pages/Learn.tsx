@@ -85,6 +85,8 @@ export default function Learn() {
   const [selectedTopic, setSelectedTopic] = useState<number | null>(() => restoredView?.selectedTopic ?? null);
   /** 章节速览点击后，请求 3D 相机把该域节点转到正前方 */
   const [graphFocus, setGraphFocus] = useState<{ id: string; at: number } | null>(null);
+  /** 深链：?unitTopic= 定位子知识点（展开功能节点层，与手点知识点一致） */
+  const [focusTopic, setFocusTopic] = useState<{ id: string; at: number } | null>(null);
   const [searchParams] = useSearchParams();
   useEffect(() => {
     if (!currentLearner.id || currentLearner.id === 'loading') return;
@@ -104,14 +106,16 @@ export default function Learn() {
   const focusTimerRef = useRef<number | null>(null);
   useEffect(() => {
     const kpParam = searchParams.get('kp');
+    const unitTopic = searchParams.get('unitTopic');
     if (!kpParam) {
       appliedKpParamRef.current = null;
       return;
     }
     if (!knowledgePoints.some((kp) => kp.id === kpParam)) return;
-    if (appliedKpParamRef.current === kpParam) return;
-    appliedKpParamRef.current = kpParam;
-    // 首页“今天就学这一件”进入：先跳转页面（默认 3D 视图），
+    const deepKey = `${kpParam}:${unitTopic ?? ''}`;
+    if (appliedKpParamRef.current === deepKey) return;
+    appliedKpParamRef.current = deepKey;
+    // 首页“今天就学这一件/去学这块”进入：先跳转页面（默认 3D 视图），
     // 页面就绪后再模拟点击“章节速览”对应章节（与真实点击同一套逻辑，相机只动一次）
     setViewMode('3d');
     if (focusTimerRef.current !== null) window.clearTimeout(focusTimerRef.current);
@@ -121,8 +125,18 @@ export default function Learn() {
       setSelectedTopic(null);
       setSingleExpandedKp(kpParam);
       setGraphFocus({ id: kpParam, at: Date.now() });
+      // 深链到子知识点：展开功能节点层并选中（对应 3D 里点击知识点的效果）
+      if (unitTopic) {
+        const topicNode = map.graphNodes.find((node) => node.kind === 'topic' && node.id === unitTopic);
+        if (topicNode) {
+          setFocusTopic({ id: topicNode.id, at: Date.now() });
+          setSelectedTopic(topicNode.topicIndex ?? null);
+        }
+      } else {
+        setFocusTopic(null);
+      }
     }, 450);
-  }, [searchParams, knowledgePoints]);
+  }, [searchParams, knowledgePoints, map.graphNodes]);
   useEffect(() => () => {
     if (focusTimerRef.current !== null) window.clearTimeout(focusTimerRef.current);
   }, []);
@@ -280,6 +294,7 @@ export default function Learn() {
               topicMastery={map.topicMastery}
               topicProgress={map.topicProgress}
               focusTarget={graphFocus}
+              focusTopicTarget={focusTopic}
               showLearned={showLearnedPath}
               resources={map.resources}
               goalId={map.goalId}
