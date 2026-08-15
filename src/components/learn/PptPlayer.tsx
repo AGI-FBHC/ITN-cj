@@ -24,6 +24,7 @@ export interface PptPlayerRef {
   slideCount: number;
   audioPlaying: boolean;
   readonly audioLoaded: boolean;
+  readonly audioLoading: boolean;
   goNext: () => void;
   goPrev: () => void;
   goTo: (index: number) => void;
@@ -52,6 +53,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
   const [error, setError] = useState('');
   const [slideSrc, setSlideSrc] = useState('');
   const [audioPlaying, setAudioPlaying] = useState(false);
+  const [audioLoading, setAudioLoading] = useState(false);
   const [audioSrc, setAudioSrc] = useState('');
   const [noteRevealCount, setNoteRevealCount] = useState<number | null>(null);
   const [activeMoment, setActiveMoment] = useState<PresentationTeachingMoment | null>(null);
@@ -61,6 +63,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const currentRef = useRef(0);
   const audioSrcRef = useRef('');
+  const audioLoadingRef = useRef<number | null>(null);
   const switchingSlideRef = useRef(false);
   const noteScrollRef = useRef<HTMLParagraphElement | null>(null);
   const triggeredMomentsRef = useRef(new Set<string>());
@@ -72,6 +75,8 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
   useEffect(() => { triggeredMomentsRef.current.clear(); }, [taskId]);
 
   useEffect(() => {
+    // 音频正在加载/播放时，不打断当前页；仅切页/重开时才真正清空
+    if (audioLoadingRef.current !== null) return;
     const audio = audioRef.current;
     if (audio) { audio.pause(); audio.removeAttribute('src'); audio.load(); }
     if (audioSrcRef.current) URL.revokeObjectURL(audioSrcRef.current);
@@ -93,9 +98,15 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
     if (audio) audio.volume = volume;
   }, [volume]);
 
-  const playAudio = async (index: number) => {
+  const playAudio = async (index: number, retried = false) => {
     const audio = audioRef.current;
     if (!audio) return;
+    // 防抖：同一页音频已在加载/播放中，忽略重复触发，避免重复请求
+    if (audioLoadingRef.current === index && !retried) {
+      return;
+    }
+    audioLoadingRef.current = index;
+    setAudioLoading(true);
     try {
       if (!audioSrcRef.current) {
         const blob = await fetchSlideAsset(taskId, index, 'audio', modelProvider, qwenVoice);
@@ -113,10 +124,29 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
       setAudioPlaying(true);
       onPlaybackChange?.(true);
     } catch (reason) {
+      // 首次 play() 常因元素被清理/中断失败（AbortError），自动重试一次
+      if (!retried && reason instanceof DOMException && reason.name === 'AbortError') {
+        try {
+          await audio.play();
+          switchingSlideRef.current = false;
+          setAudioPlaying(true);
+          onPlaybackChange?.(true);
+          return;
+        } catch (retryReason) {
+          switchingSlideRef.current = false;
+          setAudioPlaying(false);
+          onPlaybackChange?.(false);
+          setError(retryReason instanceof Error ? `音频加载失败：${retryReason.message}` : '音频暂不可用');
+          return;
+        }
+      }
       switchingSlideRef.current = false;
       setAudioPlaying(false);
       onPlaybackChange?.(false);
       setError(reason instanceof Error ? `音频加载失败：${reason.message}` : '音频暂不可用');
+    } finally {
+      audioLoadingRef.current = null;
+      setAudioLoading(false);
     }
   };
 
@@ -167,6 +197,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
     get slideCount() { return slideCount; },
     get audioPlaying() { return audioPlaying; },
     get audioLoaded() { return Boolean(audioSrcRef.current); },
+    get audioLoading() { return audioLoading; },
     goNext,
     goPrev,
     goTo,
@@ -174,7 +205,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
     play: () => { if (!audioPlaying) void playAudio(currentRef.current); },
     pause: () => { if (audioPlaying) togglePlay(); },
     restartPageAudio,
-  }), [slideCount, audioPlaying, speed, volume]);
+  }), [slideCount, audioPlaying, audioLoading, speed, volume]);
 
   const loadTask = useCallback(async () => {
     try {
@@ -259,6 +290,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
   };
 
   useEffect(() => {
+    if (audioLoadingRef.current !== null) return;
     const audio = audioRef.current;
     if (audio) { audio.pause(); audio.removeAttribute('src'); audio.load(); }
     if (!switchingSlideRef.current) setAudioPlaying(false);

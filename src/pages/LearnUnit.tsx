@@ -3125,7 +3125,7 @@ export default function LearnUnit() {
             {pptTaskId && (
               <button
                 type="button"
-                disabled={pptSlide.current <= 0}
+                disabled={pptSlide.current <= 0 || Boolean(pptRef.current?.audioLoading)}
                 onClick={() => pptRef.current?.goPrev()}
                 title="上一页"
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-hairline bg-paper text-brand transition-all hover:bg-brand-tint disabled:cursor-not-allowed disabled:text-ink-muted/35"
@@ -3135,17 +3135,18 @@ export default function LearnUnit() {
             )}
             <button
               type="button"
+              disabled={pptTaskId ? Boolean(pptRef.current?.audioLoading) : false}
               onClick={togglePlay}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand text-paper transition-transform hover:scale-105"
-              title={playing ? '暂停' : '语音授课'}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand text-paper transition-transform hover:scale-105 disabled:cursor-wait disabled:opacity-80"
+              title={pptRef.current?.audioLoading ? '音频加载中…' : (playing ? '暂停' : '语音授课')}
             >
-              {playing ? <Pause size={17} /> : <Play size={17} fill="currentColor" />}
+              {pptRef.current?.audioLoading ? <Loader2 size={17} className="animate-spin" /> : (playing ? <Pause size={17} /> : <Play size={17} fill="currentColor" />)}
             </button>
 
             {pptTaskId && (
               <button
                 type="button"
-                disabled={pptSlide.current >= pptSlide.count - 1}
+                disabled={pptSlide.current >= pptSlide.count - 1 || Boolean(pptRef.current?.audioLoading)}
                 onClick={() => pptRef.current?.goNext()}
                 title="下一页"
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-hairline bg-paper text-brand transition-all hover:bg-brand-tint disabled:cursor-not-allowed disabled:text-ink-muted/35"
