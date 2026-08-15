@@ -693,6 +693,7 @@ export default function LearnUnit() {
   const [pptVoice, setPptVoice] = useState('苏打');
   const [pptSpeed, setPptSpeed] = useState<TtsSpeed>('normal');
   const [pptVoiceSaving, setPptVoiceSaving] = useState(false);
+  const [pptAudioLoading, setPptAudioLoading] = useState(false);
   const [pptVolume, setPptVolume] = useState(() => {
     try {
       const saved = Number(window.localStorage.getItem('lf.pptVolume'));
@@ -2207,7 +2208,7 @@ export default function LearnUnit() {
             {freeBrowse ? '回到课堂推进' : '自由浏览'}
           </button>
         </div>}
-        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} wideMode={pptWideMode} speed={pptSpeed} volume={pptVolume} modelProvider={pptAudioModel} qwenVoice={qwenVoice} ref={pptRef} onPlaybackChange={setPlaying} onSlideChange={syncPptSlide} onRequestNote={openNoteHere} /> : (blocks.map((b, i) => {
+        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} wideMode={pptWideMode} speed={pptSpeed} volume={pptVolume} modelProvider={pptAudioModel} qwenVoice={qwenVoice} ref={pptRef} onPlaybackChange={setPlaying} onLoadingChange={setPptAudioLoading} onSlideChange={syncPptSlide} onRequestNote={openNoteHere} /> : (blocks.map((b, i) => {
           const active = i === cursor && playing;
           /* ---- 课堂推进三态：完整（当前/回看/自由浏览）· 摘要行（已完成）· 不渲染（未解锁） ---- */
           const effUnlocked = Math.min(unlocked, blocks.length);
@@ -3130,7 +3131,7 @@ export default function LearnUnit() {
             {pptTaskId && (
               <button
                 type="button"
-                disabled={pptSlide.current <= 0 || Boolean(pptRef.current?.audioLoading)}
+                disabled={pptSlide.current <= 0 || pptAudioLoading}
                 onClick={() => pptRef.current?.goPrev()}
                 title="上一页"
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-hairline bg-paper text-brand transition-all hover:bg-brand-tint disabled:cursor-not-allowed disabled:text-ink-muted/35"
@@ -3140,18 +3141,18 @@ export default function LearnUnit() {
             )}
             <button
               type="button"
-              disabled={pptTaskId ? Boolean(pptRef.current?.audioLoading) : false}
+              disabled={pptTaskId ? pptAudioLoading : false}
               onClick={togglePlay}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand text-paper transition-transform hover:scale-105 disabled:cursor-wait disabled:opacity-80"
-              title={pptRef.current?.audioLoading ? '音频加载中…' : (playing ? '暂停' : '语音授课')}
+              title={pptAudioLoading ? '音频加载中…' : (playing ? '暂停' : '语音授课')}
             >
-              {pptRef.current?.audioLoading ? <Loader2 size={17} className="animate-spin" /> : (playing ? <Pause size={17} /> : <Play size={17} fill="currentColor" />)}
+              {pptAudioLoading ? <Loader2 size={17} className="animate-spin" /> : (playing ? <Pause size={17} /> : <Play size={17} fill="currentColor" />)}
             </button>
 
             {pptTaskId && (
               <button
                 type="button"
-                disabled={pptSlide.current >= pptSlide.count - 1 || Boolean(pptRef.current?.audioLoading)}
+                disabled={pptSlide.current >= pptSlide.count - 1 || pptAudioLoading}
                 onClick={() => pptRef.current?.goNext()}
                 title="下一页"
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-hairline bg-paper text-brand transition-all hover:bg-brand-tint disabled:cursor-not-allowed disabled:text-ink-muted/35"

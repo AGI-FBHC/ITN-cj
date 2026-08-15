@@ -4,7 +4,7 @@
  * this component provides the actual slide content and playback controls.
  */
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { BookOpenCheck, Check, Lightbulb, Loader2, RefreshCw } from 'lucide-react';
+import { BookOpenCheck, Check, Lightbulb, Loader2, RefreshCw, X } from 'lucide-react';
 import { fetchSlideAsset, presentationApi } from '@/lib/presentationApi';
 import type { PresentationSlideshow, PresentationTask, PresentationTeachingMoment } from '@/lib/presentationApi';
 import type { TtsSpeed } from '@/lib/api';
@@ -45,7 +45,8 @@ const PROGRESS_LABEL: Record<PresentationTask['status'], string> = {
   cancelled: '已取消',
 };
 
-const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean; speed?: TtsSpeed; volume?: number; modelProvider?: 'mimo' | 'qwen'; qwenVoice?: string; onPlaybackChange?: (playing: boolean) => void; onSlideChange?: (current: number, count: number) => void; onRequestNote?: () => void }>(function PptPlayer({ taskId, speed = 'normal', volume = 1, modelProvider = 'mimo', qwenVoice = '', onPlaybackChange, onSlideChange, onRequestNote }, ref) {
+const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean; speed?: TtsSpeed; volume?: number; modelProvider?: 'mimo' | 'qwen'; qwenVoice?: string; onPlaybackChange?: (playing: boolean) => void;
+  onLoadingChange?: (loading: boolean) => void; onSlideChange?: (current: number, count: number) => void; onRequestNote?: () => void }>(function PptPlayer({ taskId, speed = 'normal', volume = 1, modelProvider = 'mimo', qwenVoice = '', onPlaybackChange, onLoadingChange, onSlideChange, onRequestNote }, ref) {
   const [task, setTask] = useState<PresentationTask | null>(null);
   const [slides, setSlides] = useState<PresentationSlideshow | null>(null);
   const [current, setCurrent] = useState(0);
@@ -107,6 +108,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
     }
     audioLoadingRef.current = index;
     setAudioLoading(true);
+    onLoadingChange?.(true);
     try {
       if (!audioSrcRef.current) {
         const blob = await fetchSlideAsset(taskId, index, 'audio', modelProvider, qwenVoice);
@@ -147,6 +149,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
     } finally {
       audioLoadingRef.current = null;
       setAudioLoading(false);
+      onLoadingChange?.(false);
     }
   };
 
@@ -357,14 +360,15 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
     window.setTimeout(continueMoment, 1100);
   };
 
+  // 讲稿字幕实时滚动：可见文本每次变化都滚到最新处（含首次展开整页讲稿）
   useEffect(() => {
-    if (!audioPlaying || noteRevealCount === null) return;
+    if (noteRevealCount === null) return;
     const frame = window.requestAnimationFrame(() => {
       const element = noteScrollRef.current;
       if (element) element.scrollTop = element.scrollHeight;
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [audioPlaying, noteRevealCount]);
+  }, [noteRevealCount, visibleNote]);
 
   if (!task && loading) {
     return (
@@ -427,39 +431,87 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
           )}
         </div>
 
-        <aside className="flex h-[132px] min-h-[132px] w-full overflow-hidden border-t border-hairline bg-card-warm/45 p-4 backdrop-blur-xl md:px-5">
-          {activeMoment?.type === 'quiz' ? (
-            <div className="w-full">
-              <div className="flex items-center gap-2 text-brand"><BookOpenCheck size={15} /><span className="font-mono text-[9.5px] tracking-wide">课堂检查点</span></div>
-              <h3 className="mt-2 text-[14px] font-semibold leading-5 text-ink">{activeMoment.title}</h3>
-              <p className="mt-2 text-[12px] leading-5 text-ink-2">{activeMoment.prompt}</p>
-              <div className="mt-3 space-y-1.5">
-                {(activeMoment.options ?? []).map((option, index) => {
-                  const correct = index === activeMoment.answerIndex;
-                  const picked = quizPick === index;
-                  return <button key={option} type="button" disabled={quizPick !== null} onClick={() => answerMoment(index)} className={cn('flex w-full items-start gap-2 rounded-[10px] border px-2.5 py-2 text-left text-[11.5px] leading-4 transition active:scale-[0.98]', quizPick === null && 'border-hairline bg-paper/75 hover:border-brand/40', quizPick !== null && correct && 'border-brand/45 bg-brand-tint text-brand', picked && !correct && 'border-brand-danger/40 bg-brand-danger/5 text-brand-danger')}><span className="font-mono">{String.fromCharCode(65 + index)}</span><span>{option}</span>{quizPick !== null && correct && <Check size={12} className="ml-auto mt-0.5 shrink-0" />}</button>;
-                })}
-              </div>
-              {quizPick !== null && <p className="mt-2 text-[10.5px] leading-4 text-ink-muted">{quizPick === activeMoment.answerIndex ? '回答正确。' : '这里容易混淆。'}{activeMoment.explanation}</p>}
+                <aside className="flex h-[132px] min-h-[132px] w-full items-center overflow-hidden border-t border-hairline bg-card-warm/45 p-4 backdrop-blur-xl md:px-5">
+          <div className="flex w-full items-start gap-4">
+            <div className="flex w-[88px] shrink-0 flex-col items-center border-r border-hairline/70 pr-4">
+              <img src={`/mascot/xiaoyuanlong-${mascotFrame}.png`} alt="正在讲解的伴学助手" className="h-16 w-16 -scale-x-100 object-contain drop-shadow-[0_8px_14px_rgba(44,63,52,0.16)]" />
+              <span className="mt-1 whitespace-nowrap text-[10px] font-medium text-ink-muted">{audioPlaying ? '正在讲解' : '准备开讲'}</span>
             </div>
-          ) : activeMoment?.type === 'summary' ? (
-            <div className="flex w-full flex-col">
-              <div className="flex items-center gap-2 text-brand"><Lightbulb size={15} /><span className="font-mono text-[9.5px] tracking-wide">AI 总结</span></div>
-              <h3 className="mt-2 text-[14px] font-semibold leading-5 text-ink">{activeMoment.title}</h3>
-              <ul className="mt-3 space-y-2 text-[12px] leading-5 text-ink-2">{(activeMoment.points ?? []).map((point) => <li key={point} className="flex gap-2"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />{point}</li>)}</ul>
-              <div className="mt-auto pt-4"><p className="text-[10.5px] leading-4 text-ink-muted">{activeMoment.notePrompt || '需要把这一节的关键点记下来吗？'}</p><div className="mt-2 flex gap-2"><button type="button" onClick={onRequestNote} className="flex-1 rounded-[9px] bg-brand px-2 py-2 text-[11.5px] font-medium text-paper active:scale-[0.98]">记个笔记</button><button type="button" onClick={continueMoment} className="rounded-[9px] border border-hairline bg-paper/75 px-3 py-2 text-[11.5px] text-ink-2 active:scale-[0.98]">继续</button></div></div>
-            </div>
-          ) : (
-            <div className="flex w-full items-start gap-4">
-              <div className="flex w-[88px] shrink-0 flex-col items-center border-r border-hairline/70 pr-4">
-                <img src={`/mascot/xiaoyuanlong-${mascotFrame}.png`} alt="正在讲解的伴学助手" className="h-16 w-16 -scale-x-100 object-contain drop-shadow-[0_8px_14px_rgba(44,63,52,0.16)]" />
-                <span className="mt-1 whitespace-nowrap text-[10px] font-medium text-ink-muted">{audioPlaying ? '正在讲解' : '准备开讲'}</span>
-              </div>
-              <div ref={noteScrollRef} className="min-w-0 flex-1 overflow-y-auto pr-2 text-[13.5px] leading-6 text-ink-2" aria-live="off">{visibleNote ? <p className="whitespace-pre-wrap">{visibleNote}<span className={cn('ml-0.5 inline-block h-[1em] w-[2px] align-[-0.12em] bg-brand', audioPlaying && 'animate-pulse')} aria-hidden /></p> : <p className="pt-5 text-ink-muted">准备开始</p>}</div>
-            </div>
-          )}
+            <div ref={noteScrollRef} className="min-w-0 flex-1 overflow-y-auto pr-2 text-[13.5px] leading-6 text-ink-2" aria-live="off">{visibleNote ? <p className="whitespace-pre-wrap">{visibleNote}<span className={cn('ml-0.5 inline-block h-[1em] w-[2px] align-[-0.12em] bg-brand', audioPlaying && 'animate-pulse')} aria-hidden /></p> : <p className="pt-5 text-ink-muted">准备开始</p>}</div>
+          </div>
         </aside>
+
       </div>
+
+      {/* 课堂检查点 / AI 总结：居中弹窗，不占用底部讲稿栏 */}
+      {activeMoment && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#17231E]/35 p-5 backdrop-blur-[3px]" onClick={activeMoment.type === 'summary' ? continueMoment : undefined}>
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="moment-title"
+            className="w-full max-w-[440px] overflow-hidden rounded-[24px] border border-white/80 bg-[#FCFDF9]/95 shadow-[0_28px_80px_rgba(28,45,36,0.24)] backdrop-blur-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="flex items-start gap-3 border-b border-[#E7EAE4] px-5 pb-3.5 pt-5">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#E8F0EA] text-[#426A54]">
+                {activeMoment.type === 'quiz' ? <BookOpenCheck size={19} /> : <Lightbulb size={19} />}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="mb-0.5 font-mono text-[10px] font-semibold tracking-[0.16em] text-[#7A877F]">
+                  {activeMoment.type === 'quiz' ? '课堂检查点' : 'AI 总结'}
+                </p>
+                <h3 id="moment-title" className="text-[17px] font-semibold leading-snug text-[#24332B]">{activeMoment.title}</h3>
+              </div>
+              {activeMoment.type === 'summary' && (
+                <button type="button" onClick={continueMoment} aria-label="关闭" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#748078] transition hover:bg-[#EDF0EB] hover:text-[#24332B]">
+                  <X size={16} />
+                </button>
+              )}
+            </header>
+
+            <div className="max-h-[50dvh] overflow-y-auto px-5 py-4">
+              {activeMoment.type === 'quiz' ? (
+                <>
+                  <p className="text-[13px] leading-5 text-[#3D4E44]">{activeMoment.prompt}</p>
+                  <div className="mt-3 space-y-2">
+                    {(activeMoment.options ?? []).map((option, index) => {
+                      const correct = index === activeMoment.answerIndex;
+                      const picked = quizPick === index;
+                      return (
+                        <button key={option} type="button" disabled={quizPick !== null} onClick={() => answerMoment(index)} className={cn('flex w-full items-start gap-2.5 rounded-[12px] border px-3 py-2.5 text-left text-[13px] leading-5 transition active:scale-[0.98]', quizPick === null && 'border-[#DDE4DC] bg-white hover:border-[#AFC3B5]', quizPick !== null && correct && 'border-[#4E7860]/50 bg-[#4E7860]/10 text-[#2D5A3D]', picked && !correct && 'border-[#B0483B]/40 bg-[#B0483B]/5 text-[#B0483B]')}>
+                          <span className="font-mono text-[12px] text-[#7A877F]">{String.fromCharCode(65 + index)}</span>
+                          <span className="min-w-0 flex-1">{option}</span>
+                          {quizPick !== null && correct && <Check size={14} className="mt-0.5 shrink-0 text-[#4E7860]" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {quizPick !== null && (
+                    <p className="mt-3 rounded-[10px] bg-[#F3F8F5] px-3 py-2 text-[12px] leading-5 text-[#4E7860]">
+                      {quizPick === activeMoment.answerIndex ? '回答正确。' : '这里容易混淆。'}{activeMoment.explanation}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <ul className="space-y-2.5 text-[13px] leading-6 text-[#3D4E44]">
+                    {(activeMoment.points ?? []).map((point) => (
+                      <li key={point} className="flex gap-2.5"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[#4E7860]" />{point}</li>
+                    ))}
+                  </ul>
+                  <p className="mt-4 text-[12px] leading-5 text-[#7A877F]">{activeMoment.notePrompt || '需要把这一节的关键点记下来吗？'}</p>
+                  <div className="mt-3 flex gap-2">
+                    <button type="button" onClick={onRequestNote} className="flex-1 rounded-[10px] bg-[#426A54] px-3 py-2 text-[12.5px] font-medium text-white transition active:scale-[0.98]">记个笔记</button>
+                    <button type="button" onClick={continueMoment} className="rounded-[10px] border border-[#DDE4DC] bg-white px-4 py-2 text-[12.5px] text-[#3D4E44] transition active:scale-[0.98]">继续</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+
       <audio ref={audioRef} onPlay={() => { switchingSlideRef.current = false; setAudioPlaying(true); onPlaybackChange?.(true); }} onPause={() => { if (!switchingSlideRef.current) { setAudioPlaying(false); onPlaybackChange?.(false); } }} onTimeUpdate={syncNoteToAudio} onEnded={handleAudioEnded} className="hidden" preload="none" />
     </div>
   );
