@@ -3,7 +3,7 @@
  * 所有页面通过 pushSignal 上报学习行为；阿诊推理后：写画像(applyWriteback) + 发消息 + 涨置信度。
  * 消息/置信度/信号日志按学习者分桶，localStorage 持久化。
  */
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { toast } from 'sonner';
 import { useProfile } from '@/context/ProfileContext';
@@ -64,6 +64,10 @@ interface AgentContextValue {
   latestHint: string | null;
   /** 真实知识地图中最弱章节（用于快捷问题与 kp 参数） */
   weakest: { id: string; name: string; mastery: number } | null;
+  /** 动态快捷问题（面板 chips，后台定时刷新） */
+  suggestions: { id: string; text: string; askType: string }[];
+  /** 发起一条建议问题 */
+  askSuggestion: (text: string, askType: string) => void;
   confidence: Record<string, number>;
   /** 决策日志（评委透视用） */
   decisions: DecisionEntry[];
@@ -102,10 +106,12 @@ const save = (key: string, v: unknown) => {
 let seq = 0;
 const mid = () => `m-${Date.now().toString(36)}-${(seq++).toString(36)}`;
 const now = () => new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+const GREETING = '你好，我是阿诊（DIA-01 学情诊断 Agent）。我会一直看着你的答题、阅读和实操记录，随时更新你的画像——每一次调整都有证据，你也可以随时质疑我。';
 const clampConf = (n: number) => Math.max(10, Math.min(95, Math.round(n)));
 
 export function AgentProvider({ children }: { children: ReactNode }) {
-  const { currentLearner, currentLearnerId, applyWriteback } = useProfile();
+  const { currentLearner, currentLearnerId, applyWriteback, viewMode } = useProfile();
+  const isExpert = viewMode === 'expert';
 
   const [msgsAll, setMsgsAll] = useState<Record<string, AgentMessage[]>>(() => readJSON(K_MSGS, {}));
   const [sessions, setSessions] = useState<AgentDockSession[]>([]);
@@ -117,6 +123,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const [unread, setUnread] = useState(0);
   const [open, setOpenRaw] = useState(false);
   const [latestHint, setLatestHint] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<{ id: string; text: string; askType: string }[]>([]);
 
   /* 真实知识地图：最弱章节 / 知识点名称，替代旧静态知识库（数据结构·计算机网络等） */
   const learningMap = useLearningMap();
@@ -133,6 +140,22 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     return map;
   }, [learningMap.domains, learningMap.graphNodes]);
   const resolveKpName = (id: string) => kpNameById.get(id) ?? id;
+
+  /* 快捷问题建议：面板打开时后台异步定时刷新 */
+  const refreshSuggestions = useCallback(() => {
+    if (!currentLearnerId) return;
+    void api.askAgentSuggestions(currentLearnerId, weakest?.id)
+      .then(({ questions }) => {
+        if (questions && questions.length) setSuggestions(questions);
+      })
+      .catch(() => undefined);
+  }, [currentLearnerId, weakest?.id]);
+  useEffect(() => {
+    if (!open || isExpert) return undefined;
+    refreshSuggestions();
+    const id = window.setInterval(refreshSuggestions, 25000);
+    return () => window.clearInterval(id);
+  }, [open, isExpert, refreshSuggestions]);
 
   /* 测验缓冲（内存态，3 题一结算） */
   const quizBuf = useRef<Record<string, { n: number; right: number; hardRight: number }>>({});
@@ -427,6 +450,14 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       void agentAsk('free', text, '正在结合你的学情回答…');
     };
 
+    /** 动态建议问题：按建议原文发起（类型已知则透传，未知按自由提问） */
+    const askSuggestion = (text: string, askType: string) => {
+      const text2 = text.trim();
+      if (!text2) return;
+      void agentAsk(askType === 'free' ? 'free' : askType, text2, '正在结合你的学情回答…');
+      refreshSuggestions();
+    };
+
     const answerVerify = (msgId: string, qIndex: number, optIndex: number) => {
       setMsgsAll((prev) => {
         const list = [...(prev[lid] ?? [])];
@@ -479,19 +510,31 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       if (v) {
         setUnread(0);
         setLatestHint(null);
-        if (messages.length === 0) {
-          append({
-            id: mid(),
-            kind: 'agent',
-            text: `你好，我是阿诊（DIA-01 学情诊断 Agent）。我会一直看着你的答题、阅读和实操记录，随时更新你的画像——每一次调整都有证据，你也可以随时质疑我。`,
-            time: now(),
-          });
+        if (isExpert) {
+          if (messages.length === 0) append({ id: mid(), kind: 'agent', text: GREETING, time: now() });
+          return;
         }
+        /* 每次进入问诊都开新会话：清空当前对话并创建 agent-dock 会话 */
+        void (async () => {
+          try {
+            const created = await api.createAgentSession(lid);
+            setSessions((prev) => [created, ...prev.filter((s) => s.id !== created.id)]);
+            setCurrentSessionId(created.id);
+            setMsgsAll((prev) => ({ ...prev, [lid]: [] }));
+            append({ id: mid(), kind: 'agent', text: GREETING, time: now() });
+            refreshSuggestions();
+          } catch {
+            /* 建会话失败时保留现有会话 */
+          }
+        })();
       }
     };
 
+
     return {
       weakest,
+      suggestions,
+      askSuggestion,
       messages,
       unread,
       open,
@@ -509,7 +552,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       switchAgentSession,
       deleteAgentSession,
     };
-  }, [msgsAll, confAll, logAll, decAll, seen, unread, open, latestHint, currentLearner, currentLearnerId, applyWriteback, weakest, kpNameById, learningMap, sessions, currentSessionId]);
+  }, [msgsAll, confAll, logAll, decAll, seen, unread, open, latestHint, currentLearner, currentLearnerId, applyWriteback, weakest, kpNameById, learningMap, suggestions, refreshSuggestions, sessions, currentSessionId]);
 
   return <AgentContext.Provider value={value}>{children}</AgentContext.Provider>;
 }

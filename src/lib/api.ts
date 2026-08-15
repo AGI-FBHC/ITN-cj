@@ -937,6 +937,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ learnerId, askType, text, kpId, sessionId }),
     }),
+  askAgentSuggestions: (learnerId: string, kpId?: string) =>
+    requestAgent<{ questions: { id: string; text: string; askType: string }[] }>('/agent/ask/suggestions', {
+      method: 'POST',
+      body: JSON.stringify({ learnerId, kpId }),
+    }),
   createAgentSession: (learnerId: string) =>
     requestAgent<AgentDockSession>('/agent-sessions', {
       method: 'POST',

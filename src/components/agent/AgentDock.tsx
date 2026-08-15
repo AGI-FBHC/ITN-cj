@@ -167,7 +167,7 @@ function DecisionLogView() {
 }
 
 export default function AgentDock() {
-  const { messages, unread, open, setOpen, latestHint, ask, askFree, answerVerify, sessions, currentSessionId, createAgentSession, switchAgentSession, deleteAgentSession, weakest } = useAgent();
+  const { messages, unread, open, setOpen, latestHint, ask, askFree, answerVerify, sessions, currentSessionId, createAgentSession, switchAgentSession, deleteAgentSession, weakest, suggestions, askSuggestion } = useAgent();
   const [draft, setDraft] = useState('');
   const { currentLearner, viewMode } = useProfile();
   const isExpert = viewMode === 'expert';
@@ -190,11 +190,13 @@ export default function AgentDock() {
   }, [open, messages]);
 
   const weakestName = weakest?.name ?? '当前章节';
-  const chips: { label: string; kind: Parameters<typeof ask>[0] }[] = [
-    { label: `为什么盲区是「${weakestName}」？`, kind: 'why-blind' },
-    { label: '我下一步学什么？', kind: 'what-next' },
-    { label: `我的「${weakestName}」不止这个分`, kind: 'challenge-score' },
-  ];
+  const chips: { label: string; onClick: () => void }[] = suggestions.length
+    ? suggestions.map((s) => ({ label: s.text, onClick: () => askSuggestion(s.text, s.askType) }))
+    : [
+        { label: `为什么盲区是「${weakestName}」？`, onClick: () => ask('why-blind') },
+        { label: '我下一步学什么？', onClick: () => ask('what-next') },
+        { label: `我的「${weakestName}」不止这个分`, onClick: () => ask('challenge-score') },
+      ];
 
   return (
     <>
@@ -315,9 +317,9 @@ export default function AgentDock() {
                   <div className="flex flex-wrap gap-1.5">
                     {chips.map((c) => (
                       <button
-                        key={c.kind}
+                        key={c.label}
                         type="button"
-                        onClick={() => ask(c.kind)}
+                        onClick={c.onClick}
                         className="rounded-full border border-brand/30 bg-paper px-2.5 py-1 text-[11.5px] font-medium text-brand transition-all hover:bg-brand-tint"
                       >
                         {c.label}
