@@ -462,6 +462,8 @@ export default function CourseResourcePlayer() {
   const blockRefs = useRef<Record<string, HTMLElement | null>>({});
   const saveTimer = useRef<number | null>(null);
   const sessionSecondsRef = useRef(0);
+  /* 预取下一个资源：进入本资源后后台拉取并写入缓存，切换时秒开 */
+  const prefetchedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -514,6 +516,23 @@ export default function CourseResourcePlayer() {
   }, [resourceId]);
 
   const blocks = useMemo(() => resource ? blocksOf(resource) : [], [resource]);
+
+  useEffect(() => {
+    /* 预取下一个资源（按讲义/实操/测试顺序），后台拉取并写入缓存，切换时秒开 */
+    const sorted = [...chapterResources].sort((a, b) =>
+      ({ lecture: 0, practice: 1, quiz: 2 }[a.type] - ({ lecture: 0, practice: 1, quiz: 2 }[b.type])),
+    );
+    const index = sorted.findIndex((item) => item.id === resource?.id);
+    const next = index >= 0 ? sorted[index + 1] : undefined;
+    if (!resource || !next || next.id === resource.id) return;
+    if (prefetchedRef.current.has(next.id)) return;
+    prefetchedRef.current.add(next.id);
+    void api.getLearningResource(next.id)
+      .then((nextRes) => writeResourcePlayerCache(next.id, {
+        resource: nextRes, course, chapterResources, traces,
+      }))
+      .catch(() => undefined);
+  }, [resource, chapterResources, course, traces]);
   /* 渲染用自评值：乐观值叠加在服务端值之上，服务端回包后自动收敛 */
   const effectiveAssessments = useMemo(() => {
     if (!resource) return {};
@@ -577,7 +596,10 @@ export default function CourseResourcePlayer() {
       }).then((result) => {
         Object.keys(payload).forEach((key) => { delete pendingAssessRef.current[key]; });
         setSelfAssessments({ ...pendingAssessRef.current });
-        setResource(result.resource);
+        /* 只合并 state，避免整对象替换导致全部段落重渲染 */
+        setResource((current) => current
+          ? { ...current, state: result.resource.state, learned: Boolean(result.resource.state?.learned || result.resource.state?.completed) }
+          : result.resource);
         toast.success(Object.values(payload).some((v) => v === 1) ? '已记录：完全掌握' : '掌握程度已更新');
       }).catch(() => {
         Object.keys(payload).forEach((key) => { delete pendingAssessRef.current[key]; });

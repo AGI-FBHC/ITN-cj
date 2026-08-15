@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import Lenis from 'lenis';
 import gsap from 'gsap';
@@ -6,22 +6,24 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { Toaster } from '@/components/ui/sonner';
 import AppShell from '@/components/AppShell';
 import Home from '@/pages/Home';
-import Learn from '@/pages/Learn';
-import LearnUnit from '@/pages/LearnUnit';
-import CourseResourcePlayer from '@/pages/CourseResourcePlayer';
-import LearnerHome from '@/pages/LearnerHome';
-import MyNotes from '@/pages/MyNotes';
-import WrongBook from '@/pages/WrongBook';
-import MyProfile from '@/pages/MyProfile';
-import Onboarding from '@/pages/Onboarding';
-import Profiles from '@/pages/Profiles';
-import Agents from '@/pages/Agents';
-import Resources from '@/pages/Resources';
-import Report from '@/pages/Report';
-import Tutoring from '@/pages/Tutoring';
-import Knowledge from '@/pages/Knowledge';
 import Login from '@/pages/Login';
 import Welcome from '@/pages/Welcome';
+
+/* 路由级懒加载：重型页面（3D/课件/图表/PPT）按需分包，降低首屏主包体积 */
+const Learn = lazy(() => import('@/pages/Learn'));
+const LearnUnit = lazy(() => import('@/pages/LearnUnit'));
+const CourseResourcePlayer = lazy(() => import('@/pages/CourseResourcePlayer'));
+const LearnerHome = lazy(() => import('@/pages/LearnerHome'));
+const MyNotes = lazy(() => import('@/pages/MyNotes'));
+const WrongBook = lazy(() => import('@/pages/WrongBook'));
+const MyProfile = lazy(() => import('@/pages/MyProfile'));
+const Onboarding = lazy(() => import('@/pages/Onboarding'));
+const Profiles = lazy(() => import('@/pages/Profiles'));
+const Agents = lazy(() => import('@/pages/Agents'));
+const Resources = lazy(() => import('@/pages/Resources'));
+const Report = lazy(() => import('@/pages/Report'));
+const Tutoring = lazy(() => import('@/pages/Tutoring'));
+const Knowledge = lazy(() => import('@/pages/Knowledge'));
 import { useAuth } from '@/context/AuthContext';
 
 gsap.registerPlugin(ScrollTrigger);
@@ -69,6 +71,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <ScrollToTop />
+      <Suspense fallback={<div className="flex min-h-[70vh] items-center justify-center text-[13px] text-ink-muted">正在加载页面…</div>}>
       <Routes>
         <Route path="login" element={<Login />} />
         <Route element={<RequireAuth />}>
@@ -93,6 +96,7 @@ export default function App() {
         </Route>
         </Route>
       </Routes>
+      </Suspense>
       <Toaster position="top-right" richColors closeButton offset={72} />
     </BrowserRouter>
   );

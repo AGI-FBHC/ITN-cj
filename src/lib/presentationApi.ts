@@ -84,6 +84,32 @@ export type PresentationTeachingMoment = {
   notePrompt?: string;
 };
 
+/* ETag 条件 GET：轮询接口内容未变时服务端返回 304，直接复用上次响应 */
+const etagCache = new Map<string, { etag: string; data: unknown }>();
+async function requestEtag<T>(path: string): Promise<T> {
+  const headers = new Headers({ Accept: 'application/json' });
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const cached = etagCache.get(path);
+  if (cached) headers.set('If-None-Match', cached.etag);
+  const res = await fetch(path, { headers });
+  if (res.status === 304 && cached) return cached.data as T;
+  if (!res.ok) {
+    let message = `请求失败 (${res.status})`;
+    try {
+      const parsed = (await res.json()) as { detail?: string; message?: string };
+      message = parsed.detail ?? parsed.message ?? message;
+    } catch {
+      /* keep status */
+    }
+    throw new Error(message);
+  }
+  const data = (await res.json()) as T;
+  const etag = res.headers.get('ETag');
+  if (etag) etagCache.set(path, { etag, data });
+  return data;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
@@ -121,7 +147,7 @@ export const presentationApi = {
   getPresentation: (taskId: string) =>
     request<PresentationTask>(`/v1/presentations/${encodeURIComponent(taskId)}`),
   listPresentationSummaries: (limit = 20, excludeCourse = false) =>
-    request<{ tasks: PresentationTaskSummary[] }>(
+    requestEtag<{ tasks: PresentationTaskSummary[] }>(
       `/v1/presentations?summary=true&limit=${encodeURIComponent(limit)}${excludeCourse ? '&exclude_course=true' : ''}`,
     ),
   completePresentation: (taskId: string) =>

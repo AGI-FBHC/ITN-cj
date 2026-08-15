@@ -126,7 +126,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const [suggestions, setSuggestions] = useState<{ id: string; text: string; askType: string }[]>([]);
 
   /* 真实知识地图：最弱章节 / 知识点名称，替代旧静态知识库（数据结构·计算机网络等） */
-  const learningMap = useLearningMap();
+  const learningMap = useLearningMap({ deferNetwork: true });
   const weakest = useMemo<{ id: string; name: string; mastery: number } | null>(() => {
     const domains = learningMap.domains ?? [];
     if (!domains.length) return null;

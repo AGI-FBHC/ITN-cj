@@ -218,8 +218,9 @@ function shortChapterLabel(name: string): string {
     .replace('自动化深度研究智能体', '深度研究智能体');
 }
 
-export function useLearningMap(): LearningMapView {
+export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMapView {
   const { currentLearnerId, currentLearner } = useProfile();
+  const deferNetwork = options?.deferNetwork === true;
   const [loading, setLoading] = useState(true);
   const [resources, setResources] = useState<LearningResourceSummary[]>(() => readLearningMapCache(currentLearnerId)?.resources ?? []);
   const [tree, setTree] = useState<RagTree | null>(() => readLearningMapCache(currentLearnerId)?.tree ?? null);
@@ -297,6 +298,11 @@ export function useLearningMap(): LearningMapView {
        学习行为（lf-signal）会置脏并防抖刷新，保证实时性 */
     const cachedAnalytics = hasLearner ? readLearnerAnalytics(currentLearnerId) : null;
     if (cachedAnalytics) setAnalytics(cachedAnalytics);
+    if (deferNetwork) {
+      /* 全局轻量场景（阿诊等）：只回显缓存、不触发网络校准；进入地图/首页等页面会正常校准 */
+      setLoading(false);
+      return () => { cancelled = true; };
+    }
     const analyticsPromise = hasLearner
       ? (cachedAnalytics ? Promise.resolve(null) : api.getLearnerAnalyticsProfile().catch(() => null))
       : Promise.resolve(null);
@@ -315,7 +321,7 @@ export function useLearningMap(): LearningMapView {
       .catch(() => undefined)
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [currentLearnerId]);
+  }, [currentLearnerId, deferNetwork]);
 
   /* 学习行为实时失效：信号/资源变更/资源播放器状态变更 → analytics 置脏 + 共享防抖刷新；
      刷新完成后广播，本页所有实例同步更新 */

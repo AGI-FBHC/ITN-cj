@@ -742,6 +742,32 @@ async function requestDirect<T>(path: string, init: RequestInit = {}): Promise<T
   return (await res.json()) as T;
 }
 
+/* ETag 条件 GET：轮询接口内容未变时服务端返回 304，直接复用上次响应（省网络与解析） */
+const agentEtagCache = new Map<string, { etag: string; data: unknown }>();
+async function requestAgentEtag<T>(path: string): Promise<T> {
+  const headers = new Headers({ Accept: 'application/json' });
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const cached = agentEtagCache.get(path);
+  if (cached) headers.set('If-None-Match', cached.etag);
+  const res = await fetch(`/v1${path}`, { headers });
+  if (res.status === 304 && cached) return cached.data as T;
+  if (!res.ok) {
+    let message = `请求失败 (${res.status})`;
+    try {
+      const parsed = (await res.json()) as { detail?: string; message?: string };
+      message = parsed.detail ?? parsed.message ?? message;
+    } catch {
+      /* keep status */
+    }
+    throw new Error(message);
+  }
+  const data = (await res.json()) as T;
+  const etag = res.headers.get('ETag');
+  if (etag) agentEtagCache.set(path, { etag, data });
+  return data;
+}
+
 async function requestAgent<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
@@ -1140,7 +1166,7 @@ export const api = {
     if (params?.chapterId) query.set('chapterId', params.chapterId);
     if (params?.resourceType) query.set('resourceType', params.resourceType);
     const suffix = query.toString() ? `?${query.toString()}` : '';
-    return requestDirect<{ resources: LearningResourceSummary[] }>(`/v1/learning-resources${suffix}`);
+    return requestAgentEtag<{ resources: LearningResourceSummary[] }>(`/learning-resources${suffix}`);
   },
   createLearningLecture: (body: LearningResourceGenerateInput) =>
     requestDirect<LearningResource>('/v1/learning-resources/lectures', {
