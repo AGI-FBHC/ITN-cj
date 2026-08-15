@@ -10,6 +10,7 @@ import {
   Clock3,
   FileDown,
   Flame,
+  History,
   Route,
   Sparkles,
   Target,
@@ -20,8 +21,12 @@ import SectionHeader from '@/components/SectionHeader';
 import { ReactECharts } from '@/components/ChartCard';
 import { useProfile } from '@/context/ProfileContext';
 import { learningResourcePath, useCourseLearning } from '@/hooks/useCourseLearning';
+import { useLearningMap } from '@/hooks/useLearningMap';
 import { api } from '@/lib/api';
-import type { LearnerAnalyticsProfile, LearningJournal, OnboardingKnowledgePoint } from '@/lib/api';
+import { CHAPTER_ABILITY_WEIGHTS, deriveAbilityScores } from '@/lib/abilityAdjust';
+import type { AbilityDimension } from '@/lib/abilityAdjust';
+import { cn } from '@/lib/utils';
+import type { LearnerAnalyticsProfile, LearnerGrowth, LearningJournal, OnboardingKnowledgePoint } from '@/lib/api';
 
 const resourceLabel = { lecture: '讲义', practice: '实操', quiz: '分阶题' } as const;
 
@@ -33,6 +38,36 @@ function localDateKey(daysAgo: number): string {
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
+
+const evidenceMeta: Record<string, { label: string; cls: string }> = {
+  focus: { label: '专注', cls: 'border-brand/30 bg-brand-tint text-brand' },
+  resource: { label: '资源', cls: 'border-ochre/40 bg-ochre-tint text-ochre' },
+  quiz: { label: '测评', cls: 'border-brand-amber/50 bg-brand-amber-tint text-ochre' },
+  chat: { label: '导学', cls: 'border-brand/30 bg-brand-tint text-brand' },
+  knowledge: { label: '画像', cls: 'border-hairline bg-paper-deep text-ink-muted' },
+};
+
+function evidenceTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(date);
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+/* 旧档案分 key → 当前六维 key 的兜底映射（与「我的画像」页一致） */
+const LEGACY_KP_IDS: Record<string, string> = {
+  'kp-ds': 'kp-plc',
+  'kp-co': 'kp-kinematics',
+  'kp-os': 'kp-sensor',
+  'kp-network': 'kp-vision',
+  'kp-db': 'kp-safety',
+  'kp-agent': 'kp-diagnosis',
+};
 
 function displayMinutes(minutes: number): string {
   if (minutes < 60) return `${minutes} 分钟`;
@@ -91,8 +126,10 @@ function weeklyOption(values: number[]) {
 export default function Report() {
   const { currentLearner, domainKnowledgePoints } = useProfile();
   const { loading: courseLoading, course, resources, nextResource, nextChapter, learnedCount, totalCount, progress } = useCourseLearning();
+  const learningMap = useLearningMap();
   const [analytics, setAnalytics] = useState<LearnerAnalyticsProfile | null>(null);
   const [journals, setJournals] = useState<LearningJournal[]>([]);
+  const [growth, setGrowth] = useState<LearnerGrowth | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [summarizing, setSummarizing] = useState(false);
@@ -102,11 +139,13 @@ export default function Report() {
     setError('');
     try {
       const dates = Array.from({ length: 7 }, (_, index) => localDateKey(index));
-      const [profile, ...recentJournals] = await Promise.all([
+      const [profile, learnerGrowth, ...recentJournals] = await Promise.all([
         api.getLearnerAnalyticsProfile(),
+        isUuid(currentLearner.id) ? api.getLearnerGrowth(currentLearner.id) : Promise.resolve(null),
         ...dates.map((date) => api.getLearningJournal(date)),
       ]);
       setAnalytics(profile);
+      setGrowth(learnerGrowth);
       setJournals(recentJournals);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '学情数据读取失败');
@@ -119,10 +158,21 @@ export default function Report() {
     void loadReport();
   }, [currentLearner.id, loadReport]);
 
-  const abilities = useMemo(() => domainKnowledgePoints.map((point) => {
-    const score = currentLearner.scores[point.id] ?? 50;
-    return { ...point, score };
-  }).sort((left, right) => left.score - right.score), [currentLearner.scores, domainKnowledgePoints]);
+  /* 六维能力 = 画像基线 + 学习证据（章节/知识点 进度×掌握度 加权），与「我的画像」页同口径 */
+  const normalizedScores = useMemo(() => {
+    const base = currentLearner.scores;
+    return domainKnowledgePoints.reduce((acc, point) => {
+      acc[point.id] = base[point.id] ?? base[LEGACY_KP_IDS[point.id] ?? ''] ?? 50;
+      return acc;
+    }, {} as Record<string, number>);
+  }, [currentLearner, domainKnowledgePoints]);
+
+  const abilityScores = useMemo(() => deriveAbilityScores(learningMap, normalizedScores), [learningMap, normalizedScores]);
+
+  const abilities = useMemo(() => domainKnowledgePoints.map((point) => ({
+    ...point,
+    score: abilityScores[point.id] ?? 50,
+  })).sort((left, right) => left.score - right.score), [abilityScores, domainKnowledgePoints]);
 
   const resourcesByChapter = useMemo(() => new Map((course?.chapters ?? []).map((chapter) => {
     const chapterResources = resources.filter((resource) => resource.chapterId === chapter.id);
@@ -138,7 +188,45 @@ export default function Report() {
 
   const accuracy = journalStats.questions ? Math.round(journalStats.correct / journalStats.questions * 100) : null;
   const overallMastery = Math.round((analytics?.mastery.overall ?? 0) * 100);
-  const weakest = abilities[0] ?? null;
+  /* 真实地图口径的最弱章节：优先有学习痕迹的，其次整体掌握度/进度最低 */
+  const weakestChapter = useMemo(() => {
+    const domains = learningMap.domains ?? [];
+    if (!domains.length) return null;
+    const active = domains.filter((domain) => (learningMap.mastery[domain.id] ?? 0) > 0 || (learningMap.chapterProgress[domain.id] ?? 0) > 0);
+    const pool = active.length ? active : domains;
+    return [...pool].sort((a, b) =>
+      (learningMap.mastery[a.id] ?? 0) - (learningMap.mastery[b.id] ?? 0)
+      || (learningMap.chapterProgress[a.id] ?? 0) - (learningMap.chapterProgress[b.id] ?? 0),
+    )[0] ?? null;
+  }, [learningMap]);
+
+  /* 最弱章节主要锻炼的六维（章节→能力权重映射） */
+  const weakestChapterDims = useMemo(() => {
+    if (!weakestChapter) return '';
+    const weights = CHAPTER_ABILITY_WEIGHTS[weakestChapter.id];
+    if (!weights) return '';
+    const names = (Object.entries(weights) as [AbilityDimension, number][])
+      .sort((a, b) => b[1] - a[1])
+      .map(([dim]) => domainKnowledgePoints.find((point) => point.id === dim)?.name ?? dim);
+    return names.length ? `该方向主要锻炼六维中的「${names.join('、')}」。` : '';
+  }, [weakestChapter, domainKnowledgePoints]);
+
+  const recentEvidence = useMemo(() => {
+    const journalEvidence = journals.flatMap((journal) => journal.timeline);
+    const profileEvidence = (growth?.events ?? []).map((event, index) => ({
+      id: `growth-${event.createdAt}-${index}`,
+      occurredAt: event.createdAt,
+      kind: 'knowledge',
+      title: event.title,
+      description: event.amount ? `成长能量 ${event.amount > 0 ? '+' : ''}${event.amount}` : '画像字段已保存到后端',
+      durationSeconds: null,
+      knowledgeName: null,
+      correctCount: null,
+      wrongCount: null,
+    }));
+    return [...journalEvidence, ...profileEvidence].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt));
+  }, [journals, growth]);
+
   const today = journals.find((journal) => journal.date === localDateKey(0)) ?? journals[0] ?? null;
 
   const generateSummary = async () => {
@@ -186,7 +274,7 @@ export default function Report() {
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { icon: Target, label: '实测综合掌握度', value: `${overallMastery}%`, note: analytics?.mastery.categories.length ? `${analytics.mastery.categories.length} 个知识分类形成证据` : '完成分阶题后开始累计', tone: 'text-brand' },
+          { icon: Target, label: '实测综合掌握度', value: `${overallMastery}%`, note: analytics?.mastery.categories.length ? `${analytics.mastery.categories.length} 个章节形成证据` : '完成分阶题后开始累计', tone: 'text-brand' },
           { icon: Clock3, label: '累计学习投入', value: displayMinutes(analytics?.stats.totalStudyMinutes ?? 0), note: `${analytics?.stats.totalDays ?? 0} 个真实学习日`, tone: 'text-brand' },
           { icon: Flame, label: '连续学习', value: `${analytics?.stats.streakDays ?? 0} 天`, note: '按后端每日学习会话统计', tone: 'text-ochre' },
           { icon: BarChart3, label: '近 7 天测评正确率', value: accuracy == null ? '暂无' : `${accuracy}%`, note: accuracy == null ? '尚无真实测评提交' : `${journalStats.correct}/${journalStats.questions} 题答对`, tone: 'text-brand' },
@@ -203,10 +291,10 @@ export default function Report() {
       </section>
 
       <section className="mt-12">
-        <SectionHeader en="DIAGNOSIS" title="六维能力画像" desc="能力分来自后端画像，只做展示，不设目标门槛。" />
+        <SectionHeader en="DIAGNOSIS" title="六维能力画像" desc="能力分 = 画像基线 + 学习证据（章节进度×掌握度加权），只做展示，不设目标门槛。" />
         <div className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
           <div className="lf-card p-5">
-            {domainKnowledgePoints.length ? <ReactECharts option={radarOption(domainKnowledgePoints, currentLearner.scores)} height={350} /> : <div className="py-20 text-center text-[13px] text-ink-muted">画像知识维度尚未建立</div>}
+            {domainKnowledgePoints.length ? <ReactECharts option={radarOption(domainKnowledgePoints, abilityScores)} height={350} /> : <div className="py-20 text-center text-[13px] text-ink-muted">画像知识维度尚未建立</div>}
           </div>
           <div className="lf-card divide-y divide-hairline overflow-hidden">
             {abilities.map((ability, index) => (
@@ -263,10 +351,20 @@ export default function Report() {
                 const count = resourcesByChapter.get(chapter.id) ?? { learned: 0, total: 0 };
                 const done = count.total > 0 && count.learned === count.total;
                 const active = nextChapter?.id === chapter.id;
+                const mastery = Math.round(learningMap.mastery[chapter.id] ?? 0);
+                const target = learningMap.nodeTargets?.[chapter.id]?.target ?? 0;
                 return (
                   <div key={chapter.id} className={`flex items-start gap-3 px-5 py-4 ${active ? 'bg-brand-tint/20' : ''}`}>
                     {done ? <CheckCircle2 size={19} className="mt-0.5 shrink-0 text-brand" /> : <CircleDashed size={19} className={active ? 'mt-0.5 shrink-0 text-ochre' : 'mt-0.5 shrink-0 text-ink-muted'} />}
-                    <div className="min-w-0 flex-1"><div className="text-[14px] font-semibold text-ink">{chapter.index}. {chapter.title}{active && <span className="ml-2 rounded-md bg-brand-amber-tint px-1.5 py-0.5 text-[9.5px] text-ochre">正在这里</span>}</div><p className="mt-1 text-[12.5px] leading-5 text-ink-muted">{chapter.summary}</p></div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[14px] font-semibold text-ink">{chapter.index}. {chapter.title}{active && <span className="ml-2 rounded-md bg-brand-amber-tint px-1.5 py-0.5 text-[9.5px] text-ochre">正在这里</span>}</div>
+                      <p className="mt-1 text-[12.5px] leading-5 text-ink-muted">{chapter.summary}</p>
+                      <div className="relative mt-2 h-1.5 overflow-hidden rounded-full bg-hairline">
+                        <div className="absolute inset-y-0 left-0 rounded-full bg-[#14B8A6]" style={{ width: `${Math.min(100, mastery)}%` }} />
+                        {target > 0 && <div className="absolute inset-y-0 w-[3px] rounded-full bg-[#155E9A]" style={{ left: `${Math.min(100, target)}%` }} />}
+                      </div>
+                      <div className="mt-1 font-mono text-[10.5px] text-ink-muted">掌握度 {mastery}%{target > 0 ? ` · 目标门槛 ${target}%` : ''}</div>
+                    </div>
                     <span className="shrink-0 font-mono text-[11px] text-ink-muted">{count.learned}/{count.total}</span>
                   </div>
                 );
@@ -274,16 +372,50 @@ export default function Report() {
             </div>
           </div>
         ) : <div className="lf-card p-7 text-center"><p className="text-[14px] text-ink-muted">当前账号还没有真实课程。</p><Link to="/learn" className="lf-btn-primary mt-4 inline-flex">去生成课程</Link></div>}
+
+        {/* 近 7 天真实学习记录：与画像页同一套证据源（每日学习会话 + 成长事件） */}
+        <div className="mt-4 lf-card p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <History size={16} className="text-brand" />
+            <span className="text-[15px] font-semibold text-ink">近 7 天真实学习记录</span>
+          </div>
+          {recentEvidence.length === 0 ? (
+            <p className="py-6 text-center text-[13px] text-ink-muted">近 7 天还没有学习记录。完成真实讲义、练习或导学后，记录会自动出现在这里。</p>
+          ) : (
+            <div className="grid gap-x-8 gap-y-4 lg:grid-cols-2">
+              {recentEvidence.slice(0, 12).map((ev) => {
+                const meta = evidenceMeta[ev.kind] ?? evidenceMeta.knowledge;
+                return (
+                  <div key={ev.id} className="relative border-l-2 border-hairline pl-4">
+                    <span className="absolute -left-[5px] top-1.5 h-2 w-2 rounded-full bg-brand" />
+                    <div className="flex items-center gap-2">
+                      <span className={cn('rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-medium', meta.cls)}>{meta.label}</span>
+                      <span className="font-mono text-[10.5px] text-ink-muted">{evidenceTime(ev.occurredAt)}</span>
+                    </div>
+                    <div className="mt-1 text-[13.5px] font-medium text-ink">{ev.title}</div>
+                    <div className="mt-0.5 text-[12px] leading-[18px] text-ink-muted">{ev.description}</div>
+                    {(ev.knowledgeName || ev.correctCount != null) && (
+                      <div className="mt-1.5 flex flex-wrap gap-1.5 font-mono text-[10.5px] text-ink-muted">
+                        {ev.knowledgeName && <span className="rounded-md bg-paper-deep px-1.5 py-0.5">{ev.knowledgeName}</span>}
+                        {ev.correctCount != null && <span className="rounded-md bg-paper-deep px-1.5 py-0.5">答对 {ev.correctCount} · 答错 {ev.wrongCount ?? 0}</span>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </section>
 
       <section className="mt-12">
-        <SectionHeader en="NEXT ACTION" title="下一步建议" desc="这不是预置 Agent 台词，而是根据当前最大能力差距和未完成资源即时计算。" />
+        <SectionHeader en="NEXT ACTION" title="下一步建议" desc="主线按真实地图最弱章节给出；六维能力只作佐证，不设目标。" />
         <div className="rounded-[16px] border border-brand/25 bg-brand-tint/35 p-6">
           <div className="flex items-start gap-4">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand text-paper"><Sparkles size={19} /></span>
             <div className="min-w-0 flex-1">
-              <div className="text-[15px] font-semibold text-ink">{weakest ? `优先补齐「${weakest.name}」` : '先完成一次真实学习'}</div>
-              <p className="mt-1 text-[13px] leading-6 text-ink-muted">{weakest ? `当前最弱的是「${weakest.name}」（${weakest.score} 分）。${nextResource ? `建议继续“${nextChapter?.title ?? nextResource.topic}”中的${resourceLabel[nextResource.type]}，完成后再用测评校准掌握度。` : '先生成对应章节的讲义与分阶题，形成可验证的学习证据。'}` : '画像维度尚未建立，先完成建档与课程生成。'}</p>
+              <div className="text-[15px] font-semibold text-ink">{weakestChapter ? `优先补齐「${weakestChapter.name}」` : '先完成一次真实学习'}</div>
+              <p className="mt-1 text-[13px] leading-6 text-ink-muted">{weakestChapter ? `当前最弱章节是「${weakestChapter.name}」（掌握度 ${Math.round(learningMap.mastery[weakestChapter.id] ?? 0)}% · 进度 ${Math.round(learningMap.chapterProgress[weakestChapter.id] ?? 0)}%）。${weakestChapterDims}${nextResource ? `建议继续“${nextChapter?.title ?? nextResource.topic}”中的${resourceLabel[nextResource.type]}，完成后再用测评校准掌握度。` : '先生成对应章节的讲义与分阶题，形成可验证的学习证据。'}` : '先完成一次真实学习，能力与画像数据会随证据累积。'}</p>
             </div>
             {nextResource ? <Link to={learningResourcePath(nextResource)} className="lf-btn-primary shrink-0 !px-4 !py-2 text-[12.5px]">继续学习 <ArrowRight size={14} /></Link> : <Link to="/learn" className="lf-btn-primary shrink-0 !px-4 !py-2 text-[12.5px]">进入课程 <ArrowRight size={14} /></Link>}
           </div>
