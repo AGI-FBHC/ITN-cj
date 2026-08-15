@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   ArrowRight,
@@ -341,7 +341,7 @@ export default function Report() {
 
       <section className="mt-12">
         <SectionHeader en="LEARNING PATH" title="真实课程学习路径" desc="章节状态由课程和资源完成记录计算；未生成资源的章节不会被标成已学完。" />
-        {course ? (
+        {course && (
           <div className="lf-card overflow-hidden">
             <div className="flex flex-wrap items-center gap-4 border-b border-hairline bg-brand-tint/25 px-5 py-4">
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand text-paper"><Route size={18} /></span>
@@ -373,7 +373,7 @@ export default function Report() {
               })}
             </div>
           </div>
-        ) : <div className="lf-card p-7 text-center"><p className="text-[14px] text-ink-muted">当前账号还没有真实课程。</p><Link to="/learn" className="lf-btn-primary mt-4 inline-flex">去生成课程</Link></div>}
+        )}
 
         {/* 近 7 天真实学习记录：与画像页同一套证据源（每日学习会话 + 成长事件） */}
         <div className="mt-4 lf-card p-5">
