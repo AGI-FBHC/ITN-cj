@@ -14,8 +14,8 @@ import type { PresentationTaskSummary } from '@/lib/presentationApi';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-// v4: 地图结构完全来自 RAG knowledge_category，旧版 overview 不再参与缓存。
-const CACHE_PREFIX = 'lf.learningMapCache:v4:';
+// v5: 资源改为全账号共用，旧 v4 缓存可能残留空资源列表，强制作废。
+const CACHE_PREFIX = 'lf.learningMapCache:v5:';
 const RESOURCE_CACHE_UPDATED_EVENT = 'lf:learning-map-resources-updated';
 const PRESENTATION_CACHE_UPDATED_EVENT = 'lf:learning-map-presentations-updated';
 
