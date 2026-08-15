@@ -283,6 +283,14 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
       setTree(cached.tree);
       if (cached.presentations) setPresentations(cached.presentations);
     }
+    /* analytics 缓存优先：新鲜（≤3min）直接首屏回显并跳过重复请求 */
+    const cachedAnalytics = hasLearner ? readLearnerAnalytics(currentLearnerId) : null;
+    if (cachedAnalytics) setAnalytics(cachedAnalytics);
+    if (deferNetwork) {
+      /* 全局轻量场景（阿诊等）：只回显缓存、不触发任何网络校准；进入地图/首页等页面会正常校准 */
+      setLoading(false);
+      return () => { cancelled = true; };
+    }
     // 缓存只用于首屏快速回显；资源可能在其他页面或后台被删除，必须始终用服务端列表校准。
     // 若校准失败才保留旧缓存，避免把已经删除的 resourceId 永久“复活”。
     const resourcesPromise = api.listLearningResources()
@@ -294,15 +302,7 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
     const presentationsPromise = presentationApi.listPresentationSummaries(100)
       .then((listed) => listed.tasks ?? [])
       .catch(() => cached?.presentations ?? [] as PresentationTaskSummary[]);
-    /* analytics 缓存优先：新鲜（≤3min）直接首屏回显并跳过重复请求；
-       学习行为（lf-signal）会置脏并防抖刷新，保证实时性 */
-    const cachedAnalytics = hasLearner ? readLearnerAnalytics(currentLearnerId) : null;
-    if (cachedAnalytics) setAnalytics(cachedAnalytics);
-    if (deferNetwork) {
-      /* 全局轻量场景（阿诊等）：只回显缓存、不触发网络校准；进入地图/首页等页面会正常校准 */
-      setLoading(false);
-      return () => { cancelled = true; };
-    }
+    /* 学习行为（lf-signal）会置脏并防抖刷新，保证实时性 */
     const analyticsPromise = hasLearner
       ? (cachedAnalytics ? Promise.resolve(null) : api.getLearnerAnalyticsProfile().catch(() => null))
       : Promise.resolve(null);

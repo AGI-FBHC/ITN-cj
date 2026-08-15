@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App.tsx';
 import RootErrorBoundary from '@/components/RootErrorBoundary';
+import BootGate from '@/components/BootGate';
 import { ensureStorageSchema } from '@/lib/storageGuard';
 import { AuthProvider } from '@/context/AuthContext';
 import { ProfileProvider } from '@/context/ProfileContext';
@@ -16,6 +17,7 @@ ensureStorageSchema();
 
 createRoot(document.getElementById('root')!).render(
   <RootErrorBoundary>
+  <BootGate>
   <AuthProvider>
   <ProfileProvider>
     <AgentProvider>
@@ -31,5 +33,6 @@ createRoot(document.getElementById('root')!).render(
     </AgentProvider>
   </ProfileProvider>
   </AuthProvider>
+  </BootGate>
   </RootErrorBoundary>,
 );
