@@ -59,11 +59,6 @@ function radarOption(kps: OnboardingKnowledgePoint[], scores: Record<string, num
       type: 'radar' as const,
       data: [
         {
-          value: kps.map((kp) => kp.targetLevel), name: '目标要求', symbol: 'none',
-          lineStyle: { color: '#E7B45A', width: 1.5, type: 'dashed' as const },
-          areaStyle: { color: 'rgba(231,180,90,0)' },
-        },
-        {
           value: kps.map((kp) => scores[kp.id] ?? 50), name: '当前画像', symbolSize: 4,
           lineStyle: { color: '#4E7860', width: 2.5 },
           itemStyle: { color: '#4E7860' }, areaStyle: { color: 'rgba(78,120,96,0.22)' },
@@ -126,8 +121,8 @@ export default function Report() {
 
   const abilities = useMemo(() => domainKnowledgePoints.map((point) => {
     const score = currentLearner.scores[point.id] ?? 50;
-    return { ...point, score, gap: Math.max(0, point.targetLevel - score) };
-  }).sort((left, right) => right.gap - left.gap), [currentLearner.scores, domainKnowledgePoints]);
+    return { ...point, score };
+  }).sort((left, right) => left.score - right.score), [currentLearner.scores, domainKnowledgePoints]);
 
   const resourcesByChapter = useMemo(() => new Map((course?.chapters ?? []).map((chapter) => {
     const chapterResources = resources.filter((resource) => resource.chapterId === chapter.id);
@@ -208,7 +203,7 @@ export default function Report() {
       </section>
 
       <section className="mt-12">
-        <SectionHeader en="DIAGNOSIS" title="知识盲区与目标差距" desc="雷达保留同事原来的画像表达；排序列表只使用当前后端画像分数和目标要求。" />
+        <SectionHeader en="DIAGNOSIS" title="六维能力画像" desc="能力分来自后端画像，只做展示，不设目标门槛。" />
         <div className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
           <div className="lf-card p-5">
             {domainKnowledgePoints.length ? <ReactECharts option={radarOption(domainKnowledgePoints, currentLearner.scores)} height={350} /> : <div className="py-20 text-center text-[13px] text-ink-muted">画像知识维度尚未建立</div>}
@@ -218,13 +213,11 @@ export default function Report() {
               <div key={ability.id} className="px-5 py-4">
                 <div className="flex items-center justify-between gap-3">
                   <span className="flex items-center gap-2 text-[14px] font-semibold text-ink"><span className="font-mono text-[10px] text-ink-muted">{String(index + 1).padStart(2, '0')}</span>{ability.name}</span>
-                  <span className="font-mono text-[11px] text-ink-muted">当前 {ability.score} · 目标 {ability.targetLevel}</span>
+                  <span className="font-mono text-[11px] text-ink-muted">当前 {ability.score} 分</span>
                 </div>
                 <div className="relative mt-3 h-2 overflow-hidden rounded-full bg-hairline">
-                  <div className="absolute inset-y-0 left-0 rounded-full bg-brand/25" style={{ width: `${Math.min(100, ability.targetLevel)}%` }} />
                   <div className="absolute inset-y-0 left-0 rounded-full bg-brand" style={{ width: `${Math.min(100, ability.score)}%` }} />
                 </div>
-                <p className="mt-2 text-[11.5px] text-ink-muted">{ability.gap ? `还需补齐 ${ability.gap} 分` : '已达到当前目标线'}</p>
               </div>
             ))}
           </div>
@@ -290,7 +283,7 @@ export default function Report() {
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand text-paper"><Sparkles size={19} /></span>
             <div className="min-w-0 flex-1">
               <div className="text-[15px] font-semibold text-ink">{weakest ? `优先补齐「${weakest.name}」` : '先完成一次真实学习'}</div>
-              <p className="mt-1 text-[13px] leading-6 text-ink-muted">{weakest ? `当前画像距目标还差 ${weakest.gap} 分。${nextResource ? `建议继续“${nextChapter?.title ?? nextResource.topic}”中的${resourceLabel[nextResource.type]}，完成后再用测评校准掌握度。` : '先生成对应章节的讲义与分阶题，形成可验证的学习证据。'}` : '画像维度尚未建立，先完成建档与课程生成。'}</p>
+              <p className="mt-1 text-[13px] leading-6 text-ink-muted">{weakest ? `当前最弱的是「${weakest.name}」（${weakest.score} 分）。${nextResource ? `建议继续“${nextChapter?.title ?? nextResource.topic}”中的${resourceLabel[nextResource.type]}，完成后再用测评校准掌握度。` : '先生成对应章节的讲义与分阶题，形成可验证的学习证据。'}` : '画像维度尚未建立，先完成建档与课程生成。'}</p>
             </div>
             {nextResource ? <Link to={learningResourcePath(nextResource)} className="lf-btn-primary shrink-0 !px-4 !py-2 text-[12.5px]">继续学习 <ArrowRight size={14} /></Link> : <Link to="/learn" className="lf-btn-primary shrink-0 !px-4 !py-2 text-[12.5px]">进入课程 <ArrowRight size={14} /></Link>}
           </div>

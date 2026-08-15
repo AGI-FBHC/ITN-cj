@@ -39,19 +39,11 @@ function radarOption(
       splitArea: { areaStyle: { color: ['rgba(253,252,249,0)', 'rgba(240,235,224,0.5)'] } },
       axisLine: { lineStyle: { color: '#DCE6DE' } },
     },
-    legend: { bottom: 0, icon: 'roundRect', itemWidth: 12, itemHeight: 8, data: ['当前能力', '目标要求'] },
+    legend: { bottom: 0, icon: 'roundRect', itemWidth: 12, itemHeight: 8, data: ['当前能力'] },
     series: [
       {
         type: 'radar' as const,
         data: [
-          {
-            value: kps.map((kp) => kp.targetLevel),
-            name: '目标要求',
-            symbol: 'none',
-            lineStyle: { color: '#E7B45A', width: 1.5, type: 'dashed' as const },
-            itemStyle: { color: '#E7B45A' },
-            areaStyle: { color: 'rgba(231, 180, 90,0)' },
-          },
           {
             value: kps.map((kp) => scores[kp.id] ?? 50),
             name: '当前能力',
@@ -430,7 +422,7 @@ export default function MyProfile() {
         {/* 右：雷达 + 时间线 */}
         <div className="space-y-5">
           <div className="lf-card p-5">
-            <div className="lf-mono-label mb-1 !text-[11px]">画像向量 · 当前 vs 目标</div>
+            <div className="lf-mono-label mb-1 !text-[11px]">画像向量 · 六维能力</div>
             <ReactECharts option={radarOption(kps, displayScores)} height={320} />
             <p className="mt-1 border-t border-hairline pt-2 text-[11px] leading-[16px] text-ink-muted">
               当前能力来自已保存画像；下方实测掌握度与诊断证据只统计后端已经记录的真实学习和测评行为。

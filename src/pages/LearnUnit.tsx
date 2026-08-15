@@ -457,7 +457,7 @@ function AdaptiveBanner({
     {
       icon: Brain,
       label: expert ? 'DIA-01 检测' : 'AI 检测',
-      text: `「${kpName}」当前 ${score} 分 / 目标 ${target}${isWeakest ? ' · 六维最弱' : gap >= 15 ? ` · 缺口 ${gap} 分` : ' · 基础扎实'}`,
+      text: `「${kpName}」当前 ${score} 分${isWeakest ? ' · 六维最弱' : gap >= 15 ? ' · 有提升空间' : ' · 基础扎实'}`,
       tone: weak ? 'amber' : 'green',
     },
     {
