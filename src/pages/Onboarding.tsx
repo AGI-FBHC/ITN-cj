@@ -158,6 +158,8 @@ export default function Onboarding() {
     setSelfLevels((prev) => Object.fromEntries(meta.knowledgePoints.map((kp) => [kp.id, prev[kp.id] ?? 2])));
   }, [meta, answers.length, baseQueue]);
   const [picked, setPicked] = useState<number | null>(null);
+  /** 记录选中序号属于哪道题：切题后旧选中不残留到下一题 */
+  const [pickedFor, setPickedFor] = useState<string | null>(null);
   /** 答错后待归因：记录挂起，归因（或跳过）后才正式提交，避免题卡提前跳题 */
   const [pendingWrong, setPendingWrong] = useState<AnswerRecord | null>(null);
   const pendingAttr = pendingWrong !== null;
@@ -206,6 +208,10 @@ export default function Onboarding() {
   const commitAnswer = async (rec: AnswerRecord) => {
     const nextAnswers = [...answers, rec];
     setAnswers(nextAnswers);
+    // 立即切题并清空选中状态（不等网络返回），防止旧序号残留到下一题
+    setPicked(null);
+    setPickedFor(null);
+    setPendingWrong(null);
     try {
       const response = await api.answerOnboarding({
         tag,
@@ -225,8 +231,6 @@ export default function Onboarding() {
     } catch {
       setAgentLine('诊断服务暂不可用，请稍后重试');
     }
-    setPicked(null);
-    setPendingWrong(null);
   };
 
   const answer = (optIndex: number | 'uncertain') => {
@@ -234,7 +238,10 @@ export default function Onboarding() {
     const q = current.q;
     const result: AnswerResult =
       optIndex === 'uncertain' ? 'uncertain' : optIndex === q.answerIndex ? 'correct' : 'wrong';
-    if (optIndex !== 'uncertain') setPicked(optIndex as number);
+    if (optIndex !== 'uncertain') {
+      setPicked(optIndex as number);
+      setPickedFor(q.id);
+    }
 
     const rec: AnswerRecord = { q, result, extra: current.extra, reason: current.reason };
     if (result === 'wrong') {
@@ -601,9 +608,9 @@ export default function Onboarding() {
                     <p className="text-[15px] font-medium leading-[24px] text-ink">{current.q.stem}</p>
                     <div className="mt-4 space-y-2">
                       {current.q.options.map((opt, i) => {
-                        const isPicked = picked === i;
+                        const isPicked = picked === i && pickedFor === current.q.id;
                         const isAnswer = i === current.q.answerIndex;
-                        const show = picked !== null || pendingAttr;
+                        const show = (picked !== null && pickedFor === current.q.id) || pendingAttr;
                         return (
                           <button
                             key={i}
