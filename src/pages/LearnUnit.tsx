@@ -7,7 +7,7 @@
  * - 检查点答错 → ARB-05 插降维块；作答/完课回写阿诊信号
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft,
@@ -1379,7 +1379,7 @@ export default function LearnUnit() {
     else startPlay(posRef.current.b, posRef.current.c);
   };
 
-  useEffect(() => () => { cancelRef.current?.(); tts.stop(); userAudioRef.current?.pause(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { cancelRef.current?.(); tts.stop(); userAudioRef.current?.pause(); setFocusMode(false); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---- 检查点 ---- */
   const answerCheckpoint = (b: Extract<CourseBlock, { kind: 'checkpoint' }>, idx: number, optIndex: number) => {
@@ -2057,6 +2057,8 @@ export default function LearnUnit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canAdvance, curIdx, playing]);
 
+  /* 旧知识库兜底拦截：无课件/最小知识点参数的裸 kpId 一律回地图，不再渲染静态旧内容 */
+  if (!pptTaskId && !topicId) return <Navigate to="/learn" replace />;
   if (topicId && unitLoading) {
     return <div className="mx-auto flex min-h-[58vh] max-w-[760px] items-center justify-center px-5"><div className="lf-card flex max-w-[460px] items-center gap-3 p-6"><Loader2 size={20} className="animate-spin text-brand" /><div><h1 className="text-[15px] font-semibold text-ink">正在准备这个最小知识点</h1><p className="mt-1 text-[12.5px] leading-5 text-ink-muted">后台正在结合你的画像、当前掌握度与真实来源生成独立学习内容。</p></div></div></div>;
   }
