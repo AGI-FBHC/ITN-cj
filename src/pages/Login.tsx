@@ -13,14 +13,10 @@ import {
   Mail,
   KeyRound,
   MessageSquareText,
-  Sparkles,
   UserRound,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import type { LoginMethod } from '@/context/AuthContext';
-import { useProfile } from '@/context/ProfileContext';
-import { startDemoTour } from '@/components/tour/DemoTour';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { BlossomBranch, Succulent } from '@/components/heal/Flora';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -31,14 +27,12 @@ type Tab = Extract<LoginMethod, 'sso' | 'sms'>;
 
 const TABS: { key: Tab; label: string; icon: typeof Building2 }[] = [
   { key: 'sso', label: '工号/邮箱', icon: Building2 },
-  { key: 'sms', label: '邮箱验证码', icon: Mail },
+  { key: 'sms', label: '邮箱登录', icon: Mail },
 ];
 
 export default function Login() {
   const navigate = useNavigate();
   const { loginRemote } = useAuth();
-  const { learners, setCurrentLearnerId, setViewMode } = useProfile();
-  const presets = learners.filter((l) => !l.custom);
 
   const [flipped, setFlipped] = useState(false);
   const [tab, setTab] = useState<Tab>('sso');
@@ -225,30 +219,9 @@ export default function Login() {
   };
 
   const inputClass = 'w-full rounded-[10px] border border-hairline bg-paper px-3.5 py-2.5 text-[14px] text-ink outline-none transition-colors focus:border-brand/50';
-  const loginAsPersona = (id: string) => {
-    const l = presets.find((p) => p.id === id);
-    if (!l) return;
-    setBusy(true);
-    doLogin('persona', `persona:${id}`, l.name, id).then(() => {
-      setCurrentLearnerId(id);
-      toast.success(`已以「${l.name}」登录`);
-    });
-  };
-
   const loginGuest = () => {
-    const demo = presets[0];
-    doLogin('guest', 'guest', '游客', demo.id).then(() => {
-      setCurrentLearnerId(demo.id);
+    doLogin('guest', 'guest', '游客').then(() => {
       toast('游客体验模式');
-      navigate('/me');
-    });
-  };
-
-  const enterJudge = () => {
-    doLogin('guest', 'judge', '评委演示').then(() => {
-      setViewMode('expert');
-      startDemoTour();
-      navigate('/');
     });
   };
   const primaryClass = 'lf-btn-primary w-full justify-center !py-2.5';
@@ -369,30 +342,9 @@ export default function Login() {
                 )}
 
                 <div className="mt-auto pt-5">
-                  <div className="flex items-center gap-3">
-                    <span className="h-px flex-1 bg-hairline" />
-                    <span className="text-[11px] text-ink-muted">或用演示画像快速进入</span>
-                    <span className="h-px flex-1 bg-hairline" />
-                  </div>
-                  <div className="mt-3.5 grid grid-cols-3 gap-2">
-                    {presets.map((l) => (
-                      <button key={l.id} type="button" disabled={busy} onClick={() => loginAsPersona(l.id)} className="group flex flex-col items-center gap-1.5 rounded-[12px] border border-hairline bg-paper px-2 py-3 transition-all hover:border-brand/45 hover:bg-brand-tint/40">
-                        <Avatar className="h-10 w-10 border border-hairline transition-transform group-hover:scale-105">
-                          <AvatarImage src={l.avatar} alt={l.name} />
-                          <AvatarFallback className="bg-brand-tint text-[12px] text-brand">{l.name.slice(0, 1)}</AvatarFallback>
-                        </Avatar>
-                        <span className="text-[12.5px] font-medium text-ink">{l.name}</span>
-                        <span className="text-[10.5px] leading-[14px] text-ink-muted">{l.tag}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <button type="button" onClick={loginGuest} className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-[10px] border border-hairline bg-paper py-2.5 text-[13px] font-medium text-ink-2 transition-all hover:border-brand/40 hover:text-ink">
+                  <button type="button" onClick={loginGuest} className="flex w-full items-center justify-center gap-1.5 rounded-[10px] border border-hairline bg-paper py-2.5 text-[13px] font-medium text-ink-2 transition-all hover:border-brand/40 hover:text-ink">
                     <UserRound size={14} />
                     游客体验
-                  </button>
-                  <button type="button" onClick={enterJudge} className="mt-3 flex w-full items-center justify-center gap-1.5 text-[12px] text-ink-muted transition-colors hover:text-brand">
-                    <Sparkles size={12} />
-                    评委 / 访客演示通道
                   </button>
                 </div>
 
