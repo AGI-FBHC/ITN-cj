@@ -498,6 +498,9 @@ export default function CourseResourcePlayer() {
   const sessionSecondsRef = useRef(0);
   /* 预取下一个资源：进入本资源后后台拉取并写入缓存，切换时秒开 */
   const prefetchedRef = useRef<Set<string>>(new Set());
+  /* 学习攒养分：打开资源 +3；每学一段 +1（每次会话上限 10 段） */
+  const sectionRewardRef = useRef(0);
+  const rewardedSectionRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -519,6 +522,21 @@ export default function CourseResourcePlayer() {
       setSessionSeconds(0);
       sessionSecondsRef.current = 0;
       setLoading(false);
+      /* 打开资源即攒养分（同一会话内每个资源只记一次） */
+      try {
+        const openKey = `lf.growthOpen:v1:${loaded.id}`;
+        if (!window.sessionStorage.getItem(openKey)) {
+          window.sessionStorage.setItem(openKey, '1');
+          const learnerId = isUuid(loaded.learnerId) ? loaded.learnerId! : currentLearnerId;
+          if (learnerId && isUuid(learnerId)) {
+            void api.recordLearnerGrowthEvent({
+              learnerId, eventType: 'focus-bonus', title: `开始学习《${loaded.title}》`, amount: 3,
+              metadata: { resourceId: loaded.id, source: 'resource-player' },
+            }).catch(() => undefined);
+            try { window.dispatchEvent(new CustomEvent('lf:growth-recorded', { detail: { learnerId } })); } catch { /* ignore */ }
+          }
+        }
+      } catch { /* ignore */ }
     };
 
     const cached = readResourcePlayerCache(resourceId);
@@ -651,6 +669,7 @@ export default function CourseResourcePlayer() {
       const id = visible.target.getAttribute('data-block-id');
       if (!id) return;
       setCurrentBlockId(id);
+      if (!rewardedSectionRef.current.has(id)) rewardSection(id);
       setVisited((current) => {
         const next = unique([...current, id]);
         saveProgress(id, next, completedSteps, elapsedBase + sessionSecondsRef.current);
@@ -670,6 +689,7 @@ export default function CourseResourcePlayer() {
 
   const goBlock = (id: string, continueSpeaking = false) => {
     setCurrentBlockId(id);
+    if (!rewardedSectionRef.current.has(id)) rewardSection(id);
     setVisited((current) => {
       const next = unique([...current, id]);
       saveProgress(id, next, completedSteps, elapsedBase + sessionSecondsRef.current);
@@ -837,6 +857,26 @@ export default function CourseResourcePlayer() {
   };
 
   /** 重新练习：清空本人对该资源的进度/作答/自评/掌握度（后端重置 + 清错题），回到第一段重新测评 */
+  /** 任何学习行为都攒养分（复用后端 focus-bonus 自定义奖励，≤25 分）并广播，园子即时刷新 */
+  const rewardGrowth = (title: string, amount: number) => {
+    const learnerId = resource?.learnerId ?? currentLearnerId;
+    if (!learnerId || !isUuid(learnerId)) return;
+    void api.recordLearnerGrowthEvent({
+      learnerId, eventType: 'focus-bonus', title, amount,
+      metadata: { resourceId: resource?.id, source: 'resource-player' },
+    }).catch(() => undefined);
+    try { window.dispatchEvent(new CustomEvent('lf:growth-recorded', { detail: { learnerId } })); } catch { /* ignore */ }
+  };
+
+  const rewardSection = (blockId: string) => {
+    if (rewardedSectionRef.current.has(blockId) || sectionRewardRef.current >= 10) return;
+    const block = blocks.find((item) => item.id === blockId);
+    if (!block || (block.kind !== 'lecture' && block.kind !== 'practice' && block.kind !== 'quiz')) return;
+    rewardedSectionRef.current.add(blockId);
+    sectionRewardRef.current += 1;
+    rewardGrowth(`学习了「${block.title}」`, 1);
+  };
+
   const restartPractice = async () => {
     if (!resource || restarting) return;
     setRestarting(true);
@@ -851,6 +891,9 @@ export default function CourseResourcePlayer() {
       sessionSecondsRef.current = 0;
       setSelfAssessments({});
       pendingAssessRef.current = {};
+      sectionRewardRef.current = 0;
+      rewardedSectionRef.current.clear();
+      try { window.sessionStorage.removeItem(`lf.growthOpen:v1:${resource.id}`); } catch { /* ignore */ }
       setWritebackStatus('idle');
       setCompleteConfirmOpen(false);
       const firstId = blocks[0]?.id ?? '';

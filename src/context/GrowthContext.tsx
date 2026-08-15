@@ -118,10 +118,13 @@ export function GrowthProvider({ children }: { children: ReactNode }) {
     };
     const onStateChanged = () => refreshGrowth();
     const onVisible = () => { if (!document.hidden) refreshGrowth(); };
+    const onGrowthRecorded = () => refreshGrowth();
     window.addEventListener('lf:learning-state-changed', onStateChanged);
+    window.addEventListener('lf:growth-recorded', onGrowthRecorded);
     document.addEventListener('visibilitychange', onVisible);
     return () => {
       window.removeEventListener('lf:learning-state-changed', onStateChanged);
+      window.removeEventListener('lf:growth-recorded', onGrowthRecorded);
       document.removeEventListener('visibilitychange', onVisible);
       if (timer !== null) window.clearTimeout(timer);
     };
