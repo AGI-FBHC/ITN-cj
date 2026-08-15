@@ -5,11 +5,11 @@ import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { Toaster } from '@/components/ui/sonner';
 import AppShell from '@/components/AppShell';
-import Home from '@/pages/Home';
 import Login from '@/pages/Login';
-import Welcome from '@/pages/Welcome';
 
 /* 路由级懒加载：重型页面（3D/课件/图表/PPT）按需分包，降低首屏主包体积 */
+const Home = lazy(() => import('@/pages/Home'));
+const Welcome = lazy(() => import('@/pages/Welcome'));
 const Learn = lazy(() => import('@/pages/Learn'));
 const LearnUnit = lazy(() => import('@/pages/LearnUnit'));
 const CourseResourcePlayer = lazy(() => import('@/pages/CourseResourcePlayer'));
