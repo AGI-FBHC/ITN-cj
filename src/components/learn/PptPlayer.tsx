@@ -68,12 +68,20 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
   const switchingSlideRef = useRef(false);
   const noteScrollRef = useRef<HTMLParagraphElement | null>(null);
   const triggeredMomentsRef = useRef(new Set<string>());
+  /* 页资源预取缓存：音频/幻灯片按 key 缓存 objectURL，翻页时免网络等待 */
+  const assetCacheRef = useRef<Map<string, string>>(new Map());
+  const assetInFlightRef = useRef<Set<string>>(new Set());
   currentRef.current = current;
   audioSrcRef.current = audioSrc;
 
   const slideCount = slides?.slideCount ?? 0;
 
-  useEffect(() => { triggeredMomentsRef.current.clear(); }, [taskId]);
+  useEffect(() => {
+    triggeredMomentsRef.current.clear();
+    assetCacheRef.current.forEach((url) => URL.revokeObjectURL(url));
+    assetCacheRef.current.clear();
+    assetInFlightRef.current.clear();
+  }, [taskId]);
 
   useEffect(() => {
     // 音频正在加载/播放时，不打断当前页；仅切页/重开时才真正清空
@@ -99,6 +107,42 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
     if (audio) audio.volume = volume;
   }, [volume]);
 
+  const assetKey = (kind: 'slides' | 'audio', index: number) => `${kind}:${index}:${modelProvider}:${qwenVoice}`;
+  const cacheAsset = (key: string, url: string) => {
+    const cache = assetCacheRef.current;
+    if (cache.size >= 6) {
+      const oldestKey = cache.keys().next().value;
+      if (oldestKey) {
+        const oldUrl = cache.get(oldestKey);
+        if (oldUrl) URL.revokeObjectURL(oldUrl);
+        cache.delete(oldestKey);
+      }
+    }
+    cache.set(key, url);
+  };
+  /** 预取相邻页资源（当前页播放时提前合成/下载下一页，翻页即用） */
+  const prefetchAsset = (kind: 'slides' | 'audio', index: number) => {
+    if (index < 0 || index >= slideCount) return;
+    const key = assetKey(kind, index);
+    if (assetCacheRef.current.has(key) || assetInFlightRef.current.has(key)) return;
+    assetInFlightRef.current.add(key);
+    void fetchSlideAsset(taskId, index, kind, modelProvider, qwenVoice)
+      .then((blob) => {
+        if (!assetCacheRef.current.has(key)) cacheAsset(key, URL.createObjectURL(blob));
+      })
+      .catch(() => undefined)
+      .finally(() => assetInFlightRef.current.delete(key));
+  };
+  /* 进入当前页后立即预取相邻页：音频（提前触发 TTS 合成）+ 幻灯片图 */
+  useEffect(() => {
+    if (!slides || slides.slideCount === 0) return;
+    prefetchAsset('audio', current + 1);
+    prefetchAsset('audio', current - 1);
+    prefetchAsset('slides', current + 1);
+    prefetchAsset('slides', current - 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current, slides, modelProvider, qwenVoice]);
+
   const playAudio = async (index: number, retried = false) => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -107,12 +151,22 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
       return;
     }
     audioLoadingRef.current = index;
-    setAudioLoading(true);
-    onLoadingChange?.(true);
+    const cacheKey = assetKey('audio', index);
+    const cachedUrl = assetCacheRef.current.get(cacheKey);
+    /* 预取命中：不显示加载态、不打断底部栏状态，直接续播 */
+    if (!cachedUrl) {
+      setAudioLoading(true);
+      onLoadingChange?.(true);
+    }
     try {
-      if (!audioSrcRef.current) {
+      if (cachedUrl) {
+        setAudioSrc(cachedUrl);
+        audioSrcRef.current = cachedUrl;
+        audio.src = cachedUrl;
+      } else if (!audioSrcRef.current) {
         const blob = await fetchSlideAsset(taskId, index, 'audio', modelProvider, qwenVoice);
         const url = URL.createObjectURL(blob);
+        cacheAsset(cacheKey, url);
         setAudioSrc(url);
         audioSrcRef.current = url;
         audio.src = url;
@@ -148,8 +202,10 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
       setError(reason instanceof Error ? `音频加载失败：${reason.message}` : '音频暂不可用');
     } finally {
       audioLoadingRef.current = null;
-      setAudioLoading(false);
-      onLoadingChange?.(false);
+      if (!cachedUrl) {
+        setAudioLoading(false);
+        onLoadingChange?.(false);
+      }
     }
   };
 
@@ -174,6 +230,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
     const audio = audioRef.current;
     if (!audio) return;
     audio.pause();
+    assetCacheRef.current.delete(assetKey('audio', currentRef.current));
     if (audioSrcRef.current) {
       URL.revokeObjectURL(audioSrcRef.current);
       audioSrcRef.current = '';
@@ -316,7 +373,8 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
     setActiveMoment(null);
     setQuizPick(null);
     if (!switchingSlideRef.current) onPlaybackChange?.(false);
-    setAudioSrc((prev) => { if (prev) URL.revokeObjectURL(prev); return ''; });
+    /* 不主动 revoke：objectURL 由预取缓存统一管理（翻回上一页可直接复用） */
+    setAudioSrc('');
     audioSrcRef.current = '';
     // Start the next narration as soon as React has committed the new page.
     // This removes the old fixed 700 ms pause while keeping the playing state
@@ -327,16 +385,23 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
   useEffect(() => {
     if (!slides || slides.slideCount === 0) return;
     let cancelled = false;
+    const cacheKey = assetKey('slides', current);
+    const cachedUrl = assetCacheRef.current.get(cacheKey);
+    if (cachedUrl) {
+      setSlideSrc(cachedUrl);
+      return undefined;
+    }
     let objectUrl = '';
     fetchSlideAsset(taskId, current, 'slides')
       .then((blob) => {
         if (cancelled) return;
         objectUrl = URL.createObjectURL(blob);
-        setSlideSrc((prev) => { if (prev) URL.revokeObjectURL(prev); return objectUrl; });
+        cacheAsset(cacheKey, objectUrl);
+        setSlideSrc(objectUrl);
       })
       .catch(() => { if (!cancelled) setError('幻灯片图片加载失败'); });
-    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [taskId, current, slides]);
+    return () => { cancelled = true; if (objectUrl && !assetCacheRef.current.has(cacheKey)) URL.revokeObjectURL(objectUrl); };
+  }, [taskId, current, slides, modelProvider, qwenVoice]);
   const note = slides?.speakerNotes[current] ?? '';
   const visibleNote = note.slice(0, noteRevealCount ?? 0);
 
