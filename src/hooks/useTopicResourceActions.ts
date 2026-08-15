@@ -2,7 +2,7 @@
  * 知识点四类功能叶子（领学讲义/实操指南/分阶测试题/交互课件）的统一动作。
  * 与 2D 侧栏一致：同知识点同类型已有资源 → 直接打开；没有 → 生成。
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useProfile } from '@/context/ProfileContext';
@@ -41,6 +41,8 @@ export function useTopicResourceActions({
   const { currentLearner } = useProfile();
   const [generating, setGenerating] = useState<Set<ResourceForm>>(() => new Set());
   const [checkingPpt, setCheckingPpt] = useState(false);
+  /* 防抖：同一资源生成请求未返回前忽略重复点击（异步查任务阶段 generating 尚未置位） */
+  const openInFlightRef = useRef<Set<ResourceForm>>(new Set());
   const topicName = label;
 
   const watchPresentation = useCallback(async (taskId: string) => {
@@ -86,7 +88,8 @@ export function useTopicResourceActions({
       navigate(`/learn/resource/${found.id}`);
       return;
     }
-    if (generating.has(form)) return;
+    if (generating.has(form) || openInFlightRef.current.has(form)) return;
+    openInFlightRef.current.add(form);
     const meta = FORM_LABEL[form];
     const body = {
       topic: topicName,
@@ -122,6 +125,8 @@ export function useTopicResourceActions({
       void watchResourceTask(form, task.id);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '资源生成失败');
+    } finally {
+      openInFlightRef.current.delete(form);
     }
   }, [existingFor, generating, navigate, currentLearner.id, kpId, topicName, goalId, watchResourceTask]);
 

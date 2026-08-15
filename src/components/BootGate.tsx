@@ -19,12 +19,11 @@ const MIN_DISPLAY_MS = 1600;
 
 function isColdStart(): boolean {
   try {
+    /* 仅当本设备从未完成过冷启动时才准备一次（会话内由 sessionStorage 兜底），
+       避免“有登录态但缓存被清空”时刷新后仍判定冷启动 → 死循环刷新 */
+    if (window.localStorage.getItem(BOOT_SEEN_KEY) === '1') return false;
     const token = getToken();
-    if (!token) {
-      // 未登录：仅当本设备从未完成过冷启动时才准备一次，避免每次会话都等待
-      return window.localStorage.getItem(BOOT_SEEN_KEY) !== '1';
-    }
-    // 已登录但应用缓存被清空 → 信息不足，需要重建
+    if (!token) return true;
     const appKeys = Object.keys(window.localStorage).filter((key) => key.startsWith('lf.'));
     return appKeys.length === 0;
   } catch {

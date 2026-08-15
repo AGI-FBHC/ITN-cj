@@ -115,7 +115,7 @@ const stageMeta: Record<DecisionEntry['stage'], { label: string; Icon: typeof Ra
 /** 系统透视：决策日志视图（信号 → 推理 → 写入 全链路 + 置信度） */
 function DecisionLogView() {
   const { decisions, confidence } = useAgent();
-  const { domains } = useLearningMap();
+  const { domains } = useLearningMap({ deferNetwork: true });
   return (
     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
       {/* 六维置信度 */}
@@ -174,7 +174,7 @@ export default function AgentDock() {
   const scrollRef = useRef<HTMLDivElement>(null);
   /* 上课时降噪：课件页里学习者正在读正文，阿诊不主动弹泡打断——推断照常积累，靠角标提示 */
   const inCourse = useLocation().pathname.startsWith('/learn/');
-  const learningMap = useLearningMap();
+  const learningMap = useLearningMap({ deferNetwork: true });
   const kpNameById = useMemo(() => {
     const map = new Map<string, string>();
     (learningMap.domains ?? []).forEach((d) => map.set(d.id, d.name));
