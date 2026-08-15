@@ -237,13 +237,12 @@ export function useLearningMap(): LearningMapView {
   }, [currentLearnerId]);
 
   useEffect(() => {
-    if (!UUID_PATTERN.test(currentLearnerId)) {
-      setLoading(false);
-      return;
-    }
+    // 共用资源与知识地图不依赖 learner：游客/新账号尚未建档时也要能加载。
+    // 仅当没有 learnerId 时跳过个人 analytics 与缓存（那些按 learner 隔离）。
+    const hasLearner = UUID_PATTERN.test(currentLearnerId);
     let cancelled = false;
     setLoading(true);
-    const cached = readLearningMapCache(currentLearnerId);
+    const cached = hasLearner ? readLearningMapCache(currentLearnerId) : null;
     if (cached) {
       setResources(cached.resources);
       setTree(cached.tree);
@@ -259,13 +258,18 @@ export function useLearningMap(): LearningMapView {
     const presentationsPromise = presentationApi.listPresentationSummaries(100)
       .then((listed) => listed.tasks ?? [])
       .catch(() => cached?.presentations ?? [] as PresentationTaskSummary[]);
-    Promise.all([api.getRagTree('agent'), api.getLearnerAnalyticsProfile().catch(() => null), presentationsPromise, resourcesPromise])
+    const analyticsPromise = hasLearner
+      ? api.getLearnerAnalyticsProfile().catch(() => null)
+      : Promise.resolve(null);
+    Promise.all([api.getRagTree('agent'), analyticsPromise, presentationsPromise, resourcesPromise])
       .then(([latestTree, latestAnalytics, latestPresentations, latestResources]) => {
         if (!cancelled) setTree(latestTree);
         if (!cancelled) setAnalytics(latestAnalytics);
         if (!cancelled) setPresentations(latestPresentations);
         if (!cancelled) setResources(latestResources);
-        if (!cancelled) writeLearningMapCache(currentLearnerId, { resources: latestResources, tree: latestTree, presentations: latestPresentations });
+        if (hasLearner && !cancelled) {
+          writeLearningMapCache(currentLearnerId, { resources: latestResources, tree: latestTree, presentations: latestPresentations });
+        }
       })
       .catch(() => undefined)
       .finally(() => { if (!cancelled) setLoading(false); });

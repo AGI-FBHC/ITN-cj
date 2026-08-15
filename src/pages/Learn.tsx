@@ -218,9 +218,10 @@ export default function Learn() {
 
       {/* ============ 桌面端：地图（结构）+ 详情（操作）+ 速览（扫描），三向联动 ============ */}
       {map.loading && knowledgePoints.length === 0 && (
-        <div className="mt-8 flex items-center justify-center gap-2 rounded-[14px] border border-hairline bg-card-warm py-12 text-[13.5px] text-ink-muted">
+        <div className="mt-8 flex flex-col items-center justify-center gap-2 rounded-[14px] border border-hairline bg-card-warm px-6 py-12 text-center text-[13.5px] text-ink-muted">
           <Loader2 size={16} className="animate-spin" />
-          正在读取真实学习地图…
+          <span>正在读取真实学习地图，首次加载可能需要一些时间…</span>
+          <span className="text-[12px] text-ink-muted/70">若长时间没有响应，请尝试刷新网页。</span>
         </div>
       )}
       {!map.loading && knowledgePoints.length === 0 && (

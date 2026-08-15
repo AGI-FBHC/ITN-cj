@@ -117,7 +117,7 @@ export default function LearnerHome() {
     return parts.join(' ');
   })();
   const primaryLoading = learning.loading && !learning.course && learningMap.loading && !learningMap.activeKp;
-  const activeTitle = primaryLoading ? '正在读取真实学习进度…' : todayChapter ? todayChapter.name : learning.nextChapter ? `第 ${learning.nextChapter.index} 章 · ${learning.nextChapter.title}` : activeNode?.title ?? '开启你的第一课';
+  const activeTitle = primaryLoading ? '正在读取真实学习进度，首次加载可能需要一些时间…' : todayChapter ? todayChapter.name : learning.nextChapter ? `第 ${learning.nextChapter.index} 章 · ${learning.nextChapter.title}` : activeNode?.title ?? '开启你的第一课';
   const activePath = primaryLoading ? '/me' : todayChapter ? `/learn?kp=${todayChapter.id}` : learning.nextResource ? learningResourcePath(learning.nextResource) : activeNode ? `/learn/${activeNode.kpId}` : '/learn';
   const activeButton = primaryLoading ? '加载中…' : todayChapter ? `继续：${todayChapter.name}` : learning.nextResource ? `继续：${learning.nextResource.title}` : activeNode ? `继续：${activeNode.resourceRef ?? activeNode.title}` : '开始学习';
   const activeEst = todayChapter ? undefined : (learning.nextResource ? undefined : activeNode?.est);
