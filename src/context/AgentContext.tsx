@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
 import type { AgentDockSession } from '@/lib/api';
-import { knowledgePoints, getKnowledgePoint } from '@/data/knowledgePoints';
+import { useLearningMap } from '@/hooks/useLearningMap';
 import type { QuizQuestion } from '@/data/quizBank';
 import {
   describeSignal,
@@ -18,7 +18,7 @@ import {
   inferGuideComplete,
   inferTutoringFinished,
   inferNoteTaken,
-  pickVerifyQuestions,
+
   verifyResult,
 } from '@/agent/agentBrain';
 import type { Signal, Inference } from '@/agent/agentBrain';
@@ -62,6 +62,8 @@ interface AgentContextValue {
   setOpen: (v: boolean) => void;
   /** 最新一条未读的简短提示（FAB 气泡） */
   latestHint: string | null;
+  /** 真实知识地图中最弱章节（用于快捷问题与 kp 参数） */
+  weakest: { id: string; name: string; mastery: number } | null;
   confidence: Record<string, number>;
   /** 决策日志（评委透视用） */
   decisions: DecisionEntry[];
@@ -103,7 +105,7 @@ const now = () => new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: 
 const clampConf = (n: number) => Math.max(10, Math.min(95, Math.round(n)));
 
 export function AgentProvider({ children }: { children: ReactNode }) {
-  const { currentLearner, currentLearnerId, applyWriteback, weakestKp } = useProfile();
+  const { currentLearner, currentLearnerId, applyWriteback } = useProfile();
 
   const [msgsAll, setMsgsAll] = useState<Record<string, AgentMessage[]>>(() => readJSON(K_MSGS, {}));
   const [sessions, setSessions] = useState<AgentDockSession[]>([]);
@@ -115,6 +117,22 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const [unread, setUnread] = useState(0);
   const [open, setOpenRaw] = useState(false);
   const [latestHint, setLatestHint] = useState<string | null>(null);
+
+  /* 真实知识地图：最弱章节 / 知识点名称，替代旧静态知识库（数据结构·计算机网络等） */
+  const learningMap = useLearningMap();
+  const weakest = useMemo<{ id: string; name: string; mastery: number } | null>(() => {
+    const domains = learningMap.domains ?? [];
+    if (!domains.length) return null;
+    const top = [...domains].sort((a, b) => (learningMap.mastery[a.id] ?? 0) - (learningMap.mastery[b.id] ?? 0))[0];
+    return top ? { id: top.id, name: top.name, mastery: learningMap.mastery[top.id] ?? 0 } : null;
+  }, [learningMap.domains, learningMap.mastery]);
+  const kpNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    (learningMap.domains ?? []).forEach((d) => map.set(d.id, d.name));
+    (learningMap.graphNodes ?? []).forEach((n) => { if (n.label) map.set(n.id, n.label); });
+    return map;
+  }, [learningMap.domains, learningMap.graphNodes]);
+  const resolveKpName = (id: string) => kpNameById.get(id) ?? id;
 
   /* 测验缓冲（内存态，3 题一结算） */
   const quizBuf = useRef<Record<string, { n: number; right: number; hardRight: number }>>({});
@@ -161,7 +179,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     const messages = msgsAll[lid] ?? [];
     let lastSignal: Signal | null = null;
     const confidence: Record<string, number> = {};
-    knowledgePoints.forEach((kp) => {
+    (learningMap.domains ?? []).forEach((kp) => {
       confidence[kp.id] = confAll[lid]?.[kp.id] ?? 40;
     });
 
@@ -198,13 +216,13 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     /** 推断落地：写画像 + 发消息 + 置信度 */
     const commit = (kpId: string, inf: Inference) => {
       bumpConf(kpId, inf.confDelta);
-      const kpName = getKnowledgePoint(kpId).name;
+      const kpName = resolveKpName(kpId);
       record(
         'inference',
         `规则命中 → 「${kpName}」Δ${inf.delta > 0 ? '+' : ''}${inf.delta} · 置信度 +${inf.confDelta}`,
       );
       if (inf.delta !== 0 && inf.eventTitle) {
-        const from = currentLearner.scores[kpId] ?? 50;
+        const from = Math.round(learningMap.mastery[kpId] ?? learningMap.topicMastery[kpId] ?? 50);
         const to = Math.max(12, Math.min(96, from + inf.delta));
         applyWriteback(lid, [{ kpId, delta: inf.delta }], {
           week: '本次',
@@ -231,7 +249,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           const deep = await api.agentInfer(lid, sig as unknown as Record<string, unknown>, currentSessionId ?? undefined);
           const tail = deep.nextStep ? ` 下一步：${deep.nextStep}` : '';
           append({ id: mid(), kind: 'agent', text: `${deep.say}${tail}`, time: now() });
-          record('inference', `DIA-01 深度诊断 → 「${getKnowledgePoint(kpId).name}」Δ${deep.delta} · 置信度 +${deep.confDelta} · 证据 ${deep.evidence.length} 条`);
+          record('inference', `DIA-01 深度诊断 → 「${resolveKpName(kpId)}」Δ${deep.delta} · 置信度 +${deep.confDelta} · 证据 ${deep.evidence.length} 条`);
         } catch { /* 接口不可用时保留规则反馈 */ }
       })();
     };
@@ -261,7 +279,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       /* 记笔记：首条成句鼓励，后续静默涨置信度（不刷屏） */
       if (s.type === 'note-taken') {
         const firstKey = `${lid}:note-first:${s.kpId}`;
-        record('inference', `笔记回流 → 「${getKnowledgePoint(s.kpId).name}」置信度 +4 · 个人知识库 +1`);
+        record('inference', `笔记回流 → 「${resolveKpName(s.kpId)}」置信度 +4 · 个人知识库 +1`);
         if (!seen.includes(firstKey)) {
           setSeen((prev) => [...prev, firstKey].slice(-100));
           commit(s.kpId, inferNoteTaken(s.kpId));
@@ -273,7 +291,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
       /* 段落签到：元认知弱信号，只动置信度不动分数 */
       if (s.type === 'self-report') {
-        const kpName = getKnowledgePoint(s.kpId).name;
+        const kpName = resolveKpName(s.kpId);
         bumpConf(s.kpId, s.feel === 'ok' ? 3 : 2);
         record(
           'inference',
@@ -358,7 +376,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       try {
         await api.askAgentStream(
           lid, askType, userText,
-          askType === 'free' ? undefined : weakestKp.id,
+          askType === 'free' ? undefined : weakest?.id,
           currentSessionId ?? undefined,
           (event) => {
             if (event.type === 'reply_delta' && event.content) {
@@ -383,24 +401,15 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     };
 
     const ask = (kind: AskKind) => {
-      const weakName = weakestKp.name;
+      const weakName = weakest?.name ?? '当前章节';
+      const weakScore = Math.round(weakest?.mastery ?? 50);
       if (kind === 'why-blind') {
         void agentAsk('why-blind', `为什么说我的盲区是「${weakName}」？`, '正在对照你的画像、测验和近期信号分析盲区依据…');
       } else if (kind === 'what-next') {
         void agentAsk('what-next', '我下一步该学什么？', '正在结合画像与资源进度规划下一步…');
       } else {
-        /* challenge-score：讨价还价 → 验证测验 */
-        append({ id: mid(), kind: 'user', text: `我觉得我的「${weakName}」不止 ${currentLearner.scores[weakestKp.id] ?? 50} 分`, time: now() });
-        const qs = pickVerifyQuestions(weakestKp.id);
-        append(
-          {
-            id: mid(),
-            kind: 'agent',
-            text: `有可能——我的记录也只是估计。这样：我出 ${qs.length} 道「${weakName}」的题当场验证，全对我就上调，敢不敢？`,
-            time: now(),
-          },
-          { id: mid(), kind: 'verify', kpId: weakestKp.id, questions: qs, picks: qs.map(() => null), settled: false, time: now() },
-        );
+        /* challenge-score：真实学情核验（后端生成回复，不再用本地题库 mock） */
+        void agentAsk('challenge-score', `我觉得我的「${weakName}」不止 ${weakScore} 分，依据是什么？`, '正在核对你的画像与测验记录…');
       }
     };
 
@@ -432,10 +441,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         if (done) {
           const right = m.questions.filter((q, qi) => picks[qi] === q.answerIndex).length;
           const res = verifyResult(m.kpId, right);
-          const from = currentLearner.scores[m.kpId] ?? 50;
+          const from = Math.round(learningMap.mastery[m.kpId] ?? learningMap.topicMastery[m.kpId] ?? 50);
           record(
             'inference',
-            `学习者质疑评估 → 验证测验 ${right}/${m.questions.length} → 「${getKnowledgePoint(m.kpId).name}」Δ+${res.delta}`,
+            `学习者质疑评估 → 验证测验 ${right}/${m.questions.length} → 「${resolveKpName(m.kpId)}」Δ+${res.delta}`,
           );
           if (res.delta > 0) {
             applyWriteback(lid, [{ kpId: m.kpId, delta: res.delta }], {
@@ -445,7 +454,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
             });
             record(
               'writeback',
-              `写入画像 「${getKnowledgePoint(m.kpId).name}」${from}→${Math.min(96, from + res.delta)} · 协商上调 · 变更时间线 +1`,
+              `写入画像 「${resolveKpName(m.kpId)}」${from}→${Math.min(96, from + res.delta)} · 协商上调 · 变更时间线 +1`,
             );
             list.push({
               id: mid(),
@@ -454,14 +463,15 @@ export function AgentProvider({ children }: { children: ReactNode }) {
               deltas: [{ kpId: m.kpId, from, to: Math.min(96, from + res.delta) }],
               time: now(),
             });
-            toast.success('协商成功', { description: `「${getKnowledgePoint(m.kpId).name}」+${res.delta} 分` });
+            toast.success('协商成功', { description: `「${resolveKpName(m.kpId)}」+${res.delta} 分` });
           } else {
             list.push({ id: mid(), kind: 'agent', text: res.say, time: now() });
           }
         }
         return { ...prev, [lid]: list };
       });
-      bumpConf(currentLearnerId ? weakestKp.id : weakestKp.id, 8);
+      const vMsg = (msgsAll[lid] ?? []).find((item) => item.id === msgId && item.kind === 'verify');
+      if (vMsg && vMsg.kind === 'verify') bumpConf(vMsg.kpId, 8);
     };
 
     const setOpen = (v: boolean) => {
@@ -481,6 +491,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     };
 
     return {
+      weakest,
       messages,
       unread,
       open,
@@ -498,7 +509,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       switchAgentSession,
       deleteAgentSession,
     };
-  }, [msgsAll, confAll, logAll, decAll, seen, unread, open, latestHint, currentLearner, currentLearnerId, applyWriteback, weakestKp, sessions, currentSessionId]);
+  }, [msgsAll, confAll, logAll, decAll, seen, unread, open, latestHint, currentLearner, currentLearnerId, applyWriteback, weakest, kpNameById, learningMap, sessions, currentSessionId]);
 
   return <AgentContext.Provider value={value}>{children}</AgentContext.Provider>;
 }

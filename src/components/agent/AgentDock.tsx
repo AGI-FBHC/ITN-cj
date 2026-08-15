@@ -2,19 +2,19 @@
  * AgentDock — 「阿诊」常驻化身（学习者模式全站可见）
  * FAB（未读角标 + 新推断冒泡）→ 对话面板：汇报流 / 证据问答 / 验证测验（讨价还价）
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Brain, X, Check, MessageCircleQuestion, Radio, GitBranch, Database, SendHorizonal, Plus, Trash2 } from 'lucide-react';
 import { useAgent } from '@/context/AgentContext';
 import type { AgentMessage, DecisionEntry } from '@/context/AgentContext';
 import { useProfile } from '@/context/ProfileContext';
-import { knowledgePoints, getKnowledgePoint } from '@/data/knowledgePoints';
+import { useLearningMap } from '@/hooks/useLearningMap';
 import { cn } from '@/lib/utils';
 
 const letters = ['A', 'B', 'C', 'D'];
 
-function Bubble({ m, onPick }: { m: AgentMessage; onPick: (msgId: string, q: number, o: number) => void }) {
+function Bubble({ m, onPick, kpName }: { m: AgentMessage; onPick: (msgId: string, q: number, o: number) => void; kpName: (id: string) => string }) {
   if (m.kind === 'user') {
     return (
       <div className="flex justify-end">
@@ -51,7 +51,7 @@ function Bubble({ m, onPick }: { m: AgentMessage; onPick: (msgId: string, q: num
               <div className="mt-2 flex flex-wrap gap-1.5 border-t border-hairline pt-2">
                 {m.deltas.map((d) => (
                   <span key={d.kpId} className="inline-flex items-center gap-1 rounded-md bg-paper-deep px-1.5 py-0.5 font-mono text-[10.5px]">
-                    {getKnowledgePoint(d.kpId).name}
+                    {kpName(d.kpId)}
                     <span className={d.to >= d.from ? 'text-brand-success' : 'text-brand-danger'}>
                       {d.from}→{d.to}
                     </span>
@@ -115,13 +115,14 @@ const stageMeta: Record<DecisionEntry['stage'], { label: string; Icon: typeof Ra
 /** 系统透视：决策日志视图（信号 → 推理 → 写入 全链路 + 置信度） */
 function DecisionLogView() {
   const { decisions, confidence } = useAgent();
+  const { domains } = useLearningMap();
   return (
-    <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
       {/* 六维置信度 */}
       <div>
         <div className="lf-mono-label mb-2 !text-[10px]">DIMENSION CONFIDENCE · 各维判断置信度</div>
         <div className="space-y-1.5">
-          {knowledgePoints.map((kp) => {
+          {domains.map((kp) => {
             const c = confidence[kp.id] ?? 40;
             return (
               <div key={kp.id} className="flex items-center gap-2">
@@ -166,13 +167,21 @@ function DecisionLogView() {
 }
 
 export default function AgentDock() {
-  const { messages, unread, open, setOpen, latestHint, ask, askFree, answerVerify, sessions, currentSessionId, createAgentSession, switchAgentSession, deleteAgentSession } = useAgent();
+  const { messages, unread, open, setOpen, latestHint, ask, askFree, answerVerify, sessions, currentSessionId, createAgentSession, switchAgentSession, deleteAgentSession, weakest } = useAgent();
   const [draft, setDraft] = useState('');
-  const { currentLearner, weakestKp, viewMode } = useProfile();
+  const { currentLearner, viewMode } = useProfile();
   const isExpert = viewMode === 'expert';
   const scrollRef = useRef<HTMLDivElement>(null);
   /* 上课时降噪：课件页里学习者正在读正文，阿诊不主动弹泡打断——推断照常积累，靠角标提示 */
   const inCourse = useLocation().pathname.startsWith('/learn/');
+  const learningMap = useLearningMap();
+  const kpNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    (learningMap.domains ?? []).forEach((d) => map.set(d.id, d.name));
+    (learningMap.graphNodes ?? []).forEach((n) => { if (n.label) map.set(n.id, n.label); });
+    return map;
+  }, [learningMap.domains, learningMap.graphNodes]);
+  const kpName = (id: string) => kpNameById.get(id) ?? id;
 
   useEffect(() => {
     if (!open) return;
@@ -180,15 +189,17 @@ export default function AgentDock() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [open, messages]);
 
+  const weakestName = weakest?.name ?? '当前章节';
   const chips: { label: string; kind: Parameters<typeof ask>[0] }[] = [
-    { label: `为什么盲区是「${weakestKp.name}」？`, kind: 'why-blind' },
+    { label: `为什么盲区是「${weakestName}」？`, kind: 'why-blind' },
     { label: '我下一步学什么？', kind: 'what-next' },
-    { label: `我的「${weakestKp.name}」不止这个分`, kind: 'challenge-score' },
+    { label: `我的「${weakestName}」不止这个分`, kind: 'challenge-score' },
   ];
 
   return (
     <>
       {/* ============ FAB ============ */}
+      {!open && (
       <div className="fixed bottom-24 right-4 z-50 flex flex-col items-end gap-2 md:bottom-6 md:right-6">
         {/* 新推断冒泡（学习者） */}
         <AnimatePresence>
@@ -227,18 +238,19 @@ export default function AgentDock() {
           )}
         </button>
       </div>
+      )}
 
       {/* ============ 面板 ============ */}
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: 24, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 24, scale: 0.97 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
             className={cn(
-              'fixed bottom-[168px] right-4 z-50 flex max-h-[min(560px,calc(100dvh-140px))] w-[min(400px,calc(100vw-32px))] flex-col overflow-hidden rounded-[18px] md:bottom-[88px] md:right-6',
-              isExpert ? 'border border-hairline bg-paper shadow-warm-lg' : 'lf-glass',
+              'fixed inset-y-0 right-0 z-50 flex h-dvh w-[min(440px,calc(100vw-20px))] flex-col overflow-hidden rounded-l-[20px] border-l shadow-warm-lg',
+              isExpert ? 'border-hairline bg-paper' : 'lf-glass border-brand/15',
             )}
           >
             {/* 头 */}
@@ -273,15 +285,24 @@ export default function AgentDock() {
                 )}
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              title="收起阿诊"
+              aria-label="收起阿诊"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-hairline bg-paper text-ink-2 transition hover:border-brand/40 hover:text-brand"
+            >
+              <X size={16} />
+            </button>
 
             {isExpert ? (
               <DecisionLogView />
             ) : (
               <>
                 {/* 消息流 */}
-                <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+                <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
                   {messages.map((m) => (
-                    <Bubble key={m.id} m={m} onPick={answerVerify} />
+                    <Bubble key={m.id} m={m} onPick={answerVerify} kpName={kpName} />
                   ))}
                 </div>
 
