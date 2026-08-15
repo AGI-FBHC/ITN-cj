@@ -27,6 +27,13 @@ import { CHAPTER_ABILITY_WEIGHTS, deriveAbilityScores } from '@/lib/abilityAdjus
 import type { AbilityDimension } from '@/lib/abilityAdjust';
 import { cn } from '@/lib/utils';
 import { learnMapPath } from '@/lib/learnNav';
+import {
+  readLearnerAnalytics,
+  writeLearnerAnalytics,
+  readLearnerJournal,
+  writeLearnerJournal,
+  bustLearnerJournal,
+} from '@/lib/dataCache';
 import type { LearnerAnalyticsProfile, LearnerGrowth, LearningJournal, OnboardingKnowledgePoint } from '@/lib/api';
 
 const resourceLabel = { lecture: '讲义', practice: '实操', quiz: '分阶题' } as const;
@@ -140,15 +147,28 @@ export default function Report() {
     setLoading(true);
     setError('');
     try {
+      const learnerId = currentLearner.id;
       const dates = Array.from({ length: 7 }, (_, index) => localDateKey(index));
-      const [profile, learnerGrowth, ...recentJournals] = await Promise.all([
-        api.getLearnerAnalyticsProfile(),
-        isUuid(currentLearner.id) ? api.getLearnerGrowth(currentLearner.id) : Promise.resolve(null),
-        ...dates.map((date) => api.getLearningJournal(date)),
+      const today = dates[0];
+      /* 缓存优先：新鲜 analytics/日记直接回显，只补缺失或过期的日期 */
+      const cachedAnalytics = isUuid(learnerId) ? readLearnerAnalytics(learnerId) : null;
+      if (cachedAnalytics) setAnalytics(cachedAnalytics);
+      const cachedJournals = dates.map((date) => (isUuid(learnerId) ? readLearnerJournal(learnerId, date, date === today) : null));
+      const hitJournals = cachedJournals.filter((journal): journal is LearningJournal => journal !== null);
+      if (hitJournals.length) setJournals(hitJournals);
+      const missingDates = dates.filter((_date, index) => !cachedJournals[index]);
+      const [profile, learnerGrowth, ...freshJournals] = await Promise.all([
+        cachedAnalytics ? Promise.resolve(null) : api.getLearnerAnalyticsProfile(),
+        isUuid(learnerId) ? api.getLearnerGrowth(learnerId) : Promise.resolve(null),
+        ...missingDates.map((date) => api.getLearningJournal(date)),
       ]);
-      setAnalytics(profile);
+      setAnalytics(profile ?? cachedAnalytics);
       setGrowth(learnerGrowth);
-      setJournals(recentJournals);
+      setJournals([...hitJournals, ...freshJournals]);
+      if (isUuid(learnerId)) {
+        if (profile) writeLearnerAnalytics(learnerId, profile);
+        freshJournals.forEach((journal) => writeLearnerJournal(learnerId, journal.date, journal));
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '学情数据读取失败');
     } finally {
@@ -159,6 +179,15 @@ export default function Report() {
   useEffect(() => {
     void loadReport();
   }, [currentLearner.id, loadReport]);
+
+  useEffect(() => {
+    const onSignal = () => {
+      if (!isUuid(currentLearner.id)) return;
+      bustLearnerJournal(currentLearner.id, localDateKey(0));
+    };
+    window.addEventListener('lf-signal', onSignal);
+    return () => window.removeEventListener('lf-signal', onSignal);
+  }, [currentLearner.id]);
 
   /* 六维能力 = 画像基线 + 学习证据（章节/知识点 进度×掌握度 加权），与「我的画像」页同口径 */
   const normalizedScores = useMemo(() => {
@@ -237,6 +266,7 @@ export default function Report() {
     try {
       const updated = await api.generateLearningJournalSummary(localDateKey(0));
       setJournals((previous) => [updated, ...previous.filter((journal) => journal.date !== updated.date)]);
+      if (isUuid(currentLearner.id)) writeLearnerJournal(currentLearner.id, updated.date, updated);
       toast.success('今日学习总结已生成');
     } catch (reason) {
       toast.error('总结生成失败', { description: reason instanceof Error ? reason.message : '请稍后再试' });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
 import type { LearnerAnalyticsProfile, JobTargetLevel, RagTree } from '@/lib/api';
@@ -10,6 +10,11 @@ import type { PathNode } from '@/data/reportData';
 import type { LearningResourceSummary } from '@/lib/api';
 import type { GeneratedResource } from '@/data/resources';
 import { presentationApi } from '@/lib/presentationApi';
+import {
+  readLearnerAnalytics,
+  writeLearnerAnalytics,
+  bustLearnerAnalytics,
+} from '@/lib/dataCache';
 import type { PresentationTaskSummary } from '@/lib/presentationApi';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -263,23 +268,58 @@ export function useLearningMap(): LearningMapView {
     const presentationsPromise = presentationApi.listPresentationSummaries(100)
       .then((listed) => listed.tasks ?? [])
       .catch(() => cached?.presentations ?? [] as PresentationTaskSummary[]);
+    /* analytics 缓存优先：新鲜（≤3min）直接首屏回显并跳过重复请求；
+       学习行为（lf-signal）会置脏并防抖刷新，保证实时性 */
+    const cachedAnalytics = hasLearner ? readLearnerAnalytics(currentLearnerId) : null;
+    if (cachedAnalytics) setAnalytics(cachedAnalytics);
     const analyticsPromise = hasLearner
-      ? api.getLearnerAnalyticsProfile().catch(() => null)
+      ? (cachedAnalytics ? Promise.resolve(null) : api.getLearnerAnalyticsProfile().catch(() => null))
       : Promise.resolve(null);
     Promise.all([api.getRagTree('agent'), analyticsPromise, presentationsPromise, resourcesPromise])
       .then(([latestTree, latestAnalytics, latestPresentations, latestResources]) => {
         if (!cancelled) setTree(latestTree);
-        if (!cancelled) setAnalytics(latestAnalytics);
+        /* 缓存命中时 latestAnalytics 为 null，保留缓存值；只有网络新值才写回缓存（避免续期） */
+        if (!cancelled) setAnalytics(latestAnalytics ?? cachedAnalytics);
         if (!cancelled) setPresentations(latestPresentations);
         if (!cancelled) setResources(latestResources);
         if (hasLearner && !cancelled) {
           writeLearningMapCache(currentLearnerId, { resources: latestResources, tree: latestTree, presentations: latestPresentations });
+          if (latestAnalytics) writeLearnerAnalytics(currentLearnerId, latestAnalytics);
         }
       })
       .catch(() => undefined)
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [currentLearnerId]);
+
+  /* 学习行为实时失效：答题/阅读/实操/自评等信号 → analytics 置脏并防抖刷新（合并高频信号） */
+  const analyticsTimerRef = useRef<number | null>(null);
+  const refreshAnalyticsSoon = useCallback(() => {
+    if (analyticsTimerRef.current !== null) window.clearTimeout(analyticsTimerRef.current);
+    analyticsTimerRef.current = window.setTimeout(() => {
+      analyticsTimerRef.current = null;
+      const learnerId = currentLearnerId;
+      if (!learnerId || !UUID_PATTERN.test(learnerId)) return;
+      void api.getLearnerAnalyticsProfile()
+        .then((fresh) => {
+          setAnalytics(fresh);
+          writeLearnerAnalytics(learnerId, fresh);
+        })
+        .catch(() => undefined);
+    }, 1500);
+  }, [currentLearnerId]);
+  useEffect(() => {
+    const onSignal = () => {
+      if (!currentLearnerId || !UUID_PATTERN.test(currentLearnerId)) return;
+      bustLearnerAnalytics(currentLearnerId);
+      refreshAnalyticsSoon();
+    };
+    window.addEventListener('lf-signal', onSignal);
+    return () => window.removeEventListener('lf-signal', onSignal);
+  }, [currentLearnerId, refreshAnalyticsSoon]);
+  useEffect(() => () => {
+    if (analyticsTimerRef.current !== null) window.clearTimeout(analyticsTimerRef.current);
+  }, []);
 
   return useMemo<LearningMapView>(() => {
     if (!tree) {

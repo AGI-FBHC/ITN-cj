@@ -11,6 +11,13 @@ import { useProfile } from '@/context/ProfileContext';
 import { useLearningMap } from '@/hooks/useLearningMap';
 import { deriveAbilityScores } from '@/lib/abilityAdjust';
 import { api } from '@/lib/api';
+import {
+  readLearnerAnalytics,
+  writeLearnerAnalytics,
+  readLearnerJournal,
+  writeLearnerJournal,
+  bustLearnerJournal,
+} from '@/lib/dataCache';
 import type { LearnerAnalyticsProfile, LearnerGrowth, LearningJournal, OnboardingKnowledgePoint } from '@/lib/api';
 import { weightedScore } from '@/components/profiles/profileMeta';
 import { ReactECharts } from '@/components/ChartCard';
@@ -109,15 +116,27 @@ export default function MyProfile() {
     setEvidenceLoading(true);
     setEvidenceError('');
     try {
+      const learnerId = currentLearner.id;
       const dates = Array.from({ length: 7 }, (_, index) => localDateKey(index));
-      const [profile, learnerGrowth, recentJournals] = await Promise.all([
-        api.getLearnerAnalyticsProfile(),
-        isUuid(currentLearner.id) ? api.getLearnerGrowth(currentLearner.id) : Promise.resolve(null),
-        Promise.all(dates.map((date) => api.getLearningJournal(date))),
+      const today = dates[0];
+      const cachedAnalytics = isUuid(learnerId) ? readLearnerAnalytics(learnerId) : null;
+      if (cachedAnalytics) setAnalytics(cachedAnalytics);
+      const cachedJournals = dates.map((date) => (isUuid(learnerId) ? readLearnerJournal(learnerId, date, date === today) : null));
+      const hitJournals = cachedJournals.filter((journal): journal is LearningJournal => journal !== null);
+      if (hitJournals.length) setJournals(hitJournals);
+      const missingDates = dates.filter((_date, index) => !cachedJournals[index]);
+      const [profile, learnerGrowth, freshJournals] = await Promise.all([
+        cachedAnalytics ? Promise.resolve(null) : api.getLearnerAnalyticsProfile(),
+        isUuid(learnerId) ? api.getLearnerGrowth(learnerId) : Promise.resolve(null),
+        Promise.all(missingDates.map((date) => api.getLearningJournal(date))),
       ]);
-      setAnalytics(profile);
+      setAnalytics(profile ?? cachedAnalytics);
       setGrowth(learnerGrowth);
-      setJournals(recentJournals);
+      setJournals([...hitJournals, ...freshJournals]);
+      if (isUuid(learnerId)) {
+        if (profile) writeLearnerAnalytics(learnerId, profile);
+        freshJournals.forEach((journal) => writeLearnerJournal(learnerId, journal.date, journal));
+      }
     } catch (reason) {
       setEvidenceError(reason instanceof Error ? reason.message : '学习证据读取失败');
     } finally {
@@ -128,6 +147,15 @@ export default function MyProfile() {
   useEffect(() => {
     void loadEvidence();
   }, [currentLearner.id, loadEvidence]);
+
+  useEffect(() => {
+    const onSignal = () => {
+      if (!isUuid(currentLearner.id)) return;
+      bustLearnerJournal(currentLearner.id, localDateKey(0));
+    };
+    window.addEventListener('lf-signal', onSignal);
+    return () => window.removeEventListener('lf-signal', onSignal);
+  }, [currentLearner.id]);
 
   const kps = domainKnowledgePoints;
 
