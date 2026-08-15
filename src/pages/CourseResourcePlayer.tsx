@@ -906,7 +906,7 @@ export default function CourseResourcePlayer() {
     };
     setMessages((current) => [...current, optimistic]);
     setQuestion('');
-    if (photo) setAskPhoto(null);
+    setAskPhoto(null);
     setAsking(true);
     /* 无课件任务：保留原有问答接口（图片退化为文本标记，不基于进度） */
     if (!chatPptTaskId) {
@@ -1267,7 +1267,7 @@ export default function CourseResourcePlayer() {
       <button type="button" disabled={asking} onClick={() => (listening === 'ask' ? stopNoteListening() : startNoteListening('ask'))} title={listening === 'ask' ? '再点一次取消（不发送）' : '语音提问 · 说完自动发送'} aria-label="语音提问" className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-all', listening === 'ask' ? 'animate-pulse border-brand-danger bg-brand-danger text-paper' : 'border-hairline bg-paper text-ink-2 hover:border-brand/40')}><Mic size={15} /></button>
       <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => { const f = event.target.files?.[0]; if (f) setAskPhoto({ name: f.name, url: URL.createObjectURL(f) }); event.target.value = ''; }} />
       <button type="button" disabled={asking} onClick={() => photoInputRef.current?.click()} title="拍：上传图片提问" aria-label="图片提问" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-hairline bg-paper text-ink-2 transition-all hover:border-brand/40 hover:text-brand"><ImagePlus size={15} /></button>
-      <textarea value={listening === 'ask' ? interim : question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void ask(); } }} placeholder={listening === 'ask' ? '正在听…' : askPhoto ? '这张图想问什么？（可不填）' : '输入问题，或点麦克风说'} readOnly={listening === 'ask'} className="max-h-28 min-h-10 flex-1 resize-none rounded-[11px] border border-hairline bg-paper px-3 py-2.5 text-[12.5px] outline-none focus:border-brand/45" />
+      <textarea value={listening === 'ask' ? interim : question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void ask(question, askPhoto); } }} placeholder={listening === 'ask' ? '正在听…' : askPhoto ? '这张图想问什么？（可不填）' : '输入问题，或点麦克风说'} readOnly={listening === 'ask'} className="max-h-28 min-h-10 flex-1 resize-none rounded-[11px] border border-hairline bg-paper px-3 py-2.5 text-[12.5px] outline-none focus:border-brand/45" />
       <button type="button" disabled={(!question.trim() && !askPhoto) || asking} onClick={() => void ask(question, askPhoto)} className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-brand text-paper disabled:opacity-40"><Send size={15} /></button>
     </div>
   </div></motion.aside></>}</AnimatePresence>
