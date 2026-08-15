@@ -67,6 +67,146 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
+/** HTML 转义，避免用户数据里的特殊字符破坏模板 */
+function esc(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/** 生成自包含 HTML 报告（内联样式，可离线打开/打印/转 Word） */
+function buildReportHtml(data: {
+  learnerName: string;
+  generatedAt: string;
+  overallMastery: number;
+  totalMinutes: number;
+  streakDays: number;
+  accuracy: number | null;
+  accuracyDetail: string;
+  abilities: { name: string; score: number }[];
+  weakestChapter: string | null;
+  weakestDetail: string;
+  courseTitle: string | null;
+  courseProgress: number;
+  chapters: { index: number; title: string; learned: number; total: number; mastery: number; target: number }[];
+  weeklyLabels: string[];
+  weeklyMinutes: number[];
+  journalStats: { questions: number; correct: number; durationMinutes: number; resources: number };
+  todaySummary: string | null;
+  quizzes: { name: string; type: string; score: string; time: string }[];
+  evidence: { label: string; time: string; title: string; description: string }[];
+}): string {
+  const card = (label: string, value: string, note: string) =>
+    `<div class="card"><div class="card-label">${esc(label)}</div><div class="card-value">${esc(value)}</div><div class="card-note">${esc(note)}</div></div>`;
+
+  const abilityRows = data.abilities.map((a) => `
+        <div class="row">
+          <div class="row-label">${esc(a.name)}</div>
+          <div class="bar"><div class="bar-fill" style="width:${Math.max(0, Math.min(100, a.score))}%"></div></div>
+          <div class="row-value">${esc(a.score)}</div>
+        </div>`).join('');
+
+  const chapterRows = data.chapters.map((c) => {
+    const pct = Math.max(0, Math.min(100, c.mastery));
+    const targetPct = Math.max(0, Math.min(100, c.target));
+    const done = c.total > 0 && c.learned === c.total ? ' ✓' : '';
+    return `
+        <div class="chapter">
+          <div class="chapter-head"><strong>${esc(c.index)}. ${esc(c.title)}${done}</strong><span>${esc(c.learned)}/${esc(c.total)} 资源 · 掌握 ${esc(c.mastery)}%${c.target > 0 ? ` · 目标门槛 ${esc(c.target)}%` : ''}</span></div>
+          <div class="bar"><div class="bar-fill" style="width:${pct}%"></div><div class="bar-threshold" style="left:${targetPct}%"></div></div>
+        </div>`;
+  }).join('');
+
+  const maxMinutes = Math.max(1, ...data.weeklyMinutes);
+  const weekBars = data.weeklyMinutes.map((m, i) => `
+        <div class="week-col"><div class="week-bar" style="height:${Math.max(2, Math.round((m / maxMinutes) * 120))}px"></div><div class="week-label">${esc(data.weeklyLabels[i] ?? '')}</div><div class="week-value">${esc(m)}</div></div>`).join('');
+
+  const quizRows = data.quizzes.map((q) => `
+        <div class="row"><span class="row-label">${esc(q.name)}</span><span class="row-note">${esc(q.type)} · ${esc(q.time)}</span><span class="row-value">${esc(q.score)}</span></div>`).join('');
+
+  const evidenceRows = data.evidence.map((e) => `
+        <div class="evidence"><span class="tag">${esc(e.label)}</span><span class="ev-time">${esc(e.time)}</span><div class="ev-title">${esc(e.title)}</div><div class="ev-desc">${esc(e.description)}</div></div>`).join('');
+
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>学习成长报告 · ${esc(data.learnerName)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #F4F2EB; color: #33403A; font-family: "PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif; }
+  .page { max-width: 860px; margin: 24px auto; background: #FFFFFF; border-radius: 16px; padding: 40px 48px; box-shadow: 0 10px 30px rgba(60,80,70,0.08); }
+  h1 { font-size: 26px; margin: 0 0 4px; color: #2E5C46; }
+  .sub { color: #7A877F; font-size: 13px; margin-bottom: 24px; }
+  h2 { font-size: 17px; margin: 28px 0 12px; color: #2E5C46; border-left: 4px solid #4E7860; padding-left: 10px; }
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .card { border: 1px solid #E3E8E1; border-radius: 12px; padding: 14px; background: #FBFCF9; }
+  .card-label { font-size: 11px; color: #7A877F; }
+  .card-value { font-size: 22px; font-weight: 700; margin: 6px 0 2px; color: #2E5C46; }
+  .card-note { font-size: 11px; color: #9AA49C; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 7px 0; border-bottom: 1px dashed #EDF0EB; font-size: 13px; }
+  .row-label { width: 150px; flex-shrink: 0; color: #44524B; }
+  .row-note { flex: 1; color: #8A958D; font-size: 11.5px; }
+  .row-value { width: 70px; text-align: right; font-weight: 600; color: #2E5C46; }
+  .bar { position: relative; flex: 1; height: 10px; border-radius: 6px; background: #EEF2EC; overflow: visible; }
+  .bar-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 6px; background: #4E7860; }
+  .bar-threshold { position: absolute; top: -2px; bottom: -2px; width: 3px; background: #155E9A; border-radius: 2px; }
+  .chapter { padding: 8px 0; border-bottom: 1px dashed #EDF0EB; }
+  .chapter-head { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; color: #44524B; }
+  .chapter-head span { font-size: 11.5px; color: #8A958D; }
+  .week { display: flex; align-items: flex-end; gap: 14px; height: 150px; padding-top: 10px; }
+  .week-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; }
+  .week-bar { width: 60%; border-radius: 6px 6px 0 0; background: #4E7860; }
+  .week-label { font-size: 10px; color: #8A958D; }
+  .week-value { font-size: 10.5px; color: #2E5C46; font-weight: 600; }
+  .summary { border: 1px solid #E3E8E1; background: #F7FAF6; border-radius: 12px; padding: 14px 16px; font-size: 13px; line-height: 1.8; color: #44524B; }
+  .evidence { border-left: 3px solid #4E7860; padding: 6px 0 6px 12px; margin-bottom: 10px; }
+  .tag { display: inline-block; border: 1px solid #C9D8CE; border-radius: 6px; padding: 1px 8px; font-size: 10.5px; color: #2E5C46; background: #F0F6F1; }
+  .ev-time { margin-left: 8px; font-size: 10.5px; color: #9AA49C; }
+  .ev-title { font-size: 13px; font-weight: 600; margin-top: 4px; color: #33403A; }
+  .ev-desc { font-size: 12px; color: #7A877F; margin-top: 2px; }
+  .footer { margin-top: 32px; padding-top: 14px; border-top: 1px solid #E3E8E1; font-size: 11px; color: #9AA49C; text-align: center; }
+  @media (max-width: 640px) { .page { padding: 20px 16px; } .cards { grid-template-columns: repeat(2, 1fr); } .row-label { width: 110px; } }
+  @media print { body { background: #fff; } .page { box-shadow: none; margin: 0; border-radius: 0; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>学习成长报告 · ${esc(data.learnerName)}</h1>
+  <div class="sub">生成时间：${esc(data.generatedAt)} · 数据来源：后端真实学习记录</div>
+
+  <h2>总体概览</h2>
+  <div class="cards">
+    ${card('实测综合掌握度', `${data.overallMastery}%`, '按真实学习证据计算')}
+    ${card('累计学习投入', data.totalMinutes >= 60 ? `${Math.floor(data.totalMinutes / 60)} 小时 ${data.totalMinutes % 60} 分` : `${data.totalMinutes} 分钟`, '按学习会话统计')}
+    ${card('连续学习', `${data.streakDays} 天`, '按每日学习会话统计')}
+    ${card('近 7 天测评正确率', data.accuracy == null ? '暂无' : `${data.accuracy}%`, data.accuracy == null ? '尚无真实测评提交' : data.accuracyDetail)}
+  </div>
+
+  ${data.weakestChapter ? `<h2>重点建议</h2><div class="summary">${esc(data.weakestDetail)}</div>` : ''}
+
+  ${data.abilities.length ? `<h2>六维能力画像</h2>${abilityRows}` : ''}
+
+  ${data.chapters.length ? `<h2>真实课程学习路径</h2>${chapterRows}` : ''}
+
+  <h2>近 7 天学习时长（分钟）</h2>
+  <div class="week">${weekBars}</div>
+  <div class="summary" style="margin-top:12px">近 7 天共作答 ${esc(data.journalStats.questions)} 题、答对 ${esc(data.journalStats.correct)} 题，学习 ${esc(data.journalStats.durationMinutes)} 分钟，记录资源 ${esc(data.journalStats.resources)} 项。${data.todaySummary ? `今日总结：${esc(data.todaySummary)}` : ''}</div>
+
+  ${data.quizzes.length ? `<h2>最近测评证据</h2>${quizRows}` : ''}
+
+  ${data.evidence.length ? `<h2>近 7 天真实学习记录</h2>${evidenceRows}` : ''}
+
+  <div class="footer">本报告由智训云枢 LearnForge 基于真实学习记录生成 · 仅用于个人学习复盘</div>
+</div>
+</body>
+</html>`;
+}
+
 /* 旧档案分 key → 当前六维 key 的兜底映射（与「我的画像」页一致） */
 const LEGACY_KP_IDS: Record<string, string> = {
   'kp-ds': 'kp-plc',
@@ -264,6 +404,82 @@ export default function Report() {
 
   const today = journals.find((journal) => journal.date === localDateKey(0)) ?? journals[0] ?? null;
 
+  const exportReport = () => {
+    const learnerName = currentLearner.name;
+    const abilitiesData = abilities.map((ability) => ({ name: ability.name, score: ability.score }));
+    const chapterData = (course?.chapters ?? []).map((chapter) => {
+      const count = resourcesByChapter.get(chapter.id) ?? { learned: 0, total: 0 };
+      return {
+        index: chapter.index,
+        title: chapter.title,
+        learned: count.learned,
+        total: count.total,
+        mastery: Math.round(learningMap.mastery[chapter.id] ?? 0),
+        target: learningMap.nodeTargets?.[chapter.id]?.target ?? 0,
+      };
+    });
+    const today = journals.find((journal) => journal.date === localDateKey(0)) ?? journals[0] ?? null;
+    const html = buildReportHtml({
+      learnerName,
+      generatedAt: new Date().toLocaleString('zh-CN', { hour12: false }),
+      overallMastery,
+      totalMinutes: Math.round((analytics?.stats.totalStudyMinutes ?? 0) / 60),
+      streakDays: analytics?.stats.streakDays ?? 0,
+      accuracy,
+      accuracyDetail: journalStats.questions ? `${journalStats.correct}/${journalStats.questions} 题答对` : '尚无真实测评提交',
+      abilities: abilitiesData,
+      weakestChapter: weakestChapter?.name ?? null,
+      weakestDetail: weakestChapter
+        ? `当前最弱章节是「${weakestChapter.name}」（掌握度 ${Math.round(learningMap.mastery[weakestChapter.id] ?? 0)}% · 进度 ${Math.round(learningMap.chapterProgress[weakestChapter.id] ?? 0)}%）。${weakestChapterDims}建议优先补齐该章节的资源与练习。`
+        : '',
+      courseTitle: course?.title ?? null,
+      courseProgress: progress,
+      chapters: chapterData,
+      weeklyLabels: Array.from({ length: 7 }, (_, index) => {
+        const date = new Date();
+        date.setDate(date.getDate() - (6 - index));
+        return `${date.getMonth() + 1}/${date.getDate()}`;
+      }),
+      weeklyMinutes: (analytics?.stats.weeklyMinutes ?? Array(7).fill(0)).map((m) => Math.round(Number(m) || 0)),
+      journalStats: {
+        questions: journalStats.questions,
+        correct: journalStats.correct,
+        durationMinutes: Math.round(journalStats.durationSeconds / 60),
+        resources: journalStats.resources,
+      },
+      todaySummary: today?.summary?.content ?? null,
+      quizzes: (analytics?.recentQuizzes ?? []).slice(0, 6).map((quiz) => ({
+        name: quiz.categoryName ?? '综合测评',
+        type: quiz.quizType,
+        score: quiz.score == null ? '—' : `${Math.round(quiz.score)}分`,
+        time: new Date(quiz.createdAt).toLocaleString('zh-CN', { hour12: false }),
+      })),
+      evidence: recentEvidence.slice(0, 10).map((ev) => {
+        const meta = evidenceMeta[ev.kind] ?? evidenceMeta.knowledge;
+        return {
+          label: meta.label,
+          time: evidenceTime(ev.occurredAt),
+          title: ev.title,
+          description: ev.description,
+        };
+      }),
+    });
+    try {
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `学习成长报告-${learnerName}-${localDateKey(0)}.html`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+      toast.success('报告已生成，正在下载', { description: 'HTML 报告可离线打开、打印或转 Word。' });
+    } catch {
+      toast.error('报告生成失败，请稍后重试');
+    }
+  };
+
   const generateSummary = async () => {
     if (summarizing) return;
     setSummarizing(true);
@@ -303,7 +519,7 @@ export default function Report() {
           <h1 className="font-serif text-[34px] font-bold text-ink">{currentLearner.name}的学习成长</h1>
           <p className="mt-2 max-w-[700px] text-[14px] leading-6 text-ink-muted">画像、测评、学习时长、课程进度与路径均来自后端已保存记录；没有证据的指标保持为空，不用演示曲线补位。</p>
         </div>
-        <button type="button" onClick={() => window.print()} className="lf-btn-ghost !px-4 !py-2 text-[13px]">
+        <button type="button" onClick={exportReport} className="lf-btn-ghost !px-4 !py-2 text-[13px]">
           <FileDown size={15} /> 导出 / 打印报告
         </button>
       </motion.header>

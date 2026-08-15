@@ -100,6 +100,33 @@ export function GrowthProvider({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, [currentLearnerId]);
 
+  /* 园子实时同步：资源播放器的答题/完成/重新练习直接上报成长事件但不经过 lf-signal，
+     且切回页面时也应刷新——监听状态变更与页面可见，防抖拉取最新养分/能量 */
+  useEffect(() => {
+    if (!UUID_PATTERN.test(currentLearnerId)) return undefined;
+    let timer: number | null = null;
+    const refreshGrowth = () => {
+      if (timer !== null) window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        timer = null;
+        const learnerId = currentLearnerId;
+        if (!learnerId || !UUID_PATTERN.test(learnerId)) return;
+        void api.getLearnerGrowth(learnerId)
+          .then((result) => { if (learnerId === currentLearnerId) setGrowth(result); })
+          .catch(() => undefined);
+      }, 1500);
+    };
+    const onStateChanged = () => refreshGrowth();
+    const onVisible = () => { if (!document.hidden) refreshGrowth(); };
+    window.addEventListener('lf:learning-state-changed', onStateChanged);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('lf:learning-state-changed', onStateChanged);
+      document.removeEventListener('visibilitychange', onVisible);
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [currentLearnerId]);
+
   /* 订阅信号总线 → 派生能量（解耦：AgentContext 只广播，不知道树的存在） */
   useEffect(() => {
     const onSignal = (e: Event) => {
