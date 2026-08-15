@@ -6,11 +6,11 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkCitationMarks from '@/lib/remarkCitationMarks';
 import {
-  ArrowLeft, ArrowRight, BookOpen, Bot, Check, CheckCircle2, ChevronLeft,
-  ChevronRight, Circle, Clock3, CloudRain, ExternalLink, FileText, Focus,
-  Gauge, Headphones, ListChecks, Loader2, MessageCircleQuestion, NotebookPen,
-  Pause, PenLine, Play, Presentation, RotateCcw, Send, ShieldAlert, ShieldCheck, Sparkles,
-  Star, Trees, TriangleAlert, Volume1, Volume2, VolumeX, Wrench, X,
+  ArrowLeft, ArrowRight, BookOpen, Bot, Camera, Check, CheckCircle2, ChevronLeft,
+  ChevronRight, Circle, Clock3, ExternalLink, FileText,
+  Gauge, Headphones, ListChecks, Loader2, MessageCircleQuestion, Mic, NotebookPen,
+  Pause, PenLine, Play, Plus, Presentation, RotateCcw, Send, ShieldAlert, ShieldCheck, Sparkles,
+  Star, Trash2, TriangleAlert, Volume1, Volume2, VolumeX, Wrench, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, streamAssistantTts } from '@/lib/api';
@@ -19,8 +19,9 @@ import type {
   Course, CourseChapter, LearningResource, LearningResourceMessage,
   LearningResourceProgress, LearningResourceSummary, LearningResourceTrace, TtsSpeed,
 } from '@/lib/api';
-import { useGrowth } from '@/context/GrowthContext';
-import { useAmbient } from '@/components/heal/useAmbient';
+import { useNotes } from '@/context/NotesContext';
+import { createPresentationChatSession, deletePresentationChatSession, getPresentationChatMessages, listPresentationChatSessions, presentationApi, streamPresentationChatText } from '@/lib/presentationApi';
+import type { PresentationChatSession } from '@/lib/presentationApi';
 import { cn } from '@/lib/utils';
 import { lectureMdComponents, slideMdComponents } from '@/components/resources/lecture-markdown';
 import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
@@ -194,6 +195,15 @@ function sourceIds(resource: LearningResource, citations: number[]) {
     map.set(Number(source.id ?? index + 1), String(source.id ?? index + 1));
   });
   return citations.map((id) => map.get(id)).filter((value): value is string => Boolean(value));
+}
+
+/* ---------- 语音识别（webkit 前缀非标准 API） ---------- */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getRecognizer(): (new () => any) | null {
+  if (typeof window === 'undefined') return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const w = window as any;
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
 function narrationText(block: LearningBlock): string {
@@ -453,10 +463,9 @@ export default function CourseResourcePlayer() {
   const { currentLearnerId } = useProfile();
   const { resourceId = '' } = useParams();
   const navigate = useNavigate();
-  const { focusMode, setFocusMode } = useGrowth();
+  const { addNote, notes } = useNotes();
   const narration = useResourceNarration(() => narrationFinishedRef.current());
   const narrationFinishedRef = useRef<() => void>(() => undefined);
-  const ambient = useAmbient();
   const [resource, setResource] = useState<LearningResource | null>(null);
   const [writebackStatus, setWritebackStatus] = useState<'idle' | 'syncing' | 'synced' | 'failed'>('idle');
   const [course, setCourse] = useState<Course | null>(null);
@@ -472,11 +481,23 @@ export default function CourseResourcePlayer() {
   const [sessionSeconds, setSessionSeconds] = useState(0);
   const [noteFor, setNoteFor] = useState<LearningBlock | null>(null);
   const [noteText, setNoteText] = useState('');
-  const [savingNote, setSavingNote] = useState(false);
+  const [noteImg, setNoteImg] = useState<{ name: string; url: string } | null>(null);
+  const noteImgInputRef = useRef<HTMLInputElement>(null);
+  /** 语音转写目标：note=笔记（转写填入待编辑，不自动保存） */
+  const [listening, setListening] = useState<null | 'note'>(null);
+  const [interim, setInterim] = useState('');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recRef = useRef<any>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [messages, setMessages] = useState<LearningResourceMessage[]>([]);
   const [question, setQuestion] = useState('');
   const [followUps, setFollowUps] = useState<string[]>([]);
+  const [chatSessions, setChatSessions] = useState<PresentationChatSession[]>([]);
+  const [chatSessionId, setChatSessionId] = useState('');
+  const [chatPptTaskId, setChatPptTaskId] = useState<string | null>(null);
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatReadyRef = useRef(false);
+  const chatAbortRef = useRef<AbortController | null>(null);
   const [asking, setAsking] = useState(false);
   const [speechSpeed, setSpeechSpeed] = useState<TtsSpeed>('normal');
   const [slideMode, setSlideMode] = useState(false);
@@ -684,8 +705,7 @@ export default function CourseResourcePlayer() {
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     if (assessTimer.current) window.clearTimeout(assessTimer.current);
     narration.stop();
-    setFocusMode(false);
-  }, [narration.stop, setFocusMode]);
+  }, [narration.stop]);
 
   const goBlock = (id: string, continueSpeaking = false) => {
     setCurrentBlockId(id);
@@ -748,37 +768,110 @@ export default function CourseResourcePlayer() {
     narration.setVolume(next);
   };
 
-  const toggleFocus = () => {
-    const next = !focusMode;
-    setFocusMode(next);
-    narration.stop();
-    if (!next) ambient.setKind('off');
+  const srAvailable = getRecognizer() !== null;
+
+  const stopNoteListening = () => {
+    try { recRef.current?.abort(); } catch { /* ignore */ }
+    recRef.current = null;
+    setListening(null);
+    setInterim('');
   };
 
-  const cycleAmbient = () => {
-    ambient.setKind(ambient.kind === 'off' ? 'rain' : ambient.kind === 'rain' ? 'forest' : 'off');
+  /** 语音记笔记：转写填进草稿，不自动保存——笔记要归档，得让人改完再存 */
+  const startNoteListening = () => {
+    const SR = getRecognizer();
+    if (!SR) {
+      toast('这个浏览器不支持语音输入', { description: '换 Chrome / Edge 试试，或直接打字' });
+      return;
+    }
+    /* 用 ref 判断是否正在听，不能用 state——闭包里的 state 是过期的 */
+    if (recRef.current) { stopNoteListening(); return; }
+    const rec = new SR();
+    recRef.current = rec;
+    rec.lang = 'zh-CN';
+    rec.interimResults = true;   // 实时预览：说到哪看到哪
+    rec.continuous = false;
+    /** 已被取消或替换掉的识别器，其回调一律作废 */
+    const isStale = () => recRef.current !== rec;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onresult = (e: any) => {
+      if (isStale()) return;
+      let finalText = '';
+      let partial = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const seg = e.results[i];
+        if (seg.isFinal) finalText += seg[0].transcript;
+        else partial += seg[0].transcript;
+      }
+      setInterim(partial);
+      if (!finalText) return;
+      recRef.current = null;
+      setListening(null);
+      setInterim('');
+      setNoteText((prev) => (prev ? `${prev} ${finalText}` : finalText));
+    };
+    rec.onerror = () => { if (!isStale()) stopNoteListening(); };
+    rec.onend = () => {
+      if (isStale()) return;
+      recRef.current = null;
+      setListening(null);
+      setInterim('');
+    };
+    setListening('note');
+    rec.start();
   };
 
-  const saveNote = async () => {
-    if (!resource || !noteFor || !noteText.trim()) return;
-    setSavingNote(true);
-    try {
-      await api.createNote({
-        title: noteFor.title.slice(0, 160), content: noteText.trim(), kpId: chapter?.id ?? resource.chapterId ?? undefined,
-        sourceKind: 'course', sourceType: 'course', sourceRef: `${resource.id}#${noteFor.id}`,
-        sourceContext: `${chapter?.title ?? resource.topic} · ${noteFor.title}`, kbRefs: sourceIds(resource, noteFor.citations),
-      });
-      toast.success('笔记已写入个人知识库');
-      setNoteFor(null); setNoteText('');
-    } catch (reason) { toast.error(reason instanceof Error ? reason.message : '笔记保存失败'); }
-    finally { setSavingNote(false); }
+  const closeNoteEditor = () => {
+    stopNoteListening();
+    setNoteFor(null);
+    setNoteText('');
+    setNoteImg(null);
+  };
+
+  const saveNoteFor = (block: LearningBlock) => {
+    if (!resource || !noteText.trim()) return;
+    stopNoteListening();
+    addNote({
+      kpId: chapter?.id ?? resource.chapterId ?? 'uncategorized',
+      text: `${noteText.trim()}${noteImg ? `\n【图片 · ${noteImg.name}】` : ''}`.trim(),
+      source: `${chapter?.title ?? resource.topic} · ${block.title}`,
+      sourceKind: 'course',
+      blockAnchor: `${resource.id}#${block.id}`,
+      kbRefs: sourceIds(resource, block.citations),
+    });
+    setNoteFor(null);
+    setNoteText('');
+    setNoteImg(null);
   };
 
   const openChat = async () => {
     setChatOpen(true);
-    if (!resource || messages.length) return;
+    if (!resource || chatReadyRef.current) return;
+    setChatLoading(true);
+    try {
+      /* 与交互导学打通：按知识点标题找到已完成 PPT 任务，复用同一套聊天会话 */
+      const listed = await presentationApi.listPresentationSummaries(50);
+      const match = (listed.tasks ?? [])
+        .filter((item) => item.status === 'completed' && (item.title === resource.topic || item.title.includes(resource.topic)))
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+      if (match) {
+        setChatPptTaskId(match.id);
+        const sessions = await listPresentationChatSessions(match.id);
+        setChatSessions(sessions);
+        const current = sessions.filter((item) => item.modelProvider === 'mimo')
+          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0]
+          ?? await createPresentationChatSession(match.id, 'mimo');
+        setChatSessionId(current.id);
+        const history = await getPresentationChatMessages(match.id, current.id);
+        setMessages(history.map((item) => ({ role: item.role, content: item.content, createdAt: item.createdAt })));
+        chatReadyRef.current = true;
+        return;
+      }
+    } catch { /* 会话初始化失败时退回传统问答 */ }
+    setChatPptTaskId(null);
     const result = await api.listLearningResourceMessages(resource.id).catch(() => ({ messages: [] }));
     setMessages(result.messages);
+    chatReadyRef.current = true;
   };
 
   const ask = async (text = question) => {
@@ -786,17 +879,107 @@ export default function CourseResourcePlayer() {
     if (!resource || !content || asking) return;
     const optimistic: LearningResourceMessage = { role: 'user', content, createdAt: new Date().toISOString() };
     setMessages((current) => [...current, optimistic]); setQuestion(''); setAsking(true);
+    /* 无课件任务：保留原有问答接口（不基于进度） */
+    if (!chatPptTaskId) {
+      try {
+        const result = await api.chatLearningResource(resource.id, {
+          message: content,
+          history: messages.slice(-12).map(({ role, content: itemContent }) => ({ role, content: itemContent })),
+          currentQuestionId: null,
+        });
+        setMessages((current) => [...current, { role: 'assistant', content: result.reply, createdAt: new Date().toISOString() }]);
+        setFollowUps(result.followUps ?? []);
+        void api.recordLearningEvent({ eventType: 'CHAT_INTERACTION', sourceType: 'CHAT', sourceId: resource.id, metadata: JSON.stringify({ courseId: resource.courseId, chapterId: resource.chapterId }) }).catch(() => undefined);
+      } catch (reason) { toast.error(reason instanceof Error ? reason.message : '提问失败'); }
+      finally { setAsking(false); }
+      return;
+    }
+    const taskId = chatPptTaskId;
+    let sessionId = chatSessionId;
+    const controller = new AbortController();
+    chatAbortRef.current?.abort();
+    chatAbortRef.current = controller;
+    let reply = '';
+    let failed = '';
     try {
-      const result = await api.chatLearningResource(resource.id, {
-        message: content,
-        history: messages.slice(-12).map(({ role, content: itemContent }) => ({ role, content: itemContent })),
-        currentQuestionId: blocks[currentIndex]?.kind === 'quiz' ? blocks[currentIndex].id : null,
-      });
-      setMessages((current) => [...current, { role: 'assistant', content: result.reply, createdAt: new Date().toISOString() }]);
-      setFollowUps(result.followUps ?? []);
-      void api.recordLearningEvent({ eventType: 'CHAT_INTERACTION', sourceType: 'CHAT', sourceId: resource.id, metadata: JSON.stringify({ courseId: resource.courseId, chapterId: resource.chapterId }) }).catch(() => undefined);
-    } catch (reason) { toast.error(reason instanceof Error ? reason.message : '提问失败'); }
-    finally { setAsking(false); }
+      if (!sessionId) {
+        const created = await createPresentationChatSession(taskId, 'mimo');
+        sessionId = created.id;
+        setChatSessionId(created.id);
+        setChatSessions((current) => [...current.filter((item) => item.id !== created.id), created]);
+      }
+      await streamPresentationChatText(taskId, [{ role: 'user', content }], 0, sessionId, 'mimo', (event) => {
+        if (event.type === 'chat_delta' && event.content) {
+          reply += event.content;
+          setMessages((current) => {
+            const next = [...current];
+            if (next.length && next[next.length - 1].role === 'assistant') {
+              next[next.length - 1] = { ...next[next.length - 1], content: reply };
+            } else {
+              next.push({ role: 'assistant', content: reply, createdAt: new Date().toISOString() });
+            }
+            return next;
+          });
+        } else if (event.type === 'refused') {
+          reply = event.banner || '这个问题暂时无法回答。';
+        } else if (event.type === 'chat_failed') {
+          failed = event.message || '回答生成失败，请稍后重试';
+        }
+      }, controller.signal);
+      if (!reply && failed) setMessages((current) => [...current, { role: 'assistant', content: failed, createdAt: new Date().toISOString() }]);
+    } catch (reason) {
+      const message = reason instanceof Error ? reason.message : '回答生成失败，请稍后重试';
+      setMessages((current) => [...current, { role: 'assistant', content: message, createdAt: new Date().toISOString() }]);
+    } finally {
+      setAsking(false);
+    }
+  };
+
+  const selectChatSession = async (sessionId: string) => {
+    if (!chatPptTaskId || !sessionId) return;
+    setChatSessionId(sessionId);
+    setChatLoading(true);
+    try {
+      const history = await getPresentationChatMessages(chatPptTaskId, sessionId);
+      setMessages(history.map((item) => ({ role: item.role, content: item.content, createdAt: item.createdAt })));
+      setFollowUps([]);
+    } catch (reason) { toast.error(reason instanceof Error ? reason.message : '会话记录加载失败'); }
+    finally { setChatLoading(false); }
+  };
+
+  const createChatSession = async () => {
+    if (!chatPptTaskId || chatLoading) return;
+    setChatLoading(true);
+    try {
+      const created = await createPresentationChatSession(chatPptTaskId, 'mimo');
+      setChatSessions((current) => [...current, created]);
+      setChatSessionId(created.id);
+      setMessages([]);
+      setFollowUps([]);
+    } catch (reason) { toast.error(reason instanceof Error ? reason.message : '新建会话失败'); }
+    finally { setChatLoading(false); }
+  };
+
+  const deleteChatSession = async () => {
+    if (!chatPptTaskId || !chatSessionId || chatLoading) return;
+    setChatLoading(true);
+    try {
+      await deletePresentationChatSession(chatPptTaskId, chatSessionId);
+      const remaining = chatSessions.filter((item) => item.id !== chatSessionId);
+      setChatSessions(remaining);
+      const next = remaining.filter((item) => item.modelProvider === 'mimo')
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
+      if (next) {
+        setChatSessionId(next.id);
+        const history = await getPresentationChatMessages(chatPptTaskId, next.id);
+        setMessages(history.map((item) => ({ role: item.role, content: item.content, createdAt: item.createdAt })));
+      } else {
+        setChatSessionId('');
+        setMessages([]);
+      }
+      setFollowUps([]);
+    } catch (reason) { toast.error(reason instanceof Error ? reason.message : '删除会话失败'); }
+    finally { setChatLoading(false); }
   };
 
   const unassessedCount = resource && resource.type !== 'quiz'
@@ -920,8 +1103,8 @@ export default function CourseResourcePlayer() {
   const resourceIndex = sortedResources.findIndex((item) => item.id === resource.id);
   const nextResource = resourceIndex >= 0 ? sortedResources[resourceIndex + 1] : undefined;
 
-  return <div className={cn('mx-auto max-w-[1260px] px-4 pb-40 pt-6 md:px-6', focusMode && 'max-w-[1040px]', (noteFor || chatOpen) && 'relative z-50')}>
-    {!focusMode && <div className="mb-5 flex flex-wrap items-center gap-2 text-[12px] text-ink-muted"><button type="button" onClick={() => { try { window.sessionStorage.setItem(`lf.knowledgeGraph3dReturn:v1:${currentLearnerId}`, 'breadcrumb'); } catch { /* ignore */ } navigate('/learn'); }} className="inline-flex items-center gap-1 hover:text-brand"><ArrowLeft size={13} />我的课程</button><ChevronRight size={12} />{resource.courseId && resource.chapterId ? <Link to={`/resources?courseId=${encodeURIComponent(resource.courseId)}&chapterId=${encodeURIComponent(resource.chapterId)}`} className="hover:text-brand">{chapter?.title ?? '章节资源'}</Link> : <span className="max-w-[260px] truncate text-ink-2">{resource.topic || '学习资源'}</span>}{resource.courseId && resource.chapterId ? <><ChevronRight size={12} /><span className="truncate text-ink-2">{resourceMeta[resource.type].label}</span></> : null}</div>}
+  return <div className={cn('mx-auto max-w-[1260px] px-4 pb-40 pt-6 md:px-6', chatOpen && 'relative z-50')}>
+    {<div className="mb-5 flex flex-wrap items-center gap-2 text-[12px] text-ink-muted"><button type="button" onClick={() => { try { window.sessionStorage.setItem(`lf.knowledgeGraph3dReturn:v1:${currentLearnerId}`, 'breadcrumb'); } catch { /* ignore */ } navigate('/learn'); }} className="inline-flex items-center gap-1 hover:text-brand"><ArrowLeft size={13} />我的课程</button><ChevronRight size={12} />{resource.courseId && resource.chapterId ? <Link to={`/resources?courseId=${encodeURIComponent(resource.courseId)}&chapterId=${encodeURIComponent(resource.chapterId)}`} className="hover:text-brand">{chapter?.title ?? '章节资源'}</Link> : <span className="max-w-[260px] truncate text-ink-2">{resource.topic || '学习资源'}</span>}{resource.courseId && resource.chapterId ? <><ChevronRight size={12} /><span className="truncate text-ink-2">{resourceMeta[resource.type].label}</span></> : null}</div>}
 
     <header className="relative overflow-hidden rounded-[20px] border border-brand/20 bg-gradient-to-br from-brand-tint/70 via-card-warm to-paper p-6 md:p-8">
       <div className="absolute -right-14 -top-16 h-44 w-44 rounded-full bg-brand/5 blur-2xl" />
@@ -931,11 +1114,11 @@ export default function CourseResourcePlayer() {
       </div>
     </header>
 
-    {!focusMode && sortedResources.length > 1 && <nav className="mt-4 flex gap-2 overflow-x-auto pb-1">{sortedResources.map((item) => { const Meta = resourceMeta[item.type]; return <Link key={item.id} to={`/learn/resource/${item.id}`} className={cn('flex shrink-0 items-center gap-2 rounded-[11px] border px-3.5 py-2 text-[12.5px] transition', item.id === resource.id ? 'border-brand bg-brand text-paper' : 'border-hairline bg-card-warm text-ink-2 hover:border-brand/40')}><Meta.Icon size={13} />{Meta.label}{item.learned && <Check size={12} />}</Link>; })}</nav>}
+    {sortedResources.length > 1 && <nav className="mt-4 flex gap-2 overflow-x-auto pb-1">{sortedResources.map((item) => { const Meta = resourceMeta[item.type]; return <Link key={item.id} to={`/learn/resource/${item.id}`} className={cn('flex shrink-0 items-center gap-2 rounded-[11px] border px-3.5 py-2 text-[12.5px] transition', item.id === resource.id ? 'border-brand bg-brand text-paper' : 'border-hairline bg-card-warm text-ink-2 hover:border-brand/40')}><Meta.Icon size={13} />{Meta.label}{item.learned && <Check size={12} />}</Link>; })}</nav>}
 
 
     <div className="mt-7 grid gap-7 lg:grid-cols-[250px_minmax(0,1fr)]">
-      {!focusMode && <aside className="min-w-0 self-start lg:sticky lg:top-[76px]"><div className="rounded-[16px] border border-hairline bg-card-warm p-3"><div className="px-2 pb-2"><div className="lf-mono-label">LEARNING PATH</div><div className="mt-1 text-[13px] font-semibold text-ink">本讲目录</div></div><div className="flex gap-1 overflow-x-auto pb-1 lg:block lg:h-[min(68vh,calc(100dvh_-_190px))] lg:space-y-1 lg:overflow-y-auto lg:overscroll-contain lg:pb-0 lg:pr-1.5">{blocks.map((block, index) => { const quizResult = resource.type === 'quiz' ? quizAnswers.get(block.id) : undefined; const done = resource.type === 'quiz' ? quizAnswers.has(block.id) : visited.includes(block.id) || resource.learned; const wrong = resource.type === 'quiz' && done && quizResult === false; return <button key={block.id} type="button" onClick={() => goBlock(block.id)} className={cn('flex w-[210px] shrink-0 items-start gap-2.5 rounded-[10px] px-2.5 py-2.5 text-left transition lg:w-full', block.id === currentBlockId ? 'bg-brand-tint text-brand' : 'text-ink-2 hover:bg-paper-deep')}><span className={cn('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border font-mono text-[9px]', wrong ? 'border-brand-danger bg-brand-danger text-paper' : done ? 'border-brand bg-brand text-paper' : 'border-hairline bg-paper text-ink-muted')}>{wrong ? <X size={10} /> : done ? <Check size={10} /> : index + 1}</span><span className="min-w-0"><span className="block text-[10px] opacity-65">{block.eyebrow}</span><span className="mt-0.5 block text-[12px] font-medium leading-[17px]">{block.title}</span></span></button>; })}</div></div>{progressOf(resource).lastOpenedAt && <p className="mt-3 hidden px-2 text-[10.5px] leading-5 text-ink-muted lg:block">已从后端恢复上次断点：{new Date(progressOf(resource).lastOpenedAt!).toLocaleString()}</p>}</aside>}
+      {<aside className="min-w-0 self-start lg:sticky lg:top-[76px]"><div className="rounded-[16px] border border-hairline bg-card-warm p-3"><div className="px-2 pb-2"><div className="lf-mono-label">LEARNING PATH</div><div className="mt-1 text-[13px] font-semibold text-ink">本讲目录</div></div><div className="flex gap-1 overflow-x-auto pb-1 lg:block lg:h-[min(68vh,calc(100dvh_-_190px))] lg:space-y-1 lg:overflow-y-auto lg:overscroll-contain lg:pb-0 lg:pr-1.5">{blocks.map((block, index) => { const quizResult = resource.type === 'quiz' ? quizAnswers.get(block.id) : undefined; const done = resource.type === 'quiz' ? quizAnswers.has(block.id) : visited.includes(block.id) || resource.learned; const wrong = resource.type === 'quiz' && done && quizResult === false; return <button key={block.id} type="button" onClick={() => goBlock(block.id)} className={cn('flex w-[210px] shrink-0 items-start gap-2.5 rounded-[10px] px-2.5 py-2.5 text-left transition lg:w-full', block.id === currentBlockId ? 'bg-brand-tint text-brand' : 'text-ink-2 hover:bg-paper-deep')}><span className={cn('mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border font-mono text-[9px]', wrong ? 'border-brand-danger bg-brand-danger text-paper' : done ? 'border-brand bg-brand text-paper' : 'border-hairline bg-paper text-ink-muted')}>{wrong ? <X size={10} /> : done ? <Check size={10} /> : index + 1}</span><span className="min-w-0"><span className="block text-[10px] opacity-65">{block.eyebrow}</span><span className="mt-0.5 block text-[12px] font-medium leading-[17px]">{block.title}</span></span></button>; })}</div></div>{progressOf(resource).lastOpenedAt && <p className="mt-3 hidden px-2 text-[10.5px] leading-5 text-ink-muted lg:block">已从后端恢复上次断点：{new Date(progressOf(resource).lastOpenedAt!).toLocaleString()}</p>}</aside>}
 
       <main className="min-w-0 space-y-6">
       {resource.type === 'practice' && <section className="rounded-[18px] border border-brand-amber/40 bg-brand-amber-tint p-5"><div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="flex items-center gap-2 text-[15px] font-semibold text-ochre"><ShieldAlert size={16} />开始前确认</h2><p className="mt-1 text-[11.5px] text-ochre/80">逐项确认后再开始操作；确认结果只用于本次学习进度。</p></div><span className="font-mono text-[11px] text-ochre">{safetyChecks.length}/{safetyChecklist.length} 已确认</span></div>{safetyChecklist.length ? <div className="mt-3 grid gap-2 sm:grid-cols-2">{safetyChecklist.map((item) => { const checked = safetyChecks.includes(item); return <button key={item} type="button" onClick={() => setSafetyChecks((current) => checked ? current.filter((value) => value !== item) : [...current, item])} className={cn('flex items-center gap-2 rounded-[10px] border bg-card-warm px-3 py-2.5 text-left text-[12.5px]', checked ? 'border-brand/45 text-brand' : 'border-hairline text-ink-2')} >{checked ? <ShieldCheck size={15} /> : <Circle size={15} className="text-ink-muted" />}<span>{item}</span></button>; })}</div> : <p className="mt-3 text-[12.5px] text-ink-muted">本任务未识别到额外的确认项，请按步骤谨慎操作即可。</p>}{String(resource.content.safetyNotice ?? '') && <div className="mt-3 flex items-start gap-2 rounded-[10px] border border-brand-danger/25 bg-brand-danger/5 px-3 py-2.5 text-[12px] leading-5 text-ink-2"><TriangleAlert size={15} className="mt-0.5 shrink-0 text-brand-danger" />{String(resource.content.safetyNotice)}</div>}</section>}
@@ -950,11 +1133,38 @@ export default function CourseResourcePlayer() {
         {block.kind === 'quiz' && <QuizBlock block={block} resource={resource} onWritebackStatus={setWritebackStatus} onResourceState={(state) => setResource((current) => current ? { ...current, state, learned: Boolean(state.learned || state.completed) } : current)} />}
         <InlineBlockCitations block={block} resource={resource} />
         {resource.type !== 'quiz' && <div className="mt-5 rounded-[12px] border border-brand/20 bg-brand-tint/25 p-3.5"><div className="flex flex-wrap items-center justify-between gap-2"><div><div className="text-[12px] font-semibold text-ink">这一块你掌握得怎么样？</div><div className="mt-0.5 text-[10.5px] text-ink-muted">自评会和答题正确率一起计算掌握程度，可随时修改。</div></div><div className="flex flex-wrap gap-1.5">{([{ label: '还需学习', value: 0.2 }, { label: '基本理解', value: 0.55 }, { label: '大体掌握', value: 0.8 }, { label: '我已经完全掌握', value: 1 }] as const).map((option) => { const selected = effectiveAssessments[block.id] === option.value; return <button key={option.value} type="button" onClick={() => void assessBlock(block.id, option.value)} className={cn('rounded-full border px-3 py-1.5 text-[11px] transition', selected ? 'border-brand bg-brand text-paper' : 'border-hairline bg-paper text-ink-2 hover:border-brand/45')}>{selected && <Check size={11} className="mr-1 inline" />}{option.label}</button>; })}</div></div></div>}
-        <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-hairline/70 pt-4"><button type="button" onClick={() => { setNoteFor(block); setNoteText(''); }} className="lf-btn-ghost !px-3 !py-1.5 text-[11.5px]"><NotebookPen size={13} />记这一段</button><button type="button" onClick={() => { setCurrentBlockId(block.id); void openChat(); }} className="lf-btn-ghost !px-3 !py-1.5 text-[11.5px]"><MessageCircleQuestion size={13} />向导学老师提问</button>{index < blocks.length - 1 && <button type="button" onClick={() => goBlock(blocks[index + 1].id)} className="ml-auto inline-flex items-center gap-1 text-[11.5px] text-brand hover:underline">下一段<ArrowRight size={12} /></button>}</div>
+        <div className="mt-5 border-t border-hairline/70 pt-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => { stopNoteListening(); setNoteFor(block); setNoteText(''); setNoteImg(null); }} className="lf-btn-ghost !px-3 !py-1.5 text-[11.5px]"><NotebookPen size={13} />记这一段</button>
+            <button type="button" onClick={() => { setCurrentBlockId(block.id); void openChat(); }} className="lf-btn-ghost !px-3 !py-1.5 text-[11.5px]"><MessageCircleQuestion size={13} />向导学老师提问</button>
+            {index < blocks.length - 1 && <button type="button" onClick={() => goBlock(blocks[index + 1].id)} className="ml-auto inline-flex items-center gap-1 text-[11.5px] text-brand hover:underline">下一段<ArrowRight size={12} /></button>}
+          </div>
+          {noteFor?.id === block.id ? (
+            <div className="mt-3 rounded-[10px] border border-brand/30 bg-paper p-2.5">
+              <textarea autoFocus value={noteText} onChange={(event) => setNoteText(event.target.value)} rows={2} placeholder="用自己的话记下这一段的要点…（也可以说，或拍张图）" className="w-full resize-none bg-transparent text-[13px] leading-[20px] text-ink outline-none placeholder:text-ink-muted/60" />
+              {listening === 'note' && <div className="mt-1 flex items-center gap-1.5 text-[11.5px] text-brand-danger"><span className="h-1.5 w-1.5 animate-ping rounded-full bg-brand-danger" />正在听…{interim || '（说完自动填进上面）'}</div>}
+              {noteImg && <div className="mt-1.5 flex items-center gap-2 rounded-[8px] border border-hairline bg-card-warm p-1.5"><img src={noteImg.url} alt="" className="h-9 w-9 rounded-[6px] object-cover" /><span className="min-w-0 flex-1 truncate text-[11px] text-ink-2">{noteImg.name}</span><button type="button" onClick={() => setNoteImg(null)} aria-label="移除图片" className="text-ink-muted hover:text-brand-danger"><X size={12} /></button></div>}
+              <div className="mt-1.5 flex items-center gap-2">
+                <span className="flex shrink-0 items-center gap-1">
+                  {srAvailable && <button type="button" onClick={() => (listening === 'note' ? stopNoteListening() : startNoteListening())} title={listening === 'note' ? '再点一次停止' : '说：语音转文字填进笔记'} aria-label="语音记笔记" className={cn('flex h-7 w-7 items-center justify-center rounded-full border transition-all', listening === 'note' ? 'animate-pulse border-brand-danger bg-brand-danger text-paper' : 'border-hairline bg-card-warm text-ink-2 hover:border-brand/40 hover:text-brand')}><Mic size={13} /></button>}
+                  <input ref={noteImgInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => { const f = event.target.files?.[0]; if (f) setNoteImg({ name: f.name, url: URL.createObjectURL(f) }); event.target.value = ''; }} />
+                  <button type="button" onClick={() => noteImgInputRef.current?.click()} title="拍：给这条笔记配张现场图" aria-label="给笔记配图" className="flex h-7 w-7 items-center justify-center rounded-full border border-hairline bg-card-warm text-ink-2 transition-all hover:border-brand/40 hover:text-brand"><Camera size={13} /></button>
+                </span>
+                <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-ink-muted">自动携带来源{noteFor.citations.length > 0 ? ' + KB 溯源' : ''} → 个人知识库</span>
+                <span className="flex shrink-0 gap-1.5">
+                  <button type="button" onClick={closeNoteEditor} className="rounded-md px-2 py-1 text-[12px] text-ink-muted hover:text-ink">取消</button>
+                  <button type="button" disabled={!noteText.trim() && !noteImg} onClick={() => saveNoteFor(block)} className={cn('rounded-md px-2.5 py-1 text-[12px] font-medium', noteText.trim() || noteImg ? 'bg-brand text-paper' : 'bg-paper-deep text-ink-muted/50')}>存入知识库</button>
+                </span>
+              </div>
+            </div>
+          ) : notes.filter((note) => note.blockAnchor === `${resource.id}#${block.id}`).length > 0 ? (
+            <span className="mt-3 inline-flex items-center gap-1.5 text-[11.5px] text-ink-muted"><PenLine size={11} className="text-brand/70" />这段记了 {notes.filter((note) => note.blockAnchor === `${resource.id}#${block.id}`).length} 条</span>
+          ) : null}
+        </div>
       </motion.section>)}</main>
     </div>
 
-    {traces.length > 0 && !focusMode && <section className="mt-8 rounded-[18px] border border-hairline bg-card-warm p-5 md:p-7"><div className="flex items-center gap-2"><Sparkles size={16} className="text-brand" /><h2 className="font-serif text-[20px] font-semibold text-ink">真实来源与生成依据</h2></div><p className="mt-1 text-[12px] text-ink-muted">以下来源由知识库检索或 Web Search 提供，并与正文引用位置关联。</p><div className="mt-4 grid gap-3 md:grid-cols-2">{traces.map((trace, traceIndex) => <article key={`${String(trace.id ?? 'source')}-${trace.title}-${traceIndex}`} className="rounded-[12px] border border-hairline bg-paper p-4"><div className="flex items-start gap-3"><span className="rounded-md bg-brand-tint px-2 py-1 font-mono text-[10px] text-brand">{trace.credibility}%</span><div className="min-w-0"><h3 className="text-[13px] font-semibold text-ink">{trace.title}</h3><p className="mt-1 line-clamp-3 text-[11.5px] leading-5 text-ink-muted">{trace.excerpt}</p></div></div>{trace.positions.length > 0 && <div className="mt-3 flex flex-wrap gap-1">{trace.positions.slice(0, 5).map((position, positionIndex) => <span key={`${position}-${positionIndex}`} className="rounded bg-paper-deep px-1.5 py-1 text-[9.5px] text-ink-muted">{position}</span>)}</div>}{trace.url && <a href={trace.url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-[11px] text-brand hover:underline">查看来源<ExternalLink size={10} /></a>}</article>)}</div></section>}
+    {traces.length > 0 && <section className="mt-8 rounded-[18px] border border-hairline bg-card-warm p-5 md:p-7"><div className="flex items-center gap-2"><Sparkles size={16} className="text-brand" /><h2 className="font-serif text-[20px] font-semibold text-ink">真实来源与生成依据</h2></div><p className="mt-1 text-[12px] text-ink-muted">以下来源由知识库检索或 Web Search 提供，并与正文引用位置关联。</p><div className="mt-4 grid gap-3 md:grid-cols-2">{traces.map((trace, traceIndex) => <article key={`${String(trace.id ?? 'source')}-${trace.title}-${traceIndex}`} className="rounded-[12px] border border-hairline bg-paper p-4"><div className="flex items-start gap-3"><span className="rounded-md bg-brand-tint px-2 py-1 font-mono text-[10px] text-brand">{trace.credibility}%</span><div className="min-w-0"><h3 className="text-[13px] font-semibold text-ink">{trace.title}</h3><p className="mt-1 line-clamp-3 text-[11.5px] leading-5 text-ink-muted">{trace.excerpt}</p></div></div>{trace.positions.length > 0 && <div className="mt-3 flex flex-wrap gap-1">{trace.positions.slice(0, 5).map((position, positionIndex) => <span key={`${position}-${positionIndex}`} className="rounded bg-paper-deep px-1.5 py-1 text-[9.5px] text-ink-muted">{position}</span>)}</div>}{trace.url && <a href={trace.url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-[11px] text-brand hover:underline">查看来源<ExternalLink size={10} /></a>}</article>)}</div></section>}
 
     <footer className="mt-8 flex flex-col items-center justify-between gap-4 rounded-[18px] border border-brand/20 bg-brand-tint/30 p-5 sm:flex-row"><div><div className="text-[13px] font-semibold text-ink">{resource.learned ? '本项资源已经学完' : resource.type === 'quiz' && !quizAllAnswered ? '完成全部答题后即可结束测试' : '完成本项学习后，进度会写入画像与报告'}</div><p className="mt-1 text-[11.5px] text-ink-muted">{resource.type === 'quiz' ? '作答' : '阅读'} {displayedCompletedCount}/{blocks.length} {resource.type === 'quiz' ? '题' : '段'} · 学习 {formatDuration(elapsedBase + sessionSeconds)}</p></div><div className="flex gap-2">{nextResource && <Link to={`/learn/resource/${nextResource.id}`} className="lf-btn-ghost">下一项：{resourceMeta[nextResource.type].label}<ArrowRight size={14} /></Link>}{resource.learned && <button type="button" disabled={restarting} onClick={() => void restartPractice()} className="lf-btn-ghost">{restarting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}重新练习</button>}<button type="button" disabled={completing || !quizAllAnswered} onClick={() => { if (resource.learned) { navigate('/learn'); return; } void markComplete(); }} className="lf-btn-primary">{completing ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}{resource.learned ? '返回地图' : resource.type === 'quiz' && !quizAllAnswered ? '请先完成全部题目' : '完成本项学习'}</button></div></footer>
 
@@ -964,10 +1174,8 @@ export default function CourseResourcePlayer() {
       <button type="button" onClick={cycleSpeed} className="flex h-9 shrink-0 items-center gap-1 rounded-[10px] border border-hairline px-2.5 text-[10.5px] text-ink-muted" title="切换语速"><Gauge size={13} /><span>{speedMeta[speechSpeed].label}</span></button>
       <button type="button" onClick={cycleVolume} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-hairline text-ink-muted" title={narration.volume === 0 ? '恢复音量' : `音量 ${Math.round(narration.volume * 100)}%`}>{narration.volume === 0 ? <VolumeX size={13} /> : narration.volume < 0.6 ? <Volume1 size={13} /> : <Volume2 size={13} />}</button>
       <button type="button" onClick={() => setSlideMode(true)} className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted" title="幻灯模式：一段一页"><Presentation size={13} /><span className="hidden md:inline">幻灯</span></button>
-      <button type="button" onClick={toggleFocus} aria-label={focusMode ? '退出专注' : '进入专注'} className={cn('flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border px-2.5 text-[11px]', focusMode ? 'border-brand bg-brand-tint text-brand' : 'border-hairline text-ink-muted')}><Focus size={13} /><span className="hidden md:inline">{focusMode ? '退出专注' : '专注'}</span></button>
-      {focusMode && ambient.supported && <button type="button" onClick={cycleAmbient} className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border', ambient.kind === 'off' ? 'border-hairline text-ink-muted' : 'border-brand bg-brand-tint text-brand')} title={ambient.kind === 'off' ? '开启细雨环境音' : ambient.kind === 'rain' ? '切换林间环境音' : '关闭环境音'}>{ambient.kind === 'forest' ? <Trees size={13} /> : <CloudRain size={13} />}</button>}
       <button type="button" onClick={() => void openChat()} aria-label="向章节导学老师提问" className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted"><Bot size={13} /><span className="hidden lg:inline">提问</span></button>
-      <button type="button" onClick={() => activeBlock && setNoteFor(activeBlock)} aria-label="记录当前段落笔记" className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted"><NotebookPen size={13} /><span className="hidden lg:inline">笔记</span></button>
+      <button type="button" onClick={() => { stopNoteListening(); if (activeBlock) { setNoteFor(activeBlock); setNoteText(''); setNoteImg(null); } }} aria-label="记录当前段落笔记" className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted"><NotebookPen size={13} /><span className="hidden lg:inline">笔记</span></button>
     </div>
 
     <AnimatePresence>{writebackStatus !== 'idle' && <motion.div initial={{ opacity: 0, y: -8, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8, scale: 0.96 }} className={cn('fixed right-4 top-4 z-[110] flex items-center gap-2 rounded-full border px-3.5 py-2 text-[11.5px] shadow-warm backdrop-blur-md', writebackStatus === 'failed' ? 'border-brand-danger/30 bg-paper/95 text-brand-danger' : 'border-brand/25 bg-paper/95 text-brand')}>
@@ -982,9 +1190,8 @@ export default function CourseResourcePlayer() {
       <footer className="flex items-center justify-center gap-3 border-t border-hairline bg-card-warm px-4 py-3"><button type="button" disabled={currentIndex === 0} onClick={() => goBlock(blocks[currentIndex - 1].id, narration.speaking)} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="上一页"><ChevronLeft size={17} /></button><button type="button" onClick={speakCurrent} className="flex h-11 items-center gap-2 rounded-full bg-brand px-5 text-[12.5px] font-medium text-paper">{narration.speaking ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}{narration.speaking ? '暂停讲播' : '讲这一页'}</button><button type="button" onClick={cycleSpeed} className="h-10 rounded-full border border-hairline px-4 font-mono text-[11px] text-ink-muted">{speedMeta[speechSpeed].label}</button><button type="button" onClick={cycleVolume} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted" title={narration.volume === 0 ? '恢复音量' : `音量 ${Math.round(narration.volume * 100)}%`}>{narration.volume === 0 ? <VolumeX size={14} /> : narration.volume < 0.6 ? <Volume1 size={14} /> : <Volume2 size={14} />}</button><button type="button" disabled={currentIndex >= blocks.length - 1} onClick={() => goBlock(blocks[currentIndex + 1].id, narration.speaking)} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="下一页"><ChevronRight size={17} /></button></footer>
     </motion.div>}</AnimatePresence>, document.body)}
 
-    <AnimatePresence>{noteFor && <><motion.button type="button" aria-label="关闭笔记面板背景" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setNoteFor(null)} className="fixed inset-0 z-[70] bg-ink/20 backdrop-blur-[2px]" /><motion.aside initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} className="fixed inset-y-0 right-0 z-[80] flex w-full max-w-[460px] flex-col border-l border-hairline bg-paper shadow-2xl"><div className="flex items-start gap-3 border-b border-hairline p-5"><NotebookPen size={18} className="mt-1 text-brand" /><div className="min-w-0 flex-1"><div className="lf-mono-label">PERSONAL NOTE</div><h2 className="mt-1 truncate font-serif text-[20px] font-semibold text-ink">{noteFor.title}</h2></div><button type="button" aria-label="关闭笔记" onClick={() => setNoteFor(null)} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep"><X size={16} /></button></div><div className="flex-1 p-5"><p className="text-[12px] leading-5 text-ink-muted">笔记会关联当前课程、资源段落和引用来源，保存到“我的笔记”。</p><textarea autoFocus value={noteText} onChange={(event) => setNoteText(event.target.value)} placeholder="写下你的理解、疑问或总结…" className="mt-4 min-h-[260px] w-full resize-none rounded-[13px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-6 text-ink outline-none focus:border-brand/45" /></div><div className="border-t border-hairline p-4"><button type="button" disabled={!noteText.trim() || savingNote} onClick={() => void saveNote()} className="lf-btn-primary w-full justify-center">{savingNote && <Loader2 size={14} className="animate-spin" />}保存到个人知识库</button></div></motion.aside></>}</AnimatePresence>
 
-    <AnimatePresence>{chatOpen && <><motion.button type="button" aria-label="关闭提问面板背景" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setChatOpen(false)} className="fixed inset-0 z-[70] bg-ink/20 backdrop-blur-[2px]" /><motion.aside initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} className="fixed inset-y-0 right-0 z-[80] flex w-full max-w-[500px] flex-col border-l border-hairline bg-paper shadow-2xl"><div className="flex items-center gap-3 border-b border-hairline bg-card-warm p-4"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand text-paper"><Bot size={17} /></span><div className="min-w-0 flex-1"><h2 className="text-[14px] font-semibold text-ink">章节导学老师</h2><p className="truncate text-[10.5px] text-ink-muted">正在结合本资源正文、作答状态和真实来源回答</p></div><button type="button" aria-label="关闭提问" onClick={() => setChatOpen(false)} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep"><X size={16} /></button></div><div className="flex-1 space-y-3 overflow-y-auto p-4">{messages.length === 0 && <div className="rounded-[13px] border border-brand/20 bg-brand-tint/35 p-4 text-[12.5px] leading-6 text-ink-2">我已经读过这项资源和它引用的知识库、网页来源。你可以让我解释当前段落、检查理解，或根据作答记录生成巩固建议。</div>}{messages.map((message, index) => <div key={`${message.createdAt}-${index}`} className={cn('w-fit max-w-[90%] rounded-[13px] px-3.5 py-2.5 text-[12.5px] leading-6', message.role === 'user' ? 'ml-auto rounded-br-sm bg-brand text-paper' : 'rounded-tl-sm border border-hairline bg-card-warm text-ink-2')}><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>)}{asking && <div className="flex items-center gap-2 text-[11.5px] text-ink-muted"><Loader2 size={13} className="animate-spin" />正在结合内容与来源思考…</div>}{followUps.length > 0 && <div className="flex flex-wrap gap-1.5">{followUps.map((item) => <button key={item} type="button" onClick={() => void ask(item)} className="rounded-lg border border-hairline bg-card-warm px-2.5 py-1.5 text-left text-[10.5px] text-brand hover:border-brand/40">{item}</button>)}</div>}</div><div className="border-t border-hairline bg-card-warm p-3"><div className="flex items-end gap-2"><textarea value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void ask(); } }} placeholder="问当前内容，Enter 发送…" className="max-h-28 min-h-10 flex-1 resize-none rounded-[11px] border border-hairline bg-paper px-3 py-2.5 text-[12.5px] outline-none focus:border-brand/45" /><button type="button" disabled={!question.trim() || asking} onClick={() => void ask()} className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-brand text-paper disabled:opacity-40"><Send size={15} /></button></div></div></motion.aside></>}</AnimatePresence>
+    <AnimatePresence>{chatOpen && <><motion.button type="button" aria-label="关闭提问面板背景" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => { chatAbortRef.current?.abort(); setChatOpen(false); }} className="fixed inset-0 z-[70] bg-ink/20 backdrop-blur-[2px]" /><motion.aside initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} className="fixed inset-y-0 right-0 z-[80] flex w-full max-w-[500px] flex-col border-l border-hairline bg-paper shadow-2xl"><div className="flex items-center gap-3 border-b border-hairline bg-card-warm p-4"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand text-paper"><Bot size={17} /></span><div className="min-w-0 flex-1"><h2 className="text-[14px] font-semibold text-ink">章节导学老师</h2><p className="truncate text-[10.5px] text-ink-muted">正在结合课件与真实来源回答，可随时提问</p></div><button type="button" aria-label="关闭提问" onClick={() => { chatAbortRef.current?.abort(); setChatOpen(false); }} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep"><X size={16} /></button></div>{chatPptTaskId && <div className="flex items-center gap-2 border-b border-hairline bg-paper px-4 py-2"><select value={chatSessionId} onChange={(event) => void selectChatSession(event.target.value)} className="min-w-0 flex-1 truncate bg-transparent text-[11px] text-ink-2 outline-none" aria-label="聊天会话">{chatSessions.filter((item) => item.modelProvider === 'mimo').map((session) => <option key={session.id} value={session.id}>{session.title || '会话'}</option>)}</select><button type="button" disabled={chatLoading} onClick={() => void createChatSession()} className="rounded-md px-1.5 py-1 font-mono text-[10px] text-ink-muted hover:bg-paper-deep hover:text-brand disabled:opacity-50" title="新建会话"><Plus size={11} className="mr-0.5 inline" />新建</button><button type="button" disabled={chatLoading || !chatSessionId} onClick={() => void deleteChatSession()} className="font-mono text-[10px] text-ink-muted hover:text-brand-danger disabled:opacity-40"><Trash2 size={11} className="mr-0.5 inline" />删除</button></div>}<div className="flex-1 space-y-3 overflow-y-auto p-4">{chatLoading && messages.length === 0 && <div className="flex items-center gap-2 text-[11.5px] text-ink-muted"><Loader2 size={13} className="animate-spin" />正在加载会话…</div>}{messages.length === 0 && !chatLoading && <div className="rounded-[13px] border border-brand/20 bg-brand-tint/35 p-4 text-[12.5px] leading-6 text-ink-2">{chatPptTaskId ? '可以问我这个知识点的内容，我会结合课件与真实来源回答。' : '我已经读过这项资源和它引用的知识库、网页来源。你可以让我解释当前段落、检查理解，或根据作答记录生成巩固建议。'}</div>}{messages.map((message, index) => <div key={`${message.createdAt}-${index}`} className={cn('w-fit max-w-[90%] rounded-[13px] px-3.5 py-2.5 text-[12.5px] leading-6', message.role === 'user' ? 'ml-auto rounded-br-sm bg-brand text-paper' : 'rounded-tl-sm border border-hairline bg-card-warm text-ink-2')}><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>)}{asking && <div className="flex items-center gap-2 text-[11.5px] text-ink-muted"><Loader2 size={13} className="animate-spin" />正在结合内容与来源思考…</div>}{!chatPptTaskId && followUps.length > 0 && <div className="flex flex-wrap gap-1.5">{followUps.map((item) => <button key={item} type="button" onClick={() => void ask(item)} className="rounded-lg border border-hairline bg-card-warm px-2.5 py-1.5 text-left text-[10.5px] text-brand hover:border-brand/40">{item}</button>)}</div>}</div><div className="border-t border-hairline bg-card-warm p-3"><div className="flex items-end gap-2"><textarea value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void ask(); } }} placeholder="问当前内容，Enter 发送…" className="max-h-28 min-h-10 flex-1 resize-none rounded-[11px] border border-hairline bg-paper px-3 py-2.5 text-[12.5px] outline-none focus:border-brand/45" /><button type="button" disabled={!question.trim() || asking} onClick={() => void ask()} className="flex h-10 w-10 items-center justify-center rounded-[10px] bg-brand text-paper disabled:opacity-40"><Send size={15} /></button></div></div></motion.aside></>}</AnimatePresence>
   {completeConfirmOpen && (
       <div className="fixed inset-0 z-[110] flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm" onClick={() => setCompleteConfirmOpen(false)} role="dialog" aria-modal="true" aria-label="完成确认">
         <div className="w-full max-w-[420px] rounded-[18px] border border-brand/30 bg-card-warm p-6 shadow-warm-lg" onClick={(event) => event.stopPropagation()}>
