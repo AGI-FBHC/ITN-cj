@@ -10,10 +10,11 @@ import {
   ChevronRight, Circle, Clock3, CloudRain, ExternalLink, FileText, Focus,
   Gauge, Headphones, ListChecks, Loader2, MessageCircleQuestion, NotebookPen,
   Pause, PenLine, Play, Presentation, RotateCcw, Send, ShieldAlert, ShieldCheck, Sparkles,
-  Star, Trees, TriangleAlert, Wrench, X,
+  Star, Trees, TriangleAlert, Volume1, Volume2, VolumeX, Wrench, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, streamAssistantTts } from '@/lib/api';
+import { audioBus } from '@/lib/audioBus';
 import type {
   Course, CourseChapter, LearningResource, LearningResourceMessage,
   LearningResourceProgress, LearningResourceSummary, LearningResourceTrace, TtsSpeed,
@@ -91,6 +92,7 @@ const speedMeta: Record<TtsSpeed, { label: string; rate: number }> = {
   very_fast: { label: '1.2×', rate: 1.2 },
 };
 const speedOrder = Object.keys(speedMeta) as TtsSpeed[];
+const VOLUME_LEVELS = [1, 0.6, 0.3, 0] as const;
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -203,13 +205,18 @@ function narrationText(block: LearningBlock): string {
     .slice(0, 2900);
 }
 
-function useResourceNarration() {
+function useResourceNarration(onFinished?: () => void) {
   const [speaking, setSpeaking] = useState(false);
+  const [volume, setVolumeState] = useState(1);
   const abortRef = useRef<AbortController | null>(null);
   const contextRef = useRef<AudioContext | null>(null);
+  const gainRef = useRef<GainNode | null>(null);
+  const volumeRef = useRef(1);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const timerRef = useRef<number | null>(null);
   const generationRef = useRef(0);
+  const onFinishedRef = useRef(onFinished);
+  onFinishedRef.current = onFinished;
 
   const stop = useCallback(() => {
     generationRef.current += 1;
@@ -232,14 +239,27 @@ function useResourceNarration() {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'zh-CN';
     utterance.rate = speedMeta[speed].rate;
-    utterance.onend = () => { if (generation === generationRef.current) setSpeaking(false); };
-    utterance.onerror = () => { if (generation === generationRef.current) setSpeaking(false); };
+    const finish = () => {
+      if (generation !== generationRef.current) return;
+      setSpeaking(false);
+      onFinishedRef.current?.();
+    };
+    utterance.onend = finish;
+    utterance.onerror = finish;
     window.speechSynthesis.speak(utterance);
+  }, []);
+
+  const setVolume = useCallback((value: number) => {
+    volumeRef.current = Math.max(0, Math.min(1, value));
+    setVolumeState(volumeRef.current);
+    if (gainRef.current) gainRef.current.gain.value = volumeRef.current;
   }, []);
 
   const play = useCallback(async (text: string, speed: TtsSpeed) => {
     stop();
     if (!text) return;
+    /* 全局单通道：开始讲播前停掉 PPT/Agent/字幕等其他通道 */
+    audioBus.stopAll();
     const generation = generationRef.current;
     const controller = new AbortController();
     abortRef.current = controller;
@@ -252,6 +272,12 @@ function useResourceNarration() {
       contextRef.current ??= new AudioContextCtor({ sampleRate: 24_000 });
       const context = contextRef.current;
       await context.resume();
+      gainRef.current ??= (() => {
+        const gain = context.createGain();
+        gain.gain.value = volumeRef.current;
+        gain.connect(context.destination);
+        return gain;
+      })();
       let nextStart = context.currentTime + 0.06;
       let pending = new Uint8Array();
       let scheduled = 0;
@@ -267,7 +293,7 @@ function useResourceNarration() {
         buffer.copyToChannel(samples, 0);
         const source = context.createBufferSource();
         source.buffer = buffer;
-        source.connect(context.destination);
+        source.connect(gainRef.current ?? context.destination);
         sourcesRef.current.add(source);
         source.onended = () => sourcesRef.current.delete(source);
         source.start(nextStart);
@@ -296,7 +322,9 @@ function useResourceNarration() {
       if (!scheduled) throw new Error('empty audio stream');
       const remainingMs = Math.max(50, Math.ceil((nextStart - context.currentTime) * 1000) + 80);
       timerRef.current = window.setTimeout(() => {
-        if (generation === generationRef.current) setSpeaking(false);
+        if (generation !== generationRef.current) return;
+        setSpeaking(false);
+        onFinishedRef.current?.();
       }, remainingMs);
     } catch (reason) {
       if ((reason as Error).name === 'AbortError' || generation !== generationRef.current) return;
@@ -304,12 +332,17 @@ function useResourceNarration() {
     }
   }, [browserFallback, stop]);
 
-  useEffect(() => () => {
-    stop();
-    if (contextRef.current) void contextRef.current.close();
+  useEffect(() => {
+    /* 与 PPT/Agent 等共用单音频通道：其他通道开播时自动停掉本通道 */
+    const release = audioBus.register('lecture', () => stop());
+    return () => {
+      release();
+      stop();
+      if (contextRef.current) void contextRef.current.close();
+    };
   }, [stop]);
 
-  return { speaking, play, stop };
+  return { speaking, play, stop, volume, setVolume };
 }
 
 function QuizBlock({
@@ -421,7 +454,8 @@ export default function CourseResourcePlayer() {
   const { resourceId = '' } = useParams();
   const navigate = useNavigate();
   const { focusMode, setFocusMode } = useGrowth();
-  const narration = useResourceNarration();
+  const narration = useResourceNarration(() => narrationFinishedRef.current());
+  const narrationFinishedRef = useRef<() => void>(() => undefined);
   const ambient = useAmbient();
   const [resource, setResource] = useState<LearningResource | null>(null);
   const [writebackStatus, setWritebackStatus] = useState<'idle' | 'syncing' | 'synced' | 'failed'>('idle');
@@ -634,7 +668,7 @@ export default function CourseResourcePlayer() {
     setFocusMode(false);
   }, [narration.stop, setFocusMode]);
 
-  const goBlock = (id: string) => {
+  const goBlock = (id: string, continueSpeaking = false) => {
     setCurrentBlockId(id);
     setVisited((current) => {
       const next = unique([...current, id]);
@@ -642,6 +676,17 @@ export default function CourseResourcePlayer() {
       return next;
     });
     blockRefs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (continueSpeaking) {
+      const nextBlock = blocks.find((block) => block.id === id);
+      if (nextBlock) void narration.play(narrationText(nextBlock), speechSpeed);
+    } else {
+      /* 手动跳段时停掉上一段讲播，避免声音与画面不同步 */
+      narration.stop();
+    }
+  };
+  /* 讲播自然结束后：幻灯模式自动续播下一页，形成连续讲解 */
+  narrationFinishedRef.current = () => {
+    if (slideMode && currentIndex < blocks.length - 1) goBlock(blocks[currentIndex + 1].id, true);
   };
 
   const toggleStep = (id: string) => {
@@ -668,8 +713,19 @@ export default function CourseResourcePlayer() {
   const cycleSpeed = () => {
     const index = speedOrder.indexOf(speechSpeed);
     const next = speedOrder[(index + 1) % speedOrder.length];
+    const wasSpeaking = narration.speaking;
     setSpeechSpeed(next);
-    if (narration.speaking) narration.stop();
+    if (wasSpeaking) {
+      /* 讲播中切语速：立即按新语速重读当前段，不打断讲解节奏 */
+      const block = blocks[currentIndex];
+      if (block) void narration.play(narrationText(block), next);
+    }
+  };
+
+  const cycleVolume = () => {
+    const index = VOLUME_LEVELS.indexOf(narration.volume as (typeof VOLUME_LEVELS)[number]);
+    const next = VOLUME_LEVELS[(index + 1) % VOLUME_LEVELS.length];
+    narration.setVolume(next);
   };
 
   const toggleFocus = () => {
@@ -863,6 +919,7 @@ export default function CourseResourcePlayer() {
       <button type="button" onClick={speakCurrent} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand text-paper" title="播放这一段">{narration.speaking ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}</button>
       <div className="hidden min-w-0 flex-1 sm:block"><div className="truncate text-[12.5px] font-medium text-ink">{activeBlock?.title ?? resource.title}</div><div className="mt-0.5 flex items-center gap-2 font-mono text-[9.5px] text-ink-muted"><span><Headphones size={10} className="mr-1 inline" />{narration.speaking ? '正在讲播' : '点击播放当前段落'}</span><span>{currentIndex + 1}/{blocks.length}</span></div></div>
       <button type="button" onClick={cycleSpeed} className="flex h-9 shrink-0 items-center gap-1 rounded-[10px] border border-hairline px-2.5 text-[10.5px] text-ink-muted" title="切换语速"><Gauge size={13} /><span>{speedMeta[speechSpeed].label}</span></button>
+      <button type="button" onClick={cycleVolume} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-hairline text-ink-muted" title={narration.volume === 0 ? '恢复音量' : `音量 ${Math.round(narration.volume * 100)}%`}>{narration.volume === 0 ? <VolumeX size={13} /> : narration.volume < 0.6 ? <Volume1 size={13} /> : <Volume2 size={13} />}</button>
       <button type="button" onClick={() => setSlideMode(true)} className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted" title="幻灯模式：一段一页"><Presentation size={13} /><span className="hidden md:inline">幻灯</span></button>
       <button type="button" onClick={toggleFocus} aria-label={focusMode ? '退出专注' : '进入专注'} className={cn('flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border px-2.5 text-[11px]', focusMode ? 'border-brand bg-brand-tint text-brand' : 'border-hairline text-ink-muted')}><Focus size={13} /><span className="hidden md:inline">{focusMode ? '退出专注' : '专注'}</span></button>
       {focusMode && ambient.supported && <button type="button" onClick={cycleAmbient} className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border', ambient.kind === 'off' ? 'border-hairline text-ink-muted' : 'border-brand bg-brand-tint text-brand')} title={ambient.kind === 'off' ? '开启细雨环境音' : ambient.kind === 'rain' ? '切换林间环境音' : '关闭环境音'}>{ambient.kind === 'forest' ? <Trees size={13} /> : <CloudRain size={13} />}</button>}
@@ -879,7 +936,7 @@ export default function CourseResourcePlayer() {
     {createPortal(<AnimatePresence>{slideMode && activeBlock && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[9999] flex flex-col bg-paper">
       <header className="flex items-center gap-3 border-b border-hairline bg-card-warm px-4 py-3 md:px-6"><Presentation size={17} className="text-brand" /><div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold text-ink">幻灯模式 · {resource.title}</div><div className="font-mono text-[9.5px] text-ink-muted">真实课程内容 · 第 {currentIndex + 1}/{blocks.length} 段</div></div><button type="button" onClick={() => setSlideMode(false)} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep" title="退出幻灯"><X size={17} /></button></header>
       <main className="flex flex-1 items-center justify-center overflow-y-auto bg-gradient-to-br from-brand-tint/25 via-paper to-card-warm px-4 py-8 md:px-12"><motion.article key={activeBlock.id} initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} className="relative w-full max-w-[1040px] overflow-hidden rounded-[24px] border border-brand/20 bg-card-warm/95 p-6 shadow-warm-lg md:p-8 lg:p-10"><div className="absolute right-0 top-0 h-32 w-32 rounded-bl-full bg-brand/5" /><div className="relative mx-auto max-w-[800px]"><div className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.12em] text-brand">{activeBlock.eyebrow}</div><h2 className="mt-4 max-w-[780px] font-serif text-[27px] font-semibold leading-tight tracking-[-0.015em] text-ink md:text-[34px]">{activeBlock.title}</h2><div className="mt-5 h-1 w-14 rounded-full bg-brand" />{activeBlock.body && <div className="mt-7"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{activeBlock.body}</ReactMarkdown></div>}<InlineBlockCitations block={activeBlock} resource={resource} />{activeBlock.code && <pre className="mt-6 max-h-[42vh] overflow-auto rounded-[14px] bg-ink p-5 text-[14px] leading-6 text-paper md:text-[16px]"><code>{activeBlock.code}</code></pre>}{activeBlock.expectedOutput && <div className="mt-5 rounded-[14px] border border-brand/25 bg-brand-tint/55 p-4 text-[15px] leading-7 text-ink-2 md:text-[17px]"><strong className="text-brand">预期结果</strong><span className="mx-2 text-brand/40">/</span>{activeBlock.expectedOutput}</div>}{activeBlock.kind === 'quiz' && <QuizBlock block={activeBlock} resource={resource} learnerId={currentLearnerId} onWritebackStatus={setWritebackStatus} onResourceState={(state) => setResource((current) => current ? { ...current, state, learned: Boolean(state.learned || state.completed) } : current)} />}</div></motion.article></main>
-      <footer className="flex items-center justify-center gap-3 border-t border-hairline bg-card-warm px-4 py-3"><button type="button" disabled={currentIndex === 0} onClick={() => goBlock(blocks[currentIndex - 1].id)} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="上一页"><ChevronLeft size={17} /></button><button type="button" onClick={speakCurrent} className="flex h-11 items-center gap-2 rounded-full bg-brand px-5 text-[12.5px] font-medium text-paper">{narration.speaking ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}{narration.speaking ? '暂停讲播' : '讲这一页'}</button><button type="button" onClick={cycleSpeed} className="h-10 rounded-full border border-hairline px-4 font-mono text-[11px] text-ink-muted">{speedMeta[speechSpeed].label}</button><button type="button" disabled={currentIndex >= blocks.length - 1} onClick={() => goBlock(blocks[currentIndex + 1].id)} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="下一页"><ChevronRight size={17} /></button></footer>
+      <footer className="flex items-center justify-center gap-3 border-t border-hairline bg-card-warm px-4 py-3"><button type="button" disabled={currentIndex === 0} onClick={() => goBlock(blocks[currentIndex - 1].id, narration.speaking)} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="上一页"><ChevronLeft size={17} /></button><button type="button" onClick={speakCurrent} className="flex h-11 items-center gap-2 rounded-full bg-brand px-5 text-[12.5px] font-medium text-paper">{narration.speaking ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}{narration.speaking ? '暂停讲播' : '讲这一页'}</button><button type="button" onClick={cycleSpeed} className="h-10 rounded-full border border-hairline px-4 font-mono text-[11px] text-ink-muted">{speedMeta[speechSpeed].label}</button><button type="button" onClick={cycleVolume} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted" title={narration.volume === 0 ? '恢复音量' : `音量 ${Math.round(narration.volume * 100)}%`}>{narration.volume === 0 ? <VolumeX size={14} /> : narration.volume < 0.6 ? <Volume1 size={14} /> : <Volume2 size={14} />}</button><button type="button" disabled={currentIndex >= blocks.length - 1} onClick={() => goBlock(blocks[currentIndex + 1].id, narration.speaking)} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="下一页"><ChevronRight size={17} /></button></footer>
     </motion.div>}</AnimatePresence>, document.body)}
 
     <AnimatePresence>{noteFor && <><motion.button type="button" aria-label="关闭笔记面板背景" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setNoteFor(null)} className="fixed inset-0 z-[70] bg-ink/20 backdrop-blur-[2px]" /><motion.aside initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} className="fixed inset-y-0 right-0 z-[80] flex w-full max-w-[460px] flex-col border-l border-hairline bg-paper shadow-2xl"><div className="flex items-start gap-3 border-b border-hairline p-5"><NotebookPen size={18} className="mt-1 text-brand" /><div className="min-w-0 flex-1"><div className="lf-mono-label">PERSONAL NOTE</div><h2 className="mt-1 truncate font-serif text-[20px] font-semibold text-ink">{noteFor.title}</h2></div><button type="button" aria-label="关闭笔记" onClick={() => setNoteFor(null)} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep"><X size={16} /></button></div><div className="flex-1 p-5"><p className="text-[12px] leading-5 text-ink-muted">笔记会关联当前课程、资源段落和引用来源，保存到“我的笔记”。</p><textarea autoFocus value={noteText} onChange={(event) => setNoteText(event.target.value)} placeholder="写下你的理解、疑问或总结…" className="mt-4 min-h-[260px] w-full resize-none rounded-[13px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-6 text-ink outline-none focus:border-brand/45" /></div><div className="border-t border-hairline p-4"><button type="button" disabled={!noteText.trim() || savingNote} onClick={() => void saveNote()} className="lf-btn-primary w-full justify-center">{savingNote && <Loader2 size={14} className="animate-spin" />}保存到个人知识库</button></div></motion.aside></>}</AnimatePresence>

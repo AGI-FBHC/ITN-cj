@@ -11,6 +11,7 @@ import { presentationApi } from '@/lib/presentationApi';
 import { refreshLearningMapResourceCache } from './useLearningMap';
 import { refreshLearningMapPresentationCache } from './useLearningMap';
 import type { GeneratedResource, ResourceForm } from '@/data/resources';
+import type { LearningResourceGenerationTask } from '@/lib/api';
 
 export const FUNCTION_META: Array<{ form: ResourceForm | 'ppt'; label: string; color: string }> = [
   { form: 'lecture', label: '领学讲义', color: '#6366F1' },
@@ -53,6 +54,25 @@ export function useTopicResourceActions({
     else toast.error(task.errorMessage || '交互课件生成失败');
   }, [currentLearner.id]);
 
+  /** 后台跟进资源生成：不阻塞卡片；完成后刷新缓存，卡片按钮自动变为「打开」 */
+  const watchResourceTask = useCallback(async (form: ResourceForm, taskId: string) => {
+    const meta = FORM_LABEL[form];
+    try {
+      let task = await api.getLearningResourceTask(taskId);
+      while (!['completed', 'failed', 'cancelled'].includes(task.status)) {
+        await new Promise((resolve) => window.setTimeout(resolve, 3000));
+        task = await api.getLearningResourceTask(taskId);
+      }
+      await refreshLearningMapResourceCache(currentLearner.id);
+      if (task.status === 'completed') toast.success(`${meta}已生成`, { description: '卡片已更新为「打开」，点击即可进入。' });
+      else toast.error(task.errorMessage || `${meta}生成失败`);
+    } catch {
+      toast.error(`${meta}生成状态查询失败，请稍后重试`);
+    } finally {
+      setGenerating((prev) => { const next = new Set(prev); next.delete(form); return next; });
+    }
+  }, [currentLearner.id]);
+
   const existingFor = useCallback(
     (form: ResourceForm) => existing.find(
       (item) => item.id && item.form === form && (item.levelTag === topicName || item.title.includes(topicName)),
@@ -67,43 +87,43 @@ export function useTopicResourceActions({
       return;
     }
     if (generating.has(form)) return;
-    setGenerating((prev) => new Set(prev).add(form));
+    const meta = FORM_LABEL[form];
+    const body = {
+      topic: topicName,
+      title: `${topicName} · ${meta}`,
+      learnerId: currentLearner.id,
+      kpId,
+      goalDriven: true,
+      learningGoalId: goalId,
+      detailLevel: 'detailed' as const,
+    };
+    const resourceType = form === 'guide' ? 'practice' : form;
     try {
-      const meta = FORM_LABEL[form];
-      const body = {
-        topic: topicName,
-        title: `${topicName} · ${meta}`,
-        learnerId: currentLearner.id,
-        kpId,
-        goalDriven: true,
-        learningGoalId: goalId,
-        detailLevel: 'detailed' as const,
-      };
-      const resourceType = form === 'guide' ? 'practice' : form;
       const listed = await api.listLearningResourceTasks(50).catch(() => ({ tasks: [] }));
-      let task = listed.tasks.find(
-        (item) => item.resourceType === resourceType && item.title === body.title && !['completed', 'failed', 'cancelled'].includes(item.status),
-      ) ?? await api.startLearningResourceTask(resourceType, body);
-      if (task.status !== 'completed') {
-        toast.success(`${meta}已加入后台教研组`, { description: '可在顶部“正在执行”查看生成进度。' });
-      }
-      while (!['completed', 'failed', 'cancelled'].includes(task.status)) {
-        await new Promise((resolve) => window.setTimeout(resolve, 1800));
-        task = await api.getLearningResourceTask(task.id);
-      }
-      if (task.status === 'completed' && task.resourceId) {
+      const sameTitle = (item: LearningResourceGenerationTask) =>
+        item.resourceType === resourceType && item.title === body.title;
+      /* 已完成但本地列表未命中（缓存过期/其他页面刚生成）：直接打开，不重复生成 */
+      const completed = listed.tasks.find(
+        (item) => sameTitle(item) && item.status === 'completed' && item.resourceId,
+      );
+      if (completed?.resourceId) {
         await refreshLearningMapResourceCache(currentLearner.id);
         toast.success(`${meta}已生成`, { description: '正在打开学习资源。' });
-        navigate(`/learn/resource/${task.resourceId}`);
-      } else {
-        throw new Error(task.errorMessage || `${meta}生成失败`);
+        navigate(`/learn/resource/${completed.resourceId}`);
+        return;
       }
+      /* 进行中任务直接跟进；否则创建新任务。全程后台执行，不阻塞卡片 */
+      const running = listed.tasks.find(
+        (item) => sameTitle(item) && !['completed', 'failed', 'cancelled'].includes(item.status),
+      );
+      const task = running ?? await api.startLearningResourceTask(resourceType, body);
+      setGenerating((prev) => new Set(prev).add(form));
+      toast.success(`${meta}已加入后台生成`, { description: '完成后卡片会自动变为「打开」，点击即可进入。' });
+      void watchResourceTask(form, task.id);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '资源生成失败');
-    } finally {
-      setGenerating((prev) => { const next = new Set(prev); next.delete(form); return next; });
     }
-  }, [existingFor, generating, navigate, currentLearner.id, kpId, topicName, goalId]);
+  }, [existingFor, generating, navigate, currentLearner.id, kpId, topicName, goalId, watchResourceTask]);
 
   const openOrCreatePpt = useCallback(async () => {
     if (checkingPpt) return;

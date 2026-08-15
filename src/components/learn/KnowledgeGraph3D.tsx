@@ -6,7 +6,6 @@ import { useRef, useMemo, useState, useCallback, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Text, Line, PerspectiveCamera, Billboard } from '@react-three/drei';
 import { BookOpen, ClipboardCheck, Presentation, Wrench, X } from 'lucide-react';
-import { toast } from 'sonner';
 import * as THREE from 'three';
 import type { GraphNode, GraphEdge, EdgeKind } from '@/data/knowledgeGraph';
 import type { ResourceForm, GeneratedResource } from '@/data/resources';
@@ -746,10 +745,7 @@ function TopicActionModal({
             disabled={busy}
             className="group h-[88px] rounded-[16px] border border-[#E1E6DF] bg-white/75 px-3.5 py-3 text-left shadow-[0_8px_22px_rgba(41,63,51,0.06)] transition duration-200 hover:-translate-y-0.5 hover:border-[#AFC3B5] hover:bg-white hover:shadow-[0_14px_32px_rgba(41,63,51,0.12)] disabled:cursor-progress disabled:opacity-60"
             onClick={() => {
-              if (!exists) {
-                toast.info('该资源暂无资源，请等待后续补齐');
-                return;
-              }
+              /* 与 2D 一致：有资源直接打开；暂无资源则后台生成，不阻塞卡片 */
               if (fn.form === 'ppt') void openOrCreatePpt();
               else void openOrGenerate(fn.form as ResourceForm);
             }}

@@ -57,7 +57,12 @@ function ScrollToTop() {
 export default function App() {
   /* 全站 Lenis 平滑滚动（lerp 0.1），与 GSAP ScrollTrigger 同步 */
   useEffect(() => {
-    const lenis = new Lenis({ lerp: 0.1 });
+    const lenis = new Lenis({
+      lerp: 0.1,
+      /* 嵌套滚动容器（本讲目录/面板/代码块等）保持原生滚轮：否则 Lenis 会劫持滚轮，
+         导致只能拖动滚动条、滚轮无效 */
+      allowNestedScroll: true,
+    });
     lenis.on('scroll', ScrollTrigger.update);
     const raf = (time: number) => lenis.raf(time * 1000);
     gsap.ticker.add(raf);
