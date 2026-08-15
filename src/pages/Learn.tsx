@@ -230,11 +230,12 @@ export default function Learn() {
         </div>
       )}
       <motion.div
-        initial={{ opacity: 0, y: 20, gridTemplateColumns: 'minmax(0, 1fr) 0px' }}
+        initial={{ opacity: 0, y: 20 }}
         layout
-        animate={{ opacity: 1, y: 0, gridTemplateColumns: viewMode === '2d' ? 'minmax(0, 1fr) 340px' : 'minmax(0, 1fr) 0px', columnGap: viewMode === '2d' ? 28 : 0 }}
-        transition={{ layout: { duration: 0.32, ease: [0.22, 1, 0.36, 1] }, gridTemplateColumns: { duration: 0.32, ease: [0.22, 1, 0.36, 1] }, columnGap: { duration: 0.28 } }}
-        className="mt-5 hidden lg:grid"
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ layout: { duration: 0.32, ease: [0.22, 1, 0.36, 1] } }}
+        className="mt-5 flex flex-col gap-0 lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-7"
+        style={{ gridTemplateColumns: undefined }}
       >
         {/* 上层只承载图谱与按需详情；章节速览在下方独立占满全局宽度。 */}
         <motion.div layout="position" className="relative min-w-0">
@@ -312,9 +313,9 @@ export default function Learn() {
         <AnimatePresence initial={false} mode="popLayout">
         {viewMode === '2d' && <motion.div
           key="knowledge-detail-panel"
-          initial={{ opacity: 0, x: 26, scale: 0.975, filter: 'blur(4px)' }}
-          animate={{ opacity: 1, x: 0, scale: 1, filter: 'blur(0px)' }}
-          exit={{ opacity: 0, x: 20, scale: 0.985, filter: 'blur(3px)' }}
+          initial={{ opacity: 0, y: 26, scale: 0.975, filter: 'blur(4px)' }}
+          animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
+          exit={{ opacity: 0, y: 20, scale: 0.985, filter: 'blur(3px)' }}
           transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
           className="min-w-0 lg:sticky lg:top-6 lg:self-start"
         >
@@ -329,7 +330,7 @@ export default function Learn() {
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.35, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
-          className="mt-4 hidden border-t border-hairline/60 pt-4 lg:block"
+          className="mt-4 border-t border-hairline/60 pt-4"
         >
           <UnitQuickList selectedKpId={selectedKp} onSelect={(kpId) => { setSelectedKp(kpId); setSelectedTopic(null); setSingleExpandedKp(kpId); setGraphFocus({ id: kpId, at: Date.now() }); }} columns items={knowledgePoints} path={map.path} mastery={map.mastery} progress={map.chapterProgress} nodeTargets={map.nodeTargets} />
         </motion.div>
