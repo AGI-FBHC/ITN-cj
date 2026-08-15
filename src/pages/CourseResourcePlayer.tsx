@@ -849,29 +849,33 @@ export default function CourseResourcePlayer() {
     if (!resource || chatReadyRef.current) return;
     setChatLoading(true);
     try {
-      /* 与交互导学打通：按知识点标题找到已完成 PPT 任务，复用同一套聊天会话 */
-      const listed = await presentationApi.listPresentationSummaries(50);
-      const match = (listed.tasks ?? [])
-        .filter((item) => item.status === 'completed' && (item.title === resource.topic || item.title.includes(resource.topic)))
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-      if (match) {
-        setChatPptTaskId(match.id);
-        const sessions = await listPresentationChatSessions(match.id);
-        setChatSessions(sessions);
-        const current = sessions.filter((item) => item.modelProvider === 'mimo')
-          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0]
-          ?? await createPresentationChatSession(match.id, 'mimo');
-        setChatSessionId(current.id);
-        const history = await getPresentationChatMessages(match.id, current.id);
-        setMessages(history.map((item) => ({ role: item.role, content: item.content, createdAt: item.createdAt })));
-        chatReadyRef.current = true;
-        return;
-      }
-    } catch { /* 会话初始化失败时退回传统问答 */ }
-    setChatPptTaskId(null);
-    const result = await api.listLearningResourceMessages(resource.id).catch(() => ({ messages: [] }));
-    setMessages(result.messages);
-    chatReadyRef.current = true;
+      try {
+        /* 与交互导学打通：按知识点标题找到已完成 PPT 任务，复用同一套聊天会话 */
+        const listed = await presentationApi.listPresentationSummaries(50);
+        const match = (listed.tasks ?? [])
+          .filter((item) => item.status === 'completed' && (item.title === resource.topic || item.title.includes(resource.topic)))
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+        if (match) {
+          setChatPptTaskId(match.id);
+          const sessions = await listPresentationChatSessions(match.id);
+          setChatSessions(sessions);
+          const current = sessions.filter((item) => item.modelProvider === 'mimo')
+            .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0]
+            ?? await createPresentationChatSession(match.id, 'mimo');
+          setChatSessionId(current.id);
+          const history = await getPresentationChatMessages(match.id, current.id);
+          setMessages(history.map((item) => ({ role: item.role, content: item.content, createdAt: item.createdAt })));
+          chatReadyRef.current = true;
+          return;
+        }
+      } catch { /* 会话初始化失败时退回传统问答 */ }
+      setChatPptTaskId(null);
+      const result = await api.listLearningResourceMessages(resource.id).catch(() => ({ messages: [] }));
+      setMessages(result.messages);
+      chatReadyRef.current = true;
+    } finally {
+      setChatLoading(false);
+    }
   };
 
   const ask = async (text = question) => {
