@@ -425,6 +425,10 @@ export default function CourseResourcePlayer() {
   const [asking, setAsking] = useState(false);
   const [speechSpeed, setSpeechSpeed] = useState<TtsSpeed>('normal');
   const [slideMode, setSlideMode] = useState(false);
+  /* 自评乐观值：点击立即生效，后台防抖持久化，避免整页等待网络返回 */
+  const [selfAssessments, setSelfAssessments] = useState<Record<string, number>>({});
+  const pendingAssessRef = useRef<Record<string, number>>({});
+  const assessTimer = useRef<number | null>(null);
 
   useEffect(() => {
     if (writebackStatus !== 'synced') return undefined;
@@ -488,6 +492,12 @@ export default function CourseResourcePlayer() {
   }, [resourceId]);
 
   const blocks = useMemo(() => resource ? blocksOf(resource) : [], [resource]);
+  /* 渲染用自评值：乐观值叠加在服务端值之上，服务端回包后自动收敛 */
+  const effectiveAssessments = useMemo(() => {
+    if (!resource) return {};
+    const base = assessmentsOf(resource);
+    return Object.keys(selfAssessments).length ? { ...base, ...selfAssessments } : base;
+  }, [resource, selfAssessments]);
   const chapter = useMemo<CourseChapter | null>(() => course?.chapters.find((item) => item.id === resource?.chapterId) ?? null, [course, resource?.chapterId]);
   const currentIndex = Math.max(0, blocks.findIndex((block) => block.id === currentBlockId));
   const quizAnswers = useMemo(() => new Map(
@@ -527,18 +537,32 @@ export default function CourseResourcePlayer() {
     }, 650);
   }, [resource]);
 
-  const assessBlock = useCallback(async (blockId: string, value: number) => {
+  /* 前台展示优先：选中态立即生效，持久化在后台防抖执行，连点自动合并为一次请求 */
+  const assessBlock = useCallback((blockId: string, value: number) => {
     if (!resource) return;
-    try {
-      const result = await api.updateLearningResourceProgress(resource.id, {
-        currentBlockId: currentBlockId || blockId, visitedBlockIds: unique([...visited, blockId]),
+    pendingAssessRef.current[blockId] = value;
+    setSelfAssessments({ ...pendingAssessRef.current });
+    setVisited((current) => unique([...current, blockId]));
+    if (assessTimer.current) window.clearTimeout(assessTimer.current);
+    assessTimer.current = window.setTimeout(() => {
+      const target = resource;
+      const payload = { ...pendingAssessRef.current };
+      if (!Object.keys(payload).length) return;
+      void api.updateLearningResourceProgress(target.id, {
+        currentBlockId: currentBlockId || blockId, visitedBlockIds: unique([...visited, ...Object.keys(payload)]),
         completedStepIds: completedSteps, elapsedSeconds: elapsedBase + sessionSecondsRef.current,
-        selfAssessments: { [blockId]: value },
+        selfAssessments: payload,
+      }).then((result) => {
+        Object.keys(payload).forEach((key) => { delete pendingAssessRef.current[key]; });
+        setSelfAssessments({ ...pendingAssessRef.current });
+        setResource(result.resource);
+        toast.success(Object.values(payload).some((v) => v === 1) ? '已记录：完全掌握' : '掌握程度已更新');
+      }).catch(() => {
+        Object.keys(payload).forEach((key) => { delete pendingAssessRef.current[key]; });
+        setSelfAssessments({ ...pendingAssessRef.current });
+        toast.error('掌握程度保存失败');
       });
-      setResource(result.resource);
-      setVisited((current) => unique([...current, blockId]));
-      toast.success(value === 1 ? '已记录：完全掌握' : '掌握程度已更新');
-    } catch { toast.error('掌握程度保存失败'); }
+    }, 400);
   }, [resource, currentBlockId, visited, completedSteps, elapsedBase]);
 
   useEffect(() => {
@@ -561,6 +585,7 @@ export default function CourseResourcePlayer() {
 
   useEffect(() => () => {
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    if (assessTimer.current) window.clearTimeout(assessTimer.current);
     narration.stop();
     setFocusMode(false);
   }, [narration.stop, setFocusMode]);
@@ -655,7 +680,7 @@ export default function CourseResourcePlayer() {
   };
 
   const unassessedCount = resource && resource.type !== 'quiz'
-    ? blocks.filter((block) => block.kind !== 'quiz' && assessmentsOf(resource)[block.id] == null).length
+    ? blocks.filter((block) => block.kind !== 'quiz' && effectiveAssessments[block.id] == null).length
     : 0;
 
   const markComplete = () => {
@@ -672,7 +697,7 @@ export default function CourseResourcePlayer() {
     if (!resource) return;
     const extra: Record<string, number> = {};
     blocks.forEach((block) => {
-      if (block.kind !== 'quiz' && assessmentsOf(resource)[block.id] == null) extra[block.id] = 0.25;
+      if (block.kind !== 'quiz' && effectiveAssessments[block.id] == null) extra[block.id] = 0.25;
     });
     finishComplete(extra);
   };
@@ -699,7 +724,7 @@ export default function CourseResourcePlayer() {
         await api.updateLearningResourceProgress(resource.id, {
           currentBlockId, visitedBlockIds: blocks.map((block) => block.id),
           completedStepIds: completedSteps, elapsedSeconds: elapsedBase + sessionSecondsRef.current,
-          selfAssessments: { ...assessmentsOf(resource), ...extraAssessments },
+          selfAssessments: { ...effectiveAssessments, ...extraAssessments },
         }).catch(() => undefined);
         void api.recordLearningEvent({ eventType: 'STUDY_END', sourceType: 'RESOURCE', sourceId: resource.id, durationSeconds: elapsedBase + sessionSecondsRef.current, metadata: JSON.stringify({ courseId: resource.courseId, chapterId: resource.chapterId, resourceType: resource.type, completed: true }) }).catch(() => undefined);
         const mapLearnerId = isUuid(resource.learnerId) ? resource.learnerId! : currentLearnerId;
@@ -745,7 +770,7 @@ export default function CourseResourcePlayer() {
         {block.warning && <div className="mt-4 flex items-start gap-2 rounded-[12px] border border-brand-amber/40 bg-brand-amber-tint px-4 py-3 text-[12.5px] leading-5 text-ochre"><TriangleAlert size={15} className="mt-0.5 shrink-0" /><span><strong>操作提醒：</strong>{block.warning}</span></div>}
         {block.kind === 'quiz' && <QuizBlock block={block} resource={resource} onWritebackStatus={setWritebackStatus} onResourceState={(state) => setResource((current) => current ? { ...current, state, learned: Boolean(state.learned || state.completed) } : current)} />}
         <InlineBlockCitations block={block} resource={resource} />
-        {resource.type !== 'quiz' && <div className="mt-5 rounded-[12px] border border-brand/20 bg-brand-tint/25 p-3.5"><div className="flex flex-wrap items-center justify-between gap-2"><div><div className="text-[12px] font-semibold text-ink">这一块你掌握得怎么样？</div><div className="mt-0.5 text-[10.5px] text-ink-muted">自评会和答题正确率一起计算掌握程度，可随时修改。</div></div><div className="flex flex-wrap gap-1.5">{([{ label: '还需学习', value: 0.2 }, { label: '基本理解', value: 0.55 }, { label: '大体掌握', value: 0.8 }, { label: '我已经完全掌握', value: 1 }] as const).map((option) => { const selected = assessmentsOf(resource)[block.id] === option.value; return <button key={option.value} type="button" onClick={() => void assessBlock(block.id, option.value)} className={cn('rounded-full border px-3 py-1.5 text-[11px] transition', selected ? 'border-brand bg-brand text-paper' : 'border-hairline bg-paper text-ink-2 hover:border-brand/45')}>{selected && <Check size={11} className="mr-1 inline" />}{option.label}</button>; })}</div></div></div>}
+        {resource.type !== 'quiz' && <div className="mt-5 rounded-[12px] border border-brand/20 bg-brand-tint/25 p-3.5"><div className="flex flex-wrap items-center justify-between gap-2"><div><div className="text-[12px] font-semibold text-ink">这一块你掌握得怎么样？</div><div className="mt-0.5 text-[10.5px] text-ink-muted">自评会和答题正确率一起计算掌握程度，可随时修改。</div></div><div className="flex flex-wrap gap-1.5">{([{ label: '还需学习', value: 0.2 }, { label: '基本理解', value: 0.55 }, { label: '大体掌握', value: 0.8 }, { label: '我已经完全掌握', value: 1 }] as const).map((option) => { const selected = effectiveAssessments[block.id] === option.value; return <button key={option.value} type="button" onClick={() => void assessBlock(block.id, option.value)} className={cn('rounded-full border px-3 py-1.5 text-[11px] transition', selected ? 'border-brand bg-brand text-paper' : 'border-hairline bg-paper text-ink-2 hover:border-brand/45')}>{selected && <Check size={11} className="mr-1 inline" />}{option.label}</button>; })}</div></div></div>}
         <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-hairline/70 pt-4"><button type="button" onClick={() => { setNoteFor(block); setNoteText(''); }} className="lf-btn-ghost !px-3 !py-1.5 text-[11.5px]"><NotebookPen size={13} />记这一段</button><button type="button" onClick={() => { setCurrentBlockId(block.id); void openChat(); }} className="lf-btn-ghost !px-3 !py-1.5 text-[11.5px]"><MessageCircleQuestion size={13} />向导学老师提问</button>{index < blocks.length - 1 && <button type="button" onClick={() => goBlock(blocks[index + 1].id)} className="ml-auto inline-flex items-center gap-1 text-[11.5px] text-brand hover:underline">下一段<ArrowRight size={12} /></button>}</div>
       </motion.section>)}</main>
     </div>
