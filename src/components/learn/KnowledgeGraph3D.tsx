@@ -12,6 +12,7 @@ import type { GraphNode, GraphEdge, EdgeKind } from '@/data/knowledgeGraph';
 import type { ResourceForm, GeneratedResource } from '@/data/resources';
 import type { PresentationTaskSummary } from '@/lib/presentationApi';
 import { FUNCTION_META, useTopicResourceActions } from '@/hooks/useTopicResourceActions';
+import { presentationApi } from '@/lib/presentationApi';
 import cjkFontUrl from '@/assets/fonts/noto-sans-cjk-sc-gb2312.otf';
 
 const EDGE_COLORS: Record<EdgeKind, string> = {
@@ -629,6 +630,20 @@ function TopicActionModal({
   onClose: () => void;
 }) {
   const dialogRef = useRef<HTMLElement>(null);
+  // 弹窗打开时若全局课件列表尚未加载完（慢请求/刷新后），主动补一次，
+  // 避免“交互课件”误显示为暂无资源。
+  const [localPresentations, setLocalPresentations] = useState<PresentationTaskSummary[]>(presentations ?? []);
+  useEffect(() => {
+    if ((presentations ?? []).length > 0) {
+      setLocalPresentations(presentations ?? []);
+      return;
+    }
+    let cancelled = false;
+    presentationApi.listPresentationSummaries(100)
+      .then((listed) => { if (!cancelled) setLocalPresentations(listed.tasks ?? []); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [presentations]);
   const { existingFor, openOrGenerate, openOrCreatePpt, generating, checkingPpt } = useTopicResourceActions({
     kpId: node.kpId,
     label: node.label,
@@ -697,7 +712,7 @@ function TopicActionModal({
           {FUNCTION_META.map((fn) => {
         const res = fn.form !== 'ppt' ? existingFor(fn.form as ResourceForm) : undefined;
         const pptTask = fn.form === 'ppt'
-          ? (presentations ?? [])
+          ? (localPresentations ?? [])
               .filter((task) => !['failed', 'cancelled'].includes(task.status))
               .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
               .find((task) => {

@@ -192,7 +192,9 @@ export function useLearningMap(): LearningMapView {
   const [resources, setResources] = useState<LearningResourceSummary[]>(() => readLearningMapCache(currentLearnerId)?.resources ?? []);
   const [tree, setTree] = useState<RagTree | null>(() => readLearningMapCache(currentLearnerId)?.tree ?? null);
   const [analytics, setAnalytics] = useState<LearnerAnalyticsProfile | null>(null);
-  const [presentations, setPresentations] = useState<PresentationTaskSummary[]>([]);
+  const [presentations, setPresentations] = useState<PresentationTaskSummary[]>(
+    () => readLearningMapCache(currentLearnerId)?.presentations ?? [],
+  );
   const [jobTargets, setJobTargets] = useState<JobTargetLevel[]>([]);
 
   /* 目标岗位门槛：随画像目标岗位加载（岗位名 → target_options 的 code） */
@@ -246,6 +248,7 @@ export function useLearningMap(): LearningMapView {
     if (cached) {
       setResources(cached.resources);
       setTree(cached.tree);
+      if (cached.presentations) setPresentations(cached.presentations);
     }
     // 缓存只用于首屏快速回显；资源可能在其他页面或后台被删除，必须始终用服务端列表校准。
     // 若校准失败才保留旧缓存，避免把已经删除的 resourceId 永久“复活”。
