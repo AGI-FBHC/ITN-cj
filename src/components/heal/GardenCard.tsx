@@ -19,6 +19,7 @@ import { Sun, Droplets, ChevronDown, ArrowRight } from 'lucide-react';
 import { useGrowth, TREE_STAGES } from '@/context/GrowthContext';
 
 import { useLearningMap } from '@/hooks/useLearningMap';
+import { learnMapPath } from '@/lib/learnNav';
 import { useProfile, dataIdOf } from '@/context/ProfileContext';
 import { useReview } from '@/context/ReviewContext';
 import { getKnowledgePoint } from '@/data/knowledgePoints';
@@ -207,7 +208,7 @@ export default function GardenCard() {
               <Droplets size={15} /> 用 {orb} 养分滋养园子
             </button>
           ) : (
-            <button type="button" onClick={() => navigate('/learn')} className="lf-btn-ghost w-full !py-2 text-[13.5px]">
+            <button type="button" onClick={() => navigate(learnMapPath(currentLearner.id, learningMap.activeKp ?? undefined))} className="lf-btn-ghost w-full !py-2 text-[13.5px]">
               去学习攒养分 <ArrowRight size={14} />
             </button>
           )}

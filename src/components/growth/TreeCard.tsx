@@ -7,11 +7,16 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Droplets, ChevronDown, Sprout, ArrowRight } from 'lucide-react';
 import { useGrowth, TREE_STAGES } from '@/context/GrowthContext';
+import { useProfile } from '@/context/ProfileContext';
+import { useLearningMap } from '@/hooks/useLearningMap';
+import { learnMapPath } from '@/lib/learnNav';
 import KnowledgeTree from './KnowledgeTree';
 import { GrassTuft, LeafSmall } from '@/components/heal/Flora';
 import { cn } from '@/lib/utils';
 
 export default function TreeCard() {
+  const { currentLearner } = useProfile();
+  const learningMap = useLearningMap();
   const { orb, watered, stage, log, fruits, water } = useGrowth();
   const navigate = useNavigate();
   const [logOpen, setLogOpen] = useState(false);
@@ -84,7 +89,7 @@ export default function TreeCard() {
           ) : (
             <button
               type="button"
-              onClick={() => navigate('/learn')}
+              onClick={() => navigate(learnMapPath(currentLearner.id, learningMap.activeKp ?? undefined))}
               className="lf-btn-ghost w-full !py-2 text-[13.5px]"
             >
               先去学习攒能量

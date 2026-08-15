@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { useProfile, dataIdOf } from '@/context/ProfileContext';
 import { reportForLearner } from '@/data/reportBuilder';
 import { learningResourcePath, useCourseLearning } from '@/hooks/useCourseLearning';
+import { learnMapPath } from '@/lib/learnNav';
 import { useLearningMap } from '@/hooks/useLearningMap';
 import { getResourcesFor } from '@/data/resources';
 import type { GeneratedResource } from '@/data/resources';
@@ -120,6 +121,12 @@ export default function LearnerHome() {
   const activeTitle = primaryLoading ? '正在读取真实学习进度，首次加载可能需要一些时间…' : todayChapter ? todayChapter.name : learning.nextChapter ? `第 ${learning.nextChapter.index} 章 · ${learning.nextChapter.title}` : activeNode?.title ?? '开启你的第一课';
   const activePath = primaryLoading ? '/me' : todayChapter ? `/learn?kp=${todayChapter.id}` : learning.nextResource ? learningResourcePath(learning.nextResource) : activeNode ? `/learn/${activeNode.kpId}` : '/learn';
   const activeButton = primaryLoading ? '加载中…' : todayChapter ? `继续：${todayChapter.name}` : learning.nextResource ? `继续：${learning.nextResource.title}` : activeNode ? `继续：${activeNode.resourceRef ?? activeNode.title}` : '开始学习';
+  const goActive = () => {
+    if (isPreset) { navigate(activePath); return; }
+    if (todayChapter) { navigate(learnMapPath(currentLearner.id, todayChapter.id)); return; }
+    if (learning.nextResource) { navigate(learningResourcePath(learning.nextResource)); return; }
+    navigate(learnMapPath(currentLearner.id));
+  };
   const activeEst = todayChapter ? undefined : (learning.nextResource ? undefined : activeNode?.est);
 
   /* 真实用户：推荐 = 知识点级，按目标门槛与当前掌握度的差距取最需加强的两个子知识点 */
@@ -266,7 +273,7 @@ export default function LearnerHome() {
             <div className="mt-5 flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                onClick={() => navigate(activePath)}
+                onClick={goActive}
                 className="lf-btn-primary group"
               >
                 <Play size={15} fill="currentColor" className="transition-transform group-hover:translate-x-[3px]" />
@@ -359,7 +366,7 @@ export default function LearnerHome() {
                 </p>
                 <button
                   type="button"
-                  onClick={() => navigate(isPreset ? `/learn/${g.kpId}` : `/learn?kp=${encodeURIComponent(g.kpId)}&unitTopic=${encodeURIComponent(g.topicId)}`)}
+                  onClick={() => navigate(isPreset ? `/learn/${g.kpId}` : learnMapPath(currentLearner.id, g.kpId, g.topicId))}
                   className="lf-btn-ghost mt-4 !px-4 !py-1.5 text-[13px]"
                 >
                   去学这块

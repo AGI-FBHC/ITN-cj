@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   ArrowRight,
@@ -20,12 +20,13 @@ import PageBack from '@/components/PageBack';
 import SectionHeader from '@/components/SectionHeader';
 import { ReactECharts } from '@/components/ChartCard';
 import { useProfile } from '@/context/ProfileContext';
-import { learningResourcePath, useCourseLearning } from '@/hooks/useCourseLearning';
+import { useCourseLearning } from '@/hooks/useCourseLearning';
 import { useLearningMap } from '@/hooks/useLearningMap';
 import { api } from '@/lib/api';
 import { CHAPTER_ABILITY_WEIGHTS, deriveAbilityScores } from '@/lib/abilityAdjust';
 import type { AbilityDimension } from '@/lib/abilityAdjust';
 import { cn } from '@/lib/utils';
+import { learnMapPath } from '@/lib/learnNav';
 import type { LearnerAnalyticsProfile, LearnerGrowth, LearningJournal, OnboardingKnowledgePoint } from '@/lib/api';
 
 const resourceLabel = { lecture: '讲义', practice: '实操', quiz: '分阶题' } as const;
@@ -124,6 +125,7 @@ function weeklyOption(values: number[]) {
 }
 
 export default function Report() {
+  const navigate = useNavigate();
   const { currentLearner, domainKnowledgePoints } = useProfile();
   const { loading: courseLoading, course, resources, nextResource, nextChapter, learnedCount, totalCount, progress } = useCourseLearning();
   const learningMap = useLearningMap();
@@ -417,7 +419,13 @@ export default function Report() {
               <div className="text-[15px] font-semibold text-ink">{weakestChapter ? `优先补齐「${weakestChapter.name}」` : '先完成一次真实学习'}</div>
               <p className="mt-1 text-[13px] leading-6 text-ink-muted">{weakestChapter ? `当前最弱章节是「${weakestChapter.name}」（掌握度 ${Math.round(learningMap.mastery[weakestChapter.id] ?? 0)}% · 进度 ${Math.round(learningMap.chapterProgress[weakestChapter.id] ?? 0)}%）。${weakestChapterDims}${nextResource ? `建议继续“${nextChapter?.title ?? nextResource.topic}”中的${resourceLabel[nextResource.type]}，完成后再用测评校准掌握度。` : '先生成对应章节的讲义与分阶题，形成可验证的学习证据。'}` : '先完成一次真实学习，能力与画像数据会随证据累积。'}</p>
             </div>
-            {nextResource ? <Link to={learningResourcePath(nextResource)} className="lf-btn-primary shrink-0 !px-4 !py-2 text-[12.5px]">继续学习 <ArrowRight size={14} /></Link> : <Link to="/learn" className="lf-btn-primary shrink-0 !px-4 !py-2 text-[12.5px]">进入课程 <ArrowRight size={14} /></Link>}
+            <button
+              type="button"
+              onClick={() => navigate(learnMapPath(currentLearner.id, nextResource?.kpId ?? weakestChapter?.id))}
+              className="lf-btn-primary shrink-0 !px-4 !py-2 text-[12.5px]"
+            >
+              {nextResource ? '继续学习' : '进入课程'} <ArrowRight size={14} />
+            </button>
           </div>
         </div>
       </section>

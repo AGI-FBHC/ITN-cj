@@ -4,7 +4,7 @@
  * 真实用户使用知识地图真实章节；预设画像保留原演示路径。
  * 已在该单元课件内 / 专注模式 / 无 active 节点时自动隐藏；与右下角阿诊 Dock 不冲突。
  */
-import { Link, useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Route, ArrowRight } from 'lucide-react';
 import { useProfile, dataIdOf } from '@/context/ProfileContext';
@@ -14,6 +14,7 @@ import { reportForLearner } from '@/data/reportBuilder';
 import { resolveLearnTarget } from '@/data/resources';
 import { useLearningMap } from '@/hooks/useLearningMap';
 import { learningResourcePath, useCourseLearning } from '@/hooks/useCourseLearning';
+import { learnMapPath } from '@/lib/learnNav';
 
 export default function ResumeLearningFab() {
   const { currentLearner } = useProfile();
@@ -25,11 +26,12 @@ export default function ResumeLearningFab() {
   const node = isPreset
     ? activePathNode(reportForLearner(currentLearner))
     : (learningMap.path.find((p) => p.status === 'active') ?? learningMap.path[0] ?? null);
-  const to = isPreset
-    ? resolveLearnTarget(dataIdOf(currentLearner), node?.kpId ?? '', node?.title ?? '').to
-    : learning.nextResource
-      ? learningResourcePath(learning.nextResource)
-      : node ? `/learn?kp=${encodeURIComponent(node.kpId)}` : '/learn';
+  const navigate = useNavigate();
+  const goLearn = () => {
+    if (isPreset) { navigate(resolveLearnTarget(dataIdOf(currentLearner), node?.kpId ?? '', node?.title ?? '').to); return; }
+    if (learning.nextResource) { navigate(learningResourcePath(learning.nextResource)); return; }
+    navigate(learnMapPath(currentLearner.id, node?.kpId ?? undefined));
+  };
 
   /* 不打扰的场合：专注模式 / 无节点 / 已经在「学」的区域里（那里本就有入口，浮标只会挡住花园） */
   const inLearnArea = location.pathname.startsWith('/learn');
@@ -45,8 +47,9 @@ export default function ResumeLearningFab() {
           transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
           className="fixed bottom-20 left-4 z-40 md:bottom-6 md:left-6"
         >
-          <Link
-            to={to}
+          <button
+            type="button"
+            onClick={goLearn}
             title={`继续学习：${node.title}`}
             className="lf-glass group flex items-center gap-2.5 rounded-full py-2 pl-2.5 pr-3.5 transition-all hover:border-brand/55"
           >
@@ -58,7 +61,7 @@ export default function ResumeLearningFab() {
               <span className="block max-w-[150px] truncate text-[12.5px] font-semibold text-ink">{node.title}</span>
             </span>
             <ArrowRight size={14} className="shrink-0 text-brand transition-transform group-hover:translate-x-0.5" />
-          </Link>
+          </button>
         </motion.div>
       )}
     </AnimatePresence>
