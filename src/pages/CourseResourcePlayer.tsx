@@ -101,6 +101,16 @@ const asNumbers = (value: unknown): number[] => Array.isArray(value) ? [...new S
 const unique = (values: string[]) => [...new Set(values.filter(Boolean))];
 const isUuid = (value?: string | null) => Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
 
+/** 学习状态变化广播：答题/重置/完成后通知全局缓存失效（analytics、今日日记），保证返回地图/成长页即新鲜 */
+function notifyLearningStateChanged(learnerId: string | null | undefined): void {
+  if (!learnerId || !isUuid(learnerId)) return;
+  try {
+    window.dispatchEvent(new CustomEvent('lf:learning-state-changed', { detail: { learnerId } }));
+  } catch {
+    /* ignore */
+  }
+}
+
 function progressOf(resource: LearningResource): LearningResourceProgress {
   const raw = asRecord(resource.state.progress);
   return {
@@ -303,10 +313,12 @@ function useResourceNarration() {
 }
 
 function QuizBlock({
-  block, resource, onResourceState, onWritebackStatus,
+  block, resource, learnerId, onResourceState, onWritebackStatus,
 }: {
   block: LearningBlock;
   resource: LearningResource;
+  /** 当前登录学习者（公共资源 resource.learnerId 可能为空，用于缓存失效广播兜底） */
+  learnerId?: string | null;
   onResourceState: (state: Record<string, unknown>) => void;
   onWritebackStatus: (status: 'syncing' | 'synced' | 'failed') => void;
 }) {
@@ -337,6 +349,7 @@ function QuizBlock({
         : await api.gradeLearningQuiz(resource.id, request);
       setSelected(optionIndex);
       setFeedback(result);
+      notifyLearningStateChanged(learnerId ?? resource.learnerId);
       const optimisticState = {
         ...resource.state,
         answered: [...asRecords(resource.state.answered), {
@@ -737,7 +750,10 @@ export default function CourseResourcePlayer() {
         }).catch(() => undefined);
         void api.recordLearningEvent({ eventType: 'STUDY_END', sourceType: 'RESOURCE', sourceId: resource.id, durationSeconds: elapsedBase + sessionSecondsRef.current, metadata: JSON.stringify({ courseId: resource.courseId, chapterId: resource.chapterId, resourceType: resource.type, completed: true }) }).catch(() => undefined);
         const mapLearnerId = isUuid(resource.learnerId) ? resource.learnerId! : currentLearnerId;
-        if (isUuid(mapLearnerId)) await refreshLearningMapResourceCache(mapLearnerId).catch(() => undefined);
+        if (isUuid(mapLearnerId)) {
+          await refreshLearningMapResourceCache(mapLearnerId).catch(() => undefined);
+          notifyLearningStateChanged(mapLearnerId);
+        }
       } catch { /* 后台失败静默，避免打扰已跳转用户 */ }
     })();
   };
@@ -763,6 +779,7 @@ export default function CourseResourcePlayer() {
       setCurrentBlockId(firstId);
       try { window.localStorage.removeItem(`${RESOURCE_CACHE_PREFIX}${resource.id}`); } catch { /* ignore */ }
       toast.success('已重新开始，进度与掌握度已清零');
+      notifyLearningStateChanged(resource.learnerId);
       if (firstId) {
         requestAnimationFrame(() => blockRefs.current[firstId]?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
       }
@@ -839,7 +856,7 @@ export default function CourseResourcePlayer() {
 
     {createPortal(<AnimatePresence>{slideMode && activeBlock && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[9999] flex flex-col bg-paper">
       <header className="flex items-center gap-3 border-b border-hairline bg-card-warm px-4 py-3 md:px-6"><Presentation size={17} className="text-brand" /><div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold text-ink">幻灯模式 · {resource.title}</div><div className="font-mono text-[9.5px] text-ink-muted">真实课程内容 · 第 {currentIndex + 1}/{blocks.length} 段</div></div><button type="button" onClick={() => setSlideMode(false)} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep" title="退出幻灯"><X size={17} /></button></header>
-      <main className="flex flex-1 items-center justify-center overflow-y-auto bg-gradient-to-br from-brand-tint/25 via-paper to-card-warm px-4 py-8 md:px-12"><motion.article key={activeBlock.id} initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} className="relative w-full max-w-[1040px] overflow-hidden rounded-[24px] border border-brand/20 bg-card-warm/95 p-6 shadow-warm-lg md:p-8 lg:p-10"><div className="absolute right-0 top-0 h-32 w-32 rounded-bl-full bg-brand/5" /><div className="relative mx-auto max-w-[800px]"><div className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.12em] text-brand">{activeBlock.eyebrow}</div><h2 className="mt-4 max-w-[780px] font-serif text-[27px] font-semibold leading-tight tracking-[-0.015em] text-ink md:text-[34px]">{activeBlock.title}</h2><div className="mt-5 h-1 w-14 rounded-full bg-brand" />{activeBlock.body && <div className="mt-7"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{activeBlock.body}</ReactMarkdown></div>}<InlineBlockCitations block={activeBlock} resource={resource} />{activeBlock.code && <pre className="mt-6 max-h-[42vh] overflow-auto rounded-[14px] bg-ink p-5 text-[14px] leading-6 text-paper md:text-[16px]"><code>{activeBlock.code}</code></pre>}{activeBlock.expectedOutput && <div className="mt-5 rounded-[14px] border border-brand/25 bg-brand-tint/55 p-4 text-[15px] leading-7 text-ink-2 md:text-[17px]"><strong className="text-brand">预期结果</strong><span className="mx-2 text-brand/40">/</span>{activeBlock.expectedOutput}</div>}{activeBlock.kind === 'quiz' && <QuizBlock block={activeBlock} resource={resource} onWritebackStatus={setWritebackStatus} onResourceState={(state) => setResource((current) => current ? { ...current, state, learned: Boolean(state.learned || state.completed) } : current)} />}</div></motion.article></main>
+      <main className="flex flex-1 items-center justify-center overflow-y-auto bg-gradient-to-br from-brand-tint/25 via-paper to-card-warm px-4 py-8 md:px-12"><motion.article key={activeBlock.id} initial={{ opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} className="relative w-full max-w-[1040px] overflow-hidden rounded-[24px] border border-brand/20 bg-card-warm/95 p-6 shadow-warm-lg md:p-8 lg:p-10"><div className="absolute right-0 top-0 h-32 w-32 rounded-bl-full bg-brand/5" /><div className="relative mx-auto max-w-[800px]"><div className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.12em] text-brand">{activeBlock.eyebrow}</div><h2 className="mt-4 max-w-[780px] font-serif text-[27px] font-semibold leading-tight tracking-[-0.015em] text-ink md:text-[34px]">{activeBlock.title}</h2><div className="mt-5 h-1 w-14 rounded-full bg-brand" />{activeBlock.body && <div className="mt-7"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{activeBlock.body}</ReactMarkdown></div>}<InlineBlockCitations block={activeBlock} resource={resource} />{activeBlock.code && <pre className="mt-6 max-h-[42vh] overflow-auto rounded-[14px] bg-ink p-5 text-[14px] leading-6 text-paper md:text-[16px]"><code>{activeBlock.code}</code></pre>}{activeBlock.expectedOutput && <div className="mt-5 rounded-[14px] border border-brand/25 bg-brand-tint/55 p-4 text-[15px] leading-7 text-ink-2 md:text-[17px]"><strong className="text-brand">预期结果</strong><span className="mx-2 text-brand/40">/</span>{activeBlock.expectedOutput}</div>}{activeBlock.kind === 'quiz' && <QuizBlock block={activeBlock} resource={resource} learnerId={currentLearnerId} onWritebackStatus={setWritebackStatus} onResourceState={(state) => setResource((current) => current ? { ...current, state, learned: Boolean(state.learned || state.completed) } : current)} />}</div></motion.article></main>
       <footer className="flex items-center justify-center gap-3 border-t border-hairline bg-card-warm px-4 py-3"><button type="button" disabled={currentIndex === 0} onClick={() => goBlock(blocks[currentIndex - 1].id)} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="上一页"><ChevronLeft size={17} /></button><button type="button" onClick={speakCurrent} className="flex h-11 items-center gap-2 rounded-full bg-brand px-5 text-[12.5px] font-medium text-paper">{narration.speaking ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}{narration.speaking ? '暂停讲播' : '讲这一页'}</button><button type="button" onClick={cycleSpeed} className="h-10 rounded-full border border-hairline px-4 font-mono text-[11px] text-ink-muted">{speedMeta[speechSpeed].label}</button><button type="button" disabled={currentIndex >= blocks.length - 1} onClick={() => goBlock(blocks[currentIndex + 1].id)} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="下一页"><ChevronRight size={17} /></button></footer>
     </motion.div>}</AnimatePresence>, document.body)}
 

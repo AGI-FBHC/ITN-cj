@@ -149,12 +149,16 @@ export default function MyProfile() {
   }, [currentLearner.id, loadEvidence]);
 
   useEffect(() => {
-    const onSignal = () => {
+    const bustToday = () => {
       if (!isUuid(currentLearner.id)) return;
       bustLearnerJournal(currentLearner.id, localDateKey(0));
     };
-    window.addEventListener('lf-signal', onSignal);
-    return () => window.removeEventListener('lf-signal', onSignal);
+    window.addEventListener('lf-signal', bustToday);
+    window.addEventListener('lf:learning-state-changed', bustToday);
+    return () => {
+      window.removeEventListener('lf-signal', bustToday);
+      window.removeEventListener('lf:learning-state-changed', bustToday);
+    };
   }, [currentLearner.id]);
 
   const kps = domainKnowledgePoints;

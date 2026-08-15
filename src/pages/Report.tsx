@@ -181,12 +181,16 @@ export default function Report() {
   }, [currentLearner.id, loadReport]);
 
   useEffect(() => {
-    const onSignal = () => {
+    const bustToday = () => {
       if (!isUuid(currentLearner.id)) return;
       bustLearnerJournal(currentLearner.id, localDateKey(0));
     };
-    window.addEventListener('lf-signal', onSignal);
-    return () => window.removeEventListener('lf-signal', onSignal);
+    window.addEventListener('lf-signal', bustToday);
+    window.addEventListener('lf:learning-state-changed', bustToday);
+    return () => {
+      window.removeEventListener('lf-signal', bustToday);
+      window.removeEventListener('lf:learning-state-changed', bustToday);
+    };
   }, [currentLearner.id]);
 
   /* 六维能力 = 画像基线 + 学习证据（章节/知识点 进度×掌握度 加权），与「我的画像」页同口径 */

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
 import type { LearnerAnalyticsProfile, JobTargetLevel, RagTree } from '@/lib/api';
@@ -15,6 +15,31 @@ import {
   writeLearnerAnalytics,
   bustLearnerAnalytics,
 } from '@/lib/dataCache';
+
+/* analytics 共享刷新：多实例只发一次请求（模块级防抖 + 飞行中合并），完成后广播给所有实例 */
+const ANALYTICS_REFRESHED_EVENT = 'lf:analytics-refreshed';
+let analyticsRefreshTimer: number | null = null;
+let analyticsRefreshInFlight = false;
+
+function scheduleAnalyticsRefresh(learnerId: string): void {
+  if (analyticsRefreshTimer !== null) window.clearTimeout(analyticsRefreshTimer);
+  analyticsRefreshTimer = window.setTimeout(() => {
+    analyticsRefreshTimer = null;
+    if (analyticsRefreshInFlight) return;
+    analyticsRefreshInFlight = true;
+    void api.getLearnerAnalyticsProfile()
+      .then((fresh) => {
+        writeLearnerAnalytics(learnerId, fresh);
+        try {
+          window.dispatchEvent(new CustomEvent(ANALYTICS_REFRESHED_EVENT, { detail: { learnerId, analytics: fresh } }));
+        } catch {
+          /* ignore */
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => { analyticsRefreshInFlight = false; });
+  }, 1500);
+}
 import type { PresentationTaskSummary } from '@/lib/presentationApi';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -292,34 +317,31 @@ export function useLearningMap(): LearningMapView {
     return () => { cancelled = true; };
   }, [currentLearnerId]);
 
-  /* 学习行为实时失效：答题/阅读/实操/自评等信号 → analytics 置脏并防抖刷新（合并高频信号） */
-  const analyticsTimerRef = useRef<number | null>(null);
-  const refreshAnalyticsSoon = useCallback(() => {
-    if (analyticsTimerRef.current !== null) window.clearTimeout(analyticsTimerRef.current);
-    analyticsTimerRef.current = window.setTimeout(() => {
-      analyticsTimerRef.current = null;
-      const learnerId = currentLearnerId;
-      if (!learnerId || !UUID_PATTERN.test(learnerId)) return;
-      void api.getLearnerAnalyticsProfile()
-        .then((fresh) => {
-          setAnalytics(fresh);
-          writeLearnerAnalytics(learnerId, fresh);
-        })
-        .catch(() => undefined);
-    }, 1500);
-  }, [currentLearnerId]);
+  /* 学习行为实时失效：信号/资源变更/资源播放器状态变更 → analytics 置脏 + 共享防抖刷新；
+     刷新完成后广播，本页所有实例同步更新 */
   useEffect(() => {
-    const onSignal = () => {
-      if (!currentLearnerId || !UUID_PATTERN.test(currentLearnerId)) return;
-      bustLearnerAnalytics(currentLearnerId);
-      refreshAnalyticsSoon();
+    const learnerId = currentLearnerId;
+    const valid = Boolean(learnerId && UUID_PATTERN.test(learnerId));
+    const onDirty = () => {
+      if (!valid) return;
+      bustLearnerAnalytics(learnerId);
+      scheduleAnalyticsRefresh(learnerId);
     };
-    window.addEventListener('lf-signal', onSignal);
-    return () => window.removeEventListener('lf-signal', onSignal);
-  }, [currentLearnerId, refreshAnalyticsSoon]);
-  useEffect(() => () => {
-    if (analyticsTimerRef.current !== null) window.clearTimeout(analyticsTimerRef.current);
-  }, []);
+    const onRefreshed = (event: Event) => {
+      const detail = (event as CustomEvent<{ learnerId: string; analytics: LearnerAnalyticsProfile }>).detail;
+      if (detail && detail.learnerId === learnerId && detail.analytics) setAnalytics(detail.analytics);
+    };
+    window.addEventListener('lf-signal', onDirty);
+    window.addEventListener('lf:learning-state-changed', onDirty);
+    window.addEventListener(RESOURCE_CACHE_UPDATED_EVENT, onDirty);
+    window.addEventListener(ANALYTICS_REFRESHED_EVENT, onRefreshed);
+    return () => {
+      window.removeEventListener('lf-signal', onDirty);
+      window.removeEventListener('lf:learning-state-changed', onDirty);
+      window.removeEventListener(RESOURCE_CACHE_UPDATED_EVENT, onDirty);
+      window.removeEventListener(ANALYTICS_REFRESHED_EVENT, onRefreshed);
+    };
+  }, [currentLearnerId]);
 
   return useMemo<LearningMapView>(() => {
     if (!tree) {
