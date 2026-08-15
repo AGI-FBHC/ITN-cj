@@ -1183,6 +1183,10 @@ export const api = {
     requestDirect<{ learned: boolean; resource: LearningResource }>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/complete`, {
       method: 'POST',
     }),
+  resetLearningResource: (resourceId: string) =>
+    requestDirect<{ resource: LearningResource }>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/reset`, {
+      method: 'POST',
+    }),
   updateLearningResourceProgress: (resourceId: string, body: {
     currentBlockId?: string | null;
     visitedBlockIds?: string[];

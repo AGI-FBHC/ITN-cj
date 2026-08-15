@@ -9,7 +9,7 @@ import {
   ArrowLeft, ArrowRight, BookOpen, Bot, Check, CheckCircle2, ChevronLeft,
   ChevronRight, Circle, Clock3, CloudRain, ExternalLink, FileText, Focus,
   Gauge, Headphones, ListChecks, Loader2, MessageCircleQuestion, NotebookPen,
-  Pause, PenLine, Play, Presentation, Send, ShieldAlert, ShieldCheck, Sparkles,
+  Pause, PenLine, Play, Presentation, RotateCcw, Send, ShieldAlert, ShieldCheck, Sparkles,
   Star, Trees, TriangleAlert, Wrench, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -324,9 +324,17 @@ function QuizBlock({
     try {
       const durationSeconds = Math.max(1, Math.round((Date.now() - startedAt.current) / 1000));
       const request = {
-        questionId: id, answer: String(optionIndex), durationSeconds: Math.max(1, Math.round((Date.now() - startedAt.current) / 1000)),
+        questionId: id, answer: String(optionIndex), durationSeconds,
       };
-      const result = await api.gradeLearningQuiz(resource.id, request);
+      /* 题目内容已预加载正确答案与解析：前端硬匹配即时判分，后台再异步落库 */
+      const localCorrectIndex = Number(question.correctIndex);
+      const localJudgable = Number.isInteger(localCorrectIndex)
+        && Array.isArray(question.options)
+        && localCorrectIndex >= 0
+        && localCorrectIndex < question.options.length;
+      const result = localJudgable
+        ? { correct: optionIndex === localCorrectIndex, correctIndex: localCorrectIndex, explanation: String(question.explanation ?? '') }
+        : await api.gradeLearningQuiz(resource.id, request);
       setSelected(optionIndex);
       setFeedback(result);
       const optimisticState = {
@@ -339,7 +347,7 @@ function QuizBlock({
       onWritebackStatus('syncing');
       void api.answerLearningQuiz(resource.id, request).then((synced) => {
         if (synced.state && typeof synced.state === 'object') onResourceState(synced.state as Record<string, unknown>);
-        setFeedback(synced);
+        setFeedback((current) => ({ ...(current ?? {}), ...synced }));
         onWritebackStatus('synced');
       }).catch((reason) => {
         onWritebackStatus('failed');
@@ -436,6 +444,7 @@ export default function CourseResourcePlayer() {
     return () => window.clearTimeout(timer);
   }, [writebackStatus]);
   const [completing, setCompleting] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const [completeConfirmOpen, setCompleteConfirmOpen] = useState(false);
   const blockRefs = useRef<Record<string, HTMLElement | null>>({});
   const saveTimer = useRef<number | null>(null);
@@ -733,6 +742,38 @@ export default function CourseResourcePlayer() {
     })();
   };
 
+  /** 重新练习：清空本人对该资源的进度/作答/自评/掌握度（后端重置 + 清错题），回到第一段重新测评 */
+  const restartPractice = async () => {
+    if (!resource || restarting) return;
+    setRestarting(true);
+    try {
+      const { resource: fresh } = await api.resetLearningResource(resource.id);
+      setResource(fresh);
+      setVisited([]);
+      setCompletedSteps([]);
+      setSafetyChecks([]);
+      setElapsedBase(0);
+      setSessionSeconds(0);
+      sessionSecondsRef.current = 0;
+      setSelfAssessments({});
+      pendingAssessRef.current = {};
+      setWritebackStatus('idle');
+      setCompleteConfirmOpen(false);
+      const firstId = blocks[0]?.id ?? '';
+      setCurrentBlockId(firstId);
+      try { window.localStorage.removeItem(`${RESOURCE_CACHE_PREFIX}${resource.id}`); } catch { /* ignore */ }
+      toast.success('已重新开始，进度与掌握度已清零');
+      if (firstId) {
+        requestAnimationFrame(() => blockRefs.current[firstId]?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+      }
+      if (isUuid(currentLearnerId)) void refreshLearningMapResourceCache(currentLearnerId).catch(() => undefined);
+    } catch (reason) {
+      toast.error(reason instanceof Error ? reason.message : '重新练习失败，请稍后再试');
+    } finally {
+      setRestarting(false);
+    }
+  };
+
   if (loading) return <div className="mx-auto flex min-h-[62vh] max-w-[980px] items-center justify-center gap-2 px-5 text-[13px] text-ink-muted"><Loader2 size={17} className="animate-spin" />正在恢复你的学习现场…</div>;
   if (error || !resource) return <div className="mx-auto max-w-[760px] px-5 py-20 text-center"><h1 className="font-serif text-[24px] font-semibold text-ink">这项学习资源暂时打不开</h1><p className="mt-2 text-[13px] text-brand-danger">{error || '资源不存在'}</p><Link to="/learn" className="lf-btn-primary mt-5 inline-flex">返回我的课程</Link></div>;
 
@@ -777,7 +818,7 @@ export default function CourseResourcePlayer() {
 
     {traces.length > 0 && !focusMode && <section className="mt-8 rounded-[18px] border border-hairline bg-card-warm p-5 md:p-7"><div className="flex items-center gap-2"><Sparkles size={16} className="text-brand" /><h2 className="font-serif text-[20px] font-semibold text-ink">真实来源与生成依据</h2></div><p className="mt-1 text-[12px] text-ink-muted">以下来源由知识库检索或 Web Search 提供，并与正文引用位置关联。</p><div className="mt-4 grid gap-3 md:grid-cols-2">{traces.map((trace, traceIndex) => <article key={`${String(trace.id ?? 'source')}-${trace.title}-${traceIndex}`} className="rounded-[12px] border border-hairline bg-paper p-4"><div className="flex items-start gap-3"><span className="rounded-md bg-brand-tint px-2 py-1 font-mono text-[10px] text-brand">{trace.credibility}%</span><div className="min-w-0"><h3 className="text-[13px] font-semibold text-ink">{trace.title}</h3><p className="mt-1 line-clamp-3 text-[11.5px] leading-5 text-ink-muted">{trace.excerpt}</p></div></div>{trace.positions.length > 0 && <div className="mt-3 flex flex-wrap gap-1">{trace.positions.slice(0, 5).map((position, positionIndex) => <span key={`${position}-${positionIndex}`} className="rounded bg-paper-deep px-1.5 py-1 text-[9.5px] text-ink-muted">{position}</span>)}</div>}{trace.url && <a href={trace.url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-[11px] text-brand hover:underline">查看来源<ExternalLink size={10} /></a>}</article>)}</div></section>}
 
-    <footer className="mt-8 flex flex-col items-center justify-between gap-4 rounded-[18px] border border-brand/20 bg-brand-tint/30 p-5 sm:flex-row"><div><div className="text-[13px] font-semibold text-ink">{resource.learned ? '本项资源已经学完' : resource.type === 'quiz' && !quizAllAnswered ? '完成全部答题后即可结束测试' : '完成本项学习后，进度会写入画像与报告'}</div><p className="mt-1 text-[11.5px] text-ink-muted">{resource.type === 'quiz' ? '作答' : '阅读'} {displayedCompletedCount}/{blocks.length} {resource.type === 'quiz' ? '题' : '段'} · 学习 {formatDuration(elapsedBase + sessionSeconds)}</p></div><div className="flex gap-2">{nextResource && <Link to={`/learn/resource/${nextResource.id}`} className="lf-btn-ghost">下一项：{resourceMeta[nextResource.type].label}<ArrowRight size={14} /></Link>}<button type="button" disabled={completing || !quizAllAnswered} onClick={() => { if (resource.learned) { navigate('/learn'); return; } void markComplete(); }} className="lf-btn-primary">{completing ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}{resource.learned ? '返回地图' : resource.type === 'quiz' && !quizAllAnswered ? '请先完成全部题目' : '完成本项学习'}</button></div></footer>
+    <footer className="mt-8 flex flex-col items-center justify-between gap-4 rounded-[18px] border border-brand/20 bg-brand-tint/30 p-5 sm:flex-row"><div><div className="text-[13px] font-semibold text-ink">{resource.learned ? '本项资源已经学完' : resource.type === 'quiz' && !quizAllAnswered ? '完成全部答题后即可结束测试' : '完成本项学习后，进度会写入画像与报告'}</div><p className="mt-1 text-[11.5px] text-ink-muted">{resource.type === 'quiz' ? '作答' : '阅读'} {displayedCompletedCount}/{blocks.length} {resource.type === 'quiz' ? '题' : '段'} · 学习 {formatDuration(elapsedBase + sessionSeconds)}</p></div><div className="flex gap-2">{nextResource && <Link to={`/learn/resource/${nextResource.id}`} className="lf-btn-ghost">下一项：{resourceMeta[nextResource.type].label}<ArrowRight size={14} /></Link>}{resource.learned && <button type="button" disabled={restarting} onClick={() => void restartPractice()} className="lf-btn-ghost">{restarting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}重新练习</button>}<button type="button" disabled={completing || !quizAllAnswered} onClick={() => { if (resource.learned) { navigate('/learn'); return; } void markComplete(); }} className="lf-btn-primary">{completing ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}{resource.learned ? '返回地图' : resource.type === 'quiz' && !quizAllAnswered ? '请先完成全部题目' : '完成本项学习'}</button></div></footer>
 
     <div className="fixed inset-x-0 bottom-[58px] z-40 mx-auto flex w-[min(920px,calc(100%-24px))] items-center gap-1.5 rounded-[17px] border border-hairline bg-paper/95 p-2.5 shadow-warm-lg backdrop-blur-md md:bottom-4 md:gap-2">
       <button type="button" onClick={speakCurrent} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand text-paper" title="播放这一段">{narration.speaking ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}</button>
@@ -814,6 +855,7 @@ export default function CourseResourcePlayer() {
             <button type="button" onClick={() => setCompleteConfirmOpen(false)} className="lf-btn-ghost flex-1 justify-center">再想想</button>
             <button type="button" onClick={confirmComplete} className="lf-btn-primary flex-1 justify-center">确认完成并返回地图</button>
           </div>
+          <button type="button" disabled={restarting} onClick={() => void restartPractice()} className="lf-btn-ghost mt-2 w-full justify-center !py-2 text-brand-danger">{restarting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}重新练习 · 清空掌握度重测</button>
         </div>
       </div>
     )}
