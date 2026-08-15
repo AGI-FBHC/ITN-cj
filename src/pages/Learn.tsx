@@ -294,6 +294,7 @@ export default function Learn() {
               mastery={map.mastery}
               chapterProgress={map.chapterProgress}
               topicMastery={map.topicMastery}
+              topicMasteryRaw={map.topicMasteryRaw}
               topicProgress={map.topicProgress}
               focusTarget={graphFocus}
               focusTopicTarget={focusTopic}

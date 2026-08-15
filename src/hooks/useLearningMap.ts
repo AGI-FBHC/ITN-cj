@@ -83,6 +83,8 @@ export interface LearningMapView {
   chapterProgress: Record<string, number>;
   confidence: Record<string, number>;
   topicMastery: Record<string, number>;
+  /** 已学掌握率（未乘进度），用于目标门槛判断 */
+  topicMasteryRaw: Record<string, number>;
   topicProgress: Record<string, number>;
   learned: Set<string>;
   status: Record<string, string>;
@@ -291,6 +293,7 @@ export function useLearningMap(): LearningMapView {
         chapterProgress: {},
         confidence: {},
         topicMastery: {},
+        topicMasteryRaw: {},
         topicProgress: {},
         learned: new Set<string>(),
         status: {},
@@ -324,6 +327,7 @@ export function useLearningMap(): LearningMapView {
     const chapterProgress: Record<string, number> = {};
     const confidence: Record<string, number> = {};
     const topicMastery: Record<string, number> = {};
+    const topicMasteryRaw: Record<string, number> = {};
     const topicProgress: Record<string, number> = {};
     const status: Record<string, string> = {};
     const masteryByCategory = new Map((analytics?.mastery.categories ?? []).map((item) => [String(item.id), item]));
@@ -355,9 +359,12 @@ export function useLearningMap(): LearningMapView {
           ...(category && category.attempts > 0 ? [{ score: category.score, weight: 0.2 }] : []),
         ];
         const evidenceWeight = weightedEvidence.reduce((sum, item) => sum + item.weight, 0);
-        topicMastery[child.nodeCode] = evidenceWeight
+        const rawMastery = evidenceWeight
           ? Math.round(weightedEvidence.reduce((sum, item) => sum + item.score * item.weight, 0) / evidenceWeight * 100)
           : 0;
+        topicMasteryRaw[child.nodeCode] = rawMastery;
+        // 知识点展示掌握 = 进度 × 已学掌握率（保证掌握 ≤ 进度）
+        topicMastery[child.nodeCode] = Math.round((topicProgress[child.nodeCode] ?? 0) / 100 * rawMastery);
       });
       const topicScores = chapter.children
         .filter((child) => child.level === 3)
@@ -365,11 +372,13 @@ export function useLearningMap(): LearningMapView {
       chapterProgress[chapter.nodeCode] = topicScores.length
         ? Math.round(topicScores.reduce((sum, value) => sum + value, 0) / topicScores.length)
         : 0;
-      const topicFill = chapter.children.filter((child) => child.level === 3).map((child) =>
-        (topicProgress[child.nodeCode] ?? 0) / 100 * (topicMastery[child.nodeCode] ?? 0) / 100);
-      const progressFraction = (chapterProgress[chapter.nodeCode] ?? 0) / 100;
-      mastery[chapter.nodeCode] = progressFraction > 0 && topicFill.length
-        ? Math.round(topicFill.reduce((sum, value) => sum + value, 0) / topicFill.length / progressFraction * 100)
+      // 章节掌握 = 各知识点(进度 × 已学掌握率)之和 ÷ 全部知识点数；未学的计 0 但占分母，
+      // 保证掌握 ≤ 进度，学完且全对才填满当前进度。
+      const chapterTopics = chapter.children.filter((child) => child.level === 3);
+      const topicFill = chapterTopics.map((child) =>
+        (topicProgress[child.nodeCode] ?? 0) / 100 * (topicMasteryRaw[child.nodeCode] ?? 0) / 100);
+      mastery[chapter.nodeCode] = topicFill.length
+        ? Math.round(topicFill.reduce((sum, value) => sum + value, 0) / topicFill.length * 100)
         : 0;
     });
 
@@ -437,14 +446,27 @@ export function useLearningMap(): LearningMapView {
       });
     });
 
-    const targetByChapter = new Map(jobTargets.map((item) => [item.nodeCode, item]));
+    const targetByCode = new Map(jobTargets.map((item) => [item.nodeCode, item]));
     const nodeTargets: Record<string, { target: number; name?: string }> = {};
     graphNodes.forEach((node) => {
       if (node.kind === 'domain') {
-        const hit = targetByChapter.get(node.id);
-        if (hit) nodeTargets[node.id] = { target: hit.targetMastery, name: hit.nodeName ?? undefined };
+        // 章节门槛 = 该章全部知识点门槛的平均（与章节掌握同口径）
+        const topicNodes = graphNodes.filter((n) => n.kind === 'topic' && n.kpId === node.id);
+        const targets = topicNodes
+          .map((n) => targetByCode.get(n.id)?.targetMastery)
+          .filter((t): t is number => typeof t === 'number');
+        const chapterHit = targetByCode.get(node.id);
+        if (targets.length) {
+          nodeTargets[node.id] = {
+            target: Math.round(targets.reduce((sum, t) => sum + t, 0) / targets.length),
+            name: chapterHit?.nodeName ?? undefined,
+          };
+        } else if (chapterHit) {
+          nodeTargets[node.id] = { target: chapterHit.targetMastery, name: chapterHit.nodeName ?? undefined };
+        }
       } else if (node.kind === 'topic') {
-        const hit = targetByChapter.get(node.kpId);
+        // 知识点门槛 = 该知识点独立预设（job_target_levels 中的 kp-x 行）
+        const hit = targetByCode.get(node.id);
         if (hit) nodeTargets[node.id] = { target: hit.targetMastery, name: hit.nodeName ?? undefined };
       }
     });
@@ -459,6 +481,7 @@ export function useLearningMap(): LearningMapView {
       chapterProgress,
       confidence,
       topicMastery,
+      topicMasteryRaw,
       topicProgress,
       learned,
       status,
