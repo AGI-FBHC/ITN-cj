@@ -26,6 +26,10 @@ export default defineConfig({
     strictPort: true,
   },
   build: {
+    /* 只预加载入口级 chunk，three/echarts 等重型分包按需加载，避免登录页预取 */
+    modulePreload: {
+      resolveDependencies: (_filename, deps) => deps.filter((dep) => dep.includes('index-') || dep.includes('.css')),
+    },
     rollupOptions: {
       output: {
         manualChunks: {
