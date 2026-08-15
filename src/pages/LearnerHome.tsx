@@ -230,7 +230,7 @@ export default function LearnerHome() {
             className="inline-flex items-center gap-1.5 rounded-[10px] border border-hairline bg-card-warm px-3 py-1.5 text-[13px] font-medium text-ink-2 transition-all hover:border-brand/35 hover:text-brand"
           >
             <NotebookPen size={15} />
-            个人知识库
+            我的笔记
           </Link>
           <Link
             to="/me/profile"

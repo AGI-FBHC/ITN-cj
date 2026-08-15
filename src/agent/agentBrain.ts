@@ -32,7 +32,7 @@ export function describeSignal(s: Signal): string {
     case 'tutoring-finished':
       return `完成《${s.title}》导学 · ${s.correct}/${s.asked} 答对（${kp}）`;
     case 'note-taken':
-      return `在《${s.title}》记了一条笔记（${kp}）→ 个人知识库`;
+      return `在《${s.title}》记了一条笔记（${kp}）→ 我的笔记`;
     case 'self-report':
       return `课件签到：自评「${kp}」${s.feel === 'ok' ? '这段很稳' : '这段还虚'}（元认知信号）`;
     case 'modality-switch':
@@ -137,7 +137,7 @@ export function inferNoteTaken(kpId: string): Inference {
   return {
     delta: 0,
     confDelta: 4,
-    say: `看到你在「${kp}」记了第一条笔记——用自己的话重述是最好的学习。笔记已入你的个人知识库，我对这一维的判断也更有底了。`,
+    say: `看到你在「${kp}」记了第一条笔记——用自己的话重述是最好的学习。笔记已存入「我的笔记」，我对这一维的判断也更有底了。`,
     eventTitle: '',
     eventDetail: '',
   };

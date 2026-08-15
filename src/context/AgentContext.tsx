@@ -302,7 +302,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       /* 记笔记：首条成句鼓励，后续静默涨置信度（不刷屏） */
       if (s.type === 'note-taken') {
         const firstKey = `${lid}:note-first:${s.kpId}`;
-        record('inference', `笔记回流 → 「${resolveKpName(s.kpId)}」置信度 +4 · 个人知识库 +1`);
+        record('inference', `笔记回流 → 「${resolveKpName(s.kpId)}」置信度 +4 · 我的笔记 +1`);
         if (!seen.includes(firstKey)) {
           setSeen((prev) => [...prev, firstKey].slice(-100));
           commit(s.kpId, inferNoteTaken(s.kpId));

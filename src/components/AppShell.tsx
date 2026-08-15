@@ -657,7 +657,7 @@ export default function AppShell() {
             ))}
           </CommandGroup>
           {notes.length > 0 && (
-            <CommandGroup heading="我的笔记 · 个人知识库">
+            <CommandGroup heading="我的笔记">
               {notes.slice(0, 6).map((n) => (
                 <CommandItem
                   key={n.id}

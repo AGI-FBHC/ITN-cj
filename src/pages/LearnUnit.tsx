@@ -2116,7 +2116,7 @@ export default function LearnUnit() {
           </span>
           <Link
             to="/me/notes"
-            title="个人知识库"
+            title="我的笔记"
             className="inline-flex items-center gap-1 rounded-md border border-hairline bg-card-warm px-2 py-0.5 font-mono text-[10.5px] text-ink-2 transition-colors hover:border-brand/40 hover:text-brand"
           >
             <NotebookPen size={11} />
@@ -2692,7 +2692,7 @@ export default function LearnUnit() {
                           </button>
                         </span>
                         <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-ink-muted">
-                          自动携带来源{'kbRefs' in b && b.kbRefs.length > 0 ? ' + KB 溯源' : ''} → 个人知识库
+                          自动携带来源{'kbRefs' in b && b.kbRefs.length > 0 ? ' + KB 溯源' : ''} → 我的笔记
                         </span>
                         <span className="flex shrink-0 gap-1.5">
                           <button type="button" onClick={() => { stopListening(); setNoteFor(null); setNoteText(''); setNoteImg(null); }} className="rounded-md px-2 py-1 text-[12px] text-ink-muted hover:text-ink">取消</button>
@@ -2715,7 +2715,7 @@ export default function LearnUnit() {
                             }}
                             className={cn('rounded-md px-2.5 py-1 text-[12px] font-medium', noteText.trim() || noteImg ? 'bg-brand text-paper' : 'bg-paper-deep text-ink-muted/50')}
                           >
-                            存入知识库
+                            存入笔记
                           </button>
                         </span>
                       </div>
