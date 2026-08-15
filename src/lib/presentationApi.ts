@@ -147,10 +147,17 @@ export async function fetchSlideAsset(taskId: string, index: number, kind: 'slid
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
   const query = kind === 'audio' ? `?model_provider=${modelProvider}${qwenVoice ? `&qwen_voice=${encodeURIComponent(qwenVoice)}` : ''}` : '';
-  const res = await fetch(`/v1/presentations/${encodeURIComponent(taskId)}/${kind}/${index}${query}`, { headers });
-  if (res.status === 401) throw new Error('登录状态已失效，请重新登录后重试');
-  if (!res.ok) throw new Error(`PPT 资源加载失败 (${res.status})`);
-  return res.blob();
+  // 资源（尤其首次 TTS 合成）可能较慢，给足超时但避免无限挂起
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 120_000);
+  try {
+    const res = await fetch(`/v1/presentations/${encodeURIComponent(taskId)}/${kind}/${index}${query}`, { headers, signal: controller.signal });
+    if (res.status === 401) throw new Error('登录状态已失效，请重新登录后重试');
+    if (!res.ok) throw new Error(`PPT 资源加载失败 (${res.status})`);
+    return await res.blob();
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 

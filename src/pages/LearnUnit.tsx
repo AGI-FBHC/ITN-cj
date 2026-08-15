@@ -795,7 +795,12 @@ export default function LearnUnit() {
       return window.localStorage.getItem('lf.pptAudioModel') === 'qwen' ? 'qwen' : 'mimo';
     } catch { return 'mimo'; }
   });
-  const [qwenVoice, setQwenVoice] = useState<(typeof QWEN_VOICES)[number]['value']>('longanxiaoxin');
+  const [qwenVoice, setQwenVoice] = useState<(typeof QWEN_VOICES)[number]['value']>(() => {
+    try {
+      const saved = window.localStorage.getItem('lf.qwenVoice');
+      return QWEN_VOICES.some((item) => item.value === saved) ? saved as (typeof QWEN_VOICES)[number]['value'] : 'longanxiaoxin';
+    } catch { return 'longanxiaoxin'; }
+  });
   const [pptChatSessions, setPptChatSessions] = useState<PresentationChatSession[]>([]);
   const qaScrollRef = useRef<HTMLDivElement>(null);
   const pptChatSessionRefs = useRef<Record<'mimo' | 'qwen', string>>({ mimo: '', qwen: '' });
@@ -3366,8 +3371,15 @@ export default function LearnUnit() {
                       <button
                         key={voice.value}
                         type="button"
-                        disabled={voiceBusy}
-                        onClick={() => setQwenVoice(voice.value)}
+                        disabled={voiceBusy || voice.value === qwenVoice}
+                        onClick={() => {
+                          if (voice.value === qwenVoice) return;
+                          setQwenVoice(voice.value);
+                          try { window.localStorage.setItem('lf.qwenVoice', voice.value); } catch { /* ignore */ }
+                          // 正在讲解时切音色：旧音频继续用旧音色，提示从当前页重读
+                          const slideActive = Boolean(pptRef.current?.audioLoaded || playing);
+                          if (slideActive) setVoiceRestart('slide');
+                        }}
                         aria-pressed={voice.value === qwenVoice}
                         className={cn(
                           'flex w-full items-center justify-between rounded-[9px] border px-3 py-1.5 text-left transition-all duration-200 disabled:opacity-60',

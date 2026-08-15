@@ -236,8 +236,23 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
   useEffect(() => {
     let cancelled = false;
     let timer = 0;
+    let consecutiveErrors = 0;
     const poll = async () => {
-      const next = await presentationApi.getPresentation(taskId);
+      let next;
+      try {
+        next = await presentationApi.getPresentation(taskId);
+        consecutiveErrors = 0;
+      } catch (reason) {
+        // 网络抖动/服务暂不可用时不清 loading、不中断轮询，退避重试
+        if (cancelled) return;
+        consecutiveErrors += 1;
+        if (consecutiveErrors >= 5) {
+          if (!cancelled) { setError(reason instanceof Error ? reason.message : 'PPT 任务读取失败'); setLoading(false); }
+          return;
+        }
+        timer = window.setTimeout(poll, Math.min(3000 * consecutiveErrors, 12000));
+        return;
+      }
       if (cancelled) return;
       setTask(next);
       if (next.status === 'outline_review' && !outlineConfirmedRef.current) {
