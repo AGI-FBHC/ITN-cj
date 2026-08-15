@@ -522,6 +522,8 @@ export default function CourseResourcePlayer() {
   /* 学习攒养分：打开资源 +3；每学一段 +1（每次会话上限 10 段） */
   const sectionRewardRef = useRef(0);
   const rewardedSectionRef = useRef<Set<string>>(new Set());
+  /** 打开资源奖励：画像未就绪时先挂起，等 learnerId 可用再上报，避免竞态漏记 */
+  const pendingOpenRewardRef = useRef<{ id: string; title: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -543,19 +545,13 @@ export default function CourseResourcePlayer() {
       setSessionSeconds(0);
       sessionSecondsRef.current = 0;
       setLoading(false);
-      /* 打开资源即攒养分（同一会话内每个资源只记一次） */
+      /* 打开资源即攒养分（同一会话内每个资源只记一次）；
+         画像可能尚未就绪，先标记、等 learnerId 可用再上报，避免直链进入时漏记 */
       try {
         const openKey = `lf.growthOpen:v1:${loaded.id}`;
         if (!window.sessionStorage.getItem(openKey)) {
           window.sessionStorage.setItem(openKey, '1');
-          const learnerId = isUuid(loaded.learnerId) ? loaded.learnerId! : currentLearnerId;
-          if (learnerId && isUuid(learnerId)) {
-            void api.recordLearnerGrowthEvent({
-              learnerId, eventType: 'focus-bonus', title: `开始学习《${loaded.title}》`, amount: 3,
-              metadata: { resourceId: loaded.id, source: 'resource-player' },
-            }).catch(() => undefined);
-            try { window.dispatchEvent(new CustomEvent('lf:growth-recorded', { detail: { learnerId } })); } catch { /* ignore */ }
-          }
+          pendingOpenRewardRef.current = { id: loaded.id, title: loaded.title };
         }
       } catch { /* ignore */ }
     };
@@ -706,6 +702,18 @@ export default function CourseResourcePlayer() {
     if (assessTimer.current) window.clearTimeout(assessTimer.current);
     narration.stop();
   }, [narration.stop]);
+
+  /* 打开资源奖励：等画像 learnerId 就绪后补发 */
+  useEffect(() => {
+    const pending = pendingOpenRewardRef.current;
+    if (!pending || !currentLearnerId || !isUuid(currentLearnerId)) return;
+    pendingOpenRewardRef.current = null;
+    void api.recordLearnerGrowthEvent({
+      learnerId: currentLearnerId, eventType: 'focus-bonus', title: `开始学习《${pending.title}》`, amount: 3,
+      metadata: { resourceId: pending.id, source: 'resource-player' },
+    }).catch(() => undefined);
+    try { window.dispatchEvent(new CustomEvent('lf:growth-recorded', { detail: { learnerId: currentLearnerId } })); } catch { /* ignore */ }
+  }, [currentLearnerId]);
 
   const goBlock = (id: string, continueSpeaking = false) => {
     setCurrentBlockId(id);
