@@ -17,6 +17,7 @@ const LearnerHome = lazy(() => import('@/pages/LearnerHome'));
 const MyNotes = lazy(() => import('@/pages/MyNotes'));
 const WrongBook = lazy(() => import('@/pages/WrongBook'));
 const MyProfile = lazy(() => import('@/pages/MyProfile'));
+const Calibrate = lazy(() => import('@/pages/Calibrate'));
 const Onboarding = lazy(() => import('@/pages/Onboarding'));
 const Profiles = lazy(() => import('@/pages/Profiles'));
 const Agents = lazy(() => import('@/pages/Agents'));
@@ -87,6 +88,7 @@ export default function App() {
           <Route path="me/profile" element={<MyProfile />} />
           <Route path="me/notes" element={<MyNotes />} />
           <Route path="me/wrong" element={<WrongBook />} />
+          <Route path="me/calibrate" element={<Calibrate />} />
           <Route path="learn" element={<Learn />} />
           <Route path="learn/resource/:resourceId" element={<CourseResourcePlayer />} />
           <Route path="learn/:kpId" element={<LearnUnit />} />

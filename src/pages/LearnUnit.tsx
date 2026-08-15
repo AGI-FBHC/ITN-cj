@@ -2016,19 +2016,6 @@ export default function LearnUnit() {
     saveProgress(currentLearner.id, kpId, { unlocked, delta: sessionDelta, style: unit.styleLabel });
   }, [unlocked, sessionDelta, finished, currentLearner.id, kpId, unit.styleLabel]);
 
-  /* ---- 学练一体入口：?drill=1（原独立「练」页重定向到这里，就地开题） ---- */
-  const drillDoneRef = useRef(false);
-  useEffect(() => {
-    if (drillDoneRef.current || searchParams.get('drill') !== '1') return;
-    drillDoneRef.current = true;
-    const t = setTimeout(() => {
-      startMiniTest();
-      toast('学和练已经合并在这一页', { description: '已按你的画像就地开出一组分阶题——练完直接回到讲解' });
-    }, 500);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
-
   /* 本讲 KB 溯源角标总数（适配横幅「已核验」卡展开用） */
   const kbCount = useMemo(
     () => blocks.reduce((n, b) => n + ('kbRefs' in b ? b.kbRefs.length : 0), 0),

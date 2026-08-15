@@ -11,6 +11,8 @@ import type { GraphNode, GraphEdge, EdgeKind } from '@/data/knowledgeGraph';
 import type { ResourceForm, GeneratedResource } from '@/data/resources';
 import type { PresentationTaskSummary } from '@/lib/presentationApi';
 import { FUNCTION_META, useTopicResourceActions } from '@/hooks/useTopicResourceActions';
+import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { presentationApi } from '@/lib/presentationApi';
 import cjkFontUrl from '@/assets/fonts/noto-sans-cjk-sc-gb2312.otf';
 
@@ -743,9 +745,13 @@ function TopicActionModal({
             key={fn.form}
             type="button"
             disabled={busy}
-            className="group h-[88px] rounded-[16px] border border-[#E1E6DF] bg-white/75 px-3.5 py-3 text-left shadow-[0_8px_22px_rgba(41,63,51,0.06)] transition duration-200 hover:-translate-y-0.5 hover:border-[#AFC3B5] hover:bg-white hover:shadow-[0_14px_32px_rgba(41,63,51,0.12)] disabled:cursor-progress disabled:opacity-60"
+            className={cn('group h-[88px] rounded-[16px] border border-[#E1E6DF] bg-white/75 px-3.5 py-3 text-left shadow-[0_8px_22px_rgba(41,63,51,0.06)] transition duration-200 hover:-translate-y-0.5 hover:border-[#AFC3B5] hover:bg-white hover:shadow-[0_14px_32px_rgba(41,63,51,0.12)] disabled:cursor-progress disabled:opacity-60', status === 'missing' && 'cursor-not-allowed hover:translate-y-0 hover:border-[#E1E6DF] hover:bg-white/75 hover:shadow-[0_8px_22px_rgba(41,63,51,0.06)]')}
             onClick={() => {
-              /* 与 2D 一致：有资源直接打开；暂无资源则后台生成，不阻塞卡片 */
+              /* 前端锁死：暂无资源不允许触发生成请求，后续由后台统一补齐 */
+              if (status === 'missing') {
+                toast.info('该资源暂未提供', { description: '后续会统一生成后开放，请稍后再来。' });
+                return;
+              }
               if (fn.form === 'ppt') void openOrCreatePpt();
               else void openOrGenerate(fn.form as ResourceForm);
             }}

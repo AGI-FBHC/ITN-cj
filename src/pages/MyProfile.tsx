@@ -444,7 +444,7 @@ export default function MyProfile() {
               <Save size={15} />
               {saving ? '正在保存…' : '保存修改'}
             </button>
-            <Link to="/tutoring" className="lf-btn-ghost !py-2 text-[13.5px]">
+            <Link to="/me/calibrate" className="lf-btn-ghost !py-2 text-[13.5px]">
               <Sparkles size={15} />
               用真实练习校准画像
             </Link>

@@ -198,7 +198,7 @@ export default function Tutoring() {
 
   /* 学练一体：学习者视角不再有独立「练」页——重定向到课件内就地开练（?drill=1）。
      系统透视/评委视角保留本页，用于展示苏格拉底导学引擎全貌。 */
-  if (isLearner) return <Navigate to={`/learn/${script.kpId}?drill=1`} replace />;
+  if (isLearner) return <Navigate to="/me/calibrate" replace />;
 
   return (
     <div className={`mx-auto ${isLearner ? 'max-w-[1080px] px-5 md:px-6' : 'max-w-[1320px] px-8'} py-10`}>
