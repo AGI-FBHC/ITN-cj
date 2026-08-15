@@ -234,8 +234,7 @@ export default function Learn() {
         layout
         animate={{ opacity: 1, y: 0 }}
         transition={{ layout: { duration: 0.32, ease: [0.22, 1, 0.36, 1] } }}
-        className="mt-5 flex flex-col gap-0 lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-7"
-        style={{ gridTemplateColumns: undefined }}
+        className={cn('mt-5 flex flex-col gap-0', viewMode === '2d' && 'lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-7')}
       >
         {/* 上层只承载图谱与按需详情；章节速览在下方独立占满全局宽度。 */}
         <motion.div layout="position" className="relative min-w-0">
