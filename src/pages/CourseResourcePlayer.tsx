@@ -506,6 +506,8 @@ export default function CourseResourcePlayer() {
   const [chatContext, setChatContext] = useState<{ blockTitle: string; content: string } | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
   const chatReadyRef = useRef(false);
+  /** 会话任务 id 镜像：避免 state 闭包过期导致异步流程拿不到最新值 */
+  const chatTaskIdRef = useRef<string | null>(null);
   const chatAbortRef = useRef<AbortController | null>(null);
   const [asking, setAsking] = useState(false);
   const [askPhoto, setAskPhoto] = useState<{ name: string; url: string } | null>(null);
@@ -865,10 +867,10 @@ export default function CourseResourcePlayer() {
     setNoteImg(null);
   };
 
-  /** 确保已解析本知识点对应的 PPT 任务（按标题匹配已完成课件） */
-  const ensureChatTask = async (): Promise<boolean> => {
-    if (!resource) return false;
-    if (chatPptTaskId) return true;
+  /** 确保已解析本知识点对应的 PPT 任务（按标题匹配已完成课件）；返回任务 id，未找到返回 null */
+  const ensureChatTask = async (): Promise<string | null> => {
+    if (!resource) return null;
+    if (chatPptTaskId) return chatPptTaskId;
     try {
       const listed = await presentationApi.listPresentationSummaries(50);
       const match = (listed.tasks ?? [])
@@ -876,10 +878,12 @@ export default function CourseResourcePlayer() {
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.updatedAt).getTime())[0];
       if (match) {
         setChatPptTaskId(match.id);
-        return true;
+        chatTaskIdRef.current = match.id;
+        return match.id;
       }
     } catch { /* 会话初始化失败时退回传统问答 */ }
-    return false;
+    chatTaskIdRef.current = null;
+    return null;
   };
 
   const openChat = async () => {
@@ -887,14 +891,15 @@ export default function CourseResourcePlayer() {
     if (!resource || chatReadyRef.current) return;
     setChatLoading(true);
     try {
-      if ((await ensureChatTask()) && chatPptTaskId) {
-        const sessions = await listPresentationChatSessions(chatPptTaskId);
+      const taskId = await ensureChatTask();
+      if (taskId) {
+        const sessions = await listPresentationChatSessions(taskId);
         setChatSessions(sessions);
         const current = sessions.filter((item) => item.modelProvider === 'mimo')
           .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0]
-          ?? await createPresentationChatSession(chatPptTaskId, 'mimo');
+          ?? await createPresentationChatSession(taskId, 'mimo');
         setChatSessionId(current.id);
-        setMessages(await loadChatHistory(chatPptTaskId, current.id));
+        setMessages(await loadChatHistory(taskId, current.id));
         chatReadyRef.current = true;
         return;
       }
@@ -923,12 +928,14 @@ ${block.code}` : ''].filter(Boolean).join('\n\n').slice(0, 3000),
     setFollowUps([]);
     setChatLoading(true);
     try {
-      if ((await ensureChatTask()) && chatPptTaskId) {
-        const created = await createPresentationChatSession(chatPptTaskId, 'mimo');
+      const taskId = await ensureChatTask();
+      if (taskId) {
+        const created = await createPresentationChatSession(taskId, 'mimo');
         setChatSessionId(created.id);
         setChatSessions((current) => [...current.filter((item) => item.id !== created.id), created]);
       } else {
         setChatPptTaskId(null);
+        chatTaskIdRef.current = null;
       }
       chatReadyRef.current = true;
     } catch { /* 保持回退模式 */ }
@@ -954,8 +961,9 @@ ${chatContext.content}
 
 `
       : '';
+    const currentTaskId = chatTaskIdRef.current ?? chatPptTaskId;
     /* 无课件任务：保留原有问答接口（图片退化为文本标记，不基于进度） */
-    if (!chatPptTaskId) {
+    if (!currentTaskId) {
       const message = `${contextPrefix}${content}${photo ? (content ? '\n' : '') + '【图片 · ' + photo.name + '】' : ''}`;
       try {
         const result = await api.chatLearningResource(resource.id, {
@@ -970,7 +978,7 @@ ${chatContext.content}
       finally { setAsking(false); }
       return;
     }
-    const taskId = chatPptTaskId;
+    const taskId = currentTaskId;
     let sessionId = chatSessionId;
     const controller = new AbortController();
     chatAbortRef.current?.abort();
