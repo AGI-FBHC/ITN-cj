@@ -89,24 +89,59 @@ interface EvidenceItem {
   wrongCount?: number | null;
 }
 
-/** S 形路径中的一个活动节点 */
-function EvidenceStep({ ev }: { ev: EvidenceItem }) {
+const NODE_COLORS: Record<string, { ring: string; dot: string }> = {
+  focus: { ring: '#4B82B8', dot: '#4B82B8' },
+  resource: { ring: '#D89238', dot: '#D89238' },
+  quiz: { ring: '#B17818', dot: '#B17818' },
+  chat: { ring: '#4E7860', dot: '#4E7860' },
+  knowledge: { ring: '#9AA19A', dot: '#9AA19A' },
+};
+
+/** 节点上方动作短语（≤5 字）：按标题关键词提取，避免整段文字堆在路径上 */
+function shortAction(ev: EvidenceItem): string {
+  const title = ev.title ?? '';
+  if (/讲义|阅读|打开|学习一项资源/.test(title)) return '学习资源';
+  if (/实操|实践|动手/.test(title)) return '动手实操';
+  if (/测试|测评|答题|答对|题/.test(title)) return '做分阶题';
+  if (/笔记/.test(title)) return '记笔记';
+  if (/导学|提问|问答|对话/.test(title)) return '导学问答';
+  if (/成长|画像|校准/.test(title)) return '画像更新';
+  if (/专注|讲播|听完/.test(title)) return '专注学习';
+  return (evidenceMeta[ev.kind] ?? evidenceMeta.knowledge).label;
+}
+
+/** S 形路径节点：圆形节点 + 上（动作）/下（时间）两行字，详情放 hover 悬浮卡 */
+function SPathNode({ ev, col, total }: { ev: EvidenceItem; col: number; total: number }) {
   const meta = evidenceMeta[ev.kind] ?? evidenceMeta.knowledge;
+  const colors = NODE_COLORS[ev.kind] ?? NODE_COLORS.knowledge;
   return (
-    <div className="relative min-w-0 flex-1 rounded-[12px] border border-hairline bg-paper px-3 py-2.5 shadow-xs">
-      <span aria-hidden className="absolute left-1/2 -top-[5px] h-2.5 w-2.5 -translate-x-1/2 rounded-full border-2 border-paper bg-brand" />
-      <div className="flex items-center gap-2">
-        <span className={cn('rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-medium', meta.cls)}>{meta.label}</span>
-        <span className="font-mono text-[10.5px] text-ink-muted">{evidenceTime(ev.occurredAt)}</span>
-      </div>
-      <div className="mt-1 truncate text-[13px] font-medium text-ink" title={ev.title}>{ev.title}</div>
-      {ev.description && <div className="mt-0.5 truncate text-[11.5px] text-ink-muted" title={ev.description}>{ev.description}</div>}
-      {(ev.knowledgeName || ev.correctCount != null) && (
-        <div className="mt-1 flex flex-wrap gap-1.5 font-mono text-[10.5px] text-ink-muted">
-          {ev.knowledgeName && <span className="rounded-md bg-paper-deep px-1.5 py-0.5">{ev.knowledgeName}</span>}
-          {ev.correctCount != null && <span className="rounded-md bg-paper-deep px-1.5 py-0.5">答对 {ev.correctCount} · 答错 {ev.wrongCount ?? 0}</span>}
+    <div className="group relative flex w-[76px] shrink-0 flex-col items-center">
+      {/* 悬浮详情卡：参考 3D 悬浮卡片风格，仅 hover 出现 */}
+      <div className={cn(
+        'pointer-events-none absolute bottom-full z-30 mb-2 hidden w-60 rounded-[14px] border border-[#E1E6DF] bg-white/95 p-3.5 shadow-[0_12px_30px_rgba(41,63,51,0.16)] backdrop-blur-sm group-hover:block',
+        col === 0 ? 'left-0' : col === total - 1 ? 'right-0 left-auto' : 'left-1/2 -translate-x-1/2',
+      )}>
+        <div className="flex items-center gap-2">
+          <span className={cn('rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-medium', meta.cls)}>{meta.label}</span>
+          <span className="font-mono text-[10.5px] text-ink-muted">{evidenceTime(ev.occurredAt)}</span>
         </div>
-      )}
+        <div className="mt-1.5 text-[13px] font-semibold leading-snug text-[#24332B]">{ev.title}</div>
+        {ev.description && <p className="mt-1 text-[12px] leading-5 text-ink-muted">{ev.description}</p>}
+        {(ev.knowledgeName || ev.correctCount != null) && (
+          <div className="mt-1.5 flex flex-wrap gap-1.5 font-mono text-[10.5px] text-ink-muted">
+            {ev.knowledgeName && <span className="rounded-md bg-paper-deep px-1.5 py-0.5">{ev.knowledgeName}</span>}
+            {ev.correctCount != null && <span className="rounded-md bg-paper-deep px-1.5 py-0.5">答对 {ev.correctCount} · 答错 {ev.wrongCount ?? 0}</span>}
+          </div>
+        )}
+      </div>
+      <span className="mb-1 max-w-[72px] truncate text-[10px] font-medium text-ink">{shortAction(ev)}</span>
+      <span
+        className="flex h-8 w-8 items-center justify-center rounded-full border-2 bg-paper shadow-sm transition-transform group-hover:scale-110"
+        style={{ borderColor: colors.ring }}
+      >
+        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colors.dot }} />
+      </span>
+      <span className="mt-1 whitespace-nowrap font-mono text-[9px] text-ink-muted">{evidenceTime(ev.occurredAt)}</span>
     </div>
   );
 }
@@ -352,6 +387,17 @@ export default function Report() {
   const [rangeEnd, setRangeEnd] = useState(localDateKey(0));
   const [rangeJournals, setRangeJournals] = useState<LearningJournal[]>([]);
   const [rangeLoading, setRangeLoading] = useState(false);
+  /** S 形路径每行节点数：按屏幕宽度自适应（4–8 个） */
+  const [perRow, setPerRow] = useState(6);
+  useEffect(() => {
+    const update = () => {
+      const width = window.innerWidth;
+      setPerRow(width >= 1440 ? 8 : width >= 1024 ? 6 : width >= 640 ? 5 : 4);
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
 
   const loadReport = useCallback(async () => {
     setLoading(true);
@@ -789,11 +835,14 @@ export default function Report() {
           {rangeEvidence.length === 0 ? (
             <p className="py-6 text-center text-[13px] text-ink-muted">这个时间段还没有学习记录。完成真实讲义、练习或导学后，记录会自动出现在这里。</p>
           ) : (
-            <div className="space-y-3">
-              {rowsOf(rangeEvidence, 3).map((row, rowIndex) => (
-                <div key={rowIndex} className={cn('relative flex items-stretch gap-3', rowIndex % 2 === 1 && 'flex-row-reverse')}>
-                  <span aria-hidden className="pointer-events-none absolute inset-x-3 top-1/2 h-px bg-brand/10" />
-                  {row.map((ev) => <EvidenceStep key={ev.id} ev={ev} />)}
+            <div className="space-y-2 pb-1 pt-2">
+              {rowsOf(rangeEvidence, perRow).map((row, rowIndex) => (
+                <div key={rowIndex} className={cn('relative flex items-center px-2', rowIndex % 2 === 1 && 'flex-row-reverse')}>
+                  <span aria-hidden className="absolute inset-x-2 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-brand/20" />
+                  {rowIndex > 0 && (
+                    <span aria-hidden className={cn('absolute -top-3 h-3 w-0.5 rounded bg-brand/25', rowIndex % 2 === 1 ? 'right-5' : 'left-5')} />
+                  )}
+                  {row.map((ev, col) => <SPathNode key={ev.id} ev={ev} col={col} total={row.length} />)}
                 </div>
               ))}
             </div>
