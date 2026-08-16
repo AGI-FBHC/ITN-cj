@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -71,13 +71,6 @@ function clampRange(start: string, end: string): { start: string; end: string } 
   return { start, end };
 }
 
-/** 把列表按行切块，用于 S 形路径布局（奇数行反向渲染） */
-function rowsOf<T>(items: T[], perRow: number): T[][] {
-  const rows: T[][] = [];
-  for (let i = 0; i < items.length; i += perRow) rows.push(items.slice(i, i + perRow));
-  return rows;
-}
-
 interface EvidenceItem {
   id: string;
   kind: string;
@@ -110,16 +103,66 @@ function shortAction(ev: EvidenceItem): string {
   return (evidenceMeta[ev.kind] ?? evidenceMeta.knowledge).label;
 }
 
-/** S 形路径节点：圆形节点 + 上（动作）/下（时间）两行字，详情放 hover 悬浮卡 */
-function SPathNode({ ev, col, total }: { ev: EvidenceItem; col: number; total: number }) {
+interface SplinePoint {
+  x: number;
+  y: number;
+  ev: EvidenceItem;
+  align: 'left' | 'right' | 'center';
+}
+
+/** 由节点位置生成一条完全连贯、平滑拐弯的 S 形 SVG 路径 */
+function buildSplineLayout(items: EvidenceItem[], perRow: number, width: number): { points: SplinePoint[]; pathD: string; height: number } {
+  const TOP = 34;
+  const ROW_H = 78;
+  const SIDE_PAD = 48;
+  const w = Math.max(width, 320);
+  const dx = perRow > 1 ? (w - SIDE_PAD * 2) / (perRow - 1) : 0;
+  const points: SplinePoint[] = [];
+  const rows = Math.ceil(items.length / perRow);
+  for (let r = 0; r < rows; r++) {
+    const row = items.slice(r * perRow, r * perRow + perRow);
+    const y = TOP + r * ROW_H;
+    row.forEach((ev, j) => {
+      const col = r % 2 === 0 ? j : perRow - 1 - j;
+      points.push({
+        x: SIDE_PAD + col * dx,
+        y,
+        ev,
+        align: col === 0 ? 'left' : col === perRow - 1 ? 'right' : 'center',
+      });
+    });
+  }
+  let d = '';
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    if (i === 0) {
+      d = `M ${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
+      continue;
+    }
+    const prev = points[i - 1];
+    if (Math.abs(p.y - prev.y) < 1) {
+      d += ` L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
+    } else {
+      /* 行尾 U 型转弯：向行外鼓出的贝塞尔曲线，保持 S 线连续顺滑 */
+      const bulge = p.x > w / 2 ? 22 : -22;
+      const h = p.y - prev.y;
+      d += ` C ${(prev.x + bulge).toFixed(1)} ${(prev.y + h * 0.45).toFixed(1)} ${(p.x + bulge).toFixed(1)} ${(p.y - h * 0.45).toFixed(1)} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
+    }
+  }
+  return { points, pathD: d, height: TOP + rows * ROW_H + 18 };
+}
+
+/** S 形路径上的圆形节点：圆 + 上（动作）/下（时间）两行字，详情放 hover 悬浮卡 */
+function SPathNode({ pt }: { pt: SplinePoint }) {
+  const ev = pt.ev;
   const meta = evidenceMeta[ev.kind] ?? evidenceMeta.knowledge;
   const colors = NODE_COLORS[ev.kind] ?? NODE_COLORS.knowledge;
   return (
-    <div className="group relative flex w-[76px] shrink-0 flex-col items-center">
+    <div className="group absolute z-10 -translate-x-1/2 -translate-y-1/2" style={{ left: pt.x, top: pt.y }}>
       {/* 悬浮详情卡：参考 3D 悬浮卡片风格，仅 hover 出现 */}
       <div className={cn(
-        'pointer-events-none absolute bottom-full z-30 mb-2 hidden w-60 rounded-[14px] border border-[#E1E6DF] bg-white/95 p-3.5 shadow-[0_12px_30px_rgba(41,63,51,0.16)] backdrop-blur-sm group-hover:block',
-        col === 0 ? 'left-0' : col === total - 1 ? 'right-0 left-auto' : 'left-1/2 -translate-x-1/2',
+        'pointer-events-none absolute bottom-full mb-2 hidden w-60 rounded-[14px] border border-[#E1E6DF] bg-white/95 p-3.5 shadow-[0_12px_30px_rgba(41,63,51,0.16)] backdrop-blur-sm group-hover:block',
+        pt.align === 'left' ? 'left-0' : pt.align === 'right' ? 'right-0' : 'left-1/2 -translate-x-1/2',
       )}>
         <div className="flex items-center gap-2">
           <span className={cn('rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-medium', meta.cls)}>{meta.label}</span>
@@ -134,14 +177,13 @@ function SPathNode({ ev, col, total }: { ev: EvidenceItem; col: number; total: n
           </div>
         )}
       </div>
-      <span className="mb-1 max-w-[72px] truncate text-[10px] font-medium text-ink">{shortAction(ev)}</span>
-      <span
-        className="flex h-8 w-8 items-center justify-center rounded-full border-2 bg-paper shadow-sm transition-transform group-hover:scale-110"
-        style={{ borderColor: colors.ring }}
-      >
-        <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colors.dot }} />
-      </span>
-      <span className="mt-1 whitespace-nowrap font-mono text-[9px] text-ink-muted">{evidenceTime(ev.occurredAt)}</span>
+      <div className="flex flex-col items-center">
+        <span className="mb-1 max-w-[72px] truncate text-[10px] font-medium text-ink">{shortAction(ev)}</span>
+        <span className="flex h-8 w-8 items-center justify-center rounded-full border-2 bg-paper shadow-sm transition-transform group-hover:scale-110" style={{ borderColor: colors.ring }}>
+          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colors.dot }} />
+        </span>
+        <span className="mt-1 whitespace-nowrap font-mono text-[9px] text-ink-muted">{evidenceTime(ev.occurredAt)}</span>
+      </div>
     </div>
   );
 }
@@ -397,6 +439,18 @@ export default function Report() {
     update();
     window.addEventListener('resize', update);
     return () => window.removeEventListener('resize', update);
+  }, []);
+
+  const pathRef = useRef<HTMLDivElement>(null);
+  const [pathWidth, setPathWidth] = useState(0);
+  useEffect(() => {
+    const el = pathRef.current;
+    if (!el) return;
+    const update = () => setPathWidth(el.clientWidth);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
   const loadReport = useCallback(async () => {
@@ -835,16 +889,20 @@ export default function Report() {
           {rangeEvidence.length === 0 ? (
             <p className="py-6 text-center text-[13px] text-ink-muted">这个时间段还没有学习记录。完成真实讲义、练习或导学后，记录会自动出现在这里。</p>
           ) : (
-            <div className="space-y-2 pb-1 pt-2">
-              {rowsOf(rangeEvidence, perRow).map((row, rowIndex) => (
-                <div key={rowIndex} className={cn('relative flex items-center px-2', rowIndex % 2 === 1 && 'flex-row-reverse')}>
-                  <span aria-hidden className="absolute inset-x-2 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-brand/20" />
-                  {rowIndex > 0 && (
-                    <span aria-hidden className={cn('absolute -top-3 h-3 w-0.5 rounded bg-brand/25', rowIndex % 2 === 1 ? 'right-5' : 'left-5')} />
-                  )}
-                  {row.map((ev, col) => <SPathNode key={ev.id} ev={ev} col={col} total={row.length} />)}
-                </div>
-              ))}
+            <div ref={pathRef} className="relative w-full">
+              {(() => {
+                const layout = buildSplineLayout(rangeEvidence, perRow, pathWidth);
+                return (
+                  <div className="relative" style={{ height: layout.height }}>
+                    {layout.pathD && (
+                      <svg className="absolute inset-0 z-0 h-full w-full" viewBox={`0 0 ${Math.max(pathWidth, 320)} ${layout.height}`} preserveAspectRatio="none" aria-hidden>
+                        <path d={layout.pathD} fill="none" stroke="#4E7860" strokeOpacity="0.38" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                    {layout.points.map((pt) => <SPathNode key={pt.ev.id} pt={pt} />)}
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>
