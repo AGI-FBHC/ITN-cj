@@ -295,6 +295,17 @@ export default function GardenCard() {
                   </div>
                 ))}
               </div>
+              {log.length > 6 && (
+                <div className="mt-1.5 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/report#learning-path')}
+                    className="inline-flex items-center gap-0.5 text-[11px] font-medium text-brand transition-colors hover:underline"
+                  >
+                    显示更多 <ArrowRight size={11} />
+                  </button>
+                </div>
+              )}
             </div>
           </motion.div>
         )}

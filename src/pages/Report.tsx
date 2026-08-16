@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   ArrowRight,
   BarChart3,
   BookOpen,
+  CalendarRange,
   CheckCircle2,
   CircleDashed,
   Clock3,
   FileDown,
   Flame,
   History,
+  Loader2,
   Route,
   Sparkles,
   Target,
@@ -45,6 +47,68 @@ function localDateKey(daysAgo: number): string {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function toDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/** 日期范围约束：最多 7 天（含首尾），且不早于/晚于边界 */
+function clampRange(start: string, end: string): { start: string; end: string } {
+  const s = new Date(`${start}T00:00:00`);
+  const e = new Date(`${end}T00:00:00`);
+  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return { start, end };
+  if (s > e) return { start: end, end };
+  const days = Math.round((e.getTime() - s.getTime()) / 86400000) + 1;
+  if (days > 7) {
+    const ns = new Date(e);
+    ns.setDate(ns.getDate() - 6);
+    return { start: toDateKey(ns), end };
+  }
+  return { start, end };
+}
+
+/** 把列表按行切块，用于 S 形路径布局（奇数行反向渲染） */
+function rowsOf<T>(items: T[], perRow: number): T[][] {
+  const rows: T[][] = [];
+  for (let i = 0; i < items.length; i += perRow) rows.push(items.slice(i, i + perRow));
+  return rows;
+}
+
+interface EvidenceItem {
+  id: string;
+  kind: string;
+  occurredAt: string;
+  title: string;
+  description: string;
+  knowledgeName?: string | null;
+  correctCount?: number | null;
+  wrongCount?: number | null;
+}
+
+/** S 形路径中的一个活动节点 */
+function EvidenceStep({ ev }: { ev: EvidenceItem }) {
+  const meta = evidenceMeta[ev.kind] ?? evidenceMeta.knowledge;
+  return (
+    <div className="relative min-w-0 flex-1 rounded-[12px] border border-hairline bg-paper px-3 py-2.5 shadow-xs">
+      <span aria-hidden className="absolute left-1/2 -top-[5px] h-2.5 w-2.5 -translate-x-1/2 rounded-full border-2 border-paper bg-brand" />
+      <div className="flex items-center gap-2">
+        <span className={cn('rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-medium', meta.cls)}>{meta.label}</span>
+        <span className="font-mono text-[10.5px] text-ink-muted">{evidenceTime(ev.occurredAt)}</span>
+      </div>
+      <div className="mt-1 truncate text-[13px] font-medium text-ink" title={ev.title}>{ev.title}</div>
+      {ev.description && <div className="mt-0.5 truncate text-[11.5px] text-ink-muted" title={ev.description}>{ev.description}</div>}
+      {(ev.knowledgeName || ev.correctCount != null) && (
+        <div className="mt-1 flex flex-wrap gap-1.5 font-mono text-[10.5px] text-ink-muted">
+          {ev.knowledgeName && <span className="rounded-md bg-paper-deep px-1.5 py-0.5">{ev.knowledgeName}</span>}
+          {ev.correctCount != null && <span className="rounded-md bg-paper-deep px-1.5 py-0.5">答对 {ev.correctCount} · 答错 {ev.wrongCount ?? 0}</span>}
+        </div>
+      )}
+    </div>
+  );
 }
 
 const evidenceMeta: Record<string, { label: string; cls: string }> = {
@@ -273,6 +337,7 @@ function weeklyOption(values: number[]) {
 
 export default function Report() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { currentLearner, domainKnowledgePoints } = useProfile();
   const { loading: courseLoading, course, resources, nextResource, nextChapter, learnedCount, totalCount, progress } = useCourseLearning();
   const learningMap = useLearningMap();
@@ -282,6 +347,11 @@ export default function Report() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [summarizing, setSummarizing] = useState(false);
+  /** 真实学习记录：可选择日期范围（最多 7 天） */
+  const [rangeStart, setRangeStart] = useState(localDateKey(6));
+  const [rangeEnd, setRangeEnd] = useState(localDateKey(0));
+  const [rangeJournals, setRangeJournals] = useState<LearningJournal[]>([]);
+  const [rangeLoading, setRangeLoading] = useState(false);
 
   const loadReport = useCallback(async () => {
     setLoading(true);
@@ -319,6 +389,19 @@ export default function Report() {
   useEffect(() => {
     void loadReport();
   }, [currentLearner.id, loadReport]);
+
+  /* 从“我的学习”跳转过来：定位到真实课程学习路径 */
+  useEffect(() => {
+    if (location.hash !== '#learning-path') return;
+    const timer = window.setInterval(() => {
+      const el = document.getElementById('learning-path');
+      if (el) {
+        window.clearInterval(timer);
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 300);
+    return () => window.clearInterval(timer);
+  }, [location.hash]);
 
   useEffect(() => {
     const bustToday = () => {
@@ -385,6 +468,69 @@ export default function Report() {
       .map(([dim]) => domainKnowledgePoints.find((point) => point.id === dim)?.name ?? dim);
     return names.length ? `该方向主要锻炼六维中的「${names.join('、')}」。` : '';
   }, [weakestChapter, domainKnowledgePoints]);
+
+  const rangeDates = useMemo(() => {
+    const dates: string[] = [];
+    const cursor = new Date(`${rangeStart}T00:00:00`);
+    const end = new Date(`${rangeEnd}T00:00:00`);
+    if (Number.isNaN(cursor.getTime()) || Number.isNaN(end.getTime())) return dates;
+    while (cursor <= end && dates.length < 7) {
+      dates.push(toDateKey(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return dates;
+  }, [rangeStart, rangeEnd]);
+
+  const handleRangeStart = (value: string) => {
+    if (!value) return;
+    setRangeStart(clampRange(value, rangeEnd).start);
+  };
+  const handleRangeEnd = (value: string) => {
+    if (!value) return;
+    setRangeEnd(clampRange(rangeStart, value).end);
+  };
+
+  /* 按所选日期范围加载日记（缓存优先），供真实学习记录展示 */
+  useEffect(() => {
+    if (!isUuid(currentLearner.id) || rangeDates.length === 0) return;
+    let cancelled = false;
+    setRangeLoading(true);
+    const todayKey = localDateKey(0);
+    const cached = rangeDates.map((date) => readLearnerJournal(currentLearner.id, date, date === todayKey));
+    const hits = cached.filter((journal): journal is LearningJournal => journal !== null);
+    if (hits.length) setRangeJournals(hits);
+    const missing = rangeDates.filter((_date, index) => !cached[index]);
+    Promise.all(missing.map((date) => api.getLearningJournal(date)))
+      .then((fresh) => {
+        if (cancelled) return;
+        setRangeJournals([...hits, ...fresh]);
+        fresh.forEach((journal) => writeLearnerJournal(currentLearner.id, journal.date, journal));
+      })
+      .catch(() => { /* 保留已有缓存 */ })
+      .finally(() => { if (!cancelled) setRangeLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentLearner.id, rangeDates.join('|')]);
+
+  const rangeEvidence = useMemo(() => {
+    const startKey = `${rangeStart}T00:00:00`;
+    const endKey = `${rangeEnd}T23:59:59.999`;
+    const journalEvidence = rangeJournals.flatMap((journal) => journal.timeline);
+    const profileEvidence = (growth?.events ?? []).map((event, index) => ({
+      id: `growth-${event.createdAt}-${index}`,
+      occurredAt: event.createdAt,
+      kind: 'knowledge',
+      title: event.title,
+      description: event.amount ? `成长能量 ${event.amount > 0 ? '+' : ''}${event.amount}` : '画像字段已保存到后端',
+      durationSeconds: null,
+      knowledgeName: null,
+      correctCount: null,
+      wrongCount: null,
+    }));
+    return [...journalEvidence, ...profileEvidence]
+      .filter((ev) => ev.occurredAt >= startKey && ev.occurredAt <= endKey)
+      .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt));
+  }, [rangeJournals, growth, rangeStart, rangeEnd]);
 
   const recentEvidence = useMemo(() => {
     const journalEvidence = journals.flatMap((journal) => journal.timeline);
@@ -589,7 +735,7 @@ export default function Report() {
         </div>
       </section>
 
-      <section className="mt-12">
+      <section id="learning-path" className="mt-12 scroll-mt-24">
         <SectionHeader en="LEARNING PATH" title="真实课程学习路径" desc="章节状态由课程和资源完成记录计算；未生成资源的章节不会被标成已学完。" />
         {course && (
           <div className="lf-card overflow-hidden">
@@ -625,36 +771,31 @@ export default function Report() {
           </div>
         )}
 
-        {/* 近 7 天真实学习记录：与画像页同一套证据源（每日学习会话 + 成长事件） */}
+        {/* 真实学习记录：可选择日期范围（最多 7 天），S 形路径展示 */}
         <div className="mt-4 lf-card p-5">
-          <div className="mb-3 flex items-center gap-2">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
             <History size={16} className="text-brand" />
-            <span className="text-[15px] font-semibold text-ink">近 7 天真实学习记录</span>
+            <span className="text-[15px] font-semibold text-ink">真实学习记录</span>
+            <span className="font-mono text-[11px] text-ink-muted">{rangeStart} ~ {rangeEnd}</span>
+            {rangeLoading && <Loader2 size={13} className="animate-spin text-ink-muted" />}
           </div>
-          {recentEvidence.length === 0 ? (
-            <p className="py-6 text-center text-[13px] text-ink-muted">近 7 天还没有学习记录。完成真实讲义、练习或导学后，记录会自动出现在这里。</p>
+          <div className="mb-4 flex flex-wrap items-center gap-2 rounded-[12px] border border-hairline bg-card-warm px-3 py-2">
+            <CalendarRange size={14} className="text-brand" />
+            <input type="date" value={rangeStart} max={rangeEnd} onChange={(event) => handleRangeStart(event.target.value)} aria-label="开始日期" className="h-8 rounded-[8px] border border-hairline bg-paper px-2 text-[12px] text-ink outline-none focus:border-brand/45" />
+            <span className="text-[11.5px] text-ink-muted">至</span>
+            <input type="date" value={rangeEnd} min={rangeStart} max={localDateKey(0)} onChange={(event) => handleRangeEnd(event.target.value)} aria-label="结束日期" className="h-8 rounded-[8px] border border-hairline bg-paper px-2 text-[12px] text-ink outline-none focus:border-brand/45" />
+            <span className="text-[11px] text-ink-muted">最多 7 天</span>
+          </div>
+          {rangeEvidence.length === 0 ? (
+            <p className="py-6 text-center text-[13px] text-ink-muted">这个时间段还没有学习记录。完成真实讲义、练习或导学后，记录会自动出现在这里。</p>
           ) : (
-            <div className="grid gap-x-8 gap-y-4 lg:grid-cols-2">
-              {recentEvidence.slice(0, 12).map((ev) => {
-                const meta = evidenceMeta[ev.kind] ?? evidenceMeta.knowledge;
-                return (
-                  <div key={ev.id} className="relative border-l-2 border-hairline pl-4">
-                    <span className="absolute -left-[5px] top-1.5 h-2 w-2 rounded-full bg-brand" />
-                    <div className="flex items-center gap-2">
-                      <span className={cn('rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-medium', meta.cls)}>{meta.label}</span>
-                      <span className="font-mono text-[10.5px] text-ink-muted">{evidenceTime(ev.occurredAt)}</span>
-                    </div>
-                    <div className="mt-1 text-[13.5px] font-medium text-ink">{ev.title}</div>
-                    <div className="mt-0.5 text-[12px] leading-[18px] text-ink-muted">{ev.description}</div>
-                    {(ev.knowledgeName || ev.correctCount != null) && (
-                      <div className="mt-1.5 flex flex-wrap gap-1.5 font-mono text-[10.5px] text-ink-muted">
-                        {ev.knowledgeName && <span className="rounded-md bg-paper-deep px-1.5 py-0.5">{ev.knowledgeName}</span>}
-                        {ev.correctCount != null && <span className="rounded-md bg-paper-deep px-1.5 py-0.5">答对 {ev.correctCount} · 答错 {ev.wrongCount ?? 0}</span>}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+            <div className="space-y-3">
+              {rowsOf(rangeEvidence, 3).map((row, rowIndex) => (
+                <div key={rowIndex} className={cn('relative flex items-stretch gap-3', rowIndex % 2 === 1 && 'flex-row-reverse')}>
+                  <span aria-hidden className="pointer-events-none absolute inset-x-3 top-1/2 h-px bg-brand/10" />
+                  {row.map((ev) => <EvidenceStep key={ev.id} ev={ev} />)}
+                </div>
+              ))}
             </div>
           )}
         </div>
