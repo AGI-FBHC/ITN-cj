@@ -15,6 +15,15 @@ import { useReview } from '@/context/ReviewContext';
 import { DAY_MS } from '@/data/forgetting';
 import { LeafSmall } from '@/components/heal/Flora';
 
+/** 本周回顾的提醒语：按各项真实动作加权打分，分数越高鼓励越具体（前端静态判断，不依赖后端） */
+function weekEncouragement(score: number): string {
+  if (score >= 40) return '这股劲儿很稳——本周的每一步都在替你攒能力。';
+  if (score >= 20) return '节奏已经在形成了，保持住，比昨天多一步就好。';
+  if (score >= 10) return '正在往前走——慢一点没关系，方向对了就行。';
+  if (score >= 5) return '开了一个好头，下次再多做一件就更好。';
+  return '只要动起来，就比停在原地多走了一步。';
+}
+
 /** 「x 天前」样式的时间串 → 是否落在最近 7 天内（GrowthContext 的 log.time 是 HH:MM 形式，故按条数兜底） */
 export default function WeekReview() {
   const { log, watered, fruits } = useGrowth();
@@ -43,6 +52,8 @@ export default function WeekReview() {
       actions,
       watered,
       fruits: fruits.length,
+      /* 动作权重：学习动作 1 · 笔记 2 · 复习 3 · 攻克错题 4 · 园子结果 2 */
+      score: actions + weekNotes.length * 2 + reviewed.length * 3 + mastered.length * 4 + fruits.length * 2,
     };
   }, [notes, reviewItems, mastered, log, watered, fruits]);
 
@@ -72,8 +83,11 @@ export default function WeekReview() {
       </div>
 
       <p className="mt-2 text-[13.5px] leading-[23px] text-ink-2">
-        {lines.length > 0 ? lines.join('、') + '。' : '一直在往前走。'}
+        {lines.length > 0 ? lines.join('、') + '。' : weekEncouragement(stat.score)}
       </p>
+      {lines.length > 0 && (
+        <p className="mt-1 text-[12.5px] font-medium text-brand/85">{weekEncouragement(stat.score)}</p>
+      )}
 
       <div className="mt-3 flex flex-wrap gap-2">
         {[
