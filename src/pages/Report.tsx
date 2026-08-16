@@ -113,8 +113,8 @@ interface SplinePoint {
 /** 由节点位置生成一条完全连贯、平滑拐弯的 S 形 SVG 路径 */
 function buildSplineLayout(items: EvidenceItem[], perRow: number, width: number): { points: SplinePoint[]; pathD: string; height: number } {
   const TOP = 34;
-  const ROW_H = 78;
-  const SIDE_PAD = 48;
+  const ROW_H = 84;
+  const SIDE_PAD = 58;
   const w = Math.max(width, 320);
   const dx = perRow > 1 ? (w - SIDE_PAD * 2) / (perRow - 1) : 0;
   const points: SplinePoint[] = [];
@@ -143,10 +143,10 @@ function buildSplineLayout(items: EvidenceItem[], perRow: number, width: number)
     if (Math.abs(p.y - prev.y) < 1) {
       d += ` L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
     } else {
-      /* 行尾 U 型转弯：向行外鼓出的贝塞尔曲线，保持 S 线连续顺滑 */
-      const bulge = p.x > w / 2 ? 22 : -22;
-      const h = p.y - prev.y;
-      d += ` C ${(prev.x + bulge).toFixed(1)} ${(prev.y + h * 0.45).toFixed(1)} ${(p.x + bulge).toFixed(1)} ${(p.y - h * 0.45).toFixed(1)} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
+      /* 行尾 180° 圆弧转弯：起点/终点切线与行内直线连续，S 曲线整体平滑无硬角 */
+      const radius = (p.y - prev.y) / 2;
+      const sweep = p.x > w / 2 ? 1 : 0;
+      d += ` A ${radius.toFixed(1)} ${radius.toFixed(1)} 0 0 ${sweep} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
     }
   }
   return { points, pathD: d, height: TOP + rows * ROW_H + 18 };
@@ -451,7 +451,8 @@ export default function Report() {
     const observer = new ResizeObserver(update);
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+    /* 记录渲染完成后容器才存在，必须在数据出现后再测量，否则节点会挤在左侧 */
+  }, [rangeJournals.length, rangeStart, rangeEnd]);
 
   const loadReport = useCallback(async () => {
     setLoading(true);
@@ -896,7 +897,7 @@ export default function Report() {
                   <div className="relative" style={{ height: layout.height }}>
                     {layout.pathD && (
                       <svg className="absolute inset-0 z-0 h-full w-full" viewBox={`0 0 ${Math.max(pathWidth, 320)} ${layout.height}`} preserveAspectRatio="none" aria-hidden>
-                        <path d={layout.pathD} fill="none" stroke="#4E7860" strokeOpacity="0.38" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d={layout.pathD} fill="none" stroke="#4E7860" strokeOpacity="0.55" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     )}
                     {layout.points.map((pt) => <SPathNode key={pt.ev.id} pt={pt} />)}
