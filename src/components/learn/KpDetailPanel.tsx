@@ -214,10 +214,13 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
   }, [currentLearner.id, kpId, kpProp, topicIndex]);
 
   if (!kpId) {
-    /* 未选中章节：优先展示最近学习但未学完的资源，其次给继续学习建议。 */
+    /* 未选中章节：优先展示最近学习但未学完的资源，其次给继续学习建议。
+       只展示当前知识地图真实章节下的资源（kpId 对齐地图章节），旧知识库记录不再出现。 */
     const allResources = resourcesProp ?? [];
+    const realChapters = knowledgeMap?.chapters ?? [];
+    const realChapterIds = new Set(realChapters.map((chapter) => chapter.id));
     const recentUnfinished = [...allResources]
-      .filter((item) => item.id && !item.learned)
+      .filter((item) => item.id && !item.learned && realChapterIds.has(item.kpId ?? ''))
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, 6);
     return (
@@ -233,7 +236,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
               const meta = FORM_META[item.form] ?? { label: '学习资源', icon: BookOpen };
               const Icon = meta.icon;
               const topicName = item.levelTag || item.title.replace(/\s*·\s*(定制讲义|领学讲义|实操指南|分阶测试题)$/, '');
-              const chapterName = item.kpId ? getKnowledgePoint(item.kpId)?.name : undefined;
+              const chapterName = item.kpId ? realChapters.find((chapter) => chapter.id === item.kpId)?.name : undefined;
               return (
                 <button key={item.id} type="button" onClick={() => navigate(`/learn/resource/${item.id}`)} className="group flex w-full items-center gap-3 rounded-[10px] border border-hairline bg-paper px-3 py-2.5 text-left transition-all hover:border-brand/45 hover:bg-brand-tint/40">
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-tint text-brand"><Icon size={16} /></span>
