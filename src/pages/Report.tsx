@@ -448,6 +448,9 @@ export default function Report() {
   const [rangeEnd, setRangeEnd] = useState(localDateKey(0));
   const [rangeJournals, setRangeJournals] = useState<LearningJournal[]>([]);
   const [rangeLoading, setRangeLoading] = useState(false);
+  /** 后台静默刷新：先展示缓存，拉取最新数据后自动更新 */
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshSeqRef = useRef(0);
   /** S 形路径每行节点数：按屏幕宽度自适应（4–8 个） */
   const [perRow, setPerRow] = useState(6);
   useEffect(() => {
@@ -473,28 +476,64 @@ export default function Report() {
     /* 记录渲染完成后容器才存在，必须在数据出现后再测量，否则节点会挤在左侧 */
   }, [rangeJournals.length, rangeStart, rangeEnd]);
 
+  /** 后台刷新整个时间窗：拉取最新数据后自动更新并写回缓存（并发用 seq 丢弃过期响应） */
+  const refreshReportData = useCallback(async (dates: string[]) => {
+    const seq = ++refreshSeqRef.current;
+    setRefreshing(true);
+    const learnerId = currentLearner.id;
+    try {
+      const [profile, learnerGrowth, ...freshJournals] = await Promise.all([
+        api.getLearnerAnalyticsProfile(),
+        isUuid(learnerId) ? api.getLearnerGrowth(learnerId) : Promise.resolve(null),
+        ...dates.map((date) => api.getLearningJournal(date)),
+      ]);
+      if (seq !== refreshSeqRef.current) return;
+      if (profile) {
+        setAnalytics(profile);
+        if (isUuid(learnerId)) writeLearnerAnalytics(learnerId, profile);
+      }
+      if (learnerGrowth) setGrowth(learnerGrowth);
+      setJournals((current) => {
+        const merged = [...current];
+        freshJournals.forEach((journal) => {
+          const index = merged.findIndex((item) => item.date === journal.date);
+          if (index >= 0) merged[index] = journal;
+          else merged.push(journal);
+        });
+        return merged;
+      });
+      if (isUuid(learnerId)) freshJournals.forEach((journal) => writeLearnerJournal(learnerId, journal.date, journal));
+    } catch { /* 后台刷新失败保留缓存展示 */ }
+    finally { if (seq === refreshSeqRef.current) setRefreshing(false); }
+  }, [currentLearner.id]);
+
   const loadReport = useCallback(async () => {
     setLoading(true);
     setError('');
+    const learnerId = currentLearner.id;
+    const dates = Array.from({ length: 7 }, (_, index) => localDateKey(index));
+    const today = dates[0];
+    /* 缓存优先：先渲染本地缓存，再后台静默拉取最新数据，完成后自动更新 */
+    const cachedAnalytics = isUuid(learnerId) ? readLearnerAnalytics(learnerId) : null;
+    if (cachedAnalytics) setAnalytics(cachedAnalytics);
+    const cachedJournals = dates.map((date) => (isUuid(learnerId) ? readLearnerJournal(learnerId, date, date === today) : null));
+    const hitJournals = cachedJournals.filter((journal): journal is LearningJournal => journal !== null);
+    if (hitJournals.length) setJournals(hitJournals);
+    if (cachedAnalytics || hitJournals.length > 0) {
+      /* 有缓存：直接展示，后台刷新；无缓存时走一次完整加载 */
+      setLoading(false);
+      void refreshReportData(dates);
+      return;
+    }
     try {
-      const learnerId = currentLearner.id;
-      const dates = Array.from({ length: 7 }, (_, index) => localDateKey(index));
-      const today = dates[0];
-      /* 缓存优先：新鲜 analytics/日记直接回显，只补缺失或过期的日期 */
-      const cachedAnalytics = isUuid(learnerId) ? readLearnerAnalytics(learnerId) : null;
-      if (cachedAnalytics) setAnalytics(cachedAnalytics);
-      const cachedJournals = dates.map((date) => (isUuid(learnerId) ? readLearnerJournal(learnerId, date, date === today) : null));
-      const hitJournals = cachedJournals.filter((journal): journal is LearningJournal => journal !== null);
-      if (hitJournals.length) setJournals(hitJournals);
-      const missingDates = dates.filter((_date, index) => !cachedJournals[index]);
       const [profile, learnerGrowth, ...freshJournals] = await Promise.all([
-        cachedAnalytics ? Promise.resolve(null) : api.getLearnerAnalyticsProfile(),
+        api.getLearnerAnalyticsProfile(),
         isUuid(learnerId) ? api.getLearnerGrowth(learnerId) : Promise.resolve(null),
-        ...missingDates.map((date) => api.getLearningJournal(date)),
+        ...dates.map((date) => api.getLearningJournal(date)),
       ]);
-      setAnalytics(profile ?? cachedAnalytics);
+      setAnalytics(profile);
       setGrowth(learnerGrowth);
-      setJournals([...hitJournals, ...freshJournals]);
+      setJournals(freshJournals);
       if (isUuid(learnerId)) {
         if (profile) writeLearnerAnalytics(learnerId, profile);
         freshJournals.forEach((journal) => writeLearnerJournal(learnerId, journal.date, journal));
@@ -504,7 +543,7 @@ export default function Report() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentLearner.id, refreshReportData]);
 
   useEffect(() => {
     void loadReport();
@@ -524,17 +563,19 @@ export default function Report() {
   }, [location.hash]);
 
   useEffect(() => {
-    const bustToday = () => {
+    const onLearning = () => {
       if (!isUuid(currentLearner.id)) return;
       bustLearnerJournal(currentLearner.id, localDateKey(0));
+      /* 学习行为发生后静默刷新最近 7 天数据，页面保持最新 */
+      void refreshReportData(Array.from({ length: 7 }, (_, index) => localDateKey(index)));
     };
-    window.addEventListener('lf-signal', bustToday);
-    window.addEventListener('lf:learning-state-changed', bustToday);
+    window.addEventListener('lf-signal', onLearning);
+    window.addEventListener('lf:learning-state-changed', onLearning);
     return () => {
-      window.removeEventListener('lf-signal', bustToday);
-      window.removeEventListener('lf:learning-state-changed', bustToday);
+      window.removeEventListener('lf-signal', onLearning);
+      window.removeEventListener('lf:learning-state-changed', onLearning);
     };
-  }, [currentLearner.id]);
+  }, [currentLearner.id, refreshReportData]);
 
   /* 六维能力 = 画像基线 + 学习证据（章节/知识点 进度×掌握度 加权），与「我的画像」页同口径 */
   const normalizedScores = useMemo(() => {
@@ -625,12 +666,14 @@ export default function Report() {
         if (cancelled) return;
         setRangeJournals([...hits, ...fresh]);
         fresh.forEach((journal) => writeLearnerJournal(currentLearner.id, journal.date, journal));
+        /* 缓存展示后，后台刷新整个所选范围，保证记录与最新数据同步 */
+        return refreshReportData(rangeDates);
       })
       .catch(() => { /* 保留已有缓存 */ })
       .finally(() => { if (!cancelled) setRangeLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentLearner.id, rangeDates.join('|')]);
+  }, [currentLearner.id, rangeDates.join('|'), refreshReportData]);
 
   const rangeEvidence = useMemo(() => {
     const startKey = `${rangeStart}T00:00:00`;
@@ -897,7 +940,7 @@ export default function Report() {
             <History size={16} className="text-brand" />
             <span className="text-[15px] font-semibold text-ink">真实学习记录</span>
             <span className="font-mono text-[11px] text-ink-muted">{rangeStart} ~ {rangeEnd}</span>
-            {rangeLoading && <Loader2 size={13} className="animate-spin text-ink-muted" />}
+            {(rangeLoading || refreshing) && <Loader2 size={13} className="animate-spin text-ink-muted" />}
           </div>
           <div className="mb-4 flex flex-wrap items-center gap-2 rounded-[12px] border border-hairline bg-card-warm px-3 py-2">
             <CalendarRange size={14} className="text-brand" />
