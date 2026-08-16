@@ -103,6 +103,15 @@ function shortAction(ev: EvidenceItem): string {
   return (evidenceMeta[ev.kind] ?? evidenceMeta.knowledge).label;
 }
 
+/** 十六进制颜色转 rgba（节点外发光呼吸效果用） */
+function hexToRgba(hex: string, alpha: number): string {
+  const value = hex.replace('#', '');
+  const r = parseInt(value.slice(0, 2), 16);
+  const g = parseInt(value.slice(2, 4), 16);
+  const b = parseInt(value.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 interface SplinePoint {
   x: number;
   y: number;
@@ -132,13 +141,12 @@ function buildSplineLayout(items: EvidenceItem[], perRow: number, width: number)
       });
     });
   }
+  const EXT = 18;
   let d = '';
-  for (let i = 0; i < points.length; i++) {
+  /* 线头尾各向外延伸一段，超出首尾节点 */
+  d = `M ${(points[0].x - EXT).toFixed(1)} ${points[0].y.toFixed(1)} L ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+  for (let i = 1; i < points.length; i++) {
     const p = points[i];
-    if (i === 0) {
-      d = `M ${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
-      continue;
-    }
     const prev = points[i - 1];
     if (Math.abs(p.y - prev.y) < 1) {
       d += ` L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
@@ -149,6 +157,10 @@ function buildSplineLayout(items: EvidenceItem[], perRow: number, width: number)
       d += ` A ${radius.toFixed(1)} ${radius.toFixed(1)} 0 0 ${sweep} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
     }
   }
+  /* 末行方向决定尾部延伸方向：偶数行向右，奇数行向左 */
+  const last = points[points.length - 1];
+  const lastRowEven = (rows - 1) % 2 === 0;
+  d += ` L ${(last.x + (lastRowEven ? EXT : -EXT)).toFixed(1)} ${last.y.toFixed(1)}`;
   return { points, pathD: d, height: TOP + rows * ROW_H + 18 };
 }
 
@@ -178,11 +190,18 @@ function SPathNode({ pt }: { pt: SplinePoint }) {
         )}
       </div>
       <div className="flex flex-col items-center">
-        <span className="mb-1 max-w-[72px] truncate text-[10px] font-medium text-ink">{shortAction(ev)}</span>
-        <span className="flex h-8 w-8 items-center justify-center rounded-full border-2 bg-paper shadow-sm transition-transform group-hover:scale-110" style={{ borderColor: colors.ring }}>
-          <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colors.dot }} />
-        </span>
-        <span className="mt-1 whitespace-nowrap font-mono text-[9px] text-ink-muted">{evidenceTime(ev.occurredAt)}</span>
+        <span className="mb-1.5 max-w-[72px] truncate text-[10px] font-medium text-ink">{shortAction(ev)}</span>
+        <motion.span
+          className="block h-6 w-6 rounded-full border border-white/70 group-hover:scale-110"
+          style={{ backgroundColor: colors.dot }}
+          animate={{ boxShadow: [
+            `0 0 0 0 ${hexToRgba(colors.dot, 0.4)}`,
+            `0 0 12px 3px ${hexToRgba(colors.dot, 0.55)}`,
+            `0 0 0 0 ${hexToRgba(colors.dot, 0.4)}`,
+          ] }}
+          transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
+        />
+        <span className="mt-1.5 whitespace-nowrap font-mono text-[9px] text-ink-muted">{evidenceTime(ev.occurredAt)}</span>
       </div>
     </div>
   );
