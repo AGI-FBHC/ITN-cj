@@ -502,6 +502,8 @@ export default function CourseResourcePlayer() {
   const [chatSessions, setChatSessions] = useState<PresentationChatSession[]>([]);
   const [chatSessionId, setChatSessionId] = useState('');
   const [chatPptTaskId, setChatPptTaskId] = useState<string | null>(null);
+  /** 当前会话挂载的段落上下文：点击“向导学老师提问”时注入，展示在对话顶部并随首问发给 LLM */
+  const [chatContext, setChatContext] = useState<{ blockTitle: string; content: string } | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
   const chatReadyRef = useRef(false);
   const chatAbortRef = useRef<AbortController | null>(null);
@@ -863,30 +865,39 @@ export default function CourseResourcePlayer() {
     setNoteImg(null);
   };
 
+  /** 确保已解析本知识点对应的 PPT 任务（按标题匹配已完成课件） */
+  const ensureChatTask = async (): Promise<boolean> => {
+    if (!resource) return false;
+    if (chatPptTaskId) return true;
+    try {
+      const listed = await presentationApi.listPresentationSummaries(50);
+      const match = (listed.tasks ?? [])
+        .filter((item) => item.status === 'completed' && (item.title === resource.topic || item.title.includes(resource.topic)))
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.updatedAt).getTime())[0];
+      if (match) {
+        setChatPptTaskId(match.id);
+        return true;
+      }
+    } catch { /* 会话初始化失败时退回传统问答 */ }
+    return false;
+  };
+
   const openChat = async () => {
     setChatOpen(true);
     if (!resource || chatReadyRef.current) return;
     setChatLoading(true);
     try {
-      try {
-        /* 与交互导学打通：按知识点标题找到已完成 PPT 任务，复用同一套聊天会话 */
-        const listed = await presentationApi.listPresentationSummaries(50);
-        const match = (listed.tasks ?? [])
-          .filter((item) => item.status === 'completed' && (item.title === resource.topic || item.title.includes(resource.topic)))
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-        if (match) {
-          setChatPptTaskId(match.id);
-          const sessions = await listPresentationChatSessions(match.id);
-          setChatSessions(sessions);
-          const current = sessions.filter((item) => item.modelProvider === 'mimo')
-            .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0]
-            ?? await createPresentationChatSession(match.id, 'mimo');
-          setChatSessionId(current.id);
-          setMessages(await loadChatHistory(match.id, current.id));
-          chatReadyRef.current = true;
-          return;
-        }
-      } catch { /* 会话初始化失败时退回传统问答 */ }
+      if ((await ensureChatTask()) && chatPptTaskId) {
+        const sessions = await listPresentationChatSessions(chatPptTaskId);
+        setChatSessions(sessions);
+        const current = sessions.filter((item) => item.modelProvider === 'mimo')
+          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0]
+          ?? await createPresentationChatSession(chatPptTaskId, 'mimo');
+        setChatSessionId(current.id);
+        setMessages(await loadChatHistory(chatPptTaskId, current.id));
+        chatReadyRef.current = true;
+        return;
+      }
       setChatPptTaskId(null);
       const result = await api.listLearningResourceMessages(resource.id).catch(() => ({ messages: [] }));
       setMessages(result.messages);
@@ -894,6 +905,34 @@ export default function CourseResourcePlayer() {
     } finally {
       setChatLoading(false);
     }
+  };
+
+  /** 点击具体段落的“向导学老师提问”：开一个新会话，并把该段内容作为上下文 */
+  const askAboutBlock = async (block: LearningBlock) => {
+    stopNoteListening();
+    setCurrentBlockId(block.id);
+    setChatOpen(true);
+    setChatContext({
+      blockTitle: block.title,
+      content: [block.body ?? '', block.code ? `代码：
+${block.code}` : ''].filter(Boolean).join('\n\n').slice(0, 3000),
+    });
+    setQuestion('');
+    setAskPhoto(null);
+    setMessages([]);
+    setFollowUps([]);
+    setChatLoading(true);
+    try {
+      if ((await ensureChatTask()) && chatPptTaskId) {
+        const created = await createPresentationChatSession(chatPptTaskId, 'mimo');
+        setChatSessionId(created.id);
+        setChatSessions((current) => [...current.filter((item) => item.id !== created.id), created]);
+      } else {
+        setChatPptTaskId(null);
+      }
+      chatReadyRef.current = true;
+    } catch { /* 保持回退模式 */ }
+    finally { setChatLoading(false); }
   };
 
   const ask = async (text = question, photo?: { name: string; url: string } | null, fromVoice = false) => {
@@ -908,9 +947,16 @@ export default function CourseResourcePlayer() {
     setQuestion('');
     setAskPhoto(null);
     setAsking(true);
+    /* 新会话首问挂载段落上下文：让 LLM 基于当前点击的模块内容回答 */
+    const contextPrefix = chatContext && messages.length === 0
+      ? `【当前段落】《${chatContext.blockTitle}》
+${chatContext.content}
+
+`
+      : '';
     /* 无课件任务：保留原有问答接口（图片退化为文本标记，不基于进度） */
     if (!chatPptTaskId) {
-      const message = photo ? `${content}${content ? '\n' : ''}【图片 · ${photo.name}】` : content;
+      const message = `${contextPrefix}${content}${photo ? (content ? '\n' : '') + '【图片 · ' + photo.name + '】' : ''}`;
       try {
         const result = await api.chatLearningResource(resource.id, {
           message,
@@ -952,7 +998,7 @@ export default function CourseResourcePlayer() {
       if (photo) {
         /* 图片提问：与交互导学 mimo 一致，走 image-stream，图片随会话落库并在历史中回显 */
         const imageBlob = await (await fetch(photo.url)).blob();
-        await streamPresentationChatImage(taskId, imageBlob, 0, content, sessionId, 'mimo', (event) => {
+        await streamPresentationChatImage(taskId, imageBlob, 0, contextPrefix + content, sessionId, 'mimo', (event) => {
           if (event.type === 'phase') {
             appendAssistant(event.phase === 'understanding' ? '正在分析图片…' : '已理解图片，正在生成回复…');
           } else if (event.type === 'reply_delta' && event.content) {
@@ -966,7 +1012,7 @@ export default function CourseResourcePlayer() {
           }
         }, controller.signal);
       } else {
-        await streamPresentationChatText(taskId, [{ role: 'user', content }], 0, sessionId, 'mimo', (event) => {
+        await streamPresentationChatText(taskId, [{ role: 'user', content: contextPrefix + content }], 0, sessionId, 'mimo', (event) => {
           if (event.type === 'chat_delta' && event.content) {
             reply += event.content;
             appendAssistant(reply);
@@ -1009,6 +1055,7 @@ export default function CourseResourcePlayer() {
   const selectChatSession = async (sessionId: string) => {
     if (!chatPptTaskId || !sessionId) return;
     setChatSessionId(sessionId);
+    setChatContext(null);
     setChatLoading(true);
     try {
       setMessages(await loadChatHistory(chatPptTaskId, sessionId));
@@ -1024,6 +1071,7 @@ export default function CourseResourcePlayer() {
       const created = await createPresentationChatSession(chatPptTaskId, 'mimo');
       setChatSessions((current) => [...current, created]);
       setChatSessionId(created.id);
+      setChatContext(null);
       setMessages([]);
       setFollowUps([]);
     } catch (reason) { toast.error(reason instanceof Error ? reason.message : '新建会话失败'); }
@@ -1041,9 +1089,11 @@ export default function CourseResourcePlayer() {
         .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
       if (next) {
         setChatSessionId(next.id);
+        setChatContext(null);
         setMessages(await loadChatHistory(chatPptTaskId, next.id));
       } else {
         setChatSessionId('');
+        setChatContext(null);
         setMessages([]);
       }
       setFollowUps([]);
@@ -1205,7 +1255,7 @@ export default function CourseResourcePlayer() {
         <div className="mt-5 border-t border-hairline/70 pt-4">
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" onClick={() => { stopNoteListening(); setNoteFor(block); setNoteText(''); setNoteImg(null); }} className="lf-btn-ghost !px-3 !py-1.5 text-[11.5px]"><NotebookPen size={13} />记这一段</button>
-            <button type="button" onClick={() => { setCurrentBlockId(block.id); void openChat(); }} className="lf-btn-ghost !px-3 !py-1.5 text-[11.5px]"><MessageCircleQuestion size={13} />向导学老师提问</button>
+            <button type="button" onClick={() => void askAboutBlock(block)} className="lf-btn-ghost !px-3 !py-1.5 text-[11.5px]"><MessageCircleQuestion size={13} />向导学老师提问</button>
             {index < blocks.length - 1 && <button type="button" onClick={() => goBlock(blocks[index + 1].id)} className="ml-auto inline-flex items-center gap-1 text-[11.5px] text-brand hover:underline">下一段<ArrowRight size={12} /></button>}
           </div>
           {noteFor?.id === block.id ? (
@@ -1260,7 +1310,7 @@ export default function CourseResourcePlayer() {
     </motion.div>}</AnimatePresence>, document.body)}
 
 
-    <AnimatePresence>{chatOpen && <><motion.button type="button" aria-label="关闭提问面板背景" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => { chatAbortRef.current?.abort(); setChatOpen(false); }} className="fixed inset-0 z-[70] bg-ink/20 backdrop-blur-[2px]" /><motion.aside initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} className="fixed bottom-0 right-0 top-14 z-[80] flex w-full max-w-[500px] flex-col border-l border-hairline bg-paper shadow-2xl"><div className="flex items-center gap-3 border-b border-hairline bg-card-warm p-4"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand text-paper"><Bot size={17} /></span><div className="min-w-0 flex-1"><h2 className="text-[14px] font-semibold text-ink">智能助教</h2><p className="truncate text-[10.5px] text-ink-muted">正在结合课件与真实来源回答，可随时提问</p></div><button type="button" aria-label="关闭提问" onClick={() => { chatAbortRef.current?.abort(); setChatOpen(false); }} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep"><X size={16} /></button></div>{chatPptTaskId && <div className="flex items-center gap-2 border-b border-hairline bg-paper px-4 py-2"><select value={chatSessionId} onChange={(event) => void selectChatSession(event.target.value)} className="min-w-0 flex-1 truncate bg-transparent text-[11px] text-ink-2 outline-none" aria-label="聊天会话">{chatSessions.filter((item) => item.modelProvider === 'mimo').map((session) => <option key={session.id} value={session.id}>{session.title || '会话'}</option>)}</select><button type="button" disabled={chatLoading} onClick={() => void createChatSession()} className="rounded-md px-1.5 py-1 font-mono text-[10px] text-ink-muted hover:bg-paper-deep hover:text-brand disabled:opacity-50" title="新建会话"><Plus size={11} className="mr-0.5 inline" />新建</button><button type="button" disabled={chatLoading || !chatSessionId} onClick={() => void deleteChatSession()} className="font-mono text-[10px] text-ink-muted hover:text-brand-danger disabled:opacity-40"><Trash2 size={11} className="mr-0.5 inline" />删除</button></div>}<div className="flex-1 space-y-3 overflow-y-auto p-4">{chatLoading && messages.length === 0 && <div className="flex items-center gap-2 text-[11.5px] text-ink-muted"><Loader2 size={13} className="animate-spin" />正在加载会话…</div>}{messages.length === 0 && !chatLoading && <div className="rounded-[13px] border border-brand/20 bg-brand-tint/35 p-4 text-[12.5px] leading-6 text-ink-2">{chatPptTaskId ? '可以问我这个知识点的内容，我会结合课件与真实来源回答。' : '我已经读过这项资源和它引用的知识库、网页来源。你可以让我解释当前段落、检查理解，或根据作答记录生成巩固建议。'}</div>}{messages.map((message, index) => <div key={`${message.createdAt}-${index}`} className={cn('flex max-w-[90%] flex-col gap-1.5', message.role === 'user' ? 'ml-auto items-end' : 'items-start')}>{message.role === 'user' && message.photoUrl && <button type="button" onClick={() => setPreviewPhoto(message.photoUrl!)} title="点击查看大图" className="block max-h-[140px] w-fit overflow-hidden rounded-[10px] border border-white/20"><img src={message.photoUrl} alt="提问附图" className="max-h-[140px] w-fit rounded-[10px] object-cover" /></button>}<div className={cn('rounded-[13px] px-3.5 py-2.5 text-[12.5px] leading-6', message.role === 'user' ? 'rounded-br-sm bg-brand text-paper' : 'rounded-tl-sm border border-hairline bg-card-warm text-ink-2')}>{message.role === 'user' && message.inputType === 'voice' && <Mic size={12} className="mr-1 inline" />}<ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content || (message.photoUrl ? '（图片）' : '')}</ReactMarkdown></div></div>)}{asking && <div className="flex items-center gap-2 text-[11.5px] text-ink-muted"><Loader2 size={13} className="animate-spin" />正在结合内容与来源思考…</div>}{!chatPptTaskId && followUps.length > 0 && <div className="flex flex-wrap gap-1.5">{followUps.map((item) => <button key={item} type="button" onClick={() => void ask(item)} className="rounded-lg border border-hairline bg-card-warm px-2.5 py-1.5 text-left text-[10.5px] text-brand hover:border-brand/40">{item}</button>)}</div>}</div><div className="border-t border-hairline bg-card-warm p-3">
+    <AnimatePresence>{chatOpen && <><motion.button type="button" aria-label="关闭提问面板背景" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => { chatAbortRef.current?.abort(); setChatOpen(false); }} className="fixed inset-0 z-[70] bg-ink/20 backdrop-blur-[2px]" /><motion.aside initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} className="fixed bottom-0 right-0 top-14 z-[80] flex w-full max-w-[500px] flex-col border-l border-hairline bg-paper shadow-2xl"><div className="flex items-center gap-3 border-b border-hairline bg-card-warm p-4"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand text-paper"><Bot size={17} /></span><div className="min-w-0 flex-1"><h2 className="text-[14px] font-semibold text-ink">智能助教</h2><p className="truncate text-[10.5px] text-ink-muted">正在结合课件与真实来源回答，可随时提问</p></div><button type="button" aria-label="关闭提问" onClick={() => { chatAbortRef.current?.abort(); setChatOpen(false); }} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep"><X size={16} /></button></div>{chatPptTaskId && <div className="flex items-center gap-2 border-b border-hairline bg-paper px-4 py-2"><select value={chatSessionId} onChange={(event) => void selectChatSession(event.target.value)} className="min-w-0 flex-1 truncate bg-transparent text-[11px] text-ink-2 outline-none" aria-label="聊天会话">{chatSessions.filter((item) => item.modelProvider === 'mimo').map((session) => <option key={session.id} value={session.id}>{session.title || '会话'}</option>)}</select><button type="button" disabled={chatLoading} onClick={() => void createChatSession()} className="rounded-md px-1.5 py-1 font-mono text-[10px] text-ink-muted hover:bg-paper-deep hover:text-brand disabled:opacity-50" title="新建会话"><Plus size={11} className="mr-0.5 inline" />新建</button><button type="button" disabled={chatLoading || !chatSessionId} onClick={() => void deleteChatSession()} className="font-mono text-[10px] text-ink-muted hover:text-brand-danger disabled:opacity-40"><Trash2 size={11} className="mr-0.5 inline" />删除</button></div>}<div className="flex-1 space-y-3 overflow-y-auto p-4">{chatLoading && messages.length === 0 && <div className="flex items-center gap-2 text-[11.5px] text-ink-muted"><Loader2 size={13} className="animate-spin" />正在加载会话…</div>}{chatContext && <div className="rounded-[13px] border border-brand/25 bg-brand-tint/35 px-3.5 py-2.5 text-[12px] leading-5 text-ink-2"><div className="mb-1 flex items-center gap-1.5 font-medium text-brand"><BookOpen size={13} />当前段落 · {chatContext.blockTitle}</div><p className="line-clamp-3 whitespace-pre-wrap">{chatContext.content}</p></div>}{messages.length === 0 && !chatLoading && <div className="rounded-[13px] border border-brand/20 bg-brand-tint/35 p-4 text-[12.5px] leading-6 text-ink-2">{chatPptTaskId ? '可以问我这个知识点的内容，我会结合课件与真实来源回答。' : '我已经读过这项资源和它引用的知识库、网页来源。你可以让我解释当前段落、检查理解，或根据作答记录生成巩固建议。'}</div>}{messages.map((message, index) => <div key={`${message.createdAt}-${index}`} className={cn('flex max-w-[90%] flex-col gap-1.5', message.role === 'user' ? 'ml-auto items-end' : 'items-start')}>{message.role === 'user' && message.photoUrl && <button type="button" onClick={() => setPreviewPhoto(message.photoUrl!)} title="点击查看大图" className="block max-h-[140px] w-fit overflow-hidden rounded-[10px] border border-white/20"><img src={message.photoUrl} alt="提问附图" className="max-h-[140px] w-fit rounded-[10px] object-cover" /></button>}<div className={cn('rounded-[13px] px-3.5 py-2.5 text-[12.5px] leading-6', message.role === 'user' ? 'rounded-br-sm bg-brand text-paper' : 'rounded-tl-sm border border-hairline bg-card-warm text-ink-2')}>{message.role === 'user' && message.inputType === 'voice' && <Mic size={12} className="mr-1 inline" />}<ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content || (message.photoUrl ? '（图片）' : '')}</ReactMarkdown></div></div>)}{asking && <div className="flex items-center gap-2 text-[11.5px] text-ink-muted"><Loader2 size={13} className="animate-spin" />正在结合内容与来源思考…</div>}{!chatPptTaskId && followUps.length > 0 && <div className="flex flex-wrap gap-1.5">{followUps.map((item) => <button key={item} type="button" onClick={() => void ask(item)} className="rounded-lg border border-hairline bg-card-warm px-2.5 py-1.5 text-left text-[10.5px] text-brand hover:border-brand/40">{item}</button>)}</div>}</div><div className="border-t border-hairline bg-card-warm p-3">
     {listening === 'ask' && <div className="mb-2 flex items-center gap-1.5 text-[11.5px] text-brand-danger"><span className="h-1.5 w-1.5 animate-ping rounded-full bg-brand-danger" />正在听…{interim || '（说完自动发送）'}</div>}
     {askPhoto && <div className="mb-2 flex items-center gap-2 rounded-[10px] border border-hairline bg-paper p-2"><img src={askPhoto.url} alt="" className="h-10 w-10 rounded-[8px] object-cover" /><span className="min-w-0 flex-1 truncate text-[11.5px] text-ink-2">{askPhoto.name}</span><button type="button" onClick={() => setAskPhoto(null)} aria-label="移除图片" className="text-ink-muted hover:text-brand-danger"><X size={13} /></button></div>}
     <div className="flex items-end gap-2">
