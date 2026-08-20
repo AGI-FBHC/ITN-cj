@@ -28,12 +28,13 @@ const Knowledge = lazy(() => import('@/pages/Knowledge'));
 import { useAuth } from '@/context/AuthContext';
 
 gsap.registerPlugin(ScrollTrigger);
+const FRONTEND_PREVIEW = import.meta.env.VITE_FRONTEND_PREVIEW === 'true';
 
 /** 路由守卫：未登录一律回 /login（演示登录，全模拟） */
 function RequireAuth() {
   const { isAuthed, session, knownOf } = useAuth();
   const { pathname } = useLocation();
-  if (!isAuthed) return <Navigate to="/login" replace />;
+  if (!isAuthed && !FRONTEND_PREVIEW) return <Navigate to="/login" replace />;
   /* 真实账号（工号/手机/微信）还没绑画像 → 只许在建档流程里，
      否则会顶着上一个用户的 currentLearnerId 看到别人的园子/错题 */
   const needsProfile =

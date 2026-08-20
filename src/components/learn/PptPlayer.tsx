@@ -5,7 +5,7 @@
  */
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { BookOpenCheck, Check, Lightbulb, Loader2, RefreshCw, X } from 'lucide-react';
-import { fetchSlideAsset, presentationApi } from '@/lib/presentationApi';
+import { fetchSlideAsset, isPresentationLocallyLearned, markPresentationLocallyLearned, presentationApi, updatePptLearningProgress } from '@/lib/presentationApi';
 import type { PresentationSlideshow, PresentationTask, PresentationTeachingMoment } from '@/lib/presentationApi';
 import type { TtsSpeed } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -46,7 +46,7 @@ const PROGRESS_LABEL: Record<PresentationTask['status'], string> = {
 };
 
 const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean; speed?: TtsSpeed; volume?: number; modelProvider?: 'mimo' | 'qwen'; qwenVoice?: string; onPlaybackChange?: (playing: boolean) => void;
-  onLoadingChange?: (loading: boolean) => void; onSlideChange?: (current: number, count: number) => void; onRequestNote?: () => void }>(function PptPlayer({ taskId, speed = 'normal', volume = 1, modelProvider = 'mimo', qwenVoice = '', onPlaybackChange, onLoadingChange, onSlideChange, onRequestNote }, ref) {
+  onLoadingChange?: (loading: boolean) => void; onSlideChange?: (current: number, count: number) => void; onRequestNote?: () => void; onLearningCompleted?: () => void }>(function PptPlayer({ taskId, speed = 'normal', volume = 1, modelProvider = 'mimo', qwenVoice = '', onPlaybackChange, onLoadingChange, onSlideChange, onRequestNote, onLearningCompleted }, ref) {
   const [task, setTask] = useState<PresentationTask | null>(null);
   const [slides, setSlides] = useState<PresentationSlideshow | null>(null);
   const [current, setCurrent] = useState(0);
@@ -60,6 +60,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
   const [activeMoment, setActiveMoment] = useState<PresentationTeachingMoment | null>(null);
   const [quizPick, setQuizPick] = useState<number | null>(null);
   const [mascotFrame, setMascotFrame] = useState('idle');
+  const [learningCompleted, setLearningCompleted] = useState(false);
   const outlineConfirmedRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const currentRef = useRef(0);
@@ -68,6 +69,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
   const switchingSlideRef = useRef(false);
   const noteScrollRef = useRef<HTMLParagraphElement | null>(null);
   const triggeredMomentsRef = useRef(new Set<string>());
+  const completionInFlightRef = useRef(false);
   /* 页资源预取缓存：音频/幻灯片按 key 缓存 objectURL，翻页时免网络等待 */
   const assetCacheRef = useRef<Map<string, string>>(new Map());
   const assetInFlightRef = useRef<Set<string>>(new Set());
@@ -78,6 +80,8 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
 
   useEffect(() => {
     triggeredMomentsRef.current.clear();
+    completionInFlightRef.current = false;
+    setLearningCompleted(false);
     assetCacheRef.current.forEach((url) => URL.revokeObjectURL(url));
     assetCacheRef.current.clear();
     assetInFlightRef.current.clear();
@@ -226,6 +230,50 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
   const goNext = () => goTo(currentRef.current + 1, audioPlaying);
   const goPrev = () => goTo(currentRef.current - 1, audioPlaying);
 
+  const completeLearning = useCallback(async () => {
+    if (!slideCount || learningCompleted || completionInFlightRef.current) return;
+    completionInFlightRef.current = true;
+    // Mark the completed viewing boundary immediately. The server update below
+    // remains the source of truth, but older gateways can return a stale task
+    // summary for a short time after the write.
+    markPresentationLocallyLearned(taskId);
+    setLearningCompleted(true);
+    setTask((previous) => previous ? {
+      ...previous,
+      learned: true,
+      learnedMeta: { ...previous.learnedMeta, learned: true, mastery: 100, maxPageViewed: slideCount - 1, pageCount: slideCount },
+    } : previous);
+    onLearningCompleted?.();
+    try {
+      // Persist both the final page and the explicit completion flag. The latter
+      // is what the course card and knowledge map use as their completion marker.
+      await updatePptLearningProgress(taskId, {
+        pageIndex: slideCount - 1,
+        pageCount: slideCount,
+        learned: true,
+        mastery: 100,
+      });
+      const result = await presentationApi.completePresentation(taskId);
+      if (!result.learned) throw new Error('学习完成状态未确认');
+    } catch {
+      // The local marker intentionally remains visible; a later visit retries
+      // the idempotent server-side write without making the player look broken.
+    }
+  }, [learningCompleted, onLearningCompleted, slideCount, taskId]);
+
+  useEffect(() => {
+    if (!slideCount) return;
+    // Save reading position as the learner turns pages, so a reopened courseware
+    // resumes with accurate server-side learning metadata.
+    void updatePptLearningProgress(taskId, { pageIndex: current, pageCount: slideCount }).catch(() => undefined);
+  }, [current, slideCount, taskId]);
+
+  useEffect(() => {
+    // The final slide is the explicit completion boundary for courseware. This
+    // also covers learners who read by clicking through instead of using audio.
+    if (slideCount > 0 && current === slideCount - 1) void completeLearning();
+  }, [completeLearning, current, slideCount]);
+
   const restartPageAudio = () => {
     const audio = audioRef.current;
     if (!audio) return;
@@ -271,6 +319,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
     try {
       const next = await presentationApi.getPresentation(taskId);
       setTask(next);
+      setLearningCompleted(Boolean(next.learned || next.learnedMeta?.learned || isPresentationLocallyLearned(taskId)));
       if (next.status === 'outline_review' && !outlineConfirmedRef.current) {
         outlineConfirmedRef.current = true;
         try { await presentationApi.startPresentationGeneration(taskId); } catch { /* ignore */ }
@@ -315,6 +364,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
       }
       if (cancelled) return;
       setTask(next);
+      setLearningCompleted(Boolean(next.learned || next.learnedMeta?.learned || isPresentationLocallyLearned(taskId)));
       if (next.status === 'outline_review' && !outlineConfirmedRef.current) {
         outlineConfirmedRef.current = true;
         try { await presentationApi.startPresentationGeneration(taskId); } catch { /* ignore */ }
@@ -340,7 +390,11 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
   const handleAudioEnded = () => {
     setNoteRevealCount(note.length);
     if (currentRef.current < slideCount - 1) goTo(currentRef.current + 1, true);
-    else { setAudioPlaying(false); onPlaybackChange?.(false); }
+    else {
+      setAudioPlaying(false);
+      onPlaybackChange?.(false);
+      void completeLearning();
+    }
   };
 
   const syncNoteToAudio = () => {
@@ -482,6 +536,11 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
     <div className="flex min-h-0 flex-1 flex-col justify-center">
       <div className="lf-anim-in-up mx-auto w-full max-w-[min(100%,calc((100dvh-420px)*16/9),1080px)] overflow-hidden rounded-[22px] border border-hairline bg-paper shadow-[0_24px_70px_rgba(35,52,43,0.13)] md:w-[min(100%,calc((100dvh-420px)*16/9))]">
         <div className="relative flex aspect-video w-full items-center justify-center overflow-hidden p-2 md:p-3">
+          {learningCompleted && (
+            <span className="absolute right-4 top-4 z-10 inline-flex items-center gap-1.5 rounded-full border border-[#77A88B]/45 bg-[#F6FCF7]/95 px-3 py-1.5 text-[12px] font-semibold text-[#376B4A] shadow-sm backdrop-blur">
+              <Check size={14} strokeWidth={2.5} /> 已学习完成
+            </span>
+          )}
           {slideSrc ? (
             <img
               src={slideSrc}

@@ -16,6 +16,7 @@ import { getToken } from '@/lib/api';
 const BOOT_FLAG = 'lf.bootReady:v1';      // session 级：本次会话已准备过
 const BOOT_SEEN_KEY = 'lf.bootSeen:v1';   // 设备级：本设备已完成过冷启动
 const MIN_DISPLAY_MS = 1600;
+const FRONTEND_PREVIEW = import.meta.env.VITE_FRONTEND_PREVIEW === 'true';
 
 function isColdStart(): boolean {
   try {
@@ -32,7 +33,7 @@ function isColdStart(): boolean {
 }
 
 export default function BootGate({ children }: { children: ReactNode }) {
-  const cold = useMemo(isColdStart, []);
+  const cold = useMemo(() => !FRONTEND_PREVIEW && isColdStart(), []);
   const [ready] = useState(() => {
     try {
       return window.sessionStorage.getItem(BOOT_FLAG) === '1';

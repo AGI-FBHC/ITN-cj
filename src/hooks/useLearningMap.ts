@@ -9,7 +9,7 @@ import type { GraphEdge, GraphNode } from '@/data/knowledgeGraph';
 import type { PathNode } from '@/data/reportData';
 import type { LearningResourceSummary } from '@/lib/api';
 import type { GeneratedResource } from '@/data/resources';
-import { presentationApi } from '@/lib/presentationApi';
+import { isPresentationLocallyLearned, presentationApi } from '@/lib/presentationApi';
 import {
   readLearnerAnalytics,
   writeLearnerAnalytics,
@@ -117,6 +117,8 @@ export interface LearningMapView {
   topicMasteryRaw: Record<string, number>;
   topicProgress: Record<string, number>;
   learned: Set<string>;
+  /** 尚未满足前置学习条件的章节/知识点。 */
+  lockedNodeIds: Set<string>;
   status: Record<string, string>;
   activeKp: string | null;
   resources: Record<string, Array<GeneratedResource & { id: string; learned?: boolean; started?: boolean }>>;
@@ -364,6 +366,7 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
         topicMasteryRaw: {},
         topicProgress: {},
         learned: new Set<string>(),
+        lockedNodeIds: new Set<string>(),
         status: {},
         activeKp: null,
         resources: {},
@@ -398,6 +401,8 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
     const topicMasteryRaw: Record<string, number> = {};
     const topicProgress: Record<string, number> = {};
     const status: Record<string, string> = {};
+    /** 解锁资格与展示进度分开：完成度达到 60% 不等于已完成必修组合。 */
+    const topicUnlockReadyIds = new Set<string>();
     const masteryByCategory = new Map((analytics?.mastery.categories ?? []).map((item) => [String(item.id), item]));
     chapters.forEach((chapter) => {
       const direct = masteryByCategory.get(String(chapter.id));
@@ -411,14 +416,38 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
       byDatabaseOrder(chapter.children.filter((child) => child.level === 3)).forEach((child) => {
         const category = masteryByCategory.get(String(child.id));
         const childResources = resources.filter((resource) => resource.kpId === chapter.nodeCode && resource.topic === child.name);
-        const progressByForm = new Map(childResources.map((resource) => [resource.type, resource.progressRatio ?? (resource.learned ? 1 : 0)]));
-        const pptLearned = presentations.some((task) => task.learned && task.title.includes(child.name));
+        // 资源生成、预热或仅被标记为 started 都不能算作学习。只有完成资源，或服务端
+        // 已记录实际阅读/答题/操作行为时，才把 progressRatio 计入知识地图。
+        const progressByForm = new Map(childResources.map((resource) => {
+          const progressState = resource.state?.progress;
+          const progressRecord = progressState && typeof progressState === 'object' && !Array.isArray(progressState)
+            ? progressState as Record<string, unknown>
+            : {};
+          const visited = Array.isArray(progressRecord.visitedBlockIds) ? progressRecord.visitedBlockIds.length : 0;
+          const completed = Array.isArray(progressRecord.completedStepIds) ? progressRecord.completedStepIds.length : 0;
+          const elapsed = Number(progressRecord.elapsedSeconds) || 0;
+          const answered = Array.isArray(resource.state?.answered) ? resource.state.answered.length : 0;
+          const hasLearningActivity = Boolean(resource.learned || visited > 0 || completed > 0 || elapsed > 0 || answered > 0);
+          const ratio = hasLearningActivity
+            ? Math.max(0, Math.min(1, resource.progressRatio ?? (resource.learned ? 1 : 0)))
+            : 0;
+          return [resource.type, ratio] as const;
+        }));
+        const pptProgress = presentations.some((task) => (task.learned || isPresentationLocallyLearned(task.id)) && task.title.includes(child.name)) ? 1 : 0;
+        // 领学讲义和交互课件是同一类“内容学习”入口，二选一即可；不能要求
+        // 学习者把同一知识点的两种呈现方式都再学一遍。实操和测试则是必做的
+        // 巩固环节：只有「讲义或 PPT」+「实操」+「测试」均完成，才可解锁下一点。
+        const contentProgress = Math.max(progressByForm.get('lecture') ?? 0, pptProgress);
+        const practiceProgress = progressByForm.get('practice') ?? 0;
+        const quizProgress = progressByForm.get('quiz') ?? 0;
         topicProgress[child.nodeCode] = Math.round((
-          (progressByForm.get('lecture') ?? 0)
-          + (progressByForm.get('practice') ?? 0)
-          + (progressByForm.get('quiz') ?? 0)
-          + (pptLearned ? 1 : 0)
-        ) / 4 * 100);
+          contentProgress * 0.6
+          + practiceProgress * 0.2
+          + quizProgress * 0.2
+        ) * 100);
+        if (contentProgress >= 1 && practiceProgress >= 1 && quizProgress >= 1) {
+          topicUnlockReadyIds.add(child.nodeCode);
+        }
         const selfEvidence = childResources.filter((resource) => resource.type !== 'quiz' && resource.masteryRatio > 0);
         const quizEvidence = childResources.filter((resource) => resource.type === 'quiz' && resource.masteryRatio > 0);
         const weightedEvidence = [
@@ -450,7 +479,6 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
         : 0;
     });
 
-    const learned = new Set(chapters.filter((chapter) => (mastery[chapter.nodeCode] ?? 0) > 0).map((chapter) => chapter.nodeCode));
     const path: PathNode[] = chapters.map((chapter, index) => ({
       id: `${chapter.nodeCode}-path`,
       title: chapter.name,
@@ -539,21 +567,96 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
       }
     });
 
+    /* 解锁规则：优先遵循知识图中的 prereq 边；没有显式前置边时，按章节/子知识点的既定顺序逐个解锁。
+       前一个节点达到基础学习进度后，下一个节点会在下一次数据刷新时自动可用。 */
+    const chapterUnlockReadyIds = new Set(
+      chapters
+        .filter((chapter) => byDatabaseOrder(chapter.children.filter((child) => child.level === 3))
+          .every((topic) => topicUnlockReadyIds.has(topic.nodeCode)))
+        .map((chapter) => chapter.nodeCode),
+    );
+    const completedNodeIds = new Set<string>();
+    graphNodes.forEach((node) => {
+      const isReady = node.kind === 'domain'
+        ? chapterUnlockReadyIds.has(node.id)
+        : topicUnlockReadyIds.has(node.id);
+      if (isReady) completedNodeIds.add(node.id);
+    });
+    const orderedTopics = new Map<string, GraphNode[]>();
+    graphNodes.filter((node) => node.kind === 'topic').forEach((node) => {
+      const list = orderedTopics.get(node.kpId) ?? [];
+      list.push(node);
+      orderedTopics.set(node.kpId, list);
+    });
+    orderedTopics.forEach((items) => items.sort((left, right) => (left.topicIndex ?? 0) - (right.topicIndex ?? 0)));
+    const nodeById = new Map(graphNodes.map((node) => [node.id, node]));
+    const lockedNodeIds = new Set<string>();
+    graphNodes.forEach((node) => {
+      const explicitPrereqs = graphEdges
+        .filter((edge) => edge.kind === 'prereq' && edge.to === node.id)
+        .map((edge) => edge.from)
+        .filter((id) => nodeById.has(id));
+      let prerequisites = explicitPrereqs;
+      if (!prerequisites.length && node.kind === 'topic') {
+        const siblings = orderedTopics.get(node.kpId) ?? [];
+        const index = siblings.findIndex((item) => item.id === node.id);
+        if (index > 0) prerequisites = [siblings[index - 1].id];
+      }
+      if (!prerequisites.length && node.kind === 'domain') {
+        const index = chapters.findIndex((chapter) => chapter.nodeCode === node.id);
+        if (index > 0) prerequisites = [chapters[index - 1].nodeCode];
+      }
+      if (!completedNodeIds.has(node.id) && prerequisites.some((id) => !completedNodeIds.has(id))) {
+        lockedNodeIds.add(node.id);
+      }
+    });
+
+    // 展示进度遵循学习顺序：后续章节即使服务端有残留/预热的原始数据，
+    // 也必须等前一章完成必修组合后才能点亮。PPT 与讲义仍然是二选一。
+    const visibleChapterProgress: Record<string, number> = { ...chapterProgress };
+    const visibleTopicProgress: Record<string, number> = { ...topicProgress };
+    let allPreviousChaptersCompleted = true;
+    chapters.forEach((chapter) => {
+      const topics = byDatabaseOrder(chapter.children.filter((child) => child.level === 3));
+      if (!allPreviousChaptersCompleted) {
+        visibleChapterProgress[chapter.nodeCode] = 0;
+        topics.forEach((topic) => { visibleTopicProgress[topic.nodeCode] = 0; });
+      } else {
+        let allPreviousTopicsCompleted = true;
+        topics.forEach((topic) => {
+          if (!allPreviousTopicsCompleted) visibleTopicProgress[topic.nodeCode] = 0;
+        if (!topicUnlockReadyIds.has(topic.nodeCode)) allPreviousTopicsCompleted = false;
+        });
+        const visibleScores = topics.map((topic) => visibleTopicProgress[topic.nodeCode] ?? 0);
+        visibleChapterProgress[chapter.nodeCode] = visibleScores.length
+          ? Math.round(visibleScores.reduce((sum, value) => sum + value, 0) / visibleScores.length)
+          : 0;
+      }
+      if (!chapterUnlockReadyIds.has(chapter.nodeCode)) allPreviousChaptersCompleted = false;
+    });
+    // 图谱的“点亮”由可展示的真实学习进度决定，不使用诊断/画像推断。
+    const learned = new Set(chapters.filter((chapter) => (visibleChapterProgress[chapter.nodeCode] ?? 0) > 0).map((chapter) => chapter.nodeCode));
+    const pathWithUnlocks = path.map((node) => ({
+      ...node,
+      status: (chapterProgress[node.kpId] ?? 0) >= 100 ? 'done' : lockedNodeIds.has(node.kpId) ? 'locked' : 'active',
+    })) as PathNode[];
+
     return {
       loading,
       domains,
       graphNodes,
       graphEdges,
-      path,
+      path: pathWithUnlocks,
       mastery,
-      chapterProgress,
+      chapterProgress: visibleChapterProgress,
       confidence,
       topicMastery,
       topicMasteryRaw,
-      topicProgress,
+      topicProgress: visibleTopicProgress,
       learned,
+      lockedNodeIds,
       status,
-      activeKp: chapters.find((chapter) => status[chapter.nodeCode] === 'active')?.nodeCode ?? chapters[0]?.nodeCode ?? null,
+      activeKp: graphNodes.find((node) => node.kind === 'domain' && !lockedNodeIds.has(node.id) && (chapterProgress[node.id] ?? 0) < 100)?.id ?? null,
       resources: resourceByKp,
       presentations,
       goalId: null,

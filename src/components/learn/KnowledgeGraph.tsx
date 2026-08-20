@@ -64,6 +64,7 @@ function DomainNode({
   selected,
   expanded,
   highlightLearned,
+  locked,
 }: {
   n: GraphNode;
   mastery: number;
@@ -75,6 +76,7 @@ function DomainNode({
   expanded: boolean;
   /** 打开“我的已学路径”时高亮已学章节 */
   highlightLearned: boolean;
+  locked: boolean;
 }) {
   const stage = growthStage(mastery, target, learned);
   const passed = learned && mastery >= target;
@@ -85,9 +87,9 @@ function DomainNode({
 
   return (
     <g
-      className="cursor-pointer"
-      opacity={dimmed ? 0.5 : 1}
-      style={{ transition: 'opacity 0.25s, filter 0.25s', filter: dimmed ? 'blur(2px)' : 'none' }}
+      className={locked ? 'cursor-not-allowed' : 'cursor-pointer'}
+      opacity={dimmed ? 0.18 : 1}
+      style={{ transition: 'opacity 0.25s, filter 0.25s', filter: dimmed ? 'blur(3.5px)' : 'none' }}
     >
       {recommended && (
         <circle cx={n.x} cy={n.y} r={n.r + 8} fill="none" stroke="#E7B45A" strokeWidth="2" opacity="0.7">
@@ -170,7 +172,7 @@ function DomainNode({
         textAnchor={n.labelAnchor}
         fontSize={n.r <= 25 ? '10.5' : '13'}
         fontWeight={600}
-        fill={dimmed ? '#A9B6A0' : '#4A5244'}
+        fill={dimmed ? '#9AA29B' : '#4A5244'}
         stroke="#FBFAF5"
         strokeWidth="3"
         strokeLinejoin="round"
@@ -184,12 +186,12 @@ function DomainNode({
 }
 
 /** 子知识点：圆形节点 + 右侧文字，保持与原知识图一致的节点语言。 */
-function TopicBranchNode({ n, mastery, progress, target }: { n: GraphNode; mastery: number; progress: number; target?: number }) {
+function TopicBranchNode({ n, mastery, progress, target, locked }: { n: GraphNode; mastery: number; progress: number; target?: number; locked: boolean }) {
   const passed = progress >= 100;
   const labelWidth = Math.min(240, Math.max(50, n.label.length * 16));
   const hitX = n.labelAnchor === 'start' ? n.x - 17 : n.x - 24 - labelWidth;
   return (
-    <g className="cursor-pointer">
+    <g className={locked ? 'cursor-not-allowed' : 'cursor-pointer'}>
       {/* 圆点、文字及中间空隙使用同一个命中面，点击文字同样选中该知识点。 */}
       <rect x={hitX} y={n.y - 19} width={labelWidth + 41} height="38" rx="7" fill="transparent" />
       <circle cx={n.x} cy={n.y} r="15" fill="#FBFAF5" stroke="#DCE6DE" strokeWidth="2.2" />
@@ -232,7 +234,7 @@ export default function KnowledgeGraph({
   nodes: nodesProp,
   edges: edgesProp,
   path: pathProp,
-  mastery: masteryProp,
+  chapterProgress: chapterProgressProp,
   topicMastery: topicMasteryProp,
   topicProgress: topicProgressProp,
   learned: learnedProp,
@@ -242,6 +244,7 @@ export default function KnowledgeGraph({
   onExpandedKpChange,
   showLearned = false,
   nodeTargets,
+  lockedNodeIds,
 }: {
   /** 提供后：点节点 = 选中（联动右栏详情），不直接跳转 */
   onSelectKp?: (kpId: string | null) => void;
@@ -251,7 +254,8 @@ export default function KnowledgeGraph({
   nodes?: GraphNode[];
   edges?: GraphEdge[];
   path?: PathNode[];
-  mastery?: Record<string, number>;
+  /** 章节学习进度；与 3D 图共用同一口径。 */
+  chapterProgress?: Record<string, number>;
   topicMastery?: Record<string, number>;
   topicProgress?: Record<string, number>;
   learned?: Set<string>;
@@ -260,6 +264,8 @@ export default function KnowledgeGraph({
   showLearned?: boolean;
   /** 目标岗位门槛：nodeCode → { target, name } */
   nodeTargets?: Record<string, { target: number; name?: string }>;
+  /** 与 3D 图共用的解锁结果：锁定节点不可选择或进入学习。 */
+  lockedNodeIds?: Set<string>;
   /** 受控展开章节集合，用于与下方章节速览联动（2D 视图只展示最近展开的一个）。 */
   expandedKpIds?: Set<string>;
   onExpandedKpChange?: (kpId: string | null) => void;
@@ -287,7 +293,7 @@ export default function KnowledgeGraph({
   const dataNodes = sourceNodes;
   const dataEdges = edgesProp ?? graphEdges;
   const reportPath = pathProp ?? report.path;
-  const masteryMap = masteryProp ?? {};
+  const chapterProgressMap = chapterProgressProp ?? {};
   const topicMasteryMap = topicMasteryProp ?? {};
   const topicProgressMap = topicProgressProp ?? {};
   const learned = learnedProp ?? useMemo(() => {
@@ -473,6 +479,7 @@ export default function KnowledgeGraph({
 
   /** 点域：展开/收拢 + 选中（右栏出详情）；点子节点：选中 */
   const clickNode = (n: GraphNode) => {
+    if (lockedNodeIds?.has(n.id)) return;
     if (n.kind === 'domain') setExpandedKp(expandedKp === n.kpId ? null : n.kpId);
     if (onSelectKp) onSelectKp(n.kpId);
     if (n.kind === 'topic' && onSelectTopic) onSelectTopic(n.topicIndex ?? 0);
@@ -486,7 +493,7 @@ export default function KnowledgeGraph({
 
   /** 双击：子知识点按自身 topic id 进入独立课件，不再压缩到父领域前三块。 */
   const openUnit = (n: GraphNode) => {
-    if (n.kind === 'domain') return;
+    if (n.kind === 'domain' || lockedNodeIds?.has(n.id)) return;
     navigate(`/learn/${n.kpId}?unitTopic=${encodeURIComponent(n.id)}`);
   };
 
@@ -523,8 +530,8 @@ export default function KnowledgeGraph({
                 return (
                   <g
                     key={`${kind}-${e.from}-${e.to}`}
-                    opacity={expandedKp ? 0.32 : 1}
-                    style={{ transition: 'opacity 0.25s, filter 0.25s', filter: expandedKp ? 'blur(1.6px)' : 'none' }}
+                    opacity={expandedKp ? 0.12 : 1}
+                    style={{ transition: 'opacity 0.25s, filter 0.25s', filter: expandedKp ? 'blur(3px)' : 'none' }}
                     onMouseEnter={() => setEdgeTip({ x: mx, y: my, kind, notes: e.notes })}
                     onMouseLeave={() => setEdgeTip(null)}
                   >
@@ -562,8 +569,9 @@ export default function KnowledgeGraph({
         {domains.map((n) => {
           const isLearned = learned.has(n.kpId);
           const kp = getKnowledgePoint(n.kpId);
-          const mastery = masteryMap[n.kpId] ?? 50;
+          const mastery = chapterProgressMap[n.id] ?? 0;
           const dimmed = expandedKp !== null && expandedKp !== n.kpId;
+          const locked = lockedNodeIds?.has(n.id) ?? false;
           return (
             <g
               key={n.id}
@@ -581,6 +589,7 @@ export default function KnowledgeGraph({
                 selected={selectedKpId === n.kpId}
                 expanded={expandedKp === n.kpId}
                 highlightLearned={showLearned}
+                locked={locked}
               />
               {/* 笔记角标 */}
               {(countByKp[n.kpId] ?? 0) > 0 && !dimmed && (
@@ -606,13 +615,14 @@ export default function KnowledgeGraph({
           </g>
         )}
         {expandedTopicLayout?.topics.map((n) => {
+          const locked = lockedNodeIds?.has(n.id) ?? false;
           return (
             <g
               key={n.id}
               onClick={() => clickNode(n)}
               onDoubleClick={() => openUnit(n)}
             >
-              <TopicBranchNode n={n} mastery={topicMasteryMap[n.id] ?? 0} progress={topicProgressMap[n.id] ?? 0} target={nodeTargets?.[n.id]?.target} />
+              <TopicBranchNode n={n} mastery={topicMasteryMap[n.id] ?? 0} progress={topicProgressMap[n.id] ?? 0} target={nodeTargets?.[n.id]?.target} locked={locked} />
             </g>
           );
         })}

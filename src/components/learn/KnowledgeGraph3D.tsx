@@ -13,7 +13,7 @@ import type { PresentationTaskSummary } from '@/lib/presentationApi';
 import { FUNCTION_META, useTopicResourceActions } from '@/hooks/useTopicResourceActions';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { presentationApi } from '@/lib/presentationApi';
+import { isPresentationLocallyLearned, markPresentationLocallyLearned, presentationApi } from '@/lib/presentationApi';
 import cjkFontUrl from '@/assets/fonts/noto-sans-cjk-sc-gb2312.otf';
 
 const EDGE_COLORS: Record<EdgeKind, string> = {
@@ -93,6 +93,8 @@ interface KnowledgeGraph3DProps {
 
   /** 各章节已有资源（kpId → resources），功能节点据此显示“打开/生成” */
   resources?: Record<string, Array<GeneratedResource & { id?: string; learned?: boolean; started?: boolean }>>;
+  /** 未满足前置条件的节点：仅灰显，不响应学习操作。 */
+  lockedNodeIds?: Set<string>;
   /** 课件任务列表，用于功能节点判断“交互课件”是否已生成 */
   presentations?: PresentationTaskSummary[];
   /** 生成资源时的学习目标 */
@@ -479,7 +481,7 @@ function EdgeArrow({
     mesh.position.copy(curTo.current).addScaledVector(dir, -pad);
     // 圆锥默认沿 +Y 指向尖端，旋转到边的方向
     mesh.quaternion.setFromUnitVectors(upAxis, dir);
-    const focusFade = fadeOnFocus ? 1 - 0.65 * b : 1;
+    const focusFade = fadeOnFocus ? 1 - 0.88 * b : 1;
     (mesh.material as THREE.MeshBasicMaterial).opacity = (dimmed ? 0.12 : hovered ? 1 : 0.9) * focusFade;
     mesh.scale.setScalar(hovered ? 1.2 : 1);
   });
@@ -650,6 +652,25 @@ function TopicActionModal({
       .catch(() => undefined);
     return () => { cancelled = true; };
   }, [presentations]);
+  useEffect(() => {
+    const matchingTask = (localPresentations ?? [])
+      .filter((task) => !['failed', 'cancelled'].includes(task.status))
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      .find((task) => task.title.includes(node.label.trim()) || node.label.trim().includes(task.title.trim()));
+    if (!matchingTask || matchingTask.learned || isPresentationLocallyLearned(matchingTask.id)) return;
+    let cancelled = false;
+    // Older summary responses can omit `learned` even though the task detail
+    // records that the learner reached its final page. Reconcile once here.
+    void presentationApi.getPresentation(matchingTask.id).then((task) => {
+      const meta = task.learnedMeta;
+      const reachedLastPage = (meta?.pageCount ?? 0) > 0
+        && (meta?.maxPageViewed ?? -1) >= (meta?.pageCount ?? 0) - 1;
+      if (cancelled || !(task.learned || meta?.learned || reachedLastPage)) return;
+      markPresentationLocallyLearned(task.id);
+      setLocalPresentations((current) => current.map((item) => item.id === task.id ? { ...item, learned: true } : item));
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [localPresentations, node.label]);
   const { existingFor, openOrGenerate, openOrCreatePpt, generating, checkingPpt } = useTopicResourceActions({
     kpId: node.kpId,
     label: node.label,
@@ -732,7 +753,7 @@ function TopicActionModal({
         const status: 'missing' | 'unlearned' | 'incomplete' | 'learned' = !exists
           ? 'missing'
           : fn.form === 'ppt'
-            ? (pptTask?.learned ? 'learned' : 'unlearned')
+            ? (pptTask?.learned || isPresentationLocallyLearned(pptTask?.id) ? 'learned' : 'unlearned')
             : (res?.learned ?? learned.has(node.kpId))
               ? 'learned'
               : res?.started
@@ -782,8 +803,7 @@ function ChildPlane({
   layout,
   hoveredId,
   selectedKpId,
-  learned,
-  topicMastery,
+  topicProgress,
   onNodeClick,
   onNodeHover,
   parentOffset,
@@ -793,6 +813,7 @@ function ChildPlane({
 
   showProgressRings,
   nodeTargets,
+  lockedNodeIds,
 
 
 }: {
@@ -801,7 +822,6 @@ function ChildPlane({
   layout: { positions: Map<string, THREE.Vector3>; childDirections: Map<string, 'left' | 'right'>; focusOffsets: Map<string, THREE.Vector3> };
   hoveredId: string | null;
   selectedKpId: string | null;
-  learned: Set<string>;
   topicMastery: Record<string, number>;
   topicProgress: Record<string, number>;
   onNodeClick: (node: GraphNode) => void;
@@ -813,6 +833,7 @@ function ChildPlane({
 
   showProgressRings?: boolean;
   nodeTargets?: Record<string, { target: number; name?: string }>;
+  lockedNodeIds?: Set<string>;
 
 
 }) {
@@ -829,44 +850,39 @@ function ChildPlane({
     const orderedChildren = [...children].sort((left, right) =>
       (left.topicIndex ?? Number.MAX_SAFE_INTEGER) - (right.topicIndex ?? Number.MAX_SAFE_INTEGER),
     );
+    const listDirection = layout.childDirections.get(orderedChildren[0]?.id ?? '') || 'right';
+    const sign = listDirection === 'left' ? -1 : 1;
     return orderedChildren.map((node, i) => {
-      const direction = layout.childDirections.get(node.id) || 'right';
-      const sign = direction === 'left' ? -1 : 1;
       const relPos: [number, number, number] = [
-        15 * sign + (i % 2) * 6 * sign,
-        ((orderedChildren.length - 1) / 2 - i) * 8,
+        17 * sign,
+        ((orderedChildren.length - 1) / 2 - i) * 6.4,
         0,
       ];
-      return { node, relPos, direction };
+      return { node, relPos, direction: listDirection, step: i + 1 };
     });
   }, [children, layout.childDirections]);
   return (
     <Billboard ref={billboardRef} position={parentPos}>
       <group>
         {/* 连线：从父节点球面到子节点球面（不穿入球体内部，避免半透明时闪烁） */}
-        {childData.map(({ node, relPos }) => {
-          const end = new THREE.Vector3(...relPos);
-          const dir = end.clone().normalize();
-          const start = dir.clone().multiplyScalar(3.7);
-          const endTrim = end.clone().addScaledVector(dir, -1.95);
-          return (
-            <Line
-              key={`line-${node.id}`}
-              renderOrder={-1}
-              points={[start, endTrim]}
-              color="#4E7860"
-              lineWidth={3}
-              transparent
-              opacity={0.6}
-            />
-          );
-        })}
+        {childData.length > 0 && (() => {
+          const sign = childData[0].direction === 'left' ? -1 : 1;
+          const trunkX = 10.5 * sign;
+          const firstY = childData[0].relPos[1];
+          const lastY = childData[childData.length - 1].relPos[1];
+          return <>
+            <Line renderOrder={-1} points={[new THREE.Vector3(3.7 * sign, 0, 0), new THREE.Vector3(trunkX, 0, 0)]} color="#4E7860" lineWidth={3} transparent opacity={0.68} />
+            <Line renderOrder={-1} points={[new THREE.Vector3(trunkX, firstY, 0), new THREE.Vector3(trunkX, lastY, 0)]} color="#4E7860" lineWidth={3} transparent opacity={0.68} />
+            {childData.map(({ node, relPos }) => <Line key={`line-${node.id}`} renderOrder={-1} points={[new THREE.Vector3(trunkX, relPos[1], 0), new THREE.Vector3(relPos[0] - sign * 1.8, relPos[1], 0)]} color="#4E7860" lineWidth={2.5} transparent opacity={0.68} />)}
+          </>;
+        })()}
         
         {/* 子节点 */}
-        {childData.map(({ node, relPos, direction }) => {
+        {childData.map(({ node, relPos, direction, step }) => {
           const isHovered = hoveredId === node.id;
           const isSelected = selectedKpId === node.id;
-          const mastery = topicMastery[node.id] ?? 0;
+          // 圆环统一表示学习进度，和 2D 子知识点保持一致；掌握度仅在详情中展示。
+          const mastery = topicProgress[node.id] ?? 0;
           
           return (
             <ChildNode
@@ -876,7 +892,8 @@ function ChildPlane({
               direction={direction}
               selected={isSelected}
               hovered={isHovered}
-              learned={learned.has(node.kpId)}
+              // 子知识点必须按自身进度判定，不能继承父章节的“已学”状态。
+              learned={mastery > 0}
               mastery={mastery}
               onClick={() => onNodeClick(node)}
               onHover={onNodeHover}
@@ -885,6 +902,8 @@ function ChildPlane({
 
               showProgressRings={showProgressRings}
               target={nodeTargets?.[node.id]?.target}
+              locked={lockedNodeIds?.has(node.id)}
+              step={step}
 
             />
           );
@@ -910,6 +929,8 @@ function ChildNode({
 
   showProgressRings,
   target,
+  locked = false,
+  step,
 
 }: {
   node: GraphNode;
@@ -926,12 +947,15 @@ function ChildNode({
 
   showProgressRings?: boolean;
   target?: number;
+  locked?: boolean;
+  step: number;
 
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const colors = NODE_COLORS.topic;
 
   const getColor = () => {
+    if (locked || !learned) return '#A8B0AA';
     if (selected) return colors.selected;
     if (hovered) return colors.hover;
     if (learned) return colors.learned;
@@ -963,16 +987,19 @@ function ChildNode({
     <group
       position={position}
       onPointerEnter={(e) => {
+        if (locked) return;
         e.stopPropagation();
         onHover(node.id, e.clientX, e.clientY, e.eventObject);
         document.body.style.cursor = 'pointer';
       }}
       onPointerLeave={() => {
+        if (locked) return;
         onHover(null);
         document.body.style.cursor = 'default';
       }}
       onClick={(e) => {
         e.stopPropagation();
+        if (locked) return;
         onClick();
       }}
     >
@@ -985,19 +1012,19 @@ function ChildNode({
         {/* 内描边：球面边缘的亮环 */}
         <mesh scale={1.015} position={[0, 0, 0.012]} raycast={() => null} renderOrder={1}>
           <ringGeometry args={[0.9, 1, 64]} />
-          <meshBasicMaterial color={TOPIC_STROKE_COLORS.inner} transparent opacity={0.34} depthWrite={false} />
+          <meshBasicMaterial color={locked || !learned ? '#B8C0BA' : TOPIC_STROKE_COLORS.inner} transparent opacity={locked || !learned ? 0.14 : 0.34} depthWrite={false} />
         </mesh>
 
         {/* 外描边：紧贴球体轮廓外的蓝色发光，向外渐隐 */}
         <mesh scale={1.16} position={[0, 0, 0.008]} raycast={() => null} renderOrder={1}>
           <ringGeometry args={[0.86, 1, 64]} />
-          <meshBasicMaterial color={TOPIC_STROKE_COLORS.outer} transparent opacity={hovered ? 0.46 : selected ? 0.4 : 0.32} depthWrite={false} />
+          <meshBasicMaterial color={locked || !learned ? '#C4CBC5' : TOPIC_STROKE_COLORS.outer} transparent opacity={locked || !learned ? 0.12 : hovered ? 0.46 : selected ? 0.4 : 0.32} depthWrite={false} />
         </mesh>
       </mesh>
       </Billboard>
 
       {/* 进度环 */}
-      {showProgressRings && <ProgressRing radius={baseSize} mastery={mastery} variant="topic" hovered={hovered} selected={selected} target={target} />}
+      {showProgressRings && !locked && mastery > 0 && <ProgressRing radius={baseSize} mastery={mastery} variant="topic" hovered={hovered} selected={selected} target={target} />}
 
       {/* 文字短线 */}
       <Line
@@ -1006,10 +1033,10 @@ function ChildNode({
           new THREE.Vector3(direction === 'left' ? -2.38 : 2.38, 0, 1),
           new THREE.Vector3(direction === 'left' ? -3.2 : 3.2, 0, 1),
         ]}
-        color="#4A90D9"
+        color={locked || !learned ? '#BAC1BC' : '#4A90D9'}
         lineWidth={2}
         transparent
-        opacity={0.85}
+        opacity={locked || !learned ? 0.45 : 0.85}
       />
 
       {learned && showLearned && <LearnedHighlightRing radius={baseSize} />}
@@ -1022,18 +1049,18 @@ function ChildNode({
         renderOrder={2}
         position={getTextPosition()}
         fontSize={1.32}
-        maxWidth={14}
+        maxWidth={40}
         lineHeight={1.28}
         letterSpacing={0.025}
         textAlign={direction === 'left' ? 'right' : 'left'}
-        color="#3D4A3A"
+        color={locked || !learned ? '#929B95' : '#3D4A3A'}
         anchorX={textAnchor.x}
         anchorY={textAnchor.y}
         outlineWidth={0.025}
         outlineColor="#FFFFFF"
         outlineOpacity={0.82}
       >
-        {format3DLabel(node.label)}
+        {`${step}. ${format3DLabel(node.label)}`}
       </Text>
     </group>
   );
@@ -1054,12 +1081,14 @@ function Node3D({
   focusOffset,
   animRef,
   fadeOnFocus,
+  hideLabel = false,
   nodeScaleRef,
 
   showLearned,
 
   showProgressRings,
   target,
+  locked = false,
 
 }: {
   node: GraphNode;
@@ -1076,6 +1105,8 @@ function Node3D({
   animRef: BlendRef;
   /** 聚焦其他节点时，本节点提高透明度退到背景 */
   fadeOnFocus?: boolean;
+  /** 展开章节时，非当前章节的标签不参与渲染，避免背景文字干扰阅读。 */
+  hideLabel?: boolean;
   /** 共享的节点实时缩放表，供箭头/连线按实际球体大小定位 */
   nodeScaleRef?: React.MutableRefObject<Map<string, number>>;
 
@@ -1083,6 +1114,7 @@ function Node3D({
 
   showProgressRings?: boolean;
   target?: number;
+  locked?: boolean;
 
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
@@ -1094,6 +1126,7 @@ function Node3D({
   const colors = isDomain ? NODE_COLORS.domain : NODE_COLORS.topic;
 
   const getColor = () => {
+    if (locked || !learned) return '#A8B0AA';
     if (selected) return colors.selected;
     if (hovered) return colors.hover;
     if (learned) return colors.learned;
@@ -1116,18 +1149,18 @@ function Node3D({
     nodeScaleRef?.current.set(node.id, mesh.scale.x / baseSize);
 
     // 聚焦时远处节点提高透明度退到背景，突出聚焦节点
-    const focusFade = fadeOnFocus ? 1 - 0.72 * animRef.current.blend : 1;
+    const focusFade = fadeOnFocus ? 1 - 0.88 * animRef.current.blend : 1;
     const mat = mesh.material as THREE.MeshBasicMaterial;
     mat.transparent = true;
-    mat.opacity = (dimmed ? 0.2 : 1) * focusFade;
+    mat.opacity = (locked ? 0.42 : dimmed ? 0.2 : 1) * focusFade;
 
     if (innerStrokeRef.current) {
       innerStrokeRef.current.opacity =
-        (dimmed ? 0.12 : hovered ? 0.52 : selected ? 0.46 : 0.34) * focusFade;
+        (locked ? 0.1 : dimmed ? 0.12 : hovered ? 0.52 : selected ? 0.46 : 0.34) * focusFade;
     }
     if (outerStrokeRef.current) {
       outerStrokeRef.current.opacity =
-        (dimmed ? 0.08 : hovered ? 0.4 : selected ? 0.36 : 0.26) * focusFade;
+        (locked ? 0.06 : dimmed ? 0.08 : hovered ? 0.4 : selected ? 0.36 : 0.26) * focusFade;
     }
     const text = textRef.current;
     if (text && (text.material as any).opacity !== undefined) {
@@ -1155,16 +1188,19 @@ function Node3D({
       ref={groupRef}
       position={position}
       onPointerEnter={(e) => {
+        if (locked) return;
         e.stopPropagation();
         onHover(node.id, e.clientX, e.clientY, e.eventObject);
         document.body.style.cursor = 'pointer';
       }}
       onPointerLeave={() => {
+        if (locked) return;
         onHover(null);
         document.body.style.cursor = 'default';
       }}
       onClick={(e) => {
         e.stopPropagation();
+        if (locked) return;
         onClick();
       }}
     >
@@ -1189,10 +1225,10 @@ function Node3D({
       </Billboard>
 
       {/* 进度描边 */}
-      {showProgressRings && <ProgressRing radius={baseSize} mastery={mastery} variant={isDomain ? 'chapter' : 'topic'} hovered={hovered} selected={selected} target={target} />}
+      {showProgressRings && !locked && mastery > 0 && <ProgressRing radius={baseSize} mastery={mastery} variant={isDomain ? 'chapter' : 'topic'} hovered={hovered} selected={selected} target={target} />}
 
       {/* 标签 */}
-      <Billboard>
+      {!hideLabel && <Billboard>
         <Text
           font={cjkFontUrl}
           sdfGlyphSize={128}
@@ -1205,7 +1241,7 @@ function Node3D({
           lineHeight={1.28}
           letterSpacing={0.025}
           textAlign={isDomain ? 'center' : direction === 'left' ? 'right' : 'left'}
-          color={isDomain ? '#FFFFFF' : '#3D4A3A'}
+          color={locked || !learned ? '#8B948E' : isDomain ? '#FFFFFF' : '#3D4A3A'}
           anchorX={textAnchor.x}
           anchorY={textAnchor.y}
           outlineWidth={isDomain ? 0.04 : 0.02}
@@ -1214,7 +1250,7 @@ function Node3D({
         >
           {format3DLabel(node.label)}
         </Text>
-      </Billboard>
+      </Billboard>}
 
       {learned && showLearned && <LearnedHighlightRing radius={baseSize} />}
         </group>
@@ -1283,7 +1319,7 @@ function Edge3D({
       line.geometry.setPositions([start.x, start.y, start.z, end.x, end.y, end.z]);
       if (dashed) line.computeLineDistances();
       // 聚焦时无关连线同步淡出
-      const focusFade = fadeOnFocus ? 1 - 0.65 * b : 1;
+      const focusFade = fadeOnFocus ? 1 - 0.88 * b : 1;
       line.material.opacity = (dimmed ? 0.06 : hovered ? 0.9 : isChildLink ? 0.5 : 0.5) * focusFade;
     }
   });
@@ -1333,7 +1369,7 @@ function SceneContent({
   onSelectTopic,
   onExpandedKpChange,
   learned,
-  mastery,
+  chapterProgress,
   topicMastery,
   topicProgress,
   expandedTopicId,
@@ -1347,6 +1383,7 @@ function SceneContent({
 
   showProgressRings,
   nodeTargets,
+  lockedNodeIds,
 
 
 }: {
@@ -1374,6 +1411,7 @@ function SceneContent({
 
   showProgressRings?: boolean;
   nodeTargets?: Record<string, { target: number; name?: string }>;
+  lockedNodeIds?: Set<string>;
 
 
 }) {
@@ -1381,6 +1419,7 @@ function SceneContent({
 
   const handleNodeClick = useCallback(
     (node: GraphNode) => {
+      if (lockedNodeIds?.has(node.id)) return;
       if (node.kind === 'domain') {
         onSelectKp(node.id);
         onExpandedKpChange(node.id);
@@ -1389,7 +1428,7 @@ function SceneContent({
         onExpandedTopicChange(expandedTopicId === node.id ? null : node.id);
       }
     },
-    [onSelectKp, onSelectTopic, onExpandedKpChange, expandedTopicId, onExpandedTopicChange],
+    [lockedNodeIds, onSelectKp, onSelectTopic, onExpandedKpChange, expandedTopicId, onExpandedTopicChange],
   );
 
   const relatedEdges = useMemo(() => {
@@ -1460,7 +1499,6 @@ function SceneContent({
             layout={layout}
             hoveredId={hoveredId}
             selectedKpId={selectedKpId}
-            learned={learned}
             topicMastery={topicMastery}
             topicProgress={topicProgress}
             onNodeClick={handleNodeClick}
@@ -1472,6 +1510,7 @@ function SceneContent({
 
             showProgressRings={showProgressRings}
             nodeTargets={nodeTargets}
+            lockedNodeIds={lockedNodeIds}
 
 
           />
@@ -1487,7 +1526,8 @@ function SceneContent({
         
         let nodeMastery = 0;
         if (node.kind === 'domain') {
-          nodeMastery = mastery[node.kpId] ?? 0;
+          // 章节圆环统一表示学习进度，和 2D 章节节点保持一致。
+          nodeMastery = chapterProgress[node.id] ?? 0;
         } else {
           nodeMastery = topicMastery[node.id] ?? 0;
         }
@@ -1508,12 +1548,14 @@ function SceneContent({
             focusOffset={layout.focusOffsets.get(node.id)}
             animRef={animRef}
             fadeOnFocus={focusId !== null && node.id !== focusId}
+            hideLabel={expandedKpIds.size > 0 && !expandedKpIds.has(node.id)}
             nodeScaleRef={nodeScaleRef}
 
             showLearned={showLearned}
 
             showProgressRings={showProgressRings}
             target={nodeTargets?.[node.id]?.target}
+            locked={lockedNodeIds?.has(node.id)}
 
           />
         );
@@ -1541,6 +1583,7 @@ export default function KnowledgeGraph3D({
   className,
   showLearned = false,
   resources = {},
+  lockedNodeIds,
   presentations = [],
   goalId = null,
   persistenceKey,
@@ -1698,6 +1741,7 @@ export default function KnowledgeGraph3D({
             showLearned={showLearned}
 
             showProgressRings={showProgressRings}
+            lockedNodeIds={lockedNodeIds}
 
 
           />
