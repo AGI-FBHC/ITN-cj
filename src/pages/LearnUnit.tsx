@@ -99,7 +99,6 @@ import remarkGfm from 'remark-gfm';
 import remarkCitationMarks from '@/lib/remarkCitationMarks';
 import { lectureMdComponents } from '@/components/resources/lecture-markdown';
 import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
-import { refreshLearningMapPresentationCache } from '@/hooks/useLearningMap';
 
 const letters = ['A', 'B', 'C', 'D'];
 const RATES = [0.75, 0.85, 1.05, 1.3, 1.5] as const;
@@ -659,10 +658,6 @@ export default function LearnUnit() {
   const syncPptSlide = useCallback((current: number, count: number) => setPptSlide((previous) => (
     previous.current === current && previous.count === count ? previous : { current, count }
   )), []);
-  const handlePptLearningCompleted = useCallback(() => {
-    pushSignal({ type: 'lecture-read', kpId, title: `${pptTopic || kp.name} · 交互课件`, value: 100 });
-    void refreshLearningMapPresentationCache(currentLearner.id);
-  }, [currentLearner.id, kp.name, kpId, pptTopic, pushSignal]);
   const [flashId, setFlashId] = useState<string | null>(null);
   useEffect(() => {
     const target = searchParams.get('block');
@@ -2071,11 +2066,6 @@ export default function LearnUnit() {
     return <div className="mx-auto flex min-h-[58vh] max-w-[760px] items-center justify-center px-5"><div className="lf-card max-w-[460px] p-6"><h1 className="text-[15px] font-semibold text-ink">这个知识点暂时没有生成成功</h1><p className="mt-2 text-[12.5px] leading-5 text-ink-muted">{unitError}</p><button type="button" onClick={() => window.location.reload()} className="lf-btn-primary mt-4">重新生成</button></div></div>;
   }
 
-  const exitPpt = () => {
-    if (window.history.length > 1) navigate(-1);
-    else navigate('/learn');
-  };
-
   return (
     <div className={cn('mx-auto px-5 transition-[max-width] duration-300 md:px-6', pptTaskId ? (pptWideMode ? `fixed inset-x-0 bottom-0 ${focusMode ? 'top-0' : 'top-14'} z-10 mx-auto flex max-w-[1500px] flex-col overflow-hidden pb-40 pt-5` : `fixed inset-x-0 bottom-0 ${focusMode ? 'top-0' : 'top-14'} z-10 mx-auto flex max-w-[900px] flex-col overflow-hidden pb-40 pt-6`) : 'max-w-[760px] pb-48 pt-6')}>
       {/* 技术亮点（系统透视）：右下角悬浮球，点开才展开 */}
@@ -2083,15 +2073,9 @@ export default function LearnUnit() {
 
       {/* 页头 */}
       <div className={cn('flex shrink-0 flex-wrap items-center gap-3', pptTaskId && 'mb-5')}>
-        {pptTaskId ? (
-          <button type="button" onClick={exitPpt} className="inline-flex items-center gap-1 rounded-[8px] border border-hairline bg-card-warm px-2.5 py-1.5 text-[13px] text-ink-muted transition hover:border-brand/40 hover:text-brand">
-            <ArrowLeft size={14} /> 退出课件
-          </button>
-        ) : (
-          <Link to="/learn" className="inline-flex items-center gap-1 text-[13px] text-ink-muted hover:text-brand">
-            <ArrowLeft size={14} /> 课程目录
-          </Link>
-        )}
+        <Link to="/learn" className="inline-flex items-center gap-1 text-[13px] text-ink-muted hover:text-brand">
+          <ArrowLeft size={14} /> 课程目录
+        </Link>
         <span className="text-hairline">/</span>
         <h1 className="font-serif text-[20px] font-semibold text-ink">{pptTopic || generatedUnit?.topicName || kp.name}</h1>
         {pptTaskId && (
@@ -2213,7 +2197,7 @@ export default function LearnUnit() {
             {freeBrowse ? '回到课堂推进' : '自由浏览'}
           </button>
         </div>}
-        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} wideMode={pptWideMode} speed={pptSpeed} volume={pptVolume} modelProvider={pptAudioModel} qwenVoice={qwenVoice} ref={pptRef} onPlaybackChange={setPlaying} onLoadingChange={setPptAudioLoading} onSlideChange={syncPptSlide} onRequestNote={openNoteHere} onLearningCompleted={handlePptLearningCompleted} /> : (blocks.map((b, i) => {
+        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} wideMode={pptWideMode} speed={pptSpeed} volume={pptVolume} modelProvider={pptAudioModel} qwenVoice={qwenVoice} ref={pptRef} onPlaybackChange={setPlaying} onLoadingChange={setPptAudioLoading} onSlideChange={syncPptSlide} onRequestNote={openNoteHere} /> : (blocks.map((b, i) => {
           const active = i === cursor && playing;
           /* ---- 课堂推进三态：完整（当前/回看/自由浏览）· 摘要行（已完成）· 不渲染（未解锁） ---- */
           const effUnlocked = Math.min(unlocked, blocks.length);

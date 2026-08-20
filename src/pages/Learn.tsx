@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowRight, Loader2, Box, Map, Route, Check } from 'lucide-react';
+import { ArrowRight, Loader2, Box, Map, Expand, Shrink, Route, Check } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
 import { useLearningMap } from '@/hooks/useLearningMap';
 import KnowledgeGraph from '@/components/learn/KnowledgeGraph';
@@ -49,7 +49,7 @@ function readLearnView(learnerId: string): LearnViewState | null {
       viewMode: parsed.viewMode === '2d' ? '2d' : '3d',
       selectedKp: typeof parsed.selectedKp === 'string' ? parsed.selectedKp : null,
       selectedTopic: typeof parsed.selectedTopic === 'number' ? parsed.selectedTopic : null,
-      expandedKpIds: parsed.expandedKpIds.filter((id): id is string => typeof id === 'string').slice(-1),
+      expandedKpIds: parsed.expandedKpIds.filter((id): id is string => typeof id === 'string'),
       showLearnedPath: Boolean(parsed.showLearnedPath),
     };
   } catch { return null; }
@@ -69,9 +69,14 @@ export default function Learn() {
   const [viewMode, setViewMode] = useState<'2d' | '3d'>(() => restoredView?.viewMode ?? '3d');
   const [selectedKp, setSelectedKp] = useState<string | null>(() => restoredView?.selectedKp ?? null);
   const [expandedKpIds, setExpandedKpIds] = useState<Set<string>>(() => new Set(restoredView?.expandedKpIds ?? []));
-  /** 3D：一次只展开一个章节，再点当前章节则收起。 */
+  /** 3D：点击章节切换展开/收起，可同时展开多个 */
   const toggleExpandedKp = (id: string) => {
-    setExpandedKpIds((prev) => (prev.has(id) ? new Set() : new Set([id])));
+    setExpandedKpIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
   /** 2D：单展开语义（null = 全部收起） */
   const setSingleExpandedKp = (id: string | null) => {
@@ -235,6 +240,29 @@ export default function Learn() {
         <motion.div layout="position" className="relative min-w-0">
           {viewMode === '3d' && (
             <div className="absolute right-4 top-4 z-10 flex flex-col items-end gap-2">
+            {viewMode === '3d' && (
+              <button
+                type="button"
+                onClick={() => {
+                  const allDomainIds = map.graphNodes.filter((n) => n.kind === 'domain').map((n) => n.id);
+                  const isAllExpanded = expandedKpIds.size === allDomainIds.length;
+                  setExpandedKpIds(isAllExpanded ? new Set() : new Set(allDomainIds));
+                }}
+                className="flex items-center gap-1.5 rounded-lg border border-hairline/50 bg-white/90 px-3 py-1.5 text-[11px] text-ink-2 backdrop-blur-sm transition-colors hover:bg-white hover:text-ink"
+              >
+                {expandedKpIds.size === map.graphNodes.filter((n) => n.kind === 'domain').length ? (
+                  <>
+                    <Shrink size={12} />
+                    隐藏全部
+                  </>
+                ) : (
+                  <>
+                    <Expand size={12} />
+                    展开全部
+                  </>
+                )}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setShowLearnedPath((v) => !v)}
@@ -275,12 +303,11 @@ export default function Learn() {
               presentations={map.presentations}
               nodeTargets={map.nodeTargets}
               jobName={map.jobName}
-              lockedNodeIds={map.lockedNodeIds}
               persistenceKey={currentLearner.id}
               restorePersistedCamera={restoreMapState && !searchParams.get('kp')}
             />
           ) : (
-            <KnowledgeGraph showLearned={showLearnedPath} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpIds={expandedKpIds} onExpandedKpChange={setSingleExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} chapterProgress={map.chapterProgress} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} nodeTargets={map.nodeTargets} lockedNodeIds={map.lockedNodeIds} />
+            <KnowledgeGraph showLearned={showLearnedPath} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpIds={expandedKpIds} onExpandedKpChange={setSingleExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} nodeTargets={map.nodeTargets} />
           )}
         </motion.div>
         <AnimatePresence initial={false} mode="popLayout">

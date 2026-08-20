@@ -4,23 +4,6 @@
  */
 import { getToken } from './api';
 
-/**
- * Keep a small client-side completion mirror as well as the server record.
- * Some existing presentation deployments return a stale summary immediately
- * after `/progress` is written; this prevents the resource card from briefly
- * reverting to “未学习” while the server summary catches up.
- */
-const PRESENTATION_LEARNED_PREFIX = 'lf.presentation-learned:v1:';
-
-export function isPresentationLocallyLearned(taskId: string | null | undefined): boolean {
-  if (!taskId) return false;
-  try { return window.localStorage.getItem(`${PRESENTATION_LEARNED_PREFIX}${taskId}`) === '1'; } catch { return false; }
-}
-
-export function markPresentationLocallyLearned(taskId: string): void {
-  try { window.localStorage.setItem(`${PRESENTATION_LEARNED_PREFIX}${taskId}`, '1'); } catch { /* ignore */ }
-}
-
 export type PresentationAudience = 'students' | 'teachers' | 'professionals' | 'general';
 export type PresentationPurpose = 'courseware' | 'report' | 'sharing' | 'defense' | 'training';
 
