@@ -25,6 +25,7 @@ const Resources = lazy(() => import('@/pages/Resources'));
 const Report = lazy(() => import('@/pages/Report'));
 const Tutoring = lazy(() => import('@/pages/Tutoring'));
 const Knowledge = lazy(() => import('@/pages/Knowledge'));
+const Admin = lazy(() => import('@/pages/Admin'));
 import { useAuth } from '@/context/AuthContext';
 
 gsap.registerPlugin(ScrollTrigger);
@@ -82,6 +83,8 @@ export default function App() {
         <Route path="login" element={<Login />} />
         <Route element={<RequireAuth />}>
         <Route path="welcome" element={<Welcome />} />
+        <Route path="admin" element={<Admin />} />
+        <Route path="admin/:section" element={<Admin />} />
         <Route element={<AppShell />}>
           <Route index element={<Home />} />
           <Route path="me" element={<LearnerHome />} />
