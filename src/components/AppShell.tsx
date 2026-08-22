@@ -26,6 +26,7 @@ import {
   NotebookPen,
   LogOut,
   Compass,
+  ShieldCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -97,6 +98,7 @@ const expertNavGroups: { heading?: string; items: NavItem[] }[] = [
     items: [
       { path: '/agents', label: '协同调度', icon: Network },
       { path: '/knowledge', label: '知识库', icon: Database },
+      { path: '/admin', label: '管理员端', icon: ShieldCheck },
     ],
   },
 ];
