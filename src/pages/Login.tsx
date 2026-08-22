@@ -95,7 +95,13 @@ export default function Login() {
       toast('请输入工号/邮箱和密码');
       return;
     }
-    doLogin('sso', `sso:${account.trim()}`, account.includes('@') ? account.trim() : `工号 ${account.trim()}`, undefined, password.trim());
+    doLogin(
+      adminMode ? 'admin' : 'sso',
+      adminMode ? `admin:${account.trim()}` : `sso:${account.trim()}`,
+      adminMode ? `管理员 ${account.trim()}` : account.includes('@') ? account.trim() : `工号 ${account.trim()}`,
+      undefined,
+      password.trim(),
+    );
   };
 
   const sendCode = async () => {

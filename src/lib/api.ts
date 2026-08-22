@@ -994,6 +994,10 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(body),
   }),
+  adminLogin: (account: string, password: string) => request<LoginResult>('/api/v1/auth/admin-login', {
+    method: 'POST',
+    body: JSON.stringify({ identityType: 'ENTERPRISE', identityValue: account, password }),
+  }),
   sendCode: (email: string, purpose: 'REGISTER' | 'LOGIN' | 'PASSWORD_RESET') =>
     request<{ email: string; expiresInSeconds: number; retryAfterSeconds: number }>('/api/v1/auth/send-code', {
       method: 'POST',

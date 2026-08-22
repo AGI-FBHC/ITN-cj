@@ -7,7 +7,7 @@ import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { api, setToken } from '@/lib/api';
 
-export type LoginMethod = 'sso' | 'sms' | 'wechat' | 'guest' | 'persona';
+export type LoginMethod = 'sso' | 'sms' | 'wechat' | 'guest' | 'persona' | 'admin';
 
 export interface AuthSession {
   method: LoginMethod;
@@ -104,6 +104,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           result = await api.guestLogin();
         } else if (method === 'persona') {
           result = await api.demoLogin(learnerId ?? account.replace(/^persona:/, ''));
+        } else if (method === 'admin') {
+          result = await api.adminLogin(account.replace(/^admin:/, ''), secret ?? '');
         } else if (method === 'sso') {
           const value = account.replace(/^sso:/, '');
           result = value.includes('@')
