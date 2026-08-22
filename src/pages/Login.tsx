@@ -13,6 +13,7 @@ import {
   Mail,
   KeyRound,
   MessageSquareText,
+  ShieldCheck,
   UserRound,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -37,6 +38,7 @@ export default function Login() {
   const [flipped, setFlipped] = useState(false);
   const [tab, setTab] = useState<Tab>('sso');
   const [busy, setBusy] = useState(false);
+  const [adminMode, setAdminMode] = useState(false);
 
   const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
@@ -85,7 +87,7 @@ export default function Login() {
       return;
     }
     toast.success(`${label}，登录成功`);
-    navigate('/welcome');
+    navigate(adminMode ? '/admin' : '/welcome');
   };
 
   const submitSso = () => {
@@ -293,10 +295,13 @@ export default function Login() {
                 className="lf-card flex h-full flex-col p-6"
               >
                 <div className="flex items-center justify-between">
-                  <h2 className="font-serif text-[20px] font-semibold text-ink">登录</h2>
-                  <button type="button" onClick={() => setFlipped(true)} className="text-[13px] font-medium text-brand hover:underline">注册</button>
+                  <div className="flex items-center gap-2">
+                    {adminMode && <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-tint text-brand"><ShieldCheck size={15} /></span>}
+                    <h2 className="font-serif text-[20px] font-semibold text-ink">{adminMode ? '管理员端登录' : '登录'}</h2>
+                  </div>
+                  {!adminMode && <button type="button" onClick={() => setFlipped(true)} className="text-[13px] font-medium text-brand hover:underline">注册</button>}
                 </div>
-                <div className="mt-4 flex gap-0.5 rounded-[11px] border border-hairline bg-paper p-0.5">
+                {!adminMode && <div className="mt-4 flex gap-0.5 rounded-[11px] border border-hairline bg-paper p-0.5">
                   {TABS.map((t) => (
                     <button
                       key={t.key}
@@ -308,19 +313,25 @@ export default function Login() {
                       {t.label}
                     </button>
                   ))}
-                </div>
+                </div>}
 
-                {tab === 'sso' && (
+                {(adminMode || tab === 'sso') && (
                   <div className="lf-anim-in-up mt-5 space-y-3">
-                    <input value={account} onChange={(e) => setAccount(e.target.value)} placeholder="工号/邮箱（如 LF-0917 或 user@example.com）" className={inputClass} />
+                    <input value={account} onChange={(e) => setAccount(e.target.value)} placeholder={adminMode ? '管理员工号/邮箱' : '工号/邮箱（如 LF-0917 或 user@example.com）'} className={inputClass} />
                     <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submitSso()} placeholder="密码" className={inputClass} />
-                    <button type="button" onClick={() => setForgotOpen(true)} className="ml-auto flex items-center gap-1 text-[12px] font-medium text-brand transition-colors hover:underline">
-                      <KeyRound size={12} />
-                      忘记密码？
-                    </button>
+                    <div className="flex items-center justify-between gap-3">
+                      <button type="button" onClick={() => { setAdminMode((value) => !value); setTab('sso'); }} className="flex items-center gap-1 text-[12px] font-medium text-brand transition-colors hover:underline">
+                        <ShieldCheck size={12} />
+                        {adminMode ? '返回学习者登录' : '管理员端登录'}
+                      </button>
+                      <button type="button" onClick={() => setForgotOpen(true)} className="flex items-center gap-1 text-[12px] font-medium text-brand transition-colors hover:underline">
+                        <KeyRound size={12} />
+                        忘记密码？
+                      </button>
+                    </div>
                     <button type="button" disabled={busy} onClick={submitSso} className={primaryClass}>
                       {busy ? <Loader2 size={15} className="animate-spin" /> : <Building2 size={15} />}
-                      登录
+                      {adminMode ? '进入管理员端' : '登录'}
                     </button>
                   </div>
                 )}
@@ -342,10 +353,10 @@ export default function Login() {
                 )}
 
                 <div className="mt-auto pt-5">
-                  <button type="button" onClick={loginGuest} className="flex w-full items-center justify-center gap-1.5 rounded-[10px] border border-hairline bg-paper py-2.5 text-[13px] font-medium text-ink-2 transition-all hover:border-brand/40 hover:text-ink">
+                  {!adminMode && <button type="button" onClick={loginGuest} className="flex w-full items-center justify-center gap-1.5 rounded-[10px] border border-hairline bg-paper py-2.5 text-[13px] font-medium text-ink-2 transition-all hover:border-brand/40 hover:text-ink">
                     <UserRound size={14} />
                     游客体验
-                  </button>
+                  </button>}
                 </div>
 
               </motion.div>
