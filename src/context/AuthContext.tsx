@@ -16,6 +16,7 @@ export interface AuthSession {
   at: number;
   token?: string;
   learnerId?: string;
+  roles?: string[];
 }
 
 interface KnownRecord {
@@ -128,7 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch { /* keep existing */ }
         persistSession({
           method, account, label, at: Date.now(), token: result.accessToken,
-          learnerId: realLearnerId ?? undefined,
+          learnerId: realLearnerId ?? undefined, roles: result.roles ?? [],
         });
         if (realLearnerId) persistKnown({ ...known, [account]: { learnerId: realLearnerId, lastAt: Date.now() } });
         return true;

@@ -35,6 +35,9 @@ function RequireAuth() {
   const { isAuthed, session, knownOf } = useAuth();
   const { pathname } = useLocation();
   if (!isAuthed) return <Navigate to="/login" replace />;
+  if (pathname.startsWith('/admin') && !session?.roles?.includes('admin')) {
+    return <Navigate to="/me" replace />;
+  }
   /* 真实账号（工号/手机/微信）还没绑画像 → 只许在建档流程里，
      否则会顶着上一个用户的 currentLearnerId 看到别人的园子/错题 */
   const needsProfile =
