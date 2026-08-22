@@ -36,7 +36,7 @@ function RequireAuth() {
   const { pathname } = useLocation();
   if (!isAuthed) return <Navigate to="/login" replace />;
   const isAdmin = session?.roles?.includes('admin') === true;
-  if (isAdmin && (pathname === '/welcome' || pathname === '/onboarding')) {
+  if (isAdmin && !pathname.startsWith('/admin')) {
     return <Navigate to="/admin" replace />;
   }
   if (pathname.startsWith('/admin') && !isAdmin) {
