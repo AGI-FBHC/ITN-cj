@@ -30,6 +30,19 @@ export interface EnterpriseRegisterResult {
   organizationName: string;
 }
 
+export interface OrganizationBranding {
+  code: string; name: string; shortName: string; logoUrl: string | null; logoUpdatedAt: string | null;
+}
+
+export interface AdminAccount {
+  id: string; email: string; nickname: string | null; accountType: 'LEARNER' | 'ADMIN'; active: boolean;
+  createdAt: string; updatedAt: string;
+}
+
+export interface AdminAccountPage {
+  items: AdminAccount[]; page: number; size: number; totalElements: number; totalPages: number;
+}
+
 export interface LearnerProfileData {
   id: string;
   code: string | null;
@@ -702,7 +715,7 @@ export interface PersonalizedLearningUnit {
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
-  if (init.body && !headers.has('Content-Type')) {
+  if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
   const token = getToken();
@@ -1019,6 +1032,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  getOrganizationBranding: () => request<OrganizationBranding>('/api/v1/organization/branding'),
+  getAdminOrganization: () => request<OrganizationBranding>('/api/v1/admin/organization'),
+  updateAdminOrganization: (body: { name: string; shortName: string }) => request<OrganizationBranding>('/api/v1/admin/organization', { method: 'PUT', body: JSON.stringify(body) }),
+  uploadOrganizationLogo: (file: File) => { const body = new FormData(); body.append('file', file); return request<OrganizationBranding>('/api/v1/admin/organization/logo', { method: 'POST', body }); },
+  deleteOrganizationLogo: () => request<OrganizationBranding>('/api/v1/admin/organization/logo', { method: 'DELETE' }),
+  createOrganizationInvite: (body: { label?: string; maxUses?: number; expiresInDays?: number }) => request<{ invitationCode: string; expiresAt: string | null; maxUses: number | null }>('/api/v1/admin/organization/invites', { method: 'POST', body: JSON.stringify(body) }),
+  listAdminAccounts: (page = 0, size = 50) => request<AdminAccountPage>(`/api/v1/admin/users?page=${page}&size=${size}`),
+  setAdminAccountEnabled: (id: string, enabled: boolean) => request<AdminAccount>(`/api/v1/admin/users/${encodeURIComponent(id)}/${enabled ? 'enable' : 'disable'}`, { method: 'POST' }),
   listLearners: () => request<LearnerProfileData[]>('/api/v1/learners'),
   getLearner: (id: string) => request<LearnerProfileData>(`/api/v1/learners/${encodeURIComponent(id)}`),
   createLearner: (body: LearnerUpsertInput) =>

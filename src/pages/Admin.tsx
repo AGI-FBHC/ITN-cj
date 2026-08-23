@@ -1,93 +1,517 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, NavLink, useLocation } from 'react-router-dom';
-import { BookCheck, ChevronDown, ChevronRight, Database, FileUp, LayoutDashboard, Loader2, LogOut, Network, RefreshCw, Search, ShieldCheck, Users, X } from 'lucide-react';
-import { toast } from 'sonner';
-import { api, type LearnerProfileData, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
-import { useAuth } from '@/context/AuthContext';
-import { cn } from '@/lib/utils';
-import { adminKnowledgeApi } from '@/lib/adminKnowledgeApi';
-import KnowledgeQuality from '@/pages/admin/KnowledgeQuality';
-import KnowledgeGraphAdmin from '@/pages/admin/KnowledgeGraphAdmin';
-import DocumentIngestion from '@/pages/admin/DocumentIngestion';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, NavLink, useLocation } from "react-router-dom";
+import { BookCheck, ChevronDown, ChevronRight, ClipboardList, Database, FileUp, LayoutDashboard, Loader2, LogOut, Network, RefreshCw, Search, Settings, ShieldCheck, Users, X } from "lucide-react";
+import { toast } from "sonner";
+import { api, type LearnerProfileData, type RagDomain, type RagTree, type RagTreeNode } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { cn } from "@/lib/utils";
+import { adminKnowledgeApi } from "@/lib/adminKnowledgeApi";
+import KnowledgeQuality from "@/pages/admin/KnowledgeQuality";
+import KnowledgeGraphAdmin from "@/pages/admin/KnowledgeGraphAdmin";
+import DocumentIngestion from "@/pages/admin/DocumentIngestion";
+import OrganizationSettings from "@/pages/admin/OrganizationSettings";
+import InstitutionUsers from "@/pages/admin/InstitutionUsers";
+import QuestionBankAdmin from "@/pages/admin/QuestionBankAdmin";
 
-type AdminSection = 'overview' | 'learners' | 'knowledge' | 'quality' | 'graph' | 'ingestion';
+type AdminSection = "overview" | "organization" | "learners" | "knowledge" | "quality" | "graph" | "questions" | "ingestion";
 const nav: { id: AdminSection; label: string; icon: typeof LayoutDashboard }[] = [
-  { id: 'overview', label: '工作台', icon: LayoutDashboard },
-  { id: 'learners', label: '学习者管理', icon: Users },
-  { id: 'knowledge', label: '知识库管理', icon: Database },
-  { id: 'quality', label: '知识质量', icon: BookCheck },
-  { id: 'graph', label: '知识图谱', icon: Network },
-  { id: 'ingestion', label: '文档入库', icon: FileUp },
+  { id: "overview", label: "工作台", icon: LayoutDashboard },
+  { id: "organization", label: "机构配置", icon: Settings },
+  { id: "learners", label: "机构用户", icon: Users },
+  { id: "knowledge", label: "知识库管理", icon: Database },
+  { id: "quality", label: "知识质量", icon: BookCheck },
+  { id: "graph", label: "知识图谱", icon: Network },
+  { id: "questions", label: "题库管理", icon: ClipboardList },
+  { id: "ingestion", label: "文档入库", icon: FileUp },
 ];
 
 function StatusTag({ ok = true, children }: { ok?: boolean; children: string }) {
-  return <span className={cn('inline-flex items-center gap-1.5 rounded px-2 py-1 text-[11px]', ok ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700')}><span className={cn('h-1.5 w-1.5 rounded-full', ok ? 'bg-emerald-500' : 'bg-amber-500')} />{children}</span>;
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 rounded px-2 py-1 text-[11px]", ok ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700")}>
+      <span className={cn("h-1.5 w-1.5 rounded-full", ok ? "bg-emerald-500" : "bg-amber-500")} />
+      {children}
+    </span>
+  );
 }
 
 function SummaryCell({ label, value, note, className }: { label: string; value: string | number; note: string; className?: string }) {
-  return <div className={cn('border-b border-r border-slate-200 px-5 py-4 md:border-b-0 last:border-r-0', className)}><p className="text-xs text-slate-500">{label}</p><p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{value}</p><p className="mt-1 text-[11px] text-slate-400">{note}</p></div>;
+  return (
+    <div className={cn("border-b border-r border-slate-200 px-5 py-4 md:border-b-0 last:border-r-0", className)}>
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{value}</p>
+      <p className="mt-1 text-[11px] text-slate-400">{note}</p>
+    </div>
+  );
 }
 
 function PageHeading({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
-  return <div className="mb-5 flex flex-wrap items-center justify-between gap-4"><div><h2 className="text-xl font-semibold text-slate-900">{title}</h2><p className="mt-1 text-sm text-slate-500">{description}</p></div>{action}</div>;
+  return (
+    <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
+        <p className="mt-1 text-sm text-slate-500">{description}</p>
+      </div>
+      {action}
+    </div>
+  );
 }
 
-function LearnerTable({ learners, onEdit }: { learners: LearnerProfileData[]; onEdit: (learner: LearnerProfileData) => void }) {
+export function LearnerTable({ learners, onEdit }: { learners: LearnerProfileData[]; onEdit: (learner: LearnerProfileData) => void }) {
   if (!learners.length) return <div className="border border-slate-200 bg-white px-6 py-14 text-center text-sm text-slate-500">暂无可管理的学习者记录</div>;
-  return <div className="overflow-hidden border border-slate-200 bg-white"><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500"><tr><th className="px-4 py-3">姓名 / 编号</th><th className="px-4 py-3">身份</th><th className="px-4 py-3">目标方向</th><th className="px-4 py-3">掌握度</th><th className="px-4 py-3">更新时间</th><th className="px-4 py-3 text-right">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{learners.map((learner) => <tr key={learner.id} className="hover:bg-slate-50/70"><td className="px-4 py-3"><div className="font-medium text-slate-900">{learner.name || '未命名'}</div><div className="mt-0.5 font-mono text-[11px] text-slate-400">{learner.code || learner.id.slice(0, 8)}</div></td><td className="px-4 py-3 text-slate-600">{learner.role || '未设置'}</td><td className="px-4 py-3 text-slate-600">{learner.targetJob || learner.education || '未设置'}</td><td className="px-4 py-3 tabular-nums text-slate-700">{Math.round(learner.overallMastery || 0)}%</td><td className="px-4 py-3 text-xs text-slate-500">{learner.updatedAt ? new Date(learner.updatedAt).toLocaleDateString('zh-CN') : '—'}</td><td className="px-4 py-3 text-right"><button type="button" onClick={() => onEdit(learner)} className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:border-blue-500 hover:text-blue-600">编辑</button></td></tr>)}</tbody></table></div></div>;
+  return (
+    <div className="overflow-hidden border border-slate-200 bg-white">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] text-left text-sm">
+          <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
+            <tr>
+              <th className="px-4 py-3">姓名 / 编号</th>
+              <th className="px-4 py-3">身份</th>
+              <th className="px-4 py-3">目标方向</th>
+              <th className="px-4 py-3">掌握度</th>
+              <th className="px-4 py-3">更新时间</th>
+              <th className="px-4 py-3 text-right">操作</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {learners.map((learner) => (
+              <tr key={learner.id} className="hover:bg-slate-50/70">
+                <td className="px-4 py-3">
+                  <div className="font-medium text-slate-900">{learner.name || "未命名"}</div>
+                  <div className="mt-0.5 font-mono text-[11px] text-slate-400">{learner.code || learner.id.slice(0, 8)}</div>
+                </td>
+                <td className="px-4 py-3 text-slate-600">{learner.role || "未设置"}</td>
+                <td className="px-4 py-3 text-slate-600">{learner.targetJob || learner.education || "未设置"}</td>
+                <td className="px-4 py-3 tabular-nums text-slate-700">{Math.round(learner.overallMastery || 0)}%</td>
+                <td className="px-4 py-3 text-xs text-slate-500">{learner.updatedAt ? new Date(learner.updatedAt).toLocaleDateString("zh-CN") : "—"}</td>
+                <td className="px-4 py-3 text-right">
+                  <button type="button" onClick={() => onEdit(learner)} className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:border-blue-500 hover:text-blue-600">
+                    编辑
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 function EditLearner({ learner, onClose, onSaved }: { learner: LearnerProfileData; onClose: () => void; onSaved: (learner: LearnerProfileData) => void }) {
-  const [name, setName] = useState(learner.name || ''); const [role, setRole] = useState(learner.role || ''); const [targetJob, setTargetJob] = useState(learner.targetJob || ''); const [saving, setSaving] = useState(false);
-  const save = async () => { setSaving(true); try { onSaved(await api.updateLearner(learner.id, { name, role, targetJob })); toast.success('学习者信息已保存'); onClose(); } catch (error) { toast.error(error instanceof Error ? error.message : '保存失败'); } finally { setSaving(false); } };
-  const fields: [string, string, (value: string) => void][] = [['姓名', name, setName], ['角色', role, setRole], ['目标方向', targetJob, setTargetJob]];
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4" role="dialog" aria-modal="true"><div className="w-full max-w-md border border-slate-200 bg-white shadow-2xl"><div className="flex items-center justify-between border-b border-slate-200 px-5 py-4"><h2 className="text-base font-semibold">编辑学习者</h2><button type="button" onClick={onClose} className="p-1.5 text-slate-400 hover:bg-slate-100"><X size={17} /></button></div><div className="space-y-4 p-5">{fields.map(([label, value, setter]) => <label key={label} className="block"><span className="mb-1.5 block text-xs font-medium text-slate-600">{label}</span><input value={value} onChange={(event) => setter(event.target.value)} className="h-10 w-full rounded border border-slate-300 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" /></label>)}</div><div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3"><button type="button" onClick={onClose} className="rounded border border-slate-300 bg-white px-4 py-2 text-xs">取消</button><button type="button" disabled={saving} onClick={() => void save()} className="rounded bg-blue-600 px-4 py-2 text-xs font-medium text-white disabled:opacity-50">{saving ? '保存中…' : '保存'}</button></div></div></div>;
+  const [name, setName] = useState(learner.name || "");
+  const [role, setRole] = useState(learner.role || "");
+  const [targetJob, setTargetJob] = useState(learner.targetJob || "");
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    try {
+      onSaved(await api.updateLearner(learner.id, { name, role, targetJob }));
+      toast.success("学习者信息已保存");
+      onClose();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+  const fields: [string, string, (value: string) => void][] = [
+    ["姓名", name, setName],
+    ["角色", role, setRole],
+    ["目标方向", targetJob, setTargetJob],
+  ];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-md border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+          <h2 className="text-base font-semibold">编辑学习者</h2>
+          <button type="button" onClick={onClose} className="p-1.5 text-slate-400 hover:bg-slate-100">
+            <X size={17} />
+          </button>
+        </div>
+        <div className="space-y-4 p-5">
+          {fields.map(([label, value, setter]) => (
+            <label key={label} className="block">
+              <span className="mb-1.5 block text-xs font-medium text-slate-600">{label}</span>
+              <input value={value} onChange={(event) => setter(event.target.value)} className="h-10 w-full rounded border border-slate-300 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+            </label>
+          ))}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
+          <button type="button" onClick={onClose} className="rounded border border-slate-300 bg-white px-4 py-2 text-xs">
+            取消
+          </button>
+          <button type="button" disabled={saving} onClick={() => void save()} className="rounded bg-blue-600 px-4 py-2 text-xs font-medium text-white disabled:opacity-50">
+            {saving ? "保存中…" : "保存"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function flattenVisibleTree(nodes: RagTreeNode[], expanded: Set<number>, depth = 0): { node: RagTreeNode; depth: number }[] {
-  return nodes.flatMap((node) => [
-    { node, depth },
-    ...(expanded.has(node.id) ? flattenVisibleTree(node.children || [], expanded, depth + 1) : []),
-  ]);
+  return nodes.flatMap((node) => [{ node, depth }, ...(expanded.has(node.id) ? flattenVisibleTree(node.children || [], expanded, depth + 1) : [])]);
 }
 
 function DomainDetail({ tree, loading, error, onBack }: { tree: RagTree | null; loading: boolean; error: string | null; onBack: () => void }) {
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
-  if (loading) return <div className="flex min-h-[320px] items-center justify-center border border-slate-200 bg-white text-sm text-slate-500"><Loader2 size={16} className="mr-2 animate-spin" />正在读取领域结构…</div>;
-  if (error || !tree) return <div className="border border-red-200 bg-red-50 p-5 text-sm text-red-700"><button type="button" onClick={onBack} className="mb-3 block text-xs text-blue-600">返回领域列表</button>{error || '领域数据不存在'}</div>;
+  if (loading)
+    return (
+      <div className="flex min-h-[320px] items-center justify-center border border-slate-200 bg-white text-sm text-slate-500">
+        <Loader2 size={16} className="mr-2 animate-spin" />
+        正在读取领域结构…
+      </div>
+    );
+  if (error || !tree)
+    return (
+      <div className="border border-red-200 bg-red-50 p-5 text-sm text-red-700">
+        <button type="button" onClick={onBack} className="mb-3 block text-xs text-blue-600">
+          返回领域列表
+        </button>
+        {error || "领域数据不存在"}
+      </div>
+    );
   const rows = flattenVisibleTree(tree.nodes, expanded);
-  const toggle = (id: number) => setExpanded((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
-  return <><div className="mb-4 flex items-center gap-2 text-xs text-slate-500"><button type="button" onClick={onBack} className="hover:text-blue-600">知识库管理</button><ChevronRight size={13} /><span className="text-slate-800">{tree.domain.name}</span></div><PageHeading title={tree.domain.name} description={tree.domain.description || `领域代码：${tree.domain.code}`} action={<StatusTag>正常</StatusTag>} /><div className="mb-5 grid grid-cols-2 border border-slate-200 bg-white md:grid-cols-5"><SummaryCell label="分类" value={tree.domain.categoryCount} note="目录节点" /><SummaryCell label="知识点" value={tree.totalKnowledgePoints} note="领域总量" /><SummaryCell label="文档" value={tree.domain.documentCount} note="已入库文档" /><SummaryCell label="知识切片" value={tree.totalChunks} note="可检索内容" /><SummaryCell label="图片" value={tree.domain.figureCount} note="图像资产" className="col-span-2 md:col-span-1" /></div><div className="border border-slate-200 bg-white"><div className="flex items-center justify-between border-b border-slate-200 px-4 py-3"><div><h3 className="text-sm font-semibold">分类结构</h3><p className="mt-0.5 text-xs text-slate-400">共 {tree.domain.categoryCount} 个目录节点，点击箭头按层展开</p></div><button type="button" disabled className="hidden cursor-not-allowed rounded border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-400 sm:block">新增分类</button></div><table className="w-full table-fixed text-left text-sm"><thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500"><tr><th className="px-4 py-2.5">分类名称</th><th className="hidden px-4 py-2.5 md:table-cell">节点代码</th><th className="hidden px-4 py-2.5 md:table-cell">类型</th><th className="w-20 px-4 py-2.5 text-right">切片数</th></tr></thead><tbody className="divide-y divide-slate-100">{rows.map(({ node, depth }) => <tr key={node.id} className="hover:bg-slate-50"><td className="px-4 py-3"><div className="flex min-w-0 items-center" style={{ paddingLeft: Math.min(depth, 3) * 16 }}>{node.children?.length ? <button type="button" onClick={() => toggle(node.id)} className="mr-1.5 shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700" aria-label={expanded.has(node.id) ? '收起分类' : '展开分类'}>{expanded.has(node.id) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button> : <span className="mr-1.5 w-[18px] shrink-0" />}<span className="truncate font-medium text-slate-800">{node.name}</span></div></td><td className="hidden px-4 py-3 font-mono text-xs text-slate-500 md:table-cell">{node.nodeCode}</td><td className="hidden px-4 py-3 text-xs text-slate-500 md:table-cell">{node.nodeType}</td><td className="px-4 py-3 text-right tabular-nums">{node.chunkCount ?? 0}</td></tr>)}</tbody></table>{!rows.length && <div className="py-12 text-center text-sm text-slate-500">该领域暂无分类结构</div>}</div></>;
+  const toggle = (id: number) =>
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  return (
+    <>
+      <div className="mb-4 flex items-center gap-2 text-xs text-slate-500">
+        <button type="button" onClick={onBack} className="hover:text-blue-600">
+          知识库管理
+        </button>
+        <ChevronRight size={13} />
+        <span className="text-slate-800">{tree.domain.name}</span>
+      </div>
+      <PageHeading title={tree.domain.name} description={tree.domain.description || `领域代码：${tree.domain.code}`} action={<StatusTag>正常</StatusTag>} />
+      <div className="mb-5 grid grid-cols-2 border border-slate-200 bg-white md:grid-cols-5">
+        <SummaryCell label="分类" value={tree.domain.categoryCount} note="目录节点" />
+        <SummaryCell label="知识点" value={tree.totalKnowledgePoints} note="领域总量" />
+        <SummaryCell label="文档" value={tree.domain.documentCount} note="已入库文档" />
+        <SummaryCell label="知识切片" value={tree.totalChunks} note="可检索内容" />
+        <SummaryCell label="图片" value={tree.domain.figureCount} note="图像资产" className="col-span-2 md:col-span-1" />
+      </div>
+      <div className="border border-slate-200 bg-white">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <div>
+            <h3 className="text-sm font-semibold">分类结构</h3>
+            <p className="mt-0.5 text-xs text-slate-400">共 {tree.domain.categoryCount} 个目录节点，点击箭头按层展开</p>
+          </div>
+          <button type="button" disabled className="hidden cursor-not-allowed rounded border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-400 sm:block">
+            新增分类
+          </button>
+        </div>
+        <table className="w-full table-fixed text-left text-sm">
+          <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
+            <tr>
+              <th className="px-4 py-2.5">分类名称</th>
+              <th className="hidden px-4 py-2.5 md:table-cell">节点代码</th>
+              <th className="hidden px-4 py-2.5 md:table-cell">类型</th>
+              <th className="w-20 px-4 py-2.5 text-right">切片数</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.map(({ node, depth }) => (
+              <tr key={node.id} className="hover:bg-slate-50">
+                <td className="px-4 py-3">
+                  <div className="flex min-w-0 items-center" style={{ paddingLeft: Math.min(depth, 3) * 16 }}>
+                    {node.children?.length ? (
+                      <button type="button" onClick={() => toggle(node.id)} className="mr-1.5 shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700" aria-label={expanded.has(node.id) ? "收起分类" : "展开分类"}>
+                        {expanded.has(node.id) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      </button>
+                    ) : (
+                      <span className="mr-1.5 w-[18px] shrink-0" />
+                    )}
+                    <span className="truncate font-medium text-slate-800">{node.name}</span>
+                  </div>
+                </td>
+                <td className="hidden px-4 py-3 font-mono text-xs text-slate-500 md:table-cell">{node.nodeCode}</td>
+                <td className="hidden px-4 py-3 text-xs text-slate-500 md:table-cell">{node.nodeType}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{node.chunkCount ?? 0}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!rows.length && <div className="py-12 text-center text-sm text-slate-500">该领域暂无分类结构</div>}
+      </div>
+    </>
+  );
 }
 
 function KnowledgeManagement({ domains }: { domains: RagDomain[] }) {
-  const [query, setQuery] = useState(''); const [selectedCode, setSelectedCode] = useState<string | null>(null); const [tree, setTree] = useState<RagTree | null>(null); const [treeLoading, setTreeLoading] = useState(false); const [treeError, setTreeError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [selectedCode, setSelectedCode] = useState<string | null>(null);
+  const [tree, setTree] = useState<RagTree | null>(null);
+  const [treeLoading, setTreeLoading] = useState(false);
+  const [treeError, setTreeError] = useState<string | null>(null);
   const filtered = useMemo(() => domains.filter((item) => `${item.name} ${item.code}`.toLowerCase().includes(query.trim().toLowerCase())), [domains, query]);
-  const openDomain = async (code: string) => { setSelectedCode(code); setTree(null); setTreeError(null); setTreeLoading(true); try { setTree(await api.getRagTree(code)); } catch (reason) { setTreeError(reason instanceof Error ? reason.message : '领域结构读取失败'); } finally { setTreeLoading(false); } };
-  if (selectedCode) return <DomainDetail tree={tree} loading={treeLoading} error={treeError} onBack={() => { setSelectedCode(null); setTree(null); }} />;
-  return <>
-    <PageHeading title="知识库管理" description="管理知识领域、分类结构和入库内容。" />
-    <div className="mb-4 flex items-center justify-between gap-3 border border-slate-200 bg-white p-3">
-      <div className="relative w-full max-w-xs"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索领域名称或代码" className="h-9 w-full rounded border border-slate-300 pl-9 pr-3 text-sm outline-none focus:border-blue-500" /></div>
-      <button type="button" disabled className="hidden cursor-not-allowed rounded bg-slate-100 px-3 py-2 text-xs text-slate-400 sm:block">新建领域</button>
-    </div>
-    <div className="space-y-2 md:hidden">
-      {filtered.map((domain) => <button key={domain.code} type="button" onClick={() => void openDomain(domain.code)} className="w-full border border-slate-200 bg-white p-4 text-left active:bg-slate-50">
-        <span className="flex items-start justify-between gap-3"><span className="min-w-0"><span className="block truncate font-medium text-slate-900">{domain.name}</span><span className="mt-1 block line-clamp-2 text-xs leading-5 text-slate-500">{domain.description || '暂无说明'}</span></span><StatusTag>正常</StatusTag></span>
-        <span className="mt-4 grid grid-cols-4 border-y border-slate-100 py-3 text-center"><span><span className="block text-base font-semibold tabular-nums text-slate-900">{domain.categoryCount}</span><span className="text-[11px] text-slate-400">分类</span></span><span><span className="block text-base font-semibold tabular-nums text-slate-900">{domain.knowledgePointCount}</span><span className="text-[11px] text-slate-400">知识点</span></span><span><span className="block text-base font-semibold tabular-nums text-slate-900">{domain.documentCount}</span><span className="text-[11px] text-slate-400">文档</span></span><span><span className="block text-base font-semibold tabular-nums text-slate-900">{domain.chunkCount}</span><span className="text-[11px] text-slate-400">切片</span></span></span>
-        <span className="mt-3 flex items-center justify-between"><span className="font-mono text-xs text-slate-400">{domain.code}</span><span className="flex items-center gap-1 text-xs text-blue-600">查看详情<ChevronRight size={13} /></span></span>
-      </button>)}
-    </div>
-    <div className="hidden overflow-x-auto border border-slate-200 bg-white md:block"><table className="w-full min-w-[820px] text-left text-sm"><thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500"><tr><th className="px-4 py-3">领域名称</th><th className="px-4 py-3">领域代码</th><th className="px-4 py-3 text-right">分类</th><th className="px-4 py-3 text-right">知识点</th><th className="px-4 py-3 text-right">文档</th><th className="px-4 py-3 text-right">切片</th><th className="px-4 py-3">状态</th><th className="px-4 py-3 text-right">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{filtered.map((domain) => <tr key={domain.code} onDoubleClick={() => void openDomain(domain.code)} className="cursor-pointer hover:bg-blue-50/40"><td className="px-4 py-3"><button type="button" onClick={() => void openDomain(domain.code)} className="font-medium text-slate-900 hover:text-blue-600">{domain.name}</button><p className="mt-0.5 max-w-[280px] truncate text-xs text-slate-400">{domain.description || '暂无说明'}</p></td><td className="px-4 py-3 font-mono text-xs text-slate-500">{domain.code}</td><td className="px-4 py-3 text-right tabular-nums">{domain.categoryCount}</td><td className="px-4 py-3 text-right tabular-nums">{domain.knowledgePointCount}</td><td className="px-4 py-3 text-right tabular-nums">{domain.documentCount}</td><td className="px-4 py-3 text-right tabular-nums">{domain.chunkCount}</td><td className="px-4 py-3"><StatusTag>正常</StatusTag></td><td className="px-4 py-3 text-right"><button type="button" onClick={() => void openDomain(domain.code)} className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs hover:border-blue-500 hover:text-blue-600">查看</button></td></tr>)}</tbody></table></div>
-    {!filtered.length && <div className="border border-slate-200 bg-white py-14 text-center text-sm text-slate-500">没有符合条件的知识领域</div>}
-  </>;
+  const openDomain = async (code: string) => {
+    setSelectedCode(code);
+    setTree(null);
+    setTreeError(null);
+    setTreeLoading(true);
+    try {
+      setTree(await api.getRagTree(code));
+    } catch (reason) {
+      setTreeError(reason instanceof Error ? reason.message : "领域结构读取失败");
+    } finally {
+      setTreeLoading(false);
+    }
+  };
+  if (selectedCode)
+    return (
+      <DomainDetail
+        tree={tree}
+        loading={treeLoading}
+        error={treeError}
+        onBack={() => {
+          setSelectedCode(null);
+          setTree(null);
+        }}
+      />
+    );
+  return (
+    <>
+      <PageHeading title="知识库管理" description="管理知识领域、分类结构和入库内容。" />
+      <div className="mb-4 flex items-center justify-between gap-3 border border-slate-200 bg-white p-3">
+        <div className="relative w-full max-w-xs">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索领域名称或代码" className="h-9 w-full rounded border border-slate-300 pl-9 pr-3 text-sm outline-none focus:border-blue-500" />
+        </div>
+        <button type="button" disabled className="hidden cursor-not-allowed rounded bg-slate-100 px-3 py-2 text-xs text-slate-400 sm:block">
+          新建领域
+        </button>
+      </div>
+      <div className="space-y-2 md:hidden">
+        {filtered.map((domain) => (
+          <button key={domain.code} type="button" onClick={() => void openDomain(domain.code)} className="w-full border border-slate-200 bg-white p-4 text-left active:bg-slate-50">
+            <span className="flex items-start justify-between gap-3">
+              <span className="min-w-0">
+                <span className="block truncate font-medium text-slate-900">{domain.name}</span>
+                <span className="mt-1 block line-clamp-2 text-xs leading-5 text-slate-500">{domain.description || "暂无说明"}</span>
+              </span>
+              <StatusTag>正常</StatusTag>
+            </span>
+            <span className="mt-4 grid grid-cols-4 border-y border-slate-100 py-3 text-center">
+              <span>
+                <span className="block text-base font-semibold tabular-nums text-slate-900">{domain.categoryCount}</span>
+                <span className="text-[11px] text-slate-400">分类</span>
+              </span>
+              <span>
+                <span className="block text-base font-semibold tabular-nums text-slate-900">{domain.knowledgePointCount}</span>
+                <span className="text-[11px] text-slate-400">知识点</span>
+              </span>
+              <span>
+                <span className="block text-base font-semibold tabular-nums text-slate-900">{domain.documentCount}</span>
+                <span className="text-[11px] text-slate-400">文档</span>
+              </span>
+              <span>
+                <span className="block text-base font-semibold tabular-nums text-slate-900">{domain.chunkCount}</span>
+                <span className="text-[11px] text-slate-400">切片</span>
+              </span>
+            </span>
+            <span className="mt-3 flex items-center justify-between">
+              <span className="font-mono text-xs text-slate-400">{domain.code}</span>
+              <span className="flex items-center gap-1 text-xs text-blue-600">
+                查看详情
+                <ChevronRight size={13} />
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
+      <div className="hidden overflow-x-auto border border-slate-200 bg-white md:block">
+        <table className="w-full min-w-[820px] text-left text-sm">
+          <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
+            <tr>
+              <th className="px-4 py-3">领域名称</th>
+              <th className="px-4 py-3">领域代码</th>
+              <th className="px-4 py-3 text-right">分类</th>
+              <th className="px-4 py-3 text-right">知识点</th>
+              <th className="px-4 py-3 text-right">文档</th>
+              <th className="px-4 py-3 text-right">切片</th>
+              <th className="px-4 py-3">状态</th>
+              <th className="px-4 py-3 text-right">操作</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {filtered.map((domain) => (
+              <tr key={domain.code} onDoubleClick={() => void openDomain(domain.code)} className="cursor-pointer hover:bg-blue-50/40">
+                <td className="px-4 py-3">
+                  <button type="button" onClick={() => void openDomain(domain.code)} className="font-medium text-slate-900 hover:text-blue-600">
+                    {domain.name}
+                  </button>
+                  <p className="mt-0.5 max-w-[280px] truncate text-xs text-slate-400">{domain.description || "暂无说明"}</p>
+                </td>
+                <td className="px-4 py-3 font-mono text-xs text-slate-500">{domain.code}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{domain.categoryCount}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{domain.knowledgePointCount}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{domain.documentCount}</td>
+                <td className="px-4 py-3 text-right tabular-nums">{domain.chunkCount}</td>
+                <td className="px-4 py-3">
+                  <StatusTag>正常</StatusTag>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <button type="button" onClick={() => void openDomain(domain.code)} className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs hover:border-blue-500 hover:text-blue-600">
+                    查看
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {!filtered.length && <div className="border border-slate-200 bg-white py-14 text-center text-sm text-slate-500">没有符合条件的知识领域</div>}
+    </>
+  );
 }
 
 export default function Admin() {
-  const location = useLocation(); const { session, logout } = useAuth(); const [learners, setLearners] = useState<LearnerProfileData[]>([]); const [domains, setDomains] = useState<RagDomain[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState<string | null>(null); const [editing, setEditing] = useState<LearnerProfileData | null>(null); const [knowledgeServices, setKnowledgeServices] = useState({ core: false, predeal: false });
-  const section = (location.pathname.split('/')[2] as AdminSection) || 'overview'; const active = nav.some((item) => item.id === section) ? section : 'overview'; const title = nav.find((item) => item.id === active)?.label || '工作台';
-  const load = useCallback(async () => { setLoading(true); setError(null); try { const [nextLearners, nextDomains] = await Promise.all([api.listLearners(), api.listRagDomains()]); setLearners(nextLearners); setDomains(nextDomains); } catch (reason) { setError(reason instanceof Error ? reason.message : '管理数据读取失败'); } finally { setLoading(false); } const [core, predeal] = await Promise.allSettled([adminKnowledgeApi.health(), adminKnowledgeApi.predealDomains()]); setKnowledgeServices({ core: core.status === 'fulfilled', predeal: predeal.status === 'fulfilled' }); }, []);
-  useEffect(() => { void load(); }, [load]);
-  const averageMastery = useMemo(() => learners.length ? Math.round(learners.reduce((sum, item) => sum + (item.overallMastery || 0), 0) / learners.length) : 0, [learners]);
-  return <div className="min-h-screen bg-slate-100 text-slate-800"><aside className="fixed inset-y-0 left-0 z-40 hidden w-56 flex-col bg-slate-900 text-slate-300 lg:flex"><Link to="/admin" className="flex h-16 items-center gap-2.5 border-b border-slate-800 px-5"><img src="/logo.svg" alt="智训云枢" className="h-7 w-7 rounded bg-white p-0.5" /><span><span className="block text-sm font-semibold text-white">智训云枢</span><span className="text-[10px] text-slate-500">后台管理系统</span></span></Link><div className="px-3 pt-5 text-[10px] uppercase tracking-wider text-slate-600">业务管理</div><nav className="mt-2 flex-1 space-y-1 overflow-y-auto px-2">{nav.map(({ id, label, icon: Icon }) => <NavLink key={id} to={`/admin/${id}`} className={({ isActive }) => cn('flex h-10 items-center gap-3 rounded px-3 text-sm', isActive ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800 hover:text-white')}><Icon size={16} />{label}</NavLink>)}</nav><div className="border-t border-slate-800 p-3"><div className="flex items-center gap-2 px-2 py-2"><span className="flex h-7 w-7 items-center justify-center rounded bg-slate-800"><ShieldCheck size={14} /></span><span><span className="block text-xs text-slate-300">系统管理员</span><span className="text-[10px] text-slate-500">{session?.account?.replace(/^admin:/, '') || 'admin'}</span></span></div><button type="button" onClick={logout} className="mt-1 flex w-full items-center gap-2 rounded px-3 py-2 text-xs text-slate-500 hover:bg-slate-800 hover:text-white"><LogOut size={14} />退出登录</button></div></aside><main className="lg:pl-56"><header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 md:px-7"><div><p className="text-[11px] text-slate-400">管理后台 / {title}</p><h1 className="mt-0.5 text-base font-semibold text-slate-900">{title}</h1></div><div className="flex items-center gap-2"><StatusTag ok={!error}>{error ? '接口异常' : '服务正常'}</StatusTag><button type="button" onClick={() => void load()} disabled={loading} className="flex h-8 items-center gap-1.5 rounded border border-slate-300 bg-white px-2.5 text-xs text-slate-600 hover:border-blue-500 hover:text-blue-600 disabled:opacity-50"><RefreshCw size={13} className={loading ? 'animate-spin' : ''} /><span className="hidden sm:inline">刷新</span></button></div></header><nav className="sticky top-16 z-20 flex overflow-x-auto border-b border-slate-200 bg-white px-2 lg:hidden">{nav.map(({ id, label, icon: Icon }) => <NavLink key={id} to={`/admin/${id}`} className={({ isActive }) => cn('flex h-11 shrink-0 items-center gap-1.5 border-b-2 px-3 text-xs', isActive ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500')}><Icon size={14} />{label}</NavLink>)}</nav><div className="mx-auto max-w-[1360px] p-4 md:p-7">{error && <div className="mb-4 border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">{error}</div>}{active === 'overview' && <><PageHeading title="工作台" description="平台业务数据与服务接入概况。" /><div className="grid grid-cols-2 border border-slate-200 bg-white md:grid-cols-4"><SummaryCell label="学习者" value={loading ? '—' : learners.length} note="可管理账号" /><SummaryCell label="平均掌握度" value={loading ? '—' : `${averageMastery}%`} note="学习者平均值" /><SummaryCell label="知识领域" value={loading ? '—' : domains.length} note="已启用领域" /><SummaryCell label="知识切片" value={loading ? '—' : domains.reduce((sum, item) => sum + item.chunkCount, 0)} note="当前索引总量" /></div><div className="mt-5 border border-slate-200 bg-white"><div className="border-b border-slate-200 px-4 py-3"><h3 className="text-sm font-semibold">模块接入状态</h3></div><table className="w-full text-sm"><tbody className="divide-y divide-slate-100">{[['学习者管理', true, '已接入'], ['知识库读取', true, 'Spring 数据接口'], ['知识质量管理', knowledgeServices.core, 'KnowledgeCore'], ['图谱审核', knowledgeServices.core, 'KnowledgeCore'], ['文档预处理', knowledgeServices.predeal, 'predeal v2']].map(([label, ok, detail]) => <tr key={label as string}><td className="px-4 py-3 font-medium">{label as string}</td><td className="px-4 py-3"><StatusTag ok={ok as boolean}>{ok ? '正常' : '服务未连接'}</StatusTag></td><td className="px-4 py-3 text-right text-xs text-slate-500">{detail as string}</td></tr>)}</tbody></table></div></>}{active === 'learners' && <><PageHeading title="学习者管理" description="查询和维护平台学习者基础信息。" action={<span className="text-xs text-slate-500">共 {learners.length} 条</span>} /><LearnerTable learners={learners} onEdit={setEditing} /></>}{active === 'knowledge' && <KnowledgeManagement domains={domains} />}{active === 'quality' && <KnowledgeQuality />}{active === 'graph' && <KnowledgeGraphAdmin />}{active === 'ingestion' && <DocumentIngestion />}{editing && <EditLearner learner={editing} onClose={() => setEditing(null)} onSaved={(updated) => setLearners((items) => items.map((item) => item.id === updated.id ? updated : item))} />}</div></main></div>;
+  const location = useLocation();
+  const { session, logout } = useAuth();
+  const [learners, setLearners] = useState<LearnerProfileData[]>([]);
+  const [domains, setDomains] = useState<RagDomain[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<LearnerProfileData | null>(null);
+  const [knowledgeServices, setKnowledgeServices] = useState({
+    core: false,
+    predeal: false,
+  });
+  const section = (location.pathname.split("/")[2] as AdminSection) || "overview";
+  const active = nav.some((item) => item.id === section) ? section : "overview";
+  const title = nav.find((item) => item.id === active)?.label || "工作台";
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [nextLearners, nextDomains] = await Promise.all([api.listLearners(), api.listRagDomains()]);
+      setLearners(nextLearners);
+      setDomains(nextDomains);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "管理数据读取失败");
+    } finally {
+      setLoading(false);
+    }
+    const [core, predeal] = await Promise.allSettled([adminKnowledgeApi.health(), adminKnowledgeApi.predealDomains()]);
+    setKnowledgeServices({
+      core: core.status === "fulfilled",
+      predeal: predeal.status === "fulfilled",
+    });
+  }, []);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const averageMastery = useMemo(() => (learners.length ? Math.round(learners.reduce((sum, item) => sum + (item.overallMastery || 0), 0) / learners.length) : 0), [learners]);
+  return (
+    <div className="min-h-screen bg-slate-100 text-slate-800">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-56 flex-col bg-slate-900 text-slate-300 lg:flex">
+        <Link to="/admin" className="flex h-16 items-center gap-2.5 border-b border-slate-800 px-5">
+          <img src="/logo.svg" alt="智训云枢" className="h-7 w-7 rounded bg-white p-0.5" />
+          <span>
+            <span className="block text-sm font-semibold text-white">智训云枢</span>
+            <span className="text-[10px] text-slate-500">后台管理系统</span>
+          </span>
+        </Link>
+        <div className="px-3 pt-5 text-[10px] uppercase tracking-wider text-slate-600">业务管理</div>
+        <nav className="mt-2 flex-1 space-y-1 overflow-y-auto px-2">
+          {nav.map(({ id, label, icon: Icon }) => (
+            <NavLink key={id} to={`/admin/${id}`} className={({ isActive }) => cn("flex h-10 items-center gap-3 rounded px-3 text-sm", isActive ? "bg-blue-600 text-white" : "text-slate-400 hover:bg-slate-800 hover:text-white")}>
+              <Icon size={16} />
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+        <div className="border-t border-slate-800 p-3">
+          <div className="flex items-center gap-2 px-2 py-2">
+            <span className="flex h-7 w-7 items-center justify-center rounded bg-slate-800">
+              <ShieldCheck size={14} />
+            </span>
+            <span>
+              <span className="block text-xs text-slate-300">系统管理员</span>
+              <span className="text-[10px] text-slate-500">{session?.account?.replace(/^admin:/, "") || "admin"}</span>
+            </span>
+          </div>
+          <button type="button" onClick={logout} className="mt-1 flex w-full items-center gap-2 rounded px-3 py-2 text-xs text-slate-500 hover:bg-slate-800 hover:text-white">
+            <LogOut size={14} />
+            退出登录
+          </button>
+        </div>
+      </aside>
+      <main className="lg:pl-56">
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 md:px-7">
+          <div>
+            <p className="text-[11px] text-slate-400">管理后台 / {title}</p>
+            <h1 className="mt-0.5 text-base font-semibold text-slate-900">{title}</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <StatusTag ok={!error}>{error ? "接口异常" : "服务正常"}</StatusTag>
+            <button type="button" onClick={() => void load()} disabled={loading} className="flex h-8 items-center gap-1.5 rounded border border-slate-300 bg-white px-2.5 text-xs text-slate-600 hover:border-blue-500 hover:text-blue-600 disabled:opacity-50">
+              <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+              <span className="hidden sm:inline">刷新</span>
+            </button>
+          </div>
+        </header>
+        <nav className="sticky top-16 z-20 flex overflow-x-auto border-b border-slate-200 bg-white px-2 lg:hidden">
+          {nav.map(({ id, label, icon: Icon }) => (
+            <NavLink key={id} to={`/admin/${id}`} className={({ isActive }) => cn("flex h-11 shrink-0 items-center gap-1.5 border-b-2 px-3 text-xs", isActive ? "border-blue-600 text-blue-600" : "border-transparent text-slate-500")}>
+              <Icon size={14} />
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+        <div className="mx-auto max-w-[1360px] p-4 md:p-7">
+          {error && <div className="mb-4 border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">{error}</div>}
+          {active === "overview" && (
+            <>
+              <PageHeading title="工作台" description="平台业务数据与服务接入概况。" />
+              <div className="grid grid-cols-2 border border-slate-200 bg-white md:grid-cols-4">
+                <SummaryCell label="学习者" value={loading ? "—" : learners.length} note="可管理账号" />
+                <SummaryCell label="平均掌握度" value={loading ? "—" : `${averageMastery}%`} note="学习者平均值" />
+                <SummaryCell label="知识领域" value={loading ? "—" : domains.length} note="已启用领域" />
+                <SummaryCell label="知识切片" value={loading ? "—" : domains.reduce((sum, item) => sum + item.chunkCount, 0)} note="当前索引总量" />
+              </div>
+              <div className="mt-5 border border-slate-200 bg-white">
+                <div className="border-b border-slate-200 px-4 py-3">
+                  <h3 className="text-sm font-semibold">模块接入状态</h3>
+                </div>
+                <table className="w-full text-sm">
+                  <tbody className="divide-y divide-slate-100">
+                    {[
+                      ["学习者管理", true, "已接入"],
+                      ["知识库读取", true, "Spring 数据接口"],
+                      ["知识质量管理", knowledgeServices.core, "KnowledgeCore"],
+                      ["图谱审核", knowledgeServices.core, "KnowledgeCore"],
+                      ["文档预处理", knowledgeServices.predeal, "predeal v2"],
+                    ].map(([label, ok, detail]) => (
+                      <tr key={label as string}>
+                        <td className="px-4 py-3 font-medium">{label as string}</td>
+                        <td className="px-4 py-3">
+                          <StatusTag ok={ok as boolean}>{ok ? "正常" : "服务未连接"}</StatusTag>
+                        </td>
+                        <td className="px-4 py-3 text-right text-xs text-slate-500">{detail as string}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+          {active === "organization" && <OrganizationSettings />}
+          {active === "learners" && <InstitutionUsers />}
+          {active === "knowledge" && <KnowledgeManagement domains={domains} />}
+          {active === "quality" && <KnowledgeQuality />}
+          {active === "graph" && <KnowledgeGraphAdmin />}
+          {active === "questions" && <QuestionBankAdmin />}
+          {active === "ingestion" && <DocumentIngestion />}
+          {editing && <EditLearner learner={editing} onClose={() => setEditing(null)} onSaved={(updated) => setLearners((items) => items.map((item) => (item.id === updated.id ? updated : item)))} />}
+        </div>
+      </main>
+    </div>
+  );
 }

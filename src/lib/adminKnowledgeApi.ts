@@ -2,6 +2,7 @@ import { getToken } from '@/lib/api';
 
 const KC = '/api/v1/admin/knowledge-core';
 const PREDEAL = '/api/v1/admin/predeal';
+const QUESTIONS = '/api/v1/admin/questions';
 
 async function direct<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
@@ -91,6 +92,15 @@ export interface PredealProgressEvent {
   message?: string; label?: string; result?: PredealTask['result'];
 }
 
+export interface QuestionRecord {
+  id: number; question_type: string; difficulty: number; cognitive_level: string; stem: string;
+  options: Array<{ key: string; text: string }> | null; reference_answer: unknown; explanation: string | null;
+  status: 'proposed' | 'active' | 'rejected' | 'deprecated'; source_type: string; updated_at: string;
+  knowledge_points?: Array<{ category_id: number; role: string; weight: number }>;
+}
+
+export interface QuestionPage { total: number; page: number; size: number; items: QuestionRecord[] }
+
 async function streamPredealProgress(taskId: string, onEvent: (event: PredealProgressEvent) => void) {
   const headers = new Headers({ Accept: 'text/event-stream' });
   const token = getToken();
@@ -149,5 +159,11 @@ export const adminKnowledgeApi = {
   predealDomains: () => direct<{ domains: PredealDomain[] }>(`${PREDEAL}/domains`),
   uploadDocument: (form: FormData) => direct<{ task_id: string; status: string }>(`${PREDEAL}/v1/uploads`, { method: 'POST', body: form }),
   predealTask: (taskId: string) => direct<PredealTask>(`${PREDEAL}/task/${encodeURIComponent(taskId)}`),
+  questionOverview: () => direct<{ total: number; by_status: Record<string, number>; by_type: Record<string, number>; by_difficulty: Record<string, number> }>(`${QUESTIONS}/stats/overview`),
+  questions: (params: { status?: string; keyword?: string; page?: number; size?: number } = {}) => direct<QuestionPage>(query(QUESTIONS, { status: params.status, keyword: params.keyword, page: params.page ?? 0, size: params.size ?? 50 })),
+  createQuestion: (body: Record<string, unknown>) => direct<QuestionRecord>(QUESTIONS, { method: 'POST', body: JSON.stringify(body) }),
+  updateQuestion: (id: number, body: Record<string, unknown>) => direct<QuestionRecord>(`${QUESTIONS}/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  reviewQuestion: (id: number, status: 'active' | 'rejected') => direct<QuestionRecord>(`${QUESTIONS}/${id}/review?status=${status}`, { method: 'POST' }),
+  deprecateQuestion: (id: number) => direct<QuestionRecord>(`${QUESTIONS}/${id}/deprecate`, { method: 'POST' }),
   streamPredealProgress,
 };
