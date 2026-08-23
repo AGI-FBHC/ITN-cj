@@ -1013,7 +1013,7 @@ export const api = {
     password: string;
     nickname?: string;
     verificationCode: string;
-    enterpriseName: string;
+    invitationCode: string;
   }) =>
     request<EnterpriseRegisterResult>('/api/v1/auth/register-enterprise', {
       method: 'POST',

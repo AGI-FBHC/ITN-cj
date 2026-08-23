@@ -52,7 +52,7 @@ export default function Login() {
   const [regPassword, setRegPassword] = useState('');
   const [regNickname, setRegNickname] = useState('');
   const [regCode, setRegCode] = useState('');
-  const [regEnterprise, setRegEnterprise] = useState('');
+  const [regInvitationCode, setRegInvitationCode] = useState('');
   const [regCountdown, setRegCountdown] = useState(0);
 
   const [forgotOpen, setForgotOpen] = useState(false);
@@ -147,7 +147,7 @@ export default function Login() {
   };
 
   const submitRegister = async () => {
-    if (!regEmail.trim() || !regPassword || !regCode.trim() || !regEnterprise.trim()) {
+    if (!regEmail.trim() || !regPassword || !regCode.trim() || !regInvitationCode.trim()) {
       toast('请填写完整注册信息');
       return;
     }
@@ -158,10 +158,10 @@ export default function Login() {
         password: regPassword,
         nickname: regNickname.trim() || undefined,
         verificationCode: regCode.trim(),
-        enterpriseName: regEnterprise.trim(),
+        invitationCode: regInvitationCode.trim(),
       });
       toast.success('注册成功', {
-        description: `企业：${result.organizationName} · 工号：${result.employeeNo}`,
+        description: `机构：${result.organizationName} · 工号：${result.employeeNo}`,
       });
       const ok = await loginRemote('sso', `sso:${result.employeeNo}`, regEmail.trim(), undefined, regPassword);
       if (!ok) {
@@ -388,7 +388,7 @@ export default function Login() {
                   <input type="email" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} placeholder="邮箱" className={inputClass} />
                   <input type="password" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} placeholder="密码（至少 8 位，含字母和数字）" className={inputClass} />
                   <input value={regNickname} onChange={(e) => setRegNickname(e.target.value)} placeholder="昵称（选填）" className={inputClass} />
-                  <input value={regEnterprise} onChange={(e) => setRegEnterprise(e.target.value)} placeholder="企业名称" className={inputClass} />
+                  <input value={regInvitationCode} onChange={(e) => setRegInvitationCode(e.target.value.toUpperCase())} placeholder="机构邀请码" className={inputClass} />
                   <div className="flex gap-2">
                     <input value={regCode} onChange={(e) => setRegCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="验证码" inputMode="numeric" className="min-w-0 flex-1 rounded-[10px] border border-hairline bg-paper px-3.5 py-2.5 text-[14px] text-ink outline-none transition-colors focus:border-brand/50" />
                     <button type="button" disabled={busy || regCountdown > 0} onClick={sendRegCode} className={cn('shrink-0 rounded-[10px] border px-3 py-2.5 text-[12.5px] font-medium transition-all', regCountdown > 0 ? 'border-hairline bg-paper-deep text-ink-muted/60' : 'border-brand/40 bg-brand-tint text-brand hover:border-brand/60')}>
