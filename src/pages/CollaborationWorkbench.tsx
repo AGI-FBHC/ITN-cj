@@ -21,6 +21,89 @@ const agents = [
 const activeStatuses = new Set(['queued', 'retrieving', 'debating', 'planning', 'analyzing', 'generating', 'verifying', 'reviewing', 'revising', 'judging', 'outline_review']);
 const typeText: Record<string, string> = { lecture: '讲义', practice: '实操指南', quiz: '题库', ppt: '交互课件' };
 
+/**
+ * 泳道时序图（方案 B）：五列 Agent 泳道，时间自上而下推进。
+ * 相邻事件切换 Agent 时画横向连线：向右 = 正序流转（品牌色实线），向左 = 回退（橙色虚线，
+ * 线长即跨度，标注 ↩N 级）；事件落点可点击联动右侧执行详情。
+ */
+function AgentLaneTimeline({ events, selectedSeq, onSelect }: {
+  events: AdminGenerationEvent[];
+  selectedSeq: number | null;
+  onSelect: (event: AdminGenerationEvent) => void;
+}) {
+  const laneLeft = (col: number) => 'calc(' + Math.round((col / agents.length) * 100) + '% + 8px)';
+  return (
+    <div className="relative mt-2">
+      {/* 泳道背景列（交替深浅） */}
+      <div className="absolute inset-0 flex">
+        {agents.map((agent, index) => (
+          <div key={agent.id} className={cn('mx-1 flex-1 rounded-xl', index % 2 ? 'bg-white/20' : 'bg-white/40')} />
+        ))}
+      </div>
+      {/* 列头：五个 Agent 泳道名 */}
+      <div className="relative flex pb-1">
+        {agents.map((agent) => (
+          <div key={agent.id} className="mx-1 flex-1 truncate rounded-lg bg-brand-tint/50 px-1 py-1.5 text-center text-[10px] font-bold text-brand">
+            {agent.name}
+          </div>
+        ))}
+      </div>
+      {/* 事件序列：自上而下 */}
+      <div className="relative space-y-0">
+        {events.map((event, index) => {
+          const col = Math.max(0, agents.findIndex((agent) => agent.id === event.agent));
+          const next = events[index + 1];
+          const nextCol = next ? Math.max(0, agents.findIndex((agent) => agent.id === next.agent)) : null;
+          const backward = next !== undefined && nextCol !== null && nextCol < col;
+          const selected = event.seq === selectedSeq;
+          return (
+            <div key={event.seq}>
+              {/* 事件落点行 */}
+              <div className="relative h-8 py-0.5">
+                <button
+                  type="button"
+                  onClick={() => onSelect(event)}
+                  className={cn('absolute top-0.5 flex h-7 max-w-[75%] items-center gap-1.5 rounded-lg px-1.5 pr-2 text-left transition-colors',
+                    selected ? 'bg-brand-tint/80 ring-1 ring-brand/25' : 'hover:bg-white/75')}
+                  style={{ left: laneLeft(col) }}
+                  title={event.detail}
+                >
+                  <span className={cn('h-2.5 w-2.5 shrink-0 rounded-full', selected ? 'bg-brand ring-2 ring-brand/30' : backward ? 'bg-ochre' : 'bg-brand/50')} />
+                  <span className="truncate text-[10px] font-semibold text-ink">{event.title}</span>
+                  <span className="shrink-0 font-mono text-[8.5px] text-ink-muted">
+                    {event.time ? new Date(event.time).toLocaleTimeString('zh-CN', { hour12: false }) : '#' + event.seq}
+                  </span>
+                </button>
+              </div>
+              {/* 过渡连线：向右=正序、向左=回退（跨度=级数） */}
+              {next && nextCol !== null && (
+                <div className="relative h-3.5">
+                  <div
+                    className={cn('absolute top-1/2 h-0', backward ? 'border-t-2 border-dashed border-ochre/70' : 'border-t border-brand/30')}
+                    style={{
+                      left: laneLeft(Math.min(col, nextCol)),
+                      width: 'calc(' + (Math.abs(nextCol - col) / agents.length) * 100 + '% - 16px)',
+                    }}
+                  />
+                  {backward && (
+                    <span className="absolute -top-1 rounded-full bg-ochre/15 px-1 py-px text-[8.5px] font-bold text-[#9A5B3C]" style={{ left: laneLeft(nextCol) }}>
+                      {'↩' + (col - nextCol) + '级'}
+                    </span>
+                  )}
+                  {!backward && nextCol > col && (
+                    <span className="absolute -top-1.5 rounded bg-brand/10 px-0.5 text-[8px] text-brand" style={{ left: laneLeft(nextCol) }}>›</span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {!events.length && <p className="relative py-8 text-center text-xs text-ink-muted">等待第一条协同事件…</p>}
+      </div>
+    </div>
+  );
+}
+
 function contextOf(task: WorkbenchTask): Record<string, unknown> {
   if (task.taskKind === 'ppt') return task.request?.generationContext ?? {};
   const request = task.request as (typeof task.request & { generation_context?: Record<string, unknown> }) | undefined;
@@ -103,16 +186,6 @@ export default function CollaborationWorkbench() {
     for (const event of events) { if (event.agent !== prior && seen.has(event.agent)) count += 1; seen.add(event.agent); prior = event.agent; }
     return count;
   }, [events]);
-  const path = useMemo(() => events.filter((event, index) => index === 0 || event.agent !== events[index - 1].agent), [events]);
-  const loopSlots = useMemo(() => {
-    const slots = Array.from({ length: agents.length - 1 }, () => 0);
-    for (let i = 1; i < events.length; i++) {
-      const from = agents.findIndex((agent) => agent.id === events[i - 1].agent);
-      const to = agents.findIndex((agent) => agent.id === events[i].agent);
-      if (from >= 0 && to >= 0 && to < from) for (let slot = to; slot < from; slot++) slots[slot] += 1;
-    }
-    return slots;
-  }, [events]);
   const grouped = useMemo(() => ({ active: tasks.filter((item) => activeStatuses.has(item.status)), finished: tasks.filter((item) => !activeStatuses.has(item.status)) }), [tasks]);
 
   return <div className="lf-anim-in-up flex min-h-[680px] flex-col gap-4 lg:h-full lg:min-h-0 lg:flex-row">
@@ -154,26 +227,26 @@ export default function CollaborationWorkbench() {
                     <span className={cn("text-center text-[11px] font-bold leading-4", selected || running ? "text-brand" : "text-ink")}>{agent.name}</span>
                     <span className="text-center text-[9px] leading-3.5 text-ink-muted">{agent.duty}</span>
                   </button>
-                  {index < agents.length - 1 && (loopSlots[index] > 0 ? (
-                    /* 该槽位发生过回退：弧形虚线回流线 + ↩N */
-                    <div className="relative mx-1 h-9 min-w-6 flex-1">
-                      <div className="absolute inset-x-1 top-1 h-6 rounded-b-[14px] border-b-2 border-dashed border-ochre/70" />
-                      <span className="absolute left-1/2 top-0 -translate-x-1/2 rounded-full bg-ochre/15 px-1.5 py-0.5 text-[9px] font-bold text-[#9A5B3C]">↩{loopSlots[index]}</span>
-                    </div>
-                  ) : (
-                    /* 正常链路：直线 + 箭头 */
+                  {index < agents.length - 1 && (
+                    /* 链路连线：直线 + 箭头（回退过程以下方泳道时序图呈现） */
                     <div className="relative mx-1 h-8 min-w-6 flex-1">
                       <div className="absolute inset-x-0 top-1/2 h-px bg-ink-muted/25" />
                       <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[10px] text-ink-muted/60">→</span>
                     </div>
-                  ))}
+                  )}
                 </Fragment>
               );
             })}
           </div>
         </section>
 
-        <section className="mt-4 overflow-x-auto rounded-xl border-y border-white/70 py-3"><div className="flex min-w-max items-center gap-1.5 px-2">{path.map((event, index) => <div key={`${event.seq}-${index}`} className="flex items-center gap-1.5">{index > 0 && <span className={cn('text-xs', path.slice(0, index).some((item) => item.agent === event.agent) ? 'text-ochre' : 'text-ink-muted')}>{path.slice(0, index).some((item) => item.agent === event.agent) ? '↩' : '→'}</span>}<button onClick={() => { setSelectedAgent(event.agent); setSelectedEventSeq(event.seq); }} className={cn('rounded-lg px-2.5 py-1.5 text-[10px] font-semibold', event.seq === selectedEvent?.seq ? 'bg-brand text-paper' : 'bg-white/60 text-ink-2')}>{agents.find((item) => item.id === event.agent)?.name ?? event.agent}</button></div>)}{!path.length && <span className="px-3 text-[10px] text-ink-muted">等待第一条协同事件…</span>}</div></section>
+        <section className="mt-4 rounded-2xl border border-white/70 bg-white/40 p-3">
+          <div className="flex items-center justify-between px-1">
+            <h4 className="text-sm font-bold text-ink">协同泳道时序</h4>
+            <span className="text-[10px] text-ink-muted">向左连线 = 回退（跨度即级数），点击落点查看执行详情</span>
+          </div>
+          <AgentLaneTimeline events={events} selectedSeq={selectedEvent?.seq ?? null} onSelect={(event) => { setSelectedAgent(event.agent); setSelectedEventSeq(event.seq); }} />
+        </section>
 
         <EvidenceDebateCourt events={events}/>
         <section className="mt-4 grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">

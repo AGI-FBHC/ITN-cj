@@ -1,7 +1,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { BookCheck, ChevronDown, ChevronRight, ClipboardList, Database, FileUp, LayoutDashboard, Loader2, LogOut, Network, RefreshCw, Settings, ShieldCheck, Sparkles, Users, X } from "lucide-react";
+import { BookCheck, ChevronDown, ChevronRight, ClipboardList, Database, FileUp, LayoutDashboard, Loader2, LogOut, Network, RefreshCw, Settings, ShieldCheck, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, type LearnerProfileData, type RagDomain, type RagTree, type RagTreeNode } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -25,7 +25,6 @@ const nav: { id: AdminSection; label: string; icon: typeof LayoutDashboard }[] =
   { id: "quality", label: "知识质量", icon: BookCheck },
   { id: "graph", label: "知识图谱", icon: Network },
   { id: "resources", label: "资源中心", icon: ClipboardList },
-  { id: "workbench", label: "AI 教研工作台", icon: Sparkles },
   { id: "ingestion", label: "文档入库", icon: FileUp },
 ];
 
@@ -481,8 +480,8 @@ export default function Admin() {
   const { session, logout } = useAuth();
   const [editing, setEditing] = useState<LearnerProfileData | null>(null);
   const section = (location.pathname.split("/")[2] as AdminSection) || "overview";
-  const active = nav.some((item) => item.id === section) ? section : "overview";
-  const title = nav.find((item) => item.id === active)?.label || "工作台";
+  const active = section === "workbench" || nav.some((item) => item.id === section) ? section : "overview";
+  const title = active === "workbench" ? "AI 教研工作台" : nav.find((item) => item.id === active)?.label || "工作台";
   /* SWR 缓存：首次进入展示缓存 + 后台刷新；手动刷新按钮强制绕过 TTL */
   const learnersQ = useCachedData<LearnerProfileData[]>('admin:learners', () => api.listLearners(), { ttlMs: 15_000 });
   const domainsQ = useCachedData<RagDomain[]>('admin:domains', () => api.listRagDomains(), { ttlMs: 30_000 });
