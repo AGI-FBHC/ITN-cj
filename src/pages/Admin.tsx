@@ -11,9 +11,9 @@ import KnowledgeGraphAdmin from "@/pages/admin/KnowledgeGraphAdmin";
 import DocumentIngestion from "@/pages/admin/DocumentIngestion";
 import OrganizationSettings from "@/pages/admin/OrganizationSettings";
 import InstitutionUsers from "@/pages/admin/InstitutionUsers";
-import QuestionBankAdmin from "@/pages/admin/QuestionBankAdmin";
+import ResourceCenterAdmin from "@/pages/admin/ResourceCenterAdmin";
 
-type AdminSection = "overview" | "organization" | "learners" | "knowledge" | "quality" | "graph" | "questions" | "ingestion";
+type AdminSection = "overview" | "organization" | "learners" | "knowledge" | "quality" | "graph" | "resources" | "ingestion";
 const nav: { id: AdminSection; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "overview", label: "工作台", icon: LayoutDashboard },
   { id: "organization", label: "机构配置", icon: Settings },
@@ -21,7 +21,7 @@ const nav: { id: AdminSection; label: string; icon: typeof LayoutDashboard }[] =
   { id: "knowledge", label: "知识库管理", icon: Database },
   { id: "quality", label: "知识质量", icon: BookCheck },
   { id: "graph", label: "知识图谱", icon: Network },
-  { id: "questions", label: "题库管理", icon: ClipboardList },
+  { id: "resources", label: "资源中心", icon: ClipboardList },
   { id: "ingestion", label: "文档入库", icon: FileUp },
 ];
 
@@ -507,7 +507,7 @@ export default function Admin() {
           {active === "knowledge" && <KnowledgeManagement domains={domains} />}
           {active === "quality" && <KnowledgeQuality />}
           {active === "graph" && <KnowledgeGraphAdmin />}
-          {active === "questions" && <QuestionBankAdmin />}
+          {active === "resources" && <ResourceCenterAdmin />}
           {active === "ingestion" && <DocumentIngestion />}
           {editing && <EditLearner learner={editing} onClose={() => setEditing(null)} onSaved={(updated) => setLearners((items) => items.map((item) => (item.id === updated.id ? updated : item)))} />}
         </div>
