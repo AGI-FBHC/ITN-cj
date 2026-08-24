@@ -1,7 +1,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { BookCheck, ChevronDown, ChevronRight, ClipboardList, Database, FileUp, LayoutDashboard, Loader2, LogOut, Network, RefreshCw, Search, Settings, ShieldCheck, Users, X } from "lucide-react";
+import { BookCheck, ChevronDown, ChevronRight, ClipboardList, Database, FileUp, LayoutDashboard, Loader2, LogOut, Network, RefreshCw, Settings, ShieldCheck, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, type LearnerProfileData, type RagDomain, type RagTree, type RagTreeNode } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -381,9 +381,8 @@ function KnowledgeManagement({ domains }: { domains: RagDomain[] }) {
     <>
       <PageHeading title="知识库管理" description="管理知识领域、分类结构和入库内容。" />
       <div className="lf-card mb-5 flex items-center justify-between gap-3 rounded-2xl p-3.5">
-        <div className="relative w-full max-w-xs">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索领域名称或代码" className="lf-input pl-9" />
+        <div className="w-full max-w-xs">
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索领域名称或代码" className="lf-input" />
         </div>
         <button type="button" disabled className="lf-row-btn hidden cursor-not-allowed opacity-40 sm:block">
           新建领域

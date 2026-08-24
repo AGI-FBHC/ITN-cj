@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Loader2, Search } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   adminKnowledgeApi, type GapStatus, type KcCategoryNode, type KcCategoryTree,
@@ -292,9 +292,8 @@ export default function KnowledgeQuality({ defaultDomain = 'agent' }: { defaultD
         </div>
         <label className="block">
           <span className="mb-1.5 block text-xs font-semibold text-ink-2">领域代码</span>
-          <div className="relative">
-            <Search size={13} className="absolute left-3 top-3 text-ink-muted" />
-            <input value={domain} onChange={(e) => setDomain(e.target.value)} className={cn('lf-input', 'pl-8 w-44')} />
+          <div>
+            <input value={domain} onChange={(e) => setDomain(e.target.value)} className={cn('lf-input', 'w-44')} />
           </div>
         </label>
       </div>

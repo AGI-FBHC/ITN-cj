@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw, Search, X } from "lucide-react";
+import { Loader2, RefreshCw, X } from "lucide-react";
 import { toast } from "sonner";
 import { adminKnowledgeApi, type KcCategoryNode, type KcGraphEdge } from "@/lib/adminKnowledgeApi";
 import { cn } from "@/lib/utils";
@@ -431,10 +431,7 @@ export default function KnowledgeGraphAdmin() {
                 <option key={value}>{value}</option>
               ))}
             </select>
-            <div className="relative">
-              <Search size={13} className="absolute left-3 top-3 text-ink-muted" />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索知识点名称" className="lf-input w-52 pl-8" />
-            </div>
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索知识点名称" className="lf-input w-52" />
             <span className="text-xs text-ink-muted">{filtered.length} 条</span>
           </div>
           <EdgeTable edges={filtered} names={categories} onOpen={setDetail} />

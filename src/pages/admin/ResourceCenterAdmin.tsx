@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   ArchiveRestore, ArrowLeft, Ban, BookOpen, CheckCircle2, ChevronDown, ChevronRight, ClipboardList,
-  Eye, FileText, FolderTree, LayoutTemplate, Loader2, MonitorPlay, Plus, RefreshCw, Search, Trash2, Wrench, XCircle,
+  Eye, FileText, FolderTree, LayoutTemplate, Loader2, MonitorPlay, Plus, RefreshCw, Trash2, Wrench, XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, type AdminResourceDetail, type AdminResourceItem, type AdminResourceStats, type LearningResourceGenerateInput, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
@@ -478,9 +478,8 @@ export default function ResourceCenterAdmin() {
                     </button>
                   ))}
                 </div>
-                <div className="relative min-w-52 flex-1">
-                  <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
-                  <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="搜索当前目录资源" className="lf-input pl-8" />
+                <div className="min-w-52 flex-1">
+                  <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="搜索当前目录资源" className="lf-input" />
                 </div>
                 {listQ.refreshing && (
                   <span className="flex items-center gap-1 text-[11px] text-ink-muted">
