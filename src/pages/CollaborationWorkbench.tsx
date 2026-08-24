@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Circle, Loader2, RefreshCw, Sparkles, XCircle } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { api, streamAdminGenerationTask, type AdminGenerationEvent, type LearningResourceGenerationTask } from '@/lib/api';
@@ -12,11 +12,11 @@ type WorkbenchTask =
   | ({ taskKind: 'ppt'; resourceType: 'ppt' } & PresentationTaskSummary);
 
 const agents = [
-  { id: 'DIA-01', name: '教学策划', duty: '目标、画像与教学蓝图' },
-  { id: 'RET-02', name: '知识检索', duty: '知识切片、补充资料与证据' },
-  { id: 'GEN-03', name: '内容生成', duty: '初稿生成与定向修订' },
-  { id: 'VER-04', name: '质量核验', duty: '结构、引用与内容一致性' },
-  { id: 'ARB-05', name: '发布仲裁', duty: '通过、返工或终止' },
+  { id: 'DIA-01', name: '教学策划 Agent', duty: '目标、画像与教学蓝图' },
+  { id: 'RET-02', name: '知识检索 Agent', duty: '知识切片、补充资料与证据' },
+  { id: 'GEN-03', name: '内容生成 Agent', duty: '初稿生成与定向修订' },
+  { id: 'VER-04', name: '质量核验 Agent', duty: '结构、引用与内容一致性' },
+  { id: 'ARB-05', name: '发布仲裁 Agent', duty: '通过、返工或终止' },
 ] as const;
 const activeStatuses = new Set(['queued', 'retrieving', 'debating', 'planning', 'analyzing', 'generating', 'verifying', 'reviewing', 'revising', 'judging', 'outline_review']);
 const typeText: Record<string, string> = { lecture: '讲义', practice: '实操指南', quiz: '题库', ppt: '交互课件' };
@@ -104,6 +104,15 @@ export default function CollaborationWorkbench() {
     return count;
   }, [events]);
   const path = useMemo(() => events.filter((event, index) => index === 0 || event.agent !== events[index - 1].agent), [events]);
+  const loopSlots = useMemo(() => {
+    const slots = Array.from({ length: agents.length - 1 }, () => 0);
+    for (let i = 1; i < events.length; i++) {
+      const from = agents.findIndex((agent) => agent.id === events[i - 1].agent);
+      const to = agents.findIndex((agent) => agent.id === events[i].agent);
+      if (from >= 0 && to >= 0 && to < from) for (let slot = to; slot < from; slot++) slots[slot] += 1;
+    }
+    return slots;
+  }, [events]);
   const grouped = useMemo(() => ({ active: tasks.filter((item) => activeStatuses.has(item.status)), finished: tasks.filter((item) => !activeStatuses.has(item.status)) }), [tasks]);
 
   return <div className="lf-anim-in-up flex min-h-[680px] flex-col gap-4 lg:h-full lg:min-h-0 lg:flex-row">
@@ -119,13 +128,56 @@ export default function CollaborationWorkbench() {
         <header className="flex flex-wrap items-start gap-3"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-bold text-ink">{String(contextOf(task).topicName || task.title)}</h2><span className="lf-pill lf-pill-null">{typeText[task.resourceType]}</span>{active && <span className="text-[11px] font-semibold text-brand">● 实时协同中</span>}</div><p className="mt-1 text-xs text-ink-muted">{task.title} · 所有 Agent、历史事件与执行详情统一回溯</p></div></header>
         <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4"><div className="rounded-xl bg-white/55 px-3 py-2.5"><p className="text-[10px] text-ink-muted">协作事件</p><p className="mt-1 text-base font-bold text-ink">{events.length}</p></div><div className="rounded-xl bg-white/55 px-3 py-2.5"><p className="text-[10px] text-ink-muted">Agent 交接</p><p className="mt-1 text-base font-bold text-ink">{transitions}</p></div><div className="rounded-xl bg-white/55 px-3 py-2.5"><p className="text-[10px] text-ink-muted">回退 / 再进入</p><p className="mt-1 text-base font-bold text-ochre">{returns}</p></div><div className="rounded-xl bg-white/55 px-3 py-2.5"><p className="text-[10px] text-ink-muted">任务状态</p><p className="mt-1 text-sm font-bold text-ink">{active ? '自主协同中' : task.status === 'completed' ? '已通过' : task.status === 'failed' ? '未通过' : task.status}</p></div></div>
 
-        <section className="mt-4 grid gap-2 md:grid-cols-5">{agents.map((agent) => { const own = events.filter((event) => event.agent === agent.id); const running = active && latest?.agent === agent.id; const selected = effectiveAgent === agent.id; return <button key={agent.id} onClick={() => { setSelectedAgent(agent.id); setSelectedEventSeq(own.at(-1)?.seq ?? null); }} className={cn('rounded-xl border p-3 text-left transition-all', selected ? 'border-brand bg-brand-tint/70 ring-2 ring-brand/10' : own.length ? 'border-emerald-200 bg-emerald-50/50' : 'border-white/75 bg-white/40')}><div className="flex items-center gap-2">{running ? <Loader2 size={13} className="animate-spin text-brand"/> : own.length ? <CheckCircle2 size={13} className="text-emerald-600"/> : <Circle size={12} className="text-ink-muted"/>}<span className="font-mono text-[9px] text-ink-muted">{agent.id}</span><span className="ml-auto text-[9px] text-ink-muted">{own.length} 项</span></div><p className="mt-2 text-xs font-bold text-ink">{agent.name}</p><p className="mt-1 text-[9px] leading-4 text-ink-muted">{agent.duty}</p></button>; })}</section>
+        <section className="relative mt-4 rounded-2xl border border-white/70 bg-white/45 px-2 pb-4 pt-5">
+          {/* 五个 Agent 以节点串联：文字写在节点外（下方名称 + 职责），回退槽位显示弧形回流线 ↩N */}
+          <div className="flex items-center">
+            {agents.map((agent, index) => {
+              const own = events.filter((event) => event.agent === agent.id);
+              const running = active && latest?.agent === agent.id;
+              const selected = effectiveAgent === agent.id;
+              return (
+                <Fragment key={agent.id}>
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedAgent(agent.id); setSelectedEventSeq(own.at(-1)?.seq ?? null); }}
+                    className="group flex w-[118px] shrink-0 flex-col items-center gap-1.5"
+                    title={agent.duty}
+                  >
+                    <span className={cn(
+                      'flex h-12 w-12 items-center justify-center rounded-full border-2 transition-all',
+                      running ? 'border-brand bg-brand text-paper shadow-[0_0_0_6px_rgba(78,120,96,0.16)]' :
+                      selected ? 'border-brand bg-brand-tint text-brand' :
+                      own.length ? 'border-emerald-300 bg-emerald-50 text-emerald-600' : 'border-white/80 bg-white/75 text-ink-muted',
+                    )}>
+                      {running ? <Loader2 size={16} className="animate-spin" /> : own.length ? <CheckCircle2 size={16} /> : <Circle size={13} />}
+                    </span>
+                    <span className={cn("text-center text-[11px] font-bold leading-4", selected || running ? "text-brand" : "text-ink")}>{agent.name}</span>
+                    <span className="text-center text-[9px] leading-3.5 text-ink-muted">{agent.duty}</span>
+                  </button>
+                  {index < agents.length - 1 && (loopSlots[index] > 0 ? (
+                    /* 该槽位发生过回退：弧形虚线回流线 + ↩N */
+                    <div className="relative mx-1 h-9 min-w-6 flex-1">
+                      <div className="absolute inset-x-1 top-1 h-6 rounded-b-[14px] border-b-2 border-dashed border-ochre/70" />
+                      <span className="absolute left-1/2 top-0 -translate-x-1/2 rounded-full bg-ochre/15 px-1.5 py-0.5 text-[9px] font-bold text-[#9A5B3C]">↩{loopSlots[index]}</span>
+                    </div>
+                  ) : (
+                    /* 正常链路：直线 + 箭头 */
+                    <div className="relative mx-1 h-8 min-w-6 flex-1">
+                      <div className="absolute inset-x-0 top-1/2 h-px bg-ink-muted/25" />
+                      <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[10px] text-ink-muted/60">→</span>
+                    </div>
+                  ))}
+                </Fragment>
+              );
+            })}
+          </div>
+        </section>
 
         <section className="mt-4 overflow-x-auto rounded-xl border-y border-white/70 py-3"><div className="flex min-w-max items-center gap-1.5 px-2">{path.map((event, index) => <div key={`${event.seq}-${index}`} className="flex items-center gap-1.5">{index > 0 && <span className={cn('text-xs', path.slice(0, index).some((item) => item.agent === event.agent) ? 'text-ochre' : 'text-ink-muted')}>{path.slice(0, index).some((item) => item.agent === event.agent) ? '↩' : '→'}</span>}<button onClick={() => { setSelectedAgent(event.agent); setSelectedEventSeq(event.seq); }} className={cn('rounded-lg px-2.5 py-1.5 text-[10px] font-semibold', event.seq === selectedEvent?.seq ? 'bg-brand text-paper' : 'bg-white/60 text-ink-2')}>{agents.find((item) => item.id === event.agent)?.name ?? event.agent}</button></div>)}{!path.length && <span className="px-3 text-[10px] text-ink-muted">等待第一条协同事件…</span>}</div></section>
 
         <EvidenceDebateCourt events={events}/>
         <section className="mt-4 grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-          <div className="rounded-2xl border border-white/75 bg-white/45 p-4"><div className="flex justify-between"><h3 className="text-sm font-bold text-ink">{agents.find((item) => item.id === effectiveAgent)?.name} Agent · 工作流</h3><span className="text-[10px] text-ink-muted">{agentEvents.length} 项</span></div><div className="mt-3 max-h-[440px] space-y-1 overflow-y-auto">{agentEvents.map((event) => <button key={event.seq} onClick={() => setSelectedEventSeq(event.seq)} className={cn('block w-full rounded-xl px-3 py-2.5 text-left', event.seq === selectedEvent?.seq ? 'bg-brand-tint/70 ring-1 ring-brand/20' : 'hover:bg-white/60')}><div className="flex gap-2"><span className="font-mono text-[9px] text-ink-muted">{event.time ? new Date(event.time).toLocaleTimeString('zh-CN', { hour12: false }) : `#${event.seq}`}</span><span className="text-[11px] font-bold text-ink">{event.title}</span></div><p className="mt-1 line-clamp-2 text-[10px] leading-5 text-ink-muted">{event.detail}</p></button>)}{!agentEvents.length && <p className="py-16 text-center text-xs text-ink-muted">该 Agent 暂无执行记录</p>}</div></div>
+          <div className="rounded-2xl border border-white/75 bg-white/45 p-4"><div className="flex justify-between"><h3 className="text-sm font-bold text-ink">{agents.find((item) => item.id === effectiveAgent)?.name} · 工作流</h3><span className="text-[10px] text-ink-muted">{agentEvents.length} 项</span></div><div className="mt-3 max-h-[440px] space-y-1 overflow-y-auto">{agentEvents.map((event) => <button key={event.seq} onClick={() => setSelectedEventSeq(event.seq)} className={cn('block w-full rounded-xl px-3 py-2.5 text-left', event.seq === selectedEvent?.seq ? 'bg-brand-tint/70 ring-1 ring-brand/20' : 'hover:bg-white/60')}><div className="flex gap-2"><span className="font-mono text-[9px] text-ink-muted">{event.time ? new Date(event.time).toLocaleTimeString('zh-CN', { hour12: false }) : `#${event.seq}`}</span><span className="text-[11px] font-bold text-ink">{event.title}</span></div><p className="mt-1 line-clamp-2 text-[10px] leading-5 text-ink-muted">{event.detail}</p></button>)}{!agentEvents.length && <p className="py-16 text-center text-xs text-ink-muted">该 Agent 暂无执行记录</p>}</div></div>
           <div className="rounded-2xl border border-white/75 bg-white/45 p-4"><h3 className="text-sm font-bold text-ink">执行详情</h3><p className="mt-1 text-[10px] text-ink-muted">展示所选事件当时的操作、结果与依据，不展示模型思维链</p>{selectedEvent ? <><p className="mt-3 text-sm font-semibold text-ink">{selectedEvent.agentName} · {selectedEvent.title}</p><p className="mt-1 text-xs leading-6 text-ink-muted">{selectedEvent.detail}</p><div className="mt-3 grid gap-2">{detailRows(selectedEvent.snapshot).map(([label, value]) => <div key={label} className="rounded-xl bg-white/65 px-3 py-2.5"><span className="text-[10px] font-semibold text-ink-muted">{label}</span><p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-ink-2">{value}</p></div>)}{!Object.keys(selectedEvent.snapshot ?? {}).length && <p className="py-10 text-center text-xs text-ink-muted">该事件没有额外的结构化执行详情</p>}</div></> : <p className="py-16 text-center text-xs text-ink-muted">请选择 Agent 和具体事件</p>}</div>
         </section>
       </>}
