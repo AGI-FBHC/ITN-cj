@@ -220,18 +220,20 @@ export default function CollaborationWorkbench() {
         <header className="flex flex-wrap items-start gap-3"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-bold text-ink">{String(contextOf(task).topicName || task.title)}</h2><span className="lf-pill lf-pill-null">{typeText[task.resourceType]}</span>{active && <span className="text-[11px] font-semibold text-brand">● 实时协同中</span>}</div><p className="mt-1 text-xs text-ink-muted">{task.title} · 所有 Agent、历史事件与执行详情统一回溯</p></div></header>
         <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4"><div className="rounded-xl bg-white/55 px-3 py-2.5"><p className="text-[10px] text-ink-muted">Agent 工作事件</p><p className="mt-1 text-base font-bold text-ink">{agentOnlyEvents.length}</p></div><div className="rounded-xl bg-white/55 px-3 py-2.5"><p className="text-[10px] text-ink-muted">Agent 交接</p><p className="mt-1 text-base font-bold text-ink">{transitions}</p></div><div className="rounded-xl bg-white/55 px-3 py-2.5"><p className="text-[10px] text-ink-muted">回退 / 再进入</p><p className="mt-1 text-base font-bold text-ochre">{returns}</p></div><div className="rounded-xl bg-white/55 px-3 py-2.5"><p className="text-[10px] text-ink-muted">任务状态</p><p className="mt-1 text-sm font-bold text-ink">{active ? '自主协同中' : task.status === 'completed' ? '已通过' : task.status === 'failed' ? '未通过' : task.status}</p></div></div>
 
+        {/* AI 教研组成员：五个 Agent 以节点链串联展示（文字写在节点外），点击进入该 Agent 的执行细节 */}
         <section className="relative mt-4 rounded-2xl border border-white/70 bg-white/45 px-3 pb-4 pt-4">
-          <div className="mb-3 flex items-center justify-between"><h4 className="text-sm font-bold text-ink">AI 教研组成员</h4><span className="text-[10px] text-ink-muted">成员筛选，不代表固定执行顺序</span></div>
-          <div className="grid gap-2 md:grid-cols-5">
-            {agents.map((agent) => {
+          <div className="mb-3 flex items-center justify-between"><h4 className="text-sm font-bold text-ink">AI 教研组成员</h4><span className="text-[10px] text-ink-muted">节点链表示教研组构成；实际执行顺序与回退见下方协作轮次泳道</span></div>
+          <div className="flex items-center">
+            {agents.map((agent, index) => {
               const own = events.filter((event) => event.agent === agent.id);
               const running = active && latest?.agent === agent.id;
               const selected = effectiveAgent === agent.id;
               return (
-                  <button key={agent.id}
+                <div key={agent.id} className="flex items-center">
+                  <button
                     type="button"
                     onClick={() => { setSelectedAgent(agent.id); setSelectedEventSeq(own.at(-1)?.seq ?? null); }}
-                    className={cn('group flex min-h-[112px] flex-col items-center rounded-xl border px-2 py-3 text-center transition-all', selected ? 'border-brand/45 bg-brand-tint/60' : 'border-white/75 bg-white/40')}
+                    className="group flex w-[118px] shrink-0 flex-col items-center gap-1.5"
                     title={agent.duty}
                   >
                     <span className={cn(
@@ -245,6 +247,14 @@ export default function CollaborationWorkbench() {
                     <span className={cn("text-center text-[11px] font-bold leading-4", selected || running ? "text-brand" : "text-ink")}>{agent.name}</span>
                     <span className="text-center text-[9px] leading-3.5 text-ink-muted">{agent.duty}</span>
                   </button>
+                  {index < agents.length - 1 && (
+                    /* 链路连线：直线 + 箭头（回退过程以泳道呈现） */
+                    <div className="relative mx-1 h-8 min-w-6 flex-1">
+                      <div className="absolute inset-x-0 top-1/2 h-px bg-ink-muted/25" />
+                      <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[10px] text-ink-muted/60">→</span>
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>
@@ -259,9 +269,29 @@ export default function CollaborationWorkbench() {
         </section>
 
         <EvidenceDebateCourt events={events}/>
-        <section className="mt-4 grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-          <div className="rounded-2xl border border-white/75 bg-white/45 p-4"><div className="flex justify-between"><h3 className="text-sm font-bold text-ink">{agents.find((item) => item.id === effectiveAgent)?.name} · 工作流</h3><span className="text-[10px] text-ink-muted">{agentEvents.length} 项</span></div><div className="mt-3 max-h-[440px] space-y-1 overflow-y-auto">{agentEvents.map((event) => <button key={event.seq} onClick={() => setSelectedEventSeq(event.seq)} className={cn('block w-full rounded-xl px-3 py-2.5 text-left', event.seq === selectedEvent?.seq ? 'bg-brand-tint/70 ring-1 ring-brand/20' : 'hover:bg-white/60')}><div className="flex gap-2"><span className="font-mono text-[9px] text-ink-muted">{event.time ? new Date(event.time).toLocaleTimeString('zh-CN', { hour12: false }) : `#${event.seq}`}</span><span className="text-[11px] font-bold text-ink">{event.title}</span></div><p className="mt-1 line-clamp-2 text-[10px] leading-5 text-ink-muted">{event.detail}</p></button>)}{!agentEvents.length && <p className="py-16 text-center text-xs text-ink-muted">该 Agent 暂无执行记录</p>}</div></div>
-          <div className="rounded-2xl border border-white/75 bg-white/45 p-4"><h3 className="text-sm font-bold text-ink">执行详情</h3><p className="mt-1 text-[10px] text-ink-muted">展示所选事件当时的操作、结果与依据，不展示模型思维链</p>{selectedEvent ? <><p className="mt-3 text-sm font-semibold text-ink">{selectedEvent.agentName} · {selectedEvent.title}</p><p className="mt-1 text-xs leading-6 text-ink-muted">{selectedEvent.detail}</p><div className="mt-3 grid gap-2">{detailRows(selectedEvent.snapshot).map(([label, value]) => <div key={label} className="rounded-xl bg-white/65 px-3 py-2.5"><span className="text-[10px] font-semibold text-ink-muted">{label}</span><p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-ink-2">{value}</p></div>)}{!Object.keys(selectedEvent.snapshot ?? {}).length && <p className="py-10 text-center text-xs text-ink-muted">该事件没有额外的结构化执行详情</p>}</div></> : <p className="py-16 text-center text-xs text-ink-muted">请选择 Agent 和具体事件</p>}</div>
+        {/* 执行详情：点泳道工作单元/成员节点回看具体事件（工作流列表已由泳道承载，此处仅保留详情） */}
+        <section className="mt-4 rounded-2xl border border-white/75 bg-white/45 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-bold text-ink">执行详情</h3>
+            {selectedEvent && <span className="lf-pill lf-pill-null">{selectedEvent.agentName || (agents.find((item) => item.id === selectedEvent.agent)?.name ?? selectedEvent.agent)}</span>}
+          </div>
+          <p className="mt-1 text-[10px] text-ink-muted">点击上方泳道中的工作单元或成员节点，回溯当时的操作、结果与依据（不展示模型思维链）</p>
+          {selectedEvent ? (
+            <div className="mt-3">
+              <p className="text-sm font-semibold text-ink">{selectedEvent.title}</p>
+              <p className="mt-1 text-xs leading-6 text-ink-muted">{selectedEvent.detail}</p>
+              <div className="mt-3 grid gap-2 xl:grid-cols-2">
+                {detailRows(selectedEvent.snapshot).map(([label, value]) => (
+                  <div key={label} className="rounded-xl bg-white/65 px-3 py-2.5"><span className="text-[10px] font-semibold text-ink-muted">{label}</span><p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-ink-2">{value}</p></div>
+                ))}
+                {!Object.keys(selectedEvent.snapshot ?? {}).length && <p className="py-10 text-center text-xs text-ink-muted xl:col-span-2">该事件没有额外的结构化执行详情</p>}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3 rounded-xl border border-dashed border-white/80 bg-white/30 px-4 py-10 text-center text-xs text-ink-muted">
+              尚未选择事件——点击泳道中的任意工作单元即可查看当时的执行细节
+            </div>
+          )}
         </section>
       </>}
     </main>
