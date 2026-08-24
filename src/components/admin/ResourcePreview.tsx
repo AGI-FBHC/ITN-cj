@@ -390,11 +390,57 @@ function asObject(raw: unknown): Record<string, unknown> | null {
   return null;
 }
 
+function QualityOverview({ decision, sourceCount }: { decision: Record<string, unknown> | null; sourceCount: number }) {
+  if (!decision) return null;
+  const knowledge = asObject(decision.knowledgeContext);
+  const multiAgent = asObject(decision.multiAgent);
+  const defenses = asObject(decision.questionBankDefenses);
+  const evidence = Array.isArray(decision.evidenceSnapshot) ? decision.evidenceSnapshot : [];
+  const review = asObject(multiAgent?.review);
+  const score = Number(knowledge?.high_fidelity_score);
+  const scoreText = Number.isFinite(score) ? `${Math.round(score * 100)} 分` : '已完成检查';
+  const citationPassed = multiAgent?.citationVerified === true;
+  const defenseItems = defenses ? [
+    ['题目结构', asObject(defenses.schema)?.passed === true],
+    ['证据对应', asObject(defenses.evidence)?.passed === true],
+    ['内容复核', asObject(defenses.reviewer)?.passed === true],
+    ['重复检查', asObject(defenses.duplicate)?.passed === true],
+  ] as Array<[string, boolean]> : [];
+  return (
+    <section className="mb-4 rounded-2xl border border-brand/15 bg-brand-tint/25 p-5">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand text-white"><CheckCircle2 size={17} /></div>
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-bold text-ink">内容依据与审核概览</h3>
+          <p className="mt-1 text-xs leading-5 text-ink-muted">帮助管理员判断该资源是否具备清晰的知识依据，以及是否适合作为机构资源继续审核。</p>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        <div className="rounded-xl bg-white/70 px-3 py-3"><p className="text-[10px] font-semibold text-ink-muted">知识依据充分度</p><p className="mt-1 text-sm font-bold text-ink">{scoreText}</p></div>
+        <div className="rounded-xl bg-white/70 px-3 py-3"><p className="text-[10px] font-semibold text-ink-muted">可查看的依据</p><p className="mt-1 text-sm font-bold text-ink">{evidence.length || sourceCount} 条</p></div>
+        <div className="rounded-xl bg-white/70 px-3 py-3"><p className="text-[10px] font-semibold text-ink-muted">引用核验</p><p className={cn('mt-1 text-sm font-bold', citationPassed ? 'text-emerald-700' : 'text-amber-700')}>{citationPassed ? '已通过' : '建议人工复核'}</p></div>
+      </div>
+      {!!defenseItems.length && <div className="mt-3 flex flex-wrap gap-2">{defenseItems.map(([label, passed]) => <span key={label} className={cn('rounded-full px-2.5 py-1 text-[11px] font-semibold', passed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700')}>{label} · {passed ? '通过' : '需复核'}</span>)}</div>}
+      {Array.isArray(review?.issues) && review.issues.length > 0 && <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">审核提示：{review.issues.slice(0, 3).map(String).join('；')}</p>}
+    </section>
+  );
+}
+
 export default function ResourcePreview({ detail }: { detail: AdminResourceDetail }) {
   const type = detail.type || '';
   const doc = asObject(detail.content);
+  const generationContext = asObject(doc?.generationContext);
+  const lectureResource = asObject(generationContext?.lectureResource);
   const rawSources = typeof detail.sources === 'string' ? (()=>{try{return JSON.parse(detail.sources) as unknown;}catch{return [];}})() : detail.sources;
-  const sources = Array.isArray(rawSources) ? rawSources.filter((item):item is Record<string,unknown>=>Boolean(item)&&typeof item==='object') : [];
+  const inheritedSources = Array.isArray(lectureResource?.sources) ? lectureResource.sources : [];
+  const sourceInput = type === 'ppt' && inheritedSources.length ? inheritedSources : rawSources;
+  const sources = Array.isArray(sourceInput) ? sourceInput.filter((item):item is Record<string,unknown>=>Boolean(item)&&typeof item==='object') : [];
+  const decision = asObject(detail.decision);
+  const qualityDecision = type === 'ppt' && lectureResource ? {
+    knowledgeContext: lectureResource.knowledgeContext,
+    evidenceSnapshot: lectureResource.evidenceSnapshot,
+    multiAgent: lectureResource.qualityReview,
+  } : decision;
   let preview: React.ReactNode;
   if (type === 'lecture') {
     preview = <LecturePreview doc={(doc ?? {}) as unknown as LectureDoc} sources={sources} />;
@@ -408,5 +454,5 @@ export default function ResourcePreview({ detail }: { detail: AdminResourceDetai
   } else {
     preview = <pre className="max-h-[480px] overflow-auto whitespace-pre-wrap rounded-xl bg-[#2C3A30] p-4 text-xs leading-5 text-emerald-50/90">{typeof detail.content === 'string' ? detail.content : JSON.stringify(detail.content ?? {}, null, 2)}</pre>;
   }
-  return <>{preview}<SourceSummary sources={sources}/></>;
+  return <><QualityOverview decision={qualityDecision} sourceCount={sources.length}/>{preview}<SourceSummary sources={sources}/></>;
 }

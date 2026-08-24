@@ -704,7 +704,7 @@ function TaskDrawer({ open, tasks, busy, focusTaskId, onClose, onCancel, onRetry
 
 const generationAgents = [
   { id: 'DIA-01', name: '教学策划 Agent', duty: '分析目标并形成教学蓝图' },
-  { id: 'RET-02', name: '知识检索 Agent', duty: '检索 RAGFlow 与可信资料' },
+  { id: 'RET-02', name: '知识检索 Agent', duty: '查找知识库与可信补充资料' },
   { id: 'GEN-03', name: '内容生成 Agent', duty: '生成资源并执行定向返工' },
   { id: 'VER-04', name: '质量核验 Agent', duty: '检查结构、引用与一致性' },
   { id: 'ARB-05', name: '发布仲裁 Agent', duty: '决定入库、返工或终止' },
@@ -712,13 +712,19 @@ const generationAgents = [
 
 function snapshotEntries(snapshot: Record<string, unknown>): Array<[string, string]> {
   const labels: Record<string, string> = {
-    activity: '当前动作', topic: '主题', query: '检索范围', ragCount: 'RAG 资料', webCount: 'Web 资料',
+    activity: '当前动作', topic: '主题', query: '知识范围', ragCount: '知识库资料', webCount: '补充资料',
     sourceTitles: '来源', coverage: '内容覆盖', acceptanceRubric: '验收标准', resourceType: '资源类型',
     chapterCount: '章节数', stepCount: '步骤数', questionCount: '题目数', sourceCount: '引用来源',
     citationVerified: '引用核验', issueCount: '发现问题', issues: '问题摘要',
+    decision: '知识依据结论', highFidelityScore: '知识依据充分度', fallbackUsed: '是否补充检索',
+    knowledgeCoreCount: '结构化知识依据',
   };
-  return Object.entries(snapshot).map(([key, value]) => {
-    const rendered = Array.isArray(value) ? value.map(String).join('、') : typeof value === 'boolean' ? (value ? '通过' : '未通过') : String(value ?? '—');
+  const hidden = new Set(['requestId', 'traceId', 'promptVersion', 'model']);
+  return Object.entries(snapshot).filter(([key]) => !hidden.has(key)).map(([key, value]) => {
+    let rendered = Array.isArray(value) ? value.map(String).join('、') : typeof value === 'boolean' ? (value ? '是' : '否') : String(value ?? '—');
+    if (key === 'highFidelityScore' && Number.isFinite(Number(value))) rendered = `${Math.round(Number(value) * 100)} 分`;
+    if (key === 'fallbackUsed') rendered = value ? '已补充更多资料' : '现有知识依据充足';
+    if (key === 'decision') rendered = ({ allow: '可继续生成', permit: '依据充分', restrict: '需谨慎使用', block: '依据不足', deny: '依据不足', eligible: '可继续生成', ineligible: '依据不足' } as Record<string, string>)[String(value)] ?? rendered;
     return [labels[key] ?? key, rendered];
   });
 }

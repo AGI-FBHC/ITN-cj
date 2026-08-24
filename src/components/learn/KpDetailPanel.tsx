@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, BookOpen, Wrench, ListChecks, Sparkles, Route } from 'lucide-react';
 import { Loader2 } from 'lucide-react';
 import { useProfile, dataIdOf } from '@/context/ProfileContext';
-import { api } from '@/lib/api';
+import { api, type LearningResourceGenerationTask } from '@/lib/api';
 import { presentationApi } from '@/lib/presentationApi';
 import { readResourceCache, removeResourceCache, upsertResourceCache } from '@/lib/resourceCache';
 import type { PresentationTask } from '@/lib/presentationApi';
@@ -24,6 +24,7 @@ import { Succulent, LeafSmall } from '@/components/heal/Flora';
 import type { PathNode } from '@/data/reportData';
 import type { GraphNode } from '@/data/knowledgeGraph';
 import { cn } from '@/lib/utils';
+import GenerationProcessViewer from '@/components/resources/GenerationProcessViewer';
 
 const FORM_META: Record<ResourceForm, { label: string; icon: typeof BookOpen; hint: string }> = {
   lecture: { label: '领学讲义', icon: BookOpen, hint: '按你水平现写的讲义' },
@@ -99,6 +100,8 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
   const startingPptRefs = useRef(new Set<string>());
   const inFlightPpts = useRef(new Set<string>());
   const mounted = useRef(true);
+  const [availableProcessTask, setAvailableProcessTask] = useState<LearningResourceGenerationTask | null>(null);
+  const [processTask, setProcessTask] = useState<LearningResourceGenerationTask | null>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -196,7 +199,9 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           else delete next[scope];
           return next;
         });
-        for (const task of tasks.filter((item) => item.title.startsWith(`${focus} · `))) {
+        const scopedTasks = tasks.filter((item) => item.title.startsWith(`${focus} · `));
+        setAvailableProcessTask(scopedTasks.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0] ?? null);
+        for (const task of scopedTasks) {
           const form: ResourceForm = task.resourceType === 'practice' ? 'guide' : task.resourceType;
           const key = `${scope}:${form}`;
           if (!['completed', 'failed', 'cancelled'].includes(task.status)) nextGenerating.add(key);
@@ -314,7 +319,9 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
       const listed = await api.listLearningResourceTasks(50).catch(() => ({ tasks: [] }));
       let task = listed.tasks.find((item) => item.resourceType === resourceType && item.title === body.title && !['completed', 'failed', 'cancelled'].includes(item.status))
         ?? await api.startLearningResourceTask(resourceType, body);
-      toast.success(`${meta.label}已加入后台教研组`, { description: '可在顶部“正在执行”查看多智能体生成与引用核验过程。' });
+      setAvailableProcessTask(task);
+      setProcessTask(task);
+      toast.success(`${meta.label}已加入 AI 教研组`, { description: '已打开完整协同过程，可查看知识依据、内容生成与质量复核。' });
       while (mounted.current && !['completed', 'failed', 'cancelled'].includes(task.status)) {
         await new Promise((resolve) => window.setTimeout(resolve, 1800));
         task = await api.getLearningResourceTask(task.id);
@@ -532,6 +539,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
         </div>
         <p className="mt-2 text-[12.5px] leading-[19px] text-ink-muted">{kp.description}</p>
       </div>
+      {availableProcessTask && <button type="button" onClick={() => setProcessTask(availableProcessTask)} className="flex w-full items-center gap-3 rounded-xl border border-brand/25 bg-brand-tint/40 px-3 py-2.5 text-left hover:border-brand/50"><Sparkles size={15} className="text-brand"/><span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-ink">查看 AI 教研组完整过程</span><span className="block truncate text-[10px] text-ink-muted">{availableProcessTask.title} · {availableProcessTask.stageMessage}</span></span><ArrowRight size={13} className="text-brand"/></button>}
 
       {/* 掌握进度 */}
       <div className="flex items-center gap-4 rounded-[12px] border border-hairline bg-card-warm p-3">
@@ -643,6 +651,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           </button>
         </div>
       </div>}
+      <GenerationProcessViewer task={processTask} onClose={() => setProcessTask(null)} />
     </div>
   );
 }
