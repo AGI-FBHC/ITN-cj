@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import {
   ArchiveRestore, ArrowLeft, Ban, BookOpen, CheckCircle2, ChevronDown, ChevronRight, ClipboardList,
-  Eye, FileText, FolderTree, LayoutTemplate, ListChecks, Loader2, MonitorPlay, Plus, RefreshCw, Trash2, Wrench, X, XCircle,
+  Eye, FileText, FolderTree, LayoutTemplate, ListChecks, Loader2, MonitorPlay, Plus, Radio, RefreshCw, Sparkles, Trash2, Wrench, X, XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { api, type AdminResourceDetail, type AdminResourceItem, type AdminResourceStats, type LearningResourceGenerateInput, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
+import { api, streamAdminGenerationTask, type AdminGenerationEvent, type AdminResourceDetail, type AdminResourceItem, type AdminResourceStats, type LearningResourceGenerateInput, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
 import { presentationApi, type PresentationRequest, type PresentationTaskSummary } from '@/lib/presentationApi';
 import { useCachedData } from '@/hooks/useCachedData';
 import { clearCacheStartsWith } from '@/lib/swrCache';
@@ -44,6 +44,7 @@ export default function ResourceCenterAdmin() {
   const [generationModalOpen, setGenerationModalOpen] = useState(false);
   const [taskDrawerOpen, setTaskDrawerOpen] = useState(false);
   const [focusTask, setFocusTask] = useState<string | null>(null);
+  const [processTask, setProcessTask] = useState<GenerationTask | null>(null);
   const [selectedKinds, setSelectedKinds] = useState<Set<ResourceKind>>(new Set(['lecture', 'practice', 'quiz', 'ppt']));
   const [generationTasks, setGenerationTasks] = useState<GenerationTask[]>([]);
   const [generationBusy, setGenerationBusy] = useState(false);
@@ -310,7 +311,8 @@ export default function ResourceCenterAdmin() {
             正在读取领域…
           </div>
         )}
-        <TaskDrawer open={taskDrawerOpen} tasks={generationTasks} busy={generationBusy} focusTaskId={focusTask} onClose={() => { setTaskDrawerOpen(false); setFocusTask(null); }} onCancel={(task) => void cancelGeneration(task)} onRetry={(task) => void retryGeneration(task)} />
+        <TaskDrawer open={taskDrawerOpen} tasks={generationTasks} busy={generationBusy} focusTaskId={focusTask} onClose={() => { setTaskDrawerOpen(false); setFocusTask(null); }} onCancel={(task) => void cancelGeneration(task)} onRetry={(task) => void retryGeneration(task)} onInspect={setProcessTask} />
+        <GenerationProcessModal key={processTask ? `${processTask.taskKind}-${processTask.id}` : 'none'} task={processTask} onClose={() => setProcessTask(null)} />
       </div>
     );
 
@@ -525,7 +527,8 @@ export default function ResourceCenterAdmin() {
         onSelectAll={() => setSelectedKinds(new Set(['lecture', 'practice', 'quiz', 'ppt']))}
         onSubmit={() => void startSelected([...selectedKinds])}
       />
-      <TaskDrawer open={taskDrawerOpen} tasks={generationTasks} busy={generationBusy} focusTaskId={focusTask} onClose={() => { setTaskDrawerOpen(false); setFocusTask(null); }} onCancel={(task) => void cancelGeneration(task)} onRetry={(task) => void retryGeneration(task)} />
+      <TaskDrawer open={taskDrawerOpen} tasks={generationTasks} busy={generationBusy} focusTaskId={focusTask} onClose={() => { setTaskDrawerOpen(false); setFocusTask(null); }} onCancel={(task) => void cancelGeneration(task)} onRetry={(task) => void retryGeneration(task)} onInspect={setProcessTask} />
+      <GenerationProcessModal key={processTask ? `${processTask.taskKind}-${processTask.id}` : 'none'} task={processTask} onClose={() => setProcessTask(null)} />
     </div>
   );
 }
@@ -590,7 +593,7 @@ function taskContext(task: GenerationTask): Record<string, unknown> {
   return request?.generationContext ?? request?.generation_context ?? {};
 }
 
-function TaskDrawer({ open, tasks, busy, focusTaskId, onClose, onCancel, onRetry }: {
+function TaskDrawer({ open, tasks, busy, focusTaskId, onClose, onCancel, onRetry, onInspect }: {
   open: boolean;
   tasks: GenerationTask[];
   busy: boolean;
@@ -598,43 +601,21 @@ function TaskDrawer({ open, tasks, busy, focusTaskId, onClose, onCancel, onRetry
   onClose: () => void;
   onCancel: (task: GenerationTask) => void;
   onRetry: (task: GenerationTask) => void;
+  onInspect: (task: GenerationTask) => void;
 }) {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [pptEvents, setPptEvents] = useState<Record<string, Record<string, unknown>[]>>({});
   const taskKey = (task: GenerationTask) => `${task.taskKind}-${task.id}`;
   const activeTasks = tasks.filter((task) => activeGenerationStatuses.has(task.status));
   const finishedTasks = tasks.filter((task) => !activeGenerationStatuses.has(task.status));
-  const eventsOf = (task: GenerationTask) => task.taskKind === 'ppt' ? pptEvents[task.id] ?? [] : (task as LearningResourceGenerationTask).events;
+  const eventsOf = (task: GenerationTask) => task.taskKind === 'ppt' ? [] : (task as LearningResourceGenerationTask).events;
 
   // 抽屉打开且带定位任务：自动展开并滚动到该任务
   useEffect(() => {
     if (!open || !focusTaskId) return;
-    setExpanded((current) => new Set(current).add(focusTaskId));
-    window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       document.getElementById(`gen-task-${focusTaskId}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }, 120);
+    return () => window.clearTimeout(timer);
   }, [open, focusTaskId]);
-
-  // 活跃 PPT 任务每 2.5s 拉取详情 events；展开查看的已完成 PPT 拉取一次并缓存
-  useEffect(() => {
-    if (!open) return;
-    let alive = true;
-    const interval = window.setInterval(() => {
-      void Promise.all(tasks.map(async (task) => {
-        if (task.taskKind !== 'ppt') return;
-        const wantFresh = activeGenerationStatuses.has(task.status);
-        const wantOnce = !wantFresh && expanded.has(taskKey(task));
-        if (wantFresh || (wantOnce && pptEvents[task.id] === undefined)) {
-          try {
-            const detail = await presentationApi.getPresentation(task.id);
-            if (alive) setPptEvents((current) => ({ ...current, [task.id]: detail.events ?? [] }));
-          } catch { /* 轮询失败静默，下轮重试 */ }
-        }
-      }));
-    }, 2500);
-    return () => { alive = false; window.clearInterval(interval); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, tasks, expanded, pptEvents]);
 
   if (!open) return null;
   const renderTask = (task: GenerationTask) => {
@@ -645,7 +626,6 @@ function TaskDrawer({ open, tasks, busy, focusTaskId, onClose, onCancel, onRetry
     const label = task.taskKind === 'ppt' ? '交互课件' : typeText[task.resourceType];
     const context = taskContext(task);
     const events = eventsOf(task);
-    const isExpanded = expanded.has(key);
     return (
       <div key={key} id={`gen-task-${key}`} className="rounded-2xl border border-white/80 bg-white/55 px-4 py-4">
         <div className="flex flex-wrap items-center gap-2">
@@ -673,35 +653,14 @@ function TaskDrawer({ open, tasks, busy, focusTaskId, onClose, onCancel, onRetry
         <div className="mt-3 rounded-xl border border-white/70 bg-white/40">
           <button
             type="button"
-            onClick={() => setExpanded((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })}
+            onClick={() => onInspect(task)}
             className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left"
           >
-            <ChevronDown size={13} className={cn('shrink-0 text-ink-muted transition-transform', !isExpanded && '-rotate-90')} />
-            <span className="text-[11.5px] font-bold text-ink">生成日志</span>
-            <span className="lf-pill lf-pill-null !px-1.5 text-[9px]">{task.taskKind === 'ppt' && pptEvents[task.id] === undefined && (active || isExpanded) ? '日志加载中…' : events.length + ' 条'}</span>
-            {active && isExpanded && <span className="ml-auto h-1.5 w-1.5 animate-ping rounded-full bg-brand" />}
+            <Radio size={13} className={cn('shrink-0', active ? 'text-brand' : 'text-ink-muted')} />
+            <span className="text-[11.5px] font-bold text-ink">查看实时协同过程</span>
+            <span className="lf-pill lf-pill-null !px-1.5 text-[9px]">{events.length ? `${events.length} 条记录` : '只读快照'}</span>
+            <ChevronRight size={13} className="ml-auto text-ink-muted" />
           </button>
-          {isExpanded && (
-            <div className="max-h-64 overflow-y-auto border-t border-white/70 px-3.5 py-2">
-              {events.length ? events.map((event, ei) => (
-                <div key={ei} className="flex items-start gap-2 py-1.5">
-                  <span className="mt-px shrink-0 font-mono text-[9.5px] tabular-nums text-ink-muted">
-                    {event.time ? new Date(String(event.time)).toLocaleTimeString('zh-CN', { hour12: false }) : '--:--:--'}
-                  </span>
-                  {event.agent ? <span className="lf-pill lf-pill-null !px-1.5 py-0 text-[9px]">{String(event.agent)}</span> : null}
-                  {event.phase ? <span className="lf-pill lf-pill-null !px-1.5 py-0 text-[9px]">{String(event.phase)}</span> : null}
-                  <span className="min-w-0 flex-1 text-[11.5px] leading-5 text-ink-2">
-                    <span className="font-semibold text-ink">{String(event.title ?? '')}</span>
-                    {event.detail ? `：${String(event.detail)}` : ''}
-                  </span>
-                </div>
-              )) : (
-                <p className="py-2 text-center text-[11px] text-ink-muted">
-                  {task.taskKind === 'ppt' && pptEvents[task.id] === undefined ? '正在读取课件日志…' : '暂无日志记录'}
-                </p>
-              )}
-            </div>
-          )}
         </div>
       </div>
     );
@@ -739,6 +698,114 @@ function TaskDrawer({ open, tasks, busy, focusTaskId, onClose, onCancel, onRetry
           {!tasks.length && <div className="lf-empty rounded-2xl p-8 text-xs">还没有管理员预生成任务。请先进入某个知识点发起生成。</div>}
         </div>
       </aside>
+    </div>
+  );
+}
+
+const generationAgents = [
+  { id: 'DIA-01', name: '教学策划 Agent', duty: '分析目标并形成教学蓝图' },
+  { id: 'RET-02', name: '知识检索 Agent', duty: '检索 RAGFlow 与可信资料' },
+  { id: 'GEN-03', name: '内容生成 Agent', duty: '生成资源并执行定向返工' },
+  { id: 'VER-04', name: '质量核验 Agent', duty: '检查结构、引用与一致性' },
+  { id: 'ARB-05', name: '发布仲裁 Agent', duty: '决定入库、返工或终止' },
+] as const;
+
+function snapshotEntries(snapshot: Record<string, unknown>): Array<[string, string]> {
+  const labels: Record<string, string> = {
+    activity: '当前动作', topic: '主题', query: '检索范围', ragCount: 'RAG 资料', webCount: 'Web 资料',
+    sourceTitles: '来源', coverage: '内容覆盖', acceptanceRubric: '验收标准', resourceType: '资源类型',
+    chapterCount: '章节数', stepCount: '步骤数', questionCount: '题目数', sourceCount: '引用来源',
+    citationVerified: '引用核验', issueCount: '发现问题', issues: '问题摘要',
+  };
+  return Object.entries(snapshot).map(([key, value]) => {
+    const rendered = Array.isArray(value) ? value.map(String).join('、') : typeof value === 'boolean' ? (value ? '通过' : '未通过') : String(value ?? '—');
+    return [labels[key] ?? key, rendered];
+  });
+}
+
+function GenerationProcessModal({ task, onClose }: { task: GenerationTask | null; onClose: () => void }) {
+  const [events, setEvents] = useState<AdminGenerationEvent[]>([]);
+  const [streamError, setStreamError] = useState('');
+  useEffect(() => {
+    if (!task) return;
+    const controller = new AbortController();
+    void streamAdminGenerationTask(task.taskKind, task.id, (event) => {
+      setEvents((current) => current.some((item) => item.seq === event.seq) ? current : [...current, event].sort((a, b) => a.seq - b.seq));
+    }, controller.signal).catch((error) => {
+      if (!controller.signal.aborted) setStreamError(error instanceof Error ? error.message : '协同过程连接中断');
+    });
+    return () => controller.abort();
+  }, [task]);
+  if (!task) return null;
+  const active = activeGenerationStatuses.has(task.status);
+  const latest = events.at(-1);
+  const context = taskContext(task);
+  return (
+    <div className="fixed inset-0 z-[95] flex items-center justify-center bg-ink/35 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-white/80 bg-[#f7f5ee] shadow-2xl">
+        <header className="flex items-start gap-3 border-b border-white/75 bg-white/35 px-6 py-5">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand text-paper"><Sparkles size={20} /></div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-lg font-bold text-ink">AI 教研组 · 实时协同过程</h3>
+              <span className="lf-pill lf-pill-null">只读</span>
+              {active && <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-brand"><span className="h-2 w-2 animate-pulse rounded-full bg-brand" />流式连接中</span>}
+            </div>
+            <p className="mt-1 truncate text-xs text-ink-muted">{String(context.topicName || task.title)} · {task.taskKind === 'ppt' ? '交互课件' : typeText[task.resourceType]}</p>
+          </div>
+          <button onClick={onClose} className="lf-row-btn !p-2" aria-label="关闭"><X size={16} /></button>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          <section className="grid gap-2 md:grid-cols-5">
+            {generationAgents.map((agent) => {
+              const agentEvents = events.filter((event) => event.agent === agent.id);
+              const isRunning = active && latest?.agent === agent.id;
+              const done = agentEvents.length > 0 && !isRunning;
+              return (
+                <div key={agent.id} className={cn('rounded-2xl border p-3 transition-colors', isRunning ? 'border-brand/50 bg-brand-tint/70' : done ? 'border-emerald-200 bg-emerald-50/60' : 'border-white/80 bg-white/45')}>
+                  <div className="flex items-center gap-2">
+                    <span className={cn('flex h-7 w-7 items-center justify-center rounded-lg text-[10px] font-bold', isRunning ? 'bg-brand text-white' : done ? 'bg-emerald-100 text-emerald-700' : 'bg-white/80 text-ink-muted')}>{agent.id.slice(0, 3)}</span>
+                    {isRunning ? <Loader2 size={13} className="animate-spin text-brand" /> : done ? <CheckCircle2 size={13} className="text-emerald-600" /> : <span className="h-2 w-2 rounded-full bg-ink-muted/30" />}
+                  </div>
+                  <p className="mt-2 text-xs font-bold text-ink">{agent.name}</p>
+                  <p className="mt-1 text-[10px] leading-4 text-ink-muted">{isRunning ? String(latest?.snapshot?.activity || latest?.title || agent.duty) : agent.duty}</p>
+                </div>
+              );
+            })}
+          </section>
+
+          <section className="mt-4 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+            <div className="rounded-2xl border border-white/80 bg-white/50 p-4">
+              <div className="flex items-center gap-2"><Radio size={14} className={active ? 'text-brand' : 'text-ink-muted'} /><h4 className="text-sm font-bold text-ink">当前工作快照</h4></div>
+              {latest ? (
+                <>
+                  <p className="mt-3 text-sm font-semibold text-ink">{latest.agentName} · {latest.title}</p>
+                  <p className="mt-1 text-xs leading-5 text-ink-muted">{latest.detail}</p>
+                  <div className="mt-3 space-y-2">
+                    {snapshotEntries(latest.snapshot).map(([label, value]) => <div key={label} className="rounded-xl bg-white/65 px-3 py-2"><span className="text-[10px] font-semibold text-ink-muted">{label}</span><p className="mt-0.5 text-xs leading-5 text-ink-2">{value}</p></div>)}
+                    {!Object.keys(latest.snapshot).length && <p className="py-4 text-center text-xs text-ink-muted">当前阶段暂无额外结构化快照</p>}
+                  </div>
+                </>
+              ) : <div className="flex items-center justify-center py-16 text-xs text-ink-muted"><Loader2 size={14} className="mr-2 animate-spin" />正在建立流式连接…</div>}
+            </div>
+
+            <div className="rounded-2xl border border-white/80 bg-white/50 p-4">
+              <div className="flex items-center justify-between"><h4 className="text-sm font-bold text-ink">协同事件流</h4><span className="text-[10px] text-ink-muted">{events.length} 条</span></div>
+              <div className="mt-3 max-h-[420px] space-y-1 overflow-y-auto pr-1">
+                {events.map((event) => (
+                  <div key={event.seq} className={cn('flex gap-3 rounded-xl px-3 py-2.5', event.seq === latest?.seq ? 'bg-brand-tint/60' : 'hover:bg-white/60')}>
+                    <span className="shrink-0 font-mono text-[10px] text-ink-muted">{event.time ? new Date(event.time).toLocaleTimeString('zh-CN', { hour12: false }) : '--:--:--'}</span>
+                    <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-1.5"><span className="lf-pill lf-pill-null !px-1.5 text-[9px]">{event.agent}</span><span className="text-[11px] font-bold text-ink">{event.title}</span></div><p className="mt-1 text-[11px] leading-5 text-ink-muted">{event.detail}</p></div>
+                  </div>
+                ))}
+                {!events.length && <p className="py-12 text-center text-xs text-ink-muted">等待第一条协同事件…</p>}
+              </div>
+              {streamError && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-[11px] text-red-600">{streamError}</p>}
+            </div>
+          </section>
+        </div>
+      </div>
     </div>
   );
 }

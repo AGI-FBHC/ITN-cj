@@ -476,6 +476,18 @@ export interface LearningResourceGenerationTask {
   updatedAt: string;
 }
 
+export interface AdminGenerationEvent {
+  seq: number;
+  time?: string | null;
+  agent: 'DIA-01' | 'RET-02' | 'GEN-03' | 'VER-04' | 'ARB-05' | string;
+  agentName: string;
+  status: string;
+  phase: string;
+  title: string;
+  detail: string;
+  snapshot: Record<string, unknown>;
+}
+
 export interface RagDomain {
   id: number;
   code: string;
@@ -887,6 +899,41 @@ export async function streamTeachingGroup(
   }
   buffer += decoder.decode();
   consume();
+}
+
+export async function streamAdminGenerationTask(
+  taskType: 'resource' | 'ppt',
+  taskId: string,
+  onEvent: (event: AdminGenerationEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const headers = new Headers({ Accept: 'text/event-stream' });
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const res = await fetch(`${API_BASE}/v1/admin-generation-tasks/${taskType}/${encodeURIComponent(taskId)}/stream`, { headers, signal });
+  if (!res.ok || !res.body) throw new Error(`协同过程读取失败 (${res.status})`);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  const consume = () => {
+    let separator = buffer.indexOf('\n\n');
+    while (separator >= 0) {
+      const block = buffer.slice(0, separator);
+      buffer = buffer.slice(separator + 2);
+      const eventType = block.split('\n').find((line) => line.startsWith('event: '))?.slice(7);
+      const data = block.split('\n').find((line) => line.startsWith('data: '))?.slice(6);
+      if (eventType === 'generation_event' && data) {
+        try { onEvent(JSON.parse(data) as AdminGenerationEvent); } catch { /* ignore malformed frame */ }
+      }
+      separator = buffer.indexOf('\n\n');
+    }
+  };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+    consume();
+  }
 }
 
 export async function streamAssistantTts(
