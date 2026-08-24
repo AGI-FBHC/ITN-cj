@@ -71,7 +71,7 @@ function CollaborationRounds({ events, selectedSeq, onSelect }: {
           </div>
           {round.trigger && <p className="mt-1 text-[10px] text-ochre">触发：{round.trigger.title}</p>}
           <div className="mt-3 overflow-x-auto pb-1">
-          <div className="relative min-w-[1040px] overflow-hidden rounded-2xl border border-white/70 bg-white/25 px-2 pb-3 pt-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+          <div className="relative min-w-[900px] overflow-hidden rounded-2xl border border-white/70 bg-white/25 px-2 pb-3 pt-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="pointer-events-none absolute inset-x-2 bottom-3 top-12 grid grid-cols-5 gap-2">
               {agents.map((agent, index) => <div key={agent.id} className={cn('relative rounded-xl', index % 2 ? 'bg-white/10' : 'bg-white/25')}><span className="absolute inset-y-0 left-1/2 w-px bg-ink-muted/10" /></div>)}
             </div>
@@ -93,27 +93,18 @@ function CollaborationRounds({ events, selectedSeq, onSelect }: {
                 const lane = Math.max(0, agents.findIndex((item) => item.id === unit.agent));
                 const previousLane = index > 0 ? Math.max(0, agents.findIndex((item) => item.id === round.units[index - 1].agent)) : lane;
                 const selected = unit.events.some((item) => item.seq === selectedSeq);
-                const agent = agents[lane];
                 return (
                   <div key={`${round.index}-${index}-${unit.agent}`}>
                     {index > 0 && previousLane !== lane && <div className="relative h-6"><span className={cn('absolute top-2.5 h-px', round.index > 0 && index === 1 ? 'border-t border-dashed border-ochre/60' : 'bg-brand/25')} style={{ left: `${(Math.min(previousLane, lane) + .5) * 20}%`, width: `${Math.abs(lane - previousLane) * 20}%` }} /><span className={cn('absolute top-[5px] -translate-x-1/2 text-[9px]', round.index > 0 && index === 1 ? 'text-ochre' : 'text-brand/55')} style={{ left: `${(lane + .5) * 20}%` }}>{lane > previousLane ? '›' : '‹'}</span>{round.index > 0 && index === 1 && <span className="absolute left-2 top-1 rounded-full bg-ochre/10 px-1.5 py-0.5 text-[8px] font-semibold text-ochre">修复交接</span>}</div>}
                     <div className="grid min-h-14 grid-cols-5 gap-2">
                       <div style={{ gridColumn: lane + 1 }} className={cn('relative mx-1 overflow-hidden rounded-xl border text-left shadow-sm transition-all duration-200', selected ? 'border-brand/45 bg-white shadow-[0_6px_18px_rgba(64,104,78,0.12)] ring-2 ring-brand/10' : 'border-white/85 bg-white/85')}>
                         <span className={cn('absolute -left-1.5 top-3.5 h-3 w-3 rounded-full border-2 border-[#f7f5ee]', selected ? 'bg-brand' : round.index > 0 ? 'bg-ochre' : 'bg-brand/50')} />
-                        <div className="border-b border-ink-muted/10 bg-brand-tint/35 px-3 py-2">
-                          <span className="block text-[9px] font-bold text-brand">{agent?.name ?? unit.agent}</span>
-                          <span className="mt-0.5 block text-[8px] text-ink-muted">本阶段完成 {unit.events.length} 项工作</span>
-                        </div>
                         <div className="space-y-0.5 p-1.5">
                           {unit.events.map((event, eventIndex) => (
-                            <button key={event.seq} type="button" onClick={() => onSelect(event)} className={cn('group block w-full rounded-lg px-2 py-2 text-left transition-colors', event.seq === selectedSeq ? 'bg-brand-tint/80' : 'hover:bg-brand-tint/40')}>
-                              <span className="flex items-start gap-1.5">
-                                <span className={cn('mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[7.5px] font-bold', event.seq === selectedSeq ? 'bg-brand text-white' : 'bg-ink-muted/10 text-ink-muted')}>{eventIndex + 1}</span>
-                                <span className="min-w-0 flex-1">
-                                  <span className="block text-[9.5px] font-bold leading-4 text-ink">{event.title}</span>
-                                  {event.detail && <span className="mt-0.5 line-clamp-2 block text-[8.5px] leading-4 text-ink-muted">{event.detail}</span>}
-                                  <span className="mt-0.5 block font-mono text-[7.5px] text-ink-muted/75">{event.time ? new Date(event.time).toLocaleTimeString('zh-CN', { hour12: false }) : `#${event.seq}`}</span>
-                                </span>
+                            <button key={event.seq} type="button" onClick={() => onSelect(event)} className={cn('block w-full rounded-lg px-2 py-2 text-left transition-colors', event.seq === selectedSeq ? 'bg-brand-tint/80' : 'hover:bg-brand-tint/40')}>
+                              <span className="flex items-center gap-1.5">
+                                <span className={cn('flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[7.5px] font-bold', event.seq === selectedSeq ? 'bg-brand text-white' : 'bg-ink-muted/10 text-ink-muted')}>{eventIndex + 1}</span>
+                                <span className="min-w-0 flex-1 truncate text-[9.5px] font-bold leading-4 text-ink" title={event.title}>{event.title}</span>
                               </span>
                             </button>
                           ))}
