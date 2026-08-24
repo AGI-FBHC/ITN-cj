@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   ArchiveRestore, ArrowLeft, BookOpen, ChevronDown, ChevronRight, ClipboardList, Eye, FileText,
-  FolderTree, Loader2, MonitorPlay, Plus, RotateCcw, Search, ShieldCheck, Trash2, Wrench,
+  FolderTree, Loader2, MonitorPlay, Plus, Search, ShieldCheck, Trash2, Wrench,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, type AdminResourceDetail, type AdminResourceItem, type AdminResourceStats, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
@@ -197,10 +197,6 @@ export default function ResourceCenterAdmin() {
           <button disabled className="lf-row-btn cursor-not-allowed opacity-50">
             <Plus size={13} />
             预生成（待开放）
-          </button>
-          <button onClick={() => { setView(view === 'recycle' ? 'library' : 'recycle'); setDetail(null); }} className={cn('lf-row-btn', view === 'recycle' && 'lf-row-btn-primary')}>
-            {view === 'recycle' ? <RotateCcw size={13} /> : <Trash2 size={13} />}
-            {view === 'recycle' ? '返回资源库' : '回收站'}
           </button>
         </div>
       </div>
