@@ -8,17 +8,16 @@ import { api, type AdminResourceDetail, type AdminResourceItem, type AdminResour
 import { useCachedData } from '@/hooks/useCachedData';
 import { clearCacheStartsWith } from '@/lib/swrCache';
 import ResourcePreview from '@/components/admin/ResourcePreview';
-import QuestionBankAdmin from './QuestionBankAdmin';
 import { cn } from '@/lib/utils';
 
-type ResourceKind = 'lecture' | 'practice' | 'questions' | 'ppt';
+type ResourceKind = 'lecture' | 'practice' | 'quiz' | 'ppt';
 type View = 'library' | 'review' | 'recycle';
-const typeText: Record<string, string> = { lecture: '讲义', practice: '实操指南', quiz: '题库', ppt: 'PPT' };
+const typeText: Record<string, string> = { lecture: '讲义', practice: '实操指南', quiz: '题库', ppt: '交互课件' };
 const kinds: [ResourceKind, string, string, typeof FileText][] = [
   ['lecture', '讲义', '知识讲解', BookOpen],
   ['practice', '实操指南', '步骤与任务', Wrench],
-  ['questions', '题库', '逐题管理', ClipboardList],
-  ['ppt', 'PPT', '演示课件', MonitorPlay],
+  ['quiz', '题库', '分阶测试资源', ClipboardList],
+  ['ppt', '交互课件', '可播放的教学课件', MonitorPlay],
 ];
 
 function flatten(nodes: RagTreeNode[], expanded: Set<number>, depth = 0): { node: RagTreeNode; depth: number }[] {
@@ -46,7 +45,7 @@ export default function ResourceCenterAdmin() {
     () => api.getRagTree((domain as RagDomain).code),
     { ttlMs: 60_000 },
   );
-  const resourceType = kind === 'questions' ? 'quiz' : kind;
+  const resourceType = kind;
   const listQ = useCachedData<{ items: AdminResourceItem[]; total: number }>(
     domain ? `admin:res:${view}:${resourceType}:${domain.code}:${node?.nodeCode ?? ''}:${keyword}` : null,
     () => api.listAdminResources({ view, type: resourceType, keyword, domainCode: (domain as { code: string }).code, nodeCode: node?.nodeCode }),
@@ -276,16 +275,7 @@ export default function ResourceCenterAdmin() {
             ))}
           </div>
 
-          {kind === 'questions' ? (
-            domain.code === '__unassigned__' ? (
-              <EmptyState>题库题目必须绑定知识目录，不提供未识别归属列表。</EmptyState>
-            ) : !node ? (
-              <EmptyState>请先从左侧目录树选择一个目录或知识点，再管理对应题目。</EmptyState>
-            ) : (
-              <QuestionBankAdmin categoryId={node.id} scopeLabel={node.name} />
-            )
-          ) : (
-            <>
+          <>
               <div className="lf-card mb-4 flex flex-wrap items-center gap-3 rounded-2xl p-3">
                 <div className="lf-seg">
                   {([['library', '资源库'], ['review', '待审核'], ['recycle', '回收站']] as [View, string][]).map(([id, label]) => (
@@ -306,8 +296,7 @@ export default function ResourceCenterAdmin() {
                 )}
               </div>
               <ResourceTable items={listQ.data?.items ?? []} loading={listQ.loading} view={view} onPreview={preview} onAction={act} />
-            </>
-          )}
+          </>
         </section>
       </div>
 
