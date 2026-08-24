@@ -32,6 +32,7 @@ export interface PresentationTask {
   progress: number;
   stageMessage: string;
   title: string;
+  request?: PresentationRequest;
   outline?: { title?: string; subtitle?: string; slides?: Array<{ title?: string; kind?: string; points?: string[]; speakerNotes?: string }> } | null;
   events?: Record<string, unknown>[];
   errorMessage?: string | null;
@@ -54,6 +55,7 @@ export interface PresentationTaskSummary {
   progress: number;
   stageMessage: string;
   title: string;
+  request?: PresentationRequest;
   errorMessage?: string | null;
   learned?: boolean;
   createdAt: string;

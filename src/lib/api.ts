@@ -418,6 +418,7 @@ export interface LearningResourceGenerateInput {
   goalDriven?: boolean;
   detailLevel?: 'concise' | 'balanced' | 'detailed';
   questionCount?: number;
+  generationContext?: Record<string, unknown>;
 }
 
 export interface LearningResource extends LearningResourceSummary {
@@ -468,6 +469,7 @@ export interface LearningResourceGenerationTask {
   progress: number;
   stageMessage: string;
   events: Array<Record<string, unknown>>;
+  request?: LearningResourceGenerateInput;
   resourceId: string | null;
   errorMessage: string | null;
   createdAt: string;

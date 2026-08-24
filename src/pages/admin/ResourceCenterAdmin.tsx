@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import {
-  ArchiveRestore, ArrowLeft, BookOpen, ChevronDown, ChevronRight, ClipboardList, Eye, FileText,
-  FolderTree, LayoutTemplate, Loader2, MonitorPlay, Plus, Search, Trash2, Wrench,
+  ArchiveRestore, ArrowLeft, Ban, BookOpen, CheckCircle2, ChevronDown, ChevronRight, ClipboardList,
+  Eye, FileText, FolderTree, LayoutTemplate, Loader2, MonitorPlay, Plus, RefreshCw, Search, Trash2, Wrench, XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { api, type AdminResourceDetail, type AdminResourceItem, type AdminResourceStats, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
+import { api, type AdminResourceDetail, type AdminResourceItem, type AdminResourceStats, type LearningResourceGenerateInput, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
+import { presentationApi, type PresentationRequest, type PresentationTaskSummary } from '@/lib/presentationApi';
 import { useCachedData } from '@/hooks/useCachedData';
 import { clearCacheStartsWith } from '@/lib/swrCache';
 import ResourcePreview from '@/components/admin/ResourcePreview';
@@ -12,6 +13,9 @@ import { cn } from '@/lib/utils';
 
 type ResourceKind = 'lecture' | 'practice' | 'quiz' | 'ppt';
 type View = 'library' | 'archive';
+type GenerationTask =
+  | ({ taskKind: 'resource' } & LearningResourceGenerationTask)
+  | ({ taskKind: 'ppt' } & PresentationTaskSummary);
 const typeText: Record<string, string> = { lecture: '讲义', practice: '实操指南', quiz: '题库', ppt: '交互课件' };
 const kinds: [ResourceKind, string, string, typeof FileText][] = [
   ['lecture', '讲义', '知识讲解', BookOpen],
@@ -37,6 +41,9 @@ export default function ResourceCenterAdmin() {
   const [keyword, setKeyword] = useState('');
   const [detail, setDetail] = useState<AdminResourceDetail | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [generationOpen, setGenerationOpen] = useState(false);
+  const [generationTasks, setGenerationTasks] = useState<GenerationTask[]>([]);
+  const [generationBusy, setGenerationBusy] = useState(false);
 
   /* ---- SWR 缓存：先展示缓存，后台异步更新 ---- */
   const domainsQ = useCachedData<RagDomain[]>('admin:rag-domains', () => api.listRagDomains(), { ttlMs: 30_000 });
@@ -54,13 +61,120 @@ export default function ResourceCenterAdmin() {
   );
 
   useEffect(() => {
-    if (treeQ.data) setExpanded(new Set(treeQ.data.nodes.map((n) => n.id)));
+    if (!treeQ.data) return;
+    const timer = window.setTimeout(() => setExpanded(new Set(treeQ.data?.nodes.map((n) => n.id) ?? [])), 0);
+    return () => window.clearTimeout(timer);
   }, [treeQ.data]);
   useEffect(() => {
     const message = domainsQ.error?.message ?? statsQ.error?.message ?? treeQ.error?.message ?? listQ.error?.message;
     if (message) toast.error(message);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [domainsQ.error, statsQ.error, treeQ.error, listQ.error]);
+
+  const loadGenerationTasks = async () => {
+    if (!domain || domain.code === '__unassigned__' || !node) {
+      setGenerationTasks([]);
+      return;
+    }
+    const [resources, presentations] = await Promise.all([
+      api.listLearningResourceTasks(100),
+      presentationApi.listPresentationSummaries(100, true),
+    ]);
+    const belongsHere = (context: Record<string, unknown> | undefined) =>
+      context?.adminGeneration === true && context.domainCode === domain.code && context.nodeCode === node.nodeCode;
+    const textTasks: GenerationTask[] = resources.tasks
+      .filter((task) => belongsHere(task.request?.generationContext))
+      .map((task) => ({ ...task, taskKind: 'resource' as const }));
+    const pptTasks: GenerationTask[] = presentations.tasks
+      .filter((task) => belongsHere(task.request?.generationContext))
+      .map((task) => ({ ...task, taskKind: 'ppt' as const }));
+    setGenerationTasks([...textTasks, ...pptTasks].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)));
+  };
+
+  useEffect(() => {
+    if (!node || domain?.code === '__unassigned__') return;
+    const initial = window.setTimeout(
+      () => void loadGenerationTasks().catch((error) => toast.error(error instanceof Error ? error.message : '生成任务读取失败')),
+      0,
+    );
+    const timer = window.setInterval(() => void loadGenerationTasks().catch(() => undefined), 2500);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [domain?.code, node?.nodeCode]);
+
+  const generationContext = () => ({
+    adminGeneration: true,
+    domainCode: domain?.code,
+    nodeCode: node?.nodeCode,
+    topicName: node?.name,
+    kpId: node?.nodeCode,
+  });
+
+  const startGeneration = async (target: ResourceKind) => {
+    if (!node || !domain || domain.code === '__unassigned__') throw new Error('请先选择一个具体知识点');
+    if (target === 'ppt') {
+      const request: PresentationRequest = {
+        requirement: `围绕“${node.name}”生成一份面向学习者的完整交互课件，内容准确、结构清晰，并适合课堂讲解与自主学习。`,
+        title: node.name,
+        audience: 'students', purpose: 'courseware', style: 'education', backgroundStyle: 'blue-white-minimal',
+        language: 'zh-CN', slideCount: 0, aspectRatio: '16:9', detailLevel: 'detailed',
+        includeSpeakerNotes: true, modelProvider: 'mimo', generationMode: 'template', generationContext: generationContext(),
+      };
+      await presentationApi.createPresentation(request);
+    } else {
+      const request: LearningResourceGenerateInput = {
+        topic: node.name,
+        title: `${node.name} · ${typeText[target]}`,
+        kpId: node.nodeCode,
+        detailLevel: 'detailed',
+        questionCount: target === 'quiz' ? 12 : undefined,
+        generationContext: generationContext(),
+      };
+      await api.startLearningResourceTask(target, request);
+    }
+  };
+
+  const startSelected = async (targets: ResourceKind[]) => {
+    setGenerationBusy(true);
+    try {
+      const results = await Promise.allSettled(targets.map(startGeneration));
+      const failed = results.filter((result) => result.status === 'rejected');
+      if (failed.length) toast.error(`${failed.length} 项生成任务未能启动`);
+      if (failed.length < results.length) toast.success(`已启动 ${results.length - failed.length} 项生成任务`);
+      setGenerationOpen(true);
+      await loadGenerationTasks();
+    } finally {
+      setGenerationBusy(false);
+    }
+  };
+
+  const cancelGeneration = async (task: GenerationTask) => {
+    try {
+      if (task.taskKind === 'ppt') await presentationApi.cancelPresentation(task.id);
+      else await api.cancelLearningResourceTask(task.id);
+      toast.success('已取消生成任务');
+      await loadGenerationTasks();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '取消失败');
+    }
+  };
+
+  const retryGeneration = async (task: GenerationTask) => {
+    setGenerationBusy(true);
+    try {
+      if (task.taskKind === 'ppt' && task.request) await presentationApi.createPresentation(task.request);
+      else if (task.taskKind === 'resource' && task.request) await api.startLearningResourceTask(task.resourceType, task.request);
+      else throw new Error('该任务缺少原始生成参数');
+      toast.success('已重新发起生成');
+      await loadGenerationTasks();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '重试失败');
+    } finally {
+      setGenerationBusy(false);
+    }
+  };
 
   const openDomain = (next: RagDomain | { code: '__unassigned__'; name: string; description: string }) => {
     setDomain(next);
@@ -193,9 +307,13 @@ export default function ResourceCenterAdmin() {
           <h2 className="mt-2 text-xl font-bold tracking-tight text-ink">{node?.name || domain.name} · 资源管理</h2>
         </div>
         <div className="flex gap-2">
-          <button disabled className="lf-row-btn cursor-not-allowed opacity-50">
+          <button
+            disabled={!node || domain.code === '__unassigned__'}
+            onClick={() => setGenerationOpen((current) => !current)}
+            className="lf-row-btn lf-row-btn-primary disabled:cursor-not-allowed disabled:opacity-50"
+          >
             <Plus size={13} />
-            预生成（待开放）
+            预生成资源
           </button>
         </div>
       </div>
@@ -235,7 +353,8 @@ export default function ResourceCenterAdmin() {
                         onClick={() =>
                           setExpanded((current) => {
                             const next = new Set(current);
-                            next.has(itemNode.id) ? next.delete(itemNode.id) : next.add(itemNode.id);
+                            if (next.has(itemNode.id)) next.delete(itemNode.id);
+                            else next.add(itemNode.id);
                             return next;
                           })
                         }
@@ -326,6 +445,17 @@ export default function ResourceCenterAdmin() {
             </div>
           ) : (
             <>
+              {generationOpen && node && domain.code !== '__unassigned__' && (
+                <GenerationManager
+                  tasks={generationTasks}
+                  busy={generationBusy}
+                  currentKind={kind}
+                  onStartCurrent={() => void startSelected([kind])}
+                  onStartAll={() => void startSelected(['lecture', 'practice', 'quiz', 'ppt'])}
+                  onCancel={(task) => void cancelGeneration(task)}
+                  onRetry={(task) => void retryGeneration(task)}
+                />
+              )}
               <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
                 {kinds.map(([id, label, note, Icon]) => (
                   <button
@@ -366,6 +496,66 @@ export default function ResourceCenterAdmin() {
       </div>
 
 
+    </div>
+  );
+}
+
+const activeGenerationStatuses = new Set(['queued', 'retrieving', 'planning', 'analyzing', 'generating', 'verifying', 'reviewing', 'revising', 'judging', 'outline_review']);
+
+function GenerationManager({ tasks, busy, currentKind, onStartCurrent, onStartAll, onCancel, onRetry }: {
+  tasks: GenerationTask[];
+  busy: boolean;
+  currentKind: ResourceKind;
+  onStartCurrent: () => void;
+  onStartAll: () => void;
+  onCancel: (task: GenerationTask) => void;
+  onRetry: (task: GenerationTask) => void;
+}) {
+  return (
+    <div className="lf-card mb-4 rounded-2xl p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="mr-auto">
+          <h3 className="text-sm font-bold text-ink">通用资源预生成</h3>
+          <p className="mt-1 text-[11px] text-ink-muted">生成结果直接进入当前知识点的机构资源库，不绑定学习者。</p>
+        </div>
+        <button disabled={busy} onClick={onStartCurrent} className="lf-row-btn disabled:opacity-50">
+          {busy ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+          生成当前类型（{typeText[currentKind]}）
+        </button>
+        <button disabled={busy} onClick={onStartAll} className="lf-row-btn lf-row-btn-primary disabled:opacity-50">
+          <Plus size={12} />
+          一键生成四类
+        </button>
+      </div>
+      <div className="mt-4 space-y-2">
+        {tasks.slice(0, 12).map((task) => {
+          const active = activeGenerationStatuses.has(task.status);
+          const completed = task.status === 'completed';
+          const failed = task.status === 'failed' || task.status === 'cancelled';
+          const label = task.taskKind === 'ppt' ? '交互课件' : typeText[task.resourceType];
+          return (
+            <div key={`${task.taskKind}-${task.id}`} className="rounded-xl border border-white/70 bg-white/45 px-3 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                {active ? <Loader2 size={14} className="animate-spin text-brand" /> : completed ? <CheckCircle2 size={14} className="text-emerald-600" /> : <XCircle size={14} className="text-red-500" />}
+                <span className="lf-pill lf-pill-null">{label}</span>
+                <span className="min-w-0 flex-1 truncate text-xs font-semibold text-ink">{task.stageMessage}</span>
+                <span className="text-[11px] tabular-nums text-ink-muted">{task.progress}%</span>
+                {active && (
+                  <button onClick={() => onCancel(task)} className="lf-row-btn text-red-600"><Ban size={11} />取消</button>
+                )}
+                {failed && (
+                  <button disabled={busy} onClick={() => onRetry(task)} className="lf-row-btn"><RefreshCw size={11} />重新生成</button>
+                )}
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/80">
+                <div className={cn('h-full rounded-full transition-all', failed ? 'bg-red-400' : completed ? 'bg-emerald-500' : 'bg-brand')} style={{ width: `${Math.max(3, task.progress)}%` }} />
+              </div>
+              {task.errorMessage && <p className="mt-2 line-clamp-2 text-[11px] text-red-600">{task.errorMessage}</p>}
+            </div>
+          );
+        })}
+        {!tasks.length && <div className="lf-empty rounded-xl p-5 text-xs">当前知识点还没有生成任务</div>}
+      </div>
     </div>
   );
 }
