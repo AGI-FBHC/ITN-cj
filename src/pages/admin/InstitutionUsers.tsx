@@ -1,22 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { api, type AdminAccount } from '@/lib/api';
+import { api, type AdminAccount, type AdminAccountPage } from '@/lib/api';
+import { useCachedData } from '@/hooks/useCachedData';
 
 export default function InstitutionUsers() {
-  const [items, setItems] = useState<AdminAccount[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const load = useCallback(async () => {
-    setLoading(true);
-    try { const result = await api.listAdminAccounts(); setItems(result.items); setTotal(result.totalElements); } catch (e) { toast.error(e instanceof Error ? e.message : '账号读取失败'); } finally { setLoading(false); }
-  }, []);
-  useEffect(() => { void load(); }, [load]);
+  const q = useCachedData<AdminAccountPage>('admin:accounts', () => api.listAdminAccounts(), { ttlMs: 15_000 });
+  const items = q.data?.items ?? [];
+  const total = q.data?.totalElements ?? 0;
+  const loading = q.loading;
   const toggle = async (item: AdminAccount) => {
     try {
-      const updated = await api.setAdminAccountEnabled(item.id, !item.active);
-      setItems((all) => all.map((value) => value.id === updated.id ? updated : value));
-      toast.success(updated.active ? '账号已启用' : '账号已停用');
+      await api.setAdminAccountEnabled(item.id, !item.active);
+      toast.success(item.active ? '账号已停用' : '账号已启用');
+      await q.refresh(true);
     } catch (e) { toast.error(e instanceof Error ? e.message : '操作失败'); }
   };
   return (
@@ -26,7 +22,10 @@ export default function InstitutionUsers() {
           <h2 className="text-2xl font-bold tracking-tight text-ink">机构用户</h2>
           <p className="mt-1.5 text-sm text-ink-muted">管理本机构注册账号的启用状态。</p>
         </div>
-        <span className="lf-pill lf-pill-null">共 {total} 个账号</span>
+        <div className="flex items-center gap-2">
+          {q.refreshing && <span className="text-[11px] text-ink-muted">更新中…</span>}
+          <span className="lf-pill lf-pill-null">共 {total} 个账号</span>
+        </div>
       </div>
       <div className="lf-table-card">
         <div className="overflow-x-auto">

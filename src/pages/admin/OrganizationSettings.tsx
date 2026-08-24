@@ -2,20 +2,25 @@ import { useEffect, useRef, useState } from 'react';
 import { Copy, ImageUp, Loader2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, type OrganizationBranding } from '@/lib/api';
+import { useCachedData } from '@/hooks/useCachedData';
 
 export default function OrganizationSettings() {
-  const [branding, setBranding] = useState<OrganizationBranding | null>(null);
   const [name, setName] = useState('');
   const [shortName, setShortName] = useState('');
   const [busy, setBusy] = useState(false);
   const [invite, setInvite] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const apply = (value: OrganizationBranding) => { setBranding(value); setName(value.name); setShortName(value.shortName); };
-  useEffect(() => { api.getAdminOrganization().then(apply).catch((e) => toast.error(e.message)); }, []);
+  const q = useCachedData<OrganizationBranding>('admin:branding', () => api.getAdminOrganization(), { ttlMs: 30_000 });
+  const branding = q.data ?? null;
+  useEffect(() => {
+    if (q.data) { setName(q.data.name); setShortName(q.data.shortName); }
+  }, [q.data]);
+  const apply = (value: OrganizationBranding) => { setName(value.name); setShortName(value.shortName); void q.refresh(true); };
   const save = async () => { setBusy(true); try { apply(await api.updateAdminOrganization({ name, shortName })); toast.success('机构配置已保存'); } catch (e) { toast.error(e instanceof Error ? e.message : '保存失败'); } finally { setBusy(false); } };
   const upload = async (file?: File) => { if (!file) return; setBusy(true); try { apply(await api.uploadOrganizationLogo(file)); toast.success('Logo 已安全处理并更新'); } catch (e) { toast.error(e instanceof Error ? e.message : '上传失败'); } finally { setBusy(false); } };
   const createInvite = async () => { setBusy(true); try { const result = await api.createOrganizationInvite({ label: '管理员创建', maxUses: 20, expiresInDays: 30 }); setInvite(result.invitationCode); } catch (e) { toast.error(e instanceof Error ? e.message : '邀请码生成失败'); } finally { setBusy(false); } };
-  if (!branding) return <div className="lf-empty flex min-h-48 items-center justify-center text-sm"><Loader2 className="mr-2 animate-spin" size={16} />读取机构配置…</div>;
+  if (!branding && q.loading) return <div className="lf-empty flex min-h-48 items-center justify-center text-sm"><Loader2 className="mr-2 animate-spin" size={16} />读取机构配置…</div>;
+  if (!branding) return null;
   return (
     <div className="lf-anim-in-up space-y-5">
       <div>

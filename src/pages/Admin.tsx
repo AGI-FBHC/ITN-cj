@@ -1,10 +1,11 @@
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { BookCheck, ChevronDown, ChevronRight, ClipboardList, Database, FileUp, LayoutDashboard, Loader2, LogOut, Network, RefreshCw, Search, Settings, ShieldCheck, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, type LearnerProfileData, type RagDomain, type RagTree, type RagTreeNode } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { useCachedData } from "@/hooks/useCachedData";
 import { cn } from "@/lib/utils";
 import { adminKnowledgeApi } from "@/lib/adminKnowledgeApi";
 import KnowledgeQuality from "@/pages/admin/KnowledgeQuality";
@@ -381,39 +382,27 @@ function KnowledgeManagement({ domains }: { domains: RagDomain[] }) {
 export default function Admin() {
   const location = useLocation();
   const { session, logout } = useAuth();
-  const [learners, setLearners] = useState<LearnerProfileData[]>([]);
-  const [domains, setDomains] = useState<RagDomain[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<LearnerProfileData | null>(null);
-  const [knowledgeServices, setKnowledgeServices] = useState({
-    core: false,
-    predeal: false,
-  });
   const section = (location.pathname.split("/")[2] as AdminSection) || "overview";
   const active = nav.some((item) => item.id === section) ? section : "overview";
   const title = nav.find((item) => item.id === active)?.label || "工作台";
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [nextLearners, nextDomains] = await Promise.all([api.listLearners(), api.listRagDomains()]);
-      setLearners(nextLearners);
-      setDomains(nextDomains);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "管理数据读取失败");
-    } finally {
-      setLoading(false);
-    }
-    const [core, predeal] = await Promise.allSettled([adminKnowledgeApi.health(), adminKnowledgeApi.predealDomains()]);
-    setKnowledgeServices({
-      core: core.status === "fulfilled",
-      predeal: predeal.status === "fulfilled",
-    });
-  }, []);
-  useEffect(() => {
-    void load();
-  }, [load]);
+  /* SWR 缓存：首次进入展示缓存 + 后台刷新；手动刷新按钮强制绕过 TTL */
+  const learnersQ = useCachedData<LearnerProfileData[]>('admin:learners', () => api.listLearners(), { ttlMs: 15_000 });
+  const domainsQ = useCachedData<RagDomain[]>('admin:domains', () => api.listRagDomains(), { ttlMs: 30_000 });
+  const coreQ = useCachedData<boolean>('admin:health:core', async () => { try { await adminKnowledgeApi.health(); return true; } catch { return false; } }, { ttlMs: 20_000 });
+  const predealQ = useCachedData<boolean>('admin:health:predeal', async () => { try { await adminKnowledgeApi.predealDomains(); return true; } catch { return false; } }, { ttlMs: 20_000 });
+  const learners = learnersQ.data ?? [];
+  const domains = domainsQ.data ?? [];
+  const loading = learnersQ.loading && !learnersQ.data;
+  const error = learnersQ.error?.message ?? domainsQ.error?.message ?? null;
+  const load = useCallback(() => {
+    void Promise.all([
+      learnersQ.refresh(true),
+      domainsQ.refresh(true),
+      coreQ.refresh(true),
+      predealQ.refresh(true),
+    ]);
+  }, [learnersQ, domainsQ, coreQ, predealQ]);
   const averageMastery = useMemo(() => (learners.length ? Math.round(learners.reduce((sum, item) => sum + (item.overallMastery || 0), 0) / learners.length) : 0), [learners]);
   return (
     <div className="lf-fade-in min-h-screen font-sans text-ink">
@@ -495,9 +484,9 @@ export default function Admin() {
                     {([
                       ["学习者管理", true, "已接入"],
                       ["知识库读取", true, "Spring 数据接口"],
-                      ["知识质量管理", knowledgeServices.core, "KnowledgeCore"],
-                      ["图谱审核", knowledgeServices.core, "KnowledgeCore"],
-                      ["文档预处理", knowledgeServices.predeal, "predeal v2"],
+                      ["知识质量管理", coreQ.data === true, "KnowledgeCore"],
+                      ["图谱审核", coreQ.data === true, "KnowledgeCore"],
+                      ["文档预处理", predealQ.data === true, "predeal v2"],
                     ] as [string, boolean, string][]).map(([label, ok, detail]) => (
                       <tr key={label}>
                         <td className="px-5 py-3.5 font-semibold text-ink">{label}</td>
@@ -519,7 +508,7 @@ export default function Admin() {
           {active === "graph" && <KnowledgeGraphAdmin />}
           {active === "resources" && <ResourceCenterAdmin />}
           {active === "ingestion" && <DocumentIngestion />}
-          {editing && <EditLearner learner={editing} onClose={() => setEditing(null)} onSaved={(updated) => setLearners((items) => items.map((item) => (item.id === updated.id ? updated : item)))} />}
+          {editing && <EditLearner learner={editing} onClose={() => setEditing(null)} onSaved={() => void learnersQ.refresh(true)} />}
         </div>
       </main>
     </div>

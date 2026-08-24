@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { FileUp, Loader2, Pencil, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { adminKnowledgeApi, type QuestionRecord } from "@/lib/adminKnowledgeApi";
+import { useCachedData } from "@/hooks/useCachedData";
 
 const statusText: Record<string, string> = {
   proposed: "待审核",
@@ -18,9 +19,6 @@ const statusPill: Record<string, string> = {
 };
 
 export default function QuestionBankAdmin({ categoryId, scopeLabel }: { categoryId?: number; scopeLabel?: string } = {}) {
-  const [items, setItems] = useState<QuestionRecord[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
   const [keyword, setKeyword] = useState("");
   const [creating, setCreating] = useState(false);
@@ -29,27 +27,20 @@ export default function QuestionBankAdmin({ categoryId, scopeLabel }: { category
   const [answer, setAnswer] = useState(true);
   const [explanation, setExplanation] = useState("");
   const [difficulty, setDifficulty] = useState(3);
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const result = await adminKnowledgeApi.questions({ status, keyword, categoryId });
-      setItems(result.items);
-      setTotal(result.total);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "题库读取失败");
-    } finally {
-      setLoading(false);
-    }
-  }, [categoryId, keyword, status]);
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const q = useCachedData<{ items: QuestionRecord[]; total: number }>(
+    `admin:qb:${categoryId ?? "*"}:${status}:${keyword}`,
+    () => adminKnowledgeApi.questions({ status, keyword, categoryId }),
+    { ttlMs: 15_000 },
+  );
+  const items = q.data?.items ?? [];
+  const total = q.data?.total ?? 0;
+  const loading = q.loading;
   const review = async (item: QuestionRecord, next: "active" | "rejected" | "deprecated") => {
     try {
       if (next === "deprecated") await adminKnowledgeApi.deprecateQuestion(item.id);
       else await adminKnowledgeApi.reviewQuestion(item.id, next);
       toast.success("题目状态已更新");
-      await load();
+      await q.refresh(true);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "操作失败");
     }
@@ -90,7 +81,7 @@ export default function QuestionBankAdmin({ categoryId, scopeLabel }: { category
       setCreating(false);
       setStem("");
       setExplanation("");
-      await load();
+      await q.refresh(true);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "创建失败");
     }
@@ -102,7 +93,7 @@ export default function QuestionBankAdmin({ categoryId, scopeLabel }: { category
       if (!Array.isArray(parsed)) throw new Error("导入文件根节点必须是题目数组");
       const result = await adminKnowledgeApi.importQuestions(parsed as Record<string, unknown>[]);
       toast.success(`导入完成：新增 ${result.created.length}，跳过 ${result.skipped.length}，失败 ${result.failed.length}`);
-      await load();
+      await q.refresh(true);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "导入失败");
     }
@@ -114,7 +105,8 @@ export default function QuestionBankAdmin({ categoryId, scopeLabel }: { category
           <h2 className="text-xl font-bold tracking-tight text-ink">题库管理</h2>
           <p className="mt-1 text-sm text-ink-muted">{scopeLabel ? `${scopeLabel} · ` : ""}人工维护、审核、发布和下架；AI 出题当前未开放。</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          {q.refreshing && <span className="text-[11px] text-ink-muted">更新中…</span>}
           <label className="lf-row-btn cursor-pointer">
             <FileUp size={14} />
             导入 JSON

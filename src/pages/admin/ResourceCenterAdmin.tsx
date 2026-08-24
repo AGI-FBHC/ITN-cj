@@ -1,14 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArchiveRestore, BookOpen, ChevronDown, ChevronRight, ClipboardList, Eye, FileText, FolderTree, Loader2, MonitorPlay, Plus, RotateCcw, Search, ShieldCheck, Trash2, Wrench, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import {
+  ArchiveRestore, BookOpen, ChevronDown, ChevronRight, ClipboardList, Eye, FileText,
+  FolderTree, Loader2, MonitorPlay, Plus, RotateCcw, Search, ShieldCheck, Trash2, Wrench, X,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { api, type AdminResourceDetail, type AdminResourceItem, type AdminResourceStats, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
+import { useCachedData } from '@/hooks/useCachedData';
+import { clearCacheStartsWith } from '@/lib/swrCache';
+import ResourcePreview from '@/components/admin/ResourcePreview';
 import QuestionBankAdmin from './QuestionBankAdmin';
 import { cn } from '@/lib/utils';
 
 type ResourceKind = 'lecture' | 'practice' | 'questions' | 'ppt';
 type View = 'library' | 'review' | 'recycle';
 const typeText: Record<string, string> = { lecture: '讲义', practice: '实操指南', quiz: '题库', ppt: 'PPT' };
-const reviewText: Record<string, string> = { DRAFT: '草稿', PENDING: '待审核', APPROVED: '已通过', REJECTED: '已驳回', PUBLISHED: '已发布', DEPRECATED: '已下架' };
 const kinds: [ResourceKind, string, string, typeof FileText][] = [
   ['lecture', '讲义', '知识讲解', BookOpen],
   ['practice', '实操指南', '步骤与任务', Wrench],
@@ -25,67 +30,51 @@ function EmptyState({ children }: { children: React.ReactNode }) {
 }
 
 export default function ResourceCenterAdmin() {
-  const [domains, setDomains] = useState<RagDomain[]>([]);
   const [domain, setDomain] = useState<RagDomain | { code: '__unassigned__'; name: string; description: string } | null>(null);
-  const [tree, setTree] = useState<RagTree | null>(null);
-  const [treeLoading, setTreeLoading] = useState(false);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [node, setNode] = useState<RagTreeNode | null>(null);
   const [kind, setKind] = useState<ResourceKind>('lecture');
   const [view, setView] = useState<View>('library');
-  const [stats, setStats] = useState<AdminResourceStats>({ library: 0, pending: 0, published: 0, recycle: 0 });
-  const [items, setItems] = useState<AdminResourceItem[]>([]);
-  const [loading, setLoading] = useState(false);
   const [keyword, setKeyword] = useState('');
   const [detail, setDetail] = useState<AdminResourceDetail | null>(null);
 
-  useEffect(() => {
-    api.listRagDomains().then(setDomains).catch((e) => toast.error(e.message));
-    api.getAdminResourceStats().then(setStats).catch(() => undefined);
-  }, []);
+  /* ---- SWR 缓存：先展示缓存，后台异步更新 ---- */
+  const domainsQ = useCachedData<RagDomain[]>('admin:rag-domains', () => api.listRagDomains(), { ttlMs: 30_000 });
+  const statsQ = useCachedData<AdminResourceStats>('admin:res:stats', () => api.getAdminResourceStats(), { ttlMs: 10_000 });
+  const treeQ = useCachedData<RagTree>(
+    domain && domain.code !== '__unassigned__' ? `admin:rag-tree:${domain.code}` : null,
+    () => api.getRagTree((domain as RagDomain).code),
+    { ttlMs: 60_000 },
+  );
+  const resourceType = kind === 'questions' ? 'quiz' : kind;
+  const listQ = useCachedData<{ items: AdminResourceItem[]; total: number }>(
+    domain ? `admin:res:${view}:${resourceType}:${domain.code}:${node?.nodeCode ?? ''}:${keyword}` : null,
+    () => api.listAdminResources({ view, type: resourceType, keyword, domainCode: (domain as { code: string }).code, nodeCode: node?.nodeCode }),
+    { ttlMs: 15_000 },
+  );
 
-  const openDomain = async (next: RagDomain | { code: '__unassigned__'; name: string; description: string }) => {
+  useEffect(() => {
+    if (treeQ.data) setExpanded(new Set(treeQ.data.nodes.map((n) => n.id)));
+  }, [treeQ.data]);
+  useEffect(() => {
+    const message = domainsQ.error?.message ?? statsQ.error?.message ?? treeQ.error?.message ?? listQ.error?.message;
+    if (message) toast.error(message);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [domainsQ.error, statsQ.error, treeQ.error, listQ.error]);
+
+  const openDomain = (next: RagDomain | { code: '__unassigned__'; name: string; description: string }) => {
     setDomain(next);
     setNode(null);
     setKind('lecture');
     setKeyword('');
-    setTree(null);
-    if (next.code === '__unassigned__') {
-      setView('recycle');
-      return;
-    }
-    setTreeLoading(true);
-    try {
-      const value = await api.getRagTree(next.code);
-      setTree(value);
-      setExpanded(new Set(value.nodes.map((n) => n.id)));
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '目录树读取失败');
-    } finally {
-      setTreeLoading(false);
-    }
+    if (next.code === '__unassigned__') setView('recycle');
   };
 
-  const resourceType = kind === 'questions' ? 'quiz' : kind;
-
-  const load = useCallback(async () => {
-    if (!domain || kind === 'questions') return;
-    setLoading(true);
-    try {
-      const listed = await api.listAdminResources({ view, type: resourceType, keyword, domainCode: domain.code, nodeCode: node?.nodeCode });
-      setItems(listed.items);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : '资源读取失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [domain, kind, keyword, node?.nodeCode, resourceType, view]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const rows = useMemo(() => flatten(tree?.nodes || [], expanded), [tree, expanded]);
+  /** 写操作后失效：清空资源相关缓存并强制刷新当前列表与统计 */
+  const invalidateResources = async () => {
+    clearCacheStartsWith('admin:res');
+    await Promise.all([listQ.refresh(true), statsQ.refresh(true)]);
+  };
 
   const act = async (item: AdminResourceItem, action: string) => {
     try {
@@ -94,7 +83,7 @@ export default function ResourceCenterAdmin() {
       else if (action === 'archive') await api.archiveAdminResource(item.id);
       else await api.reviewAdminResource(item.id, action as 'submit' | 'approve' | 'reject' | 'publish' | 'deprecate');
       toast.success(action === 'candidate' ? '已复制为通用资源草稿' : '资源状态已更新');
-      await load();
+      await invalidateResources();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '操作失败');
     }
@@ -116,26 +105,25 @@ export default function ResourceCenterAdmin() {
             <h2 className="text-2xl font-bold tracking-tight text-ink">资源中心</h2>
             <p className="mt-1.5 text-sm text-ink-muted">先选择领域，再沿知识目录管理四类学习资源。</p>
           </div>
-          <div className="lf-seg">
-            <button onClick={() => setView('review')} className={cn('lf-seg-item', view === 'review' && 'lf-seg-item-active')}>
-              <ShieldCheck size={13} />
-              审核中心
-              <span className={cn('rounded-full px-1.5 text-[10px]', view === 'review' ? 'bg-white/60' : 'bg-white/70')}>{stats.pending}</span>
-            </button>
-            <button onClick={() => setView('recycle')} className={cn('lf-seg-item', view === 'recycle' && 'lf-seg-item-active')}>
-              <Trash2 size={13} />
-              回收站
-              <span className={cn('rounded-full px-1.5 text-[10px]', view === 'recycle' ? 'bg-white/60' : 'bg-white/70')}>{stats.recycle}</span>
-            </button>
+          <div className="flex items-center gap-2">
+            {statsQ.refreshing && <span className="text-[11px] text-ink-muted">统计更新中…</span>}
+            <div className="lf-seg">
+              <button onClick={() => setView('review')} className={cn('lf-seg-item', view === 'review' && 'lf-seg-item-active')}>
+                <ShieldCheck size={13} />
+                审核中心
+                <span className={cn('rounded-full px-1.5 text-[10px]', view === 'review' ? 'bg-white/60' : 'bg-white/70')}>{statsQ.data?.pending ?? 0}</span>
+              </button>
+              <button onClick={() => setView('recycle')} className={cn('lf-seg-item', view === 'recycle' && 'lf-seg-item-active')}>
+                <Trash2 size={13} />
+                回收站
+                <span className={cn('rounded-full px-1.5 text-[10px]', view === 'recycle' ? 'bg-white/60' : 'bg-white/70')}>{statsQ.data?.recycle ?? 0}</span>
+              </button>
+            </div>
           </div>
         </div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {domains.map((item) => (
-            <button
-              key={item.code}
-              onClick={() => void openDomain(item)}
-              className="lf-card lf-card-hover rounded-2xl p-6 text-left"
-            >
+          {(domainsQ.data ?? []).map((item) => (
+            <button key={item.code} onClick={() => openDomain(item)} className="lf-card lf-card-hover rounded-2xl p-6 text-left">
               <span className="flex items-start justify-between">
                 <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-tint text-brand">
                   <FolderTree size={20} />
@@ -168,21 +156,29 @@ export default function ResourceCenterAdmin() {
               <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/70 text-ochre">
                 <FolderTree size={20} />
               </span>
-              <span className="lf-pill lf-pill-warn">{stats.recycle} 项</span>
+              <span className="lf-pill lf-pill-warn">{statsQ.data?.recycle ?? 0} 项</span>
             </span>
             <h3 className="mt-4 text-base font-bold text-ink">未识别归属</h3>
             <p className="mt-1 text-xs leading-5 text-ink-muted">安全收纳尚未建立稳定领域和知识点映射的历史资源。</p>
           </button>
         </div>
+        {domainsQ.loading && !domainsQ.data && (
+          <div className="flex justify-center py-10 text-sm text-ink-muted">
+            <Loader2 className="mr-2 animate-spin" size={16} />
+            正在读取领域…
+          </div>
+        )}
       </div>
     );
+
+  const tree = treeQ.data;
 
   return (
     <div className="lf-anim-in-up">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <nav className="flex items-center gap-1.5 text-xs text-ink-muted">
-            <button onClick={() => { setDomain(null); setTree(null); setNode(null); }} className="lf-row-btn !px-2.5 !py-1 text-brand">
+            <button onClick={() => { setDomain(null); setNode(null); }} className="lf-row-btn !px-2.5 !py-1 text-brand">
               资源中心
             </button>
             <span>/</span>
@@ -216,13 +212,13 @@ export default function ResourceCenterAdmin() {
           </button>
           {domain.code === '__unassigned__' ? (
             <div className="lf-empty m-3 rounded-xl p-4 text-xs leading-5">这些资源缺少可靠目录映射。可预览后恢复，或在后续人工绑定到领域知识点。</div>
-          ) : treeLoading ? (
+          ) : treeQ.loading && !treeQ.data ? (
             <div className="flex justify-center py-10">
               <Loader2 className="animate-spin" size={17} />
             </div>
           ) : (
             <div className="max-h-[640px] overflow-y-auto py-1.5">
-              {rows.map(({ node: itemNode, depth }) => (
+              {flatten(tree?.nodes ?? [], expanded).map(({ node: itemNode, depth }) => (
                 <div
                   key={itemNode.id}
                   className={cn('flex items-center pr-2 text-xs transition-colors', node?.id === itemNode.id ? 'lf-tree-active rounded-lg' : 'text-ink-2 hover:bg-brand-tint/50')}
@@ -260,10 +256,7 @@ export default function ResourceCenterAdmin() {
               <button
                 key={id}
                 onClick={() => setKind(id)}
-                className={cn(
-                  'lf-card rounded-2xl p-3.5 text-left transition-all',
-                  kind === id ? 'ring-2 ring-brand/50 border-brand/40 bg-brand-tint/40' : 'hover:-translate-y-0.5'
-                )}
+                className={cn('lf-card rounded-2xl p-3.5 text-left transition-all', kind === id ? 'ring-2 ring-brand/50 border-brand/40 bg-brand-tint/40' : 'hover:-translate-y-0.5')}
               >
                 <Icon size={17} className={kind === id ? 'text-brand' : 'text-ink-muted'} />
                 <p className="mt-2 text-sm font-bold text-ink">{label}</p>
@@ -294,14 +287,39 @@ export default function ResourceCenterAdmin() {
                   <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
                   <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="搜索当前目录资源" className="lf-input pl-8" />
                 </div>
+                {listQ.refreshing && (
+                  <span className="flex items-center gap-1 text-[11px] text-ink-muted">
+                    <Loader2 size={11} className="animate-spin" />
+                    后台更新中
+                  </span>
+                )}
               </div>
-              <ResourceTable items={items} loading={loading} view={view} onPreview={preview} onAction={act} />
+              <ResourceTable items={listQ.data?.items ?? []} loading={listQ.loading} view={view} onPreview={preview} onAction={act} />
             </>
           )}
         </section>
       </div>
 
-      {detail && <DetailModal detail={detail} onClose={() => setDetail(null)} />}
+      {detail && (
+        <div className="lf-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="lf-glass flex max-h-[90vh] w-full max-w-4xl flex-col rounded-2xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-white/60 px-5 py-4">
+              <div className="min-w-0">
+                <h3 className="truncate font-bold text-ink">{detail.title}</h3>
+                <p className="mt-0.5 text-xs text-ink-muted">
+                  {typeText[detail.type] || detail.type} · v{detail.revision}
+                </p>
+              </div>
+              <button onClick={() => setDetail(null)} className="ml-4 rounded-lg p-1.5 text-ink-muted hover:bg-white/60">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-5">
+              <ResourcePreview detail={detail} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -331,7 +349,7 @@ function ResourceTable({ items, loading, view, onPreview, onAction }: { items: A
                     <span className="lf-pill lf-pill-warn">已归档</span>
                   ) : item.reviewStatus ? (
                     <span className={cn('lf-pill', item.reviewStatus === 'PUBLISHED' ? 'lf-pill-ok' : item.reviewStatus === 'REJECTED' || item.reviewStatus === 'DEPRECATED' ? 'lf-pill-danger' : item.reviewStatus === 'PENDING' ? 'lf-pill-warn' : 'lf-pill-null')}>
-                      {reviewText[item.reviewStatus] || item.reviewStatus}
+                      {item.reviewStatus}
                     </span>
                   ) : (
                     <span className="lf-pill lf-pill-null">用户历史版本</span>
@@ -374,32 +392,6 @@ function ResourceTable({ items, loading, view, onPreview, onAction }: { items: A
         </div>
       )}
       {!loading && !items.length && <EmptyState>当前范围暂无资源</EmptyState>}
-    </div>
-  );
-}
-
-function DetailModal({ detail, onClose }: { detail: AdminResourceDetail; onClose: () => void }) {
-  return (
-    <div className="lf-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="lf-glass flex max-h-[88vh] w-full max-w-4xl flex-col rounded-2xl">
-        <div className="flex shrink-0 items-center justify-between border-b border-white/60 px-5 py-4">
-          <div>
-            <h3 className="font-bold text-ink">{detail.title}</h3>
-            <p className="mt-0.5 text-xs text-ink-muted">
-              {typeText[detail.type] || detail.type} · v{detail.revision}
-            </p>
-          </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-ink-muted hover:bg-white/60">
-            <X size={18} />
-          </button>
-        </div>
-        <div className="overflow-y-auto p-5">
-          <p className="text-sm leading-6 text-ink-2">{detail.topic}</p>
-          <pre className="mt-4 max-h-[440px] overflow-auto whitespace-pre-wrap rounded-xl bg-[#2C3A30] p-4 text-xs leading-5 text-emerald-50/90">
-            {typeof detail.content === 'string' ? detail.content : JSON.stringify(detail.content, null, 2)}
-          </pre>
-        </div>
-      </div>
     </div>
   );
 }
