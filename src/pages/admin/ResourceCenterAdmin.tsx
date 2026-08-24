@@ -733,8 +733,11 @@ function snapshotEntries(snapshot: Record<string, unknown>): Array<[string, stri
 function GenerationProcessModal({ task, onClose }: { task: GenerationTask | null; onClose: () => void }) {
   const [events, setEvents] = useState<AdminGenerationEvent[]>([]);
   const [streamError, setStreamError] = useState('');
+  const [selectedAgent, setSelectedAgent] = useState<string>('');
+  const [selectedEventSeq, setSelectedEventSeq] = useState<number | null>(null);
   useEffect(() => {
     if (!task) return;
+    setEvents([]); setStreamError(''); setSelectedAgent(''); setSelectedEventSeq(null);
     const controller = new AbortController();
     void streamAdminGenerationTask(task.taskKind, task.id, (event) => {
       setEvents((current) => current.some((item) => item.seq === event.seq) ? current : [...current, event].sort((a, b) => a.seq - b.seq));
@@ -746,6 +749,13 @@ function GenerationProcessModal({ task, onClose }: { task: GenerationTask | null
   if (!task) return null;
   const active = activeGenerationStatuses.has(task.status);
   const latest = events.at(-1);
+  const effectiveAgent = selectedAgent || latest?.agent || generationAgents[0].id;
+  const selectedAgentEvents = events.filter((event) => event.agent === effectiveAgent);
+  const selectedEvent = selectedAgentEvents.find((event) => event.seq === selectedEventSeq) ?? selectedAgentEvents.at(-1);
+  const selectAgent = (id: string) => {
+    setSelectedAgent(id);
+    setSelectedEventSeq(events.filter((event) => event.agent === id).at(-1)?.seq ?? null);
+  };
   const context = taskContext(task);
   return (
     <div className="fixed inset-0 z-[95] flex items-center justify-center bg-ink/35 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
@@ -770,14 +780,15 @@ function GenerationProcessModal({ task, onClose }: { task: GenerationTask | null
               const isRunning = active && latest?.agent === agent.id;
               const done = agentEvents.length > 0 && !isRunning;
               return (
-                <div key={agent.id} className={cn('rounded-2xl border p-3 transition-colors', isRunning ? 'border-brand/50 bg-brand-tint/70' : done ? 'border-emerald-200 bg-emerald-50/60' : 'border-white/80 bg-white/45')}>
+                <button type="button" onClick={() => selectAgent(agent.id)} key={agent.id} className={cn('rounded-2xl border p-3 text-left transition-all', effectiveAgent === agent.id ? 'border-brand bg-brand-tint/80 shadow-sm ring-2 ring-brand/10' : isRunning ? 'border-brand/50 bg-brand-tint/50' : done ? 'border-emerald-200 bg-emerald-50/60 hover:border-emerald-300' : 'border-white/80 bg-white/45 hover:border-brand/25')}>
                   <div className="flex items-center gap-2">
                     <span className={cn('flex h-7 w-7 items-center justify-center rounded-lg text-[10px] font-bold', isRunning ? 'bg-brand text-white' : done ? 'bg-emerald-100 text-emerald-700' : 'bg-white/80 text-ink-muted')}>{agent.id.slice(0, 3)}</span>
                     {isRunning ? <Loader2 size={13} className="animate-spin text-brand" /> : done ? <CheckCircle2 size={13} className="text-emerald-600" /> : <span className="h-2 w-2 rounded-full bg-ink-muted/30" />}
+                    <span className="ml-auto text-[9px] text-ink-muted">{agentEvents.length} 项</span>
                   </div>
                   <p className="mt-2 text-xs font-bold text-ink">{agent.name}</p>
                   <p className="mt-1 text-[10px] leading-4 text-ink-muted">{isRunning ? String(latest?.snapshot?.activity || latest?.title || agent.duty) : agent.duty}</p>
-                </div>
+                </button>
               );
             })}
           </section>
@@ -785,31 +796,23 @@ function GenerationProcessModal({ task, onClose }: { task: GenerationTask | null
 
           <section className="mt-4 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
             <div className="rounded-2xl border border-white/80 bg-white/50 p-4">
-              <div className="flex items-center gap-2"><Radio size={14} className={active ? 'text-brand' : 'text-ink-muted'} /><h4 className="text-sm font-bold text-ink">当前工作快照</h4></div>
-              {latest ? (
-                <>
-                  <p className="mt-3 text-sm font-semibold text-ink">{latest.agentName} · {latest.title}</p>
-                  <p className="mt-1 text-xs leading-5 text-ink-muted">{latest.detail}</p>
-                  <div className="mt-3 space-y-2">
-                    {snapshotEntries(latest.snapshot).map(([label, value]) => <div key={label} className="rounded-xl bg-white/65 px-3 py-2"><span className="text-[10px] font-semibold text-ink-muted">{label}</span><p className="mt-0.5 text-xs leading-5 text-ink-2">{value}</p></div>)}
-                    {!Object.keys(latest.snapshot).length && <p className="py-4 text-center text-xs text-ink-muted">当前阶段暂无额外结构化快照</p>}
-                  </div>
-                </>
-              ) : <div className="flex items-center justify-center py-16 text-xs text-ink-muted"><Loader2 size={14} className="mr-2 animate-spin" />正在建立流式连接…</div>}
+              <div className="flex items-center justify-between"><div className="flex items-center gap-2"><Radio size={14} className={active ? 'text-brand' : 'text-ink-muted'} /><h4 className="text-sm font-bold text-ink">{generationAgents.find((agent) => agent.id === effectiveAgent)?.name} · 工作流</h4></div><span className="text-[10px] text-ink-muted">{selectedAgentEvents.length} 项</span></div>
+              <div className="mt-3 max-h-[420px] space-y-1 overflow-y-auto pr-1">
+                {selectedAgentEvents.map((event) => (
+                  <button type="button" onClick={() => setSelectedEventSeq(event.seq)} key={event.seq} className={cn('flex w-full gap-3 rounded-xl px-3 py-2.5 text-left transition-colors', event.seq === selectedEvent?.seq ? 'bg-brand-tint/70 ring-1 ring-brand/20' : 'hover:bg-white/60')}>
+                    <span className="shrink-0 font-mono text-[10px] text-ink-muted">{event.time ? new Date(event.time).toLocaleTimeString('zh-CN', { hour12: false }) : '--:--:--'}</span>
+                    <div className="min-w-0 flex-1"><span className="text-[11px] font-bold text-ink">{event.title}</span><p className="mt-1 line-clamp-2 text-[11px] leading-5 text-ink-muted">{event.detail}</p></div>
+                  </button>
+                ))}
+                {!selectedAgentEvents.length && <p className="py-12 text-center text-xs text-ink-muted">该 Agent 暂无执行记录</p>}
+              </div>
+              {streamError && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-[11px] text-red-600">{streamError}</p>}
             </div>
 
             <div className="rounded-2xl border border-white/80 bg-white/50 p-4">
-              <div className="flex items-center justify-between"><h4 className="text-sm font-bold text-ink">协同事件流</h4><span className="text-[10px] text-ink-muted">{events.length} 条</span></div>
-              <div className="mt-3 max-h-[420px] space-y-1 overflow-y-auto pr-1">
-                {events.map((event) => (
-                  <div key={event.seq} className={cn('flex gap-3 rounded-xl px-3 py-2.5', event.seq === latest?.seq ? 'bg-brand-tint/60' : 'hover:bg-white/60')}>
-                    <span className="shrink-0 font-mono text-[10px] text-ink-muted">{event.time ? new Date(event.time).toLocaleTimeString('zh-CN', { hour12: false }) : '--:--:--'}</span>
-                    <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-1.5"><span className="lf-pill lf-pill-null !px-1.5 text-[9px]">{event.agent}</span><span className="text-[11px] font-bold text-ink">{event.title}</span></div><p className="mt-1 text-[11px] leading-5 text-ink-muted">{event.detail}</p></div>
-                  </div>
-                ))}
-                {!events.length && <p className="py-12 text-center text-xs text-ink-muted">等待第一条协同事件…</p>}
-              </div>
-              {streamError && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-[11px] text-red-600">{streamError}</p>}
+              <h4 className="text-sm font-bold text-ink">执行详情</h4>
+              <p className="mt-1 text-[10px] text-ink-muted">点击左侧任一事件，可回溯当时的具体操作与结果</p>
+              {selectedEvent ? <><p className="mt-3 text-sm font-semibold text-ink">{selectedEvent.agentName} · {selectedEvent.title}</p><p className="mt-1 text-xs leading-5 text-ink-muted">{selectedEvent.detail}</p><div className="mt-3 space-y-2">{snapshotEntries(selectedEvent.snapshot).map(([label, value]) => <div key={label} className="rounded-xl bg-white/65 px-3 py-2"><span className="text-[10px] font-semibold text-ink-muted">{label}</span><p className="mt-0.5 whitespace-pre-wrap text-xs leading-5 text-ink-2">{value}</p></div>)}{!Object.keys(selectedEvent.snapshot).length && <p className="py-8 text-center text-xs text-ink-muted">该事件没有额外的结构化执行详情</p>}</div></> : <p className="py-16 text-center text-xs text-ink-muted">请先选择一个有执行记录的 Agent</p>}
             </div>
           </section>
         </div>
