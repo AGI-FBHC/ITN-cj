@@ -60,7 +60,47 @@ function CollaborationRounds({ events, selectedSeq, onSelect }: {
   return (
     <div className="mt-3 space-y-3">
       {lifecycle[0] && <button type="button" onClick={() => onSelect(lifecycle[0])} className={cn('flex w-full items-center gap-2 rounded-xl border border-dashed px-3 py-2 text-left', lifecycle[0].seq === selectedSeq ? 'border-brand/40 bg-brand-tint/50' : 'border-white/80 bg-white/35')}><span className="h-2 w-2 rounded-full bg-ink-muted"/><span className="text-[10px] font-bold text-ink">{lifecycle[0].title}</span><span className="text-[9px] text-ink-muted">系统生命周期 · 不属于任何 Agent</span></button>}
-      {rounds.map((round) => <section key={round.index} className="rounded-xl border border-white/75 bg-white/35 p-3"><div className="flex flex-wrap items-center gap-2"><h5 className="text-xs font-bold text-ink">{round.label}</h5>{round.index > 0 && <span className="lf-pill lf-pill-warn">返工轮次</span>}<span className="ml-auto text-[9px] text-ink-muted">{round.units.reduce((sum, unit) => sum + unit.events.length, 0)} 条记录</span></div>{round.trigger && <p className="mt-1 text-[10px] text-ochre">触发：{round.trigger.title}</p>}<div className="mt-3 flex min-w-max items-stretch gap-2 overflow-x-auto pb-1">{round.units.map((unit, index) => { const event = unit.events.at(-1)!; const agent = agents.find((item) => item.id === unit.agent); const selected = unit.events.some((item) => item.seq === selectedSeq); return <div key={`${round.index}-${index}-${unit.agent}`} className="flex items-center gap-2">{index > 0 && <span className={cn('text-sm', round.index > 0 && index === 1 ? 'text-ochre' : 'text-ink-muted')}>{round.index > 0 && index === 1 ? '⇢' : '→'}</span>}<button type="button" onClick={() => onSelect(event)} className={cn('w-36 rounded-xl border px-3 py-2.5 text-left', selected ? 'border-brand/45 bg-brand-tint/70' : 'border-white/80 bg-white/60')}><span className="block text-[9px] font-semibold text-brand">{agent?.name ?? unit.agent}</span><span className="mt-1 block truncate text-[10px] font-bold text-ink">{event.title}</span><span className="mt-1 block text-[9px] text-ink-muted">{unit.events.length} 条过程记录</span></button></div>; })}</div></section>)}
+      {rounds.map((round) => (
+        <section key={round.index} className="rounded-xl border border-white/75 bg-white/35 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <h5 className="text-xs font-bold text-ink">{round.label}</h5>
+            {round.index > 0 && <span className="lf-pill lf-pill-warn">返工轮次</span>}
+            <span className="ml-auto text-[9px] text-ink-muted">{round.units.reduce((sum, unit) => sum + unit.events.length, 0)} 条记录</span>
+          </div>
+          {round.trigger && <p className="mt-1 text-[10px] text-ochre">触发：{round.trigger.title}</p>}
+          <div className="mt-3 overflow-x-auto pb-1">
+          <div className="relative min-w-[720px] overflow-hidden rounded-2xl border border-white/70 bg-white/25 px-2 pb-3 pt-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+            <div className="pointer-events-none absolute inset-x-2 bottom-3 top-12 grid grid-cols-5 gap-2">
+              {agents.map((agent, index) => <div key={agent.id} className={cn('relative rounded-xl', index % 2 ? 'bg-white/10' : 'bg-white/25')}><span className="absolute inset-y-0 left-1/2 w-px bg-ink-muted/10" /></div>)}
+            </div>
+            <div className="relative grid grid-cols-5 gap-2 pb-2">
+              {agents.map((agent) => <div key={agent.id} className="flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-white/70 bg-white/65 px-2 text-center shadow-sm"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-tint font-mono text-[8px] font-bold text-brand">{agent.id.slice(0, 3)}</span><span className="truncate text-[9px] font-bold text-ink">{agent.name}</span></div>)}
+            </div>
+            <div className="relative py-1">
+              {round.units.map((unit, index) => {
+                const event = unit.events.at(-1)!;
+                const lane = Math.max(0, agents.findIndex((item) => item.id === unit.agent));
+                const previousLane = index > 0 ? Math.max(0, agents.findIndex((item) => item.id === round.units[index - 1].agent)) : lane;
+                const selected = unit.events.some((item) => item.seq === selectedSeq);
+                return (
+                  <div key={`${round.index}-${index}-${unit.agent}`}>
+                    {index > 0 && previousLane !== lane && <div className="relative h-6"><span className={cn('absolute top-2.5 h-px', round.index > 0 && index === 1 ? 'border-t border-dashed border-ochre/60' : 'bg-brand/25')} style={{ left: `${(Math.min(previousLane, lane) + .5) * 20}%`, width: `${Math.abs(lane - previousLane) * 20}%` }} /><span className={cn('absolute top-[5px] -translate-x-1/2 text-[9px]', round.index > 0 && index === 1 ? 'text-ochre' : 'text-brand/55')} style={{ left: `${(lane + .5) * 20}%` }}>{lane > previousLane ? '›' : '‹'}</span>{round.index > 0 && index === 1 && <span className="absolute left-2 top-1 rounded-full bg-ochre/10 px-1.5 py-0.5 text-[8px] font-semibold text-ochre">修复交接</span>}</div>}
+                    <div className="grid min-h-14 grid-cols-5 gap-2">
+                      <button type="button" onClick={() => onSelect(event)} style={{ gridColumn: lane + 1 }} className={cn('group relative mx-1 rounded-xl border px-3 py-2.5 text-left shadow-sm transition-all duration-200', selected ? 'border-brand/50 bg-brand-tint/90 shadow-[0_6px_18px_rgba(64,104,78,0.12)] ring-2 ring-brand/10' : 'border-white/85 bg-white/80 hover:-translate-y-0.5 hover:border-brand/30 hover:bg-white')}>
+                        <span className={cn('absolute -left-1.5 top-3.5 h-3 w-3 rounded-full border-2 border-[#f7f5ee]', selected ? 'bg-brand' : round.index > 0 ? 'bg-ochre' : 'bg-brand/50')} />
+                        <span className="block truncate text-[10px] font-bold text-ink">{event.title}</span>
+                        <span className="mt-1.5 block text-[8.5px] leading-4 text-ink-muted">{unit.events.length} 条过程记录</span>
+                        <span className="block font-mono text-[8px] text-ink-muted/80">{event.time ? new Date(event.time).toLocaleTimeString('zh-CN', { hour12: false }) : `#${event.seq}`}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          </div>
+        </section>
+      ))}
       {lifecycle.slice(1).map((event) => <button key={event.seq} type="button" onClick={() => onSelect(event)} className={cn('flex w-full items-center gap-2 rounded-xl border border-dashed px-3 py-2 text-left', event.seq === selectedSeq ? 'border-brand/40 bg-brand-tint/50' : 'border-white/80 bg-white/35')}><span className="h-2 w-2 rounded-full bg-brand"/><span className="text-[10px] font-bold text-ink">{event.title}</span><span className="text-[9px] text-ink-muted">系统生命周期</span></button>)}
       {!events.length && <p className="py-8 text-center text-xs text-ink-muted">等待第一条协同事件…</p>}
     </div>
