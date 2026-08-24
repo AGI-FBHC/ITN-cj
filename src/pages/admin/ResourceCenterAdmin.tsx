@@ -772,7 +772,7 @@ function GenerationProcessModal({ task, onClose }: { task: GenerationTask | null
   const context = taskContext(task);
   return (
     <div className="fixed inset-0 z-[95] flex items-center justify-center bg-ink/35 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-white/80 bg-[#f7f5ee] shadow-2xl">
+      <div className="flex h-[min(78vh,800px)] w-full max-w-[1060px] flex-col overflow-hidden rounded-3xl border border-white/80 bg-[#f7f5ee] shadow-2xl">
         <header className="flex items-start gap-3 border-b border-white/75 bg-white/35 px-6 py-5">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand text-paper"><Sparkles size={20} /></div>
           <div className="min-w-0 flex-1">
@@ -786,14 +786,14 @@ function GenerationProcessModal({ task, onClose }: { task: GenerationTask | null
           <button onClick={onClose} className="lf-row-btn !p-2" aria-label="关闭"><X size={16} /></button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-5">
-          <section className="grid gap-2 md:grid-cols-5">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
+          <section className="grid shrink-0 gap-2 md:grid-cols-5">
             {generationAgents.map((agent) => {
               const agentEvents = events.filter((event) => event.agent === agent.id);
               const isRunning = active && latest?.agent === agent.id;
               const done = agentEvents.length > 0 && !isRunning;
               return (
-                <button type="button" onClick={() => selectAgent(agent.id)} key={agent.id} className={cn('rounded-2xl border p-3 text-left transition-all', effectiveAgent === agent.id ? 'border-brand bg-brand-tint/80 shadow-sm ring-2 ring-brand/10' : isRunning ? 'border-brand/50 bg-brand-tint/50' : done ? 'border-emerald-200 bg-emerald-50/60 hover:border-emerald-300' : 'border-white/80 bg-white/45 hover:border-brand/25')}>
+                <button type="button" onClick={() => selectAgent(agent.id)} key={agent.id} className={cn('h-[118px] rounded-2xl border p-3 text-left transition-all', effectiveAgent === agent.id ? 'border-brand bg-brand-tint/80 shadow-sm ring-2 ring-brand/10' : isRunning ? 'border-brand/50 bg-brand-tint/50' : done ? 'border-emerald-200 bg-emerald-50/60 hover:border-emerald-300' : 'border-white/80 bg-white/45 hover:border-brand/25')}>
                   <div className="flex items-center gap-2">
                     <span className={cn('flex h-7 w-7 items-center justify-center rounded-lg text-[10px] font-bold', isRunning ? 'bg-brand text-white' : done ? 'bg-emerald-100 text-emerald-700' : 'bg-white/80 text-ink-muted')}>{agent.id.slice(0, 3)}</span>
                     {isRunning ? <Loader2 size={13} className="animate-spin text-brand" /> : done ? <CheckCircle2 size={13} className="text-emerald-600" /> : <span className="h-2 w-2 rounded-full bg-ink-muted/30" />}
@@ -807,10 +807,10 @@ function GenerationProcessModal({ task, onClose }: { task: GenerationTask | null
           </section>
           <EvidenceDebateCourt events={events} />
 
-          <section className="mt-4 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-            <div className="rounded-2xl border border-white/80 bg-white/50 p-4">
-              <div className="flex items-center justify-between"><div className="flex items-center gap-2"><Radio size={14} className={active ? 'text-brand' : 'text-ink-muted'} /><h4 className="text-sm font-bold text-ink">{generationAgents.find((agent) => agent.id === effectiveAgent)?.name} · 工作流</h4></div><span className="text-[10px] text-ink-muted">{selectedAgentEvents.length} 项</span></div>
-              <div className="mt-3 max-h-[420px] space-y-1 overflow-y-auto pr-1">
+          <section className="grid shrink-0 gap-4 lg:h-[min(46vh,400px)] lg:grid-cols-[0.9fr_1.1fr]">
+            <div className="flex min-h-0 flex-col rounded-2xl border border-white/80 bg-white/50 p-4">
+              <div className="flex shrink-0 items-center justify-between"><div className="flex items-center gap-2"><Radio size={14} className={active ? 'text-brand' : 'text-ink-muted'} /><h4 className="text-sm font-bold text-ink">{generationAgents.find((agent) => agent.id === effectiveAgent)?.name} · 工作流</h4></div><span className="text-[10px] text-ink-muted">{selectedAgentEvents.length} 项</span></div>
+              <div className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
                 {selectedAgentEvents.map((event) => (
                   <button type="button" onClick={() => setSelectedEventSeq(event.seq)} key={event.seq} className={cn('flex w-full gap-3 rounded-xl px-3 py-2.5 text-left transition-colors', event.seq === selectedEvent?.seq ? 'bg-brand-tint/70 ring-1 ring-brand/20' : 'hover:bg-white/60')}>
                     <span className="shrink-0 font-mono text-[10px] text-ink-muted">{event.time ? new Date(event.time).toLocaleTimeString('zh-CN', { hour12: false }) : '--:--:--'}</span>
@@ -822,10 +822,27 @@ function GenerationProcessModal({ task, onClose }: { task: GenerationTask | null
               {streamError && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-[11px] text-red-600">{streamError}</p>}
             </div>
 
-            <div className="rounded-2xl border border-white/80 bg-white/50 p-4">
-              <h4 className="text-sm font-bold text-ink">执行详情</h4>
-              <p className="mt-1 text-[10px] text-ink-muted">点击左侧任一事件，可回溯当时的具体操作与结果</p>
-              {selectedEvent ? <><p className="mt-3 text-sm font-semibold text-ink">{selectedEvent.agentName} · {selectedEvent.title}</p><p className="mt-1 text-xs leading-5 text-ink-muted">{selectedEvent.detail}</p><div className="mt-3 space-y-2">{snapshotEntries(selectedEvent.snapshot).map(([label, value]) => <div key={label} className="rounded-xl bg-white/65 px-3 py-2"><span className="text-[10px] font-semibold text-ink-muted">{label}</span><p className="mt-0.5 whitespace-pre-wrap text-xs leading-5 text-ink-2">{value}</p></div>)}{!Object.keys(selectedEvent.snapshot).length && <p className="py-8 text-center text-xs text-ink-muted">该事件没有额外的结构化执行详情</p>}</div></> : <p className="py-16 text-center text-xs text-ink-muted">请先选择一个有执行记录的 Agent</p>}
+            <div className="flex min-h-0 flex-col rounded-2xl border border-white/80 bg-white/50 p-4">
+              <div className="shrink-0">
+                <h4 className="text-sm font-bold text-ink">执行详情</h4>
+                <p className="mt-1 text-[10px] text-ink-muted">点击左侧任一事件，可回溯当时的具体操作与结果</p>
+              </div>
+              <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
+                {selectedEvent ? (
+                  <>
+                    <p className="text-sm font-semibold text-ink">{selectedEvent.agentName} · {selectedEvent.title}</p>
+                    <p className="mt-1 text-xs leading-5 text-ink-muted">{selectedEvent.detail}</p>
+                    <div className="mt-3 space-y-2">
+                      {snapshotEntries(selectedEvent.snapshot).map(([label, value]) => (
+                        <div key={label} className="rounded-xl bg-white/65 px-3 py-2"><span className="text-[10px] font-semibold text-ink-muted">{label}</span><p className="mt-0.5 whitespace-pre-wrap text-xs leading-5 text-ink-2">{value}</p></div>
+                      ))}
+                      {!Object.keys(selectedEvent.snapshot).length && <p className="py-8 text-center text-xs text-ink-muted">该事件没有额外的结构化执行详情</p>}
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex h-full items-center justify-center py-8 text-center text-xs text-ink-muted">请先选择一个有执行记录的 Agent</div>
+                )}
+              </div>
             </div>
           </section>
         </div>
