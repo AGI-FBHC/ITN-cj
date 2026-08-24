@@ -604,19 +604,27 @@ function TaskDrawer({ open, tasks, busy, focusTaskId, onClose, onCancel, onRetry
   onRetry: (task: GenerationTask) => void;
   onInspect: (task: GenerationTask) => void;
 }) {
+  const [tab, setTab] = useState<'active' | 'finished'>('active');
   const taskKey = (task: GenerationTask) => `${task.taskKind}-${task.id}`;
   const activeTasks = tasks.filter((task) => activeGenerationStatuses.has(task.status));
   const finishedTasks = tasks.filter((task) => !activeGenerationStatuses.has(task.status));
+  // 打开抽屉时初始化默认板块（有进行中则看进行中，否则看已完成）；手动切换不受后续任务状态变化影响
+  useEffect(() => {
+    if (open) setTab(activeTasks.length ? 'active' : 'finished');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   const eventsOf = (task: GenerationTask) => task.taskKind === 'ppt' ? [] : (task as LearningResourceGenerationTask).events;
 
-  // 抽屉打开且带定位任务：自动展开并滚动到该任务
+  // 抽屉打开且带定位任务：自动切到对应板块并滚动到该任务
   useEffect(() => {
     if (!open || !focusTaskId) return;
+    const focused = tasks.find((t) => taskKey(t) === focusTaskId);
+    if (focused) setTab(activeGenerationStatuses.has(focused.status) ? 'active' : 'finished');
     const timer = window.setTimeout(() => {
       document.getElementById(`gen-task-${focusTaskId}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }, 120);
     return () => window.clearTimeout(timer);
-  }, [open, focusTaskId]);
+  }, [open, focusTaskId, tasks, taskKey]);
 
   if (!open) return null;
   const renderTask = (task: GenerationTask) => {
@@ -677,26 +685,31 @@ function TaskDrawer({ open, tasks, busy, focusTaskId, onClose, onCancel, onRetry
           </div>
           <button onClick={onClose} className="lf-row-btn !p-2" aria-label="关闭"><X size={15} /></button>
         </div>
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-          {activeTasks.length > 0 && (
-            <section>
-              <p className="mb-2 flex items-center gap-1.5 px-1 text-[11px] font-bold uppercase tracking-[0.12em] text-brand">
-                <span className="h-1.5 w-1.5 rounded-full bg-brand" />
-                进行中 · {activeTasks.length} 项
-              </p>
-              <div className="space-y-3">{activeTasks.map(renderTask)}</div>
-            </section>
+        {/* 板块切换：进行中 / 已完成 */}
+        <div className="flex gap-1.5 border-b border-white/70 px-4 py-2.5">
+          <button
+            type="button"
+            onClick={() => setTab('active')}
+            className={cn('flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors', tab === 'active' ? 'bg-brand text-paper shadow-sm' : 'text-ink-2 hover:bg-white/70')}
+          >
+            进行中
+            <span className={cn('rounded-full px-1.5 text-[10px] tabular-nums', tab === 'active' ? 'bg-white/25 text-paper' : 'bg-brand-tint text-brand')}>{activeTasks.length}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab('finished')}
+            className={cn('flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors', tab === 'finished' ? 'bg-ink text-paper shadow-sm' : 'text-ink-2 hover:bg-white/70')}
+          >
+            已完成 / 已结束
+            <span className={cn('rounded-full px-1.5 text-[10px] tabular-nums', tab === 'finished' ? 'bg-white/25 text-paper' : 'bg-ink-tint text-ink')}>{finishedTasks.length}</span>
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+          {tab === 'active' ? (
+            activeTasks.length ? activeTasks.map(renderTask) : !tasks.length ? <div className="lf-empty rounded-2xl p-8 text-xs">还没有管理员预生成任务。请先进入某个知识点发起生成。</div> : <div className="lf-empty rounded-2xl p-8 text-xs">当前没有进行中的任务，可切换到「已完成」查看历史。</div>
+          ) : (
+            finishedTasks.length ? finishedTasks.map(renderTask) : <div className="lf-empty rounded-2xl p-8 text-xs">还没有已结束的生成任务</div>
           )}
-          {finishedTasks.length > 0 && (
-            <section>
-              <p className="mb-2 flex items-center gap-1.5 px-1 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">
-                <span className="h-1.5 w-1.5 rounded-full bg-ink-muted/60" />
-                已完成 / 已结束 · {finishedTasks.length} 项
-              </p>
-              <div className="space-y-3">{finishedTasks.map(renderTask)}</div>
-            </section>
-          )}
-          {!tasks.length && <div className="lf-empty rounded-2xl p-8 text-xs">还没有管理员预生成任务。请先进入某个知识点发起生成。</div>}
         </div>
       </aside>
     </div>
