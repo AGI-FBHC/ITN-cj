@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   ArchiveRestore, ArrowLeft, BookOpen, ChevronDown, ChevronRight, ClipboardList, Eye, FileText,
-  FolderTree, Loader2, MonitorPlay, Plus, Search, ShieldCheck, Trash2, Wrench,
+  FolderTree, LayoutTemplate, Loader2, MonitorPlay, Plus, Search, Trash2, Wrench,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, type AdminResourceDetail, type AdminResourceItem, type AdminResourceStats, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
@@ -11,7 +11,7 @@ import ResourcePreview from '@/components/admin/ResourcePreview';
 import { cn } from '@/lib/utils';
 
 type ResourceKind = 'lecture' | 'practice' | 'quiz' | 'ppt';
-type View = 'library' | 'review' | 'recycle';
+type View = 'library' | 'archive';
 const typeText: Record<string, string> = { lecture: '讲义', practice: '实操指南', quiz: '题库', ppt: '交互课件' };
 const kinds: [ResourceKind, string, string, typeof FileText][] = [
   ['lecture', '讲义', '知识讲解', BookOpen],
@@ -68,7 +68,7 @@ export default function ResourceCenterAdmin() {
     setKind('lecture');
     setKeyword('');
     setDetail(null);
-    if (next.code === '__unassigned__') setView('recycle');
+    if (next.code === '__unassigned__') setView('archive');
   };
 
   /** 写操作后失效：清空资源相关缓存并强制刷新当前列表与统计 */
@@ -80,10 +80,14 @@ export default function ResourceCenterAdmin() {
   const act = async (item: AdminResourceItem, action: string) => {
     try {
       if (action === 'restore') await api.restoreAdminResource(item.id);
-      else if (action === 'candidate') await api.makeAdminResourceCandidate(item.id);
       else if (action === 'archive') await api.archiveAdminResource(item.id);
+      else if (action === 'template') await api.setAdminResourceTemplate(item.id);
+      else if (action === 'delete') {
+        if (!window.confirm(`确定彻底删除“${item.title}”吗？\n\n此操作不可恢复，相关内容${item.type === 'ppt' ? '和课件文件' : ''}将被永久删除。`)) return;
+        await api.deleteAdminResourcePermanently(item.id);
+      }
       else await api.reviewAdminResource(item.id, action as 'submit' | 'approve' | 'reject' | 'publish' | 'deprecate');
-      toast.success(action === 'candidate' ? '已复制为通用资源草稿' : action === 'restore' ? '已恢复到机构资源库草稿' : '资源状态已更新');
+      toast.success(action === 'template' ? '已设为母版' : action === 'delete' ? '资源已彻底删除' : action === 'restore' ? '已恢复到机构资源库草稿' : '资源状态已更新');
       await invalidateResources();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '操作失败');
@@ -115,15 +119,10 @@ export default function ResourceCenterAdmin() {
           <div className="flex items-center gap-2">
             {statsQ.refreshing && <span className="text-[11px] text-ink-muted">统计更新中…</span>}
             <div className="lf-seg">
-              <button onClick={() => setView('review')} className={cn('lf-seg-item', view === 'review' && 'lf-seg-item-active')}>
-                <ShieldCheck size={13} />
-                审核中心
-                <span className={cn('rounded-full px-1.5 text-[10px]', view === 'review' ? 'bg-white/60' : 'bg-white/70')}>{statsQ.data?.pending ?? 0}</span>
-              </button>
-              <button onClick={() => setView('recycle')} className={cn('lf-seg-item', view === 'recycle' && 'lf-seg-item-active')}>
+              <button onClick={() => setView('archive')} className={cn('lf-seg-item', view === 'archive' && 'lf-seg-item-active')}>
                 <Trash2 size={13} />
-                回收站
-                <span className={cn('rounded-full px-1.5 text-[10px]', view === 'recycle' ? 'bg-white/60' : 'bg-white/70')}>{statsQ.data?.recycle ?? 0}</span>
+                归档
+                <span className={cn('rounded-full px-1.5 text-[10px]', view === 'archive' ? 'bg-white/60' : 'bg-white/70')}>{statsQ.data?.recycle ?? 0}</span>
               </button>
             </div>
           </div>
@@ -343,7 +342,7 @@ export default function ResourceCenterAdmin() {
 
               <div className="lf-card mb-4 flex flex-wrap items-center gap-3 rounded-2xl p-3">
                 <div className="lf-seg">
-                  {([['library', '资源库'], ['review', '待审核'], ['recycle', '回收站']] as [View, string][]).map(([id, label]) => (
+                  {([['library', '资源库'], ['archive', '归档']] as [View, string][]).map(([id, label]) => (
                     <button key={id} onClick={() => { setView(id); setDetail(null); }} className={cn('lf-seg-item', view === id && 'lf-seg-item-active')}>
                       {label}
                     </button>
@@ -410,20 +409,25 @@ function ResourceTable({ items, loading, view, onPreview, onAction }: { items: A
                       <Eye size={11} />
                       预览
                     </button>
-                    {view === 'recycle' ? (
+                    {view === 'archive' ? (
                       <>
                         <button onClick={() => void onAction(item, 'restore')} className="lf-row-btn lf-row-btn-primary">
                           <ArchiveRestore size={11} />
                           恢复
                         </button>
-                        <button onClick={() => void onAction(item, 'candidate')} className="lf-row-btn">
-                          转通用候选
+                        <button onClick={() => void onAction(item, 'delete')} className="lf-row-btn text-red-600">
+                          <Trash2 size={11} />
+                          彻底删除
                         </button>
                       </>
                     ) : (
-                      <button onClick={() => void onAction(item, 'archive')} className="lf-row-btn text-ink-muted">
-                        归档
-                      </button>
+                      <>
+                        <button disabled={item.template} onClick={() => void onAction(item, 'template')} className="lf-row-btn lf-row-btn-primary disabled:cursor-default disabled:opacity-70">
+                          <LayoutTemplate size={11} />
+                          {item.template ? '当前母版' : '设为母版'}
+                        </button>
+                        <button onClick={() => void onAction(item, 'archive')} className="lf-row-btn text-ink-muted">归档</button>
+                      </>
                     )}
                   </div>
                 </td>

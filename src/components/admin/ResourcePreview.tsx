@@ -5,20 +5,22 @@
  */
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { CheckCircle2, Clock, Target, Terminal } from 'lucide-react';
+import { CheckCircle2, Clock, ExternalLink, FileText, Target, Terminal } from 'lucide-react';
 import { lectureMdComponents } from '@/components/resources/lecture-markdown';
+import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
+import remarkCitationMarks from '@/lib/remarkCitationMarks';
 import { cn } from '@/lib/utils';
 import type { AdminResourceDetail } from '@/lib/api';
 
 /* ---------------- 数据结构（与 generated_learning_resources.content_json / presentation_tasks.outline_json 对应） ---------------- */
 
-interface LectureSection { title?: string; content?: string }
+interface LectureSection { title?: string; content?: string; citations?: unknown; evidenceQuotes?: unknown }
 interface LectureChapter { title?: string; overview?: string; sections?: LectureSection[] }
 interface LectureDoc {
   title?: string; summary?: string; chapters?: LectureChapter[];
   keyPoints?: string[]; reviewQuestions?: string[]; learningObjectives?: string[];
 }
-interface PracticeStep { title?: string; content?: string; detail?: string; hint?: string }
+interface PracticeStep { title?: string; content?: string; detail?: string; hint?: string; citations?: unknown; evidenceQuotes?: unknown }
 interface TroubleshootItem { problem?: string; solution?: string }
 interface PracticeDoc {
   title?: string; objective?: string; environment?: string;
@@ -64,12 +66,15 @@ function lectureToMarkdown(doc: LectureDoc): string {
   return parts.join('\n\n');
 }
 
-function LecturePreview({ doc }: { doc: LectureDoc }) {
+function LecturePreview({ doc, sources }: { doc: LectureDoc; sources: Record<string, unknown>[] }) {
   return (
     <div className="lf-card rounded-2xl p-6 md:p-8">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>
         {lectureToMarkdown(doc)}
       </ReactMarkdown>
+      {(doc.chapters ?? []).flatMap((chapter) => chapter.sections ?? []).map((section, index) => (
+        <SourceCitationMarks key={index} citations={section.citations} evidenceQuotes={section.evidenceQuotes} sources={sources} />
+      ))}
     </div>
   );
 }
@@ -78,7 +83,7 @@ function LecturePreview({ doc }: { doc: LectureDoc }) {
 
 const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
-function PracticePreview({ doc }: { doc: PracticeDoc }) {
+function PracticePreview({ doc, sources }: { doc: PracticeDoc; sources: Record<string, unknown>[] }) {
   const troubles = Array.isArray(doc.troubleshooting)
     ? doc.troubleshooting.map((item) => (typeof item === 'string' ? { problem: item, solution: '' } : item))
     : [];
@@ -130,9 +135,10 @@ function PracticePreview({ doc }: { doc: PracticeDoc }) {
               <div className="min-w-0 flex-1 rounded-xl border border-white/70 bg-white/50 px-4 py-3">
                 {step.title && <p className="text-sm font-semibold text-ink">{step.title}</p>}
                 {(step.content || step.detail) && (
-                  <p className="mt-1 text-[13px] leading-6 text-ink-2">{step.content || step.detail}</p>
+                  <div className="mt-1 text-[13px] leading-6 text-ink-2"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>{step.content || step.detail || ''}</ReactMarkdown></div>
                 )}
                 {step.hint && <p className="mt-1.5 text-xs leading-5 text-ochre">{step.hint}</p>}
+                <SourceCitationMarks citations={step.citations} evidenceQuotes={step.evidenceQuotes} sources={sources} />
               </div>
             </li>
           ))}
@@ -170,7 +176,7 @@ function PracticePreview({ doc }: { doc: PracticeDoc }) {
 
 /* ---------------- 分阶测试：题目卡（含答案与解析） ---------------- */
 
-function QuizPreview({ doc }: { doc: QuizDoc }) {
+function QuizPreview({ doc, sources }: { doc: QuizDoc; sources: Record<string, unknown>[] }) {
   const questions = doc.questions ?? [];
   return (
     <div className="space-y-4">
@@ -225,6 +231,7 @@ function QuizPreview({ doc }: { doc: QuizDoc }) {
                     <p className="mt-1 text-[13px] leading-6 text-ink-2">{q.explanation}</p>
                   </div>
                 )}
+                <SourceCitationMarks citations={q.citations} sources={sources} />
               </div>
             </div>
           </div>
@@ -233,6 +240,11 @@ function QuizPreview({ doc }: { doc: QuizDoc }) {
       {!questions.length && <div className="lf-empty px-6 py-12 text-center text-sm">该资源没有可展示的题目</div>}
     </div>
   );
+}
+
+function SourceSummary({ sources }: { sources: Record<string, unknown>[] }) {
+  if (!sources.length) return null;
+  return <aside className="lf-card mt-5 rounded-2xl p-5"><div className="flex items-center gap-2"><FileText size={15} className="text-brand"/><h3 className="text-sm font-bold text-ink">引用来源</h3><span className="lf-pill lf-pill-null">{sources.length} 条</span></div><div className="mt-3 grid gap-2 md:grid-cols-2">{sources.map((source,index)=>{const title=String(source.document??source.title??`来源 ${index+1}`);const content=String(source.content??source.summary??'');const url=typeof source.url==='string'?source.url:null;return <div key={String(source.id??source.kbId??index)} className="rounded-xl border border-white/70 bg-white/50 px-4 py-3"><div className="flex items-start gap-2"><span className="font-mono text-[10px] text-brand">[{String(source.id??index+1)}]</span><p className="line-clamp-2 flex-1 text-[12.5px] font-semibold text-ink">{title}</p>{url&&<a href={url} target="_blank" rel="noreferrer" title="查看来源" className="text-brand"><ExternalLink size={12}/></a>}</div>{content&&<p className="mt-1 line-clamp-3 text-[11.5px] leading-5 text-ink-muted">{content}</p>}</div>})}</div></aside>;
 }
 
 /* ---------------- PPT：幻灯片大纲 ---------------- */
@@ -320,23 +332,20 @@ function asObject(raw: unknown): Record<string, unknown> | null {
 export default function ResourcePreview({ detail }: { detail: AdminResourceDetail }) {
   const type = detail.type || '';
   const doc = asObject(detail.content);
+  const rawSources = typeof detail.sources === 'string' ? (()=>{try{return JSON.parse(detail.sources) as unknown;}catch{return [];}})() : detail.sources;
+  const sources = Array.isArray(rawSources) ? rawSources.filter((item):item is Record<string,unknown>=>Boolean(item)&&typeof item==='object') : [];
+  let preview: React.ReactNode;
   if (type === 'lecture') {
-    return <LecturePreview doc={(doc ?? {}) as unknown as LectureDoc} />;
-  }
-  if (type === 'practice') {
-    return <PracticePreview doc={(doc ?? {}) as unknown as PracticeDoc} />;
-  }
-  if (type === 'quiz') {
-    return <QuizPreview doc={(doc ?? {}) as unknown as QuizDoc} />;
-  }
-  if (type === 'ppt') {
-    /* PPT 详情：content=request_json，decision=outline_json（幻灯片大纲） */
+    preview = <LecturePreview doc={(doc ?? {}) as unknown as LectureDoc} sources={sources} />;
+  } else if (type === 'practice') {
+    preview = <PracticePreview doc={(doc ?? {}) as unknown as PracticeDoc} sources={sources} />;
+  } else if (type === 'quiz') {
+    preview = <QuizPreview doc={(doc ?? {}) as unknown as QuizDoc} sources={sources} />;
+  } else if (type === 'ppt') {
     const outline = asObject(detail.decision) as PptOutline | null;
-    return <PptPreview outline={outline} fallback={doc ?? detail.content} />;
+    preview = <PptPreview outline={outline} fallback={doc ?? detail.content} />;
+  } else {
+    preview = <pre className="max-h-[480px] overflow-auto whitespace-pre-wrap rounded-xl bg-[#2C3A30] p-4 text-xs leading-5 text-emerald-50/90">{typeof detail.content === 'string' ? detail.content : JSON.stringify(detail.content ?? {}, null, 2)}</pre>;
   }
-  return (
-    <pre className="max-h-[480px] overflow-auto whitespace-pre-wrap rounded-xl bg-[#2C3A30] p-4 text-xs leading-5 text-emerald-50/90">
-      {typeof detail.content === 'string' ? detail.content : JSON.stringify(detail.content ?? {}, null, 2)}
-    </pre>
-  );
+  return <>{preview}<SourceSummary sources={sources}/></>;
 }

@@ -47,6 +47,7 @@ export interface AdminResourceItem {
   id: string; type: 'lecture' | 'practice' | 'quiz' | string; title: string; topic: string;
   scope: 'USER' | 'ORGANIZATION' | 'PLATFORM'; reviewStatus: string | null; revision: number; domainCode: string | null; nodeCode: string | null;
   baseResourceId: string | null; learnerId: string | null; kpId: string | null;
+  template: boolean;
   createdAt: string; updatedAt: string; archivedAt: string | null; archiveReason: string | null;
   ownerAccount: string | null;
 }
@@ -1052,7 +1053,7 @@ export const api = {
   listAdminAccounts: (page = 0, size = 50) => request<AdminAccountPage>(`/api/v1/admin/users?page=${page}&size=${size}`),
   setAdminAccountEnabled: (id: string, enabled: boolean) => request<AdminAccount>(`/api/v1/admin/users/${encodeURIComponent(id)}/${enabled ? 'enable' : 'disable'}`, { method: 'POST' }),
   getAdminResourceStats: () => request<AdminResourceStats>('/api/v1/admin/resources/stats'),
-  listAdminResources: (params: { view: 'library' | 'review' | 'recycle'; type?: string; keyword?: string; domainCode?: string; nodeCode?: string }) => {
+  listAdminResources: (params: { view: 'library' | 'archive'; type?: string; keyword?: string; domainCode?: string; nodeCode?: string }) => {
     const query = new URLSearchParams({ view: params.view });
     if (params.type) query.set('type', params.type);
     if (params.keyword) query.set('keyword', params.keyword);
@@ -1065,6 +1066,8 @@ export const api = {
   makeAdminResourceCandidate: (id: string) => request<{ id: string }>(`/api/v1/admin/resources/${encodeURIComponent(id)}/candidate`, { method: 'POST' }),
   reviewAdminResource: (id: string, action: 'submit' | 'approve' | 'reject' | 'publish' | 'deprecate', comment?: string) => request<void>(`/api/v1/admin/resources/${encodeURIComponent(id)}/review`, { method: 'POST', body: JSON.stringify({ action, comment }) }),
   archiveAdminResource: (id: string, reason?: string) => request<void>(`/api/v1/admin/resources/${encodeURIComponent(id)}/archive`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  setAdminResourceTemplate: (id: string) => request<void>(`/api/v1/admin/resources/${encodeURIComponent(id)}/template`, { method: 'POST' }),
+  deleteAdminResourcePermanently: (id: string) => request<void>(`/api/v1/admin/resources/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   listLearners: () => request<LearnerProfileData[]>('/api/v1/learners'),
   getLearner: (id: string) => request<LearnerProfileData>(`/api/v1/learners/${encodeURIComponent(id)}`),
   createLearner: (body: LearnerUpsertInput) =>
