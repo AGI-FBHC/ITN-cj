@@ -10,6 +10,7 @@ import { useCachedData } from '@/hooks/useCachedData';
 import { clearCacheStartsWith } from '@/lib/swrCache';
 import ResourcePreview from '@/components/admin/ResourcePreview';
 import { cn } from '@/lib/utils';
+import EvidenceDebateCourt from '@/components/resources/EvidenceDebateCourt';
 
 type ResourceKind = 'lecture' | 'practice' | 'quiz' | 'ppt';
 type View = 'library' | 'archive';
@@ -780,6 +781,7 @@ function GenerationProcessModal({ task, onClose }: { task: GenerationTask | null
               );
             })}
           </section>
+          <EvidenceDebateCourt events={events} />
 
           <section className="mt-4 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
             <div className="rounded-2xl border border-white/80 bg-white/50 p-4">
