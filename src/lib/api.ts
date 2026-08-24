@@ -486,6 +486,8 @@ export interface AdminGenerationEvent {
   title: string;
   detail: string;
   snapshot: Record<string, unknown>;
+  actorType?: 'system' | 'agent' | string;
+  eventType?: 'task_lifecycle' | 'agent_work' | string;
 }
 
 export interface RagDomain {
