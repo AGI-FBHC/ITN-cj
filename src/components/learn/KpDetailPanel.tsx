@@ -24,7 +24,6 @@ import { Succulent, LeafSmall } from '@/components/heal/Flora';
 import type { PathNode } from '@/data/reportData';
 import type { GraphNode } from '@/data/knowledgeGraph';
 import { cn } from '@/lib/utils';
-import GenerationProcessViewer from '@/components/resources/GenerationProcessViewer';
 
 const FORM_META: Record<ResourceForm, { label: string; icon: typeof BookOpen; hint: string }> = {
   lecture: { label: '领学讲义', icon: BookOpen, hint: '按你水平现写的讲义' },
@@ -101,7 +100,6 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
   const inFlightPpts = useRef(new Set<string>());
   const mounted = useRef(true);
   const [availableProcessTask, setAvailableProcessTask] = useState<LearningResourceGenerationTask | null>(null);
-  const [processTask, setProcessTask] = useState<LearningResourceGenerationTask | null>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -320,8 +318,8 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
       let task = listed.tasks.find((item) => item.resourceType === resourceType && item.title === body.title && !['completed', 'failed', 'cancelled'].includes(item.status))
         ?? await api.startLearningResourceTask(resourceType, body);
       setAvailableProcessTask(task);
-      setProcessTask(task);
-      toast.success(`${meta.label}已加入 AI 教研组`, { description: '已打开完整协同过程，可查看知识依据、内容生成与质量复核。' });
+      toast.success(`${meta.label}已加入 AI 教研组`, { description: '可在 AI 教研工作台查看完整协同过程。' });
+      navigate(`/collaboration?task=resource-${task.id}`);
       while (mounted.current && !['completed', 'failed', 'cancelled'].includes(task.status)) {
         await new Promise((resolve) => window.setTimeout(resolve, 1800));
         task = await api.getLearningResourceTask(task.id);
@@ -539,7 +537,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
         </div>
         <p className="mt-2 text-[12.5px] leading-[19px] text-ink-muted">{kp.description}</p>
       </div>
-      {availableProcessTask && <button type="button" onClick={() => setProcessTask(availableProcessTask)} className="flex w-full items-center gap-3 rounded-xl border border-brand/25 bg-brand-tint/40 px-3 py-2.5 text-left hover:border-brand/50"><Sparkles size={15} className="text-brand"/><span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-ink">查看 AI 教研组完整过程</span><span className="block truncate text-[10px] text-ink-muted">{availableProcessTask.title} · {availableProcessTask.stageMessage}</span></span><ArrowRight size={13} className="text-brand"/></button>}
+      {availableProcessTask && <button type="button" onClick={() => navigate(`/collaboration?task=resource-${availableProcessTask.id}`)} className="flex w-full items-center gap-3 rounded-xl border border-brand/25 bg-brand-tint/40 px-3 py-2.5 text-left hover:border-brand/50"><Sparkles size={15} className="text-brand"/><span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-ink">进入 AI 教研工作台</span><span className="block truncate text-[10px] text-ink-muted">{availableProcessTask.title} · {availableProcessTask.stageMessage}</span></span><ArrowRight size={13} className="text-brand"/></button>}
 
       {/* 掌握进度 */}
       <div className="flex items-center gap-4 rounded-[12px] border border-hairline bg-card-warm p-3">
@@ -651,7 +649,6 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           </button>
         </div>
       </div>}
-      <GenerationProcessViewer task={processTask} onClose={() => setProcessTask(null)} />
     </div>
   );
 }

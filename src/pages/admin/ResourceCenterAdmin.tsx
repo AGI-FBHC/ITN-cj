@@ -4,6 +4,7 @@ import {
   Eye, FileText, FolderTree, LayoutTemplate, ListChecks, Loader2, MonitorPlay, Plus, Radio, RefreshCw, Sparkles, Trash2, Wrench, X, XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 import { api, streamAdminGenerationTask, type AdminGenerationEvent, type AdminResourceDetail, type AdminResourceItem, type AdminResourceStats, type LearningResourceGenerateInput, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
 import { presentationApi, type PresentationRequest, type PresentationTaskSummary } from '@/lib/presentationApi';
 import { useCachedData } from '@/hooks/useCachedData';
@@ -34,6 +35,7 @@ function EmptyState({ children }: { children: React.ReactNode }) {
 }
 
 export default function ResourceCenterAdmin() {
+  const navigate = useNavigate();
   const [domain, setDomain] = useState<RagDomain | { code: '__unassigned__'; name: string; description: string } | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [node, setNode] = useState<RagTreeNode | null>(null);
@@ -145,38 +147,13 @@ export default function ResourceCenterAdmin() {
       if (failed.length) toast.error(`${failed.length} 项生成任务未能启动`);
       if (failed.length < results.length) toast.success(`已启动 ${results.length - failed.length} 项生成任务`);
       setGenerationModalOpen(false);
-      setTaskDrawerOpen(true);
       await loadGenerationTasks();
+      navigate('/admin/workbench');
     } finally {
       setGenerationBusy(false);
     }
   };
 
-  const cancelGeneration = async (task: GenerationTask) => {
-    try {
-      if (task.taskKind === 'ppt') await presentationApi.cancelPresentation(task.id);
-      else await api.cancelLearningResourceTask(task.id);
-      toast.success('已取消生成任务');
-      await loadGenerationTasks();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '取消失败');
-    }
-  };
-
-  const retryGeneration = async (task: GenerationTask) => {
-    setGenerationBusy(true);
-    try {
-      if (task.taskKind === 'ppt' && task.request) await presentationApi.createPresentation(task.request);
-      else if (task.taskKind === 'resource' && task.request) await api.startLearningResourceTask(task.resourceType, task.request);
-      else throw new Error('该任务缺少原始生成参数');
-      toast.success('已重新发起生成');
-      await loadGenerationTasks();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '重试失败');
-    } finally {
-      setGenerationBusy(false);
-    }
-  };
 
   /** 资源 → 生成任务追溯：资源任务按 resourceId 精确匹配，课件按标题匹配 */
   const taskLogForResource = (item: AdminResourceItem): GenerationTask | null => {
@@ -191,8 +168,7 @@ export default function ResourceCenterAdmin() {
       toast.info('该资源没有管理员生成日志（可能为历史资源或非预生成来源）');
       return;
     }
-    setFocusTask(task.taskKind + '-' + task.id);
-    setTaskDrawerOpen(true);
+    navigate(`/admin/workbench?task=${task.taskKind}-${task.id}`);
   };
 
   const openDomain = (next: RagDomain | { code: '__unassigned__'; name: string; description: string }) => {
@@ -251,7 +227,7 @@ export default function ResourceCenterAdmin() {
           </div>
           <div className="flex items-center gap-2">
             {statsQ.refreshing && <span className="text-[11px] text-ink-muted">统计更新中…</span>}
-            <button onClick={() => setTaskDrawerOpen(true)} className="lf-row-btn">
+            <button onClick={() => navigate('/admin/workbench')} className="lf-row-btn">
               <ListChecks size={13} />
               生成任务
               {generationTasks.some((task) => activeGenerationStatuses.has(task.status)) && <span className="h-2 w-2 rounded-full bg-brand" />}
@@ -312,8 +288,8 @@ export default function ResourceCenterAdmin() {
             正在读取领域…
           </div>
         )}
-        <TaskDrawer open={taskDrawerOpen} tasks={generationTasks} busy={generationBusy} focusTaskId={focusTask} onClose={() => { setTaskDrawerOpen(false); setFocusTask(null); }} onCancel={(task) => void cancelGeneration(task)} onRetry={(task) => void retryGeneration(task)} onInspect={setProcessTask} />
-        <GenerationProcessModal key={processTask ? `${processTask.taskKind}-${processTask.id}` : 'none'} task={processTask} onClose={() => setProcessTask(null)} />
+        <TaskDrawer open={taskDrawerOpen} tasks={generationTasks} busy={generationBusy} focusTaskId={focusTask} onClose={() => { setTaskDrawerOpen(false); setFocusTask(null); }} onCancel={() => undefined} onRetry={() => undefined} onInspect={setProcessTask} />
+        <GenerationProcessModal task={processTask} onClose={() => setProcessTask(null)} />
       </div>
     );
 
@@ -333,7 +309,7 @@ export default function ResourceCenterAdmin() {
           <h2 className="mt-2 text-xl font-bold tracking-tight text-ink">{node?.name || domain.name} · 资源管理</h2>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setTaskDrawerOpen(true)} className="lf-row-btn">
+          <button onClick={() => navigate('/admin/workbench')} className="lf-row-btn">
             <ListChecks size={13} />
             生成任务
             {generationTasks.some((task) => activeGenerationStatuses.has(task.status)) && <span className="h-2 w-2 rounded-full bg-brand" />}
@@ -528,8 +504,8 @@ export default function ResourceCenterAdmin() {
         onSelectAll={() => setSelectedKinds(new Set(['lecture', 'practice', 'quiz', 'ppt']))}
         onSubmit={() => void startSelected([...selectedKinds])}
       />
-      <TaskDrawer open={taskDrawerOpen} tasks={generationTasks} busy={generationBusy} focusTaskId={focusTask} onClose={() => { setTaskDrawerOpen(false); setFocusTask(null); }} onCancel={(task) => void cancelGeneration(task)} onRetry={(task) => void retryGeneration(task)} onInspect={setProcessTask} />
-      <GenerationProcessModal key={processTask ? `${processTask.taskKind}-${processTask.id}` : 'none'} task={processTask} onClose={() => setProcessTask(null)} />
+      <TaskDrawer open={taskDrawerOpen} tasks={generationTasks} busy={generationBusy} focusTaskId={focusTask} onClose={() => { setTaskDrawerOpen(false); setFocusTask(null); }} onCancel={() => undefined} onRetry={() => undefined} onInspect={setProcessTask} />
+      <GenerationProcessModal task={processTask} onClose={() => setProcessTask(null)} />
     </div>
   );
 }

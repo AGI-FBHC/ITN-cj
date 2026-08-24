@@ -1,7 +1,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { BookCheck, ChevronDown, ChevronRight, ClipboardList, Database, FileUp, LayoutDashboard, Loader2, LogOut, Network, RefreshCw, Settings, ShieldCheck, Users, X } from "lucide-react";
+import { BookCheck, ChevronDown, ChevronRight, ClipboardList, Database, FileUp, LayoutDashboard, Loader2, LogOut, Network, RefreshCw, Settings, ShieldCheck, Sparkles, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, type LearnerProfileData, type RagDomain, type RagTree, type RagTreeNode } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -14,8 +14,9 @@ import DocumentIngestion from "@/pages/admin/DocumentIngestion";
 import OrganizationSettings from "@/pages/admin/OrganizationSettings";
 import InstitutionUsers from "@/pages/admin/InstitutionUsers";
 import ResourceCenterAdmin from "@/pages/admin/ResourceCenterAdmin";
+import CollaborationWorkbench from "@/pages/CollaborationWorkbench";
 
-type AdminSection = "overview" | "organization" | "learners" | "knowledge" | "quality" | "graph" | "resources" | "ingestion";
+type AdminSection = "overview" | "organization" | "learners" | "knowledge" | "quality" | "graph" | "resources" | "workbench" | "ingestion";
 const nav: { id: AdminSection; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "overview", label: "工作台", icon: LayoutDashboard },
   { id: "organization", label: "机构配置", icon: Settings },
@@ -24,6 +25,7 @@ const nav: { id: AdminSection; label: string; icon: typeof LayoutDashboard }[] =
   { id: "quality", label: "知识质量", icon: BookCheck },
   { id: "graph", label: "知识图谱", icon: Network },
   { id: "resources", label: "资源中心", icon: ClipboardList },
+  { id: "workbench", label: "AI 教研工作台", icon: Sparkles },
   { id: "ingestion", label: "文档入库", icon: FileUp },
 ];
 
@@ -602,6 +604,7 @@ export default function Admin() {
           {active === "quality" && <KnowledgeQuality />}
           {active === "graph" && <KnowledgeGraphAdmin />}
           {active === "resources" && <ResourceCenterAdmin />}
+          {active === "workbench" && <CollaborationWorkbench />}
           {active === "ingestion" && <DocumentIngestion />}
           {editing && <EditLearner learner={editing} onClose={() => setEditing(null)} onSaved={() => void learnersQ.refresh(true)} />}
         </div>
