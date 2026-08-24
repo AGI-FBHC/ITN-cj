@@ -57,10 +57,12 @@ function CollaborationRounds({ events, selectedSeq, onSelect }: {
 }) {
   const lifecycle = events.filter(isLifecycleEvent);
   const rounds = buildRounds(events);
+  const displayedRounds: CollaborationRound[] = rounds.length ? rounds : lifecycle[0]
+    ? [{ index: 0, label: '初始生成', units: [] }]
+    : [];
   return (
     <div className="mt-3 space-y-3">
-      {lifecycle[0] && <button type="button" onClick={() => onSelect(lifecycle[0])} className={cn('flex w-full items-center gap-2 rounded-xl border border-dashed px-3 py-2 text-left', lifecycle[0].seq === selectedSeq ? 'border-brand/40 bg-brand-tint/50' : 'border-white/80 bg-white/35')}><span className="h-2 w-2 rounded-full bg-ink-muted"/><span className="text-[10px] font-bold text-ink">{lifecycle[0].title}</span><span className="text-[9px] text-ink-muted">系统生命周期 · 不属于任何 Agent</span></button>}
-      {rounds.map((round) => (
+      {displayedRounds.map((round, roundPosition) => (
         <section key={round.index} className="rounded-xl border border-white/75 bg-white/35 p-3">
           <div className="flex flex-wrap items-center gap-2">
             <h5 className="text-xs font-bold text-ink">{round.label}</h5>
@@ -77,6 +79,16 @@ function CollaborationRounds({ events, selectedSeq, onSelect }: {
               {agents.map((agent) => <div key={agent.id} className="flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-white/70 bg-white/65 px-2 text-center shadow-sm"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-tint font-mono text-[8px] font-bold text-brand">{agent.id.slice(0, 3)}</span><span className="truncate text-[9px] font-bold text-ink">{agent.name}</span></div>)}
             </div>
             <div className="relative py-1">
+              {roundPosition === 0 && lifecycle[0] && (
+                <div className="relative flex h-12 items-center justify-center">
+                  <span className="absolute inset-x-[10%] top-1/2 h-px bg-ink-muted/15" />
+                  <button type="button" onClick={() => onSelect(lifecycle[0])} className={cn('relative flex items-center gap-2 rounded-full border px-3 py-1.5 shadow-sm transition-colors', lifecycle[0].seq === selectedSeq ? 'border-brand/45 bg-brand-tint' : 'border-white/90 bg-white hover:border-brand/30')}>
+                    <span className="h-2 w-2 rounded-full bg-brand" />
+                    <span className="text-[9px] font-bold text-ink">{lifecycle[0].title}</span>
+                    <span className="font-mono text-[8px] text-ink-muted">{lifecycle[0].time ? new Date(lifecycle[0].time).toLocaleTimeString('zh-CN', { hour12: false }) : `#${lifecycle[0].seq}`}</span>
+                  </button>
+                </div>
+              )}
               {round.units.map((unit, index) => {
                 const lane = Math.max(0, agents.findIndex((item) => item.id === unit.agent));
                 const previousLane = index > 0 ? Math.max(0, agents.findIndex((item) => item.id === round.units[index - 1].agent)) : lane;
@@ -111,12 +123,21 @@ function CollaborationRounds({ events, selectedSeq, onSelect }: {
                   </div>
                 );
               })}
+              {roundPosition === displayedRounds.length - 1 && lifecycle.slice(1).map((event) => (
+                <div key={event.seq} className="relative flex h-12 items-center justify-center">
+                  <span className="absolute inset-x-[10%] top-1/2 h-px bg-ink-muted/15" />
+                  <button type="button" onClick={() => onSelect(event)} className={cn('relative flex items-center gap-2 rounded-full border px-3 py-1.5 shadow-sm transition-colors', event.seq === selectedSeq ? 'border-brand/45 bg-brand-tint' : 'border-white/90 bg-white hover:border-brand/30')}>
+                    <span className="h-2 w-2 rounded-full bg-brand" />
+                    <span className="text-[9px] font-bold text-ink">{event.title}</span>
+                    <span className="font-mono text-[8px] text-ink-muted">{event.time ? new Date(event.time).toLocaleTimeString('zh-CN', { hour12: false }) : `#${event.seq}`}</span>
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
           </div>
         </section>
       ))}
-      {lifecycle.slice(1).map((event) => <button key={event.seq} type="button" onClick={() => onSelect(event)} className={cn('flex w-full items-center gap-2 rounded-xl border border-dashed px-3 py-2 text-left', event.seq === selectedSeq ? 'border-brand/40 bg-brand-tint/50' : 'border-white/80 bg-white/35')}><span className="h-2 w-2 rounded-full bg-brand"/><span className="text-[10px] font-bold text-ink">{event.title}</span><span className="text-[9px] text-ink-muted">系统生命周期</span></button>)}
       {!events.length && <p className="py-8 text-center text-xs text-ink-muted">等待第一条协同事件…</p>}
     </div>
   );
