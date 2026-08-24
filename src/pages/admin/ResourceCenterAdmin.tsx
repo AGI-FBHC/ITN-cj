@@ -726,12 +726,12 @@ const generationAgents = [
 
 function snapshotEntries(snapshot: Record<string, unknown>): Array<[string, string]> {
   const labels: Record<string, string> = {
-    activity: '当前动作', topic: '主题', query: '知识范围', ragCount: '知识库资料', webCount: '补充资料',
-    sourceTitles: '来源', coverage: '内容覆盖', acceptanceRubric: '验收标准', resourceType: '资源类型',
+    activity: '当前动作', topic: '主题', query: '知识范围', ragCount: '知识库切片', webCount: '补充资料',
+    sourceTitles: '命中切片', coverage: '内容覆盖', acceptanceRubric: '验收标准', resourceType: '资源类型',
     chapterCount: '章节数', stepCount: '步骤数', questionCount: '题目数', sourceCount: '引用来源',
     citationVerified: '引用核验', issueCount: '发现问题', issues: '问题摘要',
     decision: '知识依据结论', highFidelityScore: '知识依据充分度', fallbackUsed: '是否补充检索',
-    knowledgeCoreCount: '结构化知识依据',
+    knowledgeCoreCount: '结构化知识切片',
   };
   const hidden = new Set(['requestId', 'traceId', 'promptVersion', 'model']);
   return Object.entries(snapshot).filter(([key]) => !hidden.has(key)).map(([key, value]) => {
@@ -760,8 +760,8 @@ function GenerationProcessModal({ task, onClose }: { task: GenerationTask | null
     return () => controller.abort();
   }, [task]);
   if (!task) return null;
-  const active = activeGenerationStatuses.has(task.status);
   const latest = events.at(-1);
+  const active = activeGenerationStatuses.has(task.status) && (!latest || activeGenerationStatuses.has(latest.status));
   const effectiveAgent = selectedAgent || latest?.agent || generationAgents[0].id;
   const selectedAgentEvents = events.filter((event) => event.agent === effectiveAgent);
   const selectedEvent = selectedAgentEvents.find((event) => event.seq === selectedEventSeq) ?? selectedAgentEvents.at(-1);

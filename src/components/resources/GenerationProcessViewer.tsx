@@ -11,10 +11,10 @@ const agents = [
   ['VER-04', '质量核验', '检查结构、引用和答案一致性'],
   ['ARB-05', '发布仲裁', '决定通过、返工或终止'],
 ] as const;
-const activeStatuses = new Set(['queued', 'retrieving', 'planning', 'generating', 'verifying', 'reviewing', 'revising', 'judging']);
+const activeStatuses = new Set(['queued', 'retrieving', 'debating', 'planning', 'generating', 'verifying', 'reviewing', 'revising', 'judging']);
 
 function snapshotRows(snapshot: Record<string, unknown>) {
-  const labels: Record<string, string> = { activity: '当前动作', topic: '学习主题', query: '知识范围', ragCount: '知识库资料', webCount: '补充资料', sourceTitles: '知识来源', coverage: '内容覆盖', acceptanceRubric: '验收标准', resourceType: '资源类型', chapterCount: '章节数', stepCount: '步骤数', questionCount: '题目数', sourceCount: '引用来源', citationVerified: '引用核验', issueCount: '发现问题', issues: '复核提示', decision: '知识依据结论', highFidelityScore: '知识依据充分度', fallbackUsed: '资料补充情况', knowledgeCoreCount: '结构化知识依据' };
+  const labels: Record<string, string> = { activity: '当前动作', topic: '学习主题', query: '知识范围', ragCount: '知识库切片', webCount: '补充资料', sourceTitles: '命中切片', coverage: '内容覆盖', acceptanceRubric: '验收标准', resourceType: '资源类型', chapterCount: '章节数', stepCount: '步骤数', questionCount: '题目数', sourceCount: '引用来源', citationVerified: '引用核验', issueCount: '发现问题', issues: '复核提示', decision: '知识依据结论', highFidelityScore: '知识依据充分度', fallbackUsed: '资料补充情况', knowledgeCoreCount: '结构化知识切片' };
   const hidden = new Set(['requestId', 'traceId', 'promptVersion', 'model']);
   return Object.entries(snapshot).filter(([key]) => !hidden.has(key)).map(([key, value]) => {
     let shown = Array.isArray(value) ? value.map(String).join('、') : typeof value === 'boolean' ? (value ? '是' : '否') : String(value ?? '—');
@@ -39,7 +39,8 @@ export default function GenerationProcessViewer({ task, onClose }: { task: Learn
     return () => controller.abort();
   }, [task]);
   if (!task) return null;
-  const latest = events.at(-1); const active = activeStatuses.has(task.status);
+  const latest = events.at(-1);
+  const active = activeStatuses.has(task.status) && (!latest || activeStatuses.has(latest.status));
   const effectiveAgent = selectedAgent || latest?.agent || agents[0][0];
   const agentEvents = events.filter((event) => event.agent === effectiveAgent);
   const selectedEvent = agentEvents.find((event) => event.seq === selectedEventSeq) ?? agentEvents.at(-1);
