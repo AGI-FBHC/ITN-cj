@@ -5,7 +5,7 @@
  */
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { CheckCircle2, Clock, ExternalLink, FileText, Target, Terminal } from 'lucide-react';
+import { CheckCircle2, Clock, ExternalLink, FileText, ShieldCheck, Target, Terminal, TriangleAlert } from 'lucide-react';
 import { lectureMdComponents } from '@/components/resources/lecture-markdown';
 import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
 import remarkCitationMarks from '@/lib/remarkCitationMarks';
@@ -21,13 +21,18 @@ interface LectureDoc {
   title?: string; summary?: string; chapters?: LectureChapter[];
   keyPoints?: string[]; reviewQuestions?: string[]; learningObjectives?: string[];
 }
-interface PracticeStep { title?: string; content?: string; detail?: string; hint?: string; citations?: unknown; evidenceQuotes?: unknown }
+interface PracticeStep {
+  title?: string; instruction?: string; content?: string; detail?: string;
+  code?: string; expectedOutput?: string; warning?: string; safety?: string;
+  hint?: string; citations?: unknown; evidenceQuotes?: unknown;
+}
 interface TroubleshootItem { problem?: string; solution?: string }
 interface PracticeDoc {
-  title?: string; objective?: string; environment?: string;
+  title?: string; objective?: string; environment?: string | string[];
   steps?: PracticeStep[]; prerequisites?: string[];
   troubleshooting?: TroubleshootItem[] | string[];
   acceptanceCriteria?: string[]; estimatedMinutes?: number; challenge?: string;
+  safetyNotice?: string; safetyChecklist?: string[];
 }
 interface QuizQuestion {
   id?: number | string; stem: string; options: string[];
@@ -169,7 +174,11 @@ function PracticePreview({ doc, sources }: { doc: PracticeDoc; sources: Record<s
             <Terminal size={17} className="mt-0.5 shrink-0 text-ochre" />
             <div>
               <p className="text-xs font-bold uppercase tracking-wide text-ochre">环境</p>
-              <p className="mt-1 font-mono text-[12.5px] leading-6 text-ink-2">{doc.environment}</p>
+              {Array.isArray(doc.environment) ? (
+                <ul className="mt-1 space-y-1 font-mono text-[12.5px] leading-6 text-ink-2">
+                  {doc.environment.map((item, index) => <li key={index}>• {item}</li>)}
+                </ul>
+              ) : <p className="mt-1 font-mono text-[12.5px] leading-6 text-ink-2">{doc.environment}</p>}
             </div>
           </div>
         )}
@@ -178,6 +187,13 @@ function PracticePreview({ doc, sources }: { doc: PracticeDoc; sources: Record<s
             {doc.prerequisites.map((item, index) => (
               <span key={index} className="lf-pill lf-pill-null">前置：{item}</span>
             ))}
+          </div>
+        )}
+        {(!!doc.safetyChecklist?.length || doc.safetyNotice) && (
+          <div className="mt-3 rounded-xl border border-amber-200/70 bg-amber-50/70 p-4">
+            <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-amber-800"><ShieldCheck size={15} />开始前确认</p>
+            {!!doc.safetyChecklist?.length && <ul className="mt-2 space-y-1 text-[12.5px] leading-6 text-ink-2">{doc.safetyChecklist.map((item, index) => <li key={index}>• {item}</li>)}</ul>}
+            {doc.safetyNotice && <p className="mt-2 flex items-start gap-2 text-[12.5px] leading-6 text-amber-900"><TriangleAlert size={14} className="mt-1 shrink-0" />{doc.safetyNotice}</p>}
           </div>
         )}
       </div>
@@ -191,11 +207,14 @@ function PracticePreview({ doc, sources }: { doc: PracticeDoc; sources: Record<s
             </span>
             <div className="min-w-0 flex-1">
               {step.title && <h4 className="text-[15px] font-bold text-ink">{step.title}</h4>}
-              {(step.content || step.detail) && (
+              {(step.instruction || step.content || step.detail) && (
                 <div className="mt-1.5 text-[13.5px] leading-7 text-ink-2">
-                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>{step.content || step.detail || ''}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>{step.instruction || step.content || step.detail || ''}</ReactMarkdown>
                 </div>
               )}
+              {step.code && <pre className="mt-3 max-h-[360px] overflow-auto rounded-xl bg-[#26322A] p-4 text-[12.5px] leading-6 text-emerald-50"><code>{step.code}</code></pre>}
+              {step.expectedOutput && <div className="mt-3 rounded-lg border border-brand/20 bg-brand-tint/40 px-3.5 py-2.5 text-[12.5px] leading-6 text-ink-2"><span className="font-semibold text-brand">预期结果：</span>{step.expectedOutput}</div>}
+              {(step.warning || step.safety) && <p className="mt-2 flex items-start gap-2 rounded-lg bg-amber-50 px-3.5 py-2.5 text-[12.5px] leading-6 text-amber-900"><TriangleAlert size={14} className="mt-1 shrink-0" />{step.warning || step.safety}</p>}
               {step.hint && <p className="mt-2 rounded-lg bg-amber-tint/50 px-3.5 py-2.5 text-[12.5px] leading-6 text-[#8A6A2F]">💡 {step.hint}</p>}
               <SourceCitationMarks citations={step.citations} evidenceQuotes={step.evidenceQuotes} sources={sources} />
             </div>
