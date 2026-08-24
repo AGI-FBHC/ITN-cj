@@ -37,44 +37,100 @@ interface PptPoint { heading?: string; detail?: string }
 interface PptSlide { kind?: string; title?: string; points?: PptPoint[]; takeaway?: string; speakerNotes?: string }
 interface PptOutline { title?: string; subtitle?: string; slides?: PptSlide[]; agendaPlan?: string[] }
 
-/* ---------------- 讲义：合成 markdown 后走学员端渲染器 ---------------- */
 
-function lectureToMarkdown(doc: LectureDoc): string {
-  const parts: string[] = [];
-  if (doc.title) parts.push(`# ${doc.title}`);
-  if (doc.summary) { parts.push('## 导语'); parts.push(doc.summary); }
-  for (const chapter of doc.chapters ?? []) {
-    parts.push(`## ${chapter.title ?? '章节'}`);
-    if (chapter.overview) parts.push(chapter.overview);
-    for (const section of chapter.sections ?? []) {
-      if (section.title) parts.push(`### ${section.title}`);
-      if (section.content) parts.push(section.content);
-    }
-  }
-  if (doc.learningObjectives?.length) {
-    parts.push('## 学习目标');
-    parts.push(doc.learningObjectives.map((item) => `- ${item}`).join('\n'));
-  }
-  if (doc.keyPoints?.length) {
-    parts.push('## 关键要点');
-    parts.push(doc.keyPoints.map((item) => `- ${item}`).join('\n'));
-  }
-  if (doc.reviewQuestions?.length) {
-    parts.push('## 复习思考');
-    parts.push(doc.reviewQuestions.map((item) => `- ${item}`).join('\n'));
-  }
-  return parts.join('\n\n');
-}
-
+/**
+ * 讲义预览：按"导语 / 逐章 / 收尾"分卡片展示（块间留缝），
+ * 与讲师端卡片化翻页展示保持同一颗粒度——一章一张卡。
+ */
 function LecturePreview({ doc, sources }: { doc: LectureDoc; sources: Record<string, unknown>[] }) {
+  const chapters = doc.chapters ?? [];
   return (
-    <div className="lf-card rounded-2xl p-6 md:p-8">
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>
-        {lectureToMarkdown(doc)}
-      </ReactMarkdown>
-      {(doc.chapters ?? []).flatMap((chapter) => chapter.sections ?? []).map((section, index) => (
-        <SourceCitationMarks key={index} citations={section.citations} evidenceQuotes={section.evidenceQuotes} sources={sources} />
+    <div className="space-y-4">
+      {/* 导语卡 */}
+      <div className="lf-card rounded-2xl p-6">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="mr-auto text-lg font-bold text-ink">{doc.title || '定制讲义'}</h3>
+          <span className="lf-pill lf-pill-null">{chapters.length} 章</span>
+        </div>
+        {doc.summary && <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-ink-2">{doc.summary}</p>}
+      </div>
+
+      {/* 逐章卡：一章一块 */}
+      {chapters.map((chapter, ci) => (
+        <div key={ci} className="lf-card rounded-2xl p-6">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-tint font-mono text-[13px] font-bold text-brand">
+              {ci + 1}
+            </span>
+            <h4 className="text-[16px] font-bold text-ink">{chapter.title || '章节 ' + (ci + 1)}</h4>
+          </div>
+          {chapter.overview && <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-ink-2">{chapter.overview}</p>}
+          <div className="mt-4 space-y-5">
+            {(chapter.sections ?? []).map((section, si) => (
+              <section key={si}>
+                {section.title && (
+                  <h5 className="mb-2 border-l-[3px] border-brand/50 pl-3 text-[14px] font-bold text-ink">
+                    {section.title}
+                  </h5>
+                )}
+                {section.content && (
+                  <div className="text-[14px] leading-7 text-ink-2">
+                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>
+                      {section.content}
+                    </ReactMarkdown>
+                  </div>
+                )}
+                <SourceCitationMarks citations={section.citations} evidenceQuotes={section.evidenceQuotes} sources={sources} />
+              </section>
+            ))}
+          </div>
+        </div>
       ))}
+
+      {/* 收尾卡：目标 / 要点 / 复习 */}
+      {(!!doc.learningObjectives?.length || !!doc.keyPoints?.length || !!doc.reviewQuestions?.length) && (
+        <div className="lf-card rounded-2xl p-6">
+          {!!doc.learningObjectives?.length && (
+            <div className={cn(!!doc.keyPoints?.length && 'mb-5')}>
+              <p className="text-xs font-bold uppercase tracking-wide text-brand">学习目标</p>
+              <ul className="mt-2 space-y-1.5">
+                {doc.learningObjectives.map((item, i) => (
+                  <li key={i} className="flex items-start gap-2 text-[13.5px] leading-6 text-ink-2">
+                    <CheckCircle2 size={14} className="mt-1 shrink-0 text-brand" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {!!doc.keyPoints?.length && (
+            <div className={cn(!!doc.reviewQuestions?.length && 'mb-5')}>
+              <p className="text-xs font-bold uppercase tracking-wide text-ochre">关键要点</p>
+              <ul className="mt-2 space-y-1.5">
+                {doc.keyPoints.map((item, i) => (
+                  <li key={i} className="flex items-start gap-2 text-[13.5px] leading-6 text-ink-2">
+                    <span className="mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full bg-ochre/60" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {!!doc.reviewQuestions?.length && (
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-ink-muted">复习思考</p>
+              <ul className="mt-2 space-y-1.5">
+                {doc.reviewQuestions.map((item, i) => (
+                  <li key={i} className="flex items-start gap-2 text-[13.5px] leading-6 text-ink-2">
+                    <span className="mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full bg-ink-muted/60" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -89,10 +145,11 @@ function PracticePreview({ doc, sources }: { doc: PracticeDoc; sources: Record<s
     : [];
   return (
     <div className="space-y-4">
-      {/* 目标与环境 */}
+      {/* 目标与环境卡 */}
       <div className="lf-card rounded-2xl p-5">
         <div className="flex flex-wrap items-center gap-2.5">
           <h3 className="mr-auto text-base font-bold text-ink">{doc.title || '实操指南'}</h3>
+          <span className="lf-pill lf-pill-null">{doc.steps?.length ?? 0} 步</span>
           {doc.estimatedMinutes != null && (
             <span className="lf-pill lf-pill-null"><Clock size={11} />约 {doc.estimatedMinutes} 分钟</span>
           )}
@@ -123,53 +180,57 @@ function PracticePreview({ doc, sources }: { doc: PracticeDoc; sources: Record<s
           </div>
         )}
       </div>
-      {/* 步骤 */}
-      <div className="lf-card rounded-2xl p-5">
-        <h3 className="text-sm font-bold text-ink">操作步骤</h3>
-        <ol className="mt-4 space-y-3">
-          {(doc.steps ?? []).map((step, index) => (
-            <li key={index} className="flex items-start gap-3.5">
-              <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-tint font-mono text-[12px] font-bold text-brand">
-                {index + 1}
-              </span>
-              <div className="min-w-0 flex-1 rounded-xl border border-white/70 bg-white/50 px-4 py-3">
-                {step.title && <p className="text-sm font-semibold text-ink">{step.title}</p>}
-                {(step.content || step.detail) && (
-                  <div className="mt-1 text-[13px] leading-6 text-ink-2"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>{step.content || step.detail || ''}</ReactMarkdown></div>
-                )}
-                {step.hint && <p className="mt-1.5 text-xs leading-5 text-ochre">{step.hint}</p>}
-                <SourceCitationMarks citations={step.citations} evidenceQuotes={step.evidenceQuotes} sources={sources} />
-              </div>
-            </li>
-          ))}
-        </ol>
-        {!!doc.acceptanceCriteria?.length && (
-          <div className="mt-5 rounded-xl border border-ochre/25 bg-ochre-tint/40 p-4">
-            <p className="text-xs font-bold uppercase tracking-wide text-[#9A5B3C]">验收标准</p>
-            <ul className="mt-2 space-y-1.5">
-              {doc.acceptanceCriteria.map((item, index) => (
-                <li key={index} className="flex items-start gap-2 text-[13px] leading-6 text-ink-2">
-                  <CheckCircle2 size={14} className="mt-1 shrink-0 text-ochre" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {!!troubles.length && (
-          <div className="mt-5">
-            <p className="text-xs font-bold uppercase tracking-wide text-ink-muted">常见问题</p>
-            <div className="mt-2.5 space-y-2">
-              {troubles.map((item, index) => (
-                <div key={index} className="rounded-xl bg-white/50 px-4 py-3">
-                  <p className="text-[13px] font-semibold text-ink">{item.problem}</p>
-                  {item.solution && <p className="mt-1 text-[13px] leading-6 text-ink-2">{item.solution}</p>}
+
+      {/* 步骤：一步一张卡 */}
+      {(doc.steps ?? []).map((step, index) => (
+        <div key={index} className="lf-card rounded-2xl p-5">
+          <div className="flex items-start gap-3.5">
+            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-tint font-mono text-[13px] font-bold text-brand">
+              {index + 1}
+            </span>
+            <div className="min-w-0 flex-1">
+              {step.title && <h4 className="text-[15px] font-bold text-ink">{step.title}</h4>}
+              {(step.content || step.detail) && (
+                <div className="mt-1.5 text-[13.5px] leading-7 text-ink-2">
+                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>{step.content || step.detail || ''}</ReactMarkdown>
                 </div>
-              ))}
+              )}
+              {step.hint && <p className="mt-2 rounded-lg bg-amber-tint/50 px-3.5 py-2.5 text-[12.5px] leading-6 text-[#8A6A2F]">💡 {step.hint}</p>}
+              <SourceCitationMarks citations={step.citations} evidenceQuotes={step.evidenceQuotes} sources={sources} />
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      ))}
+
+      {/* 验收标准卡 */}
+      {!!doc.acceptanceCriteria?.length && (
+        <div className="lf-card rounded-2xl border-ochre/30 p-5">
+          <p className="text-xs font-bold uppercase tracking-wide text-[#9A5B3C]">验收标准</p>
+          <ul className="mt-2.5 space-y-1.5">
+            {doc.acceptanceCriteria.map((item, index) => (
+              <li key={index} className="flex items-start gap-2 text-[13px] leading-6 text-ink-2">
+                <CheckCircle2 size={14} className="mt-1 shrink-0 text-ochre" />
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* 常见问题卡 */}
+      {!!troubles.length && (
+        <div className="lf-card rounded-2xl p-5">
+          <p className="text-xs font-bold uppercase tracking-wide text-ink-muted">常见问题</p>
+          <div className="mt-2.5 space-y-2">
+            {troubles.map((item, index) => (
+              <div key={index} className="rounded-xl bg-white/50 px-4 py-3">
+                <p className="text-[13px] font-semibold text-ink">{item.problem}</p>
+                {item.solution && <p className="mt-1 text-[13px] leading-6 text-ink-2">{item.solution}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
