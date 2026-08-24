@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
-  ArchiveRestore, BookOpen, ChevronDown, ChevronRight, ClipboardList, Eye, FileText,
-  FolderTree, Loader2, MonitorPlay, Plus, RotateCcw, Search, ShieldCheck, Trash2, Wrench, X,
+  ArchiveRestore, ArrowLeft, BookOpen, ChevronDown, ChevronRight, ClipboardList, Eye, FileText,
+  FolderTree, Loader2, MonitorPlay, Plus, RotateCcw, Search, ShieldCheck, Trash2, Wrench,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, type AdminResourceDetail, type AdminResourceItem, type AdminResourceStats, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
@@ -36,6 +36,7 @@ export default function ResourceCenterAdmin() {
   const [view, setView] = useState<View>('library');
   const [keyword, setKeyword] = useState('');
   const [detail, setDetail] = useState<AdminResourceDetail | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   /* ---- SWR 缓存：先展示缓存，后台异步更新 ---- */
   const domainsQ = useCachedData<RagDomain[]>('admin:rag-domains', () => api.listRagDomains(), { ttlMs: 30_000 });
@@ -66,6 +67,7 @@ export default function ResourceCenterAdmin() {
     setNode(null);
     setKind('lecture');
     setKeyword('');
+    setDetail(null);
     if (next.code === '__unassigned__') setView('recycle');
   };
 
@@ -89,12 +91,18 @@ export default function ResourceCenterAdmin() {
   };
 
   const preview = async (item: AdminResourceItem) => {
+    setPreviewLoading(true);
+    setDetail(null);
     try {
       setDetail(await api.getAdminResource(item.id));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '资源预览失败');
+    } finally {
+      setPreviewLoading(false);
     }
   };
+
+  const closePreview = () => setDetail(null);
 
   if (!domain)
     return (
@@ -177,7 +185,7 @@ export default function ResourceCenterAdmin() {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <nav className="flex items-center gap-1.5 text-xs text-ink-muted">
-            <button onClick={() => { setDomain(null); setNode(null); }} className="lf-row-btn !px-2.5 !py-1 text-brand">
+            <button onClick={() => { setDomain(null); setNode(null); setDetail(null); }} className="lf-row-btn !px-2.5 !py-1 text-brand">
               资源中心
             </button>
             <span>/</span>
@@ -190,7 +198,7 @@ export default function ResourceCenterAdmin() {
             <Plus size={13} />
             预生成（待开放）
           </button>
-          <button onClick={() => setView(view === 'recycle' ? 'library' : 'recycle')} className={cn('lf-row-btn', view === 'recycle' && 'lf-row-btn-primary')}>
+          <button onClick={() => { setView(view === 'recycle' ? 'library' : 'recycle'); setDetail(null); }} className={cn('lf-row-btn', view === 'recycle' && 'lf-row-btn-primary')}>
             {view === 'recycle' ? <RotateCcw size={13} /> : <Trash2 size={13} />}
             {view === 'recycle' ? '返回资源库' : '回收站'}
           </button>
@@ -204,7 +212,7 @@ export default function ResourceCenterAdmin() {
             <p className="mt-0.5 text-[11px] text-ink-muted">知识目录</p>
           </div>
           <button
-            onClick={() => setNode(null)}
+            onClick={() => { setNode(null); setDetail(null); }}
             className={cn('w-full border-b border-white/50 px-4 py-3 text-left text-xs font-semibold transition-colors', !node ? 'lf-tree-active' : 'text-ink-2 hover:bg-brand-tint/60')}
           >
             领域全部资源
@@ -248,7 +256,7 @@ export default function ResourceCenterAdmin() {
                       </button>
                     ) : (
                       /* 知识点（叶子）节点：点击进入该知识点 */
-                      <button onClick={() => setNode(itemNode)} className="min-w-0 flex-1 truncate py-2.5 text-left">
+                      <button onClick={() => { setNode(itemNode); setDetail(null); }} className="min-w-0 flex-1 truncate py-2.5 text-left">
                         {itemNode.name}
                       </button>
                     )}
@@ -261,25 +269,86 @@ export default function ResourceCenterAdmin() {
         </aside>
 
         <section>
-          <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-            {kinds.map(([id, label, note, Icon]) => (
-              <button
-                key={id}
-                onClick={() => setKind(id)}
-                className={cn('lf-card rounded-2xl p-3.5 text-left transition-all', kind === id ? 'ring-2 ring-brand/50 border-brand/40 bg-brand-tint/40' : 'hover:-translate-y-0.5')}
-              >
-                <Icon size={17} className={kind === id ? 'text-brand' : 'text-ink-muted'} />
-                <p className="mt-2 text-sm font-bold text-ink">{label}</p>
-                <p className="mt-0.5 text-[11px] text-ink-muted">{note}</p>
-              </button>
-            ))}
-          </div>
+          {detail ? (
+            /* ---- 资源预览子页面：占据右侧列表区域，非弹窗 ---- */
+            <div className="lf-anim-in-up">
+              <div className="mb-4 flex flex-wrap items-center gap-3">
+                <button onClick={closePreview} className="lf-row-btn">
+                  <ArrowLeft size={13} />
+                  返回资源列表
+                </button>
+                <nav className="flex min-w-0 items-center gap-1.5 text-xs text-ink-muted">
+                  <span>{domain.name}</span>
+                  {node && (
+                    <>
+                      <span>/</span>
+                      <span>{node.name}</span>
+                    </>
+                  )}
+                  <span>/</span>
+                  <span className="truncate font-semibold text-ink">{detail.title}</span>
+                </nav>
+              </div>
+              <div className="lf-card rounded-2xl p-6">
+                <div className="flex flex-wrap items-center gap-2 border-b border-white/60 pb-4">
+                  <h3 className="mr-auto text-lg font-bold text-ink">{detail.title}</h3>
+                  <span className="lf-pill lf-pill-null">{typeText[detail.type] || detail.type}</span>
+                  <span className="lf-pill lf-pill-null">v{detail.revision}</span>
+                  {detail.archivedAt ? (
+                    <span className="lf-pill lf-pill-warn">已归档</span>
+                  ) : detail.reviewStatus ? (
+                    <span
+                      className={cn(
+                        'lf-pill',
+                        detail.reviewStatus === 'PUBLISHED'
+                          ? 'lf-pill-ok'
+                          : detail.reviewStatus === 'REJECTED' || detail.reviewStatus === 'DEPRECATED'
+                            ? 'lf-pill-danger'
+                            : detail.reviewStatus === 'PENDING'
+                              ? 'lf-pill-warn'
+                              : 'lf-pill-null',
+                      )}
+                    >
+                      {detail.reviewStatus}
+                    </span>
+                  ) : (
+                    <span className="lf-pill lf-pill-null">用户历史版本</span>
+                  )}
+                </div>
+                <p className="mt-3 text-xs text-ink-muted">
+                  {detail.topic ? ['主题：', detail.topic, ' · '].join('') : ''}
+                  更新于 {new Date(detail.updatedAt).toLocaleString('zh-CN')}
+                </p>
+                <div className="mt-4">
+                  <ResourcePreview detail={detail} />
+                </div>
+              </div>
+            </div>
+          ) : previewLoading ? (
+            <div className="lf-card flex items-center justify-center rounded-2xl py-20 text-sm text-ink-muted">
+              <Loader2 className="mr-2 animate-spin" size={18} />
+              正在加载资源预览…
+            </div>
+          ) : (
+            <>
+              <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+                {kinds.map(([id, label, note, Icon]) => (
+                  <button
+                    key={id}
+                    onClick={() => { setKind(id); setDetail(null); }}
+                    className={cn('lf-card rounded-2xl p-3.5 text-left transition-all', kind === id ? 'ring-2 ring-brand/50 border-brand/40 bg-brand-tint/40' : 'hover:-translate-y-0.5')}
+                  >
+                    <Icon size={17} className={kind === id ? 'text-brand' : 'text-ink-muted'} />
+                    <p className="mt-2 text-sm font-bold text-ink">{label}</p>
+                    <p className="mt-0.5 text-[11px] text-ink-muted">{note}</p>
+                  </button>
+                ))}
+              </div>
 
-          <>
               <div className="lf-card mb-4 flex flex-wrap items-center gap-3 rounded-2xl p-3">
                 <div className="lf-seg">
                   {([['library', '资源库'], ['review', '待审核'], ['recycle', '回收站']] as [View, string][]).map(([id, label]) => (
-                    <button key={id} onClick={() => setView(id)} className={cn('lf-seg-item', view === id && 'lf-seg-item-active')}>
+                    <button key={id} onClick={() => { setView(id); setDetail(null); }} className={cn('lf-seg-item', view === id && 'lf-seg-item-active')}>
                       {label}
                     </button>
                   ))}
@@ -296,30 +365,12 @@ export default function ResourceCenterAdmin() {
                 )}
               </div>
               <ResourceTable items={listQ.data?.items ?? []} loading={listQ.loading} view={view} onPreview={preview} onAction={act} />
-          </>
+            </>
+          )}
         </section>
       </div>
 
-      {detail && (
-        <div className="lf-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="lf-glass flex max-h-[90vh] w-full max-w-4xl flex-col rounded-2xl">
-            <div className="flex shrink-0 items-center justify-between border-b border-white/60 px-5 py-4">
-              <div className="min-w-0">
-                <h3 className="truncate font-bold text-ink">{detail.title}</h3>
-                <p className="mt-0.5 text-xs text-ink-muted">
-                  {typeText[detail.type] || detail.type} · v{detail.revision}
-                </p>
-              </div>
-              <button onClick={() => setDetail(null)} className="ml-4 rounded-lg p-1.5 text-ink-muted hover:bg-white/60">
-                <X size={18} />
-              </button>
-            </div>
-            <div className="overflow-y-auto p-5">
-              <ResourcePreview detail={detail} />
-            </div>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 }
