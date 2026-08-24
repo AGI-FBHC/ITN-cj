@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   ArchiveRestore, ArrowLeft, Ban, BookOpen, CheckCircle2, ChevronDown, ChevronRight, ClipboardList,
-  Eye, FileText, FolderTree, LayoutTemplate, Loader2, MonitorPlay, Plus, RefreshCw, Trash2, Wrench, XCircle,
+  Eye, FileText, FolderTree, LayoutTemplate, ListChecks, Loader2, MonitorPlay, Plus, RefreshCw, Trash2, Wrench, X, XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api, type AdminResourceDetail, type AdminResourceItem, type AdminResourceStats, type LearningResourceGenerateInput, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
@@ -41,7 +41,9 @@ export default function ResourceCenterAdmin() {
   const [keyword, setKeyword] = useState('');
   const [detail, setDetail] = useState<AdminResourceDetail | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [generationOpen, setGenerationOpen] = useState(false);
+  const [generationModalOpen, setGenerationModalOpen] = useState(false);
+  const [taskDrawerOpen, setTaskDrawerOpen] = useState(false);
+  const [selectedKinds, setSelectedKinds] = useState<Set<ResourceKind>>(new Set(['lecture', 'practice', 'quiz', 'ppt']));
   const [generationTasks, setGenerationTasks] = useState<GenerationTask[]>([]);
   const [generationBusy, setGenerationBusy] = useState(false);
 
@@ -71,27 +73,24 @@ export default function ResourceCenterAdmin() {
   }, [domainsQ.error, statsQ.error, treeQ.error, listQ.error]);
 
   const loadGenerationTasks = async () => {
-    if (!domain || domain.code === '__unassigned__' || !node) {
-      setGenerationTasks([]);
-      return;
-    }
     const [resources, presentations] = await Promise.all([
       api.listLearningResourceTasks(100),
-      presentationApi.listPresentationSummaries(100, true),
+      presentationApi.listPresentationSummariesFresh(100, true),
     ]);
-    const belongsHere = (context: Record<string, unknown> | undefined) =>
-      context?.adminGeneration === true && context.domainCode === domain.code && context.nodeCode === node.nodeCode;
+    const textContext = (task: LearningResourceGenerationTask) => {
+      const request = task.request as (LearningResourceGenerateInput & { generation_context?: Record<string, unknown> }) | undefined;
+      return request?.generationContext ?? request?.generation_context;
+    };
     const textTasks: GenerationTask[] = resources.tasks
-      .filter((task) => belongsHere(task.request?.generationContext))
+      .filter((task) => textContext(task)?.adminGeneration === true)
       .map((task) => ({ ...task, taskKind: 'resource' as const }));
     const pptTasks: GenerationTask[] = presentations.tasks
-      .filter((task) => belongsHere(task.request?.generationContext))
+      .filter((task) => task.request?.generationContext?.adminGeneration === true)
       .map((task) => ({ ...task, taskKind: 'ppt' as const }));
     setGenerationTasks([...textTasks, ...pptTasks].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)));
   };
 
   useEffect(() => {
-    if (!node || domain?.code === '__unassigned__') return;
     const initial = window.setTimeout(
       () => void loadGenerationTasks().catch((error) => toast.error(error instanceof Error ? error.message : '生成任务读取失败')),
       0,
@@ -101,8 +100,7 @@ export default function ResourceCenterAdmin() {
       window.clearTimeout(initial);
       window.clearInterval(timer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [domain?.code, node?.nodeCode]);
+  }, []);
 
   const generationContext = () => ({
     adminGeneration: true,
@@ -143,7 +141,8 @@ export default function ResourceCenterAdmin() {
       const failed = results.filter((result) => result.status === 'rejected');
       if (failed.length) toast.error(`${failed.length} 项生成任务未能启动`);
       if (failed.length < results.length) toast.success(`已启动 ${results.length - failed.length} 项生成任务`);
-      setGenerationOpen(true);
+      setGenerationModalOpen(false);
+      setTaskDrawerOpen(true);
       await loadGenerationTasks();
     } finally {
       setGenerationBusy(false);
@@ -232,6 +231,11 @@ export default function ResourceCenterAdmin() {
           </div>
           <div className="flex items-center gap-2">
             {statsQ.refreshing && <span className="text-[11px] text-ink-muted">统计更新中…</span>}
+            <button onClick={() => setTaskDrawerOpen(true)} className="lf-row-btn">
+              <ListChecks size={13} />
+              生成任务
+              {generationTasks.some((task) => activeGenerationStatuses.has(task.status)) && <span className="h-2 w-2 rounded-full bg-brand" />}
+            </button>
             <div className="lf-seg">
               <button onClick={() => setView('archive')} className={cn('lf-seg-item', view === 'archive' && 'lf-seg-item-active')}>
                 <Trash2 size={13} />
@@ -288,6 +292,7 @@ export default function ResourceCenterAdmin() {
             正在读取领域…
           </div>
         )}
+        <TaskDrawer open={taskDrawerOpen} tasks={generationTasks} busy={generationBusy} onClose={() => setTaskDrawerOpen(false)} onCancel={(task) => void cancelGeneration(task)} onRetry={(task) => void retryGeneration(task)} />
       </div>
     );
 
@@ -307,9 +312,14 @@ export default function ResourceCenterAdmin() {
           <h2 className="mt-2 text-xl font-bold tracking-tight text-ink">{node?.name || domain.name} · 资源管理</h2>
         </div>
         <div className="flex gap-2">
+          <button onClick={() => setTaskDrawerOpen(true)} className="lf-row-btn">
+            <ListChecks size={13} />
+            生成任务
+            {generationTasks.some((task) => activeGenerationStatuses.has(task.status)) && <span className="h-2 w-2 rounded-full bg-brand" />}
+          </button>
           <button
             disabled={!node || domain.code === '__unassigned__'}
-            onClick={() => setGenerationOpen((current) => !current)}
+            onClick={() => { setSelectedKinds(new Set([kind])); setGenerationModalOpen(true); }}
             className="lf-row-btn lf-row-btn-primary disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Plus size={13} />
@@ -445,17 +455,6 @@ export default function ResourceCenterAdmin() {
             </div>
           ) : (
             <>
-              {generationOpen && node && domain.code !== '__unassigned__' && (
-                <GenerationManager
-                  tasks={generationTasks}
-                  busy={generationBusy}
-                  currentKind={kind}
-                  onStartCurrent={() => void startSelected([kind])}
-                  onStartAll={() => void startSelected(['lecture', 'practice', 'quiz', 'ppt'])}
-                  onCancel={(task) => void cancelGeneration(task)}
-                  onRetry={(task) => void retryGeneration(task)}
-                />
-              )}
               <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
                 {kinds.map(([id, label, note, Icon]) => (
                   <button
@@ -493,52 +492,125 @@ export default function ResourceCenterAdmin() {
           )}
         </section>
       </div>
-
-
+      <PreGenerationModal
+        open={generationModalOpen}
+        domainName={domain.name}
+        nodeName={node?.name ?? ''}
+        selected={selectedKinds}
+        busy={generationBusy}
+        onClose={() => setGenerationModalOpen(false)}
+        onToggle={(target) => setSelectedKinds((current) => {
+          const next = new Set(current);
+          if (next.has(target)) next.delete(target); else next.add(target);
+          return next;
+        })}
+        onSelectAll={() => setSelectedKinds(new Set(['lecture', 'practice', 'quiz', 'ppt']))}
+        onSubmit={() => void startSelected([...selectedKinds])}
+      />
+      <TaskDrawer open={taskDrawerOpen} tasks={generationTasks} busy={generationBusy} onClose={() => setTaskDrawerOpen(false)} onCancel={(task) => void cancelGeneration(task)} onRetry={(task) => void retryGeneration(task)} />
     </div>
   );
 }
 
 const activeGenerationStatuses = new Set(['queued', 'retrieving', 'planning', 'analyzing', 'generating', 'verifying', 'reviewing', 'revising', 'judging', 'outline_review']);
 
-function GenerationManager({ tasks, busy, currentKind, onStartCurrent, onStartAll, onCancel, onRetry }: {
+function PreGenerationModal({ open, domainName, nodeName, selected, busy, onClose, onToggle, onSelectAll, onSubmit }: {
+  open: boolean;
+  domainName: string;
+  nodeName: string;
+  selected: Set<ResourceKind>;
+  busy: boolean;
+  onClose: () => void;
+  onToggle: (kind: ResourceKind) => void;
+  onSelectAll: () => void;
+  onSubmit: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-ink/25 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+      <div className="lf-card w-full max-w-2xl rounded-3xl p-6 shadow-2xl">
+        <div className="flex items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand-tint text-brand"><Plus size={20} /></div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-lg font-bold text-ink">预生成通用资源</h3>
+            <p className="mt-1 text-xs text-ink-muted">生成结果进入机构资源库，不绑定学习者。</p>
+          </div>
+          <button disabled={busy} onClick={onClose} className="lf-row-btn !p-2" aria-label="关闭"><X size={15} /></button>
+        </div>
+        <div className="mt-5 rounded-2xl bg-white/55 px-4 py-3">
+          <p className="text-[11px] text-ink-muted">生成位置</p>
+          <p className="mt-1 text-sm font-semibold text-ink">{domainName} <span className="mx-1 text-ink-muted">/</span> {nodeName}</p>
+        </div>
+        <div className="mt-5 flex items-center justify-between">
+          <p className="text-sm font-bold text-ink">选择资源类型</p>
+          <button onClick={onSelectAll} className="text-xs font-semibold text-brand">选择全部</button>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+          {kinds.map(([id, label, note, Icon]) => (
+            <button key={id} onClick={() => onToggle(id)} className={cn('rounded-2xl border p-3 text-left transition-all', selected.has(id) ? 'border-brand/50 bg-brand-tint/70 ring-1 ring-brand/30' : 'border-white/80 bg-white/45 hover:bg-white/70')}>
+              <div className="flex items-center justify-between"><Icon size={17} className={selected.has(id) ? 'text-brand' : 'text-ink-muted'} />{selected.has(id) && <CheckCircle2 size={15} className="text-brand" />}</div>
+              <p className="mt-3 text-sm font-bold text-ink">{label}</p>
+              <p className="mt-1 text-[10px] text-ink-muted">{note}</p>
+            </button>
+          ))}
+        </div>
+        <div className="mt-6 flex justify-end gap-2 border-t border-white/70 pt-4">
+          <button disabled={busy} onClick={onClose} className="lf-row-btn">取消</button>
+          <button disabled={busy || selected.size === 0} onClick={onSubmit} className="lf-row-btn lf-row-btn-primary min-w-28 justify-center disabled:opacity-50">
+            {busy ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+            开始生成{selected.size ? `（${selected.size}项）` : ''}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function taskContext(task: GenerationTask): Record<string, unknown> {
+  if (task.taskKind === 'ppt') return task.request?.generationContext ?? {};
+  const request = task.request as (LearningResourceGenerateInput & { generation_context?: Record<string, unknown> }) | undefined;
+  return request?.generationContext ?? request?.generation_context ?? {};
+}
+
+function TaskDrawer({ open, tasks, busy, onClose, onCancel, onRetry }: {
+  open: boolean;
   tasks: GenerationTask[];
   busy: boolean;
-  currentKind: ResourceKind;
-  onStartCurrent: () => void;
-  onStartAll: () => void;
+  onClose: () => void;
   onCancel: (task: GenerationTask) => void;
   onRetry: (task: GenerationTask) => void;
 }) {
+  if (!open) return null;
+  const activeCount = tasks.filter((task) => activeGenerationStatuses.has(task.status)).length;
   return (
-    <div className="lf-card mb-4 rounded-2xl p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="mr-auto">
-          <h3 className="text-sm font-bold text-ink">通用资源预生成</h3>
-          <p className="mt-1 text-[11px] text-ink-muted">生成结果直接进入当前知识点的机构资源库，不绑定学习者。</p>
+    <div className="fixed inset-0 z-[75] bg-ink/20 backdrop-blur-[2px]" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <aside className="ml-auto flex h-full w-full max-w-md flex-col border-l border-white/70 bg-[#f7f5ee]/95 shadow-2xl backdrop-blur-2xl">
+        <div className="flex items-start gap-3 border-b border-white/70 px-5 py-5">
+          <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-tint text-brand"><ListChecks size={18} /></div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-base font-bold text-ink">资源生成任务</h3>
+            <p className="mt-1 text-[11px] text-ink-muted">{activeCount ? `${activeCount} 项正在进行` : '当前没有进行中的任务'}</p>
+          </div>
+          <button onClick={onClose} className="lf-row-btn !p-2" aria-label="关闭"><X size={15} /></button>
         </div>
-        <button disabled={busy} onClick={onStartCurrent} className="lf-row-btn disabled:opacity-50">
-          {busy ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
-          生成当前类型（{typeText[currentKind]}）
-        </button>
-        <button disabled={busy} onClick={onStartAll} className="lf-row-btn lf-row-btn-primary disabled:opacity-50">
-          <Plus size={12} />
-          一键生成四类
-        </button>
-      </div>
-      <div className="mt-4 space-y-2">
-        {tasks.slice(0, 12).map((task) => {
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+        {tasks.map((task) => {
           const active = activeGenerationStatuses.has(task.status);
           const completed = task.status === 'completed';
           const failed = task.status === 'failed' || task.status === 'cancelled';
           const label = task.taskKind === 'ppt' ? '交互课件' : typeText[task.resourceType];
+          const context = taskContext(task);
           return (
-            <div key={`${task.taskKind}-${task.id}`} className="rounded-xl border border-white/70 bg-white/45 px-3 py-3">
+            <div key={`${task.taskKind}-${task.id}`} className="rounded-2xl border border-white/80 bg-white/55 px-4 py-4">
               <div className="flex flex-wrap items-center gap-2">
                 {active ? <Loader2 size={14} className="animate-spin text-brand" /> : completed ? <CheckCircle2 size={14} className="text-emerald-600" /> : <XCircle size={14} className="text-red-500" />}
                 <span className="lf-pill lf-pill-null">{label}</span>
-                <span className="min-w-0 flex-1 truncate text-xs font-semibold text-ink">{task.stageMessage}</span>
-                <span className="text-[11px] tabular-nums text-ink-muted">{task.progress}%</span>
+                <span className="ml-auto text-[11px] tabular-nums text-ink-muted">{task.progress}%</span>
+              </div>
+              <p className="mt-3 truncate text-sm font-bold text-ink">{String(context.topicName || task.title)}</p>
+              <p className="mt-1 truncate text-[11px] text-ink-muted">{String(context.domainCode || '机构资源')} · {String(context.nodeCode || '')}</p>
+              <div className="mt-3 flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-xs text-ink-2">{task.stageMessage}</span>
                 {active && (
                   <button onClick={() => onCancel(task)} className="lf-row-btn text-red-600"><Ban size={11} />取消</button>
                 )}
@@ -553,8 +625,9 @@ function GenerationManager({ tasks, busy, currentKind, onStartCurrent, onStartAl
             </div>
           );
         })}
-        {!tasks.length && <div className="lf-empty rounded-xl p-5 text-xs">当前知识点还没有生成任务</div>}
-      </div>
+        {!tasks.length && <div className="lf-empty rounded-2xl p-8 text-xs">还没有管理员预生成任务。请先进入某个知识点发起生成。</div>}
+        </div>
+      </aside>
     </div>
   );
 }
