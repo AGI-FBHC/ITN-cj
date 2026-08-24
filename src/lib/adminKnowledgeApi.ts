@@ -309,6 +309,7 @@ export const adminKnowledgeApi = {
     includePrerequisites: boolean;
     includeContrasts: boolean;
     expandContext: boolean;
+    limit?: number;
   }) =>
     direct<KcSearchResult>(
       query(`${KC}/knowledge/chunks`, {
@@ -322,6 +323,7 @@ export const adminKnowledgeApi = {
         include_prerequisites: params.includePrerequisites,
         include_contrasts: params.includeContrasts,
         expand_context: params.expandContext,
+        limit: params.limit,
       }),
     ),
   classificationAudit: (params: {

@@ -7,7 +7,7 @@ import { api, type LearnerProfileData, type RagDomain, type RagTree, type RagTre
 import { useAuth } from "@/context/AuthContext";
 import { useCachedData } from "@/hooks/useCachedData";
 import { cn } from "@/lib/utils";
-import { adminKnowledgeApi } from "@/lib/adminKnowledgeApi";
+import { adminKnowledgeApi, type KcSearchResult } from "@/lib/adminKnowledgeApi";
 import KnowledgeQuality from "@/pages/admin/KnowledgeQuality";
 import KnowledgeGraphAdmin from "@/pages/admin/KnowledgeGraphAdmin";
 import DocumentIngestion from "@/pages/admin/DocumentIngestion";
@@ -159,6 +159,34 @@ function flattenVisibleTree(nodes: RagTreeNode[], expanded: Set<number>, depth =
 
 function DomainDetail({ tree, loading, error, onBack }: { tree: RagTree | null; loading: boolean; error: string | null; onBack: () => void }) {
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
+  const [chunkNode, setChunkNode] = useState<RagTreeNode | null>(null);
+  const [chunkResult, setChunkResult] = useState<KcSearchResult | null>(null);
+  const [chunksLoading, setChunksLoading] = useState(false);
+  const openChunks = async (node: RagTreeNode) => {
+    if (!tree) return;
+    setChunkNode(node);
+    setChunksLoading(true);
+    setChunkResult(null);
+    try {
+      setChunkResult(
+        await adminKnowledgeApi.search({
+          knowledgePoint: node.name,
+          domain: tree.domain.code,
+          categoryId: node.id,
+          thresholdMode: "fixed",
+          includeRag: false,
+          includePrerequisites: false,
+          includeContrasts: false,
+          expandContext: false,
+          limit: 30,
+        }),
+      );
+    } catch (reason) {
+      toast.error(reason instanceof Error ? reason.message : "切片读取失败");
+    } finally {
+      setChunksLoading(false);
+    }
+  };
   if (loading)
     return (
       <div className="lf-empty flex min-h-[320px] items-center justify-center text-sm">
@@ -218,15 +246,26 @@ function DomainDetail({ tree, loading, error, onBack }: { tree: RagTree | null; 
                 <th className="hidden px-4 py-3 md:table-cell">节点代码</th>
                 <th className="hidden px-4 py-3 md:table-cell">类型</th>
                 <th className="w-20 px-4 py-3 text-right">切片数</th>
+                <th className="w-24 px-4 py-3 text-right">切片</th>
               </tr>
             </thead>
             <tbody>
               {rows.map(({ node, depth }) => (
-                <tr key={node.id}>
+                <tr
+                  key={node.id}
+                  onClick={() => void openChunks(node)}
+                  title="点击查看该节点的知识切片"
+                  className={cn("cursor-pointer transition-colors", chunkNode?.id === node.id ? "bg-brand-tint/50" : "hover:bg-brand-tint/30")}
+                >
                   <td className="px-4 py-3.5">
                     <div className="flex min-w-0 items-center" style={{ paddingLeft: Math.min(depth, 3) * 18 }}>
                       {node.children?.length ? (
-                        <button type="button" onClick={() => toggle(node.id)} className="mr-1.5 shrink-0 rounded p-0.5 text-ink-muted hover:bg-brand-tint hover:text-brand" aria-label={expanded.has(node.id) ? "收起分类" : "展开分类"}>
+                        <button
+                          type="button"
+                          onClick={(event) => { event.stopPropagation(); toggle(node.id); }}
+                          className="mr-1.5 shrink-0 rounded p-0.5 text-ink-muted hover:bg-brand-tint hover:text-brand"
+                          aria-label={expanded.has(node.id) ? "收起分类" : "展开分类"}
+                        >
                           {expanded.has(node.id) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                         </button>
                       ) : (
@@ -238,6 +277,15 @@ function DomainDetail({ tree, loading, error, onBack }: { tree: RagTree | null; 
                   <td className="hidden px-4 py-3.5 font-mono text-xs text-ink-muted md:table-cell">{node.nodeCode}</td>
                   <td className="hidden px-4 py-3.5 text-xs text-ink-muted md:table-cell">{node.nodeType}</td>
                   <td className="px-4 py-3.5 text-right tabular-nums text-ink">{node.chunkCount ?? 0}</td>
+                  <td className="px-4 py-3.5 text-right">
+                    <button
+                      type="button"
+                      onClick={(event) => { event.stopPropagation(); void openChunks(node); }}
+                      className={cn("lf-row-btn", chunkNode?.id === node.id && "lf-row-btn-primary")}
+                    >
+                      查看
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -245,6 +293,54 @@ function DomainDetail({ tree, loading, error, onBack }: { tree: RagTree | null; 
         </div>
         {!rows.length && <div className="lf-empty m-4 py-10 text-center text-sm">该领域暂无分类结构</div>}
       </div>
+
+      {chunkNode && (
+        <div className="lf-anim-in-up mt-4">
+          <div className="lf-card rounded-2xl">
+            <div className="flex flex-wrap items-center gap-2 border-b border-white/60 px-5 py-4">
+              <h3 className="mr-auto text-sm font-bold text-ink">知识切片 · {chunkNode.name}</h3>
+              {chunkResult && (
+                <>
+                  <span className={cn("lf-pill", chunkResult.decision === "mysql" ? "lf-pill-ok" : chunkResult.decision === "parent" ? "lf-pill-warn" : chunkResult.decision === "rag" ? "lf-pill-null" : "lf-pill-danger")}>
+                    {chunkResult.decision === "mysql" ? "精确命中" : chunkResult.decision === "parent" ? "章节上卷" : chunkResult.decision === "rag" ? "RAG 兜底" : "无结果"}
+                  </span>
+                  <span className="lf-pill lf-pill-null">{chunkResult.chunks.length} 条切片</span>
+                </>
+              )}
+            </div>
+            {chunksLoading ? (
+              <div className="flex items-center justify-center py-12 text-sm text-ink-muted">
+                <Loader2 size={16} className="mr-2 animate-spin" />
+                正在读取切片…
+              </div>
+            ) : chunkResult ? (
+              chunkResult.chunks.length ? (
+                <div className="divide-y divide-white/50">
+                  {chunkResult.chunks.map((hit, index) => (
+                    <div key={hit.chunk_id ?? index} className="px-5 py-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-[11px] text-ink-muted">{hit.chunk_code}</span>
+                        <span className={cn("lf-pill", hit.source === "mysql" ? "lf-pill-ok" : hit.source === "parent" ? "lf-pill-warn" : "lf-pill-null")}>
+                          {hit.source === "mysql" ? "精确挂载" : hit.source === "parent" ? "章节上卷" : hit.source}
+                        </span>
+                        {hit.confidence != null && <span className="lf-pill lf-pill-null">置信 {Math.round(hit.confidence * 100)}%</span>}
+                        {hit.relation_type && <span className="lf-pill lf-pill-null">{hit.relation_type}</span>}
+                      </div>
+                      <p className="mt-2 text-[13px] font-semibold text-ink">{hit.section_title || "（无小节标题）"}</p>
+                      <p className="mt-0.5 truncate text-[11px] text-ink-muted">{hit.title_path}</p>
+                      <p className="mt-2 line-clamp-4 whitespace-pre-wrap text-[13px] leading-6 text-ink-2">{hit.content.trim()}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="lf-empty px-6 py-10 text-center text-sm">
+                  {chunkNode.children?.length ? "该分类暂无可展示切片（切片挂载在叶子知识点上，可点击子节点查看）" : "该知识点暂无切片"}
+                </div>
+              )
+            ) : null}
+          </div>
+        </div>
+      )}
     </>
   );
 }
