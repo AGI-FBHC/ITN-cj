@@ -83,7 +83,7 @@ export default function ResourceCenterAdmin() {
       else if (action === 'candidate') await api.makeAdminResourceCandidate(item.id);
       else if (action === 'archive') await api.archiveAdminResource(item.id);
       else await api.reviewAdminResource(item.id, action as 'submit' | 'approve' | 'reject' | 'publish' | 'deprecate');
-      toast.success(action === 'candidate' ? '已复制为通用资源草稿' : '资源状态已更新');
+      toast.success(action === 'candidate' ? '已复制为通用资源草稿' : action === 'restore' ? '已恢复到机构资源库草稿' : '资源状态已更新');
       await invalidateResources();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '操作失败');
