@@ -43,6 +43,7 @@ export default function ResourceCenterAdmin() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [generationModalOpen, setGenerationModalOpen] = useState(false);
   const [taskDrawerOpen, setTaskDrawerOpen] = useState(false);
+  const [focusTask, setFocusTask] = useState<string | null>(null);
   const [selectedKinds, setSelectedKinds] = useState<Set<ResourceKind>>(new Set(['lecture', 'practice', 'quiz', 'ppt']));
   const [generationTasks, setGenerationTasks] = useState<GenerationTask[]>([]);
   const [generationBusy, setGenerationBusy] = useState(false);
@@ -175,6 +176,23 @@ export default function ResourceCenterAdmin() {
     }
   };
 
+  /** 资源 → 生成任务追溯：资源任务按 resourceId 精确匹配，课件按标题匹配 */
+  const taskLogForResource = (item: AdminResourceItem): GenerationTask | null => {
+    const byId = generationTasks.find((t) => t.taskKind === 'resource' && t.resourceId === item.id);
+    if (byId) return byId;
+    return generationTasks.find((t) => t.taskKind === 'ppt' && t.title === item.title) ?? null;
+  };
+
+  const openResourceLog = (item: AdminResourceItem) => {
+    const task = taskLogForResource(item);
+    if (!task) {
+      toast.info('该资源没有管理员生成日志（可能为历史资源或非预生成来源）');
+      return;
+    }
+    setFocusTask(task.taskKind + '-' + task.id);
+    setTaskDrawerOpen(true);
+  };
+
   const openDomain = (next: RagDomain | { code: '__unassigned__'; name: string; description: string }) => {
     setDomain(next);
     setNode(null);
@@ -292,7 +310,7 @@ export default function ResourceCenterAdmin() {
             正在读取领域…
           </div>
         )}
-        <TaskDrawer open={taskDrawerOpen} tasks={generationTasks} busy={generationBusy} onClose={() => setTaskDrawerOpen(false)} onCancel={(task) => void cancelGeneration(task)} onRetry={(task) => void retryGeneration(task)} />
+        <TaskDrawer open={taskDrawerOpen} tasks={generationTasks} busy={generationBusy} focusTaskId={focusTask} onClose={() => { setTaskDrawerOpen(false); setFocusTask(null); }} onCancel={(task) => void cancelGeneration(task)} onRetry={(task) => void retryGeneration(task)} />
       </div>
     );
 
@@ -487,7 +505,7 @@ export default function ResourceCenterAdmin() {
                   </span>
                 )}
               </div>
-              <ResourceTable items={listQ.data?.items ?? []} loading={listQ.loading} view={view} onPreview={preview} onAction={act} />
+              <ResourceTable items={listQ.data?.items ?? []} loading={listQ.loading} view={view} onPreview={preview} onAction={act} onOpenLog={openResourceLog} />
             </>
           )}
         </section>
@@ -507,7 +525,7 @@ export default function ResourceCenterAdmin() {
         onSelectAll={() => setSelectedKinds(new Set(['lecture', 'practice', 'quiz', 'ppt']))}
         onSubmit={() => void startSelected([...selectedKinds])}
       />
-      <TaskDrawer open={taskDrawerOpen} tasks={generationTasks} busy={generationBusy} onClose={() => setTaskDrawerOpen(false)} onCancel={(task) => void cancelGeneration(task)} onRetry={(task) => void retryGeneration(task)} />
+      <TaskDrawer open={taskDrawerOpen} tasks={generationTasks} busy={generationBusy} focusTaskId={focusTask} onClose={() => { setTaskDrawerOpen(false); setFocusTask(null); }} onCancel={(task) => void cancelGeneration(task)} onRetry={(task) => void retryGeneration(task)} />
     </div>
   );
 }
@@ -572,16 +590,122 @@ function taskContext(task: GenerationTask): Record<string, unknown> {
   return request?.generationContext ?? request?.generation_context ?? {};
 }
 
-function TaskDrawer({ open, tasks, busy, onClose, onCancel, onRetry }: {
+function TaskDrawer({ open, tasks, busy, focusTaskId, onClose, onCancel, onRetry }: {
   open: boolean;
   tasks: GenerationTask[];
   busy: boolean;
+  focusTaskId: string | null;
   onClose: () => void;
   onCancel: (task: GenerationTask) => void;
   onRetry: (task: GenerationTask) => void;
 }) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [pptEvents, setPptEvents] = useState<Record<string, Record<string, unknown>[]>>({});
+  const taskKey = (task: GenerationTask) => `${task.taskKind}-${task.id}`;
+  const activeTasks = tasks.filter((task) => activeGenerationStatuses.has(task.status));
+  const finishedTasks = tasks.filter((task) => !activeGenerationStatuses.has(task.status));
+  const eventsOf = (task: GenerationTask) => task.taskKind === 'ppt' ? pptEvents[task.id] ?? [] : (task as LearningResourceGenerationTask).events;
+
+  // 抽屉打开且带定位任务：自动展开并滚动到该任务
+  useEffect(() => {
+    if (!open || !focusTaskId) return;
+    setExpanded((current) => new Set(current).add(focusTaskId));
+    window.setTimeout(() => {
+      document.getElementById(`gen-task-${focusTaskId}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 120);
+  }, [open, focusTaskId]);
+
+  // 活跃 PPT 任务每 2.5s 拉取详情 events；展开查看的已完成 PPT 拉取一次并缓存
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    const interval = window.setInterval(() => {
+      void Promise.all(tasks.map(async (task) => {
+        if (task.taskKind !== 'ppt') return;
+        const wantFresh = activeGenerationStatuses.has(task.status);
+        const wantOnce = !wantFresh && expanded.has(taskKey(task));
+        if (wantFresh || (wantOnce && pptEvents[task.id] === undefined)) {
+          try {
+            const detail = await presentationApi.getPresentation(task.id);
+            if (alive) setPptEvents((current) => ({ ...current, [task.id]: detail.events ?? [] }));
+          } catch { /* 轮询失败静默，下轮重试 */ }
+        }
+      }));
+    }, 2500);
+    return () => { alive = false; window.clearInterval(interval); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, tasks, expanded, pptEvents]);
+
   if (!open) return null;
-  const activeCount = tasks.filter((task) => activeGenerationStatuses.has(task.status)).length;
+  const renderTask = (task: GenerationTask) => {
+    const key = taskKey(task);
+    const active = activeGenerationStatuses.has(task.status);
+    const completed = task.status === 'completed';
+    const failed = task.status === 'failed' || task.status === 'cancelled';
+    const label = task.taskKind === 'ppt' ? '交互课件' : typeText[task.resourceType];
+    const context = taskContext(task);
+    const events = eventsOf(task);
+    const isExpanded = expanded.has(key);
+    return (
+      <div key={key} id={`gen-task-${key}`} className="rounded-2xl border border-white/80 bg-white/55 px-4 py-4">
+        <div className="flex flex-wrap items-center gap-2">
+          {active ? <Loader2 size={14} className="animate-spin text-brand" /> : completed ? <CheckCircle2 size={14} className="text-emerald-600" /> : <XCircle size={14} className="text-red-500" />}
+          <span className="lf-pill lf-pill-null">{label}</span>
+          <span className="ml-auto text-[11px] tabular-nums text-ink-muted">{task.progress}%</span>
+        </div>
+        <p className="mt-3 truncate text-sm font-bold text-ink">{String(context.topicName || task.title)}</p>
+        <p className="mt-1 truncate text-[11px] text-ink-muted">{String(context.domainCode || '机构资源')} · {String(context.nodeCode || '')}</p>
+        <div className="mt-3 flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-xs text-ink-2">{task.stageMessage}</span>
+          {active && (
+            <button onClick={() => onCancel(task)} className="lf-row-btn text-red-600"><Ban size={11} />取消</button>
+          )}
+          {failed && (
+            <button disabled={busy} onClick={() => onRetry(task)} className="lf-row-btn"><RefreshCw size={11} />重新生成</button>
+          )}
+        </div>
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/80">
+          <div className={cn('h-full rounded-full transition-all', failed ? 'bg-red-400' : completed ? 'bg-emerald-500' : 'bg-brand')} style={{ width: `${Math.max(3, task.progress)}%` }} />
+        </div>
+        {task.errorMessage && <p className="mt-2 line-clamp-2 text-[11px] text-red-600">{task.errorMessage}</p>}
+
+        {/* 生成日志：进行中实时展示（默认展开），结束后可展开回看 */}
+        <div className="mt-3 rounded-xl border border-white/70 bg-white/40">
+          <button
+            type="button"
+            onClick={() => setExpanded((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })}
+            className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left"
+          >
+            <ChevronDown size={13} className={cn('shrink-0 text-ink-muted transition-transform', !isExpanded && '-rotate-90')} />
+            <span className="text-[11.5px] font-bold text-ink">生成日志</span>
+            <span className="lf-pill lf-pill-null !px-1.5 text-[9px]">{task.taskKind === 'ppt' && pptEvents[task.id] === undefined && (active || isExpanded) ? '日志加载中…' : events.length + ' 条'}</span>
+            {active && isExpanded && <span className="ml-auto h-1.5 w-1.5 animate-ping rounded-full bg-brand" />}
+          </button>
+          {isExpanded && (
+            <div className="max-h-64 overflow-y-auto border-t border-white/70 px-3.5 py-2">
+              {events.length ? events.map((event, ei) => (
+                <div key={ei} className="flex items-start gap-2 py-1.5">
+                  <span className="mt-px shrink-0 font-mono text-[9.5px] tabular-nums text-ink-muted">
+                    {event.time ? new Date(String(event.time)).toLocaleTimeString('zh-CN', { hour12: false }) : '--:--:--'}
+                  </span>
+                  {event.agent ? <span className="lf-pill lf-pill-null !px-1.5 py-0 text-[9px]">{String(event.agent)}</span> : null}
+                  {event.phase ? <span className="lf-pill lf-pill-null !px-1.5 py-0 text-[9px]">{String(event.phase)}</span> : null}
+                  <span className="min-w-0 flex-1 text-[11.5px] leading-5 text-ink-2">
+                    <span className="font-semibold text-ink">{String(event.title ?? '')}</span>
+                    {event.detail ? `：${String(event.detail)}` : ''}
+                  </span>
+                </div>
+              )) : (
+                <p className="py-2 text-center text-[11px] text-ink-muted">
+                  {task.taskKind === 'ppt' && pptEvents[task.id] === undefined ? '正在读取课件日志…' : '暂无日志记录'}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
   return (
     <div className="fixed inset-0 z-[75] bg-ink/20 backdrop-blur-[2px]" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <aside className="ml-auto flex h-full w-full max-w-md flex-col border-l border-white/70 bg-[#f7f5ee]/95 shadow-2xl backdrop-blur-2xl">
@@ -589,50 +713,37 @@ function TaskDrawer({ open, tasks, busy, onClose, onCancel, onRetry }: {
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-tint text-brand"><ListChecks size={18} /></div>
           <div className="min-w-0 flex-1">
             <h3 className="text-base font-bold text-ink">资源生成任务</h3>
-            <p className="mt-1 text-[11px] text-ink-muted">{activeCount ? `${activeCount} 项正在进行` : '当前没有进行中的任务'}</p>
+            <p className="mt-1 text-[11px] text-ink-muted">{activeTasks.length ? `${activeTasks.length} 项正在进行` : '当前没有进行中的任务'}</p>
           </div>
           <button onClick={onClose} className="lf-row-btn !p-2" aria-label="关闭"><X size={15} /></button>
         </div>
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-        {tasks.map((task) => {
-          const active = activeGenerationStatuses.has(task.status);
-          const completed = task.status === 'completed';
-          const failed = task.status === 'failed' || task.status === 'cancelled';
-          const label = task.taskKind === 'ppt' ? '交互课件' : typeText[task.resourceType];
-          const context = taskContext(task);
-          return (
-            <div key={`${task.taskKind}-${task.id}`} className="rounded-2xl border border-white/80 bg-white/55 px-4 py-4">
-              <div className="flex flex-wrap items-center gap-2">
-                {active ? <Loader2 size={14} className="animate-spin text-brand" /> : completed ? <CheckCircle2 size={14} className="text-emerald-600" /> : <XCircle size={14} className="text-red-500" />}
-                <span className="lf-pill lf-pill-null">{label}</span>
-                <span className="ml-auto text-[11px] tabular-nums text-ink-muted">{task.progress}%</span>
-              </div>
-              <p className="mt-3 truncate text-sm font-bold text-ink">{String(context.topicName || task.title)}</p>
-              <p className="mt-1 truncate text-[11px] text-ink-muted">{String(context.domainCode || '机构资源')} · {String(context.nodeCode || '')}</p>
-              <div className="mt-3 flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-xs text-ink-2">{task.stageMessage}</span>
-                {active && (
-                  <button onClick={() => onCancel(task)} className="lf-row-btn text-red-600"><Ban size={11} />取消</button>
-                )}
-                {failed && (
-                  <button disabled={busy} onClick={() => onRetry(task)} className="lf-row-btn"><RefreshCw size={11} />重新生成</button>
-                )}
-              </div>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/80">
-                <div className={cn('h-full rounded-full transition-all', failed ? 'bg-red-400' : completed ? 'bg-emerald-500' : 'bg-brand')} style={{ width: `${Math.max(3, task.progress)}%` }} />
-              </div>
-              {task.errorMessage && <p className="mt-2 line-clamp-2 text-[11px] text-red-600">{task.errorMessage}</p>}
-            </div>
-          );
-        })}
-        {!tasks.length && <div className="lf-empty rounded-2xl p-8 text-xs">还没有管理员预生成任务。请先进入某个知识点发起生成。</div>}
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+          {activeTasks.length > 0 && (
+            <section>
+              <p className="mb-2 flex items-center gap-1.5 px-1 text-[11px] font-bold uppercase tracking-[0.12em] text-brand">
+                <span className="h-1.5 w-1.5 rounded-full bg-brand" />
+                进行中 · {activeTasks.length} 项
+              </p>
+              <div className="space-y-3">{activeTasks.map(renderTask)}</div>
+            </section>
+          )}
+          {finishedTasks.length > 0 && (
+            <section>
+              <p className="mb-2 flex items-center gap-1.5 px-1 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">
+                <span className="h-1.5 w-1.5 rounded-full bg-ink-muted/60" />
+                已完成 / 已结束 · {finishedTasks.length} 项
+              </p>
+              <div className="space-y-3">{finishedTasks.map(renderTask)}</div>
+            </section>
+          )}
+          {!tasks.length && <div className="lf-empty rounded-2xl p-8 text-xs">还没有管理员预生成任务。请先进入某个知识点发起生成。</div>}
         </div>
       </aside>
     </div>
   );
 }
 
-function ResourceTable({ items, loading, view, onPreview, onAction }: { items: AdminResourceItem[]; loading: boolean; view: View; onPreview: (i: AdminResourceItem) => void; onAction: (i: AdminResourceItem, a: string) => Promise<void> }) {
+function ResourceTable({ items, loading, view, onPreview, onAction, onOpenLog }: { items: AdminResourceItem[]; loading: boolean; view: View; onPreview: (i: AdminResourceItem) => void; onAction: (i: AdminResourceItem, a: string) => Promise<void>; onOpenLog?: (i: AdminResourceItem) => void }) {
   return (
     <div className="lf-table-card">
       <div className="overflow-x-auto">
@@ -671,6 +782,12 @@ function ResourceTable({ items, loading, view, onPreview, onAction }: { items: A
                       <Eye size={11} />
                       预览
                     </button>
+                    {onOpenLog && (
+                      <button onClick={() => onOpenLog(item)} className="lf-row-btn" title="查看该资源的生成日志">
+                        <FileText size={11} />
+                        生成日志
+                      </button>
+                    )}
                     {view === 'archive' ? (
                       <>
                         <button onClick={() => void onAction(item, 'restore')} className="lf-row-btn lf-row-btn-primary">
