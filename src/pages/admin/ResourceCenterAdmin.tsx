@@ -218,34 +218,45 @@ export default function ResourceCenterAdmin() {
             </div>
           ) : (
             <div className="max-h-[640px] overflow-y-auto py-1.5">
-              {flatten(tree?.nodes ?? [], expanded).map(({ node: itemNode, depth }) => (
-                <div
-                  key={itemNode.id}
-                  className={cn('flex items-center pr-2 text-xs transition-colors', node?.id === itemNode.id ? 'lf-tree-active rounded-lg' : 'text-ink-2 hover:bg-brand-tint/50')}
-                  style={{ paddingLeft: 6 + depth * 14 }}
-                >
-                  {itemNode.children?.length ? (
-                    <button
-                      onClick={() =>
-                        setExpanded((current) => {
-                          const next = new Set(current);
-                          next.has(itemNode.id) ? next.delete(itemNode.id) : next.add(itemNode.id);
-                          return next;
-                        })
-                      }
-                      className="p-2 text-ink-muted"
-                    >
-                      {expanded.has(itemNode.id) ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                    </button>
-                  ) : (
-                    <span className="w-7" />
-                  )}
-                  <button onClick={() => setNode(itemNode)} className="min-w-0 flex-1 truncate py-2.5 text-left">
-                    {itemNode.name}
-                  </button>
-                  <span className="text-[10px] text-ink-muted/70">{itemNode.chunkCount || 0}</span>
-                </div>
-              ))}
+              {flatten(tree?.nodes ?? [], expanded).map(({ node: itemNode, depth }) => {
+                const hasChildren = Boolean(itemNode.children?.length);
+                const isActive = !hasChildren && node?.id === itemNode.id;
+                return (
+                  <div
+                    key={itemNode.id}
+                    className={cn('flex items-center rounded-lg pr-2 text-xs transition-colors', isActive ? 'lf-tree-active' : 'text-ink-2 hover:bg-brand-tint/40')}
+                    style={{ paddingLeft: 6 + depth * 14 }}
+                  >
+                    {hasChildren ? (
+                      /* 分类 / 章节节点：整行点击仅展开或收起，不可进入 */
+                      <button
+                        onClick={() =>
+                          setExpanded((current) => {
+                            const next = new Set(current);
+                            next.has(itemNode.id) ? next.delete(itemNode.id) : next.add(itemNode.id);
+                            return next;
+                          })
+                        }
+                        title={expanded.has(itemNode.id) ? '收起' : '展开'}
+                        className="flex min-w-0 flex-1 items-center gap-1 truncate py-2.5 text-left font-semibold"
+                      >
+                        {expanded.has(itemNode.id) ? (
+                          <ChevronDown size={12} className="shrink-0 text-brand/70" />
+                        ) : (
+                          <ChevronRight size={12} className="shrink-0 text-ink-muted/70" />
+                        )}
+                        <span className="truncate">{itemNode.name}</span>
+                      </button>
+                    ) : (
+                      /* 知识点（叶子）节点：点击进入该知识点 */
+                      <button onClick={() => setNode(itemNode)} className="min-w-0 flex-1 truncate py-2.5 text-left">
+                        {itemNode.name}
+                      </button>
+                    )}
+                    <span className="text-[10px] text-ink-muted/70">{itemNode.chunkCount || 0}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
         </aside>
