@@ -405,7 +405,7 @@ export default function Admin() {
   }, [learnersQ, domainsQ, coreQ, predealQ]);
   const averageMastery = useMemo(() => (learners.length ? Math.round(learners.reduce((sum, item) => sum + (item.overallMastery || 0), 0) / learners.length) : 0), [learners]);
   return (
-    <div className="lf-fade-in min-h-screen font-sans text-ink">
+    <div className="lf-fade-in min-h-screen font-sans text-ink lg:h-screen lg:overflow-hidden">
       <aside className="lf-sidebar fixed inset-y-0 left-0 z-40 hidden w-60 flex-col lg:flex">
         <Link to="/admin" className="flex items-center gap-2.5 px-5 py-5">
           <img src="/logo.svg" alt="智训云枢" className="h-9 w-9 rounded-xl bg-white object-contain p-1 shadow-sm" />
@@ -440,8 +440,8 @@ export default function Admin() {
           </button>
         </div>
       </aside>
-      <main className="lg:pl-60">
-        <header className="lf-header-bar sticky top-0 z-30 flex h-16 items-center justify-between px-5 md:px-8">
+      <main className="lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:pl-60">
+        <header className="lf-header-bar sticky top-0 z-30 flex h-16 items-center justify-between px-4 md:px-6">
           <div>
             <p className="text-[11px] font-medium tracking-wide text-ink-muted">管理后台 / {title}</p>
             <h1 className="mt-0.5 text-base font-bold text-ink">{title}</h1>
@@ -454,7 +454,7 @@ export default function Admin() {
             </button>
           </div>
         </header>
-        <div className="sticky top-16 z-20 flex overflow-x-auto px-5 pb-3 pt-3 lg:hidden">
+        <div className="sticky top-16 z-20 flex overflow-x-auto px-4 pb-3 pt-3 lg:hidden">
           <div className="lf-seg mx-auto">
             {nav.map(({ id, label, icon: Icon }) => (
               <NavLink key={id} to={`/admin/${id}`} className={({ isActive }) => cn("lf-seg-item", isActive && "lf-seg-item-active")}>
@@ -464,7 +464,7 @@ export default function Admin() {
             ))}
           </div>
         </div>
-        <div className="mx-auto max-w-[1440px] p-5 md:p-8">
+        <div className="mx-auto w-full max-w-[1760px] min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-5">
           {error && <div className="lf-card mb-5 rounded-2xl border-ochre/40 bg-ochre-tint/60 px-4 py-3 text-xs font-medium text-[#9A5B3C]">{error}</div>}
           {active === "overview" && (
             <>

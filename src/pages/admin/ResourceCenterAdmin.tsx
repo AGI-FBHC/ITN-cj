@@ -181,8 +181,8 @@ export default function ResourceCenterAdmin() {
   const tree = treeQ.data;
 
   return (
-    <div className="lf-anim-in-up">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <div className="lf-anim-in-up flex flex-col lg:h-full lg:min-h-0 lg:overflow-hidden">
+      <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div>
           <nav className="flex items-center gap-1.5 text-xs text-ink-muted">
             <button onClick={() => { setDomain(null); setNode(null); setDetail(null); }} className="lf-row-btn !px-2.5 !py-1 text-brand">
@@ -205,8 +205,8 @@ export default function ResourceCenterAdmin() {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
-        <aside className="lf-card overflow-hidden rounded-2xl">
+      <div className="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[280px_1fr] lg:grid-rows-[minmax(0,1fr)]">
+        <aside className="lf-card flex flex-col overflow-hidden rounded-2xl">
           <div className="border-b border-white/60 px-4 py-3.5">
             <p className="text-sm font-bold text-ink">{domain.name}</p>
             <p className="mt-0.5 text-[11px] text-ink-muted">知识目录</p>
@@ -224,7 +224,7 @@ export default function ResourceCenterAdmin() {
               <Loader2 className="animate-spin" size={17} />
             </div>
           ) : (
-            <div className="max-h-[640px] overflow-y-auto py-1.5">
+            <div className="max-h-[640px] overflow-y-auto py-1.5 lg:max-h-none lg:min-h-0 lg:flex-1">
               {flatten(tree?.nodes ?? [], expanded).map(({ node: itemNode, depth }) => {
                 const hasChildren = Boolean(itemNode.children?.length);
                 const isActive = !hasChildren && node?.id === itemNode.id;
@@ -268,7 +268,7 @@ export default function ResourceCenterAdmin() {
           )}
         </aside>
 
-        <section>
+        <section className="lg:min-h-0 lg:overflow-y-auto">
           {detail ? (
             /* ---- 资源预览子页面：占据右侧列表区域，非弹窗 ---- */
             <div className="lf-anim-in-up">
