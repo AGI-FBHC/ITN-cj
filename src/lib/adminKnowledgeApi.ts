@@ -439,6 +439,7 @@ export const adminKnowledgeApi = {
       keyword?: string;
       page?: number;
       size?: number;
+      categoryId?: number;
     } = {},
   ) =>
     direct<QuestionPage>(
@@ -447,6 +448,7 @@ export const adminKnowledgeApi = {
         keyword: params.keyword,
         page: params.page ?? 0,
         size: params.size ?? 50,
+        category_id: params.categoryId,
       }),
     ),
   createQuestion: (body: Record<string, unknown>) =>

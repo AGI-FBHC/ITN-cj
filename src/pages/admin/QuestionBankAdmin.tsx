@@ -13,7 +13,7 @@ const statusText: Record<string, string> = {
   deprecated: "已下架",
 };
 
-export default function QuestionBankAdmin() {
+export default function QuestionBankAdmin({ categoryId, scopeLabel }: { categoryId?: number; scopeLabel?: string } = {}) {
   const [items, setItems] = useState<QuestionRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -28,7 +28,7 @@ export default function QuestionBankAdmin() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await adminKnowledgeApi.questions({ status, keyword });
+      const result = await adminKnowledgeApi.questions({ status, keyword, categoryId });
       setItems(result.items);
       setTotal(result.total);
     } catch (e) {
@@ -36,7 +36,7 @@ export default function QuestionBankAdmin() {
     } finally {
       setLoading(false);
     }
-  }, [keyword, status]);
+  }, [categoryId, keyword, status]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -118,7 +118,7 @@ export default function QuestionBankAdmin() {
         <div>
           <h2 className="text-xl font-semibold text-slate-900">题库管理</h2>
           <p className="mt-1 text-sm text-slate-500">
-            人工维护、审核、发布和下架；AI 出题与练习功能当前未开放。
+            {scopeLabel ? `${scopeLabel} · ` : ""}人工维护、审核、发布和下架；AI 出题当前未开放。
           </p>
         </div>
         <div className="flex gap-2">
