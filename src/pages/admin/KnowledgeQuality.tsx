@@ -12,12 +12,16 @@ const tabs: { id: Tab; label: string }[] = [
   { id: 'search', label: '检索验证' }, { id: 'coverage', label: '覆盖报告' },
   { id: 'tree', label: '目录覆盖树' }, { id: 'audit', label: '分类审计' },
 ];
-const input = 'h-9 rounded border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500';
-const button = 'h-9 rounded bg-blue-600 px-4 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50';
+const input = 'lf-input';
+const button = 'lf-btn-primary lf-btn-sm';
 
 function GapTag({ gap }: { gap: GapStatus }) {
-  const map = { no_chunks: ['无切片', 'bg-red-50 text-red-700'], below_threshold: ['不足阈值', 'bg-amber-50 text-amber-700'], ok: ['充足', 'bg-emerald-50 text-emerald-700'] } as const;
-  return <span className={cn('rounded px-2 py-1 text-[11px]', map[gap][1])}>{map[gap][0]}</span>;
+  const map = {
+    no_chunks: ['无切片', 'lf-pill lf-pill-danger'],
+    below_threshold: ['不足阈值', 'lf-pill lf-pill-warn'],
+    ok: ['充足', 'lf-pill lf-pill-ok'],
+  } as const;
+  return <span className={cn('lf-pill', map[gap][1])}>{map[gap][0]}</span>;
 }
 
 function SearchPanel({ domain, initialPoint = '' }: { domain: string; initialPoint?: string }) {
@@ -35,7 +39,57 @@ function SearchPanel({ domain, initialPoint = '' }: { domain: string; initialPoi
     } catch (error) { toast.error(error instanceof Error ? error.message : '检索失败'); } finally { setLoading(false); }
   };
   const decision = { mysql: 'MySQL 精确命中', parent: '父级上卷', rag: 'RAG 兜底', empty: '无结果' };
-  return <div className="space-y-4"><div className="border border-slate-200 bg-white p-4"><div className="grid gap-3 md:grid-cols-3"><label className="text-xs text-slate-600">知识点名称<input value={point} onChange={(e) => setPoint(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void run(); }} placeholder="如：ReAct 范式" className={cn(input, 'mt-1.5 w-full')} /></label><label className="text-xs text-slate-600">category_id（可选）<input value={categoryId} onChange={(e) => setCategoryId(e.target.value)} type="number" className={cn(input, 'mt-1.5 w-full')} /></label><label className="text-xs text-slate-600">切片阈值（可选）<input value={threshold} onChange={(e) => setThreshold(e.target.value)} type="number" className={cn(input, 'mt-1.5 w-full')} /></label><label className="text-xs text-slate-600">阈值模式<select value={mode} onChange={(e) => setMode(e.target.value as 'fixed' | 'auto')} className={cn(input, 'mt-1.5 w-full')}><option value="fixed">fixed（固定 3）</option><option value="auto">auto（章节均值）</option></select></label><label className="text-xs text-slate-600">最低分类置信度<input value={minConfidence} onChange={(e) => setMinConfidence(e.target.value)} type="number" min="0" max="1" step="0.05" className={cn(input, 'mt-1.5 w-full')} /></label></div><div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-slate-600">{[[includeRag, setIncludeRag, '启用 RAG 兜底'], [includePrerequisites, setIncludePrerequisites, '附带先修链'], [includeContrasts, setIncludeContrasts, '附带易混淆点'], [expandContext, setExpandContext, '强制补充相邻块']].map(([checked, setter, label]) => <label key={label as string} className="flex items-center gap-2"><input type="checkbox" checked={checked as boolean} onChange={(e) => (setter as (value: boolean) => void)(e.target.checked)} />{label as string}</label>)}</div><button type="button" onClick={() => void run()} disabled={loading} className={cn(button, 'mt-4')}>{loading ? <Loader2 size={14} className="mx-auto animate-spin" /> : '检索切片'}</button></div>{result && <div className="border border-slate-200 bg-white"><div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs"><span className="rounded bg-blue-50 px-2 py-1 font-medium text-blue-700">{decision[result.decision]}</span><strong>{result.category_name || result.knowledge_point}</strong>{result.category_id && <span className="font-mono text-slate-400">ID {result.category_id}</span>}<span className="text-slate-500">阈值 {result.threshold}</span>{Object.entries(result.stats).map(([key, value]) => <span key={key} className="text-slate-500">{key} {value}</span>)}</div>{result.warning && <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">{result.warning}</div>}<div className="divide-y divide-slate-100">{result.chunks.map((chunk, index) => <article key={`${chunk.source}-${chunk.chunk_id}-${index}`} className="p-4"><div className="flex flex-wrap items-center gap-2 text-xs"><span className={cn('rounded px-2 py-0.5', chunk.source === 'rag' ? 'bg-violet-50 text-violet-700' : chunk.source === 'parent' ? 'bg-amber-50 text-amber-700' : 'bg-sky-50 text-sky-700')}>{chunk.source}</span><strong className="text-slate-800">{chunk.section_title || chunk.chunk_code || `切片 ${index + 1}`}</strong><span className="font-mono text-slate-400">#{chunk.chunk_id}</span>{chunk.confidence != null && <span className="text-slate-500">分类置信度 {chunk.confidence.toFixed(2)}</span>}{chunk.similarity != null && <span className="text-slate-500">相似度 {chunk.similarity.toFixed(2)}</span>}{chunk.rerank_score != null && <span className="text-slate-500">重排 {chunk.rerank_score.toFixed(2)}</span>}</div><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{chunk.content}</p></article>)}{!result.chunks.length && <div className="p-10 text-center text-sm text-slate-500">没有返回切片</div>}</div></div>}</div>;
+  return <div className="space-y-4">
+    <div className="lf-card rounded-2xl p-4">
+      <div className="grid gap-3 md:grid-cols-3">
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold text-ink-2">知识点名称</span>
+          <input value={point} onChange={(e) => setPoint(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void run(); }} placeholder="如：ReAct 范式" className={cn(input, 'w-full')} />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold text-ink-2">category_id（可选）</span>
+          <input value={categoryId} onChange={(e) => setCategoryId(e.target.value)} type="number" className={cn(input, 'w-full')} />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold text-ink-2">切片阈值（可选）</span>
+          <input value={threshold} onChange={(e) => setThreshold(e.target.value)} type="number" className={cn(input, 'w-full')} />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold text-ink-2">阈值模式</span>
+          <select value={mode} onChange={(e) => setMode(e.target.value as 'fixed' | 'auto')} className={cn('lf-select', 'w-full')}>
+            <option value="fixed">fixed（固定 3）</option>
+            <option value="auto">auto（章节均值）</option>
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold text-ink-2">最低分类置信度</span>
+          <input value={minConfidence} onChange={(e) => setMinConfidence(e.target.value)} type="number" min="0" max="1" step="0.05" className={cn(input, 'w-full')} />
+        </label>
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-ink-2">
+        {[[includeRag, setIncludeRag, '启用 RAG 兜底'], [includePrerequisites, setIncludePrerequisites, '附带先修链'], [includeContrasts, setIncludeContrasts, '附带易混淆点'], [expandContext, setExpandContext, '强制补充相邻块']].map(([checked, setter, label]) => (
+          <label key={label as string} className="flex cursor-pointer items-center gap-2">
+            <input type="checkbox" className="accent-[#4E7860]" checked={checked as boolean} onChange={(e) => (setter as (value: boolean) => void)(e.target.checked)} />
+            {label as string}
+          </label>
+        ))}
+      </div>
+      <button type="button" onClick={() => void run()} disabled={loading} className={cn(button, 'mt-4')}>{loading ? <Loader2 size={14} className="mx-auto animate-spin" /> : '检索切片'}</button>
+    </div>
+    {result && (
+      <div className="lf-card rounded-2xl p-4">
+        <h3 className="text-sm font-bold text-ink">检索结果</h3>
+        <p className="mt-1 text-xs text-ink-muted">决策：{decision[result.decision] || result.decision} · 命中 {(result.chunks ?? result.hit_chunks ?? []).length} 条 · {result.warning ? `提示：${result.warning}` : result.via_parent ? '经父级上卷命中' : '直接命中'}</p>
+        {(result.chunks ?? result.hit_chunks ?? []).map((item) => (
+          <div key={item.chunk_id} className="mt-3 rounded-xl border border-white/70 bg-white/50 p-3.5">
+            <p className="font-semibold text-ink">{item.section_title || item.title_path}</p>
+            {item.content && <p className="mt-1 line-clamp-3 text-xs leading-5 text-ink-2">{item.content}</p>}
+            <p className="mt-2 font-mono text-[10px] text-ink-muted">chunk #{item.chunk_id} · {item.source} · conf {item.confidence?.toFixed(2) ?? '—'}</p>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>;
 }
 
 function CoveragePanel({ domain, onSearch }: { domain: string; onSearch: (name: string) => void }) {
@@ -43,7 +97,61 @@ function CoveragePanel({ domain, onSearch }: { domain: string; onSearch: (name: 
   const [data, setData] = useState<KcCoverage | null>(null); const [loading, setLoading] = useState(false);
   const load = async () => { setLoading(true); try { setData(await adminKnowledgeApi.coverage(domain, mode)); } catch (e) { toast.error(e instanceof Error ? e.message : '覆盖报告读取失败'); } finally { setLoading(false); } };
   const items = data?.items.filter((item) => gap === 'all' || item.gap === gap) || [];
-  return <div className="border border-slate-200 bg-white"><div className="flex flex-wrap items-center gap-3 border-b border-slate-200 p-4"><select value={mode} onChange={(e) => setMode(e.target.value as 'fixed' | 'auto')} className={input}><option value="fixed">fixed 阈值</option><option value="auto">auto 阈值</option></select><button type="button" onClick={() => void load()} disabled={loading} className={button}>{loading ? '读取中…' : '加载覆盖报告'}</button>{(['all', 'no_chunks', 'below_threshold', 'ok'] as const).map((item) => <button key={item} type="button" onClick={() => setGap(item)} className={cn('rounded border px-3 py-2 text-xs', gap === item ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500')}>{item === 'all' ? '全部' : item === 'no_chunks' ? '无切片' : item === 'below_threshold' ? '不足阈值' : '充足'}</button>)}</div>{data && <><div className="grid grid-cols-2 border-b border-slate-200 md:grid-cols-5">{[['知识节点', data.summary.total_nodes], ['切片合计', data.summary.total_chunks], ['无切片', data.summary.no_chunks], ['不足阈值', data.summary.below_threshold], ['覆盖充足', data.summary.ok]].map(([label, value]) => <div key={label} className="border-r border-slate-100 p-4 last:border-r-0"><p className="text-xs text-slate-400">{label}</p><p className="mt-1 text-xl font-semibold tabular-nums">{value}</p></div>)}</div><div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500"><tr><th className="px-4 py-3">节点</th><th className="px-4 py-3">编码</th><th className="px-4 py-3">层级</th><th className="px-4 py-3 text-right">切片</th><th className="px-4 py-3 text-right">阈值</th><th className="px-4 py-3">状态</th><th className="px-4 py-3"></th></tr></thead><tbody className="divide-y divide-slate-100">{items.map((item) => <tr key={item.category_id}><td className="px-4 py-3 font-medium">{item.name}</td><td className="px-4 py-3 font-mono text-xs text-slate-500">{item.node_code}</td><td className="px-4 py-3 text-slate-500">L{item.level} · {item.node_type}</td><td className="px-4 py-3 text-right tabular-nums">{item.chunk_count}</td><td className="px-4 py-3 text-right tabular-nums">{item.threshold}</td><td className="px-4 py-3"><GapTag gap={item.gap} /></td><td className="px-4 py-3 text-right"><button type="button" onClick={() => onSearch(item.name)} className="text-xs text-blue-600">检索验证</button></td></tr>)}</tbody></table></div></>}</div>;
+  return <div className="lf-table-card">
+    <div className="flex flex-wrap items-center gap-3 border-b border-white/60 p-4">
+      <select value={mode} onChange={(e) => setMode(e.target.value as 'fixed' | 'auto')} className="lf-select w-auto"><option value="fixed">fixed 阈值</option><option value="auto">auto 阈值</option></select>
+      <button type="button" onClick={() => void load()} disabled={loading} className={button}>{loading ? '读取中…' : '加载覆盖报告'}</button>
+      <div className="lf-seg">
+        {(['all', 'no_chunks', 'below_threshold', 'ok'] as const).map((item) => (
+          <button key={item} type="button" onClick={() => setGap(item)} className={cn('lf-seg-item', gap === item && 'lf-seg-item-active')}>
+            {item === 'all' ? '全部' : item === 'no_chunks' ? '无切片' : item === 'below_threshold' ? '不足阈值' : '充足'}
+          </button>
+        ))}
+      </div>
+    </div>
+    {data && (
+      <>
+        <div className="grid grid-cols-2 border-b border-white/60 bg-white/35 md:grid-cols-5">
+          {[['知识节点', data.summary.total_nodes], ['切片合计', data.summary.total_chunks], ['无切片', data.summary.no_chunks], ['不足阈值', data.summary.below_threshold], ['覆盖充足', data.summary.ok]].map(([label, value]) => (
+            <div key={label as string} className="p-4">
+              <p className="lf-stat-label">{label as string}</p>
+              <p className="lf-stat-value">{value}</p>
+            </div>
+          ))}
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[680px] text-sm">
+            <thead>
+              <tr>
+                <th className="px-4 py-3.5">节点</th>
+                <th className="px-4 py-3.5">编码</th>
+                <th className="px-4 py-3.5">层级</th>
+                <th className="px-4 py-3.5 text-right">切片</th>
+                <th className="px-4 py-3.5 text-right">阈值</th>
+                <th className="px-4 py-3.5">状态</th>
+                <th className="px-4 py-3.5"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item) => (
+                <tr key={item.category_id}>
+                  <td className="px-4 py-3.5 font-semibold text-ink">{item.name}</td>
+                  <td className="px-4 py-3.5 font-mono text-xs text-ink-muted">{item.node_code}</td>
+                  <td className="px-4 py-3.5 text-ink-2">L{item.level}</td>
+                  <td className="px-4 py-3.5 text-right tabular-nums text-ink">{item.chunk_count}</td>
+                  <td className="px-4 py-3.5 text-right tabular-nums text-ink-muted">{item.threshold}</td>
+                  <td className="px-4 py-3.5"><GapTag gap={item.gap} /></td>
+                  <td className="px-4 py-3.5 text-right">
+                    <button type="button" onClick={() => onSearch(item.name)} className="lf-row-btn">检索</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </>
+    )}
+  </div>;
 }
 
 function flattenTree(nodes: KcCategoryNode[], expanded: Set<number>, gap: 'all' | GapStatus, depth = 0): { node: KcCategoryNode; depth: number }[] {
@@ -54,7 +162,52 @@ function TreePanel({ domain }: { domain: string }) {
   const [mode, setMode] = useState<'fixed' | 'auto'>('fixed'); const [gap, setGap] = useState<'all' | GapStatus>('all'); const [data, setData] = useState<KcCategoryTree | null>(null); const [expanded, setExpanded] = useState<Set<number>>(new Set()); const [loading, setLoading] = useState(false);
   const load = async () => { setLoading(true); try { setData(await adminKnowledgeApi.tree(domain, mode)); setExpanded(new Set()); } catch (e) { toast.error(e instanceof Error ? e.message : '目录树读取失败'); } finally { setLoading(false); } };
   const rows = data ? flattenTree(data.tree, expanded, gap) : [];
-  return <div className="border border-slate-200 bg-white"><div className="flex flex-wrap items-center gap-3 border-b border-slate-200 p-4"><select value={mode} onChange={(e) => setMode(e.target.value as 'fixed' | 'auto')} className={input}><option value="fixed">fixed 阈值</option><option value="auto">auto 阈值</option></select><button type="button" onClick={() => void load()} disabled={loading} className={button}>{loading ? '读取中…' : '加载目录树'}</button>{(['all', 'no_chunks', 'below_threshold', 'ok'] as const).map((item) => <button key={item} type="button" onClick={() => setGap(item)} className={cn('rounded border px-3 py-2 text-xs', gap === item ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-500')}>{item === 'all' ? '全部' : item === 'no_chunks' ? '无切片' : item === 'below_threshold' ? '不足' : '充足'}</button>)}{data && <span className="text-xs text-slate-400">共 {data.total} 个节点</span>}</div><table className="w-full text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500"><tr><th className="px-4 py-3">分类节点</th><th className="hidden px-4 py-3 md:table-cell">编码</th><th className="w-24 px-4 py-3 text-right">切片</th><th className="w-24 px-4 py-3">状态</th></tr></thead><tbody className="divide-y divide-slate-100">{rows.map(({ node, depth }) => <tr key={node.id}><td className="px-4 py-3"><div className="flex items-center" style={{ paddingLeft: Math.min(depth, 4) * 18 }}>{node.children.length ? <button type="button" onClick={() => setExpanded((current) => { const next = new Set(current); next.has(node.id) ? next.delete(node.id) : next.add(node.id); return next; })} className="mr-1 rounded p-1 text-slate-400 hover:bg-slate-100">{expanded.has(node.id) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button> : <span className="mr-1 w-[22px]" />}<span className="font-medium">{node.name}</span></div></td><td className="hidden px-4 py-3 font-mono text-xs text-slate-500 md:table-cell">{node.node_code}</td><td className="px-4 py-3 text-right tabular-nums">{node.chunk_count}</td><td className="px-4 py-3"><GapTag gap={node.gap} /></td></tr>)}</tbody></table>{data && !rows.length && <div className="p-10 text-center text-sm text-slate-500">当前过滤条件下没有节点</div>}</div>;
+  return <div className="lf-table-card">
+    <div className="flex flex-wrap items-center gap-3 border-b border-white/60 p-4">
+      <select value={mode} onChange={(e) => setMode(e.target.value as 'fixed' | 'auto')} className="lf-select w-auto"><option value="fixed">fixed 阈值</option><option value="auto">auto 阈值</option></select>
+      <button type="button" onClick={() => void load()} disabled={loading} className={button}>{loading ? '读取中…' : '加载目录树'}</button>
+      <div className="lf-seg">
+        {(['all', 'no_chunks', 'below_threshold', 'ok'] as const).map((item) => (
+          <button key={item} type="button" onClick={() => setGap(item)} className={cn('lf-seg-item', gap === item && 'lf-seg-item-active')}>
+            {item === 'all' ? '全部' : item === 'no_chunks' ? '无切片' : item === 'below_threshold' ? '不足' : '充足'}
+          </button>
+        ))}
+      </div>
+      {data && <span className="lf-pill lf-pill-null">共 {data.total} 个节点</span>}
+    </div>
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr>
+            <th className="px-4 py-3.5">分类节点</th>
+            <th className="hidden px-4 py-3.5 md:table-cell">编码</th>
+            <th className="w-24 px-4 py-3.5 text-right">切片</th>
+            <th className="w-24 px-4 py-3.5">状态</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ node, depth }) => (
+            <tr key={node.id}>
+              <td className="px-4 py-3.5">
+                <div className="flex items-center" style={{ paddingLeft: Math.min(depth, 4) * 18 }}>
+                  {node.children.length ? (
+                    <button type="button" onClick={() => setExpanded((current) => { const next = new Set(current); next.has(node.id) ? next.delete(node.id) : next.add(node.id); return next; })} className="mr-1 rounded p-1 text-ink-muted hover:bg-brand-tint">
+                      {expanded.has(node.id) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </button>
+                  ) : <span className="mr-1 w-[22px]" />}
+                  <span className="font-semibold text-ink">{node.name}</span>
+                </div>
+              </td>
+              <td className="hidden px-4 py-3.5 font-mono text-xs text-ink-muted md:table-cell">{node.node_code}</td>
+              <td className="px-4 py-3.5 text-right tabular-nums text-ink">{node.chunk_count}</td>
+              <td className="px-4 py-3.5"><GapTag gap={node.gap} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    {!rows.length && <div className="lf-empty m-4 py-10 text-center text-sm">当前筛选下没有目录节点</div>}
+  </div>;
 }
 
 function AuditPanel({ domain }: { domain: string }) {
@@ -68,11 +221,91 @@ function AuditPanel({ domain }: { domain: string }) {
       toast.success('分类记录已更新'); await load();
     } catch (e) { toast.error(e instanceof Error ? e.message : '操作失败'); }
   };
-  return <div className="border border-slate-200 bg-white"><div className="flex flex-wrap items-end gap-3 border-b border-slate-200 p-4"><label className="text-xs text-slate-600">置信度 ≤<input value={maxConfidence} onChange={(e) => setMaxConfidence(Number(e.target.value))} type="number" min="0" max="1" step="0.05" className={cn(input, 'ml-2 w-24')} /></label><label className="text-xs text-slate-600">来源<select value={source} onChange={(e) => setSource(e.target.value)} className={cn(input, 'ml-2')}><option value="">全部</option><option value="llm">llm</option><option value="manual">manual</option><option value="agent">agent</option><option value="rag_backfill">rag_backfill</option></select></label><button type="button" onClick={() => void load()} disabled={loading} className={button}>{loading ? '读取中…' : '加载低置信度分类'}</button>{data && <span className="pb-2 text-xs text-slate-400">共 {data.total} 条</span>}</div><div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500"><tr><th className="px-4 py-3">切片</th><th className="px-4 py-3">当前知识点</th><th className="px-4 py-3">关系</th><th className="px-4 py-3">置信度</th><th className="px-4 py-3">来源</th><th className="px-4 py-3 text-right">纠错</th></tr></thead><tbody className="divide-y divide-slate-100">{data?.items.map((item) => <tr key={item.classification_id}><td className="max-w-sm px-4 py-3"><div className="font-medium">{item.chunk_code || `chunk #${item.chunk_id}`}</div><div className="mt-1 truncate text-xs text-slate-400">{item.content_preview}</div></td><td className="px-4 py-3"><div>{item.category_name}</div><div className="font-mono text-xs text-slate-400">{item.node_code} · ID {item.category_id}</div></td><td className="px-4 py-3 text-slate-500">{item.relation_type}</td><td className="px-4 py-3 tabular-nums">{item.confidence?.toFixed(2) ?? '—'}</td><td className="px-4 py-3 text-slate-500">{item.source}</td><td className="px-4 py-3 text-right"><div className="flex justify-end gap-2"><button onClick={() => void act(item, 'move')} className="text-xs text-blue-600">改挂</button><button onClick={() => void act(item, 'set_confidence')} className="text-xs text-slate-600">调置信度</button><button onClick={() => void act(item, 'delete')} className="text-xs text-red-600">删除</button></div></td></tr>)}</tbody></table></div>{data && !data.items.length && <div className="p-10 text-center text-sm text-slate-500">没有符合条件的分类记录</div>}<div className="border-t border-slate-100 bg-slate-50 px-4 py-3 text-xs text-slate-500">写操作完全调用交付实现，并受 KnowledgeCore 的 KNOWLEDGE_ALLOW_WRITE 总开关保护。</div></div>;
+  return <div className="lf-table-card">
+    <div className="flex flex-wrap items-end gap-3 border-b border-white/60 p-4">
+      <label className="text-xs font-semibold text-ink-2">置信度 ≤
+        <input value={maxConfidence} onChange={(e) => setMaxConfidence(Number(e.target.value))} type="number" min="0" max="1" step="0.05" className={cn('lf-input', 'ml-2 w-28')} />
+      </label>
+      <label className="text-xs font-semibold text-ink-2">来源
+        <select value={source} onChange={(e) => setSource(e.target.value)} className={cn('lf-select w-auto', 'ml-2')}>
+          <option value="">全部</option>
+          <option value="llm">llm</option>
+          <option value="manual">manual</option>
+          <option value="agent">agent</option>
+          <option value="rag_backfill">rag_backfill</option>
+        </select>
+      </label>
+      <button type="button" onClick={() => void load()} disabled={loading} className={button}>{loading ? '读取中…' : '加载低置信度分类'}</button>
+      {data && <span className="lf-pill lf-pill-null">{data.total} 条</span>}
+    </div>
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[980px] text-sm">
+        <thead>
+          <tr>
+            <th className="px-4 py-3.5">切片</th>
+            <th className="px-4 py-3.5">当前知识点</th>
+            <th className="px-4 py-3.5">关系</th>
+            <th className="px-4 py-3.5">置信度</th>
+            <th className="px-4 py-3.5">来源</th>
+            <th className="px-4 py-3.5 text-right">纠错</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data?.items.map((item) => (
+            <tr key={item.classification_id}>
+              <td className="max-w-sm px-4 py-3.5">
+                <div className="font-semibold text-ink">{item.chunk_code || `chunk #${item.chunk_id}`}</div>
+                <div className="mt-1 truncate text-xs text-ink-muted">{item.content_preview}</div>
+              </td>
+              <td className="px-4 py-3.5">
+                <div className="text-ink">{item.category_name}</div>
+                <div className="font-mono text-xs text-ink-muted">{item.node_code} · ID {item.category_id}</div>
+              </td>
+              <td className="px-4 py-3.5 text-ink-2">{item.relation_type}</td>
+              <td className="px-4 py-3.5 tabular-nums text-ink">{item.confidence?.toFixed(2) ?? '—'}</td>
+              <td className="px-4 py-3.5 text-ink-2">{item.source}</td>
+              <td className="px-4 py-3.5 text-right">
+                <div className="flex justify-end gap-1.5">
+                  <button type="button" onClick={() => void act(item, 'move')} className="lf-row-btn">移动</button>
+                  <button type="button" onClick={() => void act(item, 'set_confidence')} className="lf-row-btn">调置信度</button>
+                  <button type="button" onClick={() => void act(item, 'delete')} className="lf-row-btn lf-row-btn-danger">删除</button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    {data && !data.items.length && <div className="lf-empty m-4 py-10 text-center text-sm">没有符合条件的分类记录</div>}
+  </div>;
 }
 
 export default function KnowledgeQuality({ defaultDomain = 'agent' }: { defaultDomain?: string }) {
   const [tab, setTab] = useState<Tab>('search'); const [domain, setDomain] = useState(defaultDomain); const [searchPoint, setSearchPoint] = useState('');
   const body = useMemo(() => tab === 'search' ? <SearchPanel key={searchPoint} domain={domain} initialPoint={searchPoint} /> : tab === 'coverage' ? <CoveragePanel domain={domain} onSearch={(name) => { setSearchPoint(name); setTab('search'); }} /> : tab === 'tree' ? <TreePanel domain={domain} /> : <AuditPanel domain={domain} />, [tab, domain, searchPoint]);
-  return <><div className="mb-5 flex flex-wrap items-end justify-between gap-4"><div><h2 className="text-xl font-semibold text-slate-900">知识质量管理</h2><p className="mt-1 text-sm text-slate-500">交付包 KnowledgeCore：检索验证、覆盖缺口、目录覆盖和分类纠错。</p></div><label className="text-xs text-slate-500">领域代码<div className="relative mt-1"><Search size={13} className="absolute left-3 top-3 text-slate-400" /><input value={domain} onChange={(e) => setDomain(e.target.value)} className={cn(input, 'pl-8')} /></div></label></div><div className="mb-4 flex overflow-x-auto border-b border-slate-200 bg-white px-2">{tabs.map((item) => <button key={item.id} type="button" onClick={() => setTab(item.id)} className={cn('h-11 shrink-0 border-b-2 px-4 text-sm', tab === item.id ? 'border-blue-600 font-medium text-blue-600' : 'border-transparent text-slate-500')}>{item.label}</button>)}</div>{body}</>;
+  return (
+    <>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight text-ink">知识质量管理</h2>
+          <p className="mt-1.5 text-sm text-ink-muted">交付包 KnowledgeCore：检索验证、覆盖缺口、目录覆盖和分类纠错。</p>
+        </div>
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-semibold text-ink-2">领域代码</span>
+          <div className="relative">
+            <Search size={13} className="absolute left-3 top-3 text-ink-muted" />
+            <input value={domain} onChange={(e) => setDomain(e.target.value)} className={cn('lf-input', 'pl-8 w-44')} />
+          </div>
+        </label>
+      </div>
+      <div className="lf-seg mb-5">
+        {tabs.map((item) => (
+          <button key={item.id} type="button" onClick={() => setTab(item.id)} className={cn('lf-seg-item', tab === item.id && 'lf-seg-item-active')}>
+            {item.label}
+          </button>
+        ))}
+      </div>
+      {body}
+    </>
+  );
 }

@@ -27,7 +27,7 @@ const typeLabel: Record<string, string> = {
   contrasts_with: "易混淆",
 };
 function Status({ value }: { value: string }) {
-  return <span className={cn("rounded px-2 py-1 text-[11px]", value === "active" ? "bg-emerald-50 text-emerald-700" : value === "proposed" || value === "needs_review" ? "bg-amber-50 text-amber-700" : value === "rejected" ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-600")}>{statusLabel[value] || value}</span>;
+  return <span className={cn("lf-pill", value === "active" ? "lf-pill-ok" : value === "proposed" || value === "needs_review" ? "lf-pill-warn" : value === "rejected" ? "lf-pill-danger" : "lf-pill-null")}>{statusLabel[value] || value}</span>;
 }
 
 function walkCategories(nodes: KcCategoryNode[], map = new Map<number, CategoryInfo>()) {
@@ -40,40 +40,40 @@ function walkCategories(nodes: KcCategoryNode[], map = new Map<number, CategoryI
 
 function EdgeDetails({ edge, names, onClose, onAction: _onAction }: { edge: KcGraphEdge; names: Map<number, CategoryInfo>; onClose: () => void; onAction: (action: "approve" | "reject" | "reverse") => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/30" role="dialog" aria-modal="true">
-      <div className="h-full w-full max-w-md overflow-y-auto bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-200 p-5">
+    <div className="lf-overlay fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true">
+      <div className="lf-glass h-full w-full max-w-md overflow-y-auto rounded-none">
+        <div className="flex items-center justify-between border-b border-white/60 p-5">
           <h3 className="font-semibold">先修边审批详情</h3>
-          <button onClick={onClose} className="p-1 text-slate-400">
+          <button onClick={onClose} className="p-1 text-ink-muted">
             <X size={18} />
           </button>
         </div>
         <dl className="grid grid-cols-[92px_1fr] gap-y-3 p-5 text-sm">
-          <dt className="text-slate-400">边 ID</dt>
+          <dt className="text-ink-muted">边 ID</dt>
           <dd>#{edge.id}</dd>
-          <dt className="text-slate-400">先修节点</dt>
+          <dt className="text-ink-muted">先修节点</dt>
           <dd>{names.get(edge.prereq_category_id)?.name || `#${edge.prereq_category_id}`}</dd>
-          <dt className="text-slate-400">目标节点</dt>
+          <dt className="text-ink-muted">目标节点</dt>
           <dd>{names.get(edge.category_id)?.name || `#${edge.category_id}`}</dd>
-          <dt className="text-slate-400">边类型</dt>
+          <dt className="text-ink-muted">边类型</dt>
           <dd>{typeLabel[edge.edge_type] || edge.edge_type}</dd>
-          <dt className="text-slate-400">状态</dt>
+          <dt className="text-ink-muted">状态</dt>
           <dd>
             <Status value={edge.status} />
           </dd>
-          <dt className="text-slate-400">来源</dt>
+          <dt className="text-ink-muted">来源</dt>
           <dd>
             {edge.source}
             {edge.created_by ? ` · ${edge.created_by}` : ""}
           </dd>
-          <dt className="text-slate-400">置信度</dt>
+          <dt className="text-ink-muted">置信度</dt>
           <dd>{Number(edge.confidence).toFixed(2)}</dd>
-          <dt className="text-slate-400">创建时间</dt>
+          <dt className="text-ink-muted">创建时间</dt>
           <dd>{edge.created_at ? new Date(edge.created_at).toLocaleString("zh-CN") : "—"}</dd>
-          <dt className="text-slate-400">理由 / 证据</dt>
-          <dd className="whitespace-pre-wrap leading-6 text-slate-600">{edge.rationale || "—"}</dd>
+          <dt className="text-ink-muted">理由 / 证据</dt>
+          <dd className="whitespace-pre-wrap leading-6 text-ink-2">{edge.rationale || "—"}</dd>
         </dl>
-        <div className="border-t border-slate-200 p-5 text-xs text-slate-500">当前阶段为只读图谱，审核与改边功能暂不开放。</div>
+        <div className="border-t border-white/60 p-5 text-xs text-ink-muted">当前阶段为只读图谱，审核与改边功能暂不开放。</div>
       </div>
     </div>
   );
@@ -83,7 +83,7 @@ function Overview({ edges, setTab, setStatus }: { edges: KcGraphEdge[]; setTab: 
   const statuses = ["active", "proposed", "rejected", "deprecated"];
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 border border-slate-200 bg-white md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         {statuses.map((status) => (
           <button
             key={status}
@@ -92,17 +92,17 @@ function Overview({ edges, setTab, setStatus }: { edges: KcGraphEdge[]; setTab: 
               setStatus(status);
               setTab("edges");
             }}
-            className="border-b border-r border-slate-200 p-5 text-left last:border-r-0 md:border-b-0"
+            className="lf-stat-card p-5 text-left"
           >
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-ink-muted">
               {statusLabel[status]} · {status}
             </p>
             <p className="mt-2 text-2xl font-semibold tabular-nums">{edges.filter((edge) => edge.status === status).length}</p>
           </button>
         ))}
       </div>
-      <div className="border border-slate-200 bg-white">
-        <div className="border-b border-slate-200 px-4 py-3 text-sm font-semibold">最近建边</div>
+      <div className="lf-card rounded-2xl">
+        <div className="border-b border-white/60 px-5 py-4 text-sm font-bold text-ink">最近建边</div>
         <EdgeTable edges={edges.slice(0, 12)} compact />
       </div>
     </div>
@@ -113,7 +113,7 @@ function EdgeTable({ edges, names = new Map(), compact = false, onOpen, selected
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[850px] text-left text-sm">
-        <thead className="bg-slate-50 text-xs text-slate-500">
+        <thead>
           <tr>
             {selected && <th className="w-12 px-4 py-3"></th>}
             <th className="px-4 py-3">先修节点</th>
@@ -127,30 +127,30 @@ function EdgeTable({ edges, names = new Map(), compact = false, onOpen, selected
             <th className="px-4 py-3">时间</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody>
           {edges.map((edge) => (
-            <tr key={edge.id} onClick={() => onOpen?.(edge)} className={cn(onOpen && "cursor-pointer hover:bg-blue-50/40")}>
+            <tr key={edge.id} onClick={() => onOpen?.(edge)} className={cn(onOpen && "cursor-pointer hover:bg-brand-tint/50")}>
               {selected && (
                 <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                   <input type="checkbox" checked={selected.has(edge.id)} onChange={(e) => onSelect?.(edge.id, e.target.checked)} />
                 </td>
               )}
               <td className="px-4 py-3 font-medium">{names.get(edge.prereq_category_id)?.name || `#${edge.prereq_category_id}`}</td>
-              <td className="px-2 py-3 text-slate-400">→</td>
+              <td className="px-2 py-3 text-ink-muted">→</td>
               <td className="px-4 py-3 font-medium">{names.get(edge.category_id)?.name || `#${edge.category_id}`}</td>
-              <td className="px-4 py-3 text-xs text-slate-600">{typeLabel[edge.edge_type] || edge.edge_type}</td>
+              <td className="px-4 py-3 text-xs text-ink-2">{typeLabel[edge.edge_type] || edge.edge_type}</td>
               <td className="px-4 py-3">
                 <Status value={edge.status} />
               </td>
-              <td className="px-4 py-3 text-xs text-slate-500">{edge.source}</td>
+              <td className="px-4 py-3 text-xs text-ink-muted">{edge.source}</td>
               <td className="px-4 py-3 tabular-nums">{Number(edge.confidence).toFixed(2)}</td>
-              {!compact && <td className="max-w-xs truncate px-4 py-3 text-xs text-slate-500">{edge.rationale || "—"}</td>}
-              <td className="px-4 py-3 text-xs text-slate-400">{edge.created_at ? new Date(edge.created_at).toLocaleDateString("zh-CN") : "—"}</td>
+              {!compact && <td className="max-w-xs truncate px-4 py-3 text-xs text-ink-muted">{edge.rationale || "—"}</td>}
+              <td className="px-4 py-3 text-xs text-ink-muted">{edge.created_at ? new Date(edge.created_at).toLocaleDateString("zh-CN") : "—"}</td>
             </tr>
           ))}
         </tbody>
       </table>
-      {!edges.length && <div className="p-12 text-center text-sm text-slate-500">暂无边数据</div>}
+      {!edges.length && <div className="p-12 text-center text-sm text-ink-muted">暂无边数据</div>}
     </div>
   );
 }
@@ -241,21 +241,21 @@ function GraphCanvas({ edges, categories }: { edges: KcGraphEdge[]; categories: 
     set(next);
   };
   return (
-    <div className="border border-slate-200 bg-white">
-      <div className="flex flex-wrap items-center gap-4 border-b border-slate-200 p-4 text-xs">
+    <div className="lf-card rounded-2xl">
+      <div className="flex flex-wrap items-center gap-4 border-b border-white/60 p-4 text-xs">
         <label>
           <input type="radio" checked={layout === "topology"} onChange={() => setLayout("topology")} /> 拓扑分层
         </label>
         <label>
           <input type="radio" checked={layout === "band"} onChange={() => setLayout("band")} /> 章节带
         </label>
-        <span className="text-slate-400">状态：</span>
+        <span className="text-ink-muted">状态：</span>
         {["active", "proposed", "redundant"].map((value) => (
           <label key={value}>
             <input type="checkbox" checked={statuses.has(value)} onChange={() => toggleSet(statuses, value, setStatuses)} /> {value}
           </label>
         ))}
-        <span className="text-slate-400">类型：</span>
+        <span className="text-ink-muted">类型：</span>
         {["prerequisite", "cross_domain_prerequisite", "related"].map((value) => (
           <label key={value}>
             <input type="checkbox" checked={types.has(value)} onChange={() => toggleSet(types, value, setTypes)} /> {typeLabel[value]}
@@ -266,13 +266,13 @@ function GraphCanvas({ edges, categories }: { edges: KcGraphEdge[]; categories: 
           <span className="tabular-nums">{confidence.toFixed(2)}</span>
         </label>
         {focus != null && (
-          <button onClick={() => setFocus(null)} className="text-blue-600">
+          <button onClick={() => setFocus(null)} className="text-brand">
             退出焦点模式
           </button>
         )}
       </div>
       <div className="overflow-x-auto p-3">
-        <svg viewBox="0 0 1200 720" className="h-[620px] min-w-[900px] w-full border border-slate-100 bg-slate-50">
+        <svg viewBox="0 0 1200 720" className="h-[620px] min-w-[900px] w-full rounded-xl border border-white/70 bg-white/40">
           <defs>
             <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
               <path d="M0,0 L0,6 L8,3 z" fill="#94a3b8" />
@@ -314,7 +314,7 @@ function GraphCanvas({ edges, categories }: { edges: KcGraphEdge[]; categories: 
           })}
         </svg>
       </div>
-      <div className="border-t border-slate-100 px-4 py-3 text-xs text-slate-500">
+      <div className="border-t border-slate-100 px-4 py-3 text-xs text-ink-muted">
         显示 {nodes.length} 个节点、{filtered.length} 条边；点击节点聚焦上下游，节点大小按 log(切片数) 缩放。
       </div>
     </div>
@@ -371,36 +371,36 @@ export default function KnowledgeGraphAdmin() {
     <>
       <div className="mb-5 flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold text-slate-900">知识图谱管理</h2>
-          <p className="mt-1 text-sm text-slate-500">只读查看先修边、候选队列与 DAG；图谱修改待后续专项确认。</p>
+          <h2 className="text-2xl font-bold tracking-tight text-ink">知识图谱管理</h2>
+          <p className="mt-1 text-sm text-ink-muted">只读查看先修边、候选队列与 DAG；图谱修改待后续专项确认。</p>
         </div>
-        <button onClick={() => void refresh()} disabled={loading} className="flex h-9 items-center gap-2 rounded border border-slate-300 bg-white px-3 text-xs">
+        <button onClick={() => void refresh()} disabled={loading} className="lf-page-pill">
           <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
           刷新
         </button>
       </div>
-      <div className="mb-4 flex overflow-x-auto border-b border-slate-200 bg-white px-2">
+      <div className="lf-seg mb-6">
         {tabs.map((item) => (
-          <button key={item.id} onClick={() => setTab(item.id)} className={cn("h-11 shrink-0 border-b-2 px-4 text-sm", tab === item.id ? "border-blue-600 font-medium text-blue-600" : "border-transparent text-slate-500")}>
+          <button key={item.id} onClick={() => setTab(item.id)} className={cn("lf-seg-item", tab === item.id && "lf-seg-item-active")}>
             {item.label}
             {item.id === "review" && <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700">{review.length}</span>}
           </button>
         ))}
       </div>
       {loading && !edges.length ? (
-        <div className="flex min-h-72 items-center justify-center border border-slate-200 bg-white text-sm text-slate-500">
+        <div className="lf-empty flex min-h-72 items-center justify-center text-sm">
           <Loader2 size={16} className="mr-2 animate-spin" />
           正在读取图谱数据…
         </div>
       ) : tab === "overview" ? (
         <Overview edges={edges} setTab={setTab} setStatus={setStatus} />
       ) : tab === "review" ? (
-        <div className="border border-slate-200 bg-white">
-          <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 p-4">
+        <div className="lf-card rounded-2xl">
+          <div className="flex flex-wrap items-center gap-3 border-b border-white/60 p-4">
             <label className="text-xs">
               <input type="checkbox" checked={review.length > 0 && review.every((edge) => selected.has(edge.id))} onChange={(e) => setSelected(e.target.checked ? new Set(review.map((edge) => edge.id)) : new Set())} /> 全选
             </label>
-            <span className="text-xs text-slate-500">当前仅供查看候选边；审核、反转和同步操作暂不开放。</span>
+            <span className="text-xs text-ink-muted">当前仅供查看候选边；审核、反转和同步操作暂不开放。</span>
           </div>
           <EdgeTable
             edges={review}
@@ -417,25 +417,25 @@ export default function KnowledgeGraphAdmin() {
           />
         </div>
       ) : tab === "edges" ? (
-        <div className="border border-slate-200 bg-white">
-          <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 p-4">
-            <select value={status} onChange={(e) => setStatus(e.target.value)} className="h-9 rounded border border-slate-300 px-3 text-xs">
+        <div className="lf-card rounded-2xl">
+          <div className="flex flex-wrap items-center gap-3 border-b border-white/60 p-4">
+            <select value={status} onChange={(e) => setStatus(e.target.value)} className="lf-select w-auto">
               <option value="">全部状态</option>
               {["active", "proposed", "needs_review", "rejected", "deprecated", "redundant"].map((value) => (
                 <option key={value}>{value}</option>
               ))}
             </select>
-            <select value={type} onChange={(e) => setType(e.target.value)} className="h-9 rounded border border-slate-300 px-3 text-xs">
+            <select value={type} onChange={(e) => setType(e.target.value)} className="lf-select w-auto">
               <option value="">全部类型</option>
               {Object.keys(typeLabel).map((value) => (
                 <option key={value}>{value}</option>
               ))}
             </select>
             <div className="relative">
-              <Search size={13} className="absolute left-3 top-3 text-slate-400" />
-              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索知识点名称" className="h-9 rounded border border-slate-300 pl-8 pr-3 text-xs" />
+              <Search size={13} className="absolute left-3 top-3 text-ink-muted" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索知识点名称" className="lf-input w-52 pl-8" />
             </div>
-            <span className="text-xs text-slate-400">{filtered.length} 条</span>
+            <span className="text-xs text-ink-muted">{filtered.length} 条</span>
           </div>
           <EdgeTable edges={filtered} names={categories} onOpen={setDetail} />
         </div>

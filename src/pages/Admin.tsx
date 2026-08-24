@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { BookCheck, ChevronDown, ChevronRight, ClipboardList, Database, FileUp, LayoutDashboard, Loader2, LogOut, Network, RefreshCw, Search, Settings, ShieldCheck, Users, X } from "lucide-react";
@@ -27,29 +28,31 @@ const nav: { id: AdminSection; label: string; icon: typeof LayoutDashboard }[] =
 
 function StatusTag({ ok = true, children }: { ok?: boolean; children: string }) {
   return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded px-2 py-1 text-[11px]", ok ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700")}>
-      <span className={cn("h-1.5 w-1.5 rounded-full", ok ? "bg-emerald-500" : "bg-amber-500")} />
+    <span className={cn("lf-pill", ok ? "lf-pill-ok" : "lf-pill-warn")}>
+      <span className="lf-pill-dot" />
       {children}
     </span>
   );
 }
 
-function SummaryCell({ label, value, note, className }: { label: string; value: string | number; note: string; className?: string }) {
+function StatCard({ label, value, note, className }: { label: string; value: string | number; note: string; className?: string }) {
   return (
-    <div className={cn("border-b border-r border-slate-200 px-5 py-4 md:border-b-0 last:border-r-0", className)}>
-      <p className="text-xs text-slate-500">{label}</p>
-      <p className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{value}</p>
-      <p className="mt-1 text-[11px] text-slate-400">{note}</p>
+    <div className={cn("lf-stat-card", className)}>
+      <p className="lf-stat-label">{label}</p>
+      <div>
+        <p className="lf-stat-value">{value}</p>
+        <p className="lf-stat-note">{note}</p>
+      </div>
     </div>
   );
 }
 
 function PageHeading({ title, description, action }: { title: string; description: string; action?: React.ReactNode }) {
   return (
-    <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
-        <p className="mt-1 text-sm text-slate-500">{description}</p>
+        <h2 className="text-2xl font-bold tracking-tight text-ink">{title}</h2>
+        <p className="mt-1.5 text-sm leading-6 text-ink-muted">{description}</p>
       </div>
       {action}
     </div>
@@ -57,34 +60,34 @@ function PageHeading({ title, description, action }: { title: string; descriptio
 }
 
 export function LearnerTable({ learners, onEdit }: { learners: LearnerProfileData[]; onEdit: (learner: LearnerProfileData) => void }) {
-  if (!learners.length) return <div className="border border-slate-200 bg-white px-6 py-14 text-center text-sm text-slate-500">暂无可管理的学习者记录</div>;
+  if (!learners.length) return <div className="lf-empty px-6 py-14 text-center text-sm">暂无可管理的学习者记录</div>;
   return (
-    <div className="overflow-hidden border border-slate-200 bg-white">
+    <div className="lf-table-card">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] text-left text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
+        <table className="w-full min-w-[760px] text-sm">
+          <thead>
             <tr>
-              <th className="px-4 py-3">姓名 / 编号</th>
-              <th className="px-4 py-3">身份</th>
-              <th className="px-4 py-3">目标方向</th>
-              <th className="px-4 py-3">掌握度</th>
-              <th className="px-4 py-3">更新时间</th>
-              <th className="px-4 py-3 text-right">操作</th>
+              <th className="px-4 py-3.5">姓名 / 编号</th>
+              <th className="px-4 py-3.5">身份</th>
+              <th className="px-4 py-3.5">目标方向</th>
+              <th className="px-4 py-3.5">掌握度</th>
+              <th className="px-4 py-3.5">更新时间</th>
+              <th className="px-4 py-3.5 text-right">操作</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody>
             {learners.map((learner) => (
-              <tr key={learner.id} className="hover:bg-slate-50/70">
-                <td className="px-4 py-3">
-                  <div className="font-medium text-slate-900">{learner.name || "未命名"}</div>
-                  <div className="mt-0.5 font-mono text-[11px] text-slate-400">{learner.code || learner.id.slice(0, 8)}</div>
+              <tr key={learner.id}>
+                <td className="px-4 py-3.5">
+                  <div className="font-semibold text-ink">{learner.name || "未命名"}</div>
+                  <div className="mt-0.5 font-mono text-[11px] text-ink-muted">{learner.code || learner.id.slice(0, 8)}</div>
                 </td>
-                <td className="px-4 py-3 text-slate-600">{learner.role || "未设置"}</td>
-                <td className="px-4 py-3 text-slate-600">{learner.targetJob || learner.education || "未设置"}</td>
-                <td className="px-4 py-3 tabular-nums text-slate-700">{Math.round(learner.overallMastery || 0)}%</td>
-                <td className="px-4 py-3 text-xs text-slate-500">{learner.updatedAt ? new Date(learner.updatedAt).toLocaleDateString("zh-CN") : "—"}</td>
-                <td className="px-4 py-3 text-right">
-                  <button type="button" onClick={() => onEdit(learner)} className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:border-blue-500 hover:text-blue-600">
+                <td className="px-4 py-3.5 text-ink-2">{learner.role || "未设置"}</td>
+                <td className="px-4 py-3.5 text-ink-2">{learner.targetJob || learner.education || "未设置"}</td>
+                <td className="px-4 py-3.5 tabular-nums text-ink">{Math.round(learner.overallMastery || 0)}%</td>
+                <td className="px-4 py-3.5 text-xs text-ink-muted">{learner.updatedAt ? new Date(learner.updatedAt).toLocaleDateString("zh-CN") : "—"}</td>
+                <td className="px-4 py-3.5 text-right">
+                  <button type="button" onClick={() => onEdit(learner)} className="lf-row-btn">
                     编辑
                   </button>
                 </td>
@@ -120,27 +123,27 @@ function EditLearner({ learner, onClose, onSaved }: { learner: LearnerProfileDat
     ["目标方向", targetJob, setTargetJob],
   ];
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4" role="dialog" aria-modal="true">
-      <div className="w-full max-w-md border border-slate-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-          <h2 className="text-base font-semibold">编辑学习者</h2>
-          <button type="button" onClick={onClose} className="p-1.5 text-slate-400 hover:bg-slate-100">
+    <div className="lf-overlay fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+      <div className="lf-glass w-full max-w-md rounded-2xl">
+        <div className="flex items-center justify-between border-b border-white/60 px-5 py-4">
+          <h2 className="text-base font-bold text-ink">编辑学习者</h2>
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-ink-muted hover:bg-white/60">
             <X size={17} />
           </button>
         </div>
         <div className="space-y-4 p-5">
           {fields.map(([label, value, setter]) => (
             <label key={label} className="block">
-              <span className="mb-1.5 block text-xs font-medium text-slate-600">{label}</span>
-              <input value={value} onChange={(event) => setter(event.target.value)} className="h-10 w-full rounded border border-slate-300 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+              <span className="mb-1.5 block text-xs font-semibold text-ink-2">{label}</span>
+              <input value={value} onChange={(event) => setter(event.target.value)} className="lf-input" />
             </label>
           ))}
         </div>
-        <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
-          <button type="button" onClick={onClose} className="rounded border border-slate-300 bg-white px-4 py-2 text-xs">
+        <div className="flex justify-end gap-2 rounded-b-2xl bg-white/40 px-5 py-3.5">
+          <button type="button" onClick={onClose} className="lf-row-btn">
             取消
           </button>
-          <button type="button" disabled={saving} onClick={() => void save()} className="rounded bg-blue-600 px-4 py-2 text-xs font-medium text-white disabled:opacity-50">
+          <button type="button" disabled={saving} onClick={() => void save()} className="lf-row-btn lf-row-btn-primary disabled:opacity-50">
             {saving ? "保存中…" : "保存"}
           </button>
         </div>
@@ -157,15 +160,15 @@ function DomainDetail({ tree, loading, error, onBack }: { tree: RagTree | null; 
   const [expanded, setExpanded] = useState<Set<number>>(() => new Set());
   if (loading)
     return (
-      <div className="flex min-h-[320px] items-center justify-center border border-slate-200 bg-white text-sm text-slate-500">
+      <div className="lf-empty flex min-h-[320px] items-center justify-center text-sm">
         <Loader2 size={16} className="mr-2 animate-spin" />
         正在读取领域结构…
       </div>
     );
   if (error || !tree)
     return (
-      <div className="border border-red-200 bg-red-50 p-5 text-sm text-red-700">
-        <button type="button" onClick={onBack} className="mb-3 block text-xs text-blue-600">
+      <div className="lf-card rounded-2xl border-red-200/70 p-5 text-sm text-brand-danger">
+        <button type="button" onClick={onBack} className="lf-row-btn mb-3 block">
           返回领域列表
         </button>
         {error || "领域数据不存在"}
@@ -181,63 +184,65 @@ function DomainDetail({ tree, loading, error, onBack }: { tree: RagTree | null; 
     });
   return (
     <>
-      <div className="mb-4 flex items-center gap-2 text-xs text-slate-500">
-        <button type="button" onClick={onBack} className="hover:text-blue-600">
+      <div className="mb-4 flex items-center gap-2 text-xs text-ink-muted">
+        <button type="button" onClick={onBack} className="lf-row-btn">
           知识库管理
         </button>
         <ChevronRight size={13} />
-        <span className="text-slate-800">{tree.domain.name}</span>
+        <span className="font-semibold text-ink">{tree.domain.name}</span>
       </div>
       <PageHeading title={tree.domain.name} description={tree.domain.description || `领域代码：${tree.domain.code}`} action={<StatusTag>正常</StatusTag>} />
-      <div className="mb-5 grid grid-cols-2 border border-slate-200 bg-white md:grid-cols-5">
-        <SummaryCell label="分类" value={tree.domain.categoryCount} note="目录节点" />
-        <SummaryCell label="知识点" value={tree.totalKnowledgePoints} note="领域总量" />
-        <SummaryCell label="文档" value={tree.domain.documentCount} note="已入库文档" />
-        <SummaryCell label="知识切片" value={tree.totalChunks} note="可检索内容" />
-        <SummaryCell label="图片" value={tree.domain.figureCount} note="图像资产" className="col-span-2 md:col-span-1" />
+      <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-5">
+        <StatCard label="分类" value={tree.domain.categoryCount} note="目录节点" />
+        <StatCard label="知识点" value={tree.totalKnowledgePoints} note="领域总量" />
+        <StatCard label="文档" value={tree.domain.documentCount} note="已入库文档" />
+        <StatCard label="知识切片" value={tree.totalChunks} note="可检索内容" />
+        <StatCard label="图片" value={tree.domain.figureCount} note="图像资产" className="col-span-2 md:col-span-1" />
       </div>
-      <div className="border border-slate-200 bg-white">
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+      <div className="lf-table-card">
+        <div className="flex items-center justify-between border-b border-white/60 px-5 py-4">
           <div>
-            <h3 className="text-sm font-semibold">分类结构</h3>
-            <p className="mt-0.5 text-xs text-slate-400">共 {tree.domain.categoryCount} 个目录节点，点击箭头按层展开</p>
+            <h3 className="text-sm font-bold text-ink">分类结构</h3>
+            <p className="mt-0.5 text-xs text-ink-muted">共 {tree.domain.categoryCount} 个目录节点，点击箭头按层展开</p>
           </div>
-          <button type="button" disabled className="hidden cursor-not-allowed rounded border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-400 sm:block">
+          <button type="button" disabled className="lf-row-btn hidden cursor-not-allowed opacity-40 sm:block">
             新增分类
           </button>
         </div>
-        <table className="w-full table-fixed text-left text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
-            <tr>
-              <th className="px-4 py-2.5">分类名称</th>
-              <th className="hidden px-4 py-2.5 md:table-cell">节点代码</th>
-              <th className="hidden px-4 py-2.5 md:table-cell">类型</th>
-              <th className="w-20 px-4 py-2.5 text-right">切片数</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {rows.map(({ node, depth }) => (
-              <tr key={node.id} className="hover:bg-slate-50">
-                <td className="px-4 py-3">
-                  <div className="flex min-w-0 items-center" style={{ paddingLeft: Math.min(depth, 3) * 16 }}>
-                    {node.children?.length ? (
-                      <button type="button" onClick={() => toggle(node.id)} className="mr-1.5 shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700" aria-label={expanded.has(node.id) ? "收起分类" : "展开分类"}>
-                        {expanded.has(node.id) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      </button>
-                    ) : (
-                      <span className="mr-1.5 w-[18px] shrink-0" />
-                    )}
-                    <span className="truncate font-medium text-slate-800">{node.name}</span>
-                  </div>
-                </td>
-                <td className="hidden px-4 py-3 font-mono text-xs text-slate-500 md:table-cell">{node.nodeCode}</td>
-                <td className="hidden px-4 py-3 text-xs text-slate-500 md:table-cell">{node.nodeType}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{node.chunkCount ?? 0}</td>
+        <div className="overflow-x-auto">
+          <table className="w-full table-fixed text-sm">
+            <thead>
+              <tr>
+                <th className="px-4 py-3">分类名称</th>
+                <th className="hidden px-4 py-3 md:table-cell">节点代码</th>
+                <th className="hidden px-4 py-3 md:table-cell">类型</th>
+                <th className="w-20 px-4 py-3 text-right">切片数</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-        {!rows.length && <div className="py-12 text-center text-sm text-slate-500">该领域暂无分类结构</div>}
+            </thead>
+            <tbody>
+              {rows.map(({ node, depth }) => (
+                <tr key={node.id}>
+                  <td className="px-4 py-3.5">
+                    <div className="flex min-w-0 items-center" style={{ paddingLeft: Math.min(depth, 3) * 18 }}>
+                      {node.children?.length ? (
+                        <button type="button" onClick={() => toggle(node.id)} className="mr-1.5 shrink-0 rounded p-0.5 text-ink-muted hover:bg-brand-tint hover:text-brand" aria-label={expanded.has(node.id) ? "收起分类" : "展开分类"}>
+                          {expanded.has(node.id) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        </button>
+                      ) : (
+                        <span className="mr-1.5 w-[18px] shrink-0" />
+                      )}
+                      <span className="truncate font-semibold text-ink">{node.name}</span>
+                    </div>
+                  </td>
+                  <td className="hidden px-4 py-3.5 font-mono text-xs text-ink-muted md:table-cell">{node.nodeCode}</td>
+                  <td className="hidden px-4 py-3.5 text-xs text-ink-muted md:table-cell">{node.nodeType}</td>
+                  <td className="px-4 py-3.5 text-right tabular-nums text-ink">{node.chunkCount ?? 0}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!rows.length && <div className="lf-empty m-4 py-10 text-center text-sm">该领域暂无分类结构</div>}
       </div>
     </>
   );
@@ -278,46 +283,46 @@ function KnowledgeManagement({ domains }: { domains: RagDomain[] }) {
   return (
     <>
       <PageHeading title="知识库管理" description="管理知识领域、分类结构和入库内容。" />
-      <div className="mb-4 flex items-center justify-between gap-3 border border-slate-200 bg-white p-3">
+      <div className="lf-card mb-5 flex items-center justify-between gap-3 rounded-2xl p-3.5">
         <div className="relative w-full max-w-xs">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索领域名称或代码" className="h-9 w-full rounded border border-slate-300 pl-9 pr-3 text-sm outline-none focus:border-blue-500" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索领域名称或代码" className="lf-input pl-9" />
         </div>
-        <button type="button" disabled className="hidden cursor-not-allowed rounded bg-slate-100 px-3 py-2 text-xs text-slate-400 sm:block">
+        <button type="button" disabled className="lf-row-btn hidden cursor-not-allowed opacity-40 sm:block">
           新建领域
         </button>
       </div>
-      <div className="space-y-2 md:hidden">
+      <div className="space-y-3 md:hidden">
         {filtered.map((domain) => (
-          <button key={domain.code} type="button" onClick={() => void openDomain(domain.code)} className="w-full border border-slate-200 bg-white p-4 text-left active:bg-slate-50">
+          <button key={domain.code} type="button" onClick={() => void openDomain(domain.code)} className="lf-card w-full rounded-2xl p-4 text-left lf-card-hover">
             <span className="flex items-start justify-between gap-3">
               <span className="min-w-0">
-                <span className="block truncate font-medium text-slate-900">{domain.name}</span>
-                <span className="mt-1 block line-clamp-2 text-xs leading-5 text-slate-500">{domain.description || "暂无说明"}</span>
+                <span className="block truncate font-bold text-ink">{domain.name}</span>
+                <span className="mt-1 block line-clamp-2 text-xs leading-5 text-ink-muted">{domain.description || "暂无说明"}</span>
               </span>
               <StatusTag>正常</StatusTag>
             </span>
-            <span className="mt-4 grid grid-cols-4 border-y border-slate-100 py-3 text-center">
+            <span className="mt-4 grid grid-cols-4 rounded-xl bg-white/50 py-3 text-center">
               <span>
-                <span className="block text-base font-semibold tabular-nums text-slate-900">{domain.categoryCount}</span>
-                <span className="text-[11px] text-slate-400">分类</span>
+                <span className="block text-base font-bold tabular-nums text-ink">{domain.categoryCount}</span>
+                <span className="text-[11px] text-ink-muted">分类</span>
               </span>
               <span>
-                <span className="block text-base font-semibold tabular-nums text-slate-900">{domain.knowledgePointCount}</span>
-                <span className="text-[11px] text-slate-400">知识点</span>
+                <span className="block text-base font-bold tabular-nums text-ink">{domain.knowledgePointCount}</span>
+                <span className="text-[11px] text-ink-muted">知识点</span>
               </span>
               <span>
-                <span className="block text-base font-semibold tabular-nums text-slate-900">{domain.documentCount}</span>
-                <span className="text-[11px] text-slate-400">文档</span>
+                <span className="block text-base font-bold tabular-nums text-ink">{domain.documentCount}</span>
+                <span className="text-[11px] text-ink-muted">文档</span>
               </span>
               <span>
-                <span className="block text-base font-semibold tabular-nums text-slate-900">{domain.chunkCount}</span>
-                <span className="text-[11px] text-slate-400">切片</span>
+                <span className="block text-base font-bold tabular-nums text-ink">{domain.chunkCount}</span>
+                <span className="text-[11px] text-ink-muted">切片</span>
               </span>
             </span>
             <span className="mt-3 flex items-center justify-between">
-              <span className="font-mono text-xs text-slate-400">{domain.code}</span>
-              <span className="flex items-center gap-1 text-xs text-blue-600">
+              <span className="font-mono text-xs text-ink-muted">{domain.code}</span>
+              <span className="flex items-center gap-1 text-xs font-semibold text-brand">
                 查看详情
                 <ChevronRight size={13} />
               </span>
@@ -325,48 +330,50 @@ function KnowledgeManagement({ domains }: { domains: RagDomain[] }) {
           </button>
         ))}
       </div>
-      <div className="hidden overflow-x-auto border border-slate-200 bg-white md:block">
-        <table className="w-full min-w-[820px] text-left text-sm">
-          <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500">
-            <tr>
-              <th className="px-4 py-3">领域名称</th>
-              <th className="px-4 py-3">领域代码</th>
-              <th className="px-4 py-3 text-right">分类</th>
-              <th className="px-4 py-3 text-right">知识点</th>
-              <th className="px-4 py-3 text-right">文档</th>
-              <th className="px-4 py-3 text-right">切片</th>
-              <th className="px-4 py-3">状态</th>
-              <th className="px-4 py-3 text-right">操作</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {filtered.map((domain) => (
-              <tr key={domain.code} onDoubleClick={() => void openDomain(domain.code)} className="cursor-pointer hover:bg-blue-50/40">
-                <td className="px-4 py-3">
-                  <button type="button" onClick={() => void openDomain(domain.code)} className="font-medium text-slate-900 hover:text-blue-600">
-                    {domain.name}
-                  </button>
-                  <p className="mt-0.5 max-w-[280px] truncate text-xs text-slate-400">{domain.description || "暂无说明"}</p>
-                </td>
-                <td className="px-4 py-3 font-mono text-xs text-slate-500">{domain.code}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{domain.categoryCount}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{domain.knowledgePointCount}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{domain.documentCount}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{domain.chunkCount}</td>
-                <td className="px-4 py-3">
-                  <StatusTag>正常</StatusTag>
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <button type="button" onClick={() => void openDomain(domain.code)} className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs hover:border-blue-500 hover:text-blue-600">
-                    查看
-                  </button>
-                </td>
+      <div className="lf-table-card hidden md:block">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] text-sm">
+            <thead>
+              <tr>
+                <th className="px-4 py-3.5">领域名称</th>
+                <th className="px-4 py-3.5">领域代码</th>
+                <th className="px-4 py-3.5 text-right">分类</th>
+                <th className="px-4 py-3.5 text-right">知识点</th>
+                <th className="px-4 py-3.5 text-right">文档</th>
+                <th className="px-4 py-3.5 text-right">切片</th>
+                <th className="px-4 py-3.5">状态</th>
+                <th className="px-4 py-3.5 text-right">操作</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filtered.map((domain) => (
+                <tr key={domain.code} onDoubleClick={() => void openDomain(domain.code)} className="cursor-pointer">
+                  <td className="px-4 py-3.5">
+                    <button type="button" onClick={() => void openDomain(domain.code)} className="font-bold text-ink hover:text-brand">
+                      {domain.name}
+                    </button>
+                    <p className="mt-0.5 max-w-[280px] truncate text-xs text-ink-muted">{domain.description || "暂无说明"}</p>
+                  </td>
+                  <td className="px-4 py-3.5 font-mono text-xs text-ink-muted">{domain.code}</td>
+                  <td className="px-4 py-3.5 text-right tabular-nums text-ink">{domain.categoryCount}</td>
+                  <td className="px-4 py-3.5 text-right tabular-nums text-ink">{domain.knowledgePointCount}</td>
+                  <td className="px-4 py-3.5 text-right tabular-nums text-ink">{domain.documentCount}</td>
+                  <td className="px-4 py-3.5 text-right tabular-nums text-ink">{domain.chunkCount}</td>
+                  <td className="px-4 py-3.5">
+                    <StatusTag>正常</StatusTag>
+                  </td>
+                  <td className="px-4 py-3.5 text-right">
+                    <button type="button" onClick={() => void openDomain(domain.code)} className="lf-row-btn">
+                      查看
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
-      {!filtered.length && <div className="border border-slate-200 bg-white py-14 text-center text-sm text-slate-500">没有符合条件的知识领域</div>}
+      {!filtered.length && <div className="lf-empty px-6 py-14 text-center text-sm">没有符合条件的知识领域</div>}
     </>
   );
 }
@@ -409,92 +416,95 @@ export default function Admin() {
   }, [load]);
   const averageMastery = useMemo(() => (learners.length ? Math.round(learners.reduce((sum, item) => sum + (item.overallMastery || 0), 0) / learners.length) : 0), [learners]);
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800">
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-56 flex-col bg-slate-900 text-slate-300 lg:flex">
-        <Link to="/admin" className="flex h-16 items-center gap-2.5 border-b border-slate-800 px-5">
-          <img src="/logo.svg" alt="智训云枢" className="h-7 w-7 rounded bg-white p-0.5" />
+    <div className="lf-fade-in min-h-screen font-sans text-ink">
+      <aside className="lf-sidebar fixed inset-y-0 left-0 z-40 hidden w-60 flex-col lg:flex">
+        <Link to="/admin" className="flex items-center gap-2.5 px-5 py-5">
+          <img src="/logo.svg" alt="智训云枢" className="h-9 w-9 rounded-xl bg-white object-contain p-1 shadow-sm" />
           <span>
-            <span className="block text-sm font-semibold text-white">智训云枢</span>
-            <span className="text-[10px] text-slate-500">后台管理系统</span>
+            <span className="block text-[15px] font-bold leading-tight text-ink">智训云枢</span>
+            <span className="mt-0.5 block text-[10px] tracking-wide text-ink-muted">后台管理系统</span>
           </span>
         </Link>
-        <div className="px-3 pt-5 text-[10px] uppercase tracking-wider text-slate-600">业务管理</div>
-        <nav className="mt-2 flex-1 space-y-1 overflow-y-auto px-2">
+        <div className="px-6 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-muted">业务管理</div>
+        <nav className="mt-1 flex-1 space-y-1 overflow-y-auto px-3 pb-4">
           {nav.map(({ id, label, icon: Icon }) => (
-            <NavLink key={id} to={`/admin/${id}`} className={({ isActive }) => cn("flex h-10 items-center gap-3 rounded px-3 text-sm", isActive ? "bg-blue-600 text-white" : "text-slate-400 hover:bg-slate-800 hover:text-white")}>
+            <NavLink key={id} to={`/admin/${id}`} className={({ isActive }) => cn("lf-nav-pill", isActive && "lf-nav-pill-active")}>
               <Icon size={16} />
-              {label}
+              <span className="flex-1">{label}</span>
+              {id === "overview" && <span className="lf-pill lf-pill-null px-2 py-0.5 text-[10px]">首页</span>}
             </NavLink>
           ))}
         </nav>
-        <div className="border-t border-slate-800 p-3">
-          <div className="flex items-center gap-2 px-2 py-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded bg-slate-800">
-              <ShieldCheck size={14} />
+        <div className="border-t border-white/60 p-3">
+          <div className="lf-card mb-2 flex items-center gap-2.5 rounded-xl px-3 py-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-tint text-brand">
+              <ShieldCheck size={15} />
             </span>
-            <span>
-              <span className="block text-xs text-slate-300">系统管理员</span>
-              <span className="text-[10px] text-slate-500">{session?.account?.replace(/^admin:/, "") || "admin"}</span>
+            <span className="min-w-0">
+              <span className="block truncate text-xs font-bold text-ink">系统管理员</span>
+              <span className="block truncate text-[10px] text-ink-muted">{session?.account?.replace(/^admin:/, "") || "admin"}</span>
             </span>
           </div>
-          <button type="button" onClick={logout} className="mt-1 flex w-full items-center gap-2 rounded px-3 py-2 text-xs text-slate-500 hover:bg-slate-800 hover:text-white">
+          <button type="button" onClick={logout} className="lf-row-btn w-full justify-center text-brand-danger hover:border-brand-danger/40">
             <LogOut size={14} />
             退出登录
           </button>
         </div>
       </aside>
-      <main className="lg:pl-56">
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 md:px-7">
+      <main className="lg:pl-60">
+        <header className="lf-header-bar sticky top-0 z-30 flex h-16 items-center justify-between px-5 md:px-8">
           <div>
-            <p className="text-[11px] text-slate-400">管理后台 / {title}</p>
-            <h1 className="mt-0.5 text-base font-semibold text-slate-900">{title}</h1>
+            <p className="text-[11px] font-medium tracking-wide text-ink-muted">管理后台 / {title}</p>
+            <h1 className="mt-0.5 text-base font-bold text-ink">{title}</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <StatusTag ok={!error}>{error ? "接口异常" : "服务正常"}</StatusTag>
-            <button type="button" onClick={() => void load()} disabled={loading} className="flex h-8 items-center gap-1.5 rounded border border-slate-300 bg-white px-2.5 text-xs text-slate-600 hover:border-blue-500 hover:text-blue-600 disabled:opacity-50">
+            <button type="button" onClick={() => void load()} disabled={loading} className="lf-page-pill">
               <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
               <span className="hidden sm:inline">刷新</span>
             </button>
           </div>
         </header>
-        <nav className="sticky top-16 z-20 flex overflow-x-auto border-b border-slate-200 bg-white px-2 lg:hidden">
-          {nav.map(({ id, label, icon: Icon }) => (
-            <NavLink key={id} to={`/admin/${id}`} className={({ isActive }) => cn("flex h-11 shrink-0 items-center gap-1.5 border-b-2 px-3 text-xs", isActive ? "border-blue-600 text-blue-600" : "border-transparent text-slate-500")}>
-              <Icon size={14} />
-              {label}
-            </NavLink>
-          ))}
-        </nav>
-        <div className="mx-auto max-w-[1360px] p-4 md:p-7">
-          {error && <div className="mb-4 border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">{error}</div>}
+        <div className="sticky top-16 z-20 flex overflow-x-auto px-5 pb-3 pt-3 lg:hidden">
+          <div className="lf-seg mx-auto">
+            {nav.map(({ id, label, icon: Icon }) => (
+              <NavLink key={id} to={`/admin/${id}`} className={({ isActive }) => cn("lf-seg-item", isActive && "lf-seg-item-active")}>
+                <Icon size={13} />
+                {label}
+              </NavLink>
+            ))}
+          </div>
+        </div>
+        <div className="mx-auto max-w-[1440px] p-5 md:p-8">
+          {error && <div className="lf-card mb-5 rounded-2xl border-ochre/40 bg-ochre-tint/60 px-4 py-3 text-xs font-medium text-[#9A5B3C]">{error}</div>}
           {active === "overview" && (
             <>
               <PageHeading title="工作台" description="平台业务数据与服务接入概况。" />
-              <div className="grid grid-cols-2 border border-slate-200 bg-white md:grid-cols-4">
-                <SummaryCell label="学习者" value={loading ? "—" : learners.length} note="可管理账号" />
-                <SummaryCell label="平均掌握度" value={loading ? "—" : `${averageMastery}%`} note="学习者平均值" />
-                <SummaryCell label="知识领域" value={loading ? "—" : domains.length} note="已启用领域" />
-                <SummaryCell label="知识切片" value={loading ? "—" : domains.reduce((sum, item) => sum + item.chunkCount, 0)} note="当前索引总量" />
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                <StatCard label="学习者" value={loading ? "—" : learners.length} note="可管理账号" />
+                <StatCard label="平均掌握度" value={loading ? "—" : `${averageMastery}%`} note="学习者平均值" />
+                <StatCard label="知识领域" value={loading ? "—" : domains.length} note="已启用领域" />
+                <StatCard label="知识切片" value={loading ? "—" : domains.reduce((sum, item) => sum + item.chunkCount, 0)} note="当前索引总量" />
               </div>
-              <div className="mt-5 border border-slate-200 bg-white">
-                <div className="border-b border-slate-200 px-4 py-3">
-                  <h3 className="text-sm font-semibold">模块接入状态</h3>
+              <div className="lf-table-card mt-6">
+                <div className="border-b border-white/60 px-5 py-4">
+                  <h3 className="text-sm font-bold text-ink">模块接入状态</h3>
                 </div>
                 <table className="w-full text-sm">
-                  <tbody className="divide-y divide-slate-100">
-                    {[
+                  <tbody>
+                    {([
                       ["学习者管理", true, "已接入"],
                       ["知识库读取", true, "Spring 数据接口"],
                       ["知识质量管理", knowledgeServices.core, "KnowledgeCore"],
                       ["图谱审核", knowledgeServices.core, "KnowledgeCore"],
                       ["文档预处理", knowledgeServices.predeal, "predeal v2"],
-                    ].map(([label, ok, detail]) => (
-                      <tr key={label as string}>
-                        <td className="px-4 py-3 font-medium">{label as string}</td>
-                        <td className="px-4 py-3">
-                          <StatusTag ok={ok as boolean}>{ok ? "正常" : "服务未连接"}</StatusTag>
+                    ] as [string, boolean, string][]).map(([label, ok, detail]) => (
+                      <tr key={label}>
+                        <td className="px-5 py-3.5 font-semibold text-ink">{label}</td>
+                        <td className="px-5 py-3.5">
+                          <StatusTag ok={ok}>{ok ? "正常" : "服务未连接"}</StatusTag>
                         </td>
-                        <td className="px-4 py-3 text-right text-xs text-slate-500">{detail as string}</td>
+                        <td className="px-5 py-3.5 text-right text-xs text-ink-muted">{detail}</td>
                       </tr>
                     ))}
                   </tbody>

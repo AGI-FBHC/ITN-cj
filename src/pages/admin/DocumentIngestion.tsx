@@ -33,8 +33,7 @@ const steps = [
   ["audit", "12. 审计记录"],
   ["ragflow_upload", "13. RAGFlow 同步"],
 ] as const;
-const input =
-  "mt-1.5 h-10 w-full rounded border border-slate-300 bg-white px-3 text-sm outline-none focus:border-blue-500";
+const input = "mt-1.5 w-full lf-input";
 
 export default function DocumentIngestion() {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -177,17 +176,17 @@ export default function DocumentIngestion() {
   return (
     <>
       <div className="mb-5">
-        <h2 className="text-xl font-semibold text-slate-900">文档入库</h2>
-        <p className="mt-1 text-sm text-slate-500">
+        <h2 className="text-2xl font-bold tracking-tight text-ink">文档入库</h2>
+        <p className="mt-1 text-sm text-ink-muted">
           交付包 predeal v2：幂等上传、增量切片、图片处理、知识点分类与 RAGFlow
           同步。
         </p>
       </div>
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(380px,.85fr)]">
-        <section className="border border-slate-200 bg-white">
-          <div className="border-b border-slate-200 px-5 py-4">
+        <section className="lf-card rounded-2xl">
+          <div className="border-b border-white/60 px-5 py-4">
             <h3 className="text-sm font-semibold">文件与入库参数</h3>
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-xs text-ink-muted">
               参数字段与 `POST /api/v1/uploads` 保持一致
             </p>
           </div>
@@ -207,12 +206,12 @@ export default function DocumentIngestion() {
                 e.preventDefault();
                 choose(e.dataTransfer.files?.[0] || null);
               }}
-              className="flex min-h-32 w-full flex-col items-center justify-center border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-500 hover:border-blue-400 hover:bg-blue-50/30"
+              className="flex min-h-32 w-full flex-col items-center justify-center border border-dashed border-ochre/40 bg-white/50 text-sm text-ink-muted transition-colors hover:border-ochre/70 hover:bg-ochre-tint/40"
             >
-              <UploadCloud size={25} className="mb-2 text-slate-400" />
+              <UploadCloud size={25} className="mb-2 text-ink-muted" />
               {file ? (
                 <>
-                  <strong className="text-slate-700">{file.name}</strong>
+                  <strong className="text-ink">{file.name}</strong>
                   <span className="mt-1 text-xs">
                     {Math.ceil(file.size / 1024)} KB
                   </span>
@@ -220,14 +219,14 @@ export default function DocumentIngestion() {
               ) : (
                 <>
                   <span>点击或拖入 Markdown 文件</span>
-                  <span className="mt-1 text-xs text-slate-400">
+                  <span className="mt-1 text-xs text-ink-muted">
                     仅支持 .md / .markdown
                   </span>
                 </>
               )}
             </button>
             <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <label className="text-xs text-slate-600">
+              <label className="text-xs text-ink-2">
                 归属领域 *
                 <select
                   value={domain}
@@ -245,7 +244,7 @@ export default function DocumentIngestion() {
                   )}
                 </select>
               </label>
-              <label className="text-xs text-slate-600">
+              <label className="text-xs text-ink-2">
                 标题
                 <input
                   value={title}
@@ -253,7 +252,7 @@ export default function DocumentIngestion() {
                   className={input}
                 />
               </label>
-              <label className="text-xs text-slate-600">
+              <label className="text-xs text-ink-2">
                 文档类型
                 <input
                   value={documentType}
@@ -262,7 +261,7 @@ export default function DocumentIngestion() {
                   className={input}
                 />
               </label>
-              <label className="text-xs text-slate-600">
+              <label className="text-xs text-ink-2">
                 来源类型
                 <input
                   value={sourceType}
@@ -270,7 +269,7 @@ export default function DocumentIngestion() {
                   className={input}
                 />
               </label>
-              <label className="text-xs text-slate-600">
+              <label className="text-xs text-ink-2">
                 来源名称
                 <input
                   value={sourceName}
@@ -278,7 +277,7 @@ export default function DocumentIngestion() {
                   className={input}
                 />
               </label>
-              <label className="text-xs text-slate-600">
+              <label className="text-xs text-ink-2">
                 出版 / 发布组织
                 <input
                   value={publisher}
@@ -286,7 +285,7 @@ export default function DocumentIngestion() {
                   className={input}
                 />
               </label>
-              <label className="text-xs text-slate-600">
+              <label className="text-xs text-ink-2">
                 发布年份
                 <input
                   value={publishYear}
@@ -295,7 +294,7 @@ export default function DocumentIngestion() {
                   className={input}
                 />
               </label>
-              <label className="text-xs text-slate-600">
+              <label className="text-xs text-ink-2">
                 版本
                 <input
                   value={version}
@@ -303,7 +302,7 @@ export default function DocumentIngestion() {
                   className={input}
                 />
               </label>
-              <label className="text-xs text-slate-600">
+              <label className="text-xs text-ink-2">
                 可靠性评分
                 <input
                   value={reliability}
@@ -315,7 +314,7 @@ export default function DocumentIngestion() {
                   className={input}
                 />
               </label>
-              <label className="text-xs text-slate-600">
+              <label className="text-xs text-ink-2">
                 语言
                 <input
                   value={language}
@@ -323,7 +322,7 @@ export default function DocumentIngestion() {
                   className={input}
                 />
               </label>
-              <label className="text-xs text-slate-600">
+              <label className="text-xs text-ink-2">
                 存储前缀
                 <input
                   value={storagePrefix}
@@ -331,7 +330,7 @@ export default function DocumentIngestion() {
                   className={input}
                 />
               </label>
-              <label className="text-xs text-slate-600">
+              <label className="text-xs text-ink-2">
                 RAGFlow 数据集名
                 <input
                   value={datasetName}
@@ -341,7 +340,7 @@ export default function DocumentIngestion() {
                 />
               </label>
             </div>
-            <div className="mt-5 flex flex-wrap gap-5 border-y border-slate-100 py-4 text-xs text-slate-600">
+            <div className="mt-5 flex flex-wrap gap-5 border-y border-white/60 py-4 text-xs text-ink-2">
               <label className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -363,7 +362,7 @@ export default function DocumentIngestion() {
               type="button"
               disabled={running}
               onClick={() => void submit()}
-              className="mt-5 flex h-10 w-full items-center justify-center gap-2 rounded bg-blue-600 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="lf-btn-primary mt-5 h-10 w-full disabled:opacity-50"
             >
               {running ? (
                 <>
@@ -377,19 +376,19 @@ export default function DocumentIngestion() {
                 </>
               )}
             </button>
-            <p className="mt-3 text-xs leading-5 text-slate-400">
+            <p className="mt-3 text-xs leading-5 text-ink-muted">
               同名同内容会走幂等复用；同名不同内容按原实现执行增量更新。接口密钥由服务端环境读取，不在浏览器表单中传输。
             </p>
           </div>
         </section>
-        <section className="border border-slate-200 bg-white">
-          <div className="border-b border-slate-200 px-5 py-4">
+        <section className="lf-card rounded-2xl">
+          <div className="border-b border-white/60 px-5 py-4">
             <h3 className="text-sm font-semibold">处理进度</h3>
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-xs text-ink-muted">
               {taskId ? `任务 ${taskId}` : "提交文档后显示 13 步流水线"}
             </p>
           </div>
-          <ol className="divide-y divide-slate-100">
+          <ol className="divide-y divide-white/60">
             {steps.map(([key, label]) => {
               const event = events[key];
               const state = event?.status;
@@ -405,8 +404,8 @@ export default function DocumentIngestion() {
                         : state === "failed" || state === "error"
                           ? "border-red-500 bg-red-50 text-red-600"
                           : state === "running" || state === "started"
-                            ? "border-blue-500 text-blue-600"
-                            : "border-slate-200 text-slate-400",
+                            ? "lf-seg-item-active"
+                            : "lf-seg-item",
                     )}
                   >
                     {state === "completed" ||
@@ -422,10 +421,10 @@ export default function DocumentIngestion() {
                     )}
                   </span>
                   <span>
-                    <span className="block text-xs font-medium text-slate-700">
+                    <span className="block text-xs font-medium text-ink">
                       {label}
                     </span>
-                    <span className="mt-0.5 block text-[11px] text-slate-400">
+                    <span className="mt-0.5 block text-[11px] text-ink-muted">
                       {event?.message || "等待执行"}
                     </span>
                   </span>
@@ -452,23 +451,23 @@ export default function DocumentIngestion() {
               </div>
               <dl className="mt-3 grid grid-cols-2 gap-3 text-xs">
                 <div>
-                  <dt className="text-slate-400">文档编号</dt>
+                  <dt className="text-ink-muted">文档编号</dt>
                   <dd className="mt-1 font-mono">
                     {result.document_id || "—"}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-slate-400">数据库 ID</dt>
+                  <dt className="text-ink-muted">数据库 ID</dt>
                   <dd className="mt-1">{result.db_document_id || "—"}</dd>
                 </div>
                 <div>
-                  <dt className="text-slate-400">切片</dt>
+                  <dt className="text-ink-muted">切片</dt>
                   <dd className="mt-1 text-lg font-semibold">
                     {result.chunk_count || 0}
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-slate-400">图片</dt>
+                  <dt className="text-ink-muted">图片</dt>
                   <dd className="mt-1 text-lg font-semibold">
                     {result.figure_count || 0}
                   </dd>
@@ -483,11 +482,11 @@ export default function DocumentIngestion() {
           )}
         </section>
       </div>
-      <section className="mt-5 border border-slate-200 bg-white">
+      <section className="lf-card mt-5 rounded-2xl">
         <div className="flex items-center justify-between border-b px-5 py-4">
           <div>
             <h3 className="text-sm font-semibold">本机构入库任务</h3>
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-xs text-ink-muted">
               持久化历史、进度与分阶段恢复
             </p>
           </div>
@@ -504,7 +503,7 @@ export default function DocumentIngestion() {
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-xs">
-            <thead className="bg-slate-50 text-slate-500">
+            <thead>
               <tr>
                 <th className="px-4 py-3">文件</th>
                 <th className="px-4 py-3">领域</th>
@@ -518,17 +517,17 @@ export default function DocumentIngestion() {
               {history.map((task) => (
                 <tr key={task.id}>
                   <td className="px-4 py-3">
-                    <p className="max-w-xs truncate font-medium text-slate-700">
+                    <p className="max-w-xs truncate font-medium text-ink">
                       {task.file_name}
                     </p>
-                    <p className="font-mono text-[10px] text-slate-400">
+                    <p className="font-mono text-[10px] text-ink-muted">
                       {task.id}
                     </p>
                   </td>
                   <td className="px-4 py-3">{task.domain}</td>
                   <td className="px-4 py-3">
                     <p>{task.status}</p>
-                    <p className="text-[10px] text-slate-400">
+                    <p className="text-[10px] text-ink-muted">
                       {task.current_stage || "—"}
                     </p>
                     {task.error_message && (
@@ -538,7 +537,7 @@ export default function DocumentIngestion() {
                     )}
                   </td>
                   <td className="px-4 py-3">{task.progress ?? 0}%</td>
-                  <td className="px-4 py-3 text-slate-500">
+                  <td className="px-4 py-3 text-ink-muted">
                     {task.created_at
                       ? new Date(task.created_at).toLocaleString()
                       : "—"}
@@ -570,7 +569,7 @@ export default function DocumentIngestion() {
             </tbody>
           </table>
           {!historyLoading && !history.length && (
-            <p className="py-8 text-center text-sm text-slate-400">
+            <p className="py-8 text-center text-sm text-ink-muted">
               暂无入库任务
             </p>
           )}
