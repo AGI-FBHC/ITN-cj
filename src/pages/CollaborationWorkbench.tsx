@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, Plus, Sparkles, X, XCircle } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { api, streamAdminGenerationTask, type AdminGenerationEvent, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
@@ -41,22 +41,38 @@ function isLifecycleEvent(event: AdminGenerationEvent) {
 }
 
 /** 板块间数据流连接器：上板块底部点 → 加粗虚线（自上而下闪烁） → 下板块顶部点 */
-/** 板块间折线数据流：从上一板块底部中点向下 → 水平拐弯 → 下一板块顶部中点；流光沿路径自上而下流动 */
+/** 板块间弧线数据流：像素级对齐列心（测量 grid 布局含 gap），三次贝塞尔弧形过渡，流光沿弧自上而下流动 */
 function FlowLink({ fromCol, toCol }: { fromCol: number; toCol: number }) {
-  const lanes = agents.length;
-  const x1 = ((fromCol + 0.5) / lanes) * 100;
-  const x2 = ((toCol + 0.5) / lanes) * 100;
-  const path = x1 === x2
-    ? 'M ' + x1 + ' 0 L ' + x1 + ' 100'
-    : 'M ' + x1 + ' 0 L ' + x1 + ' 46 L ' + x2 + ' 46 L ' + x2 + ' 100';
+  const ref = useRef<HTMLDivElement>(null);
+  const [geom, setGeom] = useState<{ w: number; h: number; x1: number; x2: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    const pad = 8;
+    const gap = 8;
+    const laneCount = agents.length;
+    const colW = (w - pad * 2 - gap * (laneCount - 1)) / laneCount;
+    const colX = (col: number) => pad + col * (colW + gap) + colW / 2;
+    setGeom({ w, h, x1: colX(fromCol), x2: colX(toCol) });
+  }, [fromCol, toCol]);
+  const x1 = geom ? geom.x1 : 50;
+  const x2 = geom ? geom.x2 : 50;
+  const h = geom ? geom.h : 40;
+  const path = Math.abs(x1 - x2) < 0.5
+    ? 'M ' + x1 + ' 2 L ' + x1 + ' ' + (h - 2)
+    : 'M ' + x1 + ' 2 C ' + x1 + ' ' + (h * 0.62) + ', ' + x2 + ' ' + (h * 0.38) + ', ' + x2 + ' ' + (h - 2);
   return (
-    <div className="relative h-10" aria-hidden>
-      <span className="absolute -top-1 h-2 w-2 -translate-x-1/2 rounded-full bg-brand/90 shadow-[0_0_6px_rgba(78,120,96,0.9)]" style={{ left: x1 + '%' }} />
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 block h-full w-full">
-        <path d={path} fill="none" stroke="rgba(78,120,96,0.5)" strokeWidth="2.5" strokeDasharray="7 6" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-        <path d={path} fill="none" stroke="rgba(170, 232, 196, 0.95)" strokeWidth="3.5" className="lf-flow-glow" vectorEffect="non-scaling-stroke" />
-      </svg>
-      <span className="absolute bottom-0 h-2 w-2 -translate-x-1/2 rounded-full bg-brand/90 shadow-[0_0_6px_rgba(78,120,96,0.9)]" style={{ left: x2 + '%' }} />
+    <div ref={ref} className="flow-enter relative h-10 w-full" aria-hidden>
+      <span className="absolute -top-1 h-2 w-2 -translate-x-1/2 rounded-full bg-brand/90 shadow-[0_0_6px_rgba(78,120,96,0.9)]" style={{ left: x1 + 'px' }} />
+      {geom && (
+        <svg viewBox={"0 0 " + geom.w + " " + geom.h} className="absolute inset-0 block h-full w-full">
+          <path d={path} fill="none" stroke="rgba(78,120,96,0.45)" strokeWidth="2.5" strokeDasharray="7 6" strokeLinecap="round" />
+          <path d={path} fill="none" stroke="rgba(170, 232, 196, 0.95)" strokeWidth="3.5" className="lf-flow-glow" strokeLinecap="round" />
+        </svg>
+      )}
+      <span className="absolute bottom-0 h-2 w-2 -translate-x-1/2 rounded-full bg-brand/90 shadow-[0_0_6px_rgba(78,120,96,0.9)]" style={{ left: x2 + 'px' }} />
     </div>
   );
 }
@@ -131,7 +147,7 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
             const prevCol = prevBlock ? (prevBlock.kind === "life" ? (prevBlock.event === lifecycle[0] ? 0 : 4) : Math.max(0, agents.findIndex((agent) => agent.id === (prevBlock.unit ? prevBlock.unit.agent : "")))) : 0;
             const curCol = block.kind === "life" ? (block.event === lifecycle[0] ? 0 : 4) : Math.max(0, agents.findIndex((agent) => agent.id === (block.unit ? block.unit.agent : "")));
             return (
-              <div key={block.key}>
+              <div key={block.key} className="board-enter">
                 {index > 0 && (
                   <FlowLink fromCol={prevCol} toCol={curCol} />
                 )}

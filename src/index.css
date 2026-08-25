@@ -688,6 +688,39 @@
 }
 @keyframes lf-dash-flow { to { stroke-dashoffset: -156; } }
 
+/* 水平段流光：渐变光条从左向右流动 */
+.lf-flow-line-h { position: relative; height: 3px; }
+.lf-flow-line-h::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 0;
+  border-top: 3px dashed rgba(78, 120, 96, 0.5);
+  border-radius: 2px;
+}
+.lf-flow-line-h::after {
+  content: ''; position: absolute; top: -7px; width: 18px; height: 3px;
+  background: linear-gradient(90deg, rgba(78,120,96,0), rgba(170, 232, 196, 0.95), rgba(78,120,96,0));
+  filter: drop-shadow(0 0 5px rgba(91, 184, 138, 0.9));
+  border-radius: 3px;
+  animation: lf-flow-right 0.85s linear infinite;
+}
+/* 板块/连线随生成步骤实时入场：新元素 mount 时自动播放，逐步显示 */
+.board-enter { animation: lf-board-in 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes lf-board-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.flow-enter { animation: lf-flow-in 0.55s ease-out; }
+@keyframes lf-flow-in {
+  from { opacity: 0; scale: 0.6; }
+  to { opacity: 1; scale: 1; }
+}
+
+@keyframes lf-flow-right {
+  0% { left: -6%; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { left: 102%; opacity: 0; }
+}
+
 @keyframes lf-flow-down {
   0% { transform: translateY(-10px); opacity: 0; }
   14% { opacity: 1; }
