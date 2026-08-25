@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, Plus, Sparkles, X, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, Plus, Sparkles, Trash2, X, XCircle } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { api, streamAdminGenerationTask, type AdminGenerationEvent, type AdminResourceDetail, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
 import { presentationApi, type PresentationRequest, type PresentationTaskSummary } from '@/lib/presentationApi';
@@ -375,7 +375,7 @@ function useSmoothProgress(real: number, cap: number, animating: boolean) {
   return shown;
 }
 
-function WorkbenchTaskItem({ item, selected, onPreview, onClick }: { item: WorkbenchTask; selected: boolean; onPreview?: (item: WorkbenchTask) => void; onClick: () => void }) {
+function WorkbenchTaskItem({ item, selected, bulkMode, checked, onPreview, onCancel, onDelete, onClick }: { item: WorkbenchTask; selected: boolean; bulkMode: boolean; checked: boolean; onPreview?: (item: WorkbenchTask) => void; onCancel?: (item: WorkbenchTask) => void; onDelete?: (item: WorkbenchTask) => void; onClick: () => void }) {
   const active = activeStatuses.has(item.status);
   const failed = item.status === 'failed' || item.status === 'cancelled';
   const context = contextOf(item);
@@ -411,10 +411,30 @@ function WorkbenchTaskItem({ item, selected, onPreview, onClick }: { item: Workb
         </span>
         <span className="block truncate text-xs font-bold text-ink">{String(context.topicName || item.title)}</span>
         <span className="block line-clamp-1 text-[9.5px] leading-4 text-ink-muted">{item.stageMessage}</span>
-        {item.status === 'completed' && onPreview && (
+        {(item.status === 'completed' || item.status === 'failed') && (
+          <span className="flex justify-end gap-1.5 pt-1">
+            {bulkMode && (
+              <span role="checkbox" aria-checked={checked} tabIndex={0} onClick={(event) => { event.stopPropagation(); onClick(); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.stopPropagation(); onClick(); } }} className={cn('inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[9px] font-bold', checked ? 'border-brand/50 bg-brand-tint text-brand' : 'border-white/80 bg-white/80 text-ink-muted')}>
+                <span className={cn('flex h-3 w-3 items-center justify-center rounded border', checked ? 'border-brand bg-brand text-paper' : 'border-ink-muted/40 bg-white')}>{checked ? '✓' : ''}</span>
+                已选
+              </span>
+            )}
+            {item.status === 'completed' && onPreview && (
+              <span role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); onPreview(item); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.stopPropagation(); onPreview(item); } }} className="inline-flex items-center gap-1 rounded-md border border-brand/30 bg-white/80 px-2 py-1 text-[9px] font-bold text-brand transition-colors hover:bg-brand-tint">
+                <Eye size={11} /> 预览
+              </span>
+            )}
+            {onDelete && (
+              <span role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); onDelete(item); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.stopPropagation(); onDelete(item); } }} className="inline-flex items-center gap-1 rounded-md border border-white/80 bg-white/80 px-2 py-1 text-[9px] font-bold text-ink-muted transition-colors hover:border-red-300 hover:text-red-500">
+                <Trash2 size={11} /> 删除
+              </span>
+            )}
+          </span>
+        )}
+        {active && onCancel && (
           <span className="flex justify-end pt-1">
-            <span role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); onPreview(item); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.stopPropagation(); onPreview(item); } }} className="inline-flex items-center gap-1 rounded-md border border-brand/30 bg-white/80 px-2 py-1 text-[9px] font-bold text-brand transition-colors hover:bg-brand-tint">
-              <Eye size={11} /> 预览已生成内容
+            <span role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); onCancel(item); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.stopPropagation(); onCancel(item); } }} className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50/80 px-2 py-1 text-[9px] font-bold text-red-600 transition-colors hover:border-red-300 hover:bg-rose-100">
+              <XCircle size={11} /> 取消任务
             </span>
           </span>
         )}
@@ -599,6 +619,11 @@ export default function CollaborationWorkbench() {
   const [tasksCollapsed, setTasksCollapsed] = useState(false);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [newTaskBusy, setNewTaskBusy] = useState(false);
+  const [deletedKeys, setDeletedKeys] = useState<string[]>(() => { try { const raw = localStorage.getItem('wb.deletedTasks'); return raw ? JSON.parse(raw) as string[] : []; } catch { return []; } });
+  const deletedKeysRef = useRef(deletedKeys);
+  deletedKeysRef.current = deletedKeys;
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
   const [previewDetail, setPreviewDetail] = useState<AdminResourceDetail | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const selectedKey = params.get('task');
@@ -615,7 +640,7 @@ export default function CollaborationWorkbench() {
         .map((task) => ({ ...task, taskKind: 'ppt' as const, resourceType: 'ppt' as const }));
     }
     const next = [...resourceTasks, ...pptTasks].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
-    setTasks(next);
+    setTasks(next.filter((item) => !deletedKeysRef.current.includes(taskKey(item))));
     if (!selectedKey && next[0]) setParams({ task: taskKey(next[0]) }, { replace: true });
     setLoading(false);
   };
@@ -651,6 +676,40 @@ export default function CollaborationWorkbench() {
       toast.error(error instanceof Error ? error.message : '任务创建失败');
     } finally {
       setNewTaskBusy(false);
+    }
+  };
+
+  /** 从列表移除任务记录（仅清空列表，不删除资源）：本地持久化删除标记 */
+  const removeTask = (keys: string[]) => {
+    setDeletedKeys((current) => {
+      const next = Array.from(new Set([...current, ...keys]));
+      try { localStorage.setItem('wb.deletedTasks', JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+    setTasks((current) => current.filter((item) => !keys.includes(taskKey(item))));
+    toast.success(keys.length + ' 条任务记录已从列表移除');
+  };
+  const deleteTask = (item: WorkbenchTask) => {
+    if (!window.confirm('确定将该任务从列表中移除吗？\n（仅移除任务记录，不影响已生成的资源）')) return;
+    removeTask([taskKey(item)]);
+  };
+  const bulkDelete = () => {
+    if (!bulkSelected.size) return;
+    if (!window.confirm('确定将选中的 ' + bulkSelected.size + ' 条任务记录从列表移除吗？\n（仅移除记录，不影响已生成的资源）')) return;
+    removeTask([...bulkSelected]);
+    setBulkSelected(new Set());
+    setBulkMode(false);
+  };
+  /** 取消正在进行的任务 */
+  const cancelTask = async (item: WorkbenchTask) => {
+    if (!window.confirm('确定取消该任务吗？')) return;
+    try {
+      if (item.taskKind === 'ppt') await presentationApi.cancelPresentation(item.id);
+      else await api.cancelLearningResourceTask(item.id);
+      toast.success('已取消生成任务');
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '取消失败');
     }
   };
 
@@ -723,10 +782,30 @@ export default function CollaborationWorkbench() {
             <button onClick={() => setTaskTab('finished')} className={cn('flex-1 rounded-lg px-2 py-1.5 text-[11px] font-bold transition-colors', taskTab === 'finished' ? 'bg-brand text-paper shadow-sm' : 'text-ink-muted hover:text-ink')}>已完成 {grouped.finished.length}</button>
           </div>
         </div>
+        {/* 批量操作：已完成 tab 下可删除多条记录 */}
+        {taskTab === 'finished' && grouped.finished.length > 0 && (
+          <div className="flex items-center justify-between border-b border-white/70 px-3 py-2">
+            {!bulkMode ? (
+              <button onClick={() => setBulkMode(true)} className="lf-row-btn !px-2.5 !py-1.5" title="删除多条已完成任务记录（仅列表，不影响资源）">
+                <Trash2 size={12} /> 批量删除
+              </button>
+            ) : (
+              <div className="flex w-full items-center gap-2">
+                <button onClick={() => { setBulkSelected(bulkSelected.size === grouped.finished.length ? new Set() : new Set(grouped.finished.map((item) => taskKey(item)))); }} className="lf-row-btn !px-2.5 !py-1.5">
+                  {bulkSelected.size === grouped.finished.length ? '取消全选' : '全选'}
+                </button>
+                <button onClick={() => bulkDelete()} disabled={!bulkSelected.size} className="lf-row-btn lf-row-btn-primary !px-2.5 !py-1.5 disabled:opacity-50">
+                  <Trash2 size={12} /> 删除所选（{bulkSelected.size}）
+                </button>
+                <button onClick={() => { setBulkMode(false); setBulkSelected(new Set()); }} className="lf-row-btn !px-2.5 !py-1.5 text-ink-muted">退出</button>
+              </div>
+            )}
+          </div>
+        )}
         <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
           <div className="space-y-2">
             {(taskTab === 'active' ? grouped.active : grouped.finished).map((item) => (
-              <WorkbenchTaskItem key={taskKey(item)} item={item} selected={taskKey(item) === selectedKey} onPreview={(task) => void openPreview(task)} onClick={() => setParams({ task: taskKey(item) })} />
+              <WorkbenchTaskItem key={taskKey(item)} item={item} selected={taskKey(item) === selectedKey} bulkMode={bulkMode && taskTab === 'finished'} checked={bulkSelected.has(taskKey(item))} onPreview={(task) => void openPreview(task)} onCancel={(task) => void cancelTask(task)} onDelete={(task) => deleteTask(task)} onClick={() => { if (bulkMode && taskTab === 'finished') { setBulkSelected((current) => { const next = new Set(current); if (next.has(taskKey(item))) next.delete(taskKey(item)); else next.add(taskKey(item)); return next; }); } else { setParams({ task: taskKey(item) }); } }} />
             ))}
             {(taskTab === 'active' ? grouped.active : grouped.finished).length === 0 && (
               <div className="lf-empty rounded-xl p-6 text-xs">{taskTab === 'active' ? '暂无进行中的任务' : '暂无已完成任务'}</div>
