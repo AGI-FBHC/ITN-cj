@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, Plus, Sparkles, X, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, Plus, Sparkles, X, XCircle } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
-import { api, streamAdminGenerationTask, type AdminGenerationEvent, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
+import { api, streamAdminGenerationTask, type AdminGenerationEvent, type AdminResourceDetail, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
 import { presentationApi, type PresentationRequest, type PresentationTaskSummary } from '@/lib/presentationApi';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
+import ResourcePreview from '@/components/admin/ResourcePreview';
 import { cn } from '@/lib/utils';
 
 type WorkbenchTask =
@@ -366,7 +367,7 @@ function useSmoothProgress(real: number, cap: number, animating: boolean) {
   return shown;
 }
 
-function WorkbenchTaskItem({ item, selected, live, onClick }: { item: WorkbenchTask; selected: boolean; live?: boolean; onClick: () => void }) {
+function WorkbenchTaskItem({ item, selected, live, onPreview, onClick }: { item: WorkbenchTask; selected: boolean; live?: boolean; onPreview?: (item: WorkbenchTask) => void; onClick: () => void }) {
   const active = activeStatuses.has(item.status);
   const failed = item.status === 'failed' || item.status === 'cancelled';
   const context = contextOf(item);
@@ -403,6 +404,13 @@ function WorkbenchTaskItem({ item, selected, live, onClick }: { item: WorkbenchT
         </span>
         <span className="block truncate text-xs font-bold text-ink">{String(context.topicName || item.title)}</span>
         <span className="block line-clamp-1 text-[9.5px] leading-4 text-ink-muted">{item.stageMessage}</span>
+        {item.status === 'completed' && onPreview && (
+          <span className="flex justify-end pt-1">
+            <span role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); onPreview(item); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.stopPropagation(); onPreview(item); } }} className="inline-flex items-center gap-1 rounded-md border border-brand/30 bg-white/80 px-2 py-1 text-[9px] font-bold text-brand transition-colors hover:bg-brand-tint">
+              <Eye size={11} /> 预览已生成内容
+            </span>
+          </span>
+        )}
       </span>
     </button>
   );
@@ -555,6 +563,8 @@ export default function CollaborationWorkbench() {
   const [tasksCollapsed, setTasksCollapsed] = useState(false);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [newTaskBusy, setNewTaskBusy] = useState(false);
+  const [previewDetail, setPreviewDetail] = useState<AdminResourceDetail | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const selectedKey = params.get('task');
 
   const load = async () => {
@@ -608,6 +618,32 @@ export default function CollaborationWorkbench() {
     }
   };
 
+  /** 已完成任务：预览已生成内容（学习资源按 resourceId，课件拉 outline 构造） */
+  const openPreview = async (item: WorkbenchTask) => {
+    setPreviewLoading(true);
+    setPreviewDetail(null);
+    try {
+      if (item.taskKind === 'resource' && item.resourceId) {
+        setPreviewDetail(await api.getAdminResource(item.resourceId));
+      } else if (item.taskKind === 'ppt') {
+        const detail = await presentationApi.getPresentation(item.id);
+        setPreviewDetail({
+          id: item.id, type: 'ppt', title: detail.title || item.title, topic: '', scope: 'ORGANIZATION',
+          reviewStatus: 'PUBLISHED', revision: 1, domainCode: '', nodeCode: '', baseResourceId: null,
+          learnerId: null, kpId: null, createdAt: detail.createdAt, updatedAt: detail.updatedAt,
+          archivedAt: null, archiveReason: null, ownerAccount: null,
+          content: detail.request ?? {}, sources: [], decision: detail.outline ?? null,
+        } as unknown as AdminResourceDetail);
+      } else {
+        toast.info('该任务还没有关联的已生成资源');
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '预览失败');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   useEffect(() => {
     void load().catch(() => setLoading(false));
     const timer = window.setInterval(() => void load().catch(() => undefined), 3000);
@@ -654,7 +690,7 @@ export default function CollaborationWorkbench() {
         <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
           <div className="space-y-2">
             {(taskTab === 'active' ? grouped.active : grouped.finished).map((item) => (
-              <WorkbenchTaskItem key={taskKey(item)} item={item} selected={taskKey(item) === selectedKey} live={taskTab === 'active' && taskKey(item) === (grouped.active[0] ? taskKey(grouped.active[0]) : '')} onClick={() => setParams({ task: taskKey(item) })} />
+              <WorkbenchTaskItem key={taskKey(item)} item={item} selected={taskKey(item) === selectedKey} live={taskTab === 'active' && taskKey(item) === (grouped.active[0] ? taskKey(grouped.active[0]) : '')} onPreview={(task) => void openPreview(task)} onClick={() => setParams({ task: taskKey(item) })} />
             ))}
             {(taskTab === 'active' ? grouped.active : grouped.finished).length === 0 && (
               <div className="lf-empty rounded-xl p-6 text-xs">{taskTab === 'active' ? '暂无进行中的任务' : '暂无已完成任务'}</div>
@@ -709,6 +745,30 @@ export default function CollaborationWorkbench() {
           )}
         </div>
       </aside>
+      {previewDetail && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-ink/35 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewDetail(null); }}>
+          <div className="lf-card flex h-[min(86vh,760px)] w-full max-w-3xl flex-col overflow-hidden rounded-3xl shadow-2xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-white/70 px-5 py-4">
+              <div className="min-w-0">
+                <h3 className="truncate text-sm font-bold text-ink">{previewDetail.title}</h3>
+                <p className="mt-0.5 text-[11px] text-ink-muted">{typeText[previewDetail.type] || previewDetail.type} · 已生成内容预览</p>
+              </div>
+              <button onClick={() => setPreviewDetail(null)} className="lf-row-btn !p-2" aria-label="关闭"><X size={15} /></button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
+              <ResourcePreview detail={previewDetail} />
+            </div>
+          </div>
+        </div>
+      )}
+      {previewLoading && (
+        <div className="fixed inset-0 z-[94] flex items-center justify-center bg-ink/20 backdrop-blur-[2px]">
+          <div className="lf-card flex items-center gap-2 rounded-2xl px-5 py-4 text-sm text-ink-muted">
+            <Loader2 size={16} className="animate-spin" />
+            正在加载已生成内容…
+          </div>
+        </div>
+      )}
       <NewTaskModal
         open={newTaskOpen}
         busy={newTaskBusy}
