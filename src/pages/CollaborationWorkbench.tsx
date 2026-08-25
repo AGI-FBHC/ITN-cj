@@ -672,9 +672,13 @@ export default function CollaborationWorkbench() {
   const [previewDetail, setPreviewDetail] = useState<AdminResourceDetail | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const selectedKey = params.get('task');
+  const loadInFlightRef = useRef(false);
 
   const load = async () => {
-    const resources = await api.listLearningResourceTasks(100);
+    if (loadInFlightRef.current) return;
+    loadInFlightRef.current = true;
+    try {
+    const resources = await api.listLearningResourceTasks(100, true);
     const resourceTasks: WorkbenchTask[] = resources.tasks
       .filter((task) => !isAdmin || contextOf({ ...task, taskKind: 'resource' }).adminGeneration === true)
       .map((task) => ({ ...task, taskKind: 'resource' as const }));
@@ -697,6 +701,9 @@ export default function CollaborationWorkbench() {
     }
     previousTaskKeysRef.current = new Set(visible.map((item) => taskKey(item)));
     setLoading(false);
+    } finally {
+      loadInFlightRef.current = false;
+    }
   };
 
   /** 新建任务：按知识目标创建多类资源生成任务 */
@@ -809,7 +816,7 @@ export default function CollaborationWorkbench() {
 
   useEffect(() => {
     void load().catch(() => setLoading(false));
-    const timer = window.setInterval(() => void load().catch(() => undefined), 3000);
+    const timer = window.setInterval(() => void load().catch(() => undefined), 5000);
     return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin]);
@@ -839,7 +846,7 @@ export default function CollaborationWorkbench() {
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand text-paper"><Sparkles size={15} /></span>
           <div className="min-w-0 flex-1">
             <h3 className="text-sm font-bold text-ink">AI 教研任务</h3>
-            <p className="mt-0.5 truncate text-[9.5px] text-ink-muted">{grouped.active.length + grouped.finished.length} 项 · 3s 自动刷新</p>
+            <p className="mt-0.5 truncate text-[9.5px] text-ink-muted">{grouped.active.length + grouped.finished.length} 项 · 自动同步</p>
           </div>
           <button onClick={() => setNewTaskOpen(true)} className="lf-row-btn lf-row-btn-primary !px-2.5 !py-1.5"><Plus size={12} />新建任务</button>
         </div>

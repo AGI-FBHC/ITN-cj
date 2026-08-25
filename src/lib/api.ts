@@ -1295,8 +1295,8 @@ export const api = {
     requestDirect<LearningResourceGenerationTask>(`/v1/learning-resource-tasks/${resourceType}`, {
       method: 'POST', body: JSON.stringify(body),
     }),
-  listLearningResourceTasks: (limit = 30) =>
-    requestDirect<{ tasks: LearningResourceGenerationTask[] }>(`/v1/learning-resource-tasks?limit=${limit}`),
+  listLearningResourceTasks: (limit = 30, summary = false) =>
+    requestDirect<{ tasks: LearningResourceGenerationTask[] }>(`/v1/learning-resource-tasks?limit=${limit}&summary=${summary ? 'true' : 'false'}`),
   getLearningResourceTask: (taskId: string) =>
     requestDirect<LearningResourceGenerationTask>(`/v1/learning-resource-tasks/${encodeURIComponent(taskId)}`),
   cancelLearningResourceTask: (taskId: string) =>
