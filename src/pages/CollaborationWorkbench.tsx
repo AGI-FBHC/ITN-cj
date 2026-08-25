@@ -77,11 +77,12 @@ function FlowLink({ fromCol, toCol }: { fromCol: number; toCol: number }) {
   );
 }
 
-function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent, onSelect, onSelectAgent }: {
+function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent, running, onSelect, onSelectAgent }: {
   events: AdminGenerationEvent[];
   selectedSeq: number | null;
   selectedAgent: string;
   runningAgent: string | null;
+  running: boolean;
   onSelect: (event: AdminGenerationEvent) => void;
   onSelectAgent: (agentId: string) => void;
 }) {
@@ -147,8 +148,9 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
             const prevBlock = blocks[index - 1];
             const prevCol = prevBlock ? (prevBlock.kind === "life" ? (prevBlock.event === lifecycle[0] ? 0 : 4) : Math.max(0, agents.findIndex((agent) => agent.id === (prevBlock.unit ? prevBlock.unit.agent : "")))) : 0;
             const curCol = block.kind === "life" ? (block.event === lifecycle[0] ? 0 : 4) : Math.max(0, agents.findIndex((agent) => agent.id === (block.unit ? block.unit.agent : "")));
+            const isLatestLive = running && lastSeq !== null && ((block.kind === "life" && block.event && block.event.seq === lastSeq) || (block.kind === "unit" && block.unit && block.unit.events.some((event) => event.seq === lastSeq)));
             return (
-              <div key={block.key} className={cn('board-enter', events.at(-1) && ((block.kind === 'life' && (lastSeq !== null && block.event && block.event.seq === lastSeq)) || (block.kind === 'unit' && block.unit && block.unit.events.some((event) => event.seq === lastSeq))) ? 'lf-block-live' : '')}>
+              <div key={block.key} className="board-enter">
                 {index > 0 && (
                   <FlowLink fromCol={prevCol} toCol={curCol} />
                 )}
@@ -158,7 +160,7 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
                     const isStart = lifeEvent === lifecycle[0];
                     return (
                       <div className="grid grid-cols-5 gap-2">
-                        <button type="button" onClick={() => onSelect(lifeEvent)} className={cn("flex items-center gap-1.5 self-start rounded-lg border px-2 py-1.5 text-left", isStart ? "col-start-1" : "col-start-5", lifeEvent.seq === selectedSeq ? "border-brand/55 bg-brand-tint/70" : "border-white/85 bg-white/70 hover:border-brand/35")}>
+                        <button type="button" onClick={() => onSelect(lifeEvent)} className={cn("flex items-center gap-1.5 self-start rounded-lg border px-2 py-1.5 text-left", isLatestLive && "lf-block-live-card", isStart ? "col-start-1" : "col-start-5", lifeEvent.seq === selectedSeq ? "border-brand/55 bg-brand-tint/70" : "border-white/85 bg-white/70 hover:border-brand/35")}>
                           <span className={cn("h-2 w-2 shrink-0 rounded-full", isStart ? "bg-brand" : "bg-emerald-500")} />
                           <span className="truncate text-[9px] font-bold text-ink">{lifeEvent.title}</span>
                         </button>
@@ -173,7 +175,7 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
                     return (
                       <div>
                         <div className="grid grid-cols-5 gap-2">
-                          <div style={{ gridColumnStart: lane + 1 }} className={cn("overflow-hidden rounded-lg border p-1 shadow-[0_4px_14px_rgba(48,74,60,0.14)] backdrop-blur-md", selected ? "border-brand/70 bg-white/95 ring-1 ring-brand/25" : "border-white/90 bg-white/75")}>
+                          <div style={{ gridColumnStart: lane + 1 }} className={cn("overflow-hidden rounded-lg border p-1 shadow-[0_4px_14px_rgba(48,74,60,0.14)] backdrop-blur-md", isLatestLive && "lf-block-live-card", selected ? "border-brand/70 bg-white/95 ring-1 ring-brand/25" : "border-white/90 bg-white/75")}>
                             {unit.isRoundStart && unit.round > 0 && (
                               <div className="px-1 pt-1"><span className="rounded-full bg-ochre/15 px-1.5 py-px text-[7.5px] font-bold text-[#9A5B3C]">{'修复 ' + unit.round}</span></div>
                             )}
@@ -681,7 +683,7 @@ export default function CollaborationWorkbench() {
           ) : (
             <>
               <AgentWorkflowSummary events={events} running={active} />
-              <CollaborationRounds events={events} selectedSeq={selectedEvent?.seq ?? null} selectedAgent={effectiveAgent} runningAgent={active && latest ? latest.agent : null} onSelect={(event) => { if (!isLifecycleEvent(event)) setSelectedAgent(event.agent); setSelectedEventSeq(event.seq); }} onSelectAgent={(agentId) => { setSelectedAgent(agentId); setSelectedEventSeq(events.filter((event) => event.agent === agentId).at(-1)?.seq ?? null); }} />
+              <CollaborationRounds events={events} selectedSeq={selectedEvent?.seq ?? null} selectedAgent={effectiveAgent} runningAgent={active && latest ? latest.agent : null} running={active} onSelect={(event) => { if (!isLifecycleEvent(event)) setSelectedAgent(event.agent); setSelectedEventSeq(event.seq); }} onSelectAgent={(agentId) => { setSelectedAgent(agentId); setSelectedEventSeq(events.filter((event) => event.agent === agentId).at(-1)?.seq ?? null); }} />
             </>
           )}
         </div>

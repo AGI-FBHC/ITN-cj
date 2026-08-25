@@ -759,8 +759,8 @@
   50% { box-shadow: 0 0 16px 4px rgba(78,120,96,0.42), 0 4px 14px rgba(78,120,96,0.12); }
 }
 
-/* 泳道最新步骤板块：呼吸光晕闪烁 */
-.lf-block-live > div:last-child {
+/* 泳道最新步骤板块：呼吸光晕闪烁（仅进行中任务的最新板块） */
+.lf-block-live-card {
   animation: lf-block-pulse 1.6s ease-in-out infinite;
 }
 @keyframes lf-block-pulse {
