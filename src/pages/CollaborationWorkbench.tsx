@@ -103,6 +103,7 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
     visited.add(event.agent);
     previousAgent = event.agent;
   }
+  const lastSeq = events.length ? events[events.length - 1].seq : null;
   const blocks: Array<{ key: string; kind: "life" | "unit"; event?: AdminGenerationEvent; unit?: { agent: string; events: AdminGenerationEvent[]; round: number; isRoundStart: boolean } }> = [];
   if (lifecycle[0]) blocks.push({ key: "life-" + lifecycle[0].seq, kind: "life", event: lifecycle[0] });
   units.forEach((unit) => blocks.push({ key: "unit-" + unit.round + "-" + unit.agent + "-" + unit.events[0].seq, kind: "unit", unit }));
@@ -147,7 +148,7 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
             const prevCol = prevBlock ? (prevBlock.kind === "life" ? (prevBlock.event === lifecycle[0] ? 0 : 4) : Math.max(0, agents.findIndex((agent) => agent.id === (prevBlock.unit ? prevBlock.unit.agent : "")))) : 0;
             const curCol = block.kind === "life" ? (block.event === lifecycle[0] ? 0 : 4) : Math.max(0, agents.findIndex((agent) => agent.id === (block.unit ? block.unit.agent : "")));
             return (
-              <div key={block.key} className="board-enter">
+              <div key={block.key} className={cn('board-enter', events.at(-1) && ((block.kind === 'life' && (lastSeq !== null && block.event && block.event.seq === lastSeq)) || (block.kind === 'unit' && block.unit && block.unit.events.some((event) => event.seq === lastSeq))) ? 'lf-block-live' : '')}>
                 {index > 0 && (
                   <FlowLink fromCol={prevCol} toCol={curCol} />
                 )}
@@ -363,7 +364,7 @@ function useSmoothProgress(real: number, cap: number, animating: boolean) {
   return shown;
 }
 
-function WorkbenchTaskItem({ item, selected, onClick }: { item: WorkbenchTask; selected: boolean; onClick: () => void }) {
+function WorkbenchTaskItem({ item, selected, live, onClick }: { item: WorkbenchTask; selected: boolean; live?: boolean; onClick: () => void }) {
   const active = activeStatuses.has(item.status);
   const failed = item.status === 'failed' || item.status === 'cancelled';
   const context = contextOf(item);
@@ -376,6 +377,7 @@ function WorkbenchTaskItem({ item, selected, onClick }: { item: WorkbenchTask; s
       type="button"
       onClick={onClick}
       className={cn('relative w-full overflow-hidden rounded-xl border text-left transition-all',
+        live && 'lf-task-live',
         selected ? 'border-brand/70 bg-white/95 shadow-[0_4px_16px_rgba(78,120,96,0.18)] ring-2 ring-brand/25' :
         active ? 'border-white/85 bg-white/75 hover:border-brand/40' :
         failed ? 'border-rose-200/80 bg-white/70 hover:border-brand/35' :
@@ -650,7 +652,7 @@ export default function CollaborationWorkbench() {
         <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
           <div className="space-y-2">
             {(taskTab === 'active' ? grouped.active : grouped.finished).map((item) => (
-              <WorkbenchTaskItem key={taskKey(item)} item={item} selected={taskKey(item) === selectedKey} onClick={() => setParams({ task: taskKey(item) })} />
+              <WorkbenchTaskItem key={taskKey(item)} item={item} selected={taskKey(item) === selectedKey} live={taskTab === 'active' && taskKey(item) === (grouped.active[0] ? taskKey(grouped.active[0]) : '')} onClick={() => setParams({ task: taskKey(item) })} />
             ))}
             {(taskTab === 'active' ? grouped.active : grouped.finished).length === 0 && (
               <div className="lf-empty rounded-xl p-6 text-xs">{taskTab === 'active' ? '暂无进行中的任务' : '暂无已完成任务'}</div>
