@@ -673,6 +673,8 @@ export default function CollaborationWorkbench() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const selectedKey = params.get('task');
   const loadInFlightRef = useRef(false);
+  const streamBufferRef = useRef<AdminGenerationEvent[]>([]);
+  const streamFlushTimerRef = useRef<number | null>(null);
 
   const load = async () => {
     if (loadInFlightRef.current) return;
@@ -816,8 +818,18 @@ export default function CollaborationWorkbench() {
 
   useEffect(() => {
     void load().catch(() => setLoading(false));
-    const timer = window.setInterval(() => void load().catch(() => undefined), 5000);
-    return () => window.clearInterval(timer);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      void load().catch(() => undefined);
+    }, 6000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void load().catch(() => undefined);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin]);
 
@@ -826,8 +838,33 @@ export default function CollaborationWorkbench() {
     if (!task) return;
     setEvents([]); setSelectedAgent(''); setSelectedEventSeq(null);
     const controller = new AbortController();
-    void streamAdminGenerationTask(task.taskKind, task.id, (event) => setEvents((current) => current.some((item) => item.seq === event.seq) ? current : [...current, event].sort((a, b) => a.seq - b.seq)), controller.signal).catch(() => undefined);
-    return () => controller.abort();
+    const flush = () => {
+      streamFlushTimerRef.current = null;
+      const buffered = streamBufferRef.current;
+      streamBufferRef.current = [];
+      if (!buffered.length) return;
+      setEvents((current) => {
+        const bySeq = new Map(current.map((item) => [item.seq, item]));
+        buffered.forEach((item) => bySeq.set(item.seq, item));
+        return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
+      });
+    };
+    const queueEvent = (event: AdminGenerationEvent) => {
+      streamBufferRef.current.push(event);
+      if (streamFlushTimerRef.current !== null) return;
+      streamFlushTimerRef.current = window.setTimeout(flush, 160);
+    };
+    void streamAdminGenerationTask(task.taskKind, task.id, queueEvent, controller.signal)
+      .finally(flush)
+      .catch(() => undefined);
+    return () => {
+      controller.abort();
+      if (streamFlushTimerRef.current !== null) {
+        window.clearTimeout(streamFlushTimerRef.current);
+        streamFlushTimerRef.current = null;
+      }
+      streamBufferRef.current = [];
+    };
   }, [task?.id, task?.taskKind]);
 
   const latest = events.at(-1);
