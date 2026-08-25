@@ -743,8 +743,22 @@ export default function CollaborationWorkbench() {
     setTasks((current) => current.filter((item) => !keys.includes(taskKey(item))));
     toast.success(keys.length + ' 条任务记录已从列表移除');
   };
-  const deleteTask = (item: WorkbenchTask) => {
-    if (!window.confirm('确定将该任务从列表中移除吗？\n（仅移除任务记录，不影响已生成的资源）')) return;
+  const deleteTask = async (item: WorkbenchTask) => {
+    const finished = item.status === 'completed';
+    const msg = finished
+      ? '确定将该任务从列表中移除吗？\n（已完成任务仅移出列表，不影响已生成的资源）'
+      : '确定永久删除该未完成任务吗？\n（将终止执行并删除其对应的所有任务数据）';
+    if (!window.confirm(msg)) return;
+    if (!finished) {
+      try {
+        if (item.taskKind === 'ppt') await presentationApi.deletePresentation(item.id);
+        else await api.deleteLearningResourceTask(item.id);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : '任务数据删除失败');
+        return;
+      }
+      toast.success('任务及其数据已删除');
+    }
     removeTask([taskKey(item)]);
   };
   const bulkDelete = () => {

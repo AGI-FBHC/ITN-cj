@@ -1303,6 +1303,8 @@ export const api = {
     requestDirect<LearningResourceGenerationTask>(`/v1/learning-resource-tasks/${encodeURIComponent(taskId)}/cancel`, { method: 'POST' }),
   getLearningResource: (resourceId: string) =>
     requestDirect<LearningResource>(`/v1/learning-resources/${encodeURIComponent(resourceId)}`),
+  deleteLearningResourceTask: (taskId: string) =>
+    request<void>(`/v1/learning-resource-tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' }),
   getPersonalizedLearningUnit: (kpId: string, topicId: string, learnerId: string) =>
     requestDirect<PersonalizedLearningUnit>(`/v1/learning-units/${encodeURIComponent(kpId)}/topics/${encodeURIComponent(topicId)}?learnerId=${encodeURIComponent(learnerId)}`),
   prewarmPersonalizedLearningUnits: (learnerId: string) =>
