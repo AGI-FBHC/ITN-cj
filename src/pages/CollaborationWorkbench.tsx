@@ -52,7 +52,7 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
     visited.add(event.agent);
     previousAgent = event.agent;
   }
-  const laneLeft = (lane: number) => 'calc(' + Math.round(((lane + 0.5) / agents.length) * 100) + '% - 1px)';
+
   return (
     <div className="mt-3 overflow-x-auto">
       <div className="relative min-w-[880px] overflow-hidden rounded-2xl border border-white/70 bg-white/20 px-2 pb-2 pt-2">
@@ -102,7 +102,7 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
             ))}
           </div>
         )}
-        {/* 事件序列：紧凑行，初始生成挂在首个事件（第一个 Agent），修复轮次挂在回退到达事件 */}
+        {/* 事件序列：与列头同一 grid-cols-5 对齐；初始生成挂在首个事件，修复轮次挂在回退到达事件 */}
         <div className="relative py-1">
           {rows.map(({ event, round, isRoundStart, backward, jump }, index) => {
             const lane = Math.max(0, agents.findIndex((item) => item.id === event.agent));
@@ -119,30 +119,31 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
                     </span>
                   </div>
                 )}
-                {/* 跳线：向右=交接，向左=修复回退 */}
+                {/* 跳线（与列头同 grid 对齐）：向右=交接，向左=修复回退 */}
                 {prevRow && prevLane !== lane && (
-                  <div className="relative h-2.5">
-                    <span className={cn('absolute top-1/2 h-0', backward ? 'border-t border-dashed border-ochre/70' : 'border-t border-brand/25')}
-                      style={{ left: laneLeft(Math.min(lane, prevLane)), width: 'calc(' + (Math.abs(lane - prevLane) / agents.length) * 100 + '% - 16px)' }} />
-                    {backward ? (
-                      <span className="absolute -top-px rounded-full bg-ochre/15 px-1 text-[7.5px] font-bold text-[#9A5B3C]" style={{ left: laneLeft(lane) }}>{'↩' + jump + '级'}</span>
-                    ) : (
-                      <span className="absolute -top-1.5 text-[8px] text-brand/55" style={{ left: laneLeft(lane) }}>›</span>
-                    )}
+                  <div className="grid h-3 grid-cols-5 gap-2">
+                    <div className="relative" style={{ gridColumn: (Math.min(lane, prevLane) + 1) + ' / ' + (Math.max(lane, prevLane) + 2) }}>
+                      <span className={cn('absolute left-[-4px] right-[-4px] top-1/2 h-0', backward ? 'border-t border-dashed border-ochre/70' : 'border-t border-brand/25')} />
+                      {backward ? (
+                        <span className="absolute -top-px right-0 rounded-full bg-ochre/15 px-1 text-[7.5px] font-bold text-[#9A5B3C]">{'↩' + jump + '级'}</span>
+                      ) : (
+                        <span className="absolute -top-1.5 right-0 text-[8px] text-brand/55">›</span>
+                      )}
+                    </div>
                   </div>
                 )}
-                {/* 事件行 */}
-                <div className="relative h-6">
+                {/* 事件行（与列头同 grid 对齐） */}
+                <div className="grid h-6 grid-cols-5 gap-2">
                   <button
                     type="button"
                     onClick={() => onSelect(event)}
-                    className={cn('absolute top-0 flex h-6 max-w-[76%] items-center gap-1 rounded-md px-1.5 transition-colors', selected ? 'bg-brand-tint/80 ring-1 ring-brand/25' : 'hover:bg-white/70')}
-                    style={{ left: laneLeft(lane) }}
+                    style={{ gridColumnStart: lane + 1, gridRowStart: 1 }}
+                    className={cn('flex items-center gap-1 overflow-hidden rounded-md px-1.5 transition-colors', selected ? 'bg-brand-tint/80 ring-1 ring-brand/25' : 'hover:bg-white/70')}
                     title={event.detail || event.title}
                   >
                     <span className={cn('h-2 w-2 shrink-0 rounded-full', selected ? 'bg-brand ring-2 ring-brand/25' : backward || round > 0 ? 'bg-ochre' : 'bg-brand/50')} />
                     <span className="truncate text-[9.5px] font-semibold text-ink">{event.title}</span>
-                    <span className="shrink-0 font-mono text-[7.5px] tabular-nums text-ink-muted">{event.time ? new Date(event.time).toLocaleTimeString('zh-CN', { hour12: false }) : '#' + event.seq}</span>
+                    <span className="ml-auto shrink-0 font-mono text-[7.5px] tabular-nums text-ink-muted">{event.time ? new Date(event.time).toLocaleTimeString('zh-CN', { hour12: false }) : '#' + event.seq}</span>
                   </button>
                 </div>
               </div>
