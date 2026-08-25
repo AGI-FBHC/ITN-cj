@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import {
   ArchiveRestore, ArrowLeft, Ban, BookOpen, CheckCircle2, ChevronDown, ChevronRight, ClipboardList,
-  Eye, FileText, FolderTree, LayoutTemplate, ListChecks, Loader2, MonitorPlay, Radio, RefreshCw, Sparkles, Trash2, Wrench, X, XCircle,
+  Eye, FileText, FolderTree, LayoutTemplate, ListChecks, Loader2, MonitorPlay, Plus, Radio, RefreshCw, Sparkles, Trash2, Wrench, X, XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { api, streamAdminGenerationTask, type AdminGenerationEvent, type AdminResourceDetail, type AdminResourceItem, type AdminResourceStats, type LearningResourceGenerateInput, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
-import { presentationApi, type PresentationTaskSummary } from '@/lib/presentationApi';
+import { presentationApi, type PresentationRequest, type PresentationTaskSummary } from '@/lib/presentationApi';
 import { useCachedData } from '@/hooks/useCachedData';
 import { clearCacheStartsWith } from '@/lib/swrCache';
 import ResourcePreview from '@/components/admin/ResourcePreview';
@@ -48,7 +48,9 @@ export default function ResourceCenterAdmin() {
   const [focusTask, setFocusTask] = useState<string | null>(null);
   const [processTask, setProcessTask] = useState<GenerationTask | null>(null);
   const [generationTasks, setGenerationTasks] = useState<GenerationTask[]>([]);
-  const generationBusy = false; // 预生成弹窗已由 AI 教研工作台承载，busy 常为 false
+  const [generationModalOpen, setGenerationModalOpen] = useState(false);
+  const [selectedKinds, setSelectedKinds] = useState<Set<ResourceKind>>(new Set(['lecture', 'practice', 'quiz', 'ppt']));
+  const [generationBusy, setGenerationBusy] = useState(false);
 
   /* ---- SWR 缓存：先展示缓存，后台异步更新 ---- */
   const domainsQ = useCachedData<RagDomain[]>('admin:rag-domains', () => api.listRagDomains(), { ttlMs: 30_000 });
@@ -104,6 +106,59 @@ export default function ResourceCenterAdmin() {
       window.clearInterval(timer);
     };
   }, []);
+
+  const generationContext = () => ({
+    adminGeneration: true,
+    domainCode: domain?.code,
+    nodeCode: node?.nodeCode,
+    topicName: node?.name,
+    kpId: node?.nodeCode,
+  });
+
+  const startGeneration = async (target: ResourceKind) => {
+    if (!node || !domain || domain.code === '__unassigned__') throw new Error('请先选择一个具体知识点');
+    if (target === 'ppt') {
+      const request: PresentationRequest = {
+        requirement: `围绕“${node.name}”生成一份面向学习者的完整交互课件，内容准确、结构清晰，并适合课堂讲解与自主学习。`,
+        title: node.name,
+        audience: 'students', purpose: 'courseware', style: 'education', backgroundStyle: 'blue-white-minimal',
+        language: 'zh-CN', slideCount: 0, aspectRatio: '16:9', detailLevel: 'detailed',
+        includeSpeakerNotes: true, modelProvider: 'mimo', generationMode: 'template', generationContext: generationContext(),
+      };
+      const task = await presentationApi.createPresentation(request);
+      return { taskKind: 'ppt' as const, id: task.id };
+    }
+    const request: LearningResourceGenerateInput = {
+      topic: node.name,
+      title: `${node.name} · ${typeText[target]}`,
+      kpId: node.nodeCode,
+      detailLevel: 'detailed',
+      questionCount: target === 'quiz' ? 12 : undefined,
+      generationContext: generationContext(),
+    };
+    const task = await api.startLearningResourceTask(target, request);
+    return { taskKind: 'resource' as const, id: task.id };
+  };
+
+  const startSelected = async () => {
+    const targets = [...selectedKinds];
+    if (!targets.length) return;
+    setGenerationBusy(true);
+    try {
+      const results = await Promise.allSettled(targets.map(startGeneration));
+      const successful = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
+      const failedCount = results.length - successful.length;
+      if (failedCount) toast.error(`${failedCount} 项生成任务未能启动`);
+      if (!successful.length) return;
+      toast.success(`已启动 ${successful.length} 项生成任务`);
+      setGenerationModalOpen(false);
+      await loadGenerationTasks();
+      const first = successful[0];
+      navigate(`/admin/workbench?task=${first.taskKind}-${first.id}`);
+    } finally {
+      setGenerationBusy(false);
+    }
+  };
 
 
 
@@ -262,9 +317,18 @@ export default function ResourceCenterAdmin() {
           <h2 className="mt-2 text-xl font-bold tracking-tight text-ink">{node?.name || domain.name} · 资源管理</h2>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => navigate('/admin/workbench')} className="lf-row-btn lf-row-btn-primary">
+          <button onClick={() => navigate('/admin/workbench')} className="lf-row-btn">
             <Sparkles size={13} />
             AI 教研工作台
+          </button>
+          <button
+            disabled={!node || domain.code === '__unassigned__'}
+            onClick={() => { setSelectedKinds(new Set([kind])); setGenerationModalOpen(true); }}
+            className="lf-row-btn lf-row-btn-primary disabled:cursor-not-allowed disabled:opacity-50"
+            title={!node ? '请先从左侧选择具体知识点' : undefined}
+          >
+            <Plus size={13} />
+            生成资源
           </button>
         </div>
       </div>
@@ -433,6 +497,21 @@ export default function ResourceCenterAdmin() {
           )}
         </section>
       </div>
+      <PreGenerationModal
+        open={generationModalOpen}
+        domainName={domain.name}
+        nodeName={node?.name ?? ''}
+        selected={selectedKinds}
+        busy={generationBusy}
+        onClose={() => setGenerationModalOpen(false)}
+        onToggle={(target) => setSelectedKinds((current) => {
+          const next = new Set(current);
+          if (next.has(target)) next.delete(target); else next.add(target);
+          return next;
+        })}
+        onSelectAll={() => setSelectedKinds(new Set(['lecture', 'practice', 'quiz', 'ppt']))}
+        onSubmit={() => void startSelected()}
+      />
       <TaskDrawer open={taskDrawerOpen} tasks={generationTasks} busy={generationBusy} focusTaskId={focusTask} onClose={() => { setTaskDrawerOpen(false); setFocusTask(null); }} onCancel={() => undefined} onRetry={() => undefined} onInspect={setProcessTask} />
       <GenerationProcessModal task={processTask} onClose={() => setProcessTask(null)} />
     </div>
@@ -440,6 +519,37 @@ export default function ResourceCenterAdmin() {
 }
 
 const activeGenerationStatuses = new Set(['queued', 'retrieving', 'planning', 'analyzing', 'generating', 'verifying', 'reviewing', 'revising', 'judging', 'outline_review']);
+
+function PreGenerationModal({ open, domainName, nodeName, selected, busy, onClose, onToggle, onSelectAll, onSubmit }: {
+  open: boolean;
+  domainName: string;
+  nodeName: string;
+  selected: Set<ResourceKind>;
+  busy: boolean;
+  onClose: () => void;
+  onToggle: (kind: ResourceKind) => void;
+  onSelectAll: () => void;
+  onSubmit: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-ink/25 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+      <div className="lf-card w-full max-w-2xl rounded-3xl p-6 shadow-2xl">
+        <div className="flex items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand-tint text-brand"><Plus size={20} /></div>
+          <div className="min-w-0 flex-1"><h3 className="text-lg font-bold text-ink">生成机构通用资源</h3><p className="mt-1 text-xs text-ink-muted">生成结果进入机构资源库，不直接绑定学习者。</p></div>
+          <button disabled={busy} onClick={onClose} className="lf-row-btn !p-2" aria-label="关闭"><X size={15} /></button>
+        </div>
+        <div className="mt-5 rounded-2xl bg-white/55 px-4 py-3"><p className="text-[11px] text-ink-muted">生成位置</p><p className="mt-1 text-sm font-semibold text-ink">{domainName}<span className="mx-1 text-ink-muted">/</span>{nodeName}</p></div>
+        <div className="mt-5 flex items-center justify-between"><p className="text-sm font-bold text-ink">选择资源类型</p><button type="button" onClick={onSelectAll} className="text-xs font-semibold text-brand">选择全部</button></div>
+        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+          {kinds.map(([id, label, note, Icon]) => <button type="button" key={id} onClick={() => onToggle(id)} className={cn('rounded-2xl border p-3 text-left transition-all', selected.has(id) ? 'border-brand/50 bg-brand-tint/70 ring-1 ring-brand/30' : 'border-white/80 bg-white/45 hover:bg-white/70')}><div className="flex items-center justify-between"><Icon size={17} className={selected.has(id) ? 'text-brand' : 'text-ink-muted'} />{selected.has(id) && <CheckCircle2 size={15} className="text-brand" />}</div><p className="mt-3 text-sm font-bold text-ink">{label}</p><p className="mt-1 text-[10px] text-ink-muted">{note}</p></button>)}
+        </div>
+        <div className="mt-6 flex justify-end gap-2 border-t border-white/70 pt-4"><button disabled={busy} onClick={onClose} className="lf-row-btn">取消</button><button disabled={busy || selected.size === 0} onClick={onSubmit} className="lf-row-btn lf-row-btn-primary min-w-28 justify-center disabled:opacity-50">{busy ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}开始生成{selected.size ? `（${selected.size}项）` : ''}</button></div>
+      </div>
+    </div>
+  );
+}
 
 
 
