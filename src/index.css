@@ -680,6 +680,14 @@
   border-radius: 3px;
   animation: lf-flow-down 0.9s linear infinite;
 }
+/* 折线数据流：流光沿拐弯路径流动（stroke-dashoffset 负向循环） */
+.lf-flow-glow {
+  stroke-dasharray: 26 130;
+  stroke-linecap: round;
+  animation: lf-dash-flow 1.15s linear infinite;
+}
+@keyframes lf-dash-flow { to { stroke-dashoffset: -156; } }
+
 @keyframes lf-flow-down {
   0% { transform: translateY(-10px); opacity: 0; }
   14% { opacity: 1; }

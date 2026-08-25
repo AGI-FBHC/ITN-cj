@@ -41,12 +41,22 @@ function isLifecycleEvent(event: AdminGenerationEvent) {
 }
 
 /** 板块间数据流连接器：上板块底部点 → 加粗虚线（自上而下闪烁） → 下板块顶部点 */
-function FlowLink() {
+/** 板块间折线数据流：从上一板块底部中点向下 → 水平拐弯 → 下一板块顶部中点；流光沿路径自上而下流动 */
+function FlowLink({ fromCol, toCol }: { fromCol: number; toCol: number }) {
+  const lanes = agents.length;
+  const x1 = ((fromCol + 0.5) / lanes) * 100;
+  const x2 = ((toCol + 0.5) / lanes) * 100;
+  const path = x1 === x2
+    ? 'M ' + x1 + ' 0 L ' + x1 + ' 100'
+    : 'M ' + x1 + ' 0 L ' + x1 + ' 46 L ' + x2 + ' 46 L ' + x2 + ' 100';
   return (
-    <div className="flex flex-col items-center" aria-hidden>
-      <span className="h-1.5 w-1.5 rounded-full bg-brand/80 shadow-[0_0_6px_rgba(78,120,96,0.8)]" />
-      <span className="lf-flow-line" />
-      <span className="h-1.5 w-1.5 rounded-full bg-brand/80 shadow-[0_0_6px_rgba(78,120,96,0.8)]" />
+    <div className="relative h-10" aria-hidden>
+      <span className="absolute -top-1 h-2 w-2 -translate-x-1/2 rounded-full bg-brand/90 shadow-[0_0_6px_rgba(78,120,96,0.9)]" style={{ left: x1 + '%' }} />
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 block h-full w-full">
+        <path d={path} fill="none" stroke="rgba(78,120,96,0.5)" strokeWidth="2.5" strokeDasharray="7 6" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <path d={path} fill="none" stroke="rgba(170, 232, 196, 0.95)" strokeWidth="3.5" className="lf-flow-glow" vectorEffect="non-scaling-stroke" />
+      </svg>
+      <span className="absolute bottom-0 h-2 w-2 -translate-x-1/2 rounded-full bg-brand/90 shadow-[0_0_6px_rgba(78,120,96,0.9)]" style={{ left: x2 + '%' }} />
     </div>
   );
 }
@@ -119,10 +129,11 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
           {blocks.map((block, index) => {
             const prevBlock = blocks[index - 1];
             const prevCol = prevBlock ? (prevBlock.kind === "life" ? (prevBlock.event === lifecycle[0] ? 0 : 4) : Math.max(0, agents.findIndex((agent) => agent.id === (prevBlock.unit ? prevBlock.unit.agent : "")))) : 0;
+            const curCol = block.kind === "life" ? (block.event === lifecycle[0] ? 0 : 4) : Math.max(0, agents.findIndex((agent) => agent.id === (block.unit ? block.unit.agent : "")));
             return (
               <div key={block.key}>
                 {index > 0 && (
-                  <div className="grid grid-cols-5 gap-2"><div style={{ gridColumnStart: prevCol + 1 }} className="flex justify-center"><FlowLink /></div></div>
+                  <FlowLink fromCol={prevCol} toCol={curCol} />
                 )}
                 {block.kind === "life" && block.event ? (
                   (function () {
