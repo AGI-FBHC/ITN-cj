@@ -171,15 +171,11 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
                     const selected = unit.events.some((event) => event.seq === selectedSeq);
                     return (
                       <div>
-                        {unit.isRoundStart && (
-                          <div className="relative h-5">
-                            <span className={cn("absolute left-1 top-0 rounded-full px-1.5 py-px text-[8px] font-bold", unit.round === 0 ? "bg-brand-tint text-brand" : "bg-ochre/15 text-[#9A5B3C]")}>
-                              {unit.round === 0 ? "主流程" : "自主修复第 " + unit.round + " 轮"}
-                            </span>
-                          </div>
-                        )}
                         <div className="grid grid-cols-5 gap-2">
                           <div style={{ gridColumnStart: lane + 1 }} className={cn("overflow-hidden rounded-lg border p-1 shadow-[0_4px_14px_rgba(48,74,60,0.14)] backdrop-blur-md", selected ? "border-brand/70 bg-white/95 ring-1 ring-brand/25" : "border-white/90 bg-white/75")}>
+                            {unit.isRoundStart && unit.round > 0 && (
+                              <div className="px-1 pt-1"><span className="rounded-full bg-ochre/15 px-1.5 py-px text-[7.5px] font-bold text-[#9A5B3C]">{'修复 ' + unit.round}</span></div>
+                            )}
                             {unit.events.map((event) => {
                               const isConsistencyDebate = event.title === "内容—证据一致性辩论完成";
                               return (
