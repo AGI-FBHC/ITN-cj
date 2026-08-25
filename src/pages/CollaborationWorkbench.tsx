@@ -20,13 +20,8 @@ const agents = [
   { id: 'ARB-05', name: '发布仲裁 Agent', duty: '通过、返工或终止' },
 ] as const;
 const activeStatuses = new Set(['queued', 'retrieving', 'debating', 'planning', 'analyzing', 'generating', 'verifying', 'reviewing', 'revising', 'judging', 'outline_review']);
-/** 执行阶段 → 进度上限：缓冲推进绝不超过当前阶段目标，避免'才到拆解就 96%' */
-const STAGE_CAPS: Record<string, number> = {
-  queued: 2, retrieving: 12, planning: 28, analyzing: 28, outline_review: 40,
-  generating: 55, verifying: 68, reviewing: 76, revising: 80, debating: 74, judging: 88,
-  completed: 100,
-};
 const typeText: Record<string, string> = { lecture: '讲义', practice: '实操指南', quiz: '题库', ppt: '交互课件' };
+
 function eventDisplayTitle(event: AdminGenerationEvent) {
   if (event.title === '内容—证据一致性辩论完成') return '一致性辩论组';
   return event.title.replace('轻量质量检查', '质量检查').replace('轻量检查', '质量检查');
@@ -359,46 +354,19 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
     </div>
   );
 }
-function useSmoothProgress(real: number, cap: number, animating: boolean) {
-  const [shown, setShown] = useState(Math.min(real, cap));
-  const realRef = { current: real };
-  const capRef = { current: cap };
-  realRef.current = real;
-  capRef.current = cap;
-  useEffect(() => {
-    if (!animating) { setShown(realRef.current); return; }
-    const id = window.setInterval(() => {
-      setShown((current) => {
-        const rv = realRef.current;
-        /* 真实进度领先：快速吸附到真实值（精确优先） */
-        if (rv > current + 0.01) return Math.min(100, current + Math.max(0.6, (rv - current) * 0.45));
-        /* 此前蠕行超出真实值：回落贴近 */
-        if (current > rv + 0.6) return Math.max(4, current - 0.9);
-        /* 真实值静止：只在真实值 ±5 与阶段帽内做极缓慢微蠕，保持动感但不忽悠 */
-        return Math.min(capRef.current, Math.min(rv + 5, current + 0.12));
-      });
-    }, 320);
-    return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [animating]);
-  return shown;
-}
 
 function WorkbenchTaskItem({ item, selected, bulkMode, checked, onPreview, onCancel, onDelete, onClick }: { item: WorkbenchTask; selected: boolean; bulkMode: boolean; checked: boolean; onPreview?: (item: WorkbenchTask) => void; onCancel?: (item: WorkbenchTask) => void; onDelete?: (item: WorkbenchTask) => void; onClick: () => void }) {
   const active = activeStatuses.has(item.status);
   const failed = item.status === 'failed' || item.status === 'cancelled';
   const context = contextOf(item);
   const done = item.status === 'completed';
-  const stageCap = failed ? Math.max(item.progress, 4) : (STAGE_CAPS[item.status] ?? 90);
-  const shown = useSmoothProgress(done ? 100 : item.progress, failed ? stageCap : (done ? 100 : stageCap), active);
-  const fillPct = done || failed || !active ? Math.max(4, done ? 100 : item.progress) : Math.max(4, Math.round(shown));
+  const fillPct = done ? 100 : Math.max(3, item.progress);
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn('relative w-full overflow-hidden rounded-xl border text-left transition-all',
         selected ? 'border-brand/70 bg-white/95 shadow-[0_4px_16px_rgba(78,120,96,0.18)] ring-2 ring-brand/25' :
-        active ? 'border-white/85 bg-white/75 hover:border-brand/40' :
         failed ? 'border-rose-200/80 bg-white/70 hover:border-brand/35' :
         'border-white/80 bg-white/60 hover:border-brand/40')}
     >
