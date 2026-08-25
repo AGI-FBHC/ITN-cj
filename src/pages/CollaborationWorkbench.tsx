@@ -111,16 +111,18 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
   units.forEach((unit) => blocks.push({ key: "unit-" + unit.round + "-" + unit.agent + "-" + unit.events[0].seq, kind: "unit", unit }));
   lifecycle.slice(1).forEach((event) => blocks.push({ key: "life-" + event.seq, kind: "life", event }));
   return (
-    <div className="mt-3 overflow-x-auto">
-      <div className="relative min-w-[880px] overflow-hidden rounded-2xl border border-white/90 bg-white/40 px-2 pb-2 pt-2 shadow-[0_8px_28px_rgba(48,74,60,0.10)] backdrop-blur-xl">
-        {/* 泳道背景：整板（含列头区域）无缝交替着色 + 四根贯穿竖线分隔五列 */}
+    <div className="h-full overflow-x-auto">
+      <div className="relative min-w-[880px] h-full min-h-[420px] overflow-y-auto rounded-2xl border border-white/90 bg-white/40 px-2 pb-2 pt-0 shadow-[0_8px_28px_rgba(48,74,60,0.10)] backdrop-blur-xl">
+        <div className="relative">
+        {/* 泳道背景：内容 wrapper 内 inset-0，覆盖全部滚动内容高度 */}
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute inset-0 grid grid-cols-5">
             {agents.map((agent, index) => (<div key={agent.id} className={cn(index % 2 ? 'bg-[#E7F0E9]/90' : 'bg-[#F8EFDD]/95')} />))}
           </div>
           {[1, 2, 3, 4].map((i) => (<span key={i} className="absolute top-0 bottom-0 w-px bg-ink-muted/20" style={{ left: (i * 20) + '%', transform: 'translateX(-50%)' }} />))}
         </div>
-        {/* 列头 = AI 教研组成员，点击进入该成员 */}
+        {/* 列头 = AI 教研组成员，点击进入该成员（sticky 固定顶部，仅下方流程滚动） */}
+        <div className="sticky top-0 z-20 -mx-2 mb-1 border-b border-white/70 bg-[#F2EEE2]/95 px-2 pb-2 pt-2 backdrop-blur-xl shadow-[0_2px_10px_rgba(48,74,60,0.08)]">
         <div className="relative grid grid-cols-5 gap-2">
           {agents.map((agent) => {
             const own = events.filter((event) => event.agent === agent.id);
@@ -142,6 +144,7 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
               </button>
             );
           })}
+        </div>
         </div>
         {/* 系统起点 + Agent 阶段板块 + 系统终点：板块间以自上而下闪烁的虚线连接（上板块底部点 → 下板块顶部点） */}
         <div className="relative pt-2">
@@ -199,7 +202,8 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
             );
           })}
           {!units.length && lifecycle.length < 1 && <p className="relative py-6 text-center text-xs text-ink-muted">等待第一条协同事件…</p>}
-      </div>
+        </div>
+        </div>
       </div>
     </div>
   );
@@ -713,12 +717,14 @@ export default function CollaborationWorkbench() {
           </div>
           <span className="text-[10px] text-ink-muted">列头即成员 · 时间自上而下</span>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
           {!task ? (
             <div className="flex h-full items-center justify-center text-sm text-ink-muted">{loading ? '正在读取教研任务…' : '还没有可以查看的教研任务'}</div>
           ) : (
             <>
               <AgentWorkflowSummary events={events} running={active} />
+              <div className="min-h-0 flex-1">
+              </div>
               <CollaborationRounds events={events} selectedSeq={selectedEvent?.seq ?? null} selectedAgent={effectiveAgent} runningAgent={active && latest ? latest.agent : null} running={active} onSelect={(event) => { if (!isLifecycleEvent(event)) setSelectedAgent(event.agent); setSelectedEventSeq(event.seq); }} onSelectAgent={(agentId) => { setSelectedAgent(agentId); setSelectedEventSeq(events.filter((event) => event.agent === agentId).at(-1)?.seq ?? null); }} />
             </>
           )}
