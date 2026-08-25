@@ -11,12 +11,13 @@ const verdictMeta: Record<string, { label: string; cls: string }> = {
   rejected: { label: '不采用', cls: 'bg-rose-100 text-rose-700' },
 };
 
-export default function EvidenceDebateCourt({ events, archive }: { events?: EventLike[]; archive?: Record<string, unknown> | null }) {
+export default function EvidenceDebateCourt({ events, archive, hideIdle = false }: { events?: EventLike[]; archive?: Record<string, unknown> | null; hideIdle?: boolean }) {
   const snapshots = (events ?? []).map((item) => item.snapshot ?? {});
   const triggeredSnapshot = [...snapshots].reverse().find((item) => item.debateTriggered === true);
   const noNeed = snapshots.some((item) => item.debateTriggered === false);
   const triggered = archive?.triggered === true || Boolean(triggeredSnapshot);
   if (!triggered && !noNeed) return null;
+  if (!triggered && hideIdle) return null;
   if (!triggered) return <div className="mt-4 flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 px-4 py-3"><CheckCircle2 size={17} className="text-emerald-650"/><div><p className="text-xs font-bold text-emerald-800">知识库依据充分</p><p className="mt-0.5 text-[11px] text-emerald-700/80">本次无需启动多源证据辩论庭。</p></div></div>;
   const scorecard = asRecord(archive?.scorecard ?? triggeredSnapshot?.debateScorecard);
   const claimsRaw = Array.isArray(archive?.claims) ? archive?.claims : Array.isArray(triggeredSnapshot?.debateClaims) ? triggeredSnapshot?.debateClaims : [];

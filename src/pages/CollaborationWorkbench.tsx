@@ -36,19 +36,17 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
 }) {
   const lifecycle = events.filter(isLifecycleEvent);
   const work = events.filter((event) => !isLifecycleEvent(event));
-  const rows: Array<{ event: AdminGenerationEvent; round: number; isRoundStart: boolean; backward: boolean; jump: number }> = [];
+  const rows: Array<{ event: AdminGenerationEvent; round: number; isRoundStart: boolean }> = [];
   let round = 0;
   const visited = new Set<string>();
   let previousAgent = '';
   for (const event of work) {
-    const lane = Math.max(0, agents.findIndex((item) => item.id === event.agent));
     const prevRow = rows.at(-1);
-    const prevLane = prevRow ? Math.max(0, agents.findIndex((item) => item.id === prevRow.event.agent)) : lane;
     const reentry = event.agent !== previousAgent && visited.has(event.agent);
     const repairSignal = ['revising', 'debating'].includes(event.status) || ['revising', 'debating'].includes(event.phase);
     const isNewRound = (reentry || repairSignal) && prevRow !== undefined && prevRow.event.agent !== event.agent;
     if (isNewRound) round += 1;
-    rows.push({ event, round, isRoundStart: isNewRound || rows.length === 0, backward: lane < prevLane, jump: Math.abs(lane - prevLane) });
+    rows.push({ event, round, isRoundStart: isNewRound || rows.length === 0 });
     visited.add(event.agent);
     previousAgent = event.agent;
   }
@@ -104,10 +102,8 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
         )}
         {/* 事件序列：与列头同一 grid-cols-5 对齐；初始生成挂在首个事件，修复轮次挂在回退到达事件 */}
         <div className="relative py-1">
-          {rows.map(({ event, round, isRoundStart, backward, jump }, index) => {
+          {rows.map(({ event, round, isRoundStart }) => {
             const lane = Math.max(0, agents.findIndex((item) => item.id === event.agent));
-            const prevRow = rows[index - 1];
-            const prevLane = prevRow ? Math.max(0, agents.findIndex((item) => item.id === prevRow.event.agent)) : lane;
             const selected = event.seq === selectedSeq;
             return (
               <div key={event.seq}>
@@ -119,19 +115,6 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
                     </span>
                   </div>
                 )}
-                {/* 跳线（与列头同 grid 对齐）：向右=交接，向左=修复回退 */}
-                {prevRow && prevLane !== lane && (
-                  <div className="grid h-3 grid-cols-5 gap-2">
-                    <div className="relative" style={{ gridColumn: (Math.min(lane, prevLane) + 1) + ' / ' + (Math.max(lane, prevLane) + 2) }}>
-                      <span className={cn('absolute left-[-4px] right-[-4px] top-1/2 h-0', backward ? 'border-t border-dashed border-ochre/70' : 'border-t border-brand/25')} />
-                      {backward ? (
-                        <span className="absolute -top-px right-0 rounded-full bg-ochre/15 px-1 text-[7.5px] font-bold text-[#9A5B3C]">{'↩' + jump + '级'}</span>
-                      ) : (
-                        <span className="absolute -top-1.5 right-0 text-[8px] text-brand/55">›</span>
-                      )}
-                    </div>
-                  </div>
-                )}
                 {/* 事件行（与列头同 grid 对齐） */}
                 <div className="grid h-6 grid-cols-5 gap-2">
                   <button
@@ -141,7 +124,7 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
                     className={cn('flex items-center gap-1 overflow-hidden rounded-md px-1.5 transition-colors', selected ? 'bg-brand-tint/80 ring-1 ring-brand/25' : 'hover:bg-white/70')}
                     title={event.detail || event.title}
                   >
-                    <span className={cn('h-2 w-2 shrink-0 rounded-full', selected ? 'bg-brand ring-2 ring-brand/25' : backward || round > 0 ? 'bg-ochre' : 'bg-brand/50')} />
+                    <span className={cn('h-2 w-2 shrink-0 rounded-full', selected ? 'bg-brand ring-2 ring-brand/25' : round > 0 ? 'bg-ochre' : 'bg-brand/50')} />
                     <span className="truncate text-[9.5px] font-semibold text-ink">{event.title}</span>
                     <span className="ml-auto shrink-0 font-mono text-[7.5px] tabular-nums text-ink-muted">{event.time ? new Date(event.time).toLocaleTimeString('zh-CN', { hour12: false }) : '#' + event.seq}</span>
                   </button>
@@ -153,6 +136,36 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
         </div>
       </div>
     </div>
+  );
+}
+
+function AgentWorkflowSummary({ events, running }: { events: AdminGenerationEvent[]; running: boolean }) {
+  const path = events.filter((event) => !isLifecycleEvent(event)).reduce<string[]>((result, event) => {
+    if (result.at(-1) !== event.agent) result.push(event.agent);
+    return result;
+  }, []);
+  if (!path.length) return null;
+  return (
+    <section className="mt-4 rounded-2xl border border-white/75 bg-white/45 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="mr-1 text-[10px] font-bold text-ink-muted">本次协同路径</span>
+        {path.map((agentId, index) => {
+          const agent = agents.find((item) => item.id === agentId);
+          const repeated = path.indexOf(agentId) !== index;
+          const current = running && index === path.length - 1;
+          return (
+            <span key={`${agentId}-${index}`} className="contents">
+              {index > 0 && <span className="text-[10px] text-ink-muted/55">→</span>}
+              <span className={cn('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold', current ? 'border-brand/40 bg-brand-tint text-brand' : repeated ? 'border-ochre/30 bg-ochre/10 text-[#9A5B3C]' : 'border-white/85 bg-white/70 text-ink-2')}>
+                {current && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand" />}
+                {agent?.name ?? agentId}
+                {repeated && <span className="text-[8px] font-bold">再次进入</span>}
+              </span>
+            </span>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -332,7 +345,7 @@ export default function CollaborationWorkbench() {
               {task && <p className="mt-0.5 truncate text-[9.5px] text-ink-muted">{task.title} · {active ? '实时协同中' : task.status === 'completed' ? '已通过' : task.status === 'failed' ? '未通过' : task.status}</p>}
             </div>
           </div>
-          <span className="text-[10px] text-ink-muted">列头即成员 · 向右=交接 · 向左虚线=修复回退</span>
+          <span className="text-[10px] text-ink-muted">列头即成员 · 时间自上而下</span>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {!task ? (
@@ -340,7 +353,8 @@ export default function CollaborationWorkbench() {
           ) : (
             <>
               <CollaborationRounds events={events} selectedSeq={selectedEvent?.seq ?? null} selectedAgent={effectiveAgent} runningAgent={active && latest ? latest.agent : null} onSelect={(event) => { if (!isLifecycleEvent(event)) setSelectedAgent(event.agent); setSelectedEventSeq(event.seq); }} onSelectAgent={(agentId) => { setSelectedAgent(agentId); setSelectedEventSeq(events.filter((event) => event.agent === agentId).at(-1)?.seq ?? null); }} />
-              <EvidenceDebateCourt events={events} />
+              <AgentWorkflowSummary events={events} running={active} />
+              <EvidenceDebateCourt events={events} hideIdle />
             </>
           )}
         </div>
