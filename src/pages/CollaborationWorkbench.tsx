@@ -40,6 +40,17 @@ function isLifecycleEvent(event: AdminGenerationEvent) {
     || ['任务已创建', '任务取消', '生成完成', '任务已结束', '任务被取消'].includes(event.title);
 }
 
+/** 板块间数据流连接器：上板块底部点 → 加粗虚线（自上而下闪烁） → 下板块顶部点 */
+function FlowLink() {
+  return (
+    <div className="flex flex-col items-center" aria-hidden>
+      <span className="h-1.5 w-1.5 rounded-full bg-brand/80 shadow-[0_0_6px_rgba(78,120,96,0.8)]" />
+      <span className="lf-flow-line" />
+      <span className="h-1.5 w-1.5 rounded-full bg-brand/80 shadow-[0_0_6px_rgba(78,120,96,0.8)]" />
+    </div>
+  );
+}
+
 function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent, onSelect, onSelectAgent }: {
   events: AdminGenerationEvent[];
   selectedSeq: number | null;
@@ -99,51 +110,62 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
             );
           })}
         </div>
-        {/* 系统起点 + Agent 阶段块 + 系统终点：无回环时自然形成左上到右下的阶梯 */}
+        {/* 系统起点 + Agent 阶段板块 + 系统终点：板块间以自上而下闪烁的虚线连接（上板块底部点 → 下板块顶部点） */}
         <div className="relative pt-2">
-          {lifecycle[0] && (
-            <div className="grid min-h-9 grid-cols-5 gap-2">
-              <button type="button" onClick={() => onSelect(lifecycle[0])} className={cn('col-start-1 flex items-center gap-1.5 self-start rounded-lg border px-2 py-1.5 text-left', lifecycle[0].seq === selectedSeq ? 'border-brand/45 bg-brand-tint/70' : 'border-white/85 bg-white/65 hover:border-brand/30')}>
-                <span className="h-2 w-2 shrink-0 rounded-full bg-brand" /><span className="truncate text-[9px] font-bold text-ink">{lifecycle[0].title}</span><span className="ml-auto text-[7.5px] text-ink-muted">系统</span>
-              </button>
-            </div>
-          )}
-          {units.map((unit) => {
-            const lane = Math.max(0, agents.findIndex((item) => item.id === unit.agent));
-            const selected = unit.events.some((event) => event.seq === selectedSeq);
-            return (
-              <div key={`${unit.round}-${unit.agent}-${unit.events[0].seq}`}>
-                {/* 轮次起始标签（初始生成 / 修复N） */}
-                {unit.isRoundStart && (
-                  <div className="relative h-5">
-                    <span className={cn('absolute left-1 top-0 rounded-full px-1.5 py-px text-[8px] font-bold', unit.round === 0 ? 'bg-brand-tint text-brand' : 'bg-ochre/15 text-[#9A5B3C]')}>
-                      {unit.round === 0 ? '主流程' : '自主修复第 ' + unit.round + ' 轮'}
-                    </span>
-                  </div>
-                )}
-                <div className="grid min-h-9 grid-cols-5 gap-2 pb-2">
-                  <div style={{ gridColumnStart: lane + 1 }} className={cn('overflow-hidden rounded-lg border p-1 shadow-[0_4px_14px_rgba(48,74,60,0.14)] backdrop-blur-md', selected ? 'border-brand/45 bg-brand-tint/65 ring-1 ring-brand/15' : unit.round > 0 ? 'border-ochre/25 bg-white/70' : 'border-white/85 bg-white/70')}>
-                    {unit.events.map((event) => {
-                      const isConsistencyDebate = event.title === '内容—证据一致性辩论完成';
-                      return (
-                        <button key={event.seq} type="button" onClick={() => onSelect(event)} title={event.detail || event.title} className={cn('flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left transition-colors', isConsistencyDebate ? event.seq === selectedSeq ? 'bg-[#E9E5FF] ring-1 ring-[#6D63A8]/30' : 'bg-[#F2F0FF]/85 hover:bg-[#ECE9FF]' : event.seq === selectedSeq ? 'bg-white/85' : 'hover:bg-white/65')}>
-                          <span className={cn('h-2 w-2 shrink-0 rounded-full', isConsistencyDebate ? 'bg-[#6D63A8] ring-2 ring-[#6D63A8]/15' : event.seq === selectedSeq ? 'bg-brand ring-2 ring-brand/20' : unit.round > 0 ? 'bg-ochre' : 'bg-brand/50')} />
-                          <span className={cn('truncate text-[9.5px] font-semibold', isConsistencyDebate ? 'text-[#51477F]' : 'text-ink')}>{eventDisplayTitle(event)}</span>
-                        </button>
-                      );
-                    })}
+          {(function () {
+            const blocks: Array<{ key: string; kind: "life" | "unit"; event?: AdminGenerationEvent; unit?: { agent: string; events: AdminGenerationEvent[]; round: number; isRoundStart: boolean } }> = [];
+            if (lifecycle[0]) blocks.push({ key: "life-" + lifecycle[0].seq, kind: "life", event: lifecycle[0] });
+            units.forEach((unit) => blocks.push({ key: "unit-" + unit.round + "-" + unit.agent + "-" + unit.events[0].seq, kind: "unit", unit }));
+            lifecycle.slice(1).forEach((event) => blocks.push({ key: "life-" + event.seq, kind: "life", event }));
+            return blocks;
+          })()
+          .map((block, index) => {
+            if (block.kind === "life") {
+              const lifeEvent = block.event as AdminGenerationEvent;
+              const isStart = block.event === lifecycle[0];
+              return (
+                <div key={block.key}>
+                  {index > 0 && (<div className="my-1.5 flex justify-center"><FlowLink /></div>)}
+                  <div className="grid grid-cols-5 gap-2">
+                    <button type="button" onClick={() => onSelect(lifeEvent)} className={cn("flex items-center gap-1.5 self-start rounded-lg border px-2 py-1.5 text-left", isStart ? "col-start-1" : "col-start-5", lifeEvent.seq === selectedSeq ? "border-brand/55 bg-brand-tint/70" : "border-white/85 bg-white/70 hover:border-brand/35")}>
+                      <span className={cn("h-2 w-2 shrink-0 rounded-full", isStart ? "bg-brand" : "bg-emerald-500")} /><span className="truncate text-[9px] font-bold text-ink">{lifeEvent.title}</span>
+                    </button>
                   </div>
                 </div>
-              </div>
-            );
+              );
+            }
+            if (block.kind === "unit" && block.unit) {
+              const unit = block.unit;
+              const lane = Math.max(0, agents.findIndex((item) => item.id === unit.agent));
+              const selected = unit.events.some((event) => event.seq === selectedSeq);
+              return (
+                <div key={block.key}>
+                  {index > 0 && (<div className="my-1.5 flex justify-center"><FlowLink /></div>)}
+                  {unit.isRoundStart && (
+                    <div className="relative h-5">
+                      <span className={cn("absolute left-1 top-0 rounded-full px-1.5 py-px text-[8px] font-bold", unit.round === 0 ? "bg-brand-tint text-brand" : "bg-ochre/15 text-[#9A5B3C]")}>
+                        {unit.round === 0 ? "主流程" : "自主修复第 " + unit.round + " 轮"}
+                      </span>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-5 gap-2">
+                    <div style={{ gridColumnStart: lane + 1 }} className={cn("overflow-hidden rounded-lg border p-1 shadow-[0_4px_14px_rgba(48,74,60,0.14)] backdrop-blur-md", selected ? "border-brand/70 bg-white/95 ring-1 ring-brand/25" : "border-white/90 bg-white/75")}>
+                      {unit.events.map((event) => {
+                        const isConsistencyDebate = event.title === "内容—证据一致性辩论完成";
+                        return (
+                          <button key={event.seq} type="button" onClick={() => onSelect(event)} title={event.detail || event.title} className={cn("flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left transition-colors", event.seq === selectedSeq ? "bg-brand-tint/80" : "hover:bg-white/70")}>
+                            <span className={cn("h-2 w-2 shrink-0 rounded-full", isConsistencyDebate ? "bg-[#6D63A8] ring-2 ring-[#6D63A8]/25" : event.seq === selectedSeq ? "bg-brand ring-2 ring-brand/25" : "bg-brand/50")} />
+                            <span className={cn("truncate text-[9.5px] font-semibold", isConsistencyDebate ? "text-[#51477F]" : "text-ink")}>{eventDisplayTitle(event)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+            return null;
           })}
-          {lifecycle.slice(1).map((event) => (
-            <div key={event.seq} className="grid min-h-9 grid-cols-5 gap-2">
-              <button type="button" onClick={() => onSelect(event)} className={cn('col-start-5 flex items-center gap-1.5 self-start rounded-lg border px-2 py-1.5 text-left', event.seq === selectedSeq ? 'border-brand/45 bg-brand-tint/70' : 'border-white/85 bg-white/65 hover:border-brand/30')}>
-                <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" /><span className="truncate text-[9px] font-bold text-ink">{event.title}</span><span className="ml-auto text-[7.5px] text-ink-muted">系统</span>
-              </button>
-            </div>
-          ))}
           {!units.length && lifecycle.length < 1 && <p className="relative py-6 text-center text-xs text-ink-muted">等待第一条协同事件…</p>}
         </div>
       </div>
