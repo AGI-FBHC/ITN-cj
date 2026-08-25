@@ -31,6 +31,10 @@ const debateGroupNames: Record<string, string> = {
   'VER-04': '一致性辩论组', 'ARB-05': '发布决策辩论组',
 };
 
+function eventDisplayTitle(event: AdminGenerationEvent) {
+  return event.title === '内容—证据一致性辩论完成' ? '一致性辩论组' : event.title;
+}
+
 function isLifecycleEvent(event: AdminGenerationEvent) {
   return event.agent === 'SYSTEM' || event.actorType === 'system' || event.eventType === 'task_lifecycle'
     || ['任务已创建', '任务取消', '生成完成', '任务已结束', '任务被取消'].includes(event.title);
@@ -107,9 +111,6 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
           {units.map((unit) => {
             const lane = Math.max(0, agents.findIndex((item) => item.id === unit.agent));
             const selected = unit.events.some((event) => event.seq === selectedSeq);
-            const debateEvents = unit.events.filter((event) => event.snapshot?.debateTriggered === true);
-            const debateGroup = [...debateEvents].reverse().map((event) => event.snapshot?.debateGroup).find((value) => value && typeof value === 'object') as { roles?: unknown; status?: unknown } | undefined;
-            const debateRoles = Array.isArray(debateGroup?.roles) ? debateGroup.roles.map(String) : unit.agent === 'RET-02' && debateEvents.length ? ['多源调查 Agent', '质疑审查 Agent', '证据仲裁 Agent'] : [];
             return (
               <div key={`${unit.round}-${unit.agent}-${unit.events[0].seq}`}>
                 {/* 轮次起始标签（初始生成 / 修复N） */}
@@ -122,18 +123,15 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
                 )}
                 <div className="grid min-h-9 grid-cols-5 gap-2 pb-2">
                   <div style={{ gridColumnStart: lane + 1 }} className={cn('overflow-hidden rounded-lg border p-1 shadow-[0_4px_14px_rgba(48,74,60,0.14)] backdrop-blur-md', selected ? 'border-brand/45 bg-brand-tint/65 ring-1 ring-brand/15' : unit.round > 0 ? 'border-ochre/25 bg-white/70' : 'border-white/85 bg-white/70')}>
-                    {unit.events.map((event) => (
-                      <button key={event.seq} type="button" onClick={() => onSelect(event)} title={event.detail || event.title} className={cn('flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left transition-colors', event.seq === selectedSeq ? 'bg-white/85' : 'hover:bg-white/65')}>
-                        <span className={cn('h-2 w-2 shrink-0 rounded-full', event.seq === selectedSeq ? 'bg-brand ring-2 ring-brand/20' : unit.round > 0 ? 'bg-ochre' : 'bg-brand/50')} />
-                        <span className="truncate text-[9.5px] font-semibold text-ink">{event.title}</span>
-                      </button>
-                    ))}
-                    {debateEvents.length > 0 && (
-                      <button type="button" onClick={() => onSelect(debateEvents.at(-1)!)} className="m-1 mt-1.5 block w-[calc(100%_-_0.5rem)] rounded-lg border border-[#6D63A8]/25 bg-[#F2F0FF]/80 px-2 py-2 text-left transition-colors hover:border-[#6D63A8]/45 hover:bg-[#ECE9FF]">
-                        <div className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-[#6D63A8]"/><span className="text-[8.5px] font-bold text-[#51477F]">{debateGroupNames[unit.agent] ?? '专业辩论组'}</span><span className="ml-auto rounded-full bg-white/80 px-1.5 py-0.5 text-[7.5px] font-semibold text-[#51477F]/70">{debateGroup?.status === 'running' ? '进行中' : '已执行'}</span></div>
-                        {debateRoles.length > 0 && <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[7.5px] font-semibold text-ink-2">{debateRoles.map((role, roleIndex) => <span key={`${role}-${roleIndex}`} className="contents">{roleIndex > 0 && <span className="text-[#51477F]/40">→</span>}<span>{role.replace(' Agent', '')}</span></span>)}</div>}
-                      </button>
-                    )}
+                    {unit.events.map((event) => {
+                      const isConsistencyDebate = event.title === '内容—证据一致性辩论完成';
+                      return (
+                        <button key={event.seq} type="button" onClick={() => onSelect(event)} title={event.detail || event.title} className={cn('flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left transition-colors', isConsistencyDebate ? event.seq === selectedSeq ? 'bg-[#E9E5FF] ring-1 ring-[#6D63A8]/30' : 'bg-[#F2F0FF]/85 hover:bg-[#ECE9FF]' : event.seq === selectedSeq ? 'bg-white/85' : 'hover:bg-white/65')}>
+                          <span className={cn('h-2 w-2 shrink-0 rounded-full', isConsistencyDebate ? 'bg-[#6D63A8] ring-2 ring-[#6D63A8]/15' : event.seq === selectedSeq ? 'bg-brand ring-2 ring-brand/20' : unit.round > 0 ? 'bg-ochre' : 'bg-brand/50')} />
+                          <span className={cn('truncate text-[9.5px] font-semibold', isConsistencyDebate ? 'text-[#51477F]' : 'text-ink')}>{eventDisplayTitle(event)}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -434,7 +432,7 @@ function EventDetailPanel({ event }: { event: AdminGenerationEvent }) {
     <div className="space-y-3">
       <section className="rounded-2xl border border-white/85 bg-white/70 p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-2"><span className="lf-pill lf-pill-null">{event.phase || event.status}</span><span className="ml-auto font-mono text-[9px] text-ink-muted">{event.time ? new Date(event.time).toLocaleString('zh-CN', { hour12: false }) : `记录 #${event.seq}`}</span></div>
-        <h4 className="mt-3 text-sm font-bold leading-5 text-ink">{event.title}</h4>
+        <h4 className="mt-3 text-sm font-bold leading-5 text-ink">{eventDisplayTitle(event)}</h4>
         {(display.summary || event.detail) && <p className="mt-2 text-[11px] leading-5 text-ink-2">{String(display.summary || event.detail)}</p>}
       </section>
       {inputs.length > 0 && <section className="rounded-2xl border border-white/80 bg-white/55 p-3"><h4 className="text-xs font-bold text-ink">收到的任务信息</h4><div className="mt-2 space-y-2">{inputs.map((item, index) => <div key={index} className="flex items-start gap-3 rounded-xl bg-white/65 px-3 py-2"><span className="shrink-0 text-[9px] font-semibold text-ink-muted">{String(item.label ?? '输入')}</span><span className="ml-auto text-right text-[10.5px] leading-5 text-ink-2">{readableValue(item.value)}</span></div>)}</div></section>}
