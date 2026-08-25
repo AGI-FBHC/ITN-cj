@@ -282,7 +282,7 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
     </div>
   );
 }
-/** 任务项：整条充电进度带（深色轨道 + 渐变填充 + 高光涌动）；平滑推进模拟持续工作 */
+
 function useSmoothProgress(real: number, animating: boolean) {
   const [shown, setShown] = useState(real);
   const realRef = { current: real };
@@ -295,7 +295,7 @@ function useSmoothProgress(real: number, animating: boolean) {
         if (current >= 99.5) return 100;
         const gap = target - current;
         if (gap > 0.05) return Math.min(100, current + Math.max(0.35, gap * 0.3));
-        return Math.min(96, current + 0.32); /* 真实值未更新：模拟缓冲微推，为真实进度留空间 */
+        return Math.min(96, current + 0.32); /* 真实值未更新时模拟缓冲微推 */
       });
     }, 280);
     return () => window.clearInterval(id);
@@ -307,37 +307,38 @@ function useSmoothProgress(real: number, animating: boolean) {
 function WorkbenchTaskItem({ item, selected, onClick }: { item: WorkbenchTask; selected: boolean; onClick: () => void }) {
   const active = activeStatuses.has(item.status);
   const failed = item.status === 'failed' || item.status === 'cancelled';
-  const done = item.status === 'completed' || item.status === 'cancelled';
   const context = contextOf(item);
   const shown = useSmoothProgress(item.progress, active);
-  const fillPct = done ? 100 : Math.max(3, Math.round(shown));
+  const fillPct = failed ? item.progress : Math.max(4, Math.round(shown));
   return (
     <button
       type="button"
       onClick={onClick}
-      className={cn('w-full overflow-hidden rounded-xl border text-left shadow-sm transition-all',
-        selected ? 'border-brand/70 bg-brand-tint/75 shadow-[0_3px_14px_rgba(78,120,96,0.22)] ring-1 ring-brand/25' :
-        active ? 'border-white/90 bg-white/70 hover:border-brand/40' :
-        failed ? 'border-rose-200/90 bg-rose-50/60 hover:border-brand/30' :
-        'border-white/80 bg-white/50 hover:border-brand/30')}
+      className={cn('relative w-full overflow-hidden rounded-xl border text-left transition-all',
+        selected ? 'border-brand/90 shadow-[0_4px_18px_rgba(78,120,96,0.35)] ring-2 ring-brand/30' :
+        active ? 'border-white/40 hover:border-brand/50' :
+        failed ? 'border-white/40 hover:border-brand/40' :
+        'border-white/30 hover:border-brand/50')}
     >
-      <div className="flex items-center gap-1.5 px-3 pt-2.5">
-        {active ? <Loader2 size={12} className="shrink-0 animate-spin text-brand" /> : failed ? <XCircle size={12} className="shrink-0 text-red-500" /> : <CheckCircle2 size={12} className="shrink-0 text-emerald-600" />}
-        <span className="lf-pill lf-pill-null !px-1.5 !py-0.5 text-[9px]">{typeText[item.resourceType]}</span>
-        <span className="ml-auto text-[10px] font-bold tabular-nums text-ink">{fillPct}%</span>
-      </div>
-      <p className="mt-1.5 truncate px-3 text-xs font-bold text-ink">{String(context.topicName || item.title)}</p>
-      <p className="mt-0.5 line-clamp-1 px-3 text-[9.5px] leading-4 text-ink-muted">{item.stageMessage}</p>
-      {/* 整条充电进度带 */}
-      <div className="px-3 pb-3 pt-2.5">
-        <div className="lf-charge relative h-8 w-full">
-          <span className="track" />
-          <span className={cn('fill', failed ? 'bad' : 'ok', !done && '')} style={{ width: fillPct + '%' }}>
-            {active && <><span className="surge" /><span className="grain" /><span className="head" /></>}
-          </span>
-          <span className="absolute inset-y-0 right-2.5 flex items-center text-[10px] font-bold tabular-nums text-white/95 drop-shadow-sm">{fillPct}%</span>
-        </div>
-      </div>
+      {/* 轨道：整卡底层（深色充电底座） */}
+      <span className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#1D2E24] to-[#2A3D31]" />
+      {/* 进度填充：直接作为卡片背景，宽度 = 进度；含呼吸高光与前沿光点 */}
+      <span className={cn('pointer-events-none absolute inset-y-0 left-0 overflow-hidden rounded-r-xl',
+        failed ? 'bg-gradient-to-r from-[#8C3A3A]/95 to-[#C96A5A]/80' :
+        item.status === 'completed' ? 'bg-gradient-to-r from-[#1F7A44]/95 to-[#3AAE68]/85' :
+        'bg-gradient-to-r from-[#2E6B53]/95 to-[#4DA97F]/85')} style={{ width: fillPct + '%' }}>
+        {active && <><span className="surge" /><span className="head" /></>}
+      </span>
+      {/* 内容：文字叠在进度背景之上 */}
+      <span className="relative z-10 block space-y-1 p-3">
+        <span className="flex items-center gap-1.5">
+          {active ? <Loader2 size={12} className="shrink-0 animate-spin text-emerald-300" /> : failed ? <XCircle size={12} className="shrink-0 text-red-400" /> : <CheckCircle2 size={12} className="shrink-0 text-emerald-300" />}
+          <span className="rounded-md border border-white/25 bg-white/10 px-1.5 py-0.5 text-[9px] font-bold text-white/90">{typeText[item.resourceType]}</span>
+          <span className="ml-auto text-[10px] font-bold tabular-nums text-white drop-shadow-sm">{failed ? item.progress : fillPct}%</span>
+        </span>
+        <span className="block truncate text-xs font-bold text-white">{String(context.topicName || item.title)}</span>
+        <span className="block line-clamp-1 text-[9.5px] leading-4 text-white/75">{item.stageMessage}</span>
+      </span>
     </button>
   );
 }
