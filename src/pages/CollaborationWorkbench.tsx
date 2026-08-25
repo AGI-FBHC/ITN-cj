@@ -20,6 +20,10 @@ const agents = [
 ] as const;
 const activeStatuses = new Set(['queued', 'retrieving', 'debating', 'planning', 'analyzing', 'generating', 'verifying', 'reviewing', 'revising', 'judging', 'outline_review']);
 const typeText: Record<string, string> = { lecture: '讲义', practice: '实操指南', quiz: '题库', ppt: '交互课件' };
+const debateGroupNames: Record<string, string> = {
+  'DIA-01': '教学方案辩论组', 'RET-02': '证据辩论组', 'GEN-03': '内容表达辩论组',
+  'VER-04': '一致性辩论组', 'ARB-05': '发布决策辩论组',
+};
 
 function isLifecycleEvent(event: AdminGenerationEvent) {
   return event.agent === 'SYSTEM' || event.actorType === 'system' || event.eventType === 'task_lifecycle'
@@ -52,11 +56,6 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
     visited.add(event.agent);
     previousAgent = event.agent;
   }
-  const debateTriggered = events.some((event) => event.snapshot?.debateTriggered === true);
-  const debateUnitIndex = Math.max(0, units.findIndex((unit) => unit.events.some((event) => event.snapshot?.debateTriggered === true)));
-  const firstRetrievalUnit = units.findIndex((unit) => unit.agent === 'RET-02');
-  const debateHostIndex = debateTriggered && units[debateUnitIndex]?.agent === 'RET-02' ? debateUnitIndex : firstRetrievalUnit;
-
   return (
     <div className="mt-3 overflow-x-auto">
       <div className="relative min-w-[880px] overflow-hidden rounded-2xl border border-white/70 bg-white/20 px-2 pb-2 pt-2">
@@ -98,9 +97,12 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
               </button>
             </div>
           )}
-          {units.map((unit, unitIndex) => {
+          {units.map((unit) => {
             const lane = Math.max(0, agents.findIndex((item) => item.id === unit.agent));
             const selected = unit.events.some((event) => event.seq === selectedSeq);
+            const debateEvents = unit.events.filter((event) => event.snapshot?.debateTriggered === true);
+            const debateGroup = debateEvents.map((event) => event.snapshot?.debateGroup).find((value) => value && typeof value === 'object') as { roles?: unknown; status?: unknown } | undefined;
+            const debateRoles = Array.isArray(debateGroup?.roles) ? debateGroup.roles.map(String) : unit.agent === 'RET-02' && debateEvents.length ? ['多源调查 Agent', '质疑审查 Agent', '证据仲裁 Agent'] : [];
             return (
               <div key={`${unit.round}-${unit.agent}-${unit.events[0].seq}`}>
                 {/* 轮次起始标签（初始生成 / 修复N） */}
@@ -119,10 +121,10 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
                         <span className="truncate text-[9.5px] font-semibold text-ink">{event.title}</span>
                       </button>
                     ))}
-                    {unitIndex === debateHostIndex && unit.agent === 'RET-02' && (
+                    {debateEvents.length > 0 && (
                       <div className="m-1 mt-1.5 rounded-lg border border-[#6D63A8]/25 bg-[#F2F0FF]/80 px-2 py-2">
-                        <div className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-[#6D63A8]"/><span className="text-[8.5px] font-bold text-[#51477F]">证据辩论组</span><span className="ml-auto rounded-full bg-white/80 px-1.5 py-0.5 text-[7.5px] font-semibold text-[#51477F]/70">{debateTriggered ? '已执行' : '待命'}</span></div>
-                        {debateTriggered && <div className="mt-1.5 flex items-center gap-1 text-[7.5px] font-semibold text-ink-2"><span>多源调查</span><span className="text-[#51477F]/40">→</span><span>质疑审查</span><span className="text-[#51477F]/40">→</span><span>证据仲裁</span></div>}
+                        <div className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-[#6D63A8]"/><span className="text-[8.5px] font-bold text-[#51477F]">{debateGroupNames[unit.agent] ?? '专业辩论组'}</span><span className="ml-auto rounded-full bg-white/80 px-1.5 py-0.5 text-[7.5px] font-semibold text-[#51477F]/70">{debateGroup?.status === 'running' ? '进行中' : '已执行'}</span></div>
+                        {debateRoles.length > 0 && <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[7.5px] font-semibold text-ink-2">{debateRoles.map((role, roleIndex) => <span key={`${role}-${roleIndex}`} className="contents">{roleIndex > 0 && <span className="text-[#51477F]/40">→</span>}<span>{role.replace(' Agent', '')}</span></span>)}</div>}
                       </div>
                     )}
                   </div>
