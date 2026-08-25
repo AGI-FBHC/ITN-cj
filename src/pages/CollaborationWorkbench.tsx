@@ -101,7 +101,7 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
     visited.add(event.agent);
     previousAgent = event.agent;
   }
-  const lastSeq = events.length ? events[events.length - 1].seq : null;
+
   const blocks: Array<{ key: string; kind: "life" | "unit"; event?: AdminGenerationEvent; unit?: { agent: string; events: AdminGenerationEvent[]; round: number; isRoundStart: boolean } }> = [];
   if (lifecycle[0]) blocks.push({ key: "life-" + lifecycle[0].seq, kind: "life", event: lifecycle[0] });
   units.forEach((unit) => blocks.push({ key: "unit-" + unit.round + "-" + unit.agent + "-" + unit.events[0].seq, kind: "unit", unit }));
@@ -148,7 +148,7 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
             const prevBlock = blocks[index - 1];
             const prevCol = prevBlock ? (prevBlock.kind === "life" ? (prevBlock.event === lifecycle[0] ? 0 : 4) : Math.max(0, agents.findIndex((agent) => agent.id === (prevBlock.unit ? prevBlock.unit.agent : "")))) : 0;
             const curCol = block.kind === "life" ? (block.event === lifecycle[0] ? 0 : 4) : Math.max(0, agents.findIndex((agent) => agent.id === (block.unit ? block.unit.agent : "")));
-            const isLatestLive = running && lastSeq !== null && ((block.kind === "life" && block.event && block.event.seq === lastSeq) || (block.kind === "unit" && block.unit && block.unit.events.some((event) => event.seq === lastSeq)));
+            const isLatestLive = running && runningAgent !== null && block.kind === "unit" && block.unit !== undefined && block.unit.agent === runningAgent;
             return (
               <div key={block.key} className="board-enter">
                 {index > 0 && (
