@@ -113,7 +113,16 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
     seenAgents.add(events[i - 1].agent);
   }
   if (rollbackStart >= 0) {
-    for (let i = rollbackStart; i < events.length; i++) rollbackAgents.add(events[i].agent);
+    /* 回滚后若连续两跳正向（恢复正常推进），返工段之后的步骤改为 √：仅回滚点至恢复起点之间标 × */
+    let recoverStart = -1;
+    for (let i = rollbackStart + 1; i < events.length - 1; i++) {
+      const l1 = agents.findIndex((agent) => agent.id === events[i - 1].agent);
+      const l2 = agents.findIndex((agent) => agent.id === events[i].agent);
+      const l3 = agents.findIndex((agent) => agent.id === events[i + 1].agent);
+      if (l1 >= 0 && l2 >= 0 && l3 >= 0 && l2 >= l1 && l3 >= l2) { recoverStart = i; break; }
+    }
+    const retryEnd = recoverStart >= 0 ? recoverStart : events.length;
+    for (let i = rollbackStart; i < retryEnd; i++) rollbackAgents.add(events[i].agent);
   }
   return (
     <div className="h-full overflow-x-auto">
