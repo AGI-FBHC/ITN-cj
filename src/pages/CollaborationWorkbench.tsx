@@ -376,29 +376,29 @@ function WorkbenchTaskItem({ item, selected, onClick }: { item: WorkbenchTask; s
       type="button"
       onClick={onClick}
       className={cn('relative w-full overflow-hidden rounded-xl border text-left transition-all',
-        selected ? 'border-brand/90 shadow-[0_4px_18px_rgba(78,120,96,0.35)] ring-2 ring-brand/30' :
-        active ? 'border-white/40 hover:border-brand/50' :
-        failed ? 'border-white/40 hover:border-brand/40' :
-        'border-white/30 hover:border-brand/50')}
+        selected ? 'border-brand/70 bg-white/95 shadow-[0_4px_16px_rgba(78,120,96,0.18)] ring-2 ring-brand/25' :
+        active ? 'border-white/85 bg-white/75 hover:border-brand/40' :
+        failed ? 'border-rose-200/80 bg-white/70 hover:border-brand/35' :
+        'border-white/80 bg-white/60 hover:border-brand/40')}
     >
-      {/* 轨道：整卡底层（深色充电底座） */}
-      <span className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#1D2E24] to-[#2A3D31]" />
-      {/* 进度填充：直接作为卡片背景，宽度 = 进度；含呼吸高光与前沿光点 */}
+      {/* 轨道：整卡底层（奶油浅色，贴合系统主题） */}
+      <span className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/75 to-[#F1ECDE]/85" />
+      {/* 进度填充：品牌绿半透明渐变直接铺在卡片背景上，宽度 = 进度 */}
       <span className={cn('pointer-events-none absolute inset-y-0 left-0 overflow-hidden rounded-r-xl',
-        failed ? 'bg-gradient-to-r from-[#8C3A3A]/95 to-[#C96A5A]/80' :
-        item.status === 'completed' ? 'bg-gradient-to-r from-[#1F7A44]/95 to-[#3AAE68]/85' :
-        'bg-gradient-to-r from-[#2E6B53]/95 to-[#4DA97F]/85')} style={{ width: fillPct + '%' }}>
+        failed ? 'bg-gradient-to-r from-[#E08080]/45 to-[#F2B3A9]/40' :
+        item.status === 'completed' ? 'bg-gradient-to-r from-[#5FAF7C]/50 to-[#8FD3A7]/60' :
+        'bg-gradient-to-r from-[#4E7860]/40 to-[#7FB596]/50')} style={{ width: fillPct + '%' }}>
         {active && <><span className="surge" /><span className="head" /></>}
       </span>
-      {/* 内容：文字叠在进度背景之上 */}
+      {/* 内容：深色文字，浅色背景上清晰可读 */}
       <span className="relative z-10 block space-y-1 p-3">
         <span className="flex items-center gap-1.5">
-          {active ? <Loader2 size={12} className="shrink-0 animate-spin text-emerald-300" /> : failed ? <XCircle size={12} className="shrink-0 text-red-400" /> : <CheckCircle2 size={12} className="shrink-0 text-emerald-300" />}
-          <span className="rounded-md border border-white/25 bg-white/10 px-1.5 py-0.5 text-[9px] font-bold text-white/90">{typeText[item.resourceType]}</span>
-          <span className="ml-auto text-[10px] font-bold tabular-nums text-white drop-shadow-sm">{failed ? item.progress : fillPct}%</span>
+          {active ? <Loader2 size={12} className="shrink-0 animate-spin text-brand" /> : failed ? <XCircle size={12} className="shrink-0 text-red-500" /> : <CheckCircle2 size={12} className="shrink-0 text-emerald-600" />}
+          <span className="rounded-md border border-brand/25 bg-white/70 px-1.5 py-0.5 text-[9px] font-bold text-brand">{typeText[item.resourceType]}</span>
+          <span className="ml-auto text-[10px] font-bold tabular-nums text-ink">{failed ? item.progress : fillPct}%</span>
         </span>
-        <span className="block truncate text-xs font-bold text-white">{String(context.topicName || item.title)}</span>
-        <span className="block line-clamp-1 text-[9.5px] leading-4 text-white/75">{item.stageMessage}</span>
+        <span className="block truncate text-xs font-bold text-ink">{String(context.topicName || item.title)}</span>
+        <span className="block line-clamp-1 text-[9.5px] leading-4 text-ink-muted">{item.stageMessage}</span>
       </span>
     </button>
   );
