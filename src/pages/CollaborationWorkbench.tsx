@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, Plus, Sparkles, Trash2, X, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, Plus, ScrollText, Sparkles, Trash2, X, XCircle } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { api, streamAdminGenerationTask, type AdminGenerationEvent, type AdminResourceDetail, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
 import { presentationApi, type PresentationRequest, type PresentationTaskSummary } from '@/lib/presentationApi';
@@ -532,8 +532,68 @@ function ArtifactContentViewer({ title, kind, content, onClose }: { title: strin
 }
 
 function InspectionModal({ title, record, onClose }: { title: string; record: Record<string, unknown>; onClose: () => void }) {
-  const labels: Record<string, string> = { id: '编号', title: '标题', section: '章节', excerpt: '正文摘要', similarity: '相关度', sourceType: '来源类型', blockType: '对象类型', blockIndex: '序号', blockTitle: '对象名称', stepIndex: '步骤序号', stepTitle: '步骤名称', sourceId: '来源编号', sourceTitle: '来源名称', claim: '被核查内容', evidence: '对应依据', analysis: '分析结论', finding: '具体发现', label: '检查项目', passed: '检查结果', risk: '潜在风险', issue: '争议项', decision: '裁决', reason: '原因', requiredAction: '处理要求', repairInstruction: '返修要求' };
-  return <div className="fixed inset-0 z-[130] flex items-center justify-center bg-ink/25 p-5 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}><section className="max-h-[82vh] w-full max-w-2xl overflow-hidden rounded-[24px] border border-white/90 bg-[#F7F7F2] shadow-2xl"><header className="flex items-center gap-3 border-b border-ink/8 bg-white/75 px-6 py-4"><div><p className="text-[10px] font-semibold text-brand">可核查记录</p><h3 className="mt-1 text-base font-bold text-ink">{title}</h3></div><button type="button" onClick={onClose} className="ml-auto rounded-full bg-white p-2 text-ink-muted shadow-sm hover:text-ink"><X size={16}/></button></header><div className="max-h-[68vh] space-y-3 overflow-y-auto p-6">{Object.entries(record).filter(([, value]) => value != null && value !== '').map(([key, value]) => <section key={key} className="rounded-2xl border border-white bg-white/75 p-4"><p className="text-[9px] font-semibold text-ink-muted">{labels[key] ?? key}</p><p className="mt-2 whitespace-pre-wrap text-[11px] leading-6 text-ink-2">{key === 'similarity' && Number.isFinite(Number(value)) ? `${Math.round(Number(value) * 100)}%` : readableValue(value)}</p></section>)}</div></section></div>;
+  const labels: Record<string, string> = { id: '编号', title: '标题', section: '章节', excerpt: '正文摘要', similarity: '相关度', sourceType: '来源类型', blockType: '对象类型', blockIndex: '序号', blockTitle: '对象名称', stepIndex: '步骤序号', stepTitle: '步骤名称', sourceId: '来源编号', sourceTitle: '来源名称', claim: '被核查内容', evidence: '对应依据', analysis: '分析结论', finding: '具体发现', label: '检查项目', passed: '检查结果', risk: '潜在风险', issue: '争议项', decision: '裁决', reason: '原因', requiredAction: '处理要求', repairInstruction: '返修要求', selected: '是否选中' };
+  /* 短字段：徽章/进度条/编号等用两列网格紧凑展示 */
+  const shortKeys = new Set(['id', 'blockIndex', 'stepIndex', 'sourceId', 'similarity', 'sourceType', 'selected', 'blockType', 'stepTitle', 'passed', 'label', 'decision', 'nodeType', 'level', 'relationType', 'role']);
+  /* 长文本字段：独占整行，保持可读 */
+  const textKeys = new Set(['excerpt', 'title', 'blockTitle', 'section', 'claim', 'evidence', 'analysis', 'finding', 'risk', 'issue', 'reason', 'requiredAction', 'repairInstruction', 'content', 'quote', 'problem', 'solution', 'detail']);
+  const entries = Object.entries(record).filter(([, value]) => value != null && value !== '');
+  const pct = (value: unknown) => Number.isFinite(Number(value)) ? Math.min(100, Math.max(0, Math.round(Number(value) * 100))) : null;
+  return (
+    <div className="fixed inset-0 z-[130] flex items-center justify-center bg-ink/25 p-5 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="flex max-h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-[24px] border border-white/90 bg-[#F7F7F2] shadow-2xl">
+        <header className="flex shrink-0 items-center gap-3 border-b border-ink/8 bg-white/75 px-6 py-4">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-tint text-brand"><ScrollText size={16} /></span>
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold text-brand">可核查记录</p>
+            <h3 className="mt-0.5 truncate text-base font-bold text-ink">{title}</h3>
+          </div>
+          <button type="button" onClick={onClose} className="ml-auto rounded-full bg-white p-2 text-ink-muted shadow-sm hover:text-ink"><X size={16} /></button>
+        </header>
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-6">
+          {/* 短字段：两列网格 */}
+          <div className="grid gap-3 md:grid-cols-2">
+            {entries.filter(([key]) => shortKeys.has(key)).map(([key, value]) => (
+              <div key={key} className="rounded-2xl border border-white bg-white/75 px-4 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[9px] font-semibold text-ink-muted">{labels[key] ?? key}</p>
+                  {key === 'similarity' && pct(value) != null && (
+                    <span className="rounded-full bg-brand-tint px-1.5 py-0.5 text-[9px] font-bold text-brand">{pct(value)}%</span>
+                  )}
+                </div>
+                {key === 'similarity' && pct(value) != null ? (
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-brand" style={{ width: pct(value) + '%' }} /></div>
+                ) : key === 'selected' ? (
+                  <span className={cn('mt-2 inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-bold', value ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-white bg-white/80 text-ink-muted')}>{value ? '✓ 已采纳' : '✗ 未采纳'}</span>
+                ) : key === 'passed' ? (
+                  <span className={cn('mt-2 inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-bold', String(value).toLowerCase().includes('pass') || value === true ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-red-600')}>{String(value)}</span>
+                ) : key === 'sourceType' ? (
+                  <span className="mt-2 inline-flex items-center rounded-md border border-brand/25 bg-brand-tint/50 px-2 py-0.5 text-[10px] font-bold text-brand">{readableValue(value)}</span>
+                ) : (
+                  <p className="mt-1 break-words font-mono text-[11px] leading-6 text-ink-2">{readableValue(value)}</p>
+                )}
+              </div>
+            ))}
+          </div>
+          {/* 长文本字段：独占整行 */}
+          {entries.filter(([key]) => textKeys.has(key)).map(([key, value]) => (
+            <div key={key} className="rounded-2xl border border-white bg-white/75 px-4 py-3">
+              <p className="text-[9px] font-semibold text-ink-muted">{labels[key] ?? key}</p>
+              <p className="mt-1.5 whitespace-pre-wrap break-words text-[11.5px] leading-6 text-ink-2">{readableValue(value)}</p>
+            </div>
+          ))}
+          {/* 未分类残留字段 */}
+          {entries.filter(([key]) => !shortKeys.has(key) && !textKeys.has(key)).map(([key, value]) => (
+            <div key={key} className="rounded-2xl border border-white bg-white/75 px-4 py-3">
+              <p className="text-[9px] font-semibold text-ink-muted">{labels[key] ?? key}</p>
+              <p className="mt-1 break-words whitespace-pre-wrap text-[11px] leading-6 text-ink-2">{readableValue(value)}</p>
+            </div>
+          ))}
+          {!entries.length && <div className="lf-empty rounded-2xl p-8 text-center text-xs text-ink-muted">该记录没有可展示字段</div>}
+        </div>
+      </section>
+    </div>
+  );
 }
 
 function EventDetailPanel({ event }: { event: AdminGenerationEvent }) {
