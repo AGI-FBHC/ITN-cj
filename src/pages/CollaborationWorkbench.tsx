@@ -233,7 +233,7 @@ function JsonTree({ value }: { value: unknown }) {
     if (!entries.length) return <span className="jp">{"{}"}</span>;
     return (
       <>
-        <span className="jp">{"{}"}</span>
+        <span className="jp">{'{'}</span>
         {entries.map(([key, val], index) => (
           <div key={key} className="pl-4">
             <span className="jk">"{key}"</span><span className="jp">: </span>
@@ -241,7 +241,7 @@ function JsonTree({ value }: { value: unknown }) {
             {index < entries.length - 1 && <span className="jp">,</span>}
           </div>
         ))}
-        <span className="jp">{"}"}</span>
+        <span className="jp">{'}'}</span>
       </>
     );
   }
