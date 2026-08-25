@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { ExternalLink, FileText, Loader2, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { LearningResource, RagChunkDetail } from '@/lib/api';
@@ -116,7 +114,8 @@ export default function SourceCitationMarks({
           setLiveError(reason2 instanceof Error ? reason2.message : '暂时无法读取切片原文（MySQL 未命中）');
         }
       } else {
-        setLiveError('RAG Flow 原始切片在 MySQL 中不存在：' + chunkId);
+        /* RAGFlow hash（非数字）：MySQL 的 ragflow_chunk_id 未回填，历史资源此路径不可回溯——已展示生成时快照，无需重新生成 */
+        setLiveError('该引用保存于历史版本，切片标识 ' + chunkId.slice(0, 20) + '… 未关联当前知识库（ragflow_chunk_id 未回填），以下展示生成时保存的来源快照。');
       }
     } finally {
       setLoading(false);
@@ -150,19 +149,32 @@ export default function SourceCitationMarks({
                 {
                   (() => {
                     const rawContent = chunk?.content ?? String(opened.source.content ?? '没有可显示的原文内容。');
-                    const hasImage = /!\[[^\]]*\]\([^)]+\)|<img\b/i.test(rawContent);
-                    if (hasImage) {
+                    /* 魔改 HTML <img>（含 data-figure-id/data-vlm-description 等）或 markdown 图片：只取 src 加载显示 */
+                    if (/<img\b|!\[[^\]]*\]\([^)]+\)/i.test(rawContent)) {
+                      const parts = rawContent.split(/(<img\b[^>]*>|!\[[^\]]*\]\([^)]+\))/gi);
                       return (
-                        <div className="produces-rounded-[14px] rounded-[14px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-7 text-ink-2">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ img: ({ src, alt }) => <img src={src} alt={alt || '切片图片'} className="my-2 max-w-full rounded-lg border border-hairline" loading="lazy" /> }}>{rawContent}</ReactMarkdown>
+                        <div className="whitespace-pre-wrap rounded-[14px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-7 text-ink-2">
+                          {parts.map((part, index) => {
+                            const imgTag = part.match(/^<img\b([^>]*)>$/i);
+                            const mdImg = !imgTag ? part.match(/^!\[[^\]]*\]\(([^)\s"']+)["']?[^)]*\)$/) : null;
+                            if (imgTag) {
+                              const srcMatch = imgTag[1].match(/src\s*=\s*["']([^"']+)["']/i);
+                              const altMatch = imgTag[1].match(/alt\s*=\s*["']([^"']*)["']/i);
+                              if (!srcMatch) return <span key={index}>{part}</span>;
+                              return <img key={index} src={srcMatch[1]} alt={altMatch && altMatch[1] ? altMatch[1] : '切片图片'} className="my-2 block max-w-full rounded-lg border border-hairline" loading="lazy" />;
+                            }
+                            if (mdImg) {
+                              return <img key={index} src={mdImg[1]} alt="切片图片" className="my-2 block max-w-full rounded-lg border border-hairline" loading="lazy" />;
+                            }
+                            return <span key={index}>{part}</span>;
+                          })}
                         </div>
                       );
                     }
                     return <div className="whitespace-pre-wrap rounded-[14px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-7 text-ink-2">{highlightedContent(rawContent, opened.id)}</div>;
-                  })()
-                }
-                <div className="mt-3 flex flex-wrap items-center gap-2 font-mono text-[10px] text-ink-muted"><span>chunkId: {String(opened.source.chunkId ?? '—')}</span>{chunk?.pageStart != null && <span>页码: {chunk.pageStart}{chunk.pageEnd && chunk.pageEnd !== chunk.pageStart ? `–${chunk.pageEnd}` : ''}</span>}<span>{chunk ? '实时读取' : '生成快照'}</span>{typeof opened.source.url === 'string' && opened.source.url && <a href={opened.source.url} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-1 rounded-lg border border-brand/25 px-2.5 py-1.5 text-brand hover:bg-brand-tint">查看原网页<ExternalLink size={10} /></a>}</div>
-              </>}
+                  })()}
+                </>
+              }
             </div>
           </section>
         </div>, document.body,
