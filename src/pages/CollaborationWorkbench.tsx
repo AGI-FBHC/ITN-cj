@@ -102,7 +102,7 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
             const lane = Math.max(0, agents.findIndex((item) => item.id === unit.agent));
             const selected = unit.events.some((event) => event.seq === selectedSeq);
             const debateEvents = unit.events.filter((event) => event.snapshot?.debateTriggered === true);
-            const debateGroup = debateEvents.map((event) => event.snapshot?.debateGroup).find((value) => value && typeof value === 'object') as { roles?: unknown; status?: unknown } | undefined;
+            const debateGroup = [...debateEvents].reverse().map((event) => event.snapshot?.debateGroup).find((value) => value && typeof value === 'object') as { roles?: unknown; status?: unknown } | undefined;
             const debateRoles = Array.isArray(debateGroup?.roles) ? debateGroup.roles.map(String) : unit.agent === 'RET-02' && debateEvents.length ? ['多源调查 Agent', '质疑审查 Agent', '证据仲裁 Agent'] : [];
             return (
               <div key={`${unit.round}-${unit.agent}-${unit.events[0].seq}`}>
@@ -123,10 +123,10 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
                       </button>
                     ))}
                     {debateEvents.length > 0 && (
-                      <div className="m-1 mt-1.5 rounded-lg border border-[#6D63A8]/25 bg-[#F2F0FF]/80 px-2 py-2">
+                      <button type="button" onClick={() => onSelect(debateEvents.at(-1)!)} className="m-1 mt-1.5 block w-[calc(100%_-_0.5rem)] rounded-lg border border-[#6D63A8]/25 bg-[#F2F0FF]/80 px-2 py-2 text-left transition-colors hover:border-[#6D63A8]/45 hover:bg-[#ECE9FF]">
                         <div className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-[#6D63A8]"/><span className="text-[8.5px] font-bold text-[#51477F]">{debateGroupNames[unit.agent] ?? '专业辩论组'}</span><span className="ml-auto rounded-full bg-white/80 px-1.5 py-0.5 text-[7.5px] font-semibold text-[#51477F]/70">{debateGroup?.status === 'running' ? '进行中' : '已执行'}</span></div>
                         {debateRoles.length > 0 && <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[7.5px] font-semibold text-ink-2">{debateRoles.map((role, roleIndex) => <span key={`${role}-${roleIndex}`} className="contents">{roleIndex > 0 && <span className="text-[#51477F]/40">→</span>}<span>{role.replace(' Agent', '')}</span></span>)}</div>}
-                      </div>
+                      </button>
                     )}
                   </div>
                 </div>
@@ -381,6 +381,55 @@ function JsonTree({ value }: { value: unknown }) {
   return <span className="jz">—</span>;
 }
 
+const snapshotLabels: Record<string, string> = {
+  activity: '正在执行', topic: '学习主题', query: '检索范围', ragCount: '知识库依据', webCount: '补充资料',
+  sourceTitles: '采用的资料', coverage: '内容覆盖', acceptanceRubric: '验收标准', resourceType: '资源类型',
+  chapterCount: '章节数量', stepCount: '实操步骤', questionCount: '题目数量', sourceCount: '引用来源',
+  citationVerified: '引用核验', issueCount: '发现问题', issues: '问题摘要', decision: '处理决定',
+  highFidelityScore: '依据充分度', fallbackUsed: '是否补充资料', knowledgeCoreCount: '知识库切片',
+  debateStage: '辩论阶段', candidateSourceCount: '候选资料', contradictionCount: '矛盾数量',
+  repairDirectives: '返修要求', repairSource: '返修来源', contradictions: '矛盾明细',
+};
+
+function readableValue(value: unknown): string {
+  if (typeof value === 'boolean') return value ? '是' : '否';
+  if (Array.isArray(value)) return value.map((item) => typeof item === 'object' ? JSON.stringify(item) : String(item)).join('；') || '无';
+  if (value && typeof value === 'object') return JSON.stringify(value);
+  return String(value ?? '—');
+}
+
+function EventDetailPanel({ event }: { event: AdminGenerationEvent }) {
+  const [rawOpen, setRawOpen] = useState(false);
+  const snapshot = event.snapshot ?? {};
+  const debateGroup = snapshot.debateGroup && typeof snapshot.debateGroup === 'object' ? snapshot.debateGroup as Record<string, unknown> : null;
+  const roles = Array.isArray(debateGroup?.roles) ? debateGroup.roles.map(String) : [];
+  const contradictions = Array.isArray(snapshot.contradictions) ? snapshot.contradictions.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object')) : [];
+  const hidden = new Set(['requestId', 'traceId', 'promptVersion', 'model', 'debateGroup', 'contradictions', 'debateTriggered', 'debateType']);
+  const facts = Object.entries(snapshot).filter(([key]) => !hidden.has(key));
+  const decision = String(snapshot.decision ?? '');
+  const nextStep = decision === 'repair' || snapshot.repairSource ? '交给内容生成 Agent 定向返修，完成后重新核验。'
+    : decision === 'pass' ? '本关已通过，继续进入后续生成流程。' : '';
+  return (
+    <div className="space-y-3">
+      <section className="rounded-2xl border border-white/85 bg-white/70 p-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2"><span className="lf-pill lf-pill-null">{event.phase || event.status}</span><span className="ml-auto font-mono text-[9px] text-ink-muted">{event.time ? new Date(event.time).toLocaleString('zh-CN', { hour12: false }) : `记录 #${event.seq}`}</span></div>
+        <h4 className="mt-3 text-sm font-bold leading-5 text-ink">{event.title}</h4>
+        {event.detail && <p className="mt-2 text-[11px] leading-5 text-ink-2">{event.detail}</p>}
+      </section>
+      {debateGroup && <section className="rounded-2xl border border-[#6D63A8]/20 bg-[#F2F0FF]/70 p-4">
+        <div className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-[#6D63A8]"/><h4 className="text-xs font-bold text-[#51477F]">{debateGroupNames[event.agent] ?? '专业辩论组'}</h4><span className="ml-auto rounded-full bg-white/80 px-2 py-1 text-[9px] font-semibold text-[#51477F]">{debateGroup.status === 'running' ? '进行中' : '已完成'}</span></div>
+        {roles.length > 0 && <div className="mt-3 flex flex-wrap items-center gap-1.5">{roles.map((role, index) => <span key={`${role}-${index}`} className="contents">{index > 0 && <span className="text-[9px] text-[#51477F]/40">→</span>}<span className="rounded-full bg-white/80 px-2 py-1 text-[9px] font-semibold text-ink-2">{role}</span></span>)}</div>}
+        <div className="mt-3 grid grid-cols-2 gap-2"><div className="rounded-xl bg-white/65 px-3 py-2"><p className="text-[9px] text-ink-muted">仲裁结果</p><p className="mt-1 text-[11px] font-bold text-ink">{decision === 'repair' ? '发现矛盾，需要返修' : decision === 'pass' ? '未发现直接矛盾' : event.detail || '等待裁决'}</p></div><div className="rounded-xl bg-white/65 px-3 py-2"><p className="text-[9px] text-ink-muted">矛盾数量</p><p className="mt-1 text-[11px] font-bold text-ink">{Number(snapshot.contradictionCount ?? contradictions.length)} 处</p></div></div>
+        {nextStep && <div className="mt-2 rounded-xl bg-white/65 px-3 py-2"><p className="text-[9px] text-ink-muted">下一步</p><p className="mt-1 text-[11px] leading-5 text-ink-2">{nextStep}</p></div>}
+      </section>}
+      {contradictions.length > 0 && <section className="space-y-2"><h4 className="px-1 text-xs font-bold text-ink">需要返修的矛盾</h4>{contradictions.map((item, index) => <article key={index} className="rounded-2xl border border-ochre/20 bg-ochre/5 p-3"><p className="text-[10px] font-bold text-ink">{index + 1}. {String(item.claim ?? '待修正表述')}</p>{Boolean(item.evidence) && <p className="mt-2 text-[10px] leading-5 text-ink-2"><span className="font-semibold text-ink-muted">依据：</span>{String(item.evidence)}</p>}{Boolean(item.reason) && <p className="mt-1 text-[10px] leading-5 text-ink-2"><span className="font-semibold text-ink-muted">矛盾：</span>{String(item.reason)}</p>}{Boolean(item.repairInstruction) && <p className="mt-1 text-[10px] leading-5 text-ochre"><span className="font-semibold">返修：</span>{String(item.repairInstruction)}</p>}</article>)}</section>}
+      {facts.length > 0 && <section className="space-y-2"><h4 className="px-1 text-xs font-bold text-ink">本次执行记录</h4>{facts.map(([key, value]) => <div key={key} className="rounded-xl border border-white/70 bg-white/55 px-3 py-2.5"><p className="text-[9px] font-semibold text-ink-muted">{snapshotLabels[key] ?? key}</p><p className="mt-1 whitespace-pre-wrap break-words text-[10.5px] leading-5 text-ink-2">{readableValue(value)}</p></div>)}</section>}
+      <button type="button" onClick={() => setRawOpen((open) => !open)} className="flex w-full items-center justify-between rounded-xl border border-white/70 bg-white/35 px-3 py-2.5 text-[10px] font-semibold text-ink-muted hover:bg-white/55"><span>原始执行记录</span><ChevronRight size={12} className={cn('transition-transform', rawOpen && 'rotate-90')} /></button>
+      {rawOpen && <div className="lf-json p-3.5 text-[11px] leading-[1.65]"><JsonTree value={{ seq: event.seq, agent: event.agentName || event.agent, stage: event.phase || event.status, time: event.time, title: event.title, detail: event.detail, snapshot }} /></div>}
+    </div>
+  );
+}
+
 export default function CollaborationWorkbench() {
   const { session } = useAuth();
   const isAdmin = session?.roles?.includes('admin') === true;
@@ -528,28 +577,18 @@ export default function CollaborationWorkbench() {
         </div>
       </main>
 
-      {/* 第三列：执行详情（JSON 视图，专业开发者面板） */}
+      {/* 第三列：面向管理员的执行详情；原始记录按需展开 */}
       <aside className="flex w-full shrink-0 flex-col rounded-2xl border border-white/70 bg-white/45 lg:w-[350px]">
         <div className="flex items-center justify-between gap-2 border-b border-white/70 px-4 py-3">
           <div className="min-w-0">
             <h3 className="text-sm font-bold text-ink">执行详情</h3>
-            <p className="mt-0.5 text-[10px] text-ink-muted">选中事件的结构化执行记录（JSON）</p>
+            <p className="mt-0.5 text-[10px] text-ink-muted">操作、结论、依据与下一步</p>
           </div>
           {selectedEvent && <span className="lf-pill lf-pill-null shrink-0">{selectedEvent.agentName || (agents.find((item) => item.id === selectedEvent.agent)?.name ?? selectedEvent.agent)}</span>}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {selectedEvent ? (
-            <div className="lf-json p-3.5 text-[11px] leading-[1.65]">
-              <JsonTree value={{
-                seq: selectedEvent.seq,
-                agent: selectedEvent.agentName || selectedEvent.agent,
-                stage: selectedEvent.phase || selectedEvent.status,
-                time: selectedEvent.time,
-                title: selectedEvent.title,
-                detail: selectedEvent.detail,
-                snapshot: selectedEvent.snapshot ?? {},
-              }} />
-            </div>
+            <EventDetailPanel key={selectedEvent.seq} event={selectedEvent} />
           ) : (
             <div className="mt-6 rounded-xl border border-dashed border-white/80 bg-white/30 px-4 py-10 text-center text-xs leading-6 text-ink-muted">
               尚未选择事件
