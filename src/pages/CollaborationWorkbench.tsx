@@ -208,7 +208,7 @@ function AgentWorkflowSummary({ events, running }: { events: AdminGenerationEven
   }, []);
   if (!path.length) return null;
   return (
-    <section className="mt-4 rounded-2xl border border-white/75 bg-white/45 px-4 py-3">
+    <section className="rounded-2xl border border-white/75 bg-white/45 px-4 py-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="mr-1 text-[10px] font-bold text-ink-muted">本次协同路径</span>
         {path.map((agentId, index) => {
@@ -678,8 +678,8 @@ export default function CollaborationWorkbench() {
             <div className="flex h-full items-center justify-center text-sm text-ink-muted">{loading ? '正在读取教研任务…' : '还没有可以查看的教研任务'}</div>
           ) : (
             <>
-              <CollaborationRounds events={events} selectedSeq={selectedEvent?.seq ?? null} selectedAgent={effectiveAgent} runningAgent={active && latest ? latest.agent : null} onSelect={(event) => { if (!isLifecycleEvent(event)) setSelectedAgent(event.agent); setSelectedEventSeq(event.seq); }} onSelectAgent={(agentId) => { setSelectedAgent(agentId); setSelectedEventSeq(events.filter((event) => event.agent === agentId).at(-1)?.seq ?? null); }} />
               <AgentWorkflowSummary events={events} running={active} />
+              <CollaborationRounds events={events} selectedSeq={selectedEvent?.seq ?? null} selectedAgent={effectiveAgent} runningAgent={active && latest ? latest.agent : null} onSelect={(event) => { if (!isLifecycleEvent(event)) setSelectedAgent(event.agent); setSelectedEventSeq(event.seq); }} onSelectAgent={(agentId) => { setSelectedAgent(agentId); setSelectedEventSeq(events.filter((event) => event.agent === agentId).at(-1)?.seq ?? null); }} />
             </>
           )}
         </div>
