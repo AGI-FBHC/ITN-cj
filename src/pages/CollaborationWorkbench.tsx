@@ -695,6 +695,7 @@ export default function CollaborationWorkbench() {
   deletedKeysRef.current = deletedKeys;
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
+  const previousTaskKeysRef = useRef<Set<string>>(new Set());
   const [previewDetail, setPreviewDetail] = useState<AdminResourceDetail | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const selectedKey = params.get('task');
@@ -711,8 +712,17 @@ export default function CollaborationWorkbench() {
         .map((task) => ({ ...task, taskKind: 'ppt' as const, resourceType: 'ppt' as const }));
     }
     const next = [...resourceTasks, ...pptTasks].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
-    setTasks(next.filter((item) => !deletedKeysRef.current.includes(taskKey(item))));
-    if (!selectedKey && next[0]) setParams({ task: taskKey(next[0]) }, { replace: true });
+    const visible = next.filter((item) => !deletedKeysRef.current.includes(taskKey(item)));
+    setTasks(visible);
+    /* 新建任务后自动切换到最新任务泳道：列表最上方出现此前未见过的任务即为新增 */
+    const newest = visible[0];
+    const newestKey = newest ? taskKey(newest) : null;
+    if (newestKey && !previousTaskKeysRef.current.has(newestKey) && !(newestKey === selectedKey)) {
+      setParams({ task: newestKey });
+    } else if (newestKey && !selectedKey) {
+      setParams({ task: newestKey }, { replace: true });
+    }
+    previousTaskKeysRef.current = new Set(visible.map((item) => taskKey(item)));
     setLoading(false);
   };
 
