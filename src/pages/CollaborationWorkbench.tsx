@@ -106,6 +106,13 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
   if (lifecycle[0]) blocks.push({ key: "life-" + lifecycle[0].seq, kind: "life", event: lifecycle[0] });
   units.forEach((unit) => blocks.push({ key: "unit-" + unit.round + "-" + unit.agent + "-" + unit.events[0].seq, kind: "unit", unit }));
   lifecycle.slice(1).forEach((event) => blocks.push({ key: "life-" + event.seq, kind: "life", event }));
+  /* 触发过回滚的智能体：事件序列中出现'向后跳转'时的到达者（被回退要求返工） */
+  const rollbackAgents = new Set<string>();
+  for (let i = 1; i < events.length; i++) {
+    const fromIdx = agents.findIndex((agent) => agent.id === events[i - 1].agent);
+    const toIdx = agents.findIndex((agent) => agent.id === events[i].agent);
+    if (fromIdx >= 0 && toIdx >= 0 && toIdx < fromIdx) rollbackAgents.add(events[i].agent);
+  }
   return (
     <div className="h-full overflow-x-auto">
       <div className="relative min-w-[880px] h-full min-h-[420px] overflow-y-auto rounded-2xl border border-white/90 bg-white/40 px-2 pb-2 pt-0 shadow-[0_8px_28px_rgba(48,74,60,0.10)] backdrop-blur-xl">
@@ -124,6 +131,7 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
             const own = events.filter((event) => event.agent === agent.id);
             const running = runningAgent === agent.id;
             const selected = selectedAgent === agent.id;
+            const rolledBack = rollbackAgents.has(agent.id);
             return (
               <button
                 key={agent.id}
@@ -133,8 +141,8 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
                   selected ? 'border-brand/70 bg-brand-tint/85 shadow-[0_3px_12px_rgba(78,120,96,0.25)] ring-1 ring-brand/25' : running ? 'border-brand/50 bg-white/90 shadow-sm' : own.length ? 'border-white/85 bg-white/70 hover:border-brand/40 shadow-sm' : 'border-dashed border-white/80 bg-white/40 hover:border-brand/30')}
                 title={agent.duty}
               >
-                <span className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full', running ? 'bg-brand text-paper' : own.length ? 'bg-emerald-100 text-emerald-600' : 'bg-white/85 text-ink-muted/60')}>
-                  {running ? <Loader2 size={11} className="animate-spin" /> : own.length ? <CheckCircle2 size={11} /> : <span className="h-1.5 w-1.5 rounded-full bg-ink-muted/40" />}
+                <span className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full', running ? 'bg-brand text-paper' : own.length ? (rolledBack ? 'bg-rose-100 text-red-500' : 'bg-emerald-100 text-emerald-600') : 'bg-white/85 text-ink-muted/60')}>
+                  {running ? <Loader2 size={11} className="animate-spin" /> : own.length ? (rolledBack ? <XCircle size={11} /> : <CheckCircle2 size={11} />) : <span className="h-1.5 w-1.5 rounded-full bg-ink-muted/40" />}
                 </span>
                 <span className="truncate text-[10px] font-bold text-ink">{agent.name}</span>
               </button>
