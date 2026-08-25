@@ -622,20 +622,56 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
-/* 充电涌动进度条：电波从底向上涌动 + 斜纹流动（进行中任务使用） */
-.lf-charge { position: relative; overflow: hidden; }
+/* 充电进度带（仿电动车充电 UI）：深色轨道 + 高亮渐变填充 + 上涌高光 + 流动斜纹 + 前沿光点 */
+.lf-charge { position: relative; overflow: hidden; border-radius: 12px; }
+.lf-charge .track {
+  position: absolute; inset: 0; border-radius: inherit;
+  background: linear-gradient(180deg, rgba(20,32,26,0.9), rgba(28,44,36,0.92));
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.35);
+}
+.lf-charge .fill {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: inherit;
+  background: linear-gradient(90deg, #2e6b53 0%, #3f8f6e 55%, #6cc39a 100%);
+  box-shadow: 0 0 14px rgba(91, 184, 138, 0.45);
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.lf-charge .fill.ok { background: linear-gradient(90deg, #1e8449 0%, #2e9e5b 55%, #4fc07f 100%); }
+.lf-charge .fill.bad { background: linear-gradient(90deg, #b23b3b 0%, #d45555 55%, #ef7f7f 100%); }
 .lf-charge .surge {
-  position: absolute; left: 0; right: 0; height: 46%; pointer-events: none; border-radius: inherit;
-  background: linear-gradient(180deg, rgba(255,255,255,0) 20%, rgba(255,255,255,0.55) 100%);
-  animation: lf-surge-up 1.5s linear infinite;
+  position: absolute; left: 0; right: 0; height: 55%; top: 0; pointer-events: none; border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0) 55%);
+  animation: lf-breathe 2.2s ease-in-out infinite;
 }
 .lf-charge .grain {
   position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
-  background: repeating-linear-gradient(112deg, rgba(255,255,255,0.22) 0 5px, transparent 5px 13px);
+  background: repeating-linear-gradient(112deg, rgba(255,255,255,0.16) 0 5px, transparent 5px 14px);
   animation: lf-flow 0.9s linear infinite;
 }
-@keyframes lf-surge-up { 0% { bottom: -48%; } 100% { bottom: 104%; } }
-@keyframes lf-flow { to { background-position: 26px 0; } }
+.lf-charge .head {
+  position: absolute; top: 1px; bottom: 1px; width: 10px; pointer-events: none; border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.85) 100%);
+  filter: drop-shadow(0 0 6px rgba(255,255,255,0.6));
+  animation: lf-head-pulse 1.2s ease-in-out infinite;
+}
+@keyframes lf-breathe { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@keyframes lf-flow { to { background-position: 28px 0; } }
+@keyframes lf-head-pulse { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
+
+/* 毛玻璃悬浮卡片（泳道等高对比组件） */
+.lf-glass-card {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 0 4px 16px rgba(48, 74, 60, 0.10);
+}
+.lf-glass-lane {
+  background: rgba(250, 247, 238, 0.45);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 4px 18px rgba(48, 74, 60, 0.08), inset 0 1px 0 rgba(255,255,255,0.8);
+}
 
 /* JSON 查看器：深色开发者面板（执行详情列） */
 .lf-json {

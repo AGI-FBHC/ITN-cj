@@ -58,12 +58,13 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
   }
   return (
     <div className="mt-3 overflow-x-auto">
-      <div className="relative min-w-[880px] overflow-hidden rounded-2xl border border-white/70 bg-white/20 px-2 pb-2 pt-2">
-        {/* 泳道底色（交替） */}
-        <div className="pointer-events-none absolute inset-x-2 bottom-2 top-12">
-          <div className="flex h-full gap-2">
-            {agents.map((agent, index) => (<div key={agent.id} className={cn('flex-1 rounded-xl', index % 2 ? 'bg-white/5' : 'bg-white/20')} />))}
+      <div className="relative min-w-[880px] overflow-hidden rounded-2xl border border-white/90 bg-white/40 px-2 pb-2 pt-2 shadow-[0_8px_28px_rgba(48,74,60,0.10)] backdrop-blur-xl">
+        {/* 泳道背景：整板（含列头区域）无缝交替着色 + 四根贯穿竖线分隔五列 */}
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute inset-0 grid grid-cols-5">
+            {agents.map((agent, index) => (<div key={agent.id} className={cn(index % 2 ? 'bg-[#E7F0E9]/90' : 'bg-[#F8EFDD]/95')} />))}
           </div>
+          {[1, 2, 3, 4].map((i) => (<span key={i} className="absolute top-0 bottom-0 w-px bg-ink-muted/20" style={{ left: (i * 20) + '%', transform: 'translateX(-50%)' }} />))}
         </div>
         {/* 列头 = AI 教研组成员，点击进入该成员 */}
         <div className="relative grid grid-cols-5 gap-2">
@@ -76,8 +77,8 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
                 key={agent.id}
                 type="button"
                 onClick={() => onSelectAgent(agent.id)}
-                className={cn('flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-xl border px-1.5 transition-all',
-                  selected ? 'border-brand/50 bg-brand-tint/70 shadow-sm' : running ? 'border-brand/40 bg-white/75' : own.length ? 'border-white/80 bg-white/55 hover:border-brand/30' : 'border-dashed border-white/70 bg-white/30 hover:border-brand/25')}
+                className={cn('flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-xl border backdrop-blur-md transition-all',
+                  selected ? 'border-brand/70 bg-brand-tint/85 shadow-[0_3px_12px_rgba(78,120,96,0.25)] ring-1 ring-brand/25' : running ? 'border-brand/50 bg-white/90 shadow-sm' : own.length ? 'border-white/85 bg-white/70 hover:border-brand/40 shadow-sm' : 'border-dashed border-white/80 bg-white/40 hover:border-brand/30')}
                 title={agent.duty}
               >
                 <span className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full', running ? 'bg-brand text-paper' : own.length ? 'bg-emerald-100 text-emerald-600' : 'bg-white/85 text-ink-muted/60')}>
@@ -114,7 +115,7 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
                   </div>
                 )}
                 <div className="grid min-h-9 grid-cols-5 gap-2 pb-2">
-                  <div style={{ gridColumnStart: lane + 1 }} className={cn('overflow-hidden rounded-lg border p-1 shadow-sm', selected ? 'border-brand/45 bg-brand-tint/65 ring-1 ring-brand/15' : unit.round > 0 ? 'border-ochre/25 bg-white/70' : 'border-white/85 bg-white/70')}>
+                  <div style={{ gridColumnStart: lane + 1 }} className={cn('overflow-hidden rounded-lg border p-1 shadow-[0_4px_14px_rgba(48,74,60,0.14)] backdrop-blur-md', selected ? 'border-brand/45 bg-brand-tint/65 ring-1 ring-brand/15' : unit.round > 0 ? 'border-ochre/25 bg-white/70' : 'border-white/85 bg-white/70')}>
                     {unit.events.map((event) => (
                       <button key={event.seq} type="button" onClick={() => onSelect(event)} title={event.detail || event.title} className={cn('flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left transition-colors', event.seq === selectedSeq ? 'bg-white/85' : 'hover:bg-white/65')}>
                         <span className={cn('h-2 w-2 shrink-0 rounded-full', event.seq === selectedSeq ? 'bg-brand ring-2 ring-brand/20' : unit.round > 0 ? 'bg-ochre' : 'bg-brand/50')} />
@@ -281,34 +282,60 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
     </div>
   );
 }
+/** 任务项：整条充电进度带（深色轨道 + 渐变填充 + 高光涌动）；平滑推进模拟持续工作 */
+function useSmoothProgress(real: number, animating: boolean) {
+  const [shown, setShown] = useState(real);
+  const realRef = { current: real };
+  realRef.current = real;
+  useEffect(() => {
+    if (!animating) { setShown(real); return; }
+    const id = window.setInterval(() => {
+      setShown((current) => {
+        const target = realRef.current;
+        if (current >= 99.5) return 100;
+        const gap = target - current;
+        if (gap > 0.05) return Math.min(100, current + Math.max(0.35, gap * 0.3));
+        return Math.min(96, current + 0.32); /* 真实值未更新：模拟缓冲微推，为真实进度留空间 */
+      });
+    }, 280);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [animating]);
+  return shown;
+}
 
-/** 任务项：状态/类型/进度 + 充电涌动进度条；选中与运行有对比度区分 */
 function WorkbenchTaskItem({ item, selected, onClick }: { item: WorkbenchTask; selected: boolean; onClick: () => void }) {
   const active = activeStatuses.has(item.status);
   const failed = item.status === 'failed' || item.status === 'cancelled';
+  const done = item.status === 'completed' || item.status === 'cancelled';
   const context = contextOf(item);
+  const shown = useSmoothProgress(item.progress, active);
+  const fillPct = done ? 100 : Math.max(3, Math.round(shown));
   return (
     <button
       type="button"
       onClick={onClick}
-      className={cn('w-full overflow-hidden rounded-xl border text-left transition-all',
-        selected ? 'border-brand/60 bg-brand-tint/70 shadow-[0_2px_10px_rgba(78,120,96,0.16)] ring-1 ring-brand/20' :
-        active ? 'border-white/85 bg-white/60 hover:border-brand/35' :
-        failed ? 'border-rose-200/80 bg-rose-50/50 hover:border-brand/25' :
-        'border-white/75 bg-white/40 hover:border-brand/25')}
+      className={cn('w-full overflow-hidden rounded-xl border text-left shadow-sm transition-all',
+        selected ? 'border-brand/70 bg-brand-tint/75 shadow-[0_3px_14px_rgba(78,120,96,0.22)] ring-1 ring-brand/25' :
+        active ? 'border-white/90 bg-white/70 hover:border-brand/40' :
+        failed ? 'border-rose-200/90 bg-rose-50/60 hover:border-brand/30' :
+        'border-white/80 bg-white/50 hover:border-brand/30')}
     >
       <div className="flex items-center gap-1.5 px-3 pt-2.5">
         {active ? <Loader2 size={12} className="shrink-0 animate-spin text-brand" /> : failed ? <XCircle size={12} className="shrink-0 text-red-500" /> : <CheckCircle2 size={12} className="shrink-0 text-emerald-600" />}
         <span className="lf-pill lf-pill-null !px-1.5 !py-0.5 text-[9px]">{typeText[item.resourceType]}</span>
-        <span className="ml-auto font-mono text-[9px] tabular-nums text-ink-muted">{item.progress}%</span>
+        <span className="ml-auto text-[10px] font-bold tabular-nums text-ink">{fillPct}%</span>
       </div>
       <p className="mt-1.5 truncate px-3 text-xs font-bold text-ink">{String(context.topicName || item.title)}</p>
       <p className="mt-0.5 line-clamp-1 px-3 text-[9.5px] leading-4 text-ink-muted">{item.stageMessage}</p>
-      <div className="px-3 pb-3 pt-2">
-        <div className="lf-charge h-1.5 overflow-hidden rounded-full bg-white/75">
-          <div className={cn('relative h-full rounded-full', failed ? 'bg-red-400' : 'bg-brand')} style={{ width: Math.max(3, item.progress) + '%' }}>
-            {active && <><span className="surge" /><span className="grain" /></>}
-          </div>
+      {/* 整条充电进度带 */}
+      <div className="px-3 pb-3 pt-2.5">
+        <div className="lf-charge relative h-8 w-full">
+          <span className="track" />
+          <span className={cn('fill', failed ? 'bad' : 'ok', !done && '')} style={{ width: fillPct + '%' }}>
+            {active && <><span className="surge" /><span className="grain" /><span className="head" /></>}
+          </span>
+          <span className="absolute inset-y-0 right-2.5 flex items-center text-[10px] font-bold tabular-nums text-white/95 drop-shadow-sm">{fillPct}%</span>
         </div>
       </div>
     </button>
