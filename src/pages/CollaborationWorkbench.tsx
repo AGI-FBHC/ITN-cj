@@ -367,7 +367,7 @@ function useSmoothProgress(real: number, cap: number, animating: boolean) {
   return shown;
 }
 
-function WorkbenchTaskItem({ item, selected, live, onPreview, onClick }: { item: WorkbenchTask; selected: boolean; live?: boolean; onPreview?: (item: WorkbenchTask) => void; onClick: () => void }) {
+function WorkbenchTaskItem({ item, selected, onPreview, onClick }: { item: WorkbenchTask; selected: boolean; onPreview?: (item: WorkbenchTask) => void; onClick: () => void }) {
   const active = activeStatuses.has(item.status);
   const failed = item.status === 'failed' || item.status === 'cancelled';
   const context = contextOf(item);
@@ -380,7 +380,6 @@ function WorkbenchTaskItem({ item, selected, live, onPreview, onClick }: { item:
       type="button"
       onClick={onClick}
       className={cn('relative w-full overflow-hidden rounded-xl border text-left transition-all',
-        live && 'lf-task-live',
         selected ? 'border-brand/70 bg-white/95 shadow-[0_4px_16px_rgba(78,120,96,0.18)] ring-2 ring-brand/25' :
         active ? 'border-white/85 bg-white/75 hover:border-brand/40' :
         failed ? 'border-rose-200/80 bg-white/70 hover:border-brand/35' :
@@ -708,7 +707,7 @@ export default function CollaborationWorkbench() {
         <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
           <div className="space-y-2">
             {(taskTab === 'active' ? grouped.active : grouped.finished).map((item) => (
-              <WorkbenchTaskItem key={taskKey(item)} item={item} selected={taskKey(item) === selectedKey} live={taskTab === 'active' && taskKey(item) === (grouped.active[0] ? taskKey(grouped.active[0]) : '')} onPreview={(task) => void openPreview(task)} onClick={() => setParams({ task: taskKey(item) })} />
+              <WorkbenchTaskItem key={taskKey(item)} item={item} selected={taskKey(item) === selectedKey} onPreview={(task) => void openPreview(task)} onClick={() => setParams({ task: taskKey(item) })} />
             ))}
             {(taskTab === 'active' ? grouped.active : grouped.finished).length === 0 && (
               <div className="lf-empty rounded-xl p-6 text-xs">{taskTab === 'active' ? '暂无进行中的任务' : '暂无已完成任务'}</div>

@@ -750,14 +750,6 @@
 .lf-json .jz { color: #8fa39a; }
 .lf-json .jp { color: #8fa39a; }
 
-/* 最新进行中任务：呼吸光晕闪烁 */
-.lf-task-live {
-  animation: lf-task-pulse 1.7s ease-in-out infinite;
-}
-@keyframes lf-task-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(78,120,96,0.30), 0 2px 10px rgba(78,120,96,0.08); }
-  50% { box-shadow: 0 0 16px 4px rgba(78,120,96,0.42), 0 4px 14px rgba(78,120,96,0.12); }
-}
 
 /* 泳道最新步骤板块：呼吸光晕闪烁（仅进行中任务的最新板块） */
 .lf-block-live-card {
