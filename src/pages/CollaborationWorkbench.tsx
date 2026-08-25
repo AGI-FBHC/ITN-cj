@@ -231,14 +231,8 @@ export default function CollaborationWorkbench() {
   const agentEvents = events.filter((event) => event.agent === effectiveAgent);
   const selectedEvent = events.find((event) => event.seq === selectedEventSeq) ?? agentEvents.at(-1);
   const active = Boolean(task && activeStatuses.has(task.status) && (!latest || activeStatuses.has(latest.status)));
-  const agentOnlyEvents = useMemo(() => events.filter((event) => !isLifecycleEvent(event)), [events]);
-  const transitions = useMemo(() => agentOnlyEvents.slice(1).filter((event, index) => event.agent !== agentOnlyEvents[index].agent).length, [agentOnlyEvents]);
-  const returns = useMemo(() => {
-    const seen = new Set<string>(); let count = 0; let prior = '';
-    for (const event of agentOnlyEvents) { if (event.agent !== prior && seen.has(event.agent)) count += 1; seen.add(event.agent); prior = event.agent; }
-    return count;
-  }, [agentOnlyEvents]);
   const grouped = useMemo(() => ({ active: tasks.filter((item) => activeStatuses.has(item.status)), finished: tasks.filter((item) => !activeStatuses.has(item.status)) }), [tasks]);
+
 
   return <div className="lf-anim-in-up flex min-h-[680px] flex-col gap-4 lg:h-full lg:min-h-0 lg:flex-row">
     <aside className="flex w-full shrink-0 flex-col rounded-2xl border border-white/70 bg-white/45 lg:w-[300px]">
@@ -251,7 +245,7 @@ export default function CollaborationWorkbench() {
     <main className="min-w-0 flex-1 overflow-y-auto rounded-2xl border border-white/70 bg-[#f7f5ee]/75 p-5">
       {!task ? <div className="flex h-full items-center justify-center text-sm text-ink-muted">{loading ? '正在读取教研任务…' : '还没有可以查看的教研任务'}</div> : <>
         <header className="flex flex-wrap items-start gap-3"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-bold text-ink">{String(contextOf(task).topicName || task.title)}</h2><span className="lf-pill lf-pill-null">{typeText[task.resourceType]}</span>{active && <span className="text-[11px] font-semibold text-brand">● 实时协同中</span>}</div><p className="mt-1 text-xs text-ink-muted">{task.title} · 所有 Agent、历史事件与执行详情统一回溯</p></div></header>
-        <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4"><div className="rounded-xl bg-white/55 px-3 py-2.5"><p className="text-[10px] text-ink-muted">Agent 工作事件</p><p className="mt-1 text-base font-bold text-ink">{agentOnlyEvents.length}</p></div><div className="rounded-xl bg-white/55 px-3 py-2.5"><p className="text-[10px] text-ink-muted">Agent 交接</p><p className="mt-1 text-base font-bold text-ink">{transitions}</p></div><div className="rounded-xl bg-white/55 px-3 py-2.5"><p className="text-[10px] text-ink-muted">回退 / 再进入</p><p className="mt-1 text-base font-bold text-ochre">{returns}</p></div><div className="rounded-xl bg-white/55 px-3 py-2.5"><p className="text-[10px] text-ink-muted">任务状态</p><p className="mt-1 text-sm font-bold text-ink">{active ? '自主协同中' : task.status === 'completed' ? '已通过' : task.status === 'failed' ? '未通过' : task.status}</p></div></div>
+
 
         {/* AI 教研组成员已并入下方泳道表列头：成员即列名，点击列头进入该成员 */}
         <section className="mt-4 rounded-2xl border border-white/70 bg-white/40 p-3">
