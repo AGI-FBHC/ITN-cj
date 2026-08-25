@@ -19,6 +19,12 @@ const agents = [
   { id: 'ARB-05', name: '发布仲裁 Agent', duty: '通过、返工或终止' },
 ] as const;
 const activeStatuses = new Set(['queued', 'retrieving', 'debating', 'planning', 'analyzing', 'generating', 'verifying', 'reviewing', 'revising', 'judging', 'outline_review']);
+/** 执行阶段 → 进度上限：缓冲推进绝不超过当前阶段目标，避免'才到拆解就 96%' */
+const STAGE_CAPS: Record<string, number> = {
+  queued: 2, retrieving: 12, planning: 28, analyzing: 28, outline_review: 40,
+  generating: 55, verifying: 68, reviewing: 76, revising: 80, debating: 74, judging: 88,
+  completed: 100,
+};
 const typeText: Record<string, string> = { lecture: '讲义', practice: '实操指南', quiz: '题库', ppt: '交互课件' };
 const debateGroupNames: Record<string, string> = {
   'DIA-01': '教学方案辩论组', 'RET-02': '证据辩论组', 'GEN-03': '内容表达辩论组',
@@ -283,21 +289,24 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
   );
 }
 
-function useSmoothProgress(real: number, animating: boolean) {
-  const [shown, setShown] = useState(real);
+function useSmoothProgress(real: number, cap: number, animating: boolean) {
+  const [shown, setShown] = useState(Math.min(real, cap));
   const realRef = { current: real };
+  const capRef = { current: cap };
   realRef.current = real;
+  capRef.current = cap;
   useEffect(() => {
-    if (!animating) { setShown(real); return; }
+    if (!animating) { setShown(realRef.current); return; }
     const id = window.setInterval(() => {
       setShown((current) => {
-        const target = realRef.current;
-        if (current >= 99.5) return 100;
+        const target = Math.min(realRef.current, capRef.current);
+        if (current >= target - 0.05 && current >= capRef.current) return Math.min(capRef.current, current);
         const gap = target - current;
-        if (gap > 0.05) return Math.min(100, current + Math.max(0.35, gap * 0.3));
-        return Math.min(96, current + 0.32); /* 真实值未更新时模拟缓冲微推 */
+        if (gap > 0.05) return Math.min(capRef.current, current + Math.max(0.3, gap * 0.28));
+        /* 真实值已到阶段目标：在阶段帽内缓慢微推，模拟'正在当前环节推进' */
+        return Math.min(capRef.current, current + 0.22);
       });
-    }, 280);
+    }, 300);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [animating]);
@@ -308,8 +317,10 @@ function WorkbenchTaskItem({ item, selected, onClick }: { item: WorkbenchTask; s
   const active = activeStatuses.has(item.status);
   const failed = item.status === 'failed' || item.status === 'cancelled';
   const context = contextOf(item);
-  const shown = useSmoothProgress(item.progress, active);
-  const fillPct = failed ? item.progress : Math.max(4, Math.round(shown));
+  const done = item.status === 'completed';
+  const stageCap = failed ? Math.max(item.progress, 4) : (STAGE_CAPS[item.status] ?? 90);
+  const shown = useSmoothProgress(done ? 100 : item.progress, failed ? stageCap : (done ? 100 : stageCap), active);
+  const fillPct = done || failed || !active ? Math.max(4, done ? 100 : item.progress) : Math.max(4, Math.round(shown));
   return (
     <button
       type="button"
