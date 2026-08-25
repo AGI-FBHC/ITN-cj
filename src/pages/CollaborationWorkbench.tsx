@@ -105,13 +105,16 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
   const blocks: Array<{ key: string; kind: "life" | "unit"; event?: AdminGenerationEvent; unit?: { agent: string; events: AdminGenerationEvent[]; round: number; isRoundStart: boolean } }> = [];
   if (lifecycle[0]) blocks.push({ key: "life-" + lifecycle[0].seq, kind: "life", event: lifecycle[0] });
   units.forEach((unit) => blocks.push({ key: "unit-" + unit.round + "-" + unit.agent + "-" + unit.events[0].seq, kind: "unit", unit }));
-  /* 回滚标记：路径一旦发生回滚，从回滚重新开始执行的 Agent 起、其后轨迹上的所有 Agent 都标 ×（表示该轨迹经过返工/重做） */
+  /* 回滚标记：向后跳转且目标 Agent 此前已出现（真正的再次进入/返工）才算回滚；
+     从该回滚重新开始执行的 Agent 起、其后轨迹上的所有 Agent 都标 × */
   const rollbackAgents = new Set<string>();
   let rollbackStart = -1;
+  const seenAgents = new Set<string>();
   for (let i = 1; i < events.length; i++) {
     const fromIdx = agents.findIndex((agent) => agent.id === events[i - 1].agent);
     const toIdx = agents.findIndex((agent) => agent.id === events[i].agent);
-    if (fromIdx >= 0 && toIdx >= 0 && toIdx < fromIdx) { rollbackStart = i; break; }
+    if (fromIdx >= 0 && toIdx >= 0 && toIdx < fromIdx && seenAgents.has(events[i].agent)) { rollbackStart = i; break; }
+    seenAgents.add(events[i - 1].agent);
   }
   if (rollbackStart >= 0) {
     for (let i = rollbackStart; i < events.length; i++) rollbackAgents.add(events[i].agent);
@@ -351,7 +354,6 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
     </div>
   );
 }
-
 function useSmoothProgress(real: number, cap: number, animating: boolean) {
   const [shown, setShown] = useState(Math.min(real, cap));
   const realRef = { current: real };
@@ -362,16 +364,15 @@ function useSmoothProgress(real: number, cap: number, animating: boolean) {
     if (!animating) { setShown(realRef.current); return; }
     const id = window.setInterval(() => {
       setShown((current) => {
-        if (current >= 99.2) return 100;
-        const target = Math.min(realRef.current, capRef.current);
-        const gap = target - current;
-        /* 真实进度领先：优先快速逼近 */
-        if (gap > 0.05) return Math.min(capRef.current, current + Math.max(0.5, gap * 0.3));
-        /* 真实值未更新：在'阶段帽 + 蠕行余量'内缓慢持续推进，避免卡死在某值 */
-        const creepCeil = Math.min(100, Math.max(target + 11, capRef.current + 9));
-        return Math.min(creepCeil, current + 0.35);
+        const rv = realRef.current;
+        /* 真实进度领先：快速吸附到真实值（精确优先） */
+        if (rv > current + 0.01) return Math.min(100, current + Math.max(0.6, (rv - current) * 0.45));
+        /* 此前蠕行超出真实值：回落贴近 */
+        if (current > rv + 0.6) return Math.max(4, current - 0.9);
+        /* 真实值静止：只在真实值 ±5 与阶段帽内做极缓慢微蠕，保持动感但不忽悠 */
+        return Math.min(capRef.current, Math.min(rv + 5, current + 0.12));
       });
-    }, 300);
+    }, 320);
     return () => window.clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [animating]);
