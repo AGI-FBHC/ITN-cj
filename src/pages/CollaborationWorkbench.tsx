@@ -6,7 +6,6 @@ import { presentationApi, type PresentationRequest, type PresentationTaskSummary
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import EvidenceDebateCourt from '@/components/resources/EvidenceDebateCourt';
 
 type WorkbenchTask =
   | ({ taskKind: 'resource' } & LearningResourceGenerationTask)
@@ -37,20 +36,26 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
 }) {
   const lifecycle = events.filter(isLifecycleEvent);
   const work = events.filter((event) => !isLifecycleEvent(event));
-  const rows: Array<{ event: AdminGenerationEvent; round: number; isRoundStart: boolean }> = [];
+  const units: Array<{ agent: string; events: AdminGenerationEvent[]; round: number; isRoundStart: boolean }> = [];
   let round = 0;
   const visited = new Set<string>();
   let previousAgent = '';
   for (const event of work) {
-    const prevRow = rows.at(-1);
+    const previousUnit = units.at(-1);
     const reentry = event.agent !== previousAgent && visited.has(event.agent);
     const repairSignal = ['revising', 'debating'].includes(event.status) || ['revising', 'debating'].includes(event.phase);
-    const isNewRound = (reentry || repairSignal) && prevRow !== undefined && prevRow.event.agent !== event.agent;
+    const isNewRound = (reentry || repairSignal) && previousUnit !== undefined && previousUnit.agent !== event.agent;
     if (isNewRound) round += 1;
-    rows.push({ event, round, isRoundStart: isNewRound || rows.length === 0 });
+    const currentUnit = units.at(-1);
+    if (currentUnit?.agent === event.agent && currentUnit.round === round) currentUnit.events.push(event);
+    else units.push({ agent: event.agent, events: [event], round, isRoundStart: isNewRound || units.length === 0 });
     visited.add(event.agent);
     previousAgent = event.agent;
   }
+  const debateTriggered = events.some((event) => event.snapshot?.debateTriggered === true);
+  const debateUnitIndex = Math.max(0, units.findIndex((unit) => unit.events.some((event) => event.snapshot?.debateTriggered === true)));
+  const firstRetrievalUnit = units.findIndex((unit) => unit.agent === 'RET-02');
+  const debateHostIndex = debateTriggered && units[debateUnitIndex]?.agent === 'RET-02' ? debateUnitIndex : firstRetrievalUnit;
 
   return (
     <div className="mt-3 overflow-x-auto">
@@ -84,56 +89,55 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
             );
           })}
         </div>
-        {/* 生命周期事件：一行胶囊 */}
-        {lifecycle.length > 0 && (
-          <div className="relative mt-2 flex flex-wrap items-center gap-1.5">
-            <span className="text-[8px] font-bold uppercase tracking-wider text-ink-muted">生命周期</span>
-            {lifecycle.map((event) => (
-              <button
-                key={event.seq}
-                type="button"
-                onClick={() => onSelect(event)}
-                className={cn('flex items-center gap-1 rounded-full border px-2 py-0.5 text-[8.5px] font-semibold', event.seq === selectedSeq ? 'border-brand/45 bg-brand-tint/60 text-brand' : 'border-white/80 bg-white/65 text-ink-2 hover:border-brand/30')}
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-brand/60" />
-                {event.title}
+        {/* 系统起点 + Agent 阶段块 + 系统终点：无回环时自然形成左上到右下的阶梯 */}
+        <div className="relative pt-2">
+          {lifecycle[0] && (
+            <div className="grid min-h-9 grid-cols-5 gap-2">
+              <button type="button" onClick={() => onSelect(lifecycle[0])} className={cn('col-start-1 flex items-center gap-1.5 self-start rounded-lg border px-2 py-1.5 text-left', lifecycle[0].seq === selectedSeq ? 'border-brand/45 bg-brand-tint/70' : 'border-white/85 bg-white/65 hover:border-brand/30')}>
+                <span className="h-2 w-2 shrink-0 rounded-full bg-brand" /><span className="truncate text-[9px] font-bold text-ink">{lifecycle[0].title}</span><span className="ml-auto text-[7.5px] text-ink-muted">系统</span>
               </button>
-            ))}
-          </div>
-        )}
-        {/* 事件序列：与列头同一 grid-cols-5 对齐；初始生成挂在首个事件，修复轮次挂在回退到达事件 */}
-        <div className="relative py-1">
-          {rows.map(({ event, round, isRoundStart }) => {
-            const lane = Math.max(0, agents.findIndex((item) => item.id === event.agent));
-            const selected = event.seq === selectedSeq;
+            </div>
+          )}
+          {units.map((unit, unitIndex) => {
+            const lane = Math.max(0, agents.findIndex((item) => item.id === unit.agent));
+            const selected = unit.events.some((event) => event.seq === selectedSeq);
             return (
-              <div key={event.seq}>
+              <div key={`${unit.round}-${unit.agent}-${unit.events[0].seq}`}>
                 {/* 轮次起始标签（初始生成 / 修复N） */}
-                {isRoundStart && (
+                {unit.isRoundStart && (
                   <div className="relative h-5">
-                    <span className={cn('absolute left-1 top-0 rounded-full px-1.5 py-px text-[8px] font-bold', round === 0 ? 'bg-brand-tint text-brand' : 'bg-ochre/15 text-[#9A5B3C]')}>
-                      {round === 0 ? '初始生成' : '修复 ' + round}
+                    <span className={cn('absolute left-1 top-0 rounded-full px-1.5 py-px text-[8px] font-bold', unit.round === 0 ? 'bg-brand-tint text-brand' : 'bg-ochre/15 text-[#9A5B3C]')}>
+                      {unit.round === 0 ? '主流程' : '自主修复第 ' + unit.round + ' 轮'}
                     </span>
                   </div>
                 )}
-                {/* 事件行（与列头同 grid 对齐） */}
-                <div className="grid h-6 grid-cols-5 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onSelect(event)}
-                    style={{ gridColumnStart: lane + 1, gridRowStart: 1 }}
-                    className={cn('flex items-center gap-1 overflow-hidden rounded-md px-1.5 transition-colors', selected ? 'bg-brand-tint/80 ring-1 ring-brand/25' : 'hover:bg-white/70')}
-                    title={event.detail || event.title}
-                  >
-                    <span className={cn('h-2 w-2 shrink-0 rounded-full', selected ? 'bg-brand ring-2 ring-brand/25' : round > 0 ? 'bg-ochre' : 'bg-brand/50')} />
-                    <span className="truncate text-[9.5px] font-semibold text-ink">{event.title}</span>
-                    <span className="ml-auto shrink-0 font-mono text-[7.5px] tabular-nums text-ink-muted">{event.time ? new Date(event.time).toLocaleTimeString('zh-CN', { hour12: false }) : '#' + event.seq}</span>
-                  </button>
+                <div className="grid min-h-9 grid-cols-5 gap-2 pb-2">
+                  <div style={{ gridColumnStart: lane + 1 }} className={cn('overflow-hidden rounded-lg border p-1 shadow-sm', selected ? 'border-brand/45 bg-brand-tint/65 ring-1 ring-brand/15' : unit.round > 0 ? 'border-ochre/25 bg-white/70' : 'border-white/85 bg-white/70')}>
+                    {unit.events.map((event) => (
+                      <button key={event.seq} type="button" onClick={() => onSelect(event)} title={event.detail || event.title} className={cn('flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left transition-colors', event.seq === selectedSeq ? 'bg-white/85' : 'hover:bg-white/65')}>
+                        <span className={cn('h-2 w-2 shrink-0 rounded-full', event.seq === selectedSeq ? 'bg-brand ring-2 ring-brand/20' : unit.round > 0 ? 'bg-ochre' : 'bg-brand/50')} />
+                        <span className="truncate text-[9.5px] font-semibold text-ink">{event.title}</span>
+                      </button>
+                    ))}
+                    {unitIndex === debateHostIndex && unit.agent === 'RET-02' && (
+                      <div className="m-1 mt-1.5 rounded-lg border border-[#6D63A8]/25 bg-[#F2F0FF]/80 px-2 py-2">
+                        <div className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-[#6D63A8]"/><span className="text-[8.5px] font-bold text-[#51477F]">证据辩论组</span><span className="ml-auto rounded-full bg-white/80 px-1.5 py-0.5 text-[7.5px] font-semibold text-[#51477F]/70">{debateTriggered ? '已执行' : '待命'}</span></div>
+                        {debateTriggered && <div className="mt-1.5 flex items-center gap-1 text-[7.5px] font-semibold text-ink-2"><span>多源调查</span><span className="text-[#51477F]/40">→</span><span>质疑审查</span><span className="text-[#51477F]/40">→</span><span>证据仲裁</span></div>}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             );
           })}
-          {!rows.length && <p className="relative py-6 text-center text-xs text-ink-muted">等待第一条协同事件…</p>}
+          {lifecycle.slice(1).map((event) => (
+            <div key={event.seq} className="grid min-h-9 grid-cols-5 gap-2">
+              <button type="button" onClick={() => onSelect(event)} className={cn('col-start-5 flex items-center gap-1.5 self-start rounded-lg border px-2 py-1.5 text-left', event.seq === selectedSeq ? 'border-brand/45 bg-brand-tint/70' : 'border-white/85 bg-white/65 hover:border-brand/30')}>
+                <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-500" /><span className="truncate text-[9px] font-bold text-ink">{event.title}</span><span className="ml-auto text-[7.5px] text-ink-muted">系统</span>
+              </button>
+            </div>
+          ))}
+          {!units.length && lifecycle.length < 1 && <p className="relative py-6 text-center text-xs text-ink-muted">等待第一条协同事件…</p>}
         </div>
       </div>
     </div>
@@ -489,7 +493,6 @@ export default function CollaborationWorkbench() {
             <>
               <CollaborationRounds events={events} selectedSeq={selectedEvent?.seq ?? null} selectedAgent={effectiveAgent} runningAgent={active && latest ? latest.agent : null} onSelect={(event) => { if (!isLifecycleEvent(event)) setSelectedAgent(event.agent); setSelectedEventSeq(event.seq); }} onSelectAgent={(agentId) => { setSelectedAgent(agentId); setSelectedEventSeq(events.filter((event) => event.agent === agentId).at(-1)?.seq ?? null); }} />
               <AgentWorkflowSummary events={events} running={active} />
-              <EvidenceDebateCourt events={events} hideIdle />
             </>
           )}
         </div>
