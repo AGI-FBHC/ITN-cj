@@ -105,13 +105,16 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
   const blocks: Array<{ key: string; kind: "life" | "unit"; event?: AdminGenerationEvent; unit?: { agent: string; events: AdminGenerationEvent[]; round: number; isRoundStart: boolean } }> = [];
   if (lifecycle[0]) blocks.push({ key: "life-" + lifecycle[0].seq, kind: "life", event: lifecycle[0] });
   units.forEach((unit) => blocks.push({ key: "unit-" + unit.round + "-" + unit.agent + "-" + unit.events[0].seq, kind: "unit", unit }));
-  lifecycle.slice(1).forEach((event) => blocks.push({ key: "life-" + event.seq, kind: "life", event }));
-  /* 触发过回滚的智能体：事件序列中出现'向后跳转'时的到达者（被回退要求返工） */
+  /* 回滚标记：路径一旦发生回滚，从回滚重新开始执行的 Agent 起、其后轨迹上的所有 Agent 都标 ×（表示该轨迹经过返工/重做） */
   const rollbackAgents = new Set<string>();
+  let rollbackStart = -1;
   for (let i = 1; i < events.length; i++) {
     const fromIdx = agents.findIndex((agent) => agent.id === events[i - 1].agent);
     const toIdx = agents.findIndex((agent) => agent.id === events[i].agent);
-    if (fromIdx >= 0 && toIdx >= 0 && toIdx < fromIdx) rollbackAgents.add(events[i].agent);
+    if (fromIdx >= 0 && toIdx >= 0 && toIdx < fromIdx) { rollbackStart = i; break; }
+  }
+  if (rollbackStart >= 0) {
+    for (let i = rollbackStart; i < events.length; i++) rollbackAgents.add(events[i].agent);
   }
   return (
     <div className="h-full overflow-x-auto">
