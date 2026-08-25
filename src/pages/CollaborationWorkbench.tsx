@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Loader2, RefreshCw, Sparkles, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, RefreshCw, Sparkles, XCircle } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { api, streamAdminGenerationTask, type AdminGenerationEvent, type LearningResourceGenerationTask } from '@/lib/api';
 import { presentationApi, type PresentationTaskSummary } from '@/lib/presentationApi';
@@ -162,26 +162,78 @@ function contextOf(task: WorkbenchTask): Record<string, unknown> {
   return request?.generationContext ?? request?.generation_context ?? {};
 }
 
-function detailRows(snapshot: Record<string, unknown>) {
-  const labels: Record<string, string> = {
-    activity: '具体操作', topic: '学习主题', query: '知识范围', ragCount: '知识库切片', webCount: '补充资料',
-    sourceTitles: '命中切片', coverage: '内容覆盖', acceptanceRubric: '验收标准', resourceType: '资源类型',
-    chapterCount: '章节数', stepCount: '步骤数', questionCount: '题目数', sourceCount: '引用来源',
-    citationVerified: '引用核验', issueCount: '发现问题', issues: '问题摘要', decision: '知识依据结论',
-    highFidelityScore: '知识依据充分度', fallbackUsed: '资料补充情况', knowledgeCoreCount: '结构化知识切片',
-    debateStage: '辩论阶段', candidateSourceCount: '候选资料', debateScorecard: '仲裁成绩单', debateClaims: '裁决观点',
-  };
-  const hidden = new Set(['requestId', 'traceId', 'promptVersion', 'model']);
-  return Object.entries(snapshot ?? {}).filter(([key]) => !hidden.has(key)).map(([key, value]) => {
-    let shown = Array.isArray(value) ? value.map((item) => typeof item === 'object' ? JSON.stringify(item, null, 2) : String(item)).join('\n')
-      : value && typeof value === 'object' ? JSON.stringify(value, null, 2)
-      : typeof value === 'boolean' ? (value ? '是' : '否') : String(value ?? '—');
-    if (key === 'highFidelityScore' && Number.isFinite(Number(value))) shown = `${Math.round(Number(value) * 100)} 分`;
-    return [labels[key] ?? key, shown] as const;
-  });
+function taskKey(task: WorkbenchTask) { return `${task.taskKind}-${task.id}`; }
+
+/** 任务项：状态/类型/进度 + 充电涌动进度条；选中与运行有对比度区分 */
+function WorkbenchTaskItem({ item, selected, onClick }: { item: WorkbenchTask; selected: boolean; onClick: () => void }) {
+  const active = activeStatuses.has(item.status);
+  const failed = item.status === 'failed' || item.status === 'cancelled';
+  const context = contextOf(item);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn('w-full overflow-hidden rounded-xl border text-left transition-all',
+        selected ? 'border-brand/60 bg-brand-tint/70 shadow-[0_2px_10px_rgba(78,120,96,0.16)] ring-1 ring-brand/20' :
+        active ? 'border-white/85 bg-white/60 hover:border-brand/35' :
+        failed ? 'border-rose-200/80 bg-rose-50/50 hover:border-brand/25' :
+        'border-white/75 bg-white/40 hover:border-brand/25')}
+    >
+      <div className="flex items-center gap-1.5 px-3 pt-2.5">
+        {active ? <Loader2 size={12} className="shrink-0 animate-spin text-brand" /> : failed ? <XCircle size={12} className="shrink-0 text-red-500" /> : <CheckCircle2 size={12} className="shrink-0 text-emerald-600" />}
+        <span className="lf-pill lf-pill-null !px-1.5 !py-0.5 text-[9px]">{typeText[item.resourceType]}</span>
+        <span className="ml-auto font-mono text-[9px] tabular-nums text-ink-muted">{item.progress}%</span>
+      </div>
+      <p className="mt-1.5 truncate px-3 text-xs font-bold text-ink">{String(context.topicName || item.title)}</p>
+      <p className="mt-0.5 line-clamp-1 px-3 text-[9.5px] leading-4 text-ink-muted">{item.stageMessage}</p>
+      <div className="px-3 pb-3 pt-2">
+        <div className="lf-charge h-1.5 overflow-hidden rounded-full bg-white/75">
+          <div className={cn('relative h-full rounded-full', failed ? 'bg-red-400' : 'bg-brand')} style={{ width: Math.max(3, item.progress) + '%' }}>
+            {active && <><span className="surge" /><span className="grain" /></>}
+          </div>
+        </div>
+      </div>
+    </button>
+  );
 }
 
-function taskKey(task: WorkbenchTask) { return `${task.taskKind}-${task.id}`; }
+/** 递归 JSON 树（深色开发者面板）：key 绿 / 字符串琥珀 / 数字蓝 / 布尔紫 / null 灰 */
+function JsonTree({ value }: { value: unknown }) {
+  if (value === null) return <span className="jz">null</span>;
+  if (typeof value === 'string') return <span className="js">"{value}"</span>;
+  if (typeof value === 'number') return <span className="jn">{String(value)}</span>;
+  if (typeof value === 'boolean') return <span className="jb">{String(value)}</span>;
+  if (Array.isArray(value)) {
+    if (!value.length) return <span className="jp">[]</span>;
+    return (
+      <>
+        <span className="jp">[</span>
+        {value.map((item, index) => (
+          <div key={index} className="pl-4"><JsonTree value={item} />{index < value.length - 1 && <span className="jp">,</span>}</div>
+        ))}
+        <span className="jp">]</span>
+      </>
+    );
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (!entries.length) return <span className="jp">{"{}"}</span>;
+    return (
+      <>
+        <span className="jp">{"{}"}</span>
+        {entries.map(([key, val], index) => (
+          <div key={key} className="pl-4">
+            <span className="jk">"{key}"</span><span className="jp">: </span>
+            <JsonTree value={val} />
+            {index < entries.length - 1 && <span className="jp">,</span>}
+          </div>
+        ))}
+        <span className="jp">{"}"}</span>
+      </>
+    );
+  }
+  return <span className="jz">—</span>;
+}
 
 export default function CollaborationWorkbench() {
   const { session } = useAuth();
@@ -192,6 +244,8 @@ export default function CollaborationWorkbench() {
   const [events, setEvents] = useState<AdminGenerationEvent[]>([]);
   const [selectedAgent, setSelectedAgent] = useState('');
   const [selectedEventSeq, setSelectedEventSeq] = useState<number | null>(null);
+  const [taskTab, setTaskTab] = useState('active');
+  const [tasksCollapsed, setTasksCollapsed] = useState(false);
   const selectedKey = params.get('task');
 
   const load = async () => {
@@ -235,54 +289,93 @@ export default function CollaborationWorkbench() {
   const grouped = useMemo(() => ({ active: tasks.filter((item) => activeStatuses.has(item.status)), finished: tasks.filter((item) => !activeStatuses.has(item.status)) }), [tasks]);
 
 
-  return <div className="lf-anim-in-up flex min-h-[680px] flex-col gap-4 lg:h-full lg:min-h-0 lg:flex-row">
-    <aside className="flex w-full shrink-0 flex-col rounded-2xl border border-white/70 bg-white/45 lg:w-[300px]">
-      <div className="flex items-center gap-3 border-b border-white/70 p-4"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand text-paper"><Sparkles size={17}/></span><div><h2 className="text-sm font-bold text-ink">AI 教研任务</h2><p className="mt-0.5 text-[10px] text-ink-muted">选择任务查看完整协同过程</p></div><button onClick={() => void load()} className="lf-row-btn ml-auto !p-2" aria-label="刷新任务"><RefreshCw size={13} className={loading ? 'animate-spin' : ''}/></button></div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        {(['active', 'finished'] as const).map((group) => <section key={group} className="mb-4"><p className="mb-2 px-1 text-[10px] font-bold tracking-wide text-ink-muted">{group === 'active' ? `进行中 · ${grouped.active.length}` : `已完成 / 已结束 · ${grouped.finished.length}`}</p><div className="space-y-2">{grouped[group].map((item) => { const selected = taskKey(item) === selectedKey; return <button key={taskKey(item)} onClick={() => setParams({ task: taskKey(item) })} className={cn('w-full rounded-xl border px-3 py-3 text-left transition-all', selected ? 'border-brand/45 bg-brand-tint/60 shadow-sm' : 'border-white/70 bg-white/45 hover:border-brand/25')}><div className="flex items-center gap-2">{activeStatuses.has(item.status) ? <Loader2 size={12} className="animate-spin text-brand"/> : item.status === 'completed' ? <CheckCircle2 size={12} className="text-emerald-600"/> : <XCircle size={12} className="text-red-500"/>}<span className="lf-pill lf-pill-null !px-1.5 text-[9px]">{typeText[item.resourceType]}</span><span className="ml-auto text-[9px] text-ink-muted">{item.progress}%</span></div><p className="mt-2 line-clamp-2 text-xs font-bold leading-5 text-ink">{String(contextOf(item).topicName || item.title)}</p><p className="mt-1 truncate text-[10px] text-ink-muted">{item.stageMessage}</p></button>; })}{!grouped[group].length && <p className="rounded-xl border border-dashed border-white/80 px-3 py-5 text-center text-[10px] text-ink-muted">暂无任务</p>}</div></section>)}
-      </div>
-    </aside>
-
-    <main className="min-w-0 flex-1 overflow-y-auto rounded-2xl border border-white/70 bg-[#f7f5ee]/75 p-5">
-      {!task ? <div className="flex h-full items-center justify-center text-sm text-ink-muted">{loading ? '正在读取教研任务…' : '还没有可以查看的教研任务'}</div> : <>
-        <header className="flex flex-wrap items-start gap-3"><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="text-xl font-bold text-ink">{String(contextOf(task).topicName || task.title)}</h2><span className="lf-pill lf-pill-null">{typeText[task.resourceType]}</span>{active && <span className="text-[11px] font-semibold text-brand">● 实时协同中</span>}</div><p className="mt-1 text-xs text-ink-muted">{task.title} · 所有 Agent、历史事件与执行详情统一回溯</p></div></header>
-
-
-        {/* AI 教研组成员已并入下方泳道表列头：成员即列名，点击列头进入该成员 */}
-        <section className="mt-4 rounded-2xl border border-white/70 bg-white/40 p-3">
-          <div className="flex items-center justify-between px-1">
-            <h4 className="text-sm font-bold text-ink">AI 教研组 · 协作轮次与交接</h4>
-            <span className="text-[10px] text-ink-muted">列头即 AI 教研组成员；向右=交接，向左虚线=修复回退；点击事件查看详情</span>
+  return (
+    <div className="lf-anim-in-up flex h-full min-h-0 flex-col gap-4 lg:flex-row">
+      {/* 第一列：AI 教研任务（可折叠） */}
+      <aside className={cn('flex w-full shrink-0 flex-col rounded-2xl border border-white/70 bg-white/45 transition-all duration-300 lg:w-[290px]', tasksCollapsed && 'lg:w-0 lg:min-w-0 lg:overflow-hidden lg:border-none lg:bg-transparent lg:p-0 lg:gap-0')}>
+        <div className="flex items-center gap-2 border-b border-white/70 p-3">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand text-paper"><Sparkles size={15} /></span>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-bold text-ink">AI 教研任务</h3>
+            <p className="mt-0.5 truncate text-[9.5px] text-ink-muted">{grouped.active.length + grouped.finished.length} 项 · 3s 自动刷新</p>
           </div>
-          <CollaborationRounds events={events} selectedSeq={selectedEvent?.seq ?? null} selectedAgent={effectiveAgent} runningAgent={active && latest ? latest.agent : null} onSelect={(event) => { if (!isLifecycleEvent(event)) setSelectedAgent(event.agent); setSelectedEventSeq(event.seq); }} onSelectAgent={(agentId) => { setSelectedAgent(agentId); setSelectedEventSeq(events.filter((event) => event.agent === agentId).at(-1)?.seq ?? null); }} />
-        </section>
+          <button onClick={() => void load()} className="lf-row-btn !p-1.5" aria-label="刷新任务"><RefreshCw size={12} className={loading ? 'animate-spin' : ''} /></button>
+        </div>
+        {/* 进行中 / 已完成 切换 */}
+        <div className="border-b border-white/70 p-2.5">
+          <div className="flex gap-1 rounded-xl bg-white/55 p-1">
+            <button onClick={() => setTaskTab('active')} className={cn('flex-1 rounded-lg px-2 py-1.5 text-[11px] font-bold transition-colors', taskTab === 'active' ? 'bg-brand text-paper shadow-sm' : 'text-ink-muted hover:text-ink')}>进行中 {grouped.active.length}</button>
+            <button onClick={() => setTaskTab('finished')} className={cn('flex-1 rounded-lg px-2 py-1.5 text-[11px] font-bold transition-colors', taskTab === 'finished' ? 'bg-brand text-paper shadow-sm' : 'text-ink-muted hover:text-ink')}>已完成 {grouped.finished.length}</button>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
+          <div className="space-y-2">
+            {(taskTab === 'active' ? grouped.active : grouped.finished).map((item) => (
+              <WorkbenchTaskItem key={taskKey(item)} item={item} selected={taskKey(item) === selectedKey} onClick={() => setParams({ task: taskKey(item) })} />
+            ))}
+            {(taskTab === 'active' ? grouped.active : grouped.finished).length === 0 && (
+              <div className="lf-empty rounded-xl p-6 text-xs">{taskTab === 'active' ? '暂无进行中的任务' : '暂无已完成任务'}</div>
+            )}
+          </div>
+        </div>
+      </aside>
 
-        <EvidenceDebateCourt events={events}/>
-        {/* 执行详情：点泳道工作单元/成员节点回看具体事件（工作流列表已由泳道承载，此处仅保留详情） */}
-        <section className="mt-4 rounded-2xl border border-white/75 bg-white/45 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+      {/* 第二列：Agents 教研组协作泳道（主体，占最多空间） */}
+      <main className="flex min-w-0 flex-1 flex-col rounded-2xl border border-white/70 bg-[#f7f5ee]/75">
+        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-white/70 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => setTasksCollapsed((collapsed) => !collapsed)} className="lf-row-btn !p-1.5" title={tasksCollapsed ? '展开任务栏' : '收起任务栏'}>
+              {tasksCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+            </button>
+            <div>
+              <h3 className="text-sm font-bold text-ink">Agents 教研组协作泳道</h3>
+              {task && <p className="mt-0.5 truncate text-[9.5px] text-ink-muted">{task.title} · {active ? '实时协同中' : task.status === 'completed' ? '已通过' : task.status === 'failed' ? '未通过' : task.status}</p>}
+            </div>
+          </div>
+          <span className="text-[10px] text-ink-muted">列头即成员 · 向右=交接 · 向左虚线=修复回退</span>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          {!task ? (
+            <div className="flex h-full items-center justify-center text-sm text-ink-muted">{loading ? '正在读取教研任务…' : '还没有可以查看的教研任务'}</div>
+          ) : (
+            <>
+              <CollaborationRounds events={events} selectedSeq={selectedEvent?.seq ?? null} selectedAgent={effectiveAgent} runningAgent={active && latest ? latest.agent : null} onSelect={(event) => { if (!isLifecycleEvent(event)) setSelectedAgent(event.agent); setSelectedEventSeq(event.seq); }} onSelectAgent={(agentId) => { setSelectedAgent(agentId); setSelectedEventSeq(events.filter((event) => event.agent === agentId).at(-1)?.seq ?? null); }} />
+              <EvidenceDebateCourt events={events} />
+            </>
+          )}
+        </div>
+      </main>
+
+      {/* 第三列：执行详情（JSON 视图，专业开发者面板） */}
+      <aside className="flex w-full shrink-0 flex-col rounded-2xl border border-white/70 bg-white/45 lg:w-[350px]">
+        <div className="flex items-center justify-between gap-2 border-b border-white/70 px-4 py-3">
+          <div className="min-w-0">
             <h3 className="text-sm font-bold text-ink">执行详情</h3>
-            {selectedEvent && <span className="lf-pill lf-pill-null">{selectedEvent.agentName || (agents.find((item) => item.id === selectedEvent.agent)?.name ?? selectedEvent.agent)}</span>}
+            <p className="mt-0.5 text-[10px] text-ink-muted">选中事件的结构化执行记录（JSON）</p>
           </div>
-          <p className="mt-1 text-[10px] text-ink-muted">点击上方泳道中的工作单元或成员节点，回溯当时的操作、结果与依据（不展示模型思维链）</p>
+          {selectedEvent && <span className="lf-pill lf-pill-null shrink-0">{selectedEvent.agentName || (agents.find((item) => item.id === selectedEvent.agent)?.name ?? selectedEvent.agent)}</span>}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {selectedEvent ? (
-            <div className="mt-3">
-              <p className="text-sm font-semibold text-ink">{selectedEvent.title}</p>
-              <p className="mt-1 text-xs leading-6 text-ink-muted">{selectedEvent.detail}</p>
-              <div className="mt-3 grid gap-2 xl:grid-cols-2">
-                {detailRows(selectedEvent.snapshot).map(([label, value]) => (
-                  <div key={label} className="rounded-xl bg-white/65 px-3 py-2.5"><span className="text-[10px] font-semibold text-ink-muted">{label}</span><p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-ink-2">{value}</p></div>
-                ))}
-                {!Object.keys(selectedEvent.snapshot ?? {}).length && <p className="py-10 text-center text-xs text-ink-muted xl:col-span-2">该事件没有额外的结构化执行详情</p>}
-              </div>
+            <div className="lf-json p-3.5 text-[11px] leading-[1.65]">
+              <JsonTree value={{
+                seq: selectedEvent.seq,
+                agent: selectedEvent.agentName || selectedEvent.agent,
+                stage: selectedEvent.phase || selectedEvent.status,
+                time: selectedEvent.time,
+                title: selectedEvent.title,
+                detail: selectedEvent.detail,
+                snapshot: selectedEvent.snapshot ?? {},
+              }} />
             </div>
           ) : (
-            <div className="mt-3 rounded-xl border border-dashed border-white/80 bg-white/30 px-4 py-10 text-center text-xs text-ink-muted">
-              尚未选择事件——点击泳道中的任意工作单元即可查看当时的执行细节
+            <div className="mt-6 rounded-xl border border-dashed border-white/80 bg-white/30 px-4 py-10 text-center text-xs leading-6 text-ink-muted">
+              尚未选择事件
+              <br />点击泳道中的工作单元或成员节点查看执行细节
             </div>
           )}
-        </section>
-      </>}
-    </main>
-  </div>;
+        </div>
+      </aside>
+    </div>
+  );
 }

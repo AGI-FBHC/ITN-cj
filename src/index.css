@@ -622,3 +622,33 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
+/* 充电涌动进度条：电波从底向上涌动 + 斜纹流动（进行中任务使用） */
+.lf-charge { position: relative; overflow: hidden; }
+.lf-charge .surge {
+  position: absolute; left: 0; right: 0; height: 46%; pointer-events: none; border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255,255,255,0) 20%, rgba(255,255,255,0.55) 100%);
+  animation: lf-surge-up 1.5s linear infinite;
+}
+.lf-charge .grain {
+  position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+  background: repeating-linear-gradient(112deg, rgba(255,255,255,0.22) 0 5px, transparent 5px 13px);
+  animation: lf-flow 0.9s linear infinite;
+}
+@keyframes lf-surge-up { 0% { bottom: -48%; } 100% { bottom: 104%; } }
+@keyframes lf-flow { to { background-position: 26px 0; } }
+
+/* JSON 查看器：深色开发者面板（执行详情列） */
+.lf-json {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
+  background: #20301f;
+  color: #e8efe9;
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.lf-json .jk { color: #9fd3a8; }
+.lf-json .js { color: #f2c079; }
+.lf-json .jn { color: #8ab4f8; }
+.lf-json .jb { color: #d3aefb; }
+.lf-json .jz { color: #8fa39a; }
+.lf-json .jp { color: #8fa39a; }
+
