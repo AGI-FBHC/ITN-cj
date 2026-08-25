@@ -898,7 +898,7 @@ export default function CollaborationWorkbench() {
         </header>
         <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
           {!task ? (
-            <div className="flex h-full items-center justify-center text-sm text-ink-muted">{loading ? '正在读取教研任务…' : '还没有可以查看的教研任务'}</div>
+            <div className="flex h-full items-center justify-center text-sm text-ink-muted">{loading ? '正在读取教研任务…' : tasks.length ? '\u8bf7\u9009\u62e9\u4f60\u8981\u67e5\u770b\u7684\u4efb\u52a1\uff0c\u70b9\u51fb\u5de6\u4fa7\u5217\u8868\u4e2d\u7684\u4efb\u52a1\u5373\u53ef\u5728\u6b64\u67e5\u770b\u6d01\u9053\u4e0e\u6267\u884c\u8be6\u60c5' : '还没有可以查看的教研任务'}</div>
           ) : (
             <>
               <AgentWorkflowSummary events={events} running={active} />
