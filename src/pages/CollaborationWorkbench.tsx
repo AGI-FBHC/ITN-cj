@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, RefreshCw, Sparkles, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, ChevronRight, Loader2, Plus, Sparkles, X, XCircle } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
-import { api, streamAdminGenerationTask, type AdminGenerationEvent, type LearningResourceGenerationTask } from '@/lib/api';
-import { presentationApi, type PresentationTaskSummary } from '@/lib/presentationApi';
+import { api, streamAdminGenerationTask, type AdminGenerationEvent, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
+import { presentationApi, type PresentationRequest, type PresentationTaskSummary } from '@/lib/presentationApi';
 import { useAuth } from '@/context/AuthContext';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import EvidenceDebateCourt from '@/components/resources/EvidenceDebateCourt';
 
@@ -177,6 +178,104 @@ function contextOf(task: WorkbenchTask): Record<string, unknown> {
 
 function taskKey(task: WorkbenchTask) { return `${task.taskKind}-${task.id}`; }
 
+type GenKind = 'lecture' | 'practice' | 'quiz' | 'ppt';
+const genKinds: [GenKind, string, string][] = [
+  ['lecture', '讲义', '知识讲解'],
+  ['practice', '实操指南', '步骤与任务'],
+  ['quiz', '题库', '分阶测试资源'],
+  ['ppt', '交互课件', '可播放的教学课件'],
+];
+
+/** 新建任务弹窗：领域 → 章节 → 知识点 级联选择，多选资源类型后创建生成任务 */
+function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClose: () => void; onCreate: (targets: GenKind[], ctx: { domainCode: string; nodeCode: string; topicName: string }) => void; busy: boolean }) {
+  const [domains, setDomains] = useState<RagDomain[]>([]);
+  const [domainCode, setDomainCode] = useState('');
+  const [tree, setTree] = useState<RagTree | null>(null);
+  const [chapterCode, setChapterCode] = useState('');
+  const [kpCode, setKpCode] = useState('');
+  const [selected, setSelected] = useState<Set<GenKind>>(new Set(['lecture', 'practice', 'quiz', 'ppt']));
+  useEffect(() => {
+    if (!open) return;
+    void api.listRagDomains().then((items) => { setDomains(items); if (items[0]?.code) setDomainCode(items[0].code); }).catch(() => setDomains([]));
+  }, [open]);
+  useEffect(() => {
+    if (!domainCode) { setTree(null); return; }
+    setTree(null); setChapterCode(''); setKpCode('');
+    void api.getRagTree(domainCode).then(setTree).catch(() => setTree(null));
+  }, [domainCode]);
+  // 章节 = 一级节点（根分类的 children；无 children 时根即章节）
+  const chapters = useMemo(() => {
+    const out: Array<{ node: RagTreeNode; path: string }> = [];
+    for (const root of tree?.nodes ?? []) {
+      if (root.children?.length) root.children.forEach((child) => out.push({ node: child, path: root.name + ' / ' + child.name }));
+      else out.push({ node: root, path: root.name });
+    }
+    return out;
+  }, [tree]);
+  const chapter = chapters.find((item) => item.node.nodeCode === chapterCode) ?? null;
+  const kps: RagTreeNode[] = chapter && chapter.node.children?.length ? chapter.node.children : chapter ? [chapter.node] : [];
+  const kp = kps.find((item) => item.nodeCode === kpCode) ?? null;
+  const canCreate = Boolean(kp && selected.size && !busy);
+  if (!open) return null;
+  const selectCls = 'lf-select w-full';
+  return (
+    <div className="fixed inset-0 z-[95] flex items-center justify-center bg-ink/35 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+      <div className="lf-card w-full max-w-2xl rounded-3xl p-6 shadow-2xl">
+        <div className="flex items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand-tint text-brand"><Plus size={20} /></div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-lg font-bold text-ink">新建教研任务</h3>
+            <p className="mt-1 text-xs text-ink-muted">选择生成位置（领域 → 章节 → 知识点）与资源类型，结果进入机构资源库</p>
+          </div>
+          <button disabled={busy} onClick={onClose} className="lf-row-btn !p-2" aria-label="关闭"><X size={15} /></button>
+        </div>
+        <div className="mt-5 space-y-4">
+          <div className="grid gap-3 md:grid-cols-3">
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold text-ink-2">领域</span>
+              <select value={domainCode} onChange={(e) => setDomainCode(e.target.value)} className={selectCls}>
+                {domains.map((domain) => <option key={domain.code} value={domain.code}>{domain.name}（{domain.code}）</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold text-ink-2">章节</span>
+              <select value={chapterCode} onChange={(e) => { setChapterCode(e.target.value); setKpCode(''); }} className={selectCls} disabled={!chapters.length}>
+                <option value="">{chapters.length ? '请选择章节' : '该领域暂无章节'}</option>
+                {chapters.map((item) => <option key={item.node.nodeCode} value={item.node.nodeCode}>{item.path}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold text-ink-2">知识点</span>
+              <select value={kpCode} onChange={(e) => setKpCode(e.target.value)} className={selectCls} disabled={!kps.length}>
+                <option value="">{kps.length ? '请选择知识点' : '请先选择章节'}</option>
+                {kps.map((item) => <option key={item.nodeCode} value={item.nodeCode}>{item.name}</option>)}
+              </select>
+            </label>
+          </div>
+          <div>
+            <p className="mb-2 text-sm font-bold text-ink">资源类型</p>
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+              {genKinds.map(([id, label, note]) => (
+                <button key={id} type="button" onClick={() => setSelected((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} className={cn('rounded-2xl border p-3 text-left transition-all', selected.has(id) ? 'border-brand/50 bg-brand-tint/70 ring-1 ring-brand/30' : 'border-white/80 bg-white/45 hover:bg-white/70')}>
+                  <p className="text-sm font-bold text-ink">{label}</p>
+                  <p className="mt-0.5 text-[10px] text-ink-muted">{note}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="mt-6 flex justify-end gap-2 border-t border-white/70 pt-4">
+          <button disabled={busy} onClick={onClose} className="lf-row-btn">取消</button>
+          <button disabled={!canCreate} onClick={() => kp && onCreate([...selected], { domainCode, nodeCode: kp.nodeCode, topicName: kp.name })} className="lf-row-btn lf-row-btn-primary min-w-28 justify-center disabled:opacity-50">
+            {busy ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+            创建{selected.size ? '（' + selected.size + '项）' : ''}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** 任务项：状态/类型/进度 + 充电涌动进度条；选中与运行有对比度区分 */
 function WorkbenchTaskItem({ item, selected, onClick }: { item: WorkbenchTask; selected: boolean; onClick: () => void }) {
   const active = activeStatuses.has(item.status);
@@ -259,6 +358,8 @@ export default function CollaborationWorkbench() {
   const [selectedEventSeq, setSelectedEventSeq] = useState<number | null>(null);
   const [taskTab, setTaskTab] = useState('active');
   const [tasksCollapsed, setTasksCollapsed] = useState(false);
+  const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const [newTaskBusy, setNewTaskBusy] = useState(false);
   const selectedKey = params.get('task');
 
   const load = async () => {
@@ -276,6 +377,40 @@ export default function CollaborationWorkbench() {
     setTasks(next);
     if (!selectedKey && next[0]) setParams({ task: taskKey(next[0]) }, { replace: true });
     setLoading(false);
+  };
+
+  /** 新建任务：按知识目标创建多类资源生成任务 */
+  const createGeneration = async (targets: GenKind[], ctx: { domainCode: string; nodeCode: string; topicName: string }) => {
+    setNewTaskBusy(true);
+    try {
+      const results = await Promise.allSettled(targets.map(async (target) => {
+        if (target === 'ppt') {
+          const request: PresentationRequest = {
+            requirement: '围绕“' + ctx.topicName + '”生成一份面向学习者的完整交互课件，内容准确、结构清晰，并适合课堂讲解与自主学习。',
+            title: ctx.topicName, audience: 'students', purpose: 'courseware', style: 'education', backgroundStyle: 'blue-white-minimal',
+            language: 'zh-CN', slideCount: 0, aspectRatio: '16:9', detailLevel: 'detailed', includeSpeakerNotes: true,
+            modelProvider: 'mimo', generationMode: 'template',
+            generationContext: { adminGeneration: true, domainCode: ctx.domainCode, nodeCode: ctx.nodeCode, kpId: ctx.nodeCode, topicName: ctx.topicName },
+          };
+          await presentationApi.createPresentation(request);
+        } else {
+          await api.startLearningResourceTask(target, {
+            topic: ctx.topicName, title: ctx.topicName + ' · ' + typeText[target], kpId: ctx.nodeCode, detailLevel: 'detailed',
+            questionCount: target === 'quiz' ? 12 : undefined,
+            generationContext: { adminGeneration: true, domainCode: ctx.domainCode, nodeCode: ctx.nodeCode, kpId: ctx.nodeCode, topicName: ctx.topicName },
+          });
+        }
+      }));
+      const failed = results.filter((result) => result.status === 'rejected').length;
+      if (failed) toast.error(failed + ' 项任务创建失败');
+      if (failed < results.length) toast.success('已创建 ' + (results.length - failed) + ' 项生成任务');
+      setNewTaskOpen(false);
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '任务创建失败');
+    } finally {
+      setNewTaskBusy(false);
+    }
   };
 
   useEffect(() => {
@@ -312,7 +447,7 @@ export default function CollaborationWorkbench() {
             <h3 className="text-sm font-bold text-ink">AI 教研任务</h3>
             <p className="mt-0.5 truncate text-[9.5px] text-ink-muted">{grouped.active.length + grouped.finished.length} 项 · 3s 自动刷新</p>
           </div>
-          <button onClick={() => void load()} className="lf-row-btn !p-1.5" aria-label="刷新任务"><RefreshCw size={12} className={loading ? 'animate-spin' : ''} /></button>
+          <button onClick={() => setNewTaskOpen(true)} className="lf-row-btn lf-row-btn-primary !px-2.5 !py-1.5"><Plus size={12} />新建任务</button>
         </div>
         {/* 进行中 / 已完成 切换 */}
         <div className="border-b border-white/70 p-2.5">
@@ -390,6 +525,12 @@ export default function CollaborationWorkbench() {
           )}
         </div>
       </aside>
+      <NewTaskModal
+        open={newTaskOpen}
+        busy={newTaskBusy}
+        onClose={() => { if (!newTaskBusy) setNewTaskOpen(false); }}
+        onCreate={(targets, ctx) => void createGeneration(targets, ctx)}
+      />
     </div>
   );
 }
