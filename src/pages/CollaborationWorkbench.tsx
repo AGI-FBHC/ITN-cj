@@ -347,12 +347,14 @@ function useSmoothProgress(real: number, cap: number, animating: boolean) {
     if (!animating) { setShown(realRef.current); return; }
     const id = window.setInterval(() => {
       setShown((current) => {
+        if (current >= 99.2) return 100;
         const target = Math.min(realRef.current, capRef.current);
-        if (current >= target - 0.05 && current >= capRef.current) return Math.min(capRef.current, current);
         const gap = target - current;
-        if (gap > 0.05) return Math.min(capRef.current, current + Math.max(0.3, gap * 0.28));
-        /* 真实值已到阶段目标：在阶段帽内缓慢微推，模拟'正在当前环节推进' */
-        return Math.min(capRef.current, current + 0.22);
+        /* 真实进度领先：优先快速逼近 */
+        if (gap > 0.05) return Math.min(capRef.current, current + Math.max(0.5, gap * 0.3));
+        /* 真实值未更新：在'阶段帽 + 蠕行余量'内缓慢持续推进，避免卡死在某值 */
+        const creepCeil = Math.min(100, Math.max(target + 11, capRef.current + 9));
+        return Math.min(creepCeil, current + 0.35);
       });
     }, 300);
     return () => window.clearInterval(id);
