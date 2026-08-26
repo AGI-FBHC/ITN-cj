@@ -6,6 +6,7 @@ import { presentationApi, type PresentationRequest, type PresentationTaskSummary
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import ResourcePreview from '@/components/admin/ResourcePreview';
+import QuizExecutionDetail, { isQuizQuestionEvent } from '@/components/admin/QuizExecutionDetail';
 import { cn } from '@/lib/utils';
 
 type WorkbenchTask =
@@ -131,7 +132,6 @@ function QuizQuestionReviewNavigator({ events, selectedSeq, onSelect }: {
           return (
             <button type='button' key={question.number} disabled={!lastEvent} onClick={() => lastEvent && onSelect(lastEvent)} className={cn('block w-full rounded-xl border px-2.5 py-2 text-left transition', selected ? 'border-brand/45 bg-brand-tint/65' : 'border-white/80 bg-white/65 hover:border-brand/30 disabled:opacity-60')}>
               <div className='flex items-center gap-2'><span className='flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-brand-tint font-mono text-[9px] font-bold text-brand'>{question.number}</span><span className={cn('min-w-0 flex-1 truncate text-[9.5px] font-semibold', question.passed ? 'text-emerald-700' : question.reviewed ? 'text-ochre' : 'text-ink-muted')}>{stateLabel}</span><span className='text-[8.5px] text-ink-muted'>难度 {questionDifficultyLabel(question)}</span>{question.attempts > 1 && <span className='rounded-md bg-ochre/10 px-1.5 py-0.5 text-[8px] font-bold text-ochre'>轮次 {question.attempts}</span>}<ChevronRight size={10} className='shrink-0 text-ink-muted' /></div>
-              <p className='mt-1 line-clamp-1 text-[9px] leading-4 text-ink-2'>{String(question.question?.stem ?? (question.lastEvent?.snapshot?.question && typeof question.lastEvent.snapshot.question === 'object' ? (question.lastEvent.snapshot.question as Record<string, unknown>).stem : '') ?? `第 ${question.number} 题`)}</p>
             </button>
           );
         })}
@@ -1034,14 +1034,18 @@ export default function CollaborationWorkbench() {
       streamBufferRef.current = [];
     };
   }, [task?.id, task?.taskKind]);
+  const quizQuestions = useMemo(() => summarizeQuizQuestions(events), [events]);
+  const isQuizTask = task?.taskKind === 'resource' && task.resourceType === 'quiz';
 
   const latest = events.at(-1);
   const effectiveAgent = selectedAgent || latest?.agent || agents[0].id;
   const agentEvents = events.filter((event) => event.agent === effectiveAgent);
-  const selectedEvent = events.find((event) => event.seq === selectedEventSeq) ?? agentEvents.at(-1);
+  const selectedEvent = events.find((event) => event.seq === selectedEventSeq) ?? (isQuizTask && !selectedAgent ? quizQuestions[0]?.lastEvent ?? agentEvents.at(-1) : agentEvents.at(-1));
   const active = Boolean(task && activeStatuses.has(task.status) && (!latest || activeStatuses.has(latest.status)));
-  const isQuizTask = task?.taskKind === 'resource' && task.resourceType === 'quiz';
   const grouped = useMemo(() => ({ active: tasks.filter((item) => activeStatuses.has(item.status)), finished: tasks.filter((item) => !activeStatuses.has(item.status)) }), [tasks]);
+  const selectedQuizSummary = isQuizTask && selectedEvent && isQuizQuestionEvent(selectedEvent)
+    ? quizQuestions.find((question) => question.number === Number(selectedEvent.snapshot?.questionNumber)) ?? quizQuestions[0]
+    : undefined;
 
 
   return (
@@ -1135,7 +1139,11 @@ export default function CollaborationWorkbench() {
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {isQuizTask && <QuizQuestionReviewNavigator events={events} selectedSeq={selectedEvent?.seq ?? null} onSelect={(event) => { setSelectedAgent(event.agent); setSelectedEventSeq(event.seq); }} />}
           {selectedEvent ? (
-            <EventDetailPanel key={selectedEvent.seq} event={selectedEvent} />
+            selectedQuizSummary && selectedEvent && isQuizQuestionEvent(selectedEvent) ? (
+              <QuizExecutionDetail key={selectedEvent.seq} event={selectedEvent} summary={selectedQuizSummary} />
+            ) : (
+              <EventDetailPanel key={selectedEvent.seq} event={selectedEvent} />
+            )
           ) : (
             <div className="mt-6 rounded-xl border border-dashed border-white/80 bg-white/30 px-4 py-10 text-center text-xs leading-6 text-ink-muted">
               尚未选择事件
