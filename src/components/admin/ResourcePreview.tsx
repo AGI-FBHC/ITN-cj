@@ -36,7 +36,10 @@ interface PracticeDoc {
 }
 interface QuizQuestion {
   id?: number | string; stem: string; options: string[];
-  correctIndex?: number; explanation?: string; difficulty?: number; citations?: unknown[];
+  correctIndex?: number; explanation?: string; difficulty?: number | string; difficultyLevel?: number; citations?: unknown[];
+  reviewStatus?: string; reviewMetrics?: Record<string, number>; riskLabels?: string[];
+  generationRationale?: Record<string, string>; replacementUsed?: boolean;
+  versionHistory?: Array<Record<string, unknown>>; reviewSnapshot?: Record<string, unknown>;
 }
 interface QuizDoc { title?: string; questions?: QuizQuestion[]; knowledgePoints?: string[] }
 interface PptPoint { heading?: string; detail?: string }
@@ -270,6 +273,13 @@ function QuizPreview({ doc, sources }: { doc: QuizDoc; sources: Record<string, u
       </div>
       {questions.map((q, index) => {
         const correct = q.correctIndex;
+        const metrics = q.reviewMetrics ?? {};
+        const rationale = q.generationRationale ?? {};
+        const metricLabels: Record<string, string> = {
+          grounding: '证据支撑', answerConfidence: '答案可信', clarity: '题意清晰',
+          distractorQuality: '干扰项质量', difficultyMatch: '难度匹配',
+          explanationQuality: '解析完整', overall: '综合评分',
+        };
         return (
           <div key={q.id ?? index} className="lf-card overflow-hidden rounded-2xl">
             <div className="flex items-start gap-3 px-5 py-4">
@@ -278,9 +288,11 @@ function QuizPreview({ doc, sources }: { doc: QuizDoc; sources: Record<string, u
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  {q.difficulty != null && (
-                    <span className="lf-pill lf-pill-null">难度 {q.difficulty}/5</span>
+                  {(q.difficultyLevel ?? q.difficulty) != null && (
+                    <span className="lf-pill lf-pill-null">难度 {q.difficultyLevel ?? q.difficulty}/5</span>
                   )}
+                  <span className="lf-pill lf-pill-null">待人工审核</span>
+                  {q.replacementUsed && <span className="lf-pill bg-amber-50 text-amber-700">已更换候选题</span>}
                   <span className="font-mono text-[10.5px] text-ink-muted">#{q.id ?? index + 1}</span>
                 </div>
                 <p className="mt-1.5 text-[14.5px] font-medium leading-[23px] text-ink">{q.stem}</p>
@@ -311,6 +323,22 @@ function QuizPreview({ doc, sources }: { doc: QuizDoc; sources: Record<string, u
                     <p className="text-[11px] font-bold uppercase tracking-wide text-[#9A5B3C]">解析</p>
                     <p className="mt-1 text-[13px] leading-6 text-ink-2">{q.explanation}</p>
                   </div>
+                )}
+                {(Object.keys(metrics).length > 0 || Object.keys(rationale).length > 0) && (
+                  <details className="mt-3 rounded-xl border border-white/80 bg-white/55 px-4 py-3">
+                    <summary className="cursor-pointer text-xs font-bold text-ink">生成依据与审核指标</summary>
+                    {Object.keys(metrics).length > 0 && <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                      {Object.entries(metrics).map(([key, value]) => <div key={key} className="rounded-lg bg-[#F3F5F0] px-3 py-2">
+                        <p className="text-[10px] text-ink-muted">{metricLabels[key] ?? key}</p>
+                        <p className="mt-0.5 text-sm font-bold text-ink">{Math.round(Number(value) || 0)} 分</p>
+                      </div>)}
+                    </div>}
+                    {q.riskLabels?.length ? <p className="mt-3 text-xs leading-5 text-amber-800">关注项：{q.riskLabels.join('；')}</p> : null}
+                    {Object.keys(rationale).length > 0 && <div className="mt-3 space-y-2">
+                      {Object.entries(rationale).map(([key, value]) => <div key={key} className="text-xs leading-5 text-ink-2"><span className="font-semibold text-ink">{metricLabels[key] ?? key}：</span>{String(value)}</div>)}
+                    </div>}
+                    {!!q.versionHistory?.length && <p className="mt-3 text-[11px] text-ink-muted">共保留 {q.versionHistory.length} 个候选版本，可结合生成日志回看审核与换题过程。</p>}
+                  </details>
                 )}
                 <SourceCitationMarks citations={q.citations} sources={sources} />
               </div>
