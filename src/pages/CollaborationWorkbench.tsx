@@ -1118,7 +1118,7 @@ export default function CollaborationWorkbench() {
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {isQuizTask && <QuizQuestionReviewNavigator events={events} selectedSeq={selectedEvent?.seq ?? null} onSelect={(event) => { setSelectedAgent(event.agent); setSelectedEventSeq(event.seq); }} />}
           {selectedEvent ? (
-            <ExecutionDetailPanel key={selectedEvent.seq} event={selectedEvent} title={eventDisplayTitle(selectedEvent)} />
+            <ExecutionDetailPanel key={selectedEvent.seq} event={selectedEvent} title={eventDisplayTitle(selectedEvent)} taskType={task?.taskKind === 'ppt' ? 'ppt' : 'resource'} taskId={task?.id ?? ''} />
           ) : (
             <div className="mt-6 rounded-xl border border-dashed border-white/80 bg-white/30 px-4 py-10 text-center text-xs leading-6 text-ink-muted">
               尚未选择事件

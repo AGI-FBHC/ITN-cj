@@ -1297,6 +1297,8 @@ export const api = {
     }),
   listLearningResourceTasks: (limit = 30, summary = false) =>
     requestDirect<{ tasks: LearningResourceGenerationTask[] }>(`/v1/learning-resource-tasks?limit=${limit}&summary=${summary ? 'true' : 'false'}`),
+  summarizeAdminGenerationEvent: (taskType: 'resource' | 'ppt', taskId: string, seq: number) =>
+    requestDirect<{ summary: string; model: string; llmFallback: boolean }>(`/v1/admin-generation-events/${taskType}/${encodeURIComponent(taskId)}/summarize?seq=${seq}`),
   getLearningResourceTask: (taskId: string) =>
     requestDirect<LearningResourceGenerationTask>(`/v1/learning-resource-tasks/${encodeURIComponent(taskId)}`),
   cancelLearningResourceTask: (taskId: string) =>
