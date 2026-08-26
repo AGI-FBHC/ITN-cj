@@ -32,7 +32,114 @@ function isLifecycleEvent(event: AdminGenerationEvent) {
     || ['任务已创建', '任务取消', '生成完成', '任务已结束', '任务被取消'].includes(event.title);
 }
 
-/** 板块间数据流连接器：上板块底部点 → 加粗虚线（自上而下闪烁） → 下板块顶部点 */
+
+const quizMetricLabels: Record<string, string> = {
+  grounding: '证据支撑', answerConfidence: '答案可信', clarity: '题意清晰',
+  distractorQuality: '干扰项质量', difficultyMatch: '难度匹配',
+  explanationQuality: '解析完整', overall: '综合评分',
+};
+const reviewModeLabels: Record<string, string> = {
+  full: '完整审核', full_or_closure: '完整审核 + 定向复核', closure_only: '定向复核',
+  score_only: '换题后评分', duplicate_check: '重复性检查',
+};
+
+interface QuizQuestionReviewSummary {
+  number: number;
+  question?: Record<string, unknown>;
+  audit?: Record<string, unknown>;
+  attempts: number;
+  passed: boolean;
+  reviewed: boolean;
+  generationEvents: AdminGenerationEvent[];
+  reviewEvents: AdminGenerationEvent[];
+  lastEvent?: AdminGenerationEvent;
+}
+
+function recordArray(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+    : [];
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(String).filter(Boolean) : [];
+}
+
+function summarizeQuizQuestions(events: AdminGenerationEvent[]): QuizQuestionReviewSummary[] {
+  const grouped = new Map<number, QuizQuestionReviewSummary>();
+  for (const event of events) {
+    const snapshot = event.snapshot ?? {};
+    const questionNumber = Number(snapshot.questionNumber ?? 0);
+    if (!Number.isInteger(questionNumber) || questionNumber <= 0) continue;
+    const current = grouped.get(questionNumber) ?? {
+      number: questionNumber, attempts: 1, passed: false, reviewed: false,
+      generationEvents: [], reviewEvents: [],
+    };
+    current.attempts = Math.max(current.attempts, Math.max(1, Number(snapshot.attempt) || 1));
+    if (snapshot.question && typeof snapshot.question === 'object') current.question = snapshot.question as Record<string, unknown>;
+    if (snapshot.questionAudit && typeof snapshot.questionAudit === 'object') current.audit = snapshot.questionAudit as Record<string, unknown>;
+    if (/生成第 \d+ 题|第 \d+ 题第一版已生成/.test(event.title)) current.generationEvents.push(event);
+    if (event.title.includes('核验')) current.reviewEvents.push(event);
+    grouped.set(questionNumber, current);
+  }
+  const questions = [...grouped.values()].sort((a, b) => a.number - b.number);
+  for (const question of questions) {
+    const auditEvents = question.reviewEvents.filter((event) => event.snapshot?.questionAudit && typeof event.snapshot.questionAudit === 'object');
+    const passedEvent = [...auditEvents].reverse().find((event) => {
+      const audit = event.snapshot.questionAudit as Record<string, unknown>;
+      return audit.passed === true;
+    });
+    question.reviewed = question.reviewEvents.length > 0;
+    question.passed = question.passed || Boolean(passedEvent);
+    const lastReview = question.reviewEvents.at(-1);
+    const lastGenerated = [...question.generationEvents].reverse().find((event) => event.snapshot?.question && typeof event.snapshot.question === 'object');
+    question.lastEvent = passedEvent ?? lastReview ?? lastGenerated;
+  }
+  return questions;
+}
+
+function questionDifficultyLabel(question: QuizQuestionReviewSummary): string {
+  const direct = question.question?.difficultyLevel ?? question.question?.difficulty;
+  if (direct != null) return String(direct);
+  const fromEvent = question.generationEvents.at(-1)?.snapshot?.questionDifficulty;
+  return fromEvent != null ? String(fromEvent) : '—';
+}
+
+function QuizQuestionReviewNavigator({ events, selectedSeq, onSelect }: {
+  events: AdminGenerationEvent[];
+  selectedSeq: number | null;
+  onSelect: (event: AdminGenerationEvent) => void;
+}) {
+  const questions = useMemo(() => summarizeQuizQuestions(events), [events]);
+  if (!questions.length) return null;
+  const reviewed = questions.filter((question) => question.reviewed).length;
+  const passed = questions.filter((question) => question.passed).length;
+  const revised = questions.filter((question) => question.attempts > 1).length;
+  return (
+    <section className='mb-3 rounded-2xl border border-white/80 bg-white/55 p-3'>
+      <div className='flex items-center gap-2'><h4 className='text-xs font-bold text-ink'>题库逐题审核</h4><span className='ml-auto text-[9px] font-semibold text-brand'>{questions.length} 题</span></div>
+      <div className='mt-2 grid grid-cols-3 gap-1.5'>
+        <div className='rounded-lg bg-white/70 px-2 py-1.5'><p className='text-[8.5px] text-ink-muted'>已核验</p><p className='mt-0.5 text-[11px] font-bold text-ink'>{reviewed}</p></div>
+        <div className='rounded-lg bg-emerald-50/70 px-2 py-1.5'><p className='text-[8.5px] text-emerald-700/80'>通过</p><p className='mt-0.5 text-[11px] font-bold text-emerald-700'>{passed}</p></div>
+        <div className='rounded-lg bg-ochre/5 px-2 py-1.5'><p className='text-[8.5px] text-ochre/70'>多轮处理</p><p className='mt-0.5 text-[11px] font-bold text-ochre'>{revised}</p></div>
+      </div>
+      <div className='mt-3 max-h-52 space-y-1.5 overflow-y-auto pr-1'>
+        {questions.map((question) => {
+          const selected = question.generationEvents.some((event) => event.seq === selectedSeq) || question.reviewEvents.some((event) => event.seq === selectedSeq);
+          const lastEvent = question.lastEvent;
+          const stateLabel = question.passed ? '已通过' : question.reviewed ? '待复核' : '生成中';
+          return (
+            <button type='button' key={question.number} disabled={!lastEvent} onClick={() => lastEvent && onSelect(lastEvent)} className={cn('block w-full rounded-xl border px-2.5 py-2 text-left transition', selected ? 'border-brand/45 bg-brand-tint/65' : 'border-white/80 bg-white/65 hover:border-brand/30 disabled:opacity-60')}>
+              <div className='flex items-center gap-2'><span className='flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-brand-tint font-mono text-[9px] font-bold text-brand'>{question.number}</span><span className={cn('min-w-0 flex-1 truncate text-[9.5px] font-semibold', question.passed ? 'text-emerald-700' : question.reviewed ? 'text-ochre' : 'text-ink-muted')}>{stateLabel}</span><span className='text-[8.5px] text-ink-muted'>难度 {questionDifficultyLabel(question)}</span>{question.attempts > 1 && <span className='rounded-md bg-ochre/10 px-1.5 py-0.5 text-[8px] font-bold text-ochre'>轮次 {question.attempts}</span>}<ChevronRight size={10} className='shrink-0 text-ink-muted' /></div>
+              <p className='mt-1 line-clamp-1 text-[9px] leading-4 text-ink-2'>{String(question.question?.stem ?? (question.lastEvent?.snapshot?.question && typeof question.lastEvent.snapshot.question === 'object' ? (question.lastEvent.snapshot.question as Record<string, unknown>).stem : '') ?? `第 ${question.number} 题`)}</p>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 /** 板块间弧线数据流：像素级对齐列心（测量 grid 布局含 gap），三次贝塞尔弧形过渡，流光沿弧自上而下流动 */
 function FlowLink({ fromCol, toCol }: { fromCol: number; toCol: number }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -612,6 +719,16 @@ function EventDetailPanel({ event }: { event: AdminGenerationEvent }) {
   const reviewResolutions = questionAudit && Array.isArray(questionAudit.resolutions) ? questionAudit.resolutions.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object')) : [];
   const ruleConstraints = Array.isArray(snapshot.ruleConstraints) ? snapshot.ruleConstraints.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object')) : [];
   const ruleCheckResults = Array.isArray(snapshot.ruleCheckResults) ? snapshot.ruleCheckResults.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object')) : [];
+  const scoreRecords = questionAudit && typeof questionAudit.scores === 'object' ? questionAudit.scores as Record<string, unknown> : null;
+  const scoreEntries = scoreRecords ? Object.entries(scoreRecords).filter(([, value]) => Number.isFinite(Number(value))) : [];
+  const auditIssues = stringArray(questionAudit?.issues);
+  const auditRiskLabels = stringArray(questionAudit?.riskLabels);
+  const hardErrorRecords = recordArray(questionAudit?.hardErrors);
+  const hardErrorStrings = stringArray(questionAudit?.hardErrors);
+  const repairRecords = recordArray(questionAudit?.repairSuggestions);
+  const repairStrings = stringArray(questionAudit?.repairSuggestions);
+  const reviewMode = String(questionAudit?.reviewMode ?? snapshot.reviewMode ?? '');
+  const reviewModeLabel = reviewModeLabels[reviewMode] ?? reviewMode;
   const hidden = new Set(['requestId', 'traceId', 'promptVersion', 'model', 'display', 'debateGroup', 'contradictions', 'debateTriggered', 'debateType']);
   const facts = hasDisplay ? [] : Object.entries(snapshot).filter(([key]) => !hidden.has(key));
   const decision = String(snapshot.decision ?? '');
@@ -635,6 +752,16 @@ function EventDetailPanel({ event }: { event: AdminGenerationEvent }) {
         {Array.isArray(question.options) && <div className="mt-3 grid gap-2">{question.options.map((option, index) => <div key={index} className={cn('rounded-xl px-3 py-2 text-[10.5px] leading-5', Number(question.correctIndex) === index ? 'bg-emerald-50 font-semibold text-emerald-800 ring-1 ring-emerald-200' : 'bg-[#F3F5F0] text-ink-2')}><span className="mr-2 font-bold">{String.fromCharCode(65 + index)}.</span>{String(option)}</div>)}</div>}
         {Boolean(question.explanation) && <div className="mt-3 rounded-xl bg-brand-tint/45 px-3 py-2"><p className="text-[9px] font-semibold text-brand">答案解析</p><p className="mt-1 text-[10.5px] leading-5 text-ink-2">{String(question.explanation)}</p></div>}
         {Array.isArray(question.answerEvidenceQuotes) && question.answerEvidenceQuotes.length > 0 && <div className="mt-3 space-y-2"><p className="text-[9px] font-semibold text-ink-muted">答案依据</p>{question.answerEvidenceQuotes.map((item, index) => { const quote = item && typeof item === 'object' ? item as Record<string, unknown> : {}; return <button type="button" key={index} onClick={() => setInspection({ title: `答案依据 ${index + 1}`, record: quote })} className="block w-full rounded-xl bg-white px-3 py-2 text-left text-[10px] leading-5 text-ink-2 hover:ring-1 hover:ring-brand/25">{String(quote.quote ?? '')}<ChevronRight size={11} className="ml-auto inline text-brand"/></button>; })}</div>}
+        {(scoreEntries.length > 0 || auditRiskLabels.length > 0 || auditIssues.length > 0 || hardErrorRecords.length > 0 || hardErrorStrings.length > 0 || repairRecords.length > 0 || repairStrings.length > 0) && <div className="mt-3 rounded-xl border border-white/80 bg-white/60 p-3">
+          <div className="flex flex-wrap items-center gap-2"><h4 className="text-[10px] font-bold text-ink">审核评分与风险</h4>{reviewMode && <span className="rounded-full bg-brand-tint px-2 py-0.5 text-[8px] font-bold text-brand">{reviewModeLabel}</span>}</div>
+          {scoreEntries.length > 0 && <div className="mt-2 grid grid-cols-2 gap-1.5">{scoreEntries.map(([key, value]) => <div key={key} className="rounded-lg bg-[#F3F5F0] px-2 py-1.5"><p className="text-[8px] text-ink-muted">{quizMetricLabels[key] ?? key}</p><p className="mt-0.5 text-[10px] font-bold text-ink">{Math.round(Number(value))} 分</p></div>)}</div>}
+          {auditRiskLabels.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{auditRiskLabels.map((label) => <span key={label} className="rounded-md bg-amber-50 px-2 py-0.5 text-[8px] font-bold text-amber-700">{label}</span>)}</div>}
+          {auditIssues.length > 0 && <div className="mt-2 space-y-1">{auditIssues.map((issue) => <p key={issue} className="rounded-lg bg-ochre/10 px-2 py-1.5 text-[9px] leading-4 text-ochre">{issue}</p>)}</div>}
+          {hardErrorStrings.length > 0 && <div className="mt-2 space-y-1">{hardErrorStrings.map((item) => <p key={item} className="rounded-lg bg-rose-50 px-2 py-1.5 text-[9px] leading-4 text-red-700">硬错误：{item}</p>)}</div>}
+          {repairStrings.length > 0 && <div className="mt-2 space-y-1">{repairStrings.map((item) => <p key={item} className="rounded-lg bg-amber-50/80 px-2 py-1.5 text-[9px] leading-4 text-amber-800">返修建议：{item}</p>)}</div>}
+          {hardErrorRecords.length > 0 && <div className="mt-2 space-y-1">{hardErrorRecords.map((item, index) => <button type="button" key={index} onClick={() => setInspection({ title: '硬错误 ' + (index + 1), record: item })} className="block w-full rounded-lg bg-rose-50 px-2 py-1.5 text-left text-[9px] leading-4 text-red-700 hover:ring-1 hover:ring-rose-200">{String(item.issue ?? item.finding ?? item.requiredAction ?? JSON.stringify(item))}<ChevronRight size={10} className="ml-auto inline" /></button>)}</div>}
+          {repairRecords.length > 0 && <div className="mt-2 space-y-1">{repairRecords.map((item, index) => <button type="button" key={index} onClick={() => setInspection({ title: '返修建议 ' + (index + 1), record: item })} className="block w-full rounded-lg bg-amber-50/80 px-2 py-1.5 text-left text-[9px] leading-4 text-amber-800 hover:ring-1 hover:ring-amber-200">{String(item.suggestion ?? item.instruction ?? item.issue ?? JSON.stringify(item))}<ChevronRight size={10} className="ml-auto inline" /></button>)}</div>}
+        </div>}
       </section>}
       {questionAudit && Array.isArray(questionAudit.checks) && questionAudit.checks.length > 0 && <section className="space-y-2"><div className="flex items-center justify-between px-1"><h4 className="text-xs font-bold text-ink">逐题核验记录</h4><span className={cn('text-[9px] font-bold', questionAudit.passed ? 'text-emerald-700' : 'text-ochre')}>{questionAudit.passed ? '本题通过' : '本题需返修'}</span></div>{questionAudit.checks.map((item, index) => { const check = item && typeof item === 'object' ? item as Record<string, unknown> : {}; return <button type="button" key={index} onClick={() => setInspection({ title: String(check.label ?? `核验项 ${index + 1}`), record: check })} className="block w-full rounded-2xl border border-white/80 bg-white/60 p-3 text-left transition hover:border-brand/30"><div className="flex items-center gap-2"><span className={cn('h-2 w-2 rounded-full', check.passed === false ? 'bg-ochre' : 'bg-emerald-500')}/><span className="min-w-0 flex-1 text-[10.5px] font-bold text-ink">{String(check.label ?? `核验项 ${index + 1}`)}</span><span className="text-[9px] font-semibold text-ink-muted">{check.passed === false ? '需要处理' : '通过'}</span><ChevronRight size={11} className="text-ink-muted"/></div>{Boolean(check.finding) && <p className="mt-2 line-clamp-2 text-[10px] leading-5 text-ink-2">{String(check.finding)}</p>}</button>; })}</section>}
       {reviewResolutions.length > 0 && <section className="space-y-2"><h4 className="px-1 text-xs font-bold text-ink">上一轮问题复核</h4>{reviewResolutions.map((item, index) => <button type="button" key={index} onClick={() => setInspection({ title: `原问题复核 ${index + 1}`, record: item })} className="block w-full rounded-2xl border border-white/80 bg-white/60 p-3 text-left"><div className="flex items-center gap-2"><span className={cn('h-2 w-2 rounded-full', item.resolved === false ? 'bg-ochre' : 'bg-emerald-500')}/><span className="min-w-0 flex-1 text-[10px] font-semibold text-ink">{String(item.previousIssue ?? `原问题 ${index + 1}`)}</span><span className="text-[9px] text-ink-muted">{item.resolved === false ? '仍未解决' : '已解决'}</span></div>{Boolean(item.finding) && <p className="mt-2 text-[10px] leading-5 text-ink-2">{String(item.finding)}</p>}</button>)}</section>}
@@ -913,6 +1040,7 @@ export default function CollaborationWorkbench() {
   const agentEvents = events.filter((event) => event.agent === effectiveAgent);
   const selectedEvent = events.find((event) => event.seq === selectedEventSeq) ?? agentEvents.at(-1);
   const active = Boolean(task && activeStatuses.has(task.status) && (!latest || activeStatuses.has(latest.status)));
+  const isQuizTask = task?.taskKind === 'resource' && task.resourceType === 'quiz';
   const grouped = useMemo(() => ({ active: tasks.filter((item) => activeStatuses.has(item.status)), finished: tasks.filter((item) => !activeStatuses.has(item.status)) }), [tasks]);
 
 
@@ -1005,6 +1133,7 @@ export default function CollaborationWorkbench() {
           {selectedEvent && <span className="lf-pill lf-pill-null shrink-0">{selectedEvent.agentName || (agents.find((item) => item.id === selectedEvent.agent)?.name ?? selectedEvent.agent)}</span>}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          {isQuizTask && <QuizQuestionReviewNavigator events={events} selectedSeq={selectedEvent?.seq ?? null} onSelect={(event) => { setSelectedAgent(event.agent); setSelectedEventSeq(event.seq); }} />}
           {selectedEvent ? (
             <EventDetailPanel key={selectedEvent.seq} event={selectedEvent} />
           ) : (
