@@ -155,6 +155,7 @@ export const presentationApi = {
   listPresentationSummariesFresh: (limit = 20, excludeCourse = false) =>
     request<{ tasks: PresentationTaskSummary[] }>(
       `/v1/presentations?summary=true&limit=${encodeURIComponent(limit)}${excludeCourse ? '&exclude_course=true' : ''}`,
+      { cache: 'no-store' },
     ),
   completePresentation: (taskId: string) =>
     request<{ learned: boolean }>(`/v1/presentations/${encodeURIComponent(taskId)}/complete`, { method: 'POST' }),

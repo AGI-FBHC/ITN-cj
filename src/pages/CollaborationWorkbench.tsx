@@ -741,16 +741,37 @@ export default function CollaborationWorkbench() {
             modelProvider: 'mimo', generationMode: 'template',
             generationContext: { adminGeneration: true, domainCode: ctx.domainCode, nodeCode: ctx.nodeCode, kpId: ctx.nodeCode, topicName: ctx.topicName },
           };
-          await presentationApi.createPresentation(request);
+          const task = await presentationApi.createPresentation(request);
+          return { ...task, taskKind: 'ppt' as const, resourceType: 'ppt' as const } as WorkbenchTask;
         } else {
-          await api.startLearningResourceTask(target, {
+          const task = await api.startLearningResourceTask(target, {
             topic: ctx.topicName, title: ctx.topicName + ' · ' + typeText[target], kpId: ctx.nodeCode, detailLevel: 'detailed',
             questionCount: target === 'quiz' ? 12 : undefined,
             generationContext: { adminGeneration: true, domainCode: ctx.domainCode, nodeCode: ctx.nodeCode, kpId: ctx.nodeCode, topicName: ctx.topicName },
           });
+          return { ...task, taskKind: 'resource' as const } as WorkbenchTask;
         }
       }));
       const failed = results.filter((result) => result.status === 'rejected').length;
+      const created = results
+        .filter((result): result is PromiseFulfilledResult<WorkbenchTask> => result.status === 'fulfilled')
+        .map((result) => result.value);
+      const createdKeys = new Set(created.map(taskKey));
+      if (createdKeys.size) {
+        setDeletedKeys((current) => {
+          const next = current.filter((key) => !createdKeys.has(key));
+          try { localStorage.setItem('wb.deletedTasks', JSON.stringify(next)); } catch { /* ignore */ }
+          return next;
+        });
+        // POST 已经返回了完整任务，先即时展示；后台列表同步只负责校准状态。
+        setTasks((current) => {
+          const byKey = new Map(current.map((item) => [taskKey(item), item]));
+          created.forEach((item) => byKey.set(taskKey(item), item));
+          return [...byKey.values()].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+        });
+        const newest = created.at(-1);
+        if (newest) setParams({ task: taskKey(newest) });
+      }
       if (failed) toast.error(failed + ' 项任务创建失败');
       if (failed < results.length) toast.success('已创建 ' + (results.length - failed) + ' 项生成任务');
       setNewTaskOpen(false);
