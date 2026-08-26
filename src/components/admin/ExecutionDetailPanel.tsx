@@ -1,8 +1,6 @@
-import { useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
-import { api } from '@/lib/api';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Loader2 } from 'lucide-react';
 import { lectureMdComponents } from '@/components/resources/lecture-markdown';
 import type { AdminGenerationEvent } from '@/lib/api';
 
@@ -47,43 +45,14 @@ function JsonTree({ value }: { value: unknown }) {
 export default function ExecutionDetailPanel({
   event,
   title,
-  taskType,
-  taskId,
   running = false,
 }: {
   event: AdminGenerationEvent;
   title: string;
-  taskType: 'resource' | 'ppt';
-  taskId: string;
   running?: boolean;
 }) {
-  const [summary, setSummary] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [fallback, setFallback] = useState(false);
   const snapshot = event.snapshot ?? {};
-
-  useEffect(() => {
-    let cancelled = false;
-    if (running) { setSummary(null); setLoading(false); setFallback(false); return; }
-    setLoading(true);
-    setSummary(null);
-    setFallback(false);
-    api.summarizeAdminGenerationEvent(taskType, taskId, event.seq)
-      .then((result) => {
-        if (cancelled) return;
-        setSummary(result.summary);
-        setFallback(result.llmFallback);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setSummary(`这个事件已完成：${event.detail || event.title}`);
-        setFallback(true);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [taskType, taskId, event.seq, event.detail, event.title, running]);
+  const summary = typeof event.executionSummary === 'string' ? event.executionSummary : '';
 
   return (
     <div className="space-y-3">
@@ -93,8 +62,8 @@ export default function ExecutionDetailPanel({
           <span className="lf-pill lf-pill-null">{event.phase || event.status}</span>
           <span className="ml-auto text-[9px] font-mono text-ink-muted">{event.time ? new Date(event.time).toLocaleString('zh-CN', { hour12: false }) : `记录 #${event.seq}`}</span>
         </div>
-      </header>
         <p className="mt-1.5 text-[10px] font-semibold text-ink-muted">{title}</p>
+      </header>
 
       <section className="rounded-2xl border border-white/80 bg-white/55 p-3">
         <div className="flex items-center justify-between border-b border-white/70 pb-2">
@@ -103,17 +72,12 @@ export default function ExecutionDetailPanel({
         <div className="mt-3 min-h-[240px] overflow-y-auto">
           {running ? (
             <div className="flex items-center gap-2 rounded-lg bg-white/70 px-3 py-4 text-[10.5px] text-ink-muted"><Loader2 size={13} className="animate-spin text-brand" />正在执行…</div>
-          ) : loading ? (
-            <div className="flex items-center gap-2 rounded-lg bg-white/70 px-3 py-4 text-[10.5px] text-ink-muted"><Loader2 size={13} className="animate-spin text-brand" />正在生成执行摘要…</div>
-          ) : (
+          ) : summary ? (
             <div className="rounded-lg bg-white/70 px-3 py-3 text-[11px] leading-6 text-ink-2">
-              {summary ? <ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{summary}</ReactMarkdown> : <p>暂时没有可展示的执行摘要。</p>}
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{summary}</ReactMarkdown>
             </div>
-          )}
-          {!loading && fallback && (
-            <p className="mt-2 rounded-lg bg-amber-50/80 px-3 py-2 text-[9px] leading-4 text-amber-800">
-              当前为本地兜底说明，生成模型暂不可用；下方原始 JSON 仍保留完整事件数据。
-            </p>
+          ) : (
+            <div className="rounded-lg bg-white/70 px-3 py-4 text-[10.5px] text-ink-muted">暂无执行摘要。</div>
           )}
         </div>
       </section>
@@ -121,7 +85,7 @@ export default function ExecutionDetailPanel({
       <section className="rounded-2xl border border-white/80 bg-white/55 p-3">
         <h4 className="border-b border-white/70 pb-2 text-[11px] font-bold text-ink">原始 JSON</h4>
         <div className="lf-json mt-3 min-h-[280px] max-h-[380px] overflow-y-auto p-3 text-[10.5px] leading-5">
-          <JsonTree value={{ seq: event.seq, time: event.time, agent: event.agent, agentName: event.agentName, phase: event.phase, status: event.status, title: event.title, detail: event.detail, snapshot }} />
+          <JsonTree value={{ seq: event.seq, time: event.time, agent: event.agent, agentName: event.agentName, phase: event.phase, status: event.status, title: event.title, detail: event.detail, executionSummary: summary || null, snapshot }} />
         </div>
       </section>
     </div>
