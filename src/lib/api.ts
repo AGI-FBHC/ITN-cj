@@ -1299,8 +1299,8 @@ export const api = {
     }),
   listLearningResourceTasks: (limit = 30, summary = false) =>
     requestDirect<{ tasks: LearningResourceGenerationTask[] }>(`/v1/learning-resource-tasks?limit=${limit}&summary=${summary ? 'true' : 'false'}`),
-  summarizeAdminGenerationEvent: (taskType: 'resource' | 'ppt', taskId: string, seq: number) =>
-    requestDirect<{ summary: string; model: string; llmFallback: boolean }>(`/v1/admin-generation-events/${taskType}/${encodeURIComponent(taskId)}/summarize?seq=${seq}`),
+  summarizeAdminGenerationEvent: (taskType: 'resource' | 'ppt', taskId: string, seq: number, refresh = false) =>
+    requestDirect<{ summary: string; model: string; llmFallback: boolean }>(`/v1/admin-generation-events/${taskType}/${encodeURIComponent(taskId)}/summarize?seq=${seq}&refresh=${refresh}`),
   backfillAdminGenerationEventSummaries: (taskType: 'resource' | 'ppt', taskId: string) =>
     requestDirect<{ started: boolean; alreadyRunning: boolean; pending: number }>(`/v1/admin-generation-events/${taskType}/${encodeURIComponent(taskId)}/backfill-summaries`, { method: 'POST' }),
   getLearningResourceTask: (taskId: string) =>

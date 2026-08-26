@@ -46,11 +46,14 @@ export default function ExecutionDetailPanel({
   event,
   title,
   running = false,
+  summaryLoading = false,
 }: {
   event: AdminGenerationEvent;
   title: string;
   running?: boolean;
+  summaryLoading?: boolean;
 }) {
+
   const snapshot = event.snapshot ?? {};
   const summary = typeof event.executionSummary === 'string' ? event.executionSummary : '';
 
@@ -71,6 +74,8 @@ export default function ExecutionDetailPanel({
         <div className="mt-3 min-h-[240px] overflow-y-auto">
           {running ? (
             <div className="flex items-center gap-2 rounded-lg bg-white/70 px-3 py-4 text-[10.5px] text-ink-muted"><Loader2 size={13} className="animate-spin text-brand" />正在执行…</div>
+          ) : summaryLoading ? (
+            <div className="flex items-center gap-2 rounded-lg bg-white/70 px-3 py-4 text-[10.5px] text-ink-muted"><Loader2 size={13} className="animate-spin text-brand" />正在生成执行摘要…</div>
           ) : summary ? (
             <div className="rounded-lg bg-white/70 px-3 py-3 text-[11px] leading-6 text-ink-2">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{summary}</ReactMarkdown>

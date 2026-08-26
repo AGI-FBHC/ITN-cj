@@ -4,8 +4,6 @@ import { useSearchParams } from 'react-router-dom';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { presentationApi, type PresentationRequest, type PresentationTaskSummary } from '@/lib/presentationApi';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import ResourcePreview from '@/components/admin/ResourcePreview';
@@ -138,10 +136,9 @@ function QuizQuestionReviewNavigator({ events, selectedSeq, onSelect }: {
           const lastEvent = question.lastEvent;
           const stateLabel = question.passed ? '已通过' : question.reviewed ? '待复核' : '生成中';
           return (
-            <div key={question.number} className={cn('rounded-xl border px-2.5 py-2 transition', selected ? 'border-brand/45 bg-brand-tint/65' : 'border-white/80 bg-white/65')}>
-              <button type='button' disabled={!lastEvent} onClick={() => lastEvent && onSelect(lastEvent)} className='block w-full text-left disabled:opacity-60'><div className='flex items-center gap-2'><span className='flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-brand-tint font-mono text-[9px] font-bold text-brand'>{question.number}</span><span className={cn('min-w-0 flex-1 truncate text-[9.5px] font-semibold', question.passed ? 'text-emerald-700' : question.reviewed ? 'text-ochre' : 'text-ink-muted')}>{stateLabel}</span><span className='text-[8.5px] text-ink-muted'>难度 {questionDifficultyLabel(question)}</span>{question.attempts > 1 && <span className='rounded-md bg-ochre/10 px-1.5 py-0.5 text-[8px] font-bold text-ochre'>轮次 {question.attempts}</span>}<ChevronRight size={10} className='shrink-0 text-ink-muted' /></div></button>
-              {lastEvent?.executionSummary ? <div className='mt-1.5 rounded-lg bg-white/70 px-2 py-1.5 text-[9px] leading-4 text-ink-2'><ReactMarkdown remarkPlugins={[remarkGfm]}>{lastEvent.executionSummary}</ReactMarkdown></div> : <p className='mt-1 text-[9px] text-ink-muted'>暂无执行摘要。</p>}
-            </div>
+            <button key={question.number} type='button' disabled={!lastEvent} onClick={() => lastEvent && onSelect(lastEvent)} className={cn('block w-full rounded-xl border px-2.5 py-2 text-left transition disabled:opacity-60', selected ? 'border-brand/45 bg-brand-tint/65' : 'border-white/80 bg-white/65 hover:border-brand/30')}>
+              <div className='flex items-center gap-2'><span className='flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-brand-tint font-mono text-[9px] font-bold text-brand'>{question.number}</span><span className={cn('min-w-0 flex-1 truncate text-[9.5px] font-semibold', question.passed ? 'text-emerald-700' : question.reviewed ? 'text-ochre' : 'text-ink-muted')}>{stateLabel}</span><span className='text-[8.5px] text-ink-muted'>难度 {questionDifficultyLabel(question)}</span>{question.attempts > 1 && <span className='rounded-md bg-ochre/10 px-1.5 py-0.5 text-[8px] font-bold text-ochre'>轮次 {question.attempts}</span>}<ChevronRight size={10} className='shrink-0 text-ink-muted' /></div>
+            </button>
           );
         })}
       </div>
@@ -888,6 +885,7 @@ export default function CollaborationWorkbench() {
   const prevTaskStatusRef = useRef<Map<string, string>>(new Map());
   const [selectedAgent, setSelectedAgent] = useState('');
   const [selectedEventSeq, setSelectedEventSeq] = useState<number | null>(null);
+  const [summaryLoadingSeq, setSummaryLoadingSeq] = useState<number | null>(null);
   const [taskTab, setTaskTab] = useState('active');
   const [tasksCollapsed, setTasksCollapsed] = useState(false);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
@@ -1156,6 +1154,23 @@ export default function CollaborationWorkbench() {
   const active = Boolean(task && activeStatuses.has(task.status) && (!latest || activeStatuses.has(latest.status)));
   const selectedEvent = events.find((event) => event.seq === selectedEventSeq) ?? (isQuizTask && !selectedAgent ? quizQuestions[0]?.lastEvent ?? agentEvents.at(-1) : agentEvents.at(-1));
   const selectedEventIsRunning = Boolean(task && active && latest && selectedEvent && selectedEvent.seq === latest.seq);
+  const selectQuizEvent = async (event: AdminGenerationEvent) => {
+    setSelectedAgent(event.agent);
+    setSelectedEventSeq(event.seq);
+    const needsQuizRefresh = Boolean(event.snapshot?.questionAudit && event.executionSummary && /(上一节点|下一节点)/.test(event.executionSummary));
+    if (!task || summaryLoadingSeq === event.seq) return;
+    if (!event.executionSummary || needsQuizRefresh) {
+      setSummaryLoadingSeq(event.seq);
+      try {
+        const result = await api.summarizeAdminGenerationEvent(task.taskKind, task.id, event.seq, needsQuizRefresh);
+        setEvents((current) => current.map((item) => item.seq === event.seq ? { ...item, executionSummary: result.summary } : item));
+      } catch {
+        // 摘要生成失败时保留已有事件，用户仍可查看原始 JSON。
+      } finally {
+        setSummaryLoadingSeq(null);
+      }
+    }
+  };
   const grouped = useMemo(() => ({ active: tasks.filter((item) => activeStatuses.has(item.status)), finished: tasks.filter((item) => !activeStatuses.has(item.status)) }), [tasks]);
   const currentTasks = taskTab === 'active' ? grouped.active : grouped.finished;
   const taskTree = useMemo(() => buildTaskTree(currentTasks), [currentTasks]);
@@ -1248,9 +1263,9 @@ export default function CollaborationWorkbench() {
           {selectedEvent && <span className="lf-pill lf-pill-null shrink-0">{selectedEvent.agentName || (agents.find((item) => item.id === selectedEvent.agent)?.name ?? selectedEvent.agent)}</span>}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
-          {isQuizTask && <QuizQuestionReviewNavigator events={events} selectedSeq={selectedEvent?.seq ?? null} onSelect={(event) => { setSelectedAgent(event.agent); setSelectedEventSeq(event.seq); }} />}
+          {isQuizTask && <QuizQuestionReviewNavigator events={events} selectedSeq={selectedEvent?.seq ?? null} onSelect={selectQuizEvent} />}
           {selectedEvent ? (
-            <ExecutionDetailPanel key={selectedEvent.seq} event={selectedEvent} title={eventDisplayTitle(selectedEvent)} running={selectedEventIsRunning} />
+            <ExecutionDetailPanel key={selectedEvent.seq} event={selectedEvent} title={eventDisplayTitle(selectedEvent)} running={selectedEventIsRunning} summaryLoading={summaryLoadingSeq === selectedEvent.seq} />
           ) : (
             <div className="mt-6 rounded-xl border border-dashed border-white/80 bg-white/30 px-4 py-10 text-center text-xs leading-6 text-ink-muted">
               尚未选择事件
