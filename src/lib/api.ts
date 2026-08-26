@@ -1309,6 +1309,8 @@ export const api = {
     requestDirect<LearningResourceGenerationTask>(`/v1/learning-resource-tasks/${encodeURIComponent(taskId)}`),
   cancelLearningResourceTask: (taskId: string) =>
     requestDirect<LearningResourceGenerationTask>(`/v1/learning-resource-tasks/${encodeURIComponent(taskId)}/cancel`, { method: 'POST' }),
+  restartLearningResourceTask: (taskId: string) =>
+    requestDirect<LearningResourceGenerationTask>(`/v1/learning-resource-tasks/${encodeURIComponent(taskId)}/restart`, { method: 'POST' }),
   getLearningResource: (resourceId: string) =>
     requestDirect<LearningResource>(`/v1/learning-resources/${encodeURIComponent(resourceId)}`),
   deleteLearningResourceTask: (taskId: string) =>

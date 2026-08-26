@@ -1,4 +1,4 @@
-import { CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, MonitorPlay, Plus, ScrollText, Sparkles, Trash2, X, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, MonitorPlay, Plus, RotateCw, ScrollText, Sparkles, Trash2, X, XCircle } from 'lucide-react';
 import { api, streamAdminGenerationTask, type AdminGenerationEvent, type AdminResourceDetail, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
 import { loadAdminEventCache, saveAdminEventCache } from '@/lib/adminEventCache';
 import { useSearchParams } from 'react-router-dom';
@@ -558,7 +558,7 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
   );
 }
 
-function WorkbenchTaskItem({ item, selected, bulkMode, checked, onPreview, onCancel, onDelete, onClick }: { item: WorkbenchTask; selected: boolean; bulkMode: boolean; checked: boolean; onPreview?: (item: WorkbenchTask) => void; onCancel?: (item: WorkbenchTask) => void; onDelete?: (item: WorkbenchTask) => void; onClick: () => void }) {
+function WorkbenchTaskItem({ item, selected, bulkMode, checked, onPreview, onCancel, onRestart, onDelete, onClick }: { item: WorkbenchTask; selected: boolean; bulkMode: boolean; checked: boolean; onPreview?: (item: WorkbenchTask) => void; onCancel?: (item: WorkbenchTask) => void; onRestart?: (item: WorkbenchTask) => void; onDelete?: (item: WorkbenchTask) => void; onClick: () => void }) {
   const active = activeStatuses.has(item.status);
   const failed = item.status === 'failed' || item.status === 'cancelled';
   const context = contextOf(item);
@@ -626,6 +626,13 @@ function WorkbenchTaskItem({ item, selected, bulkMode, checked, onPreview, onCan
           <span className="flex justify-end pt-1">
             <span role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); onCancel(item); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.stopPropagation(); onCancel(item); } }} className="inline-flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50/80 px-2 py-1 text-[9px] font-bold text-red-600 transition-colors hover:border-red-300 hover:bg-rose-100">
               <XCircle size={11} /> 取消任务
+            </span>
+          </span>
+        )}
+        {item.status === 'failed' && onRestart && (
+          <span className="flex justify-end pt-1">
+            <span role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); onRestart(item); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.stopPropagation(); onRestart(item); } }} className="inline-flex items-center gap-1 rounded-md border border-brand/30 bg-white/80 px-2 py-1 text-[9px] font-bold text-brand transition-colors hover:bg-brand-tint">
+              <RotateCw size={11} /> 重启
             </span>
           </span>
         )}
@@ -1058,6 +1065,20 @@ export default function CollaborationWorkbench() {
     }
   };
 
+  /** 调试用：重启失败任务，复用原请求重新执行 */
+  const restartTask = async (item: WorkbenchTask) => {
+    if (!window.confirm('确定重启该失败任务吗？原请求会重新执行。')) return;
+    try {
+      if (item.taskKind === 'ppt') await presentationApi.restartPresentation(item.id);
+      else await api.restartLearningResourceTask(item.id);
+      toast.success('任务已重新启动');
+      setParams({ task: taskKey(item) });
+      await load();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '重启失败');
+    }
+  };
+
   /** 已完成任务：预览已生成内容（学习资源按 resourceId，课件拉 outline 构造） */
   const openPreview = async (item: WorkbenchTask) => {
     setPreviewLoading(true);
@@ -1245,7 +1266,7 @@ export default function CollaborationWorkbench() {
         )}
         <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
           <div className="space-y-2">
-            <TaskDirectoryTree nodes={taskTree} expanded={expandedTaskKeys} selectedKey={selectedKey} onToggle={(key) => setExpandedTaskKeys((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} renderLeaf={(item) => <WorkbenchTaskItem key={taskKey(item)} item={item} selected={taskKey(item) === selectedKey} bulkMode={bulkMode && taskTab === 'finished'} checked={bulkSelected.has(taskKey(item))} onPreview={(task) => void openPreview(task)} onCancel={(task) => void cancelTask(task)} onDelete={(task) => deleteTask(task)} onClick={() => { if (bulkMode && taskTab === 'finished') { setBulkSelected((current) => { const next = new Set(current); if (next.has(taskKey(item))) next.delete(taskKey(item)); else next.add(taskKey(item)); return next; }); } else { setParams({ task: taskKey(item) }); } }} />} />
+            <TaskDirectoryTree nodes={taskTree} expanded={expandedTaskKeys} selectedKey={selectedKey} onToggle={(key) => setExpandedTaskKeys((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} renderLeaf={(item) => <WorkbenchTaskItem key={taskKey(item)} item={item} selected={taskKey(item) === selectedKey} bulkMode={bulkMode && taskTab === 'finished'} checked={bulkSelected.has(taskKey(item))} onPreview={(task) => void openPreview(task)} onCancel={(task) => void cancelTask(task)} onRestart={(task) => void restartTask(task)} onDelete={(task) => deleteTask(task)} onClick={() => { if (bulkMode && taskTab === 'finished') { setBulkSelected((current) => { const next = new Set(current); if (next.has(taskKey(item))) next.delete(taskKey(item)); else next.add(taskKey(item)); return next; }); } else { setParams({ task: taskKey(item) }); } }} />} />
             {currentTasks.length === 0 && (
               <div className="lf-empty rounded-xl p-6 text-xs">{taskTab === 'active' ? '暂无进行中的任务' : '暂无已完成任务'}</div>
             )}

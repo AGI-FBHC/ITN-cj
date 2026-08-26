@@ -163,6 +163,8 @@ export const presentationApi = {
     request<PresentationTask>(`/v1/presentations/${encodeURIComponent(taskId)}/generate`, { method: 'POST' }),
   cancelPresentation: (taskId: string) =>
     request<PresentationTask>(`/v1/presentations/${encodeURIComponent(taskId)}/cancel`, { method: 'POST' }),
+  restartPresentation: (taskId: string) =>
+    request<PresentationTask>(`/v1/presentations/${encodeURIComponent(taskId)}/restart`, { method: 'POST' }),
   deletePresentation: (taskId: string) =>
     request<void>(`/v1/presentations/${encodeURIComponent(taskId)}`, { method: 'DELETE' }),
   getSlideshowSlides: (taskId: string) =>
