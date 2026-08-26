@@ -59,7 +59,6 @@ export default function ExecutionDetailPanel({
       <header className="min-h-[76px] rounded-2xl border border-white/85 bg-white/70 p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
           <h3 className="min-w-0 flex-1 truncate text-sm font-bold text-ink">{event.agentName || event.agent}</h3>
-          <span className="lf-pill lf-pill-null">{event.phase || event.status}</span>
           <span className="ml-auto text-[9px] font-mono text-ink-muted">{event.time ? new Date(event.time).toLocaleString('zh-CN', { hour12: false }) : `记录 #${event.seq}`}</span>
         </div>
         <p className="mt-1.5 text-[10px] font-semibold text-ink-muted">{title}</p>
