@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, MonitorPlay, Plus, ScrollText, Sparkles, Trash2, X, XCircle } from 'lucide-react';
 import { api, streamAdminGenerationTask, type AdminGenerationEvent, type AdminResourceDetail, type AdminResourceItem, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
 import { useSearchParams } from 'react-router-dom';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+
 import { presentationApi, type PresentationRequest, type PresentationTaskSummary } from '@/lib/presentationApi';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
@@ -354,6 +355,82 @@ const genKinds: [GenKind, string, string][] = [
 ];
 
 /** 新建任务弹窗：领域 → 章节 → 知识点 级联选择，多选资源类型后创建生成任务 */
+
+type TaskTreeNode = {
+  key: string;
+  label: string;
+  count: number;
+  tasks: WorkbenchTask[];
+  children: TaskTreeNode[];
+};
+
+const taskDomainLabels: Record<string, string> = {
+  agent: '智能体', mcp: 'MCP 规范', 'cs-base': '计算机基础', hello_agents: '智能体',
+};
+
+function taskTreeContext(task: WorkbenchTask) {
+  const ctx = contextOf(task);
+  const domainCode = String(ctx.domainCode || '未分类');
+  const nodeCode = String(ctx.nodeCode || ctx.kpId || '未分组知识节点');
+  const topicName = String(ctx.topicName || nodeCode);
+  const groupName = String(ctx.groupName || '默认分组');
+  const domainLabel = taskDomainLabels[domainCode] || domainCode;
+  return { domainCode, domainLabel, nodeCode, topicName, groupName };
+}
+
+function taskTreePathKeys(task: WorkbenchTask): string[] {
+  const ctx = taskTreeContext(task);
+  const domainKey = `d:${ctx.domainCode}`;
+  const nodeKey = `${domainKey}/n:${ctx.nodeCode}`;
+  const groupKey = `${nodeKey}/g:${ctx.groupName}`;
+  return [domainKey, nodeKey, groupKey];
+}
+
+function buildTaskTree(items: WorkbenchTask[]): TaskTreeNode[] {
+  const roots: TaskTreeNode[] = [];
+  const domains = new Map<string, TaskTreeNode>();
+  const find = (map: Map<string, TaskTreeNode>, key: string, label: string, parent: TaskTreeNode | null): TaskTreeNode => {
+    let node = map.get(key);
+    if (!node) {
+      node = { key, label, count: 0, tasks: [], children: [] };
+      map.set(key, node);
+      if (parent) parent.children.push(node); else roots.push(node);
+    }
+    return node;
+  };
+  items.forEach((task) => {
+    const ctx = taskTreeContext(task);
+    const domain = find(domains, `d:${ctx.domainCode}`, ctx.domainLabel, null);
+    domain.count += 1;
+    const nodeMap = new Map(domain.children.map((child) => [child.key, child]));
+    const node = find(nodeMap, `${domain.key}/n:${ctx.nodeCode}`, ctx.topicName, domain);
+    node.count += 1;
+    const groupMap = new Map(node.children.map((child) => [child.key, child]));
+    const group = find(groupMap, `${node.key}/g:${ctx.groupName}`, ctx.groupName, node);
+    group.count += 1;
+    group.tasks.push(task);
+  });
+  return roots;
+}
+
+function TaskDirectoryTree({
+  nodes, level = 0, expanded, selectedKey, onToggle, renderLeaf,
+}: {
+  nodes: TaskTreeNode[];
+  level?: number;
+  expanded: Set<string>;
+  selectedKey: string | null;
+  onToggle: (key: string) => void;
+  renderLeaf: (task: WorkbenchTask) => ReactNode;
+}) {
+  return <>{nodes.map((node) => {
+    const isOpen = expanded.has(node.key);
+    if (node.tasks.length > 0) {
+      return <div key={node.key} style={{ marginLeft: level * 8 }} className="space-y-1.5"><button type="button" onClick={() => onToggle(node.key)} className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left hover:bg-white/60"><ChevronRight size={12} className={cn('text-ink-muted transition-transform', isOpen && 'rotate-90')} /><span className="min-w-0 flex-1 truncate text-[10.5px] font-bold text-ink">{node.label}</span><span className="rounded-full bg-brand-tint px-1.5 py-0.5 text-[8.5px] font-bold text-brand">{node.count}</span></button>{isOpen && <div className="space-y-1.5">{node.tasks.map((task) => <div key={taskKey(task)}>{renderLeaf(task)}</div>)}</div>}</div>;
+    }
+    return <div key={node.key} style={{ marginLeft: level * 8 }} className="space-y-1.5"><button type="button" onClick={() => onToggle(node.key)} className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left hover:bg-white/60"><ChevronRight size={12} className={cn('text-ink-muted transition-transform', isOpen && 'rotate-90')} /><span className="min-w-0 flex-1 truncate text-[10.5px] font-bold text-ink">{node.label}</span><span className="text-[8.5px] text-ink-muted">{node.count}</span></button>{isOpen && <TaskDirectoryTree nodes={node.children} level={level + 1} expanded={expanded} selectedKey={selectedKey} onToggle={onToggle} renderLeaf={renderLeaf} />}</div>;
+  })}</>;
+}
 function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClose: () => void; onCreate: (targets: GenKind[], ctx: { domainCode: string; nodeCode: string; topicName: string; groupName: string }) => void; busy: boolean }) {
   const [domains, setDomains] = useState<RagDomain[]>([]);
   const [domainCode, setDomainCode] = useState('');
@@ -817,6 +894,7 @@ export default function CollaborationWorkbench() {
   deletedKeysRef.current = deletedKeys;
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
+  const [expandedTaskKeys, setExpandedTaskKeys] = useState<Set<string>>(new Set());
   const previousTaskKeysRef = useRef<Set<string>>(new Set());
   const [previewDetail, setPreviewDetail] = useState<AdminResourceDetail | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -1014,6 +1092,12 @@ export default function CollaborationWorkbench() {
 
   const task = tasks.find((item) => taskKey(item) === selectedKey) ?? null;
   useEffect(() => {
+    if (!selectedKey) return;
+    const selected = tasks.find((item) => taskKey(item) === selectedKey);
+    if (!selected) return;
+    setExpandedTaskKeys((current) => new Set([...current, ...taskTreePathKeys(selected)]));
+  }, [selectedKey, tasks]);
+  useEffect(() => {
     if (!task) return;
     setEvents([]); setSelectedAgent(''); setSelectedEventSeq(null);
     const controller = new AbortController();
@@ -1054,6 +1138,8 @@ export default function CollaborationWorkbench() {
   const selectedEvent = events.find((event) => event.seq === selectedEventSeq) ?? (isQuizTask && !selectedAgent ? quizQuestions[0]?.lastEvent ?? agentEvents.at(-1) : agentEvents.at(-1));
   const active = Boolean(task && activeStatuses.has(task.status) && (!latest || activeStatuses.has(latest.status)));
   const grouped = useMemo(() => ({ active: tasks.filter((item) => activeStatuses.has(item.status)), finished: tasks.filter((item) => !activeStatuses.has(item.status)) }), [tasks]);
+  const currentTasks = taskTab === 'active' ? grouped.active : grouped.finished;
+  const taskTree = useMemo(() => buildTaskTree(currentTasks), [currentTasks]);
 
 
   return (
@@ -1097,10 +1183,8 @@ export default function CollaborationWorkbench() {
         )}
         <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
           <div className="space-y-2">
-            {(taskTab === 'active' ? grouped.active : grouped.finished).map((item) => (
-              <WorkbenchTaskItem key={taskKey(item)} item={item} selected={taskKey(item) === selectedKey} bulkMode={bulkMode && taskTab === 'finished'} checked={bulkSelected.has(taskKey(item))} onPreview={(task) => void openPreview(task)} onCancel={(task) => void cancelTask(task)} onDelete={(task) => deleteTask(task)} onClick={() => { if (bulkMode && taskTab === 'finished') { setBulkSelected((current) => { const next = new Set(current); if (next.has(taskKey(item))) next.delete(taskKey(item)); else next.add(taskKey(item)); return next; }); } else { setParams({ task: taskKey(item) }); } }} />
-            ))}
-            {(taskTab === 'active' ? grouped.active : grouped.finished).length === 0 && (
+            <TaskDirectoryTree nodes={taskTree} expanded={expandedTaskKeys} selectedKey={selectedKey} onToggle={(key) => setExpandedTaskKeys((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} renderLeaf={(item) => <WorkbenchTaskItem key={taskKey(item)} item={item} selected={taskKey(item) === selectedKey} bulkMode={bulkMode && taskTab === 'finished'} checked={bulkSelected.has(taskKey(item))} onPreview={(task) => void openPreview(task)} onCancel={(task) => void cancelTask(task)} onDelete={(task) => deleteTask(task)} onClick={() => { if (bulkMode && taskTab === 'finished') { setBulkSelected((current) => { const next = new Set(current); if (next.has(taskKey(item))) next.delete(taskKey(item)); else next.add(taskKey(item)); return next; }); } else { setParams({ task: taskKey(item) }); } }} />} />
+            {currentTasks.length === 0 && (
               <div className="lf-empty rounded-xl p-6 text-xs">{taskTab === 'active' ? '暂无进行中的任务' : '暂无已完成任务'}</div>
             )}
           </div>

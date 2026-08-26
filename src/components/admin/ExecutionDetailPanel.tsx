@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { lectureMdComponents } from '@/components/resources/lecture-markdown';
 import type { AdminGenerationEvent } from '@/lib/api';
 
 function JsonTree({ value }: { value: unknown }) {
@@ -101,9 +104,9 @@ export default function ExecutionDetailPanel({
               正在生成执行摘要…
             </div>
           ) : (
-            <p className="whitespace-pre-wrap rounded-lg bg-white/70 px-3 py-3 text-[11px] leading-6 text-ink-2">
-              {summary || '暂时没有可展示的执行摘要。'}
-            </p>
+            <div className="rounded-lg bg-white/70 px-3 py-3 text-[11px] leading-6 text-ink-2">
+              {summary ? <ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{summary}</ReactMarkdown> : <p>暂时没有可展示的执行摘要。</p>}
+            </div>
           )}
           {!loading && fallback && (
             <p className="mt-2 rounded-lg bg-amber-50/80 px-3 py-2 text-[9px] leading-4 text-amber-800">
