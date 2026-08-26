@@ -8,17 +8,22 @@ import { toast } from 'sonner';
 import ResourcePreview from '@/components/admin/ResourcePreview';
 import QuizExecutionDetail, { isQuizQuestionEvent } from '@/components/admin/QuizExecutionDetail';
 import { cn } from '@/lib/utils';
+import planningAgentIcon from '@/assets/agents/planning.svg';
+import retrievalAgentIcon from '@/assets/agents/retrieval.svg';
+import generationAgentIcon from '@/assets/agents/generation.svg';
+import reviewAgentIcon from '@/assets/agents/review.svg';
+import arbitrationAgentIcon from '@/assets/agents/arbitration.svg';
 
 type WorkbenchTask =
   | ({ taskKind: 'resource' } & LearningResourceGenerationTask)
   | ({ taskKind: 'ppt'; resourceType: 'ppt' } & PresentationTaskSummary);
 
 const agents = [
-  { id: 'DIA-01', name: '教学策划 Agent', duty: '目标、画像与教学蓝图' },
-  { id: 'RET-02', name: '知识检索 Agent', duty: '知识切片、补充资料与证据' },
-  { id: 'GEN-03', name: '内容生成 Agent', duty: '初稿生成与定向修订' },
-  { id: 'VER-04', name: '质量核验 Agent', duty: '结构、引用与内容一致性' },
-  { id: 'ARB-05', name: '发布仲裁 Agent', duty: '通过、返工或终止' },
+  { id: 'DIA-01', name: '教学策划 Agent', duty: '目标、画像与教学蓝图', icon: planningAgentIcon },
+  { id: 'RET-02', name: '知识检索 Agent', duty: '知识切片、补充资料与证据', icon: retrievalAgentIcon },
+  { id: 'GEN-03', name: '内容生成 Agent', duty: '初稿生成与定向修订', icon: generationAgentIcon },
+  { id: 'VER-04', name: '质量核验 Agent', duty: '结构、引用与内容一致性', icon: reviewAgentIcon },
+  { id: 'ARB-05', name: '发布仲裁 Agent', duty: '通过、返工或终止', icon: arbitrationAgentIcon },
 ] as const;
 const activeStatuses = new Set(['queued', 'retrieving', 'debating', 'planning', 'analyzing', 'generating', 'verifying', 'reviewing', 'revising', 'judging', 'outline_review']);
 const typeText: Record<string, string> = { lecture: '讲义', practice: '实操指南', quiz: '题库', ppt: '交互课件' };
@@ -203,29 +208,6 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
   const blocks: Array<{ key: string; kind: "life" | "unit"; event?: AdminGenerationEvent; unit?: { agent: string; events: AdminGenerationEvent[]; round: number; isRoundStart: boolean } }> = [];
   if (lifecycle[0]) blocks.push({ key: "life-" + lifecycle[0].seq, kind: "life", event: lifecycle[0] });
   units.forEach((unit) => blocks.push({ key: "unit-" + unit.round + "-" + unit.agent + "-" + unit.events[0].seq, kind: "unit", unit }));
-  /* 回滚标记：向后跳转且目标 Agent 此前已出现（真正的再次进入/返工）才算回滚；
-     从该回滚重新开始执行的 Agent 起、其后轨迹上的所有 Agent 都标 × */
-  const rollbackAgents = new Set<string>();
-  let rollbackStart = -1;
-  const seenAgents = new Set<string>();
-  for (let i = 1; i < events.length; i++) {
-    const fromIdx = agents.findIndex((agent) => agent.id === events[i - 1].agent);
-    const toIdx = agents.findIndex((agent) => agent.id === events[i].agent);
-    if (fromIdx >= 0 && toIdx >= 0 && toIdx < fromIdx && seenAgents.has(events[i].agent)) { rollbackStart = i; break; }
-    seenAgents.add(events[i - 1].agent);
-  }
-  if (rollbackStart >= 0) {
-    /* 回滚后若连续两跳正向（恢复正常推进），返工段之后的步骤改为 √：仅回滚点至恢复起点之间标 × */
-    let recoverStart = -1;
-    for (let i = rollbackStart + 1; i < events.length - 1; i++) {
-      const l1 = agents.findIndex((agent) => agent.id === events[i - 1].agent);
-      const l2 = agents.findIndex((agent) => agent.id === events[i].agent);
-      const l3 = agents.findIndex((agent) => agent.id === events[i + 1].agent);
-      if (l1 >= 0 && l2 >= 0 && l3 >= 0 && l2 >= l1 && l3 >= l2) { recoverStart = i; break; }
-    }
-    const retryEnd = recoverStart >= 0 ? recoverStart : events.length;
-    for (let i = rollbackStart; i < retryEnd; i++) rollbackAgents.add(events[i].agent);
-  }
   return (
     <div className="h-full overflow-x-auto">
       <div className="relative min-w-[880px] h-full min-h-[420px] overflow-y-auto rounded-2xl border border-white/90 bg-white/40 px-2 pb-2 pt-0 shadow-[0_8px_28px_rgba(48,74,60,0.10)] backdrop-blur-xl">
@@ -241,23 +223,22 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
         <div className="sticky top-0 z-20 -mx-2 mb-1 border-b border-white/70 bg-[#F2EEE2]/95 px-2 pb-2 pt-2 backdrop-blur-xl shadow-[0_2px_10px_rgba(48,74,60,0.08)]">
         <div className="relative grid grid-cols-5 gap-2">
           {agents.map((agent) => {
-            const own = events.filter((event) => event.agent === agent.id);
+            const own = events.some((event) => event.agent === agent.id);
             const running = runningAgent === agent.id;
             const selected = selectedAgent === agent.id;
-            const rolledBack = rollbackAgents.has(agent.id);
             return (
               <button
                 key={agent.id}
                 type="button"
                 onClick={() => onSelectAgent(agent.id)}
                 className={cn('flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-xl border backdrop-blur-md transition-all',
-                  selected ? 'border-brand/70 bg-brand-tint/85 shadow-[0_3px_12px_rgba(78,120,96,0.25)] ring-1 ring-brand/25' : running ? 'border-brand/50 bg-white/90 shadow-sm' : own.length ? 'border-white/85 bg-white/70 hover:border-brand/40 shadow-sm' : 'border-dashed border-white/80 bg-white/40 hover:border-brand/30')}
+                  running ? 'border-brand/75 bg-brand/10 shadow-[0_4px_16px_rgba(78,120,96,0.28)]' : selected ? 'border-brand/70 bg-brand-tint/85 shadow-[0_3px_12px_rgba(78,120,96,0.25)] ring-1 ring-brand/25' : own ? 'border-emerald-200/80 bg-emerald-50/70 hover:border-brand/40 hover:bg-white/85' : 'border-dashed border-white/80 bg-white/40 hover:border-brand/30')}
                 title={agent.duty}
               >
-                <span className={cn('flex h-5 w-5 shrink-0 items-center justify-center rounded-full', running ? 'bg-brand text-paper' : own.length ? (rolledBack ? 'bg-rose-100 text-red-500' : 'bg-emerald-100 text-emerald-600') : 'bg-white/85 text-ink-muted/60')}>
-                  {running ? <Loader2 size={11} className="animate-spin" /> : own.length ? (rolledBack ? <XCircle size={11} /> : <CheckCircle2 size={11} />) : <span className="h-1.5 w-1.5 rounded-full bg-ink-muted/40" />}
+                <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border transition-all', running ? 'border-brand/60 bg-white/95 lf-agent-live' : own ? 'border-brand/20 bg-brand-tint' : 'border-white/80 bg-white/45')}>
+                  <img src={agent.icon} alt="" className={cn('h-5 w-5 object-contain transition-all', !running && !own && 'opacity-35 grayscale')} />
                 </span>
-                <span className="truncate text-[10px] font-bold text-ink">{agent.name}</span>
+                <span className={cn('truncate text-[10px] font-bold', running ? 'text-brand' : own ? 'text-ink' : 'text-ink-muted/75')}>{agent.name}</span>
               </button>
             );
           })}
