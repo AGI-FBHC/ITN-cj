@@ -6,7 +6,7 @@ import { presentationApi, type PresentationRequest, type PresentationTaskSummary
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import ResourcePreview from '@/components/admin/ResourcePreview';
-import QuizExecutionDetail, { isQuizQuestionEvent } from '@/components/admin/QuizExecutionDetail';
+import ExecutionDetailPanel from '@/components/admin/ExecutionDetailPanel';
 import { cn } from '@/lib/utils';
 import planningAgentIcon from '@/assets/agents/planning.svg';
 import retrievalAgentIcon from '@/assets/agents/retrieval.svg';
@@ -673,7 +673,8 @@ function InspectionModal({ title, record, onClose }: { title: string; record: Re
   );
 }
 
-function EventDetailPanel({ event }: { event: AdminGenerationEvent }) {
+export function EventDetailPanel({ event }: { event: AdminGenerationEvent }) {
+
   const [rawOpen, setRawOpen] = useState(false);
   const [artifactOpen, setArtifactOpen] = useState(false);
   const [inspection, setInspection] = useState<{ title: string; record: Record<string, unknown> } | null>(null);
@@ -1024,9 +1025,6 @@ export default function CollaborationWorkbench() {
   const selectedEvent = events.find((event) => event.seq === selectedEventSeq) ?? (isQuizTask && !selectedAgent ? quizQuestions[0]?.lastEvent ?? agentEvents.at(-1) : agentEvents.at(-1));
   const active = Boolean(task && activeStatuses.has(task.status) && (!latest || activeStatuses.has(latest.status)));
   const grouped = useMemo(() => ({ active: tasks.filter((item) => activeStatuses.has(item.status)), finished: tasks.filter((item) => !activeStatuses.has(item.status)) }), [tasks]);
-  const selectedQuizSummary = isQuizTask && selectedEvent && isQuizQuestionEvent(selectedEvent)
-    ? quizQuestions.find((question) => question.number === Number(selectedEvent.snapshot?.questionNumber)) ?? quizQuestions[0]
-    : undefined;
 
 
   return (
@@ -1120,11 +1118,7 @@ export default function CollaborationWorkbench() {
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {isQuizTask && <QuizQuestionReviewNavigator events={events} selectedSeq={selectedEvent?.seq ?? null} onSelect={(event) => { setSelectedAgent(event.agent); setSelectedEventSeq(event.seq); }} />}
           {selectedEvent ? (
-            selectedQuizSummary && selectedEvent && isQuizQuestionEvent(selectedEvent) ? (
-              <QuizExecutionDetail key={selectedEvent.seq} event={selectedEvent} summary={selectedQuizSummary} />
-            ) : (
-              <EventDetailPanel key={selectedEvent.seq} event={selectedEvent} />
-            )
+            <ExecutionDetailPanel key={selectedEvent.seq} event={selectedEvent} title={eventDisplayTitle(selectedEvent)} />
           ) : (
             <div className="mt-6 rounded-xl border border-dashed border-white/80 bg-white/30 px-4 py-10 text-center text-xs leading-6 text-ink-muted">
               尚未选择事件
