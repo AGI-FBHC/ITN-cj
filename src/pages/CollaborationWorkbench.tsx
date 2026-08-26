@@ -4,6 +4,8 @@ import { useSearchParams } from 'react-router-dom';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { presentationApi, type PresentationRequest, type PresentationTaskSummary } from '@/lib/presentationApi';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import ResourcePreview from '@/components/admin/ResourcePreview';
@@ -130,15 +132,16 @@ function QuizQuestionReviewNavigator({ events, selectedSeq, onSelect }: {
         <div className='rounded-lg bg-emerald-50/70 px-2 py-1.5'><p className='text-[8.5px] text-emerald-700/80'>通过</p><p className='mt-0.5 text-[11px] font-bold text-emerald-700'>{passed}</p></div>
         <div className='rounded-lg bg-ochre/5 px-2 py-1.5'><p className='text-[8.5px] text-ochre/70'>多轮处理</p><p className='mt-0.5 text-[11px] font-bold text-ochre'>{revised}</p></div>
       </div>
-      <div className='mt-3 max-h-52 space-y-1.5 overflow-y-auto pr-1'>
+      <div className='mt-3 max-h-[420px] space-y-1.5 overflow-y-auto pr-1'>
         {questions.map((question) => {
           const selected = question.generationEvents.some((event) => event.seq === selectedSeq) || question.reviewEvents.some((event) => event.seq === selectedSeq);
           const lastEvent = question.lastEvent;
           const stateLabel = question.passed ? '已通过' : question.reviewed ? '待复核' : '生成中';
           return (
-            <button type='button' key={question.number} disabled={!lastEvent} onClick={() => lastEvent && onSelect(lastEvent)} className={cn('block w-full rounded-xl border px-2.5 py-2 text-left transition', selected ? 'border-brand/45 bg-brand-tint/65' : 'border-white/80 bg-white/65 hover:border-brand/30 disabled:opacity-60')}>
-              <div className='flex items-center gap-2'><span className='flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-brand-tint font-mono text-[9px] font-bold text-brand'>{question.number}</span><span className={cn('min-w-0 flex-1 truncate text-[9.5px] font-semibold', question.passed ? 'text-emerald-700' : question.reviewed ? 'text-ochre' : 'text-ink-muted')}>{stateLabel}</span><span className='text-[8.5px] text-ink-muted'>难度 {questionDifficultyLabel(question)}</span>{question.attempts > 1 && <span className='rounded-md bg-ochre/10 px-1.5 py-0.5 text-[8px] font-bold text-ochre'>轮次 {question.attempts}</span>}<ChevronRight size={10} className='shrink-0 text-ink-muted' /></div>
-            </button>
+            <div key={question.number} className={cn('rounded-xl border px-2.5 py-2 transition', selected ? 'border-brand/45 bg-brand-tint/65' : 'border-white/80 bg-white/65')}>
+              <button type='button' disabled={!lastEvent} onClick={() => lastEvent && onSelect(lastEvent)} className='block w-full text-left disabled:opacity-60'><div className='flex items-center gap-2'><span className='flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-brand-tint font-mono text-[9px] font-bold text-brand'>{question.number}</span><span className={cn('min-w-0 flex-1 truncate text-[9.5px] font-semibold', question.passed ? 'text-emerald-700' : question.reviewed ? 'text-ochre' : 'text-ink-muted')}>{stateLabel}</span><span className='text-[8.5px] text-ink-muted'>难度 {questionDifficultyLabel(question)}</span>{question.attempts > 1 && <span className='rounded-md bg-ochre/10 px-1.5 py-0.5 text-[8px] font-bold text-ochre'>轮次 {question.attempts}</span>}<ChevronRight size={10} className='shrink-0 text-ink-muted' /></div></button>
+              {lastEvent?.executionSummary ? <div className='mt-1.5 rounded-lg bg-white/70 px-2 py-1.5 text-[9px] leading-4 text-ink-2'><ReactMarkdown remarkPlugins={[remarkGfm]}>{lastEvent.executionSummary}</ReactMarkdown></div> : <p className='mt-1 text-[9px] text-ink-muted'>暂无执行摘要。</p>}
+            </div>
           );
         })}
       </div>
