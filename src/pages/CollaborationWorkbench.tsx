@@ -399,7 +399,7 @@ function WorkbenchTaskItem({ item, selected, bulkMode, checked, onPreview, onCan
         <span className="block truncate text-xs font-bold text-ink">{String(context.topicName || item.title)}</span>
         <span className="block line-clamp-1 text-[9.5px] leading-4 text-ink-muted">{item.stageMessage}</span>
         {timeLine && <span className="block pt-0.5 text-[9px] font-semibold tabular-nums text-ink-muted/80">{timeLine}</span>}
-        {(item.status === 'completed' || item.status === 'failed') && (
+        {(item.status === 'completed') && (
           <span className="flex justify-end gap-1.5 pt-1">
             {bulkMode && (
               <span role="checkbox" aria-checked={checked} tabIndex={0} onClick={(event) => { event.stopPropagation(); onClick(); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.stopPropagation(); onClick(); } }} className={cn('inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[9px] font-bold', checked ? 'border-brand/50 bg-brand-tint text-brand' : 'border-white/80 bg-white/80 text-ink-muted')}>
@@ -668,6 +668,7 @@ export default function CollaborationWorkbench() {
   const [tasks, setTasks] = useState<WorkbenchTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [events, setEvents] = useState<AdminGenerationEvent[]>([]);
+  const prevTaskStatusRef = useRef<Map<string, string>>(new Map());
   const [selectedAgent, setSelectedAgent] = useState('');
   const [selectedEventSeq, setSelectedEventSeq] = useState<number | null>(null);
   const [taskTab, setTaskTab] = useState('active');
@@ -712,6 +713,14 @@ export default function CollaborationWorkbench() {
     } else if (newestKey && !selectedKey) {
       setParams({ task: newestKey }, { replace: true });
     }
+    visible.forEach((item) => {
+      const key = taskKey(item);
+      const prev = prevTaskStatusRef.current.get(key);
+      if (prev && activeStatuses.has(prev) && (item.status === 'failed' || item.status === 'cancelled')) {
+        toast.error((String(contextOf(item).topicName || item.title).slice(0, 40)) + ' 生成' + (item.status === 'cancelled' ? '已取消' : '失败') + '，详见该任务详情');
+      }
+      prevTaskStatusRef.current.set(key, item.status);
+    });
     previousTaskKeysRef.current = new Set(visible.map((item) => taskKey(item)));
     setLoading(false);
     } finally {
