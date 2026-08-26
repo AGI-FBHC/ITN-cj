@@ -1301,6 +1301,8 @@ export const api = {
     requestDirect<{ tasks: LearningResourceGenerationTask[] }>(`/v1/learning-resource-tasks?limit=${limit}&summary=${summary ? 'true' : 'false'}`),
   summarizeAdminGenerationEvent: (taskType: 'resource' | 'ppt', taskId: string, seq: number) =>
     requestDirect<{ summary: string; model: string; llmFallback: boolean }>(`/v1/admin-generation-events/${taskType}/${encodeURIComponent(taskId)}/summarize?seq=${seq}`),
+  backfillAdminGenerationEventSummaries: (taskType: 'resource' | 'ppt', taskId: string) =>
+    requestDirect<{ started: boolean; alreadyRunning: boolean; pending: number }>(`/v1/admin-generation-events/${taskType}/${encodeURIComponent(taskId)}/backfill-summaries`, { method: 'POST' }),
   getLearningResourceTask: (taskId: string) =>
     requestDirect<LearningResourceGenerationTask>(`/v1/learning-resource-tasks/${encodeURIComponent(taskId)}`),
   cancelLearningResourceTask: (taskId: string) =>

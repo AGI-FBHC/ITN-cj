@@ -905,6 +905,7 @@ export default function CollaborationWorkbench() {
   const loadInFlightRef = useRef(false);
   const streamBufferRef = useRef<AdminGenerationEvent[]>([]);
   const streamFlushTimerRef = useRef<number | null>(null);
+  const backfillTriggeredRef = useRef<Set<string>>(new Set());
 
   const load = async () => {
     if (loadInFlightRef.current) return;
@@ -1132,6 +1133,20 @@ export default function CollaborationWorkbench() {
       streamBufferRef.current = [];
     };
   }, [task?.id, task?.taskKind]);
+  useEffect(() => {
+    if (!task) return;
+    const key = `s:${task.taskKind}:${task.id}`;
+    if (backfillTriggeredRef.current.has(key)) return;
+    backfillTriggeredRef.current.add(key);
+    void api.backfillAdminGenerationEventSummaries(task.taskKind, task.id).catch(() => undefined);
+  }, [task?.id, task?.taskKind]);
+  useEffect(() => {
+    if (!task || !['completed', 'failed', 'cancelled'].includes(task.status)) return;
+    const key = `t:${task.taskKind}:${task.id}`;
+    if (backfillTriggeredRef.current.has(key)) return;
+    backfillTriggeredRef.current.add(key);
+    void api.backfillAdminGenerationEventSummaries(task.taskKind, task.id).catch(() => undefined);
+  }, [task?.id, task?.status]);
   const quizQuestions = useMemo(() => summarizeQuizQuestions(events), [events]);
   const isQuizTask = task?.taskKind === 'resource' && task.resourceType === 'quiz';
 
