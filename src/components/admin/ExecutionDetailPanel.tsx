@@ -92,18 +92,18 @@ export default function ExecutionDetailPanel({
 
       <section className="rounded-2xl border border-white/80 bg-white/55 p-3">
         <div className="flex items-center justify-between border-b border-white/70 pb-2">
-          <h4 className="text-[11px] font-bold text-ink">流水线解读</h4>
+          <h4 className="text-[11px] font-bold text-ink">执行摘要</h4>
           <span className="text-[9px] text-ink-muted">mimo-v2.5 · opencode</span>
         </div>
         <div className="mt-3">
           {loading ? (
             <div className="flex items-center gap-2 rounded-lg bg-white/70 px-3 py-4 text-[10.5px] text-ink-muted">
               <Loader2 size={13} className="animate-spin text-brand" />
-              正在解读整条流水线和当前步骤…
+              正在生成执行摘要…
             </div>
           ) : (
             <p className="whitespace-pre-wrap rounded-lg bg-white/70 px-3 py-3 text-[11px] leading-6 text-ink-2">
-              {summary || '暂时没有可展示的流水线解读。'}
+              {summary || '暂时没有可展示的执行摘要。'}
             </p>
           )}
           {!loading && fallback && (
