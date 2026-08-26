@@ -1,5 +1,6 @@
 import { CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, MonitorPlay, Plus, ScrollText, Sparkles, Trash2, X, XCircle } from 'lucide-react';
 import { api, streamAdminGenerationTask, type AdminGenerationEvent, type AdminResourceDetail, type AdminResourceItem, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
+import { loadAdminEventCache, saveAdminEventCache } from '@/lib/adminEventCache';
 import { useSearchParams } from 'react-router-dom';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
@@ -1103,6 +1104,17 @@ export default function CollaborationWorkbench() {
     if (!task) return;
     setEvents([]); setSelectedAgent(''); setSelectedEventSeq(null);
     const controller = new AbortController();
+    const taskKind = task.taskKind;
+    const taskId = task.id;
+    let disposed = false;
+    void loadAdminEventCache(taskKind, taskId).then((cached) => {
+      if (disposed || !cached.length) return;
+      setEvents((current) => {
+        const bySeq = new Map(current.map((item) => [item.seq, item]));
+        cached.forEach((item) => bySeq.set(item.seq, item));
+        return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
+      });
+    }).catch(() => undefined);
     const flush = () => {
       streamFlushTimerRef.current = null;
       const buffered = streamBufferRef.current;
@@ -1111,7 +1123,9 @@ export default function CollaborationWorkbench() {
       setEvents((current) => {
         const bySeq = new Map(current.map((item) => [item.seq, item]));
         buffered.forEach((item) => bySeq.set(item.seq, item));
-        return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
+        const next = [...bySeq.values()].sort((a, b) => a.seq - b.seq);
+        void saveAdminEventCache(taskKind, taskId, next).catch(() => undefined);
+        return next;
       });
     };
     const queueEvent = (event: AdminGenerationEvent) => {
@@ -1119,10 +1133,11 @@ export default function CollaborationWorkbench() {
       if (streamFlushTimerRef.current !== null) return;
       streamFlushTimerRef.current = window.setTimeout(flush, 160);
     };
-    void streamAdminGenerationTask(task.taskKind, task.id, queueEvent, controller.signal)
+    void streamAdminGenerationTask(taskKind, taskId, queueEvent, controller.signal)
       .finally(flush)
       .catch(() => undefined);
     return () => {
+      disposed = true;
       controller.abort();
       if (streamFlushTimerRef.current !== null) {
         window.clearTimeout(streamFlushTimerRef.current);
@@ -1163,7 +1178,11 @@ export default function CollaborationWorkbench() {
       setSummaryLoadingSeq(event.seq);
       try {
         const result = await api.summarizeAdminGenerationEvent(task.taskKind, task.id, event.seq, needsQuizRefresh);
-        setEvents((current) => current.map((item) => item.seq === event.seq ? { ...item, executionSummary: result.summary } : item));
+        setEvents((current) => {
+          const next = current.map((item) => item.seq === event.seq ? { ...item, executionSummary: result.summary } : item);
+          void saveAdminEventCache(task.taskKind, task.id, next).catch(() => undefined);
+          return next;
+        });
       } catch {
         // 摘要生成失败时保留已有事件，用户仍可查看原始 JSON。
       } finally {
