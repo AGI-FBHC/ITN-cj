@@ -361,6 +361,16 @@ function WorkbenchTaskItem({ item, selected, bulkMode, checked, onPreview, onCan
   const context = contextOf(item);
   const done = item.status === 'completed';
   const fillPct = done ? 100 : Math.max(3, item.progress);
+  const formatTime = (iso?: string) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()) + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes());
+  };
+  const timeLine = active
+    ? (item.createdAt ? '开始 ' + formatTime(item.createdAt) : '')
+    : (item.updatedAt ? (done ? '完成 ' : '结束 ') + formatTime(item.updatedAt) : '');
   return (
     <button
       type="button"
@@ -388,6 +398,7 @@ function WorkbenchTaskItem({ item, selected, bulkMode, checked, onPreview, onCan
         </span>
         <span className="block truncate text-xs font-bold text-ink">{String(context.topicName || item.title)}</span>
         <span className="block line-clamp-1 text-[9.5px] leading-4 text-ink-muted">{item.stageMessage}</span>
+        {timeLine && <span className="block pt-0.5 text-[9px] font-semibold tabular-nums text-ink-muted/80">{timeLine}</span>}
         {(item.status === 'completed' || item.status === 'failed') && (
           <span className="flex justify-end gap-1.5 pt-1">
             {bulkMode && (
