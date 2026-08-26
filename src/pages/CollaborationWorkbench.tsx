@@ -901,6 +901,7 @@ export default function CollaborationWorkbench() {
   const selectedKey = params.get('task');
   const loadInFlightRef = useRef(false);
   const streamBufferRef = useRef<AdminGenerationEvent[]>([]);
+  const prefetchedSummarySeqRef = useRef<Set<number>>(new Set());
   const streamFlushTimerRef = useRef<number | null>(null);
 
   const load = async () => {
@@ -1100,6 +1101,7 @@ export default function CollaborationWorkbench() {
   useEffect(() => {
     if (!task) return;
     setEvents([]); setSelectedAgent(''); setSelectedEventSeq(null);
+    prefetchedSummarySeqRef.current = new Set();
     const controller = new AbortController();
     const flush = () => {
       streamFlushTimerRef.current = null;
@@ -1129,14 +1131,26 @@ export default function CollaborationWorkbench() {
       streamBufferRef.current = [];
     };
   }, [task?.id, task?.taskKind]);
+  useEffect(() => {
+    if (!task || !events.length) return;
+    const terminal = ['completed', 'failed', 'cancelled'].includes(task.status);
+    const latestSeq = events.at(-1)?.seq;
+    events.forEach((event) => {
+      if (!terminal && event.seq === latestSeq) return;
+      if (prefetchedSummarySeqRef.current.has(event.seq)) return;
+      prefetchedSummarySeqRef.current.add(event.seq);
+      void api.summarizeAdminGenerationEvent(task.taskKind, task.id, event.seq).catch(() => undefined);
+    });
+  }, [task, events]);
   const quizQuestions = useMemo(() => summarizeQuizQuestions(events), [events]);
   const isQuizTask = task?.taskKind === 'resource' && task.resourceType === 'quiz';
 
   const latest = events.at(-1);
   const effectiveAgent = selectedAgent || latest?.agent || agents[0].id;
   const agentEvents = events.filter((event) => event.agent === effectiveAgent);
-  const selectedEvent = events.find((event) => event.seq === selectedEventSeq) ?? (isQuizTask && !selectedAgent ? quizQuestions[0]?.lastEvent ?? agentEvents.at(-1) : agentEvents.at(-1));
   const active = Boolean(task && activeStatuses.has(task.status) && (!latest || activeStatuses.has(latest.status)));
+  const selectedEvent = events.find((event) => event.seq === selectedEventSeq) ?? (isQuizTask && !selectedAgent ? quizQuestions[0]?.lastEvent ?? agentEvents.at(-1) : agentEvents.at(-1));
+  const selectedEventIsRunning = Boolean(task && active && latest && selectedEvent && selectedEvent.seq === latest.seq);
   const grouped = useMemo(() => ({ active: tasks.filter((item) => activeStatuses.has(item.status)), finished: tasks.filter((item) => !activeStatuses.has(item.status)) }), [tasks]);
   const currentTasks = taskTab === 'active' ? grouped.active : grouped.finished;
   const taskTree = useMemo(() => buildTaskTree(currentTasks), [currentTasks]);
@@ -1231,7 +1245,7 @@ export default function CollaborationWorkbench() {
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {isQuizTask && <QuizQuestionReviewNavigator events={events} selectedSeq={selectedEvent?.seq ?? null} onSelect={(event) => { setSelectedAgent(event.agent); setSelectedEventSeq(event.seq); }} />}
           {selectedEvent ? (
-            <ExecutionDetailPanel key={selectedEvent.seq} event={selectedEvent} title={eventDisplayTitle(selectedEvent)} taskType={task?.taskKind === 'ppt' ? 'ppt' : 'resource'} taskId={task?.id ?? ''} />
+            <ExecutionDetailPanel key={selectedEvent.seq} event={selectedEvent} title={eventDisplayTitle(selectedEvent)} taskType={task?.taskKind === 'ppt' ? 'ppt' : 'resource'} taskId={task?.id ?? ''} running={selectedEventIsRunning} />
           ) : (
             <div className="mt-6 rounded-xl border border-dashed border-white/80 bg-white/30 px-4 py-10 text-center text-xs leading-6 text-ink-muted">
               尚未选择事件

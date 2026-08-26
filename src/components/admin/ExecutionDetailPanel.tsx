@@ -49,11 +49,13 @@ export default function ExecutionDetailPanel({
   title,
   taskType,
   taskId,
+  running = false,
 }: {
   event: AdminGenerationEvent;
   title: string;
   taskType: 'resource' | 'ppt';
   taskId: string;
+  running?: boolean;
 }) {
   const [summary, setSummary] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -62,6 +64,7 @@ export default function ExecutionDetailPanel({
 
   useEffect(() => {
     let cancelled = false;
+    if (running) { setSummary(null); setLoading(false); setFallback(false); return; }
     setLoading(true);
     setSummary(null);
     setFallback(false);
@@ -80,29 +83,28 @@ export default function ExecutionDetailPanel({
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [taskType, taskId, event.seq, event.detail, event.title]);
+  }, [taskType, taskId, event.seq, event.detail, event.title, running]);
 
   return (
     <div className="space-y-3">
-      <header className="rounded-2xl border border-white/85 bg-white/70 p-4 shadow-sm">
+      <header className="min-h-[76px] rounded-2xl border border-white/85 bg-white/70 p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="min-w-0 flex-1 truncate text-sm font-bold text-ink">{title}</h3>
+          <h3 className="min-w-0 flex-1 truncate text-sm font-bold text-ink">{event.agentName || event.agent}</h3>
           <span className="lf-pill lf-pill-null">{event.phase || event.status}</span>
           <span className="ml-auto text-[9px] font-mono text-ink-muted">{event.time ? new Date(event.time).toLocaleString('zh-CN', { hour12: false }) : `记录 #${event.seq}`}</span>
         </div>
-        <p className="mt-1.5 text-[10px] font-semibold text-ink-muted">{event.agentName || event.agent}</p>
       </header>
+        <p className="mt-1.5 text-[10px] font-semibold text-ink-muted">{title}</p>
 
       <section className="rounded-2xl border border-white/80 bg-white/55 p-3">
         <div className="flex items-center justify-between border-b border-white/70 pb-2">
           <h4 className="text-[11px] font-bold text-ink">执行摘要</h4>
         </div>
-        <div className="mt-3">
-          {loading ? (
-            <div className="flex items-center gap-2 rounded-lg bg-white/70 px-3 py-4 text-[10.5px] text-ink-muted">
-              <Loader2 size={13} className="animate-spin text-brand" />
-              正在生成执行摘要…
-            </div>
+        <div className="mt-3 min-h-[240px] overflow-y-auto">
+          {running ? (
+            <div className="flex items-center gap-2 rounded-lg bg-white/70 px-3 py-4 text-[10.5px] text-ink-muted"><Loader2 size={13} className="animate-spin text-brand" />正在执行…</div>
+          ) : loading ? (
+            <div className="flex items-center gap-2 rounded-lg bg-white/70 px-3 py-4 text-[10.5px] text-ink-muted"><Loader2 size={13} className="animate-spin text-brand" />正在生成执行摘要…</div>
           ) : (
             <div className="rounded-lg bg-white/70 px-3 py-3 text-[11px] leading-6 text-ink-2">
               {summary ? <ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{summary}</ReactMarkdown> : <p>暂时没有可展示的执行摘要。</p>}
@@ -118,7 +120,7 @@ export default function ExecutionDetailPanel({
 
       <section className="rounded-2xl border border-white/80 bg-white/55 p-3">
         <h4 className="border-b border-white/70 pb-2 text-[11px] font-bold text-ink">原始 JSON</h4>
-        <div className="lf-json mt-3 p-3 text-[10.5px] leading-5">
+        <div className="lf-json mt-3 min-h-[280px] max-h-[380px] overflow-y-auto p-3 text-[10.5px] leading-5">
           <JsonTree value={{ seq: event.seq, time: event.time, agent: event.agent, agentName: event.agentName, phase: event.phase, status: event.status, title: event.title, detail: event.detail, snapshot }} />
         </div>
       </section>
