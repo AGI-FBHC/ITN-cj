@@ -479,13 +479,25 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
   const existingGroupNames = useMemo(() => Array.from(new Set(['默认分组', ...existingGroups.map((group) => group.groupName)])), [existingGroups]);
   useEffect(() => {
     if (!kpCode) return;
-    const base: GenKind[] = ['lecture', 'practice', 'quiz'];
-    if (pptReady) base.push('ppt');
+    const base: GenKind[] = ['lecture', 'practice', 'quiz', 'ppt'];
     setSelected(new Set(base));
   }, [kpCode, pptReady, groupMode, effectiveGroupName]);
   if (!open) return null;
-  const validSelected = [...selected].filter((kind) => kind !== 'ppt' || pptReady);
+  const validSelected = [...selected];
   const canCreate = Boolean(kp && effectiveGroupName && validSelected.length && !busy);
+  const handleCreate = () => {
+    if (!kp || !validSelected.length) return;
+    const duplicateTypes = validSelected.filter((kind) => groupTypes.has(kind));
+    if (duplicateTypes.length) {
+      toast.warning(duplicateTypes.map((kind) => typeText[kind]).join('、') + '已存在于当前分组，同一分组内各资源唯一');
+      return;
+    }
+    if (validSelected.includes('ppt') && !pptReady) {
+      toast.warning('请先生成讲义、实操、题库后再生成交互课件');
+      return;
+    }
+    onCreate(validSelected, { domainCode, nodeCode: kp.nodeCode, topicName: kp.name, groupName: effectiveGroupName });
+  };
   const selectCls = 'lf-select w-full';
   return (
     <div className="fixed inset-0 z-[95] flex items-center justify-center bg-ink/35 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
@@ -537,7 +549,7 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
             <p className="mb-2 text-sm font-bold text-ink">资源类型</p>
             <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
               {genKinds.map(([id, label, note]) => {
-                const disabled = id === 'ppt' && !pptReady;
+                const disabled = false;
                 return <button key={id} type="button" disabled={disabled} onClick={() => setSelected((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} className={cn('rounded-2xl border p-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-45', selected.has(id) && !disabled ? 'border-brand/50 bg-brand-tint/70 ring-1 ring-brand/30' : 'border-white/80 bg-white/45 hover:bg-white/70')}>
                   <p className="text-sm font-bold text-ink">{label}</p>
                   <p className="mt-0.5 text-[10px] text-ink-muted">{disabled ? '需先生成讲义、实操、题库' : note}</p>
@@ -548,7 +560,7 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
         </div>
         <div className="mt-6 flex justify-end gap-2 border-t border-white/70 pt-4">
           <button disabled={busy} onClick={onClose} className="lf-row-btn">取消</button>
-          <button disabled={!canCreate} onClick={() => kp && onCreate(validSelected, { domainCode, nodeCode: kp.nodeCode, topicName: kp.name, groupName: effectiveGroupName })} className="lf-row-btn lf-row-btn-primary min-w-28 justify-center disabled:opacity-50">
+          <button disabled={!canCreate} onClick={handleCreate} className="lf-row-btn lf-row-btn-primary min-w-28 justify-center disabled:opacity-50">
             {busy ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
             创建{validSelected.length ? '（' + validSelected.length + '项）' : ''}
           </button>
