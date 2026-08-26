@@ -1055,7 +1055,7 @@ export default function CollaborationWorkbench() {
     setPreviewDetail(null);
     try {
       if (item.taskKind === 'resource' && item.resourceId) {
-        setPreviewDetail(await api.getAdminResource(item.resourceId));
+        setPreviewDetail(await api.getAdminGenerationResource(item.resourceId));
       } else if (item.taskKind === 'ppt') {
         const detail = await presentationApi.getPresentation(item.id);
         setPreviewDetail({
