@@ -1154,9 +1154,9 @@ export default function CollaborationWorkbench() {
   const active = Boolean(task && activeStatuses.has(task.status) && (!latest || activeStatuses.has(latest.status)));
   const selectedEvent = events.find((event) => event.seq === selectedEventSeq) ?? (isQuizTask && !selectedAgent ? quizQuestions[0]?.lastEvent ?? agentEvents.at(-1) : agentEvents.at(-1));
   const selectedEventIsRunning = Boolean(task && active && latest && selectedEvent && selectedEvent.seq === latest.seq);
-  const selectQuizEvent = async (event: AdminGenerationEvent) => {
-    setSelectedAgent(event.agent);
+  const selectGenerationEvent = async (event: AdminGenerationEvent, keepAgent = false) => {
     setSelectedEventSeq(event.seq);
+    if (!keepAgent) setSelectedAgent(event.agent);
     const needsQuizRefresh = Boolean(event.snapshot?.questionAudit && event.executionSummary && /(上一节点|下一节点)/.test(event.executionSummary));
     if (!task || summaryLoadingSeq === event.seq) return;
     if (!event.executionSummary || needsQuizRefresh) {
@@ -1247,7 +1247,7 @@ export default function CollaborationWorkbench() {
               <AgentWorkflowSummary events={events} running={active} />
               <div className="min-h-0 flex-1">
               </div>
-              <CollaborationRounds events={events} selectedSeq={selectedEvent?.seq ?? null} selectedAgent={effectiveAgent} runningAgent={active && latest ? latest.agent : null} running={active} onSelect={(event) => { if (!isLifecycleEvent(event)) setSelectedAgent(event.agent); setSelectedEventSeq(event.seq); }} onSelectAgent={(agentId) => { setSelectedAgent(agentId); setSelectedEventSeq(events.filter((event) => event.agent === agentId).at(-1)?.seq ?? null); }} />
+              <CollaborationRounds events={events} selectedSeq={selectedEvent?.seq ?? null} selectedAgent={effectiveAgent} runningAgent={active && latest ? latest.agent : null} running={active} onSelect={(event) => void selectGenerationEvent(event, isLifecycleEvent(event))} onSelectAgent={(agentId) => { setSelectedAgent(agentId); setSelectedEventSeq(events.filter((event) => event.agent === agentId).at(-1)?.seq ?? null); }} />
             </>
           )}
         </div>
@@ -1263,7 +1263,7 @@ export default function CollaborationWorkbench() {
           {selectedEvent && <span className="lf-pill lf-pill-null shrink-0">{selectedEvent.agentName || (agents.find((item) => item.id === selectedEvent.agent)?.name ?? selectedEvent.agent)}</span>}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
-          {isQuizTask && <QuizQuestionReviewNavigator events={events} selectedSeq={selectedEvent?.seq ?? null} onSelect={selectQuizEvent} />}
+          {isQuizTask && <QuizQuestionReviewNavigator events={events} selectedSeq={selectedEvent?.seq ?? null} onSelect={selectGenerationEvent} />}
           {selectedEvent ? (
             <ExecutionDetailPanel key={selectedEvent.seq} event={selectedEvent} title={eventDisplayTitle(selectedEvent)} running={selectedEventIsRunning} summaryLoading={summaryLoadingSeq === selectedEvent.seq} />
           ) : (
