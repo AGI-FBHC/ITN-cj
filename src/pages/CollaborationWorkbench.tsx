@@ -1,5 +1,5 @@
 import { CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, MonitorPlay, Plus, ScrollText, Sparkles, Trash2, X, XCircle } from 'lucide-react';
-import { api, streamAdminGenerationTask, type AdminGenerationEvent, type AdminResourceDetail, type AdminResourceItem, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
+import { api, streamAdminGenerationTask, type AdminGenerationEvent, type AdminResourceDetail, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
 import { loadAdminEventCache, saveAdminEventCache } from '@/lib/adminEventCache';
 import { useSearchParams } from 'react-router-dom';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -439,8 +439,10 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
   const [chapterCode, setChapterCode] = useState('');
   const [kpCode, setKpCode] = useState('');
   const [selected, setSelected] = useState<Set<GenKind>>(new Set(['lecture', 'practice', 'quiz', 'ppt']));
-  const [groupName, setGroupName] = useState('默认分组');
-  const [groupResources, setGroupResources] = useState<AdminResourceItem[]>([]);
+  const [groupMode, setGroupMode] = useState<'existing' | 'new'>('existing');
+  const [existingGroups, setExistingGroups] = useState<Array<{ groupName: string; types: string[] }>>([]);
+  const [existingGroupName, setExistingGroupName] = useState('默认分组');
+  const [newGroupName, setNewGroupName] = useState('');
   useEffect(() => {
     if (!open) return;
     void api.listRagDomains().then((items) => { setDomains(items); if (items[0]?.code) setDomainCode(items[0].code); }).catch(() => setDomains([]));
@@ -451,11 +453,11 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
     void api.getRagTree(domainCode).then(setTree).catch(() => setTree(null));
   }, [domainCode]);
   useEffect(() => {
-    if (!domainCode || !kpCode) { setGroupResources([]); setGroupName('默认分组'); return; }
+    if (!domainCode || !kpCode) { setExistingGroups([]); setExistingGroupName('默认分组'); setNewGroupName(''); return; }
     let cancelled = false;
-    api.listAdminResources({ view: 'library', domainCode, nodeCode: kpCode })
-      .then((result) => { if (!cancelled) { setGroupResources(result.items); setGroupName('默认分组'); } })
-      .catch(() => { if (!cancelled) { setGroupResources([]); setGroupName('默认分组'); } });
+    api.getAdminGenerationGroups(domainCode, kpCode)
+      .then((result) => { if (cancelled) return; setExistingGroups(result.groups); setExistingGroupName(result.groups.some((group) => group.groupName === '默认分组') ? '默认分组' : result.groups[0]?.groupName ?? '默认分组'); })
+      .catch(() => { if (!cancelled) { setExistingGroups([]); setExistingGroupName('默认分组'); } });
     return () => { cancelled = true; };
   }, [domainCode, kpCode]);
   // 章节 = 一级节点（根分类的 children；无 children 时根即章节）
@@ -470,18 +472,20 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
   const chapter = chapters.find((item) => item.node.nodeCode === chapterCode) ?? null;
   const kps: RagTreeNode[] = chapter && chapter.node.children?.length ? chapter.node.children : chapter ? [chapter.node] : [];
   const kp = kps.find((item) => item.nodeCode === kpCode) ?? null;
-  const groupNames = useMemo(() => Array.from(new Set(['默认分组', ...groupResources.filter((item) => !item.archivedAt).map((item) => item.groupName || '默认分组')])), [groupResources]);
-  const groupTypes = useMemo(() => new Set(groupResources.filter((item) => !item.archivedAt && (item.groupName || '默认分组') === groupName).map((item) => item.type as GenKind)), [groupResources, groupName]);
-  const pptReady = ['lecture', 'practice', 'quiz'].every((type) => groupTypes.has(type as GenKind));
+  const effectiveGroupName = groupMode === 'new' ? (newGroupName.trim() || '默认分组') : (existingGroupName || '默认分组');
+  const selectedGroup = useMemo(() => existingGroups.find((group) => group.groupName === effectiveGroupName), [existingGroups, effectiveGroupName]);
+  const groupTypes = useMemo(() => new Set(selectedGroup?.types ?? []), [selectedGroup]);
+  const pptReady = groupMode === 'existing' && ['lecture', 'practice', 'quiz'].every((type) => groupTypes.has(type));
+  const existingGroupNames = useMemo(() => Array.from(new Set(['默认分组', ...existingGroups.map((group) => group.groupName)])), [existingGroups]);
   useEffect(() => {
     if (!kpCode) return;
     const base: GenKind[] = ['lecture', 'practice', 'quiz'];
     if (pptReady) base.push('ppt');
     setSelected(new Set(base));
-  }, [kpCode, pptReady]);
+  }, [kpCode, pptReady, groupMode, effectiveGroupName]);
   if (!open) return null;
   const validSelected = [...selected].filter((kind) => kind !== 'ppt' || pptReady);
-  const canCreate = Boolean(kp && groupName && validSelected.length && !busy);
+  const canCreate = Boolean(kp && effectiveGroupName && validSelected.length && !busy);
   const selectCls = 'lf-select w-full';
   return (
     <div className="fixed inset-0 z-[95] flex items-center justify-center bg-ink/35 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
@@ -518,14 +522,19 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
             </label>
           </div>
           <div>
+            <p className="mb-2 text-sm font-bold text-ink">资源分组</p>
+            <div className="mb-3 flex flex-wrap items-end gap-2">
+              <button type="button" disabled={!kp} onClick={() => setGroupMode('existing')} className={cn('lf-row-btn', groupMode === 'existing' && 'bg-brand text-paper border-brand')}>选择已有</button>
+              <button type="button" disabled={!kp} onClick={() => setGroupMode('new')} className={cn('lf-row-btn', groupMode === 'new' && 'bg-brand text-paper border-brand')}>新建分组</button>
+              {groupMode === 'existing' ? (
+                <select value={existingGroupName} onChange={(e) => setExistingGroupName(e.target.value)} className="lf-select min-w-44 flex-1" disabled={!kp}>
+                  {existingGroupNames.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+              ) : (
+                <input value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} placeholder="不输入则为默认分组" className="lf-input min-w-44 flex-1" disabled={!kp} />
+              )}
+            </div>
             <p className="mb-2 text-sm font-bold text-ink">资源类型</p>
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="block min-w-52 flex-1">
-              <span className="mb-1.5 block text-xs font-semibold text-ink-2">资源分组</span>
-              <input value={groupName} onChange={(e) => setGroupName(e.target.value)} list="wb-resource-groups" placeholder="输入或选择分组" className="lf-input" disabled={!kp} />
-              <datalist id="wb-resource-groups">{groupNames.map((name) => <option key={name} value={name} />)}</datalist>
-            </label>
-          </div>
             <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
               {genKinds.map(([id, label, note]) => {
                 const disabled = id === 'ppt' && !pptReady;
@@ -539,7 +548,7 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
         </div>
         <div className="mt-6 flex justify-end gap-2 border-t border-white/70 pt-4">
           <button disabled={busy} onClick={onClose} className="lf-row-btn">取消</button>
-          <button disabled={!canCreate} onClick={() => kp && onCreate(validSelected, { domainCode, nodeCode: kp.nodeCode, topicName: kp.name, groupName })} className="lf-row-btn lf-row-btn-primary min-w-28 justify-center disabled:opacity-50">
+          <button disabled={!canCreate} onClick={() => kp && onCreate(validSelected, { domainCode, nodeCode: kp.nodeCode, topicName: kp.name, groupName: effectiveGroupName })} className="lf-row-btn lf-row-btn-primary min-w-28 justify-center disabled:opacity-50">
             {busy ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
             创建{validSelected.length ? '（' + validSelected.length + '项）' : ''}
           </button>

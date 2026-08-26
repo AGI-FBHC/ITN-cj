@@ -1116,6 +1116,7 @@ export const api = {
   },
   getAdminResource: (id: string) => request<AdminResourceDetail>(`/api/v1/admin/resources/${encodeURIComponent(id)}`),
   getAdminGenerationResource: (id: string) => requestDirect<AdminResourceDetail>(`/v1/admin-generation-resources/${encodeURIComponent(id)}`),
+  getAdminGenerationGroups: (domainCode: string, nodeCode: string) => requestDirect<{ groups: Array<{ groupName: string; types: string[] }> }>(`/v1/admin-generation-groups?domainCode=${encodeURIComponent(domainCode)}&nodeCode=${encodeURIComponent(nodeCode)}`),
   restoreAdminResource: (id: string) => request<void>(`/api/v1/admin/resources/${encodeURIComponent(id)}/restore`, { method: 'POST' }),
   makeAdminResourceCandidate: (id: string) => request<{ id: string }>(`/api/v1/admin/resources/${encodeURIComponent(id)}/candidate`, { method: 'POST' }),
   reviewAdminResource: (id: string, action: 'submit' | 'approve' | 'reject' | 'publish' | 'deprecate', comment?: string) => request<void>(`/api/v1/admin/resources/${encodeURIComponent(id)}/review`, { method: 'POST', body: JSON.stringify({ action, comment }) }),
