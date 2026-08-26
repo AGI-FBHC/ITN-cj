@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArchiveRestore, ArrowLeft, Ban, BookOpen, CheckCircle2, ChevronDown, ChevronRight, ClipboardList,
   Eye, FileText, FolderTree, LayoutTemplate, ListChecks, Loader2, MonitorPlay, Plus, Radio, RefreshCw, Sparkles, Trash2, Wrench, X, XCircle,
@@ -51,6 +51,8 @@ export default function ResourceCenterAdmin() {
   const [generationModalOpen, setGenerationModalOpen] = useState(false);
   const [selectedKinds, setSelectedKinds] = useState<Set<ResourceKind>>(new Set(['lecture', 'practice', 'quiz', 'ppt']));
   const [generationBusy, setGenerationBusy] = useState(false);
+  const [groupResources, setGroupResources] = useState<AdminResourceItem[]>([]);
+  const [selectedGroupName, setSelectedGroupName] = useState('默认分组');
 
   /* ---- SWR 缓存：先展示缓存，后台异步更新 ---- */
   const domainsQ = useCachedData<RagDomain[]>('admin:rag-domains', () => api.listRagDomains(), { ttlMs: 30_000 });
@@ -72,6 +74,14 @@ export default function ResourceCenterAdmin() {
     const timer = window.setTimeout(() => setExpanded(new Set(treeQ.data?.nodes.map((n) => n.id) ?? [])), 0);
     return () => window.clearTimeout(timer);
   }, [treeQ.data]);
+  useEffect(() => {
+    if (!node || !domain || domain.code === '__unassigned__') { setGroupResources([]); return; }
+    let cancelled = false;
+    api.listAdminResources({ view: 'library', domainCode: domain.code, nodeCode: node.nodeCode })
+      .then((result) => { if (!cancelled) setGroupResources(result.items); })
+      .catch(() => { if (!cancelled) setGroupResources([]); });
+    return () => { cancelled = true; };
+  }, [node?.id, node?.nodeCode, domain?.code]);
   useEffect(() => {
     const message = domainsQ.error?.message ?? statsQ.error?.message ?? treeQ.error?.message ?? listQ.error?.message;
     if (message) toast.error(message);
@@ -113,7 +123,29 @@ export default function ResourceCenterAdmin() {
     nodeCode: node?.nodeCode,
     topicName: node?.name,
     kpId: node?.nodeCode,
+    groupName: selectedGroupName,
   });
+  const groupTypeMap = useMemo(() => {
+    const map = new Map<string, Set<ResourceKind>>();
+    const addType = (group: string, type: ResourceKind) => {
+      if (!kinds.some(([id]) => id === type)) return;
+      const set = map.get(group) ?? new Set<ResourceKind>();
+      set.add(type);
+      map.set(group, set);
+    };
+    groupResources.forEach((item) => { if (!item.archivedAt) addType(item.groupName || '默认分组', item.type as ResourceKind); });
+    generationTasks.forEach((task) => {
+      const ctx = taskContext(task);
+      if (task.status === 'completed' && ctx.domainCode === domain?.code && ctx.nodeCode === node?.nodeCode) {
+        addType(String(ctx.groupName || '默认分组'), task.taskKind === 'ppt' ? 'ppt' : task.resourceType);
+      }
+    });
+    return map;
+  }, [groupResources, generationTasks, domain?.code, node?.nodeCode]);
+  const groupNames = useMemo(() => Array.from(new Set(['默认分组', ...groupTypeMap.keys()])), [groupTypeMap]);
+  useEffect(() => { if (!groupNames.includes(selectedGroupName)) setSelectedGroupName('默认分组'); }, [groupNames, selectedGroupName]);
+  const completedTypes = groupTypeMap.get(selectedGroupName) ?? new Set<ResourceKind>();
+  const pptReady = ['lecture', 'practice', 'quiz'].every((type) => completedTypes.has(type as ResourceKind));
 
   const startGeneration = async (target: ResourceKind) => {
     if (!node || !domain || domain.code === '__unassigned__') throw new Error('请先选择一个具体知识点');
@@ -141,7 +173,7 @@ export default function ResourceCenterAdmin() {
   };
 
   const startSelected = async () => {
-    const targets = [...selectedKinds];
+    const targets = [...selectedKinds].filter((kind) => kind !== 'ppt' || pptReady);
     if (!targets.length) return;
     setGenerationBusy(true);
     try {
@@ -323,7 +355,7 @@ export default function ResourceCenterAdmin() {
           </button>
           <button
             disabled={!node || domain.code === '__unassigned__'}
-            onClick={() => { setSelectedKinds(new Set([kind])); setGenerationModalOpen(true); }}
+            onClick={() => { setSelectedKinds(new Set([kind === 'ppt' && !pptReady ? 'lecture' : kind])); setGenerationModalOpen(true); }}
             className="lf-row-btn lf-row-btn-primary disabled:cursor-not-allowed disabled:opacity-50"
             title={!node ? '请先从左侧选择具体知识点' : undefined}
           >
@@ -385,7 +417,7 @@ export default function ResourceCenterAdmin() {
                       </button>
                     ) : (
                       /* 知识点（叶子）节点：点击进入该知识点 */
-                      <button onClick={() => { setNode(itemNode); setDetail(null); }} className="min-w-0 flex-1 truncate py-2.5 text-left">
+                      <button onClick={() => { setNode(itemNode); setSelectedGroupName('默认分组'); setDetail(null); }} className="min-w-0 flex-1 truncate py-2.5 text-left">
                         {itemNode.name}
                       </button>
                     )}
@@ -421,6 +453,7 @@ export default function ResourceCenterAdmin() {
               <div className="lf-card rounded-2xl p-6">
                 <div className="flex flex-wrap items-center gap-2 border-b border-white/60 pb-4">
                   <h3 className="mr-auto text-lg font-bold text-ink">{detail.title}</h3>
+                  {detail.type === 'ppt' && <a href={`/learn/ppt-preview/${detail.id}`} target="_blank" rel="noreferrer" className="lf-row-btn lf-row-btn-primary"><MonitorPlay size={12} />完整课件预览</a>}
                   <span className="lf-pill lf-pill-null">{typeText[detail.type] || detail.type}</span>
                   <span className="lf-pill lf-pill-null">v{detail.revision}</span>
                   {detail.archivedAt ? (
@@ -460,19 +493,23 @@ export default function ResourceCenterAdmin() {
             </div>
           ) : (
             <>
-              <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-                {kinds.map(([id, label, note, Icon]) => (
-                  <button
-                    key={id}
-                    onClick={() => { setKind(id); setDetail(null); }}
-                    className={cn('lf-card rounded-2xl p-3.5 text-left transition-all', kind === id ? 'ring-2 ring-brand/50 border-brand/40 bg-brand-tint/40' : 'hover:-translate-y-0.5')}
-                  >
-                    <Icon size={17} className={kind === id ? 'text-brand' : 'text-ink-muted'} />
-                    <p className="mt-2 text-sm font-bold text-ink">{label}</p>
-                    <p className="mt-0.5 text-[11px] text-ink-muted">{note}</p>
-                  </button>
-                ))}
-              </div>
+              {!node ? (
+                <div className="lf-card mb-4 flex items-center gap-3 rounded-2xl p-5">
+                  <FolderTree size={18} className="text-ink-muted" />
+                  <p className="text-sm font-semibold text-ink">请先选择左侧知识点分组，再查看和管理该分组内的四种资源。</p>
+                </div>
+              ) : (
+                <div className="lf-card mb-4 rounded-2xl p-3">
+                  <div className="mb-2 flex flex-wrap items-center gap-2"><span className="text-[10px] font-semibold text-ink-muted">知识点</span><span className="truncate text-xs font-bold text-ink">{node.name}</span></div>
+                  <div className="mb-3 flex flex-wrap items-center gap-2"><span className="text-[10px] font-semibold text-ink-muted">资源分组</span><input value={selectedGroupName} onChange={(e) => { setSelectedGroupName(e.target.value); setDetail(null); }} list="rc-resource-groups" placeholder="输入或选择分组" className="lf-input min-w-52 flex-1" /></div>
+                  <datalist id="rc-resource-groups">{groupNames.map((name) => <option key={name} value={name} />)}</datalist>
+                  <div className="lf-seg">
+                    {kinds.map(([id, label]) => (
+                      <button key={id} onClick={() => { setKind(id); setDetail(null); }} className={cn('lf-seg-item', kind === id && 'lf-seg-item-active')}>{label}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="lf-card mb-4 flex flex-wrap items-center gap-3 rounded-2xl p-3">
                 <div className="lf-seg">
@@ -492,7 +529,7 @@ export default function ResourceCenterAdmin() {
                   </span>
                 )}
               </div>
-              <ResourceTable items={listQ.data?.items ?? []} loading={listQ.loading} view={view} onPreview={preview} onAction={act} onOpenLog={openResourceLog} />
+              <ResourceTable items={(listQ.data?.items ?? []).filter((item) => (item.groupName ?? '默认分组') === selectedGroupName)} loading={listQ.loading} view={view} onPreview={preview} onAction={act} onOpenLog={openResourceLog} />
             </>
           )}
         </section>
@@ -501,6 +538,7 @@ export default function ResourceCenterAdmin() {
         open={generationModalOpen}
         domainName={domain.name}
         nodeName={node?.name ?? ''}
+        groupName={selectedGroupName}
         selected={selectedKinds}
         busy={generationBusy}
         onClose={() => setGenerationModalOpen(false)}
@@ -509,7 +547,8 @@ export default function ResourceCenterAdmin() {
           if (next.has(target)) next.delete(target); else next.add(target);
           return next;
         })}
-        onSelectAll={() => setSelectedKinds(new Set(['lecture', 'practice', 'quiz', 'ppt']))}
+        pptDisabled={!pptReady}
+        onSelectAll={() => setSelectedKinds(new Set(pptReady ? ['lecture', 'practice', 'quiz', 'ppt'] : ['lecture', 'practice', 'quiz']))}
         onSubmit={() => void startSelected()}
       />
       <TaskDrawer open={taskDrawerOpen} tasks={generationTasks} busy={generationBusy} focusTaskId={focusTask} onClose={() => { setTaskDrawerOpen(false); setFocusTask(null); }} onCancel={() => undefined} onRetry={() => undefined} onInspect={setProcessTask} />
@@ -520,12 +559,15 @@ export default function ResourceCenterAdmin() {
 
 const activeGenerationStatuses = new Set(['queued', 'retrieving', 'planning', 'analyzing', 'generating', 'verifying', 'reviewing', 'revising', 'judging', 'outline_review']);
 
-function PreGenerationModal({ open, domainName, nodeName, selected, busy, onClose, onToggle, onSelectAll, onSubmit }: {
+function PreGenerationModal({ open, domainName, nodeName, groupName, selected, busy, pptDisabled, onClose, onToggle, onSelectAll, onSubmit }: {
+
   open: boolean;
   domainName: string;
   nodeName: string;
+  groupName: string;
   selected: Set<ResourceKind>;
   busy: boolean;
+  pptDisabled: boolean;
   onClose: () => void;
   onToggle: (kind: ResourceKind) => void;
   onSelectAll: () => void;
@@ -540,10 +582,13 @@ function PreGenerationModal({ open, domainName, nodeName, selected, busy, onClos
           <div className="min-w-0 flex-1"><h3 className="text-lg font-bold text-ink">生成机构通用资源</h3><p className="mt-1 text-xs text-ink-muted">生成结果进入机构资源库，不直接绑定学习者。</p></div>
           <button disabled={busy} onClick={onClose} className="lf-row-btn !p-2" aria-label="关闭"><X size={15} /></button>
         </div>
-        <div className="mt-5 rounded-2xl bg-white/55 px-4 py-3"><p className="text-[11px] text-ink-muted">生成位置</p><p className="mt-1 text-sm font-semibold text-ink">{domainName}<span className="mx-1 text-ink-muted">/</span>{nodeName}</p></div>
+        <div className="mt-5 rounded-2xl bg-white/55 px-4 py-3"><p className="text-[11px] text-ink-muted">生成位置</p><p className="mt-1 text-sm font-semibold text-ink">{domainName}<span className="mx-1 text-ink-muted">/</span>{nodeName}<span className="mx-1 text-ink-muted">/</span>{groupName}</p></div>
         <div className="mt-5 flex items-center justify-between"><p className="text-sm font-bold text-ink">选择资源类型</p><button type="button" onClick={onSelectAll} className="text-xs font-semibold text-brand">选择全部</button></div>
         <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
-          {kinds.map(([id, label, note, Icon]) => <button type="button" key={id} onClick={() => onToggle(id)} className={cn('rounded-2xl border p-3 text-left transition-all', selected.has(id) ? 'border-brand/50 bg-brand-tint/70 ring-1 ring-brand/30' : 'border-white/80 bg-white/45 hover:bg-white/70')}><div className="flex items-center justify-between"><Icon size={17} className={selected.has(id) ? 'text-brand' : 'text-ink-muted'} />{selected.has(id) && <CheckCircle2 size={15} className="text-brand" />}</div><p className="mt-3 text-sm font-bold text-ink">{label}</p><p className="mt-1 text-[10px] text-ink-muted">{note}</p></button>)}
+          {kinds.map(([id, label, note, Icon]) => {
+            const disabled = id === 'ppt' && pptDisabled;
+            return <button type="button" key={id} disabled={disabled} onClick={() => !disabled && onToggle(id)} className={cn('rounded-2xl border p-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-45', selected.has(id) && !disabled ? 'border-brand/50 bg-brand-tint/70 ring-1 ring-brand/30' : 'border-white/80 bg-white/45 hover:bg-white/70')}><div className="flex items-center justify-between"><Icon size={17} className={selected.has(id) && !disabled ? 'text-brand' : 'text-ink-muted'} />{selected.has(id) && !disabled && <CheckCircle2 size={15} className="text-brand" />}</div><p className="mt-3 text-sm font-bold text-ink">{label}</p><p className="mt-1 text-[10px] text-ink-muted">{disabled ? '需先生成讲义、实操、题库' : note}</p></button>;
+          })}
         </div>
         <div className="mt-6 flex justify-end gap-2 border-t border-white/70 pt-4"><button disabled={busy} onClick={onClose} className="lf-row-btn">取消</button><button disabled={busy || selected.size === 0} onClick={onSubmit} className="lf-row-btn lf-row-btn-primary min-w-28 justify-center disabled:opacity-50">{busy ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}开始生成{selected.size ? `（${selected.size}项）` : ''}</button></div>
       </div>
@@ -876,7 +921,7 @@ function ResourceTable({ items, loading, view, onPreview, onAction, onOpenLog }:
                       <>
                         <button disabled={item.template} onClick={() => void onAction(item, 'template')} className="lf-row-btn lf-row-btn-primary disabled:cursor-default disabled:opacity-70">
                           <LayoutTemplate size={11} />
-                          {item.template ? '当前母版' : '设为母版'}
+                          {item.template ? '当前分组母版' : '设为分组母版'}
                         </button>
                         <button onClick={() => void onAction(item, 'archive')} className="lf-row-btn text-ink-muted">归档</button>
                       </>

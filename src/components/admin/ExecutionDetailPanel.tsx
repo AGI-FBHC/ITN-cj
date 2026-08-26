@@ -93,7 +93,6 @@ export default function ExecutionDetailPanel({
       <section className="rounded-2xl border border-white/80 bg-white/55 p-3">
         <div className="flex items-center justify-between border-b border-white/70 pb-2">
           <h4 className="text-[11px] font-bold text-ink">执行摘要</h4>
-          <span className="text-[9px] text-ink-muted">mimo-v2.5 · opencode</span>
         </div>
         <div className="mt-3">
           {loading ? (

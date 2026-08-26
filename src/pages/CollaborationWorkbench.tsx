@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, Plus, ScrollText, Sparkles, Trash2, X, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, MonitorPlay, Plus, ScrollText, Sparkles, Trash2, X, XCircle } from 'lucide-react';
+import { api, streamAdminGenerationTask, type AdminGenerationEvent, type AdminResourceDetail, type AdminResourceItem, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
 import { useSearchParams } from 'react-router-dom';
-import { api, streamAdminGenerationTask, type AdminGenerationEvent, type AdminResourceDetail, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
 import { presentationApi, type PresentationRequest, type PresentationTaskSummary } from '@/lib/presentationApi';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
@@ -354,13 +354,15 @@ const genKinds: [GenKind, string, string][] = [
 ];
 
 /** 新建任务弹窗：领域 → 章节 → 知识点 级联选择，多选资源类型后创建生成任务 */
-function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClose: () => void; onCreate: (targets: GenKind[], ctx: { domainCode: string; nodeCode: string; topicName: string }) => void; busy: boolean }) {
+function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClose: () => void; onCreate: (targets: GenKind[], ctx: { domainCode: string; nodeCode: string; topicName: string; groupName: string }) => void; busy: boolean }) {
   const [domains, setDomains] = useState<RagDomain[]>([]);
   const [domainCode, setDomainCode] = useState('');
   const [tree, setTree] = useState<RagTree | null>(null);
   const [chapterCode, setChapterCode] = useState('');
   const [kpCode, setKpCode] = useState('');
   const [selected, setSelected] = useState<Set<GenKind>>(new Set(['lecture', 'practice', 'quiz', 'ppt']));
+  const [groupName, setGroupName] = useState('默认分组');
+  const [groupResources, setGroupResources] = useState<AdminResourceItem[]>([]);
   useEffect(() => {
     if (!open) return;
     void api.listRagDomains().then((items) => { setDomains(items); if (items[0]?.code) setDomainCode(items[0].code); }).catch(() => setDomains([]));
@@ -370,6 +372,14 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
     setTree(null); setChapterCode(''); setKpCode('');
     void api.getRagTree(domainCode).then(setTree).catch(() => setTree(null));
   }, [domainCode]);
+  useEffect(() => {
+    if (!domainCode || !kpCode) { setGroupResources([]); setGroupName('默认分组'); return; }
+    let cancelled = false;
+    api.listAdminResources({ view: 'library', domainCode, nodeCode: kpCode })
+      .then((result) => { if (!cancelled) { setGroupResources(result.items); setGroupName('默认分组'); } })
+      .catch(() => { if (!cancelled) { setGroupResources([]); setGroupName('默认分组'); } });
+    return () => { cancelled = true; };
+  }, [domainCode, kpCode]);
   // 章节 = 一级节点（根分类的 children；无 children 时根即章节）
   const chapters = useMemo(() => {
     const out: Array<{ node: RagTreeNode; path: string }> = [];
@@ -382,8 +392,18 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
   const chapter = chapters.find((item) => item.node.nodeCode === chapterCode) ?? null;
   const kps: RagTreeNode[] = chapter && chapter.node.children?.length ? chapter.node.children : chapter ? [chapter.node] : [];
   const kp = kps.find((item) => item.nodeCode === kpCode) ?? null;
-  const canCreate = Boolean(kp && selected.size && !busy);
+  const groupNames = useMemo(() => Array.from(new Set(['默认分组', ...groupResources.filter((item) => !item.archivedAt).map((item) => item.groupName || '默认分组')])), [groupResources]);
+  const groupTypes = useMemo(() => new Set(groupResources.filter((item) => !item.archivedAt && (item.groupName || '默认分组') === groupName).map((item) => item.type as GenKind)), [groupResources, groupName]);
+  const pptReady = ['lecture', 'practice', 'quiz'].every((type) => groupTypes.has(type as GenKind));
+  useEffect(() => {
+    if (!kpCode) return;
+    const base: GenKind[] = ['lecture', 'practice', 'quiz'];
+    if (pptReady) base.push('ppt');
+    setSelected(new Set(base));
+  }, [kpCode, pptReady]);
   if (!open) return null;
+  const validSelected = [...selected].filter((kind) => kind !== 'ppt' || pptReady);
+  const canCreate = Boolean(kp && groupName && validSelected.length && !busy);
   const selectCls = 'lf-select w-full';
   return (
     <div className="fixed inset-0 z-[95] flex items-center justify-center bg-ink/35 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
@@ -421,21 +441,29 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
           </div>
           <div>
             <p className="mb-2 text-sm font-bold text-ink">资源类型</p>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="block min-w-52 flex-1">
+              <span className="mb-1.5 block text-xs font-semibold text-ink-2">资源分组</span>
+              <input value={groupName} onChange={(e) => setGroupName(e.target.value)} list="wb-resource-groups" placeholder="输入或选择分组" className="lf-input" disabled={!kp} />
+              <datalist id="wb-resource-groups">{groupNames.map((name) => <option key={name} value={name} />)}</datalist>
+            </label>
+          </div>
             <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-              {genKinds.map(([id, label, note]) => (
-                <button key={id} type="button" onClick={() => setSelected((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} className={cn('rounded-2xl border p-3 text-left transition-all', selected.has(id) ? 'border-brand/50 bg-brand-tint/70 ring-1 ring-brand/30' : 'border-white/80 bg-white/45 hover:bg-white/70')}>
+              {genKinds.map(([id, label, note]) => {
+                const disabled = id === 'ppt' && !pptReady;
+                return <button key={id} type="button" disabled={disabled} onClick={() => setSelected((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} className={cn('rounded-2xl border p-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-45', selected.has(id) && !disabled ? 'border-brand/50 bg-brand-tint/70 ring-1 ring-brand/30' : 'border-white/80 bg-white/45 hover:bg-white/70')}>
                   <p className="text-sm font-bold text-ink">{label}</p>
-                  <p className="mt-0.5 text-[10px] text-ink-muted">{note}</p>
-                </button>
-              ))}
+                  <p className="mt-0.5 text-[10px] text-ink-muted">{disabled ? '需先生成讲义、实操、题库' : note}</p>
+                </button>;
+              })}
             </div>
           </div>
         </div>
         <div className="mt-6 flex justify-end gap-2 border-t border-white/70 pt-4">
           <button disabled={busy} onClick={onClose} className="lf-row-btn">取消</button>
-          <button disabled={!canCreate} onClick={() => kp && onCreate([...selected], { domainCode, nodeCode: kp.nodeCode, topicName: kp.name })} className="lf-row-btn lf-row-btn-primary min-w-28 justify-center disabled:opacity-50">
+          <button disabled={!canCreate} onClick={() => kp && onCreate(validSelected, { domainCode, nodeCode: kp.nodeCode, topicName: kp.name, groupName })} className="lf-row-btn lf-row-btn-primary min-w-28 justify-center disabled:opacity-50">
             {busy ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
-            创建{selected.size ? '（' + selected.size + '项）' : ''}
+            创建{validSelected.length ? '（' + validSelected.length + '项）' : ''}
           </button>
         </div>
       </div>
@@ -838,7 +866,7 @@ export default function CollaborationWorkbench() {
   };
 
   /** 新建任务：按知识目标创建多类资源生成任务 */
-  const createGeneration = async (targets: GenKind[], ctx: { domainCode: string; nodeCode: string; topicName: string }) => {
+  const createGeneration = async (targets: GenKind[], ctx: { domainCode: string; nodeCode: string; topicName: string; groupName: string }) => {
     setNewTaskBusy(true);
     try {
       const results = await Promise.allSettled(targets.map(async (target) => {
@@ -848,7 +876,7 @@ export default function CollaborationWorkbench() {
             title: ctx.topicName, audience: 'students', purpose: 'courseware', style: 'education', backgroundStyle: 'blue-white-minimal',
             language: 'zh-CN', slideCount: 0, aspectRatio: '16:9', detailLevel: 'detailed', includeSpeakerNotes: true,
             modelProvider: 'mimo', generationMode: 'template',
-            generationContext: { adminGeneration: true, domainCode: ctx.domainCode, nodeCode: ctx.nodeCode, kpId: ctx.nodeCode, topicName: ctx.topicName },
+            generationContext: { adminGeneration: true, domainCode: ctx.domainCode, nodeCode: ctx.nodeCode, kpId: ctx.nodeCode, topicName: ctx.topicName, groupName: ctx.groupName },
           };
           const task = await presentationApi.createPresentation(request);
           return { ...task, taskKind: 'ppt' as const, resourceType: 'ppt' as const } as WorkbenchTask;
@@ -856,7 +884,7 @@ export default function CollaborationWorkbench() {
           const task = await api.startLearningResourceTask(target, {
             topic: ctx.topicName, title: ctx.topicName + ' · ' + typeText[target], kpId: ctx.nodeCode, detailLevel: 'detailed',
             questionCount: target === 'quiz' ? 12 : undefined,
-            generationContext: { adminGeneration: true, domainCode: ctx.domainCode, nodeCode: ctx.nodeCode, kpId: ctx.nodeCode, topicName: ctx.topicName },
+            generationContext: { adminGeneration: true, domainCode: ctx.domainCode, nodeCode: ctx.nodeCode, kpId: ctx.nodeCode, topicName: ctx.topicName, groupName: ctx.groupName },
           });
           return { ...task, taskKind: 'resource' as const } as WorkbenchTask;
         }
@@ -953,6 +981,7 @@ export default function CollaborationWorkbench() {
           id: item.id, type: 'ppt', title: detail.title || item.title, topic: '', scope: 'ORGANIZATION',
           reviewStatus: 'PUBLISHED', revision: 1, domainCode: '', nodeCode: '', baseResourceId: null,
           learnerId: null, kpId: null, createdAt: detail.createdAt, updatedAt: detail.updatedAt,
+          groupName: null,
           archivedAt: null, archiveReason: null, ownerAccount: null,
           content: detail.request ?? {}, sources: [], decision: detail.outline ?? null,
         } as unknown as AdminResourceDetail);
@@ -1135,6 +1164,7 @@ export default function CollaborationWorkbench() {
                 <h3 className="truncate text-sm font-bold text-ink">{previewDetail.title}</h3>
                 <p className="mt-0.5 text-[11px] text-ink-muted">{typeText[previewDetail.type] || previewDetail.type} · 已生成内容预览</p>
               </div>
+              {previewDetail.type === 'ppt' && <a href={`/learn/ppt-preview/${previewDetail.id}`} target="_blank" rel="noreferrer" className="lf-row-btn lf-row-btn-primary"><MonitorPlay size={12} />完整课件预览</a>}
               <button onClick={() => setPreviewDetail(null)} className="lf-row-btn !p-2" aria-label="关闭"><X size={15} /></button>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-5">

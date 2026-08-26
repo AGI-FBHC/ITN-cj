@@ -47,6 +47,7 @@ export interface AdminResourceItem {
   id: string; type: 'lecture' | 'practice' | 'quiz' | string; title: string; topic: string;
   scope: 'USER' | 'ORGANIZATION' | 'PLATFORM'; reviewStatus: string | null; revision: number; domainCode: string | null; nodeCode: string | null;
   baseResourceId: string | null; learnerId: string | null; kpId: string | null;
+  groupName: string | null;
   template: boolean;
   createdAt: string; updatedAt: string; archivedAt: string | null; archiveReason: string | null;
   ownerAccount: string | null;
