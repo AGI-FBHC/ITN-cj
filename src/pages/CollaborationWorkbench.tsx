@@ -1046,7 +1046,7 @@ export default function CollaborationWorkbench() {
         }
         const task = await api.startLearningResourceTask(target, {
           topic: ctx.topicName, title: ctx.topicName + ' · ' + typeText[target], kpId: ctx.nodeCode, detailLevel: 'detailed',
-          questionCount: target === 'quiz' ? 12 : undefined,
+          questionCount: target === 'quiz' ? 15 : undefined,
           generationContext: commonContext,
         });
         return { ...task, taskKind: 'resource' as const } as WorkbenchTask;

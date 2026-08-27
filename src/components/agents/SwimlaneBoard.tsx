@@ -98,10 +98,10 @@ function buildLaneMilestones(
       },
       {
         at: idx.guide,
-        label: '产出实操指南 5 步 · 分阶题 12 题',
+        label: '产出实操指南 5 步 · 分阶题 15 题',
         chips: [
           { label: '实操指南 5 步', tone: 'plain', draft: 'guide' },
-          { label: '分阶题 12 题', tone: 'plain', draft: 'quiz' },
+          { label: '分阶题 15 题', tone: 'plain', draft: 'quiz' },
         ],
       },
     ],
@@ -230,7 +230,7 @@ function DraftDialog({
       kbs: ['KB-018', 'KB-005'],
     },
     quiz: {
-      title: '分阶测试题 · 12 题',
+      title: '分阶测试题 · 15 题',
       desc: '基础 4 / 进阶 5 / 挑战 3 · 解析全部可回溯',
       body: ['基础：位姿准确度与重复定位精度概念辨析', '进阶：GB/T 12642 试验条件下的标定流程排序', '挑战：温度漂移场景下的补偿参数计算'],
       kbs: ['KB-009', 'KB-022'],
