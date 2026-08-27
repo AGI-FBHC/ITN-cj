@@ -584,11 +584,6 @@ export default function Welcome() {
               看看我的画像
             </button>
           </div>
-          <div className="mt-3 text-center">
-            <button type="button" onClick={() => setMode('choice')} className="text-[11.5px] text-ink-muted transition-colors hover:text-brand">
-              不是你？重新建一份画像
-            </button>
-          </div>
         </motion.div>
       )}
 
