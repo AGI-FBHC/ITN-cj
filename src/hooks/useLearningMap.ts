@@ -296,10 +296,11 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
     const resourcesPromise = api.listLearningResources()
       .then((listed) => listed.resources ?? [])
       .catch(() => cached?.resources ?? [] as LearningResourceSummary[]);
-    // Admin-generated (ORGANIZATION) resources for knowledge network display
+    // Admin template resources: the knowledge network shows only the admin's
+    // template group resources as the universal default for each node.
     const adminResourcesPromise = api.listAdminResources({ view: 'library', domainCode: 'agent' })
       .then((listed) => (listed.items ?? [])
-        .filter((item) => !item.archivedAt && item.nodeCode)
+        .filter((item) => !item.archivedAt && item.nodeCode && item.template)
         .map((item): LearningResourceSummary => ({
           id: item.id,
           type: (item.type === 'practice' ? 'practice' : item.type) as LearningResourceSummary['type'],
@@ -322,16 +323,16 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
       : Promise.resolve(null);
     Promise.all([api.getRagTree('agent'), analyticsPromise, presentationsPromise, resourcesPromise, adminResourcesPromise])
       .then(([latestTree, latestAnalytics, latestPresentations, latestResources, adminResources]) => {
-        // Merge: prefer user resource over admin for same kpId+type
-        const userKeys = new Set(latestResources.map((r) => `${r.kpId}::${r.type}`));
-        const mergedResources = [...latestResources, ...adminResources.filter((r) => !userKeys.has(`${r.kpId}::${r.type}`))];
+        // Knowledge network shows admin template resources only.
+        // User resources are kept separately for personal learning progress.
+        const templateResources = adminResources.length > 0 ? adminResources : latestResources;
         if (!cancelled) setTree(latestTree);
         /* 缓存命中时 latestAnalytics 为 null，保留缓存值；只有网络新值才写回缓存（避免续期） */
         if (!cancelled) setAnalytics(latestAnalytics ?? cachedAnalytics);
         if (!cancelled) setPresentations(latestPresentations);
-        if (!cancelled) setResources(mergedResources);
+        if (!cancelled) setResources(templateResources);
         if (hasLearner && !cancelled) {
-          writeLearningMapCache(currentLearnerId, { resources: mergedResources, tree: latestTree, presentations: latestPresentations });
+          writeLearningMapCache(currentLearnerId, { resources: templateResources, tree: latestTree, presentations: latestPresentations });
           if (latestAnalytics) writeLearnerAnalytics(currentLearnerId, latestAnalytics);
         }
       })
