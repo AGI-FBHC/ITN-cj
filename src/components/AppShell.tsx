@@ -47,7 +47,6 @@ import { resources } from '@/data/resources';
 import { globalStats } from '@/data/metrics';
 import LiveDot from './LiveDot';
 import KBDrawer from './KBDrawer';
-import TeachingGroup from './TeachingGroup';
 import AgentDock from './agent/AgentDock';
 import ResumeLearningFab from './ResumeLearningFab';
 import { SparkField } from './heal/Flora';
@@ -301,7 +300,6 @@ export default function AppShell() {
 
             {/* 右侧集群 */}
             <div className="ml-auto flex shrink-0 items-center gap-2 whitespace-nowrap md:ml-0">
-              <TeachingGroup variant="compact" />
               <button
                 type="button"
                 onClick={() => setSearchOpen(true)}
