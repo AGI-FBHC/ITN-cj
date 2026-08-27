@@ -1233,11 +1233,12 @@ ${chatContext.content}
   return <div className={cn('mx-auto max-w-[1260px] px-4 pb-40 pt-6 md:px-6', chatOpen && 'relative z-50')}>
     {<div className="mb-5 flex flex-wrap items-center gap-2 text-[12px] text-ink-muted"><button type="button" onClick={() => { try { window.sessionStorage.setItem(`lf.knowledgeGraph3dReturn:v1:${currentLearnerId}`, 'breadcrumb'); } catch { /* ignore */ } navigate('/learn'); }} className="inline-flex items-center gap-1 hover:text-brand"><ArrowLeft size={13} />我的课程</button><ChevronRight size={12} />{resource.courseId && resource.chapterId ? <Link to={`/resources?courseId=${encodeURIComponent(resource.courseId)}&chapterId=${encodeURIComponent(resource.chapterId)}`} className="hover:text-brand">{chapter?.title ?? '章节资源'}</Link> : <span className="max-w-[260px] truncate text-ink-2">{resource.topic || '学习资源'}</span>}{resource.courseId && resource.chapterId ? <><ChevronRight size={12} /><span className="truncate text-ink-2">{resourceMeta[resource.type].label}</span></> : null}</div>}
 
-    <header className="relative overflow-hidden rounded-[20px] border border-brand/20 bg-gradient-to-br from-brand-tint/70 via-card-warm to-paper p-6 md:p-8">
-      <div className="absolute -right-14 -top-16 h-44 w-44 rounded-full bg-brand/5 blur-2xl" />
-      <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-        <div className="max-w-[800px]"><div className="lf-mono-label flex items-center gap-2"><BookOpen size={13} />{course?.title ?? '真实课程'} · {chapter ? `第 ${chapter.index} 章` : resourceMeta[resource.type].label}</div><h1 className="mt-2 font-serif text-[29px] font-semibold leading-tight text-ink md:text-[35px]">{resource.title}</h1><p className="mt-3 max-w-[720px] text-[13.5px] leading-6 text-ink-muted">{chapter?.summary || resource.topic}</p></div>
-        <div className="min-w-[220px] rounded-[14px] border border-white/60 bg-paper/70 p-4 backdrop-blur"><div className="flex items-center justify-between text-[11px] text-ink-muted"><span>本资源学习进度</span><span className="font-mono text-brand">{displayedCompletionPercent}%</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-paper-deep"><motion.div className="h-full rounded-full bg-brand" animate={{ width: `${displayedCompletionPercent}%` }} /></div><div className="mt-3 flex items-center justify-between font-mono text-[10.5px] text-ink-muted"><span><Clock3 size={11} className="mr-1 inline" />{formatDuration(elapsedBase + sessionSeconds)}</span><span>{displayedCompletedCount}/{blocks.length} {resource.type === 'quiz' ? '题' : '段'}</span></div></div>
+    <header className="flex items-center gap-4 rounded-[14px] border border-hairline bg-card-warm px-5 py-3">
+      <h1 className="min-w-0 flex-1 truncate font-serif text-[18px] font-semibold text-ink">{resource.title}</h1>
+      <div className="flex shrink-0 items-center gap-4 font-mono text-[11px] text-ink-muted">
+        <span className="flex items-center gap-1"><Clock3 size={12} />{formatDuration(elapsedBase + sessionSeconds)}</span>
+        <span>{displayedCompletedCount}/{blocks.length}{resource.type === 'quiz' ? '题' : '段'}</span>
+        <span className="text-brand font-semibold">{displayedCompletionPercent}%</span>
       </div>
     </header>
 
