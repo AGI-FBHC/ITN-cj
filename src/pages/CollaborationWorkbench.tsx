@@ -1,4 +1,4 @@
-import { CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, Plus, RotateCw, ScrollText, Sparkles, Trash2, X, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, Pause, Play, Plus, RotateCw, ScrollText, Sparkles, Trash2, X, XCircle } from 'lucide-react';
 import { api, streamAdminGenerationTask, type AdminGenerationEvent, type AdminResourceDetail, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
 import { loadAdminEventCache, saveAdminEventCache } from '@/lib/adminEventCache';
 import { useSearchParams } from 'react-router-dom';
@@ -8,7 +8,7 @@ import { presentationApi, type PresentationRequest, type PresentationTaskSummary
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import ResourcePreview from '@/components/admin/ResourcePreview';
-import PptPlayer from '@/components/learn/PptPlayer';
+import PptPlayer, { type PptPlayerRef } from '@/components/learn/PptPlayer';
 import ExecutionDetailPanel from '@/components/admin/ExecutionDetailPanel';
 import { cn } from '@/lib/utils';
 import planningAgentIcon from '@/assets/agents/planning.svg';
@@ -501,7 +501,7 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
   };
   const selectCls = 'lf-select w-full';
   return (
-    <div className="fixed inset-0 z-[95] flex items-center justify-center bg-ink/35 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+    <div className="fixed inset-0 z-[95] flex items-center justify-center bg-ink/35 p-4 backdrop-blur-sm">
       <div className="lf-card w-full max-w-2xl rounded-3xl p-6 shadow-2xl">
         <div className="flex items-start gap-3">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand-tint text-brand"><Plus size={20} /></div>
@@ -723,7 +723,7 @@ function ArtifactContentViewer({ title, kind, content, onClose }: { title: strin
   const chapters = Array.isArray(content.chapters) ? content.chapters.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object')) : [];
   const steps = Array.isArray(content.steps) ? content.steps.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object')) : [];
   const questions = Array.isArray(content.questions) ? content.questions.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object')) : [];
-  return <div className="fixed inset-0 z-[120] flex items-center justify-center bg-ink/25 p-5 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+  return <div className="fixed inset-0 z-[120] flex items-center justify-center bg-ink/25 p-5 backdrop-blur-sm">
     <section className="flex max-h-[86vh] w-full max-w-4xl flex-col overflow-hidden rounded-[24px] border border-white/90 bg-[#F7F7F2] shadow-2xl">
       <header className="flex items-center gap-3 border-b border-ink/8 bg-white/75 px-6 py-4"><div><p className="text-[10px] font-semibold text-brand">阶段成果快照</p><h3 className="mt-1 text-base font-bold text-ink">{title}</h3></div><button type="button" onClick={onClose} className="ml-auto rounded-full bg-white p-2 text-ink-muted shadow-sm hover:text-ink"><X size={16}/></button></header>
       <div className="space-y-4 overflow-y-auto p-6">
@@ -752,7 +752,7 @@ function InspectionModal({ title, record, onClose }: { title: string; record: Re
   const entries = Object.entries(record).filter(([, value]) => value != null && value !== '');
   const pct = (value: unknown) => Number.isFinite(Number(value)) ? Math.min(100, Math.max(0, Math.round(Number(value) * 100))) : null;
   return (
-    <div className="fixed inset-0 z-[130] flex items-center justify-center bg-ink/25 p-5 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <div className="fixed inset-0 z-[130] flex items-center justify-center bg-ink/25 p-5 backdrop-blur-sm">
       <section className="flex max-h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-[24px] border border-white/90 bg-[#F7F7F2] shadow-2xl">
         <header className="flex shrink-0 items-center gap-3 border-b border-ink/8 bg-white/75 px-6 py-4">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-tint text-brand"><ScrollText size={16} /></span>
@@ -905,6 +905,25 @@ export function EventDetailPanel({ event }: { event: AdminGenerationEvent }) {
   );
 }
 
+function PptModalPreview({ taskId }: { taskId: string }) {
+  const playerRef = useRef<PptPlayerRef>(null);
+  const [playing, setPlaying] = useState(false);
+  const [current, setCurrent] = useState(0);
+  const [count, setCount] = useState(0);
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1">
+        <PptPlayer ref={playerRef} taskId={taskId} speed="normal" volume={1} modelProvider="mimo" onPlaybackChange={setPlaying} onSlideChange={(slide, total) => { setCurrent(slide); setCount(total); }} />
+      </div>
+      <div className="flex shrink-0 items-center justify-center gap-1.5 border-t border-white/70 bg-white/65 px-2 py-2">
+        <button type="button" title="上一页" disabled={!count || current <= 0} onClick={() => playerRef.current?.goPrev()} className="lf-row-btn !p-2 disabled:opacity-40"><ChevronLeft size={14} /></button>
+        <button type="button" title={playing ? '暂停' : '播放'} disabled={!count} onClick={() => playerRef.current?.togglePlay()} className="lf-row-btn lf-row-btn-primary !px-3 !py-2 disabled:opacity-40">{playing ? <Pause size={13} /> : <Play size={13} />}{playing ? '暂停' : '播放'}</button>
+        <button type="button" title="下一页" disabled={!count || current >= count - 1} onClick={() => playerRef.current?.goNext()} className="lf-row-btn !p-2 disabled:opacity-40"><ChevronRight size={14} /></button>
+        <span className="ml-1 text-[10px] tabular-nums text-ink-muted">{current + 1} / {count}</span>
+      </div>
+    </div>
+  );
+}
 export default function CollaborationWorkbench() {
   const { session } = useAuth();
   const isAdmin = session?.roles?.includes('admin') === true;
@@ -1337,7 +1356,7 @@ export default function CollaborationWorkbench() {
         </div>
       </aside>
       {previewDetail && (
-        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-ink/35 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewDetail(null); }}>
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-ink/35 p-4 backdrop-blur-sm">
           <div className={cn('lf-card flex h-[min(90vh,820px)] w-full flex-col overflow-hidden rounded-3xl shadow-2xl', previewDetail.type === 'ppt' ? 'max-w-6xl' : 'max-w-3xl')}>
             <div className="flex shrink-0 items-center justify-between border-b border-white/70 px-5 py-4">
               <div className="min-w-0">
@@ -1349,7 +1368,7 @@ export default function CollaborationWorkbench() {
             <div className={cn('min-h-0 flex-1', previewDetail.type === 'ppt' && 'grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.8fr)]')}>
               {previewDetail.type === 'ppt' && (
                 <div className="flex min-h-0 flex-col overflow-y-auto border-b border-white/70 p-4 lg:border-b-0 lg:border-r">
-                  <PptPlayer taskId={previewDetail.id} speed="normal" volume={1} modelProvider="mimo" />
+                  <PptModalPreview taskId={previewDetail.id} />
                 </div>
               )}
               <div className="min-h-0 overflow-y-auto p-5">
