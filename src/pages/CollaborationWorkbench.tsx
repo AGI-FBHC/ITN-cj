@@ -440,7 +440,7 @@ function TaskDirectoryTree({
     return <div key={node.key} style={{ marginLeft: level * 8 }} className="space-y-1.5"><button type="button" onClick={() => onToggle(node.key)} className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left hover:bg-white/60"><ChevronRight size={12} className={cn('text-ink-muted transition-transform', isOpen && 'rotate-90')} /><span className="min-w-0 flex-1 truncate text-[10.5px] font-bold text-ink">{node.label}</span><span className="text-[8.5px] text-ink-muted">{node.count}</span></button>{isOpen && <TaskDirectoryTree nodes={node.children} level={level + 1} expanded={expanded} selectedKey={selectedKey} onToggle={onToggle} renderLeaf={renderLeaf} />}</div>;
   })}</>;
 }
-function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClose: () => void; onCreate: (targets: GenKind[], ctx: { domainCode: string; nodeCode: string; topicName: string; groupName: string }) => void; busy: boolean }) {
+function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClose: () => void; onCreate: (targets: GenKind[], ctx: { domainCode: string; nodeCode: string; topicName: string; groupName: string; regenerate?: boolean; pptWaitsForBatch?: boolean }) => void; busy: boolean }) {
   const [domains, setDomains] = useState<RagDomain[]>([]);
   const [domainCode, setDomainCode] = useState('');
   const [tree, setTree] = useState<RagTree | null>(null);
@@ -448,7 +448,7 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
   const [kpCode, setKpCode] = useState('');
   const [selected, setSelected] = useState<Set<GenKind>>(new Set(['lecture', 'practice', 'quiz', 'ppt']));
   const [groupMode, setGroupMode] = useState<'existing' | 'new'>('existing');
-  const [existingGroups, setExistingGroups] = useState<Array<{ groupName: string; types: string[] }>>([]);
+  const [existingGroups, setExistingGroups] = useState<Array<{ groupName: string; types: string[]; details?: Record<string, string[]> }>>([]);
   const [existingGroupName, setExistingGroupName] = useState('默认分组');
   const [newGroupName, setNewGroupName] = useState('');
   useEffect(() => {
@@ -482,8 +482,11 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
   const kp = kps.find((item) => item.nodeCode === kpCode) ?? null;
   const effectiveGroupName = groupMode === 'new' ? (newGroupName.trim() || '默认分组') : (existingGroupName || '默认分组');
   const selectedGroup = useMemo(() => existingGroups.find((group) => group.groupName === effectiveGroupName), [existingGroups, effectiveGroupName]);
-  const groupTypes = useMemo(() => new Set(selectedGroup?.types ?? []), [selectedGroup]);
-  const pptReady = groupMode === 'existing' && ['lecture', 'practice', 'quiz'].every((type) => groupTypes.has(type));
+  const selectedGroupDetails = useMemo(() => selectedGroup?.details ?? {}, [selectedGroup]);
+  const generatedTypes = useMemo(() => new Set(Object.entries(selectedGroupDetails).filter(([, statuses]) => statuses.includes('generated')).map(([type]) => type)), [selectedGroupDetails]);
+  const statusOf = (kind: string) => selectedGroupDetails[kind] ?? [];
+  const dependencies: GenKind[] = ['lecture', 'practice', 'quiz'];
+  const pptReady = groupMode === 'existing' && dependencies.every((type) => generatedTypes.has(type));
   const existingGroupNames = useMemo(() => Array.from(new Set(['默认分组', ...existingGroups.map((group) => group.groupName)])), [existingGroups]);
   useEffect(() => {
     if (!kpCode) return;
@@ -495,16 +498,32 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
   const canCreate = Boolean(kp && effectiveGroupName && validSelected.length && !busy);
   const handleCreate = () => {
     if (!kp || !validSelected.length) return;
-    const duplicateTypes = validSelected.filter((kind) => groupTypes.has(kind));
+    const working = new Set(validSelected);
+    const duplicateTypes = [...working].filter((kind) => { const statuses = statusOf(kind); return statuses.includes('generated') || statuses.includes('generating'); });
+    let regenerate = false;
     if (duplicateTypes.length) {
-      toast.warning(duplicateTypes.map((kind) => typeText[kind]).join('、') + '已存在于当前分组，同一分组内各资源唯一');
-      return;
+      const confirmed = window.confirm(duplicateTypes.map((kind) => typeText[kind]).join('、') + '当前分组已存在或正在生成，是否重新生成？');
+      if (confirmed) {
+        regenerate = true;
+      } else {
+        duplicateTypes.forEach((kind) => working.delete(kind));
+        setSelected(working);
+      }
     }
-    if (validSelected.includes('ppt') && !pptReady) {
-      toast.warning('请先生成讲义、实操、题库后再生成交互课件');
-      return;
+    const missingDeps = dependencies.filter((kind) => !generatedTypes.has(kind) && !working.has(kind));
+    if (working.has('ppt') && missingDeps.length) {
+      const addMissing = window.confirm('交互课件需要讲义、实操、题库，当前缺：' + missingDeps.map((kind) => typeText[kind]).join('、') + '。是否将这些资源一并加入本次生成？');
+      if (addMissing) {
+        missingDeps.forEach((kind) => working.add(kind));
+      } else {
+        working.delete('ppt');
+      }
+      setSelected(working);
     }
-    onCreate(validSelected, { domainCode, nodeCode: kp.nodeCode, topicName: kp.name, groupName: effectiveGroupName });
+    const finalTargets = [...working];
+    if (!finalTargets.length) return;
+    const pptWaitsForBatch = finalTargets.includes('ppt') && dependencies.some((kind) => !generatedTypes.has(kind));
+    onCreate(finalTargets, { domainCode, nodeCode: kp.nodeCode, topicName: kp.name, groupName: effectiveGroupName, regenerate, pptWaitsForBatch });
   };
   const selectCls = 'lf-select w-full';
   return (
@@ -559,9 +578,11 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
             <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
               {genKinds.map(([id, label, note]) => {
                 const disabled = false;
+                const statuses = statusOf(id);
+                const statusLabel = statuses.includes('generated') ? '已有' : statuses.includes('generating') ? '生成中' : statuses.includes('failed') ? '上次失败' : statuses.includes('cancelled') ? '已取消' : '未生成';
                 return <button key={id} type="button" disabled={disabled} onClick={() => setSelected((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; })} className={cn('rounded-2xl border p-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-45', selected.has(id) && !disabled ? 'border-brand/50 bg-brand-tint/70 ring-1 ring-brand/30' : 'border-white/80 bg-white/45 hover:bg-white/70')}>
                   <p className="text-sm font-bold text-ink">{label}</p>
-                  <p className="mt-0.5 text-[10px] text-ink-muted">{disabled ? '需先生成讲义、实操、题库' : note}</p>
+                  <p className="mt-0.5 text-[10px] text-ink-muted">{statusLabel} · {note}</p>
                 </button>;
               })}
             </div>
@@ -1005,33 +1026,37 @@ export default function CollaborationWorkbench() {
   };
 
   /** 新建任务：按知识目标创建多类资源生成任务 */
-  const createGeneration = async (targets: GenKind[], ctx: { domainCode: string; nodeCode: string; topicName: string; groupName: string }) => {
+  const createGeneration = async (targets: GenKind[], ctx: { domainCode: string; nodeCode: string; topicName: string; groupName: string; regenerate?: boolean; pptWaitsForBatch?: boolean }) => {
     setNewTaskBusy(true);
     try {
-      const results = await Promise.allSettled(targets.map(async (target) => {
+      const created: WorkbenchTask[] = [];
+      let failed = 0;
+      const createOne = async (target: GenKind): Promise<WorkbenchTask> => {
+        const commonContext = { adminGeneration: true, domainCode: ctx.domainCode, nodeCode: ctx.nodeCode, kpId: ctx.nodeCode, topicName: ctx.topicName, groupName: ctx.groupName, regenerate: ctx.regenerate === true };
         if (target === 'ppt') {
           const request: PresentationRequest = {
             requirement: '围绕“' + ctx.topicName + '”生成一份面向学习者的完整交互课件，内容准确、结构清晰，并适合课堂讲解与自主学习。',
             title: ctx.topicName, audience: 'students', purpose: 'courseware', style: 'education', backgroundStyle: 'blue-white-minimal',
             language: 'zh-CN', slideCount: 0, aspectRatio: '16:9', detailLevel: 'detailed', includeSpeakerNotes: true,
             modelProvider: 'mimo', generationMode: 'template',
-            generationContext: { adminGeneration: true, domainCode: ctx.domainCode, nodeCode: ctx.nodeCode, kpId: ctx.nodeCode, topicName: ctx.topicName, groupName: ctx.groupName },
+            generationContext: { ...commonContext, waitForDependencies: ctx.pptWaitsForBatch === true },
           };
           const task = await presentationApi.createPresentation(request);
           return { ...task, taskKind: 'ppt' as const, resourceType: 'ppt' as const } as WorkbenchTask;
-        } else {
-          const task = await api.startLearningResourceTask(target, {
-            topic: ctx.topicName, title: ctx.topicName + ' · ' + typeText[target], kpId: ctx.nodeCode, detailLevel: 'detailed',
-            questionCount: target === 'quiz' ? 12 : undefined,
-            generationContext: { adminGeneration: true, domainCode: ctx.domainCode, nodeCode: ctx.nodeCode, kpId: ctx.nodeCode, topicName: ctx.topicName, groupName: ctx.groupName },
-          });
-          return { ...task, taskKind: 'resource' as const } as WorkbenchTask;
         }
-      }));
-      const failed = results.filter((result) => result.status === 'rejected').length;
-      const created = results
-        .filter((result): result is PromiseFulfilledResult<WorkbenchTask> => result.status === 'fulfilled')
-        .map((result) => result.value);
+        const task = await api.startLearningResourceTask(target, {
+          topic: ctx.topicName, title: ctx.topicName + ' · ' + typeText[target], kpId: ctx.nodeCode, detailLevel: 'detailed',
+          questionCount: target === 'quiz' ? 12 : undefined,
+          generationContext: commonContext,
+        });
+        return { ...task, taskKind: 'resource' as const } as WorkbenchTask;
+      };
+      const coreTargets = targets.filter((target) => target !== 'ppt');
+      const coreResults = await Promise.allSettled(coreTargets.map((target) => createOne(target)));
+      coreResults.forEach((result) => { if (result.status === 'fulfilled') created.push(result.value); else failed += 1; });
+      if (targets.includes('ppt') && !coreResults.some((result) => result.status === 'rejected')) {
+        try { created.push(await createOne('ppt')); } catch { failed += 1; }
+      }
       const createdKeys = new Set(created.map(taskKey));
       if (createdKeys.size) {
         setDeletedKeys((current) => {
@@ -1039,7 +1064,6 @@ export default function CollaborationWorkbench() {
           try { localStorage.setItem('wb.deletedTasks', JSON.stringify(next)); } catch { /* ignore */ }
           return next;
         });
-        // POST 已经返回了完整任务，先即时展示；后台列表同步只负责校准状态。
         setTasks((current) => {
           const byKey = new Map(current.map((item) => [taskKey(item), item]));
           created.forEach((item) => byKey.set(taskKey(item), item));
@@ -1049,7 +1073,7 @@ export default function CollaborationWorkbench() {
         if (newest) setParams({ task: taskKey(newest) });
       }
       if (failed) toast.error(failed + ' 项任务创建失败');
-      if (failed < results.length) toast.success('已创建 ' + (results.length - failed) + ' 项生成任务');
+      if (created.length) toast.success('已创建 ' + created.length + ' 项生成任务');
       setNewTaskOpen(false);
       await load();
     } catch (error) {
