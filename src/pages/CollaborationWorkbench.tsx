@@ -1,4 +1,4 @@
-import { CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, MonitorPlay, Plus, RotateCw, ScrollText, Sparkles, Trash2, X, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, Plus, RotateCw, ScrollText, Sparkles, Trash2, X, XCircle } from 'lucide-react';
 import { api, streamAdminGenerationTask, type AdminGenerationEvent, type AdminResourceDetail, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
 import { loadAdminEventCache, saveAdminEventCache } from '@/lib/adminEventCache';
 import { useSearchParams } from 'react-router-dom';
@@ -8,6 +8,7 @@ import { presentationApi, type PresentationRequest, type PresentationTaskSummary
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 import ResourcePreview from '@/components/admin/ResourcePreview';
+import PptPlayer from '@/components/learn/PptPlayer';
 import ExecutionDetailPanel from '@/components/admin/ExecutionDetailPanel';
 import { cn } from '@/lib/utils';
 import planningAgentIcon from '@/assets/agents/planning.svg';
@@ -1337,17 +1338,23 @@ export default function CollaborationWorkbench() {
       </aside>
       {previewDetail && (
         <div className="fixed inset-0 z-[95] flex items-center justify-center bg-ink/35 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewDetail(null); }}>
-          <div className="lf-card flex h-[min(86vh,760px)] w-full max-w-3xl flex-col overflow-hidden rounded-3xl shadow-2xl">
+          <div className={cn('lf-card flex h-[min(90vh,820px)] w-full flex-col overflow-hidden rounded-3xl shadow-2xl', previewDetail.type === 'ppt' ? 'max-w-6xl' : 'max-w-3xl')}>
             <div className="flex shrink-0 items-center justify-between border-b border-white/70 px-5 py-4">
               <div className="min-w-0">
                 <h3 className="truncate text-sm font-bold text-ink">{previewDetail.title}</h3>
                 <p className="mt-0.5 text-[11px] text-ink-muted">{typeText[previewDetail.type] || previewDetail.type} · 已生成内容预览</p>
               </div>
-              {previewDetail.type === 'ppt' && <a href={`/learn/ppt-preview/${previewDetail.id}`} target="_blank" rel="noreferrer" className="lf-row-btn lf-row-btn-primary"><MonitorPlay size={12} />完整课件预览</a>}
               <button onClick={() => setPreviewDetail(null)} className="lf-row-btn !p-2" aria-label="关闭"><X size={15} /></button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-5">
-              <ResourcePreview detail={previewDetail} />
+            <div className={cn('min-h-0 flex-1', previewDetail.type === 'ppt' && 'grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.8fr)]')}>
+              {previewDetail.type === 'ppt' && (
+                <div className="flex min-h-0 flex-col overflow-y-auto border-b border-white/70 p-4 lg:border-b-0 lg:border-r">
+                  <PptPlayer taskId={previewDetail.id} speed="normal" volume={1} modelProvider="mimo" />
+                </div>
+              )}
+              <div className="min-h-0 overflow-y-auto p-5">
+                <ResourcePreview detail={previewDetail} />
+              </div>
             </div>
           </div>
         </div>
