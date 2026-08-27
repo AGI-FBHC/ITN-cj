@@ -592,6 +592,9 @@ export default function ResourceCenterAdmin() {
                                   <>
                                     <span className="min-w-0 flex-1 truncate font-semibold text-ink" title={item.title}>{item.title}</span>
                                     {item.archivedAt ? <span className="lf-pill lf-pill-warn">已归档</span> : null}
+                                    {view !== 'archive' && (
+                                      <button onClick={() => void startGeneration(type).then(loadGenerationTasks)} className="lf-row-btn text-ink-muted" title="重新生成"><RefreshCw size={11} />重新生成</button>
+                                    )}
                                     <button onClick={() => preview(item)} className="lf-row-btn"><Eye size={11} />预览</button>
                                     {openResourceLog && <button onClick={() => openResourceLog(item)} className="lf-row-btn" title="生成日志"><FileText size={11} /></button>}
                                     {view === 'archive' ? (
@@ -604,7 +607,7 @@ export default function ResourceCenterAdmin() {
                                     )}
                                   </>
                                 ) : (
-                                  <span className="text-ink-muted">未生成</span>
+                                  <button onClick={() => void startGeneration(type).then(loadGenerationTasks)} className="lf-row-btn lf-row-btn-primary"><Plus size={11} />生成</button>
                                 )}
                               </div>
                             );
