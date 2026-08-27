@@ -30,10 +30,6 @@ function flatten(nodes: RagTreeNode[], expanded: Set<number>, depth = 0): { node
   return nodes.flatMap((node) => [{ node, depth }, ...(node.children?.length && expanded.has(node.id) ? flatten(node.children, expanded, depth + 1) : [])]);
 }
 
-function EmptyState({ children }: { children: React.ReactNode }) {
-  return <div className="lf-empty px-6 py-14 text-center text-sm">{children}</div>;
-}
-
 export default function ResourceCenterAdmin() {
   const navigate = useNavigate();
   const [domain, setDomain] = useState<RagDomain | { code: '__unassigned__'; name: string; description: string } | null>(null);
@@ -53,6 +49,7 @@ export default function ResourceCenterAdmin() {
   const [generationBusy, setGenerationBusy] = useState(false);
   const [groupResources, setGroupResources] = useState<AdminResourceItem[]>([]);
   const [selectedGroupName, setSelectedGroupName] = useState('默认分组');
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['默认分组']));
 
   /* ---- SWR 缓存：先展示缓存，后台异步更新 ---- */
   const domainsQ = useCachedData<RagDomain[]>('admin:rag-domains', () => api.listRagDomains(), { ttlMs: 30_000 });
@@ -145,9 +142,17 @@ export default function ResourceCenterAdmin() {
   const groupNames = useMemo(() => Array.from(new Set(['默认分组', ...groupTypeMap.keys()])), [groupTypeMap]);
   useEffect(() => { if (!groupNames.includes(selectedGroupName)) setSelectedGroupName('默认分组'); }, [groupNames, selectedGroupName]);
   const completedTypes = groupTypeMap.get(selectedGroupName) ?? new Set<ResourceKind>();
-  const currentGroupItems = useMemo(() => groupResources.filter((item) => (item.groupName ?? '默认分组') === selectedGroupName), [groupResources, selectedGroupName]);
-  const isCurrentGroupTemplate = currentGroupItems.some((item) => item.template);
-  const currentGroupFirstItem = currentGroupItems[0];
+  const groupedEntries = useMemo(() => {
+    const map = new Map<string, Map<ResourceKind, AdminResourceItem>>();
+    const ensure = (g: string) => { if (!map.has(g)) map.set(g, new Map()); return map.get(g)!; };
+    (listQ.data?.items ?? []).forEach((item) => { ensure(item.groupName || '默认分组').set(item.type as ResourceKind, item); });
+    generationTasks.forEach((task) => {
+      const ctx = taskContext(task);
+      if (task.status === 'completed' && ctx.domainCode === domain?.code && ctx.nodeCode === node?.nodeCode) ensure(String(ctx.groupName || '默认分组'));
+    });
+    ensure('默认分组');
+    return [...map.entries()].sort(([a], [b]) => a === '默认分组' ? -1 : b === '默认分组' ? 1 : a.localeCompare(b));
+  }, [listQ.data?.items, generationTasks, domain?.code, node?.nodeCode]);
   const pptReady = ['lecture', 'practice', 'quiz'].every((type) => completedTypes.has(type as ResourceKind));
 
   const startGeneration = async (target: ResourceKind) => {
@@ -499,18 +504,11 @@ export default function ResourceCenterAdmin() {
               {!node ? (
                 <div className="lf-card mb-4 flex items-center gap-3 rounded-2xl p-5">
                   <FolderTree size={18} className="text-ink-muted" />
-                  <p className="text-sm font-semibold text-ink">请先选择左侧知识点分组，再查看和管理该分组内的四种资源。</p>
+                  <p className="text-sm font-semibold text-ink">请先选择左侧知识点，再查看和管理该知识点下的资源分组。</p>
                 </div>
               ) : (
                 <div className="lf-card mb-4 rounded-2xl p-3">
-                  <div className="mb-2 flex flex-wrap items-center gap-2"><span className="text-[10px] font-semibold text-ink-muted">知识点</span><span className="truncate text-xs font-bold text-ink">{node.name}</span></div>
-                  <div className="mb-3 flex flex-wrap items-center gap-2"><span className="text-[10px] font-semibold text-ink-muted">资源分组</span><input value={selectedGroupName} onChange={(e) => { setSelectedGroupName(e.target.value); setDetail(null); }} list="rc-resource-groups" placeholder="输入或选择分组" className="lf-input min-w-52 flex-1" />{view === 'library' && (<button disabled={isCurrentGroupTemplate || !currentGroupFirstItem} onClick={() => currentGroupFirstItem && void act(currentGroupFirstItem, 'template')} className="lf-row-btn lf-row-btn-primary disabled:cursor-default disabled:opacity-70"><LayoutTemplate size={11} />{isCurrentGroupTemplate ? '当前分组母版' : '设为分组母版'}</button>)}</div>
-                  <datalist id="rc-resource-groups">{groupNames.map((name) => <option key={name} value={name} />)}</datalist>
-                  <div className="lf-seg">
-                    {kinds.map(([id, label]) => (
-                      <button key={id} onClick={() => { setKind(id); setDetail(null); }} className={cn('lf-seg-item', kind === id && 'lf-seg-item-active')}>{label}</button>
-                    ))}
-                  </div>
+                  <div className="flex flex-wrap items-center gap-2"><span className="text-[10px] font-semibold text-ink-muted">知识点</span><span className="truncate text-xs font-bold text-ink">{node.name}</span></div>
                 </div>
               )}
 
@@ -532,7 +530,96 @@ export default function ResourceCenterAdmin() {
                   </span>
                 )}
               </div>
-              <ResourceTable items={(listQ.data?.items ?? []).filter((item) => (item.groupName ?? '默认分组') === selectedGroupName)} loading={listQ.loading} view={view} onPreview={preview} onAction={act} onOpenLog={openResourceLog} />
+
+              {node && (listQ.loading && !listQ.data ? (
+                <div className="lf-card flex items-center justify-center rounded-2xl py-20 text-sm text-ink-muted">
+                  <Loader2 className="mr-2 animate-spin" size={18} />
+                  正在加载资源…
+                </div>
+              ) : groupedEntries.length === 0 ? (
+                <div className="lf-card rounded-2xl py-12 text-center text-sm text-ink-muted">当前范围暂无资源</div>
+              ) : (
+                groupedEntries.map(([groupName, typeMap]) => {
+                  const isTemplate = [...typeMap.values()].some((item) => item.template);
+                  const firstItem = [...typeMap.values()][0];
+                  const isExpanded = expandedGroups.has(groupName);
+                  const matchKeyword = (item?: AdminResourceItem) => {
+                    if (!keyword || !item) return !keyword;
+                    const q = keyword.toLowerCase();
+                    return item.title.toLowerCase().includes(q) || (item.topic ?? '').toLowerCase().includes(q);
+                  };
+                  const visibleKinds = kinds.filter(([type]) => { const item = typeMap.get(type); return matchKeyword(item) || (!item && !keyword); });
+                  if (keyword && visibleKinds.length === 0) return null;
+                  return (
+                    <div key={groupName} className="lf-card mb-3 overflow-hidden rounded-2xl">
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-brand-tint/30"
+                        onClick={() => setExpandedGroups((prev) => { const next = new Set(prev); if (next.has(groupName)) next.delete(groupName); else next.add(groupName); return next; })}
+                      >
+                        {isExpanded ? <ChevronDown size={14} className="shrink-0" /> : <ChevronRight size={14} className="shrink-0" />}
+                        <span className="text-sm font-bold text-ink">{groupName}</span>
+                        {isTemplate && <span className="lf-pill lf-pill-ok">母版</span>}
+                        <span className="ml-1 text-[10px] text-ink-muted">({typeMap.size}/4)</span>
+                        <span className="ml-auto" />
+                        {view === 'library' && (
+                          <button
+                            disabled={isTemplate || !firstItem}
+                            onClick={(e) => { e.stopPropagation(); firstItem && void act(firstItem, 'template'); }}
+                            className="lf-row-btn lf-row-btn-primary disabled:cursor-default disabled:opacity-70"
+                          >
+                            <LayoutTemplate size={11} />
+                            {isTemplate ? '当前母版' : '设为母版'}
+                          </button>
+                        )}
+                      </button>
+                      {isExpanded && (
+                        <div className="border-t border-white/60 px-4 py-1">
+                          {kinds.map(([type, label, _desc, Icon]) => {
+                            const item = typeMap.get(type);
+                            if (keyword) {
+                              const q = keyword.toLowerCase();
+                              if (item && !item.title.toLowerCase().includes(q) && !(item.topic ?? '').toLowerCase().includes(q)) return null;
+                              if (!item) return null;
+                            }
+                            return (
+                              <div key={type} className="flex items-center gap-3 rounded-lg px-2 py-2.5 text-xs hover:bg-brand-tint/30">
+                                <Icon size={14} className="shrink-0 text-ink-muted" />
+                                <span className="w-16 shrink-0 font-semibold text-ink-2">{label}</span>
+                                {item ? (
+                                  <>
+                                    <span className="min-w-0 flex-1 truncate font-semibold text-ink" title={item.title}>{item.title}</span>
+                                    {item.archivedAt ? (
+                                      <span className="lf-pill lf-pill-warn">已归档</span>
+                                    ) : item.reviewStatus ? (
+                                      <span className={cn('lf-pill', item.reviewStatus === 'PUBLISHED' ? 'lf-pill-ok' : item.reviewStatus === 'REJECTED' || item.reviewStatus === 'DEPRECATED' ? 'lf-pill-danger' : item.reviewStatus === 'PENDING' ? 'lf-pill-warn' : 'lf-pill-null')}>
+                                        {item.reviewStatus}
+                                      </span>
+                                    ) : null}
+                                    <span className="text-ink-muted">v{item.revision}</span>
+                                    <button onClick={() => preview(item)} className="lf-row-btn"><Eye size={11} />预览</button>
+                                    {openResourceLog && <button onClick={() => openResourceLog(item)} className="lf-row-btn" title="生成日志"><FileText size={11} /></button>}
+                                    {view === 'archive' ? (
+                                      <>
+                                        <button onClick={() => void act(item, 'restore')} className="lf-row-btn lf-row-btn-primary"><ArchiveRestore size={11} />恢复</button>
+                                        <button onClick={() => void act(item, 'delete')} className="lf-row-btn text-red-600"><Trash2 size={11} /></button>
+                                      </>
+                                    ) : (
+                                      <button onClick={() => void act(item, 'archive')} className="lf-row-btn text-ink-muted">归档</button>
+                                    )}
+                                  </>
+                                ) : (
+                                  <span className="text-ink-muted">未生成</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              ))}
             </>
           )}
         </section>
@@ -860,85 +947,6 @@ function GenerationProcessModal({ task, onClose }: { task: GenerationTask | null
           </section>
         </div>
       </div>
-    </div>
-  );
-}
-
-function ResourceTable({ items, loading, view, onPreview, onAction, onOpenLog }: { items: AdminResourceItem[]; loading: boolean; view: View; onPreview: (i: AdminResourceItem) => void; onAction: (i: AdminResourceItem, a: string) => Promise<void>; onOpenLog?: (i: AdminResourceItem) => void }) {
-  return (
-    <div className="lf-table-card">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] text-sm">
-          <thead>
-            <tr>
-              <th className="px-4 py-3.5">资源</th>
-              <th className="px-4 py-3.5">状态</th>
-              <th className="px-4 py-3.5">更新时间</th>
-              <th className="px-4 py-3.5 text-right">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item) => (
-              <tr key={item.id}>
-                <td className="max-w-lg px-4 py-3.5">
-                  <p className="line-clamp-1 font-semibold text-ink">{item.title}</p>
-                  <p className="mt-1 line-clamp-1 text-[11px] text-ink-muted">{item.topic}</p>
-                </td>
-                <td className="px-4 py-3.5">
-                  {item.archivedAt ? (
-                    <span className="lf-pill lf-pill-warn">已归档</span>
-                  ) : item.reviewStatus ? (
-                    <span className={cn('lf-pill', item.reviewStatus === 'PUBLISHED' ? 'lf-pill-ok' : item.reviewStatus === 'REJECTED' || item.reviewStatus === 'DEPRECATED' ? 'lf-pill-danger' : item.reviewStatus === 'PENDING' ? 'lf-pill-warn' : 'lf-pill-null')}>
-                      {item.reviewStatus}
-                    </span>
-                  ) : (
-                    <span className="lf-pill lf-pill-null">用户历史版本</span>
-                  )}
-                  <p className="mt-1 text-[11px] text-ink-muted">v{item.revision}</p>
-                </td>
-                <td className="px-4 py-3.5 text-xs text-ink-muted">{new Date(item.archivedAt || item.updatedAt).toLocaleString('zh-CN')}</td>
-                <td className="px-4 py-3.5 text-right">
-                  <div className="flex justify-end gap-1.5">
-                    <button onClick={() => onPreview(item)} className="lf-row-btn">
-                      <Eye size={11} />
-                      预览
-                    </button>
-                    {onOpenLog && (
-                      <button onClick={() => onOpenLog(item)} className="lf-row-btn" title="查看该资源的生成日志">
-                        <FileText size={11} />
-                        生成日志
-                      </button>
-                    )}
-                    {view === 'archive' ? (
-                      <>
-                        <button onClick={() => void onAction(item, 'restore')} className="lf-row-btn lf-row-btn-primary">
-                          <ArchiveRestore size={11} />
-                          恢复
-                        </button>
-                        <button onClick={() => void onAction(item, 'delete')} className="lf-row-btn text-red-600">
-                          <Trash2 size={11} />
-                          彻底删除
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button onClick={() => void onAction(item, 'archive')} className="lf-row-btn text-ink-muted">归档</button>
-                      </>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {loading && (
-        <div className="flex justify-center py-12 text-sm text-ink-muted">
-          <Loader2 className="mr-2 animate-spin" size={16} />
-          加载中…
-        </div>
-      )}
-      {!loading && !items.length && <EmptyState>当前范围暂无资源</EmptyState>}
     </div>
   );
 }
