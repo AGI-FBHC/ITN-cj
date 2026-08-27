@@ -36,7 +36,7 @@ export default function ResourceCenterAdmin() {
   const [domain, setDomain] = useState<RagDomain | { code: '__unassigned__'; name: string; description: string } | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [node, setNode] = useState<RagTreeNode | null>(null);
-  const [kind, setKind] = useState<ResourceKind>('lecture');
+  const [, setKind] = useState<ResourceKind>('lecture');
   const [view, setView] = useState<View>('library');
   const [keyword, setKeyword] = useState('');
   const [detail, setDetail] = useState<AdminResourceDetail | null>(null);
@@ -362,21 +362,6 @@ export default function ResourceCenterAdmin() {
             <span className="font-bold text-ink-muted">· 资源管理</span>
           </nav>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => navigate('/admin/workbench')} className="lf-row-btn">
-            <Sparkles size={13} />
-            AI 教研工作台
-          </button>
-          <button
-            disabled={!node || domain.code === '__unassigned__'}
-            onClick={() => { setSelectedKinds(new Set([kind === 'ppt' && !pptReady ? 'lecture' : kind])); setGenerationModalOpen(true); }}
-            className="lf-row-btn lf-row-btn-primary disabled:cursor-not-allowed disabled:opacity-50"
-            title={!node ? '请先从左侧选择具体知识点' : undefined}
-          >
-            <Plus size={13} />
-            生成资源
-          </button>
-        </div>
       </div>
 
       <div className="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[280px_1fr] lg:grid-rows-[minmax(0,1fr)]">
@@ -593,7 +578,7 @@ export default function ResourceCenterAdmin() {
                                     <span className="min-w-0 flex-1 truncate font-semibold text-ink" title={item.title}>{item.title}</span>
                                     {item.archivedAt ? <span className="lf-pill lf-pill-warn">已归档</span> : null}
                                     {view !== 'archive' && (
-                                      <button onClick={() => void startGeneration(type).then(loadGenerationTasks)} className="lf-row-btn text-ink-muted" title="重新生成"><RefreshCw size={11} />重新生成</button>
+                                      <button onClick={() => { void startGeneration(type).then((r) => { void loadGenerationTasks(); navigate(`/admin/workbench?task=${r.taskKind}-${r.id}`); }); }} className="lf-row-btn text-ink-muted" title="重新生成"><RefreshCw size={11} />重新生成</button>
                                     )}
                                     <button onClick={() => preview(item)} className="lf-row-btn"><Eye size={11} />预览</button>
                                     {openResourceLog && <button onClick={() => openResourceLog(item)} className="lf-row-btn" title="生成日志"><FileText size={11} /></button>}
@@ -607,7 +592,7 @@ export default function ResourceCenterAdmin() {
                                     )}
                                   </>
                                 ) : (
-                                  <button onClick={() => void startGeneration(type).then(loadGenerationTasks)} className="lf-row-btn lf-row-btn-primary"><Plus size={11} />生成</button>
+                                  <button onClick={() => { void startGeneration(type).then((r) => { void loadGenerationTasks(); navigate(`/admin/workbench?task=${r.taskKind}-${r.id}`); }); }} className="lf-row-btn lf-row-btn-primary"><Plus size={11} />生成</button>
                                 )}
                               </div>
                             );
