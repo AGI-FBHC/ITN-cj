@@ -105,17 +105,25 @@ export default function SourceCitationMarks({
     try {
       setChunk(await api.getRagflowChunk(chunkId));
     } catch {
-      /* RAGFlow id 在 MySQL 反查失败：快照中存的可能是 knowledge_chunk.id（数字），直接按 MySQL 切片 id 取原文 */
-      const numeric = Number(chunkId);
-      if (Number.isFinite(numeric) && numeric > 0) {
+      /* RAGFlow id 在 MySQL 反查失败：尝试 knowledgeChunkId（生成时由内容匹配写入） */
+      const fallbackId = Number(source.knowledgeChunkId);
+      if (Number.isFinite(fallbackId) && fallbackId > 0) {
         try {
-          setChunk(await api.getRagChunk(numeric));
-        } catch (reason2) {
-          setLiveError(reason2 instanceof Error ? reason2.message : '暂时无法读取切片原文（MySQL 未命中）');
+          setChunk(await api.getRagChunk(fallbackId));
+        } catch {
+          setLiveError('切片原文暂时无法读取（MySQL 未命中），以下展示生成时保存的来源快照。');
         }
       } else {
-        /* RAGFlow hash（非数字）：MySQL 的 ragflow_chunk_id 未回填，历史资源此路径不可回溯——已展示生成时快照，无需重新生成 */
-        setLiveError('该引用保存于历史版本，切片标识 ' + chunkId.slice(0, 20) + '… 未关联当前知识库（ragflow_chunk_id 未回填），以下展示生成时保存的来源快照。');
+        const numeric = Number(chunkId);
+        if (Number.isFinite(numeric) && numeric > 0) {
+          try {
+            setChunk(await api.getRagChunk(numeric));
+          } catch (reason2) {
+            setLiveError(reason2 instanceof Error ? reason2.message : '暂时无法读取切片原文（MySQL 未命中）');
+          }
+        } else {
+          setLiveError('该引用未关联知识库切片，以下展示生成时保存的来源快照。');
+        }
       }
     } finally {
       setLoading(false);
