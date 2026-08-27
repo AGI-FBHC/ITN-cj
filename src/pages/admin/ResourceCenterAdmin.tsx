@@ -10,8 +10,9 @@ import { presentationApi, type PresentationRequest, type PresentationTaskSummary
 import { useCachedData } from '@/hooks/useCachedData';
 import { clearCacheStartsWith } from '@/lib/swrCache';
 import ResourcePreview from '@/components/admin/ResourcePreview';
+import ExecutionDetailPanel from '@/components/admin/ExecutionDetailPanel';
 import { cn } from '@/lib/utils';
-import EvidenceDebateCourt from '@/components/resources/EvidenceDebateCourt';
+import { agents as generationAgents, CollaborationRounds, AgentWorkflowSummary, eventDisplayTitle, isLifecycleEvent } from '@/pages/CollaborationWorkbench';
 
 type ResourceKind = 'lecture' | 'practice' | 'quiz' | 'ppt';
 type View = 'library' | 'archive';
@@ -810,32 +811,7 @@ function TaskDrawer({ open, tasks, busy, focusTaskId, onClose, onCancel, onRetry
   );
 }
 
-const generationAgents = [
-  { id: 'DIA-01', name: '教学策划 Agent', duty: '分析目标并形成教学蓝图' },
-  { id: 'RET-02', name: '知识检索 Agent', duty: '查找知识库与可信补充资料' },
-  { id: 'GEN-03', name: '内容生成 Agent', duty: '生成资源并执行定向返工' },
-  { id: 'VER-04', name: '质量核验 Agent', duty: '检查结构、引用与一致性' },
-  { id: 'ARB-05', name: '发布仲裁 Agent', duty: '决定入库、返工或终止' },
-] as const;
 
-function snapshotEntries(snapshot: Record<string, unknown>): Array<[string, string]> {
-  const labels: Record<string, string> = {
-    activity: '当前动作', topic: '主题', query: '知识范围', ragCount: '知识库切片', webCount: '补充资料',
-    sourceTitles: '命中切片', coverage: '内容覆盖', acceptanceRubric: '验收标准', resourceType: '资源类型',
-    chapterCount: '章节数', stepCount: '步骤数', questionCount: '题目数', sourceCount: '引用来源',
-    citationVerified: '引用核验', issueCount: '发现问题', issues: '问题摘要',
-    decision: '知识依据结论', highFidelityScore: '知识依据充分度', fallbackUsed: '是否补充检索',
-    knowledgeCoreCount: '结构化知识切片',
-  };
-  const hidden = new Set(['requestId', 'traceId', 'promptVersion', 'model']);
-  return Object.entries(snapshot).filter(([key]) => !hidden.has(key)).map(([key, value]) => {
-    let rendered = Array.isArray(value) ? value.map(String).join('、') : typeof value === 'boolean' ? (value ? '是' : '否') : String(value ?? '—');
-    if (key === 'highFidelityScore' && Number.isFinite(Number(value))) rendered = `${Math.round(Number(value) * 100)} 分`;
-    if (key === 'fallbackUsed') rendered = value ? '已补充更多资料' : '现有知识依据充足';
-    if (key === 'decision') rendered = ({ allow: '可继续生成', permit: '依据充分', restrict: '需谨慎使用', block: '依据不足', deny: '依据不足', eligible: '可继续生成', ineligible: '依据不足' } as Record<string, string>)[String(value)] ?? rendered;
-    return [labels[key] ?? key, rendered];
-  });
-}
 
 function GenerationProcessModal({ task, onClose }: { task: GenerationTask | null; onClose: () => void }) {
   const [events, setEvents] = useState<AdminGenerationEvent[]>([]);
@@ -857,8 +833,11 @@ function GenerationProcessModal({ task, onClose }: { task: GenerationTask | null
   const latest = events.at(-1);
   const active = activeGenerationStatuses.has(task.status) && (!latest || activeGenerationStatuses.has(latest.status));
   const effectiveAgent = selectedAgent || latest?.agent || generationAgents[0].id;
-  const selectedAgentEvents = events.filter((event) => event.agent === effectiveAgent);
-  const selectedEvent = selectedAgentEvents.find((event) => event.seq === selectedEventSeq) ?? selectedAgentEvents.at(-1);
+  const selectedEvent = events.find((event) => event.seq === selectedEventSeq) ?? events.filter((event) => event.agent === effectiveAgent).at(-1);
+  const selectGenerationEvent = (event: AdminGenerationEvent, _lifecycle?: boolean) => {
+    setSelectedEventSeq(event.seq);
+    if (!isLifecycleEvent(event)) setSelectedAgent(event.agent);
+  };
   const selectAgent = (id: string) => {
     setSelectedAgent(id);
     setSelectedEventSeq(events.filter((event) => event.agent === id).at(-1)?.seq ?? null);
@@ -866,79 +845,62 @@ function GenerationProcessModal({ task, onClose }: { task: GenerationTask | null
   const context = taskContext(task);
   return (
     <div className="fixed inset-0 z-[95] flex items-center justify-center bg-ink/35 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <div className="flex h-[min(78vh,800px)] w-full max-w-[1060px] flex-col overflow-hidden rounded-3xl border border-white/80 bg-[#f7f5ee] shadow-2xl">
-        <header className="flex items-start gap-3 border-b border-white/75 bg-white/35 px-6 py-5">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-brand text-paper"><Sparkles size={20} /></div>
+      <div className="flex h-[min(85vh,900px)] w-full max-w-[1200px] flex-col overflow-hidden rounded-3xl border border-white/80 bg-[#f7f5ee] shadow-2xl">
+        <header className="flex shrink-0 items-start gap-3 border-b border-white/75 bg-white/35 px-6 py-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-brand text-paper"><Sparkles size={18} /></div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-lg font-bold text-ink">AI 教研组 · 实时协同过程</h3>
+              <h3 className="text-base font-bold text-ink">AI 教研组 · 协同过程</h3>
               <span className="lf-pill lf-pill-null">只读</span>
-              {active && <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-brand"><span className="h-2 w-2 animate-pulse rounded-full bg-brand" />流式连接中</span>}
+              {active && <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-brand"><span className="h-2 w-2 animate-pulse rounded-full bg-brand" />进行中</span>}
             </div>
-            <p className="mt-1 truncate text-xs text-ink-muted">{String(context.topicName || task.title)} · {task.taskKind === 'ppt' ? '交互课件' : typeText[task.resourceType]}</p>
+            <p className="mt-0.5 truncate text-xs text-ink-muted">{String(context.topicName || task.title)} · {task.taskKind === 'ppt' ? '交互课件' : typeText[task.resourceType]}</p>
           </div>
           <button onClick={onClose} className="lf-row-btn !p-2" aria-label="关闭"><X size={16} /></button>
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
-          <section className="grid shrink-0 gap-2 md:grid-cols-5">
-            {generationAgents.map((agent) => {
-              const agentEvents = events.filter((event) => event.agent === agent.id);
-              const isRunning = active && latest?.agent === agent.id;
-              const done = agentEvents.length > 0 && !isRunning;
-              return (
-                <button type="button" onClick={() => selectAgent(agent.id)} key={agent.id} className={cn('h-[118px] rounded-2xl border p-3 text-left transition-all', effectiveAgent === agent.id ? 'border-brand bg-brand-tint/80 shadow-sm ring-2 ring-brand/10' : isRunning ? 'border-brand/50 bg-brand-tint/50' : done ? 'border-emerald-200 bg-emerald-50/60 hover:border-emerald-300' : 'border-white/80 bg-white/45 hover:border-brand/25')}>
-                  <div className="flex items-center gap-2">
-                    <span className={cn('flex h-7 w-7 items-center justify-center rounded-lg text-[10px] font-bold', isRunning ? 'bg-brand text-white' : done ? 'bg-emerald-100 text-emerald-700' : 'bg-white/80 text-ink-muted')}>{agent.id.slice(0, 3)}</span>
-                    {isRunning ? <Loader2 size={13} className="animate-spin text-brand" /> : done ? <CheckCircle2 size={13} className="text-emerald-600" /> : <span className="h-2 w-2 rounded-full bg-ink-muted/30" />}
-                    <span className="ml-auto text-[9px] text-ink-muted">{agentEvents.length} 项</span>
-                  </div>
-                  <p className="mt-2 text-xs font-bold text-ink">{agent.name}</p>
-                  <p className="mt-1 text-[10px] leading-4 text-ink-muted">{isRunning ? String(latest?.snapshot?.activity || latest?.title || agent.duty) : agent.duty}</p>
-                </button>
-              );
-            })}
-          </section>
-          <EvidenceDebateCourt events={events} />
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
+          <AgentWorkflowSummary events={events} running={active} />
 
-          <section className="grid shrink-0 gap-4 lg:h-[min(46vh,400px)] lg:grid-cols-[0.9fr_1.1fr]">
-            <div className="flex min-h-0 flex-col rounded-2xl border border-white/80 bg-white/50 p-4">
-              <div className="flex shrink-0 items-center justify-between"><div className="flex items-center gap-2"><Radio size={14} className={active ? 'text-brand' : 'text-ink-muted'} /><h4 className="text-sm font-bold text-ink">{generationAgents.find((agent) => agent.id === effectiveAgent)?.name} · 工作流</h4></div><span className="text-[10px] text-ink-muted">{selectedAgentEvents.length} 项</span></div>
-              <div className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
-                {selectedAgentEvents.map((event) => (
-                  <button type="button" onClick={() => setSelectedEventSeq(event.seq)} key={event.seq} className={cn('flex w-full gap-3 rounded-xl px-3 py-2.5 text-left transition-colors', event.seq === selectedEvent?.seq ? 'bg-brand-tint/70 ring-1 ring-brand/20' : 'hover:bg-white/60')}>
-                    <span className="shrink-0 font-mono text-[10px] text-ink-muted">{event.time ? new Date(event.time).toLocaleTimeString('zh-CN', { hour12: false }) : '--:--:--'}</span>
-                    <div className="min-w-0 flex-1"><span className="text-[11px] font-bold text-ink">{event.title}</span><p className="mt-1 line-clamp-2 text-[11px] leading-5 text-ink-muted">{event.detail}</p></div>
-                  </button>
-                ))}
-                {!selectedAgentEvents.length && <p className="py-12 text-center text-xs text-ink-muted">该 Agent 暂无执行记录</p>}
+          <div className="flex min-h-0 flex-1 gap-3">
+            {/* 泳道 */}
+            <div className="flex min-w-0 flex-1 flex-col rounded-2xl border border-white/70 bg-[#f7f5ee]/75">
+              <div className="flex shrink-0 items-center gap-2 border-b border-white/70 px-3 py-2">
+                <h3 className="text-sm font-bold text-ink">协作泳道</h3>
+                <span className="text-[10px] text-ink-muted">列头即成员 · 时间自上而下</span>
               </div>
-              {streamError && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-[11px] text-red-600">{streamError}</p>}
-            </div>
-
-            <div className="flex min-h-0 flex-col rounded-2xl border border-white/80 bg-white/50 p-4">
-              <div className="shrink-0">
-                <h4 className="text-sm font-bold text-ink">执行详情</h4>
-                <p className="mt-1 text-[10px] text-ink-muted">点击左侧任一事件，可回溯当时的具体操作与结果</p>
-              </div>
-              <div className="mt-3 min-h-0 flex-1 overflow-y-auto">
-                {selectedEvent ? (
-                  <>
-                    <p className="text-sm font-semibold text-ink">{selectedEvent.agentName} · {selectedEvent.title}</p>
-                    <p className="mt-1 text-xs leading-5 text-ink-muted">{selectedEvent.detail}</p>
-                    <div className="mt-3 space-y-2">
-                      {snapshotEntries(selectedEvent.snapshot).map(([label, value]) => (
-                        <div key={label} className="rounded-xl bg-white/65 px-3 py-2"><span className="text-[10px] font-semibold text-ink-muted">{label}</span><p className="mt-0.5 whitespace-pre-wrap text-xs leading-5 text-ink-2">{value}</p></div>
-                      ))}
-                      {!Object.keys(selectedEvent.snapshot).length && <p className="py-8 text-center text-xs text-ink-muted">该事件没有额外的结构化执行详情</p>}
-                    </div>
-                  </>
+              <div className="min-h-0 flex-1 p-3">
+                {events.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-xs text-ink-muted">{streamError || '等待第一条协同事件…'}</div>
                 ) : (
-                  <div className="flex h-full items-center justify-center py-8 text-center text-xs text-ink-muted">请先选择一个有执行记录的 Agent</div>
+                  <CollaborationRounds events={events} selectedSeq={selectedEvent?.seq ?? null} selectedAgent={effectiveAgent} runningAgent={active && latest ? latest.agent : null} running={active} onSelect={(event) => void selectGenerationEvent(event, isLifecycleEvent(event))} onSelectAgent={selectAgent} />
                 )}
               </div>
             </div>
-          </section>
+
+            {/* 执行详情 */}
+            <aside className="flex w-full shrink-0 flex-col rounded-2xl border border-white/70 bg-white/45 lg:w-[340px]">
+              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-white/70 px-4 py-3">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-bold text-ink">执行详情</h3>
+                  <p className="mt-0.5 text-[10px] text-ink-muted">操作、结论、依据与下一步</p>
+                </div>
+                {selectedEvent && <span className="lf-pill lf-pill-null shrink-0">{selectedEvent.agentName || (generationAgents.find((item) => item.id === selectedEvent.agent)?.name ?? selectedEvent.agent)}</span>}
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                {selectedEvent ? (
+                  <ExecutionDetailPanel key={selectedEvent.seq} event={selectedEvent} title={eventDisplayTitle(selectedEvent)} running={active && selectedEvent.seq === latest?.seq} summaryLoading={false} />
+                ) : (
+                  <div className="mt-6 rounded-xl border border-dashed border-white/80 bg-white/30 px-4 py-10 text-center text-xs leading-6 text-ink-muted">
+                    尚未选择事件
+                    <br />点击泳道中的工作单元查看执行细节
+                  </div>
+                )}
+              </div>
+            </aside>
+          </div>
+
+          {streamError && <p className="shrink-0 rounded-xl bg-red-50 px-3 py-2 text-[11px] text-red-600">{streamError}</p>}
         </div>
       </div>
     </div>

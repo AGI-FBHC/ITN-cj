@@ -21,7 +21,7 @@ type WorkbenchTask =
   | ({ taskKind: 'resource' } & LearningResourceGenerationTask)
   | ({ taskKind: 'ppt'; resourceType: 'ppt' } & PresentationTaskSummary);
 
-const agents = [
+export const agents = [
   { id: 'DIA-01', name: '教学策划 Agent', duty: '目标、画像与教学蓝图', icon: planningAgentIcon },
   { id: 'RET-02', name: '知识检索 Agent', duty: '知识切片、补充资料与证据', icon: retrievalAgentIcon },
   { id: 'GEN-03', name: '内容生成 Agent', duty: '初稿生成与定向修订', icon: generationAgentIcon },
@@ -31,12 +31,12 @@ const agents = [
 const activeStatuses = new Set(['queued', 'retrieving', 'debating', 'planning', 'analyzing', 'generating', 'verifying', 'reviewing', 'revising', 'judging', 'outline_review']);
 const typeText: Record<string, string> = { lecture: '讲义', practice: '实操指南', quiz: '题库', ppt: '交互课件' };
 
-function eventDisplayTitle(event: AdminGenerationEvent) {
+export function eventDisplayTitle(event: AdminGenerationEvent) {
   if (event.title === '内容—证据一致性辩论完成') return '一致性辩论组';
   return event.title.replace('轻量质量检查', '质量检查').replace('轻量检查', '质量检查');
 }
 
-function isLifecycleEvent(event: AdminGenerationEvent) {
+export function isLifecycleEvent(event: AdminGenerationEvent) {
   return event.agent === 'SYSTEM' || event.actorType === 'system' || event.eventType === 'task_lifecycle'
     || ['任务已创建', '任务取消', '生成完成', '任务已结束', '任务被取消'].includes(event.title);
 }
@@ -184,7 +184,7 @@ function FlowLink({ fromCol, toCol }: { fromCol: number; toCol: number }) {
   );
 }
 
-function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent, running, onSelect, onSelectAgent }: {
+export function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent, running, onSelect, onSelectAgent }: {
   events: AdminGenerationEvent[];
   selectedSeq: number | null;
   selectedAgent: string;
@@ -310,7 +310,7 @@ function CollaborationRounds({ events, selectedSeq, selectedAgent, runningAgent,
   );
 }
 
-function AgentWorkflowSummary({ events, running }: { events: AdminGenerationEvent[]; running: boolean }) {
+export function AgentWorkflowSummary({ events, running }: { events: AdminGenerationEvent[]; running: boolean }) {
   const path = events.filter((event) => !isLifecycleEvent(event)).reduce<string[]>((result, event) => {
     if (result.at(-1) !== event.agent) result.push(event.agent);
     return result;
