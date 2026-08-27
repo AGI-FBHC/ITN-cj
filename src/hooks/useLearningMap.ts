@@ -532,12 +532,11 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
       });
     });
 
-    const graphEdges: GraphEdge[] = tree.edges.map((edge) => ({
-      from: edge.from,
-      to: edge.to,
-      kind: edge.kind,
-      note: edge.note ?? '',
-    }));
+    // Filter edges: only keep those where both endpoints exist in graphNodes
+    const nodeIds = new Set(graphNodes.map((n) => n.id));
+    const graphEdges: GraphEdge[] = tree.edges
+      .map((edge) => ({ from: edge.from, to: edge.to, kind: edge.kind, note: edge.note ?? '' }))
+      .filter((edge) => nodeIds.has(edge.from) && nodeIds.has(edge.to));
 
     const resourceByKp: Record<string, Array<GeneratedResource & { id: string; learned?: boolean; started?: boolean }>> = {};
     resources.forEach((resource) => {
