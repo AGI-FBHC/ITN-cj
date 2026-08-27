@@ -21,7 +21,6 @@ import TraceBadge from '@/components/TraceBadge';
 import { SprigTop, PottedPlant, LeafDivider } from '@/components/heal/Flora';
 import GardenCard from '@/components/heal/GardenCard';
 import { useWrongBook } from '@/context/WrongBookContext';
-import FirstRunGuide from '@/components/heal/FirstRunGuide';
 import WeekReview from '@/components/heal/WeekReview';
 import ConfidenceBadge from '@/components/ConfidenceBadge';
 
@@ -243,7 +242,6 @@ export default function LearnerHome() {
       </motion.section>
 
       {/* 首次使用引导：这是什么 / 你在哪 / 先做哪一步 */}
-      <FirstRunGuide />
 
       {/* 诗意标语（治愈 · 去焦虑） */}
       <motion.p {...fadeUp} className="mt-5 px-0.5 text-[14px] leading-relaxed text-ink-2">
