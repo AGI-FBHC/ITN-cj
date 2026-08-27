@@ -516,13 +516,14 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
             <label className="block">
               <span className="mb-1.5 block text-xs font-semibold text-ink-2">领域</span>
               <select value={domainCode} onChange={(e) => setDomainCode(e.target.value)} className={selectCls}>
+                {domains.length === 0 && <option value="">正在加载领域…</option>}
                 {domains.map((domain) => <option key={domain.code} value={domain.code}>{domain.name}（{domain.code}）</option>)}
               </select>
             </label>
             <label className="block">
               <span className="mb-1.5 block text-xs font-semibold text-ink-2">章节</span>
               <select value={chapterCode} onChange={(e) => { setChapterCode(e.target.value); setKpCode(''); }} className={selectCls} disabled={!chapters.length}>
-                <option value="">{chapters.length ? '请选择章节' : '该领域暂无章节'}</option>
+                <option value="">{chapters.length ? '请选择章节' : domainCode ? (tree === null ? '正在加载章节…' : '该领域暂无章节') : '请选择领域'}</option>
                 {chapters.map((item) => <option key={item.node.nodeCode} value={item.node.nodeCode}>{item.path}</option>)}
               </select>
             </label>
@@ -953,6 +954,14 @@ export default function CollaborationWorkbench() {
   const streamBufferRef = useRef<AdminGenerationEvent[]>([]);
   const streamFlushTimerRef = useRef<number | null>(null);
   const backfillTriggeredRef = useRef<Set<string>>(new Set());
+  const initialSelectionClearedRef = useRef(false);
+  useEffect(() => {
+    if (initialSelectionClearedRef.current) return;
+    initialSelectionClearedRef.current = true;
+    setParams({}, { replace: true });
+    // 进入工作台默认不自动打开任务，避免右侧流和回填导致首屏卡顿。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const load = async () => {
     if (loadInFlightRef.current) return;
@@ -968,17 +977,11 @@ export default function CollaborationWorkbench() {
       pptTasks = presentations.tasks.filter((task) => task.request?.generationContext?.adminGeneration === true)
         .map((task) => ({ ...task, taskKind: 'ppt' as const, resourceType: 'ppt' as const }));
     }
+    setTasks(resourceTasks);
+    setLoading(false);
     const next = [...resourceTasks, ...pptTasks].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
     const visible = next.filter((item) => !deletedKeysRef.current.includes(taskKey(item)));
     setTasks(visible);
-    /* 新建任务后自动切换到最新任务泳道：列表最上方出现此前未见过的任务即为新增 */
-    const newest = visible[0];
-    const newestKey = newest ? taskKey(newest) : null;
-    if (newestKey && !previousTaskKeysRef.current.has(newestKey) && !(newestKey === selectedKey)) {
-      setParams({ task: newestKey });
-    } else if (newestKey && !selectedKey) {
-      setParams({ task: newestKey }, { replace: true });
-    }
     visible.forEach((item) => {
       const key = taskKey(item);
       const prev = prevTaskStatusRef.current.get(key);
