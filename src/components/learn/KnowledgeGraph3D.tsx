@@ -424,6 +424,70 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpIds: Set<
   }, [nodes, expandedKpIds, domainLayout, focusId]);
 }
 
+/** 有向边末端的静态圆锥箭头：尖端指向目标节点 */
+function EdgeArrow({
+  fromPos,
+  toPos,
+  color,
+  dimmed = false,
+  hovered = false,
+  fromOffset,
+  toOffset,
+  animRef,
+  fadeOnFocus,
+  targetId,
+  nodeScaleRef,
+}: {
+  fromPos: THREE.Vector3;
+  toPos: THREE.Vector3;
+  color: string;
+  dimmed?: boolean;
+  hovered?: boolean;
+  fromOffset?: THREE.Vector3;
+  toOffset?: THREE.Vector3;
+  animRef: BlendRef;
+  fadeOnFocus?: boolean;
+  targetId?: string;
+  nodeScaleRef?: React.MutableRefObject<Map<string, number>>;
+}) {
+  const meshRef = useRef<THREE.Mesh | null>(null);
+  const curFrom = useRef(fromPos.clone());
+  const curTo = useRef(toPos.clone());
+  const upAxis = useMemo(() => new THREE.Vector3(0, 1, 0), []);
+
+  useFrame(() => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    // 聚焦动画期间逐帧弹性跟随端点
+    const b = animRef.current.blend;
+    const tf = fromPos.clone();
+    if (fromOffset) tf.addScaledVector(fromOffset, b);
+    const tt = toPos.clone();
+    if (toOffset) tt.addScaledVector(toOffset, b);
+    curFrom.current.lerp(tf, 0.18);
+    curTo.current.lerp(tt, 0.18);
+
+    const dir = curTo.current.clone().sub(curFrom.current);
+    const len = Math.max(dir.length(), 0.001);
+    dir.normalize();
+    // 箭头尖端贴着目标节点的实时表面（节点选中放大时自动让开），普通节点不留大缝
+    const targetScale = (targetId && nodeScaleRef?.current.get(targetId)) || 1;
+    const pad = Math.min(3 * targetScale + 0.85, len * 0.45);
+    mesh.position.copy(curTo.current).addScaledVector(dir, -pad);
+    // 圆锥默认沿 +Y 指向尖端，旋转到边的方向
+    mesh.quaternion.setFromUnitVectors(upAxis, dir);
+    const focusFade = fadeOnFocus ? 1 - 0.65 * b : 1;
+    (mesh.material as THREE.MeshBasicMaterial).opacity = (dimmed ? 0.12 : hovered ? 1 : 0.9) * focusFade;
+    mesh.scale.setScalar(hovered ? 1.2 : 1);
+  });
+
+  return (
+    <mesh ref={meshRef}>
+      <coneGeometry args={[0.38, 1.0, 16]} />
+      <meshBasicMaterial color={color} transparent depthWrite={false} />
+    </mesh>
+  );
+}
 
 /** 进度环 */
 function ProgressRing({
@@ -1143,49 +1207,6 @@ function Node3D({
   );
 }
 
-/** 有向边末端的静态圆锥箭头 */
-function EdgeArrow({
-  fromPos, toPos, color, dimmed = false, hovered = false,
-  fromOffset, toOffset, animRef, fadeOnFocus, targetId, nodeScaleRef,
-}: {
-  fromPos: THREE.Vector3; toPos: THREE.Vector3; color: string;
-  dimmed?: boolean; hovered?: boolean; fromOffset?: THREE.Vector3; toOffset?: THREE.Vector3;
-  animRef: BlendRef; fadeOnFocus?: boolean; targetId?: string;
-  nodeScaleRef?: React.MutableRefObject<Map<string, number>>;
-}) {
-  const meshRef = useRef<THREE.Mesh | null>(null);
-  const curFrom = useRef(fromPos.clone());
-  const curTo = useRef(toPos.clone());
-  const upAxis = useMemo(() => new THREE.Vector3(0, 1, 0), []);
-  useFrame(() => {
-    const mesh = meshRef.current;
-    if (!mesh) return;
-    const b = animRef.current.blend;
-    const tf = fromPos.clone();
-    if (fromOffset) tf.addScaledVector(fromOffset, b);
-    const tt = toPos.clone();
-    if (toOffset) tt.addScaledVector(toOffset, b);
-    curFrom.current.lerp(tf, 0.18);
-    curTo.current.lerp(tt, 0.18);
-    const dir = curTo.current.clone().sub(curFrom.current);
-    const len = Math.max(dir.length(), 0.001);
-    dir.normalize();
-    const targetScale = (targetId && nodeScaleRef?.current.get(targetId)) || 1;
-    const pad = Math.min(3 * targetScale + 0.85, len * 0.45);
-    mesh.position.copy(curTo.current).addScaledVector(dir, -pad);
-    mesh.quaternion.setFromUnitVectors(upAxis, dir);
-    const focusFade = fadeOnFocus ? 1 - 0.65 * b : 1;
-    (mesh.material as THREE.MeshBasicMaterial).opacity = (dimmed ? 0.1 : hovered ? 0.8 : 0.6) * focusFade;
-    mesh.scale.setScalar(hovered ? 1.2 : 1);
-  });
-  return (
-    <mesh ref={meshRef}>
-      <coneGeometry args={[0.3, 0.8, 12]} />
-      <meshBasicMaterial color={color} transparent depthWrite={false} />
-    </mesh>
-  );
-}
-
 /** 3D 连线 */
 function Edge3D({
   fromPos,
@@ -1255,24 +1276,33 @@ function Edge3D({
 
   return (
     <group>
+      {/* 单条连续直线，避免分段渲染产生接缝 */}
       <Line
         ref={lineRef}
         renderOrder={-1}
         points={[fromPos, toPos]}
         color={color}
-        lineWidth={isChildLink ? 2 : hovered ? 3 : 2}
+        lineWidth={isChildLink ? 3 : hovered ? 4.5 : 3}
         transparent
-        opacity={dimmed ? 0.06 : hovered ? 0.7 : isChildLink ? 0.35 : 0.35}
+        opacity={dimmed ? 0.06 : hovered ? 0.9 : isChildLink ? 0.5 : 0.5}
         dashed={dashed}
         dashSize={1.5}
         gapSize={0.8}
       />
+
+      {/* 末端静态箭头：指向目标节点 */}
       <EdgeArrow
-        fromPos={fromPos} toPos={toPos} color={color}
-        dimmed={dimmed} hovered={hovered}
-        fromOffset={fromOffset} toOffset={toOffset}
-        animRef={animRef} fadeOnFocus={fadeOnFocus}
-        targetId={targetId} nodeScaleRef={nodeScaleRef}
+        fromPos={fromPos}
+        toPos={toPos}
+        color={color}
+        dimmed={dimmed}
+        hovered={hovered}
+        fromOffset={fromOffset}
+        toOffset={toOffset}
+        animRef={animRef}
+        fadeOnFocus={fadeOnFocus}
+        targetId={targetId}
+        nodeScaleRef={nodeScaleRef}
       />
     </group>
   );
