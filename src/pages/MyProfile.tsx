@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { Save, Sparkles, Brain, History, PlusCircle, RotateCcw, HelpCircle, Clock3, Flame, ClipboardCheck, ArrowRight } from 'lucide-react';
+import { Save, Sparkles, Brain, History, RotateCcw, HelpCircle, Clock3, Flame, ClipboardCheck, ArrowRight } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
 import { useLearningMap } from '@/hooks/useLearningMap';
 import { deriveAbilityScores } from '@/lib/abilityAdjust';
@@ -323,10 +323,6 @@ export default function MyProfile() {
             <ConfidenceBadge learnerId={currentLearner.id} />
           </p>
         </div>
-        <Link to="/onboarding" className="lf-btn-ghost !px-4 !py-2 text-[13px]">
-          <PlusCircle size={15} />
-          新建画像
-        </Link>
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
