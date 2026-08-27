@@ -35,7 +35,6 @@ import type { KBSlice, KBType } from '@/data/kbSlices';
 import { getKnowledgePoint } from '@/data/knowledgePoints';
 import { getLearner } from '@/data/learners';
 import type { ResourceForm } from '@/data/resources';
-import { useProfile } from '@/context/ProfileContext';
 import { kbTypeColor, resourceHref, referencingResources, resourceFormLabel } from './kb-utils';
 import { cn } from '@/lib/utils';
 
@@ -65,7 +64,7 @@ export default function KBDetailDrawer({
   onFilterKp: (kpId: string) => void;
 }) {
   const navigate = useNavigate();
-  const { currentLearnerId, setCurrentLearnerId } = useProfile();
+  
   if (!slice) return null;
   const TypeIcon = typeIcon[slice.type];
   const tone = kbTypeColor[slice.type];
@@ -74,10 +73,6 @@ export default function KBDetailDrawer({
   const citedBy = referencingResources(slice.id);
 
   const goToResource = (r: (typeof citedBy)[number]) => {
-    if (r.learnerId !== currentLearnerId) {
-      setCurrentLearnerId(r.learnerId);
-      toast.success(`已切换画像至 ${getLearner(r.learnerId).name}`);
-    }
     onOpenChange(false);
     navigate(`/resources?tab=${r.form}`);
   };

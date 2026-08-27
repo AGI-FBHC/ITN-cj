@@ -16,7 +16,6 @@ import {
   Target,
   UserRound,
 } from 'lucide-react';
-import { toast } from 'sonner';
 import AgentChip from '@/components/AgentChip';
 import ChartCard, { ReactECharts } from '@/components/ChartCard';
 import LiveDot from '@/components/LiveDot';
@@ -87,7 +86,6 @@ function ProfileCard({
   current,
   selected,
   onSelect,
-  onSetCurrent,
 }: {
   learner: Learner;
   points: OnboardingKnowledgePoint[];
@@ -95,7 +93,6 @@ function ProfileCard({
   current: boolean;
   selected: boolean;
   onSelect: () => void;
-  onSetCurrent: () => void;
 }) {
   const color = profileColors[index % profileColors.length];
   const ordered = [...points]
@@ -150,13 +147,9 @@ function ProfileCard({
 
         <div className="mt-3 flex flex-wrap gap-1.5">{learner.learningStyle.map((style) => <span key={style} className="lf-chip !px-2 !py-0.5 !text-[11px]">{style}</span>)}</div>
         <p className="mt-3 line-clamp-3 flex-1 text-[12.5px] italic leading-[21px] text-ink-muted">{learner.diagnosisSummary || 'DIA-01 尚未生成诊断摘要。'}</p>
-        <button
-          type="button"
-          onClick={(event) => { event.stopPropagation(); if (!current) onSetCurrent(); }}
-          className={cn('mt-4 w-full', current ? 'lf-btn-primary cursor-default' : 'lf-btn-ghost')}
-        >
-          {current ? <><Check size={14} />当前画像</> : '设为当前画像'}
-        </button>
+        <div className={cn('mt-4 w-full rounded-[10px] py-2 text-center text-[13px] font-medium', current ? 'bg-brand-tint text-brand' : 'bg-paper-deep text-ink-muted')}>
+          {current ? <><Check size={14} className="mr-1 inline" />当前画像</> : '画像详情'}
+        </div>
       </div>
     </motion.article>
   );
@@ -283,7 +276,7 @@ function Comparison({ learners, points }: { learners: Learner[]; points: Onboard
 
 export default function Profiles() {
   const { session } = useAuth();
-  const { learners, currentLearnerId, setCurrentLearnerId, domainKnowledgePoints } = useProfile();
+  const { learners, currentLearnerId, domainKnowledgePoints } = useProfile();
   const [searchParams, setSearchParams] = useSearchParams();
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [remoteProfiles, setRemoteProfiles] = useState<LearnerProfileData[]>([]);
@@ -321,23 +314,10 @@ export default function Profiles() {
     if (selected && selected.id !== selectedId) setSelectedId(selected.id);
   }, [selected, selectedId]);
 
-  useEffect(() => {
-    if (realLearners.length > 0 && !realLearners.some((learner) => learner.id === currentLearnerId)) {
-      setCurrentLearnerId(realLearners[0].id);
-    }
-  }, [currentLearnerId, realLearners, setCurrentLearnerId]);
-
   const selectProfile = (id: string) => {
     setSelectedId(id);
     setSearchParams({ learner: id }, { replace: true });
     requestAnimationFrame(() => detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
-  };
-
-  const setCurrent = (learner: Learner) => {
-    setCurrentLearnerId(learner.id);
-    setSelectedId(learner.id);
-    setSearchParams({ learner: learner.id }, { replace: true });
-    toast.success(`已切换为 ${learner.name}`, { description: '课程、资源、导学与报告将使用这份真实画像。' });
   };
 
   if (loadState === 'loading' || (loadState === 'ready' && remoteProfiles.length > 0 && realLearners.length === 0)) {
@@ -368,7 +348,7 @@ export default function Profiles() {
       </header>
 
       <div className={cn('grid gap-5', realLearners.length === 1 ? 'max-w-[430px]' : 'md:grid-cols-2 xl:grid-cols-3')}>
-        {realLearners.map((learner, index) => <ProfileCard key={learner.id} learner={learner} points={domainKnowledgePoints} index={index} current={learner.id === currentLearnerId} selected={learner.id === selected.id} onSelect={() => selectProfile(learner.id)} onSetCurrent={() => setCurrent(learner)} />)}
+        {realLearners.map((learner, index) => <ProfileCard key={learner.id} learner={learner} points={domainKnowledgePoints} index={index} current={learner.id === currentLearnerId} selected={learner.id === selected.id} onSelect={() => selectProfile(learner.id)} />)}
       </div>
 
       <div ref={detailRef} className="mt-14 scroll-mt-20">

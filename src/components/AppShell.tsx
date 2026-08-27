@@ -19,8 +19,6 @@ import {
   Search,
   PanelLeftClose,
   PanelLeftOpen,
-  ChevronDown,
-  Check,
   GraduationCap,
   Cpu,
   NotebookPen,
@@ -36,14 +34,7 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useProfile } from '@/context/ProfileContext';
@@ -166,64 +157,6 @@ function ModeToggle({
   );
 }
 
-/** 画像切换下拉（两种布局共用） */
-function ProfileSwitcher({
-  currentLearner,
-  currentLearnerId,
-  learners,
-  onSwitch,
-}: {
-  currentLearner: ReturnType<typeof useProfile>['currentLearner'];
-  currentLearnerId: string;
-  learners: ReturnType<typeof useProfile>['learners'];
-  onSwitch: (id: string) => void;
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className="flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] border border-hairline bg-card-warm pl-1 pr-2 transition-all duration-200 hover:border-brand/35"
-        >
-          <Avatar className="h-6 w-6 border border-hairline">
-            <AvatarImage src={currentLearner.avatar} alt={currentLearner.name} />
-            <AvatarFallback className="bg-brand-tint text-[11px] text-brand">
-              {currentLearner.name.slice(0, 1)}
-            </AvatarFallback>
-          </Avatar>
-          <span className="hidden whitespace-nowrap text-[12.5px] font-medium text-ink xl:inline">{currentLearner.name}</span>
-          <ChevronDown size={13} className="text-ink-muted" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64 border-hairline bg-card-warm">
-        <DropdownMenuLabel className="lf-mono-label !text-[10px]">切换学习者画像</DropdownMenuLabel>
-        <DropdownMenuSeparator className="bg-hairline" />
-        {learners.map((l) => (
-          <DropdownMenuItem
-            key={l.id}
-            onClick={() => onSwitch(l.id)}
-            className="flex cursor-pointer items-center gap-3 py-2.5 focus:bg-brand-tint"
-          >
-            <Avatar className="h-8 w-8 border border-hairline">
-              <AvatarImage src={l.avatar} alt={l.name} />
-              <AvatarFallback className="bg-brand-tint text-[11px] text-brand">
-                {l.name.slice(0, 1)}
-              </AvatarFallback>
-            </Avatar>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[13.5px] font-medium text-ink">{l.name}</span>
-              <span className="block truncate text-[11.5px] text-ink-muted">
-                {l.tag} · {l.role}
-              </span>
-            </span>
-            {l.id === currentLearnerId && <Check size={15} className="text-brand" />}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 /** 侧栏导航项（系统透视用） */
 function SideNavRow({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
   return (
@@ -265,9 +198,6 @@ export default function AppShell() {
   const [drawerKb, setDrawerKb] = useState<string | null>(null);
   const {
     currentLearner,
-    currentLearnerId,
-    setCurrentLearnerId,
-    learners,
     demoMode,
     setDemoMode,
     viewMode,
@@ -319,15 +249,6 @@ export default function AppShell() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const switchLearner = (id: string) => {
-    if (id === currentLearnerId) return;
-    setCurrentLearnerId(id);
-    const l = learners.find((x) => x.id === id);
-    toast.success(`已切换为 ${l?.name}，全站数据已更新`, {
-      description: '画像 / 报告 / 资源 / 导学 / 协同已重新取数',
-    });
-  };
-
   const changeMode = (m: ViewMode) => {
     if (m === viewMode) return;
     setViewMode(m);
@@ -378,7 +299,7 @@ export default function AppShell() {
               ))}
             </nav>
 
-            {/* 右侧集群（画像切换仅系统透视提供——学习者视角里"我"就是当前画像） */}
+            {/* 右侧集群 */}
             <div className="ml-auto flex shrink-0 items-center gap-2 whitespace-nowrap md:ml-0">
               <TeachingGroup variant="compact" />
               <button
@@ -591,12 +512,19 @@ export default function AppShell() {
                 </label>
 
                 <ModeToggle mode={viewMode} onChange={changeMode} />
-                <ProfileSwitcher
-                  currentLearner={currentLearner}
-                  currentLearnerId={currentLearnerId}
-                  learners={learners}
-                  onSwitch={switchLearner}
-                />
+                <Link
+                  to="/me/profile"
+                  title={currentLearner.name}
+                  className="flex h-8 shrink-0 items-center gap-1.5 rounded-[9px] border border-hairline bg-card-warm pl-1 pr-2.5 transition-all duration-200 hover:border-brand/35"
+                >
+                  <Avatar className="h-6 w-6 border border-hairline">
+                    <AvatarImage src={currentLearner.avatar} alt={currentLearner.name} />
+                    <AvatarFallback className="bg-brand-tint text-[11px] text-brand">
+                      {currentLearner.name.slice(0, 1)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="hidden whitespace-nowrap text-[12.5px] font-medium text-ink xl:inline">{currentLearner.name}</span>
+                </Link>
                 <button
                   type="button"
                   onClick={doLogout}
@@ -673,21 +601,6 @@ export default function AppShell() {
               ))}
             </CommandGroup>
           )}
-          <CommandGroup heading="学习者画像">
-            {learners.map((l) => (
-              <CommandItem
-                key={l.id}
-                value={`${l.name} ${l.tag}`}
-                onSelect={() => {
-                  setSearchOpen(false);
-                  switchLearner(l.id);
-                }}
-              >
-                <Users size={14} className="mr-2 text-brand-amber" />
-                {l.name} · {l.tag}
-              </CommandItem>
-            ))}
-          </CommandGroup>
         </CommandList>
       </CommandDialog>
 
