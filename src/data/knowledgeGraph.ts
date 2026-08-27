@@ -157,11 +157,6 @@ export const graphEdges: GraphEdge[] = [
   { from: 'kp-diagnosis-t0', to: 'kp-diagnosis-t1', kind: 'prereq', note: '读懂报警才有故障树排查' },
   { from: 'kp-safety-t0', to: 'kp-sensor-t0', kind: 'prereq', note: '安全要求是一切实操的前置' },
   /* 相关：互补/同源 */
-  { from: 'kp-sensor-t2', to: 'kp-diagnosis-t3', kind: 'related', note: '温漂数据是预测性维护的重要输入' },
-  { from: 'kp-sensor-t3', to: 'kp-vision-t1', kind: 'related', note: '重复精度决定视觉定位的可信区间' },
-  { from: 'kp-plc-t2', to: 'kp-diagnosis-t0', kind: 'related', note: '通讯丢站与报警排查同构' },
-  { from: 'kp-safety-t1', to: 'kp-diagnosis-t1', kind: 'related', note: '风险评估与故障树共用分析方法' },
-  { from: 'kp-vision-t3', to: 'kp-vision-t1', kind: 'related', note: '光照稳定是特征匹配的成败关键' },
   /* 应用：规范约束实操 */
 ];
 

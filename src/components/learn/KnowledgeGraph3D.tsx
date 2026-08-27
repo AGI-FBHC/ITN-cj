@@ -1143,6 +1143,49 @@ function Node3D({
   );
 }
 
+/** 有向边末端的静态圆锥箭头 */
+function EdgeArrow({
+  fromPos, toPos, color, dimmed = false, hovered = false,
+  fromOffset, toOffset, animRef, fadeOnFocus, targetId, nodeScaleRef,
+}: {
+  fromPos: THREE.Vector3; toPos: THREE.Vector3; color: string;
+  dimmed?: boolean; hovered?: boolean; fromOffset?: THREE.Vector3; toOffset?: THREE.Vector3;
+  animRef: BlendRef; fadeOnFocus?: boolean; targetId?: string;
+  nodeScaleRef?: React.MutableRefObject<Map<string, number>>;
+}) {
+  const meshRef = useRef<THREE.Mesh | null>(null);
+  const curFrom = useRef(fromPos.clone());
+  const curTo = useRef(toPos.clone());
+  const upAxis = useMemo(() => new THREE.Vector3(0, 1, 0), []);
+  useFrame(() => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    const b = animRef.current.blend;
+    const tf = fromPos.clone();
+    if (fromOffset) tf.addScaledVector(fromOffset, b);
+    const tt = toPos.clone();
+    if (toOffset) tt.addScaledVector(toOffset, b);
+    curFrom.current.lerp(tf, 0.18);
+    curTo.current.lerp(tt, 0.18);
+    const dir = curTo.current.clone().sub(curFrom.current);
+    const len = Math.max(dir.length(), 0.001);
+    dir.normalize();
+    const targetScale = (targetId && nodeScaleRef?.current.get(targetId)) || 1;
+    const pad = Math.min(3 * targetScale + 0.85, len * 0.45);
+    mesh.position.copy(curTo.current).addScaledVector(dir, -pad);
+    mesh.quaternion.setFromUnitVectors(upAxis, dir);
+    const focusFade = fadeOnFocus ? 1 - 0.65 * b : 1;
+    (mesh.material as THREE.MeshBasicMaterial).opacity = (dimmed ? 0.1 : hovered ? 0.8 : 0.6) * focusFade;
+    mesh.scale.setScalar(hovered ? 1.2 : 1);
+  });
+  return (
+    <mesh ref={meshRef}>
+      <coneGeometry args={[0.3, 0.8, 12]} />
+      <meshBasicMaterial color={color} transparent depthWrite={false} />
+    </mesh>
+  );
+}
+
 /** 3D 连线 */
 function Edge3D({
   fromPos,
@@ -1223,6 +1266,13 @@ function Edge3D({
         dashed={dashed}
         dashSize={1.5}
         gapSize={0.8}
+      />
+      <EdgeArrow
+        fromPos={fromPos} toPos={toPos} color={color}
+        dimmed={dimmed} hovered={hovered}
+        fromOffset={fromOffset} toOffset={toOffset}
+        animRef={animRef} fadeOnFocus={fadeOnFocus}
+        targetId={targetId} nodeScaleRef={nodeScaleRef}
       />
     </group>
   );
