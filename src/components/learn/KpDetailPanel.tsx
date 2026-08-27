@@ -218,7 +218,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
 
   if (!kpId) {
     /* 未选中章节：优先展示最近学习但未学完的资源，其次给继续学习建议。
-       只展示当前知识地图真实章节下的资源（kpId 对齐地图章节），旧知识库记录不再出现。 */
+       只展示当前知识网络真实章节下的资源（kpId 对齐地图章节），旧知识库记录不再出现。 */
     const allResources = resourcesProp ?? [];
     const realChapters = knowledgeMap?.chapters ?? [];
     const realChapterIds = new Set(realChapters.map((chapter) => chapter.id));
@@ -255,12 +255,12 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center rounded-[12px] border border-dashed border-brand/35 bg-paper px-4 py-8 text-center">
             <Route size={18} className="text-brand" />
-            <p className="mt-2 text-[13px] font-medium text-ink">还没有未学完的内容</p>
-            <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">点击左侧任一章节，就能开始生成并学习第一份资源。</p>
+            <p className="mt-2 text-[13px] font-medium text-ink">还没有已生成的内容</p>
+            <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">管理员尚未为该知识点生成资源，请联系管理员。</p>
           </div>
         )}
         <div className="mt-auto border-t border-hairline/70 pt-3">
-          <p className="font-mono text-[9.5px] tracking-wide text-ink-muted">NEXT · 从知识地图继续</p>
+          <p className="font-mono text-[9.5px] tracking-wide text-ink-muted">NEXT · 从知识网络继续</p>
           <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">页面下方的“章节速览”可直接聚焦任意章节。</p>
         </div>
       </div>
@@ -446,7 +446,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
         previousTopic,
         nextTopic,
       };
-      const requirement = `面向${currentLearner.tag}（${currentLearner.education}）制作《${focus}》教学PPT，目标是${currentLearner.targetJob}。本课件只深入当前最小知识点，不扩写成整章；内容要覆盖核心概念、原理、方法、典型应用、练习检查与回顾。讲解要自然承接知识地图中的前序内容，并为后续知识点留下必要接口，但不要机械复述地图或频繁预告下一页。`;
+      const requirement = `面向${currentLearner.tag}（${currentLearner.education}）制作《${focus}》教学PPT，目标是${currentLearner.targetJob}。本课件只深入当前最小知识点，不扩写成整章；内容要覆盖核心概念、原理、方法、典型应用、练习检查与回顾。讲解要自然承接知识网络中的前序内容，并为后续知识点留下必要接口，但不要机械复述地图或频繁预告下一页。`;
       const task = await presentationApi.createPresentation({
         requirement,
         title: wantedTitle,
@@ -465,7 +465,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
         generationContext: {
           contextType: 'knowledge-map-position',
           kpId,
-          instruction: '把知识地图作为课程上下文：默认学习者已经接触前序知识点；当前PPT只讲当前知识点；必要时自然引用前序概念，并说明它与后续知识的关系。不要把章节名称逐条念成目录，也不要把用户目标或写作要求当成知识章节。',
+          instruction: '把知识网络作为课程上下文：默认学习者已经接触前序知识点；当前PPT只讲当前知识点；必要时自然引用前序概念，并说明它与后续知识的关系。不要把章节名称逐条念成目录，也不要把用户目标或写作要求当成知识章节。',
           current: mapPosition,
           chapters: chapters.map((chapter, index) => ({
             order: index + 1,
@@ -568,7 +568,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           {topicRecommendations.map((item, index) => {
             const meta = FORM_META[item.form];
             const Icon = meta.icon;
-            return <button key={`${item.topic}-${item.form}-${index}`} type="button" onClick={() => onSelectTopic?.(item.childIndex)} className="group flex w-full items-center gap-3 rounded-[10px] border border-dashed border-brand/35 bg-paper px-3 py-2.5 text-left transition-all hover:border-brand/60 hover:bg-brand-tint/40"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-paper-deep text-brand"><Icon size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium text-ink">暂无资源 · {meta.label}</span><span className="block truncate text-[11px] text-ink-muted">先进入子知识点「{item.topic}」</span></span><ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" /></button>;
+            return <button key={`${item.topic}-${item.form}-${index}`} type="button" onClick={() => onSelectTopic?.(item.childIndex)} className="group flex w-full items-center gap-3 rounded-[10px] border border-dashed border-brand/35 bg-paper px-3 py-2.5 text-left transition-all hover:border-brand/60 hover:bg-brand-tint/40"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-paper-deep text-brand"><Icon size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium text-ink">未生成 · {meta.label}</span><span className="block truncate text-[11px] text-ink-muted">管理员未生成，请联系管理员</span></span><ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" /></button>;
           })}
         </div>
       </div>}
@@ -576,7 +576,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
       {/* 子知识点资源入口 */}
       {selectedTopicName && <div>
         <div className="mb-2 text-[12px] font-medium text-ink-2">
-          {res.length ? `已经做好 ${res.length} 份，挑一个开始` : '以下资源暂无资源：'}
+          {res.length ? `已经做好 ${res.length} 份，挑一个开始` : '以下资源未生成：'}
         </div>
         <div className="space-y-2">
           {/* 三类资源彼此独立：可同时后台生成，完成后原位切换为打开入口。 */}
@@ -589,9 +589,9 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
                 <button
                   key={f}
                   type="button"
-                  onClick={() => { if (!completed) { toast.info('该资源暂无资源'); return; } void generateResource(f); }}
+                  onClick={() => { if (!completed) { toast.info('该资源未生成'); return; } void generateResource(f); }}
                   aria-busy={isGenerating}
-                  title={isGenerating ? '内容正在生成中' : completed ? `打开${meta.label}` : '暂无资源'}
+                  title={isGenerating ? '内容正在生成中' : completed ? `打开${meta.label}` : '未生成'}
                   className={cn(
                     'group flex w-full items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left transition-all',
                     completed
@@ -606,10 +606,10 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] font-medium text-ink">
-                      {completed ? `打开${meta.label}` : isGenerating ? `正在生成${meta.label}` : `${meta.label} · 暂无资源`}
+                      {completed ? `打开${meta.label}` : isGenerating ? `正在生成${meta.label}` : `${meta.label} · 未生成`}
                     </span>
                     <span className="block truncate text-[11px] text-ink-muted">
-                      {completed?.title ?? (isGenerating ? '正在后台生成，可继续生成其他内容' : '暂无资源')}
+                      {completed?.title ?? (isGenerating ? '正在后台生成，可继续生成其他内容' : '未生成')}
                     </span>
                   </span>
                   {isGenerating
@@ -624,9 +624,9 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           {/* 交互课件与其他资源一致：后台独立生成，完成后原位切换为打开入口。 */}
           <button
             type="button"
-            onClick={() => { if (!pptForScope || pptForScope.status !== 'completed') { toast.info('交互课件暂无资源'); return; } void openPptCourseware(); }}
+            onClick={() => { if (!pptForScope || pptForScope.status !== 'completed') { toast.info('交互课件未生成'); return; } void openPptCourseware(); }}
             aria-busy={pptGenerating || pptChecking}
-            title={pptChecking ? '正在检查已有课件' : pptGenerating ? '内容正在生成中' : pptForScope ? '打开交互课件' : '暂无资源'}
+            title={pptChecking ? '正在检查已有课件' : pptGenerating ? '内容正在生成中' : pptForScope ? '打开交互课件' : '未生成'}
             className={cn(
               'group flex w-full items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left transition-all',
               pptForScope?.status === 'completed'
@@ -642,8 +642,8 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
               {pptGenerating || pptChecking ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-medium text-ink">{pptForScope?.status === 'completed' ? '打开交互课件' : pptGenerating ? '正在生成交互课件' : pptChecking ? '正在检查交互课件' : '交互课件 · 暂无资源'}</span>
-              <span className="block truncate text-[11px] text-ink-muted">{pptGenerating ? '正在后台生成，可继续生成其他内容' : pptChecking ? '正在查询已有生成记录' : pptForScope?.title ?? '暂无资源'}</span>
+              <span className="block text-[13px] font-medium text-ink">{pptForScope?.status === 'completed' ? '打开交互课件' : pptGenerating ? '正在生成交互课件' : pptChecking ? '正在检查交互课件' : '交互课件 · 未生成'}</span>
+              <span className="block truncate text-[11px] text-ink-muted">{pptGenerating ? '正在后台生成，可继续生成其他内容' : pptChecking ? '正在查询已有生成记录' : pptForScope?.title ?? '未生成'}</span>
             </span>
             {pptGenerating || pptChecking ? <Loader2 size={13} className="shrink-0 animate-spin text-brand" /> : pptForScope?.status === 'completed' ? <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" /> : <Sparkles size={13} className="shrink-0 text-brand/70 transition-transform group-hover:scale-110" />}
           </button>

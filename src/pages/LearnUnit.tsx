@@ -600,7 +600,7 @@ export default function LearnUnit() {
   const dataId = dataIdOf(currentLearner);
   const nextNode = nextPathNodeAfter(reportForLearner(currentLearner), kpId);
   const [searchParams] = useSearchParams();
-  /* `topic` 是 PPT 子章节标题；`unitTopic` 才是知识地图小圆的后台 topic id。 */
+  /* `topic` 是 PPT 子章节标题；`unitTopic` 才是知识网络小圆的后台 topic id。 */
   const topicId = searchParams.get('unitTopic');
   const [generatedUnit, setGeneratedUnit] = useState<PersonalizedLearningUnit | null>(null);
   const [unitLoading, setUnitLoading] = useState(Boolean(topicId));

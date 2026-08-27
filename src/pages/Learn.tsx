@@ -161,7 +161,7 @@ export default function Learn() {
         <Fern className="pointer-events-none absolute -top-3 right-1 hidden h-[76px] w-[54px] opacity-80 xl:block" />
         <GrassTuft className="pointer-events-none absolute -top-2 right-[62px] hidden h-[36px] w-[50px] opacity-60 xl:block" />
         <div>
-          <h1 className="font-serif text-[26px] font-bold leading-[36px] text-ink">我的知识地图</h1>
+          <h1 className="font-serif text-[26px] font-bold leading-[36px] text-ink">我的知识网络</h1>
         </div>
 
         {/* 场景切换 + 2D/3D 切换 */}

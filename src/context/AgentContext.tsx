@@ -62,7 +62,7 @@ interface AgentContextValue {
   setOpen: (v: boolean) => void;
   /** 最新一条未读的简短提示（FAB 气泡） */
   latestHint: string | null;
-  /** 真实知识地图中最弱章节（用于快捷问题与 kp 参数） */
+  /** 真实知识网络中最弱章节（用于快捷问题与 kp 参数） */
   weakest: { id: string; name: string; mastery: number } | null;
   /** 动态快捷问题（面板 chips，后台定时刷新） */
   suggestions: { id: string; text: string; askType: string }[];
@@ -125,7 +125,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const [latestHint, setLatestHint] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<{ id: string; text: string; askType: string }[]>([]);
 
-  /* 真实知识地图：最弱章节 / 知识点名称，替代旧静态知识库（数据结构·计算机网络等） */
+  /* 真实知识网络：最弱章节 / 知识点名称，替代旧静态知识库（数据结构·计算机网络等） */
   const learningMap = useLearningMap({ deferNetwork: true });
   const weakest = useMemo<{ id: string; name: string; mastery: number } | null>(() => {
     const domains = learningMap.domains ?? [];

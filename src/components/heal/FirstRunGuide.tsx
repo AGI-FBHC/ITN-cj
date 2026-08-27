@@ -62,8 +62,8 @@ export default function FirstRunGuide() {
       text: isPreset
         ? `一共 6 个知识点、${report.path.length} 个阶段，你已经完成 ${done} 个。系统按你的强弱排好了先后顺序。`
         : learningMap.domains.length
-          ? `知识地图共 ${learningMap.domains.length} 个章节，你已经完成 ${done} 个。系统按你的掌握度排好了先后顺序。`
-          : '从知识地图选一个章节开始，系统会按你的掌握度安排学习顺序。',
+          ? `知识网络共 ${learningMap.domains.length} 个章节，你已经完成 ${done} 个。系统按你的掌握度排好了先后顺序。`
+          : '从知识网络选一个章节开始，系统会按你的掌握度安排学习顺序。',
     },
     {
       icon: Play,

@@ -72,7 +72,7 @@ export default function LearnerHome() {
   const report = isPreset ? reportForLearner(currentLearner) : null;
   const resources = isPreset ? getResourcesFor(dataIdOf(currentLearner)) : learning.resources;
 
-  /* 真实用户：路径/进度/盲区全部来自知识地图真实数据；预设画像保留原演示报告 */
+  /* 真实用户：路径/进度/盲区全部来自知识网络真实数据；预设画像保留原演示报告 */
   const path = isPreset ? report!.path : learningMap.path;
   const doneCount = isPreset ? path.filter((p) => p.status === 'done').length : learningMap.learned.size;
   const activeNode = isPreset
@@ -80,7 +80,7 @@ export default function LearnerHome() {
     : path.find((p) => p.status === 'active') ?? path[0] ?? null;
   const pathPct = path.length ? Math.round((doneCount / path.length) * 100) : 0;
   const mapActive = learningMap.activeKp ? learningMap.domains.find((domain) => domain.id === learningMap.activeKp) : null;
-  // 与当前知识地图对齐：最近学习章节优先，否则取掌握度最低的章节作为推荐入口
+  // 与当前知识网络对齐：最近学习章节优先，否则取掌握度最低的章节作为推荐入口
   const weakestChapter = [...learningMap.domains].sort(
     (a, b) => (learningMap.mastery[a.id] ?? 0) - (learningMap.mastery[b.id] ?? 0),
   )[0];
@@ -90,7 +90,7 @@ export default function LearnerHome() {
     if (!todayChapter) {
       return isPreset
         ? currentLearner.diagnosisSummary.replace(/^DIA-01 诊断：/, '')
-        : '还没有学习记录，从知识地图选一个章节开始你的第一课。';
+        : '还没有学习记录，从知识网络选一个章节开始你的第一课。';
     }
     const chapterId = todayChapter.id;
     const progress = learningMap.chapterProgress[chapterId] ?? 0;

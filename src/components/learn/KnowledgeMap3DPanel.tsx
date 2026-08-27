@@ -1,5 +1,5 @@
 /**
- * KnowledgeMap3DPanel — 供总览（系统透视 Dashboard）等其他页面复用的 3D 知识地图。
+ * KnowledgeMap3DPanel — 供总览（系统透视 Dashboard）等其他页面复用的 3D 知识网络。
  * 自带数据加载（useLearningMap）与本地交互状态（选中/展开/已学路径），无需调用方接线。
  */
 import { useState } from 'react';
@@ -24,14 +24,14 @@ export default function KnowledgeMap3DPanel({ className = '' }: { className?: st
   if (map.loading && map.graphNodes.length === 0) {
     return (
       <div className="flex h-full items-center justify-center text-[12px] text-ink-muted">
-        正在加载知识地图…
+        正在加载知识网络…
       </div>
     );
   }
   if (!map.graphNodes.length) {
     return (
       <div className="flex h-full items-center justify-center px-6 text-center text-[12px] leading-5 text-ink-muted">
-        暂无知识地图数据，请先完成画像或等待后端数据。
+        暂无知识网络数据，请先完成画像或等待后端数据。
       </div>
     );
   }

@@ -66,7 +66,7 @@ export default function GardenCard() {
   const { items, due } = useReview();
   const dataId = dataIdOf(currentLearner);
 
-  // 园子与学习进度关联：果实 = 当前知识地图中「掌握度达标或四类资源学完」的知识点
+  // 园子与学习进度关联：果实 = 当前知识网络中「掌握度达标或四类资源学完」的知识点
 
   const mapTopics = learningMap.graphNodes.filter((n) => n.kind === 'topic');
 

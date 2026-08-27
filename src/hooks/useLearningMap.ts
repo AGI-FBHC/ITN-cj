@@ -272,7 +272,7 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
   }, [currentLearnerId]);
 
   useEffect(() => {
-    // 共用资源与知识地图不依赖 learner：游客/新账号尚未建档时也要能加载。
+    // 共用资源与知识网络不依赖 learner：游客/新账号尚未建档时也要能加载。
     // 仅当没有 learnerId 时跳过个人 analytics 与缓存（那些按 learner 隔离）。
     const hasLearner = UUID_PATTERN.test(currentLearnerId);
     let cancelled = false;
@@ -296,6 +296,20 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
     const resourcesPromise = api.listLearningResources()
       .then((listed) => listed.resources ?? [])
       .catch(() => cached?.resources ?? [] as LearningResourceSummary[]);
+    // Admin-generated (ORGANIZATION) resources for knowledge network display
+    const adminResourcesPromise = api.listAdminResources({ view: 'library', domainCode: 'agent' })
+      .then((listed) => (listed.items ?? [])
+        .filter((item) => !item.archivedAt && item.nodeCode)
+        .map((item): LearningResourceSummary => ({
+          id: item.id,
+          type: (item.type === 'practice' ? 'practice' : item.type) as LearningResourceSummary['type'],
+          title: item.title, topic: item.topic,
+          courseId: null, chapterId: null, sources: [],
+          learnerId: null, kpId: item.nodeCode,
+          learned: false, started: false, progressRatio: 0, masteryRatio: 0,
+          createdAt: item.createdAt, updatedAt: item.updatedAt,
+        })))
+      .catch(() => [] as LearningResourceSummary[]);
     // Presentation generation completes outside this page. Always reconcile
     // against the server so historical completed tasks cannot stay "missing"
     // forever because an older cache predates their completion.
@@ -306,15 +320,18 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
     const analyticsPromise = hasLearner
       ? (cachedAnalytics ? Promise.resolve(null) : api.getLearnerAnalyticsProfile().catch(() => null))
       : Promise.resolve(null);
-    Promise.all([api.getRagTree('agent'), analyticsPromise, presentationsPromise, resourcesPromise])
-      .then(([latestTree, latestAnalytics, latestPresentations, latestResources]) => {
+    Promise.all([api.getRagTree('agent'), analyticsPromise, presentationsPromise, resourcesPromise, adminResourcesPromise])
+      .then(([latestTree, latestAnalytics, latestPresentations, latestResources, adminResources]) => {
+        // Merge: prefer user resource over admin for same kpId+type
+        const userKeys = new Set(latestResources.map((r) => `${r.kpId}::${r.type}`));
+        const mergedResources = [...latestResources, ...adminResources.filter((r) => !userKeys.has(`${r.kpId}::${r.type}`))];
         if (!cancelled) setTree(latestTree);
         /* 缓存命中时 latestAnalytics 为 null，保留缓存值；只有网络新值才写回缓存（避免续期） */
         if (!cancelled) setAnalytics(latestAnalytics ?? cachedAnalytics);
         if (!cancelled) setPresentations(latestPresentations);
-        if (!cancelled) setResources(latestResources);
+        if (!cancelled) setResources(mergedResources);
         if (hasLearner && !cancelled) {
-          writeLearningMapCache(currentLearnerId, { resources: latestResources, tree: latestTree, presentations: latestPresentations });
+          writeLearningMapCache(currentLearnerId, { resources: mergedResources, tree: latestTree, presentations: latestPresentations });
           if (latestAnalytics) writeLearnerAnalytics(currentLearnerId, latestAnalytics);
         }
       })
@@ -374,7 +391,7 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
       };
     }
 
-    // 一级目录仅用于数据库归档；知识地图从二级章节开始建图。
+    // 一级目录仅用于数据库归档；知识网络从二级章节开始建图。
     const byDatabaseOrder = <T extends { sortOrder: number; id: number }>(items: T[]) =>
       [...items].sort((left, right) => left.sortOrder - right.sortOrder || left.id - right.id);
     const chapters = byDatabaseOrder(tree.nodes).flatMap((root) =>

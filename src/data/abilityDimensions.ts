@@ -1,4 +1,4 @@
-/** 通用六维能力：只用于画像评估与展示，不替代知识地图章节。 */
+/** 通用六维能力：只用于画像评估与展示，不替代知识网络章节。 */
 export const ABILITY_DIMENSION_NAMES: Record<string, string> = {
   'kp-ds': '知识理解',
   'kp-co': '逻辑推理',
