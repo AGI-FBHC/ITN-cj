@@ -179,7 +179,7 @@ export function useTutoringEngine(script: TutoringScript, learner: Learner) {
     void enterNode(script.startId, session);
   }, [enterNode, script.startId]);
 
-  /* 开局 / 切换画像（脚本变化）时重置（defer 一帧，避免 effect 体内同步 setState） */
+  /* 开局时重置（defer 一帧，避免 effect 体内同步 setState） */
   useEffect(() => {
     const t = setTimeout(start, 0);
     return () => {

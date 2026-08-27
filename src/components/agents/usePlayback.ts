@@ -54,7 +54,7 @@ export function usePlayback(events: CollabEvent[]): Playback {
   const isDone = events.length > 0 && engine.cursor >= events.length;
   const status: PlayStatus = isDone ? 'done' : playState;
 
-  /* 脚本身份变化（切换画像）→ 渲染期比对重置（React 官方 derived-reset 模式） */
+  /* 脚本内容变化 → 渲染期比对重置（React 官方 derived-reset 模式） */
   const [prevEvents, setPrevEvents] = useState(events);
   if (prevEvents !== events) {
     setPrevEvents(events);
