@@ -590,14 +590,7 @@ export default function ResourceCenterAdmin() {
                                 {item ? (
                                   <>
                                     <span className="min-w-0 flex-1 truncate font-semibold text-ink" title={item.title}>{item.title}</span>
-                                    {item.archivedAt ? (
-                                      <span className="lf-pill lf-pill-warn">已归档</span>
-                                    ) : item.reviewStatus ? (
-                                      <span className={cn('lf-pill', item.reviewStatus === 'PUBLISHED' ? 'lf-pill-ok' : item.reviewStatus === 'REJECTED' || item.reviewStatus === 'DEPRECATED' ? 'lf-pill-danger' : item.reviewStatus === 'PENDING' ? 'lf-pill-warn' : 'lf-pill-null')}>
-                                        {item.reviewStatus}
-                                      </span>
-                                    ) : null}
-                                    <span className="text-ink-muted">v{item.revision}</span>
+                                    {item.archivedAt ? <span className="lf-pill lf-pill-warn">已归档</span> : null}
                                     <button onClick={() => preview(item)} className="lf-row-btn"><Eye size={11} />预览</button>
                                     {openResourceLog && <button onClick={() => openResourceLog(item)} className="lf-row-btn" title="生成日志"><FileText size={11} /></button>}
                                     {view === 'archive' ? (
