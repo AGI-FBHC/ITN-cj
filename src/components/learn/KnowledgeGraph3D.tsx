@@ -1406,8 +1406,14 @@ function SceneContent({
       <ambientLight intensity={0.7} />
       <directionalLight position={[25, 25, 25]} intensity={0.6} />
 
-      {/* 语义边 */}
+      {/* 语义边：只画两端节点都可见的边 */}
       {edges.map((edge) => {
+        const n1 = nodes.find((n) => n.id === edge.from);
+        const n2 = nodes.find((n) => n.id === edge.to);
+        // 节点不可见则跳过：domain 始终可见，topic 需要其父章节已展开
+        const v1 = n1 && (n1.kind === 'domain' || expandedKpIds.has(n1.kpId));
+        const v2 = n2 && (n2.kind === 'domain' || expandedKpIds.has(n2.kpId));
+        if (!v1 || !v2) return null;
         const p1 = layout.positions.get(edge.from);
         const p2 = layout.positions.get(edge.to);
         if (!p1 || !p2) return null;
