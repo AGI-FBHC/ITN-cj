@@ -145,6 +145,9 @@ export default function ResourceCenterAdmin() {
   const groupNames = useMemo(() => Array.from(new Set(['默认分组', ...groupTypeMap.keys()])), [groupTypeMap]);
   useEffect(() => { if (!groupNames.includes(selectedGroupName)) setSelectedGroupName('默认分组'); }, [groupNames, selectedGroupName]);
   const completedTypes = groupTypeMap.get(selectedGroupName) ?? new Set<ResourceKind>();
+  const currentGroupItems = useMemo(() => groupResources.filter((item) => (item.groupName ?? '默认分组') === selectedGroupName), [groupResources, selectedGroupName]);
+  const isCurrentGroupTemplate = currentGroupItems.some((item) => item.template);
+  const currentGroupFirstItem = currentGroupItems[0];
   const pptReady = ['lecture', 'practice', 'quiz'].every((type) => completedTypes.has(type as ResourceKind));
 
   const startGeneration = async (target: ResourceKind) => {
@@ -501,7 +504,7 @@ export default function ResourceCenterAdmin() {
               ) : (
                 <div className="lf-card mb-4 rounded-2xl p-3">
                   <div className="mb-2 flex flex-wrap items-center gap-2"><span className="text-[10px] font-semibold text-ink-muted">知识点</span><span className="truncate text-xs font-bold text-ink">{node.name}</span></div>
-                  <div className="mb-3 flex flex-wrap items-center gap-2"><span className="text-[10px] font-semibold text-ink-muted">资源分组</span><input value={selectedGroupName} onChange={(e) => { setSelectedGroupName(e.target.value); setDetail(null); }} list="rc-resource-groups" placeholder="输入或选择分组" className="lf-input min-w-52 flex-1" /></div>
+                  <div className="mb-3 flex flex-wrap items-center gap-2"><span className="text-[10px] font-semibold text-ink-muted">资源分组</span><input value={selectedGroupName} onChange={(e) => { setSelectedGroupName(e.target.value); setDetail(null); }} list="rc-resource-groups" placeholder="输入或选择分组" className="lf-input min-w-52 flex-1" />{view === 'library' && (<button disabled={isCurrentGroupTemplate || !currentGroupFirstItem} onClick={() => currentGroupFirstItem && void act(currentGroupFirstItem, 'template')} className="lf-row-btn lf-row-btn-primary disabled:cursor-default disabled:opacity-70"><LayoutTemplate size={11} />{isCurrentGroupTemplate ? '当前分组母版' : '设为分组母版'}</button>)}</div>
                   <datalist id="rc-resource-groups">{groupNames.map((name) => <option key={name} value={name} />)}</datalist>
                   <div className="lf-seg">
                     {kinds.map(([id, label]) => (
@@ -919,10 +922,6 @@ function ResourceTable({ items, loading, view, onPreview, onAction, onOpenLog }:
                       </>
                     ) : (
                       <>
-                        <button disabled={item.template} onClick={() => void onAction(item, 'template')} className="lf-row-btn lf-row-btn-primary disabled:cursor-default disabled:opacity-70">
-                          <LayoutTemplate size={11} />
-                          {item.template ? '当前分组母版' : '设为分组母版'}
-                        </button>
                         <button onClick={() => void onAction(item, 'archive')} className="lf-row-btn text-ink-muted">归档</button>
                       </>
                     )}
