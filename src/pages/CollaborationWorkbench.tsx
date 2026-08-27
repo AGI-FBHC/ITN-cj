@@ -355,6 +355,17 @@ function contextOf(task: WorkbenchTask): Record<string, unknown> {
 
 function taskKey(task: WorkbenchTask) { return `${task.taskKind}-${task.id}`; }
 
+function latestFinishedTasksByGroup(items: WorkbenchTask[]): WorkbenchTask[] {
+  const latest = new Map<string, WorkbenchTask>();
+  items.forEach((task) => {
+    const ctx = taskTreeContext(task);
+    const key = `${ctx.domainCode}\u0000${ctx.nodeCode}\u0000${ctx.groupName}\u0000${task.resourceType}`;
+    const current = latest.get(key);
+    if (!current || Date.parse(task.createdAt) > Date.parse(current.createdAt)) latest.set(key, task);
+  });
+  return [...latest.values()].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+}
+
 type GenKind = 'lecture' | 'practice' | 'quiz' | 'ppt';
 const genKinds: [GenKind, string, string][] = [
   ['lecture', '讲义', '知识讲解'],
@@ -1286,7 +1297,10 @@ export default function CollaborationWorkbench() {
       }
     }
   };
-  const grouped = useMemo(() => ({ active: tasks.filter((item) => activeStatuses.has(item.status)), finished: tasks.filter((item) => !activeStatuses.has(item.status)) }), [tasks]);
+  const grouped = useMemo(() => ({
+    active: tasks.filter((item) => activeStatuses.has(item.status)),
+    finished: latestFinishedTasksByGroup(tasks.filter((item) => !activeStatuses.has(item.status))),
+  }), [tasks]);
   const currentTasks = taskTab === 'active' ? grouped.active : grouped.finished;
   const taskTree = useMemo(() => buildTaskTree(currentTasks), [currentTasks]);
 
