@@ -228,9 +228,7 @@ export default function Login() {
 
   const inputClass = 'w-full rounded-[10px] border border-hairline bg-paper px-3.5 py-2.5 text-[14px] text-ink outline-none transition-colors focus:border-brand/50';
   const loginGuest = () => {
-    doLogin('guest', 'guest', '游客').then(() => {
-      toast('游客体验模式');
-    });
+    doLogin("guest", "guest", "游客");
   };
   const primaryClass = 'lf-btn-primary w-full justify-center !py-2.5';
 
