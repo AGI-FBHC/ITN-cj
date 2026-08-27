@@ -7,7 +7,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Text, Line, PerspectiveCamera, Billboard } from '@react-three/drei';
 import { BookOpen, ClipboardCheck, Presentation, Wrench, X } from 'lucide-react';
 import * as THREE from 'three';
-import type { GraphNode, GraphEdge, EdgeKind } from '@/data/knowledgeGraph';
+import type { GraphNode, GraphEdge } from '@/data/knowledgeGraph';
 import type { ResourceForm, GeneratedResource } from '@/data/resources';
 import type { PresentationTaskSummary } from '@/lib/presentationApi';
 import { toast } from 'sonner';
@@ -15,10 +15,12 @@ import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import cjkFontUrl from '@/assets/fonts/noto-sans-cjk-sc-gb2312.otf';
 
-const EDGE_COLORS: Record<EdgeKind, string> = {
+const EDGE_COLORS: Record<string, string> = {
   prereq: '#4E7860',
+  prerequisite: '#4E7860',
   related: '#B77552',
   applies: '#66725E',
+  contrasts_with: '#B77552',
 };
 
 const NODE_COLORS = {
