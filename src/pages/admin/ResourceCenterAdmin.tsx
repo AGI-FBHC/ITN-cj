@@ -221,7 +221,7 @@ export default function ResourceCenterAdmin() {
       toast.info('该资源没有管理员生成日志（可能为历史资源或非预生成来源）');
       return;
     }
-    navigate(`/admin/workbench?task=${task.taskKind}-${task.id}`);
+    setProcessTask(task);
   };
 
   const openDomain = (next: RagDomain | { code: '__unassigned__'; name: string; description: string }) => {
