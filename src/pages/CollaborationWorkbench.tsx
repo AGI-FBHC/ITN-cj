@@ -318,15 +318,15 @@ function AgentWorkflowSummary({ events, running }: { events: AdminGenerationEven
   if (!path.length) return null;
   const [expanded, setExpanded] = useState(false);
   return (
-    <section className="rounded-2xl border border-white/75 bg-white/45 px-4 py-3">
+    <section className="rounded-2xl border border-white/75 bg-white/45 px-3 py-2">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] font-bold text-ink-muted">本次协同路径</span>
-        <button type="button" onClick={() => setExpanded((current) => !current)} className="lf-row-btn !px-2 !py-1 text-[9px]">
+        <button type="button" onClick={() => setExpanded((current) => !current)} className="lf-row-btn !px-1.5 !py-0.5 text-[9px]">
           {expanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
           {expanded ? '收起' : '展开'}
         </button>
       </div>
-      <div className={cn('mt-2 flex flex-wrap items-center gap-2 overflow-hidden transition-[max-height] duration-300', expanded ? 'max-h-[320px]' : 'max-h-[58px] min-h-[58px]')}>
+      <div className={cn('mt-1.5 flex flex-wrap items-center gap-1.5 overflow-hidden transition-[max-height] duration-300', expanded ? 'max-h-[320px]' : 'max-h-[48px] min-h-[48px]')}>
         {path.map((agentId, index) => {
           const agent = agents.find((item) => item.id === agentId);
           const repeated = path.indexOf(agentId) !== index;
@@ -334,7 +334,7 @@ function AgentWorkflowSummary({ events, running }: { events: AdminGenerationEven
           return (
             <span key={`${agentId}-${index}`} className="contents">
               {index > 0 && <span className="text-[10px] text-ink-muted/55">→</span>}
-              <span className={cn('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold', current ? 'border-brand/40 bg-brand-tint text-brand' : repeated ? 'border-ochre/30 bg-ochre/10 text-[#9A5B3C]' : 'border-white/85 bg-white/70 text-ink-2')}>
+              <span className={cn('inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9.5px] font-semibold', current ? 'border-brand/40 bg-brand-tint text-brand' : repeated ? 'border-ochre/30 bg-ochre/10 text-[#9A5B3C]' : 'border-white/85 bg-white/70 text-ink-2')}>
                 {current && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand" />}
                 {agent?.name ?? agentId}
                 {repeated && <span className="text-[8px] font-bold">再次进入</span>}
@@ -1318,15 +1318,13 @@ export default function CollaborationWorkbench() {
 
       {/* 第二列：Agents 教研组协作泳道（主体，占最多空间） */}
       <main className="flex min-w-0 flex-1 flex-col rounded-2xl border border-white/70 bg-[#f7f5ee]/75">
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-white/70 px-4 py-3">
-          <div className="flex items-center gap-2">
+        <header className="flex min-w-0 items-center justify-between gap-2 border-b border-white/70 px-3 py-2">
+          <div className="flex min-w-0 items-center gap-2">
             <button type="button" onClick={() => setTasksCollapsed((collapsed) => !collapsed)} className="lf-row-btn !p-1.5" title={tasksCollapsed ? '展开任务栏' : '收起任务栏'}>
               {tasksCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
             </button>
-            <div>
-              <h3 className="text-sm font-bold text-ink">Agents 教研组协作泳道</h3>
-              {task && <p className="mt-0.5 truncate text-[9.5px] text-ink-muted">{task.title} · {active ? '实时协同中' : task.status === 'completed' ? '已通过' : task.status === 'failed' ? '未通过' : task.status}</p>}
-            </div>
+            <h3 className="shrink-0 text-sm font-bold text-ink">Agents 教研组协作泳道</h3>
+            {task && <p className="min-w-0 flex-1 truncate text-[9.5px] text-ink-muted">{task.title} · {active ? '实时协同中' : task.status === 'completed' ? '已通过' : task.status === 'failed' ? '未通过' : task.status}</p>}
           </div>
           <span className="text-[10px] text-ink-muted">列头即成员 · 时间自上而下</span>
         </header>
