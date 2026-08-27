@@ -1,23 +1,17 @@
 /**
  * KpDetailPanel — 知识点详情侧栏（图谱选中即见进度 + 资源 + 跳转）
  * 选中任一知识点后：掌握度环（对目标差）、AI 把握、路径位置、
- * 已生成资源形态（讲义/实操/分阶题，点击深链资源页），以及"进入交互课件（现场生成）"。
+ * 管理员母版资源形态（讲义/实操/分阶题/课件），存在则打开，不存在则显示暂无资源。
  */
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, BookOpen, Wrench, ListChecks, Sparkles, Route } from 'lucide-react';
-import { Loader2 } from 'lucide-react';
-import { useProfile, dataIdOf } from '@/context/ProfileContext';
-import { api, type LearningResourceGenerationTask } from '@/lib/api';
-import { presentationApi } from '@/lib/presentationApi';
-import { readResourceCache, removeResourceCache, upsertResourceCache } from '@/lib/resourceCache';
-import type { PresentationTask } from '@/lib/presentationApi';
+import { useProfile } from '@/context/ProfileContext';
+import type { PresentationTask, PresentationTaskSummary } from '@/lib/presentationApi';
 import { reportForLearner } from '@/data/reportBuilder';
 import type { PathNodeStatus } from '@/data/reportData';
 import { getKnowledgePoint } from '@/data/knowledgePoints';
 import type { KnowledgePoint } from '@/data/knowledgePoints';
-import { resourcesForKp } from '@/data/resources';
 import type { GeneratedResource } from '@/data/resources';
 import type { ResourceForm } from '@/data/resources';
 import { Succulent, LeafSmall } from '@/components/heal/Flora';
@@ -69,7 +63,7 @@ function MasteryRing({ score }: { score: number }) {
   );
 }
 
-export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpProp, mastery: masteryProp, topicMastery, topicProgress, graphNodes, path: pathProp, resources: resourcesProp, goalId, knowledgeMap }: {
+export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpProp, mastery: masteryProp, topicMastery, topicProgress, graphNodes, path: pathProp, resources: resourcesProp, presentations: presentationsProp, knowledgeMap }: {
   kpId: string | null;
   topicIndex?: number | null;
   onSelectTopic?: (topicIndex: number) => void;
@@ -80,7 +74,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
   graphNodes?: GraphNode[];
   path?: PathNode[];
   resources?: Array<GeneratedResource & { id?: string; learned?: boolean }>;
-  goalId?: string | null;
+  presentations?: PresentationTaskSummary[];
   knowledgeMap?: {
     chapters: Array<{ id: string; name: string; topics: string[] }>;
     edges: Array<{ from: string; to: string; kind: string }>;
@@ -88,133 +82,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
 }) {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
-  const dataId = dataIdOf(currentLearner);
   const report = reportForLearner(currentLearner);
-  const [generating, setGenerating] = useState<Set<string>>(() => new Set());
-  const [generatedResources, setGeneratedResources] = useState<Record<string, Partial<Record<ResourceForm, GeneratedResourceLink>>>>({});
-  const inFlightResources = useRef(new Set<string>());
-  const [pptResources, setPptResources] = useState<Record<string, PptResourceLink>>({});
-  const [checkingPpt, setCheckingPpt] = useState(false);
-  const [startingPpts, setStartingPpts] = useState<Set<string>>(() => new Set());
-  const startingPptRefs = useRef(new Set<string>());
-  const inFlightPpts = useRef(new Set<string>());
-  const mounted = useRef(true);
-  const [availableProcessTask, setAvailableProcessTask] = useState<LearningResourceGenerationTask | null>(null);
-
-  useEffect(() => {
-    mounted.current = true;
-    return () => { mounted.current = false; };
-  }, []);
-
-  /* 进入子知识点时从真实 PPT 任务表恢复状态，不能只依赖本次页面会话里的 setState。 */
-  useEffect(() => {
-    if (!kpId) return undefined;
-    const selectedKp = kpProp ?? getKnowledgePoint(kpId);
-    const focus = topicIndex != null
-      ? selectedKp.coreTopics[topicIndex]
-      : selectedKp.coreTopics[0] ?? selectedKp.name;
-    const scope = `${currentLearner.id}:${kpId}:${topicIndex != null ? focus : ''}`;
-    const wantedTitle = focus;
-    let cancelled = false;
-    let timer = 0;
-
-    const restorePptStatus = async () => {
-      const cachedPpt = readResourceCache(scope)?.ppt;
-      if (cachedPpt?.id && cachedPpt.status === 'completed') {
-        setPptResources((current) => (current[scope]?.id === cachedPpt.id ? current : { ...current, [scope]: { id: cachedPpt.id, title: cachedPpt.title, status: 'completed' as const } }));
-        if (!cancelled) setCheckingPpt(false);
-        return;
-      }
-      setCheckingPpt(true);
-      try {
-        const listed = await presentationApi.listPresentationSummaries(50);
-        if (cancelled) return;
-        const match = (listed.tasks ?? [])
-          .filter((item) => item.title === wantedTitle || item.title.includes(focus))
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-          .find((item) => !['failed', 'cancelled'].includes(item.status));
-        setPptResources((current) => {
-          if (!match) {
-            if (!current[scope]) return current;
-            const next = { ...current };
-            delete next[scope];
-            return next;
-          }
-          const previous = current[scope];
-          if (previous?.id === match.id && previous.status === match.status && previous.title === match.title) return current;
-          return { ...current, [scope]: { id: match.id, title: match.title, status: match.status } };
-        });
-        if (match) {
-          upsertResourceCache(scope, 'ppt', { id: match.id, title: match.title, status: match.status, updatedAt: new Date().toISOString() });
-          if (!['completed', 'failed', 'cancelled'].includes(match.status)) {
-            timer = window.setTimeout(restorePptStatus, 2500);
-          }
-        } else {
-          removeResourceCache(scope, 'ppt');
-        }
-      } catch {
-        /* 状态恢复失败不覆盖当前按钮；用户点击时仍会再次查询，避免误创建。 */
-      } finally {
-        if (!cancelled) setCheckingPpt(false);
-      }
-    };
-
-    void restorePptStatus();
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [currentLearner.id, kpId, kpProp, topicIndex]);
-
-  /* 同步后台个性资源任务：刷新或切回页面后，按钮仍显示真实生成状态。 */
-  useEffect(() => {
-    if (!kpId) return undefined;
-    const selectedKp = kpProp ?? getKnowledgePoint(kpId);
-    const focus = topicIndex != null ? selectedKp.coreTopics[topicIndex] : selectedKp.coreTopics[0] ?? selectedKp.name;
-    const scope = `${currentLearner.id}:${kpId}:${topicIndex != null ? focus : ''}`;
-    let cancelled = false;
-    let timer = 0;
-    const syncTasks = async () => {
-      const resourceForms = Object.keys(FORM_META) as ResourceForm[];
-      try {
-        const [{ tasks }, listed] = await Promise.all([
-          api.listLearningResourceTasks(50),
-          api.listLearningResources(),
-        ]);
-        if (cancelled) return;
-        const nextGenerating = new Set<string>();
-        const links: Partial<Record<ResourceForm, GeneratedResourceLink>> = {};
-        for (const resource of listed.resources ?? []) {
-          if (resource.kpId !== kpId || resource.topic !== focus) continue;
-          const form: ResourceForm = resource.type === 'practice' ? 'guide' : resource.type;
-          if (!resourceForms.includes(form)) continue;
-          links[form] = { id: resource.id, title: resource.title };
-          upsertResourceCache(scope, form, { id: resource.id, title: resource.title, updatedAt: resource.updatedAt });
-        }
-        resourceForms.forEach((form) => {
-          if (!links[form]) removeResourceCache(scope, form);
-        });
-        setGeneratedResources((current) => {
-          const next = { ...current };
-          if (Object.keys(links).length) next[scope] = links;
-          else delete next[scope];
-          return next;
-        });
-        const scopedTasks = tasks.filter((item) => item.title.startsWith(`${focus} · `));
-        setAvailableProcessTask(scopedTasks.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0] ?? null);
-        for (const task of scopedTasks) {
-          const form: ResourceForm = task.resourceType === 'practice' ? 'guide' : task.resourceType;
-          const key = `${scope}:${form}`;
-          if (!['completed', 'failed', 'cancelled'].includes(task.status)) nextGenerating.add(key);
-        }
-        setGenerating((current) => {
-          const next = new Set([...current].filter((key) => !key.startsWith(`${scope}:`)));
-          nextGenerating.forEach((key) => next.add(key));
-          return next;
-        });
-        if (nextGenerating.size) timer = window.setTimeout(syncTasks, 1800);
-      } catch { /* 资源任务状态异常时静默，不伪造状态。 */ }
-    };
-    void syncTasks();
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [currentLearner.id, kpId, kpProp, topicIndex]);
 
   if (!kpId) {
     /* 未选中章节：优先展示最近学习但未学完的资源，其次给继续学习建议。
@@ -276,220 +144,28 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
     const values = (graphNodes ?? []).filter((node) => node.kind === 'topic' && node.kpId === kpId).map((node) => topicProgress?.[node.id] ?? 0);
     return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
   })();
-  const res: Array<GeneratedResource & { id?: string; learned?: boolean }> = resourcesProp ?? resourcesForKp(dataId, kpId);
+  const res: Array<GeneratedResource & { id?: string; learned?: boolean }> = resourcesProp ?? [];
   const reportPath = pathProp ?? report.path;
-  const resourceScope = `${currentLearner.id}:${kpId}:${selectedTopicName ?? ''}`;
-  const generatedForScope = generatedResources[resourceScope] ?? {};
-  const pptForScope = pptResources[resourceScope];
-  const pptChecking = checkingPpt && !pptForScope;
-  const pptGenerating = startingPpts.has(resourceScope) || Boolean(pptForScope && ['queued', 'analyzing', 'outline_review', 'generating', 'reviewing'].includes(pptForScope.status));
-  const existingResourceFor = (form: ResourceForm) => res.find((item) => (
-    item.form === form
-    && item.id
-    && (!selectedTopicName || item.levelTag === selectedTopicName || item.title.includes(selectedTopicName))
-  ));
-  const generateResource = async (form: ResourceForm) => {
-    const meta = FORM_META[form];
-    const taskKey = `${resourceScope}:${form}`;
-    const existing = generatedForScope[form] ?? existingResourceFor(form);
-    if (existing?.id) {
-      navigate(`/learn/resource/${existing.id}`);
-      return;
-    }
-    if (inFlightResources.current.has(taskKey)) {
-      toast.info(`${meta.label}正在生成中`);
-      return;
-    }
-    inFlightResources.current.add(taskKey);
-    setGenerating((current) => new Set(current).add(taskKey));
-    try {
-      const selectedTopicName = topicIndex != null ? kp.coreTopics[topicIndex] : null;
-      const body = {
-        topic: selectedTopicName ?? kpProp?.coreTopics[0] ?? kp.name,
-        title: `${selectedTopicName ?? kpProp?.coreTopics[0] ?? kp.name} · ${FORM_META[form].label}`,
-        learnerId: currentLearner.id,
-        kpId,
-        goalDriven: true,
-        learningGoalId: goalId,
-        detailLevel: 'detailed' as const,
-      };
-      const resourceType = form === 'guide' ? 'practice' : form;
-      const listed = await api.listLearningResourceTasks(50).catch(() => ({ tasks: [] }));
-      let task = listed.tasks.find((item) => item.resourceType === resourceType && item.title === body.title && !['completed', 'failed', 'cancelled'].includes(item.status))
-        ?? await api.startLearningResourceTask(resourceType, body);
-      setAvailableProcessTask(task);
-      toast.success(`${meta.label}已加入 AI 教研组`, { description: '可在 AI 教研工作台查看完整协同过程。' });
-      navigate(`/collaboration?task=resource-${task.id}`);
-      while (mounted.current && !['completed', 'failed', 'cancelled'].includes(task.status)) {
-        await new Promise((resolve) => window.setTimeout(resolve, 1800));
-        task = await api.getLearningResourceTask(task.id);
-      }
-      if (task.status !== 'completed' || !task.resourceId) {
-        throw new Error(task.errorMessage || `${meta.label}未通过质量审查，请稍后重试`);
-      }
-      const resource = await api.getLearningResource(task.resourceId);
-      setGeneratedResources((current) => ({
-        ...current,
-        [resourceScope]: {
-          ...current[resourceScope],
-          [form]: { id: resource.id, title: resource.title },
-        },
-      }));
-      upsertResourceCache(resourceScope, form, { id: resource.id, title: resource.title, updatedAt: new Date().toISOString() });
-      toast.success(`${meta.label}已通过多智能体审查，可以打开`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '资源生成失败');
-    } finally {
-      inFlightResources.current.delete(taskKey);
-      setGenerating((current) => {
-        const next = new Set(current);
-        next.delete(taskKey);
-        return next;
-      });
-    }
-  };
-  const watchPpt = async (scope: string, taskId: string, focus: string) => {
-    const watchKey = `${scope}:${taskId}`;
-    if (inFlightPpts.current.has(watchKey)) return;
-    inFlightPpts.current.add(watchKey);
-    try {
-      while (mounted.current) {
-        await new Promise((resolve) => window.setTimeout(resolve, 2500));
-        const task = await presentationApi.getPresentation(taskId);
-        if (!mounted.current) return;
-        if (task.status === 'failed' || task.status === 'cancelled') {
-          removeResourceCache(scope, 'ppt');
-          setPptResources((current) => {
-            const next = { ...current };
-            delete next[scope];
-            return next;
-          });
-          toast.error(task.errorMessage || '交互课件生成失败，请重试');
-          return;
-        }
-        setPptResources((current) => ({ ...current, [scope]: { id: task.id, title: task.title, status: task.status } }));
-        upsertResourceCache(scope, 'ppt', { id: task.id, title: task.title, status: task.status, updatedAt: new Date().toISOString() });
-        if (task.status === 'completed') {
-          toast.success('交互课件已生成，可以打开', { description: focus });
-          return;
-        }
-      }
-    } catch (error) {
-      if (mounted.current) toast.error(error instanceof Error ? error.message : '课件状态更新失败');
-    } finally {
-      inFlightPpts.current.delete(watchKey);
-    }
-  };
+  const templatePpt = (presentationsProp ?? [])
+    .filter((item) => item.status === 'completed')
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .find((item) => {
+      const topicName = String(item.request?.generationContext?.topicName ?? '');
+      const templateKpId = String(item.request?.generationContext?.kpId ?? '');
+      return templateKpId === kpId && (!selectedTopicName || topicName === selectedTopicName || item.title.includes(selectedTopicName));
+    });
+  const pptForScope: PptResourceLink | undefined = templatePpt
+    ? { id: templatePpt.id, title: templatePpt.title, status: templatePpt.status }
+    : undefined;
+  const existingResourceFor = (form: ResourceForm) => res.find((item) => item.form === form && item.id);
   const openPptCourseware = async () => {
     const selectedTopicName = topicIndex != null ? kp.coreTopics[topicIndex] : null;
     const focus = selectedTopicName ?? kpProp?.coreTopics[0] ?? kp.name;
-    if (pptChecking) {
-      toast.info('正在检查已有交互课件');
-      return;
-    }
     if (pptForScope?.status === 'completed') {
       navigate(`/learn/${kpId}?ppt=${pptForScope.id}&topic=${encodeURIComponent(focus)}`);
       return;
     }
-    if (pptGenerating) {
-      toast.info('交互课件正在生成中');
-      return;
-    }
-    if (startingPptRefs.current.has(resourceScope)) {
-      toast.info('交互课件正在生成中');
-      return;
-    }
-    startingPptRefs.current.add(resourceScope);
-    setStartingPpts((current) => new Set(current).add(resourceScope));
-    try {
-      const wantedTitle = focus;
-      // 复用已有任务，并把进行中的任务留在当前页面后台轮询。
-      try {
-        const listed = await presentationApi.listPresentationSummaries(50);
-        const match = (listed.tasks ?? [])
-          .filter((item) => item.title === wantedTitle || item.title.includes(focus))
-          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-          .find((item) => !['failed', 'cancelled'].includes(item.status));
-        if (match) {
-          upsertResourceCache(resourceScope, 'ppt', { id: match.id, title: match.title, status: match.status, updatedAt: new Date().toISOString() });
-          if (match.status === 'completed') {
-            setPptResources((current) => ({ ...current, [resourceScope]: { id: match.id, title: match.title, status: 'completed' } }));
-            navigate(`/learn/${kpId}?ppt=${match.id}&topic=${encodeURIComponent(focus)}`);
-          } else {
-            setPptResources((current) => ({ ...current, [resourceScope]: { id: match.id, title: match.title, status: match.status } }));
-            toast.info('交互课件正在后台生成，可继续生成其他内容');
-            void watchPpt(resourceScope, match.id, focus);
-          }
-          return;
-        }
-      } catch { /* 列表查询失败时允许直接创建 */ }
-      const chapters = knowledgeMap?.chapters ?? [{ id: kpId, name: kp.name, topics: kp.coreTopics }];
-      const chapterIndex = Math.max(0, chapters.findIndex((chapter) => chapter.id === kpId));
-      const currentChapter = chapters[chapterIndex] ?? chapters[0];
-      const currentTopicIndex = topicIndex ?? Math.max(0, currentChapter.topics.indexOf(focus));
-      const previousTopic = currentTopicIndex > 0
-        ? currentChapter.topics[currentTopicIndex - 1]
-        : chapters[chapterIndex - 1]?.topics.at(-1) ?? null;
-      const nextTopic = currentTopicIndex + 1 < currentChapter.topics.length
-        ? currentChapter.topics[currentTopicIndex + 1]
-        : chapters[chapterIndex + 1]?.topics[0] ?? null;
-      const mapPosition = {
-        chapterIndex,
-        chapterNumber: chapterIndex + 1,
-        chapterCount: chapters.length,
-        chapterId: currentChapter.id,
-        chapterName: currentChapter.name,
-        topicIndex: currentTopicIndex,
-        topicNumber: currentTopicIndex + 1,
-        topicCount: currentChapter.topics.length,
-        topicName: focus,
-        previousTopic,
-        nextTopic,
-      };
-      const requirement = `面向${currentLearner.tag}（${currentLearner.education}）制作《${focus}》教学PPT，目标是${currentLearner.targetJob}。本课件只深入当前最小知识点，不扩写成整章；内容要覆盖核心概念、原理、方法、典型应用、练习检查与回顾。讲解要自然承接知识网络中的前序内容，并为后续知识点留下必要接口，但不要机械复述地图或频繁预告下一页。`;
-      const task = await presentationApi.createPresentation({
-        requirement,
-        title: wantedTitle,
-        audience: 'students',
-        purpose: 'courseware',
-        style: 'academic',
-        backgroundStyle: 'blue-white-minimal',
-        language: 'zh-CN',
-        slideCount: 0,
-        aspectRatio: '16:9',
-        detailLevel: 'detailed',
-        includeSpeakerNotes: true,
-        modelProvider: 'mimo',
-        generationMode: 'template',
-        learningGoalId: goalId ?? undefined,
-        generationContext: {
-          contextType: 'knowledge-map-position',
-          kpId,
-          instruction: '把知识网络作为课程上下文：默认学习者已经接触前序知识点；当前PPT只讲当前知识点；必要时自然引用前序概念，并说明它与后续知识的关系。不要把章节名称逐条念成目录，也不要把用户目标或写作要求当成知识章节。',
-          current: mapPosition,
-          chapters: chapters.map((chapter, index) => ({
-            order: index + 1,
-            id: chapter.id,
-            name: chapter.name,
-            topics: chapter.topics,
-          })),
-          prerequisiteEdges: (knowledgeMap?.edges ?? []).filter((edge) => edge.kind === 'prereq'),
-        },
-      });
-      setPptResources((current) => ({ ...current, [resourceScope]: { id: task.id, title: task.title, status: task.status } }));
-      upsertResourceCache(resourceScope, 'ppt', { id: task.id, title: task.title, status: task.status, updatedAt: new Date().toISOString() });
-      toast.success('交互课件已加入后台生成', { description: '可以继续生成讲义、实操指南或分阶测试题。' });
-      void watchPpt(resourceScope, task.id, focus);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'PPT 创建失败');
-    } finally {
-      startingPptRefs.current.delete(resourceScope);
-      if (mounted.current) setStartingPpts((current) => {
-        const next = new Set(current);
-        next.delete(resourceScope);
-        return next;
-      });
-    }
+    toast.info('该资源暂未提供', { description: '管理员尚未设置该知识点的课件母版。' });
   };
   const pathNodes = reportPath.filter((n) => n.kpId === kpId);
   const primaryStatus = pathNodes.find((n) => n.status === 'active')?.status
@@ -537,7 +213,6 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
         </div>
         <p className="mt-2 text-[12.5px] leading-[19px] text-ink-muted">{kp.description}</p>
       </div>
-      {availableProcessTask && <button type="button" onClick={() => navigate(`/collaboration?task=resource-${availableProcessTask.id}`)} className="flex w-full items-center gap-3 rounded-xl border border-brand/25 bg-brand-tint/40 px-3 py-2.5 text-left hover:border-brand/50"><Sparkles size={15} className="text-brand"/><span className="min-w-0 flex-1"><span className="block text-xs font-semibold text-ink">进入 AI 教研工作台</span><span className="block truncate text-[10px] text-ink-muted">{availableProcessTask.title} · {availableProcessTask.stageMessage}</span></span><ArrowRight size={13} className="text-brand"/></button>}
 
       {/* 掌握进度 */}
       <div className="flex items-center gap-4 rounded-[12px] border border-hairline bg-card-warm p-3">
@@ -568,7 +243,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           {topicRecommendations.map((item, index) => {
             const meta = FORM_META[item.form];
             const Icon = meta.icon;
-            return <button key={`${item.topic}-${item.form}-${index}`} type="button" onClick={() => onSelectTopic?.(item.childIndex)} className="group flex w-full items-center gap-3 rounded-[10px] border border-dashed border-brand/35 bg-paper px-3 py-2.5 text-left transition-all hover:border-brand/60 hover:bg-brand-tint/40"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-paper-deep text-brand"><Icon size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium text-ink">未生成 · {meta.label}</span><span className="block truncate text-[11px] text-ink-muted">管理员未生成，请联系管理员</span></span><ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" /></button>;
+            return <button key={`${item.topic}-${item.form}-${index}`} type="button" onClick={() => onSelectTopic?.(item.childIndex)} className="group flex w-full items-center gap-3 rounded-[10px] border border-dashed border-brand/35 bg-paper px-3 py-2.5 text-left transition-all hover:border-brand/60 hover:bg-brand-tint/40"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-paper-deep text-brand"><Icon size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium text-ink">暂无资源 · {meta.label}</span><span className="block truncate text-[11px] text-ink-muted">管理员尚未设置通用资源</span></span><ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" /></button>;
           })}
         </div>
       </div>}
@@ -576,76 +251,63 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
       {/* 子知识点资源入口 */}
       {selectedTopicName && <div>
         <div className="mb-2 text-[12px] font-medium text-ink-2">
-          {res.length ? `已经做好 ${res.length} 份，挑一个开始` : '以下资源未生成：'}
+          {res.length ? `已有 ${res.length} 份通用资源` : '暂无资源'}
         </div>
         <div className="space-y-2">
-          {/* 三类资源彼此独立：可同时后台生成，完成后原位切换为打开入口。 */}
+          {/* 用户端只读管理员母版资源。 */}
           {(Object.keys(FORM_META) as ResourceForm[]).map((f) => {
               const meta = FORM_META[f];
               const Icon = meta.icon;
-              const completed = generatedForScope[f] ?? existingResourceFor(f);
-              const isGenerating = generating.has(`${resourceScope}:${f}`);
+              const completed = existingResourceFor(f);
               return (
                 <button
                   key={f}
                   type="button"
-                  onClick={() => { if (!completed) { toast.info('该资源未生成'); return; } void generateResource(f); }}
-                  aria-busy={isGenerating}
-                  title={isGenerating ? '内容正在生成中' : completed ? `打开${meta.label}` : '未生成'}
+                  onClick={() => { if (!completed?.id) { toast.info('暂无资源'); return; } navigate(`/learn/resource/${completed.id}`); }}
+                  title={completed ? `打开${meta.label}` : '暂无资源'}
                   className={cn(
                     'group flex w-full items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left transition-all',
                     completed
                       ? 'border-hairline bg-paper hover:border-brand/45 hover:bg-brand-tint/40'
-                      : isGenerating
-                        ? 'cursor-wait border-brand/45 bg-brand-tint/40'
-                        : 'border-dashed border-brand/35 bg-paper hover:border-brand/60 hover:bg-brand-tint/40',
+                      : 'cursor-not-allowed border-dashed border-brand/35 bg-paper',
                   )}
                 >
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-tint text-brand">
-                    {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Icon size={16} strokeWidth={1.75} />}
+                    <Icon size={16} strokeWidth={1.75} />
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] font-medium text-ink">
-                      {completed ? `打开${meta.label}` : isGenerating ? `正在生成${meta.label}` : `${meta.label} · 未生成`}
+                      {completed ? `打开${meta.label}` : `${meta.label} · 暂无资源`}
                     </span>
                     <span className="block truncate text-[11px] text-ink-muted">
-                      {completed?.title ?? (isGenerating ? '正在后台生成，可继续生成其他内容' : '未生成')}
+                      {completed?.title ?? '管理员尚未设置通用资源'}
                     </span>
                   </span>
-                  {isGenerating
-                    ? <Loader2 size={13} className="shrink-0 animate-spin text-brand" />
-                    : completed
-                      ? <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
-                      : <Sparkles size={13} className="shrink-0 text-brand/70 transition-transform group-hover:scale-110" />}
+                  {completed && <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />}
                 </button>
               );
             })}
 
-          {/* 交互课件与其他资源一致：后台独立生成，完成后原位切换为打开入口。 */}
+          {/* 交互课件同样只读管理员母版。 */}
           <button
             type="button"
-            onClick={() => { if (!pptForScope || pptForScope.status !== 'completed') { toast.info('交互课件未生成'); return; } void openPptCourseware(); }}
-            aria-busy={pptGenerating || pptChecking}
-            title={pptChecking ? '正在检查已有课件' : pptGenerating ? '内容正在生成中' : pptForScope ? '打开交互课件' : '未生成'}
+            onClick={() => { if (!pptForScope || pptForScope.status !== 'completed') { toast.info('暂无资源'); return; } void openPptCourseware(); }}
+            title={pptForScope ? '打开交互课件' : '暂无资源'}
             className={cn(
               'group flex w-full items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left transition-all',
               pptForScope?.status === 'completed'
                 ? 'border-hairline bg-paper hover:border-brand/45 hover:bg-brand-tint/40'
-                : pptGenerating
-                  ? 'cursor-wait border-brand/45 bg-brand-tint/40'
-                  : res.length
-                    ? 'border-dashed border-brand/35 bg-paper hover:border-brand/60 hover:bg-brand-tint/40'
-                    : 'border-brand/35 bg-brand-tint/50 hover:border-brand/60',
+                : 'cursor-not-allowed border-dashed border-brand/35 bg-paper',
             )}
           >
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand text-paper">
-              {pptGenerating || pptChecking ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+              <Sparkles size={15} />
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-medium text-ink">{pptForScope?.status === 'completed' ? '打开交互课件' : pptGenerating ? '正在生成交互课件' : pptChecking ? '正在检查交互课件' : '交互课件 · 未生成'}</span>
-              <span className="block truncate text-[11px] text-ink-muted">{pptGenerating ? '正在后台生成，可继续生成其他内容' : pptChecking ? '正在查询已有生成记录' : pptForScope?.title ?? '未生成'}</span>
+              <span className="block text-[13px] font-medium text-ink">{pptForScope?.status === 'completed' ? '打开交互课件' : '交互课件 · 暂无资源'}</span>
+              <span className="block truncate text-[11px] text-ink-muted">{pptForScope?.title ?? '管理员尚未设置通用资源'}</span>
             </span>
-            {pptGenerating || pptChecking ? <Loader2 size={13} className="shrink-0 animate-spin text-brand" /> : pptForScope?.status === 'completed' ? <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" /> : <Sparkles size={13} className="shrink-0 text-brand/70 transition-transform group-hover:scale-110" />}
+            {pptForScope?.status === 'completed' && <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />}
           </button>
         </div>
       </div>}

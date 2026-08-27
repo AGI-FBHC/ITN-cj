@@ -10,10 +10,9 @@ import * as THREE from 'three';
 import type { GraphNode, GraphEdge, EdgeKind } from '@/data/knowledgeGraph';
 import type { ResourceForm, GeneratedResource } from '@/data/resources';
 import type { PresentationTaskSummary } from '@/lib/presentationApi';
-import { FUNCTION_META, useTopicResourceActions } from '@/hooks/useTopicResourceActions';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { presentationApi } from '@/lib/presentationApi';
+import { useNavigate } from 'react-router-dom';
 import cjkFontUrl from '@/assets/fonts/noto-sans-cjk-sc-gb2312.otf';
 
 const EDGE_COLORS: Record<EdgeKind, string> = {
@@ -91,12 +90,10 @@ interface KnowledgeGraph3DProps {
   nodeTargets?: Record<string, { target: number; name?: string }>;
   jobName?: string;
 
-  /** 各章节已有资源（kpId → resources），功能节点据此显示“打开/生成” */
+  /** 各叶子知识点的管理员母版资源（nodeCode → resources）。 */
   resources?: Record<string, Array<GeneratedResource & { id?: string; learned?: boolean; started?: boolean }>>;
-  /** 课件任务列表，用于功能节点判断“交互课件”是否已生成 */
+  /** 管理员母版课件列表。 */
   presentations?: PresentationTaskSummary[];
-  /** 生成资源时的学习目标 */
-  goalId?: string | null;
   className?: string;
 }
 
@@ -609,11 +606,17 @@ const FUNCTION_ICON = {
   ppt: Presentation,
 };
 
+const FUNCTION_META: Array<{ form: ResourceForm | 'ppt'; label: string }> = [
+  { form: 'lecture', label: '领学讲义' },
+  { form: 'guide', label: '实操指南' },
+  { form: 'quiz', label: '分阶测试题' },
+  { form: 'ppt', label: '交互课件' },
+];
+
 function TopicActionModal({
   node,
   resources,
   presentations,
-  goalId,
   learned,
   progress,
   mastery,
@@ -625,7 +628,6 @@ function TopicActionModal({
   node: GraphNode;
   resources?: Array<GeneratedResource & { id?: string; learned?: boolean; started?: boolean }>;
   presentations?: PresentationTaskSummary[];
-  goalId?: string | null;
   learned: Set<string>;
   progress: number;
   mastery: number;
@@ -636,26 +638,8 @@ function TopicActionModal({
   onClose: () => void;
 }) {
   const dialogRef = useRef<HTMLElement>(null);
-  // 弹窗打开时若全局课件列表尚未加载完（慢请求/刷新后），主动补一次，
-  // 避免“交互课件”误显示为暂无资源。
-  const [localPresentations, setLocalPresentations] = useState<PresentationTaskSummary[]>(presentations ?? []);
-  useEffect(() => {
-    if ((presentations ?? []).length > 0) {
-      setLocalPresentations(presentations ?? []);
-      return;
-    }
-    let cancelled = false;
-    presentationApi.listPresentationSummaries(100)
-      .then((listed) => { if (!cancelled) setLocalPresentations(listed.tasks ?? []); })
-      .catch(() => undefined);
-    return () => { cancelled = true; };
-  }, [presentations]);
-  const { existingFor, openOrGenerate, openOrCreatePpt, generating, checkingPpt } = useTopicResourceActions({
-    kpId: node.kpId,
-    label: node.label,
-    goalId,
-    existing: resources ?? [],
-  });
+  const navigate = useNavigate();
+  const existingFor = (form: ResourceForm) => (resources ?? []).find((item) => item.id && item.form === form);
   useEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const dialog = dialogRef.current;
@@ -718,7 +702,7 @@ function TopicActionModal({
           {FUNCTION_META.map((fn) => {
         const res = fn.form !== 'ppt' ? existingFor(fn.form as ResourceForm) : undefined;
         const pptTask = fn.form === 'ppt'
-          ? (localPresentations ?? [])
+          ? (presentations ?? [])
               .filter((task) => !['failed', 'cancelled'].includes(task.status))
               .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
               .find((task) => {
@@ -728,7 +712,7 @@ function TopicActionModal({
               })
           : undefined;
         const exists = fn.form === 'ppt' ? Boolean(pptTask && pptTask.status === 'completed') : Boolean(res?.id);
-        const busy = fn.form === 'ppt' ? checkingPpt : generating.has(fn.form);
+        const busy = false;
         const status: 'missing' | 'unlearned' | 'incomplete' | 'learned' = !exists
           ? 'missing'
           : fn.form === 'ppt'
@@ -752,8 +736,10 @@ function TopicActionModal({
                 toast.info('该资源暂未提供', { description: '后续会统一生成后开放，请稍后再来。' });
                 return;
               }
-              if (fn.form === 'ppt') void openOrCreatePpt();
-              else void openOrGenerate(fn.form as ResourceForm);
+              if (fn.form === 'ppt' && pptTask) {
+                navigate(`/learn/${node.kpId}?ppt=${pptTask.id}&topic=${encodeURIComponent(node.label.trim())}`);
+              }
+              else if (res?.id) navigate(`/learn/resource/${res.id}`);
             }}
           >
             <span className="mb-2 flex items-center justify-between">
@@ -1542,7 +1528,6 @@ export default function KnowledgeGraph3D({
   showLearned = false,
   resources = {},
   presentations = [],
-  goalId = null,
   persistenceKey,
   restorePersistedCamera = false,
 
@@ -1710,9 +1695,8 @@ export default function KnowledgeGraph3D({
 
         <TopicActionModal
           node={actionTopic}
-          resources={resources[actionTopic.kpId] ?? []}
+          resources={resources[actionTopic.id] ?? []}
           presentations={presentations}
-          goalId={goalId}
           learned={learned}
           progress={topicProgress[actionTopic.id] ?? 0}
           mastery={topicMastery[actionTopic.id] ?? 0}

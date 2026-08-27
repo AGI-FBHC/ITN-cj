@@ -56,6 +56,18 @@ export interface AdminResourceItem {
 export interface AdminResourceStats { library: number; pending: number; published: number; recycle: number; }
 export interface AdminResourceDetail extends AdminResourceItem { content: unknown; sources: unknown; decision: unknown; }
 
+export interface LearningTemplateResourceItem {
+  id: string;
+  type: 'lecture' | 'practice' | 'quiz' | 'ppt';
+  title: string;
+  topic: string;
+  domainCode: string | null;
+  nodeCode: string;
+  groupName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LearnerProfileData {
   id: string;
   code: string | null;
@@ -1122,6 +1134,10 @@ export const api = {
   reviewAdminResource: (id: string, action: 'submit' | 'approve' | 'reject' | 'publish' | 'deprecate', comment?: string) => request<void>(`/api/v1/admin/resources/${encodeURIComponent(id)}/review`, { method: 'POST', body: JSON.stringify({ action, comment }) }),
   archiveAdminResource: (id: string, reason?: string) => request<void>(`/api/v1/admin/resources/${encodeURIComponent(id)}/archive`, { method: 'POST', body: JSON.stringify({ reason }) }),
   setAdminResourceTemplate: (id: string) => request<void>(`/api/v1/admin/resources/${encodeURIComponent(id)}/template`, { method: 'POST' }),
+  listLearningTemplateResources: (domainCode?: string) => {
+    const query = domainCode ? `?domainCode=${encodeURIComponent(domainCode)}` : '';
+    return request<{ items: LearningTemplateResourceItem[]; total: number }>(`/api/v1/learning-template-resources${query}`);
+  },
   deleteAdminResourcePermanently: (id: string) => request<void>(`/api/v1/admin/resources/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   listLearners: () => request<LearnerProfileData[]>('/api/v1/learners'),
   getLearner: (id: string) => request<LearnerProfileData>(`/api/v1/learners/${encodeURIComponent(id)}`),

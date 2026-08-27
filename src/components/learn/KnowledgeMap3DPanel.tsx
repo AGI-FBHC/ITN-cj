@@ -52,7 +52,6 @@ export default function KnowledgeMap3DPanel({ className = '' }: { className?: st
       topicProgress={map.topicProgress}
       showLearned={showLearnedPath}
       resources={map.resources}
-      goalId={map.goalId}
       presentations={map.presentations}
       showHoverCards={false}
       showActionDialog={false}

@@ -149,6 +149,21 @@ export default function Learn() {
     return null;
   };
 
+  const selectedTopicNode = selectedKp && selectedTopic !== null
+    ? map.graphNodes.find((node) => (
+      node.kind === 'topic'
+      && node.kpId === selectedKp
+      && node.topicIndex === selectedTopic
+    ))
+    : null;
+  const detailResources = selectedTopicNode
+    ? map.resources[selectedTopicNode.id] ?? []
+    : selectedKp
+      ? map.graphNodes
+        .filter((node) => node.kind === 'topic' && node.kpId === selectedKp)
+        .flatMap((node) => map.resources[node.id] ?? [])
+      : Object.values(map.resources).flat();
+
   return (
     <div className="mx-auto max-w-[1280px] px-5 pb-24 pt-8 md:px-6">
       {/* 页头：标题 + 一句带动词的引导语 + 场景分段控件（全页唯一控件组） */}
@@ -299,7 +314,6 @@ export default function Learn() {
               focusTopicTarget={focusTopic}
               showLearned={showLearnedPath}
               resources={map.resources}
-              goalId={map.goalId}
               presentations={map.presentations}
               nodeTargets={map.nodeTargets}
               jobName={map.jobName}
@@ -319,7 +333,7 @@ export default function Learn() {
           transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
           className="min-w-0 lg:sticky lg:top-6 lg:self-start"
         >
-          <KpDetailPanel kpId={selectedKp} topicIndex={selectedTopic} onSelectTopic={setSelectedTopic} kp={knowledgePoints.find((kp) => kp.id === selectedKp) ?? null} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} graphNodes={map.graphNodes} path={map.path} resources={selectedKp ? map.resources[selectedKp] ?? [] : Object.values(map.resources).flat()} goalId={map.goalId} knowledgeMap={{ chapters: knowledgePoints.map((chapter) => ({ id: chapter.id, name: chapter.name, topics: chapter.coreTopics })), edges: map.graphEdges }} />
+          <KpDetailPanel kpId={selectedKp} topicIndex={selectedTopic} onSelectTopic={setSelectedTopic} kp={knowledgePoints.find((kp) => kp.id === selectedKp) ?? null} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} graphNodes={map.graphNodes} path={map.path} resources={detailResources} presentations={map.presentations} knowledgeMap={{ chapters: knowledgePoints.map((chapter) => ({ id: chapter.id, name: chapter.name, topics: chapter.coreTopics })), edges: map.graphEdges }} />
         </motion.div>}
         </AnimatePresence>
       </motion.div>

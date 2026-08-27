@@ -7,9 +7,8 @@ import {
 } from '@/data/knowledgeGraph';
 import type { GraphEdge, GraphNode } from '@/data/knowledgeGraph';
 import type { PathNode } from '@/data/reportData';
-import type { LearningResourceSummary } from '@/lib/api';
+import type { LearningResourceSummary, LearningTemplateResourceItem } from '@/lib/api';
 import type { GeneratedResource } from '@/data/resources';
-import { presentationApi } from '@/lib/presentationApi';
 import {
   readLearnerAnalytics,
   writeLearnerAnalytics,
@@ -44,8 +43,8 @@ import type { PresentationTaskSummary } from '@/lib/presentationApi';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-// v5: 资源改为全账号共用，旧 v4 缓存可能残留空资源列表，强制作废。
-const CACHE_PREFIX = 'lf.learningMapCache:v5:';
+// v6: 缓存只允许保存当前机构母版资源；v5 可能被个人资源刷新事件污染。
+const CACHE_PREFIX = 'lf.learningMapCache:v6:';
 const RESOURCE_CACHE_UPDATED_EVENT = 'lf:learning-map-resources-updated';
 const PRESENTATION_CACHE_UPDATED_EVENT = 'lf:learning-map-presentations-updated';
 
@@ -72,34 +71,85 @@ function writeLearningMapCache(learnerId: string, cache: LearningMapCache) {
   }
 }
 
-/** 生成完成后刷新资源缓存：仅请求一次资源列表并写回，下次打开地图直接命中缓存、不再请求后端 */
+function toTemplateResource(item: LearningTemplateResourceItem): LearningResourceSummary {
+  return {
+    id: item.id,
+    type: item.type as LearningResourceSummary['type'],
+    title: item.title,
+    topic: item.topic,
+    courseId: null,
+    chapterId: null,
+    sources: [],
+    learnerId: null,
+    kpId: item.nodeCode,
+    learned: false,
+    started: false,
+    progressRatio: 0,
+    masteryRatio: 0,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  };
+}
+
+function toTemplatePresentation(item: LearningTemplateResourceItem): PresentationTaskSummary {
+  return {
+    id: item.id,
+    status: 'completed',
+    progress: 100,
+    stageMessage: '机构母版课件',
+    title: item.title,
+    request: {
+      requirement: item.topic,
+      title: item.title,
+      audience: 'students',
+      purpose: 'courseware',
+      style: 'education',
+      backgroundStyle: 'clean-minimal',
+      language: 'zh-CN',
+      slideCount: 0,
+      aspectRatio: '16:9',
+      detailLevel: 'detailed',
+      includeSpeakerNotes: true,
+      modelProvider: 'mimo',
+      generationContext: { kpId: item.nodeCode, topicName: item.topic, groupName: item.groupName },
+    },
+    learned: false,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  };
+}
+
+async function fetchLearningTemplateCatalog(): Promise<{
+  resources: LearningResourceSummary[];
+  presentations: PresentationTaskSummary[];
+}> {
+  const listed = await api.listLearningTemplateResources('agent');
+  const items = (listed.items ?? []).filter((item) => item.nodeCode);
+  return {
+    resources: items.filter((item) => item.type !== 'ppt').map(toTemplateResource),
+    presentations: items.filter((item) => item.type === 'ppt').map(toTemplatePresentation),
+  };
+}
+
+/** 母版发生变化后刷新知识网络目录；个人资源绝不写入该缓存。 */
 export async function refreshLearningMapResourceCache(learnerId: string): Promise<void> {
   const cache = readLearningMapCache(learnerId);
   try {
-    const [listed, tree] = await Promise.all([
-      api.listLearningResources(),
+    const [catalog, tree] = await Promise.all([
+      fetchLearningTemplateCatalog(),
       cache?.tree ? Promise.resolve(cache.tree) : api.getRagTree('agent'),
     ]);
-    const resources = listed.resources ?? [];
-    writeLearningMapCache(learnerId, { resources, tree, presentations: cache?.presentations });
-    window.dispatchEvent(new CustomEvent(RESOURCE_CACHE_UPDATED_EVENT, { detail: { learnerId, resources } }));
+    writeLearningMapCache(learnerId, { ...catalog, tree });
+    window.dispatchEvent(new CustomEvent(RESOURCE_CACHE_UPDATED_EVENT, { detail: { learnerId, resources: catalog.resources } }));
+    window.dispatchEvent(new CustomEvent(PRESENTATION_CACHE_UPDATED_EVENT, { detail: { learnerId, presentations: catalog.presentations } }));
   } catch {
     /* 刷新失败时保留原缓存 */
   }
 }
 
-/** PPT 生成后刷新课件缓存：请求一次课件任务列表并写回，供下次打开地图直接命中 */
+/** 课件母版变化与学习资源母版使用同一只读目录，避免个人 PPT 污染知识网络。 */
 export async function refreshLearningMapPresentationCache(learnerId: string): Promise<void> {
-  const cache = readLearningMapCache(learnerId);
-  if (!cache) return;
-  try {
-    const listed = await presentationApi.listPresentationSummaries(100);
-    const presentations = listed.tasks ?? [];
-    writeLearningMapCache(learnerId, { resources: cache.resources, tree: cache.tree, presentations });
-    window.dispatchEvent(new CustomEvent(PRESENTATION_CACHE_UPDATED_EVENT, { detail: { learnerId, presentations } }));
-  } catch {
-    /* 刷新失败时保留原缓存 */
-  }
+  await refreshLearningMapResourceCache(learnerId);
 }
 
 
@@ -291,48 +341,24 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
       setLoading(false);
       return () => { cancelled = true; };
     }
-    // 缓存只用于首屏快速回显；资源可能在其他页面或后台被删除，必须始终用服务端列表校准。
-    // 若校准失败才保留旧缓存，避免把已经删除的 resourceId 永久“复活”。
-    const resourcesPromise = api.listLearningResources()
-      .then((listed) => listed.resources ?? [])
-      .catch(() => cached?.resources ?? [] as LearningResourceSummary[]);
-    // Admin template resources: the knowledge network shows only the admin's
-    // template group resources as the universal default for each node.
-    const adminResourcesPromise = api.listAdminResources({ view: 'library', domainCode: 'agent' })
-      .then((listed) => (listed.items ?? [])
-        .filter((item) => !item.archivedAt && item.nodeCode && item.template)
-        .map((item): LearningResourceSummary => ({
-          id: item.id,
-          type: (item.type === 'practice' ? 'practice' : item.type) as LearningResourceSummary['type'],
-          title: item.title, topic: item.topic,
-          courseId: null, chapterId: null, sources: [],
-          learnerId: null, kpId: item.nodeCode,
-          learned: false, started: false, progressRatio: 0, masteryRatio: 0,
-          createdAt: item.createdAt, updatedAt: item.updatedAt,
-        })))
-      .catch(() => [] as LearningResourceSummary[]);
-    // Presentation generation completes outside this page. Always reconcile
-    // against the server so historical completed tasks cannot stay "missing"
-    // forever because an older cache predates their completion.
-    const presentationsPromise = presentationApi.listPresentationSummaries(100)
-      .then((listed) => listed.tasks ?? [])
-      .catch(() => cached?.presentations ?? [] as PresentationTaskSummary[]);
+    // 知识网络只校准当前机构母版目录；接口失败时仅保留 v6 母版缓存，绝不回退个人资源。
+    const templateCatalogPromise = fetchLearningTemplateCatalog().catch(() => ({
+      resources: cached?.resources ?? [],
+      presentations: cached?.presentations ?? [],
+    }));
     /* 学习行为（lf-signal）会置脏并防抖刷新，保证实时性 */
     const analyticsPromise = hasLearner
       ? (cachedAnalytics ? Promise.resolve(null) : api.getLearnerAnalyticsProfile().catch(() => null))
       : Promise.resolve(null);
-    Promise.all([api.getRagTree('agent'), analyticsPromise, presentationsPromise, resourcesPromise, adminResourcesPromise])
-      .then(([latestTree, latestAnalytics, latestPresentations, latestResources, adminResources]) => {
-        // Knowledge network shows admin template resources only.
-        // User resources are kept separately for personal learning progress.
-        const templateResources = adminResources.length > 0 ? adminResources : latestResources;
+    Promise.all([api.getRagTree('agent'), analyticsPromise, templateCatalogPromise])
+      .then(([latestTree, latestAnalytics, templateCatalog]) => {
         if (!cancelled) setTree(latestTree);
         /* 缓存命中时 latestAnalytics 为 null，保留缓存值；只有网络新值才写回缓存（避免续期） */
         if (!cancelled) setAnalytics(latestAnalytics ?? cachedAnalytics);
-        if (!cancelled) setPresentations(latestPresentations);
-        if (!cancelled) setResources(templateResources);
+        if (!cancelled) setPresentations(templateCatalog.presentations);
+        if (!cancelled) setResources(templateCatalog.resources);
         if (hasLearner && !cancelled) {
-          writeLearningMapCache(currentLearnerId, { resources: templateResources, tree: latestTree, presentations: latestPresentations });
+          writeLearningMapCache(currentLearnerId, { ...templateCatalog, tree: latestTree });
           if (latestAnalytics) writeLearnerAnalytics(currentLearnerId, latestAnalytics);
         }
       })
@@ -428,7 +454,7 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
       status[chapter.nodeCode] = attempts > 0 ? 'active' : 'locked';
       byDatabaseOrder(chapter.children.filter((child) => child.level === 3)).forEach((child) => {
         const category = masteryByCategory.get(String(child.id));
-        const childResources = resources.filter((resource) => resource.kpId === chapter.nodeCode && resource.topic === child.name);
+        const childResources = resources.filter((resource) => resource.kpId === child.nodeCode);
         const progressByForm = new Map(childResources.map((resource) => [resource.type, resource.progressRatio ?? (resource.learned ? 1 : 0)]));
         const pptLearned = presentations.some((task) => task.learned && task.title.includes(child.name));
         topicProgress[child.nodeCode] = Math.round((
