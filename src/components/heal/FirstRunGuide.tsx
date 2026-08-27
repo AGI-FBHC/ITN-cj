@@ -96,7 +96,6 @@ export default function FirstRunGuide() {
 
             <div className="flex items-center gap-2.5">
               <Sprout className="h-8 w-8 shrink-0" />
-              <h2 className="font-serif text-[17px] font-semibold text-ink">先花 20 秒，看懂这里怎么用</h2>
             </div>
 
             <div className="mt-3.5 grid gap-3 sm:grid-cols-3">
