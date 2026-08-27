@@ -1,4 +1,4 @@
-import { CheckCircle2, ChevronLeft, ChevronRight, Eye, Loader2, Pause, Play, Plus, RotateCw, ScrollText, Sparkles, Trash2, X, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Eye, Loader2, Pause, Play, Plus, RotateCw, ScrollText, Sparkles, Trash2, X, XCircle } from 'lucide-react';
 import { api, streamAdminGenerationTask, type AdminGenerationEvent, type AdminResourceDetail, type LearningResourceGenerationTask, type RagDomain, type RagTree, type RagTreeNode } from '@/lib/api';
 import { loadAdminEventCache, saveAdminEventCache } from '@/lib/adminEventCache';
 import { useSearchParams } from 'react-router-dom';
@@ -316,10 +316,17 @@ function AgentWorkflowSummary({ events, running }: { events: AdminGenerationEven
     return result;
   }, []);
   if (!path.length) return null;
+  const [expanded, setExpanded] = useState(false);
   return (
     <section className="rounded-2xl border border-white/75 bg-white/45 px-4 py-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="mr-1 text-[10px] font-bold text-ink-muted">本次协同路径</span>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-bold text-ink-muted">本次协同路径</span>
+        <button type="button" onClick={() => setExpanded((current) => !current)} className="lf-row-btn !px-2 !py-1 text-[9px]">
+          {expanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+          {expanded ? '收起' : '展开'}
+        </button>
+      </div>
+      <div className={cn('mt-2 flex flex-wrap items-center gap-2 overflow-hidden transition-[max-height] duration-300', expanded ? 'max-h-[320px]' : 'max-h-[58px] min-h-[58px]')}>
         {path.map((agentId, index) => {
           const agent = agents.find((item) => item.id === agentId);
           const repeated = path.indexOf(agentId) !== index;
