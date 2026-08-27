@@ -163,9 +163,6 @@ export const graphEdges: GraphEdge[] = [
   { from: 'kp-safety-t1', to: 'kp-diagnosis-t1', kind: 'related', note: '风险评估与故障树共用分析方法' },
   { from: 'kp-vision-t3', to: 'kp-vision-t1', kind: 'related', note: '光照稳定是特征匹配的成败关键' },
   /* 应用：规范约束实操 */
-  { from: 'kp-safety-t2', to: 'kp-sensor-t0', kind: 'applies', note: '标定作业必须在急停可用状态下进行' },
-  { from: 'kp-safety-t3', to: 'kp-vision-t2', kind: 'applies', note: '协作边界约束抓取运动范围' },
-  { from: 'kp-safety-t0', to: 'kp-plc-t3', kind: 'applies', note: 'GB 11291.1 直接约束安全门设计' },
 ];
 
 /** 某节点的前置链（入边为 prereq 的源） */
