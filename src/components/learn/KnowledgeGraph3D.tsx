@@ -829,25 +829,6 @@ function ChildPlane({
   return (
     <Billboard ref={billboardRef} position={parentPos}>
       <group>
-        {/* 连线：从父节点球面到子节点球面（不穿入球体内部，避免半透明时闪烁） */}
-        {childData.map(({ node, relPos }) => {
-          const end = new THREE.Vector3(...relPos);
-          const dir = end.clone().normalize();
-          const start = dir.clone().multiplyScalar(3.7);
-          const endTrim = end.clone().addScaledVector(dir, -1.95);
-          return (
-            <Line
-              key={`line-${node.id}`}
-              renderOrder={-1}
-              points={[start, endTrim]}
-              color="#4E7860"
-              lineWidth={3}
-              transparent
-              opacity={0.6}
-            />
-          );
-        })}
-        
         {/* 子节点 */}
         {childData.map(({ node, relPos, direction }) => {
           const isHovered = hoveredId === node.id;
