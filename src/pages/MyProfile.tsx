@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { Save, Sparkles, Brain, History, RotateCcw, HelpCircle, Clock3, Flame, ClipboardCheck, ArrowRight } from 'lucide-react';
+import { Save, Sparkles, Brain, History, HelpCircle, Clock3, Flame, ClipboardCheck, ArrowRight } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
 import { useLearningMap } from '@/hooks/useLearningMap';
 import { deriveAbilityScores } from '@/lib/abilityAdjust';
@@ -566,10 +566,6 @@ export default function MyProfile() {
               重看新手提示（各页只提示一次的那些）
             </button>
 
-            <Link to="/onboarding" className="flex items-center justify-center gap-2 text-[13px] font-medium text-ink-muted transition-colors hover:text-brand">
-              <RotateCcw size={14} />
-              重新走一遍诊断向导
-            </Link>
           </div>
         </div>
       </div>
