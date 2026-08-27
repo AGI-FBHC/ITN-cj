@@ -59,10 +59,14 @@ export default function ResourceCenterAdmin() {
     () => api.getRagTree((domain as RagDomain).code),
     { ttlMs: 60_000 },
   );
-  const resourceType = kind;
   const listQ = useCachedData<{ items: AdminResourceItem[]; total: number }>(
-    domain ? `admin:res:${view}:${resourceType}:${domain.code}:${node?.nodeCode ?? ''}:${keyword}` : null,
-    () => api.listAdminResources({ view, type: resourceType, keyword, domainCode: (domain as { code: string }).code, nodeCode: node?.nodeCode }),
+    domain ? `admin:res:${view}:${domain.code}:${node?.nodeCode ?? ''}:${keyword}` : null,
+    () => api.listAdminResources({ view, keyword, domainCode: (domain as { code: string }).code, nodeCode: node?.nodeCode }),
+    { ttlMs: 15_000 },
+  );
+  const pptQ = useCachedData<{ items: AdminResourceItem[]; total: number }>(
+    domain ? `admin:ppt:${view}:${domain.code}:${node?.nodeCode ?? ''}:${keyword}` : null,
+    () => api.listAdminResources({ view, type: 'ppt', keyword, domainCode: (domain as { code: string }).code, nodeCode: node?.nodeCode }),
     { ttlMs: 15_000 },
   );
 
@@ -145,14 +149,14 @@ export default function ResourceCenterAdmin() {
   const groupedEntries = useMemo(() => {
     const map = new Map<string, Map<ResourceKind, AdminResourceItem>>();
     const ensure = (g: string) => { if (!map.has(g)) map.set(g, new Map()); return map.get(g)!; };
-    (listQ.data?.items ?? []).forEach((item) => { ensure(item.groupName || '默认分组').set(item.type as ResourceKind, item); });
+    [...(listQ.data?.items ?? []), ...(pptQ.data?.items ?? [])].forEach((item) => { ensure(item.groupName || '默认分组').set(item.type as ResourceKind, item); });
     generationTasks.forEach((task) => {
       const ctx = taskContext(task);
       if (task.status === 'completed' && ctx.domainCode === domain?.code && ctx.nodeCode === node?.nodeCode) ensure(String(ctx.groupName || '默认分组'));
     });
     ensure('默认分组');
     return [...map.entries()].sort(([a], [b]) => a === '默认分组' ? -1 : b === '默认分组' ? 1 : a.localeCompare(b));
-  }, [listQ.data?.items, generationTasks, domain?.code, node?.nodeCode]);
+  }, [listQ.data?.items, pptQ.data?.items, generationTasks, domain?.code, node?.nodeCode]);
   const pptReady = ['lecture', 'practice', 'quiz'].every((type) => completedTypes.has(type as ResourceKind));
 
   const startGeneration = async (target: ResourceKind) => {
@@ -232,7 +236,7 @@ export default function ResourceCenterAdmin() {
   /** 写操作后失效：清空资源相关缓存并强制刷新当前列表与统计 */
   const invalidateResources = async () => {
     clearCacheStartsWith('admin:res');
-    await Promise.all([listQ.refresh(true), statsQ.refresh(true)]);
+    await Promise.all([listQ.refresh(true), pptQ.refresh(true), statsQ.refresh(true)]);
   };
 
   const act = async (item: AdminResourceItem, action: string) => {
@@ -353,8 +357,9 @@ export default function ResourceCenterAdmin() {
             </button>
             <span>/</span>
             <span className="font-semibold text-ink">{domain.name}</span>
+            {node && (<><span>/</span><span className="font-semibold text-ink">{node.name}</span></>)}
+            <span className="font-bold text-ink-muted">· 资源管理</span>
           </nav>
-          <h2 className="mt-2 text-xl font-bold tracking-tight text-ink">{node?.name || domain.name} · 资源管理</h2>
         </div>
         <div className="flex gap-2">
           <button onClick={() => navigate('/admin/workbench')} className="lf-row-btn">
@@ -506,11 +511,7 @@ export default function ResourceCenterAdmin() {
                   <FolderTree size={18} className="text-ink-muted" />
                   <p className="text-sm font-semibold text-ink">请先选择左侧知识点，再查看和管理该知识点下的资源分组。</p>
                 </div>
-              ) : (
-                <div className="lf-card mb-4 rounded-2xl p-3">
-                  <div className="flex flex-wrap items-center gap-2"><span className="text-[10px] font-semibold text-ink-muted">知识点</span><span className="truncate text-xs font-bold text-ink">{node.name}</span></div>
-                </div>
-              )}
+              ) : null}
 
               <div className="lf-card mb-4 flex flex-wrap items-center gap-3 rounded-2xl p-3">
                 <div className="lf-seg">
