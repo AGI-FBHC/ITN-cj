@@ -165,7 +165,7 @@ export default function ResourceCenterAdmin() {
       title: `${node.name} · ${typeText[target]}`,
       kpId: node.nodeCode,
       detailLevel: 'detailed',
-      questionCount: target === 'quiz' ? 12 : undefined,
+      questionCount: target === 'quiz' ? 15 : undefined,
       generationContext: generationContext(),
     };
     const task = await api.startLearningResourceTask(target, request);
