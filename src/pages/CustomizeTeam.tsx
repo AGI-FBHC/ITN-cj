@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, BookOpen, ClipboardCheck, Loader2, Presentation, Wand2, Wrench } from 'lucide-react';
 import { api, type AdminGenerationEvent, type LearningResourceGenerationTask, type LearningTemplateResourceItem } from '@/lib/api';
-import { CollaborationRounds, AgentWorkflowSummary, agents, eventDisplayTitle, isLifecycleEvent } from '@/pages/CollaborationWorkbench';
+import { CollaborationRounds, agents, eventDisplayTitle, isLifecycleEvent } from '@/pages/CollaborationWorkbench';
 import ExecutionDetailPanel from '@/components/admin/ExecutionDetailPanel';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -322,7 +322,27 @@ export default function CustomizeTeam() {
             <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3">
               {shownTask ? (
                 <>
-                  <AgentWorkflowSummary events={events} running={active} />
+                  {/* 紧凑协同路径：单行，无标题 */}
+                  {(() => {
+                    const path = events.filter((e) => !isLifecycleEvent(e)).reduce<string[]>((acc, e) => { if (acc.at(-1) !== e.agent) acc.push(e.agent); return acc; }, []);
+                    return path.length > 0 ? (
+                      <div className="flex flex-wrap items-center gap-1 overflow-hidden">
+                        {path.map((agentId, i) => {
+                          const agent = agents.find((a) => a.id === agentId);
+                          const current = active && i === path.length - 1;
+                          return (
+                            <span key={`${agentId}-${i}`} className="contents">
+                              {i > 0 && <span className="text-[9px] text-ink-muted/50">→</span>}
+                              <span className={cn('inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-medium', current ? 'border-brand/40 bg-brand-tint text-brand' : 'border-white/80 bg-white/60 text-ink-2')}>
+                                {current && <span className="h-1 w-1 animate-pulse rounded-full bg-brand" />}
+                                {agent?.name ?? agentId}
+                              </span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : null;
+                  })()}
                   <CollaborationRounds
                     events={events}
                     selectedSeq={selectedEvent?.seq ?? null}
@@ -384,10 +404,7 @@ export default function CustomizeTeam() {
       {confirmTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 p-4 backdrop-blur-sm" onClick={() => setConfirmTarget(null)}>
           <div className="lf-card max-w-sm rounded-2xl p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-[15px] font-semibold text-ink">确认定制</h3>
-            <p className="mt-2 text-[12px] text-ink-muted">
-              将基于管理员母版为「{confirmTarget.label}」生成个性化定制资源，此操作每个资源仅可执行一次。
-            </p>
+            <h3 className="text-[15px] font-semibold text-ink">确认定制「{confirmTarget.label}」？</h3>
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={() => setConfirmTarget(null)} className="lf-row-btn !px-3 !py-1.5 text-[12px]">取消</button>
               <button
