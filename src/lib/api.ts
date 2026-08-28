@@ -1317,7 +1317,7 @@ export const api = {
     requestDirect<LearningResourceGenerationTask>(`/v1/learning-resource-tasks/${resourceType}`, {
       method: 'POST', body: JSON.stringify(body),
     }),
-  createCustomizeTask: (body: { adminResourceId: string; kpId?: string | null; resourceType: 'lecture' | 'practice' | 'quiz' | 'ppt'; title?: string }) =>
+  createCustomizeTask: (body: { adminResourceId: string; kpId?: string | null; resourceType: 'lecture' | 'practice' | 'quiz' | 'ppt'; title?: string; overwrite?: boolean }) =>
     requestDirect<LearningResourceGenerationTask>('/v1/customize-resource', { method: 'POST', body: JSON.stringify(body) }),
   getCustomizeTask: (taskId: string) =>
     requestDirect<LearningResourceGenerationTask>(`/v1/customize-tasks/${encodeURIComponent(taskId)}`),

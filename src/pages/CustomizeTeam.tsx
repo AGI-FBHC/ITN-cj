@@ -11,7 +11,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BookOpen, ClipboardCheck, Loader2, Presentation, Wand2, Wrench } from 'lucide-react';
+import { ArrowLeft, BookOpen, ClipboardCheck, Loader2, Presentation, RefreshCw, Wand2, Wrench } from 'lucide-react';
 import { api, type AdminGenerationEvent, type LearningResourceGenerationTask, type LearningTemplateResourceItem } from '@/lib/api';
 import { CollaborationRounds, agents, eventDisplayTitle, isLifecycleEvent } from '@/pages/CollaborationWorkbench';
 import ExecutionDetailPanel from '@/components/admin/ExecutionDetailPanel';
@@ -121,18 +121,21 @@ export default function CustomizeTeam() {
   useEffect(() => {
     if (!effectiveTaskId) { setFullTask(null); setEvents([]); return; }
     let alive = true;
+    let timer = 0;
+    setFullTask((current) => current?.id === effectiveTaskId ? current : null);
     const load = async () => {
       try {
         const detail = await api.getCustomizeTask(effectiveTaskId);
         if (!alive) return;
         setFullTask(detail);
         setEvents((detail.events ?? []) as unknown as AdminGenerationEvent[]);
+        if (activeStatuses.has(detail.status)) {
+          timer = window.setTimeout(() => { void load(); }, 2000);
+        }
       } catch { /* 保留现状 */ }
     };
     void load();
-    const busy = shownTask ? activeStatuses.has(shownTask.status) : false;
-    const timer = busy ? window.setInterval(() => { void load(); }, 2000) : 0;
-    return () => { alive = false; if (timer) window.clearInterval(timer); };
+    return () => { alive = false; if (timer) window.clearTimeout(timer); };
   }, [effectiveTaskId]);
 
   /* 完成时广播刷新 */
@@ -149,12 +152,14 @@ export default function CustomizeTeam() {
   const selectedEventIsRunning = Boolean(active && latest && selectedEvent && selectedEvent.seq === latest.seq);
 
   /* 动作 */
-  const startOne = async (type: ResType, templateId: string) => {
+  const startOne = async (type: ResType, templateId: string, overwrite = false) => {
     try {
-      const created = await api.createCustomizeTask({ adminResourceId: templateId, kpId: activeKpId, resourceType: type });
+      const created = await api.createCustomizeTask({ adminResourceId: templateId, kpId: activeKpId, resourceType: type, overwrite });
       setShownTaskId(created.id);
+      setTasks((current) => [created, ...current]);
       setSelectedEventSeq(null);
       setSelectedAgent('');
+      if (overwrite) toast.success('已开始重新生成，完成后将覆盖当前资源');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '发起定制失败');
     }
@@ -280,16 +285,10 @@ export default function CustomizeTeam() {
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {rows.map(({ type, label, icon: Icon, template, task: matched, busy, customized }) => (
-                <button
+                <div
                   key={type}
-                  type="button"
-                  disabled={!template}
-                  onClick={() => {
-                    if (matched) { setShownTaskId(matched.id); setSelectedEventSeq(null); setSelectedAgent(''); return; }
-                    if (template?.id) setConfirmTarget({ type, templateId: template.id, label });
-                  }}
                   className={cn(
-                    'rounded-[12px] border px-3 py-2 text-left transition-all',
+                    'relative rounded-[12px] border text-left transition-all',
                     !template ? 'cursor-not-allowed border-dashed border-hairline bg-paper/60'
                       : busy ? 'border-brand-amber/50 bg-brand-amber-tint/50'
                       : customized ? 'border-brand/45 bg-brand-tint/40 hover:border-brand/60'
@@ -297,16 +296,35 @@ export default function CustomizeTeam() {
                     effectiveTaskId === matched?.id && 'ring-2 ring-brand/25',
                   )}
                 >
-                  <span className="flex items-center justify-between">
-                    <span className={cn('flex h-6 w-6 items-center justify-center rounded-md', template ? 'bg-brand-tint text-brand' : 'bg-paper-deep text-ink-muted')}>
-                      {busy ? <Loader2 size={12} className="animate-spin" /> : <Icon size={12} />}
+                  <button
+                    type="button"
+                    disabled={!template}
+                    onClick={() => {
+                      if (matched) { setShownTaskId(matched.id); setSelectedEventSeq(null); setSelectedAgent(''); return; }
+                      if (template?.id) setConfirmTarget({ type, templateId: template.id, label });
+                    }}
+                    className="block w-full px-3 py-2 text-left"
+                  >
+                    <span className="flex items-center justify-between">
+                      <span className={cn('flex h-6 w-6 items-center justify-center rounded-md', template ? 'bg-brand-tint text-brand' : 'bg-paper-deep text-ink-muted')}>
+                        {busy ? <Loader2 size={12} className="animate-spin" /> : <Icon size={12} />}
+                      </span>
+                      <span className={cn('text-[10px] font-medium', busy ? 'text-ochre' : customized ? 'text-brand' : template ? 'text-ink-2' : 'text-ink-muted')}>
+                        {!template ? '暂无母版' : busy ? '定制中' : customized ? '已定制' : '未定制'}
+                      </span>
                     </span>
-                    <span className={cn('text-[10px] font-medium', busy ? 'text-ochre' : customized ? 'text-brand' : template ? 'text-ink-2' : 'text-ink-muted')}>
-                      {!template ? '暂无母版' : busy ? '定制中' : customized ? '已定制' : '未定制'}
-                    </span>
-                  </span>
-                  <strong className="mt-1 block truncate text-[12px] font-semibold text-ink">{label}</strong>
-                </button>
+                    <strong className="mt-1 block truncate text-[12px] font-semibold text-ink">{label}</strong>
+                  </button>
+                  {customized && template?.id && !busy && (
+                    <button
+                      type="button"
+                      onClick={() => void startOne(type, template.id, true)}
+                      className="mx-3 mb-2 inline-flex items-center gap-1 text-[10px] font-medium text-brand transition-colors hover:text-brand-dark"
+                    >
+                      <RefreshCw size={10} />重新生成
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           </div>
