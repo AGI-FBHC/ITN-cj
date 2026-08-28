@@ -393,6 +393,25 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
     };
   }, [currentLearnerId]);
 
+  /* 定制任务完成 → 立即重新校准知识网络（资源状态从"未定制"变为"打开"） */
+  useEffect(() => {
+    if (deferNetwork) return;
+    let cancelled = false;
+    const refreshCatalog = async () => {
+      try {
+        const templateCatalog = await fetchLearningTemplateCatalog();
+        if (cancelled) return;
+        setResources(templateCatalog.resources);
+        setPresentations(templateCatalog.presentations);
+        if (UUID_PATTERN.test(currentLearnerId) && tree) {
+          writeLearningMapCache(currentLearnerId, { ...templateCatalog, tree });
+        }
+      } catch { /* 校准失败保留现状 */ }
+    };
+    window.addEventListener('lf:customize-completed', refreshCatalog);
+    return () => { cancelled = true; window.removeEventListener('lf:customize-completed', refreshCatalog); };
+  }, [currentLearnerId, deferNetwork, tree]);
+
   return useMemo<LearningMapView>(() => {
     if (!tree) {
       return {

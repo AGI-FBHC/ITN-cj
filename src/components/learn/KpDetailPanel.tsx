@@ -345,7 +345,8 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
               const cTask = customizeTaskFor(f);
               const busy = taskBusy(cTask);
               const copied = cTask?.status === 'completed' && cTask.resourceId;
-              const openTarget = template?.id ?? (copied ? cTask!.resourceId! : null);
+              // 定制副本优先于母版：定制完成后打开用户自己的副本
+              const openTarget = copied ? cTask!.resourceId! : (template?.id ?? null);
               if (!template && !cTask) {
                 return (
                   <div key={f} className="flex w-full cursor-not-allowed items-center gap-3 rounded-[10px] border border-dashed border-brand/35 bg-paper px-3 py-2.5 text-left">
