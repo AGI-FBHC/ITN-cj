@@ -869,13 +869,14 @@ function ChildPlane({
 
 
 }) {
-  const billboardRef = useRef<THREE.Group | null>(null);
+  const planeRef = useRef<THREE.Group | null>(null);
 
-  // 聚焦动画期间子节点平面跟随父节点
+  // 聚焦动画期间子节点平面跟随父节点。平面本身保留世界坐标方向，节点视觉
+  // 各自在 ChildNode 内正对相机，避免整个平面旋转后脱离语义边的世界坐标。
   useFrame(() => {
-    if (!billboardRef.current) return;
-    billboardRef.current.position.copy(parentPos);
-    if (parentOffset) billboardRef.current.position.addScaledVector(parentOffset, animRef.current.blend);
+    if (!planeRef.current) return;
+    planeRef.current.position.copy(parentPos);
+    if (parentOffset) planeRef.current.position.addScaledVector(parentOffset, animRef.current.blend);
   });
   // 计算子节点在平面上的相对位置
   const childData = useMemo(() => {
@@ -895,7 +896,7 @@ function ChildPlane({
     });
   }, [children, layout.childDirections, layout.positions, parentPos]);
   return (
-    <Billboard ref={billboardRef} position={parentPos}>
+    <group ref={planeRef} position={parentPos}>
       <group>
         {/* 连线：从父节点球面到子节点球面（不穿入球体内部，避免半透明时闪烁） */}
         {childData.map(({ node, relPos }) => {
@@ -944,7 +945,7 @@ function ChildPlane({
           );
         })}
       </group>
-    </Billboard>
+    </group>
   );
 }
 
@@ -1030,7 +1031,7 @@ function ChildNode({
         onClick();
       }}
     >
-      {/* 节点视觉始终正对相机，避免透视边缘把圆球拉成椭圆 */}
+      {/* 节点视觉、文字和进度环各自正对相机；仅旋转视觉，不改变节点世界坐标。 */}
       <Billboard>
       <mesh ref={meshRef}>
         <circleGeometry args={[1, 64]} />
@@ -1048,7 +1049,6 @@ function ChildNode({
           <meshBasicMaterial color={TOPIC_STROKE_COLORS.outer} transparent opacity={hovered ? 0.46 : selected ? 0.4 : 0.32} depthWrite={false} />
         </mesh>
       </mesh>
-      </Billboard>
 
       {/* 进度环 */}
       {showProgressRings && <ProgressRing radius={baseSize} mastery={mastery} variant="topic" hovered={hovered} selected={selected} target={target} />}
@@ -1089,6 +1089,7 @@ function ChildNode({
       >
         {format3DLabel(node.label)}
       </Text>
+      </Billboard>
     </group>
   );
 }
@@ -1501,8 +1502,10 @@ function SceneContent({
             hovered={isRelated}
             dimmed={!!isDimmed}
             dashed={edge.kind === 'related'}
-            fromOffset={layout.focusOffsets.get(edge.from)}
-            toOffset={layout.focusOffsets.get(edge.to)}
+            // topic 跟随 ChildPlane 一起移动，需继承父章节的聚焦偏移；否则节点球
+            // 已移动而语义边仍停留在原布局坐标，箭头会悬在空处。
+            fromOffset={layout.focusOffsets.get(edge.from) ?? (n1.kind === 'topic' ? layout.focusOffsets.get(n1.kpId) : undefined)}
+            toOffset={layout.focusOffsets.get(edge.to) ?? (n2.kind === 'topic' ? layout.focusOffsets.get(n2.kpId) : undefined)}
             animRef={animRef}
             fadeOnFocus={focusId !== null && edge.from !== focusId && edge.to !== focusId}
             sourceId={edge.from}
