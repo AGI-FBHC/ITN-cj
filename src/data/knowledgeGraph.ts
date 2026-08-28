@@ -24,7 +24,7 @@ export interface GraphNode {
   labelAnchor: 'start' | 'middle' | 'end';
 }
 
-export type EdgeKind = 'prereq' | 'related' | 'applies';
+export type EdgeKind = 'prereq' | 'related' | 'applies' | 'prerequisite' | 'contrasts_with' | 'contains';
 
 export interface GraphEdge {
   from: string;

@@ -1408,7 +1408,8 @@ function SceneContent({
       <ambientLight intensity={0.7} />
       <directionalLight position={[25, 25, 25]} intensity={0.6} />
 
-      {/* 语义边：只画两端节点都可见的边 */}
+      {/* 语义边：只画两端节点都可见的边；默认只显示前置依赖，
+          易混淆/相关边仅在 hover 到其端点节点时显示 */}
       {edges.map((edge) => {
         const n1 = nodes.find((n) => n.id === edge.from);
         const n2 = nodes.find((n) => n.id === edge.to);
@@ -1416,10 +1417,13 @@ function SceneContent({
         const v1 = n1 && (n1.kind === 'domain' || expandedKpIds.has(n1.kpId));
         const v2 = n2 && (n2.kind === 'domain' || expandedKpIds.has(n2.kpId));
         if (!v1 || !v2) return null;
+        const key = `${edge.from}-${edge.to}`;
+        const isHoverEdge = Boolean(hoveredId) && (edge.from === hoveredId || edge.to === hoveredId);
+        // 非前置边（易混淆/相关）只在 hover 到端点时出现
+        if (edge.kind !== 'prerequisite' && edge.kind !== 'prereq' && !isHoverEdge) return null;
         const p1 = layout.positions.get(edge.from);
         const p2 = layout.positions.get(edge.to);
         if (!p1 || !p2) return null;
-        const key = `${edge.from}-${edge.to}`;
         const isRelated = relatedEdges.has(key);
         const isDimmed = hoveredId && !isRelated;
         return (

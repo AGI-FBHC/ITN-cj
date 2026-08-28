@@ -28,6 +28,9 @@ import SpeciesPlant, { GardenDefs } from '@/components/heal/SpeciesPlant';
 /** 术语双标：人话在前（label），行话在后（term，进 hover 提示） */
 const EDGE_STYLE: Record<EdgeKind, { stroke: string; width: number; dash?: string; opacity: number; label: string; term: string; hint: string }> = {
   prereq: { stroke: '#5F8870', width: 1.55, opacity: 0.5, label: '先学它', term: 'prereq · 前置', hint: '箭头从 A 指向 B：先学 A 才好学 B' },
+  prerequisite: { stroke: '#5F8870', width: 1.55, opacity: 0.5, label: '先学它', term: 'prerequisite · 前置', hint: '箭头从 A 指向 B：先学 A 才好学 B' },
+  contrasts_with: { stroke: '#B77552', width: 1.3, dash: '5 4', opacity: 0.45, label: '易混淆', term: 'contrasts_with · 易混淆', hint: '两个知识点容易混淆，注意区分' },
+  contains: { stroke: '#8A94A6', width: 1.1, opacity: 0.35, label: '包含', term: 'contains · 包含', hint: '章节包含该知识点' },
   related: { stroke: '#B77552', width: 1.4, dash: '5 4', opacity: 0.5, label: '互相印证', term: 'related · 相关', hint: '两个知识互补或方法同构，一起看更通' },
   applies: { stroke: '#66725E', width: 1.1, dash: '2 4', opacity: 0.45, label: '规范约束', term: 'applies · 应用', hint: '安全规范对实操动作的硬性约束' },
 };
