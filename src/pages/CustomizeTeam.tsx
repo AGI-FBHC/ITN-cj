@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, BookOpen, ClipboardCheck, Loader2, Presentation, Wand2, Wrench } from 'lucide-react';
-import { api, streamAdminGenerationTask, type AdminGenerationEvent, type LearningResourceGenerationTask, type LearningTemplateResourceItem } from '@/lib/api';
+import { api, type AdminGenerationEvent, type LearningResourceGenerationTask, type LearningTemplateResourceItem } from '@/lib/api';
 import { CollaborationRounds, AgentWorkflowSummary, agents, eventDisplayTitle, isLifecycleEvent } from '@/pages/CollaborationWorkbench';
 import ExecutionDetailPanel from '@/components/admin/ExecutionDetailPanel';
 import { cn } from '@/lib/utils';
@@ -112,22 +112,26 @@ export default function CustomizeTeam() {
     return running[0]?.id ?? rows.find((r) => r.task?.status === 'completed')?.task?.id ?? null;
   }, [shownTaskId, rows]);
 
-  const shownTask = tasks.find((t) => t.id === effectiveTaskId) ?? null;
+  const [fullTask, setFullTask] = useState<LearningResourceGenerationTask | null>(null);
+  const shownTask = fullTask ?? (tasks.find((t) => t.id === effectiveTaskId) ?? null);
   const active = Boolean(shownTask && activeStatuses.has(shownTask.status));
 
-  /* SSE 流式读取执行事件 */
+  /* 拉取任务详情（含完整 events），进行中时轮询 */
   useEffect(() => {
-    if (!effectiveTaskId) { setEvents([]); return; }
-    const controller = new AbortController();
-    const queueEvent = (event: AdminGenerationEvent) => {
-      setEvents((current) => {
-        const bySeq = new Map(current.map((item) => [item.seq, item]));
-        bySeq.set(event.seq, event);
-        return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
-      });
+    if (!effectiveTaskId) { setFullTask(null); setEvents([]); return; }
+    let alive = true;
+    const load = async () => {
+      try {
+        const detail = await api.getCustomizeTask(effectiveTaskId);
+        if (!alive) return;
+        setFullTask(detail);
+        setEvents((detail.events ?? []) as unknown as AdminGenerationEvent[]);
+      } catch { /* 保留现状 */ }
     };
-    void streamAdminGenerationTask('resource', effectiveTaskId, queueEvent, controller.signal).catch(() => undefined);
-    return () => controller.abort();
+    void load();
+    const busy = shownTask ? activeStatuses.has(shownTask.status) : false;
+    const timer = busy ? window.setInterval(() => { void load(); }, 2000) : 0;
+    return () => { alive = false; if (timer) window.clearInterval(timer); };
   }, [effectiveTaskId]);
 
   /* 完成时广播刷新 */
@@ -329,8 +333,16 @@ export default function CustomizeTeam() {
                   />
                 </>
               ) : (
-                <div className="flex h-full items-center justify-center text-[12px] text-ink-muted">
-                  该知识点还没有定制任务。点击上方资源卡片发起定制，或使用「一键定制」。
+                <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+                  <p className="text-[12px] text-ink-muted">该知识点还没有定制任务</p>
+                  <button
+                    type="button"
+                    onClick={() => void customizeAll()}
+                    className="lf-btn-primary inline-flex items-center gap-1.5 text-[12px]"
+                  >
+                    <Wand2 size={13} />一键定制全部资源
+                  </button>
+                  <p className="text-[10px] text-ink-muted">或点击上方资源卡片逐个发起定制</p>
                 </div>
               )}
             </div>
