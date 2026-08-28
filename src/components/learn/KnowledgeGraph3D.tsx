@@ -786,27 +786,54 @@ function TopicActionModal({
                 <Loader2 size={14} className="shrink-0 animate-spin text-[#D89238]" />
                 <span className="truncate">正在定制 {customizingTasks.length} 项资源…</span>
               </span>
-              <button
-                type="button"
-                onClick={() => navigate(`/learn/customize/${customizingTasks[0].id}`)}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#D89238]/50 bg-[#D89238]/10 px-2.5 py-1.5 text-[11px] font-medium text-[#8A6A2F] transition-all hover:border-[#D89238] hover:bg-[#D89238]/20"
-              >
-                <ScrollText size={12} />查看生成过程
-              </button>
+              <span className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => navigate(`/learn/customize/${customizingTasks[0].id}`)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[#D89238]/50 bg-[#D89238]/10 px-2.5 py-1.5 text-[11px] font-medium text-[#8A6A2F] transition-all hover:border-[#D89238] hover:bg-[#D89238]/20"
+                >
+                  <ScrollText size={12} />查看生成过程
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/learn/customize-team/${node.id}`)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[#8FA796]/40 bg-white/70 px-2.5 py-1.5 text-[11px] font-medium text-[#5B6A5F] transition-all hover:border-[#5B6A5F] hover:bg-white"
+                >
+                  <Wand2 size={12} />定制教研组
+                </button>
+              </span>
             </>
           ) : customizableTemplates.length > 0 ? (
             <>
               <span className="min-w-0 truncate text-[12px] text-[#5B6A5F]">还有 {customizableTemplates.length} 项资源未定制</span>
-              <button
-                type="button"
-                onClick={() => void customizeAll()}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#466C56]/40 bg-[#E8F0EA] px-2.5 py-1.5 text-[11px] font-medium text-[#466C56] transition-all hover:border-[#466C56] hover:bg-[#DCE8DF]"
-              >
-                <Wand2 size={12} />一键定制
-              </button>
+              <span className="flex shrink-0 items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => void customizeAll()}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[#466C56]/40 bg-[#E8F0EA] px-2.5 py-1.5 text-[11px] font-medium text-[#466C56] transition-all hover:border-[#466C56] hover:bg-[#DCE8DF]"
+                >
+                  <Wand2 size={12} />一键定制
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/learn/customize-team/${node.id}`)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[#8FA796]/40 bg-white/70 px-2.5 py-1.5 text-[11px] font-medium text-[#5B6A5F] transition-all hover:border-[#5B6A5F] hover:bg-white"
+                >
+                  <ScrollText size={12} />定制教研组
+                </button>
+              </span>
             </>
           ) : (
-            <span className="min-w-0 flex-1 truncate text-[12px] text-[#5B6A5F]">全部资源已定制，可开始学习</span>
+            <>
+              <span className="min-w-0 flex-1 truncate text-[12px] text-[#5B6A5F]">全部资源已定制，可开始学习</span>
+              <button
+                type="button"
+                onClick={() => navigate(`/learn/customize-team/${node.id}`)}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#8FA796]/40 bg-white/70 px-2.5 py-1.5 text-[11px] font-medium text-[#5B6A5F] transition-all hover:border-[#5B6A5F] hover:bg-white"
+              >
+                <ScrollText size={12} />定制教研组
+              </button>
+            </>
           )}
         </div>
 

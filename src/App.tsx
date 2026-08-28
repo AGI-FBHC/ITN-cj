@@ -107,6 +107,7 @@ export default function App() {
           <Route path="learn/ppt-preview/:taskId" element={<PptPreview />} />
           <Route path="learn/resource/:resourceId" element={<CourseResourcePlayer />} />
           <Route path="learn/customize/:taskId" element={<CustomizePipeline />} />
+          <Route path="learn/customize-team/:kpId" element={<CustomizePipeline />} />
           <Route path="learn/:kpId" element={<LearnUnit />} />
           <Route path="onboarding" element={<Onboarding />} />
           <Route path="profiles" element={<Profiles />} />
