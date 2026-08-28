@@ -1645,7 +1645,7 @@ export default function KnowledgeGraph3D({
       onTouchMove={(e) => e.stopPropagation()}
     >
       <Canvas>
-        <PerspectiveCamera makeDefault position={[0, 0, 75]} fov={45} />
+        <PerspectiveCamera makeDefault position={[0, 0, 88]} fov={45} />
         <OrbitControls
           makeDefault
           enablePan
