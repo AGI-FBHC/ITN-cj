@@ -13,7 +13,7 @@ import { CollaborationRounds, AgentWorkflowSummary, agents, eventDisplayTitle, i
 import ExecutionDetailPanel from '@/components/admin/ExecutionDetailPanel';
 import { cn } from '@/lib/utils';
 
-const activeStatuses = new Set(['queued', 'retrieving', 'debating', 'planning', 'analyzing', 'generating', 'verifying', 'reviewing', 'revising', 'judging', 'outline_review']);
+const activeStatuses = new Set(['queued', 'running', 'retrieving', 'debating', 'planning', 'analyzing', 'generating', 'verifying', 'reviewing', 'revising', 'judging', 'outline_review']);
 
 const RESOURCE_LABEL: Record<string, string> = {
   lecture: '定制讲义',
