@@ -8,6 +8,8 @@ import { OrbitControls, Text, Line, PerspectiveCamera, Billboard } from '@react-
 import { BookOpen, ClipboardCheck, Presentation, Wrench, X } from 'lucide-react';
 import * as THREE from 'three';
 import type { GraphNode, GraphEdge } from '@/data/knowledgeGraph';
+import { api } from '@/lib/api';
+import type { LearningResourceGenerationTask } from '@/lib/api';
 import type { ResourceForm, GeneratedResource } from '@/data/resources';
 import type { PresentationTaskSummary } from '@/lib/presentationApi';
 import { toast } from 'sonner';
@@ -642,6 +644,33 @@ function TopicActionModal({
   const dialogRef = useRef<HTMLElement>(null);
   const navigate = useNavigate();
   const existingFor = (form: ResourceForm) => (resources ?? []).find((item) => item.id && item.form === form);
+  /* 定制任务状态：跟随当前知识点拉取，进行中轮询 */
+  const [customizeTasks, setCustomizeTasks] = useState<LearningResourceGenerationTask[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const listed = await api.listCustomizeTasks(node.kpId);
+        if (alive) setCustomizeTasks(listed.tasks ?? []);
+      } catch { /* 查询失败保持现状 */ }
+    };
+    void load();
+    const timer = window.setInterval(() => { void load(); }, 2500);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [node.kpId]);
+  const CUSTOMIZE_FORM_TYPE: Record<ResourceForm, 'lecture' | 'practice' | 'quiz'> = { lecture: 'lecture', guide: 'practice', quiz: 'quiz' };
+  const customizeTaskFor = (form: ResourceForm): LearningResourceGenerationTask | undefined =>
+    customizeTasks.find((t) => t.resourceType === CUSTOMIZE_FORM_TYPE[form]);
+  const taskBusy = (task?: LearningResourceGenerationTask) =>
+    Boolean(task && !['completed', 'failed', 'cancelled'].includes(task.status));
+  const startCustomize = async (form: ResourceForm, adminResourceId: string) => {
+    try {
+      const task = await api.createCustomizeTask({ adminResourceId, kpId: node.kpId, resourceType: CUSTOMIZE_FORM_TYPE[form] });
+      navigate(`/learn/customize/${task.id}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '发起定制失败');
+    }
+  };
   useEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const dialog = dialogRef.current;
@@ -714,16 +743,21 @@ function TopicActionModal({
               })
           : undefined;
         const exists = fn.form === 'ppt' ? Boolean(pptTask && pptTask.status === 'completed') : Boolean(res?.id);
-        const busy = false;
-        const status: 'missing' | 'unlearned' | 'incomplete' | 'learned' = !exists
-          ? 'missing'
-          : fn.form === 'ppt'
-            ? (pptTask?.learned ? 'learned' : 'unlearned')
-            : (res?.learned ?? learned.has(node.kpId))
-              ? 'learned'
-              : res?.started
-                ? 'incomplete'
-                : 'unlearned';
+        const cTask = fn.form !== 'ppt' ? customizeTaskFor(fn.form as ResourceForm) : undefined;
+        const customizing = fn.form !== 'ppt' && taskBusy(cTask);
+        const customized = fn.form !== 'ppt' && cTask?.status === 'completed' && Boolean(cTask.resourceId);
+        const busy = customizing;
+        const status: 'missing' | 'unlearned' | 'incomplete' | 'learned' =
+          customizing ? 'incomplete'
+          : !exists && !customized
+            ? 'missing'
+            : fn.form === 'ppt'
+              ? (pptTask?.learned ? 'learned' : 'unlearned')
+              : customized || (res?.learned ?? learned.has(node.kpId))
+                ? 'learned'
+                : res?.started
+                  ? 'incomplete'
+                  : exists ? 'unlearned' : 'missing';
         const Icon = FUNCTION_ICON[fn.form];
         const tag = STATUS_META[status];
         return (
@@ -738,10 +772,25 @@ function TopicActionModal({
                 toast.info('该资源暂未提供', { description: '后续会统一生成后开放，请稍后再来。' });
                 return;
               }
+              if (customizing && cTask) {
+                navigate(`/learn/customize/${cTask.id}`);
+                return;
+              }
               if (fn.form === 'ppt' && pptTask) {
                 navigate(`/learn/${node.kpId}?ppt=${pptTask.id}&topic=${encodeURIComponent(node.label.trim())}`);
+                return;
               }
-              else if (res?.id) navigate(`/learn/resource/${res.id}`);
+              if (customized && cTask?.resourceId) {
+                navigate(`/learn/resource/${cTask.resourceId}`);
+                return;
+              }
+              if (res?.id && customized) {
+                navigate(`/learn/resource/${res.id}`);
+                return;
+              }
+              if (res?.id) {
+                void startCustomize(fn.form as ResourceForm, res.id);
+              }
             }}
           >
             <span className="mb-2 flex items-center justify-between">
@@ -750,7 +799,7 @@ function TopicActionModal({
               </span>
               <span className="flex items-center gap-1.5 text-[11px] font-medium text-[#6C7971]">
                 <i className="h-2 w-2 rounded-full" style={{ backgroundColor: busy ? '#D89238' : tag.color }} />
-                {busy ? '处理中' : tag.label}
+                {busy ? '定制中…' : status === 'unlearned' && fn.form !== 'ppt' && !customized ? '未定制' : tag.label}
               </span>
             </span>
             <strong className="block text-[15px] font-semibold text-[#26352D]">{fn.label}</strong>
