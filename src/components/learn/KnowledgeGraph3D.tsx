@@ -405,7 +405,8 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpIds: Set<
         // 水平展开：垂直排列
         const childPos = new THREE.Vector3(
           basePos.x + (i % 2) * 8 * sign,
-          basePos.y + (i - (children.length - 1) / 2) * 8,
+          // 屏幕上固定按 topicIndex 从上到下排列：第 1 项在最上方，第 N 项在最下方。
+          basePos.y - (i - (children.length - 1) / 2) * 8,
           basePos.z + 2,
         );
         positions.set(node.id, childPos);
@@ -869,14 +870,13 @@ function ChildPlane({
 
 
 }) {
-  const planeRef = useRef<THREE.Group | null>(null);
+  const billboardRef = useRef<THREE.Group | null>(null);
 
-  // 聚焦动画期间子节点平面跟随父节点。平面本身保留世界坐标方向，节点视觉
-  // 各自在 ChildNode 内正对相机，避免整个平面旋转后脱离语义边的世界坐标。
+  // 聚焦动画期间子节点平面跟随父节点，并始终正对屏幕以稳定上下顺序。
   useFrame(() => {
-    if (!planeRef.current) return;
-    planeRef.current.position.copy(parentPos);
-    if (parentOffset) planeRef.current.position.addScaledVector(parentOffset, animRef.current.blend);
+    if (!billboardRef.current) return;
+    billboardRef.current.position.copy(parentPos);
+    if (parentOffset) billboardRef.current.position.addScaledVector(parentOffset, animRef.current.blend);
   });
   // 计算子节点在平面上的相对位置
   const childData = useMemo(() => {
@@ -896,7 +896,7 @@ function ChildPlane({
     });
   }, [children, layout.childDirections, layout.positions, parentPos]);
   return (
-    <group ref={planeRef} position={parentPos}>
+    <Billboard ref={billboardRef} position={parentPos}>
       <group>
         {/* 连线：从父节点球面到子节点球面（不穿入球体内部，避免半透明时闪烁） */}
         {childData.map(({ node, relPos }) => {
@@ -945,7 +945,7 @@ function ChildPlane({
           );
         })}
       </group>
-    </group>
+    </Billboard>
   );
 }
 
@@ -1031,7 +1031,7 @@ function ChildNode({
         onClick();
       }}
     >
-      {/* 节点视觉、文字和进度环各自正对相机；仅旋转视觉，不改变节点世界坐标。 */}
+      {/* 节点视觉始终正对相机，避免透视边缘把圆球拉成椭圆 */}
       <Billboard>
       <mesh ref={meshRef}>
         <circleGeometry args={[1, 64]} />
@@ -1049,6 +1049,7 @@ function ChildNode({
           <meshBasicMaterial color={TOPIC_STROKE_COLORS.outer} transparent opacity={hovered ? 0.46 : selected ? 0.4 : 0.32} depthWrite={false} />
         </mesh>
       </mesh>
+      </Billboard>
 
       {/* 进度环 */}
       {showProgressRings && <ProgressRing radius={baseSize} mastery={mastery} variant="topic" hovered={hovered} selected={selected} target={target} />}
@@ -1089,7 +1090,6 @@ function ChildNode({
       >
         {format3DLabel(node.label)}
       </Text>
-      </Billboard>
     </group>
   );
 }
@@ -1482,7 +1482,7 @@ function SceneContent({
         const n2 = nodes.find((n) => n.id === edge.to);
         // 3D 展开视图只保留章节层语义关系；知识点之间已有章节到子节点的结构线，
         // 不再叠加前置/易混淆箭头，避免展开后的局部网络过密。
-        if (n1?.kind === 'topic' && n2?.kind === 'topic') return null;
+        if (n1?.kind === 'topic' || n2?.kind === 'topic') return null;
         // 节点不可见则跳过：domain 始终可见，topic 需要其父章节已展开
         const v1 = n1 && (n1.kind === 'domain' || expandedKpIds.has(n1.kpId));
         const v2 = n2 && (n2.kind === 'domain' || expandedKpIds.has(n2.kpId));
