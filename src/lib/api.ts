@@ -1021,6 +1021,23 @@ export interface JobTargetLevel {
   sortOrder: number;
 }
 
+export interface UserMemory {
+  id: string;
+  learnerId?: string | null;
+  namespace: 'profile' | 'goal' | 'preference' | 'knowledge' | 'misconception' | 'learning_strategy' | 'episodic';
+  key: string;
+  scope: Record<string, unknown>;
+  value: Record<string, unknown>;
+  summary: string;
+  sourceType: 'user_declared' | 'system_calculated' | 'agent_inferred';
+  confidence: number;
+  importance: number;
+  version: number;
+  lastUsedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export const api = {
   login: (email: string, password: string) =>
     request<LoginResult>('/api/v1/auth/login', {
@@ -1323,6 +1340,12 @@ export const api = {
     requestDirect<LearningResourceGenerationTask>(`/v1/customize-tasks/${encodeURIComponent(taskId)}`),
   listCustomizeTasks: (kpId?: string | null) =>
     requestDirect<{ tasks: LearningResourceGenerationTask[] }>(`/v1/customize-tasks${kpId ? `?kpId=${encodeURIComponent(kpId)}` : ''}`),
+  listMemories: (namespace?: string) =>
+    requestDirect<{ items: UserMemory[] }>(`/v1/memories${namespace ? `?namespace=${encodeURIComponent(namespace)}` : ''}`),
+  deleteMemory: (memoryId: string) =>
+    requestDirect<void>(`/v1/memories/${encodeURIComponent(memoryId)}`, { method: 'DELETE' }),
+  getMemoryContext: (body: { scene: string; scope?: Record<string, unknown>; taskId?: string }) =>
+    requestDirect<Record<string, unknown>>('/v1/memory/context', { method: 'POST', body: JSON.stringify(body) }),
   listLearningResourceTasks: (limit = 30, summary = false) =>
     requestDirect<{ tasks: LearningResourceGenerationTask[] }>(`/v1/learning-resource-tasks?limit=${limit}&summary=${summary ? 'true' : 'false'}`),
   summarizeAdminGenerationEvent: (taskType: 'resource' | 'ppt', taskId: string, seq: number, refresh = false) =>
