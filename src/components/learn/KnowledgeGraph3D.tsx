@@ -882,17 +882,18 @@ function ChildPlane({
     const orderedChildren = [...children].sort((left, right) =>
       (left.topicIndex ?? Number.MAX_SAFE_INTEGER) - (right.topicIndex ?? Number.MAX_SAFE_INTEGER),
     );
-    return orderedChildren.map((node, i) => {
+    // 子节点球面位置取自 layout.positions（与语义边端点同源），相对父节点转成局部坐标。
+    // 修复：此前用独立的 15*sign + ... 公式算 relPos，与语义边的 layout.positions 不一致，
+    // 导致展开章节时跨节点语义边的箭头悬空。
+    return orderedChildren.map((node) => {
       const direction = layout.childDirections.get(node.id) || 'right';
-      const sign = direction === 'left' ? -1 : 1;
-      const relPos: [number, number, number] = [
-        15 * sign + (i % 2) * 6 * sign,
-        ((orderedChildren.length - 1) / 2 - i) * 8,
-        0,
-      ];
+      const abs = layout.positions.get(node.id);
+      const relPos: [number, number, number] = abs
+        ? [abs.x - parentPos.x, abs.y - parentPos.y, abs.z - parentPos.z]
+        : [0, 0, 0];
       return { node, relPos, direction };
     });
-  }, [children, layout.childDirections]);
+  }, [children, layout.childDirections, layout.positions, parentPos]);
   return (
     <Billboard ref={billboardRef} position={parentPos}>
       <group>
