@@ -802,7 +802,7 @@ function TopicActionModal({
                 onClick={() => void customizeAll()}
                 className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#466C56]/40 bg-[#E8F0EA] px-2.5 py-1.5 text-[11px] font-medium text-[#466C56] transition-all hover:border-[#466C56] hover:bg-[#DCE8DF]"
               >
-                <Wand2 size={12} />统一定制
+                <Wand2 size={12} />一键定制
               </button>
             </>
           ) : (
