@@ -1315,6 +1315,12 @@ export const api = {
     requestDirect<LearningResourceGenerationTask>(`/v1/learning-resource-tasks/${resourceType}`, {
       method: 'POST', body: JSON.stringify(body),
     }),
+  createCustomizeTask: (body: { adminResourceId: string; kpId?: string | null; resourceType: string; title?: string }) =>
+    requestDirect<LearningResourceGenerationTask>('/v1/customize-resource', { method: 'POST', body: JSON.stringify(body) }),
+  getCustomizeTask: (taskId: string) =>
+    requestDirect<LearningResourceGenerationTask>(`/v1/customize-tasks/${encodeURIComponent(taskId)}`),
+  listCustomizeTasks: (kpId?: string | null) =>
+    requestDirect<{ tasks: LearningResourceGenerationTask[] }>(`/v1/customize-tasks${kpId ? `?kpId=${encodeURIComponent(kpId)}` : ''}`),
   listLearningResourceTasks: (limit = 30, summary = false) =>
     requestDirect<{ tasks: LearningResourceGenerationTask[] }>(`/v1/learning-resource-tasks?limit=${limit}&summary=${summary ? 'true' : 'false'}`),
   summarizeAdminGenerationEvent: (taskType: 'resource' | 'ppt', taskId: string, seq: number, refresh = false) =>

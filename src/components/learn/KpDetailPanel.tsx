@@ -3,9 +3,10 @@
  * 选中任一知识点后：掌握度环（对目标差）、AI 把握、路径位置、
  * 管理员母版资源形态（讲义/实操/分阶题/课件），存在则打开，不存在则显示暂无资源。
  */
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ArrowRight, BookOpen, Wrench, ListChecks, Sparkles, Route } from 'lucide-react';
+import { ArrowRight, BookOpen, Wrench, ListChecks, Sparkles, Route, Loader2, Wand2 } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
 import type { PresentationTask, PresentationTaskSummary } from '@/lib/presentationApi';
 import { reportForLearner } from '@/data/reportBuilder';
@@ -18,6 +19,8 @@ import { Succulent, LeafSmall } from '@/components/heal/Flora';
 import type { PathNode } from '@/data/reportData';
 import type { GraphNode } from '@/data/knowledgeGraph';
 import { cn } from '@/lib/utils';
+import { api } from '@/lib/api';
+import type { LearningResourceGenerationTask } from '@/lib/api';
 
 const FORM_META: Record<ResourceForm, { label: string; icon: typeof BookOpen; hint: string }> = {
   lecture: { label: '领学讲义', icon: BookOpen, hint: '按你水平现写的讲义' },
@@ -83,6 +86,24 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
   const report = reportForLearner(currentLearner);
+  const [customizeTasks, setCustomizeTasks] = useState<LearningResourceGenerationTask[]>([]);
+
+  /* 拉取本知识点的定制任务，进行中时轮询刷新 */
+  useEffect(() => {
+    if (!kpId) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const listed = await api.listCustomizeTasks(kpId);
+        if (alive) setCustomizeTasks(listed.tasks ?? []);
+      } catch { /* 定制任务查询失败时保持现有状态 */ }
+    };
+    void load();
+    const busy = (listed_tasks: LearningResourceGenerationTask[]) => listed_tasks.some((t) => !['completed', 'failed', 'cancelled'].includes(t.status));
+    const timer = window.setInterval(() => { void load(); }, 2500);
+    if (!busy(customizeTasks)) { /* 静止时降低频率由 busy 逻辑控制 */ }
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [kpId]);
 
   if (!kpId) {
     /* 未选中章节：优先展示最近学习但未学完的资源，其次给继续学习建议。
@@ -172,6 +193,59 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
     ?? pathNodes.find((n) => n.status === 'todo')?.status
     ?? pathNodes[0]?.status
     ?? null;
+  /* ===== 用户定制（基于管理员母版二次创作） ===== */
+  const CUSTOMIZE_FORM_TYPE: Record<ResourceForm, 'lecture' | 'practice' | 'quiz'> = { lecture: 'lecture', guide: 'practice', quiz: 'quiz' };
+  const customizeTaskFor = (form: ResourceForm): LearningResourceGenerationTask | undefined =>
+    customizeTasks.find((t) => t.resourceType === CUSTOMIZE_FORM_TYPE[form]);
+  const taskBusy = (task?: LearningResourceGenerationTask) =>
+    Boolean(task && !['completed', 'failed', 'cancelled'].includes(task.status));
+
+  const startCustomize = async (form: ResourceForm) => {
+    const template = existingResourceFor(form);
+    if (!template?.id) { toast.info('该资源暂无母版，无法定制'); return; }
+    if (taskBusy(customizeTaskFor(form))) { toast.info('该资源正在定制中'); return; }
+    try {
+      const task = await api.createCustomizeTask({
+        adminResourceId: template.id,
+        kpId,
+        resourceType: CUSTOMIZE_FORM_TYPE[form],
+      });
+      navigate(`/learn/customize/${task.id}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '发起定制失败');
+    }
+  };
+
+  const customizableForms = (Object.keys(FORM_META) as ResourceForm[]).filter((f) => {
+    const hasTemplate = Boolean(existingResourceFor(f)?.id);
+    const task = customizeTaskFor(f);
+    const copied = task?.status === 'completed' && task.resourceId;
+    return hasTemplate && !copied;
+  });
+  const allBusy = customizableForms.every((f) => taskBusy(customizeTaskFor(f)));
+
+  const customizeAll = async () => {
+    if (!customizableForms.length) { toast.info('所有资源均已定制'); return; }
+    if (allBusy) { toast.info('资源正在定制中'); return; }
+    let firstTaskId: string | null = null;
+    for (const form of customizableForms) {
+      if (taskBusy(customizeTaskFor(form))) continue;
+      const template = existingResourceFor(form);
+      if (!template?.id) continue;
+      try {
+        const task = await api.createCustomizeTask({
+          adminResourceId: template.id,
+          kpId,
+          resourceType: CUSTOMIZE_FORM_TYPE[form],
+        });
+        firstTaskId ??= task.id;
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : '发起定制失败');
+      }
+    }
+    if (firstTaskId) navigate(`/learn/customize/${firstTaskId}`);
+  };
+
   /* 四个推荐：优先展示最近已学内容（我的已学路径），不足用未学完资源补位，最后用子知识点生成推荐补满。 */
   const learnedResources = [...res]
     .filter((item) => item.id && item.learned)
@@ -250,40 +324,66 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
 
       {/* 子知识点资源入口 */}
       {selectedTopicName && <div>
-        <div className="mb-2 text-[12px] font-medium text-ink-2">
-          {res.length ? `已有 ${res.length} 份通用资源` : '暂无资源'}
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className="text-[12px] font-medium text-ink-2">{res.length ? `已有 ${res.length} 份通用资源` : '暂无资源'}</span>
+          {customizableForms.length > 0 && (
+            <button
+              type="button"
+              onClick={() => void customizeAll()}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-brand/45 bg-brand-tint/50 px-2.5 py-1.5 text-[11px] font-medium text-brand transition-all hover:border-brand hover:bg-brand-tint"
+            >
+              <Wand2 size={12} />一键定制全部
+            </button>
+          )}
         </div>
         <div className="space-y-2">
-          {/* 用户端只读管理员母版资源。 */}
+          {/* 三态资源按钮：未定制 → 定制中 → 打开 */}
           {(Object.keys(FORM_META) as ResourceForm[]).map((f) => {
               const meta = FORM_META[f];
               const Icon = meta.icon;
-              const completed = existingResourceFor(f);
+              const template = existingResourceFor(f);
+              const cTask = customizeTaskFor(f);
+              const busy = taskBusy(cTask);
+              const copied = cTask?.status === 'completed' && cTask.resourceId;
+              const openTarget = template?.id ?? (copied ? cTask!.resourceId! : null);
+              if (!template && !cTask) {
+                return (
+                  <div key={f} className="flex w-full cursor-not-allowed items-center gap-3 rounded-[10px] border border-dashed border-brand/35 bg-paper px-3 py-2.5 text-left">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-tint text-brand"><Icon size={16} strokeWidth={1.75} /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-medium text-ink">{meta.label} · 暂无资源</span>
+                      <span className="block truncate text-[11px] text-ink-muted">管理员尚未设置通用资源</span>
+                    </span>
+                  </div>
+                );
+              }
               return (
                 <button
                   key={f}
                   type="button"
-                  onClick={() => { if (!completed?.id) { toast.info('暂无资源'); return; } navigate(`/learn/resource/${completed.id}`); }}
-                  title={completed ? `打开${meta.label}` : '暂无资源'}
+                  onClick={() => { if (busy) { navigate(`/learn/customize/${cTask!.id}`); return; } if (!openTarget) { void startCustomize(f); return; } navigate(`/learn/resource/${openTarget}`); }}
+                  title={busy ? '查看定制进度' : openTarget ? `打开${meta.label}` : `定制${meta.label}`}
                   className={cn(
                     'group flex w-full items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left transition-all',
-                    completed
-                      ? 'border-hairline bg-paper hover:border-brand/45 hover:bg-brand-tint/40'
-                      : 'cursor-not-allowed border-dashed border-brand/35 bg-paper',
+                    busy ? 'border-brand/45 bg-brand-tint/40'
+                      : openTarget ? 'border-hairline bg-paper hover:border-brand/45 hover:bg-brand-tint/40'
+                      : 'border-brand/45 bg-paper hover:border-brand/60 hover:bg-brand-tint/40',
                   )}
                 >
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-tint text-brand">
-                    <Icon size={16} strokeWidth={1.75} />
+                    {busy ? <Loader2 size={16} className="animate-spin" /> : <Icon size={16} strokeWidth={1.75} />}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] font-medium text-ink">
-                      {completed ? `打开${meta.label}` : `${meta.label} · 暂无资源`}
+                      {busy ? `${meta.label} · 定制中` : openTarget ? `打开${meta.label}` : `${meta.label} · 未定制`}
                     </span>
                     <span className="block truncate text-[11px] text-ink-muted">
-                      {completed?.title ?? '管理员尚未设置通用资源'}
+                      {busy ? `${cTask!.stageMessage ?? '正在定制'}（点击查看进度）` : openTarget ? (template?.title ?? cTask?.title) : '基于管理员母版进行个性化定制'}
                     </span>
                   </span>
-                  {completed && <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />}
+                  {busy ? <span className="shrink-0 font-mono text-[10px] text-brand">{cTask!.progress ?? 0}%</span>
+                    : openTarget ? <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
+                    : <Wand2 size={13} className="shrink-0 text-brand/70 transition-transform group-hover:scale-110" />}
                 </button>
               );
             })}
