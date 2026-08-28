@@ -49,6 +49,7 @@ export default function CustomizeTeam() {
   const [selectedEventSeq, setSelectedEventSeq] = useState<number | null>(null);
   const [selectedAgent, setSelectedAgent] = useState('');
   const creatingRef = useRef(false);
+  const [confirmTarget, setConfirmTarget] = useState<{ type: ResType; templateId: string; label: string } | null>(null);
 
   /* 加载领域内知识点列表（一次性） */
   useEffect(() => {
@@ -285,7 +286,7 @@ export default function CustomizeTeam() {
                   disabled={!template}
                   onClick={() => {
                     if (matched) { setShownTaskId(matched.id); setSelectedEventSeq(null); setSelectedAgent(''); return; }
-                    if (template?.id) void startOne(type, template.id);
+                    if (template?.id) setConfirmTarget({ type, templateId: template.id, label });
                   }}
                   className={cn(
                     'rounded-[12px] border px-3 py-2 text-left transition-all',
@@ -378,6 +379,32 @@ export default function CustomizeTeam() {
         </p>
 
       </footer>
+
+      {/* 确认定制弹窗 */}
+      {confirmTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 p-4 backdrop-blur-sm" onClick={() => setConfirmTarget(null)}>
+          <div className="lf-card max-w-sm rounded-2xl p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-[15px] font-semibold text-ink">确认定制</h3>
+            <p className="mt-2 text-[12px] text-ink-muted">
+              将基于管理员母版为「{confirmTarget.label}」生成个性化定制资源，此操作每个资源仅可执行一次。
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setConfirmTarget(null)} className="lf-row-btn !px-3 !py-1.5 text-[12px]">取消</button>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = confirmTarget;
+                  setConfirmTarget(null);
+                  if (target) void startOne(target.type, target.templateId);
+                }}
+                className="lf-btn-primary !px-3 !py-1.5 text-[12px]"
+              >
+                确认定制
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

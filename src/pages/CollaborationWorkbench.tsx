@@ -213,7 +213,7 @@ export function CollaborationRounds({ events, selectedSeq, selectedAgent, runnin
   units.forEach((unit) => blocks.push({ key: "unit-" + unit.round + "-" + unit.agent + "-" + unit.events[0].seq, kind: "unit", unit }));
   return (
     <div className="h-full overflow-x-auto">
-      <div className="relative min-w-[880px] h-full min-h-[420px] overflow-y-auto rounded-2xl border border-white/90 bg-white/40 px-2 pb-2 pt-0 shadow-[0_8px_28px_rgba(48,74,60,0.10)] backdrop-blur-xl">
+      <div className="relative min-w-0 h-full min-h-[420px] overflow-y-auto rounded-2xl border border-white/90 bg-white/40 px-2 pb-2 pt-0 shadow-[0_8px_28px_rgba(48,74,60,0.10)] backdrop-blur-xl">
         <div className="relative">
         {/* 泳道背景：内容 wrapper 内 inset-0，覆盖全部滚动内容高度 */}
         <div className="pointer-events-none absolute inset-0">
