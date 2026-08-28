@@ -764,8 +764,7 @@ function TopicActionModal({
           <button
             key={fn.form}
             type="button"
-            disabled={busy}
-            className={cn('group h-[88px] rounded-[16px] border border-[#E1E6DF] bg-white/75 px-3.5 py-3 text-left shadow-[0_8px_22px_rgba(41,63,51,0.06)] transition duration-200 hover:-translate-y-0.5 hover:border-[#AFC3B5] hover:bg-white hover:shadow-[0_14px_32px_rgba(41,63,51,0.12)] disabled:cursor-progress disabled:opacity-60', status === 'missing' && 'cursor-not-allowed hover:translate-y-0 hover:border-[#E1E6DF] hover:bg-white/75 hover:shadow-[0_8px_22px_rgba(41,63,51,0.06)]')}
+            className={cn('group h-[88px] rounded-[16px] border border-[#E1E6DF] bg-white/75 px-3.5 py-3 text-left shadow-[0_8px_22px_rgba(41,63,51,0.06)] transition duration-200 hover:-translate-y-0.5 hover:border-[#AFC3B5] hover:bg-white hover:shadow-[0_14px_32px_rgba(41,63,51,0.12)]', status === 'missing' && 'cursor-not-allowed hover:translate-y-0 hover:border-[#E1E6DF] hover:bg-white/75 hover:shadow-[0_8px_22px_rgba(41,63,51,0.06)]', customizing && 'border-[#D89238]/50 bg-[#D89238]/5 hover:border-[#D89238]')}
             onClick={() => {
               /* 前端锁死：暂无资源不允许触发生成请求，后续由后台统一补齐 */
               if (status === 'missing') {
