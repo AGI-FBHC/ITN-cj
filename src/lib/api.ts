@@ -476,7 +476,7 @@ export interface UserProfileSettings {
 
 export interface LearningResourceGenerationTask {
   id: string;
-  resourceType: 'lecture' | 'practice' | 'quiz';
+  resourceType: 'lecture' | 'practice' | 'quiz' | 'ppt';
   title: string;
   status: 'queued' | 'retrieving' | 'planning' | 'generating' | 'verifying' | 'reviewing' | 'revising' | 'judging' | 'completed' | 'failed' | 'cancelled';
   progress: number;
@@ -1315,7 +1315,7 @@ export const api = {
     requestDirect<LearningResourceGenerationTask>(`/v1/learning-resource-tasks/${resourceType}`, {
       method: 'POST', body: JSON.stringify(body),
     }),
-  createCustomizeTask: (body: { adminResourceId: string; kpId?: string | null; resourceType: string; title?: string }) =>
+  createCustomizeTask: (body: { adminResourceId: string; kpId?: string | null; resourceType: 'lecture' | 'practice' | 'quiz' | 'ppt'; title?: string }) =>
     requestDirect<LearningResourceGenerationTask>('/v1/customize-resource', { method: 'POST', body: JSON.stringify(body) }),
   getCustomizeTask: (taskId: string) =>
     requestDirect<LearningResourceGenerationTask>(`/v1/customize-tasks/${encodeURIComponent(taskId)}`),

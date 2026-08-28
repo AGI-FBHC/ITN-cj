@@ -197,6 +197,19 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
   const CUSTOMIZE_FORM_TYPE: Record<ResourceForm, 'lecture' | 'practice' | 'quiz'> = { lecture: 'lecture', guide: 'practice', quiz: 'quiz' };
   const customizeTaskFor = (form: ResourceForm): LearningResourceGenerationTask | undefined =>
     customizeTasks.find((t) => t.resourceType === CUSTOMIZE_FORM_TYPE[form]);
+  const pptCustomizeTask = customizeTasks.find((t) => t.resourceType === 'ppt');
+  const pptBusy = Boolean(pptCustomizeTask && !['completed', 'failed', 'cancelled'].includes(pptCustomizeTask.status));
+  const pptCustomized = Boolean(pptCustomizeTask?.status === 'completed' && pptCustomizeTask.resourceId);
+  const pptStartCustomize = async () => {
+    if (!pptForScope?.id) { toast.info('该课件暂无母版，无法定制'); return; }
+    if (pptBusy) { toast.info('该课件正在定制中'); return; }
+    try {
+      const task = await api.createCustomizeTask({ adminResourceId: pptForScope.id, kpId, resourceType: 'ppt' });
+      navigate(`/learn/customize/${task.id}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '发起定制失败');
+    }
+  };
   const taskBusy = (task?: LearningResourceGenerationTask) =>
     Boolean(task && !['completed', 'failed', 'cancelled'].includes(task.status));
 
@@ -222,11 +235,12 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
     const copied = task?.status === 'completed' && task.resourceId;
     return hasTemplate && !copied;
   });
+  const pptCustomizable = Boolean(pptForScope?.id) && !pptBusy && !pptCustomized;
   const allBusy = customizableForms.every((f) => taskBusy(customizeTaskFor(f)));
 
   const customizeAll = async () => {
-    if (!customizableForms.length) { toast.info('所有资源均已定制'); return; }
-    if (allBusy) { toast.info('资源正在定制中'); return; }
+    if (!customizableForms.length && !pptCustomizable) { toast.info('所有资源均已定制'); return; }
+    if (allBusy && (pptBusy || !pptCustomizable)) { toast.info('资源正在定制中'); return; }
     let firstTaskId: string | null = null;
     for (const form of customizableForms) {
       if (taskBusy(customizeTaskFor(form))) continue;
@@ -238,6 +252,14 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           kpId,
           resourceType: CUSTOMIZE_FORM_TYPE[form],
         });
+        firstTaskId ??= task.id;
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : '发起定制失败');
+      }
+    }
+    if (pptCustomizable && pptForScope?.id) {
+      try {
+        const task = await api.createCustomizeTask({ adminResourceId: pptForScope.id, kpId, resourceType: 'ppt' });
         firstTaskId ??= task.id;
       } catch (error) {
         toast.error(error instanceof Error ? error.message : '发起定制失败');
@@ -326,7 +348,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
       {selectedTopicName && <div>
         <div className="mb-2 flex items-center justify-between gap-2">
           <span className="text-[12px] font-medium text-ink-2">{res.length ? `已有 ${res.length} 份通用资源` : '暂无资源'}</span>
-          {customizableForms.length > 0 && (
+          {(customizableForms.length > 0 || pptCustomizable) && (
             <button
               type="button"
               onClick={() => void customizeAll()}
@@ -389,26 +411,41 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
               );
             })}
 
-          {/* 交互课件同样只读管理员母版。 */}
+          {/* 交互课件：三态（未定制 → 定制中 → 打开） */}
           <button
             type="button"
-            onClick={() => { if (!pptForScope || pptForScope.status !== 'completed') { toast.info('暂无资源'); return; } void openPptCourseware(); }}
-            title={pptForScope ? '打开交互课件' : '暂无资源'}
+            onClick={() => {
+              if (pptBusy) { navigate(`/learn/customize/${pptCustomizeTask!.id}`); return; }
+              if (pptCustomized && pptCustomizeTask?.resourceId) { void openPptCourseware(); return; }
+              if (pptForScope?.id) { void pptStartCustomize(); return; }
+              toast.info('暂无资源');
+            }}
+            title={pptBusy ? '查看定制进度' : pptCustomized ? '打开交互课件' : pptForScope ? '定制交互课件' : '暂无资源'}
             className={cn(
               'group flex w-full items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left transition-all',
-              pptForScope?.status === 'completed'
-                ? 'border-hairline bg-paper hover:border-brand/45 hover:bg-brand-tint/40'
-                : 'cursor-not-allowed border-dashed border-brand/35 bg-paper',
+              pptBusy
+                ? 'border-brand/45 bg-brand-tint/40'
+                : pptCustomized
+                  ? 'border-hairline bg-paper hover:border-brand/45 hover:bg-brand-tint/40'
+                  : pptForScope
+                    ? 'border-brand/45 bg-paper hover:border-brand/60 hover:bg-brand-tint/40'
+                    : 'cursor-not-allowed border-dashed border-brand/35 bg-paper',
             )}
           >
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand text-paper">
-              <Sparkles size={15} />
+              {pptBusy ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-medium text-ink">{pptForScope?.status === 'completed' ? '打开交互课件' : '交互课件 · 暂无资源'}</span>
-              <span className="block truncate text-[11px] text-ink-muted">{pptForScope?.title ?? '管理员尚未设置通用资源'}</span>
+              <span className="block text-[13px] font-medium text-ink">
+                {pptBusy ? '交互课件 · 定制中' : pptCustomized ? '打开交互课件' : pptForScope ? '交互课件 · 未定制' : '交互课件 · 暂无资源'}
+              </span>
+              <span className="block truncate text-[11px] text-ink-muted">
+                {pptBusy ? `${pptCustomizeTask!.stageMessage ?? '正在定制'}（点击查看进度）` : pptCustomized ? (pptForScope?.title ?? pptCustomizeTask?.title) : pptForScope ? '基于管理员母版进行个性化定制' : '管理员尚未设置通用资源'}
+              </span>
             </span>
-            {pptForScope?.status === 'completed' && <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />}
+            {pptBusy ? <span className="shrink-0 font-mono text-[10px] text-brand">{pptCustomizeTask!.progress ?? 0}%</span>
+              : pptCustomized ? <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
+              : pptForScope ? <Wand2 size={13} className="shrink-0 text-brand/70 transition-transform group-hover:scale-110" /> : null}
           </button>
         </div>
       </div>}

@@ -661,11 +661,22 @@ function TopicActionModal({
   const CUSTOMIZE_FORM_TYPE: Record<ResourceForm, 'lecture' | 'practice' | 'quiz'> = { lecture: 'lecture', guide: 'practice', quiz: 'quiz' };
   const customizeTaskFor = (form: ResourceForm): LearningResourceGenerationTask | undefined =>
     customizeTasks.find((t) => t.resourceType === CUSTOMIZE_FORM_TYPE[form]);
+  const pptCustomizeTask = customizeTasks.find((t) => t.resourceType === 'ppt');
+  const pptBusy = Boolean(pptCustomizeTask && !['completed', 'failed', 'cancelled'].includes(pptCustomizeTask.status));
+  const pptCustomized = Boolean(pptCustomizeTask?.status === 'completed' && pptCustomizeTask.resourceId);
   const taskBusy = (task?: LearningResourceGenerationTask) =>
     Boolean(task && !['completed', 'failed', 'cancelled'].includes(task.status));
   const startCustomize = async (form: ResourceForm, adminResourceId: string) => {
     try {
       const task = await api.createCustomizeTask({ adminResourceId, kpId: node.kpId, resourceType: CUSTOMIZE_FORM_TYPE[form] });
+      navigate(`/learn/customize/${task.id}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '发起定制失败');
+    }
+  };
+  const startPptCustomize = async (adminResourceId: string) => {
+    try {
+      const task = await api.createCustomizeTask({ adminResourceId, kpId: node.kpId, resourceType: 'ppt' });
       navigate(`/learn/customize/${task.id}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '发起定制失败');
@@ -742,17 +753,18 @@ function TopicActionModal({
                 return taskTitle === nodeTitle || task.title.includes(nodeTitle) || nodeTitle.includes(taskTitle);
               })
           : undefined;
-        const exists = fn.form === 'ppt' ? Boolean(pptTask && pptTask.status === 'completed') : Boolean(res?.id);
-        const cTask = fn.form !== 'ppt' ? customizeTaskFor(fn.form as ResourceForm) : undefined;
-        const customizing = fn.form !== 'ppt' && taskBusy(cTask);
-        const customized = fn.form !== 'ppt' && cTask?.status === 'completed' && Boolean(cTask.resourceId);
+        const isPpt = fn.form === 'ppt';
+        const exists = isPpt ? Boolean(pptTask && pptTask.status === 'completed') : Boolean(res?.id);
+        const cTask = isPpt ? pptCustomizeTask : customizeTaskFor(fn.form as ResourceForm);
+        const customizing = isPpt ? pptBusy : taskBusy(cTask);
+        const customized = isPpt ? pptCustomized : (cTask?.status === 'completed' && Boolean(cTask.resourceId));
         const busy = customizing;
         const status: 'missing' | 'unlearned' | 'incomplete' | 'learned' =
           customizing ? 'incomplete'
           : !exists && !customized
             ? 'missing'
-            : fn.form === 'ppt'
-              ? (pptTask?.learned ? 'learned' : 'unlearned')
+            : isPpt
+              ? (customized ? 'learned' : (pptTask?.learned ? 'learned' : 'unlearned'))
               : customized || (res?.learned ?? learned.has(node.kpId))
                 ? 'learned'
                 : res?.started
@@ -775,8 +787,13 @@ function TopicActionModal({
                 navigate(`/learn/customize/${cTask.id}`);
                 return;
               }
-              if (fn.form === 'ppt' && pptTask) {
-                navigate(`/learn/${node.kpId}?ppt=${pptTask.id}&topic=${encodeURIComponent(node.label.trim())}`);
+              if (isPpt) {
+                if (customized && pptCustomizeTask?.resourceId) {
+                  const pptId = pptCustomizeTask.resourceId;
+                  navigate(`/learn/${node.kpId}?ppt=${pptId}&topic=${encodeURIComponent(node.label.trim())}`);
+                } else if (pptTask?.id) {
+                  void startPptCustomize(pptTask.id);
+                }
                 return;
               }
               if (customized && cTask?.resourceId) {
@@ -798,7 +815,7 @@ function TopicActionModal({
               </span>
               <span className="flex items-center gap-1.5 text-[11px] font-medium text-[#6C7971]">
                 <i className="h-2 w-2 rounded-full" style={{ backgroundColor: busy ? '#D89238' : tag.color }} />
-                {busy ? '定制中…' : status === 'unlearned' && fn.form !== 'ppt' && !customized ? '未定制' : tag.label}
+                {busy ? '定制中…' : ((status === 'unlearned') && !customized && exists) ? '未定制' : tag.label}
               </span>
             </span>
             <strong className="block text-[15px] font-semibold text-[#26352D]">{fn.label}</strong>
@@ -1755,7 +1772,7 @@ export default function KnowledgeGraph3D({
 
         <TopicActionModal
           node={actionTopic}
-          resources={resources[actionTopic.id] ?? []}
+          resources={resources[actionTopic.kpId] ?? []}
           presentations={presentations}
           learned={learned}
           progress={topicProgress[actionTopic.id] ?? 0}
