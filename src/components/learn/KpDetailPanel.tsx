@@ -355,15 +355,32 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
       {selectedTopicName && <div>
         <div className="mb-2 flex items-center justify-between gap-2">
           <span className="text-[12px] font-medium text-ink-2">{res.length ? `已有 ${res.length} 份通用资源` : '暂无资源'}</span>
-          {(customizableForms.length > 0 || pptCustomizable) && (
-            <button
-              type="button"
-              onClick={() => void customizeAll()}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-brand/45 bg-brand-tint/50 px-2.5 py-1.5 text-[11px] font-medium text-brand transition-all hover:border-brand hover:bg-brand-tint"
-            >
-              <Wand2 size={12} />一键定制全部
-            </button>
-          )}
+          {(() => {
+            const activeTasks = [...customizeTasks.filter((t) => taskBusy(t)), ...(pptBusy && pptCustomizeTask ? [pptCustomizeTask] : [])];
+            if (activeTasks.length > 0) {
+              return (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/learn/customize/${activeTasks[0].id}`)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-ochre/45 bg-ochre-tint/60 px-2.5 py-1.5 text-[11px] font-medium text-ochre transition-all hover:border-ochre hover:bg-ochre-tint"
+                >
+                  <Loader2 size={12} className="animate-spin" />查看生成过程（{activeTasks.length} 项定制中）
+                </button>
+              );
+            }
+            if (customizableForms.length > 0 || pptCustomizable) {
+              return (
+                <button
+                  type="button"
+                  onClick={() => void customizeAll()}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-brand/45 bg-brand-tint/50 px-2.5 py-1.5 text-[11px] font-medium text-brand transition-all hover:border-brand hover:bg-brand-tint"
+                >
+                  <Wand2 size={12} />一键定制全部
+                </button>
+              );
+            }
+            return null;
+          })()}
         </div>
         <div className="space-y-2">
           {/* 三态资源按钮：未定制 → 定制中 → 打开 */}

@@ -5,7 +5,7 @@
 import { useRef, useMemo, useState, useCallback, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Text, Line, PerspectiveCamera, Billboard } from '@react-three/drei';
-import { BookOpen, ClipboardCheck, Presentation, Wrench, X } from 'lucide-react';
+import { BookOpen, ClipboardCheck, Loader2, Presentation, ScrollText, Wand2, Wrench, X } from 'lucide-react';
 import * as THREE from 'three';
 import type { GraphNode, GraphEdge } from '@/data/knowledgeGraph';
 import { api } from '@/lib/api';
@@ -679,6 +679,47 @@ function TopicActionModal({
       toast.error(error instanceof Error ? error.message : '发起定制失败');
     }
   };
+  /* ===== 统一定制：一次性定制当前知识点全部未定制资源 ===== */
+  const customizableTemplates = FUNCTION_META.map((fn) => {
+    const isPpt = fn.form === 'ppt';
+    const res = isPpt ? undefined : existingFor(fn.form as ResourceForm);
+    const pptTask = isPpt
+      ? (presentations ?? [])
+          .filter((task) => !['failed', 'cancelled'].includes(task.status))
+          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+          .find((task) => {
+            const taskTitle = task.title.replace(/\s*[·・]\s*交互课件\s*$/, '').trim();
+            const nodeTitle = node.label.trim();
+            return taskTitle === nodeTitle || task.title.includes(nodeTitle) || nodeTitle.includes(taskTitle);
+          })
+      : undefined;
+    const templateId = isPpt ? (pptTask?.status === 'completed' ? pptTask.id : undefined) : res?.id;
+    if (!templateId) return null;
+    const cTask = customizeTasks.find((task) =>
+      task.resourceType === (isPpt ? 'ppt' : CUSTOMIZE_FORM_TYPE[fn.form as ResourceForm])
+      && task.request?.adminResourceId === templateId,
+    );
+    if (taskBusy(cTask) || (cTask?.status === 'completed' && cTask.resourceId)) return null;
+    return { adminResourceId: templateId, resourceType: isPpt ? 'ppt' as const : CUSTOMIZE_FORM_TYPE[fn.form as ResourceForm] };
+  }).filter((entry): entry is { adminResourceId: string; resourceType: 'lecture' | 'practice' | 'quiz' | 'ppt' } => entry != null);
+  const customizingTasks = customizeTasks.filter((task) => taskBusy(task));
+  const customizeAllBusy = useRef(false);
+  const customizeAll = async () => {
+    if (customizeAllBusy.current) return;
+    if (!customizableTemplates.length) { toast.info('所有资源均已定制'); return; }
+    customizeAllBusy.current = true;
+    let firstTaskId: string | null = null;
+    for (const entry of customizableTemplates) {
+      try {
+        const task = await api.createCustomizeTask(entry);
+        firstTaskId ??= task.id;
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : '发起定制失败');
+      }
+    }
+    customizeAllBusy.current = false;
+    if (firstTaskId) navigate(`/learn/customize/${firstTaskId}`);
+  };
   useEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const dialog = dialogRef.current;
@@ -736,6 +777,38 @@ function TopicActionModal({
           </div>
         </div>
       )}
+
+        {/* 统一定制 + 生成过程入口 */}
+        <div className="mx-5 mt-3 flex items-center justify-between gap-3 rounded-[14px] border border-[#DCE7E1] bg-[#F7FAF7] px-4 py-2.5">
+          {customizingTasks.length > 0 ? (
+            <>
+              <span className="flex min-w-0 items-center gap-2 text-[12px] text-[#8A6A2F]">
+                <Loader2 size={14} className="shrink-0 animate-spin text-[#D89238]" />
+                <span className="truncate">正在定制 {customizingTasks.length} 项资源…</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => navigate(`/learn/customize/${customizingTasks[0].id}`)}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#D89238]/50 bg-[#D89238]/10 px-2.5 py-1.5 text-[11px] font-medium text-[#8A6A2F] transition-all hover:border-[#D89238] hover:bg-[#D89238]/20"
+              >
+                <ScrollText size={12} />查看生成过程
+              </button>
+            </>
+          ) : customizableTemplates.length > 0 ? (
+            <>
+              <span className="min-w-0 truncate text-[12px] text-[#5B6A5F]">还有 {customizableTemplates.length} 项资源未定制</span>
+              <button
+                type="button"
+                onClick={() => void customizeAll()}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#466C56]/40 bg-[#E8F0EA] px-2.5 py-1.5 text-[11px] font-medium text-[#466C56] transition-all hover:border-[#466C56] hover:bg-[#DCE8DF]"
+              >
+                <Wand2 size={12} />统一定制
+              </button>
+            </>
+          ) : (
+            <span className="min-w-0 flex-1 truncate text-[12px] text-[#5B6A5F]">全部资源已定制，可开始学习</span>
+          )}
+        </div>
 
         <div className="grid grid-cols-2 gap-3 p-5 pt-4 sm:px-6 sm:pb-5">
           {FUNCTION_META.map((fn) => {
