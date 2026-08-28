@@ -587,10 +587,11 @@ function LearnedHighlightRing({ radius }: { radius: number }) {
 }
 
 /** 页面级知识点操作弹窗：脱离 3D 世界坐标，确保尺寸与交互始终稳定。 */
-const STATUS_META: Record<'missing' | 'unlearned' | 'incomplete' | 'learned', { label: string; color: string }> = {
+const STATUS_META: Record<'missing' | 'unlearned' | 'incomplete' | 'customized' | 'learned', { label: string; color: string }> = {
   missing: { label: '暂无资源', color: '#9AA19A' },
   unlearned: { label: '未学习', color: '#D89238' },
   incomplete: { label: '未学完', color: '#4B82B8' },
+  customized: { label: '已定制', color: '#2F8F5B' },
   learned: { label: '已学习', color: '#2F8F5B' },
 };
 
@@ -760,14 +761,16 @@ function TopicActionModal({
         const customizing = isPpt ? pptBusy : taskBusy(cTask);
         const customized = isPpt ? pptCustomized : (cTask?.status === 'completed' && Boolean(cTask.resourceId));
         const busy = customizing;
-        const status: 'missing' | 'unlearned' | 'incomplete' | 'learned' =
+        const status: 'missing' | 'unlearned' | 'incomplete' | 'customized' | 'learned' =
           customizing ? 'incomplete'
           : !exists && !customized
             ? 'missing'
             : isPpt
-              ? (customized ? 'learned' : (pptTask?.learned ? 'learned' : 'unlearned'))
-              : customized || (res?.learned ?? learned.has(node.kpId))
-                ? 'learned'
+              ? (customized ? 'customized' : (pptTask?.learned ? 'learned' : 'unlearned'))
+              : customized
+                ? 'customized'
+                : (res?.learned ?? learned.has(node.kpId))
+                  ? 'learned'
                 : res?.started
                   ? 'incomplete'
                   : exists ? 'unlearned' : 'missing';
@@ -1507,8 +1510,8 @@ function SceneContent({
             dashed={edge.kind === 'related'}
             // topic 跟随 ChildPlane 一起移动，需继承父章节的聚焦偏移；否则节点球
             // 已移动而语义边仍停留在原布局坐标，箭头会悬在空处。
-            fromOffset={layout.focusOffsets.get(edge.from) ?? (n1.kind === 'topic' ? layout.focusOffsets.get(n1.kpId) : undefined)}
-            toOffset={layout.focusOffsets.get(edge.to) ?? (n2.kind === 'topic' ? layout.focusOffsets.get(n2.kpId) : undefined)}
+            fromOffset={layout.focusOffsets.get(edge.from)}
+            toOffset={layout.focusOffsets.get(edge.to)}
             animRef={animRef}
             fadeOnFocus={focusId !== null && edge.from !== focusId && edge.to !== focusId}
             sourceId={edge.from}
@@ -1779,7 +1782,7 @@ export default function KnowledgeGraph3D({
 
         <TopicActionModal
           node={actionTopic}
-          resources={resources[actionTopic.kpId] ?? []}
+          resources={resources[actionTopic.id] ?? []}
           presentations={presentations}
           learned={learned}
           progress={topicProgress[actionTopic.id] ?? 0}
