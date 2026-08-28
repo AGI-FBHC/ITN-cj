@@ -652,25 +652,20 @@ function TopicActionModal({
     let alive = true;
     const load = async () => {
       try {
-        const listed = await api.listCustomizeTasks(node.kpId);
+        const listed = await api.listCustomizeTasks();
         if (alive) setCustomizeTasks(listed.tasks ?? []);
       } catch { /* 查询失败保持现状 */ }
     };
     void load();
     const timer = window.setInterval(() => { void load(); }, 2500);
     return () => { alive = false; window.clearInterval(timer); };
-  }, [node.kpId]);
+  }, [node.id]);
   const CUSTOMIZE_FORM_TYPE: Record<ResourceForm, 'lecture' | 'practice' | 'quiz'> = { lecture: 'lecture', guide: 'practice', quiz: 'quiz' };
-  const customizeTaskFor = (form: ResourceForm): LearningResourceGenerationTask | undefined =>
-    customizeTasks.find((t) => t.resourceType === CUSTOMIZE_FORM_TYPE[form]);
-  const pptCustomizeTask = customizeTasks.find((t) => t.resourceType === 'ppt');
-  const pptBusy = Boolean(pptCustomizeTask && !['completed', 'failed', 'cancelled'].includes(pptCustomizeTask.status));
-  const pptCustomized = Boolean(pptCustomizeTask?.status === 'completed' && pptCustomizeTask.resourceId);
   const taskBusy = (task?: LearningResourceGenerationTask) =>
     Boolean(task && !['completed', 'failed', 'cancelled'].includes(task.status));
   const startCustomize = async (form: ResourceForm, adminResourceId: string) => {
     try {
-      const task = await api.createCustomizeTask({ adminResourceId, kpId: node.kpId, resourceType: CUSTOMIZE_FORM_TYPE[form] });
+      const task = await api.createCustomizeTask({ adminResourceId, kpId: node.id, resourceType: CUSTOMIZE_FORM_TYPE[form] });
       navigate(`/learn/customize/${task.id}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '发起定制失败');
@@ -678,7 +673,7 @@ function TopicActionModal({
   };
   const startPptCustomize = async (adminResourceId: string) => {
     try {
-      const task = await api.createCustomizeTask({ adminResourceId, kpId: node.kpId, resourceType: 'ppt' });
+      const task = await api.createCustomizeTask({ adminResourceId, kpId: node.id, resourceType: 'ppt' });
       navigate(`/learn/customize/${task.id}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '发起定制失败');
@@ -757,9 +752,13 @@ function TopicActionModal({
           : undefined;
         const isPpt = fn.form === 'ppt';
         const exists = isPpt ? Boolean(pptTask && pptTask.status === 'completed') : Boolean(res?.id);
-        const cTask = isPpt ? pptCustomizeTask : customizeTaskFor(fn.form as ResourceForm);
-        const customizing = isPpt ? pptBusy : taskBusy(cTask);
-        const customized = isPpt ? pptCustomized : (cTask?.status === 'completed' && Boolean(cTask.resourceId));
+        const templateId = isPpt ? pptTask?.id : res?.id;
+        const cTask = customizeTasks.find((task) =>
+          task.resourceType === (isPpt ? 'ppt' : CUSTOMIZE_FORM_TYPE[fn.form as ResourceForm])
+          && task.request?.adminResourceId === templateId,
+        );
+        const customizing = taskBusy(cTask);
+        const customized = Boolean(cTask?.status === 'completed' && cTask.resourceId);
         const busy = customizing;
         const status: 'missing' | 'unlearned' | 'incomplete' | 'customized' | 'learned' =
           customizing ? 'incomplete'
@@ -792,8 +791,8 @@ function TopicActionModal({
                 return;
               }
               if (isPpt) {
-                if (customized && pptCustomizeTask?.resourceId) {
-                  const pptId = pptCustomizeTask.resourceId;
+                if (customized && cTask?.resourceId) {
+                  const pptId = cTask.resourceId;
                   navigate(`/learn/${node.kpId}?ppt=${pptId}&topic=${encodeURIComponent(node.label.trim())}`);
                 } else if (pptTask?.id) {
                   void startPptCustomize(pptTask.id);

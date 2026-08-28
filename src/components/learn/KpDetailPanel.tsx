@@ -94,7 +94,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
     let alive = true;
     const load = async () => {
       try {
-        const listed = await api.listCustomizeTasks(kpId);
+        const listed = await api.listCustomizeTasks();
         if (alive) setCustomizeTasks(listed.tasks ?? []);
       } catch { /* 定制任务查询失败时保持现有状态 */ }
     };
@@ -159,6 +159,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
   const kp = kpProp ?? getKnowledgePoint(kpId);
   const selectedTopicName = topicIndex != null ? kp.coreTopics[topicIndex] : null;
   const selectedTopicNode = topicIndex != null ? graphNodes?.find((node) => node.kind === 'topic' && node.kpId === kpId && node.topicIndex === topicIndex) : null;
+  const customizationKpId = selectedTopicNode?.id ?? kpId;
   const childScores = (graphNodes ?? []).filter((node) => node.kind === 'topic' && node.kpId === kpId).map((node) => topicMastery?.[node.id] ?? 0);
   const score = selectedTopicNode ? (topicMastery?.[selectedTopicNode.id] ?? 0) : childScores.length ? Math.round(childScores.reduce((sum, value) => sum + value, 0) / childScores.length) : ((masteryProp ?? {})[kpId] ?? 0);
   const learningProgress = selectedTopicNode ? (topicProgress?.[selectedTopicNode.id] ?? 0) : (() => {
@@ -195,16 +196,22 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
     ?? null;
   /* ===== 用户定制（基于管理员母版二次创作） ===== */
   const CUSTOMIZE_FORM_TYPE: Record<ResourceForm, 'lecture' | 'practice' | 'quiz'> = { lecture: 'lecture', guide: 'practice', quiz: 'quiz' };
-  const customizeTaskFor = (form: ResourceForm): LearningResourceGenerationTask | undefined =>
-    customizeTasks.find((t) => t.resourceType === CUSTOMIZE_FORM_TYPE[form]);
-  const pptCustomizeTask = customizeTasks.find((t) => t.resourceType === 'ppt');
+  const customizeTaskFor = (form: ResourceForm): LearningResourceGenerationTask | undefined => {
+    const templateId = existingResourceFor(form)?.id;
+    return customizeTasks.find((task) =>
+      task.resourceType === CUSTOMIZE_FORM_TYPE[form] && task.request?.adminResourceId === templateId,
+    );
+  };
+  const pptCustomizeTask = customizeTasks.find((task) =>
+    task.resourceType === 'ppt' && task.request?.adminResourceId === pptForScope?.id,
+  );
   const pptBusy = Boolean(pptCustomizeTask && !['completed', 'failed', 'cancelled'].includes(pptCustomizeTask.status));
   const pptCustomized = Boolean(pptCustomizeTask?.status === 'completed' && pptCustomizeTask.resourceId);
   const pptStartCustomize = async () => {
     if (!pptForScope?.id) { toast.info('该课件暂无母版，无法定制'); return; }
     if (pptBusy) { toast.info('该课件正在定制中'); return; }
     try {
-      const task = await api.createCustomizeTask({ adminResourceId: pptForScope.id, kpId, resourceType: 'ppt' });
+      const task = await api.createCustomizeTask({ adminResourceId: pptForScope.id, kpId: customizationKpId, resourceType: 'ppt' });
       navigate(`/learn/customize/${task.id}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '发起定制失败');
@@ -220,7 +227,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
     try {
       const task = await api.createCustomizeTask({
         adminResourceId: template.id,
-        kpId,
+        kpId: customizationKpId,
         resourceType: CUSTOMIZE_FORM_TYPE[form],
       });
       navigate(`/learn/customize/${task.id}`);
@@ -249,7 +256,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
       try {
         const task = await api.createCustomizeTask({
           adminResourceId: template.id,
-          kpId,
+          kpId: customizationKpId,
           resourceType: CUSTOMIZE_FORM_TYPE[form],
         });
         firstTaskId ??= task.id;
@@ -259,7 +266,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
     }
     if (pptCustomizable && pptForScope?.id) {
       try {
-        const task = await api.createCustomizeTask({ adminResourceId: pptForScope.id, kpId, resourceType: 'ppt' });
+        const task = await api.createCustomizeTask({ adminResourceId: pptForScope.id, kpId: customizationKpId, resourceType: 'ppt' });
         firstTaskId ??= task.id;
       } catch (error) {
         toast.error(error instanceof Error ? error.message : '发起定制失败');

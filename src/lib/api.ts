@@ -423,6 +423,8 @@ export interface LearningResourceSummary {
 }
 
 export interface LearningResourceGenerateInput {
+  /** 定制任务引用的机构母版资源 ID。 */
+  adminResourceId?: string;
   topic: string;
   title?: string;
   learnerId?: string | null;
