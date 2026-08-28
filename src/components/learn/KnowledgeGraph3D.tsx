@@ -1480,6 +1480,9 @@ function SceneContent({
       {edges.map((edge) => {
         const n1 = nodes.find((n) => n.id === edge.from);
         const n2 = nodes.find((n) => n.id === edge.to);
+        // 3D 展开视图只保留章节层语义关系；知识点之间已有章节到子节点的结构线，
+        // 不再叠加前置/易混淆箭头，避免展开后的局部网络过密。
+        if (n1?.kind === 'topic' && n2?.kind === 'topic') return null;
         // 节点不可见则跳过：domain 始终可见，topic 需要其父章节已展开
         const v1 = n1 && (n1.kind === 'domain' || expandedKpIds.has(n1.kpId));
         const v2 = n2 && (n2.kind === 'domain' || expandedKpIds.has(n2.kpId));
