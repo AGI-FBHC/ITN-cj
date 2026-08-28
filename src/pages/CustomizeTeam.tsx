@@ -11,7 +11,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BookOpen, CheckCircle2, ClipboardCheck, Loader2, Presentation, Wand2, Wrench } from 'lucide-react';
+import { ArrowLeft, BookOpen, ClipboardCheck, Loader2, Presentation, Wand2, Wrench } from 'lucide-react';
 import { api, streamAdminGenerationTask, type AdminGenerationEvent, type LearningResourceGenerationTask, type LearningTemplateResourceItem } from '@/lib/api';
 import { CollaborationRounds, AgentWorkflowSummary, agents, eventDisplayTitle, isLifecycleEvent } from '@/pages/CollaborationWorkbench';
 import ExecutionDetailPanel from '@/components/admin/ExecutionDetailPanel';
@@ -28,7 +28,7 @@ const RES_META: Array<{ type: ResType; label: string; icon: typeof BookOpen }> =
   { type: 'ppt', label: '交互课件', icon: Presentation },
 ];
 
-interface TopicOption { id: string; label: string; chapterId: string }
+interface TopicOption { id: string; label: string; chapterId: string; chapterName: string }
 
 export default function CustomizeTeam() {
   const { kpId: routeKpId } = useParams<{ kpId: string }>();
@@ -56,21 +56,21 @@ export default function CustomizeTeam() {
     void api.getRagTree('agent').then((tree) => {
       if (!alive) return;
       const options: TopicOption[] = [];
-      const walk = (nodes: Array<Record<string, unknown>>, chapterId: string) => {
+      const walk = (nodes: Array<Record<string, unknown>>, chapterId: string, chapterName: string) => {
         for (const node of nodes) {
           const level = Number(node.level);
           const code = String(node.nodeCode ?? '');
           const children = (node.children ?? []) as Array<Record<string, unknown>>;
           if (level === 2) {
-            walk(children, code);
+            walk(children, code, String(node.name ?? code));
           } else if (level === 3) {
-            options.push({ id: code, label: String(node.name ?? ''), chapterId });
+            options.push({ id: code, label: String(node.name ?? ''), chapterId, chapterName });
           } else if (children.length) {
-            walk(children, chapterId);
+            walk(children, chapterId, chapterName);
           }
         }
       };
-      walk((tree.nodes ?? []) as unknown as Array<Record<string, unknown>>, '');
+      walk((tree.nodes ?? []) as unknown as Array<Record<string, unknown>>, '', '');
       setTopics(options);
     }).catch(() => undefined);
     return () => { alive = false; };
@@ -229,26 +229,40 @@ export default function CustomizeTeam() {
             <p className="text-[9px] text-ink-muted">点击切换，查看或发起定制</p>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
-            {topics.map((topic) => {
-              const isActive = topic.id === activeKpId;
-              const colors = topicStatus(topic.id);
-              return (
-                <button
-                  key={topic.id}
-                  type="button"
-                  onClick={() => switchTopic(topic.id)}
-                  className={cn(
-                    'mb-0.5 w-full rounded-[8px] border px-2.5 py-1.5 text-left transition-all',
-                    isActive ? 'border-brand/40 bg-brand-tint/50' : 'border-transparent hover:border-hairline hover:bg-brand-tint/20',
-                  )}
-                >
-                  <span className="block truncate text-[11.5px] font-medium text-ink">{topic.label}</span>
-                  <span className="mt-0.5 flex items-center gap-0.5">
-                    {colors.map((color, i) => <i key={i} className="h-1 w-3.5 rounded-full" style={{ backgroundColor: color }} />)}
-                  </span>
-                </button>
-              );
-            })}
+            {(() => {
+              /* 按章节分组 */
+              const chapters = new Map<string, TopicOption[]>();
+              for (const topic of topics) {
+                const key = topic.chapterId || 'other';
+                if (!chapters.has(key)) chapters.set(key, []);
+                chapters.get(key)!.push(topic);
+              }
+              return Array.from(chapters.entries()).map(([chapterId, chapterTopics]) => (
+                <div key={chapterId} className="mb-1">
+                  <div className="px-2 py-1 text-[9.5px] font-semibold text-ink-muted">{chapterTopics[0]?.chapterName || chapterId}</div>
+                  {chapterTopics.map((topic) => {
+                    const isActive = topic.id === activeKpId;
+                    const colors = topicStatus(topic.id);
+                    return (
+                      <button
+                        key={topic.id}
+                        type="button"
+                        onClick={() => switchTopic(topic.id)}
+                        className={cn(
+                          'mb-0.5 w-full rounded-[8px] border px-2.5 py-1.5 text-left transition-all',
+                          isActive ? 'border-brand/40 bg-brand-tint/50' : 'border-transparent hover:border-hairline hover:bg-brand-tint/20',
+                        )}
+                      >
+                        <span className="block truncate text-[11.5px] font-medium text-ink">{topic.label}</span>
+                        <span className="mt-0.5 flex items-center gap-0.5">
+                          {colors.map((color, i) => <i key={i} className="h-1 w-3.5 rounded-full" style={{ backgroundColor: color }} />)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ));
+            })()}
           </div>
         </aside>
 
@@ -266,8 +280,7 @@ export default function CustomizeTeam() {
                   type="button"
                   disabled={!template}
                   onClick={() => {
-                    if (busy && matched) { setShownTaskId(matched.id); setSelectedEventSeq(null); setSelectedAgent(''); return; }
-                    if (customized && matched?.resourceId) { navigate(`/learn/resource/${matched.resourceId}`); return; }
+                    if (matched) { setShownTaskId(matched.id); setSelectedEventSeq(null); setSelectedAgent(''); return; }
                     if (template?.id) void startOne(type, template.id);
                   }}
                   className={cn(
@@ -351,11 +364,7 @@ export default function CustomizeTeam() {
         <p className="text-[11px] text-ink-muted">
           {completed ? '定制资源已就绪，可开始学习。' : failed ? '定制过程出现异常，可重新发起定制。' : '定制基于管理员母版进行个性化二次创作，每个资源仅可定制一次。'}
         </p>
-        {completed && shownTask?.resourceId && (
-          <button type="button" onClick={() => navigate(`/learn/resource/${shownTask.resourceId}`)} className="lf-btn-primary inline-flex items-center gap-1.5 text-[12px]">
-            <CheckCircle2 size={13} />开始学习
-          </button>
-        )}
+
       </footer>
     </div>
   );
