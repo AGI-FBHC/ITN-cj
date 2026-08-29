@@ -78,8 +78,9 @@ export default function AgentDock() {
     };
     const onEnd = () => {
       const offset = dragX.get();
-      // 拖到屏幕边缘 → 自动收起
-      if (Math.abs(offset) > window.innerWidth * 0.35) {
+      // 拖动条中心接近屏幕边缘（30px内）→ 自动收起
+      const handleCenter = baseX + panelW / 2 + offset;
+      if (handleCenter < 30 || handleCenter > window.innerWidth - 30) {
         setOpen(false);
         dragX.set(0);
         return;
