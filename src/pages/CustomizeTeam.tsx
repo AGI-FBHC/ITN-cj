@@ -11,7 +11,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BookOpen, ClipboardCheck, Loader2, Presentation, RefreshCw, Wand2, Wrench } from 'lucide-react';
+import { ArrowLeft, BookOpen, ChevronLeft, ChevronRight, ClipboardCheck, Loader2, Presentation, RefreshCw, Wand2, Wrench } from 'lucide-react';
 import { api, type AdminGenerationEvent, type LearningResourceGenerationTask, type LearningTemplateResourceItem } from '@/lib/api';
 import { CollaborationRounds, agents, eventDisplayTitle, isLifecycleEvent } from '@/pages/CollaborationWorkbench';
 import ExecutionDetailPanel from '@/components/admin/ExecutionDetailPanel';
@@ -48,6 +48,7 @@ export default function CustomizeTeam() {
   const [events, setEvents] = useState<AdminGenerationEvent[]>([]);
   const [selectedEventSeq, setSelectedEventSeq] = useState<number | null>(null);
   const [selectedAgent, setSelectedAgent] = useState('');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const creatingRef = useRef(false);
   const [confirmTarget, setConfirmTarget] = useState<{ type: ResType; templateId: string; label: string } | null>(null);
 
@@ -77,9 +78,8 @@ export default function CustomizeTeam() {
     return () => { alive = false; };
   }, []);
 
-  /* 加载当前知识点的母版 + 全部定制任务（轮询） */
+  /* 加载全部母版模板 + 全部定制任务（轮询） */
   useEffect(() => {
-    if (!activeKpId) return;
     let alive = true;
     const load = async () => {
       try {
@@ -88,14 +88,14 @@ export default function CustomizeTeam() {
           api.listCustomizeTasks(),
         ]);
         if (!alive) return;
-        setTemplates((listed.items ?? []).filter((item) => item.nodeCode === activeKpId));
+        setTemplates(listed.items ?? []);
         setTasks(taskList.tasks ?? []);
       } catch { /* 保留现状 */ }
     };
     void load();
     const timer = window.setInterval(() => { void load(); }, 3000);
     return () => { alive = false; window.clearInterval(timer); };
-  }, [activeKpId]);
+  }, []);
 
   /* 每类资源的行数据（母版 ID 精确匹配） */
   const rows = useMemo(() => RES_META.map(({ type, label, icon }) => {
@@ -210,7 +210,7 @@ export default function CustomizeTeam() {
   };
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-120px)] max-w-[1400px] flex-col px-4 pb-8 pt-4">
+    <div className="mx-auto flex h-[calc(100dvh-60px)] max-w-[1400px] flex-col px-4 pb-3 pt-3">
       {/* 顶部 */}
       <header className="flex shrink-0 items-center justify-between gap-3 pb-3">
         <div className="flex min-w-0 items-center gap-3">
@@ -230,13 +230,18 @@ export default function CustomizeTeam() {
       </header>
 
       {/* 三栏 */}
-      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[220px_minmax(0,1fr)_340px]">
+      <div className="grid min-h-0 flex-1 gap-3 overflow-hidden" style={{ gridTemplateColumns: sidebarCollapsed ? '0px minmax(0,1fr) 340px' : '220px minmax(0,1fr) 340px' }}>
 
-        {/* 左栏：知识点选择器 */}
-        <aside className="hidden min-w-0 flex-col overflow-hidden rounded-2xl border border-white/70 bg-white/45 lg:flex">
-          <div className="shrink-0 border-b border-white/70 px-3 py-2.5">
-            <h3 className="text-[12px] font-bold text-ink">知识点</h3>
-            <p className="text-[9px] text-ink-muted">点击切换，查看或发起定制</p>
+        {/* 左栏：知识点选择器（可折叠） */}
+        <aside className={cn('hidden min-h-0 flex-col overflow-hidden rounded-2xl border border-white/70 bg-white/45 transition-all lg:flex', sidebarCollapsed && '!w-0 !border-0 !p-0')}>
+          <div className="shrink-0 flex items-center justify-between border-b border-white/70 px-3 py-2.5">
+            <div>
+              <h3 className="text-[12px] font-bold text-ink">知识点</h3>
+              <p className="text-[9px] text-ink-muted">点击切换，查看或发起定制</p>
+            </div>
+            <button type="button" onClick={() => setSidebarCollapsed((c) => !c)} className="lf-row-btn !p-1" title={sidebarCollapsed ? '展开知识点列表' : '收起知识点列表'}>
+              {sidebarCollapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
+            </button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
             {(() => {
@@ -277,7 +282,7 @@ export default function CustomizeTeam() {
         </aside>
 
         {/* 中栏：资源状态卡片 + 泳道 */}
-        <main className="flex min-w-0 flex-col gap-2.5 overflow-hidden">
+        <main className="flex min-h-0 min-w-0 flex-col gap-2.5 overflow-hidden">
           {/* 资源状态卡片 */}
           <div className="shrink-0 rounded-2xl border border-white/70 bg-white/45 p-3">
             <div className="mb-2 flex items-center justify-between">
@@ -394,7 +399,7 @@ export default function CustomizeTeam() {
         </main>
 
         {/* 右栏：执行详情 */}
-        <aside className="hidden min-w-0 flex-col rounded-2xl border border-white/70 bg-white/45 lg:flex">
+        <aside className="hidden min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-white/70 bg-white/45 lg:flex">
           <div className="flex shrink-0 items-center justify-between border-b border-white/70 px-4 py-3">
             <div className="min-w-0">
               <h3 className="text-sm font-bold text-ink">执行详情</h3>
