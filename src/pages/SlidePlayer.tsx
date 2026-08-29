@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -59,6 +59,7 @@ export default function SlidePlayer() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [error, setError] = useState('');
   const [resourceSources, setResourceSources] = useState<Array<Record<string, unknown>>>([]);
+  const cardScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!taskId) return;
@@ -84,6 +85,7 @@ export default function SlidePlayer() {
   const slides = data?.slides ?? [];
   useEffect(() => { if (slides.length && currentIndex >= slides.length) setCurrentIndex(slides.length - 1); }, [slides.length, currentIndex]);
   const slide = slides[currentIndex];
+  useEffect(() => { cardScrollRef.current?.scrollTo({ top: 0 }); }, [currentIndex, slide?.index]);
   const readyNext = currentIndex + 1 < slides.length;
   const complete = data?.status === 'completed';
   const expected = useMemo(() => Math.max(data?.total ?? 0, slides.length), [data?.total, slides.length]);
@@ -104,24 +106,30 @@ export default function SlidePlayer() {
   }, [slide, resourceSources]);
 
   return (
-    <main className="mx-auto flex min-h-[calc(100dvh-72px)] w-full max-w-[1180px] flex-col px-4 py-5 md:px-7">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-hairline pb-4">
+    <main className="mx-auto flex h-[calc(100dvh-72px)] min-h-0 w-full max-w-[1180px] flex-col overflow-hidden px-4 py-4 md:px-7 md:py-5">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-hairline pb-4">
         <button type="button" onClick={() => navigate(data?.kpId ? `/learn/customize-team/${data.kpId}?taskId=${taskId}` : '/learn')} className="inline-flex items-center gap-2 text-[12px] text-ink-muted hover:text-brand"><ArrowLeft size={15} />返回</button>
         <div className="min-w-0 flex-1 text-center"><p className="truncate text-[13px] font-medium text-ink">{data?.title ?? '正在准备个性化学习内容'}</p><p className="mt-0.5 font-mono text-[10px] text-ink-muted">{slides.length ? `第 ${currentIndex + 1} 张 · 已就绪 ${slides.length}${expected ? ` / 预计 ${expected}` : ''}` : '等待首张卡片'}</p></div>
         <div className="flex min-w-[78px] justify-end">{complete && data?.resourceId && <button type="button" title="完整阅读模式" onClick={() => navigate(`/learn/resource/${data.resourceId}`)} className="rounded-lg border border-hairline p-2 text-ink-muted hover:border-brand/40 hover:text-brand"><ExternalLink size={15} /></button>}</div>
       </header>
 
-      <section className="flex flex-1 items-center justify-center py-7">
-        {!slide ? <div className="flex min-h-[420px] w-full max-w-[880px] flex-col items-center justify-center rounded-[24px] border border-dashed border-brand/30 bg-card-warm px-6 text-center"><Loader2 size={25} className="animate-spin text-brand" /><h1 className="mt-4 font-serif text-[23px] font-semibold text-ink">正在准备第一张学习卡片</h1><p className="mt-2 max-w-md text-[12.5px] leading-6 text-ink-muted">第一章或第一个步骤完成后会立即显示，不必等待整项资源生成。</p>{error && <p className="mt-4 flex items-center gap-1.5 text-[11px] text-brand-danger"><CircleAlert size={13} />{error}</p>}</div>
-          : <article className="w-full max-w-[920px] rounded-[24px] border border-brand/20 bg-card-warm p-6 shadow-warm-lg md:p-9"><div className="flex items-center justify-between gap-4"><span className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.1em] text-brand">{slide.type === 'question' ? '分阶练习' : slide.type === 'step' ? '实操步骤' : '领学章节'}</span>{data?.status === 'generating' && <span className="inline-flex items-center gap-1.5 text-[10.5px] text-ink-muted"><Loader2 size={12} className="animate-spin" />后续卡片生成中</span>}</div>{slide.type === 'question' ? <QuizCard key={slide.index} slide={slide} /> : <><h1 className="mt-5 font-serif text-[28px] font-semibold leading-tight text-ink md:text-[34px]">{slide.title}</h1><div className="mt-6 h-1 w-14 rounded-full bg-brand" /><div className="mt-7 max-w-none text-ink-2"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{String(slide.content ?? '')}</ReactMarkdown></div></>}<SourceList sources={pageSources} evidenceQuotes={slide.evidenceQuotes} /></article>}
+      <section className="flex min-h-0 flex-1 items-stretch justify-center py-4 md:py-5">
+        {!slide ? <div className="flex h-full w-full max-w-[880px] flex-col items-center justify-center rounded-[24px] border border-dashed border-brand/30 bg-card-warm px-6 text-center"><Loader2 size={25} className="animate-spin text-brand" /><h1 className="mt-4 font-serif text-[23px] font-semibold text-ink">正在准备第一张学习卡片</h1><p className="mt-2 max-w-md text-[12.5px] leading-6 text-ink-muted">第一章或第一个步骤完成后会立即显示，不必等待整项资源生成。</p>{error && <p className="mt-4 flex items-center gap-1.5 text-[11px] text-brand-danger"><CircleAlert size={13} />{error}</p>}</div>
+          : <article className="flex h-full min-h-0 w-full max-w-[920px] flex-col overflow-hidden rounded-[24px] border border-brand/20 bg-card-warm shadow-warm-lg">
+              <div className="flex shrink-0 items-center justify-between gap-4 border-b border-hairline/70 bg-paper/55 px-6 py-3.5 md:px-9"><span className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.1em] text-brand">{slide.type === 'question' ? '分阶练习' : slide.type === 'step' ? '实操步骤' : '领学章节'}</span>{data?.status === 'generating' && <span className="inline-flex items-center gap-1.5 text-[10.5px] text-ink-muted"><Loader2 size={12} className="animate-spin" />后续卡片生成中</span>}</div>
+              <div ref={cardScrollRef} className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-6 pb-8 pt-5 [scrollbar-gutter:stable] md:px-9 md:pb-9 md:pt-6">
+                {slide.type === 'question' ? <QuizCard key={slide.index} slide={slide} /> : <><h1 className="font-serif text-[28px] font-semibold leading-tight text-ink md:text-[34px]">{slide.title}</h1><div className="mt-6 h-1 w-14 rounded-full bg-brand" /><div className="mt-7 max-w-none text-ink-2"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{String(slide.content ?? '')}</ReactMarkdown></div></>}
+                <SourceList sources={pageSources} evidenceQuotes={slide.evidenceQuotes} />
+              </div>
+            </article>}
       </section>
 
-      <footer className="flex items-center justify-center gap-4 pb-2">
+      <footer className="flex shrink-0 items-center justify-center gap-4 pb-2">
         <button type="button" disabled={currentIndex === 0} onClick={() => setCurrentIndex((value) => Math.max(0, value - 1))} className="inline-flex h-10 items-center gap-2 rounded-xl border border-hairline bg-paper px-4 text-[12px] text-ink disabled:cursor-not-allowed disabled:opacity-35"><ChevronLeft size={16} />上一张</button>
         <span className="min-w-[120px] text-center font-mono text-[10.5px] text-ink-muted">{slide ? `${currentIndex + 1} / ${slides.length}` : '0 / 0'}</span>
         <button type="button" disabled={!readyNext} onClick={() => setCurrentIndex((value) => Math.min(slides.length - 1, value + 1))} className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand px-4 text-[12px] text-paper disabled:cursor-not-allowed disabled:bg-paper-deep disabled:text-ink-muted">{readyNext ? '下一张' : complete ? '已到最后' : '生成中'}<ChevronRight size={16} /></button>
       </footer>
-      {complete && data?.resourceId && <div className="pb-5 text-center"><button type="button" onClick={() => navigate(`/learn/resource/${data.resourceId}`)} className="inline-flex items-center gap-2 text-[12px] font-medium text-brand hover:underline"><BookOpen size={14} />切换为完整阅读模式</button></div>}
+      {complete && data?.resourceId && <div className="shrink-0 pb-1 pt-1 text-center"><button type="button" onClick={() => navigate(`/learn/resource/${data.resourceId}`)} className="inline-flex items-center gap-2 text-[12px] font-medium text-brand hover:underline"><BookOpen size={14} />切换为完整阅读模式</button></div>}
     </main>
   );
 }
