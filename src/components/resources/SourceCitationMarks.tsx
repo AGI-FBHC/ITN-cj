@@ -100,31 +100,37 @@ export default function SourceCitationMarks({
     setChunk(null);
     setLiveError(null);
     const chunkId = String(source.chunkId ?? '').trim();
-    if (!chunkId) return;
     setLoading(true);
     try {
-      setChunk(await api.getRagflowChunk(chunkId));
-    } catch {
-      /* RAGFlow id 在 MySQL 反查失败：尝试 knowledgeChunkId（生成时由内容匹配写入） */
-      const fallbackId = Number(source.knowledgeChunkId);
-      if (Number.isFinite(fallbackId) && fallbackId > 0) {
+      const stableId = Number(source.knowledgeChunkId);
+      if (Number.isFinite(stableId) && stableId > 0) {
+        setChunk(await api.getRagChunk(stableId));
+        return;
+      }
+      if (chunkId) {
         try {
-          setChunk(await api.getRagChunk(fallbackId));
-        } catch {
-          setLiveError('切片原文暂时无法读取（MySQL 未命中），以下展示生成时保存的来源快照。');
-        }
-      } else {
-        const numeric = Number(chunkId);
-        if (Number.isFinite(numeric) && numeric > 0) {
-          try {
-            setChunk(await api.getRagChunk(numeric));
-          } catch (reason2) {
-            setLiveError(reason2 instanceof Error ? reason2.message : '暂时无法读取切片原文（MySQL 未命中）');
-          }
-        } else {
-          setLiveError('该引用未关联知识库切片，以下展示生成时保存的来源快照。');
+          setChunk(await api.getRagflowChunk(chunkId));
+          return;
+        } catch { /* 历史数据的 RAGFlow ID 可能尚未回填到 MySQL */ }
+      }
+      const raw = String(source.content ?? '');
+      const plain = raw.replace(/[`*_>#\[\]()]/g, ' ');
+      const phrases = plain.split(/[。！？!?\r\n]+/)
+        .map((item) => item.replace(/\s+/g, ' ').trim())
+        .filter((item) => item.length >= 18 && item.length <= 180)
+        .sort((a, b) => b.length - a.length)
+        .slice(0, 8)
+        .map((item) => item.slice(0, 72));
+      for (const query of phrases) {
+        const page = await api.searchRagChunks(query, 0, 5);
+        if (page.items.length) {
+          setChunk(await api.getRagChunk(page.items[0].id));
+          return;
         }
       }
+      throw new Error('MySQL 中未找到与来源快照匹配的知识切片');
+    } catch {
+      setLiveError('MySQL 中暂未找到对应知识切片，以下展示生成时保存的来源快照。');
     } finally {
       setLoading(false);
     }
