@@ -392,6 +392,22 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
     /** 真实学情问答：调后端 /agent/ask（MiMo），占位消息替换为真实回复 */
     const agentAsk = async (askType: string, userText: string, placeholder: string) => {
+      // Lazy session: create on first message, title from user text
+      let sid = currentSessionId;
+      if (!sid) {
+        const created = await api.createAgentSession(lid);
+        sid = created.id;
+        setSessions((prev) => [created, ...prev.filter((s) => s.id !== created.id)]);
+        setCurrentSessionId(sid);
+        setMsgsAll((prev) => ({ ...prev, [lid]: [] }));
+      }
+      // Set session title from first user message (truncate to 20 chars)
+      if (userText.length > 0) {
+        const shortTitle = userText.length > 20 ? userText.slice(0, 20) + '…' : userText;
+        void api.updateAgentSession(sid, { title: shortTitle }).then((updated) => {
+          setSessions((prev) => prev.map((s) => s.id === sid ? { ...s, title: updated.title } : s));
+        }).catch(() => {/* ignore */});
+      }
       append({ id: mid(), kind: 'user', text: userText, time: now() });
       const pendingId = mid();
       append({ id: pendingId, kind: 'agent', text: placeholder, time: now() });
@@ -400,7 +416,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         await api.askAgentStream(
           lid, askType, userText,
           askType === 'free' ? undefined : weakest?.id,
-          currentSessionId ?? undefined,
+          sid ?? undefined,
           (event) => {
             if (event.type === 'reply_delta' && event.content) {
               acc += event.content;

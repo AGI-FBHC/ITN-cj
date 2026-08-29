@@ -1126,6 +1126,10 @@ export const api = {
     }),
   deleteAgentSession: (sessionId: string) =>
     requestAgent<void>(`/agent-sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
+  updateAgentSession: (sessionId: string, body: { title?: string }) =>
+    requestAgent<AgentDockSession>(`/agent-sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'PATCH', body: JSON.stringify(body),
+    }),
   getAgentSessionMessages: (sessionId: string) =>
     requestAgent<{ messages: AgentDockSessionMessage[] }>(`/agent-sessions/${encodeURIComponent(sessionId)}/messages`),
   listAgentSessions: () =>

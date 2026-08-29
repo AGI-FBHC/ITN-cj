@@ -5,7 +5,7 @@
  * 侧边边缘：按住拖拽调整宽度（左浮→右边拖，右浮→左边拖）
  * 位置和宽度持久化到 localStorage
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useMotionValue, useTransform, animate } from 'framer-motion';
 import { Brain, GripHorizontal, Maximize2, Plus, X } from 'lucide-react';
@@ -42,14 +42,8 @@ export default function AgentDock() {
   const [side, setSide] = useState<'left' | 'right'>(readSide);
   const [panelW, setPanelW] = useState(readWidth);
 
-  /* 每次切换页面后首次打开侧边栏，自动新建会话 */
-  const lastPathRef = useRef<string>('');
-  useEffect(() => {
-    if (open && location.pathname !== lastPathRef.current) {
-      lastPathRef.current = location.pathname;
-      requestAnimationFrame(() => { void createAgentSession(); });
-    }
-  }, [open, location.pathname, createAgentSession]);
+  /* Sessions are now lazy-created on first message in agentAsk.
+     No auto-create needed here. */
 
   /* 隐藏规则 */
   const hidden = useMemo(() => {
