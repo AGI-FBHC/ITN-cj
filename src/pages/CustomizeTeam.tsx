@@ -371,7 +371,7 @@ export default function CustomizeTeam() {
                     onSelectAgent={(agentId) => { setSelectedAgent(agentId); setSelectedEventSeq(events.filter((e) => e.agent === agentId).at(-1)?.seq ?? null); }}
                   />
                 </>
-              ) : (
+              ) : rows.some((r) => r.template?.id) ? (
                 <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
                   <p className="text-[12px] text-ink-muted">该知识点还没有定制任务</p>
                   <button
@@ -382,6 +382,11 @@ export default function CustomizeTeam() {
                     <Wand2 size={13} />一键定制全部资源
                   </button>
                   <p className="text-[10px] text-ink-muted">或点击上方资源卡片逐个发起定制</p>
+                </div>
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
+                  <p className="text-[13px] text-ink-muted">该知识点暂未开放定制</p>
+                  <p className="text-[11px] text-ink-muted/70">相关课程资源尚未生成，暂时无法定制</p>
                 </div>
               )}
             </div>
