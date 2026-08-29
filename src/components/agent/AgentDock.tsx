@@ -3,7 +3,7 @@
  * FAB（未读角标 + 新推断冒泡）→ 对话面板：汇报流 / 证据问答 / 验证测验（讨价还价）
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Brain, X, Check, MessageCircleQuestion, Radio, GitBranch, Database, SendHorizonal, Plus, Trash2 } from 'lucide-react';
 import { useAgent } from '@/context/AgentContext';
@@ -171,6 +171,7 @@ export default function AgentDock() {
   const [draft, setDraft] = useState('');
   const { currentLearner, viewMode } = useProfile();
   const isExpert = viewMode === 'expert';
+  const navigate = useNavigate();
   const scrollRef = useRef<HTMLDivElement>(null);
   /* 上课时降噪：课件页里学习者正在读正文，阿诊不主动弹泡打断——推断照常积累，靠角标提示 */
   const inCourse = useLocation().pathname.startsWith('/learn/');
@@ -221,7 +222,7 @@ export default function AgentDock() {
 
         <button
           type="button"
-          onClick={() => setOpen(!open)}
+          onClick={() => navigate("/chat")}
           title={isExpert ? 'DIA-01 决策日志 · 系统透视' : '阿诊 · DIA-01 学情诊断'}
           className={cn(
             'relative flex h-13 w-13 items-center justify-center rounded-full border-2 shadow-warm-lg transition-all duration-200 hover:scale-105',

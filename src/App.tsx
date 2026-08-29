@@ -28,6 +28,7 @@ const Tutoring = lazy(() => import('@/pages/Tutoring'));
 const Knowledge = lazy(() => import('@/pages/Knowledge'));
 const Admin = lazy(() => import('@/pages/Admin'));
 const CollaborationWorkbench = lazy(() => import('@/pages/CollaborationWorkbench'));
+const AiChat = lazy(() => import('@/pages/AiChat'));
 const CustomizePipeline = lazy(() => import('@/pages/CustomizePipeline'));
 const CustomizeTeam = lazy(() => import('@/pages/CustomizeTeam'));
 import { useAuth } from '@/context/AuthContext';
@@ -118,6 +119,7 @@ export default function App() {
           <Route path="tutoring" element={<Tutoring />} />
           <Route path="knowledge" element={<Knowledge />} />
           <Route path="collaboration" element={<CollaborationWorkbench />} />
+          <Route path="chat" element={<AiChat />} />
           <Route path="*" element={<Home />} />
         </Route>
         </Route>
