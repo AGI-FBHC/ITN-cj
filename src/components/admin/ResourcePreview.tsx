@@ -353,7 +353,37 @@ function QuizPreview({ doc, sources }: { doc: QuizDoc; sources: Record<string, u
 
 function SourceSummary({ sources }: { sources: Record<string, unknown>[] }) {
   if (!sources.length) return null;
-  return <aside className="lf-card mt-5 rounded-2xl p-5"><div className="flex items-center gap-2"><FileText size={15} className="text-brand"/><h3 className="text-sm font-bold text-ink">引用来源</h3><span className="lf-pill lf-pill-null">{sources.length} 条</span></div><div className="mt-3 grid gap-2 md:grid-cols-2">{sources.map((source,index)=>{const title=String(source.document??source.title??`来源 ${index+1}`);const content=String(source.content??source.summary??'');const url=typeof source.url==='string'?source.url:null;return <div key={String(source.id??source.kbId??index)} className="rounded-xl border border-white/70 bg-white/50 px-4 py-3"><div className="flex items-start gap-2"><span className="font-mono text-[10px] text-brand">[{String(source.id??index+1)}]</span>{source.debateVerified===true&&<span className="shrink-0 rounded-full bg-[#51477F] px-2 py-0.5 text-[9px] font-semibold text-white">多源辩论通过</span>}<p className="line-clamp-2 flex-1 text-[12.5px] font-semibold text-ink">{title}</p>{url&&<a href={url} target="_blank" rel="noreferrer" title="查看来源" className="text-brand"><ExternalLink size={12}/></a>}</div>{content&&<p className="mt-1 line-clamp-3 text-[11.5px] leading-5 text-ink-muted">{content}</p>}</div>})}</div></aside>;
+  return (
+    <aside className="lf-card mt-5 rounded-2xl p-5">
+      <div className="flex items-center gap-2">
+        <FileText size={15} className="text-brand" />
+        <h3 className="text-sm font-bold text-ink">引用来源</h3>
+        <span className="lf-pill lf-pill-null">{sources.length} 条</span>
+      </div>
+      <div className="mt-3 grid gap-2 md:grid-cols-2">
+        {sources.map((source, index) => {
+          const title = String(source.document ?? source.title ?? `来源 ${index + 1}`);
+          const content = String(source.content ?? source.summary ?? '');
+          const url = typeof source.url === 'string' ? source.url : null;
+          return (
+            <div key={String(source.id ?? source.kbId ?? index)} className="rounded-xl border border-white/70 bg-white/50 px-4 py-3">
+              <div className="flex items-start gap-2">
+                <span className="font-mono text-[10px] text-brand">[{String(source.id ?? index + 1)}]</span>
+                {source.debateVerified === true && <span className="shrink-0 rounded-full bg-[#51477F] px-2 py-0.5 text-[9px] font-semibold text-white">多源辩论通过</span>}
+                <p className="line-clamp-2 flex-1 text-[12.5px] font-semibold text-ink">{title}</p>
+                {url && <a href={url} target="_blank" rel="noreferrer" title="查看来源" className="text-brand"><ExternalLink size={12} /></a>}
+              </div>
+              {content && (
+                <div className="mt-1 line-clamp-3 text-[11.5px] leading-5 text-ink-muted [&>*:first-child]:!mt-0 [&>*:last-child]:!mb-0 [&_h1]:!my-0.5 [&_h1]:!text-[12px] [&_h1]:!leading-5 [&_h2]:!my-0.5 [&_h2]:!border-0 [&_h2]:!pb-0 [&_h2]:!text-[12px] [&_h2]:!leading-5 [&_h2_span:first-child]:hidden [&_h3]:!my-0.5 [&_h3]:!text-[11.5px] [&_h4]:!my-0.5 [&_p]:!my-0.5 [&_p]:!text-[11.5px] [&_p]:!leading-5 [&_li]:!my-0 [&_li]:!text-[11.5px] [&_li]:!leading-5 [&_ol]:!my-0.5 [&_ul]:!my-0.5">
+                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>{content}</ReactMarkdown>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </aside>
+  );
 }
 
 /* ---------------- PPT：幻灯片大纲 ---------------- */
