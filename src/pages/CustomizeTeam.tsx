@@ -11,7 +11,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, Loader2, Presentation, RefreshCw, Wand2, Wrench } from 'lucide-react';
+import { ArrowLeft, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, Loader2, Play, Presentation, RefreshCw, Wand2, Wrench } from 'lucide-react';
 import { api, type AdminGenerationEvent, type LearningResourceGenerationTask, type LearningTemplateResourceItem } from '@/lib/api';
 import { CollaborationRounds, agents, eventDisplayTitle, isLifecycleEvent } from '@/pages/CollaborationWorkbench';
 import ExecutionDetailPanel from '@/components/admin/ExecutionDetailPanel';
@@ -203,6 +203,14 @@ export default function CustomizeTeam() {
   const activeKpLabel = topics.find((t) => t.id === activeKpId)?.label ?? activeKpId;
   const completed = shownTask?.status === 'completed';
   const failed = shownTask?.status === 'failed' || shownTask?.status === 'cancelled';
+  const openCompletedResource = () => {
+    if (!shownTask?.resourceId) return;
+    if (shownTask.resourceType === 'ppt') {
+      navigate(`/learn/${encodeURIComponent(activeKpId)}?ppt=${encodeURIComponent(shownTask.resourceId)}&topic=${encodeURIComponent(activeKpLabel)}`);
+      return;
+    }
+    navigate(`/learn/slide/${encodeURIComponent(shownTask.id)}`);
+  };
 
   /* 左栏：每个知识点的定制状态微标颜色 */
   const topicStatus = (topicId: string) => {
@@ -403,6 +411,17 @@ export default function CustomizeTeam() {
                     onSelect={(event) => { setSelectedEventSeq(event.seq); if (!isLifecycleEvent(event)) setSelectedAgent(event.agent); }}
                     onSelectAgent={(agentId) => { setSelectedAgent(agentId); setSelectedEventSeq(events.filter((e) => e.agent === agentId).at(-1)?.seq ?? null); }}
                   />
+                  {completed && shownTask.resourceId && (
+                    <div className="flex shrink-0 items-center justify-between gap-3 rounded-xl border border-brand/25 bg-brand-tint/45 px-3.5 py-3">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-ink">资源已就绪</p>
+                        <p className="mt-0.5 truncate text-[10px] text-ink-muted">{shownTask.title}</p>
+                      </div>
+                      <button type="button" onClick={openCompletedResource} className="lf-btn-primary inline-flex shrink-0 items-center gap-1.5 !px-3 !py-1.5 text-[11px]">
+                        <Play size={12} fill="currentColor" />开始学习
+                      </button>
+                    </div>
+                  )}
                 </>
               ) : rows.some((r) => r.template?.id) ? (
                 <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
