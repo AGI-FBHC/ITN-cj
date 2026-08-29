@@ -514,7 +514,8 @@ export default function CourseResourcePlayer() {
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [speechSpeed, setSpeechSpeed] = useState<TtsSpeed>('normal');
-  const [slideMode, setSlideMode] = useState(false);
+  /* 讲义、实操与题库进入后默认采用现有的一段一卡幻灯播放。 */
+  const [slideMode, setSlideMode] = useState(true);
   /* 自评乐观值：点击立即生效，后台防抖持久化，避免整页等待网络返回 */
   const [selfAssessments, setSelfAssessments] = useState<Record<string, number>>({});
   const pendingAssessRef = useRef<Record<string, number>>({});
@@ -538,6 +539,10 @@ export default function CourseResourcePlayer() {
   const rewardedSectionRef = useRef<Set<string>>(new Set());
   /** 打开资源奖励：画像未就绪时先挂起，等 learnerId 可用再上报，避免竞态漏记 */
   const [pendingOpenReward, setPendingOpenReward] = useState<{ id: string; title: string } | null>(null);
+
+  useEffect(() => {
+    setSlideMode(true);
+  }, [resourceId]);
 
   useEffect(() => {
     let cancelled = false;
