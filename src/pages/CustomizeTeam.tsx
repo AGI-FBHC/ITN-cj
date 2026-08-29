@@ -11,7 +11,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BookOpen, ChevronLeft, ChevronRight, ClipboardCheck, Loader2, Presentation, RefreshCw, Wand2, Wrench } from 'lucide-react';
+import { ArrowLeft, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, Loader2, Presentation, RefreshCw, Wand2, Wrench } from 'lucide-react';
 import { api, type AdminGenerationEvent, type LearningResourceGenerationTask, type LearningTemplateResourceItem } from '@/lib/api';
 import { CollaborationRounds, agents, eventDisplayTitle, isLifecycleEvent } from '@/pages/CollaborationWorkbench';
 import ExecutionDetailPanel from '@/components/admin/ExecutionDetailPanel';
@@ -49,6 +49,7 @@ export default function CustomizeTeam() {
   const [selectedEventSeq, setSelectedEventSeq] = useState<number | null>(null);
   const [selectedAgent, setSelectedAgent] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [collapsedChapters, setCollapsedChapters] = useState<Set<string>>(new Set());
   const creatingRef = useRef(false);
   const [confirmTarget, setConfirmTarget] = useState<{ type: ResType; templateId: string; label: string } | null>(null);
 
@@ -239,8 +240,8 @@ export default function CustomizeTeam() {
               <h3 className="text-[12px] font-bold text-ink">知识点</h3>
               <p className="text-[9px] text-ink-muted">点击切换，查看或发起定制</p>
             </div>
-            <button type="button" onClick={() => setSidebarCollapsed((c) => !c)} className="lf-row-btn !p-1" title={sidebarCollapsed ? '展开知识点列表' : '收起知识点列表'}>
-              {sidebarCollapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
+            <button type="button" onClick={() => setSidebarCollapsed((c) => !c)} className="lf-row-btn !p-1" title="收起知识点列表">
+              <ChevronLeft size={13} />
             </button>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
@@ -252,34 +253,54 @@ export default function CustomizeTeam() {
                 if (!chapters.has(key)) chapters.set(key, []);
                 chapters.get(key)!.push(topic);
               }
-              return Array.from(chapters.entries()).map(([chapterId, chapterTopics]) => (
-                <div key={chapterId} className="mb-1">
-                  <div className="px-2 py-1 text-[9.5px] font-semibold text-ink-muted">{chapterTopics[0]?.chapterName || chapterId}</div>
-                  {chapterTopics.map((topic) => {
-                    const isActive = topic.id === activeKpId;
-                    const colors = topicStatus(topic.id);
-                    return (
-                      <button
-                        key={topic.id}
-                        type="button"
-                        onClick={() => switchTopic(topic.id)}
-                        className={cn(
-                          'mb-0.5 w-full rounded-[8px] border px-2.5 py-1.5 text-left transition-all',
-                          isActive ? 'border-brand/40 bg-brand-tint/50' : 'border-transparent hover:border-hairline hover:bg-brand-tint/20',
-                        )}
-                      >
-                        <span className="block truncate text-[11.5px] font-medium text-ink">{topic.label}</span>
-                        <span className="mt-0.5 flex items-center gap-0.5">
-                          {colors.map((color, i) => <i key={i} className="h-1 w-3.5 rounded-full" style={{ backgroundColor: color }} />)}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ));
+              return Array.from(chapters.entries()).map(([chapterId, chapterTopics]) => {
+                const isChapterCollapsed = collapsedChapters.has(chapterId);
+                const toggleChapter = () => {
+                  setCollapsedChapters((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(chapterId)) next.delete(chapterId); else next.add(chapterId);
+                    return next;
+                  });
+                };
+                return (
+                  <div key={chapterId} className="mb-1">
+                    <button type="button" onClick={toggleChapter} className="flex w-full items-center gap-1 px-2 py-1 text-left">
+                      <ChevronDown size={10} className={cn('shrink-0 text-ink-muted transition-transform', isChapterCollapsed && '-rotate-90')} />
+                      <span className="truncate text-[9.5px] font-semibold text-ink-muted">{chapterTopics[0]?.chapterName || chapterId}</span>
+                    </button>
+                    {!isChapterCollapsed && chapterTopics.map((topic) => {
+                      const isActive = topic.id === activeKpId;
+                      const colors = topicStatus(topic.id);
+                      return (
+                        <button
+                          key={topic.id}
+                          type="button"
+                          onClick={() => switchTopic(topic.id)}
+                          className={cn(
+                            'mb-0.5 w-full rounded-[8px] border px-2.5 py-1.5 text-left transition-all',
+                            isActive ? 'border-brand/40 bg-brand-tint/50' : 'border-transparent hover:border-hairline hover:bg-brand-tint/20',
+                          )}
+                        >
+                          <span className="block truncate text-[11.5px] font-medium text-ink">{topic.label}</span>
+                          <span className="mt-0.5 flex items-center gap-0.5">
+                            {colors.map((color, i) => <i key={i} className="h-1 w-3.5 rounded-full" style={{ backgroundColor: color }} />)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              });
             })()}
           </div>
         </aside>
+
+        {/* 侧栏收起时的展开按钮 */}
+        {sidebarCollapsed && (
+          <button type="button" onClick={() => setSidebarCollapsed(false)} className="hidden self-start rounded-lg border border-white/70 bg-white/60 p-1.5 text-ink-muted transition hover:bg-brand-tint hover:text-brand lg:block" title="展开知识点列表">
+            <ChevronRight size={14} />
+          </button>
+        )}
 
         {/* 中栏：资源状态卡片 + 泳道 */}
         <main className="flex min-h-0 min-w-0 flex-col gap-2.5 overflow-hidden">
