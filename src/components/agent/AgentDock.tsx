@@ -78,6 +78,12 @@ export default function AgentDock() {
     };
     const onEnd = () => {
       const offset = dragX.get();
+      // 拖到屏幕边缘 → 自动收起
+      if (Math.abs(offset) > window.innerWidth * 0.35) {
+        setOpen(false);
+        dragX.set(0);
+        return;
+      }
       if (Math.abs(offset) > panelW * 0.2) {
         const newSide = offset > 0 ? 'right' : 'left';
         setSide(newSide);
