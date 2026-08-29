@@ -89,12 +89,14 @@ export default function SourceCitationMarks({
       }
       const raw = String(source.content ?? '');
       const plain = raw.replace(/[`*_>#\[\]()]/g, ' ');
-      const phrases = plain.split(/[。！？!?\r\n]+/)
+      const all = plain.split(/[。！？!?\r\n]+/)
         .map((item) => item.replace(/\s+/g, ' ').trim())
         .filter((item) => item.length >= 18 && item.length <= 180)
         .sort((a, b) => b.length - a.length)
-        .slice(0, 8)
         .map((item) => item.slice(0, 72));
+      // Prefer tail half (RAGFlow prepends summary not in MySQL)
+      const half = Math.floor(all.length / 2);
+      const phrases = [...all.slice(half), ...all.slice(0, half)].slice(0, 8);
       for (const query of phrases) {
         const page = await api.searchRagChunks(query, 0, 5);
         if (page.items.length) {
