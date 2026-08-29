@@ -49,7 +49,7 @@ export default function CustomizeTeam() {
   const [selectedEventSeq, setSelectedEventSeq] = useState<number | null>(null);
   const [selectedAgent, setSelectedAgent] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [cardIndex, setCardIndex] = useState(0);
+
   const [collapsedChapters, setCollapsedChapters] = useState<Set<string>>(new Set());
   const creatingRef = useRef(false);
   const [confirmTarget, setConfirmTarget] = useState<{ type: ResType; templateId: string; label: string } | null>(null);
@@ -310,81 +310,50 @@ export default function CustomizeTeam() {
             <div className="mb-2 flex items-center justify-between">
               <span className="text-[11px] font-medium text-ink-2">{activeKpLabel} · 资源定制状态</span>
             </div>
-            {/* 卡片轮播：前3类资源（讲义/实操/题库）左右切换，课件单独显示 */}
-            {(() => {
-              const carouselRows = rows.filter((r) => r.type !== 'ppt');
-              const pptRow = rows.find((r) => r.type === 'ppt');
-              const safeIndex = Math.min(cardIndex, carouselRows.length - 1);
-              const current = carouselRows[safeIndex];
-              if (!current) return null;
-              const { type, label, icon: Icon, template, task: matched, busy, customized } = current;
-              return (
-                <div className="flex items-center gap-2">
-                  {/* 课件卡片（固定左侧） */}
-                  {pptRow && (() => {
-                    const { type: pt, label: pl, icon: PIcon, template: ptpl, task: pmt, busy: pb, customized: pc } = pptRow;
-                    return (
-                      <div className={cn(
-                        'relative w-[140px] shrink-0 rounded-[12px] border text-left transition-all',
-                        !ptpl ? 'cursor-not-allowed border-dashed border-hairline bg-paper/60'
-                          : pb ? 'border-brand-amber/50 bg-brand-amber-tint/50'
-                          : pc ? 'border-brand/45 bg-brand-tint/40 hover:border-brand/60'
-                          : 'border-hairline bg-paper hover:border-brand/50 hover:bg-brand-tint/30',
-                        effectiveTaskId === pmt?.id && 'ring-2 ring-brand/25',
-                      )}>
-                        <button type="button" disabled={!ptpl} onClick={() => { if (pmt) { setShownTaskId(pmt.id); setSelectedEventSeq(null); setSelectedAgent(''); return; } if (ptpl?.id) setConfirmTarget({ type: pt, templateId: ptpl.id, label: pl }); }} className="block w-full px-2.5 py-1.5 text-left">
-                          <span className="flex items-center justify-between">
-                            <span className={cn('flex h-5 w-5 items-center justify-center rounded-md', ptpl ? 'bg-brand-tint text-brand' : 'bg-paper-deep text-ink-muted')}>
-                              {pb ? <Loader2 size={10} className="animate-spin" /> : <PIcon size={10} />}
-                            </span>
-                            <span className={cn('text-[9px] font-medium', pb ? 'text-ochre' : pc ? 'text-brand' : 'text-ink-muted')}>{!ptpl ? '暂无' : pb ? '定制中' : pc ? '已定制' : '未定制'}</span>
-                          </span>
-                          <strong className="mt-0.5 block truncate text-[11px] font-semibold text-ink">{pl}</strong>
-                        </button>
-                      </div>
-                    );
-                  })()}
-
-                  {/* 轮播主体 */}
-                  <div className="flex min-w-0 flex-1 items-center gap-1.5">
-                    <button type="button" onClick={() => setCardIndex((i) => (i - 1 + carouselRows.length) % carouselRows.length)} className="lf-row-btn shrink-0 !p-1" disabled={carouselRows.length <= 1}>
-                      <ChevronLeft size={14} />
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {rows.map(({ type, label, icon: Icon, template, task: matched, busy, customized }) => (
+                <div
+                  key={type}
+                  className={cn(
+                    'relative rounded-[12px] border text-left transition-all',
+                    !template ? 'cursor-not-allowed border-dashed border-hairline bg-paper/60'
+                      : busy ? 'border-brand-amber/50 bg-brand-amber-tint/50'
+                      : customized ? 'border-brand/45 bg-brand-tint/40 hover:border-brand/60'
+                      : 'border-hairline bg-paper hover:border-brand/50 hover:bg-brand-tint/30',
+                    effectiveTaskId === matched?.id && 'ring-2 ring-brand/25',
+                  )}
+                >
+                  <button
+                    type="button"
+                    disabled={!template}
+                    onClick={() => {
+                      if (matched) { setShownTaskId(matched.id); setSelectedEventSeq(null); setSelectedAgent(''); return; }
+                      if (template?.id) setConfirmTarget({ type, templateId: template.id, label });
+                    }}
+                    className="block w-full px-3 py-2 text-left"
+                  >
+                    <span className="flex items-center justify-between">
+                      <span className={cn('flex h-6 w-6 items-center justify-center rounded-md', template ? 'bg-brand-tint text-brand' : 'bg-paper-deep text-ink-muted')}>
+                        {busy ? <Loader2 size={12} className="animate-spin" /> : <Icon size={12} />}
+                      </span>
+                      <span className={cn('text-[10px] font-medium', busy ? 'text-ochre' : customized ? 'text-brand' : template ? 'text-ink-2' : 'text-ink-muted')}>
+                        {!template ? '暂无资源' : busy ? '定制中' : customized ? '已定制' : '未定制'}
+                      </span>
+                    </span>
+                    <strong className="mt-1 block truncate text-[12px] font-semibold text-ink">{label}</strong>
+                  </button>
+                  {customized && template?.id && !busy && (
+                    <button
+                      type="button"
+                      onClick={() => void startOne(type, template.id, true)}
+                      className="mx-3 mb-2 inline-flex items-center gap-1 text-[10px] font-medium text-brand transition-colors hover:text-brand-dark"
+                    >
+                      <RefreshCw size={10} />重新生成
                     </button>
-                    <div className={cn(
-                      'min-w-0 flex-1 rounded-[12px] border text-left transition-all',
-                      !template ? 'cursor-not-allowed border-dashed border-hairline bg-paper/60'
-                        : busy ? 'border-brand-amber/50 bg-brand-amber-tint/50'
-                        : customized ? 'border-brand/45 bg-brand-tint/40 hover:border-brand/60'
-                        : 'border-hairline bg-paper hover:border-brand/50 hover:bg-brand-tint/30',
-                      effectiveTaskId === matched?.id && 'ring-2 ring-brand/25',
-                    )}>
-                      <button type="button" disabled={!template} onClick={() => { if (matched) { setShownTaskId(matched.id); setSelectedEventSeq(null); setSelectedAgent(''); return; } if (template?.id) setConfirmTarget({ type, templateId: template.id, label }); }} className="block w-full px-3 py-2 text-left">
-                        <span className="flex items-center justify-between">
-                          <span className={cn('flex h-6 w-6 items-center justify-center rounded-md', template ? 'bg-brand-tint text-brand' : 'bg-paper-deep text-ink-muted')}>
-                            {busy ? <Loader2 size={12} className="animate-spin" /> : <Icon size={12} />}
-                          </span>
-                          <span className="flex items-center gap-2">
-                            <span className={cn('text-[10px] font-medium', busy ? 'text-ochre' : customized ? 'text-brand' : template ? 'text-ink-2' : 'text-ink-muted')}>
-                              {!template ? '暂无母版' : busy ? '定制中' : customized ? '已定制' : '未定制'}
-                            </span>
-                            <span className="font-mono text-[10px] text-ink-muted">{safeIndex + 1}/{carouselRows.length}</span>
-                          </span>
-                        </span>
-                        <strong className="mt-1 block truncate text-[12px] font-semibold text-ink">{label}</strong>
-                      </button>
-                      {customized && template?.id && !busy && (
-                        <button type="button" onClick={() => void startOne(type, template.id, true)} className="mx-3 mb-2 inline-flex items-center gap-1 text-[10px] font-medium text-brand transition-colors hover:text-brand-dark">
-                          <RefreshCw size={10} />重新生成
-                        </button>
-                      )}
-                    </div>
-                    <button type="button" onClick={() => setCardIndex((i) => (i + 1) % carouselRows.length)} className="lf-row-btn shrink-0 !p-1" disabled={carouselRows.length <= 1}>
-                      <ChevronRight size={14} />
-                    </button>
-                  </div>
+                  )}
                 </div>
-              );
-            })()}
+              ))}
+            </div>
           </div>
 
           {/* 泳道 */}
