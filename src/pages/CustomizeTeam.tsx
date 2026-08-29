@@ -211,7 +211,7 @@ export default function CustomizeTeam() {
   };
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-60px)] max-w-[1400px] flex-col px-4 pb-3 pt-3">
+    <div className="mx-auto flex h-[calc(100dvh-80px)] max-w-[1400px] flex-col px-4 pb-2 pt-2">
       {/* 顶部 */}
       <header className="flex shrink-0 items-center justify-between gap-3 pb-3">
         <div className="flex min-w-0 items-center gap-3">
