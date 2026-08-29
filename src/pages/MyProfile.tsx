@@ -6,11 +6,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
-import { Save, Sparkles, Brain, History, HelpCircle, Clock3, Flame, ClipboardCheck, ArrowRight, Trash2 } from 'lucide-react';
+import { Save, Sparkles, Brain, History, HelpCircle, Clock3, Flame, ClipboardCheck, ArrowRight, Trash2, RefreshCw, X } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
 import { useLearningMap } from '@/hooks/useLearningMap';
 import { deriveAbilityScores } from '@/lib/abilityAdjust';
-import { api } from '@/lib/api';
+import { api, streamProfileAnalysis, type ProfileAnalysisEvent } from '@/lib/api';
 import {
   readLearnerAnalytics,
   writeLearnerAnalytics,
@@ -170,6 +170,57 @@ export default function MyProfile() {
   useEffect(() => {
     void loadMemories();
   }, [currentLearner.id, loadMemories]);
+
+  /* ===== 画像记忆驱动更新 ===== */
+  const [analysisOpen, setAnalysisOpen] = useState(false);
+  const [analysisText, setAnalysisText] = useState('');
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisError, setAnalysisError] = useState('');
+  const [proposedScores, setProposedScores] = useState<Record<string, number> | null>(null);
+
+  const startAnalysis = useCallback(async () => {
+    setAnalysisOpen(true);
+    setAnalysisText('');
+    setAnalysisError('');
+    setAnalysisLoading(true);
+    setProposedScores(null);
+    const controller = new AbortController();
+    try {
+      await streamProfileAnalysis((event: ProfileAnalysisEvent) => {
+        if (event.type === 'no_data') {
+          setAnalysisError(event.message || '最近没有新的学习数据');
+          setAnalysisLoading(false);
+        } else if (event.type === 'delta') {
+          setAnalysisText((prev) => prev + (event.content || ''));
+        } else if (event.type === 'done') {
+          setAnalysisText(event.analysis || '');
+          setProposedScores(event.currentScores || null);
+          setAnalysisLoading(false);
+        } else if (event.type === 'error') {
+          setAnalysisError(event.message || '分析失败');
+          setAnalysisLoading(false);
+        }
+      }, controller.signal);
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        setAnalysisError(err instanceof Error ? err.message : '分析请求失败');
+      }
+    } finally {
+      setAnalysisLoading(false);
+    }
+  }, []);
+
+  const applyScores = useCallback(async () => {
+    if (!proposedScores) return;
+    try {
+      await api.updateLearnerScores(proposedScores);
+      setScores(proposedScores);
+      setAnalysisOpen(false);
+      toast.success('六维能力已更新');
+    } catch {
+      toast.error('保存失败');
+    }
+  }, [proposedScores]);
 
   useEffect(() => {
     const bustToday = () => {
@@ -353,8 +404,13 @@ export default function MyProfile() {
         <div className="space-y-5">
           <div className="lf-card space-y-3 p-5">
             <div className="flex items-center justify-between">
-              <div className="lf-mono-label !text-[11px]">六维能力（随学习进度动态更新）</div>
-              {dirty && <span className="font-mono text-[11px] text-ochre">未保存</span>}
+              <div className="flex items-center gap-2">
+                <div className="lf-mono-label !text-[11px]">六维能力（随学习进度动态更新）</div>
+                {dirty && <span className="font-mono text-[11px] text-ochre">未保存</span>}
+              </div>
+              <button type="button" onClick={() => void startAnalysis()} title="基于最近学习数据更新六维能力" className="lf-row-btn !p-1.5">
+                <RefreshCw size={13} className={analysisLoading ? "animate-spin" : ""} />
+              </button>
             </div>
             {kps.map((kp) => (
               <div key={kp.id}>
@@ -637,6 +693,39 @@ export default function MyProfile() {
           </div>
         </div>
       </div>
+
+      {/* 画像记忆驱动更新弹窗 */}
+      {analysisOpen && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-ink/35 p-4 backdrop-blur-sm">
+          <div className="lf-card flex h-[min(80vh,640px)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl shadow-2xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-hairline px-5 py-4">
+              <div>
+                <h3 className="text-[15px] font-semibold text-ink">六维能力分析</h3>
+                <p className="mt-0.5 text-[11px] text-ink-muted">基于最近学习记忆自动分析</p>
+              </div>
+              <button type="button" onClick={() => setAnalysisOpen(false)} className="lf-row-btn !p-2"><X size={15} /></button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              {analysisError ? (
+                <div className="py-8 text-center text-[13px] text-ink-muted">{analysisError}</div>
+              ) : analysisLoading && !analysisText ? (
+                <div className="py-8 text-center text-[13px] text-ink-muted">
+                  <RefreshCw size={16} className="mx-auto mb-2 animate-spin text-brand" />
+                  正在分析学习数据…
+                </div>
+              ) : (
+                <div className="prose prose-sm max-w-none text-[13px] leading-6 text-ink-2 whitespace-pre-wrap">{analysisText}</div>
+              )}
+            </div>
+            {proposedScores && (
+              <div className="flex shrink-0 items-center justify-end gap-3 border-t border-hairline px-5 py-3">
+                <button type="button" onClick={() => setAnalysisOpen(false)} className="lf-btn-ghost !px-3 !py-1.5 text-[12px]">取消</button>
+                <button type="button" onClick={() => void applyScores()} className="lf-btn-primary !px-3 !py-1.5 text-[12px]">应用更新</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

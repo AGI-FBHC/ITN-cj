@@ -919,6 +919,48 @@ export async function streamTeachingGroup(
   consume();
 }
 
+export interface ProfileAnalysisEvent {
+  type: 'no_data' | 'delta' | 'done' | 'error';
+  message?: string;
+  content?: string;
+  analysis?: string;
+  currentScores?: Record<string, number>;
+}
+
+export async function streamProfileAnalysis(
+  onEvent: (event: ProfileAnalysisEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const headers = new Headers({ Accept: 'text/event-stream' });
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const res = await fetch(`${API_BASE}/v1/memory/profile-analysis`, { headers, signal });
+  if (!res.ok || !res.body) throw new Error(`画像分析请求失败 (${res.status})`);
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  const consume = () => {
+    let separator = buffer.indexOf('\n\n');
+    while (separator >= 0) {
+      const block = buffer.slice(0, separator);
+      buffer = buffer.slice(separator + 2);
+      const data = block.split('\n').find((line) => line.startsWith('data: '))?.slice(6);
+      if (data) {
+        try { onEvent(JSON.parse(data) as ProfileAnalysisEvent); } catch { /* ignore */ }
+      }
+      separator = buffer.indexOf('\n\n');
+    }
+  };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    consume();
+  }
+  buffer += decoder.decode();
+  consume();
+}
+
 export async function streamAdminGenerationTask(
   taskType: 'resource' | 'ppt',
   taskId: string,
@@ -1346,6 +1388,8 @@ export const api = {
     requestDirect<void>(`/v1/memories/${encodeURIComponent(memoryId)}`, { method: 'DELETE' }),
   getMemoryContext: (body: { scene: string; scope?: Record<string, unknown>; taskId?: string }) =>
     requestDirect<Record<string, unknown>>('/v1/memory/context', { method: 'POST', body: JSON.stringify(body) }),
+  updateLearnerScores: (scores: Record<string, number>) =>
+    requestDirect<{ ok: boolean }>('/v1/learners/scores', { method: 'PUT', body: JSON.stringify({ scores }) }),
   listLearningResourceTasks: (limit = 30, summary = false) =>
     requestDirect<{ tasks: LearningResourceGenerationTask[] }>(`/v1/learning-resource-tasks?limit=${limit}&summary=${summary ? 'true' : 'false'}`),
   summarizeAdminGenerationEvent: (taskType: 'resource' | 'ppt', taskId: string, seq: number, refresh = false) =>
