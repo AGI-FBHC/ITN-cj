@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { createPortal } from 'react-dom';
 import { ExternalLink, FileText, Loader2, X } from 'lucide-react';
+import { lectureMdComponents } from '@/components/resources/lecture-markdown';
 import { api } from '@/lib/api';
+import remarkCitationMarks from '@/lib/remarkCitationMarks';
 import type { LearningResource, RagChunkDetail } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
@@ -139,29 +142,27 @@ export default function SourceCitationMarks({
                 {
                   (() => {
                     const rawContent = chunk?.content ?? String(opened.source.content ?? '没有可显示的原文内容。');
-                    /* 魔改 HTML <img>（含 data-figure-id/data-vlm-description 等）或 markdown 图片：只取 src 加载显示 */
-                    if (/<img\b|!\[[^\]]*\]\([^)]+\)/i.test(rawContent)) {
-                      const parts = rawContent.split(/(<img\b[^>]*>|!\[[^\]]*\]\([^)]+\))/gi);
-                      return (
-                        <div className="whitespace-pre-wrap rounded-[14px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-7 text-ink-2">
-                          {parts.map((part, index) => {
-                            const imgTag = part.match(/^<img\b([^>]*)>$/i);
-                            const mdImg = !imgTag ? part.match(/^!\[[^\]]*\]\(([^)\s"']+)["']?[^)]*\)$/) : null;
-                            if (imgTag) {
-                              const srcMatch = imgTag[1].match(/src\s*=\s*["']([^"']+)["']/i);
-                              const altMatch = imgTag[1].match(/alt\s*=\s*["']([^"']*)["']/i);
-                              if (!srcMatch) return <span key={index}>{part}</span>;
-                              return <img key={index} src={srcMatch[1]} alt={altMatch && altMatch[1] ? altMatch[1] : '切片图片'} className="my-2 block max-w-full rounded-lg border border-hairline" loading="lazy" />;
-                            }
-                            if (mdImg) {
-                              return <img key={index} src={mdImg[1]} alt="切片图片" className="my-2 block max-w-full rounded-lg border border-hairline" loading="lazy" />;
-                            }
-                            return <span key={index}>{part}</span>;
-                          })}
-                        </div>
-                      );
-                    }
-                    return <div className="rounded-[14px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-7 text-ink-2 prose prose-sm max-w-none prose-headings:text-ink prose-p:text-ink-2 prose-code:text-[12px] prose-code:bg-paper prose-code:px-1 prose-code:rounded"><ReactMarkdown>{rawContent}</ReactMarkdown></div>;
+                    const markdownContent = rawContent
+                      .replace(/<img\b([^>]*)>/gi, (_tag, attrs: string) => {
+                        const src = attrs.match(/src\s*=\s*["']([^"']+)["']/i)?.[1];
+                        if (!src) return '';
+                        const alt = attrs.match(/alt\s*=\s*["']([^"']*)["']/i)?.[1] || '切片图片';
+                        return `\n\n![${alt.replace(/[\[\]]/g, '')}](${src})\n\n`;
+                      })
+                      .replace(/<\/?(?:div|p|center|figure|figcaption)\b[^>]*>/gi, '\n');
+                    return (
+                      <div className="rounded-[14px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-7 text-ink-2">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm, remarkCitationMarks]}
+                          components={{
+                            ...lectureMdComponents,
+                            img: ({ src, alt }) => src ? <img src={src} alt={alt || '切片图片'} className="my-3 block max-w-full rounded-lg border border-hairline" loading="lazy" /> : null,
+                          }}
+                        >
+                          {markdownContent}
+                        </ReactMarkdown>
+                      </div>
+                    );
                   })()}
                 </>
               }
