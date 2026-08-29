@@ -4,6 +4,9 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ArrowLeft, BookOpen, Check, ChevronLeft, ChevronRight, CircleAlert, ExternalLink, Loader2 } from 'lucide-react';
 import { api, type CustomizeSlide, type CustomizeSlidesResponse } from '@/lib/api';
+import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
+import { slideMdComponents } from '@/components/resources/lecture-markdown';
+import remarkCitationMarks from '@/lib/remarkCitationMarks';
 import { cn } from '@/lib/utils';
 
 type QuizValue = string | number;
@@ -39,8 +42,15 @@ function QuizCard({ slide }: { slide: CustomizeSlide }) {
 
 function SourceList({ sources }: { sources?: Array<Record<string, unknown>> }) {
   if (!sources?.length) return null;
-  return <div className="mt-7 border-t border-hairline pt-4"><p className="font-mono text-[10px] tracking-[0.12em] text-ink-muted">本页依据</p><div className="mt-2 flex flex-wrap gap-2">{sources.map((source, index) => <span key={`${source.id ?? source.sourceId ?? index}`} className="rounded-full border border-brand/20 bg-brand-tint/35 px-3 py-1 text-[11px] text-ink-2">{String(source.title ?? source.label ?? source.name ?? `来源 ${index + 1}`)}</span>)}</div></div>;
+  const citations = sources.map((source, index) => Number(source.id ?? index + 1)).filter(Number.isFinite);
+  return <div className="mt-7 border-t border-hairline pt-4"><p className="font-mono text-[10px] tracking-[0.12em] text-ink-muted">本页依据</p><div className="mt-2"><SourceCitationMarks citations={citations} sources={sources} /></div></div>;
 }
+
+const citedSourceIds = (slide?: CustomizeSlide): Set<number> => {
+  if (!slide) return new Set();
+  const text = typeof slide.content === 'string' ? slide.content : JSON.stringify(slide.content ?? {});
+  return new Set([...text.matchAll(/(?<!\!)\[(\d+)\](?!\s*\()/g)].map((match) => Number(match[1])));
+};
 
 export default function SlidePlayer() {
   const { taskId = '' } = useParams<{ taskId: string }>();
@@ -48,6 +58,7 @@ export default function SlidePlayer() {
   const [data, setData] = useState<CustomizeSlidesResponse | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [error, setError] = useState('');
+  const [resourceSources, setResourceSources] = useState<Array<Record<string, unknown>>>([]);
 
   useEffect(() => {
     if (!taskId) return;
@@ -76,6 +87,21 @@ export default function SlidePlayer() {
   const readyNext = currentIndex + 1 < slides.length;
   const complete = data?.status === 'completed';
   const expected = useMemo(() => Math.max(data?.total ?? 0, slides.length), [data?.total, slides.length]);
+  useEffect(() => {
+    if (!data?.resourceId) return;
+    let alive = true;
+    void api.getLearningResource(data.resourceId).then((resource) => {
+      if (alive) setResourceSources((resource.sources ?? []) as Array<Record<string, unknown>>);
+    }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [data?.resourceId]);
+  const pageSources = useMemo(() => {
+    if (slide?.sources?.length) return slide.sources;
+    const ids = citedSourceIds(slide);
+    return ids.size
+      ? resourceSources.filter((source, index) => ids.has(Number(source.id ?? index + 1)))
+      : [];
+  }, [slide, resourceSources]);
 
   return (
     <main className="mx-auto flex min-h-[calc(100dvh-72px)] w-full max-w-[1180px] flex-col px-4 py-5 md:px-7">
@@ -87,7 +113,7 @@ export default function SlidePlayer() {
 
       <section className="flex flex-1 items-center justify-center py-7">
         {!slide ? <div className="flex min-h-[420px] w-full max-w-[880px] flex-col items-center justify-center rounded-[24px] border border-dashed border-brand/30 bg-card-warm px-6 text-center"><Loader2 size={25} className="animate-spin text-brand" /><h1 className="mt-4 font-serif text-[23px] font-semibold text-ink">正在准备第一张学习卡片</h1><p className="mt-2 max-w-md text-[12.5px] leading-6 text-ink-muted">第一章或第一个步骤完成后会立即显示，不必等待整项资源生成。</p>{error && <p className="mt-4 flex items-center gap-1.5 text-[11px] text-brand-danger"><CircleAlert size={13} />{error}</p>}</div>
-          : <article className="w-full max-w-[920px] rounded-[24px] border border-brand/20 bg-card-warm p-6 shadow-warm-lg md:p-9"><div className="flex items-center justify-between gap-4"><span className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.1em] text-brand">{slide.type === 'question' ? '分阶练习' : slide.type === 'step' ? '实操步骤' : '领学章节'}</span>{data?.status === 'generating' && <span className="inline-flex items-center gap-1.5 text-[10.5px] text-ink-muted"><Loader2 size={12} className="animate-spin" />后续卡片生成中</span>}</div>{slide.type === 'question' ? <QuizCard key={slide.index} slide={slide} /> : <><h1 className="mt-5 font-serif text-[28px] font-semibold leading-tight text-ink md:text-[34px]">{slide.title}</h1><div className="mt-6 h-1 w-14 rounded-full bg-brand" /><div className="prose prose-sm mt-7 max-w-none text-ink-2 md:prose-base"><ReactMarkdown remarkPlugins={[remarkGfm]}>{String(slide.content ?? '')}</ReactMarkdown></div></>}<SourceList sources={slide.sources} /></article>}
+          : <article className="w-full max-w-[920px] rounded-[24px] border border-brand/20 bg-card-warm p-6 shadow-warm-lg md:p-9"><div className="flex items-center justify-between gap-4"><span className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.1em] text-brand">{slide.type === 'question' ? '分阶练习' : slide.type === 'step' ? '实操步骤' : '领学章节'}</span>{data?.status === 'generating' && <span className="inline-flex items-center gap-1.5 text-[10.5px] text-ink-muted"><Loader2 size={12} className="animate-spin" />后续卡片生成中</span>}</div>{slide.type === 'question' ? <QuizCard key={slide.index} slide={slide} /> : <><h1 className="mt-5 font-serif text-[28px] font-semibold leading-tight text-ink md:text-[34px]">{slide.title}</h1><div className="mt-6 h-1 w-14 rounded-full bg-brand" /><div className="mt-7 max-w-none text-ink-2"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{String(slide.content ?? '')}</ReactMarkdown></div></>}<SourceList sources={pageSources} /></article>}
       </section>
 
       <footer className="flex items-center justify-center gap-4 pb-2">
