@@ -143,6 +143,8 @@ export default function SourceCitationMarks({
                   (() => {
                     const rawContent = chunk?.content ?? String(opened.source.content ?? '没有可显示的原文内容。');
                     const markdownContent = rawContent
+                      // 历史切片会把成对强调标记保存为 \*\*文本\*\*；仅恢复完整配对，避免误改普通转义字符。
+                      .replace(/\\\*\\\*([^\n]+?)\\\*\\\*/g, '**$1**')
                       .replace(/<img\b([^>]*)>/gi, (_tag, attrs: string) => {
                         const src = attrs.match(/src\s*=\s*["']([^"']+)["']/i)?.[1];
                         if (!src) return '';
