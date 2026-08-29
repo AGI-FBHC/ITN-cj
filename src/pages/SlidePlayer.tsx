@@ -40,10 +40,10 @@ function QuizCard({ slide }: { slide: CustomizeSlide }) {
   );
 }
 
-function SourceList({ sources }: { sources?: Array<Record<string, unknown>> }) {
+function SourceList({ sources, evidenceQuotes }: { sources?: Array<Record<string, unknown>>; evidenceQuotes?: Array<Record<string, unknown>> }) {
   if (!sources?.length) return null;
   const citations = sources.map((source, index) => Number(source.id ?? index + 1)).filter(Number.isFinite);
-  return <div className="mt-7 border-t border-hairline pt-4"><p className="font-mono text-[10px] tracking-[0.12em] text-ink-muted">本页依据</p><div className="mt-2"><SourceCitationMarks citations={citations} sources={sources} /></div></div>;
+  return <div className="mt-7 border-t border-hairline pt-4"><p className="font-mono text-[10px] tracking-[0.12em] text-ink-muted">本页依据</p><div className="mt-2"><SourceCitationMarks citations={citations} evidenceQuotes={evidenceQuotes} sources={sources} /></div></div>;
 }
 
 const citedSourceIds = (slide?: CustomizeSlide): Set<number> => {
@@ -113,7 +113,7 @@ export default function SlidePlayer() {
 
       <section className="flex flex-1 items-center justify-center py-7">
         {!slide ? <div className="flex min-h-[420px] w-full max-w-[880px] flex-col items-center justify-center rounded-[24px] border border-dashed border-brand/30 bg-card-warm px-6 text-center"><Loader2 size={25} className="animate-spin text-brand" /><h1 className="mt-4 font-serif text-[23px] font-semibold text-ink">正在准备第一张学习卡片</h1><p className="mt-2 max-w-md text-[12.5px] leading-6 text-ink-muted">第一章或第一个步骤完成后会立即显示，不必等待整项资源生成。</p>{error && <p className="mt-4 flex items-center gap-1.5 text-[11px] text-brand-danger"><CircleAlert size={13} />{error}</p>}</div>
-          : <article className="w-full max-w-[920px] rounded-[24px] border border-brand/20 bg-card-warm p-6 shadow-warm-lg md:p-9"><div className="flex items-center justify-between gap-4"><span className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.1em] text-brand">{slide.type === 'question' ? '分阶练习' : slide.type === 'step' ? '实操步骤' : '领学章节'}</span>{data?.status === 'generating' && <span className="inline-flex items-center gap-1.5 text-[10.5px] text-ink-muted"><Loader2 size={12} className="animate-spin" />后续卡片生成中</span>}</div>{slide.type === 'question' ? <QuizCard key={slide.index} slide={slide} /> : <><h1 className="mt-5 font-serif text-[28px] font-semibold leading-tight text-ink md:text-[34px]">{slide.title}</h1><div className="mt-6 h-1 w-14 rounded-full bg-brand" /><div className="mt-7 max-w-none text-ink-2"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{String(slide.content ?? '')}</ReactMarkdown></div></>}<SourceList sources={pageSources} /></article>}
+          : <article className="w-full max-w-[920px] rounded-[24px] border border-brand/20 bg-card-warm p-6 shadow-warm-lg md:p-9"><div className="flex items-center justify-between gap-4"><span className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.1em] text-brand">{slide.type === 'question' ? '分阶练习' : slide.type === 'step' ? '实操步骤' : '领学章节'}</span>{data?.status === 'generating' && <span className="inline-flex items-center gap-1.5 text-[10.5px] text-ink-muted"><Loader2 size={12} className="animate-spin" />后续卡片生成中</span>}</div>{slide.type === 'question' ? <QuizCard key={slide.index} slide={slide} /> : <><h1 className="mt-5 font-serif text-[28px] font-semibold leading-tight text-ink md:text-[34px]">{slide.title}</h1><div className="mt-6 h-1 w-14 rounded-full bg-brand" /><div className="mt-7 max-w-none text-ink-2"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{String(slide.content ?? '')}</ReactMarkdown></div></>}<SourceList sources={pageSources} evidenceQuotes={slide.evidenceQuotes} /></article>}
       </section>
 
       <footer className="flex items-center justify-center gap-4 pb-2">

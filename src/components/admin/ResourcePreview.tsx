@@ -15,7 +15,7 @@ import EvidenceDebateCourt from '@/components/resources/EvidenceDebateCourt';
 
 /* ---------------- 数据结构（与 generated_learning_resources.content_json / presentation_tasks.outline_json 对应） ---------------- */
 
-interface LectureSection { title?: string; content?: string; citations?: unknown; evidenceQuotes?: unknown }
+interface LectureSection { title?: string; content?: string; citations?: unknown; evidenceQuotes?: unknown; evidenceMatches?: unknown }
 interface LectureChapter { title?: string; overview?: string; sections?: LectureSection[] }
 interface LectureDoc {
   title?: string; summary?: string; chapters?: LectureChapter[];
@@ -24,7 +24,7 @@ interface LectureDoc {
 interface PracticeStep {
   title?: string; instruction?: string; content?: string; detail?: string;
   code?: string; expectedOutput?: string; warning?: string; safety?: string;
-  hint?: string; citations?: unknown; evidenceQuotes?: unknown;
+  hint?: string; citations?: unknown; evidenceQuotes?: unknown; evidenceMatches?: unknown;
 }
 interface TroubleshootItem { problem?: string; solution?: string }
 interface PracticeDoc {
@@ -40,6 +40,7 @@ interface QuizQuestion {
   reviewStatus?: string; reviewMetrics?: Record<string, number>; riskLabels?: string[];
   generationRationale?: Record<string, string>; replacementUsed?: boolean;
   versionHistory?: Array<Record<string, unknown>>; reviewSnapshot?: Record<string, unknown>;
+  answerEvidenceQuotes?: unknown; evidenceQuotes?: unknown;
 }
 interface QuizDoc { title?: string; questions?: QuizQuestion[]; knowledgePoints?: string[] }
 interface PptPoint { heading?: string; detail?: string }
@@ -89,7 +90,7 @@ function LecturePreview({ doc, sources }: { doc: LectureDoc; sources: Record<str
                     </ReactMarkdown>
                   </div>
                 )}
-                <SourceCitationMarks citations={section.citations} evidenceQuotes={section.evidenceQuotes} sources={sources} />
+                <SourceCitationMarks citations={section.citations} evidenceQuotes={section.evidenceQuotes ?? section.evidenceMatches} sources={sources} />
               </section>
             ))}
           </div>
@@ -219,7 +220,7 @@ function PracticePreview({ doc, sources }: { doc: PracticeDoc; sources: Record<s
               {step.expectedOutput && <div className="mt-3 rounded-lg border border-brand/20 bg-brand-tint/40 px-3.5 py-2.5 text-[12.5px] leading-6 text-ink-2"><span className="font-semibold text-brand">预期结果：</span>{step.expectedOutput}</div>}
               {(step.warning || step.safety) && <p className="mt-2 flex items-start gap-2 rounded-lg bg-amber-50 px-3.5 py-2.5 text-[12.5px] leading-6 text-amber-900"><TriangleAlert size={14} className="mt-1 shrink-0" />{step.warning || step.safety}</p>}
               {step.hint && <p className="mt-2 rounded-lg bg-amber-tint/50 px-3.5 py-2.5 text-[12.5px] leading-6 text-[#8A6A2F]">💡 {step.hint}</p>}
-              <SourceCitationMarks citations={step.citations} evidenceQuotes={step.evidenceQuotes} sources={sources} />
+              <SourceCitationMarks citations={step.citations} evidenceQuotes={step.evidenceQuotes ?? step.evidenceMatches} sources={sources} />
             </div>
           </div>
         </div>
@@ -340,7 +341,7 @@ function QuizPreview({ doc, sources }: { doc: QuizDoc; sources: Record<string, u
                     {!!q.versionHistory?.length && <p className="mt-3 text-[11px] text-ink-muted">共保留 {q.versionHistory.length} 个候选版本，可结合生成日志回看审核与换题过程。</p>}
                   </details>
                 )}
-                <SourceCitationMarks citations={q.citations} sources={sources} />
+                <SourceCitationMarks citations={q.citations} evidenceQuotes={q.answerEvidenceQuotes ?? q.evidenceQuotes} sources={sources} />
               </div>
             </div>
           </div>

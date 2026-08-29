@@ -18,6 +18,33 @@ function citationNumbers(value: unknown): number[] {
     : [];
 }
 
+interface EvidenceAnchor {
+  sourceId: number;
+  quote: string;
+  claim?: string;
+}
+
+function evidenceAnchors(value: unknown, fallbackSourceId?: number): EvidenceAnchor[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  return value.flatMap((raw) => {
+    const item = asRecord(raw);
+    const sourceId = Number(item.sourceId ?? item.chunk_id ?? item.citationId ?? fallbackSourceId);
+    const quote = String(item.quote ?? item.sourcePassage ?? item.evidenceQuote ?? '').trim();
+    if (!Number.isFinite(sourceId) || sourceId <= 0 || !quote) return [];
+    const key = `${sourceId}:${quote}`;
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [{ sourceId, quote, claim: String(item.claim ?? '').trim() || undefined }];
+  });
+}
+
+const plainEvidenceText = (value: string) => value
+  .replace(/<[^>]+>/g, ' ')
+  .replace(/[`*_>#\[\]()\\]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
 /**
  * Render resource-owned citations at the exact content block that declared them.
  * Unknown ids are intentionally omitted: showing an unresolvable badge implies
@@ -25,7 +52,7 @@ function citationNumbers(value: unknown): number[] {
  */
 export default function SourceCitationMarks({
   citations,
-
+  evidenceQuotes,
   resource,
   sources,
   className,
@@ -142,6 +169,12 @@ export default function SourceCitationMarks({
                 {
                   (() => {
                     const rawContent = chunk?.content ?? String(opened.source.content ?? '没有可显示的原文内容。');
+                    const anchors = [
+                      ...evidenceAnchors(evidenceQuotes, opened.id),
+                      ...evidenceAnchors(opened.source.evidenceAnchors, opened.id),
+                    ].filter((anchor, index, all) => all.findIndex((item) => item.sourceId === anchor.sourceId && item.quote === anchor.quote) === index)
+                      .filter((anchor) => anchor.sourceId === opened.id);
+                    const plainContent = plainEvidenceText(rawContent);
                     const markdownContent = rawContent
                       // 历史切片会把成对强调标记保存为 \*\*文本\*\*；仅恢复完整配对，避免误改普通转义字符。
                       .replace(/\\\*\\\*([^\n]+?)\\\*\\\*/g, '**$1**')
@@ -153,16 +186,34 @@ export default function SourceCitationMarks({
                       })
                       .replace(/<\/?(?:div|p|center|figure|figcaption)\b[^>]*>/gi, '\n');
                     return (
-                      <div className="rounded-[14px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-7 text-ink-2">
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm, remarkCitationMarks]}
-                          components={{
-                            ...lectureMdComponents,
-                            img: ({ src, alt }) => src ? <img src={src} alt={alt || '切片图片'} className="my-3 block max-w-full rounded-lg border border-hairline" loading="lazy" /> : null,
-                          }}
-                        >
-                          {markdownContent}
-                        </ReactMarkdown>
+                      <div className="space-y-4">
+                        {anchors.length > 0 && <section className="rounded-[14px] border border-brand-amber/40 bg-brand-amber-tint/35 p-4">
+                          <div className="mb-3 flex items-center justify-between gap-3"><h3 className="text-[12px] font-semibold text-ink">支撑当前内容的事实原文</h3><span className="font-mono text-[9.5px] text-ochre">{anchors.length} 处依据</span></div>
+                          <div className="space-y-3">
+                            {anchors.map((anchor, index) => {
+                              const located = plainContent.includes(plainEvidenceText(anchor.quote));
+                              return <div key={`${anchor.sourceId}-${index}`} className="rounded-xl border border-brand-amber/30 bg-paper/85 px-3.5 py-3">
+                                {anchor.claim && <p className="mb-2 text-[11px] leading-5 text-ink-muted">对应结论：{anchor.claim}</p>}
+                                <mark className="box-decoration-clone rounded bg-[#FFE58A]/75 px-1 py-0.5 text-[13.5px] leading-7 text-ink decoration-clone">
+                                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>{anchor.quote}</ReactMarkdown>
+                                </mark>
+                                <p className="mt-2 font-mono text-[9.5px] text-ochre">{located ? '已在实时切片原文中定位' : '生成时保存的事实原文'}</p>
+                              </div>;
+                            })}
+                          </div>
+                        </section>}
+                        <section className="rounded-[14px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-7 text-ink-2">
+                          {anchors.length > 0 && <p className="mb-3 border-b border-hairline pb-2 font-mono text-[9.5px] tracking-[0.08em] text-ink-muted">完整切片原文</p>}
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm, remarkCitationMarks]}
+                            components={{
+                              ...lectureMdComponents,
+                              img: ({ src, alt }) => src ? <img src={src} alt={alt || '切片图片'} className="my-3 block max-w-full rounded-lg border border-hairline" loading="lazy" /> : null,
+                            }}
+                          >
+                            {markdownContent}
+                          </ReactMarkdown>
+                        </section>
                       </div>
                     );
                   })()}

@@ -501,6 +501,7 @@ export interface CustomizeSlide {
   title: string;
   content: string | Record<string, unknown>;
   sources?: Array<Record<string, unknown>>;
+  evidenceQuotes?: Array<Record<string, unknown>>;
 }
 
 export interface CustomizeSlidesResponse {
