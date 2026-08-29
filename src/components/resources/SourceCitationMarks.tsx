@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { createPortal } from 'react-dom';
 import { ExternalLink, FileText, Loader2, X } from 'lucide-react';
 import { api } from '@/lib/api';
@@ -21,7 +22,7 @@ function citationNumbers(value: unknown): number[] {
  */
 export default function SourceCitationMarks({
   citations,
-  evidenceQuotes,
+
   resource,
   sources,
   className,
@@ -67,33 +68,6 @@ export default function SourceCitationMarks({
     .filter((item): item is { id: number; source: Record<string, unknown> } => Boolean(item.source));
   if (!matched.length) return null;
 
-  const highlightQuotes = (sourceId: number) => (Array.isArray(evidenceQuotes) ? evidenceQuotes : [])
-    .map(asRecord)
-    .filter((item) => Number(item.sourceId ?? item.chunk_id ?? item.chunkId) === sourceId)
-    .map((item) => String(item.quote ?? '').trim())
-    .filter(Boolean);
-
-  const highlightedContent = (content: string, sourceId: number) => {
-    const quotes = highlightQuotes(sourceId).sort((a, b) => b.length - a.length);
-    if (!quotes.length) return content;
-    const parts: Array<{ text: string; marked: boolean }> = [{ text: content, marked: false }];
-    quotes.forEach((quote) => {
-      for (let index = parts.length - 1; index >= 0; index -= 1) {
-        const part = parts[index];
-        if (part.marked) continue;
-        const offset = part.text.indexOf(quote);
-        if (offset < 0) continue;
-        parts.splice(index, 1,
-          { text: part.text.slice(0, offset), marked: false },
-          { text: quote, marked: true },
-          { text: part.text.slice(offset + quote.length), marked: false },
-        );
-      }
-    });
-    return parts.filter((part) => part.text).map((part, index) => part.marked
-      ? <mark key={index} className="rounded bg-brand-amber/25 px-0.5 text-ink ring-1 ring-brand-amber/35">{part.text}</mark>
-      : <span key={index}>{part.text}</span>);
-  };
 
   const openSource = async (id: number, source: Record<string, unknown>) => {
     setOpened({ id, source });
@@ -185,7 +159,7 @@ export default function SourceCitationMarks({
                         </div>
                       );
                     }
-                    return <div className="whitespace-pre-wrap rounded-[14px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-7 text-ink-2">{highlightedContent(rawContent, opened.id)}</div>;
+                    return <div className="rounded-[14px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-7 text-ink-2 prose prose-sm max-w-none prose-headings:text-ink prose-p:text-ink-2 prose-code:text-[12px] prose-code:bg-paper prose-code:px-1 prose-code:rounded"><ReactMarkdown>{rawContent}</ReactMarkdown></div>;
                   })()}
                 </>
               }
