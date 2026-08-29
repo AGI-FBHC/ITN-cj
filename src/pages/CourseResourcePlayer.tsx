@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkCitationMarks from '@/lib/remarkCitationMarks';
+import { fullLearningResourcePath, markLearningMapReturn } from '@/lib/learningNavigation';
 import {
   ArrowLeft, ArrowRight, BookOpen, Bot, Camera, Check, CheckCircle2, ChevronLeft,
   ChevronRight, Circle, Clock3, ExternalLink, FileText,
@@ -470,6 +471,7 @@ export default function CourseResourcePlayer() {
   const { currentLearnerId } = useProfile();
   const { resourceId = '' } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { addNote, notes } = useNotes();
   const narration = useResourceNarration(() => narrationFinishedRef.current());
   const narrationFinishedRef = useRef<() => void>(() => undefined);
@@ -514,8 +516,9 @@ export default function CourseResourcePlayer() {
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [speechSpeed, setSpeechSpeed] = useState<TtsSpeed>('normal');
-  /* 讲义、实操与题库进入后默认采用现有的一段一卡幻灯播放。 */
-  const [slideMode, setSlideMode] = useState(true);
+  /* 普通入口默认卡片播放；明确从“完整阅读”入口进入时不得再次覆盖一层幻灯。 */
+  const requestedFullView = searchParams.get('view') === 'full';
+  const [slideMode, setSlideMode] = useState(() => !requestedFullView);
   /* 自评乐观值：点击立即生效，后台防抖持久化，避免整页等待网络返回 */
   const [selfAssessments, setSelfAssessments] = useState<Record<string, number>>({});
   const pendingAssessRef = useRef<Record<string, number>>({});
@@ -542,8 +545,8 @@ export default function CourseResourcePlayer() {
   const [pendingOpenReward, setPendingOpenReward] = useState<{ id: string; title: string } | null>(null);
 
   useEffect(() => {
-    setSlideMode(true);
-  }, [resourceId]);
+    setSlideMode(!requestedFullView);
+  }, [resourceId, requestedFullView]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1149,6 +1152,7 @@ ${chatContext.content}
     setCompleting(true);
     setCompleteConfirmOpen(false);
     toast.success('已标记完成，正在后台同步学习记录');
+    markLearningMapReturn(currentLearnerId);
     navigate('/learn');
     /* 后台隐式同步：不阻塞跳转；组件卸载后不再 setState */
     void (async () => {
@@ -1241,9 +1245,14 @@ ${chatContext.content}
   const sortedResources = [...chapterResources].sort((a, b) => ({ lecture: 0, practice: 1, quiz: 2 }[a.type] - ({ lecture: 0, practice: 1, quiz: 2 }[b.type])));
   const resourceIndex = sortedResources.findIndex((item) => item.id === resource.id);
   const nextResource = resourceIndex >= 0 ? sortedResources[resourceIndex + 1] : undefined;
+  const resourcePath = (id: string) => requestedFullView ? fullLearningResourcePath(id) : `/learn/resource/${id}`;
+  const returnToKnowledgePoint = () => {
+    markLearningMapReturn(currentLearnerId);
+    navigate('/learn');
+  };
 
   return <div className={cn('mx-auto max-w-[1260px] px-4 pb-40 pt-6 md:px-6', chatOpen && 'relative z-50')}>
-    {<div className="mb-5 flex flex-wrap items-center gap-2 text-[12px] text-ink-muted"><button type="button" onClick={() => { try { window.sessionStorage.setItem(`lf.knowledgeGraph3dReturn:v1:${currentLearnerId}`, 'breadcrumb'); } catch { /* ignore */ } navigate('/learn'); }} className="inline-flex items-center gap-1 hover:text-brand"><ArrowLeft size={13} />我的课程</button><ChevronRight size={12} />{resource.courseId && resource.chapterId ? <Link to={`/resources?courseId=${encodeURIComponent(resource.courseId)}&chapterId=${encodeURIComponent(resource.chapterId)}`} className="hover:text-brand">{chapter?.title ?? '章节资源'}</Link> : <span className="max-w-[260px] truncate text-ink-2">{resource.topic || '学习资源'}</span>}{resource.courseId && resource.chapterId ? <><ChevronRight size={12} /><span className="truncate text-ink-2">{resourceMeta[resource.type].label}</span></> : null}</div>}
+    {<div className="mb-5 flex flex-wrap items-center gap-2 text-[12px] text-ink-muted"><button type="button" onClick={returnToKnowledgePoint} className="inline-flex items-center gap-1 hover:text-brand"><ArrowLeft size={13} />返回知识点</button><ChevronRight size={12} />{resource.courseId && resource.chapterId ? <Link to={`/resources?courseId=${encodeURIComponent(resource.courseId)}&chapterId=${encodeURIComponent(resource.chapterId)}`} className="hover:text-brand">{chapter?.title ?? '章节资源'}</Link> : <span className="max-w-[260px] truncate text-ink-2">{resource.topic || '学习资源'}</span>}{resource.courseId && resource.chapterId ? <><ChevronRight size={12} /><span className="truncate text-ink-2">{resourceMeta[resource.type].label}</span></> : null}</div>}
 
     <header className="flex items-center gap-4 rounded-[14px] border border-hairline bg-card-warm px-5 py-3">
       <h1 className="min-w-0 flex-1 truncate font-serif text-[18px] font-semibold text-ink">{resource.title}</h1>
@@ -1254,7 +1263,7 @@ ${chatContext.content}
       </div>
     </header>
 
-    {sortedResources.length > 1 && <nav className="mt-4 flex gap-2 overflow-x-auto pb-1">{sortedResources.map((item) => { const Meta = resourceMeta[item.type]; return <Link key={item.id} to={`/learn/resource/${item.id}`} className={cn('flex shrink-0 items-center gap-2 rounded-[11px] border px-3.5 py-2 text-[12.5px] transition', item.id === resource.id ? 'border-brand bg-brand text-paper' : 'border-hairline bg-card-warm text-ink-2 hover:border-brand/40')}><Meta.Icon size={13} />{Meta.label}{item.learned && <Check size={12} />}</Link>; })}</nav>}
+    {sortedResources.length > 1 && <nav className="mt-4 flex gap-2 overflow-x-auto pb-1">{sortedResources.map((item) => { const Meta = resourceMeta[item.type]; return <Link key={item.id} to={resourcePath(item.id)} replace className={cn('flex shrink-0 items-center gap-2 rounded-[11px] border px-3.5 py-2 text-[12.5px] transition', item.id === resource.id ? 'border-brand bg-brand text-paper' : 'border-hairline bg-card-warm text-ink-2 hover:border-brand/40')}><Meta.Icon size={13} />{Meta.label}{item.learned && <Check size={12} />}</Link>; })}</nav>}
 
 
     <div className="mt-7 grid gap-7 lg:grid-cols-[250px_minmax(0,1fr)]">
@@ -1306,7 +1315,7 @@ ${chatContext.content}
 
     {traces.length > 0 && <section className="mt-8 rounded-[18px] border border-hairline bg-card-warm p-5 md:p-7"><div className="flex items-center gap-2"><Sparkles size={16} className="text-brand" /><h2 className="font-serif text-[20px] font-semibold text-ink">真实来源与生成依据</h2></div><p className="mt-1 text-[12px] text-ink-muted">以下来源由知识库检索或 Web Search 提供，并与正文引用位置关联。</p><div className="mt-4 grid gap-3 md:grid-cols-2">{traces.map((trace, traceIndex) => <article key={`${String(trace.id ?? 'source')}-${trace.title}-${traceIndex}`} className="rounded-[12px] border border-hairline bg-paper p-4"><div className="flex items-start gap-3"><span className="rounded-md bg-brand-tint px-2 py-1 font-mono text-[10px] text-brand">{trace.credibility}%</span><div className="min-w-0"><h3 className="text-[13px] font-semibold text-ink">{trace.title}</h3><p className="mt-1 line-clamp-3 text-[11.5px] leading-5 text-ink-muted">{trace.excerpt}</p></div></div>{trace.positions.length > 0 && <div className="mt-3 flex flex-wrap gap-1">{trace.positions.slice(0, 5).map((position, positionIndex) => <span key={`${position}-${positionIndex}`} className="rounded bg-paper-deep px-1.5 py-1 text-[9.5px] text-ink-muted">{position}</span>)}</div>}{trace.url && <a href={trace.url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-[11px] text-brand hover:underline">查看来源<ExternalLink size={10} /></a>}</article>)}</div></section>}
 
-    <footer className="mt-8 flex flex-col items-center justify-between gap-4 rounded-[18px] border border-brand/20 bg-brand-tint/30 p-5 sm:flex-row"><div><div className="text-[13px] font-semibold text-ink">{resource.learned ? '本项资源已经学完' : resource.type === 'quiz' && !quizAllAnswered ? '完成全部答题后即可结束测试' : '完成本项学习后，进度会写入画像与报告'}</div><p className="mt-1 text-[11.5px] text-ink-muted">{resource.type === 'quiz' ? '作答' : '阅读'} {displayedCompletedCount}/{blocks.length} {resource.type === 'quiz' ? '题' : '段'} · 学习 {formatDuration(elapsedBase + sessionSeconds)}</p></div><div className="flex gap-2">{nextResource && <Link to={`/learn/resource/${nextResource.id}`} className="lf-btn-ghost">下一项：{resourceMeta[nextResource.type].label}<ArrowRight size={14} /></Link>}{resource.learned && <button type="button" disabled={restarting} onClick={() => void restartPractice()} className="lf-btn-ghost">{restarting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}重新练习</button>}<button type="button" disabled={completing || !quizAllAnswered} onClick={() => { if (resource.learned) { navigate('/learn'); return; } void markComplete(); }} className="lf-btn-primary">{completing ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}{resource.learned ? '返回地图' : resource.type === 'quiz' && !quizAllAnswered ? '请先完成全部题目' : '完成本项学习'}</button></div></footer>
+    <footer className="mt-8 flex flex-col items-center justify-between gap-4 rounded-[18px] border border-brand/20 bg-brand-tint/30 p-5 sm:flex-row"><div><div className="text-[13px] font-semibold text-ink">{resource.learned ? '本项资源已经学完' : resource.type === 'quiz' && !quizAllAnswered ? '完成全部答题后即可结束测试' : '完成本项学习后，进度会写入画像与报告'}</div><p className="mt-1 text-[11.5px] text-ink-muted">{resource.type === 'quiz' ? '作答' : '阅读'} {displayedCompletedCount}/{blocks.length} {resource.type === 'quiz' ? '题' : '段'} · 学习 {formatDuration(elapsedBase + sessionSeconds)}</p></div><div className="flex gap-2">{nextResource && <Link to={resourcePath(nextResource.id)} replace className="lf-btn-ghost">下一项：{resourceMeta[nextResource.type].label}<ArrowRight size={14} /></Link>}{resource.learned && <button type="button" disabled={restarting} onClick={() => void restartPractice()} className="lf-btn-ghost">{restarting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}重新练习</button>}<button type="button" disabled={completing || !quizAllAnswered} onClick={() => { if (resource.learned) { returnToKnowledgePoint(); return; } void markComplete(); }} className="lf-btn-primary">{completing ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}{resource.learned ? '返回地图' : resource.type === 'quiz' && !quizAllAnswered ? '请先完成全部题目' : '完成本项学习'}</button></div></footer>
 
     <div className="fixed inset-x-0 bottom-[58px] z-40 mx-auto flex w-[min(920px,calc(100%-24px))] items-center gap-1.5 rounded-[17px] border border-hairline bg-paper/95 p-2.5 shadow-warm-lg backdrop-blur-md md:bottom-4 md:gap-2">
       <button type="button" onClick={speakCurrent} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand text-paper" title="播放这一段">{narration.speaking ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}</button>

@@ -99,6 +99,7 @@ import remarkGfm from 'remark-gfm';
 import remarkCitationMarks from '@/lib/remarkCitationMarks';
 import { lectureMdComponents } from '@/components/resources/lecture-markdown';
 import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
+import { markLearningMapReturn } from '@/lib/learningNavigation';
 
 const letters = ['A', 'B', 'C', 'D'];
 const RATES = [0.75, 0.85, 1.05, 1.3, 1.5] as const;
@@ -598,6 +599,7 @@ export default function LearnUnit() {
   const { addWrong } = useWrongBook();
   const kp = getKnowledgePoint(kpId);
   const dataId = dataIdOf(currentLearner);
+  const rememberLearningMapReturn = () => markLearningMapReturn(currentLearner.id);
   const nextNode = nextPathNodeAfter(reportForLearner(currentLearner), kpId);
   const [searchParams] = useSearchParams();
   /* `topic` 是 PPT 子章节标题；`unitTopic` 才是知识网络小圆的后台 topic id。 */
@@ -2073,8 +2075,8 @@ export default function LearnUnit() {
 
       {/* 页头 */}
       <div className={cn('flex shrink-0 flex-wrap items-center gap-3', pptTaskId && 'mb-5')}>
-        <Link to="/learn" className="inline-flex items-center gap-1 text-[13px] text-ink-muted hover:text-brand">
-          <ArrowLeft size={14} /> 课程目录
+        <Link to="/learn" onClick={rememberLearningMapReturn} className="inline-flex items-center gap-1 text-[13px] text-ink-muted hover:text-brand">
+          <ArrowLeft size={14} /> {pptTaskId ? '返回知识点' : '课程目录'}
         </Link>
         <span className="text-hairline">/</span>
         <h1 className="font-serif text-[20px] font-semibold text-ink">{pptTopic || generatedUnit?.topicName || kp.name}</h1>
@@ -2838,7 +2840,7 @@ export default function LearnUnit() {
                   就地再练 3 题巩固 <ArrowRight size={14} />
                 </button>
                 <Link to="/report" className="lf-btn-ghost !py-2 text-[13.5px]">看我的成长</Link>
-                <Link to="/learn" className="lf-btn-ghost !py-2 text-[13.5px]">回课程目录</Link>
+                <Link to="/learn" onClick={rememberLearningMapReturn} className="lf-btn-ghost !py-2 text-[13.5px]">返回知识点</Link>
               </div>
 
               {/* ---- 本讲错题即时复盘：趁热把错的那一两道带解析再过一遍 ---- */}

@@ -60,7 +60,8 @@ export default function Learn() {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
   const [restoreMapState] = useState(() => consumeCameraReturn(currentLearner.id));
-  const restoredView = restoreMapState ? readLearnView(currentLearner.id) : null;
+  /* 无论通过页面按钮还是浏览器返回，都恢复离开前的章节、知识点与 2D/3D 视图。 */
+  const restoredView = readLearnView(currentLearner.id);
   const map = useLearningMap();
   const knowledgePoints = map.domains;
   const reportPath = map.path;

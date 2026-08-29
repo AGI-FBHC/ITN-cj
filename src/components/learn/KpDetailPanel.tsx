@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { ArrowRight, BookOpen, Wrench, ListChecks, Sparkles, Route, Loader2, Wand2, Maximize2 } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
+import { fullLearningResourcePath } from '@/lib/learningNavigation';
 import type { PresentationTask, PresentationTaskSummary } from '@/lib/presentationApi';
 import { reportForLearner } from '@/data/reportBuilder';
 import type { PathNodeStatus } from '@/data/reportData';
@@ -410,7 +411,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
                     : openTarget ? <ArrowRight size={14} className="shrink-0 text-ink-muted transition-colors group-hover:text-brand" />
                     : <Wand2 size={13} className="shrink-0 text-brand/70 transition-transform group-hover:scale-110" />}
                 </button>
-                {openTarget && <button type="button" title="完整阅读模式" aria-label={`以完整模式打开${meta.label}`} onClick={() => navigate(`/learn/resource/${openTarget}`)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg border border-hairline bg-paper p-1.5 text-ink-muted hover:border-brand/35 hover:text-brand"><Maximize2 size={13} /></button>}
+                {openTarget && <button type="button" title="完整阅读模式" aria-label={`以完整模式打开${meta.label}`} onClick={() => navigate(fullLearningResourcePath(openTarget))} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg border border-hairline bg-paper p-1.5 text-ink-muted hover:border-brand/35 hover:text-brand"><Maximize2 size={13} /></button>}
                 </div>
               );
             })}

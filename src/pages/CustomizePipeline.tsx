@@ -11,6 +11,8 @@ import { api, streamAdminGenerationTask, type AdminGenerationEvent, type Learnin
 import { CollaborationRounds, AgentWorkflowSummary, agents, eventDisplayTitle, isLifecycleEvent } from '@/pages/CollaborationWorkbench';
 import ExecutionDetailPanel from '@/components/admin/ExecutionDetailPanel';
 import { cn } from '@/lib/utils';
+import { useProfile } from '@/context/ProfileContext';
+import { markLearningMapReturn } from '@/lib/learningNavigation';
 
 const activeStatuses = new Set(['queued', 'running', 'retrieving', 'debating', 'planning', 'analyzing', 'generating', 'verifying', 'reviewing', 'revising', 'judging', 'outline_review']);
 
@@ -24,6 +26,7 @@ const RESOURCE_LABEL: Record<string, string> = {
 export default function CustomizePipeline() {
   const { taskId } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
+  const { currentLearner } = useProfile();
   const [task, setTask] = useState<LearningResourceGenerationTask | null>(null);
   const [events, setEvents] = useState<AdminGenerationEvent[]>([]);
   const [selectedEventSeq, setSelectedEventSeq] = useState<number | null>(null);
@@ -81,7 +84,21 @@ export default function CustomizePipeline() {
   const selectedEvent = events.find((event) => event.seq === selectedEventSeq) ?? agentEvents.at(-1);
   const selectedEventIsRunning = Boolean(active && latest && selectedEvent && selectedEvent.seq === latest.seq);
 
-  const handleBack = () => navigate('/learn');
+  const handleBack = () => {
+    markLearningMapReturn(currentLearner.id);
+    navigate('/learn');
+  };
+
+  const openCompletedResource = () => {
+    if (!task?.resourceId) return;
+    if (task.resourceType === 'ppt') {
+      const kpId = task.request?.kpId;
+      if (!kpId) { handleBack(); return; }
+      navigate(`/learn/${encodeURIComponent(kpId)}?ppt=${encodeURIComponent(task.resourceId)}&topic=${encodeURIComponent(task.title)}`, { replace: true });
+      return;
+    }
+    navigate(`/learn/slide/${encodeURIComponent(task.id)}`, { replace: true });
+  };
 
   if (notFound) {
     return (
@@ -175,7 +192,7 @@ export default function CustomizePipeline() {
           {failed ? (task.errorMessage ?? '定制过程出现异常，请稍后重试。') : completed ? '定制资源已就绪，可开始学习。' : ''}
         </p>
         {completed && task.resourceId && (
-          <button type="button" onClick={() => navigate(`/learn/resource/${task.resourceId}`)} className="lf-btn-primary inline-flex items-center gap-1.5">
+          <button type="button" onClick={openCompletedResource} className="lf-btn-primary inline-flex items-center gap-1.5">
             <CheckCircle2 size={14} />开始学习
           </button>
         )}

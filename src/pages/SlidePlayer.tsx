@@ -8,6 +8,8 @@ import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
 import { slideMdComponents } from '@/components/resources/lecture-markdown';
 import remarkCitationMarks from '@/lib/remarkCitationMarks';
 import { cn } from '@/lib/utils';
+import { useProfile } from '@/context/ProfileContext';
+import { fullLearningResourcePath, markLearningMapReturn } from '@/lib/learningNavigation';
 
 type QuizValue = string | number;
 
@@ -55,6 +57,7 @@ const citedSourceIds = (slide?: CustomizeSlide): Set<number> => {
 export default function SlidePlayer() {
   const { taskId = '' } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
+  const { currentLearner } = useProfile();
   const [data, setData] = useState<CustomizeSlidesResponse | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [error, setError] = useState('');
@@ -108,9 +111,9 @@ export default function SlidePlayer() {
   return (
     <main className="mx-auto flex h-[calc(100dvh-72px)] min-h-0 w-full max-w-[1180px] flex-col overflow-hidden px-4 py-4 md:px-7 md:py-5">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-hairline pb-4">
-        <button type="button" onClick={() => navigate(data?.kpId ? `/learn/customize-team/${data.kpId}?taskId=${taskId}` : '/learn')} className="inline-flex items-center gap-2 text-[12px] text-ink-muted hover:text-brand"><ArrowLeft size={15} />返回</button>
+        <button type="button" onClick={() => { markLearningMapReturn(currentLearner.id); navigate('/learn'); }} className="inline-flex items-center gap-2 text-[12px] text-ink-muted hover:text-brand"><ArrowLeft size={15} />返回知识点</button>
         <div className="min-w-0 flex-1 text-center"><p className="truncate text-[13px] font-medium text-ink">{data?.title ?? '正在准备个性化学习内容'}</p><p className="mt-0.5 font-mono text-[10px] text-ink-muted">{slides.length ? `第 ${currentIndex + 1} 张 · 已就绪 ${slides.length}${expected ? ` / 预计 ${expected}` : ''}` : '等待首张卡片'}</p></div>
-        <div className="flex min-w-[78px] justify-end">{complete && data?.resourceId && <button type="button" title="完整阅读模式" onClick={() => navigate(`/learn/resource/${data.resourceId}`)} className="rounded-lg border border-hairline p-2 text-ink-muted hover:border-brand/40 hover:text-brand"><ExternalLink size={15} /></button>}</div>
+        <div className="flex min-w-[78px] justify-end">{complete && data?.resourceId && <button type="button" title="完整阅读模式" onClick={() => navigate(fullLearningResourcePath(data.resourceId), { replace: true })} className="rounded-lg border border-hairline p-2 text-ink-muted hover:border-brand/40 hover:text-brand"><ExternalLink size={15} /></button>}</div>
       </header>
 
       <section className="flex min-h-0 flex-1 items-stretch justify-center py-4 md:py-5">
@@ -129,7 +132,7 @@ export default function SlidePlayer() {
         <span className="min-w-[120px] text-center font-mono text-[10.5px] text-ink-muted">{slide ? `${currentIndex + 1} / ${slides.length}` : '0 / 0'}</span>
         <button type="button" disabled={!readyNext} onClick={() => setCurrentIndex((value) => Math.min(slides.length - 1, value + 1))} className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand px-4 text-[12px] text-paper disabled:cursor-not-allowed disabled:bg-paper-deep disabled:text-ink-muted">{readyNext ? '下一张' : complete ? '已到最后' : '生成中'}<ChevronRight size={16} /></button>
       </footer>
-      {complete && data?.resourceId && <div className="shrink-0 pb-1 pt-1 text-center"><button type="button" onClick={() => navigate(`/learn/resource/${data.resourceId}`)} className="inline-flex items-center gap-2 text-[12px] font-medium text-brand hover:underline"><BookOpen size={14} />切换为完整阅读模式</button></div>}
+      {complete && data?.resourceId && <div className="shrink-0 pb-1 pt-1 text-center"><button type="button" onClick={() => navigate(fullLearningResourcePath(data.resourceId), { replace: true })} className="inline-flex items-center gap-2 text-[12px] font-medium text-brand hover:underline"><BookOpen size={14} />切换为完整阅读模式</button></div>}
     </main>
   );
 }

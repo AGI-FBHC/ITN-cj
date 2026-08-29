@@ -17,6 +17,8 @@ import { CollaborationRounds, agents, eventDisplayTitle, isLifecycleEvent } from
 import ExecutionDetailPanel from '@/components/admin/ExecutionDetailPanel';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { useProfile } from '@/context/ProfileContext';
+import { markLearningMapReturn } from '@/lib/learningNavigation';
 
 const activeStatuses = new Set(['queued', 'running', 'retrieving', 'debating', 'planning', 'analyzing', 'generating', 'verifying', 'reviewing', 'revising', 'judging', 'outline_review']);
 
@@ -33,6 +35,7 @@ interface TopicOption { id: string; label: string; chapterId: string; chapterNam
 export default function CustomizeTeam() {
   const { kpId: routeKpId } = useParams<{ kpId: string }>();
   const navigate = useNavigate();
+  const { currentLearner } = useProfile();
   const [searchParams] = useSearchParams();
   const autoTaskId = searchParams.get('taskId');
 
@@ -230,7 +233,7 @@ export default function CustomizeTeam() {
       {/* 顶部 */}
       <header className="flex shrink-0 items-center justify-between gap-3 pb-3">
         <div className="flex min-w-0 items-center gap-3">
-          <button type="button" onClick={() => navigate('/learn')} className="lf-row-btn inline-flex items-center gap-1.5 !px-3 !py-1.5 text-[12px]">
+          <button type="button" onClick={() => { markLearningMapReturn(currentLearner.id); navigate('/learn'); }} className="lf-row-btn inline-flex items-center gap-1.5 !px-3 !py-1.5 text-[12px]">
             <ArrowLeft size={14} />返回知识网络
           </button>
           <div className="min-w-0">
