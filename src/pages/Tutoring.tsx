@@ -184,7 +184,7 @@ export default function Tutoring() {
     nearBottomRef.current = true;
   };
 
-  /* 回写钩子：本节结束 → 交给阿诊(DIA-01)推理回写（画像 + 时间线 + 对话消息，闭环成环） */
+  /* 回写钩子：本节结束 → 交给伴学助手(DIA-01)推理回写（画像 + 时间线 + 对话消息，闭环成环） */
   const wroteForRef = useRef<string | null>(null);
   useEffect(() => {
     if (!finished) return;
@@ -262,7 +262,7 @@ export default function Tutoring() {
               {isLearner ? (
                 <span className="flex items-center gap-2">
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-[12px] font-bold text-paper">诊</span>
-                  <span className="text-[13.5px] font-semibold text-ink">阿诊老师</span>
+                  <span className="text-[13.5px] font-semibold text-ink">伴学助手老师</span>
                 </span>
               ) : (
                 <>

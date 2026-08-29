@@ -36,7 +36,7 @@ function radarOption(
     radar: {
       indicator: kps.map((kp) => {
         const c = confidence?.[kp.id] ?? 100;
-        /* 标签实度 = 阿诊对该维判断的置信度（弱证据维度淡显） */
+        /* 标签实度 = 伴学助手对该维判断的置信度（弱证据维度淡显） */
         return { name: kp.name, max: 100, color: `rgba(70, 100, 80,${(0.3 + 0.7 * (c / 100)).toFixed(2)})` };
       }),
       radius: '66%',

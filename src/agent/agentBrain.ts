@@ -1,5 +1,5 @@
 /**
- * agentBrain — 「阿诊」(DIA-01) 的规则推理层（纯函数，无副作用）
+ * agentBrain — 「伴学助手」(DIA-01) 的规则推理层（纯函数，无副作用）
  * 信号 → 推断（分数增量 + 置信度变化 + 一句人话 + 证据）
  * 纯前端演示：规则引擎扮演 Agent 大脑，话术模板扮演生成。
  */
@@ -46,7 +46,7 @@ export interface Inference {
   delta: number;
   /** 置信度增量 */
   confDelta: number;
-  /** 阿诊要说的话 */
+  /** 伴学助手要说的话 */
   say: string;
   /** 时间线事件标题（delta≠0 时用） */
   eventTitle: string;

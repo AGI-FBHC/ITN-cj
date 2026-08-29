@@ -65,7 +65,7 @@ export default function LectureTab({
   const [printView, setPrintView] = useState(false);
   const docRef = useRef<HTMLDivElement>(null);
 
-  /* ---------- 阿诊：读完信号（脚注区进入视口视为读完，一次性） ---------- */
+  /* ---------- 伴学助手：读完信号（脚注区进入视口视为读完，一次性） ---------- */
   const { pushSignal } = useAgent();
   const [read, setRead] = useState(false);
   const footerRef = useRef<HTMLElement>(null);
@@ -366,7 +366,7 @@ export default function LectureTab({
               </motion.footer>
             )}
 
-            {/* 阿诊轻存在：读完记录 + 下一步 */}
+            {/* 伴学助手轻存在：读完记录 + 下一步 */}
             <AnimatePresence>
               {read && (
                 <motion.div
@@ -376,7 +376,7 @@ export default function LectureTab({
                 >
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-brand/25 bg-brand-tint/60 px-3 py-1.5 text-[12px] font-medium text-brand">
                     <BadgeCheck size={13} />
-                    阿诊已记录：本讲义读完 · 画像已微调
+                    伴学助手已记录：本讲义读完 · 画像已微调
                   </span>
                   {onGotoGuide && (
                     <button

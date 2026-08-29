@@ -2,7 +2,7 @@
  * ResumeLearningFab — 全局「继续学习」浮标（学习者视角常驻，左下角）
  * 永远指向当前 active 路径节点，随时从任意页面回到「我在哪」，接回学习闭环。
  * 真实用户使用知识网络真实章节；预设画像保留原演示路径。
- * 已在该单元课件内 / 专注模式 / 无 active 节点时自动隐藏；与右下角阿诊 Dock 不冲突。
+ * 已在该单元课件内 / 专注模式 / 无 active 节点时自动隐藏；与右下角伴学助手 Dock 不冲突。
  */
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';

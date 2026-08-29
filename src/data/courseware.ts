@@ -371,7 +371,7 @@ export function buildUnit(kpId: string, learner: Learner, styleOverride?: StyleL
   blocks.push({
     kind: 'summary',
     id: `${kpId}-sum`,
-    text: `本讲要点：${kp.coreTopics.slice(0, 3).join('；')}。这一讲学练已经打通——觉得不够稳，讲末可以直接「再练 3 题」，阿诊会根据你的表现更新画像。`,
+    text: `本讲要点：${kp.coreTopics.slice(0, 3).join('；')}。这一讲学练已经打通——觉得不够稳，讲末可以直接「再练 3 题」，伴学助手会根据你的表现更新画像。`,
     script: `这一讲就到这里。要点回顾：${kp.coreTopics.slice(0, 3).join('，')}。觉得不够稳可以就地再练几道，我会根据你的表现更新画像。`,
   });
 

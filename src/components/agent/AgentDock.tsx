@@ -1,5 +1,5 @@
 /**
- * AgentDock — 「阿诊」常驻 FAB + 1/3 屏侧边栏
+ * AgentDock — 「伴学助手」常驻 FAB + 1/3 屏侧边栏
  *
  * FAB 点击 → 打开侧边栏（ChatStream compact 模式）
  * 侧边栏有"全屏"按钮 → 跳转 /chat 独立页面
@@ -70,7 +70,7 @@ export default function AgentDock() {
         <button
           type="button"
           onClick={() => setOpen(!open)}
-          title={isExpert ? 'DIA-01 决策日志' : '阿诊 · AI 学习助手'}
+          title={isExpert ? 'DIA-01 决策日志' : '伴学助手 · AI 学习助手'}
           className={cn(
             'relative flex h-[52px] w-[52px] items-center justify-center rounded-full border-2 shadow-warm-lg transition-all duration-200 hover:scale-105',
             open ? 'border-brand bg-paper text-brand' : 'border-brand/20 bg-brand text-paper',
@@ -105,7 +105,7 @@ export default function AgentDock() {
                   <Brain size={14} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[13px] font-semibold text-ink">阿诊 · AI 学习助手</p>
+                  <p className="text-[13px] font-semibold text-ink">伴学助手 · AI 学习助手</p>
                   <p className="text-[9px] text-ink-muted">DIA-01 学情诊断 · {currentLearner.name}</p>
                 </div>
                 <button type="button" onClick={() => { setOpen(false); navigate('/chat'); }} title="全屏对话" className="lf-row-btn !p-1.5">

@@ -337,7 +337,7 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
     const cachedAnalytics = hasLearner ? readLearnerAnalytics(currentLearnerId) : null;
     if (cachedAnalytics) setAnalytics(cachedAnalytics);
     if (deferNetwork) {
-      /* 全局轻量场景（阿诊等）：只回显缓存、不触发任何网络校准；进入地图/首页等页面会正常校准 */
+      /* 全局轻量场景（伴学助手等）：只回显缓存、不触发任何网络校准；进入地图/首页等页面会正常校准 */
       setLoading(false);
       return () => { cancelled = true; };
     }

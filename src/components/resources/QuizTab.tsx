@@ -370,7 +370,7 @@ export default function QuizTab({
     setAnswers(next);
     writeStoredAnswers(dataId, next);
     const correct = idx === q.answerIndex;
-    /* 上报阿诊：每题即时进入信号流，3 题一结算 */
+    /* 上报伴学助手：每题即时进入信号流，3 题一结算 */
     pushSignal({ type: 'quiz-answer', kpId: q.kpId, level: q.level, correct });
     /* 每答一题都是一次画像校准证据（精简建档的低置信画像靠这个涨） */
     bumpConfidence(currentLearner.id);

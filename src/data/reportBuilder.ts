@@ -3,7 +3,7 @@
  *
  * 预设 3 画像保留 reportData 的静态富数据（评委测试用例，有完整 8 周叙事）；
  * 自建画像不再借用预设报告，而是由三份真数据现场推导：
- *   1. 画像分数（含阿诊写回后的最新值）→ 盲区 / 适配分 / 难度匹配曲线
+ *   1. 画像分数（含伴学助手写回后的最新值）→ 盲区 / 适配分 / 难度匹配曲线
  *   2. 画像事件时间线（lf.events 的 writeback 增量）→ 成长曲线重放 + Agent 介入点
  *   3. 复习记录（lf.review，学过才有）→ 路径节点 done/active/todo
  * 刚建档 = 单点基线 + 全 todo 路径 + 零投入——没有任何伪造的历史。
@@ -144,7 +144,7 @@ export function buildReportFor(l: Learner): LearnerReport {
   const interventions = evs.slice(-3).map((e, i) => ({
     week: e.week,
     title: e.title,
-    desc: e.detail ?? '阿诊依据学习信号写回画像',
+    desc: e.detail ?? '伴学助手依据学习信号写回画像',
     color: INTERVENTION_COLORS[i % INTERVENTION_COLORS.length],
   }));
 

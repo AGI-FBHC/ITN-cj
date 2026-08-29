@@ -2,7 +2,7 @@
  * knowledgeGraph — 知识图谱数据层
  * 两层结构：6 个域节点（大液面球）+ 24 个子知识点（coreTopics，小球），
  * 语义边（前置/相关/应用）手工定义；布局为确定性极坐标（六域环形 + 子节点外侧扇形）。
- * 掌握度：域 = learner.scores；子 = 域分数 + 确定性偏移；"学过"判定复用阿诊信号去重记录。
+ * 掌握度：域 = learner.scores；子 = 域分数 + 确定性偏移；"学过"判定复用伴学助手信号去重记录。
  */
 import { knowledgePoints } from '@/data/knowledgePoints';
 import type { Learner } from '@/data/learners';
@@ -169,7 +169,7 @@ export function prereqOf(nodeId: string): { node: GraphNode; note: string }[] {
 }
 
 /* ================= 学过判定 + 掌握度派生 ================= */
-/** 学过：阿诊信号去重记录里有该知识点的 lecture-read/guide/tutoring 痕迹，或预设画像路径已完成 */
+/** 学过：伴学助手信号去重记录里有该知识点的 lecture-read/guide/tutoring 痕迹，或预设画像路径已完成 */
 export function learnedKpIds(learner: Learner, pathDoneKpIds: string[]): Set<string> {
   const learned = new Set<string>(pathDoneKpIds);
   try {

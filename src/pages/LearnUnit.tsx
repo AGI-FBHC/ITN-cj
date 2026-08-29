@@ -4,7 +4,7 @@
  * - 演播块(stage)：黑板式教具（图示/要点/公式/大数字/溯源卡）随语音逐件出现
  * - 演示导览：语音讲第几步，模拟器/坐标演示自己演到第几步，讲完交还给学习者
  * - 字幕条 + 音效（对/错/换块）+ 语速切换 + 说话脉冲；无 TTS 自动降级"默片+字幕"
- * - 检查点答错 → ARB-05 插降维块；作答/完课回写阿诊信号
+ * - 检查点答错 → ARB-05 插降维块；作答/完课回写伴学助手信号
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -298,7 +298,7 @@ function FeatureSpotlight({ flags }: { flags: SpotFlags }) {
   const [open, setOpen] = useState(false);
   const hitCount = SPOT_DEFS.filter((d) => flags[d.key]).length;
   /* 悬浮球形态：不再常驻侧栏——收起时只是右下角一枚计数球，点开才展开清单。
-     bottom-44：给下方的阿诊 FAB（bottom-6）和演示导览 FAB（md:bottom-24）让位，右下角三层不打架 */
+     bottom-44：给下方的伴学助手 FAB（bottom-6）和演示导览 FAB（md:bottom-24）让位，右下角三层不打架 */
   return (
     <div className="fixed bottom-44 right-5 z-30 hidden w-[240px] lg:block">
       <div className={cn(!open && 'flex justify-end')}>
@@ -1301,7 +1301,7 @@ export default function LearnUnit() {
         description: `「${kp.name}」到 ${finalScore} 分 · 已收进「我的成长」的温室`,
       });
     }
-    toast.success(`《${kp.name}》学完 · 阿诊已回写画像`, {
+    toast.success(`《${kp.name}》学完 · 伴学助手已回写画像`, {
       description: nextNode ? `学习路径推进 → 下一步《${nextNode.title}》` : '本条学习路径已全部完成 🎉',
     });
   };
@@ -2616,7 +2616,7 @@ export default function LearnUnit() {
               {selfCheck[b.id] === 'ok' && (
                 <div className="mt-3 border-t border-hairline/60 pt-2 text-[11px] text-ink-muted">
                   <Check size={10} className="mr-1 inline text-brand" />
-                  已签到「很稳」——阿诊记下了这条元认知证据
+                  已签到「很稳」——伴学助手记下了这条元认知证据
                 </div>
               )}
 
@@ -2818,7 +2818,7 @@ export default function LearnUnit() {
                   <Check size={28} strokeWidth={2.5} className="text-paper drop-shadow" />
                 </span>
               </div>
-              <div id="lesson-complete-title" className="text-[15px] font-semibold text-brand">本讲完成 · 阿诊已记录，画像已微调</div>
+              <div id="lesson-complete-title" className="text-[15px] font-semibold text-brand">本讲完成 · 伴学助手已记录，画像已微调</div>
               {nextNode && (
                 <div className="mt-2 text-[12.5px] text-ink-muted">
                   学习路径推进 → 下一步《{nextNode.title}》 · {nextNode.est}

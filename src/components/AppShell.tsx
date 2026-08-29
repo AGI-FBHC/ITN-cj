@@ -342,7 +342,7 @@ export default function AppShell() {
             </div>
           </main>
 
-          {/* 阿诊 · 常驻画像助手（专注时收起） */}
+          {/* 伴学助手 · 常驻画像助手（专注时收起） */}
           {!focusMode && <AgentDock />}
 
           {/* 全局「继续学习」浮标 · 左下角，随时回到当前路径节点 */}

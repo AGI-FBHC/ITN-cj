@@ -330,7 +330,7 @@ export default function Calibrate() {
                 className="overflow-hidden"
               >
                 <div className="mt-3 rounded-[10px] border border-brand-amber/40 bg-brand-amber-tint/60 p-3">
-                  <div className="text-[12.5px] font-medium text-ink">阿诊追问：这道为什么错？（帮我判断更准）</div>
+                  <div className="text-[12.5px] font-medium text-ink">伴学助手追问：这道为什么错？（帮我判断更准）</div>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {([
                       ['guess', '我是猜的'],

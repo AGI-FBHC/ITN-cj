@@ -159,7 +159,7 @@ export default function DemoTour() {
   return (
     <AnimatePresence>
       {state.minimized ? (
-        /* ============ 收起态：右下角圆钮（不遮挡阿诊 Dock，堆叠在其上方） ============ */
+        /* ============ 收起态：右下角圆钮（不遮挡伴学助手 Dock，堆叠在其上方） ============ */
         <motion.button
           key="demo-tour-mini"
           type="button"

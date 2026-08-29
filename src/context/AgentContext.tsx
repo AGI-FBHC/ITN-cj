@@ -1,6 +1,6 @@
 /**
- * AgentContext — 「阿诊」(DIA-01) 的运行时：信号总线 + 消息流 + 置信度 + 验证会话
- * 所有页面通过 pushSignal 上报学习行为；阿诊推理后：写画像(applyWriteback) + 发消息 + 涨置信度。
+ * AgentContext — 「伴学助手」(DIA-01) 的运行时：信号总线 + 消息流 + 置信度 + 验证会话
+ * 所有页面通过 pushSignal 上报学习行为；伴学助手推理后：写画像(applyWriteback) + 发消息 + 涨置信度。
  * 消息/置信度/信号日志按学习者分桶，localStorage 持久化。
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -106,7 +106,7 @@ const save = (key: string, v: unknown) => {
 let seq = 0;
 const mid = () => `m-${Date.now().toString(36)}-${(seq++).toString(36)}`;
 const now = () => new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
-const GREETING = '你好，我是阿诊（DIA-01 学情诊断 Agent）。我会一直看着你的答题、阅读和实操记录，随时更新你的画像——每一次调整都有证据，你也可以随时质疑我。';
+const GREETING = '你好，我是伴学助手（DIA-01 学情诊断 Agent）。我会一直看着你的答题、阅读和实操记录，随时更新你的画像——每一次调整都有证据，你也可以随时质疑我。';
 const clampConf = (n: number) => Math.max(10, Math.min(95, Math.round(n)));
 
 export function AgentProvider({ children }: { children: ReactNode }) {
@@ -169,7 +169,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   useEffect(() => save(K_DEC, decAll), [decAll]);
   useEffect(() => save(K_SEEN, seen), [seen]);
 
-  /* 阿诊会话管理：加载该学习者的 agent-dock 会话，默认选中最新一条并合并消息 */
+  /* 伴学助手会话管理：加载该学习者的 agent-dock 会话，默认选中最新一条并合并消息 */
   useEffect(() => {
     if (!currentLearnerId) return;
     let cancelled = false;
@@ -255,10 +255,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         record('writeback', `写入画像 「${kpName}」${from}→${to} · 变更时间线 +1 · 通知 ARB-05 重排路径`);
         append({ id: mid(), kind: 'update', text: inf.say, deltas: [{ kpId, from, to }], time: now() });
         notify(`${kpName} ${inf.delta > 0 ? '+' : ''}${inf.delta}`);
-        toast.success('阿诊更新了你的画像', { description: `「${kpName}」${inf.delta > 0 ? '+' : ''}${inf.delta} 分` });
+        toast.success('伴学助手更新了你的画像', { description: `「${kpName}」${inf.delta > 0 ? '+' : ''}${inf.delta} 分` });
       } else {
         append({ id: mid(), kind: 'agent', text: inf.say, time: now() });
-        notify('阿诊有话说');
+        notify('伴学助手有话说');
       }
       void deepDiagnose(kpId);
     };
@@ -436,7 +436,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    /** 自由提问：学情类问题走真实问答（后端 MiMo），知识点讲解由阿诊引导回课件「问一问」 */
+    /** 自由提问：学情类问题走真实问答（后端 MiMo），知识点讲解由伴学助手引导回课件「问一问」 */
     const askFree = (raw: string) => {
       const text = raw.trim();
       if (!text) return;

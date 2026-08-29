@@ -1,6 +1,6 @@
 /**
  * Onboarding `/onboarding` — 画像初诊向导（面谈式 · 五步）
- * ① 背景采集（选择即初始化先验，阿诊出声解释）
+ * ① 背景采集（选择即初始化先验，伴学助手出声解释）
  * ② 自我评估（六维五档快评 → 弱先验 + 元认知对照素材）
  * ③ 理论自测（置信度驱动的自适应加测 6~14 题：每题点评 / 「不确定」/ 答错归因追问）
  * ④ AI 诊断（流式结论 + 自评 vs 实测对照 + 置信度标注）→ 直接建档，后续由学习信号持续校准
@@ -204,7 +204,7 @@ export default function Onboarding() {
     reason: a.reason ?? null,
   });
 
-  /** 正式提交一条作答：后端负责评分、加测与阿诊点评 */
+  /** 正式提交一条作答：后端负责评分、加测与伴学助手点评 */
   const commitAnswer = async (rec: AnswerRecord) => {
     const nextAnswers = [...answers, rec];
     setAnswers(nextAnswers);
@@ -388,7 +388,7 @@ export default function Onboarding() {
   };
   const forgeDone = () => {
     toast.success(`「${forge?.name}」初稿画像已建档`, {
-      description: `平均置信度 ${avgConf}% · 阿诊将随你的学习持续校准`,
+      description: `平均置信度 ${avgConf}% · 伴学助手将随你的学习持续校准`,
     });
     navigate('/me');
   };
@@ -574,7 +574,7 @@ export default function Onboarding() {
                 <div className="lf-mono-label mb-1 !text-[11px]">起点雷达 · 背景先验 + 自评</div>
                 <ReactECharts option={radarOption(estimates, confidence)} height={330} />
                 <p className="mt-1 border-t border-hairline pt-2 text-[11px] leading-[16px] text-ink-muted">
-                  标签越淡表示阿诊对该维越不确定——答题会让它们变实。
+                  标签越淡表示伴学助手对该维越不确定——答题会让它们变实。
                 </p>
               </div>
             </div>
@@ -587,7 +587,7 @@ export default function Onboarding() {
                 <div>
                   <h1 className="font-serif text-[24px] font-semibold text-ink">能力情境自测</h1>
                   <p className="mt-1 text-[14px] text-ink-muted">
-                    题目来自编程、接口、数据库、系统运维和 AI 等领域；哪一维证据不足，阿诊就继续加测。
+                    题目来自编程、接口、数据库、系统运维和 AI 等领域；哪一维证据不足，伴学助手就继续加测。
                   </p>
                 </div>
 
@@ -653,7 +653,7 @@ export default function Onboarding() {
                           className="overflow-hidden"
                         >
                           <div className="mt-3 rounded-[10px] border border-brand-amber/40 bg-brand-amber-tint/60 p-3">
-                            <div className="text-[12.5px] font-medium text-ink">阿诊追问：这道为什么错？（帮我判断更准）</div>
+                            <div className="text-[12.5px] font-medium text-ink">伴学助手追问：这道为什么错？（帮我判断更准）</div>
                             <div className="mt-2 flex flex-wrap gap-1.5">
                               {([
                                 ['guess', '我是猜的'],
@@ -693,7 +693,7 @@ export default function Onboarding() {
                   </div>
                 )}
 
-                {/* 阿诊每题点评 */}
+                {/* 伴学助手每题点评 */}
                 {agentLine && <DiaLine key={agentLine} text={agentLine} />}
 
                 <div>
@@ -712,7 +712,7 @@ export default function Onboarding() {
                 <div className="lf-mono-label mb-1 !text-[11px]">LIVE · 画像实时校准</div>
                 <ReactECharts option={radarOption(estimates, confidence)} height={340} />
                 <p className="mt-1 border-t border-hairline pt-2 text-[11px] leading-[16px] text-ink-muted">
-                  每答一题，估计与置信度同步更新；标签变实 = 阿诊越来越确定。
+                  每答一题，估计与置信度同步更新；标签变实 = 伴学助手越来越确定。
                 </p>
               </div>
             </div>
@@ -723,7 +723,7 @@ export default function Onboarding() {
             <div className="grid gap-6 lg:grid-cols-2">
               <div className="space-y-4">
                 <div>
-                  <h1 className="font-serif text-[24px] font-semibold text-ink">阿诊的初诊结论</h1>
+                  <h1 className="font-serif text-[24px] font-semibold text-ink">伴学助手的初诊结论</h1>
                   <p className="mt-1 text-[14px] text-ink-muted">先验 + 自评 + {answers.length} 题作答的综合判断。</p>
                 </div>
                 <div className="lf-card p-5">
@@ -732,7 +732,7 @@ export default function Onboarding() {
                       <Brain size={16} />
                     </span>
                     <div>
-                      <div className="text-[13.5px] font-semibold text-ink">阿诊</div>
+                      <div className="text-[13.5px] font-semibold text-ink">伴学助手</div>
                       <div className="font-mono text-[10px] text-ink-muted">DIA-01 学情诊断</div>
                     </div>
                   </div>
@@ -950,7 +950,7 @@ function DiaLine({ text }: { text: string }) {
         <Brain size={16} />
       </span>
       <div>
-        <div className="lf-mono-label !text-[10px]">阿诊 · DIA-01 学情诊断</div>
+        <div className="lf-mono-label !text-[10px]">伴学助手 · DIA-01 学情诊断</div>
         <p className="mt-0.5 text-[13.5px] leading-[21px] text-ink-2">{text}</p>
       </div>
     </div>
