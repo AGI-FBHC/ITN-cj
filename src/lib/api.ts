@@ -491,6 +491,30 @@ export interface LearningResourceGenerationTask {
   updatedAt: string;
 }
 
+export interface CustomizeSlide {
+  index: number;
+  unitIndex: number;
+  totalUnits: number;
+  partIndex?: number;
+  partCount?: number;
+  type: 'chapter' | 'step' | 'question';
+  title: string;
+  content: string | Record<string, unknown>;
+  sources?: Array<Record<string, unknown>>;
+}
+
+export interface CustomizeSlidesResponse {
+  slides: CustomizeSlide[];
+  total: number;
+  completed: number;
+  status: 'generating' | 'completed' | 'failed' | 'cancelled';
+  resourceId: string | null;
+  resourceType: LearningResourceGenerationTask['resourceType'];
+  title: string;
+  stageMessage: string;
+  kpId?: string | null;
+}
+
 export interface AdminGenerationEvent {
   seq: number;
   time?: string | null;
@@ -1384,6 +1408,8 @@ export const api = {
     requestDirect<LearningResourceGenerationTask>('/v1/customize-resource', { method: 'POST', body: JSON.stringify(body) }),
   getCustomizeTask: (taskId: string) =>
     requestDirect<LearningResourceGenerationTask>(`/v1/customize-tasks/${encodeURIComponent(taskId)}`),
+  getCustomizeSlides: (taskId: string) =>
+    requestDirect<CustomizeSlidesResponse>(`/v1/customize-tasks/${encodeURIComponent(taskId)}/slides`),
   listCustomizeTasks: (kpId?: string | null) =>
     requestDirect<{ tasks: LearningResourceGenerationTask[] }>(`/v1/customize-tasks${kpId ? `?kpId=${encodeURIComponent(kpId)}` : ''}`),
   listMemories: (namespace?: string) =>

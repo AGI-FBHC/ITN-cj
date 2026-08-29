@@ -31,6 +31,7 @@ const CollaborationWorkbench = lazy(() => import('@/pages/CollaborationWorkbench
 const AiChat = lazy(() => import('@/pages/AiChat'));
 const CustomizePipeline = lazy(() => import('@/pages/CustomizePipeline'));
 const CustomizeTeam = lazy(() => import('@/pages/CustomizeTeam'));
+const SlidePlayer = lazy(() => import('@/pages/SlidePlayer'));
 import { useAuth } from '@/context/AuthContext';
 
 gsap.registerPlugin(ScrollTrigger);
@@ -109,6 +110,7 @@ export default function App() {
           <Route path="learn/ppt-preview/:taskId" element={<PptPreview />} />
           <Route path="learn/resource/:resourceId" element={<CourseResourcePlayer />} />
           <Route path="learn/customize/:taskId" element={<CustomizePipeline />} />
+          <Route path="learn/slide/:taskId" element={<SlidePlayer />} />
                     <Route path="learn/customize-team/:kpId" element={<CustomizeTeam />} />
           <Route path="learn/:kpId" element={<LearnUnit />} />
           <Route path="onboarding" element={<Onboarding />} />

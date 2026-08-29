@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import { ArrowRight, BookOpen, Wrench, ListChecks, Sparkles, Route, Loader2, Wand2 } from 'lucide-react';
+import { ArrowRight, BookOpen, Wrench, ListChecks, Sparkles, Route, Loader2, Wand2, Maximize2 } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
 import type { PresentationTask, PresentationTaskSummary } from '@/lib/presentationApi';
 import { reportForLearner } from '@/data/reportBuilder';
@@ -21,6 +21,7 @@ import type { GraphNode } from '@/data/knowledgeGraph';
 import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
 import type { LearningResourceGenerationTask } from '@/lib/api';
+import CustomizeChoiceModal from '@/components/learn/CustomizeChoiceModal';
 
 const FORM_META: Record<ResourceForm, { label: string; icon: typeof BookOpen; hint: string }> = {
   lecture: { label: '领学讲义', icon: BookOpen, hint: '按你水平现写的讲义' },
@@ -87,6 +88,9 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
   const { currentLearner } = useProfile();
   const report = reportForLearner(currentLearner);
   const [customizeTasks, setCustomizeTasks] = useState<LearningResourceGenerationTask[]>([]);
+  const [customizeChoice, setCustomizeChoice] = useState<{
+    adminResourceId: string; kpId: string; resourceType: 'lecture' | 'practice' | 'quiz' | 'ppt'; resourceLabel: string;
+  } | null>(null);
 
   /* 拉取本知识点的定制任务，进行中时轮询刷新 */
   useEffect(() => {
@@ -207,34 +211,8 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
   );
   const pptBusy = Boolean(pptCustomizeTask && !['completed', 'failed', 'cancelled'].includes(pptCustomizeTask.status));
   const pptCustomized = Boolean(pptCustomizeTask?.status === 'completed' && pptCustomizeTask.resourceId);
-  const pptStartCustomize = async () => {
-    if (!pptForScope?.id) { toast.info('该课件暂无母版，无法定制'); return; }
-    if (pptBusy) { toast.info('该课件正在定制中'); return; }
-    try {
-      const task = await api.createCustomizeTask({ adminResourceId: pptForScope.id, kpId: customizationKpId, resourceType: 'ppt' });
-      navigate(`/learn/customize/${task.id}`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '发起定制失败');
-    }
-  };
   const taskBusy = (task?: LearningResourceGenerationTask) =>
     Boolean(task && !['completed', 'failed', 'cancelled'].includes(task.status));
-
-  const startCustomize = async (form: ResourceForm) => {
-    const template = existingResourceFor(form);
-    if (!template?.id) { toast.info('该资源暂无母版，无法定制'); return; }
-    if (taskBusy(customizeTaskFor(form))) { toast.info('该资源正在定制中'); return; }
-    try {
-      const task = await api.createCustomizeTask({
-        adminResourceId: template.id,
-        kpId: customizationKpId,
-        resourceType: CUSTOMIZE_FORM_TYPE[form],
-      });
-      navigate(`/learn/customize/${task.id}`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '发起定制失败');
-    }
-  };
 
   const customizableForms = (Object.keys(FORM_META) as ResourceForm[]).filter((f) => {
     const hasTemplate = Boolean(existingResourceFor(f)?.id);
@@ -405,13 +383,13 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
                 );
               }
               return (
+                <div key={f} className="relative">
                 <button
-                  key={f}
                   type="button"
-                  onClick={() => { if (busy) { navigate(`/learn/customize/${cTask!.id}`); return; } if (!openTarget) { void startCustomize(f); return; } navigate(`/learn/resource/${openTarget}`); }}
+                  onClick={() => { if (busy || openTarget) { navigate(`/learn/slide/${cTask!.id}`); return; } if (template?.id) setCustomizeChoice({ adminResourceId: template.id, kpId: customizationKpId, resourceType: CUSTOMIZE_FORM_TYPE[f], resourceLabel: meta.label }); }}
                   title={busy ? '查看定制进度' : openTarget ? `打开${meta.label}` : `定制${meta.label}`}
                   className={cn(
-                    'group flex w-full items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left transition-all',
+                    'group flex w-full items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left transition-all', openTarget && 'pr-11',
                     busy ? 'border-brand/45 bg-brand-tint/40'
                       : openTarget ? 'border-hairline bg-paper hover:border-brand/45 hover:bg-brand-tint/40'
                       : 'border-brand/45 bg-paper hover:border-brand/60 hover:bg-brand-tint/40',
@@ -429,9 +407,11 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
                     </span>
                   </span>
                   {busy ? <span className="shrink-0 font-mono text-[10px] text-brand">{cTask!.progress ?? 0}%</span>
-                    : openTarget ? <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
+                    : openTarget ? <ArrowRight size={14} className="shrink-0 text-ink-muted transition-colors group-hover:text-brand" />
                     : <Wand2 size={13} className="shrink-0 text-brand/70 transition-transform group-hover:scale-110" />}
                 </button>
+                {openTarget && <button type="button" title="完整阅读模式" aria-label={`以完整模式打开${meta.label}`} onClick={() => navigate(`/learn/resource/${openTarget}`)} className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg border border-hairline bg-paper p-1.5 text-ink-muted hover:border-brand/35 hover:text-brand"><Maximize2 size={13} /></button>}
+                </div>
               );
             })}
 
@@ -441,7 +421,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
             onClick={() => {
               if (pptBusy) { navigate(`/learn/customize/${pptCustomizeTask!.id}`); return; }
               if (pptCustomized && pptCustomizeTask?.resourceId) { void openPptCourseware(); return; }
-              if (pptForScope?.id) { void pptStartCustomize(); return; }
+              if (pptForScope?.id) { setCustomizeChoice({ adminResourceId: pptForScope.id, kpId: customizationKpId, resourceType: 'ppt', resourceLabel: '交互课件' }); return; }
               toast.info('暂无资源');
             }}
             title={pptBusy ? '查看定制进度' : pptCustomized ? '打开交互课件' : pptForScope ? '定制交互课件' : '暂无资源'}
@@ -473,6 +453,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           </button>
         </div>
       </div>}
+      {customizeChoice && <CustomizeChoiceModal open adminResourceId={customizeChoice.adminResourceId} kpId={customizeChoice.kpId} resourceType={customizeChoice.resourceType} resourceLabel={customizeChoice.resourceLabel} onClose={() => setCustomizeChoice(null)} />}
     </div>
   );
 }

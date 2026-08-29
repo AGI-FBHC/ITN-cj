@@ -10,7 +10,7 @@
  * 知识点切换用本地 state，不触发路由变更，SSE 不断开。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, BookOpen, ChevronDown, ChevronLeft, ChevronRight, ClipboardCheck, Loader2, Presentation, RefreshCw, Wand2, Wrench } from 'lucide-react';
 import { api, type AdminGenerationEvent, type LearningResourceGenerationTask, type LearningTemplateResourceItem } from '@/lib/api';
 import { CollaborationRounds, agents, eventDisplayTitle, isLifecycleEvent } from '@/pages/CollaborationWorkbench';
@@ -33,6 +33,8 @@ interface TopicOption { id: string; label: string; chapterId: string; chapterNam
 export default function CustomizeTeam() {
   const { kpId: routeKpId } = useParams<{ kpId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const autoTaskId = searchParams.get('taskId');
 
   /* 当前选中的知识点（本地 state，切换不触发路由变更） */
   const [activeKpId, setActiveKpId] = useState(routeKpId ?? '');
@@ -53,6 +55,10 @@ export default function CustomizeTeam() {
   const [collapsedChapters, setCollapsedChapters] = useState<Set<string>>(new Set());
   const creatingRef = useRef(false);
   const [confirmTarget, setConfirmTarget] = useState<{ type: ResType; templateId: string; label: string } | null>(null);
+
+  useEffect(() => {
+    if (autoTaskId) setShownTaskId(autoTaskId);
+  }, [autoTaskId]);
 
   /* 加载领域内知识点列表（一次性） */
   useEffect(() => {

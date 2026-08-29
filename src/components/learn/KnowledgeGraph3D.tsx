@@ -5,7 +5,7 @@
 import { useRef, useMemo, useState, useCallback, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Text, Line, PerspectiveCamera, Billboard } from '@react-three/drei';
-import { BookOpen, ClipboardCheck, Loader2, Presentation, ScrollText, Wand2, Wrench, X } from 'lucide-react';
+import { BookOpen, ClipboardCheck, Loader2, Maximize2, Presentation, ScrollText, Wand2, Wrench, X } from 'lucide-react';
 import * as THREE from 'three';
 import type { GraphNode, GraphEdge } from '@/data/knowledgeGraph';
 import { api } from '@/lib/api';
@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import cjkFontUrl from '@/assets/fonts/noto-sans-cjk-sc-gb2312.otf';
+import CustomizeChoiceModal from '@/components/learn/CustomizeChoiceModal';
 
 const EDGE_COLORS: Record<string, string> = {
   prereq: '#4E7860',
@@ -648,6 +649,9 @@ function TopicActionModal({
   const existingFor = (form: ResourceForm) => (resources ?? []).find((item) => item.id && item.form === form);
   /* 定制任务状态：跟随当前知识点拉取，进行中轮询 */
   const [customizeTasks, setCustomizeTasks] = useState<LearningResourceGenerationTask[]>([]);
+  const [customizeChoice, setCustomizeChoice] = useState<{
+    adminResourceId: string; resourceType: 'lecture' | 'practice' | 'quiz' | 'ppt'; resourceLabel: string;
+  } | null>(null);
   useEffect(() => {
     let alive = true;
     const load = async () => {
@@ -663,22 +667,6 @@ function TopicActionModal({
   const CUSTOMIZE_FORM_TYPE: Record<ResourceForm, 'lecture' | 'practice' | 'quiz'> = { lecture: 'lecture', guide: 'practice', quiz: 'quiz' };
   const taskBusy = (task?: LearningResourceGenerationTask) =>
     Boolean(task && !['completed', 'failed', 'cancelled'].includes(task.status));
-  const startCustomize = async (form: ResourceForm, adminResourceId: string) => {
-    try {
-      const task = await api.createCustomizeTask({ adminResourceId, kpId: node.id, resourceType: CUSTOMIZE_FORM_TYPE[form] });
-      navigate(`/learn/customize/${task.id}`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '发起定制失败');
-    }
-  };
-  const startPptCustomize = async (adminResourceId: string) => {
-    try {
-      const task = await api.createCustomizeTask({ adminResourceId, kpId: node.id, resourceType: 'ppt' });
-      navigate(`/learn/customize/${task.id}`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : '发起定制失败');
-    }
-  };
   /* ===== 统一定制：一次性定制当前知识点全部未定制资源 ===== */
   const customizableTemplates = FUNCTION_META.map((fn) => {
     const isPpt = fn.form === 'ppt';
@@ -876,10 +864,10 @@ function TopicActionModal({
         const Icon = FUNCTION_ICON[fn.form];
         const tag = STATUS_META[status];
         return (
+          <div key={fn.form} className="relative">
           <button
-            key={fn.form}
             type="button"
-            className={cn('group h-[88px] rounded-[16px] border border-[#E1E6DF] bg-white/75 px-3.5 py-3 text-left shadow-[0_8px_22px_rgba(41,63,51,0.06)] transition duration-200 hover:-translate-y-0.5 hover:border-[#AFC3B5] hover:bg-white hover:shadow-[0_14px_32px_rgba(41,63,51,0.12)]', status === 'missing' && 'cursor-not-allowed hover:translate-y-0 hover:border-[#E1E6DF] hover:bg-white/75 hover:shadow-[0_8px_22px_rgba(41,63,51,0.06)]', customizing && 'border-[#D89238]/50 bg-[#D89238]/5 hover:border-[#D89238]')}
+            className={cn('group h-[88px] w-full rounded-[16px] border border-[#E1E6DF] bg-white/75 px-3.5 py-3 text-left shadow-[0_8px_22px_rgba(41,63,51,0.06)] transition duration-200 hover:-translate-y-0.5 hover:border-[#AFC3B5] hover:bg-white hover:shadow-[0_14px_32px_rgba(41,63,51,0.12)]', status === 'missing' && 'cursor-not-allowed hover:translate-y-0 hover:border-[#E1E6DF] hover:bg-white/75 hover:shadow-[0_8px_22px_rgba(41,63,51,0.06)]', customizing && 'border-[#D89238]/50 bg-[#D89238]/5 hover:border-[#D89238]', customized && !isPpt && 'pr-10')}
             onClick={() => {
               /* 前端锁死：暂无资源不允许触发生成请求，后续由后台统一补齐 */
               if (status === 'missing') {
@@ -887,7 +875,7 @@ function TopicActionModal({
                 return;
               }
               if (customizing && cTask) {
-                navigate(`/learn/customize/${cTask.id}`);
+                navigate(isPpt ? `/learn/customize/${cTask.id}` : `/learn/slide/${cTask.id}`);
                 return;
               }
               if (isPpt) {
@@ -895,12 +883,12 @@ function TopicActionModal({
                   const pptId = cTask.resourceId;
                   navigate(`/learn/${node.kpId}?ppt=${pptId}&topic=${encodeURIComponent(node.label.trim())}`);
                 } else if (pptTask?.id) {
-                  void startPptCustomize(pptTask.id);
+                  setCustomizeChoice({ adminResourceId: pptTask.id, resourceType: 'ppt', resourceLabel: fn.label });
                 }
                 return;
               }
               if (customized && cTask?.resourceId) {
-                navigate(`/learn/resource/${cTask.resourceId}`);
+                navigate(`/learn/slide/${cTask.id}`);
                 return;
               }
               if (res?.id && customized) {
@@ -908,7 +896,7 @@ function TopicActionModal({
                 return;
               }
               if (res?.id) {
-                void startCustomize(fn.form as ResourceForm, res.id);
+                setCustomizeChoice({ adminResourceId: res.id, resourceType: CUSTOMIZE_FORM_TYPE[fn.form as ResourceForm], resourceLabel: fn.label });
               }
             }}
           >
@@ -923,10 +911,13 @@ function TopicActionModal({
             </span>
             <strong className="block text-[15px] font-semibold text-[#26352D]">{fn.label}</strong>
           </button>
+          {customized && !isPpt && cTask?.resourceId && <button type="button" title="完整阅读模式" aria-label={`以完整模式打开${fn.label}`} onClick={() => navigate(`/learn/resource/${cTask.resourceId}`)} className="absolute bottom-2.5 right-2.5 rounded-lg border border-[#E1E6DF] bg-white p-1.5 text-[#6C7971] hover:border-[#AFC3B5] hover:text-[#2F6B4F]"><Maximize2 size={12} /></button>}
+          </div>
         );
           })}
         </div>
       </section>
+      {customizeChoice && <CustomizeChoiceModal open adminResourceId={customizeChoice.adminResourceId} kpId={node.id} resourceType={customizeChoice.resourceType} resourceLabel={customizeChoice.resourceLabel} onClose={() => setCustomizeChoice(null)} />}
     </div>
   );
 }
