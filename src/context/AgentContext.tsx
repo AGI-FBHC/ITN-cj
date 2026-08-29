@@ -73,14 +73,15 @@ interface AgentContextValue {
   decisions: DecisionEntry[];
   pushSignal: (s: Signal) => void;
   ask: (kind: AskKind) => void;
-  /** 自由提问：学情类问题就地答，知识点类问题引导回课件的「问一问」 */
-  askFree: (text: string) => void;
+  /** 自由提问：直接回答，页面位置仅作为不可见上下文传递。 */
+  askFree: (text: string, pageContext?: string) => void;
   answerVerify: (msgId: string, qIndex: number, optIndex: number) => void;
   sessions: AgentDockSession[];
   currentSessionId: string | null;
   createAgentSession: () => Promise<void>;
   switchAgentSession: (id: string) => Promise<void>;
   deleteAgentSession: (id: string) => Promise<void>;
+  renameAgentSession: (id: string, title: string) => Promise<void>;
 }
 
 const AgentContext = createContext<AgentContextValue | null>(null);
@@ -106,7 +107,7 @@ const save = (key: string, v: unknown) => {
 let seq = 0;
 const mid = () => `m-${Date.now().toString(36)}-${(seq++).toString(36)}`;
 const now = () => new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
-const GREETING = '你好，我是伴学助手。我会关注你的学习过程，随时更新你的画像——每次调整都有依据，你也可以随时质疑我。';
+const GREETING = '你好，我是伴学助手。你可以直接问当前内容、概念、例题或学习安排，我会先回答你的问题。';
 const clampConf = (n: number) => Math.max(10, Math.min(95, Math.round(n)));
 
 export function AgentProvider({ children }: { children: ReactNode }) {
@@ -390,22 +391,33 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       }
     };
 
+    const renameAgentSession = async (id: string, title: string) => {
+      const clean = title.trim();
+      if (!clean) return;
+      const updated = await api.updateAgentSession(id, { title: clean });
+      setSessions((prev) => prev.map((session) => session.id === id ? updated : session));
+    };
+
     /** 真实学情问答：调后端 /agent/ask（MiMo），占位消息替换为真实回复 */
-    const agentAsk = async (askType: string, userText: string, placeholder: string) => {
+    const agentAsk = async (askType: string, userText: string, placeholder: string, pageContext?: string) => {
       // Lazy session: create on first message, title from user text
       let sid = currentSessionId;
+      let activeSession = sessions.find((session) => session.id === sid);
       if (!sid) {
         const created = await api.createAgentSession(lid);
         sid = created.id;
+        activeSession = created;
         setSessions((prev) => [created, ...prev.filter((s) => s.id !== created.id)]);
         setCurrentSessionId(sid);
         setMsgsAll((prev) => ({ ...prev, [lid]: [] }));
       }
-      // Set session title from first user message (truncate to 20 chars)
-      if (userText.length > 0) {
-        const shortTitle = userText.length > 20 ? userText.slice(0, 20) + '…' : userText;
+      // Only the first real question names a new/default session. Later messages do not overwrite it.
+      const hasDefaultTitle = !activeSession?.title || /^(伴学助手|阿诊)\s*·\s*学习诊断$/.test(activeSession.title);
+      if (hasDefaultTitle && userText.length > 0) {
+        const titleText = userText.replace(/^\s*\[当前页面[：:]\s*[^\]]+\]\s*/, '').trim();
+        const shortTitle = titleText.length > 20 ? titleText.slice(0, 20) + '…' : titleText;
         void api.updateAgentSession(sid, { title: shortTitle }).then((updated) => {
-          setSessions((prev) => prev.map((s) => s.id === sid ? { ...s, title: updated.title } : s));
+          setSessions((prev) => prev.map((s) => s.id === sid ? updated : s));
         }).catch(() => {/* ignore */});
       }
       append({ id: mid(), kind: 'user', text: userText, time: now() });
@@ -417,6 +429,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           lid, askType, userText,
           askType === 'free' ? undefined : weakest?.id,
           sid ?? undefined,
+          pageContext,
           (event) => {
             if (event.type === 'reply_delta' && event.content) {
               acc += event.content;
@@ -452,18 +465,11 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    /** 自由提问：学情类问题走真实问答（后端 MiMo），知识点讲解由伴学助手引导回课件「问一问」 */
-    const askFree = (raw: string) => {
+    /** 自由输入始终按原问题回答；学情快捷问题由 askSuggestion 显式分流。 */
+    const askFree = (raw: string, pageContext?: string) => {
       const text = raw.trim();
       if (!text) return;
-      const t = text.toLowerCase();
-      const has = (...ws: string[]) => ws.some((w) => t.includes(w));
-
-      if (has('盲区', '最弱', '为什么是', '凭什么', '依据', '证据')) return ask('why-blind');
-      if (has('下一步', '学什么', '接下来', '先学', '怎么安排', '计划', '路径')) return ask('what-next');
-      if (has('不止', '不服', '低了', '不准', '质疑', '凭啥', '重测', '再测')) return ask('challenge-score');
-
-      void agentAsk('free', text, '正在结合你的学情回答…');
+      void agentAsk('free', text, '正在查阅当前内容并回答…', pageContext);
     };
 
     /** 动态建议问题：按建议原文发起（类型已知则透传，未知按自由提问） */
@@ -567,6 +573,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       createAgentSession,
       switchAgentSession,
       deleteAgentSession,
+      renameAgentSession,
     };
   }, [msgsAll, confAll, logAll, decAll, seen, unread, open, latestHint, currentLearner, currentLearnerId, applyWriteback, weakest, kpNameById, learningMap, suggestions, refreshSuggestions, sessions, currentSessionId]);
 

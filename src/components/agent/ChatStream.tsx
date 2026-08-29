@@ -4,7 +4,7 @@
  * 被 AiChat 页面和 AgentDockSidebar 侧边栏复用。
  */
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { Brain, Plus, SendHorizonal, Trash2 } from 'lucide-react';
+import { Brain, Check, Pencil, Plus, SendHorizonal, Trash2, X } from 'lucide-react';
 import { useAgent } from '@/context/AgentContext';
 import type { AgentMessage } from '@/context/AgentContext';
 import { cn } from '@/lib/utils';
@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils';
 function MessageBubble({ message }: { message: AgentMessage }) {
   const isUser = message.kind === 'user';
   const text = 'text' in message ? message.text : '';
+  const visibleText = isUser ? text.replace(/^\s*\[当前页面[：:]\s*[^\]]+\]\s*/, '') : text;
   const loading = 'loading' in message ? message.loading : false;
   if (message.kind === 'verify') return null;
   return (
@@ -30,7 +31,7 @@ function MessageBubble({ message }: { message: AgentMessage }) {
             <span className="animate-pulse" style={{ animationDelay: '0.3s' }}>●</span>
           </span>
         ) : (
-          <div className="whitespace-pre-wrap">{text}</div>
+          <div className="whitespace-pre-wrap">{visibleText}</div>
         )}
       </div>
     </div>
@@ -54,8 +55,7 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
   const handleSend = () => {
     const text = input.trim();
     if (!text) return;
-    const full = pageContext ? `[当前页面：${pageContext}] ${text}` : text;
-    askFree(full);
+    askFree(text, pageContext);
     setInput('');
   };
 
@@ -141,7 +141,9 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
 
 /* ===== 会话列表（全屏页面用） ===== */
 export function SessionList() {
-  const { sessions, currentSessionId, createAgentSession, switchAgentSession, deleteAgentSession } = useAgent();
+  const { sessions, currentSessionId, createAgentSession, switchAgentSession, deleteAgentSession, renameAgentSession } = useAgent();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftTitle, setDraftTitle] = useState('');
 
   return (
     <>
@@ -168,9 +170,10 @@ export function SessionList() {
             onClick={() => void switchAgentSession(s.id)}
           >
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[12px] font-medium text-ink">{s.title || '未命名对话'}</p>
+              {editingId === s.id ? <input autoFocus value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Enter' && draftTitle.trim()) { event.stopPropagation(); void renameAgentSession(s.id, draftTitle).then(() => setEditingId(null)); } if (event.key === 'Escape') setEditingId(null); }} className="w-full rounded-md border border-brand/30 bg-paper px-2 py-1 text-[12px] text-ink outline-none" /> : <p className="truncate text-[12px] font-medium text-ink">{s.title || '未命名对话'}</p>}
               <p className="truncate text-[10px] text-ink-muted">{s.sessionType || ''}</p>
             </div>
+            {editingId === s.id ? <><button type="button" onClick={(event) => { event.stopPropagation(); if (draftTitle.trim()) void renameAgentSession(s.id, draftTitle).then(() => setEditingId(null)); }} className="shrink-0 rounded-md p-1 text-brand"><Check size={12} /></button><button type="button" onClick={(event) => { event.stopPropagation(); setEditingId(null); }} className="shrink-0 rounded-md p-1 text-ink-muted"><X size={12} /></button></> : <button type="button" onClick={(event) => { event.stopPropagation(); setEditingId(s.id); setDraftTitle(s.title || ''); }} className="hidden shrink-0 rounded-md p-1 text-ink-muted transition hover:bg-brand-tint hover:text-brand group-hover:block"><Pencil size={12} /></button>}
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); void deleteAgentSession(s.id); }}
