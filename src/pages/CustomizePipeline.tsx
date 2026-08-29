@@ -172,7 +172,7 @@ export default function CustomizePipeline() {
 
       <footer className="flex shrink-0 items-center justify-between gap-3 pt-3">
         <p className="text-[11px] text-ink-muted">
-          {failed ? (task.errorMessage ?? '定制过程出现异常，请稍后重试。') : completed ? '定制资源已就绪，可开始学习。' : '定制基于管理员母版进行个性化二次创作，完成后即可学习。'}
+          {failed ? (task.errorMessage ?? '定制过程出现异常，请稍后重试。') : completed ? '定制资源已就绪，可开始学习。' : ''}
         </p>
         {completed && task.resourceId && (
           <button type="button" onClick={() => navigate(`/learn/resource/${task.resourceId}`)} className="lf-btn-primary inline-flex items-center gap-1.5">
