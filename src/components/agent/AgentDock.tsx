@@ -216,35 +216,33 @@ export default function AgentDock() {
             </div>
 
             {/* 头 */}
-            <div className="shrink-0 border-b border-black/[0.06] px-3 pb-2.5">
-              <div className="flex items-center gap-2">
-                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-paper shadow-sm">
-                  <Brain size={14} />
+            <div className="shrink-0 border-b border-black/[0.06] px-3 py-2">
+              <div className="flex items-center gap-1.5">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-brand text-paper shadow-sm">
+                  <Brain size={12} />
                 </span>
-                <p className="min-w-0 flex-1 text-[14px] font-semibold text-ink">伴学助手</p>
-                <button type="button" onClick={() => { setOpen(false); navigate('/chat'); }} title="全屏" className="lf-row-btn !p-1.5">
-                  <Maximize2 size={13} />
-                </button>
-                <button type="button" onClick={() => setOpen(false)} title="收起" className="lf-row-btn !p-1.5">
-                  <X size={13} />
-                </button>
-              </div>
-              {sessions.length > 0 && (
-                <div className="mt-1.5 flex items-center gap-1.5">
+                <p className="shrink-0 text-[13px] font-semibold text-ink">伴学助手</p>
+                {sessions.length > 0 && (
                   <select
                     value={currentSessionId ?? ''}
                     onChange={(e) => { if (e.target.value) void switchAgentSession(e.target.value); }}
-                    className="min-w-0 flex-1 rounded-md border border-hairline bg-white/80 px-2 py-1 text-[10.5px] text-ink outline-none"
+                    className="min-w-0 flex-1 truncate rounded-md border border-hairline bg-white/80 px-1.5 py-0.5 text-[10px] text-ink outline-none"
                   >
                     {sessions.map((s) => (
                       <option key={s.id} value={s.id}>{s.title || '未命名对话'}</option>
                     ))}
                   </select>
-                  <button type="button" onClick={() => void createAgentSession()} title="新建" className="lf-row-btn !p-1">
-                    <Plus size={12} />
-                  </button>
-                </div>
-              )}
+                )}
+                <button type="button" onClick={() => void createAgentSession()} title="新建会话" className="lf-row-btn !p-1">
+                  <Plus size={11} />
+                </button>
+                <button type="button" onClick={() => { setOpen(false); navigate('/chat'); }} title="全屏" className="lf-row-btn !p-1">
+                  <Maximize2 size={12} />
+                </button>
+                <button type="button" onClick={() => setOpen(false)} title="收起" className="lf-row-btn !p-1">
+                  <X size={12} />
+                </button>
+              </div>
             </div>
 
             {/* 消息流 + composer */}
