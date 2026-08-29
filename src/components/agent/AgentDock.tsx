@@ -1,29 +1,36 @@
 /**
- * AgentDock — 伴学助手常驻 FAB + 可拖拽悬浮侧边栏
+ * AgentDock — 伴学助手常驻 FAB + 可拖拽/可调宽悬浮侧边栏
  *
- * FAB 点击 → 从左侧或右侧浮出侧边栏（ChatStream compact 模式）
- * 侧边栏顶部有拖拽横条，按住拖动可切换左/右侧
- * 位置持久化到 localStorage
+ * 顶部横条：按住拖拽移动侧边栏，松手吸附最近一侧
+ * 侧边边缘：按住拖拽调整宽度（左浮→右边拖，右浮→左边拖）
+ * 位置和宽度持久化到 localStorage
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useMotionValue, useTransform, animate } from 'framer-motion';
 import { Brain, GripHorizontal, Maximize2, Plus, X } from 'lucide-react';
 import { useAgent } from '@/context/AgentContext';
 import { cn } from '@/lib/utils';
 import { ChatStream } from '@/components/agent/ChatStream';
 
-const STORAGE_KEY = 'lf.agent-dock-side';
+const SIDE_KEY = 'lf.agent-dock-side';
+const WIDTH_KEY = 'lf.agent-dock-width';
+const MIN_W = 300;
+const MAX_W = Math.min(720, window.innerWidth * 0.55);
+const DEFAULT_W = Math.min(480, window.innerWidth * 0.38);
+const MARGIN = 12;
 
 function readSide(): 'left' | 'right' {
-  try {
-    const v = localStorage.getItem(STORAGE_KEY);
-    return v === 'left' ? 'left' : 'right';
-  } catch { return 'right'; }
+  try { return localStorage.getItem(SIDE_KEY) === 'left' ? 'left' : 'right'; } catch { return 'right'; }
 }
-
-function writeSide(side: 'left' | 'right') {
-  try { localStorage.setItem(STORAGE_KEY, side); } catch { /* ignore */ }
+function writeSide(s: 'left' | 'right') {
+  try { localStorage.setItem(SIDE_KEY, s); } catch { /* */ }
+}
+function readWidth(): number {
+  try { const v = parseInt(localStorage.getItem(WIDTH_KEY) || '', 10); return v >= MIN_W && v <= MAX_W ? v : DEFAULT_W; } catch { return DEFAULT_W; }
+}
+function writeWidth(w: number) {
+  try { localStorage.setItem(WIDTH_KEY, String(Math.round(w))); } catch { /* */ }
 }
 
 export default function AgentDock() {
@@ -33,6 +40,7 @@ export default function AgentDock() {
   const inCourse = location.pathname.startsWith('/learn/');
 
   const [side, setSide] = useState<'left' | 'right'>(readSide);
+  const [panelW, setPanelW] = useState(readWidth);
 
   /* 每次切换页面后首次打开侧边栏，自动新建会话 */
   const lastPathRef = useRef<string>('');
@@ -56,38 +64,72 @@ export default function AgentDock() {
     return () => window.removeEventListener('keydown', onKey);
   }, [open, setOpen]);
 
-  /* 拖拽逻辑 */
-  const dragRef = useRef<{ startY: number; startX: number; dragging: boolean }>({ startY: 0, startX: 0, dragging: false });
-  const onDragStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    const point = 'touches' in e ? e.touches[0] : e;
-    dragRef.current = { startY: point.clientY, startX: point.clientX, dragging: true };
+  /* ====== 拖拽移动 ====== */
+  const dragX = useMotionValue(0);
+  const startDragMove = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    const pt = 'touches' in e ? e.touches[0] : e;
+    const startX = pt.clientX;
+    dragX.set(0);
+
     const onMove = (ev: MouseEvent | TouchEvent) => {
-      if (!dragRef.current.dragging) return;
-      const pt = 'touches' in ev ? ev.touches[0] : ev;
-      const dx = pt.clientX - dragRef.current.startX;
-      if (Math.abs(dx) > 80) {
-        const newSide = dx > 0 ? 'right' : 'left';
-        setSide(newSide);
-        writeSide(newSide);
-        dragRef.current.dragging = false;
-      }
+      const p = 'touches' in ev ? ev.touches[0] : ev;
+      dragX.set(p.clientX - startX);
     };
     const onEnd = () => {
-      dragRef.current.dragging = false;
+      const offset = dragX.get();
+      if (Math.abs(offset) > panelW * 0.2) {
+        const newSide = offset > 0 ? 'right' : 'left';
+        setSide(newSide);
+        writeSide(newSide);
+      }
+      animate(dragX, 0, { type: 'spring', stiffness: 400, damping: 30 });
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onEnd);
       window.removeEventListener('touchmove', onMove);
       window.removeEventListener('touchend', onEnd);
     };
-    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mousemove', onMove, { passive: true });
     window.addEventListener('mouseup', onEnd);
-    window.addEventListener('touchmove', onMove);
+    window.addEventListener('touchmove', onMove, { passive: true });
     window.addEventListener('touchend', onEnd);
-  }, []);
+  }, [dragX, panelW]);
+
+  /* ====== 拖拽调宽 ====== */
+  const startResize = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const pt = 'touches' in e ? e.touches[0] : e;
+    const startX = pt.clientX;
+    const startW = panelW;
+    const isLeft = side === 'left';
+
+    const onMove = (ev: MouseEvent | TouchEvent) => {
+      const p = 'touches' in ev ? ev.touches[0] : ev;
+      const dx = p.clientX - startX;
+      // 左浮：右边缘拖拽 → dx>0 变宽；右浮：左边缘拖拽 → dx<0 变宽
+      const newW = isLeft ? startW + dx : startW - dx;
+      const clamped = Math.max(MIN_W, Math.min(MAX_W, newW));
+      setPanelW(clamped);
+    };
+    const onEnd = () => {
+      writeWidth(panelW);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onEnd);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+    };
+    window.addEventListener('mousemove', onMove, { passive: true });
+    window.addEventListener('mouseup', onEnd);
+    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('touchend', onEnd);
+  }, [panelW, side]);
 
   if (hidden) return null;
 
   const isLeft = side === 'left';
+  const baseX = isLeft ? MARGIN : window.innerWidth - panelW - MARGIN;
+  const panelX = useTransform(dragX, (dx) => baseX + dx);
 
   return (
     <>
@@ -130,39 +172,56 @@ export default function AgentDock() {
         </button>
       </div>
 
-      {/* ===== 侧边栏 ===== */}
+      {/* ===== 悬浮侧边栏 ===== */}
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ x: isLeft ? '-100%' : '100%', opacity: 0.5 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: isLeft ? '-100%' : '100%', opacity: 0.5 }}
-            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+            style={{ x: panelX, width: panelW }}
+            initial={{ opacity: 0, scale: 0.92 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.92 }}
+            transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
             className={cn(
-              'fixed inset-y-3 z-50 flex h-[calc(100dvh-24px)] w-[min(520px,44vw)] flex-col overflow-hidden rounded-2xl border border-white/50 bg-paper/80 shadow-2xl backdrop-blur-xl',
-              isLeft ? 'left-3' : 'right-3',
+              'fixed top-3 z-50 flex h-[calc(100dvh-24px)] flex-col overflow-visible',
+              'rounded-2xl border border-white/60',
+              'bg-gradient-to-b from-white/90 to-white/75 backdrop-blur-2xl',
+              'shadow-[0_8px_40px_rgba(0,0,0,0.12),0_2px_12px_rgba(0,0,0,0.06)]',
             )}
           >
-            {/* 拖拽横条 */}
+            {/* 左/右边缘 resize 手柄 */}
             <div
-              onMouseDown={onDragStart}
-              onTouchStart={onDragStart}
-              className="flex shrink-0 cursor-grab items-center justify-center py-1.5 active:cursor-grabbing"
+              onMouseDown={startResize}
+              onTouchStart={startResize}
+              className={cn(
+                'absolute top-0 z-10 h-full w-[6px] cursor-col-resize',
+                isLeft ? '-right-[3px]' : '-left-[3px]',
+              )}
             >
-              <div className="flex h-5 w-10 items-center justify-center rounded-full bg-ink/10">
-                <GripHorizontal size={12} className="text-ink-muted" />
+              <div className={cn(
+                'absolute top-1/2 -translate-y-1/2 h-10 w-[3px] rounded-full transition-colors',
+                isLeft ? 'right-0' : 'left-0',
+                'bg-transparent hover:bg-brand/30',
+              )} />
+            </div>
+
+            {/* 顶部拖拽横条 */}
+            <div
+              onMouseDown={startDragMove}
+              onTouchStart={startDragMove}
+              className="flex shrink-0 cursor-grab items-center justify-center py-1 active:cursor-grabbing"
+            >
+              <div className="flex h-[18px] w-12 items-center justify-center rounded-full bg-ink/[0.06] transition-colors hover:bg-ink/12">
+                <GripHorizontal size={12} className="text-ink-muted/60" />
               </div>
             </div>
 
             {/* 头 */}
-            <div className="shrink-0 border-b border-white/40 bg-paper/60 px-3 pb-2.5 backdrop-blur-md">
+            <div className="shrink-0 border-b border-black/[0.06] px-3 pb-2.5">
               <div className="flex items-center gap-2">
-                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-paper">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-paper shadow-sm">
                   <Brain size={14} />
                 </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[14px] font-semibold text-ink">伴学助手</p>
-                </div>
+                <p className="min-w-0 flex-1 text-[14px] font-semibold text-ink">伴学助手</p>
                 <button type="button" onClick={() => { setOpen(false); navigate('/chat'); }} title="全屏" className="lf-row-btn !p-1.5">
                   <Maximize2 size={13} />
                 </button>
@@ -175,7 +234,7 @@ export default function AgentDock() {
                   <select
                     value={currentSessionId ?? ''}
                     onChange={(e) => { if (e.target.value) void switchAgentSession(e.target.value); }}
-                    className="min-w-0 flex-1 rounded-md border border-hairline bg-paper px-2 py-1 text-[10.5px] text-ink outline-none"
+                    className="min-w-0 flex-1 rounded-md border border-hairline bg-white/80 px-2 py-1 text-[10.5px] text-ink outline-none"
                   >
                     {sessions.map((s) => (
                       <option key={s.id} value={s.id}>{s.title || '未命名对话'}</option>
