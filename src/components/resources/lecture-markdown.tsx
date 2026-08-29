@@ -4,8 +4,9 @@
  * - H2 章节自动挂 id（scroll-spy / 目录定位用）
  * - blockquote 按内容分流为：标准引用块（虚线框+印章）/ 安全警示（砖红）/ 重点 callout（墨绿）
  */
-import { Children, cloneElement, isValidElement } from 'react';
+import { Children, cloneElement, isValidElement, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
+import { Check, Copy } from 'lucide-react';
 import { withTraceBadges } from '@/components/TraceBadge';
 import { cn } from '@/lib/utils';
 
@@ -57,6 +58,40 @@ const domOnly = (props: MDProps): Omit<MDProps, 'node'> => {
   void node;
   return rest;
 };
+
+function MarkdownCodeBlock({ children, roomy = false }: { children?: ReactNode; roomy?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const child = Children.toArray(children)[0];
+  const childClass = isValidElement(child)
+    ? String((child.props as { className?: string }).className ?? '')
+    : '';
+  const language = childClass.match(/language-([\w-]+)/)?.[1]?.toUpperCase() || 'CODE';
+  const source = flattenText(children).replace(/\n$/, '');
+  const lines = source.split('\n');
+  const copy = async () => {
+    await navigator.clipboard.writeText(source);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  };
+  return (
+    <figure className={cn('my-5 overflow-hidden rounded-[14px] border border-[#2E463D] bg-[#14211C] shadow-[0_12px_30px_rgba(17,34,27,0.16)]', roomy && 'my-6 rounded-[16px]')}>
+      <figcaption className="flex h-10 items-center justify-between border-b border-white/10 bg-[#1A2B24] px-3.5">
+        <div className="flex items-center gap-2.5">
+          <span className="h-4 w-[3px] rounded-full bg-[#73A98E]" />
+          <span className="font-mono text-[9.5px] font-semibold tracking-[0.16em] text-[#B9D2C5]">{language}</span>
+        </div>
+        <button type="button" onClick={() => void copy()} className="inline-flex h-7 items-center gap-1.5 rounded-md border border-white/10 px-2 text-[10px] text-[#AFC6BB] transition-colors hover:border-[#73A98E]/60 hover:bg-white/[0.06] hover:text-white" aria-label="复制代码">
+          {copied ? <Check size={12} /> : <Copy size={12} />}{copied ? '已复制' : '复制'}
+        </button>
+      </figcaption>
+      <div className={cn('max-h-[440px] overflow-auto py-3.5', roomy && 'max-h-[48vh] py-4')}>
+        <code className={cn('block min-w-max font-mono text-[12.5px] leading-[22px] text-[#E2ECE7]', roomy && 'text-[13.5px] leading-6')}>
+          {lines.map((line, index) => <span key={index} className="grid grid-cols-[42px_minmax(0,1fr)] pr-5 hover:bg-white/[0.035]"><span aria-hidden className="select-none border-r border-white/[0.07] pr-3 text-right text-[#60776C]">{index + 1}</span><span className="whitespace-pre pl-4">{line || ' '}</span></span>)}
+        </code>
+      </div>
+    </figure>
+  );
+}
 
 export const lectureMdComponents = {
   h1: (props: MDProps) => {
@@ -175,15 +210,8 @@ export const lectureMdComponents = {
     );
   },
   pre: (props: MDProps) => {
-    const { children, ...rest } = domOnly(props);
-    return (
-      <pre
-        className="my-4 overflow-x-auto rounded-[10px] border border-hairline bg-paper-deep p-4 font-mono text-[13px] leading-[21px] text-ink-2"
-        {...rest}
-      >
-        {children}
-      </pre>
-    );
+    const { children } = domOnly(props);
+    return <MarkdownCodeBlock>{children}</MarkdownCodeBlock>;
   },
   code: (props: MDProps) => {
     const { children, className, ...rest } = domOnly(props);
@@ -197,7 +225,7 @@ export const lectureMdComponents = {
     }
     return (
       <code
-        className="rounded-[5px] border border-hairline bg-paper-deep px-1.5 py-px font-mono text-[12.5px] text-ochre"
+        className="rounded-[5px] bg-brand-tint/75 px-1.5 py-0.5 font-mono text-[12.5px] font-medium text-brand"
         {...rest}
       >
         {children}
@@ -292,8 +320,8 @@ export const slideMdComponents = {
     return <li className="relative rounded-[13px] border border-hairline bg-paper/75 px-4 py-3 text-[14px] leading-6 text-ink-2 shadow-xs before:mr-2 before:text-brand before:content-['•'] md:text-[15.5px]" {...rest}>{traceify(children)}</li>;
   },
   pre: (props: MDProps) => {
-    const { children, ...rest } = domOnly(props);
-    return <pre className="my-5 max-h-[42vh] overflow-auto rounded-[14px] bg-ink p-5 font-mono text-[13px] leading-6 text-paper shadow-inner md:text-[14px]" {...rest}>{children}</pre>;
+    const { children } = domOnly(props);
+    return <MarkdownCodeBlock roomy>{children}</MarkdownCodeBlock>;
   },
   table: (props: MDProps) => {
     const { children, ...rest } = domOnly(props);
