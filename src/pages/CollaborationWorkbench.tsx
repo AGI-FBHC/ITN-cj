@@ -1411,13 +1411,13 @@ export default function CollaborationWorkbench() {
               </div>
               <button onClick={() => setPreviewDetail(null)} className="lf-row-btn !p-2" aria-label="关闭"><X size={15} /></button>
             </div>
-            <div className={cn('min-h-0 flex-1', previewDetail.type === 'ppt' && 'grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.8fr)]')}>
+            <div className={cn('min-h-0 flex-1 overflow-hidden', previewDetail.type === 'ppt' ? 'grid grid-cols-1 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.8fr)]' : 'flex')}>
               {previewDetail.type === 'ppt' && (
                 <div className="flex min-h-0 flex-col overflow-y-auto border-b border-white/70 p-4 lg:border-b-0 lg:border-r">
                   <PptModalPreview taskId={previewDetail.id} />
                 </div>
               )}
-              <div className="min-h-0 overflow-y-auto p-5">
+              <div className="min-h-0 flex-1 overflow-y-auto p-5">
                 <ResourcePreview detail={previewDetail} />
               </div>
             </div>
