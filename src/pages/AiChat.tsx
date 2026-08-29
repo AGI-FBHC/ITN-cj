@@ -28,7 +28,7 @@ export default function AiChat() {
             <Brain size={14} />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-[13px] font-semibold text-ink">伴学助手 · AI 学习助手</p>
+            <p className="text-[13px] font-semibold text-ink">伴学助手</p>
             <p className="text-[10px] text-ink-muted">DIA-01 学情诊断</p>
           </div>
         </div>

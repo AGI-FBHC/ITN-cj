@@ -1,59 +1,101 @@
 /**
- * AgentDock — 「伴学助手」常驻 FAB + 1/3 屏侧边栏
+ * AgentDock — 伴学助手常驻 FAB + 可拖拽悬浮侧边栏
  *
- * FAB 点击 → 打开侧边栏（ChatStream compact 模式）
- * 侧边栏有"全屏"按钮 → 跳转 /chat 独立页面
+ * FAB 点击 → 从左侧或右侧浮出侧边栏（ChatStream compact 模式）
+ * 侧边栏顶部有拖拽横条，按住拖动可切换左/右侧
+ * 位置持久化到 localStorage
  */
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Brain, Maximize2, Plus, X } from 'lucide-react';
+import { Brain, GripHorizontal, Maximize2, Plus, X } from 'lucide-react';
 import { useAgent } from '@/context/AgentContext';
-import { useProfile } from '@/context/ProfileContext';
-
 import { cn } from '@/lib/utils';
 import { ChatStream } from '@/components/agent/ChatStream';
 
+const STORAGE_KEY = 'lf.agent-dock-side';
+
+function readSide(): 'left' | 'right' {
+  try {
+    const v = localStorage.getItem(STORAGE_KEY);
+    return v === 'left' ? 'left' : 'right';
+  } catch { return 'right'; }
+}
+
+function writeSide(side: 'left' | 'right') {
+  try { localStorage.setItem(STORAGE_KEY, side); } catch { /* ignore */ }
+}
+
 export default function AgentDock() {
   const { unread, open, setOpen, latestHint, sessions, currentSessionId, createAgentSession, switchAgentSession } = useAgent();
-  const { currentLearner, viewMode } = useProfile();
-  const isExpert = viewMode === 'expert';
   const navigate = useNavigate();
   const location = useLocation();
   const inCourse = location.pathname.startsWith('/learn/');
+
+  const [side, setSide] = useState<'left' | 'right'>(readSide);
 
   /* 每次切换页面后首次打开侧边栏，自动新建会话 */
   const lastPathRef = useRef<string>('');
   useEffect(() => {
     if (open && location.pathname !== lastPathRef.current) {
       lastPathRef.current = location.pathname;
-      // 延迟一帧等 AgentContext 就绪
-      requestAnimationFrame(() => {
-        void createAgentSession();
-      });
+      requestAnimationFrame(() => { void createAgentSession(); });
     }
   }, [open, location.pathname, createAgentSession]);
 
-  /* 隐藏规则：管理页面、登录页、引导页不显示 FAB */
+  /* 隐藏规则 */
   const hidden = useMemo(() => {
     const p = location.pathname;
     return p.startsWith('/admin') || p === '/login' || p === '/welcome' || p === '/onboarding';
   }, [location.pathname]);
 
-  /* 全局键盘快捷键：Escape 关闭 */
+  /* Escape 关闭 */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && open) setOpen(false); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, setOpen]);
 
+  /* 拖拽逻辑 */
+  const dragRef = useRef<{ startY: number; startX: number; dragging: boolean }>({ startY: 0, startX: 0, dragging: false });
+  const onDragStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    const point = 'touches' in e ? e.touches[0] : e;
+    dragRef.current = { startY: point.clientY, startX: point.clientX, dragging: true };
+    const onMove = (ev: MouseEvent | TouchEvent) => {
+      if (!dragRef.current.dragging) return;
+      const pt = 'touches' in ev ? ev.touches[0] : ev;
+      const dx = pt.clientX - dragRef.current.startX;
+      if (Math.abs(dx) > 80) {
+        const newSide = dx > 0 ? 'right' : 'left';
+        setSide(newSide);
+        writeSide(newSide);
+        dragRef.current.dragging = false;
+      }
+    };
+    const onEnd = () => {
+      dragRef.current.dragging = false;
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onEnd);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onEnd);
+    window.addEventListener('touchmove', onMove);
+    window.addEventListener('touchend', onEnd);
+  }, []);
+
   if (hidden) return null;
+
+  const isLeft = side === 'left';
 
   return (
     <>
       {/* ===== FAB ===== */}
-      <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2 md:bottom-6 md:right-6">
-        {/* 推断气泡 */}
+      <div className={cn(
+        'fixed bottom-4 z-40 flex flex-col gap-2 md:bottom-6',
+        isLeft ? 'left-4 md:left-6' : 'right-4 md:right-6',
+      )}>
         <AnimatePresence>
           {!open && latestHint && !inCourse && (
             <motion.div
@@ -70,7 +112,7 @@ export default function AgentDock() {
         <button
           type="button"
           onClick={() => setOpen(!open)}
-          title={isExpert ? 'DIA-01 决策日志' : '伴学助手 · AI 学习助手'}
+          title="伴学助手"
           className={cn(
             'relative flex h-[52px] w-[52px] items-center justify-center rounded-full border-2 shadow-warm-lg transition-all duration-200 hover:scale-105',
             open ? 'border-brand bg-paper text-brand' : 'border-brand/20 bg-brand text-paper',
@@ -88,34 +130,46 @@ export default function AgentDock() {
         </button>
       </div>
 
-      {/* ===== 侧边栏（1/3 屏） ===== */}
+      {/* ===== 侧边栏 ===== */}
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
-            className="fixed inset-y-0 right-0 z-50 flex h-dvh w-[min(520px,44vw)] flex-col overflow-hidden rounded-l-[20px] border-l border-hairline bg-paper shadow-warm-lg"
+            initial={{ x: isLeft ? '-100%' : '100%', opacity: 0.5 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: isLeft ? '-100%' : '100%', opacity: 0.5 }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+            className={cn(
+              'fixed inset-y-3 z-50 flex h-[calc(100dvh-24px)] w-[min(520px,44vw)] flex-col overflow-hidden rounded-2xl border border-white/50 bg-paper/80 shadow-2xl backdrop-blur-xl',
+              isLeft ? 'left-3' : 'right-3',
+            )}
           >
+            {/* 拖拽横条 */}
+            <div
+              onMouseDown={onDragStart}
+              onTouchStart={onDragStart}
+              className="flex shrink-0 cursor-grab items-center justify-center py-1.5 active:cursor-grabbing"
+            >
+              <div className="flex h-5 w-10 items-center justify-center rounded-full bg-ink/10">
+                <GripHorizontal size={12} className="text-ink-muted" />
+              </div>
+            </div>
+
             {/* 头 */}
-            <div className="shrink-0 border-b border-hairline px-3 py-2.5">
+            <div className="shrink-0 border-b border-white/40 bg-paper/60 px-3 pb-2.5 backdrop-blur-md">
               <div className="flex items-center gap-2">
                 <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-paper">
                   <Brain size={14} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[13px] font-semibold text-ink">伴学助手 · AI 学习助手</p>
-                  <p className="text-[9px] text-ink-muted">DIA-01 学情诊断 · {currentLearner.name}</p>
+                  <p className="text-[14px] font-semibold text-ink">伴学助手</p>
                 </div>
-                <button type="button" onClick={() => { setOpen(false); navigate('/chat'); }} title="全屏对话" className="lf-row-btn !p-1.5">
+                <button type="button" onClick={() => { setOpen(false); navigate('/chat'); }} title="全屏" className="lf-row-btn !p-1.5">
                   <Maximize2 size={13} />
                 </button>
                 <button type="button" onClick={() => setOpen(false)} title="收起" className="lf-row-btn !p-1.5">
                   <X size={13} />
                 </button>
               </div>
-              {/* 会话切换 */}
               {sessions.length > 0 && (
                 <div className="mt-1.5 flex items-center gap-1.5">
                   <select
@@ -127,20 +181,14 @@ export default function AgentDock() {
                       <option key={s.id} value={s.id}>{s.title || '未命名对话'}</option>
                     ))}
                   </select>
-                  <button type="button" onClick={() => void createAgentSession()} title="新建会话" className="lf-row-btn !p-1">
+                  <button type="button" onClick={() => void createAgentSession()} title="新建" className="lf-row-btn !p-1">
                     <Plus size={12} />
                   </button>
                 </div>
               )}
-              {/* 当前页面上下文标签 */}
-              <div className="mt-1.5 flex items-center gap-1">
-                <span className="rounded-full bg-brand-tint px-2 py-0.5 text-[9px] text-brand">
-                  {location.pathname.startsWith('/learn/') ? '学习中' : location.pathname === '/me/profile' ? '画像页' : location.pathname === '/me' ? '首页' : location.pathname}
-                </span>
-              </div>
             </div>
 
-            {/* 消息流 + composer（compact 模式） */}
+            {/* 消息流 + composer */}
             <ChatStream compact pageContext={location.pathname} />
           </motion.div>
         )}

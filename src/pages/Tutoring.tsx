@@ -184,7 +184,7 @@ export default function Tutoring() {
     nearBottomRef.current = true;
   };
 
-  /* 回写钩子：本节结束 → 交给伴学助手(DIA-01)推理回写（画像 + 时间线 + 对话消息，闭环成环） */
+  /* 回写钩子：本节结束 → 交给伴学助手推理回写（画像 + 时间线 + 对话消息，闭环成环） */
   const wroteForRef = useRef<string | null>(null);
   useEffect(() => {
     if (!finished) return;

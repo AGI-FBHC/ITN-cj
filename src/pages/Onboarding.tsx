@@ -950,7 +950,7 @@ function DiaLine({ text }: { text: string }) {
         <Brain size={16} />
       </span>
       <div>
-        <div className="lf-mono-label !text-[10px]">伴学助手 · DIA-01 学情诊断</div>
+        <div className="lf-mono-label !text-[10px]">伴学助手</div>
         <p className="mt-0.5 text-[13.5px] leading-[21px] text-ink-2">{text}</p>
       </div>
     </div>

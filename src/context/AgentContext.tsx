@@ -1,5 +1,5 @@
 /**
- * AgentContext — 「伴学助手」(DIA-01) 的运行时：信号总线 + 消息流 + 置信度 + 验证会话
+ * AgentContext — 伴学助手的运行时：信号总线 + 消息流 + 置信度 + 验证会话
  * 所有页面通过 pushSignal 上报学习行为；伴学助手推理后：写画像(applyWriteback) + 发消息 + 涨置信度。
  * 消息/置信度/信号日志按学习者分桶，localStorage 持久化。
  */
@@ -106,7 +106,7 @@ const save = (key: string, v: unknown) => {
 let seq = 0;
 const mid = () => `m-${Date.now().toString(36)}-${(seq++).toString(36)}`;
 const now = () => new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
-const GREETING = '你好，我是伴学助手（DIA-01 学情诊断 Agent）。我会一直看着你的答题、阅读和实操记录，随时更新你的画像——每一次调整都有证据，你也可以随时质疑我。';
+const GREETING = '你好，我是伴学助手。我会关注你的学习过程，随时更新你的画像——每次调整都有依据，你也可以随时质疑我。';
 const clampConf = (n: number) => Math.max(10, Math.min(95, Math.round(n)));
 
 export function AgentProvider({ children }: { children: ReactNode }) {

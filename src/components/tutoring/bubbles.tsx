@@ -153,7 +153,7 @@ export function TutorBubble({
         <div className="mb-1 flex items-center gap-2">
           {/* 学习者只需要知道「这是老师在说话」，内部代号留给系统透视 */}
           <span className="text-[11.5px] font-semibold text-brand">
-            {isLearner ? '伴学助手老师' : 'DIA-01 · 导师'}
+            {isLearner ? '伴学老师' : 'DIA-01 · 导师'}
           </span>
           {stage && <StageProgress stage={stage} />}
           {!isLearner && confidence !== undefined && (
