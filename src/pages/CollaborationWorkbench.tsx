@@ -1066,10 +1066,16 @@ export default function CollaborationWorkbench() {
         });
         return { ...task, taskKind: 'resource' as const } as WorkbenchTask;
       };
-      const coreTargets = targets.filter((target) => target !== 'ppt');
-      const coreResults = await Promise.allSettled(coreTargets.map((target) => createOne(target)));
-      coreResults.forEach((result) => { if (result.status === 'fulfilled') created.push(result.value); else failed += 1; });
-      if (targets.includes('ppt') && !coreResults.some((result) => result.status === 'rejected')) {
+      const generationOrder: GenKind[] = ['lecture', 'practice', 'quiz'];
+      const coreTargets = generationOrder.filter((target) => targets.includes(target));
+      let coreFailed = false;
+      // Submit in a deterministic order. The backend executes the same FIFO
+      // order, so a batch is always lecture -> practice -> quiz -> ppt.
+      for (const target of coreTargets) {
+        try { created.push(await createOne(target)); }
+        catch { failed += 1; coreFailed = true; }
+      }
+      if (targets.includes('ppt') && !coreFailed) {
         try { created.push(await createOne('ppt')); } catch { failed += 1; }
       }
       const createdKeys = new Set(created.map(taskKey));
