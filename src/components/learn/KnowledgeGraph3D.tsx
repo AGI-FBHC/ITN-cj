@@ -867,7 +867,7 @@ function TopicActionModal({
           <div key={fn.form} className="relative">
           <button
             type="button"
-            className={cn('group h-[88px] w-full rounded-[16px] border border-[#E1E6DF] bg-white/75 px-3.5 py-3 text-left shadow-[0_8px_22px_rgba(41,63,51,0.06)] transition duration-200 hover:-translate-y-0.5 hover:border-[#AFC3B5] hover:bg-white hover:shadow-[0_14px_32px_rgba(41,63,51,0.12)]', status === 'missing' && 'cursor-not-allowed hover:translate-y-0 hover:border-[#E1E6DF] hover:bg-white/75 hover:shadow-[0_8px_22px_rgba(41,63,51,0.06)]', customizing && 'border-[#D89238]/50 bg-[#D89238]/5 hover:border-[#D89238]', customized && !isPpt && 'pr-10')}
+            className={cn('group relative h-[88px] w-full rounded-[16px] border border-[#E1E6DF] bg-white/75 px-3.5 py-3 text-left shadow-[0_8px_22px_rgba(41,63,51,0.06)] transition duration-200 hover:-translate-y-0.5 hover:border-[#AFC3B5] hover:bg-white hover:shadow-[0_14px_32px_rgba(41,63,51,0.12)]', status === 'missing' && 'cursor-not-allowed hover:translate-y-0 hover:border-[#E1E6DF] hover:bg-white/75 hover:shadow-[0_8px_22px_rgba(41,63,51,0.06)]', customizing && 'border-[#D89238]/50 bg-[#D89238]/5 hover:border-[#D89238]')}
             onClick={() => {
               /* 前端锁死：暂无资源不允许触发生成请求，后续由后台统一补齐 */
               if (status === 'missing') {
@@ -900,11 +900,11 @@ function TopicActionModal({
               }
             }}
           >
-            <span className="mb-2 flex items-center justify-between">
+            <span className="mb-2 block">
               <span className="flex h-8 w-8 items-center justify-center rounded-[11px] bg-[#EDF3EE] text-[#466C56] transition group-hover:bg-[#E2ECE5]">
                 <Icon size={17} strokeWidth={1.8} />
               </span>
-              <span className="flex items-center gap-1.5 text-[11px] font-medium text-[#6C7971]">
+              <span className="absolute right-3.5 top-3 flex min-w-[60px] items-center justify-end gap-1.5 text-[11px] font-medium text-[#6C7971]">
                 <i className="h-2 w-2 rounded-full" style={{ backgroundColor: busy ? '#D89238' : tag.color }} />
                 {busy ? '定制中…' : ((status === 'unlearned') && !customized && exists) ? '未定制' : tag.label}
               </span>

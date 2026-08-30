@@ -376,9 +376,10 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
                   <div key={f} className="flex w-full cursor-not-allowed items-center gap-3 rounded-[10px] border border-dashed border-brand/35 bg-paper px-3 py-2.5 text-left">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-tint text-brand"><Icon size={16} strokeWidth={1.75} /></span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium text-ink">{meta.label} · 暂无资源</span>
+                      <span className="block truncate text-[13px] font-medium text-ink">{meta.label}</span>
                       <span className="block truncate text-[11px] text-ink-muted">管理员尚未设置通用资源</span>
                     </span>
+                    <span className="w-[58px] shrink-0 text-right text-[10.5px] font-medium text-ink-muted">暂无资源</span>
                   </div>
                 );
               }
@@ -400,15 +401,20 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] font-medium text-ink">
-                      {busy ? `${meta.label} · 定制中` : openTarget ? `打开${meta.label}` : `${meta.label} · 未定制`}
+                      {meta.label}
                     </span>
                     <span className="block truncate text-[11px] text-ink-muted">
                       {busy ? `${cTask!.stageMessage ?? '正在定制'}（点击查看进度）` : openTarget ? (template?.title ?? cTask?.title) : '基于管理员母版进行个性化定制'}
                     </span>
                   </span>
-                  {busy ? <span className="shrink-0 font-mono text-[10px] text-brand">{cTask!.progress ?? 0}%</span>
-                    : openTarget ? <ArrowRight size={14} className="shrink-0 text-ink-muted transition-colors group-hover:text-brand" />
-                    : <Wand2 size={13} className="shrink-0 text-brand/70 transition-transform group-hover:scale-110" />}
+                  <span className="flex w-[76px] shrink-0 items-center justify-end gap-1.5">
+                    <span className={cn('text-[10.5px] font-medium', busy || openTarget ? 'text-brand' : 'text-ink-muted')}>
+                      {busy ? '定制中' : openTarget ? '已定制' : '未定制'}
+                    </span>
+                    {busy ? <span className="font-mono text-[9.5px] text-brand">{cTask!.progress ?? 0}%</span>
+                      : openTarget ? <ArrowRight size={14} className="text-ink-muted transition-colors group-hover:text-brand" />
+                      : <Wand2 size={13} className="text-brand/70 transition-transform group-hover:scale-110" />}
+                  </span>
                 </button>
                 </div>
               );
@@ -440,15 +446,20 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
             </span>
             <span className="min-w-0 flex-1">
               <span className="block text-[13px] font-medium text-ink">
-                {pptBusy ? '交互课件 · 定制中' : pptCustomized ? '打开交互课件' : pptForScope ? '交互课件 · 未定制' : '交互课件 · 暂无资源'}
+                交互课件
               </span>
               <span className="block truncate text-[11px] text-ink-muted">
                 {pptBusy ? `${pptCustomizeTask!.stageMessage ?? '正在定制'}（点击查看进度）` : pptCustomized ? (pptForScope?.title ?? pptCustomizeTask?.title) : pptForScope ? '基于管理员母版进行个性化定制' : '管理员尚未设置通用资源'}
               </span>
             </span>
-            {pptBusy ? <span className="shrink-0 font-mono text-[10px] text-brand">{pptCustomizeTask!.progress ?? 0}%</span>
-              : pptCustomized ? <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
-              : pptForScope ? <Wand2 size={13} className="shrink-0 text-brand/70 transition-transform group-hover:scale-110" /> : null}
+            <span className="flex w-[76px] shrink-0 items-center justify-end gap-1.5">
+              <span className={cn('text-[10.5px] font-medium', pptBusy || pptCustomized ? 'text-brand' : 'text-ink-muted')}>
+                {pptBusy ? '定制中' : pptCustomized ? '已定制' : pptForScope ? '未定制' : '暂无资源'}
+              </span>
+              {pptBusy ? <span className="font-mono text-[9.5px] text-brand">{pptCustomizeTask!.progress ?? 0}%</span>
+                : pptCustomized ? <ArrowRight size={14} className="text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
+                : pptForScope ? <Wand2 size={13} className="text-brand/70 transition-transform group-hover:scale-110" /> : null}
+            </span>
           </button>
         </div>
       </div>}
