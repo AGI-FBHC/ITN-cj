@@ -5,7 +5,7 @@
 import { useRef, useMemo, useState, useCallback, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Text, Line, PerspectiveCamera, Billboard } from '@react-three/drei';
-import { BookOpen, ClipboardCheck, Loader2, Maximize2, Presentation, ScrollText, Wand2, Wrench, X } from 'lucide-react';
+import { BookOpen, ClipboardCheck, Loader2, Presentation, ScrollText, Wand2, Wrench, X } from 'lucide-react';
 import * as THREE from 'three';
 import type { GraphNode, GraphEdge } from '@/data/knowledgeGraph';
 import { api } from '@/lib/api';
@@ -14,7 +14,6 @@ import type { ResourceForm, GeneratedResource } from '@/data/resources';
 import type { PresentationTaskSummary } from '@/lib/presentationApi';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { fullLearningResourcePath } from '@/lib/learningNavigation';
 import { useNavigate } from 'react-router-dom';
 import cjkFontUrl from '@/assets/fonts/noto-sans-cjk-sc-gb2312.otf';
 import CustomizeChoiceModal from '@/components/learn/CustomizeChoiceModal';
@@ -912,7 +911,6 @@ function TopicActionModal({
             </span>
             <strong className="block text-[15px] font-semibold text-[#26352D]">{fn.label}</strong>
           </button>
-          {customized && !isPpt && cTask?.resourceId && <button type="button" title="完整阅读模式" aria-label={`以完整模式打开${fn.label}`} onClick={() => navigate(fullLearningResourcePath(cTask.resourceId))} className="absolute bottom-2.5 right-2.5 rounded-lg border border-[#E1E6DF] bg-white p-1.5 text-[#6C7971] hover:border-[#AFC3B5] hover:text-[#2F6B4F]"><Maximize2 size={12} /></button>}
           </div>
         );
           })}
