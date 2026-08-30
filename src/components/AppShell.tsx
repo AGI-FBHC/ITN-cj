@@ -269,7 +269,7 @@ export default function AppShell() {
           {/* 漂浮微光（治愈氛围，专注时收起） */}
           {!(focusMode || isSlideMode) && <SparkField />}
           {/* 顶栏 */}
-          {!focusMode && (
+          {!(focusMode || isSlideMode) && (
           <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b border-hairline bg-paper/85 px-4 backdrop-blur-md md:px-6">
             {/* logo */}
             <Link to="/me" className="flex shrink-0 items-center gap-2.5">
@@ -350,7 +350,7 @@ export default function AppShell() {
           <ResumeLearningFab />
 
           {/* 移动端底部 tab */}
-          {!focusMode && (
+          {!(focusMode || isSlideMode) && (
           <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-hairline bg-paper/95 backdrop-blur-md md:hidden">
             {learnerNav.map((item) => (
               <NavLink
