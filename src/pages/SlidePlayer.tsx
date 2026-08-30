@@ -157,7 +157,7 @@ export default function SlidePlayer() {
     };
     void load();
     return () => { alive = false; if (timer) window.clearTimeout(timer); };
-  }, [taskId]);
+  }, [taskId, resourceId]);
 
   const slides = useMemo(() => {
     const ready = expandReadySlides(data?.slides ?? []);
@@ -223,21 +223,41 @@ export default function SlidePlayer() {
   useEffect(() => () => { if ('speechSynthesis' in window) window.speechSynthesis.cancel(); }, []);
   useEffect(() => { stopSpeech(); }, [currentIndex]);
 
-  const unassessedCount = slides.filter((_, i) => slideAssessments[i] == null).length;
+  const assessableSlides = slides
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => item.type !== 'question');
+  const unassessedCount = assessableSlides.filter(({ index }) => slideAssessments[index] == null).length;
+
+  const assessmentKey = (item: CustomizeSlide, index: number) => {
+    if (item.type === 'intro') return 'lecture-intro';
+    if (item.type === 'chapter') return `lecture-${item.unitIndex + 1}-${(item.partIndex ?? 0) + 1}`;
+    if (item.type === 'step') return `practice-step-${item.unitIndex + 1}`;
+    return `slide-${index + 1}`;
+  };
 
   const handleComplete = async () => {
     if (!data?.resourceId || completing) return;
     setCompleting(true);
-    setCompleteConfirmOpen(false);
     try {
+      const assessments: Record<string, number> = {};
+      assessableSlides.forEach(({ item, index }) => {
+        assessments[assessmentKey(item, index)] = slideAssessments[index] ?? 0.25;
+      });
+      if (Object.keys(assessments).length) {
+        await api.updateLearningResourceProgress(data.resourceId, {
+          currentBlockId: assessmentKey(slide!, currentIndex),
+          visitedBlockIds: assessableSlides.map(({ item, index }) => assessmentKey(item, index)),
+          selfAssessments: assessments,
+        });
+      }
       await api.completeLearningResource(data.resourceId);
-      // Write slide assessments as progress updates
-      const assessments = { ...slideAssessments };
-      slides.forEach((_, i) => { if (assessments[i] == null) assessments[i] = 0.25; });
-      // TODO: batch write assessments to backend
-    } catch { /* ignore */ }
-    markLearningMapReturn(currentLearner.id);
-    navigate('/learn');
+      setCompleteConfirmOpen(false);
+      markLearningMapReturn(currentLearner.id);
+      navigate('/learn');
+    } catch {
+      setError('学习记录保存失败，请稍后重试');
+      setCompleting(false);
+    }
   };
 
   return (
@@ -258,40 +278,11 @@ export default function SlidePlayer() {
                 <SourceList sources={pageSources} evidenceQuotes={slide.evidenceQuotes} />
               </div>
             </article>}
-      {/* 掌握程度自评 */}
-      {slide && slide.type !== "question" && (
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-hairline/70 bg-card-warm/80 px-4 py-2.5 md:px-6">
-          <div>
-            <div className="text-[12px] font-semibold text-ink">这一块你掌握得怎么样？</div>
-            <div className="mt-0.5 text-[10.5px] text-ink-muted">自评会和答题正确率一起计算掌握程度，可随时修改。</div>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {(["还需学习", "基本理解", "大体掌握", "我已经完全掌握"] as const).map((label) => {
-              const score = label === "还需学习" ? 0 : label === "基本理解" ? 0.25 : label === "大体掌握" ? 0.5 : 1;
-              return (
-                <button key={label} type="button" onClick={() => setSlideAssessments((prev) => ({ ...prev, [currentIndex]: score }))} className={`rounded-full border px-3 py-1.5 text-[11px] transition ${slideAssessments[currentIndex] === score ? "border-brand bg-brand-tint text-brand" : "border-hairline bg-paper text-ink-2 hover:border-brand/45"}`}>{label}</button>
-              );
-            })}
-          </div>
-        </div>
-      )}
       </section>
 
-      <footer className="flex shrink-0 flex-col gap-2 border-t border-hairline bg-card-warm px-4 py-2.5 md:px-6">
-        {slide && slide.type !== 'question' && (
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-[11px] font-medium text-ink-muted">这一块你掌握得怎么样？</div>
-            <div className="flex flex-wrap gap-1">
-              {(['还需学习', '基本理解', '大体掌握', '我已经完全掌握'] as const).map((label) => {
-                const score = label === '还需学习' ? 0 : label === '基本理解' ? 0.25 : label === '大体掌握' ? 0.5 : 1;
-                return (
-                  <button key={label} type="button" onClick={() => setSlideAssessments((prev) => ({ ...prev, [currentIndex]: score }))} className={`rounded-full border px-2.5 py-1 text-[10.5px] transition ${slideAssessments[currentIndex] === score ? 'border-brand bg-brand-tint text-brand font-medium' : 'border-hairline bg-paper text-ink-2 hover:border-brand/45'}`}>{label}</button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-        <div className="flex items-center justify-center gap-3">
+      <footer className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4 overflow-x-auto border-t border-hairline bg-card-warm px-4 py-2.5 md:px-6">
+        <div aria-hidden="true" />
+        <div className="flex shrink-0 items-center justify-self-center gap-3">
           <button type="button" disabled={currentIndex === 0} onClick={() => setCurrentIndex((value) => Math.max(0, value - 1))} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="上一页"><ChevronLeft size={17} /></button>
           <button type="button" onClick={speakCurrent} className="flex h-11 items-center gap-2 rounded-full bg-brand px-5 text-[12.5px] font-medium text-paper">{speaking ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}{speaking ? '暂停讲播' : '讲这一页'}</button>
           <button type="button" onClick={() => setSpeechRateIndex((value) => (value + 1) % speechRates.length)} className="h-10 rounded-full border border-hairline px-4 font-mono text-[11px] text-ink-muted">{speechRates[speechRateIndex].toFixed(1)}×</button>
@@ -302,6 +293,19 @@ export default function SlidePlayer() {
             <button type="button" disabled={!readyNext} onClick={() => setCurrentIndex((value) => Math.min(slides.length - 1, value + 1))} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="下一页"><ChevronRight size={17} /></button>
           )}
         </div>
+        {slide && slide.type !== 'question' && (
+          <div className="flex shrink-0 items-center justify-self-end gap-2 border-l border-hairline pl-4">
+            <span className="text-[10.5px] font-medium text-ink-muted">掌握程度</span>
+            <div className="flex items-center gap-1">
+              {(['还需学习', '基本理解', '大体掌握', '完全掌握'] as const).map((label) => {
+                const score = label === '还需学习' ? 0 : label === '基本理解' ? 0.25 : label === '大体掌握' ? 0.5 : 1;
+                return (
+                  <button key={label} type="button" onClick={() => setSlideAssessments((prev) => ({ ...prev, [currentIndex]: score }))} aria-pressed={slideAssessments[currentIndex] === score} className={`whitespace-nowrap rounded-full border px-2.5 py-1 text-[10.5px] transition ${slideAssessments[currentIndex] === score ? 'border-brand bg-brand text-paper shadow-sm' : 'border-hairline bg-paper text-ink-2 hover:border-brand/45 hover:text-brand'}`}>{label}</button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </footer>
       {completeConfirmOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm" onClick={() => setCompleteConfirmOpen(false)} role="dialog" aria-modal="true" aria-label="完成确认">
@@ -310,7 +314,7 @@ export default function SlidePlayer() {
             <p className="mt-1.5 text-[12.5px] leading-5 text-ink-muted">未选择的卡片将默认标记为「基本理解」（25% 掌握分），与你的选择一起计入掌握程度。确认后立即返回知识网络。</p>
             <div className="mt-5 flex gap-2">
               <button type="button" onClick={() => setCompleteConfirmOpen(false)} className="lf-btn-ghost flex-1 justify-center">再想想</button>
-              <button type="button" onClick={() => void handleComplete()} className="lf-btn-primary flex-1 justify-center">确认完成并返回</button>
+              <button type="button" disabled={completing} onClick={() => void handleComplete()} className="lf-btn-primary flex-1 justify-center disabled:opacity-50">{completing ? <Loader2 size={14} className="animate-spin" /> : null}确认完成并返回</button>
             </div>
           </div>
         </div>

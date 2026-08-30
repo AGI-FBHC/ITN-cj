@@ -347,7 +347,7 @@ export default function AppShell() {
           {!(focusMode || isSlideMode) && <AgentDock />}
 
           {/* 全局「继续学习」浮标 · 左下角，随时回到当前路径节点 */}
-          <ResumeLearningFab />
+          {!isSlideMode && <ResumeLearningFab />}
 
           {/* 移动端底部 tab */}
           {!(focusMode || isSlideMode) && (
