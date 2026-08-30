@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Check, ChevronLeft, ChevronRight, CircleAlert, Loader2, Pause, Play, Presentation, Volume1, Volume2, VolumeX, X } from 'lucide-react';
-import { api, type CustomizeSlide, type CustomizeSlidesResponse } from '@/lib/api';
+import { BookOpen, Check, ChevronLeft, ChevronRight, CircleAlert, Loader2, Pause, Play, Presentation, Volume1, Volume2, VolumeX, X } from 'lucide-react';
+import { api, type CustomizeSlide, type CustomizeSlidesResponse, type LearningResource } from '@/lib/api';
 import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
 import { slideMdComponents } from '@/components/resources/lecture-markdown';
 import remarkCitationMarks from '@/lib/remarkCitationMarks';
@@ -93,6 +93,7 @@ export default function SlidePlayer() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [error, setError] = useState('');
   const [resourceSources, setResourceSources] = useState<Array<Record<string, unknown>>>([]);
+  const [completedResource, setCompletedResource] = useState<LearningResource | null>(null);
   const [speaking, setSpeaking] = useState(false);
   const [speechRateIndex, setSpeechRateIndex] = useState(2);
   const [volumeIndex, setVolumeIndex] = useState(0);
@@ -121,7 +122,23 @@ export default function SlidePlayer() {
     return () => { alive = false; if (timer) window.clearTimeout(timer); };
   }, [taskId]);
 
-  const slides = useMemo(() => expandReadySlides(data?.slides ?? []), [data?.slides]);
+  const slides = useMemo(() => {
+    const ready = expandReadySlides(data?.slides ?? []);
+    if (ready.some((item) => item.type === 'intro') || data?.resourceType !== 'lecture' || !completedResource) return ready;
+    const objectives = Array.isArray(completedResource.content.learningObjectives)
+      ? completedResource.content.learningObjectives.map(String).filter(Boolean)
+      : [];
+    const summary = String(completedResource.content.summary ?? '').trim();
+    if (!summary && !objectives.length) return ready;
+    const body = [
+      summary,
+      objectives.length ? `**完成本讲后，你将能够：**\n${objectives.map((item) => `- ${item}`).join('\n')}` : '',
+    ].filter(Boolean).join('\n\n');
+    return [{
+      index: 0, unitIndex: 0, totalUnits: ready.length, type: 'intro' as const,
+      title: '学习目标与内容概览', content: body,
+    }, ...ready.map((item, index) => ({ ...item, index: index + 1 }))];
+  }, [data?.slides, data?.resourceType, completedResource]);
   useEffect(() => { if (slides.length && currentIndex >= slides.length) setCurrentIndex(slides.length - 1); }, [slides.length, currentIndex]);
   const slide = slides[currentIndex];
   useEffect(() => { cardScrollRef.current?.scrollTo({ top: 0 }); }, [currentIndex, slide?.index]);
@@ -131,7 +148,10 @@ export default function SlidePlayer() {
     if (!data?.resourceId) return;
     let alive = true;
     void api.getLearningResource(data.resourceId).then((resource) => {
-      if (alive) setResourceSources((resource.sources ?? []) as Array<Record<string, unknown>>);
+      if (alive) {
+        setCompletedResource(resource);
+        setResourceSources((resource.sources ?? []) as Array<Record<string, unknown>>);
+      }
     }).catch(() => undefined);
     return () => { alive = false; };
   }, [data?.resourceId]);
@@ -142,12 +162,6 @@ export default function SlidePlayer() {
       ? resourceSources.filter((source, index) => ids.has(Number(source.id ?? index + 1)))
       : [];
   }, [slide, resourceSources]);
-
-  useEffect(() => {
-    if (data?.status === 'completed' && data.resourceId) {
-      navigate(`/learn/resource/${encodeURIComponent(data.resourceId)}`, { replace: true });
-    }
-  }, [data?.status, data?.resourceId, navigate]);
 
   const stopSpeech = () => {
     if ('speechSynthesis' in window) window.speechSynthesis.cancel();
@@ -176,13 +190,14 @@ export default function SlidePlayer() {
       <header className="flex shrink-0 items-center gap-3 border-b border-hairline bg-card-warm px-4 py-3 md:px-6">
         <Presentation size={17} className="text-brand" />
         <div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold text-ink">幻灯模式 · {data?.title ?? '正在准备个性化学习内容'}</div><div className="font-mono text-[9.5px] text-ink-muted">个性化内容生成中 · 第 {slides.length ? currentIndex + 1 : 0}/{expected || slides.length || 0} 页</div></div>
+        {data?.resourceId && <button type="button" onClick={() => { stopSpeech(); navigate(`/learn/resource/${encodeURIComponent(data.resourceId!)}?view=full`); }} className="inline-flex h-9 items-center gap-1.5 rounded-[10px] border border-hairline bg-paper px-3 text-[11px] font-medium text-ink-2 hover:border-brand/35 hover:text-brand"><BookOpen size={13} />全屏阅读</button>}
         <button type="button" onClick={() => { stopSpeech(); markLearningMapReturn(currentLearner.id); navigate('/learn'); }} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep" title="退出幻灯"><X size={17} /></button>
       </header>
 
       <section className="flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-gradient-to-br from-brand-tint/25 via-paper to-card-warm px-4 py-8 md:px-12">
         {!slide ? <div className="flex h-full w-full max-w-[880px] flex-col items-center justify-center rounded-[24px] border border-dashed border-brand/30 bg-card-warm px-6 text-center"><Loader2 size={25} className="animate-spin text-brand" /><h1 className="mt-4 font-serif text-[23px] font-semibold text-ink">正在准备第一张学习卡片</h1><p className="mt-2 max-w-md text-[12.5px] leading-6 text-ink-muted">第一章或第一个步骤完成后会立即显示，不必等待整项资源生成。</p>{error && <p className="mt-4 flex items-center gap-1.5 text-[11px] text-brand-danger"><CircleAlert size={13} />{error}</p>}</div>
           : <article className="relative flex h-full min-h-0 w-full max-w-[1040px] flex-col overflow-hidden rounded-[24px] border border-brand/20 bg-card-warm/95 shadow-warm-lg">
-              <div className="flex shrink-0 items-center justify-between gap-4 border-b border-hairline/70 bg-paper/55 px-6 py-3.5 md:px-9"><span className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.1em] text-brand">{slide.type === 'question' ? '分阶练习' : slide.type === 'step' ? '实操步骤' : '领学章节'}</span>{data?.status === 'generating' && <span className="inline-flex items-center gap-1.5 text-[10.5px] text-ink-muted"><Loader2 size={12} className="animate-spin" />后续卡片生成中</span>}</div>
+              <div className="flex shrink-0 items-center justify-between gap-4 border-b border-hairline/70 bg-paper/55 px-6 py-3.5 md:px-9"><span className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.1em] text-brand">{slide.type === 'question' ? '分阶练习' : slide.type === 'step' ? '实操步骤' : slide.type === 'intro' ? '本讲导览' : '领学章节'}</span>{data?.status === 'generating' && <span className="inline-flex items-center gap-1.5 text-[10.5px] text-ink-muted"><Loader2 size={12} className="animate-spin" />后续卡片生成中</span>}</div>
               <div ref={cardScrollRef} className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-6 pb-8 pt-5 [scrollbar-gutter:stable] md:px-9 md:pb-9 md:pt-6">
                 {slide.type === 'question' ? <QuizCard key={slide.index} slide={slide} /> : <><h1 className="font-serif text-[28px] font-semibold leading-tight text-ink md:text-[34px]">{slide.title}</h1><div className="mt-6 h-1 w-14 rounded-full bg-brand" /><div className="mt-7 max-w-none text-ink-2"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{String(slide.content ?? '')}</ReactMarkdown></div></>}
                 <SourceList sources={pageSources} evidenceQuotes={slide.evidenceQuotes} />

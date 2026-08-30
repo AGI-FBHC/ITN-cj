@@ -497,7 +497,7 @@ export interface CustomizeSlide {
   totalUnits: number;
   partIndex?: number;
   partCount?: number;
-  type: 'chapter' | 'step' | 'question';
+  type: 'intro' | 'chapter' | 'step' | 'question';
   title: string;
   content: string | Record<string, unknown>;
   sources?: Array<Record<string, unknown>>;
