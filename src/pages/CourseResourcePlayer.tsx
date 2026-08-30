@@ -28,6 +28,7 @@ import { lectureMdComponents, slideMdComponents } from '@/components/resources/l
 import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
 import { refreshLearningMapResourceCache } from '@/hooks/useLearningMap';
 import { useProfile } from '@/context/ProfileContext';
+import LearningCompleteDialog from '@/components/learn/LearningCompleteDialog';
 
 /** 智能助教聊天消息：在基础文本之上携带多模态类型与附件信息 */
 interface ChatMessage extends LearningResourceMessage {
@@ -1357,18 +1358,6 @@ ${chatContext.content}
         <button type="button" onClick={() => setPreviewPhoto(null)} className="absolute right-5 top-5 flex h-10 w-10 items-center justify-center rounded-full bg-paper/10 text-paper backdrop-blur transition hover:bg-paper/20" aria-label="关闭预览"><X size={18} /></button>
       </div>
     )}
-  {completeConfirmOpen && (
-      <div className="fixed inset-0 z-[110] flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm" onClick={() => setCompleteConfirmOpen(false)} role="dialog" aria-modal="true" aria-label="完成确认">
-        <div className="w-full max-w-[420px] rounded-[18px] border border-brand/30 bg-card-warm p-6 shadow-warm-lg" onClick={(event) => event.stopPropagation()}>
-          <h3 className="font-serif text-[18px] font-semibold text-ink">还有 {unassessedCount} 段没选掌握程度</h3>
-          <p className="mt-1.5 text-[12.5px] leading-5 text-ink-muted">未选择的段落将默认标记为「基本理解」（25% 掌握分），与你的选择一起计入掌握程度。确认后立即返回知识网络。</p>
-          <div className="mt-5 flex gap-2">
-            <button type="button" onClick={() => setCompleteConfirmOpen(false)} className="lf-btn-ghost flex-1 justify-center">再想想</button>
-            <button type="button" onClick={confirmComplete} className="lf-btn-primary flex-1 justify-center">确认完成并返回地图</button>
-          </div>
-          <button type="button" disabled={restarting} onClick={() => void restartPractice()} className="lf-btn-ghost mt-2 w-full justify-center !py-2 text-brand-danger">{restarting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}重新练习 · 清空掌握度重测</button>
-        </div>
-      </div>
-    )}
+  <LearningCompleteDialog open={completeConfirmOpen} unassessedCount={unassessedCount} confirming={completing} restarting={restarting} onClose={() => setCompleteConfirmOpen(false)} onConfirm={confirmComplete} onRestart={() => void restartPractice()} />
   </div>;
 }

@@ -10,6 +10,7 @@ import remarkCitationMarks from '@/lib/remarkCitationMarks';
 import { cn } from '@/lib/utils';
 import { useProfile } from '@/context/ProfileContext';
 import { markLearningMapReturn } from '@/lib/learningNavigation';
+import LearningCompleteDialog from '@/components/learn/LearningCompleteDialog';
 
 type QuizValue = string | number;
 
@@ -101,6 +102,7 @@ export default function SlidePlayer() {
   const [volumeIndex, setVolumeIndex] = useState(0);
   const cardScrollRef = useRef<HTMLDivElement>(null);
   const [completing, setCompleting] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const [completeConfirmOpen, setCompleteConfirmOpen] = useState(false);
   const [slideAssessments, setSlideAssessments] = useState<Record<number, number>>({});
   const speechRates = [0.8, 0.9, 1, 1.1, 1.2];
@@ -260,6 +262,23 @@ export default function SlidePlayer() {
     }
   };
 
+  const handleRestart = async () => {
+    if (!data?.resourceId || restarting) return;
+    setRestarting(true);
+    try {
+      const result = await api.resetLearningResource(data.resourceId);
+      setCompletedResource(result.resource);
+      setSlideAssessments({});
+      setCurrentIndex(0);
+      setCompleteConfirmOpen(false);
+      setError('');
+    } catch {
+      setError('学习记录重置失败，请稍后重试');
+    } finally {
+      setRestarting(false);
+    }
+  };
+
   return (
     <main className="fixed inset-0 z-[9999] flex min-h-0 flex-col overflow-hidden bg-paper">
       <header className="flex shrink-0 items-center gap-3 border-b border-hairline bg-card-warm px-4 py-3 md:px-6">
@@ -307,18 +326,7 @@ export default function SlidePlayer() {
           </div>
         )}
       </footer>
-      {completeConfirmOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm" onClick={() => setCompleteConfirmOpen(false)} role="dialog" aria-modal="true" aria-label="完成确认">
-          <div className="w-full max-w-[420px] rounded-[18px] border border-brand/30 bg-card-warm p-6 shadow-warm-lg" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-serif text-[18px] font-semibold text-ink">还有 {unassessedCount} 张卡片没选掌握程度</h3>
-            <p className="mt-1.5 text-[12.5px] leading-5 text-ink-muted">未选择的卡片将默认标记为「基本理解」（25% 掌握分），与你的选择一起计入掌握程度。确认后立即返回知识网络。</p>
-            <div className="mt-5 flex gap-2">
-              <button type="button" onClick={() => setCompleteConfirmOpen(false)} className="lf-btn-ghost flex-1 justify-center">再想想</button>
-              <button type="button" disabled={completing} onClick={() => void handleComplete()} className="lf-btn-primary flex-1 justify-center disabled:opacity-50">{completing ? <Loader2 size={14} className="animate-spin" /> : null}确认完成并返回</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <LearningCompleteDialog open={completeConfirmOpen} unassessedCount={unassessedCount} confirming={completing} restarting={restarting} onClose={() => setCompleteConfirmOpen(false)} onConfirm={() => void handleComplete()} onRestart={() => void handleRestart()} />
     </main>
   );
 }
