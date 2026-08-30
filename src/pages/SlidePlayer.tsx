@@ -108,6 +108,7 @@ export default function SlidePlayer() {
   const [completeConfirmOpen, setCompleteConfirmOpen] = useState(false);
   const [slideAssessments, setSlideAssessments] = useState<Record<number, number>>({});
   const [noteOpen, setNoteOpen] = useState(false);
+  const [pulseFlash, setPulseFlash] = useState(false);
   const [noteText, setNoteText] = useState('');
   const speechRates = [0.8, 0.9, 1, 1.1, 1.2];
   const volumes = [1, 0.6, 0.3, 0];
@@ -231,7 +232,7 @@ export default function SlidePlayer() {
 
   const assessableSlides = slides
     .map((item, index) => ({ item, index }))
-    .filter(({ item }) => item.type !== 'question');
+    .filter(({ item, index }) => item.type !== 'question' && item.type !== 'intro' && index > 0 && index < slides.length - 1);
   const unassessedCount = assessableSlides.filter(({ index }) => slideAssessments[index] == null).length;
 
   const assessmentKey = (item: CustomizeSlide, index: number) => {
@@ -300,6 +301,15 @@ export default function SlidePlayer() {
     setNoteOpen(false);
   };
 
+  const needsAssessment = slide && slide.type !== "question" && slide.type !== "intro" && currentIndex > 0 && !isLastSlide;
+  const goNext = () => {
+    if (needsAssessment && slideAssessments[currentIndex] == null) {
+      setPulseFlash(true);
+      setTimeout(() => setPulseFlash(false), 1800);
+      return;
+    }
+    setCurrentIndex((v) => Math.min(slides.length - 1, v + 1));
+  };
   return (
     <main className="fixed inset-0 z-[9999] flex min-h-0 flex-col overflow-hidden bg-paper">
       <header className="flex shrink-0 items-center gap-3 border-b border-hairline bg-card-warm px-4 py-3 md:px-6">
@@ -331,11 +341,11 @@ export default function SlidePlayer() {
           {isLastSlide && data?.resourceId ? (
             <button type="button" disabled={completing} onClick={() => setCompleteConfirmOpen(true)} className="flex h-10 items-center gap-1.5 rounded-full bg-brand px-5 text-[12px] font-medium text-paper disabled:opacity-50">{completing ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}完成学习</button>
           ) : (
-            <button type="button" disabled={!readyNext} onClick={() => setCurrentIndex((value) => Math.min(slides.length - 1, value + 1))} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="下一页"><ChevronRight size={17} /></button>
+            <button type="button" disabled={!readyNext} onClick={goNext} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="下一页"><ChevronRight size={17} /></button>
           )}
         </div>
-        {slide && slide.type !== 'question' && (
-          <div className="flex shrink-0 items-center justify-self-end gap-2 border-l border-hairline pl-4">
+        {needsAssessment && (
+          <div className={`flex shrink-0 items-center justify-self-end gap-2 border-l border-hairline pl-4 ${pulseFlash ? 'animate-pulse' : ''}`}>
             <span className="text-[10.5px] font-medium text-ink-muted">掌握程度</span>
             <div className="flex items-center gap-1">
               {(['还需学习', '基本理解', '大体掌握', '完全掌握'] as const).map((label) => {
