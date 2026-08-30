@@ -352,7 +352,7 @@ export default function SlidePlayer() {
                 const colors = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6'];
                 return (
                   <button key={score} type="button" onClick={() => setSlideAssessments((prev) => ({ ...prev, [currentIndex]: score }))} className="group relative flex items-center justify-center" title={['还需学习', '基本理解', '大体掌握', '完全掌握'][i]}>
-                    <div className={`h-3 transition-all duration-200 ${i === 0 ? 'w-7 rounded-l-full' : i === 3 ? 'w-7 rounded-r-full' : 'w-7'} ${active ? '' : 'bg-paper-deep hover:bg-ink-muted/20'}`} style={active ? { backgroundColor: colors[i] } : undefined} />
+                    <div className={`h-3.5 w-7 transition-all duration-200 ${i === 0 ? 'rounded-l-full' : i === 3 ? 'rounded-r-full' : ''} ${active ? 'shadow-sm' : 'bg-ink-muted/15 hover:bg-ink-muted/25'}`} style={active ? { backgroundColor: colors[i] } : undefined} />
                   </button>
                 );
               })}
