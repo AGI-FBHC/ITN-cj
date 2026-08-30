@@ -301,6 +301,16 @@ export default function AppShell() {
 
             {/* 右侧集群 */}
             <div className="ml-auto flex shrink-0 items-center gap-2 whitespace-nowrap md:ml-0">
+              <Link
+                to="/me/notes"
+                title="我的笔记"
+                aria-label={`我的笔记，共 ${notes.length} 条`}
+                className="relative flex h-9 items-center gap-1.5 rounded-[10px] border border-hairline bg-card-warm px-2.5 text-[12.5px] font-medium text-ink-2 transition-all duration-200 hover:border-brand/35 hover:bg-brand-tint/30 hover:text-brand"
+              >
+                <NotebookPen size={15} />
+                <span className="hidden lg:inline">笔记</span>
+                {notes.length > 0 && <span className="flex min-w-4 items-center justify-center rounded-full bg-brand-tint px-1 font-mono text-[9px] leading-4 text-brand">{notes.length > 99 ? '99+' : notes.length}</span>}
+              </Link>
               <button
                 type="button"
                 onClick={() => setSearchOpen(true)}
@@ -461,6 +471,16 @@ export default function AppShell() {
 
               {/* 右侧控件群：整体不参与压缩，窄屏按重要度分级隐藏，杜绝挤压变形 */}
               <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
+                <Link
+                  to="/me/notes"
+                  title="我的笔记"
+                  aria-label={`我的笔记，共 ${notes.length} 条`}
+                  className="flex h-8 shrink-0 items-center gap-1.5 rounded-[9px] border border-hairline bg-card-warm px-2.5 text-[12px] font-medium text-ink-2 transition-all duration-200 hover:border-brand/35 hover:text-brand"
+                >
+                  <NotebookPen size={13} />
+                  <span className="hidden lg:inline">笔记</span>
+                  {notes.length > 0 && <span className="font-mono text-[9px] text-brand">{notes.length > 99 ? '99+' : notes.length}</span>}
+                </Link>
                 <button
                   type="button"
                   onClick={() => setSearchOpen(true)}

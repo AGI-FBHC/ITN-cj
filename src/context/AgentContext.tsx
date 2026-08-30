@@ -439,6 +439,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
                   m.id === pendingId ? { id: pendingId, kind: 'agent', text: acc, time: now() } : m
                 )),
               }));
+            } else if (event.type === 'note_saved') {
+              window.dispatchEvent(new CustomEvent('itn:assistant-note-saved'));
             }
           },
         );

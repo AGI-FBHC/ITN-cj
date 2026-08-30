@@ -50,6 +50,13 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   const { pushSignal } = useAgent();
   const [notes, setNotes] = useState<Note[]>([]);
 
+  const reloadNotes = () => {
+    if (!session?.token) return;
+    void api.listNotes()
+      .then(({ notes: records }) => setNotes(records.map(toNote)))
+      .catch(() => undefined);
+  };
+
   useEffect(() => {
     if (!session?.token) {
       setNotes([]);
@@ -60,6 +67,14 @@ export function NotesProvider({ children }: { children: ReactNode }) {
       .then(({ notes: records }) => { if (!cancelled) setNotes(records.map(toNote)); })
       .catch(() => { if (!cancelled) setNotes([]); });
     return () => { cancelled = true; };
+  }, [currentLearnerId, session?.token]);
+
+  useEffect(() => {
+    const onAssistantNoteSaved = () => reloadNotes();
+    window.addEventListener('itn:assistant-note-saved', onAssistantNoteSaved);
+    return () => window.removeEventListener('itn:assistant-note-saved', onAssistantNoteSaved);
+    // reloadNotes intentionally follows the active auth/profile values.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentLearnerId, session?.token]);
 
   const value = useMemo<NotesContextValue>(() => {
