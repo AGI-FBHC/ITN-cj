@@ -1010,13 +1010,13 @@ export default function CollaborationWorkbench() {
     if (loadInFlightRef.current) return;
     loadInFlightRef.current = true;
     try {
-    const resources = await api.listLearningResourceTasks(100, true);
+    const resources = await api.listLearningResourceTasks(1000, true);
     const resourceTasks: WorkbenchTask[] = resources.tasks
       .filter((task) => !isAdmin || contextOf({ ...task, taskKind: 'resource' }).adminGeneration === true)
       .map((task) => ({ ...task, taskKind: 'resource' as const }));
     let pptTasks: WorkbenchTask[] = [];
     if (isAdmin) {
-      const presentations = await presentationApi.listPresentationSummariesFresh(100, true);
+      const presentations = await presentationApi.listPresentationSummariesFresh(1000, true);
       pptTasks = presentations.tasks.filter((task) => task.request?.generationContext?.adminGeneration === true)
         .map((task) => ({ ...task, taskKind: 'ppt' as const, resourceType: 'ppt' as const }));
     }
