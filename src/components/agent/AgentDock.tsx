@@ -5,7 +5,7 @@
  * 侧边边缘：按住拖拽调整宽度（左浮→右边拖，右浮→左边拖）
  * 位置和宽度持久化到 localStorage
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useMotionValue, useTransform, animate } from 'framer-motion';
 import { Brain, GripHorizontal, Maximize2, Plus, X } from 'lucide-react';
@@ -51,13 +51,6 @@ export default function AgentDock() {
     return p.startsWith('/admin') || p === '/login' || p === '/welcome' || p === '/onboarding';
   }, [location.pathname]);
 
-  /* Escape 关闭 */
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && open) setOpen(false); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, setOpen]);
-
   /* ====== 拖拽移动 ====== */
   const dragX = useMotionValue(0);
   const startDragMove = useCallback((e: React.MouseEvent | React.TouchEvent) => {
@@ -72,13 +65,6 @@ export default function AgentDock() {
     };
     const onEnd = () => {
       const offset = dragX.get();
-      // 拖动条中心接近屏幕边缘（30px内）→ 自动收起
-      const handleCenter = baseX + panelW / 2 + offset;
-      if (handleCenter < 30 || handleCenter > window.innerWidth - 30) {
-        setOpen(false);
-        dragX.set(0);
-        return;
-      }
       if (Math.abs(offset) > panelW * 0.2) {
         const newSide = offset > 0 ? 'right' : 'left';
         setSide(newSide);
@@ -240,7 +226,7 @@ export default function AgentDock() {
                 <button type="button" onClick={() => { setOpen(false); navigate('/chat'); }} title="全屏" className="lf-row-btn !p-1">
                   <Maximize2 size={12} />
                 </button>
-                <button type="button" onClick={() => setOpen(false)} title="收起" className="lf-row-btn !p-1">
+                <button type="button" onClick={() => setOpen(false)} title="关闭" className="lf-row-btn !p-1">
                   <X size={12} />
                 </button>
               </div>
