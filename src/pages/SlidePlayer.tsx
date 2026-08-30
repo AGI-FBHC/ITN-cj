@@ -345,7 +345,7 @@ export default function SlidePlayer() {
           )}
         </div>
         {needsAssessment && (
-          <div className={`flex shrink-0 items-center justify-self-end gap-2 border-l border-hairline pl-4 ${pulseFlash ? 'animate-pulse' : ''}`}>
+          <div className={`flex shrink-0 items-center justify-self-end gap-2 border-l border-hairline pl-4 ${pulseFlash ? 'rounded-lg shadow-[0_0_12px_3px_rgba(88,166,255,0.5)] transition-shadow duration-300' : 'transition-shadow duration-500'}`}>
             <span className="text-[10.5px] font-medium text-ink-muted">掌握程度</span>
             <div className="flex items-center gap-1">
               {(['还需学习', '基本理解', '大体掌握', '完全掌握'] as const).map((label) => {
