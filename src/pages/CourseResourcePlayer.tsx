@@ -476,7 +476,6 @@ export default function CourseResourcePlayer() {
   const narration = useResourceNarration(() => narrationFinishedRef.current());
   const narrationFinishedRef = useRef<() => void>(() => undefined);
   const [resource, setResource] = useState<LearningResource | null>(null);
-  const [customizeTaskId, setCustomizeTaskId] = useState<string | null>(null);
   const [writebackStatus, setWritebackStatus] = useState<'idle' | 'syncing' | 'synced' | 'failed'>('idle');
   const [course, setCourse] = useState<Course | null>(null);
   const [chapterResources, setChapterResources] = useState<LearningResourceSummary[]>([]);
@@ -609,23 +608,6 @@ export default function CourseResourcePlayer() {
   }, [resourceId]);
 
   const blocks = useMemo(() => resource ? blocksOf(resource) : [], [resource]);
-
-  useEffect(() => {
-    if (!resource?.id) {
-      setCustomizeTaskId(null);
-      return;
-    }
-    let cancelled = false;
-    setCustomizeTaskId(null);
-    void api.listCustomizeTasks(resource.kpId).then(({ tasks }) => {
-      if (cancelled) return;
-      const task = tasks.find((item) => item.status === 'completed' && item.resourceId === resource.id);
-      setCustomizeTaskId(task?.id ?? null);
-    }).catch(() => {
-      if (!cancelled) setCustomizeTaskId(null);
-    });
-    return () => { cancelled = true; };
-  }, [resource?.id, resource?.kpId]);
 
   useEffect(() => {
     /* 预取下一个资源（按讲义/实操/测试顺序），后台拉取并写入缓存，切换时秒开 */
@@ -1340,13 +1322,7 @@ ${chatContext.content}
       <div className="hidden min-w-0 flex-1 sm:block"><div className="truncate text-[12.5px] font-medium text-ink">{activeBlock?.title ?? resource.title}</div><div className="mt-0.5 flex items-center gap-2 font-mono text-[9.5px] text-ink-muted"><span><Headphones size={10} className="mr-1 inline" />{narration.speaking ? '正在讲播' : '点击播放当前段落'}</span><span>{currentIndex + 1}/{blocks.length}</span></div></div>
       <button type="button" onClick={cycleSpeed} className="flex h-9 shrink-0 items-center gap-1 rounded-[10px] border border-hairline px-2.5 text-[10.5px] text-ink-muted" title="切换语速"><Gauge size={13} /><span>{speedMeta[speechSpeed].label}</span></button>
       <button type="button" onClick={cycleVolume} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-hairline text-ink-muted" title={narration.volume === 0 ? '恢复音量' : `音量 ${Math.round(narration.volume * 100)}%`}>{narration.volume === 0 ? <VolumeX size={13} /> : narration.volume < 0.6 ? <Volume1 size={13} /> : <Volume2 size={13} />}</button>
-      <button type="button" onClick={() => {
-        if (customizeTaskId && resource) {
-          navigate(`/learn/slide/${customizeTaskId}?returnResource=${encodeURIComponent(resource.id)}`);
-          return;
-        }
-        setSlideMode(true);
-      }} className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted" title="幻灯模式"><Presentation size={13} /><span className="hidden md:inline">幻灯</span></button>
+      <button type="button" onClick={() => setSlideMode(true)} className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted" title="幻灯模式"><Presentation size={13} /><span className="hidden md:inline">幻灯</span></button>
       <button type="button" onClick={() => void openChat()} aria-label="向智能助教提问" className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted"><Bot size={13} /><span className="hidden lg:inline">提问</span></button>
       <button type="button" onClick={() => { stopNoteListening(); if (activeBlock) { setNoteFor(activeBlock); setNoteText(''); setNoteImg(null); } }} aria-label="记录当前段落笔记" className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted"><NotebookPen size={13} /><span className="hidden lg:inline">笔记</span></button>
     </div>
@@ -1360,7 +1336,7 @@ ${chatContext.content}
     {createPortal(<AnimatePresence>{slideMode && activeBlock && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[9999] flex flex-col bg-paper">
       <header className="flex items-center gap-3 border-b border-hairline bg-card-warm px-4 py-3 md:px-6"><Presentation size={17} className="text-brand" /><div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold text-ink">幻灯模式 · {resource.title}</div><div className="font-mono text-[9.5px] text-ink-muted">真实课程内容 · 第 {currentIndex + 1}/{blocks.length} 段</div></div><button type="button" onClick={() => setSlideMode(false)} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep" title="退出幻灯"><X size={17} /></button></header>
       <main ref={slideViewportRef} className="flex flex-1 items-center justify-center overflow-x-hidden overflow-y-auto bg-gradient-to-br from-brand-tint/25 via-paper to-card-warm px-4 py-8 md:px-12"><article className="relative w-full max-w-[1040px] overflow-hidden rounded-[24px] border border-brand/20 bg-card-warm/95 p-6 shadow-warm-lg md:p-8 lg:p-10"><div className="absolute right-0 top-0 h-32 w-32 rounded-bl-full bg-brand/5" /><div className="relative mx-auto max-w-[800px]"><div className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.12em] text-brand">{activeBlock.eyebrow}</div><h2 className="mt-4 max-w-[780px] font-serif text-[27px] font-semibold leading-tight tracking-[-0.015em] text-ink md:text-[34px]">{activeBlock.title}</h2><div className="mt-5 h-1 w-14 rounded-full bg-brand" />{activeBlock.body && <div className="mt-7"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{activeBlock.body}</ReactMarkdown></div>}<InlineBlockCitations block={activeBlock} resource={resource} />{activeBlock.code && <pre className="mt-6 max-h-[42vh] overflow-auto rounded-[14px] bg-ink p-5 text-[14px] leading-6 text-paper md:text-[16px]"><code>{activeBlock.code}</code></pre>}{activeBlock.expectedOutput && <div className="mt-5 rounded-[14px] border border-brand/25 bg-brand-tint/55 p-4 text-[15px] leading-7 text-ink-2 md:text-[17px]"><strong className="text-brand">预期结果</strong><span className="mx-2 text-brand/40">/</span>{activeBlock.expectedOutput}</div>}{activeBlock.kind === 'quiz' && <QuizBlock block={activeBlock} resource={resource} learnerId={currentLearnerId} onWritebackStatus={setWritebackStatus} onResourceState={(state) => setResource((current) => current ? { ...current, state, learned: Boolean(state.learned || state.completed) } : current)} />}</div></article></main>
-      <footer className="flex items-center justify-center gap-3 border-t border-hairline bg-card-warm px-4 py-3"><button type="button" disabled={currentIndex === 0} onClick={() => goBlock(blocks[currentIndex - 1].id, narration.speaking)} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="上一页"><ChevronLeft size={17} /></button><button type="button" onClick={speakCurrent} className="flex h-11 items-center gap-2 rounded-full bg-brand px-5 text-[12.5px] font-medium text-paper">{narration.speaking ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}{narration.speaking ? '暂停讲播' : '讲这一页'}</button><button type="button" onClick={cycleSpeed} className="h-10 rounded-full border border-hairline px-4 font-mono text-[11px] text-ink-muted">{speedMeta[speechSpeed].label}</button><button type="button" onClick={cycleVolume} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted" title={narration.volume === 0 ? '恢复音量' : `音量 ${Math.round(narration.volume * 100)}%`}>{narration.volume === 0 ? <VolumeX size={14} /> : narration.volume < 0.6 ? <Volume1 size={14} /> : <Volume2 size={14} />}</button><button type="button" disabled={currentIndex >= blocks.length - 1} onClick={() => goBlock(blocks[currentIndex + 1].id, narration.speaking)} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="下一页"><ChevronRight size={17} /></button></footer>
+      <footer className="flex items-center justify-center gap-4 border-t border-hairline bg-card-warm px-4 py-3"><button type="button" disabled={currentIndex === 0} onClick={() => goBlock(blocks[currentIndex - 1].id)} className="inline-flex h-10 items-center gap-2 rounded-xl border border-hairline bg-paper px-4 text-[12px] text-ink disabled:cursor-not-allowed disabled:opacity-35"><ChevronLeft size={16} />上一张</button><span className="min-w-[120px] text-center font-mono text-[10.5px] text-ink-muted">{currentIndex + 1} / {blocks.length}</span><button type="button" disabled={currentIndex >= blocks.length - 1} onClick={() => goBlock(blocks[currentIndex + 1].id)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand px-4 text-[12px] text-paper disabled:cursor-not-allowed disabled:bg-paper-deep disabled:text-ink-muted">下一张<ChevronRight size={16} /></button></footer>
     </motion.div>}</AnimatePresence>, document.body)}
 
 

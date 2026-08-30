@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ArrowLeft, BookOpen, Check, ChevronLeft, ChevronRight, CircleAlert, ExternalLink, Loader2 } from 'lucide-react';
@@ -57,7 +57,6 @@ const citedSourceIds = (slide?: CustomizeSlide): Set<number> => {
 export default function SlidePlayer() {
   const { taskId = '' } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const { currentLearner } = useProfile();
   const [data, setData] = useState<CustomizeSlidesResponse | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -93,15 +92,6 @@ export default function SlidePlayer() {
   const readyNext = currentIndex + 1 < slides.length;
   const complete = data?.status === 'completed';
   const expected = useMemo(() => Math.max(data?.total ?? 0, slides.length), [data?.total, slides.length]);
-  const returnResourceId = searchParams.get('returnResource');
-  const leaveSlides = () => {
-    if (returnResourceId) {
-      navigate(fullLearningResourcePath(returnResourceId), { replace: true });
-      return;
-    }
-    markLearningMapReturn(currentLearner.id);
-    navigate('/learn');
-  };
   useEffect(() => {
     if (!data?.resourceId) return;
     let alive = true;
@@ -121,7 +111,7 @@ export default function SlidePlayer() {
   return (
     <main className="mx-auto flex h-[calc(100dvh-72px)] min-h-0 w-full max-w-[1180px] flex-col overflow-hidden px-4 py-4 md:px-7 md:py-5">
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-hairline pb-4">
-        <button type="button" onClick={leaveSlides} className="inline-flex items-center gap-2 text-[12px] text-ink-muted hover:text-brand"><ArrowLeft size={15} />{returnResourceId ? '返回完整阅读' : '返回知识点'}</button>
+        <button type="button" onClick={() => { markLearningMapReturn(currentLearner.id); navigate('/learn'); }} className="inline-flex items-center gap-2 text-[12px] text-ink-muted hover:text-brand"><ArrowLeft size={15} />返回知识点</button>
         <div className="min-w-0 flex-1 text-center"><p className="truncate text-[13px] font-medium text-ink">{data?.title ?? '正在准备个性化学习内容'}</p><p className="mt-0.5 font-mono text-[10px] text-ink-muted">{slides.length ? `第 ${currentIndex + 1} 张 · 已就绪 ${slides.length}${expected ? ` / 预计 ${expected}` : ''}` : '等待首张卡片'}</p></div>
         <div className="flex min-w-[78px] justify-end">{complete && data?.resourceId && <button type="button" title="完整阅读模式" onClick={() => navigate(fullLearningResourcePath(data.resourceId), { replace: true })} className="rounded-lg border border-hairline p-2 text-ink-muted hover:border-brand/40 hover:text-brand"><ExternalLink size={15} /></button>}</div>
       </header>
