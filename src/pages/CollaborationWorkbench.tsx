@@ -506,7 +506,8 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
   }, [kpCode, pptReady, groupMode, effectiveGroupName]);
   if (!open) return null;
   const validSelected = [...selected];
-  const canCreate = Boolean(kp && effectiveGroupName && validSelected.length && !busy);
+  const isDuplicateGroup = groupMode === 'new' && newGroupName.trim() && existingGroupNames.includes(newGroupName.trim());
+  const canCreate = Boolean(kp && effectiveGroupName && validSelected.length && !busy && !isDuplicateGroup);
   const handleCreate = () => {
     if (!kp || !validSelected.length) return;
     const working = new Set(validSelected);
@@ -582,7 +583,10 @@ function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClos
                   {existingGroupNames.map((name) => <option key={name} value={name}>{name}</option>)}
                 </select>
               ) : (
+                <>
                 <input value={newGroupName} onChange={(e) => setNewGroupName(e.target.value)} placeholder="不输入则为默认分组" className="lf-input min-w-44 flex-1" disabled={!kp} />
+                {isDuplicateGroup && <p className="text-xs text-red-500 mt-1">该分组名已存在，请选择已有分组或输入新名称</p>}
+                </>
               )}
             </div>
             <p className="mb-2 text-sm font-bold text-ink">资源类型</p>
