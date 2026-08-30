@@ -86,7 +86,9 @@ function expandReadySlides(rawSlides: CustomizeSlide[]): CustomizeSlide[] {
 }
 
 export default function SlidePlayer() {
-  const { taskId = '' } = useParams<{ taskId: string }>();
+  const { taskId: rawTaskId = '', resourceId: rawResourceId = '' } = useParams<{ taskId: string; resourceId: string }>();
+  const taskId = rawTaskId;
+  const resourceId = rawResourceId;
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
   const [data, setData] = useState<CustomizeSlidesResponse | null>(null);
@@ -105,6 +107,38 @@ export default function SlidePlayer() {
   const volumes = [1, 0.6, 0.3, 0];
 
   useEffect(() => {
+    if (resourceId) {
+      let alive = true;
+      void api.getLearningResource(resourceId).then((resource) => {
+        if (!alive) return;
+        setCompletedResource(resource);
+        setResourceSources((resource.sources ?? []) as Array<Record<string, unknown>>);
+        const content = resource.content as Record<string, unknown>;
+        const builtSlides: CustomizeSlide[] = [];
+        if (resource.type === 'lecture' && Array.isArray(content.chapters)) {
+          (content.chapters as Record<string, unknown>[]).forEach((ch, ci) => {
+            const sections = Array.isArray(ch.sections) ? ch.sections as Record<string, unknown>[] : [];
+            if (!sections.length) {
+              builtSlides.push({ index: builtSlides.length, unitIndex: ci, totalUnits: (content.chapters as unknown[]).length, type: 'chapter' as const, title: String(ch.title ?? ''), content: String(ch.content ?? '') });
+            } else {
+              sections.forEach((sec) => {
+                builtSlides.push({ index: builtSlides.length, unitIndex: ci, totalUnits: (content.chapters as unknown[]).length, type: 'chapter' as const, title: String(sec.title ?? ch.title ?? ''), content: String(sec.content ?? '') });
+              });
+            }
+          });
+        } else if (resource.type === 'practice' && Array.isArray(content.steps)) {
+          (content.steps as Record<string, unknown>[]).forEach((step, si) => {
+            builtSlides.push({ index: builtSlides.length, unitIndex: si, totalUnits: (content.steps as unknown[]).length, type: 'step' as const, title: String(step.title ?? ''), content: String(step.content ?? step.description ?? '') });
+          });
+        } else if (resource.type === 'quiz' && Array.isArray(content.questions)) {
+          (content.questions as Record<string, unknown>[]).forEach((q, qi) => {
+            builtSlides.push({ index: builtSlides.length, unitIndex: qi, totalUnits: (content.questions as unknown[]).length, type: 'question' as const, title: `题目 ${qi + 1}`, content: q });
+          });
+        }
+        setData({ slides: builtSlides, total: builtSlides.length, completed: builtSlides.length, status: 'completed' as const, resourceId: resource.id, resourceType: resource.type, title: resource.title, stageMessage: '', kpId: resource.kpId ?? null });
+      }).catch(() => { if (alive) setError('无法加载资源'); });
+      return () => { alive = false; };
+    }
     if (!taskId) return;
     let alive = true;
     let timer = 0;
