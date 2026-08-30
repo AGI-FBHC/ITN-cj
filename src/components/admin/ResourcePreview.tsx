@@ -218,7 +218,7 @@ function PracticePreview({ doc, sources }: { doc: PracticeDoc; sources: Record<s
               )}
               {step.code && <pre className="mt-3 max-h-[360px] overflow-auto rounded-xl bg-[#26322A] p-4 text-[12.5px] leading-6 text-emerald-50"><code>{step.code}</code></pre>}
               {step.expectedOutput && <div className="mt-3 rounded-lg border border-brand/20 bg-brand-tint/40 px-3.5 py-2.5 text-[12.5px] leading-6 text-ink-2"><span className="font-semibold text-brand">预期结果：</span>{step.expectedOutput}</div>}
-              {(step.warning || step.safety) && <p className="mt-2 flex items-start gap-2 rounded-lg bg-amber-50 px-3.5 py-2.5 text-[12.5px] leading-6 text-amber-900"><TriangleAlert size={14} className="mt-1 shrink-0" />{step.warning || step.safety}</p>}
+              {step.warning && <p className="mt-2 flex items-start gap-2 rounded-lg bg-amber-50 px-3.5 py-2.5 text-[12.5px] leading-6 text-amber-900"><TriangleAlert size={14} className="mt-1 shrink-0" />{step.warning}</p>}
               {step.hint && <p className="mt-2 rounded-lg bg-amber-tint/50 px-3.5 py-2.5 text-[12.5px] leading-6 text-[#8A6A2F]">💡 {step.hint}</p>}
               <SourceCitationMarks citations={step.citations} evidenceQuotes={step.evidenceQuotes ?? step.evidenceMatches} sources={sources} />
             </div>
