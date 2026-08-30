@@ -174,6 +174,7 @@ export default function AgentDock() {
               'bg-gradient-to-b from-white/90 to-white/75 backdrop-blur-2xl',
               'shadow-[0_8px_40px_rgba(0,0,0,0.12),0_2px_12px_rgba(0,0,0,0.06)]',
             )}
+            data-agent-dock
           >
             {/* 左/右边缘 resize 手柄 */}
             <div

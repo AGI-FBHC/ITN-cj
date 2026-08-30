@@ -1,3 +1,5 @@
+import type { LearningPageContext } from '@/lib/pageContext';
+
 export interface ApiEnvelope<T> {
   code: number;
   message: string;
@@ -1122,14 +1124,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ learnerId, signal, sessionId }),
     }),
-  askAgentStream: async (learnerId: string, askType: string, text: string, kpId: string | undefined, sessionId: string | undefined, pageContext: string | undefined, onEvent: (payload: { type: string; content?: string; reply?: string; message?: string; note?: LearningNoteRecord }) => void) => {
+  askAgentStream: async (learnerId: string, askType: string, text: string, kpId: string | undefined, sessionId: string | undefined, pageContext: string | undefined, pageState: LearningPageContext | undefined, onEvent: (payload: { type: string; content?: string; reply?: string; message?: string; note?: LearningNoteRecord }) => void) => {
     const headers = new Headers({ 'Content-Type': 'application/json', Accept: 'text/event-stream' });
     const token = getToken();
     if (token) headers.set('Authorization', `Bearer ${token}`);
     const res = await fetch('/v1/agent/ask/stream', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ learnerId, askType, text, kpId, sessionId, pageContext }),
+      body: JSON.stringify({ learnerId, askType, text, kpId, sessionId, pageContext, pageState }),
     });
     if (!res.ok) throw new Error(`请求失败 (${res.status})`);
     await readAgentSse(res, (payload) => onEvent(payload as { type: string; content?: string; reply?: string; message?: string; note?: LearningNoteRecord }));

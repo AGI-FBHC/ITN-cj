@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
 import type { AgentDockSession } from '@/lib/api';
+import type { LearningPageContext } from '@/lib/pageContext';
 import { useLearningMap } from '@/hooks/useLearningMap';
 import type { QuizQuestion } from '@/data/quizBank';
 import {
@@ -35,6 +36,7 @@ export type AgentMessage =
       time: string;
     }
   | { id: string; kind: 'evidence'; text: string; items: string[]; time: string }
+  | { id: string; kind: 'note'; title: string; text: string; noteId: string; time: string }
   | {
       id: string;
       kind: 'verify';
@@ -74,7 +76,7 @@ interface AgentContextValue {
   pushSignal: (s: Signal) => void;
   ask: (kind: AskKind) => void;
   /** 自由提问：直接回答，页面位置仅作为不可见上下文传递。 */
-  askFree: (text: string, pageContext?: string) => void;
+  askFree: (text: string, pageContext?: LearningPageContext) => void;
   answerVerify: (msgId: string, qIndex: number, optIndex: number) => void;
   sessions: AgentDockSession[];
   currentSessionId: string | null;
@@ -399,7 +401,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     };
 
     /** 真实学情问答：调后端 /agent/ask（MiMo），占位消息替换为真实回复 */
-    const agentAsk = async (askType: string, userText: string, placeholder: string, pageContext?: string) => {
+    const agentAsk = async (askType: string, userText: string, placeholder: string, pageContext?: LearningPageContext) => {
       // Lazy session: create on first message, title from user text
       let sid = currentSessionId;
       let activeSession = sessions.find((session) => session.id === sid);
@@ -429,6 +431,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           lid, askType, userText,
           askType === 'free' ? undefined : weakest?.id,
           sid ?? undefined,
+          pageContext?.route,
           pageContext,
           (event) => {
             if (event.type === 'reply_delta' && event.content) {
@@ -441,6 +444,12 @@ export function AgentProvider({ children }: { children: ReactNode }) {
               }));
             } else if (event.type === 'note_saved') {
               window.dispatchEvent(new CustomEvent('itn:assistant-note-saved'));
+              if (event.note) {
+                append({
+                  id: `note-${event.note.id}`, kind: 'note', noteId: event.note.id,
+                  title: event.note.title, text: event.note.content, time: now(),
+                });
+              }
             }
           },
         );
@@ -468,7 +477,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     };
 
     /** 自由输入始终按原问题回答；学情快捷问题由 askSuggestion 显式分流。 */
-    const askFree = (raw: string, pageContext?: string) => {
+    const askFree = (raw: string, pageContext?: LearningPageContext) => {
       const text = raw.trim();
       if (!text) return;
       void agentAsk('free', text, '正在查阅当前内容并回答…', pageContext);

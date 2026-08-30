@@ -4,10 +4,13 @@
  * 被 AiChat 页面和 AgentDockSidebar 侧边栏复用。
  */
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { Brain, Check, Pencil, Plus, SendHorizonal, Trash2, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Brain, Check, ChevronDown, Eye, NotebookPen, Pencil, Plus, SendHorizonal, Trash2, X } from 'lucide-react';
 import { useAgent } from '@/context/AgentContext';
 import type { AgentMessage } from '@/context/AgentContext';
 import { cn } from '@/lib/utils';
+import { collectLearningPageContext, describeLearningPageContext } from '@/lib/pageContext';
+import type { LearningPageContext } from '@/lib/pageContext';
 
 /* ===== 消息气泡 ===== */
 function MessageBubble({ message }: { message: AgentMessage }) {
@@ -16,6 +19,15 @@ function MessageBubble({ message }: { message: AgentMessage }) {
   const visibleText = isUser ? text.replace(/^\s*\[当前页面[：:]\s*[^\]]+\]\s*/, '') : text;
   const loading = 'loading' in message ? message.loading : false;
   if (message.kind === 'verify') return null;
+  if (message.kind === 'note') return (
+    <div className="flex justify-start">
+      <div className="w-[88%] rounded-2xl rounded-bl-md border border-brand/20 bg-brand-tint/30 p-3.5">
+        <div className="flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-paper"><NotebookPen size={13} /></span><div className="min-w-0"><div className="text-[10px] text-brand">已保存到笔记本</div><div className="truncate text-[13px] font-semibold text-ink">{message.title}</div></div></div>
+        <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-[11.5px] leading-5 text-ink-2">{message.text}</p>
+        <Link to="/me/notes" className="mt-2 inline-flex text-[11px] font-medium text-brand hover:underline">查看笔记</Link>
+      </div>
+    </div>
+  );
   return (
     <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
       <div className={cn(
@@ -44,6 +56,8 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [contextOpen, setContextOpen] = useState(false);
+  const [currentContext, setCurrentContext] = useState<LearningPageContext>(() => collectLearningPageContext());
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -52,10 +66,20 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
+  useEffect(() => {
+    const refresh = () => setCurrentContext(collectLearningPageContext());
+    refresh();
+    const timer = window.setInterval(refresh, 1500);
+    document.addEventListener('selectionchange', refresh);
+    return () => { window.clearInterval(timer); document.removeEventListener('selectionchange', refresh); };
+  }, [pageContext]);
+
   const handleSend = () => {
     const text = input.trim();
     if (!text) return;
-    askFree(text, pageContext);
+    const snapshot = collectLearningPageContext();
+    setCurrentContext(snapshot);
+    askFree(text, snapshot);
     setInput('');
   };
 
@@ -79,6 +103,19 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
 
   return (
     <>
+      <div className="shrink-0 border-b border-hairline/70 bg-brand-tint/20 px-3 py-2">
+        <button type="button" onClick={() => setContextOpen((value) => !value)} className="flex w-full items-center gap-2 text-left" aria-expanded={contextOpen}>
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-brand/15 bg-paper text-brand"><Eye size={12} /></span>
+          <span className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-ink-2">当前所见：{describeLearningPageContext(currentContext)}</span>
+          <ChevronDown size={12} className={cn('shrink-0 text-ink-muted transition-transform', contextOpen && 'rotate-180')} />
+        </button>
+        {contextOpen && (
+          <div className="mt-2 rounded-xl border border-hairline/70 bg-paper/80 px-3 py-2 text-[10.5px] leading-5 text-ink-muted">
+            <p>{currentContext.selection ? '将优先使用选中的文字' : currentContext.focus ? `当前焦点：${currentContext.focus.title || currentContext.focus.kind}` : '当前没有选中文字或专属卡片'}</p>
+            <p className="mt-0.5">可见内容约 {currentContext.visibleText.length} 字{currentContext.entities.resourceOrTaskId ? ' · 已关联当前资源' : ''}</p>
+          </div>
+        )}
+      </div>
       {/* 消息流 */}
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
         {messages.length === 0 ? (
