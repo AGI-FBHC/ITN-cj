@@ -476,6 +476,7 @@ export default function CourseResourcePlayer() {
   const narration = useResourceNarration(() => narrationFinishedRef.current());
   const narrationFinishedRef = useRef<() => void>(() => undefined);
   const [resource, setResource] = useState<LearningResource | null>(null);
+  const [customizeTaskId, setCustomizeTaskId] = useState<string | null>(null);
   const [writebackStatus, setWritebackStatus] = useState<'idle' | 'syncing' | 'synced' | 'failed'>('idle');
   const [course, setCourse] = useState<Course | null>(null);
   const [chapterResources, setChapterResources] = useState<LearningResourceSummary[]>([]);
@@ -608,6 +609,23 @@ export default function CourseResourcePlayer() {
   }, [resourceId]);
 
   const blocks = useMemo(() => resource ? blocksOf(resource) : [], [resource]);
+
+  useEffect(() => {
+    if (!resource?.id) {
+      setCustomizeTaskId(null);
+      return;
+    }
+    let cancelled = false;
+    setCustomizeTaskId(null);
+    void api.listCustomizeTasks(resource.kpId).then(({ tasks }) => {
+      if (cancelled) return;
+      const task = tasks.find((item) => item.status === 'completed' && item.resourceId === resource.id);
+      setCustomizeTaskId(task?.id ?? null);
+    }).catch(() => {
+      if (!cancelled) setCustomizeTaskId(null);
+    });
+    return () => { cancelled = true; };
+  }, [resource?.id, resource?.kpId]);
 
   useEffect(() => {
     /* 预取下一个资源（按讲义/实操/测试顺序），后台拉取并写入缓存，切换时秒开 */
@@ -1322,7 +1340,13 @@ ${chatContext.content}
       <div className="hidden min-w-0 flex-1 sm:block"><div className="truncate text-[12.5px] font-medium text-ink">{activeBlock?.title ?? resource.title}</div><div className="mt-0.5 flex items-center gap-2 font-mono text-[9.5px] text-ink-muted"><span><Headphones size={10} className="mr-1 inline" />{narration.speaking ? '正在讲播' : '点击播放当前段落'}</span><span>{currentIndex + 1}/{blocks.length}</span></div></div>
       <button type="button" onClick={cycleSpeed} className="flex h-9 shrink-0 items-center gap-1 rounded-[10px] border border-hairline px-2.5 text-[10.5px] text-ink-muted" title="切换语速"><Gauge size={13} /><span>{speedMeta[speechSpeed].label}</span></button>
       <button type="button" onClick={cycleVolume} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-hairline text-ink-muted" title={narration.volume === 0 ? '恢复音量' : `音量 ${Math.round(narration.volume * 100)}%`}>{narration.volume === 0 ? <VolumeX size={13} /> : narration.volume < 0.6 ? <Volume1 size={13} /> : <Volume2 size={13} />}</button>
-      <button type="button" onClick={() => setSlideMode(true)} className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted" title="幻灯模式：一段一页"><Presentation size={13} /><span className="hidden md:inline">幻灯</span></button>
+      <button type="button" onClick={() => {
+        if (customizeTaskId && resource) {
+          navigate(`/learn/slide/${customizeTaskId}?returnResource=${encodeURIComponent(resource.id)}`);
+          return;
+        }
+        setSlideMode(true);
+      }} className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted" title="幻灯模式"><Presentation size={13} /><span className="hidden md:inline">幻灯</span></button>
       <button type="button" onClick={() => void openChat()} aria-label="向智能助教提问" className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted"><Bot size={13} /><span className="hidden lg:inline">提问</span></button>
       <button type="button" onClick={() => { stopNoteListening(); if (activeBlock) { setNoteFor(activeBlock); setNoteText(''); setNoteImg(null); } }} aria-label="记录当前段落笔记" className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted"><NotebookPen size={13} /><span className="hidden lg:inline">笔记</span></button>
     </div>
