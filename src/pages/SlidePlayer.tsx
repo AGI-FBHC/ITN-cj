@@ -345,16 +345,21 @@ export default function SlidePlayer() {
           )}
         </div>
         {needsAssessment && (
-          <div className={`flex shrink-0 items-center justify-self-end gap-2 border-l border-hairline pl-4 ${pulseFlash ? 'rounded-lg shadow-[0_0_12px_3px_rgba(88,166,255,0.5)] transition-shadow duration-300' : 'transition-shadow duration-500'}`}>
-            <span className="text-[10.5px] font-medium text-ink-muted">掌握程度</span>
-            <div className="flex items-center gap-1">
-              {(['还需学习', '基本理解', '大体掌握', '完全掌握'] as const).map((label) => {
-                const score = label === '还需学习' ? 0 : label === '基本理解' ? 0.25 : label === '大体掌握' ? 0.5 : 1;
+          <div className={`flex shrink-0 items-center gap-3 rounded-xl border border-hairline/60 bg-paper/60 px-3.5 py-2 backdrop-blur-sm ${pulseFlash ? 'shadow-[0_0_14px_4px_rgba(88,166,255,0.45)] transition-shadow duration-300' : 'transition-shadow duration-500'}`}>
+            <div className="flex items-center gap-0.5">
+              {[0, 0.25, 0.5, 1].map((score, i) => {
+                const active = slideAssessments[currentIndex] != null && slideAssessments[currentIndex] >= score;
+                const colors = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6'];
                 return (
-                  <button key={label} type="button" onClick={() => setSlideAssessments((prev) => ({ ...prev, [currentIndex]: score }))} aria-pressed={slideAssessments[currentIndex] === score} className={`whitespace-nowrap rounded-full border px-2.5 py-1 text-[10.5px] transition ${slideAssessments[currentIndex] === score ? 'border-brand bg-brand text-paper shadow-sm' : 'border-hairline bg-paper text-ink-2 hover:border-brand/45 hover:text-brand'}`}>{label}</button>
+                  <button key={score} type="button" onClick={() => setSlideAssessments((prev) => ({ ...prev, [currentIndex]: score }))} className="group relative flex items-center justify-center" title={['还需学习', '基本理解', '大体掌握', '完全掌握'][i]}>
+                    <div className={`h-3 transition-all duration-200 ${i === 0 ? 'w-7 rounded-l-full' : i === 3 ? 'w-7 rounded-r-full' : 'w-7'} ${active ? '' : 'bg-paper-deep hover:bg-ink-muted/20'}`} style={active ? { backgroundColor: colors[i] } : undefined} />
+                  </button>
                 );
               })}
             </div>
+            <span className="text-[10px] font-medium text-ink-muted">
+              {slideAssessments[currentIndex] == null ? '点击评' : slideAssessments[currentIndex] === 0 ? '还需学习' : slideAssessments[currentIndex] === 0.25 ? '基本理解' : slideAssessments[currentIndex] === 0.5 ? '大体掌握' : '完全掌握'}
+            </span>
           </div>
         )}
       </footer>
