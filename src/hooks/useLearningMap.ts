@@ -346,19 +346,35 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
       resources: cached?.resources ?? [],
       presentations: cached?.presentations ?? [],
     }));
+    const userResourcesPromise = hasLearner
+      ? api.listLearningResources().catch(() => ({ resources: [] }))
+      : Promise.resolve({ resources: [] });
     /* 学习行为（lf-signal）会置脏并防抖刷新，保证实时性 */
     const analyticsPromise = hasLearner
       ? (cachedAnalytics ? Promise.resolve(null) : api.getLearnerAnalyticsProfile().catch(() => null))
       : Promise.resolve(null);
-    Promise.all([api.getRagTree('agent'), analyticsPromise, templateCatalogPromise])
-      .then(([latestTree, latestAnalytics, templateCatalog]) => {
+    Promise.all([api.getRagTree('agent'), analyticsPromise, templateCatalogPromise, userResourcesPromise])
+      .then(([latestTree, latestAnalytics, templateCatalog, userRes]) => {
         if (!cancelled) setTree(latestTree);
-        /* 缓存命中时 latestAnalytics 为 null，保留缓存值；只有网络新值才写回缓存（避免续期） */
         if (!cancelled) setAnalytics(latestAnalytics ?? cachedAnalytics);
         if (!cancelled) setPresentations(templateCatalog.presentations);
-        if (!cancelled) setResources(templateCatalog.resources);
+        // Merge user customized copy state into template resources
+        const userStateMap = new Map<string, { learned: boolean; started: boolean; progressRatio: number; masteryRatio: number }>();
+        for (const ur of (userRes.resources ?? [])) {
+          if (!ur.kpId || !ur.type) continue;
+          const key = `${ur.kpId}::${ur.type}`;
+          const prev = userStateMap.get(key);
+          if (!prev || (ur.learned ? 1 : 0) > (prev.learned ? 1 : 0)) {
+            userStateMap.set(key, { learned: ur.learned ?? false, started: ur.started ?? false, progressRatio: ur.progressRatio ?? (ur.learned ? 1 : 0), masteryRatio: ur.masteryRatio ?? 0 });
+          }
+        }
+        const mergedResources = templateCatalog.resources.map((tr) => {
+          const userState = tr.kpId ? userStateMap.get(`${tr.kpId}::${tr.type}`) : undefined;
+          return userState ? { ...tr, ...userState } : tr;
+        });
+        if (!cancelled) setResources(mergedResources);
         if (hasLearner && !cancelled) {
-          writeLearningMapCache(currentLearnerId, { ...templateCatalog, tree: latestTree });
+          writeLearningMapCache(currentLearnerId, { resources: mergedResources, presentations: templateCatalog.presentations, tree: latestTree });
           if (latestAnalytics) writeLearnerAnalytics(currentLearnerId, latestAnalytics);
         }
       })
