@@ -21,7 +21,7 @@ import type {
   LearningResourceProgress, LearningResourceSummary, LearningResourceTrace, TtsSpeed,
 } from '@/lib/api';
 import { useNotes } from '@/context/NotesContext';
-import { createPresentationChatSession, deletePresentationChatSession, fetchChatAttachmentBlob, getPresentationChatMessages, listPresentationChatSessions, presentationApi, streamPresentationChatImage, streamPresentationChatText } from '@/lib/presentationApi';
+import { createPresentationChatSession, deletePresentationChatSession, fetchChatAttachmentBlob, getPresentationChatMessages, presentationApi, streamPresentationChatImage, streamPresentationChatText } from '@/lib/presentationApi';
 import type { PresentationChatSession } from '@/lib/presentationApi';
 import { cn } from '@/lib/utils';
 import { lectureMdComponents, slideMdComponents } from '@/components/resources/lecture-markdown';
@@ -29,6 +29,7 @@ import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
 import { refreshLearningMapResourceCache } from '@/hooks/useLearningMap';
 import { useProfile } from '@/context/ProfileContext';
 import LearningCompleteDialog from '@/components/learn/LearningCompleteDialog';
+import { useAgent } from '@/context/AgentContext';
 
 /** 智能助教聊天消息：在基础文本之上携带多模态类型与附件信息 */
 interface ChatMessage extends LearningResourceMessage {
@@ -474,6 +475,7 @@ export default function CourseResourcePlayer() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { addNote, notes } = useNotes();
+  const { setOpen: setAgentDockOpen } = useAgent();
   const narration = useResourceNarration(() => narrationFinishedRef.current());
   const narrationFinishedRef = useRef<() => void>(() => undefined);
   const [resource, setResource] = useState<LearningResource | null>(null);
@@ -498,7 +500,9 @@ export default function CourseResourcePlayer() {
   const [interim, setInterim] = useState('');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recRef = useRef<any>(null);
-  const [chatOpen, setChatOpen] = useState(false);
+  const [, setChatOpen] = useState(false);
+  /* 页面内旧助手已下线；提问统一打开全局 AgentDock。 */
+  const chatOpen = false;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [question, setQuestion] = useState('');
   const [followUps, setFollowUps] = useState<string[]>([]);
@@ -902,32 +906,6 @@ export default function CourseResourcePlayer() {
     return null;
   };
 
-  const openChat = async () => {
-    setChatOpen(true);
-    if (!resource || chatReadyRef.current) return;
-    setChatLoading(true);
-    try {
-      const taskId = await ensureChatTask();
-      if (taskId) {
-        const sessions = await listPresentationChatSessions(taskId);
-        setChatSessions(sessions);
-        const current = sessions.filter((item) => item.modelProvider === 'mimo')
-          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0]
-          ?? await createPresentationChatSession(taskId, 'mimo');
-        setChatSessionId(current.id);
-        setMessages(await loadChatHistory(taskId, current.id));
-        chatReadyRef.current = true;
-        return;
-      }
-      setChatPptTaskId(null);
-      const result = await api.listLearningResourceMessages(resource.id).catch(() => ({ messages: [] }));
-      setMessages(result.messages);
-      chatReadyRef.current = true;
-    } finally {
-      setChatLoading(false);
-    }
-  };
-
   /** 点击具体段落的“向导学老师提问”：开一个新会话，并把该段内容作为上下文 */
   const askAboutBlock = async (block: LearningBlock) => {
     stopNoteListening();
@@ -1252,7 +1230,7 @@ ${chatContext.content}
     navigate('/learn');
   };
 
-  return <div className={cn('mx-auto max-w-[1260px] px-4 pb-40 pt-6 md:px-6', chatOpen && 'relative z-50')}>
+  return <div className="mx-auto max-w-[1260px] px-4 pb-40 pt-6 md:px-6">
     {<div className="mb-5 flex flex-wrap items-center gap-2 text-[12px] text-ink-muted"><button type="button" onClick={returnToKnowledgePoint} className="inline-flex items-center gap-1 hover:text-brand"><ArrowLeft size={13} />返回知识点</button><ChevronRight size={12} />{resource.courseId && resource.chapterId ? <Link to={`/resources?courseId=${encodeURIComponent(resource.courseId)}&chapterId=${encodeURIComponent(resource.chapterId)}`} className="hover:text-brand">{chapter?.title ?? '章节资源'}</Link> : <span className="max-w-[260px] truncate text-ink-2">{resource.topic || '学习资源'}</span>}{resource.courseId && resource.chapterId ? <><ChevronRight size={12} /><span className="truncate text-ink-2">{resourceMeta[resource.type].label}</span></> : null}</div>}
 
     <header className="flex items-center gap-4 rounded-[14px] border border-hairline bg-card-warm px-5 py-3">
@@ -1324,7 +1302,7 @@ ${chatContext.content}
       <button type="button" onClick={cycleSpeed} className="flex h-9 shrink-0 items-center gap-1 rounded-[10px] border border-hairline px-2.5 text-[10.5px] text-ink-muted" title="切换语速"><Gauge size={13} /><span>{speedMeta[speechSpeed].label}</span></button>
       <button type="button" onClick={cycleVolume} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] border border-hairline text-ink-muted" title={narration.volume === 0 ? '恢复音量' : `音量 ${Math.round(narration.volume * 100)}%`}>{narration.volume === 0 ? <VolumeX size={13} /> : narration.volume < 0.6 ? <Volume1 size={13} /> : <Volume2 size={13} />}</button>
       <button type="button" onClick={() => navigate(`/learn/slide/resource/${encodeURIComponent(resource.id)}`)} className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted" title="幻灯模式"><Presentation size={13} /><span className="hidden md:inline">幻灯</span></button>
-      <button type="button" onClick={() => void openChat()} aria-label="向智能助教提问" className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted"><Bot size={13} /><span className="hidden lg:inline">提问</span></button>
+      <button type="button" onClick={() => setAgentDockOpen(true)} aria-label="打开伴学助手提问" className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted"><Bot size={13} /><span className="hidden lg:inline">提问</span></button>
       <button type="button" onClick={() => { stopNoteListening(); if (activeBlock) { setNoteFor(activeBlock); setNoteText(''); setNoteImg(null); } }} aria-label="记录当前段落笔记" className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-hairline px-2.5 text-[11px] text-ink-muted"><NotebookPen size={13} /><span className="hidden lg:inline">笔记</span></button>
     </div>
 

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { BookOpen, Check, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Loader2, Pause, Play, Presentation, Volume1, Volume2, VolumeX, X } from 'lucide-react';
+import { BookOpen, Check, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Loader2, NotebookPen, Pause, Play, Presentation, Volume1, Volume2, VolumeX, X } from 'lucide-react';
 import { api, type CustomizeSlide, type CustomizeSlidesResponse, type LearningResource } from '@/lib/api';
 import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
 import { slideMdComponents } from '@/components/resources/lecture-markdown';
@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { useProfile } from '@/context/ProfileContext';
 import { markLearningMapReturn } from '@/lib/learningNavigation';
 import LearningCompleteDialog from '@/components/learn/LearningCompleteDialog';
+import { useNotes } from '@/context/NotesContext';
 
 type QuizValue = string | number;
 
@@ -92,6 +93,7 @@ export default function SlidePlayer() {
   const resourceId = rawResourceId;
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
+  const { addNote } = useNotes();
   const [data, setData] = useState<CustomizeSlidesResponse | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [error, setError] = useState('');
@@ -105,6 +107,8 @@ export default function SlidePlayer() {
   const [restarting, setRestarting] = useState(false);
   const [completeConfirmOpen, setCompleteConfirmOpen] = useState(false);
   const [slideAssessments, setSlideAssessments] = useState<Record<number, number>>({});
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteText, setNoteText] = useState('');
   const speechRates = [0.8, 0.9, 1, 1.1, 1.2];
   const volumes = [1, 0.6, 0.3, 0];
 
@@ -279,6 +283,23 @@ export default function SlidePlayer() {
     }
   };
 
+  const saveCurrentNote = () => {
+    if (!slide || !noteText.trim()) return;
+    const kbRefs = pageSources
+      .map((source) => String(source.chunkId ?? source.id ?? ''))
+      .filter(Boolean);
+    addNote({
+      kpId: data?.kpId ?? completedResource?.kpId ?? 'uncategorized',
+      text: noteText.trim(),
+      source: `${data?.title ?? '学习资源'} · ${slide.title}`,
+      sourceKind: 'course',
+      blockAnchor: data?.resourceId ? `${data.resourceId}#slide-${currentIndex + 1}` : undefined,
+      kbRefs,
+    });
+    setNoteText('');
+    setNoteOpen(false);
+  };
+
   return (
     <main className="fixed inset-0 z-[9999] flex min-h-0 flex-col overflow-hidden bg-paper">
       <header className="flex shrink-0 items-center gap-3 border-b border-hairline bg-card-warm px-4 py-3 md:px-6">
@@ -306,6 +327,7 @@ export default function SlidePlayer() {
           <button type="button" onClick={speakCurrent} className="flex h-11 items-center gap-2 rounded-full bg-brand px-5 text-[12.5px] font-medium text-paper">{speaking ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}{speaking ? '暂停讲播' : '讲这一页'}</button>
           <button type="button" onClick={() => setSpeechRateIndex((value) => (value + 1) % speechRates.length)} className="h-10 rounded-full border border-hairline px-4 font-mono text-[11px] text-ink-muted">{speechRates[speechRateIndex].toFixed(1)}×</button>
           <button type="button" onClick={() => setVolumeIndex((value) => (value + 1) % volumes.length)} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted" title={volumes[volumeIndex] === 0 ? '恢复音量' : `音量 ${Math.round(volumes[volumeIndex] * 100)}%`}>{volumes[volumeIndex] === 0 ? <VolumeX size={14} /> : volumes[volumeIndex] < 0.6 ? <Volume1 size={14} /> : <Volume2 size={14} />}</button>
+          <button type="button" disabled={!slide} onClick={() => { setNoteText(''); setNoteOpen(true); }} className="flex h-10 items-center gap-1.5 rounded-full border border-hairline px-3 text-[11px] text-ink-muted hover:border-brand/40 hover:text-brand disabled:opacity-30" title="记录当前卡片笔记"><NotebookPen size={14} />笔记</button>
           {isLastSlide && data?.resourceId ? (
             <button type="button" disabled={completing} onClick={() => setCompleteConfirmOpen(true)} className="flex h-10 items-center gap-1.5 rounded-full bg-brand px-5 text-[12px] font-medium text-paper disabled:opacity-50">{completing ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}完成学习</button>
           ) : (
@@ -327,6 +349,16 @@ export default function SlidePlayer() {
         )}
       </footer>
       <LearningCompleteDialog open={completeConfirmOpen} unassessedCount={unassessedCount} confirming={completing} restarting={restarting} onClose={() => setCompleteConfirmOpen(false)} onConfirm={() => void handleComplete()} onRestart={() => void handleRestart()} />
+      {noteOpen && slide && (
+        <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm" onClick={() => setNoteOpen(false)} role="dialog" aria-modal="true" aria-label="记录学习笔记">
+          <div className="w-full max-w-[520px] rounded-[18px] border border-brand/30 bg-card-warm p-6 shadow-warm-lg" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start gap-3"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-brand-tint text-brand"><NotebookPen size={17} /></span><div className="min-w-0"><h3 className="font-serif text-[18px] font-semibold text-ink">记录当前卡片</h3><p className="mt-0.5 truncate text-[11px] text-ink-muted">{slide.title}</p></div></div>
+            <textarea autoFocus value={noteText} onChange={(event) => setNoteText(event.target.value)} rows={6} placeholder="用自己的话记下这一张卡片的要点……" className="mt-5 w-full resize-none rounded-[13px] border border-hairline bg-paper px-4 py-3 text-[13px] leading-6 text-ink outline-none placeholder:text-ink-muted/60 focus:border-brand/45" />
+            <p className="mt-2 text-[10.5px] text-ink-muted">保存时会自动关联当前资源、卡片位置和本页引用。</p>
+            <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setNoteOpen(false)} className="lf-btn-ghost">取消</button><button type="button" disabled={!noteText.trim()} onClick={saveCurrentNote} className="lf-btn-primary disabled:opacity-40">存入我的笔记</button></div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
