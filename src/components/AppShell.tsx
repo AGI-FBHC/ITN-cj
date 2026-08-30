@@ -206,6 +206,7 @@ export default function AppShell() {
   const { focusMode } = useGrowth();
   const { logout } = useAuth();
   const location = useLocation();
+  const isSlideMode = location.pathname.startsWith('/learn/slide/');
   const navigate = useNavigate();
   const isLearner = viewMode === 'learner';
 
@@ -266,7 +267,7 @@ export default function AppShell() {
         /* ==================== 学习者：顶部导航外壳（专注模式收起全部 chrome） ==================== */
         <div className="flex min-h-[100dvh] flex-col">
           {/* 漂浮微光（治愈氛围，专注时收起） */}
-          {!focusMode && <SparkField />}
+          {!(focusMode || isSlideMode) && <SparkField />}
           {/* 顶栏 */}
           {!focusMode && (
           <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b border-hairline bg-paper/85 px-4 backdrop-blur-md md:px-6">
@@ -343,7 +344,7 @@ export default function AppShell() {
           </main>
 
           {/* 伴学助手 · 常驻画像助手（专注时收起） */}
-          {!focusMode && <AgentDock />}
+          {!(focusMode || isSlideMode) && <AgentDock />}
 
           {/* 全局「继续学习」浮标 · 左下角，随时回到当前路径节点 */}
           <ResumeLearningFab />
