@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { BookOpen, Check, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Loader2, NotebookPen, Pause, Play, Presentation, Volume1, Volume2, VolumeX, X } from 'lucide-react';
-import { api, type CustomizeSlide, type CustomizeSlidesResponse, type LearningResource } from '@/lib/api';
+import { api, type CustomizeSlide, type CustomizeSlidesResponse, type LearningResource, type TtsSpeed } from '@/lib/api';
 import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
 import { slideMdComponents } from '@/components/resources/lecture-markdown';
 import remarkCitationMarks from '@/lib/remarkCitationMarks';
@@ -12,6 +12,7 @@ import { useProfile } from '@/context/ProfileContext';
 import { markLearningMapReturn } from '@/lib/learningNavigation';
 import LearningCompleteDialog from '@/components/learn/LearningCompleteDialog';
 import { useNotes } from '@/context/NotesContext';
+import { narrationSpeeds, useStreamingNarration } from '@/hooks/useStreamingNarration';
 
 type QuizValue = string | number;
 
@@ -99,9 +100,8 @@ export default function SlidePlayer() {
   const [error, setError] = useState('');
   const [resourceSources, setResourceSources] = useState<Array<Record<string, unknown>>>([]);
   const [completedResource, setCompletedResource] = useState<LearningResource | null>(null);
-  const [speaking, setSpeaking] = useState(false);
-  const [speechRateIndex, setSpeechRateIndex] = useState(2);
-  const [volumeIndex, setVolumeIndex] = useState(0);
+  const [speechSpeed, setSpeechSpeed] = useState<TtsSpeed>('normal');
+  const narration = useStreamingNarration();
   const cardScrollRef = useRef<HTMLDivElement>(null);
   const [completing, setCompleting] = useState(false);
   const [restarting, setRestarting] = useState(false);
@@ -110,8 +110,7 @@ export default function SlidePlayer() {
   const [noteOpen, setNoteOpen] = useState(false);
   const [pulseFlash, setPulseFlash] = useState(false);
   const [noteText, setNoteText] = useState('');
-  const speechRates = [0.8, 0.9, 1, 1.1, 1.2];
-  const volumes = [1, 0.6, 0.3, 0];
+  const volumeLevels = [1, 0.6, 0.3, 0] as const;
 
   useEffect(() => {
     if (resourceId) {
@@ -208,27 +207,40 @@ export default function SlidePlayer() {
       : [];
   }, [slide, resourceSources]);
 
-  const stopSpeech = () => {
-    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
-    setSpeaking(false);
-  };
-  const speakCurrent = () => {
-    if (speaking) { stopSpeech(); return; }
-    if (!slide || !('speechSynthesis' in window)) return;
+  const currentNarrationText = () => {
+    if (!slide) return '';
     const raw = typeof slide.content === 'string'
       ? `${slide.title}。${slide.content}`
       : `${slide.title}。${String(slide.content.stem ?? slide.content.question ?? '')}`;
-    const utterance = new SpeechSynthesisUtterance(raw.replace(/[`*_#>\[\]()]/g, ' '));
-    utterance.lang = 'zh-CN';
-    utterance.rate = speechRates[speechRateIndex];
-    utterance.volume = volumes[volumeIndex];
-    utterance.onend = () => setSpeaking(false);
-    utterance.onerror = () => setSpeaking(false);
-    setSpeaking(true);
-    window.speechSynthesis.speak(utterance);
+    return raw
+      .replace(/```[\s\S]*?```/g, ' 代码示例请看屏幕。')
+      .replace(/[#*_`>\-[\]]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 2900);
   };
-  useEffect(() => () => { if ('speechSynthesis' in window) window.speechSynthesis.cancel(); }, []);
-  useEffect(() => { stopSpeech(); }, [currentIndex]);
+  const speakCurrent = () => {
+    if (narration.speaking) { narration.stop(); return; }
+    const text = currentNarrationText();
+    if (text) void narration.play(text, speechSpeed);
+  };
+  useEffect(() => { narration.stop(); }, [currentIndex]);
+
+  const cycleSpeed = () => {
+    const index = narrationSpeeds.findIndex((item) => item.value === speechSpeed);
+    const next = narrationSpeeds[(index + 1) % narrationSpeeds.length].value;
+    const wasSpeaking = narration.speaking;
+    setSpeechSpeed(next);
+    if (wasSpeaking) {
+      const text = currentNarrationText();
+      if (text) void narration.play(text, next);
+    }
+  };
+
+  const cycleVolume = () => {
+    const index = volumeLevels.indexOf(narration.volume as (typeof volumeLevels)[number]);
+    narration.setVolume(volumeLevels[(index + 1) % volumeLevels.length]);
+  };
 
   const assessableSlides = slides
     .map((item, index) => ({ item, index }))
@@ -315,8 +327,8 @@ export default function SlidePlayer() {
       <header className="flex shrink-0 items-center gap-3 border-b border-hairline bg-card-warm px-4 py-3 md:px-6">
         <Presentation size={17} className="text-brand" />
         <div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold text-ink">幻灯模式 · {data?.title ?? '正在准备个性化学习内容'}</div><div className="font-mono text-[9.5px] text-ink-muted">个性化内容生成中 · 第 {slides.length ? currentIndex + 1 : 0}/{expected || slides.length || 0} 页</div></div>
-        {data?.resourceId && <button type="button" onClick={() => { stopSpeech(); navigate(`/learn/resource/${encodeURIComponent(data.resourceId!)}?view=full`); }} className="inline-flex h-9 items-center gap-1.5 rounded-[10px] border border-hairline bg-paper px-3 text-[11px] font-medium text-ink-2 hover:border-brand/35 hover:text-brand"><BookOpen size={13} />完整阅读</button>}
-        <button type="button" onClick={() => { stopSpeech(); markLearningMapReturn(currentLearner.id); navigate('/learn'); }} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep" title="退出幻灯"><X size={17} /></button>
+        {data?.resourceId && <button type="button" onClick={() => { narration.stop(); navigate(`/learn/resource/${encodeURIComponent(data.resourceId!)}?view=full`); }} className="inline-flex h-9 items-center gap-1.5 rounded-[10px] border border-hairline bg-paper px-3 text-[11px] font-medium text-ink-2 hover:border-brand/35 hover:text-brand"><BookOpen size={13} />完整阅读</button>}
+        <button type="button" onClick={() => { narration.stop(); markLearningMapReturn(currentLearner.id); navigate('/learn'); }} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep" title="退出幻灯"><X size={17} /></button>
       </header>
 
       <section className="flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-gradient-to-br from-brand-tint/25 via-paper to-card-warm px-4 py-8 md:px-12">
@@ -334,9 +346,9 @@ export default function SlidePlayer() {
         <div aria-hidden="true" />
         <div className="flex shrink-0 items-center justify-self-center gap-3">
           <button type="button" disabled={currentIndex === 0} onClick={() => setCurrentIndex((value) => Math.max(0, value - 1))} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="上一页"><ChevronLeft size={17} /></button>
-          <button type="button" onClick={speakCurrent} className="flex h-11 items-center gap-2 rounded-full bg-brand px-5 text-[12.5px] font-medium text-paper">{speaking ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}{speaking ? '暂停讲播' : '讲这一页'}</button>
-          <button type="button" onClick={() => setSpeechRateIndex((value) => (value + 1) % speechRates.length)} className="h-10 rounded-full border border-hairline px-4 font-mono text-[11px] text-ink-muted">{speechRates[speechRateIndex].toFixed(1)}×</button>
-          <button type="button" onClick={() => setVolumeIndex((value) => (value + 1) % volumes.length)} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted" title={volumes[volumeIndex] === 0 ? '恢复音量' : `音量 ${Math.round(volumes[volumeIndex] * 100)}%`}>{volumes[volumeIndex] === 0 ? <VolumeX size={14} /> : volumes[volumeIndex] < 0.6 ? <Volume1 size={14} /> : <Volume2 size={14} />}</button>
+          <button type="button" onClick={speakCurrent} className="flex h-11 items-center gap-2 rounded-full bg-brand px-5 text-[12.5px] font-medium text-paper">{narration.speaking ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}{narration.speaking ? '暂停讲播' : '讲这一页'}</button>
+          <button type="button" onClick={cycleSpeed} className="h-10 rounded-full border border-hairline px-4 font-mono text-[11px] text-ink-muted">{narrationSpeeds.find((item) => item.value === speechSpeed)?.label ?? '1.0×'}</button>
+          <button type="button" onClick={cycleVolume} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted" title={narration.volume === 0 ? '恢复音量' : `音量 ${Math.round(narration.volume * 100)}%`}>{narration.volume === 0 ? <VolumeX size={14} /> : narration.volume < 0.6 ? <Volume1 size={14} /> : <Volume2 size={14} />}</button>
           <button type="button" disabled={!slide} onClick={() => { setNoteText(''); setNoteOpen(true); }} className="flex h-10 items-center gap-1.5 rounded-full border border-hairline px-3 text-[11px] text-ink-muted hover:border-brand/40 hover:text-brand disabled:opacity-30" title="记录当前卡片笔记"><NotebookPen size={14} />笔记</button>
           {isLastSlide && data?.resourceId ? (
             <button type="button" disabled={completing} onClick={() => setCompleteConfirmOpen(true)} className="flex h-10 items-center gap-1.5 rounded-full bg-brand px-5 text-[12px] font-medium text-paper disabled:opacity-50">{completing ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}完成学习</button>
