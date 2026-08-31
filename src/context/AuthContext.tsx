@@ -101,7 +101,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         let result;
         if (method === 'guest') {
-          result = await api.guestLogin();
+          const persona = account.startsWith('guest:') ? account.replace('guest:', '') : undefined;
+          result = await api.guestLogin(persona);
         } else if (method === 'persona') {
           result = await api.demoLogin(learnerId ?? account.replace(/^persona:/, ''));
         } else if (method === 'admin') {

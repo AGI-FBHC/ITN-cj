@@ -1114,7 +1114,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     }),
-  guestLogin: () => request<LoginResult>('/api/v1/auth/guest-login', { method: 'POST' }),
+  guestLogin: (persona?: string) => request<LoginResult>(`/api/v1/auth/guest-login${persona ? `?persona=${persona}` : ''}`, { method: 'POST' }),
   demoLogin: (learnerCode: string) =>
     request<LoginResult>('/api/v1/auth/demo-login', {
       method: 'POST',

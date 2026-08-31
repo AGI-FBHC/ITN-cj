@@ -6,6 +6,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { Toaster } from '@/components/ui/sonner';
 import AppShell from '@/components/AppShell';
 import Login from '@/pages/Login';
+import PersonaSelect from '@/pages/PersonaSelect';
 
 /* 路由级懒加载：重型页面（3D/课件/图表/PPT）按需分包，降低首屏主包体积 */
 const Home = lazy(() => import('@/pages/Home'));
@@ -95,6 +96,7 @@ export default function App() {
       <Suspense fallback={<div className="flex min-h-[70vh] items-center justify-center text-[13px] text-ink-muted">正在加载页面…</div>}>
       <Routes>
         <Route path="login" element={<Login />} />
+        <Route path="persona" element={<PersonaSelect />} />
         <Route element={<RequireAuth />}>
         <Route path="welcome" element={<Welcome />} />
         <Route path="admin" element={<Admin />} />

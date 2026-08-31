@@ -227,10 +227,8 @@ export default function Login() {
   };
 
   const inputClass = 'w-full rounded-[10px] border border-hairline bg-paper px-3.5 py-2.5 text-[14px] text-ink outline-none transition-colors focus:border-brand/50';
-  const loginGuest = () => {
-    doLogin("guest", "guest", "游客");
-  };
   const primaryClass = 'lf-btn-primary w-full justify-center !py-2.5';
+  const navigatePersona = () => navigate('/persona');
 
   return (
     <div className="lf-learner grid min-h-[100dvh] lg:grid-cols-[1.05fr_1fr]">
@@ -357,7 +355,7 @@ export default function Login() {
                 )}
 
                 <div className="mt-auto pt-5">
-                  {!adminMode && <button type="button" onClick={loginGuest} className="flex w-full items-center justify-center gap-1.5 rounded-[10px] border border-hairline bg-paper py-2.5 text-[13px] font-medium text-ink-2 transition-all hover:border-brand/40 hover:text-ink">
+                  {!adminMode && <button type="button" onClick={navigatePersona} className="flex w-full items-center justify-center gap-1.5 rounded-[10px] border border-hairline bg-paper py-2.5 text-[13px] font-medium text-ink-2 transition-all hover:border-brand/40 hover:text-ink">
                     <UserRound size={14} />
                     游客体验
                   </button>}
