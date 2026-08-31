@@ -180,7 +180,7 @@ export default function SlidePlayer() {
     ].filter(Boolean).join('\n\n');
     return [{
       index: 0, unitIndex: 0, totalUnits: ready.length, type: 'intro' as const,
-      title: '学习目标与内容概览', content: body,
+      title: String(completedResource.content.introTitle ?? '学习目标与内容概览'), content: body,
     }, ...ready.map((item, index) => ({ ...item, index: index + 1 }))];
   }, [data?.slides, data?.resourceType, completedResource]);
   useEffect(() => { if (slides.length && currentIndex >= slides.length) setCurrentIndex(slides.length - 1); }, [slides.length, currentIndex]);

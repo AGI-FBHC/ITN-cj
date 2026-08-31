@@ -142,7 +142,7 @@ function blocksOf(resource: LearningResource): LearningBlock[] {
     const objectives = asStrings(content.learningObjectives);
     if (content.summary || objectives.length) {
       blocks.push({
-        id: 'lecture-intro', kind: 'intro', eyebrow: '本讲导览', title: '学习目标与内容概览',
+        id: 'lecture-intro', kind: 'intro', eyebrow: '本讲导览', title: String(content.introTitle ?? '学习目标与内容概览'),
         body: [String(content.summary ?? ''), objectives.length ? `\n\n**完成本讲后，你将能够：**\n${objectives.map((item) => `- ${item}`).join('\n')}` : ''].join(''),
         citations: [],
       });
