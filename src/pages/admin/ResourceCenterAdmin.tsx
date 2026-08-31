@@ -585,7 +585,7 @@ export default function ResourceCenterAdmin() {
                                       <button onClick={() => { void startGeneration(type).then((r) => { void loadGenerationTasks(); navigate(`/admin/workbench?task=${r.taskKind}-${r.id}`); }); }} className="lf-row-btn text-ink-muted" title="重新生成"><RefreshCw size={11} />重新生成</button>
                                     )}
                                     <button onClick={() => preview(item)} className="lf-row-btn"><Eye size={11} />预览</button>
-                                    {openResourceLog && <button onClick={() => openResourceLog(item)} className="lf-row-btn" title="生成日志"><FileText size={11} /></button>}
+                                    {openResourceLog && <button onClick={() => openResourceLog(item)} className="lf-row-btn" title="打开生成日志"><FileText size={11} />日志</button>}
                                     {view === 'archive' ? (
                                       <>
                                         <button onClick={() => void act(item, 'restore')} className="lf-row-btn lf-row-btn-primary"><ArchiveRestore size={11} />恢复</button>
