@@ -10,6 +10,11 @@ export interface LearningPageContext {
   headings: string[];
   visibleText: string;
   entities: Record<string, string>;
+  interaction?: {
+    kind: 'quiz';
+    submitted: boolean;
+    selectedAnswer?: string;
+  };
 }
 
 const PAGE_TYPES: Array<[RegExp, string]> = [
@@ -75,6 +80,15 @@ export function collectLearningPageContext(): LearningPageContext {
     '[data-assistant-focus="true"], [data-assistant-context][aria-current="true"], [data-assistant-context]',
   )].find(visible) ?? null;
   const focus = elementContext(focusElement, '当前内容');
+  const quizInteraction = focusElement?.dataset.contextKind === '当前题目'
+    ? {
+        kind: 'quiz' as const,
+        submitted: focusElement.dataset.contextQuizSubmitted === 'true',
+        ...(focusElement.dataset.contextSelectedAnswer
+          ? { selectedAnswer: clean(focusElement.dataset.contextSelectedAnswer, 120) }
+          : {}),
+      }
+    : undefined;
   const dialog = elementContext(dialogElement, '当前弹窗');
   const headings = [...main.querySelectorAll('h1,h2,h3')].filter(visible)
     .map((element) => clean(element.textContent, 160)).filter(Boolean).slice(0, 12);
@@ -94,6 +108,7 @@ export function collectLearningPageContext(): LearningPageContext {
     headings,
     visibleText,
     entities: entityIds(route),
+    ...(quizInteraction ? { interaction: quizInteraction } : {}),
   };
   try {
     if (pageType === '伴学对话') {

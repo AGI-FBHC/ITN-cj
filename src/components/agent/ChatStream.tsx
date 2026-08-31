@@ -100,6 +100,11 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
       ? [`帮我理解「${weakest.name}」的核心概念`, `${weakest.name}有哪些常见错误？`]
       : ['今天想学什么？', '帮我解释一个概念'];
   })();
+  const quizActions = currentContext.interaction?.kind === 'quiz'
+    ? currentContext.interaction.submitted
+      ? ['讲解这道题', '分析错误选项', '查看原文依据']
+      : ['分析题干', '给我一点提示', '帮我排除选项']
+    : [];
 
   return (
     <>
@@ -147,6 +152,20 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
         )}
       </div>
 
+      {quizActions.length > 0 && (
+        <div className="flex shrink-0 gap-1.5 overflow-x-auto border-t border-hairline/70 bg-brand-tint/15 px-3 py-2">
+          {quizActions.map((action) => (
+            <button
+              key={action}
+              type="button"
+              onClick={() => askFree(action, collectLearningPageContext())}
+              className="shrink-0 rounded-full border border-brand/20 bg-paper px-2.5 py-1 text-[10.5px] font-medium text-brand transition hover:border-brand/45 hover:bg-brand-tint/40"
+            >
+              {action}
+            </button>
+          ))}
+        </div>
+      )}
       {/* Composer */}
       <div className="shrink-0 border-t border-hairline px-3 py-2">
         <div className="flex items-end gap-2 rounded-xl border border-hairline bg-paper px-2.5 py-1.5">

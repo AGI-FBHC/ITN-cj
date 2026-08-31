@@ -5,7 +5,7 @@
  * 侧边边缘：按住拖拽调整宽度（左浮→右边拖，右浮→左边拖）
  * 位置和宽度持久化到 localStorage
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useMotionValue, useTransform, animate } from 'framer-motion';
 import { Brain, GripHorizontal, Maximize2, Plus, X } from 'lucide-react';
@@ -38,9 +38,21 @@ export default function AgentDock() {
   const navigate = useNavigate();
   const location = useLocation();
   const inCourse = location.pathname.startsWith('/learn/');
+  const inSlidePlayer = location.pathname.startsWith('/learn/slide/');
 
   const [side, setSide] = useState<'left' | 'right'>(readSide);
   const [panelW, setPanelW] = useState(readWidth);
+  const effectiveSide = inSlidePlayer ? 'right' : side;
+  const effectivePanelW = inSlidePlayer ? Math.min(400, window.innerWidth - MARGIN * 2) : panelW;
+
+  useEffect(() => {
+    if (!inSlidePlayer || !open) {
+      document.documentElement.style.removeProperty('--lf-slide-assistant-width');
+      return;
+    }
+    document.documentElement.style.setProperty('--lf-slide-assistant-width', `${effectivePanelW + MARGIN * 2}px`);
+    return () => { document.documentElement.style.removeProperty('--lf-slide-assistant-width'); };
+  }, [effectivePanelW, inSlidePlayer, open]);
 
   /* Sessions are now lazy-created on first message in agentAsk.
      No auto-create needed here. */
@@ -114,15 +126,16 @@ export default function AgentDock() {
 
   if (hidden) return null;
 
-  const isLeft = side === 'left';
-  const baseX = isLeft ? MARGIN : window.innerWidth - panelW - MARGIN;
+  const isLeft = effectiveSide === 'left';
+  const baseX = isLeft ? MARGIN : window.innerWidth - effectivePanelW - MARGIN;
   const panelX = useTransform(dragX, (dx) => baseX + dx);
 
   return (
     <>
       {/* ===== FAB ===== */}
       <div className={cn(
-        'fixed bottom-4 z-40 flex flex-col gap-2 md:bottom-6',
+        'fixed bottom-4 flex flex-col gap-2 md:bottom-6',
+        inSlidePlayer ? 'z-[10010]' : 'z-40',
         isLeft ? 'left-4 md:left-6' : 'right-4 md:right-6',
       )}>
         <AnimatePresence>
@@ -163,13 +176,14 @@ export default function AgentDock() {
       <AnimatePresence>
         {open && (
           <motion.div
-            style={{ x: panelX, width: panelW }}
+            style={{ x: panelX, width: effectivePanelW }}
             initial={{ opacity: 0, scale: 0.92 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.92 }}
             transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
             className={cn(
-              'fixed top-3 z-50 flex h-[calc(100dvh-24px)] flex-col overflow-visible',
+              'fixed top-3 flex h-[calc(100dvh-24px)] flex-col overflow-visible',
+              inSlidePlayer ? 'z-[10010]' : 'z-50',
               'rounded-2xl border border-white/60',
               'bg-gradient-to-b from-white/90 to-white/75 backdrop-blur-2xl',
               'shadow-[0_8px_40px_rgba(0,0,0,0.12),0_2px_12px_rgba(0,0,0,0.06)]',
@@ -177,7 +191,7 @@ export default function AgentDock() {
             data-agent-dock
           >
             {/* 左/右边缘 resize 手柄 */}
-            <div
+            {!inSlidePlayer && <div
               onMouseDown={startResize}
               onTouchStart={startResize}
               className={cn(
@@ -190,13 +204,13 @@ export default function AgentDock() {
                 isLeft ? 'right-0' : 'left-0',
                 'bg-transparent hover:bg-brand/30',
               )} />
-            </div>
+            </div>}
 
             {/* 顶部拖拽横条 */}
             <div
               onMouseDown={startDragMove}
               onTouchStart={startDragMove}
-              className="flex shrink-0 cursor-grab items-center justify-center py-1 active:cursor-grabbing"
+              className={cn('flex shrink-0 items-center justify-center py-1', inSlidePlayer ? 'cursor-default' : 'cursor-grab active:cursor-grabbing')}
             >
               <div className="flex h-[18px] w-12 items-center justify-center rounded-full bg-ink/[0.06] transition-colors hover:bg-ink/12">
                 <GripHorizontal size={12} className="text-ink-muted/60" />
