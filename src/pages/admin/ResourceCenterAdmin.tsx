@@ -70,6 +70,10 @@ export default function ResourceCenterAdmin() {
     () => api.listAdminResources({ view, type: 'ppt', keyword, domainCode: (domain as { code: string }).code, nodeCode: node?.nodeCode }),
     { ttlMs: 15_000 },
   );
+  const completedPptItems = useMemo(
+    () => (pptQ.data?.items ?? []).filter((item) => item.status === 'completed'),
+    [pptQ.data?.items],
+  );
 
   useEffect(() => {
     if (!treeQ.data) return;
@@ -80,7 +84,7 @@ export default function ResourceCenterAdmin() {
     if (!node || !domain || domain.code === '__unassigned__') { setGroupResources([]); return; }
     let cancelled = false;
     api.listAdminResources({ view: 'library', domainCode: domain.code, nodeCode: node.nodeCode })
-      .then((result) => { if (!cancelled) setGroupResources(result.items); })
+      .then((result) => { if (!cancelled) setGroupResources(result.items.filter((item) => item.type !== 'ppt' || item.status === 'completed')); })
       .catch(() => { if (!cancelled) setGroupResources([]); });
     return () => { cancelled = true; };
   }, [node?.id, node?.nodeCode, domain?.code]);
@@ -150,14 +154,14 @@ export default function ResourceCenterAdmin() {
   const groupedEntries = useMemo(() => {
     const map = new Map<string, Map<ResourceKind, AdminResourceItem>>();
     const ensure = (g: string) => { if (!map.has(g)) map.set(g, new Map()); return map.get(g)!; };
-    [...(listQ.data?.items ?? []), ...(pptQ.data?.items ?? [])].forEach((item) => { ensure(item.groupName || '默认分组').set(item.type as ResourceKind, item); });
+    [...(listQ.data?.items ?? []), ...completedPptItems].forEach((item) => { ensure(item.groupName || '默认分组').set(item.type as ResourceKind, item); });
     generationTasks.forEach((task) => {
       const ctx = taskContext(task);
       if (task.status === 'completed' && ctx.domainCode === domain?.code && ctx.nodeCode === node?.nodeCode) ensure(String(ctx.groupName || '默认分组'));
     });
     ensure('默认分组');
     return [...map.entries()].sort(([a], [b]) => a === '默认分组' ? -1 : b === '默认分组' ? 1 : a.localeCompare(b));
-  }, [listQ.data?.items, pptQ.data?.items, generationTasks, domain?.code, node?.nodeCode]);
+  }, [listQ.data?.items, completedPptItems, generationTasks, domain?.code, node?.nodeCode]);
   const pptReady = ['lecture', 'practice', 'quiz'].every((type) => completedTypes.has(type as ResourceKind));
 
   const startGeneration = async (target: ResourceKind) => {

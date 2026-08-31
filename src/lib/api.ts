@@ -53,6 +53,7 @@ export interface AdminResourceItem {
   template: boolean;
   createdAt: string; updatedAt: string; archivedAt: string | null; archiveReason: string | null;
   ownerAccount: string | null;
+  status?: string | null;
 }
 
 export interface AdminResourceStats { library: number; pending: number; published: number; recycle: number; }
