@@ -95,19 +95,11 @@ export default function ResourceCenterAdmin() {
 
   const loadGenerationTasks = async () => {
     const [resources, presentations] = await Promise.all([
-      api.listLearningResourceTasks(100),
-      presentationApi.listPresentationSummariesFresh(100, true),
+      api.listLearningResourceTasks(1000),
+      presentationApi.listPresentationSummariesFresh(1000, true),
     ]);
-    const textContext = (task: LearningResourceGenerationTask) => {
-      const request = task.request as (LearningResourceGenerateInput & { generation_context?: Record<string, unknown> }) | undefined;
-      return request?.generationContext ?? request?.generation_context;
-    };
-    const textTasks: GenerationTask[] = resources.tasks
-      .filter((task) => textContext(task)?.adminGeneration === true)
-      .map((task) => ({ ...task, taskKind: 'resource' as const }));
-    const pptTasks: GenerationTask[] = presentations.tasks
-      .filter((task) => task.request?.generationContext?.adminGeneration === true)
-      .map((task) => ({ ...task, taskKind: 'ppt' as const }));
+    const textTasks: GenerationTask[] = resources.tasks.map((task) => ({ ...task, taskKind: 'resource' as const }));
+    const pptTasks: GenerationTask[] = presentations.tasks.map((task) => ({ ...task, taskKind: 'ppt' as const }));
     setGenerationTasks([...textTasks, ...pptTasks].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)));
   };
 
@@ -213,11 +205,13 @@ export default function ResourceCenterAdmin() {
 
 
 
-  /** 资源 → 生成任务追溯：资源任务按 resourceId 精确匹配，课件按标题匹配 */
+  /** 资源 → 生成任务追溯：资源任务按 resourceId，课件先按任务 id 再按标题匹配 */
   const taskLogForResource = (item: AdminResourceItem): GenerationTask | null => {
-    const byId = generationTasks.find((t) => t.taskKind === 'resource' && t.resourceId === item.id);
+    const byId = generationTasks.find((t) => t.taskKind === 'resource' && t.resourceId === item.id)
+      ?? generationTasks.find((t) => t.taskKind === 'ppt' && t.id === item.id);
     if (byId) return byId;
-    return generationTasks.find((t) => t.taskKind === 'ppt' && t.title === item.title) ?? null;
+    if (item.type === 'ppt') return generationTasks.find((t) => t.taskKind === 'ppt' && t.title === item.title) ?? null;
+    return null;
   };
 
   const openResourceLog = (item: AdminResourceItem) => {
