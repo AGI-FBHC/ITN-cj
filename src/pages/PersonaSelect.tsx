@@ -55,7 +55,7 @@ export default function PersonaSelect() {
     try {
       const ok = await loginRemote('guest', `guest:${persona.id}`, persona.label);
       if (ok) {
-        navigate('/learn', { replace: true });
+        navigate('/welcome', { replace: true });
       } else {
         toast.error('登录失败，请稍后重试');
       }
