@@ -29,6 +29,7 @@ export const agents = [
   { id: 'ARB-05', name: '发布仲裁 Agent', duty: '通过、返工或终止', icon: arbitrationAgentIcon },
 ] as const;
 const activeStatuses = new Set(['queued', 'retrieving', 'debating', 'planning', 'analyzing', 'generating', 'verifying', 'reviewing', 'revising', 'judging', 'outline_review']);
+const executingStatuses = new Set(['retrieving', 'debating', 'planning', 'analyzing', 'generating', 'verifying', 'reviewing', 'revising', 'judging']);
 const typeText: Record<string, string> = { lecture: '讲义', practice: '实操指南', quiz: '题库', ppt: '交互课件' };
 
 export function eventDisplayTitle(event: AdminGenerationEvent) {
@@ -434,21 +435,23 @@ function buildTaskTree(items: WorkbenchTask[]): TaskTreeNode[] {
 }
 
 function TaskDirectoryTree({
-  nodes, level = 0, expanded, selectedKey, onToggle, renderLeaf,
+  nodes, level = 0, expanded, selectedKey, runningGroupKey, onToggle, renderLeaf,
 }: {
   nodes: TaskTreeNode[];
   level?: number;
   expanded: Set<string>;
   selectedKey: string | null;
+  runningGroupKey: string | null;
   onToggle: (key: string) => void;
   renderLeaf: (task: WorkbenchTask) => ReactNode;
 }) {
   return <>{nodes.map((node) => {
     const isOpen = expanded.has(node.key);
+    const isRunningGroup = node.key === runningGroupKey;
     if (node.tasks.length > 0) {
-      return <div key={node.key} style={{ marginLeft: level * 8 }} className="space-y-1.5"><button type="button" onClick={() => onToggle(node.key)} className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left hover:bg-white/60"><ChevronRight size={12} className={cn('text-ink-muted transition-transform', isOpen && 'rotate-90')} /><span className="min-w-0 flex-1 truncate text-[10.5px] font-bold text-ink">{node.label}</span><span className="rounded-full bg-brand-tint px-1.5 py-0.5 text-[8.5px] font-bold text-brand">{node.count}</span></button>{isOpen && <div className="space-y-1.5">{node.tasks.map((task) => <div key={taskKey(task)}>{renderLeaf(task)}</div>)}</div>}</div>;
+      return <div key={node.key} style={{ marginLeft: level * 8 }} className="space-y-1.5"><button type="button" data-running-group={isRunningGroup ? 'true' : undefined} onClick={() => onToggle(node.key)} className={cn('relative flex w-full items-center gap-1.5 rounded-lg border px-2 py-1.5 text-left transition-[background-color,border-color,box-shadow] hover:bg-white/60', isRunningGroup ? 'border-emerald-300/80 bg-emerald-50/80 shadow-[0_0_0_3px_rgba(16,185,129,0.10),0_0_18px_rgba(16,185,129,0.18)]' : 'border-transparent')}><ChevronRight size={12} className={cn('text-ink-muted transition-transform', isOpen && 'rotate-90')} />{isRunningGroup && <span className="relative flex h-2.5 w-2.5 shrink-0" aria-label="当前正在执行"><span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-70 motion-reduce:animate-none" /><span className="relative inline-flex h-2.5 w-2.5 animate-pulse rounded-full border-2 border-white bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.85)] motion-reduce:animate-none" /></span>}<span className="min-w-0 flex-1 truncate text-[10.5px] font-bold text-ink">{node.label}</span>{isRunningGroup && <span className="shrink-0 text-[8.5px] font-bold tracking-wide text-emerald-700">执行中</span>}<span className="rounded-full bg-brand-tint px-1.5 py-0.5 text-[8.5px] font-bold text-brand">{node.count}</span></button>{isOpen && <div className="space-y-1.5">{node.tasks.map((task) => <div key={taskKey(task)}>{renderLeaf(task)}</div>)}</div>}</div>;
     }
-    return <div key={node.key} style={{ marginLeft: level * 8 }} className="space-y-1.5"><button type="button" onClick={() => onToggle(node.key)} className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left hover:bg-white/60"><ChevronRight size={12} className={cn('text-ink-muted transition-transform', isOpen && 'rotate-90')} /><span className="min-w-0 flex-1 truncate text-[10.5px] font-bold text-ink">{node.label}</span><span className="text-[8.5px] text-ink-muted">{node.count}</span></button>{isOpen && <TaskDirectoryTree nodes={node.children} level={level + 1} expanded={expanded} selectedKey={selectedKey} onToggle={onToggle} renderLeaf={renderLeaf} />}</div>;
+    return <div key={node.key} style={{ marginLeft: level * 8 }} className="space-y-1.5"><button type="button" onClick={() => onToggle(node.key)} className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left hover:bg-white/60"><ChevronRight size={12} className={cn('text-ink-muted transition-transform', isOpen && 'rotate-90')} /><span className="min-w-0 flex-1 truncate text-[10.5px] font-bold text-ink">{node.label}</span><span className="text-[8.5px] text-ink-muted">{node.count}</span></button>{isOpen && <TaskDirectoryTree nodes={node.children} level={level + 1} expanded={expanded} selectedKey={selectedKey} runningGroupKey={runningGroupKey} onToggle={onToggle} renderLeaf={renderLeaf} />}</div>;
   })}</>;
 }
 function NewTaskModal({ open, onClose, onCreate, busy }: { open: boolean; onClose: () => void; onCreate: (targets: GenKind[], ctx: { domainCode: string; nodeCode: string; topicName: string; groupName: string; regenerate?: boolean; pptWaitsForBatch?: boolean }) => void; busy: boolean }) {
@@ -1298,6 +1301,23 @@ export default function CollaborationWorkbench() {
   }), [tasks]);
   const currentTasks = taskTab === 'active' ? grouped.active : grouped.finished;
   const taskTree = useMemo(() => buildTaskTree(currentTasks), [currentTasks]);
+  const runningTask = useMemo(() => tasks
+    .filter((item) => executingStatuses.has(item.status))
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0] ?? null, [tasks]);
+  const runningGroupKey = runningTask ? taskTreePathKeys(runningTask)[2] : null;
+  useEffect(() => {
+    if (!runningGroupKey) return;
+    setExpandedTaskKeys((current) => {
+      const next = new Set(current);
+      [runningGroupKey.split('/n:')[0], runningGroupKey.split('/g:')[0], runningGroupKey]
+        .forEach((key) => next.add(key));
+      return next;
+    });
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>('[data-running-group="true"]')
+        ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    });
+  }, [runningGroupKey]);
 
 
   return (
@@ -1341,7 +1361,7 @@ export default function CollaborationWorkbench() {
         )}
         <div className="min-h-0 flex-1 overflow-y-auto p-2.5">
           <div className="space-y-2">
-            <TaskDirectoryTree nodes={taskTree} expanded={expandedTaskKeys} selectedKey={selectedKey} onToggle={(key) => setExpandedTaskKeys((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} renderLeaf={(item) => <WorkbenchTaskItem key={taskKey(item)} item={item} selected={taskKey(item) === selectedKey} bulkMode={bulkMode && taskTab === 'finished'} checked={bulkSelected.has(taskKey(item))} onPreview={(task) => void openPreview(task)} onCancel={(task) => void cancelTask(task)} onRestart={(task) => void restartTask(task)} onDelete={(task) => deleteTask(task)} onClick={() => { if (bulkMode && taskTab === 'finished') { setBulkSelected((current) => { const next = new Set(current); if (next.has(taskKey(item))) next.delete(taskKey(item)); else next.add(taskKey(item)); return next; }); } else { setParams({ task: taskKey(item) }); } }} />} />
+            <TaskDirectoryTree nodes={taskTree} expanded={expandedTaskKeys} selectedKey={selectedKey} runningGroupKey={taskTab === 'active' ? runningGroupKey : null} onToggle={(key) => setExpandedTaskKeys((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; })} renderLeaf={(item) => <WorkbenchTaskItem key={taskKey(item)} item={item} selected={taskKey(item) === selectedKey} bulkMode={bulkMode && taskTab === 'finished'} checked={bulkSelected.has(taskKey(item))} onPreview={(task) => void openPreview(task)} onCancel={(task) => void cancelTask(task)} onRestart={(task) => void restartTask(task)} onDelete={(task) => deleteTask(task)} onClick={() => { if (bulkMode && taskTab === 'finished') { setBulkSelected((current) => { const next = new Set(current); if (next.has(taskKey(item))) next.delete(taskKey(item)); else next.add(taskKey(item)); return next; }); } else { setParams({ task: taskKey(item) }); } }} />} />
             {currentTasks.length === 0 && (
               <div className="lf-empty rounded-xl p-6 text-xs">{taskTab === 'active' ? '暂无进行中的任务' : '暂无已完成任务'}</div>
             )}
