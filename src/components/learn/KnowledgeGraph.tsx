@@ -471,6 +471,16 @@ export default function KnowledgeGraph({
     const trunkX = parent.x + direction * (parent.r + 32);
     return { parent, topics, rootX, rootY, trunkX, direction };
   }, [expandedKp, expandedTopics, nodeById, longestTopicLabel]);
+  const expandedTopicEdges = useMemo(() => {
+    if (!expandedTopicLayout) return [];
+    const visibleTopics = new Map(expandedTopicLayout.topics.map((topic) => [topic.id, topic]));
+    return dataEdges.flatMap((edge) => {
+      const from = visibleTopics.get(edge.from);
+      const to = visibleTopics.get(edge.to);
+      if (!from || !to || edge.kind === 'contains') return [];
+      return [{ edge, from, to }];
+    });
+  }, [dataEdges, expandedTopicLayout]);
   const currentViewBox = graphViewBox;
 
 
@@ -608,6 +618,38 @@ export default function KnowledgeGraph({
             })}
           </g>
         )}
+        {/* 仅绘制当前展开章节内、两端均可见的知识点语义边，避免悬空连线。 */}
+        {expandedTopicLayout && expandedTopicEdges.map(({ edge, from, to }, index) => {
+          const st = EDGE_STYLE[edge.kind];
+          const offset = 26 + (index % 3) * 6;
+          const innerDirection = -expandedTopicLayout.direction;
+          const x1 = from.x + innerDirection * (from.r + 2);
+          const x2 = to.x + innerDirection * (to.r + 2);
+          const curveX = Math.min(x1, x2) + innerDirection * offset;
+          const path = `M ${x1} ${from.y} C ${curveX} ${from.y}, ${curveX} ${to.y}, ${x2} ${to.y}`;
+          return (
+            <g
+              key={`topic-edge-${edge.kind}-${edge.from}-${edge.to}-${index}`}
+              onMouseEnter={() => setEdgeTip({ x: curveX, y: (from.y + to.y) / 2, kind: edge.kind, notes: edge.note ? [edge.note] : [st.hint] })}
+              onMouseLeave={() => setEdgeTip(null)}
+            >
+              <path d={path} fill="none" stroke="transparent" strokeWidth="12" />
+              <path
+                data-topic-edge-from={edge.from}
+                data-topic-edge-to={edge.to}
+                d={path}
+                fill="none"
+                stroke={st.stroke}
+                strokeWidth={st.width}
+                strokeDasharray={st.dash}
+                strokeLinecap="round"
+                opacity={Math.min(0.9, st.opacity + 0.22)}
+                markerEnd={edge.kind === 'prereq' || edge.kind === 'prerequisite' ? 'url(#kg-arrow)' : undefined}
+                style={{ pointerEvents: 'none' }}
+              />
+            </g>
+          );
+        })}
         {expandedTopicLayout?.topics.map((n) => {
           return (
             <g
