@@ -282,7 +282,7 @@ export default function KnowledgeGraph({
   };
 
   /* 默认只展示“先学它”前置边，保持学习方向清晰 */
-  const layerOn = (k: EdgeKind): boolean => k === 'prereq';
+  const layerOn = (k: EdgeKind): boolean => k === 'prereq' || k === 'prerequisite';
 
   const sourceNodes = nodesProp ?? graphNodes;
   const expandedSourceTopics = expandedKp ? sourceNodes.filter((node) => node.kind === 'topic' && node.kpId === expandedKp) : [];
@@ -543,7 +543,7 @@ export default function KnowledgeGraph({
                       strokeDasharray={st.dash}
                       strokeLinecap="round"
                       opacity={st.opacity + 0.1}
-                      markerEnd={kind === 'prereq' ? 'url(#kg-arrow)' : undefined}
+                      markerEnd={kind === 'prereq' || kind === 'prerequisite' ? 'url(#kg-arrow)' : undefined}
                       style={{ pointerEvents: 'none' }}
                     />
                     {e.count > 1 && (
@@ -634,8 +634,8 @@ export default function KnowledgeGraph({
         >
           <div className="flex items-center gap-1.5 text-[11px] font-semibold text-ink">
             <svg width="20" height="8" viewBox="0 0 24 8" aria-hidden>
-              <line x1="0" y1="4" x2={edgeTip.kind === 'prereq' ? 17 : 24} y2="4" stroke={EDGE_STYLE[edgeTip.kind].stroke} strokeWidth="2" strokeDasharray={EDGE_STYLE[edgeTip.kind].dash} />
-              {edgeTip.kind === 'prereq' && <path d="M 17 0.5 L 24 4 L 17 7.5 Z" fill={EDGE_STYLE[edgeTip.kind].stroke} />}
+              <line x1="0" y1="4" x2={edgeTip.kind === 'prereq' || edgeTip.kind === 'prerequisite' ? 17 : 24} y2="4" stroke={EDGE_STYLE[edgeTip.kind].stroke} strokeWidth="2" strokeDasharray={EDGE_STYLE[edgeTip.kind].dash} />
+              {(edgeTip.kind === 'prereq' || edgeTip.kind === 'prerequisite') && <path d="M 17 0.5 L 24 4 L 17 7.5 Z" fill={EDGE_STYLE[edgeTip.kind].stroke} />}
             </svg>
             {EDGE_STYLE[edgeTip.kind].label}
             <span className="font-mono text-[9.5px] font-normal text-ink-muted">{EDGE_STYLE[edgeTip.kind].term}</span>
