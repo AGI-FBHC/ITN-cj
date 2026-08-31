@@ -356,6 +356,32 @@ function contextOf(task: WorkbenchTask): Record<string, unknown> {
 
 function taskKey(task: WorkbenchTask) { return `${task.taskKind}-${task.id}`; }
 
+const taskResourceOrder: Record<string, number> = { lecture: 0, practice: 1, quiz: 2, ppt: 3 };
+const taskNaturalCollator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' });
+
+/** 与资源中心一致：批次序号优先，旧任务再按领域、知识点、分组和资源类型排列。 */
+function resourceCenterTaskOrder(a: WorkbenchTask, b: WorkbenchTask): number {
+  const aSequence = Number(contextOf(a).queueSequence);
+  const bSequence = Number(contextOf(b).queueSequence);
+  const aHasSequence = Number.isFinite(aSequence) && aSequence > 0;
+  const bHasSequence = Number.isFinite(bSequence) && bSequence > 0;
+  if (aHasSequence && bHasSequence && aSequence !== bSequence) return aSequence - bSequence;
+  if (aHasSequence !== bHasSequence) return aHasSequence ? -1 : 1;
+  const aContext = taskTreeContext(a);
+  const bContext = taskTreeContext(b);
+  const fields = [
+    [aContext.domainCode, bContext.domainCode],
+    [aContext.nodeCode, bContext.nodeCode],
+    [aContext.groupName, bContext.groupName],
+  ];
+  for (const [left, right] of fields) {
+    const compared = taskNaturalCollator.compare(left, right);
+    if (compared !== 0) return compared;
+  }
+  const typeCompared = (taskResourceOrder[a.resourceType] ?? 99) - (taskResourceOrder[b.resourceType] ?? 99);
+  return typeCompared || Date.parse(b.createdAt) - Date.parse(a.createdAt);
+}
+
 function latestFinishedTasksByGroup(items: WorkbenchTask[]): WorkbenchTask[] {
   const latest = new Map<string, WorkbenchTask>();
   items.forEach((task) => {
@@ -364,7 +390,7 @@ function latestFinishedTasksByGroup(items: WorkbenchTask[]): WorkbenchTask[] {
     const current = latest.get(key);
     if (!current || Date.parse(task.createdAt) > Date.parse(current.createdAt)) latest.set(key, task);
   });
-  return [...latest.values()].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  return [...latest.values()].sort(resourceCenterTaskOrder);
 }
 
 type GenKind = 'lecture' | 'practice' | 'quiz' | 'ppt';
@@ -982,7 +1008,6 @@ export default function CollaborationWorkbench() {
   const prevTaskStatusRef = useRef<Map<string, string>>(new Map());
   const [selectedAgent, setSelectedAgent] = useState('');
   const [selectedEventSeq, setSelectedEventSeq] = useState<number | null>(null);
-  const [summaryLoadingSeq, setSummaryLoadingSeq] = useState<number | null>(null);
   const [taskTab, setTaskTab] = useState('active');
   const [tasksCollapsed, setTasksCollapsed] = useState(false);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
@@ -1025,7 +1050,7 @@ export default function CollaborationWorkbench() {
     }
     setTasks(resourceTasks);
     setLoading(false);
-    const next = [...resourceTasks, ...pptTasks].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+    const next = [...resourceTasks, ...pptTasks].sort(resourceCenterTaskOrder);
     const visible = next.filter((item) => !deletedKeysRef.current.includes(taskKey(item)));
     setTasks(visible);
     visible.forEach((item) => {
@@ -1091,7 +1116,7 @@ export default function CollaborationWorkbench() {
         setTasks((current) => {
           const byKey = new Map(current.map((item) => [taskKey(item), item]));
           created.forEach((item) => byKey.set(taskKey(item), item));
-          return [...byKey.values()].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+          return [...byKey.values()].sort(resourceCenterTaskOrder);
         });
         const newest = created.at(-1);
         if (newest) setParams({ task: taskKey(newest) });
@@ -1275,36 +1300,19 @@ export default function CollaborationWorkbench() {
   const active = Boolean(task && activeStatuses.has(task.status) && (!latest || activeStatuses.has(latest.status)));
   const selectedEvent = events.find((event) => event.seq === selectedEventSeq) ?? (isQuizTask && !selectedAgent ? quizQuestions[0]?.lastEvent ?? agentEvents.at(-1) : agentEvents.at(-1));
   const selectedEventIsRunning = Boolean(task && active && latest && selectedEvent && selectedEvent.seq === latest.seq);
-  const selectGenerationEvent = async (event: AdminGenerationEvent, keepAgent = false) => {
+  const selectGenerationEvent = (event: AdminGenerationEvent, keepAgent = false) => {
     setSelectedEventSeq(event.seq);
     if (!keepAgent) setSelectedAgent(event.agent);
-    const needsQuizRefresh = Boolean(event.snapshot?.questionAudit && event.executionSummary && /(上一节点|下一节点)/.test(event.executionSummary));
-    if (!task || summaryLoadingSeq === event.seq) return;
-    if (!event.executionSummary || needsQuizRefresh) {
-      setSummaryLoadingSeq(event.seq);
-      try {
-        const result = await api.summarizeAdminGenerationEvent(task.taskKind, task.id, event.seq, needsQuizRefresh);
-        setEvents((current) => {
-          const next = current.map((item) => item.seq === event.seq ? { ...item, executionSummary: result.summary } : item);
-          void saveAdminEventCache(task.taskKind, task.id, next).catch(() => undefined);
-          return next;
-        });
-      } catch {
-        // 摘要生成失败时保留已有事件，用户仍可查看原始 JSON。
-      } finally {
-        setSummaryLoadingSeq(null);
-      }
-    }
   };
   const grouped = useMemo(() => ({
-    active: tasks.filter((item) => activeStatuses.has(item.status)),
+    active: tasks.filter((item) => activeStatuses.has(item.status)).sort(resourceCenterTaskOrder),
     finished: latestFinishedTasksByGroup(tasks.filter((item) => !activeStatuses.has(item.status))),
   }), [tasks]);
   const currentTasks = taskTab === 'active' ? grouped.active : grouped.finished;
   const taskTree = useMemo(() => buildTaskTree(currentTasks), [currentTasks]);
   const runningTask = useMemo(() => tasks
     .filter((item) => executingStatuses.has(item.status))
-    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0] ?? null, [tasks]);
+    .sort(resourceCenterTaskOrder)[0] ?? null, [tasks]);
   const runningGroupKey = runningTask ? taskTreePathKeys(runningTask)[2] : null;
   useEffect(() => {
     if (!runningGroupKey) return;
@@ -1408,7 +1416,7 @@ export default function CollaborationWorkbench() {
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {isQuizTask && <QuizQuestionReviewNavigator events={events} selectedSeq={selectedEvent?.seq ?? null} onSelect={selectGenerationEvent} />}
           {selectedEvent ? (
-            <ExecutionDetailPanel key={selectedEvent.seq} event={selectedEvent} title={eventDisplayTitle(selectedEvent)} running={selectedEventIsRunning} summaryLoading={summaryLoadingSeq === selectedEvent.seq} />
+            <ExecutionDetailPanel key={selectedEvent.seq} event={selectedEvent} title={eventDisplayTitle(selectedEvent)} running={selectedEventIsRunning} summaryLoading={false} />
           ) : (
             <div className="mt-6 rounded-xl border border-dashed border-white/80 bg-white/30 px-4 py-10 text-center text-xs leading-6 text-ink-muted">
               尚未选择事件
