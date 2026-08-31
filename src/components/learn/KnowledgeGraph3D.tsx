@@ -82,6 +82,8 @@ interface KnowledgeGraph3DProps {
   /** 打开“我的已学路径”：高亮已学章节/子知识点 */
 
   showLearned?: boolean;
+  /** 是否显示展开章节内的知识点语义关系。 */
+  showTopicEdges?: boolean;
 
   /** 只读展示模式：禁用悬浮卡片/选项卡片/进度环（总览等场景） */
 
@@ -925,6 +927,7 @@ function TopicActionModal({
 function ChildPlane({
   parentPos,
   children,
+  edges,
   layout,
   hoveredId,
   selectedKpId,
@@ -936,6 +939,7 @@ function ChildPlane({
   animRef,
 
   showLearned,
+  showTopicEdges,
 
   showProgressRings,
   nodeTargets,
@@ -944,6 +948,7 @@ function ChildPlane({
 }: {
   parentPos: THREE.Vector3;
   children: GraphNode[];
+  edges: GraphEdge[];
   layout: { positions: Map<string, THREE.Vector3>; childDirections: Map<string, 'left' | 'right'>; focusOffsets: Map<string, THREE.Vector3> };
   hoveredId: string | null;
   selectedKpId: string | null;
@@ -956,6 +961,7 @@ function ChildPlane({
   animRef: BlendRef;
 
   showLearned?: boolean;
+  showTopicEdges: boolean;
 
   showProgressRings?: boolean;
   nodeTargets?: Record<string, { target: number; name?: string }>;
@@ -987,6 +993,21 @@ function ChildPlane({
       return { node, relPos, direction };
     });
   }, [children, layout.childDirections, layout.positions, parentPos]);
+  const childPositionById = useMemo(
+    () => new Map(childData.map(({ node, relPos }) => [node.id, new THREE.Vector3(...relPos)])),
+    [childData],
+  );
+  const planarTopicEdges = useMemo(() => {
+    if (!showTopicEdges) return [];
+    return edges.flatMap((edge) => {
+      const from = childPositionById.get(edge.from);
+      const to = childPositionById.get(edge.to);
+      if (!from || !to || edge.kind === 'contains') return [];
+      const hovered = hoveredId === edge.from || hoveredId === edge.to;
+      if (edge.kind !== 'prerequisite' && edge.kind !== 'prereq' && !hovered) return [];
+      return [{ edge, from, to, hovered }];
+    });
+  }, [showTopicEdges, edges, childPositionById, hoveredId]);
   return (
     <Billboard ref={billboardRef} position={parentPos}>
       <group>
@@ -1008,6 +1029,18 @@ function ChildPlane({
             />
           );
         })}
+
+        {/* 知识点语义关系与子节点共处 Billboard，本地平面始终正对用户。 */}
+        {planarTopicEdges.map(({ edge, from, to, hovered }) => (
+          <PlanarTopicEdge
+            key={`${edge.kind}-${edge.from}-${edge.to}`}
+            from={from}
+            to={to}
+            color={EDGE_COLORS[edge.kind]}
+            dashed={edge.kind === 'related' || edge.kind === 'contrasts_with'}
+            hovered={hovered}
+          />
+        ))}
         
         {/* 子节点 */}
         {childData.map(({ node, relPos, direction }) => {
@@ -1038,6 +1071,54 @@ function ChildPlane({
         })}
       </group>
     </Billboard>
+  );
+}
+
+function PlanarTopicEdge({
+  from,
+  to,
+  color,
+  dashed,
+  hovered,
+}: {
+  from: THREE.Vector3;
+  to: THREE.Vector3;
+  color: string;
+  dashed: boolean;
+  hovered: boolean;
+}) {
+  const geometry = useMemo(() => {
+    const direction = to.clone().sub(from);
+    const length = Math.max(direction.length(), 0.001);
+    direction.normalize();
+    const start = from.clone().addScaledVector(direction, Math.min(1.5, length * 0.3));
+    const end = to.clone().addScaledVector(direction, -Math.min(1.8, length * 0.36));
+    const arrowPosition = end.clone();
+    const arrowQuaternion = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      direction,
+    );
+    return { start, end, arrowPosition, arrowQuaternion };
+  }, [from, to]);
+
+  return (
+    <group position={[0, 0, 0.08]}>
+      <Line
+        renderOrder={0}
+        points={[geometry.start, geometry.end]}
+        color={color}
+        lineWidth={hovered ? 4 : 3}
+        transparent
+        opacity={hovered ? 0.92 : 0.58}
+        dashed={dashed}
+        dashSize={1.25}
+        gapSize={0.7}
+      />
+      <mesh position={geometry.arrowPosition} quaternion={geometry.arrowQuaternion} renderOrder={1}>
+        <coneGeometry args={[0.34, 0.82, 18]} />
+        <meshBasicMaterial color={color} transparent opacity={hovered ? 0.95 : 0.72} depthWrite={false} />
+      </mesh>
+    </group>
   );
 }
 
@@ -1491,6 +1572,7 @@ function SceneContent({
   onHoverNode,
 
   showLearned,
+  showTopicEdges,
 
   showProgressRings,
   nodeTargets,
@@ -1518,6 +1600,7 @@ function SceneContent({
   onHoverNode: (id: string | null, clientX?: number, clientY?: number, object?: THREE.Object3D) => void;
 
   showLearned?: boolean;
+  showTopicEdges: boolean;
 
   showProgressRings?: boolean;
   nodeTargets?: Record<string, { target: number; name?: string }>;
@@ -1572,8 +1655,8 @@ function SceneContent({
       {edges.map((edge) => {
         const n1 = nodes.find((n) => n.id === edge.from);
         const n2 = nodes.find((n) => n.id === edge.to);
-        // 3D 展开视图只保留章节层语义关系；知识点之间已有章节到子节点的结构线，
-        // 不再叠加前置/易混淆箭头，避免展开后的局部网络过密。
+        // 世界坐标层只展示章节↔章节关系。知识点关系由各 ChildPlane 在
+        // 面向用户的 Billboard 内绘制，避免箭头与子节点平面角度不一致。
         if (n1?.kind === 'topic' || n2?.kind === 'topic') return null;
         // 节点不可见则跳过：domain 始终可见，topic 需要其父章节已展开
         const v1 = n1 && (n1.kind === 'domain' || expandedKpIds.has(n1.kpId));
@@ -1588,21 +1671,21 @@ function SceneContent({
         if (!p1 || !p2) return null;
         const isRelated = relatedEdges.has(key);
         const isDimmed = hoveredId && !isRelated;
+        const fromBelongsToFocus = n1.id === focusId;
+        const toBelongsToFocus = n2.id === focusId;
         return (
           <Edge3D
-            key={key}
+            key={`${edge.kind}-${key}`}
             fromPos={p1}
             toPos={p2}
             color={EDGE_COLORS[edge.kind]}
             hovered={isRelated}
             dimmed={!!isDimmed}
             dashed={edge.kind === 'related'}
-            // topic 跟随 ChildPlane 一起移动，需继承父章节的聚焦偏移；否则节点球
-            // 已移动而语义边仍停留在原布局坐标，箭头会悬在空处。
             fromOffset={layout.focusOffsets.get(edge.from)}
             toOffset={layout.focusOffsets.get(edge.to)}
             animRef={animRef}
-            fadeOnFocus={focusId !== null && edge.from !== focusId && edge.to !== focusId}
+            fadeOnFocus={focusId !== null && !fromBelongsToFocus && !toBelongsToFocus}
             sourceId={edge.from}
             targetId={edge.to}
             nodeScaleRef={nodeScaleRef}
@@ -1619,6 +1702,7 @@ function SceneContent({
             key={kpId}
             parentPos={parentPos}
             children={nodes.filter((n) => n.kind === 'topic' && n.kpId === kpId)}
+            edges={edges}
             layout={layout}
             hoveredId={hoveredId}
             selectedKpId={selectedKpId}
@@ -1631,6 +1715,7 @@ function SceneContent({
             animRef={animRef}
 
             showLearned={showLearned}
+            showTopicEdges={showTopicEdges}
 
             showProgressRings={showProgressRings}
             nodeTargets={nodeTargets}
@@ -1702,6 +1787,7 @@ export default function KnowledgeGraph3D({
   focusTopicTarget,
   className,
   showLearned = false,
+  showTopicEdges = true,
   resources = {},
   presentations = [],
   persistenceKey,
@@ -1857,6 +1943,7 @@ export default function KnowledgeGraph3D({
             onHoverNode={handleHoverNode}
 
             showLearned={showLearned}
+            showTopicEdges={showTopicEdges}
 
             showProgressRings={showProgressRings}
 
