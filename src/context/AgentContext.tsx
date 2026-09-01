@@ -106,18 +106,9 @@ interface SessionStageRecord {
 
 const DEFAULT_SESSION_TITLE_RE = /^(新对话|伴学助手|阿诊)\s*·?\s*(学习诊断)?$/;
 
-function buildSessionTitle(askType: string, text: string, pageContext?: LearningPageContext): string {
-  const focusTitle = (pageContext?.focus?.title || pageContext?.pageTitle || '').replace(/\s+/g, ' ').trim().slice(0, 16);
-  const focusKind = pageContext?.focus?.kind ?? '';
-  const interactionKind = pageContext?.interaction?.kind;
-  if (focusKind.includes('题目') || interactionKind === 'quiz') return `题目讲解${focusTitle ? ` · ${focusTitle}` : ''}`;
-  if (focusKind.includes('实操')) return `实操求助${focusTitle ? ` · ${focusTitle}` : ''}`;
-  if (pageContext?.pageType === '幻灯片学习') return `幻灯片提问${focusTitle ? ` · ${focusTitle}` : ''}`;
-  if (pageContext?.pageType === '完整阅读' || focusKind.includes('阅读')) return `讲义提问${focusTitle ? ` · ${focusTitle}` : ''}`;
-  if (askType === 'why-blind') return '盲区诊断';
-  if (askType === 'what-next') return '下一步规划';
-  if (askType === 'challenge-score') return '分数核验';
-  return focusTitle ? `伴学提问 · ${focusTitle}` : '伴学提问';
+function buildSessionTitle(text: string): string {
+  const cleanText = text.replace(/^\s*\[当前页面[：:]\s*[^\]]+\]\s*/, '').replace(/\s+/g, ' ').trim();
+  return cleanText.length > 12 ? `${cleanText.slice(0, 12)}…` : cleanText;
 }
 
 function buildCrossPageBridge(history: SessionStageRecord[], current: LearningPageContext): string | null {
@@ -462,7 +453,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       // Only the first real question names a new/default session. Later messages do not overwrite it.
       const hasDefaultTitle = !activeSession?.title || DEFAULT_SESSION_TITLE_RE.test(activeSession.title.trim());
       if (hasDefaultTitle && userText.length > 0) {
-        const title = buildSessionTitle(askType, userText, pageContext);
+        const title = buildSessionTitle(userText);
         void api.updateAgentSession(sid, { title }).then((updated) => {
           setSessions((prev) => prev.map((s) => s.id === sid ? updated : s));
         }).catch(() => {/* ignore */});
@@ -616,19 +607,13 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           if (messages.length === 0) append({ id: mid(), kind: 'agent', text: GREETING, time: now() });
           return;
         }
-        /* 每次进入问诊都开新会话：清空当前对话并创建 agent-dock 会话 */
-        void (async () => {
-          try {
-            const created = await api.createAgentSession(lid);
-            setSessions((prev) => [created, ...prev.filter((s) => s.id !== created.id)]);
-            setCurrentSessionId(created.id);
-            setMsgsAll((prev) => ({ ...prev, [lid]: [] }));
-            append({ id: mid(), kind: 'agent', text: GREETING, time: now() });
-            refreshSuggestions();
-          } catch {
-            /* 建会话失败时保留现有会话 */
-          }
-        })();
+        /* 打开面板不再自动新建会话：保留当前会话，避免自动提问后跳到新会话。
+           没有会话时等首次提问再懒创建。 */
+        if (!currentSessionId && sessions.length > 0) {
+          setCurrentSessionId(sessions[0].id);
+          sessionSelectionLocked.current = true;
+        }
+        refreshSuggestions();
       }
     };
 
