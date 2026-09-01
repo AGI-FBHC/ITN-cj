@@ -222,7 +222,7 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
   })();
   const quizActions = currentContext.interaction?.kind === 'quiz'
     ? currentContext.interaction.submitted
-      ? ['讲解这道题', '分析错误选项', '查看原文依据']
+      ? ['讲解这道题', '分析错误选项', '查看原文依据', '出一道类似的题']
       : ['分析题干', '给我一点提示', '帮我排除选项']
     : [];
 
@@ -284,7 +284,7 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
             <button
               key={action}
               type="button"
-              onClick={() => askFree(action, collectLearningPageContext())}
+              onClick={() => askFree(action === '出一道类似的题' ? '出一道与这道题思路相近的练习题，给出选项，让我直接在对话框里作答' : action, collectLearningPageContext())}
               className="shrink-0 rounded-full border border-brand/20 bg-paper px-2.5 py-1 text-[10.5px] font-medium text-brand transition hover:border-brand/45 hover:bg-brand-tint/40"
             >
               {action}
