@@ -104,6 +104,17 @@ interface SessionStageRecord {
   askedAt: string;
 }
 
+function backendToAgentMessages(list: { id: string; agentId?: string | null; kind: string; content: string; createdAt: string }[]): AgentMessage[] {
+  return (list ?? [])
+    .filter((m) => m.content && (m.kind === 'user' || m.agentId === 'DIA-01'))
+    .map((m) => ({
+      id: `agent-${m.id}`,
+      kind: m.kind === 'user' ? 'user' as const : 'agent' as const,
+      text: m.content,
+      time: new Date(m.createdAt).toLocaleString(),
+    }));
+}
+
 const DEFAULT_SESSION_TITLE_RE = /^(新对话|伴学助手|阿诊)\s*·?\s*(学习诊断)?$/;
 
 function buildSessionTitle(text: string): string {
@@ -218,9 +229,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       if (sessionSelectionLocked.current) return;
       const latest = mine[0];
       setCurrentSessionId(latest.id);
-      const remote: AgentMessage[] = (latest.messages ?? [])
-        .filter((m) => m.agentId === 'DIA-01' && m.content)
-        .map((m) => ({ id: `agent-${m.id}`, kind: 'agent', text: m.content, time: new Date(m.createdAt).toLocaleString() }));
+      const remote: AgentMessage[] = backendToAgentMessages(latest.messages ?? []);
       if (!remote.length) return;
       setMsgsAll((prev) => {
         const list = [...(prev[currentLearnerId] ?? [])];
@@ -402,9 +411,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       sessionSelectionLocked.current = true;
       try {
         const { messages: list } = await api.getAgentSessionMessages(id);
-        const remote: AgentMessage[] = (list ?? [])
-          .filter((m) => m.agentId === 'DIA-01' && m.content)
-          .map((m) => ({ id: `agent-${m.id}`, kind: 'agent', text: m.content, time: new Date(m.createdAt).toLocaleString() }));
+        const remote: AgentMessage[] = backendToAgentMessages(list ?? []);
         setMsgsAll((prev) => ({ ...prev, [lid]: remote }));
       } catch { /* 会话加载失败保持现状 */ }
     };
@@ -420,9 +427,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         if (next) {
           try {
             const { messages: list } = await api.getAgentSessionMessages(next.id);
-            const remote: AgentMessage[] = (list ?? [])
-              .filter((m) => m.agentId === 'DIA-01' && m.content)
-              .map((m) => ({ id: `agent-${m.id}`, kind: 'agent', text: m.content, time: new Date(m.createdAt).toLocaleString() }));
+            const remote: AgentMessage[] = backendToAgentMessages(list ?? []);
             setMsgsAll((prev) => ({ ...prev, [lid]: remote }));
           } catch { /* ignore */ }
         }
