@@ -1394,6 +1394,10 @@ function Node3D({
   };
 
   const getColor = () => {
+    if (isDomain && selected) {
+      const c = new THREE.Color(getDomainStateColor()).multiplyScalar(0.78);
+      return `#${c.getHexString()}`;
+    }
     if (selected) return colors.selected;
     if (hovered) return colors.hover;
     if (isDomain) return getDomainStateColor();
