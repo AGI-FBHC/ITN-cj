@@ -53,6 +53,18 @@ function pageAwareSuggestions(ctx: LearningPageContext): string[] {
   return [];
 }
 
+function sessionTag(title?: string | null): string {
+  const value = title || '';
+  if (/新对话/.test(value)) return '未开始';
+  if (/题目/.test(value)) return '题目';
+  if (/实操/.test(value)) return '实操';
+  if (/幻灯片/.test(value)) return '幻灯片';
+  if (/讲义|阅读|段落/.test(value)) return '讲义/阅读';
+  if (/盲区|下一步|学情|画像|分数/.test(value)) return '学情';
+  if (/导学/.test(value)) return '导学';
+  return '对话';
+}
+
 /* ===== 消息气泡 ===== */
 function MessageBubble({ message }: { message: AgentMessage }) {
   const isUser = message.kind === 'user';
@@ -274,7 +286,7 @@ export function SessionList() {
           >
             <div className="min-w-0 flex-1">
               {editingId === s.id ? <input autoFocus value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Enter' && draftTitle.trim()) { event.stopPropagation(); void renameAgentSession(s.id, draftTitle).then(() => setEditingId(null)); } if (event.key === 'Escape') setEditingId(null); }} className="w-full rounded-md border border-brand/30 bg-paper px-2 py-1 text-[12px] text-ink outline-none" /> : <p className="truncate text-[12px] font-medium text-ink">{s.title || '未命名对话'}</p>}
-              <p className="truncate text-[10px] text-ink-muted">{s.sessionType || ''}</p>
+              <p className="truncate text-[10px] text-ink-muted">{sessionTag(s.title)}</p>
             </div>
             {editingId === s.id ? <><button type="button" onClick={(event) => { event.stopPropagation(); if (draftTitle.trim()) void renameAgentSession(s.id, draftTitle).then(() => setEditingId(null)); }} className="shrink-0 rounded-md p-1 text-brand"><Check size={12} /></button><button type="button" onClick={(event) => { event.stopPropagation(); setEditingId(null); }} className="shrink-0 rounded-md p-1 text-ink-muted"><X size={12} /></button></> : <button type="button" onClick={(event) => { event.stopPropagation(); setEditingId(s.id); setDraftTitle(s.title || ''); }} className="hidden shrink-0 rounded-md p-1 text-ink-muted transition hover:bg-brand-tint hover:text-brand group-hover:block"><Pencil size={12} /></button>}
             <button

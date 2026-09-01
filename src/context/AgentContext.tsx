@@ -94,6 +94,22 @@ const K_LOG = 'lf.agentLog';
 const K_SEEN = 'lf.agentSeen';
 const K_DEC = 'lf.agentDecisions';
 
+const DEFAULT_SESSION_TITLE_RE = /^(新对话|伴学助手|阿诊)\s*·?\s*(学习诊断)?$/;
+
+function buildSessionTitle(askType: string, text: string, pageContext?: LearningPageContext): string {
+  const focusTitle = (pageContext?.focus?.title || pageContext?.pageTitle || '').replace(/\s+/g, ' ').trim().slice(0, 16);
+  const focusKind = pageContext?.focus?.kind ?? '';
+  const interactionKind = pageContext?.interaction?.kind;
+  if (focusKind.includes('题目') || interactionKind === 'quiz') return `题目讲解${focusTitle ? ` · ${focusTitle}` : ''}`;
+  if (focusKind.includes('实操')) return `实操求助${focusTitle ? ` · ${focusTitle}` : ''}`;
+  if (pageContext?.pageType === '幻灯片学习') return `幻灯片提问${focusTitle ? ` · ${focusTitle}` : ''}`;
+  if (pageContext?.pageType === '完整阅读' || focusKind.includes('阅读')) return `讲义提问${focusTitle ? ` · ${focusTitle}` : ''}`;
+  if (askType === 'why-blind') return '盲区诊断';
+  if (askType === 'what-next') return '下一步规划';
+  if (askType === 'challenge-score') return '分数核验';
+  return focusTitle ? `伴学提问 · ${focusTitle}` : '伴学提问';
+}
+
 function readJSON<T>(key: string, fallback: T): T {
   try {
     const raw = window.localStorage.getItem(key);
@@ -414,11 +430,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         setMsgsAll((prev) => ({ ...prev, [lid]: [] }));
       }
       // Only the first real question names a new/default session. Later messages do not overwrite it.
-      const hasDefaultTitle = !activeSession?.title || /^(伴学助手|阿诊)\s*·\s*学习诊断$/.test(activeSession.title);
+      const hasDefaultTitle = !activeSession?.title || DEFAULT_SESSION_TITLE_RE.test(activeSession.title.trim());
       if (hasDefaultTitle && userText.length > 0) {
-        const titleText = userText.replace(/^\s*\[当前页面[：:]\s*[^\]]+\]\s*/, '').trim();
-        const shortTitle = titleText.length > 20 ? titleText.slice(0, 20) + '…' : titleText;
-        void api.updateAgentSession(sid, { title: shortTitle }).then((updated) => {
+        const title = buildSessionTitle(askType, userText, pageContext);
+        void api.updateAgentSession(sid, { title }).then((updated) => {
           setSessions((prev) => prev.map((s) => s.id === sid ? updated : s));
         }).catch(() => {/* ignore */});
       }

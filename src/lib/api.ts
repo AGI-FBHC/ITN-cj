@@ -1151,7 +1151,7 @@ export const api = {
   createAgentSession: (learnerId: string) =>
     requestAgent<AgentDockSession>('/agent-sessions', {
       method: 'POST',
-      body: JSON.stringify({ learnerId, sessionType: 'agent-dock', title: '伴学助手 · 学习诊断' }),
+      body: JSON.stringify({ learnerId, sessionType: 'agent-dock', title: '新对话' }),
     }),
   deleteAgentSession: (sessionId: string) =>
     requestAgent<void>(`/agent-sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
