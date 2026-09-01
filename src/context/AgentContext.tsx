@@ -671,7 +671,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       void agentAskImage('free', text, image, '正在分析图片并回答…', pageContext);
     };
 
-    /** 出一道类似题：后端生成结构化题目后渲染为可交互做题卡片。 */
+    /** 出一道类似题：后端生成结构化题目后渲染为可交互随堂练习。 */
     const askSimilarQuiz = async (pageContext?: LearningPageContext) => {
       if (!lid) return;
       let sid = currentSessionId;
@@ -696,7 +696,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       const userText = '出一道与这道题思路相近的练习题，让我在对话里作答';
       append({ id: mid(), kind: 'user', text: userText, time: now() });
       const pendingId = mid();
-      append({ id: pendingId, kind: 'agent', text: '正在生成做题卡片…', time: now() });
+      append({ id: pendingId, kind: 'agent', text: '正在生成随堂练习…', time: now() });
       setIsResponding(true);
       try {
         const result = await api.askAgentSimilarQuiz(

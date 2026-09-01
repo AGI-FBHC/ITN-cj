@@ -269,9 +269,20 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
       ? [`帮我理解「${weakest.name}」的核心概念`, `${weakest.name}有哪些常见错误？`]
       : ['今天想学什么？', '帮我解释一个概念'];
   })();
+  const lastQuizCardIdx = (() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].kind === 'quiz-card') return i;
+    }
+    return -1;
+  })();
+  const lastQuizCard = lastQuizCardIdx >= 0 && messages[lastQuizCardIdx].kind === 'quiz-card' ? messages[lastQuizCardIdx] : undefined;
+  const qaRoundsAfterQuiz = lastQuizCardIdx >= 0
+    ? messages.slice(lastQuizCardIdx + 1).filter((m) => m.kind === 'user').length
+    : 0;
+  const canOfferSimilarQuiz = !lastQuizCard || (lastQuizCard.settled && qaRoundsAfterQuiz >= 2);
   const quizActions = currentContext.interaction?.kind === 'quiz'
     ? currentContext.interaction.submitted
-      ? ['讲解这道题', '分析错误选项', '查看原文依据', '出一道类似的题']
+      ? ['讲解这道题', '分析错误选项', '查看原文依据', ...(canOfferSimilarQuiz ? ['出一道类似的题'] : [])]
       : ['分析题干', '给我一点提示', '帮我排除选项']
     : [];
 
