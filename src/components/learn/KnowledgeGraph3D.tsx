@@ -1550,7 +1550,7 @@ function Edge3D({
   nodeScaleRef?: React.MutableRefObject<Map<string, number>>;
 }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const SEGMENTS = 8;
+  const SEGMENTS = 32;
   const segRefs = useRef<Array<any>>([]);
   const curFrom = useRef(fromPos.clone());
   const curTo = useRef(toPos.clone());
