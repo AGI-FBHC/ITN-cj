@@ -17,7 +17,7 @@ const SIDE_KEY = 'lf.agent-dock-side';
 const WIDTH_KEY = 'lf.agent-dock-width';
 const MIN_W = 300;
 const MAX_W = Math.min(720, window.innerWidth * 0.55);
-const DEFAULT_W = Math.min(480, window.innerWidth * 0.38);
+const DEFAULT_W = Math.min(440, window.innerWidth * 0.36);
 const MARGIN = 12;
 
 function readSide(): 'left' | 'right' {
