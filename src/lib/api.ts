@@ -856,7 +856,7 @@ async function requestAgentEtag<T>(path: string): Promise<T> {
 
 async function requestAgent<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
-  if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
   const res = await fetch(`/v1${path}`, { ...init, headers });
@@ -1155,6 +1155,11 @@ export const api = {
     });
     if (!res.ok) throw new Error(`请求失败 (${res.status})`);
     await readAgentSse(res, (payload) => onEvent(payload as { type: string; content?: string; reply?: string; message?: string; note?: LearningNoteRecord }));
+  },
+  transcribeAssistantAudio: (audio: Blob) => {
+    const body = new FormData();
+    body.append('audio', audio, 'voice.wav');
+    return requestAgent<{ transcript: string }>('/assistant/asr', { method: 'POST', body });
   },
   askAgent: (learnerId: string, askType: string, text: string, kpId?: string, sessionId?: string) =>
     requestAgent<{ reply: string; evidence: string[] }>('/agent/ask', {

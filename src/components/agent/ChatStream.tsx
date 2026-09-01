@@ -7,8 +7,11 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Brain, Check, ChevronDown, Eye, EyeOff, ImagePlus, NotebookPen, Pencil, Plus, SendHorizonal, Trash2, X } from 'lucide-react';
+import { Brain, Check, ChevronDown, Eye, EyeOff, ImagePlus, Mic, NotebookPen, Pencil, Plus, SendHorizonal, Trash2, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { useAgent } from '@/context/AgentContext';
+import { api } from '@/lib/api';
+import { startWavRecording, type WavRecorder } from '@/lib/voiceRecorder';
 import type { AgentMessage } from '@/context/AgentContext';
 import { cn } from '@/lib/utils';
 import { collectLearningPageContext, describeLearningPageContext } from '@/lib/pageContext';
@@ -124,9 +127,11 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
   const { messages, askFree, askFreeWithImage, suggestions, weakest, pageContextEnabled, setPageContextEnabled } = useAgent();
   const [input, setInput] = useState('');
   const [image, setImage] = useState<{ name: string; url: string; blob?: Blob } | null>(null);
+  const [recording, setRecording] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const voiceRecRef = useRef<WavRecorder | null>(null);
   const [contextOpen, setContextOpen] = useState(false);
   const [currentContext, setCurrentContext] = useState<LearningPageContext>(() => collectLearningPageContext());
 
@@ -157,6 +162,43 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
       askFree(text, snapshot);
     }
     setInput('');
+  };
+
+  const finishVoice = async () => {
+    const recorder = voiceRecRef.current;
+    if (!recorder) return;
+    voiceRecRef.current = null;
+    setRecording(false);
+    try {
+      const blob = await recorder.stop();
+      const { transcript } = await api.transcribeAssistantAudio(blob);
+      const text = transcript.trim();
+      if (!text) return;
+      const snapshot = collectLearningPageContext();
+      setCurrentContext(snapshot);
+      askFree(text, snapshot);
+      setInput('');
+    } catch (reason) {
+      toast.error(reason instanceof Error ? reason.message : '语音识别失败');
+    }
+  };
+
+  const toggleVoice = async () => {
+    if (voiceRecRef.current) {
+      void finishVoice();
+      return;
+    }
+    try {
+      const recorder = await startWavRecording({
+        silenceMs: 1300,
+        maxDurationMs: 15000,
+        onSilence: () => { void finishVoice(); },
+      });
+      voiceRecRef.current = recorder;
+      setRecording(true);
+    } catch (reason) {
+      toast.error(reason instanceof Error ? reason.message : '无法开始录音');
+    }
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -261,6 +303,15 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
         )}
         <div className="flex items-end gap-2 rounded-xl border border-hairline bg-paper px-2.5 py-1.5">
           <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) setImage({ name: file.name, url: URL.createObjectURL(file), blob: file }); event.target.value = ''; }} />
+          <button
+            type="button"
+            onClick={() => void toggleVoice()}
+            title={recording ? '停止录音并发送' : '语音提问'}
+            aria-label="语音提问"
+            className={cn('shrink-0 rounded-lg border p-2 transition', recording ? 'animate-pulse border-brand-danger bg-brand-danger text-paper' : 'border-hairline text-ink-muted hover:border-brand/40 hover:text-brand')}
+          >
+            <Mic size={14} />
+          </button>
           <button
             type="button"
             onClick={() => imageInputRef.current?.click()}
