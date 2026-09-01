@@ -263,7 +263,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
       const mine = list.filter(
         (s) => (s.sessionType === 'agent-dock' || s.sessionType === 'agent')
-          && s.learnerId === currentLearnerId,
+          && s.learnerId === currentLearnerId
+          && (s.messages?.length ?? 0) > 0,
       );
       setSessions(mine);
       if (!mine.length) return;
@@ -442,9 +443,12 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
     /** 会话管理：新建 / 切换 / 删除（agent-dock 会话） */
     const createAgentSession = async () => {
-      const created = await api.createAgentSession(lid);
-      setSessions((prev) => [created, ...prev.filter((s) => s.id !== created.id)]);
-      setCurrentSessionId(created.id);
+      const hasMessages = (msgsAll[lid] ?? []).length > 0;
+      if (!hasMessages && currentSessionId === null) {
+        toast.info('已经是新对话，无需重复创建');
+        return;
+      }
+      setCurrentSessionId(null);
       sessionSelectionLocked.current = true;
       setMsgsAll((prev) => ({ ...prev, [lid]: [] }));
     };
