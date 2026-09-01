@@ -65,6 +65,26 @@ const TOPIC_STROKE_COLORS = {
   outer: '#8FC3F2',
 };
 
+function createSoftPlushTexture(size = 256): THREE.Texture {
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('2D canvas unavailable');
+  const c = size / 2;
+  const g = ctx.createRadialGradient(c, c, 0, c, c, c);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.3, 'rgba(255,255,255,0.96)');
+  g.addColorStop(0.55, 'rgba(255,255,255,0.72)');
+  g.addColorStop(0.78, 'rgba(255,255,255,0.28)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
 interface KnowledgeGraph3DProps {
   onTopicClick?: (kpId: string, topicIndex: number, label: string) => void;
   persistenceKey?: string;
@@ -1357,8 +1377,10 @@ function Node3D({
   const textRef = useRef<THREE.Mesh | null>(null);
   const innerStrokeRef = useRef<THREE.MeshBasicMaterial | null>(null);
   const outerStrokeRef = useRef<THREE.MeshBasicMaterial | null>(null);
+  const glowRef = useRef<THREE.MeshBasicMaterial | null>(null);
   const isDomain = node.kind === 'domain';
   const colors = isDomain ? NODE_COLORS.domain : NODE_COLORS.topic;
+  const plushTexture = useMemo(() => createSoftPlushTexture(), []);
 
   const getColor = () => {
     if (selected) return colors.selected;
@@ -1395,6 +1417,10 @@ function Node3D({
     if (outerStrokeRef.current) {
       outerStrokeRef.current.opacity =
         (dimmed ? 0.08 : hovered ? 0.4 : selected ? 0.36 : 0.26) * focusFade;
+    }
+    if (glowRef.current) {
+      glowRef.current.opacity =
+        (dimmed ? 0.06 : hovered ? 0.55 : selected ? 0.5 : 0.34) * focusFade;
     }
     const text = textRef.current;
     if (text && (text.material as any).opacity !== undefined) {
@@ -1439,7 +1465,13 @@ function Node3D({
       <Billboard>
       <mesh ref={meshRef}>
         <circleGeometry args={[1, 64]} />
-        <meshBasicMaterial color={getColor()} transparent opacity={1} />
+        <meshBasicMaterial map={plushTexture} color={getColor()} transparent opacity={1} depthWrite={false} />
+
+        {/* 毛绒发光：从内到外柔光扩散 */}
+        <mesh scale={1.5} position={[0, 0, -0.015]} raycast={() => null} renderOrder={0}>
+          <circleGeometry args={[1, 64]} />
+          <meshBasicMaterial ref={glowRef} map={plushTexture} color={getColor()} transparent opacity={0.34} depthWrite={false} />
+        </mesh>
 
         {/* 内描边：球面边缘的亮环 */}
         <mesh scale={1.015} position={[0, 0, 0.012]} raycast={() => null} renderOrder={1}>
