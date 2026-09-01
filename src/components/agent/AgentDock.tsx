@@ -5,7 +5,7 @@
  * 侧边边缘：按住拖拽调整宽度（左浮→右边拖，右浮→左边拖）
  * 位置和宽度持久化到 localStorage
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useMotionValue, useTransform, animate } from 'framer-motion';
 import { Brain, GripHorizontal, Maximize2, Plus, X } from 'lucide-react';
@@ -42,8 +42,11 @@ export default function AgentDock() {
 
   const [side, setSide] = useState<'left' | 'right'>(readSide);
   const [panelW, setPanelW] = useState(readWidth);
+  const panelWRef = useRef(panelW);
   const effectiveSide = inSlidePlayer ? 'right' : side;
   const effectivePanelW = inSlidePlayer ? Math.min(400, window.innerWidth - MARGIN * 2) : panelW;
+
+  useEffect(() => { panelWRef.current = panelW; }, [panelW]);
 
   useEffect(() => {
     if (!inSlidePlayer || !open) {
@@ -100,7 +103,7 @@ export default function AgentDock() {
     e.stopPropagation();
     const pt = 'touches' in e ? e.touches[0] : e;
     const startX = pt.clientX;
-    const startW = panelW;
+    const startW = panelWRef.current;
     const isLeft = side === 'left';
 
     const onMove = (ev: MouseEvent | TouchEvent) => {
@@ -112,7 +115,7 @@ export default function AgentDock() {
       setPanelW(clamped);
     };
     const onEnd = () => {
-      writeWidth(panelW);
+      writeWidth(panelWRef.current);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onEnd);
       window.removeEventListener('touchmove', onMove);
@@ -122,7 +125,7 @@ export default function AgentDock() {
     window.addEventListener('mouseup', onEnd);
     window.addEventListener('touchmove', onMove, { passive: true });
     window.addEventListener('touchend', onEnd);
-  }, [panelW, side]);
+  }, [side]);
 
   if (hidden) return null;
 
@@ -195,14 +198,15 @@ export default function AgentDock() {
               onMouseDown={startResize}
               onTouchStart={startResize}
               className={cn(
-                'absolute top-0 z-10 h-full w-[6px] cursor-col-resize',
-                isLeft ? '-right-[3px]' : '-left-[3px]',
+                'absolute top-0 z-10 h-full w-[10px] cursor-col-resize',
+                isLeft ? '-right-[5px]' : '-left-[5px]',
               )}
+              title="拖动调整宽度"
             >
               <div className={cn(
-                'absolute top-1/2 -translate-y-1/2 h-10 w-[3px] rounded-full transition-colors',
+                'absolute top-1/2 -translate-y-1/2 h-12 w-[5px] rounded-full transition-colors',
                 isLeft ? 'right-0' : 'left-0',
-                'bg-transparent hover:bg-brand/30',
+                'bg-brand/15 hover:bg-brand/40',
               )} />
             </div>}
 
