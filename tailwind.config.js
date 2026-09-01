@@ -78,8 +78,8 @@ module.exports = {
         "agent-arb": "#5A6553",
       },
       fontFamily: {
-        serif: ['"ZCOOL XiaoWei"', '"Noto Serif SC"', 'serif'],
-        display: ['"ZCOOL XiaoWei"', '"Noto Serif SC"', 'serif'],
+        serif: ['"Noto Serif SC"', '"Source Han Serif SC"', '"Songti SC"', 'SimSun', 'serif'],
+        display: ['"Noto Serif SC"', '"Source Han Serif SC"', '"Songti SC"', 'SimSun', 'serif'],
         sans: ['"Noto Sans SC"', 'system-ui', 'sans-serif'],
         mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
       },
