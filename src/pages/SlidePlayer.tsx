@@ -54,7 +54,7 @@ function QuizCard({ slide, onInteractionChange, resourceId }: { slide: Customize
       return;
     }
     try {
-      const result = await api.gradeLearningQuiz(resourceId, {
+      const result = await api.answerLearningQuiz(resourceId, {
         questionId,
         answer: String(option),
         durationSeconds: 1,
