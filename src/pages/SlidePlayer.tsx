@@ -15,6 +15,7 @@ import { useNotes } from '@/context/NotesContext';
 import { narrationSpeeds, useStreamingNarration } from '@/hooks/useStreamingNarration';
 import { useAgent } from '@/context/AgentContext';
 import { fetchSlideAsset, presentationApi, updatePptLearningProgress } from '@/lib/presentationApi';
+import { toast } from 'sonner';
 
 type QuizValue = string | number;
 
@@ -114,7 +115,6 @@ export default function SlidePlayer() {
   const [completeConfirmOpen, setCompleteConfirmOpen] = useState(false);
   const [slideAssessments, setSlideAssessments] = useState<Record<number, number>>({});
   const [noteOpen, setNoteOpen] = useState(false);
-  const [pulseFlash, setPulseFlash] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [quizInteraction, setQuizInteraction] = useState<{ submitted: boolean; selectedAnswer?: string }>({ submitted: false });
   const [presentationImage, setPresentationImage] = useState('');
@@ -351,9 +351,8 @@ export default function SlidePlayer() {
   const needsAssessment = slide && slide.type !== "question" && slide.type !== "intro" && currentIndex > 0 && !isLastSlide;
   const goNext = () => {
     if (needsAssessment && slideAssessments[currentIndex] == null) {
-      setPulseFlash(true);
-      setTimeout(() => setPulseFlash(false), 1800);
-      return;
+      setSlideAssessments((prev) => ({ ...prev, [currentIndex]: 0.25 }));
+      toast('未选择掌握程度，已默认标记为「基本理解」', { description: '返回上一页可随时调整自评档位' });
     }
     setCurrentIndex((v) => Math.min(slides.length - 1, v + 1));
   };
@@ -392,7 +391,7 @@ export default function SlidePlayer() {
           )}
         </div>
         {needsAssessment && (
-          <div className={`flex shrink-0 items-center gap-3 rounded-xl border border-hairline/60 bg-paper/60 px-3.5 py-2 backdrop-blur-sm ${pulseFlash ? 'shadow-[0_0_14px_4px_rgba(88,166,255,0.45)] transition-shadow duration-300' : 'transition-shadow duration-500'}`}>
+          <div className="flex shrink-0 items-center gap-3 rounded-xl border border-hairline/60 bg-paper/60 px-3.5 py-2 backdrop-blur-sm transition-shadow duration-500">
             <div className="flex items-center gap-0.5">
               {[0, 0.25, 0.5, 1].map((score, i) => {
                 const active = slideAssessments[currentIndex] != null && slideAssessments[currentIndex] >= score;
