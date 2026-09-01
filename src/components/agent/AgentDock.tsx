@@ -206,14 +206,22 @@ export default function AgentDock() {
               )} />
             </div>}
 
-            {/* 顶部拖拽横条 */}
+            {/* 顶部拖拽横条 + macOS 风格窗口按钮 */}
             <div
               onMouseDown={startDragMove}
               onTouchStart={startDragMove}
-              className={cn('flex shrink-0 items-center justify-center py-1', inSlidePlayer ? 'cursor-default' : 'cursor-grab active:cursor-grabbing')}
+              className={cn('relative flex shrink-0 items-center justify-center py-1', inSlidePlayer ? 'cursor-default' : 'cursor-grab active:cursor-grabbing')}
             >
               <div className="flex h-[18px] w-12 items-center justify-center rounded-full bg-ink/[0.06] transition-colors hover:bg-ink/12">
                 <GripHorizontal size={12} className="text-ink-muted/60" />
+              </div>
+              <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
+                <button type="button" onClick={() => { setOpen(false); navigate('/chat'); }} title="全屏" onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} className="flex h-5 w-5 items-center justify-center rounded-full bg-[#28C840] text-paper shadow-sm transition-transform hover:scale-110">
+                  <Maximize2 size={9} />
+                </button>
+                <button type="button" onClick={() => setOpen(false)} title="关闭" onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} className="flex h-5 w-5 items-center justify-center rounded-full bg-[#FF5F57] text-paper shadow-sm transition-transform hover:scale-110">
+                  <X size={10} />
+                </button>
               </div>
             </div>
 
@@ -237,12 +245,6 @@ export default function AgentDock() {
                 )}
                 <button type="button" onClick={() => void createAgentSession()} title="新建会话" className="lf-row-btn !p-1">
                   <Plus size={11} />
-                </button>
-                <button type="button" onClick={() => { setOpen(false); navigate('/chat'); }} title="全屏" className="lf-row-btn !p-1">
-                  <Maximize2 size={12} />
-                </button>
-                <button type="button" onClick={() => setOpen(false)} title="关闭" className="lf-row-btn !p-1">
-                  <X size={12} />
                 </button>
               </div>
             </div>
