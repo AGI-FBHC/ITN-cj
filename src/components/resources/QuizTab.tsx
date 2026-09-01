@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Star, Lock, Check, X, ArrowRight, ChevronDown, Scale, BookX, RotateCcw } from 'lucide-react';
+import { Star, Check, X, ArrowRight, ChevronDown, Scale, BookX, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import TraceBadge from '@/components/TraceBadge';
 import type { GeneratedResource } from '@/data/resources';
@@ -40,7 +40,6 @@ function writeStoredAnswers(dataId: string, answers: Record<string, number>) {
 }
 
 const letters = ['A', 'B', 'C', 'D'];
-const tierOrder: QuizLevel[] = ['basic', 'advanced', 'challenge'];
 
 /** 三阶难度分（演示口径，不代表真实心理测量学标定） */
 const levelDifficulty: Record<QuizLevel, number> = { basic: 40, advanced: 65, challenge: 85 };
@@ -353,17 +352,6 @@ export default function QuizTab({
   const correctCount = questions.filter((q) => answers[q.id] === q.answerIndex).length;
   const accuracy = answeredCount > 0 ? Math.round((correctCount / answeredCount) * 100) : 0;
 
-  const tiers = useMemo(
-    () =>
-      tierOrder.map((level) => {
-        const qs = questions.filter((q) => q.level === level);
-        const done = qs.filter((q) => answers[q.id] !== undefined);
-        const right = qs.filter((q) => answers[q.id] === q.answerIndex);
-        return { level, qs, done: done.length, right: right.length };
-      }),
-    [questions, answers],
-  );
-
   const answer = (q: QuizQuestion, idx: number) => {
     if (answers[q.id] !== undefined) return;
     const next = { ...answers, [q.id]: idx };
@@ -401,56 +389,6 @@ export default function QuizTab({
 
   return (
     <div className="pb-24">
-      {/* 三阶概览 */}
-      <div className="grid gap-3 sm:grid-cols-3">
-        {tiers.map((t, i) => {
-          const meta = quizLevelMeta[t.level];
-          const complete = t.qs.length > 0 && t.done === t.qs.length;
-          return (
-            <motion.div
-              key={t.level}
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.08 * i, duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-              className="lf-card p-4"
-            >
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-2 text-[14.5px] font-semibold text-ink">
-                  {meta.label}阶
-                  {t.level === 'challenge' && (
-                    <span title="基础阶正确率 ≥ 60% 解锁（演示环境已解锁）">
-                      <Lock size={13} className="text-ink-muted" />
-                    </span>
-                  )}
-                </span>
-                <Stars n={i + 1} color={meta.color} />
-              </div>
-              <div className="mt-1.5 flex items-center justify-between">
-                <span className="font-mono text-[11.5px] text-ink-muted">{t.qs.length} 题</span>
-                {complete ? (
-                  <motion.span
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    className="rounded-md border border-brand/30 bg-brand-tint px-2 py-0.5 font-mono text-[11px] font-semibold text-brand tabular"
-                  >
-                    得分 {t.right}/{t.qs.length}
-                  </motion.span>
-                ) : (
-                  <span className="font-mono text-[11px] text-ink-muted tabular">
-                    {t.done}/{t.qs.length} 已答
-                  </span>
-                )}
-              </div>
-              {t.level === 'challenge' && (
-                <p className="mt-2 border-t border-hairline pt-2 font-mono text-[10px] leading-[15px] text-ink-muted">
-                  基础阶正确率 ≥ 60% 解锁（演示环境已解锁）
-                </p>
-              )}
-            </motion.div>
-          );
-        })}
-      </div>
-
       {/* 题目列表 */}
       <div className="mt-4 space-y-3">
         {questions.map((q, i) => (
