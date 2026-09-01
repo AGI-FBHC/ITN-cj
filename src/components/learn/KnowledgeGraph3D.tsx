@@ -52,13 +52,6 @@ const NODE_COLORS = {
 // “我的已学路径”高亮环配色（醒目翠绿，与已学色区分）
 const LEARNED_HIGHLIGHT = '#2FBF71';
 
-// 描边发光配色：与节点同色系，最里面颜色最深，由内而向外淡出
-// 域节点（绿球）发翡翠绿光
-const STROKE_COLORS = {
-  inner: '#2F6B4F',
-  outer: '#8FD3AE',
-};
-
 // 子节点（蓝球）发天蓝光
 const TOPIC_STROKE_COLORS = {
   inner: '#2E6BA8',
@@ -1375,8 +1368,6 @@ function Node3D({
   const meshRef = useRef<THREE.Mesh>(null);
   const groupRef = useRef<THREE.Group | null>(null);
   const textRef = useRef<THREE.Mesh | null>(null);
-  const innerStrokeRef = useRef<THREE.MeshBasicMaterial | null>(null);
-  const outerStrokeRef = useRef<THREE.MeshBasicMaterial | null>(null);
   const glowRef = useRef<THREE.MeshBasicMaterial | null>(null);
   const isDomain = node.kind === 'domain';
   const colors = isDomain ? NODE_COLORS.domain : NODE_COLORS.topic;
@@ -1410,14 +1401,6 @@ function Node3D({
     mat.transparent = true;
     mat.opacity = (dimmed ? 0.2 : 1) * focusFade;
 
-    if (innerStrokeRef.current) {
-      innerStrokeRef.current.opacity =
-        (dimmed ? 0.12 : hovered ? 0.52 : selected ? 0.46 : 0.34) * focusFade;
-    }
-    if (outerStrokeRef.current) {
-      outerStrokeRef.current.opacity =
-        (dimmed ? 0.08 : hovered ? 0.4 : selected ? 0.36 : 0.26) * focusFade;
-    }
     if (glowRef.current) {
       glowRef.current.opacity =
         (dimmed ? 0.06 : hovered ? 0.55 : selected ? 0.5 : 0.34) * focusFade;
@@ -1472,23 +1455,13 @@ function Node3D({
           <circleGeometry args={[1, 64]} />
           <meshBasicMaterial ref={glowRef} map={plushTexture} color={getColor()} transparent opacity={0.34} depthWrite={false} />
         </mesh>
-
-        {/* 内描边：球面边缘的亮环 */}
-        <mesh scale={1.015} position={[0, 0, 0.012]} raycast={() => null} renderOrder={1}>
-          <ringGeometry args={[0.9, 1, 64]} />
-          <meshBasicMaterial ref={innerStrokeRef} color={isDomain ? STROKE_COLORS.inner : TOPIC_STROKE_COLORS.inner} transparent opacity={hovered ? 0.52 : selected ? 0.46 : 0.34} depthWrite={false} />
-        </mesh>
-
-        {/* 外描边：紧贴球体轮廓外的蓝色发光，向外渐隐 */}
-        <mesh scale={1.16} position={[0, 0, 0.008]} raycast={() => null} renderOrder={1}>
-          <ringGeometry args={[0.86, 1, 64]} />
-          <meshBasicMaterial ref={outerStrokeRef} color={isDomain ? STROKE_COLORS.outer : TOPIC_STROKE_COLORS.outer} transparent opacity={hovered ? 0.4 : selected ? 0.36 : 0.26} depthWrite={false} />
-        </mesh>
       </mesh>
       </Billboard>
 
       {/* 进度描边 */}
-      {showProgressRings && <ProgressRing radius={baseSize} mastery={mastery} variant={isDomain ? 'chapter' : 'topic'} hovered={hovered} selected={selected} target={target} />}
+      {showProgressRings && isDomain && (hovered || selected) && (
+        <ProgressRing radius={baseSize} mastery={mastery} variant="chapter" hovered={hovered} selected={selected} target={target} />
+      )}
 
       {/* 标签 */}
       <Billboard>
