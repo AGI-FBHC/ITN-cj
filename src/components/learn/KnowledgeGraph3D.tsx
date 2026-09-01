@@ -1329,6 +1329,7 @@ function Node3D({
   dimmed,
   learned,
   mastery,
+  progress = 0,
   onClick,
   onHover,
   focusOffset,
@@ -1350,6 +1351,7 @@ function Node3D({
   dimmed: boolean;
   learned: boolean;
   mastery: number;
+  progress?: number;
   onClick: () => void;
   onHover: (id: string | null, clientX?: number, clientY?: number, object?: THREE.Object3D) => void;
   focusOffset?: THREE.Vector3;
@@ -1373,9 +1375,23 @@ function Node3D({
   const colors = isDomain ? NODE_COLORS.domain : NODE_COLORS.topic;
   const plushTexture = useMemo(() => createSoftPlushTexture(), []);
 
+  const getDomainStateColor = () => {
+    const p = Math.max(0, Math.min(100, progress || 0));
+    if (learned && p >= 100) return '#2FBF71';
+    if (p > 0 || learned) {
+      const yellowGreen = new THREE.Color('#C8D96A');
+      const green = new THREE.Color('#4CAF50');
+      return `#${yellowGreen.clone().lerp(green, p / 100).getHexString()}`;
+    }
+    const purple = new THREE.Color('#8E7FA3');
+    const gray = new THREE.Color('#B9B2C9');
+    return `#${purple.clone().lerp(gray, 0.25).getHexString()}`;
+  };
+
   const getColor = () => {
     if (selected) return colors.selected;
     if (hovered) return colors.hover;
+    if (isDomain) return getDomainStateColor();
     if (learned) return colors.learned;
     return colors.base;
   };
@@ -1606,6 +1622,7 @@ function SceneContent({
   onExpandedKpChange,
   learned,
   mastery,
+  chapterProgress,
   topicMastery,
   topicProgress,
   expandedTopicId,
@@ -1794,6 +1811,7 @@ function SceneContent({
             dimmed={!!isDimmed}
             learned={learned.has(node.kpId)}
             mastery={nodeMastery}
+            progress={node.kind === 'domain' ? chapterProgress[node.kpId] ?? 0 : 0}
             onClick={() => handleNodeClick(node)}
             onHover={onHoverNode}
             focusOffset={layout.focusOffsets.get(node.id)}
