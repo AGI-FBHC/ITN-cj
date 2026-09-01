@@ -500,9 +500,10 @@ export interface CustomizeSlide {
   totalUnits: number;
   partIndex?: number;
   partCount?: number;
-  type: 'intro' | 'chapter' | 'step' | 'question';
+  type: 'intro' | 'chapter' | 'step' | 'question' | 'presentation';
   title: string;
   content: string | Record<string, unknown>;
+  presentationId?: string;
   sources?: Array<Record<string, unknown>>;
   evidenceQuotes?: Array<Record<string, unknown>>;
 }

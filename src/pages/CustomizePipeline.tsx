@@ -36,6 +36,13 @@ export default function CustomizePipeline() {
 
   const active = Boolean(task && activeStatuses.has(task.status));
 
+  /* 旧入口兼容：交互课件也使用边生成边学习播放器，不停留在流程工作台。 */
+  useEffect(() => {
+    if (taskId && task?.resourceType === 'ppt') {
+      navigate(`/learn/slide/${encodeURIComponent(taskId)}`, { replace: true });
+    }
+  }, [navigate, task?.resourceType, taskId]);
+
   /* 轮询任务状态 */
   useEffect(() => {
     if (!taskId) return;

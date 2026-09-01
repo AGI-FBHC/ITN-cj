@@ -37,8 +37,6 @@ export default function CustomizeChoiceModal({
       onClose();
       if (destination === 'team') {
         navigate(`/learn/customize-team/${encodeURIComponent(kpId)}?taskId=${encodeURIComponent(task.id)}`);
-      } else if (resourceType === 'ppt') {
-        navigate(`/learn/customize/${task.id}`);
       } else {
         navigate(`/learn/slide/${task.id}`);
       }

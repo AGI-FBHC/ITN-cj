@@ -14,6 +14,7 @@ import LearningCompleteDialog from '@/components/learn/LearningCompleteDialog';
 import { useNotes } from '@/context/NotesContext';
 import { narrationSpeeds, useStreamingNarration } from '@/hooks/useStreamingNarration';
 import { useAgent } from '@/context/AgentContext';
+import { fetchSlideAsset, presentationApi, updatePptLearningProgress } from '@/lib/presentationApi';
 
 type QuizValue = string | number;
 
@@ -116,6 +117,7 @@ export default function SlidePlayer() {
   const [pulseFlash, setPulseFlash] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [quizInteraction, setQuizInteraction] = useState<{ submitted: boolean; selectedAnswer?: string }>({ submitted: false });
+  const [presentationImage, setPresentationImage] = useState('');
   const quizAssistantOpenedRef = useRef(false);
   const volumeLevels = [1, 0.6, 0.3, 0] as const;
 
@@ -191,6 +193,20 @@ export default function SlidePlayer() {
   }, [data?.slides, data?.resourceType, completedResource]);
   useEffect(() => { if (slides.length && currentIndex >= slides.length) setCurrentIndex(slides.length - 1); }, [slides.length, currentIndex]);
   const slide = slides[currentIndex];
+  useEffect(() => {
+    if (slide?.type !== 'presentation' || !slide.presentationId) {
+      setPresentationImage('');
+      return;
+    }
+    let alive = true;
+    let objectUrl = '';
+    void fetchSlideAsset(slide.presentationId, slide.unitIndex, 'slides').then((blob) => {
+      if (!alive) return;
+      objectUrl = URL.createObjectURL(blob);
+      setPresentationImage(objectUrl);
+    }).catch(() => { if (alive) setPresentationImage(''); });
+    return () => { alive = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [slide?.type, slide?.presentationId, slide?.unitIndex]);
   const isQuiz = data?.resourceType === 'quiz' || slide?.type === 'question';
   useEffect(() => {
     if (!isQuiz || quizAssistantOpenedRef.current) return;
@@ -283,7 +299,8 @@ export default function SlidePlayer() {
           selfAssessments: assessments,
         });
       }
-      await api.completeLearningResource(data.resourceId);
+      if (data.resourceType === 'ppt') await presentationApi.completePresentation(data.resourceId);
+      else await api.completeLearningResource(data.resourceId);
       setCompleteConfirmOpen(false);
       markLearningMapReturn(currentLearner.id);
       navigate('/learn');
@@ -297,8 +314,12 @@ export default function SlidePlayer() {
     if (!data?.resourceId || restarting) return;
     setRestarting(true);
     try {
-      const result = await api.resetLearningResource(data.resourceId);
-      setCompletedResource(result.resource);
+      if (data.resourceType === 'ppt') {
+        await updatePptLearningProgress(data.resourceId, { learned: false, pageIndex: 0, pageCount: slides.length });
+      } else {
+        const result = await api.resetLearningResource(data.resourceId);
+        setCompletedResource(result.resource);
+      }
       setSlideAssessments({});
       setCurrentIndex(0);
       setCompleteConfirmOpen(false);
@@ -341,16 +362,16 @@ export default function SlidePlayer() {
       <header className="flex shrink-0 items-center gap-3 border-b border-hairline bg-card-warm px-4 py-3 md:px-6">
         <Presentation size={17} className="text-brand" />
         <div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold text-ink">幻灯模式 · {data?.title ?? '正在准备个性化学习内容'}</div><div className="font-mono text-[9.5px] text-ink-muted">个性化内容生成中 · 第 {slides.length ? currentIndex + 1 : 0}/{expected || slides.length || 0} 页</div></div>
-        {data?.resourceId && <button type="button" onClick={() => { narration.stop(); navigate(`/learn/resource/${encodeURIComponent(data.resourceId!)}?view=full`); }} className="inline-flex h-9 items-center gap-1.5 rounded-[10px] border border-hairline bg-paper px-3 text-[11px] font-medium text-ink-2 hover:border-brand/35 hover:text-brand"><BookOpen size={13} />完整阅读</button>}
+        {data?.resourceId && <button type="button" onClick={() => { narration.stop(); navigate(data.resourceType === 'ppt' ? `/learn/${encodeURIComponent(data.kpId ?? '')}?ppt=${encodeURIComponent(data.resourceId!)}` : `/learn/resource/${encodeURIComponent(data.resourceId!)}?view=full`); }} className="inline-flex h-9 items-center gap-1.5 rounded-[10px] border border-hairline bg-paper px-3 text-[11px] font-medium text-ink-2 hover:border-brand/35 hover:text-brand"><BookOpen size={13} />完整阅读</button>}
         <button type="button" onClick={() => { narration.stop(); markLearningMapReturn(currentLearner.id); navigate('/learn'); }} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep" title="退出幻灯"><X size={17} /></button>
       </header>
 
       <section className={cn('flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-gradient-to-br from-brand-tint/25 via-paper to-card-warm px-4 py-8 md:px-12', isQuiz && assistantOpen && 'lg:pr-[var(--lf-slide-assistant-width)]')}>
         {!slide ? <div className="flex h-full w-full max-w-[880px] flex-col items-center justify-center rounded-[24px] border border-dashed border-brand/30 bg-card-warm px-6 text-center"><Loader2 size={25} className="animate-spin text-brand" /><h1 className="mt-4 font-serif text-[23px] font-semibold text-ink">正在准备第一张学习卡片</h1><p className="mt-2 max-w-md text-[12.5px] leading-6 text-ink-muted">第一章或第一个步骤完成后会立即显示，不必等待整项资源生成。</p>{error && <p className="mt-4 flex items-center gap-1.5 text-[11px] text-brand-danger"><CircleAlert size={13} />{error}</p>}</div>
           : <article className="relative flex h-full min-h-0 w-full max-w-[1040px] flex-col overflow-hidden rounded-[24px] border border-brand/20 bg-card-warm/95 shadow-warm-lg" data-assistant-context data-assistant-focus="true" data-context-kind={slide.type === 'question' ? '当前题目' : slide.type === 'step' ? '当前实操步骤' : '当前学习卡片'} data-context-title={slide.title} data-context-index={currentIndex + 1} data-context-total={expected || slides.length} data-context-resource-id={data?.resourceId ?? ''} data-context-knowledge-point-id={data?.kpId ?? completedResource?.kpId ?? ''} data-context-quiz-submitted={slide.type === 'question' ? String(quizInteraction.submitted) : undefined} data-context-selected-answer={slide.type === 'question' ? quizInteraction.selectedAnswer : undefined}>
-              <div className="flex shrink-0 items-center justify-between gap-4 border-b border-hairline/70 bg-paper/55 px-6 py-3.5 md:px-9"><span className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.1em] text-brand">{slide.type === 'question' ? '分阶练习' : slide.type === 'step' ? '实操步骤' : slide.type === 'intro' ? '本讲导览' : '领学章节'}</span>{data?.status === 'generating' && <span className="inline-flex items-center gap-1.5 text-[10.5px] text-ink-muted"><Loader2 size={12} className="animate-spin" />后续卡片生成中</span>}</div>
+              <div className="flex shrink-0 items-center justify-between gap-4 border-b border-hairline/70 bg-paper/55 px-6 py-3.5 md:px-9"><span className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.1em] text-brand">{slide.type === 'question' ? '分阶练习' : slide.type === 'step' ? '实操步骤' : slide.type === 'intro' ? '本讲导览' : slide.type === 'presentation' ? '交互课件' : '领学章节'}</span>{data?.status === 'generating' && <span className="inline-flex items-center gap-1.5 text-[10.5px] text-ink-muted"><Loader2 size={12} className="animate-spin" />后续页面讲解生成中</span>}</div>
               <div ref={cardScrollRef} className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-6 pb-8 pt-5 [scrollbar-gutter:stable] md:px-9 md:pb-9 md:pt-6">
-                {slide.type === 'question' ? <QuizCard key={slide.index} slide={slide} onInteractionChange={setQuizInteraction} /> : <><h1 className="font-serif text-[28px] font-semibold leading-tight text-ink md:text-[34px]">{slide.title}</h1><div className="mt-6 h-1 w-14 rounded-full bg-brand" /><div className="mt-7 max-w-none text-ink-2"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{String(slide.content ?? '')}</ReactMarkdown></div></>}
+                {slide.type === 'question' ? <QuizCard key={slide.index} slide={slide} onInteractionChange={setQuizInteraction} /> : slide.type === 'presentation' ? <div className="mx-auto flex h-full max-w-[980px] flex-col"><h1 className="shrink-0 font-serif text-[22px] font-semibold text-ink">{slide.title}</h1><div className="mt-4 flex min-h-[320px] flex-1 items-center justify-center overflow-hidden rounded-[16px] border border-hairline bg-ink/5">{presentationImage ? <img src={presentationImage} alt={`第 ${slide.unitIndex + 1} 页 · ${slide.title}`} className="max-h-full max-w-full object-contain" /> : <Loader2 size={22} className="animate-spin text-brand" />}</div><div className="mt-4 rounded-xl border border-brand/15 bg-brand-tint/25 px-4 py-3 text-[12.5px] leading-6 text-ink-2"><span className="mr-2 font-medium text-brand">本页讲解</span>{String(slide.content ?? '')}</div></div> : <><h1 className="font-serif text-[28px] font-semibold leading-tight text-ink md:text-[34px]">{slide.title}</h1><div className="mt-6 h-1 w-14 rounded-full bg-brand" /><div className="mt-7 max-w-none text-ink-2"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{String(slide.content ?? '')}</ReactMarkdown></div></>}
                 <SourceList sources={pageSources} evidenceQuotes={slide.evidenceQuotes} />
               </div>
             </article>}
