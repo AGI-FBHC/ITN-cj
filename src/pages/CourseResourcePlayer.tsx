@@ -30,6 +30,7 @@ import { refreshLearningMapResourceCache } from '@/hooks/useLearningMap';
 import { useProfile } from '@/context/ProfileContext';
 import LearningCompleteDialog from '@/components/learn/LearningCompleteDialog';
 import { useAgent } from '@/context/AgentContext';
+import { collectLearningPageContext, type LearningPageContext } from '@/lib/pageContext';
 
 /** 智能助教聊天消息：在基础文本之上携带多模态类型与附件信息 */
 interface ChatMessage extends LearningResourceMessage {
@@ -503,7 +504,7 @@ export default function CourseResourcePlayer() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { addNote, notes } = useNotes();
-  const { setOpen: setAgentDockOpen } = useAgent();
+  const { setOpen: setAgentDockOpen, askFree } = useAgent();
   const narration = useResourceNarration(() => narrationFinishedRef.current());
   const narrationFinishedRef = useRef<() => void>(() => undefined);
   const [resource, setResource] = useState<LearningResource | null>(null);
@@ -543,6 +544,7 @@ export default function CourseResourcePlayer() {
   const chatReadyRef = useRef(false);
   /** 会话任务 id 镜像：避免 state 闭包过期导致异步流程拿不到最新值 */
   const chatTaskIdRef = useRef<string | null>(null);
+  const askTemplateIndex = useRef(0);
   const chatAbortRef = useRef<AbortController | null>(null);
   const [asking, setAsking] = useState(false);
   const [askPhoto, setAskPhoto] = useState<{ name: string; url: string } | null>(null);
@@ -685,11 +687,6 @@ export default function CourseResourcePlayer() {
   const quizAllAnswered = resource?.type !== 'quiz' || (blocks.length > 0 && completedBlockCount === blocks.length);
   const safetyChecklist = resource?.type === 'practice' ? asStrings(resource.content.safetyChecklist) : [];
   const safetyReady = safetyChecklist.length === 0 || safetyChecklist.every((item) => safetyChecks.includes(item));
-  const quizTiers = resource?.type === 'quiz' ? (['easy', 'medium', 'hard'] as const).map((difficulty) => {
-    const tierBlocks = blocks.filter((block) => String(block.question?.difficulty ?? 'easy') === difficulty);
-    return { difficulty, total: tierBlocks.length, done: tierBlocks.filter((block) => quizAnswers.has(block.id)).length };
-  }) : [];
-
   useEffect(() => {
     if (!resource) return;
     const id = window.setInterval(() => setSessionSeconds((value) => {
@@ -941,34 +938,61 @@ export default function CourseResourcePlayer() {
     return null;
   };
 
-  /** 点击具体段落的“向导学老师提问”：开一个新会话，并把该段内容作为上下文 */
-  const askAboutBlock = async (block: LearningBlock) => {
+  /** 点击具体段落的“向导学老师提问”：打开全局 AgentDock，并用轮换模板直接发送当前内容提问 */
+  const askAboutBlock = (block: LearningBlock) => {
     stopNoteListening();
     setCurrentBlockId(block.id);
-    setChatOpen(true);
-    setChatContext({
-      blockTitle: block.title,
-      content: [block.body ?? '', block.code ? `代码：
+    const quizTemplates = [
+      '这道题我有点没看明白，能帮我拆解一下吗？',
+      '这题我不太理解，帮我把题目和选项讲清楚。',
+      '能不能用更生动的方式讲一下这道题的关键点？',
+      '这道题卡住我了，先帮我分析一下题目在考什么。',
+      '帮我看看这题怎么判断，我还不太确定。',
+      '这题我选的时候没底气，能不能教我一套判断思路？',
+      '能不能先给我一个提示，让我自己再想一想这题？',
+      '这题的知识点我应该怎么巩固，下次才能更稳？',
+    ];
+    const practiceTemplates = [
+      '这步实操我没太看懂，能帮我把关键动作拆细一点吗？',
+      '这个操作卡住我了，帮我讲讲这一步要注意什么。',
+      '实操步骤里有哪些坑是我要先避开的？',
+      '这一步做完之后应该看到什么结果？帮我确认一下。',
+      '我不确定这么操作对不对，帮我给一个更直白的判断方法。',
+    ];
+    const lectureTemplates = [
+      '这段内容我没太理解，能帮我用更通俗的话解释一下吗？',
+      '这里的关键概念是什么？帮我提炼一下重点。',
+      '这段讲完后我该记住什么？可以帮我梳理一份小结吗？',
+      '能不能给我一个例子，让我更好地理解这段内容？',
+      '这个知识点和我之前学的有什么联系？',
+    ];
+    const templates = block.kind === 'quiz'
+      ? quizTemplates
+      : block.kind === 'practice'
+        ? practiceTemplates
+        : lectureTemplates;
+    const template = templates[askTemplateIndex.current % templates.length];
+    askTemplateIndex.current += 1;
+
+    const base = collectLearningPageContext();
+    const pageContext: LearningPageContext = {
+      ...base,
+      version: 1,
+      focus: {
+        kind: block.kind === 'quiz' ? '当前题目' : '当前阅读段落',
+        title: block.title,
+        text: [block.body ?? '', block.code ? `代码：
 ${block.code}` : ''].filter(Boolean).join('\n\n').slice(0, 3000),
-    });
-    setQuestion('');
-    setAskPhoto(null);
-    setMessages([]);
-    setFollowUps([]);
-    setChatLoading(true);
-    try {
-      const taskId = await ensureChatTask();
-      if (taskId) {
-        const created = await createPresentationChatSession(taskId, 'mimo');
-        setChatSessionId(created.id);
-        setChatSessions((current) => [...current.filter((item) => item.id !== created.id), created]);
-      } else {
-        setChatPptTaskId(null);
-        chatTaskIdRef.current = null;
-      }
-      chatReadyRef.current = true;
-    } catch { /* 保持回退模式 */ }
-    finally { setChatLoading(false); }
+      },
+    };
+    const opener = block.kind === 'quiz' && block.title
+      ? `我对这道题「${block.title}」不太理解。`
+      : block.kind === 'practice' && block.title
+        ? `我在「${block.title}」这个实操步骤上有点不清楚。`
+        : `我对「${block.title}」这部分内容不太理解。`;
+
+    setAgentDockOpen(true);
+    askFree(`${opener} ${template}`, pageContext);
   };
 
   const ask = async (text = question, photo?: { name: string; url: string } | null, fromVoice = false) => {
@@ -1286,7 +1310,6 @@ ${chatContext.content}
       <main className="min-w-0 space-y-6">
       {resource.type === 'practice' && <section className="rounded-[18px] border border-brand-amber/40 bg-brand-amber-tint p-5"><div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="flex items-center gap-2 text-[15px] font-semibold text-ochre"><ShieldAlert size={16} />开始前确认</h2><p className="mt-1 text-[11.5px] text-ochre/80">逐项确认后再开始操作；确认结果只用于本次学习进度。</p></div><span className="font-mono text-[11px] text-ochre">{safetyChecks.length}/{safetyChecklist.length} 已确认</span></div>{safetyChecklist.length ? <div className="mt-3 grid gap-2 sm:grid-cols-2">{safetyChecklist.map((item) => { const checked = safetyChecks.includes(item); return <button key={item} type="button" onClick={() => setSafetyChecks((current) => checked ? current.filter((value) => value !== item) : [...current, item])} className={cn('flex items-center gap-2 rounded-[10px] border bg-card-warm px-3 py-2.5 text-left text-[12.5px]', checked ? 'border-brand/45 text-brand' : 'border-hairline text-ink-2')} >{checked ? <ShieldCheck size={15} /> : <Circle size={15} className="text-ink-muted" />}<span>{item}</span></button>; })}</div> : <p className="mt-3 text-[12.5px] text-ink-muted">本任务未识别到额外的确认项，请按步骤谨慎操作即可。</p>}{String(resource.content.safetyNotice ?? '') && <div className="mt-3 flex items-start gap-2 rounded-[10px] border border-brand-danger/25 bg-brand-danger/5 px-3 py-2.5 text-[12px] leading-5 text-ink-2"><TriangleAlert size={15} className="mt-0.5 shrink-0 text-brand-danger" />{String(resource.content.safetyNotice)}</div>}</section>}
       {resource.type === 'practice' && <section className="grid gap-3 sm:grid-cols-3"><div className="lf-card p-4"><Clock3 size={15} className="text-brand" /><div className="mt-2 text-[18px] font-semibold text-ink">{Number(resource.content.estimatedMinutes) || blocks.length * 10} 分钟</div><div className="text-[10.5px] text-ink-muted">预计完成时间</div></div><div className="lf-card p-4 sm:col-span-2"><div className="flex items-center gap-2 text-[12px] font-semibold text-ink"><Wrench size={14} className="text-brand" />环境与工具</div><div className="mt-2 flex flex-wrap gap-1.5">{asStrings(resource.content.environment).map((item) => <span key={item} className="rounded-md border border-hairline bg-paper px-2 py-1 text-[10.5px] text-ink-2">{item}</span>)}</div></div></section>}
-      {resource.type === 'quiz' && <section className="grid gap-3 sm:grid-cols-3">{quizTiers.map((tier) => { const meta = difficultyMeta[tier.difficulty]; return <div key={tier.difficulty} className="lf-card p-4"><div className="flex items-center justify-between"><span className="text-[14px] font-semibold text-ink">{meta.label}</span><DifficultyStars count={meta.stars} color={meta.color} /></div><div className="mt-2 flex items-center justify-between font-mono text-[11px] text-ink-muted"><span>{tier.total} 题</span><span>{tier.done}/{tier.total} 已答</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-paper-deep"><div className="h-full rounded-full" style={{ width: `${tier.total ? tier.done / tier.total * 100 : 0}%`, backgroundColor: meta.color }} /></div></div>; })}</section>}
       {blocks.length === 0 ? <div className="rounded-[16px] border border-dashed border-hairline p-12 text-center"><p className="text-[14px] text-ink-muted">当前资源没有可学习的正文。</p><Link to={`/resources?courseId=${resource.courseId}&chapterId=${resource.chapterId}`} className="lf-btn-primary mt-4 inline-flex">重新生成资源</Link></div> : blocks.map((block, index) => <motion.section key={block.id} ref={(element) => { blockRefs.current[block.id] = element; }} data-block-id={block.id} data-assistant-context data-assistant-focus={block.id === currentBlockId ? 'true' : undefined} aria-current={block.id === currentBlockId ? 'true' : undefined} data-context-kind={block.kind === 'quiz' ? '当前题目' : resource.type === 'practice' ? '当前实操步骤' : '当前阅读段落'} data-context-title={block.title} data-context-index={index + 1} data-context-total={blocks.length} data-context-resource-id={resource.id} data-context-knowledge-point-id={resource.kpId} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-80px' }} className={cn('scroll-mt-28 rounded-[18px] border bg-card-warm p-5 shadow-xs transition md:p-7', block.id === currentBlockId ? 'border-brand/35 shadow-warm' : 'border-hairline', block.safety === 'danger' && 'border-l-2 border-l-brand-danger/60')}>
         <div className="flex items-start gap-4"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-brand-tint font-mono text-[11px] font-semibold text-brand">{block.kind === 'practice' ? `S${index}` : String(index + 1).padStart(2, '0')}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><div className="lf-mono-label !text-[10px]">{block.eyebrow}</div>{block.kind === 'practice' && block.safety && <span className={cn('rounded-md border px-1.5 py-0.5 font-mono text-[9.5px]', block.safety === 'danger' ? 'border-brand-danger/35 bg-brand-danger/10 text-brand-danger' : block.safety === 'caution' ? 'border-brand-amber/40 bg-brand-amber-tint text-ochre' : 'border-brand/25 bg-brand-tint text-brand')}>{block.safety === 'danger' ? '高风险' : block.safety === 'caution' ? '需谨慎' : '常规操作'}</span>}{block.kind === 'quiz' && (() => { const meta = difficultyMeta[String(block.question?.difficulty ?? 'easy') as keyof typeof difficultyMeta] ?? difficultyMeta.easy; return <span className="flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[9.5px]" style={{ borderColor: `${meta.color}55`, color: meta.color }}><DifficultyStars count={meta.stars} color={meta.color} />{meta.label}</span>; })()}</div><h2 className="mt-1 font-serif text-[22px] font-semibold leading-tight text-ink md:text-[25px]">{block.title}</h2></div>{block.kind === 'practice' && <button type="button" onClick={() => toggleStep(block.id)} className={cn('flex shrink-0 items-center gap-1.5 rounded-[10px] border px-3 py-2 text-[11.5px]', completedSteps.includes(block.id) ? 'border-brand bg-brand text-paper' : !safetyReady && block.id === blocks.find((item) => item.kind === 'practice')?.id ? 'cursor-not-allowed border-hairline bg-paper-deep text-ink-muted' : 'border-hairline bg-paper text-ink-muted hover:border-brand/40')} >{completedSteps.includes(block.id) ? <CheckCircle2 size={14} /> : <Circle size={14} />}完成步骤</button>}</div>
         {block.body && <div className="mt-5 max-w-[760px]"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>{normalizeMarkdownLists(block.body)}</ReactMarkdown></div>}
