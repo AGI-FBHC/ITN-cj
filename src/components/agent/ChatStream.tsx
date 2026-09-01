@@ -69,7 +69,7 @@ function sessionTag(title?: string | null): string {
 function MessageBubble({ message }: { message: AgentMessage }) {
   const isUser = message.kind === 'user';
   const text = 'text' in message ? message.text : '';
-  const visibleText = isUser ? text.replace(/^\s*\[当前页面[：:]\s*[^\]]+\]\s*/, '') : text;
+  const visibleText = isUser ? text.replace(/^\s*\[(?:当前页面|跨会话上下文)[：:][^\]]+\]\s*/g, '') : text;
   const loading = 'loading' in message ? message.loading : false;
   if (message.kind === 'verify') return null;
   if (message.kind === 'note') return (
@@ -109,7 +109,7 @@ function MessageBubble({ message }: { message: AgentMessage }) {
 
 /* ===== 消息流 + composer ===== */
 export function ChatStream({ compact = false, pageContext }: { compact?: boolean; pageContext?: string }) {
-  const { messages, askFree, suggestions, weakest } = useAgent();
+  const { messages, askFree, suggestions, weakest, crossPageNotice } = useAgent();
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -223,6 +223,11 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
               {action}
             </button>
           ))}
+        </div>
+      )}
+      {crossPageNotice && (
+        <div className="shrink-0 border-t border-brand/15 bg-brand-tint/15 px-3 py-1.5 text-[10.5px] leading-4 text-brand">
+          {crossPageNotice}
         </div>
       )}
       {/* Composer */}

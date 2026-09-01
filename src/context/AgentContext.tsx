@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
 import type { AgentDockSession } from '@/lib/api';
-import type { LearningPageContext } from '@/lib/pageContext';
+import { collectLearningPageContext, type LearningPageContext } from '@/lib/pageContext';
 import { useLearningMap } from '@/hooks/useLearningMap';
 import type { QuizQuestion } from '@/data/quizBank';
 import {
@@ -84,6 +84,7 @@ interface AgentContextValue {
   switchAgentSession: (id: string) => Promise<void>;
   deleteAgentSession: (id: string) => Promise<void>;
   renameAgentSession: (id: string, title: string) => Promise<void>;
+  crossPageNotice: string | null;
 }
 
 const AgentContext = createContext<AgentContextValue | null>(null);
@@ -93,6 +94,15 @@ const K_CONF = 'lf.agentConf';
 const K_LOG = 'lf.agentLog';
 const K_SEEN = 'lf.agentSeen';
 const K_DEC = 'lf.agentDecisions';
+const K_SESSION_CTX = 'lf.agentSessionContexts';
+
+interface SessionStageRecord {
+  pageType: string;
+  pageTitle: string;
+  focusTitle?: string;
+  route: string;
+  askedAt: string;
+}
 
 const DEFAULT_SESSION_TITLE_RE = /^(新对话|伴学助手|阿诊)\s*·?\s*(学习诊断)?$/;
 
@@ -108,6 +118,20 @@ function buildSessionTitle(askType: string, text: string, pageContext?: Learning
   if (askType === 'what-next') return '下一步规划';
   if (askType === 'challenge-score') return '分数核验';
   return focusTitle ? `伴学提问 · ${focusTitle}` : '伴学提问';
+}
+
+function buildCrossPageBridge(history: SessionStageRecord[], current: LearningPageContext): string | null {
+  if (!history.length) return null;
+  const last = history[history.length - 1];
+  const currentFocus = current.focus?.title || current.pageTitle;
+  if (last.pageType === current.pageType && last.focusTitle === currentFocus) return null;
+  const recent = history.slice(-4);
+  const startStage = history.length - recent.length + 1;
+  const stages = recent
+    .map((item, index) => `阶段${startStage + index}：${item.pageType} · ${item.focusTitle || item.pageTitle}`)
+    .join('；');
+  const now = `${current.pageType} · ${currentFocus}`;
+  return `[跨会话上下文：此前${stages}；现在在${now}。若需引用之前内容，请区分不同阶段；回答优先结合当前页面。]`;
 }
 
 function readJSON<T>(key: string, fallback: T): T {
@@ -135,6 +159,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const [msgsAll, setMsgsAll] = useState<Record<string, AgentMessage[]>>(() => readJSON(K_MSGS, {}));
   const [sessions, setSessions] = useState<AgentDockSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [crossPageNotice, setCrossPageNotice] = useState<string | null>(null);
   const [confAll, setConfAll] = useState<Record<string, Record<string, number>>>(() => readJSON(K_CONF, {}));
   const [logAll, setLogAll] = useState<Record<string, string[]>>(() => readJSON(K_LOG, {}));
   const [decAll, setDecAll] = useState<Record<string, DecisionEntry[]>>(() => readJSON(K_DEC, {}));
@@ -437,13 +462,31 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           setSessions((prev) => prev.map((s) => s.id === sid ? updated : s));
         }).catch(() => {/* ignore */});
       }
+      const currentPage = pageContext ?? collectLearningPageContext();
+      const ctxMap = readJSON<Record<string, SessionStageRecord[]>>(K_SESSION_CTX, {});
+      const history = ctxMap[sid] ?? [];
+      const bridge = buildCrossPageBridge(history, currentPage);
+      const sendText = bridge ? `${bridge}\n${userText}` : userText;
+      const stage: SessionStageRecord = {
+        pageType: currentPage.pageType,
+        pageTitle: currentPage.pageTitle,
+        ...(currentPage.focus?.title ? { focusTitle: currentPage.focus.title } : {}),
+        route: currentPage.route,
+        askedAt: new Date().toISOString(),
+      };
+      ctxMap[sid] = [...history, stage].slice(-6);
+      save(K_SESSION_CTX, ctxMap);
+      if (bridge && history.length) {
+        const last = history[history.length - 1];
+        setCrossPageNotice(`已自动补充跨页面承接：从「${last.pageType} · ${last.focusTitle || last.pageTitle}」到「${currentPage.pageType} · ${currentPage.focus?.title || currentPage.pageTitle}」`);
+      }
       append({ id: mid(), kind: 'user', text: userText, time: now() });
       const pendingId = mid();
       append({ id: pendingId, kind: 'agent', text: placeholder, time: now() });
       let acc = '';
       try {
         await api.askAgentStream(
-          lid, askType, userText,
+          lid, askType, sendText,
           askType === 'free' ? undefined : weakest?.id,
           sid ?? undefined,
           pageContext?.route,
@@ -600,8 +643,9 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       switchAgentSession,
       deleteAgentSession,
       renameAgentSession,
+      crossPageNotice,
     };
-  }, [msgsAll, confAll, logAll, decAll, seen, unread, open, latestHint, currentLearner, currentLearnerId, applyWriteback, weakest, kpNameById, learningMap, suggestions, refreshSuggestions, sessions, currentSessionId]);
+  }, [msgsAll, confAll, logAll, decAll, seen, unread, open, latestHint, currentLearner, currentLearnerId, applyWriteback, weakest, kpNameById, learningMap, suggestions, refreshSuggestions, sessions, currentSessionId, crossPageNotice]);
 
   return <AgentContext.Provider value={value}>{children}</AgentContext.Provider>;
 }
