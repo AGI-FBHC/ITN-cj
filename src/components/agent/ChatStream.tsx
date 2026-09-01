@@ -99,7 +99,7 @@ function MessageBubble({ message, onAnswerQuizCard }: { message: AgentMessage; o
         <div className="w-[92%] rounded-2xl rounded-bl-md border border-hairline bg-paper p-3.5">
           <div className="flex items-center gap-2">
             <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-brand text-paper"><Brain size={13} /></span>
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-brand">做题卡片</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-brand">随堂练习</span>
           </div>
           <p className="mt-2 whitespace-pre-wrap text-[13px] leading-[1.7] text-ink">{message.stem}</p>
           <div className="mt-2.5 space-y-1.5">
@@ -171,7 +171,7 @@ function MessageBubble({ message, onAnswerQuizCard }: { message: AgentMessage; o
 
 /* ===== 消息流 + composer ===== */
 export function ChatStream({ compact = false, pageContext }: { compact?: boolean; pageContext?: string }) {
-  const { messages, askFree, askFreeWithImage, askSimilarQuiz, answerQuizCard, suggestions, weakest, pageContextEnabled, setPageContextEnabled } = useAgent();
+  const { messages, askFree, askFreeWithImage, askSimilarQuiz, answerQuizCard, isResponding, suggestions, weakest, pageContextEnabled, setPageContextEnabled } = useAgent();
   const [input, setInput] = useState('');
   const [image, setImage] = useState<{ name: string; url: string; blob?: Blob } | null>(null);
   const [recording, setRecording] = useState(false);
@@ -199,7 +199,7 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
 
   const handleSend = () => {
     const text = input.trim();
-    if (!text && !image) return;
+    if (isResponding || (!text && !image)) return;
     const snapshot = collectLearningPageContext();
     setCurrentContext(snapshot);
     if (image) {
@@ -216,6 +216,7 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
     if (!recorder) return;
     voiceRecRef.current = null;
     setRecording(false);
+    if (isResponding) return;
     try {
       const blob = await recorder.stop();
       const { transcript } = await api.transcribeAssistantAudio(blob);
@@ -235,6 +236,7 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
       void finishVoice();
       return;
     }
+    if (isResponding) return;
     try {
       const recorder = await startWavRecording({
         silenceMs: 1300,
@@ -311,7 +313,8 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
                   key={s}
                   type="button"
                   onClick={() => askFree(s, currentContext)}
-                  className="rounded-xl border border-hairline bg-paper px-3 py-2 text-left text-[12px] text-ink transition hover:border-brand/40 hover:bg-brand-tint/20"
+                  disabled={isResponding}
+                  className="rounded-xl border border-hairline bg-paper px-3 py-2 text-left text-[12px] text-ink transition hover:border-brand/40 hover:bg-brand-tint/20 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {s}
                 </button>
@@ -331,6 +334,7 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
             <button
               key={action}
               type="button"
+              disabled={isResponding}
               onClick={() => {
                 const ctx = collectLearningPageContext();
                 if (action === '出一道类似的题') {
@@ -339,7 +343,7 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
                   askFree(action, ctx);
                 }
               }}
-              className="shrink-0 rounded-full border border-brand/20 bg-paper px-2.5 py-1 text-[10.5px] font-medium text-brand transition hover:border-brand/45 hover:bg-brand-tint/40"
+              className="shrink-0 rounded-full border border-brand/20 bg-paper px-2.5 py-1 text-[10.5px] font-medium text-brand transition hover:border-brand/45 hover:bg-brand-tint/40 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {action}
             </button>
@@ -360,17 +364,19 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
           <button
             type="button"
             onClick={() => void toggleVoice()}
+            disabled={isResponding && !recording}
             title={recording ? '停止录音并发送' : '语音提问'}
             aria-label="语音提问"
-            className={cn('shrink-0 rounded-lg border p-2 transition', recording ? 'animate-pulse border-brand-danger bg-brand-danger text-paper' : 'border-hairline text-ink-muted hover:border-brand/40 hover:text-brand')}
+            className={cn('shrink-0 rounded-lg border p-2 transition disabled:cursor-not-allowed disabled:opacity-40', recording ? 'animate-pulse border-brand-danger bg-brand-danger text-paper' : 'border-hairline text-ink-muted hover:border-brand/40 hover:text-brand')}
           >
             <Mic size={14} />
           </button>
           <button
             type="button"
             onClick={() => imageInputRef.current?.click()}
+            disabled={isResponding}
             title="上传图片提问"
-            className="shrink-0 rounded-lg border border-hairline p-2 text-ink-muted transition hover:border-brand/40 hover:text-brand"
+            className="shrink-0 rounded-lg border border-hairline p-2 text-ink-muted transition hover:border-brand/40 hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
           >
             <ImagePlus size={14} />
           </button>
@@ -381,15 +387,17 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
             onKeyDown={handleKeyDown}
             placeholder="输入你的问题…"
             rows={1}
+            disabled={isResponding}
             className={cn(
               'min-h-[24px] flex-1 resize-none bg-transparent text-[13px] leading-[1.6] text-ink outline-none placeholder:text-ink-muted',
+              isResponding && 'cursor-not-allowed opacity-60',
               compact ? 'max-h-[80px]' : 'max-h-[140px]',
             )}
           />
           <button
             type="button"
             onClick={handleSend}
-            disabled={!input.trim() && !image}
+            disabled={isResponding || (!input.trim() && !image)}
             className="shrink-0 rounded-lg bg-ink px-2.5 py-1.5 text-paper transition hover:opacity-90 disabled:opacity-30"
           >
             <SendHorizonal size={14} />

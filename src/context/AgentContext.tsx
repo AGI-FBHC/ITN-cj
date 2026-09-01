@@ -76,6 +76,8 @@ interface AgentContextValue {
   unread: number;
   open: boolean;
   setOpen: (v: boolean) => void;
+  /** 伴学助手正在生成回复/题目，应暂时禁用新的发送入口。 */
+  isResponding: boolean;
   /** 最新一条未读的简短提示（FAB 气泡） */
   latestHint: string | null;
   /** 真实知识网络中最弱章节（用于快捷问题与 kp 参数） */
@@ -197,6 +199,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const [msgsAll, setMsgsAll] = useState<Record<string, AgentMessage[]>>(() => readJSON(K_MSGS, {}));
   const [sessions, setSessions] = useState<AgentDockSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [isResponding, setIsResponding] = useState(false);
   const sessionSelectionLocked = useRef(false);
   const [pageContextEnabled, setPageContextEnabled] = useState(true);
   const [confAll, setConfAll] = useState<Record<string, Record<string, number>>>(() => readJSON(K_CONF, {}));
@@ -534,6 +537,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       append({ id: mid(), kind: 'user', text: userText, time: now() });
       const pendingId = mid();
       append({ id: pendingId, kind: 'agent', text: placeholder, time: now() });
+      setIsResponding(true);
       let acc = '';
       try {
         await api.askAgentStream(
@@ -569,6 +573,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
             m.id === pendingId ? { id: pendingId, kind: 'agent', text: '网络开小差了，稍后再问我～', time: now() } : m
           )),
         }));
+      } finally {
+        setIsResponding(false);
       }
     };
 
@@ -600,6 +606,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       append({ id: mid(), kind: 'user', text: userText, image: { name: image.name, url: image.url }, time: now() });
       const pendingId = mid();
       append({ id: pendingId, kind: 'agent', text: placeholder, time: now() });
+      setIsResponding(true);
       let acc = '';
       try {
         const blob = image.blob ?? await (await fetch(image.url)).blob();
@@ -633,6 +640,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
             m.id === pendingId ? { id: pendingId, kind: 'agent', text: '图片识别或网络开小差了，稍后再问我～', time: now() } : m
           )),
         }));
+      } finally {
+        setIsResponding(false);
       }
     };
 
@@ -688,6 +697,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       append({ id: mid(), kind: 'user', text: userText, time: now() });
       const pendingId = mid();
       append({ id: pendingId, kind: 'agent', text: '正在生成做题卡片…', time: now() });
+      setIsResponding(true);
       try {
         const result = await api.askAgentSimilarQuiz(
           lid, undefined, sid ?? undefined, currentPage?.route, currentPage,
@@ -722,6 +732,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
             m.id === pendingId ? { id: pendingId, kind: 'agent', text: '类似题生成失败，稍后再试一次吧', time: now() } : m
           )),
         }));
+      } finally {
+        setIsResponding(false);
       }
     };
 
@@ -829,6 +841,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       unread,
       open,
       setOpen,
+      isResponding,
       latestHint,
       confidence,
       decisions: decAll[lid] ?? [],
@@ -848,7 +861,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       deleteAgentSession,
       renameAgentSession,
     };
-  }, [msgsAll, confAll, logAll, decAll, seen, unread, open, latestHint, currentLearner, currentLearnerId, applyWriteback, weakest, kpNameById, learningMap, suggestions, refreshSuggestions, sessions, currentSessionId, pageContextEnabled]);
+  }, [msgsAll, confAll, logAll, decAll, seen, unread, open, isResponding, latestHint, currentLearner, currentLearnerId, applyWriteback, weakest, kpNameById, learningMap, suggestions, refreshSuggestions, sessions, currentSessionId, pageContextEnabled]);
 
   return <AgentContext.Provider value={value}>{children}</AgentContext.Provider>;
 }
