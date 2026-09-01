@@ -67,9 +67,10 @@ function createSoftPlushTexture(size = 256): THREE.Texture {
   const c = size / 2;
   const g = ctx.createRadialGradient(c, c, 0, c, c, c);
   g.addColorStop(0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.3, 'rgba(255,255,255,0.96)');
-  g.addColorStop(0.55, 'rgba(255,255,255,0.72)');
-  g.addColorStop(0.78, 'rgba(255,255,255,0.28)');
+  g.addColorStop(0.2, 'rgba(255,255,255,1)');
+  g.addColorStop(0.42, 'rgba(255,255,255,0.9)');
+  g.addColorStop(0.62, 'rgba(255,255,255,0.55)');
+  g.addColorStop(0.82, 'rgba(255,255,255,0.16)');
   g.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, size, size);
@@ -1549,8 +1550,8 @@ function Edge3D({
   targetId?: string;
   nodeScaleRef?: React.MutableRefObject<Map<string, number>>;
 }) {
+  const SEGMENTS = 8;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const SEGMENTS = 32;
   const segRefs = useRef<Array<any>>([]);
   const curFrom = useRef(fromPos.clone());
   const curTo = useRef(toPos.clone());
@@ -1565,7 +1566,6 @@ function Edge3D({
     curFrom.current.lerp(tf, 0.18);
     curTo.current.lerp(tt, 0.18);
     // 线段裁剪到球体表面：不穿入节点内部，节点半透明时也不会看到线穿过球体；
-    // 两端裁剪距离跟随节点实时缩放（选中放大时自动让开）
     const dir = curTo.current.clone().sub(curFrom.current);
     const len = Math.max(dir.length(), 0.001);
     dir.normalize();
