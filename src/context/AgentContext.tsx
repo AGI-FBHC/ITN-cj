@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
 import type { AgentDockSession } from '@/lib/api';
+import { fetchChatAttachmentBlob } from '@/lib/presentationApi';
 import { collectLearningPageContext, type LearningPageContext } from '@/lib/pageContext';
 import { useLearningMap } from '@/hooks/useLearningMap';
 import type { QuizQuestion } from '@/data/quizBank';
@@ -27,7 +28,7 @@ import type { Signal, Inference } from '@/agent/agentBrain';
 /* ================= 消息模型 ================= */
 export type AgentMessage =
   | { id: string; kind: 'agent'; text: string; time: string }
-  | { id: string; kind: 'user'; text: string; time: string; image?: { name: string; url: string } }
+  | { id: string; kind: 'user'; text: string; time: string; image?: { name: string; url: string }; attachmentId?: string }
   | { id: string; kind: 'stage'; text: string; time: string }
   | {
       id: string;
@@ -110,12 +111,30 @@ interface SessionStageRecord {
 function backendToAgentMessages(list: { id: string; agentId?: string | null; kind: string; content: string; createdAt: string }[]): AgentMessage[] {
   return (list ?? [])
     .filter((m) => m.content && (m.kind === 'user' || m.agentId === 'DIA-01'))
-    .map((m) => ({
-      id: `agent-${m.id}`,
-      kind: m.kind === 'user' ? 'user' as const : 'agent' as const,
-      text: m.content,
-      time: new Date(m.createdAt).toLocaleString(),
-    }));
+    .map((m) => {
+      const attachmentMatch = m.kind === 'user' ? m.content.match(/\[图片:([0-9a-fA-F-]{36})\]/) : null;
+      const text = attachmentMatch ? m.content.replace(/\[图片:[0-9a-fA-F-]{36}\]/, '').trim() : m.content;
+      return {
+        id: `agent-${m.id}`,
+        kind: m.kind === 'user' ? 'user' as const : 'agent' as const,
+        text,
+        ...(attachmentMatch ? { attachmentId: attachmentMatch[1] } : {}),
+        time: new Date(m.createdAt).toLocaleString(),
+      };
+    });
+}
+
+async function hydrateAgentImages(messages: AgentMessage[]): Promise<AgentMessage[]> {
+  const result = [...messages];
+  for (let i = 0; i < result.length; i += 1) {
+    const message = result[i];
+    if (message.kind !== 'user' || !message.attachmentId || message.image) continue;
+    try {
+      const blob = await fetchChatAttachmentBlob(message.attachmentId);
+      result[i] = { ...message, image: { name: '图片', url: URL.createObjectURL(blob) } };
+    } catch { /* 附件加载失败时保留纯文本 */ }
+  }
+  return result;
 }
 
 const DEFAULT_SESSION_TITLE_RE = /^(新对话|伴学助手|阿诊)\s*·?\s*(学习诊断)?$/;
@@ -223,7 +242,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!currentLearnerId) return;
     let cancelled = false;
-    void api.listAgentSessions().then(({ sessions: list }) => {
+    void api.listAgentSessions().then(async ({ sessions: list }) => {
       if (cancelled) return;
       const mine = list.filter(
         (s) => s.sessionType === 'agent-dock' && s.learnerId === currentLearnerId,
@@ -235,10 +254,12 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       setCurrentSessionId(latest.id);
       const remote: AgentMessage[] = backendToAgentMessages(latest.messages ?? []);
       if (!remote.length) return;
+      const hydrated = await hydrateAgentImages(remote);
+      if (cancelled) return;
       setMsgsAll((prev) => {
         const list = [...(prev[currentLearnerId] ?? [])];
         const ids = new Set(list.map((m) => m.id));
-        const add = remote.filter((m) => !ids.has(m.id));
+        const add = hydrated.filter((m) => !ids.has(m.id));
         return add.length ? { ...prev, [currentLearnerId]: [...list, ...add] } : prev;
       });
     }).catch(() => undefined);
@@ -416,7 +437,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       try {
         const { messages: list } = await api.getAgentSessionMessages(id);
         const remote: AgentMessage[] = backendToAgentMessages(list ?? []);
-        setMsgsAll((prev) => ({ ...prev, [lid]: remote }));
+        const hydrated = await hydrateAgentImages(remote);
+        setMsgsAll((prev) => ({ ...prev, [lid]: hydrated }));
       } catch { /* 会话加载失败保持现状 */ }
     };
     const deleteAgentSession = async (id: string) => {
@@ -432,7 +454,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           try {
             const { messages: list } = await api.getAgentSessionMessages(next.id);
             const remote: AgentMessage[] = backendToAgentMessages(list ?? []);
-            setMsgsAll((prev) => ({ ...prev, [lid]: remote }));
+            const hydrated = await hydrateAgentImages(remote);
+            setMsgsAll((prev) => ({ ...prev, [lid]: hydrated }));
           } catch { /* ignore */ }
         }
       }
