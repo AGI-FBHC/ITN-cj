@@ -14,6 +14,45 @@ import { cn } from '@/lib/utils';
 import { collectLearningPageContext, describeLearningPageContext } from '@/lib/pageContext';
 import type { LearningPageContext } from '@/lib/pageContext';
 
+const shortLabel = (text: string | undefined, max = 18) => {
+  const value = String(text ?? '').replace(/\s+/g, ' ').trim();
+  return value ? (value.length > max ? `${value.slice(0, max)}…` : value) : '';
+};
+
+function pageAwareSuggestions(ctx: LearningPageContext): string[] {
+  const focusKind = ctx.focus?.kind ?? '';
+  const focusTitle = shortLabel(ctx.focus?.title);
+  const pageTitle = shortLabel(ctx.pageTitle);
+
+  if (ctx.interaction?.kind === 'quiz' || focusKind === '当前题目') {
+    return ctx.interaction?.submitted
+      ? ['讲解这道题', '分析错误选项', '这道题考的是哪个知识点', '把这道题整理成错题']
+      : ['分析题干', '给我一点提示', '帮我排除选项', '这道题会用到什么概念'];
+  }
+  if (focusKind === '当前实操步骤') {
+    return focusTitle
+      ? [`帮我讲一下「${focusTitle}」`, '这一步为什么这么做', '这个步骤容易踩哪些坑', '做完这一步怎么确认对错']
+      : ['帮我拆解这个操作步骤', '这一步为什么这么做', '这个步骤容易踩哪些坑', '做完怎么确认对错'];
+  }
+  if (ctx.pageType === '幻灯片学习' || focusKind === '当前学习卡片') {
+    return focusTitle
+      ? [`帮我讲一下「${focusTitle}」`, '这页有哪几个关键点', '这页内容怎么记更容易', '把这页整理成笔记']
+      : ['这页有哪几个关键点', '这页内容怎么记更容易', '帮我讲一下当前这一页', '把这页整理成笔记'];
+  }
+  if (ctx.pageType === '完整阅读' || focusKind === '当前阅读段落') {
+    return focusTitle
+      ? [`这段「${focusTitle}」我不太理解`, '帮我提炼这段的重点', '这个知识点怎么记', '根据这段给我出一道练习题']
+      : ['帮我提炼当前这段的重点', '这段我不太理解', '这个知识点怎么记', '根据当前内容给我出一道练习题'];
+  }
+  if (ctx.selection) {
+    return ['用更简单的说法讲一遍', '帮我总结选中内容的要点', '选中内容和我当前学的有什么关系', '根据选中内容出一道题'];
+  }
+  if (['知识点学习', '交互导学', '资源定制', '资源生成'].includes(ctx.pageType) && pageTitle) {
+    return [`帮我讲一下「${pageTitle}」`, '我该怎么理解当前内容', '帮我提炼当前页面重点', '根据当前页面内容出个练习'];
+  }
+  return [];
+}
+
 /* ===== 消息气泡 ===== */
 function MessageBubble({ message }: { message: AgentMessage }) {
   const isUser = message.kind === 'user';
@@ -101,6 +140,8 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
   };
 
   const welcomeSuggestions = (() => {
+    const pageBased = pageAwareSuggestions(currentContext);
+    if (pageBased.length) return pageBased.slice(0, 4);
     if (suggestions.length) return suggestions.map((s) => s.text);
     return weakest
       ? [`帮我理解「${weakest.name}」的核心概念`, `${weakest.name}有哪些常见错误？`]
@@ -143,7 +184,7 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
                 <button
                   key={s}
                   type="button"
-                  onClick={() => askFree(s)}
+                  onClick={() => askFree(s, currentContext)}
                   className="rounded-xl border border-hairline bg-paper px-3 py-2 text-left text-[12px] text-ink transition hover:border-brand/40 hover:bg-brand-tint/20"
                 >
                   {s}
