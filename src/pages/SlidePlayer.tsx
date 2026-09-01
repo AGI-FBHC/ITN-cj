@@ -94,6 +94,101 @@ function expandReadySlides(rawSlides: CustomizeSlide[]): CustomizeSlide[] {
   return expanded;
 }
 
+function contentSlidesOf(resource: LearningResource): CustomizeSlide[] {
+  const content = resource.content as Record<string, unknown>;
+  const slides: CustomizeSlide[] = [];
+
+  if (resource.type === 'lecture') {
+    const objectives = Array.isArray(content.learningObjectives)
+      ? content.learningObjectives.map(String).filter(Boolean)
+      : [];
+    const summary = String(content.summary ?? '').trim();
+    if (summary || objectives.length) {
+      slides.push({
+        index: slides.length, unitIndex: 0, totalUnits: 0, type: 'intro' as const,
+        title: String(content.introTitle ?? '学习目标与内容概览'),
+        content: [
+          summary,
+          objectives.length ? `**完成本讲后，你将能够：**\n${objectives.map((item) => `- ${item}`).join('\n')}` : '',
+        ].filter(Boolean).join('\n\n'),
+        sources: [], evidenceQuotes: [],
+      });
+    }
+    const chapters = Array.isArray(content.chapters) ? content.chapters as Record<string, unknown>[] : [];
+    chapters.forEach((ch, ci) => {
+      const sections = Array.isArray(ch.sections) ? ch.sections as Record<string, unknown>[] : [];
+      if (!sections.length) {
+        slides.push({
+          index: slides.length, unitIndex: ci, totalUnits: 0, type: 'chapter' as const,
+          title: String(ch.title ?? ''), content: String(ch.content ?? ''),
+          sources: [], evidenceQuotes: [],
+        });
+      } else {
+        sections.forEach((sec) => {
+          slides.push({
+            index: slides.length, unitIndex: ci, totalUnits: 0, type: 'chapter' as const,
+            title: String(sec.title ?? ch.title ?? ''), content: String(sec.content ?? sec.body ?? ''),
+            sources: [], evidenceQuotes: [],
+          });
+        });
+      }
+    });
+    const review = Array.isArray(content.reviewQuestions) ? content.reviewQuestions.map(String).filter(Boolean) : [];
+    if (review.length) {
+      slides.push({
+        index: slides.length, unitIndex: chapters.length, totalUnits: 0, type: 'chapter' as const,
+        title: '带着问题检查理解', content: review.map((item, index) => `${index + 1}. ${item}`).join('\n\n'),
+        sources: [], evidenceQuotes: [],
+      });
+    }
+  } else if (resource.type === 'practice') {
+    const prerequisites = Array.isArray(content.prerequisites) ? content.prerequisites.map(String) : [];
+    const environment = Array.isArray(content.environment) ? content.environment.map(String) : [];
+    slides.push({
+      index: slides.length, unitIndex: 0, totalUnits: 0, type: 'intro' as const,
+      title: String(content.title ?? resource.title),
+      content: [
+        String(content.objective ?? ''),
+        prerequisites.length ? `\n\n**前置条件**\n${prerequisites.map((item) => `- ${item}`).join('\n')}` : '',
+        environment.length ? `\n\n**环境与工具**\n${environment.map((item) => `- ${item}`).join('\n')}` : '',
+      ].filter(Boolean).join('\n'),
+      sources: [], evidenceQuotes: [],
+    });
+    const steps = Array.isArray(content.steps) ? content.steps as Record<string, unknown>[] : [];
+    steps.forEach((step, si) => {
+      slides.push({
+        index: slides.length, unitIndex: si, totalUnits: 0, type: 'step' as const,
+        title: String(step.title ?? `步骤 ${si + 1}`),
+        content: String(step.instruction ?? step.content ?? step.description ?? ''),
+        sources: [], evidenceQuotes: [],
+      });
+    });
+    const criteria = Array.isArray(content.acceptanceCriteria) ? content.acceptanceCriteria.map(String).filter(Boolean) : [];
+    if (criteria.length) {
+      slides.push({
+        index: slides.length, unitIndex: steps.length, totalUnits: 0, type: 'step' as const,
+        title: '用结果判断是否真正完成', content: criteria.map((item) => `- ${item}`).join('\n'),
+        sources: [], evidenceQuotes: [],
+      });
+    }
+  } else if (resource.type === 'quiz') {
+    const questions = Array.isArray(content.questions) ? content.questions as Record<string, unknown>[] : [];
+    questions.forEach((q, qi) => {
+      slides.push({
+        index: slides.length, unitIndex: qi, totalUnits: 0, type: 'question' as const,
+        title: `题目 ${qi + 1}`, content: q,
+        sources: [], evidenceQuotes: [],
+      });
+    });
+  }
+
+  slides.forEach((slide, index) => {
+    slide.index = index;
+    slide.totalUnits = slides.length;
+  });
+  return slides;
+}
+
 export default function SlidePlayer() {
   const { taskId: rawTaskId = '', resourceId: rawResourceId = '' } = useParams<{ taskId: string; resourceId: string }>();
   const taskId = rawTaskId;
@@ -128,28 +223,7 @@ export default function SlidePlayer() {
         if (!alive) return;
         setCompletedResource(resource);
         setResourceSources((resource.sources ?? []) as Array<Record<string, unknown>>);
-        const content = resource.content as Record<string, unknown>;
-        const builtSlides: CustomizeSlide[] = [];
-        if (resource.type === 'lecture' && Array.isArray(content.chapters)) {
-          (content.chapters as Record<string, unknown>[]).forEach((ch, ci) => {
-            const sections = Array.isArray(ch.sections) ? ch.sections as Record<string, unknown>[] : [];
-            if (!sections.length) {
-              builtSlides.push({ index: builtSlides.length, unitIndex: ci, totalUnits: (content.chapters as unknown[]).length, type: 'chapter' as const, title: String(ch.title ?? ''), content: String(ch.content ?? '') });
-            } else {
-              sections.forEach((sec) => {
-                builtSlides.push({ index: builtSlides.length, unitIndex: ci, totalUnits: (content.chapters as unknown[]).length, type: 'chapter' as const, title: String(sec.title ?? ch.title ?? ''), content: String(sec.content ?? '') });
-              });
-            }
-          });
-        } else if (resource.type === 'practice' && Array.isArray(content.steps)) {
-          (content.steps as Record<string, unknown>[]).forEach((step, si) => {
-            builtSlides.push({ index: builtSlides.length, unitIndex: si, totalUnits: (content.steps as unknown[]).length, type: 'step' as const, title: String(step.title ?? ''), content: String(step.content ?? step.description ?? '') });
-          });
-        } else if (resource.type === 'quiz' && Array.isArray(content.questions)) {
-          (content.questions as Record<string, unknown>[]).forEach((q, qi) => {
-            builtSlides.push({ index: builtSlides.length, unitIndex: qi, totalUnits: (content.questions as unknown[]).length, type: 'question' as const, title: `题目 ${qi + 1}`, content: q });
-          });
-        }
+        const builtSlides = contentSlidesOf(resource);
         setData({ slides: builtSlides, total: builtSlides.length, completed: builtSlides.length, status: 'completed' as const, resourceId: resource.id, resourceType: resource.type, title: resource.title, stageMessage: '', kpId: resource.kpId ?? null });
       }).catch(() => { if (alive) setError('无法加载资源'); });
       return () => { alive = false; };
@@ -225,10 +299,14 @@ export default function SlidePlayer() {
       if (alive) {
         setCompletedResource(resource);
         setResourceSources((resource.sources ?? []) as Array<Record<string, unknown>>);
+        if (data?.status !== 'generating' && resource.type !== 'ppt') {
+          const builtSlides = contentSlidesOf(resource);
+          setData((prev) => prev ? { ...prev, slides: builtSlides, total: builtSlides.length, completed: builtSlides.length, status: 'completed' as const } : prev);
+        }
       }
     }).catch(() => undefined);
     return () => { alive = false; };
-  }, [data?.resourceId]);
+  }, [data?.resourceId, data?.status]);
   const pageSources = useMemo(() => {
     if (slide?.sources?.length) return slide.sources;
     const ids = citedSourceIds(slide);
