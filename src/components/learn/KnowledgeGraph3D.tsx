@@ -36,7 +36,7 @@ const TOPIC_EDGE_COLORS: Record<string, string> = {
 
 const NODE_COLORS = {
   domain: {
-    base: '#4E7860',
+    base: '#3E6A54',
     hover: '#F0B35A',
     selected: '#2D5A3D',
     learned: '#6BA080',
