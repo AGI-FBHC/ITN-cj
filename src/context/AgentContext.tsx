@@ -27,7 +27,7 @@ import type { Signal, Inference } from '@/agent/agentBrain';
 /* ================= 消息模型 ================= */
 export type AgentMessage =
   | { id: string; kind: 'agent'; text: string; time: string }
-  | { id: string; kind: 'user'; text: string; time: string }
+  | { id: string; kind: 'user'; text: string; time: string; image?: { name: string; url: string } }
   | { id: string; kind: 'stage'; text: string; time: string }
   | {
       id: string;
@@ -78,6 +78,7 @@ interface AgentContextValue {
   ask: (kind: AskKind) => void;
   /** 自由提问：直接回答，页面位置仅作为不可见上下文传递。 */
   askFree: (text: string, pageContext?: LearningPageContext) => void;
+  askFreeWithImage: (text: string, image: { name: string; url: string; blob?: Blob }, pageContext?: LearningPageContext) => void;
   pageContextEnabled: boolean;
   setPageContextEnabled: (v: boolean) => void;
   answerVerify: (msgId: string, qIndex: number, optIndex: number) => void;
@@ -534,6 +535,70 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       }
     };
 
+    /** 图片提问：MiMo 先理解图片，再走伴学助手回复链路（SSE）。 */
+    const agentAskImage = async (
+      askType: string, userText: string,
+      image: { name: string; url: string; blob?: Blob },
+      placeholder: string, pageContext?: LearningPageContext,
+    ) => {
+      let sid = currentSessionId;
+      let activeSession = sessions.find((session) => session.id === sid);
+      if (!sid) {
+        const created = await api.createAgentSession(lid);
+        sid = created.id;
+        activeSession = created;
+        setSessions((prev) => [created, ...prev.filter((s) => s.id !== created.id)]);
+        setCurrentSessionId(sid);
+        sessionSelectionLocked.current = true;
+        setMsgsAll((prev) => ({ ...prev, [lid]: [] }));
+      }
+      const hasDefaultTitle = !activeSession?.title || DEFAULT_SESSION_TITLE_RE.test(activeSession.title.trim());
+      if (hasDefaultTitle) {
+        const title = buildSessionTitle(userText || '图片提问');
+        void api.updateAgentSession(sid, { title }).then((updated) => {
+          setSessions((prev) => prev.map((s) => s.id === sid ? updated : s));
+        }).catch(() => {/* ignore */});
+      }
+      const currentPage = pageContextEnabled ? (pageContext ?? collectLearningPageContext()) : undefined;
+      append({ id: mid(), kind: 'user', text: userText, image: { name: image.name, url: image.url }, time: now() });
+      const pendingId = mid();
+      append({ id: pendingId, kind: 'agent', text: placeholder, time: now() });
+      let acc = '';
+      try {
+        const blob = image.blob ?? await (await fetch(image.url)).blob();
+        await api.askAgentImageStream(
+          lid, askType, userText, blob, sid ?? undefined,
+          currentPage?.route, currentPage,
+          (event) => {
+            if (event.type === 'reply_delta' && event.content) {
+              acc += event.content;
+              setMsgsAll((prev) => ({
+                ...prev,
+                [lid]: (prev[lid] ?? []).map((m) => (
+                  m.id === pendingId ? { id: pendingId, kind: 'agent', text: acc, time: now() } : m
+                )),
+              }));
+            } else if (event.type === 'note_saved') {
+              window.dispatchEvent(new CustomEvent('itn:assistant-note-saved'));
+              if (event.note) {
+                append({
+                  id: `note-${event.note.id}`, kind: 'note', noteId: event.note.id,
+                  title: event.note.title, text: event.note.content, time: now(),
+                });
+              }
+            }
+          },
+        );
+      } catch {
+        setMsgsAll((prev) => ({
+          ...prev,
+          [lid]: (prev[lid] ?? []).map((m) => (
+            m.id === pendingId ? { id: pendingId, kind: 'agent', text: '图片识别或网络开小差了，稍后再问我～', time: now() } : m
+          )),
+        }));
+      }
+    };
+
     const ask = (kind: AskKind) => {
       const weakName = weakest?.name ?? '当前章节';
       const weakScore = Math.round(weakest?.mastery ?? 50);
@@ -552,6 +617,12 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       const text = raw.trim();
       if (!text) return;
       void agentAsk('free', text, '正在查阅当前内容并回答…', pageContext);
+    };
+
+    const askFreeWithImage = (raw: string, image: { name: string; url: string; blob?: Blob }, pageContext?: LearningPageContext) => {
+      const text = raw.trim();
+      if (!text && !image) return;
+      void agentAskImage('free', text, image, '正在分析图片并回答…', pageContext);
     };
 
     /** 动态建议问题：按建议原文发起（类型已知则透传，未知按自由提问） */
@@ -643,6 +714,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       pushSignal,
       ask,
       askFree,
+      askFreeWithImage,
       pageContextEnabled,
       setPageContextEnabled,
       answerVerify,

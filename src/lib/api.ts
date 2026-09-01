@@ -1138,6 +1138,24 @@ export const api = {
     if (!res.ok) throw new Error(`请求失败 (${res.status})`);
     await readAgentSse(res, (payload) => onEvent(payload as { type: string; content?: string; reply?: string; message?: string; note?: LearningNoteRecord }));
   },
+  askAgentImageStream: async (learnerId: string, askType: string, text: string, image: Blob, sessionId: string | undefined, pageContext: string | undefined, pageState: LearningPageContext | undefined, onEvent: (payload: { type: string; content?: string; reply?: string; message?: string; note?: LearningNoteRecord }) => void) => {
+    const form = new FormData();
+    form.append('image', image, 'question.png');
+    form.append('learnerId', learnerId);
+    form.append('askType', askType);
+    if (text) form.append('text', text);
+    if (sessionId) form.append('sessionId', sessionId);
+    if (pageContext) form.append('pageContext', pageContext);
+    if (pageState) form.append('pageState', JSON.stringify(pageState));
+    const headers = new Headers({ Accept: 'text/event-stream' });
+    const token = getToken();
+    if (token) headers.set('Authorization', `Bearer ${token}`);
+    const res = await fetch('/v1/agent/ask/image-stream', {
+      method: 'POST', headers, body: form,
+    });
+    if (!res.ok) throw new Error(`请求失败 (${res.status})`);
+    await readAgentSse(res, (payload) => onEvent(payload as { type: string; content?: string; reply?: string; message?: string; note?: LearningNoteRecord }));
+  },
   askAgent: (learnerId: string, askType: string, text: string, kpId?: string, sessionId?: string) =>
     requestAgent<{ reply: string; evidence: string[] }>('/agent/ask', {
       method: 'POST',

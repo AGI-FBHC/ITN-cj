@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Brain, Check, ChevronDown, Eye, EyeOff, NotebookPen, Pencil, Plus, SendHorizonal, Trash2, X } from 'lucide-react';
+import { Brain, Check, ChevronDown, Eye, EyeOff, ImagePlus, NotebookPen, Pencil, Plus, SendHorizonal, Trash2, X } from 'lucide-react';
 import { useAgent } from '@/context/AgentContext';
 import type { AgentMessage } from '@/context/AgentContext';
 import { cn } from '@/lib/utils';
@@ -70,6 +70,7 @@ function MessageBubble({ message }: { message: AgentMessage }) {
   const isUser = message.kind === 'user';
   const text = 'text' in message ? message.text : '';
   const visibleText = isUser ? text.replace(/^\s*\[(?:当前页面|跨会话上下文)[：:][^\]]+\]\s*/g, '') : text;
+  const userImage = message.kind === 'user' && 'image' in message ? message.image : undefined;
   const loading = 'loading' in message ? message.loading : false;
   if (message.kind === 'stage') return (
     <div className="flex justify-center py-1.5">
@@ -103,7 +104,11 @@ function MessageBubble({ message }: { message: AgentMessage }) {
             <span className="animate-pulse" style={{ animationDelay: '0.3s' }}>●</span>
           </span>
         ) : isUser ? (
-          <div className="whitespace-pre-wrap">{visibleText}</div>
+          <div className="min-w-0">{userImage && (
+            <div className="mb-1.5 overflow-hidden rounded-lg">
+              <img src={userImage.url} alt={userImage.name} className="max-h-40 w-auto rounded-lg object-cover" />
+            </div>
+          )}<div className="whitespace-pre-wrap">{visibleText}</div></div>
         ) : (
           <div className="[&_a]:text-brand [&_a]:underline [&_code]:rounded [&_code]:bg-ink/[0.06] [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.9em] [&_li]:my-0.5 [&_li]:ml-4 [&_ol]:my-1.5 [&_ol]:list-decimal [&_p]:my-1.5 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-ink/[0.06] [&_pre]:p-2 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_strong]:font-semibold [&_ul]:my-1.5 [&_ul]:list-disc">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{visibleText}</ReactMarkdown>
@@ -116,10 +121,12 @@ function MessageBubble({ message }: { message: AgentMessage }) {
 
 /* ===== 消息流 + composer ===== */
 export function ChatStream({ compact = false, pageContext }: { compact?: boolean; pageContext?: string }) {
-  const { messages, askFree, suggestions, weakest, pageContextEnabled, setPageContextEnabled } = useAgent();
+  const { messages, askFree, askFreeWithImage, suggestions, weakest, pageContextEnabled, setPageContextEnabled } = useAgent();
   const [input, setInput] = useState('');
+  const [image, setImage] = useState<{ name: string; url: string; blob?: Blob } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [contextOpen, setContextOpen] = useState(false);
   const [currentContext, setCurrentContext] = useState<LearningPageContext>(() => collectLearningPageContext());
 
@@ -140,10 +147,15 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
 
   const handleSend = () => {
     const text = input.trim();
-    if (!text) return;
+    if (!text && !image) return;
     const snapshot = collectLearningPageContext();
     setCurrentContext(snapshot);
-    askFree(text, snapshot);
+    if (image) {
+      askFreeWithImage(text, image, snapshot);
+      setImage(null);
+    } else {
+      askFree(text, snapshot);
+    }
     setInput('');
   };
 
@@ -240,7 +252,23 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
       )}
       {/* Composer */}
       <div className="shrink-0 border-t border-hairline px-3 py-2">
+        {image && (
+          <div className="mb-2 flex items-center gap-2 rounded-lg border border-hairline bg-paper p-1.5">
+            <img src={image.url} alt={image.name} className="h-9 w-9 rounded object-cover" />
+            <span className="min-w-0 flex-1 truncate text-[10.5px] text-ink-2">{image.name}</span>
+            <button type="button" onClick={() => setImage(null)} className="shrink-0 rounded p-1 text-ink-muted hover:text-brand-danger" title="移除图片"><X size={12} /></button>
+          </div>
+        )}
         <div className="flex items-end gap-2 rounded-xl border border-hairline bg-paper px-2.5 py-1.5">
+          <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) setImage({ name: file.name, url: URL.createObjectURL(file), blob: file }); event.target.value = ''; }} />
+          <button
+            type="button"
+            onClick={() => imageInputRef.current?.click()}
+            title="上传图片提问"
+            className="shrink-0 rounded-lg border border-hairline p-2 text-ink-muted transition hover:border-brand/40 hover:text-brand"
+          >
+            <ImagePlus size={14} />
+          </button>
           <textarea
             ref={inputRef}
             value={input}
@@ -256,7 +284,7 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
           <button
             type="button"
             onClick={handleSend}
-            disabled={!input.trim()}
+            disabled={!input.trim() && !image}
             className="shrink-0 rounded-lg bg-ink px-2.5 py-1.5 text-paper transition hover:opacity-90 disabled:opacity-30"
           >
             <SendHorizonal size={14} />
