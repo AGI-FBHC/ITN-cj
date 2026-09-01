@@ -22,6 +22,8 @@ const shortLabel = (text: string | undefined, max = 18) => {
   return value ? (value.length > max ? `${value.slice(0, max)}…` : value) : '';
 };
 
+const cleanOptionLabel = (text: string) => String(text ?? '').replace(/^\s*[A-Ha-h][.、:：)）\s]+/, '').trim();
+
 function pageAwareSuggestions(ctx: LearningPageContext): string[] {
   const focusKind = ctx.focus?.kind ?? '';
   const focusTitle = shortLabel(ctx.focus?.title);
@@ -122,7 +124,7 @@ function MessageBubble({ message, onAnswerQuizCard }: { message: AgentMessage; o
                   )}
                 >
                   <span className="mt-0.5 shrink-0 font-semibold">{String.fromCharCode(65 + idx)}</span>
-                  <span className="min-w-0 flex-1 whitespace-pre-wrap">{option}</span>
+                  <span className="min-w-0 flex-1 whitespace-pre-wrap">{cleanOptionLabel(option)}</span>
                   {settled && correct && <Check size={14} className="mt-1 shrink-0 text-emerald-600" />}
                   {settled && !correct && picked && <X size={14} className="mt-1 shrink-0 text-brand-danger" />}
                 </button>
