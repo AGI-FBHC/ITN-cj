@@ -78,6 +78,19 @@ function createSoftPlushTexture(size = 256): THREE.Texture {
   return tex;
 }
 
+function chapterStateColor(learned: boolean, progress: number): string {
+  const p = Math.max(0, Math.min(100, progress || 0));
+  if (learned && p >= 100) return '#1F8A4A';
+  if (p > 0 || learned) {
+    const yellowGreen = new THREE.Color('#A6C34E');
+    const green = new THREE.Color('#2E7D32');
+    return `#${yellowGreen.clone().lerp(green, p / 100).getHexString()}`;
+  }
+  const purple = new THREE.Color('#6E6384');
+  const gray = new THREE.Color('#8E87A0');
+  return `#${purple.clone().lerp(gray, 0.25).getHexString()}`;
+}
+
 interface KnowledgeGraph3DProps {
   onTopicClick?: (kpId: string, topicIndex: number, label: string) => void;
   persistenceKey?: string;
@@ -1044,7 +1057,7 @@ function ChildPlane({
               renderOrder={-1}
               points={[start, endTrim]}
               color="#4E7860"
-              lineWidth={3}
+              lineWidth={2}
               transparent
               opacity={0.6}
             />
@@ -1159,7 +1172,7 @@ function PlanarTopicEdge({
         renderOrder={0}
         points={geometry.curvePoints}
         color={color}
-        lineWidth={hovered ? 4 : 3}
+        lineWidth={hovered ? 3 : 2}
         transparent
         opacity={hovered ? 0.92 : 0.58}
         dashed={dashed}
@@ -1376,16 +1389,7 @@ function Node3D({
   const plushTexture = useMemo(() => createSoftPlushTexture(), []);
 
   const getDomainStateColor = () => {
-    const p = Math.max(0, Math.min(100, progress || 0));
-    if (learned && p >= 100) return '#2FBF71';
-    if (p > 0 || learned) {
-      const yellowGreen = new THREE.Color('#C8D96A');
-      const green = new THREE.Color('#4CAF50');
-      return `#${yellowGreen.clone().lerp(green, p / 100).getHexString()}`;
-    }
-    const purple = new THREE.Color('#8E7FA3');
-    const gray = new THREE.Color('#B9B2C9');
-    return `#${purple.clone().lerp(gray, 0.25).getHexString()}`;
+    return chapterStateColor(learned, progress);
   };
 
   const getColor = () => {
@@ -1514,6 +1518,8 @@ function Edge3D({
   fromPos,
   toPos,
   color,
+  fromColor = color,
+  toColor = color,
   hovered,
   dimmed,
   dashed,
@@ -1529,6 +1535,8 @@ function Edge3D({
   fromPos: THREE.Vector3;
   toPos: THREE.Vector3;
   color: string;
+  fromColor?: string;
+  toColor?: string;
   hovered: boolean;
   dimmed: boolean;
   dashed?: boolean;
@@ -1542,7 +1550,8 @@ function Edge3D({
   nodeScaleRef?: React.MutableRefObject<Map<string, number>>;
 }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const lineRef = useRef<any>(null);
+  const SEGMENTS = 8;
+  const segRefs = useRef<Array<any>>([]);
   const curFrom = useRef(fromPos.clone());
   const curTo = useRef(toPos.clone());
 
@@ -1555,48 +1564,60 @@ function Edge3D({
     if (toOffset) tt.addScaledVector(toOffset, b);
     curFrom.current.lerp(tf, 0.18);
     curTo.current.lerp(tt, 0.18);
-    const line = lineRef.current;
-    if (line) {
-      // 线段裁剪到球体表面：不穿入节点内部，节点半透明时也不会看到线穿过球体；
-      // 两端裁剪距离跟随节点实时缩放（选中放大时自动让开）
-      const dir = curTo.current.clone().sub(curFrom.current);
-      const len = Math.max(dir.length(), 0.001);
-      dir.normalize();
-      const sFrom = (sourceId && nodeScaleRef?.current.get(sourceId)) || 1;
-      const sTo = (targetId && nodeScaleRef?.current.get(targetId)) || 1;
-      const startPad = Math.min(3 * sFrom + 0.7, len * 0.4);
-      const endPad = Math.min(3 * sTo + 1.0, len * 0.5);
-      const start = curFrom.current.clone().addScaledVector(dir, startPad);
-      const end = curTo.current.clone().addScaledVector(dir, -endPad);
-      line.geometry.setPositions([start.x, start.y, start.z, end.x, end.y, end.z]);
+    // 线段裁剪到球体表面：不穿入节点内部，节点半透明时也不会看到线穿过球体；
+    // 两端裁剪距离跟随节点实时缩放（选中放大时自动让开）
+    const dir = curTo.current.clone().sub(curFrom.current);
+    const len = Math.max(dir.length(), 0.001);
+    dir.normalize();
+    const sFrom = (sourceId && nodeScaleRef?.current.get(sourceId)) || 1;
+    const sTo = (targetId && nodeScaleRef?.current.get(targetId)) || 1;
+    const startPad = Math.min(3 * sFrom + 0.7, len * 0.4);
+    const endPad = Math.min(3 * sTo + 1.0, len * 0.5);
+    const start = curFrom.current.clone().addScaledVector(dir, startPad);
+    const end = curTo.current.clone().addScaledVector(dir, -endPad);
+    const focusFade = fadeOnFocus ? 1 - 0.65 * b : 1;
+    const opacity = (dimmed ? 0.06 : hovered ? 0.9 : isChildLink ? 0.5 : 0.5) * focusFade;
+    for (let i = 0; i < SEGMENTS; i += 1) {
+      const line = segRefs.current[i];
+      if (!line) continue;
+      const t0 = i / SEGMENTS;
+      const t1 = (i + 1) / SEGMENTS;
+      const p0 = start.clone().lerp(end, t0);
+      const p1 = start.clone().lerp(end, t1);
+      line.geometry.setPositions([p0.x, p0.y, p0.z, p1.x, p1.y, p1.z]);
       if (dashed) line.computeLineDistances();
-      // 聚焦时无关连线同步淡出
-      const focusFade = fadeOnFocus ? 1 - 0.65 * b : 1;
-      line.material.opacity = (dimmed ? 0.06 : hovered ? 0.9 : isChildLink ? 0.5 : 0.5) * focusFade;
+      line.material.opacity = opacity;
     }
   });
 
   return (
     <group>
-      {/* 单条连续直线，避免分段渲染产生接缝 */}
-      <Line
-        ref={lineRef}
-        renderOrder={-1}
-        points={[fromPos, toPos]}
-        color={color}
-        lineWidth={isChildLink ? 3 : hovered ? 4.5 : 3}
-        transparent
-        opacity={dimmed ? 0.06 : hovered ? 0.9 : isChildLink ? 0.5 : 0.5}
-        dashed={dashed}
-        dashSize={1.5}
-        gapSize={0.8}
-      />
+      {/* 多段渐变线：从起点节点颜色过渡到终点节点颜色 */}
+      {Array.from({ length: SEGMENTS }).map((_, i) => {
+        const t = i / Math.max(1, SEGMENTS - 1);
+        const segColor = new THREE.Color(fromColor).lerp(new THREE.Color(toColor), t).getStyle();
+        return (
+          <Line
+            key={i}
+            ref={(el) => { segRefs.current[i] = el; }}
+            renderOrder={-1}
+            points={[fromPos, toPos]}
+            color={segColor}
+            lineWidth={isChildLink ? 2 : hovered ? 3 : 2}
+            transparent
+            opacity={dimmed ? 0.06 : hovered ? 0.9 : isChildLink ? 0.5 : 0.5}
+            dashed={dashed}
+            dashSize={1.5}
+            gapSize={0.8}
+          />
+        );
+      })}
 
       {/* 末端静态箭头：指向目标节点 */}
       <EdgeArrow
         fromPos={fromPos}
         toPos={toPos}
-        color={color}
+        color={toColor}
         dimmed={dimmed}
         hovered={hovered}
         fromOffset={fromOffset}
@@ -1730,6 +1751,7 @@ function SceneContent({
         const p1 = layout.positions.get(edge.from);
         const p2 = layout.positions.get(edge.to);
         if (!p1 || !p2) return null;
+        if (!n1 || !n2) return null;
         const isRelated = relatedEdges.has(key);
         const isDimmed = hoveredId && !isRelated;
         const fromBelongsToFocus = n1.id === focusId;
@@ -1740,6 +1762,8 @@ function SceneContent({
             fromPos={p1}
             toPos={p2}
             color={EDGE_COLORS[edge.kind]}
+            fromColor={chapterStateColor(learned.has(n1.kpId), chapterProgress[n1.kpId] ?? 0)}
+            toColor={chapterStateColor(learned.has(n2.kpId), chapterProgress[n2.kpId] ?? 0)}
             hovered={isRelated}
             dimmed={!!isDimmed}
             dashed={edge.kind === 'related'}
