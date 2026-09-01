@@ -262,7 +262,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     void api.listAgentSessions().then(async ({ sessions: list }) => {
       if (cancelled) return;
       const mine = list.filter(
-        (s) => s.sessionType === 'agent-dock' && s.learnerId === currentLearnerId,
+        (s) => (s.sessionType === 'agent-dock' || s.sessionType === 'agent')
+          && s.learnerId === currentLearnerId,
       );
       setSessions(mine);
       if (!mine.length) return;
