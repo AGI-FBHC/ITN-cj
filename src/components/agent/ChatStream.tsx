@@ -71,6 +71,13 @@ function MessageBubble({ message }: { message: AgentMessage }) {
   const text = 'text' in message ? message.text : '';
   const visibleText = isUser ? text.replace(/^\s*\[(?:当前页面|跨会话上下文)[：:][^\]]+\]\s*/g, '') : text;
   const loading = 'loading' in message ? message.loading : false;
+  if (message.kind === 'stage') return (
+    <div className="flex justify-center py-1.5">
+      <div className="max-w-[90%] rounded-full border border-brand/20 bg-brand-tint/15 px-3 py-1 text-center text-[10.5px] leading-4 text-brand whitespace-pre-wrap">
+        {message.text}
+      </div>
+    </div>
+  );
   if (message.kind === 'verify') return null;
   if (message.kind === 'note') return (
     <div className="flex justify-start">
@@ -109,7 +116,7 @@ function MessageBubble({ message }: { message: AgentMessage }) {
 
 /* ===== 消息流 + composer ===== */
 export function ChatStream({ compact = false, pageContext }: { compact?: boolean; pageContext?: string }) {
-  const { messages, askFree, suggestions, weakest, crossPageNotice } = useAgent();
+  const { messages, askFree, suggestions, weakest } = useAgent();
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -223,11 +230,6 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
               {action}
             </button>
           ))}
-        </div>
-      )}
-      {crossPageNotice && (
-        <div className="shrink-0 border-t border-brand/15 bg-brand-tint/15 px-3 py-1.5 text-[10.5px] leading-4 text-brand">
-          {crossPageNotice}
         </div>
       )}
       {/* Composer */}

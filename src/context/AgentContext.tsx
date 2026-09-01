@@ -28,6 +28,7 @@ import type { Signal, Inference } from '@/agent/agentBrain';
 export type AgentMessage =
   | { id: string; kind: 'agent'; text: string; time: string }
   | { id: string; kind: 'user'; text: string; time: string }
+  | { id: string; kind: 'stage'; text: string; time: string }
   | {
       id: string;
       kind: 'update';
@@ -84,7 +85,6 @@ interface AgentContextValue {
   switchAgentSession: (id: string) => Promise<void>;
   deleteAgentSession: (id: string) => Promise<void>;
   renameAgentSession: (id: string, title: string) => Promise<void>;
-  crossPageNotice: string | null;
 }
 
 const AgentContext = createContext<AgentContextValue | null>(null);
@@ -159,7 +159,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const [msgsAll, setMsgsAll] = useState<Record<string, AgentMessage[]>>(() => readJSON(K_MSGS, {}));
   const [sessions, setSessions] = useState<AgentDockSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  const [crossPageNotice, setCrossPageNotice] = useState<string | null>(null);
   const [confAll, setConfAll] = useState<Record<string, Record<string, number>>>(() => readJSON(K_CONF, {}));
   const [logAll, setLogAll] = useState<Record<string, string[]>>(() => readJSON(K_LOG, {}));
   const [decAll, setDecAll] = useState<Record<string, DecisionEntry[]>>(() => readJSON(K_DEC, {}));
@@ -478,7 +477,13 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       save(K_SESSION_CTX, ctxMap);
       if (bridge && history.length) {
         const last = history[history.length - 1];
-        setCrossPageNotice(`已自动补充跨页面承接：从「${last.pageType} · ${last.focusTitle || last.pageTitle}」到「${currentPage.pageType} · ${currentPage.focus?.title || currentPage.pageTitle}」`);
+        const recent = history.slice(-4);
+        const startStage = history.length - recent.length + 1;
+        const stageLines = recent
+          .map((item, index) => `阶段${startStage + index}：${item.pageType} · ${item.focusTitle || item.pageTitle}`)
+          .join('\n');
+        const currentFocus = currentPage.focus?.title || currentPage.pageTitle;
+        append({ id: mid(), kind: 'stage', text: `跨页面承接\n${stageLines}\n现在：${currentPage.pageType} · ${currentFocus}`, time: now() });
       }
       append({ id: mid(), kind: 'user', text: userText, time: now() });
       const pendingId = mid();
@@ -643,9 +648,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       switchAgentSession,
       deleteAgentSession,
       renameAgentSession,
-      crossPageNotice,
     };
-  }, [msgsAll, confAll, logAll, decAll, seen, unread, open, latestHint, currentLearner, currentLearnerId, applyWriteback, weakest, kpNameById, learningMap, suggestions, refreshSuggestions, sessions, currentSessionId, crossPageNotice]);
+  }, [msgsAll, confAll, logAll, decAll, seen, unread, open, latestHint, currentLearner, currentLearnerId, applyWriteback, weakest, kpNameById, learningMap, suggestions, refreshSuggestions, sessions, currentSessionId]);
 
   return <AgentContext.Provider value={value}>{children}</AgentContext.Provider>;
 }
