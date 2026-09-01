@@ -16,6 +16,7 @@ import { narrationSpeeds, useStreamingNarration } from '@/hooks/useStreamingNarr
 import { useAgent } from '@/context/AgentContext';
 import { fetchSlideAsset, presentationApi, updatePptLearningProgress } from '@/lib/presentationApi';
 import { toast } from 'sonner';
+import { buildQuizFollowUpPrompt } from '@/lib/assistantPrompts';
 
 type QuizValue = string | number;
 
@@ -37,6 +38,8 @@ function QuizCard({ slide, onInteractionChange, resourceId }: { slide: Customize
   });
   const [picked, setPicked] = useState<QuizValue | null>(null);
   const [feedback, setFeedback] = useState<{ correct: boolean; correctIndex?: number; explanation?: string } | null>(null);
+  const proactiveSentRef = useRef(false);
+  const { askFree, setOpen } = useAgent();
   const correct = (question.correctAnswer ?? question.answer ?? question.correctIndex) as QuizValue | undefined;
   const localCorrectIndex = typeof correct === 'string' && /^[A-Za-z]$/.test(correct)
     ? correct.toUpperCase().charCodeAt(0) - 65 : Number(correct);
@@ -51,6 +54,20 @@ function QuizCard({ slide, onInteractionChange, resourceId }: { slide: Customize
   const choose = async (option: QuizValue, index: number, resourceId?: string | null) => {
     if (picked !== null) return;
     setPicked(option);
+    if (!proactiveSentRef.current) {
+      proactiveSentRef.current = true;
+      const optionLabels = options.map((item) => item.label);
+      setOpen(true);
+      askFree(buildQuizFollowUpPrompt({
+        title: slide.title,
+        stem: String(question.stem ?? question.question ?? question.title ?? slide.title),
+        options: optionLabels,
+        selectedIndex: index,
+        correct: String(option) === String(correct) || index === localCorrectIndex,
+        correctIndex: Number.isFinite(localCorrectIndex) ? localCorrectIndex : null,
+        explanation: String(question.explanation ?? question.analysis ?? ''),
+      }));
+    }
     const questionId = String(question.id ?? question.questionId ?? slide.id ?? '');
     const fallback = {
       correct: picked !== null ? false : (String(option) === String(correct) || index === localCorrectIndex),
