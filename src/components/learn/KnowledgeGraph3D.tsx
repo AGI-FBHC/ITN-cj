@@ -1942,7 +1942,12 @@ export default function KnowledgeGraph3D({
       onWheel={(e) => e.stopPropagation()}
       onTouchMove={(e) => e.stopPropagation()}
     >
-      <Canvas>
+      <Canvas
+        onPointerMissed={() => {
+          onSelectKp(null);
+          onSelectTopic(null);
+        }}
+      >
         <PerspectiveCamera makeDefault position={[0, 0, 88]} fov={45} />
         <OrbitControls
           makeDefault
