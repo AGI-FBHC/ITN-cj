@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BadgeCheck, Check, ChevronDown, GraduationCap, Repeat, RotateCcw, Trash2, X } from 'lucide-react';
+import { BadgeCheck, Check, ChevronDown, GraduationCap, Repeat, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import GardenEmpty from '@/components/heal/GardenEmpty';
 import PageTip from '@/components/heal/PageTip';
@@ -143,12 +143,17 @@ export default function WrongBook() {
   const [items, setItems] = useState<WrongAnswerRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [showMastered, setShowMastered] = useState(false);
+  const [keyword, setKeyword] = useState('');
 
   useEffect(() => {
-    api.listWrongAnswers().then((result) => setItems(result.items ?? []))
-      .catch((reason) => toast.error(reason instanceof Error ? reason.message : '错题读取失败'))
-      .finally(() => setLoading(false));
-  }, []);
+    setLoading(true);
+    const timer = window.setTimeout(() => {
+      api.listWrongAnswers(keyword || undefined).then((result) => setItems(result.items ?? []))
+        .catch((reason) => toast.error(reason instanceof Error ? reason.message : '错题读取失败'))
+        .finally(() => setLoading(false));
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [keyword]);
 
   const sourceNames = useMemo(() => {
     const chapters = new Map((learning.course?.chapters ?? []).map((chapter) => [chapter.id, chapter.title]));
@@ -187,6 +192,23 @@ export default function WrongBook() {
       </div>
     </motion.div>
     <PageTip id="wrongbook" className="mt-4">错题由后端长期保存，并按<span className="font-medium text-ink">记忆规律</span>安排重做。每次作答都会回写连续答对次数、复习次数和下次复习节奏。</PageTip>
+
+    {/* 搜索栏 */}
+    <div className="relative mt-4">
+      <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+      <input
+        type="text"
+        value={keyword}
+        onChange={(event) => setKeyword(event.target.value)}
+        placeholder="搜索题干、解析或知识点名称..."
+        className="w-full rounded-[12px] border border-hairline bg-paper py-2.5 pl-9 pr-9 text-[13px] text-ink outline-none transition-colors focus:border-brand/40"
+      />
+      {keyword && (
+        <button type="button" onClick={() => setKeyword('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink">
+          <X size={14} />
+        </button>
+      )}
+    </div>
 
     {loading ? <div className="lf-card mt-5 p-8 text-center text-[13px] text-ink-muted">正在读取后端错题记录…</div> : active.length === 0 ? <div className="lf-card mt-5"><GardenEmpty scene="sprout" title={mastered.length ? '错题都清完了' : '还没有错题'} hint={mastered.length ? `已经拿下 ${mastered.length} 题。之后的真实错题仍会自动收进这里。` : '在课程分阶题中答错后，题目会自动收进这里，并按记忆规律提醒你重做。'} action={<button type="button" onClick={() => navigate('/tutoring')} className="lf-btn-primary !py-2 text-[13.5px]">去练一节</button>} /></div> : <div className="mt-5 space-y-6">
       {grouped.map(([name, group]) => <section key={name}><div className="mb-2.5 flex items-center gap-2"><h2 className="text-[15.5px] font-semibold text-ink">{name}</h2><span className="rounded bg-brand-danger/10 px-1.5 py-0.5 font-mono text-[10.5px] font-medium text-brand-danger">{group.length}</span></div><div className="space-y-2.5">{group.map((item) => <WrongCard key={item.id} item={item} categoryName={categoryOf(item)} sourcePath={item.resourceId ? sourcePaths.get(item.resourceId) ?? null : null} onChange={change} onRemove={(id) => void remove(id)} />)}</div></section>)}

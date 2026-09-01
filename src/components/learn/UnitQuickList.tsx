@@ -90,10 +90,8 @@ export default function UnitQuickList({
           const threshold = nodeTargets?.[kp.id]?.target;
           const seq = routeOrdered ? pathSeq.indexOf(kp.id) : -1;
           const selected = selectedKpId === kp.id;
-          // 数据库章节名自带「第X章」前缀，拆出来单独一行小字，主标题更清晰
-          const nameMatch = kp.name.match(/^(第[一二三四五六七八九十百零\d]+章)\s*(.*)$/);
-          const chapterTag = nameMatch ? nameMatch[1] : null;
-          const title = nameMatch && nameMatch[2] ? nameMatch[2] : kp.name;
+          const categoryLabel = kp.parentName;
+          const title = kp.name;
           return (
             <button
               key={kp.id}
@@ -116,7 +114,7 @@ export default function UnitQuickList({
               <span className="min-w-0 flex-1">
                 {/* 第一行：章节标签 + 学习进度条 + 进度值，不挤压标题 */}
                 <span className="flex items-center gap-2">
-                  <span className="text-[10.5px] font-medium leading-[14px] text-brand/70">{chapterTag ?? ''}</span>
+                  <span className="text-[10.5px] font-medium leading-[14px] text-brand/70">{categoryLabel ?? ''}</span>
                   <span className="ml-auto flex items-center gap-2">
                     <span className="relative h-1.5 w-10 shrink-0 overflow-hidden rounded-full border border-black/[0.06] bg-[#E8EDF2] xl:w-12" title={`掌握程度 ${progressValue}%${threshold ? ` · 目标门槛 ${threshold}%` : ''}`}>
                       <span className="absolute inset-y-0 left-0 rounded-full bg-[#3B82F6]" style={{ width: `${progressValue}%` }} />

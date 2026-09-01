@@ -26,6 +26,14 @@ const EDGE_COLORS: Record<string, string> = {
   contrasts_with: '#B77552',
 };
 
+const TOPIC_EDGE_COLORS: Record<string, string> = {
+  prereq: '#B77552',
+  prerequisite: '#B77552',
+  related: '#B77552',
+  applies: '#66725E',
+  contrasts_with: '#B77552',
+};
+
 const NODE_COLORS = {
   domain: {
     base: '#4E7860',
@@ -1036,8 +1044,8 @@ function ChildPlane({
             key={`${edge.kind}-${edge.from}-${edge.to}`}
             from={from}
             to={to}
-            color={EDGE_COLORS[edge.kind]}
-            dashed={edge.kind === 'related' || edge.kind === 'contrasts_with'}
+            color={TOPIC_EDGE_COLORS[edge.kind]}
+            dashed={edge.kind === 'related' || edge.kind === 'contrasts_with' || edge.kind === 'prerequisite' || edge.kind === 'prereq'}
             hovered={hovered}
           />
         ))}
@@ -1093,19 +1101,50 @@ function PlanarTopicEdge({
     direction.normalize();
     const start = from.clone().addScaledVector(direction, Math.min(1.5, length * 0.3));
     const end = to.clone().addScaledVector(direction, -Math.min(1.8, length * 0.36));
+
+    // 曲线控制点：向外侧（远离章节父节点方向）弯曲
+    // 父节点在局部坐标原点 (0,0)，子节点在 relPos，
+    // "外侧"= 两个子节点中点远离原点的方向
+    const mid = start.clone().add(end).multiplyScalar(0.5);
+    const outward = mid.clone().normalize();
+    // 如果中点接近原点（两个节点几乎对称），用垂直于连线的方向
+    const perp = new THREE.Vector3(-direction.y, direction.x, 0);
+    // 取 outward 和 perp 中更远离原点的分量
+    const bendDir = outward.lengthSq() > 0.01
+      ? outward
+      : (perp.y > 0 ? perp : perp.negate());
+    bendDir.normalize();
+    const bendAmount = Math.min(length * 0.45, 4.0) + 0.3;
+    const control = mid.clone().addScaledVector(bendDir, bendAmount);
+
+    // 生成曲线上的采样点
+    const curvePoints: THREE.Vector3[] = [];
+    const segments = 24;
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments;
+      // 二次贝塞尔：(1-t)²·start + 2(1-t)t·control + t²·end
+      const p = new THREE.Vector3()
+        .addScaledVector(start, (1 - t) * (1 - t))
+        .addScaledVector(control, 2 * (1 - t) * t)
+        .addScaledVector(end, t * t);
+      curvePoints.push(p);
+    }
+
+    // 箭头方向：曲线末端的切线方向
+    const tangent = curvePoints[segments].clone().sub(curvePoints[segments - 1]).normalize();
     const arrowPosition = end.clone();
     const arrowQuaternion = new THREE.Quaternion().setFromUnitVectors(
       new THREE.Vector3(0, 1, 0),
-      direction,
+      tangent,
     );
-    return { start, end, arrowPosition, arrowQuaternion };
+    return { curvePoints, arrowPosition, arrowQuaternion };
   }, [from, to]);
 
   return (
     <group position={[0, 0, 0.08]}>
       <Line
         renderOrder={0}
-        points={[geometry.start, geometry.end]}
+        points={geometry.curvePoints}
         color={color}
         lineWidth={hovered ? 4 : 3}
         transparent
@@ -1115,7 +1154,7 @@ function PlanarTopicEdge({
         gapSize={0.7}
       />
       <mesh position={geometry.arrowPosition} quaternion={geometry.arrowQuaternion} renderOrder={1}>
-        <coneGeometry args={[0.34, 0.82, 18]} />
+        <coneGeometry args={[0.42, 1.0, 18]} />
         <meshBasicMaterial color={color} transparent opacity={hovered ? 0.95 : 0.72} depthWrite={false} />
       </mesh>
     </group>

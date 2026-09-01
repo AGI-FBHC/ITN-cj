@@ -456,6 +456,14 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
     // 一级目录仅用于数据库归档；知识网络从二级章节开始建图。
     const byDatabaseOrder = <T extends { sortOrder: number; id: number }>(items: T[]) =>
       [...items].sort((left, right) => left.sortOrder - right.sortOrder || left.id - right.id);
+    // L2 章节 → L1 父节点名称映射
+    const parentNameMap = new Map<string, string>();
+    for (const root of byDatabaseOrder(tree.nodes)) {
+      if (root.level !== 1) continue;
+      for (const child of byDatabaseOrder(root.children)) {
+        if (child.level === 2) parentNameMap.set(child.nodeCode, root.name);
+      }
+    }
     const chapters = byDatabaseOrder(tree.nodes).flatMap((root) =>
       root.level === 2 ? [root] : byDatabaseOrder(root.children.filter((node) => node.level === 2)),
     );
@@ -463,6 +471,7 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
       id: chapter.nodeCode,
       name: chapter.name,
       en: chapter.nodeCode.toUpperCase(),
+      parentName: parentNameMap.get(chapter.nodeCode),
       weight: 1 / Math.max(1, chapters.length),
       targetLevel: 80,
       coverage: chapter.chunkCount ? 100 : 0,

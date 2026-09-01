@@ -7,6 +7,8 @@ export interface KnowledgePoint {
   id: string;
   name: string;
   en: string;
+  /** L1 大分类名称（如"概念与基础"） */
+  parentName?: string;
   /** 目标能力模型权重 (0-1) */
   weight: number;
   /** 目标掌握水平 (0-100) */

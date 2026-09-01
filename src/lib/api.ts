@@ -1305,12 +1305,14 @@ export const api = {
     sourceKind?: string; sourceType?: string; sourceRef?: string; sourceContext?: string; kbRefs?: string[];
   }) => requestDirect<LearningNoteRecord>('/v1/notes', { method: 'POST', body: JSON.stringify(body) }),
   deleteNote: (noteId: string) => requestDirect<void>(`/v1/notes/${encodeURIComponent(noteId)}`, { method: 'DELETE' }),
-  listWrongAnswers: () => requestDirect<{ items: WrongAnswerRecord[] }>('/v1/wrong-answers'),
+  listWrongAnswers: (keyword?: string) => requestDirect<{ items: WrongAnswerRecord[] }>(`/v1/wrong-answers${keyword ? `?keyword=${encodeURIComponent(keyword)}` : ''}`),
   updateWrongAnswer: (wrongId: string, body: { reviewStatus?: string; mastered?: boolean; streak?: number; lastPick?: number }) =>
     requestDirect<WrongAnswerRecord>(`/v1/wrong-answers/${encodeURIComponent(wrongId)}`, { method: 'PATCH', body: JSON.stringify(body) }),
   reviewWrongAnswer: (wrongId: string, answer: number) =>
     requestDirect<{ item: WrongAnswerRecord; correct: boolean }>(`/v1/wrong-answers/${encodeURIComponent(wrongId)}/review`, { method: 'POST', body: JSON.stringify({ answer }) }),
   deleteWrongAnswer: (wrongId: string) => requestDirect<void>(`/v1/wrong-answers/${encodeURIComponent(wrongId)}`, { method: 'DELETE' }),
+  addToWrongBook: (body: { resourceId: string; questionId: string; stem: string; options: string[]; userAnswer: number; correctAnswer: number; explanation?: string; difficulty?: string; kpId?: string; knowledgeCategoryName?: string }) =>
+    requestDirect<WrongAnswerRecord>('/v1/wrong-answers/add', { method: 'POST', body: JSON.stringify(body) }),
   getTutoringScript: (learnerCode: string) =>
     requestDirect<Record<string, unknown>>(`/v1/tutoring/scripts/${encodeURIComponent(learnerCode)}`),
   createTutoringSession: (body: { learnerCode?: string; resourceId?: string }) =>

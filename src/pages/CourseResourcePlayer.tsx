@@ -112,6 +112,13 @@ const asRecords = (value: unknown): Record<string, unknown>[] =>
 const asStrings = (value: unknown): string[] => Array.isArray(value) ? value.map(String).filter(Boolean) : [];
 const asNumbers = (value: unknown): number[] => Array.isArray(value) ? [...new Set(value.map(Number).filter(Number.isFinite))] : [];
 const unique = (values: string[]) => [...new Set(values.filter(Boolean))];
+
+/** 确保编号列表前有换行，LLM 返回的文本常缺失 markdown 列表格式 */
+function normalizeMarkdownLists(text: string): string {
+  if (!text) return text;
+  // 在 "数字. " 前加换行（如果前面没有换行）
+  return text.replace(/([^\n])(\d+\.\s)/g, '$1\n\n$2');
+}
 const isUuid = (value?: string | null) => Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
 
 /** 学习状态变化广播：答题/重置/完成后通知全局缓存失效（analytics、今日日记），保证返回地图/成长页即新鲜 */
@@ -443,11 +450,32 @@ function QuizBlock({
   };
 
   const correctIndex = feedback && typeof feedback.correctIndex === 'number' ? feedback.correctIndex : null;
+  const [addedToWrongBook, setAddedToWrongBook] = useState(false);
+  const addToWrongBook = async () => {
+    try {
+      await api.addToWrongBook({
+        resourceId: resource.id,
+        questionId: id,
+        stem: String(question.stem || block.title),
+        options: asStrings(question.options),
+        userAnswer: selected ?? 0,
+        correctAnswer: correctIndex ?? 0,
+        explanation: String(question.explanation || ''),
+        difficulty: String(question.difficulty || 'medium'),
+        kpId: resource.kpId ?? undefined,
+        knowledgeCategoryName: block.title,
+      });
+      setAddedToWrongBook(true);
+      toast.success('已收入错题本');
+    } catch {
+      toast.error('收入失败');
+    }
+  };
   return <div className="mt-5 grid gap-2.5">{asStrings(question.options).map((option, index) => {
     const chosen = selected === index;
     const correct = correctIndex === index;
     return <button key={`${id}-${index}`} type="button" disabled={selected !== null || submitting} onClick={() => void answer(index)} className={cn('flex items-start gap-3 rounded-[12px] border px-4 py-3.5 text-left text-[13.5px] leading-6 transition-all', selected === null && 'border-hairline bg-paper hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-xs', chosen && Boolean(feedback?.correct) && 'border-brand bg-brand-tint text-brand', chosen && Boolean(feedback) && !Boolean(feedback?.correct) && 'border-brand-danger bg-brand-danger/10 text-brand-danger', correct && selected !== null && 'border-brand bg-brand-tint text-brand')}><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-current/20 font-mono text-[11px]">{String.fromCharCode(65 + index)}</span><span>{option}</span></button>;
-  })}{submitting && <p className="flex items-center gap-2 text-[12px] text-ink-muted"><Loader2 size={13} className="animate-spin" />正在判分并更新学习记录…</p>}{feedback && <div className={cn('rounded-[12px] px-4 py-3 text-[13px] leading-6', feedback.correct ? 'bg-brand-tint text-brand' : 'bg-brand-danger/10 text-ink-2')}><strong>{feedback.correct ? '回答正确。' : '这次还没有答对。'}</strong>{feedback.explanation ? <span className="ml-1">{String(feedback.explanation)}</span> : persisted ? <span className="ml-1 text-ink-muted">作答结果已保存。</span> : null}{typeof feedback.masteryDelta === 'number' && <div className="mt-1 font-mono text-[10.5px] opacity-75">掌握度变化 {Number(feedback.masteryDelta) >= 0 ? '+' : ''}{Number(feedback.masteryDelta).toFixed(1)}%</div>}</div>}</div>;
+  })}{submitting && <p className="flex items-center gap-2 text-[12px] text-ink-muted"><Loader2 size={13} className="animate-spin" />正在判分并更新学习记录…</p>}{feedback && <div className={cn('rounded-[12px] px-4 py-3 text-[13px] leading-6', feedback.correct ? 'bg-brand-tint text-brand' : 'bg-brand-danger/10 text-ink-2')}><strong>{feedback.correct ? '回答正确。' : '这次还没有答对。'}</strong>{feedback.explanation ? <span className="ml-1">{String(feedback.explanation)}</span> : persisted ? <span className="ml-1 text-ink-muted">作答结果已保存。</span> : null}{typeof feedback.masteryDelta === 'number' && <div className="mt-1 font-mono text-[10.5px] opacity-75">掌握度变化 {Number(feedback.masteryDelta) >= 0 ? '+' : ''}{Number(feedback.masteryDelta).toFixed(1)}%</div>}{Boolean(feedback?.correct) && !addedToWrongBook && <button type="button" onClick={() => void addToWrongBook()} className="mt-2 inline-flex items-center gap-1 rounded-md border border-brand/30 bg-paper px-2.5 py-1 text-[11.5px] text-brand hover:bg-brand-tint">收入错题本</button>}{addedToWrongBook && <span className="mt-2 inline-flex items-center gap-1 text-[11.5px] text-brand"><Check size={12} />已收入</span>}</div>}</div>;
 }
 
 function InlineBlockCitations({ block, resource }: { block: LearningBlock; resource: LearningResource }) {
@@ -521,13 +549,16 @@ export default function CourseResourcePlayer() {
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const [speechSpeed, setSpeechSpeed] = useState<TtsSpeed>('normal');
-  /* 普通入口默认卡片播放；明确从“完整阅读”入口进入时不得再次覆盖一层幻灯。 */
+  /* 普通入口默认卡片播放；明确从"完整阅读"入口进入时不得再次覆盖一层幻灯。 */
   const requestedFullView = searchParams.get('view') === 'full';
   const [slideMode, setSlideMode] = useState(() => !requestedFullView);
   /* 自评乐观值：点击立即生效，后台防抖持久化，避免整页等待网络返回 */
   const [selfAssessments, setSelfAssessments] = useState<Record<string, number>>({});
   const pendingAssessRef = useRef<Record<string, number>>({});
   const assessTimer = useRef<number | null>(null);
+  /* 已学习过的资源：查看模式下禁用自评 */
+  const [viewOnly, setViewOnly] = useState(false);
+  const [learnedPromptOpen, setLearnedPromptOpen] = useState(false);
 
   useEffect(() => {
     if (writebackStatus !== 'synced') return undefined;
@@ -573,6 +604,10 @@ export default function CourseResourcePlayer() {
       setSessionSeconds(0);
       sessionSecondsRef.current = 0;
       setLoading(false);
+      /* 已学习过的资源弹出提示：重新学习 or 查看 */
+      if (loaded.learned || loaded.state?.learned || loaded.state?.completed) {
+        setLearnedPromptOpen(true);
+      }
       /* 打开资源即攒养分（同一会话内每个资源只记一次）；
          画像可能尚未就绪，先标记、等 learnerId 可用再上报，避免直链进入时漏记 */
       try {
@@ -1113,7 +1148,7 @@ ${chatContext.content}
       setCompleteConfirmOpen(true);
       return;
     }
-    finishComplete({});
+    confirmComplete();
   };
 
   /** 确认完成：未选掌握程度的段落默认标记为「基本理解」（25% 掌握分） */
@@ -1254,13 +1289,13 @@ ${chatContext.content}
       {resource.type === 'quiz' && <section className="grid gap-3 sm:grid-cols-3">{quizTiers.map((tier) => { const meta = difficultyMeta[tier.difficulty]; return <div key={tier.difficulty} className="lf-card p-4"><div className="flex items-center justify-between"><span className="text-[14px] font-semibold text-ink">{meta.label}</span><DifficultyStars count={meta.stars} color={meta.color} /></div><div className="mt-2 flex items-center justify-between font-mono text-[11px] text-ink-muted"><span>{tier.total} 题</span><span>{tier.done}/{tier.total} 已答</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-paper-deep"><div className="h-full rounded-full" style={{ width: `${tier.total ? tier.done / tier.total * 100 : 0}%`, backgroundColor: meta.color }} /></div></div>; })}</section>}
       {blocks.length === 0 ? <div className="rounded-[16px] border border-dashed border-hairline p-12 text-center"><p className="text-[14px] text-ink-muted">当前资源没有可学习的正文。</p><Link to={`/resources?courseId=${resource.courseId}&chapterId=${resource.chapterId}`} className="lf-btn-primary mt-4 inline-flex">重新生成资源</Link></div> : blocks.map((block, index) => <motion.section key={block.id} ref={(element) => { blockRefs.current[block.id] = element; }} data-block-id={block.id} data-assistant-context data-assistant-focus={block.id === currentBlockId ? 'true' : undefined} aria-current={block.id === currentBlockId ? 'true' : undefined} data-context-kind={block.kind === 'quiz' ? '当前题目' : resource.type === 'practice' ? '当前实操步骤' : '当前阅读段落'} data-context-title={block.title} data-context-index={index + 1} data-context-total={blocks.length} data-context-resource-id={resource.id} data-context-knowledge-point-id={resource.kpId} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-80px' }} className={cn('scroll-mt-28 rounded-[18px] border bg-card-warm p-5 shadow-xs transition md:p-7', block.id === currentBlockId ? 'border-brand/35 shadow-warm' : 'border-hairline', block.safety === 'danger' && 'border-l-2 border-l-brand-danger/60')}>
         <div className="flex items-start gap-4"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-brand-tint font-mono text-[11px] font-semibold text-brand">{block.kind === 'practice' ? `S${index}` : String(index + 1).padStart(2, '0')}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><div className="lf-mono-label !text-[10px]">{block.eyebrow}</div>{block.kind === 'practice' && block.safety && <span className={cn('rounded-md border px-1.5 py-0.5 font-mono text-[9.5px]', block.safety === 'danger' ? 'border-brand-danger/35 bg-brand-danger/10 text-brand-danger' : block.safety === 'caution' ? 'border-brand-amber/40 bg-brand-amber-tint text-ochre' : 'border-brand/25 bg-brand-tint text-brand')}>{block.safety === 'danger' ? '高风险' : block.safety === 'caution' ? '需谨慎' : '常规操作'}</span>}{block.kind === 'quiz' && (() => { const meta = difficultyMeta[String(block.question?.difficulty ?? 'easy') as keyof typeof difficultyMeta] ?? difficultyMeta.easy; return <span className="flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[9.5px]" style={{ borderColor: `${meta.color}55`, color: meta.color }}><DifficultyStars count={meta.stars} color={meta.color} />{meta.label}</span>; })()}</div><h2 className="mt-1 font-serif text-[22px] font-semibold leading-tight text-ink md:text-[25px]">{block.title}</h2></div>{block.kind === 'practice' && <button type="button" onClick={() => toggleStep(block.id)} className={cn('flex shrink-0 items-center gap-1.5 rounded-[10px] border px-3 py-2 text-[11.5px]', completedSteps.includes(block.id) ? 'border-brand bg-brand text-paper' : !safetyReady && block.id === blocks.find((item) => item.kind === 'practice')?.id ? 'cursor-not-allowed border-hairline bg-paper-deep text-ink-muted' : 'border-hairline bg-paper text-ink-muted hover:border-brand/40')} >{completedSteps.includes(block.id) ? <CheckCircle2 size={14} /> : <Circle size={14} />}完成步骤</button>}</div>
-        {block.body && <div className="mt-5 max-w-[760px]"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>{block.body}</ReactMarkdown></div>}
+        {block.body && <div className="mt-5 max-w-[760px]"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>{normalizeMarkdownLists(block.body)}</ReactMarkdown></div>}
         {block.code && <pre className="mt-5 overflow-x-auto rounded-[12px] bg-ink px-4 py-4 text-[12px] leading-6 text-paper"><code>{block.code}</code></pre>}
         {block.expectedOutput && <div className="mt-4 rounded-[12px] border border-brand/20 bg-brand-tint/35 px-4 py-3 text-[13px] leading-6 text-ink-2"><strong className="text-brand">预期结果：</strong>{block.expectedOutput}</div>}
         {block.warning && <div className="mt-4 flex items-start gap-2 rounded-[12px] border border-brand-amber/40 bg-brand-amber-tint px-4 py-3 text-[12.5px] leading-5 text-ochre"><TriangleAlert size={15} className="mt-0.5 shrink-0" /><span><strong>操作提醒：</strong>{block.warning}</span></div>}
         {block.kind === 'quiz' && <QuizBlock block={block} resource={resource} onWritebackStatus={setWritebackStatus} onResourceState={(state) => setResource((current) => current ? { ...current, state, learned: Boolean(state.learned || state.completed) } : current)} />}
         <InlineBlockCitations block={block} resource={resource} />
-        {resource.type !== 'quiz' && <div className="mt-5 rounded-[12px] border border-brand/20 bg-brand-tint/25 p-3.5"><div className="flex flex-wrap items-center justify-between gap-2"><div><div className="text-[12px] font-semibold text-ink">这一块你掌握得怎么样？</div><div className="mt-0.5 text-[10.5px] text-ink-muted">自评会和答题正确率一起计算掌握程度，可随时修改。</div></div><div className="flex flex-wrap gap-1.5">{([{ label: '还需学习', value: 0.2 }, { label: '基本理解', value: 0.55 }, { label: '大体掌握', value: 0.8 }, { label: '我已经完全掌握', value: 1 }] as const).map((option) => { const selected = effectiveAssessments[block.id] === option.value; return <button key={option.value} type="button" onClick={() => void assessBlock(block.id, option.value)} className={cn('rounded-full border px-3 py-1.5 text-[11px] transition', selected ? 'border-brand bg-brand text-paper' : 'border-hairline bg-paper text-ink-2 hover:border-brand/45')}>{selected && <Check size={11} className="mr-1 inline" />}{option.label}</button>; })}</div></div></div>}
+        {resource.type !== 'quiz' && <div className={cn("mt-5 rounded-[12px] border border-brand/20 bg-brand-tint/25 p-3.5", viewOnly && "opacity-50 pointer-events-none")}><div className="flex flex-wrap items-center justify-between gap-2"><div><div className="text-[12px] font-semibold text-ink">这一块你掌握得怎么样？{viewOnly && <span className="ml-2 text-[10px] text-ink-muted">（查看模式）</span>}</div><div className="mt-0.5 text-[10.5px] text-ink-muted">自评会和答题正确率一起计算掌握程度，可随时修改。</div></div><div className="flex flex-wrap gap-1.5">{([{ label: '还需学习', value: 0.2 }, { label: '基本理解', value: 0.55 }, { label: '大体掌握', value: 0.8 }, { label: '我已经完全掌握', value: 1 }] as const).map((option) => { const selected = effectiveAssessments[block.id] === option.value; return <button key={option.value} type="button" disabled={viewOnly} onClick={() => void assessBlock(block.id, option.value)} className={cn('rounded-full border px-3 py-1.5 text-[11px] transition', selected ? 'border-brand bg-brand text-paper' : 'border-hairline bg-paper text-ink-2 hover:border-brand/45')}>{selected && <Check size={11} className="mr-1 inline" />}{option.label}</button>; })}</div></div></div>}
         <div className="mt-5 border-t border-hairline/70 pt-4">
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" onClick={() => { stopNoteListening(); setNoteFor(block); setNoteText(''); setNoteImg(null); }} className="lf-btn-ghost !px-3 !py-1.5 text-[11.5px]"><NotebookPen size={13} />记这一段</button>
@@ -1314,7 +1349,7 @@ ${chatContext.content}
 
     {createPortal(<AnimatePresence>{slideMode && activeBlock && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[9999] flex flex-col bg-paper">
       <header className="flex items-center gap-3 border-b border-hairline bg-card-warm px-4 py-3 md:px-6"><Presentation size={17} className="text-brand" /><div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold text-ink">幻灯模式 · {resource.title}</div><div className="font-mono text-[9.5px] text-ink-muted">真实课程内容 · 第 {currentIndex + 1}/{blocks.length} 段</div></div><button type="button" onClick={() => setSlideMode(false)} className="inline-flex h-9 items-center gap-1.5 rounded-[10px] border border-hairline bg-paper px-3 text-[11px] font-medium text-ink-2 hover:border-brand/35 hover:text-brand"><BookOpen size={13} />完整阅读</button><button type="button" onClick={() => setSlideMode(false)} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep" title="退出幻灯"><X size={17} /></button></header>
-      <main ref={slideViewportRef} className="flex flex-1 items-center justify-center overflow-x-hidden overflow-y-auto bg-gradient-to-br from-brand-tint/25 via-paper to-card-warm px-4 py-8 md:px-12"><article className="relative w-full max-w-[1040px] overflow-hidden rounded-[24px] border border-brand/20 bg-card-warm/95 p-6 shadow-warm-lg md:p-8 lg:p-10" data-assistant-context data-assistant-focus="true" data-context-kind={activeBlock.kind === 'quiz' ? '当前题目' : resource.type === 'practice' ? '当前实操步骤' : '当前学习卡片'} data-context-title={activeBlock.title} data-context-index={currentIndex + 1} data-context-total={blocks.length} data-context-resource-id={resource.id} data-context-knowledge-point-id={resource.kpId}><div className="absolute right-0 top-0 h-32 w-32 rounded-bl-full bg-brand/5" /><div className="relative mx-auto max-w-[800px]"><div className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.12em] text-brand">{activeBlock.eyebrow}</div><h2 className="mt-4 max-w-[780px] font-serif text-[27px] font-semibold leading-tight tracking-[-0.015em] text-ink md:text-[34px]">{activeBlock.title}</h2><div className="mt-5 h-1 w-14 rounded-full bg-brand" />{activeBlock.body && <div className="mt-7"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{activeBlock.body}</ReactMarkdown></div>}<InlineBlockCitations block={activeBlock} resource={resource} />{activeBlock.code && <pre className="mt-6 max-h-[42vh] overflow-auto rounded-[14px] bg-ink p-5 text-[14px] leading-6 text-paper md:text-[16px]"><code>{activeBlock.code}</code></pre>}{activeBlock.expectedOutput && <div className="mt-5 rounded-[14px] border border-brand/25 bg-brand-tint/55 p-4 text-[15px] leading-7 text-ink-2 md:text-[17px]"><strong className="text-brand">预期结果</strong><span className="mx-2 text-brand/40">/</span>{activeBlock.expectedOutput}</div>}{activeBlock.kind === 'quiz' && <QuizBlock block={activeBlock} resource={resource} learnerId={currentLearnerId} onWritebackStatus={setWritebackStatus} onResourceState={(state) => setResource((current) => current ? { ...current, state, learned: Boolean(state.learned || state.completed) } : current)} />}</div></article></main>
+      <main ref={slideViewportRef} className="flex flex-1 items-center justify-center overflow-x-hidden overflow-y-auto bg-gradient-to-br from-brand-tint/25 via-paper to-card-warm px-4 py-8 md:px-12"><article className="relative w-full max-w-[1040px] overflow-hidden rounded-[24px] border border-brand/20 bg-card-warm/95 p-6 shadow-warm-lg md:p-8 lg:p-10" data-assistant-context data-assistant-focus="true" data-context-kind={activeBlock.kind === 'quiz' ? '当前题目' : resource.type === 'practice' ? '当前实操步骤' : '当前学习卡片'} data-context-title={activeBlock.title} data-context-index={currentIndex + 1} data-context-total={blocks.length} data-context-resource-id={resource.id} data-context-knowledge-point-id={resource.kpId}><div className="absolute right-0 top-0 h-32 w-32 rounded-bl-full bg-brand/5" /><div className="relative mx-auto max-w-[800px]"><div className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.12em] text-brand">{activeBlock.eyebrow}</div><h2 className="mt-4 max-w-[780px] font-serif text-[27px] font-semibold leading-tight tracking-[-0.015em] text-ink md:text-[34px]">{activeBlock.title}</h2><div className="mt-5 h-1 w-14 rounded-full bg-brand" />{activeBlock.body && <div className="mt-7"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{normalizeMarkdownLists(activeBlock.body)}</ReactMarkdown></div>}<InlineBlockCitations block={activeBlock} resource={resource} />{activeBlock.code && <pre className="mt-6 max-h-[42vh] overflow-auto rounded-[14px] bg-ink p-5 text-[14px] leading-6 text-paper md:text-[16px]"><code>{activeBlock.code}</code></pre>}{activeBlock.expectedOutput && <div className="mt-5 rounded-[14px] border border-brand/25 bg-brand-tint/55 p-4 text-[15px] leading-7 text-ink-2 md:text-[17px]"><strong className="text-brand">预期结果</strong><span className="mx-2 text-brand/40">/</span>{activeBlock.expectedOutput}</div>}{activeBlock.kind === 'quiz' && <QuizBlock block={activeBlock} resource={resource} learnerId={currentLearnerId} onWritebackStatus={setWritebackStatus} onResourceState={(state) => setResource((current) => current ? { ...current, state, learned: Boolean(state.learned || state.completed) } : current)} />}</div></article></main>
       <footer className="flex items-center justify-center gap-3 border-t border-hairline bg-card-warm px-4 py-3"><button type="button" disabled={currentIndex === 0} onClick={() => goBlock(blocks[currentIndex - 1].id, narration.speaking)} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="上一页"><ChevronLeft size={17} /></button><button type="button" onClick={speakCurrent} className="flex h-11 items-center gap-2 rounded-full bg-brand px-5 text-[12.5px] font-medium text-paper">{narration.speaking ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}{narration.speaking ? '暂停讲播' : '讲这一页'}</button><button type="button" onClick={cycleSpeed} className="h-10 rounded-full border border-hairline px-4 font-mono text-[11px] text-ink-muted">{speedMeta[speechSpeed].label}</button><button type="button" onClick={cycleVolume} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted" title={narration.volume === 0 ? '恢复音量' : `音量 ${Math.round(narration.volume * 100)}%`}>{narration.volume === 0 ? <VolumeX size={14} /> : narration.volume < 0.6 ? <Volume1 size={14} /> : <Volume2 size={14} />}</button><button type="button" disabled={currentIndex >= blocks.length - 1} onClick={() => goBlock(blocks[currentIndex + 1].id, narration.speaking)} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="下一页"><ChevronRight size={17} /></button></footer>
     </motion.div>}</AnimatePresence>, document.body)}
 
@@ -1337,5 +1372,19 @@ ${chatContext.content}
       </div>
     )}
   <LearningCompleteDialog open={completeConfirmOpen} unassessedCount={unassessedCount} confirming={completing} restarting={restarting} onClose={() => setCompleteConfirmOpen(false)} onConfirm={confirmComplete} onRestart={() => void restartPractice()} />
+
+  {/* 已学习提示：重新学习 or 查看 */}
+  {learnedPromptOpen && (
+    <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm" onClick={() => { setLearnedPromptOpen(false); setViewOnly(true); }} role="dialog" aria-modal="true" aria-label="学习提示">
+      <div className="w-full max-w-[380px] rounded-[18px] border border-brand/30 bg-card-warm p-6 shadow-warm-lg" onClick={(e) => e.stopPropagation()}>
+        <h3 className="font-serif text-[18px] font-semibold text-ink">你已经学过这项资源</h3>
+        <p className="mt-1.5 text-[12.5px] leading-5 text-ink-muted">上次的学习进度和自评数据已保存。你可以重新学习清空记录，或查看已有内容。</p>
+        <div className="mt-5 flex gap-2">
+          <button type="button" onClick={() => { setLearnedPromptOpen(false); setViewOnly(true); }} className="lf-btn-ghost flex-1 justify-center">查看</button>
+          <button type="button" onClick={() => { setLearnedPromptOpen(false); setViewOnly(false); void restartPractice(); }} className="lf-btn-primary flex-1 justify-center">重新学习</button>
+        </div>
+      </div>
+    </div>
+  )}
   </div>;
 }
