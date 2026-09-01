@@ -5,15 +5,22 @@ export interface LearningPageContext {
   pageTitle: string;
   capturedAt: string;
   selection?: string;
-  focus?: { kind: string; title?: string; text: string; index?: number; total?: number };
+  focus?: { kind: string; title?: string; text: string; index?: number; total?: number; state?: Record<string, string> };
   dialog?: { title?: string; text: string };
   headings: string[];
   visibleText: string;
   entities: Record<string, string>;
   interaction?: {
-    kind: 'quiz';
-    submitted: boolean;
+    kind: 'quiz' | 'practice' | 'reading' | 'page';
+    submitted?: boolean;
     selectedAnswer?: string;
+    correct?: boolean;
+    answerIndex?: string;
+    assessed?: boolean;
+    assessment?: string;
+    completed?: boolean;
+    stepCompleted?: boolean;
+    progress?: string;
   };
 }
 
@@ -60,12 +67,47 @@ function elementContext(element: HTMLElement | null, kind: string) {
   if (!text) return undefined;
   const index = Number(element.dataset.contextIndex);
   const total = Number(element.dataset.contextTotal);
+  const state: Record<string, string> = {};
+  const seen = new Set(['kind', 'title', 'text', 'index', 'total']);
+  for (const el of [element, ...element.querySelectorAll<HTMLElement>('*')]) {
+    for (const [key, value] of Object.entries(el.dataset)) {
+      if (!key.startsWith('context') || !value) continue;
+      const name = key.slice(7).replace(/^./, (c) => c.toLowerCase());
+      if (!name || seen.has(name)) continue;
+      state[name] = clean(value, 300);
+    }
+  }
   return {
     kind: element.dataset.contextKind || kind,
     ...(title ? { title } : {}),
     text,
     ...(Number.isFinite(index) ? { index } : {}),
     ...(Number.isFinite(total) ? { total } : {}),
+    ...(Object.keys(state).length ? { state } : {}),
+  };
+}
+
+function buildInteraction(focus: NonNullable<LearningPageContext['focus']>): LearningPageContext['interaction'] | undefined {
+  const s = focus.state ?? {};
+  const hasQuiz = focus.kind === '当前题目' || s.quizSubmitted !== undefined || s.selectedAnswer !== undefined;
+  if (hasQuiz) {
+    return {
+      kind: 'quiz',
+      ...(s.quizSubmitted !== undefined ? { submitted: s.quizSubmitted === 'true' } : {}),
+      ...(s.selectedAnswer ? { selectedAnswer: s.selectedAnswer } : {}),
+      ...(s.quizCorrect !== undefined ? { correct: s.quizCorrect === 'true' } : {}),
+      ...(s.answerIndex ? { answerIndex: s.answerIndex } : {}),
+    };
+  }
+  const hasState = s.assessed !== undefined || s.assessment || s.progress || s.completed !== undefined || s.stepCompleted !== undefined || s.currentPage;
+  if (!hasState) return undefined;
+  return {
+    kind: focus.kind.includes('实操') ? 'practice' : focus.kind.includes('阅读') ? 'reading' : 'page',
+    ...(s.assessed !== undefined ? { assessed: s.assessed === 'true' } : {}),
+    ...(s.assessment ? { assessment: s.assessment } : {}),
+    ...(s.completed !== undefined ? { completed: s.completed === 'true' } : {}),
+    ...(s.stepCompleted !== undefined ? { stepCompleted: s.stepCompleted === 'true' } : {}),
+    ...(s.progress ? { progress: s.progress } : {}),
   };
 }
 
@@ -80,15 +122,7 @@ export function collectLearningPageContext(): LearningPageContext {
     '[data-assistant-focus="true"], [data-assistant-context][aria-current="true"], [data-assistant-context]',
   )].find(visible) ?? null;
   const focus = elementContext(focusElement, '当前内容');
-  const quizInteraction = focusElement?.dataset.contextKind === '当前题目'
-    ? {
-        kind: 'quiz' as const,
-        submitted: focusElement.dataset.contextQuizSubmitted === 'true',
-        ...(focusElement.dataset.contextSelectedAnswer
-          ? { selectedAnswer: clean(focusElement.dataset.contextSelectedAnswer, 120) }
-          : {}),
-      }
-    : undefined;
+  const interaction = focus ? buildInteraction(focus) : undefined;
   const dialog = elementContext(dialogElement, '当前弹窗');
   const headings = [...main.querySelectorAll('h1,h2,h3')].filter(visible)
     .map((element) => clean(element.textContent, 160)).filter(Boolean).slice(0, 12);
@@ -108,7 +142,7 @@ export function collectLearningPageContext(): LearningPageContext {
     headings,
     visibleText,
     entities: entityIds(route),
-    ...(quizInteraction ? { interaction: quizInteraction } : {}),
+    ...(interaction ? { interaction } : {}),
   };
   try {
     if (pageType === '伴学对话') {
