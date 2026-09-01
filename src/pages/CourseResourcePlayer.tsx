@@ -1197,7 +1197,26 @@ ${chatContext.content}
     if (!resource || completing) return;
     setCompleting(true);
     setCompleteConfirmOpen(false);
-    toast.success('已标记完成，正在后台同步学习记录');
+    const sorted = [...chapterResources].sort((a, b) =>
+      ({ lecture: 0, practice: 1, quiz: 2 }[a.type] - ({ lecture: 0, practice: 1, quiz: 2 }[b.type])),
+    );
+    const index = sorted.findIndex((item) => item.id === resource.id);
+    const next = index >= 0 ? sorted[index + 1] : undefined;
+    const goTutoring = resource.type === 'quiz' && !next;
+    const suggestionText = goTutoring
+      ? '下一步建议：进入交互导学完成最后的综合练习'
+      : next
+        ? `下一步建议：进入${resourceMeta[next.type].label}`
+        : undefined;
+    const actionLabel = goTutoring ? '去交互导学' : next ? `去${resourceMeta[next.type].label}` : undefined;
+    const actionTarget = goTutoring ? '/tutoring' : next ? resourcePath(next.id) : undefined;
+    toast.success('已标记完成，正在后台同步学习记录', {
+      description: suggestionText,
+      ...(actionTarget && actionLabel
+        ? { action: { label: actionLabel, onClick: () => navigate(actionTarget) } }
+        : {}),
+      duration: 8000,
+    });
     markLearningMapReturn(currentLearnerId);
     navigate('/learn');
     /* 后台隐式同步：不阻塞跳转；组件卸载后不再 setState */
