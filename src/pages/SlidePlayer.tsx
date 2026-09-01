@@ -19,7 +19,7 @@ import { toast } from 'sonner';
 
 type QuizValue = string | number;
 
-function QuizCard({ slide, onInteractionChange }: { slide: CustomizeSlide; onInteractionChange: (state: { submitted: boolean; selectedAnswer?: string }) => void }) {
+function QuizCard({ slide, onInteractionChange, resourceId }: { slide: CustomizeSlide; onInteractionChange: (state: { submitted: boolean; selectedAnswer?: string }) => void; resourceId?: string | null }) {
   const question = slide.content as Record<string, unknown>;
   const rawOptions = Array.isArray(question.options) ? question.options : [];
   const options = rawOptions.map((option, index) => {
@@ -28,25 +28,58 @@ function QuizCard({ slide, onInteractionChange }: { slide: CustomizeSlide; onInt
     return { label: String(item.text ?? item.label ?? item.content ?? ''), value: (item.value ?? item.id ?? index) as QuizValue };
   });
   const [picked, setPicked] = useState<QuizValue | null>(null);
+  const [feedback, setFeedback] = useState<{ correct: boolean; correctIndex?: number; explanation?: string } | null>(null);
   const correct = (question.correctAnswer ?? question.answer ?? question.correctIndex) as QuizValue | undefined;
-  const correctIndex = typeof correct === 'string' && /^[A-Za-z]$/.test(correct)
+  const localCorrectIndex = typeof correct === 'string' && /^[A-Za-z]$/.test(correct)
     ? correct.toUpperCase().charCodeAt(0) - 65 : Number(correct);
   const pickedIndex = options.findIndex((option) => picked !== null && String(option.value) === String(picked));
-  const isCorrect = picked !== null && (String(picked) === String(correct) || pickedIndex === correctIndex);
+  const localIsCorrect = picked !== null && (String(picked) === String(correct) || pickedIndex === localCorrectIndex);
+  const isCorrect = feedback?.correct ?? localIsCorrect;
+  const displayCorrectIndex = feedback?.correctIndex ?? localCorrectIndex;
   useEffect(() => {
     onInteractionChange({ submitted: picked !== null, ...(picked !== null ? { selectedAnswer: String(picked) } : {}) });
   }, [onInteractionChange, picked]);
+
+  const choose = async (option: QuizValue, index: number, resourceId?: string | null) => {
+    if (picked !== null) return;
+    setPicked(option);
+    const questionId = String(question.id ?? question.questionId ?? slide.id ?? '');
+    const fallback = {
+      correct: picked !== null ? false : (String(option) === String(correct) || index === localCorrectIndex),
+      correctIndex: Number.isFinite(localCorrectIndex) ? localCorrectIndex : undefined,
+      explanation: String(question.explanation ?? question.analysis ?? '') || undefined,
+    };
+    if (!resourceId || !questionId) {
+      setFeedback(fallback);
+      return;
+    }
+    try {
+      const result = await api.gradeLearningQuiz(resourceId, {
+        questionId,
+        answer: String(option),
+        durationSeconds: 1,
+      }) as { correct?: unknown; correctIndex?: unknown; explanation?: unknown; analysis?: unknown };
+      setFeedback({
+        correct: Boolean(result.correct),
+        correctIndex: Number(result.correctIndex ?? localCorrectIndex),
+        explanation: String(result.explanation ?? result.analysis ?? question.explanation ?? question.analysis ?? '') || undefined,
+      });
+    } catch {
+      setFeedback(fallback);
+    }
+  };
+
   return (
     <div className="mt-7">
       <h2 className="font-serif text-[25px] font-semibold leading-[1.45] text-ink md:text-[30px]">{String(question.stem ?? question.question ?? question.title ?? slide.title)}</h2>
       <div className="mt-6 grid gap-3">
         {options.map((option, index) => {
           const selected = picked !== null && String(picked) === String(option.value);
-          const correctOption = picked !== null && (String(option.value) === String(correct) || index === correctIndex);
-          return <button key={`${option.value}-${index}`} type="button" disabled={picked !== null} onClick={() => setPicked(option.value)} className={cn('flex items-start gap-3 rounded-[14px] border px-4 py-3.5 text-left text-[14px] leading-6', picked === null && 'border-hairline bg-paper hover:border-brand/45 hover:bg-brand-tint/30', selected && !isCorrect && 'border-brand-danger/40 bg-red-50', correctOption && 'border-brand/45 bg-brand-tint')}><span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-current font-mono text-[11px]">{String.fromCharCode(65 + index)}</span><span>{option.label}</span>{correctOption && <Check size={16} className="ml-auto mt-1 text-brand" />}</button>;
+          const correctOption = picked !== null && (String(option.value) === String(correct) || index === displayCorrectIndex);
+          return <button key={`${option.value}-${index}`} type="button" disabled={picked !== null} onClick={() => void choose(option.value, index, resourceId)} className={cn('flex items-start gap-3 rounded-[14px] border px-4 py-3.5 text-left text-[14px] leading-6', picked === null && 'border-hairline bg-paper hover:border-brand/45 hover:bg-brand-tint/30', selected && !isCorrect && 'border-brand-danger/40 bg-red-50', correctOption && 'border-brand/45 bg-brand-tint')}><span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-current font-mono text-[11px]">{String.fromCharCode(65 + index)}</span><span>{option.label}</span>{correctOption && <Check size={16} className="ml-auto mt-1 text-brand" />}</button>;
         })}
       </div>
-      {picked !== null && <div className={cn('mt-5 rounded-[14px] border p-4 text-[13px] leading-6', isCorrect ? 'border-brand/30 bg-brand-tint/45 text-ink' : 'border-brand-amber/35 bg-brand-amber-tint/45 text-ink')}><strong>{isCorrect ? '回答正确' : '再看一下解析'}</strong>{question.explanation || question.analysis ? <p className="mt-1 text-ink-2">{String(question.explanation ?? question.analysis)}</p> : null}</div>}
+      {picked !== null && <div className={cn('mt-5 rounded-[14px] border p-4 text-[13px] leading-6', isCorrect ? 'border-brand/30 bg-brand-tint/45 text-ink' : 'border-brand-amber/35 bg-brand-amber-tint/45 text-ink')}><strong>{isCorrect ? '回答正确' : '再看一下解析'}</strong>{(feedback?.explanation || question.explanation || question.analysis) ? <p className="mt-1 text-ink-2">{String(feedback?.explanation ?? question.explanation ?? question.analysis)}</p> : null}</div>}
     </div>
   );
 }
@@ -448,7 +481,7 @@ export default function SlidePlayer() {
           : <article className="relative flex h-full min-h-0 w-full max-w-[1040px] flex-col overflow-hidden rounded-[24px] border border-brand/20 bg-card-warm/95 shadow-warm-lg" data-assistant-context data-assistant-focus="true" data-context-kind={slide.type === 'question' ? '当前题目' : slide.type === 'step' ? '当前实操步骤' : '当前学习卡片'} data-context-title={slide.title} data-context-index={currentIndex + 1} data-context-total={expected || slides.length} data-context-resource-id={data?.resourceId ?? ''} data-context-knowledge-point-id={data?.kpId ?? completedResource?.kpId ?? ''} data-context-quiz-submitted={slide.type === 'question' ? String(quizInteraction.submitted) : undefined} data-context-selected-answer={slide.type === 'question' ? quizInteraction.selectedAnswer : undefined}>
               <div className="flex shrink-0 items-center justify-between gap-4 border-b border-hairline/70 bg-paper/55 px-6 py-3.5 md:px-9"><span className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.1em] text-brand">{slide.type === 'question' ? '分阶练习' : slide.type === 'step' ? '实操步骤' : slide.type === 'intro' ? '本讲导览' : slide.type === 'presentation' ? '交互课件' : '领学章节'}</span>{data?.status === 'generating' && <span className="inline-flex items-center gap-1.5 text-[10.5px] text-ink-muted"><Loader2 size={12} className="animate-spin" />后续页面讲解生成中</span>}</div>
               <div ref={cardScrollRef} className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-6 pb-8 pt-5 [scrollbar-gutter:stable] md:px-9 md:pb-9 md:pt-6">
-                {slide.type === 'question' ? <QuizCard key={slide.index} slide={slide} onInteractionChange={setQuizInteraction} /> : slide.type === 'presentation' ? <div className="mx-auto flex h-full max-w-[980px] flex-col"><h1 className="shrink-0 font-serif text-[22px] font-semibold text-ink">{slide.title}</h1><div className="mt-4 flex min-h-[320px] flex-1 items-center justify-center overflow-hidden rounded-[16px] border border-hairline bg-ink/5">{presentationImage ? <img src={presentationImage} alt={`第 ${slide.unitIndex + 1} 页 · ${slide.title}`} className="max-h-full max-w-full object-contain" /> : <Loader2 size={22} className="animate-spin text-brand" />}</div><div className="mt-4 rounded-xl border border-brand/15 bg-brand-tint/25 px-4 py-3 text-[12.5px] leading-6 text-ink-2"><span className="mr-2 font-medium text-brand">本页讲解</span>{String(slide.content ?? '')}</div></div> : <><h1 className="font-serif text-[28px] font-semibold leading-tight text-ink md:text-[34px]">{slide.title}</h1><div className="mt-6 h-1 w-14 rounded-full bg-brand" /><div className="mt-7 max-w-none text-ink-2"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{String(slide.content ?? '')}</ReactMarkdown></div></>}
+                {slide.type === 'question' ? <QuizCard key={slide.index} slide={slide} resourceId={data?.resourceId} onInteractionChange={setQuizInteraction} /> : slide.type === 'presentation' ? <div className="mx-auto flex h-full max-w-[980px] flex-col"><h1 className="shrink-0 font-serif text-[22px] font-semibold text-ink">{slide.title}</h1><div className="mt-4 flex min-h-[320px] flex-1 items-center justify-center overflow-hidden rounded-[16px] border border-hairline bg-ink/5">{presentationImage ? <img src={presentationImage} alt={`第 ${slide.unitIndex + 1} 页 · ${slide.title}`} className="max-h-full max-w-full object-contain" /> : <Loader2 size={22} className="animate-spin text-brand" />}</div><div className="mt-4 rounded-xl border border-brand/15 bg-brand-tint/25 px-4 py-3 text-[12.5px] leading-6 text-ink-2"><span className="mr-2 font-medium text-brand">本页讲解</span>{String(slide.content ?? '')}</div></div> : <><h1 className="font-serif text-[28px] font-semibold leading-tight text-ink md:text-[34px]">{slide.title}</h1><div className="mt-6 h-1 w-14 rounded-full bg-brand" /><div className="mt-7 max-w-none text-ink-2"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{String(slide.content ?? '')}</ReactMarkdown></div></>}
                 <SourceList sources={pageSources} evidenceQuotes={slide.evidenceQuotes} />
               </div>
             </article>}
