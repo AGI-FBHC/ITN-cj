@@ -138,6 +138,7 @@ export default function AgentDock() {
       {/* ===== FAB ===== */}
       <div className={cn(
         'fixed bottom-4 flex flex-col gap-2 md:bottom-6',
+        open && 'pointer-events-none opacity-0',
         inSlidePlayer ? 'z-[10010]' : 'z-40',
         isLeft ? 'left-4 md:left-6' : 'right-4 md:right-6',
       )}>
@@ -186,7 +187,7 @@ export default function AgentDock() {
             transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
             className={cn(
               inSlidePlayer
-                ? 'fixed top-16 flex h-[calc(100dvh-76px)] flex-col overflow-visible'
+                ? 'fixed top-16 bottom-16 flex flex-col overflow-visible'
                 : 'fixed top-3 flex h-[calc(100dvh-24px)] flex-col overflow-visible',
               inSlidePlayer ? 'z-[10010]' : 'z-50',
               'rounded-2xl border border-white/60',
