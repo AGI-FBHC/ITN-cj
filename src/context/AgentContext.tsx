@@ -41,6 +41,18 @@ export type AgentMessage =
   | { id: string; kind: 'note'; title: string; text: string; noteId: string; time: string }
   | {
       id: string;
+      kind: 'quiz-card';
+      stem: string;
+      options: string[];
+      answerIndex: number;
+      analysis?: string;
+      picked?: number | null;
+      settled?: boolean;
+      correct?: boolean;
+      time: string;
+    }
+  | {
+      id: string;
       kind: 'verify';
       kpId: string;
       questions: QuizQuestion[];
@@ -80,6 +92,8 @@ interface AgentContextValue {
   /** 自由提问：直接回答，页面位置仅作为不可见上下文传递。 */
   askFree: (text: string, pageContext?: LearningPageContext) => void;
   askFreeWithImage: (text: string, image: { name: string; url: string; blob?: Blob }, pageContext?: LearningPageContext) => void;
+  askSimilarQuiz: (pageContext?: LearningPageContext) => void;
+  answerQuizCard: (msgId: string, optIndex: number) => void;
   pageContextEnabled: boolean;
   setPageContextEnabled: (v: boolean) => void;
   answerVerify: (msgId: string, qIndex: number, optIndex: number) => void;
@@ -648,6 +662,90 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       void agentAskImage('free', text, image, '正在分析图片并回答…', pageContext);
     };
 
+    /** 出一道类似题：后端生成结构化题目后渲染为可交互做题卡片。 */
+    const askSimilarQuiz = async (pageContext?: LearningPageContext) => {
+      if (!lid) return;
+      let sid = currentSessionId;
+      let activeSession = sessions.find((session) => session.id === sid);
+      if (!sid) {
+        const created = await api.createAgentSession(lid);
+        sid = created.id;
+        activeSession = created;
+        setSessions((prev) => [created, ...prev.filter((s) => s.id !== created.id)]);
+        setCurrentSessionId(sid);
+        sessionSelectionLocked.current = true;
+        setMsgsAll((prev) => ({ ...prev, [lid]: [] }));
+      }
+      const hasDefaultTitle = !activeSession?.title || DEFAULT_SESSION_TITLE_RE.test(activeSession.title.trim());
+      if (hasDefaultTitle) {
+        const title = buildSessionTitle('出一道类似的题');
+        void api.updateAgentSession(sid, { title }).then((updated) => {
+          setSessions((prev) => prev.map((s) => s.id === sid ? updated : s));
+        }).catch(() => {/* ignore */});
+      }
+      const currentPage = pageContextEnabled ? (pageContext ?? collectLearningPageContext()) : undefined;
+      const userText = '出一道与这道题思路相近的练习题，让我在对话里作答';
+      append({ id: mid(), kind: 'user', text: userText, time: now() });
+      const pendingId = mid();
+      append({ id: pendingId, kind: 'agent', text: '正在生成做题卡片…', time: now() });
+      try {
+        const result = await api.askAgentSimilarQuiz(
+          lid, undefined, sid ?? undefined, currentPage?.route, currentPage,
+        );
+        const q = result?.question;
+        if (!q || !q.stem || !Array.isArray(q.options) || q.options.length < 2) {
+          throw new Error('invalid quiz payload');
+        }
+        setMsgsAll((prev) => ({
+          ...prev,
+          [lid]: (prev[lid] ?? []).map((m) => (
+            m.id === pendingId
+              ? {
+                  id: pendingId,
+                  kind: 'quiz-card',
+                  stem: q.stem,
+                  options: q.options.slice(0, 6),
+                  answerIndex: q.answerIndex,
+                  analysis: q.analysis,
+                  settled: false,
+                  picked: null,
+                  correct: false,
+                  time: now(),
+                }
+              : m
+          )),
+        }));
+      } catch {
+        setMsgsAll((prev) => ({
+          ...prev,
+          [lid]: (prev[lid] ?? []).map((m) => (
+            m.id === pendingId ? { id: pendingId, kind: 'agent', text: '类似题生成失败，稍后再试一次吧', time: now() } : m
+          )),
+        }));
+      }
+    };
+
+    /** 作答做题卡片：本地即时判分，并把解析留在卡片内展示。 */
+    const answerQuizCard = (msgId: string, optIndex: number) => {
+      setMsgsAll((prev) => {
+        const list = [...(prev[lid] ?? [])];
+        const i = list.findIndex((m) => m.id === msgId && m.kind === 'quiz-card');
+        if (i < 0) return prev;
+        const m = list[i];
+        if (m.kind !== 'quiz-card' || m.settled) return prev;
+        const correct = optIndex === m.answerIndex;
+        const updated = [...list];
+        updated[i] = {
+          ...m,
+          picked: optIndex,
+          settled: true,
+          correct,
+          time: now(),
+        };
+        return { ...prev, [lid]: updated.slice(-60) };
+      });
+    };
+
     /** 动态建议问题：按建议原文发起（类型已知则透传，未知按自由提问） */
     const askSuggestion = (text: string, askType: string) => {
       const text2 = text.trim();
@@ -738,6 +836,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       ask,
       askFree,
       askFreeWithImage,
+      askSimilarQuiz,
+      answerQuizCard,
       pageContextEnabled,
       setPageContextEnabled,
       answerVerify,

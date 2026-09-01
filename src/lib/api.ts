@@ -1062,6 +1062,16 @@ export interface AgentInferResult {
   sessionId?: string;
 }
 
+export interface AgentSimilarQuizResult {
+  question: {
+    id: string;
+    stem: string;
+    options: string[];
+    answerIndex: number;
+    analysis: string;
+  };
+}
+
 export interface AgentDockSessionMessage {
   id: string;
   agentId?: string | null;
@@ -1170,6 +1180,11 @@ export const api = {
     requestAgent<{ questions: { id: string; text: string; askType: string }[] }>('/agent/ask/suggestions', {
       method: 'POST',
       body: JSON.stringify({ learnerId, kpId }),
+    }),
+  askAgentSimilarQuiz: (learnerId: string, kpId: string | undefined, sessionId: string | undefined, pageContext: string | undefined, pageState: LearningPageContext | undefined) =>
+    requestAgent<AgentSimilarQuizResult>('/agent/ask/similar-quiz', {
+      method: 'POST',
+      body: JSON.stringify({ learnerId, kpId, sessionId, pageContext, pageState }),
     }),
   createAgentSession: (learnerId: string) =>
     requestAgent<AgentDockSession>('/agent-sessions', {

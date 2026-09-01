@@ -69,7 +69,7 @@ function sessionTag(title?: string | null): string {
 }
 
 /* ===== 消息气泡 ===== */
-function MessageBubble({ message }: { message: AgentMessage }) {
+function MessageBubble({ message, onAnswerQuizCard }: { message: AgentMessage; onAnswerQuizCard: (msgId: string, optIndex: number) => void }) {
   const isUser = message.kind === 'user';
   const text = 'text' in message ? message.text : '';
   const visibleText = isUser ? text.replace(/^\s*\[(?:当前页面|跨会话上下文)[：:][^\]]+\]\s*/g, '') : text;
@@ -92,6 +92,53 @@ function MessageBubble({ message }: { message: AgentMessage }) {
       </div>
     </div>
   );
+  if (message.kind === 'quiz-card') {
+    const options = message.options ?? [];
+    return (
+      <div className="flex justify-start">
+        <div className="w-[92%] rounded-2xl rounded-bl-md border border-hairline bg-paper p-3.5">
+          <div className="flex items-center gap-2">
+            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-brand text-paper"><Brain size={13} /></span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-brand">做题卡片</span>
+          </div>
+          <p className="mt-2 whitespace-pre-wrap text-[13px] leading-[1.7] text-ink">{message.stem}</p>
+          <div className="mt-2.5 space-y-1.5">
+            {options.map((option, idx) => {
+              const picked = message.picked === idx;
+              const correct = message.answerIndex === idx;
+              const settled = !!message.settled;
+              return (
+                <button
+                  key={`${message.id}-${idx}`}
+                  type="button"
+                  disabled={settled}
+                  onClick={() => onAnswerQuizCard(message.id, idx)}
+                  className={cn(
+                    'flex w-full items-start gap-2 rounded-xl border px-3 py-2 text-left text-[12.5px] leading-5 transition',
+                    !settled && 'border-hairline bg-paper text-ink hover:border-brand/50 hover:bg-brand-tint/20',
+                    settled && correct && 'border-emerald-400 bg-emerald-50 text-emerald-900',
+                    settled && !correct && picked && 'border-brand-danger/60 bg-brand-danger/5 text-brand-danger',
+                    settled && !correct && !picked && 'border-hairline/70 text-ink-muted opacity-70',
+                  )}
+                >
+                  <span className="mt-0.5 shrink-0 font-semibold">{String.fromCharCode(65 + idx)}</span>
+                  <span className="min-w-0 flex-1 whitespace-pre-wrap">{option}</span>
+                  {settled && correct && <Check size={14} className="mt-1 shrink-0 text-emerald-600" />}
+                  {settled && !correct && picked && <X size={14} className="mt-1 shrink-0 text-brand-danger" />}
+                </button>
+              );
+            })}
+          </div>
+          {message.settled && (
+            <div className={cn('mt-3 rounded-xl px-3 py-2 text-[12px] leading-5', message.correct ? 'bg-emerald-50 text-emerald-900' : 'bg-brand-tint/30 text-ink')}>
+              <div className="font-semibold">{message.correct ? '答对了' : '答错了'}，解析：</div>
+              <p className="mt-1 whitespace-pre-wrap">{message.analysis || '没有更多解析。'}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
       <div className={cn(
@@ -124,7 +171,7 @@ function MessageBubble({ message }: { message: AgentMessage }) {
 
 /* ===== 消息流 + composer ===== */
 export function ChatStream({ compact = false, pageContext }: { compact?: boolean; pageContext?: string }) {
-  const { messages, askFree, askFreeWithImage, suggestions, weakest, pageContextEnabled, setPageContextEnabled } = useAgent();
+  const { messages, askFree, askFreeWithImage, askSimilarQuiz, answerQuizCard, suggestions, weakest, pageContextEnabled, setPageContextEnabled } = useAgent();
   const [input, setInput] = useState('');
   const [image, setImage] = useState<{ name: string; url: string; blob?: Blob } | null>(null);
   const [recording, setRecording] = useState(false);
@@ -273,7 +320,7 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
           </div>
         ) : (
           <div className="space-y-3">
-            {messages.map((m) => <MessageBubble key={m.id} message={m} />)}
+            {messages.map((m) => <MessageBubble key={m.id} message={m} onAnswerQuizCard={answerQuizCard} />)}
           </div>
         )}
       </div>
@@ -284,7 +331,14 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
             <button
               key={action}
               type="button"
-              onClick={() => askFree(action === '出一道类似的题' ? '出一道与这道题思路相近的练习题，给出选项，让我直接在对话框里作答' : action, collectLearningPageContext())}
+              onClick={() => {
+                const ctx = collectLearningPageContext();
+                if (action === '出一道类似的题') {
+                  void askSimilarQuiz(ctx);
+                } else {
+                  askFree(action, ctx);
+                }
+              }}
               className="shrink-0 rounded-full border border-brand/20 bg-paper px-2.5 py-1 text-[10.5px] font-medium text-brand transition hover:border-brand/45 hover:bg-brand-tint/40"
             >
               {action}
