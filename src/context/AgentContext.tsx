@@ -159,6 +159,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const [msgsAll, setMsgsAll] = useState<Record<string, AgentMessage[]>>(() => readJSON(K_MSGS, {}));
   const [sessions, setSessions] = useState<AgentDockSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const sessionSelectionLocked = useRef(false);
   const [confAll, setConfAll] = useState<Record<string, Record<string, number>>>(() => readJSON(K_CONF, {}));
   const [logAll, setLogAll] = useState<Record<string, string[]>>(() => readJSON(K_LOG, {}));
   const [decAll, setDecAll] = useState<Record<string, DecisionEntry[]>>(() => readJSON(K_DEC, {}));
@@ -223,6 +224,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       );
       setSessions(mine);
       if (!mine.length) return;
+      if (sessionSelectionLocked.current) return;
       const latest = mine[0];
       setCurrentSessionId(latest.id);
       const remote: AgentMessage[] = (latest.messages ?? [])
@@ -400,11 +402,13 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       const created = await api.createAgentSession(lid);
       setSessions((prev) => [created, ...prev.filter((s) => s.id !== created.id)]);
       setCurrentSessionId(created.id);
+      sessionSelectionLocked.current = true;
       setMsgsAll((prev) => ({ ...prev, [lid]: [] }));
     };
     const switchAgentSession = async (id: string) => {
       if (id === currentSessionId) return;
       setCurrentSessionId(id);
+      sessionSelectionLocked.current = true;
       try {
         const { messages: list } = await api.getAgentSessionMessages(id);
         const remote: AgentMessage[] = (list ?? [])
@@ -420,6 +424,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       if (id === currentSessionId) {
         const next = remaining[0];
         setCurrentSessionId(next?.id ?? null);
+        sessionSelectionLocked.current = true;
         setMsgsAll((prev) => ({ ...prev, [lid]: [] }));
         if (next) {
           try {
@@ -451,6 +456,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         activeSession = created;
         setSessions((prev) => [created, ...prev.filter((s) => s.id !== created.id)]);
         setCurrentSessionId(sid);
+        sessionSelectionLocked.current = true;
         setMsgsAll((prev) => ({ ...prev, [lid]: [] }));
       }
       // Only the first real question names a new/default session. Later messages do not overwrite it.
