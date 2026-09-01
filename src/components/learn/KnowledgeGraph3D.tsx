@@ -1982,24 +1982,34 @@ export default function KnowledgeGraph3D({
   }, [nodes]);
 
   return (
-    <div
-      ref={containerRef}
-      className={`relative h-[52dvh] min-h-[360px] w-full overflow-hidden rounded-2xl border border-hairline lg:h-[600px] ${className}`}
-      style={{
-        backgroundImage: [
-          'radial-gradient(1px 1px at 12% 22%, rgba(255,255,255,0.9) 50%, transparent 51%)',
-          'radial-gradient(1px 1px at 28% 45%, rgba(255,255,255,0.7) 50%, transparent 51%)',
-          'radial-gradient(1.5px 1.5px at 64% 24%, rgba(255,255,255,0.85) 50%, transparent 51%)',
-          'radial-gradient(1px 1px at 82% 56%, rgba(255,255,255,0.6) 50%, transparent 51%)',
-          'radial-gradient(1px 1px at 48% 72%, rgba(255,255,255,0.8) 50%, transparent 51%)',
-          'radial-gradient(1.5px 1.5px at 91% 16%, rgba(255,255,255,0.7) 50%, transparent 51%)',
-          'radial-gradient(ellipse at 50% 30%, #EAF4FF 0%, #CFE4FF 50%, #A9CCFF 100%)',
-        ].join(', '),
-        backgroundColor: '#CFE4FF',
-      }}
-      onWheel={(e) => e.stopPropagation()}
-      onTouchMove={(e) => e.stopPropagation()}
-    >
+    <>
+      <style>{`@keyframes lf-star-twinkle { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }`}</style>
+      <div
+        ref={containerRef}
+        className={`relative h-[52dvh] min-h-[360px] w-full overflow-hidden rounded-2xl border border-hairline lg:h-[600px] ${className}`}
+        style={{
+          backgroundImage: 'linear-gradient(180deg, #0B1F3A 0%, #102A4C 55%, #07182F 100%)',
+          backgroundColor: '#081A33',
+        }}
+        onWheel={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
+      >
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundImage: [
+              'radial-gradient(1px 1px at 12% 22%, rgba(255,255,255,0.95) 50%, transparent 51%)',
+              'radial-gradient(1px 1px at 28% 45%, rgba(255,255,255,0.75) 50%, transparent 51%)',
+              'radial-gradient(1.5px 1.5px at 64% 24%, rgba(255,255,255,0.9) 50%, transparent 51%)',
+              'radial-gradient(1px 1px at 82% 56%, rgba(255,255,255,0.65) 50%, transparent 51%)',
+              'radial-gradient(1px 1px at 48% 72%, rgba(255,255,255,0.85) 50%, transparent 51%)',
+              'radial-gradient(1.5px 1.5px at 91% 16%, rgba(255,255,255,0.75) 50%, transparent 51%)',
+              'radial-gradient(1px 1px at 38% 10%, rgba(255,255,255,0.8) 50%, transparent 51%)',
+              'radial-gradient(1.5px 1.5px at 73% 68%, rgba(255,255,255,0.7) 50%, transparent 51%)',
+            ].join(', '),
+            animation: 'lf-star-twinkle 4s ease-in-out infinite alternate',
+          }}
+        />
       <Canvas
         onPointerMissed={() => {
           onSelectKp(null);
@@ -2095,5 +2105,6 @@ export default function KnowledgeGraph3D({
       </div>
 
     </div>
+    </>
   );
 }
