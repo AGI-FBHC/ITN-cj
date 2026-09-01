@@ -221,7 +221,7 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
     if (isResponding) return;
     try {
       const blob = await recorder.stop();
-      const { transcript } = await api.transcribeAssistantAudio(blob, JSON.stringify(collectLearningPageContext()));
+      const { transcript } = await api.transcribeAssistantAudio(blob);
       const text = transcript.trim();
       if (!text) return;
       const snapshot = collectLearningPageContext();

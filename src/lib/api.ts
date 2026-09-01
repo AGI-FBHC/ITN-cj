@@ -1166,12 +1166,10 @@ export const api = {
     if (!res.ok) throw new Error(`请求失败 (${res.status})`);
     await readAgentSse(res, (payload) => onEvent(payload as { type: string; content?: string; reply?: string; message?: string; note?: LearningNoteRecord }));
   },
-  transcribeAssistantAudio: async (audio: Blob, context: string = '{}') => {
+  transcribeAssistantAudio: (audio: Blob) => {
     const body = new FormData();
     body.append('audio', audio, 'voice.wav');
-    body.append('context', context);
-    const plan = await requestAgent<{ transcript?: string; reply?: string; action?: string }>('/assistant/audio-plan', { method: 'POST', body });
-    return { transcript: plan.transcript ?? '' };
+    return requestAgent<{ transcript: string }>('/assistant/asr', { method: 'POST', body });
   },
   askAgent: (learnerId: string, askType: string, text: string, kpId?: string, sessionId?: string) =>
     requestAgent<{ reply: string; evidence: string[] }>('/agent/ask', {
