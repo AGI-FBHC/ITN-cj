@@ -449,6 +449,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         return;
       }
       setCurrentSessionId(null);
+      setPageContextEnabled(false);
       sessionSelectionLocked.current = true;
       setMsgsAll((prev) => ({ ...prev, [lid]: [] }));
     };

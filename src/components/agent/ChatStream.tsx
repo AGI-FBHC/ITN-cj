@@ -290,6 +290,7 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
 
   return (
     <>
+      {messages.length > 0 && (
       <div className="shrink-0 border-b border-hairline/70 bg-brand-tint/20 px-3 py-2">
         <div className="flex w-full items-center gap-2">
           <button type="button" onClick={() => { setPageContextEnabled(!pageContextEnabled); if (pageContextEnabled) setContextOpen(false); }} title={pageContextEnabled ? '关闭当前所见' : '开启当前所见'} className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border bg-paper transition', pageContextEnabled ? 'border-brand/15 text-brand' : 'border-hairline text-ink-muted')}>
@@ -309,6 +310,7 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
           </div>
         )}
       </div>
+      )}
       {/* 消息流 */}
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
         {messages.length === 0 ? (
