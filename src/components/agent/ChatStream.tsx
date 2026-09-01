@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Brain, Check, ChevronDown, Eye, NotebookPen, Pencil, Plus, SendHorizonal, Trash2, X } from 'lucide-react';
+import { Brain, Check, ChevronDown, Eye, EyeOff, NotebookPen, Pencil, Plus, SendHorizonal, Trash2, X } from 'lucide-react';
 import { useAgent } from '@/context/AgentContext';
 import type { AgentMessage } from '@/context/AgentContext';
 import { cn } from '@/lib/utils';
@@ -116,7 +116,7 @@ function MessageBubble({ message }: { message: AgentMessage }) {
 
 /* ===== 消息流 + composer ===== */
 export function ChatStream({ compact = false, pageContext }: { compact?: boolean; pageContext?: string }) {
-  const { messages, askFree, suggestions, weakest } = useAgent();
+  const { messages, askFree, suggestions, weakest, pageContextEnabled, setPageContextEnabled } = useAgent();
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -175,12 +175,18 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
   return (
     <>
       <div className="shrink-0 border-b border-hairline/70 bg-brand-tint/20 px-3 py-2">
-        <button type="button" onClick={() => setContextOpen((value) => !value)} className="flex w-full items-center gap-2 text-left" aria-expanded={contextOpen}>
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-brand/15 bg-paper text-brand"><Eye size={12} /></span>
-          <span className="min-w-0 flex-1 truncate text-[11.5px] font-medium text-ink-2">当前所见：{describeLearningPageContext(currentContext)}</span>
-          <ChevronDown size={12} className={cn('shrink-0 text-ink-muted transition-transform', contextOpen && 'rotate-180')} />
-        </button>
-        {contextOpen && (
+        <div className="flex w-full items-center gap-2">
+          <button type="button" onClick={() => { setPageContextEnabled(!pageContextEnabled); if (pageContextEnabled) setContextOpen(false); }} title={pageContextEnabled ? '关闭当前所见' : '开启当前所见'} className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border bg-paper transition', pageContextEnabled ? 'border-brand/15 text-brand' : 'border-hairline text-ink-muted')}>
+            {pageContextEnabled ? <Eye size={12} /> : <EyeOff size={12} />}
+          </button>
+          <span className={cn('min-w-0 flex-1 truncate text-[11.5px] font-medium', pageContextEnabled ? 'text-ink-2' : 'text-ink-muted')}>
+            {pageContextEnabled ? `当前所见：${describeLearningPageContext(currentContext)}` : '当前所见已关闭'}
+          </span>
+          <button type="button" onClick={() => setContextOpen((value) => !value)} aria-expanded={contextOpen} className="shrink-0" disabled={!pageContextEnabled}>
+            <ChevronDown size={12} className={cn('text-ink-muted transition-transform', contextOpen && 'rotate-180', !pageContextEnabled && 'opacity-40')} />
+          </button>
+        </div>
+        {contextOpen && pageContextEnabled && (
           <div className="mt-2 rounded-xl border border-hairline/70 bg-paper/80 px-3 py-2 text-[10.5px] leading-5 text-ink-muted">
             <p>{currentContext.selection ? '将优先使用选中的文字' : currentContext.focus ? `当前焦点：${currentContext.focus.title || currentContext.focus.kind}` : '当前没有选中文字或专属卡片'}</p>
             <p className="mt-0.5">可见内容约 {currentContext.visibleText.length} 字{currentContext.entities.resourceOrTaskId ? ' · 已关联当前资源' : ''}</p>

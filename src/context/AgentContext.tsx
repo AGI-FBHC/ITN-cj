@@ -78,6 +78,8 @@ interface AgentContextValue {
   ask: (kind: AskKind) => void;
   /** 自由提问：直接回答，页面位置仅作为不可见上下文传递。 */
   askFree: (text: string, pageContext?: LearningPageContext) => void;
+  pageContextEnabled: boolean;
+  setPageContextEnabled: (v: boolean) => void;
   answerVerify: (msgId: string, qIndex: number, optIndex: number) => void;
   sessions: AgentDockSession[];
   currentSessionId: string | null;
@@ -162,6 +164,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<AgentDockSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const sessionSelectionLocked = useRef(false);
+  const [pageContextEnabled, setPageContextEnabled] = useState(true);
   const [confAll, setConfAll] = useState<Record<string, Record<string, number>>>(() => readJSON(K_CONF, {}));
   const [logAll, setLogAll] = useState<Record<string, string[]>>(() => readJSON(K_LOG, {}));
   const [decAll, setDecAll] = useState<Record<string, DecisionEntry[]>>(() => readJSON(K_DEC, {}));
@@ -463,29 +466,32 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           setSessions((prev) => prev.map((s) => s.id === sid ? updated : s));
         }).catch(() => {/* ignore */});
       }
-      const currentPage = pageContext ?? collectLearningPageContext();
-      const ctxMap = readJSON<Record<string, SessionStageRecord[]>>(K_SESSION_CTX, {});
-      const history = ctxMap[sid] ?? [];
-      const bridge = buildCrossPageBridge(history, currentPage);
-      const sendText = bridge ? `${bridge}\n${userText}` : userText;
-      const stage: SessionStageRecord = {
-        pageType: currentPage.pageType,
-        pageTitle: currentPage.pageTitle,
-        ...(currentPage.focus?.title ? { focusTitle: currentPage.focus.title } : {}),
-        route: currentPage.route,
-        askedAt: new Date().toISOString(),
-      };
-      ctxMap[sid] = [...history, stage].slice(-6);
-      save(K_SESSION_CTX, ctxMap);
-      if (bridge && history.length) {
-        const last = history[history.length - 1];
-        const recent = history.slice(-4);
-        const startStage = history.length - recent.length + 1;
-        const stageLines = recent
-          .map((item, index) => `阶段${startStage + index}：${item.pageType} · ${item.focusTitle || item.pageTitle}`)
-          .join('\n');
-        const currentFocus = currentPage.focus?.title || currentPage.pageTitle;
-        append({ id: mid(), kind: 'stage', text: `跨页面承接\n${stageLines}\n现在：${currentPage.pageType} · ${currentFocus}`, time: now() });
+      const currentPage = pageContextEnabled ? (pageContext ?? collectLearningPageContext()) : undefined;
+      let bridge: string | null = null;
+      let sendText = userText;
+      if (currentPage) {
+        const ctxMap = readJSON<Record<string, SessionStageRecord[]>>(K_SESSION_CTX, {});
+        const history = ctxMap[sid] ?? [];
+        bridge = buildCrossPageBridge(history, currentPage);
+        sendText = bridge ? `${bridge}\n${userText}` : userText;
+        const stage: SessionStageRecord = {
+          pageType: currentPage.pageType,
+          pageTitle: currentPage.pageTitle,
+          ...(currentPage.focus?.title ? { focusTitle: currentPage.focus.title } : {}),
+          route: currentPage.route,
+          askedAt: new Date().toISOString(),
+        };
+        ctxMap[sid] = [...history, stage].slice(-6);
+        save(K_SESSION_CTX, ctxMap);
+        if (bridge && history.length) {
+          const recent = history.slice(-4);
+          const startStage = history.length - recent.length + 1;
+          const stageLines = recent
+            .map((item, index) => `阶段${startStage + index}：${item.pageType} · ${item.focusTitle || item.pageTitle}`)
+            .join('\n');
+          const currentFocus = currentPage.focus?.title || currentPage.pageTitle;
+          append({ id: mid(), kind: 'stage', text: `跨页面承接\n${stageLines}\n现在：${currentPage.pageType} · ${currentFocus}`, time: now() });
+        }
       }
       append({ id: mid(), kind: 'user', text: userText, time: now() });
       const pendingId = mid();
@@ -496,8 +502,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           lid, askType, sendText,
           askType === 'free' ? undefined : weakest?.id,
           sid ?? undefined,
-          pageContext?.route,
-          pageContext,
+          currentPage?.route,
+          currentPage,
           (event) => {
             if (event.type === 'reply_delta' && event.content) {
               acc += event.content;
@@ -637,6 +643,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       pushSignal,
       ask,
       askFree,
+      pageContextEnabled,
+      setPageContextEnabled,
       answerVerify,
       sessions,
       currentSessionId,
@@ -645,7 +653,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       deleteAgentSession,
       renameAgentSession,
     };
-  }, [msgsAll, confAll, logAll, decAll, seen, unread, open, latestHint, currentLearner, currentLearnerId, applyWriteback, weakest, kpNameById, learningMap, suggestions, refreshSuggestions, sessions, currentSessionId]);
+  }, [msgsAll, confAll, logAll, decAll, seen, unread, open, latestHint, currentLearner, currentLearnerId, applyWriteback, weakest, kpNameById, learningMap, suggestions, refreshSuggestions, sessions, currentSessionId, pageContextEnabled]);
 
   return <AgentContext.Provider value={value}>{children}</AgentContext.Provider>;
 }
