@@ -68,10 +68,10 @@ function createSoftPlushTexture(size = 256): THREE.Texture {
   const g = ctx.createRadialGradient(c, c, 0, c, c, c);
   g.addColorStop(0, 'rgba(255,255,255,1)');
   g.addColorStop(0.35, 'rgba(255,255,255,1)');
-  g.addColorStop(0.55, 'rgba(255,255,255,0.95)');
-  g.addColorStop(0.72, 'rgba(255,255,255,0.7)');
-  g.addColorStop(0.88, 'rgba(255,255,255,0.3)');
-  g.addColorStop(1, 'rgba(255,255,255,0)');
+  g.addColorStop(0.55, 'rgba(255,255,255,0.96)');
+  g.addColorStop(0.72, 'rgba(255,255,255,0.82)');
+  g.addColorStop(0.88, 'rgba(255,255,255,0.6)');
+  g.addColorStop(1, 'rgba(255,255,255,0.42)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, size, size);
   const tex = new THREE.CanvasTexture(canvas);
