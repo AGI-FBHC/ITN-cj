@@ -1636,6 +1636,41 @@ function Edge3D({
 }
 
 /** 场景 */
+function ConstellationField() {
+  const { positions, links } = useMemo(() => {
+    const rand = (a: number, b: number) => a + Math.random() * (b - a);
+    const clusters = Array.from({ length: 3 }).map(() => {
+      const cx = rand(-70, 70);
+      const cy = rand(-45, 45);
+      const cz = rand(-105, -75);
+      return Array.from({ length: 5 }).map(() => new THREE.Vector3(
+        cx + rand(-9, 9),
+        cy + rand(-7, 7),
+        cz + rand(-4, 4),
+      ));
+    });
+    const stars = clusters.flat();
+    return {
+      positions: stars.flatMap((p) => p.toArray()),
+      links: clusters.flatMap((pts) => pts.slice(0, -1).map((p, i) => ({ from: p, to: pts[i + 1] }))),
+    };
+  }, []);
+
+  return (
+    <group raycast={() => null}>
+      <points>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[new Float32Array(positions), 3]} />
+        </bufferGeometry>
+        <pointsMaterial size={0.35} color="#BBD6FF" transparent opacity={0.75} sizeAttenuation depthWrite={false} />
+      </points>
+      {links.map((l, i) => (
+        <Line key={i} points={[l.from, l.to]} color="#A9C9FF" lineWidth={1} transparent opacity={0.35} depthWrite={false} />
+      ))}
+    </group>
+  );
+}
+
 function SceneContent({
   nodes,
   edges,
@@ -1733,6 +1768,7 @@ function SceneContent({
 
     return (
     <>
+      <ConstellationField />
       <ambientLight intensity={0.7} />
       <directionalLight position={[25, 25, 25]} intensity={0.6} />
 
