@@ -32,6 +32,23 @@ const RES_META: Array<{ type: ResType; label: string; icon: typeof BookOpen }> =
 
 interface TopicOption { id: string; label: string; chapterId: string; chapterName: string }
 
+/**
+ * 同一母版可能因为重新生成留下多条任务。资源副本一旦成功存在，就不能被
+ * 后续失败记录遮蔽；进行中的任务仅用于表达当前正在重新生成。
+ */
+function resolveCustomizeTask(
+  tasks: LearningResourceGenerationTask[],
+  resourceType: ResType,
+  templateId: string,
+) {
+  const matched = tasks.filter((task) =>
+    task.resourceType === resourceType && task.request?.adminResourceId === templateId,
+  );
+  return matched.find((task) => activeStatuses.has(task.status))
+    ?? matched.find((task) => task.status === 'completed' && Boolean(task.resourceId))
+    ?? matched[0];
+}
+
 export default function CustomizeTeam() {
   const { kpId: routeKpId } = useParams<{ kpId: string }>();
   const navigate = useNavigate();
@@ -108,14 +125,14 @@ export default function CustomizeTeam() {
     return () => { alive = false; window.clearInterval(timer); };
   }, []);
 
-  /* 每类资源的行数据（母版 ID 精确匹配） */
+  /* 每类资源的行数据：必须同时归属于当前知识点，不能拿全领域第一份同类型母版。 */
   const rows = useMemo(() => RES_META.map(({ type, label, icon }) => {
-    const template = templates.find((item) => item.type === type);
-    const matched = template ? tasks.find((t) => t.resourceType === type && t.request?.adminResourceId === template.id) : undefined;
+    const template = templates.find((item) => item.nodeCode === activeKpId && item.type === type);
+    const matched = template ? resolveCustomizeTask(tasks, type, template.id) : undefined;
     const busy = Boolean(matched && activeStatuses.has(matched.status));
     const customized = Boolean(matched?.status === 'completed' && matched.resourceId);
     return { type, label, icon, template, task: matched, busy, customized };
-  }), [templates, tasks]);
+  }), [activeKpId, templates, tasks]);
 
   /* 泳道展示的任务：手动选择优先，否则最新进行中，否则最新完成 */
   const effectiveTaskId = useMemo(() => {
@@ -221,7 +238,7 @@ export default function CustomizeTeam() {
     return RES_META.map(({ type }) => {
       const tpl = topicTemplates.find((item) => item.type === type);
       if (!tpl) return '#D8DDD6'; // 暂无母版
-      const task = tasks.find((t) => t.resourceType === type && t.request?.adminResourceId === tpl.id);
+      const task = resolveCustomizeTask(tasks, type, tpl.id);
       if (task && activeStatuses.has(task.status)) return '#D89238'; // 定制中
       if (task?.status === 'completed' && task.resourceId) return '#4E7860'; // 已定制
       return '#8FA796'; // 未定制
