@@ -68,10 +68,10 @@ function createSoftPlushTexture(size = 256): THREE.Texture {
   const g = ctx.createRadialGradient(c, c, 0, c, c, c);
   g.addColorStop(0, 'rgba(255,255,255,1)');
   g.addColorStop(0.35, 'rgba(255,255,255,1)');
-  g.addColorStop(0.55, 'rgba(255,255,255,0.96)');
-  g.addColorStop(0.72, 'rgba(255,255,255,0.82)');
-  g.addColorStop(0.88, 'rgba(255,255,255,0.6)');
-  g.addColorStop(1, 'rgba(255,255,255,0.42)');
+  g.addColorStop(0.55, 'rgba(255,255,255,0.9)');
+  g.addColorStop(0.72, 'rgba(255,255,255,0.5)');
+  g.addColorStop(0.88, 'rgba(255,255,255,0.22)');
+  g.addColorStop(1, 'rgba(255,255,255,0.08)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, size, size);
   const tex = new THREE.CanvasTexture(canvas);
@@ -1424,7 +1424,7 @@ function Node3D({
 
     if (glowRef.current) {
       glowRef.current.opacity =
-        (dimmed ? 0.06 : hovered ? 0.55 : selected ? 0.5 : 0.34) * focusFade;
+        (dimmed ? 0.08 : hovered ? 0.65 : selected ? 0.6 : 0.45) * focusFade;
     }
     const text = textRef.current;
     if (text && (text.material as any).opacity !== undefined) {
