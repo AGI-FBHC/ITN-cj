@@ -185,7 +185,9 @@ export default function AgentDock() {
             exit={{ opacity: 0, scale: 0.92 }}
             transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
             className={cn(
-              'fixed top-3 flex h-[calc(100dvh-24px)] flex-col overflow-visible',
+              inSlidePlayer
+                ? 'fixed top-16 flex h-[calc(100dvh-76px)] flex-col overflow-visible'
+                : 'fixed top-3 flex h-[calc(100dvh-24px)] flex-col overflow-visible',
               inSlidePlayer ? 'z-[10010]' : 'z-50',
               'rounded-2xl border border-white/60',
               'bg-gradient-to-b from-white/90 to-white/75 backdrop-blur-2xl',
