@@ -454,9 +454,9 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         return;
       }
       setCurrentSessionId(null);
-      setPageContextEnabled(false);
       sessionSelectionLocked.current = true;
       setMsgsAll((prev) => ({ ...prev, [lid]: [] }));
+      append({ id: mid(), kind: 'stage', text: '阶段1：新对话', time: now() });
     };
     const switchAgentSession = async (id: string) => {
       if (id === currentSessionId) return;

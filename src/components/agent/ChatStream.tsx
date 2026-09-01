@@ -287,10 +287,11 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
       ? ['讲解这道题', '分析错误选项', '查看原文依据', ...(canOfferSimilarQuiz ? ['出一道类似的题'] : [])]
       : ['分析题干', '给我一点提示', '帮我排除选项']
     : [];
+  const hasChatMessage = messages.some((m) => m.kind !== 'stage');
 
   return (
     <>
-      {messages.length > 0 && (
+      {(!compact || hasChatMessage) && (
       <div className="shrink-0 border-b border-hairline/70 bg-brand-tint/20 px-3 py-2">
         <div className="flex w-full items-center gap-2">
           <button type="button" onClick={() => { setPageContextEnabled(!pageContextEnabled); if (pageContextEnabled) setContextOpen(false); }} title={pageContextEnabled ? '关闭当前所见' : '开启当前所见'} className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border bg-paper transition', pageContextEnabled ? 'border-brand/15 text-brand' : 'border-hairline text-ink-muted')}>
@@ -425,7 +426,7 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
 
 /* ===== 会话列表（全屏页面用） ===== */
 export function SessionList() {
-  const { sessions, currentSessionId, createAgentSession, switchAgentSession, deleteAgentSession, renameAgentSession } = useAgent();
+  const { sessions, currentSessionId, createAgentSession, switchAgentSession, deleteAgentSession, renameAgentSession, isResponding, setPageContextEnabled } = useAgent();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
 
@@ -434,7 +435,8 @@ export function SessionList() {
       <div className="shrink-0 border-b border-hairline px-3 py-2">
         <button
           type="button"
-          onClick={() => void createAgentSession()}
+          disabled={isResponding}
+          onClick={() => { if (isResponding) return; setPageContextEnabled(false); void createAgentSession(); }}
           className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-hairline bg-ink py-2 text-[13px] font-semibold text-paper transition hover:opacity-90"
         >
           <Plus size={14} />新对话
@@ -451,16 +453,17 @@ export function SessionList() {
               'group mb-0.5 flex cursor-pointer items-center gap-2 rounded-xl px-2.5 py-2 transition',
               s.id === currentSessionId ? 'bg-brand-tint/50' : 'hover:bg-paper-deep',
             )}
-            onClick={() => void switchAgentSession(s.id)}
+            onClick={() => { if (isResponding) return; void switchAgentSession(s.id); }}
           >
             <div className="min-w-0 flex-1">
               {editingId === s.id ? <input autoFocus value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Enter' && draftTitle.trim()) { event.stopPropagation(); void renameAgentSession(s.id, draftTitle).then(() => setEditingId(null)); } if (event.key === 'Escape') setEditingId(null); }} className="w-full rounded-md border border-brand/30 bg-paper px-2 py-1 text-[12px] text-ink outline-none" /> : <p className="truncate text-[12px] font-medium text-ink">{s.title || '未命名对话'}</p>}
               <p className="truncate text-[10px] text-ink-muted">{sessionTag(s.title)}</p>
             </div>
-            {editingId === s.id ? <><button type="button" onClick={(event) => { event.stopPropagation(); if (draftTitle.trim()) void renameAgentSession(s.id, draftTitle).then(() => setEditingId(null)); }} className="shrink-0 rounded-md p-1 text-brand"><Check size={12} /></button><button type="button" onClick={(event) => { event.stopPropagation(); setEditingId(null); }} className="shrink-0 rounded-md p-1 text-ink-muted"><X size={12} /></button></> : <button type="button" onClick={(event) => { event.stopPropagation(); setEditingId(s.id); setDraftTitle(s.title || ''); }} className="hidden shrink-0 rounded-md p-1 text-ink-muted transition hover:bg-brand-tint hover:text-brand group-hover:block"><Pencil size={12} /></button>}
+            {editingId === s.id ? <><button type="button" disabled={isResponding} onClick={(event) => { if (isResponding) return; event.stopPropagation(); if (draftTitle.trim()) void renameAgentSession(s.id, draftTitle).then(() => setEditingId(null)); }} className="shrink-0 rounded-md p-1 text-brand disabled:opacity-40"><Check size={12} /></button><button type="button" disabled={isResponding} onClick={(event) => { if (isResponding) return; event.stopPropagation(); setEditingId(null); }} className="shrink-0 rounded-md p-1 text-ink-muted disabled:opacity-40"><X size={12} /></button></> : <button type="button" disabled={isResponding} onClick={(event) => { if (isResponding) return; event.stopPropagation(); setEditingId(s.id); setDraftTitle(s.title || ''); }} className="hidden shrink-0 rounded-md p-1 text-ink-muted transition hover:bg-brand-tint hover:text-brand group-hover:block disabled:cursor-not-allowed disabled:opacity-40"><Pencil size={12} /></button>}
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); void deleteAgentSession(s.id); }}
+              disabled={isResponding}
+              onClick={(e) => { if (isResponding) return; e.stopPropagation(); void deleteAgentSession(s.id); }}
               className="hidden shrink-0 rounded-md p-1 text-ink-muted transition hover:bg-brand-danger/10 hover:text-brand-danger group-hover:block"
             >
               <Trash2 size={12} />

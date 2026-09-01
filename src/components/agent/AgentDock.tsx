@@ -34,7 +34,7 @@ function writeWidth(w: number) {
 }
 
 export default function AgentDock() {
-  const { unread, open, setOpen, latestHint, sessions, currentSessionId, createAgentSession, switchAgentSession } = useAgent();
+  const { unread, open, setOpen, latestHint, sessions, currentSessionId, createAgentSession, switchAgentSession, isResponding } = useAgent();
   const navigate = useNavigate();
   const location = useLocation();
   const inCourse = location.pathname.startsWith('/learn/');
@@ -157,11 +157,13 @@ export default function AgentDock() {
 
         <button
           type="button"
-          onClick={() => setOpen(!open)}
+          onClick={() => { if (isResponding) return; setOpen(!open); }}
           title="伴学助手"
+          disabled={isResponding}
           className={cn(
             'relative flex h-[52px] w-[52px] items-center justify-center rounded-full border-2 shadow-warm-lg transition-all duration-200 hover:scale-105',
             open ? 'border-brand bg-paper text-brand' : 'border-brand/20 bg-brand text-paper',
+            isResponding && 'cursor-not-allowed opacity-50',
           )}
         >
           {open ? <X size={20} /> : <Brain size={22} />}
@@ -223,10 +225,10 @@ export default function AgentDock() {
                 <GripHorizontal size={12} className="text-ink-muted/60" />
               </div>
               <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1.5">
-                <button type="button" onClick={() => { setOpen(false); navigate('/chat'); }} title="全屏" onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} className="flex h-5 w-5 items-center justify-center rounded-full bg-[#28C840] text-paper shadow-sm transition-transform hover:scale-110">
+                <button type="button" disabled={isResponding} onClick={() => { if (isResponding) return; setOpen(false); navigate('/chat'); }} title="全屏" onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} className="flex h-5 w-5 items-center justify-center rounded-full bg-[#28C840] text-paper shadow-sm transition-transform hover:scale-110 disabled:cursor-not-allowed disabled:opacity-40">
                   <Maximize2 size={9} />
                 </button>
-                <button type="button" onClick={() => setOpen(false)} title="关闭" onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} className="flex h-5 w-5 items-center justify-center rounded-full bg-[#FF5F57] text-paper shadow-sm transition-transform hover:scale-110">
+                <button type="button" disabled={isResponding} onClick={() => { if (isResponding) return; setOpen(false); }} title="关闭" onMouseDown={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} className="flex h-5 w-5 items-center justify-center rounded-full bg-[#FF5F57] text-paper shadow-sm transition-transform hover:scale-110 disabled:cursor-not-allowed disabled:opacity-40">
                   <X size={10} />
                 </button>
               </div>
@@ -241,8 +243,9 @@ export default function AgentDock() {
                 <p className="shrink-0 text-[13px] font-semibold text-ink">伴学助手</p>
                 {sessions.length > 0 && (
                   <select
+                    disabled={isResponding}
                     value={currentSessionId ?? ''}
-                    onChange={(e) => { if (e.target.value) void switchAgentSession(e.target.value); }}
+                    onChange={(e) => { if (isResponding) return; if (e.target.value) void switchAgentSession(e.target.value); }}
                     className="min-w-0 flex-1 truncate rounded-md border border-hairline bg-white/80 px-1.5 py-0.5 text-[10px] text-ink outline-none"
                   >
                     {sessions.map((s) => (
@@ -250,7 +253,7 @@ export default function AgentDock() {
                     ))}
                   </select>
                 )}
-                <button type="button" onClick={() => void createAgentSession()} title="新建会话" className="lf-row-btn !p-1">
+                <button type="button" disabled={isResponding} onClick={() => { if (isResponding) return; void createAgentSession(); }} title="新建会话" className="lf-row-btn !p-1 disabled:cursor-not-allowed disabled:opacity-40">
                   <Plus size={11} />
                 </button>
               </div>
