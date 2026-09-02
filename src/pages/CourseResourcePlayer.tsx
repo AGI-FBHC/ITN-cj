@@ -392,7 +392,7 @@ function QuizBlock({
   const [submitting, setSubmitting] = useState(false);
   const startedAt = useRef(Date.now());
   const proactiveSentRef = useRef(false);
-  const { askFree, setOpen } = useAgent();
+  const { askFree, askSimilarQuiz, setOpen } = useAgent();
 
   const answer = async (optionIndex: number) => {
     if (selected !== null || submitting) return;
@@ -427,6 +427,9 @@ function QuizBlock({
           correctIndex,
           explanation: String(question.explanation || result.explanation || ''),
         }));
+        if (!result.correct) {
+          void askSimilarQuiz();
+        }
       }
       notifyLearningStateChanged(learnerId ?? resource.learnerId);
       const optimisticState = {
@@ -1456,3 +1459,4 @@ ${chatContext.content}
   )}
   </div>;
 }
+

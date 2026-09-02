@@ -83,7 +83,7 @@ function QuizCard({ slide, onInteractionChange, resourceId, initialPicked = null
   const [picked, setPicked] = useState<QuizValue | null>(initialPicked);
   const [feedback, setFeedback] = useState<{ correct: boolean; correctIndex?: number; explanation?: string } | null>(initialFeedback);
   const proactiveSentRef = useRef(false);
-  const { askFree, setOpen } = useAgent();
+  const { askFree, askSimilarQuiz, setOpen } = useAgent();
   const correct = (question.correctAnswer ?? question.answer ?? question.correctIndex) as QuizValue | undefined;
   const localCorrectIndex = typeof correct === 'string' && /^[A-Za-z]$/.test(correct)
     ? correct.toUpperCase().charCodeAt(0) - 65 : Number(correct);
@@ -102,15 +102,19 @@ function QuizCard({ slide, onInteractionChange, resourceId, initialPicked = null
       proactiveSentRef.current = true;
       const optionLabels = options.map((item) => item.label);
       setOpen(true);
+      const selectedCorrect = String(option) === String(correct) || index === localCorrectIndex;
       askFree(buildQuizFollowUpPrompt({
         title: slide.title,
         stem: String(question.stem ?? question.question ?? question.title ?? slide.title),
         options: optionLabels,
         selectedIndex: index,
-        correct: String(option) === String(correct) || index === localCorrectIndex,
+        correct: selectedCorrect,
         correctIndex: Number.isFinite(localCorrectIndex) ? localCorrectIndex : null,
         explanation: String(question.explanation ?? question.analysis ?? ''),
       }));
+      if (!selectedCorrect) {
+        void askSimilarQuiz();
+      }
     }
     const questionId = String(question.id ?? question.questionId ?? slide.id ?? '');
     const fallback = {
@@ -603,6 +607,7 @@ export default function SlidePlayer() {
     </main>
   );
 }
+
 
 
 

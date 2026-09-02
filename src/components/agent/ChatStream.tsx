@@ -24,6 +24,8 @@ const shortLabel = (text: string | undefined, max = 18) => {
 
 const cleanOptionLabel = (text: string) => String(text ?? '').replace(/^\s*[A-Ha-h][.、:：)）\s]+/, '').trim();
 
+const isQuizRequest = (text: string) => /出题|出个练习|练习题|类似题/.test(text);
+
 function pageAwareSuggestions(ctx: LearningPageContext): string[] {
   const focusKind = ctx.focus?.kind ?? '';
   const focusTitle = shortLabel(ctx.focus?.title);
@@ -407,7 +409,7 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
                 <button
                   key={s}
                   type="button"
-                  onClick={() => askFree(s, currentContext)}
+                  onClick={() => { if (isQuizRequest(s)) { void askSimilarQuiz(currentContext); } else { askFree(s, currentContext); } }}
                   disabled={isResponding}
                   className="rounded-xl border border-hairline bg-paper px-3 py-2 text-left text-[12px] text-ink transition hover:border-brand/40 hover:bg-brand-tint/20 disabled:cursor-not-allowed disabled:opacity-50"
                 >
@@ -430,7 +432,7 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
                         disabled={isResponding}
                         onClick={() => {
                           const ctx = collectLearningPageContext();
-                          if (option === '出一道类似的题') {
+                          if (isQuizRequest(option)) {
                             void askSimilarQuiz(ctx);
                           } else {
                             askFree(option, ctx);
@@ -458,7 +460,7 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
               disabled={isResponding}
               onClick={() => {
                 const ctx = collectLearningPageContext();
-                if (action === '出一道类似的题') {
+                if (isQuizRequest(action)) {
                   void askSimilarQuiz(ctx);
                 } else {
                   askFree(action, ctx);
@@ -579,6 +581,9 @@ export function SessionList() {
     </>
   );
 }
+
+
+
 
 
 

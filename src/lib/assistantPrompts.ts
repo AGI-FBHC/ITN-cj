@@ -26,6 +26,7 @@ export function buildQuizFollowUpPrompt(input: QuizFollowUpInput): string {
     `判断：${input.correct ? '回答正确' : '回答错误'}`,
     correct ? `正确答案：${correct}` : '',
     input.explanation ? `解析：${input.explanation}` : '',
-    '请先简短判断我对这道题的理解是否到位，结合解析讲清关键点；如果我理解不深或答错了，请再出一道与本题思想相近或相似度高的题目让我巩固。',
+    '请先简短判断我对这道题的理解是否到位，结合解析讲清关键点；如果我没理解透，请明确指出我该补哪个概念。',
   ].filter(Boolean).join('\n');
 }
+
