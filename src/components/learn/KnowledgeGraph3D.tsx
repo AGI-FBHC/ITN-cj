@@ -1635,38 +1635,6 @@ function Edge3D({
   );
 }
 
-/** 场景 */
-function ConstellationField() {
-  const { positions } = useMemo(() => {
-    const rand = (a: number, b: number) => a + Math.random() * (b - a);
-    const stars = Array.from({ length: 10 }).map(() => new THREE.Vector3(
-      rand(-85, 85),
-      rand(-55, 55),
-      rand(-120, -80),
-    ));
-    return {
-      positions: stars.flatMap((p) => p.toArray()),
-    };
-  }, []);
-  const matRef = useRef<THREE.PointsMaterial | null>(null);
-  useFrame((state) => {
-    if (matRef.current) {
-      matRef.current.opacity = 0.55 + Math.sin(state.clock.elapsedTime * 1.8) * 0.35;
-    }
-  });
-
-  return (
-    <group raycast={() => null}>
-      <points>
-        <bufferGeometry>
-          <bufferAttribute attach="attributes-position" args={[new Float32Array(positions), 3]} />
-        </bufferGeometry>
-        <pointsMaterial ref={matRef} size={0.9} color="#EAF3FF" transparent opacity={0.75} sizeAttenuation depthWrite={false} />
-      </points>
-    </group>
-  );
-}
-
 function SceneContent({
   nodes,
   edges,
@@ -1764,7 +1732,6 @@ function SceneContent({
 
     return (
     <>
-      <ConstellationField />
       <ambientLight intensity={0.7} />
       <directionalLight position={[25, 25, 25]} intensity={0.6} />
 
@@ -2015,33 +1982,12 @@ export default function KnowledgeGraph3D({
 
   return (
     <>
-      <style>{`@keyframes lf-star-twinkle { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }`}</style>
       <div
         ref={containerRef}
-        className={`relative h-[52dvh] min-h-[360px] w-full overflow-hidden rounded-2xl border border-hairline lg:h-[600px] ${className}`}
-        style={{
-          backgroundImage: 'linear-gradient(180deg, #EAF4FF 0%, #CFE4FF 55%, #B9D6FF 100%)',
-          backgroundColor: '#CFE4FF',
-        }}
+        className={`relative h-[52dvh] min-h-[360px] w-full overflow-hidden rounded-2xl border border-hairline bg-gradient-to-br from-paper via-[#F5F3EA] to-brand-tint/20 lg:h-[600px] ${className}`}
         onWheel={(e) => e.stopPropagation()}
         onTouchMove={(e) => e.stopPropagation()}
       >
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundImage: [
-              'radial-gradient(1px 1px at 12% 22%, rgba(255,255,255,0.95) 50%, transparent 51%)',
-              'radial-gradient(1px 1px at 28% 45%, rgba(255,255,255,0.75) 50%, transparent 51%)',
-              'radial-gradient(1.5px 1.5px at 64% 24%, rgba(255,255,255,0.9) 50%, transparent 51%)',
-              'radial-gradient(1px 1px at 82% 56%, rgba(255,255,255,0.65) 50%, transparent 51%)',
-              'radial-gradient(1px 1px at 48% 72%, rgba(255,255,255,0.85) 50%, transparent 51%)',
-              'radial-gradient(1.5px 1.5px at 91% 16%, rgba(255,255,255,0.75) 50%, transparent 51%)',
-              'radial-gradient(1px 1px at 38% 10%, rgba(255,255,255,0.8) 50%, transparent 51%)',
-              'radial-gradient(1.5px 1.5px at 73% 68%, rgba(255,255,255,0.7) 50%, transparent 51%)',
-            ].join(', '),
-            animation: 'lf-star-twinkle 4s ease-in-out infinite alternate',
-          }}
-        />
       <Canvas
         onPointerMissed={() => {
           onSelectKp(null);
