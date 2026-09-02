@@ -257,9 +257,7 @@ export default function AppShell() {
                 <span className="hidden lg:inline">笔记</span>
                 {notes.length > 0 && <span className="flex min-w-4 items-center justify-center rounded-full bg-brand-tint px-1 font-mono text-[9px] leading-4 text-brand">{notes.length > 99 ? '99+' : notes.length}</span>}
               </Link>
-              <button
-                type="button"
-                to="/me/profile"
+              <Link to="/me/profile"
                 title={`当前学习者：${currentLearner.name}`}
                 className="flex items-center gap-2 rounded-[10px] border border-hairline bg-card-warm py-1.5 pl-1.5 pr-2.5 transition-all duration-200 hover:border-brand/35"
               >
