@@ -1820,6 +1820,7 @@ function SceneContent({
             fadeOnFocus={focusId !== null && node.id !== focusId}
             nodeScaleRef={nodeScaleRef}
 
+              showLearned={showLearned}
               showProgressRings={showProgressRings}
             target={nodeTargets?.[node.id]?.target}
 
