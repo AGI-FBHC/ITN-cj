@@ -169,7 +169,7 @@ export interface LearningMapView {
   learned: Set<string>;
   status: Record<string, string>;
   activeKp: string | null;
-  resources: Record<string, Array<GeneratedResource & { id: string; learned?: boolean; started?: boolean }>>;
+  resources: Record<string, Array<GeneratedResource & { id: string; learned?: boolean; started?: boolean; progressRatio?: number; masteryRatio?: number }>>;
   presentations: PresentationTaskSummary[];
   goalId: string | null;
   /** 目标岗位门槛：nodeCode → { target, name }（知识点继承所属章节） */
@@ -583,7 +583,7 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
       note: edge.note ?? '',
     }));
 
-    const resourceByKp: Record<string, Array<GeneratedResource & { id: string; learned?: boolean; started?: boolean }>> = {};
+    const resourceByKp: Record<string, Array<GeneratedResource & { id: string; learned?: boolean; started?: boolean; progressRatio?: number; masteryRatio?: number }>> = {};
     resources.forEach((resource) => {
       if (!resource.kpId) return;
       const list = resourceByKp[resource.kpId] ??= [];
@@ -598,6 +598,8 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
         updatedAt: resource.updatedAt,
         learned: resource.learned,
         started: resource.started,
+        progressRatio: resource.progressRatio,
+        masteryRatio: resource.masteryRatio,
         kbRefs: [],
       });
     });

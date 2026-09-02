@@ -77,7 +77,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
   topicProgress?: Record<string, number>;
   graphNodes?: GraphNode[];
   path?: PathNode[];
-  resources?: Array<GeneratedResource & { id?: string; learned?: boolean }>;
+  resources?: Array<GeneratedResource & { id?: string; learned?: boolean; started?: boolean; progressRatio?: number; masteryRatio?: number }>;
   presentations?: PresentationTaskSummary[];
   knowledgeMap?: {
     chapters: Array<{ id: string; name: string; topics: string[] }>;
@@ -170,7 +170,12 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
     const values = (graphNodes ?? []).filter((node) => node.kind === 'topic' && node.kpId === kpId).map((node) => topicProgress?.[node.id] ?? 0);
     return values.length ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length) : 0;
   })();
-  const res: Array<GeneratedResource & { id?: string; learned?: boolean }> = resourcesProp ?? [];
+  const res: Array<GeneratedResource & { id?: string; learned?: boolean; started?: boolean; progressRatio?: number; masteryRatio?: number }> = resourcesProp ?? [];
+  const learningStatusOf = (item?: (typeof res)[number] | null) => {
+    if (item?.learned) return { label: '已学完', cls: 'text-brand' };
+    if (item?.started || (item?.progressRatio ?? 0) > 0) return { label: '未学完', cls: 'text-ochre' };
+    return { label: '未学习', cls: 'text-ink-muted' };
+  };
   const reportPath = pathProp ?? report.path;
   const templatePpt = (presentationsProp ?? [])
     .filter((item) => item.status === 'completed')
@@ -408,8 +413,8 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
                     </span>
                   </span>
                   <span className="flex w-[76px] shrink-0 items-center justify-end gap-1.5">
-                    <span className={cn('text-[10.5px] font-medium', busy || openTarget ? 'text-brand' : 'text-ink-muted')}>
-                      {busy ? '定制中' : openTarget ? '已定制' : '未定制'}
+                    <span className={cn('text-[10.5px] font-medium', busy ? 'text-brand' : openTarget ? learningStatusOf(existingResourceFor(f)).cls : 'text-ink-muted')}>
+                      {busy ? '定制中' : openTarget ? learningStatusOf(existingResourceFor(f)).label : '未定制'}
                     </span>
                     {busy ? <span className="font-mono text-[9.5px] text-brand">{cTask!.progress ?? 0}%</span>
                       : openTarget ? <ArrowRight size={14} className="text-ink-muted transition-colors group-hover:text-brand" />
