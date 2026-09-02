@@ -393,29 +393,13 @@ function findBestDirection(
 }
 
 /** 3D 布局：固定域节点 + 智能子节点展开 */
-function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpIds: Set<string>, focusId: string | null, selectedKpId: string | null) {
+function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpIds: Set<string>, focusId: string | null) {
   const domainLayout = useDomainLayout(nodes, edges);
 
   return useMemo(() => {
     const positions = new Map(domainLayout);
     const childDirections = new Map<string, 'left' | 'right'>();
     const focusOffsets = new Map<string, THREE.Vector3>();
-
-    if (selectedKpId) {
-      const center = nodes.find((n) => n.kind === 'domain' && n.id === selectedKpId);
-      if (center) {
-        const pre = nodes.filter((n) => n.kind === 'domain' && edges.some((e) => e.to === center.id && e.from === n.id));
-        const post = nodes.filter((n) => n.kind === 'domain' && edges.some((e) => e.from === center.id && e.to === n.id));
-        const related = new Set([center.id, ...pre.map((n) => n.id), ...post.map((n) => n.id)]);
-        positions.clear();
-        positions.set(center.id, new THREE.Vector3(0, 0, 0));
-        pre.forEach((n, i) => positions.set(n.id, new THREE.Vector3(-26, (i - (pre.length - 1) / 2) * 9, 0)));
-        post.forEach((n, i) => positions.set(n.id, new THREE.Vector3(26, (i - (post.length - 1) / 2) * 9, 0)));
-        nodes.filter((n) => n.kind === 'domain' && !related.has(n.id)).forEach((n) => {
-          positions.set(n.id, new THREE.Vector3(0, 0, 80));
-        });
-      }
-    }
 
     // 聚焦布局：目标节点沿径向多拉出，其余域节点向最终视角的左侧让位
     // （相机最终沿径向从外侧看向节点，此时视角的“左” = nodeDir x 世界上方向）
@@ -437,18 +421,6 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpIds: Set<
     expandedKpIds.forEach((kpId) => {
       const parentPos = positions.get(kpId);
       if (!parentPos) return;
-      const children = nodes.filter((n) => n.kind === 'topic' && n.kpId === kpId);
-      if (kpId === selectedKpId) {
-        children.forEach((node, i) => {
-          positions.set(node.id, new THREE.Vector3(
-            (i - (children.length - 1) / 2) * 9,
-            22,
-            2,
-          ));
-          childDirections.set(node.id, 'right');
-        });
-        return;
-      }
       let direction: 'left' | 'right';
       let offset: THREE.Vector3;
       if (kpId === focusId) {
@@ -459,6 +431,7 @@ function use3DLayout(nodes: GraphNode[], edges: GraphEdge[], expandedKpIds: Set<
         direction = found.direction;
         offset = found.offset;
       }
+      const children = nodes.filter((n) => n.kind === 'topic' && n.kpId === kpId);
       const sign = direction === 'left' ? -1 : 1;
 
       children.forEach((node, i) => {
@@ -1729,15 +1702,8 @@ function SceneContent({
   }, [hoveredId, edges]);
 
   const visibleNodes = useMemo(() => {
-    const domains = nodes.filter((n) => n.kind === 'domain');
-    if (!selectedKpId) return domains;
-    const related = new Set([selectedKpId]);
-    edges.forEach((e) => {
-      if (e.to === selectedKpId && nodes.some((n) => n.id === e.from && n.kind === 'domain')) related.add(e.from);
-      if (e.from === selectedKpId && nodes.some((n) => n.id === e.to && n.kind === 'domain')) related.add(e.to);
-    });
-    return domains.filter((n) => related.has(n.id));
-  }, [nodes, edges, selectedKpId]);
+    return nodes.filter((n) => n.kind === 'domain');
+  }, [nodes]);
 
     return (
     <>
@@ -1752,7 +1718,6 @@ function SceneContent({
         // 世界坐标层只展示章节↔章节关系。知识点关系由各 ChildPlane 在
         // 面向用户的 Billboard 内绘制，避免箭头与子节点平面角度不一致。
         if (n1?.kind === 'topic' || n2?.kind === 'topic') return null;
-        if (selectedKpId && (!visibleNodes.some((n) => n.id === edge.from) || !visibleNodes.some((n) => n.id === edge.to))) return null;
         // 节点不可见则跳过：domain 始终可见，topic 需要其父章节已展开
         const v1 = n1 && (n1.kind === 'domain' || expandedKpIds.has(n1.kpId));
         const v2 = n2 && (n2.kind === 'domain' || expandedKpIds.has(n2.kpId));
@@ -1941,7 +1906,7 @@ export default function KnowledgeGraph3D({
   // 切换聚焦目标时从头开始拉出
   useEffect(() => { blendRef.current.blend = 0; }, [focusId]);
 
-  const layout = use3DLayout(nodes, edges, expandedKpIds, focusId, selectedKpId);
+  const layout = use3DLayout(nodes, edges, expandedKpIds, focusId);
   const sceneRef = useRef<THREE.Group | null>(null);
   // 悬停时暂停自动旋转，避免节点在光标下移动导致悬停闪烁
   const containerRef = useRef<HTMLDivElement | null>(null);
