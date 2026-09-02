@@ -559,6 +559,7 @@ export default function MyProfile() {
             </div>
           </div>
 
+          <div className="grid gap-5 lg:grid-cols-2">
           <div className="lf-card p-5">
             <div className="mb-3 flex items-center gap-2">
               <History size={16} className="text-brand" />
@@ -659,6 +660,7 @@ export default function MyProfile() {
                 ))}
               </div>
             )}
+          </div>
           </div>
 
           <div className="space-y-2">
