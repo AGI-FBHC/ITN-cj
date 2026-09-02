@@ -87,9 +87,9 @@ function chapterStateColor(learned: boolean, progress: number): string {
     const green = new THREE.Color('#2E7D32');
     return `#${yellowGreen.clone().lerp(green, p / 100).getHexString()}`;
   }
-  const purple = new THREE.Color('#6E6384');
-  const gray = new THREE.Color('#8E87A0');
-  return `#${purple.clone().lerp(gray, 0.25).getHexString()}`;
+    const purple = new THREE.Color('#8D83A8');
+    const gray = new THREE.Color('#A99FC4');
+    return `#${purple.clone().lerp(gray, 0.4).getHexString()}`;
 }
 
 interface KnowledgeGraph3DProps {
