@@ -396,8 +396,8 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
               <Fragment key={m.id}>
                 <MessageBubble message={m} onAnswerQuizCard={answerQuizCard} />
                 {showReplyOptions && m.id === lastAgentMsg?.id && (
-                  <div className="ml-1 flex flex-col gap-1.5">
-                    {replyOptions.map((option, idx) => (
+                  <div className="ml-1 flex flex-col items-start gap-1">
+                    {replyOptions.map((option) => (
                       <button
                         key={option}
                         type="button"
@@ -410,10 +410,9 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
                             askFree(option, ctx);
                           }
                         }}
-                        className="flex w-full items-center gap-2 rounded-xl border border-hairline bg-paper px-3 py-2 text-left text-[12px] text-ink transition hover:border-brand/40 hover:bg-brand-tint/20 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex items-center rounded-lg border border-hairline bg-paper px-2 py-1 text-left text-[10.5px] leading-4 text-ink transition hover:border-brand/40 hover:bg-brand-tint/20 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-current font-mono text-[10px]">{idx + 1}</span>
-                        <span className="min-w-0">{option}</span>
+                        {option}
                       </button>
                     ))}
                   </div>
