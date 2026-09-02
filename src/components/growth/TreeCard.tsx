@@ -45,7 +45,7 @@ export default function TreeCard() {
           <Sprout size={12} className="text-brand" />
           我的知识树 · 学习能量浇灌
         </div>
-        <span className="font-mono text-[10.5px] text-ink-muted">果实 = 达标知识点（{fruits.length}/6）</span>
+        <span className="font-mono text-[10.5px] text-ink-muted">果实 = 已掌握知识点（{fruits.length}/6）</span>
       </div>
 
       <div className="mt-2 grid items-center gap-4 sm:grid-cols-2">

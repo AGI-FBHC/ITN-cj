@@ -124,7 +124,7 @@ export default function TeachingGroup({
               <p className="text-[12.5px] leading-[19px] text-ink-2">
                 每条内容都经<span className="font-semibold text-ochre">交叉验证</span>并挂接出处，
                 当前幻觉率仅 <span className="font-mono font-semibold text-ochre">{halluc?.value}%</span>
-                （达标 &lt; 5%）。
+                （参考线 &lt; 5%）。
               </p>
             </div>
 

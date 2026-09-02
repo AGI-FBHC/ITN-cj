@@ -282,7 +282,7 @@ function buildReportHtml(data: {
     const done = c.total > 0 && c.learned === c.total ? ' ✓' : '';
     return `
         <div class="chapter">
-          <div class="chapter-head"><strong>${esc(c.index)}. ${esc(c.title)}${done}</strong><span>${esc(c.learned)}/${esc(c.total)} 资源 · 掌握 ${esc(c.mastery)}%${c.target > 0 ? ` · 目标门槛 ${esc(c.target)}%` : ''}</span></div>
+          <div class="chapter-head"><strong>${esc(c.index)}. ${esc(c.title)}${done}</strong><span>${esc(c.learned)}/${esc(c.total)} 资源 · 掌握 ${esc(c.mastery)}%${c.target > 0 ? ` · 目标 ${esc(c.target)}%` : ''}</span></div>
           <div class="bar"><div class="bar-fill" style="width:${pct}%"></div><div class="bar-threshold" style="left:${targetPct}%"></div></div>
         </div>`;
   }).join('');
@@ -665,7 +665,7 @@ export default function Report() {
       path: pathNodes,
       summary: spots.length
         ? `当前最需优先补齐「${getKnowledgePoint(spots[0].kpId).name}」（差 ${spots[0].gap} 分），建议按路径顺序完成讲义、实操与分阶题。`
-        : '六维能力已全面达标，保持当前学习节奏并定期测评即可。',
+        : '六维能力均衡向好，保持当前学习节奏并定期测评即可。',
       generated: true,
       baselineHighSpots: spots.filter((spot) => spot.priority === '高').length,
       resolvedSpots: Math.max(0, Math.round(spots.filter((spot) => spot.gap <= 10).length / 2)),
@@ -1021,7 +1021,7 @@ export default function Report() {
                         <div className="absolute inset-y-0 left-0 rounded-full bg-[#14B8A6]" style={{ width: `${Math.min(100, mastery)}%` }} />
                         {target > 0 && <div className="absolute inset-y-0 w-[3px] rounded-full bg-[#155E9A]" style={{ left: `${Math.min(100, target)}%` }} />}
                       </div>
-                      <div className="mt-1 font-mono text-[10.5px] text-ink-muted">掌握度 {mastery}%{target > 0 ? ` · 目标门槛 ${target}%` : ''}</div>
+                      <div className="mt-1 font-mono text-[10.5px] text-ink-muted">掌握度 {mastery}%{target > 0 ? ` · 目标 ${target}%` : ''}</div>
                     </div>
                     <span className="shrink-0 font-mono text-[11px] text-ink-muted">{count.learned}/{count.total}</span>
                   </div>

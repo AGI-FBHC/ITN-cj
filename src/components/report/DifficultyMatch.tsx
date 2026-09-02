@@ -183,7 +183,7 @@ export default function DifficultyMatch({
             symbol: 'none',
             lineStyle: { color: '#66725E', type: 'dashed' as const, width: 1 },
             label: {
-              formatter: '适配目标线 85',
+              formatter: '适配参考线',
               position: 'insideEndTop' as const,
               fontSize: 10,
               fontFamily: '"IBM Plex Mono", monospace',
@@ -223,7 +223,7 @@ export default function DifficultyMatch({
       en="ABILITY × RESOURCE-DIFFICULTY · ADAPTATION BAND ±10"
       actions={
         <span className="inline-flex items-center gap-1.5 rounded-lg border border-brand/30 bg-brand-tint px-2.5 py-1 font-mono text-[11px] font-medium text-brand">
-          适配准确率 {report.adaptScore}% · 达标
+          资源适配准确率 {report.adaptScore}%
         </span>
       }
     >

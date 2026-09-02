@@ -173,7 +173,7 @@ function GapRadar({
             <span className="h-[7px] w-[7px] rounded-full" style={{ backgroundColor: tone.bar }} />
             {kp.name}
             <span className="font-mono text-[10.5px] tabular">
-              {spot ? `Δ-${spot.gap}` : '达标'}
+              {spot ? `Δ-${spot.gap}` : '状态良好'}
             </span>
           </button>
         ))}
@@ -393,7 +393,7 @@ export default function GapSection({
   const [pulse, setPulse] = useState(0);
   const selectKp = (kpId: string) => {
     if (!sorted.some((s) => s.kpId === kpId)) {
-      toast.info(`${getKnowledgePoint(kpId).name}已达标`, { description: '当前无需消解计划，继续保持即可' });
+      toast.info(`${getKnowledgePoint(kpId).name}状态良好`, { description: '当前表现良好，继续保持即可' });
       return;
     }
     setActiveKpId(kpId);

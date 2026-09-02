@@ -68,7 +68,7 @@ export default function KnowledgeTree({
           <circle cx="100" cy="102" r="18" fill={LEAF} />
           {fruits.slice(0, 2).map((f, i) => (
             <circle key={f.kpId} className="kt-fruit" style={{ animationDelay: `${i * 0.22}s` }} cx={fruitPos[i][0] + 10} cy={fruitPos[i][1] + 46} r="4.5" fill={FRUIT} stroke="#CE9C45" strokeWidth="1">
-              <title>已达标：{f.name}</title>
+              <title>已掌握：{f.name}</title>
             </circle>
           ))}
         </g>
@@ -88,7 +88,7 @@ export default function KnowledgeTree({
           {fruits.slice(0, 6).map((f, i) => (
             <g key={f.kpId}>
               <circle className="kt-fruit" style={{ animationDelay: `${i * 0.18}s` }} cx={fruitPos[i][0]} cy={fruitPos[i][1]} r="5.5" fill={FRUIT} stroke="#CE9C45" strokeWidth="1.2">
-                <title>已达标：{f.name}</title>
+                <title>已掌握：{f.name}</title>
               </circle>
               <path d={`M${fruitPos[i][0]} ${fruitPos[i][1] - 5} q2 -3 4 -4`} stroke={TRUNK} strokeWidth="1" fill="none" />
             </g>

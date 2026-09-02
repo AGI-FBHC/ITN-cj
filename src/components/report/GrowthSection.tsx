@@ -272,11 +272,11 @@ export default function GrowthSection({
       },
       {
         icon: ClipboardCheck,
-        text: `${strongestKp.name}理论已达标（${strongest[1]} 分），建议 48h 内进行保持性测评（5 题）`,
+        text: `${strongestKp.name}理论基础扎实（${strongest[1]} 分），建议 48h 内进行保持性测评（5 题）`,
         cta: '去测评',
         href: '/tutoring',
         priority: '中' as Severity,
-        evidence: `依据：${strongestKp.name} 当前 ${strongest[1]} 分 · 已超目标线 · 保持性测评周期 48h · ARB-05 置信 0.88`,
+        evidence: `依据：${strongestKp.name} 当前 ${strongest[1]} 分 · 表现稳定 · 保持性测评周期 48h · ARB-05 置信 0.88`,
       },
       {
         icon: BookOpen,

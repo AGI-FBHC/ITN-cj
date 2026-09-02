@@ -105,8 +105,6 @@ export default function ScoreBand({ report }: { report: LearnerReport }) {
   const invest = report.generated
     ? { total: report.investHours ?? 0, note: report.investNote ?? '建档后实时累计' }
     : investMap[report.learnerId] ?? investMap.lin;
-  const passed = report.adaptScore >= 85;
-
   const gaugeOption = useMemo(
     () => ({
       animationDuration: 1200,
@@ -168,15 +166,8 @@ export default function ScoreBand({ report }: { report: LearnerReport }) {
               ADAPTATION SCORE
             </span>
           )}
-          <span
-            className={cn(
-              'rounded-md border px-1.5 py-0.5 font-mono text-[10.5px] font-medium',
-              passed
-                ? 'border-brand/30 bg-brand-tint text-brand'
-                : 'border-brand-amber/50 bg-brand-amber-tint text-ochre',
-            )}
-          >
-            {passed ? '达标 ≥ 85' : '未达标 < 85'}
+          <span className="rounded-md border border-brand/30 bg-brand-tint px-1.5 py-0.5 font-mono text-[10.5px] font-medium text-brand">
+            持续优化中
           </span>
         </div>
         <ReactECharts option={gaugeOption} height={128} />
@@ -194,7 +185,7 @@ export default function ScoreBand({ report }: { report: LearnerReport }) {
         suffix="%"
         name="知识覆盖率"
         note="6 大知识点 · 岗位能力模型对齐"
-        badge="达标 ≥ 90%"
+        badge="岗位对齐"
         badgeTone="green"
       />
       <StatCard
@@ -208,7 +199,7 @@ export default function ScoreBand({ report }: { report: LearnerReport }) {
             ? `建档基线 ${baselineHigh} 个高优盲区，当前剩 ${highCount} 个`
             : `近 8 周高盲区由 5 降至 ${highCount}`
         }
-        badge={report.generated && resolved === 0 ? '待消解' : '持续消解中'}
+        badge={report.generated && resolved === 0 ? '推进中' : '持续优化中'}
         badgeTone="amber"
       />
       <StatCard

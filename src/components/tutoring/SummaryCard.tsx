@@ -99,7 +99,7 @@ export default function SummaryCard({
       priority: '中',
       title: '保持强项 · 挑战进阶分阶题',
       desc: `「${kp.name}」本轮表现稳定，可挑战更高难度题巩固。`,
-      evidence: `依据：本轮正确率 ${acc}% · 已达进阶门槛`,
+      evidence: `依据：本轮正确率 ${acc}% · 进入进阶区间`,
       to: '/resources?tab=quiz',
     },
     {

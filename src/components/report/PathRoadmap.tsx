@@ -52,10 +52,10 @@ const statusText: Record<PathNodeStatus, string> = {
 };
 
 const standardText: Record<PathNodeStatus, string> = {
-  done: '已通过阶段测评（≥ 80 分），资源完成度 100%。',
-  active: '完成全部已配资源学习，阶段测评 ≥ 80 分后自动推进。',
-  todo: '前置阶段达标后解锁，资源由 GEN-03 预生成排队中。',
-  locked: '综合测评 ≥ 85 分，并通过企业导师线上评审。',
+  done: '已完成阶段测评与配套资源，资源完成度 100%。',
+  active: '完成全部已配资源学习与阶段测评后自动推进。',
+  todo: '完成前置阶段后解锁，资源由 GEN-03 预生成排队中。',
+  locked: '完成综合测评并通过企业导师线上评审后解锁。',
 };
 
 const pct = (v: number, base: number) => `${(v / base) * 100}%`;

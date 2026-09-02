@@ -688,7 +688,7 @@ export default function Onboarding() {
                       <Check size={22} />
                     </span>
                     <p className="text-[14px] text-ink-2">
-                      {answers.length} 题测完，各维置信度已达标——不用再加测了。
+                      {answers.length} 题测完，各维置信度已足够——不用再加测了。
                     </p>
                   </div>
                 )}

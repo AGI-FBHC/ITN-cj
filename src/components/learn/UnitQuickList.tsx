@@ -85,7 +85,7 @@ export default function UnitQuickList({
       </div>
       <div className={cn('mt-1', columns ? 'grid gap-x-3 gap-y-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5' : 'divide-y divide-hairline/70')}>
         {items.map((kp) => {
-          /* 速览统一显示掌握程度与门槛（学习进度只在资源卡片里展示） */
+          /* 速览统一显示掌握程度与目标（学习进度只在资源卡片里展示） */
           const progressValue = mastery[kp.id] ?? progress[kp.id] ?? 0;
           const threshold = nodeTargets?.[kp.id]?.target;
           const seq = routeOrdered ? pathSeq.indexOf(kp.id) : -1;
@@ -116,13 +116,13 @@ export default function UnitQuickList({
                 <span className="flex items-center gap-2">
                   <span className="text-[10.5px] font-medium leading-[14px] text-brand/70">{categoryLabel ?? ''}</span>
                   <span className="ml-auto flex items-center gap-2">
-                    <span className="relative h-1.5 w-10 shrink-0 overflow-hidden rounded-full border border-black/[0.06] bg-[#E8EDF2] xl:w-12" title={`掌握程度 ${progressValue}%${threshold ? ` · 目标门槛 ${threshold}%` : ''}`}>
+                    <span className="relative h-1.5 w-10 shrink-0 overflow-hidden rounded-full border border-black/[0.06] bg-[#E8EDF2] xl:w-12" title={`掌握程度 ${progressValue}%${threshold ? ` · 目标 ${threshold}%` : ''}`}>
                       <span className="absolute inset-y-0 left-0 rounded-full bg-[#3B82F6]" style={{ width: `${progressValue}%` }} />
                       {threshold != null && threshold > 0 && (
-                        <span className="absolute inset-y-[-1.5px] w-[2px] rounded-full bg-[#155E9A]" style={{ left: `${Math.min(100, threshold)}%` }} title={`目标门槛 ${threshold}%`} />
+                        <span className="absolute inset-y-[-1.5px] w-[2px] rounded-full bg-[#155E9A]" style={{ left: `${Math.min(100, threshold)}%` }} title={`目标 ${threshold}%`} />
                       )}
                     </span>
-                    <span className="w-12 shrink-0 text-right font-mono text-[10.5px] tabular-nums" title={`掌握程度 ${progressValue}%${threshold != null ? ` · 目标门槛 ${threshold}%` : ''}`}>
+                    <span className="w-12 shrink-0 text-right font-mono text-[10.5px] tabular-nums" title={`掌握程度 ${progressValue}%${threshold != null ? ` · 目标 ${threshold}%` : ''}`}>
                       <span className="text-[#174E43]">{progressValue}%</span>
                       {threshold != null && threshold > 0 && (
                         <span className="text-[#155E9A]">/{threshold}%</span>

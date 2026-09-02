@@ -210,7 +210,7 @@ function TopicBranchNode({ n, mastery, progress, target }: { n: GraphNode; maste
         />
       )}
       <circle cx={n.x} cy={n.y} r="5.5" fill={passed ? '#D8A94E' : progress > 0 ? '#5F8870' : '#D5DFD7'} />
-      <title>{`学习进度 ${progress}% · 实际掌握 ${mastery}%${target != null ? ` · 目标门槛 ${target}%${mastery >= target ? '（已达标）' : ''}` : ''}`}</title>
+      <title>{`学习进度 ${progress}% · 实际掌握 ${mastery}%${target != null ? ` · 目标 ${target}%` : ''}`}</title>
       <text
         x={n.labelX}
         y={n.y + 5.3}
