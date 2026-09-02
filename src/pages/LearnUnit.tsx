@@ -86,8 +86,9 @@ import type { PptPlayerRef } from '@/components/learn/PptPlayer';
 import { startWavRecording } from '@/lib/voiceRecorder';
 import { audioBus } from '@/lib/audioBus';
 import type { WavRecorder } from '@/lib/voiceRecorder';
-import { createPresentationChatSession, deletePresentationChatSession, fetchChatAttachmentBlob, getPresentationChatMessages, listPresentationChatSessions, draftPresentationNote, streamPresentationChatAudio, streamPresentationChatImage, streamPresentationChatText, streamPresentationChatTts } from '@/lib/presentationApi';
+import { presentationApi, createPresentationChatSession, deletePresentationChatSession, fetchChatAttachmentBlob, getPresentationChatMessages, listPresentationChatSessions, draftPresentationNote, streamPresentationChatAudio, streamPresentationChatImage, streamPresentationChatText, streamPresentationChatTts, updatePptLearningProgress } from '@/lib/presentationApi';
 import type { PresentationAudioEvent, PresentationChatSession } from '@/lib/presentationApi';
+import { refreshLearningMapResourceCache } from '@/hooks/useLearningMap';
 import PathProgressBar from '@/components/learn/PathProgressBar';
 import { GrassTuft, Sprout } from '@/components/heal/Flora';
 import { useAmbient } from '@/components/heal/useAmbient';
@@ -102,6 +103,7 @@ import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
 import { markLearningMapReturn } from '@/lib/learningNavigation';
 
 const letters = ['A', 'B', 'C', 'D'];
+const isUuid = (value?: string | null) => Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
 const RATES = [0.75, 0.85, 1.05, 1.3, 1.5] as const;
 
 /** 语音风格预设：音高 + 语速微调（浏览器 TTS 可控维度内做出可感知差异） */
@@ -657,9 +659,46 @@ export default function LearnUnit() {
   const pptRef = useRef<PptPlayerRef>(null);
   const [pptSlide, setPptSlide] = useState({ current: 0, count: 0 });
   const [pptWideMode, setPptWideMode] = useState(true);
+  const [pptCompleting, setPptCompleting] = useState(false);
   const syncPptSlide = useCallback((current: number, count: number) => setPptSlide((previous) => (
     previous.current === current && previous.count === count ? previous : { current, count }
   )), []);
+  const persistPptProgress = async (pageIndex: number, final = false) => {
+    if (!pptTaskId || !pptSlide.count) return;
+    await updatePptLearningProgress(pptTaskId, {
+      pageIndex: Math.max(0, Math.min(pptSlide.count - 1, pageIndex)),
+      pageCount: pptSlide.count,
+      learned: final,
+    });
+  };
+  const returnToKnowledge = async () => {
+    try {
+      if (pptTaskId && pptSlide.count) await persistPptProgress(pptSlide.current);
+    } catch {
+      /* 保存失败不阻塞返回 */
+    } finally {
+      window.dispatchEvent(new CustomEvent('lf:learning-state-changed', { detail: { learnerId: currentLearner.id } }));
+      if (isUuid(currentLearner.id)) void refreshLearningMapResourceCache(currentLearner.id).catch(() => undefined);
+      markLearningMapReturn(currentLearner.id);
+      navigate('/learn');
+    }
+  };
+  const handlePptComplete = async () => {
+    if (!pptTaskId || pptCompleting) return;
+    setPptCompleting(true);
+    try {
+      await persistPptProgress(pptSlide.current, true);
+      await presentationApi.completePresentation(pptTaskId);
+      window.dispatchEvent(new CustomEvent('lf:learning-state-changed', { detail: { learnerId: currentLearner.id } }));
+      if (isUuid(currentLearner.id)) void refreshLearningMapResourceCache(currentLearner.id).catch(() => undefined);
+      markLearningMapReturn(currentLearner.id);
+      navigate('/learn');
+    } catch {
+      toast.error('完成记录保存失败，请稍后重试');
+    } finally {
+      setPptCompleting(false);
+    }
+  };
   const [flashId, setFlashId] = useState<string | null>(null);
   useEffect(() => {
     const target = searchParams.get('block');
@@ -2059,9 +2098,15 @@ export default function LearnUnit() {
 
       {/* 页头 */}
       <div className={cn('flex shrink-0 flex-wrap items-center gap-3', pptTaskId && 'mb-5')}>
-        <Link to="/learn" onClick={rememberLearningMapReturn} className="inline-flex items-center gap-1 text-[13px] text-ink-muted hover:text-brand">
-          <ArrowLeft size={14} /> {pptTaskId ? '返回知识点' : '课程目录'}
-        </Link>
+        {pptTaskId ? (
+          <button type="button" onClick={() => void returnToKnowledge()} className="inline-flex items-center gap-1 text-[13px] text-ink-muted hover:text-brand">
+            <ArrowLeft size={14} /> 返回知识点
+          </button>
+        ) : (
+          <Link to="/learn" onClick={rememberLearningMapReturn} className="inline-flex items-center gap-1 text-[13px] text-ink-muted hover:text-brand">
+            <ArrowLeft size={14} /> 课程目录
+          </Link>
+        )}
         <span className="text-hairline">/</span>
         <h1 className="font-serif text-[20px] font-semibold text-ink">{pptTopic || generatedUnit?.topicName || kp.name}</h1>
         <span className="flex items-center gap-2">
@@ -3206,6 +3251,22 @@ export default function LearnUnit() {
               >
                 {pptWideMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
                 {barExpanded && (pptWideMode ? '窄屏' : '宽屏')}
+              </button>
+            )}
+
+            {pptTaskId && pptSlide.count > 0 && pptSlide.current >= pptSlide.count - 1 && (
+              <button
+                type="button"
+                disabled={pptCompleting}
+                onClick={() => void handlePptComplete()}
+                title="完成学习并同步进度"
+                className={cn(
+                  'inline-flex shrink-0 items-center gap-1.5 rounded-[10px] bg-brand text-paper shadow-warm transition-all hover:bg-brand-hover hover:shadow-warm-lg disabled:cursor-not-allowed disabled:opacity-60',
+                  barExpanded ? 'px-3.5 py-2 text-[13px] font-semibold' : 'rounded-full p-2.5',
+                )}
+              >
+                {pptCompleting ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                {barExpanded && (pptCompleting ? '保存中…' : '完成学习')}
               </button>
             )}
 
