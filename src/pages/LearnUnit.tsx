@@ -2206,7 +2206,7 @@ export default function LearnUnit() {
             {freeBrowse ? '回到课堂推进' : '自由浏览'}
           </button>
         </div>}
-        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} wideMode={pptWideMode} speed={pptSpeed} volume={pptVolume} modelProvider={pptAudioModel} qwenVoice={qwenVoice} ref={pptRef} onPlaybackChange={setPlaying} onLoadingChange={setPptAudioLoading} onSlideChange={syncPptSlide} onRequestNote={openNoteHere} /> : (blocks.map((b, i) => {
+        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} wideMode={pptWideMode} speed={pptSpeed} volume={pptVolume} modelProvider={pptAudioModel} qwenVoice={qwenVoice} ref={pptRef} onPlaybackChange={setPlaying} onLoadingChange={setPptAudioLoading} onSlideChange={syncPptSlide} onRequestNote={openNoteHere} onRequestComplete={() => void handlePptComplete()} /> : (blocks.map((b, i) => {
           const active = i === cursor && playing;
           /* ---- 课堂推进三态：完整（当前/回看/自由浏览）· 摘要行（已完成）· 不渲染（未解锁） ---- */
           const effUnlocked = Math.min(unlocked, blocks.length);
