@@ -1176,10 +1176,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ learnerId, askType, text, kpId, sessionId }),
     }),
-  askAgentSuggestions: (learnerId: string, kpId?: string) =>
+  askAgentSuggestions: (learnerId: string, kpId?: string, context?: { pageContext?: string; pageState?: unknown; text?: string }) =>
     requestAgent<{ questions: { id: string; text: string; askType: string }[] }>('/agent/ask/suggestions', {
       method: 'POST',
-      body: JSON.stringify({ learnerId, kpId }),
+      body: JSON.stringify({ learnerId, kpId, ...(context ?? {}) }),
     }),
   askAgentSimilarQuiz: (learnerId: string, kpId: string | undefined, sessionId: string | undefined, pageContext: string | undefined, pageState: LearningPageContext | undefined) =>
     requestAgent<AgentSimilarQuizResult>('/agent/ask/similar-quiz', {
@@ -1536,3 +1536,4 @@ export const api = {
       body: JSON.stringify(body),
     }),
 };
+

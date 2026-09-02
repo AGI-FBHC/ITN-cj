@@ -216,7 +216,7 @@ function MessageBubble({ message, onAnswerQuizCard }: { message: AgentMessage; o
 
 /* ===== 消息流 + composer ===== */
 export function ChatStream({ compact = false, pageContext }: { compact?: boolean; pageContext?: string }) {
-  const { messages, askFree, askFreeWithImage, askSimilarQuiz, answerQuizCard, isResponding, suggestions, weakest, pageContextEnabled, setPageContextEnabled } = useAgent();
+  const { messages, askFree, askFreeWithImage, askSimilarQuiz, answerQuizCard, isResponding, suggestions, weakest, currentLearnerId, pageContextEnabled, setPageContextEnabled } = useAgent();
   const [input, setInput] = useState('');
   const [image, setImage] = useState<{ name: string; url: string; blob?: Blob } | null>(null);
   const [recording, setRecording] = useState(false);
@@ -338,8 +338,31 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
     }
     return undefined;
   })();
-  const replyOptions = lastAgentMsg ? buildReplyOptions(lastAgentMsg, currentContext) : [];
-  const showReplyOptions = Boolean(lastAgentMsg && !isResponding && replyOptions.length > 0);
+  useEffect(() => {
+    if (!lastAgentMsg || isResponding) return;
+    const currentId = lastAgentMsg.id;
+    if (replyMsgId === currentId) return;
+    setReplyMsgId(currentId);
+    setReplyOptionsLoading(true);
+    const fallback = buildReplyOptions(lastAgentMsg, currentContext);
+    let alive = true;
+    api.askAgentSuggestions(currentLearnerId ?? '', weakest?.id, {
+      pageState: currentContext,
+      text: lastAgentMsg.text.slice(0, 1800),
+    }).then((res) => {
+      if (!alive) return;
+      const items = (res.questions ?? []).map((q) => q.text).filter(Boolean).slice(0, 4);
+      setReplyOptions(items.length >= 2 ? items : fallback);
+    }).catch(() => {
+      if (!alive) return;
+      setReplyOptions(fallback);
+    }).finally(() => {
+      if (alive) setReplyOptionsLoading(false);
+    });
+    return () => { alive = false; };
+  }, [lastAgentMsg, isResponding, currentLearnerId, weakest?.id, currentContext, replyMsgId]);
+
+  const showReplyOptions = Boolean(lastAgentMsg && !isResponding && !replyOptionsLoading && replyOptions.length > 0);
 
 
   return (
@@ -553,3 +576,5 @@ export function SessionList() {
     </>
   );
 }
+
+

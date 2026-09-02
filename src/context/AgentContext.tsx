@@ -74,6 +74,7 @@ export interface DecisionEntry {
 interface AgentContextValue {
   messages: AgentMessage[];
   unread: number;
+  currentLearnerId: string | null;
   open: boolean;
   setOpen: (v: boolean) => void;
   /** 伴学助手正在生成回复/题目，应暂时禁用新的发送入口。 */
@@ -889,3 +890,4 @@ export function useAgent(): AgentContextValue {
   if (!ctx) throw new Error('useAgent must be used within AgentProvider');
   return ctx;
 }
+
