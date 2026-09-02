@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   ArrowRight,
-  BarChart3,
   BookOpen,
   CalendarRange,
   CheckCircle2,
@@ -947,7 +946,6 @@ export default function Report() {
         {[
           { icon: Target, label: '实测综合掌握度', value: `${overallMastery}%`, note: analytics?.mastery.categories.length ? `${analytics.mastery.categories.length} 个章节形成证据` : '完成分阶题后开始累计', tone: 'text-brand' },
           { icon: Clock3, label: '累计学习投入', value: displayMinutes(analytics?.stats.totalStudyMinutes ?? 0), note: `${analytics?.stats.totalDays ?? 0} 个真实学习日`, tone: 'text-brand' },
-          { icon: BarChart3, label: '近 7 天测评正确率', value: accuracy == null ? '暂无' : `${accuracy}%`, note: accuracy == null ? '尚无真实测评提交' : `${journalStats.correct}/${journalStats.questions} 题答对`, tone: 'text-brand' },
         ].map((item, index) => {
           const Icon = item.icon;
           return (
@@ -958,15 +956,13 @@ export default function Report() {
             </motion.div>
           );
         })}
-      </section>
-
-      <div className="mt-4">
         <StreakCalendar
+          className="sm:col-span-2 xl:col-span-2"
           streakDays={analytics?.stats.streakDays ?? 0}
           studyDates={analytics?.stats.studyDates ?? []}
           totalDays={analytics?.stats.totalDays ?? 0}
         />
-      </div>
+      </section>
 
       <section className="mt-12">
         <SectionHeader en="DIAGNOSIS" title="六维能力画像" desc="" />

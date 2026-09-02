@@ -13,10 +13,12 @@ export default function StreakCalendar({
   streakDays,
   studyDates,
   totalDays,
+  className,
 }: {
   streakDays: number;
   studyDates: string[];
   totalDays?: number;
+  className?: string;
 }) {
   const studied = useMemo(() => new Set(studyDates), [studyDates]);
   const today = new Date();
@@ -31,7 +33,7 @@ export default function StreakCalendar({
   const weekLabels = ['日', '一', '二', '三', '四', '五', '六'];
 
   return (
-    <div className="lf-card p-5">
+    <div className={cn('lf-card p-5', className)}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-2 text-[12px] text-ink-muted">
           <CalendarDays size={15} className="text-brand" />
