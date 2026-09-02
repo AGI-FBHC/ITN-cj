@@ -49,9 +49,6 @@ const NODE_COLORS = {
   },
 };
 
-// “我的已学路径”高亮环配色（醒目翠绿，与已学色区分）
-const LEARNED_HIGHLIGHT = '#2FBF71';
-
 // 子节点（蓝球）发天蓝光
 const TOPIC_STROKE_COLORS = {
   inner: '#2E6BA8',
@@ -79,17 +76,16 @@ function createSoftPlushTexture(size = 256): THREE.Texture {
   return tex;
 }
 
-function chapterStateColor(learned: boolean, progress: number): string {
-  const p = Math.max(0, Math.min(100, progress || 0));
-  if (learned && p >= 100) return '#1F8A4A';
-  if (p > 0 || learned) {
+function chapterStateColor(learned: boolean, progress: number, showLearned = false): string {
+  if (!showLearned) return '#8D83A8';
+  if (learned) {
+    const p = Math.max(0, Math.min(100, progress || 0));
+    if (p >= 100) return '#1F8A4A';
     const yellowGreen = new THREE.Color('#A6C34E');
     const green = new THREE.Color('#2E7D32');
     return `#${yellowGreen.clone().lerp(green, p / 100).getHexString()}`;
   }
-    const purple = new THREE.Color('#8D83A8');
-    const gray = new THREE.Color('#A99FC4');
-    return `#${purple.clone().lerp(gray, 0.4).getHexString()}`;
+  return '#8D83A8';
 }
 
 interface KnowledgeGraph3DProps {
@@ -613,16 +609,6 @@ function HoverCardTracker({ object, cardRef }: {
 }
 
 /** “我的已学路径”高亮环：始终面向相机，环绕已学节点 */
-function LearnedHighlightRing({ radius }: { radius: number }) {
-  return (
-    <Billboard>
-      <mesh raycast={() => null} renderOrder={3} position={[0, 0, 0.02]}>
-        <ringGeometry args={[radius + 0.28, radius + 0.52, 64]} />
-        <meshBasicMaterial color={LEARNED_HIGHLIGHT} transparent opacity={0.95} side={THREE.DoubleSide} depthWrite={false} />
-      </mesh>
-    </Billboard>
-  );
-}
 
 /** 页面级知识点操作弹窗：脱离 3D 世界坐标，确保尺寸与交互始终稳定。 */
 const STATUS_META: Record<'missing' | 'unlearned' | 'incomplete' | 'customized' | 'learned', { label: string; color: string }> = {
@@ -973,7 +959,6 @@ function ChildPlane({
   parentOffset,
   animRef,
 
-  showLearned,
   showTopicEdges,
 
   showProgressRings,
@@ -995,7 +980,6 @@ function ChildPlane({
   parentOffset?: THREE.Vector3;
   animRef: BlendRef;
 
-  showLearned?: boolean;
   showTopicEdges: boolean;
 
   showProgressRings?: boolean;
@@ -1095,8 +1079,6 @@ function ChildPlane({
               mastery={mastery}
               onClick={() => onNodeClick(node)}
               onHover={onNodeHover}
-
-              showLearned={showLearned}
 
               showProgressRings={showProgressRings}
               target={nodeTargets?.[node.id]?.target}
@@ -1200,8 +1182,6 @@ function ChildNode({
   onClick,
   onHover,
 
-  showLearned,
-
   showProgressRings,
   target,
 
@@ -1215,8 +1195,6 @@ function ChildNode({
   mastery: number;
   onClick: () => void;
   onHover: (id: string | null, clientX?: number, clientY?: number, object?: THREE.Object3D) => void;
-
-  showLearned?: boolean;
 
   showProgressRings?: boolean;
   target?: number;
@@ -1306,8 +1284,6 @@ function ChildNode({
         opacity={0.85}
       />
 
-      {learned && showLearned && <LearnedHighlightRing radius={baseSize} />}
-
       {/* 文字 */}
       <Text
         font={cjkFontUrl}
@@ -1390,7 +1366,7 @@ function Node3D({
   const plushTexture = useMemo(() => createSoftPlushTexture(), []);
 
   const getDomainStateColor = () => {
-    return chapterStateColor(learned, progress);
+    return chapterStateColor(learned, progress, showLearned);
   };
 
   const getColor = () => {
@@ -1513,7 +1489,6 @@ function Node3D({
         </Text>
       </Billboard>
 
-      {learned && showLearned && <LearnedHighlightRing radius={baseSize} />}
         </group>
   );
 }
@@ -1765,8 +1740,8 @@ function SceneContent({
             fromPos={p1}
             toPos={p2}
             color={EDGE_COLORS[edge.kind]}
-            fromColor={chapterStateColor(learned.has(n1.kpId), chapterProgress[n1.kpId] ?? 0)}
-            toColor={chapterStateColor(learned.has(n2.kpId), chapterProgress[n2.kpId] ?? 0)}
+            fromColor={chapterStateColor(learned.has(n1.kpId), chapterProgress[n1.kpId] ?? 0, showLearned)}
+            toColor={chapterStateColor(learned.has(n2.kpId), chapterProgress[n2.kpId] ?? 0, showLearned)}
             hovered={isRelated}
             dimmed={!!isDimmed}
             dashed={edge.kind === 'related'}
@@ -1802,7 +1777,6 @@ function SceneContent({
             parentOffset={layout.focusOffsets.get(kpId)}
             animRef={animRef}
 
-            showLearned={showLearned}
             showTopicEdges={showTopicEdges}
 
             showProgressRings={showProgressRings}
@@ -1846,9 +1820,7 @@ function SceneContent({
             fadeOnFocus={focusId !== null && node.id !== focusId}
             nodeScaleRef={nodeScaleRef}
 
-            showLearned={showLearned}
-
-            showProgressRings={showProgressRings}
+              showProgressRings={showProgressRings}
             target={nodeTargets?.[node.id]?.target}
 
           />
