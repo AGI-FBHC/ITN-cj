@@ -58,6 +58,49 @@ function pageAwareSuggestions(ctx: LearningPageContext): string[] {
   return [];
 }
 
+function extractTopic(ctx: LearningPageContext, replyText = ''): string {
+  const text = ctx.focus?.text || ctx.visibleText || replyText || '';
+  const quoted = text.match(/[“「]([^”」]{2,24})[”」]/)?.[1];
+  if (quoted) return quoted;
+  const firstSentence = text.split(/[。？?\n]/)[0].replace(/\s+/g, ' ').trim();
+  if (firstSentence.length > 2) return firstSentence.length > 18 ? `${firstSentence.slice(0, 18)}…` : firstSentence;
+  const title = ctx.focus?.title || ctx.pageTitle || '';
+  if (title.length > 2) return title.length > 18 ? `${title.slice(0, 18)}…` : title;
+  return '当前知识点';
+}
+
+function buildReplyOptions(message: AgentMessage, ctx: LearningPageContext): string[] {
+  const isQuiz = ctx.interaction?.kind === 'quiz' || ctx.focus?.kind === '当前题目';
+  if (isQuiz) {
+    const topic = extractTopic(ctx, message.text);
+    if (ctx.interaction?.submitted) {
+      if (ctx.interaction.correct === false) {
+        return [
+          '我选错了，帮我分析为什么错',
+          `正确答案为什么和「${topic}」相关`,
+          '换个说法再讲一遍这道题',
+          `再出一道和「${topic}」相近的题`,
+        ];
+      }
+      return [
+        `为什么这道题的关键是「${topic}」`,
+        '换一种方式解释这个概念',
+        `再出一道和「${topic}」相近的题`,
+        '帮我把这个知识点整理成一句话记忆',
+      ];
+    }
+    return [
+      `这道题里的「${topic}」在考什么`,
+      '先别给答案，给我一点提示',
+      '帮我排除明显不对的选项',
+      '这道题最容易错在哪个理解上',
+    ];
+  }
+  const page = pageAwareSuggestions(ctx).slice(0, 4);
+  return page.length
+    ? page
+    : ['结合当前内容再讲一遍', '帮我提炼一下当前重点', '根据当前内容出一道题'];
+}
 function sessionTag(title?: string | null): string {
   const value = title || '';
   if (/新对话/.test(value)) return '未开始';
@@ -295,15 +338,7 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
     }
     return undefined;
   })();
-  const replyOptions = (() => {
-    const isQuiz = currentContext.interaction?.kind === 'quiz' || currentContext.focus?.kind === '当前题目';
-    if (isQuiz) {
-      return currentContext.interaction?.submitted
-        ? ['讲解这道题', '分析错误选项', '查看原文依据', '出一道类似的题']
-        : ['分析题干', '给我一点提示', '帮我排除选项'];
-    }
-    return pageAwareSuggestions(currentContext).slice(0, 4);
-  })();
+  const replyOptions = lastAgentMsg ? buildReplyOptions(lastAgentMsg, currentContext) : [];
   const showReplyOptions = Boolean(lastAgentMsg && !isResponding && replyOptions.length > 0);
 
 
