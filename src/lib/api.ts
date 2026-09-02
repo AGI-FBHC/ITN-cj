@@ -1492,7 +1492,7 @@ export const api = {
       method: 'POST',
     }),
   rewardLearningResourceAbility: (resourceId: string) =>
-    requestDirect<{ rewarded: boolean; reason?: string; primaryDimension?: string; secondaryDimension?: string; deltas?: Record<string, { from: number; to: number }> }>(/v1/learning-resources//ability-reward, { method: 'POST' }),
+    requestDirect<{ rewarded: boolean; reason?: string; primaryDimension?: string; secondaryDimension?: string; deltas?: Record<string, { from: number; to: number }> }>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/ability-reward`, { method: 'POST' }),
   resetLearningResource: (resourceId: string) =>
     requestDirect<{ resource: LearningResource }>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/reset`, {
       method: 'POST',
