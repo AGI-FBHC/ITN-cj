@@ -140,10 +140,19 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
   /* 进入当前页后立即预取相邻页：音频（提前触发 TTS 合成）+ 幻灯片图 */
   useEffect(() => {
     if (!slides || slides.slideCount === 0) return;
-    prefetchAsset('audio', current + 1);
-    prefetchAsset('audio', current - 1);
-    prefetchAsset('slides', current + 1);
-    prefetchAsset('slides', current - 1);
+    /* 图片预取稍后开始，音频/TTS 预取再晚一拍，避免首次进入页面时同时拉取造成卡顿 */
+    const slideTimer = window.setTimeout(() => {
+      prefetchAsset('slides', current + 1);
+      prefetchAsset('slides', current - 1);
+    }, 80);
+    const audioTimer = window.setTimeout(() => {
+      prefetchAsset('audio', current + 1);
+      prefetchAsset('audio', current - 1);
+    }, 1400);
+    return () => {
+      window.clearTimeout(slideTimer);
+      window.clearTimeout(audioTimer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current, slides, modelProvider, qwenVoice]);
 
