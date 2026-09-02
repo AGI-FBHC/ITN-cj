@@ -541,6 +541,11 @@ export default function CourseResourcePlayer() {
   const [course, setCourse] = useState<Course | null>(null);
   const [chapterResources, setChapterResources] = useState<LearningResourceSummary[]>([]);
   const [traces, setTraces] = useState<LearningResourceTrace[]>([]);
+  /** 资源 state 变化（答题/自评/重置）后同步更新本地缓存，避免返回时仍命中旧答案 */
+  useEffect(() => {
+    if (!resource) return;
+    writeResourcePlayerCache(resource.id, { resource, course, chapterResources, traces });
+  }, [resource, course, chapterResources, traces]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [currentBlockId, setCurrentBlockId] = useState('');
