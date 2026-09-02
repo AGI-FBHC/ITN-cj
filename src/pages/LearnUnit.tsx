@@ -793,11 +793,8 @@ export default function LearnUnit() {
     id?: string;
   }
   const [qaLog, setQaLog] = useState<QaEntry[]>([]);
-  const [pptAudioModel, setPptAudioModel] = useState<'mimo' | 'qwen'>(() => {
-    try {
-      return window.localStorage.getItem('lf.pptAudioModel') === 'qwen' ? 'qwen' : 'mimo';
-    } catch { return 'mimo'; }
-  });
+  /* 交互导学暂时固定 MiMo，Qwen 方案先隐藏 */
+  const [pptAudioModel] = useState<'mimo' | 'qwen'>('mimo');
   const [qwenVoice, setQwenVoice] = useState<(typeof QWEN_VOICES)[number]['value']>(() => {
     try {
       const saved = window.localStorage.getItem('lf.qwenVoice');
@@ -907,19 +904,6 @@ export default function LearnUnit() {
     const next = remaining.find((item) => item.modelProvider === pptAudioModel);
     pptChatSessionRefs.current[pptAudioModel] = next?.id ?? '';
     if (next) await restorePptChatSession(next.id); else setQaLog([]);
-  };
-
-  const switchPptAudioModel = async (model: 'mimo' | 'qwen') => {
-    if (model === pptAudioModel || voiceBusy) return;
-    pptAskAbortRef.current?.abort();
-    stopAnswerAudio();
-    setPptAudioModel(model);
-    try { window.localStorage.setItem('lf.pptAudioModel', model); } catch { /* ignore */ }
-    setQaLog([]);
-    try {
-      const sessionId = await ensurePptChatSession(model);
-      await restorePptChatSession(sessionId);
-    } catch { /* session creation is retried on the first question */ }
   };
 
   const requestPptAnswerAudio = (text: string, signal?: AbortSignal) => {
@@ -2080,28 +2064,6 @@ export default function LearnUnit() {
         </Link>
         <span className="text-hairline">/</span>
         <h1 className="font-serif text-[20px] font-semibold text-ink">{pptTopic || generatedUnit?.topicName || kp.name}</h1>
-        {pptTaskId && (
-          <div className="ml-auto flex items-center gap-2" aria-label="Model">
-            <span className="font-mono text-[12px] font-semibold text-ink-muted">Model:</span>
-            <div className="flex rounded-full border border-hairline bg-card-warm p-1 shadow-sm">
-              {(['mimo', 'qwen'] as const).map((model) => (
-                <button
-                  key={model}
-                  type="button"
-                  disabled={voiceBusy}
-                  onClick={() => void switchPptAudioModel(model)}
-                  className={cn(
-                    'rounded-full px-4 py-1.5 font-mono text-[12px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50',
-                    pptAudioModel === model ? 'bg-brand text-paper shadow-sm' : 'text-ink-muted hover:text-ink',
-                  )}
-                  title={model === 'mimo' ? 'MiMo 版本' : 'Qwen 版本'}
-                >
-                  {model === 'mimo' ? 'MiMo' : 'Qwen'}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
         <span className="flex items-center gap-2">
           {/* 掌握度小徽标（伴学栏收起时也看得到，移动端唯一入口） */}
           <span
