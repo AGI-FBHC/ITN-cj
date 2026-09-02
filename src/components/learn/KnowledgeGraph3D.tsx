@@ -12,6 +12,7 @@ import { api } from '@/lib/api';
 import type { LearningResourceGenerationTask } from '@/lib/api';
 import type { ResourceForm, GeneratedResource } from '@/data/resources';
 import type { PresentationTaskSummary } from '@/lib/presentationApi';
+import { presentationApi } from '@/lib/presentationApi';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
@@ -677,6 +678,7 @@ function TopicActionModal({
   const existingFor = (form: ResourceForm) => (resources ?? []).find((item) => item.id && item.form === form);
   /* 定制任务状态：跟随当前知识点拉取，进行中轮询 */
   const [customizeTasks, setCustomizeTasks] = useState<LearningResourceGenerationTask[]>([]);
+  const [pptStates, setPptStates] = useState<Record<string, { learned: boolean; maxPageViewed: number; pageCount: number }>>({});
   const [customizeChoice, setCustomizeChoice] = useState<{
     adminResourceId: string; resourceType: 'lecture' | 'practice' | 'quiz' | 'ppt'; resourceLabel: string;
   } | null>(null);
@@ -684,8 +686,21 @@ function TopicActionModal({
     let alive = true;
     const load = async () => {
       try {
-        const listed = await api.listCustomizeTasks();
+        const [listed, pptRes] = await Promise.all([
+          api.listCustomizeTasks(),
+          presentationApi.listPresentationSummariesFresh(300, true).catch(() => ({ tasks: [] })),
+        ]);
         if (alive) setCustomizeTasks(listed.tasks ?? []);
+        const next: Record<string, { learned: boolean; maxPageViewed: number; pageCount: number }> = {};
+        for (const raw of pptRes.tasks ?? []) {
+          const meta = (raw as PresentationTaskSummary & { learnedMeta?: { learned?: boolean; maxPageViewed?: number; pageCount?: number } }).learnedMeta ?? {};
+          next[raw.id] = {
+            learned: Boolean(raw.learned || meta.learned),
+            maxPageViewed: Number(meta.maxPageViewed ?? 0),
+            pageCount: Number(meta.pageCount ?? 0),
+          };
+        }
+        if (alive) setPptStates(next);
       } catch { /* 查询失败保持现状 */ }
     };
     void load();
@@ -876,12 +891,29 @@ function TopicActionModal({
         const customizing = taskBusy(cTask);
         const customized = Boolean(cTask?.status === 'completed' && cTask.resourceId);
         const busy = customizing;
+        const pptResourceId = isPpt && customized && cTask?.resourceId
+          ? cTask.resourceId
+          : isPpt && pptTask?.id
+            ? pptTask.id
+            : undefined;
+        const pptState = isPpt && pptResourceId ? pptStates[pptResourceId] : undefined;
+        const pptRatio = pptState
+          ? pptState.learned || pptState.pageCount > 0 && pptState.maxPageViewed >= pptState.pageCount
+            ? 1
+            : pptState.pageCount > 0
+              ? Math.min(1, pptState.maxPageViewed / pptState.pageCount)
+              : 0
+          : 0;
         const status: 'missing' | 'unlearned' | 'incomplete' | 'learned' =
           customizing ? 'incomplete'
           : !exists && !customized
             ? 'missing'
             : isPpt
-              ? (pptTask?.learned ? 'learned' : ((pptTask?.progress ?? 0) > 0 ? 'incomplete' : 'unlearned'))
+              ? (pptRatio >= 1
+                  ? 'learned'
+                  : pptRatio > 0
+                    ? 'incomplete'
+                    : 'unlearned')
               : (res?.learned ?? learned.has(node.kpId))
                 ? 'learned'
               : res?.started

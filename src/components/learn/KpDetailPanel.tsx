@@ -192,8 +192,12 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
   const openPptCourseware = async () => {
     const selectedTopicName = topicIndex != null ? kp.coreTopics[topicIndex] : null;
     const focus = selectedTopicName ?? kpProp?.coreTopics[0] ?? kp.name;
-    if (pptForScope?.status === 'completed') {
-      navigate(`/learn/${kpId}?ppt=${pptForScope.id}&topic=${encodeURIComponent(focus)}`);
+    const customizedPptId = pptCustomizeTask?.status === 'completed' && pptCustomizeTask.resourceId
+      ? pptCustomizeTask.resourceId
+      : undefined;
+    const targetPptId = customizedPptId ?? pptForScope?.id;
+    if (targetPptId && (customizedPptId || pptForScope?.status === 'completed')) {
+      navigate(`/learn/${kpId}?ppt=${targetPptId}&topic=${encodeURIComponent(focus)}`);
       return;
     }
     toast.info('该资源暂未提供', { description: '管理员尚未设置该知识点的课件母版。' });
