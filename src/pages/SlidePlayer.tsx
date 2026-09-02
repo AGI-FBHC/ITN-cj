@@ -28,6 +28,33 @@ function assessmentLabel(score: number | null | undefined) {
   return '完全掌握';
 }
 
+const quizDifficultyMeta = {
+  easy: { label: '基础', color: '#287a62' },
+  medium: { label: '进阶', color: '#b17818' },
+  hard: { label: '挑战', color: '#b94f45' },
+} as const;
+
+function quizDifficultyOf(question: Record<string, unknown>) {
+  const raw = String(question.difficulty ?? question.difficultyLevel ?? '').toLowerCase();
+  const byLabel = quizDifficultyMeta[raw as keyof typeof quizDifficultyMeta];
+  if (byLabel) return byLabel;
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric)) {
+    if (numeric <= 2) return quizDifficultyMeta.easy;
+    if (numeric === 3) return quizDifficultyMeta.medium;
+    return quizDifficultyMeta.hard;
+  }
+  return { label: '自适应', color: '#6b7280' };
+}
+
+function DifficultyBadge({ question }: { question: Record<string, unknown> }) {
+  const meta = quizDifficultyOf(question);
+  return (
+    <span className="inline-flex rounded-full border px-3 py-1 font-mono text-[10px] tracking-[0.1em]" style={{ borderColor: `${meta.color}55`, color: meta.color, backgroundColor: `${meta.color}14` }}>
+      {meta.label}
+    </span>
+  );
+}
 function QuizCard({ slide, onInteractionChange, resourceId }: { slide: CustomizeSlide; onInteractionChange: (state: { submitted: boolean; selectedAnswer?: string; correct?: boolean }) => void; resourceId?: string | null }) {
   const question = slide.content as Record<string, unknown>;
   const rawOptions = Array.isArray(question.options) ? question.options : [];
@@ -101,10 +128,10 @@ function QuizCard({ slide, onInteractionChange, resourceId }: { slide: Customize
         {options.map((option, index) => {
           const selected = picked !== null && String(picked) === String(option.value);
           const correctOption = picked !== null && (String(option.value) === String(correct) || index === displayCorrectIndex);
-          return <button key={`${option.value}-${index}`} type="button" disabled={picked !== null} onClick={() => void choose(option.value, index, resourceId)} className={cn('flex items-start gap-3 rounded-[14px] border px-4 py-3.5 text-left text-[14px] leading-6', picked === null && 'border-hairline bg-paper hover:border-brand/45 hover:bg-brand-tint/30', selected && !isCorrect && 'border-brand-danger/40 bg-red-50', correctOption && 'border-brand/45 bg-brand-tint')}><span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-current font-mono text-[11px]">{String.fromCharCode(65 + index)}</span><span>{option.label}</span>{correctOption && <Check size={16} className="ml-auto mt-1 text-brand" />}</button>;
+          return <button key={`${option.value}-${index}`} type="button" disabled={picked !== null} onClick={() => void choose(option.value, index, resourceId)} className={cn('flex items-start gap-3 rounded-[14px] border px-4 py-3.5 text-left text-[14px] leading-6', picked === null && 'border-hairline bg-paper hover:border-brand/45 hover:bg-brand-tint/30', selected && !isCorrect && 'border-brand-danger/40 bg-red-50', correctOption && 'border-emerald-500/70 bg-emerald-50 text-emerald-900')}><span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-current font-mono text-[11px]">{String.fromCharCode(65 + index)}</span><span>{option.label}</span>{correctOption && <Check size={16} className="ml-auto mt-1 text-emerald-600" />}</button>;
         })}
       </div>
-      {picked !== null && <div className={cn('mt-5 rounded-[14px] border p-4 text-[13px] leading-6', isCorrect ? 'border-brand/30 bg-brand-tint/45 text-ink' : 'border-brand-amber/35 bg-brand-amber-tint/45 text-ink')}><strong>{isCorrect ? '回答正确' : '再看一下解析'}</strong>{(feedback?.explanation || question.explanation || question.analysis) ? <p className="mt-1 text-ink-2">{String(feedback?.explanation ?? question.explanation ?? question.analysis)}</p> : null}</div>}
+      {picked !== null && <div className={cn('mt-5 rounded-[14px] border p-4 text-[13px] leading-6', isCorrect ? 'border-brand/30 bg-brand-tint/45 text-ink' : 'border-brand-amber/35 bg-brand-amber-tint/45 text-ink')}><strong>{isCorrect ? '回答正确' : '解析'}</strong>{(feedback?.explanation || question.explanation || question.analysis) ? <p className="mt-1 text-ink-2">{String(feedback?.explanation ?? question.explanation ?? question.analysis)}</p> : null}</div>}
     </div>
   );
 }
@@ -504,7 +531,7 @@ export default function SlidePlayer() {
       <section className={cn('flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-gradient-to-br from-brand-tint/25 via-paper to-card-warm px-4 py-8 md:px-12', isQuiz && assistantOpen && 'lg:pr-[var(--lf-slide-assistant-width)]')}>
         {!slide ? <div className="flex h-full w-full max-w-[880px] flex-col items-center justify-center rounded-[24px] border border-dashed border-brand/30 bg-card-warm px-6 text-center">{data?.status === 'failed' || data?.status === 'cancelled' ? <><CircleAlert size={25} className="text-brand-danger" /><h1 className="mt-4 font-serif text-[23px] font-semibold text-ink">本次定制没有生成可学习页面</h1><p className="mt-2 max-w-md text-[12.5px] leading-6 text-ink-muted">返回知识网络后重新选择该资源，即可按新的逐页流程生成。</p><button type="button" onClick={() => navigate('/learn')} className="lf-btn-primary mt-5">返回知识网络</button></> : <><Loader2 size={25} className="animate-spin text-brand" /><h1 className="mt-4 font-serif text-[23px] font-semibold text-ink">正在准备第一张学习卡片</h1><p className="mt-2 max-w-md text-[12.5px] leading-6 text-ink-muted">第一页完成后会立即显示，不必等待整项资源生成。</p>{error && <p className="mt-4 flex items-center gap-1.5 text-[11px] text-brand-danger"><CircleAlert size={13} />{error}</p>}</>}</div>
           : <article className="relative flex h-full min-h-0 w-full max-w-[1040px] flex-col overflow-hidden rounded-[24px] border border-brand/20 bg-card-warm/95 shadow-warm-lg" data-assistant-context data-assistant-focus="true" data-context-kind={slide.type === 'question' ? '当前题目' : slide.type === 'step' ? '当前实操步骤' : '当前学习卡片'} data-context-title={slide.title} data-context-index={currentIndex + 1} data-context-total={expected || slides.length} data-context-current-page={currentIndex + 1} data-context-total-pages={expected || slides.length} data-context-assessed={slideAssessments[currentIndex] != null ? 'true' : undefined} data-context-assessment={assessmentLabel(slideAssessments[currentIndex])} data-context-resource-id={data?.resourceId ?? ''} data-context-knowledge-point-id={data?.kpId ?? completedResource?.kpId ?? ''} data-context-quiz-submitted={slide.type === 'question' ? String(quizInteraction.submitted) : undefined} data-context-selected-answer={slide.type === 'question' ? quizInteraction.selectedAnswer : undefined} data-context-quiz-correct={slide.type === 'question' && quizInteraction.correct !== undefined ? String(quizInteraction.correct) : undefined}>
-              <div className="flex shrink-0 items-center justify-between gap-4 border-b border-hairline/70 bg-paper/55 px-6 py-3.5 md:px-9"><span className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.1em] text-brand">{slide.type === 'question' ? '分阶练习' : slide.type === 'step' ? '实操步骤' : slide.type === 'intro' ? '本讲导览' : slide.type === 'presentation' ? '交互课件' : '领学章节'}</span>{data?.status === 'generating' && <span className="inline-flex items-center gap-1.5 text-[10.5px] text-ink-muted"><Loader2 size={12} className="animate-spin" />后续页面讲解生成中</span>}</div>
+              <div className="flex shrink-0 items-center justify-between gap-4 border-b border-hairline/70 bg-paper/55 px-6 py-3.5 md:px-9"><span className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.1em] text-brand">{slide.type === 'question' ? <DifficultyBadge question={slide.content as Record<string, unknown>} /> : slide.type === 'step' ? '实操步骤' : slide.type === 'intro' ? '本讲导览' : slide.type === 'presentation' ? '交互课件' : '领学章节'}</span>{data?.status === 'generating' && <span className="inline-flex items-center gap-1.5 text-[10.5px] text-ink-muted"><Loader2 size={12} className="animate-spin" />后续页面讲解生成中</span>}</div>
               <div ref={cardScrollRef} className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-6 pb-8 pt-5 [scrollbar-gutter:stable] md:px-9 md:pb-9 md:pt-6">
                 {slide.type === 'question' ? <QuizCard key={slide.index} slide={slide} resourceId={data?.resourceId} onInteractionChange={setQuizInteraction} /> : slide.type === 'presentation' ? <div className="mx-auto flex h-full max-w-[980px] flex-col"><h1 className="shrink-0 font-serif text-[22px] font-semibold text-ink">{slide.title}</h1><div className="mt-4 flex min-h-[320px] flex-1 items-center justify-center overflow-hidden rounded-[16px] border border-hairline bg-ink/5">{presentationImage ? <img src={presentationImage} alt={`第 ${slide.unitIndex + 1} 页 · ${slide.title}`} className="max-h-full max-w-full object-contain" /> : <Loader2 size={22} className="animate-spin text-brand" />}</div><div className="mt-4 rounded-xl border border-brand/15 bg-brand-tint/25 px-4 py-3 text-[12.5px] leading-6 text-ink-2"><span className="mr-2 font-medium text-brand">本页讲解</span>{String(slide.content ?? '')}</div></div> : <><h1 className="font-serif text-[28px] font-semibold leading-tight text-ink md:text-[34px]">{slide.title}</h1><div className="mt-6 h-1 w-14 rounded-full bg-brand" /><div className="mt-7 max-w-none text-ink-2"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{String(slide.content ?? '')}</ReactMarkdown></div></>}
                 <SourceList sources={pageSources} evidenceQuotes={slide.evidenceQuotes} />

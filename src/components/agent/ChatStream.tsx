@@ -3,7 +3,7 @@
  *
  * 被 AiChat 页面和 AgentDockSidebar 侧边栏复用。
  */
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -288,6 +288,24 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
       : ['分析题干', '给我一点提示', '帮我排除选项']
     : [];
   const hasChatMessage = messages.some((m) => m.kind !== 'stage');
+  const lastAgentMsg = (() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const m = messages[i];
+      if (m.kind === 'agent' && 'text' in m && m.text.trim()) return m;
+    }
+    return undefined;
+  })();
+  const replyOptions = (() => {
+    const isQuiz = currentContext.interaction?.kind === 'quiz' || currentContext.focus?.kind === '当前题目';
+    if (isQuiz) {
+      return currentContext.interaction?.submitted
+        ? ['讲解这道题', '分析错误选项', '查看原文依据', '出一道类似的题']
+        : ['分析题干', '给我一点提示', '帮我排除选项'];
+    }
+    return pageAwareSuggestions(currentContext).slice(0, 4);
+  })();
+  const showReplyOptions = Boolean(lastAgentMsg && !isResponding && replyOptions.length > 0);
+
 
   return (
     <>
@@ -339,7 +357,34 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
           </div>
         ) : (
           <div className="space-y-3">
-            {messages.map((m) => <MessageBubble key={m.id} message={m} onAnswerQuizCard={answerQuizCard} />)}
+            {messages.map((m) => (
+              <Fragment key={m.id}>
+                <MessageBubble message={m} onAnswerQuizCard={answerQuizCard} />
+                {showReplyOptions && m.id === lastAgentMsg?.id && (
+                  <div className="ml-1 flex flex-col gap-1.5">
+                    {replyOptions.map((option, idx) => (
+                      <button
+                        key={option}
+                        type="button"
+                        disabled={isResponding}
+                        onClick={() => {
+                          const ctx = collectLearningPageContext();
+                          if (option === '出一道类似的题') {
+                            void askSimilarQuiz(ctx);
+                          } else {
+                            askFree(option, ctx);
+                          }
+                        }}
+                        className="flex w-full items-center gap-2 rounded-xl border border-hairline bg-paper px-3 py-2 text-left text-[12px] text-ink transition hover:border-brand/40 hover:bg-brand-tint/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-current font-mono text-[10px]">{idx + 1}</span>
+                        <span className="min-w-0">{option}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </Fragment>
+            ))}
           </div>
         )}
       </div>
