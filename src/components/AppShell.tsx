@@ -16,7 +16,6 @@ import {
   Network,
   PenLine,
   Database,
-  Search,
   PanelLeftClose,
   PanelLeftOpen,
   NotebookPen,
@@ -260,13 +259,6 @@ export default function AppShell() {
               </Link>
               <button
                 type="button"
-                onClick={() => setSearchOpen(true)}
-                title="检索（⌘K）"
-                className="hidden h-9 w-9 items-center justify-center rounded-[10px] border border-hairline bg-card-warm text-ink-muted transition-all duration-200 hover:border-brand/35 hover:text-ink sm:flex"
-              >
-                <Search size={15} />
-              </button>
-              <Link
                 to="/me/profile"
                 title={`当前学习者：${currentLearner.name}`}
                 className="flex items-center gap-2 rounded-[10px] border border-hairline bg-card-warm py-1.5 pl-1.5 pr-2.5 transition-all duration-200 hover:border-brand/35"
@@ -554,4 +546,5 @@ export default function AppShell() {
     </>
   );
 }
+
 
