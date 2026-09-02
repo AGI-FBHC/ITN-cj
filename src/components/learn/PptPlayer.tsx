@@ -19,6 +19,10 @@ const SPEED_RATE: Record<TtsSpeed, number> = {
   very_fast: 1.3,
 };
 
+function cleanMomentText(value?: string): string {
+  return String(value ?? '').replace(/^\s*#{1,6}\s*/g, '').trim();
+}
+
 export interface PptPlayerRef {
   current: number;
   slideCount: number;
@@ -526,7 +530,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
                 <p className="mb-0.5 font-mono text-[10px] font-semibold tracking-[0.16em] text-[#7A877F]">
                   {activeMoment.type === 'quiz' ? '课堂检查点' : 'AI 总结'}
                 </p>
-                <h3 id="moment-title" className="text-[17px] font-semibold leading-snug text-[#24332B]">{activeMoment.title}</h3>
+                <h3 id="moment-title" className="text-[17px] font-semibold leading-snug text-[#24332B]">{cleanMomentText(activeMoment.title) || '课堂检查点'}</h3>
               </div>
               {activeMoment.type === 'summary' && (
                 <button type="button" onClick={continueMoment} aria-label="关闭" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#748078] transition hover:bg-[#EDF0EB] hover:text-[#24332B]">
@@ -538,7 +542,7 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
             <div className="max-h-[50dvh] overflow-y-auto px-5 py-4">
               {activeMoment.type === 'quiz' ? (
                 <>
-                  <p className="text-[13px] leading-5 text-[#3D4E44]">{activeMoment.prompt}</p>
+                  <p className="text-[13px] leading-5 text-[#3D4E44]">{cleanMomentText(activeMoment.prompt) || '请根据刚才讲到的内容，选择最准确的一项。'}</p>
                   <div className="mt-3 space-y-2">
                     {(activeMoment.options ?? []).map((option, index) => {
                       const correct = index === activeMoment.answerIndex;
