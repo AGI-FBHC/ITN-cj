@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowRight, Loader2, Box, Map, Expand, Shrink, Route, Check, Share2 } from 'lucide-react';
+import { ArrowRight, Loader2, Box, Map, Route, Check, Share2 } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
 import { useLearningMap } from '@/hooks/useLearningMap';
 import KnowledgeGraph from '@/components/learn/KnowledgeGraph';
@@ -62,14 +62,14 @@ export default function Learn() {
   const navigate = useNavigate();
   const { currentLearner } = useProfile();
   const [restoreMapState] = useState(() => consumeCameraReturn(currentLearner.id));
-  /* 无论通过页面按钮还是浏览器返回，都恢复离开前的章节、知识点与 2D/3D 视图。 */
-  const restoredView = readLearnView(currentLearner.id);
+  /* 每次进入 learn 页面重置 3D 视图状态 */
+  const restoredView: LearnViewState | null = null;
   const map = useLearningMap();
   const knowledgePoints = map.domains;
   const reportPath = map.path;
   /** “我的已学路径”：高亮已学章节/资源 */
   const [showLearnedPath, setShowLearnedPath] = useState(() => restoredView?.showLearnedPath ?? false);
-  const [showTopicEdges, setShowTopicEdges] = useState(() => restoredView?.showTopicEdges ?? true);
+  const [showTopicEdges, setShowTopicEdges] = useState(false);
   const [viewMode, setViewMode] = useState<'2d' | '3d'>(() => restoredView?.viewMode ?? '3d');
   const [selectedKp, setSelectedKp] = useState<string | null>(() => restoredView?.selectedKp ?? null);
   const [expandedKpIds, setExpandedKpIds] = useState<Set<string>>(() => new Set(restoredView?.expandedKpIds ?? []));
@@ -216,15 +216,10 @@ export default function Learn() {
 
           <button
             type="button"
-            onClick={() => setShowTopicEdges((visible) => !visible)}
+            onClick={() => setShowTopicEdges((visible: boolean) => !visible)}
             aria-pressed={showTopicEdges}
             title="同时控制 2D 与 3D 视图中的知识点关系连线"
-            className={cn(
-              'hidden items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] transition-colors lg:inline-flex',
-              showTopicEdges
-                ? 'border-brand/60 bg-brand-tint text-brand hover:bg-brand-tint'
-                : 'border-hairline/50 bg-white/90 text-ink-2 hover:bg-white hover:text-ink',
-            )}
+            className="hidden"
           >
             <Share2 size={12} />
             知识点连线
@@ -234,7 +229,7 @@ export default function Learn() {
           {viewMode === '2d' && (
             <button
               type="button"
-              onClick={() => setShowLearnedPath((v) => !v)}
+              onClick={() => setShowLearnedPath((v: boolean) => !v)}
               aria-pressed={showLearnedPath}
               title="高亮已学章节/资源，不一定连续"
               className={cn(
@@ -276,32 +271,9 @@ export default function Learn() {
         <motion.div layout="position" className="relative min-w-0">
           {viewMode === '3d' && (
             <div className="absolute right-4 top-4 z-10 flex flex-col items-end gap-2">
-            {viewMode === '3d' && (
-              <button
-                type="button"
-                onClick={() => {
-                  const allDomainIds = map.graphNodes.filter((n) => n.kind === 'domain').map((n) => n.id);
-                  const isAllExpanded = expandedKpIds.size === allDomainIds.length;
-                  setExpandedKpIds(isAllExpanded ? new Set() : new Set(allDomainIds));
-                }}
-                className="flex items-center gap-1.5 rounded-lg border border-hairline/50 bg-white/90 px-3 py-1.5 text-[11px] text-ink-2 backdrop-blur-sm transition-colors hover:bg-white hover:text-ink"
-              >
-                {expandedKpIds.size === map.graphNodes.filter((n) => n.kind === 'domain').length ? (
-                  <>
-                    <Shrink size={12} />
-                    隐藏全部
-                  </>
-                ) : (
-                  <>
-                    <Expand size={12} />
-                    展开全部
-                  </>
-                )}
-              </button>
-            )}
             <button
               type="button"
-              onClick={() => setShowLearnedPath((v) => !v)}
+              onClick={() => setShowLearnedPath((v: boolean) => !v)}
               aria-pressed={showLearnedPath}
               title="高亮已学章节/资源，不一定连续"
               className={cn(
