@@ -2020,8 +2020,8 @@ export default function KnowledgeGraph3D({
         ref={containerRef}
         className={`relative h-[52dvh] min-h-[360px] w-full overflow-hidden rounded-2xl border border-hairline lg:h-[600px] ${className}`}
         style={{
-          backgroundImage: 'linear-gradient(180deg, #0B1F3A 0%, #102A4C 55%, #07182F 100%)',
-          backgroundColor: '#081A33',
+          backgroundImage: 'linear-gradient(180deg, #EAF4FF 0%, #CFE4FF 55%, #B9D6FF 100%)',
+          backgroundColor: '#CFE4FF',
         }}
         onWheel={(e) => e.stopPropagation()}
         onTouchMove={(e) => e.stopPropagation()}
