@@ -166,14 +166,11 @@ export default function ScoreBand({ report }: { report: LearnerReport }) {
               ADAPTATION SCORE
             </span>
           )}
-          <span className="rounded-md border border-brand/30 bg-brand-tint px-1.5 py-0.5 font-mono text-[10.5px] font-medium text-brand">
-            持续优化中
-          </span>
         </div>
         <ReactECharts option={gaugeOption} height={128} />
         <div className="-mt-3 text-center text-[13px] font-medium text-ink-2">综合适配评分</div>
         <div className="mt-2 border-t border-hairline pt-2 text-center text-[12px] leading-[18px] text-ink-muted">
-          画像与资源难度适配
+          定制资源覆盖 × 学习证据
         </div>
       </motion.div>
 
@@ -199,7 +196,7 @@ export default function ScoreBand({ report }: { report: LearnerReport }) {
             ? `建档基线 ${baselineHigh} 个高优盲区，当前剩 ${highCount} 个`
             : `近 8 周高盲区由 5 降至 ${highCount}`
         }
-        badge={report.generated && resolved === 0 ? '推进中' : '持续优化中'}
+        badge="推进中"
         badgeTone="amber"
       />
       <StatCard

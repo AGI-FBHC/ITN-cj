@@ -654,9 +654,39 @@ export default function Report() {
       };
     });
     const trendStart = Math.max(12, Math.round(avg - 10));
+
+    /* 综合适配评分：定制覆盖为主，学习证据与测评表现为辅。
+       覆盖 = 知识点上已挂接讲义/实操/分阶题等资源形态的比例；
+       学习证据 = 章节进度 × 掌握度的均值；
+       测评表现 = 近 6 次测评得分的均值，无测评时按 80 分中性计。 */
+    const catalogForms = new Set<string>();
+    let catalogKpCount = 0;
+    Object.entries(learningMap.resources ?? {}).forEach(([kpId, list]) => {
+      if (!list || list.length === 0) return;
+      catalogKpCount += 1;
+      list.forEach((resource) => catalogForms.add(`${kpId}::${resource.form}`));
+    });
+    const expectedForms = Math.max(1, catalogKpCount) * 3;
+    const formCoverage = catalogKpCount ? Math.min(1, catalogForms.size / expectedForms) : 0;
+    const domains = learningMap.domains ?? [];
+    const learningEvidence = domains.length
+      ? domains.reduce((sum, domain) => sum + ((learningMap.chapterProgress[domain.id] ?? 0) / 100) * ((learningMap.mastery[domain.id] ?? 0) / 100), 0) / domains.length
+      : 0;
+    const quizScores = (analytics?.recentQuizzes ?? [])
+      .map((quiz) => quiz.score)
+      .filter((score): score is number => score != null);
+    const quizPerformance = quizScores.length
+      ? quizScores.reduce((sum, score) => sum + score, 0) / quizScores.length / 100
+      : 0.8;
+    const adaptScore = Math.max(65, Math.min(98, Math.round(
+      80 * (0.5 + 0.5 * formCoverage) +
+      10 * learningEvidence +
+      10 * quizPerformance,
+    )));
+
     return {
       learnerId: currentLearner.id,
-      adaptScore: Math.round(avg),
+      adaptScore,
       adaptTrend: weeks.map((_, weekIndex) => Math.round(trendStart + (avg - trendStart) * (weekIndex / 7))),
       weeks,
       abilityCurves,
@@ -672,7 +702,7 @@ export default function Report() {
       investHours: Math.round((analytics?.stats.weeklyMinutes.reduce((sum, minutes) => sum + minutes, 0) ?? 0) / 60),
       investNote: '按近 7 天学习时长估算',
     };
-  }, [abilities, abilityScores, analytics, currentLearner, resources]);
+  }, [abilities, abilityScores, analytics, currentLearner, learningMap, resources]);
   const resourcesByChapter = useMemo(() => new Map((course?.chapters ?? []).map((chapter) => {
     const chapterResources = resources.filter((resource) => resource.chapterId === chapter.id);
     return [chapter.id, { total: chapterResources.length, learned: chapterResources.filter((resource) => resource.learned).length }];
