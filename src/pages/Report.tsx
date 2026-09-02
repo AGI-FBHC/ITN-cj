@@ -457,6 +457,8 @@ export default function Report() {
   /** 后台静默刷新：先展示缓存，拉取最新数据后自动更新 */
   const [refreshing, setRefreshing] = useState(false);
   const refreshSeqRef = useRef(0);
+  /** 匹配报告速览当前展开的模块 */
+  const [activeMatchTab, setActiveMatchTab] = useState<'score' | 'gap' | 'difficulty' | 'path'>('score');
   /** S 形路径每行节点数：按屏幕宽度自适应（4–8 个） */
   const [perRow, setPerRow] = useState(6);
   useEffect(() => {
@@ -715,7 +717,18 @@ export default function Report() {
   }), { questions: 0, correct: 0, durationSeconds: 0, resources: 0 }), [journals]);
 
   const accuracy = journalStats.questions ? Math.round(journalStats.correct / journalStats.questions * 100) : null;
-  const overallMastery = Math.round((analytics?.mastery.overall ?? 0) * 100);
+  const liveMasteryValues = Object.values(learningMap.mastery).filter((value) => value > 0);
+  const overallMastery = liveMasteryValues.length
+    ? Math.round(liveMasteryValues.reduce((sum, value) => sum + value, 0) / liveMasteryValues.length)
+    : Math.round((analytics?.mastery.overall ?? 0) * 100);
+  const analyticsMinutes = analytics?.stats.totalStudyMinutes ?? 0;
+  const journalMinutes = Math.round(journalStats.durationSeconds / 60);
+  const totalMinutesShown = Math.max(analyticsMinutes, journalMinutes);
+  const totalMinutesNote = (analytics?.stats.totalDays ?? 0) > 0
+    ? `${analytics?.stats.totalDays ?? 0} 个真实学习日`
+    : journalMinutes > 0
+      ? '按真实学习会话滚动累计，暂无全量统计'
+      : '完成真实学习后自动累计';
   /* 真实地图口径的最弱章节：优先有学习痕迹的，其次整体掌握度/进度最低 */
   const weakestChapter = useMemo(() => {
     const domains = learningMap.domains ?? [];
@@ -942,10 +955,10 @@ export default function Report() {
         </button>
       </motion.header>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-2">
         {[
-          { icon: Target, label: '实测综合掌握度', value: `${overallMastery}%`, note: analytics?.mastery.categories.length ? `${analytics.mastery.categories.length} 个章节形成证据` : '完成分阶题后开始累计', tone: 'text-brand' },
-          { icon: Clock3, label: '累计学习投入', value: displayMinutes(analytics?.stats.totalStudyMinutes ?? 0), note: `${analytics?.stats.totalDays ?? 0} 个真实学习日`, tone: 'text-brand' },
+          { icon: Target, label: '实测综合掌握度', value: `${overallMastery}%`, note: liveMasteryValues.length || (analytics?.mastery.categories.length ?? 0) ? `${Math.max(liveMasteryValues.length, analytics?.mastery.categories.length ?? 0)} 个章节形成证据` : '完成分阶题后开始累计', tone: 'text-brand' },
+          { icon: Clock3, label: '累计学习投入', value: displayMinutes(totalMinutesShown), note: totalMinutesNote, tone: 'text-brand' },
         ].map((item, index) => {
           const Icon = item.icon;
           return (
@@ -956,12 +969,6 @@ export default function Report() {
             </motion.div>
           );
         })}
-        <StreakCalendar
-          className="sm:col-span-2 xl:col-span-2"
-          streakDays={analytics?.stats.streakDays ?? 0}
-          studyDates={analytics?.stats.studyDates ?? []}
-          totalDays={analytics?.stats.totalDays ?? 0}
-        />
       </section>
 
       <section className="mt-12">
@@ -988,11 +995,50 @@ export default function Report() {
 
       <section className="mt-12 print:break-before-page">
         <SectionHeader en="MATCH REPORT" title="学情与资源匹配度报告" desc="知识盲区、资源难度匹配与学习路径规划，帮助直观决策。" />
-        <div className="space-y-5">
-          <ScoreBand report={visualReport} />
-          <GapSection learner={reportLearner} report={visualReport} />
-          <DifficultyMatch learner={reportLearner} report={visualReport} />
-          <PathRoadmap learner={reportLearner} report={visualReport} />
+        <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_350px]">
+          <div className="lf-card p-4">
+            <div className="mb-3 flex flex-wrap gap-2 border-b border-hairline pb-3">
+              {[
+                { key: 'score' as const, label: '综合评分', Icon: Target },
+                { key: 'gap' as const, label: '知识盲区', Icon: History },
+                { key: 'difficulty' as const, label: '难度匹配', Icon: BookOpen },
+                { key: 'path' as const, label: '路径规划', Icon: Route },
+              ].map((tab) => {
+                const Icon = tab.Icon;
+                const active = activeMatchTab === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => setActiveMatchTab(tab.key)}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium transition-all',
+                      active
+                        ? 'bg-brand text-paper shadow-sm'
+                        : 'bg-paper-deep text-ink-muted hover:bg-brand-tint hover:text-brand',
+                    )}
+                  >
+                    <Icon size={13} />
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="max-h-[680px] overflow-y-auto pr-1">
+              {activeMatchTab === 'score' && <ScoreBand report={visualReport} />}
+              {activeMatchTab === 'gap' && <GapSection learner={reportLearner} report={visualReport} />}
+              {activeMatchTab === 'difficulty' && <DifficultyMatch learner={reportLearner} report={visualReport} />}
+              {activeMatchTab === 'path' && <PathRoadmap learner={reportLearner} report={visualReport} />}
+            </div>
+          </div>
+          <StreakCalendar
+            className="xl:sticky xl:top-6"
+            streakDays={analytics?.stats.streakDays ?? 0}
+            studyDates={analytics?.stats.studyDates ?? []}
+            totalDays={analytics?.stats.totalDays ?? 0}
+          />
+        </div>
+        <div className="mt-5">
           <GrowthSection learner={reportLearner} report={visualReport} />
         </div>
       </section>
