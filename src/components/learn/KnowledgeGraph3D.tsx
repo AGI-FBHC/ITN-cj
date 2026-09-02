@@ -1956,7 +1956,7 @@ export default function KnowledgeGraph3D({
     <>
       <div
         ref={containerRef}
-        className={`relative h-[52dvh] min-h-[360px] w-full overflow-hidden rounded-2xl border border-hairline bg-gradient-to-br from-paper via-[#F5F3EA] to-brand-tint/20 lg:h-[600px] ${className}`}
+        className={`relative h-[52dvh] min-h-[360px] w-full overflow-hidden rounded-2xl border border-hairline bg-[#F7F8FA] lg:h-[600px] ${className}`}
         onWheel={(e) => e.stopPropagation()}
         onTouchMove={(e) => e.stopPropagation()}
       >
