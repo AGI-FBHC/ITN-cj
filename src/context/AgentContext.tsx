@@ -775,6 +775,18 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         };
         return { ...prev, [lid]: updated.slice(-60) };
       });
+      const qMsg = (msgsAll[lid] ?? []).find((item) => item.id === msgId && item.kind === 'quiz-card');
+      if (qMsg && qMsg.kind === 'quiz-card' && !correct) {
+        void api.addToWrongBook({
+          questionId: qMsg.id,
+          stem: qMsg.stem,
+          options: qMsg.options,
+          userAnswer: optIndex,
+          correctAnswer: qMsg.answerIndex,
+          explanation: qMsg.analysis ?? '',
+          difficulty: 'medium',
+        }).catch(() => undefined);
+      }
     };
 
     /** 动态建议问题：按建议原文发起（类型已知则透传，未知按自由提问） */
@@ -890,4 +902,5 @@ export function useAgent(): AgentContextValue {
   if (!ctx) throw new Error('useAgent must be used within AgentProvider');
   return ctx;
 }
+
 

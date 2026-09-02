@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BadgeCheck, Check, ChevronDown, GraduationCap, Repeat, RotateCcw, Search, Trash2, X } from 'lucide-react';
+import { BadgeCheck, Check, ChevronDown, GraduationCap, NotebookPen, Repeat, RotateCcw, Search, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import GardenEmpty from '@/components/heal/GardenEmpty';
 import PageTip from '@/components/heal/PageTip';
@@ -9,6 +9,7 @@ import PageBack from '@/components/PageBack';
 import TraceBadge from '@/components/TraceBadge';
 import { DAY_MS, dueAt, humanAgo, moistLevel, MOIST_META, retention } from '@/data/forgetting';
 import { learningResourcePath, useCourseLearning } from '@/hooks/useCourseLearning';
+import { useNotes } from '@/context/NotesContext';
 import { api } from '@/lib/api';
 import type { WrongAnswerRecord } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -41,6 +42,10 @@ function WrongCard({ item, categoryName, sourcePath, onChange, onRemove }: {
   const [pick, setPick] = useState<number | null>(null);
   const [correct, setCorrect] = useState<boolean | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const { addNote } = useNotes();
+  const [note, setNote] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteSaved, setNoteSaved] = useState(false);
   const memory = memoryOf(item);
   const meta = MOIST_META[moistLevel(memory.retention)];
   const oldPick = item.lastPick ?? item.userAnswer;
@@ -72,6 +77,23 @@ function WrongCard({ item, categoryName, sourcePath, onChange, onRemove }: {
     }
   };
 
+  const saveNote = () => {
+    const text = note.trim();
+    if (!text || noteSaving) return;
+    setNoteSaving(true);
+    addNote({
+      kpId: item.kpId ?? 'uncategorized',
+      text: `【错题】${item.stem}\n\n我的记录：${text}\n\n正确答案：${letters[item.correctAnswer]}；解析：${item.explanation || '无'}`,
+      source: `错题 · ${item.knowledgeCategoryName || '未分类'} · ${item.stem.slice(0, 18)}`,
+      sourceKind: 'manual',
+      blockAnchor: item.id,
+      kbRefs: item.kbRefs ?? [],
+    });
+    setNoteSaving(false);
+    setNoteSaved(true);
+    setNote('');
+    toast.success('已记入笔记本', { description: '错题和你的记录已保存到笔记本' });
+  };
   return (
     <article className={cn('lf-card overflow-hidden', memory.due && 'border-brand-amber/45')}>
       <button type="button" onClick={() => setOpen((value) => !value)} className="flex w-full items-start gap-3 px-4 py-3 text-left">
@@ -130,8 +152,29 @@ function WrongCard({ item, categoryName, sourcePath, onChange, onRemove }: {
               <button type="button" onClick={() => void setMastered()} className="inline-flex items-center gap-1.5 rounded-md border border-brand/35 bg-brand-tint/50 px-2.5 py-1 text-[12px] font-medium text-brand hover:bg-brand-tint"><BadgeCheck size={12} />{item.mastered ? '放回错题本' : '这题我已经会了'}</button>
               <button type="button" onClick={() => onRemove(item.id)} className="ml-auto inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[12px] text-ink-muted hover:text-brand-danger"><Trash2 size={12} />移除</button>
             </div>
-          </div>
-        </motion.div>}
+
+            <div className="border-t border-hairline/60 pt-2.5">
+              <p className="text-[11px] font-medium text-ink-2">错题笔记</p>
+              <textarea
+                value={note}
+                onChange={(event) => { setNote(event.target.value); if (noteSaved) setNoteSaved(false); }}
+                rows={2}
+                placeholder="记录这道错题的想法、错因或要点…"
+                className="mt-1.5 w-full rounded-[10px] border border-hairline bg-paper px-3 py-2 text-[12.5px] leading-5 text-ink outline-none transition-colors focus:border-brand/40"
+              />
+              <div className="mt-1.5 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={saveNote}
+                  disabled={!note.trim() || noteSaving}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-brand/30 bg-brand-tint/50 px-2.5 py-1 text-[11.5px] font-medium text-brand transition hover:border-brand/45 hover:bg-brand-tint disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <NotebookPen size={12} />保存到笔记本
+                </button>
+                {noteSaved && <span className="text-[11px] text-brand">已记入笔记本</span>}
+              </div>
+            </div>
+          </div></motion.div>}
       </AnimatePresence>
     </article>
   );
@@ -217,3 +260,6 @@ export default function WrongBook() {
     {mastered.length > 0 && <div className="mt-8"><button type="button" onClick={() => setShowMastered((value) => !value)} className="flex w-full items-center justify-between rounded-[12px] border border-hairline bg-card-warm/70 px-4 py-2.5 text-[13px] text-ink-2 hover:border-brand/40"><span className="inline-flex items-center gap-1.5"><BadgeCheck size={14} className="text-brand" />已经拿下的 {mastered.length} 题</span><ChevronDown size={15} className={cn('transition-transform', showMastered && 'rotate-180')} /></button>{showMastered && <div className="lf-anim-in-up mt-2 space-y-1.5">{mastered.map((item) => <div key={item.id} className="flex items-center gap-2 rounded-[10px] border border-hairline bg-paper px-3 py-2"><BadgeCheck size={14} className="shrink-0 text-brand" /><span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">{item.stem}</span><button type="button" onClick={async () => { try { change(await api.updateWrongAnswer(item.id, { mastered: false, reviewStatus: 'reviewing' })); } catch (reason) { toast.error(reason instanceof Error ? reason.message : '状态更新失败'); } }} className="shrink-0 text-[11.5px] text-ink-muted hover:text-brand">放回错题本</button></div>)}</div>}</div>}
   </div>;
 }
+
+
+

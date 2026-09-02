@@ -55,7 +55,24 @@ function DifficultyBadge({ question }: { question: Record<string, unknown> }) {
     </span>
   );
 }
-function QuizCard({ slide, onInteractionChange, resourceId }: { slide: CustomizeSlide; onInteractionChange: (state: { submitted: boolean; selectedAnswer?: string; correct?: boolean }) => void; resourceId?: string | null }) {
+function quizInitialState(slide: CustomizeSlide, resourceState?: Record<string, unknown> | null) {
+  const question = slide.content as Record<string, unknown>;
+  const questionId = String(question.id ?? question.questionId ?? slide.id ?? '');
+  const answered = Array.isArray(resourceState?.answered) ? resourceState.answered : [];
+  const record = answered.find((item: Record<string, unknown>) => String(item.questionId) === questionId) as Record<string, unknown> | undefined;
+  if (!record) return { picked: null, feedback: null };
+  const selected = Number(record.selectedIndex ?? record.selectedAnswer ?? NaN);
+  return {
+    picked: Number.isFinite(selected) ? selected : null,
+    feedback: {
+      correct: Boolean(record.correct),
+      correctIndex: typeof question.correctIndex === 'number' ? question.correctIndex : undefined,
+      explanation: String(question.explanation ?? question.analysis ?? '') || undefined,
+    },
+  };
+}
+
+function QuizCard({ slide, onInteractionChange, resourceId, initialPicked = null, initialFeedback = null }: { slide: CustomizeSlide; onInteractionChange: (state: { submitted: boolean; selectedAnswer?: string; correct?: boolean }) => void; resourceId?: string | null; initialPicked?: QuizValue | null; initialFeedback?: { correct: boolean; correctIndex?: number; explanation?: string } | null }) {
   const question = slide.content as Record<string, unknown>;
   const rawOptions = Array.isArray(question.options) ? question.options : [];
   const options = rawOptions.map((option, index) => {
@@ -63,8 +80,8 @@ function QuizCard({ slide, onInteractionChange, resourceId }: { slide: Customize
     const item = option as Record<string, unknown>;
     return { label: String(item.text ?? item.label ?? item.content ?? ''), value: (item.value ?? item.id ?? index) as QuizValue };
   });
-  const [picked, setPicked] = useState<QuizValue | null>(null);
-  const [feedback, setFeedback] = useState<{ correct: boolean; correctIndex?: number; explanation?: string } | null>(null);
+  const [picked, setPicked] = useState<QuizValue | null>(initialPicked);
+  const [feedback, setFeedback] = useState<{ correct: boolean; correctIndex?: number; explanation?: string } | null>(initialFeedback);
   const proactiveSentRef = useRef(false);
   const { askFree, setOpen } = useAgent();
   const correct = (question.correctAnswer ?? question.answer ?? question.correctIndex) as QuizValue | undefined;
@@ -533,7 +550,7 @@ export default function SlidePlayer() {
           : <article className="relative flex h-full min-h-0 w-full max-w-[1040px] flex-col overflow-hidden rounded-[24px] border border-brand/20 bg-card-warm/95 shadow-warm-lg" data-assistant-context data-assistant-focus="true" data-context-kind={slide.type === 'question' ? '当前题目' : slide.type === 'step' ? '当前实操步骤' : '当前学习卡片'} data-context-title={slide.title} data-context-index={currentIndex + 1} data-context-total={expected || slides.length} data-context-current-page={currentIndex + 1} data-context-total-pages={expected || slides.length} data-context-assessed={slideAssessments[currentIndex] != null ? 'true' : undefined} data-context-assessment={assessmentLabel(slideAssessments[currentIndex])} data-context-resource-id={data?.resourceId ?? ''} data-context-knowledge-point-id={data?.kpId ?? completedResource?.kpId ?? ''} data-context-quiz-submitted={slide.type === 'question' ? String(quizInteraction.submitted) : undefined} data-context-selected-answer={slide.type === 'question' ? quizInteraction.selectedAnswer : undefined} data-context-quiz-correct={slide.type === 'question' && quizInteraction.correct !== undefined ? String(quizInteraction.correct) : undefined}>
               <div className="flex shrink-0 items-center justify-between gap-4 border-b border-hairline/70 bg-paper/55 px-6 py-3.5 md:px-9">{slide.type === 'question' ? <DifficultyBadge question={slide.content as Record<string, unknown>} /> : <span className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.1em] text-brand">{slide.type === 'step' ? '实操步骤' : slide.type === 'intro' ? '本讲导览' : slide.type === 'presentation' ? '交互课件' : '领学章节'}</span>}{data?.status === 'generating' && <span className="inline-flex items-center gap-1.5 text-[10.5px] text-ink-muted"><Loader2 size={12} className="animate-spin" />后续页面讲解生成中</span>}</div>
               <div ref={cardScrollRef} className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-6 pb-8 pt-5 [scrollbar-gutter:stable] md:px-9 md:pb-9 md:pt-6">
-                {slide.type === 'question' ? <QuizCard key={slide.index} slide={slide} resourceId={data?.resourceId} onInteractionChange={setQuizInteraction} /> : slide.type === 'presentation' ? <div className="mx-auto flex h-full max-w-[980px] flex-col"><h1 className="shrink-0 font-serif text-[22px] font-semibold text-ink">{slide.title}</h1><div className="mt-4 flex min-h-[320px] flex-1 items-center justify-center overflow-hidden rounded-[16px] border border-hairline bg-ink/5">{presentationImage ? <img src={presentationImage} alt={`第 ${slide.unitIndex + 1} 页 · ${slide.title}`} className="max-h-full max-w-full object-contain" /> : <Loader2 size={22} className="animate-spin text-brand" />}</div><div className="mt-4 rounded-xl border border-brand/15 bg-brand-tint/25 px-4 py-3 text-[12.5px] leading-6 text-ink-2"><span className="mr-2 font-medium text-brand">本页讲解</span>{String(slide.content ?? '')}</div></div> : <><h1 className="font-serif text-[28px] font-semibold leading-tight text-ink md:text-[34px]">{slide.title}</h1><div className="mt-6 h-1 w-14 rounded-full bg-brand" /><div className="mt-7 max-w-none text-ink-2"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{String(slide.content ?? '')}</ReactMarkdown></div></>}
+                {slide.type === 'question' ? <QuizCard key={slide.index} slide={slide} resourceId={data?.resourceId} onInteractionChange={setQuizInteraction} initialPicked={quizInitialState(slide, completedResource?.state).picked} initialFeedback={quizInitialState(slide, completedResource?.state).feedback} /> : slide.type === 'presentation' ? <div className="mx-auto flex h-full max-w-[980px] flex-col"><h1 className="shrink-0 font-serif text-[22px] font-semibold text-ink">{slide.title}</h1><div className="mt-4 flex min-h-[320px] flex-1 items-center justify-center overflow-hidden rounded-[16px] border border-hairline bg-ink/5">{presentationImage ? <img src={presentationImage} alt={`第 ${slide.unitIndex + 1} 页 · ${slide.title}`} className="max-h-full max-w-full object-contain" /> : <Loader2 size={22} className="animate-spin text-brand" />}</div><div className="mt-4 rounded-xl border border-brand/15 bg-brand-tint/25 px-4 py-3 text-[12.5px] leading-6 text-ink-2"><span className="mr-2 font-medium text-brand">本页讲解</span>{String(slide.content ?? '')}</div></div> : <><h1 className="font-serif text-[28px] font-semibold leading-tight text-ink md:text-[34px]">{slide.title}</h1><div className="mt-6 h-1 w-14 rounded-full bg-brand" /><div className="mt-7 max-w-none text-ink-2"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{String(slide.content ?? '')}</ReactMarkdown></div></>}
                 <SourceList sources={pageSources} evidenceQuotes={slide.evidenceQuotes} />
               </div>
             </article>}
@@ -586,3 +603,6 @@ export default function SlidePlayer() {
     </main>
   );
 }
+
+
+

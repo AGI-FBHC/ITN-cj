@@ -1350,7 +1350,7 @@ export const api = {
   reviewWrongAnswer: (wrongId: string, answer: number) =>
     requestDirect<{ item: WrongAnswerRecord; correct: boolean }>(`/v1/wrong-answers/${encodeURIComponent(wrongId)}/review`, { method: 'POST', body: JSON.stringify({ answer }) }),
   deleteWrongAnswer: (wrongId: string) => requestDirect<void>(`/v1/wrong-answers/${encodeURIComponent(wrongId)}`, { method: 'DELETE' }),
-  addToWrongBook: (body: { resourceId: string; questionId: string; stem: string; options: string[]; userAnswer: number; correctAnswer: number; explanation?: string; difficulty?: string; kpId?: string; knowledgeCategoryName?: string }) =>
+  addToWrongBook: (body: { resourceId?: string; questionId: string; stem: string; options: string[]; userAnswer: number; correctAnswer: number; explanation?: string; difficulty?: string; kpId?: string; knowledgeCategoryName?: string }) =>
     requestDirect<WrongAnswerRecord>('/v1/wrong-answers/add', { method: 'POST', body: JSON.stringify(body) }),
   getTutoringScript: (learnerCode: string) =>
     requestDirect<Record<string, unknown>>(`/v1/tutoring/scripts/${encodeURIComponent(learnerCode)}`),
@@ -1536,4 +1536,5 @@ export const api = {
       body: JSON.stringify(body),
     }),
 };
+
 
