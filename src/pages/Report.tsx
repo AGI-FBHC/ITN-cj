@@ -37,6 +37,13 @@ import {
   bustLearnerJournal,
 } from '@/lib/dataCache';
 import type { LearnerAnalyticsProfile, LearnerGrowth, LearningJournal, OnboardingKnowledgePoint } from '@/lib/api';
+import GapSection from '@/components/report/GapSection';
+import DifficultyMatch from '@/components/report/DifficultyMatch';
+import PathRoadmap from '@/components/report/PathRoadmap';
+import GrowthSection from '@/components/report/GrowthSection';
+import ScoreBand from '@/components/report/ScoreBand';
+import type { BlindSpot, LearnerReport, PathNodeStatus } from '@/data/reportData';
+import { knowledgePoints, getKnowledgePoint } from '@/data/knowledgePoints';
 
 const resourceLabel = { lecture: '讲义', practice: '实操', quiz: '分阶题' } as const;
 
@@ -593,6 +600,79 @@ export default function Report() {
     score: abilityScores[point.id] ?? 50,
   })).sort((left, right) => left.score - right.score), [abilityScores, domainKnowledgePoints]);
 
+  const reportLearner = useMemo(() => ({ ...currentLearner, scores: abilityScores }), [currentLearner, abilityScores]);
+
+  const visualReport = useMemo<LearnerReport>(() => {
+    const weeks = ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8'];
+    const spots: BlindSpot[] = abilities
+      .filter((ability) => ability.score < getKnowledgePoint(ability.id).targetLevel)
+      .map((ability) => {
+        const kp = getKnowledgePoint(ability.id);
+        const gap = kp.targetLevel - ability.score;
+        return {
+          kpId: ability.id,
+          score: ability.score,
+          target: kp.targetLevel,
+          gap,
+          priority: gap >= 30 ? '高' : gap >= 20 ? '中' : '低',
+          suggestion: `先完成「${kp.name}」对应章节的讲义与分阶题，再用实操巩固。`,
+        };
+      })
+      .sort((left, right) => right.gap - left.gap)
+      .slice(0, 6);
+
+    const pathNodes = knowledgePoints.map((kp, index) => {
+      const chapterIds = Object.entries(CHAPTER_ABILITY_WEIGHTS)
+        .filter(([, weights]) => weights[kp.id as AbilityDimension])
+        .map(([chapterId]) => chapterId);
+      const chapterResources = resources.filter((resource) => chapterIds.includes(resource.chapterId ?? ''));
+      const learnedCount = chapterResources.filter((resource) => resource.learned).length;
+      const status: PathNodeStatus = chapterResources.length > 0 && learnedCount === chapterResources.length
+        ? 'done'
+        : learnedCount > 0 ? 'active' : 'todo';
+      return {
+        id: `path-${kp.id}`,
+        title: kp.name,
+        kpId: kp.id,
+        status,
+        est: status === 'done' ? '已完成' : `第 ${Math.min(8, index + 1)} 周`,
+        resourceRef: chapterResources.find((resource) => resource.learned)?.title ?? '配套讲义 / 实操 / 分阶题',
+      };
+    });
+
+    const avg = abilities.reduce((sum, ability) => sum + ability.score, 0) / Math.max(1, abilities.length);
+    const difficultyMatch = [1, 2, 3, 4, 5].map((difficulty) => ({
+      difficulty,
+      fit: Math.max(20, Math.min(100, Math.round(100 - Math.abs(avg - difficulty * 18) * 2.2))),
+    }));
+    const abilityCurves = knowledgePoints.map((kp) => {
+      const current = abilityScores[kp.id] ?? 50;
+      const start = Math.max(12, current - 8);
+      return {
+        kpId: kp.id,
+        points: weeks.map((_, weekIndex) => Math.round(start + (current - start) * (weekIndex / 7))),
+      };
+    });
+    const trendStart = Math.max(12, Math.round(avg - 10));
+    return {
+      learnerId: currentLearner.id,
+      adaptScore: Math.round(avg),
+      adaptTrend: weeks.map((_, weekIndex) => Math.round(trendStart + (avg - trendStart) * (weekIndex / 7))),
+      weeks,
+      abilityCurves,
+      difficultyMatch,
+      blindSpots: spots,
+      path: pathNodes,
+      summary: spots.length
+        ? `当前最需优先补齐「${getKnowledgePoint(spots[0].kpId).name}」（差 ${spots[0].gap} 分），建议按路径顺序完成讲义、实操与分阶题。`
+        : '六维能力已全面达标，保持当前学习节奏并定期测评即可。',
+      generated: true,
+      baselineHighSpots: spots.filter((spot) => spot.priority === '高').length,
+      resolvedSpots: Math.max(0, Math.round(spots.filter((spot) => spot.gap <= 10).length / 2)),
+      investHours: Math.round((analytics?.stats.weeklyMinutes.reduce((sum, minutes) => sum + minutes, 0) ?? 0) / 60),
+      investNote: '按近 7 天学习时长估算',
+    };
+  }, [abilities, abilityScores, analytics, currentLearner, resources]);
   const resourcesByChapter = useMemo(() => new Map((course?.chapters ?? []).map((chapter) => {
     const chapterResources = resources.filter((resource) => resource.chapterId === chapter.id);
     return [chapter.id, { total: chapterResources.length, learned: chapterResources.filter((resource) => resource.learned).length }];
@@ -873,6 +953,16 @@ export default function Report() {
         </div>
       </section>
 
+      <section className="mt-12 print:break-before-page">
+        <SectionHeader en="MATCH REPORT" title="学情与资源匹配度报告" desc="知识盲区、资源难度匹配与学习路径规划，帮助直观决策。" />
+        <div className="space-y-5">
+          <ScoreBand report={visualReport} />
+          <GapSection learner={reportLearner} report={visualReport} />
+          <DifficultyMatch learner={reportLearner} report={visualReport} />
+          <PathRoadmap learner={reportLearner} report={visualReport} />
+          <GrowthSection learner={reportLearner} report={visualReport} />
+        </div>
+      </section>
       <section className="mt-12">
         <SectionHeader en="GROWTH" title="近 7 天真实成长轨迹" desc="学习时长与测评记录来自每日学习会话，不再用固定 W1–W8 模拟增长。" />
         <div className="grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
@@ -1008,4 +1098,5 @@ export default function Report() {
     </div>
   );
 }
+
 
