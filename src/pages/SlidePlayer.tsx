@@ -485,6 +485,7 @@ export default function SlidePlayer() {
       }
       if (data.resourceType === 'ppt') await presentationApi.completePresentation(data.resourceId);
       else await api.completeLearningResource(data.resourceId);
+      void api.rewardLearningResourceAbility(data.resourceId).catch(() => undefined);
       setCompleteConfirmOpen(false);
       window.dispatchEvent(new CustomEvent('lf:learning-state-changed', { detail: { learnerId: currentLearner.id } })); markLearningMapReturn(currentLearner.id);
       navigate('/learn');
@@ -607,6 +608,7 @@ export default function SlidePlayer() {
     </main>
   );
 }
+
 
 
 

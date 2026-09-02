@@ -1244,6 +1244,7 @@ ${chatContext.content}
     void (async () => {
       try {
         await api.completeLearningResource(resource.id).catch(() => null);
+        await api.rewardLearningResourceAbility(resource.id).catch(() => undefined);
         window.localStorage.removeItem(`${RESOURCE_CACHE_PREFIX}${resource.id}`);
         if (isUuid(resource.learnerId) && resource.type !== 'quiz') {
           const eventType = resource.type === 'practice' ? 'guide-complete' : 'lecture-read';
