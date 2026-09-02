@@ -1502,11 +1502,11 @@ function Node3D({
           lineHeight={1.28}
           letterSpacing={0.025}
           textAlign={isDomain ? 'center' : direction === 'left' ? 'right' : 'left'}
-          color={isDomain ? '#FFFFFF' : '#3D4A3A'}
+          color={isDomain ? '#000000' : '#3D4A3A'}
           anchorX={textAnchor.x}
           anchorY={textAnchor.y}
           outlineWidth={isDomain ? 0.04 : 0.02}
-          outlineColor={isDomain ? '#000000' : '#FFFFFF'}
+          outlineColor={isDomain ? '#FFFFFF' : '#FFFFFF'}
           outlineOpacity={0.5}
         >
           {format3DLabel(node.label)}
