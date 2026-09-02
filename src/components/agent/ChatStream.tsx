@@ -226,6 +226,9 @@ export function ChatStream({ compact = false, pageContext }: { compact?: boolean
   const voiceRecRef = useRef<WavRecorder | null>(null);
   const [contextOpen, setContextOpen] = useState(false);
   const [currentContext, setCurrentContext] = useState<LearningPageContext>(() => collectLearningPageContext());
+  const [replyOptions, setReplyOptions] = useState<string[]>([]);
+  const [replyOptionsLoading, setReplyOptionsLoading] = useState(false);
+  const [replyMsgId, setReplyMsgId] = useState('');
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -576,5 +579,6 @@ export function SessionList() {
     </>
   );
 }
+
 
 
