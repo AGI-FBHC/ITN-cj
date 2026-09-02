@@ -611,12 +611,11 @@ function HoverCardTracker({ object, cardRef }: {
 /** “我的已学路径”高亮环：始终面向相机，环绕已学节点 */
 
 /** 页面级知识点操作弹窗：脱离 3D 世界坐标，确保尺寸与交互始终稳定。 */
-const STATUS_META: Record<'missing' | 'unlearned' | 'incomplete' | 'customized' | 'learned', { label: string; color: string }> = {
+const STATUS_META: Record<'missing' | 'unlearned' | 'incomplete' | 'learned', { label: string; color: string }> = {
   missing: { label: '暂无资源', color: '#9AA19A' },
   unlearned: { label: '未学习', color: '#D89238' },
   incomplete: { label: '未学完', color: '#4B82B8' },
-  customized: { label: '已定制', color: '#2F8F5B' },
-  learned: { label: '已学习', color: '#2F8F5B' },
+  learned: { label: '已学完', color: '#2F8F5B' },
 };
 
 /** 统一 3D 中文标签标点，避免半角窄标点在远景 SDF 采样中丢失。 */
@@ -871,19 +870,17 @@ function TopicActionModal({
         const customizing = taskBusy(cTask);
         const customized = Boolean(cTask?.status === 'completed' && cTask.resourceId);
         const busy = customizing;
-        const status: 'missing' | 'unlearned' | 'incomplete' | 'customized' | 'learned' =
+        const status: 'missing' | 'unlearned' | 'incomplete' | 'learned' =
           customizing ? 'incomplete'
           : !exists && !customized
             ? 'missing'
             : isPpt
-              ? (customized ? 'customized' : (pptTask?.learned ? 'learned' : 'unlearned'))
-              : customized
-                ? 'customized'
-                : (res?.learned ?? learned.has(node.kpId))
-                  ? 'learned'
-                : res?.started
-                  ? 'incomplete'
-                  : exists ? 'unlearned' : 'missing';
+              ? (pptTask?.learned ? 'learned' : ((pptTask?.progress ?? 0) > 0 ? 'incomplete' : 'unlearned'))
+              : (res?.learned ?? learned.has(node.kpId))
+                ? 'learned'
+              : res?.started
+                ? 'incomplete'
+                : exists ? 'unlearned' : 'missing';
         const Icon = FUNCTION_ICON[fn.form];
         const tag = STATUS_META[status];
         return (
@@ -929,7 +926,7 @@ function TopicActionModal({
               </span>
               <span className="absolute right-3.5 top-3 flex min-w-[60px] items-center justify-end gap-1.5 text-[11px] font-medium text-[#6C7971]">
                 <i className="h-2 w-2 rounded-full" style={{ backgroundColor: busy ? '#D89238' : tag.color }} />
-                {busy ? '定制中…' : ((status === 'unlearned') && !customized && exists) ? '未定制' : tag.label}
+                {busy ? '定制中…' : tag.label}
               </span>
             </span>
             <strong className="block text-[15px] font-semibold text-[#26352D]">{fn.label}</strong>
