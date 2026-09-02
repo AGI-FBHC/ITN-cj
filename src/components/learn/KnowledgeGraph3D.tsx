@@ -1637,24 +1637,23 @@ function Edge3D({
 
 /** 场景 */
 function ConstellationField() {
-  const { positions, links } = useMemo(() => {
+  const { positions } = useMemo(() => {
     const rand = (a: number, b: number) => a + Math.random() * (b - a);
-    const clusters = Array.from({ length: 3 }).map(() => {
-      const cx = rand(-70, 70);
-      const cy = rand(-45, 45);
-      const cz = rand(-105, -75);
-      return Array.from({ length: 5 }).map(() => new THREE.Vector3(
-        cx + rand(-9, 9),
-        cy + rand(-7, 7),
-        cz + rand(-4, 4),
-      ));
-    });
-    const stars = clusters.flat();
+    const stars = Array.from({ length: 10 }).map(() => new THREE.Vector3(
+      rand(-85, 85),
+      rand(-55, 55),
+      rand(-120, -80),
+    ));
     return {
       positions: stars.flatMap((p) => p.toArray()),
-      links: clusters.flatMap((pts) => pts.slice(0, -1).map((p, i) => ({ from: p, to: pts[i + 1] }))),
     };
   }, []);
+  const matRef = useRef<THREE.PointsMaterial | null>(null);
+  useFrame((state) => {
+    if (matRef.current) {
+      matRef.current.opacity = 0.55 + Math.sin(state.clock.elapsedTime * 1.8) * 0.35;
+    }
+  });
 
   return (
     <group raycast={() => null}>
@@ -1662,11 +1661,8 @@ function ConstellationField() {
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" args={[new Float32Array(positions), 3]} />
         </bufferGeometry>
-        <pointsMaterial size={0.35} color="#BBD6FF" transparent opacity={0.75} sizeAttenuation depthWrite={false} />
+        <pointsMaterial ref={matRef} size={0.9} color="#EAF3FF" transparent opacity={0.75} sizeAttenuation depthWrite={false} />
       </points>
-      {links.map((l, i) => (
-        <Line key={i} points={[l.from, l.to]} color="#A9C9FF" lineWidth={1} transparent opacity={0.35} depthWrite={false} />
-      ))}
     </group>
   );
 }
