@@ -499,11 +499,6 @@ function EdgeArrow({
   const meshRef = useRef<THREE.Mesh | null>(null);
   const curFrom = useRef(fromPos.clone());
   const curTo = useRef(toPos.clone());
-  const targetFrom = useMemo(() => new THREE.Vector3(), []);
-  const targetTo = useMemo(() => new THREE.Vector3(), []);
-  const tempDir = useMemo(() => new THREE.Vector3(), []);
-  const lastOpacityRef = useRef(-1);
-  const lastScaleRef = useRef(0);
   const upAxis = useMemo(() => new THREE.Vector3(0, 1, 0), []);
 
   useFrame(() => {
@@ -511,35 +506,25 @@ function EdgeArrow({
     if (!mesh) return;
     // 聚焦动画期间逐帧弹性跟随端点
     const b = animRef.current.blend;
-    targetFrom.copy(fromPos);
-    if (fromOffset) targetFrom.addScaledVector(fromOffset, b);
-    targetTo.copy(toPos);
-    if (toOffset) targetTo.addScaledVector(toOffset, b);
-    const moved = targetFrom.distanceToSquared(curFrom.current) > 1e-4
-      || targetTo.distanceToSquared(curTo.current) > 1e-4;
-    const focusFade = fadeOnFocus ? 1 - 0.65 * b : 1;
-    const opacity = (dimmed ? 0.12 : hovered ? 1 : 0.9) * focusFade;
-    const scale = hovered ? 1.2 : 1;
-    const opacityChanged = Math.abs(opacity - lastOpacityRef.current) > 0.001;
-    const scaleChanged = Math.abs(scale - lastScaleRef.current) > 0.001;
-    if (!moved && !opacityChanged && !scaleChanged) return;
-    lastOpacityRef.current = opacity;
-    lastScaleRef.current = scale;
-    if (moved) {
-      curFrom.current.lerp(targetFrom, 0.18);
-      curTo.current.lerp(targetTo, 0.18);
-    }
-    tempDir.copy(curTo.current).sub(curFrom.current);
-    const len = Math.max(tempDir.length(), 0.001);
-    tempDir.normalize();
+    const tf = fromPos.clone();
+    if (fromOffset) tf.addScaledVector(fromOffset, b);
+    const tt = toPos.clone();
+    if (toOffset) tt.addScaledVector(toOffset, b);
+    curFrom.current.lerp(tf, 0.18);
+    curTo.current.lerp(tt, 0.18);
+
+    const dir = curTo.current.clone().sub(curFrom.current);
+    const len = Math.max(dir.length(), 0.001);
+    dir.normalize();
     // 箭头尖端贴着目标节点的实时表面（节点选中放大时自动让开），普通节点不留大缝
     const targetScale = (targetId && nodeScaleRef?.current.get(targetId)) || 1;
     const pad = Math.min(3 * targetScale + 0.85, len * 0.45);
-    mesh.position.copy(curTo.current).addScaledVector(tempDir, -pad);
+    mesh.position.copy(curTo.current).addScaledVector(dir, -pad);
     // 圆锥默认沿 +Y 指向尖端，旋转到边的方向
-    mesh.quaternion.setFromUnitVectors(upAxis, tempDir);
-    (mesh.material as THREE.MeshBasicMaterial).opacity = opacity;
-    mesh.scale.setScalar(scale);
+    mesh.quaternion.setFromUnitVectors(upAxis, dir);
+    const focusFade = fadeOnFocus ? 1 - 0.65 * b : 1;
+    (mesh.material as THREE.MeshBasicMaterial).opacity = (dimmed ? 0.12 : hovered ? 1 : 0.9) * focusFade;
+    mesh.scale.setScalar(hovered ? 1.2 : 1);
   });
 
   return (
@@ -1595,28 +1580,16 @@ function Edge3D({
   const segRefs = useRef<Array<any>>([]);
   const curFrom = useRef(fromPos.clone());
   const curTo = useRef(toPos.clone());
-  const targetFrom = useMemo(() => new THREE.Vector3(), []);
-  const targetTo = useMemo(() => new THREE.Vector3(), []);
-  const lastOpacityRef = useRef(-1);
 
   // 聚焦动画期间逐帧弹性跟随（lerp 产生橡皮筋效果），不触发 React 重渲染
   useFrame(() => {
     const b = animRef.current.blend;
-    targetFrom.copy(fromPos);
-    if (fromOffset) targetFrom.addScaledVector(fromOffset, b);
-    targetTo.copy(toPos);
-    if (toOffset) targetTo.addScaledVector(toOffset, b);
-    const moved = targetFrom.distanceToSquared(curFrom.current) > 1e-4
-      || targetTo.distanceToSquared(curTo.current) > 1e-4;
-    const focusFade = fadeOnFocus ? 1 - 0.65 * b : 1;
-    const opacity = (dimmed ? 0.06 : hovered ? 0.9 : isChildLink ? 0.5 : 0.5) * focusFade;
-    const opacityChanged = Math.abs(opacity - lastOpacityRef.current) > 0.001;
-    if (!moved && !opacityChanged) return;
-    lastOpacityRef.current = opacity;
-    if (moved) {
-      curFrom.current.lerp(targetFrom, 0.18);
-      curTo.current.lerp(targetTo, 0.18);
-    }
+    const tf = fromPos.clone();
+    if (fromOffset) tf.addScaledVector(fromOffset, b);
+    const tt = toPos.clone();
+    if (toOffset) tt.addScaledVector(toOffset, b);
+    curFrom.current.lerp(tf, 0.18);
+    curTo.current.lerp(tt, 0.18);
     // 线段裁剪到球体表面：不穿入节点内部，节点半透明时也不会看到线穿过球体；
     const dir = curTo.current.clone().sub(curFrom.current);
     const len = Math.max(dir.length(), 0.001);
@@ -1627,17 +1600,18 @@ function Edge3D({
     const endPad = Math.min(3 * sTo + 1.0, len * 0.5);
     const start = curFrom.current.clone().addScaledVector(dir, startPad);
     const end = curTo.current.clone().addScaledVector(dir, -endPad);
+    const focusFade = fadeOnFocus ? 1 - 0.65 * b : 1;
+    const opacity = (dimmed ? 0.06 : hovered ? 0.9 : isChildLink ? 0.5 : 0.5) * focusFade;
     for (let i = 0; i < SEGMENTS; i += 1) {
       const line = segRefs.current[i];
       if (!line) continue;
-      line.material.opacity = opacity;
-      if (!moved) continue;
       const t0 = i / SEGMENTS;
       const t1 = (i + 1) / SEGMENTS;
       const p0 = start.clone().lerp(end, t0);
       const p1 = start.clone().lerp(end, t1);
       line.geometry.setPositions([p0.x, p0.y, p0.z, p1.x, p1.y, p1.z]);
       if (dashed) line.computeLineDistances();
+      line.material.opacity = opacity;
     }
   });
 
