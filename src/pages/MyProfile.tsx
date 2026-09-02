@@ -524,6 +524,50 @@ export default function MyProfile() {
               用真实练习校准画像
             </Link>
           </div>
+          <div className="lf-card p-5">
+            <div className="mb-1 flex items-center gap-2">
+              <Brain size={16} className="text-brand" />
+              <span className="text-[15px] font-semibold text-ink">我的学习记忆</span>
+            </div>
+            <p className="mb-3 text-[11.5px] leading-5 text-ink-muted">
+              这些信息会用于资源定制、AI 辅导和学习推荐。学习进度来自真实操作，你也可以删除不希望继续使用的记忆。
+            </p>
+            {memoryLoading ? (
+              <div className="py-5 text-center text-[12px] text-ink-muted">正在整理学习记忆…</div>
+            ) : memories.length === 0 ? (
+              <div className="rounded-[10px] bg-paper-deep px-3 py-4 text-center text-[12px] text-ink-muted">完成学习或测评后，相关记忆会出现在这里。</div>
+            ) : (
+              <div className="space-y-2">
+                {memories.slice(0, 12).map((memory) => (
+                  <div key={memory.id} className="flex items-start gap-3 rounded-[10px] border border-hairline bg-paper px-3 py-2.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-md bg-brand-tint px-1.5 py-0.5 text-[10px] font-medium text-brand">{memoryTypeLabel[memory.namespace]}</span>
+                        <span className="font-mono text-[9.5px] text-ink-muted">可信度 {Math.round(memory.confidence * 100)}%</span>
+                      </div>
+                      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">{memory.summary}</p>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label="删除这条学习记忆"
+                      onClick={async () => {
+                        try {
+                          await api.deleteMemory(memory.id);
+                          setMemories((items) => items.filter((item) => item.id !== memory.id));
+                          toast.success('已删除这条学习记忆');
+                        } catch (error) {
+                          toast.error(error instanceof Error ? error.message : '删除失败');
+                        }
+                      }}
+                      className="mt-0.5 rounded-md p-1.5 text-ink-muted transition hover:bg-brand-danger/10 hover:text-brand-danger"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* 右：雷达 + 时间线 */}
@@ -559,7 +603,6 @@ export default function MyProfile() {
             </div>
           </div>
 
-          <div className="grid gap-5 lg:grid-cols-2">
           <div className="lf-card p-5">
             <div className="mb-3 flex items-center gap-2">
               <History size={16} className="text-brand" />
@@ -617,51 +660,6 @@ export default function MyProfile() {
             </Link>
           </div>
 
-          <div className="lf-card p-5">
-            <div className="mb-1 flex items-center gap-2">
-              <Brain size={16} className="text-brand" />
-              <span className="text-[15px] font-semibold text-ink">我的学习记忆</span>
-            </div>
-            <p className="mb-3 text-[11.5px] leading-5 text-ink-muted">
-              这些信息会用于资源定制、AI 辅导和学习推荐。学习进度来自真实操作，你也可以删除不希望继续使用的记忆。
-            </p>
-            {memoryLoading ? (
-              <div className="py-5 text-center text-[12px] text-ink-muted">正在整理学习记忆…</div>
-            ) : memories.length === 0 ? (
-              <div className="rounded-[10px] bg-paper-deep px-3 py-4 text-center text-[12px] text-ink-muted">完成学习或测评后，相关记忆会出现在这里。</div>
-            ) : (
-              <div className="space-y-2">
-                {memories.slice(0, 12).map((memory) => (
-                  <div key={memory.id} className="flex items-start gap-3 rounded-[10px] border border-hairline bg-paper px-3 py-2.5">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="rounded-md bg-brand-tint px-1.5 py-0.5 text-[10px] font-medium text-brand">{memoryTypeLabel[memory.namespace]}</span>
-                        <span className="font-mono text-[9.5px] text-ink-muted">可信度 {Math.round(memory.confidence * 100)}%</span>
-                      </div>
-                      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">{memory.summary}</p>
-                    </div>
-                    <button
-                      type="button"
-                      aria-label="删除这条学习记忆"
-                      onClick={async () => {
-                        try {
-                          await api.deleteMemory(memory.id);
-                          setMemories((items) => items.filter((item) => item.id !== memory.id));
-                          toast.success('已删除这条学习记忆');
-                        } catch (error) {
-                          toast.error(error instanceof Error ? error.message : '删除失败');
-                        }
-                      }}
-                      className="mt-0.5 rounded-md p-1.5 text-ink-muted transition hover:bg-brand-danger/10 hover:text-brand-danger"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          </div>
 
           <div className="space-y-2">
             {/* 帮助入口：把各页的一次性提示重新打开 */}
