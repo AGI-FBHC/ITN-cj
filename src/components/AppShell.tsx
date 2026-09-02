@@ -19,8 +19,6 @@ import {
   Search,
   PanelLeftClose,
   PanelLeftOpen,
-  GraduationCap,
-  Cpu,
   NotebookPen,
   LogOut,
   Compass,
@@ -38,7 +36,6 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useProfile } from '@/context/ProfileContext';
-import type { ViewMode } from '@/context/ProfileContext';
 import { useAuth } from '@/context/AuthContext';
 import { useNotes } from '@/context/NotesContext';
 import { useGrowth } from '@/context/GrowthContext';
@@ -119,43 +116,6 @@ function LiveClock() {
   );
 }
 
-/** 视图模式切换段控 */
-function ModeToggle({
-  mode,
-  onChange,
-}: {
-  mode: ViewMode;
-  onChange: (m: ViewMode) => void;
-}) {
-  const opts: { key: ViewMode; label: string; icon: typeof Home }[] = [
-    { key: 'learner', label: '学习', icon: GraduationCap },
-    { key: 'expert', label: '系统透视', icon: Cpu },
-  ];
-  return (
-    <div className="flex shrink-0 items-center gap-0.5 rounded-[11px] border border-hairline bg-paper p-0.5">
-      {opts.map((o) => {
-        const active = mode === o.key;
-        return (
-          <button
-            key={o.key}
-            type="button"
-            onClick={() => onChange(o.key)}
-            title={o.key === 'expert' ? '系统透视 / 评委视角：展开完整多智能体机制' : '学习者视角'}
-            aria-label={o.label}
-            className={cn(
-              'flex h-7 items-center gap-1.5 whitespace-nowrap rounded-[8px] px-2 text-[12px] font-medium transition-all duration-200',
-              active ? 'bg-brand text-paper shadow-warm' : 'text-ink-muted hover:text-ink',
-            )}
-          >
-            <o.icon size={13} />
-            <span className="hidden sm:inline">{o.label}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 /** 侧栏导航项（系统透视用） */
 function SideNavRow({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
   return (
@@ -200,7 +160,6 @@ export default function AppShell() {
     demoMode,
     setDemoMode,
     viewMode,
-    setViewMode,
   } = useProfile();
   const { notes } = useNotes();
   const { focusMode } = useGrowth();
@@ -248,18 +207,6 @@ export default function AppShell() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
-
-  const changeMode = (m: ViewMode) => {
-    if (m === viewMode) return;
-    setViewMode(m);
-    if (m === 'learner') {
-      navigate('/me');
-      toast('已切换到学习者视角', { description: '顶部导航 · 单列聚焦，AI 机制收进「教研组」按需查看' });
-    } else {
-      navigate('/');
-      toast('已切换到系统透视 / 评委视角', { description: '侧栏仪表盘 · 完整展开多智能体协同机制' });
-    }
-  };
 
   return (
     <>
@@ -319,7 +266,6 @@ export default function AppShell() {
               >
                 <Search size={15} />
               </button>
-              <ModeToggle mode={viewMode} onChange={changeMode} />
               <Link
                 to="/me/profile"
                 title={`当前学习者：${currentLearner.name}`}
@@ -481,27 +427,6 @@ export default function AppShell() {
                   <span className="hidden lg:inline">笔记</span>
                   {notes.length > 0 && <span className="font-mono text-[9px] text-brand">{notes.length > 99 ? '99+' : notes.length}</span>}
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => setSearchOpen(true)}
-                  className="hidden h-8 shrink-0 items-center gap-2 rounded-[9px] border border-hairline bg-card-warm px-2.5 text-[12.5px] text-ink-muted transition-all duration-200 hover:border-brand/35 hover:text-ink xl:flex"
-                >
-                  <Search size={13} />
-                  <span className="max-w-[170px] truncate">检索知识库 / 资源 / 标准号…</span>
-                  <kbd className="rounded border border-hairline bg-paper px-1.5 py-px font-mono text-[10px] text-ink-muted">
-                    ⌘K
-                  </kbd>
-                </button>
-                {/* 中窄屏：检索降级为图标按钮，不再占一整条 */}
-                <button
-                  type="button"
-                  onClick={() => setSearchOpen(true)}
-                  title="检索（⌘K）"
-                  aria-label="检索知识库"
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border border-hairline bg-card-warm text-ink-muted transition-all duration-200 hover:border-brand/35 hover:text-ink xl:hidden"
-                >
-                  <Search size={14} />
-                </button>
 
                 {/* 评委一键导览：5 分钟自动串场，把五步闭环叙事喂到评委嘴边 */}
                 <button
@@ -530,7 +455,6 @@ export default function AppShell() {
                   />
                 </label>
 
-                <ModeToggle mode={viewMode} onChange={changeMode} />
                 <Link
                   to="/me/profile"
                   title={currentLearner.name}
@@ -630,3 +554,4 @@ export default function AppShell() {
     </>
   );
 }
+

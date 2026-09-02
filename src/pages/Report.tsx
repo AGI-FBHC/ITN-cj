@@ -852,7 +852,7 @@ export default function Report() {
       </section>
 
       <section className="mt-12">
-        <SectionHeader en="DIAGNOSIS" title="六维能力画像" desc="能力分 = 画像基线 + 学习证据（章节进度×掌握度加权），只做展示，不设目标门槛。" />
+        <SectionHeader en="DIAGNOSIS" title="六维能力画像" desc="" />
         <div className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
           <div className="lf-card p-5">
             {domainKnowledgePoints.length ? <ReactECharts option={radarOption(domainKnowledgePoints, abilityScores)} height={350} /> : <div className="py-20 text-center text-[13px] text-ink-muted">画像知识维度尚未建立</div>}
@@ -1008,3 +1008,4 @@ export default function Report() {
     </div>
   );
 }
+
