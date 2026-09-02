@@ -1575,7 +1575,8 @@ function Edge3D({
   targetId?: string;
   nodeScaleRef?: React.MutableRefObject<Map<string, number>>;
 }) {
-  const SEGMENTS = 8;
+  // 渐变分段降到 3 段：保留颜色过渡观感，同时显著减少连线几何更新量。
+  const SEGMENTS = 3;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const segRefs = useRef<Array<any>>([]);
   const curFrom = useRef(fromPos.clone());
