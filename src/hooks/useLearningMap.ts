@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
-import { presentationApi } from '@/lib/presentationApi';
 import type { LearnerAnalyticsProfile, JobTargetLevel, RagTree } from '@/lib/api';
 import type { KnowledgePoint } from '@/data/knowledgePoints';
 import {
@@ -126,30 +125,9 @@ async function fetchLearningTemplateCatalog(): Promise<{
 }> {
   const listed = await api.listLearningTemplateResources('agent');
   const items = (listed.items ?? []).filter((item) => item.nodeCode);
-  const userPresentations = await presentationApi.listPresentationSummaries(300, true)
-    .then((result) => result.tasks ?? [])
-    .catch(() => []);
-  const templatePresentations = items.filter((item) => item.type === 'ppt').map(toTemplatePresentation);
-  const customPresentations = userPresentations.filter((task) =>
-    task.status === 'completed' && task.request?.generationContext?.kpId,
-  );
-  const detailedPresentations = (await Promise.all(
-    customPresentations.slice(0, 80).map(async (task) => {
-      try {
-        return await presentationApi.getPresentation(task.id);
-      } catch {
-        return null;
-      }
-    }),
-  )).filter((task): task is PresentationTaskSummary => task !== null);
-  const existing = new Set(templatePresentations.map((task) => task.id));
-  const presentations = [
-    ...templatePresentations,
-    ...detailedPresentations.filter((task) => !existing.has(task.id)),
-  ];
   return {
     resources: items.filter((item) => item.type !== 'ppt').map(toTemplateResource),
-    presentations,
+    presentations: items.filter((item) => item.type === 'ppt').map(toTemplatePresentation),
   };
 }
 
@@ -522,26 +500,12 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
         const category = masteryByCategory.get(String(child.id));
         const childResources = resources.filter((resource) => resource.kpId === child.nodeCode);
         const progressByForm = new Map(childResources.map((resource) => [resource.type, resource.progressRatio ?? (resource.learned ? 1 : 0)]));
-        let pptProgressRatio = 0;
-        presentations.forEach((task) => {
-          const meta = (task as PresentationTaskSummary & { learnedMeta?: { learned?: boolean; maxPageViewed?: number; pageCount?: number } }).learnedMeta;
-          const taskKpId = task.request?.generationContext?.kpId;
-          const sameTopic = task.title.includes(child.name) || String(taskKpId ?? '') === String(child.nodeCode);
-          if (!sameTopic) return;
-          const count = Number(meta?.pageCount || 0);
-          const viewed = Number(meta?.maxPageViewed || 0);
-          const ratio = meta?.learned || task.learned || count > 0 && viewed >= count
-            ? 1
-            : count > 0
-              ? Math.min(1, viewed / count)
-              : 0;
-          pptProgressRatio = Math.max(pptProgressRatio, ratio);
-        });
+        const pptLearned = presentations.some((task) => task.learned && task.title.includes(child.name));
         topicProgress[child.nodeCode] = Math.round((
           (progressByForm.get('lecture') ?? 0)
           + (progressByForm.get('practice') ?? 0)
           + (progressByForm.get('quiz') ?? 0)
-          + pptProgressRatio
+          + (pptLearned ? 1 : 0)
         ) / 4 * 100);
         const selfEvidence = childResources.filter((resource) => resource.type !== 'quiz' && resource.masteryRatio > 0);
         const quizEvidence = childResources.filter((resource) => resource.type === 'quiz' && resource.masteryRatio > 0);
