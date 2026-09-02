@@ -85,7 +85,7 @@ function miniRadar(scores: Record<string, number>) {
     animationDuration: 500,
     radar: {
       indicator: knowledgePoints.map((kp) => ({ name: abilityName(kp.id, kp.name), max: 100 })),
-      radius: '62%',
+      radius: '58%',
       center: ['50%', '52%'] as [string, string],
       axisName: { fontSize: 10, color: '#8A8474', fontFamily: '"Noto Sans SC", sans-serif' },
       splitLine: { lineStyle: { color: '#E9E3D4' } },
@@ -551,7 +551,7 @@ export default function Welcome() {
             <Sprout className="hidden h-9 w-9 sm:block" />
           </div>
 
-          <div className="mt-4 grid gap-4 sm:grid-cols-[190px_1fr]">
+          <div className="mt-4 grid gap-4 sm:grid-cols-[230px_1fr]">
             <div>
               <ReactECharts option={miniRadar(knownLearner.scores)} height={170} />
             </div>
