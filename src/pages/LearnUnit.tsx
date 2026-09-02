@@ -669,6 +669,7 @@ export default function LearnUnit() {
       pageIndex: Math.max(0, Math.min(pptSlide.count - 1, pageIndex)),
       pageCount: pptSlide.count,
       learned: final,
+      mastery: final ? 1 : Math.min(1, (pageIndex + 1) / pptSlide.count),
     });
   };
   const returnToKnowledge = async () => {

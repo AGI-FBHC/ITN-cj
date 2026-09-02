@@ -572,6 +572,7 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
         const quizEvidence = childResources.filter((resource) => resource.type === 'quiz' && resource.masteryRatio > 0);
         const weightedEvidence = [
           ...selfEvidence.map((resource) => ({ score: resource.masteryRatio, weight: resource.type === 'practice' ? 0.2 : 0.15 })),
+          ...(pptProgressRatio > 0 ? [{ score: Math.min(1, pptProgressRatio), weight: 0.2 }] : []),
           ...quizEvidence.map((resource) => ({ score: resource.masteryRatio, weight: 0.45 })),
           ...(category && category.attempts > 0 ? [{ score: category.score, weight: 0.2 }] : []),
         ];
