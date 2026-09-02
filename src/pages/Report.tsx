@@ -10,7 +10,6 @@ import {
   CircleDashed,
   Clock3,
   FileDown,
-  Flame,
   History,
   Loader2,
   Route,
@@ -42,6 +41,7 @@ import DifficultyMatch from '@/components/report/DifficultyMatch';
 import PathRoadmap from '@/components/report/PathRoadmap';
 import GrowthSection from '@/components/report/GrowthSection';
 import ScoreBand from '@/components/report/ScoreBand';
+import StreakCalendar from '@/components/StreakCalendar';
 import type { BlindSpot, LearnerReport, PathNodeStatus } from '@/data/reportData';
 import { knowledgePoints, getKnowledgePoint } from '@/data/knowledgePoints';
 
@@ -917,7 +917,6 @@ export default function Report() {
         {[
           { icon: Target, label: '实测综合掌握度', value: `${overallMastery}%`, note: analytics?.mastery.categories.length ? `${analytics.mastery.categories.length} 个章节形成证据` : '完成分阶题后开始累计', tone: 'text-brand' },
           { icon: Clock3, label: '累计学习投入', value: displayMinutes(analytics?.stats.totalStudyMinutes ?? 0), note: `${analytics?.stats.totalDays ?? 0} 个真实学习日`, tone: 'text-brand' },
-          { icon: Flame, label: '连续学习', value: `${analytics?.stats.streakDays ?? 0} 天`, note: '按后端每日学习会话统计', tone: 'text-ochre' },
           { icon: BarChart3, label: '近 7 天测评正确率', value: accuracy == null ? '暂无' : `${accuracy}%`, note: accuracy == null ? '尚无真实测评提交' : `${journalStats.correct}/${journalStats.questions} 题答对`, tone: 'text-brand' },
         ].map((item, index) => {
           const Icon = item.icon;
@@ -930,6 +929,14 @@ export default function Report() {
           );
         })}
       </section>
+
+      <div className="mt-4">
+        <StreakCalendar
+          streakDays={analytics?.stats.streakDays ?? 0}
+          studyDates={analytics?.stats.studyDates ?? []}
+          totalDays={analytics?.stats.totalDays ?? 0}
+        />
+      </div>
 
       <section className="mt-12">
         <SectionHeader en="DIAGNOSIS" title="六维能力画像" desc="" />
@@ -1098,5 +1105,3 @@ export default function Report() {
     </div>
   );
 }
-
-

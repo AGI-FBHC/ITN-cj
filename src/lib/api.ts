@@ -128,6 +128,7 @@ export interface LearnerAnalyticsProfile {
     totalStudyMinutes: number;
     totalDays: number;
     streakDays: number;
+    studyDates: string[];
     weeklyMinutes: number[];
     eventDistribution: Record<string, number>;
   };
