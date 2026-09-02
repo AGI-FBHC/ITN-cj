@@ -9,7 +9,7 @@ export const ABILITY_DIMENSION_NAMES: Record<string, string> = {
 };
 
 export const ABILITY_SELF_PROMPTS: Record<string, string> = {
-  'kp-ds': '面对数据结构、网络、数据库或 AI 等专业概念，我能理解术语，并准确解释它们解决的问题。',
+  'kp-ds': '面对智能体、LLM、RAG 等专业概念，我能理解术语，并准确解释它们解决的问题。',
   'kp-co': '面对一段代码、规则或技术方案，我能梳理条件关系，推导运行结果并发现逻辑矛盾。',
   'kp-os': '面对明确的开发任务，我能使用工具完成编码、调试、测试和交付。',
   'kp-network': '系统出现报错、性能下降或结果异常时，我能根据现象和证据逐步定位原因。',

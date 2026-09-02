@@ -60,7 +60,7 @@ interface Override {
 interface ProfileContextValue {
   /** 生效画像列表（后端 learners + 本地预设展示元数据） */
   learners: Learner[];
-  /** 后端画像知识维度（数据结构/组成原理/操作系统/网络/数据库/智能体） */
+  /** 后端画像知识维度（知识理解/逻辑推理/工程实践/问题诊断/系统设计/学习迁移） */
   domainKnowledgePoints: OnboardingKnowledgePoint[];
   currentLearnerId: string;
   setCurrentLearnerId: (id: string) => void;
@@ -104,12 +104,12 @@ function readInitialMode(): ViewMode {
 }
 
 const NEW_KP_NAMES: Record<string, string> = {
-  'kp-ds': '数据结构与算法',
-  'kp-co': '计算机组成原理',
-  'kp-os': '操作系统',
-  'kp-network': '计算机网络',
-  'kp-db': '数据库',
-  'kp-agent': '智能体与大模型',
+  'kp-ds': '知识理解',
+  'kp-co': '逻辑推理',
+  'kp-os': '工程实践',
+  'kp-network': '问题诊断',
+  'kp-db': '系统设计',
+  'kp-agent': '学习迁移',
 };
 
 const LEGACY_SCORE_IDS: Record<string, string> = {

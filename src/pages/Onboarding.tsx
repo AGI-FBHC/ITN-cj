@@ -587,7 +587,7 @@ export default function Onboarding() {
                 <div>
                   <h1 className="font-serif text-[24px] font-semibold text-ink">能力情境自测</h1>
                   <p className="mt-1 text-[14px] text-ink-muted">
-                    题目来自编程、接口、数据库、系统运维和 AI 等领域；哪一维证据不足，伴学助手就继续加测。
+                    题目来自智能体、LLM、RAG、工具调用与工程实践等领域；哪一维证据不足，伴学助手就继续加测。
                   </p>
                 </div>
 
