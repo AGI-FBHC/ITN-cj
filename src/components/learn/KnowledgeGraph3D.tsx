@@ -67,10 +67,11 @@ function createSoftPlushTexture(size = 256): THREE.Texture {
   const c = size / 2;
   const g = ctx.createRadialGradient(c, c, 0, c, c, c);
   g.addColorStop(0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.6, 'rgba(255,255,255,1)');
-  g.addColorStop(0.78, 'rgba(255,255,255,0.95)');
-  g.addColorStop(0.9, 'rgba(255,255,255,0.6)');
-  g.addColorStop(1, 'rgba(255,255,255,0.15)');
+  g.addColorStop(0.35, 'rgba(255,255,255,1)');
+  g.addColorStop(0.55, 'rgba(255,255,255,0.9)');
+  g.addColorStop(0.72, 'rgba(255,255,255,0.5)');
+  g.addColorStop(0.88, 'rgba(255,255,255,0.22)');
+  g.addColorStop(1, 'rgba(255,255,255,0.08)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, size, size);
   const tex = new THREE.CanvasTexture(canvas);
@@ -1472,7 +1473,7 @@ function Node3D({
       <Billboard>
       <mesh ref={meshRef}>
         <circleGeometry args={[1, 64]} />
-        <meshBasicMaterial map={plushTexture} color={getColor()} transparent opacity={1} depthWrite={false} />
+        <meshBasicMaterial map={plushTexture} color={getColor()} transparent opacity={1} depthWrite={true} />
 
         {/* 毛绒发光：从内到外柔光扩散 */}
         <mesh scale={1.5} position={[0, 0, -0.015]} raycast={() => null} renderOrder={0}>
