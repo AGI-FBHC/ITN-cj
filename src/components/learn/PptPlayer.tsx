@@ -50,7 +50,7 @@ const PROGRESS_LABEL: Record<PresentationTask['status'], string> = {
 };
 
 const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean; speed?: TtsSpeed; volume?: number; modelProvider?: 'mimo' | 'qwen'; qwenVoice?: string; onPlaybackChange?: (playing: boolean) => void;
-  onLoadingChange?: (loading: boolean) => void; onSlideChange?: (current: number, count: number) => void; onRequestNote?: () => void; onRequestComplete?: () => void }>(function PptPlayer({ taskId, speed = 'normal', volume = 1, modelProvider = 'mimo', qwenVoice = '', onPlaybackChange, onLoadingChange, onSlideChange, onRequestNote, onRequestComplete }, ref) {
+  onLoadingChange?: (loading: boolean) => void; onSlideChange?: (current: number, count: number) => void; onRequestNote?: () => void }>(function PptPlayer({ taskId, speed = 'normal', volume = 1, modelProvider = 'mimo', qwenVoice = '', onPlaybackChange, onLoadingChange, onSlideChange, onRequestNote }, ref) {
   const [task, setTask] = useState<PresentationTask | null>(null);
   const [slides, setSlides] = useState<PresentationSlideshow | null>(null);
   const [current, setCurrent] = useState(0);
@@ -518,19 +518,6 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
             <div ref={noteScrollRef} className="min-w-0 flex-1 overflow-y-auto pr-2 text-[13.5px] leading-6 text-ink-2" aria-live="off">{visibleNote ? <p className="whitespace-pre-wrap">{visibleNote}<span className={cn('ml-0.5 inline-block h-[1em] w-[2px] align-[-0.12em] bg-brand', audioPlaying && 'animate-pulse')} aria-hidden /></p> : <p className="pt-5 text-ink-muted">准备开始</p>}</div>
           </div>
         </aside>
-
-        {slideCount > 0 && current === slideCount - 1 && onRequestComplete && (
-          <div className="flex justify-end px-4 pb-1 md:px-5">
-            <button
-              type="button"
-              onClick={() => onRequestComplete()}
-              className="flex items-center gap-1.5 rounded-full bg-brand px-4 py-1.5 text-[12px] font-semibold text-paper shadow-warm transition hover:bg-brand-hover"
-            >
-              <Check size={13} />
-              完成学习
-            </button>
-          </div>
-        )}
 
       </div>
 

@@ -678,7 +678,7 @@ export default function LearnUnit() {
       /* 保存失败不阻塞返回 */
     } finally {
       window.dispatchEvent(new CustomEvent('lf:learning-state-changed', { detail: { learnerId: currentLearner.id } }));
-      if (isUuid(currentLearner.id)) void refreshLearningMapResourceCache(currentLearner.id).catch(() => undefined);
+      if (isUuid(currentLearner.id)) await refreshLearningMapResourceCache(currentLearner.id).catch(() => undefined);
       markLearningMapReturn(currentLearner.id);
       navigate('/learn');
     }
@@ -690,7 +690,7 @@ export default function LearnUnit() {
       await persistPptProgress(pptSlide.current, true);
       await presentationApi.completePresentation(pptTaskId);
       window.dispatchEvent(new CustomEvent('lf:learning-state-changed', { detail: { learnerId: currentLearner.id } }));
-      if (isUuid(currentLearner.id)) void refreshLearningMapResourceCache(currentLearner.id).catch(() => undefined);
+      if (isUuid(currentLearner.id)) await refreshLearningMapResourceCache(currentLearner.id).catch(() => undefined);
       markLearningMapReturn(currentLearner.id);
       navigate('/learn');
     } catch {
@@ -2206,7 +2206,7 @@ export default function LearnUnit() {
             {freeBrowse ? '回到课堂推进' : '自由浏览'}
           </button>
         </div>}
-        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} wideMode={pptWideMode} speed={pptSpeed} volume={pptVolume} modelProvider={pptAudioModel} qwenVoice={qwenVoice} ref={pptRef} onPlaybackChange={setPlaying} onLoadingChange={setPptAudioLoading} onSlideChange={syncPptSlide} onRequestNote={openNoteHere} onRequestComplete={() => void handlePptComplete()} /> : (blocks.map((b, i) => {
+        {(pptTaskId) ? <PptPlayer taskId={pptTaskId} wideMode={pptWideMode} speed={pptSpeed} volume={pptVolume} modelProvider={pptAudioModel} qwenVoice={qwenVoice} ref={pptRef} onPlaybackChange={setPlaying} onLoadingChange={setPptAudioLoading} onSlideChange={syncPptSlide} onRequestNote={openNoteHere} /> : (blocks.map((b, i) => {
           const active = i === cursor && playing;
           /* ---- 课堂推进三态：完整（当前/回看/自由浏览）· 摘要行（已完成）· 不渲染（未解锁） ---- */
           const effUnlocked = Math.min(unlocked, blocks.length);
@@ -3148,15 +3148,28 @@ export default function LearnUnit() {
             </button>
 
             {pptTaskId && (
-              <button
-                type="button"
-                disabled={pptSlide.current >= pptSlide.count - 1 || pptAudioLoading}
-                onClick={() => pptRef.current?.goNext()}
-                title="下一页"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-hairline bg-paper text-brand transition-all hover:bg-brand-tint disabled:cursor-not-allowed disabled:text-ink-muted/35"
-              >
-                <ChevronRight size={16} />
-              </button>
+              pptSlide.count > 0 && pptSlide.current >= pptSlide.count - 1 ? (
+                <button
+                  type="button"
+                  disabled={pptCompleting}
+                  onClick={() => void handlePptComplete()}
+                  title="完成学习并同步进度"
+                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-brand px-3.5 text-[12px] font-semibold text-paper shadow-warm transition hover:bg-brand-hover disabled:cursor-wait disabled:opacity-70"
+                >
+                  {pptCompleting ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                  完成学习
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={pptSlide.current >= pptSlide.count - 1 || pptAudioLoading}
+                  onClick={() => pptRef.current?.goNext()}
+                  title="下一页"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-hairline bg-paper text-brand transition-all hover:bg-brand-tint disabled:cursor-not-allowed disabled:text-ink-muted/35"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              )
             )}
 
             {/* 课堂节拍器：下一段（当前块是未作答检查点时禁用——练是必经的） */}
@@ -3251,22 +3264,6 @@ export default function LearnUnit() {
               >
                 {pptWideMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
                 {barExpanded && (pptWideMode ? '窄屏' : '宽屏')}
-              </button>
-            )}
-
-            {pptTaskId && pptSlide.count > 0 && pptSlide.current >= pptSlide.count - 1 && (
-              <button
-                type="button"
-                disabled={pptCompleting}
-                onClick={() => void handlePptComplete()}
-                title="完成学习并同步进度"
-                className={cn(
-                  'inline-flex shrink-0 items-center gap-1.5 rounded-[10px] bg-brand text-paper shadow-warm transition-all hover:bg-brand-hover hover:shadow-warm-lg disabled:cursor-not-allowed disabled:opacity-60',
-                  barExpanded ? 'px-3.5 py-2 text-[13px] font-semibold' : 'rounded-full p-2.5',
-                )}
-              >
-                {pptCompleting ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                {barExpanded && (pptCompleting ? '保存中…' : '完成学习')}
               </button>
             )}
 

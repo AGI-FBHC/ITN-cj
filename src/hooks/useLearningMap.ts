@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
+import { presentationApi } from '@/lib/presentationApi';
 import type { LearnerAnalyticsProfile, JobTargetLevel, RagTree } from '@/lib/api';
 import type { KnowledgePoint } from '@/data/knowledgePoints';
 import {
@@ -47,11 +48,13 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const CACHE_PREFIX = 'lf.learningMapCache:v6:';
 const RESOURCE_CACHE_UPDATED_EVENT = 'lf:learning-map-resources-updated';
 const PRESENTATION_CACHE_UPDATED_EVENT = 'lf:learning-map-presentations-updated';
+const PPT_PROGRESS_CACHE_UPDATED_EVENT = 'lf:learning-map-ppt-progress-updated';
 
 interface LearningMapCache {
   resources: LearningResourceSummary[];
   tree: RagTree;
   presentations?: PresentationTaskSummary[];
+  pptProgress?: Record<string, number>;
 }
 
 function readLearningMapCache(learnerId: string): LearningMapCache | null {
@@ -119,6 +122,41 @@ function toTemplatePresentation(item: LearningTemplateResourceItem): Presentatio
   };
 }
 
+type UserPptLike = PresentationTaskSummary & {
+  learnedMeta?: {
+    learned?: boolean;
+    maxPageViewed?: number;
+    pageCount?: number;
+    learnedAt?: string;
+    updatedAt?: string;
+  };
+};
+
+async function fetchPptProgressByKp(): Promise<Record<string, number>> {
+  const map: Record<string, number> = {};
+  try {
+    const result = await presentationApi.listPresentationSummariesFresh(300, true);
+    for (const raw of result.tasks ?? []) {
+      const task = raw as UserPptLike;
+      if (task.status !== 'completed') continue;
+      const kpId = String(task.request?.generationContext?.kpId ?? '');
+      if (!kpId) continue;
+      const meta = task.learnedMeta ?? {};
+      const pageCount = Number(meta.pageCount ?? 0);
+      const maxPageViewed = Number(meta.maxPageViewed ?? 0);
+      const ratio = task.learned || meta.learned || (pageCount > 0 && maxPageViewed >= pageCount)
+        ? 1
+        : pageCount > 0
+          ? Math.min(1, maxPageViewed / pageCount)
+          : 0;
+      map[kpId] = Math.max(map[kpId] ?? 0, ratio);
+    }
+  } catch {
+    /* 拉取不到个人 PPT 进度时不阻塞知识网络 */
+  }
+  return map;
+}
+
 async function fetchLearningTemplateCatalog(): Promise<{
   resources: LearningResourceSummary[];
   presentations: PresentationTaskSummary[];
@@ -135,13 +173,15 @@ async function fetchLearningTemplateCatalog(): Promise<{
 export async function refreshLearningMapResourceCache(learnerId: string): Promise<void> {
   const cache = readLearningMapCache(learnerId);
   try {
-    const [catalog, tree] = await Promise.all([
+    const [catalog, tree, pptProgress] = await Promise.all([
       fetchLearningTemplateCatalog(),
       cache?.tree ? Promise.resolve(cache.tree) : api.getRagTree('agent'),
+      fetchPptProgressByKp(),
     ]);
-    writeLearningMapCache(learnerId, { ...catalog, tree });
+    writeLearningMapCache(learnerId, { ...catalog, tree, pptProgress });
     window.dispatchEvent(new CustomEvent(RESOURCE_CACHE_UPDATED_EVENT, { detail: { learnerId, resources: catalog.resources } }));
     window.dispatchEvent(new CustomEvent(PRESENTATION_CACHE_UPDATED_EVENT, { detail: { learnerId, presentations: catalog.presentations } }));
+    window.dispatchEvent(new CustomEvent(PPT_PROGRESS_CACHE_UPDATED_EVENT, { detail: { learnerId, pptProgress } }));
   } catch {
     /* 刷新失败时保留原缓存 */
   }
@@ -278,6 +318,9 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
   const [presentations, setPresentations] = useState<PresentationTaskSummary[]>(
     () => readLearningMapCache(currentLearnerId)?.presentations ?? [],
   );
+  const [pptProgressByKp, setPptProgressByKp] = useState<Record<string, number>>(
+    () => readLearningMapCache(currentLearnerId)?.pptProgress ?? {},
+  );
   const [jobTargets, setJobTargets] = useState<JobTargetLevel[]>([]);
 
   /* 目标岗位门槛：随画像目标岗位加载（岗位名 → target_options 的 code） */
@@ -322,6 +365,15 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
   }, [currentLearnerId]);
 
   useEffect(() => {
+    const syncPptProgress = (event: Event) => {
+      const detail = (event as CustomEvent<{ learnerId?: string; pptProgress?: Record<string, number> }>).detail;
+      if (detail?.learnerId === currentLearnerId && detail.pptProgress) setPptProgressByKp(detail.pptProgress);
+    };
+    window.addEventListener(PPT_PROGRESS_CACHE_UPDATED_EVENT, syncPptProgress);
+    return () => window.removeEventListener(PPT_PROGRESS_CACHE_UPDATED_EVENT, syncPptProgress);
+  }, [currentLearnerId]);
+
+  useEffect(() => {
     // 共用资源与知识网络不依赖 learner：游客/新账号尚未建档时也要能加载。
     // 仅当没有 learnerId 时跳过个人 analytics 与缓存（那些按 learner 隔离）。
     const hasLearner = UUID_PATTERN.test(currentLearnerId);
@@ -332,6 +384,7 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
       setResources(cached.resources);
       setTree(cached.tree);
       if (cached.presentations) setPresentations(cached.presentations);
+      if (cached.pptProgress) setPptProgressByKp(cached.pptProgress);
     }
     /* analytics 缓存优先：新鲜（≤3min）直接首屏回显并跳过重复请求 */
     const cachedAnalytics = hasLearner ? readLearnerAnalytics(currentLearnerId) : null;
@@ -349,15 +402,19 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
     const userResourcesPromise = hasLearner
       ? api.listLearningResources().catch(() => ({ resources: [] }))
       : Promise.resolve({ resources: [] });
+    const pptProgressPromise = hasLearner
+      ? fetchPptProgressByKp()
+      : Promise.resolve({});
     /* 学习行为（lf-signal）会置脏并防抖刷新，保证实时性 */
     const analyticsPromise = hasLearner
       ? (cachedAnalytics ? Promise.resolve(null) : api.getLearnerAnalyticsProfile().catch(() => null))
       : Promise.resolve(null);
-    Promise.all([api.getRagTree('agent'), analyticsPromise, templateCatalogPromise, userResourcesPromise])
-      .then(([latestTree, latestAnalytics, templateCatalog, userRes]) => {
+    Promise.all([api.getRagTree('agent'), analyticsPromise, templateCatalogPromise, userResourcesPromise, pptProgressPromise])
+      .then(([latestTree, latestAnalytics, templateCatalog, userRes, pptProgress]) => {
         if (!cancelled) setTree(latestTree);
         if (!cancelled) setAnalytics(latestAnalytics ?? cachedAnalytics);
         if (!cancelled) setPresentations(templateCatalog.presentations);
+        if (!cancelled) setPptProgressByKp(pptProgress);
         // Merge user customized copy state into template resources
         const userStateMap = new Map<string, { learned: boolean; started: boolean; progressRatio: number; masteryRatio: number }>();
         for (const ur of (userRes.resources ?? [])) {
@@ -374,7 +431,7 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
         });
         if (!cancelled) setResources(mergedResources);
         if (hasLearner && !cancelled) {
-          writeLearningMapCache(currentLearnerId, { resources: mergedResources, presentations: templateCatalog.presentations, tree: latestTree });
+          writeLearningMapCache(currentLearnerId, { resources: mergedResources, presentations: templateCatalog.presentations, tree: latestTree, pptProgress });
           if (latestAnalytics) writeLearnerAnalytics(currentLearnerId, latestAnalytics);
         }
       })
@@ -415,12 +472,16 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
     let cancelled = false;
     const refreshCatalog = async () => {
       try {
-        const templateCatalog = await fetchLearningTemplateCatalog();
+        const [templateCatalog, pptProgress] = await Promise.all([
+          fetchLearningTemplateCatalog(),
+          fetchPptProgressByKp(),
+        ]);
         if (cancelled) return;
         setResources(templateCatalog.resources);
         setPresentations(templateCatalog.presentations);
+        setPptProgressByKp(pptProgress);
         if (UUID_PATTERN.test(currentLearnerId) && tree) {
-          writeLearningMapCache(currentLearnerId, { ...templateCatalog, tree });
+          writeLearningMapCache(currentLearnerId, { ...templateCatalog, tree, pptProgress });
         }
       } catch { /* 校准失败保留现状 */ }
     };
@@ -500,12 +561,12 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
         const category = masteryByCategory.get(String(child.id));
         const childResources = resources.filter((resource) => resource.kpId === child.nodeCode);
         const progressByForm = new Map(childResources.map((resource) => [resource.type, resource.progressRatio ?? (resource.learned ? 1 : 0)]));
-        const pptLearned = presentations.some((task) => task.learned && task.title.includes(child.name));
+        const pptProgressRatio = pptProgressByKp[child.nodeCode] ?? 0;
         topicProgress[child.nodeCode] = Math.round((
           (progressByForm.get('lecture') ?? 0)
           + (progressByForm.get('practice') ?? 0)
           + (progressByForm.get('quiz') ?? 0)
-          + (pptLearned ? 1 : 0)
+          + pptProgressRatio
         ) / 4 * 100);
         const selfEvidence = childResources.filter((resource) => resource.type !== 'quiz' && resource.masteryRatio > 0);
         const quizEvidence = childResources.filter((resource) => resource.type === 'quiz' && resource.masteryRatio > 0);
@@ -650,5 +711,5 @@ export function useLearningMap(options?: { deferNetwork?: boolean }): LearningMa
       nodeTargets,
       jobName: currentLearner.targetJob || undefined,
     };
-  }, [tree, analytics, presentations, loading, currentLearner, resources, currentLearnerId, jobTargets]);
+  }, [tree, analytics, presentations, pptProgressByKp, loading, currentLearner, resources, currentLearnerId, jobTargets]);
 }
