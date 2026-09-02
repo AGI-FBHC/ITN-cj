@@ -486,7 +486,7 @@ export default function SlidePlayer() {
       if (data.resourceType === 'ppt') await presentationApi.completePresentation(data.resourceId);
       else await api.completeLearningResource(data.resourceId);
       setCompleteConfirmOpen(false);
-      markLearningMapReturn(currentLearner.id);
+      window.dispatchEvent(new CustomEvent('lf:learning-state-changed', { detail: { learnerId: currentLearner.id } })); markLearningMapReturn(currentLearner.id);
       navigate('/learn');
     } catch {
       setError('学习记录保存失败，请稍后重试');
@@ -546,7 +546,7 @@ export default function SlidePlayer() {
         <Presentation size={17} className="text-brand" />
         <div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold text-ink">幻灯模式 · {data?.title ?? '正在准备个性化学习内容'}</div><div className="font-mono text-[9.5px] text-ink-muted">个性化内容生成中 · 第 {slides.length ? currentIndex + 1 : 0}/{expected || slides.length || 0} 页</div></div>
         {data?.resourceId && <button type="button" onClick={() => { narration.stop(); navigate(data.resourceType === 'ppt' ? `/learn/${encodeURIComponent(data.kpId ?? '')}?ppt=${encodeURIComponent(data.resourceId!)}` : `/learn/resource/${encodeURIComponent(data.resourceId!)}?view=full`); }} className="inline-flex h-9 items-center gap-1.5 rounded-[10px] border border-hairline bg-paper px-3 text-[11px] font-medium text-ink-2 hover:border-brand/35 hover:text-brand"><BookOpen size={13} />完整阅读</button>}
-        <button type="button" onClick={() => { narration.stop(); markLearningMapReturn(currentLearner.id); navigate('/learn'); }} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep" title="退出幻灯"><X size={17} /></button>
+        <button type="button" onClick={() => { narration.stop(); window.dispatchEvent(new CustomEvent('lf:learning-state-changed', { detail: { learnerId: currentLearner.id } })); markLearningMapReturn(currentLearner.id); navigate('/learn'); }} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep" title="退出幻灯"><X size={17} /></button>
       </header>
 
       <section className={cn('flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-gradient-to-br from-brand-tint/25 via-paper to-card-warm px-4 py-8 md:px-12', isQuiz && assistantOpen && 'lg:pr-[var(--lf-slide-assistant-width)]')}>
@@ -607,6 +607,7 @@ export default function SlidePlayer() {
     </main>
   );
 }
+
 
 
 
