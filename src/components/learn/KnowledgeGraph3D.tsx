@@ -76,6 +76,12 @@ function createSoftPlushTexture(size = 256): THREE.Texture {
   return tex;
 }
 
+let sharedPlushTexture: THREE.Texture | null = null;
+function getSharedPlushTexture(): THREE.Texture {
+  if (!sharedPlushTexture) sharedPlushTexture = createSoftPlushTexture();
+  return sharedPlushTexture;
+}
+
 function chapterStateColor(learned: boolean, progress: number, showLearned = false): string {
   if (!showLearned) return '#8D83A8';
   if (learned) {
@@ -1248,7 +1254,7 @@ function ChildNode({
       {/* 节点视觉始终正对相机，避免透视边缘把圆球拉成椭圆 */}
       <Billboard>
       <mesh ref={meshRef}>
-        <circleGeometry args={[1, 64]} />
+        <circleGeometry args={[1, 40]} />
         <meshBasicMaterial color={getColor()} transparent={false} />
 
         {/* 内描边：球面边缘的亮环 */}
@@ -1360,7 +1366,7 @@ function Node3D({
   const glowRef = useRef<THREE.MeshBasicMaterial | null>(null);
   const isDomain = node.kind === 'domain';
   const colors = isDomain ? NODE_COLORS.domain : NODE_COLORS.topic;
-  const plushTexture = useMemo(() => createSoftPlushTexture(), []);
+  const plushTexture = useMemo(() => getSharedPlushTexture(), []);
 
   const getDomainStateColor = () => {
     return chapterStateColor(learned, progress, showLearned);
@@ -1445,12 +1451,12 @@ function Node3D({
       {/* 节点视觉始终正对相机，避免透视边缘把圆球拉成椭圆 */}
       <Billboard>
       <mesh ref={meshRef}>
-        <circleGeometry args={[1, 64]} />
+        <circleGeometry args={[1, 40]} />
         <meshBasicMaterial map={plushTexture} color={getColor()} transparent opacity={1} depthWrite={true} />
 
         {/* 毛绒发光：从内到外柔光扩散 */}
         <mesh scale={1.5} position={[0, 0, -0.015]} raycast={() => null} renderOrder={0}>
-          <circleGeometry args={[1, 64]} />
+          <circleGeometry args={[1, 40]} />
           <meshBasicMaterial ref={glowRef} map={plushTexture} color={getColor()} transparent opacity={0.34} depthWrite={false} />
         </mesh>
       </mesh>
@@ -1959,6 +1965,7 @@ export default function KnowledgeGraph3D({
         onTouchMove={(e) => e.stopPropagation()}
       >
       <Canvas
+        dpr={[1, 1.5]}
         onPointerMissed={() => {
           onSelectKp(null);
           onSelectTopic(null);
