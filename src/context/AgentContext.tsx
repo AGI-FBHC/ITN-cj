@@ -155,19 +155,25 @@ async function hydrateAgentImages(messages: AgentMessage[]): Promise<AgentMessag
 
 const DEFAULT_SESSION_TITLE_RE = /^(新对话|伴学助手|阿诊)\s*·?\s*(学习诊断)?$/;
 
+function normalizeFocusTitle(title?: string | null): string {
+  const value = String(title ?? '').trim();
+  const match = value.match(/^第\s*(\d+)\s*题$/);
+  if (match) return `题目 ${match[1]}`;
+  return value;
+}
 function buildSessionTitle(text: string): string {
   const cleanText = text.replace(/^\s*\[当前页面[：:]\s*[^\]]+\]\s*/, '').replace(/\s+/g, ' ').trim();
   return cleanText.length > 12 ? `${cleanText.slice(0, 12)}…` : cleanText;
 }
 
 function buildCrossPageBridge(history: SessionStageRecord[], current: LearningPageContext): string | null {
-  const currentFocus = current.focus?.title || current.pageTitle;
+  const currentFocus = normalizeFocusTitle(current.focus?.title || current.pageTitle);
   const now = `${current.pageType} · ${currentFocus}`;
   const recent = history.slice(-4);
   const startStage = history.length - recent.length + 2;
   const stageLines = [
     '阶段1：新对话',
-    ...recent.map((item, index) => `阶段${startStage + index}：${item.pageType} · ${item.focusTitle || item.pageTitle}`),
+    ...recent.map((item, index) => `阶段${startStage + index}：${item.pageType} · ${normalizeFocusTitle(item.focusTitle || item.pageTitle)}`),
   ];
   const currentStage = history.length + 2;
   if (!history.length) {
@@ -528,7 +534,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         const stage: SessionStageRecord = {
           pageType: currentPage.pageType,
           pageTitle: currentPage.pageTitle,
-          ...(currentPage.focus?.title ? { focusTitle: currentPage.focus.title } : {}),
+          ...(currentPage.focus?.title ? { focusTitle: normalizeFocusTitle(currentPage.focus.title) } : {}),
           route: currentPage.route,
           askedAt: new Date().toISOString(),
         };
@@ -539,10 +545,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           const startStage = history.length - recent.length + 2;
           const stageLines = [
             '阶段1：新对话',
-            ...recent.map((item, index) => `阶段${startStage + index}：${item.pageType} · ${item.focusTitle || item.pageTitle}`),
+            ...recent.map((item, index) => `阶段${startStage + index}：${item.pageType} · ${normalizeFocusTitle(item.focusTitle || item.pageTitle)}`),
           ];
           const currentStage = history.length + 2;
-          const currentFocus = currentPage.focus?.title || currentPage.pageTitle;
+          const currentFocus = normalizeFocusTitle(currentPage.focus?.title || currentPage.pageTitle);
           append({ id: mid(), kind: 'stage', text: `跨页面承接\n${stageLines.join('\n')}\n阶段${currentStage}：${currentPage.pageType} · ${currentFocus}`, time: now() });
         }
       }
