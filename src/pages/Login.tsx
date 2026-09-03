@@ -256,7 +256,7 @@ export default function Login() {
             transition={{ delay: 0.12, duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
             className="mt-4 text-[14.5px] leading-[25px] text-ink-muted"
           >
-            同一个知识点，给你的讲法和给别人的不一样——而且每句话都有国标出处。
+            同一个知识点，给你的讲法和给别人的不一样——而且每句话都有出处。
             从建一份属于你的学情画像开始，让每一次学习都更贴合你当前的水平。
           </motion.p>
           <div className="mt-8 flex items-center whitespace-nowrap">
