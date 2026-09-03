@@ -6,7 +6,7 @@ import { adminKnowledgeApi, type KcCategoryNode, type KcGraphEdge } from "@/lib/
 import { cn } from "@/lib/utils";
 
 type Tab = "overview" | "review" | "edges" | "dag" | "builder";
-type CategoryInfo = Pick<KcCategoryNode, "id" | "name" | "level" | "parent_id" | "chunk_count">;
+type CategoryInfo = Pick<KcCategoryNode, "id" | "name" | "level" | "parent_id" | "node_type" | "chunk_count">;
 const tabs: { id: Tab; label: string }[] = [
   { id: "overview", label: "网络概览" },
   { id: "review", label: "审核队列" },
@@ -164,6 +164,107 @@ type ProposedSuggestion = {
   rationale?: string;
 };
 
+function SimpleChapterCanvas({
+  categories,
+  edges,
+  sourceId,
+  targetId,
+  onPick,
+}: {
+  categories: Map<number, CategoryInfo>;
+  edges: KcGraphEdge[];
+  sourceId: number | null;
+  targetId: number | null;
+  onPick: (id: number) => void;
+}) {
+  const chapters = useMemo(
+    () =>
+      [...categories.values()]
+        .filter((node) => node.level === 2 && (node.node_type === "category" || node.node_type === "domain"))
+        .sort((a, b) => a.name.localeCompare(b.name, "zh-CN")),
+    [categories],
+  );
+  const chapterIds = useMemo(() => new Set(chapters.map((node) => node.id)), [chapters]);
+  const chapterEdges = useMemo(
+    () => edges.filter((edge) => chapterIds.has(edge.prereq_category_id) && chapterIds.has(edge.category_id)),
+    [edges, chapterIds],
+  );
+  const positions = useMemo(() => {
+    const result = new Map<number, { x: number; y: number }>();
+    const count = chapters.length;
+    if (!count) return result;
+    const cx = 600;
+    const cy = 340;
+    const radius = Math.max(150, Math.min(260, 190 + (count - 6) * 4));
+    chapters.forEach((node, index) => {
+      const angle = (Math.PI * 2 * index) / count - Math.PI / 2;
+      result.set(node.id, {
+        x: cx + radius * Math.cos(angle),
+        y: cy + radius * Math.sin(angle),
+      });
+    });
+    return result;
+  }, [chapters]);
+
+  return (
+    <div className="lf-card rounded-2xl">
+      <div className="border-b border-white/60 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <GitBranch size={15} className="text-brand" />
+          <h3 className="text-sm font-bold text-ink">章节网络 · 快速建边</h3>
+        </div>
+        <p className="mt-1 text-[11px] leading-4 text-ink-muted">这里只展示章节节点和章节之间的已有边。点第一个章节设为前置，再点第二个章节设为目标。</p>
+      </div>
+      <div className="overflow-x-auto p-3">
+        <svg viewBox="0 0 1200 680" className="h-[560px] min-w-[900px] w-full rounded-xl border border-white/70 bg-white/40">
+          <defs>
+            <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#94a3b8" />
+            </marker>
+          </defs>
+          {chapterEdges.map((edge) => {
+            const from = positions.get(edge.prereq_category_id);
+            const to = positions.get(edge.category_id);
+            if (!from || !to) return null;
+            const color = edge.edge_type === "cross_domain_prerequisite" ? "#7c3aed" : edge.edge_type === "related" ? "#0ea5e9" : edge.edge_type === "contrasts_with" ? "#ea580c" : "#94a3b8";
+            return (
+              <line key={edge.id} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={color} strokeWidth="2" strokeDasharray={edge.status === "proposed" ? "6 4" : undefined} markerEnd="url(#arrow)" opacity={0.72}>
+                <title>{categories.get(edge.prereq_category_id)?.name} → {categories.get(edge.category_id)?.name}</title>
+              </line>
+            );
+          })}
+          {chapters.map((node) => {
+            const pos = positions.get(node.id);
+            if (!pos) return null;
+            const isSource = sourceId === node.id;
+            const isTarget = targetId === node.id;
+            const color = isSource ? "#d97706" : isTarget ? "#059669" : "#2563eb";
+            return (
+              <g key={node.id} transform={`translate(${pos.x},${pos.y})`} onClick={() => onPick(node.id)} className="cursor-pointer">
+                <circle r="30" fill={isSource || isTarget ? color : "#fff"} stroke={color} strokeWidth={isSource || isTarget ? 4 : 2} />
+                <text y="-38" textAnchor="middle" fontSize="12" fill={isSource || isTarget ? color : "#334155"} fontWeight={isSource || isTarget ? 700 : 500}>
+                  {node.name}
+                </text>
+                <text y="4" textAnchor="middle" fontSize="10" fill={isSource || isTarget ? "#fff" : "#64748b"}>
+                  #{node.id}
+                </text>
+                <title>{node.name} · 章节</title>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      <div className="border-t border-slate-100 px-4 py-3 text-xs text-ink-muted">
+        {sourceId == null
+          ? "请先点选前置章节"
+          : targetId == null
+            ? "已选前置章节，请再点选目标章节"
+            : `当前连线：${categories.get(sourceId)?.name ?? sourceId} → ${categories.get(targetId)?.name ?? targetId}`}
+      </div>
+    </div>
+  );
+}
+
 function DagQuickBuilder({
   categories,
   edges,
@@ -182,7 +283,10 @@ function DagQuickBuilder({
   onTargetIdChange: (id: number | null) => void;
 }) {
   const options = useMemo(
-    () => [...categories.values()].sort((a, b) => a.level - b.level || a.name.localeCompare(b.name, "zh-CN")),
+    () =>
+      [...categories.values()]
+        .filter((node) => node.level === 2 && (node.node_type === "category" || node.node_type === "domain"))
+        .sort((a, b) => a.name.localeCompare(b.name, "zh-CN")),
     [categories],
   );
   const existingKeys = useMemo(() => new Set(edges.map((edge) => `${edge.prereq_category_id}->${edge.category_id}`)), [edges]);
@@ -681,12 +785,12 @@ export default function KnowledgeGraphAdmin() {
         </div>
       ) : tab === "builder" ? (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <GraphCanvas
-            edges={edges}
+          <SimpleChapterCanvas
             categories={categories}
-            edgeMode
-            selectedIds={new Set([builderSourceId, builderTargetId].filter((id): id is number => id != null))}
-            onPickNode={handleBuilderPick}
+            edges={edges}
+            sourceId={builderSourceId}
+            targetId={builderTargetId}
+            onPick={handleBuilderPick}
           />
           <DagQuickBuilder
             categories={categories}
