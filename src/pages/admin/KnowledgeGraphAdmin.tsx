@@ -506,7 +506,12 @@ function DagQuickBuilder({
         </p>
       </div>
       <div className="space-y-3 p-4 text-xs">
-        {suggestions.length === 0 ? (
+        {aiBusy && suggestions.length === 0 ? (
+          <div className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-brand/30 bg-brand-tint/15 px-3 py-6 text-center">
+            <Loader2 size={18} className="animate-spin text-brand" />
+            <span className="text-[11.5px] leading-4 text-ink-muted">正在根据章节关系生成建边建议，请稍候…</span>
+          </div>
+        ) : suggestions.length === 0 ? (
           <div className="rounded-xl border border-dashed border-black/10 px-3 py-5 text-center text-ink-muted">
             点击“AI 建议”，让模型基于当前章节关系直接给出可建边、关系和理由。
           </div>
