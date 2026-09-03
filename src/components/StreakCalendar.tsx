@@ -48,9 +48,9 @@ export default function StreakCalendar({
         按后端每日学习会话统计{totalDays != null ? ` · 累计学习 ${totalDays} 天` : ''}
       </p>
 
-      <div className="mt-4 grid grid-cols-7 gap-1">
+      <div className="mt-4 grid grid-cols-7 gap-1.5">
         {weekLabels.map((label) => (
-          <div key={label} className="pb-1 text-center font-mono text-[10px] text-ink-muted">{label}</div>
+          <div key={label} className="pb-1 text-center font-mono text-[11px] text-ink-muted">{label}</div>
         ))}
         {cells.map((date, index) => {
           if (!date) return <span key={`empty-${index}`} />;
@@ -61,7 +61,7 @@ export default function StreakCalendar({
             <div key={key} className="flex items-center justify-center">
               <span
                 className={cn(
-                  'relative flex h-7 w-7 items-center justify-center rounded-full font-mono text-[11px] transition-colors',
+                  'relative flex h-9 w-9 items-center justify-center rounded-full font-mono text-[12px] transition-colors',
                   learned ? 'bg-brand font-semibold text-paper' : 'text-ink-2',
                   isToday && 'ring-2 ring-brand/50',
                 )}

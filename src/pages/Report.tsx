@@ -1067,7 +1067,7 @@ export default function Report() {
             onStatsChange={setFocusStats}
           />
         </div>
-        <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_350px]">
+        <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_440px]">
           <div className="lf-card p-4">
             <div className="mb-3 flex flex-wrap gap-2 border-b border-hairline pb-3">
               {[
