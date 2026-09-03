@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GitBranch, Loader2, Plus, RefreshCw, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -170,12 +170,14 @@ function SimpleChapterCanvas({
   sourceId,
   targetId,
   onPick,
+  onAddEdge,
 }: {
   categories: Map<number, CategoryInfo>;
   edges: KcGraphEdge[];
   sourceId: number | null;
   targetId: number | null;
   onPick: (id: number) => void;
+  onAddEdge?: (source: number, target: number) => void;
 }) {
   const chapters = useMemo(
     () =>
@@ -243,6 +245,25 @@ function SimpleChapterCanvas({
     return result;
   }, [chapters, chapterEdges]);
 
+  const [manualPositions, setManualPositions] = useState<Record<number, { x: number; y: number }>>({});
+  const nodePositions = useMemo(() => {
+    const merged = new Map<number, { x: number; y: number }>(positions);
+    Object.entries(manualPositions).forEach(([rawId, pos]) => merged.set(Number(rawId), pos));
+    return merged;
+  }, [positions, manualPositions]);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const draggingId = useRef<number | null>(null);
+  const movedRef = useRef(false);
+
+  const toCanvasPoint = (clientX: number, clientY: number) => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect || !rect.width || !rect.height) return { x: 0, y: 0 };
+    return {
+      x: ((clientX - rect.left) / rect.width) * 1200,
+      y: ((clientY - rect.top) / rect.height) * 680,
+    };
+  };
+
   return (
     <div className="lf-card rounded-2xl">
       <div className="border-b border-white/60 px-4 py-3">
@@ -250,18 +271,18 @@ function SimpleChapterCanvas({
           <GitBranch size={15} className="text-brand" />
           <h3 className="text-sm font-bold text-ink">章节网络 · 快速建边</h3>
         </div>
-        <p className="mt-1 text-[11px] leading-4 text-ink-muted">这里只展示章节节点和章节之间的已有边。点第一个章节设为前置，再点第二个章节设为目标。</p>
+        <p className="mt-1 text-[11px] leading-4 text-ink-muted">这里只展示章节节点和章节之间的已有边。点第一个章节设为前置，再点第二个章节设为目标；节点可拖动调整位置。</p>
       </div>
       <div className="overflow-x-auto p-3">
-        <svg viewBox="0 0 1200 680" className="h-[560px] min-w-[900px] w-full rounded-xl border border-white/70 bg-white/40">
+        <svg ref={svgRef} viewBox="0 0 1200 680" className="h-[560px] min-w-[900px] w-full cursor-grab rounded-xl border border-white/70 bg-white/40" onPointerMove={(event) => { if (draggingId.current == null) return; const point = toCanvasPoint(event.clientX, event.clientY); movedRef.current = true; setManualPositions((current) => ({ ...current, [draggingId.current as number]: point })); }} onPointerUp={() => { draggingId.current = null; }}>
           <defs>
             <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
               <path d="M0,0 L0,6 L8,3 z" fill="#94a3b8" />
             </marker>
           </defs>
           {chapterEdges.map((edge) => {
-            const from = positions.get(edge.prereq_category_id);
-            const to = positions.get(edge.category_id);
+            const from = nodePositions.get(edge.prereq_category_id);
+            const to = nodePositions.get(edge.category_id);
             if (!from || !to) return null;
             const color = edge.edge_type === "cross_domain_prerequisite" ? "#7c3aed" : edge.edge_type === "related" ? "#0ea5e9" : edge.edge_type === "contrasts_with" ? "#ea580c" : "#94a3b8";
             return (
@@ -270,14 +291,20 @@ function SimpleChapterCanvas({
               </line>
             );
           })}
+          {sourceId != null && targetId != null && sourceId !== targetId && (() => {
+            const from = nodePositions.get(sourceId);
+            const to = nodePositions.get(targetId);
+            if (!from || !to) return null;
+            return <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="#d97706" strokeWidth="3" strokeDasharray="8 6" markerEnd="url(#arrow)" opacity={0.9} />;
+          })()}
           {chapters.map((node) => {
-            const pos = positions.get(node.id);
+            const pos = nodePositions.get(node.id);
             if (!pos) return null;
             const isSource = sourceId === node.id;
             const isTarget = targetId === node.id;
             const color = isSource ? "#d97706" : isTarget ? "#059669" : "#2563eb";
             return (
-              <g key={node.id} transform={`translate(${pos.x},${pos.y})`} onClick={() => onPick(node.id)} className="cursor-pointer">
+              <g key={node.id} transform={`translate(${pos.x},${pos.y})`} onPointerDown={(event) => { event.stopPropagation(); event.currentTarget.setPointerCapture?.(event.pointerId); movedRef.current = false; draggingId.current = node.id; }} onClick={() => { if (!movedRef.current) onPick(node.id); }} className="cursor-grab active:cursor-grabbing">
                 <circle r="30" fill={isSource || isTarget ? color : "#fff"} stroke={color} strokeWidth={isSource || isTarget ? 4 : 2} />
                 <text y="-38" textAnchor="middle" fontSize="12" fill={isSource || isTarget ? color : "#334155"} fontWeight={isSource || isTarget ? 700 : 500}>
                   {node.name}
@@ -291,12 +318,20 @@ function SimpleChapterCanvas({
           })}
         </svg>
       </div>
-      <div className="border-t border-slate-100 px-4 py-3 text-xs text-ink-muted">
-        {sourceId == null
-          ? "请先点选前置章节"
-          : targetId == null
-            ? "已选前置章节，请再点选目标章节"
-            : `当前连线：${categories.get(sourceId)?.name ?? sourceId} → ${categories.get(targetId)?.name ?? targetId}`}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-xs text-ink-muted">
+        <div>
+          {sourceId == null
+            ? "请先点选前置章节"
+            : targetId == null
+              ? "已选前置章节，请再点选目标章节"
+              : `当前连线：${categories.get(sourceId)?.name ?? sourceId} → ${categories.get(targetId)?.name ?? targetId}`}
+        </div>
+        {sourceId != null && targetId != null && sourceId !== targetId && onAddEdge && (
+          <button onClick={() => onAddEdge(sourceId, targetId)} className="lf-btn-primary justify-center gap-1 !px-3 !py-1.5 text-xs">
+            <Plus size={13} />
+            加边
+          </button>
+        )}
       </div>
     </div>
   );
@@ -727,6 +762,25 @@ export default function KnowledgeGraphAdmin() {
       setLoading(false);
     }
   }, []);
+  const handleBuilderAddEdge = useCallback(async (source: number, target: number) => {
+    if (source === target) return;
+    try {
+      const result = await adminKnowledgeApi.addPrerequisite({
+        prereqCategoryId: source,
+        categoryId: target,
+        edgeType: "prerequisite",
+        source: "human",
+        rationale: "在章节网络快速建图中手动加边",
+        directActive: true,
+      });
+      toast.success(result.edge.status === "active" ? "章节边已添加" : "章节边已进入待审核队列");
+      setBuilderSourceId(null);
+      setBuilderTargetId(null);
+      await refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "加边失败");
+    }
+  }, [refresh]);
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -828,6 +882,7 @@ export default function KnowledgeGraphAdmin() {
             sourceId={builderSourceId}
             targetId={builderTargetId}
             onPick={handleBuilderPick}
+            onAddEdge={(source, target) => void handleBuilderAddEdge(source, target)}
           />
           <DagQuickBuilder
             categories={categories}
