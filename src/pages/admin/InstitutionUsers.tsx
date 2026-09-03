@@ -77,7 +77,7 @@ export default function InstitutionUsers() {
                         title="重置学习记录，恢复为注册后状态"
                       >
                         {busyId === item.id ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
-                        重置为新人
+                        重置
                       </button>
                     )}
                   </td>
