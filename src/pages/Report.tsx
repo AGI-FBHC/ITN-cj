@@ -802,17 +802,19 @@ export default function Report() {
     return names.length ? `该方向主要锻炼六维中的「${names.join('、')}」。` : '';
   }, [weakestChapter, domainKnowledgePoints]);
 
-  /* 顶部“继续学习/进入课程”：直接落到真实知识点卡片 */
+  /* 顶部“继续学习/进入课程”：与「我的学习」同口径 */
   const continueTarget = useMemo(() => {
-    const resourceKpId = nextResource?.kpId ?? null;
-    const topicNode = resourceKpId
-      ? learningMap.graphNodes.find((node) => node.kind === 'topic' && node.id === resourceKpId)
+    const mapActiveChapter = learningMap.activeKp
+      ? learningMap.domains.find((domain) => domain.id === learningMap.activeKp)
       : null;
-    return {
-      chapterId: topicNode?.kpId ?? resourceKpId ?? weakestChapter?.id ?? null,
-      topicId: topicNode?.id ?? null,
-    };
-  }, [learningMap.graphNodes, nextResource?.kpId, weakestChapter?.id]);
+    const chapter = mapActiveChapter ?? weakestChapter;
+    if (!chapter) return { chapterId: null, topicId: null };
+    const topics = learningMap.graphNodes
+      .filter((node) => node.kind === 'topic' && node.kpId === chapter.id)
+      .sort((left, right) => (left.topicIndex ?? 99) - (right.topicIndex ?? 99));
+    const topic = topics.find((node) => (learningMap.topicProgress[node.id] ?? 0) < 100) ?? topics[0] ?? null;
+    return { chapterId: chapter.id, topicId: topic?.id ?? null };
+  }, [learningMap, weakestChapter]);
 
   const rangeDates = useMemo(() => {
     const dates: string[] = [];
