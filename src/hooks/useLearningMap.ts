@@ -45,7 +45,7 @@ import type { PresentationTaskSummary } from '@/lib/presentationApi';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 // v6: 缓存只允许保存当前机构母版资源；v5 可能被个人资源刷新事件污染。
-const CACHE_PREFIX = 'lf.learningMapCache:v6:';
+const CACHE_PREFIX = 'lf.learningMapCache:v7:';
 const RESOURCE_CACHE_UPDATED_EVENT = 'lf:learning-map-resources-updated';
 const PRESENTATION_CACHE_UPDATED_EVENT = 'lf:learning-map-presentations-updated';
 const PPT_PROGRESS_CACHE_UPDATED_EVENT = 'lf:learning-map-ppt-progress-updated';
