@@ -85,7 +85,7 @@ export default function BlindFocusBoard({
       active: activeRecords.length,
       resolved: records.filter((record) => Boolean(record.resolvedAt)).length,
     }),
-    [records, activeRecords],
+    [records],
   );
 
   /* 依据真实学习进度自动消散：用户学完该知识点后无需手动勾选 */
@@ -106,9 +106,9 @@ export default function BlindFocusBoard({
   }, [learnerId, pending, records]);
 
   useEffect(() => {
-    onStatsChange?.(stats);
+    onStatsChange?.({ active: stats.active, resolved: stats.resolved });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stats]);
+  }, [stats.active, stats.resolved]);
 
   const choose = (kp: FocusKp) => {
     if (activeRecords.length >= MAX_ACTIVE) {
