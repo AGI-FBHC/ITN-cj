@@ -26,16 +26,43 @@ export default function ResumeLearningFab() {
   const node = isPreset
     ? activePathNode(reportForLearner(currentLearner))
     : (learningMap.path.find((p) => p.status === 'active') ?? learningMap.path[0] ?? null);
+  const mapActive = learningMap.activeKp
+    ? learningMap.domains.find((domain) => domain.id === learningMap.activeKp)
+    : null;
+  const weakestChapter = [...learningMap.domains].sort(
+    (a, b) => (learningMap.mastery[a.id] ?? 0) - (learningMap.mastery[b.id] ?? 0),
+  )[0];
+  const todayChapter = mapActive ?? weakestChapter ?? null;
+  const todayTopics = todayChapter
+    ? learningMap.graphNodes
+        .filter((n) => n.kind === 'topic' && n.kpId === todayChapter.id)
+        .sort((left, right) => (left.topicIndex ?? 99) - (right.topicIndex ?? 99))
+    : [];
+  const continueTopic = todayTopics.find((topic) => (learningMap.topicProgress[topic.id] ?? 0) < 100)
+    ?? todayTopics[0]
+    ?? null;
+  const displayTitle = isPreset
+    ? (node?.title ?? '继续学习')
+    : todayChapter
+      ? (continueTopic?.label ?? todayChapter.name)
+      : (learning.nextResource?.title ?? node?.title ?? '继续学习');
   const navigate = useNavigate();
   const goLearn = () => {
     if (isPreset) { navigate(resolveLearnTarget(dataIdOf(currentLearner), node?.kpId ?? '', node?.title ?? '').to); return; }
-    if (learning.nextResource) { navigate(learningResourcePath(learning.nextResource)); return; }
+    if (todayChapter) {
+      navigate(learnMapPath(currentLearner.id, todayChapter.id, continueTopic?.id));
+      return;
+    }
+    if (learning.nextResource) {
+      navigate(learningResourcePath(learning.nextResource));
+      return;
+    }
     navigate(learnMapPath(currentLearner.id, node?.kpId ?? undefined));
   };
 
   /* 不打扰的场合：专注模式 / 无节点 / 已经在「学」的区域里（那里本就有入口，浮标只会挡住花园） */
   const inLearnArea = location.pathname.startsWith('/learn');
-  const show = !focusMode && !!node && !inLearnArea;
+  const show = !focusMode && !inLearnArea && (!!node || !!todayChapter || !!learning.nextResource);
 
   return (
     <AnimatePresence>
@@ -50,7 +77,7 @@ export default function ResumeLearningFab() {
           <button
             type="button"
             onClick={goLearn}
-            title={`继续学习：${node.title}`}
+            title={`继续学习：${displayTitle}`}
             className="lf-glass group flex items-center gap-2.5 rounded-full py-2 pl-2.5 pr-3.5 transition-all hover:border-brand/55"
           >
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand text-paper">
@@ -58,7 +85,7 @@ export default function ResumeLearningFab() {
             </span>
             <span className="min-w-0">
               <span className="block font-mono text-[9px] uppercase tracking-wide text-ochre">继续学习</span>
-              <span className="block max-w-[150px] truncate text-[12.5px] font-semibold text-ink">{node.title}</span>
+              <span className="block max-w-[150px] truncate text-[12.5px] font-semibold text-ink">{displayTitle}</span>
             </span>
             <ArrowRight size={14} className="shrink-0 text-brand transition-transform group-hover:translate-x-0.5" />
           </button>
