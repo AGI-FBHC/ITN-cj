@@ -39,6 +39,7 @@ import GapSection from '@/components/report/GapSection';
 import DifficultyMatch from '@/components/report/DifficultyMatch';
 import PathRoadmap from '@/components/report/PathRoadmap';
 import GrowthSection from '@/components/report/GrowthSection';
+import BlindFocusBoard, { readBlindFocusRecords, type FocusKp } from '@/components/report/BlindFocusBoard';
 import ScoreBand from '@/components/report/ScoreBand';
 import StreakCalendar from '@/components/StreakCalendar';
 import type { BlindSpot, LearnerReport, PathNodeStatus } from '@/data/reportData';
@@ -459,6 +460,14 @@ export default function Report() {
   const refreshSeqRef = useRef(0);
   /** 匹配报告速览当前展开的模块 */
   const [activeMatchTab, setActiveMatchTab] = useState<'score' | 'gap' | 'difficulty' | 'path'>('score');
+  /** 盲区选择：学习者主动设为目标后，完成后自动计入盲区消解数 */
+  const [focusStats, setFocusStats] = useState<{ active: number; resolved: number }>(() => {
+    const records = isUuid(currentLearner.id) ? readBlindFocusRecords(currentLearner.id) : [];
+    return {
+      active: records.filter((record) => !record.resolvedAt).length,
+      resolved: records.filter((record) => Boolean(record.resolvedAt)).length,
+    };
+  });
   /** S 形路径每行节点数：按屏幕宽度自适应（4–8 个） */
   const [perRow, setPerRow] = useState(6);
   useEffect(() => {
@@ -603,6 +612,23 @@ export default function Report() {
 
   const reportLearner = useMemo(() => ({ ...currentLearner, scores: abilityScores }), [currentLearner, abilityScores]);
 
+  /* 盲区候选：优先真实知识网络的章节/知识点；按学习路径顺序 + 低掌握度排序，供随机挑选 */
+  const focusCandidates = useMemo<FocusKp[]>(() => {
+    const order = new Map((learningMap.path ?? []).map((node, index) => [node.kpId, index]));
+    return (learningMap.domains ?? [])
+      .map((domain) => ({
+        id: domain.id,
+        name: domain.name,
+        progress: Math.round(learningMap.chapterProgress[domain.id] ?? 0),
+        mastery: Math.round(learningMap.mastery[domain.id] ?? 0),
+      }))
+      .sort((left, right) =>
+        (order.get(left.id) ?? 99) - (order.get(right.id) ?? 99)
+        || left.progress - right.progress
+        || right.mastery - left.mastery,
+      );
+  }, [learningMap]);
+
   const visualReport = useMemo<LearnerReport>(() => {
     const weeks = ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8'];
     const spots: BlindSpot[] = abilities
@@ -713,14 +739,18 @@ export default function Report() {
         ? `当前最需优先补齐「${getKnowledgePoint(spots[0].kpId).name}」（差 ${spots[0].gap} 分），建议按路径顺序完成讲义、实操与分阶题。`
         : '六维能力均衡向好，保持当前学习节奏并定期测评即可。',
       generated: true,
-      baselineHighSpots: spots.filter((spot) => spot.priority === '高').length,
-      resolvedSpots: Math.max(0, Math.round(spots.filter((spot) => spot.gap <= 10).length / 2)),
+      baselineHighSpots: focusStats.active + focusStats.resolved > 0
+        ? focusStats.active + focusStats.resolved
+        : spots.filter((spot) => spot.priority === '高').length,
+      resolvedSpots: focusStats.resolved > 0
+        ? focusStats.resolved
+        : Math.max(0, Math.round(spots.filter((spot) => spot.gap <= 10).length / 2)),
       investHours: Math.round((analytics?.stats.weeklyMinutes.reduce((sum, minutes) => sum + minutes, 0) ?? 0) / 60),
       investNote: '按近 7 天学习时长估算',
       knowledgeCoverage,
       knowledgeCoverageNote,
     };
-  }, [abilities, abilityScores, analytics, currentLearner, learningMap, resources]);
+  }, [abilities, abilityScores, analytics, currentLearner, focusStats, learningMap, resources]);
   const resourcesByChapter = useMemo(() => new Map((course?.chapters ?? []).map((chapter) => {
     const chapterResources = resources.filter((resource) => resource.chapterId === chapter.id);
     return [chapter.id, { total: chapterResources.length, learned: chapterResources.filter((resource) => resource.learned).length }];
@@ -1011,6 +1041,13 @@ export default function Report() {
 
       <section className="mt-12 print:break-before-page">
         <SectionHeader en="MATCH REPORT" title="学情与资源匹配度报告" desc="知识盲区、资源难度匹配与学习路径规划，帮助直观决策。" />
+        <div className="mb-5">
+          <BlindFocusBoard
+            learnerId={currentLearner.id}
+            pending={focusCandidates}
+            onStatsChange={setFocusStats}
+          />
+        </div>
         <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_350px]">
           <div className="lf-card p-4">
             <div className="mb-3 flex flex-wrap gap-2 border-b border-hairline pb-3">
