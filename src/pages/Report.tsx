@@ -1001,7 +1001,7 @@ export default function Report() {
         </button>
       </motion.header>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-2">
+      <section className="grid gap-4 lg:grid-cols-[0.9fr_0.9fr_1.3fr]">
         {[
           { icon: Target, label: '实测综合掌握度', value: `${overallMastery}%`, note: liveMasteryValues.length || (analytics?.mastery.categories.length ?? 0) ? `${Math.max(liveMasteryValues.length, analytics?.mastery.categories.length ?? 0)} 个章节形成证据` : '完成分阶题后开始累计', tone: 'text-brand' },
           { icon: Clock3, label: '累计学习投入', value: displayMinutes(totalMinutesShown), note: totalMinutesNote, tone: 'text-brand' },
@@ -1015,6 +1015,25 @@ export default function Report() {
             </motion.div>
           );
         })}
+        <div className="lf-card border-brand/25 bg-brand-tint/25 p-5">
+          <div className="flex items-center gap-2 text-[12px] text-ink-muted">
+            <Sparkles size={15} className="text-brand" />
+            下一步建议
+          </div>
+          <div className="mt-3 text-[15px] font-semibold text-ink">
+            {weakestChapter ? `优先补齐「${weakestChapter.name}」` : '先完成一次学习'}
+          </div>
+          <p className="mt-1.5 text-[12.5px] leading-5 text-ink-muted">
+            {weakestChapter ? `当前最弱章节是「${weakestChapter.name}」（掌握度 ${Math.round(learningMap.mastery[weakestChapter.id] ?? 0)}% · 进度 ${Math.round(learningMap.chapterProgress[weakestChapter.id] ?? 0)}%）。${weakestChapterDims}${nextResource ? `建议继续“${nextChapter?.title ?? nextResource.topic}”中的${resourceLabel[nextResource.type]}。` : '先生成对应章节的讲义与分阶题，形成可验证的学习证据。'}` : '先完成一次学习，能力与画像数据会随证据累积。'}
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate(learnMapPath(currentLearner.id, nextResource?.kpId ?? weakestChapter?.id))}
+            className="lf-btn-primary mt-3 !px-3.5 !py-2 text-[12.5px]"
+          >
+            {nextResource ? '继续学习' : '进入课程'} <ArrowRight size={14} />
+          </button>
+        </div>
       </section>
 
       <section className="mt-12">
@@ -1190,26 +1209,6 @@ export default function Report() {
               })()}
             </div>
           )}
-        </div>
-      </section>
-
-      <section className="mt-12">
-        <SectionHeader en="NEXT ACTION" title="下一步建议" desc="" />
-        <div className="rounded-[16px] border border-brand/25 bg-brand-tint/35 p-6">
-          <div className="flex items-start gap-4">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand text-paper"><Sparkles size={19} /></span>
-            <div className="min-w-0 flex-1">
-              <div className="text-[15px] font-semibold text-ink">{weakestChapter ? `优先补齐「${weakestChapter.name}」` : '先完成一次学习'}</div>
-              <p className="mt-1 text-[13px] leading-6 text-ink-muted">{weakestChapter ? `当前最弱章节是「${weakestChapter.name}」（掌握度 ${Math.round(learningMap.mastery[weakestChapter.id] ?? 0)}% · 进度 ${Math.round(learningMap.chapterProgress[weakestChapter.id] ?? 0)}%）。${weakestChapterDims}${nextResource ? `建议继续“${nextChapter?.title ?? nextResource.topic}”中的${resourceLabel[nextResource.type]}，完成后再用测评校准掌握度。` : '先生成对应章节的讲义与分阶题，形成可验证的学习证据。'}` : '先完成一次学习，能力与画像数据会随证据累积。'}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => navigate(learnMapPath(currentLearner.id, nextResource?.kpId ?? weakestChapter?.id))}
-              className="lf-btn-primary shrink-0 !px-4 !py-2 text-[12.5px]"
-            >
-              {nextResource ? '继续学习' : '进入课程'} <ArrowRight size={14} />
-            </button>
-          </div>
         </div>
       </section>
 
