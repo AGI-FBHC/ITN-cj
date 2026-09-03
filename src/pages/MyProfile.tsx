@@ -328,7 +328,7 @@ export default function MyProfile() {
         toast.warning('画像已保存，但学习时间线暂未写入');
       }
       await loadEvidence();
-      toast.success('画像已保存', { description: '修改已持久化，后续真实练习会继续补充诊断证据' });
+      toast.success('画像已保存', { description: '后续练习会继续补充诊断证据' });
     } catch (reason) {
       toast.error('画像保存失败', { description: reason instanceof Error ? reason.message : '请稍后重试' });
     } finally {
@@ -447,7 +447,7 @@ export default function MyProfile() {
             </button>
             <Link to="/me/calibrate" className="lf-btn-ghost !py-2 text-[13.5px]">
               <Sparkles size={15} />
-              用真实练习校准画像
+              用练习校准画像
             </Link>
           </div>
           <div className="lf-card p-5">
@@ -456,7 +456,7 @@ export default function MyProfile() {
               <span className="text-[15px] font-semibold text-ink">我的学习记忆</span>
             </div>
             <p className="mb-3 text-[11.5px] leading-5 text-ink-muted">
-              这些信息会用于资源定制、AI 辅导和学习推荐。学习进度来自真实操作，你也可以删除不希望继续使用的记忆。
+              这些信息会用于资源定制、AI 辅导和学习推荐；不需要的记忆也可以删除。
             </p>
             {memoryLoading ? (
               <div className="py-5 text-center text-[12px] text-ink-muted">正在整理学习记忆…</div>
@@ -501,9 +501,6 @@ export default function MyProfile() {
           <div className="lf-card p-5">
             <div className="lf-mono-label mb-1 !text-[11px]">画像向量 · 六维能力</div>
             <ReactECharts option={radarOption(kps, displayScores)} height={320} />
-            <p className="mt-1 border-t border-hairline pt-2 text-[11px] leading-[16px] text-ink-muted">
-              当前能力来自已保存画像；下方实测掌握度与诊断证据只统计后端已经记录的真实学习和测评行为。
-            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -543,10 +540,10 @@ export default function MyProfile() {
               </div>
             ) : evidence.length === 0 ? (
               <div className="flex flex-col items-center gap-3 py-8 text-center">
-                <p className="max-w-[360px] text-[13px] leading-5 text-ink-muted">近 7 天还没有学习证据。完成真实讲义、练习或导学后，记录会自动出现在这里。</p>
+                <p className="max-w-[360px] text-[13px] leading-5 text-ink-muted">近 7 天还没有学习证据。完成讲义、练习或导学后，记录会自动出现在这里。</p>
                 <Link to="/learn" className="lf-btn-ghost !px-4 !py-2 text-[13px]">
                   <Sparkles size={14} />
-                  开始真实课程
+                  开始课程
                 </Link>
               </div>
             ) : (

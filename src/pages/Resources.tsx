@@ -63,7 +63,7 @@ function Sources({ resource }: { resource: LearningResource }) {
   return (
     <aside className="rounded-[14px] border border-hairline bg-paper p-5 xl:sticky xl:top-24">
       <div className="lf-mono-label !text-[10px]">TRACEABILITY</div>
-      <h3 className="mt-1 text-[14px] font-semibold text-ink">本资源使用的真实来源</h3>
+      <h3 className="mt-1 text-[14px] font-semibold text-ink">本资源使用的来源</h3>
       <div className="mt-3 space-y-2">
         {resource.sources.map((raw, index) => {
           const source = asRecord(raw);
@@ -301,22 +301,14 @@ export default function Resources() {
   return (
     <div className={cn('mx-auto pb-24 pt-8', isLearner ? 'max-w-[1080px] px-5 md:px-6' : 'max-w-[1320px] px-5 md:px-8')}>
       <PageBack parent={{ label: '我的课程', to: '/learn' }} current={chapter?.title ?? '章节资源'} />
-      {isLearner && (
-        <PageTip id="real-course-resources" className="mb-4">
-          这里是 AI 按你的目标生成的真实资源。每条来源都可以打开核对；发现不一致时，可直接提交给审核裁判 Agent 复核。
-        </PageTip>
-      )}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
         <div className="lf-mono-label flex items-center gap-2"><span className="inline-block h-px w-6 bg-brand/40" />{isLearner ? '我的学习资源 · 学' : 'CONSTRAINED GENERATION'}</div>
         <h1 className="mt-2 font-serif text-[32px] font-bold leading-[40px] text-ink md:text-[36px]">
           {isLearner ? '为你定制的学习资源' : '个性化资源生成'}
         </h1>
-        <p className="mt-2 max-w-[760px] text-[14px] leading-6 text-ink-muted">
-          讲义、实操指南与分阶题均来自当前课程目标，并由真实知识库检索与 WebSearch 兜底提供依据。
-        </p>
       </motion.div>
-      {loading && <div className="mt-8 flex items-center justify-center gap-2 rounded-[14px] border border-hairline bg-card-warm py-14 text-[13.5px] text-ink-muted"><Loader2 size={16} className="animate-spin" />正在读取真实课程资源…</div>}
-      {!loading && !course && <div className="mt-8 rounded-[14px] border border-hairline bg-card-warm p-8 text-center"><p className="text-ink-muted">还没有可学习的真实课程。</p><Link to="/learn" className="lf-btn-primary mt-4 inline-flex">去生成课程</Link></div>}
+      {loading && <div className="mt-8 flex items-center justify-center gap-2 rounded-[14px] border border-hairline bg-card-warm py-14 text-[13.5px] text-ink-muted"><Loader2 size={16} className="animate-spin" />正在读取课程资源…</div>}
+      {!loading && !course && <div className="mt-8 rounded-[14px] border border-hairline bg-card-warm p-8 text-center"><p className="text-ink-muted">还没有可学习的课程。</p><Link to="/learn" className="lf-btn-primary mt-4 inline-flex">去生成课程</Link></div>}
       {error && <div className="mt-5 rounded-[12px] border border-brand-danger/40 bg-brand-danger/10 px-4 py-3 text-[13px] text-brand-danger">{error}</div>}
       {!loading && course && chapter && <>
         <motion.header initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className="lf-card mt-6 p-4 md:p-5">
@@ -347,7 +339,7 @@ export default function Resources() {
               {active && !active.state.learned && <button type="button" onClick={() => void markLearned()} className="lf-btn-ghost !px-3 !py-1.5 text-[12px]"><Check size={13} />标记学完</button>}
             </div>
           </div>
-          {active && <div className="mt-6 grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_300px]"><main><div className="mb-5"><h2 className="font-serif text-[23px] font-semibold text-ink">{active.title}</h2><p className="mt-1 font-mono text-[10.5px] text-ink-muted">真实资源 · 更新于 {new Date(active.updatedAt).toLocaleString()} · {currentLearner.name}</p></div>{active.type === 'lecture' && <LectureContent resource={active} />}{active.type === 'practice' && <PracticeContent resource={active} />}{active.type === 'quiz' && <QuizContent resource={active} onStateChange={(state) => setResources((prev) => prev.map((item) => item.id === active.id ? { ...item, state } : item))} />}</main><Sources resource={active} /></div>}
+          {active && <div className="mt-6 grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_300px]"><main><div className="mb-5"><h2 className="font-serif text-[23px] font-semibold text-ink">{active.title}</h2><p className="mt-1 font-mono text-[10.5px] text-ink-muted">更新于 {new Date(active.updatedAt).toLocaleString()} · {currentLearner.name}</p></div>{active.type === 'lecture' && <LectureContent resource={active} />}{active.type === 'practice' && <PracticeContent resource={active} />}{active.type === 'quiz' && <QuizContent resource={active} onStateChange={(state) => setResources((prev) => prev.map((item) => item.id === active.id ? { ...item, state } : item))} />}</main><Sources resource={active} /></div>}
         </>}
       </>}
     </div>

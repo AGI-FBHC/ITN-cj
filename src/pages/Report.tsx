@@ -343,21 +343,21 @@ function buildReportHtml(data: {
 <body>
 <div class="page">
   <h1>学习成长报告 · ${esc(data.learnerName)}</h1>
-  <div class="sub">生成时间：${esc(data.generatedAt)} · 数据来源：后端真实学习记录</div>
+  <div class="sub">生成时间：${esc(data.generatedAt)} · 数据来源：学习记录</div>
 
   <h2>总体概览</h2>
   <div class="cards">
-    ${card('实测综合掌握度', `${data.overallMastery}%`, '按真实学习证据计算')}
+    ${card('实测综合掌握度', `${data.overallMastery}%`, '按学习证据计算')}
     ${card('累计学习投入', data.totalMinutes >= 60 ? `${Math.floor(data.totalMinutes / 60)} 小时 ${data.totalMinutes % 60} 分` : `${data.totalMinutes} 分钟`, '按学习会话统计')}
     ${card('连续学习', `${data.streakDays} 天`, '按每日学习会话统计')}
-    ${card('近 7 天测评正确率', data.accuracy == null ? '暂无' : `${data.accuracy}%`, data.accuracy == null ? '尚无真实测评提交' : data.accuracyDetail)}
+    ${card('近 7 天测评正确率', data.accuracy == null ? '暂无' : `${data.accuracy}%`, data.accuracy == null ? '尚无测评提交' : data.accuracyDetail)}
   </div>
 
   ${data.weakestChapter ? `<h2>重点建议</h2><div class="summary">${esc(data.weakestDetail)}</div>` : ''}
 
   ${data.abilities.length ? `<h2>六维能力画像</h2>${abilityRows}` : ''}
 
-  ${data.chapters.length ? `<h2>真实课程学习路径</h2>${chapterRows}` : ''}
+  ${data.chapters.length ? `<h2>课程学习路径</h2>${chapterRows}` : ''}
 
   <h2>近 7 天学习时长（分钟）</h2>
   <div class="week">${weekBars}</div>
@@ -365,9 +365,9 @@ function buildReportHtml(data: {
 
   ${data.quizzes.length ? `<h2>最近测评证据</h2>${quizRows}` : ''}
 
-  ${data.evidence.length ? `<h2>近 7 天真实学习记录</h2>${evidenceRows}` : ''}
+  ${data.evidence.length ? `<h2>近 7 天学习记录</h2>${evidenceRows}` : ''}
 
-  <div class="footer">本报告由智训云枢基于真实学习记录生成 · 仅用于个人学习复盘</div>
+  <div class="footer">本报告由智训云枢基于学习记录生成 · 仅用于个人学习复盘</div>
 </div>
 </body>
 </html>`;
@@ -742,10 +742,10 @@ export default function Report() {
   const journalMinutes = Math.round(journalStats.durationSeconds / 60);
   const totalMinutesShown = Math.max(analyticsMinutes, journalMinutes);
   const totalMinutesNote = (analytics?.stats.totalDays ?? 0) > 0
-    ? `${analytics?.stats.totalDays ?? 0} 个真实学习日`
+    ? `${analytics?.stats.totalDays ?? 0} 个学习日`
     : journalMinutes > 0
-      ? '按真实学习会话滚动累计，暂无全量统计'
-      : '完成真实学习后自动累计';
+      ? '按学习会话滚动累计，暂无全量统计'
+      : '完成学习后自动累计';
   /* 真实地图口径的最弱章节：优先有学习痕迹的，其次整体掌握度/进度最低 */
   const weakestChapter = useMemo(() => {
     const domains = learningMap.domains ?? [];
@@ -874,7 +874,7 @@ export default function Report() {
       totalMinutes: Math.round((analytics?.stats.totalStudyMinutes ?? 0) / 60),
       streakDays: analytics?.stats.streakDays ?? 0,
       accuracy,
-      accuracyDetail: journalStats.questions ? `${journalStats.correct}/${journalStats.questions} 题答对` : '尚无真实测评提交',
+      accuracyDetail: journalStats.questions ? `${journalStats.correct}/${journalStats.questions} 题答对` : '尚无测评提交',
       abilities: abilitiesData,
       weakestChapter: weakestChapter?.name ?? null,
       weakestDetail: weakestChapter
@@ -944,7 +944,7 @@ export default function Report() {
   };
 
   if (loading || courseLoading) {
-    return <div className="mx-auto max-w-[1100px] px-6 py-16 text-center text-[14px] text-ink-muted">正在汇总真实学习数据…</div>;
+    return <div className="mx-auto max-w-[1100px] px-6 py-16 text-center text-[14px] text-ink-muted">正在汇总学习数据…</div>;
   }
 
   if (error && !analytics) {
@@ -965,7 +965,6 @@ export default function Report() {
         <div>
           <div className="lf-mono-label mb-2">LEARNING EVIDENCE REPORT</div>
           <h1 className="font-serif text-[34px] font-bold text-ink">{currentLearner.name}的学习成长</h1>
-          <p className="mt-2 max-w-[700px] text-[14px] leading-6 text-ink-muted">画像、测评、学习时长、课程进度与路径均来自后端已保存记录；没有证据的指标保持为空，不用演示曲线补位。</p>
         </div>
         <button type="button" onClick={exportReport} className="lf-btn-ghost !px-4 !py-2 text-[13px]">
           <FileDown size={15} /> 导出 / 打印报告
@@ -1060,7 +1059,7 @@ export default function Report() {
         </div>
       </section>
       <section className="mt-12">
-        <SectionHeader en="GROWTH" title="近 7 天真实成长轨迹" desc="学习时长与测评记录来自每日学习会话，不再用固定 W1–W8 模拟增长。" />
+        <SectionHeader en="GROWTH" title="近 7 天成长轨迹" desc="" />
         <div className="grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
           <div className="lf-card p-5">
             <div className="mb-2 text-[14px] font-semibold text-ink">每日学习时长</div>
@@ -1074,7 +1073,7 @@ export default function Report() {
             {today?.summary ? (
               <p className="mt-5 rounded-[12px] border border-brand/20 bg-brand-tint/35 p-4 text-[13px] leading-6 text-ink-2">{today.summary.content}</p>
             ) : (
-              <div className="mt-5 rounded-[12px] border border-dashed border-hairline p-5 text-[13px] leading-6 text-ink-muted">{today?.timeline.length ? `今天已有 ${today.timeline.length} 条学习记录，可以生成一份基于真实证据的日总结。` : '今天还没有形成学习轨迹。完成资源、练习或导学后再来生成总结。'}</div>
+              <div className="mt-5 rounded-[12px] border border-dashed border-hairline p-5 text-[13px] leading-6 text-ink-muted">{today?.timeline.length ? `今天已有 ${today.timeline.length} 条学习记录，可以生成一份日总结。` : '今天还没有形成学习轨迹。完成资源、练习或导学后再来生成总结。'}</div>
             )}
             <div className="mt-5 grid grid-cols-2 gap-3 text-center">
               <div className="rounded-[10px] bg-paper-deep p-3"><div className="font-mono text-[20px] font-semibold text-ink">{journalStats.resources}</div><div className="mt-1 text-[10.5px] text-ink-muted">近 7 天资源记录</div></div>
@@ -1085,7 +1084,7 @@ export default function Report() {
       </section>
 
       <section id="learning-path" className="mt-12 scroll-mt-24">
-        <SectionHeader en="LEARNING PATH" title="真实课程学习路径" desc="章节状态由课程和资源完成记录计算；未生成资源的章节不会被标成已学完。" />
+        <SectionHeader en="LEARNING PATH" title="课程学习路径" desc="" />
         {course && (
           <div className="lf-card overflow-hidden">
             <div className="flex flex-wrap items-center gap-4 border-b border-hairline bg-brand-tint/25 px-5 py-4">
@@ -1124,7 +1123,7 @@ export default function Report() {
         <div className="mt-4 lf-card p-5">
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <History size={16} className="text-brand" />
-            <span className="text-[15px] font-semibold text-ink">真实学习记录</span>
+            <span className="text-[15px] font-semibold text-ink">学习记录</span>
             <span className="font-mono text-[11px] text-ink-muted">{rangeStart} ~ {rangeEnd}</span>
             {(rangeLoading || refreshing) && <Loader2 size={13} className="animate-spin text-ink-muted" />}
           </div>
@@ -1136,7 +1135,7 @@ export default function Report() {
             <span className="text-[11px] text-ink-muted">最多 7 天</span>
           </div>
           {rangeEvidence.length === 0 ? (
-            <p className="py-6 text-center text-[13px] text-ink-muted">这个时间段还没有学习记录。完成真实讲义、练习或导学后，记录会自动出现在这里。</p>
+            <p className="py-6 text-center text-[13px] text-ink-muted">这个时间段还没有学习记录。完成讲义、练习或导学后，记录会自动出现在这里。</p>
           ) : (
             <div ref={pathRef} className="relative w-full">
               {(() => {
@@ -1158,13 +1157,13 @@ export default function Report() {
       </section>
 
       <section className="mt-12">
-        <SectionHeader en="NEXT ACTION" title="下一步建议" desc="主线按真实地图最弱章节给出；六维能力只作佐证，不设目标。" />
+        <SectionHeader en="NEXT ACTION" title="下一步建议" desc="" />
         <div className="rounded-[16px] border border-brand/25 bg-brand-tint/35 p-6">
           <div className="flex items-start gap-4">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand text-paper"><Sparkles size={19} /></span>
             <div className="min-w-0 flex-1">
-              <div className="text-[15px] font-semibold text-ink">{weakestChapter ? `优先补齐「${weakestChapter.name}」` : '先完成一次真实学习'}</div>
-              <p className="mt-1 text-[13px] leading-6 text-ink-muted">{weakestChapter ? `当前最弱章节是「${weakestChapter.name}」（掌握度 ${Math.round(learningMap.mastery[weakestChapter.id] ?? 0)}% · 进度 ${Math.round(learningMap.chapterProgress[weakestChapter.id] ?? 0)}%）。${weakestChapterDims}${nextResource ? `建议继续“${nextChapter?.title ?? nextResource.topic}”中的${resourceLabel[nextResource.type]}，完成后再用测评校准掌握度。` : '先生成对应章节的讲义与分阶题，形成可验证的学习证据。'}` : '先完成一次真实学习，能力与画像数据会随证据累积。'}</p>
+              <div className="text-[15px] font-semibold text-ink">{weakestChapter ? `优先补齐「${weakestChapter.name}」` : '先完成一次学习'}</div>
+              <p className="mt-1 text-[13px] leading-6 text-ink-muted">{weakestChapter ? `当前最弱章节是「${weakestChapter.name}」（掌握度 ${Math.round(learningMap.mastery[weakestChapter.id] ?? 0)}% · 进度 ${Math.round(learningMap.chapterProgress[weakestChapter.id] ?? 0)}%）。${weakestChapterDims}${nextResource ? `建议继续“${nextChapter?.title ?? nextResource.topic}”中的${resourceLabel[nextResource.type]}，完成后再用测评校准掌握度。` : '先生成对应章节的讲义与分阶题，形成可验证的学习证据。'}` : '先完成一次学习，能力与画像数据会随证据累积。'}</p>
             </div>
             <button
               type="button"
