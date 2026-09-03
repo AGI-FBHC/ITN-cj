@@ -1567,6 +1567,15 @@ export const api = {
   }),
   getLearningResourceTraceability: (resourceId: string) =>
     requestDirect<{ items: LearningResourceTrace[] }>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/traceability`),
+  agentChat: (body: { messages: { role: string; content: string }[]; systemPrompt?: string; modelProvider?: string }) =>
+    requestDirect<{ reply: string }>('/v1/chat', {
+      method: 'POST',
+      body: JSON.stringify({
+        messages: body.messages,
+        system_prompt: body.systemPrompt,
+        model_provider: body.modelProvider ?? 'mimo',
+      }),
+    }),
   submitLearningResourceSourceFeedback: (resourceId: string, body: {
     sourceId: string;
     issueType?: 'needs_review' | 'mismatch' | 'outdated' | 'broken_link' | 'other';

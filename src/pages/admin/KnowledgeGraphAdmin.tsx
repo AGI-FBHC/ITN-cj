@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, RefreshCw, X } from "lucide-react";
+import { GitBranch, Loader2, Plus, RefreshCw, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "@/lib/api";
 import { adminKnowledgeApi, type KcCategoryNode, type KcGraphEdge } from "@/lib/adminKnowledgeApi";
 import { cn } from "@/lib/utils";
 
@@ -151,6 +152,211 @@ function EdgeTable({ edges, names = new Map(), compact = false, onOpen, selected
         </tbody>
       </table>
       {!edges.length && <div className="p-12 text-center text-sm text-ink-muted">暂无边数据</div>}
+    </div>
+  );
+}
+
+type ProposedSuggestion = {
+  prereqCategoryId: number;
+  categoryId: number;
+  edgeType: string;
+  rationale?: string;
+};
+
+function DagQuickBuilder({
+  categories,
+  edges,
+  onSaved,
+}: {
+  categories: Map<number, CategoryInfo>;
+  edges: KcGraphEdge[];
+  onSaved: () => Promise<void>;
+}) {
+  const options = useMemo(
+    () => [...categories.values()].sort((a, b) => a.level - b.level || a.name.localeCompare(b.name, "zh-CN")),
+    [categories],
+  );
+  const existingKeys = useMemo(() => new Set(edges.map((edge) => `${edge.prereq_category_id}->${edge.category_id}`)), [edges]);
+  const [prereq, setPrereq] = useState("");
+  const [category, setCategory] = useState("");
+  const [edgeType, setEdgeType] = useState("prerequisite");
+  const [rationale, setRationale] = useState("");
+  const [directActive, setDirectActive] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [suggestions, setSuggestions] = useState<ProposedSuggestion[]>([]);
+  const [draftIndex, setDraftIndex] = useState<number | null>(null);
+
+  const applyDraft = (index: number) => {
+    const draft = suggestions[index];
+    if (!draft) return;
+    setPrereq(String(draft.prereqCategoryId));
+    setCategory(String(draft.categoryId));
+    setEdgeType(draft.edgeType);
+    setRationale(draft.rationale || "");
+    setDraftIndex(index);
+  };
+
+  const save = async () => {
+    const prereqId = Number(prereq);
+    const categoryId = Number(category);
+    if (!prereqId || !categoryId) return toast.error("请选择前置节点和目标节点");
+    if (prereqId === categoryId) return toast.error("前置节点不能等于目标节点");
+    if (existingKeys.has(`${prereqId}->${categoryId}`)) return toast.error("该边已经存在");
+    setBusy(true);
+    try {
+      const result = await adminKnowledgeApi.addPrerequisite({
+        prereqCategoryId: prereqId,
+        categoryId,
+        edgeType,
+        rationale: rationale.trim() || "管理员在 DAG 快速建图面板手动添加",
+        source: "human",
+        directActive,
+      });
+      toast.success(result.edge.status === "active" ? "建边已生效" : "建边已进入待审核队列");
+      setRationale("");
+      setDraftIndex(null);
+      await onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "建边失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runAiSuggest = async () => {
+    if (!options.length) return toast.error("当前没有可建边的知识点");
+    setAiBusy(true);
+    setSuggestions([]);
+    try {
+      const compactNodes = options.slice(0, 160).map((node) => ({
+        id: node.id,
+        name: node.name,
+        level: node.level,
+        chunks: node.chunk_count,
+      }));
+      const existingEdges = edges.slice(0, 300).map((edge) => ({
+        from: edge.prereq_category_id,
+        to: edge.category_id,
+        type: edge.edge_type,
+        status: edge.status,
+      }));
+      const reply = await api.agentChat({
+        modelProvider: "mimo",
+        systemPrompt:
+          "你是知识图谱教研助手。根据给出的知识点清单和已有边，建议合理的先修、相关或易混淆边。只返回 JSON 数组，不要 Markdown，不要解释。每条格式：{\"prereqCategoryId\": number, \"categoryId\": number, \"edgeType\": \"prerequisite\" | \"related\" | \"contrasts_with\", \"rationale\": string}",
+        messages: [
+          {
+            role: "user",
+            content: `知识点：${JSON.stringify(compactNodes)}
+已有边：${JSON.stringify(existingEdges)}`,
+          },
+        ],
+      });
+      const cleaned = (reply.reply || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
+      const start = cleaned.indexOf("[");
+      const end = cleaned.lastIndexOf("]");
+      if (start < 0 || end <= start) throw new Error("AI 返回格式无法解析");
+      const parsed = JSON.parse(cleaned.slice(start, end + 1)) as ProposedSuggestion[];
+      const seen = new Set<string>();
+      const valid = parsed.filter((item) => {
+        if (!item.prereqCategoryId || !item.categoryId || item.prereqCategoryId === item.categoryId) return false;
+        const key = `${item.prereqCategoryId}->${item.categoryId}`;
+        if (existingKeys.has(key) || seen.has(key)) return false;
+        seen.add(key);
+        return categories.has(item.prereqCategoryId) && categories.has(item.categoryId);
+      });
+      if (!valid.length) throw new Error("没有新建议，或建议与现有边重复");
+      setSuggestions(valid.slice(0, 8));
+      applyDraft(0);
+      toast.success(`AI 给出 ${valid.length} 条建议，已填入第一条`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "AI 建议生成失败");
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  return (
+    <div className="lf-card rounded-2xl">
+      <div className="border-b border-white/60 px-4 py-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <GitBranch size={15} className="text-brand" />
+            <h3 className="text-sm font-bold text-ink">快速建图</h3>
+          </div>
+          <button onClick={() => void runAiSuggest()} disabled={aiBusy} className="lf-row-btn lf-row-btn-primary">
+            {aiBusy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+            AI 建议
+          </button>
+        </div>
+        <p className="mt-1 text-[11px] leading-4 text-ink-muted">先选前置/目标节点，再写一条边；AI 建议会尝试给出候选。</p>
+      </div>
+      <div className="space-y-3 p-4 text-xs">
+        <label className="block">
+          <span className="mb-1 block text-ink-muted">前置 / 先修节点</span>
+          <select value={prereq} onChange={(e) => setPrereq(e.target.value)} className="lf-select w-full">
+            <option value="">请选择前置节点</option>
+            {options.map((node) => (
+              <option key={node.id} value={node.id}>
+                {node.name} · L{node.level} · #{node.id}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-ink-muted">目标节点</span>
+          <select value={category} onChange={(e) => setCategory(e.target.value)} className="lf-select w-full">
+            <option value="">请选择目标节点</option>
+            {options.map((node) => (
+              <option key={node.id} value={node.id}>
+                {node.name} · L{node.level} · #{node.id}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block">
+            <span className="mb-1 block text-ink-muted">边类型</span>
+            <select value={edgeType} onChange={(e) => setEdgeType(e.target.value)} className="lf-select w-full">
+              {Object.entries(typeLabel).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="mt-5 flex items-center gap-2">
+            <input type="checkbox" checked={directActive} onChange={(e) => setDirectActive(e.target.checked)} />
+            直接生效
+          </label>
+        </div>
+        <label className="block">
+          <span className="mb-1 block text-ink-muted">建边理由（可选）</span>
+          <textarea value={rationale} onChange={(e) => setRationale(e.target.value)} rows={3} className="lf-input w-full resize-none" placeholder="为什么这条关系成立" />
+        </label>
+        {suggestions.length > 0 && (
+          <div className="rounded-xl border border-brand/20 bg-brand-tint/20 p-2">
+            <div className="mb-1 text-[11px] font-semibold text-brand">AI 候选</div>
+            <div className="flex flex-wrap gap-1.5">
+              {suggestions.map((item, index) => (
+                <button
+                  key={`${item.prereqCategoryId}-${item.categoryId}-${index}`}
+                  type="button"
+                  onClick={() => applyDraft(index)}
+                  className={cn("lf-row-btn", draftIndex === index ? "lf-row-btn-primary" : "")}
+                >
+                  {categories.get(item.prereqCategoryId)?.name || item.prereqCategoryId} → {categories.get(item.categoryId)?.name || item.categoryId}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <button onClick={() => void save()} disabled={busy} className="lf-btn-primary w-full justify-center">
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+          添加这条边
+        </button>
+      </div>
     </div>
   );
 }
@@ -372,7 +578,7 @@ export default function KnowledgeGraphAdmin() {
       <div className="mb-5 flex items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-ink">知识图谱管理</h2>
-          <p className="mt-1 text-sm text-ink-muted">只读查看先修边、候选队列与 DAG；图谱修改待后续专项确认。</p>
+          <p className="mt-1 text-sm text-ink-muted">查看先修边、候选队列与 DAG；DAG 页右侧可快速建边并用 AI 生成候选关系。</p>
         </div>
         <button onClick={() => void refresh()} disabled={loading} className="lf-page-pill">
           <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
@@ -437,7 +643,10 @@ export default function KnowledgeGraphAdmin() {
           <EdgeTable edges={filtered} names={categories} onOpen={setDetail} />
         </div>
       ) : (
-        <GraphCanvas edges={edges} categories={categories} />
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <GraphCanvas edges={edges} categories={categories} />
+          <DagQuickBuilder categories={categories} edges={edges} onSaved={refresh} />
+        </div>
       )}
       {detail && <EdgeDetails edge={detail} names={categories} onClose={() => setDetail(null)} onAction={(kind) => void action(kind, [detail.id])} />}
     </>

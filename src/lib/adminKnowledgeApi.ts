@@ -395,6 +395,32 @@ export const adminKnowledgeApi = {
     }>(query(`${KC}/knowledge/graph/validate`, { domain_id: domainId }), {
       method: "POST",
     }),
+  addPrerequisite: (body: {
+    categoryId: number;
+    prereqCategoryId: number;
+    domainId?: number;
+    edgeType?: string;
+    source?: string;
+    rationale?: string;
+    createdBy?: string;
+    directActive?: boolean;
+  }) =>
+    direct<{ edge: KcGraphEdge; warnings: string[] }>(
+      `${KC}/knowledge/graph/prerequisites`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          category_id: body.categoryId,
+          prereq_category_id: body.prereqCategoryId,
+          domain_id: body.domainId,
+          edge_type: body.edgeType ?? "prerequisite",
+          source: body.source ?? "human",
+          rationale: body.rationale,
+          created_by: body.createdBy,
+          direct_active: body.directActive ?? false,
+        }),
+      },
+    ),
   predealDomains: () =>
     direct<{ domains: PredealDomain[] }>(`${PREDEAL}/domains`),
   uploadDocument: (form: FormData) =>
