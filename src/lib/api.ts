@@ -1095,6 +1095,16 @@ export interface AgentSimilarQuizResult {
   };
 }
 
+export interface AgentWeeklyPlanResult {
+  suggestions: {
+    text: string;
+    cta: string;
+    href: string;
+    priority: '高' | '中' | '低';
+    evidence: string;
+  }[];
+}
+
 export interface AgentDockSessionMessage {
   id: string;
   agentId?: string | null;
@@ -1203,6 +1213,11 @@ export const api = {
     requestAgent<{ questions: { id: string; text: string; askType: string }[] }>('/agent/ask/suggestions', {
       method: 'POST',
       body: JSON.stringify({ learnerId, kpId, ...(context ?? {}) }),
+    }),
+  askAgentWeeklyPlan: (learnerId: string, kpId?: string) =>
+    requestAgent<AgentWeeklyPlanResult>('/agent/ask/weekly-plan', {
+      method: 'POST',
+      body: JSON.stringify({ learnerId, kpId }),
     }),
   askAgentSimilarQuiz: (learnerId: string, kpId: string | undefined, sessionId: string | undefined, pageContext: string | undefined, pageState: LearningPageContext | undefined) =>
     requestAgent<AgentSimilarQuizResult>('/agent/ask/similar-quiz', {

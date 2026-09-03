@@ -3,18 +3,21 @@
  * 左：近 8 周测评分趋势（墨绿线 + 面积渐变 + 3 个 Agent 介入标注）
  * 右：ARB-05 本周调度建议
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowRight, ChevronDown, Wrench, ClipboardCheck, BookOpen } from 'lucide-react';
+import { ArrowRight, ChevronDown, Loader2, Wrench, ClipboardCheck, BookOpen } from 'lucide-react';
 import type { Learner } from '@/data/learners';
 import type { LearnerReport } from '@/data/reportData';
 import { getKnowledgePoint } from '@/data/knowledgePoints';
 import ChartCard, { ReactECharts } from '@/components/ChartCard';
 import AgentChip from '@/components/AgentChip';
 import { useProfile } from '@/context/ProfileContext';
+import { api } from '@/lib/api';
 import type { Severity } from '@/components/profiles/profileMeta';
 import { cn } from '@/lib/utils';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const easeLf: [number, number, number, number] = [0.22, 1, 0.36, 1];
 
@@ -245,10 +248,12 @@ export default function GrowthSection({
   report: LearnerReport;
 }) {
   const navigate = useNavigate();
-  const { viewMode } = useProfile();
+  const { viewMode, currentLearner } = useProfile();
   const isLearner = viewMode === 'learner';
+  const [advisorAdvice, setAdvisorAdvice] = useState<AdviceItem[] | null>(null);
+  const [advisorLoading, setAdvisorLoading] = useState(false);
 
-  const advice = useMemo(() => {
+  const fallbackAdvice = useMemo<AdviceItem[]>(() => {
     const sorted = [...report.blindSpots].sort((a, b) => b.gap - a.gap);
     const top = sorted[0];
     const second = sorted[1] ?? sorted[0];
@@ -289,6 +294,38 @@ export default function GrowthSection({
     ];
   }, [learner, report]);
 
+  const advice = advisorAdvice ?? fallbackAdvice;
+
+  useEffect(() => {
+    if (!UUID_PATTERN.test(learner.id)) {
+      setAdvisorLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setAdvisorLoading(true);
+    void api.askAgentWeeklyPlan(currentLearner.id || learner.id, report.blindSpots[0]?.kpId)
+      .then((result) => {
+        if (cancelled) return;
+        const iconPool = [Wrench, ClipboardCheck, BookOpen];
+        const mapped: AdviceItem[] = (result?.suggestions ?? []).map((item, index) => ({
+          icon: iconPool[index % iconPool.length],
+          text: item.text,
+          cta: item.cta || '去看看',
+          href: item.href,
+          priority: item.priority,
+          evidence: item.evidence || 'ARB-05 基于你的真实学情生成本周建议',
+        }));
+        if (mapped.length > 0) setAdvisorAdvice(mapped);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setAdvisorLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentLearner.id, learner.id, report]);
+
   return (
     <div className="grid gap-5 lg:grid-cols-12">
       <div className="lg:col-span-7">
@@ -302,7 +339,14 @@ export default function GrowthSection({
             {isLearner
               ? <span className="font-serif text-[15px] font-semibold text-ink">这周建议你做的</span>
               : <AgentChip agentId="ARB-05" />}
-            {!isLearner && <span className="font-mono text-[11px] text-ink-muted">本周调度建议</span>}
+            {advisorLoading && !advisorAdvice ? (
+              <span className="inline-flex items-center gap-1.5 font-mono text-[10.5px] text-ink-muted">
+                <Loader2 size={12} className="animate-spin text-brand" />
+                ARB-05 生成中
+              </span>
+            ) : (
+              <span className="font-mono text-[11px] text-ink-muted">{advisorAdvice ? 'ARB-05 实时建议' : '本周调度建议'}</span>
+            )}
           </div>
           <div className="space-y-2">
             {advice.map((a, i) => (
