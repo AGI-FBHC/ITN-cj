@@ -56,6 +56,9 @@ export interface LearnerReport {
   /** 学习投入估算（小时） */
   investHours?: number;
   investNote?: string;
+  /** 知识覆盖率（现算报告） */
+  knowledgeCoverage?: number;
+  knowledgeCoverageNote?: string;
 }
 
 const WEEKS = ['W1','W2','W3','W4','W5','W6','W7','W8'];

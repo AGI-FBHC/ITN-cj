@@ -105,6 +105,9 @@ export default function ScoreBand({ report }: { report: LearnerReport }) {
   const invest = report.generated
     ? { total: report.investHours ?? 0, note: report.investNote ?? '建档后实时累计' }
     : investMap[report.learnerId] ?? investMap.lin;
+  const coverage = report.knowledgeCoverage ?? 92.4;
+  const coverageNote = report.knowledgeCoverageNote ?? '6 大知识点 · 岗位能力模型对齐';
+  const coverageBadge = report.generated ? '真实学习' : '岗位对齐';
   const gaugeOption = useMemo(
     () => ({
       animationDuration: 1200,
@@ -177,12 +180,12 @@ export default function ScoreBand({ report }: { report: LearnerReport }) {
       <StatCard
         index={1}
         en="COVERAGE"
-        value={92.4}
+        value={coverage}
         decimals={1}
         suffix="%"
         name="知识覆盖率"
-        note="6 大知识点 · 岗位能力模型对齐"
-        badge="岗位对齐"
+        note={coverageNote}
+        badge={coverageBadge}
         badgeTone="green"
       />
       <StatCard

@@ -685,6 +685,21 @@ export default function Report() {
       10 * quizPerformance,
     )));
 
+    const courseResources = resources ?? [];
+    const resourceTotal = courseResources.length;
+    const resourceLearned = courseResources.filter((item) => item.learned).length;
+    const resourceCoverage = resourceTotal ? resourceLearned / resourceTotal : 0;
+    const topicNodes = learningMap.graphNodes.filter((node) => node.kind === 'topic');
+    const topicTotal = topicNodes.length;
+    const topicCovered = topicNodes.filter((node) =>
+      (learningMap.topicProgress[node.id] ?? 0) > 0 || (learningMap.topicMastery[node.id] ?? 0) > 0,
+    ).length;
+    const topicCoverage = topicTotal ? topicCovered / topicTotal : 0;
+    const knowledgeCoverage = Math.max(0, Math.min(100, Math.round((0.55 * resourceCoverage + 0.45 * topicCoverage) * 100)));
+    const knowledgeCoverageNote = topicTotal > 0
+      ? `完成 ${resourceLearned}/${resourceTotal} 个资源 · 覆盖 ${topicCovered}/${topicTotal} 个知识点`
+      : `完成 ${resourceLearned}/${resourceTotal} 个学习资源`;
+
     return {
       learnerId: currentLearner.id,
       adaptScore,
@@ -702,6 +717,8 @@ export default function Report() {
       resolvedSpots: Math.max(0, Math.round(spots.filter((spot) => spot.gap <= 10).length / 2)),
       investHours: Math.round((analytics?.stats.weeklyMinutes.reduce((sum, minutes) => sum + minutes, 0) ?? 0) / 60),
       investNote: '按近 7 天学习时长估算',
+      knowledgeCoverage,
+      knowledgeCoverageNote,
     };
   }, [abilities, abilityScores, analytics, currentLearner, learningMap, resources]);
   const resourcesByChapter = useMemo(() => new Map((course?.chapters ?? []).map((chapter) => {
