@@ -185,7 +185,7 @@ function SimpleChapterCanvas({
     () =>
       [...categories.values()]
         .filter((node) => node.level === 2 && (node.node_type === "category" || node.node_type === "domain"))
-        .sort((a, b) => a.name.localeCompare(b.name, "zh-CN")),
+        .sort((a, b) => (a.sort_order ?? a.id) - (b.sort_order ?? b.id) || a.id - b.id),
     [categories],
   );
   const chapterIds = useMemo(() => new Set(chapters.map((node) => node.id)), [chapters]);
@@ -382,7 +382,7 @@ function DagQuickBuilder({
     () =>
       [...categories.values()]
         .filter((node) => node.level === 2 && (node.node_type === "category" || node.node_type === "domain"))
-        .sort((a, b) => a.name.localeCompare(b.name, "zh-CN")),
+        .sort((a, b) => (a.sort_order ?? a.id) - (b.sort_order ?? b.id) || a.id - b.id),
     [categories],
   );
   const existingKeys = useMemo(() => new Set(edges.map((edge) => `${edge.prereq_category_id}->${edge.category_id}`)), [edges]);
