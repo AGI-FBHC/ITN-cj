@@ -200,6 +200,7 @@ type ProposedSuggestion = {
 function SimpleChapterCanvas({
   categories,
   edges,
+  pendingEdges = [],
   sourceId,
   targetId,
   onPick,
@@ -208,6 +209,7 @@ function SimpleChapterCanvas({
 }: {
   categories: Map<number, CategoryInfo>;
   edges: KcGraphEdge[];
+  pendingEdges?: Array<{ prereqCategoryId: number; categoryId: number; edgeType?: string; rationale?: string }>;
   sourceId: number | null;
   targetId: number | null;
   onPick: (id: number) => void;
@@ -333,6 +335,25 @@ function SimpleChapterCanvas({
               </line>
             );
           })}
+          {pendingEdges.map((edge) => {
+            const from = nodePositions.get(edge.prereqCategoryId);
+            const to = nodePositions.get(edge.categoryId);
+            if (!from || !to) return null;
+            const dx = to.x - from.x;
+            const dy = to.y - from.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const ux = dx / len;
+            const uy = dy / len;
+            const sx = from.x + ux * 30;
+            const sy = from.y + uy * 30;
+            const ex = to.x - ux * 30;
+            const ey = to.y - uy * 30;
+            return (
+              <line key={`pending-${edge.prereqCategoryId}-${edge.categoryId}`} x1={sx} y1={sy} x2={ex} y2={ey} stroke="#f59e0b" strokeWidth="3" strokeDasharray="8 6" markerEnd="url(#arrow)" opacity={0.95}>
+                <title>待确认：{categories.get(edge.prereqCategoryId)?.name} → {categories.get(edge.categoryId)?.name}</title>
+              </line>
+            );
+          })}
           {sourceId != null && targetId != null && sourceId !== targetId && (() => {
             const from = nodePositions.get(sourceId);
             const to = nodePositions.get(targetId);
@@ -369,7 +390,9 @@ function SimpleChapterCanvas({
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-xs text-ink-muted">
         <div>
-          {sourceId == null
+          {pendingEdges.length > 0
+            ? `待确认 ${pendingEdges.length} 条边（橙色虚线），确认保存后写入`
+            : sourceId == null
             ? "请先点选前置章节"
             : targetId == null
               ? "已选前置章节，请再点选目标章节"
@@ -914,6 +937,7 @@ export default function KnowledgeGraphAdmin() {
           <SimpleChapterCanvas
             categories={categories}
             edges={edges}
+            pendingEdges={pendingEdges}
             sourceId={builderSourceId}
             targetId={builderTargetId}
             onPick={handleBuilderPick}
