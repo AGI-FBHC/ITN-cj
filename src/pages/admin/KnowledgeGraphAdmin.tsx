@@ -193,18 +193,55 @@ function SimpleChapterCanvas({
     const result = new Map<number, { x: number; y: number }>();
     const count = chapters.length;
     if (!count) return result;
-    const cx = 600;
-    const cy = 340;
-    const radius = Math.max(150, Math.min(260, 190 + (count - 6) * 4));
-    chapters.forEach((node, index) => {
-      const angle = (Math.PI * 2 * index) / count - Math.PI / 2;
-      result.set(node.id, {
-        x: cx + radius * Math.cos(angle),
-        y: cy + radius * Math.sin(angle),
-      });
+    const indegree = new Map<number, number>();
+    chapters.forEach((node) => indegree.set(node.id, 0));
+    chapterEdges.forEach((edge) => {
+      indegree.set(edge.category_id, (indegree.get(edge.category_id) || 0) + 1);
     });
+    const levels = new Map<number, number>();
+    const queue = chapters.filter((node) => !(indegree.get(node.id) || 0)).map((node) => node.id);
+    queue.forEach((id) => levels.set(id, 0));
+    for (let i = 0; i < queue.length; i += 1) {
+      const id = queue[i];
+      chapterEdges
+        .filter((edge) => edge.prereq_category_id === id)
+        .forEach((edge) => {
+          levels.set(edge.category_id, Math.max(levels.get(edge.category_id) || 0, (levels.get(id) || 0) + 1));
+          indegree.set(edge.category_id, (indegree.get(edge.category_id) || 0) - 1);
+          if ((indegree.get(edge.category_id) || 0) === 0) queue.push(edge.category_id);
+        });
+    }
+    chapters.forEach((node) => {
+      if (!levels.has(node.id)) levels.set(node.id, 0);
+    });
+    const groups = new Map<number, number[]>();
+    chapters.forEach((node) => {
+      const level = levels.get(node.id) || 0;
+      groups.set(level, [...(groups.get(level) || []), node.id]);
+    });
+    const maxLevel = Math.max(...groups.keys(), 0);
+    if (maxLevel === 0) {
+      const half = Math.ceil(chapters.length / 2);
+      chapters.forEach((node, index) => {
+        const col = Math.floor(index / half);
+        const row = index % half;
+        result.set(node.id, {
+          x: col === 0 ? 260 : 720,
+          y: 90 + row * Math.min(120, 520 / Math.max(half, 1)),
+        });
+      });
+      return result;
+    }
+    groups.forEach((ids, level) =>
+      ids.forEach((id, index) =>
+        result.set(id, {
+          x: 90 + level * (1040 / Math.max(maxLevel, 1)),
+          y: 80 + index * Math.min(96, 560 / Math.max(ids.length, 1)),
+        }),
+      ),
+    );
     return result;
-  }, [chapters]);
+  }, [chapters, chapterEdges]);
 
   return (
     <div className="lf-card rounded-2xl">
