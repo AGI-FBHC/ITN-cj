@@ -109,8 +109,8 @@ function miniRadar(scores: Record<string, number>) {
   };
 }
 
-/* ================= 精简建档三步 ================= */
-const QUICK_STEPS = ['我是谁', '什么学历', '想做什么'];
+/* ================= 精简建档四步 ================= */
+const QUICK_STEPS = ['我是谁', '什么学历', '技术底子', '想做什么'];
 
 function QuickWizard({ onBack }: { onBack: () => void }) {
   const navigate = useNavigate();
@@ -137,6 +137,7 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
   const [showCustomIdentity, setShowCustomIdentity] = useState(false);
   const [customEdu, setCustomEdu] = useState<string | null>(null);
   const [showCustomEdu, setShowCustomEdu] = useState(false);
+  const [background, setBackground] = useState('');
   const [tag, setTag] = useState<string | null>(null);
   const [edu, setEdu] = useState<string | null>(null);
   const [job, setJob] = useState<string | null>(null);
@@ -150,7 +151,7 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
     setJob(name);
   };
 
-  const canNext = step === 0 ? name.trim().length > 0 && tag !== null : step === 1 ? edu !== null : job !== null;
+  const canNext = step === 0 ? name.trim().length > 0 && tag !== null : step === 1 ? edu !== null : step === 2 ? true : job !== null;
 
   const finish = async () => {
     const effectiveTag = customIdentity ?? tag;
@@ -177,9 +178,35 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
       blindSpots: blind,
       goal: `拿下「${job}」岗位所需的核心技能——画像先按背景估，边学边测准。`,
     };
+    const backgroundNarrative = background.trim()
+      ? background.trim()
+      : `我的身份是「${effectiveTag}」，学历「${effectiveEdu}」，目标方向「${job}」。`;
+    let profileConfidence = 33;
+    try {
+      const llmProfile = await api.generateLlmProfileScore({
+        name: name.trim(),
+        tag: effectiveTag,
+        education: effectiveEdu,
+        targetJob: job,
+        targetCategoryCode,
+        method: 'quick',
+        background: backgroundNarrative,
+      }).catch(() => null);
+      if (llmProfile && Object.keys(llmProfile.scores ?? {}).length >= 6) {
+        draft.scores = llmProfile.scores;
+        draft.blindSpots = llmProfile.blindSpots?.length ? llmProfile.blindSpots : blind;
+        draft.goal = llmProfile.goal || draft.goal;
+        draft.diagnosisSummary = llmProfile.diagnosisSummary || draft.diagnosisSummary;
+        if (typeof llmProfile.confidence === 'number') profileConfidence = Math.max(33, Math.min(90, Math.round(llmProfile.confidence)));
+      }
+    } catch {
+      /* LLM 不可用时继续使用规则兜底 */
+    }
+    const baseSummary = draft.diagnosisSummary || `画像按背景生成，目标方向「${job}」。`;
+    draft.diagnosisSummary = `${baseSummary} | 技术背景：${backgroundNarrative}`.slice(0, 1000);
     let id: string;
     try {
-      id = await createLearner(draft, { method: 'quick', value: 33 });
+      id = await createLearner(draft, { method: 'quick', value: profileConfidence });
       if (session) bindAccount(id);
     } catch {
       toast.error('建档失败', { description: '请稍后重试' });
@@ -188,7 +215,7 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
     /* 先让后端生成真实画像轨迹，再播放锻造动画 */
     let forgeSteps;
     let forgeBlindSpots;
-    let forgeEvidenceFinal = [`身份「${effectiveTag}」`, `学历「${effectiveEdu}」`, `目标「${job}」`, '背景先验 → 六维起点'];
+    let forgeEvidenceFinal = [`身份「${effectiveTag}」`, `学历「${effectiveEdu}」`, `目标「${job}」`, background.trim() ? `技术背景：${background.trim()}` : 'LLM 推断六维起点'];
     try {
       const generated = await api.generateProfile({
         method: 'quick',
@@ -198,8 +225,8 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
         education: effectiveEdu,
         targetJob: job,
         targetCategoryCode,
-        scores,
-        confidence: 33,
+        scores: draft.scores,
+        confidence: profileConfidence,
       });
       forgeSteps = generated.steps;
       forgeEvidenceFinal = generated.evidence;
@@ -210,8 +237,8 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
     setForge({
       name: draft.name,
       avatar: draft.avatar,
-      scores,
-      confidence: 33,
+      scores: draft.scores,
+      confidence: profileConfidence,
       method: 'quick',
       evidence: forgeEvidenceFinal,
       steps: forgeSteps,
@@ -220,8 +247,10 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
   };
 
   const forgeDone = () => {
-    toast.success(`「${forge?.name}」画像已按背景先验建档`, {
-      description: '置信度 33% · 前两讲我会多问几个检查点，边学边把画像测准',
+    toast.success(`「${forge?.name}」画像已生成`, {
+      description: forge?.confidence && forge.confidence > 40
+        ? `画像置信度约 ${forge.confidence}% · 后续学习会继续校准`
+        : '置信度 33% · 前两讲我会多问几个检查点，边学边把画像测准',
     });
     navigate('/me');
   };
@@ -252,12 +281,12 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
           </span>
         </div>
 
-        <div className="relative mt-4 grid grid-cols-3 gap-2">
-          <span aria-hidden className="absolute left-[16.5%] right-[16.5%] top-[13px] h-px bg-hairline" />
+        <div className="relative mt-4 grid grid-cols-4 gap-2">
+          <span aria-hidden className="absolute left-[12.5%] right-[12.5%] top-[13px] h-px bg-hairline" />
           <span
             aria-hidden
-            className="absolute left-[16.5%] top-[13px] h-px bg-brand transition-[width] duration-500 ease-lf"
-            style={{ width: `${step * 33.5}%` }}
+            className="absolute left-[12.5%] top-[13px] h-px bg-brand transition-[width] duration-500 ease-lf"
+            style={{ width: `${step * 25}%` }}
           />
           {QUICK_STEPS.map((label, index) => {
             const active = index === step;
@@ -432,6 +461,35 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
 
           {step === 2 && (
             <motion.div
+              key="background"
+              initial={{ opacity: 0, x: 18 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -18 }}
+              transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <div>
+                <div className="flex items-end justify-between gap-3">
+                  <label htmlFor="quick-background" className="text-[13px] font-semibold text-ink">你已有的技术底子？</label>
+                  <span className="text-[10.5px] text-ink-muted">选填，写具体的更容易生成准确画像</span>
+                </div>
+                <textarea
+                  id="quick-background"
+                  value={background}
+                  onChange={(e) => setBackground(e.target.value)}
+                  placeholder="例如：Python 熟练，接过 OpenAI API，上过 ML/NLP 课，但没做过 Agent 项目…"
+                  rows={4}
+                  className="mt-2.5 w-full resize-none rounded-[12px] border border-hairline bg-white/45 px-4 py-3 text-[13px] leading-6 text-ink shadow-xs outline-none transition-all placeholder:text-ink-muted/55 focus:border-brand/55 focus:bg-white/70 focus:shadow-[0_0_0_3px_rgba(78,120,96,0.08)]"
+                />
+              </div>
+              <p className="mt-3 flex items-start gap-2 text-[11px] leading-[17px] text-ink-muted">
+                <Sparkles size={12} className="mt-0.5 shrink-0 text-brand" />
+                这里的信息会直接交给画像模型判断，不再只靠身份和学历估算。
+              </p>
+            </motion.div>
+          )}
+
+          {step === 3 && (
+            <motion.div
               key="goal"
               initial={{ opacity: 0, x: 18 }}
               animate={{ opacity: 1, x: 0 }}
@@ -463,10 +521,6 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
                   </button>
                 ))}
               </div>
-              <p className="mt-3 flex items-start gap-2 text-[11px] leading-[17px] text-ink-muted">
-                <Gauge size={12} className="mt-0.5 shrink-0 text-ochre" />
-                精简建档会先生成一份「校准中」画像，前两讲通过少量检查点边学边测准。
-              </p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -484,10 +538,10 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
         <button
           type="button"
           disabled={!canNext}
-          onClick={() => (step === 2 ? finish() : setStep((current) => current + 1))}
+          onClick={() => (step === 3 ? finish() : setStep((current) => current + 1))}
           className={cn('lf-btn-primary !rounded-full !px-5 !py-2 text-[13px]', !canNext && 'pointer-events-none opacity-40 grayscale-[0.25]')}
         >
-          {step === 2 ? '生成学习计划' : '下一步'}
+          {step === 3 ? '生成学习计划' : '下一步'}
           <ArrowRight size={14} />
         </button>
       </div>

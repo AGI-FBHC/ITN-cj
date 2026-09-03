@@ -755,6 +755,28 @@ export interface GenerateProfileResponse {
   goal: string;
   diagnosisSummary: string;
 }
+
+export interface LlmProfileScoreInput {
+  name?: string;
+  tag: string;
+  education: string;
+  targetJob: string;
+  targetCategoryCode?: string;
+  method: 'quick' | 'full';
+  background?: string;
+  selfLevels?: Record<string, number>;
+  answers?: OnboardingAnswerInput[];
+}
+
+export interface LlmProfileScoreResult {
+  scores: Record<string, number>;
+  confidence: number;
+  reasoning: Record<string, string>;
+  blindSpots: string[];
+  goal: string;
+  diagnosisSummary: string;
+  recommendation?: { entry?: string; difficulty?: string };
+}
 const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 export const TOKEN_KEY = 'lf.token';
 
@@ -1311,6 +1333,11 @@ export const api = {
   getOnboardingMeta: () => request<OnboardingMeta>('/api/v1/onboarding/meta'),
   generateProfile: (body: GenerateProfileRequest) =>
     request<GenerateProfileResponse>('/api/v1/onboarding/generate-profile', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  generateLlmProfileScore: (body: LlmProfileScoreInput) =>
+    requestAgent<LlmProfileScoreResult>('/profile/llm-score', {
       method: 'POST',
       body: JSON.stringify(body),
     }),
