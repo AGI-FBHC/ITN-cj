@@ -1023,6 +1023,7 @@ export default function CollaborationWorkbench() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const selectedKey = params.get('task');
   const loadInFlightRef = useRef(false);
+  const tasksSignatureRef = useRef('');
   const streamBufferRef = useRef<AdminGenerationEvent[]>([]);
   const streamFlushTimerRef = useRef<number | null>(null);
   const initialSelectionClearedRef = useRef(false);
@@ -1048,11 +1049,13 @@ export default function CollaborationWorkbench() {
       pptTasks = presentations.tasks.filter((task) => task.request?.generationContext?.adminGeneration === true)
         .map((task) => ({ ...task, taskKind: 'ppt' as const, resourceType: 'ppt' as const }));
     }
-    setTasks(resourceTasks);
-    setLoading(false);
     const next = [...resourceTasks, ...pptTasks].sort(resourceCenterTaskOrder);
     const visible = next.filter((item) => !deletedKeysRef.current.includes(taskKey(item)));
-    setTasks(visible);
+    const signature = visible.map((item) => `${taskKey(item)}:${item.status}:${item.progress}:${item.updatedAt}`).join('|');
+    if (signature !== tasksSignatureRef.current) {
+      tasksSignatureRef.current = signature;
+      setTasks(visible);
+    }
     visible.forEach((item) => {
       const key = taskKey(item);
       const prev = prevTaskStatusRef.current.get(key);
@@ -1226,7 +1229,7 @@ export default function CollaborationWorkbench() {
     const timer = window.setInterval(() => {
       if (document.visibilityState !== 'visible') return;
       void load().catch(() => undefined);
-    }, 6000);
+    }, 8000);
     const onVisible = () => {
       if (document.visibilityState === 'visible') void load().catch(() => undefined);
     };

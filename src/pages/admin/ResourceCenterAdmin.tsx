@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArchiveRestore, ArrowLeft, Ban, BookOpen, CheckCircle2, ChevronDown, ChevronRight, ClipboardList,
   Eye, FileText, FolderTree, LayoutTemplate, ListChecks, Loader2, MonitorPlay, Plus, Radio, RefreshCw, Sparkles, Trash2, Wrench, X, XCircle,
@@ -94,24 +94,44 @@ export default function ResourceCenterAdmin() {
   }, [domainsQ.error, statsQ.error, treeQ.error, listQ.error]);
 
   const loadGenerationTasks = async () => {
-    const [resources, presentations] = await Promise.all([
-      api.listLearningResourceTasks(1000),
-      presentationApi.listPresentationSummariesFresh(1000, true),
-    ]);
-    const textTasks: GenerationTask[] = resources.tasks.map((task) => ({ ...task, taskKind: 'resource' as const }));
-    const pptTasks: GenerationTask[] = presentations.tasks.map((task) => ({ ...task, taskKind: 'ppt' as const }));
-    setGenerationTasks([...textTasks, ...pptTasks].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)));
+    if (generationLoadInFlightRef.current) return;
+    generationLoadInFlightRef.current = true;
+    try {
+      const [resources, presentations] = await Promise.all([
+        api.listLearningResourceTasks(1000),
+        presentationApi.listPresentationSummariesFresh(1000, true),
+      ]);
+      const textTasks: GenerationTask[] = resources.tasks.map((task) => ({ ...task, taskKind: 'resource' as const }));
+      const pptTasks: GenerationTask[] = presentations.tasks.map((task) => ({ ...task, taskKind: 'ppt' as const }));
+      const next = [...textTasks, ...pptTasks].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+      const signature = next.map((item) => `${item.taskKind}:${item.id}:${item.status}:${item.progress}:${item.updatedAt}`).join('|');
+      if (signature !== generationTasksSignatureRef.current) {
+        generationTasksSignatureRef.current = signature;
+        setGenerationTasks(next);
+      }
+    } finally {
+      generationLoadInFlightRef.current = false;
+    }
   };
+  const generationLoadInFlightRef = useRef(false);
+  const generationTasksSignatureRef = useRef('');
 
   useEffect(() => {
     const initial = window.setTimeout(
       () => void loadGenerationTasks().catch((error) => toast.error(error instanceof Error ? error.message : '生成任务读取失败')),
       0,
     );
-    const timer = window.setInterval(() => void loadGenerationTasks().catch(() => undefined), 2500);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadGenerationTasks().catch(() => undefined);
+    }, 8000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void loadGenerationTasks().catch(() => undefined);
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       window.clearTimeout(initial);
       window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
 
