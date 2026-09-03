@@ -28,6 +28,9 @@ const nav: { id: AdminSection; label: string; icon: typeof LayoutDashboard }[] =
   { id: "workbench", label: "AI 教研工作台", icon: Sparkles },
   { id: "ingestion", label: "文档入库", icon: FileUp },
 ];
+/** 暂不开放给管理员的模块：仅从导航隐藏，功能代码保留。 */
+const hiddenAdminSections = new Set<AdminSection>(["knowledge", "quality", "ingestion"]);
+const visibleNav = nav.filter((item) => !hiddenAdminSections.has(item.id));
 
 function StatusTag({ ok = true, children }: { ok?: boolean; children: string }) {
   return (
@@ -513,7 +516,7 @@ export default function Admin() {
         </Link>
         <div className="px-6 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-muted">业务管理</div>
         <nav className="mt-1 flex-1 space-y-1 overflow-y-auto px-3 pb-4">
-          {nav.map(({ id, label, icon: Icon }) => (
+          {visibleNav.map(({ id, label, icon: Icon }) => (
             <NavLink key={id} to={`/admin/${id}`} className={({ isActive }) => cn("lf-nav-pill", isActive && "lf-nav-pill-active")}>
               <Icon size={16} />
               <span className="flex-1">{label}</span>
@@ -553,7 +556,7 @@ export default function Admin() {
         </header>
         <div className="sticky top-16 z-20 flex overflow-x-auto px-4 pb-3 pt-3 lg:hidden">
           <div className="lf-seg mx-auto">
-            {nav.map(({ id, label, icon: Icon }) => (
+            {visibleNav.map(({ id, label, icon: Icon }) => (
               <NavLink key={id} to={`/admin/${id}`} className={({ isActive }) => cn("lf-seg-item", isActive && "lf-seg-item-active")}>
                 <Icon size={13} />
                 {label}
