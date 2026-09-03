@@ -9,6 +9,8 @@
  */
 
 import type { AgentId } from './agents';
+import { getLearner, weakestKpOf } from './learners';
+import { getKnowledgePoint } from './knowledgePoints';
 
 export type TutorStage = '引导' | '追问' | '确认';
 export type DecisionType = 'simplify' | 'challenge';
@@ -233,5 +235,63 @@ export const tutoringScripts: TutoringScript[] = [
   },
 ];
 
-export const getTutoringScript = (learnerId: string): TutoringScript =>
-  tutoringScripts.find((t) => t.learnerId === learnerId) ?? tutoringScripts[0];
+function genericAgentScript(learnerId: string): TutoringScript {
+  const learner = getLearner(learnerId);
+  const kp = getKnowledgePoint(weakestKpOf(learner));
+  const topic = kp.coreTopics[0] ?? kp.name;
+  return {
+    learnerId,
+    title: `苏格拉底导学 · ${kp.name}`,
+    kpId: kp.id,
+    startId: 'n1',
+    nodes: {
+      n1: {
+        id: 'n1',
+        stage: '引导',
+        tutor: `我们先用你自己的话理解「${kp.name}」。不看资料，你觉得这个能力在 Agent / LLM 的工作链路里解决什么问题？`,
+        options: [
+          { label: '能围绕概念说清目标和边界', next: 'n2', correct: true },
+          { label: '还比较模糊，提示我', next: 'n1b' },
+        ],
+        backstage: [{ agent: 'DIA-01', content: '开放问题启动，探测概念建模能力' }],
+      },
+      n1b: {
+        id: 'n1b',
+        stage: '引导',
+        tutor: `提示：它更像一种判断/组织/转化能力——先想清楚它在哪个环节、解决什么不一致，再记定义会更容易。试着从「${topic}」这个切入点再说一遍。`,
+        options: [{ label: '明白了，继续', next: 'n2' }],
+      },
+      n2: {
+        id: 'n2',
+        stage: '追问',
+        tutor: `如果要落地到一个小任务里，第一步不应该写代码，而应先明确什么？`,
+        options: [
+          { label: '输入、输出和失败边界', next: 'n3', correct: true },
+          { label: '先把实现代码写完', next: 'n2b', correct: false },
+        ],
+      },
+      n2b: {
+        id: 'n2b',
+        stage: '追问',
+        tutor: '代码只是实现。先缺了边界，后面很容易在异常输入或调用失败时失控。想想一个 Agent 调用工具前，应该先确认什么？',
+        options: [{ label: '调用权限、返回结构和失败兜底', next: 'n3', correct: true }],
+        decision: 'simplify',
+        decisionReason: '用工程落地视角补上边界意识',
+      },
+      n3: {
+        id: 'n3',
+        stage: '确认',
+        tutor: `你已经把这个能力放到真实链路里理解了。记住：先定输入输出与失败边界，再实现；实现后要用最小案例验证，再逐步扩展。下一步可以进入「${kp.name}」相关实操继续巩固。`,
+        decision: 'challenge',
+        decisionReason: '概念闭环完成，进入实操迁移',
+        backstage: [
+          { agent: 'DIA-01', content: `${kp.name}维度预估上升，回写画像` },
+          { agent: 'ARB-05', content: `决策：解锁「${kp.name}」实操任务` },
+        ],
+        end: true,
+      },
+    },
+  };
+}
+
+export const getTutoringScript = (learnerId: string): TutoringScript => genericAgentScript(learnerId);

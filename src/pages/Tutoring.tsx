@@ -41,25 +41,6 @@ import SummaryCard from '@/components/tutoring/SummaryCard';
 import PageTip from '@/components/heal/PageTip';
 import { cn } from '@/lib/utils';
 
-/** 知识点复述文案（page-local，按脚本差异化） */
-const recapTexts: Record<string, { text: string; kb: string }[]> = {
-  lin: [
-    { text: '回零准备 → 粗对零 → 精对零 → 写入零点 → 复测验证，每步都有量化判据，错一步就回到上一步。', kb: 'KB-018' },
-    { text: '位姿准确度是指令位姿与实到位姿集群重心的偏差；试验须在额定负载下对立方体五点位姿各测 30 次。', kb: 'KB-007' },
-    { text: '线性补偿 Δθ=k(T−T₀) 只在 10–35℃ 验证过，k 由五点恒温实验拟合，超出区间必须重新拟合。', kb: 'KB-014' },
-  ],
-  chen: [
-    { text: '四个参数 ai-1、αi-1、di、θi 唯一确定一个连杆变换 —— 就像万用表的四个档位刻度。', kb: 'KB-009' },
-    { text: '正解是六个变换矩阵连乘；满足 Pieper 准则的六轴臂可位姿分离，共 8 组解按最短行程取舍。', kb: 'KB-022' },
-    { text: 'TCP 原点定义在工具中心点，绕 X/Y/Z 的旋转命名 RX/RY/RZ，正方向遵从右手定则。', kb: 'KB-002' },
-  ],
-  zhao: [
-    { text: '采集 12–20 组姿态、旋转大于 30°，避免纯平移导致旋转分量无法约束、解退化。', kb: 'KB-011' },
-    { text: '来料偏差 ±15 mm 用模板匹配粗定位 + 边缘精定位两级消化，与分段排查思路同构。', kb: 'KB-016' },
-    { text: '像素 ↔ 毫米的翻译官是手眼矩阵；相机丢帧排查链与你的 PROFINET 丢站排查链同构。', kb: 'KB-026' },
-  ],
-};
-
 export default function Tutoring() {
   const { currentLearner, viewMode } = useProfile();
   const { pushSignal } = useAgent();
@@ -136,12 +117,10 @@ export default function Tutoring() {
   /* 本节知识点 chips：掌握度由画像分数派生 */
   const topics = useMemo<KpTopic[]>(() => {
     const base = currentLearner.scores[script.kpId] ?? 50;
-    const texts = recapTexts[currentLearner.id] ?? recapTexts.lin;
     return kp.coreTopics.slice(0, 3).map((topic, i) => ({
       topic,
       mastery: Math.min(96, Math.max(10, base + [14, 3, -9][i])),
-      recapText: texts[i]?.text ?? kp.description,
-      kbRef: texts[i]?.kb,
+      recapText: kp.description,
     }));
   }, [currentLearner, script.kpId, kp]);
 

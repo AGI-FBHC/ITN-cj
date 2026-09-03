@@ -35,76 +35,76 @@ export const learnerUiMeta: Record<string, LearnerUiMeta> = {
     bandColor: '#4E7860',
     bandBg: '#DFEDE4',
     workExp: '无工龄 · 应届生',
-    certificate: 'CET-6 · 计算机二级',
+    certificate: 'CET-6 · 计算机等级证书',
     blindWall: [
-      { label: '故障诊断实操', severity: '高', evidence: '理论测试 §故障诊断 得分 47 · 近 3 次实操练习正确率 38%' },
-      { label: '传感器标定实操', severity: '高', evidence: '理论测试 §传感器标定 得分 42 · 标定实操打卡 0/5 次' },
-      { label: '视觉引导应用', severity: '中', evidence: '理论测试 §视觉引导 得分 51 · 尚未开始专项训练' },
-      { label: 'PLC 通讯组态', severity: '低', evidence: '理论测试 §PLC 编程 得分 58 · 联锁案例练习 2/6' },
+      { label: 'Agent 工具调用实操', severity: '高', evidence: '理论测试 §工具调用 得分 47 · 近 3 次实操练习正确率 38%' },
+      { label: 'RAG 检索链路实操', severity: '高', evidence: '理论测试 §RAG 检索 得分 42 · 实操打卡 0/5 次' },
+      { label: '多智能体协作', severity: '中', evidence: '理论测试 §多智能体 得分 51 · 尚未开始专项训练' },
+      { label: 'Agent 工程交付', severity: '低', evidence: '理论测试 §Agent 工程 得分 58 · 交付案例练习 2/6' },
     ],
-    pathChips: ['① 标定实操精讲', '② 故障树诊断案例', '③ 综合考核'],
+    pathChips: ['① 工具调用实操', '② RAG 检索诊断案例', '③ 综合能力校验'],
   },
   chen: {
     bandLabel: '实操型 · 动手强',
     bandColor: '#E7B45A',
     bandBg: '#F8ECD2',
     workExp: '实训 480 学时',
-    certificate: '1+X 初级备考中',
+    certificate: 'CET-4 · AI 应用证书备考中',
     blindWall: [
-      { label: '运动学正逆解', severity: '高', evidence: '理论测试 §机器人运动学 得分 45 · 近 3 次练习正确率 41%' },
-      { label: 'DH 参数建模', severity: '高', evidence: '随堂测验 §DH 建模 得分 38 · 公式推导题放弃率 62%' },
-      { label: 'PLC 结构化编程', severity: '中', evidence: '理论测试 §PLC 编程 得分 61 · 梯形图作业完成 4/6' },
-      { label: '标定原理', severity: '中', evidence: '理论测试 §传感器标定 得分 66 · 实操优秀 / 原理待补' },
+      { label: 'Agent 流程推理', severity: '高', evidence: '理论测试 §Agent 流程 得分 45 · 近 3 次练习正确率 41%' },
+      { label: '系统设计', severity: '高', evidence: '随堂测验 §系统设计 得分 38 · 方案题放弃率 62%' },
+      { label: '上下文工程', severity: '中', evidence: '理论测试 §上下文 得分 61 · 案例作业完成 4/6' },
+      { label: '知识理解', severity: '中', evidence: '理论测试 §概念理解 得分 66 · 概念讲解优秀 / 推理待补' },
     ],
-    pathChips: ['① 坐标系图解入门', '② 运动学分阶闯关', '③ 省赛综合实训'],
+    pathChips: ['① Agent 概念图解', '② 流程推理分阶闯关', '③ 多智能体综合实训'],
   },
   zhao: {
     bandLabel: '经验型 · 转型中',
     bandColor: '#B77552',
     bandBg: '#F4E7DC',
-    workExp: '15 年传统产线维护',
-    certificate: '电工中级证 · 设备主管',
+    workExp: '15 年 IT 运维经验',
+    certificate: '服务端运维 · 中级',
     blindWall: [
-      { label: '视觉引导', severity: '高', evidence: '理论测试 §视觉引导 得分 44 · 转岗新领域零基础' },
-      { label: '手眼标定', severity: '高', evidence: 'AX=XB 求解测验正确率 35% · 案例迁移学习进行中' },
-      { label: '协作机器人功率与力限制', severity: '中', evidence: '理论测试 §安全规范 得分 85 · 协作条款为新增内容' },
-      { label: '离线编程', severity: '低', evidence: '尚未开始 · 已排入第 4 周学习路径' },
+      { label: 'Agent 基础概念', severity: '高', evidence: '理论测试 §Agent 基础 得分 44 · 转岗新领域零基础' },
+      { label: '上下文工程', severity: '高', evidence: '上下文设计测验正确率 35% · 案例迁移学习进行中' },
+      { label: '多智能体协作', severity: '中', evidence: '理论测试 §多智能体 得分 85 · 协作条款为新增内容' },
+      { label: 'Agent 工具调试', severity: '低', evidence: '尚未开始 · 已排入第 4 周学习路径' },
     ],
-    pathChips: ['① 手眼标定迁移课', '② 坐标变换工程直觉', '③ 工作站运维认证'],
+    pathChips: ['① Agent 概念迁移课', '② 上下文工程直觉', '③ 工程化运维认证'],
   },
 };
 
 /** 六维理论测试错题摘要（按知识点，页面本地 Mock，KB 溯源取 kbSlicesByKp 前三条） */
 export const wrongNotesByKp: Record<string, string[]> = {
-  'kp-plc': [
-    '安全门联锁回路的常闭触点串接逻辑写反，导致仿真急停失效',
-    'PROFINET 设备名未与组态一致，I/O 映射全部漂移到下一槽位',
-    'ST 语言中定时器 ENO 链式使用条件判断遗漏',
+  'kp-ds': [
+    '混淆 LLM 与 Agent 的边界，把模型能力直接当成系统能力',
+    '对 RAG、上下文工程等概念理解停留在名词表面',
+    '忽视提示与工具对智能体行为边界的共同约束',
   ],
-  'kp-kinematics': [
-    'D-H 参数表中 α 扭转角符号约定混淆，正解矩阵整体错位',
-    '逆解多解分支选择未考虑奇异位形，仿真轨迹穿越关节极限',
-    '工件坐标系与工具坐标系复合变换顺序写反',
+  'kp-co': [
+    '多智能体协作时遗漏条件分支，导致工具调用路径不确定',
+    '对 Agent 流程中异常分支的判断顺序混乱',
+    '将串行流程误判为可并行协同，状态依赖分析缺失',
   ],
-  'kp-sensor': [
-    '位姿准确度与重复定位精度概念混淆，验收指标引用错误',
-    '温度漂移补偿系数直接套用出厂值，未按实测区间重新拟合',
-    '零点标定第 3 步精对零顺序错误，J2/J3 未用百分表找正',
+  'kp-os': [
+    '调用工具时参数与权限校验不完整，导致安全边界被绕过',
+    '调试智能体应用时未先记录输入与日志，定位链路缺失',
+    '交付时忽略配置化与测试步骤，迭代成本上升',
   ],
-  'kp-vision': [
-    '手眼标定 AX=XB 方程组采集姿态数量不足，解算发散',
-    '特征匹配阈值设置过高，低对比度工件定位丢失',
-    '曝光与增益未随现场光照标定，分拣抓取位姿漂移',
+  'kp-network': [
+    'RAG 召回为空时没有先区分文档切分、向量检索还是查询改写问题',
+    '上下文超限被误判为模型幻觉，缺少证据链分析',
+    '排查链路未记录检索分数与来源文档，归因困难',
   ],
-  'kp-safety': [
-    '风险评估三步法中「风险估计」等级漏评低频高危项',
-    '协作运行功率与力限制阈值引用过期版本标准',
-    '急停复位后自动重启条件判断与安全回路规范不符',
+  'kp-db': [
+    '设计记忆与知识库时未考虑更新一致性与过期策略',
+    '接口拆分的职责边界不清，导致多智能体协作冲突',
+    '对可靠性要求只考虑单点实现，缺少回退与重试方案',
   ],
-  'kp-diagnosis': [
-    '报警代码分级读取错误，将警告级误判为停机级',
-    '故障树最小割集求解漏掉共因失效分支',
-    '减速器振动频谱特征频率计算用错齿数参数',
+  'kp-agent': [
+    '接触新工具时直接套用旧 API 写法，未先读权限与返回值结构',
+    '新场景迁移缺少最小验证，方案落地前未做局部试验',
+    '把已有流程硬映射到新框架，忽略生态差异与约束',
   ],
 };
 

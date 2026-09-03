@@ -172,7 +172,7 @@ function HeroSection() {
           </p>
 
           <p data-hero="sub" className="mt-5 max-w-[480px] text-[15px] leading-[26px] text-ink-2">
-            以五个分工明确的智能体取代单体大模型：学情诊断锚定盲区，知识检索锁定权威标准，内容生成严格溯源，审核裁判交叉验证，决策仲裁动态调度。面向智能制造 · 工业机器人运维技能培训。
+            以五个分工明确的智能体取代单体大模型：学情诊断锚定盲区，知识检索锁定权威标准，内容生成严格溯源，审核裁判交叉验证，决策仲裁动态调度。面向智能体工程与复杂能力训练场景。
           </p>
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
@@ -797,8 +797,8 @@ function DomainCard() {
     <div className="lf-card h-full overflow-hidden p-5">
       <div className="relative overflow-hidden rounded-[14px] border border-hairline">
         <img
-          src="/robot-arm.png"
-          alt="六轴工业机器人传感器标定蓝图"
+          src="/hero-network.png"
+          alt="多智能体学习网络"
           className="aspect-[4/3] w-full object-cover transition-transform duration-500 ease-lf hover:scale-[1.02]"
         />
         {/* clip 揭示：遮罩面板滑出 */}
@@ -812,7 +812,7 @@ function DomainCard() {
         />
       </div>
       <h3 className="mt-4 font-serif text-[19px] font-semibold text-ink">
-        垂直领域 · 工业机器人运维
+        Agent 工程 · 全流程能力训练
       </h3>
       <div className="mt-3 grid grid-cols-2 gap-2.5">
         {knowledgePoints.map((kp, i) => (
@@ -841,7 +841,7 @@ function DomainCard() {
         ))}
       </div>
       <p className="mt-3 text-[13px] leading-[20px] text-ink-muted">
-        对接岗位能力模型 · 国赛/1+X 证书标准对齐
+        对接智能体与大模型方向的能力模型 · 覆盖概念理解到工程交付
       </p>
       <button type="button" onClick={() => navigate('/knowledge')} className="lf-btn-ghost mt-3 w-full !py-2 text-[13.5px]">
         进入知识库

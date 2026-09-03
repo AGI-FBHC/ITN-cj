@@ -680,14 +680,14 @@ export default function MyProfile() {
                     localStorage.removeItem('lf.guideSeen');
                   }
                 } catch { /* ignore */ }
-                toast.success('新手提示已重新打开', {
-                  description: '回到「我的学习」「学」「练」等页面，会再各提示你一次能做什么',
+                toast.success('页面引导已重新打开', {
+                  description: '回到相关页面时会再次显示操作引导',
                 });
               }}
               className="flex w-full items-center justify-center gap-2 rounded-[10px] border border-hairline bg-card-warm py-2 text-[13px] font-medium text-ink-2 transition-all hover:border-brand/40 hover:text-brand"
             >
               <HelpCircle size={14} />
-              重看新手提示（各页只提示一次的那些）
+              查看操作引导
             </button>
 
           </div>
