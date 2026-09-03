@@ -328,7 +328,7 @@ function SimpleChapterCanvas({
                   {node.name}
                 </text>
                 <text y="4" textAnchor="middle" fontSize="10" fill={isSource || isTarget ? "#fff" : "#64748b"}>
-                  {`#${String(node.sort_order ?? node.id).padStart(2, "0")}`}
+                  {`#${String(chapters.findIndex((item) => item.id === node.id) + 1).padStart(2, "0")}`}
                 </text>
                 <title>{node.name} · 章节</title>
               </g>
