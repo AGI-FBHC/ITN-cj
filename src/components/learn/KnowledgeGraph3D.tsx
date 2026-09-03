@@ -5,8 +5,6 @@
 import { useRef, useMemo, useState, useCallback, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Text, Line, PerspectiveCamera, Billboard } from '@react-three/drei';
-import { DepthOfField, EffectComposer } from '@react-three/postprocessing';
-import type { DepthOfFieldEffect } from 'postprocessing';
 import { BookOpen, ClipboardCheck, Loader2, Presentation, ScrollText, Wand2, Wrench, X } from 'lucide-react';
 import * as THREE from 'three';
 import type { GraphNode, GraphEdge } from '@/data/knowledgeGraph';
@@ -184,27 +182,6 @@ function PersistedCamera({ storageKey, restore = false }: { storageKey?: string;
     };
   }, [camera, controls, storageKey]);
   return null;
-}
-
-/** 跟随相机观察点的景深：远处节点/文字自然虚化，近处保持清晰。 */
-function AdaptiveDepthOfField() {
-  const effectRef = useRef<DepthOfFieldEffect | null>(null);
-  const camera = useThree((state) => state.camera);
-  const controls = useThree((state) => state.controls) as { target: THREE.Vector3 } | null;
-  const origin = useMemo(() => new THREE.Vector3(), []);
-
-  useFrame(() => {
-    const effect = effectRef.current;
-    if (!effect) return;
-    const focus = controls?.target ?? origin;
-    effect.focusDistance = camera.position.distanceTo(focus);
-  });
-
-  return (
-    <EffectComposer multisampling={0} enableNormalPass={false}>
-      <DepthOfField ref={effectRef} focusRange={58} bokehScale={0.55} resolutionScale={0.55} />
-    </EffectComposer>
-  );
 }
 
 /** 多轴随机缓慢旋转的场景容器 */
@@ -2031,17 +2008,13 @@ export default function KnowledgeGraph3D({
       >
       <Canvas
         dpr={[1, 1.25]}
-        gl={{ antialias: true, alpha: true, premultipliedAlpha: false, powerPreference: 'high-performance', failIfMajorPerformanceCaveat: false }}
-        onCreated={({ gl }) => {
-          gl.setClearColor(0x000000, 0);
-        }}
+        gl={{ antialias: true, powerPreference: 'high-performance', failIfMajorPerformanceCaveat: false }}
         onPointerMissed={() => {
           onSelectKp(null);
           onSelectTopic(null);
         }}
       >
         <PerspectiveCamera makeDefault position={[0, 0, 88]} fov={45} />
-        <color attach="background" args={['#F7F8FA']} />
         <OrbitControls
           makeDefault
           enablePan
@@ -2096,7 +2069,6 @@ export default function KnowledgeGraph3D({
         </RotatingScene>
         <CameraFocus focusTarget={focusTarget} layout={layout} sceneRef={sceneRef} blendRef={blendRef} topicCountByKp={topicCountByKp} />
         {showHoverCards && hoveredNode && <HoverCardTracker object={hoveredNode.object} cardRef={hoverCardRef} />}
-        <AdaptiveDepthOfField />
       </Canvas>
 
       {showActionDialog && actionTopic && (
