@@ -38,6 +38,8 @@ import { useProfile } from '@/context/ProfileContext';
 import { useAuth } from '@/context/AuthContext';
 import { useNotes } from '@/context/NotesContext';
 import { useGrowth } from '@/context/GrowthContext';
+import { api, type OrganizationBranding } from '@/lib/api';
+import { useCachedData } from '@/hooks/useCachedData';
 import { kbSlices } from '@/data/kbSlices';
 import { resources } from '@/data/resources';
 import { globalStats } from '@/data/metrics';
@@ -163,6 +165,12 @@ export default function AppShell() {
   const { notes } = useNotes();
   const { focusMode } = useGrowth();
   const { logout } = useAuth();
+  const orgBranding = useCachedData<OrganizationBranding>(
+    'learner:organizationBranding',
+    () => api.getOrganizationBranding(),
+    { ttlMs: 5 * 60_000 },
+  );
+  const orgShortName = orgBranding.data?.shortName?.trim() || null;
   const location = useLocation();
   const isSlideMode = location.pathname.startsWith('/learn/slide/');
   const navigate = useNavigate();
@@ -220,7 +228,14 @@ export default function AppShell() {
             {/* logo */}
             <Link to="/me" className="flex shrink-0 items-center gap-2.5">
               <img src="/logo.svg" alt="智训云枢" className="h-7 w-7" />
-              <span className="hidden font-serif text-[16px] font-bold text-ink sm:inline">智训云枢</span>
+              <span className="hidden items-center gap-1.5 sm:flex">
+                <span className="font-serif text-[16px] font-bold text-ink">智训云枢</span>
+                {orgShortName && (
+                  <span className="rounded-md border border-hairline bg-paper px-1.5 py-0.5 font-mono text-[9.5px] font-medium tracking-wide text-ink-muted">
+                    {orgShortName}
+                  </span>
+                )}
+              </span>
             </Link>
 
             {/* 居中导航（桌面） */}
