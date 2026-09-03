@@ -5,7 +5,7 @@
  * 点行 = 选中网络对应节点（与网络、详情栏三向联动）；「我的路线」场景下按路径顺序重排带序号。
  * 无卡框：divide-y 细分隔线（结构进分隔线，不进边框）。
  */
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useProfile } from '@/context/ProfileContext';
 import { reportForLearner } from '@/data/reportBuilder';
 import { knowledgePoints } from '@/data/knowledgePoints';
@@ -53,6 +53,7 @@ export default function UnitQuickList({
   nodeTargets?: Record<string, { target: number; name?: string }>;
 }) {
   const { currentLearner } = useProfile();
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const report = reportForLearner(currentLearner);
   const reportPath = pathProp ?? report.path;
   const mastery = masteryProp ?? {};
@@ -90,52 +91,79 @@ export default function UnitQuickList({
           const threshold = nodeTargets?.[kp.id]?.target;
           const seq = routeOrdered ? pathSeq.indexOf(kp.id) : -1;
           const selected = selectedKpId === kp.id;
+          const expanded = expandedId === kp.id;
           const categoryLabel = kp.parentName;
           const title = kp.name;
+          const topicCount = kp.coreTopics?.length ?? 0;
+          const topicCols = topicCount >= 8 ? 4 : topicCount >= 6 ? 3 : topicCount >= 3 ? 2 : 1;
           return (
-            <button
+            <div
               key={kp.id}
-              type="button"
-              onClick={() => onSelect(kp.id)}
               className={cn(
-                'group flex w-full items-center gap-2.5 px-2 py-3 text-left transition-all duration-200',
+                'overflow-hidden transition-all duration-200',
                 columns
-                  ? 'rounded-[12px] border bg-white/30 shadow-[0_1px_2px_rgba(0,0,0,0.03)] hover:-translate-y-0.5 hover:bg-white/70 hover:shadow-[0_6px_20px_rgba(0,0,0,0.08)]'
-                  : 'rounded-[10px] border border-transparent bg-white/20 px-2.5 hover:bg-white/60',
-                selected
-                  ? 'border-[#2E6BA8]/35 bg-[#EAF3FB] shadow-[0_2px_10px_rgba(46,107,168,0.10)]'
-                  : cn('border-black/[0.04] hover:bg-black/[0.02]', columns && 'hover:border-black/10'),
+                  ? 'rounded-[14px] border bg-white/30 shadow-[0_1px_2px_rgba(0,0,0,0.03)] hover:border-black/10 hover:bg-white/70'
+                  : 'rounded-[10px] border border-transparent bg-white/20',
+                expanded && 'border-[#2E6BA8]/25 bg-[#F5FAFF]',
               )}
             >
-              {seq >= 0 && (
-                <span className="w-4 shrink-0 font-mono text-[10.5px] font-semibold text-ochre">{seq + 1}</span>
-              )}
-              <StatusDot progress={progressValue} />
-              <span className="min-w-0 flex-1">
-                {/* 第一行：章节标签 + 学习进度条 + 进度值，不挤压标题 */}
-                <span className="flex items-center gap-2">
-                  <span className="text-[10.5px] font-medium leading-[14px] text-brand/70">{categoryLabel ?? ''}</span>
-                  <span className="ml-auto flex items-center gap-2">
-                    <span className="relative h-1.5 w-10 shrink-0 overflow-hidden rounded-full border border-black/[0.06] bg-[#E8EDF2] xl:w-12" title={`掌握程度 ${progressValue}%${threshold ? ` · 目标 ${threshold}%` : ''}`}>
-                      <span className="absolute inset-y-0 left-0 rounded-full bg-[#3B82F6]" style={{ width: `${progressValue}%` }} />
-                      {threshold != null && threshold > 0 && (
-                        <span className="absolute inset-y-[-1.5px] w-[2px] rounded-full bg-[#155E9A]" style={{ left: `${Math.min(100, threshold)}%` }} title={`目标 ${threshold}%`} />
-                      )}
-                    </span>
-                    <span className="w-12 shrink-0 text-right font-mono text-[10.5px] tabular-nums" title={`掌握程度 ${progressValue}%${threshold != null ? ` · 目标 ${threshold}%` : ''}`}>
-                      <span className="text-[#174E43]">{progressValue}%</span>
-                      {threshold != null && threshold > 0 && (
-                        <span className="text-[#155E9A]">/{threshold}%</span>
-                      )}
+              <button
+                type="button"
+                onClick={() => {
+                  const next = expanded ? null : kp.id;
+                  setExpandedId(next);
+                  onSelect(kp.id);
+                }}
+                className={cn(
+                  'group flex w-full items-center gap-2.5 px-2 py-3 text-left transition-all duration-200',
+                  columns ? 'rounded-[14px]' : 'rounded-[10px] px-2.5',
+                  selected
+                    ? 'bg-[#EAF3FB]'
+                    : cn(columns && 'bg-transparent', !columns && 'bg-white/20 hover:bg-white/60'),
+                )}
+              >
+                {seq >= 0 && (
+                  <span className="w-4 shrink-0 font-mono text-[10.5px] font-semibold text-ochre">{seq + 1}</span>
+                )}
+                <StatusDot progress={progressValue} />
+                <span className="min-w-0 flex-1">
+                  {/* 第一行：章节标签 + 学习进度条 + 进度值，不挤压标题 */}
+                  <span className="flex items-center gap-2">
+                    <span className="text-[10.5px] font-medium leading-[14px] text-brand/70">{categoryLabel ?? ''}</span>
+                    <span className="ml-auto flex items-center gap-2">
+                      <span className="relative h-1.5 w-10 shrink-0 overflow-hidden rounded-full border border-black/[0.06] bg-[#E8EDF2] xl:w-12" title={`掌握程度 ${progressValue}%${threshold ? ` · 目标 ${threshold}%` : ''}`}>
+                        <span className="absolute inset-y-0 left-0 rounded-full bg-[#3B82F6]" style={{ width: `${progressValue}%` }} />
+                        {threshold != null && threshold > 0 && (
+                          <span className="absolute inset-y-[-1.5px] w-[2px] rounded-full bg-[#155E9A]" style={{ left: `${Math.min(100, threshold)}%` }} title={`目标 ${threshold}%`} />
+                        )}
+                      </span>
+                      <span className="w-12 shrink-0 text-right font-mono text-[10.5px] tabular-nums" title={`掌握程度 ${progressValue}%${threshold != null ? ` · 目标 ${threshold}%` : ''}`}>
+                        <span className="text-[#174E43]">{progressValue}%</span>
+                        {threshold != null && threshold > 0 && (
+                          <span className="text-[#155E9A]">/{threshold}%</span>
+                        )}
+                      </span>
                     </span>
                   </span>
+                  {/* 第二行：标题独占整行宽度 */}
+                  <span className={cn('block text-[13px] leading-[17px] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden', selected ? 'font-medium text-ink' : 'text-ink-2')} title={kp.name}>
+                    {title}
+                  </span>
                 </span>
-                {/* 第二行：标题独占整行宽度 */}
-                <span className={cn('block text-[13px] leading-[17px] [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2] overflow-hidden', selected ? 'font-medium text-ink' : 'text-ink-2')} title={kp.name}>
-                  {title}
-                </span>
-              </span>
-            </button>
+              </button>
+              {expanded && topicCount > 0 && (
+                <div className={cn('border-t border-[#2E6BA8]/10 px-3 pb-3 pt-2.5', columns ? 'bg-[#F5FAFF]' : 'bg-[#F7FAFC]')}>
+                  <div className={cn('grid gap-1.5', { 'grid-cols-1': topicCols === 1, 'grid-cols-2': topicCols === 2, 'grid-cols-3': topicCols === 3, 'grid-cols-4': topicCols === 4 })}>
+                    {kp.coreTopics.map((topic, index) => (
+                      <div key={`${kp.id}-${index}`} className="flex items-center gap-1.5 rounded-lg border border-black/[0.04] bg-white/70 px-2 py-1.5 text-[11.5px] leading-4 text-ink-2">
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand/50" />
+                        <span className="min-w-0 truncate">{topic}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           );
         })}
       </div>
