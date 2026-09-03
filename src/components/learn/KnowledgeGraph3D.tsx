@@ -2011,7 +2011,7 @@ export default function KnowledgeGraph3D({
       >
       <Canvas
         dpr={[1, 1.25]}
-        gl={{ antialias: false, powerPreference: 'high-performance', failIfMajorPerformanceCaveat: false }}
+        gl={{ antialias: true, powerPreference: 'high-performance', failIfMajorPerformanceCaveat: false }}
         onPointerMissed={() => {
           onSelectKp(null);
           onSelectTopic(null);
