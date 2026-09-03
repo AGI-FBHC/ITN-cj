@@ -369,12 +369,14 @@ function DagQuickBuilder({
   sourceId,
   targetId,
   onStageEdge,
+  onPreviewEdge,
 }: {
   categories: Map<number, CategoryInfo>;
   edges: KcGraphEdge[];
   sourceId: number | null;
   targetId: number | null;
   onStageEdge?: (source: number, target: number, edgeType: string, rationale: string) => void;
+  onPreviewEdge?: (source: number, target: number) => void;
 }) {
   const options = useMemo(
     () =>
@@ -486,10 +488,18 @@ function DagQuickBuilder({
                 <span className="rounded-md border border-brand/20 bg-white/70 px-1.5 py-0.5 text-[10px] text-brand">{typeLabel[item.edgeType] || item.edgeType}</span>
               </div>
               <p className="mt-1.5 leading-4 text-ink-2">{item.rationale || "模型未给出理由"}</p>
-              <button onClick={() => stageSuggestion(item)} className="lf-row-btn lf-row-btn-primary mt-2">
-                <Plus size={12} />
-                加入待保存
-              </button>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {onPreviewEdge && (
+                  <button onClick={() => onPreviewEdge(item.prereqCategoryId, item.categoryId)} className="lf-row-btn text-brand">
+                    <GitBranch size={12} />
+                    图中预览
+                  </button>
+                )}
+                <button onClick={() => stageSuggestion(item)} className="lf-row-btn lf-row-btn-primary">
+                  <Plus size={12} />
+                  加入待保存
+                </button>
+              </div>
             </div>
           ))
         )}
@@ -899,6 +909,10 @@ export default function KnowledgeGraphAdmin() {
             sourceId={builderSourceId}
             targetId={builderTargetId}
             onStageEdge={(source, target, edgeType, rationale) => stageBuilderEdge(source, target, edgeType, rationale)}
+            onPreviewEdge={(source, target) => {
+              setBuilderSourceId(source);
+              setBuilderTargetId(target);
+            }}
           />
         </div>
         </>
