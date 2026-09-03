@@ -203,11 +203,7 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
   };
 
   const forgeDone = () => {
-    toast.success(`「${forge?.name}」画像已生成`, {
-      description: forge?.confidence && forge.confidence > 40
-        ? `画像置信度约 ${forge.confidence}% · 后续学习会继续校准`
-        : '置信度 33% · 前两讲我会多问几个检查点，边学边把画像测准',
-    });
+    toast.success('已为您生成初始画像');
     navigate('/me');
   };
 
