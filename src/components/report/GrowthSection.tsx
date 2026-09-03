@@ -174,13 +174,17 @@ function resourceTargetFor(
   return target ? `/learn/resource/${encodeURIComponent(target.id)}` : fallback;
 }
 
+interface AdviceMapTarget {
+  chapterId: string | null;
+  topicId: string | null;
+}
+
 function adviceTargetFor(
   learnerId: string,
   nodes: GraphNode[],
   kpId: string | undefined,
   hint: string,
-  resources: LearningResourceSummary[],
-  fallback: string,
+  fallback: AdviceMapTarget,
 ): string {
   const normalizedKpId = kpId?.trim()
     || hint.match(/\b(?:kp-\d+-\d+|ch\d+[\w-]*|kp-[a-z0-9-]+)\b/)?.[0]
@@ -189,11 +193,13 @@ function adviceTargetFor(
     const node = nodes.find((item) => item.id === normalizedKpId || item.kpId === normalizedKpId);
     if (node?.kind === 'domain') return learnMapPath(learnerId, node.id);
     if (node?.kind === 'topic') {
-      const parent = nodes.find((item) => item.id === node.kpId);
+      const parent = nodes.find((item) => item.kind === 'domain' && item.id === node.kpId);
       return learnMapPath(learnerId, parent?.id ?? node.kpId, node.id);
     }
   }
-  return resourceTargetFor(resources, hint, fallback);
+  return fallback.chapterId
+    ? learnMapPath(learnerId, fallback.chapterId, fallback.topicId)
+    : learnMapPath(learnerId);
 }
 
 /** 建议卡：点击整行直达对应资源；右下箭头仅用于展开/收起「决策依据」 */
@@ -296,12 +302,14 @@ export function WeeklyAdviceCard({
   report,
   resources,
   nodes = [],
+  fallbackTarget,
   className,
 }: {
   learner: Learner;
   report: LearnerReport;
   resources: LearningResourceSummary[];
   nodes?: GraphNode[];
+  fallbackTarget?: AdviceMapTarget;
   className?: string;
 }) {
   const navigate = useNavigate();
@@ -351,8 +359,16 @@ export function WeeklyAdviceCard({
     ];
   }, [learner, report, resources]);
 
-  const advice = advisorAdvice ?? fallbackAdvice;
   const advisorKpId = report.blindSpots[0]?.kpId;
+  /* 跳转地址在渲染时统一按最新知识网络节点解析，避免接口返回时节点还没加载完而退化成 /resources */
+  const advice = useMemo(() => {
+    const source = advisorAdvice ?? fallbackAdvice;
+    const learnerId = currentLearner.id || learner.id;
+    return source.map((item) => ({
+      ...item,
+      href: adviceTargetFor(learnerId, nodes, item.kpId, `${item.cta} ${item.text}`, fallbackTarget ?? { chapterId: null, topicId: null }),
+    }));
+  }, [advisorAdvice, currentLearner.id, fallbackAdvice, fallbackTarget, learner.id, nodes]);
 
   useEffect(() => {
     if (!UUID_PATTERN.test(learner.id)) {
@@ -372,7 +388,7 @@ export function WeeklyAdviceCard({
           icon: iconPool[index % iconPool.length],
           text: item.text,
           cta: item.cta || '去看看',
-          href: adviceTargetFor(currentLearner.id || learner.id, nodes, item.kpId, `${item.cta} ${item.text}`, resources, '/resources'),
+          href: '',
           kpId: item.kpId,
           priority: item.priority,
           evidence: item.evidence || '基于你的真实学情生成本周建议',
