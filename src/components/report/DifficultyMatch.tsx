@@ -9,7 +9,6 @@ import { weakestKpOf } from '@/data/learners';
 import type { LearnerReport } from '@/data/reportData';
 import { knowledgePoints, getKnowledgePoint } from '@/data/knowledgePoints';
 import ChartCard, { ReactECharts } from '@/components/ChartCard';
-import { useProfile } from '@/context/ProfileContext';
 
 /** 非带外知识点的资源难度偏移（均落在 ±10 适配带内） */
 const offsetByKp: Record<string, number> = {
@@ -30,8 +29,6 @@ export default function DifficultyMatch({
   learner: Learner;
   report: LearnerReport;
 }) {
-  const { viewMode } = useProfile();
-  const isLearner = viewMode === 'learner';
   const model = useMemo(() => {
     /* 按学习路径首现顺序排列 6 个知识点 */
     const orderedIds: string[] = [];
@@ -228,11 +225,6 @@ export default function DifficultyMatch({
       }
     >
       <ReactECharts option={option} height={360} />
-      <p className="mt-3 border-t border-hairline pt-3 text-[13px] leading-[21px] text-ink-muted">
-        {isLearner
-          ? '给你的题会跟着你的正确率自动调难度——太难就降、太简单就升，尽量让你一直待在“跳一跳够得着”的区间。砖红圈出的是早期偏难的资料，第 2 周已经调回来了。'
-          : '资源难度由 ARB-05 依据近 3 次测评正确率动态回调——这就是「交互反馈 → 动态决策更新」闭环的量化证据。砖红圈出点为早期带外资源，已于第 2 周回调至适配带内。'}
-      </p>
     </ChartCard>
   );
 }

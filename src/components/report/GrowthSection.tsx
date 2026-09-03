@@ -325,6 +325,7 @@ export function WeeklyAdviceCard({
   }, [learner, report, resources]);
 
   const advice = advisorAdvice ?? fallbackAdvice;
+  const advisorKpId = report.blindSpots[0]?.kpId;
 
   useEffect(() => {
     if (!UUID_PATTERN.test(learner.id)) {
@@ -333,7 +334,10 @@ export function WeeklyAdviceCard({
     }
     let cancelled = false;
     setAdvisorLoading(true);
-    void api.askAgentWeeklyPlan(currentLearner.id || learner.id, report.blindSpots[0]?.kpId)
+    const timeout = window.setTimeout(() => {
+      if (!cancelled) setAdvisorLoading(false);
+    }, 15_000);
+    void api.askAgentWeeklyPlan(currentLearner.id || learner.id, advisorKpId)
       .then((result) => {
         if (cancelled) return;
         const iconPool = [Wrench, ClipboardCheck, BookOpen];
@@ -343,18 +347,19 @@ export function WeeklyAdviceCard({
           cta: item.cta || '去看看',
           href: resourceTargetFor(resources, `${item.cta} ${item.text}`, '/resources'),
           priority: item.priority,
-          evidence: item.evidence || 'ARB-05 基于你的真实学情生成本周建议',
+          evidence: item.evidence || '基于你的真实学情生成本周建议',
         }));
         if (mapped.length > 0) setAdvisorAdvice(mapped);
       })
       .catch(() => undefined)
       .finally(() => {
+        window.clearTimeout(timeout);
         if (!cancelled) setAdvisorLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [currentLearner.id, learner.id, report, resources]);
+  }, [advisorKpId, currentLearner.id, learner.id]);
 
   return (
     <div className={cn('lf-card h-full border-t-[3px] !border-t-[#5A6553] p-5', className)}>
@@ -365,10 +370,10 @@ export function WeeklyAdviceCard({
         {advisorLoading && !advisorAdvice ? (
           <span className="inline-flex items-center gap-1.5 font-mono text-[10.5px] text-ink-muted">
             <Loader2 size={12} className="animate-spin text-brand" />
-            ARB-05 生成中
+            生成中…
           </span>
         ) : (
-          <span className="font-mono text-[11px] text-ink-muted">{advisorAdvice ? 'ARB-05 实时建议' : '本周调度建议'}</span>
+          <span className="font-mono text-[11px] text-ink-muted">{advisorAdvice ? '已基于学情生成' : '本周调度建议'}</span>
         )}
       </div>
       <div className="space-y-2">
