@@ -115,13 +115,14 @@ export default function ResourceCenterAdmin() {
     };
   }, []);
 
-  const generationContext = () => ({
+  const generationContext = (extra: Record<string, unknown> = {}) => ({
     adminGeneration: true,
     domainCode: domain?.code,
     nodeCode: node?.nodeCode,
     topicName: node?.name,
     kpId: node?.nodeCode,
     groupName: selectedGroupName,
+    ...extra,
   });
   const groupTypeMap = useMemo(() => {
     const map = new Map<string, Set<ResourceKind>>();
@@ -143,6 +144,19 @@ export default function ResourceCenterAdmin() {
   const groupNames = useMemo(() => Array.from(new Set(['默认分组', ...groupTypeMap.keys()])), [groupTypeMap]);
   useEffect(() => { if (!groupNames.includes(selectedGroupName)) setSelectedGroupName('默认分组'); }, [groupNames, selectedGroupName]);
   const completedTypes = groupTypeMap.get(selectedGroupName) ?? new Set<ResourceKind>();
+  const groupTypeTasks = useMemo(() => {
+    const map = new Map<string, Record<ResourceKind, GenerationTask>>();
+    for (const task of generationTasks) {
+      const ctx = taskContext(task);
+      if (ctx.domainCode !== domain?.code || ctx.nodeCode !== node?.nodeCode) continue;
+      const group = String(ctx.groupName || '默认分组');
+      const type = (task.taskKind === 'ppt' ? 'ppt' : task.resourceType) as ResourceKind;
+      const entry = map.get(group) ?? {} as Record<ResourceKind, GenerationTask>;
+      if (!entry[type]) entry[type] = task;
+      map.set(group, entry);
+    }
+    return map;
+  }, [generationTasks, domain?.code, node?.nodeCode]);
   const groupedEntries = useMemo(() => {
     const map = new Map<string, Map<ResourceKind, AdminResourceItem>>();
     const ensure = (g: string) => { if (!map.has(g)) map.set(g, new Map()); return map.get(g)!; };
@@ -156,7 +170,7 @@ export default function ResourceCenterAdmin() {
   }, [listQ.data?.items, completedPptItems, generationTasks, domain?.code, node?.nodeCode]);
   const pptReady = ['lecture', 'practice', 'quiz'].every((type) => completedTypes.has(type as ResourceKind));
 
-  const startGeneration = async (target: ResourceKind) => {
+  const startGeneration = async (target: ResourceKind, regenerate = false) => {
     if (!node || !domain || domain.code === '__unassigned__') throw new Error('请先选择一个具体知识点');
     if (target === 'ppt') {
       const request: PresentationRequest = {
@@ -164,7 +178,7 @@ export default function ResourceCenterAdmin() {
         title: node.name,
         audience: 'students', purpose: 'courseware', style: 'education', backgroundStyle: 'blue-white-minimal',
         language: 'zh-CN', slideCount: 0, aspectRatio: '16:9', detailLevel: 'detailed',
-        includeSpeakerNotes: true, modelProvider: 'mimo', generationMode: 'template', generationContext: generationContext(),
+        includeSpeakerNotes: true, modelProvider: 'mimo', generationMode: 'template', generationContext: generationContext(regenerate ? { regenerate: true } : {}),
       };
       const task = await presentationApi.createPresentation(request);
       return { taskKind: 'ppt' as const, id: task.id };
@@ -175,10 +189,19 @@ export default function ResourceCenterAdmin() {
       kpId: node.nodeCode,
       detailLevel: 'detailed',
       questionCount: target === 'quiz' ? 15 : undefined,
-      generationContext: generationContext(),
+      generationContext: generationContext(regenerate ? { regenerate: true } : {}),
     };
     const task = await api.startLearningResourceTask(target, request);
     return { taskKind: 'resource' as const, id: task.id };
+  };
+
+  const launchGeneration = (target: ResourceKind, regenerate = false) => {
+    void startGeneration(target, regenerate)
+      .then((result) => {
+        void loadGenerationTasks();
+        navigate(`/admin/workbench?task=${result.taskKind}-${result.id}`);
+      })
+      .catch((error) => toast.error(error instanceof Error ? error.message : '生成任务启动失败'));
   };
 
   const startSelected = async () => {
@@ -186,7 +209,7 @@ export default function ResourceCenterAdmin() {
     if (!targets.length) return;
     setGenerationBusy(true);
     try {
-      const results = await Promise.allSettled(targets.map(startGeneration));
+      const results = await Promise.allSettled(targets.map((target) => startGeneration(target)));
       const successful = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []);
       const failedCount = results.length - successful.length;
       if (failedCount) toast.error(`${failedCount} 项生成任务未能启动`);
@@ -527,6 +550,11 @@ export default function ResourceCenterAdmin() {
                 groupedEntries.map(([groupName, typeMap]) => {
                   const isTemplate = [...typeMap.values()].some((item) => item.template);
                   const firstItem = [...typeMap.values()][0];
+                  const activeTypeTasks = groupTypeTasks.get(groupName);
+                  const rowTypeCount = new Set<ResourceKind>([
+                    ...typeMap.keys(),
+                    ...(activeTypeTasks ? Object.keys(activeTypeTasks) as ResourceKind[] : []),
+                  ]).size;
                   const isExpanded = expandedGroups.has(groupName);
                   const matchKeyword = (item?: AdminResourceItem) => {
                     if (!keyword || !item) return !keyword;
@@ -545,7 +573,7 @@ export default function ResourceCenterAdmin() {
                         {isExpanded ? <ChevronDown size={14} className="shrink-0" /> : <ChevronRight size={14} className="shrink-0" />}
                         <span className="text-sm font-bold text-ink">{groupName}</span>
                         {isTemplate && <span className="lf-pill lf-pill-ok">母版</span>}
-                        <span className="ml-1 text-[10px] text-ink-muted">({typeMap.size}/4)</span>
+                        <span className="ml-1 text-[10px] text-ink-muted">({rowTypeCount}/4)</span>
                         <span className="ml-auto" />
                         {view === 'library' && (
                           <button
@@ -562,6 +590,9 @@ export default function ResourceCenterAdmin() {
                         <div className="border-t border-white/60 px-4 py-1">
                           {kinds.map(([type, label, _desc, Icon]) => {
                             const item = typeMap.get(type);
+                            const task = activeTypeTasks?.[type] ?? null;
+                            const active = task ? activeGenerationStatuses.has(task.status) : false;
+                            const hasPriorState = Boolean(item) || task !== null;
                             if (keyword) {
                               const q = keyword.toLowerCase();
                               if (item && !item.title.toLowerCase().includes(q) && !(item.topic ?? '').toLowerCase().includes(q)) return null;
@@ -576,7 +607,11 @@ export default function ResourceCenterAdmin() {
                                     <span className="min-w-0 flex-1 truncate font-semibold text-ink" title={item.title}>{item.title}</span>
                                     {item.archivedAt ? <span className="lf-pill lf-pill-warn">已归档</span> : null}
                                     {view !== 'archive' && (
-                                      <button onClick={() => { void startGeneration(type).then((r) => { void loadGenerationTasks(); navigate(`/admin/workbench?task=${r.taskKind}-${r.id}`); }); }} className="lf-row-btn text-ink-muted" title="重新生成"><RefreshCw size={11} />重新生成</button>
+                                      active ? (
+                                        <span className="lf-pill lf-pill-warn"><Loader2 size={11} className="animate-spin" />生成中 {task.progress}%</span>
+                                      ) : (
+                                        <button onClick={() => launchGeneration(type, true)} className="lf-row-btn text-ink-muted" title="重新生成"><RefreshCw size={11} />重新生成</button>
+                                      )
                                     )}
                                     <button onClick={() => preview(item)} className="lf-row-btn"><Eye size={11} />预览</button>
                                     {openResourceLog && <button onClick={() => openResourceLog(item)} className="lf-row-btn" title="打开生成日志"><FileText size={11} />日志</button>}
@@ -589,8 +624,17 @@ export default function ResourceCenterAdmin() {
                                       <button onClick={() => void act(item, 'archive')} className="lf-row-btn text-ink-muted">归档</button>
                                     )}
                                   </>
+                                ) : active ? (
+                                  <>
+                                    <span className="min-w-0 flex-1 truncate font-semibold text-brand">
+                                      <span className="inline-flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" />生成中 {task.progress}% · {task.stageMessage || '任务进行中'}</span>
+                                    </span>
+                                    {view !== 'archive' && (
+                                      <button onClick={() => navigate(`/admin/workbench?task=${task.taskKind}-${task.id}`)} className="lf-row-btn">查看任务</button>
+                                    )}
+                                  </>
                                 ) : (
-                                  <button onClick={() => { void startGeneration(type).then((r) => { void loadGenerationTasks(); navigate(`/admin/workbench?task=${r.taskKind}-${r.id}`); }); }} className="lf-row-btn lf-row-btn-primary"><Plus size={11} />生成</button>
+                                  <button onClick={() => launchGeneration(type, hasPriorState)} className="lf-row-btn lf-row-btn-primary"><Plus size={11} />生成</button>
                                 )}
                               </div>
                             );
