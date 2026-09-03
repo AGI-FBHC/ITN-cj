@@ -95,7 +95,6 @@ export default function UnitQuickList({
           const categoryLabel = kp.parentName;
           const title = kp.name;
           const topicCount = kp.coreTopics?.length ?? 0;
-          const topicCols = topicCount >= 8 ? 4 : topicCount >= 6 ? 3 : topicCount >= 3 ? 2 : 1;
           return (
             <div
               key={kp.id}
@@ -154,7 +153,7 @@ export default function UnitQuickList({
               </button>
               {expanded && topicCount > 0 && (
                 <div className={cn('border-t border-[#2E6BA8]/10 px-3 pb-3 pt-2.5', columns ? 'bg-[#F5FAFF]' : 'bg-[#F7FAFC]')}>
-                  <div className={cn('grid gap-1.5', { 'grid-cols-1': topicCols === 1, 'grid-cols-2': topicCols === 2, 'grid-cols-3': topicCols === 3, 'grid-cols-4': topicCols === 4 })}>
+                  <div className="grid auto-rows-min grid-cols-2 gap-1.5 sm:grid-cols-4">
                     {kp.coreTopics.map((topic, index) => (
                       <div key={`${kp.id}-${index}`} className="flex items-center gap-1.5 rounded-lg border border-black/[0.04] bg-white/70 px-2 py-1.5 text-[11.5px] leading-4 text-ink-2">
                         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand/50" />
