@@ -237,7 +237,6 @@ export default function Login() {
         <div className="flex items-center gap-3">
           <img src="/logo.png" alt="智训云枢" className="h-9 w-9" />
           <span className="font-serif text-[20px] font-bold text-ink">智训云枢</span>
-          <span className="font-mono text-[10.5px] tracking-wider text-ink-muted">LearnForge</span>
         </div>
         <div className="max-w-[460px]">
           <motion.h1

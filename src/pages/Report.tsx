@@ -367,7 +367,7 @@ function buildReportHtml(data: {
 
   ${data.evidence.length ? `<h2>近 7 天真实学习记录</h2>${evidenceRows}` : ''}
 
-  <div class="footer">本报告由智训云枢 LearnForge 基于真实学习记录生成 · 仅用于个人学习复盘</div>
+  <div class="footer">本报告由智训云枢基于真实学习记录生成 · 仅用于个人学习复盘</div>
 </div>
 </body>
 </html>`;

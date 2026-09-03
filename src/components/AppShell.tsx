@@ -90,15 +90,15 @@ const expertNavGroups: { heading?: string; items: NavItem[] }[] = [
 ];
 
 const pageTitleMap: Record<string, { title: string; crumb: string }> = {
-  '/': { title: '总览 Dashboard', crumb: 'LEARNFORGE / OVERVIEW' },
-  '/me': { title: '我的学习', crumb: 'LEARNFORGE / MY LEARNING' },
-  '/learn': { title: '学 · 练 · 我的课程', crumb: 'LEARNFORGE / COURSE' },
-  '/profiles': { title: '学情画像', crumb: 'LEARNFORGE / PROFILES' },
-  '/agents': { title: '多智能体协同调度', crumb: 'LEARNFORGE / AGENTS' },
-  '/resources': { title: '个性化资源生成', crumb: 'LEARNFORGE / RESOURCES' },
-  '/report': { title: '学情报告', crumb: 'LEARNFORGE / REPORT' },
-  '/tutoring': { title: '交互导学', crumb: 'LEARNFORGE / TUTORING' },
-  '/knowledge': { title: '知识库', crumb: 'LEARNFORGE / KNOWLEDGE' },
+  '/': { title: '总览 Dashboard', crumb: '智训云枢 / OVERVIEW' },
+  '/me': { title: '我的学习', crumb: '智训云枢 / MY LEARNING' },
+  '/learn': { title: '学 · 练 · 我的课程', crumb: '智训云枢 / COURSE' },
+  '/profiles': { title: '学情画像', crumb: '智训云枢 / PROFILES' },
+  '/agents': { title: '多智能体协同调度', crumb: '智训云枢 / AGENTS' },
+  '/resources': { title: '个性化资源生成', crumb: '智训云枢 / RESOURCES' },
+  '/report': { title: '学情报告', crumb: '智训云枢 / REPORT' },
+  '/tutoring': { title: '交互导学', crumb: '智训云枢 / TUTORING' },
+  '/knowledge': { title: '知识库', crumb: '智训云枢 / KNOWLEDGE' },
 };
 
 /** 实时时钟 mono HH:MM:SS 每秒走动（仅系统透视） */
@@ -353,7 +353,7 @@ export default function AppShell() {
               {!collapsed && (
                 <span className="flex flex-col leading-tight">
                   <span className="font-serif text-[17px] font-bold text-ink">智训云枢</span>
-                  <span className="font-mono text-[10px] tracking-wider text-ink-muted">LearnForge v2.1</span>
+                  <span className="font-mono text-[10px] tracking-wider text-ink-muted">v2.1</span>
                 </span>
               )}
             </Link>

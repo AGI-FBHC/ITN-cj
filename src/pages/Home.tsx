@@ -168,7 +168,7 @@ function HeroSection() {
           </h1>
 
           <p data-hero="en" className="mt-4 font-display text-[19px] italic leading-[26px] text-ochre">
-            LearnForge — Multi-Agent Personalized Training Engine
+            智训云枢 · Multi-Agent Personalized Training Engine
           </p>
 
           <p data-hero="sub" className="mt-5 max-w-[480px] text-[15px] leading-[26px] text-ink-2">
@@ -1005,7 +1005,7 @@ function FooterSection() {
         <div>
           <div className="flex items-center gap-2.5">
             <img src="/logo.png" alt="智训云枢" className="h-8 w-8" />
-            <span className="font-serif text-[16px] font-bold text-ink">智训云枢 LearnForge</span>
+            <span className="font-serif text-[16px] font-bold text-ink">智训云枢</span>
           </div>
           <p className="mt-3 font-mono text-[11.5px] leading-[18px] text-ink-muted">
             XH-202630 · 上海云之脑智能科技有限公司
@@ -1027,7 +1027,7 @@ function FooterSection() {
             前端演示环境 · 全量模拟数据
             <br />
             React 19 + Tailwind
-            <br />© 2025 LearnForge Demo
+            <br />© 2025 智训云枢
           </p>
         </div>
       </div>
