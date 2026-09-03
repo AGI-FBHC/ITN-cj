@@ -433,7 +433,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
             onClick={() => {
               if (pptBusy) { navigate(`/learn/customize/${pptCustomizeTask!.id}`); return; }
               if (pptCustomized && pptCustomizeTask?.resourceId) { void openPptCourseware(); return; }
-              if (pptForScope?.id) { void startCustomizeLearning({ adminResourceId: pptForScope.id, kpId: customizationKpId, routeKpId: kpId, resourceType: 'ppt', resourceLabel: '交互课件', topic: selectedTopicName ?? kp.name }); return; }
+              if (pptForScope?.id) { void startCustomizeLearning({ adminResourceId: pptForScope.id, kpId: customizationKpId, resourceType: 'ppt', resourceLabel: '交互课件' }); return; }
               toast.info('暂无资源');
             }}
             title={pptBusy ? '查看定制进度' : pptCustomized ? '打开交互课件' : pptForScope ? '定制交互课件' : '暂无资源'}
