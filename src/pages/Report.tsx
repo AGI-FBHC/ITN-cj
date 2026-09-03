@@ -721,16 +721,8 @@ export default function Report() {
       (learningMap.topicProgress[node.id] ?? 0) > 0 || (learningMap.topicMastery[node.id] ?? 0) > 0,
     ).length;
     const topicCoverage = topicTotal ? topicCovered / topicTotal : 0;
-    const startedChapterRatio = domains.length
-      ? domains.filter((domain) => (learningMap.chapterProgress[domain.id] ?? 0) > 0).length / domains.length
-      : 0;
-    /* 覆盖率口径：资源是否已可学/已覆盖到图谱 > 单纯“是否学完”，避免冷启动阶段把可用资源也判成空白 */
-    const knowledgeCoverage = Math.max(0, Math.min(100, Math.round(
-      Math.max(
-        0.35,
-        0.45 * formCoverage + 0.25 * Math.max(topicCoverage, startedChapterRatio) + 0.20 * resourceCoverage,
-      ) * 100,
-    )));
+    /* 知识覆盖率口径沿用原始算法：已完成资源 + 已开始/已形成掌握的知识点 */
+    const knowledgeCoverage = Math.max(0, Math.min(100, Math.round((0.55 * resourceCoverage + 0.45 * topicCoverage) * 100)));
     const knowledgeCoverageNote = topicTotal > 0
       ? `完成 ${resourceLearned}/${resourceTotal} 个资源 · 覆盖 ${topicCovered}/${topicTotal} 个知识点`
       : `完成 ${resourceLearned}/${resourceTotal} 个学习资源`;

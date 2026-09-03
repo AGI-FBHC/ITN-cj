@@ -1,6 +1,6 @@
 /**
  * ScoreBand — 报告页头综合评分带（report.md S1，4 格）
- * 综合适配评分（简洁环形 gauge）/ 知识覆盖率 / 盲区消解数 / 学习投入
+ * 综合适配评分（简洁环形 gauge）/ 资源覆盖度 / 盲区消解数 / 学习投入
  */
 import { useMemo, useRef } from 'react';
 import { motion, useInView } from 'framer-motion';
@@ -183,7 +183,7 @@ export default function ScoreBand({ report }: { report: LearnerReport }) {
         value={coverage}
         decimals={1}
         suffix="%"
-        name="知识覆盖率"
+        name="资源覆盖度"
         note={coverageNote}
         badge={coverageBadge}
         badgeTone="green"
