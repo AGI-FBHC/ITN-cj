@@ -222,7 +222,7 @@ export default function BlindFocusBoard({
               已消散 {stats.resolved}
             </span>
           </div>
-          <div className="mt-3 space-y-2">
+          <div className="mt-3 h-[264px] space-y-2 overflow-y-auto pr-1">
             {activeRecords.length === 0 ? (
               <div className="rounded-[12px] border border-dashed border-hairline bg-paper p-4 text-[12px] leading-5 text-ink-muted">
                 尚未选择盲区目标。建议先选一个最近要学的知识点，完成后这里会自动显示消散状态。

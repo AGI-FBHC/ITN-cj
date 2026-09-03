@@ -38,7 +38,7 @@ import type { LearnerAnalyticsProfile, LearnerGrowth, LearningJournal, Onboardin
 import GapSection from '@/components/report/GapSection';
 import DifficultyMatch from '@/components/report/DifficultyMatch';
 import PathRoadmap from '@/components/report/PathRoadmap';
-import GrowthSection from '@/components/report/GrowthSection';
+import { GrowthTrendChart, WeeklyAdviceCard } from '@/components/report/GrowthSection';
 import BlindFocusBoard, { readBlindFocusRecords, type FocusKp } from '@/components/report/BlindFocusBoard';
 import ScoreBand from '@/components/report/ScoreBand';
 import StreakCalendar from '@/components/StreakCalendar';
@@ -1068,50 +1068,52 @@ export default function Report() {
           />
         </div>
         <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_440px]">
-          <div className="lf-card p-4">
-            <div className="mb-3 flex flex-wrap gap-2 border-b border-hairline pb-3">
-              {[
-                { key: 'score' as const, label: '综合评分', Icon: Target },
-                { key: 'gap' as const, label: '知识盲区', Icon: History },
-                { key: 'difficulty' as const, label: '难度匹配', Icon: BookOpen },
-                { key: 'path' as const, label: '路径规划', Icon: Route },
-              ].map((tab) => {
-                const Icon = tab.Icon;
-                const active = activeMatchTab === tab.key;
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setActiveMatchTab(tab.key)}
-                    className={cn(
-                      'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium transition-all',
-                      active
-                        ? 'bg-brand text-paper shadow-sm'
-                        : 'bg-paper-deep text-ink-muted hover:bg-brand-tint hover:text-brand',
-                    )}
-                  >
-                    <Icon size={13} />
-                    {tab.label}
-                  </button>
-                );
-              })}
+          <div className="min-w-0 space-y-5">
+            <div className="lf-card p-4">
+              <div className="mb-3 flex flex-wrap gap-2 border-b border-hairline pb-3">
+                {[
+                  { key: 'score' as const, label: '综合评分', Icon: Target },
+                  { key: 'gap' as const, label: '知识盲区', Icon: History },
+                  { key: 'difficulty' as const, label: '难度匹配', Icon: BookOpen },
+                  { key: 'path' as const, label: '路径规划', Icon: Route },
+                ].map((tab) => {
+                  const Icon = tab.Icon;
+                  const active = activeMatchTab === tab.key;
+                  return (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => setActiveMatchTab(tab.key)}
+                      className={cn(
+                        'inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] font-medium transition-all',
+                        active
+                          ? 'bg-brand text-paper shadow-sm'
+                          : 'bg-paper-deep text-ink-muted hover:bg-brand-tint hover:text-brand',
+                      )}
+                    >
+                      <Icon size={13} />
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="max-h-[680px] overflow-y-auto pr-1">
+                {activeMatchTab === 'score' && <ScoreBand report={visualReport} />}
+                {activeMatchTab === 'gap' && <GapSection learner={reportLearner} report={visualReport} />}
+                {activeMatchTab === 'difficulty' && <DifficultyMatch learner={reportLearner} report={visualReport} />}
+                {activeMatchTab === 'path' && <PathRoadmap learner={reportLearner} report={visualReport} />}
+              </div>
             </div>
-            <div className="max-h-[680px] overflow-y-auto pr-1">
-              {activeMatchTab === 'score' && <ScoreBand report={visualReport} />}
-              {activeMatchTab === 'gap' && <GapSection learner={reportLearner} report={visualReport} />}
-              {activeMatchTab === 'difficulty' && <DifficultyMatch learner={reportLearner} report={visualReport} />}
-              {activeMatchTab === 'path' && <PathRoadmap learner={reportLearner} report={visualReport} />}
-            </div>
+            <GrowthTrendChart report={visualReport} />
           </div>
-          <StreakCalendar
-            className="xl:sticky xl:top-6"
-            streakDays={analytics?.stats.streakDays ?? 0}
-            studyDates={analytics?.stats.studyDates ?? []}
-            totalDays={analytics?.stats.totalDays ?? 0}
-          />
-        </div>
-        <div className="mt-5">
-          <GrowthSection learner={reportLearner} report={visualReport} />
+          <div className="space-y-5">
+            <StreakCalendar
+              streakDays={analytics?.stats.streakDays ?? 0}
+              studyDates={analytics?.stats.studyDates ?? []}
+              totalDays={analytics?.stats.totalDays ?? 0}
+            />
+            <WeeklyAdviceCard learner={reportLearner} report={visualReport} />
+          </div>
         </div>
       </section>
       <section className="mt-12">

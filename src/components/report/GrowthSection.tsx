@@ -240,12 +240,18 @@ function AdviceRow({
   );
 }
 
-export default function GrowthSection({
+export function GrowthTrendChart({ report }: { report: LearnerReport }) {
+  return <GrowthChart report={report} />;
+}
+
+export function WeeklyAdviceCard({
   learner,
   report,
+  className,
 }: {
   learner: Learner;
   report: LearnerReport;
+  className?: string;
 }) {
   const navigate = useNavigate();
   const { viewMode, currentLearner } = useProfile();
@@ -327,36 +333,46 @@ export default function GrowthSection({
   }, [currentLearner.id, learner.id, report]);
 
   return (
+    <div className={cn('lf-card h-full border-t-[3px] !border-t-[#5A6553] p-5', className)}>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        {isLearner
+          ? <span className="font-serif text-[15px] font-semibold text-ink">这周建议你做的</span>
+          : <AgentChip agentId="ARB-05" />}
+        {advisorLoading && !advisorAdvice ? (
+          <span className="inline-flex items-center gap-1.5 font-mono text-[10.5px] text-ink-muted">
+            <Loader2 size={12} className="animate-spin text-brand" />
+            ARB-05 生成中
+          </span>
+        ) : (
+          <span className="font-mono text-[11px] text-ink-muted">{advisorAdvice ? 'ARB-05 实时建议' : '本周调度建议'}</span>
+        )}
+      </div>
+      <div className="space-y-2">
+        {advice.map((a, i) => (
+          <AdviceRow key={a.cta} advice={a} index={i} navigate={navigate} />
+        ))}
+      </div>
+      <p className="mt-4 border-t border-hairline pt-3 font-mono text-[11px] leading-[18px] text-ink-muted">
+        下次路径重排：完成标定测评后自动触发
+      </p>
+    </div>
+  );
+}
+
+export default function GrowthSection({
+  learner,
+  report,
+}: {
+  learner: Learner;
+  report: LearnerReport;
+}) {
+  return (
     <div className="grid gap-5 lg:grid-cols-12">
       <div className="lg:col-span-7">
-        <GrowthChart report={report} />
+        <GrowthTrendChart report={report} />
       </div>
-
-      {/* 本周建议（学习者看到的是人话，系统透视保留 Agent 归属） */}
       <div className="lg:col-span-5">
-        <div className="lf-card h-full border-t-[3px] !border-t-[#5A6553] p-5">
-          <div className="mb-4 flex items-center justify-between gap-2">
-            {isLearner
-              ? <span className="font-serif text-[15px] font-semibold text-ink">这周建议你做的</span>
-              : <AgentChip agentId="ARB-05" />}
-            {advisorLoading && !advisorAdvice ? (
-              <span className="inline-flex items-center gap-1.5 font-mono text-[10.5px] text-ink-muted">
-                <Loader2 size={12} className="animate-spin text-brand" />
-                ARB-05 生成中
-              </span>
-            ) : (
-              <span className="font-mono text-[11px] text-ink-muted">{advisorAdvice ? 'ARB-05 实时建议' : '本周调度建议'}</span>
-            )}
-          </div>
-          <div className="space-y-2">
-            {advice.map((a, i) => (
-              <AdviceRow key={a.cta} advice={a} index={i} navigate={navigate} />
-            ))}
-          </div>
-          <p className="mt-4 border-t border-hairline pt-3 font-mono text-[11px] leading-[18px] text-ink-muted">
-            下次路径重排：完成标定测评后自动触发
-          </p>
-        </div>
+        <WeeklyAdviceCard learner={learner} report={report} />
       </div>
     </div>
   );
