@@ -137,7 +137,7 @@ function AnswerTrend({ answers }: { answers?: boolean[] }) {
   );
 }
 
-/* ---------- 知识点图谱（可交互 SVG）：点节点选中 → 一键去学 ---------- */
+/* ---------- 知识点网络（可交互 SVG）：点节点选中 → 一键去学 ---------- */
 
 /** 六大知识点的领域关联边（岗位能力模型的天然依赖） */
 const KP_EDGES: [string, string][] = [
@@ -180,7 +180,7 @@ function KnowledgeGraphCard({
   return (
     <div className="lf-card p-5">
       <div className="lf-mono-label flex items-center gap-1.5">
-        <Waypoints size={12} /> GRAPH · 知识点图谱
+        <Waypoints size={12} /> GRAPH · 知识点网络
       </div>
 
       <svg viewBox="0 0 300 210" className="mt-2 block w-full" role="group" aria-label="知识点关系图，点击节点选择要学的知识点">
@@ -340,16 +340,16 @@ export default function SidePanel({
   onRecap: (t: KpTopic) => void;
   /** 本轮答题对错序列（按作答顺序），供「答题走势」迷你图使用；未传则显示占位 */
   answers?: boolean[];
-  /** 本节知识点 id（图谱高亮「本节」节点） */
+  /** 本节知识点 id（网络高亮「本节」节点） */
   kpId: string;
-  /** 学习者各知识点掌握度（图谱节点着色） */
+  /** 学习者各知识点掌握度（网络节点着色） */
   scores: Record<string, number>;
 }) {
   const acc = asked > 0 ? Math.round((correct / asked) * 100) : 0;
   const accColor = acc >= 80 ? '#6BA080' : acc >= 60 ? '#E7B45A' : asked === 0 ? '#4E7860' : '#B0483B';
   /* 本节知识点卡：手风琴展开，同时只展开一个 */
   const [expandedTopic, setExpandedTopic] = useState<string | null>(null);
-  /* 决策历史：让位给知识点图谱，默认折叠 */
+  /* 决策历史：让位给知识点网络，默认折叠 */
   const [historyOpen, setHistoryOpen] = useState(false);
 
   const gaugeOption = {
@@ -451,7 +451,7 @@ export default function SidePanel({
         </div>
       </div>
 
-      {/* 知识点图谱：点节点快速选择想学的知识点（原「决策历史」升为图谱，历史折叠保留在下方） */}
+      {/* 知识点网络：点节点快速选择想学的知识点（原「决策历史」升为网络，历史折叠保留在下方） */}
       <KnowledgeGraphCard kpId={kpId} scores={scores} />
 
       {/* 决策历史（折叠） */}

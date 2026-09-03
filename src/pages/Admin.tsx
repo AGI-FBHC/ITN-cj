@@ -23,7 +23,7 @@ const nav: { id: AdminSection; label: string; icon: typeof LayoutDashboard }[] =
   { id: "learners", label: "机构用户", icon: Users },
   { id: "knowledge", label: "知识库管理", icon: Database },
   { id: "quality", label: "知识质量", icon: BookCheck },
-  { id: "graph", label: "知识图谱", icon: Network },
+  { id: "graph", label: "知识网络", icon: Network },
   { id: "resources", label: "资源中心", icon: ClipboardList },
   { id: "workbench", label: "AI 教研工作台", icon: Sparkles },
   { id: "ingestion", label: "文档入库", icon: FileUp },
@@ -585,7 +585,7 @@ export default function Admin() {
                       ["学习者管理", true, "已接入"],
                       ["知识库读取", true, "Spring 数据接口"],
                       ["知识质量管理", coreQ.data === true, "KnowledgeCore"],
-                      ["图谱审核", coreQ.data === true, "KnowledgeCore"],
+                      ["网络审核", coreQ.data === true, "KnowledgeCore"],
                       ["文档预处理", predealQ.data === true, "predeal v2"],
                     ] as [string, boolean, string][]).map(([label, ok, detail]) => (
                       <tr key={label}>

@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 type Tab = "overview" | "review" | "edges" | "dag";
 type CategoryInfo = Pick<KcCategoryNode, "id" | "name" | "level" | "parent_id" | "chunk_count">;
 const tabs: { id: Tab; label: string }[] = [
-  { id: "overview", label: "图谱概览" },
+  { id: "overview", label: "网络概览" },
   { id: "review", label: "审核队列" },
   { id: "edges", label: "建边情况" },
   { id: "dag", label: "DAG 图" },
@@ -74,7 +74,7 @@ function EdgeDetails({ edge, names, onClose, onAction: _onAction }: { edge: KcGr
           <dt className="text-ink-muted">理由 / 证据</dt>
           <dd className="whitespace-pre-wrap leading-6 text-ink-2">{edge.rationale || "—"}</dd>
         </dl>
-        <div className="border-t border-white/60 p-5 text-xs text-ink-muted">当前阶段为只读图谱，审核与改边功能暂不开放。</div>
+        <div className="border-t border-white/60 p-5 text-xs text-ink-muted">当前阶段为只读网络，审核与改边功能暂不开放。</div>
       </div>
     </div>
   );
@@ -244,7 +244,7 @@ function DagQuickBuilder({
       const reply = await api.agentChat({
         modelProvider: "mimo",
         systemPrompt:
-          "你是知识图谱教研助手。根据给出的知识点清单和已有边，建议合理的先修、相关或易混淆边。只返回 JSON 数组，不要 Markdown，不要解释。每条格式：{\"prereqCategoryId\": number, \"categoryId\": number, \"edgeType\": \"prerequisite\" | \"related\" | \"contrasts_with\", \"rationale\": string}",
+          "你是知识网络教研助手。根据给出的知识点清单和已有边，建议合理的先修、相关或易混淆边。只返回 JSON 数组，不要 Markdown，不要解释。每条格式：{\"prereqCategoryId\": number, \"categoryId\": number, \"edgeType\": \"prerequisite\" | \"related\" | \"contrasts_with\", \"rationale\": string}",
         messages: [
           {
             role: "user",
@@ -544,7 +544,7 @@ export default function KnowledgeGraphAdmin() {
       setEdges(nextEdges.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))));
       setCategories(walkCategories(tree.tree));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "图谱数据读取失败");
+      toast.error(e instanceof Error ? e.message : "网络数据读取失败");
     } finally {
       setLoading(false);
     }
@@ -565,19 +565,19 @@ export default function KnowledgeGraphAdmin() {
           else if (kind === "reject") await adminKnowledgeApi.rejectEdge(id);
           else await adminKnowledgeApi.reverseEdge(id);
         }
-      toast.success("图谱审核操作已完成");
+      toast.success("网络审核操作已完成");
       setSelected(new Set());
       setDetail(null);
       await refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "图谱操作失败");
+      toast.error(e instanceof Error ? e.message : "网络操作失败");
     }
   };
   return (
     <>
       <div className="mb-5 flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-ink">知识图谱管理</h2>
+          <h2 className="text-2xl font-bold tracking-tight text-ink">知识网络管理</h2>
           <p className="mt-1 text-sm text-ink-muted">查看先修边、候选队列与 DAG；DAG 页右侧可快速建边并用 AI 生成候选关系。</p>
         </div>
         <button onClick={() => void refresh()} disabled={loading} className="lf-page-pill">
@@ -596,7 +596,7 @@ export default function KnowledgeGraphAdmin() {
       {loading && !edges.length ? (
         <div className="lf-empty flex min-h-72 items-center justify-center text-sm">
           <Loader2 size={16} className="mr-2 animate-spin" />
-          正在读取图谱数据…
+          正在读取网络数据…
         </div>
       ) : tab === "overview" ? (
         <Overview edges={edges} setTab={setTab} setStatus={setStatus} />

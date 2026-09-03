@@ -12,7 +12,7 @@ import { speciesOf, harvestsOf } from '@/data/garden';
 import { PottedSpecies } from '@/components/heal/SpeciesPlant';
 import { cn } from '@/lib/utils';
 
-/** 与图谱同一套生长阶段口径 */
+/** 与网络同一套生长阶段口径 */
 function growthStage(mastery: number, target: number, learned: boolean): number {
   if (!learned) return 0;
   if (mastery >= 95) return 5;

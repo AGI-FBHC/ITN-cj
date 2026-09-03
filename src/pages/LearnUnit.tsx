@@ -653,7 +653,7 @@ export default function LearnUnit() {
   /* 画像驱动现做：进页即触发（本讲已按画像拼装完成） */
   useEffect(() => hitSpot('gen'), []);
 
-  /* 图谱深链：?block=cN → 定位并闪烁对应概念块 */
+  /* 网络深链：?block=cN → 定位并闪烁对应概念块 */
   const pptTaskId = searchParams.get('ppt');
   const pptTopic = searchParams.get('topic');
   const pptRef = useRef<PptPlayerRef>(null);

@@ -271,7 +271,7 @@ export default function Learn() {
         transition={{ layout: { duration: 0.32, ease: [0.22, 1, 0.36, 1] } }}
         className={cn('mt-5 flex flex-col gap-0', viewMode === '2d' && 'lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-7')}
       >
-        {/* 上层只承载图谱与按需详情；章节速览在下方独立占满全局宽度。 */}
+        {/* 上层只承载网络与按需详情；章节速览在下方独立占满全局宽度。 */}
         <motion.div layout="position" className="relative min-w-0">
           {viewMode === '3d' && (
             <div className="absolute right-4 top-4 z-10 flex flex-col items-end gap-2">
@@ -348,7 +348,7 @@ export default function Learn() {
         </motion.div>
       )}
 
-      {/* ============ 移动端：图谱不适合小屏，单元卡片作为移动布局 ============ */}
+      {/* ============ 移动端：网络不适合小屏，单元卡片作为移动布局 ============ */}
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:hidden">
         {knowledgePoints.map((kp, i) => {
           const score = map.mastery[kp.id] ?? currentLearner.scores[kp.id] ?? 50;

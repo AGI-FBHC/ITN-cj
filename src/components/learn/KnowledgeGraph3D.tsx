@@ -1,5 +1,5 @@
 /**
- * KnowledgeGraph3D — Obsidian 风格 3D 知识图谱（智能展开版）
+ * KnowledgeGraph3D — Obsidian 风格 3D 知识网络（智能展开版）
  * 子节点自动选择空旷方向展开，文字跟随方向
  */
 import { useRef, useMemo, useState, useCallback, useEffect } from 'react';
