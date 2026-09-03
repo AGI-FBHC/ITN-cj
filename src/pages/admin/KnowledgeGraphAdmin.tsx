@@ -945,6 +945,24 @@ export default function KnowledgeGraphAdmin() {
           <EdgeTable edges={filtered} names={categories} onOpen={setDetail} />
         </div>
       ) : tab === "builder" ? (
+        <>
+        {pendingEdges.length > 0 && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand/25 bg-[#EEF6FF] px-4 py-3">
+            <div>
+              <p className="text-xs font-bold text-brand">待确认边 {pendingEdges.length} 条</p>
+              <p className="mt-0.5 text-[10.5px] text-ink-muted">确认后才会写入并刷新图形。</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button onClick={() => setPendingEdges([])} className="lf-row-btn text-ink-muted">
+                清空
+              </button>
+              <button onClick={() => void confirmPendingEdges()} className="lf-btn-primary justify-center gap-1 !px-4 !py-2">
+                <CheckCircle2 size={14} />
+                确认保存 {pendingEdges.length} 条
+              </button>
+            </div>
+          </div>
+        )}
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
           <SimpleChapterCanvas
             categories={categories}
@@ -965,34 +983,8 @@ export default function KnowledgeGraphAdmin() {
             onTargetIdChange={setBuilderTargetId}
             onStageEdge={(source, target, edgeType, rationale) => stageBuilderEdge(source, target, edgeType, rationale)}
           />
-          {pendingEdges.length > 0 && (
-            <div className="lf-card rounded-2xl p-4">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-xs font-semibold text-ink">待确认边 {pendingEdges.length} 条</p>
-                  <p className="mt-0.5 text-[10.5px] text-ink-muted">确认后才会写入并刷新图形。</p>
-                </div>
-                <button onClick={() => setPendingEdges([])} className="lf-row-btn text-ink-muted">
-                  清空
-                </button>
-              </div>
-              <div className="mt-2 max-h-40 space-y-1 overflow-auto">
-                {pendingEdges.map((item, index) => (
-                  <div key={`${item.prereqCategoryId}-${item.categoryId}-${index}`} className="flex items-center justify-between gap-2 rounded-lg border border-black/[0.04] bg-white/60 px-2 py-1.5 text-[11px]">
-                    <span className="min-w-0 flex-1 truncate">
-                      {categories.get(item.prereqCategoryId)?.name || item.prereqCategoryId} → {categories.get(item.categoryId)?.name || item.categoryId}
-                    </span>
-                    <span className="shrink-0 text-ink-muted">{typeLabel[item.edgeType] || item.edgeType}</span>
-                  </div>
-                ))}
-              </div>
-              <button onClick={() => void confirmPendingEdges()} className="lf-btn-primary mt-3 w-full justify-center">
-                <CheckCircle2 size={14} />
-                确认保存
-              </button>
-            </div>
-          )}
         </div>
+        </>
       ) : (
         <GraphCanvas edges={edges} categories={categories} />
       )}
