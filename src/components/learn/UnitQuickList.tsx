@@ -38,6 +38,7 @@ export default function UnitQuickList({
   mastery: masteryProp,
   progress: progressProp,
   nodeTargets,
+  onSelectTopic,
 }: {
   selectedKpId?: string | null;
   onSelect: (kpId: string) => void;
@@ -51,6 +52,8 @@ export default function UnitQuickList({
   progress?: Record<string, number>;
   /** 目标岗位门槛：nodeCode → { target, name }（章节门槛在速览进度条体现） */
   nodeTargets?: Record<string, { target: number; name?: string }>;
+  /** 点击展开区子知识点：模拟在 3D/2D 网络里点击该知识点 */
+  onSelectTopic?: (kpId: string, topicIndex: number) => void;
 }) {
   const { currentLearner } = useProfile();
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -155,10 +158,15 @@ export default function UnitQuickList({
                 <div className={cn('border-t border-[#2E6BA8]/10 px-3 pb-3 pt-2.5', columns ? 'bg-[#F5FAFF]' : 'bg-[#F7FAFC]')}>
                   <div className="grid auto-rows-min grid-cols-2 gap-1.5 sm:grid-cols-4">
                     {kp.coreTopics.map((topic, index) => (
-                      <div key={`${kp.id}-${index}`} className="flex items-center gap-1.5 rounded-lg border border-black/[0.04] bg-white/70 px-2 py-1.5 text-[11.5px] leading-4 text-ink-2">
+                      <button
+                        key={`${kp.id}-${index}`}
+                        type="button"
+                        onClick={() => onSelectTopic?.(kp.id, index)}
+                        className="flex items-center gap-1.5 rounded-lg border border-black/[0.04] bg-white/70 px-2 py-1.5 text-left text-[11.5px] leading-4 text-ink-2 transition-colors hover:border-brand/30 hover:bg-white hover:text-ink"
+                      >
                         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand/50" />
                         <span className="min-w-0 truncate">{topic}</span>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>

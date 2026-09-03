@@ -344,7 +344,14 @@ export default function Learn() {
           transition={{ duration: 0.35, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
           className="mt-4 border-t border-hairline/60 pt-4"
         >
-          <UnitQuickList selectedKpId={selectedKp} onSelect={(kpId) => { setSelectedKp(kpId); setSelectedTopic(null); setSingleExpandedKp(kpId); setGraphFocus({ id: kpId, at: Date.now() }); }} columns items={knowledgePoints} path={map.path} mastery={map.mastery} progress={map.chapterProgress} nodeTargets={map.nodeTargets} />
+          <UnitQuickList selectedKpId={selectedKp} onSelect={(kpId) => { setSelectedKp(kpId); setSelectedTopic(null); setSingleExpandedKp(kpId); setGraphFocus({ id: kpId, at: Date.now() }); }} onSelectTopic={(kpId, topicIndex) => {
+            setSelectedKp(kpId);
+            setSingleExpandedKp(kpId);
+            const topicNode = map.graphNodes.find((node) => node.kind === 'topic' && node.kpId === kpId && node.topicIndex === topicIndex);
+            setSelectedTopic(topicIndex);
+            setGraphFocus({ id: kpId, at: Date.now() });
+            setFocusTopic(topicNode ? { id: topicNode.id, at: Date.now() } : null);
+          }} columns items={knowledgePoints} path={map.path} mastery={map.mastery} progress={map.chapterProgress} nodeTargets={map.nodeTargets} />
         </motion.div>
       )}
 
