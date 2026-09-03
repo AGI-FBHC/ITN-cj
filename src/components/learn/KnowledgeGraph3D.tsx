@@ -818,13 +818,6 @@ function TopicActionModal({
               <span className="flex shrink-0 items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={() => navigate(`/learn/customize/${customizingTasks[0].id}`)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-[#D89238]/50 bg-[#D89238]/10 px-2.5 py-1.5 text-[11px] font-medium text-[#8A6A2F] transition-all hover:border-[#D89238] hover:bg-[#D89238]/20"
-                >
-                  <ScrollText size={12} />查看生成过程
-                </button>
-                <button
-                  type="button"
                   onClick={() => navigate(`/learn/customize-team/${node.id}`)}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-[#8FA796]/40 bg-white/70 px-2.5 py-1.5 text-[11px] font-medium text-[#5B6A5F] transition-all hover:border-[#5B6A5F] hover:bg-white"
                 >
