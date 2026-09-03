@@ -50,15 +50,6 @@ function writeBlindFocusRecords(learnerId: string, records: FocusRecord[]): void
   }
 }
 
-function shuffle<T>(items: T[], nonce: number): T[] {
-  const list = [...items];
-  for (let index = list.length - 1; index > 0; index -= 1) {
-    const target = Math.floor(Math.abs(Math.sin(nonce * 7919 + index * 137)) * (index + 1));
-    [list[index], list[target]] = [list[target], list[index]];
-  }
-  return list;
-}
-
 export default function BlindFocusBoard({
   learnerId,
   pending,
@@ -70,15 +61,19 @@ export default function BlindFocusBoard({
 }) {
   const navigate = useNavigate();
   const [records, setRecords] = useState<FocusRecord[]>(() => readBlindFocusRecords(learnerId));
-  const [shuffleNonce, setShuffleNonce] = useState(() => Date.now() % 997);
+  const [suggestionOffset, setSuggestionOffset] = useState(0);
 
   const activeRecords = records.filter((record) => !record.resolvedAt);
   const candidatePool = pending.filter((kp) => !isComplete(kp) && !activeRecords.some((record) => record.kpId === kp.id));
 
-  const suggestions = useMemo(
-    () => shuffle(candidatePool, shuffleNonce).slice(0, CHOICE_COUNT),
-    [candidatePool, shuffleNonce],
-  );
+  const suggestions = useMemo(() => {
+    if (!candidatePool.length) return [];
+    const start = suggestionOffset % candidatePool.length;
+    return Array.from(
+      { length: Math.min(CHOICE_COUNT, candidatePool.length) },
+      (_, index) => candidatePool[(start + index) % candidatePool.length],
+    );
+  }, [candidatePool, suggestionOffset]);
 
   const stats = useMemo(
     () => ({
@@ -145,7 +140,7 @@ export default function BlindFocusBoard({
         </div>
         <button
           type="button"
-          onClick={() => setShuffleNonce((value) => value + 1)}
+          onClick={() => setSuggestionOffset((value) => value + CHOICE_COUNT)}
           className="lf-btn-ghost !px-3 !py-1.5 text-[12px]"
         >
           <RefreshCw size={13} />
@@ -156,7 +151,7 @@ export default function BlindFocusBoard({
       <div className="grid gap-0 lg:grid-cols-[1.2fr_0.8fr]">
         <div className="border-b border-hairline p-5 lg:border-b-0 lg:border-r">
           <div className="mb-3 flex items-center justify-between gap-2">
-            <span className="text-[12.5px] font-medium text-ink">建议优先消解</span>
+            <span className="text-[12.5px] font-medium text-ink">最近几个没学完的知识点</span>
             <span className="font-mono text-[10.5px] text-ink-muted">{activeRecords.length}/{MAX_ACTIVE} 已选</span>
           </div>
           {suggestions.length === 0 ? (
