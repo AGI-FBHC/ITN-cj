@@ -366,21 +366,15 @@ function SimpleChapterCanvas({
 function DagQuickBuilder({
   categories,
   edges,
-  onSaved,
   sourceId,
   targetId,
-  onSourceIdChange,
-  onTargetIdChange,
   onStageEdge,
 }: {
   categories: Map<number, CategoryInfo>;
   edges: KcGraphEdge[];
-  onSaved: () => Promise<void>;
   sourceId: number | null;
   targetId: number | null;
-  onSourceIdChange: (id: number | null) => void;
-  onTargetIdChange: (id: number | null) => void;
-  onStageEdge?: (source: number, target: number, edgeType: string, rationale: string, directActive: boolean) => void;
+  onStageEdge?: (source: number, target: number, edgeType: string, rationale: string) => void;
 }) {
   const options = useMemo(
     () =>
@@ -390,67 +384,18 @@ function DagQuickBuilder({
     [categories],
   );
   const existingKeys = useMemo(() => new Set(edges.map((edge) => `${edge.prereq_category_id}->${edge.category_id}`)), [edges]);
-  const [edgeType, setEdgeType] = useState("prerequisite");
-  const [rationale, setRationale] = useState("");
-  const [directActive, setDirectActive] = useState(true);
-  const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [suggestions, setSuggestions] = useState<ProposedSuggestion[]>([]);
-  const [draftIndex, setDraftIndex] = useState<number | null>(null);
-
-  const applyDraft = (index: number) => {
-    const draft = suggestions[index];
-    if (!draft) return;
-    onSourceIdChange(draft.prereqCategoryId);
-    onTargetIdChange(draft.categoryId);
-    setEdgeType(draft.edgeType);
-    setRationale(draft.rationale || "");
-    setDraftIndex(index);
-  };
-
-  const save = async () => {
-    const prereqId = sourceId;
-    const categoryId = targetId;
-    if (!prereqId || !categoryId) return toast.error("请选择前置节点和目标节点");
-    if (prereqId === categoryId) return toast.error("前置节点不能等于目标节点");
-    if (existingKeys.has(`${prereqId}->${categoryId}`)) return toast.error("该边已经存在");
-    setBusy(true);
-    try {
-      if (onStageEdge) {
-        onStageEdge(prereqId, categoryId, edgeType, rationale.trim(), directActive);
-        setRationale("");
-        setDraftIndex(null);
-      } else {
-        const result = await adminKnowledgeApi.addPrerequisite({
-          prereqCategoryId: prereqId,
-          categoryId,
-          edgeType,
-          rationale: rationale.trim() || "管理员在 DAG 快速建图面板手动添加",
-          source: "human",
-          directActive,
-        });
-        toast.success(result.edge.status === "active" ? "建边已生效" : "建边已进入待审核队列");
-        setRationale("");
-        setDraftIndex(null);
-        await onSaved();
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "建边失败");
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const runAiSuggest = async () => {
-    if (!options.length) return toast.error("当前没有可建边的知识点");
+    if (!options.length) return toast.error("当前没有可建边的章节");
     setAiBusy(true);
     setSuggestions([]);
     try {
-      const compactNodes = options.slice(0, 160).map((node) => ({
+      const compactNodes = options.slice(0, 120).map((node) => ({
         id: node.id,
         name: node.name,
         level: node.level,
-        chunks: node.chunk_count,
       }));
       const existingEdges = edges.slice(0, 300).map((edge) => ({
         from: edge.prereq_category_id,
@@ -461,20 +406,29 @@ function DagQuickBuilder({
       const reply = await api.agentChat({
         modelProvider: "mimo",
         systemPrompt:
-          "你是知识网络教研助手。根据给出的知识点清单和已有边，建议合理的先修、相关或易混淆边。只返回 JSON 数组，不要 Markdown，不要解释。每条格式：{\"prereqCategoryId\": number, \"categoryId\": number, \"edgeType\": \"prerequisite\" | \"related\" | \"contrasts_with\", \"rationale\": string}",
+          "你是知识网络教研助手。现在只允许返回一个标准 JSON 数组，不要 Markdown、不要代码块、不要解释、不要额外文字。若没有合理建议就返回 []。每条元素必须使用数字 id，字段名固定为 prereqCategoryId、categoryId、edgeType、rationale；edgeType 只能是 prerequisite、related 或 contrasts_with。",
         messages: [
           {
             role: "user",
-            content: `知识点：${JSON.stringify(compactNodes)}
-已有边：${JSON.stringify(existingEdges)}`,
+            content: `章节：${JSON.stringify(compactNodes)}
+已有边：${JSON.stringify(existingEdges)}
+请只输出 JSON 数组，字段用 prereqCategoryId/categoryId/edgeType/rationale。`,
           },
         ],
       });
-      const cleaned = (reply.reply || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
+      const cleaned = (reply.reply || "")
+        .replace(/```json|```/gi, "")
+        .trim();
       const start = cleaned.indexOf("[");
       const end = cleaned.lastIndexOf("]");
-      if (start < 0 || end <= start) throw new Error("AI 返回格式无法解析");
-      const parsed = JSON.parse(cleaned.slice(start, end + 1)) as ProposedSuggestion[];
+      if (start < 0 || end <= start) throw new Error("AI 没有返回 JSON 数组，请重试");
+      const raw = cleaned.slice(start, end + 1);
+      const parsed = (JSON.parse(raw) as ProposedSuggestion[]).map((item) => ({
+        prereqCategoryId: Number(item.prereqCategoryId || (item as unknown as { prereq_category_id?: number }).prereq_category_id),
+        categoryId: Number(item.categoryId || (item as unknown as { category_id?: number }).category_id),
+        edgeType: String(item.edgeType || "prerequisite"),
+        rationale: item.rationale || "",
+      }));
       const seen = new Set<string>();
       const valid = parsed.filter((item) => {
         if (!item.prereqCategoryId || !item.categoryId || item.prereqCategoryId === item.categoryId) return false;
@@ -485,13 +439,17 @@ function DagQuickBuilder({
       });
       if (!valid.length) throw new Error("没有新建议，或建议与现有边重复");
       setSuggestions(valid.slice(0, 8));
-      applyDraft(0);
-      toast.success(`AI 给出 ${valid.length} 条建议，已填入第一条`);
+      toast.success(`AI 给出 ${valid.length} 条建议，可直接加入待保存`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "AI 建议生成失败");
     } finally {
       setAiBusy(false);
     }
+  };
+
+  const stageSuggestion = (item: ProposedSuggestion) => {
+    if (!onStageEdge) return;
+    onStageEdge(item.prereqCategoryId, item.categoryId, item.edgeType, item.rationale || "");
   };
 
   return (
@@ -500,79 +458,41 @@ function DagQuickBuilder({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <GitBranch size={15} className="text-brand" />
-            <h3 className="text-sm font-bold text-ink">快速建图</h3>
+            <h3 className="text-sm font-bold text-ink">智能建边</h3>
           </div>
           <button onClick={() => void runAiSuggest()} disabled={aiBusy} className="lf-row-btn lf-row-btn-primary">
             {aiBusy ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
             AI 建议
           </button>
         </div>
-        <p className="mt-1 text-[11px] leading-4 text-ink-muted">先选前置/目标节点，再写一条边；AI 建议会尝试给出候选。</p>
+        <p className="mt-1 text-[11px] leading-4 text-ink-muted">
+          {sourceId != null && targetId != null
+            ? `${categories.get(sourceId)?.name ?? sourceId} → ${categories.get(targetId)?.name ?? targetId}`
+            : "在左侧章节网络里点选两个章节，或在 AI 建议里直接加入待保存。"}
+        </p>
       </div>
       <div className="space-y-3 p-4 text-xs">
-        <label className="block">
-          <span className="mb-1 block text-ink-muted">前置 / 先修节点</span>
-          <select value={sourceId ?? ""} onChange={(e) => onSourceIdChange(e.target.value ? Number(e.target.value) : null)} className="lf-select w-full">
-            <option value="">请选择前置节点</option>
-            {options.map((node) => (
-              <option key={node.id} value={node.id}>
-                {node.name} · L{node.level} · #{node.id}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-ink-muted">目标节点</span>
-          <select value={targetId ?? ""} onChange={(e) => onTargetIdChange(e.target.value ? Number(e.target.value) : null)} className="lf-select w-full">
-            <option value="">请选择目标节点</option>
-            {options.map((node) => (
-              <option key={node.id} value={node.id}>
-                {node.name} · L{node.level} · #{node.id}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="grid grid-cols-2 gap-2">
-          <label className="block">
-            <span className="mb-1 block text-ink-muted">边类型</span>
-            <select value={edgeType} onChange={(e) => setEdgeType(e.target.value)} className="lf-select w-full">
-              {Object.entries(typeLabel).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="mt-5 flex items-center gap-2">
-            <input type="checkbox" checked={directActive} onChange={(e) => setDirectActive(e.target.checked)} />
-            直接生效
-          </label>
-        </div>
-        <label className="block">
-          <span className="mb-1 block text-ink-muted">建边理由（可选）</span>
-          <textarea value={rationale} onChange={(e) => setRationale(e.target.value)} rows={3} className="lf-input w-full resize-none" placeholder="为什么这条关系成立" />
-        </label>
-        {suggestions.length > 0 && (
-          <div className="rounded-xl border border-brand/20 bg-brand-tint/20 p-2">
-            <div className="mb-1 text-[11px] font-semibold text-brand">AI 候选</div>
-            <div className="flex flex-wrap gap-1.5">
-              {suggestions.map((item, index) => (
-                <button
-                  key={`${item.prereqCategoryId}-${item.categoryId}-${index}`}
-                  type="button"
-                  onClick={() => applyDraft(index)}
-                  className={cn("lf-row-btn", draftIndex === index ? "lf-row-btn-primary" : "")}
-                >
-                  {categories.get(item.prereqCategoryId)?.name || item.prereqCategoryId} → {categories.get(item.categoryId)?.name || item.categoryId}
-                </button>
-              ))}
-            </div>
+        {suggestions.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-black/10 px-3 py-5 text-center text-ink-muted">
+            点击“AI 建议”，让模型基于当前章节关系直接给出可建边、关系和理由。
           </div>
+        ) : (
+          suggestions.map((item, index) => (
+            <div key={`${item.prereqCategoryId}-${item.categoryId}-${index}`} className="rounded-xl border border-brand/20 bg-brand-tint/20 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-ink">
+                  {categories.get(item.prereqCategoryId)?.name || item.prereqCategoryId} → {categories.get(item.categoryId)?.name || item.categoryId}
+                </span>
+                <span className="rounded-md border border-brand/20 bg-white/70 px-1.5 py-0.5 text-[10px] text-brand">{typeLabel[item.edgeType] || item.edgeType}</span>
+              </div>
+              <p className="mt-1.5 leading-4 text-ink-2">{item.rationale || "模型未给出理由"}</p>
+              <button onClick={() => stageSuggestion(item)} className="lf-row-btn lf-row-btn-primary mt-2">
+                <Plus size={12} />
+                加入待保存
+              </button>
+            </div>
+          ))
         )}
-        <button onClick={() => void save()} disabled={busy} className="lf-btn-primary w-full justify-center">
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-          添加这条边
-        </button>
       </div>
     </div>
   );
@@ -976,11 +896,8 @@ export default function KnowledgeGraphAdmin() {
           <DagQuickBuilder
             categories={categories}
             edges={edges}
-            onSaved={refresh}
             sourceId={builderSourceId}
             targetId={builderTargetId}
-            onSourceIdChange={setBuilderSourceId}
-            onTargetIdChange={setBuilderTargetId}
             onStageEdge={(source, target, edgeType, rationale) => stageBuilderEdge(source, target, edgeType, rationale)}
           />
         </div>

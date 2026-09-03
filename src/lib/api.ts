@@ -1567,15 +1567,23 @@ export const api = {
   }),
   getLearningResourceTraceability: (resourceId: string) =>
     requestDirect<{ items: LearningResourceTrace[] }>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/traceability`),
-  agentChat: (body: { messages: { role: string; content: string }[]; systemPrompt?: string; modelProvider?: string }) =>
-    requestDirect<{ reply: string }>('/v1/chat', {
-      method: 'POST',
-      body: JSON.stringify({
-        messages: body.messages,
-        system_prompt: body.systemPrompt,
-        model_provider: body.modelProvider ?? 'mimo',
-      }),
-    }),
+  agentChat: async (body: { messages: { role: string; content: string }[]; systemPrompt?: string; modelProvider?: string }) => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 90_000);
+    try {
+      return await requestDirect<{ reply: string }>('/v1/chat', {
+        method: 'POST',
+        signal: controller.signal,
+        body: JSON.stringify({
+          messages: body.messages,
+          system_prompt: body.systemPrompt,
+          model_provider: body.modelProvider ?? 'mimo',
+        }),
+      });
+    } finally {
+      window.clearTimeout(timer);
+    }
+  },
   submitLearningResourceSourceFeedback: (resourceId: string, body: {
     sourceId: string;
     issueType?: 'needs_review' | 'mismatch' | 'outdated' | 'broken_link' | 'other';
