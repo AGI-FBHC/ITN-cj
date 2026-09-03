@@ -218,6 +218,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
   );
   const pptBusy = Boolean(pptCustomizeTask && !['completed', 'failed', 'cancelled'].includes(pptCustomizeTask.status));
   const pptCustomized = Boolean(pptCustomizeTask?.status === 'completed' && pptCustomizeTask.resourceId);
+  const pptOpenable = Boolean(pptForScope?.status === 'completed') || pptCustomized;
   const taskBusy = (task?: LearningResourceGenerationTask) =>
     Boolean(task && !['completed', 'failed', 'cancelled'].includes(task.status));
 
@@ -433,10 +434,11 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
             onClick={() => {
               if (pptBusy) { navigate(`/learn/customize/${pptCustomizeTask!.id}`); return; }
               if (pptCustomized && pptCustomizeTask?.resourceId) { void openPptCourseware(); return; }
+              if (pptForScope?.status === 'completed') { void openPptCourseware(); return; }
               if (pptForScope?.id) { void startCustomizeLearning({ adminResourceId: pptForScope.id, kpId: customizationKpId, resourceType: 'ppt', resourceLabel: '交互课件' }); return; }
               toast.info('暂无资源');
             }}
-            title={pptBusy ? '查看定制进度' : pptCustomized ? '打开交互课件' : pptForScope ? '定制交互课件' : '暂无资源'}
+            title={pptBusy ? '查看定制进度' : pptOpenable ? '打开交互课件' : pptForScope ? '定制交互课件' : '暂无资源'}
             className={cn(
               'group flex w-full items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left transition-all',
               pptBusy
@@ -456,15 +458,15 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
                 交互课件
               </span>
               <span className="block truncate text-[11px] text-ink-muted">
-                {pptBusy ? `${pptCustomizeTask!.stageMessage ?? '正在定制'}（点击查看进度）` : pptCustomized ? (pptForScope?.title ?? pptCustomizeTask?.title) : pptForScope ? '基于管理员母版进行个性化定制' : '管理员尚未设置通用资源'}
+                {pptBusy ? `${pptCustomizeTask!.stageMessage ?? '正在定制'}（点击查看进度）` : pptOpenable ? (pptForScope?.title ?? pptCustomizeTask?.title) : pptForScope ? '基于管理员母版进行个性化定制' : '管理员尚未设置通用资源'}
               </span>
             </span>
             <span className="flex w-[76px] shrink-0 items-center justify-end gap-1.5">
-              <span className={cn('text-[10.5px] font-medium', pptBusy || pptCustomized ? 'text-brand' : 'text-ink-muted')}>
-                {pptBusy ? '定制中' : pptCustomized ? '已定制' : pptForScope ? '未定制' : '暂无资源'}
+              <span className={cn('text-[10.5px] font-medium', pptBusy || pptOpenable ? 'text-brand' : 'text-ink-muted')}>
+                {pptBusy ? '定制中' : pptOpenable ? '可打开' : pptForScope ? '未定制' : '暂无资源'}
               </span>
               {pptBusy ? <span className="font-mono text-[9.5px] text-brand">{pptCustomizeTask!.progress ?? 0}%</span>
-                : pptCustomized ? <ArrowRight size={14} className="text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
+                : pptOpenable ? <ArrowRight size={14} className="text-ink-muted transition-transform group-hover:translate-x-0.5 group-hover:text-brand" />
                 : pptForScope ? <Wand2 size={13} className="text-brand/70 transition-transform group-hover:scale-110" /> : null}
             </span>
           </button>

@@ -931,6 +931,8 @@ function TopicActionModal({
                 if (customized && cTask?.resourceId) {
                   const pptId = cTask.resourceId;
                   navigate(`/learn/${node.kpId}?ppt=${pptId}&topic=${encodeURIComponent(node.label.trim())}`);
+                } else if (pptTask?.status === 'completed' && pptTask.id) {
+                  navigate(`/learn/${node.kpId}?ppt=${pptTask.id}&topic=${encodeURIComponent(node.label.trim())}`);
                 } else if (pptTask?.id) {
                   void startCustomizeLearning({ adminResourceId: pptTask.id, kpId: node.id, resourceType: 'ppt', resourceLabel: fn.label });
                 }
