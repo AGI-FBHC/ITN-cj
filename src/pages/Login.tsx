@@ -257,9 +257,9 @@ export default function Login() {
             className="mt-4 text-[14.5px] leading-[25px] text-ink-muted"
           >
             同一个知识点，给你的讲法和给别人的不一样——而且每句话都有国标出处。
-            面向工业机器人运维，从建一份属于你的学情画像开始。
+            从建一份属于你的学情画像开始，让每一次学习都更贴合你当前的水平。
           </motion.p>
-          <div className="mt-8 flex flex-wrap items-center gap-y-2">
+          <div className="mt-8 flex items-center whitespace-nowrap">
             {LOOP_STEPS.map((s, i) => (
               <span key={s} className="flex items-center">
                 <span className={cn('rounded-[9px] border px-2.5 py-1 text-[12px] font-medium', i === 0 ? 'border-brand/40 bg-brand-tint text-brand' : 'border-hairline bg-paper text-ink-2')}>
@@ -272,7 +272,7 @@ export default function Login() {
           <p className="mt-2.5 text-[11.5px] text-ink-muted/80">登录即进入第一步：画像建档 —— 之后的一切都由它驱动。</p>
         </div>
         <div className="font-mono text-[10.5px] tracking-wide text-ink-muted/70">
-          领域知识个性化生成与多智能体协同决策系统
+          个性化学习内容生成与多智能体协同决策系统
         </div>
       </div>
 
