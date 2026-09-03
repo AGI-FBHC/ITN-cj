@@ -629,6 +629,18 @@ export default function Report() {
       );
   }, [learningMap]);
 
+  /* 顶部“继续学习/进入课程”：直接落到真实知识点卡片 */
+  const continueTarget = useMemo(() => {
+    const resourceKpId = nextResource?.kpId ?? null;
+    const topicNode = resourceKpId
+      ? learningMap.graphNodes.find((node) => node.kind === 'topic' && node.id === resourceKpId)
+      : null;
+    return {
+      chapterId: topicNode?.kpId ?? resourceKpId ?? weakestChapter?.id ?? null,
+      topicId: topicNode?.id ?? null,
+    };
+  }, [learningMap.graphNodes, nextResource?.kpId, weakestChapter?.id]);
+
   const visualReport = useMemo<LearnerReport>(() => {
     const weeks = ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8'];
     const spots: BlindSpot[] = abilities
@@ -1035,8 +1047,8 @@ export default function Report() {
             {weakestChapter ? `当前最弱章节是「${weakestChapter.name}」（掌握度 ${Math.round(learningMap.mastery[weakestChapter.id] ?? 0)}% · 进度 ${Math.round(learningMap.chapterProgress[weakestChapter.id] ?? 0)}%）。${weakestChapterDims}${nextResource ? `建议继续“${nextChapter?.title ?? nextResource.topic}”中的${resourceLabel[nextResource.type]}。` : '先生成对应章节的讲义与分阶题，形成可验证的学习证据。'}` : '先完成一次学习，能力与画像数据会随证据累积。'}
           </p>
           <button
-            type="button"
-            onClick={() => navigate(learnMapPath(currentLearner.id, nextResource?.kpId ?? weakestChapter?.id))}
+              type="button"
+              onClick={() => navigate(learnMapPath(currentLearner.id, continueTarget.chapterId, continueTarget.topicId))}
             className="lf-btn-primary mt-3 !px-3.5 !py-2 text-[12.5px]"
           >
             {nextResource ? '继续学习' : '进入课程'} <ArrowRight size={14} />

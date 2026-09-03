@@ -17,6 +17,7 @@ import { useProfile } from '@/context/ProfileContext';
 import { api, type LearningResourceSummary } from '@/lib/api';
 import type { Severity } from '@/components/profiles/profileMeta';
 import { cn } from '@/lib/utils';
+import { learnMapPath } from '@/lib/learnNav';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -174,18 +175,22 @@ function resourceTargetFor(
 }
 
 function adviceTargetFor(
+  learnerId: string,
   nodes: GraphNode[],
   kpId: string | undefined,
   hint: string,
   resources: LearningResourceSummary[],
   fallback: string,
 ): string {
-  if (kpId) {
-    const node = nodes.find((item) => item.id === kpId || item.kpId === kpId);
-    if (node?.kind === 'domain') return `/learn?kp=${encodeURIComponent(node.id)}`;
+  const normalizedKpId = kpId?.trim()
+    || hint.match(/\b(?:kp-\d+-\d+|ch\d+[\w-]*|kp-[a-z0-9-]+)\b/)?.[0]
+    || '';
+  if (normalizedKpId) {
+    const node = nodes.find((item) => item.id === normalizedKpId || item.kpId === normalizedKpId);
+    if (node?.kind === 'domain') return learnMapPath(learnerId, node.id);
     if (node?.kind === 'topic') {
       const parent = nodes.find((item) => item.id === node.kpId);
-      return `/learn?kp=${encodeURIComponent(parent?.id ?? node.kpId)}&unitTopic=${encodeURIComponent(node.id)}`;
+      return learnMapPath(learnerId, parent?.id ?? node.kpId, node.id);
     }
   }
   return resourceTargetFor(resources, hint, fallback);
@@ -367,7 +372,7 @@ export function WeeklyAdviceCard({
           icon: iconPool[index % iconPool.length],
           text: item.text,
           cta: item.cta || '去看看',
-          href: adviceTargetFor(nodes, item.kpId, `${item.cta} ${item.text}`, resources, '/resources'),
+          href: adviceTargetFor(currentLearner.id || learner.id, nodes, item.kpId, `${item.cta} ${item.text}`, resources, '/resources'),
           kpId: item.kpId,
           priority: item.priority,
           evidence: item.evidence || '基于你的真实学情生成本周建议',
