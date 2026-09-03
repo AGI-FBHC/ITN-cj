@@ -168,18 +168,24 @@ function DagQuickBuilder({
   categories,
   edges,
   onSaved,
+  sourceId,
+  targetId,
+  onSourceIdChange,
+  onTargetIdChange,
 }: {
   categories: Map<number, CategoryInfo>;
   edges: KcGraphEdge[];
   onSaved: () => Promise<void>;
+  sourceId: number | null;
+  targetId: number | null;
+  onSourceIdChange: (id: number | null) => void;
+  onTargetIdChange: (id: number | null) => void;
 }) {
   const options = useMemo(
     () => [...categories.values()].sort((a, b) => a.level - b.level || a.name.localeCompare(b.name, "zh-CN")),
     [categories],
   );
   const existingKeys = useMemo(() => new Set(edges.map((edge) => `${edge.prereq_category_id}->${edge.category_id}`)), [edges]);
-  const [prereq, setPrereq] = useState("");
-  const [category, setCategory] = useState("");
   const [edgeType, setEdgeType] = useState("prerequisite");
   const [rationale, setRationale] = useState("");
   const [directActive, setDirectActive] = useState(true);
@@ -191,16 +197,16 @@ function DagQuickBuilder({
   const applyDraft = (index: number) => {
     const draft = suggestions[index];
     if (!draft) return;
-    setPrereq(String(draft.prereqCategoryId));
-    setCategory(String(draft.categoryId));
+    onSourceIdChange(draft.prereqCategoryId);
+    onTargetIdChange(draft.categoryId);
     setEdgeType(draft.edgeType);
     setRationale(draft.rationale || "");
     setDraftIndex(index);
   };
 
   const save = async () => {
-    const prereqId = Number(prereq);
-    const categoryId = Number(category);
+    const prereqId = sourceId;
+    const categoryId = targetId;
     if (!prereqId || !categoryId) return toast.error("请选择前置节点和目标节点");
     if (prereqId === categoryId) return toast.error("前置节点不能等于目标节点");
     if (existingKeys.has(`${prereqId}->${categoryId}`)) return toast.error("该边已经存在");
@@ -296,7 +302,7 @@ function DagQuickBuilder({
       <div className="space-y-3 p-4 text-xs">
         <label className="block">
           <span className="mb-1 block text-ink-muted">前置 / 先修节点</span>
-          <select value={prereq} onChange={(e) => setPrereq(e.target.value)} className="lf-select w-full">
+          <select value={sourceId ?? ""} onChange={(e) => onSourceIdChange(e.target.value ? Number(e.target.value) : null)} className="lf-select w-full">
             <option value="">请选择前置节点</option>
             {options.map((node) => (
               <option key={node.id} value={node.id}>
@@ -307,7 +313,7 @@ function DagQuickBuilder({
         </label>
         <label className="block">
           <span className="mb-1 block text-ink-muted">目标节点</span>
-          <select value={category} onChange={(e) => setCategory(e.target.value)} className="lf-select w-full">
+          <select value={targetId ?? ""} onChange={(e) => onTargetIdChange(e.target.value ? Number(e.target.value) : null)} className="lf-select w-full">
             <option value="">请选择目标节点</option>
             {options.map((node) => (
               <option key={node.id} value={node.id}>
@@ -362,7 +368,19 @@ function DagQuickBuilder({
   );
 }
 
-function GraphCanvas({ edges, categories }: { edges: KcGraphEdge[]; categories: Map<number, CategoryInfo> }) {
+function GraphCanvas({
+  edges,
+  categories,
+  edgeMode = false,
+  selectedIds,
+  onPickNode,
+}: {
+  edges: KcGraphEdge[];
+  categories: Map<number, CategoryInfo>;
+  edgeMode?: boolean;
+  selectedIds?: Set<number>;
+  onPickNode?: (id: number) => void;
+}) {
   const [layout, setLayout] = useState<"topology" | "band">("topology");
   const [statuses, setStatuses] = useState(new Set(["active"]));
   const [types, setTypes] = useState(new Set(["prerequisite", "cross_domain_prerequisite", "related"]));
@@ -505,8 +523,8 @@ function GraphCanvas({ edges, categories }: { edges: KcGraphEdge[]; categories: 
             const radius = 20 + Math.min(13, Math.log2((info?.chunk_count || 0) + 1) * 3);
             const dim = focusSet && !focusSet.has(id);
             return (
-              <g key={id} transform={`translate(${pos.x},${pos.y})`} onClick={() => setFocus(id)} className="cursor-pointer" opacity={dim ? 0.12 : 1}>
-                <circle r={radius} fill={focus === id ? "#2563eb" : "#fff"} stroke="#2563eb" strokeWidth="2" />
+              <g key={id} transform={`translate(${pos.x},${pos.y})`} onClick={() => (onPickNode ? onPickNode(id) : setFocus(id))} className="cursor-pointer" opacity={dim ? 0.12 : 1}>
+                <circle r={radius} fill={selectedIds?.has(id) ? "#d97706" : focus === id ? "#2563eb" : "#fff"} stroke={selectedIds?.has(id) ? "#d97706" : "#2563eb"} strokeWidth={selectedIds?.has(id) ? 3 : 2} />
                 <text y={radius + 16} textAnchor="middle" fontSize="11" fill="#334155">
                   {(info?.name || `#${id}`).slice(0, 12)}
                 </text>
@@ -522,7 +540,7 @@ function GraphCanvas({ edges, categories }: { edges: KcGraphEdge[]; categories: 
         </svg>
       </div>
       <div className="border-t border-slate-100 px-4 py-3 text-xs text-ink-muted">
-        显示 {nodes.length} 个节点、{filtered.length} 条边；点击节点聚焦上下游，节点大小按 log(切片数) 缩放。
+        {edgeMode ? "编辑模式：先点前置节点，再点目标节点；右侧表单会同步当前选中。" : `显示 ${nodes.length} 个节点、${filtered.length} 条边；点击节点聚焦上下游，节点大小按 log(切片数) 缩放。`}
       </div>
     </div>
   );
@@ -538,6 +556,24 @@ export default function KnowledgeGraphAdmin() {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(new Set<number>());
   const [detail, setDetail] = useState<KcGraphEdge | null>(null);
+  const [builderSourceId, setBuilderSourceId] = useState<number | null>(null);
+  const [builderTargetId, setBuilderTargetId] = useState<number | null>(null);
+  const handleBuilderPick = useCallback(
+    (id: number) => {
+      if (builderSourceId == null || builderSourceId === id) {
+        setBuilderSourceId(id);
+        setBuilderTargetId(null);
+        return;
+      }
+      if (builderTargetId == null) {
+        setBuilderTargetId(id);
+        return;
+      }
+      setBuilderSourceId(builderTargetId);
+      setBuilderTargetId(id);
+    },
+    [builderSourceId, builderTargetId],
+  );
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
@@ -579,7 +615,7 @@ export default function KnowledgeGraphAdmin() {
       <div className="mb-5 flex items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-ink">知识网络管理</h2>
-          <p className="mt-1 text-sm text-ink-muted">查看先修边、候选队列与 DAG；快速建图与 AI 候选作为独立功能项，不再混在 DAG 展示页里。</p>
+          <p className="mt-1 text-sm text-ink-muted">查看先修边、候选队列与 DAG；快速建图作为独立功能项，可直接在 2D 网络图上点选前置/目标节点建边。</p>
         </div>
         <button onClick={() => void refresh()} disabled={loading} className="lf-page-pill">
           <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
@@ -644,7 +680,24 @@ export default function KnowledgeGraphAdmin() {
           <EdgeTable edges={filtered} names={categories} onOpen={setDetail} />
         </div>
       ) : tab === "builder" ? (
-        <DagQuickBuilder categories={categories} edges={edges} onSaved={refresh} />
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <GraphCanvas
+            edges={edges}
+            categories={categories}
+            edgeMode
+            selectedIds={new Set([builderSourceId, builderTargetId].filter((id): id is number => id != null))}
+            onPickNode={handleBuilderPick}
+          />
+          <DagQuickBuilder
+            categories={categories}
+            edges={edges}
+            onSaved={refresh}
+            sourceId={builderSourceId}
+            targetId={builderTargetId}
+            onSourceIdChange={setBuilderSourceId}
+            onTargetIdChange={setBuilderTargetId}
+          />
+        </div>
       ) : (
         <GraphCanvas edges={edges} categories={categories} />
       )}
