@@ -143,7 +143,6 @@ export default function ResourceCenterAdmin() {
   }, [groupResources, generationTasks, domain?.code, node?.nodeCode]);
   const groupNames = useMemo(() => Array.from(new Set(['默认分组', ...groupTypeMap.keys()])), [groupTypeMap]);
   useEffect(() => { if (!groupNames.includes(selectedGroupName)) setSelectedGroupName('默认分组'); }, [groupNames, selectedGroupName]);
-  const completedTypes = groupTypeMap.get(selectedGroupName) ?? new Set<ResourceKind>();
   const groupTypeTasks = useMemo(() => {
     const map = new Map<string, Record<ResourceKind, GenerationTask>>();
     for (const task of generationTasks) {
@@ -168,7 +167,6 @@ export default function ResourceCenterAdmin() {
     ensure('默认分组');
     return [...map.entries()].sort(([a], [b]) => a === '默认分组' ? -1 : b === '默认分组' ? 1 : a.localeCompare(b));
   }, [listQ.data?.items, completedPptItems, generationTasks, domain?.code, node?.nodeCode]);
-  const pptReady = ['lecture', 'practice', 'quiz'].every((type) => completedTypes.has(type as ResourceKind));
 
   const startGeneration = async (target: ResourceKind, regenerate = false) => {
     if (!node || !domain || domain.code === '__unassigned__') throw new Error('请先选择一个具体知识点');
@@ -178,7 +176,7 @@ export default function ResourceCenterAdmin() {
         title: node.name,
         audience: 'students', purpose: 'courseware', style: 'education', backgroundStyle: 'blue-white-minimal',
         language: 'zh-CN', slideCount: 0, aspectRatio: '16:9', detailLevel: 'detailed',
-        includeSpeakerNotes: true, modelProvider: 'mimo', generationMode: 'template', generationContext: generationContext(regenerate ? { regenerate: true } : {}),
+        includeSpeakerNotes: true, modelProvider: 'mimo', generationMode: 'template', generationContext: generationContext({ waitForDependencies: true, ...(regenerate ? { regenerate: true } : {}) }),
       };
       const task = await presentationApi.createPresentation(request);
       return { taskKind: 'ppt' as const, id: task.id };
@@ -205,7 +203,7 @@ export default function ResourceCenterAdmin() {
   };
 
   const startSelected = async () => {
-    const targets = [...selectedKinds].filter((kind) => kind !== 'ppt' || pptReady);
+    const targets = [...selectedKinds];
     if (!targets.length) return;
     setGenerationBusy(true);
     try {
@@ -662,8 +660,7 @@ export default function ResourceCenterAdmin() {
           if (next.has(target)) next.delete(target); else next.add(target);
           return next;
         })}
-        pptDisabled={!pptReady}
-        onSelectAll={() => setSelectedKinds(new Set(pptReady ? ['lecture', 'practice', 'quiz', 'ppt'] : ['lecture', 'practice', 'quiz']))}
+        onSelectAll={() => setSelectedKinds(new Set(['lecture', 'practice', 'quiz', 'ppt']))}
         onSubmit={() => void startSelected()}
       />
       <TaskDrawer open={taskDrawerOpen} tasks={generationTasks} busy={generationBusy} focusTaskId={focusTask} onClose={() => { setTaskDrawerOpen(false); setFocusTask(null); }} onCancel={() => undefined} onRetry={() => undefined} onInspect={setProcessTask} />
@@ -674,7 +671,7 @@ export default function ResourceCenterAdmin() {
 
 const activeGenerationStatuses = new Set(['queued', 'retrieving', 'planning', 'analyzing', 'generating', 'verifying', 'reviewing', 'revising', 'judging', 'outline_review']);
 
-function PreGenerationModal({ open, domainName, nodeName, groupName, selected, busy, pptDisabled, onClose, onToggle, onSelectAll, onSubmit }: {
+function PreGenerationModal({ open, domainName, nodeName, groupName, selected, busy, onClose, onToggle, onSelectAll, onSubmit }: {
 
   open: boolean;
   domainName: string;
@@ -682,7 +679,6 @@ function PreGenerationModal({ open, domainName, nodeName, groupName, selected, b
   groupName: string;
   selected: Set<ResourceKind>;
   busy: boolean;
-  pptDisabled: boolean;
   onClose: () => void;
   onToggle: (kind: ResourceKind) => void;
   onSelectAll: () => void;
@@ -701,8 +697,7 @@ function PreGenerationModal({ open, domainName, nodeName, groupName, selected, b
         <div className="mt-5 flex items-center justify-between"><p className="text-sm font-bold text-ink">选择资源类型</p><button type="button" onClick={onSelectAll} className="text-xs font-semibold text-brand">选择全部</button></div>
         <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
           {kinds.map(([id, label, note, Icon]) => {
-            const disabled = id === 'ppt' && pptDisabled;
-            return <button type="button" key={id} disabled={disabled} onClick={() => !disabled && onToggle(id)} className={cn('rounded-2xl border p-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-45', selected.has(id) && !disabled ? 'border-brand/50 bg-brand-tint/70 ring-1 ring-brand/30' : 'border-white/80 bg-white/45 hover:bg-white/70')}><div className="flex items-center justify-between"><Icon size={17} className={selected.has(id) && !disabled ? 'text-brand' : 'text-ink-muted'} />{selected.has(id) && !disabled && <CheckCircle2 size={15} className="text-brand" />}</div><p className="mt-3 text-sm font-bold text-ink">{label}</p><p className="mt-1 text-[10px] text-ink-muted">{disabled ? '需先生成讲义、实操、题库' : note}</p></button>;
+            return <button type="button" key={id} onClick={() => onToggle(id)} className={cn('rounded-2xl border p-3 text-left transition-all', selected.has(id) ? 'border-brand/50 bg-brand-tint/70 ring-1 ring-brand/30' : 'border-white/80 bg-white/45 hover:bg-white/70')}><div className="flex items-center justify-between"><Icon size={17} className={selected.has(id) ? 'text-brand' : 'text-ink-muted'} />{selected.has(id) && <CheckCircle2 size={15} className="text-brand" />}</div><p className="mt-3 text-sm font-bold text-ink">{label}</p><p className="mt-1 text-[10px] text-ink-muted">{note}</p></button>;
           })}
         </div>
         <div className="mt-6 flex justify-end gap-2 border-t border-white/70 pt-4"><button disabled={busy} onClick={onClose} className="lf-row-btn">取消</button><button disabled={busy || selected.size === 0} onClick={onSubmit} className="lf-row-btn lf-row-btn-primary min-w-28 justify-center disabled:opacity-50">{busy ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}开始生成{selected.size ? `（${selected.size}项）` : ''}</button></div>
