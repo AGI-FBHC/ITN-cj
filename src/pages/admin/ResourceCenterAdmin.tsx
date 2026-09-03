@@ -276,6 +276,19 @@ export default function ResourceCenterAdmin() {
     }
   };
 
+  const deleteGroup = async (groupName: string) => {
+    if (!domain || !node || domain.code === '__unassigned__' || groupName === '默认分组') return;
+    if (!window.confirm(`确定彻底删除“${groupName}”吗？\n\n该知识点分组下的已生成/待生成/归档资源与任务会被一并删除，且不可恢复。`)) return;
+    try {
+      await api.deleteAdminResourceGroup(domain.code, node.nodeCode, groupName);
+      toast.success('分组已彻底删除');
+      await invalidateResources();
+      if (selectedGroupName === groupName) setSelectedGroupName('默认分组');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : '分组删除失败');
+    }
+  };
+
   const preview = async (item: AdminResourceItem) => {
     setPreviewLoading(true);
     setDetail(null);
@@ -529,6 +542,24 @@ export default function ResourceCenterAdmin() {
                 <div className="min-w-52 flex-1">
                   <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="搜索当前目录资源" className="lf-input" />
                 </div>
+                {view === 'archive' && (
+                  <button
+                    onClick={() => void (async () => {
+                      if (!window.confirm('确定彻底清空当前机构的归档内容吗？此操作不可恢复。')) return;
+                      try {
+                        await api.purgeAdminResourceArchive();
+                        toast.success('归档内容已彻底清理');
+                        await invalidateResources();
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : '归档清理失败');
+                      }
+                    })()}
+                    className="lf-row-btn text-red-600"
+                  >
+                    <Trash2 size={12} />
+                    清空归档
+                  </button>
+                )}
                 {listQ.refreshing && (
                   <span className="flex items-center gap-1 text-[11px] text-ink-muted">
                     <Loader2 size={11} className="animate-spin" />
@@ -583,6 +614,16 @@ export default function ResourceCenterAdmin() {
                             {isTemplate ? '当前母版' : '设为母版'}
                           </button>
                         )}
+                        {groupName !== '默认分组' && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); void deleteGroup(groupName); }}
+                            className="lf-row-btn text-red-600"
+                            title="彻底删除该分组"
+                          >
+                            <Trash2 size={11} />
+                            删除分组
+                          </button>
+                        )}
                       </button>
                       {isExpanded && (
                         <div className="border-t border-white/60 px-4 py-1">
@@ -590,6 +631,7 @@ export default function ResourceCenterAdmin() {
                             const item = typeMap.get(type);
                             const task = activeTypeTasks?.[type] ?? null;
                             const active = task ? activeGenerationStatuses.has(task.status) : false;
+                            const runningTask = active ? task : null;
                             const hasPriorState = Boolean(item) || task !== null;
                             if (keyword) {
                               const q = keyword.toLowerCase();
@@ -606,7 +648,7 @@ export default function ResourceCenterAdmin() {
                                     {item.archivedAt ? <span className="lf-pill lf-pill-warn">已归档</span> : null}
                                     {view !== 'archive' && (
                                       active ? (
-                                        <span className="lf-pill lf-pill-warn"><Loader2 size={11} className="animate-spin" />生成中 {task.progress}%</span>
+                                        <span className="lf-pill lf-pill-warn"><Loader2 size={11} className="animate-spin" />生成中 {runningTask?.progress}%</span>
                                       ) : (
                                         <button onClick={() => launchGeneration(type, true, groupName)} className="lf-row-btn text-ink-muted" title="重新生成"><RefreshCw size={11} />重新生成</button>
                                       )
@@ -625,10 +667,10 @@ export default function ResourceCenterAdmin() {
                                 ) : active ? (
                                   <>
                                     <span className="min-w-0 flex-1 truncate font-semibold text-brand">
-                                      <span className="inline-flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" />生成中 {task.progress}% · {task.stageMessage || '任务进行中'}</span>
+                                      <span className="inline-flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" />生成中 {runningTask?.progress}% · {runningTask?.stageMessage || '任务进行中'}</span>
                                     </span>
                                     {view !== 'archive' && (
-                                      <button onClick={() => navigate(`/admin/workbench?task=${task.taskKind}-${task.id}`)} className="lf-row-btn">查看任务</button>
+                                      <button onClick={() => runningTask && navigate(`/admin/workbench?task=${runningTask.taskKind}-${runningTask.id}`)} className="lf-row-btn">查看任务</button>
                                     )}
                                   </>
                                 ) : (

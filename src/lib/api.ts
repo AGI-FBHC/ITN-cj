@@ -1311,6 +1311,9 @@ export const api = {
     return request<{ items: LearningTemplateResourceItem[]; total: number }>(`/api/v1/learning-template-resources${query}`);
   },
   deleteAdminResourcePermanently: (id: string) => request<void>(`/api/v1/admin/resources/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  deleteAdminResourceGroup: (domainCode: string, nodeCode: string, groupName: string) =>
+    request<void>(`/api/v1/admin/resources/groups?domainCode=${encodeURIComponent(domainCode)}&nodeCode=${encodeURIComponent(nodeCode)}&groupName=${encodeURIComponent(groupName)}`, { method: 'DELETE' }),
+  purgeAdminResourceArchive: () => request<void>('/api/v1/admin/resources/archived', { method: 'DELETE' }),
   listLearners: () => request<LearnerProfileData[]>('/api/v1/learners'),
   getLearner: (id: string) => request<LearnerProfileData>(`/api/v1/learners/${encodeURIComponent(id)}`),
   createLearner: (body: LearnerUpsertInput) =>
