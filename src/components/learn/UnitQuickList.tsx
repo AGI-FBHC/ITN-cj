@@ -84,7 +84,7 @@ export default function UnitQuickList({
         <span className="text-[12.5px] font-medium text-ink">章节速览</span>
         <span className="text-[10.5px] text-ink-muted">点一行 · 图上看它的位置</span>
       </div>
-      <div className={cn('mt-1', columns ? 'grid gap-x-3 gap-y-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5' : 'divide-y divide-hairline/70')}>
+      <div className={cn('mt-1 items-start', columns ? 'flex flex-wrap gap-2.5' : 'divide-y divide-hairline/70')}>
         {items.map((kp) => {
           /* 速览统一显示掌握程度与目标（学习进度只在资源卡片里展示） */
           const progressValue = mastery[kp.id] ?? progress[kp.id] ?? 0;
@@ -99,11 +99,12 @@ export default function UnitQuickList({
           return (
             <div
               key={kp.id}
+              style={expanded && columns ? { width: '100%' } : undefined}
               className={cn(
                 'overflow-hidden transition-all duration-200',
                 columns
-                  ? 'rounded-[14px] border bg-white/30 shadow-[0_1px_2px_rgba(0,0,0,0.03)] hover:border-black/10 hover:bg-white/70'
-                  : 'rounded-[10px] border border-transparent bg-white/20',
+                  ? 'w-full rounded-[14px] border bg-white/30 shadow-[0_1px_2px_rgba(0,0,0,0.03)] hover:border-black/10 hover:bg-white/70 sm:w-[calc(50%-0.3125rem)] lg:w-[calc(33.333%-0.4167rem)] xl:w-[calc(25%-0.46875rem)] 2xl:w-[calc(20%-0.5rem)]'
+                  : 'w-full rounded-[10px] border border-transparent bg-white/20',
                 expanded && 'border-[#2E6BA8]/25 bg-[#F5FAFF]',
               )}
             >
