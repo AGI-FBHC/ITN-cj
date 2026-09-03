@@ -960,6 +960,11 @@ export default function Report() {
 
   const generateSummary = async () => {
     if (summarizing) return;
+    const hasRecords = Boolean(today?.timeline.length) || (rangeJournals.length > 0 && rangeJournals.some((journal) => journal.date === localDateKey(0) && journal.timeline.length > 0));
+    if (!hasRecords) {
+      toast.info('今天未学习，无法生成小结', { description: '先完成资源、练习或导学后，再来生成今日学习总结。' });
+      return;
+    }
     setSummarizing(true);
     try {
       const updated = await api.generateLearningJournalSummary(localDateKey(0));
