@@ -33,7 +33,7 @@ export default function StreakCalendar({
   const weekLabels = ['日', '一', '二', '三', '四', '五', '六'];
 
   return (
-    <div className={cn('lf-card p-5', className)}>
+    <div className={cn('lf-card p-6', className)}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-2 text-[12px] text-ink-muted">
           <CalendarDays size={15} className="text-brand" />
@@ -48,7 +48,7 @@ export default function StreakCalendar({
         按后端每日学习会话统计{totalDays != null ? ` · 累计学习 ${totalDays} 天` : ''}
       </p>
 
-      <div className="mt-4 grid grid-cols-7 gap-1.5">
+      <div className="mt-5 grid grid-cols-7 gap-2">
         {weekLabels.map((label) => (
           <div key={label} className="pb-1 text-center font-mono text-[11px] text-ink-muted">{label}</div>
         ))}
@@ -61,7 +61,7 @@ export default function StreakCalendar({
             <div key={key} className="flex items-center justify-center">
               <span
                 className={cn(
-                  'relative flex h-9 w-9 items-center justify-center rounded-full font-mono text-[12px] transition-colors',
+                  'relative flex h-10 w-10 items-center justify-center rounded-full font-mono text-[13px] transition-colors',
                   learned ? 'bg-brand font-semibold text-paper' : 'text-ink-2',
                   isToday && 'ring-2 ring-brand/50',
                 )}
