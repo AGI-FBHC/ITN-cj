@@ -1109,7 +1109,7 @@ export default function Report() {
                 {activeMatchTab === 'score' && <ScoreBand report={visualReport} />}
                 {activeMatchTab === 'gap' && <GapSection learner={reportLearner} report={visualReport} />}
                 {activeMatchTab === 'difficulty' && <DifficultyMatch learner={reportLearner} report={visualReport} />}
-                {activeMatchTab === 'path' && <PathRoadmap learner={reportLearner} report={visualReport} />}
+                {activeMatchTab === 'path' && <PathRoadmap learner={reportLearner} report={visualReport} tree={learningMap.tree} />}
               </div>
             </div>
             <GrowthTrendChart report={visualReport} />

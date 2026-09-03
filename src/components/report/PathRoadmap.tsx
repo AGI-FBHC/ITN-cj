@@ -10,6 +10,7 @@ import { BookOpen, Crosshair, Wrench, Award, Check, Lock, SlidersHorizontal } fr
 import type { LucideIcon } from 'lucide-react';
 import type { Learner } from '@/data/learners';
 import type { LearnerReport, PathNodeStatus } from '@/data/reportData';
+import type { RagTree } from '@/lib/api';
 import { getKnowledgePoint } from '@/data/knowledgePoints';
 import { getResourcesFor } from '@/data/resources';
 import { useProfile } from '@/context/ProfileContext';
@@ -59,13 +60,35 @@ const standardText: Record<PathNodeStatus, string> = {
 };
 
 const pct = (v: number, base: number) => `${(v / base) * 100}%`;
+const STAGE_NUMS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨'];
+const ICON_POOL: LucideIcon[] = [BookOpen, Crosshair, Wrench, Award, BookOpen, Crosshair, Wrench, Award];
+
+function topTreeStages(tree?: RagTree | null): Stage[] {
+  const roots = (tree?.nodes ?? [])
+    .filter((node) => node.level === 1)
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id);
+  if (!roots.length) return [];
+  const left = 120;
+  const right = VB_W - 120;
+  return roots.map((root, index) => ({
+    key: root.nodeCode || `root-${root.id}`,
+    num: STAGE_NUMS[index] ?? String(index + 1),
+    name: root.name,
+    icon: ICON_POOL[index % ICON_POOL.length],
+    status: 'todo',
+    x: roots.length === 1 ? VB_W / 2 : Math.round(left + ((right - left) * index) / Math.max(1, roots.length - 1)),
+    y: index % 2 === 0 ? 112 : 172,
+  }));
+}
 
 export default function PathRoadmap({
   learner,
   report,
+  tree,
 }: {
   learner: Learner;
   report: LearnerReport;
+  tree?: RagTree | null;
 }) {
   const [selected, setSelected] = useState<Stage | null>(null);
   const { viewMode } = useProfile();
@@ -78,27 +101,39 @@ export default function PathRoadmap({
     if (!report.generated) return STAGE_DEFS;
     const total = report.path.length || 1;
     const frac = report.path.filter((n) => n.status === 'done').length / total;
-    return STAGE_DEFS.map((s, i) => {
+    const treeStages = topTreeStages(tree);
+    const defs = treeStages.length ? treeStages : STAGE_DEFS;
+    const last = defs.length - 1;
+    return defs.map((s, i) => {
       let status: PathNodeStatus;
-      if (i === 3) status = frac >= 1 ? 'active' : 'locked';
-      else if (frac >= (i + 1) / 3) status = 'done';
-      else if (frac >= i / 3) status = 'active';
+      if (i === last) status = frac >= 1 ? 'done' : 'locked';
+      else if (frac >= (i + 1) / Math.max(1, last)) status = 'done';
+      else if (frac >= i / Math.max(1, last)) status = 'active';
       else status = 'todo';
       return { ...s, status };
     });
-  }, [report]);
+  }, [report, tree]);
 
   const stageNodes = useMemo(() => {
     const map = new Map<string, typeof report.path>();
     if (report.generated) {
-      /* 自建：路径节点按顺序均分进 ①②③（④综合考核不挂节点） */
-      const chunk = Math.ceil(report.path.length / 3) || 1;
-      stages.forEach((s, i) => map.set(s.key, i < 3 ? report.path.slice(i * chunk, (i + 1) * chunk) : []));
+      /* 自建：路径节点按顺序均分进各顶层目录 */
+      const chunk = Math.ceil(report.path.length / stages.length) || 1;
+      stages.forEach((s, i) => map.set(s.key, report.path.slice(i * chunk, (i + 1) * chunk)));
     } else {
       stages.forEach((s) => map.set(s.key, report.path.filter((n) => n.status === s.status)));
     }
     return map;
   }, [report, stages]);
+
+  const connectorPaths = useMemo(
+    () => stages.slice(0, -1).map((stage, index) => {
+      const next = stages[index + 1];
+      const midX = Math.round((stage.x + next.x) / 2);
+      return `M${stage.x},${stage.y} C${midX},${stage.y} ${midX},${next.y} ${next.x},${next.y}`;
+    }),
+    [stages],
+  );
 
   const kbOfStage = (stage: Stage): string[] => {
     const nodes = stageNodes.get(stage.key) ?? [];
@@ -115,7 +150,7 @@ export default function PathRoadmap({
     <div className="lf-card p-5">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
-          {!isLearner && <div className="lf-mono-label mb-1">LEARNING PATH · 4 STAGES</div>}
+          {!isLearner && <div className="lf-mono-label mb-1">LEARNING PATH · {stages.length} STAGES</div>}
           <h3 className="text-[16px] font-semibold leading-[24px] text-ink">学习路径规划图</h3>
         </div>
         <button
@@ -140,11 +175,7 @@ export default function PathRoadmap({
             preserveAspectRatio="none"
             aria-hidden
           >
-            {[
-              'M110,110 C200,110 320,168 410,168',
-              'M410,168 C500,168 620,110 710,110',
-              'M710,110 C800,110 920,168 1010,168',
-            ].map((d, i) => {
+            {connectorPaths.map((d, i) => {
               const st = stages[i].status;
               const pathId = `lf-roadmap-path-${i}`;
               if (st === 'done') {
@@ -283,7 +314,7 @@ export default function PathRoadmap({
                   }}
                 >
                   <div className="text-[14px] font-semibold text-ink">
-                    阶段 {s.num} {s.name}
+                    {s.num} {s.name}
                   </div>
                   <div
                     className={cn(
