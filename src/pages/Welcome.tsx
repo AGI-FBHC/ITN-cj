@@ -182,26 +182,6 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
       ? background.trim()
       : `我的身份是「${effectiveTag}」，学历「${effectiveEdu}」，目标方向「${job}」。`;
     let profileConfidence = 33;
-    try {
-      const llmProfile = await api.generateLlmProfileScore({
-        name: name.trim(),
-        tag: effectiveTag,
-        education: effectiveEdu,
-        targetJob: job,
-        targetCategoryCode,
-        method: 'quick',
-        background: backgroundNarrative,
-      }).catch(() => null);
-      if (llmProfile && Object.keys(llmProfile.scores ?? {}).length >= 6) {
-        draft.scores = llmProfile.scores;
-        draft.blindSpots = llmProfile.blindSpots?.length ? llmProfile.blindSpots : blind;
-        draft.goal = llmProfile.goal || draft.goal;
-        draft.diagnosisSummary = llmProfile.diagnosisSummary || draft.diagnosisSummary;
-        if (typeof llmProfile.confidence === 'number') profileConfidence = Math.max(33, Math.min(90, Math.round(llmProfile.confidence)));
-      }
-    } catch {
-      /* LLM 不可用时继续使用规则兜底 */
-    }
     const baseSummary = draft.diagnosisSummary || `画像按背景生成，目标方向「${job}」。`;
     draft.diagnosisSummary = `${baseSummary} | 技术背景：${backgroundNarrative}`.slice(0, 1000);
     let id: string;
@@ -212,37 +192,13 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
       toast.error('建档失败', { description: '请稍后重试' });
       return;
     }
-    /* 先让后端生成真实画像轨迹，再播放锻造动画 */
-    let forgeSteps;
-    let forgeBlindSpots;
-    let forgeEvidenceFinal = [`身份「${effectiveTag}」`, `学历「${effectiveEdu}」`, `目标「${job}」`, background.trim() ? `技术背景：${background.trim()}` : 'LLM 推断六维起点'];
-    try {
-      const generated = await api.generateProfile({
-        method: 'quick',
-        name: draft.name,
-        avatar: draft.avatar,
-        tag: effectiveTag,
-        education: effectiveEdu,
-        targetJob: job,
-        targetCategoryCode,
-        scores: draft.scores,
-        confidence: profileConfidence,
-      });
-      forgeSteps = generated.steps;
-      forgeEvidenceFinal = generated.evidence;
-      forgeBlindSpots = generated.blindSpots;
-    } catch {
-      /* 后端不可用时保留前端兜底文案 */
-    }
     setForge({
       name: draft.name,
       avatar: draft.avatar,
       scores: draft.scores,
       confidence: profileConfidence,
       method: 'quick',
-      evidence: forgeEvidenceFinal,
-      steps: forgeSteps,
-      blindSpots: forgeBlindSpots,
+      evidence: [`身份「${effectiveTag}」`, `学历「${effectiveEdu}」`, `目标「${job}」`, background.trim() ? `技术背景：${background.trim()}` : '按背景先验生成六维起点'],
     });
   };
 
