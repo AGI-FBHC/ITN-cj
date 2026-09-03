@@ -401,29 +401,27 @@ export default function GapSection({
   };
 
   return (
-    <div className="grid gap-5 lg:grid-cols-12">
-      <div className="lg:col-span-7">
-        <GapRadar learner={learner} spots={report.blindSpots} onSelect={selectKp} />
-      </div>
-      <div className="lg:col-span-5">
-        <div className="lf-card h-full p-5">
-          {!isLearner && <div className="lf-mono-label mb-1">RANKED BLIND SPOTS</div>}
-          <h3 className="mb-2 text-[16px] font-semibold leading-[24px] text-ink">
-            盲区排序 · 按缺口降序
-          </h3>
-          <div className="divide-y divide-hairline/60">
-            {sorted.map((s, i) => (
-              <BlindSpotRow
-                key={s.kpId}
-                spot={s}
-                index={i}
-                learnerId={learner.id}
-                isLearner={isLearner}
-                activeKpId={activeKpId}
-                pulse={pulse}
-              />
-            ))}
-          </div>
+    <div className="space-y-5">
+      <GapRadar learner={learner} spots={report.blindSpots} onSelect={selectKp} />
+      <div className="lf-card p-5">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h3 className="text-[16px] font-semibold text-ink">盲区排序 · 按缺口降序</h3>
+          <span className="rounded-md border border-hairline bg-paper-deep px-2 py-0.5 font-mono text-[10.5px] text-ink-muted">
+            {sorted.length} 项
+          </span>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          {sorted.map((s, i) => (
+            <BlindSpotRow
+              key={s.kpId}
+              spot={s}
+              index={i}
+              learnerId={learner.id}
+              isLearner={isLearner}
+              activeKpId={activeKpId}
+              pulse={pulse}
+            />
+          ))}
         </div>
       </div>
     </div>
