@@ -5,13 +5,14 @@ import { api } from "@/lib/api";
 import { adminKnowledgeApi, type KcCategoryNode, type KcGraphEdge } from "@/lib/adminKnowledgeApi";
 import { cn } from "@/lib/utils";
 
-type Tab = "overview" | "review" | "edges" | "dag";
+type Tab = "overview" | "review" | "edges" | "dag" | "builder";
 type CategoryInfo = Pick<KcCategoryNode, "id" | "name" | "level" | "parent_id" | "chunk_count">;
 const tabs: { id: Tab; label: string }[] = [
   { id: "overview", label: "网络概览" },
   { id: "review", label: "审核队列" },
   { id: "edges", label: "建边情况" },
   { id: "dag", label: "DAG 图" },
+  { id: "builder", label: "快速建图" },
 ];
 const statusLabel: Record<string, string> = {
   active: "生效",
@@ -578,7 +579,7 @@ export default function KnowledgeGraphAdmin() {
       <div className="mb-5 flex items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-ink">知识网络管理</h2>
-          <p className="mt-1 text-sm text-ink-muted">查看先修边、候选队列与 DAG；DAG 页右侧可快速建边并用 AI 生成候选关系。</p>
+          <p className="mt-1 text-sm text-ink-muted">查看先修边、候选队列与 DAG；快速建图与 AI 候选作为独立功能项，不再混在 DAG 展示页里。</p>
         </div>
         <button onClick={() => void refresh()} disabled={loading} className="lf-page-pill">
           <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
@@ -642,11 +643,10 @@ export default function KnowledgeGraphAdmin() {
           </div>
           <EdgeTable edges={filtered} names={categories} onOpen={setDetail} />
         </div>
+      ) : tab === "builder" ? (
+        <DagQuickBuilder categories={categories} edges={edges} onSaved={refresh} />
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <GraphCanvas edges={edges} categories={categories} />
-          <DagQuickBuilder categories={categories} edges={edges} onSaved={refresh} />
-        </div>
+        <GraphCanvas edges={edges} categories={categories} />
       )}
       {detail && <EdgeDetails edge={detail} names={categories} onClose={() => setDetail(null)} onAction={(kind) => void action(kind, [detail.id])} />}
     </>
