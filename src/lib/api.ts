@@ -1567,6 +1567,11 @@ export const api = {
   }),
   getLearningResourceTraceability: (resourceId: string) =>
     requestDirect<{ items: LearningResourceTrace[] }>(`/v1/learning-resources/${encodeURIComponent(resourceId)}/traceability`),
+  graphSuggest: (nodes: { id: number; name: string; level?: number; chunks?: number }[], edges: { from: number; to: number; type?: string; status?: string }[]) =>
+    requestDirect<{ edges: Array<{ prereqCategoryId?: number; prereq_category_id?: number; categoryId?: number; category_id?: number; edgeType?: string; rationale?: string }> }>('/v1/graph-suggest', {
+      method: 'POST',
+      body: JSON.stringify({ nodes, edges }),
+    }),
   agentChat: async (body: { messages: { role: string; content: string }[]; systemPrompt?: string; modelProvider?: string }) => {
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), 90_000);

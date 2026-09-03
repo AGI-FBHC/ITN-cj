@@ -6,7 +6,7 @@ import { adminKnowledgeApi, type KcCategoryNode, type KcGraphEdge } from "@/lib/
 import { cn } from "@/lib/utils";
 
 type Tab = "overview" | "review" | "edges" | "dag" | "builder";
-type CategoryInfo = Pick<KcCategoryNode, "id" | "name" | "level" | "parent_id" | "node_type" | "chunk_count">;
+type CategoryInfo = Pick<KcCategoryNode, "id" | "name" | "level" | "parent_id" | "node_type" | "sort_order" | "chunk_count">;
 const tabs: { id: Tab; label: string }[] = [
   { id: "overview", label: "网络概览" },
   { id: "review", label: "审核队列" },
@@ -328,7 +328,7 @@ function SimpleChapterCanvas({
                   {node.name}
                 </text>
                 <text y="4" textAnchor="middle" fontSize="10" fill={isSource || isTarget ? "#fff" : "#64748b"}>
-                  {isSource ? "起点" : isTarget ? "终点" : node.name.slice(0, 6)}
+                  {`#${String(node.sort_order ?? node.id).padStart(2, "0")}`}
                 </text>
                 <title>{node.name} · 章节</title>
               </g>
@@ -405,27 +405,8 @@ function DagQuickBuilder({
         type: edge.edge_type,
         status: edge.status,
       }));
-      const reply = await api.agentChat({
-        modelProvider: "mimo",
-        systemPrompt:
-          "你是知识网络教研助手。现在只允许返回一个标准 JSON 数组，不要 Markdown、不要代码块、不要解释、不要额外文字。若没有合理建议就返回 []。每条元素必须使用数字 id，字段名固定为 prereqCategoryId、categoryId、edgeType、rationale；edgeType 只能是 prerequisite、related 或 contrasts_with。",
-        messages: [
-          {
-            role: "user",
-            content: `章节：${JSON.stringify(compactNodes)}
-已有边：${JSON.stringify(existingEdges)}
-请只输出 JSON 数组，字段用 prereqCategoryId/categoryId/edgeType/rationale。`,
-          },
-        ],
-      });
-      const cleaned = (reply.reply || "")
-        .replace(/```json|```/gi, "")
-        .trim();
-      const start = cleaned.indexOf("[");
-      const end = cleaned.lastIndexOf("]");
-      if (start < 0 || end <= start) throw new Error("AI 没有返回 JSON 数组，请重试");
-      const raw = cleaned.slice(start, end + 1);
-      const parsed = (JSON.parse(raw) as ProposedSuggestion[]).map((item) => ({
+      const suggestionPayload = await api.graphSuggest(compactNodes, existingEdges);
+      const parsed = (suggestionPayload.edges || []).map((item) => ({
         prereqCategoryId: Number(item.prereqCategoryId || (item as unknown as { prereq_category_id?: number }).prereq_category_id),
         categoryId: Number(item.categoryId || (item as unknown as { category_id?: number }).category_id),
         edgeType: String(item.edgeType || "prerequisite"),
@@ -440,7 +421,7 @@ function DagQuickBuilder({
         return categories.has(item.prereqCategoryId) && categories.has(item.categoryId);
       });
       if (!valid.length) throw new Error("没有新建议，或建议与现有边重复");
-      setSuggestions(valid.slice(0, 8));
+      setSuggestions(valid.slice(0, 5));
       toast.success(`AI 给出 ${valid.length} 条建议，可直接加入待保存`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "AI 建议生成失败");
