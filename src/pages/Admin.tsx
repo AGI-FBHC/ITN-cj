@@ -505,7 +505,7 @@ export default function Admin() {
     <div className="lf-fade-in min-h-screen font-sans text-ink lg:h-screen lg:overflow-hidden">
       <aside className="lf-sidebar fixed inset-y-0 left-0 z-40 hidden w-60 flex-col lg:flex">
         <Link to="/admin" className="flex items-center gap-2.5 px-5 py-5">
-          <img src="/logo.svg" alt="智训云枢" className="h-9 w-9 rounded-xl bg-white object-contain p-1 shadow-sm" />
+          <img src="/logo.png" alt="智训云枢" className="h-9 w-9 rounded-xl bg-white object-contain p-1 shadow-sm" />
           <span>
             <span className="block text-[15px] font-bold leading-tight text-ink">智训云枢</span>
             <span className="mt-0.5 block text-[10px] tracking-wide text-ink-muted">后台管理系统</span>

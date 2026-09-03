@@ -1004,7 +1004,7 @@ function FooterSection() {
       <div className="mx-auto grid max-w-[1320px] gap-8 px-8 py-10 md:grid-cols-3">
         <div>
           <div className="flex items-center gap-2.5">
-            <img src="/logo.svg" alt="智训云枢" className="h-8 w-8" />
+            <img src="/logo.png" alt="智训云枢" className="h-8 w-8" />
             <span className="font-serif text-[16px] font-bold text-ink">智训云枢 LearnForge</span>
           </div>
           <p className="mt-3 font-mono text-[11.5px] leading-[18px] text-ink-muted">

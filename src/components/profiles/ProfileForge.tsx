@@ -114,7 +114,7 @@ export default function ProfileForge({ data, onDone }: { data: ForgeData; onDone
       <main className="relative mx-auto flex min-h-full w-full max-w-[920px] flex-col justify-center">
         <div className="mb-2 flex items-center justify-between px-1 sm:px-2">
           <div className="flex items-center gap-2.5">
-            <img src="/logo.svg" alt="" className="h-7 w-7" />
+            <img src="/logo.png" alt="" className="h-7 w-7" />
             <span className="font-serif text-[17px] font-semibold tracking-wide text-ink">智训云枢</span>
           </div>
           <span className="rounded-full border border-white/80 bg-white/45 px-3 py-1 text-[11px] font-medium text-ink-muted shadow-xs backdrop-blur">

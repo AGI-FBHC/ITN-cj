@@ -227,7 +227,7 @@ export default function AppShell() {
           <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b border-hairline bg-paper/85 px-4 backdrop-blur-md md:px-6">
             {/* logo */}
             <Link to="/me" className="flex shrink-0 items-center gap-2.5">
-              <img src="/logo.svg" alt="智训云枢" className="h-7 w-7" />
+              <img src="/logo.png" alt="智训云枢" className="h-7 w-7" />
               <span className="hidden items-center gap-1.5 sm:flex">
                 <span className="font-serif text-[16px] font-bold text-ink">智训云枢</span>
                 {orgShortName && (
@@ -349,7 +349,7 @@ export default function AppShell() {
                 collapsed && 'justify-center px-0',
               )}
             >
-              <img src="/logo.svg" alt="智训云枢" className="h-8 w-8 shrink-0" />
+              <img src="/logo.png" alt="智训云枢" className="h-8 w-8 shrink-0" />
               {!collapsed && (
                 <span className="flex flex-col leading-tight">
                   <span className="font-serif text-[17px] font-bold text-ink">智训云枢</span>

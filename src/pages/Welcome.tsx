@@ -526,7 +526,7 @@ export default function Welcome() {
     <div className="lf-learner flex min-h-[100dvh] flex-col items-center justify-center px-5 py-12">
       {/* 顶部品牌 */}
       <div className="mb-8 flex items-center gap-2.5">
-        <img src="/logo.svg" alt="智训云枢" className="h-8 w-8" />
+        <img src="/logo.png" alt="智训云枢" className="h-8 w-8" />
         <span className="font-serif text-[18px] font-bold text-ink">智训云枢</span>
       </div>
 

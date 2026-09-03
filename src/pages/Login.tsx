@@ -235,7 +235,7 @@ export default function Login() {
       <div className="relative hidden flex-col justify-between overflow-hidden border-r border-hairline bg-card-warm/60 p-12 lg:flex">
         <BlossomBranch className="pointer-events-none absolute right-10 top-8 h-[88px] w-[132px] opacity-90" />
         <div className="flex items-center gap-3">
-          <img src="/logo.svg" alt="智训云枢" className="h-9 w-9" />
+          <img src="/logo.png" alt="智训云枢" className="h-9 w-9" />
           <span className="font-serif text-[20px] font-bold text-ink">智训云枢</span>
           <span className="font-mono text-[10.5px] tracking-wider text-ink-muted">LearnForge</span>
         </div>
@@ -279,7 +279,7 @@ export default function Login() {
       <div className="relative flex items-center justify-center px-5 py-10">
         <Succulent className="pointer-events-none absolute right-8 top-6 hidden h-[56px] w-[48px] md:block" />
         <div className="mb-6 flex items-center gap-2.5 lg:hidden">
-          <img src="/logo.svg" alt="智训云枢" className="h-8 w-8" />
+          <img src="/logo.png" alt="智训云枢" className="h-8 w-8" />
           <span className="font-serif text-[18px] font-bold text-ink">智训云枢</span>
         </div>
 
