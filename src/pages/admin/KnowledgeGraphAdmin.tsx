@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { GitBranch, Loader2, Plus, RefreshCw, Sparkles, X } from "lucide-react";
+import { CheckCircle2, GitBranch, Loader2, Plus, RefreshCw, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { adminKnowledgeApi, type KcCategoryNode, type KcGraphEdge } from "@/lib/adminKnowledgeApi";
@@ -287,8 +287,17 @@ function SimpleChapterCanvas({
             const to = nodePositions.get(edge.category_id);
             if (!from || !to) return null;
             const color = edge.edge_type === "cross_domain_prerequisite" ? "#7c3aed" : edge.edge_type === "related" ? "#0ea5e9" : edge.edge_type === "contrasts_with" ? "#ea580c" : "#94a3b8";
+            const dx = to.x - from.x;
+            const dy = to.y - from.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const ux = dx / len;
+            const uy = dy / len;
+            const sx = from.x + ux * 30;
+            const sy = from.y + uy * 30;
+            const ex = to.x - ux * 30;
+            const ey = to.y - uy * 30;
             return (
-              <line key={edge.id} x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={color} strokeWidth="2" strokeDasharray={edge.status === "proposed" ? "6 4" : undefined} markerEnd="url(#arrow)" opacity={0.72}>
+              <line key={edge.id} x1={sx} y1={sy} x2={ex} y2={ey} stroke={color} strokeWidth="2" strokeDasharray={edge.status === "proposed" ? "6 4" : undefined} markerEnd="url(#arrow)" opacity={0.72}>
                 <title>{categories.get(edge.prereq_category_id)?.name} → {categories.get(edge.category_id)?.name}</title>
               </line>
             );
@@ -297,7 +306,14 @@ function SimpleChapterCanvas({
             const from = nodePositions.get(sourceId);
             const to = nodePositions.get(targetId);
             if (!from || !to) return null;
-            return <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="#d97706" strokeWidth="3" strokeDasharray="8 6" markerEnd="url(#arrow)" opacity={0.9} />;
+            const dx = to.x - from.x;
+            const dy = to.y - from.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const ux = dx / len;
+            const uy = dy / len;
+            const ex = to.x - ux * 30;
+            const ey = to.y - uy * 30;
+            return <line x1={from.x + ux * 30} y1={from.y + uy * 30} x2={ex} y2={ey} stroke="#d97706" strokeWidth="3" strokeDasharray="8 6" markerEnd="url(#arrow)" opacity={0.9} />;
           })()}
           {chapters.map((node) => {
             const pos = nodePositions.get(node.id);
@@ -355,6 +371,7 @@ function DagQuickBuilder({
   targetId,
   onSourceIdChange,
   onTargetIdChange,
+  onStageEdge,
 }: {
   categories: Map<number, CategoryInfo>;
   edges: KcGraphEdge[];
@@ -363,6 +380,7 @@ function DagQuickBuilder({
   targetId: number | null;
   onSourceIdChange: (id: number | null) => void;
   onTargetIdChange: (id: number | null) => void;
+  onStageEdge?: (source: number, target: number, edgeType: string, rationale: string, directActive: boolean) => void;
 }) {
   const options = useMemo(
     () =>
@@ -398,18 +416,24 @@ function DagQuickBuilder({
     if (existingKeys.has(`${prereqId}->${categoryId}`)) return toast.error("该边已经存在");
     setBusy(true);
     try {
-      const result = await adminKnowledgeApi.addPrerequisite({
-        prereqCategoryId: prereqId,
-        categoryId,
-        edgeType,
-        rationale: rationale.trim() || "管理员在 DAG 快速建图面板手动添加",
-        source: "human",
-        directActive,
-      });
-      toast.success(result.edge.status === "active" ? "建边已生效" : "建边已进入待审核队列");
-      setRationale("");
-      setDraftIndex(null);
-      await onSaved();
+      if (onStageEdge) {
+        onStageEdge(prereqId, categoryId, edgeType, rationale.trim(), directActive);
+        setRationale("");
+        setDraftIndex(null);
+      } else {
+        const result = await adminKnowledgeApi.addPrerequisite({
+          prereqCategoryId: prereqId,
+          categoryId,
+          edgeType,
+          rationale: rationale.trim() || "管理员在 DAG 快速建图面板手动添加",
+          source: "human",
+          directActive,
+        });
+        toast.success(result.edge.status === "active" ? "建边已生效" : "建边已进入待审核队列");
+        setRationale("");
+        setDraftIndex(null);
+        await onSaved();
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "建边失败");
     } finally {
@@ -744,6 +768,7 @@ export default function KnowledgeGraphAdmin() {
   const [detail, setDetail] = useState<KcGraphEdge | null>(null);
   const [builderSourceId, setBuilderSourceId] = useState<number | null>(null);
   const [builderTargetId, setBuilderTargetId] = useState<number | null>(null);
+  const [pendingEdges, setPendingEdges] = useState<{ prereqCategoryId: number; categoryId: number; edgeType: string; rationale: string }[]>([]);
   const handleBuilderPick = useCallback(
     (id: number) => {
       if (builderSourceId == null || builderSourceId === id) {
@@ -772,25 +797,60 @@ export default function KnowledgeGraphAdmin() {
       setLoading(false);
     }
   }, []);
-  const handleBuilderAddEdge = useCallback(async (source: number, target: number) => {
-    if (source === target) return;
-    try {
-      const result = await adminKnowledgeApi.addPrerequisite({
+  const stageBuilderEdge = useCallback(
+    (source: number, target: number, edgeType = "prerequisite", rationale = "") => {
+      if (source === target) return;
+      const duplicate = pendingEdges.some((item) => item.prereqCategoryId === source && item.categoryId === target);
+      if (duplicate) {
+        toast.warning("这条边已经在待保存列表里");
+        return;
+      }
+      setPendingEdges((current) => [...current, {
         prereqCategoryId: source,
         categoryId: target,
-        edgeType: "prerequisite",
-        source: "human",
-        rationale: "在章节网络快速建图中手动加边",
-        directActive: true,
-      });
-      toast.success(result.edge.status === "active" ? "章节边已添加" : "章节边已进入待审核队列");
+        edgeType,
+        rationale: rationale.trim() || "在章节网络快速建图中手动加边",
+      }]);
       setBuilderSourceId(null);
       setBuilderTargetId(null);
+      toast.success("已暂存一条边，可继续编辑或确认保存");
+    },
+    [pendingEdges],
+  );
+  const handleBuilderAddEdge = useCallback(
+    (source: number, target: number) => stageBuilderEdge(source, target),
+    [stageBuilderEdge],
+  );
+  const confirmPendingEdges = useCallback(async () => {
+    if (!pendingEdges.length) return;
+    const queue = [...pendingEdges];
+    const errors: string[] = [];
+    setPendingEdges([]);
+    try {
+      for (const item of queue) {
+        try {
+          await adminKnowledgeApi.addPrerequisite({
+            prereqCategoryId: item.prereqCategoryId,
+            categoryId: item.categoryId,
+            edgeType: item.edgeType,
+            source: "human",
+            rationale: item.rationale,
+            directActive: true,
+          });
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : String(error));
+        }
+      }
+      if (errors.length) {
+        toast.error(`部分边保存失败：${errors.join("；")}`);
+      } else {
+        toast.success(`已确认保存 ${queue.length} 条章节边`);
+      }
       await refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "加边失败");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "保存失败");
     }
-  }, [refresh]);
+  }, [pendingEdges, refresh]);
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -903,7 +963,35 @@ export default function KnowledgeGraphAdmin() {
             targetId={builderTargetId}
             onSourceIdChange={setBuilderSourceId}
             onTargetIdChange={setBuilderTargetId}
+            onStageEdge={(source, target, edgeType, rationale) => stageBuilderEdge(source, target, edgeType, rationale)}
           />
+          {pendingEdges.length > 0 && (
+            <div className="lf-card rounded-2xl p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-semibold text-ink">待确认边 {pendingEdges.length} 条</p>
+                  <p className="mt-0.5 text-[10.5px] text-ink-muted">确认后才会写入并刷新图形。</p>
+                </div>
+                <button onClick={() => setPendingEdges([])} className="lf-row-btn text-ink-muted">
+                  清空
+                </button>
+              </div>
+              <div className="mt-2 max-h-40 space-y-1 overflow-auto">
+                {pendingEdges.map((item, index) => (
+                  <div key={`${item.prereqCategoryId}-${item.categoryId}-${index}`} className="flex items-center justify-between gap-2 rounded-lg border border-black/[0.04] bg-white/60 px-2 py-1.5 text-[11px]">
+                    <span className="min-w-0 flex-1 truncate">
+                      {categories.get(item.prereqCategoryId)?.name || item.prereqCategoryId} → {categories.get(item.categoryId)?.name || item.categoryId}
+                    </span>
+                    <span className="shrink-0 text-ink-muted">{typeLabel[item.edgeType] || item.edgeType}</span>
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => void confirmPendingEdges()} className="lf-btn-primary mt-3 w-full justify-center">
+                <CheckCircle2 size={14} />
+                确认保存
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <GraphCanvas edges={edges} categories={categories} />
