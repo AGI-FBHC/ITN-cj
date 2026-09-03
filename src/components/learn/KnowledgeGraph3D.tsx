@@ -202,7 +202,7 @@ function AdaptiveDepthOfField() {
 
   return (
     <EffectComposer multisampling={0} enableNormalPass={false}>
-      <DepthOfField ref={effectRef} focusRange={42} bokehScale={0.95} resolutionScale={0.55} />
+      <DepthOfField ref={effectRef} focusRange={58} bokehScale={0.55} resolutionScale={0.55} />
     </EffectComposer>
   );
 }
@@ -2041,6 +2041,7 @@ export default function KnowledgeGraph3D({
         }}
       >
         <PerspectiveCamera makeDefault position={[0, 0, 88]} fov={45} />
+        <color attach="background" args={['#F7F8FA']} />
         <OrbitControls
           makeDefault
           enablePan
