@@ -258,7 +258,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
         toast.error(error instanceof Error ? error.message : '发起定制失败');
       }
     }
-    if (firstTaskId) navigate(`/learn/customize/${firstTaskId}`);
+    if (firstTaskId) navigate(`/learn/customize-team/${encodeURIComponent(customizationKpId)}?taskId=${encodeURIComponent(firstTaskId)}`);
   };
 
   /* 四个推荐：优先展示最近已学内容（我的已学路径），不足用未学完资源补位，最后用子知识点生成推荐补满。 */
@@ -347,7 +347,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
               return (
                 <button
                   type="button"
-                  onClick={() => navigate(`/learn/customize/${activeTasks[0].id}`)}
+                  onClick={() => navigate(`/learn/customize-team/${encodeURIComponent(customizationKpId)}?taskId=${encodeURIComponent(activeTasks[0].id)}`)}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-ochre/45 bg-ochre-tint/60 px-2.5 py-1.5 text-[11px] font-medium text-ochre transition-all hover:border-ochre hover:bg-ochre-tint"
                 >
                   <Loader2 size={12} className="animate-spin" />查看生成过程（{activeTasks.length} 项定制中）
@@ -432,7 +432,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           <button
             type="button"
             onClick={() => {
-              if (pptBusy) { navigate(`/learn/customize/${pptCustomizeTask!.id}`); return; }
+              if (pptBusy) { navigate(`/learn/customize-team/${encodeURIComponent(customizationKpId)}?taskId=${encodeURIComponent(pptCustomizeTask!.id)}`); return; }
               if (pptCustomized && pptCustomizeTask?.resourceId) { void openPptCourseware(); return; }
               if (pptForScope?.status === 'completed') { void openPptCourseware(); return; }
               if (pptForScope?.id) { void startCustomizeLearning({ adminResourceId: pptForScope.id, kpId: customizationKpId, resourceType: 'ppt', resourceLabel: '交互课件' }); return; }

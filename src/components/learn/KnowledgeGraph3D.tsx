@@ -753,7 +753,7 @@ function TopicActionModal({
       }
     }
     customizeAllBusy.current = false;
-    if (firstTaskId) navigate(`/learn/customize/${firstTaskId}`);
+    if (firstTaskId) navigate(`/learn/customize-team/${encodeURIComponent(node.id)}?taskId=${encodeURIComponent(firstTaskId)}`);
   };
   useEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -921,7 +921,11 @@ function TopicActionModal({
                 return;
               }
               if (customizing && cTask) {
-                navigate(isPpt ? `/learn/customize/${cTask.id}` : `/learn/slide/${cTask.id}`);
+                if (isPpt) {
+                  navigate(`/learn/customize-team/${encodeURIComponent(node.id)}?taskId=${encodeURIComponent(cTask.id)}`);
+                } else {
+                  navigate(`/learn/slide/${cTask.id}`);
+                }
                 return;
               }
               if (isPpt) {

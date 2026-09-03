@@ -51,3 +51,13 @@ export function useCustomizeActivity(): CustomizeActivityValue {
   if (!context) throw new Error('useCustomizeActivity must be used within CustomizeActivityProvider');
   return context;
 }
+
+export function customizeTeamPathForTask(task?: LearningResourceGenerationTask | null): string {
+  if (!task) return '';
+  const request = task.request;
+  const kpId = request?.kpId || (request?.generationContext && typeof request.generationContext.kpId === 'string'
+    ? request.generationContext.kpId
+    : '');
+  if (!kpId) return '';
+  return `/learn/customize-team/${encodeURIComponent(kpId)}?taskId=${encodeURIComponent(task.id)}`;
+}

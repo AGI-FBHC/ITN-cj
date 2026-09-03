@@ -24,7 +24,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { useCustomizeActivity } from '@/context/CustomizeActivityContext';
+import { customizeTeamPathForTask, useCustomizeActivity } from '@/context/CustomizeActivityContext';
 import {
   CommandDialog,
   CommandEmpty,
@@ -268,7 +268,10 @@ export default function AppShell() {
               {activeTasks[0] && (
                 <button
                   type="button"
-                  onClick={() => navigate(`/learn/customize/${encodeURIComponent(activeTasks[0].id)}`)}
+                  onClick={() => {
+                    const path = customizeTeamPathForTask(activeTasks[0]);
+                    if (path) navigate(path);
+                  }}
                   title={activeTasks.length > 1 ? `查看生成进度（${activeTasks.length} 项正在生成）` : '查看生成进度'}
                   className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-brand-amber/50 bg-brand-amber-tint px-2.5 text-[12px] font-medium text-ochre transition-all duration-200 hover:border-brand-amber/80 hover:bg-brand-amber-tint/80"
                 >

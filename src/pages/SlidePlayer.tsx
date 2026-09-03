@@ -18,7 +18,7 @@ import { fetchSlideAsset, presentationApi, updatePptLearningProgress } from '@/l
 import { refreshLearningMapResourceCache } from '@/hooks/useLearningMap';
 import { toast } from 'sonner';
 import { buildQuizFollowUpPrompt } from '@/lib/assistantPrompts';
-import { useCustomizeActivity } from '@/context/CustomizeActivityContext';
+import { customizeTeamPathForTask, useCustomizeActivity } from '@/context/CustomizeActivityContext';
 
 type QuizValue = string | number;
 const isUuid = (value?: string | null) => Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
@@ -585,7 +585,10 @@ export default function SlidePlayer() {
         {activeTasks[0] && (
           <button
             type="button"
-            onClick={() => navigate(`/learn/customize/${encodeURIComponent(activeTasks[0].id)}`)}
+            onClick={() => {
+              const path = customizeTeamPathForTask(activeTasks[0]);
+              if (path) navigate(path);
+            }}
             title="查看资源生成执行流程"
             className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-brand-amber/50 bg-brand-amber-tint px-3 text-[11px] font-medium text-ochre transition-all hover:border-brand-amber/80"
           >
