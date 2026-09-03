@@ -70,7 +70,7 @@ export default function CustomizeTeam() {
   const [events, setEvents] = useState<AdminGenerationEvent[]>([]);
   const [selectedEventSeq, setSelectedEventSeq] = useState<number | null>(null);
   const [selectedAgent, setSelectedAgent] = useState('');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
 
   const [collapsedChapters, setCollapsedChapters] = useState<Set<string>>(new Set());
   const creatingRef = useRef(false);
@@ -335,12 +335,14 @@ export default function CustomizeTeam() {
           {/* 资源状态卡片 */}
           <div className="shrink-0 rounded-2xl border border-white/70 bg-white/45 p-3">
             <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="text-[11px] font-medium text-ink-2">{activeKpLabel} · 资源定制状态</span>
-              {sidebarCollapsed && (
-                <button type="button" onClick={() => setSidebarCollapsed(false)} className="rounded-lg border border-white/70 bg-white/60 p-1.5 text-ink-muted transition hover:bg-brand-tint hover:text-brand" title="展开知识点列表">
-                  <ChevronRight size={13} />
-                </button>
-              )}
+              <span className="flex min-w-0 items-center gap-2">
+                {sidebarCollapsed && (
+                  <button type="button" onClick={() => setSidebarCollapsed(false)} className="rounded-lg border border-white/70 bg-white/60 p-1.5 text-ink-muted transition hover:bg-brand-tint hover:text-brand" title="展开知识点列表">
+                    <ChevronRight size={13} />
+                  </button>
+                )}
+                <span className="truncate text-[11px] font-medium text-ink-2">{activeKpLabel} · 资源定制状态</span>
+              </span>
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {rows.map(({ type, label, icon: Icon, template, task: matched, busy, customized }) => (
