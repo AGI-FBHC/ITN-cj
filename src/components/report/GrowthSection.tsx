@@ -171,7 +171,7 @@ function resourceTargetFor(
   return target ? `/learn/resource/${encodeURIComponent(target.id)}` : fallback;
 }
 
-/** 建议卡：优先级徽标 + 可展开「决策依据」，右侧导航箭头独立可点击（stopPropagation） */
+/** 建议卡：点击整行直达对应资源；右下箭头仅用于展开/收起「决策依据」 */
 function AdviceRow({
   advice,
   index,
@@ -194,9 +194,9 @@ function AdviceRow({
       <div
         role="button"
         tabIndex={0}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => navigate(advice.href)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') setOpen((v) => !v);
+          if (e.key === 'Enter') navigate(advice.href);
         }}
         className="group flex w-full cursor-pointer items-start gap-3 p-3.5 text-left"
       >
@@ -228,10 +228,20 @@ function AdviceRow({
             className="transition-transform duration-200 group-hover:translate-x-[3px]"
           />
         </button>
-        <ChevronDown
-          size={14}
-          className={cn('mt-1 shrink-0 text-ink-muted transition-transform duration-200', open && 'rotate-180')}
-        />
+        <button
+          type="button"
+          aria-label="查看建议依据"
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen((v) => !v);
+          }}
+          className="mt-0.5 shrink-0 rounded-md p-0.5 text-ink-muted hover:bg-paper-deep hover:text-brand"
+        >
+          <ChevronDown
+            size={14}
+            className={cn('transition-transform duration-200', open && 'rotate-180')}
+          />
+        </button>
       </div>
       <AnimatePresence initial={false}>
         {open && (
