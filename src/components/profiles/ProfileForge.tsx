@@ -1,5 +1,5 @@
 /**
- * ProfileForge — 画像建档生成过场（全屏覆盖，约 5s，可跳过）
+ * ProfileForge — 画像建档生成过场（全屏覆盖，完成后自动进入）
  * 精简建档（/welcome）与精准定制（/onboarding）共用。
  */
 import { useEffect, useMemo, useState } from 'react';
@@ -366,15 +366,8 @@ export default function ProfileForge({ data, onDone }: { data: ForgeData; onDone
             </div>
           </div>
 
-          <footer className="flex shrink-0 items-center justify-between border-t border-hairline/70 bg-white/25 px-5 py-3 sm:px-7">
+          <footer className="flex shrink-0 items-center border-t border-hairline/70 bg-white/25 px-5 py-3 sm:px-7">
             <p className="text-[10.5px] text-ink-muted">预计用时约 6 秒 · 完成后自动进入学习空间</p>
-            <button
-              type="button"
-              onClick={onDone}
-              className="rounded-full px-3 py-1.5 text-[11.5px] font-medium text-ink-muted transition-colors hover:bg-white/55 hover:text-brand"
-            >
-              跳过动画 →
-            </button>
           </footer>
         </section>
       </main>
