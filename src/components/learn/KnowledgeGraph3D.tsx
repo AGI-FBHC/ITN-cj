@@ -17,7 +17,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import cjkFontUrl from '@/assets/fonts/noto-sans-cjk-sc-gb2312.otf';
-import CustomizeChoiceModal from '@/components/learn/CustomizeChoiceModal';
+import { useStartCustomizeLearning } from '@/lib/startCustomizeLearning';
 
 const EDGE_COLORS: Record<string, string> = {
   prereq: '#4E7860',
@@ -675,13 +675,11 @@ function TopicActionModal({
 }) {
   const dialogRef = useRef<HTMLElement>(null);
   const navigate = useNavigate();
+  const startCustomizeLearning = useStartCustomizeLearning();
   const existingFor = (form: ResourceForm) => (resources ?? []).find((item) => item.id && item.form === form);
   /* 定制任务状态：跟随当前知识点拉取，进行中轮询 */
   const [customizeTasks, setCustomizeTasks] = useState<LearningResourceGenerationTask[]>([]);
   const [pptStates, setPptStates] = useState<Record<string, { learned: boolean; maxPageViewed: number; pageCount: number }>>({});
-  const [customizeChoice, setCustomizeChoice] = useState<{
-    adminResourceId: string; resourceType: 'lecture' | 'practice' | 'quiz' | 'ppt'; resourceLabel: string;
-  } | null>(null);
   useEffect(() => {
     let alive = true;
     const load = async () => {
@@ -941,7 +939,7 @@ function TopicActionModal({
                   const pptId = cTask.resourceId;
                   navigate(`/learn/${node.kpId}?ppt=${pptId}&topic=${encodeURIComponent(node.label.trim())}`);
                 } else if (pptTask?.id) {
-                  setCustomizeChoice({ adminResourceId: pptTask.id, resourceType: 'ppt', resourceLabel: fn.label });
+                  void startCustomizeLearning({ adminResourceId: pptTask.id, kpId: node.id, resourceType: 'ppt', resourceLabel: fn.label });
                 }
                 return;
               }
@@ -954,7 +952,7 @@ function TopicActionModal({
                 return;
               }
               if (res?.id) {
-                setCustomizeChoice({ adminResourceId: res.id, resourceType: CUSTOMIZE_FORM_TYPE[fn.form as ResourceForm], resourceLabel: fn.label });
+                void startCustomizeLearning({ adminResourceId: res.id, kpId: node.id, resourceType: CUSTOMIZE_FORM_TYPE[fn.form as ResourceForm], resourceLabel: fn.label });
               }
             }}
           >
@@ -974,7 +972,6 @@ function TopicActionModal({
           })}
         </div>
       </section>
-      {customizeChoice && <CustomizeChoiceModal open adminResourceId={customizeChoice.adminResourceId} kpId={node.id} resourceType={customizeChoice.resourceType} resourceLabel={customizeChoice.resourceLabel} onClose={() => setCustomizeChoice(null)} />}
     </div>
   );
 }

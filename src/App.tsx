@@ -5,6 +5,7 @@ import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { Toaster } from '@/components/ui/sonner';
 import AppShell from '@/components/AppShell';
+import { CustomizeActivityProvider } from '@/context/CustomizeActivityContext';
 import Login from '@/pages/Login';
 import PersonaSelect from '@/pages/PersonaSelect';
 
@@ -101,7 +102,7 @@ export default function App() {
         <Route path="welcome" element={<Welcome />} />
         <Route path="admin" element={<Admin />} />
         <Route path="admin/:section" element={<Admin />} />
-        <Route element={<AppShell />}>
+        <Route element={<CustomizeActivityProvider><AppShell /></CustomizeActivityProvider>}>
           <Route index element={<Home />} />
           <Route path="me" element={<LearnerHome />} />
           <Route path="me/profile" element={<MyProfile />} />

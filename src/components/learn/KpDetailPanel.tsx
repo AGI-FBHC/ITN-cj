@@ -21,7 +21,7 @@ import type { GraphNode } from '@/data/knowledgeGraph';
 import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
 import type { LearningResourceGenerationTask } from '@/lib/api';
-import CustomizeChoiceModal from '@/components/learn/CustomizeChoiceModal';
+import { useStartCustomizeLearning } from '@/lib/startCustomizeLearning';
 
 const FORM_META: Record<ResourceForm, { label: string; icon: typeof BookOpen; hint: string }> = {
   lecture: { label: '领学讲义', icon: BookOpen, hint: '按你水平现写的讲义' },
@@ -85,12 +85,10 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
   };
 }) {
   const navigate = useNavigate();
+  const startCustomizeLearning = useStartCustomizeLearning();
   const { currentLearner } = useProfile();
   const report = reportForLearner(currentLearner);
   const [customizeTasks, setCustomizeTasks] = useState<LearningResourceGenerationTask[]>([]);
-  const [customizeChoice, setCustomizeChoice] = useState<{
-    adminResourceId: string; kpId: string; resourceType: 'lecture' | 'practice' | 'quiz' | 'ppt'; resourceLabel: string;
-  } | null>(null);
 
   /* 拉取本知识点的定制任务，进行中时轮询刷新 */
   useEffect(() => {
@@ -396,7 +394,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
                 <div key={f} className="relative">
                 <button
                   type="button"
-                  onClick={() => { if (busy || openTarget) { navigate(`/learn/slide/${cTask!.id}`); return; } if (template?.id) setCustomizeChoice({ adminResourceId: template.id, kpId: customizationKpId, resourceType: CUSTOMIZE_FORM_TYPE[f], resourceLabel: meta.label }); }}
+                  onClick={() => { if (busy || openTarget) { navigate(`/learn/slide/${cTask!.id}`); return; } if (template?.id) void startCustomizeLearning({ adminResourceId: template.id, kpId: customizationKpId, resourceType: CUSTOMIZE_FORM_TYPE[f], resourceLabel: meta.label }); }}
                   title={busy ? '查看定制进度' : openTarget ? `打开${meta.label}` : `定制${meta.label}`}
                   className={cn(
                     'group flex w-full items-center gap-3 rounded-[10px] border px-3 py-2.5 text-left transition-all',
@@ -435,7 +433,7 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
             onClick={() => {
               if (pptBusy) { navigate(`/learn/customize/${pptCustomizeTask!.id}`); return; }
               if (pptCustomized && pptCustomizeTask?.resourceId) { void openPptCourseware(); return; }
-              if (pptForScope?.id) { setCustomizeChoice({ adminResourceId: pptForScope.id, kpId: customizationKpId, resourceType: 'ppt', resourceLabel: '交互课件' }); return; }
+              if (pptForScope?.id) { void startCustomizeLearning({ adminResourceId: pptForScope.id, kpId: customizationKpId, resourceType: 'ppt', resourceLabel: '交互课件' }); return; }
               toast.info('暂无资源');
             }}
             title={pptBusy ? '查看定制进度' : pptCustomized ? '打开交互课件' : pptForScope ? '定制交互课件' : '暂无资源'}
@@ -472,7 +470,6 @@ export default function KpDetailPanel({ kpId, topicIndex, onSelectTopic, kp: kpP
           </button>
         </div>
       </div>}
-      {customizeChoice && <CustomizeChoiceModal open adminResourceId={customizeChoice.adminResourceId} kpId={customizeChoice.kpId} resourceType={customizeChoice.resourceType} resourceLabel={customizeChoice.resourceLabel} onClose={() => setCustomizeChoice(null)} />}
     </div>
   );
 }

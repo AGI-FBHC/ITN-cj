@@ -18,6 +18,7 @@ import { fetchSlideAsset, presentationApi, updatePptLearningProgress } from '@/l
 import { refreshLearningMapResourceCache } from '@/hooks/useLearningMap';
 import { toast } from 'sonner';
 import { buildQuizFollowUpPrompt } from '@/lib/assistantPrompts';
+import { useCustomizeActivity } from '@/context/CustomizeActivityContext';
 
 type QuizValue = string | number;
 const isUuid = (value?: string | null) => Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
@@ -305,6 +306,7 @@ export default function SlidePlayer() {
   const { currentLearner } = useProfile();
   const { addNote } = useNotes();
   const { open: assistantOpen, setOpen: setAssistantOpen } = useAgent();
+  const { activeTasks } = useCustomizeActivity();
   const [data, setData] = useState<CustomizeSlidesResponse | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [error, setError] = useState('');
@@ -580,6 +582,18 @@ export default function SlidePlayer() {
         <Presentation size={17} className="text-brand" />
         <div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold text-ink">幻灯模式 · {data?.title ?? '正在准备个性化学习内容'}</div><div className="font-mono text-[9.5px] text-ink-muted">个性化内容生成中 · 第 {slides.length ? currentIndex + 1 : 0}/{expected || slides.length || 0} 页</div></div>
         {data?.resourceId && <button type="button" onClick={() => { narration.stop(); navigate(data.resourceType === 'ppt' ? `/learn/${encodeURIComponent(data.kpId ?? '')}?ppt=${encodeURIComponent(data.resourceId!)}` : `/learn/resource/${encodeURIComponent(data.resourceId!)}?view=full`); }} className="inline-flex h-9 items-center gap-1.5 rounded-[10px] border border-hairline bg-paper px-3 text-[11px] font-medium text-ink-2 hover:border-brand/35 hover:text-brand"><BookOpen size={13} />完整阅读</button>}
+        {activeTasks[0] && (
+          <button
+            type="button"
+            onClick={() => navigate(`/learn/customize/${encodeURIComponent(activeTasks[0].id)}`)}
+            title="查看资源生成执行流程"
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-brand-amber/50 bg-brand-amber-tint px-3 text-[11px] font-medium text-ochre transition-all hover:border-brand-amber/80"
+          >
+            <Loader2 size={13} className="animate-spin" />
+            <span className="hidden sm:inline">正在生成</span>
+            {activeTasks.length > 1 && <span className="font-mono text-[9px]">{activeTasks.length}</span>}
+          </button>
+        )}
         <button type="button" onClick={() => void leaveToKnowledgePoint()} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep" title="退出幻灯"><X size={17} /></button>
       </header>
 

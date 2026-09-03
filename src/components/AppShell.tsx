@@ -21,8 +21,10 @@ import {
   NotebookPen,
   LogOut,
   Compass,
+  Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useCustomizeActivity } from '@/context/CustomizeActivityContext';
 import {
   CommandDialog,
   CommandEmpty,
@@ -174,6 +176,7 @@ export default function AppShell() {
   const location = useLocation();
   const isSlideMode = location.pathname.startsWith('/learn/slide/');
   const navigate = useNavigate();
+  const { activeTasks } = useCustomizeActivity();
   const isLearner = viewMode === 'learner';
 
   const doLogout = () => {
@@ -262,6 +265,22 @@ export default function AppShell() {
 
             {/* 右侧集群 */}
             <div className="ml-auto flex shrink-0 items-center gap-2 whitespace-nowrap md:ml-0">
+              {activeTasks[0] && (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/learn/customize/${encodeURIComponent(activeTasks[0].id)}`)}
+                  title={activeTasks.length > 1 ? `查看生成进度（${activeTasks.length} 项正在生成）` : '查看生成进度'}
+                  className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-brand-amber/50 bg-brand-amber-tint px-2.5 text-[12px] font-medium text-ochre transition-all duration-200 hover:border-brand-amber/80 hover:bg-brand-amber-tint/80"
+                >
+                  <Loader2 size={14} className="animate-spin" />
+                  <span className="hidden lg:inline">正在生成</span>
+                  {activeTasks.length > 1 && (
+                    <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-ochre px-1 font-mono text-[9px] font-semibold leading-4 text-paper">
+                      {activeTasks.length}
+                    </span>
+                  )}
+                </button>
+              )}
               <Link
                 to="/me/notes"
                 title="我的笔记"
