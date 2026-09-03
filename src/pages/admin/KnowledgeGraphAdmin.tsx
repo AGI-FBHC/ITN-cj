@@ -40,6 +40,39 @@ function walkCategories(nodes: KcCategoryNode[], map = new Map<number, CategoryI
   return map;
 }
 
+/** 与学习页“章节速览”同口径：先按 L1 大类 sort_order，再按章节 sort_order。 */
+function chapterNodesByDbOrder(categories: Map<number, CategoryInfo>): CategoryInfo[] {
+  const nodes = [...categories.values()];
+  const roots = nodes
+    .filter((node) => node.level === 1 && (node.node_type === "category" || node.node_type === "domain"))
+    .sort((a, b) => (a.sort_order ?? a.id) - (b.sort_order ?? b.id) || a.id - b.id);
+  const rootRank = new Map<number, number>();
+  roots.forEach((root, index) => rootRank.set(root.id, index));
+  return nodes
+    .filter((node) => node.level === 2 && (node.node_type === "category" || node.node_type === "domain"))
+    .sort((a, b) => {
+      const ra = rootRank.get(a.parent_id ?? -1) ?? Number.MAX_SAFE_INTEGER;
+      const rb = rootRank.get(b.parent_id ?? -1) ?? Number.MAX_SAFE_INTEGER;
+      if (ra !== rb) return ra - rb;
+      return (a.sort_order ?? a.id) - (b.sort_order ?? b.id) || a.id - b.id;
+    });
+}
+
+function dbDisplayNumbers(categories: Map<number, CategoryInfo>): Map<number, string> {
+  const result = new Map<number, string>();
+  const chapters = chapterNodesByDbOrder(categories);
+  chapters.forEach((chapter, chapterIndex) => {
+    result.set(chapter.id, String(chapterIndex + 1));
+    const topics = [...categories.values()]
+      .filter((node) => node.parent_id === chapter.id && node.level === 3)
+      .sort((a, b) => (a.sort_order ?? a.id) - (b.sort_order ?? b.id) || a.id - b.id);
+    topics.forEach((topic, topicIndex) => {
+      result.set(topic.id, `${chapterIndex + 1}-${topicIndex + 1}`);
+    });
+  });
+  return result;
+}
+
 function EdgeDetails({ edge, names, onClose, onAction: _onAction }: { edge: KcGraphEdge; names: Map<number, CategoryInfo>; onClose: () => void; onAction: (action: "approve" | "reject" | "reverse") => void }) {
   return (
     <div className="lf-overlay fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true">
@@ -182,12 +215,10 @@ function SimpleChapterCanvas({
   onClear?: () => void;
 }) {
   const chapters = useMemo(
-    () =>
-      [...categories.values()]
-        .filter((node) => node.level === 2 && (node.node_type === "category" || node.node_type === "domain"))
-        .sort((a, b) => (a.sort_order ?? a.id) - (b.sort_order ?? b.id) || a.id - b.id),
+    () => chapterNodesByDbOrder(categories),
     [categories],
   );
+  const chapterCodes = useMemo(() => dbDisplayNumbers(categories), [categories]);
   const chapterIds = useMemo(() => new Set(chapters.map((node) => node.id)), [chapters]);
   const chapterEdges = useMemo(
     () => edges.filter((edge) => chapterIds.has(edge.prereq_category_id) && chapterIds.has(edge.category_id)),
@@ -328,7 +359,7 @@ function SimpleChapterCanvas({
                   {node.name}
                 </text>
                 <text y="4" textAnchor="middle" fontSize="10" fill={isSource || isTarget ? "#fff" : "#64748b"}>
-                  {`#${String(chapters.findIndex((item) => item.id === node.id) + 1).padStart(2, "0")}`}
+                  {chapterCodes.get(node.id) ? `#${chapterCodes.get(node.id)?.padStart(2, "0")}` : `#${String(chapters.findIndex((item) => item.id === node.id) + 1).padStart(2, "0")}`}
                 </text>
                 <title>{node.name} · 章节</title>
               </g>
@@ -379,10 +410,7 @@ function DagQuickBuilder({
   onPreviewEdge?: (source: number, target: number) => void;
 }) {
   const options = useMemo(
-    () =>
-      [...categories.values()]
-        .filter((node) => node.level === 2 && (node.node_type === "category" || node.node_type === "domain"))
-        .sort((a, b) => (a.sort_order ?? a.id) - (b.sort_order ?? b.id) || a.id - b.id),
+    () => chapterNodesByDbOrder(categories),
     [categories],
   );
   const existingKeys = useMemo(() => new Set(edges.map((edge) => `${edge.prereq_category_id}->${edge.category_id}`)), [edges]);
@@ -507,6 +535,7 @@ function GraphCanvas({
   const [types, setTypes] = useState(new Set(["prerequisite", "cross_domain_prerequisite", "related"]));
   const [confidence, setConfidence] = useState(0.7);
   const [focus, setFocus] = useState<number | null>(null);
+  const displayCodes = useMemo(() => dbDisplayNumbers(categories), [categories]);
   const filtered = useMemo(() => edges.filter((edge) => statuses.has(edge.status) && types.has(edge.edge_type) && edge.confidence >= confidence), [edges, statuses, types, confidence]);
   const nodes = useMemo(() => [...new Set(filtered.flatMap((edge) => [edge.prereq_category_id, edge.category_id]))], [filtered]);
   const focusSet = useMemo(() => {
@@ -641,6 +670,7 @@ function GraphCanvas({
             const pos = positions.get(id);
             if (!pos) return null;
             const info = categories.get(id);
+            const display = displayCodes.get(id);
             const radius = 20 + Math.min(13, Math.log2((info?.chunk_count || 0) + 1) * 3);
             const dim = focusSet && !focusSet.has(id);
             return (
@@ -650,10 +680,10 @@ function GraphCanvas({
                   {(info?.name || `#${id}`).slice(0, 12)}
                 </text>
                 <text y="4" textAnchor="middle" fontSize="10" fill={focus === id ? "#fff" : "#64748b"}>
-                  {info?.chunk_count || 0}
+                  {display ? `#${display}` : (info?.chunk_count || 0)}
                 </text>
                 <title>
-                  {info?.name || `#${id}`} · {info?.chunk_count || 0} 切片
+                  {info?.name || `#${id}`} · {display ? `序号 ${display}` : `${info?.chunk_count || 0} 切片`}
                 </title>
               </g>
             );
