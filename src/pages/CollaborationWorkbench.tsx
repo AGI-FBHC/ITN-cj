@@ -412,7 +412,7 @@ type TaskTreeNode = {
 };
 
 const taskDomainLabels: Record<string, string> = {
-  agent: '智能体', mcp: 'MCP 规范', 'cs-base': '计算机基础', hello_agents: '智能体',
+  agent: '智能体', hello_agents: '智能体',
 };
 
 function taskTreeContext(task: WorkbenchTask) {
