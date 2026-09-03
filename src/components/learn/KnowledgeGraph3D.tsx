@@ -202,7 +202,7 @@ function AdaptiveDepthOfField() {
 
   return (
     <EffectComposer multisampling={0} enableNormalPass={false}>
-      <DepthOfField ref={effectRef} focusRange={42} bokehScale={1.7} resolutionScale={0.55} />
+      <DepthOfField ref={effectRef} focusRange={42} bokehScale={0.95} resolutionScale={0.55} />
     </EffectComposer>
   );
 }
@@ -2031,7 +2031,10 @@ export default function KnowledgeGraph3D({
       >
       <Canvas
         dpr={[1, 1.25]}
-        gl={{ antialias: true, powerPreference: 'high-performance', failIfMajorPerformanceCaveat: false }}
+        gl={{ antialias: true, alpha: true, premultipliedAlpha: false, powerPreference: 'high-performance', failIfMajorPerformanceCaveat: false }}
+        onCreated={({ gl }) => {
+          gl.setClearColor(0x000000, 0);
+        }}
         onPointerMissed={() => {
           onSelectKp(null);
           onSelectTopic(null);
