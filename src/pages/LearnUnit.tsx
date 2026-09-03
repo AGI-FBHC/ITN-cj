@@ -102,6 +102,12 @@ import { lectureMdComponents } from '@/components/resources/lecture-markdown';
 import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
 import { markLearningMapReturn } from '@/lib/learningNavigation';
 
+function normalizeQaMarkdown(text: string): string {
+  return String(text ?? '')
+    .replace(/\\([*_#`>~|])/g, '$1')
+    .trim();
+}
+
 const letters = ['A', 'B', 'C', 'D'];
 const isUuid = (value?: string | null) => Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
 const RATES = [0.75, 0.85, 1.05, 1.3, 1.5] as const;
@@ -3676,7 +3682,9 @@ export default function LearnUnit() {
                     qa.q && <div className="ml-auto w-fit max-w-[90%] rounded-[12px] rounded-br-[4px] bg-brand px-3 py-1.5 text-[12.5px] text-paper">{qa.q}</div>
                   )}
                   <div className="w-fit max-w-[92%] rounded-[12px] rounded-tl-[4px] border border-hairline bg-card-warm px-3 py-2 text-[12.5px] leading-[19px] text-ink-2">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{qa.a || (qa.voice ? (qa.converting ? '正在识别语音…' : '已识别，正在回答…') : '')}</ReactMarkdown>
+                    <div className="[&_a]:text-brand [&_a]:underline [&_code]:rounded [&_code]:bg-ink/[0.06] [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.9em] [&_li]:my-0.5 [&_li]:ml-4 [&_ol]:my-1.5 [&_ol]:list-decimal [&_p]:my-1.5 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-ink/[0.06] [&_pre]:p-2 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_strong]:font-semibold [&_ul]:my-1.5 [&_ul]:list-disc">
+                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]}>{normalizeQaMarkdown(qa.a || (qa.voice ? (qa.converting ? '正在识别语音…' : '已识别，正在回答…') : ''))}</ReactMarkdown>
+                    </div>
                     {qa.kbRef && <span className="ml-1.5"><TraceBadge kbId={qa.kbRef} /></span>}
                   </div>
                 </div>
