@@ -1272,6 +1272,7 @@ export const api = {
   createOrganizationInvite: (body: { label?: string; maxUses?: number; expiresInDays?: number }) => request<{ invitationCode: string; expiresAt: string | null; maxUses: number | null }>('/api/v1/admin/organization/invites', { method: 'POST', body: JSON.stringify(body) }),
   listAdminAccounts: (page = 0, size = 50) => request<AdminAccountPage>(`/api/v1/admin/users?page=${page}&size=${size}`),
   setAdminAccountEnabled: (id: string, enabled: boolean) => request<AdminAccount>(`/api/v1/admin/users/${encodeURIComponent(id)}/${enabled ? 'enable' : 'disable'}`, { method: 'POST' }),
+  resetAdminUser: (id: string) => request<AdminAccount>(`/api/v1/admin/users/${encodeURIComponent(id)}/reset`, { method: 'POST' }),
   getAdminResourceStats: () => request<AdminResourceStats>('/api/v1/admin/resources/stats'),
   listAdminResources: (params: { view: 'library' | 'archive'; type?: string; keyword?: string; domainCode?: string; nodeCode?: string }) => {
     const query = new URLSearchParams({ view: params.view });
