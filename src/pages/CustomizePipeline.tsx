@@ -5,7 +5,7 @@
  * 聚焦单个定制任务的泳道与执行详情。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { api, streamAdminGenerationTask, type AdminGenerationEvent, type LearningResourceGenerationTask } from '@/lib/api';
 import { CollaborationRounds, AgentWorkflowSummary, agents, eventDisplayTitle, isLifecycleEvent } from '@/pages/CollaborationWorkbench';
@@ -26,7 +26,10 @@ const RESOURCE_LABEL: Record<string, string> = {
 export default function CustomizePipeline() {
   const { taskId } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { currentLearner } = useProfile();
+  const returnKpId = searchParams.get('returnKpId') ?? '';
+  const returnTopic = searchParams.get('returnTopic') ?? '';
   const [task, setTask] = useState<LearningResourceGenerationTask | null>(null);
   const [events, setEvents] = useState<AdminGenerationEvent[]>([]);
   const [selectedEventSeq, setSelectedEventSeq] = useState<number | null>(null);
@@ -35,13 +38,6 @@ export default function CustomizePipeline() {
   const doneRef = useRef(false);
 
   const active = Boolean(task && activeStatuses.has(task.status));
-
-  /* 旧入口兼容：交互课件也使用边生成边学习播放器，不停留在流程工作台。 */
-  useEffect(() => {
-    if (taskId && task?.resourceType === 'ppt') {
-      navigate(`/learn/slide/${encodeURIComponent(taskId)}`, { replace: true });
-    }
-  }, [navigate, task?.resourceType, taskId]);
 
   /* 轮询任务状态 */
   useEffect(() => {
@@ -99,9 +95,10 @@ export default function CustomizePipeline() {
   const openCompletedResource = () => {
     if (!task?.resourceId) return;
     if (task.resourceType === 'ppt') {
-      const kpId = task.request?.kpId;
+      const kpId = returnKpId || task.request?.kpId;
       if (!kpId) { handleBack(); return; }
-      navigate(`/learn/${encodeURIComponent(kpId)}?ppt=${encodeURIComponent(task.resourceId)}&topic=${encodeURIComponent(task.title)}`, { replace: true });
+      const topic = returnTopic || task.title;
+      navigate(`/learn/${encodeURIComponent(kpId)}?ppt=${encodeURIComponent(task.resourceId)}&topic=${encodeURIComponent(topic)}`, { replace: true });
       return;
     }
     navigate(`/learn/slide/${encodeURIComponent(task.id)}`, { replace: true });

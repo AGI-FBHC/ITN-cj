@@ -939,7 +939,7 @@ function TopicActionModal({
                   const pptId = cTask.resourceId;
                   navigate(`/learn/${node.kpId}?ppt=${pptId}&topic=${encodeURIComponent(node.label.trim())}`);
                 } else if (pptTask?.id) {
-                  void startCustomizeLearning({ adminResourceId: pptTask.id, kpId: node.id, resourceType: 'ppt', resourceLabel: fn.label });
+                  void startCustomizeLearning({ adminResourceId: pptTask.id, kpId: node.id, routeKpId: node.kpId, resourceType: 'ppt', resourceLabel: fn.label, topic: node.label.trim() });
                 }
                 return;
               }

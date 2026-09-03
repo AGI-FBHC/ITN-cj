@@ -324,6 +324,7 @@ export default function SlidePlayer() {
   const [quizInteraction, setQuizInteraction] = useState<{ submitted: boolean; selectedAnswer?: string; correct?: boolean }>({ submitted: false });
   const [presentationImage, setPresentationImage] = useState('');
   const quizAssistantOpenedRef = useRef(false);
+  const pptRedirectRef = useRef(false);
   const volumeLevels = [1, 0.6, 0.3, 0] as const;
 
   useEffect(() => {
@@ -357,6 +358,14 @@ export default function SlidePlayer() {
     void load();
     return () => { alive = false; if (timer) window.clearTimeout(timer); };
   }, [taskId, resourceId]);
+
+  /* 交互课件不允许复用前三类资源的通用幻灯页：进入后立即改走独立导学路由 */
+  useEffect(() => {
+    if (pptRedirectRef.current || data?.resourceType !== 'ppt' || !data.resourceId || !data.kpId) return;
+    pptRedirectRef.current = true;
+    const topic = (data.title || '').replace(/\s*[·・]\s*交互课件\s*$/, '').trim() || data.title || '交互课件';
+    navigate(`/learn/${encodeURIComponent(data.kpId)}?ppt=${encodeURIComponent(data.resourceId)}&topic=${encodeURIComponent(topic)}`, { replace: true });
+  }, [data, navigate]);
 
   const slides = useMemo(() => {
     const ready = expandReadySlides(data?.slides ?? []);
