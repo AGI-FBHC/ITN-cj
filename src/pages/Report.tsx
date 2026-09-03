@@ -721,10 +721,21 @@ export default function Report() {
       (learningMap.topicProgress[node.id] ?? 0) > 0 || (learningMap.topicMastery[node.id] ?? 0) > 0,
     ).length;
     const topicCoverage = topicTotal ? topicCovered / topicTotal : 0;
-    const knowledgeCoverage = Math.max(0, Math.min(100, Math.round((0.55 * resourceCoverage + 0.45 * topicCoverage) * 100)));
+    const startedChapterRatio = domains.length
+      ? domains.filter((domain) => (learningMap.chapterProgress[domain.id] ?? 0) > 0).length / domains.length
+      : 0;
+    /* 覆盖率口径：资源是否已可学/已覆盖到图谱 > 单纯“是否学完”，避免冷启动阶段把可用资源也判成空白 */
+    const knowledgeCoverage = Math.max(0, Math.min(100, Math.round(
+      Math.max(
+        0.35,
+        0.45 * formCoverage + 0.25 * Math.max(topicCoverage, startedChapterRatio) + 0.20 * resourceCoverage,
+      ) * 100,
+    )));
     const knowledgeCoverageNote = topicTotal > 0
       ? `完成 ${resourceLearned}/${resourceTotal} 个资源 · 覆盖 ${topicCovered}/${topicTotal} 个知识点`
       : `完成 ${resourceLearned}/${resourceTotal} 个学习资源`;
+    const todayJournal = journals.find((journal) => journal.date === localDateKey(0)) ?? null;
+    const todayStudySeconds = todayJournal?.stats.totalDurationSeconds ?? 0;
 
     return {
       learnerId: currentLearner.id,
@@ -745,12 +756,12 @@ export default function Report() {
       resolvedSpots: focusStats.resolved > 0
         ? focusStats.resolved
         : Math.max(0, Math.round(spots.filter((spot) => spot.gap <= 10).length / 2)),
-      investHours: Math.round((analytics?.stats.weeklyMinutes.reduce((sum, minutes) => sum + minutes, 0) ?? 0) / 60),
-      investNote: '按近 7 天学习时长估算',
+      investHours: Number((todayStudySeconds / 3600).toFixed(1)),
+      investNote: todayStudySeconds > 0 ? '今日学习时长' : '今天暂无学习记录',
       knowledgeCoverage,
       knowledgeCoverageNote,
     };
-  }, [abilities, abilityScores, analytics, currentLearner, focusStats, learningMap, resources]);
+  }, [abilities, abilityScores, analytics, currentLearner, focusStats, journals, learningMap, resources]);
   const resourcesByChapter = useMemo(() => new Map((course?.chapters ?? []).map((chapter) => {
     const chapterResources = resources.filter((resource) => resource.chapterId === chapter.id);
     return [chapter.id, { total: chapterResources.length, learned: chapterResources.filter((resource) => resource.learned).length }];
