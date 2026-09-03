@@ -171,6 +171,7 @@ function SimpleChapterCanvas({
   targetId,
   onPick,
   onAddEdge,
+  onClear,
 }: {
   categories: Map<number, CategoryInfo>;
   edges: KcGraphEdge[];
@@ -178,6 +179,7 @@ function SimpleChapterCanvas({
   targetId: number | null;
   onPick: (id: number) => void;
   onAddEdge?: (source: number, target: number) => void;
+  onClear?: () => void;
 }) {
   const chapters = useMemo(
     () =>
@@ -271,7 +273,7 @@ function SimpleChapterCanvas({
           <GitBranch size={15} className="text-brand" />
           <h3 className="text-sm font-bold text-ink">章节网络 · 快速建边</h3>
         </div>
-        <p className="mt-1 text-[11px] leading-4 text-ink-muted">这里只展示章节节点和章节之间的已有边。点第一个章节设为前置，再点第二个章节设为目标；节点可拖动调整位置。</p>
+        <p className="mt-1 text-[11px] leading-4 text-ink-muted">只展示章节和章节之间的边。橙色为已选起点，绿色为已选终点；节点可拖动调整位置，选好两点后点“加边”即可画线。</p>
       </div>
       <div className="overflow-x-auto p-3">
         <svg ref={svgRef} viewBox="0 0 1200 680" className="h-[560px] min-w-[900px] w-full cursor-grab rounded-xl border border-white/70 bg-white/40" onPointerMove={(event) => { if (draggingId.current == null) return; const point = toCanvasPoint(event.clientX, event.clientY); movedRef.current = true; setManualPositions((current) => ({ ...current, [draggingId.current as number]: point })); }} onPointerUp={() => { draggingId.current = null; }}>
@@ -310,7 +312,7 @@ function SimpleChapterCanvas({
                   {node.name}
                 </text>
                 <text y="4" textAnchor="middle" fontSize="10" fill={isSource || isTarget ? "#fff" : "#64748b"}>
-                  #{node.id}
+                  {isSource ? "起点" : isTarget ? "终点" : node.name.slice(0, 6)}
                 </text>
                 <title>{node.name} · 章节</title>
               </g>
@@ -326,12 +328,20 @@ function SimpleChapterCanvas({
               ? "已选前置章节，请再点选目标章节"
               : `当前连线：${categories.get(sourceId)?.name ?? sourceId} → ${categories.get(targetId)?.name ?? targetId}`}
         </div>
-        {sourceId != null && targetId != null && sourceId !== targetId && onAddEdge && (
-          <button onClick={() => onAddEdge(sourceId, targetId)} className="lf-btn-primary justify-center gap-1 !px-3 !py-1.5 text-xs">
-            <Plus size={13} />
-            加边
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {(sourceId != null || targetId != null) && onClear && (
+            <button onClick={onClear} className="lf-row-btn text-ink-muted">
+              <X size={12} />
+              清除
+            </button>
+          )}
+          {sourceId != null && targetId != null && sourceId !== targetId && onAddEdge && (
+            <button onClick={() => onAddEdge(sourceId, targetId)} className="lf-btn-primary justify-center gap-1 !px-3 !py-1.5 text-xs">
+              <Plus size={13} />
+              加边
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -883,6 +893,7 @@ export default function KnowledgeGraphAdmin() {
             targetId={builderTargetId}
             onPick={handleBuilderPick}
             onAddEdge={(source, target) => void handleBuilderAddEdge(source, target)}
+            onClear={() => { setBuilderSourceId(null); setBuilderTargetId(null); }}
           />
           <DagQuickBuilder
             categories={categories}
