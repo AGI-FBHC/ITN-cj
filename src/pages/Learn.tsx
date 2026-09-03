@@ -116,8 +116,12 @@ export default function Learn() {
       appliedKpParamRef.current = null;
       return;
     }
-    if (!knowledgePoints.some((kp) => kp.id === kpParam)) return;
-    const deepKey = `${kpParam}:${unitTopic ?? ''}`;
+    const domainNode = map.graphNodes.find((node) => node.kind === 'domain' && (node.id === kpParam || node.kpId === kpParam));
+    const topicNode = map.graphNodes.find((node) => node.kind === 'topic' && node.id === kpParam);
+    if (!domainNode && !topicNode) return;
+    const chapterId = domainNode?.id ?? topicNode?.kpId ?? kpParam;
+    const topicId = topicNode?.id ?? unitTopic ?? null;
+    const deepKey = `${chapterId}:${topicId ?? ''}`;
     if (appliedKpParamRef.current === deepKey) return;
     appliedKpParamRef.current = deepKey;
     // 首页“今天就学这一件/去学这块”进入：先跳转页面（默认 3D 视图），
@@ -126,16 +130,16 @@ export default function Learn() {
     if (focusTimerRef.current !== null) window.clearTimeout(focusTimerRef.current);
     focusTimerRef.current = window.setTimeout(() => {
       focusTimerRef.current = null;
-      setSelectedKp(kpParam);
+      setSelectedKp(chapterId);
       setSelectedTopic(null);
-      setSingleExpandedKp(kpParam);
-      setGraphFocus({ id: kpParam, at: Date.now() });
+      setSingleExpandedKp(chapterId);
+      setGraphFocus({ id: chapterId, at: Date.now() });
       // 深链到子知识点：展开功能节点层并选中（对应 3D 里点击知识点的效果）
-      if (unitTopic) {
-        const topicNode = map.graphNodes.find((node) => node.kind === 'topic' && node.id === unitTopic);
-        if (topicNode) {
-          setFocusTopic({ id: topicNode.id, at: Date.now() });
-          setSelectedTopic(topicNode.topicIndex ?? null);
+      if (topicId) {
+        const targetTopic = map.graphNodes.find((node) => node.kind === 'topic' && node.id === topicId);
+        if (targetTopic) {
+          setFocusTopic({ id: targetTopic.id, at: Date.now() });
+          setSelectedTopic(targetTopic.topicIndex ?? null);
         }
       } else {
         setFocusTopic(null);

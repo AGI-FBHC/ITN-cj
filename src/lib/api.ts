@@ -1100,6 +1100,7 @@ export interface AgentWeeklyPlanResult {
     text: string;
     cta: string;
     href: string;
+    kpId?: string;
     priority: '高' | '中' | '低';
     evidence: string;
   }[];

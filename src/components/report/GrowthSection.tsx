@@ -9,6 +9,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowRight, ChevronDown, Loader2, Wrench, ClipboardCheck, BookOpen } from 'lucide-react';
 import type { Learner } from '@/data/learners';
 import type { LearnerReport } from '@/data/reportData';
+import type { GraphNode } from '@/data/knowledgeGraph';
 import { getKnowledgePoint } from '@/data/knowledgePoints';
 import ChartCard, { ReactECharts } from '@/components/ChartCard';
 import AgentChip from '@/components/AgentChip';
@@ -155,6 +156,7 @@ interface AdviceItem {
   text: string;
   cta: string;
   href: string;
+  kpId?: string;
   priority: Severity;
   evidence: string;
 }
@@ -169,6 +171,24 @@ function resourceTargetFor(
   const pooled = resources.filter((resource) => !resource.learned && (!typeHint || resource.type === typeHint));
   const target = pooled[0] ?? resources.find((resource) => !resource.learned) ?? resources[0];
   return target ? `/learn/resource/${encodeURIComponent(target.id)}` : fallback;
+}
+
+function adviceTargetFor(
+  nodes: GraphNode[],
+  kpId: string | undefined,
+  hint: string,
+  resources: LearningResourceSummary[],
+  fallback: string,
+): string {
+  if (kpId) {
+    const node = nodes.find((item) => item.id === kpId || item.kpId === kpId);
+    if (node?.kind === 'domain') return `/learn?kp=${encodeURIComponent(node.id)}`;
+    if (node?.kind === 'topic') {
+      const parent = nodes.find((item) => item.id === node.kpId);
+      return `/learn?kp=${encodeURIComponent(parent?.id ?? node.kpId)}&unitTopic=${encodeURIComponent(node.id)}`;
+    }
+  }
+  return resourceTargetFor(resources, hint, fallback);
 }
 
 /** 建议卡：点击整行直达对应资源；右下箭头仅用于展开/收起「决策依据」 */
@@ -270,11 +290,13 @@ export function WeeklyAdviceCard({
   learner,
   report,
   resources,
+  nodes = [],
   className,
 }: {
   learner: Learner;
   report: LearnerReport;
   resources: LearningResourceSummary[];
+  nodes?: GraphNode[];
   className?: string;
 }) {
   const navigate = useNavigate();
@@ -345,7 +367,8 @@ export function WeeklyAdviceCard({
           icon: iconPool[index % iconPool.length],
           text: item.text,
           cta: item.cta || '去看看',
-          href: resourceTargetFor(resources, `${item.cta} ${item.text}`, '/resources'),
+          href: adviceTargetFor(nodes, item.kpId, `${item.cta} ${item.text}`, resources, '/resources'),
+          kpId: item.kpId,
           priority: item.priority,
           evidence: item.evidence || '基于你的真实学情生成本周建议',
         }));
@@ -392,10 +415,12 @@ export default function GrowthSection({
   learner,
   report,
   resources,
+  nodes = [],
 }: {
   learner: Learner;
   report: LearnerReport;
   resources: LearningResourceSummary[];
+  nodes?: GraphNode[];
 }) {
   return (
     <div className="grid gap-5 lg:grid-cols-12">
@@ -403,7 +428,7 @@ export default function GrowthSection({
         <GrowthTrendChart report={report} />
       </div>
       <div className="lg:col-span-5">
-        <WeeklyAdviceCard learner={learner} report={report} resources={resources} />
+        <WeeklyAdviceCard learner={learner} report={report} resources={resources} nodes={nodes} />
       </div>
     </div>
   );
