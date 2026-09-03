@@ -708,20 +708,26 @@ function TopicActionModal({
   const CUSTOMIZE_FORM_TYPE: Record<ResourceForm, 'lecture' | 'practice' | 'quiz'> = { lecture: 'lecture', guide: 'practice', quiz: 'quiz' };
   const taskBusy = (task?: LearningResourceGenerationTask) =>
     Boolean(task && !['completed', 'failed', 'cancelled'].includes(task.status));
+  const findPptForNode = (node: { id?: string; kpId?: string; label?: string }) => (presentations ?? [])
+    .filter((task) => !['failed', 'cancelled'].includes(task.status))
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .find((task) => {
+      const gen = task.request?.generationContext;
+      const ctxKpId = String(gen?.kpId ?? gen?.current?.kpId ?? '');
+      const ctxTopic = String(gen?.topicName ?? gen?.current?.topicName ?? '').trim();
+      const taskTitle = task.title.replace(/\s*[·・]\s*交互课件\s*$/, '').trim();
+      const nodeTitle = String(node.label ?? '').trim();
+      const nodeId = String(node.id ?? '');
+      const nodeKpId = String(node.kpId ?? '');
+      return Boolean((ctxKpId && (ctxKpId === nodeId || ctxKpId === nodeKpId))
+        || (ctxTopic && ctxTopic === nodeTitle)
+        || (taskTitle && (taskTitle === nodeTitle || task.title.includes(nodeTitle) || nodeTitle.includes(taskTitle))));
+    });
   /* ===== 统一定制：一次性定制当前知识点全部未定制资源 ===== */
   const customizableTemplates = FUNCTION_META.map((fn) => {
     const isPpt = fn.form === 'ppt';
     const res = isPpt ? undefined : existingFor(fn.form as ResourceForm);
-    const pptTask = isPpt
-      ? (presentations ?? [])
-          .filter((task) => !['failed', 'cancelled'].includes(task.status))
-          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-          .find((task) => {
-            const taskTitle = task.title.replace(/\s*[·・]\s*交互课件\s*$/, '').trim();
-            const nodeTitle = node.label.trim();
-            return taskTitle === nodeTitle || task.title.includes(nodeTitle) || nodeTitle.includes(taskTitle);
-          })
-      : undefined;
+    const pptTask = isPpt ? findPptForNode(node) : undefined;
     const templateId = isPpt ? (pptTask?.status === 'completed' ? pptTask.id : undefined) : res?.id;
     if (!templateId) return null;
     const cTask = customizeTasks.find((task) =>
@@ -862,16 +868,7 @@ function TopicActionModal({
         <div className="grid grid-cols-2 gap-3 p-5 pt-4 sm:px-6 sm:pb-5">
           {FUNCTION_META.map((fn) => {
         const res = fn.form !== 'ppt' ? existingFor(fn.form as ResourceForm) : undefined;
-        const pptTask = fn.form === 'ppt'
-          ? (presentations ?? [])
-              .filter((task) => !['failed', 'cancelled'].includes(task.status))
-              .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-              .find((task) => {
-                const taskTitle = task.title.replace(/\s*[·・]\s*交互课件\s*$/, '').trim();
-                const nodeTitle = node.label.trim();
-                return taskTitle === nodeTitle || task.title.includes(nodeTitle) || nodeTitle.includes(taskTitle);
-              })
-          : undefined;
+        const pptTask = fn.form === 'ppt' ? findPptForNode(node) : undefined;
         const isPpt = fn.form === 'ppt';
         const exists = isPpt ? Boolean(pptTask && pptTask.status === 'completed') : Boolean(res?.id);
         const templateId = isPpt ? pptTask?.id : res?.id;
