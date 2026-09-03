@@ -1,6 +1,6 @@
 /**
  * LectureTab — 领学讲义（resources.md TAB 1）
- * 流式生成动画（16ms tick 逐段物化 + 光标闪烁）· scroll-spy 目录 ·
+ * 流式生成动画（16ms tick 逐段物化 + 光标闪烁 + 跳过）· scroll-spy 目录 ·
  * 脚注引用区（定位回链）· 右侧溯源栏
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkCitationMarks from '@/lib/remarkCitationMarks';
-import { BadgeCheck, ListTree, Printer, Download, CornerDownLeft, ShieldCheck } from 'lucide-react';
+import { BadgeCheck, FastForward, ListTree, Printer, Download, CornerDownLeft, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import TraceBadge from '@/components/TraceBadge';
 import type { GeneratedResource } from '@/data/resources';
@@ -102,6 +102,11 @@ export default function LectureTab({
     }, 16);
     return () => clearInterval(timer);
   }, [full, reduced]);
+
+  const skip = () => {
+    setShown(full.length);
+    setDone(true);
+  };
 
   /* ---------- 目录 + scroll-spy ---------- */
   const toc = useMemo(() => extractToc(full), [full]);
@@ -259,6 +264,15 @@ export default function LectureTab({
 
             {/* 文档操作 */}
             <div className="mt-4 flex flex-wrap items-center gap-2">
+              {!done && (
+                <button
+                  type="button"
+                  onClick={skip}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-brand-amber/50 bg-brand-amber-tint px-3 py-1.5 text-[12.5px] font-medium text-ochre transition-colors hover:bg-brand-amber/20"
+                >
+                  <FastForward size={13} /> 跳过动画
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => toast.info('演示环境 · 已生成模拟导出', { description: `${resource.title}.pdf（含 ${kbRefs.length} 条溯源脚注）` })}
