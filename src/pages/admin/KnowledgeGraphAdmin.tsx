@@ -798,13 +798,19 @@ export default function KnowledgeGraphAdmin() {
           刷新
         </button>
       </div>
-      <div className="lf-seg mb-6">
-        {tabs.map((item) => (
-          <button key={item.id} onClick={() => setTab(item.id)} className={cn("lf-seg-item", tab === item.id && "lf-seg-item-active")}>
-            {item.label}
-            {item.id === "review" && <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700">{review.length}</span>}
-          </button>
-        ))}
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        <button onClick={() => setTab("builder")} className={cn("lf-btn-primary", tab !== "builder" && "opacity-90")}>
+          <GitBranch size={14} />
+          快速建图
+        </button>
+        <div className="lf-seg">
+          {tabs.filter((item) => item.id !== "builder").map((item) => (
+            <button key={item.id} onClick={() => setTab(item.id)} className={cn("lf-seg-item", tab === item.id && "lf-seg-item-active")}>
+              {item.label}
+              {item.id === "review" && <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-700">{review.length}</span>}
+            </button>
+          ))}
+        </div>
       </div>
       {loading && !edges.length ? (
         <div className="lf-empty flex min-h-72 items-center justify-center text-sm">
