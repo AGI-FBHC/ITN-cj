@@ -552,7 +552,7 @@ function ProgressRing({
   target?: number;
 }) {
   /* 单层外圈：只表示掌握程度（章节深绿 / 知识点青色），门槛用深蓝刻度线 */
-  const trackColor = variant === 'chapter' ? '#71877D' : '#7B8780';
+  const trackColor = selected ? '#8B7CF6' : hovered ? '#7E8E84' : variant === 'chapter' ? '#71877D' : '#7B8780';
   const masteryColor = variant === 'chapter' ? '#174E43' : '#14B8A6';
   const masteryArc = (Math.max(0, Math.min(100, mastery)) / 100) * Math.PI * 2;
   const inner = radius + 0.3;
@@ -570,7 +570,7 @@ function ProgressRing({
       {/* 轨道 */}
       <mesh raycast={() => null} renderOrder={3} position={[0, 0, 0.08]} rotation={[0, 0, -Math.PI / 2]}>
         <ringGeometry args={[inner, outer, 96]} />
-        <meshBasicMaterial color={trackColor} transparent opacity={hovered || selected ? 0.72 : 0.48} side={THREE.DoubleSide} depthWrite={false} />
+        <meshBasicMaterial color={trackColor} transparent opacity={selected ? 0.9 : hovered ? 0.7 : 0.48} side={THREE.DoubleSide} depthWrite={false} />
       </mesh>
       {/* 掌握程度弧（淡蓝） */}
       {masteryArc > 0 && <mesh raycast={() => null} renderOrder={4} position={[0, 0, 0.1]} rotation={[0, 0, -Math.PI / 2]}>
