@@ -330,19 +330,17 @@ export default function CustomizeTeam() {
           </div>
         </aside>
 
-        {/* 侧栏收起时的展开按钮 */}
-        {sidebarCollapsed && (
-          <button type="button" onClick={() => setSidebarCollapsed(false)} className="hidden self-start rounded-lg border border-white/70 bg-white/60 p-1.5 text-ink-muted transition hover:bg-brand-tint hover:text-brand lg:block" title="展开知识点列表">
-            <ChevronRight size={14} />
-          </button>
-        )}
-
         {/* 中栏：资源状态卡片 + 泳道 */}
         <main className="flex min-h-0 min-w-0 flex-col gap-2.5 overflow-hidden">
           {/* 资源状态卡片 */}
           <div className="shrink-0 rounded-2xl border border-white/70 bg-white/45 p-3">
-            <div className="mb-2 flex items-center justify-between">
+            <div className="mb-2 flex items-center justify-between gap-2">
               <span className="text-[11px] font-medium text-ink-2">{activeKpLabel} · 资源定制状态</span>
+              {sidebarCollapsed && (
+                <button type="button" onClick={() => setSidebarCollapsed(false)} className="rounded-lg border border-white/70 bg-white/60 p-1.5 text-ink-muted transition hover:bg-brand-tint hover:text-brand" title="展开知识点列表">
+                  <ChevronRight size={13} />
+                </button>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {rows.map(({ type, label, icon: Icon, template, task: matched, busy, customized }) => (
