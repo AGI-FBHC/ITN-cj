@@ -13,7 +13,7 @@ import { getKnowledgePoint } from '@/data/knowledgePoints';
 import ChartCard, { ReactECharts } from '@/components/ChartCard';
 import AgentChip from '@/components/AgentChip';
 import { useProfile } from '@/context/ProfileContext';
-import { api } from '@/lib/api';
+import { api, type LearningResourceSummary } from '@/lib/api';
 import type { Severity } from '@/components/profiles/profileMeta';
 import { cn } from '@/lib/utils';
 
@@ -159,6 +159,18 @@ interface AdviceItem {
   evidence: string;
 }
 
+function resourceTargetFor(
+  resources: LearningResourceSummary[],
+  hint: string,
+  fallback: string,
+): string {
+  const lower = `${hint}`.toLowerCase();
+  const typeHint = /测|quiz/.test(lower) ? 'quiz' : /实操|guide|practice/.test(lower) ? 'practice' : undefined;
+  const pooled = resources.filter((resource) => !resource.learned && (!typeHint || resource.type === typeHint));
+  const target = pooled[0] ?? resources.find((resource) => !resource.learned) ?? resources[0];
+  return target ? `/learn/resource/${encodeURIComponent(target.id)}` : fallback;
+}
+
 /** 建议卡：优先级徽标 + 可展开「决策依据」，右侧导航箭头独立可点击（stopPropagation） */
 function AdviceRow({
   advice,
@@ -247,10 +259,12 @@ export function GrowthTrendChart({ report }: { report: LearnerReport }) {
 export function WeeklyAdviceCard({
   learner,
   report,
+  resources,
   className,
 }: {
   learner: Learner;
   report: LearnerReport;
+  resources: LearningResourceSummary[];
   className?: string;
 }) {
   const navigate = useNavigate();
@@ -277,7 +291,7 @@ export function WeeklyAdviceCard({
         icon: Wrench,
         text: `${topKp.name}仍为最大盲区（Δ -${top.gap}），建议本周完成已配案例与实操指南`,
         cta: '去实操',
-        href: '/resources',
+        href: resourceTargetFor(resources, '实操', '/resources'),
         priority: top.priority as Severity,
         evidence: `依据：盲区缺口 ${top.gap} · 近 ${weekSpan} 周综合分提升 +${growth} · ARB-05 置信 0.91`,
       },
@@ -285,7 +299,7 @@ export function WeeklyAdviceCard({
         icon: ClipboardCheck,
         text: `${strongestKp.name}理论基础扎实（${strongest[1]} 分），建议 48h 内进行保持性测评（5 题）`,
         cta: '去测评',
-        href: '/tutoring',
+        href: resourceTargetFor(resources, '测评', '/resources'),
         priority: '中' as Severity,
         evidence: `依据：${strongestKp.name} 当前 ${strongest[1]} 分 · 表现稳定 · 保持性测评周期 48h · ARB-05 置信 0.88`,
       },
@@ -293,12 +307,12 @@ export function WeeklyAdviceCard({
         icon: BookOpen,
         text: `${secondKp.name}可提前预习，已为你排队入门讲义与分阶题组`,
         cta: '查看',
-        href: '/resources',
+        href: resourceTargetFor(resources, '讲义', '/resources'),
         priority: second.priority as Severity,
         evidence: `依据：次要盲区缺口 ${second.gap} · 已排队资源就位 · ARB-05 置信 0.86`,
       },
     ];
-  }, [learner, report]);
+  }, [learner, report, resources]);
 
   const advice = advisorAdvice ?? fallbackAdvice;
 
@@ -317,7 +331,7 @@ export function WeeklyAdviceCard({
           icon: iconPool[index % iconPool.length],
           text: item.text,
           cta: item.cta || '去看看',
-          href: item.href,
+          href: resourceTargetFor(resources, `${item.cta} ${item.text}`, '/resources'),
           priority: item.priority,
           evidence: item.evidence || 'ARB-05 基于你的真实学情生成本周建议',
         }));
@@ -330,7 +344,7 @@ export function WeeklyAdviceCard({
     return () => {
       cancelled = true;
     };
-  }, [currentLearner.id, learner.id, report]);
+  }, [currentLearner.id, learner.id, report, resources]);
 
   return (
     <div className={cn('lf-card h-full border-t-[3px] !border-t-[#5A6553] p-5', className)}>
@@ -362,9 +376,11 @@ export function WeeklyAdviceCard({
 export default function GrowthSection({
   learner,
   report,
+  resources,
 }: {
   learner: Learner;
   report: LearnerReport;
+  resources: LearningResourceSummary[];
 }) {
   return (
     <div className="grid gap-5 lg:grid-cols-12">
@@ -372,7 +388,7 @@ export default function GrowthSection({
         <GrowthTrendChart report={report} />
       </div>
       <div className="lg:col-span-5">
-        <WeeklyAdviceCard learner={learner} report={report} />
+        <WeeklyAdviceCard learner={learner} report={report} resources={resources} />
       </div>
     </div>
   );

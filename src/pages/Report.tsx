@@ -1120,7 +1120,7 @@ export default function Report() {
               studyDates={analytics?.stats.studyDates ?? []}
               totalDays={analytics?.stats.totalDays ?? 0}
             />
-            <WeeklyAdviceCard learner={reportLearner} report={visualReport} />
+            <WeeklyAdviceCard learner={reportLearner} report={visualReport} resources={resources} />
           </div>
         </div>
       </section>
