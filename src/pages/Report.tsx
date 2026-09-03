@@ -680,7 +680,19 @@ export default function Report() {
         points: weeks.map((_, weekIndex) => Math.round(start + (current - start) * (weekIndex / 7))),
       };
     });
-    const trendStart = Math.max(12, Math.round(avg - 10));
+    /* 能力成长曲线：优先用真实测评记录作为历史点，末端用当前综合能力分收口；
+       不再用 W1-W8 的假趋势，避免没有真实历史时看起来像 mock。 */
+    const quizTrendScores = (analytics?.recentQuizzes ?? [])
+      .map((quiz) => quiz.score == null ? null : Math.round(quiz.score))
+      .filter((score): score is number => score != null)
+      .slice(-8);
+    const currentAbilityScore = Math.max(0, Math.min(100, Math.round(avg)));
+    const growthLabels = quizTrendScores.length
+      ? [...quizTrendScores.map((_, index) => `第${index + 1}次测评`), '现在']
+      : ['当前'];
+    const growthTrend = quizTrendScores.length
+      ? [...quizTrendScores, currentAbilityScore]
+      : [currentAbilityScore];
 
     /* 综合适配评分：定制覆盖为主，学习证据与测评表现为辅。
        覆盖 = 知识点上已挂接讲义/实操/分阶题等资源形态的比例；
@@ -732,8 +744,8 @@ export default function Report() {
     return {
       learnerId: currentLearner.id,
       adaptScore,
-      adaptTrend: weeks.map((_, weekIndex) => Math.round(trendStart + (avg - trendStart) * (weekIndex / 7))),
-      weeks,
+      adaptTrend: growthTrend,
+      weeks: growthLabels,
       abilityCurves,
       difficultyMatch,
       blindSpots: spots,

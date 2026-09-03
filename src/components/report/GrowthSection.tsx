@@ -142,9 +142,9 @@ function GrowthChart({ report }: { report: LearnerReport }) {
             {it.title}
           </span>
         ))}
-        {report.generated && interventions.length === 0 && (
+        {report.generated && report.adaptTrend.length <= 1 && (
           <span className="text-[11.5px] text-ink-muted">
-            刚建档，曲线只有基线一个点——去学一讲、答几题，它会跟着你真实长出来。
+            暂无测评记录，当前只展示真实能力分；完成分阶题后会按真实测评点生成曲线。
           </span>
         )}
       </div>
