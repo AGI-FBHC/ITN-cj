@@ -115,13 +115,13 @@ export default function ResourceCenterAdmin() {
     };
   }, []);
 
-  const generationContext = (extra: Record<string, unknown> = {}) => ({
+  const generationContext = (extra: Record<string, unknown> = {}, groupOverride?: string) => ({
     adminGeneration: true,
     domainCode: domain?.code,
     nodeCode: node?.nodeCode,
     topicName: node?.name,
     kpId: node?.nodeCode,
-    groupName: selectedGroupName,
+    groupName: groupOverride ?? selectedGroupName,
     ...extra,
   });
   const groupTypeMap = useMemo(() => {
@@ -168,7 +168,7 @@ export default function ResourceCenterAdmin() {
     return [...map.entries()].sort(([a], [b]) => a === '默认分组' ? -1 : b === '默认分组' ? 1 : a.localeCompare(b));
   }, [listQ.data?.items, completedPptItems, generationTasks, domain?.code, node?.nodeCode]);
 
-  const startGeneration = async (target: ResourceKind, regenerate = false) => {
+  const startGeneration = async (target: ResourceKind, regenerate = false, groupName?: string) => {
     if (!node || !domain || domain.code === '__unassigned__') throw new Error('请先选择一个具体知识点');
     if (target === 'ppt') {
       const request: PresentationRequest = {
@@ -176,7 +176,7 @@ export default function ResourceCenterAdmin() {
         title: node.name,
         audience: 'students', purpose: 'courseware', style: 'education', backgroundStyle: 'blue-white-minimal',
         language: 'zh-CN', slideCount: 0, aspectRatio: '16:9', detailLevel: 'detailed',
-        includeSpeakerNotes: true, modelProvider: 'mimo', generationMode: 'template', generationContext: generationContext({ waitForDependencies: true, ...(regenerate ? { regenerate: true } : {}) }),
+        includeSpeakerNotes: true, modelProvider: 'mimo', generationMode: 'template', generationContext: generationContext({ waitForDependencies: true, ...(regenerate ? { regenerate: true } : {}) }, groupName),
       };
       const task = await presentationApi.createPresentation(request);
       return { taskKind: 'ppt' as const, id: task.id };
@@ -187,14 +187,14 @@ export default function ResourceCenterAdmin() {
       kpId: node.nodeCode,
       detailLevel: 'detailed',
       questionCount: target === 'quiz' ? 15 : undefined,
-      generationContext: generationContext(regenerate ? { regenerate: true } : {}),
+      generationContext: generationContext(regenerate ? { regenerate: true } : {}, groupName),
     };
     const task = await api.startLearningResourceTask(target, request);
     return { taskKind: 'resource' as const, id: task.id };
   };
 
-  const launchGeneration = (target: ResourceKind, regenerate = false) => {
-    void startGeneration(target, regenerate)
+  const launchGeneration = (target: ResourceKind, regenerate = false, groupName?: string) => {
+    void startGeneration(target, regenerate, groupName)
       .then((result) => {
         void loadGenerationTasks();
         navigate(`/admin/workbench?task=${result.taskKind}-${result.id}`);
@@ -608,7 +608,7 @@ export default function ResourceCenterAdmin() {
                                       active ? (
                                         <span className="lf-pill lf-pill-warn"><Loader2 size={11} className="animate-spin" />生成中 {task.progress}%</span>
                                       ) : (
-                                        <button onClick={() => launchGeneration(type, true)} className="lf-row-btn text-ink-muted" title="重新生成"><RefreshCw size={11} />重新生成</button>
+                                        <button onClick={() => launchGeneration(type, true, groupName)} className="lf-row-btn text-ink-muted" title="重新生成"><RefreshCw size={11} />重新生成</button>
                                       )
                                     )}
                                     <button onClick={() => preview(item)} className="lf-row-btn"><Eye size={11} />预览</button>
@@ -632,7 +632,7 @@ export default function ResourceCenterAdmin() {
                                     )}
                                   </>
                                 ) : (
-                                  <button onClick={() => launchGeneration(type, hasPriorState)} className="lf-row-btn lf-row-btn-primary"><Plus size={11} />生成</button>
+                                  <button onClick={() => launchGeneration(type, hasPriorState, groupName)} className="lf-row-btn lf-row-btn-primary"><Plus size={11} />生成</button>
                                 )}
                               </div>
                             );
