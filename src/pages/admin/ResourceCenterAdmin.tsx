@@ -37,6 +37,7 @@ export default function ResourceCenterAdmin() {
   const [node, setNode] = useState<RagTreeNode | null>(null);
   const [, setKind] = useState<ResourceKind>('lecture');
   const [keyword, setKeyword] = useState('');
+  const [debouncedKeyword, setDebouncedKeyword] = useState('');
   const [detail, setDetail] = useState<AdminResourceDetail | null>(null);
   const [pptPreviewOpen, setPptPreviewOpen] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -47,7 +48,6 @@ export default function ResourceCenterAdmin() {
   const [generationModalOpen, setGenerationModalOpen] = useState(false);
   const [selectedKinds, setSelectedKinds] = useState<Set<ResourceKind>>(new Set(['lecture', 'practice', 'quiz', 'ppt']));
   const [generationBusy, setGenerationBusy] = useState(false);
-  const [groupResources, setGroupResources] = useState<AdminResourceItem[]>([]);
   const [selectedGroupName, setSelectedGroupName] = useState('默认分组');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['默认分组']));
 
@@ -60,33 +60,41 @@ export default function ResourceCenterAdmin() {
     { ttlMs: 60_000 },
   );
   const listQ = useCachedData<{ items: AdminResourceItem[]; total: number }>(
-    domain ? `admin:res:library:${domain.code}:${node?.nodeCode ?? ''}:${keyword}` : null,
-    () => api.listAdminResources({ view: 'library', keyword, domainCode: (domain as { code: string }).code, nodeCode: node?.nodeCode }),
+    domain ? `admin:res:library:${domain.code}:${node?.nodeCode ?? ''}:${debouncedKeyword}` : null,
+    () => api.listAdminResources({ view: 'library', keyword: debouncedKeyword, domainCode: (domain as { code: string }).code, nodeCode: node?.nodeCode }),
     { ttlMs: 15_000 },
   );
   const pptQ = useCachedData<{ items: AdminResourceItem[]; total: number }>(
-    domain ? `admin:ppt:library:${domain.code}:${node?.nodeCode ?? ''}:${keyword}` : null,
-    () => api.listAdminResources({ view: 'library', type: 'ppt', keyword, domainCode: (domain as { code: string }).code, nodeCode: node?.nodeCode }),
+    domain ? `admin:ppt:library:${domain.code}:${node?.nodeCode ?? ''}:${debouncedKeyword}` : null,
+    () => api.listAdminResources({ view: 'library', type: 'ppt', keyword: debouncedKeyword, domainCode: (domain as { code: string }).code, nodeCode: node?.nodeCode }),
     { ttlMs: 15_000 },
   );
+  const groupQ = useCachedData<{ items: AdminResourceItem[]; total: number }>(
+    node && domain && domain.code !== '__unassigned__'
+      ? `admin:group-resources:${domain.code}:${node.nodeCode}`
+      : null,
+    () => api.listAdminResources({ view: 'library', domainCode: (domain as { code: string }).code, nodeCode: node?.nodeCode }),
+    { ttlMs: 15_000 },
+  );
+  const groupResources = useMemo(() => {
+    if (!node || !domain || domain.code === '__unassigned__') return [];
+    return (groupQ.data?.items ?? []).filter((item) => item.type !== 'ppt' || item.status === 'completed');
+  }, [groupQ.data?.items, node, domain]);
   const completedPptItems = useMemo(
     () => (pptQ.data?.items ?? []).filter((item) => item.status === 'completed'),
     [pptQ.data?.items],
   );
 
   useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedKeyword(keyword.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [keyword]);
+
+  useEffect(() => {
     if (!treeQ.data) return;
     const timer = window.setTimeout(() => setExpanded(new Set(treeQ.data?.nodes.map((n) => n.id) ?? [])), 0);
     return () => window.clearTimeout(timer);
   }, [treeQ.data]);
-  useEffect(() => {
-    if (!node || !domain || domain.code === '__unassigned__') { setGroupResources([]); return; }
-    let cancelled = false;
-    api.listAdminResources({ view: 'library', domainCode: domain.code, nodeCode: node.nodeCode })
-      .then((result) => { if (!cancelled) setGroupResources(result.items.filter((item) => item.type !== 'ppt' || item.status === 'completed')); })
-      .catch(() => { if (!cancelled) setGroupResources([]); });
-    return () => { cancelled = true; };
-  }, [node?.id, node?.nodeCode, domain?.code]);
   useEffect(() => {
     const message = domainsQ.error?.message ?? statsQ.error?.message ?? treeQ.error?.message ?? listQ.error?.message;
     if (message) toast.error(message);
@@ -122,7 +130,7 @@ export default function ResourceCenterAdmin() {
     );
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') void loadGenerationTasks().catch(() => undefined);
-    }, 8000);
+    }, 20000);
     const onVisible = () => {
       if (document.visibilityState === 'visible') void loadGenerationTasks().catch(() => undefined);
     };
@@ -268,6 +276,7 @@ export default function ResourceCenterAdmin() {
     setNode(null);
     setKind('lecture');
     setKeyword('');
+    setDebouncedKeyword('');
     setDetail(null);
   };
 

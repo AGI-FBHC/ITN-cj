@@ -1229,7 +1229,7 @@ export default function CollaborationWorkbench() {
     const timer = window.setInterval(() => {
       if (document.visibilityState !== 'visible') return;
       void load().catch(() => undefined);
-    }, 8000);
+    }, 20000);
     const onVisible = () => {
       if (document.visibilityState === 'visible') void load().catch(() => undefined);
     };
