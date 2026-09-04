@@ -31,7 +31,6 @@ import { useProfile } from '@/context/ProfileContext';
 import LearningCompleteDialog from '@/components/learn/LearningCompleteDialog';
 import { useAgent } from '@/context/AgentContext';
 import { collectLearningPageContext, type LearningPageContext } from '@/lib/pageContext';
-import { buildQuizFollowUpPrompt } from '@/lib/assistantPrompts';
 
 /** 智能助教聊天消息：在基础文本之上携带多模态类型与附件信息 */
 interface ChatMessage extends LearningResourceMessage {
@@ -392,7 +391,7 @@ function QuizBlock({
   const [submitting, setSubmitting] = useState(false);
   const startedAt = useRef(Date.now());
   const proactiveSentRef = useRef(false);
-  const { askFree, askSimilarQuiz, setOpen } = useAgent();
+  const { askSimilarQuiz, setOpen } = useAgent();
 
   const answer = async (optionIndex: number) => {
     if (selected !== null || submitting) return;
@@ -415,21 +414,8 @@ function QuizBlock({
       setFeedback(result);
       if (!proactiveSentRef.current) {
         proactiveSentRef.current = true;
-        const optionLabels = asStrings(question.options);
-        const correctIndex = Number.isInteger(Number(question.correctIndex)) ? Number(question.correctIndex) : null;
         setOpen(true);
-        askFree(buildQuizFollowUpPrompt({
-          title: block.title,
-          stem: String(question.stem || ''),
-          options: optionLabels,
-          selectedIndex: optionIndex,
-          correct: Boolean(result.correct),
-          correctIndex,
-          explanation: String(question.explanation || result.explanation || ''),
-        }));
-        if (!result.correct) {
-          void askSimilarQuiz();
-        }
+        void askSimilarQuiz();
       }
       notifyLearningStateChanged(learnerId ?? resource.learnerId);
       const optimisticState = {

@@ -17,7 +17,6 @@ import { useAgent } from '@/context/AgentContext';
 import { fetchSlideAsset, presentationApi, updatePptLearningProgress } from '@/lib/presentationApi';
 import { refreshLearningMapResourceCache } from '@/hooks/useLearningMap';
 import { toast } from 'sonner';
-import { buildQuizFollowUpPrompt } from '@/lib/assistantPrompts';
 import { customizeTeamPathForTask, useCustomizeActivity } from '@/context/CustomizeActivityContext';
 
 type QuizValue = string | number;
@@ -86,7 +85,7 @@ function QuizCard({ slide, onInteractionChange, resourceId, initialPicked = null
   const [picked, setPicked] = useState<QuizValue | null>(initialPicked);
   const [feedback, setFeedback] = useState<{ correct: boolean; correctIndex?: number; explanation?: string } | null>(initialFeedback);
   const proactiveSentRef = useRef(false);
-  const { askFree, askSimilarQuiz, setOpen } = useAgent();
+  const { askSimilarQuiz, setOpen } = useAgent();
   const correct = (question.correctAnswer ?? question.answer ?? question.correctIndex) as QuizValue | undefined;
   const localCorrectIndex = typeof correct === 'string' && /^[A-Za-z]$/.test(correct)
     ? correct.toUpperCase().charCodeAt(0) - 65 : Number(correct);
@@ -103,21 +102,8 @@ function QuizCard({ slide, onInteractionChange, resourceId, initialPicked = null
     setPicked(option);
     if (!proactiveSentRef.current) {
       proactiveSentRef.current = true;
-      const optionLabels = options.map((item) => item.label);
       setOpen(true);
-      const selectedCorrect = String(option) === String(correct) || index === localCorrectIndex;
-      askFree(buildQuizFollowUpPrompt({
-        title: slide.title,
-        stem: String(question.stem ?? question.question ?? question.title ?? slide.title),
-        options: optionLabels,
-        selectedIndex: index,
-        correct: selectedCorrect,
-        correctIndex: Number.isFinite(localCorrectIndex) ? localCorrectIndex : null,
-        explanation: String(question.explanation ?? question.analysis ?? ''),
-      }));
-      if (!selectedCorrect) {
-        void askSimilarQuiz();
-      }
+      void askSimilarQuiz();
     }
     const questionId = String(question.id ?? question.questionId ?? slide.id ?? '');
     const fallback = {

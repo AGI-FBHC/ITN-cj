@@ -49,6 +49,8 @@ export type AgentMessage =
       picked?: number | null;
       settled?: boolean;
       correct?: boolean;
+      quizFlowKey?: string;
+      quizRound?: number;
       time: string;
     }
   | {
@@ -204,6 +206,29 @@ const now = () => new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: 
 const GREETING = '你好，我是伴学助手。你可以直接问当前内容、概念、例题或学习安排，我会先回答你的问题。';
 const clampConf = (n: number) => Math.max(10, Math.min(95, Math.round(n)));
 
+interface QuizFlowState {
+  key: string;
+  sessionId: string;
+  round: number;
+  results: boolean[];
+}
+
+interface QuizFlowOptions {
+  pageContext?: LearningPageContext;
+  round?: number;
+  previousCorrect?: boolean[];
+  difficulty?: 'similar' | 'harder' | 'easier';
+  source?: { stem: string; options: string[]; answerIndex: number; analysis?: string };
+  sessionId?: string;
+  userText?: string;
+}
+
+function nextQuizDifficulty(results: boolean[]) {
+  if (results.length >= 2 && results.every(Boolean)) return 'harder' as const;
+  if (results.length >= 2 && results.every((correct) => !correct)) return 'easier' as const;
+  return 'similar' as const;
+}
+
 export function AgentProvider({ children }: { children: ReactNode }) {
   const { currentLearner, currentLearnerId, applyWriteback, viewMode } = useProfile();
   const isExpert = viewMode === 'expert';
@@ -257,6 +282,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
 
   /* 测验缓冲（内存态，3 题一结算） */
   const quizBuf = useRef<Record<string, { n: number; right: number; hardRight: number }>>({});
+  /* 伴学练习卡片的连续追问状态：三题一组，前两题近似，第三题按前两题对错调难度。 */
+  const quizFlowRef = useRef<Record<string, QuizFlowState>>({});
   /* 模态切换计数（内存态，连续 3 次同模态 → 确认风格偏好） */
   const modeBuf = useRef<Record<string, number>>({});
   const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -690,10 +717,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       void agentAskImage('free', text, image, '正在分析图片并回答…', pageContext);
     };
 
-    /** 出一道类似题：后端生成结构化题目后渲染为可交互随堂练习。 */
-    const askSimilarQuiz = async (pageContext?: LearningPageContext) => {
+    /** 出一道练习卡片：三题一组，第一题近似原题，答完自动出下一题；第三题按前两题对错调整难度。 */
+    const requestQuizCard = async (options: QuizFlowOptions = {}) => {
       if (!lid) return;
-      let sid = currentSessionId;
+      let sid = options.sessionId ?? currentSessionId;
       let activeSession = sessions.find((session) => session.id === sid);
       if (!sid) {
         const created = await api.createAgentSession(lid);
@@ -706,20 +733,39 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       }
       const hasDefaultTitle = !activeSession?.title || DEFAULT_SESSION_TITLE_RE.test(activeSession.title.trim());
       if (hasDefaultTitle) {
-        const title = buildSessionTitle('出一道类似的题');
+        const title = buildSessionTitle('出一道练习题');
         void api.updateAgentSession(sid, { title }).then((updated) => {
           setSessions((prev) => prev.map((s) => s.id === sid ? updated : s));
         }).catch(() => {/* ignore */});
       }
-      const currentPage = pageContextEnabled ? (pageContext ?? collectLearningPageContext()) : undefined;
-      const userText = '出一道与这道题思路相近的练习题，让我在对话里作答';
+      const currentPage = pageContextEnabled ? (options.pageContext ?? collectLearningPageContext()) : undefined;
+      const round = options.round ?? 1;
+      const previousCorrect = options.previousCorrect ?? [];
+      const difficulty = options.difficulty ?? 'similar';
+      if (round === 1) {
+        quizFlowRef.current[lid] = { key: `${lid}:${sid}`, sessionId: sid, round: 1, results: [] };
+      }
+      const flow = quizFlowRef.current[lid];
+      const flowKey = flow && flow.sessionId === sid ? flow.key : `${lid}:${sid}`;
+      const userText = options.userText ?? (
+        round === 1
+          ? '出一道与这道题思路相近的练习题，让我在对话里作答'
+          : round === 2
+            ? '再出一道与刚才这道题思路相近的练习题，让我继续作答'
+            : '根据我前两道练习的作答情况，出一道难度更合适的巩固题，让我在对话里作答'
+      );
       append({ id: mid(), kind: 'user', text: userText, time: now() });
       const pendingId = mid();
       append({ id: pendingId, kind: 'agent', text: '正在生成随堂练习…', time: now() });
       setIsResponding(true);
       try {
         const result = await api.askAgentSimilarQuiz(
-          lid, undefined, sid ?? undefined, currentPage?.route, currentPage,
+          lid, undefined, sid ?? undefined, currentPage?.route, currentPage, {
+            round,
+            previousCorrect,
+            difficulty,
+            source: options.source,
+          },
         );
         const q = result?.question;
         if (!q || !q.stem || !Array.isArray(q.options) || q.options.length < 2) {
@@ -739,6 +785,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
                   settled: false,
                   picked: null,
                   correct: false,
+                  quizFlowKey: flowKey,
+                  quizRound: round,
                   time: now(),
                 }
               : m
@@ -748,7 +796,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         setMsgsAll((prev) => ({
           ...prev,
           [lid]: (prev[lid] ?? []).map((m) => (
-            m.id === pendingId ? { id: pendingId, kind: 'agent', text: '类似题生成失败，稍后再试一次吧', time: now() } : m
+            m.id === pendingId ? { id: pendingId, kind: 'agent', text: '随堂练习生成失败，稍后再试一次吧', time: now() } : m
           )),
         }));
       } finally {
@@ -756,15 +804,21 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    /** 作答做题卡片：本地即时判分，并把解析留在卡片内展示。 */
+    const askSimilarQuiz = async (pageContext?: LearningPageContext) => {
+      await requestQuizCard({ pageContext, round: 1 });
+    };
+
+    /** 作答做题卡片：本地即时判分，并把解析留在卡片内展示；前三张卡片自动连续追问。 */
     const answerQuizCard = (msgId: string, optIndex: number) => {
+      const qMsg = (msgsAll[lid] ?? []).find((item) => item.id === msgId && item.kind === 'quiz-card');
+      if (!qMsg || qMsg.kind !== 'quiz-card' || qMsg.settled) return;
+      const correct = optIndex === qMsg.answerIndex;
       setMsgsAll((prev) => {
         const list = [...(prev[lid] ?? [])];
         const i = list.findIndex((m) => m.id === msgId && m.kind === 'quiz-card');
         if (i < 0) return prev;
         const m = list[i];
         if (m.kind !== 'quiz-card' || m.settled) return prev;
-        const correct = optIndex === m.answerIndex;
         const updated = [...list];
         updated[i] = {
           ...m,
@@ -775,8 +829,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         };
         return { ...prev, [lid]: updated.slice(-60) };
       });
-      const qMsg = (msgsAll[lid] ?? []).find((item) => item.id === msgId && item.kind === 'quiz-card');
-      if (qMsg && qMsg.kind === 'quiz-card' && !correct) {
+      if (!correct) {
         void api.addToWrongBook({
           questionId: qMsg.id,
           stem: qMsg.stem,
@@ -786,6 +839,26 @@ export function AgentProvider({ children }: { children: ReactNode }) {
           explanation: qMsg.analysis ?? '',
           difficulty: 'medium',
         }).catch(() => undefined);
+      }
+      const flow = quizFlowRef.current[lid];
+      const sid = currentSessionId;
+      if (flow && sid && flow.sessionId === sid && qMsg.quizFlowKey && qMsg.quizFlowKey === flow.key && flow.round <= 2) {
+        const nextRound = flow.round + 1;
+        const results = [...flow.results, correct];
+        quizFlowRef.current[lid] = { ...flow, round: nextRound, results };
+        const difficulty = nextRound === 3 ? nextQuizDifficulty(results) : 'similar';
+        void requestQuizCard({
+          round: nextRound,
+          previousCorrect: results,
+          difficulty,
+          source: {
+            stem: qMsg.stem,
+            options: qMsg.options,
+            answerIndex: qMsg.answerIndex,
+            analysis: qMsg.analysis ?? '',
+          },
+          sessionId: sid,
+        });
       }
     };
 
@@ -869,6 +942,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       suggestions,
       askSuggestion,
       messages,
+      currentLearnerId: lid,
       unread,
       open,
       setOpen,

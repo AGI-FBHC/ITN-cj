@@ -1095,6 +1095,18 @@ export interface AgentSimilarQuizResult {
   };
 }
 
+export interface AgentSimilarQuizOptions {
+  round?: number;
+  previousCorrect?: boolean[];
+  difficulty?: 'similar' | 'harder' | 'easier';
+  source?: {
+    stem: string;
+    options: string[];
+    answerIndex: number;
+    analysis?: string;
+  };
+}
+
 export interface AgentWeeklyPlanResult {
   suggestions: {
     text: string;
@@ -1220,10 +1232,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ learnerId, kpId }),
     }),
-  askAgentSimilarQuiz: (learnerId: string, kpId: string | undefined, sessionId: string | undefined, pageContext: string | undefined, pageState: LearningPageContext | undefined) =>
+  askAgentSimilarQuiz: (learnerId: string, kpId: string | undefined, sessionId: string | undefined, pageContext: string | undefined, pageState: LearningPageContext | undefined, options?: AgentSimilarQuizOptions) =>
     requestAgent<AgentSimilarQuizResult>('/agent/ask/similar-quiz', {
       method: 'POST',
-      body: JSON.stringify({ learnerId, kpId, sessionId, pageContext, pageState }),
+      body: JSON.stringify({ learnerId, kpId, sessionId, pageContext, pageState, quizFollowUp: options ?? undefined }),
     }),
   createAgentSession: (learnerId: string) =>
     requestAgent<AgentDockSession>('/agent-sessions', {
