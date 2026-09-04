@@ -1,14 +1,12 @@
 import { useRef, useState } from 'react';
 import { useEffect } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowRight, Loader2, Box, Map, Route, Check, Share2 } from 'lucide-react';
+import { ArrowRight, Loader2, Route, Check } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
 import { useLearningMap } from '@/hooks/useLearningMap';
-import KnowledgeGraph from '@/components/learn/KnowledgeGraph';
 import KnowledgeGraph3D from '@/components/learn/KnowledgeGraph3D';
-import KpDetailPanel from '@/components/learn/KpDetailPanel';
 import UnitQuickList from '@/components/learn/UnitQuickList';
 import { Fern, GrassTuft } from '@/components/heal/Flora';
 import { cn } from '@/lib/utils';
@@ -20,7 +18,6 @@ const statusMeta: Record<string, { label: string; cls: string }> = {
 };
 
 interface LearnViewState {
-  viewMode: '2d' | '3d';
   selectedKp: string | null;
   selectedTopic: number | null;
   expandedKpIds: string[];
@@ -47,7 +44,6 @@ function readLearnView(learnerId: string): LearnViewState | null {
     const parsed = JSON.parse(window.sessionStorage.getItem(learnViewKey(learnerId)) ?? 'null') as Partial<LearnViewState> | null;
     if (!parsed || !Array.isArray(parsed.expandedKpIds)) return null;
     return {
-      viewMode: parsed.viewMode === '2d' ? '2d' : '3d',
       selectedKp: typeof parsed.selectedKp === 'string' ? parsed.selectedKp : null,
       selectedTopic: typeof parsed.selectedTopic === 'number' ? parsed.selectedTopic : null,
       expandedKpIds: parsed.expandedKpIds.filter((id): id is string => typeof id === 'string'),
@@ -70,7 +66,6 @@ export default function Learn() {
   /** “我的已学路径”：高亮已学章节/资源 */
   const [showLearnedPath, setShowLearnedPath] = useState(() => restoredView?.showLearnedPath ?? false);
   const [showTopicEdges, setShowTopicEdges] = useState(false);
-  const [viewMode, setViewMode] = useState<'2d' | '3d'>(() => restoredView?.viewMode ?? '3d');
   const [selectedKp, setSelectedKp] = useState<string | null>(() => restoredView?.selectedKp ?? null);
   const [expandedKpIds, setExpandedKpIds] = useState<Set<string>>(() => new Set(restoredView?.expandedKpIds ?? []));
   /** 3D：点击章节切换展开/收起，可同时展开多个 */
@@ -82,7 +77,7 @@ export default function Learn() {
       return next;
     });
   };
-  /** 2D：单展开语义（null = 全部收起） */
+  /** 章节速览只展开单个章节 */
   const setSingleExpandedKp = (id: string | null) => {
     setExpandedKpIds(id === null ? new Set() : new Set([id]));
   };
@@ -96,7 +91,6 @@ export default function Learn() {
     if (!currentLearner.id || currentLearner.id === 'loading') return;
     try {
       window.sessionStorage.setItem(learnViewKey(currentLearner.id), JSON.stringify({
-        viewMode,
         selectedKp,
         selectedTopic,
         expandedKpIds: Array.from(expandedKpIds),
@@ -104,7 +98,7 @@ export default function Learn() {
         showTopicEdges,
       } satisfies LearnViewState));
     } catch { /* sessionStorage 不可用时保持当前内存状态 */ }
-  }, [currentLearner.id, viewMode, selectedKp, selectedTopic, expandedKpIds, showLearnedPath, showTopicEdges]);
+  }, [currentLearner.id, selectedKp, selectedTopic, expandedKpIds, showLearnedPath, showTopicEdges]);
   // kp 参数只应用一次：地图数据分多次到达会导致本 effect 反复执行，
   // 每次都重新触发相机聚焦会造成“展开后视角又变一次”，这里用 ref 去重。
   const appliedKpParamRef = useRef<string | null>(null);
@@ -126,7 +120,6 @@ export default function Learn() {
     appliedKpParamRef.current = deepKey;
     // 首页“今天就学这一件/去学这块”进入：先跳转页面（默认 3D 视图），
     // 页面就绪后再模拟点击“章节速览”对应章节（与真实点击同一套逻辑，相机只动一次）
-    setViewMode('3d');
     if (focusTimerRef.current !== null) window.clearTimeout(focusTimerRef.current);
     focusTimerRef.current = window.setTimeout(() => {
       focusTimerRef.current = null;
@@ -158,21 +151,6 @@ export default function Learn() {
     return null;
   };
 
-  const selectedTopicNode = selectedKp && selectedTopic !== null
-    ? map.graphNodes.find((node) => (
-      node.kind === 'topic'
-      && node.kpId === selectedKp
-      && node.topicIndex === selectedTopic
-    ))
-    : null;
-  const detailResources = selectedTopicNode
-    ? map.resources[selectedTopicNode.id] ?? []
-    : selectedKp
-      ? map.graphNodes
-        .filter((node) => node.kind === 'topic' && node.kpId === selectedKp)
-        .flatMap((node) => map.resources[node.id] ?? [])
-      : Object.values(map.resources).flat();
-
   return (
     <div className="mx-auto max-w-[1280px] px-5 pb-24 pt-8 md:px-6">
       {/* 页头：标题 + 一句带动词的引导语 + 场景分段控件（全页唯一控件组） */}
@@ -188,67 +166,6 @@ export default function Learn() {
           <h1 className="font-serif text-[26px] font-bold leading-[36px] text-ink">我的知识网络</h1>
         </div>
 
-        {/* 场景切换 + 2D/3D 切换 */}
-        <div className="flex items-center gap-2">
-          {/* 2D/3D 切换 */}
-          <div className="hidden items-center gap-0.5 rounded-[11px] border border-hairline bg-paper p-0.5 lg:inline-flex">
-            <button
-              type="button"
-              onClick={() => setViewMode('2d')}
-              title="2D 平面视图"
-              className={cn(
-                'rounded-[9px] px-3 py-1.5 text-[12.5px] font-medium transition-all flex items-center gap-1.5',
-                viewMode === '2d' ? 'bg-card-warm text-ink shadow-xs ring-1 ring-hairline' : 'text-ink-muted hover:text-ink',
-              )}
-            >
-              <Map size={14} />
-              2D
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('3d')}
-              title="3D 立体视图（Obsidian 风格）"
-              className={cn(
-                'rounded-[9px] px-3 py-1.5 text-[12.5px] font-medium transition-all flex items-center gap-1.5',
-                viewMode === '3d' ? 'bg-card-warm text-ink shadow-xs ring-1 ring-hairline' : 'text-ink-muted hover:text-ink',
-              )}
-            >
-              <Box size={14} />
-              3D
-            </button>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setShowTopicEdges((visible: boolean) => !visible)}
-            aria-pressed={showTopicEdges}
-            title="同时控制 2D 与 3D 视图中的知识点关系连线"
-            className="hidden"
-          >
-            <Share2 size={12} />
-            知识点连线
-          </button>
-
-          {/* 已学路径（2D：放在 2D/3D 切换旁） */}
-          {viewMode === '2d' && (
-            <button
-              type="button"
-              onClick={() => setShowLearnedPath((v: boolean) => !v)}
-              aria-pressed={showLearnedPath}
-              title="高亮已学章节/资源，不一定连续"
-              className={cn(
-                'hidden items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] transition-colors lg:inline-flex',
-                showLearnedPath
-                  ? 'border-brand/60 bg-brand-tint text-brand hover:bg-brand-tint'
-                  : 'border-hairline/50 bg-white/90 text-ink-2 hover:bg-white hover:text-ink',
-              )}
-            >
-              {showLearnedPath ? <Check size={12} /> : <Route size={12} />}
-              {showLearnedPath ? '隐藏已学路径' : '已学路径'}
-            </button>
-          )}
-
-        </div>
       </motion.div>
 
       {/* ============ 桌面端：地图（结构）+ 详情（操作）+ 速览（扫描），三向联动 ============ */}
@@ -269,12 +186,11 @@ export default function Learn() {
         layout
         animate={{ opacity: 1, y: 0 }}
         transition={{ layout: { duration: 0.32, ease: [0.22, 1, 0.36, 1] } }}
-        className={cn('mt-5 flex flex-col gap-0', viewMode === '2d' && 'lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-7')}
+        className="mt-5 flex flex-col gap-0"
       >
         {/* 上层只承载网络与按需详情；章节速览在下方独立占满全局宽度。 */}
         <motion.div layout="position" className="relative min-w-0">
-          {viewMode === '3d' && (
-            <div className="absolute right-4 top-4 z-10 flex flex-col items-end gap-2">
+          <div className="absolute right-4 top-4 z-10 flex flex-col items-end gap-2">
             <button
               type="button"
               onClick={() => setShowLearnedPath((v: boolean) => !v)}
@@ -290,50 +206,33 @@ export default function Learn() {
               {showLearnedPath ? <Check size={12} /> : <Route size={12} />}
               {showLearnedPath ? '隐藏已学路径' : '已学路径'}
             </button>
-            </div>
-          )}
-          {viewMode === '3d' ? (
-            <KnowledgeGraph3D
-              nodes={map.graphNodes}
-              edges={map.graphEdges}
-              selectedKpId={selectedKp}
-              expandedKpIds={expandedKpIds}
-              onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }}
-              onSelectTopic={setSelectedTopic}
-              onExpandedKpChange={toggleExpandedKp}
-              learned={map.learned}
-              mastery={map.mastery}
-              chapterProgress={map.chapterProgress}
-              topicMastery={map.topicMastery}
-              topicMasteryRaw={map.topicMasteryRaw}
-              topicProgress={map.topicProgress}
-              focusTarget={graphFocus}
-              focusTopicTarget={focusTopic}
-              showLearned={showLearnedPath}
-              showTopicEdges={showTopicEdges}
-              resources={map.resources}
-              presentations={map.presentations}
-              nodeTargets={map.nodeTargets}
-              jobName={map.jobName}
-              persistenceKey={currentLearner.id}
-              restorePersistedCamera={restoreMapState && !searchParams.get('kp')}
-            />
-          ) : (
-            <KnowledgeGraph showLearned={showLearnedPath} showTopicEdges={showTopicEdges} onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }} onSelectTopic={setSelectedTopic} selectedKpId={selectedKp} expandedKpIds={expandedKpIds} onExpandedKpChange={setSingleExpandedKp} nodes={map.graphNodes} edges={map.graphEdges} path={map.path} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} learned={map.learned} activeKp={map.activeKp} nodeTargets={map.nodeTargets} />
-          )}
+          </div>
+          <KnowledgeGraph3D
+            nodes={map.graphNodes}
+            edges={map.graphEdges}
+            selectedKpId={selectedKp}
+            expandedKpIds={expandedKpIds}
+            onSelectKp={(id) => { setSelectedKp(id); setSelectedTopic(null); }}
+            onSelectTopic={setSelectedTopic}
+            onExpandedKpChange={toggleExpandedKp}
+            learned={map.learned}
+            mastery={map.mastery}
+            chapterProgress={map.chapterProgress}
+            topicMastery={map.topicMastery}
+            topicMasteryRaw={map.topicMasteryRaw}
+            topicProgress={map.topicProgress}
+            focusTarget={graphFocus}
+            focusTopicTarget={focusTopic}
+            showLearned={showLearnedPath}
+            showTopicEdges={showTopicEdges}
+            resources={map.resources}
+            presentations={map.presentations}
+            nodeTargets={map.nodeTargets}
+            jobName={map.jobName}
+            persistenceKey={currentLearner.id}
+            restorePersistedCamera={restoreMapState && !searchParams.get('kp')}
+          />
         </motion.div>
-        <AnimatePresence initial={false} mode="popLayout">
-        {viewMode === '2d' && <motion.div
-          key="knowledge-detail-panel"
-          initial={{ opacity: 0, y: 26, scale: 0.975, filter: 'blur(4px)' }}
-          animate={{ opacity: 1, y: 0, scale: 1, filter: 'blur(0px)' }}
-          exit={{ opacity: 0, y: 20, scale: 0.985, filter: 'blur(3px)' }}
-          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-          className="min-w-0 lg:sticky lg:top-6 lg:self-start"
-        >
-          <KpDetailPanel kpId={selectedKp} topicIndex={selectedTopic} onSelectTopic={setSelectedTopic} kp={knowledgePoints.find((kp) => kp.id === selectedKp) ?? null} mastery={map.mastery} topicMastery={map.topicMastery} topicProgress={map.topicProgress} graphNodes={map.graphNodes} path={map.path} resources={detailResources} presentations={map.presentations} knowledgeMap={{ chapters: knowledgePoints.map((chapter) => ({ id: chapter.id, name: chapter.name, topics: chapter.coreTopics })), edges: map.graphEdges }} />
-        </motion.div>}
-        </AnimatePresence>
       </motion.div>
 
       {/* 全局章节速览不参与上方两栏动画，侧栏出现时不会被挤压或拉伸。 */}
