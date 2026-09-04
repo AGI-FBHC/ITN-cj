@@ -68,7 +68,6 @@ export default function SourceCitationMarks({
   const [opened, setOpened] = useState<{ id: number; source: Record<string, unknown> } | null>(null);
   const [chunk, setChunk] = useState<RagChunkDetail | null>(null);
   const [loading, setLoading] = useState(false);
-  const [liveError, setLiveError] = useState<string | null>(null);
   useEffect(() => {
     if (!opened) return undefined;
     const body = document.body;
@@ -102,7 +101,6 @@ export default function SourceCitationMarks({
   const openSource = async (id: number, source: Record<string, unknown>) => {
     setOpened({ id, source });
     setChunk(null);
-    setLiveError(null);
     const chunkId = String(source.chunkId ?? '').trim();
     setLoading(true);
     try {
@@ -136,7 +134,7 @@ export default function SourceCitationMarks({
       }
       throw new Error('MySQL 中未找到与来源快照匹配的知识切片');
     } catch {
-      setLiveError('MySQL 中暂未找到对应知识切片，以下展示生成时保存的来源快照。');
+      /* 实时原文不存在时直接展示来源快照，不打断阅读。 */
     } finally {
       setLoading(false);
     }
@@ -165,7 +163,6 @@ export default function SourceCitationMarks({
             </header>
             <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-5">
               {loading ? <div className="flex items-center justify-center gap-2 py-16 text-[13px] text-ink-muted"><Loader2 size={16} className="animate-spin" />正在读取向量知识库原始切片…</div> : <>
-                {liveError && <div className="mb-3 rounded-xl border border-brand-amber/35 bg-brand-amber-tint px-3 py-2 text-[11.5px] text-ochre">实时原文读取失败，以下显示生成时保存的来源快照：{liveError}</div>}
                 {
                   (() => {
                     const rawContent = chunk?.content ?? String(opened.source.content ?? '没有可显示的原文内容。');
