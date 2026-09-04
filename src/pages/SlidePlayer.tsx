@@ -429,7 +429,8 @@ export default function SlidePlayer() {
       .slice(0, 2900);
   };
   const speakCurrent = () => {
-    if (narration.speaking) { narration.stop(); return; }
+    if (narration.paused) { void narration.resume(); return; }
+    if (narration.speaking) { void narration.pause(); return; }
     const text = currentNarrationText();
     if (text) void narration.play(text, speechSpeed);
   };
@@ -606,7 +607,7 @@ export default function SlidePlayer() {
         <div aria-hidden="true" />
         <div className="flex shrink-0 items-center justify-self-center gap-3">
           <button type="button" disabled={currentIndex === 0} onClick={() => setCurrentIndex((value) => Math.max(0, value - 1))} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="上一页"><ChevronLeft size={17} /></button>
-          <button type="button" onClick={speakCurrent} className="flex h-11 items-center gap-2 rounded-full bg-brand px-5 text-[12.5px] font-medium text-paper">{narration.speaking ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}{narration.speaking ? '暂停讲播' : '讲这一页'}</button>
+          <button type="button" onClick={speakCurrent} className="flex h-11 items-center gap-2 rounded-full bg-brand px-5 text-[12.5px] font-medium text-paper">{narration.speaking && !narration.paused ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}{narration.speaking && !narration.paused ? '暂停讲播' : narration.paused ? '继续讲播' : '讲这一页'}</button>
           <button type="button" onClick={cycleSpeed} className="h-10 rounded-full border border-hairline px-4 font-mono text-[11px] text-ink-muted">{narrationSpeeds.find((item) => item.value === speechSpeed)?.label ?? '1.0×'}</button>
           <button type="button" onClick={cycleVolume} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted" title={narration.volume === 0 ? '恢复音量' : `音量 ${Math.round(narration.volume * 100)}%`}>{narration.volume === 0 ? <VolumeX size={14} /> : narration.volume < 0.6 ? <Volume1 size={14} /> : <Volume2 size={14} />}</button>
           <button type="button" disabled={!slide} onClick={() => { setNoteText(''); setNoteOpen(true); }} className="flex h-10 items-center gap-1.5 rounded-full border border-hairline px-3 text-[11px] text-ink-muted hover:border-brand/40 hover:text-brand disabled:opacity-30" title="记录当前卡片笔记"><NotebookPen size={14} />笔记</button>

@@ -18,6 +18,7 @@ const browserRate = (speed: TtsSpeed) => narrationSpeeds.find((item) => item.val
 export function useStreamingNarration(onFinished?: () => void) {
   const [speaking, setSpeaking] = useState(false);
   const [volume, setVolumeState] = useState(1);
+  const [paused, setPaused] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const contextRef = useRef<AudioContext | null>(null);
   const gainRef = useRef<GainNode | null>(null);
@@ -25,6 +26,8 @@ export function useStreamingNarration(onFinished?: () => void) {
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const timerRef = useRef<number | null>(null);
   const generationRef = useRef(0);
+  const pausedRef = useRef(false);
+  const endTimeRef = useRef<number | null>(null);
   const onFinishedRef = useRef(onFinished);
   onFinishedRef.current = onFinished;
 
@@ -37,6 +40,8 @@ export function useStreamingNarration(onFinished?: () => void) {
     sourcesRef.current.forEach((source) => { try { source.stop(); } catch { /* already ended */ } });
     sourcesRef.current.clear();
     window.speechSynthesis?.cancel();
+    pausedRef.current = false;
+    setPaused(false);
     setSpeaking(false);
   }, []);
 
@@ -53,12 +58,52 @@ export function useStreamingNarration(onFinished?: () => void) {
     const finish = () => {
       if (generation !== generationRef.current) return;
       setSpeaking(false);
+      pausedRef.current = false;
+      setPaused(false);
       onFinishedRef.current?.();
     };
     utterance.onend = finish;
     utterance.onerror = finish;
     window.speechSynthesis.speak(utterance);
   }, []);
+
+  const rescheduleEnd = useCallback(() => {
+    if (timerRef.current) window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+    const context = contextRef.current;
+    if (!context || endTimeRef.current == null) return;
+    const delay = Math.max(50, Math.ceil((endTimeRef.current - context.currentTime) * 1000) + 80);
+    const generation = generationRef.current;
+    timerRef.current = window.setTimeout(() => {
+      if (generation !== generationRef.current) return;
+      setSpeaking(false);
+      pausedRef.current = false;
+      setPaused(false);
+      onFinishedRef.current?.();
+    }, delay);
+  }, []);
+
+  const pause = useCallback(() => {
+    if (pausedRef.current || !speaking) return;
+    pausedRef.current = true;
+    setPaused(true);
+    if (timerRef.current) window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+    if (window.speechSynthesis?.speaking) window.speechSynthesis.pause();
+    const context = contextRef.current;
+    if (context && context.state === 'running') void context.suspend();
+  }, [speaking]);
+
+  const resume = useCallback(async () => {
+    if (!pausedRef.current) return;
+    const context = contextRef.current;
+    if (context && context.state === 'suspended') await context.resume();
+    if (window.speechSynthesis?.paused) window.speechSynthesis.resume();
+    pausedRef.current = false;
+    setPaused(false);
+    setSpeaking(true);
+    rescheduleEnd();
+  }, [rescheduleEnd]);
 
   const setVolume = useCallback((value: number) => {
     volumeRef.current = Math.max(0, Math.min(1, value));
@@ -74,6 +119,9 @@ export function useStreamingNarration(onFinished?: () => void) {
     const generation = generationRef.current;
     const controller = new AbortController();
     abortRef.current = controller;
+    pausedRef.current = false;
+    setPaused(false);
+    endTimeRef.current = null;
     setSpeaking(true);
     try {
       const response = await streamAssistantTts(speechText, speed, controller.signal);
@@ -108,6 +156,7 @@ export function useStreamingNarration(onFinished?: () => void) {
         source.onended = () => sourcesRef.current.delete(source);
         source.start(nextStart);
         nextStart += buffer.duration;
+        endTimeRef.current = nextStart;
         scheduled += 1;
       };
       for (;;) {
@@ -127,11 +176,8 @@ export function useStreamingNarration(onFinished?: () => void) {
       }
       schedule(pending);
       if (!scheduled) throw new Error('empty audio stream');
-      timerRef.current = window.setTimeout(() => {
-        if (generation !== generationRef.current) return;
-        setSpeaking(false);
-        onFinishedRef.current?.();
-      }, Math.max(50, Math.ceil((nextStart - context.currentTime) * 1000) + 80));
+      endTimeRef.current = nextStart;
+      rescheduleEnd();
     } catch (reason) {
       if ((reason as Error).name === 'AbortError' || generation !== generationRef.current) return;
       browserFallback(speechText, speed, generation);
@@ -147,5 +193,5 @@ export function useStreamingNarration(onFinished?: () => void) {
     };
   }, [stop]);
 
-  return { speaking, play, stop, volume, setVolume };
+  return { speaking, paused, play, pause, resume, stop, volume, setVolume };
 }
