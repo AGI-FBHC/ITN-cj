@@ -12,7 +12,7 @@ import { clearCacheStartsWith } from '@/lib/swrCache';
 import ResourcePreview from '@/components/admin/ResourcePreview';
 import ExecutionDetailPanel from '@/components/admin/ExecutionDetailPanel';
 import { cn } from '@/lib/utils';
-import { agents as generationAgents, CollaborationRounds, AgentWorkflowSummary, eventDisplayTitle, isLifecycleEvent } from '@/pages/CollaborationWorkbench';
+import { agents as generationAgents, CollaborationRounds, AgentWorkflowSummary, eventDisplayTitle, isLifecycleEvent, PptModalPreview } from '@/pages/CollaborationWorkbench';
 
 type ResourceKind = 'lecture' | 'practice' | 'quiz' | 'ppt';
 type View = 'library' | 'archive';
@@ -40,6 +40,7 @@ export default function ResourceCenterAdmin() {
   const [view, setView] = useState<View>('library');
   const [keyword, setKeyword] = useState('');
   const [detail, setDetail] = useState<AdminResourceDetail | null>(null);
+  const [pptPreviewOpen, setPptPreviewOpen] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [taskDrawerOpen, setTaskDrawerOpen] = useState(false);
   const [focusTask, setFocusTask] = useState<string | null>(null);
@@ -504,7 +505,7 @@ export default function ResourceCenterAdmin() {
               <div className="lf-card rounded-2xl p-6">
                 <div className="flex flex-wrap items-center gap-2 border-b border-white/60 pb-4">
                   <h3 className="mr-auto text-lg font-bold text-ink">{detail.title}</h3>
-                  {detail.type === 'ppt' && <a href={`/learn/ppt-preview/${detail.id}`} target="_blank" rel="noreferrer" className="lf-row-btn lf-row-btn-primary"><MonitorPlay size={12} />完整课件预览</a>}
+                  {detail.type === 'ppt' && <button type="button" onClick={() => setPptPreviewOpen(true)} className="lf-row-btn lf-row-btn-primary"><MonitorPlay size={12} />完整课件预览</button>}
                   <span className="lf-pill lf-pill-null">{typeText[detail.type] || detail.type}</span>
                   <span className="lf-pill lf-pill-null">v{detail.revision}</span>
                   {detail.archivedAt ? (
@@ -709,6 +710,27 @@ export default function ResourceCenterAdmin() {
           )}
         </section>
       </div>
+      {pptPreviewOpen && detail?.type === 'ppt' && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-ink/35 p-4 backdrop-blur-sm">
+          <div className="lf-card flex h-[min(90vh,820px)] w-full max-w-6xl flex-col overflow-hidden rounded-3xl shadow-2xl">
+            <div className="flex shrink-0 items-center justify-between border-b border-white/70 px-5 py-4">
+              <div className="min-w-0">
+                <h3 className="truncate text-sm font-bold text-ink">{detail.title}</h3>
+                <p className="mt-0.5 text-[11px] text-ink-muted">{typeText[detail.type] || detail.type} · 已生成内容预览</p>
+              </div>
+              <button onClick={() => setPptPreviewOpen(false)} className="lf-row-btn !p-2" aria-label="关闭"><X size={15} /></button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden lg:grid lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.8fr)]">
+              <div className="flex min-h-0 flex-col overflow-y-auto border-b border-white/70 p-4 lg:border-b-0 lg:border-r">
+                <PptModalPreview taskId={detail.id} />
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-5">
+                <ResourcePreview detail={detail} />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <PreGenerationModal
         open={generationModalOpen}
         domainName={domain.name}

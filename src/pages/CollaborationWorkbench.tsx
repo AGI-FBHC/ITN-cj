@@ -979,7 +979,7 @@ export function EventDetailPanel({ event }: { event: AdminGenerationEvent }) {
   );
 }
 
-function PptModalPreview({ taskId }: { taskId: string }) {
+export function PptModalPreview({ taskId }: { taskId: string }) {
   const playerRef = useRef<PptPlayerRef>(null);
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
