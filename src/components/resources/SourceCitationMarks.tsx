@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { createPortal } from 'react-dom';
 import { ExternalLink, FileText, Loader2, X } from 'lucide-react';
-import { lectureMdComponents } from '@/components/resources/lecture-markdown';
+import { lectureMdComponents, secureImageSrc } from '@/components/resources/lecture-markdown';
 import { api } from '@/lib/api';
 import remarkCitationMarks from '@/lib/remarkCitationMarks';
 import type { LearningResource, RagChunkDetail } from '@/lib/api';
@@ -205,7 +205,7 @@ export default function SourceCitationMarks({
                             remarkPlugins={[remarkGfm, remarkCitationMarks]}
                             components={{
                               ...lectureMdComponents,
-                              img: ({ src, alt }) => src ? <img src={src} alt={alt || '切片图片'} className="my-3 block max-w-full rounded-lg border border-hairline" loading="lazy" /> : null,
+                              img: ({ src, alt }) => src ? <img src={secureImageSrc(src)} alt={alt || '切片图片'} className="my-3 block max-w-full rounded-lg border border-hairline" loading="lazy" /> : null,
                             }}
                           >
                             {markdownContent}

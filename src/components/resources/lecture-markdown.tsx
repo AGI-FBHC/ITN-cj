@@ -50,6 +50,24 @@ export const headingId = (text: string) =>
     .replace(/[^\w一-龥.-]/g, '')
     .slice(0, 48);
 
+/** 知识库原文/讲义里常见 http://113.249.110.108:28901/... 图床地址，走后端 HTTPS 代理避免 Mixed Content。 */
+export const secureImageSrc = (src: string | undefined) => {
+  if (!src) return src;
+  try {
+    const url = new URL(src, window.location.origin);
+    if (url.protocol === 'http:' && url.hostname === '113.249.110.108' && url.port === '28901') {
+      return `/api/v1/rag/assets/remote?url=${encodeURIComponent(src)}`;
+    }
+    if (url.protocol === 'http:') {
+      url.protocol = 'https:';
+      return url.toString();
+    }
+  } catch {
+    return src;
+  }
+  return src;
+};
+
 type MDProps = { node?: unknown; children?: ReactNode; className?: string };
 
 /** 剥离 react-markdown 注入的非 DOM 属性（node） */
@@ -270,9 +288,9 @@ export const lectureMdComponents = {
     );
   },
   img: (props: MDProps & { src?: string; alt?: string }) => {
-    const { node, ...rest } = props;
+    const { node, src, ...rest } = props;
     void node;
-    return <img className="my-5 max-h-[440px] w-full rounded-[12px] border border-hairline bg-paper-deep object-contain" loading="lazy" {...rest} />;
+    return <img src={secureImageSrc(src)} className="my-5 max-h-[440px] w-full rounded-[12px] border border-hairline bg-paper-deep object-contain" loading="lazy" {...rest} />;
   },
   hr: (props: MDProps) => <hr className="my-6 border-hairline" {...domOnly(props)} />,
   a: (props: MDProps) => {
