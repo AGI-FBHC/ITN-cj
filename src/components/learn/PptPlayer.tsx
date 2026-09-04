@@ -172,11 +172,11 @@ const PptPlayer = forwardRef<PptPlayerRef, { taskId: string; wideMode?: boolean;
       onLoadingChange?.(true);
     }
     try {
-      if (cachedUrl) {
+      if (cachedUrl && audioSrcRef.current !== cachedUrl) {
         setAudioSrc(cachedUrl);
         audioSrcRef.current = cachedUrl;
         audio.src = cachedUrl;
-      } else if (!audioSrcRef.current) {
+      } else if (!cachedUrl && !audioSrcRef.current) {
         const blob = await fetchSlideAsset(taskId, index, 'audio', modelProvider, qwenVoice);
         const url = URL.createObjectURL(blob);
         cacheAsset(cacheKey, url);
