@@ -105,8 +105,10 @@ export default function Onboarding() {
   useEffect(() => {
     api.getOnboardingMeta().then(setMeta).catch(() => {});
   }, []);
-  const knowledgePoints = (meta?.knowledgePoints ?? localKnowledgePoints)
-    .map((kp) => ({ ...kp, name: abilityName(kp.id, kp.name) }));
+  const knowledgePoints = useMemo(
+    () => (meta?.knowledgePoints ?? localKnowledgePoints).map((kp) => ({ ...kp, name: abilityName(kp.id, kp.name) })),
+    [meta?.knowledgePoints],
+  );
   const tags = meta?.tags ?? TAGS;
   const edu = meta?.edu ?? EDU;
   const targetOptions = meta?.targetOptions ?? [];
