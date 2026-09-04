@@ -155,7 +155,12 @@ function SourceList({ sources, evidenceQuotes }: { sources?: Array<Record<string
 const citedSourceIds = (slide?: CustomizeSlide): Set<number> => {
   if (!slide) return new Set();
   const text = typeof slide.content === 'string' ? slide.content : JSON.stringify(slide.content ?? {});
-  return new Set([...text.matchAll(/(?<!\!)\[(\d+)\](?!\s*\()/g)].map((match) => Number(match[1])));
+  const ids: number[] = [];
+  for (const match of text.matchAll(/(?:\^\[(\d+)\]|\[(?:\^(\d+)|citation\s*:\s*(\d+))\]|(?<!\!)\[(\d+)\](?!\s*\())/g)) {
+    const value = match[1] ?? match[2] ?? match[3] ?? match[4];
+    if (value) ids.push(Number(value));
+  }
+  return new Set(ids);
 };
 
 /** 后端按完整章节生成；前端收到章节后一次拆出其中全部小节卡片。 */
