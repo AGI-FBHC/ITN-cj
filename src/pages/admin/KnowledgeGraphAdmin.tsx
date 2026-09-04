@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckCircle2, GitBranch, Loader2, Plus, RefreshCw, Sparkles, X } from "lucide-react";
+import { CheckCircle2, GitBranch, Loader2, Minus, Plus, RefreshCw, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { adminKnowledgeApi, type KcCategoryNode, type KcGraphEdge } from "@/lib/adminKnowledgeApi";
@@ -201,19 +201,23 @@ function SimpleChapterCanvas({
   categories,
   edges,
   pendingEdges = [],
+  pendingRemoveEdges = [],
   sourceId,
   targetId,
   onPick,
   onAddEdge,
+  onRemoveEdge,
   onClear,
 }: {
   categories: Map<number, CategoryInfo>;
   edges: KcGraphEdge[];
   pendingEdges?: Array<{ prereqCategoryId: number; categoryId: number; edgeType?: string; rationale?: string }>;
+  pendingRemoveEdges?: KcGraphEdge[];
   sourceId: number | null;
   targetId: number | null;
   onPick: (id: number) => void;
   onAddEdge?: (source: number, target: number) => void;
+  onRemoveEdge?: (source: number, target: number) => void;
   onClear?: () => void;
 }) {
   const chapters = useMemo(
@@ -306,7 +310,7 @@ function SimpleChapterCanvas({
           <GitBranch size={15} className="text-brand" />
           <h3 className="text-sm font-bold text-ink">章节网络 · 快速建边</h3>
         </div>
-        <p className="mt-1 text-[11px] leading-4 text-ink-muted">只展示章节和章节之间的边。橙色为已选起点，绿色为已选终点；节点可拖动调整位置，选好两点后点“加边”即可画线。</p>
+        <p className="mt-1 text-[11px] leading-4 text-ink-muted">只展示章节和章节之间的边。橙色为已选起点，绿色为已选终点；节点可拖动调整位置，选好两点后点“加边”或“减边”，再统一确认生效。</p>
       </div>
       <div className="overflow-x-auto p-3">
         <svg ref={svgRef} viewBox="0 0 1200 680" className="h-[560px] min-w-[900px] w-full cursor-grab rounded-xl border border-white/70 bg-white/40" onPointerMove={(event) => { if (draggingId.current == null) return; const point = toCanvasPoint(event.clientX, event.clientY); movedRef.current = true; setManualPositions((current) => ({ ...current, [draggingId.current as number]: point })); }} onPointerUp={() => { draggingId.current = null; }}>
@@ -354,6 +358,25 @@ function SimpleChapterCanvas({
               </line>
             );
           })}
+          {pendingRemoveEdges.map((edge) => {
+            const from = nodePositions.get(edge.prereq_category_id);
+            const to = nodePositions.get(edge.category_id);
+            if (!from || !to) return null;
+            const dx = to.x - from.x;
+            const dy = to.y - from.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const ux = dx / len;
+            const uy = dy / len;
+            const sx = from.x + ux * 30;
+            const sy = from.y + uy * 30;
+            const ex = to.x - ux * 30;
+            const ey = to.y - uy * 30;
+            return (
+              <line key={`delete-${edge.id}`} x1={sx} y1={sy} x2={ex} y2={ey} stroke="#dc2626" strokeWidth="4" strokeDasharray="8 6" markerEnd="url(#arrow)" opacity={0.9}>
+                <title>待删除：{categories.get(edge.prereq_category_id)?.name} → {categories.get(edge.category_id)?.name}</title>
+              </line>
+            );
+          })}
           {sourceId != null && targetId != null && sourceId !== targetId && (() => {
             const from = nodePositions.get(sourceId);
             const to = nodePositions.get(targetId);
@@ -390,8 +413,8 @@ function SimpleChapterCanvas({
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 text-xs text-ink-muted">
         <div>
-          {pendingEdges.length > 0
-            ? `待确认 ${pendingEdges.length} 条边（橙色虚线），确认保存后写入`
+          {pendingEdges.length > 0 || pendingRemoveEdges.length > 0
+            ? `待确认 加边 ${pendingEdges.length} 条 / 删除 ${pendingRemoveEdges.length} 条`
             : sourceId == null
             ? "请先点选前置章节"
             : targetId == null
@@ -409,6 +432,12 @@ function SimpleChapterCanvas({
             <button onClick={() => onAddEdge(sourceId, targetId)} className="lf-btn-primary justify-center gap-1 !px-3 !py-1.5 text-xs">
               <Plus size={13} />
               加边
+            </button>
+          )}
+          {sourceId != null && targetId != null && sourceId !== targetId && onRemoveEdge && (
+            <button onClick={() => onRemoveEdge(sourceId, targetId)} className="inline-flex items-center rounded-xl border border-brand-danger/30 bg-brand-danger/5 px-3 py-1.5 text-xs font-semibold text-brand-danger transition hover:border-brand-danger/60 hover:bg-brand-danger/10">
+              <Minus size={13} />
+              减边
             </button>
           )}
         </div>
@@ -738,6 +767,7 @@ export default function KnowledgeGraphAdmin() {
   const [builderSourceId, setBuilderSourceId] = useState<number | null>(null);
   const [builderTargetId, setBuilderTargetId] = useState<number | null>(null);
   const [pendingEdges, setPendingEdges] = useState<{ prereqCategoryId: number; categoryId: number; edgeType: string; rationale: string }[]>([]);
+  const [pendingRemoveEdges, setPendingRemoveEdges] = useState<KcGraphEdge[]>([]);
   const handleBuilderPick = useCallback(
     (id: number) => {
       if (builderSourceId == null || builderSourceId === id) {
@@ -790,6 +820,29 @@ export default function KnowledgeGraphAdmin() {
     (source: number, target: number) => stageBuilderEdge(source, target),
     [stageBuilderEdge],
   );
+  const handleBuilderRemoveEdge = useCallback(
+    (source: number, target: number) => {
+      const matches = edges.filter(
+        (edge) => edge.prereq_category_id === source
+          && edge.category_id === target
+          && ["active", "proposed", "needs_review"].includes(edge.status),
+      );
+      if (!matches.length) {
+        toast.warning("没有找到可删除的生效边");
+        return;
+      }
+      setPendingRemoveEdges((current) => {
+        const existing = new Set(current.map((edge) => edge.id));
+        const fresh = matches.filter((edge) => !existing.has(edge.id));
+        if (fresh.length) toast.success(`已暂存 ${fresh.length} 条待删除边`);
+        else toast.warning("这条边已经在待删除列表里");
+        return [...current, ...fresh];
+      });
+      setBuilderSourceId(null);
+      setBuilderTargetId(null);
+    },
+    [edges],
+  );
   const confirmPendingEdges = useCallback(async () => {
     if (!pendingEdges.length) return;
     const queue = [...pendingEdges];
@@ -820,6 +873,29 @@ export default function KnowledgeGraphAdmin() {
       toast.error(error instanceof Error ? error.message : "保存失败");
     }
   }, [pendingEdges, refresh]);
+  const confirmPendingRemovals = useCallback(async () => {
+    if (!pendingRemoveEdges.length) return;
+    const queue = [...pendingRemoveEdges];
+    const errors: string[] = [];
+    setPendingRemoveEdges([]);
+    try {
+      for (const item of queue) {
+        try {
+          await adminKnowledgeApi.deleteEdge(item.id);
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : String(error));
+        }
+      }
+      if (errors.length) {
+        toast.error(`部分边删除失败：${errors.join("；")}`);
+      } else {
+        toast.success(`已确认删除 ${queue.length} 条章节边`);
+      }
+      await refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "删除失败");
+    }
+  }, [pendingRemoveEdges, refresh]);
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -938,15 +1014,34 @@ export default function KnowledgeGraphAdmin() {
             </div>
           </div>
         )}
+        {pendingRemoveEdges.length > 0 && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-danger/30 bg-red-50 px-4 py-3">
+            <div>
+              <p className="text-xs font-bold text-brand-danger">待删除边 {pendingRemoveEdges.length} 条</p>
+              <p className="mt-0.5 text-[10.5px] text-ink-muted">确认后会软删除并刷新图形。</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button onClick={() => setPendingRemoveEdges([])} className="lf-row-btn text-ink-muted">
+                清空
+              </button>
+              <button onClick={() => void confirmPendingRemovals()} className="inline-flex items-center justify-center gap-1 rounded-xl border border-brand-danger/30 bg-brand-danger px-4 py-2 text-xs font-semibold text-paper transition hover:bg-brand-danger/90">
+                <Minus size={13} />
+                确认删除 {pendingRemoveEdges.length} 条
+              </button>
+            </div>
+          </div>
+        )}
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
           <SimpleChapterCanvas
             categories={categories}
             edges={edges}
             pendingEdges={pendingEdges}
+            pendingRemoveEdges={pendingRemoveEdges}
             sourceId={builderSourceId}
             targetId={builderTargetId}
             onPick={handleBuilderPick}
             onAddEdge={(source, target) => void handleBuilderAddEdge(source, target)}
+            onRemoveEdge={(source, target) => handleBuilderRemoveEdge(source, target)}
             onClear={() => { setBuilderSourceId(null); setBuilderTargetId(null); }}
           />
           <DagQuickBuilder

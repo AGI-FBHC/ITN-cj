@@ -386,6 +386,11 @@ export const adminKnowledgeApi = {
       `${KC}/knowledge/graph/edges/${id}/reverse`,
       { method: "POST" },
     ),
+  deleteEdge: (id: number) =>
+    direct<Record<string, unknown>>(
+      `${KC}/knowledge/graph/edges/${id}`,
+      { method: "DELETE" },
+    ),
   validateGraph: (domainId?: number) =>
     direct<{
       is_consistent: boolean;
