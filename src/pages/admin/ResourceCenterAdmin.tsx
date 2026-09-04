@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArchiveRestore, ArrowLeft, Ban, BookOpen, CheckCircle2, ChevronDown, ChevronRight, ClipboardList,
+  ArrowLeft, Ban, BookOpen, CheckCircle2, ChevronDown, ChevronRight, ClipboardList,
   Eye, FileText, FolderTree, LayoutTemplate, ListChecks, Loader2, MonitorPlay, Plus, Radio, RefreshCw, Sparkles, Trash2, Wrench, X, XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -15,7 +15,6 @@ import { cn } from '@/lib/utils';
 import { agents as generationAgents, CollaborationRounds, AgentWorkflowSummary, eventDisplayTitle, isLifecycleEvent, PptModalPreview } from '@/pages/CollaborationWorkbench';
 
 type ResourceKind = 'lecture' | 'practice' | 'quiz' | 'ppt';
-type View = 'library' | 'archive';
 type GenerationTask =
   | ({ taskKind: 'resource' } & LearningResourceGenerationTask)
   | ({ taskKind: 'ppt' } & PresentationTaskSummary);
@@ -37,7 +36,6 @@ export default function ResourceCenterAdmin() {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [node, setNode] = useState<RagTreeNode | null>(null);
   const [, setKind] = useState<ResourceKind>('lecture');
-  const [view, setView] = useState<View>('library');
   const [keyword, setKeyword] = useState('');
   const [detail, setDetail] = useState<AdminResourceDetail | null>(null);
   const [pptPreviewOpen, setPptPreviewOpen] = useState(false);
@@ -62,13 +60,13 @@ export default function ResourceCenterAdmin() {
     { ttlMs: 60_000 },
   );
   const listQ = useCachedData<{ items: AdminResourceItem[]; total: number }>(
-    domain ? `admin:res:${view}:${domain.code}:${node?.nodeCode ?? ''}:${keyword}` : null,
-    () => api.listAdminResources({ view, keyword, domainCode: (domain as { code: string }).code, nodeCode: node?.nodeCode }),
+    domain ? `admin:res:library:${domain.code}:${node?.nodeCode ?? ''}:${keyword}` : null,
+    () => api.listAdminResources({ view: 'library', keyword, domainCode: (domain as { code: string }).code, nodeCode: node?.nodeCode }),
     { ttlMs: 15_000 },
   );
   const pptQ = useCachedData<{ items: AdminResourceItem[]; total: number }>(
-    domain ? `admin:ppt:${view}:${domain.code}:${node?.nodeCode ?? ''}:${keyword}` : null,
-    () => api.listAdminResources({ view, type: 'ppt', keyword, domainCode: (domain as { code: string }).code, nodeCode: node?.nodeCode }),
+    domain ? `admin:ppt:library:${domain.code}:${node?.nodeCode ?? ''}:${keyword}` : null,
+    () => api.listAdminResources({ view: 'library', type: 'ppt', keyword, domainCode: (domain as { code: string }).code, nodeCode: node?.nodeCode }),
     { ttlMs: 15_000 },
   );
   const completedPptItems = useMemo(
@@ -271,7 +269,6 @@ export default function ResourceCenterAdmin() {
     setKind('lecture');
     setKeyword('');
     setDetail(null);
-    if (next.code === '__unassigned__') setView('archive');
   };
 
   /** 写操作后失效：清空资源相关缓存并强制刷新当前列表与统计 */
@@ -282,15 +279,13 @@ export default function ResourceCenterAdmin() {
 
   const act = async (item: AdminResourceItem, action: string) => {
     try {
-      if (action === 'restore') await api.restoreAdminResource(item.id);
-      else if (action === 'archive') await api.archiveAdminResource(item.id);
-      else if (action === 'template') await api.setAdminResourceTemplate(item.id);
+      if (action === 'template') await api.setAdminResourceTemplate(item.id);
       else if (action === 'delete') {
         if (!window.confirm(`确定彻底删除“${item.title}”吗？\n\n此操作不可恢复，相关内容${item.type === 'ppt' ? '和课件文件' : ''}将被永久删除。`)) return;
         await api.deleteAdminResourcePermanently(item.id);
       }
       else await api.reviewAdminResource(item.id, action as 'submit' | 'approve' | 'reject' | 'publish' | 'deprecate');
-      toast.success(action === 'template' ? '已设为母版' : action === 'delete' ? '资源已彻底删除' : action === 'restore' ? '已恢复到机构资源库草稿' : '资源状态已更新');
+      toast.success(action === 'template' ? '已设为母版' : action === 'delete' ? '资源已彻底删除' : '资源状态已更新');
       await invalidateResources();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '操作失败');
@@ -299,7 +294,7 @@ export default function ResourceCenterAdmin() {
 
   const deleteGroup = async (groupName: string) => {
     if (!domain || !node || domain.code === '__unassigned__' || groupName === '默认分组') return;
-    if (!window.confirm(`确定彻底删除“${groupName}”吗？\n\n该知识点分组下的已生成/待生成/归档资源与任务会被一并删除，且不可恢复。`)) return;
+    if (!window.confirm(`确定彻底删除“${groupName}”吗？\n\n该知识点分组下的已生成/待生成资源与任务会被一并删除，且不可恢复。`)) return;
     try {
       await api.deleteAdminResourceGroup(domain.code, node.nodeCode, groupName);
       toast.success('分组已彻底删除');
@@ -338,13 +333,6 @@ export default function ResourceCenterAdmin() {
               <Sparkles size={13} />
               AI 教研工作台
             </button>
-            <div className="lf-seg">
-              <button onClick={() => setView('archive')} className={cn('lf-seg-item', view === 'archive' && 'lf-seg-item-active')}>
-                <Trash2 size={13} />
-                归档
-                <span className={cn('rounded-full px-1.5 text-[10px]', view === 'archive' ? 'bg-white/60' : 'bg-white/70')}>{statsQ.data?.recycle ?? 0}</span>
-              </button>
-            </div>
           </div>
         </div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -374,19 +362,6 @@ export default function ResourceCenterAdmin() {
               </div>
             </button>
           ))}
-          <button
-            onClick={() => void openDomain({ code: '__unassigned__', name: '未识别归属', description: '旧资源中无法可靠映射到领域目录的内容' })}
-            className="lf-card lf-card-hover rounded-2xl border-dashed border-ochre/40 bg-ochre-tint/40 p-6 text-left"
-          >
-            <span className="flex items-start justify-between">
-              <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/70 text-ochre">
-                <FolderTree size={20} />
-              </span>
-              <span className="lf-pill lf-pill-warn">{statsQ.data?.recycle ?? 0} 项</span>
-            </span>
-            <h3 className="mt-4 text-base font-bold text-ink">未识别归属</h3>
-            <p className="mt-1 text-xs leading-5 text-ink-muted">安全收纳尚未建立稳定领域和知识点映射的历史资源。</p>
-          </button>
         </div>
         {domainsQ.loading && !domainsQ.data && (
           <div className="flex justify-center py-10 text-sm text-ink-muted">
@@ -508,9 +483,7 @@ export default function ResourceCenterAdmin() {
                   {detail.type === 'ppt' && <button type="button" onClick={() => setPptPreviewOpen(true)} className="lf-row-btn lf-row-btn-primary"><MonitorPlay size={12} />完整课件预览</button>}
                   <span className="lf-pill lf-pill-null">{typeText[detail.type] || detail.type}</span>
                   <span className="lf-pill lf-pill-null">v{detail.revision}</span>
-                  {detail.archivedAt ? (
-                    <span className="lf-pill lf-pill-warn">已归档</span>
-                  ) : detail.reviewStatus ? (
+                  {detail.reviewStatus ? (
                     <span
                       className={cn(
                         'lf-pill',
@@ -553,34 +526,9 @@ export default function ResourceCenterAdmin() {
               ) : null}
 
               <div className="lf-card mb-4 flex flex-wrap items-center gap-3 rounded-2xl p-3">
-                <div className="lf-seg">
-                  {([['library', '资源库'], ['archive', '归档']] as [View, string][]).map(([id, label]) => (
-                    <button key={id} onClick={() => { setView(id); setDetail(null); }} className={cn('lf-seg-item', view === id && 'lf-seg-item-active')}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
                 <div className="min-w-52 flex-1">
                   <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="搜索当前目录资源" className="lf-input" />
                 </div>
-                {view === 'archive' && (
-                  <button
-                    onClick={() => void (async () => {
-                      if (!window.confirm('确定彻底清空当前机构的归档内容吗？此操作不可恢复。')) return;
-                      try {
-                        await api.purgeAdminResourceArchive();
-                        toast.success('归档内容已彻底清理');
-                        await invalidateResources();
-                      } catch (e) {
-                        toast.error(e instanceof Error ? e.message : '归档清理失败');
-                      }
-                    })()}
-                    className="lf-row-btn text-red-600"
-                  >
-                    <Trash2 size={12} />
-                    清空归档
-                  </button>
-                )}
                 {listQ.refreshing && (
                   <span className="flex items-center gap-1 text-[11px] text-ink-muted">
                     <Loader2 size={11} className="animate-spin" />
@@ -625,16 +573,14 @@ export default function ResourceCenterAdmin() {
                         {isTemplate && <span className="lf-pill lf-pill-ok">母版</span>}
                         <span className="ml-1 text-[10px] text-ink-muted">({rowTypeCount}/4)</span>
                         <span className="ml-auto" />
-                        {view === 'library' && (
-                          <button
-                            disabled={isTemplate || !firstItem}
-                            onClick={(e) => { e.stopPropagation(); firstItem && void act(firstItem, 'template'); }}
-                            className="lf-row-btn lf-row-btn-primary disabled:cursor-default disabled:opacity-70"
-                          >
-                            <LayoutTemplate size={11} />
-                            {isTemplate ? '当前母版' : '设为母版'}
-                          </button>
-                        )}
+                        <button
+                          disabled={isTemplate || !firstItem}
+                          onClick={(e) => { e.stopPropagation(); firstItem && void act(firstItem, 'template'); }}
+                          className="lf-row-btn lf-row-btn-primary disabled:cursor-default disabled:opacity-70"
+                        >
+                          <LayoutTemplate size={11} />
+                          {isTemplate ? '当前母版' : '设为母版'}
+                        </button>
                         {groupName !== '默认分组' && (
                           <button
                             onClick={(e) => { e.stopPropagation(); void deleteGroup(groupName); }}
@@ -666,33 +612,20 @@ export default function ResourceCenterAdmin() {
                                 {item ? (
                                   <>
                                     <span className="min-w-0 flex-1 truncate font-semibold text-ink" title={item.title}>{item.title}</span>
-                                    {item.archivedAt ? <span className="lf-pill lf-pill-warn">已归档</span> : null}
-                                    {view !== 'archive' && (
-                                      active ? (
-                                        <span className="lf-pill lf-pill-warn"><Loader2 size={11} className="animate-spin" />生成中 {runningTask?.progress}%</span>
-                                      ) : (
-                                        <button onClick={() => launchGeneration(type, true, groupName)} className="lf-row-btn text-ink-muted" title="重新生成"><RefreshCw size={11} />重新生成</button>
-                                      )
+                                    {active ? (
+                                      <span className="lf-pill lf-pill-warn"><Loader2 size={11} className="animate-spin" />生成中 {runningTask?.progress}%</span>
+                                    ) : (
+                                      <button onClick={() => launchGeneration(type, true, groupName)} className="lf-row-btn text-ink-muted" title="重新生成"><RefreshCw size={11} />重新生成</button>
                                     )}
                                     <button onClick={() => preview(item)} className="lf-row-btn"><Eye size={11} />预览</button>
                                     {openResourceLog && <button onClick={() => openResourceLog(item)} className="lf-row-btn" title="打开生成日志"><FileText size={11} />日志</button>}
-                                    {view === 'archive' ? (
-                                      <>
-                                        <button onClick={() => void act(item, 'restore')} className="lf-row-btn lf-row-btn-primary"><ArchiveRestore size={11} />恢复</button>
-                                        <button onClick={() => void act(item, 'delete')} className="lf-row-btn text-red-600"><Trash2 size={11} /></button>
-                                      </>
-                                    ) : (
-                                      <button onClick={() => void act(item, 'archive')} className="lf-row-btn text-ink-muted">归档</button>
-                                    )}
                                   </>
                                 ) : active ? (
                                   <>
                                     <span className="min-w-0 flex-1 truncate font-semibold text-brand">
                                       <span className="inline-flex items-center gap-1.5"><Loader2 size={11} className="animate-spin" />生成中 {runningTask?.progress}% · {runningTask?.stageMessage || '任务进行中'}</span>
                                     </span>
-                                    {view !== 'archive' && (
-                                      <button onClick={() => runningTask && navigate(`/admin/workbench?task=${runningTask.taskKind}-${runningTask.id}`)} className="lf-row-btn">查看任务</button>
-                                    )}
+                                    <button onClick={() => runningTask && navigate(`/admin/workbench?task=${runningTask.taskKind}-${runningTask.id}`)} className="lf-row-btn">查看任务</button>
                                   </>
                                 ) : (
                                   <button onClick={() => launchGeneration(type, hasPriorState, groupName)} className="lf-row-btn lf-row-btn-primary"><Plus size={11} />生成</button>
