@@ -328,7 +328,6 @@ export default function ResourceCenterAdmin() {
             <p className="mt-1.5 text-sm text-ink-muted">先选择领域，再沿知识目录管理四类学习资源。</p>
           </div>
           <div className="flex items-center gap-2">
-            {statsQ.refreshing && <span className="text-[11px] text-ink-muted">统计更新中…</span>}
             <button onClick={() => navigate('/admin/workbench')} className="lf-row-btn">
               <Sparkles size={13} />
               AI 教研工作台
@@ -346,20 +345,6 @@ export default function ResourceCenterAdmin() {
               </span>
               <h3 className="mt-4 text-base font-bold text-ink">{item.name}</h3>
               <p className="mt-1 line-clamp-2 text-xs leading-5 text-ink-muted">{item.description || '暂无领域说明'}</p>
-              <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-white/50 p-2.5 text-center text-[11px] text-ink-muted">
-                <span>
-                  <b className="block text-base font-bold tabular-nums text-ink">{item.categoryCount}</b>
-                  目录
-                </span>
-                <span>
-                  <b className="block text-base font-bold tabular-nums text-ink">{item.knowledgePointCount}</b>
-                  知识点
-                </span>
-                <span>
-                  <b className="block text-base font-bold tabular-nums text-ink">{item.chunkCount}</b>
-                  切片
-                </span>
-              </div>
             </button>
           ))}
         </div>
@@ -812,7 +797,6 @@ function TaskDrawer({ open, tasks, busy, focusTaskId, onClose, onCancel, onRetry
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-tint text-brand"><ListChecks size={18} /></div>
           <div className="min-w-0 flex-1">
             <h3 className="text-base font-bold text-ink">资源生成任务</h3>
-            <p className="mt-1 text-[11px] text-ink-muted">{activeTasks.length ? `${activeTasks.length} 项正在进行` : '当前没有进行中的任务'}</p>
           </div>
           <button onClick={onClose} className="lf-row-btn !p-2" aria-label="关闭"><X size={15} /></button>
         </div>
@@ -823,16 +807,14 @@ function TaskDrawer({ open, tasks, busy, focusTaskId, onClose, onCancel, onRetry
             onClick={() => setTab('active')}
             className={cn('flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors', tab === 'active' ? 'bg-brand text-paper shadow-sm' : 'text-ink-2 hover:bg-white/70')}
           >
-            进行中
-            <span className={cn('rounded-full px-1.5 text-[10px] tabular-nums', tab === 'active' ? 'bg-white/25 text-paper' : 'bg-brand-tint text-brand')}>{activeTasks.length}</span>
+             进行中
           </button>
           <button
             type="button"
             onClick={() => setTab('finished')}
             className={cn('flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-colors', tab === 'finished' ? 'bg-ink text-paper shadow-sm' : 'text-ink-2 hover:bg-white/70')}
           >
-            已完成 / 已结束
-            <span className={cn('rounded-full px-1.5 text-[10px] tabular-nums', tab === 'finished' ? 'bg-white/25 text-paper' : 'bg-ink-tint text-ink')}>{finishedTasks.length}</span>
+             已完成 / 已结束
           </button>
         </div>
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
