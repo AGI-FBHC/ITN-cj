@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkCitationMarks from '@/lib/remarkCitationMarks';
+import { normalizeMarkdownLists } from '@/lib/normalizeMarkdown';
 import { fullLearningResourcePath, markLearningMapReturn } from '@/lib/learningNavigation';
 import {
   ArrowLeft, ArrowRight, BookOpen, Bot, Camera, Check, CheckCircle2, ChevronLeft,
@@ -114,12 +115,6 @@ const asStrings = (value: unknown): string[] => Array.isArray(value) ? value.map
 const asNumbers = (value: unknown): number[] => Array.isArray(value) ? [...new Set(value.map(Number).filter(Number.isFinite))] : [];
 const unique = (values: string[]) => [...new Set(values.filter(Boolean))];
 
-/** 确保编号列表前有换行，LLM 返回的文本常缺失 markdown 列表格式 */
-function normalizeMarkdownLists(text: string): string {
-  if (!text) return text;
-  // 在 "数字. " 前加换行（如果前面没有换行）
-  return text.replace(/([^\n])(\d+\.\s)/g, '$1\n\n$2');
-}
 const isUuid = (value?: string | null) => Boolean(value && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value));
 
 /** 学习状态变化广播：答题/重置/完成后通知全局缓存失效（analytics、今日日记），保证返回地图/成长页即新鲜 */
