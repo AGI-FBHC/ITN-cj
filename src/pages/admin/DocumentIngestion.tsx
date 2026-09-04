@@ -105,7 +105,7 @@ export default function DocumentIngestion() {
       }
       await new Promise((resolve) => window.setTimeout(resolve, 1000));
     }
-    throw new Error("预处理任务等待超时");
+    throw new Error("文档入库任务等待超时");
   };
   const submit = async () => {
     if (!file) return toast.error("请选择 Markdown 文件");
@@ -152,7 +152,7 @@ export default function DocumentIngestion() {
       } catch {
         await pollUntilDone(created.task_id);
       }
-      toast.success("文档预处理任务已结束");
+      toast.success("文档入库任务已结束");
       await loadHistory();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "文档入库失败");
@@ -178,7 +178,7 @@ export default function DocumentIngestion() {
       <div className="mb-5">
         <h2 className="text-2xl font-bold tracking-tight text-ink">文档入库</h2>
         <p className="mt-1 text-sm text-ink-muted">
-          交付包 predeal v2：幂等上传、增量切片、图片处理、知识点分类与 RAGFlow
+          文档切片入库 v2：幂等上传、增量切片、图片处理、知识点分类与 RAGFlow
           同步。
         </p>
       </div>

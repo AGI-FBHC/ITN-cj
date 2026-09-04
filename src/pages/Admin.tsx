@@ -586,7 +586,7 @@ export default function Admin() {
                       ["知识库读取", true, "Spring 数据接口"],
                       ["知识质量管理", coreQ.data === true, "KnowledgeCore"],
                       ["网络审核", coreQ.data === true, "KnowledgeCore"],
-                      ["文档预处理", predealQ.data === true, "predeal v2"],
+                      ["文档切片入库", predealQ.data === true, "文档切片入库 v2"],
                     ] as [string, boolean, string][]).map(([label, ok, detail]) => (
                       <tr key={label}>
                         <td className="px-5 py-3.5 font-semibold text-ink">{label}</td>
