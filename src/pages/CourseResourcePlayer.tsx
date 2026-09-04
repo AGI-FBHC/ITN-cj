@@ -23,7 +23,7 @@ import type {
 import { useNotes } from '@/context/NotesContext';
 import { createPresentationChatSession, deletePresentationChatSession, fetchChatAttachmentBlob, getPresentationChatMessages, presentationApi, streamPresentationChatImage, streamPresentationChatText } from '@/lib/presentationApi';
 import type { PresentationChatSession } from '@/lib/presentationApi';
-import { cn } from '@/lib/utils';
+import { cn, spreadLlmForSpeech } from '@/lib/utils';
 import { lectureMdComponents, slideMdComponents } from '@/components/resources/lecture-markdown';
 import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
 import { refreshLearningMapResourceCache } from '@/hooks/useLearningMap';
@@ -264,7 +264,7 @@ function useResourceNarration(onFinished?: () => void) {
       toast.error('当前设备暂时无法播放语音');
       return;
     }
-    const utterance = new SpeechSynthesisUtterance(text);
+    const utterance = new SpeechSynthesisUtterance(spreadLlmForSpeech(text));
     utterance.lang = 'zh-CN';
     utterance.rate = speedMeta[speed].rate;
     const finish = () => {
@@ -286,6 +286,7 @@ function useResourceNarration(onFinished?: () => void) {
   const play = useCallback(async (text: string, speed: TtsSpeed) => {
     stop();
     if (!text) return;
+    const speechText = spreadLlmForSpeech(text);
     /* 全局单通道：开始讲播前停掉 PPT/Agent/字幕等其他通道 */
     audioBus.stopAll();
     const generation = generationRef.current;
@@ -293,7 +294,7 @@ function useResourceNarration(onFinished?: () => void) {
     abortRef.current = controller;
     setSpeaking(true);
     try {
-      const response = await streamAssistantTts(text, speed, controller.signal);
+      const response = await streamAssistantTts(speechText, speed, controller.signal);
       const reader = response.body!.getReader();
       const AudioContextCtor = window.AudioContext ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AudioContextCtor) throw new Error('AudioContext unavailable');
@@ -356,7 +357,7 @@ function useResourceNarration(onFinished?: () => void) {
       }, remainingMs);
     } catch (reason) {
       if ((reason as Error).name === 'AbortError' || generation !== generationRef.current) return;
-      browserFallback(text, speed, generation);
+      browserFallback(speechText, speed, generation);
     }
   }, [browserFallback, stop]);
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { streamAssistantTts, type TtsSpeed } from '@/lib/api';
 import { audioBus } from '@/lib/audioBus';
+import { spreadLlmForSpeech } from '@/lib/utils';
 
 export const narrationSpeeds: Array<{ value: TtsSpeed; label: string; rate: number }> = [
   { value: 'very_slow', label: '0.8×', rate: 0.8 },
@@ -45,7 +46,7 @@ export function useStreamingNarration(onFinished?: () => void) {
       toast.error('当前设备暂时无法播放语音');
       return;
     }
-    const utterance = new SpeechSynthesisUtterance(text);
+    const utterance = new SpeechSynthesisUtterance(spreadLlmForSpeech(text));
     utterance.lang = 'zh-CN';
     utterance.rate = browserRate(speed);
     utterance.volume = volumeRef.current;
@@ -68,13 +69,14 @@ export function useStreamingNarration(onFinished?: () => void) {
   const play = useCallback(async (text: string, speed: TtsSpeed) => {
     stop();
     if (!text) return;
+    const speechText = spreadLlmForSpeech(text);
     audioBus.stopAll();
     const generation = generationRef.current;
     const controller = new AbortController();
     abortRef.current = controller;
     setSpeaking(true);
     try {
-      const response = await streamAssistantTts(text, speed, controller.signal);
+      const response = await streamAssistantTts(speechText, speed, controller.signal);
       const reader = response.body!.getReader();
       const AudioContextCtor = window.AudioContext ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AudioContextCtor) throw new Error('AudioContext unavailable');
@@ -132,7 +134,7 @@ export function useStreamingNarration(onFinished?: () => void) {
       }, Math.max(50, Math.ceil((nextStart - context.currentTime) * 1000) + 80));
     } catch (reason) {
       if ((reason as Error).name === 'AbortError' || generation !== generationRef.current) return;
-      browserFallback(text, speed, generation);
+      browserFallback(speechText, speed, generation);
     }
   }, [browserFallback, stop]);
 

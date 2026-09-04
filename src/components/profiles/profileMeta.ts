@@ -77,7 +77,7 @@ export const learnerUiMeta: Record<string, LearnerUiMeta> = {
 /** 六维理论测试错题摘要（按知识点，页面本地 Mock，KB 溯源取 kbSlicesByKp 前三条） */
 export const wrongNotesByKp: Record<string, string[]> = {
   'kp-ds': [
-    '混淆 LLM 与 Agent 的边界，把模型能力直接当成系统能力',
+    '混淆 L L M 与 Agent 的边界，把模型能力直接当成系统能力',
     '对 RAG、上下文工程等概念理解停留在名词表面',
     '忽视提示与工具对智能体行为边界的共同约束',
   ],

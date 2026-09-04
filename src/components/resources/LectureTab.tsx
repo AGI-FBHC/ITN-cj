@@ -22,7 +22,7 @@ import { cn } from '@/lib/utils';
 /** 学习目标看板（page-local，按画像差异化） */
 const objectives: Record<string, string[]> = {
   lin: [
-    '区分 LLM 与 Agent 的能力边界与职责',
+    '区分 L L M 与 Agent 的能力边界与职责',
     '复述智能体工具调用的标准步骤与判据',
     '解释上下文工程中提示与检索的适用边界',
   ],

@@ -67,6 +67,7 @@ import { getKnowledgePoint } from '@/data/knowledgePoints';
 import { nextPathNodeAfter } from '@/data/reportData';
 import { reportForLearner } from '@/data/reportBuilder';
 import { resolveLearnTarget } from '@/data/resources';
+import { spreadLlmForSpeech } from '@/lib/utils';
 import { loadProgress, saveProgress, clearProgress } from '@/data/learnProgress';
 import { recordHarvest, speciesOf } from '@/data/garden';
 import { buildUnit, remedialBlockOf, variantBlockOf, drawQuestions, matchQA, fallbackAnswer, cuesOf, qaBank, STYLE_LABELS } from '@/data/courseware';
@@ -150,7 +151,7 @@ function useTts() {
       onEnd();
     };
     window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
+    const u = new SpeechSynthesisUtterance(spreadLlmForSpeech(text));
     const zh = window.speechSynthesis.getVoices().find((v) => v.lang.startsWith('zh'));
     if (zh) u.voice = zh;
     u.lang = 'zh-CN';
