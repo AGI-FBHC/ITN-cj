@@ -448,7 +448,6 @@ export default function ResourceCenterAdmin() {
                         {itemNode.name}
                       </button>
                     )}
-                    <span className="text-[10px] text-ink-muted/70">{itemNode.chunkCount || 0}</span>
                   </div>
                 );
               })}
@@ -549,10 +548,6 @@ export default function ResourceCenterAdmin() {
                   const isTemplate = [...typeMap.values()].some((item) => item.template);
                   const firstItem = [...typeMap.values()][0];
                   const activeTypeTasks = groupTypeTasks.get(groupName);
-                  const rowTypeCount = new Set<ResourceKind>([
-                    ...typeMap.keys(),
-                    ...(activeTypeTasks ? Object.keys(activeTypeTasks) as ResourceKind[] : []),
-                  ]).size;
                   const isExpanded = expandedGroups.has(groupName);
                   const matchKeyword = (item?: AdminResourceItem) => {
                     if (!keyword || !item) return !keyword;
@@ -571,7 +566,6 @@ export default function ResourceCenterAdmin() {
                         {isExpanded ? <ChevronDown size={14} className="shrink-0" /> : <ChevronRight size={14} className="shrink-0" />}
                         <span className="text-sm font-bold text-ink">{groupName}</span>
                         {isTemplate && <span className="lf-pill lf-pill-ok">母版</span>}
-                        <span className="ml-1 text-[10px] text-ink-muted">({rowTypeCount}/4)</span>
                         <span className="ml-auto" />
                         <button
                           disabled={isTemplate || !firstItem}
