@@ -302,7 +302,8 @@ function shortChapterLabel(name: string): string {
     .replace('智能体经典范式构建', '经典范式构建')
     .replace('低代码平台智能体搭建', '低代码平台搭建')
     .replace('主流Agent框架实践', 'Agent框架实践')
-    .replace('自建HelloAgents框架', 'HelloAgents框架')
+    .replace('自建HelloAgents框架', '自建Agents框架')
+    .replace('HelloAgents', '自建Agents')
     .replace('智能体通信协议', '通信协议')
     .replace('智能体性能评估', '性能评估')
     .replace('自动化深度研究智能体', '深度研究智能体');
