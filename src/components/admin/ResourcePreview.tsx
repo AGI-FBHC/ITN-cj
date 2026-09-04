@@ -510,7 +510,7 @@ export default function ResourcePreview({ detail }: { detail: AdminResourceDetai
   const lectureResource = asObject(generationContext?.lectureResource);
   const rawSources = typeof detail.sources === 'string' ? (()=>{try{return JSON.parse(detail.sources) as unknown;}catch{return [];}})() : detail.sources;
   const inheritedSources = Array.isArray(lectureResource?.sources) ? lectureResource.sources : [];
-  const sourceInput = type === 'ppt' && inheritedSources.length ? inheritedSources : rawSources;
+  const sourceInput = type === 'ppt' ? inheritedSources : rawSources;
   const sources = Array.isArray(sourceInput) ? sourceInput.filter((item):item is Record<string,unknown>=>Boolean(item)&&typeof item==='object') : [];
   const decision = asObject(detail.decision);
   const qualityDecision = type === 'ppt' && lectureResource ? {
@@ -533,5 +533,11 @@ export default function ResourcePreview({ detail }: { detail: AdminResourceDetai
     preview = <pre className="max-h-[480px] overflow-auto whitespace-pre-wrap rounded-xl bg-[#2C3A30] p-4 text-xs leading-5 text-emerald-50/90">{typeof detail.content === 'string' ? detail.content : JSON.stringify(detail.content ?? {}, null, 2)}</pre>;
   }
   const debateArchive = asObject(qualityDecision?.webEvidenceDebate);
-  return <><QualityOverview decision={qualityDecision} sourceCount={sources.length}/><EvidenceDebateCourt archive={debateArchive}/>{preview}<SourceSummary sources={sources}/></>;
+  const showEvidenceBlocks = type === 'ppt'
+    ? inheritedSources.length > 0
+      || Boolean(lectureResource?.evidenceSnapshot)
+      || Boolean(lectureResource?.qualityReview)
+      || Boolean(lectureResource?.webEvidenceDebate)
+    : true;
+  return <>{showEvidenceBlocks && <QualityOverview decision={qualityDecision} sourceCount={sources.length}/>}{showEvidenceBlocks && <EvidenceDebateCourt archive={debateArchive}/>}{preview}{showEvidenceBlocks && <SourceSummary sources={sources}/>}</>;
 }
