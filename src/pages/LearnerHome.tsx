@@ -22,7 +22,6 @@ import { SprigTop, PottedPlant, LeafDivider } from '@/components/heal/Flora';
 import GardenCard from '@/components/heal/GardenCard';
 import { useWrongBook } from '@/context/WrongBookContext';
 import WeekReview from '@/components/heal/WeekReview';
-import ConfidenceBadge from '@/components/ConfidenceBadge';
 
 const fadeUp = {
   initial: { opacity: 0, y: 24 },
@@ -214,7 +213,6 @@ export default function LearnerHome() {
           </h1>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13.5px] text-ink-muted">
             <span>{currentLearner.tag} · {currentLearner.targetJob} · 每周可投入 {currentLearner.weeklyHours}h</span>
-            <ConfidenceBadge learnerId={currentLearner.id} />
           </p>
         </div>
         <span className="ml-auto flex items-center gap-2">

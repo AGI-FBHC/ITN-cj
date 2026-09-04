@@ -25,7 +25,6 @@ import { weightedScore } from '@/components/profiles/profileMeta';
 import { ReactECharts } from '@/components/ChartCard';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import PageBack from '@/components/PageBack';
-import ConfidenceBadge from '@/components/ConfidenceBadge';
 import { cn } from '@/lib/utils';
 
 function radarOption(
@@ -367,7 +366,6 @@ export default function MyProfile() {
           </h1>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-ink-muted">
             <span>{currentLearner.tag} · {currentLearner.targetJob} · 综合适配 {weightedScore({ scores: displayScores }, kps)} 分</span>
-            <ConfidenceBadge learnerId={currentLearner.id} />
           </p>
         </div>
       </div>
