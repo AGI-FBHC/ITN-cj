@@ -85,6 +85,12 @@ function QuizCard({ slide, onInteractionChange, resourceId, initialPicked = null
   const [picked, setPicked] = useState<QuizValue | null>(initialPicked);
   const [feedback, setFeedback] = useState<{ correct: boolean; correctIndex?: number; explanation?: string } | null>(initialFeedback);
   const proactiveSentRef = useRef(false);
+  useEffect(() => {
+    if (picked === null && initialPicked !== null) {
+      setPicked(initialPicked);
+      if (initialFeedback) setFeedback(initialFeedback);
+    }
+  }, [picked, initialPicked, initialFeedback]);
   const { askSimilarQuiz, setOpen } = useAgent();
   const correct = (question.correctAnswer ?? question.answer ?? question.correctIndex) as QuizValue | undefined;
   const localCorrectIndex = typeof correct === 'string' && /^[A-Za-z]$/.test(correct)
@@ -560,6 +566,7 @@ export default function SlidePlayer() {
     setNoteOpen(false);
   };
 
+  const quizGenerating = data?.resourceType === 'quiz' && data?.status === 'generating';
   const needsAssessment = slide && slide.type !== "question" && slide.type !== "intro" && currentIndex > 0 && !isLastSlide;
   const goNext = () => {
     if (needsAssessment && slideAssessments[currentIndex] == null) {
@@ -612,7 +619,11 @@ export default function SlidePlayer() {
           <button type="button" onClick={cycleVolume} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted" title={narration.volume === 0 ? '恢复音量' : `音量 ${Math.round(narration.volume * 100)}%`}>{narration.volume === 0 ? <VolumeX size={14} /> : narration.volume < 0.6 ? <Volume1 size={14} /> : <Volume2 size={14} />}</button>
           <button type="button" disabled={!slide} onClick={() => { setNoteText(''); setNoteOpen(true); }} className="flex h-10 items-center gap-1.5 rounded-full border border-hairline px-3 text-[11px] text-ink-muted hover:border-brand/40 hover:text-brand disabled:opacity-30" title="记录当前卡片笔记"><NotebookPen size={14} />笔记</button>
           {isLastSlide && data?.resourceId ? (
-            <button type="button" disabled={completing} onClick={() => setCompleteConfirmOpen(true)} className="flex h-10 items-center gap-1.5 rounded-full bg-brand px-5 text-[12px] font-medium text-paper disabled:opacity-50">{completing ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}完成学习</button>
+            quizGenerating ? (
+              <button type="button" onClick={() => void leaveToKnowledgePoint()} className="flex h-10 items-center gap-1.5 rounded-full border border-hairline bg-paper px-5 text-[12px] font-medium text-ink-2 hover:border-brand/40 hover:text-brand" title="退出学习，保留当前答题进度">退出学习</button>
+            ) : (
+              <button type="button" disabled={completing} onClick={() => setCompleteConfirmOpen(true)} className="flex h-10 items-center gap-1.5 rounded-full bg-brand px-5 text-[12px] font-medium text-paper disabled:opacity-50">{completing ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}完成学习</button>
+            )
           ) : (
             <button type="button" disabled={!readyNext} onClick={goNext} className="flex h-10 w-10 items-center justify-center rounded-full border border-hairline text-ink-muted disabled:opacity-30" title="下一页"><ChevronRight size={17} /></button>
           )}
