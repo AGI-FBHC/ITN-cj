@@ -55,7 +55,8 @@ export default function ExecutionDetailPanel({
 }) {
 
   const snapshot = event.snapshot ?? {};
-  const summary = typeof event.executionSummary === 'string' ? event.executionSummary : '';
+  const rawSummary = typeof event.executionSummary === 'string' ? event.executionSummary.trim() : '';
+  const summary = rawSummary || (typeof event.detail === 'string' ? event.detail.trim() : '');
 
   return (
     <div className="space-y-3">
