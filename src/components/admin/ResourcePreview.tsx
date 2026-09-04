@@ -478,7 +478,6 @@ function QualityOverview({ decision, sourceCount }: { decision: Record<string, u
   const review = asObject(multiAgent?.review);
   const score = Number(knowledge?.high_fidelity_score);
   const scoreText = Number.isFinite(score) ? `${Math.round(score * 100)} 分` : '已完成检查';
-  const citationPassed = multiAgent?.citationVerified === true;
   const defenseItems = defenses ? [
     ['题目结构', asObject(defenses.schema)?.passed === true],
     ['证据对应', asObject(defenses.evidence)?.passed === true],
@@ -494,10 +493,9 @@ function QualityOverview({ decision, sourceCount }: { decision: Record<string, u
           <p className="mt-1 text-xs leading-5 text-ink-muted">帮助管理员判断该资源是否具备清晰的知识依据，以及是否适合作为机构资源继续审核。</p>
         </div>
       </div>
-      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
         <div className="rounded-xl bg-white/70 px-3 py-3"><p className="text-[10px] font-semibold text-ink-muted">知识依据充分度</p><p className="mt-1 text-sm font-bold text-ink">{scoreText}</p></div>
         <div className="rounded-xl bg-white/70 px-3 py-3"><p className="text-[10px] font-semibold text-ink-muted">可查看的依据</p><p className="mt-1 text-sm font-bold text-ink">{evidence.length || sourceCount} 条</p></div>
-        <div className="rounded-xl bg-white/70 px-3 py-3"><p className="text-[10px] font-semibold text-ink-muted">引用核验</p><p className={cn('mt-1 text-sm font-bold', citationPassed ? 'text-emerald-700' : 'text-amber-700')}>{citationPassed ? '已通过' : '建议人工复核'}</p></div>
       </div>
       {!!defenseItems.length && <div className="mt-3 flex flex-wrap gap-2">{defenseItems.map(([label, passed]) => <span key={label} className={cn('rounded-full px-2.5 py-1 text-[11px] font-semibold', passed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700')}>{label} · {passed ? '通过' : '需复核'}</span>)}</div>}
       {Array.isArray(review?.issues) && review.issues.length > 0 && <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">审核提示：{review.issues.slice(0, 3).map(String).join('；')}</p>}

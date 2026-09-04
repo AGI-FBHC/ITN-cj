@@ -770,7 +770,7 @@ const snapshotLabels: Record<string, string> = {
   activity: '正在执行', topic: '学习主题', query: '检索范围', ragCount: '知识库依据', webCount: '补充资料',
   sourceTitles: '采用的资料', coverage: '内容覆盖', acceptanceRubric: '验收标准', resourceType: '资源类型',
   chapterCount: '章节数量', stepCount: '实操步骤', questionCount: '题目数量', sourceCount: '引用来源',
-  citationVerified: '引用核验', issueCount: '发现问题', issues: '问题摘要', decision: '处理决定',
+  issueCount: '发现问题', issues: '问题摘要', decision: '处理决定',
   highFidelityScore: '依据充分度', fallbackUsed: '是否补充资料', knowledgeCoreCount: '知识库切片',
   debateStage: '辩论阶段', candidateSourceCount: '候选资料', contradictionCount: '矛盾数量',
   repairDirectives: '返修要求', repairSource: '返修来源', contradictions: '矛盾明细',
@@ -920,7 +920,7 @@ export function EventDetailPanel({ event }: { event: AdminGenerationEvent }) {
   const repairStrings = stringArray(questionAudit?.repairSuggestions);
   const reviewMode = String(questionAudit?.reviewMode ?? snapshot.reviewMode ?? '');
   const reviewModeLabel = reviewModeLabels[reviewMode] ?? reviewMode;
-  const hidden = new Set(['requestId', 'traceId', 'promptVersion', 'model', 'display', 'debateGroup', 'contradictions', 'debateTriggered', 'debateType']);
+  const hidden = new Set(['requestId', 'traceId', 'promptVersion', 'model', 'citationVerified', 'display', 'debateGroup', 'contradictions', 'debateTriggered', 'debateType']);
   const facts = hasDisplay ? [] : Object.entries(snapshot).filter(([key]) => !hidden.has(key));
   const decision = String(snapshot.decision ?? '');
   const decisionLabel = ({ repair: '退回定向修订', pass: '本关通过', blocked: '阻止发布' } as Record<string, string>)[String(display.decision ?? decision)] ?? readableValue(display.decision ?? decision);
