@@ -1197,12 +1197,12 @@ export const api = {
   askAgentImageStream: async (learnerId: string, askType: string, text: string, image: Blob, sessionId: string | undefined, pageContext: string | undefined, pageState: LearningPageContext | undefined, onEvent: (payload: { type: string; content?: string; reply?: string; message?: string; note?: LearningNoteRecord }) => void) => {
     const form = new FormData();
     form.append('image', image, 'question.png');
-    form.append('learnerId', learnerId);
-    form.append('askType', askType);
+    form.append('learner_id', learnerId);
+    form.append('ask_type', askType);
     if (text) form.append('text', text);
-    if (sessionId) form.append('sessionId', sessionId);
-    if (pageContext) form.append('pageContext', pageContext);
-    if (pageState) form.append('pageState', JSON.stringify(pageState));
+    if (sessionId) form.append('session_id', sessionId);
+    if (pageContext) form.append('page_context', pageContext);
+    if (pageState) form.append('page_state', JSON.stringify(pageState));
     const headers = new Headers({ Accept: 'text/event-stream' });
     const token = getToken();
     if (token) headers.set('Authorization', `Bearer ${token}`);
