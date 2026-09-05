@@ -7,7 +7,7 @@ import { api, type CustomizeSlide, type CustomizeSlidesResponse, type LearningRe
 import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
 import { slideMdComponents } from '@/components/resources/lecture-markdown';
 import remarkCitationMarks from '@/lib/remarkCitationMarks';
-import { normalizeMarkdownLists } from '@/lib/normalizeMarkdown';
+import { markdownList, normalizeMarkdownLists } from '@/lib/normalizeMarkdown';
 import { cn } from '@/lib/utils';
 import { useProfile } from '@/context/ProfileContext';
 import { markLearningMapReturn } from '@/lib/learningNavigation';
@@ -216,7 +216,7 @@ function contentSlidesOf(resource: LearningResource): CustomizeSlide[] {
         title: String(content.introTitle ?? '学习目标与内容概览'),
         content: [
           summary,
-          objectives.length ? `**完成本讲后，你将能够：**\n${objectives.map((item) => `- ${item}`).join('\n')}` : '',
+          objectives.length ? `**完成本讲后，你将能够：**\n${markdownList(objectives)}` : '',
         ].filter(Boolean).join('\n\n'),
         sources: [], evidenceQuotes: [],
       });
@@ -256,17 +256,30 @@ function contentSlidesOf(resource: LearningResource): CustomizeSlide[] {
       title: String(content.title ?? resource.title),
       content: [
         String(content.objective ?? ''),
-        prerequisites.length ? `\n\n**前置条件**\n${prerequisites.map((item) => `- ${item}`).join('\n')}` : '',
-        environment.length ? `\n\n**环境与工具**\n${environment.map((item) => `- ${item}`).join('\n')}` : '',
+        prerequisites.length ? `\n\n**前置条件**\n${markdownList(prerequisites)}` : '',
+        environment.length ? `\n\n**环境与工具**\n${markdownList(environment)}` : '',
       ].filter(Boolean).join('\n'),
       sources: [], evidenceQuotes: [],
     });
     const steps = Array.isArray(content.steps) ? content.steps as Record<string, unknown>[] : [];
     steps.forEach((step, si) => {
+      const paragraphs = [String(step.instruction ?? step.content ?? step.description ?? '')];
+      const code = String(step.code ?? '').trim();
+      if (code) {
+        paragraphs.push(code.startsWith('```') ? code : `\`\`\`python\n${code}\n\`\`\``);
+      }
+      const expectedOutput = String(step.expectedOutput ?? '').trim();
+      if (expectedOutput) {
+        paragraphs.push(`**预期结果**\n\n${expectedOutput}`);
+      }
+      const warning = String(step.warning ?? '').trim();
+      if (warning) {
+        paragraphs.push(`**操作提醒**\n\n${warning}`);
+      }
       slides.push({
         index: slides.length, unitIndex: si, totalUnits: 0, type: 'step' as const,
         title: String(step.title ?? `步骤 ${si + 1}`),
-        content: String(step.instruction ?? step.content ?? step.description ?? ''),
+        content: paragraphs.filter(Boolean).join('\n\n'),
         sources: [], evidenceQuotes: [],
       });
     });
@@ -274,7 +287,7 @@ function contentSlidesOf(resource: LearningResource): CustomizeSlide[] {
     if (criteria.length) {
       slides.push({
         index: slides.length, unitIndex: steps.length, totalUnits: 0, type: 'step' as const,
-        title: '用结果判断是否真正完成', content: criteria.map((item) => `- ${item}`).join('\n'),
+        title: '用结果判断是否真正完成', content: markdownList(criteria),
         sources: [], evidenceQuotes: [],
       });
     }
@@ -366,7 +379,7 @@ export default function SlidePlayer() {
     if (!summary && !objectives.length) return ready;
     const body = [
       summary,
-      objectives.length ? `**完成本讲后，你将能够：**\n${objectives.map((item) => `- ${item}`).join('\n')}` : '',
+      objectives.length ? `**完成本讲后，你将能够：**\n${markdownList(objectives)}` : '',
     ].filter(Boolean).join('\n\n');
     return [{
       index: 0, unitIndex: 0, totalUnits: ready.length, type: 'intro' as const,

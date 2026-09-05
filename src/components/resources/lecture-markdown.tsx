@@ -327,7 +327,7 @@ export const slideMdComponents = {
   },
   ul: (props: MDProps) => {
     const { children, ...rest } = domOnly(props);
-    return <ul className="my-5 grid gap-2.5" {...rest}>{children}</ul>;
+    return <ul className="my-5 grid list-none gap-2.5 pl-0" {...rest}>{children}</ul>;
   },
   ol: (props: MDProps) => {
     const { children, ...rest } = domOnly(props);
