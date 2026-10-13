@@ -140,26 +140,43 @@ function AnswerTrend({ answers }: { answers?: boolean[] }) {
 /* ---------- 知识点网络（可交互 SVG）：点节点选中 → 一键去学 ---------- */
 
 /** 六大知识点的领域关联边（岗位能力模型的天然依赖） */
+/* 六维能力之间的关系（当前 id 集合：kp-ds 知识理解 / kp-co 逻辑推理 / kp-os 工程实践 /
+   kp-network 问题诊断 / kp-db 系统设计 / kp-agent 学习迁移）。
+   注意：这里曾长期沿用旧赛题 id（kp-plc / kp-kinematics / ...），知识点改名后 KP_POS 全部查不到，
+   渲染 p.x 直接抛错导致 /tutoring 整页白屏（BUG-034）。 */
 const KP_EDGES: [string, string][] = [
-  ['kp-plc', 'kp-diagnosis'],
-  ['kp-plc', 'kp-safety'],
-  ['kp-plc', 'kp-kinematics'],
-  ['kp-kinematics', 'kp-sensor'],
-  ['kp-kinematics', 'kp-vision'],
-  ['kp-sensor', 'kp-vision'],
-  ['kp-sensor', 'kp-diagnosis'],
-  ['kp-safety', 'kp-diagnosis'],
+  ['kp-ds', 'kp-co'],
+  ['kp-ds', 'kp-os'],
+  ['kp-co', 'kp-network'],
+  ['kp-os', 'kp-db'],
+  ['kp-network', 'kp-db'],
+  ['kp-db', 'kp-agent'],
+  ['kp-agent', 'kp-ds'],
 ];
 
 /** 六边形静态布局（viewBox 300x210），顺序与 knowledgePoints 一致 */
 const KP_POS: Record<string, { x: number; y: number }> = {
-  'kp-plc': { x: 150, y: 32 },
-  'kp-kinematics': { x: 252, y: 74 },
-  'kp-sensor': { x: 252, y: 148 },
-  'kp-vision': { x: 150, y: 186 },
-  'kp-safety': { x: 48, y: 148 },
-  'kp-diagnosis': { x: 48, y: 74 },
+  'kp-ds': { x: 150, y: 32 },
+  'kp-co': { x: 252, y: 74 },
+  'kp-os': { x: 252, y: 148 },
+  'kp-network': { x: 150, y: 186 },
+  'kp-db': { x: 48, y: 148 },
+  'kp-agent': { x: 48, y: 74 },
 };
+
+/** 兜底布局：未在 KP_POS 中登记的知识点按圆形均分，保证 id 再次变更时不会整页崩溃 */
+function layoutPositions(points: { id: string }[]): Record<string, { x: number; y: number }> {
+  const out: Record<string, { x: number; y: number }> = { ...KP_POS };
+  const unknown = points.filter((k) => !out[k.id]);
+  unknown.forEach((k, i) => {
+    const angle = (Math.PI * 2 * i) / Math.max(1, unknown.length) - Math.PI / 2;
+    out[k.id] = {
+      x: Math.round(150 + 100 * Math.cos(angle)),
+      y: Math.round(105 + 78 * Math.sin(angle)),
+    };
+  });
+  return out;
+}
 
 const masteryColor = (v: number) => (v >= 75 ? '#6BA080' : v >= 55 ? '#E7B45A' : '#B0483B');
 
@@ -174,8 +191,10 @@ function KnowledgeGraphCard({
 }) {
   const navigate = useNavigate();
   const [selectedId, setSelectedId] = useState<string>(kpId);
+  const positions = layoutPositions(knowledgePoints);
   const selected = knowledgePoints.find((k) => k.id === selectedId) ?? knowledgePoints[0];
   const selectedMastery = scores[selectedId] ?? 50;
+  if (!selected) return null;
 
   return (
     <div className="lf-card p-5">
@@ -186,8 +205,9 @@ function KnowledgeGraphCard({
       <svg viewBox="0 0 300 210" className="mt-2 block w-full" role="group" aria-label="知识点关系图，点击节点选择要学的知识点">
         {/* 关联边：选中节点的边加亮 */}
         {KP_EDGES.map(([a, b]) => {
-          const pa = KP_POS[a];
-          const pb = KP_POS[b];
+          const pa = positions[a];
+          const pb = positions[b];
+          if (!pa || !pb) return null;
           const hot = a === selectedId || b === selectedId;
           return (
             <line
@@ -205,7 +225,8 @@ function KnowledgeGraphCard({
         })}
 
         {knowledgePoints.map((k) => {
-          const p = KP_POS[k.id];
+          const p = positions[k.id];
+          if (!p) return null;
           const mastery = scores[k.id] ?? 50;
           const color = masteryColor(mastery);
           const isCurrent = k.id === kpId;

@@ -76,12 +76,9 @@ import { canStartChallenge, CHALLENGE_THRESHOLD, CHALLENGE_MAX_WRONG } from '@/a
 import TraceBadge from '@/components/TraceBadge';
 import InlineTutor from '@/components/learn/InlineTutor';
 import type { TutorMsg } from '@/components/learn/InlineTutor';
-import CalibrationSim from '@/components/learn/CalibrationSim';
 import FrameDemo from '@/components/learn/FrameDemo';
 import PlcLadderDemo from '@/components/learn/PlcLadderDemo';
-import SafetyLoopDemo from '@/components/learn/SafetyLoopDemo';
 import VisionGuideDemo from '@/components/learn/VisionGuideDemo';
-import FaultTreeDemo from '@/components/learn/FaultTreeDemo';
 import PptPlayer from '@/components/learn/PptPlayer';
 import type { PptPlayerRef } from '@/components/learn/PptPlayer';
 import { startWavRecording } from '@/lib/voiceRecorder';
@@ -2475,12 +2472,9 @@ export default function LearnUnit() {
                       )}
                     </span>
                   </div>
-                  {b.demo === 'calibration' && <CalibrationSim tourStep={tourStepOf(b, i)} />}
                   {b.demo === 'frame' && <FrameDemo tourStage={tourStepOf(b, i)} />}
                   {b.demo === 'plc' && <PlcLadderDemo tourStep={tourStepOf(b, i)} />}
-                  {b.demo === 'safety' && <SafetyLoopDemo tourStep={tourStepOf(b, i)} />}
                   {b.demo === 'vision' && <VisionGuideDemo tourStep={tourStepOf(b, i)} />}
-                  {b.demo === 'fault' && <FaultTreeDemo tourStep={tourStepOf(b, i)} />}
                 </>
               )}
 
@@ -3059,12 +3053,9 @@ export default function LearnUnit() {
                   <>
                     <h2 className="font-serif text-[22px] font-bold leading-[32px] text-ink">{sb.title}</h2>
                     <div className="mt-4">
-                      {sb.demo === 'calibration' && <CalibrationSim tourStep={tourStepOf(sb, slideIdx)} />}
                       {sb.demo === 'frame' && <FrameDemo tourStage={tourStepOf(sb, slideIdx)} />}
                       {sb.demo === 'plc' && <PlcLadderDemo tourStep={tourStepOf(sb, slideIdx)} />}
-                      {sb.demo === 'safety' && <SafetyLoopDemo tourStep={tourStepOf(sb, slideIdx)} />}
                       {sb.demo === 'vision' && <VisionGuideDemo tourStep={tourStepOf(sb, slideIdx)} />}
-                      {sb.demo === 'fault' && <FaultTreeDemo tourStep={tourStepOf(sb, slideIdx)} />}
                     </div>
                   </>
                 )}
@@ -3787,13 +3778,15 @@ export default function LearnUnit() {
 
 /** 提问面板占位示例问题 */
 function qaBankHint(kpId: string): string {
+  /* 按当前六维能力（kp-ds/kp-co/…）给示例问题；旧赛题 id 的示例（常开常闭 / 正解逆解 / 示教限速…）
+     已随命题切换移除，避免机床机器人内容再次出现在智能体课程里。 */
   const hints: Record<string, string> = {
-    'kp-plc': '常开和常闭有什么区别？',
-    'kp-kinematics': '正解和逆解的区别？',
-    'kp-sensor': '温度漂移怎么补偿？',
-    'kp-vision': 'AX=XB 是怎么回事？',
-    'kp-safety': '为什么示教限速 250mm/s？',
-    'kp-diagnosis': '看到报警第一步做什么？',
+    'kp-ds': '智能体和普通自动化脚本的区别是什么？',
+    'kp-co': 'ReAct 里“思考—行动—观察”为什么必须循环？',
+    'kp-os': '工具调用失败时应该怎么设计兜底？',
+    'kp-network': 'Agent 答非所问时，第一步该排查什么？',
+    'kp-db': '多智能体协作该怎么划分职责？',
+    'kp-agent': '这一课的方法能迁移到哪些场景？',
   };
   return hints[kpId] ?? '这一讲的重点是什么？';
 }

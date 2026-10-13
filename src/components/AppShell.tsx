@@ -22,6 +22,7 @@ import {
   NotebookPen,
   LogOut,
   Loader2,
+  Compass,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { customizeTeamPathForTask, useCustomizeActivity } from '@/context/CustomizeActivityContext';
@@ -47,6 +48,7 @@ import { resources } from '@/data/resources';
 import KBDrawer from './KBDrawer';
 import AgentDock from './agent/AgentDock';
 import ResumeLearningFab from './ResumeLearningFab';
+import DemoTour, { startDemoTour } from '@/components/tour/DemoTour';
 import { SparkField } from './heal/Flora';
 import { cn } from '@/lib/utils';
 
@@ -71,13 +73,15 @@ const learnerNav: NavItem[] = [
  * 这些页面此前只存在于专家视角侧栏（或根本没有入口），学习者只能手输 URL 才能到达，
  * 属于"入口隐蔽"问题；这里统一收进一个可发现的菜单。
  */
-const learnerMoreItems: { path: string; label: string; note: string }[] = [
+const learnerMoreItems: { path: string; label: string; note: string; action?: 'tour' }[] = [
   { path: '/resources', label: '我的资源', note: '定制讲义 / 实操 / 分阶题' },
   { path: '/knowledge', label: '领域知识库', note: '切片检索与原文溯源' },
   { path: '/chat', label: '伴学助手', note: '就当前进度提问' },
   { path: '/profiles', label: '学情画像', note: '六维能力与盲区' },
   { path: '/agents', label: '协同调度', note: '五个 Agent 的执行过程（需先生成课程）' },
   { path: '/collaboration', label: '协同工作台', note: '教研任务泳道（演示）' },
+  /* 评委导览是动作不是路由：点击后切到系统透视并从第 1 步开始（BUG-033：此前无任何入口） */
+  { path: '#demo-tour', label: '评委导览', note: '7 步 · 约 5 分钟串场（自动切到系统透视）', action: 'tour' },
 ];
 
 const expertNavGroups: { heading?: string; items: NavItem[] }[] = [
@@ -199,6 +203,7 @@ useEffect(() => {
     demoMode,
     setDemoMode,
     viewMode,
+    setViewMode,
   } = useProfile();
   const { notes } = useNotes();
   const { focusMode } = useGrowth();
@@ -312,10 +317,17 @@ useEffect(() => {
                   {moreOpen && (
                     <div role="menu" onClick={(event) => event.stopPropagation()} className="absolute right-0 top-full z-50 mt-2 w-64 rounded-[14px] border border-hairline bg-paper p-2 shadow-warm-lg">
                       {learnerMoreItems.map((entry) => (
-                        <Link key={entry.path} to={entry.path} onClick={() => setMoreOpen(false)} className="block rounded-[10px] px-3 py-2 transition-colors hover:bg-paper-deep">
-                          <span className="block text-[13px] font-medium text-ink">{entry.label}</span>
-                          <span className="block text-[11px] text-ink-muted">{entry.note}</span>
-                        </Link>
+                        entry.action === 'tour' ? (
+                          <button key={entry.path} type="button" onClick={() => { setMoreOpen(false); startDemoTour(); }} className="block w-full rounded-[10px] px-3 py-2 text-left transition-colors hover:bg-paper-deep">
+                            <span className="block text-[13px] font-medium text-ink">{entry.label}</span>
+                            <span className="block text-[11px] text-ink-muted">{entry.note}</span>
+                          </button>
+                        ) : (
+                          <Link key={entry.path} to={entry.path} onClick={() => setMoreOpen(false)} className="block rounded-[10px] px-3 py-2 transition-colors hover:bg-paper-deep">
+                            <span className="block text-[13px] font-medium text-ink">{entry.label}</span>
+                            <span className="block text-[11px] text-ink-muted">{entry.note}</span>
+                          </Link>
+                        )
                       ))}
                     </div>
                   )}
@@ -344,6 +356,15 @@ useEffect(() => {
                   )}
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => startDemoTour()}
+                title="评委导览 · 7 步约 5 分钟（自动切到系统透视）"
+                className="flex h-9 shrink-0 items-center gap-1.5 rounded-[10px] border border-brand/35 bg-brand-tint/50 px-2.5 text-[12px] font-medium text-brand transition-colors hover:bg-brand-tint"
+              >
+                <Compass size={14} />
+                <span className="hidden lg:inline">评委导览</span>
+              </button>
               <Link
                 to="/me/notes"
                 title="我的笔记"
@@ -393,10 +414,17 @@ useEffect(() => {
           {isLearner && moreOpen && (
             <div role="menu" onClick={(event) => event.stopPropagation()} className="fixed inset-x-3 bottom-16 z-[60] rounded-[14px] border border-hairline bg-paper p-2 shadow-warm-lg md:hidden">
               {learnerMoreItems.map((entry) => (
-                <Link key={entry.path} to={entry.path} onClick={() => setMoreOpen(false)} className="block rounded-[10px] px-3 py-2 transition-colors hover:bg-paper-deep">
-                  <span className="block text-[13px] font-medium text-ink">{entry.label}</span>
-                  <span className="block text-[11px] text-ink-muted">{entry.note}</span>
-                </Link>
+                entry.action === 'tour' ? (
+                  <button key={entry.path} type="button" onClick={() => { setMoreOpen(false); startDemoTour(); }} className="block w-full rounded-[10px] px-3 py-2 text-left transition-colors hover:bg-paper-deep">
+                    <span className="block text-[13px] font-medium text-ink">{entry.label}</span>
+                    <span className="block text-[11px] text-ink-muted">{entry.note}</span>
+                  </button>
+                ) : (
+                  <Link key={entry.path} to={entry.path} onClick={() => setMoreOpen(false)} className="block rounded-[10px] px-3 py-2 transition-colors hover:bg-paper-deep">
+                    <span className="block text-[13px] font-medium text-ink">{entry.label}</span>
+                    <span className="block text-[11px] text-ink-muted">{entry.note}</span>
+                  </Link>
+                )
               ))}
             </div>
           )}
@@ -520,6 +548,26 @@ useEffect(() => {
                 </Link>
 
 
+                <button
+                  type="button"
+                  onClick={() => setViewMode('learner')}
+                  title="返回学习者视角"
+                  className="flex h-8 shrink-0 items-center gap-1.5 rounded-[9px] border border-hairline bg-card-warm px-2.5 text-[12px] font-medium text-ink-2 transition-colors hover:border-brand/35 hover:text-brand"
+                >
+                  <Home size={13} />
+                  <span className="hidden lg:inline">学习者视角</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => startDemoTour()}
+                  title="评委导览 · 7 步约 5 分钟（自动切到系统透视）"
+                  className="flex h-8 shrink-0 items-center gap-1.5 rounded-[9px] border border-brand/35 bg-brand-tint/50 px-2.5 text-[12px] font-medium text-brand transition-colors hover:bg-brand-tint"
+                >
+                  <Compass size={13} />
+                  <span className="hidden lg:inline">评委导览</span>
+                </button>
+
                 <LiveClock />
                 <label className="hidden h-8 shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap rounded-[9px] border border-hairline bg-card-warm px-2.5 xl:flex">
                   <span className={cn('text-[12px] font-medium', demoMode ? 'text-brand' : 'text-ink-muted')}>
@@ -633,6 +681,8 @@ useEffect(() => {
       </CommandDialog>
 
       <KBDrawer sliceId={drawerKb} open={drawerKb !== null} onOpenChange={(o) => !o && setDrawerKb(null)} />
+
+      <DemoTour />
 
     </>
   );

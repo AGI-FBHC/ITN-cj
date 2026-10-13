@@ -112,8 +112,9 @@ export default function DemoTour() {
   useEffect(() => {
     if (!state.active || state.minimized) return;
     const target = tourSteps[state.stepIndex].route;
-    const targetPath = target.split('?')[0];
-    if (location.pathname !== targetPath) {
+    /* 必须连 query 一起比：只比 pathname 时 /resources?tab=lecture → ?tab=guide 不会跳转，
+       第 3、4 步会停在同一个页面（BUG-033 复核发现）。 */
+    if (location.pathname + location.search !== target) {
       navigate(target);
     }
     window.scrollTo({ top: 0, behavior: 'auto' });
