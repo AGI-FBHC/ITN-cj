@@ -207,6 +207,22 @@ public class Api {
             return
         }
 
+        if (path == "/api/models/diagnose" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    match (store.load().findModel(strOf(b, "id"))) {
+                        case Some(cfg) =>
+                            let o = JsonObject()
+                            o.put("endpoint", JsonString(cfg.baseUrl))
+                            o.put("attempts", tlsProbe(LlmClient(cfg).endpoint("/chat/completions"), cfg.apiKey))
+                            ok(ctx, o)
+                        case None => fail(ctx, 404, "找不到模型配置")
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         // ---------- 知识库 ----------
 
         if (path == "/api/kb/save" && method == "POST") {
@@ -562,6 +578,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/models/delete",
         "/api/models/roles",
         "/api/models/test",
+        "/api/models/diagnose",
         "/api/chat",
         "/api/kb/save",
         "/api/kb/delete",

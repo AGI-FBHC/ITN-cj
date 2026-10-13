@@ -87,3 +87,15 @@
 - 新增 `tools/ui-flow.ps1`：一键准备界面验证环境（本地 mock + 示例知识库含图片 + 带界面的内核），打印界面地址与 mock 地址。
 - 新增 `docs/05-仓颉杯提交说明.md`：项目简介、技术架构、仓颉使用情况（2538 行、10 个文件、用到的 stdx 能力、两个踩坑修复）、四条主链路、引用自检、运行方式、实测验证数据、已知边界与复核命令。
 - 截图归档：`docs/screenshots/ui-kb.png`（知识库页）、`itn-desktop-flow2.png`（讲义渲染效果）。
+
+## 2026-10-14T02:31:01+08:00 真实 OpenAI 兼容端点验证：定位并修复 TLS SNI 缺失
+
+- 起因：目标里明确要求"OpenSSL 走通 HTTPS 的 OpenAI 兼容接口"，此前只用公开 HTTPS 站点验过 TLS，没有真正打通模型服务。
+- 现象：对真实端点发起请求时握手失败，报 `tlsv1 alert internal error (1080)`。
+- 排查：PowerShell 直连（含 -NoProxy 与走系统代理两种）均返回 HTTP 200，模型正常回复，TCP 443 可达，排除网络与凭据；逐个尝试 TLS 版本（1.2 / 1.3）、安全级别（0 / 1）、ALPN，七种组合错误完全相同，排除协商参数问题。
+- 根因：仓颉 `stdx.net.http` 客户端不会把请求域名自动带入 TLS 握手，缺少 SNI 时服务端无法按域名路由，直接以 internal error 拒绝。
+- 修复：`LlmClient.postJson` 中从 URL 提取主机名并显式设置 `tls.serverName`。实测修复后 `/api/models/test` 返回「连通」（3.6 秒），`/api/chat` 拿到真实模型回答。
+- 附带修正早期误判：`www.example.com` 握手失败当时归因为本机代理拦截，实际是同一个 SNI 缺失问题。
+- 新增 `/api/models/diagnose` 端点诊断：自动尝试多种 TLS 协商参数并报告结果，用户可自助排查自己的端点。
+- 新发现：当前供应商只提供对话接口，`/embeddings` 返回网关 404。内核已针对该情况给出「请为向量用途单独绑定支持向量化的模型」的提示。向量链路仍以本地 mock 验证。
+- 新增 `tools/real-model-check.ps1`、`tools/real-embed-check.ps1`、`tools/tls-diagnose.ps1` 三个验证脚本，均从外部 .env 读取密钥且不回显。

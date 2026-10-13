@@ -2,6 +2,7 @@ package itn_desktop_core.llm
 
 import stdx.net.http.*
 import stdx.net.tls.*
+import stdx.net.tls.common.*
 import std.collection.*
 import std.io.*
 import std.convert.*
@@ -73,11 +74,16 @@ public class LlmClient {
     }
 
     func postJson(path: String, payload: JsonValue): JsonValue {
-        let client = ClientBuilder().tlsConfig(TlsClientConfig()).build()
+        let url = endpoint(path)
+        // 必须显式设置 SNI：仓颉的 HTTP 客户端不会自动把请求域名带入 TLS 握手，
+        // 缺少 SNI 时多数云厂商会直接以 internal error 拒绝握手。
+        var tls = TlsClientConfig()
+        tls.serverName = Some(hostOf(url))
+        let client = ClientBuilder().tlsConfig(tls).build()
         try {
             let req = HttpRequestBuilder()
                 .method("POST")
-                .url(endpoint(path))
+                .url(url)
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Bearer " + cfg.apiKey)
                 .header("Accept", "application/json")
@@ -170,7 +176,13 @@ public class LlmClient {
         let payload = JsonObject()
         payload.put("model", JsonString(name))
         payload.put("input", arr)
-        let result = postJson("/embeddings", payload)
+        var result: JsonValue = JsonNull()
+        try {
+            result = postJson("/embeddings", payload)
+        } catch (e: LlmException) {
+            // 不少对话类服务不提供向量接口，这里给出明确指引而不是抛原始 HTML
+            throw LlmException(e.message + "；若返回 404，说明该服务未提供 /embeddings 接口，请为「向量」用途单独绑定一个支持向量化的模型")
+        }
         let out = ArrayList<Array<Float64>>()
         match (pick(result, ["data"])) {
             case Some(dv) =>
@@ -214,4 +226,88 @@ public class LlmClient {
         let reply = chat("你是一个连通性测试助手。", "只回复两个字：可用")
         return reply
     }
+}
+
+// ---------- 端点诊断 ----------
+// 不同服务端的 TLS 配置差异较大，这里逐个尝试常见的协商参数，
+// 报告哪种组合能完成握手。分类只依据"是否拿到 HTTP 响应"，不判断业务是否成功。
+
+func hostOf(url: String): String {
+    let b = url.toArray()
+    var i = 0
+    while (i + 2 < b.size) {
+        if (b[i] == 58 && b[i + 1] == 47 && b[i + 2] == 47) {
+            i = i + 3
+            break
+        }
+        i = i + 1
+    }
+    let start = i
+    var end = b.size
+    var j = i
+    while (j < b.size) {
+        if (b[j] == 47 || b[j] == 58) {
+            end = j
+            break
+        }
+        j = j + 1
+    }
+    return String.fromUtf8(b[start..end])
+}
+
+func tryTlsMode(url: String, apiKey: String, mode: String): String {
+    try {
+        var tls = TlsClientConfig()
+        if (mode == "TLS1.2") {
+            tls.supportedVersions = [TlsVersion.V1_2]
+        } else if (mode == "TLS1.3") {
+            tls.supportedVersions = [TlsVersion.V1_3]
+        } else if (mode == "安全级别1") {
+            tls.securityLevel = 1
+        } else if (mode == "安全级别0") {
+            tls.securityLevel = 0
+        } else if (mode == "ALPN http/1.1") {
+            tls.supportedAlpnProtocols = ["http/1.1"]
+        } else if (mode == "TLS1.2+级别1") {
+            tls.supportedVersions = [TlsVersion.V1_2]
+            tls.securityLevel = 1
+        } else if (mode == "指定SNI") {
+            tls.serverName = Some(hostOf(url))
+        } else if (mode == "指定SNI+TLS1.2") {
+            tls.serverName = Some(hostOf(url))
+            tls.supportedVersions = [TlsVersion.V1_2]
+        } else if (mode == "指定SNI+级别1") {
+            tls.serverName = Some(hostOf(url))
+            tls.securityLevel = 1
+        }
+        let client = ClientBuilder().tlsConfig(tls).build()
+        try {
+            let req = HttpRequestBuilder()
+                .method("POST")
+                .url(url)
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + apiKey)
+                .body("{}")
+                .build()
+            let resp = client.send(req)
+            let st = resp.status
+            return "HTTP " + st.toString()
+        } finally {
+            client.close()
+        }
+    } catch (e: Exception) {
+        return "失败：" + e.message
+    }
+}
+
+public func tlsProbe(url: String, apiKey: String): JsonArray {
+    let modes = ["默认", "指定SNI", "指定SNI+TLS1.2", "指定SNI+级别1", "ALPN http/1.1", "安全级别0"]
+    let out = JsonArray()
+    for (m in modes) {
+        let o = JsonObject()
+        o.put("mode", JsonString(m))
+        o.put("result", JsonString(tryTlsMode(url, apiKey, m)))
+        out.add(o)
+    }
+    return out
 }
