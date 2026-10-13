@@ -29,8 +29,11 @@ const nav: { id: AdminSection; label: string; icon: typeof LayoutDashboard }[] =
   { id: "ingestion", label: "文档入库", icon: FileUp },
 ];
 /** 暂不开放给管理员的模块：仅从导航隐藏，功能代码保留。 */
-const hiddenAdminSections = new Set<AdminSection>(["knowledge", "quality", "ingestion"]);
-const visibleNav = nav.filter((item) => !hiddenAdminSections.has(item.id));
+/** 教研/运维子集：此前整组不在导航里、只能手输 URL 才能到达（入口隐蔽，BUG-013）。
+    现单独成组放回导航，业务管理组保持聚焦；权限仍由 /admin 登录态控制。 */
+const opsSections = new Set<AdminSection>(["knowledge", "quality", "ingestion"]);
+const visibleNav = nav.filter((item) => !opsSections.has(item.id));
+const opsNav = nav.filter((item) => opsSections.has(item.id));
 
 function StatusTag({ ok = true, children }: { ok?: boolean; children: string }) {
   return (
@@ -534,6 +537,15 @@ export default function Admin() {
             </NavLink>
           ))}
         </nav>
+        <div className="px-6 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-muted">教研运维</div>
+        <nav className="space-y-1 px-3 pb-4">
+          {opsNav.map(({ id, label, icon: Icon }) => (
+            <NavLink key={id} to={`/admin/${id}`} className={({ isActive }) => cn("lf-nav-pill", isActive && "lf-nav-pill-active")}>
+              <Icon size={16} />
+              <span className="flex-1">{label}</span>
+            </NavLink>
+          ))}
+        </nav>
         <div className="border-t border-white/60 p-3">
           <div className="lf-card mb-2 flex items-center gap-2.5 rounded-xl px-3 py-2.5">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-tint text-brand">
@@ -566,7 +578,7 @@ export default function Admin() {
         </header>
         <div className="sticky top-16 z-20 flex overflow-x-auto px-4 pb-3 pt-3 lg:hidden">
           <div className="lf-seg mx-auto">
-            {visibleNav.map(({ id, label, icon: Icon }) => (
+            {[...visibleNav, ...opsNav].map(({ id, label, icon: Icon }) => (
               <NavLink key={id} to={`/admin/${id}`} className={({ isActive }) => cn("lf-seg-item", isActive && "lf-seg-item-active")}>
                 <Icon size={13} />
                 {label}

@@ -175,8 +175,10 @@ export default function Tutoring() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [finished, currentLearner.id]);
 
-  /* 学练一体：学习者视角不再有独立「练」页——重定向到课件内就地开练（?drill=1）。
-     系统透视/评委视角保留本页，用于展示苏格拉底导学引擎全貌。 */
+  /* 学练一体：学习者视角不再有独立「练」页，统一收敛到 /me/calibrate（用真实练习校准画像）。
+     系统透视/评委视角保留本页，用于展示苏格拉底导学引擎全貌。
+     注意：学习者侧入口必须直接指向 /me/calibrate，不要依赖这里的静默 replace 跳转
+     （否则点「去练一组题」后地址栏突变、返回键也回不去，属 BUG-008）。 */
   if (isLearner) return <Navigate to="/me/calibrate" replace />;
 
   return (

@@ -28,7 +28,7 @@ const PAGE_TYPES: Array<[RegExp, string]> = [
   [/^\/me\/notes/, '我的笔记'], [/^\/me\/wrong/, '错题本'], [/^\/me\/profile/, '个人资料'],
   [/^\/me/, '我的学习'], [/^\/learn\/slide\//, '幻灯片学习'],
   [/^\/learn\/resource\//, '完整阅读'], [/^\/learn\/customize-team\//, 'AI教研组'],
-  [/^\/learn\/customize\//, '资源定制'], [/^\/learn\/ppt-preview\//, '交互课件预览'],
+  [/^\/learn\/customize\//, '资源定制'],
   [/^\/learn\/[^/]+/, '知识点学习'], [/^\/learn/, '知识网络'],
   [/^\/report/, '成长报告'], [/^\/profiles/, '学情画像'], [/^\/resources/, '资源生成'],
   [/^\/tutoring/, '交互导学'], [/^\/knowledge/, '知识库'], [/^\/agents/, '协同调度'],
