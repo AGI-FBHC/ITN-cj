@@ -27,11 +27,8 @@ import {
   Star,
   Pause,
   Scale,
-  Compass,
 } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
-import { startDemoTour } from '@/components/tour/DemoTour';
-import { coreMetrics, globalStats } from '@/data/metrics';
 import { agents } from '@/data/agents';
 import type { AgentId } from '@/data/agents';
 import { knowledgePoints } from '@/data/knowledgePoints';
@@ -39,7 +36,6 @@ import { liveFeedSamples } from '@/data/collabScript';
 import type { LiveFeedSample } from '@/data/collabScript';
 import { getResourcesFor } from '@/data/resources';
 import { getQuizByIds, quizLevelMeta } from '@/data/quizBank';
-import MetricCard from '@/components/MetricCard';
 import SectionHeader from '@/components/SectionHeader';
 import AgentChip, { AgentIcon } from '@/components/AgentChip';
 import LiveDot from '@/components/LiveDot';
@@ -155,24 +151,23 @@ function HeroSection() {
             data-hero="eyebrow"
             className="mb-6 inline-flex w-fit items-center gap-2 rounded-full border border-brand/40 bg-card-warm/80 px-3.5 py-1.5 font-mono text-[12px] tracking-wide text-brand"
           >
-            <LiveDot status="running" />
-            挑战杯·揭榜挂帅 XH-202630 · 上海云之脑智能科技有限公司
+            按你的目标安排课程与练习
           </div>
 
           <h1
             ref={titleRef}
             className="font-serif text-[40px] leading-[1.18] font-bold tracking-[0.01em] text-ink xl:text-[56px]"
           >
-            <span className="block whitespace-nowrap">让每一次技能培训</span>
-            <span className="block whitespace-nowrap">都被精确地个性化</span>
+            <span className="block whitespace-nowrap">找到适合你的课程</span>
+            <span className="block whitespace-nowrap">从今天这一课开始</span>
           </h1>
 
           <p data-hero="en" className="mt-4 font-display text-[19px] italic leading-[26px] text-ochre">
-            智训云枢 · Multi-Agent Personalized Training Engine
+            智训云枢 · 学习与练习
           </p>
 
           <p data-hero="sub" className="mt-5 max-w-[480px] text-[15px] leading-[26px] text-ink-2">
-            以五个分工明确的智能体取代单体大模型：学情诊断锚定盲区，知识检索锁定权威标准，内容生成严格溯源，审核裁判交叉验证，决策仲裁动态调度。面向智能体工程与复杂能力训练场景。
+            查看学习目标、课程资源和练习记录，按自己的进度继续学习。
           </p>
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
@@ -193,23 +188,13 @@ function HeroSection() {
             >
               查看学情画像
             </button>
-            <button
-              data-hero="cta"
-              type="button"
-              onClick={() => startDemoTour()}
-              title="面向评委的 5 分钟自动串场：五步闭环，逐站讲解"
-              className="lf-btn-ghost group"
-            >
-              <Compass size={15} className="transition-transform duration-200 group-hover:rotate-45" />
-              评委 5 分钟导览
-            </button>
           </div>
           <Link
             data-hero="cta"
             to="/knowledge"
             className="mt-4 inline-flex w-fit items-center gap-1.5 font-mono text-[12.5px] text-ink-muted transition-colors hover:text-brand"
           >
-            浏览知识库 {globalStats.kbSlicesTotal.toLocaleString()} 条切片
+            浏览知识库
             <ArrowRight size={13} />
           </Link>
         </div>
@@ -258,19 +243,6 @@ function HeroSection() {
   );
 }
 
-/* ================= S2 指标看板 ================= */
-function MetricsSection() {
-  return (
-    <section className="relative mx-auto max-w-[1320px] px-8 py-14">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {coreMetrics.map((m) => (
-          <MetricCard key={m.id} metric={m} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
 /* ================= S3 五步闭环（GSAP 钉住叙事） ================= */
 const loopSteps = [
   {
@@ -286,7 +258,7 @@ const loopSteps = [
     name: '多智能体协同调度',
     en: 'COLLABORATION',
     desc: '诊断/检索/生成/审核/仲裁五体协同，消息实时流转，辩论消除幻觉。',
-    detail: 'ARB-05 统一调度：任务拆解、泳道分发、分歧仲裁。2 轮辩论 + 交叉验证，把幻觉率压到 3.2%。',
+    detail: '查看课程任务的执行进度、内容检查和处理结果。',
     href: '/agents',
   },
   {
@@ -642,9 +614,6 @@ function TopologySection() {
                   <span className="pointer-events-none absolute left-1/2 top-[-8px] z-10 w-48 -translate-x-1/2 -translate-y-full rounded-[10px] border border-hairline bg-card-warm p-2.5 text-left opacity-0 shadow-warm transition-opacity duration-150 group-hover:opacity-100">
                     <span className="block text-[12.5px] font-semibold text-ink">{agent.name}</span>
                     <span className="mt-0.5 block text-[11.5px] leading-[17px] text-ink-muted">{agent.duty}</span>
-                    <span className="mt-1 block font-mono text-[10px] text-ink-muted">
-                      今日处理 {agent.todayCount} 次 · 均耗 {agent.avgLatency}
-                    </span>
                   </span>
                 </motion.button>
               );
@@ -674,9 +643,6 @@ function TopologySection() {
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] leading-[19px] text-ink-2 transition-colors group-hover:text-ink">
                   {a.duty}
-                </span>
-                <span className="mt-0.5 block font-mono text-[10.5px] text-ink-muted">
-                  今日处理 {a.todayCount} 次 · 均耗 {a.avgLatency}
                 </span>
               </span>
               <ArrowRight size={14} className="shrink-0 text-ink-muted transition-transform duration-200 group-hover:translate-x-1 group-hover:text-brand" />
@@ -1008,11 +974,11 @@ function FooterSection() {
             <span className="font-serif text-[16px] font-bold text-ink">智训云枢</span>
           </div>
           <p className="mt-3 font-mono text-[11.5px] leading-[18px] text-ink-muted">
-            XH-202630 · 上海云之脑智能科技有限公司
+            学习、练习与成长记录
           </p>
           <p className="mt-1 flex items-center gap-1.5 font-mono text-[11.5px] text-ink-muted">
             <Scale size={11} />
-            领域知识个性化生成与多智能体协同决策系统
+            围绕学习目标安排课程与练习
           </p>
         </div>
         <div className="flex flex-wrap content-start gap-x-5 gap-y-2 md:justify-center">
@@ -1024,10 +990,7 @@ function FooterSection() {
         </div>
         <div className="md:text-right">
           <p className="font-mono text-[11.5px] leading-[19px] text-ink-muted">
-            前端演示环境 · 全量模拟数据
-            <br />
-            React 19 + Tailwind
-            <br />© 2025 智训云枢
+            © {new Date().getFullYear()} 智训云枢
           </p>
         </div>
       </div>
@@ -1040,7 +1003,6 @@ export default function Home() {
   return (
     <div>
       <HeroSection />
-      <MetricsSection />
       <ClosedLoopSection />
       <TopologySection />
       <section className="mx-auto max-w-[1320px] px-8 py-4 pb-20">

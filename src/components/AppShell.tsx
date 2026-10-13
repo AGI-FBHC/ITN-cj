@@ -20,7 +20,6 @@ import {
   PanelLeftOpen,
   NotebookPen,
   LogOut,
-  Compass,
   Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -44,13 +43,10 @@ import { api, type OrganizationBranding } from '@/lib/api';
 import { useCachedData } from '@/hooks/useCachedData';
 import { kbSlices } from '@/data/kbSlices';
 import { resources } from '@/data/resources';
-import { globalStats } from '@/data/metrics';
-import LiveDot from './LiveDot';
 import KBDrawer from './KBDrawer';
 import AgentDock from './agent/AgentDock';
 import ResumeLearningFab from './ResumeLearningFab';
 import { SparkField } from './heal/Flora';
-import DemoTour, { startDemoTour } from './tour/DemoTour';
 import { cn } from '@/lib/utils';
 
 type NavItem = {
@@ -395,26 +391,6 @@ export default function AppShell() {
             </nav>
 
             <div className="border-t border-hairline p-3">
-              <div
-                className={cn(
-                  'flex items-center gap-2 rounded-[10px] bg-card-warm px-3 py-2.5',
-                  collapsed && 'justify-center px-0',
-                )}
-              >
-                <LiveDot status="running" />
-                {!collapsed && (
-                  <span className="relative flex-1 overflow-hidden">
-                    <span className="flex w-max animate-marquee gap-8 font-mono text-[10.5px] whitespace-nowrap text-ink-muted">
-                      <span>
-                        {globalStats.agentsOnline} AGENTS ONLINE · 今日协同 {globalStats.todayCollabCount} 次
-                      </span>
-                      <span aria-hidden>
-                        {globalStats.agentsOnline} AGENTS ONLINE · 今日协同 {globalStats.todayCollabCount} 次
-                      </span>
-                    </span>
-                  </span>
-                )}
-              </div>
               <button
                 type="button"
                 onClick={() => setCollapsed((v) => !v)}
@@ -455,16 +431,6 @@ export default function AppShell() {
                   {notes.length > 0 && <span className="font-mono text-[9px] text-brand">{notes.length > 99 ? '99+' : notes.length}</span>}
                 </Link>
 
-                {/* 评委一键导览：5 分钟自动串场，把五步闭环叙事喂到评委嘴边 */}
-                <button
-                  type="button"
-                  onClick={() => startDemoTour()}
-                  title="评委一键导览 · 5 分钟串场演示"
-                  className="flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[9px] border border-brand-amber/45 bg-brand-amber-tint px-2.5 text-[12px] font-medium text-ochre transition-all duration-200 hover:border-brand-amber/70"
-                >
-                  <Compass size={13} />
-                  <span className="hidden md:inline">评委导览</span>
-                </button>
 
                 <LiveClock />
                 <label className="hidden h-8 shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap rounded-[9px] border border-hairline bg-card-warm px-2.5 xl:flex">
@@ -576,8 +542,6 @@ export default function AppShell() {
 
       <KBDrawer sliceId={drawerKb} open={drawerKb !== null} onOpenChange={(o) => !o && setDrawerKb(null)} />
 
-      {/* 评委一键导览：挂载在 Router 内部，跨路由不卸载，进度存 sessionStorage */}
-      <DemoTour />
     </>
   );
 }

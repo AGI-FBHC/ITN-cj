@@ -409,7 +409,7 @@ export default function MyProfile() {
 
             <p className="border-t border-hairline pt-2 text-[10.5px] leading-[15px] text-ink-muted">
 
-              六维能力 = 画像基础值 + 学习证据（各章节知识点「完成进度 × 掌握度」按维度权重折算），只读展示，随学习动态更新。
+              能力分数会随课程和练习记录更新。
 
             </p>
 
@@ -431,7 +431,7 @@ export default function MyProfile() {
               <Brain size={16} />
             </span>
             <div className="min-w-0 flex-1">
-              <div className="lf-mono-label !text-[10px]">DIA-01 实时诊断</div>
+              <div className="lf-mono-label !text-[10px]">学习建议</div>
               <p className="mt-0.5 text-[13px] leading-[20px] text-ink-2">{diaLine}</p>
             </div>
           </div>
@@ -532,7 +532,7 @@ export default function MyProfile() {
               <span className="text-[15px] font-semibold text-ink">近 7 天诊断证据</span>
             </div>
             {evidenceLoading ? (
-              <div className="py-8 text-center text-[13px] text-ink-muted">正在读取后端学习记录…</div>
+              <div className="py-8 text-center text-[13px] text-ink-muted">正在加载学习记录…</div>
             ) : evidenceError ? (
               <div className="py-7 text-center">
                 <p className="text-[13px] text-brand-danger">{evidenceError}</p>

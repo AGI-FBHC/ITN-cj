@@ -435,7 +435,7 @@ function QuickWizard({ onBack }: { onBack: () => void }) {
               </div>
               <p className="mt-3 flex items-start gap-2 text-[11px] leading-[17px] text-ink-muted">
                 <Sparkles size={12} className="mt-0.5 shrink-0 text-brand" />
-                这里的信息会直接交给画像模型判断，不再只靠身份和学历估算。
+                填写技术经历后，我们能更好地安排学习起点。
               </p>
             </motion.div>
           )}
@@ -575,7 +575,7 @@ export default function Welcome() {
                 </div>
               )}
               <p className="text-[12px] leading-[19px] text-ink-muted">
-                画像和进度都替你存着——不用重新建档，接着上次的节奏走就行。
+                    你的资料和进度已保存，可以接着上次的内容学。
               </p>
             </div>
           </div>
@@ -599,7 +599,7 @@ export default function Welcome() {
           <div className="text-center">
             <h1 className="font-serif text-[26px] font-semibold text-ink">先建一份你的学情画像</h1>
             <p className="mt-2 text-[13.5px] leading-[22px] text-ink-muted">
-              之后的讲义、练习、路径全由它驱动。两种方式，测得越准、首日推荐越准。
+              填写基本信息即可开始；也可以先做几道题，了解目前的水平。
             </p>
           </div>
 
@@ -614,13 +614,13 @@ export default function Welcome() {
                 <Zap size={19} />
               </span>
               <span className="mt-3 text-[16px] font-semibold text-ink">精简建档</span>
-              <span className="mt-0.5 font-mono text-[10.5px] tracking-wide text-ink-muted">约 30 秒 · 3 步选择</span>
+              <span className="mt-0.5 font-mono text-[10.5px] tracking-wide text-ink-muted">填写基本资料</span>
               <span className="mt-2.5 text-[12.5px] leading-[20px] text-ink-2">
-                只答"我是谁 / 什么学历 / 想做什么"，按背景先验起一份画像，马上开学。
+                填写称呼、学历、技术经历和目标方向，就可以开始学习。
               </span>
               <span className="mt-3 flex items-center gap-1.5 rounded-[9px] bg-paper-deep px-2.5 py-1.5 text-[11.5px] text-ink-muted">
                 <Gauge size={12} className="text-ochre" />
-                画像置信度低 → 前两讲多问几个检查点，边学边测准
+                开始学习后，可以根据练习结果调整内容
               </span>
               <span className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-brand transition-transform group-hover:translate-x-0.5">
                 快速开始 <ArrowRight size={13} />
@@ -638,13 +638,13 @@ export default function Welcome() {
                 <Target size={19} />
               </span>
               <span className="mt-3 text-[16px] font-semibold text-ink">精准定制</span>
-              <span className="mt-0.5 font-mono text-[10.5px] tracking-wide text-ink-muted">约 5 分钟 · 自评 + 自适应测题</span>
+              <span className="mt-0.5 font-mono text-[10.5px] tracking-wide text-ink-muted">填写资料并完成测评</span>
               <span className="mt-2.5 text-[12.5px] leading-[20px] text-ink-2">
-                走一遍五步初诊：背景、六维自评、6~14 道自适应题，AI 边测边诊断。
+                先介绍学习背景，再做自评和几道题，看看哪些内容适合你。
               </span>
               <span className="mt-3 flex items-center gap-1.5 rounded-[9px] bg-brand-tint/60 px-2.5 py-1.5 text-[11.5px] text-ink-2">
                 <Gauge size={12} className="text-brand" />
-                建档即高置信 → 首日推荐就精准
+                完成后可以查看学习建议和路线
               </span>
               <span className="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-brand transition-transform group-hover:translate-x-0.5">
                 认真测一次 <ArrowRight size={13} />

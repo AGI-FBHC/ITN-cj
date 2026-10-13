@@ -122,7 +122,7 @@ export default function LearnerHome() {
         .sort((left, right) => (left.topicIndex ?? 99) - (right.topicIndex ?? 99))
     : [];
   const continueTopic = todayTopics.find((topic) => (learningMap.topicProgress[topic.id] ?? 0) < 100) ?? todayTopics[0] ?? null;
-  const activeTitle = primaryLoading ? '正在读取真实学习进度，首次加载可能需要一些时间…' : todayChapter ? todayChapter.name : learning.nextChapter ? `第 ${learning.nextChapter.index} 章 · ${learning.nextChapter.title}` : activeNode?.title ?? '开启你的第一课';
+  const activeTitle = primaryLoading ? '正在加载学习进度…' : todayChapter ? todayChapter.name : learning.nextChapter ? `第 ${learning.nextChapter.index} 章 · ${learning.nextChapter.title}` : activeNode?.title ?? '开启你的第一课';
   const activePath = primaryLoading ? '/me' : todayChapter ? learnMapPath(currentLearner.id, todayChapter.id, continueTopic?.id) : learning.nextResource ? learningResourcePath(learning.nextResource) : activeNode ? `/learn/${activeNode.kpId}` : '/learn';
   const activeButton = primaryLoading ? '加载中…' : todayChapter ? (continueTopic ? `继续：${continueTopic.label}` : `继续：${todayChapter.name}`) : learning.nextResource ? `继续：${learning.nextResource.title}` : activeNode ? `继续：${activeNode.resourceRef ?? activeNode.title}` : '开始学习';
   const goActive = () => {
@@ -246,13 +246,6 @@ export default function LearnerHome() {
       </motion.section>
 
       {/* 首次使用引导：这是什么 / 你在哪 / 先做哪一步 */}
-
-      {/* 诗意标语（治愈 · 去焦虑） */}
-      <motion.p {...fadeUp} className="mt-5 px-0.5 text-[14px] leading-relaxed text-ink-2">
-        <span className="mr-0.5 align-[-2px] text-[20px] text-ochre">「</span>
-        每学一点，都是给未来的自己，浇一次水。
-        <span className="ml-0.5 align-[-2px] text-[20px] text-ochre">」</span>
-      </motion.p>
 
       {/* ============ 今天就学这一件（唯一焦点） ============ */}
       <motion.section {...fadeUp} className="relative mt-8">
@@ -383,7 +376,7 @@ export default function LearnerHome() {
       {/* ============ 学习资源（列表式） ============ */}
       <motion.section {...fadeUp} className="mt-8">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="font-serif text-[17px] font-semibold text-ink">AI 给你做好的资料</h3>
+          <h3 className="font-serif text-[17px] font-semibold text-ink">学习资料</h3>
           <Link
             to="/resources"
             className="inline-flex items-center gap-1 text-[13px] font-medium text-brand hover:underline"

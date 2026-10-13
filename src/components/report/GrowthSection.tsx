@@ -338,23 +338,23 @@ export function WeeklyAdviceCard({
         cta: '去实操',
         href: resourceTargetFor(resources, '实操', '/resources'),
         priority: top.priority as Severity,
-        evidence: `依据：盲区缺口 ${top.gap} · 近 ${weekSpan} 周综合分提升 +${growth} · ARB-05 置信 0.91`,
+        evidence: `依据：当前能力与目标相差 ${top.gap} 分 · 近 ${weekSpan} 周变化 ${growth >= 0 ? '+' : ''}${growth} 分`,
       },
       {
         icon: ClipboardCheck,
-        text: `${strongestKp.name}理论基础扎实（${strongest[1]} 分），建议 48h 内进行保持性测评（5 题）`,
+        text: `${strongestKp.name}目前 ${strongest[1]} 分，可以做几道题巩固`,
         cta: '去测评',
         href: resourceTargetFor(resources, '测评', '/resources'),
         priority: '中' as Severity,
-        evidence: `依据：${strongestKp.name} 当前 ${strongest[1]} 分 · 表现稳定 · 保持性测评周期 48h · ARB-05 置信 0.88`,
+        evidence: `依据：${strongestKp.name} 当前 ${strongest[1]} 分`,
       },
       {
         icon: BookOpen,
-        text: `${secondKp.name}可提前预习，已为你排队入门讲义与分阶题组`,
+        text: `${secondKp.name}可以先看讲义，再做分阶练习`,
         cta: '查看',
         href: resourceTargetFor(resources, '讲义', '/resources'),
         priority: second.priority as Severity,
-        evidence: `依据：次要盲区缺口 ${second.gap} · 已排队资源就位 · ARB-05 置信 0.86`,
+        evidence: `依据：当前能力与目标相差 ${second.gap} 分`,
       },
     ];
   }, [learner, report, resources]);

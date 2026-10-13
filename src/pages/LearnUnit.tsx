@@ -298,7 +298,7 @@ interface SpotFlags {
 const SPOT_DEFS: { key: keyof SpotFlags; icon: typeof Sparkles; name: string; desc: string; how: string }[] = [
   { key: 'gen', icon: Sparkles, name: '画像驱动现做', desc: '难度 × 风格 × KB 切片拼装', how: '进入本页即触发' },
   { key: 'av', icon: Volume2, name: '视听双通道', desc: '语音讲到哪，画面亮到哪', how: '点播放 / 讲这一段' },
-  { key: 'trace', icon: ShieldCheck, name: '零幻觉溯源', desc: '论断挂 KB 角标，讲到出处会发光', how: '播到引用句自动触发' },
+  { key: 'trace', icon: ShieldCheck, name: '引用来源', desc: '查看讲义引用和原文', how: '点开正文中的引用' },
   { key: 'arb', icon: Scale, name: '动态决策 ARB-05', desc: '答错降维 / 进阶挑战 / 两错接回', how: '答错检查点试试' },
   { key: 'agency', icon: Hand, name: '学习者主权', desc: '签到自选 / 换讲法 / 越权协商', how: '点「这段感觉如何」' },
   { key: 'modal', icon: LayoutGrid, name: '多模态学习', desc: '读 / 图卡 / 听 / 幻灯 / 交互演示', how: '切模态或开幻灯' },
@@ -479,7 +479,7 @@ function AdaptiveBanner({
     {
       icon: ShieldCheck,
       label: expert ? 'VER-04 核验' : '已核验',
-      text: '每个论断都挂 KB 溯源角标——没有出处的内容发不出来',
+      text: '本讲的引用来源可以在正文中查看',
       tone: 'green',
     },
   ] as const;
@@ -496,7 +496,7 @@ function AdaptiveBanner({
           {weak ? 'ADAPTIVE · 检测到薄弱维，本讲已为你调整' : 'ADAPTIVE · 本讲按你的画像现做'}
         </span>
         <span className="rounded-md border border-hairline bg-paper px-1.5 py-0.5 font-mono text-[10px] text-ink-muted">
-          换个人打开，这一讲长得不一样
+          可以随时切换讲法
         </span>
       </div>
       <div className="grid gap-2 sm:grid-cols-3">
@@ -583,11 +583,11 @@ function AdaptiveBanner({
               )}
               {openIdx === 2 && (
                 <div className="text-[12.5px] leading-[19px] text-ink-2">
-                  <div className="font-mono text-[10px] font-semibold text-ink-muted">零幻觉核验</div>
+                  <div className="font-mono text-[10px] font-semibold text-ink-muted">引用来源</div>
                   <div className="mt-1">
-                    本讲共 <span className="font-semibold text-brand">{kbCount}</span> 处论断挂了 KB 溯源角标——正文里的{' '}
+                    本讲有 <span className="font-semibold text-brand">{kbCount}</span> 处引用标记。正文中的{' '}
                     <span className="font-mono text-brand">[KB-xxx]</span> 点开可看原文出处；语音讲到引用句时角标会发光。
-                    没有出处的内容，生成阶段就发不出来。
+                    引用可点开查看原文。
                   </div>
                 </div>
               )}

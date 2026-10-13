@@ -280,13 +280,13 @@ export default function Onboarding() {
     const gapText =
       Math.abs(biggestGap.diff) >= 10
         ? biggestGap.diff > 0
-          ? `值得注意：你在「${biggestGap.kp.name}」上自评比实测高约 ${Math.round(biggestGap.diff)} 分，存在高估——这类"以为会了"恰恰是最危险的盲区。`
-          : `有个好消息：你在「${biggestGap.kp.name}」上比自己以为的强约 ${Math.round(-biggestGap.diff)} 分，可以更自信。`
-        : '你的自评和实测基本一致，元认知很准。';
+          ? `你在「${biggestGap.kp.name}」上的自评比本次作答高约 ${Math.round(biggestGap.diff)} 分，建议先复习这一部分。`
+          : `本次作答显示，你在「${biggestGap.kp.name}」上比自评更熟悉。`
+        : '你的自评与本次作答结果接近。';
     return (
       `初诊完成。综合背景先验、自评与 ${answers.length} 题作答：最强「${strongest?.kp.name}」约 ${strongest?.s} 分，` +
       `最弱「${weakest?.kp.name}」约 ${weakest?.s} 分。${gapText}` +
-      `本画像为初稿（平均置信度 ${avgConf}%），之后你每一次答题、阅读、实操，我都会继续校准它。`
+      `这是一份初步结果，后续练习会继续更新。`
     );
   }, [strongest, weakest, biggestGap, answers.length, avgConf]);
 
@@ -408,7 +408,7 @@ export default function Onboarding() {
             <div className="space-y-6">
               <div>
                 <h1 className="font-serif text-[24px] font-semibold text-ink">先认识一下你</h1>
-                <p className="mt-1 text-[14px] text-ink-muted">你的背景就是第一份证据——选择会直接初始化你的画像起点。</p>
+                <p className="mt-1 text-[14px] text-ink-muted">填写学习经历，帮助我们了解你的起点。</p>
               </div>
 
               <div className="lf-card space-y-5 p-6">
@@ -512,7 +512,7 @@ export default function Onboarding() {
                 <div>
                   <h1 className="font-serif text-[24px] font-semibold text-ink">下面这些情况，你通常能做到哪一步？</h1>
                   <p className="mt-1 text-[14px] text-ink-muted">
-                    根据真实经历快速作答。随后会用跨领域情境题校准，并据此评估六维能力。
+                    按实际经历选择即可。接下来会做几道题。
                   </p>
                 </div>
                 <div className="lf-card space-y-4 p-5">
@@ -545,13 +545,13 @@ export default function Onboarding() {
                     </div>
                   ))}
                 </div>
-                <DiaLine text="都记下了。接下来我出题验证——如果你对自己的判断很准，说明元认知不错；有偏差也没关系，那正是我要找的。" />
+                  <DiaLine text="接下来做几道题，看看哪些内容已经掌握。" />
               </div>
               <div className="lf-card h-fit p-5">
                 <div className="lf-mono-label mb-1 !text-[11px]">起点雷达 · 背景先验 + 自评</div>
                 <ReactECharts option={radarOption(estimates, confidence)} height={330} />
                 <p className="mt-1 border-t border-hairline pt-2 text-[11px] leading-[16px] text-ink-muted">
-                  标签越淡表示伴学助手对该维越不确定——答题会让它们变实。
+                  颜色较浅的部分信息还不充分，做题后会更新。
                 </p>
               </div>
             </div>

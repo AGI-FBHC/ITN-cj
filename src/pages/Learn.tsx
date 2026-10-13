@@ -172,13 +172,13 @@ export default function Learn() {
       {map.loading && knowledgePoints.length === 0 && (
         <div className="mt-8 flex flex-col items-center justify-center gap-2 rounded-[14px] border border-hairline bg-card-warm px-6 py-12 text-center text-[13.5px] text-ink-muted">
           <Loader2 size={16} className="animate-spin" />
-          <span>正在读取真实学习地图，首次加载可能需要一些时间…</span>
+          <span>正在加载学习内容…</span>
           <span className="text-[12px] text-ink-muted/70">若长时间没有响应，请尝试刷新网页。</span>
         </div>
       )}
       {!map.loading && knowledgePoints.length === 0 && (
         <div className="mt-8 rounded-[14px] border border-hairline bg-card-warm px-6 py-10 text-center text-[13.5px] text-ink-muted">
-          暂无学习地图，请先完成画像或等待后端数据。
+          暂无学习内容。完成资料填写后，可刷新页面重试。
         </div>
       )}
       <motion.div

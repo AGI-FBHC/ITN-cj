@@ -22,7 +22,7 @@ import { BlossomBranch, Succulent } from '@/components/heal/Flora';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
-const LOOP_STEPS = ['画像建档', '协同调度', '个性化生成', '交互反馈', '动态更新'];
+const LOOP_STEPS = ['填写资料', '选择目标', '开始学习'];
 
 type Tab = Extract<LoginMethod, 'sso' | 'sms'>;
 
@@ -245,9 +245,9 @@ export default function Login() {
             transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
             className="font-serif text-[34px] font-bold leading-[46px] text-ink"
           >
-            会按你的水平
+            从适合你的内容
             <br />
-            「现做」教材的学习系统
+            开始学习
           </motion.h1>
           <motion.p
             initial={{ opacity: 0, y: 18 }}
@@ -255,8 +255,7 @@ export default function Login() {
             transition={{ delay: 0.12, duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
             className="mt-4 text-[14.5px] leading-[25px] text-ink-muted"
           >
-            同一个知识点，给你的讲法和给别人的不一样——而且每句话都有出处。
-            从建一份属于你的学情画像开始，让每一次学习都更贴合你当前的水平。
+            设定目标，查看学习建议，再按自己的进度完成课程和练习。
           </motion.p>
           <div className="mt-8 flex items-center whitespace-nowrap">
             {LOOP_STEPS.map((s, i) => (
@@ -268,10 +267,10 @@ export default function Login() {
               </span>
             ))}
           </div>
-          <p className="mt-2.5 text-[11.5px] text-ink-muted/80">登录即进入第一步：画像建档 —— 之后的一切都由它驱动。</p>
+          <p className="mt-2.5 text-[11.5px] text-ink-muted/80">首次使用先填写基本信息；再次登录可以继续上次的学习。</p>
         </div>
         <div className="font-mono text-[10.5px] tracking-wide text-ink-muted/70">
-          个性化学习内容生成与多智能体协同决策系统
+          学习、练习与复习，都可以在这里继续。
         </div>
       </div>
 

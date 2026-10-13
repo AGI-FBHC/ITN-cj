@@ -54,7 +54,7 @@ function confidencePercent(learner: Learner) {
 }
 
 function formatTime(value?: string | null) {
-  if (!value) return '后端未记录';
+  if (!value) return '暂无记录';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat('zh-CN', {
@@ -209,7 +209,7 @@ function BlindSpotWall({ learner, points, analytics }: { learner: Learner; point
           </motion.div>;
         })}
       </div>
-      <p className="mt-3 text-[11.5px] leading-5 text-ink-muted">严重度由当前画像分与后端目标能力线的差距计算，不使用预设案例。</p>
+      <p className="mt-3 text-[11.5px] leading-5 text-ink-muted">当前水平与目标相差越多，越值得优先学习。</p>
     </div>
   );
 }
@@ -321,15 +321,15 @@ export default function Profiles() {
   };
 
   if (loadState === 'loading' || (loadState === 'ready' && remoteProfiles.length > 0 && realLearners.length === 0)) {
-    return <div className="mx-auto flex min-h-[55vh] max-w-[1180px] items-center justify-center px-6"><RefreshCw className="animate-spin text-brand" size={22} /><span className="ml-3 text-[13px] text-ink-muted">正在同步后端画像与测评证据…</span></div>;
+    return <div className="mx-auto flex min-h-[55vh] max-w-[1180px] items-center justify-center px-6"><RefreshCw className="animate-spin text-brand" size={22} /><span className="ml-3 text-[13px] text-ink-muted">正在加载画像和测评记录…</span></div>;
   }
 
   if (loadState === 'error') {
-    return <div className="mx-auto max-w-[760px] px-6 py-16"><EmptyEvidence title="画像数据暂时无法读取" detail="页面没有回退到预设学习者。请确认后端服务正常后重新加载。" /><button type="button" onClick={() => void load()} className="lf-btn-primary mx-auto mt-4"><RefreshCw size={14} />重新加载</button></div>;
+    return <div className="mx-auto max-w-[760px] px-6 py-16"><EmptyEvidence title="画像数据暂时无法读取" detail="请稍后重试；如果问题持续，可以刷新页面。" /><button type="button" onClick={() => void load()} className="lf-btn-primary mx-auto mt-4"><RefreshCw size={14} />重新加载</button></div>;
   }
 
   if (!selected || remoteProfiles.length === 0) {
-    return <div className="mx-auto max-w-[760px] px-6 py-16"><EmptyEvidence title="当前账号还没有画像" detail="先完成精简建档或精准定制，画像页会在真实数据写入后自动展开。" /><Link to="/welcome" className="lf-btn-primary mx-auto mt-4">开始建档 <ArrowUpRight size={14} /></Link></div>;
+    return <div className="mx-auto max-w-[760px] px-6 py-16"><EmptyEvidence title="当前账号还没有画像" detail="先填写基本资料，或完成测评。" /><Link to="/welcome" className="lf-btn-primary mx-auto mt-4">开始建档 <ArrowUpRight size={14} /></Link></div>;
   }
 
   return (
@@ -338,7 +338,7 @@ export default function Profiles() {
         <div className="max-w-[690px]">
           <div className="lf-mono-label mb-3 flex items-center gap-2"><span className="h-px w-6 bg-brand/40" />PERSISTED LEARNER PROFILES · {realLearners.length} REAL</div>
           <h1 className="font-serif text-[32px] font-bold leading-tight text-ink sm:text-[36px]">学情画像</h1>
-          <p className="mt-3 text-[13.5px] leading-6 text-ink-muted">整合建档自评、真实测评与学习行为，形成可计算的能力向量。画像只展示当前账号后端数据，缺少的证据会明确标注。</p>
+          <p className="mt-3 text-[13.5px] leading-6 text-ink-muted">查看当前能力、学习目标和需要加强的内容。</p>
         </div>
         <div className="lf-card flex items-center gap-3 px-4 py-3">
           <img src={selected.avatar} alt={selected.name} className="h-11 w-11 rounded-full border border-hairline object-cover" />
@@ -352,7 +352,7 @@ export default function Profiles() {
       </div>
 
       <div ref={detailRef} className="mt-14 scroll-mt-20">
-        <SectionHeader en="SELECTED PROFILE" title={`画像详情 · ${selected.name}`} desc="当前水平、目标能力、盲区和诊断均由真实画像计算；没有题级证据时保留明确空态。" actions={<Link to="/onboarding" className="lf-btn-ghost !px-3 !py-2 text-[12px]"><Sparkles size={14} />重新精准诊断</Link>} />
+        <SectionHeader en="SELECTED PROFILE" title={`画像详情 · ${selected.name}`} desc="查看目前水平、目标和下一步建议。" actions={<Link to="/onboarding" className="lf-btn-ghost !px-3 !py-2 text-[12px]"><Sparkles size={14} />重新精准诊断</Link>} />
         <div className="grid gap-5 lg:grid-cols-12">
           <div className="space-y-5 lg:col-span-7">
             <ProfileRadar learner={selected} points={domainKnowledgePoints} />

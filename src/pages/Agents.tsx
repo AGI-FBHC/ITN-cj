@@ -167,10 +167,10 @@ export default function Agents() {
     return (
       <div className="mx-auto max-w-[760px] px-6 py-16 text-center">
         <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-brand-tint text-brand"><Sparkles size={21} /></span>
-        <h1 className="mt-4 text-[20px] font-semibold text-ink">还没有可回放的真实协同</h1>
-        <p className="mt-2 text-[13px] leading-6 text-ink-muted">{error || '从 AI 教研组发起一次真实运行后，完整泳道、证据和仲裁结果会永久保存在这里。'}</p>
+        <h1 className="mt-4 text-[20px] font-semibold text-ink">还没有生成记录</h1>
+        <p className="mt-2 text-[13px] leading-6 text-ink-muted">{error || '生成一份课程后，可以在这里查看进度和结果。'}</p>
         <div className="mt-5 flex justify-center gap-3">
-          <Link to="/me" className="lf-btn-primary">发起真实协同</Link>
+          <Link to="/me" className="lf-btn-primary">生成课程</Link>
           {course && <Link to="/agents?run=course" className="lf-btn-ghost">查看课程生成记录</Link>}
         </div>
       </div>

@@ -322,7 +322,7 @@ export default function Resources() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-lg border border-brand/30 bg-brand-tint px-2.5 py-1.5 text-[11.5px] font-medium text-brand"><Link2 size={12} />{sourceQuality.count} 条依据{sourceQuality.average ? ` · 平均 ${sourceQuality.average}%` : ''}</span>
               <span className="inline-flex items-center gap-1.5 rounded-lg border border-brand/30 bg-brand-tint px-2.5 py-1.5 text-[11.5px] font-medium text-brand"><ShieldCheck size={12} />可核验 · 可反馈</span>
-              {sourceQuality.web > 0 && <span className="inline-flex items-center gap-1.5 rounded-lg border border-brand-amber/50 bg-brand-amber-tint px-2.5 py-1.5 text-[11.5px] font-medium text-ochre">WebSearch 兜底 {sourceQuality.web} 条</span>}
+              {sourceQuality.web > 0 && <span className="inline-flex items-center gap-1.5 rounded-lg border border-brand-amber/50 bg-brand-amber-tint px-2.5 py-1.5 text-[11.5px] font-medium text-ochre">来自网页 {sourceQuality.web} 条</span>}
             </div>
           </div>
           <div className="mt-4 border-t border-hairline pt-3">
