@@ -123,3 +123,5 @@
 - 修掉一个刷新缺陷：提问后没有触发会话列表刷新，导致刚产生的会话不显示。
 - 新增 `tools/big-kb-setup.ps1`：生成大规模知识库并起动 mock，供容量验证复用。
 - 截图归档 `docs/screenshots/ui-sessions.png`。
+
+- 2026-10-14T03:00:01+08:00 验收视角验证：新增 `tools/fresh-extract-check.ps1`，把 `ITN-Desktop-win-x64.zip` 解压到全新目录（1.6 秒）后直接运行入口程序，返回 `TITLE=ITN-Desktop / STATUS=内核已连接 · 1.2.0 / PANELS=3 / RESULT=OK`。「解压即用、目标机器无需安装仓颉或 Node」据此从描述变为实测结论。
