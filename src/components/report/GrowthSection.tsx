@@ -319,13 +319,27 @@ export function WeeklyAdviceCard({
   const [advisorLoading, setAdvisorLoading] = useState(false);
 
   const fallbackAdvice = useMemo<AdviceItem[]>(() => {
-    const sorted = [...report.blindSpots].sort((a, b) => b.gap - a.gap);
+    const sorted = [...(report.blindSpots ?? [])].sort((a, b) => b.gap - a.gap);
     const top = sorted[0];
     const second = sorted[1] ?? sorted[0];
+    /* 画像知识点尚未就绪（domainKnowledgePoints 为空）时盲区列表为空，
+       这里必须给中性建议，否则 top/second 为 undefined 会让整页进错误边界。 */
+    if (!top || !second) {
+      return [
+        {
+          icon: BookOpen,
+          text: '暂无盲区数据：先完成一次分阶测评，再来看本周建议',
+          cta: '去测评',
+          href: resourceTargetFor(resources, '测评', '/resources'),
+          priority: '低' as Severity,
+          evidence: '依据：当前画像与测评记录不足，暂不生成针对性建议',
+        },
+      ];
+    }
     const topKp = getKnowledgePoint(top.kpId);
     const secondKp = getKnowledgePoint(second.kpId);
-    const strongest = Object.entries(learner.scores).sort((a, b) => b[1] - a[1])[0];
-    const strongestKp = getKnowledgePoint(strongest[0]);
+    const strongest = Object.entries(learner.scores ?? {}).sort((a, b) => b[1] - a[1])[0] ?? ['', 0];
+    const strongestKp = getKnowledgePoint(String(strongest[0]));
     /* 近 N 周综合分提升（用于决策依据展示，自建画像沿用真实建档→当前的差值） */
     const growth = Math.round(
       (report.adaptTrend[report.adaptTrend.length - 1] ?? 0) - (report.adaptTrend[0] ?? 0),
