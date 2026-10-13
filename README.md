@@ -27,4 +27,15 @@
 .\scripts\package.ps1
 ```
 
-产物在 `dist/core`，约 17MB。技术验证结论见 [docs/04-技术验证.md](docs/04-技术验证.md)。
+产物在 `dist/core`，约 17MB。
+
+## 冒烟测试
+
+```powershell
+# 先构建并打包，再跑端到端冒烟（会拉起本地 mock 模型，不需要真实密钥）
+.\scripts\build.ps1
+.\scripts\package.ps1
+.\tools\smoke.ps1
+```
+
+测试脚本跑的是 `dist/core` 里的打包产物，而不是 `core/target` 下的裸可执行文件——后者需要工具链 PATH 才能启动。技术验证结论见 [docs/04-技术验证.md](docs/04-技术验证.md)。

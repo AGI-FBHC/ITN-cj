@@ -36,3 +36,13 @@
 - 三项验证全部通过：① 本地 HTTP 系统分配端口、200/404 正常；② HTTPS 出网 `cangjie-lang.cn`、`baidu` 均 200（`example.com` 失败是本机代理拦截）；③ 干净环境（PATH 仅 System32）下仅需 4 个 DLL、共约 17MB 即可运行并完成 HTTPS 调用。
 - 已知问题：`println` 写入管道被缓冲，端口号要等进程退出才出现，Electron 握手不能依赖 stdout，后续改为写端口文件。
 - 本轮无接口契约变更（本地自检接口仅用于技术验证）。
+
+## 2026-10-14T02:00:02+08:00 内核模块化：配置存储、模型调用、本地接口全部打通
+
+- 新增模块：`util`（文件与环境、参数解析）、`store`（模型配置与用途绑定的本地持久化）、`llm`（OpenAI 兼容的对话与向量调用）、`api`（本地 HTTP 接口）。`main.cj` 改为启动内核并写端口文件。
+- 端口握手改为写文件，解决了 `println` 到管道被缓冲、Electron 读不到端口的问题。新增启动参数 `--data-dir`、`--port-file`，且同时支持 `--flag value` 与 `--flag=value`。
+- 踩坑记录：① 仓颉类型名为 `Bool`；② `Exception.message` 已是 `String`；③ `x as T` 在类层次里返回 `Option<T>`，改用 `case x: T =>` 类型模式匹配；④ `Int64.parse` 需要 `import std.convert.*`；⑤ `String` 常量拼接与 `JsonArray()` 需显式类型；⑥ 默认请求分发器按精确路径匹配，`register("")` 不能兜底，所有路由必须在 `buildServer` 显式注册（已写入接口文档）。
+- 新增 `tools/mock-openai/server.py`：本地 OpenAI 兼容 mock（chat 与 embeddings），供无真实密钥时自测。
+- 新增 `tools/smoke.ps1`：端到端冒烟。实测结果：端口文件握手成功；`/health` 200；`/api/models/save` 200；`/api/models/roles` 200；`/api/models/test` 返回「连通」（真实发出 HTTPS/HTTP 请求）；`/api/chat` 返回 mock 回复；`/api/settings` 不回传密钥；未知模型返回 400 与明确提示。
+- 重要发现：`core/target` 下的裸可执行文件需要工具链 PATH 才能启动（缺 DLL 会以 0xC0000135 退出），而 `dist/core` 里的打包产物自包含。冒烟测试因此改为直接跑打包产物，更贴近真实发布形态。
+- 接口契约文档 `docs/02-接口契约.md` 按实际实现重写，新增「实现注意」一节说明精确路径匹配的约束。本轮接口为本项目自定义，不涉及旧系统契约。
