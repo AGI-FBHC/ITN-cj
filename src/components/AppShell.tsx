@@ -76,7 +76,7 @@ const learnerMoreItems: { path: string; label: string; note: string }[] = [
   { path: '/knowledge', label: '领域知识库', note: '切片检索与原文溯源' },
   { path: '/chat', label: '伴学助手', note: '就当前进度提问' },
   { path: '/profiles', label: '学情画像', note: '六维能力与盲区' },
-  { path: '/agents', label: '协同调度', note: '五个 Agent 的执行过程' },
+  { path: '/agents', label: '协同调度', note: '五个 Agent 的执行过程（需先生成课程）' },
   { path: '/collaboration', label: '协同工作台', note: '教研任务泳道（演示）' },
 ];
 
