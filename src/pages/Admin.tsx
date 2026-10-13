@@ -583,7 +583,7 @@ export default function Admin() {
                 <StatCard label="学习者" value={loading ? "—" : learners.length} note="可管理账号" />
                 <StatCard label="平均掌握度" value={loading ? "—" : `${averageMastery}%`} note="学习者平均值" />
                 <StatCard label="知识领域" value={loading ? "—" : domains.length} note="已启用领域" />
-                <StatCard label="知识切片" value={loading ? "—" : domains.reduce((sum, item) => sum + item.chunkCount, 0)} note="当前索引总量" />
+                <StatCard label="知识切片" value={loading ? "—" : domains.reduce((sum, item) => sum + item.chunkCount, 0)} note="当前索引总量（RAGFlow 索引）" />
               </div>
               <div className="lf-table-card mt-6">
                 <div className="border-b border-white/60 px-5 py-4">
