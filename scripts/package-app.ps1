@@ -39,6 +39,10 @@ if (Test-Path -LiteralPath $srcExe) {
     Move-Item -LiteralPath $srcExe -Destination (Join-Path $OutDir "ITN-Desktop.exe") -Force
 }
 
+# 4.5) 随包附带说明书，让解压的人不必翻仓库
+Copy-Item -LiteralPath (Join-Path $repo "docs\07-使用说明.md") -Destination (Join-Path $OutDir "使用说明.md") -Force
+Copy-Item -LiteralPath (Join-Path $repo "docs\05-仓颉杯提交说明.md") -Destination (Join-Path $OutDir "系统说明.md") -Force
+
 # 5) 压缩
 Compress-Archive -Path (Join-Path $OutDir "*") -DestinationPath $ZipPath -CompressionLevel Optimal -Force
 
