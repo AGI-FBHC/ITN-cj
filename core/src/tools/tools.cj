@@ -73,7 +73,7 @@ public class ToolRegistry {
         let s = store.load()
         match (s.findModel(s.embedModelId)) {
             case Some(cfg) =>
-                let idx = loadIndex(store.dataDir, kbId)
+                let idx = loadIndexCached(store.dataDir, kbId)
                 if (idx.chunks.size == 0) {
                     r.ok = false
                     r.summary = "知识库还没有索引"

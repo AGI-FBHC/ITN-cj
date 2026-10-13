@@ -3,8 +3,13 @@
 用法：python server.py [port]
 """
 import json
+import os
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
+
+
+# 向量维度可通过环境变量调整，便于做真实规模下的容量验证
+EMBED_DIM = int(os.environ.get("ITN_MOCK_EMBED_DIM", "3"))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -42,7 +47,7 @@ class Handler(BaseHTTPRequestHandler):
                 "object": "list",
                 "model": body.get("model", "mock-embed"),
                 "data": [
-                    {"object": "embedding", "index": i, "embedding": [float((len(t) + i) % 7) / 7.0, 0.5, 0.25]}
+                    {"object": "embedding", "index": i, "embedding": [float((len(t) + i + j) % 7) / 7.0 for j in range(EMBED_DIM)]}
                     for i, t in enumerate(items)
                 ],
             }

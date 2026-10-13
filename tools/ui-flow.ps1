@@ -2,6 +2,8 @@
 # 只负责拉起进程并打印地址，交互由外部驱动
 
 $ErrorActionPreference = 'Stop'
+# 仓颉运行时默认堆上限 256MB，真实规模的知识库索引会顶穿
+$env:cjHeapSize = '2GB'
 $repo = Resolve-Path "$PSScriptRoot\.."
 
 $mockPort = Get-Random -Minimum 20000 -Maximum 45000

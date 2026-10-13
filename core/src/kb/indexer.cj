@@ -4,6 +4,8 @@ import std.fs.*
 import std.collection.*
 import std.time.*
 import stdx.encoding.json.*
+import std.convert.*
+import std.sync.*
 import stdx.encoding.base64.*
 import itn_desktop_core.llm.*
 import itn_desktop_core.util.*
@@ -12,10 +14,78 @@ public func kbDir(dataDir: String, kbId: String): String {
     return dataDir + Path.Separator + "kb" + Path.Separator + kbId
 }
 
+public func vectorsPath(dataDir: String, kbId: String): String {
+    return kbDir(dataDir, kbId) + Path.Separator + "vectors.txt"
+}
+
 public func saveIndex(dataDir: String, kbId: String, idx: KbIndex): Unit {
     let dir = kbDir(dataDir, kbId)
     ensureDir(dir)
+    // 向量走紧凑文本，一行一个切片；元数据仍走 JSON。
+    // 分批追加写入：一次性拼出几十 MB 字符串会把堆顶穿。
+    let vpath = Path(dir + Path.Separator + "vectors.txt")
+    writeText(dir + Path.Separator + "vectors.txt", "")
+    var sb = StringBuilder()
+    var inBatch = 0
+    for (c in idx.chunks) {
+        var i = 0
+        while (i < c.vector.size) {
+            if (i > 0) {
+                sb.append(" ")
+            }
+            sb.append(c.vector[i].toString())
+            i = i + 1
+        }
+        sb.append("\n")
+        inBatch = inBatch + 1
+        if (inBatch >= 200) {
+            File.appendTo(vpath, sb.toString().toArray())
+            sb = StringBuilder()
+            inBatch = 0
+        }
+    }
+    if (inBatch > 0) {
+        File.appendTo(vpath, sb.toString().toArray())
+    }
     writeText(dir + Path.Separator + "index.json", idx.toJson().toString())
+}
+
+/** 原地解析一行浮点，避免为每个数字生成中间字符串数组。 */
+func attachVectors(path: String, idx: KbIndex): Unit {
+    let raw = readTextOr(path, "")
+    if (raw.size == 0) {
+        return
+    }
+    let b = raw.toArray()
+    var chunkIdx = 0
+    var i = 0
+    let n = idx.chunks.size
+    while (chunkIdx < n) {
+        var lineEnd = i
+        while (lineEnd < b.size && b[lineEnd] != 10) {
+            lineEnd = lineEnd + 1
+        }
+        let vec = idx.chunks[chunkIdx].vector
+        var p = i
+        while (p < lineEnd) {
+            while (p < lineEnd && (b[p] == 32 || b[p] == 9)) {
+                p = p + 1
+            }
+            if (p >= lineEnd) {
+                break
+            }
+            let start = p
+            while (p < lineEnd && b[p] != 32 && b[p] != 9) {
+                p = p + 1
+            }
+            vec.add(Float64.parse(String.fromUtf8(b[start..p])))
+        }
+        chunkIdx = chunkIdx + 1
+        if (lineEnd >= b.size) {
+            break
+        }
+        i = lineEnd + 1
+    }
 }
 
 public func loadIndex(dataDir: String, kbId: String): KbIndex {
@@ -24,11 +94,14 @@ public func loadIndex(dataDir: String, kbId: String): KbIndex {
     if (raw.size == 0) {
         return KbIndex()
     }
+    var idx = KbIndex()
     try {
-        return KbIndex.fromJson(JsonValue.fromStr(raw))
+        idx = KbIndex.fromJson(JsonValue.fromStr(raw))
     } catch (e: Exception) {
         return KbIndex()
     }
+    attachVectors(vectorsPath(dataDir, kbId), idx)
+    return idx
 }
 
 /** 扫描目录并按 Markdown 结构分块。不调用模型。 */
@@ -153,4 +226,54 @@ public func captionChunks(rootDir: String, idx: KbIndex, client: LlmClient, visi
         }
     }
     return done
+}
+
+// ---------- 索引缓存 ----------
+// 真实规模下索引有数万个切片，每次检索都重新读盘并按浮点解析代价太高。
+// 进程内按 (数据目录, 知识库) 缓存，重建索引时替换。
+
+let indexCacheLock = Mutex()
+let indexCacheMap = HashMap<String, KbIndex>()
+
+func cacheKey(dataDir: String, kbId: String): String {
+    return dataDir + "|" + kbId
+}
+
+public func loadIndexCached(dataDir: String, kbId: String): KbIndex {
+    let key = cacheKey(dataDir, kbId)
+    indexCacheLock.lock()
+    try {
+        match (indexCacheMap.get(key)) {
+            case Some(v) => return v
+            case None => ()
+        }
+    } finally {
+        indexCacheLock.unlock()
+    }
+    let idx = loadIndex(dataDir, kbId)
+    indexCacheLock.lock()
+    try {
+        indexCacheMap[key] = idx
+    } finally {
+        indexCacheLock.unlock()
+    }
+    return idx
+}
+
+public func putIndexCache(dataDir: String, kbId: String, idx: KbIndex): Unit {
+    indexCacheLock.lock()
+    try {
+        indexCacheMap[cacheKey(dataDir, kbId)] = idx
+    } finally {
+        indexCacheLock.unlock()
+    }
+}
+
+public func dropIndexCache(dataDir: String, kbId: String): Unit {
+    indexCacheLock.lock()
+    try {
+        indexCacheMap.remove(cacheKey(dataDir, kbId))
+    } finally {
+        indexCacheLock.unlock()
+    }
 }

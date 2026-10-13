@@ -49,6 +49,8 @@ async function startKernel() {
     cwd: path.dirname(exe),
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
+    // 仓颉运行时默认堆上限 256MB，向量索引在真实规模下不够用
+    env: Object.assign({}, process.env, { cjHeapSize: "2GB" }),
   });
   kernel.stdout.on("data", (d) => process.stdout.write("[core] " + d));
   kernel.stderr.on("data", (d) => process.stderr.write("[core] " + d));

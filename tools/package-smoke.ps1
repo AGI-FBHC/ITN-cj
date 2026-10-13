@@ -1,5 +1,7 @@
 # 打包并验证绿色压缩包里的应用能真正启动
 $ErrorActionPreference = 'Continue'
+# 仓颉运行时默认堆上限 256MB，真实规模的知识库索引会顶穿
+$env:cjHeapSize = '2GB'
 $result = Join-Path $env:TEMP "itn-desktop-smoke-result.txt"
 $before = if (Test-Path $result) { (Get-Item $result).LastWriteTime } else { $null }
 

@@ -5,6 +5,8 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
+# 仓颉运行时默认堆上限 256MB，真实规模的知识库索引会顶穿
+$env:cjHeapSize = '2GB'
 $portFile = Join-Path $env:TEMP ("itn-ui-" + [guid]::NewGuid().ToString("N") + ".port")
 $dataDir = Join-Path $env:TEMP ("itn-ui-data-" + [guid]::NewGuid().ToString("N"))
 

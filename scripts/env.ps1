@@ -13,3 +13,7 @@ $env:CANGJIE_STDX_PATH = "$SdkRoot\stdx\windows_x86_64_cjnative\static\stdx"
 # OpenSSL 3：链接期用 LIBRARY_PATH，运行期用 PATH
 $env:LIBRARY_PATH = "$SdkRoot\openssl\mingw64\lib"
 $env:PATH = "$SdkRoot\openssl\mingw64\bin;$env:PATH"
+
+# 仓颉运行时默认堆上限只有 256MB，向量索引在真实规模下会顶穿。
+# 这里放宽到 2GB；这是上限而非预分配，按需增长。
+$env:cjHeapSize = '2GB'

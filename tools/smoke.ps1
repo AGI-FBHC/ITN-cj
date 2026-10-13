@@ -6,6 +6,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# 仓颉运行时默认堆上限 256MB，真实规模的知识库索引会顶穿
+$env:cjHeapSize = '2GB'
 if ($MockPort -le 0) {
     # 用随机高位端口，避免与残留的旧 mock 进程抢端口
     $MockPort = Get-Random -Minimum 20000 -Maximum 45000

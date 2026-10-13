@@ -320,6 +320,7 @@ public class Api {
                                 idx.kbId = id
                                 idx.builtAt = stamp()
                                 saveIndex(store.dataDir, id, idx)
+                                putIndexCache(store.dataDir, id, idx)
                                 kb.docCount = idx.docCount()
                                 kb.chunkCount = idx.chunks.size
                                 kb.imageCount = idx.imageCount()
@@ -346,7 +347,7 @@ public class Api {
                     let s = store.load()
                     match (s.findKb(id)) {
                         case Some(kb) =>
-                            let idx = loadIndex(store.dataDir, id)
+                            let idx = loadIndexCached(store.dataDir, id)
                             let o = kb.toJson()
                             o.put("loadedChunks", JsonInt(idx.chunks.size))
                             ok(ctx, o)
@@ -373,7 +374,7 @@ public class Api {
                     let embedId = s.embedModelId
                     match (s.findModel(embedId)) {
                         case Some(cfg) =>
-                            let idx = loadIndex(store.dataDir, id)
+                            let idx = loadIndexCached(store.dataDir, id)
                             if (idx.chunks.size == 0) {
                                 fail(ctx, 404, "该知识库还没有索引，请先建立索引")
                                 return

@@ -97,9 +97,8 @@ public class KbChunk {
         let imgs = JsonArray()
         for (i in images) { imgs.add(JsonString(i)) }
         o.put("images", imgs)
-        let vec = JsonArray()
-        for (v in vector) { vec.add(JsonFloat(v)) }
-        o.put("vector", vec)
+        // 向量不写进 JSON：千万级浮点做成 JSON 对象会直接把内存打爆，
+        // 改由 indexer 以紧凑文本单独存放。
         return o
     }
 
