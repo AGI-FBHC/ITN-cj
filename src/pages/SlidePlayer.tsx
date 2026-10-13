@@ -596,7 +596,11 @@ export default function SlidePlayer() {
     <main className="fixed inset-0 z-[9999] flex min-h-0 flex-col overflow-hidden bg-paper">
       <header className="flex shrink-0 items-center gap-3 border-b border-hairline bg-card-warm px-4 py-3 md:px-6">
         <Presentation size={17} className="text-brand" />
-        <div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold text-ink">幻灯模式 · {data?.title ?? '正在准备个性化学习内容'}</div><div className="font-mono text-[9.5px] text-ink-muted">{data?.status === 'generating'
+        <div className="min-w-0 flex-1"><div className="truncate text-[13px] font-semibold text-ink">幻灯模式 · {data?.title ?? '正在准备个性化学习内容'}</div><div className="font-mono text-[9.5px] text-ink-muted">{data?.status === 'failed'
+                  ? '定制于生成阶段失败'
+                  : data?.status === 'cancelled'
+                    ? '定制已取消'
+                    : data?.status === 'generating'
                   ? (isQuiz
                       ? `第 ${slides.length ? currentIndex + 1 : 0}/${expected || slides.length || 0} 题 · 等待作答（作答后自动出下一题）`
                       : `内容生成中 · 已就绪 ${slides.length}/${expected || slides.length || 0} 页`)
