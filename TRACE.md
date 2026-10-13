@@ -46,3 +46,14 @@
 - 新增 `tools/smoke.ps1`：端到端冒烟。实测结果：端口文件握手成功；`/health` 200；`/api/models/save` 200；`/api/models/roles` 200；`/api/models/test` 返回「连通」（真实发出 HTTPS/HTTP 请求）；`/api/chat` 返回 mock 回复；`/api/settings` 不回传密钥；未知模型返回 400 与明确提示。
 - 重要发现：`core/target` 下的裸可执行文件需要工具链 PATH 才能启动（缺 DLL 会以 0xC0000135 退出），而 `dist/core` 里的打包产物自包含。冒烟测试因此改为直接跑打包产物，更贴近真实发布形态。
 - 接口契约文档 `docs/02-接口契约.md` 按实际实现重写，新增「实现注意」一节说明精确路径匹配的约束。本轮接口为本项目自定义，不涉及旧系统契约。
+
+## 2026-10-14T02:08:41+08:00 知识库模块完成：分块、多模态描述、向量索引与检索
+
+- 新增 `kb` 包三个文件：`kb.cj`（数据结构、Markdown 分块、余弦检索）、`indexer.cj`（扫描分块、图片描述、批量向量化、索引读写）；`store` 增加知识库注册表；`api` 增加五个知识库接口；`llm` 增加 `chatVision` 多模态调用。
+- 分块策略：按 Markdown 标题层级切块并记录 `headingPath`；代码围栏内不做标题判定也不切开；单块超过 `maxChars`（默认 1200）即切；图片引用随所属切片记录。`docTitle` 取正文首个一级标题。
+- 多模态：建索引时对含图片的切片读取图片、base64 编码成 data URL，与提示词一起发给 `chunkModelId` 指定的视觉模型，描述写入 `caption`；参与向量化的文本为「正文 + [图片描述]」。图片相对路径拒绝绝对路径与 `..` 跳转。
+- 实测（`tools/smoke.ps1`，随机 mock 端口）：3 篇文档切出 5 个切片，识别 1 张图片并生成 1 条描述；`kb/search` 返回带 `headingPath`、`text`、`images` 的命中，分数 1 / 0.993916 / 0.989892。代码围栏内的 `#` 未被误判为标题（切片 headingPath 为「第一章 概述 > 1.1 背景 > 代码示例」）。
+- 修掉两个真实缺陷：① `search` 里把命中项对象标记为已取用后直接返回同一引用，导致分数被覆盖成 -2，改为返回副本；② `trimStr` 未处理换行，切片文本首尾残留空行。
+- 踩坑：`File.readFrom(Path)` 会解析成读文件字节的重载，遍历目录必须用 `Directory.walk(Path, (FileInfo) -> Bool)`；`intOf` 在 `store` 与 `kb` 重复定义导致 api 侧函数解析歧义，已合并；`std.fs` 的 `FileInfo.name` / `isDirectory()` 需通过 `Directory.walk` 回调取得。
+- 冒烟脚本改用随机高位端口并清理残留 python 进程：上一轮旧 mock 占用 9999 导致新 mock 未启动，请求仍由旧进程应答，一度误判为视觉分支未生效。
+- 接口契约文档补充知识库接口、检索命中结构与处理约定。

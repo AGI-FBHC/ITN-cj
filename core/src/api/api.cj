@@ -5,6 +5,7 @@ import std.collection.*
 import stdx.encoding.json.*
 import itn_desktop_core.store.*
 import itn_desktop_core.llm.*
+import itn_desktop_core.kb.*
 import itn_desktop_core.util.*
 
 public class Api {
@@ -57,6 +58,28 @@ public class Api {
         return o
     }
 
+    func kbStatsJson(b: KnowledgeBase): JsonObject {
+        return b.toJson()
+    }
+
+    func chunkJson(c: KbChunk, score: Float64): JsonObject {
+        let o = JsonObject()
+        o.put("score", JsonFloat(score))
+        o.put("id", JsonString(c.id))
+        o.put("docPath", JsonString(c.docPath))
+        o.put("docTitle", JsonString(c.docTitle))
+        o.put("headingPath", JsonString(c.headingPath))
+        o.put("ordinal", JsonInt(c.ordinal))
+        o.put("text", JsonString(c.text))
+        o.put("caption", JsonString(c.caption))
+        let imgs = JsonArray()
+        for (i in c.images) {
+            imgs.add(JsonString(i))
+        }
+        o.put("images", imgs)
+        return o
+    }
+
     public func handle(ctx: HttpContext): Unit {
         let path = ctx.request.url.path
         let method = ctx.request.method
@@ -88,7 +111,6 @@ public class Api {
                     var i = 0
                     while (i < s.models.size) {
                         if (s.models[i].id == incoming.id) {
-                            // 请求未带密钥时保留原密钥
                             if (incoming.apiKey.size == 0) {
                                 incoming.apiKey = s.models[i].apiKey
                             }
@@ -149,8 +171,7 @@ public class Api {
                     let id = strOf(b, "id")
                     match (store.load().findModel(id)) {
                         case Some(cfg) =>
-                            let client = LlmClient(cfg)
-                            client.selfTest()
+                            LlmClient(cfg).selfTest()
                             ok(ctx, JsonString("连通"))
                         case None => fail(ctx, 404, "找不到模型配置：" + id)
                     }
@@ -163,17 +184,195 @@ public class Api {
             match (bodyJson(ctx)) {
                 case Some(b) =>
                     let s = store.load()
-                    let modelId = strOf(b, "modelId")
-                    let effectiveId = if (modelId.size > 0) { modelId } else { s.chatModelId }
+                    let requested = strOf(b, "modelId")
+                    let effectiveId = if (requested.size > 0) { requested } else { s.chatModelId }
+                    if (effectiveId.size == 0) {
+                        fail(ctx, 400, "没有指定对话模型，请先在设置里配置")
+                        return
+                    }
                     match (s.findModel(effectiveId)) {
                         case Some(cfg) =>
-                            let client = LlmClient(cfg)
-                            let reply = client.chat(strOf(b, "system"), strOf(b, "user"))
+                            let reply = LlmClient(cfg).chat(strOf(b, "system"), strOf(b, "user"))
                             let o = JsonObject()
                             o.put("reply", JsonString(reply))
                             o.put("modelId", JsonString(effectiveId))
                             ok(ctx, o)
-                        case None => fail(ctx, 400, "没有可用的对话模型，请先在设置里配置并指定")
+                        case None => fail(ctx, 404, "找不到模型配置：" + effectiveId)
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        // ---------- 知识库 ----------
+
+        if (path == "/api/kb/save" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let id = strOf(b, "id")
+                    if (id.size == 0) {
+                        fail(ctx, 400, "缺少 id")
+                        return
+                    }
+                    let s = store.load()
+                    var replaced = false
+                    var i = 0
+                    while (i < s.knowledgeBases.size) {
+                        if (s.knowledgeBases[i].id == id) {
+                            s.knowledgeBases[i].name = strOf(b, "name")
+                            s.knowledgeBases[i].rootDir = strOf(b, "rootDir")
+                            replaced = true
+                        }
+                        i = i + 1
+                    }
+                    if (!replaced) {
+                        let kb = KnowledgeBase()
+                        kb.id = id
+                        kb.name = strOf(b, "name")
+                        kb.rootDir = strOf(b, "rootDir")
+                        s.knowledgeBases.add(kb)
+                    }
+                    store.save(s)
+                    ok(ctx, settingsJson())
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/kb/delete" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let id = strOf(b, "id")
+                    let s = store.load()
+                    let kept = ArrayList<KnowledgeBase>()
+                    for (kb in s.knowledgeBases) {
+                        if (kb.id != id) {
+                            kept.add(kb)
+                        }
+                    }
+                    s.knowledgeBases = kept
+                    store.save(s)
+                    ok(ctx, settingsJson())
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/kb/build" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let id = strOf(b, "id")
+                    let s = store.load()
+                    match (s.findKb(id)) {
+                        case Some(kb) =>
+                            if (kb.rootDir.size == 0) {
+                                fail(ctx, 400, "知识库未设置目录")
+                                return
+                            }
+                            let embedId = s.embedModelId
+                            if (embedId.size == 0) {
+                                fail(ctx, 400, "未指定向量模型，请先在设置里绑定")
+                                return
+                            }
+                            let embedCfg = s.findModel(embedId)
+                            if (embedCfg.isNone()) {
+                                fail(ctx, 404, "找不到向量模型配置：" + embedId)
+                                return
+                            }
+                            var maxChars: Int64 = 1200
+                            let requested = intOf(b, "maxChars")
+                            if (requested > 0) { maxChars = requested }
+                            try {
+                                let idx = chunkAll(kb.rootDir, maxChars)
+                                if (idx.chunks.size == 0) {
+                                    fail(ctx, 400, "目录里没有找到 Markdown 或纯文本文件")
+                                    return
+                                }
+                                var captioned: Int64 = 0
+                                if (s.chunkModelId.size > 0) {
+                                    match (s.findModel(s.chunkModelId)) {
+                                        case Some(cc) =>
+                                            let vm = if (cc.visionModel.size > 0) { cc.visionModel } else { cc.model }
+                                            captioned = captionChunks(kb.rootDir, idx, LlmClient(cc), vm)
+                                        case None => ()
+                                    }
+                                }
+                                let done = embedChunks(idx, LlmClient(embedCfg.getOrThrow()), 16)
+                                idx.kbId = id
+                                idx.builtAt = stamp()
+                                saveIndex(store.dataDir, id, idx)
+                                kb.docCount = idx.docCount()
+                                kb.chunkCount = idx.chunks.size
+                                kb.imageCount = idx.imageCount()
+                                kb.builtAt = idx.builtAt
+                                store.save(s)
+                                let o = kb.toJson()
+                                o.put("embedded", JsonInt(done))
+                                o.put("captioned", JsonInt(captioned))
+                                ok(ctx, o)
+                            } catch (e: Exception) {
+                                fail(ctx, 500, "建立索引失败：" + e.message)
+                            }
+                        case None => fail(ctx, 404, "找不到知识库：" + id)
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/kb/stats" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let id = strOf(b, "id")
+                    let s = store.load()
+                    match (s.findKb(id)) {
+                        case Some(kb) =>
+                            let idx = loadIndex(store.dataDir, id)
+                            let o = kb.toJson()
+                            o.put("loadedChunks", JsonInt(idx.chunks.size))
+                            ok(ctx, o)
+                        case None => fail(ctx, 404, "找不到知识库：" + id)
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/kb/search" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let id = strOf(b, "id")
+                    let query = strOf(b, "query")
+                    if (query.size == 0) {
+                        fail(ctx, 400, "缺少 query")
+                        return
+                    }
+                    var topK: Int64 = 5
+                    let reqK = intOf(b, "topK")
+                    if (reqK > 0) { topK = reqK }
+                    let s = store.load()
+                    let embedId = s.embedModelId
+                    match (s.findModel(embedId)) {
+                        case Some(cfg) =>
+                            let idx = loadIndex(store.dataDir, id)
+                            if (idx.chunks.size == 0) {
+                                fail(ctx, 404, "该知识库还没有索引，请先建立索引")
+                                return
+                            }
+                            try {
+                                let qv = LlmClient(cfg).embed([query])
+                                let hits = search(idx, qv[0], topK)
+                                let arr = JsonArray()
+                                for (h in hits) {
+                                    arr.add(chunkJson(h.chunk, h.score))
+                                }
+                                let o = JsonObject()
+                                o.put("hits", arr)
+                                ok(ctx, o)
+                            } catch (e: Exception) {
+                                fail(ctx, 500, "检索失败：" + e.message)
+                            }
+                        case None => fail(ctx, 400, "未指定向量模型，请先在设置里绑定")
                     }
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -195,7 +394,12 @@ public func buildServer(dataDir: String): Server {
         "/api/models/delete",
         "/api/models/roles",
         "/api/models/test",
-        "/api/chat"
+        "/api/chat",
+        "/api/kb/save",
+        "/api/kb/delete",
+        "/api/kb/build",
+        "/api/kb/stats",
+        "/api/kb/search"
     ]
     for (r in routes) {
         server.distributor.register(r, { ctx: HttpContext => api.handle(ctx) })

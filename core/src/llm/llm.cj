@@ -135,6 +135,31 @@ public class LlmClient {
         return content
     }
 
+    /** 多模态对话：一张图加一段提示词，返回模型描述。 */
+    public func chatVision(model: String, prompt: String, imageDataUrl: String): String {
+        let textPart = JsonObject()
+        textPart.put("type", JsonString("text"))
+        textPart.put("text", JsonString(prompt))
+        let urlObj = JsonObject()
+        urlObj.put("url", JsonString(imageDataUrl))
+        let imgPart = JsonObject()
+        imgPart.put("type", JsonString("image_url"))
+        imgPart.put("image_url", urlObj)
+        let contentArr = JsonArray()
+        contentArr.add(textPart)
+        contentArr.add(imgPart)
+        let usr = JsonObject()
+        usr.put("role", JsonString("user"))
+        usr.put("content", contentArr)
+        let msgs = JsonArray()
+        msgs.add(usr)
+        let payload = JsonObject()
+        payload.put("model", JsonString(model))
+        payload.put("messages", msgs)
+        let result = postJson("/chat/completions", payload)
+        return pickStr(result, ["choices", "0", "message", "content"])
+    }
+
     /** 向量化。返回与输入等长的向量数组。 */
     public func embed(inputs: Array<String>): Array<Array<Float64>> {
         let name = if (cfg.embeddingModel.size > 0) { cfg.embeddingModel } else { cfg.model }

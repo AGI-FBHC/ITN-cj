@@ -105,13 +105,74 @@ public class ModelConfig {
     }
 }
 
+public class KnowledgeBase {
+    public var id: String = ""
+    public var name: String = ""
+    public var rootDir: String = ""
+    public var docCount: Int64 = 0
+    public var chunkCount: Int64 = 0
+    public var imageCount: Int64 = 0
+    public var builtAt: String = ""
+
+    public init() {}
+
+    public func toJson(): JsonObject {
+        let o = JsonObject()
+        o.put("id", JsonString(id))
+        o.put("name", JsonString(name))
+        o.put("rootDir", JsonString(rootDir))
+        o.put("docCount", JsonInt(docCount))
+        o.put("chunkCount", JsonInt(chunkCount))
+        o.put("imageCount", JsonInt(imageCount))
+        o.put("builtAt", JsonString(builtAt))
+        return o
+    }
+
+    public static func fromJson(v: JsonValue): KnowledgeBase {
+        let b = KnowledgeBase()
+        match (objOf(v)) {
+            case Some(o) =>
+                b.id = strOf(o, "id")
+                b.name = strOf(o, "name")
+                b.rootDir = strOf(o, "rootDir")
+                b.docCount = intOf(o, "docCount")
+                b.chunkCount = intOf(o, "chunkCount")
+                b.imageCount = intOf(o, "imageCount")
+                b.builtAt = strOf(o, "builtAt")
+            case None => ()
+        }
+        return b
+    }
+}
+
+public func intOf(o: JsonObject, key: String): Int64 {
+    match (o.get(key)) {
+        case Some(v) =>
+            match (v) {
+                case j: JsonInt => j.getValue()
+                case _ => 0
+            }
+        case None => 0
+    }
+}
+
 public class Settings {
     public var models: ArrayList<ModelConfig> = ArrayList<ModelConfig>()
+    public var knowledgeBases: ArrayList<KnowledgeBase> = ArrayList<KnowledgeBase>()
     public var chunkModelId: String = ""
     public var embedModelId: String = ""
     public var chatModelId: String = ""
 
     public init() {}
+
+    public func findKb(id: String): ?KnowledgeBase {
+        for (b in knowledgeBases) {
+            if (b.id == id) {
+                return Some(b)
+            }
+        }
+        return None
+    }
 
     public func findModel(id: String): ?ModelConfig {
         for (m in models) {
@@ -129,6 +190,11 @@ public class Settings {
             arr.add(m.toJson())
         }
         o.put("models", arr)
+        let kbs = JsonArray()
+        for (b in knowledgeBases) {
+            kbs.add(b.toJson())
+        }
+        o.put("knowledgeBases", kbs)
         o.put("chunkModelId", JsonString(chunkModelId))
         o.put("embedModelId", JsonString(embedModelId))
         o.put("chatModelId", JsonString(chatModelId))
@@ -142,6 +208,19 @@ public class Settings {
                 s.chunkModelId = strOf(vj, "chunkModelId")
                 s.embedModelId = strOf(vj, "embedModelId")
                 s.chatModelId = strOf(vj, "chatModelId")
+                match (vj.get("knowledgeBases")) {
+                    case Some(kv) =>
+                        match (kv) {
+                            case ka: JsonArray =>
+                                var i = 0
+                                while (i < ka.size()) {
+                                    s.knowledgeBases.add(KnowledgeBase.fromJson(ka[i]))
+                                    i = i + 1
+                                }
+                            case _ => ()
+                        }
+                    case None => ()
+                }
                 match (vj.get("models")) {
                     case Some(mv) =>
                         match (mv) {

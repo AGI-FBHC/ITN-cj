@@ -19,6 +19,10 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.endswith("/chat/completions"):
             messages = body.get("messages") or []
             last = messages[-1].get("content") if messages else ""
+            if isinstance(last, list):
+                # 视觉请求：content 是分段数组
+                has_image = any(part.get("type") == "image_url" for part in last if isinstance(part, dict))
+                last = "MOCK_VISION_CAPTION:看到一张图片" if has_image else "MOCK_VISION_NONE"
             out = {
                 "id": "mock-chat",
                 "object": "chat.completion",
