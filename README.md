@@ -16,3 +16,15 @@
 ## 当前状态
 
 脚手架阶段。仓颉 Windows 工具链尚未安装，先完成技术验证再写业务代码。
+
+## 如何构建
+
+```powershell
+# 构建内核（需要先有 D:\cangjie-sdk\1.2.0 工具链，见 docs/04-技术验证.md）
+.\scripts\build.ps1
+
+# 产出可独立分发的内核目录（目标机器无需安装仓颉）
+.\scripts\package.ps1
+```
+
+产物在 `dist/core`，约 17MB。技术验证结论见 [docs/04-技术验证.md](docs/04-技术验证.md)。
