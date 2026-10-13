@@ -416,6 +416,30 @@ export default function SlidePlayer() {
   const readyNext = currentIndex + 1 < slides.length;
   const isLastSlide = slides.length > 0 && currentIndex === slides.length - 1;
   const expected = useMemo(() => Math.max(data?.total ?? 0, slides.length), [data?.total, slides.length]);
+  /* 自适应分阶题：已作答的题目会保留在 slides 里。重进页面时若默认停在第 1 题（已作答），
+     用户会以为"没答过的题又回来了"，且头部固定写"等待作答"，与卡片实际状态矛盾。
+     这里统一算出已答 questionId 集合，用于 ① 头部状态 ② 首次加载直接定位到待作答那一题。 */
+  const quizAnsweredIds = useMemo(() => {
+    const state = (completedResource?.state ?? {}) as Record<string, unknown>;
+    const answered = Array.isArray(state.answered) ? (state.answered as Array<Record<string, unknown>>) : [];
+    return new Set(answered.map((item) => String(item?.questionId ?? '')).filter(Boolean));
+  }, [completedResource]);
+  const slideQuestionId = (item?: CustomizeSlide | null): string => {
+    if (!item || item.type !== 'question') return '';
+    const question = item.content as Record<string, unknown>;
+    return String(question?.id ?? question?.questionId ?? '');
+  };
+  const currentQuestionId = slideQuestionId(slide);
+  const currentAnswered = currentQuestionId !== '' && quizAnsweredIds.has(currentQuestionId);
+  const quizPosition = currentAnswered ? currentIndex + 1 : quizAnsweredIds.size + 1;
+  const resumeAppliedRef = useRef(false);
+  useEffect(() => {
+    if (resumeAppliedRef.current) return;
+    if (data?.resourceType !== 'quiz' || quizAnsweredIds.size === 0 || slides.length === 0) return;
+    resumeAppliedRef.current = true;
+    const pending = slides.findIndex((item) => item.type === 'question' && !quizAnsweredIds.has(slideQuestionId(item)));
+    if (pending > 0) setCurrentIndex(pending);
+  }, [data?.resourceType, quizAnsweredIds, slides]);
   useEffect(() => {
     if (!data?.resourceId) return;
     let alive = true;
@@ -602,9 +626,11 @@ export default function SlidePlayer() {
                     ? '定制已取消'
                     : data?.status === 'generating'
                   ? (isQuiz
-                      ? `第 ${slides.length ? currentIndex + 1 : 0}/${expected || slides.length || 0} 题 · 等待作答（作答后自动出下一题）`
+                      ? `第 ${slides.length ? quizPosition : 0}/${expected || slides.length || 0} 题 · ${currentAnswered ? '已作答（可查看解析）' : '等待作答（作答后自动出下一题）'}`
                       : `内容生成中 · 已就绪 ${slides.length}/${expected || slides.length || 0} 页`)
-                  : `第 ${slides.length ? currentIndex + 1 : 0}/${expected || slides.length || 0} 页`}</div></div>
+                  : isQuiz
+                    ? `第 ${slides.length ? quizPosition : 0}/${expected || slides.length || 0} 题`
+                    : `第 ${slides.length ? currentIndex + 1 : 0}/${expected || slides.length || 0} 页`}</div></div>
         {data?.resourceId && (data?.status !== 'generating' || data?.resourceType !== 'quiz') && <button type="button" onClick={() => { narration.stop(); navigate(data.resourceType === 'ppt' ? `/learn/${encodeURIComponent(data.kpId ?? '')}?ppt=${encodeURIComponent(data.resourceId!)}` : `/learn/resource/${encodeURIComponent(data.resourceId!)}?view=full`); }} className="inline-flex h-9 items-center gap-1.5 rounded-[10px] border border-hairline bg-paper px-3 text-[11px] font-medium text-ink-2 hover:border-brand/35 hover:text-brand"><BookOpen size={13} />完整阅读</button>}
         {activeTasks[0] && (
           <button
