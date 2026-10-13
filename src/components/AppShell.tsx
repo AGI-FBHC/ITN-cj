@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Home,
+  MoreHorizontal,
   BookOpen,
   MessagesSquare,
   BarChart3,
@@ -65,6 +66,20 @@ const learnerNav: NavItem[] = [
 ];
 
 /** 系统透视 / 评委视角：完整 7 页，分组呈现 */
+/**
+ * 学习者视角的"更多"入口。
+ * 这些页面此前只存在于专家视角侧栏（或根本没有入口），学习者只能手输 URL 才能到达，
+ * 属于"入口隐蔽"问题；这里统一收进一个可发现的菜单。
+ */
+const learnerMoreItems: { path: string; label: string; note: string }[] = [
+  { path: '/resources', label: '我的资源', note: '定制讲义 / 实操 / 分阶题' },
+  { path: '/knowledge', label: '领域知识库', note: '切片检索与原文溯源' },
+  { path: '/chat', label: '伴学助手', note: '就当前进度提问' },
+  { path: '/profiles', label: '学情画像', note: '六维能力与盲区' },
+  { path: '/agents', label: '协同调度', note: '五个 Agent 的执行过程' },
+  { path: '/collaboration', label: '协同工作台', note: '教研任务泳道（演示）' },
+];
+
 const expertNavGroups: { heading?: string; items: NavItem[] }[] = [
   {
     items: [{ path: '/', label: '总览 Dashboard', icon: LayoutDashboard, end: true }],
@@ -153,6 +168,15 @@ function SideNavRow({ item, collapsed }: { item: NavItem; collapsed: boolean }) 
 export default function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  /* 点击页面其它位置关闭"更多"菜单。 */
+  useEffect(() => {
+    if (!moreOpen) return;
+    const close = () => setMoreOpen(false);
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, [moreOpen]);
   /* ⌘K 的知识切片结果改为真实检索（此前取硬编码的旧赛题切片，见 BUG-007）。 */
   const [kbQuery, setKbQuery] = useState('');
   const [kbHits, setKbHits] = useState<RagChunkSummary[]>([]);
@@ -273,6 +297,30 @@ useEffect(() => {
                   {item.label}
                 </NavLink>
               ))}
+              {isLearner && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    aria-haspopup="menu"
+                    aria-expanded={moreOpen}
+                    onClick={(event) => { event.stopPropagation(); setMoreOpen((value) => !value); }}
+                    className="flex items-center gap-2 rounded-[10px] px-3.5 py-1.5 text-[14px] font-medium text-ink-2 transition-all duration-200 ease-lf hover:bg-paper-deep hover:text-ink"
+                  >
+                    <MoreHorizontal size={16} strokeWidth={1.9} />
+                    更多
+                  </button>
+                  {moreOpen && (
+                    <div role="menu" onClick={(event) => event.stopPropagation()} className="absolute right-0 top-full z-50 mt-2 w-64 rounded-[14px] border border-hairline bg-paper p-2 shadow-warm-lg">
+                      {learnerMoreItems.map((entry) => (
+                        <Link key={entry.path} to={entry.path} onClick={() => setMoreOpen(false)} className="block rounded-[10px] px-3 py-2 transition-colors hover:bg-paper-deep">
+                          <span className="block text-[13px] font-medium text-ink">{entry.label}</span>
+                          <span className="block text-[11px] text-ink-muted">{entry.note}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </nav>
 
             {/* 右侧集群 */}
@@ -341,6 +389,18 @@ useEffect(() => {
           {/* 伴学助手 · 常驻画像助手（专注时收起） */}
           {(!focusMode || isSlideMode) && <AgentDock />}
 
+          {/* 更多：移动端固定在底部 tab 之上，桌面端由顶部导航的下拉承担 */}
+          {isLearner && moreOpen && (
+            <div role="menu" onClick={(event) => event.stopPropagation()} className="fixed inset-x-3 bottom-16 z-[60] rounded-[14px] border border-hairline bg-paper p-2 shadow-warm-lg md:hidden">
+              {learnerMoreItems.map((entry) => (
+                <Link key={entry.path} to={entry.path} onClick={() => setMoreOpen(false)} className="block rounded-[10px] px-3 py-2 transition-colors hover:bg-paper-deep">
+                  <span className="block text-[13px] font-medium text-ink">{entry.label}</span>
+                  <span className="block text-[11px] text-ink-muted">{entry.note}</span>
+                </Link>
+              ))}
+            </div>
+          )}
+
           {/* 全局「继续学习」浮标 · 左下角，随时回到当前路径节点 */}
           {!isSlideMode && <ResumeLearningFab />}
 
@@ -363,6 +423,18 @@ useEffect(() => {
                 {item.label}
               </NavLink>
             ))}
+            {isLearner && (
+              <button
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={moreOpen}
+                onClick={(event) => { event.stopPropagation(); setMoreOpen((value) => !value); }}
+                className="flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium text-ink-muted"
+              >
+                <MoreHorizontal size={19} strokeWidth={1.9} />
+                更多
+              </button>
+            )}
           </nav>
           )}
         </div>
