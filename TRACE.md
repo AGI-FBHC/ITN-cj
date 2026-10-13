@@ -77,3 +77,5 @@
 - 实测：内核托管界面 `/`、`/index.html`、`/app.js`、`/style.css` 均 200，`/nope.js` 404；Electron 44.7.1 开发态冒烟返回 `TITLE=ITN-Desktop / STATUS=内核已连接 · 1.2.0 / PANELS=3 / RESULT=OK`；打包后 `dist/ITN-Desktop/ITN-Desktop.exe --smoke` 同样返回上述结果，绿色压缩包 161.6 MB。
 - 打包后的 Electron 是 GUI 子系统程序，控制台看不到 stdout，因此冒烟结果同时写入 `%TEMP%\itn-desktop-smoke-result.txt`。
 - Electron 经 npmmirror 镜像安装（`ELECTRON_MIRROR` + `--registry=https://registry.npmmirror.com`），版本 44.7.1。
+
+- 2026-10-14T02:20:10+08:00 界面渲染复核：用浏览器打开内核托管的 `http://127.0.0.1:60641/`，页面标题为 ITN-Desktop，三个标签页（知识库 / 对话与产物 / 设置）与状态「内核已连接 · 1.2.0」均正常渲染；截图归档到 `docs/screenshots/ui-kb.png`。
