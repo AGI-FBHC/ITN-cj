@@ -87,3 +87,11 @@ footer { padding: 8px 20px; border-top: 1px solid #e6eaee; color: #7b8794; font-
 .artifacts ul { margin: 0; padding-left: 20px; }
 .artifacts li { margin-bottom: 6px; }
 .artifacts .path { color: #9aa5b1; font-size: 12px; word-break: break-all; }
+
+.sessions { font-size: 13px; }
+.sessions ul { margin: 0; padding-left: 20px; }
+.sessions li { margin-bottom: 4px; }
+button.link { border: 0; background: none; padding: 0; color: #2f5d8c; cursor: pointer; font: inherit; text-align: left; }
+button.link:hover { text-decoration: underline; background: none; }
+.sessions .events { background: #f4f6f8; border: 1px solid #e6eaee; border-radius: 6px; padding: 8px 10px; margin: 6px 0 10px; font-size: 12px; color: #3e4c59; }
+.sessions .events.hidden { display: none; }

@@ -187,6 +187,50 @@ async function refreshArtifacts() {
   }
 }
 
+async function refreshSessions() {
+  const box = $("chat-sessions");
+  try {
+    const data = await call("/api/sessions/list", {});
+    const items = data.sessions || [];
+    box.innerHTML = "";
+    if (!items.length) {
+      box.textContent = "还没有会话记录。";
+      return;
+    }
+    const ul = document.createElement("ul");
+    for (const s of items.slice(0, 8)) {
+      const li = document.createElement("li");
+      const head = document.createElement("button");
+      head.className = "link";
+      head.textContent = (s.title || s.sessionId) + " · " + s.eventCount + " 条事件";
+      const detail = document.createElement("pre");
+      detail.className = "events hidden";
+      head.onclick = async () => {
+        if (!detail.classList.contains("hidden")) {
+          detail.classList.add("hidden");
+          return;
+        }
+        try {
+          const ev = await call("/api/sessions/events", { sessionId: s.sessionId });
+          detail.textContent = (ev.events || [])
+            .map((e) => (e.at || "").slice(11, 19) + "  " + e.type)
+            .join("\n");
+          detail.classList.remove("hidden");
+        } catch (e) {
+          detail.textContent = "读取失败：" + e.message;
+          detail.classList.remove("hidden");
+        }
+      };
+      li.appendChild(head);
+      li.appendChild(detail);
+      ul.appendChild(li);
+    }
+    box.appendChild(ul);
+  } catch (e) {
+    box.textContent = "读取会话失败：" + e.message;
+  }
+}
+
 async function refresh() {
   settings = await call("/api/settings");
   renderModels();
@@ -206,6 +250,7 @@ async function init() {
     setFooter("读取设置失败：" + e.message);
   }
   await refreshArtifacts();
+  await refreshSessions();
 }
 
 $("chat-ask").onclick = async () => {
@@ -222,6 +267,7 @@ $("chat-ask").onclick = async () => {
     if (data.citationReport) {
       setFooter("段落 " + data.citationReport.paragraphs + " · 带引用 " + data.citationReport.citedParagraphs + " · 越界引用 " + data.citationReport.outOfRange);
     }
+    await refreshSessions();
   } catch (e) {
     setOutput("失败：" + e.message);
   }
@@ -239,6 +285,7 @@ async function generate(kind) {
     renderCitations(data);
     setFooter(data.artifactPath ? "已写出：" + data.artifactPath : "");
     await refreshArtifacts();
+    await refreshSessions();
   } catch (e) {
     setOutput("失败：" + e.message);
   }
