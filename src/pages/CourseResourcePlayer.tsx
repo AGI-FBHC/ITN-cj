@@ -441,6 +441,34 @@ function QuizBlock({
         }).catch(() => undefined);
       }
       const point = asRecord(result.knowledgePoint);
+      /* BUG-029：`recordLearningEvent` 只写事件流，不会更新 knowledge_mastery（知识网络读的是后者）。
+         这里补一次测评上报，掌握度才会随完整阅读页的作答一起动。优先用后端判分返回的 categoryId，
+         没有就退回资源的 kp node_code（后端按 node_code 解析）。 */
+      const categoryId = Number(point.categoryId);
+      const categoryCode = String(point.categoryId ?? '').trim() || String(resource.kpId ?? '').trim();
+      if (Number.isFinite(categoryId) && categoryId > 0) {
+        void api.recordProfileQuiz({
+          quizType: 'FORMATIVE',
+          knowledgeCategoryId: categoryId,
+          questionCount: 1,
+          correctCount: result.correct ? 1 : 0,
+          score: result.correct ? 100 : 0,
+          durationSeconds,
+          difficultyLevel: String(question.difficulty ?? '') || undefined,
+          details: JSON.stringify({ resourceId: resource.id, questionId: id, source: 'full-reading' }),
+        }).catch(() => undefined);
+      } else if (categoryCode) {
+        void api.recordProfileQuiz({
+          quizType: 'FORMATIVE',
+          knowledgeCategoryCode: categoryCode,
+          questionCount: 1,
+          correctCount: result.correct ? 1 : 0,
+          score: result.correct ? 100 : 0,
+          durationSeconds,
+          difficultyLevel: String(question.difficulty ?? '') || undefined,
+          details: JSON.stringify({ resourceId: resource.id, questionId: id, source: 'full-reading' }),
+        }).catch(() => undefined);
+      }
       void api.recordLearningEvent({
         eventType: 'QUIZ_SUBMIT', sourceType: 'QUIZ', sourceId: resource.id,
         knowledgeCategoryId: Number(point.categoryId) || null,
