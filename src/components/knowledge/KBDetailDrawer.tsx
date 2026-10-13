@@ -318,7 +318,7 @@ export default function KBDetailDrawer({
               </button>
 
               <div className="rounded-[10px] bg-paper-deep p-3 font-mono text-[11px] leading-[18px] text-ink-muted">
-                TRACE CHAIN · 该切片由 RET-02 于知识库 2,356 条切片中命中，经 VER-04 交叉验证后进入生成链路。
+                TRACE CHAIN · 该切片由 RET-02 从领域知识库中命中，经 VER-04 交叉验证后进入生成链路。
               </div>
             </div>
           </div>

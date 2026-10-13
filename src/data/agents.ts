@@ -38,7 +38,7 @@ export const agents: AgentDef[] = [
     code: 'RET-02',
     name: '知识检索 Agent',
     en: 'RETRIEVAL',
-    duty: '命中 2,356 条领域切片，锁定权威标准',
+    duty: '命中领域知识切片，锁定权威出处与依据',
     detail:
       '在领域知识库中执行语义 + 标准号混合检索，优先命中国标/行标切片，为生成提供可溯源的事实依据，附可信度评分。',
     color: '#B77552',

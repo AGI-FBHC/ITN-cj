@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, BookOpen, CheckCircle2, Clock3, History, Loader2, Sparkles } from 'lucide-react';
 import CourseRunView from '@/components/agents/CourseRunView';
+import { AgentIcon } from '@/components/AgentChip';
+import { agents } from '@/data/agents';
 import RealTeachingRunView from '@/components/agents/RealTeachingRunView';
 import { useProfile } from '@/context/ProfileContext';
 import { api } from '@/lib/api';
@@ -165,13 +167,34 @@ export default function Agents() {
 
   if (wantsTeachingRun || runs.length === 0) {
     return (
-      <div className="mx-auto max-w-[760px] px-6 py-16 text-center">
-        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-brand-tint text-brand"><Sparkles size={21} /></span>
-        <h1 className="mt-4 text-[20px] font-semibold text-ink">还没有生成记录</h1>
-        <p className="mt-2 text-[13px] leading-6 text-ink-muted">{error || '生成一份课程后，可以在这里查看进度和结果。'}</p>
-        <div className="mt-5 flex justify-center gap-3">
-          <Link to="/me" className="lf-btn-primary">生成课程</Link>
-          {course && <Link to="/agents?run=course" className="lf-btn-ghost">查看课程生成记录</Link>}
+      <div className="mx-auto max-w-[860px] px-6 py-14">
+        <div className="text-center">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-brand-tint text-brand"><Sparkles size={21} /></span>
+          <h1 className="mt-4 text-[20px] font-semibold text-ink">{error ? '读取运行档案失败' : '还没有生成记录'}</h1>
+          <p className="mt-2 text-[13px] leading-6 text-ink-muted">{error || '生成一份课程后，可以在这里查看进度和结果；下面是参与协同的五个 Agent。'}</p>
+          <div className="mt-5 flex justify-center gap-3">
+            <Link to="/me" className="lf-btn-primary">生成课程</Link>
+            {course && <Link to="/agents?run=course" className="lf-btn-ghost">查看课程生成记录</Link>}
+            <Link to="/collaboration" className="lf-btn-ghost">看教研组协作泳道</Link>
+          </div>
+        </div>
+
+        {/* 没有运行记录时也把“五个 Agent 是谁”讲清楚，避免入口点进来是死胡同（BUG-032 后续） */}
+        <div className="mt-8 grid gap-3 md:grid-cols-2">
+          {agents.map((a) => (
+            <div key={a.id} className="lf-card flex gap-3 rounded-2xl p-4">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px]" style={{ backgroundColor: `${a.color}1f`, color: a.color }}>
+                <AgentIcon agent={a} size={16} />
+              </span>
+              <span className="min-w-0">
+                <span className="flex items-baseline gap-2">
+                  <span className="text-[13.5px] font-semibold text-ink">{a.name}</span>
+                  <span className="font-mono text-[10px] tracking-wide text-ink-muted">{a.code} · {a.en}</span>
+                </span>
+                <span className="mt-1 block text-[12px] leading-5 text-ink-2">{a.duty}</span>
+              </span>
+            </div>
+          ))}
         </div>
       </div>
     );
