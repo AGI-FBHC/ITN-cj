@@ -51,6 +51,8 @@ export type AgentMessage =
       correct?: boolean;
       quizFlowKey?: string;
       quizRound?: number;
+      /** 该练习卡所属知识点 node_code（如 kp-1-2）：作答后上报平台画像掌握度用（BUG-029） */
+      kpCode?: string;
       time: string;
     }
   | {
@@ -837,6 +839,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
                   correct: false,
                   quizFlowKey: flowKey,
                   quizRound: round,
+                  kpCode: currentPage?.entities?.knowledgePointId,
                   time: now(),
                 }
               : m
@@ -879,6 +882,18 @@ export function AgentProvider({ children }: { children: ReactNode }) {
         };
         return { ...prev, [lid]: updated.slice(-60) };
       });
+      /* 浮窗"随堂练习"此前只写错题本、不进画像，导致知识网络掌握度与真实作答脱节（BUG-029 补充）。 */
+      if (qMsg.kpCode) {
+        void api.recordProfileQuiz({
+          quizType: 'FORMATIVE',
+          knowledgeCategoryCode: qMsg.kpCode,
+          questionCount: 1,
+          correctCount: correct ? 1 : 0,
+          score: correct ? 100 : 0,
+          durationSeconds: 1,
+          details: JSON.stringify({ source: 'agent-dock-practice', round: qMsg.quizRound ?? 1 }),
+        }).catch(() => undefined);
+      }
       if (!correct) {
         void api.addToWrongBook({
           questionId: qMsg.id,
