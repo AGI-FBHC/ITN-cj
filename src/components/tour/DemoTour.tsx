@@ -102,7 +102,16 @@ export default function DemoTour() {
     } catch {
       /* ignore */
     }
-    const onEvent = () => handleStart();
+    /* 已挂载时直接响应，并顺手清掉待启动标记：否则 startDemoTour() 写下的标记会一直留着，
+       之后每次整页刷新都会“自动重启导览并劫持导航”（BUG-036）。 */
+    const onEvent = () => {
+      try {
+        window.sessionStorage.removeItem(TOUR_PENDING_KEY);
+      } catch {
+        /* ignore */
+      }
+      handleStart();
+    };
     window.addEventListener(TOUR_START_EVENT, onEvent);
     return () => window.removeEventListener(TOUR_START_EVENT, onEvent);
     // eslint-disable-next-line react-hooks/exhaustive-deps
