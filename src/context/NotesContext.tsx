@@ -6,6 +6,7 @@ import { useAgent } from '@/context/AgentContext';
 import { useAuth } from '@/context/AuthContext';
 import { api } from '@/lib/api';
 import type { LearningNoteRecord } from '@/lib/api';
+import { parseApiInstant } from '@/lib/utils';
 
 export interface Note {
   id: string;
@@ -39,7 +40,7 @@ function toNote(record: LearningNoteRecord): Note {
     sourceKind,
     blockAnchor: record.sourceRef ?? undefined,
     kbRefs: record.kbRefs ?? [],
-    time: new Date(record.updatedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    time: (parseApiInstant(record.updatedAt) ?? new Date()).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
     createdAt: record.createdAt,
   };
 }
