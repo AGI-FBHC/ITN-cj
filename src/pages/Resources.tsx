@@ -8,6 +8,7 @@ import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
 import { Check, CheckCircle2, ExternalLink, FileText, Flag, Link2, ListChecks, Loader2, PenLine, PlayCircle, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import type { LearningResourceGenerationTask } from '@/lib/api';
 import type { Course, CourseChapter, LearningResource } from '@/lib/api';
 import PageBack from '@/components/PageBack';
 import PageTip from '@/components/heal/PageTip';
@@ -210,9 +211,18 @@ export default function Resources() {
   const [loading, setLoading] = useState(true);
   const [regenerating, setRegenerating] = useState<ResourceType | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /* 单资源定制（不挂在课程下的"我的定制"资源）此前在该页完全不可见（BUG-005）。 */
+  const [customTasks, setCustomTasks] = useState<LearningResourceGenerationTask[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
+    /* 定制任务与课程并行拉取；失败不影响章节资源展示。 */
+    void api.listCustomizeTasks()
+      .then((listed) => setCustomTasks(((listed.tasks ?? []) as LearningResourceGenerationTask[])
+        .filter((task) => (task.status === 'completed' && task.resourceId)
+          /* 自适应分阶题在等待作答期间状态就是 generating，属于"可继续"的资源。 */
+          || (task.resourceType === 'quiz' && task.status === 'generating'))))
+      .catch(() => setCustomTasks([]));
     try {
       let selectedCourseId = courseId;
       let selectedChapterId = chapterId;
@@ -308,8 +318,23 @@ export default function Resources() {
         </h1>
       </motion.div>
       {loading && <div className="mt-8 flex items-center justify-center gap-2 rounded-[14px] border border-hairline bg-card-warm py-14 text-[13.5px] text-ink-muted"><Loader2 size={16} className="animate-spin" />正在读取课程资源…</div>}
-      {!loading && !course && <div className="mt-8 rounded-[14px] border border-hairline bg-card-warm p-8 text-center"><p className="text-ink-muted">还没有可学习的课程。</p><Link to="/learn" className="lf-btn-primary mt-4 inline-flex">去生成课程</Link></div>}
+      {!loading && !course && customTasks.length === 0 && <div className="mt-8 rounded-[14px] border border-hairline bg-card-warm p-8 text-center"><p className="text-ink-muted">还没有可学习的课程，也还没有定制过单个资源。</p><p className="mt-1 text-[12px] text-ink-muted">进入任意知识点，点“一键定制”即可生成属于你的讲义/实操/分阶题。</p><Link to="/learn" className="lf-btn-ghost mt-4 inline-flex">去学习章节</Link></div>}
       {error && <div className="mt-5 rounded-[12px] border border-brand-danger/40 bg-brand-danger/10 px-4 py-3 text-[13px] text-brand-danger">{error}</div>}
+      {!loading && customTasks.length > 0 && (
+        <section className="mt-6 rounded-[14px] border border-hairline bg-card-warm p-4 md:p-5">
+          <div className="flex items-center gap-2"><span className="lf-mono-label !text-[10px]">我的定制资源</span><span className="text-[11px] text-ink-muted">{customTasks.length} 项</span></div>
+          <p className="mt-1 text-[12px] text-ink-muted">这些是按你的知识点单独定制的资源，不一定挂在课程章节下。</p>
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            {customTasks.map((task) => {
+              const to = task.resourceType === 'quiz' || task.resourceType === 'ppt'
+                ? `/learn/slide/${encodeURIComponent(task.id)}`
+                : `/learn/resource/${encodeURIComponent(String(task.resourceId))}?view=full`;
+              const label = task.resourceType === 'lecture' ? '领学讲义' : task.resourceType === 'practice' ? '实操指南' : task.resourceType === 'quiz' ? '分阶测试题' : '交互课件';
+              return <Link key={task.id} to={to} className="flex items-center justify-between gap-3 rounded-[12px] border border-hairline bg-paper px-4 py-3 hover:border-brand/40"><div className="min-w-0"><div className="truncate text-[13px] font-medium text-ink">{task.title}</div><div className="mt-0.5 text-[11px] text-ink-muted">{label} · {task.status === 'completed' ? '已生成' : task.status === 'generating' ? '进行中（等待作答）' : task.status}</div></div><span className="shrink-0 text-[12px] text-brand">继续学习 →</span></Link>;
+            })}
+          </div>
+        </section>
+      )}
       {!loading && course && chapter && <>
         <motion.header initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className="lf-card mt-6 p-4 md:p-5">
           <div className="flex flex-wrap items-start gap-4">
