@@ -159,6 +159,34 @@ function renderKbs() {
   }
 }
 
+async function refreshArtifacts() {
+  const box = $("chat-artifacts");
+  try {
+    const data = await call("/api/artifacts/list", {});
+    box.innerHTML = "";
+    const items = data.artifacts || [];
+    if (!items.length) {
+      box.textContent = "还没有生成任何产物。";
+      return;
+    }
+    const ul = document.createElement("ul");
+    for (const it of items) {
+      const li = document.createElement("li");
+      const name = document.createElement("span");
+      name.textContent = it.name + "（" + it.size + " 字节）";
+      const p = document.createElement("div");
+      p.className = "path";
+      p.textContent = it.path;
+      li.appendChild(name);
+      li.appendChild(p);
+      ul.appendChild(li);
+    }
+    box.appendChild(ul);
+  } catch (e) {
+    box.textContent = "读取产物列表失败：" + e.message;
+  }
+}
+
 async function refresh() {
   settings = await call("/api/settings");
   renderModels();
@@ -177,6 +205,7 @@ async function init() {
   } catch (e) {
     setFooter("读取设置失败：" + e.message);
   }
+  await refreshArtifacts();
 }
 
 $("chat-ask").onclick = async () => {
@@ -209,6 +238,7 @@ async function generate(kind) {
     setOutput(data.content || data.message || "");
     renderCitations(data);
     setFooter(data.artifactPath ? "已写出：" + data.artifactPath : "");
+    await refreshArtifacts();
   } catch (e) {
     setOutput("失败：" + e.message);
   }
