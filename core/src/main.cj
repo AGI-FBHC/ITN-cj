@@ -12,7 +12,13 @@ main(args: Array<String>): Int64 {
         case None => ()
     }
 
-    let server = buildServer(dataDir)
+    var uiDir = "ui"
+    match (argValue(args, "--ui-dir")) {
+        case Some(v) => uiDir = v
+        case None => ()
+    }
+
+    let server = buildServer(dataDir, uiDir)
     spawn { server.serve() }
     sleep(Duration.millisecond * 300)
 

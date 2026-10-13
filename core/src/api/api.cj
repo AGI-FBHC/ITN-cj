@@ -508,7 +508,50 @@ public class Api {
     }
 }
 
-public func buildServer(dataDir: String): Server {
+func contentTypeOf(name: String): String {
+    let n = name
+    let b = n.toArray()
+    var dot = -1
+    var i = 0
+    while (i < b.size) {
+        if (b[i] == 46) { dot = i }
+        i = i + 1
+    }
+    if (dot < 0) { return "application/octet-stream" }
+    let ext = String.fromUtf8(b[(dot + 1)..b.size])
+    if (ext == "html") { return "text/html; charset=utf-8" }
+    if (ext == "js") { return "application/javascript; charset=utf-8" }
+    if (ext == "css") { return "text/css; charset=utf-8" }
+    if (ext == "svg") { return "image/svg+xml" }
+    if (ext == "json") { return "application/json; charset=utf-8" }
+    return "application/octet-stream"
+}
+
+func serveStatic(ctx: HttpContext, uiDir: String, rel: String): Unit {
+    let name = if (rel == "/") { "index.html" } else { String.fromUtf8(rel.toArray()[1..rel.toArray().size]) }
+    // 只允许白名单文件名，避免路径穿越
+    let allowed = ["index.html", "app.js", "style.css"]
+    var ok = false
+    for (a in allowed) {
+        if (a == name) { ok = true }
+    }
+    if (!ok) {
+        ctx.responseBuilder.status(404)
+        ctx.responseBuilder.body("not found".toArray())
+        return
+    }
+    let full = uiDir + Path.Separator + name
+    if (!exists(full)) {
+        ctx.responseBuilder.status(404)
+        ctx.responseBuilder.body(("missing static file: " + name).toArray())
+        return
+    }
+    ctx.responseBuilder.status(200)
+    ctx.responseBuilder.header("Content-Type", contentTypeOf(name))
+    ctx.responseBuilder.body(File.readFrom(full))
+}
+
+public func buildServer(dataDir: String, uiDir: String): Server {
     let server = ServerBuilder().addr("127.0.0.1").port(0).build()
     let api = Api(Store(dataDir))
     // 默认分发器按精确路径匹配，所有路由必须显式注册
@@ -534,6 +577,11 @@ public func buildServer(dataDir: String): Server {
     ]
     for (r in routes) {
         server.distributor.register(r, { ctx: HttpContext => api.handle(ctx) })
+    }
+    // 界面由内核托管，外壳与界面同源，避免跨域
+    let statics = ["/", "/index.html", "/app.js", "/style.css"]
+    for (s in statics) {
+        server.distributor.register(s, { ctx: HttpContext => serveStatic(ctx, uiDir, s) })
     }
     return server
 }

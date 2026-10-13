@@ -67,3 +67,13 @@
 - 踩坑：`type` 是仓颉保留字，事件字段改用 `kind`（JSON 键仍是 `type`）；`JsonArray.size` 是方法而非属性；`Int64.parse` 需 `import std.convert.*`。
 - 接口契约文档补充 agent / session / artifact 接口、会话事件表、引用自检说明与产物目录约定。
 - 剩余：Electron 外壳与极简界面、绿色压缩包产物。
+
+## 2026-10-14T02:18:12+08:00 界面与外壳完成，绿色压缩包产出并验证可启动
+
+- 架构决策：界面由仓颉内核以静态资源托管，Electron 只负责拉起内核、读端口文件、把窗口指向 `http://127.0.0.1:<port>/`。好处是界面与接口同源、无需处理 CORS、也没有前端构建步骤。静态资源放行白名单（index.html / app.js / style.css），其余 404，避免路径穿越。
+- 新增 `--ui-dir` 启动参数；内核增加 `/`、`/index.html`、`/app.js`、`/style.css` 四个静态路由与内容类型推断。
+- 新增 `shell/`：`package.json`、`main.js`（拉起内核、端口文件握手、失败弹窗、退出时回收子进程、`--smoke` 校验模式）、`renderer/`（index.html、app.js、style.css）。界面极简三页：知识库、对话与产物、设置；无框架、无构建。
+- 新增 `tools/ui-check.ps1`（静态资源与白名单校验）与 `tools/package-smoke.ps1`（打包后启动校验）。
+- 实测：内核托管界面 `/`、`/index.html`、`/app.js`、`/style.css` 均 200，`/nope.js` 404；Electron 44.7.1 开发态冒烟返回 `TITLE=ITN-Desktop / STATUS=内核已连接 · 1.2.0 / PANELS=3 / RESULT=OK`；打包后 `dist/ITN-Desktop/ITN-Desktop.exe --smoke` 同样返回上述结果，绿色压缩包 161.6 MB。
+- 打包后的 Electron 是 GUI 子系统程序，控制台看不到 stdout，因此冒烟结果同时写入 `%TEMP%\itn-desktop-smoke-result.txt`。
+- Electron 经 npmmirror 镜像安装（`ELECTRON_MIRROR` + `--registry=https://registry.npmmirror.com`），版本 44.7.1。

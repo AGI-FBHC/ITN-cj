@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ITN-Desktop</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <span class="brand">ITN-Desktop</span>
+  <nav>
+    <button class="tab" data-tab="kb">知识库</button>
+    <button class="tab" data-tab="chat">对话与产物</button>
+    <button class="tab" data-tab="settings">设置</button>
+  </nav>
+  <span id="status" class="status">连接中…</span>
+</header>
+
+<main>
+  <section id="panel-kb" class="panel">
+    <h2>知识库</h2>
+    <p class="hint">指定一个本地目录，应用会递归读取其中的 Markdown 与纯文本文件。</p>
+    <div class="row">
+      <input id="kb-id" placeholder="标识，例如 course">
+      <input id="kb-name" placeholder="显示名称">
+    </div>
+    <div class="row">
+      <input id="kb-dir" placeholder="目录绝对路径，例如 D:\\资料\\课程">
+      <button id="kb-add">保存</button>
+      <button id="kb-build">建立索引</button>
+    </div>
+    <table id="kb-list"><tbody></tbody></table>
+  </section>
+
+  <section id="panel-chat" class="panel hidden">
+    <h2>对话与产物</h2>
+    <div class="row">
+      <select id="chat-kb"></select>
+      <input id="chat-q" placeholder="就你的资料提一个问题">
+      <button id="chat-ask">提问</button>
+      <button id="chat-lecture">生成讲义</button>
+      <button id="chat-quiz">生成练习</button>
+    </div>
+    <div id="chat-out" class="output"></div>
+    <div id="chat-cites" class="cites"></div>
+  </section>
+
+  <section id="panel-settings" class="panel hidden">
+    <h2>模型设置</h2>
+    <p class="hint">统一使用 OpenAI 兼容接口。密钥只保存在本机。</p>
+    <div class="row">
+      <input id="m-id" placeholder="标识，例如 deepseek">
+      <input id="m-name" placeholder="显示名称">
+    </div>
+    <div class="row">
+      <input id="m-base" placeholder="Base URL，例如 https://api.deepseek.com/v1">
+      <input id="m-key" placeholder="API Key" type="password">
+    </div>
+    <div class="row">
+      <input id="m-model" placeholder="对话模型">
+      <input id="m-vision" placeholder="多模态模型（可留空）">
+      <input id="m-embed" placeholder="向量模型（可留空）">
+      <button id="m-save">保存模型</button>
+    </div>
+    <table id="m-list"><tbody></tbody></table>
+    <h3>用途绑定</h3>
+    <div class="row">
+      <label>对话 <select id="role-chat"></select></label>
+      <label>向量 <select id="role-embed"></select></label>
+      <label>切片与图片描述 <select id="role-chunk"></select></label>
+      <button id="role-save">保存绑定</button>
+    </div>
+  </section>
+</main>
+
+<footer id="footer"></footer>
+<script src="/app.js"></script>
+</body>
+</html>

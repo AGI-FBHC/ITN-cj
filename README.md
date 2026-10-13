@@ -38,4 +38,18 @@
 .\tools\smoke.ps1
 ```
 
-测试脚本跑的是 `dist/core` 里的打包产物，而不是 `core/target` 下的裸可执行文件——后者需要工具链 PATH 才能启动。技术验证结论见 [docs/04-技术验证.md](docs/04-技术验证.md)。
+测试脚本跑的是 `dist/core` 里的打包产物，而不是 `core/target` 下的裸可执行文件——后者需要工具链 PATH 才能启动。
+
+## 运行桌面应用
+
+```powershell
+# 开发态：直接拉起 Electron，它会自行启动仓颉内核
+cd shell
+npm install
+npx electron .
+
+# 打包成绿色压缩包（目标机器无需安装仓颉或 Node）
+.\scripts\package-app.ps1
+```
+
+产物在 `dist/ITN-Desktop/` 与 `dist/ITN-Desktop-win-x64.zip`，约 162 MB。界面由仓颉内核托管，Electron 只负责窗口。技术验证结论见 [docs/04-技术验证.md](docs/04-技术验证.md)。

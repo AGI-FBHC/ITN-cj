@@ -1,0 +1,73 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 14px/1.7 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  color: #1f2933;
+  background: #fbfcfd;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+header {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 12px 20px;
+  border-bottom: 1px solid #e6eaee;
+  background: #fff;
+}
+.brand { font-weight: 600; letter-spacing: .3px; }
+nav { display: flex; gap: 4px; }
+.tab {
+  border: 0;
+  background: transparent;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #52606d;
+  font-size: 14px;
+}
+.tab:hover { background: #f1f4f7; }
+.tab.active { background: #e8eef6; color: #1f2933; font-weight: 600; }
+.status { margin-left: auto; color: #7b8794; font-size: 12px; }
+main { flex: 1; overflow: auto; padding: 24px 28px; }
+.panel.hidden { display: none; }
+h2 { font-size: 17px; margin: 0 0 6px; }
+h3 { font-size: 14px; margin: 22px 0 8px; }
+.hint { color: #7b8794; margin: 0 0 16px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; align-items: center; }
+input, select {
+  padding: 7px 10px;
+  border: 1px solid #d5dbe1;
+  border-radius: 6px;
+  font: inherit;
+  background: #fff;
+  min-width: 160px;
+}
+button {
+  padding: 7px 14px;
+  border: 1px solid #d5dbe1;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+}
+button:hover { background: #f1f4f7; }
+button.primary { background: #2f5d8c; border-color: #2f5d8c; color: #fff; }
+button.primary:hover { background: #274d75; }
+table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #eef1f4; vertical-align: top; }
+th { color: #7b8794; font-weight: 500; font-size: 12px; }
+.output {
+  white-space: pre-wrap;
+  background: #fff;
+  border: 1px solid #e6eaee;
+  border-radius: 8px;
+  padding: 16px;
+  min-height: 80px;
+  margin-top: 6px;
+}
+.cites { margin-top: 12px; color: #52606d; font-size: 13px; }
+.cites li { margin-bottom: 2px; }
+footer { padding: 8px 20px; border-top: 1px solid #e6eaee; color: #7b8794; font-size: 12px; background: #fff; min-height: 30px; }
+.tag { display: inline-block; padding: 1px 7px; border-radius: 4px; background: #eef2f6; color: #52606d; font-size: 12px; }
