@@ -430,7 +430,8 @@ export default function SlidePlayer() {
     return String(question?.id ?? question?.questionId ?? '');
   };
   const currentQuestionId = slideQuestionId(slide);
-  const currentAnswered = currentQuestionId !== '' && quizAnsweredIds.has(currentQuestionId);
+  /* 已答判定要同时看两处：服务端回读（重进页面）与当前卡片刚提交的作答（回答后尚未回读）。 */
+  const currentAnswered = (currentQuestionId !== '' && quizAnsweredIds.has(currentQuestionId)) || quizInteraction.submitted;
   const quizPosition = currentAnswered ? currentIndex + 1 : quizAnsweredIds.size + 1;
   const resumeAppliedRef = useRef(false);
   useEffect(() => {
@@ -626,7 +627,7 @@ export default function SlidePlayer() {
                     ? '定制已取消'
                     : data?.status === 'generating'
                   ? (isQuiz
-                      ? `第 ${slides.length ? quizPosition : 0}/${expected || slides.length || 0} 题 · ${currentAnswered ? '已作答（可查看解析）' : '等待作答（作答后自动出下一题）'}`
+                      ? `第 ${slides.length ? quizPosition : 0}/${expected || slides.length || 0} 题 · ${currentAnswered ? '已作答（可查看解析）' : '等待作答（作答后自动生成下一题）'}`
                       : `内容生成中 · 已就绪 ${slides.length}/${expected || slides.length || 0} 页`)
                   : isQuiz
                     ? `第 ${slides.length ? quizPosition : 0}/${expected || slides.length || 0} 题`
