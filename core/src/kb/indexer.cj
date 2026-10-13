@@ -206,6 +206,7 @@ public func captionChunks(rootDir: String, idx: KbIndex, client: LlmClient, visi
         if (c.images.size == 0 || c.caption.size > 0) {
             continue
         }
+        c.captionError = ""
         let rel = c.images[0]
         if (!isSafeRel(rel)) {
             continue
@@ -222,7 +223,9 @@ public func captionChunks(rootDir: String, idx: KbIndex, client: LlmClient, visi
             c.caption = client.chatVision(visionModel, prompt, dataUrl)
             done = done + 1
         } catch (e: Exception) {
+            // 不静默吞掉：把失败原因写进描述字段，便于用户与排查者看到
             c.caption = ""
+            c.captionError = e.message
         }
     }
     return done

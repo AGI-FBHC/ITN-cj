@@ -79,7 +79,15 @@ public class LlmClient {
         // 缺少 SNI 时多数云厂商会直接以 internal error 拒绝握手。
         var tls = TlsClientConfig()
         tls.serverName = Some(hostOf(url))
-        let client = ClientBuilder().tlsConfig(tls).build()
+        // 默认走 HTTP/2，长生成请求在部分服务端会被提前断开；实测 HTTP/1.1 稳定。
+        tls.supportedAlpnProtocols = ["http/1.1"]
+        // 默认读写超时只有十几秒，真实模型写一整节内容远超这个时间；
+        // mock 是瞬时返回的，这个差异只有在真实模型上才会暴露。
+        let client = ClientBuilder()
+            .tlsConfig(tls)
+            .readTimeout(Duration.minute * 10)
+            .writeTimeout(Duration.minute * 10)
+            .build()
         try {
             let req = HttpRequestBuilder()
                 .method("POST")
@@ -88,6 +96,7 @@ public class LlmClient {
                 .header("Authorization", "Bearer " + cfg.apiKey)
                 .header("Accept", "application/json")
                 .body(payload.toString())
+                .readTimeout(Duration.minute * 10)
                 .build()
             let resp = client.send(req)
             let text = readAllString(resp.body)
@@ -100,6 +109,47 @@ public class LlmClient {
             throw e
         } catch (e: Exception) {
             throw LlmException("请求模型失败：" + e.message)
+        } finally {
+            client.close()
+        }
+    }
+
+    /** 流式请求：逐块读取 SSE，累积正文后返回。
+        长生成如果用非流式，服务端不刷新响应体会让单次读阻塞过久而被断开；
+        改流式后数据持续到达，读不再长时间阻塞。 */
+    func postStream(path: String, payload: JsonValue): String {
+        let url = endpoint(path)
+        var tls = TlsClientConfig()
+        tls.serverName = Some(hostOf(url))
+        tls.supportedAlpnProtocols = ["http/1.1"]
+        let client = ClientBuilder()
+            .tlsConfig(tls)
+            .readTimeout(Duration.minute * 10)
+            .writeTimeout(Duration.minute * 10)
+            .build()
+        var stage = "构造请求"
+        try {
+            let req = HttpRequestBuilder()
+                .method("POST")
+                .url(url)
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + cfg.apiKey)
+                .header("Accept", "text/event-stream")
+                .body(payload.toString())
+                .build()
+            stage = "发送请求"
+            let resp = client.send(req)
+            stage = "读取状态"
+            let st = resp.status
+            if (st != 200) {
+                throw LlmException("模型接口返回 " + st.toString() + "：" + readAllString(resp.body))
+            }
+            stage = "读取响应体"
+            return readSse(resp.body)
+        } catch (e: LlmException) {
+            throw e
+        } catch (e: Exception) {
+            throw LlmException("请求模型失败（" + stage + " 阶段）：" + e.message)
         } finally {
             client.close()
         }
@@ -133,10 +183,10 @@ public class LlmClient {
         payload.put("model", JsonString(modelName()))
         payload.put("messages", messages)
         payload.put("temperature", JsonFloat(0.3))
-        let result = postJson("/chat/completions", payload)
-        let content = pickStr(result, ["choices", "0", "message", "content"])
+        payload.put("stream", JsonBool(true))
+        let content = postStream("/chat/completions", payload)
         if (content.size == 0) {
-            throw LlmException("模型返回内容为空：" + result.toString())
+            throw LlmException("模型返回内容为空")
         }
         return content
     }
@@ -162,8 +212,7 @@ public class LlmClient {
         let payload = JsonObject()
         payload.put("model", JsonString(model))
         payload.put("messages", msgs)
-        let result = postJson("/chat/completions", payload)
-        return pickStr(result, ["choices", "0", "message", "content"])
+        return postStream("/chat/completions", payload)
     }
 
     /** 向量化。返回与输入等长的向量数组。 */
@@ -225,6 +274,72 @@ public class LlmClient {
     public func selfTest(): String {
         let reply = chat("你是一个连通性测试助手。", "只回复两个字：可用")
         return reply
+    }
+}
+
+// ---------- 流式响应解析 ----------
+
+func handleSseLine(line: String, out: StringBuilder): Unit {
+    if (!hasPrefix(line, "data:")) {
+        return
+    }
+    let b = line.toArray()
+    let data = trimStr(String.fromUtf8(b[5..b.size]))
+    if (data.size == 0 || data == "[DONE]") {
+        return
+    }
+    try {
+        let v = JsonValue.fromStr(data)
+        // 多数服务端用 delta.content 增量；也有服务端对流式请求仍回整体 message.content
+        var piece = pickStr(v, ["choices", "0", "delta", "content"])
+        if (piece.size == 0) {
+            piece = pickStr(v, ["choices", "0", "message", "content"])
+        }
+        out.append(piece)
+    } catch (e: Exception) {
+        // 单行解析失败不影响整体
+        ()
+    }
+}
+
+func readSse(input: InputStream): String {
+    let out = StringBuilder()
+    let raw = StringBuilder()
+    let buf = Array<UInt8>(4096, repeat: 0)
+    var pending = ArrayList<UInt8>()
+    while (true) {
+        let n = input.read(buf)
+        if (n <= 0) {
+            break
+        }
+        raw.append(String.fromUtf8(buf[0..n]))
+        var i = 0
+        while (i < n) {
+            if (buf[i] == 10) {
+                handleSseLine(trimStr(String.fromUtf8(pending.toArray())), out)
+                pending = ArrayList<UInt8>()
+            } else {
+                pending.add(buf[i])
+            }
+            i = i + 1
+        }
+    }
+    if (pending.size > 0) {
+        handleSseLine(trimStr(String.fromUtf8(pending.toArray())), out)
+    }
+    if (out.toString().size > 0) {
+        return out.toString()
+    }
+    // 服务端忽略了 stream 参数，直接回了完整 JSON
+    try {
+        let v = JsonValue.fromStr(trimStr(raw.toString()))
+        var content = pickStr(v, ["choices", "0", "message", "content"])
+        if (content.size == 0) {
+            content = pickStr(v, ["choices", "0", "delta", "content"])
+        }
+        return content
+    } catch (e: Exception) {
+        return out.toString()
     }
 }
 

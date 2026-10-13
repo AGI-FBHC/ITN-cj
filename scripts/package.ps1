@@ -1,4 +1,8 @@
 # 产出可独立分发的内核目录（目标机器无需安装仓颉）
+# 注意：目标文件被占用时 Copy-Item 会失败。这里强制出错即停，
+# 并在拷贝后校验哈希，避免出现「打包成功但其实是旧产物」的静默失败。
+$ErrorActionPreference = 'Stop'
+
 . "$PSScriptRoot\env.ps1"
 
 $repo = Resolve-Path "$PSScriptRoot\.."
@@ -18,7 +22,15 @@ $artifacts = @(
 
 foreach ($a in $artifacts) {
     if (-not (Test-Path -LiteralPath $a.from)) { throw "missing artifact: $($a.from)" }
-    Copy-Item -LiteralPath $a.from -Destination (Join-Path $dist $a.to) -Force
+    $dest = Join-Path $dist $a.to
+    try {
+        Copy-Item -LiteralPath $a.from -Destination $dest -Force
+    } catch {
+        throw "无法写入 $dest —— 目标文件可能被正在运行的内核或桌面应用占用，请先关闭它们。原始错误：$($_.Exception.Message)"
+    }
+    $srcHash = (Get-FileHash -LiteralPath $a.from -Algorithm SHA256).Hash
+    $dstHash = (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash
+    if ($srcHash -ne $dstHash) { throw "拷贝后哈希不一致：$dest" }
 }
 
 Write-Output "packaged to $dist"

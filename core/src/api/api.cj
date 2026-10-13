@@ -174,8 +174,12 @@ public class Api {
                     let id = strOf(b, "id")
                     match (store.load().findModel(id)) {
                         case Some(cfg) =>
-                            LlmClient(cfg).selfTest()
-                            ok(ctx, JsonString("连通"))
+                            try {
+                                LlmClient(cfg).selfTest()
+                                ok(ctx, JsonString("连通"))
+                            } catch (e: Exception) {
+                                fail(ctx, 502, "连接失败：" + e.message)
+                            }
                         case None => fail(ctx, 404, "找不到模型配置：" + id)
                     }
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
@@ -195,11 +199,16 @@ public class Api {
                     }
                     match (s.findModel(effectiveId)) {
                         case Some(cfg) =>
-                            let reply = LlmClient(cfg).chat(strOf(b, "system"), strOf(b, "user"))
-                            let o = JsonObject()
-                            o.put("reply", JsonString(reply))
-                            o.put("modelId", JsonString(effectiveId))
-                            ok(ctx, o)
+                            // 不加捕获会让异常直接变成不透明的 500，用户看不到原因
+                            try {
+                                let reply = LlmClient(cfg).chat(strOf(b, "system"), strOf(b, "user"))
+                                let o = JsonObject()
+                                o.put("reply", JsonString(reply))
+                                o.put("modelId", JsonString(effectiveId))
+                                ok(ctx, o)
+                            } catch (e: Exception) {
+                                fail(ctx, 502, "模型调用失败：" + e.message)
+                            }
                         case None => fail(ctx, 404, "找不到模型配置：" + effectiveId)
                     }
                 case None => fail(ctx, 400, "请求体不是合法 JSON")

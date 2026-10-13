@@ -23,7 +23,7 @@ public func writeText(path: String, text: String): Unit {
     File.writeTo(path, text.toArray())
 }
 
-func hasPrefix(s: String, prefix: String): Bool {
+public func hasPrefix(s: String, prefix: String): Bool {
     let sb = s.toArray()
     let pb = prefix.toArray()
     if (pb.size > sb.size) {

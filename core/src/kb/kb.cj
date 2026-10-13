@@ -74,6 +74,7 @@ public class KbChunk {
     public var text: String = ""
     public var images: ArrayList<String> = ArrayList<String>()
     public var caption: String = ""
+    public var captionError: String = ""
     public var vector: ArrayList<Float64> = ArrayList<Float64>()
 
     public init() {}
@@ -94,6 +95,7 @@ public class KbChunk {
         o.put("ordinal", JsonInt(ordinal))
         o.put("text", JsonString(text))
         o.put("caption", JsonString(caption))
+        o.put("captionError", JsonString(captionError))
         let imgs = JsonArray()
         for (i in images) { imgs.add(JsonString(i)) }
         o.put("images", imgs)
@@ -113,6 +115,7 @@ public class KbChunk {
                 c.ordinal = intOf(o, "ordinal")
                 c.text = strOf(o, "text")
                 c.caption = strOf(o, "caption")
+                c.captionError = strOf(o, "captionError")
                 c.images = strArrayOf(o, "images")
                 match (o.get("vector")) {
                     case Some(vv) =>
