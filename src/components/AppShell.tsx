@@ -41,7 +41,7 @@ import { useNotes } from '@/context/NotesContext';
 import { useGrowth } from '@/context/GrowthContext';
 import { api, type OrganizationBranding } from '@/lib/api';
 import { useCachedData } from '@/hooks/useCachedData';
-import { kbSlices } from '@/data/kbSlices';
+import type { RagChunkSummary } from '@/lib/api';
 import { resources } from '@/data/resources';
 import KBDrawer from './KBDrawer';
 import AgentDock from './agent/AgentDock';
@@ -153,6 +153,22 @@ function SideNavRow({ item, collapsed }: { item: NavItem; collapsed: boolean }) 
 export default function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  /* ⌘K 的知识切片结果改为真实检索（此前取硬编码的旧赛题切片，见 BUG-007）。 */
+  const [kbQuery, setKbQuery] = useState('');
+  const [kbHits, setKbHits] = useState<RagChunkSummary[]>([]);
+/* ⌘K 知识切片：防抖调用 /api/v1/rag/chunks/search，避免每次按键都打慢接口。 */
+useEffect(() => {
+  const text = kbQuery.trim();
+  if (!searchOpen || text.length < 2) { setKbHits([]); return; }
+  let alive = true;
+  const timer = window.setTimeout(() => {
+    void api.searchRagChunks(text, 0, 6)
+  .then((page) => { if (alive) setKbHits(page.items ?? []); })
+  .catch(() => { if (alive) setKbHits([]); });
+  }, 400);
+  return () => { alive = false; window.clearTimeout(timer); };
+}, [kbQuery, searchOpen]);
+
   const [drawerKb, setDrawerKb] = useState<string | null>(null);
   const {
     currentLearner,
@@ -485,24 +501,28 @@ export default function AppShell() {
 
       {/* ⌘K 检索弹层（两种布局共用） */}
       <CommandDialog open={searchOpen} onOpenChange={setSearchOpen}>
-        <CommandInput placeholder="检索知识库 / 资源 / 标准号…" />
+        <CommandInput placeholder="检索知识库 / 资源 / 标准号…" value={kbQuery} onValueChange={setKbQuery} />
         <CommandList>
           <CommandEmpty>未找到匹配结果</CommandEmpty>
           <CommandGroup heading="知识切片">
-            {kbSlices.slice(0, 8).map((k) => (
+            {kbHits.map((k) => (
               <CommandItem
                 key={k.id}
-                value={`${k.id} ${k.title} ${k.standardNo ?? ''}`}
+                value={`${kbQuery} ${k.chunkCode} ${k.sectionTitle ?? ''} ${k.titlePath ?? ''}`}
                 onSelect={() => {
                   setSearchOpen(false);
-                  setDrawerKb(k.id);
+                  const q = k.sectionTitle || k.titlePath || k.chunkCode || '';
+                  navigate(`/knowledge?q=${encodeURIComponent(q)}`);
                 }}
               >
                 <Database size={14} className="mr-2 text-brand" />
-                <span className="font-mono text-[12px] text-brand">{k.id}</span>
-                <span className="ml-2 truncate">{k.title}</span>
+                <span className="font-mono text-[12px] text-brand">{k.chunkCode}</span>
+                <span className="ml-2 truncate">{k.sectionTitle || k.titlePath || '未命名切片'}</span>
               </CommandItem>
             ))}
+            {kbQuery.trim().length >= 2 && kbHits.length === 0 && (
+              <div className="px-3 py-2 text-[12px] text-ink-muted">没有匹配的知识切片</div>
+            )}
           </CommandGroup>
           <CommandGroup heading="生成资源">
             {resources.map((r) => (
