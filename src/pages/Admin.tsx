@@ -504,6 +504,16 @@ export default function Admin() {
     ]);
   }, [learnersQ, domainsQ, coreQ, predealQ]);
   const averageMastery = useMemo(() => (learners.length ? Math.round(learners.reduce((sum, item) => sum + (item.overallMastery || 0), 0) / learners.length) : 0), [learners]);
+  /* 模块接入状态与顶部“服务正常”必须一致（BUG-015）。 */
+  const moduleStatus: [string, boolean, string][] = [
+    ['学习者管理', true, '已接入'],
+    ['知识库读取', true, 'Spring 数据接口'],
+    ['知识质量管理', coreQ.data === true, 'KnowledgeCore'],
+    ['网络审核', coreQ.data === true, 'KnowledgeCore'],
+    ['文档切片入库', predealQ.data === true, '文档切片入库 v2'],
+  ];
+  const allModulesOk = moduleStatus.every(([, ok]) => ok);
+
   return (
     <div className="lf-fade-in min-h-screen font-sans text-ink lg:h-screen lg:overflow-hidden">
       <aside className="lf-sidebar fixed inset-y-0 left-0 z-40 hidden w-60 flex-col lg:flex">
@@ -547,7 +557,7 @@ export default function Admin() {
             <h1 className="mt-0.5 text-base font-bold text-ink">{title}</h1>
           </div>
           <div className="flex items-center gap-2.5">
-            <StatusTag ok={!error}>{error ? "接口异常" : "服务正常"}</StatusTag>
+            <StatusTag ok={!error && allModulesOk}>{error ? "接口异常" : allModulesOk ? "服务正常" : "部分模块未连接"}</StatusTag>
             <button type="button" onClick={() => void load()} disabled={loading} className="lf-page-pill">
               <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
               <span className="hidden sm:inline">刷新</span>
@@ -581,13 +591,7 @@ export default function Admin() {
                 </div>
                 <table className="w-full text-sm">
                   <tbody>
-                    {([
-                      ["学习者管理", true, "已接入"],
-                      ["知识库读取", true, "Spring 数据接口"],
-                      ["知识质量管理", coreQ.data === true, "KnowledgeCore"],
-                      ["网络审核", coreQ.data === true, "KnowledgeCore"],
-                      ["文档切片入库", predealQ.data === true, "文档切片入库 v2"],
-                    ] as [string, boolean, string][]).map(([label, ok, detail]) => (
+                    {moduleStatus.map(([label, ok, detail]) => (
                       <tr key={label}>
                         <td className="px-5 py-3.5 font-semibold text-ink">{label}</td>
                         <td className="px-5 py-3.5">
