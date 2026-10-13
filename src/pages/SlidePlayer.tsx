@@ -439,7 +439,12 @@ export default function SlidePlayer() {
     if (data?.resourceType !== 'quiz' || quizAnsweredIds.size === 0 || slides.length === 0) return;
     resumeAppliedRef.current = true;
     const pending = slides.findIndex((item) => item.type === 'question' && !quizAnsweredIds.has(slideQuestionId(item)));
-    if (pending > 0) setCurrentIndex(pending);
+    if (pending > 0) {
+      setCurrentIndex(pending);
+    } else if (pending === -1) {
+      /* 全部答完：停在最后一题（"完成学习"入口在末页），而不是回到第 1 题 */
+      setCurrentIndex(Math.max(0, slides.length - 1));
+    }
   }, [data?.resourceType, quizAnsweredIds, slides]);
   useEffect(() => {
     if (!data?.resourceId) return;
