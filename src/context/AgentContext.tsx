@@ -143,6 +143,56 @@ function backendToAgentMessages(list: { id: string; agentId?: string | null; kin
     });
 }
 
+/** 归一化消息文本：与 ChatStream 渲染时一致地去掉隐藏的页面/跨会话前缀，便于"本地乐观消息"与"后端回读消息"配对。 */
+function normalizeDockMessageText(text: string): string {
+  return String(text ?? '')
+    .replace(/^\s*\[(?:当前页面|跨会话上下文)[：:][^\]]*\]\s*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function dockMessageKey(m: AgentMessage): string {
+  const text = 'text' in m ? m.text : 'stem' in m ? m.stem : '';
+  return `${m.kind}::${normalizeDockMessageText(String(text))}`;
+}
+
+/**
+ * 合并"本地乐观消息"与"后端回读消息"。
+ * 本地消息 id 是 m-…，后端回读消息 id 是 agent-<serverId>，两套 id 永远不相等，
+ * 只按 id 去重会让刷新后整段对话重复一遍（BUG-026）。
+ * 这里按「类型 + 归一化文本」做一对一配对：本地已有同文消息就不再补入历史；
+ * 同时清掉历史上已经产生的重复回读副本（只针对 agent- 前缀的后端消息，不动用户本地消息）。
+ */
+function mergeRemoteMessages(local: AgentMessage[], remote: AgentMessage[]): AgentMessage[] {
+  const seenIds = new Set<string>();
+  const seenKeys = new Set<string>();
+  const merged: AgentMessage[] = [];
+  local.forEach((m) => {
+    if (seenIds.has(m.id)) return;
+    const key = dockMessageKey(m);
+    if (m.id.startsWith('agent-') && seenKeys.has(key)) return;
+    seenIds.add(m.id);
+    seenKeys.add(key);
+    merged.push(m);
+  });
+  if (remote.length) {
+    const pending = new Map<string, number>();
+    merged.forEach((m) => pending.set(dockMessageKey(m), (pending.get(dockMessageKey(m)) ?? 0) + 1));
+    remote.forEach((m) => {
+      if (seenIds.has(m.id)) return;
+      const key = dockMessageKey(m);
+      const left = pending.get(key) ?? 0;
+      if (left > 0) {
+        pending.set(key, left - 1);
+        return;
+      }
+      seenIds.add(m.id);
+      pending.set(key, 1);
+      merged.push(m);
+    });
+  }
+  return merged;
+}
+
 async function hydrateAgentImages(messages: AgentMessage[]): Promise<AgentMessage[]> {
   const result = [...messages];
   for (let i = 0; i < result.length; i += 1) {
@@ -315,10 +365,10 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       const hydrated = await hydrateAgentImages(remote);
       if (cancelled) return;
       setMsgsAll((prev) => {
-        const list = [...(prev[currentLearnerId] ?? [])];
-        const ids = new Set(list.map((m) => m.id));
-        const add = hydrated.filter((m) => !ids.has(m.id));
-        return add.length ? { ...prev, [currentLearnerId]: [...list, ...add] } : prev;
+        const before = prev[currentLearnerId] ?? [];
+        const merged = mergeRemoteMessages(before, hydrated);
+        if (merged.length === before.length && merged.every((m, i) => m.id === before[i].id)) return prev;
+        return { ...prev, [currentLearnerId]: merged };
       });
     }).catch(() => undefined);
     return () => { cancelled = true; };
