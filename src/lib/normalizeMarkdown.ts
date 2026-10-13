@@ -11,6 +11,20 @@ export function normalizeMarkdownLists(text: string): string {
   );
   value = value.replace(/([^\n])(\s*)([-•*]\s+)/g, '$1\n\n$2$3');
   value = value.replace(/^[ \t]*[-•*][ \t]*$/gm, '');
+  /* 模型偶发抖动会产生“星号不成对”的强调标记（如 **完成本讲后，你将能够：*），
+     CommonMark 于是把多出来的那个 * 当普通字符输出，学习者会看到裸星号。
+     这里按行把行首的强调标记配平：奇数个星号时降一级（**… → *… → 去掉），
+     非行首的 * 一律不动，避免误伤 “2*3” 这类正文。 */
+  value = value
+    .split('\n')
+    .map((line) => {
+      const stars = (line.match(/\*/g) || []).length;
+      if (stars % 2 === 0) return line;
+      if (/^[ \t]*\*\*[^\s*]/.test(line)) return line.replace(/^([ \t]*)\*\*/, '$1*');
+      if (/^[ \t]*\*(?![\s*])/.test(line)) return line.replace(/^([ \t]*)\*/, '$1');
+      return line;
+    })
+    .join('\n');
   value = value.replace(/\n{3,}/g, '\n\n');
   return value;
 }
