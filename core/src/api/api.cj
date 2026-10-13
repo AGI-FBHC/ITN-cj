@@ -6,6 +6,9 @@ import stdx.encoding.json.*
 import itn_desktop_core.store.*
 import itn_desktop_core.llm.*
 import itn_desktop_core.kb.*
+import itn_desktop_core.agent.*
+import itn_desktop_core.session.*
+import std.fs.*
 import itn_desktop_core.util.*
 
 public class Api {
@@ -379,6 +382,128 @@ public class Api {
             return
         }
 
+
+        // ---------- Agent ----------
+
+        if (path == "/api/agent/ask" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let question = strOf(b, "question")
+                    if (question.size == 0) {
+                        fail(ctx, 400, "缺少 question")
+                        return
+                    }
+                    let ag = Agent(store)
+                    try {
+                        ok(ctx, ag.ask(strOf(b, "kbId"), question, strOf(b, "sessionId")))
+                    } catch (e: Exception) {
+                        fail(ctx, 500, "问答失败：" + e.message)
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/agent/lecture" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let topic = strOf(b, "topic")
+                    if (topic.size == 0) {
+                        fail(ctx, 400, "缺少 topic")
+                        return
+                    }
+                    let ag = Agent(store)
+                    try {
+                        ok(ctx, ag.lecture(strOf(b, "kbId"), topic, strOf(b, "sessionId")))
+                    } catch (e: Exception) {
+                        fail(ctx, 500, "生成讲义失败：" + e.message)
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/agent/quiz" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let topic = strOf(b, "topic")
+                    if (topic.size == 0) {
+                        fail(ctx, 400, "缺少 topic")
+                        return
+                    }
+                    var count: Int64 = 5
+                    let reqCount = intOf(b, "count")
+                    if (reqCount > 0) { count = reqCount }
+                    let ag = Agent(store)
+                    try {
+                        ok(ctx, ag.quiz(strOf(b, "kbId"), topic, count, strOf(b, "sessionId")))
+                    } catch (e: Exception) {
+                        fail(ctx, 500, "生成练习失败：" + e.message)
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        // ---------- 会话与产物 ----------
+
+        if (path == "/api/sessions/list" && method == "POST") {
+            let ss = SessionStore(store.dataDir)
+            let arr = JsonArray()
+            for (sm in ss.list()) {
+                arr.add(sm)
+            }
+            let o = JsonObject()
+            o.put("sessions", arr)
+            ok(ctx, o)
+            return
+        }
+
+        if (path == "/api/sessions/events" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let id = strOf(b, "sessionId")
+                    if (id.size == 0) {
+                        fail(ctx, 400, "缺少 sessionId")
+                        return
+                    }
+                    let ss = SessionStore(store.dataDir)
+                    let arr = JsonArray()
+                    for (ev in ss.events(id)) {
+                        arr.add(ev)
+                    }
+                    let o = JsonObject()
+                    o.put("events", arr)
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/artifacts/list" && method == "POST") {
+            let dir = store.dataDir + Path.Separator + "artifacts"
+            ensureDir(dir)
+            let arr = JsonArray()
+            try {
+                Directory.walk(Path(dir), { fi: FileInfo =>
+                    if (!fi.isDirectory()) {
+                        let o = JsonObject()
+                        o.put("name", JsonString(fi.name))
+                        o.put("path", JsonString(dir + Path.Separator + fi.name))
+                        o.put("size", JsonInt(fi.size))
+                        arr.add(o)
+                    }
+                    true
+                })
+            } catch (e: Exception) {
+                ()
+            }
+            let o = JsonObject()
+            o.put("artifacts", arr)
+            ok(ctx, o)
+            return
+        }
+
         fail(ctx, 404, "未知接口：" + method + " " + path)
     }
 }
@@ -399,7 +524,13 @@ public func buildServer(dataDir: String): Server {
         "/api/kb/delete",
         "/api/kb/build",
         "/api/kb/stats",
-        "/api/kb/search"
+        "/api/kb/search",
+        "/api/agent/ask",
+        "/api/agent/lecture",
+        "/api/agent/quiz",
+        "/api/sessions/list",
+        "/api/sessions/events",
+        "/api/artifacts/list"
     ]
     for (r in routes) {
         server.distributor.register(r, { ctx: HttpContext => api.handle(ctx) })

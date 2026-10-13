@@ -4,6 +4,7 @@ import std.fs.*
 import std.env.*
 import std.collection.*
 import std.io.*
+import stdx.encoding.json.*
 
 public func ensureDir(dir: String): Unit {
     if (!exists(dir)) {
@@ -74,4 +75,115 @@ public func defaultDataDir(): String {
         case Some(v) => v + "\\ITN-Desktop"
         case None => "."
     }
+}
+
+// ---------- JSON 取值辅助 ----------
+
+public func strValue(v: JsonValue): String {
+    match (v) {
+        case s: JsonString => s.getValue()
+        case _ => ""
+    }
+}
+
+public func strOf(o: JsonObject, key: String): String {
+    match (o.get(key)) {
+        case Some(v) => strValue(v)
+        case None => ""
+    }
+}
+
+public func intOf(o: JsonObject, key: String): Int64 {
+    match (o.get(key)) {
+        case Some(v) =>
+            match (v) {
+                case j: JsonInt => j.getValue()
+                case _ => 0
+            }
+        case None => 0
+    }
+}
+
+public func floatValue(v: JsonValue): Float64 {
+    match (v) {
+        case f: JsonFloat => f.getValue()
+        case i: JsonInt => Float64(i.getValue())
+        case _ => 0.0
+    }
+}
+
+public func objOf(v: JsonValue): ?JsonObject {
+    match (v) {
+        case o: JsonObject => Some(o)
+        case _ => None
+    }
+}
+
+public func arrOf(v: JsonValue): ?JsonArray {
+    match (v) {
+        case a: JsonArray => Some(a)
+        case _ => None
+    }
+}
+
+public func strArrayOf(o: JsonObject, key: String): ArrayList<String> {
+    let out = ArrayList<String>()
+    match (o.get(key)) {
+        case Some(v) =>
+            match (v) {
+                case a: JsonArray =>
+                    var i = 0
+                    while (i < a.size()) {
+                        out.add(strValue(a[i]))
+                        i = i + 1
+                    }
+                case _ => ()
+            }
+        case None => ()
+    }
+    return out
+}
+
+// ---------- 文本辅助 ----------
+
+public func splitLines(s: String): ArrayList<String> {
+    let out = ArrayList<String>()
+    let bytes = s.toArray()
+    var start = 0
+    var i = 0
+    while (i < bytes.size) {
+        if (bytes[i] == 10) {
+            var e = i
+            if (e > start && bytes[e - 1] == 13) {
+                e = e - 1
+            }
+            out.add(String.fromUtf8(bytes[start..e]))
+            start = i + 1
+        }
+        i = i + 1
+    }
+    if (start < bytes.size) {
+        out.add(String.fromUtf8(bytes[start..bytes.size]))
+    }
+    return out
+}
+
+public func trimStr(s: String): String {
+    let b = s.toArray()
+    var start = 0
+    var end = b.size
+    while (start < end && (b[start] == 32 || b[start] == 9 || b[start] == 13 || b[start] == 10)) { start = start + 1 }
+    while (end > start && (b[end - 1] == 32 || b[end - 1] == 9 || b[end - 1] == 13 || b[end - 1] == 10)) { end = end - 1 }
+    return String.fromUtf8(b[start..end])
+}
+
+public func joinWith(parts: ArrayList<String>, sep: String): String {
+    let sb = StringBuilder()
+    var first = true
+    for (p in parts) {
+        if (!first) { sb.append(sep) }
+        sb.append(p)
+        first = false
+    }
+    return sb.toString()
 }

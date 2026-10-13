@@ -4,52 +4,6 @@ import std.collection.*
 import stdx.encoding.json.*
 import itn_desktop_core.util.*
 
-public func strValue(v: JsonValue): String {
-    match (v) {
-        case s: JsonString => s.getValue()
-        case _ => ""
-    }
-}
-
-public func strOf(o: JsonObject, key: String): String {
-    match (o.get(key)) {
-        case Some(v) => strValue(v)
-        case None => ""
-    }
-}
-
-public func objOf(v: JsonValue): ?JsonObject {
-    match (v) {
-        case o: JsonObject => Some(o)
-        case _ => None
-    }
-}
-
-public func arrOf(v: JsonValue): ?JsonArray {
-    match (v) {
-        case a: JsonArray => Some(a)
-        case _ => None
-    }
-}
-
-public func strArrayOf(o: JsonObject, key: String): ArrayList<String> {
-    let out = ArrayList<String>()
-    match (o.get(key)) {
-        case Some(v) =>
-            match (v) {
-                case a: JsonArray =>
-                    var i = 0
-                    while (i < a.size()) {
-                        out.add(strValue(a[i]))
-                        i = i + 1
-                    }
-                case _ => ()
-            }
-        case None => ()
-    }
-    return out
-}
-
 public class ModelConfig {
     public var id: String = ""
     public var name: String = ""
@@ -142,17 +96,6 @@ public class KnowledgeBase {
             case None => ()
         }
         return b
-    }
-}
-
-public func intOf(o: JsonObject, key: String): Int64 {
-    match (o.get(key)) {
-        case Some(v) =>
-            match (v) {
-                case j: JsonInt => j.getValue()
-                case _ => 0
-            }
-        case None => 0
     }
 }
 

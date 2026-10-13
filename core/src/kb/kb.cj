@@ -7,36 +7,6 @@ import stdx.encoding.json.*
 import itn_desktop_core.store.*
 import itn_desktop_core.util.*
 
-public func floatValue(v: JsonValue): Float64 {
-    match (v) {
-        case f: JsonFloat => f.getValue()
-        case i: JsonInt => Float64(i.getValue())
-        case _ => 0.0
-    }
-}
-
-public func splitLines(s: String): ArrayList<String> {
-    let out = ArrayList<String>()
-    let bytes = s.toArray()
-    var start = 0
-    var i = 0
-    while (i < bytes.size) {
-        if (bytes[i] == 10) {
-            var e = i
-            if (e > start && bytes[e - 1] == 13) {
-                e = e - 1
-            }
-            out.add(String.fromUtf8(bytes[start..e]))
-            start = i + 1
-        }
-        i = i + 1
-    }
-    if (start < bytes.size) {
-        out.add(String.fromUtf8(bytes[start..bytes.size]))
-    }
-    return out
-}
-
 func lineStartsWith(line: String, prefix: String): Bool {
     let lb = line.toArray()
     let pb = prefix.toArray()
@@ -47,15 +17,6 @@ func lineStartsWith(line: String, prefix: String): Bool {
         i = i + 1
     }
     return true
-}
-
-public func trimStr(s: String): String {
-    let b = s.toArray()
-    var start = 0
-    var end = b.size
-    while (start < end && (b[start] == 32 || b[start] == 9 || b[start] == 13 || b[start] == 10)) { start = start + 1 }
-    while (end > start && (b[end - 1] == 32 || b[end - 1] == 9 || b[end - 1] == 13 || b[end - 1] == 10)) { end = end - 1 }
-    return String.fromUtf8(b[start..end])
 }
 
 func headingLevel(line: String): Int64 {
@@ -102,17 +63,6 @@ func extractImages(line: String, out: ArrayList<String>): Unit {
         }
         i = i + 1
     }
-}
-
-public func joinWith(parts: ArrayList<String>, sep: String): String {
-    let sb = StringBuilder()
-    var first = true
-    for (p in parts) {
-        if (!first) { sb.append(sep) }
-        sb.append(p)
-        first = false
-    }
-    return sb.toString()
 }
 
 public class KbChunk {

@@ -57,3 +57,13 @@
 - 踩坑：`File.readFrom(Path)` 会解析成读文件字节的重载，遍历目录必须用 `Directory.walk(Path, (FileInfo) -> Bool)`；`intOf` 在 `store` 与 `kb` 重复定义导致 api 侧函数解析歧义，已合并；`std.fs` 的 `FileInfo.name` / `isDirectory()` 需通过 `Directory.walk` 回调取得。
 - 冒烟脚本改用随机高位端口并清理残留 python 进程：上一轮旧 mock 占用 9999 导致新 mock 未启动，请求仍由旧进程应答，一度误判为视觉分支未生效。
 - 接口契约文档补充知识库接口、检索命中结构与处理约定。
+
+## 2026-10-14T02:13:05+08:00 session / tools / agent 完成，核心演示链路跑通
+
+- 新增三个包：`session`（只追加会话日志，JSONL 每会话一文件，含摘要与列表）、`tools`（工具注册表：`kb_search` 检索、`artifact_save` 落盘，产物名做非法字符替换）、`agent`（`ask` 检索增强问答、`lecture` 生成讲义、`quiz` 生成练习，含引用自检）。`api` 增加 6 个接口。
+- 把 JSON 与文本辅助函数（`strOf`/`objOf`/`intOf`/`floatValue`/`splitLines`/`trimStr`/`joinWith` 等）从 `store`、`kb` 统一收敛到 `util`，消除了跨包重复定义与解析歧义。
+- 实测结果（`tools/smoke.ps1`）：`agent/ask` 返回带编号出处的答案；`agent/lecture` 产出 `讲义-分块.md`（589 字节），含「资料来源」章节与 `[n]` 引用标记；`agent/quiz` 200；会话列表 3 条；选中会话事件数 14，类型序列为 `turn/start,user/message,step/start,tool/call,tool/result,step/end,step/start,step/end,step/start,validation,step/end,step/start,step/end,turn/end`；产物列表 2 项。
+- 引用自检为程序化实现而非再调模型：统计正文段落数、带引用段落数、越界引用编号数，返回 `citationReport`。这样既省一次模型调用，也让「可溯源」变成可测的数值。
+- 踩坑：`type` 是仓颉保留字，事件字段改用 `kind`（JSON 键仍是 `type`）；`JsonArray.size` 是方法而非属性；`Int64.parse` 需 `import std.convert.*`。
+- 接口契约文档补充 agent / session / artifact 接口、会话事件表、引用自检说明与产物目录约定。
+- 剩余：Electron 外壳与极简界面、绿色压缩包产物。

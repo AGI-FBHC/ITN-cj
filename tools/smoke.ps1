@@ -90,6 +90,50 @@ Write-Output ("图片描述是否进入索引: " + ($(if ($r.body -match "MOCK_V
 $hitBody = $r.body
 
 
+
+# ---------- Agent 主链路 ----------
+$r = Api $base "/api/agent/ask" "POST" '{ "kbId": "demo", "question": "分块是怎么做的？" }'
+$s = if ($r.body.Length -gt 420) { $r.body.Substring(0, 420) } else { $r.body }
+Write-Output ("agent/ask -> {0} {1}" -f $r.status, $s)
+
+$r = Api $base "/api/agent/lecture" "POST" '{ "kbId": "demo", "topic": "分块" }'
+$lec = $r
+$s = if ($r.body.Length -gt 300) { $r.body.Substring(0, 300) } else { $r.body }
+Write-Output ("agent/lecture -> {0} {1}" -f $r.status, $s)
+
+$r = Api $base "/api/agent/quiz" "POST" '{ "kbId": "demo", "topic": "分块", "count": 3 }'
+Write-Output ("agent/quiz -> {0}" -f $r.status)
+
+$r = Api $base "/api/sessions/list" "POST" '{}'
+Write-Output ("sessions/list -> {0}" -f $r.status)
+$sess = ($r.body | ConvertFrom-Json).data.sessions
+Write-Output ("会话数: {0}" -f $sess.Count)
+
+if ($sess.Count -gt 0) {
+    $sid = $sess[0].sessionId
+    $r = Api $base "/api/sessions/events" "POST" (@{ sessionId = $sid } | ConvertTo-Json -Compress)
+    $evs = ($r.body | ConvertFrom-Json).data.events
+    Write-Output ("会话 {0} 事件数: {1}" -f $sid, $evs.Count)
+    $kinds = ($evs | ForEach-Object { $_.type }) -join ","
+    Write-Output ("事件类型: {0}" -f $kinds)
+}
+
+$r = Api $base "/api/artifacts/list" "POST" '{}'
+$arts = ($r.body | ConvertFrom-Json).data.artifacts
+Write-Output ("产物数: {0}" -f $arts.Count)
+
+$lecJson = $lec.body | ConvertFrom-Json
+$ap = $lecJson.data.artifactPath
+if ($ap -and (Test-Path -LiteralPath $ap)) {
+    $content = Get-Content -LiteralPath $ap -Raw
+    Write-Output ("讲义文件: {0} 字节" -f (Get-Item -LiteralPath $ap).Length)
+    Write-Output ("讲义含「资料来源」章节: " + ($(if ($content -match "资料来源") { "是" } else { "否" })))
+    Write-Output ("讲义含引用标记: " + ($(if ($content -match "\[\d+\]") { "是" } else { "否" })))
+} else {
+    Write-Output "讲义文件路径无效"
+}
+
+
 $core.Kill(); $mock.Kill(); exit 1
 }
 $base = "http://127.0.0.1:$port"
@@ -167,6 +211,50 @@ Write-Output ("kb/search -> {0} {1}" -f $r.status, $short)
 $r = Api $base "/api/kb/stats" "POST" '{ "id": "demo" }'
 Write-Output ("图片描述是否进入索引: " + ($(if ($r.body -match "MOCK_VISION_CAPTION") { "是（stats）" } else { "需查搜索命中" })))
 $hitBody = $r.body
+
+
+
+# ---------- Agent 主链路 ----------
+$r = Api $base "/api/agent/ask" "POST" '{ "kbId": "demo", "question": "分块是怎么做的？" }'
+$s = if ($r.body.Length -gt 420) { $r.body.Substring(0, 420) } else { $r.body }
+Write-Output ("agent/ask -> {0} {1}" -f $r.status, $s)
+
+$r = Api $base "/api/agent/lecture" "POST" '{ "kbId": "demo", "topic": "分块" }'
+$lec = $r
+$s = if ($r.body.Length -gt 300) { $r.body.Substring(0, 300) } else { $r.body }
+Write-Output ("agent/lecture -> {0} {1}" -f $r.status, $s)
+
+$r = Api $base "/api/agent/quiz" "POST" '{ "kbId": "demo", "topic": "分块", "count": 3 }'
+Write-Output ("agent/quiz -> {0}" -f $r.status)
+
+$r = Api $base "/api/sessions/list" "POST" '{}'
+Write-Output ("sessions/list -> {0}" -f $r.status)
+$sess = ($r.body | ConvertFrom-Json).data.sessions
+Write-Output ("会话数: {0}" -f $sess.Count)
+
+if ($sess.Count -gt 0) {
+    $sid = $sess[0].sessionId
+    $r = Api $base "/api/sessions/events" "POST" (@{ sessionId = $sid } | ConvertTo-Json -Compress)
+    $evs = ($r.body | ConvertFrom-Json).data.events
+    Write-Output ("会话 {0} 事件数: {1}" -f $sid, $evs.Count)
+    $kinds = ($evs | ForEach-Object { $_.type }) -join ","
+    Write-Output ("事件类型: {0}" -f $kinds)
+}
+
+$r = Api $base "/api/artifacts/list" "POST" '{}'
+$arts = ($r.body | ConvertFrom-Json).data.artifacts
+Write-Output ("产物数: {0}" -f $arts.Count)
+
+$lecJson = $lec.body | ConvertFrom-Json
+$ap = $lecJson.data.artifactPath
+if ($ap -and (Test-Path -LiteralPath $ap)) {
+    $content = Get-Content -LiteralPath $ap -Raw
+    Write-Output ("讲义文件: {0} 字节" -f (Get-Item -LiteralPath $ap).Length)
+    Write-Output ("讲义含「资料来源」章节: " + ($(if ($content -match "资料来源") { "是" } else { "否" })))
+    Write-Output ("讲义含引用标记: " + ($(if ($content -match "\[\d+\]") { "是" } else { "否" })))
+} else {
+    Write-Output "讲义文件路径无效"
+}
 
 
 $core.Kill(); $mock.Kill()
