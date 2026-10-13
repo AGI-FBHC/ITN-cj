@@ -67,6 +67,9 @@ export default function Knowledge() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  /* 后端知识树为逐节点查询，实测 13~23 秒；超过 8 秒仍无结果显示慢提示与重试入口（BUG-006）。 */
+  const [slow, setSlow] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [view, setView] = useState<'grid' | 'table'>('grid');
   const [types, setTypes] = useState<string[]>([]);
   const [standard, setStandard] = useState<string | null>(null);
@@ -76,12 +79,17 @@ export default function Knowledge() {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
-    api.listRagDomains().then((result) => { setDomains(result); setDomainCode(result[0]?.code || ''); }).catch((reason) => setError(reason instanceof Error ? reason.message : '知识库读取失败'));
+    api.listRagDomains().then((result) => {
+      setDomains(result);
+      setDomainCode(result[0]?.code || '');
+      if (!result.length) { setError('暂无可用知识领域'); setLoading(false); }
+    }).catch((reason) => { setError(reason instanceof Error ? reason.message : '知识库读取失败'); setLoading(false); });
   }, []);
 
   useEffect(() => {
     if (!domainCode) return;
     setLoading(true);
+    setSlow(false);
     api.getRagTree(domainCode).then((result) => {
       const available = flattenTree(result.nodes).filter(({ node }) => (node.chunkCount ?? 0) > 0).sort((a, b) => (b.node.chunkCount ?? 0) - (a.node.chunkCount ?? 0));
       setTree(result);
@@ -90,7 +98,14 @@ export default function Knowledge() {
       setCategoryId(available[0]?.node.id ?? null);
       setError('');
     }).catch((reason) => setError(reason instanceof Error ? reason.message : '知识树读取失败')).finally(() => setLoading(false));
-  }, [domainCode]);
+  }, [domainCode, reloadKey]);
+
+  /* 加载超过 8 秒仍未返回 → 显示"较慢/可重试"提示（不打断请求，只补反馈）。 */
+  useEffect(() => {
+    if (!loading) return;
+    const timer = window.setTimeout(() => setSlow(true), 8000);
+    return () => window.clearTimeout(timer);
+  }, [loading, reloadKey]);
 
   useEffect(() => {
     if (!categoryId || initialQuery) return;
@@ -128,7 +143,7 @@ export default function Knowledge() {
 
     {error && <div className="mt-4 rounded-[10px] border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">{error}</div>}
     <div className="mt-6 grid gap-5 lg:grid-cols-[250px_minmax(0,1fr)]"><aside className="self-start rounded-[14px] border border-hairline bg-card-warm p-3 lg:sticky lg:top-[190px]"><div className="px-2 pb-2"><div className="lf-mono-label">KNOWLEDGE TREE</div><div className="mt-1 text-[13px] font-semibold text-ink">{tree?.domain.name || '知识分类'}</div></div><div className="max-h-[560px] overflow-y-auto">{flatNodes.map(({ node, depth }) => <button key={node.id} type="button" onClick={() => selectCategory(node.id)} className={cn('flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[12px] transition', categoryId === node.id ? 'bg-brand-tint font-medium text-brand' : 'text-ink-2 hover:bg-paper-deep')} style={{ paddingLeft: 8 + depth * 13 }}><ChevronRight size={11} className="shrink-0 opacity-50" /><span className="min-w-0 flex-1 truncate">{node.name}</span><span className="font-mono text-[9.5px] text-ink-muted">{node.chunkCount ?? 0}</span></button>)}</div></aside>
-      <main className="min-h-[360px]">{loading ? <div className="lf-card p-12 text-center text-[13px] text-ink-muted">正在读取知识切片…</div> : !flatNodes.length ? <div className="flex flex-col items-center rounded-[14px] border border-dashed border-hairline py-20 text-center"><Database size={34} className="text-ink-muted" /><p className="mt-3 text-[14px] font-medium text-ink">该领域尚未建立知识分类</p><p className="mt-1 max-w-[440px] text-[12px] leading-5 text-ink-muted">暂没有关联的知识节点与切片。</p>{domains.some((domain) => domain.chunkCount > 0) && <button type="button" onClick={() => setDomainCode(domains.find((domain) => domain.chunkCount > 0)!.code)} className="lf-btn-ghost mt-4">查看已有知识内容</button>}</div> : !filtered.length ? <div className="flex flex-col items-center rounded-[14px] border border-dashed border-hairline py-20 text-center"><SearchX size={34} className="text-ink-muted" /><p className="mt-3 text-[14px] font-medium text-ink">当前条件没有匹配切片</p><button type="button" onClick={() => { setTypes([]); setStandard(null); setMinReliability(0); }} className="lf-btn-ghost mt-4">清除过滤</button></div> : view === 'grid' ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{filtered.map((item, index) => <ChunkCard key={item.id} item={item} index={index} query={query} onOpen={() => void openDetail(item.id)} onCategory={selectCategory} />)}</div> : <div className="overflow-x-auto rounded-[14px] border border-hairline bg-card-warm"><table className="w-full text-left"><thead className="bg-paper-deep/70 text-[11px] text-ink-muted"><tr><th className="px-4 py-3">切片</th><th className="px-4 py-3">标题</th><th className="px-4 py-3">来源</th><th className="px-4 py-3">知识点</th><th className="px-4 py-3 text-right">可信度</th></tr></thead><tbody>{filtered.map((item) => <tr key={item.id} onClick={() => void openDetail(item.id)} className="cursor-pointer border-t border-hairline text-[12.5px] hover:bg-brand-tint/35"><td className="px-4 py-3 font-mono text-brand">{item.chunkCode}</td><td className="max-w-[340px] px-4 py-3 font-medium text-ink">{item.sectionTitle || item.titlePath}</td><td className="px-4 py-3 text-ink-muted">{item.standardNumber || item.documentTitle}</td><td className="px-4 py-3 text-ink-2">{item.categories[0]?.name || '—'}</td><td className="px-4 py-3 text-right font-mono text-brand">{Math.round((item.reliabilityScore ?? 0) * 100) || '—'}</td></tr>)}</tbody></table></div>}</main></div>
+      <main className="min-h-[360px]">{loading ? <div className="lf-card p-12 text-center text-[13px] text-ink-muted"><p>正在读取知识切片…</p>{slow && <><p className="mt-2 text-[11.5px] text-ink-muted">知识树按目录逐节点查询，较慢时可能需要 10~30 秒；如果一直无响应可重试。</p><button type="button" onClick={() => { setSlow(false); setReloadKey((value) => value + 1); }} className="lf-btn-ghost mt-4">重新读取</button></>}</div> : !flatNodes.length ? <div className="flex flex-col items-center rounded-[14px] border border-dashed border-hairline py-20 text-center"><Database size={34} className="text-ink-muted" /><p className="mt-3 text-[14px] font-medium text-ink">该领域尚未建立知识分类</p><p className="mt-1 max-w-[440px] text-[12px] leading-5 text-ink-muted">暂没有关联的知识节点与切片。</p>{domains.some((domain) => domain.chunkCount > 0) && <button type="button" onClick={() => setDomainCode(domains.find((domain) => domain.chunkCount > 0)!.code)} className="lf-btn-ghost mt-4">查看已有知识内容</button>}</div> : !filtered.length ? <div className="flex flex-col items-center rounded-[14px] border border-dashed border-hairline py-20 text-center"><SearchX size={34} className="text-ink-muted" /><p className="mt-3 text-[14px] font-medium text-ink">当前条件没有匹配切片</p><button type="button" onClick={() => { setTypes([]); setStandard(null); setMinReliability(0); }} className="lf-btn-ghost mt-4">清除过滤</button></div> : view === 'grid' ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{filtered.map((item, index) => <ChunkCard key={item.id} item={item} index={index} query={query} onOpen={() => void openDetail(item.id)} onCategory={selectCategory} />)}</div> : <div className="overflow-x-auto rounded-[14px] border border-hairline bg-card-warm"><table className="w-full text-left"><thead className="bg-paper-deep/70 text-[11px] text-ink-muted"><tr><th className="px-4 py-3">切片</th><th className="px-4 py-3">标题</th><th className="px-4 py-3">来源</th><th className="px-4 py-3">知识点</th><th className="px-4 py-3 text-right">可信度</th></tr></thead><tbody>{filtered.map((item) => <tr key={item.id} onClick={() => void openDetail(item.id)} className="cursor-pointer border-t border-hairline text-[12.5px] hover:bg-brand-tint/35"><td className="px-4 py-3 font-mono text-brand">{item.chunkCode}</td><td className="max-w-[340px] px-4 py-3 font-medium text-ink">{item.sectionTitle || item.titlePath}</td><td className="px-4 py-3 text-ink-muted">{item.standardNumber || item.documentTitle}</td><td className="px-4 py-3 text-ink-2">{item.categories[0]?.name || '—'}</td><td className="px-4 py-3 text-right font-mono text-brand">{Math.round((item.reliabilityScore ?? 0) * 100) || '—'}</td></tr>)}</tbody></table></div>}</main></div>
 
     <div className="mt-14 text-center"><p className="font-serif text-[18px] italic text-ink-2">“知识的每一条来路，都应该被看见。”</p><p className="mt-2 font-mono text-[11px] text-ink-muted">分类 · 原文切片 · 文档级可信度 · 可核验溯源</p></div>
     <DetailDrawer detail={detail} open={drawerOpen} onClose={() => setDrawerOpen(false)} />
