@@ -699,7 +699,7 @@ export default function SlidePlayer() {
           </div>
         )}
       </footer>
-      <LearningCompleteDialog open={completeConfirmOpen} unassessedCount={unassessedCount} confirming={completing} restarting={restarting} onClose={() => setCompleteConfirmOpen(false)} onConfirm={() => void handleComplete()} onRestart={() => void handleRestart()} />
+      <LearningCompleteDialog open={completeConfirmOpen} unassessedCount={unassessedCount} questionTotal={isQuiz ? Math.max(expected, slides.length) : undefined} confirming={completing} restarting={restarting} onClose={() => setCompleteConfirmOpen(false)} onConfirm={() => void handleComplete()} onRestart={() => void handleRestart()} />
       {noteOpen && slide && (
         <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm" onClick={() => setNoteOpen(false)} role="dialog" aria-modal="true" aria-label="记录学习笔记">
           <div className="w-full max-w-[520px] rounded-[18px] border border-brand/30 bg-card-warm p-6 shadow-warm-lg" onClick={(event) => event.stopPropagation()}>
