@@ -1344,6 +1344,26 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  /**
+   * 上报一次测评结果（写 quiz_results + 更新 knowledge_mastery）。
+   * 定制资源的分阶题作答走 agents 通道，不会自动进平台画像，必须显式上报，否则知识网络掌握度恒为 0（BUG-029）。
+   * knowledgeCategoryId 与 knowledgeCategoryCode 二选一：前端只有 node_code 时用后者，后端自行解析。
+   */
+  recordProfileQuiz: (body: {
+    quizType: 'DIAGNOSTIC' | 'FORMATIVE' | 'SUMMATIVE' | 'CHALLENGE';
+    knowledgeCategoryId?: number;
+    knowledgeCategoryCode?: string;
+    questionCount: number;
+    correctCount: number;
+    score?: number;
+    durationSeconds?: number;
+    difficultyLevel?: string;
+    details?: string;
+  }) =>
+    request<void>('/api/v1/learner-profile/quiz', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   getLearningJournal: (date?: string) =>
     request<LearningJournal>(`/api/v1/learner-profile/journal${date ? `?date=${encodeURIComponent(date)}` : ''}`),
   generateLearningJournalSummary: (date?: string) =>

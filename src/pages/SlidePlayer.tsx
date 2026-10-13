@@ -75,7 +75,7 @@ function quizInitialState(slide: CustomizeSlide, resourceState?: Record<string, 
   };
 }
 
-function QuizCard({ slide, onInteractionChange, resourceId, initialPicked = null, initialFeedback = null }: { slide: CustomizeSlide; onInteractionChange: (state: { submitted: boolean; selectedAnswer?: string; correct?: boolean }) => void; resourceId?: string | null; initialPicked?: QuizValue | null; initialFeedback?: { correct: boolean; correctIndex?: number; explanation?: string } | null }) {
+function QuizCard({ slide, onInteractionChange, resourceId, knowledgeCategoryCode = null, initialPicked = null, initialFeedback = null }: { slide: CustomizeSlide; onInteractionChange: (state: { submitted: boolean; selectedAnswer?: string; correct?: boolean }) => void; resourceId?: string | null; /** 平台知识点 node_code（如 kp-1-2），用于把作答上报进画像掌握度 */ knowledgeCategoryCode?: string | null; initialPicked?: QuizValue | null; initialFeedback?: { correct: boolean; correctIndex?: number; explanation?: string } | null }) {
   const question = slide.content as Record<string, unknown>;
   const rawOptions = Array.isArray(question.options) ? question.options : [];
   const options = rawOptions.map((option, index) => {
@@ -128,11 +128,26 @@ function QuizCard({ slide, onInteractionChange, resourceId, initialPicked = null
         answer: String(option),
         durationSeconds: 1,
       }) as { correct?: unknown; correctIndex?: unknown; explanation?: unknown; analysis?: unknown };
+      const grading = Boolean(result.correct);
       setFeedback({
-        correct: Boolean(result.correct),
+        correct: grading,
         correctIndex: Number(result.correctIndex ?? localCorrectIndex),
         explanation: String(result.explanation ?? result.analysis ?? question.explanation ?? question.analysis ?? '') || undefined,
       });
+      /* BUG-029：作答只写进资源 state，从未进平台画像 → 知识网络掌握度恒为 0。
+         这里把这一题的结果上报给平台（后端按 knowledgeCategoryCode 解析知识点并更新 mastery）。 */
+      if (knowledgeCategoryCode) {
+        void api.recordProfileQuiz({
+          quizType: 'FORMATIVE',
+          knowledgeCategoryCode,
+          questionCount: 1,
+          correctCount: grading ? 1 : 0,
+          score: grading ? 100 : 0,
+          durationSeconds: 1,
+          difficultyLevel: String(question.difficulty ?? '') || undefined,
+          details: JSON.stringify({ resourceId, questionId, source: 'customize-quiz' }),
+        }).catch(() => undefined);
+      }
     } catch {
       setFeedback(fallback);
     }
@@ -661,7 +676,7 @@ export default function SlidePlayer() {
           : <article className="relative flex h-full min-h-0 w-full max-w-[1040px] flex-col overflow-hidden rounded-[24px] border border-brand/20 bg-card-warm/95 shadow-warm-lg" data-assistant-context data-assistant-focus="true" data-context-kind={slide.type === 'question' ? '当前题目' : slide.type === 'step' ? '当前实操步骤' : '当前学习卡片'} data-context-title={slide.title} data-context-index={currentIndex + 1} data-context-total={expected || slides.length} data-context-current-page={currentIndex + 1} data-context-total-pages={expected || slides.length} data-context-assessed={slideAssessments[currentIndex] != null ? 'true' : undefined} data-context-assessment={assessmentLabel(slideAssessments[currentIndex])} data-context-resource-id={data?.resourceId ?? ''} data-context-knowledge-point-id={data?.kpId ?? completedResource?.kpId ?? ''} data-context-quiz-submitted={slide.type === 'question' ? String(quizInteraction.submitted) : undefined} data-context-selected-answer={slide.type === 'question' ? quizInteraction.selectedAnswer : undefined} data-context-quiz-correct={slide.type === 'question' && quizInteraction.correct !== undefined ? String(quizInteraction.correct) : undefined}>
               <div className="flex shrink-0 items-center justify-between gap-4 border-b border-hairline/70 bg-paper/55 px-6 py-3.5 md:px-9">{slide.type === 'question' ? <DifficultyBadge question={slide.content as Record<string, unknown>} /> : <span className="inline-flex rounded-full border border-brand/20 bg-brand-tint px-3 py-1 font-mono text-[10px] tracking-[0.1em] text-brand">{slide.type === 'step' ? '实操步骤' : slide.type === 'intro' ? '本讲导览' : slide.type === 'presentation' ? '交互课件' : '领学章节'}</span>}{data?.status === 'generating' && <span className="inline-flex items-center gap-1.5 text-[10.5px] text-ink-muted"><Loader2 size={12} className="animate-spin" />{isQuiz ? '作答后自动生成下一题' : '后续页面讲解生成中'}</span>}</div>
               <div ref={cardScrollRef} className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-6 pb-8 pt-5 [scrollbar-gutter:stable] md:px-9 md:pb-9 md:pt-6">
-                {slide.type === 'question' ? <QuizCard key={slide.index} slide={slide} resourceId={data?.resourceId} onInteractionChange={setQuizInteraction} initialPicked={quizInitialState(slide, completedResource?.state).picked} initialFeedback={quizInitialState(slide, completedResource?.state).feedback} /> : slide.type === 'presentation' ? <div className="mx-auto flex h-full max-w-[980px] flex-col"><h1 className="shrink-0 font-serif text-[22px] font-semibold text-ink">{slide.title}</h1><div className="mt-4 flex min-h-[320px] flex-1 items-center justify-center overflow-hidden rounded-[16px] border border-hairline bg-ink/5">{presentationImage ? <img src={presentationImage} alt={`第 ${slide.unitIndex + 1} 页 · ${slide.title}`} className="max-h-full max-w-full object-contain" /> : <Loader2 size={22} className="animate-spin text-brand" />}</div><div className="mt-4 rounded-xl border border-brand/15 bg-brand-tint/25 px-4 py-3 text-[12.5px] leading-6 text-ink-2"><span className="mr-2 font-medium text-brand">本页讲解</span>{String(slide.content ?? '')}</div></div> : <><h1 className="font-serif text-[28px] font-semibold leading-tight text-ink md:text-[34px]">{slide.title}</h1><div className="mt-6 h-1 w-14 rounded-full bg-brand" /><div className="mt-7 max-w-none text-ink-2"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{normalizeMarkdownLists(String(slide.content ?? ''))}</ReactMarkdown></div></>}
+                {slide.type === 'question' ? <QuizCard key={slide.index} slide={slide} resourceId={data?.resourceId} knowledgeCategoryCode={data?.kpId ?? completedResource?.kpId ?? null} onInteractionChange={setQuizInteraction} initialPicked={quizInitialState(slide, completedResource?.state).picked} initialFeedback={quizInitialState(slide, completedResource?.state).feedback} /> : slide.type === 'presentation' ? <div className="mx-auto flex h-full max-w-[980px] flex-col"><h1 className="shrink-0 font-serif text-[22px] font-semibold text-ink">{slide.title}</h1><div className="mt-4 flex min-h-[320px] flex-1 items-center justify-center overflow-hidden rounded-[16px] border border-hairline bg-ink/5">{presentationImage ? <img src={presentationImage} alt={`第 ${slide.unitIndex + 1} 页 · ${slide.title}`} className="max-h-full max-w-full object-contain" /> : <Loader2 size={22} className="animate-spin text-brand" />}</div><div className="mt-4 rounded-xl border border-brand/15 bg-brand-tint/25 px-4 py-3 text-[12.5px] leading-6 text-ink-2"><span className="mr-2 font-medium text-brand">本页讲解</span>{String(slide.content ?? '')}</div></div> : <><h1 className="font-serif text-[28px] font-semibold leading-tight text-ink md:text-[34px]">{slide.title}</h1><div className="mt-6 h-1 w-14 rounded-full bg-brand" /><div className="mt-7 max-w-none text-ink-2"><ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={slideMdComponents}>{normalizeMarkdownLists(String(slide.content ?? ''))}</ReactMarkdown></div></>}
                 <SourceList sources={pageSources} evidenceQuotes={slide.evidenceQuotes} />
               </div>
             </article>}
