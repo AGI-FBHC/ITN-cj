@@ -71,3 +71,14 @@ th { color: #7b8794; font-weight: 500; font-size: 12px; }
 .cites li { margin-bottom: 2px; }
 footer { padding: 8px 20px; border-top: 1px solid #e6eaee; color: #7b8794; font-size: 12px; background: #fff; min-height: 30px; }
 .tag { display: inline-block; padding: 1px 7px; border-radius: 4px; background: #eef2f6; color: #52606d; font-size: 12px; }
+
+#chat-out h1, #chat-out h2, #chat-out h3 { margin: 18px 0 8px; line-height: 1.4; }
+#chat-out h1 { font-size: 20px; }
+#chat-out h2 { font-size: 16px; }
+#chat-out h3 { font-size: 15px; color: #3e4c59; }
+#chat-out p { margin: 0 0 10px; }
+#chat-out ul, #chat-out ol { margin: 0 0 10px; padding-left: 22px; }
+#chat-out pre { background: #f4f6f8; border: 1px solid #e6eaee; border-radius: 6px; padding: 10px 12px; overflow: auto; }
+#chat-out code { background: #f1f4f7; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+#chat-out pre code { background: none; padding: 0; }
+#chat-out strong { font-weight: 600; }

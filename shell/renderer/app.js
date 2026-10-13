@@ -1,5 +1,68 @@
 const $ = (id) => document.getElementById(id);
 
+/* 极简 Markdown 渲染：先转义 HTML，再处理标题、代码块、列表、粗体与行内代码。
+   只覆盖讲义与练习会用到的语法，不引入任何依赖。 */
+function escapeHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function renderMarkdown(src) {
+  const lines = escapeHtml(src || "").split("\n");
+  const out = [];
+  let inCode = false;
+  let listType = null;
+
+  const closeList = () => {
+    if (listType) { out.push(listType === "ul" ? "</ul>" : "</ol>"); listType = null; }
+  };
+  const inline = (s) => s
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, "");
+    if (/^\s*```/.test(line)) {
+      closeList();
+      out.push(inCode ? "</code></pre>" : "<pre><code>");
+      inCode = !inCode;
+      continue;
+    }
+    if (inCode) { out.push(raw); continue; }
+
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      closeList();
+      out.push("<h" + h[1].length + ">" + inline(h[2]) + "</h" + h[1].length + ">");
+      continue;
+    }
+    if (/^\s*$/.test(line)) { closeList(); continue; }
+
+    const ul = line.match(/^\s*[-*]\s+(.*)$/);
+    if (ul) {
+      if (listType !== "ul") { closeList(); out.push("<ul>"); listType = "ul"; }
+      out.push("<li>" + inline(ul[1]) + "</li>");
+      continue;
+    }
+    const ol = line.match(/^\s*\d+[.)]\s+(.*)$/);
+    if (ol) {
+      if (listType !== "ol") { closeList(); out.push("<ol>"); listType = "ol"; }
+      out.push("<li>" + inline(ol[1]) + "</li>");
+      continue;
+    }
+    closeList();
+    out.push("<p>" + inline(line) + "</p>");
+  }
+  closeList();
+  if (inCode) out.push("</code></pre>");
+  return out.join("\n");
+}
+
+function setOutput(text) {
+  $("chat-out").innerHTML = renderMarkdown(text);
+}
+
+
+
 let settings = { models: [], knowledgeBases: [] };
 
 async function call(path, body) {
@@ -120,18 +183,18 @@ $("chat-ask").onclick = async () => {
   const kbId = $("chat-kb").value;
   const question = $("chat-q").value.trim();
   if (!question) { setFooter("请先输入问题"); return; }
-  $("chat-out").textContent = "正在检索并生成…";
+  setOutput("正在检索并生成…");
   $("chat-cites").innerHTML = "";
   setFooter("");
   try {
     const data = await call("/api/agent/ask", { kbId, question });
-    $("chat-out").textContent = data.answer || data.message || "";
+    setOutput(data.answer || data.message || "");
     renderCitations(data);
     if (data.citationReport) {
       setFooter("段落 " + data.citationReport.paragraphs + " · 带引用 " + data.citationReport.citedParagraphs + " · 越界引用 " + data.citationReport.outOfRange);
     }
   } catch (e) {
-    $("chat-out").textContent = "失败：" + e.message;
+    setOutput("失败：" + e.message);
   }
 };
 
@@ -139,15 +202,15 @@ async function generate(kind) {
   const kbId = $("chat-kb").value;
   const topic = $("chat-q").value.trim();
   if (!topic) { setFooter("请先在输入框写个主题"); return; }
-  $("chat-out").textContent = "正在生成" + (kind === "lecture" ? "讲义" : "练习") + "…";
+  setOutput("正在生成" + (kind === "lecture" ? "讲义" : "练习") + "…");
   $("chat-cites").innerHTML = "";
   try {
     const data = await call("/api/agent/" + kind, { kbId, topic });
-    $("chat-out").textContent = data.content || data.message || "";
+    setOutput(data.content || data.message || "");
     renderCitations(data);
     setFooter(data.artifactPath ? "已写出：" + data.artifactPath : "");
   } catch (e) {
-    $("chat-out").textContent = "失败：" + e.message;
+    setOutput("失败：" + e.message);
   }
 }
 
