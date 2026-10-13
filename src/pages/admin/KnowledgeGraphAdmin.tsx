@@ -114,7 +114,7 @@ function EdgeDetails({ edge, names, onClose, onAction: _onAction }: { edge: KcGr
   );
 }
 
-function Overview({ edges, setTab, setStatus }: { edges: KcGraphEdge[]; setTab: (tab: Tab) => void; setStatus: (status: string) => void }) {
+function Overview({ edges, setTab, setStatus, names = new Map() }: { edges: KcGraphEdge[]; setTab: (tab: Tab) => void; setStatus: (status: string) => void; names?: Map<number, CategoryInfo> }) {
   const statuses = ["active", "proposed", "rejected", "deprecated"];
   return (
     <div className="space-y-4">
@@ -138,7 +138,8 @@ function Overview({ edges, setTab, setStatus }: { edges: KcGraphEdge[]; setTab: 
       </div>
       <div className="lf-card rounded-2xl">
         <div className="border-b border-white/60 px-5 py-4 text-sm font-bold text-ink">最近建边</div>
-        <EdgeTable edges={edges.slice(0, 12)} compact />
+        {/* 必须把目录名称传入，否则最近建边只能显示 #115 → #121 这类编号（BUG-016）。 */}
+        <EdgeTable edges={edges.slice(0, 12)} compact names={names} />
       </div>
     </div>
   );
@@ -787,11 +788,24 @@ export default function KnowledgeGraphAdmin() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [nextEdges, tree] = await Promise.all([adminKnowledgeApi.edges(), adminKnowledgeApi.tree("agent")]);
-      setEdges(nextEdges.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))));
-      setCategories(walkCategories(tree.tree));
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "网络数据读取失败");
+      /* 两个请求互相独立：任一个失败都不应让另一个的数据白拉（此前用 Promise.all，
+         目录接口一旦异常会让 names 为空，建边列表就只剩 #115 → #121 这类编号，BUG-016）。 */
+      const [edgesResult, treeResult] = await Promise.allSettled([
+        adminKnowledgeApi.edges(),
+        adminKnowledgeApi.tree("agent"),
+      ]);
+      if (edgesResult.status === "fulfilled") {
+        setEdges([...edgesResult.value].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))));
+      } else {
+        toast.error(edgesResult.reason instanceof Error ? edgesResult.reason.message : "网络数据读取失败");
+      }
+      if (treeResult.status === "fulfilled") {
+        const raw = treeResult.value as unknown as { tree?: unknown; nodes?: unknown };
+        const nodes = Array.isArray(raw?.tree) ? raw.tree : Array.isArray(raw?.nodes) ? raw.nodes : [];
+        setCategories(walkCategories(nodes as KcCategoryNode[]));
+      } else {
+        toast.error(treeResult.reason instanceof Error ? treeResult.reason.message : "知识目录读取失败（连线将只显示编号）");
+      }
     } finally {
       setLoading(false);
     }
@@ -952,7 +966,7 @@ export default function KnowledgeGraphAdmin() {
           正在读取网络数据…
         </div>
       ) : tab === "overview" ? (
-        <Overview edges={edges} setTab={setTab} setStatus={setStatus} />
+        <Overview edges={edges} setTab={setTab} setStatus={setStatus} names={categories} />
       ) : tab === "review" ? (
         <div className="lf-card rounded-2xl">
           <div className="flex flex-wrap items-center gap-3 border-b border-white/60 p-4">
