@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { ExternalLink, FileText, Loader2, X } from 'lucide-react';
 import { lectureMdComponents, secureImageSrc } from '@/components/resources/lecture-markdown';
 import { api } from '@/lib/api';
+import { readableSourceTitle } from '@/lib/sourceLabel';
 import remarkCitationMarks from '@/lib/remarkCitationMarks';
 import type { LearningResource, RagChunkDetail } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -80,7 +81,8 @@ export default function SourceCitationMarks({
       if (event.key === 'Escape') setOpened(null);
     };
     window.addEventListener('keydown', closeOnEscape);
-    return () => {
+
+  return () => {
       window.removeEventListener('keydown', closeOnEscape);
       body.style.overflow = previousOverflow;
       body.style.paddingRight = previousPaddingRight;
@@ -140,10 +142,11 @@ export default function SourceCitationMarks({
     }
   };
 
+
   return (
     <span className={cn('ml-1 inline-flex flex-wrap items-center gap-1 align-baseline', className)} aria-label="本段引用来源">
       {matched.map(({ id, source }) => {
-        const title = String(source.document ?? source.title ?? `来源 ${id}`);
+        const title = readableSourceTitle(source, id);
         const url = typeof source.url === 'string' ? source.url : null;
         const style = cn(
           'inline-flex items-center gap-1 rounded-md border border-brand/35 bg-brand-tint/55 font-mono font-medium text-brand transition-colors hover:border-brand hover:bg-brand-tint',
@@ -158,7 +161,7 @@ export default function SourceCitationMarks({
           <section role="dialog" aria-modal="true" aria-label={`引用 ${opened.id} 原文`} onClick={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()} onTouchMove={(event) => event.stopPropagation()} className="flex max-h-[82vh] w-full max-w-[720px] flex-col overflow-hidden rounded-[22px] border border-white/70 bg-paper shadow-2xl">
             <header className="flex items-start gap-3 border-b border-hairline bg-card-warm px-5 py-4">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-brand-tint text-brand"><FileText size={17} /></span>
-              <div className="min-w-0 flex-1"><div className="font-mono text-[10px] text-brand">{String(opened.source.sourceType) === 'web' ? (opened.source.debateVerified === true ? '多源辩论通过' : '补充资料') : '知识库依据'} · [{opened.id}]</div><h2 className="mt-1 text-[15px] font-semibold text-ink">{chunk?.document.title ?? String(opened.source.document ?? opened.source.title ?? `来源 ${opened.id}`)}</h2>{chunk?.titlePath && <p className="mt-1 text-[11px] text-ink-muted">{chunk.titlePath}</p>}</div>
+              <div className="min-w-0 flex-1"><div className="font-mono text-[10px] text-brand">{String(opened.source.sourceType) === 'web' ? (opened.source.debateVerified === true ? '多源辩论通过' : '补充资料') : '知识库依据'} · [{opened.id}]</div><h2 className="mt-1 text-[15px] font-semibold text-ink">{chunk?.document.title ?? readableSourceTitle(opened.source, opened.id)}</h2>{chunk?.titlePath && <p className="mt-1 text-[11px] text-ink-muted">{chunk.titlePath}</p>}</div>
               <button type="button" aria-label="关闭原文" onClick={() => setOpened(null)} className="rounded-lg p-2 text-ink-muted hover:bg-paper-deep"><X size={17} /></button>
             </header>
             <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-5">
