@@ -2,7 +2,7 @@
  * ProfileContext — 全局学习者画像状态 + 视图模式 + 画像生命周期
  * 画像数据以后端 /api/v1/learners 为唯一数据源；本地只保存 UI 偏好与当前选中项。
  */
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { Learner } from '@/data/learners';
 import { learners as presetLearners, getLearner, weakestKpOf, strongestKpOf } from '@/data/learners';
@@ -62,6 +62,10 @@ interface ProfileContextValue {
   learners: Learner[];
   /** 后端画像知识维度（知识理解/逻辑推理/工程实践/问题诊断/系统设计/学习迁移） */
   domainKnowledgePoints: OnboardingKnowledgePoint[];
+  /** 画像维度元数据的加载状态：区分“加载中”与“请求失败”，避免页面无限停留在加载中（BUG-003）。 */
+  metaStatus: 'idle' | 'loading' | 'ready' | 'error';
+  /** 手动重试拉取画像维度元数据。 */
+  refreshMeta: () => void;
   currentLearnerId: string;
   setCurrentLearnerId: (id: string) => void;
   currentLearner: Learner;
@@ -287,6 +291,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     readJSON<Record<string, ProfileEvent[]>>(K_EVENTS, {}),
   );
   const [domainKnowledgePoints, setDomainKnowledgePoints] = useState<OnboardingKnowledgePoint[]>([]);
+  const [metaStatus, setMetaStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
 
   useEffect(() => {
     if (!session) {
@@ -321,23 +326,30 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     };
   }, [session]);
 
-  useEffect(() => {
+  const metaSeqRef = useRef(0);
+  const loadMeta = useCallback(async () => {
     if (!session) {
       setDomainKnowledgePoints([]);
+      setMetaStatus('idle');
       return;
     }
-    let cancelled = false;
-    api.getOnboardingMeta()
-      .then((meta) => {
-        if (!cancelled) setDomainKnowledgePoints(meta.knowledgePoints);
-      })
-      .catch(() => {
-        if (!cancelled) setDomainKnowledgePoints([]);
-      });
-    return () => {
-      cancelled = true;
-    };
+    const seq = ++metaSeqRef.current;
+    setMetaStatus('loading');
+    try {
+      const meta = await api.getOnboardingMeta();
+      if (seq !== metaSeqRef.current) return;
+      setDomainKnowledgePoints(meta.knowledgePoints ?? []);
+      setMetaStatus('ready');
+    } catch {
+      if (seq !== metaSeqRef.current) return;
+      /* 不要把失败伪装成“空数据”：保留失败标记，页面据此给出重试入口。 */
+      setMetaStatus('error');
+    }
   }, [session]);
+
+  useEffect(() => {
+    void loadMeta();
+  }, [loadMeta]);
 
   useEffect(() => {
     try {
@@ -471,6 +483,8 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       weakestKp: getKnowledgePoint(weakestKpOf(currentLearner)),
       strongestKp: getKnowledgePoint(strongestKpOf(currentLearner)),
       domainKnowledgePoints,
+      metaStatus,
+      refreshMeta: () => { void loadMeta(); },
       demoMode,
       setDemoMode,
       viewMode,
@@ -481,7 +495,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       bumpConfidence,
       getEvents,
     };
-  }, [currentLearnerId, demoMode, viewMode, learners, events, domainKnowledgePoints, session]);
+  }, [currentLearnerId, demoMode, viewMode, learners, events, domainKnowledgePoints, metaStatus, loadMeta, session]);
 
   return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>;
 }

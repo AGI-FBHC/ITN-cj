@@ -110,7 +110,7 @@ const LEGACY_KP_IDS: Record<string, string> = {
 };
 
 export default function MyProfile() {
-  const { currentLearner, patchLearner, domainKnowledgePoints } = useProfile();
+  const { currentLearner, patchLearner, domainKnowledgePoints, metaStatus, refreshMeta } = useProfile();
   const [analytics, setAnalytics] = useState<LearnerAnalyticsProfile | null>(null);
   const [journals, setJournals] = useState<LearningJournal[]>([]);
   const [growth, setGrowth] = useState<LearnerGrowth | null>(null);
@@ -342,8 +342,12 @@ export default function MyProfile() {
       <div className="mx-auto max-w-[980px] px-5 pb-24 pt-8 md:px-6">
         <PageBack parent={{ label: '我的学习', to: '/me' }} current="我的画像" />
         <div className="lf-card mt-6 p-8 text-center text-[13.5px] text-ink-muted">
-          画像知识维度加载中，请稍候…
-        </div>
+          {metaStatus === 'error'
+            ? '画像知识维度加载失败（可能是网络或后端超时）。'
+            : metaStatus === 'ready'
+              ? '暂无可用的画像知识维度数据。'
+              : '画像知识维度加载中，请稍候…'}
+          {metaStatus === 'error' && <button type="button" onClick={() => refreshMeta()} className="mt-4 rounded-lg border border-hairline px-3 py-1.5 text-[12px] text-brand hover:border-brand/40">重新加载画像维度</button>}</div>
       </div>
     );
   }
