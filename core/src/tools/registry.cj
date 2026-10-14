@@ -88,6 +88,14 @@ public func toolCatalog(): ArrayList<ToolSpec> {
         "只在本地资料里找不到、或用户明确要求上网查的时候用；引用它给出的信息要带上链接。"
     out.add(h)
 
+    let j = ToolSpec()
+    j.name = "skill_read"
+    j.title = "读技能正文"
+    j.usage = "{\"id\": \"web-research\"}"
+    j.desc = "按 id 读取一个技能的正文（也就是这件事该怎么做），然后照着里面的步骤、用它声明的工具去完成。" +
+        "技能清单已经在系统提示里给你了，需要哪本就先读哪本。"
+    out.add(j)
+
     let i = ToolSpec()
     i.name = "web_fetch"
     i.title = "读取网页"
@@ -105,7 +113,7 @@ public func toolCatalog(): ArrayList<ToolSpec> {
  * webSearch 为 false（没配 Tavily 密钥，或者用户把开关关了）时不写进提示词：
  * 提示词里列了却调用不起来，模型会反复重试同一个死工具。
  */
-public func toolPrompt(webSearch: Bool, webFetch: Bool): String {
+public func toolPrompt(webSearch: Bool, webFetch: Bool, skillRead: Bool): String {
     let sb = StringBuilder()
     sb.append("你可以调用以下工具来获取事实（不要凭空猜）：\n")
     for (t in toolCatalog()) {
@@ -113,6 +121,9 @@ public func toolPrompt(webSearch: Bool, webFetch: Bool): String {
             continue
         }
         if (t.name == "web_fetch" && !webFetch) {
+            continue
+        }
+        if (t.name == "skill_read" && !skillRead) {
             continue
         }
         sb.append("- ")

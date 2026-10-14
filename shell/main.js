@@ -87,7 +87,9 @@ async function startKernel() {
   fs.mkdirSync(dataDir, { recursive: true });
   cleanStaleDbLock(dataDir);
 
-  kernel = spawn(exe, ["--data-dir", dataDir, "--port-file", portFile, "--ui-dir", uiDir], {
+  // 随包内置的技能（只读）：与界面同目录，打包时一起进 resources/app
+  const skillsDir = path.join(__dirname, "skills");
+  kernel = spawn(exe, ["--data-dir", dataDir, "--port-file", portFile, "--ui-dir", uiDir, "--skills-dir", skillsDir], {
     cwd: path.dirname(exe),
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],

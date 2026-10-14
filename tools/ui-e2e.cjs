@@ -196,6 +196,8 @@ function assert(cond, msg) {
     '--data-dir=' + dataDir,
     '--port-file=' + portFile,
     '--ui-dir=' + path.join(REPO, 'shell', 'renderer'),
+    // 和真实外壳一致：把随包内置的技能指给内核
+    '--skills-dir=' + path.join(REPO, 'shell', 'skills'),
   ], { cwd: REPO, windowsHide: true, stdio: ['ignore', coreLog, coreLog], env: Object.assign({}, process.env, { cjHeapSize: '2GB' }) });
   children.push(core);
 
@@ -1537,10 +1539,10 @@ function assert(cond, msg) {
     return '深色 ' + darkBg + ' → 浅色 ' + st.bg + '（重载后仍生效）';
   });
 
-  await step('设置页：左侧六个分区、右侧跟着换、深链直达、老路由兼容', async () => {
+  await step('设置页：左侧七个分区、右侧跟着换、深链直达、老路由兼容', async () => {
     await nav('设置');
     const secs = await page.$$eval('.settings-nav button', (els) => els.map((e) => e.textContent.trim()));
-    assert(secs.length === 6, '设置应有 6 个分区，实际 ' + secs.length + '：' + secs.join('/'));
+    assert(secs.length === 7, '设置应有 7 个分区，实际 ' + secs.length + '：' + secs.join('/'));
     assert(secs.join('/').indexOf('模型与接口') >= 0, '模型配置应该收在设置里');
     await page.goto(base + '#/settings/models', { waitUntil: 'load', timeout: 30000 });
     await page.waitForSelector('#m-id', { timeout: 20000 });
@@ -1670,6 +1672,57 @@ function assert(cond, msg) {
     // 复原：会话档位回到"交给 agent"（必须带上刚才那段会话，空 id 是 400）
     await page.evaluate((id) => fetch('/api/web/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: id, mode: 'auto' }) }), sid);
     return '三档：' + opts.join(' / ');
+  });
+
+  await step('技能：输入 / 就能挑，绑到这一段会话；工具边界写在面板上', async () => {
+    await nav('伴学助手');
+    await page.waitForSelector('.composer-chip', { timeout: 15000 });
+    await page.waitForTimeout(600);
+    const chips0 = await page.$$eval('.composer-chip', (els) => els.map((e) => e.innerText.trim()));
+    assert(chips0.join('/').indexOf('技能') >= 0, '输入区应有技能 chip，实际 ' + JSON.stringify(chips0));
+    assert(chips0.join('/').indexOf('技能：自动') >= 0, '默认应是"技能：自动"，实际 ' + JSON.stringify(chips0));
+    // 输入 / 打开技能菜单：只出技能，不出别的动作
+    await page.fill('#chat-input', '/');
+    await page.waitForSelector('.cm-skills .composer-menu-item', { timeout: 8000 });
+    const actsHidden = await page.evaluate(() => { const a = document.querySelector('.cm-actions'); return a ? a.hidden : null; });
+    assert(actsHidden === true, '输入 / 时不该同时列出"读取网页/添加资料目录"这些动作');
+    const skillItems = await page.$$eval('.cm-skills .cm-label', (els) => els.map((e) => e.textContent));
+    assert(skillItems.join('/').indexOf('联网专题研究') >= 0, '技能菜单里应有内置技能，实际 ' + skillItems.join('/'));
+    await shot('47-技能菜单');
+    await page.locator('.cm-skills .composer-menu-item', { hasText: '联网专题研究' }).click();
+    await page.waitForTimeout(1200);
+    const chips1 = await page.$$eval('.composer-chip', (els) => els.map((e) => e.innerText.trim()));
+    assert(chips1.join('/').indexOf('联网专题研究') >= 0, '选完 chip 应显示技能名，实际 ' + JSON.stringify(chips1));
+    // 会话里真的绑上了（按对话区标着的会话 id 去问）
+    const sid = await page.evaluate(() => (document.querySelector('#chat-thread') ? document.querySelector('#chat-thread').dataset.session : ''));
+    assert(sid, '挑技能时应顺手开一段会话（对话区上要标着 sessionId）');
+    const bound = await page.evaluate((id) => fetch('/api/skills/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: id }) }).then((r) => r.json()).then((j) => j.data.bound), sid);
+    assert(bound === 'web-research', '绑定的技能应存在内核里，实际 ' + bound);
+    await page.fill('#chat-input', '');
+    // 工具面板上说清"这次只允许这些工具"
+    await page.locator('.chat-head button', { hasText: '工具' }).click();
+    await page.waitForSelector('#tool-sheet:not([hidden])', { timeout: 10000 });
+    const sheet = await page.locator('#tool-sheet').innerText();
+    assert(sheet.indexOf('联网专题研究') >= 0, '工具面板应说明这次用的是哪个技能');
+    await page.locator('.chat-head button', { hasText: '工具' }).click();
+    // 复原：解绑，别影响后面的步骤
+    await page.evaluate((id) => fetch('/api/skills/bind', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: id, skill: '' }) }), sid);
+    return '技能：自动 → ' + chips1.join(' / ');
+  });
+
+  await step('设置 · 技能：清单、允许的工具、能打开正文', async () => {
+    await settings('技能');
+    await page.waitForSelector('#view .item:has-text("web-research")', { timeout: 15000 });
+    const txt = await page.locator('#view .card').first().innerText();
+    assert(txt.indexOf('允许工具') >= 0, '技能卡片应写明允许的工具，实际：' + txt.replace(/\s+/g, ' ').slice(0, 80));
+    assert(txt.indexOf('内置') >= 0, '应标出内置技能（只读）');
+    await page.locator('#view .item', { hasText: 'web-research' }).getByRole('button', { name: '看正文' }).click();
+    await page.waitForSelector('#view .card.dialog .artifact-preview', { timeout: 10000 });
+    const body = await page.locator('#view .card.dialog').innerText();
+    assert(body.indexOf('联网专题研究') >= 0 || body.length > 100, '应能打开技能正文');
+    await shot('48-技能设置');
+    await page.keyboard.press('Escape');
+    return '清单 + 允许工具 + 正文可看';
   });
 
   await step('伴学助手与会话记录合并成一个入口（会话栏挂在对话页左侧）', async () => {

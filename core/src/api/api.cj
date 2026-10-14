@@ -483,7 +483,8 @@ public class Api {
                     let ag = Agent(store)
                     try {
                         // web：本次请求的联网档位（""=跟着设置走），会话级开关也在这里落地
-                        ok(ctx, ag.askWeb(strOf(b, "kbId"), question, strOf(b, "sessionId"), strOf(b, "web")))
+                        ok(ctx, ag.askWeb(strOf(b, "kbId"), question, strOf(b, "sessionId"),
+                            strOf(b, "web"), trimStr(strOf(b, "skill"))))
                     } catch (e: Exception) {
                         fail(ctx, 500, "问答失败：" + e.message)
                     }
@@ -711,6 +712,74 @@ public class Api {
                     ok(ctx, o)
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
+            return
+        }
+
+        // ---------- 技能（Skill）：写个 Markdown 就多一种"用法说明书" ----------
+        if (path == "/api/skills/list" && method == "POST") {
+            var sid = ""
+            match (bodyJson(ctx)) {
+                case Some(b) => sid = strOf(b, "sessionId")
+                case None => ()
+            }
+            let db = DbHub.open(store.dataDir)
+            let webAllowed = webMode(store.dataDir) != "off"
+            let bound = if (sid.size > 0) { db.getKv("meta", "skill:" + sid, "") } else { "" }
+            let arr = JsonArray()
+            for (s in listSkills(store.dataDir, webAllowed)) {
+                arr.add(skillJson(s))
+            }
+            let o = JsonObject()
+            o.put("skills", arr)
+            o.put("bound", JsonString(bound))
+            o.put("userDir", JsonString(userSkillsDir(store.dataDir)))
+            o.put("bundledDir", JsonString(SKILLS_BUNDLED_DIR))
+            ok(ctx, o)
+            return
+        }
+
+        if (path == "/api/skills/read" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let id = strOf(b, "id")
+                    match (readSkill(store.dataDir, id, webMode(store.dataDir) != "off")) {
+                        case Some(pair) =>
+                            let o = skillJson(pair[0])
+                            o.put("body", JsonString(pair[1]))
+                            ok(ctx, o)
+                        case None => fail(ctx, 404, "没有这个技能：" + id)
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/skills/bind" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let sid = strOf(b, "sessionId")
+                    if (sid.size == 0) {
+                        fail(ctx, 400, "缺少 sessionId")
+                        return
+                    }
+                    let id = trimStr(strOf(b, "skill"))
+                    // 空串 = 解除绑定（回到"让模型自己挑"）
+                    DbHub.open(store.dataDir).putKv("meta", "skill:" + sid, id)
+                    let o = JsonObject()
+                    o.put("bound", JsonString(id))
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/skills/template" && method == "POST") {
+            let dir = userSkillsDir(store.dataDir)
+            ensureDir(dir)
+            let p = writeTemplateSkill(store.dataDir, "_template")
+            let o = JsonObject()
+            o.put("path", JsonString(p))
+            ok(ctx, o)
             return
         }
 
@@ -1667,6 +1736,10 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/web/cache/delete",
         "/api/web/session",
         "/api/graph",
+        "/api/skills/list",
+        "/api/skills/read",
+        "/api/skills/bind",
+        "/api/skills/template",
         "/api/tools/list",
         "/api/sessions/new",
         "/api/sessions/list",

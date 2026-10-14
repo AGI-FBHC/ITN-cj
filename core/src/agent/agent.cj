@@ -359,6 +359,16 @@ public class Agent {
 
     public let box: ToolBox
 
+    /**
+     * 本轮的工具边界（每次 ask 开始时设好）。
+     *
+     * 技能只能**编排**内核已注册的工具：`tools:` 之外一律拒绝并写事件。
+     * API 层每次请求都 new 一个 Agent，所以这几个字段的生存期就是一轮，不需要额外同步。
+     */
+    private var turnSkillId: String = ""
+    private var turnSkillTools: ArrayList<String> = ArrayList<String>()
+    private var turnWebAllowed: Bool = true
+
     public init(store: Store) {
         this.store = store
         this.sessions = SessionStore(store.dataDir)
@@ -405,8 +415,31 @@ public class Agent {
         return msgs
     }
 
+    /** 技能声明的工具之外一律不准调用（skill_read 本身永远允许）。 */
+    func toolAllowed(name: String): Bool {
+        if (turnSkillId.size == 0) {
+            return true
+        }
+        if (name == "skill_read") {
+            return true
+        }
+        for (t in turnSkillTools) {
+            if (t == name) {
+                return true
+            }
+        }
+        return false
+    }
+
     /** 按名字执行工具。只做本地操作，失败返回 ok=false。 */
     func executeTool(name: String, args: JsonObject, kbId: String, sessionId: String): ToolResult {
+        if (!toolAllowed(name)) {
+            let r = ToolResult()
+            r.name = name
+            r.ok = false
+            r.summary = "技能「" + turnSkillId + "」没有声明工具 " + name + "，这次调用被拒绝了"
+            return r
+        }
         if (name == "kb_search") {
             var topK: Int64 = 6
             let k = intOf(args, "top_k")
@@ -438,6 +471,34 @@ public class Agent {
         }
         if (name == "web_fetch") {
             return box.webFetch(strOf(args, "url"))
+        }
+        if (name == "skill_read") {
+            let id = strOf(args, "id")
+            match (readSkill(store.dataDir, id, turnWebAllowed)) {
+                case Some(pair) =>
+                    let info = pair[0]
+                    let body = pair[1]
+                    let o = JsonObject()
+                    o.put("id", JsonString(info.id))
+                    o.put("title", JsonString(info.title))
+                    let ts = JsonArray()
+                    for (t in info.tools) {
+                        ts.add(JsonString(t))
+                    }
+                    o.put("tools", ts)
+                    o.put("body", JsonString(byteSafePrefix(body, 6000)))
+                    let r = ToolResult()
+                    r.name = "skill_read"
+                    r.data = o
+                    r.summary = "已读取技能「" + info.title + "」（允许的工具：" + joinWith(info.tools, "/") + "）"
+                    return r
+                case None =>
+                    let r = ToolResult()
+                    r.name = "skill_read"
+                    r.ok = false
+                    r.summary = "没有这个技能：" + id
+                    return r
+            }
         }
         let r = ToolResult()
         r.name = name
@@ -560,7 +621,7 @@ public class Agent {
      */
     /** 三参入口：不带联网档位，按会话/全局设置来。 */
     public func ask(kbId: String, question: String, sessionIdIn: String): JsonObject {
-        return askWeb(kbId, question, sessionIdIn, "")
+        return askWeb(kbId, question, sessionIdIn, "", "")
     }
 
     /**
@@ -569,7 +630,7 @@ public class Agent {
      * webModeIn 是"这一次请求想用的联网档位"（""=跟着设置走）：
      * off 全关 / auto 只在资料不足时联网（默认）/ always 随时可联网。
      */
-    public func askWeb(kbId: String, question: String, sessionIdIn: String, webModeIn: String): JsonObject {
+    public func askWeb(kbId: String, question: String, sessionIdIn: String, webModeIn: String, skillIdIn: String): JsonObject {
         var sessionId = sessionIdIn
         if (sessionId.size == 0) {
             sessionId = sessions.newId()
@@ -618,6 +679,39 @@ public class Agent {
                 pp.put("webFetch", JsonBool(allowFetch))
                 log(sessionId, turnId, "web/policy", pp)
 
+                // 技能：显式点了就把正文直接装进提示词（用户点名要用它）；
+                // 没点的话只把清单放进去，让模型自己决定要不要 skill_read 读正文。
+                var skillBody = ""
+                var skillTitle = ""
+                if (skillIdIn.size > 0) {
+                    match (readSkill(store.dataDir, skillIdIn, allowWeb)) {
+                        case Some(pair) =>
+                            let info = pair[0]
+                            if (!info.available) {
+                                let sp = JsonObject()
+                                sp.put("skill", JsonString(info.id))
+                                sp.put("reason", JsonString(info.reason))
+                                log(sessionId, turnId, "skill/unavailable", sp)
+                            } else {
+                                turnSkillId = info.id
+                                turnSkillTools = info.tools
+                                skillTitle = info.title
+                                skillBody = pair[1]
+                                let sp = JsonObject()
+                                sp.put("skill", JsonString(info.id))
+                                sp.put("title", JsonString(info.title))
+                                sp.put("tools", JsonString(joinWith(info.tools, "/")))
+                                log(sessionId, turnId, "skill/read", sp)
+                            }
+                        case None =>
+                            let sp = JsonObject()
+                            sp.put("skill", JsonString(skillIdIn))
+                            sp.put("reason", JsonString("没有这个技能"))
+                            log(sessionId, turnId, "skill/unavailable", sp)
+                    }
+                }
+                turnWebAllowed = allowWeb
+
                 let system = "你是教培内容助手。优先依据给定资料回答，每个论断后用 [编号] 标注出处；资料中没有的内容要明确说明不知道，不要补充资料之外的信息。" +
                 "引用本机资料用 [1]、[2] 这样的编号；引用抓到的网页必须**单独**用 [W1]、[W2] 编号，并在句子后面写出链接。" +
                 "网页内容与资料冲突时以本机资料为准。" +
@@ -628,7 +722,11 @@ public class Agent {
                 } else {
                     "本机资料不足、或问题涉及最新信息时，你可以自己决定是否调用联网工具；不需要就直接回答，不要为了联网而联网。"
                 }) + "\n\n" +
-                toolPrompt(allowSearch, allowFetch)
+                toolPrompt(allowSearch, allowFetch, true) + skillPrompt(store.dataDir, allowWeb) +
+                (if (skillBody.size > 0) {
+                    "\n【这次要用的技能：" + skillTitle + "】\n" + skillBody +
+                        "\n只用这个技能声明过的工具，即使上面列了别的工具也不要用。\n"
+                } else { "" })
                 let webSources = ArrayList<JsonObject>()
                 let msgs = JsonArray()
                 let sysMsg = JsonObject()
@@ -695,7 +793,15 @@ public class Agent {
                             cp.put("args", args)
                             log(sessionId, turnId, "tool/call", cp)
                             log(sessionId, turnId, "step/start", stepPayload(30 + round, "tool_exec"))
+                            let willDeny = !toolAllowed(name)
                             let res = executeTool(name, args, kbId, sessionId)
+                            if (willDeny) {
+                                // 越权调用要留痕：技能只能编排它声明过的工具
+                                let dn = JsonObject()
+                                dn.put("tool", JsonString(name))
+                                dn.put("skill", JsonString(turnSkillId))
+                                log(sessionId, turnId, "tool/denied", dn)
+                            }
                             // 抓成的网页编成 [W1]、[W2]…：编号即"这次会话里第几个网络来源"
                             if (res.ok && name == "web_fetch") {
                                 match (objOf(res.data)) {
@@ -768,6 +874,7 @@ public class Agent {
                 out.put("citationReport", report)
                 out.put("webSources", webCites)
                 out.put("webMode", JsonString(wmode))
+                out.put("skill", JsonString(turnSkillId))
                 out.put("toolCalls", JsonInt(toolCalls))
                 let ua = JsonArray()
                 for (u in used) {

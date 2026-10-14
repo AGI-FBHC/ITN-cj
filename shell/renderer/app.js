@@ -336,7 +336,7 @@ const state = {
   profile: {}, report: {}, artifacts: [], sessions: [],
   kb: "", chapter: null, artifactQuery: "", wrongTab: "due", wrongQuery: "",
   chatSessionId: "", chatTurns: [], chatEvents: [], tools: null, chatQuery: "", artifactFocus: "",
-  webMode: "auto",
+  webMode: "auto", skill: "", skills: [],
   busyTurn: false, pendingQuestion: "", lastQuestion: "",
   // 主题与会话栏偏好存在内核的 settings 表里（内核端口每次启动都变，localStorage 活不过一次重启）
   theme: "system", dark: false, panelHidden: false, kernel: null,
@@ -2594,6 +2594,23 @@ async function openUrlFetchDialog() {
 }
 
 /**
+ * 技能清单 + 这段会话绑的技能。
+ *
+ * 技能是"用法说明书"：写个 <dataDir>/skills/<id>/SKILL.md 就多一种；内置的只读，用户自己的可以改。
+ * 绑定是**会话级**的，换会话不串。
+ */
+async function loadSkills(sessionId) {
+  try {
+    const d = await api("/api/skills/list", { sessionId: sessionId || state.chatSessionId || "" });
+    state.skills = d.skills || [];
+    state.skill = d.bound || "";
+  } catch (e) {
+    state.skills = [];
+    state.skill = "";
+  }
+}
+
+/**
  * 这一段会话实际用哪一档联网。
  *
  * 会话里改过就用会话的，否则跟着设置——所以问内核时要带上 sessionId，
@@ -3840,6 +3857,7 @@ PAGES.chat = {
     if (currentSection === "overview") { await renderSessionsOverview(); return; }
     await loadCfg();
     await loadWebMode(state.chatSessionId);
+    await loadSkills(state.chatSessionId);
     setChatMode(true);
     const v = $("view");
     v.innerHTML = "";
@@ -3885,6 +3903,13 @@ PAGES.chat = {
     sheet.appendChild(el("div", "card-head", ""));
     sheet.querySelector(".card-head").appendChild(el("h2", null, "Agent 可调用的工具"));
     sheet.querySelector(".card-head").appendChild(spacer());
+    const curSkill = (state.skills || []).find((x) => x.id === state.skill);
+    if (curSkill) {
+      sheet.querySelector(".card-head").appendChild(tag("技能：" + curSkill.title, "ok"));
+      sheet.appendChild(el("p", "muted sm",
+        "这次对话绑了技能「" + curSkill.title + "」：只有它声明的工具（" + (curSkill.tools || []).join(" / ") +
+        "）能调用，别的会被拒绝并记进会话。"));
+    }
     const tlist = el("div", "list");
     const tools = state.tools || [];
     if (!tools.length) {
@@ -3944,6 +3969,19 @@ PAGES.chat = {
     };
     paintWebChip();
     crow.appendChild(webChip);
+
+    const skillChip = el("button", "composer-chip", "");
+    skillChip.type = "button";
+    const paintSkillChip = () => {
+      const cur = (state.skills || []).find((x) => x.id === state.skill);
+      skillChip.classList.toggle("off", !cur);
+      skillChip.innerHTML = icon("book") + "<span>技能：" + esc(cur ? cur.title : "自动") + "</span>" + icon("chevron");
+      skillChip.title = cur
+        ? "这次对话用技能「" + cur.title + "」，只允许：" + (cur.tools || []).join("/")
+        : "让模型自己决定要不要读技能（输入 / 也能直接挑）";
+    };
+    paintSkillChip();
+    crow.appendChild(skillChip);
     crow.appendChild(spacer());
 
     const modelChip = el("button", "composer-chip", "");
@@ -3989,6 +4027,7 @@ PAGES.chat = {
     /* ＋ 菜单：只放真做得成的事，不放"技能""编排模式"这类还没有的东西 */
     let closeMenu = () => { menu.hidden = true; };
     const buildMenu = () => {
+      const actionsBox = el("div", "cm-actions");
     const menuItem = (iconName, label, hint, onClick) => {
       const b2 = el("button", "composer-menu-item");
       b2.type = "button";
@@ -3997,8 +4036,8 @@ PAGES.chat = {
       b2.onclick = () => { closeMenu(); onClick(); };
       return b2;
     };
-      menu.appendChild(menuItem("globe", "读取网页…", "贴一个链接，抓正文落到本机", () => openUrlFetchDialog()));
-      menu.appendChild(menuItem("db", "添加资料目录…", "选一个本机目录加入知识库", async () => {
+      actionsBox.appendChild(menuItem("globe", "读取网页…", "贴一个链接，抓正文落到本机", () => openUrlFetchDialog()));
+      actionsBox.appendChild(menuItem("db", "添加资料目录…", "选一个本机目录加入知识库", async () => {
       const a2 = window.itnWindow;
       if (!a2 || typeof a2.pickDirectory !== "function") {
         toast("选目录只在桌面应用窗口里可用");
@@ -4018,11 +4057,11 @@ PAGES.chat = {
         if (nameEl && !nameEl.value.trim()) nameEl.value = base;
       }
     }));
-      menu.appendChild(menuItem("layers", "做成讲义 / 练习册…", "把某一章做成产物", () => {
+      actionsBox.appendChild(menuItem("layers", "做成讲义 / 练习册…", "把某一章做成产物", () => {
       const topic = topicFromText(state.lastQuestion || "");
       askTopic("lecture", topic);
     }));
-      menu.appendChild(menuItem("refresh", "清空抓取缓存…", "删掉所有抓回来的网页", async () => {
+      actionsBox.appendChild(menuItem("refresh", "清空抓取缓存…", "删掉所有抓回来的网页", async () => {
       try {
         const c = await api("/api/web/cache", {});
         for (const pg of (c.pages || [])) {
@@ -4031,7 +4070,7 @@ PAGES.chat = {
         toast("已清空 " + (c.pages || []).length + " 页抓取缓存");
       } catch (e) { toast("清空失败：" + e.message); }
     }));
-      menu.appendChild(menuItem("target", "联网方式", "默认交给 agent 自己判断", () => {}));
+      actionsBox.appendChild(menuItem("target", "联网方式", "默认交给 agent 自己判断", () => {}));
       const webBox = el("div", "composer-menu-sub");
     for (const m of ["auto", "always", "off"]) {
         const b3 = el("button", "composer-menu-item" + (m === (state.webMode || "auto") ? " active" : ""), "");
@@ -4053,24 +4092,49 @@ PAGES.chat = {
       };
         webBox.appendChild(b3);
       }
-      webBox.dataset.built = "1";
-      menu.appendChild(webBox);
+      actionsBox.appendChild(webBox);
+      menu.appendChild(actionsBox);
+
+      // 技能：自动 / 每个技能（不可用的标出来，点了不假装能跑）
+      const skillBox = el("div", "cm-skills");
+      const pick = async (id) => {
+        closeMenu();
+        const prev = state.skill;
+        state.skill = id;
+        paintSkillChip();
+        try {
+          if (!state.chatSessionId) {
+            state.chatSessionId = (await api("/api/sessions/new", {})).sessionId;
+          }
+          await api("/api/skills/bind", { sessionId: state.chatSessionId, skill: id });
+          // 整页重画一次：工具面板上那句"这次只允许…"、chip、会话 id 都要跟着更新
+          // （会话正文是从事件里还原的，重画不会丢东西）
+          go("chat");
+          const cur = (state.skills || []).find((x) => x.id === id);
+          toast(id ? "这次对话用技能：「" + (cur ? cur.title : id) + "」" : "技能交给模型自己决定");
+        } catch (e) {
+          state.skill = prev;
+          paintSkillChip();
+          toast("绑定技能失败：" + e.message);
+        }
+      };
+      skillBox.appendChild(menuItem("refresh", "自动", "不指定，模型自己决定要不要读技能", () => pick("")));
+      for (const sk of (state.skills || [])) {
+        const b4 = menuItem("book", sk.title + (sk.source === "bundled" ? "（内置）" : ""),
+          sk.available ? ("允许的工具：" + (sk.tools || []).join("/")) : (sk.reason || "不可用"),
+          () => { if (sk.available) pick(sk.id); else toast(sk.reason || "这个技能现在不可用"); });
+        if (sk.id === state.skill) b4.classList.add("active");
+        if (!sk.available) b4.classList.add("disabled");
+        skillBox.appendChild(b4);
+      }
+      if (!(state.skills || []).length) {
+        skillBox.appendChild(el("div", "cm-hint", "还没有技能：设置 → 技能 里可以新建一个。"));
+      }
+      menu.appendChild(skillBox);
     };
 
-    plusBtn.onclick = (ev) => {
-      ev.stopPropagation();
-      if (!menuBuilt) {
-        buildMenu();
-        inputRow.insertBefore(menu, null);
-        menuBuilt = true;
-        menu.hidden = false;
-        document.addEventListener("click", closeMenu);
-        return;
-      }
-      menu.hidden = !menu.hidden;
-    };
-    webChip.onclick = (ev) => {
-      ev.stopPropagation();
+    /** 两种开法：＋ 打开全部；输入 / 只挑技能。 */
+    const openMenu = (mode) => {
       if (!menuBuilt) {
         buildMenu();
         inputRow.appendChild(menu);
@@ -4078,14 +4142,28 @@ PAGES.chat = {
         document.addEventListener("click", closeMenu);
       }
       menu.hidden = false;
+      const acts = menu.querySelector(".cm-actions");
+      if (acts) acts.hidden = mode === "skills";
     };
+
+    plusBtn.onclick = (ev) => {
+      ev.stopPropagation();
+      if (menuBuilt && !menu.hidden) { closeMenu(); return; }
+      openMenu("all");
+    };
+    webChip.onclick = (ev) => { ev.stopPropagation(); openMenu("all"); };
+    skillChip.onclick = (ev) => { ev.stopPropagation(); openMenu("skills"); };
 
     // 输入框随内容长高（最多 8 行），像桌面聊天客户端那样
     const grow = () => {
       ta.style.height = "auto";
       ta.style.height = Math.min(ta.scrollHeight, 200) + "px";
     };
-    ta.addEventListener("input", grow);
+    ta.addEventListener("input", () => {
+      grow();
+      // 输入 / 就是"调用技能"（和 Codex 一样）：只出技能，不出别的动作
+      if (ta.value.trimStart().startsWith("/")) openMenu("skills");
+    });
     grow();
 
     if (state.pendingQuestion) {
@@ -4160,7 +4238,7 @@ PAGES.chat = {
 
       let failure = "";
       try {
-        const res = await api("/api/agent/ask", { kbId: state.kb, question: text, sessionId: sid });
+        const res = await api("/api/agent/ask", { kbId: state.kb, question: text, sessionId: sid, web: state.webMode, skill: state.skill });
         if (res.ok !== true) failure = res.message || "这一轮没有完成";
       } catch (e) {
         failure = e.message;
@@ -4760,6 +4838,7 @@ const SETTINGS_SECTIONS = [
   { id: "kb", label: "知识库", icon: "db", title: "知识库" },
   { id: "models", label: "模型与接口", icon: "gear", title: "模型与接口" },
   { id: "data", label: "数据与备份", icon: "layers", title: "数据与备份" },
+  { id: "skills", label: "技能", icon: "book", title: "技能" },
   { id: "about", label: "关于", icon: "file", title: "关于 ITN-Desktop" },
 ];
 
@@ -4792,6 +4871,7 @@ PAGES.settings = {
 /** 设置分区的路由表；每个 builder 返回一个可以整体塞进内容区的节点。 */
 function settingsSection(id) {
   if (id === "appearance") return settingsAppearance();
+  if (id === "skills") return settingsSkills();
   if (id === "kb") return settingsKb();
   if (id === "models") return settingsModels();
   if (id === "data") return settingsData();
@@ -5114,6 +5194,82 @@ async function settingsData() {
 }
 
 /* ---------- 设置 · 关于 ---------- */
+/**
+ * 设置 · 技能。
+ *
+ * 技能就是一份 Markdown：<数据目录>/skills/<id>/SKILL.md。内置的随包只读，
+ * 用户自己的随便改；表格里把"允许的工具"和"要不要联网授权"直接摆出来——
+ * 这两件事决定了它会怎么被用。
+ */
+async function settingsSkills() {
+  const g = document.createDocumentFragment();
+  let data = { skills: [], userDir: "", bundledDir: "" };
+  try {
+    data = await api("/api/skills/list", {});
+  } catch (e) {
+    g.appendChild(cardOf({ title: "技能", body: el("p", "muted", "读不到技能清单：" + e.message) }));
+    return g;
+  }
+  const card = cardOf({
+    title: "技能",
+    tag: (data.skills || []).length + " 个",
+    actions: [
+      btn("打开技能目录", "sm", async () => {
+        try {
+          const r = await api("/api/skills/template", {});
+          toast("已准备好用户技能目录；示例技能：" + artifactNameFromPath(r.path));
+          go("settings", "skills");
+        } catch (e) { toast("失败：" + e.message); }
+      }),
+      copyButton(() => data.userDir || "", "复制目录路径"),
+    ],
+  });
+  card.appendChild(el("p", "muted sm",
+    "技能 = 一份 Markdown 说明书（用法步骤 + 允许用哪些工具）。工具是内核的能力，技能只是怎么用它们的说明。" +
+    "内置技能随包只读；自己的技能放在上面那个目录里，一层一个目录，里面放 SKILL.md。"));
+  const list = el("div", "list");
+  for (const sk of (data.skills || [])) {
+    const it = el("div", "item");
+    const row = el("div", "row");
+    const main = el("div", "grow");
+    main.appendChild(el("div", "item-title", sk.title + "　" + sk.id));
+    if (sk.description) main.appendChild(el("div", "meta", sk.description));
+    const meta = el("div", "meta");
+    meta.appendChild(el("span", null, "允许工具：" + ((sk.tools || []).join(" / ") || "（没声明）")));
+    if (sk.requiresConsent) meta.appendChild(el("span", null, "需要授权：" + sk.requiresConsent));
+    meta.appendChild(el("span", null, sk.source === "bundled" ? "内置（只读）" : "自己的"));
+    main.appendChild(meta);
+    row.appendChild(main);
+    row.appendChild(sk.available ? tag("可用", "ok") : tag(sk.reason || "不可用", "warn"));
+    it.appendChild(row);
+    const acts = el("div", "row item-actions");
+    acts.appendChild(btn("看正文", "sm", async () => {
+      try {
+        const d = await api("/api/skills/read", { id: sk.id });
+        const dlg = el("div", "card dialog");
+        dlg.appendChild(cardHeadOnly("技能正文 · " + d.title));
+        const pre = el("div", "artifact-preview");
+        pre.innerHTML = md(d.body || "");
+        dlg.appendChild(pre);
+        dlg.appendChild(btn("收起", "ghost", () => dlg.remove()));
+        $("view").insertBefore(dlg, $("view").firstChild);
+      } catch (e) { toast("读取失败：" + e.message); }
+    }));
+    acts.appendChild(copyButton(() => sk.path || "", "复制路径"));
+    it.appendChild(acts);
+    list.appendChild(it);
+  }
+  card.appendChild(list);
+  g.appendChild(card);
+
+  if (data.bundledDir) {
+    const b = cardOf({ title: "内置技能目录", sub: "随包只读，升级软件时跟着更新" });
+    b.appendChild(el("p", "path-line", data.bundledDir));
+    g.appendChild(b);
+  }
+  return g;
+}
+
 function settingsAbout() {
   const g = document.createDocumentFragment();
   const k = state.kernel || {};

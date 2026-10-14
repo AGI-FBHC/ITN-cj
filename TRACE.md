@@ -1370,3 +1370,44 @@ ITN-Desktop"；最后要求"做好之后先让我单独试试效果"。
 2. 全屏别用 `position: fixed` 盖住导航；铺满"主区"就够了（`.main { position: relative }` + `absolute inset:0`）。
 3. 网格容器里给"横跨整行"的工具条要显式 `grid-column: 1 / -1`，否则会被挤成一条竖线。
 4. 自动化点画布上的图形，给一个"按名字取坐标"的接缝远比猜坐标稳。
+
+---
+
+## 第十八轮（2026-10-14）：Skills（docs/09 的 P4）—— 技能是"用法说明书"，不是代码
+
+**这一轮用户提的**：`docs/10` 的 R17 —— "这个 harness 应当像 Codex 一样有 skill 能力"（来自 docs/09 的 P4）。
+
+### 内核
+
+- 新 `core/src/agent/skill.cj`：扫 `<dataDir>/skills/<id>/SKILL.md`（用户）+ `--skills-dir` 指进来的内置目录（只读），
+  解析 YAML frontmatter（name/title/description/when_to_use/tools/requires_consent），支持 `tools: [a, b]` 与 `- a` 两种写法。
+- 四条规矩落地：**渐进披露**（`skillPrompt()` 只给清单；正文靠 `skill_read`；用户点名时直接把正文装进提示词并记 `skill/read`）、
+  **只编排不执行**（Agent 里加 `turnSkillTools`，`toolAllowed()` 之外一律拒 + `tool/denied` 事件）、
+  **要授权的明说**（`requires_consent: web` 在"不联网"档位下 `available=false` + 原因 + `skill/unavailable` 事件）、
+  **失败说人话**。
+- 新工具 `skill_read`（工具清单第 10 个）；`/api/skills/list|read|bind|template`；`/api/agent/ask` 多一个 `skill` 参数；
+  `out.skill` 告诉界面这轮用的哪个。
+- `main.cj` 新增 `--skills-dir`；外壳 `main.js` 传 `resources/app/skills`（开发态 `shell/skills`），`package-app.ps1` 一起拷进去。
+- 内置一个**真技能** `shell/skills/web-research/SKILL.md`：先查本机 → 说清缺口 → 搜索 → 逐篇抓 → 本机 `[n]`/网页 `[Wn]` 分开编号 → 落笔记或产物。
+  （docs/09 说"只内置 1 个真技能"，就没塞第二个。）
+
+### 前端
+
+- 对话框加"技能"chip（默认「技能：自动」）；**输入 `/` 直接调技能**——这时菜单只出技能、不出"读取网页/添加资料目录"这些动作；
+- 挑技能会顺手开一段会话并把绑定存在内核里（会话级，换会话不串）；绑定后整页重画，工具面板上会多一句
+  "这次对话绑了技能「X」：只有它声明的工具（a / b）能调用，别的会被拒绝并记进会话"；
+- 设置新增「技能」分区：清单（允许的工具 / 是否要授权 / 内置还是自己的）+ 看正文 + 复制路径 + 「打开技能目录」（顺手写一个 `_template/SKILL.md` 骨架）。
+
+### 验证
+
+- `tools/skill-check.ps1`（新）→ **14 项全过**：内置技能列表与 frontmatter 解析 / 用户技能与模板 / 读正文 /
+  会话绑定 / **越权工具被拒并留 `tool/denied`** / 对照（不绑技能时同一个问题照常算，`toolCalls=1`）/
+  不联网档位下 web-research 不可用且记 `skill/unavailable`。
+- `node tools/ui-e2e.cjs` → **77 通过 / 0 失败**（新增两步：`/` 挑技能并绑到会话 + 工具面板说明；设置·技能清单与正文）。
+- `graph-check` / `web-fetch-check` / `smoke` / `study-api-check` / `ui-check` / `package-smoke` 全过。
+
+### 教训
+
+1. 又是 `String.replace(a, b)` 把替换串里的 `$$` 折成 `$`：`page.$$eval` 被写成 `page.$eval`（第三次踩）。**批量改代码一律传函数**。
+2. PowerShell 里不能写 `(if (...) { } else { })` 当表达式——先算到变量再传参。
+3. 菜单里"隐藏的那一组"仍在 DOM 里，自动化 `waitForSelector('.composer-menu-item')` 会挑到隐藏的第一个而超时：测试要收窄到具体分组（`.cm-skills`）。
