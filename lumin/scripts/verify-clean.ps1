@@ -47,4 +47,31 @@ if ($text -match 'error while loading shared libraries|找不到指定的模块|
 
 Write-Output ("绿色包目录：" + $dist)
 Write-Output ("干净环境日志：" + $log)
+# 3) 批处理文件体检：内容必须纯 ASCII + CRLF。
+#    真机撞过：.cmd 里只要有非 ASCII 字节或行尾只有 LF，cmd.exe 就可能把自己在文件里的位置读错，
+#    把某一行的中段当命令执行（表现是 "'m' 不是内部或外部命令" 这种莫名其妙的片段错误）。
+$projRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
+$batchFiles = Get-ChildItem -Path $projRoot -Recurse -File -Include *.cmd, *.bat -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -notmatch '\\target\\' -and $_.FullName -notmatch '\\ref-pi\\' }
+$batchBad = @()
+foreach ($f in $batchFiles) {
+    $bytes = [IO.File]::ReadAllBytes($f.FullName)
+    $nonAscii = 0
+    foreach ($x in $bytes) {
+        if ($x -gt 127) { $nonAscii = $nonAscii + 1 }
+    }
+    $bareLf = 0
+    for ($i = 0; $i -lt $bytes.Length; $i++) {
+        if ($bytes[$i] -eq 10 -and ($i -eq 0 -or $bytes[$i - 1] -ne 13)) { $bareLf = $bareLf + 1 }
+    }
+    if ($nonAscii -gt 0 -or $bareLf -gt 0) {
+        $batchBad += ($f.Name + "（非 ASCII " + $nonAscii + " 字节，裸 LF " + $bareLf + " 处）")
+    }
+    Write-Output ("批处理体检：" + $f.Name + " -> 非 ASCII " + $nonAscii + "，裸 LF " + $bareLf)
+}
+if ($batchBad.Count -gt 0) {
+    throw ("这些批处理文件会让 cmd.exe 出错，必须改成纯 ASCII + CRLF：" + ($batchBad -join "；"))
+}
+Write-Output ("批处理体检通过（" + $batchFiles.Count + " 个文件都是 ASCII + CRLF）")
+
 Write-Output 'CLEAN-ENV-OK'

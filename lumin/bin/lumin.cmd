@@ -1,12 +1,21 @@
 @echo off
-rem lumin 启动器：在任何目录敲 lumin 就进对话，**当前目录就是工作区**（Pi 的 cwd 语义）
-rem 用法： lumin            进对话
-rem        lumin demo       离线演示（不联网、不读写文件）
-rem        lumin --trust / --workspace X / --mode agent --allow-exec … 参数原样传给 CLI
+rem lumin launcher. ASCII-only ON PURPOSE.
+rem A .cmd with non-ASCII bytes plus chcp makes cmd.exe mis-track its own file
+rem position and execute garbage (symptom: repeated "'m' is not recognized").
+rem Put the chcp first, keep the file ASCII, and keep the docs in README instead.
 chcp 65001 > nul
 set "LUMIN_HOME=%~dp0.."
-if "%~1"=="demo" (
-  "%LUMIN_HOME%\dist\lumin-demo\lumin-demo.exe" demo %2 %3 %4 %5
-) else (
-  "%LUMIN_HOME%\dist\lumin-demo\lumin-demo.exe" chat %*
-)
+set "LUMIN_EXE=%LUMIN_HOME%\dist\lumin-demo\lumin-demo.exe"
+if not exist "%LUMIN_EXE%" goto lumin_missing
+if "%~1"=="demo" goto lumin_demo
+"%LUMIN_EXE%" chat %*
+goto lumin_end
+:lumin_demo
+"%LUMIN_EXE%" demo %2 %3 %4 %5
+goto lumin_end
+:lumin_missing
+echo [lumin] launcher: green bundle not found:
+echo   %LUMIN_EXE%
+echo [lumin] build it first:  pwsh -File "%LUMIN_HOME%\scripts\package-demo.ps1"
+goto lumin_end
+:lumin_end

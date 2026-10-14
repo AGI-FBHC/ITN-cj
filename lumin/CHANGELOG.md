@@ -51,6 +51,10 @@ lumin 目前是 `0.x`，**对外契约（事件名 / 工具 schema / 会话 JSON
   7 个工具的边界 / 沙箱越界 / 命令超时 / skills 扫描 / 流式解析分片无关性 / 权限档位与审批 / Tavily 结果形状。
 
 ### Fixed
+- **`lumin` 启动器在 cmd.exe 里报 `'m' 不是内部或外部命令`**（真机撞到）：`bin\lumin.cmd` 里有中文注释 +
+  `chcp 65001`，cmd.exe 会把自己的文件位置读错、把行的中段当命令执行。现在启动器**纯 ASCII**（用 `goto` 而非
+  `if/else` 块），`package-demo.ps1` 生成的两个启动器也改成 ASCII + CRLF，并加了会 throw 的写入函数 +
+  `verify-clean.ps1` 的全仓批处理体检（非 ASCII 或裸 LF 直接失败）。
 - 读键盘的线程上线后，审批提示还是直接 `readln()`，两边抢同一个 stdin —— 谁先抢到谁读到，
   审批可能永远等不到回答。现在统一走 `LineQueue.takeBlocking()`。
 - `takeBlocking` 一次拿到多行（粘贴/管道）时把剩下的按**倒序**塞回队尾，会把粘贴的多行顺序搞乱；

@@ -54,6 +54,12 @@ lumin 是**照 Pi（`github.com/earendil-works/pi`，TypeScript，MIT）的架�
 - `Process.start` 默认**不接管管道**（要么 `executeWithOutput`，要么重定向到文件）。
 - `SubProcess.wait(timeout:)` 超时**抛异常**；`Future.get(timeout:)` 不存在。
 - 编译产物被占用（上一次的 `main.exe` / `lumin-demo.exe` 还在跑）会导致 build 失败 —— 先结束进程。
+- **Windows 批处理（`.cmd` / `.bat`）内容必须纯 ASCII + CRLF**。有非 ASCII 字节，或者行尾只有 LF，
+  cmd.exe 就可能把自己在文件里的位置读错，把某一行的**中段**当命令执行 ——
+  症状是 `'m' 不是内部或外部命令` 这种莫名其妙的片段报错（真机撞过，排查花了很久）。
+  中文**文件名**没问题（那是文件系统的事），中文字幕让 exe 自己打。
+  `scripts/package-demo.ps1` 生成的启动器走 `Write-BatchFile`（内容含非 ASCII 会直接 throw）；
+  `scripts/verify-clean.ps1` 每次都会体检全仓的 `.cmd`/`.bat`。
 
 ## 6. 环境
 

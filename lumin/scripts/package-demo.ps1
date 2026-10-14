@@ -40,6 +40,23 @@ foreach ($a in $artifacts) {
     if ($srcHash -ne $dstHash) { throw "拷贝后哈希不一致：$dest" }
 }
 
+# 批处理启动器：内容必须**纯 ASCII + CRLF**。
+# 为什么（真机撞过，排查了半天）：`.cmd` 里只要有非 ASCII 字节，或者行尾只有 LF，
+# cmd.exe 就可能把自己在文件里的位置读错 —— 于是它把某一行的**中段**当成命令去执行，
+# 报出 \"'m' 不是内部或外部命令\" 这种莫名其妙的片段错误。文件名用中文没关系（那是文件系统的事），
+# **内容**必须是 ASCII。中文字幕交给 exe 自己打（它走 console API，不受这条影响）。
+function Write-BatchFile([string]$path, [string]$text) {
+    $normalized = ($text -replace "`r`n", "`n") -replace "`n", "`r`n"
+    $bad = @()
+    for ($i = 0; $i -lt $normalized.Length; $i++) {
+        if ([int]$normalized[$i] -gt 127) { $bad += ("0x{0:X4}@{1}" -f [int]$normalized[$i], $i) }
+    }
+    if ($bad.Count -gt 0) {
+        throw ("批处理内容里有非 ASCII 字符（会把 cmd.exe 搞乱）：" + ($bad[0..([Math]::Min(4, $bad.Count - 1))] -join ', '))
+    }
+    [IO.File]::WriteAllText($path, $normalized, [Text.UTF8Encoding]::new($false))
+}
+
 # 演示输出很长，双击 exe 后窗口会立刻关掉 —— 附一个"双击就能看清"的启动器
 $launcher = @'
 @echo off
@@ -47,24 +64,24 @@ chcp 65001 > nul
 cd /d "%~dp0"
 lumin-demo.exe demo
 echo.
-echo （按任意键关闭）
+echo (press any key to close)
 pause > nul
 '@
-Set-Content -LiteralPath (Join-Path $dist "运行演示.cmd") -Value $launcher -Encoding utf8NoBOM
+Write-BatchFile (Join-Path $dist "运行演示.cmd") $launcher
 
-# 对话启动器：回到工程目录再跑，这样能自动读到 lumin\.env.local 里的 Key（Key 不进 dist）
+# 对话启动器：回到工程目录再跑，这样能自动读到 lumin\.env.local 里的 Key（Key 不进 dist）。
+# 默认工作区是 chat-workspace 而不是工程根目录 —— 免得模型把 .env.local 里的 Key 读出来。
 $chat = @'
 @echo off
 chcp 65001 > nul
 cd /d "%~dp0..\.."
 if not exist "chat-workspace" mkdir "chat-workspace"
-rem 默认工作区是 chat-workspace，而不是工程根目录 —— 免得模型把 .env.local 里的 Key 读出来
 "%~dp0lumin-demo.exe" chat --workspace chat-workspace %*
 echo.
-echo （按任意键关闭）
+echo (press any key to close)
 pause > nul
 '@
-Set-Content -LiteralPath (Join-Path $dist "对话.cmd") -Value $chat -Encoding utf8NoBOM
+Write-BatchFile (Join-Path $dist "对话.cmd") $chat
 
 $readme = @'
 Lumin —— Pi-Agent 风格的仓颉 Agent 运行时
