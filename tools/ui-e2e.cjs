@@ -213,7 +213,17 @@ function assert(cond, msg) {
   const shots = [];
   const shot = async (name) => {
     const file = path.join(outDir, name + '.png');
-    await page.screenshot({ path: file, fullPage: true });
+    // 页面真正的滚动容器是 #view，document 本身不滚，fullPage 只能拍到一屏。
+    // 截图前临时把视口拉高，才能把整页内容留下来。
+    const prev = page.viewportSize();
+    try {
+      await page.setViewportSize({ width: prev.width, height: 2600 });
+      await page.waitForTimeout(150);
+      await page.screenshot({ path: file });
+    } finally {
+      await page.setViewportSize(prev);
+      await page.waitForTimeout(80);
+    }
     shots.push(path.relative(process.cwd(), file));
   };
 
@@ -836,6 +846,44 @@ function assert(cond, msg) {
     assert(after === 4, '四步应全部完成，实际 ' + after);
     await shot('21-学习单元完成');
     return '目录标已完成，四步 ' + after + ' / 4';
+  });
+
+  await step('数据与备份：备份能被打开校验，也能删掉', async () => {
+    const statusApi = async () => (await page.evaluate(() => fetch('/api/maintenance/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()))).data;
+    const waitBackups = async (want) => {
+      for (let i = 0; i < 60; i += 1) {
+        const st = await statusApi();
+        if (st.backups.length === want) return st;
+        await page.waitForTimeout(250);
+      }
+      throw new Error('等待备份数变成 ' + want + ' 超时');
+    };
+
+    await nav('档案与知识库');
+    await page.waitForSelector('.data-backup .kv-line', { timeout: 15000 });
+    const info = await page.locator('.data-backup').innerText();
+    assert(info.indexOf('数据与备份') >= 0 || info.indexOf('数据目录') >= 0, '应有「数据与备份」卡片');
+    assert(info.indexOf('恢复方式') >= 0, '应写明恢复方式');
+
+    const st0 = await statusApi();
+    assert(st0.dbSize > 0, '应能读到数据库大小，实际 ' + st0.dbSize);
+    const before = st0.backups.length;
+
+    // 空态里也有一个「立即备份」，这里要指名点卡片动作条里那个
+    await page.locator('.data-backup > .row').getByRole('button', { name: '立即备份' }).click();
+    const st1 = await waitBackups(before + 1);
+    const newest = st1.backups[st1.backups.length - 1];
+    const bkPath = path.join(dataDir, 'backups', newest.name);
+    assert(fs.existsSync(bkPath), '备份文件应真的写在磁盘上：' + bkPath);
+    assert(fs.statSync(bkPath).size === st1.dbSize, '备份应与当前数据库同样大：' + fs.statSync(bkPath).size + ' vs ' + st1.dbSize);
+    await page.waitForSelector('.backup-item:has-text("' + newest.name + '")', { timeout: 20000 });
+    await shot('25-数据与备份');
+
+    await page.locator('.backup-item', { hasText: newest.name }).getByRole('button', { name: '删除' }).click();
+    await page.getByRole('button', { name: '确认删除' }).click();
+    await waitBackups(before);
+    assert(!fs.existsSync(bkPath), '删除后备份文件应没了');
+    return '库 ' + Math.round(st1.dbSize / 1024) + ' KB；备份 ' + newest.name + '（磁盘同大小）→ 已删除';
   });
 
   await step('我的成长统计已跟上', async () => {

@@ -2881,6 +2881,105 @@ PAGES.settings = {
     }
     v.appendChild(kbCard);
 
+    /* ---------- 数据与备份 ----------
+       用户最怕的是"攒了两个月的东西，一旦坏了就没了"。数据全在本机一个 SQLite 文件里，
+       所以这里给一个明确的"立即备份"和一个看得见的备份列表。 */
+    const bk = cardOf({
+      cls: "data-backup",
+      title: "数据与备份",
+      sub: "所有数据都在本机这一个 SQLite 文件里，备份就是把它复制一份",
+    });
+    let maint = { dataDir: state.cfg.dataDir || "", dbSize: 0, backups: [] };
+    try {
+      maint = await api("/api/maintenance/status", {});
+    } catch (e) {
+      bk.appendChild(el("p", "muted", "读不到数据状态：" + e.message));
+    }
+    const info = el("div", "kv-list");
+    const dirLine = el("div", "kv-line");
+    dirLine.appendChild(el("span", "kv-key", "数据目录"));
+    dirLine.appendChild(el("span", "path-line grow", maint.dataDir || "（未返回）"));
+    dirLine.appendChild(btn("复制路径", "sm ghost", () => {
+      navigator.clipboard.writeText(maint.dataDir || "").then(() => toast("路径已复制"), () => toast("复制失败，请手动选择"));
+    }));
+    info.appendChild(dirLine);
+    const dbLine = el("div", "kv-line");
+    dbLine.appendChild(el("span", "kv-key", "本地数据库"));
+    dbLine.appendChild(el("span", "muted", "itn.db · " + fmtSize(maint.dbSize) + " · " + (maint.backups || []).length + " 份备份"));
+    info.appendChild(dbLine);
+    bk.appendChild(info);
+
+    const bkActs = el("div", "row");
+    bkActs.appendChild(btn("立即备份", "primary", async (ev) => {
+      const b = ev.target;
+      b.disabled = true;
+      b.textContent = "备份并校验中…";
+      try {
+        const r = await api("/api/maintenance/backup", {});
+        toast("备份完成（已校验可打开）：" + r.name + " · " + fmtSize(r.size));
+        go("settings");
+      } catch (e) {
+        toast("备份失败：" + e.message);
+        b.disabled = false;
+        b.textContent = "立即备份";
+      }
+    }));
+    bkActs.appendChild(btn("复制备份目录", "ghost", () => {
+      navigator.clipboard.writeText((maint.dataDir || "") + "\\backups").then(() => toast("路径已复制"), () => toast("复制失败"));
+    }));
+    bk.appendChild(bkActs);
+
+    if (!(maint.backups || []).length) {
+      bk.appendChild(emptyState({
+        inline: true,
+        art: "layers",
+        title: "还没有备份",
+        text: "点「立即备份」会把整个数据库复制到数据目录的 backups 子目录，并立刻打开副本校验一次——拷出来打不开的备份不算备份。",
+        actions: [btn("立即备份", "primary", async (ev) => {
+          const b = ev.target;
+          b.disabled = true;
+          b.textContent = "备份并校验中…";
+          try {
+            const r = await api("/api/maintenance/backup", {});
+            toast("备份完成（已校验可打开）：" + r.name + " · " + fmtSize(r.size));
+            go("settings");
+          } catch (e) {
+            toast("备份失败：" + e.message);
+            b.disabled = false;
+            b.textContent = "立即备份";
+          }
+        })],
+      }));
+    } else {
+      const bl = el("div", "list");
+      bl.style.marginTop = "10px";
+      for (const b of maint.backups) {
+        const it = el("div", "item backup-item");
+        const row = el("div", "row");
+        const main = el("div", "grow");
+        main.appendChild(el("div", "item-title", b.name));
+        main.appendChild(el("div", "meta", fmtSize(b.size) + " · " + b.name.replace(/^itn-/, "").replace(/\.db$/, "")));
+        row.appendChild(main);
+        row.appendChild(btn("复制路径", "sm ghost", () => {
+          navigator.clipboard.writeText(b.path || "").then(() => toast("路径已复制"), () => toast("复制失败"));
+        }));
+        row.appendChild(btn("删除", "sm ghost", () => {
+          confirmDialog("删除这份备份？", "会删掉 " + b.name + "。它只是一份副本，删了不影响当前数据。", async () => {
+            try {
+              await api("/api/maintenance/backups/delete", { name: b.name });
+              toast("已删除备份");
+              go("settings");
+            } catch (e) { toast("删除失败：" + e.message); }
+          });
+        }));
+        it.appendChild(row);
+        bl.appendChild(it);
+      }
+      bk.appendChild(bl);
+    }
+    bk.appendChild(el("p", "muted sm", "恢复方式：先退出应用，把备份文件改名成 itn.db 覆盖数据目录里的同名文件（若旁边还有 itn.db-journal，一并删掉），再启动即可。"));
+    v.appendChild(bk);
+
     const about = cardOf({ title: "数据与隐私" });
     const ul = el("ul", "about-list");
     [

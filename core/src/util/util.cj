@@ -62,6 +62,22 @@ public func hasPrefix(s: String, prefix: String): Bool {
     return true
 }
 
+public func hasSuffix(s: String, suffix: String): Bool {
+    let sb = s.toArray()
+    let xb = suffix.toArray()
+    if (xb.size > sb.size) {
+        return false
+    }
+    var i = 0
+    while (i < xb.size) {
+        if (sb[sb.size - xb.size + i] != xb[i]) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
 // 同时支持 "--flag value" 与 "--flag=value" 两种写法
 public func argValue(args: Array<String>, flag: String): ?String {
     let pref = flag + "="

@@ -673,6 +673,122 @@ public class Api {
             return
         }
 
+        // ---------- 数据与备份 ----------
+
+        if (path == "/api/maintenance/status" && method == "POST") {
+            let dir = store.dataDir + Path.Separator + "backups"
+            ensureDir(dir)
+            let arr = JsonArray()
+            try {
+                Directory.walk(Path(dir), { fi: FileInfo =>
+                    if (!fi.isDirectory() && hasSuffix(fi.name, ".db")) {
+                        let o = JsonObject()
+                        o.put("name", JsonString(fi.name))
+                        o.put("path", JsonString(dir + Path.Separator + fi.name))
+                        o.put("size", JsonInt(fi.size))
+                        arr.add(o)
+                    }
+                    true
+                })
+            } catch (e: Exception) {
+                ()
+            }
+            let dbPath = store.dataDir + Path.Separator + "itn.db"
+            let o = JsonObject()
+            o.put("dataDir", JsonString(store.dataDir))
+            o.put("dbPath", JsonString(dbPath))
+            o.put("dbSize", JsonInt(fileSizeOf(dbPath)))
+            o.put("backupDir", JsonString(dir))
+            o.put("backups", arr)
+            ok(ctx, o)
+            return
+        }
+
+        if (path == "/api/maintenance/backup" && method == "POST") {
+            let dir = store.dataDir + Path.Separator + "backups"
+            ensureDir(dir)
+            let src = store.dataDir + Path.Separator + "itn.db"
+            if (!exists(src)) {
+                fail(ctx, 404, "找不到数据库文件：" + src)
+                return
+            }
+            var name = "itn-" + fileStamp() + ".db"
+            var n = 2
+            while (exists(dir + Path.Separator + name)) {
+                name = "itn-" + fileStamp() + "-" + n.toString() + ".db"
+                n = n + 1
+            }
+            let dst = dir + Path.Separator + name
+            try {
+                File.writeTo(dst, File.readFrom(src))
+                // 数据库旁边若还有回滚日志，也一起带上：只拷主文件的话，
+                // 那一瞬间的状态可能是不完整的，带上 journal 才回得去。
+                let jrn = src + "-journal"
+                if (exists(jrn)) {
+                    File.writeTo(dst + "-journal", File.readFrom(jrn))
+                }
+            } catch (e: Exception) {
+                fail(ctx, 500, "复制数据库失败：" + e.message)
+                return
+            }
+            var rows: Int64 = -1
+            try {
+                rows = verifyBackup(dst)
+            } catch (e: Exception) {
+                // 拷出来打不开：删掉副本，让用户稍后重试（多半是刚好撞上一次写入）
+                try {
+                    remove(dst)
+                } catch (_: Exception) {
+                    ()
+                }
+                if (exists(dst + "-journal")) {
+                    try {
+                        remove(dst + "-journal")
+                    } catch (_: Exception) {
+                        ()
+                    }
+                }
+                fail(ctx, 500, "备份校验没通过（可能正好撞上一次写入）：" + e.message + "。稍后再试即可。")
+                return
+            }
+            let o = JsonObject()
+            o.put("name", JsonString(name))
+            o.put("path", JsonString(dst))
+            o.put("size", JsonInt(fileSizeOf(dst)))
+            o.put("at", JsonString(nowStamp()))
+            o.put("verified", JsonBool(true))
+            o.put("rows", JsonInt(rows))
+            ok(ctx, o)
+            return
+        }
+
+        if (path == "/api/maintenance/backups/delete" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let name = strOf(b, "name")
+                    if (name.size == 0 || sanitizeName(name) != name || !hasSuffix(name, ".db")) {
+                        fail(ctx, 400, "备份名不合法：" + name)
+                        return
+                    }
+                    let full = store.dataDir + Path.Separator + "backups" + Path.Separator + name
+                    if (!exists(full)) {
+                        fail(ctx, 404, "找不到备份：" + name)
+                        return
+                    }
+                    try {
+                        remove(full)
+                        if (exists(full + "-journal")) {
+                            remove(full + "-journal")
+                        }
+                        ok(ctx, JsonString("ok"))
+                    } catch (e: Exception) {
+                        fail(ctx, 500, "删除备份失败：" + e.message)
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         // ---------- 课件播放进度 ----------
 
         if (path == "/api/artifacts/progress" && method == "POST") {
@@ -1123,6 +1239,55 @@ func kvStr(parts: Array<String>, idx: Int64): String {
     return trimStr(parts[idx])
 }
 
+/** 文件名安全的时间戳：20261014-110804。用不了就退回毫秒数。 */
+func fileStamp(): String {
+    let raw = nowStamp()
+    let b = raw.toArray()
+    let out = ArrayList<UInt8>()
+    var i = 0
+    while (i < b.size) {
+        let c = b[i]
+        if (c >= 48 && c <= 57) {
+            out.add(c)
+        } else if (c == 84) {
+            out.add(45)   // 'T' -> '-'
+        }
+        i = i + 1
+    }
+    let s = String.fromUtf8(out.toArray())
+    if (s.size >= 15 && s.toArray()[8] == 45) {
+        return String.fromUtf8(s.toArray()[0..15])
+    }
+    return if (s.size > 0) { s } else { "backup" }
+}
+
+func fileSizeOf(path: String): Int64 {
+    try {
+        let f = File(path, OpenMode.Read)
+        let n = f.length
+        f.close()
+        return n
+    } catch (e: Exception) {
+        return 0
+    }
+}
+
+/**
+ * 校验一份备份能不能真的打开。
+ *
+ * 只做文件复制是不够的：拷的瞬间如果正好有一次写入，拷出来可能是不一致的。
+ * 这里的做法是把副本当数据库打开、数一下 meta 表的行数——能打开、能查询，才算这份备份可用。
+ * 副本有独立的 -cjflock，不会和主库互相干扰。
+ */
+func verifyBackup(path: String): Int64 {
+    let db = Db.openFile(path)
+    try {
+        return db.scalarInt("SELECT COUNT(*) FROM meta", ArrayList<DbValue>())
+    } finally {
+        db.close()
+    }
+}
+
 func describeFailure(message: String): String {
     if (message.split("cjflock").size > 1 || message.split("database is locked").size > 1) {
         return "本地数据库被另一个进程占用，无法读写：" + message +
@@ -1152,6 +1317,9 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/agent/ask",
         "/api/agent/lecture",
         "/api/agent/quiz",
+        "/api/maintenance/status",
+        "/api/maintenance/backup",
+        "/api/maintenance/backups/delete",
         "/api/tools/list",
         "/api/sessions/new",
         "/api/sessions/list",

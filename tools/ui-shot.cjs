@@ -72,7 +72,12 @@ const { chromium } = loadPlaywright();
     }));
     const safe = navItems[i].replace(/[^\w\u4e00-\u9fa5]+/g, '_');
     const file = path.join(outDir, String(i + 1).padStart(2, '0') + '-' + safe + '.png');
-    await page.screenshot({ path: file, fullPage: true });
+    // 滚动容器是 #view 而不是 document，fullPage 只能拍一屏；先把视口拉高再拍
+    await page.setViewportSize({ width: 1440, height: 2600 });
+    await page.waitForTimeout(150);
+    await page.screenshot({ path: file });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.waitForTimeout(80);
     summary.pages.push({ index: i + 1, nav: navItems[i], ...info, shot: path.relative(process.cwd(), file) });
   }
 
