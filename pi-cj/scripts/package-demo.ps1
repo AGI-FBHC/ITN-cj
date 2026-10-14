@@ -50,19 +50,21 @@ echo.
 echo （按任意键关闭）
 pause > nul
 '@
-Set-Content -LiteralPath (Join-Path $dist "运行演示.cmd") -Value $launcher -Encoding OEM
+Set-Content -LiteralPath (Join-Path $dist "运行演示.cmd") -Value $launcher -Encoding utf8NoBOM
 
 # 对话启动器：回到工程目录再跑，这样能自动读到 pi-cj\.env.local 里的 Key（Key 不进 dist）
 $chat = @'
 @echo off
 chcp 65001 > nul
 cd /d "%~dp0..\.."
-target\release\bin\main.exe chat --workspace . %*
+if not exist "chat-workspace" mkdir "chat-workspace"
+rem 默认工作区是 chat-workspace，而不是工程根目录 —— 免得模型把 .env.local 里的 Key 读出来
+"%~dp0pi-cj-demo.exe" chat --workspace chat-workspace %*
 echo.
 echo （按任意键关闭）
 pause > nul
 '@
-Set-Content -LiteralPath (Join-Path $dist "对话.cmd") -Value $chat -Encoding OEM
+Set-Content -LiteralPath (Join-Path $dist "对话.cmd") -Value $chat -Encoding utf8NoBOM
 
 $readme = @'
 pi-cj —— Pi-Agent 风格的仓颉 Agent 运行时
