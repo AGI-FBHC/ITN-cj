@@ -796,28 +796,98 @@ async function renderChapter(v) {
   head.appendChild(el("h2", null, state.chapter));
   head.appendChild(spacer());
   head.appendChild(tag(readCount + " / " + chunks.length + " 片已读", readCount === chunks.length && chunks.length ? "ok" : ""));
-  const acts = el("div", "row");
-  acts.style.marginTop = "10px";
-  acts.appendChild(btn("按节播放", "primary sm", () => playChapter(state.chapter)));
-  acts.appendChild(btn("生成讲义", "sm", () => askTopic("lecture", state.chapter)));
-  acts.appendChild(btn("生成练习册", "sm", () => askTopic("quiz", state.chapter)));
-  acts.appendChild(btn("出题练习", "sm", () => openQuiz(v, state.chapter)));
-  acts.appendChild(btn("写笔记", "sm ghost", () => openNoteEditor(null, state.kb, state.chapter)));
-  acts.appendChild(btn("整章标记已读", "sm ghost", async () => {
+  // 学 · 练 的一章就是一个"学习单元"：讲 → 练 → 记 → 完成。
+  // 四步是否完成全部由真实记录判定（切片已读、本章答题、本章笔记、章节完成标记），
+  // 不存"向导进度"这种东西，也就不会出现"界面说你做完了但记录是空的"。
+  const [statRes, noteRes, treeRes] = await Promise.all([
+    api("/api/study/quiz/stats", {}).catch(() => ({ chapters: [] })),
+    api("/api/study/notes/list", {}).catch(() => ({ notes: [] })),
+    api("/api/study/tree", { kbId: state.kb }).catch(() => ({ chapters: [] })),
+  ]);
+  const stat = ((statRes.chapters || []).filter((x) => x.chapter === state.chapter && x.kbId === state.kb)[0]) ||
+    { total: 0, right: 0, wrong: 0 };
+  const chapterNotes = (noteRes.notes || []).filter((n) => n.chapter === state.chapter);
+  const chapterMeta = ((treeRes.chapters || []).filter((c) => c.name === state.chapter)[0]) || {};
+  const markAllRead = async () => {
     for (const c of chunks) {
       if (c.read) continue;
       await api("/api/study/read", { kbId: state.kb, chunkId: c.id, chapter: state.chapter, chapterDone: true });
     }
-    toast("已标记整章");
+    toast("已标记本章完成，回目录挑下一章");
+    state.chapter = null;
     go("learn");
-  }));
+  };
+
   bar.appendChild(head);
-  bar.appendChild(acts);
   const prog = el("div", "bar");
   prog.innerHTML = '<i style="width:' + pct(readCount, chunks.length) + '%"></i>';
   prog.style.marginTop = "12px";
   bar.appendChild(prog);
   v.appendChild(bar);
+
+  const steps = [
+    {
+      n: 1, title: "讲一遍", done: readCount > 0,
+      desc: "按节翻一遍本章：已读 " + readCount + " / " + chunks.length + " 片",
+      acts: [btn("按节播放", "primary sm", () => playChapter(state.chapter)),
+             btn("整章标记已读", "sm ghost", markAllRead)],
+    },
+    {
+      n: 2, title: "练一组", done: stat.total > 0,
+      desc: stat.total > 0 ? ("本章已答 " + stat.total + " 题 · 对 " + stat.right + " · 错 " + stat.wrong)
+                          : "还没有针对本章的作答记录",
+      acts: [btn("出题练习", "primary sm", () => openQuiz(v, state.chapter)),
+             btn("错题本", "sm ghost", () => go("wrong"))],
+    },
+    {
+      n: 3, title: "记一条", done: chapterNotes.length > 0,
+      desc: chapterNotes.length > 0 ? ("本章已有 " + chapterNotes.length + " 条笔记") : "把这一章的想法留下来",
+      acts: [btn("写笔记", "primary sm", () => openNoteEditor(null, state.kb, state.chapter)),
+             btn("全部笔记", "sm ghost", () => go("notes"))],
+    },
+    {
+      n: 4, title: "完成本章", done: !!chapterMeta.done,
+      desc: chapterMeta.done ? "已标记完成，会记进学习报告" : "标记后这一章进学习报告，目录里也会标已完成",
+      acts: [btn("标记本章完成", "primary sm", markAllRead)],
+    },
+  ];
+  const doneCount = steps.filter((x) => x.done).length;
+  const unit = cardOf({
+    title: "学习单元 · " + state.chapter,
+    sub: "讲 → 练 → 记 → 完成，每一步都按本机真实记录判定",
+    tag: "已完成 " + doneCount + " / 4",
+    tagCls: doneCount === 4 ? "ok" : "",
+  });
+  const strip = el("div", "unit-steps");
+  for (const st of steps) {
+    const item = el("div", "unit-step" + (st.done ? " done" : "") + (!st.done && st.n === doneCount + 1 ? " current" : ""));
+    item.appendChild(el("div", "unit-idx", st.done ? "✓" : String(st.n)));
+    const body = el("div", "unit-body");
+    body.appendChild(el("div", "unit-title", st.title));
+    body.appendChild(el("div", "unit-desc", st.desc));
+    item.appendChild(body);
+    const acts = el("div", "unit-acts");
+    for (const b of st.acts) acts.appendChild(b);
+    item.appendChild(acts);
+    strip.appendChild(item);
+  }
+  unit.appendChild(strip);
+  if (doneCount === 4) {
+    unit.appendChild(el("p", "unit-done-note", "这一章走完了：讲、练、记、完成都在本机留了记录。可以生成一份讲义沉淀，或者回目录挑下一章。"));
+  }
+  v.appendChild(unit);
+
+  v.appendChild(cardOf({
+    title: "还能做什么",
+    body: (() => {
+      const row = el("div", "row");
+      row.appendChild(btn("生成讲义", "", () => askTopic("lecture", state.chapter)));
+      row.appendChild(btn("生成练习册", "", () => askTopic("quiz", state.chapter)));
+      row.appendChild(btn("去检索这部分", "ghost", () => go("kb")));
+      row.appendChild(btn("问助手", "ghost", () => go("chat")));
+      return row;
+    })(),
+  }));
 
   for (const c of chunks) {
     const box = el("div", "card chunk-card");

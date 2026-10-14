@@ -578,3 +578,31 @@ body.chat-mode .topbar { display: none; }
 }
 .seg-wide { display: flex; flex-wrap: wrap; margin: 8px 0 0; }
 .seg-flag { margin-left: 6px; font-size: 10px; color: var(--amber); }
+/* ============================================================
+  学习单元：一章 = 讲 → 练 → 记 → 完成
+   ============================================================ */
+.unit-steps { display: flex; flex-direction: column; gap: 8px; }
+.unit-step {
+  display: flex; align-items: center; gap: 12px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 12px 14px; background: #fff;
+}
+.unit-step.current { border-color: var(--brand-line); background: var(--brand-soft); }
+.unit-step.done { background: var(--panel-soft); }
+.unit-idx {
+  flex: 0 0 26px; width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: #f1efe8; color: var(--muted); font-size: 12px; font-weight: 650;
+}
+.unit-step.done .unit-idx { background: var(--brand-soft); color: var(--brand); }
+.unit-step.current .unit-idx { background: var(--brand); color: #f4faf6; }
+.unit-body { flex: 1; min-width: 0; }
+.unit-title { font-size: 13.5px; font-weight: 600; }
+.unit-step.done .unit-title { color: var(--muted); text-decoration: line-through; text-decoration-color: #cfd8d1; }
+.unit-desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.unit-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.unit-done-note {
+  margin: 12px 0 0; padding: 10px 14px; font-size: 13px;
+  background: var(--brand-soft); color: var(--ink-2); border-radius: 10px;
+}
+@media (max-width: 900px) { .unit-step { flex-wrap: wrap; } }

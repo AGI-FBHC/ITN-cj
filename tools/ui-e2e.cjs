@@ -707,6 +707,37 @@ function assert(cond, msg) {
     return n + ' 条';
   });
 
+  await step('学习单元：四步状态全部来自真实记录', async () => {
+    await nav('学 · 练');
+    if (!(await page.locator('.chunk-card').count())) {
+      await page.locator('.item', { hasText: '提示词工程基础' }).getByRole('button', { name: '开始学' }).click();
+      await page.waitForSelector('.chunk-card', { timeout: 20000 });
+    }
+    await page.waitForSelector('.unit-step', { timeout: 15000 });
+    const steps = await page.locator('.unit-step').count();
+    assert(steps === 4, '学习单元应有四步，实际 ' + steps);
+    const descs = await page.$$eval('.unit-step .unit-desc', (els) => els.map((e) => e.textContent.trim()));
+    assert(/已读 \d+ \/ \d+ 片/.test(descs[0]), '第一步应显示已读比例，实际：' + descs[0]);
+    assert(descs[1].indexOf('已答') >= 0, '第二步应显示本章答题数（真实记录），实际：' + descs[1]);
+    assert(descs[2].indexOf('笔记') >= 0, '第三步应显示本章笔记数（真实记录），实际：' + descs[2]);
+    const before = await page.locator('.unit-step.done').count();
+    await shot('20-学习单元');
+    return '四步，进入时已完成 ' + before + ' / 4：' + descs.join(' | ').slice(0, 80);
+  });
+
+  await step('标记本章完成后回目录，目录标已完成且四步全绿', async () => {
+    await page.getByRole('button', { name: '标记本章完成' }).click();
+    await page.waitForSelector('.chapter-idx', { timeout: 20000 });
+    const row = await page.locator('.item', { hasText: '提示词工程基础' }).first().innerText();
+    assert(row.indexOf('已完成') >= 0, '目录里该章应标「已完成」，实际：' + row.replace(/\s+/g, ' '));
+    await page.locator('.item', { hasText: '提示词工程基础' }).getByRole('button', { name: '开始学' }).click();
+    await page.waitForSelector('.unit-step', { timeout: 20000 });
+    const after = await page.locator('.unit-step.done').count();
+    assert(after === 4, '四步应全部完成，实际 ' + after);
+    await shot('21-学习单元完成');
+    return '目录标已完成，四步 ' + after + ' / 4';
+  });
+
   await step('我的成长统计已跟上', async () => {
     await nav('我的成长');
     const vals = await page.$$eval('.stat .v', (els) => els.map((e) => parseInt(e.textContent, 10) || 0));

@@ -773,6 +773,49 @@ public class Api {
             return
         }
 
+        // 按章节的答题统计：学习单元要靠它显示"这一章练过多少、对了几道"
+        if (path == "/api/study/quiz/stats" && method == "POST") {
+            let grouped = ArrayList<JsonObject>()
+            let keys = ArrayList<String>()
+            for (r in DbHub.open(store.dataDir).querySql("SELECT kb_id, chapter, correct FROM quiz_records")) {
+                let key = r.text(0) + "|" + r.text(1)
+                var found = -1
+                var i = 0
+                while (i < keys.size) {
+                    if (keys[i] == key) {
+                        found = i
+                    }
+                    i = i + 1
+                }
+                if (found < 0) {
+                    let o = JsonObject()
+                    o.put("kbId", JsonString(r.text(0)))
+                    o.put("chapter", JsonString(r.text(1)))
+                    o.put("total", JsonInt(0))
+                    o.put("right", JsonInt(0))
+                    o.put("wrong", JsonInt(0))
+                    keys.add(key)
+                    grouped.add(o)
+                    found = grouped.size - 1
+                }
+                let g = grouped[found]
+                g.put("total", JsonInt(intOf(g, "total") + 1))
+                if (r.text(2) == "1" || r.text(2) == "true" || r.text(2) == "TRUE") {
+                    g.put("right", JsonInt(intOf(g, "right") + 1))
+                } else {
+                    g.put("wrong", JsonInt(intOf(g, "wrong") + 1))
+                }
+            }
+            let arr = JsonArray()
+            for (g in grouped) {
+                arr.add(g)
+            }
+            let o = JsonObject()
+            o.put("chapters", arr)
+            ok(ctx, o)
+            return
+        }
+
         // ---------- 笔记 ----------
 
         if (path == "/api/study/notes/list" && method == "POST") {
@@ -1038,6 +1081,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/study/notes/delete",
         "/api/study/quiz/generate",
         "/api/study/quiz/submit",
+        "/api/study/quiz/stats",
         "/api/study/wrong",
         "/api/study/report",
         "/api/artifacts/list",
