@@ -1,7 +1,7 @@
 # 构建并直接跑一遍 lumin 演示（开发时用）
 $ErrorActionPreference = 'Stop'
 
-. "$PSScriptRoot\..\..\scripts\env.ps1"
+. "$PSScriptRoot\env.ps1"
 
 $proj = Resolve-Path "$PSScriptRoot\.."
 Push-Location $proj

@@ -1,7 +1,7 @@
 # 把 lumin 打成"双击就能跑"的绿色目录（目标机器无需装仓颉）。
 $ErrorActionPreference = 'Stop'
 
-. "$PSScriptRoot\..\..\scripts\env.ps1"
+. "$PSScriptRoot\env.ps1"
 
 $proj = Resolve-Path "$PSScriptRoot\.."
 $dist = Join-Path $proj "dist\lumin-demo"

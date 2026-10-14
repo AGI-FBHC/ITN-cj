@@ -8,7 +8,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-. "$PSScriptRoot\..\..\scripts\env.ps1"
+. "$PSScriptRoot\env.ps1"
 
 $proj = Resolve-Path "$PSScriptRoot\.."
 Push-Location $proj

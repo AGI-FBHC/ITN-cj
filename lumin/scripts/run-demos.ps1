@@ -7,7 +7,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-. "$PSScriptRoot\..\..\scripts\env.ps1"
+. "$PSScriptRoot\env.ps1"
 
 $proj = Resolve-Path "$PSScriptRoot\.."
 if (-not $Out) { $Out = Join-Path $proj ("dist\logs-" + (Get-Date -Format 'MMdd-HHmm')) }
