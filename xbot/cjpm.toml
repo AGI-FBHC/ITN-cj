@@ -1,0 +1,12 @@
+[package]
+cjc-version = "1.2.0"
+name = "xbot"
+version = "0.1.0"
+description = "Pi-Agent 风格 Agent 运行时（仓颉实现）：事件流 / 增量工具调用 / 模式=工具集"
+output-type = "executable"
+compile-option = "-Woff unused --diagnostic-format=noColor -lssl -lcrypto -lcangjie-dynamicLoader-opensslFFI -lcrypt32"
+
+[dependencies]
+
+[target.x86_64-w64-mingw32.bin-dependencies]
+path-option = ["${CANGJIE_STDX_PATH}"]
