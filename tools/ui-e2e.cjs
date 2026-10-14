@@ -666,53 +666,45 @@ fs.writeFileSync(singleFile, [
     return prev.length + ' 字';
   });
 
-  await step('生成过程有实时进度（阶段 + 小节 + 增量文字）', async () => {
+  await step('生成过程是一条时间线，没有内核写死的步骤条', async () => {
     await page.getByRole('button', { name: '生成讲义' }).first().click();
     await page.waitForSelector('#topic-input', { timeout: 10000 });
     await page.fill('#topic-input', '提示词工程实时进度');
     await page.getByRole('button', { name: '开始生成讲义' }).click();
-    // 进度卡必须在请求进行中就出现，而不是等结果回来才画
-    await page.waitForSelector('.progress-card .gen-stage', { timeout: 10000 });
-    // 等一拍再抓现场：第一帧一定是"准备中…"，想留下真正跑到某一节时的样子。
-    // 卡片在生成结束时会消失，所以读取要容错。
-    await page.waitForTimeout(900);
-    let stage = "", liveText = "", liveSecs = "";
-    stage = await page.textContent('.gen-stage').catch(() => stage);
-    liveText = await page.textContent('.gen-text').catch(() => liveText);
-    liveSecs = await page.textContent('.gen-sections').catch(() => liveSecs);
-    await shot('22-生成实时进度');
+    // 生成卡必须在请求进行中就出现，而不是等结果回来才画
+    await page.waitForSelector('.gen-card', { timeout: 10000 });
+    // 关键断言：这张卡里**没有**写死的步骤条（上一版网页端的"检索→大纲→逐节→自检→落盘"已经删掉）
+    const fixed = await page.locator('.gen-card .pipe-step').count();
+    assert(fixed === 0, '生成卡里不该有写死的步骤条，实际 ' + fixed + ' 个');
+    await page.waitForTimeout(700);
+    await shot('22-生成过程');
     await page.waitForSelector('.ok-dialog:has-text("讲义已生成")', { timeout: 90000 });
+    const head = await page.locator('.ok-dialog').innerText();
+    assert(/讲义-/.test(head), '结果卡里应出现产物文件名，实际：' + head.replace(/\s+/g, ' ').slice(0, 80));
     await page.locator('.ok-dialog').getByRole('button', { name: '收起' }).click();
-    // 事件里应当留下逐节写作的增量与"本节完成"
-    const list = await page.evaluate(async () => {
-      const r = await fetch('/api/sessions/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-      return { status: r.status, body: await r.json().catch(() => null) };
-    });
-    assert(list.body && list.body.data && list.body.data.sessions && list.body.data.sessions.length,
-      'sessions/list 没有返回会话：HTTP ' + list.status + ' ' + JSON.stringify(list.body).slice(0, 200));
-    const sid = list.body.data.sessions[0].sessionId;
+    // 会话里也不该有内核编的"第 N 步"事件：步骤是模型自己排的
+    const list = await page.evaluate(() => fetch('/api/sessions/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()));
+    const sid = list.data.sessions[0].sessionId;
     const ev = await page.evaluate((id) => fetch('/api/sessions/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: id }) }).then((x) => x.json()), sid);
     const evs = ev.data.events;
-    const stageDeltas = evs.filter((e) => e.type === 'assistant/delta' && (e.payload || {}).stage === 'section');
-    const sections = evs.filter((e) => e.type === 'section/done');
-    assert(stageDeltas.length >= 1, '应有逐节写作的增量事件，实际 ' + stageDeltas.length);
-    assert(sections.length >= 1, '应有 section/done 事件，实际 ' + sections.length);
-    const label = (stageDeltas[0].payload || {}).label || '';
-    assert(label.length > 0, '逐节增量应带上小节名');
-    return '请求中已显示「' + (stage || '（卡片已收）') + '」（实时文字 ' + liveText.length + ' 字' + (liveSecs ? '，' + liveSecs.slice(0, 30) : '') + '）；' +
-      stageDeltas.length + ' 段逐节增量 / ' + sections.length + ' 节完成（' + label + '）';
+    const stepEvents = evs.filter((e) => String(e.type).indexOf('step/') === 0);
+    assert(stepEvents.length === 0, '会话里不该再有 step/* 事件（那是内核编的步骤），实际 ' + stepEvents.length);
+    const turnStart = evs.filter((e) => e.type === 'turn/start').pop();
+    assert(turnStart && turnStart.payload.kind === 'lecture', '这一轮应标成讲义任务，实际 ' + JSON.stringify(turnStart && turnStart.payload));
+    return '生成卡里 0 个写死步骤 · 事件 ' + evs.length + ' 条 · kind=' + turnStart.payload.kind;
   });
 
-  await step('生成讲义（大纲 → 逐节 → 引用自检）', async () => {
+  await step('生成讲义（一次任务：怎么写写在提示词里，不在代码里）', async () => {
     await page.getByRole('button', { name: '生成讲义' }).first().click();
     await page.waitForSelector('#topic-input', { timeout: 10000 });
     await page.fill('#topic-input', '提示词工程');
     await page.getByRole('button', { name: '开始生成讲义' }).click();
     await page.waitForSelector('.ok-dialog:has-text("讲义已生成")', { timeout: 90000 });
     const head = await page.locator('.ok-dialog').innerText();
-    assert(/小节/.test(head), '应显示小节数，实际：' + head.replace(/\s+/g, ' ').slice(0, 80));
+    assert(/讲义-提示词工程/.test(head), '结果卡里应写出产物名，实际：' + head.replace(/\s+/g, ' ').slice(0, 80));
     const prev = await page.locator('.ok-dialog .artifact-preview').innerText();
     assert(prev.length > 100, '讲义正文应有一定长度');
+    assert(/资料来源/.test(prev), '讲义末尾应带资料来源');
     await shot('09-讲义生成');
     await page.locator('.ok-dialog').getByRole('button', { name: '收起' }).click();
     return head.replace(/\s+/g, ' ').slice(0, 60);
@@ -731,27 +723,19 @@ fs.writeFileSync(singleFile, [
   });
 
   /* ---------- 伴学助手：会话栏 + 主对话框 ---------- */
-  await step('讲义正文不重复小节标题（内核去重）', async () => {
-    const list = await page.evaluate(() => fetch('/api/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()));
-    const lec = list.data.artifacts.filter((a) => a.name.indexOf('讲义-') === 0)[0];
-    const read = await page.evaluate((n) => fetch('/api/artifacts/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: n }) }).then((x) => x.json()), lec.name);
-    const lines = String(read.data.content).split('\n');
-    let echoed = 0;
-    for (let i = 0; i < lines.length; i += 1) {
-      const m = lines[i].trim().match(/^##\s+\d+\s+(.+)$/);
-      if (!m) continue;
-      const want = m[1].trim();
-      for (let j = i + 1; j < Math.min(i + 4, lines.length); j += 1) {
-        const t2 = lines[j].trim();
-        if (!t2) continue;
-        const h = t2.match(/^#+\s+(.+)$/);
-        if (h && h[1].trim() === want) echoed += 1;
-        break;
-      }
-    }
-    assert(echoed === 0, '正文里不该再抄一遍小节标题，实际抄了 ' + echoed + ' 处');
-    const heads = lines.map((x) => x.trim()).filter((x) => x.indexOf('## ') === 0);
-    return heads.length + ' 个二级标题，无重复抄写';
+  await step('同名产物不会静默覆盖（第二次自动加序号）', async () => {
+    const post = (route, body) => page.evaluate(([r, b]) => fetch(r, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b),
+    }).then((x) => x.json()), [route, body]);
+    const a = await post('/api/agent/task-pi', { kind: 'lecture', kbId: '', topic: '同名不覆盖', web: 'off' });
+    const b = await post('/api/agent/task-pi', { kind: 'lecture', kbId: '', topic: '同名不覆盖', web: 'off' });
+    assert(a.data.artifactPath && b.data.artifactPath, '两次都该有产物路径：' + JSON.stringify([a.data.artifactPath, b.data.artifactPath]));
+    assert(a.data.artifactPath !== b.data.artifactPath, '同名第二次应换一个文件名，实际两次都是 ' + a.data.artifactPath);
+    assert(fs.existsSync(a.data.artifactPath) && fs.existsSync(b.data.artifactPath), '两份产物都应真在磁盘上');
+    const latest = await page.evaluate(() => fetch('/api/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()));
+    const names = latest.data.artifacts.map((x) => x.name).filter((n) => n.indexOf('讲义-同名不覆盖') === 0);
+    assert(names.length === 2, '资源里应有同名两份，实际 ' + names.join('/'));
+    return '两次落盘：' + names.join(' / ');
   });
 
   await step('伴学助手是「会话栏 + 主对话框」两栏形态', async () => {
@@ -853,14 +837,23 @@ fs.writeFileSync(singleFile, [
   });
 
   await step('点会话栏能还原历史对话与出处', async () => {
-    await page.locator('.panel-item').first().click();
-    await page.waitForSelector('.turn-block', { timeout: 20000 });
-    const turns = await page.locator('.turn-block').count();
-    const cites = await page.locator('.cite-list li').count();
+    // 会话栏第一条可能是"生成讲义"那次任务（标题就是任务简报），所以这里挨条开，
+    // 找到那条真的带出处的问答 —— 要验的是"历史会话能还原出处"，不是"第一条一定是问答"。
+    const items = page.locator('.panel-item');
+    const n = await items.count();
+    let turns = 0;
+    let cites = 0;
+    for (let i = 0; i < n; i += 1) {
+      await items.nth(i).click();
+      await page.waitForTimeout(700);
+      turns = await page.locator('.turn-block').count();
+      cites = await page.locator('.cite-list li').count();
+      if (turns >= 1 && cites >= 1) break;
+    }
     assert(turns >= 1, '应还原出对话轮次');
     assert(cites >= 1, '历史会话也应能还原出处列表，实际 ' + cites);
     await shot('15-历史会话还原');
-    return turns + ' 轮，出处 ' + cites + ' 条';
+    return turns + ' 轮，出处 ' + cites + ' 条（共 ' + n + ' 条会话）';
   });
 
   await step('「新建对话」会开一条空会话', async () => {
@@ -1080,9 +1073,9 @@ fs.writeFileSync(singleFile, [
     await page.waitForSelector('#topic-input', { timeout: 10000 });
     await page.fill('#topic-input', '提示词工程-会被取消');
     await page.getByRole('button', { name: '开始生成讲义' }).click();
-    await page.waitForSelector('.progress-card', { timeout: 15000 });
-    await page.waitForTimeout(900);   // 让它真的开始写某一节，再停
-    const stage = await page.textContent('.gen-stage').catch(() => '');
+    await page.waitForSelector('.gen-card', { timeout: 15000 });
+    await page.waitForTimeout(900);   // 让它真的开始跑，再停
+    const stage = await page.textContent('.gen-card .card-head h2').catch(() => '');
     await page.getByRole('button', { name: '停止生成' }).click();
     await page.waitForSelector('.dialog:has-text("已取消")', { timeout: 30000 });
     const box = await page.locator('.dialog', { hasText: '已取消' }).first().innerText();
