@@ -101,6 +101,101 @@ public func citationReport(markdown: String, sourceCount: Int64): JsonObject {
     return o
 }
 
+/**
+ * 扫描 [Wn]（网络来源）标记。
+ *
+ * 本机资料用 [n]、网页用 [Wn]：两套编号分开，是因为它们的可信度与寿命不一样——
+ * 资料是本机的、可复现；网页会变，所以出处里必须带抓取时间。
+ */
+public func scanWebCitations(text: String): ArrayList<Int64> {
+    let out = ArrayList<Int64>()
+    let b = text.toArray()
+    var i = 0
+    while (i < b.size) {
+        if (b[i] == 91 && i + 1 < b.size && (b[i + 1] == 87 || b[i + 1] == 119)) {
+            var j = i + 2
+            var digits = ArrayList<UInt8>()
+            while (j < b.size && b[j] >= 48 && b[j] <= 57) {
+                digits.add(b[j])
+                j = j + 1
+            }
+            if (digits.size > 0 && j < b.size && b[j] == 93) {
+                out.add(Int64.parse(String.fromUtf8(digits.toArray())))
+                i = j
+            }
+        }
+        i = i + 1
+    }
+    return out
+}
+
+/** 正文里真的用到的网络来源，才进出处列表（带抓取时间）。 */
+public func webCitationsFrom(answer: String, sources: ArrayList<JsonObject>): JsonArray {
+    let arr = JsonArray()
+    let marks = scanWebCitations(answer)
+    for (w in sources) {
+        let idx = intOf(w, "index")
+        var used = false
+        for (m in marks) {
+            if (m == idx) {
+                used = true
+            }
+        }
+        if (!used) {
+            continue
+        }
+        let c = JsonObject()
+        c.put("index", JsonInt(idx))
+        c.put("label", JsonString("W" + idx.toString()))
+        c.put("kind", JsonString("web"))
+        c.put("docTitle", JsonString(strOf(w, "title")))
+        c.put("docPath", JsonString(strOf(w, "url")))
+        c.put("headingPath", JsonString("网络资料 · 抓取于 " + strOf(w, "fetchedAt")))
+        c.put("fetchedAt", JsonString(strOf(w, "fetchedAt")))
+        arr.add(c)
+    }
+    return arr
+}
+
+/** 带网络来源的引用自检：本机 [n] 与网络 [Wn] 分开算越界。 */
+public func citationReportWeb(markdown: String, sourceCount: Int64, webCount: Int64): JsonObject {
+    var paragraphs: Int64 = 0
+    var cited: Int64 = 0
+    var outOfRange: Int64 = 0
+    var outOfRangeWeb: Int64 = 0
+    var webCited: Int64 = 0
+    for (block in markdown.split("\n\n")) {
+        let t = trimStr(block)
+        if (t.size == 0 || t.toArray()[0] == 35) {
+            continue
+        }
+        paragraphs = paragraphs + 1
+        let marks = scanCitations(t)
+        let wmarks = scanWebCitations(t)
+        if (marks.size > 0 || wmarks.size > 0) {
+            cited = cited + 1
+        }
+        for (m in marks) {
+            if (m > sourceCount) {
+                outOfRange = outOfRange + 1
+            }
+        }
+        for (m in wmarks) {
+            webCited = webCited + 1
+            if (m > webCount) {
+                outOfRangeWeb = outOfRangeWeb + 1
+            }
+        }
+    }
+    let o = JsonObject()
+    o.put("paragraphs", JsonInt(paragraphs))
+    o.put("citedParagraphs", JsonInt(cited))
+    o.put("outOfRange", JsonInt(outOfRange))
+    o.put("webCited", JsonInt(webCited))
+    o.put("outOfRangeWeb", JsonInt(outOfRangeWeb))
+    return o
+}
+
 /** 扫描文本里的 [n] 引用标记，返回编号列表。 */
 public func scanCitations(text: String): ArrayList<Int64> {
     let out = ArrayList<Int64>()
@@ -341,6 +436,9 @@ public class Agent {
         if (name == "web_search") {
             return box.webSearch(strOf(args, "query"), intOf(args, "limit"))
         }
+        if (name == "web_fetch") {
+            return box.webFetch(strOf(args, "url"))
+        }
         let r = ToolResult()
         r.name = name
         r.ok = false
@@ -395,7 +493,8 @@ public class Agent {
 
     /** 供界面展示的工具清单。available=false 的（目前只有联网搜索）会标成"需要先配置"。 */
     public func toolsJson(): JsonArray {
-        let web = webSearchReady(store.dataDir)
+        let webOn = webMode(store.dataDir) != "off"
+        let webKey = webSearchReady(store.dataDir)
         let arr = JsonArray()
         for (t in toolCatalog()) {
             let o = JsonObject()
@@ -403,7 +502,15 @@ public class Agent {
             o.put("title", JsonString(t.title))
             o.put("usage", JsonString(t.usage))
             o.put("desc", JsonString(t.desc))
-            o.put("available", JsonBool(if (t.name == "web_search") { web } else { true }))
+            // 联网总开关关掉时两个联网工具都标成不可用；搜索还额外要有 Key
+            var av = true
+            if (t.name == "web_search") {
+                av = webOn && webKey
+            }
+            if (t.name == "web_fetch") {
+                av = webOn
+            }
+            o.put("available", JsonBool(av))
             arr.add(o)
         }
         return arr
@@ -451,7 +558,18 @@ public class Agent {
      * 每收到一段正文就写一条 assistant/delta 事件，界面靠轮询这些事件做流式输出——
      * 内核的 HTTP 服务是多线程的，长生成不会挡住其他请求，所以不需要另做 SSE。
      */
+    /** 三参入口：不带联网档位，按会话/全局设置来。 */
     public func ask(kbId: String, question: String, sessionIdIn: String): JsonObject {
+        return askWeb(kbId, question, sessionIdIn, "")
+    }
+
+    /**
+     * 问答主链路。
+     *
+     * webModeIn 是"这一次请求想用的联网档位"（""=跟着设置走）：
+     * off 全关 / auto 只在资料不足时联网（默认）/ always 随时可联网。
+     */
+    public func askWeb(kbId: String, question: String, sessionIdIn: String, webModeIn: String): JsonObject {
         var sessionId = sessionIdIn
         if (sessionId.size == 0) {
             sessionId = sessions.newId()
@@ -482,8 +600,36 @@ public class Agent {
                 let hits = retrieve(sessionId, turnId, kbId, question, 6)
                 log(sessionId, turnId, "step/end", stepPayload(1, "retrieve"))
 
+                // 联网策略：先定"这一轮能不能联网"，再据此决定给模型哪些工具。
+                // auto 的判据先用最硬的一个信号：这一问在本机资料里一条都没检索到。
+                // 关掉时两个联网工具都不进提示词——不静默联网，也不给够不着的工具。
+                let wmode = effectiveWebMode(store.dataDir, sessionId, webModeIn)
+                let insufficient = hits.size() == 0
+                // 这是 agent，不是工作流：auto 的含义是"两个联网工具都给它，
+                // 该不该联网由它自己判断"，而不是由界面按条件替它决定。
+                // 只有用户明确选择"不联网"时才把工具收走。
+                let allowWeb = wmode != "off"
+                let allowSearch = allowWeb && webSearchReady(store.dataDir)
+                let allowFetch = allowWeb
+                let pp = JsonObject()
+                pp.put("mode", JsonString(wmode))
+                pp.put("insufficient", JsonBool(insufficient))
+                pp.put("webSearch", JsonBool(allowSearch))
+                pp.put("webFetch", JsonBool(allowFetch))
+                log(sessionId, turnId, "web/policy", pp)
+
                 let system = "你是教培内容助手。优先依据给定资料回答，每个论断后用 [编号] 标注出处；资料中没有的内容要明确说明不知道，不要补充资料之外的信息。" +
-                "如果开启了联网搜索，可以用它补充资料里没有的公开信息，并写出来源链接。" + "\n\n" + toolPrompt(webSearchReady(store.dataDir))
+                "引用本机资料用 [1]、[2] 这样的编号；引用抓到的网页必须**单独**用 [W1]、[W2] 编号，并在句子后面写出链接。" +
+                "网页内容与资料冲突时以本机资料为准。" +
+                (if (wmode == "off") {
+                    "这次对话不允许联网，不要调用任何联网工具。"
+                } else if (wmode == "always") {
+                    "优先用联网工具补充最新信息（尤其是会变的事实）。"
+                } else {
+                    "本机资料不足、或问题涉及最新信息时，你可以自己决定是否调用联网工具；不需要就直接回答，不要为了联网而联网。"
+                }) + "\n\n" +
+                toolPrompt(allowSearch, allowFetch)
+                let webSources = ArrayList<JsonObject>()
                 let msgs = JsonArray()
                 let sysMsg = JsonObject()
                 sysMsg.put("role", JsonString("system"))
@@ -550,6 +696,20 @@ public class Agent {
                             log(sessionId, turnId, "tool/call", cp)
                             log(sessionId, turnId, "step/start", stepPayload(30 + round, "tool_exec"))
                             let res = executeTool(name, args, kbId, sessionId)
+                            // 抓成的网页编成 [W1]、[W2]…：编号即"这次会话里第几个网络来源"
+                            if (res.ok && name == "web_fetch") {
+                                match (objOf(res.data)) {
+                                    case Some(d) =>
+                                        let w = JsonObject()
+                                        w.put("index", JsonInt(webSources.size + 1))
+                                        w.put("url", JsonString(strOf(d, "url")))
+                                        w.put("title", JsonString(strOf(d, "title")))
+                                        w.put("fetchedAt", JsonString(strOf(d, "fetchedAt")))
+                                        w.put("path", JsonString(strOf(d, "path")))
+                                        webSources.add(w)
+                                    case None => ()
+                                }
+                            }
                             let rp = JsonObject()
                             rp.put("tool", JsonString(name))
                             rp.put("ok", JsonBool(res.ok))
@@ -564,8 +724,14 @@ public class Agent {
                             msgs.add(am)
                             let trm = JsonObject()
                             trm.put("role", JsonString("user"))
-                            trm.put("content", JsonString("工具 " + name + " 的结果：\n" + toolResultText(res) +
-                                "\n请基于这些结果继续回答。引用编号只能用资料里的 [n]，工具结果不要编号引用。"))
+                            var hint = "请基于这些结果继续回答。引用编号只能用资料里的 [n]，工具结果不要编号引用。"
+                            if (name == "web_fetch") {
+                                hint = "请基于这些结果继续回答。这是网络来源，正文里用 [W1]、[W2] 这样编号并在句尾写链接。"
+                            }
+                            if (name == "web_search") {
+                                hint = "请基于这些结果继续回答。要用其中某一条时，先调用 web_fetch 抓它的链接，再用 [Wn] 引用。"
+                            }
+                            trm.put("content", JsonString("工具 " + name + " 的结果：\n" + toolResultText(res) + "\n" + hint))
                             msgs.add(trm)
                         case None =>
                             answer = reply
@@ -580,19 +746,28 @@ public class Agent {
                 log(sessionId, turnId, "assistant/message", ap)
 
                 log(sessionId, turnId, "step/start", stepPayload(100, "citation_check"))
-                let report = citationReport(answer, hits.size())
+                let report = citationReportWeb(answer, hits.size(), webSources.size)
+                let cites = citationsFromHits(hits)
+                let webCites = webCitationsFrom(answer, webSources)
+                var wci = 0
+                while (wci < webCites.size()) {
+                    cites.add(webCites[wci])
+                    wci = wci + 1
+                }
                 let vp = JsonObject()
                 vp.put("report", report)
                 // 出处也写进事件：重新打开历史会话时，界面仍能还原"[1] 出自哪篇资料"
-                vp.put("citations", citationsFromHits(hits))
+                vp.put("citations", cites)
                 log(sessionId, turnId, "validation", vp)
                 log(sessionId, turnId, "step/end", stepPayload(100, "citation_check"))
 
                 log(sessionId, turnId, "turn/end", endPayload(true, ""))
                 out.put("ok", JsonBool(true))
                 out.put("answer", JsonString(answer))
-                out.put("citations", citationsFromHits(hits))
+                out.put("citations", cites)
                 out.put("citationReport", report)
+                out.put("webSources", webCites)
+                out.put("webMode", JsonString(wmode))
                 out.put("toolCalls", JsonInt(toolCalls))
                 let ua = JsonArray()
                 for (u in used) {

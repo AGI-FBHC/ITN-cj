@@ -349,11 +349,21 @@ public class Api {
                                     }
                                 }
                                 // 向量模型可选：没配就只做关键词可检索的索引
+                                // 向量模型可选：没配就只做关键词可检索的索引。
+                                // 配了但服务端不提供 /embeddings（例如 MiMo TokenPlan）时也一样：
+                                // 这是"少了一种检索方式"，不是"这次索引失败"——整库照样落盘，
+                                // 只把原因带回去，让界面用琥珀色说清楚。
                                 var done: Int64 = 0
+                                var embedError = ""
                                 if (s.embedModelId.size > 0) {
                                     match (s.findModel(s.embedModelId)) {
                                         case Some(embedCfg) =>
-                                            done = embedChunks(idx, LlmClient(embedCfg), 16)
+                                            try {
+                                                done = embedChunks(idx, LlmClient(embedCfg), 16)
+                                            } catch (e: Exception) {
+                                                embedError = e.message
+                                                done = 0
+                                            }
                                         case None => ()
                                     }
                                 }
@@ -368,6 +378,7 @@ public class Api {
                                 store.save(s)
                                 let o = kb.toJson()
                                 o.put("embedded", JsonInt(done))
+                                o.put("embedError", JsonString(embedError))
                                 o.put("captioned", JsonInt(captioned))
                                 // 这次扫描跳过了什么，一并回给界面
                                 o.put("skipped", idx.scan.toJson())
@@ -375,6 +386,7 @@ public class Api {
                                 o.put("skippedTotal", JsonInt(idx.scan.total()))
                                 // 也记一份在库里，方便以后在知识库页面回看
                                 DbHub.open(store.dataDir).putKv("meta", "kb-skipped:" + id, idx.scan.summary())
+                                DbHub.open(store.dataDir).putKv("meta", "kb-embed-error:" + id, embedError)
                                 ok(ctx, o)
                             } catch (e: Exception) {
                                 fail(ctx, 500, "建立索引失败：" + e.message)
@@ -397,6 +409,7 @@ public class Api {
                             let o = kb.toJson()
                             o.put("loadedChunks", JsonInt(idx.chunks.size))
                             o.put("skippedSummary", JsonString(DbHub.open(store.dataDir).getKv("meta", "kb-skipped:" + id, "")))
+                            o.put("embedError", JsonString(DbHub.open(store.dataDir).getKv("meta", "kb-embed-error:" + id, "")))
                             ok(ctx, o)
                         case None => fail(ctx, 404, "找不到知识库：" + id)
                     }
@@ -469,7 +482,8 @@ public class Api {
                     }
                     let ag = Agent(store)
                     try {
-                        ok(ctx, ag.ask(strOf(b, "kbId"), question, strOf(b, "sessionId")))
+                        // web：本次请求的联网档位（""=跟着设置走），会话级开关也在这里落地
+                        ok(ctx, ag.askWeb(strOf(b, "kbId"), question, strOf(b, "sessionId"), strOf(b, "web")))
                     } catch (e: Exception) {
                         fail(ctx, 500, "问答失败：" + e.message)
                     }
@@ -582,7 +596,13 @@ public class Api {
                     if (strOf(b, "clearKey") == "1") {
                         DbHub.open(store.dataDir).delKv(WEB_SEARCH_TABLE, "web_search_key")
                     }
-                    saveWebSearch(store.dataDir, strOf(b, "apiKey"), strOf(b, "enabled") == "1", n)
+                    // enabled 既可能是 JSON 布尔也可能是 "0"/"1" 字符串，两种都认
+                    saveWebSearch(store.dataDir, strOf(b, "apiKey"),
+                        boolOf(b, "enabled") || strOf(b, "enabled") == "1", n)
+                    let m = strOf(b, "mode")
+                    if (m == "off" || m == "auto" || m == "always") {
+                        saveWebMode(store.dataDir, m)
+                    }
                     ok(ctx, webSearchJson(store.dataDir))
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -622,6 +642,73 @@ public class Api {
                         // 502：上游（Tavily）的问题，不是本机的问题
                         fail(ctx, 502, e.message)
                     }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        // ---------- 联网抓取（web_fetch 的手动入口 + 缓存审计） ----------
+        if (path == "/api/web/fetch" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let url = trimStr(strOf(b, "url"))
+                    if (url.size == 0) {
+                        fail(ctx, 400, "缺少 url")
+                        return
+                    }
+                    try {
+                        ok(ctx, fetchPage(store.dataDir, url))
+                    } catch (e: Exception) {
+                        fail(ctx, 502, e.message)
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/web/cache" && method == "POST") {
+            // mode 给的是"这段会话实际用哪一档"：会话里改过就是会话的，否则是全局设置。
+            // 界面靠它把输入区那个 chip 画对，所以不能只回全局。
+            var sid = ""
+            match (bodyJson(ctx)) {
+                case Some(b) => sid = strOf(b, "sessionId")
+                case None => ()
+            }
+            let o = JsonObject()
+            o.put("pages", listWebCache(store.dataDir))
+            o.put("dir", JsonString(webCacheDir(store.dataDir)))
+            o.put("mode", JsonString(effectiveWebMode(store.dataDir, sid, "")))
+            o.put("globalMode", JsonString(webMode(store.dataDir)))
+            ok(ctx, o)
+            return
+        }
+
+        if (path == "/api/web/cache/delete" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let name = strOf(b, "name")
+                    if (deleteWebCache(store.dataDir, name)) {
+                        ok(ctx, JsonString("ok"))
+                    } else {
+                        fail(ctx, 404, "找不到这一页缓存：" + name)
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/web/session" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let sid = strOf(b, "sessionId")
+                    if (sid.size == 0) {
+                        fail(ctx, 400, "缺少 sessionId")
+                        return
+                    }
+                    saveSessionWebMode(store.dataDir, sid, trimStr(strOf(b, "mode")))
+                    let o = JsonObject()
+                    o.put("mode", JsonString(effectiveWebMode(store.dataDir, sid, "")))
+                    ok(ctx, o)
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
             return
@@ -1613,6 +1700,10 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/websearch/get",
         "/api/websearch/save",
         "/api/websearch/test",
+        "/api/web/fetch",
+        "/api/web/cache",
+        "/api/web/cache/delete",
+        "/api/web/session",
         "/api/tools/list",
         "/api/sessions/new",
         "/api/sessions/list",

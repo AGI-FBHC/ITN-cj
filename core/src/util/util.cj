@@ -96,17 +96,32 @@ public func argValue(args: Array<String>, flag: String): ?String {
     return None
 }
 
+/**
+ * 把整个输入流读成字符串。
+ *
+ * 这里**不能**"每读一块就 String.fromUtf8 一次"：UTF-8 的一个字最多 4 字节，
+ * 8KB 的读边界很可能落在一个汉字的中间，那一块单独解码就是非法序列
+ * （表现为 "Invalid utf8 byte sequence"，而且只有中文/emoji 响应才会触发）。
+ * 正确做法是先把字节攒齐，最后整体转一次。
+ */
 public func readAllString(input: InputStream): String {
-    let sb = StringBuilder()
+    let out = ArrayList<UInt8>()
     let buf = Array<UInt8>(8192, repeat: 0)
     while (true) {
         let n = input.read(buf)
         if (n <= 0) {
             break
         }
-        sb.append(String.fromUtf8(buf[0..n]))
+        var i = 0
+        while (i < n) {
+            out.add(buf[i])
+            i = i + 1
+        }
     }
-    return sb.toString()
+    if (out.size == 0) {
+        return ""
+    }
+    return String.fromUtf8(out.toArray())
 }
 
 public func defaultDataDir(): String {
@@ -148,6 +163,29 @@ public func floatValue(v: JsonValue): Float64 {
         case f: JsonFloat => f.getValue()
         case i: JsonInt => Float64(i.getValue())
         case _ => 0.0
+    }
+}
+
+/**
+ * 读一个"真假值"。
+ *
+ * 前端可能发 JSON 布尔（true/false），也可能按界面偏好的约定发字符串 "1"/"0"——
+ * 两种都得认。之前只认字符串，于是联网开关怎么点都存不进去（存进去的永远是 false）。
+ * 这里不去依赖 JsonBool 的具体取值接口：直接看它的 JSON 文本。
+ */
+public func boolOf(o: JsonObject, key: String): Bool {
+    match (o.get(key)) {
+        case Some(v) =>
+            let t = trimStr(strValue(v))
+            if (t == "1" || t == "true" || t == "yes" || t == "on") {
+                return true
+            }
+            if (t == "0" || t == "false" || t == "no" || t == "off") {
+                return false
+            }
+            let raw = trimStr(v.toString())
+            return raw == "true" || raw == "1"
+        case None => return false
     }
 }
 

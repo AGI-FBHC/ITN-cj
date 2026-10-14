@@ -161,7 +161,6 @@ body {
   border-right: 1px solid var(--rail-line);
   position: relative; z-index: 2;
 }
-body.rail-hidden .rail { display: none; }
 .rail-sep { flex: 0 0 auto; width: 22px; height: 1px; margin: 7px 0; background: var(--rail-line); }
 .rail-spacer { flex: 1 1 auto; min-height: 10px; }
 
@@ -562,34 +561,6 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--brand-soft)
   对话形态：左侧会话栏 + 主对话框（对标 Codex 的两栏结构）
    ============================================================ */
 
-.session-rail {
-  flex: 0 0 252px; width: 252px;
-  background: var(--rail-bg);
-  border-right: 1px solid var(--line);
-  display: flex; flex-direction: column;
-  min-height: 0;
-}
-.session-rail[hidden] { display: none; }
-.rail-head { display: flex; align-items: center; gap: 8px; padding: 16px 14px 10px; }
-.rail-title { flex: 1; font-size: 13px; font-weight: 650; letter-spacing: .01em; }
-.rail-search { margin: 0 14px 8px; width: auto; font-size: 12.5px; padding: 6px 9px; }
-.rail-list { flex: 1; overflow: auto; padding: 2px 8px 10px; display: flex; flex-direction: column; gap: 2px; }
-.rail-item {
-  display: block; width: 100%; text-align: left; border: 0; background: none;
-  border-radius: 10px; padding: 8px 10px; cursor: pointer; font: inherit;
-  transition: background .13s, box-shadow .13s;
-}
-.rail-item:hover { background: var(--panel); }
-.rail-item.active { background: var(--panel); box-shadow: var(--shadow-sm); }
-.rail-item-title {
-  font-size: 13px; color: var(--ink); overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap;
-}
-.rail-item.active .rail-item-title { font-weight: 600; color: var(--brand); }
-.rail-item-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
-.rail-empty { padding: 14px 10px; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
-.rail-foot { border-top: 1px solid var(--line); padding: 8px; }
-
 /* ---------- 主对话框 ---------- */
 /* 对话页固定高度：头部与输入区固定，只有中间的消息流滚动（和桌面聊天客户端一致） */
 body.chat-mode .view { display: flex; flex-direction: column; gap: 12px; overflow: hidden; padding-bottom: 20px; }
@@ -622,15 +593,7 @@ body.chat-mode .view { display: flex; flex-direction: column; gap: 12px; overflo
 .msg-actions { margin-top: 8px; }
 .err-text { color: var(--danger); }
 .tool-sheet { margin-bottom: 0; }
-.composer {
-  flex: 0 0 auto;
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: var(--radius); padding: 12px 14px;
-  box-shadow: 0 -6px 18px rgba(26, 38, 31, .04);
-}
-.composer textarea { resize: vertical; min-height: 68px; }
-.composer-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-@media (max-width: 1180px) { .session-rail { flex-basis: 208px; width: 208px; } }
+
 /* ============================================================
   课件播放器：把讲义/练习/章节按页铺开，逐页讲授
    ============================================================ */
@@ -982,8 +945,8 @@ body.win-maximized .tb-btn .icon-restore { display: block; }
   .tb-btn:hover { background: var(--panel-sunk); color: var(--ink); }
   .tb-close:hover { background: var(--danger); color: #ffffff; }
 }
-/* 侧栏被收起时，"显示/隐藏侧栏"按钮保持一个按下态，用户知道去哪儿找回来 */
-body.rail-hidden #rail-toggle { background: var(--rail-hi); color: var(--brand); }
+/* 第二层面板收起时，折叠按钮保持一个按下态，用户知道去哪儿找回来 */
+body.panel-hidden #rail-toggle { background: var(--rail-hi); color: var(--brand); }
 @media (max-width: 1020px) { .tb-status { display: none; } }
 
 /* ============================================================
@@ -1043,12 +1006,179 @@ body.rail-hidden #rail-toggle { background: var(--rail-hi); color: var(--brand);
 .card.hero h2 { font-size: 20px; font-weight: 640; }
 
 /* 会话栏（对话页左侧）跟着主题走 */
-.session-rail { background: var(--rail-bg); border-right: 1px solid var(--rail-line); }
-.rail-item:hover { background: var(--panel); }
-.rail-item.active { background: var(--panel); box-shadow: var(--shadow-sm); }
-.rail-search { background: var(--panel); }
-.rail-foot { border-top: 1px solid var(--rail-line); }
 
 /* 课件播放器：不再用暖黄底，跟主题走 */
 .player { background: var(--panel-soft); }
 .player-page { box-shadow: var(--shadow); }
+
+
+/* ============================================================
+   第二层面板（对标 Codex 的三栏：窄侧栏 / 功能面板 / 主区）
+   窄侧栏是第一层"功能树的根"，固定不动；点进去展开的是第二层
+   （功能目录或列表，例如「伴学助手」→ 会话列表）。
+   标题栏左上角的折叠按钮收起的正是这一层，不是最左侧那条窄栏。
+   ============================================================ */
+.panel {
+  flex: 0 0 250px; width: 250px;
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--rail-bg);
+  border-right: 1px solid var(--rail-line);
+}
+.panel[hidden] { display: none; }
+body.panel-hidden .panel { display: none; }
+@media (max-width: 1180px) { .panel { flex-basis: 218px; width: 218px; } }
+
+.panel-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 12px 10px 8px 14px;
+}
+.panel-title {
+  flex: 1; min-width: 0; font-size: 13px; font-weight: 650; letter-spacing: -.005em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.panel-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.panel-btn {
+  width: 26px; height: 26px; display: grid; place-items: center;
+  border: 0; border-radius: 7px; background: none; color: var(--muted);
+  cursor: pointer; transition: background .13s var(--ease-out), color .13s var(--ease-out);
+}
+.panel-btn svg { width: 15px; height: 15px; }
+@media (hover: hover) and (pointer: fine) {
+  .panel-btn:hover { background: var(--panel); color: var(--ink); }
+}
+.panel-btn:active { transform: scale(.94); }
+.panel-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+.panel-body {
+  flex: 1; min-height: 0; overflow: auto;
+  padding: 0 8px 10px; display: flex; flex-direction: column; gap: 1px;
+}
+.panel-foot { border-top: 1px solid var(--rail-line); padding: 8px; }
+.panel-foot:empty { display: none; }
+.panel-foot .btn { width: 100%; justify-content: center; }
+
+.panel-item {
+  display: block; width: 100%; text-align: left;
+  border: 0; background: none; border-radius: 9px; padding: 7px 9px;
+  font: inherit; cursor: pointer;
+  transition: background .13s var(--ease-out), color .13s var(--ease-out);
+}
+.panel-item:hover { background: var(--panel); }
+.panel-item.active { background: var(--panel); box-shadow: var(--shadow-sm); }
+.panel-item-title {
+  font-size: 12.5px; color: var(--ink); line-height: 1.5;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.panel-item-meta {
+  font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.45;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.panel-item.active .panel-item-title { font-weight: 600; color: var(--brand); }
+.panel-item .tag { flex: 0 0 auto; }
+
+.panel-group-title {
+  font-size: 11px; color: var(--muted); padding: 10px 9px 3px;
+}
+.panel-search { width: auto; margin: 0 4px 6px; font-size: 12.5px; padding: 6px 9px; }
+.panel-empty { padding: 14px 10px; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
+.panel-seg { display: flex; gap: 2px; padding: 3px; margin: 0 4px 6px; border-radius: 999px; background: var(--panel-sunk); }
+.panel-seg button {
+  flex: 1; border: 0; background: none; font: inherit; font-size: 11.5px; color: var(--ink-2);
+  padding: 4px 6px; border-radius: 999px; cursor: pointer;
+}
+.panel-seg button.active { background: var(--panel); color: var(--brand); font-weight: 600; box-shadow: var(--shadow-sm); }
+.panel-row { display: flex; align-items: center; gap: 8px; padding: 6px 9px; }
+.panel-kv { display: flex; align-items: baseline; gap: 8px; padding: 5px 9px; }
+.panel-kv .k { flex: 1; min-width: 0; font-size: 12.5px; color: var(--ink-2); }
+.panel-kv .v { font-size: 12.5px; font-weight: 600; }
+.panel .settings-nav { position: static; gap: 1px; padding: 0; }
+.panel .settings-nav button { padding: 7px 9px; border-radius: 9px; font-size: 12.5px; }
+
+/* 面板里点过的那一条，滚到主区并在原地闪一下描边（不跳走、不弹窗） */
+.item.focus-ring, .calib-row.focus-ring { box-shadow: 0 0 0 2px var(--brand-line), var(--shadow-sm); }
+
+
+/* ============================================================
+   对话框（对标 Codex 的输入区）
+   一整块圆角输入区：上面写任务，下面一行是 [＋] [联网/权限] … [当前模型] [发送]。
+   这是 agent：能不能联网由 agent 自己判断，这里不摆"工作流开关"。
+   ============================================================ */
+.composer {
+  position: relative; flex: 0 0 auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 10px 12px 8px;
+  box-shadow: var(--shadow-sm);
+  transition: border-color .16s var(--ease-out), box-shadow .16s var(--ease-out);
+}
+.composer:focus-within { border-color: var(--brand-line); box-shadow: var(--shadow); }
+.composer textarea {
+  display: block; width: 100%;
+  border: 0; background: none; box-shadow: none;
+  padding: 6px 2px 8px; margin: 0;
+  font-size: 14px; line-height: 1.6; color: var(--ink);
+  resize: none; min-height: 26px; max-height: 200px; overflow-y: auto;
+}
+.composer textarea:focus { outline: none; }
+.composer textarea::placeholder { color: var(--muted); }
+.composer-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.composer-icon {
+  width: 28px; height: 28px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border: 0; border-radius: 50%; background: none;
+  color: var(--ink-2); cursor: pointer;
+  transition: background .13s var(--ease-out), color .13s var(--ease-out), transform .12s var(--ease-out);
+}
+.composer-icon svg { width: 16px; height: 16px; }
+@media (hover: hover) and (pointer: fine) {
+  .composer-icon:hover { background: var(--panel-sunk); color: var(--ink); }
+}
+.composer-icon:active { transform: scale(.94); }
+.composer-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--line); background: var(--panel);
+  color: var(--ink-2); font: inherit; font-size: 12.5px; line-height: 1.4;
+  padding: 3px 9px; border-radius: 999px; cursor: pointer;
+  transition: background .13s var(--ease-out), border-color .13s var(--ease-out), color .13s var(--ease-out);
+}
+.composer-chip svg { width: 13px; height: 13px; }
+.composer-chip.off { color: var(--muted); }
+@media (hover: hover) and (pointer: fine) {
+  .composer-chip:hover { background: var(--panel-soft); border-color: var(--brand-line); color: var(--ink); }
+}
+.composer-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); flex: 0 0 auto; }
+.composer-send {
+  width: 30px; height: 30px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border: 0; border-radius: 50%; background: var(--brand); color: var(--brand-ink);
+  cursor: pointer;
+  transition: background .13s var(--ease-out), transform .12s var(--ease-out), opacity .13s var(--ease-out);
+}
+.composer-send svg { width: 16px; height: 16px; }
+@media (hover: hover) and (pointer: fine) {
+  .composer-send:hover { background: var(--brand-strong); }
+}
+.composer-send:active { transform: scale(.94); }
+.composer-send:disabled { opacity: .45; cursor: default; }
+.composer-menu {
+  position: absolute; left: 6px; bottom: calc(100% + 8px); z-index: 30;
+  width: 284px; padding: 5px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 12px; box-shadow: var(--shadow);
+}
+.composer-menu[hidden] { display: none; }
+.composer-menu-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  border: 0; background: none; border-radius: 8px; padding: 7px 9px;
+  font: inherit; text-align: left; color: var(--ink); cursor: pointer;
+}
+.composer-menu-item svg { width: 16px; height: 16px; flex: 0 0 16px; color: var(--ink-2); }
+@media (hover: hover) and (pointer: fine) { .composer-menu-item:hover { background: var(--panel-soft); } }
+.composer-menu-item .cm-label { display: block; font-size: 13px; line-height: 1.45; }
+.composer-menu-item .cm-hint { display: block; font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+.composer-menu-sub { padding-left: 24px; }
+.composer-menu-sub .composer-menu-item { padding: 5px 9px; }
+.composer-menu-sub .composer-menu-item.active { background: var(--brand-soft); }
+.chat-thread { padding-bottom: 2px; }
+.cite-list li.cite-web { color: var(--ink); }

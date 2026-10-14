@@ -87,6 +87,15 @@ public func toolCatalog(): ArrayList<ToolSpec> {
     h.desc = "用 Tavily 在互联网上搜公开资料（文档、论文、新闻），返回标题、链接和摘要。" +
         "只在本地资料里找不到、或用户明确要求上网查的时候用；引用它给出的信息要带上链接。"
     out.add(h)
+
+    let i = ToolSpec()
+    i.name = "web_fetch"
+    i.title = "读取网页"
+    i.usage = "{\"url\": \"https://example.com/article\"}"
+    i.desc = "抓取一个网页的正文并落到本机（数据目录的 webcache 里），返回标题、抓取时间与正文。" +
+        "用户贴了一个链接让你读、或者搜索结果里有想细看的页面时用它。" +
+        "引用网页内容必须用 [W1]、[W2] 这样单独编号，并写出链接。"
+    out.add(i)
     return out
 }
 
@@ -96,11 +105,14 @@ public func toolCatalog(): ArrayList<ToolSpec> {
  * webSearch 为 false（没配 Tavily 密钥，或者用户把开关关了）时不写进提示词：
  * 提示词里列了却调用不起来，模型会反复重试同一个死工具。
  */
-public func toolPrompt(webSearch: Bool): String {
+public func toolPrompt(webSearch: Bool, webFetch: Bool): String {
     let sb = StringBuilder()
     sb.append("你可以调用以下工具来获取事实（不要凭空猜）：\n")
     for (t in toolCatalog()) {
         if (t.name == "web_search" && !webSearch) {
+            continue
+        }
+        if (t.name == "web_fetch" && !webFetch) {
             continue
         }
         sb.append("- ")
@@ -420,6 +432,28 @@ public class ToolBox {
             return r
         } catch (e: Exception) {
             return fail("web_search", e.message)
+        }
+    }
+
+    /**
+     * 抓一个网页：正文落 <数据目录>/webcache，同时把正文回给模型。
+     *
+     * 和 web_search 不同，这个不需要任何 Key——"用户贴一个链接让 agent 读"本身就完整可用。
+     */
+    public func webFetch(url: String): ToolResult {
+        if (url.size == 0) {
+            return fail("web_fetch", "缺少 url")
+        }
+        try {
+            let page = fetchPage(store.dataDir, trimStr(url))
+            let r = ToolResult()
+            r.name = "web_fetch"
+            r.data = page
+            r.summary = "已读取网页《" + strOf(page, "title") + "》（抓取于 " + strOf(page, "fetchedAt") +
+                "，落本机：" + strOf(page, "path") + "）"
+            return r
+        } catch (e: Exception) {
+            return fail("web_fetch", e.message)
         }
     }
 

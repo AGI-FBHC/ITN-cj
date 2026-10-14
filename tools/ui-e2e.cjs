@@ -631,7 +631,7 @@ function assert(cond, msg) {
   await step('伴学助手是「会话栏 + 主对话框」两栏形态', async () => {
     await nav('伴学助手');
     await page.waitForSelector('#chat-input', { timeout: 20000 });
-    const railVisible = await page.locator('#session-rail').isVisible();
+    const railVisible = await page.locator('#panel').isVisible();
     assert(railVisible, '对话页应显示左侧会话栏');
     const hasThread = await page.locator('.chat-thread').count();
     const hasComposer = await page.locator('.composer textarea').count();
@@ -672,10 +672,10 @@ function assert(cond, msg) {
   });
 
   await step('会话栏出现这条对话并可切换', async () => {
-    await page.waitForSelector('.rail-item', { timeout: 15000 });
-    const n = await page.locator('.rail-item').count();
+    await page.waitForSelector('.panel-item', { timeout: 15000 });
+    const n = await page.locator('.panel-item').count();
     assert(n >= 1, '会话栏应至少有 1 条会话，实际 ' + n);
-    const active = await page.locator('.rail-item.active').count();
+    const active = await page.locator('.panel-item.active').count();
     assert(active === 1, '当前会话应高亮');
     return n + ' 条会话';
   });
@@ -709,7 +709,7 @@ function assert(cond, msg) {
   });
 
   await step('点会话栏能还原历史对话与出处', async () => {
-    await page.locator('.rail-item').first().click();
+    await page.locator('.panel-item').first().click();
     await page.waitForSelector('.turn-block', { timeout: 20000 });
     const turns = await page.locator('.turn-block').count();
     const cites = await page.locator('.cite-list li').count();
@@ -1002,8 +1002,8 @@ function assert(cond, msg) {
 
   await step('会话标注知识库；切库开新会话，回旧会话自动切回', async () => {
     await nav('伴学助手');
-    await page.waitForSelector('.rail-item', { timeout: 15000 });
-    const railText = await page.locator('#rail-list').innerText();
+    await page.waitForSelector('.panel-item', { timeout: 15000 });
+    const railText = await page.locator('#panel-body').innerText();
     assert(railText.indexOf('课程资料') >= 0, '会话栏应标出知识库，实际：' + railText.replace(/\s+/g, ' ').slice(0, 120));
 
     // 建第二个知识库：用来验证"切库 → 新会话"和"回旧会话 → 切回旧库"
@@ -1031,7 +1031,7 @@ function assert(cond, msg) {
     const fresh = await page.locator('.turn-block').count();
     assert(fresh === 0, '切库后应是空的新会话，实际 ' + fresh + ' 轮');
 
-    await page.locator('.rail-item').last().click();
+    await page.locator('.panel-item').last().click();
     await page.waitForTimeout(1500);
     const kbBack = await page.evaluate(() => document.querySelector('.chat-head select').value);
     assert(kbBack === 'course', '打开旧会话应切回它自己的知识库，实际 ' + kbBack);
@@ -1070,7 +1070,7 @@ function assert(cond, msg) {
   /* ---------- 笔记 / 错题 / 成长 ---------- */
   await step('写笔记并出现在笔记列表', async () => {
     await nav('我的笔记');
-    await page.getByRole('button', { name: '写一条笔记' }).click();
+    await page.locator('#view').getByRole('button', { name: '写一条笔记' }).click();
     await page.waitForSelector('#nt-title', { timeout: 10000 });
     await page.fill('#nt-title', 'E2E 自测笔记');
     await page.fill('#nt-text', '这是端到端自测写入的一条笔记。');
@@ -1362,34 +1362,95 @@ function assert(cond, msg) {
 
   /* ---------- 新壳：标题栏前后箭头 / 侧栏显隐 / 主题 / 设置分区 ---------- */
   await step('标题栏的前进后退真的能换页（按钮可用态按访问栈算）', async () => {
-    await nav('我的学习');
+    await nav('首页');
     await nav('我的笔记');
     assert(await page.evaluate(() => !document.querySelector('#nav-back').disabled), '走过一页之后「后退」应可点');
     await page.locator('#nav-back').click();
-    await page.waitForFunction(() => (document.querySelector('#page-title') || {}).textContent === '我的学习', null, { timeout: 10000 });
+    await page.waitForFunction(() => (document.querySelector('#page-title') || {}).textContent === '首页', null, { timeout: 10000 });
     assert(await page.evaluate(() => !document.querySelector('#nav-forward').disabled), '后退之后「前进」应可点');
     await page.locator('#nav-forward').click();
     await page.waitForFunction(() => (document.querySelector('#page-title') || {}).textContent === '我的笔记', null, { timeout: 10000 });
-    return '后退 → 我的学习，前进 → 我的笔记';
+    return '后退 → 首页，前进 → 我的笔记';
   });
 
-  await step('侧栏显隐：标题栏按钮与 Ctrl+Shift+S 都能收放，并且被记住', async () => {
+  await step('折叠的是第二层：窄栏固定不动，收起后仍可点、重载仍保持', async () => {
     await page.locator('#rail-toggle').click();
     await page.waitForTimeout(350);
-    let hidden = await page.evaluate(() => document.body.classList.contains('rail-hidden'));
-    assert(hidden, '点按钮应收起侧栏');
-    const w = await page.evaluate(() => { const r = document.querySelector('#rail'); return r ? r.getBoundingClientRect().width : -1; });
-    assert(w < 1, '收起后侧栏不该占宽度，实际 ' + w);
+    let st = await page.evaluate(() => ({
+      hidden: document.body.classList.contains('panel-hidden'),
+      panel: (document.querySelector('#panel') || { getBoundingClientRect: () => ({ width: -1 }) }).getBoundingClientRect().width,
+      rail: (document.querySelector('#rail') || { getBoundingClientRect: () => ({ width: -1 }) }).getBoundingClientRect().width,
+    }));
+    assert(st.hidden, '点折叠按钮应收起第二层面板');
+    assert(st.panel < 1, '收起后面板不该占宽度，实际 ' + st.panel);
+    assert(st.rail > 40, '最左侧窄栏必须固定不动，实际宽度 ' + st.rail);
+    // 窄栏还在，就还能换页
+    await page.locator('[data-page="notes"]').click();
+    await page.waitForTimeout(600);
+    assert((await page.textContent('#page-title')).indexOf('笔记') >= 0, '面板收起时窄栏仍应能切页');
     await page.keyboard.press('Control+Shift+S');
-    await page.waitForTimeout(350);
-    hidden = await page.evaluate(() => document.body.classList.contains('rail-hidden'));
-    assert(!hidden, 'Ctrl+Shift+S 应能把侧栏放回来');
+    await page.waitForTimeout(400);
+    st = await page.evaluate(() => ({ hidden: document.body.classList.contains('panel-hidden') }));
+    assert(!st.hidden, 'Ctrl+Shift+S 应能把面板放回来');
     await page.reload({ waitUntil: 'load' });
     await page.waitForSelector('.nav-item', { timeout: 20000 });
     await page.waitForTimeout(900);
-    hidden = await page.evaluate(() => document.body.classList.contains('rail-hidden'));
-    assert(!hidden, '侧栏状态存在内核里，重载后应保持显示');
-    return '收起 → Ctrl+Shift+S 放回 → 重载后保持';
+    st = await page.evaluate(() => ({ hidden: document.body.classList.contains('panel-hidden') }));
+    assert(!st.hidden, '面板状态存在内核里，重载后应保持展开');
+    return '第二层收起 → 窄栏仍可点 → Ctrl+Shift+S 放回 → 重载保持';
+  });
+
+  await step('每个根功能都有自己的第二层（功能目录 / 列表）', async () => {
+    const roots = ['首页', '学 · 练', '我的笔记', '错题本', '我的成长', '画像校准', '我的资源', '领域知识库', '伴学助手', '设置'];
+    const seen = [];
+    for (const label of roots) {
+      await nav(label);
+      await page.waitForSelector('#panel-title', { timeout: 15000 });
+      const info = await page.evaluate(() => ({
+        title: ((document.querySelector('#panel-title') || {}).textContent || '').trim(),
+        items: document.querySelectorAll('#panel-body .panel-item, #panel-body .settings-nav button').length,
+        empty: document.querySelectorAll('#panel-body .panel-empty').length,
+        foot: document.querySelectorAll('#panel-foot button').length,
+      }));
+      assert(info.title.length > 0, label + ' 的第二层面板应有标题');
+      assert(info.items + info.empty + info.foot > 0, label + ' 的第二层面板是空的（既没有条目也没有空态）');
+      seen.push(label + '→' + info.title + '(' + info.items + ')');
+    }
+    return seen.join(' / ');
+  });
+
+  await step('面板挑一个 → 主区滚到并高亮同一条（两栏联动）', async () => {
+    await nav('我的笔记');
+    await page.waitForSelector('#panel-body .panel-item', { timeout: 15000 });
+    const first = await page.locator('#panel-body .panel-item').first();
+    const want = await first.locator('.panel-item-title').innerText();
+    await first.click();
+    await page.waitForTimeout(900);
+    const hit = await page.evaluate((t) => {
+      const nodes = Array.from(document.querySelectorAll('#view [data-id]'));
+      const node = nodes.filter((n) => (n.innerText || '').indexOf(t) >= 0)[0];
+      return node ? { id: node.dataset.id, ring: node.classList.contains('focus-ring') } : null;
+    }, want.trim());
+    assert(hit, '主区里应能找到面板点的那条笔记：' + want);
+    assert(hit.ring, '主区对应的那条应被高亮描边');
+    return '面板点「' + want.trim() + '」→ 主区滚动并高亮';
+  });
+
+  await step('登记知识库：目录用系统对话框选，浏览器里如实说明', async () => {
+    await settings('知识库');
+    await page.waitForSelector('#kb-dir', { timeout: 15000 });
+    const pickBtn = page.locator('button', { hasText: '选择…' }).first();
+    assert((await page.locator('button', { hasText: '选择…' }).count()) >= 1, '目录旁边应有「选择…」按钮');
+    assert(!(await page.evaluate(() => !!(window.itnWindow && window.itnWindow.pickDirectory))),
+      '无头浏览器里不应存在目录对话框能力（这条同时验证"桌面专属能力不依赖浏览器"）');
+    await pickBtn.click();
+    await page.waitForFunction(() => {
+      const t = document.querySelector('#toast');
+      return !!t && t.classList.contains('show') && t.innerText.indexOf('桌面应用窗口') >= 0;
+    }, null, { timeout: 8000 });
+    const t = await page.textContent('#toast');
+    await shot('43-目录选择');
+    return '按钮在，浏览器里提示：' + t.replace(/\s+/g, ' ').slice(0, 26);
   });
 
   await step('主题三档：切换立即生效、写进内核、重载后仍然生效', async () => {
@@ -1487,10 +1548,73 @@ function assert(cond, msg) {
     return '保存 → 掩码回显 → 工具变可用 → 清除复原';
   });
 
+  await step('对话框是 Codex 那种一整块输入区：＋ 动作 / 联网交给 agent / 模型 / 圆形发送', async () => {
+    await nav('伴学助手');
+    await page.waitForSelector('.composer', { timeout: 15000 });
+    const ph = await page.getAttribute('#chat-input', 'placeholder');
+    assert(ph.indexOf('描述任务') >= 0, '输入框应是"描述任务，输入 / 调用技能"，实际：' + ph);
+    const chips = await page.$$eval('.composer-chip', (els) => els.map((e) => e.innerText.trim()));
+    assert(chips.length >= 2, '输入区应有权限/联网 chip 与模型 chip，实际 ' + JSON.stringify(chips));
+    assert(chips.join('/').indexOf('agent') >= 0, '默认应是"交给 agent 判断"，实际 ' + JSON.stringify(chips));
+    assert((await page.locator('.composer-send svg').count()) === 1, '发送按钮应是圆形箭头按钮');
+    // ＋ 菜单懒建：不点开就不该有那些按钮
+    assert((await page.locator('.composer-menu-item').count()) === 0, '＋ 菜单没点开时不该存在');
+    await page.locator('.composer-row .composer-icon').first().click();
+    await page.waitForSelector('.composer-menu-item', { timeout: 8000 });
+    const items = await page.$$eval('.composer-menu-item .cm-label', (els) => els.map((e) => e.textContent));
+    assert(items.join('/').indexOf('读取网页') >= 0, '＋ 菜单里应有「读取网页…」，实际 ' + items.join('/'));
+    assert(items.join('/').indexOf('联网方式') >= 0, '＋ 菜单里应有「联网方式」');
+    assert(items.join('/').indexOf('技能') < 0, '技能还没做，不该放一个点不动的入口');
+    await shot('44-对话框');
+    // 输入框随内容长高
+    await page.fill('#chat-input', '第一行\n第二行\n第三行\n第四行');
+    await page.waitForTimeout(300);
+    const h = await page.evaluate(() => document.querySelector('#chat-input').getBoundingClientRect().height);
+    assert(h > 60, '输入框应随内容长高，实际 ' + Math.round(h));
+    await page.fill('#chat-input', '');
+    await page.locator('body').click({ position: { x: 5, y: 5 } });
+    return '占位符「' + ph + '」· chip ' + chips.join(' / ') + ' · ＋ 菜单 ' + items.length + ' 项';
+  });
+
+  await step('联网：默认交给 agent 判断，开关由 ＋ 菜单改，设置里能存', async () => {
+    await nav('伴学助手');
+    await page.waitForSelector('.composer-chip', { timeout: 15000 });
+    // 从 ＋ 菜单把这一轮会话改成"不联网"
+    await page.locator('.composer-row .composer-icon').first().click();
+    await page.waitForSelector('.composer-menu-item', { timeout: 8000 });
+    await page.locator('.composer-menu-item', { hasText: '不联网' }).click();
+    await page.waitForTimeout(900);
+    const chip = await page.locator('.composer-chip').first().innerText();
+    assert(chip.indexOf('不联网') >= 0, '选完之后输入区的联网 chip 应变成"不联网"，实际 ' + chip);
+    // 会话级档位存在内核里：拿刚建的那段会话再问一次，应该回 off
+    // 用页面上标着的那段会话（刚点开时才建的，不一定在 sessions/list 里）
+    let sid = await page.evaluate(() => (document.querySelector('#chat-thread') ? document.querySelector('#chat-thread').dataset.session : ""));
+    if (!sid) {
+      sid = await page.evaluate(() => fetch('/api/sessions/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => r.json()).then((j) => ((j.data.sessions || [])[0] || {}).sessionId || ""));
+    }
+    const mode = await page.evaluate((id) => fetch('/api/web/cache', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: id }) }).then((r) => r.json()).then((j) => j.data.mode), sid);
+    assert(mode === 'off', '会话级开关应存在内核里，实际 ' + mode + '（sessionId=' + sid + '）');
+    // 设置里的联网卡片：三档 + 手动抓取
+    await settings('模型与接口');
+    await page.waitForSelector('#ws-mode', { timeout: 15000 });
+    const opts = await page.$$eval('#ws-mode option', (els) => els.map((e) => e.textContent));
+    assert(opts.length === 3, '联网档位应有三档，实际 ' + JSON.stringify(opts));
+    assert((await page.locator('button', { hasText: '抓取' }).count()) >= 1, '应能手动贴链接抓取');
+    await page.selectOption('#ws-mode', 'auto');
+    await page.getByRole('button', { name: '保存', exact: true }).click();
+    await page.waitForTimeout(1200);
+    const st = await page.evaluate(() => fetch('/api/websearch/get', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => r.json()).then((j) => j.data));
+    assert(st.mode === 'auto', '档位应写回内核，实际 ' + JSON.stringify(st.mode));
+    await shot('45-联网设置');
+    // 复原：会话档位回到"交给 agent"（必须带上刚才那段会话，空 id 是 400）
+    await page.evaluate((id) => fetch('/api/web/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: id, mode: 'auto' }) }), sid);
+    return '三档：' + opts.join(' / ');
+  });
+
   await step('伴学助手与会话记录合并成一个入口（会话栏挂在对话页左侧）', async () => {
     await nav('伴学助手');
     await page.waitForTimeout(700);
-    assert(await page.locator('#session-rail').isVisible(), '对话页左侧应是会话栏');
+    assert(await page.locator('#panel').isVisible(), '对话页左侧应是会话栏');
     assert((await page.locator('#rail-all').count()) === 1, '会话栏底部应有「全部会话与步骤」入口');
     await page.locator('#rail-all').click();
     await page.waitForTimeout(800);

@@ -144,6 +144,23 @@ async function createWindow() {
     else win.maximize();
   });
   ipcMain.on("win:close", () => { if (win) win.close(); });
+  /**
+   * 选一个本机目录（登记知识库用）。
+   *
+   * 为什么必须走主进程：渲染层是普通网页（同源 http://127.0.0.1:port），
+   * 网页没有"读本机绝对路径"的能力，只有 Electron 的 dialog 有。
+   * 返回绝对路径字符串；用户取消就返回空串，界面不该把取消当成失败。
+   */
+  ipcMain.handle("dlg:pick-directory", async () => {
+    if (!win) return "";
+    const r = await dialog.showOpenDialog(win, {
+      title: "选择资料目录",
+      properties: ["openDirectory", "createDirectory"],
+      buttonLabel: "用这个目录",
+    });
+    if (r.canceled || !r.filePaths || !r.filePaths.length) return "";
+    return r.filePaths[0];
+  });
   const pushWindowState = () => {
     if (win) win.webContents.send("win:state", { maximized: win.isMaximized() });
   };

@@ -1194,3 +1194,59 @@ ITN-Desktop"；最后要求"做好之后先让我单独试试效果"。
 2. 写"不会崩"的字节代码时，"退到非续字节"是不够的判据；要按首字节算长度。
 3. 只做讨论的会话里如果用户又明确要求产出代码，要**把产出放进独立目录并单独提交**，不碰并行会话的
    工作区文件，这样两边都不会互相踩。
+
+---
+
+## 第十六轮（2026-10-14）：三栏结构（窄栏/第二层/主区）+ Codex 式对话框 + 联网交给 agent 判断 + 四个自己的 bug
+
+**这一轮用户提的**（逐条登记在 `docs/10-需求与实施计划.md` 的 R11~R15）：
+① 左侧最窄那条是"功能树的根"，固定不动；点进去展开**第二层**（功能目录/列表），标题栏那个折叠按钮收的是第二层；
+② 对话框照 Codex 那种"一整块输入区 + ＋/权限/模型/发送"；
+③ 这是 agent——**是否联网由 agent 自己判断**，别做成工作流；
+④ 知识库目录要能选目录，不要手打路径；
+⑤ 四个我们自己的 bug（见下）。
+
+### 关键改动
+
+- **三栏结构**：`#rail`(56px，固定) + `#panel`(250px，可折叠) + `.main`。`PANELS` 注册表给 10 个根各配一个第二层
+  （首页=今天/最近产物、学·练=章节、笔记/错题/产物/知识库=列表、成长=概览+六维、校准=六维、对话=会话列表、设置=六个分区）。
+  面板只负责"挑一个"，细节永远在主区；点面板条目会 `go(page, null, {focus: id})`，主区滚到并高亮（`.focus-ring`）。
+  折叠状态存内核（复用 `ui_session_rail`），`Ctrl+Shift+S` 同步。
+- **设置分区从内容区搬进第二层**：`.settings-nav` 现在在面板里，主区只剩标题 + 分区内容。
+- **对话框**：圆角整块输入区 + 占位符「描述任务，输入 / 调用技能」；底部一行 `＋`（懒建菜单：读取网页…/添加资料目录…/做成讲义·练习册…/清空抓取缓存…/联网方式 ▸）、
+  联网 chip（盾牌图标 + 当前档位）、模型 chip（点击去设置）、圆形发送按钮；输入框随内容长高；工具条里删掉了模型标签与"新建对话"（分别在对话框和面板里）。
+- **联网交给 agent 判断**：`auto`（默认）的含义从"检索结果为零才给联网工具"改成"**工具直接给它，由它自己决定**"；
+  `off` 才把工具收走。每轮写一条 `web/policy` 事件 `{mode, insufficient, webSearch, webFetch}` 留痕（不静默联网）。
+  会话级档位走 `/api/web/session`，`/api/web/cache` 按 sessionId 回"这段会话实际用哪一档"。
+- **新内核文件 `core/src/tools/web.cj`**：`web_fetch` —— 抓网页正文 → `<dataDir>/webcache/<hash>.md`（frontmatter 记 url/title/fetchedAt/bytes）
+  → 复用 `kb.cj` 的 `htmlToText` → 正文回给模型；只允许 http/https、上限 2MB、超时 20s、二进制如实说读不了；缓存可列可删（拒绝路径分隔符）。
+- **引用分级**：本机 `[n]` / 网络 `[Wn]`；`scanWebCitations`、`webCitationsFrom`、`citationReportWeb`（多 `webCited`/`outOfRangeWeb`）；
+  agent 的系统提示词里写清"网络来源必须单独编号并写链接"。
+- **修 bug（用户点名，全部是自己造成的）**：
+  1. **向量服务 404 拖垮整次建索引**：`/api/kb/build` 里包了 try/catch，失败记 `embedError`、`embedded:0`，索引照落盘走关键词；
+     界面用琥珀色说"向量检索没启用（索引本身是好的）"，知识库页也能回看；失败文案不再无差别挂"目录路径写错"（只有像目录问题的才提示）。
+  2. **`readAllString` 按 8KB 分片各自 `String.fromUtf8`** → 中文被切断（"Invalid utf8 byte sequence"）：改成按字节攒进 `ArrayList<UInt8>`、最后整体转一次。
+  3. **联网开关存不进去**：`/api/websearch/save` 只用 `strOf` 比对 `"1"`，前端发 JSON 布尔就永远是 false：加 `util.boolOf`（认布尔也认 "1"/"0"），并删掉 `study.cj` 里那个只认 JsonBool 的同名实现。
+  4. **联网三缺口**：补 `web_fetch` + `[Wn]` 引用分级 + 会话级联网档位（见上）。
+- **新增自检 `tools/web-fetch-check.ps1` + `tools/mock-web/server.py`**：本地迷你网站（中文 > 8KB 的 HTML、302、二进制），
+  验"抓取 / 落盘（全文 13KB 中文完整）/ 跟跳转 / 读不了如实说 / 缓存可列可删 / 路径穿越被拒"。
+
+### 验证
+
+- `node tools/ui-e2e.cjs` → **73 通过 / 0 失败**（新增：对话框形态、联网交给 agent、每个根都有自己的第二层、折叠的是第二层、面板→主区联动、目录选择按钮、联网卡片三档）
+- `pwsh -File tools/web-fetch-check.ps1` → **16 项全过**
+- `tools/smoke.ps1`、`tools/study-api-check.ps1`、`tools/ui-check.ps1` → 全过
+- `tools/package-smoke.ps1` → 打包版 `PRELOAD=ok / TITLEBAR=ok / NAV=10 / RESULT=OK`
+
+### 教训
+
+1. **JS 里 `String.replace(a, b)` 的替换串会把 `$$` 折成 `$`** —— 我批量插入 `page.$$eval` 时把三处写成了 `page.$eval`，E2E 报 `els.map is not a function`。批量改代码用 `replace(a, () => b)`。
+2. 仓颉的 `String.indexOf` 返回 `Option<Int64>`；响应头要用 `resp.headers.getFirst(name)`；`resp.status` 只和字面量比。
+3. 隐藏的菜单项别一直留在 DOM 里（会撞名、会被自动化点到），懒建更安全。
+4. 会话级状态（联网档位）必须带 sessionId 取，否则界面会把"这次对话的选择"画成全局设置。
+
+### 还没做（下一步）
+
+- **首页 3D 学习网络图**（用户上一条需求）：内核只读接口 `/api/graph` + canvas 2D 自写透视图（不引 three.js），
+  节点=章节（大小=切片数、颜色=进度）、笔记/错题/产物挂在章节上、点节点出动作卡、切页暂停渲染。计划见 `docs/10` 的 P 表。
+- docs/09 的 **P4 Skills**（`skill_read` + 内置 `web-research`）与 P1 的**域名黑白名单**、P3 的**「资料不足」卡片 + 计划行可停**。

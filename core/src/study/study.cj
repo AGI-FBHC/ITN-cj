@@ -261,17 +261,6 @@ public class QuizRecord {
     }
 }
 
-public func boolOf(o: JsonObject, key: String): Bool {
-    match (o.get(key)) {
-        case Some(v) =>
-            match (v) {
-                case b: JsonBool => b.getValue()
-                case _ => false
-            }
-        case None => false
-    }
-}
-
 // ==================== 本地存储 ====================
 // 单人本地使用，所有学习数据放一个文件，够用且好备份。
 

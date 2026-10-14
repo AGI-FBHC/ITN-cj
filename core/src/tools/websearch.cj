@@ -188,6 +188,60 @@ public func webSearchKeyHint(key: String): String {
     return String.fromUtf8(b[0..4]) + "…" + String.fromUtf8(b[(b.size - 4)..])
 }
 
+/* ---------- 联网模式与授权 ---------- */
+
+/**
+ * 全局联网模式（存在 settings 表里）：
+ * - `off`    完全不联网（两个联网工具都不给模型）
+ * - `auto`   默认：只在"资料不足"时才把联网工具给它（判据见 agent 里的 insufficient）
+ * - `always` 随时可联网
+ *
+ * 会话级开关优先于全局：一次会话里临时改过，就按那次会话的来。
+ */
+public func webMode(dataDir: String): String {
+    let db = DbHub.open(dataDir)
+    let m = trimStr(db.getKv(WEB_SEARCH_TABLE, "web_mode", "auto"))
+    if (m == "off" || m == "auto" || m == "always") {
+        return m
+    }
+    return "auto"
+}
+
+public func saveWebMode(dataDir: String, mode: String): Unit {
+    if (mode != "off" && mode != "auto" && mode != "always") {
+        return
+    }
+    DbHub.open(dataDir).putKv(WEB_SEARCH_TABLE, "web_mode", mode)
+}
+
+/** 某一段会话自己的联网选择；没设过返回 ""。 */
+public func sessionWebMode(dataDir: String, sessionId: String): String {
+    if (sessionId.size == 0) {
+        return ""
+    }
+    return trimStr(DbHub.open(dataDir).getKv("meta", "web-mode:" + sessionId, ""))
+}
+
+public func saveSessionWebMode(dataDir: String, sessionId: String, mode: String): Unit {
+    if (sessionId.size == 0 || (mode != "" && mode != "off" && mode != "auto" && mode != "always")) {
+        return
+    }
+    DbHub.open(dataDir).putKv("meta", "web-mode:" + sessionId, mode)
+}
+
+/** 这一轮实际用哪一档：请求里带的 > 会话记着的 > 全局设置。 */
+public func effectiveWebMode(dataDir: String, sessionId: String, requested: String): String {
+    if (requested == "off" || requested == "auto" || requested == "always") {
+        saveSessionWebMode(dataDir, sessionId, requested)
+        return requested
+    }
+    let s = sessionWebMode(dataDir, sessionId)
+    if (s.size > 0) {
+        return s
+    }
+    return webMode(dataDir)
+}
+
 /** 界面用的那一段 JSON。 */
 public func webSearchJson(dataDir: String): JsonObject {
     let key = webSearchKey(dataDir)
@@ -197,5 +251,7 @@ public func webSearchJson(dataDir: String): JsonObject {
     o.put("hasKey", JsonBool(key.size > 0))
     o.put("keyHint", JsonString(webSearchKeyHint(key)))
     o.put("results", JsonInt(webSearchResults(dataDir)))
+    o.put("mode", JsonString(webMode(dataDir)))
+    o.put("cacheCount", JsonInt(listWebCache(dataDir).size()))
     return o
 }
