@@ -3,6 +3,7 @@ package lumin.tools
 import std.collection.*
 import std.env.*
 import std.fs.*
+import std.posix.*
 import std.process.*
 import std.sync.*
 import std.time.*
@@ -29,22 +30,50 @@ public class Workspace {
      * 落在这些前缀下的路径一律拒绝。
      */
     private var denyRoots = ArrayList<String>()
+    /** 明确不许读的文件（绝对路径）：就是模型自己在用的那份配置（.env.local） */
+    private var denyFiles = ArrayList<String>()
+    /**
+     * 权限档位：ask（默认，沙箱在）/ auto / full。
+     * ask 之外的档位不再把路径限制在工作区内（对齐 Codex 的"完全访问权限"），
+     * 只保留"不交出自己在用的 Key"这一条红线。
+     */
+    public var level: String = "ask"
     public let maxListEntries: Int64 = 500
     public let maxFindResults: Int64 = 1000
     public let maxGrepMatches: Int64 = 100
     public let maxScanBytes: Int64 = 512 * 1024
 
     public init(root: String) {
-        this.root = stripTrailingSeps(root)
+        this.root = stripTrailingSeps(absNorm(root))
     }
 
     public init(root: String, denyRoots: ArrayList<String>) {
-        this.root = stripTrailingSeps(root)
+        this.root = stripTrailingSeps(absNorm(root))
         for (d in denyRoots) {
             if (d.size > 0) {
-                this.denyRoots.add(stripTrailingSeps(d))
+                this.denyRoots.add(stripTrailingSeps(absNorm(d)))
             }
         }
+    }
+
+    public init(root: String, denyRoots: ArrayList<String>, denyFiles: ArrayList<String>, level: String) {
+        this.root = stripTrailingSeps(absNorm(root))
+        this.level = level
+        for (d in denyRoots) {
+            if (d.size > 0) {
+                this.denyRoots.add(stripTrailingSeps(absNorm(d)))
+            }
+        }
+        for (f in denyFiles) {
+            if (f.size > 0) {
+                this.denyFiles.add(stripTrailingSeps(absNorm(f)))
+            }
+        }
+    }
+
+    /** 是否把路径关在工作区内（只有 ask 档关）。 */
+    public func sandboxed(): Bool {
+        return level == "ask"
     }
 
     /**
@@ -55,30 +84,55 @@ public class Workspace {
      * 而我们的 Key 就在项目里的 .env.local，默认工作区又是启动目录 —— 不拦等于把 Key 摆在模型面前。
      */
     public func denyReason(rel: String): String {
-        match (normalizeRel(rel)) {
-            case None => return "路径越出工作区，拒绝访问"
-            case Some(n) =>
-                if (hasSensitiveSegment(n)) {
-                    return "这是敏感路径（.env / .git / .ssh 之类），已拒绝访问"
-                }
-                let full = if (n.size == 0) { root } else { root + "/" + n }
-                for (d in denyRoots) {
-                    if (hasPrefix(full, d)) {
-                        return "这个路径在受保护目录里，拒绝访问"
-                    }
-                }
-                return ""
+        let t = trimStr(rel)
+        if (t.size == 0) {
+            return ""
         }
+        var full = ""
+        if (!sandboxed()) {
+            full = joinAbs(t)
+        } else {
+            match (normalizeRel(t)) {
+                case None => return "路径越出工作区，拒绝访问"
+                case Some(n) =>
+                    // 沙箱档额外遮住敏感路径
+                    if (hasSensitiveSegment(n)) {
+                        return "这是敏感路径（.env / .git / .ssh 之类），已拒绝访问"
+                    }
+                    full = if (n.size == 0) { root } else { root + "/" + n }
+            }
+        }
+        // 任何档位都不交出去的红线：模型自己在用的配置 + 数据目录
+        let norm = stripTrailingSeps(absNorm(full))
+        for (f in denyFiles) {
+            if (norm == f) {
+                return "这是模型自己在用的配置文件（里面有 API Key），拒绝访问"
+            }
+        }
+        for (d in denyRoots) {
+            if (hasPrefix(norm, d)) {
+                return "这个路径在受保护目录里（放着模型的配置与会话），拒绝访问"
+            }
+        }
+        return ""
     }
 
     public func relOf(rel: String): String {
         match (normalizeRel(rel)) {
             case Some(n) => return n
-            case None => return ""
+            case None => return rel
         }
     }
 
     public func resolve(rel: String): ?String {
+        if (!sandboxed()) {
+            // 非沙箱档：绝对路径直接用；相对路径挂到工作区上（.. 交给系统解析，就是要能走出去）
+            let t = trimStr(rel)
+            if (t.size == 0) {
+                return Some(root)
+            }
+            return Some(joinAbs(t))
+        }
         match (normalizeRel(rel)) {
             case Some(n) =>
                 if (n.size == 0) {
@@ -87,6 +141,18 @@ public class Workspace {
                 return Some(root + "/" + n)
             case None => return None
         }
+    }
+
+    /** 绝对路径原样；相对路径接到 root 后面。 */
+    private func joinAbs(t: String): String {
+        let b = t.toArray()
+        if (b.size >= 2 && b[1] == 58) {
+            return t
+        }
+        if (b[0] == 47 || b[0] == 92) {
+            return t
+        }
+        return root + "/" + t
     }
 
     public func readText(rel: String): ?String {
@@ -294,6 +360,22 @@ public class CmdOutcome {
     }
 }
 
+
+/** 归一成"绝对路径 + 正斜杠"：工作区与红线名单两边都过这一遍，字符串才可直接比。 */
+func absNorm(p: String): String {
+    let t = trimStr(p)
+    if (t.size == 0) {
+        return toSlashes(getcwd().toString())
+    }
+    let b = t.toArray()
+    if (b.size >= 2 && b[1] == 58) {
+        return toSlashes(t)
+    }
+    if (b[0] == 47 || b[0] == 92) {
+        return toSlashes(t)
+    }
+    return toSlashes(getcwd().toString()) + "/" + toSlashes(t)
+}
 
 /** 路径里有没有敏感段（.env*、.git、.ssh、CLI 数据文件名）。 */
 func hasSensitiveSegment(rel: String): Bool {

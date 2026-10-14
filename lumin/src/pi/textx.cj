@@ -127,12 +127,22 @@ public func toSlashes(s: String): String {
     let out = StringBuilder()
     var i: Int64 = 0
     while (i < b.size) {
-        if (b[i] == 92) {
+        let c = b[i]
+        if (c == 92) {
             out.append("/")
-        } else {
+            i = i + 1
+        } else if (c < 128) {
             out.append(String.fromUtf8(b[i..i + 1]))
+            i = i + 1
+        } else {
+            // 多字节字符必须整块追加：逐字节解码遇到中文会抛 Invalid utf8 byte sequence
+            var j = i + utf8CharLen(c)
+            if (j > b.size) {
+                j = b.size
+            }
+            out.append(String.fromUtf8(b[i..j]))
+            i = j
         }
-        i = i + 1
     }
     return out.toString()
 }

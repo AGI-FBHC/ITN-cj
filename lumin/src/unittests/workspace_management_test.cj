@@ -56,6 +56,56 @@ class WorkspaceManagementTest {
     }
 
     @TestCase
+    func fullPermissionReachesOutsideButNeverTheKey(): Unit {
+        let root = freshDir("perm-root")
+        let outside = freshDir("perm-outside")
+        fsWrite(outside + "/note.txt", "外面的文件")
+        fsWrite(root + "/.env.local", "LUMIN_KEY=secret")
+        let denyRoots = ArrayList<String>()
+        let denyFiles = ArrayList<String>()
+        denyFiles.add(absPath(root + "/.env.local"))
+        let ask = Workspace(root, denyRoots, denyFiles, "ask")
+        let full = Workspace(root, denyRoots, denyFiles, "full")
+        let regAsk = ToolRegistry()
+        registerWorkspaceTools(regAsk, ask, false)
+        let regFull = ToolRegistry()
+        registerWorkspaceTools(regFull, full, false)
+        let absNote = absPath(outside) + "/note.txt"
+        // ask 档：越界被拒
+        @Expect(regAsk.execute(modeStandard(), "c", "read", strObj("path", absNote)).isError, true)
+        // full 档：外面也能读
+        let r = regFull.execute(modeStandard(), "c2", "read", strObj("path", absNote))
+        @Expect(r.isError, false)
+        @Expect(containsSub(r.content, "外面的文件"), true)
+        // 但模型自己在用的配置（含 Key）任何档位都不给
+        let r2 = regFull.execute(modeStandard(), "c3", "read", strObj("path", ".env.local"))
+        @Expect(r2.isError, true)
+        @Expect(containsSub(r2.content, "配置文件"), true)
+        // 沙箱开关跟着档位走
+        @Expect(ask.sandboxed(), true)
+        @Expect(full.sandboxed(), false)
+    }
+
+    @TestCase
+    func permissionTiersAreListedAndRemembered(): Unit {
+        let data = freshDir("perm-data")
+        let ms = builtinPermissionModes()
+        @Expect(ms.size, 3)
+        @Expect(ms[0].name, "ask")
+        @Expect(ms[1].name, "auto")
+        @Expect(ms[2].name, "full")
+        @Expect(containsSub(ms[2].description, "不受限制"), true)
+        @Expect(findPermissionMode("full").isSome(), true)
+        @Expect(findPermissionMode("nope").isNone(), true)
+        // 默认没设置
+        @Expect(loadPermissionSetting(data), "")
+        savePermissionSetting(data, "full")
+        @Expect(loadPermissionSetting(data), "full")
+        savePermissionSetting(data, "auto")
+        @Expect(loadPermissionSetting(data), "auto")
+    }
+
+    @TestCase
     func trustIsInheritedFromTheNearestAncestor(): Unit {
         let data = freshDir("trust-data")
         let parent = freshDir("trust-parent")

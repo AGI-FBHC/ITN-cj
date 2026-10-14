@@ -65,6 +65,23 @@ public func truncateLine(s: String): String {
     return byteSafePrefix(s, GREP_MAX_LINE_LENGTH) + "…"
 }
 
+/** UTF-8 首字节 -> 该字符占几个字节（非法按 1，保证不越界）。tools 包里自己带一份，避免跨包依赖。 */
+func utf8CharLen(b: UInt8): Int64 {
+    if (b < 128) {
+        return 1
+    }
+    if ((b & 224) == 192) {
+        return 2
+    }
+    if ((b & 240) == 224) {
+        return 3
+    }
+    if ((b & 248) == 240) {
+        return 4
+    }
+    return 1
+}
+
 /** glob -> 正则（find/grep 的过滤器用）。支持 * ? ** 与 **\/。 */
 public func globToRegex(pat: String): String {
     let b = pat.toArray()
@@ -91,9 +108,18 @@ public func globToRegex(pat: String): String {
             sb.append("\\.")
         } else if (c == 47 || c == 45 || c == 95 || (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122)) {
             sb.append(String.fromUtf8(b[i..i + 1]))
-        } else {
+        } else if (c < 128) {
             sb.append("\\")
             sb.append(String.fromUtf8(b[i..i + 1]))
+        } else {
+            // 非 ASCII 字符整块追加（逐字节解码会抛 Invalid utf8）
+            var j = i + utf8CharLen(c)
+            if (j > b.size) {
+                j = b.size
+            }
+            sb.append(String.fromUtf8(b[i..j]))
+            i = j
+            continue
         }
         i = i + 1
     }

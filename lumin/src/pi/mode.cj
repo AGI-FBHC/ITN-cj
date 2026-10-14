@@ -76,6 +76,19 @@ public func modeAgent(): Mode {
     return m
 }
 
+/**
+ * 「完全访问权限」档用：把所有**已注册**的工具都给模型（不看原来的档位）。
+ * 为什么需要它：full 档不该"把 research 换成 agent"那样换来换去 —— 换一次就丢一类工具
+ * （实测：切到 agent 后 web_search 不在白名单里，模型只好绕道去跑外部 CLI，白烧 token）。
+ */
+public func modeEverything(reg: ToolRegistry): Mode {
+    let m = Mode("full", "全部工具", "完全访问权限：所有已注册的工具都可用")
+    for (s in reg.allSpecs()) {
+        m.allow([s.name])
+    }
+    return m
+}
+
 public func builtinModes(): ArrayList<Mode> {
     let out = ArrayList<Mode>()
     out.add(modeChat())

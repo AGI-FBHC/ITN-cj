@@ -1800,3 +1800,56 @@ web-fetch / skill / graph / study-api / ui-check / smoke / package-smoke 全过�
 
 **下一步**：P3 后半（把 `core/src/agent/pi_tools_spec.cj` 的中立 `DomainTool` 包成 pi 的 `Tool`）+ P4（换主循环，
 先挂临时路由 `/api/agent/ask-pi` 同题对照）。
+
+---
+
+## 第二十一轮（2026-10-14）：权限档位 + human-in-the-loop 审批 + Tavily 联网检索
+
+**用户诉求**：① 贴了 Codex 的三档权限截图，要"基于 agent 完全访问的权限"，别再让信任提示/--allow-exec 这类碎设置挡路；
+② 把 Tavily 联网检索集成进 lumin（"ITN 里那个 agent 太垃圾了，lumin 的回复流做得好，以后放到 ITN 里也合适"）。
+
+### 一、权限档位（照 Codex 三档，`/permissions` 或 `--permissions` 切，会记住在 `<dataDir>/settings.json`）
+
+| 档 | 界面文案 | 行为 |
+| --- | --- | --- |
+| `ask` | 请求批准 | 只在工作区内读写；**编辑外部文件 / 跑命令 / 联网之前都停下来问** |
+| `auto` | 帮我批准 | 不再限制在工作区内；**只有检测到的风险操作**（危险命令、写工作区外、联网）才问 |
+| `full` | 完全访问权限 | 不受限制地读写这台电脑、跑命令、联网；只留一条硬红线：不交出**模型自己在用的那份 API Key** |
+
+- 非 `ask` 档是用户的明确选择 → 不再问"信不信任这个目录"（信任表仍保留，`ask` 档照旧问、向上继承）。
+- `full` 档 = **全部工具档**（`modeEverything`）。
+
+### 二、human in the loop（审批层 `src/cli/approvals.cj`）
+
+- **按"动作"授权**，不是按工具名：路径前缀 / 命令首词 / 联网目标；四种回答：
+  `y` 允许一次、`s` 本次会话都允许、`a` 总是允许（写进 `<dataDir>/approvals.json`）、`n` 拒绝。
+- **拒绝会回灌给模型**（作为工具错误结果），它会改道或问用户，而不是静默失败。
+- **审计**：每次决定打印一行 + 往会话里写一条 `custom` entry（`lumin.approval`，不进模型上下文）；`/approvals` 看统计与规则。
+- 挂点用的是运行时已有的 `AgentOptions.beforeToolCall`（没有为它改运行时）；危险命令首词表（del/rd/format/reg/taskkill/…）宁可多问。
+
+### 三、Tavily 联网检索（新包 `src/net/`，工具 `web_search`，risk = external）
+
+- Key 走 `LUMIN_TAVILY_KEY`（`.env.local` / 环境变量）；没配就"注册但不可用"（清单里看得见、提示词不给、调用直接拒）。
+- 结果按 `[W1]/[W2]…` 编号 + 带链接 —— 正好是运行时 `citationWarning()` 认的格式，**编造网页编号会当场被自检抓到**。
+- 位置划分：`lumin.pi` 运行时零网络 / `lumin.tools` 只管文件与命令 / **`lumin.net` 才是联网**（以后接 ITN 一眼看得清）。
+- 真机验证（mimo-v2.6-flash，research 档 + full）：「查 2026 提示词工程新做法，三条要点带链接」→ 模型**一次并行两条** `web_search`，
+  拿到 20 条结果，答出 6 个真实链接，**2 轮 2 次调用 / 10478 tokens**。
+
+### 四、这轮挖出并修掉的三个 bug（都值得记）
+
+1. **`toSlashes` / `globToRegex` 逐字节解码**：路径里一有中文就抛 `Invalid utf8 byte sequence`
+   （测试正好抓到；同类写法在 escapeJson/escapeXml 里是有 `c < 128` 保护的，这两处漏了）。**多字节必须整块追加**这条又踩了一次。
+2. **full 档"换档丢工具"**：原来 full 会把 research 换成 agent，结果 `web_search` 不在白名单里 —— 模型只好绕道跑
+   `mcporter`/Exa 外部 CLI，**8 轮 7 次调用 / 76113 tokens** 才答出来。改成"全部工具档"后 2 轮 2 次 / 10478 tokens（同样的问题）。
+3. **`absPath("./")` 没归一化**：信任提示里出现过 `D:\...\lumin/.`、会话目录被切成 `--...-lumin-.--`。
+
+### 五、验证
+
+- `cjpm test` → **62/62 全绿**（新增 4 例联网解析/门禁 + 权限档位/审批相关）。
+- 重新打包 `dist\lumin-demo` + 干净环境自检 `CLEAN-ENV-OK`；真机三例：读文件、跑命令、联网检索全通。
+
+### 六、已知待办（没藏）
+
+1. `ask` 档下，位于工作区**外**的 skills（比如 `~/.agents/skills/...`）我们播报了名字却读不到文件 ——
+   要么读技能文件放行（只读白名单），要么在 `ask` 档只播报工作区内的技能。真机里模型就撞过这个（它想去读 agent-reach 的 SKILL.md）。
+2. 命令审批的粒度还是"首词"；"这条命令再危险也要一次问具体参数"这种更细的规则以后再加。
