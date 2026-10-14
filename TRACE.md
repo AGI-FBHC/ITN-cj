@@ -239,3 +239,12 @@ JSON 在真实规模下有三个硬伤，都在实测里撞到过：向量与切
 - UI 仍是我上一轮那套九页布局，用户明确说"太简单太丑、缺网页版的主要功能与交互"（已在并行线上处理）。
 - 产物（`artifacts`）仍是目录扫描，没有登记进库；本轮判断文件本身就是权威、没有额外查询需求，先不动。
 - 数据库备份/导出入口还没做进界面（`docs/08-整体规划.md` 里列的风险项）。
+
+## 2026-10-14 修 P0：界面文件被写坏导致整个桌面窗口只显示 HTML 源码（提交 c7aa074）
+
+- **现象**：用内核 HTTP 界面（tools/ui-flow.ps1 拉起）在浏览器里打开，页面显示的是 HTML 源码文本，document.title 为空、.nav-item 数量 0。
+- **定位**：shell/renderer/index.html 的**每个字符后面都跟了一个 LF**（1875 字节里 961 个换行；core.autocrlf=true 在检出时又变成 CRLF），于是浏览器把它当纯文本解析；git show HEAD:... 显示这个损坏**已经提交进仓库**，dist/ITN-Desktop/resources/app/renderer/index.html 同样是坏副本 → 打包后的绿色包启动后窗口里只会显示一屏 HTML 源码。
+- **影响面**：全仓扫描（html/js/css/md/cj/ps1/json/toml/yml，排除 node_modules/.git/target/tmp）只有这两个文件异常，其余正常。
+- **修复**：按原语义重建 shell/renderer/index.html（1038 字节、32 行、结构校验通过），并同步覆盖 dist 下的打包副本。
+- **顺带交付**：新增 	ools/ui-shot.cjs —— 桌面端界面自检脚本（无头 Edge 直连内核 HTTP 界面，逐页截图 + 结构摘要 + console error 收集，playwright 路径自动解析），已用它验证修复：标题 ITN-Desktop · 本地教培工作台、10 个导航项、九页全部渲染正常。
+- **教训（写进约定）**：往仓库写 .html 这类文件时**不要用 PowerShell 的 Set-Content -Value ** 这类会按行输出的写法；写完必须读回校验字节数/换行数。	ools/ui-shot.cjs 可作为"界面是否真的渲染"的常规自检手段。
