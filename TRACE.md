@@ -2451,3 +2451,52 @@ agent.preamble = "你是 Lumin，一个跑在用户自己电脑上的编码助�
 
 `scripts/package-app.ps1` → `tools/package-smoke.ps1` **RESULT=OK**（PRELOAD/TITLEBAR 正常、NAV=8、首屏渲染出来），
 `dist/ITN-Desktop` 已是最新，可以直接双击试。
+
+## 第三十四轮（2026-10-15）：把系统提示词摊开 —— 新增 `/prompt` 命令 + `docs/system-prompt.md`
+
+**用户需求（原话）**："lumin 的完整系统提示词是什么，能不能直接发我看看"。
+
+### 一、先回答"完整提示词"这个概念
+
+它不是一段固定字符串：`src/pi/prompt.cj` 的 `buildSystemPrompt` 把**四段**拼起来（照 Pi 的做法），
+随**工具集档位**与**扫到哪些 skills** 变：
+
+| 顺序 | 段 | 由谁决定 |
+| --- | --- | --- |
+| 1 | preamble（角色 + 语言 + 行为约定） | `src/cli/chat.cj` 的 `agent.preamble` 字面量 |
+| 2 | `<tools>`（当前档位的工具清单 + 所有 guidelines） | 当前 `Mode` + 各 `ToolSpec.guidelines` |
+| 3 | `<available_skills>`（只播 name/description/location） | skills 扫描（工作区/.pi、.agents、数据目录、~/.agents） |
+| 4 | 工作目录三条规矩 | 当前工作区 |
+
+拼完还会作为一条 `system` 消息的 `sections` 快照存进会话 —— 所以能回放"当时用的哪版提示词"。
+**工具声明（JSON Schema）不在这段里**，在请求的 `tools` 字段（原生 function calling），Pi 也是这么分的。
+
+### 二、新增 `/prompt`
+
+`chat.cj` 主循环里加一个分支（挨着 `/tools`）：打印 `agent.systemPromptNow()` —— 就是**此刻真发出去的那一份**。
+帮助里加了说明。这样"看提示词"从"我给你贴一段"变成"你自己随时能打"。
+
+### 三、实测样例（9745 字节）
+
+```
+echo /prompt | lumin chat --trust --mode standard --workspace samplesdemo-workspace
+```
+
+- preamble：**整段中文**（第三十三轮改的）+ "思考过程也用中文（代码、报错原文、专有名词可以保留英文原文，别硬翻）"。
+- `<tools>`：6 件（standard 档）；**snippet 与大部分 guidelines 是英文** —— 那是照 Pi 逐字对齐的对外契约，
+  只有我们自己加的两条要点是中文（"大文件用 offset/limit 分段读"、"改几处小地方用 edit"、"先 ls 看清楚有什么"）。
+- `<available_skills>`：本机 17 个，**占了大头**；套话（"The following skills provide..."）也是照规范/Pi 的英文原文。
+- 工作目录：`Working directory: <绝对路径>` + 三条（相对路径怎么写、改完文件怎么报、`.env/.git/.ssh` 不许碰）。
+
+### 四、产物与验证
+
+- 新增 `docs/system-prompt.md`：四段结构表 + 每段由谁决定 + 一份**脱敏**样例（用户目录换成 `<你的用户目录>`，
+  skills 只留两个示例）+ "为什么英文很多"的解释 + "想改就改哪儿"的表。
+- `README` 命令表加 `/prompt`、目录树加 `docs/system-prompt.md`；`CHANGELOG` 加一条 Added。
+- `cjpm test` **70/70**；`verify-clean.ps1` → 重新打包 + 批处理体检通过 + `CLEAN-ENV-OK`。
+- 提交 `634da77`。
+
+### 五、给下一个接手的人
+
+- 调提示词先敲 `/prompt` 看现状，别凭记忆改（提示词随档位/skills 变）。
+- `<tools>` 里的英文**别顺手翻译**：那是与 Pi 对齐的部分（先看 `docs/vs-pi.md`）。
