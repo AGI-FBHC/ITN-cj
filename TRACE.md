@@ -2257,3 +2257,61 @@ web-fetch / skill / graph / study-api / ui-check / smoke / package-smoke 全过�
   `web/policy` 留痕、`/api/agent/ask` 没被弄坏。
 - 顺带把打包好的 `dist/ITN-Desktop` 更新到最新（用户之前开着应用导致覆盖失败，这轮他关掉了）：
   `tools/package-smoke.ps1` → `PRELOAD=ok / TITLEBAR=ok / NAV=8 / RESULT=OK`。
+
+## 第三十二轮（2026-10-15）：`lumin` 启动器在 cmd.exe 里报 `'m' 不是内部或外部命令` —— 定位并修掉
+
+**用户反馈（原话）**："你测过了吗，我输入 lumin 怎么一直提示：'m' 不是内部或外部命令，也不是可运行的程序或批处理文件。"
+**先认账**：上一轮我只在"自己手工往 $env:PATH 里加过 bin 目录的 PowerShell"里跑过 exe，
+**没有真在 cmd.exe 里敲过 `lumin`**。这个启动器路径等于没测。
+
+### 一、复现
+
+```
+cd /d D:\Desktop\ITN\ITN-Desktop
+cmd /c "chcp 936 >nul & (echo /quit) | lumin"      # 936 + 管道 + 靠 PATH 找 → 复现
+```
+
+输出（GBK 解 UTF-8 所以看着是乱码，但能对上）：
+`'m' 不是内部或外部命令，也不是可运行的程序' / '或批处理文件。'` × 4~6 次。
+对照组：`lumin demo`（有参数）**不炸**；65001 代码页 + 管道**不炸**；不带管道**不炸**。
+
+### 二、根因（两个同源坑，都是"cmd.exe 把自己在 .cmd 里的位置读错了"）
+
+管道会让 cmd 为批处理这一侧**再起一个子 cmd**（进程表里能看到 `cmd.exe /S /D /c" lumin"`），
+子 cmd 是**边读文件边执行**的，于是文件位置一旦算错，它就把某一行的**中段**当成命令去跑：
+
+1. **`bin\lumin.cmd` 里有非 ASCII 字节（中文注释）+ 中途 `chcp 65001`**。
+   cmd 的"第几个字符"和"第几个字节"在多字节编码下对不上，重新定位时就落到行中间 ——
+   这次正好落在 `rem` 的最后一个字母上，于是它去执行一条叫 `m` 的命令。**这就是那个神秘的 'm'。**
+2. **`package-demo.ps1` 生成的两个启动器是 LF 结尾**（PowerShell 7 的 here-string 就是 \n），
+   同样的错位。当场抓到更直观的现场：
+   `'t-workspace" mkdir "chat-workspace"'`（从 `"chat-workspace"` 中间切开）、
+   `'中文注释…' `、`'（按任意键关闭）pause'`（两行粘一起）。
+
+### 三、修法
+
+| 文件 | 改动 |
+| --- | --- |
+| `bin\lumin.cmd` | 重写成**纯 ASCII**：`@echo off` → `chcp 65001 > nul` → `set LUMIN_HOME/LUMIN_EXE` → `goto` 分支（**不用 `if/else` 括号块**，少一层"要先读完一个块"的解析）；顺手加"绿色包不存在"的提示（打路径 + 叫你先跑 package-demo.ps1） |
+| `scripts\package-demo.ps1` | 新增 `Write-BatchFile`：把内容**归一化成 CRLF** 再写，并且**内容里有非 ASCII 就直接 throw**；两个启动器（`对话.cmd` / `运行演示.cmd`）内容改成 ASCII（中文提示改成英文，中文字幕交给 exe 自己打） |
+| `.gitattributes` | 新增 `*.cmd text eol=crlf` / `*.bat text eol=crlf`。**这条最容易被漏**：原来只有 `* text=auto eol=lf`，检出时会把 .cmd 转成 LF → 老 bug 复活。是 git 的警告（`CRLF will be replaced by LF`）提醒了我 |
+| `scripts\verify-clean.ps1` | 新增"批处理体检"：扫全仓 `.cmd`/`.bat`（跳过 target/ref-pi），**非 ASCII 或裸 LF 直接 fail**，把这条规矩钉死在每次打包前 |
+
+### 四、验证矩阵（都是真跑）
+
+- **cmd.exe，代码页 936**：`(echo /quit) | lumin`（原复现命令）✅ banner 正常、无 `'m'`；
+  `lumin < 文件` ✅；`lumin demo` ✅。
+- **cmd.exe，代码页 65001**：`lumin demo` ✅。
+- **PowerShell 7 / Windows PowerShell 5.1**，cwd=`C:\`：`lumin demo` ✅（走 PATH 解析）。
+- **两个绿色包启动器**：`对话.cmd`（936 + 管道）✅ 起 CLI；`运行演示.cmd`（936）✅ 起 demo。
+- **换行回归**：`git checkout-index -f -- lumin/bin/lumin.cmd` 用索引重写工作区 → `CRLF=21 裸 LF=0`，
+  且 `git status` 干净（不会来回抖动）。
+- **体检**：`verify-clean.ps1` → 3 个批处理文件 `非 ASCII 0，裸 LF 0` → `批处理体检通过` → `CLEAN-ENV-OK`。
+- **回归**：`cjpm test` **70/70**。
+
+### 五、给下一个接手的人
+
+- **改任何 `.cmd`/`.bat` 之后，必须真在 `cmd.exe`（代码页 936）里敲一遍**，尤其是
+  "管道 / 重定向 / 靠 PATH 调用"这三种情况 —— 只在 PowerShell 里跑 exe 不算测过启动器。
+- 批处理内容**永远纯 ASCII + CRLF**；中文写在 README / 说明.txt / 交给 exe 打印。
+- `verify-clean.ps1` 现在会拦这条；`Write-BatchFile` 也会拦。别绕过它们。
