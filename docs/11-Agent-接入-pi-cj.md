@@ -6,6 +6,12 @@
 >
 > 读这份文档前先看：`pi-cj/README.md`（尤其第 7 节《合并清单》）与 `pi-cj/docs/vs-pi.md`。
 
+> **版本注记（2026-10-14 复核）**：这份方案写完后，pi-cj 自己又做了一轮"按 Pi 源码对齐"的重构
+> （`9b9242e refactor(pi-cj)!: 事件名/循环/会话树/工具 schema/skills`）。我重新核对了本文依赖的接缝：
+> `ChatProvider.respond(StepContext, EventStream)`、`Tool.spec()/run()`、`ToolResult.modelText()`、
+> 以及事件名（`agent_start/turn_start/message_*/tool_execution_*` 与 `text_delta/thinking_delta/toolcall_delta`）**都没变**；
+> 变的是它内部实现与测试数（69 → 47 例）。接入时以 **`pi-cj/README.md` 的《合并清单》为准**，本文的映射关系仍然成立。
+
 ## 一、两边各是什么（先别急着替换）
 
 | | 现在（`core/src/agent/agent.cj`） | pi-cj（`pi-cj/src/pi/`） |
