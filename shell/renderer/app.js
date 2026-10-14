@@ -1645,9 +1645,9 @@ async function renderChapterTree(v) {
     it.appendChild(bar);
     const acts = el("div", "row item-actions");
     acts.appendChild(btn("开始学", "sm primary", () => { state.chapter = c.name; go("learn"); }));
-    acts.appendChild(btn("出题练习", "sm", () => openQuiz(v, c.name)));
-    acts.appendChild(btn("生成讲义", "sm", () => askTopic("lecture", c.name)));
-    acts.appendChild(btn("生成练习册", "sm", () => askTopic("quiz", c.name)));
+    acts.appendChild(btn("出题练习", "sm ghost", () => openQuiz(v, c.name)));
+    acts.appendChild(btn("生成讲义", "sm ghost", () => askTopic("lecture", c.name)));
+    acts.appendChild(btn("生成练习册", "sm ghost", () => askTopic("quiz", c.name)));
     it.appendChild(acts);
     it.onclick = (ev) => {
       if (ev.target.closest("button")) return;
@@ -1659,16 +1659,6 @@ async function renderChapterTree(v) {
   card.appendChild(list);
   v.appendChild(card);
 
-  v.appendChild(cardOf({
-    title: "还能做什么",
-    body: (() => {
-      const wrap = el("div", "row");
-      wrap.appendChild(btn("把整章做成讲义", "", () => askTopic("lecture", (tree.chapters[0] || {}).name || "")));
-      wrap.appendChild(btn("问助手一个问题", "", () => go("chat")));
-      wrap.appendChild(btn("看检索效果", "", () => go("kb")));
-      return wrap;
-    })(),
-  }));
 }
 
 async function renderChapter(v) {
@@ -2345,7 +2335,7 @@ function abilityCard() {
     title: "六维能力",
     tag: r.weakest ? "该补：" + r.weakest : "",
     tagCls: r.weakest ? "warn" : "",
-    actions: [btn("校准我的能力", "sm", () => openCalibration())],
+    actions: [],
   });
   if (!rows.length) {
     card.appendChild(emptyState({
@@ -5761,17 +5751,11 @@ function settingsGeneral() {
   const prof = cardOf({
     title: "学习者档案",
     actions: [btn("保存档案", "primary sm", async () => {
-      const selfScores = {};
-      for (const k of SELF_SCORE_KEYS) {
-        const val = Number((document.getElementById("pf-score-" + k) || {}).value);
-        if (val > 0) selfScores[k] = Math.max(0, Math.min(100, val));
-      }
       try {
         await saveProfile({
           nickname: $("pf-nick").value.trim(),
           goal: $("pf-goal").value.trim(),
           weeklyHours: Number($("pf-hours").value) || 0,
-          selfScores: selfScores,
         });
         toast("档案已保存");
         go("settings", "general");
@@ -5783,22 +5767,12 @@ function settingsGeneral() {
   prow1.appendChild(fieldOf("学习目标", inputOf("pf-goal", "例如 两周内讲完提示词工程", p.goal || "")));
   prow1.appendChild(fieldOf("每周投入（小时）", inputOf("pf-hours", "8", p.weeklyHours || "")));
   prof.appendChild(prow1);
-  const scores = p.selfScores || {};
-  const grid = el("div", "grid grid-3");
-  for (const k of SELF_SCORE_KEYS) {
-    grid.appendChild(fieldOf(k + "（0-100）", inputOf("pf-score-" + k, "", scores[k] === undefined ? "" : scores[k])));
-  }
-  prof.appendChild(grid);
+  /* 六维自评只在「我的成长 → 能力校准」里改：同一份数据两个入口，改一处漏一处是上一轮的教训 */
+  const hint = el("div", "row profile-hint");
+  hint.appendChild(el("span", "muted grow", "六维自评在「我的成长」里用一句话一条校准；这里只管称呼、目标与每周投入。"));
+  hint.appendChild(btn("去校准", "sm", () => openCalibration()));
+  prof.appendChild(hint);
   g.appendChild(prof);
-
-  /* 设置页最容易变成"填完就没人来"的地方，所以每个分区都给一条回到干活的捷径 */
-  const jump = cardOf({ title: "下一步" });
-  const jr = el("div", "row");
-  jr.appendChild(btn("去配置模型接口", "primary sm", () => go("settings", "models")));
-  jr.appendChild(btn("去指定资料目录", "sm", () => go("settings", "kb")));
-  jr.appendChild(btn("去学 · 练", "sm ghost", () => go("learn")));
-  jump.appendChild(jr);
-  g.appendChild(jump);
   return g;
 }
 
