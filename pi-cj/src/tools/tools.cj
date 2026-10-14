@@ -48,6 +48,11 @@ class ReadFileTool <: Tool {
         if (path.size == 0) {
             return ToolResult.bad("缺少 path 参数")
         }
+        match (ws.resolve(path)) {
+            case None => return ToolResult.bad("路径越出工作区，拒绝访问：" + path +
+                "（模型只能读工作区里的文件）")
+            case Some(_) => ()
+        }
         match (ws.readText(path)) {
             case Some(t) =>
                 let arr = JsonArray()
@@ -146,6 +151,10 @@ class WriteFileTool <: Tool {
         if (path.size == 0) {
             return ToolResult.bad("缺少 path 参数")
         }
+        match (ws.resolve(path)) {
+            case None => return ToolResult.bad("路径越出工作区，拒绝写入：" + path)
+            case Some(_) => ()
+        }
         let content = strOf(args, "content")
         if (ws.writeText(path, content)) {
             return ToolResult.good("已写入 " + ws.relOf(path) + "（" + content.size.toString() + " 字节）", JsonNull())
@@ -173,6 +182,10 @@ class EditFileTool <: Tool {
         let newText = strOf(args, "new_text")
         if (path.size == 0 || oldText.size == 0) {
             return ToolResult.bad("需要 path 与 old_text")
+        }
+        match (ws.resolve(path)) {
+            case None => return ToolResult.bad("路径越出工作区，拒绝访问：" + path)
+            case Some(_) => ()
         }
         var text = ""
         match (ws.readText(path)) {
