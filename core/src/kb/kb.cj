@@ -79,11 +79,18 @@ public class KbChunk {
 
     public init() {}
 
+    /** 参与检索的文本。标题路径也要进来：像「常用手法」这种词往往只在标题里，
+        正文并不出现，漏掉标题会让检索直接找不到这一段。 */
     public func indexText(): String {
-        if (caption.size > 0) {
-            return text + "\n[图片描述] " + caption
+        var s = headingPath
+        if (s.size > 0) {
+            s = s + "\n"
         }
-        return text
+        s = s + text
+        if (caption.size > 0) {
+            s = s + "\n[图片描述] " + caption
+        }
+        return s
     }
 
     public func toJson(): JsonObject {
@@ -358,6 +365,106 @@ public func search(index: KbIndex, queryVector: Array<Float64>, topK: Int64): Ar
         // 取用后把原项标记为已选，但返回值必须是副本，否则分数会被标记值覆盖
         out.add(SearchHit(pool[best].chunk, bestScore))
         pool[best].score = -2.0
+        taken = taken + 1
+    }
+    return out
+}
+
+// ---------- 关键词兜底检索 ----------
+// 很多模型服务只提供对话、不提供向量接口。为了不让知识库卡在某个服务类型上，
+// 没配向量模型时改用字符二元组重叠度排序，不依赖任何外部服务。
+
+/** 二元组的哈希。每步都掩到 31 位：
+    仓颉默认对整数溢出抛异常，所以不能直接用会溢出的整数哈希。 */
+func gramHash(bytes: Array<UInt8>, start: Int64, end: Int64): Int64 {
+    var h: Int64 = 0
+    var i = start
+    while (i < end) {
+        h = ((h << 5) + h + Int64(bytes[i])) & 2147483647
+        i = i + 1
+    }
+    return h
+}
+/** 返回每个 UTF-8 字符的起始字节下标，末尾追加哨兵。 */
+func charStarts(bytes: Array<UInt8>): ArrayList<Int64> {
+    let out = ArrayList<Int64>()
+    var i = 0
+    while (i < bytes.size) {
+        if ((bytes[i] & 192) != 128) {
+            out.add(i)
+        }
+        i = i + 1
+    }
+    out.add(bytes.size)
+    return out
+}
+
+func gramHashes(bytes: Array<UInt8>, starts: ArrayList<Int64>): HashSet<Int64> {
+    let set = HashSet<Int64>()
+    var i = 0
+    while (i + 2 < starts.size) {
+        set.add(gramHash(bytes, starts[i], starts[i + 2]))
+        i = i + 1
+    }
+    return set
+}
+
+public func keywordSearch(index: KbIndex, query: String, topK: Int64): ArrayList<SearchHit> {
+    let qb = query.toArray()
+    let qStarts = charStarts(qb)
+    let qGrams = gramHashes(qb, qStarts)
+    let hits = ArrayList<SearchHit>()
+    if (qGrams.size == 0) {
+        return hits
+    }
+    for (c in index.chunks) {
+        let text = c.indexText()
+        let cb = text.toArray()
+        let cStarts = charStarts(cb)
+        if (cStarts.size < 3) {
+            continue
+        }
+        var matches: Int64 = 0
+        var i = 0
+        while (i + 2 < cStarts.size) {
+            if (qGrams.contains(gramHash(cb, cStarts[i], cStarts[i + 2]))) {
+                matches = matches + 1
+            }
+            i = i + 1
+        }
+        if (matches == 0) {
+            continue
+        }
+        // 归一化长度，避免长切片仅因字数多而排前
+        let total = Float64(cStarts.size - 2)
+        hits.add(SearchHit(c, Float64(matches) / sqrt(total)))
+    }
+    return topHits(hits, topK)
+}
+
+
+/** 从候选里挑出得分最高的 topK 个。返回副本，避免内部标记值污染结果。 */
+public func topHits(pool: ArrayList<SearchHit>, topK: Int64): ArrayList<SearchHit> {
+    let n = pool.size
+    let k = if (topK < n) { topK } else { n }
+    let out = ArrayList<SearchHit>()
+    var taken: Int64 = 0
+    while (taken < k) {
+        var best = -1
+        var bestScore = -1.0e308
+        var i = 0
+        while (i < n) {
+            if (pool[i].score > bestScore) {
+                bestScore = pool[i].score
+                best = i
+            }
+            i = i + 1
+        }
+        if (best < 0) {
+            break
+        }
+        out.add(SearchHit(pool[best].chunk, bestScore))
+        pool[best].score = -1.0e308
         taken = taken + 1
     }
     return out

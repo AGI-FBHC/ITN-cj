@@ -61,7 +61,9 @@ public class ToolRegistry {
         this.store = store
     }
 
-    /** 工具：检索知识库，返回带出处的切片。 */
+    /** 工具：检索知识库，返回带出处的切片。
+        配了向量模型就按向量相似度检索；没配（或调用失败）则退回字符二元组重叠度，
+        保证知识库不被某个服务类型卡住。 */
     public func kbSearch(kbId: String, query: String, topK: Int64): ToolResult {
         let r = ToolResult()
         r.name = "kb_search"
@@ -71,34 +73,39 @@ public class ToolRegistry {
             return r
         }
         let s = store.load()
-        match (s.findModel(s.embedModelId)) {
-            case Some(cfg) =>
-                let idx = loadIndexCached(store.dataDir, kbId)
-                if (idx.chunks.size == 0) {
-                    r.ok = false
-                    r.summary = "知识库还没有索引"
-                    return r
-                }
-                try {
-                    let qv = LlmClient(cfg).embed([query])
-                    let hits = search(idx, qv[0], topK)
-                    let arr = JsonArray()
-                    for (h in hits) {
-                        arr.add(hitJson(h.chunk, h.score))
-                    }
-                    r.data = arr
-                    r.summary = "命中 " + hits.size.toString() + " 个切片"
-                } catch (e: Exception) {
-                    r.ok = false
-                    r.summary = "检索失败：" + e.message
-                }
-            case None =>
-                r.ok = false
-                r.summary = "未指定向量模型"
+        let idx = loadIndexCached(store.dataDir, kbId)
+        if (idx.chunks.size == 0) {
+            r.ok = false
+            r.summary = "知识库还没有索引"
+            return r
         }
+        var hits = ArrayList<SearchHit>()
+        var mode = "关键词"
+        if (s.embedModelId.size > 0) {
+            match (s.findModel(s.embedModelId)) {
+                case Some(cfg) =>
+                    try {
+                        let qv = LlmClient(cfg).embed([query])
+                        hits = search(idx, qv[0], topK)
+                        mode = "向量"
+                    } catch (e: Exception) {
+                        hits = keywordSearch(idx, query, topK)
+                        mode = "关键词（向量调用失败：" + e.message + "）"
+                    }
+                case None =>
+                    hits = keywordSearch(idx, query, topK)
+            }
+        } else {
+            hits = keywordSearch(idx, query, topK)
+        }
+        let arr = JsonArray()
+        for (h in hits) {
+            arr.add(hitJson(h.chunk, h.score))
+        }
+        r.data = arr
+        r.summary = "命中 " + hits.size.toString() + " 个切片（" + mode + "）"
         return r
     }
-
     /** 工具：把产物写到本地文件。 */
     public func saveArtifact(name: String, content: String): ToolResult {
         let r = ToolResult()

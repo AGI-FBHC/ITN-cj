@@ -297,16 +297,6 @@ public class Api {
                                 fail(ctx, 400, "知识库未设置目录")
                                 return
                             }
-                            let embedId = s.embedModelId
-                            if (embedId.size == 0) {
-                                fail(ctx, 400, "未指定向量模型，请先在设置里绑定")
-                                return
-                            }
-                            let embedCfg = s.findModel(embedId)
-                            if (embedCfg.isNone()) {
-                                fail(ctx, 404, "找不到向量模型配置：" + embedId)
-                                return
-                            }
                             var maxChars: Int64 = 1200
                             let requested = intOf(b, "maxChars")
                             if (requested > 0) { maxChars = requested }
@@ -325,7 +315,15 @@ public class Api {
                                         case None => ()
                                     }
                                 }
-                                let done = embedChunks(idx, LlmClient(embedCfg.getOrThrow()), 16)
+                                // 向量模型可选：没配就只做关键词可检索的索引
+                                var done: Int64 = 0
+                                if (s.embedModelId.size > 0) {
+                                    match (s.findModel(s.embedModelId)) {
+                                        case Some(embedCfg) =>
+                                            done = embedChunks(idx, LlmClient(embedCfg), 16)
+                                        case None => ()
+                                    }
+                                }
                                 idx.kbId = id
                                 idx.builtAt = stamp()
                                 saveIndex(store.dataDir, id, idx)
@@ -380,29 +378,39 @@ public class Api {
                     let reqK = intOf(b, "topK")
                     if (reqK > 0) { topK = reqK }
                     let s = store.load()
-                    let embedId = s.embedModelId
-                    match (s.findModel(embedId)) {
-                        case Some(cfg) =>
-                            let idx = loadIndexCached(store.dataDir, id)
-                            if (idx.chunks.size == 0) {
-                                fail(ctx, 404, "该知识库还没有索引，请先建立索引")
-                                return
-                            }
-                            try {
-                                let qv = LlmClient(cfg).embed([query])
-                                let hits = search(idx, qv[0], topK)
-                                let arr = JsonArray()
-                                for (h in hits) {
-                                    arr.add(chunkJson(h.chunk, h.score))
-                                }
-                                let o = JsonObject()
-                                o.put("hits", arr)
-                                ok(ctx, o)
-                            } catch (e: Exception) {
-                                fail(ctx, 500, "检索失败：" + e.message)
-                            }
-                        case None => fail(ctx, 400, "未指定向量模型，请先在设置里绑定")
+                    let idx = loadIndexCached(store.dataDir, id)
+                    if (idx.chunks.size == 0) {
+                        fail(ctx, 404, "该知识库还没有索引，请先建立索引")
+                        return
                     }
+                    // 向量模型可选，未配置时退回关键词检索
+                    var hits = ArrayList<SearchHit>()
+                    var mode = "关键词"
+                    if (s.embedModelId.size > 0) {
+                        match (s.findModel(s.embedModelId)) {
+                            case Some(cfg) =>
+                                try {
+                                    let qv = LlmClient(cfg).embed([query])
+                                    hits = search(idx, qv[0], topK)
+                                    mode = "向量"
+                                } catch (e: Exception) {
+                                    hits = keywordSearch(idx, query, topK)
+                                    mode = "关键词"
+                                }
+                            case None =>
+                                hits = keywordSearch(idx, query, topK)
+                        }
+                    } else {
+                        hits = keywordSearch(idx, query, topK)
+                    }
+                    let arr = JsonArray()
+                    for (h in hits) {
+                        arr.add(chunkJson(h.chunk, h.score))
+                    }
+                    let o = JsonObject()
+                    o.put("hits", arr)
+                    o.put("mode", JsonString(mode))
+                    ok(ctx, o)
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
             return
