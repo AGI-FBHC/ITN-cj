@@ -57,7 +57,15 @@ pi-cj 的运行时**零网络、零文件 IO**（它的 README 明确写了这�
 > - **P2 已完成**：`core/src/pi_provider/provider.cj` —— `OpenAiChatProvider`（拿内核的 `ModelConfig`，SSE 流式 +
 >   原生 tool_calls 的增量拼装 + 429/5xx 退避重试 + usage），另加 3 例自测（**进程内 SSE 假服务**，不联网）：
 >   增量拼装 / 只在"还没推过事件"时重试 / 500 只回报不抛。`cjpm test` → **54/54**。
-> - P3 起未做。
+> - **P3 进行中（已暂停）**：写好了"中立工具定义"那一层 —— `core/src/agent/pi_tools_spec.cj`
+>   （只认识内核工具，把 10 个领域工具摘成 `DomainTool`：说明书 + 显式 JSON Schema + risk + run 闭包；
+>   `allowWeb=false` 时**根本不生成**联网工具）。编译通过、`cjpm test` 54/54。
+>   剩下"把 DomainTool 包成 pi 的 Tool + 跑一轮"那一半**暂停**：用户发现 pi-cj 还有小 bug，等那边修完再继续。
+>
+> **运维要点**：`core/src/pi/` 是 `pi-cj/src/pi/` 的**拷贝**。那边每修一次 bug，这边都要
+> 重新同步一次（同样的包名替换：`pi_cj.pi` → `itn_desktop_core.pi`、`pi_cj.tools` → `itn_desktop_core.pi_tools`、
+> `pi_cj.unittests` → `itn_desktop_core.unittests`），并重跑 `cjpm test`。长期看要考虑的是"以哪个仓库为准"，
+> 别让两份拷贝各自漂移。
 
 > 注：pi 那个包里有一批和内核 util 同名的工具函数（`hasPrefix`/`byteSafePrefix`/`intOf`…），
 > 所以桥接文件**不要同时 `.*` 导入 pi 与 util**；`provider.cj` 用的是"逐个具名 import"，歧义交给编译器是最后手段，不是第一手段。

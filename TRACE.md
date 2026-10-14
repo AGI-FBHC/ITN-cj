@@ -1626,3 +1626,20 @@ ITN-Desktop"；最后要求"做好之后先让我单独试试效果"。
 
 P3：把内核现有 10 个领域工具各包一层 pi `Tool`（`FuncTool` + 显式 JSON Schema + `risk`）；
 P4：新增一条 `/api/agent/ask-pi`（临时）跑 pi 循环，与现有 agent 做**同题对照**，验证过再切默认。
+
+---
+
+## 第二十三轮（2026-10-14）：pi-cj 接入先停一下（P3 写了前半，编译与测试都留着）
+
+**用户说**：另一个会话发现 pi-cj 有小 bug，等他修完再继续接入。
+
+**停之前把状态收拾干净**（不留编译不过的东西在工作区）：
+- 删掉了写到一半的 `core/src/agent/pi_bridge.cj`（它用全限定名绕过 pi/工具同名类型，仓颉不认这种写法，编译不过）。
+- 留下并**验证通过**的是 P3 的前半：`core/src/agent/pi_tools_spec.cj` —— 领域工具的"中立定义"层。
+  为什么拆两层：pi 包与内核 tools 包同名类型太多（`ToolSpec/ToolResult/Tool/ToolRegistry`），
+  同一个文件两边通配导入会歧义、全限定名又不认；于是**一边一个文件**，用同包内的普通类 `DomainTool` 对接。
+  实测：`scripts/build.ps1` 通过，`cjpm test` **54/54**（P1 的 51 例 + P2 的 3 例）。
+- `docs/11` 补了两件事：P3 停在哪；**`core/src/pi/` 是 pi-cj 的拷贝，那边每修 bug 这边都要重新同步**（并把包名替换的规则写下来），
+  长期要想清楚"以哪个仓库为准"，别让两份拷贝各自漂移。
+
+**恢复时的第一步**：重新同步 `pi-cj/src/{pi,tools,unittests}` → 内核对应目录 → `cjpm test` 全绿 → 再接着写 pi 侧的包装与 `runPiTurn`。
