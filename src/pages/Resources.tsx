@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { lectureMdComponents } from '@/components/resources/lecture-markdown';
+import { lectureMdComponents, mdRemarkPlugins, mdRehypePlugins } from '@/components/resources/lecture-markdown';
 import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
 import { Check, CheckCircle2, ExternalLink, FileText, Flag, Link2, ListChecks, Loader2, PenLine, PlayCircle, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
@@ -118,7 +117,7 @@ function LectureContent({ resource }: { resource: LearningResource }) {
               <div key={`${String(section.title)}-${sectionIndex}`}>
                 <h4 className="text-[15px] font-semibold text-ink">{String(section.title ?? `第 ${sectionIndex + 1} 节`)}</h4>
                 <div className="mt-2 max-w-[760px]">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{String(section.content ?? '')}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={mdRemarkPlugins} rehypePlugins={mdRehypePlugins} components={lectureMdComponents}>{String(section.content ?? '')}</ReactMarkdown>
                   <SourceCitationMarks citations={section.citations} evidenceQuotes={section.evidenceQuotes ?? section.evidenceMatches} resource={resource} />
                 </div>
               </div>
@@ -145,7 +144,7 @@ function PracticeContent({ resource }: { resource: LearningResource }) {
       <div className="space-y-3">
         {asRecords(content.steps).map((step, index) => (
           <section key={`${String(step.title)}-${index}`} className="rounded-[14px] border border-hairline bg-card-warm p-5">
-            <div className="flex items-start gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand text-paper font-mono text-[12px]">{index + 1}</span><div className="min-w-0 flex-1"><h3 className="text-[15px] font-semibold text-ink">{String(step.title ?? `步骤 ${index + 1}`)}</h3><div className="mt-1"><ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{String(step.instruction ?? '')}</ReactMarkdown><SourceCitationMarks citations={step.citations} evidenceQuotes={step.evidenceQuotes ?? step.evidenceMatches} resource={resource} /></div></div></div>
+            <div className="flex items-start gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand text-paper font-mono text-[12px]">{index + 1}</span><div className="min-w-0 flex-1"><h3 className="text-[15px] font-semibold text-ink">{String(step.title ?? `步骤 ${index + 1}`)}</h3><div className="mt-1"><ReactMarkdown remarkPlugins={mdRemarkPlugins} rehypePlugins={mdRehypePlugins} components={lectureMdComponents}>{String(step.instruction ?? '')}</ReactMarkdown><SourceCitationMarks citations={step.citations} evidenceQuotes={step.evidenceQuotes ?? step.evidenceMatches} resource={resource} /></div></div></div>
             {step.code ? <pre className="mt-4 overflow-x-auto rounded-lg bg-ink px-4 py-3 text-[12px] leading-5 text-paper"><code>{String(step.code)}</code></pre> : null}
             {step.expectedOutput ? <div className="mt-3 rounded-lg border border-brand/20 bg-brand-tint/40 px-3 py-2 text-[12.5px] text-ink-2"><span className="font-semibold text-brand">预期结果：</span>{String(step.expectedOutput)}</div> : null}
           </section>

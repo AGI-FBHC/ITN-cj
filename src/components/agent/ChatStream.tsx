@@ -6,7 +6,6 @@
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { Brain, Check, ChevronDown, Eye, EyeOff, ImagePlus, Mic, NotebookPen, Pencil, Plus, SendHorizonal, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAgent } from '@/context/AgentContext';
@@ -17,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { collectLearningPageContext, describeLearningPageContext } from '@/lib/pageContext';
 import type { LearningPageContext } from '@/lib/pageContext';
 
+import { mdRemarkPlugins, mdRehypePlugins } from '@/components/resources/lecture-markdown';
 const shortLabel = (text: string | undefined, max = 18) => {
   const value = String(text ?? '').replace(/\s+/g, ' ').trim();
   return value ? (value.length > max ? `${value.slice(0, max)}…` : value) : '';
@@ -208,7 +208,7 @@ function MessageBubble({ message, onAnswerQuizCard }: { message: AgentMessage; o
           )}<div className="whitespace-pre-wrap">{visibleText}</div></div>
         ) : (
           <div className="[&_a]:text-brand [&_a]:underline [&_code]:rounded [&_code]:bg-ink/[0.06] [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.9em] [&_li]:my-0.5 [&_li]:ml-4 [&_ol]:my-1.5 [&_ol]:list-decimal [&_p]:my-1.5 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-ink/[0.06] [&_pre]:p-2 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_strong]:font-semibold [&_ul]:my-1.5 [&_ul]:list-disc">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{visibleText}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={mdRemarkPlugins} rehypePlugins={mdRehypePlugins}>{visibleText}</ReactMarkdown>
           </div>
         )}
       </div>

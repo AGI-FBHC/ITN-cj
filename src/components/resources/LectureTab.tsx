@@ -6,8 +6,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkCitationMarks from '@/lib/remarkCitationMarks';
 import { BadgeCheck, FastForward, ListTree, Printer, Download, CornerDownLeft, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import TraceBadge from '@/components/TraceBadge';
@@ -16,7 +14,7 @@ import type { Learner } from '@/data/learners';
 import { getKBSlice } from '@/data/kbSlices';
 import { useAgent } from '@/context/AgentContext';
 import TraceRail from './TraceRail';
-import { extractToc, kbFirstSection, lectureMdComponents } from './lecture-markdown';
+import { extractToc, kbFirstSection, lectureMdComponents, mdRemarkPluginsCited, mdRehypePlugins } from './lecture-markdown';
 import { cn } from '@/lib/utils';
 
 /** 学习目标看板（page-local，按画像差异化） */
@@ -303,7 +301,7 @@ export default function LectureTab({
 
           {/* 正文（流式） */}
           <div className="px-7 py-6">
-            <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>
+            <ReactMarkdown remarkPlugins={mdRemarkPluginsCited} rehypePlugins={mdRehypePlugins} components={lectureMdComponents}>
               {full.slice(0, shown)}
             </ReactMarkdown>
             {!done && (

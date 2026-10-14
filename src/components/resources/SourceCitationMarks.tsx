@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { createPortal } from 'react-dom';
 import { ExternalLink, FileText, Loader2, X } from 'lucide-react';
-import { lectureMdComponents, secureImageSrc } from '@/components/resources/lecture-markdown';
+import { lectureMdComponents, secureImageSrc, mdRemarkPluginsCited, mdRehypePlugins } from '@/components/resources/lecture-markdown';
 import { api } from '@/lib/api';
 import { readableSourceTitle } from '@/lib/sourceLabel';
-import remarkCitationMarks from '@/lib/remarkCitationMarks';
 import type { LearningResource, RagChunkDetail } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
@@ -195,7 +193,7 @@ export default function SourceCitationMarks({
                               return <div key={`${anchor.sourceId}-${index}`} className="rounded-xl border border-brand-amber/30 bg-paper/85 px-3.5 py-3">
                                 {anchor.claim && <p className="mb-2 text-[11px] leading-5 text-ink-muted">对应结论：{anchor.claim}</p>}
                                 <mark className="box-decoration-clone rounded bg-[#FFE58A]/75 px-1 py-0.5 text-[13.5px] leading-7 text-ink decoration-clone">
-                                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>{anchor.quote}</ReactMarkdown>
+                                  <ReactMarkdown remarkPlugins={mdRemarkPluginsCited} rehypePlugins={mdRehypePlugins} components={lectureMdComponents}>{anchor.quote}</ReactMarkdown>
                                 </mark>
                                 <p className="mt-2 font-mono text-[9.5px] text-ochre">{located ? '已在实时切片原文中定位' : '生成时保存的事实原文'}</p>
                               </div>;
@@ -205,7 +203,7 @@ export default function SourceCitationMarks({
                         <section className="rounded-[14px] border border-hairline bg-card-warm p-4 text-[13.5px] leading-7 text-ink-2">
                           {anchors.length > 0 && <p className="mb-3 border-b border-hairline pb-2 font-mono text-[9.5px] tracking-[0.08em] text-ink-muted">完整切片原文</p>}
                           <ReactMarkdown
-                            remarkPlugins={[remarkGfm, remarkCitationMarks]}
+                            remarkPlugins={mdRemarkPluginsCited} rehypePlugins={mdRehypePlugins}
                             components={{
                               ...lectureMdComponents,
                               img: ({ src, alt }) => src ? <img src={secureImageSrc(src)} alt={alt || '切片图片'} className="my-3 block max-w-full rounded-lg border border-hairline" loading="lazy" /> : null,

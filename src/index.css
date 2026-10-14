@@ -768,3 +768,40 @@
   0%, 100% { box-shadow: 0 0 0 0 rgba(78,120,96,0.35), 0 0 12px 2px rgba(78,120,96,0.16); transform: scale(1); }
   50% { box-shadow: 0 0 0 5px rgba(78,120,96,0.08), 0 0 22px 7px rgba(78,120,96,0.42); transform: scale(1.06); }
 }
+
+/* ================= Markdown 渲染增强：公式（KaTeX）与代码高亮（highlight.js） ================= */
+/* 行内/块级公式：长公式横向滚动，避免撑破卡片 */
+.katex { font-size: 1.05em; }
+.katex-display { margin: 0.85em 0; overflow-x: auto; overflow-y: hidden; padding: 2px 0 4px; }
+
+/* 深色代码块（lf-codeblock，见 lecture-markdown.tsx）内的语法配色，对齐 lf 暖绿体系 */
+.lf-codeblock .hljs-comment,
+.lf-codeblock .hljs-quote { color: #7C9186; font-style: italic; }
+.lf-codeblock .hljs-keyword,
+.lf-codeblock .hljs-selector-tag,
+.lf-codeblock .hljs-literal,
+.lf-codeblock .hljs-type,
+.lf-codeblock .hljs-doctag { color: #8FD0B0; font-weight: 600; }
+.lf-codeblock .hljs-string,
+.lf-codeblock .hljs-regexp,
+.lf-codeblock .hljs-addition,
+.lf-codeblock .hljs-attribute,
+.lf-codeblock .hljs-selector-attr { color: #E7B45A; }
+.lf-codeblock .hljs-number,
+.lf-codeblock .hljs-built_in,
+.lf-codeblock .hljs-symbol,
+.lf-codeblock .hljs-bullet,
+.lf-codeblock .hljs-template-variable { color: #F0A46E; }
+.lf-codeblock .hljs-title,
+.lf-codeblock .hljs-name,
+.lf-codeblock .hljs-section,
+.lf-codeblock .hljs-selector-id,
+.lf-codeblock .hljs-selector-class { color: #9CC7E8; font-weight: 600; }
+.lf-codeblock .hljs-variable,
+.lf-codeblock .hljs-params,
+.lf-codeblock .hljs-property { color: #E2ECE7; }
+.lf-codeblock .hljs-meta,
+.lf-codeblock .hljs-deletion,
+.lf-codeblock .hljs-tag { color: #D9A0C0; }
+.lf-codeblock .hljs-emphasis { font-style: italic; }
+.lf-codeblock .hljs-strong { font-weight: 700; }

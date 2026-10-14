@@ -33,6 +33,8 @@ const AiChat = lazy(() => import('@/pages/AiChat'));
 const CustomizePipeline = lazy(() => import('@/pages/CustomizePipeline'));
 const CustomizeTeam = lazy(() => import('@/pages/CustomizeTeam'));
 const SlidePlayer = lazy(() => import('@/pages/SlidePlayer'));
+/** W6 渲染增强的开发期自检页（仅 DEV 注册路由，生产不注册） */
+const MarkdownCheck = lazy(() => import('@/pages/dev/MarkdownCheck'));
 import { useAuth } from '@/context/AuthContext';
 
 gsap.registerPlugin(ScrollTrigger);
@@ -97,6 +99,8 @@ export default function App() {
       <Routes>
         <Route path="login" element={<Login />} />
         <Route path="persona" element={<PersonaSelect />} />
+        {/* 开发期 Markdown 渲染自检（公式 + 代码高亮）：dev-only，不参与生产路由 */}
+        {import.meta.env.DEV && <Route path="__mdcheck" element={<MarkdownCheck />} />}
         <Route element={<RequireAuth />}>
         <Route path="welcome" element={<Welcome />} />
         <Route path="admin" element={<Admin />} />

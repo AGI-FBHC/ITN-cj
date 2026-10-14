@@ -94,9 +94,7 @@ import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
 import type { PersonalizedLearningUnit, TtsSpeed, UserProfileSettings } from '@/lib/api';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkCitationMarks from '@/lib/remarkCitationMarks';
-import { lectureMdComponents } from '@/components/resources/lecture-markdown';
+import { lectureMdComponents, mdRemarkPluginsCited, mdRemarkPlugins, mdRehypePlugins } from '@/components/resources/lecture-markdown';
 import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
 import { markLearningMapReturn } from '@/lib/learningNavigation';
 
@@ -2355,7 +2353,7 @@ export default function LearnUnit() {
                   </div>
                   {(b.kind !== 'concept' || (blockMode[b.id] ?? 'read') === 'read') && (
                     <div className="mt-2 text-[15px] leading-[28px] text-ink-2">
-                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>{b.text}</ReactMarkdown>
+                      <ReactMarkdown remarkPlugins={mdRemarkPluginsCited} rehypePlugins={mdRehypePlugins} components={lectureMdComponents}>{b.text}</ReactMarkdown>
                       {/* 溯源内联：角标贴着论断走，不再沉到块底 */}
                       {'kbRefs' in b &&
                         b.kbRefs.map((id) => (
@@ -3576,8 +3574,8 @@ export default function LearnUnit() {
                 className="mt-2 min-h-[240px] w-full resize-y rounded-[10px] border border-hairline bg-card-warm p-3 text-[13px] leading-6 text-ink outline-none focus:border-brand/50 disabled:opacity-60"
                 placeholder="从这里开始记录你的想法…"
               />}
-              {pptNoteMode === 'preview' && <article className="mt-2 min-h-[260px] rounded-[12px] border border-hairline bg-card-warm p-5"><ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{noteText || '*还没有内容*'}</ReactMarkdown></article>}
-              {pptNoteMode === 'pages' && <div className="mt-2 grid min-h-[260px] gap-3 md:grid-cols-2">{noteText.split(/\n(?=#{1,3}\s)/).filter(Boolean).map((page, index) => <article key={`${index}-${page.slice(0, 12)}`} className="rounded-[12px] border border-hairline bg-card-warm p-4 shadow-sm"><div className="mb-3 font-mono text-[9px] text-ink-muted">PAGE {String(index + 1).padStart(2, '0')}</div><ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{page}</ReactMarkdown></article>)}</div>}
+              {pptNoteMode === 'preview' && <article className="mt-2 min-h-[260px] rounded-[12px] border border-hairline bg-card-warm p-5"><ReactMarkdown remarkPlugins={mdRemarkPlugins} rehypePlugins={mdRehypePlugins} components={lectureMdComponents}>{noteText || '*还没有内容*'}</ReactMarkdown></article>}
+              {pptNoteMode === 'pages' && <div className="mt-2 grid min-h-[260px] gap-3 md:grid-cols-2">{noteText.split(/\n(?=#{1,3}\s)/).filter(Boolean).map((page, index) => <article key={`${index}-${page.slice(0, 12)}`} className="rounded-[12px] border border-hairline bg-card-warm p-4 shadow-sm"><div className="mb-3 font-mono text-[9px] text-ink-muted">PAGE {String(index + 1).padStart(2, '0')}</div><ReactMarkdown remarkPlugins={mdRemarkPlugins} rehypePlugins={mdRehypePlugins} components={lectureMdComponents}>{page}</ReactMarkdown></article>)}</div>}
               </div>
               <div className="flex items-center justify-end gap-2 border-t border-hairline px-5 py-3">
                 <button type="button" onClick={() => setPptNoteOpen(false)} className="lf-btn-ghost !py-2 text-[13px]">取消</button>
@@ -3675,7 +3673,7 @@ export default function LearnUnit() {
                   )}
                   <div className="w-fit max-w-[92%] rounded-[12px] rounded-tl-[4px] border border-hairline bg-card-warm px-3 py-2 text-[12.5px] leading-[19px] text-ink-2">
                     <div className="[&_a]:text-brand [&_a]:underline [&_code]:rounded [&_code]:bg-ink/[0.06] [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.9em] [&_li]:my-0.5 [&_li]:ml-4 [&_ol]:my-1.5 [&_ol]:list-decimal [&_p]:my-1.5 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-ink/[0.06] [&_pre]:p-2 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_strong]:font-semibold [&_ul]:my-1.5 [&_ul]:list-disc">
-                      <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]}>{normalizeQaMarkdown(qa.a || (qa.voice ? (qa.converting ? '正在识别语音…' : '已识别，正在回答…') : ''))}</ReactMarkdown>
+                      <ReactMarkdown remarkPlugins={mdRemarkPluginsCited} rehypePlugins={mdRehypePlugins}>{normalizeQaMarkdown(qa.a || (qa.voice ? (qa.converting ? '正在识别语音…' : '已识别，正在回答…') : ''))}</ReactMarkdown>
                     </div>
                     {qa.kbRef && <span className="ml-1.5"><TraceBadge kbId={qa.kbRef} /></span>}
                   </div>

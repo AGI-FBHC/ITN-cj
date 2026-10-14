@@ -1,7 +1,6 @@
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { Loader2 } from 'lucide-react';
-import { lectureMdComponents } from '@/components/resources/lecture-markdown';
+import { lectureMdComponents, mdRemarkPlugins, mdRehypePlugins } from '@/components/resources/lecture-markdown';
 import type { AdminGenerationEvent } from '@/lib/api';
 
 function JsonTree({ value }: { value: unknown }) {
@@ -75,7 +74,7 @@ export default function ExecutionDetailPanel({
         <div className="mt-3 min-h-[240px] overflow-y-auto">
           {summary ? (
             <div className="rounded-lg bg-white/70 px-3 py-3 text-[11px] leading-6 text-ink-2">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{summary}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={mdRemarkPlugins} rehypePlugins={mdRehypePlugins} components={lectureMdComponents}>{summary}</ReactMarkdown>
             </div>
           ) : summaryLoading ? (
             <div className="flex items-center gap-2 rounded-lg bg-white/70 px-3 py-4 text-[10.5px] text-ink-muted"><Loader2 size={13} className="animate-spin text-brand" />正在生成执行摘要…</div>

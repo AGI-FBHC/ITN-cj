@@ -6,7 +6,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { toast } from 'sonner';
 import { Save, Sparkles, Brain, History, HelpCircle, Clock3, Flame, ClipboardCheck, ArrowRight, Trash2, RefreshCw, X } from 'lucide-react';
 import { useProfile } from '@/context/ProfileContext';
@@ -27,6 +26,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import PageBack from '@/components/PageBack';
 import { cn } from '@/lib/utils';
 
+import { mdRemarkPlugins, mdRehypePlugins } from '@/components/resources/lecture-markdown';
 function radarOption(
   kps: OnboardingKnowledgePoint[],
   scores: Record<string, number>,
@@ -642,7 +642,7 @@ export default function MyProfile() {
                 </div>
               ) : (
                 <div className="prose prose-sm max-w-none text-[13px] leading-6 text-ink-2 [&_a]:text-brand [&_a]:underline [&_code]:rounded [&_code]:bg-ink/[0.06] [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.9em] [&_li]:my-0.5 [&_li]:ml-4 [&_ol]:my-1.5 [&_ol]:list-decimal [&_p]:my-1.5 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-ink/[0.06] [&_pre]:p-2 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_strong]:font-semibold [&_ul]:my-1.5 [&_ul]:list-disc">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{analysisText}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={mdRemarkPlugins} rehypePlugins={mdRehypePlugins}>{analysisText}</ReactMarkdown>
                 </div>
               )}
             </div>

@@ -2,8 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Check, NotebookPen, Plus, Trash2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { lectureMdComponents } from '@/components/resources/lecture-markdown';
+import { lectureMdComponents, mdRemarkPlugins, mdRehypePlugins } from '@/components/resources/lecture-markdown';
 import PageBack from '@/components/PageBack';
 import { useNotes } from '@/context/NotesContext';
 import { useProfile } from '@/context/ProfileContext';
@@ -57,7 +56,7 @@ export default function MyNotes() {
 
       <div className="mt-6 space-y-6">{groups.map(([kpId, items]) => <section key={kpId}>
         <div className="mb-2 flex items-center gap-2"><h2 className="text-[15px] font-semibold text-ink">{nameById.get(kpId) ?? '未分类'}</h2><span className="rounded bg-brand-tint px-1.5 py-0.5 font-mono text-[10px] text-brand">{items.length}</span></div>
-        <div className={cn(viewMode === 'pages' ? 'grid gap-3 md:grid-cols-2' : 'space-y-2.5')}>{items.map((note, index) => <article key={note.id} className="lf-card group p-4">{viewMode === 'pages' && <div className="mb-3 font-mono text-[9px] text-ink-muted">PAGE {String(index + 1).padStart(2, '0')}</div>}{viewMode === 'source' ? <pre className="whitespace-pre-wrap font-mono text-[12.5px] leading-6 text-ink-2">{note.text}</pre> : <ReactMarkdown remarkPlugins={[remarkGfm]} components={lectureMdComponents}>{note.text}</ReactMarkdown>}<div className="mt-3 flex flex-wrap items-center gap-2 border-t border-hairline/60 pt-2 font-mono text-[10.5px] text-ink-muted"><span>{note.source}</span><span>{note.time}</span>{note.kbRefs.map((ref) => <span key={ref} className="rounded bg-paper-deep px-1.5 py-0.5">{ref}</span>)}<button type="button" onClick={() => deleteNote(note.id)} className="ml-auto opacity-0 transition group-hover:opacity-100" title="删除笔记"><Trash2 size={13} /></button></div></article>)}</div>
+        <div className={cn(viewMode === 'pages' ? 'grid gap-3 md:grid-cols-2' : 'space-y-2.5')}>{items.map((note, index) => <article key={note.id} className="lf-card group p-4">{viewMode === 'pages' && <div className="mb-3 font-mono text-[9px] text-ink-muted">PAGE {String(index + 1).padStart(2, '0')}</div>}{viewMode === 'source' ? <pre className="whitespace-pre-wrap font-mono text-[12.5px] leading-6 text-ink-2">{note.text}</pre> : <ReactMarkdown remarkPlugins={mdRemarkPlugins} rehypePlugins={mdRehypePlugins} components={lectureMdComponents}>{note.text}</ReactMarkdown>}<div className="mt-3 flex flex-wrap items-center gap-2 border-t border-hairline/60 pt-2 font-mono text-[10.5px] text-ink-muted"><span>{note.source}</span><span>{note.time}</span>{note.kbRefs.map((ref) => <span key={ref} className="rounded bg-paper-deep px-1.5 py-0.5">{ref}</span>)}<button type="button" onClick={() => deleteNote(note.id)} className="ml-auto opacity-0 transition group-hover:opacity-100" title="删除笔记"><Trash2 size={13} /></button></div></article>)}</div>
       </section>)}</div>
     </div>
   );

@@ -4,11 +4,9 @@
  * 实操/测验/PPT 大纲按同款玻璃卡片语言绘制。
  */
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { CheckCircle2, Clock, ExternalLink, FileText, ShieldCheck, Target, Terminal, TriangleAlert } from 'lucide-react';
-import { lectureMdComponents } from '@/components/resources/lecture-markdown';
+import { lectureMdComponents, mdRemarkPluginsCited, mdRehypePlugins } from '@/components/resources/lecture-markdown';
 import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
-import remarkCitationMarks from '@/lib/remarkCitationMarks';
 import { cn } from '@/lib/utils';
 import type { AdminResourceDetail } from '@/lib/api';
 import EvidenceDebateCourt from '@/components/resources/EvidenceDebateCourt';
@@ -85,7 +83,7 @@ function LecturePreview({ doc, sources }: { doc: LectureDoc; sources: Record<str
                 )}
                 {section.content && (
                   <div className="text-[14px] leading-7 text-ink-2">
-                    <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>
+                    <ReactMarkdown remarkPlugins={mdRemarkPluginsCited} rehypePlugins={mdRehypePlugins} components={lectureMdComponents}>
                       {section.content}
                     </ReactMarkdown>
                   </div>
@@ -213,7 +211,7 @@ function PracticePreview({ doc, sources }: { doc: PracticeDoc; sources: Record<s
               {step.title && <h4 className="text-[15px] font-bold text-ink">{step.title}</h4>}
               {(step.instruction || step.content || step.detail) && (
                 <div className="mt-1.5 text-[13.5px] leading-7 text-ink-2">
-                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>{step.instruction || step.content || step.detail || ''}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={mdRemarkPluginsCited} rehypePlugins={mdRehypePlugins} components={lectureMdComponents}>{step.instruction || step.content || step.detail || ''}</ReactMarkdown>
                 </div>
               )}
               {step.code && <pre className="mt-3 max-h-[360px] overflow-auto rounded-xl bg-[#26322A] p-4 text-[12.5px] leading-6 text-emerald-50"><code>{step.code}</code></pre>}
@@ -376,7 +374,7 @@ function SourceSummary({ sources }: { sources: Record<string, unknown>[] }) {
               </div>
               {content && (
                 <div className="mt-1 line-clamp-3 text-[11.5px] leading-5 text-ink-muted [&>*:first-child]:!mt-0 [&>*:last-child]:!mb-0 [&_h1]:!my-0.5 [&_h1]:!text-[12px] [&_h1]:!leading-5 [&_h2]:!my-0.5 [&_h2]:!border-0 [&_h2]:!pb-0 [&_h2]:!text-[12px] [&_h2]:!leading-5 [&_h2_span:first-child]:hidden [&_h3]:!my-0.5 [&_h3]:!text-[11.5px] [&_h4]:!my-0.5 [&_p]:!my-0.5 [&_p]:!text-[11.5px] [&_p]:!leading-5 [&_li]:!my-0 [&_li]:!text-[11.5px] [&_li]:!leading-5 [&_ol]:!my-0.5 [&_ul]:!my-0.5">
-                  <ReactMarkdown remarkPlugins={[remarkGfm, remarkCitationMarks]} components={lectureMdComponents}>{content}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={mdRemarkPluginsCited} rehypePlugins={mdRehypePlugins} components={lectureMdComponents}>{content}</ReactMarkdown>
                 </div>
               )}
             </div>

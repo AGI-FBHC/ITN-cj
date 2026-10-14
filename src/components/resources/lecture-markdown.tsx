@@ -7,6 +7,12 @@
 import { Children, cloneElement, isValidElement, useState } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 import { Check, Copy } from 'lucide-react';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import rehypeHighlight from 'rehype-highlight';
+import remarkCitationMarks from '@/lib/remarkCitationMarks';
+import 'katex/dist/katex.min.css';
 import { withTraceBadges } from '@/components/TraceBadge';
 import { cn } from '@/lib/utils';
 
@@ -68,6 +74,17 @@ export const secureImageSrc = (src: string | undefined) => {
   return src;
 };
 
+/**
+ * 统一 Markdown 插件（全站共用，别再各处手写 remarkGfm）：
+ * - GFM 表格/任务列表；
+ * - remark-math + rehype-katex：``$公式$`` / ``$$公式$$`` 渲染成真公式（旧版即有 KaTeX）；
+ * - rehype-highlight：代码块语法高亮，配色见 index.css 的 ``.lf-codeblock`` 段。
+ */
+export const mdRemarkPlugins = [remarkGfm, remarkMath];
+export const mdRehypePlugins = [rehypeKatex, rehypeHighlight];
+/** 讲义/实操正文：额外把 [n] 渲染成引用角标（聊天/笔记等场景不需要） */
+export const mdRemarkPluginsCited = [remarkGfm, remarkCitationMarks, remarkMath];
+
 type MDProps = { node?: unknown; children?: ReactNode; className?: string };
 
 /** 剥离 react-markdown 注入的非 DOM 属性（node） */
@@ -77,6 +94,36 @@ const domOnly = (props: MDProps): Omit<MDProps, 'node'> => {
   return rest;
 };
 
+type MDToken = { text: string; cls?: string };
+
+/** 把 rehype-highlight 生成的 token 树按换行拆成「每行若干 token」，行内保留语法类名 */
+function tokenizeLines(children: ReactNode): MDToken[][] {
+  const lines: MDToken[][] = [[]];
+  const emit = (text: string, cls?: string) => {
+    text.split('\n').forEach((part, index) => {
+      if (index > 0) lines.push([]);
+      if (!part) return;
+      const current = lines[lines.length - 1];
+      const last = current[current.length - 1];
+      if (last && last.cls === cls) last.text += part;
+      else current.push({ text: part, cls });
+    });
+  };
+  const walk = (node: ReactNode, inherited?: string) => {
+    Children.forEach(node, (child) => {
+      if (typeof child === 'string' || typeof child === 'number') {
+        emit(String(child), inherited);
+        return;
+      }
+      if (!isValidElement(child)) return;
+      const props = child.props as { children?: ReactNode; className?: string };
+      walk(props.children, props.className ?? inherited);
+    });
+  };
+  walk(children);
+  return lines;
+}
+
 function MarkdownCodeBlock({ children, roomy = false }: { children?: ReactNode; roomy?: boolean }) {
   const [copied, setCopied] = useState(false);
   const child = Children.toArray(children)[0];
@@ -85,14 +132,14 @@ function MarkdownCodeBlock({ children, roomy = false }: { children?: ReactNode; 
     : '';
   const language = childClass.match(/language-([\w-]+)/)?.[1]?.toUpperCase() || 'CODE';
   const source = flattenText(children).replace(/\n$/, '');
-  const lines = source.split('\n');
+  const lines = tokenizeLines(children);
   const copy = async () => {
     await navigator.clipboard.writeText(source);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1600);
   };
   return (
-    <figure className={cn('my-5 overflow-hidden rounded-[14px] border border-[#2E463D] bg-[#14211C] shadow-[0_12px_30px_rgba(17,34,27,0.16)]', roomy && 'my-6 rounded-[16px]')}>
+    <figure className={cn('lf-codeblock my-5 overflow-hidden rounded-[14px] border border-[#2E463D] bg-[#14211C] shadow-[0_12px_30px_rgba(17,34,27,0.16)]', roomy && 'my-6 rounded-[16px]')}>
       <figcaption className="flex h-10 items-center justify-between border-b border-white/10 bg-[#1A2B24] px-3.5">
         <div className="flex items-center gap-2.5">
           <span className="h-4 w-[3px] rounded-full bg-[#73A98E]" />
@@ -104,7 +151,7 @@ function MarkdownCodeBlock({ children, roomy = false }: { children?: ReactNode; 
       </figcaption>
       <div className={cn('max-h-[440px] overflow-auto py-3.5', roomy && 'max-h-[48vh] py-4')}>
         <code className={cn('block min-w-max font-mono text-[12.5px] leading-[22px] text-[#E2ECE7]', roomy && 'text-[13.5px] leading-6')}>
-          {lines.map((line, index) => <span key={index} className="grid grid-cols-[42px_minmax(0,1fr)] pr-5 hover:bg-white/[0.035]"><span aria-hidden className="select-none border-r border-white/[0.07] pr-3 text-right text-[#60776C]">{index + 1}</span><span className="whitespace-pre pl-4">{line || ' '}</span></span>)}
+          {lines.map((line, index) => <span key={index} className="grid grid-cols-[42px_minmax(0,1fr)] pr-5 hover:bg-white/[0.035]"><span aria-hidden className="select-none border-r border-white/[0.07] pr-3 text-right text-[#60776C]">{index + 1}</span><span className="whitespace-pre pl-4">{line.length === 0 ? ' ' : line.map((token, i) => token.cls ? <span key={i} className={token.cls}>{token.text}</span> : token.text)}</span></span>)}
         </code>
       </div>
     </figure>
