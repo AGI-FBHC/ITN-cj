@@ -2693,3 +2693,38 @@ E2E 文件里用 JS 的 `String.replace(a, b)` 批量改代码时，**替换串�
 - `tools/report-check.ps1` 加了 4 条（**17 → 21 项**）：没活动时不给假日期 / 记一条笔记后今天进列表 / 升序且形如 YYYY-MM-DD。
 - 其余：`skill-check`、`graph-check`、`web-fetch-check`、`study-api-check`、`ui-audit`（16/16）、`cjpm test`（66/66）全过；
   `scripts/package-app.ps1` + `tools/package-smoke.ps1` → RESULT=OK。
+
+---
+
+## 第四十轮（2026-10-15）：真模型同题对照（lumin vs 旧写死链路）—— 通过，默认站得住
+
+**为什么要做**：`docs/11` 里那条"等真实模型上同题对照过再切默认"的闸门。mock 只能证明契约，
+证明不了"真模型认不认这套原生工具协议"。
+
+### 新增工具：`tools/real-agent-compare.ps1`
+
+把你本机应用的**数据目录复制一份**到临时目录再起内核（模型配置与 Key 只用副本，绝不碰你的真库），
+造一份小知识库，然后**同一批问题分别打新（`/api/agent/ask-pi`）旧（`/api/agent/ask`）两条链路**，
+打印耗时、答案长度、出处数、这一轮真正调过的工具，并附上回答原文前 120 字。
+用法：`pwsh -File tools/real-agent-compare.ps1`（没配模型时会直接告诉你去配）。
+
+### 结果（MiMo TokenPlan，原生 function calling）
+
+| 问题 | lumin | 旧链路 |
+| --- | --- | --- |
+| 提示词三要素 | ok **6.9s** · 答 140 字 · 出处 1 · 工具 `[kb_search]` | ok 3.7s · 答 48 字 · 出处 1 · 工具 `[kb_search]` |
+| (12+8)*3/4 | ok 11.6s · 答 56 字 · **工具 `[calc]`** | ok 3.8s · 答 71 字 · 工具 `[kb_search]`（固定先检索） |
+| RAG 流程一句话 | ok 5.3s · 答 48 字 · 出处 1 | ok 3.8s · 答 47 字 · 出处 1 |
+
+- **3/3 两条链路都跑完**；lumin 每题都**自己决定**调了工具（算数那题挑了 `calc`，真的算出 15）。
+- 引用自检在真模型上照常工作（`[1]` 能对上切片）。
+- 代价：lumin 慢一些（多一轮模型请求：工具调用 → 结果 → 再答）——这是 agent 的固有成本。
+
+### 顺带用真模型验了"动手"（`tmp/live-workspace.cjs`）
+
+指定工作目录后让它"把这句话写进 notes.md"：它自己选了 **`find` + `write`**（先看看有没有、再写），
+**没弹审批**（写工作区内，符合 ask 档语义），`notes.md` 真的落盘、内容正确、回答里如实写了文件在哪。
+
+### 结论
+
+**默认走 lumin（界面已经是）、旧的手写链路保留但不参与对话**。`docs/11` 的进度段已同步这条对照结论。
