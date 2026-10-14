@@ -62,6 +62,21 @@ pi-cj 的运行时**零网络、零文件 IO**（它的 README 明确写了这�
 >   `allowWeb=false` 时**根本不生成**联网工具）。编译通过、`cjpm test` 54/54。
 >   剩下"把 DomainTool 包成 pi 的 Tool + 跑一轮"那一半**暂停**：用户发现 pi-cj 还有小 bug，等那边修完再继续。
 >
+> **改名历史（2026-10-14 一天内改了两次）**：`pi-cj/` → `xbot/` → **`lumin/`**（现在的名字，包名 `lumin.pi` / `lumin.tools` / `lumin.cli`）。
+> 所以我内核里那份 `core/src/pi/**` 是**旧名字时代的快照**，重新开工前必须先重新同步一次。
+>
+> **硬约束（用户明确要求）**：**不要改动 `lumin/` 本体**——那个智能体会单独上传到别的仓库；
+> 我们只**把副本拿进自己项目**再改自己的副本（`core/src/pi*`），两边不互相污染。
+>
+> **重新同步的手册**（改自 P1 的实际操作）：
+> 1. `lumin/src/pi/*` → `core/src/pi/`：`package lumin.pi` → `package itn_desktop_core.pi`（同包内引用不动）。
+> 2. `lumin/src/tools/*` → `core/src/pi_tools/`：`package lumin.tools` → `itn_desktop_core.pi_tools`，`import lumin.pi.*` → `import itn_desktop_core.pi.*`。
+> 3. `lumin/src/unittests/*` → `core/src/unittests/`：`package lumin.unittests` → `itn_desktop_core.unittests`；
+>    **注意**：现在的 unittests 里有文件 `import lumin.cli.*`，所以还要看它到底用了 cli 的什么
+>    （大概率是 `util.cj` 里的小工具）——把用到的那几个文件也拷进内核（建议另起 `core/src/lumin_cli/`），
+>    或者把那条测试单独摘出来改造；拷之前先 **`cjpm test` 对照 lumin 自己的结果**。
+> 4. 重新同步后：`scripts/build.ps1` → `cjpm test` 全绿（lumin 自己的例数 + 我们 P2 的 3 例）→ 再接着写 pi 侧包装与 `runPiTurn`。
+>
 > **运维要点**：`core/src/pi/` 是 `pi-cj/src/pi/` 的**拷贝**。那边每修一次 bug，这边都要
 > 重新同步一次（同样的包名替换：`pi_cj.pi` → `itn_desktop_core.pi`、`pi_cj.tools` → `itn_desktop_core.pi_tools`、
 > `pi_cj.unittests` → `itn_desktop_core.unittests`），并重跑 `cjpm test`。长期看要考虑的是"以哪个仓库为准"，

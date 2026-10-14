@@ -1728,3 +1728,20 @@ P4：新增一条 `/api/agent/ask-pi`（临时）跑 pi 循环，与现有 agent
   出现过 `D:\...\xbot/.` 这种难看的路径，会话目录也跟着被切成 `--...-xbot-.--`）。
 - 验证：改名后 `cjpm build` 通过、`cjpm test` **56/56 全绿**、重新打包 `dist\lumin-demo\`、
   干净环境自检 `CLEAN-ENV-OK`。旧 `dist\xbot-demo` 已删。
+
+---
+
+## 第二十五轮（2026-10-14）：lumin 又改名了 —— 先等它稳定，把我们这边的重新同步手册写死
+
+**用户说**：那个会话又给它改了名字（`pi-cj` → `xbot` → **`lumin`**），先等等；并且**不要改动 lumin 本体**（那个智能体会单独上传到别的仓库），我们只把副本拿进自己项目再改自己的副本。
+
+**这一轮做的（只动文档与自己的副本状态确认）**：
+- 探明现状：`lumin/` 在磁盘上（`src/pi` 15 个文件 `package lumin.pi`、`src/tools` 3 个 `lumin.tools`、
+  `src/unittests` 8 个 `lumin.unittests`，且**有测试 import `lumin.cli.*`**），README 改成 lumin 的、环境变量 `LUMIN_*`。
+- 结论：我内核里 `core/src/pi/**` 是**旧名字时代的快照**，重新开工前必须先重新同步；
+  已经把"重新同步手册"写进 `docs/11`（包名替换规则 + unittests 可能还要 cli 的注意点 + 同步后跑 build/test 的顺序），
+  并把"**不动 lumin 本体、只改自己的副本**"写成硬约束。
+- 顺带说明：这一轮之前刚提交的 `423d82d`（域名黑白名单）与 lumin 无关，是 docs/09 P1 的最后一块，已独立验证。
+
+**已提交的接入进度**：P1（运行时+工具+51 例单测搬进内核，`cjpm test` 全绿）、P2（`OpenAiChatProvider` + 3 例自测，共 54/54）、
+P3 前半（`core/src/agent/pi_tools_spec.cj` 中立工具定义层）。**P3 后半暂停**，等 lumin 稳定 + 重新同步。
