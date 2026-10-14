@@ -67,6 +67,13 @@ export default function LearnerHome() {
 
   const learning = useCourseLearning();
   const learningMap = useLearningMap();
+
+  /*
+   * 知识网络首屏并行读 5 个接口（rag/tree、analytics、模板目录、本人资源、PPT 进度），慢的时候要好几秒。
+   * 这段时间若直接按“没有章节”渲染，页面就会说“还没有学习记录”“0 块”“0 份”——那是假话：
+   * 学习者其实已经有章节进度和定制资源。所以加载期只说“正在读”，读完再下结论。
+   */
+  const mapLoading = learningMap.loading && learningMap.path.length === 0;
   const isPreset = !currentLearner.custom;
   const report = isPreset ? reportForLearner(currentLearner) : null;
   const resources = isPreset ? getResourcesFor(dataIdOf(currentLearner)) : learning.resources;
@@ -87,9 +94,8 @@ export default function LearnerHome() {
   // 学情描述：基于该章节与其内部知识点的真实统计动态生成，不写死固定话术
   const todayDiagnosis = (() => {
     if (!todayChapter) {
-      return isPreset
-        ? currentLearner.diagnosisSummary.replace(/^DIA-01 诊断：/, '')
-        : '还没有学习记录，从知识网络选一个章节开始你的第一课。';
+      if (isPreset) return currentLearner.diagnosisSummary.replace(/^DIA-01 诊断：/, '');
+      return mapLoading ? '正在读取你的学习进度…' : '还没有学习记录，从知识网络选一个章节开始你的第一课。';
     }
     const chapterId = todayChapter.id;
     const progress = learningMap.chapterProgress[chapterId] ?? 0;
@@ -116,15 +122,16 @@ export default function LearnerHome() {
     return parts.join(' ');
   })();
   const primaryLoading = learning.loading && !learning.course && learningMap.loading && !learningMap.activeKp;
+
   const todayTopics = todayChapter
     ? learningMap.graphNodes
         .filter((node) => node.kind === 'topic' && node.kpId === todayChapter.id)
         .sort((left, right) => (left.topicIndex ?? 99) - (right.topicIndex ?? 99))
     : [];
   const continueTopic = todayTopics.find((topic) => (learningMap.topicProgress[topic.id] ?? 0) < 100) ?? todayTopics[0] ?? null;
-  const activeTitle = primaryLoading ? '正在加载学习进度…' : todayChapter ? todayChapter.name : learning.nextChapter ? `第 ${learning.nextChapter.index} 章 · ${learning.nextChapter.title}` : activeNode?.title ?? '开启你的第一课';
+  const activeTitle = primaryLoading || mapLoading ? '正在加载学习进度…' : todayChapter ? todayChapter.name : learning.nextChapter ? `第 ${learning.nextChapter.index} 章 · ${learning.nextChapter.title}` : activeNode?.title ?? '开启你的第一课';
   const activePath = primaryLoading ? '/me' : todayChapter ? learnMapPath(currentLearner.id, todayChapter.id, continueTopic?.id) : learning.nextResource ? learningResourcePath(learning.nextResource) : activeNode ? `/learn/${activeNode.kpId}` : '/learn';
-  const activeButton = primaryLoading ? '加载中…' : todayChapter ? (continueTopic ? `继续：${continueTopic.label}` : `继续：${todayChapter.name}`) : learning.nextResource ? `继续：${learning.nextResource.title}` : activeNode ? `继续：${activeNode.resourceRef ?? activeNode.title}` : '开始学习';
+  const activeButton = primaryLoading || mapLoading ? '加载中…' : todayChapter ? (continueTopic ? `继续：${continueTopic.label}` : `继续：${todayChapter.name}`) : learning.nextResource ? `继续：${learning.nextResource.title}` : activeNode ? `继续：${activeNode.resourceRef ?? activeNode.title}` : '开始学习';
   const goActive = () => {
     if (isPreset) { navigate(activePath); return; }
     if (todayChapter) { navigate(learnMapPath(currentLearner.id, todayChapter.id, continueTopic?.id)); return; }
@@ -312,10 +319,13 @@ export default function LearnerHome() {
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-[14px] font-medium text-ink">
-              {path.length > 0 ? `更多进展：整体走到 ${doneCount}/${path.length} 阶段` : '更多进展：还没有学习记录'}
+            {path.length > 0
+              ? `更多进展：整体走到 ${doneCount}/${path.length} 阶段`
+              : mapLoading ? '更多进展：正在读取学习进度…' : '更多进展：还没有学习记录'}
             </span>
             <span className="block text-[12px] text-ink-muted">
-              还需加强的 {topGaps.length} 块 · 为你做好的资料 {resources.length} 份
+              {/* 资料数只在拉到之后才说：加载期报 0 与页面下方列出的资料自相矛盾 */}
+              还需加强的 {topGaps.length} 块 · {learning.loading && resources.length === 0 ? '正在汇总资料…' : `可学资料 ${resources.length} 份`}
             </span>
           </span>
           <ChevronDown size={16} className={cn('shrink-0 text-ink-muted transition-transform', moreOpen && 'rotate-180')} />

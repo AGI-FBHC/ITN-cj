@@ -32,7 +32,17 @@ async function fetchCourseData(learnerId: string): Promise<CourseSnapshot> {
   try {
     const { courses } = await api.listCourses(learnerId);
     const latest = courses?.[0] ?? null;
-    const listed = latest ? await api.listLearningResources({ courseId: latest.id }) : { resources: [] as LearningResourceSummary[] };
+    /*
+     * 没有课程行 ≠ 没有学习资源。
+     *
+     * 后端 /learning-resources 不带 courseId 时返回的是"当前学习者的全部资源"（含按知识点定制的
+     * 讲义/实操/分阶题），而课程表是另一张表：演示画像与只做定制、没建课程的学习者，
+     * /v1/courses 会是空数组。以前这里直接给 resources: []，于是首页一边显示"已学 1/119 个知识点"，
+     * 一边说"为你做好的资料 0 份"——数据明明在，页面却说没有。
+     */
+    const listed = latest
+      ? await api.listLearningResources({ courseId: latest.id })
+      : await api.listLearningResources();
     return { loading: false, course: latest, resources: listed.resources ?? [], updatedAt: Date.now() };
   } catch {
     return { loading: false, course: null, resources: [], updatedAt: Date.now() };
