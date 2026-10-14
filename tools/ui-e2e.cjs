@@ -1666,6 +1666,57 @@ fs.writeFileSync(singleFile, [
     return '新增知识库 ' + info.id + ' · 切片 ' + chunks + ' 片 · 资料目录 …\\source · 来源已记住';
   });
 
+  await step('显示大小：页面缩放 + 字体大小（也能用 Ctrl +/- 调，重载后记得住）', async () => {
+    await settings('外观');
+    await page.waitForSelector('.setting-row', { timeout: 15000 });
+    const rows = await page.locator('.setting-row').count();
+    assert(rows >= 2, '外观里应有"页面缩放"与"字体大小"两行，实际 ' + rows);
+    const read = () => page.evaluate(() => ({
+      zoom: document.body.style.zoom || '1',
+      fs: getComputedStyle(document.documentElement).getPropertyValue('--fs').trim() || '1',
+      base: parseFloat(getComputedStyle(document.body).fontSize),
+    }));
+    const before = await read();
+    // 页面缩放：点 115%
+    await page.locator('#view .setting-row', { hasText: '页面缩放' }).locator('button', { hasText: '115%' }).click();
+    await page.waitForTimeout(500);
+    let st = await read();
+    assert(Math.abs(parseFloat(st.zoom) - 1.15) < 0.01, '页面缩放应变成 1.15，实际 ' + st.zoom);
+    // 字体大小：点「大」
+    await page.locator('#view .setting-row', { hasText: '字体大小' }).locator('button', { hasText: /^大$/ }).click();
+    await page.waitForTimeout(500);
+    st = await read();
+    assert(Math.abs(parseFloat(st.fs) - 1.1) < 0.01, '字体倍数应变成 1.1，实际 ' + st.fs);
+    assert(st.base > before.base, '字体应真的变大：' + before.base + ' → ' + st.base);
+    await shot('52-显示大小');
+    // Ctrl + 也能调缩放（回到 130%）
+    await page.keyboard.press('Control+=');
+    await page.waitForTimeout(400);
+    st = await read();
+    assert(Math.abs(parseFloat(st.zoom) - 1.3) < 0.01, 'Ctrl + 应把缩放加到 130%，实际 ' + st.zoom);
+    // Ctrl 0 复位
+    await page.keyboard.press('Control+0');
+    await page.waitForTimeout(400);
+    st = await read();
+    assert(Math.abs(parseFloat(st.zoom) - 1) < 0.01, 'Ctrl 0 应复位到 100%，实际 ' + st.zoom);
+    // 再点回 115%，然后重载：两个偏好都该从内核读回来
+    await settings('外观');
+    await page.locator('#view .setting-row', { hasText: '页面缩放' }).locator('button', { hasText: '115%' }).click();
+    await page.waitForTimeout(400);
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForSelector('.nav-item', { timeout: 20000 });
+    await page.waitForTimeout(1200);
+    const after = await read();
+    assert(Math.abs(parseFloat(after.zoom) - 1.15) < 0.01, '重载后页面缩放应保持 115%，实际 ' + after.zoom);
+    assert(Math.abs(parseFloat(after.fs) - 1.1) < 0.01, '重载后字体倍数应保持 1.1，实际 ' + after.fs);
+    // 复位，别影响后面的截图与坐标计算
+    await page.locator('#view .setting-row', { hasText: '页面缩放' }).locator('button', { hasText: '100%' }).click();
+    await page.waitForTimeout(300);
+    await page.locator('#view .setting-row', { hasText: '字体大小' }).locator('button', { hasText: '标准' }).click();
+    await page.waitForTimeout(300);
+    return '缩放 100%→115%→Ctrl+ 130%→Ctrl 0 复位；字体 1.1 倍；重载后仍是 115% / 1.1';
+  });
+
   await step('主题三档：切换立即生效、写进内核、重载后仍然生效', async () => {
     await settings('外观');
     const cards = await page.locator('.theme-card').count();

@@ -699,6 +699,9 @@ public class Api {
             o.put("theme", JsonString(db.getKv("settings", "ui_theme", "system")))
             o.put("sessionRail", JsonString(db.getKv("settings", "ui_session_rail", "1")))
             o.put("rail", JsonString(db.getKv("settings", "ui_rail", "1")))
+            // 显示大小：页面缩放与字体大小分开存（两者是两件事：缩放管"多大一块"、字体管"字多大"）
+            o.put("uiZoom", JsonString(db.getKv("settings", "ui_zoom", "1")))
+            o.put("uiFont", JsonString(db.getKv("settings", "ui_font", "1")))
             ok(ctx, o)
             return
         }
@@ -720,10 +723,21 @@ public class Api {
                     if (railPref == "0" || railPref == "1") {
                         db.putKv("settings", "ui_rail", railPref)
                     }
+                    // 页面缩放 0.8~1.6、字体 0.85~1.4：限幅，别让手滑存出个 9 倍放大
+                    let zoom = floatValue(match (b.get("uiZoom")) { case Some(z) => z; case None => JsonNull() })
+                    if (zoom >= 0.8 && zoom <= 1.6) {
+                        db.putKv("settings", "ui_zoom", zoom.toString())
+                    }
+                    let font = floatValue(match (b.get("uiFont")) { case Some(z) => z; case None => JsonNull() })
+                    if (font >= 0.85 && font <= 1.4) {
+                        db.putKv("settings", "ui_font", font.toString())
+                    }
                     let o = JsonObject()
                     o.put("theme", JsonString(db.getKv("settings", "ui_theme", "system")))
                     o.put("sessionRail", JsonString(db.getKv("settings", "ui_session_rail", "1")))
                     o.put("rail", JsonString(db.getKv("settings", "ui_rail", "1")))
+                    o.put("uiZoom", JsonString(db.getKv("settings", "ui_zoom", "1")))
+                    o.put("uiFont", JsonString(db.getKv("settings", "ui_font", "1")))
                     ok(ctx, o)
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }

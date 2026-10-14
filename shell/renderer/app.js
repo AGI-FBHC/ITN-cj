@@ -295,7 +295,7 @@ function progressCard(title, steps) {
   const box = el("div", "pipe");
   for (const s of steps) box.appendChild(el("span", "pipe-step", s));
   c.appendChild(box);
-  c.appendChild(el("p", "muted sm", "生成过程会逐个调用模型，耗时取决于你配置的服务；期间可以先看别的页面。"));
+  
   c._timer = setInterval(() => {
     const t = (Date.now() - c._start) / 1000;
     timer.textContent = t.toFixed(1) + " 秒";
@@ -339,7 +339,7 @@ const state = {
   webMode: "auto", skill: "", skills: [], lastReportArtifact: "",
   busyTurn: false, pendingQuestion: "", lastQuestion: "",
   // 主题与会话栏偏好存在内核的 settings 表里（内核端口每次启动都变，localStorage 活不过一次重启）
-  theme: "system", dark: false, panelHidden: false, kernel: null,
+  theme: "system", dark: false, panelHidden: false, kernel: null, uiZoom: 1, uiFont: 1,
 };
 
 let current = "home";
@@ -410,11 +410,11 @@ function modelLabel(id) {
 function checklist() {
   const kbs = state.cfg.knowledgeBases;
   const steps = [
-    { done: hasChatModel(), title: "配置模型接口", text: "填一次 Base URL 和 API Key，并把「对话与生成」绑定到它。", go: () => go("settings", "models"), act: "去配置" },
-    { done: kbs.length > 0, title: "指定资料目录", text: "选一个本机的 Markdown / 纯文本目录，作为这门课的知识库。", go: () => go("settings", "kb"), act: "去指定" },
-    { done: kbs.some((k) => (k.chunkCount || 0) > 0), title: "建立索引", text: "扫描目录并按标题切片；这一步过后检索才有内容。", go: () => go("settings", "kb"), act: "去建立" },
-    { done: state.sessions.length > 0, title: "问第一个问题", text: "在伴学助手里就你的资料提问，答案会标出出处编号。", go: () => go("chat"), act: "去提问" },
-    { done: state.artifacts.length > 0, title: "生成第一份产物", text: "把一章做成讲义或练习，落成本机 Markdown 文件。", go: () => go("learn"), act: "去生成" },
+    { done: hasChatModel(), title: "配置模型接口", text: "填 Base URL 与 API Key，绑定到「对话与生成」。", go: () => go("settings", "models"), act: "去配置" },
+    { done: kbs.length > 0, title: "指定资料目录", text: "选一个本机资料目录（Markdown / 文本）。", go: () => go("settings", "kb"), act: "去指定" },
+    { done: kbs.some((k) => (k.chunkCount || 0) > 0), title: "建立索引", text: "扫描目录并切片，建完才能检索。", go: () => go("settings", "kb"), act: "去建立" },
+    { done: state.sessions.length > 0, title: "问第一个问题", text: "就你的资料提问，答案带出处编号。", go: () => go("chat"), act: "去提问" },
+    { done: state.artifacts.length > 0, title: "生成第一份产物", text: "把一章做成讲义或练习，存成本机 Markdown。", go: () => go("learn"), act: "去生成" },
   ];
   return steps;
 }
@@ -680,13 +680,15 @@ PAGES.home = {
       (state.profile.nickname ? state.profile.nickname + "，" : "") + "今天从哪一段开始？"));
     main.appendChild(el("p", "hero-sub", state.profile.goal
       ? "学习目标：" + state.profile.goal + (state.profile.weeklyHours ? " · 每周可投入 " + state.profile.weeklyHours + " 小时" : "")
-      : "还没有写学习目标。到设置里补一句，首页建议会跟着变。"));
+      : "还没有学习目标。在设置里写一句，首页建议会跟着变。"));
+    /* 只留"会让人动手"的两三个标签：模型没配、资料没指定是警告，别的都是噪声 */
     const chips = el("div", "meta");
-    chips.appendChild(tag(state.cfg.models.length ? "模型 " + state.cfg.models.length + " 个" : "未配置模型", state.cfg.models.length ? "" : "warn"));
-    chips.appendChild(tag(kbs.length ? "知识库 " + kbs.length + " 个" : "未指定资料目录", kbs.length ? "" : "warn"));
-    chips.appendChild(tag("产物 " + state.artifacts.length + " 份"));
-    if (state.cfg.embedModelId) chips.appendChild(tag("向量检索已启用", "ok"));
-    else chips.appendChild(tag("关键词检索（未绑向量模型）"));
+    if (!state.cfg.models.length) chips.appendChild(tag("未配置模型", "warn"));
+    if (!kbs.length) chips.appendChild(tag("未指定资料目录", "warn"));
+    if (state.cfg.models.length && kbs.length) {
+      chips.appendChild(tag("模型已就绪", "ok"));
+      chips.appendChild(tag("知识库 " + kbs.length + " 个"));
+    }
     main.appendChild(chips);
     hero.appendChild(main);
 
@@ -715,7 +717,7 @@ PAGES.home = {
         tagCls: "ok",
         body: (() => {
           const wrap = el("div");
-          wrap.appendChild(el("p", "muted", "模型、资料、索引、问答、产物五个环节都跑通了。接下来只管内容：读、练、生成。"));
+          wrap.appendChild(el("p", "muted", "五个环节都跑通了：模型、资料、索引、问答、产物。"));
           const row = el("div", "row");
           row.appendChild(btn("去学 · 练", "primary", () => go("learn")));
           row.appendChild(btn("看我的资源", "", () => go("resources")));
@@ -808,7 +810,7 @@ PAGES.home = {
     v.appendChild(grid);
 
     const recent = el("div", "card");
-    recent.innerHTML = '<div class="card-head"><h2>最近产物</h2><div class="spacer"></div><span class="card-sub">讲义与练习都落在本机 artifacts 目录</span></div>';
+    recent.innerHTML = '<div class="card-head"><h2>最近产物</h2><div class="spacer"></div><span class="card-sub">都在本机</span></div>';
     if (!state.artifacts.length) {
       recent.appendChild(emptyState({
         inline: true,
@@ -2166,7 +2168,7 @@ async function renderWrongSection(v) {
     bTop.appendChild(el("div", "review-count grow", due.length ? ("今天该复习 " + due.length + " 条") : "今天的复习都做完了"));
     if (due.length) bTop.appendChild(btn("开始复习", "primary sm", () => openRedo(due[0])));
     banner.appendChild(bTop);
-    banner.appendChild(el("div", "muted sm", "间隔 1 / 3 / 7 / 16 / 35 天：重做答对就往后推，答错回到今天；特别熟的可以标记已掌握。"));
+    banner.appendChild(el("div", "muted sm", "答对往后推（1 / 3 / 7 / 16 / 35 天），答错回到今天。"));
     card.appendChild(banner);
 
     const tools = el("div", "row artifact-tools");
@@ -2314,7 +2316,7 @@ function openRedo(rec) {
   } else {
     dlg.appendChild(el("div", "answer-line wrong-line", "我的答案：" + (rec.myAnswer || "（空）")));
     dlg.appendChild(el("div", "answer-line", "参考答案：" + (rec.reference || "—")));
-    dlg.appendChild(el("p", "muted sm", "这条是早期记录（那时还没存下选项），所以由你自己判定这次答对了没有。"));
+    dlg.appendChild(el("p", "muted sm", "这条是早期记录，没存下选项，请自己判定对错。"));
     const row = el("div", "row");
     row.appendChild(btn("这次答对了", "primary", () => finish(true)));
     row.appendChild(btn("还是没答对", "", () => finish(false)));
@@ -2398,7 +2400,7 @@ function suggestionBox(weakest, rows) {
   const box = el("div", "ability-advice");
   if (!weakest) {
     box.appendChild(el("div", "ability-advice-title", "数据还不足以下结论"));
-    box.appendChild(el("div", "muted sm", "读几片、做几题之后，这里会指出最该补的那一维。"));
+    box.appendChild(el("div", "muted sm", "读几片、做几题之后，这里会指出最该补的一维。"));
     return box;
   }
   const row = rows.filter((x) => x.key === weakest)[0] || { key: weakest };
@@ -2790,7 +2792,6 @@ function growthReportCard() {
       go("report");
     } catch (e) { toast("导出失败：" + e.message); }
   }));
-  row.appendChild(el("span", "muted sm", "含概览、六维依据、最近两周与下一步。"));
   card.appendChild(row);
   if (state.lastReportArtifact) {
     const line = el("div", "row");
@@ -2875,7 +2876,6 @@ async function activityCard() {
     list.appendChild(it);
   }
   card.appendChild(list);
-  card.appendChild(el("div", "muted sm", "全部会话与每一步事件在「伴学助手 → 全部会话」里。"));
   return card;
 }
 
@@ -3340,7 +3340,7 @@ async function openUrlFetchDialog() {
   input.className = "grow";
   row.appendChild(input);
   dlg.appendChild(fieldOf("网页地址", row));
-  dlg.appendChild(el("p", "muted sm", "正文会落进本机 webcache，可以直接被引用（引用编号是 [W1] 这种）。"));
+  dlg.appendChild(el("p", "muted sm", "正文落到本机，引用时写成 [W1]。"));
   const acts = el("div", "row");
   const goBtn = btn("读取", "primary", async () => {
     const url = input.value.trim();
@@ -3423,6 +3423,76 @@ async function loadPrefs() {
   }
 }
 
+/**
+ * 显示大小：**页面缩放**（整体缩放，含布局）与**字体大小**（只动字）是两件事，分开存、分开调。
+ * 缩放走 body 的 zoom（Chromium 支持，布局一起缩，最接近"浏览器缩放"的体感）；
+ * 字体走根上的 --fs，CSS 里每个字号都是 calc(Npx * var(--fs))。
+ */
+const ZOOM_STEPS = [0.85, 1, 1.15, 1.3];
+const FONT_STEPS = [0.9, 1, 1.1, 1.25];
+
+function clampZoom(v) { return Math.max(0.8, Math.min(1.6, Number(v) || 1)); }
+function clampFont(v) { return Math.max(0.85, Math.min(1.4, Number(v) || 1)); }
+
+function applyZoom(v) {
+  state.uiZoom = clampZoom(v);
+  document.body.style.zoom = String(state.uiZoom);
+}
+
+function applyFont(v) {
+  state.uiFont = clampFont(v);
+  document.documentElement.style.setProperty("--fs", String(state.uiFont));
+}
+
+async function setZoom(v) {
+  applyZoom(v);
+  await savePrefs({ uiZoom: state.uiZoom });
+}
+
+async function setFont(v) {
+  applyFont(v);
+  await savePrefs({ uiFont: state.uiFont });
+}
+
+function nearestStep(steps, v) {
+  let best = 0;
+  let bestD = 1e9;
+  steps.forEach((s, i) => {
+    const d = Math.abs(s - Number(v || 1));
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  });
+  return best;
+}
+
+function stepZoom(delta) {
+  const i = nearestStep(ZOOM_STEPS, state.uiZoom);
+  const j = Math.max(0, Math.min(ZOOM_STEPS.length - 1, i + delta));
+  setZoom(ZOOM_STEPS[j]);
+  toast("页面缩放 " + Math.round(ZOOM_STEPS[j] * 100) + "%");
+}
+
+/** Ctrl +/- 加减号缩放、Ctrl 0 复位（与浏览器一致的习惯）。 */
+function initZoomKeys() {
+  window.addEventListener("keydown", (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const k = e.key;
+    if (k === "=" || k === "+" || e.code === "NumpadAdd") {
+      e.preventDefault();
+      stepZoom(1);
+    } else if (k === "-" || k === "_" || e.code === "NumpadSubtract") {
+      e.preventDefault();
+      stepZoom(-1);
+    } else if (k === "0" || e.code === "Numpad0") {
+      e.preventDefault();
+      setZoom(1);
+      toast("页面缩放 100%");
+    }
+  });
+}
+
 async function savePrefs(patch) {
   try {
     applyPrefs(await api("/api/prefs/save", patch));
@@ -3435,6 +3505,9 @@ async function savePrefs(patch) {
 function applyPrefs(p) {
   applyTheme(p.theme);
   setPanelVisible(p.sessionRail !== "0");
+  // 没存过就用默认（1 / 1）；刷新后按内核里记的来
+  applyZoom(p.uiZoom === undefined || p.uiZoom === "" ? 1 : p.uiZoom);
+  applyFont(p.uiFont === undefined || p.uiFont === "" ? 1 : p.uiFont);
 }
 
 /**
@@ -5756,6 +5829,36 @@ function settingsAppearance() {
   themeCard.appendChild(picker);
   g.appendChild(themeCard);
 
+  /* 显示大小：页面缩放（整体）与字体大小（只动字）分成两个旋钮，各自四档 */
+  const sizeCard = cardOf({
+    title: "显示大小",
+    sub: "页面缩放也可以直接按 Ctrl + / Ctrl - ，Ctrl 0 复位",
+  });
+  const segRow = (label, steps, current, fmt, onPick) => {
+    const row = el("div", "row setting-row");
+    row.appendChild(el("div", "grow switch-label", label));
+    const seg = el("div", "seg");
+    const cur = nearestStep(steps, current);
+    steps.forEach((v, i) => {
+      const b = el("button", "seg-item" + (i === cur ? " active" : ""), fmt(v));
+      b.dataset.step = String(v);
+      b.onclick = () => onPick(v);
+      seg.appendChild(b);
+    });
+    row.appendChild(seg);
+    return row;
+  };
+  sizeCard.appendChild(segRow("页面缩放", ZOOM_STEPS, state.uiZoom, (v) => Math.round(v * 100) + "%", (v) => {
+    setZoom(v);
+    go("settings", "appearance");
+  }));
+  sizeCard.appendChild(segRow("字体大小", FONT_STEPS, state.uiFont,
+    (v) => ({ 0.9: "小", 1: "标准", 1.1: "大", 1.25: "特大" })[v] || String(v), (v) => {
+      setFont(v);
+      go("settings", "appearance");
+    }));
+  g.appendChild(sizeCard);
+
   const railCard = cardOf({ title: "侧栏" });
   const mkRow = (label, action, actLabel) => {
     const row = el("div", "row switch-row");
@@ -6370,7 +6473,7 @@ async function organizeKb(kbId) {
     card.remove();
     const box = cardOf({ cls: "dialog", title: "整理失败" });
     box.appendChild(el("p", "muted", e.message));
-    box.appendChild(el("p", "muted sm", "整理只是一次模型调用；失败不影响原有索引，可以直接重建索引或稍后重试。"));
+    box.appendChild(el("p", "muted sm", "失败不影响原有索引，可以直接重建索引或重试。"));
     box.appendChild(btn("关闭", "ghost", () => box.remove()));
     v.insertBefore(box, v.firstChild);
     toast("整理失败：" + e.message);
@@ -6443,6 +6546,7 @@ async function buildIndex(kbId) {
 
 async function boot() {
   initTitlebar();
+  initZoomKeys();
   buildNav();
   // 偏好要在首屏之前读：否则深色用户会先看到一帧白底
   await loadPrefs();
