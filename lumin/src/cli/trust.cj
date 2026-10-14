@@ -203,10 +203,16 @@ public func askTrust(path: String): TrustDecision {
         d.decided = true
         d.sessionOnly = true
         d.source = path + "（仅本次）"
-    } else {
+    } else if (t == "3") {
         d.trusted = false
         d.decided = true
         d.source = path
+    } else {
+        // 回车/乱输：当作"仅本次不信任"，不写进信任表（免得手滑把目录永久标死）
+        d.trusted = false
+        d.decided = true
+        d.sessionOnly = true
+        d.source = path + "（默认：仅本次）"
     }
     return d
 }

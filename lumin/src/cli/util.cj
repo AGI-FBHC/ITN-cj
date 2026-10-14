@@ -208,6 +208,10 @@ class EnvFile {
         keys.add(k)
         vals.add(v)
     }
+
+    public func allKeys(): ArrayList<String> {
+        return keys
+    }
 }
 
 func loadEnvFile(path: String): EnvFile {
@@ -230,6 +234,25 @@ func loadEnvFile(path: String): EnvFile {
                 }
             }
         case None => ()
+    }
+    return out
+}
+
+/** 依次读多个 .env 文件：先读到的键优先（后面的只补缺）。 */
+func loadEnvFiles(paths: ArrayList<String>): EnvFile {
+    let out = EnvFile()
+    for (p in paths) {
+        let e = loadEnvFile(p)
+        for (k in e.allKeys()) {
+            match (e.get(k)) {
+                case Some(v) =>
+                    match (out.get(k)) {
+                        case Some(_) => ()
+                        case None => out.put(k, v)
+                    }
+                case None => ()
+            }
+        }
     }
     return out
 }

@@ -288,7 +288,15 @@ func pickSession(dataDir: String, cwd: String, continueLast: Bool, sessionId: St
 /* ---------- 入口 ---------- */
 
 public func runChat(args: Array<String>): Int64 {
-    let env = loadEnvFile(".env.local")
+    // 配置：先看当前目录的 .env.local，再看 LUMIN_HOME（bin\lumin.cmd 会设）指向的工程目录。
+    // 这样"在哪个目录敲 lumin，就用哪个目录当工作区"，同时 Key 依然只放在工程里。
+    let envPaths = ArrayList<String>()
+    envPaths.add(".env.local")
+    let luminHome = envOr("LUMIN_HOME", "")
+    if (luminHome.size > 0) {
+        envPaths.add(luminHome + "/.env.local")
+    }
+    let env = loadEnvFiles(envPaths)
     var base = cfgValue(env, "LUMIN_BASE", "https://token-plan-cn.xiaomimimo.com/v1")
     var key = cfgValue(env, "LUMIN_KEY", "")
     var model = cfgValue(env, "LUMIN_MODEL", "mimo-v2.6-flash")
