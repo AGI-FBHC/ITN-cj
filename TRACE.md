@@ -1250,3 +1250,66 @@ ITN-Desktop"；最后要求"做好之后先让我单独试试效果"。
 - **首页 3D 学习网络图**（用户上一条需求）：内核只读接口 `/api/graph` + canvas 2D 自写透视图（不引 three.js），
   节点=章节（大小=切片数、颜色=进度）、笔记/错题/产物挂在章节上、点节点出动作卡、切页暂停渲染。计划见 `docs/10` 的 P 表。
 - docs/09 的 **P4 Skills**（`skill_read` + 内置 `web-research`）与 P1 的**域名黑白名单**、P3 的**「资料不足」卡片 + 计划行可停**。
+
+---
+
+## 第十七轮（2026-10-14）：pi-cj 接真实模型（MiMo TokenPlan）+ Pi 风格真实工具，69 例测试全绿
+
+**用户提的**：① 用 MiMo TokenPlan 试一下（给了 Key 与 `https://token-plan-cn.xiaomimimo.com/v1`）；
+② "不具备读写功能吗？我还是需要 Pi 的一些运行时思想，如果实在没有能不能加点其他成熟的方法进来"。
+
+**范围**：仍然**只动** `pi-cj/`（独立工程），没碰 `core/`、`shell/`、`tools/`。
+提交 **26f2ba2**；上一轮（运行时骨架）是 e5f942b。
+
+### 先回答用户的疑问
+
+- **仓颉有运行时**，缺的是 Pi 本体依赖的 Node/JS。所以"把 Pi 搬过来"只能是**用仓颉重写它的运行时思想**；
+  而"读文件 / 跑命令"这些能力仓颉自己的 `std.fs`、`std.process` 就有，不需要 Node。
+- 上一轮说的"运行时不碰文件/网络"指的是**分层**（`src/pi/` 保持纯净、可整体搬进内核），
+  不是"没有读写能力"。本轮把真实工具补上，分成三个包：`pi_cj.pi`（循环）/ `pi_cj.tools`（真实工具+沙箱）/ `pi_cj.cli`（模型通信+命令行）。
+
+### 本轮新增
+
+- **`src/tools/`**：`workspace.cj`（工作区沙箱：路径归一化、越界/盘符/冒号全拒、命令 cwd 钉死在工作区）
+  + `tools.cj` 八个真实工具：`read_file / list_files / search_text / write_file / edit_file / run_command / current_time / calc`。
+  `run_command` 双层闸：模式（只有 `agent` 允许）+ 启动开关（`--allow-exec`，没加就标记不可用、不进提示词）。
+- **`src/cli/`**：`http.cj`（OpenAI 兼容流式客户端：原生 `tools`、`tool_calls` 多路解析、
+  半截 arguments 喂流式解析器、usage 统计、429/5xx 退避重试）+ `chat.cj`（命令行界面：模式切换、`:tools`、`--ask-file`）。
+- 运行时配套：`StepContext.toolSpecs`（结构化工具定义）、`ModelReply.requests`（**一步多条**工具调用）、
+  `ToolRequest.id`、`PiEvent.callId`、`History.addToolCalls/addToolResult`（按 OpenAI 协议写
+  assistant+tool_calls / role=tool+tool_call_id）、`ToolResult.content` 与 `modelText()`（回灌给模型的正文）。
+- 第四档模式 `agent`（标准 + run_command）；`maxSteps` 6→8；`src/pi/textx.cj`（公共字符串助手）。
+- 交付物：`scripts/chat.ps1`（开发用对话）、`dist\pi-cj-demo\`（双击「运行演示.cmd」离线演示 / 「对话.cmd」连真模型；
+  绿色包现在需要 4 个 DLL：2 个运行时 + 2 个 OpenSSL，因为真模型走 HTTPS）。
+
+### 真机跑出来的六个坑（都已修，重要）
+
+1. **Windows 下中文不能进 argv**：命令行参数里带中文会让仓颉运行时**在 main 之前**抛
+   `Invalid unicode scalar value`（argv 按 ANSI 码页解成 UTF-8 失败；`chcp 65001` 也没救）。
+   → 中文一律走 `--ask-file` / `--ask-stdin` / 交互式 stdin（交互式实测正常）。
+2. **MiMo 不认"只输出一行 JSON"**：它直接吐 Qwen 风格的 `<tool_call><function=..>` XML，被当成正文。
+   探针验证该端点**支持原生 function calling**（`tools` + `tool_choice:auto` → `finish_reason:"tool_calls"`，带 id 与流式 arguments），
+   改走原生 tools 后完全正常。
+3. **只回灌 summary 等于没给模型数据**：模型看到"共 2 项"看不到是哪 2 项，6 轮瞎试撞上限。
+   → `ToolResult.content` / `modelText()`（正文 > 摊平 data > summary，8KB 字节安全截断）。
+4. **漏接并行工具调用会引发重试风暴**：一步里两条调用只接第一条，第二条凭空消失 → 模型反复重试
+   （实测 6 轮 5 次调用 3 次失败；改成"一步多条全部执行"后同一道题 **2 轮 2 次调用 0 失败**）。
+5. **套餐有速率限制**：回 `429 Request rate limited`；加 2s/4s/6s 退避重试，且只在"一个事件都没推出去"时重试（否则正文重复）。
+6. **`run_command` 没有超时**（这版 `executeWithOutput` 不带 timeout）：跑 `pause` 会一直挂着 —— **已知缺口**，接内核要用带超时的进程封装补。
+
+语言坑补充：`where` 也是关键字（不能当变量名）；`String.size` 是字节数；`Process.runOutput/executeWithOutput` 返回 `(Int64, Array<Byte>, Array<Byte>)`（退出码+stdout+stderr）。
+
+### 验证
+
+- `cjpm test` → **TOTAL 69 / PASSED 69 / FAILED 0**（新增：原生调用 id 形状、并行两步、回灌正文、modelText 优先级与截断、工作区沙箱越界）。
+- 干净环境（PATH 只留 System32、清空 `CANGJIE_HOME`）跑绿色包 → `exit=0`、48 行输出、四段演示齐全。
+- **真机端到端**（mimo-v2.6-flash，工作区 `pi-cj\target\ws`）：
+  - 交互式提问「读一下 note.md，告诉我三要素是什么」→ read_file → 答出角色/任务/格式；2 轮 1 次调用，5.5s，906/52 tokens。
+  - 提问「读完 note.md 整理成 out/三要素.md」→ **write_file 真的写出了文件**（118 字节）。
+  - `--mode agent --allow-exec` 提问「dir /b + calc」→ 一步并行两条调用，2 轮 2 次调用 0 失败，答出目录内容与 15.000000。
+  - 无 Key / 429 / 越界路径 / 缺参数，都给出可读的失败信息，不崩。
+
+### 给接手的人
+
+- 合并路线、必须保留的三样（并行调用 / `tool_call_id` 回填 / 正文回灌）、以及每一步的坑，都写在 `pi-cj/README.md`（第 4、6、7 节）。
+- Key 存在 `pi-cj\.env.local`（已 gitignore，**没有**进 Git，也没有进 dist 包）。
