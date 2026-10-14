@@ -29,7 +29,15 @@ lumin 是**照 Pi（`github.com/earendil-works/pi`，TypeScript，MIT）的架�
 4. 往 `CHANGELOG.md` 追加一条（时间 / 范围 / 涉及文件 / 验证结果）。
 5. 不要 `git reset --hard`、不要 `git checkout --` 清工作区。
 
-## 4. 仓颉语言坑（踩过，别再踩）
+## 4. 独立仓与发布
+
+- 独立仓：**https://github.com/SuanXiangJi/lumin**（默认 private）。
+- **正本在 ITN-Desktop 仓库的 `lumin/` 目录**（上层桌面应用要合并它，两份必须同源）；
+  独立仓是用 `git subtree split --prefix=lumin` 导出的，**不要在独立仓上直接改代码** ——
+  改了下次导出会被覆盖。改完本地提交，然后在上层仓库根目录跑 `scripts\publish-lumin.ps1` 重新导出。
+- 发布前脚本会检查 `lumin/` 有没有未提交改动，有就拒绝推（免得推上去的历史和你眼前看到的代码对不上）。
+
+## 5. 仓颉语言坑（踩过，别再踩）
 
 - `with` / `where` 是关键字，不能当标识符。
 - `String.size` 是**字节数**不是字符数；`ArrayList.size` 是属性、`JsonArray.size()` 是方法。
@@ -41,7 +49,7 @@ lumin 是**照 Pi（`github.com/earendil-works/pi`，TypeScript，MIT）的架�
 - `SubProcess.wait(timeout:)` 超时**抛异常**；`Future.get(timeout:)` 不存在。
 - 编译产物被占用（上一次的 `main.exe` / `lumin-demo.exe` 还在跑）会导致 build 失败 —— 先结束进程。
 
-## 5. 环境
+## 6. 环境
 
 需要 **仓颉 SDK 1.2.0**（含 stdx）与 **OpenSSL 3**。
 `.\scripts\env.ps1` 自己找：`$env:CANGJIE_SDK_ROOT` → `$env:SDK_ROOT` → `D:\cangjie-sdk\1.2.0`。
