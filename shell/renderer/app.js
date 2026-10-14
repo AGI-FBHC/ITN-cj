@@ -336,7 +336,7 @@ const state = {
   profile: {}, report: {}, artifacts: [], sessions: [],
   kb: "", chapter: null, artifactQuery: "", wrongTab: "due", wrongQuery: "",
   chatSessionId: "", chatTurns: [], chatEvents: [], tools: null, chatQuery: "", artifactFocus: "",
-  webMode: "auto", skill: "", skills: [],
+  webMode: "auto", skill: "", skills: [], lastReportArtifact: "",
   busyTurn: false, pendingQuestion: "", lastQuestion: "",
   // 主题与会话栏偏好存在内核的 settings 表里（内核端口每次启动都变，localStorage 活不过一次重启）
   theme: "system", dark: false, panelHidden: false, kernel: null,
@@ -2363,6 +2363,126 @@ function drawTrend(canvas, days) {
   }
 }
 
+
+/* ============================================================
+   我的成长 · 学习报告（网页版 Report 的"导出报告"搬过来）
+   ------------------------------------------------------------
+   报告正文是**按当前页上的真实数据现拼的**：概览 / 六维（含每一格的依据）/ 最近两周 /
+   最该补的一维 / 错题清单。数据不够的地方就写"数据不够"，不编。
+   ============================================================ */
+function growthReportText() {
+  const r = state.report || {};
+  const rows = Array.isArray(r.abilities) ? r.abilities : [];
+  const p = state.profile || {};
+  const day = new Date().toLocaleDateString("sv-SE");
+  const acc = r.quizTotal ? Math.round((r.quizRight || 0) * 100 / r.quizTotal) + "%" : "—";
+  const lines = [];
+  lines.push("# 学习报告 " + day);
+  lines.push("");
+  lines.push("## 概览");
+  lines.push("");
+  lines.push("- 已读切片：" + (r.readChunks || 0));
+  lines.push("- 完成章节：" + (r.completedChapters || 0));
+  lines.push("- 答题：" + (r.quizTotal || 0) + "（正确率 " + acc + "，错题 " + (r.quizWrong || 0) + " 条，今天该复习 " + (r.wrongDue || 0) + " 条）");
+  lines.push("- 笔记：" + (r.noteCount || 0) + " 条 · 产物：" + (r.artifactCount || 0) + " 份");
+  if (p.nickname || p.goal) {
+    lines.push("- 学习目标：" + (p.goal || "（未填）") + (p.nickname ? "（" + p.nickname + "）" : ""));
+  }
+  lines.push("");
+  if (rows.length) {
+    lines.push("## 六维能力");
+    lines.push("");
+    lines.push("| 维度 | 自评 | 实测参考 | 依据 |");
+    lines.push("| --- | --- | --- | --- |");
+    for (const row of rows) {
+      lines.push("| " + row.key + " | " + (row.self >= 0 ? row.self : "—") + " | " +
+        (row.evidence >= 0 ? row.evidence : "—") + " | " + (row.basis || "") + " |");
+    }
+    lines.push("");
+    lines.push("> 自评是设置里自己填的；实测参考由真实学习记录推算（见「依据」列）。数据不足的维度不给参考，不拿噪声当分数。");
+    lines.push("");
+  }
+  const trend = Array.isArray(r.trend) ? r.trend : [];
+  if (trend.length) {
+    const DAY = 86400000;
+    const byDate = {};
+    for (const x of trend) byDate[x.date] = x;
+    const days = [];
+    for (let i = 13; i >= 0; i -= 1) {
+      const key = new Date(Date.now() - i * DAY).toLocaleDateString("sv-SE");
+      const row = byDate[key] || {};
+      days.push({ key: key, read: Number(row.read || 0), quiz: Number(row.quiz || 0), notes: Number(row.notes || 0) });
+    }
+    const sum = (arr, k) => arr.reduce((a, x) => a + x[k], 0);
+    const last7 = days.slice(7);
+    const prev7 = days.slice(0, 7);
+    lines.push("## 最近两周");
+    lines.push("");
+    lines.push("- 本周：读了 " + sum(last7, "read") + " 片 · 做了 " + sum(last7, "quiz") + " 题 · 笔记 " + sum(last7, "notes") + " 条");
+    lines.push("- 上周：读了 " + sum(prev7, "read") + " 片 · 做了 " + sum(prev7, "quiz") + " 题 · 笔记 " + sum(prev7, "notes") + " 条");
+    const active = days.filter((d) => d.read + d.quiz + d.notes > 0).length;
+    lines.push("- 这 14 天里有 " + active + " 天在学");
+    lines.push("");
+  }
+  if (r.weakest) {
+    const row = rows.filter((x) => x.key === r.weakest)[0] || { key: r.weakest };
+    const adv = ABILITY_ADVICE[r.weakest];
+    lines.push("## 下一步");
+    lines.push("");
+    lines.push("- 最该补的一维：**" + row.key + "**" + (adv ? " —— " + adv.text : ""));
+    if (row.basis) {
+      lines.push("- 依据：" + row.basis);
+    }
+    if ((r.wrongDue || 0) > 0) {
+      lines.push("- 有 " + r.wrongDue + " 条错题今天该重做。");
+    }
+    lines.push("");
+  }
+  lines.push("> 这份报告由 ITN-Desktop 在本机生成：数据只在本地数据库里，没有上传。");
+  lines.push("");
+  return lines.join("\n");
+}
+
+function growthReportCard() {
+  const card = cardOf({
+    title: "学习报告",
+    sub: "按当前记录现拼的 Markdown",
+    actions: [
+      btn("存成产物", "sm primary", async () => {
+        const text = growthReportText();
+        const name = "成长报告-" + new Date().toLocaleDateString("sv-SE") + ".md";
+        try {
+          const r = await api("/api/artifacts/save", { name: name, content: text });
+          state.lastReportArtifact = r.name;
+          toast("已存成产物：" + r.name + "（在「我的资源」里）");
+          go("report");
+        } catch (e) { toast("保存失败：" + e.message); }
+      }),
+      copyButton(() => growthReportText(), "复制 Markdown"),
+      btn("看预览", "sm ghost", () => {
+        const back = $("view");
+        const dlg = el("div", "card dialog");
+        dlg.appendChild(cardHeadOnly("学习报告预览"));
+        const pre = el("div", "artifact-preview");
+        pre.innerHTML = md(growthReportText());
+        dlg.appendChild(pre);
+        const row = el("div", "row");
+        row.appendChild(btn("收起", "ghost", () => dlg.remove()));
+        row.appendChild(copyButton(() => growthReportText(), "复制 Markdown"));
+        dlg.appendChild(row);
+        back.insertBefore(dlg, back.firstChild);
+      }),
+    ],
+  });
+  if (state.lastReportArtifact) {
+    const line = el("div", "row");
+    line.appendChild(el("span", "muted sm grow", "刚存成：" + state.lastReportArtifact));
+    line.appendChild(btn("去我的资源", "sm ghost", () => go("resources")));
+    card.appendChild(line);
+  }
+  return card;
+}
+
 /* ---------- 我的成长 ---------- */
 
 PAGES.report = {
@@ -2378,6 +2498,8 @@ PAGES.report = {
     grid.appendChild(statCard("答题总数", r.quizTotal || 0, ""));
     grid.appendChild(statCard("正确率", r.quizTotal ? pct(r.quizRight, r.quizTotal) : 0, "%"));
     v.appendChild(grid);
+
+    v.appendChild(growthReportCard());
 
     /* 错题的"今天该复习"直接摆到成长页：不然用户不会想起来去错题本 */
     if (r.quizWrong > 0) {

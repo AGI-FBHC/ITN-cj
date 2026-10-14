@@ -80,6 +80,17 @@ try {
     Check '今天的读/做/记与总数对得上' ($today.read -eq 1 -and $today.quiz -eq 5 -and $today.notes -eq 1) ("read=" + $today.read + " quiz=" + $today.quiz + " notes=" + $today.notes)
     Check '每一天都带 read/quiz/notes/done/turns 五个字段' (($trend | Where-Object { $null -eq $_.read -or $null -eq $_.quiz -or $null -eq $_.notes -or $null -eq $_.done -or $null -eq $_.turns }).Count -eq 0) 'ok'
 
+    Write-Output "== 报告能落成本地产物（成长页「存成产物」走的就是这条路） =="
+    $saved = Post '/api/artifacts/save' @{ name = '成长报告-自测.md'; content = '# 学习报告 自测' }
+    Check '保存成功并回文件名' ($saved.code -eq 0 -and ([string]$saved.data.name) -eq '成长报告-自测.md') (([string]$saved.data.name) + ' -> ' + ([string]$saved.data.path))
+    $artFile = Join-Path $dataDir 'artifacts\成长报告-自测.md'
+    Check '文件真的落在 artifacts 里' (Test-Path $artFile) $artFile
+    Check '内容就是这个 Markdown' ((Get-Content $artFile -Raw -Encoding UTF8).Contains('学习报告')) 'ok'
+    # 重名不覆盖：再存一次应该自动加序号
+    $again = Post '/api/artifacts/save' @{ name = '成长报告-自测.md'; content = '第二次' }
+    Check '重名自动加序号（不覆盖上一份）' ($again.code -eq 0 -and ([string]$again.data.name) -ne '成长报告-自测.md') ([string]$again.data.name)
+    Check '缺参数会被拒' ((Post '/api/artifacts/save' @{ name = ''; content = '' }).code -ne 0) 'ok'
+
     Write-Output "== 不够就不给：练习不足 4 题时逻辑推理不给参考 =="
     $dataDir2 = Join-Path $env:TEMP ("itn-rep2-data-" + [guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Force -Path $dataDir2 | Out-Null

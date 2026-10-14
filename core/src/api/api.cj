@@ -908,6 +908,45 @@ public class Api {
 
         // ---------- 学习者档案 ----------
 
+        // 把界面里生成的 Markdown 落成本地产物（例如成长页导出的学习报告）。
+        // 复用 ToolRegistry.saveArtifact：它已经有"重名自动加序号、路径净化"的那套语义。
+        if (path == "/api/artifacts/save" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let name = trimStr(strOf(b, "name"))
+                    let content = strOf(b, "content")
+                    if (name.size == 0 || content.size == 0) {
+                        fail(ctx, 400, "缺少 name 或 content")
+                        return
+                    }
+                    try {
+                        let r = ToolRegistry(store).saveArtifact(name, content)
+                        if (!r.ok) {
+                            fail(ctx, 400, r.summary)
+                            return
+                        }
+                        // saveArtifact 的 data 是最终文件路径（可能加了 -2 序号）
+                        let p = strValue(r.data)
+                        let o = JsonObject()
+                        o.put("path", JsonString(p))
+                        var finalName = p
+                        let slash = p.lastIndexOf(Path.Separator)
+                        if (slash != None) {
+                            match (slash) {
+                                case Some(i) => finalName = String.fromUtf8(p.toArray()[(i + 1)..p.size])
+                                case None => ()
+                            }
+                        }
+                        o.put("name", JsonString(finalName))
+                        ok(ctx, o)
+                    } catch (e: Exception) {
+                        fail(ctx, 500, "写产物失败：" + e.message)
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         if (path == "/api/artifacts/delete" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) =>
@@ -1818,6 +1857,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/study/wrong/review",
         "/api/study/report",
         "/api/artifacts/list",
+        "/api/artifacts/save",
         "/api/artifacts/delete",
         "/api/artifacts/rename",
         "/api/artifacts/progress",

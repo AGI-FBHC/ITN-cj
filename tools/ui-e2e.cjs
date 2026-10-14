@@ -1387,7 +1387,19 @@ function assert(cond, msg) {
       assert(trend.side.indexOf('今天：') >= 0, '今天有记录时右侧应写"今天：…"，实际：' + trend.side.replace(/\s+/g, ' ').slice(0, 80));
     }
     await shot('50-最近两周');
-    return '六维 ' + drawn.rows + ' 行有依据 · 重点：' + api.weakest + ' · 趋势 ' + api.trend.length + ' 天有数据';
+    // 学习报告：存成产物 → 能读回内容
+    const before = await page.evaluate(() => fetch('/api/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => r.json()).then((j) => (j.data.artifacts || []).length));
+    await page.locator('#view button', { hasText: '存成产物' }).first().click();
+    await page.waitForFunction((n) => fetch('/api/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => r.json()).then((j) => (j.data.artifacts || []).length > n), before, { timeout: 15000 });
+    const arts = await page.evaluate(() => fetch('/api/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => r.json()).then((j) => j.data.artifacts.map((x) => x.name)));
+    const made = arts.filter((x) => x.indexOf('成长报告-') === 0)[0];
+    assert(made, '应生成一份 成长报告-*.md，实际：' + arts.join(','));
+    const body = await page.evaluate((nm) => fetch('/api/artifacts/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: nm }) }).then((r) => r.json()).then((j) => j.data.content), made);
+    assert(String(body).indexOf('六维能力') >= 0 && String(body).indexOf('最近两周') >= 0, '报告里应有六维与最近两周，实际：' + String(body).slice(0, 80));
+    // 清理：删掉这份产物，别影响后面的资源页断言
+    await page.evaluate((nm) => fetch('/api/artifacts/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: nm }) }), made);
+    await shot('51-学习报告');
+    return '六维 ' + drawn.rows + ' 行有依据 · 重点：' + api.weakest + ' · 趋势 ' + api.trend.length + ' 天有数据 · 报告已导出（' + made + '）';
   });
 
   await step('侧栏徽标反映真实数量', async () => {
