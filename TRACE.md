@@ -2761,3 +2761,93 @@ E2E 文件里用 JS 的 `String.replace(a, b)` 批量改代码时，**替换串�
 
 E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被折成 `$`（第三、四次了）。
 这次连修 3 处。**已经写成硬规矩：批量替换一律传函数 `s.replace(re, () => text)`。**
+---
+
+## 第四十二轮（2026-10-15）：把"上一版网页端的设计逻辑"整条换成 lumin 的新方案
+
+### 用户原话（要点）
+
+> lumin 接的还是不对啊，之前的设计逻辑都替换为 lumin 新方案啊，怎么现在一问个问题首先还是检索，
+> lumin 不是分动态步骤执行的吗，不要写死啊，对话界面参考 codex，不要还像着之前那个网页版乱设计。
+
+### 我怎么定位的（先查证，再动手）
+
+1. **对话那条路本身没问题**：起内核打 `/api/agent/ask-pi`，问"你好"→ 一步工具都没调；
+   问"1+1 等于几"→ 只调 `calc`；问"帮我写个快排"→ 不查资料直接写；问"今天适合做什么"→
+   自己挑了 `current_time` + `list_documents` + `kb_search` + `read_chunk`。
+   也就是说**模型确实是动态决定步骤的**。
+2. **真正写死的地方是产物那条路**：界面上的"生成讲义 / 生成练习册"走的是 `/api/agent/lecture` /
+   `/api/agent/quiz`，内核里写死一条流水线（检索 → 拟大纲 → 逐节写作 → 引用自检 → 落盘），
+   界面上还画着那条五步进度条，弹层里甚至写着"会先按这个主题检索资料，再生成"。
+   **"一问个问题首先还是检索"说的就是这里**（用户点"生成讲义"时看到的第一件事就是"正在检索资料…"）。
+3. **提示词里也埋着一条"先检索"**：`pi_ask.cj` 的 preamble 原来写着
+   `"Answer with the local knowledge base; cite the material you used as [1], [2] …"` ——
+   这等于把"必须先查知识库"钉进系统提示词，模型自然每次都先去 `kb_search`。
+
+### 一、产物生成换成"lumin 的一次任务"（提交 963f720）
+
+- **新增 `POST /api/agent/task-pi`**：`{kind:"lecture"|"quiz", kbId, topic, count?, sessionId?, web?, perm?, exec?}`。
+  与问答共用同一条链路（`PiAgent.runFull`），差别只有两处 —— 提示词说清"成品是什么、落到哪"，
+  以及"没落盘时内核兜底"。**提示词里没有任何步骤**：要不要查资料、查几次、分几节，模型自己排。
+- **删掉** `/api/agent/lecture`、`/api/agent/quiz` 两条路由（连同 `buildServer` 的 routes 白名单）。
+  内核那条"先检索 → 拟大纲 → 逐节写作 → 引用自检 → 落盘"的流水线不再参与产品。
+  （`agent.cj` 里那套手写循环与它的单测**暂时保留**：它还有 `/api/agent/ask` 这个对照入口，
+  也留着回滚余地。已记在 docs/10 R37 —— 要不要连根删掉，等用户拍板。）
+- **提示词改写**：身份 + 语言 + "工具是可选的，用不用、用几次由你按问题判断" + 引用规矩 + 简短要求。
+  产物任务再追加一句"这是一次产物生成任务：成品要写完整，最后用 save_artifact 落盘"。
+- **产物归属**：模型自己 `save_artifact` 落了盘，就从工具记录里取路径（`savedBy="model"`）；
+  模型不认 function calling 时，内核把**最后一段正文**兜底落盘（`savedBy="kernel"`）。
+  两种情况都回 `artifactPath`，界面照实显示文件名。
+- **前端**：`generateArtifact` 整段重写 —— 生成卡里只有**一条时间线**（工具行 + 正文，
+  和伴学助手同一套 `renderToolRows`/`assistantBlock`），没有步骤条；取消时结果卡写明"未保存"。
+  主题弹层的"（会先按这个主题检索资料，再生成）"也去掉了。
+- **测试跟上**：mock 认得出任务简报（返回带小标题、带 [1]、末尾"资料来源"的成品）；
+  `tools/smoke.ps1`、`tools/real-lecture-check.ps1` 改走新接口。
+
+### 二、真机跑任务时挖出来的三个真 bug（提交 a2923c1）
+
+用真实模型（MiMo TokenPlan）跑"把提示词工程做成讲义"，一次就暴露三处：
+
+1. **工具记录表并发丢记录**。pi 的 parallel 模式下工具是多线程跑的，`ToolRecord` 表是普通
+   `ArrayList`，并发 add 丢了一条 `save_artifact` —— 文件明明写出来了，产物路径却没取回来，
+   界面于是以为模型没落盘，又兜底写了一份（磁盘上出现 `讲义-X.md` 和 `讲义-X-2.md` 两份）。
+   加一把 `Mutex`（`pi_bridge.cj`）。
+2. **检索结果没告诉模型切片 id**。`flattenForModel` 没有把 `id` 交给模型，于是 `read_chunk`
+   只能靠猜 id，实测模型连着猜了十几轮（一轮 104 秒大半耗在这儿）。补上 `id`。
+3. **"这一轮的答案"混进了过程**。模型查资料时说的"知识库里有这篇，先看它讲了什么…"和最后的
+   正文被接成一段，兜底落盘时那段讲解被当成讲义存了下来。改成：时间线全留，但
+   `out.answer` / `assistant/message` / 兜底产物只取**最后一次工具调用之后**那段
+   （闭包捕获不了 var，所以包了个 `AnswerSeg` 小类）。
+   新增离线自测 `core/src/unittests/task_pi_test.cj`（2 例：模型自己落盘 / 内核兜底 + 不许有 step 事件）。
+
+### 三、界面顺手清掉的旧形状（提交 028db41）
+
+- 会话总览（原「会话记录」）里的 `step/start`/`step/end` 标签与 `STEP_LABEL`
+  （检索资料 / 拟大纲 / 逐节写作…）整块删掉 —— 内核已经不写 step 事件，留着就是上一版的化石；
+  "全部会话与步骤" → "全部会话"，文案改成"每段对话都留下了只追加的记录"。
+- E2E：生成过程那步改成断言 **0 个写死步骤条 + 0 个 step/* 事件 + turn/start.kind=lecture**；
+  新增"同名产物不静默覆盖"（连打两次 task-pi 核对文件名与磁盘）；"还原出处"那步改成
+  挨条找那条真带出处的问答（会话栏第一条现在是生成任务，标题就是任务简报）。
+
+### 四、验证
+
+| 项 | 结果 |
+| --- | --- |
+| `node tools/ui-e2e.cjs` | **84/84** |
+| `node tools/ui-audit.cjs` | 16/16 |
+| `cd core; cjpm test` | **68/68**（新增 2 例） |
+| `tools/pi-ask-check.ps1` | 全部通过（含通用模式跨库） |
+| `tools/agent-work-check.ps1` | 全部通过（审批 / 插话 / 三档权限） |
+| `tools/graph-check.ps1` / `skill-check.ps1` | 全部通过 |
+| 真机 `tools/real-lecture-check.ps1` | 讲义落盘 `讲义-提示词工程.md`，`savedBy=model`，正文是完整讲义 |
+| 真机探针（4 问） | 闲聊不检索 / 算数只调 calc / 写代码不查资料 / 学习建议自己排工具 |
+
+### 五、给下一个 agent 的两条交接
+
+1. **R29（知识库收集通道）在途文件已经被我挪走**：上一轮写的 `core/src/kb/staging.cj` 编译不过
+   （8 个错：缺 `Store` 导入、`fetchPage`/`hostOfUrl` 未声明、`JsonObject(JsonObject, String)`
+   多参、`fromBase64String` 返回 Option），会挡住整棵树的构建。我先把它**原样移到
+   `tmp/parked/staging.cj`**（`tmp/` 已在 .gitignore 里，没丢、没提交），先把用户当下的诉求做完。
+   要继续 R29 就去那儿拿回来，按 docs/10 里 R29 那一行的清单往下做。
+2. 本轮所有探查脚本都在 `tmp/parked/`（`probe-preamble.ps1` / `probe-task.ps1` / patch*.cjs），
+   用完可删；真机探针的写法可以直接抄来做回归。
