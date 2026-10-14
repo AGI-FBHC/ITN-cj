@@ -1,7 +1,9 @@
 package itn_desktop_core.store
 
 import std.collection.*
+import std.fs.*
 import stdx.encoding.json.*
+import itn_desktop_core.db.*
 import itn_desktop_core.util.*
 
 public class ModelConfig {
@@ -183,13 +185,21 @@ public class Settings {
     }
 }
 
+/*
+ * 配置仓库。
+ *
+ * 模型接口、用途绑定、知识库登记三类数据落在 SQLite。对外签名与 JSON 时代完全一致，
+ * 上层 (api.cj) 不需要改。
+ */
 public class Store {
     public let dataDir: String
-    public let settingsPath: String
 
     public init(dataDir: String) {
         this.dataDir = dataDir
-        this.settingsPath = dataDir + "\\settings.json"
+    }
+
+    private func db(): Db {
+        return DbHub.open(dataDir)
     }
 
     public func ensure(): Unit {
@@ -198,19 +208,117 @@ public class Store {
 
     public func load(): Settings {
         ensure()
-        let raw = readTextOr(settingsPath, "")
-        if (raw.size == 0) {
-            return Settings()
+        migrateFromJson()
+        let s = Settings()
+        s.chatModelId = roleOf("chat")
+        s.embedModelId = roleOf("embed")
+        s.chunkModelId = roleOf("chunk")
+        for (r in db().querySql("SELECT id, name, base_url, api_key, model, vision_model, embedding_model, capabilities " +
+            "FROM models ORDER BY ord")) {
+            let m = ModelConfig()
+            m.id = r.text(0)
+            m.name = r.text(1)
+            m.baseUrl = r.text(2)
+            m.apiKey = r.text(3)
+            m.model = r.text(4)
+            m.visionModel = r.text(5)
+            m.embeddingModel = r.text(6)
+            m.capabilities = splitCsv(r.text(7))
+            s.models.add(m)
         }
-        try {
-            return Settings.fromJson(JsonValue.fromStr(raw))
-        } catch (e: Exception) {
-            return Settings()
+        for (r in db().querySql("SELECT id, name, root_dir, doc_count, chunk_count, image_count, built_at " +
+            "FROM knowledge_bases ORDER BY ord")) {
+            let b = KnowledgeBase()
+            b.id = r.text(0)
+            b.name = r.text(1)
+            b.rootDir = r.text(2)
+            b.docCount = r.int(3)
+            b.chunkCount = r.int(4)
+            b.imageCount = r.int(5)
+            b.builtAt = r.text(6)
+            s.knowledgeBases.add(b)
         }
+        return s
     }
 
     public func save(s: Settings): Unit {
         ensure()
-        writeText(settingsPath, s.toJson().toString())
+        let ops = ArrayList<DbOp>()
+        ops.add(DbOp("DELETE FROM models", ArrayList<DbValue>()))
+        var ord: Int64 = 0
+        for (m in s.models) {
+            ops.add(DbOp("INSERT INTO models (id, name, base_url, api_key, model, vision_model, embedding_model, capabilities, ord) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                va([tv(m.id), tv(m.name), tv(m.baseUrl), tv(m.apiKey), tv(m.model), tv(m.visionModel), tv(m.embeddingModel),
+                    tv(joinCsv(m.capabilities)), nv(ord)])))
+            ord += 1
+        }
+        ops.add(DbOp("DELETE FROM knowledge_bases", ArrayList<DbValue>()))
+        ord = 0
+        for (b in s.knowledgeBases) {
+            ops.add(DbOp("INSERT INTO knowledge_bases (id, name, root_dir, doc_count, chunk_count, image_count, built_at, ord) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                va([tv(b.id), tv(b.name), tv(b.rootDir), nv(b.docCount), nv(b.chunkCount), nv(b.imageCount), tv(b.builtAt), nv(ord)])))
+            ord += 1
+        }
+        ops.add(DbOp("DELETE FROM roles", ArrayList<DbValue>()))
+        if (s.chatModelId.size > 0) {
+            ops.add(DbOp("INSERT INTO roles (kind, model_id) VALUES (?, ?)", va([tv("chat"), tv(s.chatModelId)])))
+        }
+        if (s.embedModelId.size > 0) {
+            ops.add(DbOp("INSERT INTO roles (kind, model_id) VALUES (?, ?)", va([tv("embed"), tv(s.embedModelId)])))
+        }
+        if (s.chunkModelId.size > 0) {
+            ops.add(DbOp("INSERT INTO roles (kind, model_id) VALUES (?, ?)", va([tv("chunk"), tv(s.chunkModelId)])))
+        }
+        db().batch(ops)
+    }
+
+    /** 一次性把 settings.json 导进数据库；导完保留 .migrated 副本，只导一次。 */
+    private func migrateFromJson(): Unit {
+        if (migrationDone(db(), "store")) {
+            return
+        }
+        let path = dataDir + "\\settings.json"
+        if (exists(path)) {
+            let raw = readTextOr(path, "")
+            if (raw.size > 0) {
+                try {
+                    save(Settings.fromJson(JsonValue.fromStr(raw)))
+                } catch (e: Exception) {
+                    ()
+                }
+            }
+            archiveLegacy(path)
+        }
+        markMigrationDone(db(), "store")
+    }
+
+    /** 用途绑定在 roles 表里是 kind/model_id 两列，与 meta 那类 k/v 表不同。 */
+    private func roleOf(kind: String): String {
+        return db().scalarText("SELECT model_id FROM roles WHERE kind = ?", va([tv(kind)]))
+    }
+
+    private func splitCsv(text: String): ArrayList<String> {
+        let out = ArrayList<String>()
+        for (p in text.split(",")) {
+            if (p.size > 0) {
+                out.add(p)
+            }
+        }
+        return out
+    }
+
+    private func joinCsv(items: ArrayList<String>): String {
+        let sb = StringBuilder()
+        var first = true
+        for (it in items) {
+            if (!first) {
+                sb.append(",")
+            }
+            sb.append(it)
+            first = false
+        }
+        return sb.toString()
     }
 }

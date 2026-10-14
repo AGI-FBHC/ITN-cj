@@ -60,15 +60,36 @@ $build = Api "/api/kb/build" '{ "id": "big" }'
 $sw.Stop()
 Write-Output ("建索引 {0} 秒 -> {1}" -f [math]::Round($sw.Elapsed.TotalSeconds, 1), $build)
 
-$idxFile = Join-Path $dataDir "kb\big\index.json"
-if (Test-Path $idxFile) { Write-Output ("索引文件 {0} MB" -f [math]::Round((Get-Item $idxFile).Length / 1MB, 2)) }
+# 数据落库后观察的是数据库文件，不再是 kb\<id>\index.json
+$dbFile = Join-Path $dataDir "itn.db"
+if (Test-Path $dbFile) { Write-Output ("数据库文件 {0} MB" -f [math]::Round((Get-Item $dbFile).Length / 1MB, 2)) }
 
 foreach ($n in 1, 2) {
     $sw2 = [Diagnostics.Stopwatch]::StartNew()
     $r = Api "/api/kb/search" '{ "id": "big", "query": "提示词", "topK": 5 }'
     $sw2.Stop()
     $hits = ($r | ConvertFrom-Json).data.hits.Count
-    Write-Output ("第 {0} 次检索 {1} 秒，命中 {2} 条" -f $n, [math]::Round($sw2.Elapsed.TotalSeconds, 2), $hits)
+    Write-Output ("热态第 {0} 次检索 {1} 秒，命中 {2} 条" -f $n, [math]::Round($sw2.Elapsed.TotalSeconds, 2), $hits)
 }
 
-$core.Kill(); $mock.Kill()
+# 冷启动：索引不在进程内缓存时才真正读盘。这是 SQLite 改动最该被量化的一步。
+$core.Kill()
+$core.WaitForExit(10000) | Out-Null
+$portFile2 = Join-Path $env:TEMP ("itn-scale-cold-" + [guid]::NewGuid().ToString("N") + ".port")
+$core2 = Start-Process -FilePath $Exe -ArgumentList "--data-dir=$dataDir", "--port-file=$portFile2" -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $env:TEMP "itn-scale2.out") -RedirectStandardError (Join-Path $env:TEMP "itn-scale2.err")
+$port2 = $null
+for ($i = 0; $i -lt 60; $i++) { if (Test-Path $portFile2) { $t = (Get-Content $portFile2 -Raw).Trim(); if ($t) { $port2 = $t; break } }; Start-Sleep -Milliseconds 250 }
+if (-not $port2) { $core2.Kill(); $mock.Kill(); throw "冷启动内核未起来" }
+$base2 = "http://127.0.0.1:$port2"
+function Api2([string]$path, [string]$body) {
+    (Invoke-WebRequest -Uri "$base2$path" -Method Post -Body $body -ContentType "application/json" -UseBasicParsing -TimeoutSec 600 -SkipHttpErrorCheck).Content
+}
+foreach ($n in 1, 2) {
+    $sw3 = [Diagnostics.Stopwatch]::StartNew()
+    $r = Api2 "/api/kb/search" '{ "id": "big", "query": "提示词", "topK": 5 }'
+    $sw3.Stop()
+    $hits = ($r | ConvertFrom-Json).data.hits.Count
+    Write-Output ("冷启动第 {0} 次检索 {1} 秒，命中 {2} 条" -f $n, [math]::Round($sw3.Elapsed.TotalSeconds, 2), $hits)
+}
+
+$core2.Kill(); $mock.Kill()

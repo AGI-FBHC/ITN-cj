@@ -8,6 +8,7 @@ import std.convert.*
 import std.sync.*
 import stdx.encoding.base64.*
 import itn_desktop_core.llm.*
+import itn_desktop_core.db.*
 import itn_desktop_core.util.*
 
 public func kbDir(dataDir: String, kbId: String): String {
@@ -18,40 +19,103 @@ public func vectorsPath(dataDir: String, kbId: String): String {
     return kbDir(dataDir, kbId) + Path.Separator + "vectors.txt"
 }
 
+/*
+ * 索引落库。
+ *
+ * 切片进 chunks 表、向量进 embeddings 表的 BLOB 列。整库索引替换是一次事务：
+ * 中途失败不会留下半个知识库。
+ *
+ * 切片主键由这里显式分配（max(id)+1 起），因此插入切片与向量可以在同一批里完成，
+ * 不需要逐行回读自增 id。
+ */
 public func saveIndex(dataDir: String, kbId: String, idx: KbIndex): Unit {
-    let dir = kbDir(dataDir, kbId)
-    ensureDir(dir)
-    // 向量走紧凑文本，一行一个切片；元数据仍走 JSON。
-    // 分批追加写入：一次性拼出几十 MB 字符串会把堆顶穿。
-    let vpath = Path(dir + Path.Separator + "vectors.txt")
-    writeText(dir + Path.Separator + "vectors.txt", "")
-    var sb = StringBuilder()
-    var inBatch = 0
+    let db = DbHub.open(dataDir)
+    db.batch(va2([
+        DbOp("DELETE FROM embeddings WHERE kb_id = ?", va([tv(kbId)])),
+        DbOp("DELETE FROM chunks WHERE kb_id = ?", va([tv(kbId)]))
+    ]))
+    var nextId = db.scalarInt("SELECT MAX(id) FROM chunks", ArrayList<DbValue>()) + 1
+    let chunkRows = ArrayList<ArrayList<DbValue>>()
+    let ops = ArrayList<DbOp>()
+    var ord: Int64 = 0
     for (c in idx.chunks) {
-        var i = 0
-        while (i < c.vector.size) {
-            if (i > 0) {
-                sb.append(" ")
-            }
-            sb.append(c.vector[i].toString())
-            i = i + 1
+        let rowId = nextId
+        nextId += 1
+        chunkRows.add(va([nv(rowId), tv(kbId), tv(c.id), tv(c.docPath), tv(c.docTitle), tv(c.headingPath),
+            nv(ord), tv(c.text), tv(c.caption), tv(c.captionError), tv(imagesJson(c.images))]))
+        if (c.vector.size > 0) {
+            ops.add(DbOp("INSERT INTO embeddings (chunk_id, kb_id, dim, vec) VALUES (?, ?, ?, ?)",
+                va([nv(rowId), tv(kbId), nv(Int64(c.vector.size)), bv(encodeVector(c.vector))])))
         }
-        sb.append("\n")
-        inBatch = inBatch + 1
-        if (inBatch >= 200) {
-            File.appendTo(vpath, sb.toString().toArray())
-            sb = StringBuilder()
-            inBatch = 0
-        }
+        ord += 1
     }
-    if (inBatch > 0) {
-        File.appendTo(vpath, sb.toString().toArray())
-    }
-    writeText(dir + Path.Separator + "index.json", idx.toJson().toString())
+    db.runMany("INSERT INTO chunks (id, kb_id, chunk_key, doc_path, doc_title, heading_path, ord, text, caption, caption_error, images) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", chunkRows)
+    db.batch(ops)
+    db.putKv("meta", "kb_root_" + kbId, idx.rootDir)
 }
 
-/** 原地解析一行浮点，避免为每个数字生成中间字符串数组。 */
-func attachVectors(path: String, idx: KbIndex): Unit {
+public func loadIndex(dataDir: String, kbId: String): KbIndex {
+    let db = DbHub.open(dataDir)
+    migrateKbFromJson(db, dataDir, kbId)
+    let idx = KbIndex()
+    idx.kbId = kbId
+    idx.rootDir = db.getKv("meta", "kb_root_" + kbId, "")
+    if (idx.rootDir.size == 0) {
+        idx.rootDir = db.scalarText("SELECT root_dir FROM knowledge_bases WHERE id = ?", va([tv(kbId)]))
+    }
+    let slot = HashMap<String, Int64>()
+    var i: Int64 = 0
+    for (r in db.query("SELECT chunk_key, doc_path, doc_title, heading_path, text, caption, caption_error, images " +
+        "FROM chunks WHERE kb_id = ? ORDER BY ord", va([tv(kbId)]))) {
+        let c = KbChunk()
+        c.id = r.text(0)
+        c.docPath = r.text(1)
+        c.docTitle = r.text(2)
+        c.headingPath = r.text(3)
+        c.ordinal = i
+        c.text = r.text(4)
+        c.caption = r.text(5)
+        c.captionError = r.text(6)
+        c.images = parseImages(r.text(7))
+        slot[c.id] = i
+        idx.chunks.add(c)
+        i += 1
+    }
+    for (r in db.query("SELECT chunk_key, vec FROM chunks JOIN embeddings ON embeddings.chunk_id = chunks.id WHERE chunks.kb_id = ?",
+        va([tv(kbId)]))) {
+        match (slot.get(r.text(0))) {
+            case Some(pos) =>
+                idx.chunks[pos].vector = decodeVector(r.blob(1))
+            case None => ()
+        }
+    }
+    return idx
+}
+
+/** 一次性把 kb/<id>/index.json 与 vectors.txt 导进数据库，只导一次。 */
+func migrateKbFromJson(db: Db, dataDir: String, kbId: String): Unit {
+    let flag = "migrated_kb_" + kbId
+    if (db.getKv("meta", flag, "") == "1") {
+        return
+    }
+    let path = kbDir(dataDir, kbId) + Path.Separator + "index.json"
+    let raw = readTextOr(path, "")
+    if (raw.size > 0) {
+        try {
+            let old = KbIndex.fromJson(JsonValue.fromStr(raw))
+            attachLegacyVectors(vectorsPath(dataDir, kbId), old)
+            saveIndex(dataDir, kbId, old)
+        } catch (e: Exception) {
+            ()
+        }
+        archiveLegacy(path)
+    }
+    db.putKv("meta", flag, "1")
+}
+
+/** 老格式 vectors.txt：原地解析一行浮点，避免为每个数字生成中间字符串数组。 */
+func attachLegacyVectors(path: String, idx: KbIndex): Unit {
     let raw = readTextOr(path, "")
     if (raw.size == 0) {
         return
@@ -88,20 +152,42 @@ func attachVectors(path: String, idx: KbIndex): Unit {
     }
 }
 
-public func loadIndex(dataDir: String, kbId: String): KbIndex {
-    let path = kbDir(dataDir, kbId) + Path.Separator + "index.json"
-    let raw = readTextOr(path, "")
-    if (raw.size == 0) {
-        return KbIndex()
+func imagesJson(images: ArrayList<String>): String {
+    let arr = JsonArray()
+    for (i in images) {
+        arr.add(JsonString(i))
     }
-    var idx = KbIndex()
+    return arr.toString()
+}
+
+func parseImages(text: String): ArrayList<String> {
+    let out = ArrayList<String>()
+    if (text.size == 0) {
+        return out
+    }
     try {
-        idx = KbIndex.fromJson(JsonValue.fromStr(raw))
+        match (arrOf(JsonValue.fromStr(text))) {
+            case Some(a) =>
+                var i = 0
+                while (i < a.size()) {
+                    out.add(strValue(a[i]))
+                    i += 1
+                }
+            case None => ()
+        }
     } catch (e: Exception) {
-        return KbIndex()
+        ()
     }
-    attachVectors(vectorsPath(dataDir, kbId), idx)
-    return idx
+    return out
+}
+
+/** 把数组转成 ArrayList，供 batch 使用。 */
+func va2(ops: Array<DbOp>): ArrayList<DbOp> {
+    let out = ArrayList<DbOp>()
+    for (o in ops) {
+        out.add(o)
+    }
+    return out
 }
 
 /** 扫描目录并按 Markdown 结构分块。不调用模型。 */

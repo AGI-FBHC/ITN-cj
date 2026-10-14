@@ -1,0 +1,9 @@
+[package]
+  name = "sqlite_driver_advanced_sql"
+  version = "0.1.0"
+  cjc-version = "1.1.0"
+  output-type = "executable"
+  organization = ""
+
+[dependencies]
+  "sqlite_driver" = { path = "../../" }

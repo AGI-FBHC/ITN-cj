@@ -5,6 +5,7 @@ import std.collection.*
 import std.time.*
 import std.random.*
 import stdx.encoding.json.*
+import itn_desktop_core.db.*
 import itn_desktop_core.util.*
 
 /** 一条只追加的会话事件。payload 承载该事件的自由结构。 */
@@ -26,7 +27,12 @@ public class SessionEvent {
     }
 }
 
-/** 会话日志：每个会话一个 JSONL 文件，只追加不修改。 */
+/*
+ * 会话仓库。
+ *
+ * 每条事件一行，只插入不更新，与原来的 JSONL 语义一致；区别是列表和摘要不再需要
+ * 把每个会话的整个文件读进来解析一遍。
+ */
 public class SessionStore {
     public let dataDir: String
 
@@ -34,12 +40,8 @@ public class SessionStore {
         this.dataDir = dataDir
     }
 
-    public func dir(): String {
-        return dataDir + Path.Separator + "sessions"
-    }
-
-    public func path(sessionId: String): String {
-        return dir() + Path.Separator + sessionId + ".jsonl"
+    private func db(): Db {
+        return DbHub.open(dataDir)
     }
 
     public func newId(): String {
@@ -51,61 +53,63 @@ public class SessionStore {
     }
 
     public func append(event: SessionEvent): Unit {
-        ensureDir(dir())
         if (event.at.size == 0) {
             event.at = DateTime.now().toString()
         }
-        let line = event.toJson().toString() + "\n"
-        let p = path(event.sessionId)
-        writeText(p, readTextOr(p, "") + line)
+        migrateFromJson()
+        let ops = ArrayList<DbOp>()
+        ops.add(DbOp("INSERT OR IGNORE INTO sessions (id, created_at, updated_at) VALUES (?, ?, ?)",
+            va([tv(event.sessionId), tv(event.at), tv(event.at)])))
+        ops.add(DbOp("UPDATE sessions SET updated_at = ? WHERE id = ?", va([tv(event.at), tv(event.sessionId)])))
+        ops.add(DbOp("INSERT INTO session_events (session_id, ts, kind, turn_id, payload) VALUES (?, ?, ?, ?, ?)",
+            va([tv(event.sessionId), tv(event.at), tv(event.kind), tv(event.turnId), tv(event.payload.toString())])))
+        db().batch(ops)
     }
 
     public func events(sessionId: String): ArrayList<JsonObject> {
         let out = ArrayList<JsonObject>()
-        let raw = readTextOr(path(sessionId), "")
-        if (raw.size == 0) {
-            return out
-        }
-        for (line in splitLines(raw)) {
-            let t = line
-            if (t.size == 0) {
-                continue
-            }
-            try {
-                match (objOf(JsonValue.fromStr(t))) {
-                    case Some(o) => out.add(o)
-                    case None => ()
+        for (r in db().query("SELECT ts, kind, turn_id, payload FROM session_events WHERE session_id = ? ORDER BY id",
+            va([tv(sessionId)]))) {
+            let o = JsonObject()
+            o.put("sessionId", JsonString(sessionId))
+            o.put("type", JsonString(r.text(1)))
+            o.put("at", JsonString(r.text(0)))
+            o.put("turnId", JsonString(r.text(2)))
+            let payload = r.text(3)
+            if (payload.size > 0) {
+                try {
+                    o.put("payload", JsonValue.fromStr(payload))
+                } catch (e: Exception) {
+                    o.put("payload", JsonObject())
                 }
-            } catch (e: Exception) {
-                ()
+            } else {
+                o.put("payload", JsonObject())
             }
+            out.add(o)
         }
         return out
     }
 
-    /** 从日志推导会话摘要：事件数、最后一条事件的时间与类型、首条用户问题。 */
+    /** 会话摘要：事件数、最后一条事件的时间与类型、首个用户提问作为标题。 */
     public func summary(sessionId: String): JsonObject {
-        let evs = events(sessionId)
         let o = JsonObject()
         o.put("sessionId", JsonString(sessionId))
-        o.put("eventCount", JsonInt(evs.size))
+        let count = db().scalarInt("SELECT COUNT(*) FROM session_events WHERE session_id = ?", va([tv(sessionId)]))
+        o.put("eventCount", JsonInt(count))
         var title = ""
         var lastType = ""
         var lastAt = ""
-        for (e in evs) {
-            let ty = strOf(e, "type")
-            lastType = ty
-            lastAt = strOf(e, "at")
-            if (title.size == 0 && ty == "user/message") {
-                match (e.get("payload")) {
-                    case Some(pv) =>
-                        match (objOf(pv)) {
-                            case Some(po) => title = strOf(po, "text")
-                            case None => ()
-                        }
-                    case None => ()
-                }
-            }
+        match (db().one("SELECT ts, kind, payload FROM session_events WHERE session_id = ? AND kind = ? ORDER BY id LIMIT 1",
+            va([tv(sessionId), tv("user/message")]))) {
+            case Some(r) =>
+                title = payloadText(r.text(2), "text")
+            case None => ()
+        }
+        match (db().one("SELECT ts, kind FROM session_events WHERE session_id = ? ORDER BY id DESC LIMIT 1", va([tv(sessionId)]))) {
+            case Some(r) =>
+                lastAt = r.text(0)
+                lastType = r.text(1)
+            case None => ()
         }
         if (title.size > 40) {
             title = String.fromUtf8(title.toArray()[0..40])
@@ -118,25 +122,93 @@ public class SessionStore {
 
     public func list(): ArrayList<JsonObject> {
         let out = ArrayList<JsonObject>()
-        ensureDir(dir())
-        let ids = ArrayList<String>()
+        migrateFromJson()
+        for (r in db().querySql("SELECT session_id, MAX(id) FROM session_events GROUP BY session_id ORDER BY MAX(id) DESC")) {
+            out.add(summary(r.text(0)))
+        }
+        return out
+    }
+
+    private func payloadText(payload: String, key: String): String {
+        if (payload.size == 0) {
+            return ""
+        }
         try {
-            Directory.walk(Path(dir()), { fi: FileInfo =>
-                let nm = fi.name
-                if (!fi.isDirectory() && nm.size > 6) {
-                    let ext = Path(nm).extensionName
-                    if (ext == "jsonl") {
-                        ids.add(String.fromUtf8(nm.toArray()[0..(nm.toArray().size - 6)]))
-                    }
-                }
-                true
-            })
+            match (objOf(JsonValue.fromStr(payload))) {
+                case Some(o) => return strOf(o, key)
+                case None => ()
+            }
         } catch (e: Exception) {
             ()
         }
-        for (id in ids) {
-            out.add(summary(id))
+        return ""
+    }
+
+    /** 把老的 sessions 目录下的 jsonl 导进数据库，导完保留副本，只导一次。 */
+    private func migrateFromJson(): Unit {
+        if (migrationDone(db(), "sessions")) {
+            return
         }
-        return out
+        let dir = dataDir + Path.Separator + "sessions"
+        if (exists(dir)) {
+            let ids = ArrayList<String>()
+            try {
+                Directory.walk(Path(dir), { fi: FileInfo =>
+                    let nm = fi.name
+                    if (!fi.isDirectory() && Path(nm).extensionName == "jsonl") {
+                        let bytes = nm.toArray()
+                        if (bytes.size > 6) {
+                            ids.add(String.fromUtf8(bytes[0..(bytes.size - 6)]))
+                        }
+                    }
+                    true
+                })
+            } catch (e: Exception) {
+                ()
+            }
+            for (id in ids) {
+                let raw = readTextOr(dir + Path.Separator + id + ".jsonl", "")
+                if (raw.size == 0) {
+                    continue
+                }
+                let rows = ArrayList<ArrayList<DbValue>>()
+                for (line in splitLines(raw)) {
+                    if (line.size == 0) {
+                        continue
+                    }
+                    let ev = SessionEvent()
+                    ev.sessionId = id
+                    try {
+                        match (objOf(JsonValue.fromStr(line))) {
+                            case Some(o) =>
+                                ev.kind = strOf(o, "type")
+                                ev.at = strOf(o, "at")
+                                ev.turnId = strOf(o, "turnId")
+                                match (o.get("payload")) {
+                                    case Some(p) => ev.payload = objOf(p).getOrThrow()
+                                    case None => ()
+                                }
+                            case None => ()
+                        }
+                    } catch (e: Exception) {
+                        ()
+                    }
+                    if (ev.kind.size == 0) {
+                        continue
+                    }
+                    rows.add(va([tv(id), tv(ev.at), tv(ev.kind), tv(ev.turnId), tv(ev.payload.toString())]))
+                }
+                if (rows.size > 0) {
+                    db().runMany("INSERT INTO session_events (session_id, ts, kind, turn_id, payload) VALUES (?, ?, ?, ?, ?)", rows)
+                    let first = rows[0]
+                    let ops = ArrayList<DbOp>()
+                    ops.add(DbOp("INSERT OR IGNORE INTO sessions (id, created_at, updated_at) VALUES (?, ?, ?)",
+                        va([tv(id), first[1], first[1]])))
+                    db().batch(ops)
+                }
+            }
+            archiveLegacyDir(dir)
+        }
+        markMigrationDone(db(), "sessions")
     }
 }
