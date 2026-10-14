@@ -790,3 +790,77 @@ JSON 在真实规模下有三个硬伤，都在实测里撞到过：向量与切
 - 若用户资料确实是 PDF/Word 为主：可选方案是"让用户手工导出成文本/Markdown"（已有明确提示），
   或评估在仓颉里接第三方解析（当前判断是不现实，需要时再论证）。
 - 笔记搜索、笔记与切片/章节的引用联动、对话按知识库分组的会话栏——都还是候选。
+
+
+## 2026-10-14 桌面版第十轮：自绘窗口框 + Ctrl+K 全局检索 + 按设计检查表过一遍（提交 5e3945a）
+
+> 冻结版 freeze-1-20261014 仍未动；冻结包与最新包的差别在这条：
+> 冻结包是**系统标题栏**，最新包里标题栏由界面自绘。
+
+### 一、用户这一轮的两条反馈
+
+1. 「顶部那个边框，是不是还是 Windows 原生的，能不能优化一下，自己设计顶部框」——对，此前 `BrowserWindow` 没设 `frame`，用的是系统标题栏。
+2. 「用 `emilkowalski/skills` 优化一下前端」——执行了 `npx skills@latest add emilkowalski/skills`（装了 15 个 skills 到 `.agents/skills`），
+   读完之后按它的 **Review Checklist** 逐条过了一遍现有 CSS。
+
+### 二、自绘窗口框
+
+- `shell/main.js`：`frame: false` + `ipcMain` 的 `win:minimize` / `win:toggle-maximize` / `win:close`，
+  并在 `maximize`/`unmaximize` 时向渲染层推 `win:state`。
+- 新增 `shell/preload.js`：`contextBridge` **只**暴露三个方法 + 一个状态订阅。
+  自绘标题栏需要窗口控制，但这不该成为"打开整扇后门"的理由——渲染层拿不到 Node，也拿不到任意 IPC 通道。
+- 界面：38px 深绿标题栏（`-webkit-app-region: drag`），左边品牌、右边自绘的三个 26px 按钮
+  （悬停淡白、关闭悬停变红、按下 scale .94），双击标题栏切换最大化；最大化后按钮图标切成"还原"。
+- **去重复**：侧栏原来那块 `.brand`（同一角落的第二份品牌）删掉，品牌只在标题栏出现一次；
+  侧栏从「检索资料与笔记」开始。
+- 遮罩层（Ctrl+K 弹层、课件播放器）改成 `top: var(--titlebar-h)`，压在标题栏下面，窗口按钮永远够得着。
+- 浏览器里打开同一份界面（开发自测 / E2E）没有这套能力：按钮**不假装能用**，点了提示「最小化只在桌面应用窗口里可用」。
+- `scripts/package-app.ps1` 同步把 `preload.js` 放进 `resources/app`；
+  打包版 `--smoke` 新增两条硬指标：`PRELOAD=ok`、`TITLEBAR=ok`（实测都是 ok）。
+
+### 三、Ctrl+K 全局检索（顺带把网页版最常用的交互搬过来）
+
+网页版 `AppShell.tsx` 里有一个 ⌘K 知识切片检索弹层（防抖调 RAG 搜索）。桌面版照同样的习惯做了一个：
+
+- 一次输入同时找：**资料切片**（服务端检索，220ms 防抖，用序号防串台）/ **章节** / **笔记** / **产物**（本地过滤），
+  外加两条动作：「问助手：<关键词>」「就这个主题生成讲义：<关键词>」。
+- ↑↓ 选择、Enter 打开、Esc 关闭；点条目直接跳到对应页面（切片会落到它所属的那一章，产物直接进播放器）。
+- 入口不只是快捷键：侧栏顶部常驻一个「检索资料与笔记 Ctrl K」按钮（用户此前提过"入口太隐蔽"的问题）。
+
+### 四、笔记可溯源
+
+切片卡片新增「就这段记笔记」：预填 `> 原文摘录（标题路径）：前 160 字` + `我的想法：`，并记住所属章节。
+至此"答案可溯源"这条产品承诺也覆盖到了笔记。
+
+### 五、按 `emil-design-eng` 检查表做的改动（Before / After）
+
+| Before | After | Why |
+| --- | --- | --- |
+| `.btn:active { transform: translateY(1px) }` | `:active { transform: scale(0.97) }` | 按下要有即时反馈；位移看不出"按下去" |
+| `.view > * { animation: rise .22s }`（每次重渲染都跑） | 去掉 | 页面切换每天几十次，入场动画只会显得慢 |
+| `.bar > i { transition: width .3s }` | 去掉宽度过渡 | 只动 transform/opacity；width 触发布局 |
+| `.item.clickable:hover { transform: translateY(-1px) }` 无条件 | 包 `@media (hover: hover) and (pointer: fine)` | 触屏上 hover 会在点击时误触发 |
+| 用内置 `ease` / `ease-out` | 自定义 `--ease-out: cubic-bezier(.23,1,.32,1)`、`--ease-in-out: cubic-bezier(.77,0,.175,1)` | 内置曲线太弱，动作没有"用力" |
+| 弹层凭空出现 | 从 `scale(0.985) + opacity 0` 入场，180ms | 现实里没有东西凭空出现；偶发操作用轻量入场 |
+| 无 `prefers-reduced-motion` 处理 | 单独的媒体查询：去掉位移动画、放慢 spinner、保留颜色/透明度过渡 | 动效敏感的人需要更安静的界面 |
+| 系统标题栏 + 侧栏第二份品牌 | 自绘标题栏一处品牌 + 窗口按钮 | 去掉重复信息，窗口按钮也成为设计的一部分 |
+| 浏览器里点窗口按钮毫无反应 | 明确提示"只在桌面应用窗口里可用" | 不留死按钮 |
+
+**刻意没做**（说明理由，避免以后有人照搬）：spring 动画（本项目无框架、纯 CSS）；
+列表 stagger 入场（会把刚去掉的页面入场动画又请回来）；tooltip 首次延迟/后续瞬开（几乎不用 tooltip）；
+拖拽/手势类（桌面端没有触屏目标）。
+
+### 六、验证
+
+- `node tools/ui-e2e.cjs`：**53 步全过**。新增 4 步：
+  Ctrl+K 全局检索（分组齐全、↑↓ 切换、Enter 落到学 · 练）、从检索直接播放产物、就这段记笔记带原文摘录、
+  自绘标题栏（标题栏高度 30~48px、内容区紧贴其下、浏览器里点按钮给出明确提示）。
+- `node tools/ui-shot.cjs`：12 页 / deadEnds 0 / 0 控制台报错（截图现在整页可见，含标题栏）。
+- 打包版 `ITN-Desktop.exe --smoke`：`PRELOAD=ok / TITLEBAR=ok / NAV=12 / VIEW_NODES=6 / RESULT=OK`。
+- `tools/smoke.ps1`、`tools/study-api-check.ps1`、`tools/keyword-mode-check.ps1` 通过。
+- 截图：`tmp/ui-e2e-shots/32-自绘标题栏.png`、`30-全局检索.png`、`31-溯源笔记.png`。
+
+### 七、下一步候选
+
+- 冻结版试用反馈（用户正在试）。
+- 会话栏按知识库分组、错题「重做」（需要把选项一起存下来）、讲义/练习的流式增量已做、产物登记进库（若要做标签/统计）。
