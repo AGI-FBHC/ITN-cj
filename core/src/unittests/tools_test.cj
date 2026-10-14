@@ -165,18 +165,25 @@ class ToolsTest {
     }
 
     @TestCase
-    func everyPathEscapeIsRefused(): Unit {
+    func pathEscapesAreReadableButNotWritableWithoutApproval(): Unit {
         let ws = Workspace(freshDir("tools-sandbox"))
         let reg = ToolRegistry()
         registerWorkspaceTools(reg, ws, false)
-        let bad = reg.execute(modeStandard(), "c", "read", strObj("path", "../../windows/win.ini"))
-        @Expect(bad.isError, true)
-        @Expect(containsSub(bad.content, "越出工作区"), true)
+        // 读：不设边界（沙箱只隔离"写"），越界路径在这一层就不该被拒
+        @Expect(ws.denyReasonRead("../../windows/win.ini"), "")
+        @Expect(ws.denyReasonRead("C:/windows/win.ini"), "")
+        // 写：越界要批准，没批准就是错误（并且说清是"要批准"）
         let bad2 = reg.execute(modeStandard(), "c2", "write",
             twoObj("path", "../逃出去.md", "content", "x"))
         @Expect(bad2.isError, true)
-        let bad3 = reg.execute(modeStandard(), "c3", "read", strObj("path", "C:/windows/win.ini"))
+        @Expect(containsSub(bad2.content, "批准"), true)
+        let bad3 = reg.execute(modeStandard(), "c3", "write",
+            twoObj("path", "C:/windows/win.ini", "content", "x"))
         @Expect(bad3.isError, true)
+        // 工作区内的敏感段：写也拒
+        let bad4 = reg.execute(modeStandard(), "c4", "write",
+            twoObj("path", ".git/config", "content", "x"))
+        @Expect(bad4.isError, true)
         // 路径归一化本身
         @Expect(normalizeRel("a/../../b").isNone(), true)
         @Expect(normalizeRel("a/./b").getOrThrow(), "a/b")

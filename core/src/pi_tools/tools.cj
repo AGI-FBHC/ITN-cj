@@ -52,7 +52,7 @@ class ReadTool <: Tool {
         if (path.size == 0) {
             return ToolResult.err("缺少 path 参数")
         }
-        let why = ws.denyReason(path)
+        let why = ws.denyReasonRead(path)
         if (why.size > 0) {
             return ToolResult.err(why + "：" + path)
         }
@@ -60,7 +60,7 @@ class ReadTool <: Tool {
             case Some(t) => t
             case None => return ToolResult.err("读不到 " + path + "（不存在、是目录，或者没有权限）")
         }
-        let rel = ws.relOf(path)
+        let rel = ws.shownPath(path)
         let details = JsonObject()
         details.put("path", JsonString(rel))
         let offset = intOf(args, "offset")
@@ -232,7 +232,7 @@ class LsTool <: Tool {
 
     public func run(callId: String, args: JsonObject): ToolResult {
         let path = strOf(args, "path")
-        let why = ws.denyReason(path)
+        let why = ws.denyReasonRead(path)
         if (why.size > 0) {
             return ToolResult.err(why + "：" + path)
         }
@@ -241,7 +241,7 @@ class LsTool <: Tool {
             limit = ws.maxListEntries
         }
         let items = ws.list(path, limit)
-        let rel = ws.relOf(path)
+        let rel = ws.shownPath(path)
         let place = if (rel.size == 0) { "工作区根目录" } else { rel }
         if (items.size == 0) {
             return ToolResult.ok(place + " 是空的", place + " 下没有任何条目。", JsonNull())
@@ -276,7 +276,7 @@ class FindTool <: Tool {
             return ToolResult.err("缺少 pattern 参数")
         }
         let path = strOf(args, "path")
-        let why = ws.denyReason(path)
+        let why = ws.denyReasonRead(path)
         if (why.size > 0) {
             return ToolResult.err(why + "：" + path)
         }
@@ -296,10 +296,12 @@ class FindTool <: Tool {
             if (hits.size >= limit) {
                 break
             }
+            // 匹配与展示都用"给人看"的路径：工作区内是相对路径，外面是绝对路径
+            let disp = ws.displayPath(f)
             match (re) {
                 case Some(r) =>
-                    if (r.matches(f)) {
-                        hits.add(f)
+                    if (r.matches(disp)) {
+                        hits.add(disp)
                     }
                 case None => ()
             }
@@ -337,7 +339,7 @@ class GrepTool <: Tool {
             return ToolResult.err("缺少 pattern 参数")
         }
         let path = strOf(args, "path")
-        let why = ws.denyReason(path)
+        let why = ws.denyReasonRead(path)
         if (why.size > 0) {
             return ToolResult.err(why + "：" + path)
         }
@@ -376,10 +378,11 @@ class GrepTool <: Tool {
             if (hits.size >= limit) {
                 break
             }
+            let disp = ws.displayPath(f)
             var skip = false
             match (globRe) {
                 case Some(gr) =>
-                    if (!gr.matches(f)) {
+                    if (!gr.matches(disp)) {
                         skip = true
                     }
                 case None => ()
@@ -404,16 +407,16 @@ class GrepTool <: Tool {
                     while (c > 0) {
                         let bi = i - c
                         if (bi >= 0) {
-                            hits.add(f + ":" + (bi + 1).toString() + "-" + truncateLine(lines[bi]))
+                            hits.add(disp + ":" + (bi + 1).toString() + "-" + truncateLine(lines[bi]))
                         }
                         c = c - 1
                     }
-                    hits.add(f + ":" + (i + 1).toString() + ": " + truncateLine(lines[i]))
+                    hits.add(disp + ":" + (i + 1).toString() + ": " + truncateLine(lines[i]))
                     var a: Int64 = 1
                     while (a <= ctxLines) {
                         let ai = i + a
                         if (ai < lines.size) {
-                            hits.add(f + ":" + (ai + 1).toString() + "-" + truncateLine(lines[ai]))
+                            hits.add(disp + ":" + (ai + 1).toString() + "-" + truncateLine(lines[ai]))
                         }
                         a = a + 1
                     }

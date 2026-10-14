@@ -89,6 +89,8 @@ public class Agent {
     public var preamble: String = ""
     /** skills 播报文本（由宿主扫描后注入） */
     public var skillsText: String = ""
+    /** 当前工作区根（宿主设置；审批层用它判断"写到了工作区外"） */
+    public var workspaceRoot: String = ""
     private let provider: ChatProvider
     private var abortedFlag = false
     private var lastSystemText = ""

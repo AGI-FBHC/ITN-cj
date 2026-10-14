@@ -176,7 +176,16 @@ public class Session {
         return appendEntry(e)
     }
 
-    /** 分叉：把叶子指回更早的 entry，之后追加的新 entry 天然形成另一条分支。 */
+    /** 自定义 entry（Pi 的 custom 类型）：审批记录这类"要留痕但不进模型上下文"的东西。 */
+public func appendCustom(customType: String, data: JsonObject): String {
+    let e = JsonObject()
+    e.put("type", JsonString("custom"))
+    e.put("customType", JsonString(customType))
+    e.put("data", data)
+    return appendEntry(e)
+}
+
+/** 分叉：把叶子指回更早的 entry，之后追加的新 entry 天然形成另一条分支。 */
     public func forkFrom(entryId: String): Bool {
         if (entryId.size == 0) {
             leafId = ""

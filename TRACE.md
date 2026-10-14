@@ -2528,3 +2528,32 @@ echo /prompt | lumin chat --trust --mode standard --workspace samplesdemo-worksp
 - 有一轮 `ui-e2e` 跑到第 48 步时内核进程**无声消失**（core.log 里只有正常的 socket 警告，没有 panic），
   后面 30 步全因为 `ERR_CONNECTION_REFUSED` 失败。**重跑一次就 80/80**——是偶发，不是回归。
   下次遇到"突然全红"，先看 core.log 有没有异常、再重跑一次，别急着改代码。
+
+---
+
+## 第三十六轮（2026-10-15）：重新同步 lumin（权限档位 / 只隔离写的沙箱 / 中文提示词）
+
+lumin 那边这轮动得不少（`lumin/CHANGELOG.md` 的 Unreleased 段 + `docs/roadmap.md` 是权威清单）：
+
+- **读写策略分开**：沙箱**只隔离写**，读整机（两条红线：模型自己在用的含 Key 配置、CLI 数据目录），
+  读到工作区外会把绝对路径打出来（用可见性代替拦截）；
+- **权限档位 ask / auto / full**（`cli/permissions.cj`）+ **审批层**（`cli/approvals.cj`）：
+  按**动作**分类授权（`path-outside` / `command` / `command-dangerous` / `web`），四答（一次 / 本会话 / 记住 / 拒绝），
+  记住的进 `approvals.json`；**批了"写工作区外"会把那个目录记进沙箱白名单**（否则"批了还是拒"）；
+- **系统提示词整段中文 + 明确要求思考也用中文**；`/prompt` 打印此刻真正发给模型的那份提示词；
+- `cli/lines.cj`（中途插话的读键盘线程）、`net/tavily.cj`（运行时自带联网）——这两个是 CLI 侧的，桌面版不需要，**没拷**。
+
+**同步动作**（照 `docs/11` 的手册，包名替换 `lumin.* → itn_desktop_core.*`）：
+`lumin/src/pi/*`（15）→ `core/src/pi/`、`lumin/src/tools/*`（3）→ `core/src/pi_tools/`、
+`lumin/src/cli/{trust,util,workspaces}.cj` **加新的 `approvals.cj`、`permissions.cj`** → `core/src/lumin_cli/`（5）、
+`lumin/src/unittests/*`（8，跳过 `lines_test`/`websearch_test`——它们依赖没拷的 CLI 文件）。
+共 31 个文件；残留检查无旧包名；`core/src/unittests/provider_test.cj`、`pi_ask_test.cj` 没被覆盖。
+
+**验证**：`cjpm build` 通过；`cjpm test` → **66/66**（含 lumin 自己的例 + 我的 provider/pi_ask 例）。
+
+### 为什么这一步重要
+
+桌面版接下来要做的"让 lumin 真的动手"（在用户点过头的目录里读写文件、跑命令），
+**策略层不用另写**：`Approver.checkTool(agent, name, args)` 就是挂在 pi `beforeToolCall` 上的钩子，
+`Approver.nextLine` 是个"取一行输入"的回调 —— 桌面版只要把它换成"登记待批 → 等界面点按钮"，
+就能原样复用 lumin 验证过的分类、四答、记忆与白名单副作用。
