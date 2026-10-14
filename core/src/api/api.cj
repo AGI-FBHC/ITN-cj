@@ -3,6 +3,7 @@ package itn_desktop_core.api
 import stdx.net.http.*
 import std.collection.*
 import std.convert.*
+import std.time.*
 import stdx.encoding.json.*
 import itn_desktop_core.store.*
 import itn_desktop_core.db.*
@@ -1129,6 +1130,23 @@ public class Api {
                     r.createdAt = nowStamp()
                     d.quizRecords.add(r)
                     ss.save(d)
+                    // 存下原始题目（选项 / 正确项 / 解析）：以后"重做"才能给出一模一样的题，
+                    // 而不是只能让用户对着参考答案自评
+                    let origin = JsonObject()
+                    match (b.get("options")) {
+                        case Some(ov) =>
+                            match (arrOf(ov)) {
+                                case Some(oa) => origin.put("options", oa)
+                                case None => ()
+                            }
+                        case None => ()
+                    }
+                    origin.put("answerIndex", JsonInt(intOf(b, "answerIndex")))
+                    origin.put("explain", JsonString(strOf(b, "explain")))
+                    origin.put("source", JsonString(strOf(b, "source")))
+                    if (origin.get("options").isSome()) {
+                        DbHub.open(store.dataDir).putKv("meta", "quiz-q:" + r.id, origin.toString())
+                    }
                     ok(ctx, r.toJson())
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -1137,11 +1155,16 @@ public class Api {
 
         if (path == "/api/study/wrong" && method == "POST") {
             let d = StudyStore(store.dataDir).load()
+            let db = DbHub.open(store.dataDir)
+            let nowMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
             let arr = JsonArray()
             var i = d.quizRecords.size - 1
             while (i >= 0) {
                 if (!d.quizRecords[i].correct) {
-                    arr.add(d.quizRecords[i].toJson())
+                    let r = d.quizRecords[i]
+                    let ro = r.toJson()
+                    attachReviewState(db, ro, r.id, nowMs)
+                    arr.add(ro)
                 }
                 i = i - 1
             }
@@ -1151,14 +1174,84 @@ public class Api {
             return
         }
 
+        // 复习一条错题：correct 表示这次重做对不对（推进/重置复习曲线），mastered 是显式掌握开关
+        if (path == "/api/study/wrong/review" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let id = strOf(b, "id")
+                    if (id.size == 0) {
+                        fail(ctx, 400, "缺少 id")
+                        return
+                    }
+                    let db = DbHub.open(store.dataDir)
+                    let key = "quiz-review:" + id
+                    let parts = db.getKv("meta", key, "").split("|")
+                    var reviews = kvInt(parts, 0)
+                    var lastMs = kvInt(parts, 1)
+                    var mastered = kvInt(parts, 2) == 1
+                    let nowMs = DateTime.now().toUnixTimeStamp().toMilliseconds()
+                    var hasCorrect = false
+                    var correctVal = false
+                    match (b.get("correct")) {
+                        case Some(v) =>
+                            match (boolValueOf(v)) {
+                                case Some(x) =>
+                                    hasCorrect = true
+                                    correctVal = x
+                                case None => ()
+                            }
+                        case None => ()
+                    }
+                    if (hasCorrect) {
+                        if (correctVal) {
+                            reviews = reviews + 1
+                        } else {
+                            // 又答错了：回到"当天就要复习"
+                            reviews = 0
+                        }
+                        lastMs = nowMs
+                    }
+                    match (b.get("mastered")) {
+                        case Some(v) =>
+                            match (boolValueOf(v)) {
+                                case Some(x) => mastered = x
+                                case None => ()
+                            }
+                        case None => ()
+                    }
+                    db.putKv("meta", key,
+                        reviews.toString() + "|" + lastMs.toString() + "|" + (if (mastered) { "1" } else { "0" }))
+                    let o = JsonObject()
+                    o.put("id", JsonString(id))
+                    attachReviewState(db, o, id, nowMs)
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         // ---------- 学习报告 ----------
 
         if (path == "/api/study/report" && method == "POST") {
             let d = StudyStore(store.dataDir).load()
+            let rd = DbHub.open(store.dataDir)
+            let rNow = DateTime.now().toUnixTimeStamp().toMilliseconds()
+            var dueCount: Int64 = 0
             var right: Int64 = 0
             var wrong: Int64 = 0
             for (r in d.quizRecords) {
-                if (r.correct) { right = right + 1 } else { wrong = wrong + 1 }
+                if (r.correct) {
+                    right = right + 1
+                } else {
+                    wrong = wrong + 1
+                    let pts = rd.getKv("meta", "quiz-review:" + r.id, "").split("|")
+                    let rev = kvInt(pts, 0)
+                    let last = kvInt(pts, 1)
+                    let mas = kvInt(pts, 2) == 1
+                    if (!mas && (rev == 0 || rNow >= last + reviewIntervalMs(rev))) {
+                        dueCount = dueCount + 1
+                    }
+                }
             }
             let o = JsonObject()
             o.put("readChunks", JsonInt(d.progress.readChunks.size))
@@ -1167,6 +1260,7 @@ public class Api {
             o.put("quizTotal", JsonInt(d.quizRecords.size))
             o.put("quizRight", JsonInt(right))
             o.put("quizWrong", JsonInt(wrong))
+        o.put("wrongDue", JsonInt(dueCount))
             o.put("profile", d.profile.toJson())
             ok(ctx, o)
             return
@@ -1315,6 +1409,63 @@ func verifyBackup(path: String): Int64 {
     }
 }
 
+func boolValueOf(v: JsonValue): ?Bool {
+    match (v) {
+        case jb: JsonBool => return Some(jb.getValue())
+        case _ => return None
+    }
+}
+
+/**
+ * 间隔复习的节奏（毫秒）。
+ *
+ * 没错过的题当天就该复习；答对一次之后，隔 1 / 3 / 7 / 16 / 35 天再出现。
+ * 这是错题本里唯一"算法"，单独写在一处，界面不再重复这套规则。
+ */
+func reviewIntervalMs(reviews: Int64): Int64 {
+    let day: Int64 = 24 * 60 * 60 * 1000
+    if (reviews <= 0) {
+        return 0
+    }
+    if (reviews == 1) {
+        return day
+    }
+    if (reviews == 2) {
+        return 3 * day
+    }
+    if (reviews == 3) {
+        return 7 * day
+    }
+    if (reviews == 4) {
+        return 16 * day
+    }
+    return 35 * day
+}
+
+/** 把一条错题记录附上复习状态（存在 meta 键值表里，不动表结构，老数据目录也能直接用）。 */
+func attachReviewState(db: Db, o: JsonObject, id: String, nowMs: Int64): Unit {
+    let parts = db.getKv("meta", "quiz-review:" + id, "").split("|")
+    let reviews = kvInt(parts, 0)
+    let lastMs = kvInt(parts, 1)
+    let mastered = kvInt(parts, 2) == 1
+    let due = !mastered && (reviews == 0 || nowMs >= lastMs + reviewIntervalMs(reviews))
+    o.put("reviews", JsonInt(reviews))
+    o.put("lastMs", JsonInt(lastMs))
+    o.put("mastered", JsonBool(mastered))
+    o.put("due", JsonBool(due))
+    o.put("dueMs", JsonInt(lastMs + reviewIntervalMs(reviews)))
+    // 原始题目（选项/正确项/解析）也一起回传，这样"重做"给的是一模一样的题
+    let q = db.getKv("meta", "quiz-q:" + id, "")
+    o.put("hasOptions", JsonBool(q.size > 0))
+    if (q.size > 0) {
+        try {
+            o.put("origin", JsonValue.fromStr(q))
+        } catch (e: Exception) {
+            ()
+        }
+    }
+}
+
 func describeFailure(message: String): String {
     if (message.split("cjflock").size > 1 || message.split("database is locked").size > 1) {
         return "本地数据库被另一个进程占用，无法读写：" + message +
@@ -1364,6 +1515,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/study/quiz/submit",
         "/api/study/quiz/stats",
         "/api/study/wrong",
+        "/api/study/wrong/review",
         "/api/study/report",
         "/api/artifacts/list",
         "/api/artifacts/delete",

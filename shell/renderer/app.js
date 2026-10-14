@@ -82,6 +82,22 @@ function fmtStamp(s) {
 
 function plural(n, unit) { return Number(n || 0) + " " + unit; }
 
+/** 毫秒时间戳 → 08-16 14:30（错题的下次复习时间用它）。 */
+function fmtMs(ms) {
+  const v = Number(ms || 0);
+  if (!v) return "";
+  const d = new Date(v);
+  const p = (x) => String(x).padStart(2, "0");
+  return p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+}
+
+/** 距今天还有几天（用于"下次复习 3 天后"）。 */
+function daysUntil(ms) {
+  const diff = Number(ms || 0) - Date.now();
+  if (diff <= 0) return 0;
+  return Math.ceil(diff / 86400000);
+}
+
 /** 本地时间戳，形如 2026-10-14T11:30（只用于笔记标题这类展示用途）。 */
 function nowStamp() {
   const d = new Date();
@@ -299,7 +315,7 @@ function citationBox(citations, report) {
 const state = {
   cfg: { models: [], knowledgeBases: [], chatModelId: "", embedModelId: "", chunkModelId: "" },
   profile: {}, report: {}, artifacts: [], sessions: [],
-  kb: "", chapter: null, artifactQuery: "",
+  kb: "", chapter: null, artifactQuery: "", wrongTab: "due", wrongQuery: "",
   chatSessionId: "", chatTurns: [], chatEvents: [], tools: null,
   busyTurn: false, pendingQuestion: "", lastQuestion: "",
 };
@@ -1177,70 +1193,188 @@ PAGES.wrong = {
     const v = $("view");
     v.innerHTML = "";
     const data = await api("/api/study/wrong", {});
-    const records = data.records || [];
+    const all = data.records || [];
+    const due = all.filter((r) => r.due);
+    const mastered = all.filter((r) => r.mastered);
+    const tab = state.wrongTab || "due";
+    const query = String(state.wrongQuery || "").trim().toLowerCase();
+    const pool = tab === "due" ? due : tab === "mastered" ? mastered : all;
+    const shown = pool.filter((r) => !query ||
+      String(r.question || "").toLowerCase().indexOf(query) >= 0 ||
+      String(r.chapter || "").toLowerCase().indexOf(query) >= 0);
+
     const card = cardOf({
       title: "错题本",
-      tag: records.length + " 条",
-      sub: "答错的题会自动收进来",
-      actions: [btn("再练一组", "primary sm", () => {
-        if (!state.chapter) { go("learn"); return; }
-        openQuiz(v, state.chapter);
-      })],
+      sub: "答对一次往后推，答错就回到今天",
+      tag: all.length + " 条",
     });
-    if (!records.length) {
-      card.appendChild(emptyState({
-        art: "flag",
-        title: "还没有错题",
-        text: "在「学 · 练」里对某一章出题练习，答错的题会记录在这里，方便回头复习。",
-        actions: [btn("去做一组练习", "primary", () => go("learn")),
-                  btn("看看我的成长", "", () => go("report"))],
-      }));
-    } else {
-      const list = el("div", "list");
-      for (const q of records) {
+
+    /* 今天该复习多少条：这是这个页面存在的意义，放最上面 */
+    const banner = el("div", "review-banner" + (due.length ? " due" : ""));
+    const bTop = el("div", "row");
+    bTop.appendChild(el("div", "review-count grow", due.length ? ("今天该复习 " + due.length + " 条") : "今天的复习都做完了"));
+    if (due.length) bTop.appendChild(btn("开始复习", "primary sm", () => openRedo(due[0])));
+    banner.appendChild(bTop);
+    banner.appendChild(el("div", "muted sm", "间隔 1 / 3 / 7 / 16 / 35 天：重做答对就往后推，答错回到今天；特别熟的可以标记已掌握。"));
+    card.appendChild(banner);
+
+    const tools = el("div", "row artifact-tools");
+    const seg = el("div", "seg");
+    const tabs = [["due", "待复习 " + due.length], ["mastered", "已掌握 " + mastered.length], ["all", "全部 " + all.length]];
+    for (const [k, label] of tabs) {
+      const b = el("button", "seg-item" + (tab === k ? " active" : ""), label);
+      b.onclick = () => { state.wrongTab = k; go("wrong"); };
+      seg.appendChild(b);
+    }
+    tools.appendChild(seg);
+    const search = inputOf("wrong-search", "按题目或章节搜索", state.wrongQuery || "");
+    search.oninput = () => {
+      state.wrongQuery = search.value;
+      const q = search.value.trim().toLowerCase();
+      const hits = pool.filter((r) => !q ||
+        String(r.question || "").toLowerCase().indexOf(q) >= 0 ||
+        String(r.chapter || "").toLowerCase().indexOf(q) >= 0);
+      renderWrongList(hits);
+    };
+    tools.appendChild(search);
+    card.appendChild(tools);
+
+    const list = el("div", "list");
+    card.appendChild(list);
+
+    function renderWrongList(items) {
+      list.innerHTML = "";
+      if (!items.length) {
+        list.appendChild(emptyState({
+          inline: true,
+          art: all.length ? "search" : "flag",
+          title: all.length ? "这个条件下没有错题" : "还没有错题",
+          text: all.length ? "换个分类或关键词看看。" : "在「学 · 练」里对某一章出题练习，答错的题会进这里，并按间隔复习安排提醒你重做。",
+          actions: all.length ? [btn("看清空条件", "", () => { state.wrongTab = "all"; state.wrongQuery = ""; go("wrong"); })]
+                             : [btn("去做一组练习", "primary", () => go("learn")), btn("看我的成长", "", () => go("report"))],
+        }));
+        return;
+      }
+      for (const r of items) {
         const it = el("div", "item");
-        it.appendChild(el("div", "item-title", q.question || "（题干缺失）"));
+        const head = el("div", "row");
+        const main = el("div", "grow");
+        main.appendChild(el("div", "item-title", r.question || "（题干缺失）"));
         const meta = el("div", "meta");
-        if (q.chapter) meta.appendChild(el("span", null, q.chapter));
-        if (q.createdAt) meta.appendChild(el("span", null, fmtStamp(q.createdAt)));
-        it.appendChild(meta);
-        const mine = el("div", "answer-line wrong-line", "我的答案：" + (q.myAnswer || "（空）"));
-        it.appendChild(mine);
-        if (q.reference) it.appendChild(el("div", "answer-line", "参考答案：" + q.reference));
+        if (r.chapter) meta.appendChild(el("span", null, r.chapter));
+        if (r.createdAt) meta.appendChild(el("span", null, "错于 " + fmtStamp(r.createdAt).slice(0, 5)));
+        if (r.reviews > 0) meta.appendChild(el("span", null, "已重做对 " + r.reviews + " 次"));
+        if (!r.mastered && !r.due && r.dueMs) meta.appendChild(el("span", null, "下次复习 " + fmtMs(r.dueMs) + "（" + daysUntil(r.dueMs) + " 天后）"));
+        main.appendChild(meta);
+        head.appendChild(main);
+        if (r.mastered) head.appendChild(tag("已掌握", "ok"));
+        else if (r.due) head.appendChild(tag("该重做了", "warn"));
+        it.appendChild(head);
+        it.appendChild(el("div", "answer-line wrong-line", "我的答案：" + (r.myAnswer || "（空）")));
+        if (r.reference) it.appendChild(el("div", "answer-line", "参考答案：" + r.reference));
+        const acts = el("div", "row item-actions");
+        acts.appendChild(btn(r.due ? "重做" : "再练一次", r.due ? "primary sm" : "sm", () => openRedo(r)));
+        acts.appendChild(btn(r.mastered ? "取消已掌握" : "标记已掌握", "sm ghost", async () => {
+          try {
+            await api("/api/study/wrong/review", { id: r.id, mastered: !r.mastered });
+            toast(r.mastered ? "已移回待复习" : "已标记掌握");
+            go("wrong");
+          } catch (e) { toast("操作失败：" + e.message); }
+        }));
+        it.appendChild(acts);
         list.appendChild(it);
       }
-      card.appendChild(list);
     }
-    v.appendChild(card);
+    renderWrongList(shown);
 
-    if (records.length) {
-      const retry = el("div", "card");
-      retry.innerHTML = '<div class="card-head"><h2>复习建议</h2></div>';
-      const tips = el("div", "list");
+    if (all.length) {
       const byChapter = {};
-      for (const q of records) {
-        const key = q.chapter || "未分章";
+      for (const r of all) {
+        const key = r.chapter || "未分章";
         byChapter[key] = (byChapter[key] || 0) + 1;
       }
-      Object.keys(byChapter)
-        .sort((a, b) => byChapter[b] - byChapter[a])
-        .slice(0, 5)
-        .forEach((key) => {
-          const it = el("div", "item clickable");
-          const row = el("div", "row");
-          const main = el("div", "grow");
-          main.appendChild(el("div", "item-title", key));
-          main.appendChild(el("div", "meta", byChapter[key] + " 道错题"));
-          row.appendChild(main);
-          row.appendChild(btn("回到这一章", "sm primary", () => { state.chapter = key === "未分章" ? null : key; go("learn"); }));
-          it.appendChild(row);
-          tips.appendChild(it);
-        });
-      retry.appendChild(tips);
-      v.appendChild(retry);
+      const advice = cardOf({ title: "哪几章错得多", sub: "点一下直接回去重练那一章" });
+      const tips = el("div", "list");
+      Object.keys(byChapter).sort((a, b) => byChapter[b] - byChapter[a]).slice(0, 6).forEach((key) => {
+        const it = el("div", "item clickable");
+        const row = el("div", "row");
+        const main = el("div", "grow");
+        main.appendChild(el("div", "item-title", key));
+        main.appendChild(el("div", "meta", byChapter[key] + " 道错题"));
+        row.appendChild(main);
+        row.appendChild(btn("去练这一章", "sm primary", () => { state.chapter = key === "未分章" ? null : key; go("learn"); }));
+        it.appendChild(row);
+        tips.appendChild(it);
+      });
+      advice.appendChild(tips);
+      v.appendChild(card);
+      v.appendChild(advice);
+    } else {
+      v.appendChild(card);
     }
   },
 };
+
+/** 重做一道错题：存了原题就给一样的选项，没存就对着参考答案自评（不假装能判分）。 */
+function openRedo(rec) {
+  const v = $("view");
+  const dlg = el("div", "card dialog");
+  const head = cardHeadOnly("重做这道题");
+  if (rec.chapter) head.appendChild(tag(rec.chapter));
+  if (rec.reviews > 0) head.appendChild(tag("已重做对 " + rec.reviews + " 次"));
+  dlg.appendChild(head);
+  dlg.appendChild(el("div", "item-title", rec.question || ""));
+
+  const finish = async (correct) => {
+    try {
+      await api("/api/study/wrong/review", { id: rec.id, correct: correct });
+      const w = await api("/api/study/wrong", {});
+      const now = (w.records || []).filter((x) => x.id === rec.id)[0];
+      if (correct) toast("答对了 · 下次复习：" + (now && now.dueMs ? fmtMs(now.dueMs) + "（" + daysUntil(now.dueMs) + " 天后）" : "—"));
+      else toast("没关系，这条回到今天，明天再来一次");
+      go("wrong");
+    } catch (e) {
+      toast("记录失败：" + e.message);
+    }
+  };
+
+  const origin = rec.origin || {};
+  const opts = origin.options || [];
+  if (opts.length) {
+    const btns = [];
+    opts.forEach((o, i) => {
+      const b = btn(String.fromCharCode(65 + i) + ". " + o, "choice", () => {
+        if (dlg.dataset.done) return;
+        dlg.dataset.done = "1";
+        const ok = i === Number(origin.answerIndex);
+        b.classList.add(ok ? "right" : "wrong");
+        if (!ok && btns[Number(origin.answerIndex)]) btns[Number(origin.answerIndex)].classList.add("right");
+        const tip = el("div", "quiz-explain");
+        tip.innerHTML = '<span class="tag ' + (ok ? "ok" : "warn") + '">' + (ok ? "答对了" : "答错了") + "</span> " +
+          '<span class="muted">参考答案：' + esc(opts[Number(origin.answerIndex)] || rec.reference || "") + "</span>" +
+          (origin.explain ? '<div class="muted sm" style="margin-top:6px">' + esc(origin.explain) + "</div>" : "");
+        dlg.appendChild(tip);
+        // 让对错先看清，再刷新页面
+        setTimeout(() => { finish(ok); }, 650);
+      });
+      btns.push(b);
+      dlg.appendChild(b);
+    });
+  } else {
+    dlg.appendChild(el("div", "answer-line wrong-line", "我的答案：" + (rec.myAnswer || "（空）")));
+    dlg.appendChild(el("div", "answer-line", "参考答案：" + (rec.reference || "—")));
+    dlg.appendChild(el("p", "muted sm", "这条是早期记录（那时还没存下选项），所以由你自己判定这次答对了没有。"));
+    const row = el("div", "row");
+    row.appendChild(btn("这次答对了", "primary", () => finish(true)));
+    row.appendChild(btn("还是没答对", "", () => finish(false)));
+    dlg.appendChild(row);
+  }
+  const foot = el("div", "row");
+  foot.appendChild(btn("关闭", "ghost", () => dlg.remove()));
+  dlg.appendChild(foot);
+  v.insertBefore(dlg, v.firstChild);
+  dlg.scrollIntoView({ block: "start" });
+}
 
 /* ---------- 我的成长 ---------- */
 
@@ -1257,6 +1391,15 @@ PAGES.report = {
     grid.appendChild(statCard("答题总数", r.quizTotal || 0, ""));
     grid.appendChild(statCard("正确率", r.quizTotal ? pct(r.quizRight, r.quizTotal) : 0, "%"));
     v.appendChild(grid);
+
+    /* 错题的"今天该复习"直接摆到成长页：不然用户不会想起来去错题本 */
+    if (r.quizWrong > 0) {
+      const nudge = el("div", "row review-nudge");
+      const dueN = Number(r.wrongDue || 0);
+      nudge.appendChild(el("span", "muted grow", "错题 " + r.quizWrong + " 条，其中 " + dueN + " 条今天该复习"));
+      nudge.appendChild(btn(dueN > 0 ? "去复习 " + dueN + " 条" : "打开错题本", dueN > 0 ? "primary sm" : "sm", () => go("wrong")));
+      v.appendChild(nudge);
+    }
 
     const scores = (r.profile && r.profile.selfScores) ? r.profile.selfScores : {};
     const keys = Object.keys(scores);
@@ -3415,6 +3558,8 @@ async function openQuiz(container, chapter) {
           await api("/api/study/quiz/submit", {
             kbId: state.kb, chapter: chapter, question: q.question,
             myAnswer: opts[oi], reference: opts[q.answerIndex] || "", correct: ok,
+            // 把原题也存下来：以后在错题本里"重做"给的是同一道题，而不是只能对着答案自评
+            options: opts, answerIndex: q.answerIndex, explain: q.explain || "", source: q.source || "",
           });
           await loadReport();
           buildNav();

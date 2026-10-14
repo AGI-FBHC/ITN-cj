@@ -920,6 +920,61 @@ function assert(cond, msg) {
     return n + ' 条';
   });
 
+  await step('错题本能重做同一道题，并按间隔把复习往后推', async () => {
+    await nav('错题本');
+    await page.waitForSelector('.review-banner', { timeout: 15000 });
+    const banner = await page.locator('.review-banner').innerText();
+    assert(banner.indexOf('今天该复习') >= 0, '应显示今天该复习的条数，实际：' + banner.replace(/\s+/g, ' '));
+    await page.waitForSelector('.tag:has-text("该重做了")', { timeout: 10000 });
+    await shot('33-错题本待复习');
+    const wrong0 = (await page.evaluate(() => fetch('/api/study/wrong', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()))).data.records;
+    const target = wrong0.filter((r) => r.due)[0];
+    assert(target && target.hasOptions, '这条错题应存下了原题选项（否则只能自评）');
+
+    await page.locator('.item', { hasText: target.question.slice(0, 12) }).getByRole('button', { name: '重做' }).first().click();
+    await page.waitForSelector('.choice', { timeout: 10000 });
+    const opts = await page.locator('.choice').count();
+    assert(opts >= 2, '重做应给出选项，实际 ' + opts);
+    await page.locator('.choice').nth(1).click();
+    await page.waitForSelector('.quiz-explain:has-text("答对了")', { timeout: 10000 });
+    await page.waitForTimeout(1600);
+    const wrong1 = (await page.evaluate(() => fetch('/api/study/wrong', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()))).data.records;
+    const after = wrong1.filter((r) => r.id === target.id)[0];
+    assert(after.reviews === 1, '重做答对后复习次数应为 1，实际 ' + after.reviews);
+    assert(after.due === false, '答对后今天不该再出现，实际 due=' + after.due);
+    const nextDays = Math.ceil((after.dueMs - Date.now()) / 86400000);
+    assert(nextDays >= 1, '下次复习应至少排到明天，实际 ' + nextDays + ' 天');
+    await shot('34-错题重做');
+    return '重做同一道题（' + opts + ' 个选项）→ 答对 → 复习次数 1，下次 ' + nextDays + ' 天后';
+  });
+
+  await step('标记已掌握后不再进待复习，成长页的待复习数跟着降', async () => {
+    const wrongApi = async () => (await page.evaluate(() => fetch('/api/study/wrong', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()))).data.records;
+    const reportApi = async () => (await page.evaluate(() => fetch('/api/study/report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()))).data;
+    const target = (await wrongApi())[0];
+    // 先让它回到"待复习"（等价于又答错一次），这样后面的对比才有意义
+    await page.evaluate((id) => fetch('/api/study/wrong/review', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, correct: false }),
+    }), target.id);
+    await nav('错题本');
+    await page.waitForSelector('.review-banner.due', { timeout: 15000 });
+    const dueBefore = (await reportApi()).wrongDue;
+    assert(dueBefore === 1, '答错后应回到待复习，实际 ' + dueBefore);
+
+    await page.locator('.item', { hasText: target.question.slice(0, 12) }).getByRole('button', { name: '标记已掌握' }).first().click();
+    await page.waitForTimeout(1200);
+    const after = (await wrongApi()).filter((r) => r.id === target.id)[0];
+    assert(after.mastered === true, '应标记为已掌握');
+    const dueAfter = (await reportApi()).wrongDue;
+    assert(dueAfter === 0, '成长页的待复习数应降到 0，实际 ' + dueAfter);
+    await page.getByRole('button', { name: /已掌握/ }).first().click();
+    await page.waitForTimeout(700);
+    const rows = await page.locator('.item').count();
+    assert(rows >= 1, '已掌握分组里应有这条');
+    await shot('35-已掌握');
+    return '待复习 ' + dueBefore + ' → 标记掌握 → ' + dueAfter + '；已掌握分组 ' + rows + ' 条';
+  });
+
   await step('学习单元：四步状态全部来自真实记录', async () => {
     await nav('学 · 练');
     if (!(await page.locator('.chunk-card').count())) {
