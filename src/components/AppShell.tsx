@@ -1,8 +1,8 @@
 /**
- * AppShell — 应用外壳（双模式 · 双布局）
- * 学习者视角(learner)：顶部导航外壳（logo + 居中 4 站 + AI 教研组 + 画像 + 模式）；移动端底部 tab；内容单列。
- * 系统透视(expert / 评委模式)：左侧栏仪表盘（完整 7 页分组 + 时钟 + 引擎 ticker + 演示模式）。
- * 两种视角是两种布局形态——学习 App vs 控制台。
+ * AppShell — 应用外壳（学习者视角单一布局）
+ * 顶部导航外壳（logo + 居中 4 站 + AI 教研组 + 画像 + 模式）；移动端底部 tab；内容单列。
+ * 「系统透视 / 评委视角」控制台布局与「评委导览」已按用户要求整体移除，现在只剩学习者外壳；
+ * 原先只挂在系统透视侧栏的「交互导学」已并入「更多」菜单。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -10,11 +10,7 @@ import {
   Home,
   MoreHorizontal,
   BookOpen,
-  MessagesSquare,
   BarChart3,
-  LayoutDashboard,
-  Users,
-  Network,
   PenLine,
   Database,
   PanelLeftClose,
@@ -34,7 +30,6 @@ import {
   CommandList,
 } from '@/components/ui/command';
 
-import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useProfile } from '@/context/ProfileContext';
 import { useAuth } from '@/context/AuthContext';
@@ -65,7 +60,6 @@ const learnerNav: NavItem[] = [
   { path: '/report', label: '我的成长', icon: BarChart3 },
 ];
 
-/** 系统透视 / 评委视角：完整 7 页，分组呈现 */
 /**
  * 学习者视角的"更多"入口。
  * 这些页面此前只存在于专家视角侧栏（或根本没有入口），学习者只能手输 URL 才能到达，
@@ -74,33 +68,13 @@ const learnerNav: NavItem[] = [
 const learnerMoreItems: { path: string; label: string; note: string }[] = [
   { path: '/resources', label: '我的资源', note: '定制讲义 / 实操 / 分阶题' },
   { path: '/knowledge', label: '领域知识库', note: '切片检索与原文溯源' },
+  { path: '/tutoring', label: '交互导学', note: '苏格拉底式追问导学' },
   { path: '/chat', label: '伴学助手', note: '就当前进度提问' },
   { path: '/profiles', label: '学情画像', note: '六维能力与盲区' },
   { path: '/agents', label: '协同调度', note: '五个 Agent 的执行过程（需先生成课程）' },
   { path: '/collaboration', label: '协同工作台', note: '教研任务泳道（演示）' },
 ];
 
-const expertNavGroups: { heading?: string; items: NavItem[] }[] = [
-  {
-    items: [{ path: '/', label: '总览 Dashboard', icon: LayoutDashboard, end: true }],
-  },
-  {
-    heading: '学习流程',
-    items: [
-      { path: '/profiles', label: '学情画像', icon: Users },
-      { path: '/resources', label: '资源生成', icon: PenLine },
-      { path: '/tutoring', label: '交互导学', icon: MessagesSquare },
-      { path: '/report', label: '学情报告', icon: BarChart3 },
-    ],
-  },
-  {
-    heading: 'AI 引擎',
-    items: [
-      { path: '/agents', label: '协同调度', icon: Network },
-      { path: '/knowledge', label: '知识库', icon: Database },
-    ],
-  },
-];
 
 const pageTitleMap: Record<string, { title: string; crumb: string }> = {
   '/': { title: '总览 Dashboard', crumb: '智训云枢 / OVERVIEW' },
@@ -114,56 +88,7 @@ const pageTitleMap: Record<string, { title: string; crumb: string }> = {
   '/knowledge': { title: '知识库', crumb: '智训云枢 / KNOWLEDGE' },
 };
 
-/** 实时时钟 mono HH:MM:SS 每秒走动（仅系统透视） */
-function LiveClock() {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  const text = now.toLocaleTimeString('zh-CN', { hour12: false });
-  return (
-    <span className="hidden h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-hairline bg-paper px-2 font-mono text-[12px] font-medium text-ink-2 tabular lg:inline-flex">
-      <span className="h-1.5 w-1.5 rounded-full bg-brand-amber" />
-      {text}
-    </span>
-  );
-}
 
-/** 侧栏导航项（系统透视用） */
-function SideNavRow({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
-  return (
-    <NavLink
-      to={item.path}
-      end={item.end}
-      title={item.label}
-      className={({ isActive }) =>
-        cn(
-          'group relative flex items-center gap-3 rounded-[10px] px-3 py-2.5 text-[14px] font-medium transition-all duration-200 ease-lf',
-          collapsed && 'justify-center px-0',
-          isActive ? 'bg-brand-tint text-brand' : 'text-ink-2 hover:bg-paper-deep hover:text-ink',
-        )
-      }
-    >
-      {({ isActive }) => (
-        <>
-          <span
-            className={cn(
-              'absolute left-0 top-1/2 h-[22px] w-[3px] -translate-y-1/2 rounded-r-full bg-brand transition-opacity duration-200',
-              isActive ? 'opacity-100' : 'opacity-0',
-            )}
-          />
-          <item.icon
-            size={18}
-            strokeWidth={1.75}
-            className={cn('shrink-0', isActive ? 'text-brand' : 'text-ink-muted group-hover:text-ink')}
-          />
-          {!collapsed && item.label}
-        </>
-      )}
-    </NavLink>
-  );
-}
 
 export default function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
@@ -196,10 +121,7 @@ useEffect(() => {
   const [drawerKb, setDrawerKb] = useState<string | null>(null);
   const {
     currentLearner,
-    demoMode,
-    setDemoMode,
     viewMode,
-    setViewMode,
   } = useProfile();
   const { notes } = useNotes();
   const { focusMode } = useGrowth();
@@ -439,148 +361,7 @@ useEffect(() => {
           </nav>
           )}
         </div>
-      ) : (
-        /* ==================== 系统透视：侧栏仪表盘 ==================== */
-        <div className="flex min-h-[100dvh]">
-          {/* 左侧导航 */}
-          <aside
-            className={cn(
-              'sticky top-0 z-40 flex h-[100dvh] shrink-0 flex-col border-r border-hairline bg-paper transition-[width] duration-300 ease-lf',
-              collapsed ? 'w-[72px]' : 'w-[248px]',
-            )}
-          >
-            <Link
-              to="/"
-              className={cn(
-                'flex h-16 items-center gap-2.5 border-b border-hairline px-4',
-                collapsed && 'justify-center px-0',
-              )}
-            >
-              <img src="/logo.png" alt="智训云枢" className="h-8 w-8 shrink-0" />
-              {!collapsed && (
-                <span className="flex flex-col leading-tight">
-                  <span className="font-serif text-[17px] font-bold text-ink">智训云枢</span>
-                  <span className="font-mono text-[10px] tracking-wider text-ink-muted">v2.1</span>
-                </span>
-              )}
-            </Link>
-
-            <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-              {expertNavGroups.map((group, gi) => (
-                <div key={gi} className={gi > 0 ? 'pt-3' : undefined}>
-                  {group.heading && !collapsed && (
-                    <div className="lf-mono-label mb-1 px-3 !text-[10px]">{group.heading}</div>
-                  )}
-                  {group.heading && collapsed && gi > 0 && <div className="mx-3 mb-2 border-t border-hairline" />}
-                  {group.items.map((item) => (
-                    <SideNavRow key={item.path} item={item} collapsed={collapsed} />
-                  ))}
-                </div>
-              ))}
-            </nav>
-
-            <div className="border-t border-hairline p-3">
-              <button
-                type="button"
-                onClick={() => setCollapsed((v) => !v)}
-                className={cn(
-                  'mt-2 flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-[12.5px] text-ink-muted transition-colors hover:bg-paper-deep hover:text-ink',
-                  collapsed && 'justify-center px-0',
-                )}
-              >
-                {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
-                {!collapsed && '折叠导航'}
-              </button>
-            </div>
-          </aside>
-
-          {/* 主区 */}
-          <div className="flex min-w-0 flex-1 flex-col">
-            <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-4 border-b border-hairline bg-paper/85 px-6 backdrop-blur-md">
-              {/* 左侧标题区：可压缩但只截断、不折行（面包屑逐字换行就是从这儿来的） */}
-              <div className="min-w-0 flex-1">
-                <h1 className="truncate font-serif text-[16px] font-semibold leading-[22px] text-ink">
-                  {pageInfo.title}
-                </h1>
-                <div className="truncate whitespace-nowrap font-mono text-[10px] tracking-[0.12em] text-ink-muted">
-                  {pageInfo.crumb}
-                </div>
-              </div>
-
-              {/* 右侧控件群：整体不参与压缩，窄屏按重要度分级隐藏，杜绝挤压变形 */}
-              <div className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
-                <Link
-                  to="/me/notes"
-                  title="我的笔记"
-                  aria-label={`我的笔记，共 ${notes.length} 条`}
-                  className="flex h-8 shrink-0 items-center gap-1.5 rounded-[9px] border border-hairline bg-card-warm px-2.5 text-[12px] font-medium text-ink-2 transition-all duration-200 hover:border-brand/35 hover:text-brand"
-                >
-                  <NotebookPen size={13} />
-                  <span className="hidden lg:inline">笔记</span>
-                  {notes.length > 0 && <span className="font-mono text-[9px] text-brand">{notes.length > 99 ? '99+' : notes.length}</span>}
-                </Link>
-
-
-                <button
-                  type="button"
-                  onClick={() => setViewMode('learner')}
-                  title="返回学习者视角"
-                  className="flex h-8 shrink-0 items-center gap-1.5 rounded-[9px] border border-hairline bg-card-warm px-2.5 text-[12px] font-medium text-ink-2 transition-colors hover:border-brand/35 hover:text-brand"
-                >
-                  <Home size={13} />
-                  <span className="hidden lg:inline">学习者视角</span>
-                </button>
-
-                <LiveClock />
-                <label className="hidden h-8 shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap rounded-[9px] border border-hairline bg-card-warm px-2.5 xl:flex">
-                  <span className={cn('text-[12px] font-medium', demoMode ? 'text-brand' : 'text-ink-muted')}>
-                    演示模式
-                  </span>
-                  <Switch
-                    checked={demoMode}
-                    onCheckedChange={(v) => {
-                      setDemoMode(v);
-                      toast(v ? '演示模式已开启' : '演示模式已关闭', {
-                        description: v ? '各页面将自动播放模拟脚本' : '自动播放已停止',
-                      });
-                    }}
-                  />
-                </label>
-
-                <Link
-                  to="/me/profile"
-                  title={currentLearner.name}
-                  className="flex h-8 shrink-0 items-center gap-1.5 rounded-[9px] border border-hairline bg-card-warm pl-1 pr-2.5 transition-all duration-200 hover:border-brand/35"
-                >
-                  <Avatar className="h-6 w-6 border border-hairline">
-                    <AvatarImage src={currentLearner.avatar} alt={currentLearner.name} />
-                    <AvatarFallback className="bg-brand-tint text-[11px] text-brand">
-                      {currentLearner.name.slice(0, 1)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="hidden whitespace-nowrap text-[12.5px] font-medium text-ink xl:inline">{currentLearner.name}</span>
-                </Link>
-                <button
-                  type="button"
-                  onClick={doLogout}
-                  title="退出登录"
-                  aria-label="退出登录"
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border border-hairline bg-card-warm text-ink-muted transition-all duration-200 hover:border-brand/35 hover:text-ink"
-                >
-                  <LogOut size={13} />
-                </button>
-              </div>
-            </header>
-
-            <main className="min-w-0 flex-1">
-              <Outlet />
-            </main>
-          </div>
-
-          {/* DIA-01 决策日志（评委透视） */}
-          <AgentDock />
-        </div>
-      )}
+      ) : null}
 
       {/* ⌘K 检索弹层（两种布局共用） */}
       <CommandDialog open={searchOpen} onOpenChange={setSearchOpen}>
