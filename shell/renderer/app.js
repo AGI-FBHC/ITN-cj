@@ -985,6 +985,23 @@ async function generateArtifact(kind, topic) {
     sid = (await api("/api/sessions/new", {})).sessionId;
   } catch (e) { /* 拿不到会话也能生成，只是没有实时进度 */ }
 
+  if (sid) {
+    const stopGen = btn("停止生成", "sm ghost", async () => {
+      stopGen.disabled = true;
+      stopGen.textContent = "正在停止…";
+      try {
+        await api("/api/agent/cancel", { sessionId: sid });
+        toast("已请求停止，正在收尾…");
+      } catch (e) {
+        toast("停止失败：" + e.message);
+        stopGen.disabled = false;
+        stopGen.textContent = "停止生成";
+      }
+    });
+    const head = card.querySelector(".card-head");
+    if (head) head.appendChild(stopGen);
+  }
+
   let poll = null;
   if (sid) {
     poll = setInterval(async () => {
@@ -1036,6 +1053,19 @@ async function generateArtifact(kind, topic) {
     row.appendChild(btn("关闭", "ghost", () => box.remove()));
     box.appendChild(row);
     v.insertBefore(box, v.firstChild);
+    return;
+  }
+
+  if (d && d.cancelled === true) {
+    // 取消不是失败：说清楚停在哪、有没有落盘，并给一个重来的入口
+    const box = cardOf({ cls: "dialog", title: (kind === "lecture" ? "讲义生成已取消" : "练习册生成已取消"), tag: "未落盘" });
+    box.appendChild(el("p", "muted", (d && d.message) || "已取消"));
+    const row = el("div", "row");
+    row.appendChild(btn("重新生成", "primary", () => { box.remove(); askTopic(kind, topic); }));
+    row.appendChild(btn("关闭", "ghost", () => box.remove()));
+    box.appendChild(row);
+    v.insertBefore(box, v.firstChild);
+    box.scrollIntoView({ block: "start" });
     return;
   }
 
@@ -2181,10 +2211,28 @@ function renderTurnBlock(t, live) {
       a.appendChild(acts);
     }
     box.appendChild(a);
+  } else if (live) {
+    // 提问后到第一段文字到达之间，什么都不显示会让人以为没点上——
+    // 这里给一个明确的"正在进行"占位
+    const p = el("div", "msg msg-ai");
+    p.appendChild(el("div", "msg-who", "伴学助手"));
+    const b = el("div", "msg-body");
+    b.innerHTML = '<span class="spinner"></span> 正在检索资料并作答…';
+    p.appendChild(b);
+    box.appendChild(p);
   } else if (!live && t.ok === false) {
+    const cancelled = String(t.message || "").indexOf("取消") >= 0;
     const e = el("div", "msg msg-ai");
     e.appendChild(el("div", "msg-who", "伴学助手"));
-    e.appendChild(el("div", "msg-body err-text", t.message || "这一轮没有完成"));
+    e.appendChild(el("div", "msg-body " + (cancelled ? "muted" : "err-text"),
+      t.message || "这一轮没有完成"));
+    if (cancelled && t.user) {
+      const acts = el("div", "row msg-actions");
+      acts.appendChild(btn("重新问一次", "sm ghost", () => {
+        if (state.chatResend) state.chatResend(t.user);
+      }));
+      e.appendChild(acts);
+    }
     box.appendChild(e);
   }
   return box;
@@ -2268,6 +2316,18 @@ PAGES.chat = {
     quick.appendChild(btn("生成练习册", "sm ghost", () => askTopic("quiz", topicFromText(state.lastQuestion || ""))));
     crow.appendChild(quick);
     crow.appendChild(spacer());
+    const stopBtn = btn("停止", "ghost", async () => {
+      stopBtn.disabled = true;
+      stopBtn.textContent = "停止中…";
+      try {
+        await api("/api/agent/cancel", { sessionId: state.chatSessionId });
+        toast("已请求停止，正在收尾…");
+      } catch (e) {
+        toast("停止失败：" + e.message);
+      }
+    });
+    stopBtn.style.display = "none";
+    crow.appendChild(stopBtn);
     const sendBtn = btn("发送", "primary", () => send());
     crow.appendChild(sendBtn);
     inputRow.appendChild(crow);
@@ -2295,6 +2355,10 @@ PAGES.chat = {
       } else {
         for (const t of state.chatTurns) thread.appendChild(renderTurnBlock(t, !t.answer && state.busyTurn));
       }
+      // 正在生成时才显示「停止」：用户点错了主题/问题，不用等它跑完
+      stopBtn.style.display = state.busyTurn ? "" : "none";
+      stopBtn.disabled = false;
+      stopBtn.textContent = "停止";
       thread.scrollTop = thread.scrollHeight;
       const main = document.querySelector(".main");
       if (main) main.scrollTop = main.scrollHeight;
@@ -2314,6 +2378,12 @@ PAGES.chat = {
       ta.value = "";
       state.lastQuestion = text;
       state.busyTurn = true;
+      // 允许"已取消"的那一轮一键重问（取消多半是因为问题写错了）
+      state.chatResend = (q) => {
+        const input = $("chat-input");
+        if (input) input.value = q;
+        send();
+      };
       state.chatTurns.push({ id: "local", kind: "ask", user: text, answer: "", deltas: "", tools: [], report: null, citations: [], ok: null, message: "" });
       paint();
 
@@ -2347,7 +2417,8 @@ PAGES.chat = {
         state.chatTurns = state.chatTurns.filter((t) => t.id !== "local");
       }
       state.busyTurn = false;
-      if (failure) toast("生成失败：" + failure);
+      // 取消不是失败，别把提示写成"生成失败"
+      if (failure) toast(String(failure).indexOf("取消") >= 0 ? "已取消" : ("生成失败：" + failure));
       await reloadSessions();
       paint();
     }

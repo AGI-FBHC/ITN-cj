@@ -507,6 +507,22 @@ public class Api {
             return
         }
 
+        if (path == "/api/agent/cancel" && method == "POST") {
+            // 置一个取消标记：正在跑的那一轮会在下一段流式增量处停下来
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let sid = strOf(b, "sessionId")
+                    if (sid.size == 0) {
+                        fail(ctx, 400, "缺少 sessionId")
+                        return
+                    }
+                    requestCancel(sid)
+                    ok(ctx, JsonString("ok"))
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         if (path == "/api/tools/list" && method == "POST") {
             let o = JsonObject()
             o.put("tools", Agent(store).toolsJson())
@@ -1320,6 +1336,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/maintenance/status",
         "/api/maintenance/backup",
         "/api/maintenance/backups/delete",
+        "/api/agent/cancel",
         "/api/tools/list",
         "/api/sessions/new",
         "/api/sessions/list",

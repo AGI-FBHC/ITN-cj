@@ -10,7 +10,9 @@ import stdx.encoding.json.*
 import itn_desktop_core.store.*
 import itn_desktop_core.util.*
 
-public class LlmException <: Exception {
+// 用 open：上层需要区分"网络/模型报错"与"用户取消"（取消例外继承它，
+// 这样 postStream 的 catch (e: LlmException) 会把它原样重抛，不会被包成网络错误）
+public open class LlmException <: Exception {
     public init(message: String) {
         super(message)
     }
@@ -318,20 +320,24 @@ func handleSseLine(line: String, out: StringBuilder, onDelta: (String) -> Unit):
     if (data.size == 0 || data == "[DONE]") {
         return
     }
+    // 注意：这个 try 只保护"这一行解析不出来"，**不能把 onDelta 也圈进去**——
+    // 取消就是这么实现的：回调里抛 CancelException 表示"别读了"，被这里吞掉的话
+    // 用户点了停止却还会一直生成下去（本轮实测踩到过）。
+    var piece = ""
     try {
         let v = JsonValue.fromStr(data)
         // 多数服务端用 delta.content 增量；也有服务端对流式请求仍回整体 message.content
-        var piece = pickStr(v, ["choices", "0", "delta", "content"])
+        piece = pickStr(v, ["choices", "0", "delta", "content"])
         if (piece.size == 0) {
             piece = pickStr(v, ["choices", "0", "message", "content"])
         }
-        out.append(piece)
-        if (piece.size > 0) {
-            onDelta(piece)
-        }
     } catch (e: Exception) {
         // 单行解析失败不影响整体
-        ()
+        return
+    }
+    out.append(piece)
+    if (piece.size > 0) {
+        onDelta(piece)
     }
 }
 

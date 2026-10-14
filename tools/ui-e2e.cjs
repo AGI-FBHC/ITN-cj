@@ -175,7 +175,7 @@ function assert(cond, msg) {
   const mockPort = await freePort();
   const mock = spawn('python', [path.join(__dirname, 'mock-openai', 'server.py'), String(mockPort)],
     { cwd: REPO, windowsHide: true, stdio: 'ignore',
-      env: Object.assign({}, process.env, { ITN_MOCK_CHUNK_DELAY_MS: '60' }) });
+      env: Object.assign({}, process.env, { ITN_MOCK_CHUNK_DELAY_MS: '120' }) });
   children.push(mock);
   const mockBase = 'http://127.0.0.1:' + mockPort + '/v1';
   await sleep(600); // 给 python mock 一点启动时间
@@ -533,7 +533,7 @@ function assert(cond, msg) {
       const bodies = document.querySelectorAll('.msg-ai .msg-body');
       if (!bodies.length) return false;
       const last = bodies[bodies.length - 1];
-      return !last.querySelector('.caret') && last.innerText.trim().length > 5;
+      return !last.querySelector('.spinner') && !last.querySelector('.caret') && last.innerText.trim().length > 5;
     }, null, { timeout: 60000 });
     const answer = await page.locator('.msg-ai .msg-body').last().innerText();
     assert(answer.indexOf('失败') < 0, '回答不应是失败信息：' + answer.slice(0, 60));
@@ -560,7 +560,7 @@ function assert(cond, msg) {
       const bodies = document.querySelectorAll('.msg-ai .msg-body');
       if (!bodies.length) return false;
       const last = bodies[bodies.length - 1];
-      return !last.querySelector('.caret') && last.innerText.indexOf('15') >= 0;
+      return !last.querySelector('.spinner') && !last.querySelector('.caret') && last.innerText.indexOf('15') >= 0;
     }, null, { timeout: 60000 });
     const tools = await page.$$eval('.tool-row .tool-name', (els) => els.map((e) => e.textContent.trim()));
     await shot('14-工具调用');
@@ -778,6 +778,71 @@ function assert(cond, msg) {
     assert(text.indexOf('实测参考') >= 0 || text.indexOf('参考') >= 0, '校准笔记应含实测参考');
     await shot('19-校准记录笔记');
     return '已生成并可回看';
+  });
+
+  /* ---------- 停止生成 / 停止回答 ---------- */
+  await step('生成中可以停止：写明停在哪、且不落产物', async () => {
+    await nav('学 · 练');
+    if (await page.locator('.chunk-card').count()) {
+      await page.getByRole('button', { name: /返回目录/ }).first().click();
+      await page.waitForTimeout(500);
+    }
+    const before = (await page.evaluate(() => fetch('/api/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()))).data.artifacts.length;
+    await page.locator('.item', { hasText: '提示词工程基础' }).getByRole('button', { name: '开始学' }).click();
+    await page.waitForSelector('.chunk-card', { timeout: 20000 });
+    await page.getByRole('button', { name: '生成讲义' }).first().click();
+    await page.waitForSelector('#topic-input', { timeout: 10000 });
+    await page.fill('#topic-input', '提示词工程-会被取消');
+    await page.getByRole('button', { name: '开始生成讲义' }).click();
+    await page.waitForSelector('.progress-card', { timeout: 15000 });
+    await page.waitForTimeout(900);   // 让它真的开始写某一节，再停
+    const stage = await page.textContent('.gen-stage').catch(() => '');
+    await page.getByRole('button', { name: '停止生成' }).click();
+    await page.waitForSelector('.dialog:has-text("已取消")', { timeout: 30000 });
+    const box = await page.locator('.dialog', { hasText: '已取消' }).first().innerText();
+    assert(box.indexOf('未落盘') >= 0 || box.indexOf('未保存') >= 0, '取消卡片应写明没落盘，实际：' + box.replace(/\s+/g, ' '));
+    const after = (await page.evaluate(() => fetch('/api/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()))).data.artifacts.length;
+    assert(after === before, '取消不应产生产物：前 ' + before + ' 后 ' + after);
+    await shot('26-停止生成');
+    const list = await page.evaluate(() => fetch('/api/sessions/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()));
+    const ev = await page.evaluate((id) => fetch('/api/sessions/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: id }) }).then((x) => x.json()), list.data.sessions[0].sessionId);
+    const end = ev.data.events.filter((e) => e.type === 'turn/end').pop();
+    assert(end && end.payload.ok === false && String(end.payload.message).indexOf('取消') >= 0,
+      '会话里应留下"被取消"的收尾事件，实际：' + JSON.stringify(end));
+    await page.locator('.dialog', { hasText: '已取消' }).getByRole('button', { name: '关闭' }).click();
+    return '停止前阶段「' + stage + '」；产物未增加（' + after + ' 份）；事件：' + end.payload.message;
+  });
+
+  await step('回答可以停止，并且能一键重问', async () => {
+    await nav('伴学助手');
+    await page.waitForSelector('#chat-input', { timeout: 20000 });
+    await page.fill('#chat-input', '把这一章的内容完整讲一遍');
+    await page.getByRole('button', { name: '发送' }).click();
+    await page.waitForSelector('.msg-ai .msg-body .spinner', { timeout: 15000 });
+    await page.waitForTimeout(260);
+    await page.getByRole('button', { name: '停止' }).click();
+    // 注意：界面这里显示的是内核写下的 turn/end 文案「用户取消了这次回答」，
+    // 不是返回值里的「已取消」——断言用「取消」这个共同子串
+    await page.waitForFunction(() => {
+      const t = document.querySelector('.chat-thread');
+      return !!t && t.innerText.indexOf('取消') >= 0;
+    }, null, { timeout: 30000 }).catch(async () => {
+      const seen = await page.locator('.chat-thread').innerText().catch(() => '(读不到)');
+      throw new Error('点了停止但界面没出现取消态，当前对话区：' + String(seen).replace(/\s+/g, ' ').slice(0, 200));
+    });
+    await shot('27-停止回答');
+    const cancelBtn = await page.getByRole('button', { name: '重新问一次' }).count();
+    assert(cancelBtn >= 1, '被取消的那一轮应给出「重新问一次」');
+    await page.getByRole('button', { name: '重新问一次' }).first().click();
+    await page.waitForFunction(() => {
+      const bodies = document.querySelectorAll('.msg-ai .msg-body');
+      if (!bodies.length) return false;
+      const last = bodies[bodies.length - 1];
+      return !last.querySelector('.caret') && !last.querySelector('.spinner') && last.innerText.trim().length > 5;
+    }, null, { timeout: 60000 });
+    const last = await page.locator('.msg-ai .msg-body').last().innerText();
+    assert(last.indexOf('取消') < 0, '重问后应真的拿到回答，实际：' + last.slice(0, 40));
+    return '停止 → 出现「已取消」与重问入口 → 重问拿到 ' + last.length + ' 字回答';
   });
 
   /* ---------- 会话记录 ---------- */
