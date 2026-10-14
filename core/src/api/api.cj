@@ -689,16 +689,9 @@ public class Api {
                         return
                     }
                     try {
-                        // 工作目录 + 权限档位来自设置；没设目录就是"只问答，不碰本机文件"
-                        let db = DbHub.open(store.dataDir)
-                        let work = WorkContext()
-                        work.dir = db.getKv("settings", "agent_work_dir", "")
-                        let permReq = strOf(b, "perm")
-                        work.perm = if (permReq.size > 0) { permReq } else { db.getKv("settings", "agent_perm", "ask") }
-                        let execReq = strOf(b, "exec")
-                        work.allowExec = if (execReq.size > 0) { execReq == "1" } else { db.getKv("settings", "agent_exec", "0") == "1" }
                         ok(ctx, PiAgent(store).askTask(strOf(b, "kbId"), question,
-                            strOf(b, "sessionId"), strOf(b, "web"), trimStr(strOf(b, "skill")), Some(work)))
+                            strOf(b, "sessionId"), strOf(b, "web"), trimStr(strOf(b, "skill")),
+                            Some(workContextOf(store, b))))
                     } catch (e: Exception) {
                         fail(ctx, 500, "问答失败（lumin）：" + e.message)
                     }
@@ -707,7 +700,10 @@ public class Api {
             return
         }
 
-        if (path == "/api/agent/lecture" && method == "POST") {
+        // 讲义 / 练习册：同样交给 lumin 当一次任务跑，提示词只说"成品是什么、落到哪"。
+        // 上一版的 /api/agent/lecture|quiz 是内核写死"先检索 → 拟大纲 → 逐节写作"的流水线，已经删掉：
+        // 步骤由模型自己排，这才是 agent；固定步骤是工作流（而且它把"先检索"钉死在了第一步）。
+        if (path == "/api/agent/task-pi" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) =>
                     let topic = strOf(b, "topic")
@@ -715,33 +711,15 @@ public class Api {
                         fail(ctx, 400, "缺少 topic")
                         return
                     }
-                    let ag = Agent(store)
-                    try {
-                        ok(ctx, ag.lecture(strOf(b, "kbId"), topic, strOf(b, "sessionId")))
-                    } catch (e: Exception) {
-                        fail(ctx, 500, "生成讲义失败：" + e.message)
-                    }
-                case None => fail(ctx, 400, "请求体不是合法 JSON")
-            }
-            return
-        }
-
-        if (path == "/api/agent/quiz" && method == "POST") {
-            match (bodyJson(ctx)) {
-                case Some(b) =>
-                    let topic = strOf(b, "topic")
-                    if (topic.size == 0) {
-                        fail(ctx, 400, "缺少 topic")
-                        return
-                    }
+                    let kind = if (strOf(b, "kind") == "quiz") { "quiz" } else { "lecture" }
                     var count: Int64 = 5
                     let reqCount = intOf(b, "count")
                     if (reqCount > 0) { count = reqCount }
-                    let ag = Agent(store)
                     try {
-                        ok(ctx, ag.quiz(strOf(b, "kbId"), topic, count, strOf(b, "sessionId")))
+                        ok(ctx, PiAgent(store).make(kind, strOf(b, "kbId"), topic, count,
+                            strOf(b, "sessionId"), strOf(b, "web"), Some(workContextOf(store, b))))
                     } catch (e: Exception) {
-                        fail(ctx, 500, "生成练习失败：" + e.message)
+                        fail(ctx, 500, "生成失败（lumin）：" + e.message)
                     }
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -2105,6 +2083,23 @@ func verifyBackup(path: String): Int64 {
     }
 }
 
+/**
+ * 这一轮"能不能动用户的电脑"：工作目录 + 权限档位（lumin 那三档）+ 要不要放开跑命令。
+ *
+ * 请求里带了就用请求里的（界面上的那枚 chip 是会话级的选择），没带就跟着设置走。
+ * 没指定工作目录 = 模型拿不到本机文件那几个工具 —— 这是默认，也是最安全的默认。
+ */
+func workContextOf(store: Store, b: JsonObject): WorkContext {
+    let db = DbHub.open(store.dataDir)
+    let work = WorkContext()
+    work.dir = db.getKv("settings", "agent_work_dir", "")
+    let permReq = strOf(b, "perm")
+    work.perm = if (permReq.size > 0) { permReq } else { db.getKv("settings", "agent_perm", "ask") }
+    let execReq = strOf(b, "exec")
+    work.allowExec = if (execReq.size > 0) { execReq == "1" } else { db.getKv("settings", "agent_exec", "0") == "1" }
+    return work
+}
+
 func boolValueOf(v: JsonValue): ?Bool {
     match (v) {
         case jb: JsonBool => return Some(jb.getValue())
@@ -2152,8 +2147,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/agent/approvals",
         "/api/agent/approvals/answer",
         "/api/agent/steer",
-        "/api/agent/lecture",
-        "/api/agent/quiz",
+        "/api/agent/task-pi",
         "/api/maintenance/status",
         "/api/maintenance/backup",
         "/api/maintenance/backups/delete",

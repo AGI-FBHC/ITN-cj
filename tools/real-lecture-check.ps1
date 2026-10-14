@@ -75,19 +75,25 @@ Api "/api/kb/build" '{ "id": "lec" }' | Out-Null
 
 Write-Output "正在用真实模型生成讲义（多次调用，请稍候）…"
 $sw = [Diagnostics.Stopwatch]::StartNew()
-$r = Api "/api/agent/lecture" '{ "kbId": "lec", "topic": "提示词工程" }'
+$r = Api "/api/agent/task-pi" '{ "kind": "lecture", "kbId": "lec", "topic": "提示词工程" }'
 $sw.Stop()
 $parsed = $r | ConvertFrom-Json
 Write-Output ("返回码 {0}，耗时 {1} 秒" -f $parsed.code, [math]::Round($sw.Elapsed.TotalSeconds, 1))
 
 if ($parsed.code -eq 0) {
     $d = $parsed.data
-    Write-Output ("小节数: {0}" -f $d.sections.Count)
     Write-Output ("引用自检: 段落 {0} / 带引用 {1} / 越界 {2}" -f $d.citationReport.paragraphs, $d.citationReport.citedParagraphs, $d.citationReport.outOfRange)
-    Write-Output ("产物路径: {0}" -f $d.artifactPath)
+    Write-Output ("产物路径: {0}（谁落盘：{1}）" -f $d.artifactPath, $d.savedBy)
+    $ev = (Api "/api/sessions/events" ('{ "sessionId": "' + $d.sessionId + '" }') | ConvertFrom-Json).data.events
+    $tools = @($ev | Where-Object { $_.type -eq "tool/call" } | ForEach-Object { $_.payload.tool })
+    Write-Output ("这一轮它自己调了: " + (($tools | Select-Object -Unique) -join " / "))
     Write-Output "----- 讲义正文 -----"
-    Write-Output $d.content
-} else {
-    Write-Output ("失败：" + $parsed.message)
+    if ($d.artifactPath) {
+        $name = Split-Path -Leaf $d.artifactPath
+        $read = Api "/api/artifacts/read" ('{ "name": "' + $name + '" }') | ConvertFrom-Json
+        Write-Output $read.data.content
+    } else {
+        Write-Output "（没有落盘）"
+    }
 }
 $core.Kill(); $mock.Kill()

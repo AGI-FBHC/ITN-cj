@@ -461,7 +461,7 @@ const PAGE_META = {
   resources: { title: "个性化资源", sub: "生成的讲义与练习，全部在本机" },
   kb: { title: "领域知识库", sub: "检索资料，每一句都能追到原文" },
   chat: { title: "伴学助手", sub: "就你的资料提问" },
-  sessions: { title: "全部会话与步骤", sub: "每一次检索、生成都留了可追溯的过程" },
+  sessions: { title: "全部会话", sub: "每段对话只追加地留了下来，可以回看" },
   models: { title: "模型与接口", sub: "填写自己的模型服务，统一 OpenAI 兼容格式" },
   settings: { title: "设置", sub: "档案、外观、知识库、模型与数据都收在这里" },
 };
@@ -1862,7 +1862,7 @@ function askTopic(kind, defaultTopic) {
   head.appendChild(tag(state.chapter || kbName(state.kb)));
   dlg.appendChild(head);
   const input = inputOf("topic-input", "例如：提示词工程", defaultTopic || "");
-  dlg.appendChild(fieldOf("主题（会先按这个主题检索资料，再生成）", input));
+  dlg.appendChild(fieldOf("主题", input));
   const row = el("div", "row");
   const goBtn = btn(kind === "lecture" ? "开始生成讲义" : "开始生成练习册", "primary", async () => {
     const topic = input.value.trim();
@@ -1879,130 +1879,111 @@ function askTopic(kind, defaultTopic) {
 }
 
 /**
- * 调内核的生成链路（讲义 / 练习册），结果落在 artifacts 目录。
+ * 生成讲义 / 练习册：交给 lumin 当**一次任务**跑（内核 /api/agent/task-pi）。
  *
- * 生成要跑几十秒到几分钟，所以这里先开一个会话、带着 sessionId 发请求，
- * 然后轮询 /api/sessions/events 把内核写下的 assistant/delta（带 stage/label）渲染出来——
- * 用户能看到"正在拟大纲 / 正在写第 2 节：常见问题"，而不是对着一句"生成中"干等。
+ * 这里刻意没有"检索资料 → 拟大纲 → 逐节写作 → 引用自检 → 落盘"那条进度条：
+ * 那是上一版网页端写死的工作流，和"步骤由 agent 自己决定"是两回事 —— 要不要查资料、查几次、
+ * 先写哪一节，都由模型自己排。所以这里只画**一条时间线**：它调了什么工具、写了什么，
+ * 按发生顺序摆出来，和伴学助手用的是同一套渲染。
  */
 async function generateArtifact(kind, topic) {
+  const title = kind === "lecture" ? "生成讲义" : "生成练习册";
   if (!hasChatModel()) {
     toast("还没有可用的对话模型");
     go("models");
     return;
   }
   const v = $("view");
-  const steps = kind === "lecture"
-    ? ["检索资料", "拟大纲", "逐节写作", "引用自检", "落盘"]
-    : ["检索资料", "批量出题", "引用自检", "落盘"];
-  const card = progressCard((kind === "lecture" ? "正在生成讲义" : "正在生成练习册") + "：「" + topic + "」", steps);
-  const live = el("div", "gen-live");
-  const stageEl = el("div", "gen-stage", "准备中…");
-  const textEl = el("div", "gen-text");
-  const secEl = el("div", "gen-sections");
-  live.appendChild(stageEl);
-  live.appendChild(textEl);
-  live.appendChild(secEl);
-  card.appendChild(live);
+  const started = Date.now();
+  const card = el("div", "card gen-card");
+  const head = el("div", "card-head");
+  head.innerHTML = '<span class="spinner"></span><h2>' + esc("正在" + title + "：" + topic) + "</h2>";
+  head.appendChild(spacer());
+  const timer = el("span", "muted", "0.0 秒");
+  head.appendChild(timer);
+  card.appendChild(head);
+  const thread = el("div", "gen-thread");
+  card.appendChild(thread);
   v.insertBefore(card, v.firstChild);
   card.scrollIntoView({ block: "start" });
+  const timerId = setInterval(() => { timer.textContent = ((Date.now() - started) / 1000).toFixed(1) + " 秒"; }, 100);
 
   let sid = "";
   try {
     sid = (await api("/api/sessions/new", {})).sessionId;
-  } catch (e) { /* 拿不到会话也能生成，只是没有实时进度 */ }
+  } catch (e) { /* 拿不到会话也能生成，只是没有实时过程 */ }
 
   if (sid) {
-    const stopGen = btn("停止生成", "sm ghost", async () => {
-      stopGen.disabled = true;
-      stopGen.textContent = "正在停止…";
+    const stopBtn = btn("停止生成", "sm ghost", async () => {
+      stopBtn.disabled = true;
+      stopBtn.textContent = "正在停止…";
       try {
         await api("/api/agent/cancel", { sessionId: sid });
         toast("已请求停止，正在收尾…");
       } catch (e) {
         toast("停止失败：" + e.message);
-        stopGen.disabled = false;
-        stopGen.textContent = "停止生成";
+        stopBtn.disabled = false;
+        stopBtn.textContent = "停止生成";
       }
     });
-    const head = card.querySelector(".card-head");
-    if (head) head.appendChild(stopGen);
+    head.appendChild(stopBtn);
   }
+
+  const paintThread = (turns, live) => {
+    thread.innerHTML = "";
+    for (const t of turns) {
+      for (const it of t.items) {
+        if (it.t === "tool") thread.appendChild(renderToolRows([it]));
+        else if (it.text) thread.appendChild(assistantBlock(it.text, live && it.streaming));
+      }
+    }
+    thread.scrollTop = thread.scrollHeight;
+  };
+  paintThread([], true);
 
   let poll = null;
   if (sid) {
     poll = setInterval(async () => {
       try {
         const d = await api("/api/sessions/events", { sessionId: sid });
-        let stage = "", label = "", buf = "";
-        const secs = [];
-        for (const e of d.events || []) {
-          const p = e.payload || {};
-          if (e.type === "section/done") {
-            secs.push(p.section || "");
-          } else if (e.type === "assistant/delta") {
-            const st = p.stage || "";
-            const lb = p.label || "";
-            if (st !== stage || lb !== label) { buf = ""; stage = st; label = lb; }
-            buf += (p.text || "");
-          }
-        }
-        if (stage === "outline") stageEl.textContent = "正在拟大纲…";
-        else if (stage === "section") stageEl.textContent = "正在写：" + (label || "正文");
-        else if (stage === "quiz") stageEl.textContent = "正在出题…";
-        else stageEl.textContent = "正在检索资料…";
-        textEl.textContent = buf.slice(-800);
-        if (secs.length) secEl.textContent = "已完成 " + secs.length + " 小节：" + secs.join(" / ");
-      } catch (e) {
-        // 轮询失败不打扰用户，最终结果以收尾时那次为准
-      }
+        paintThread(turnsFromEvents(d.events || []), true);
+      } catch (e) { /* 轮询失败不打扰用户，最终结果以收尾时那次为准 */ }
     }, 450);
   }
 
   let d = null;
   let fail = "";
   try {
-    d = await api(kind === "lecture" ? "/api/agent/lecture" : "/api/agent/quiz",
-      { kbId: state.kb, topic: topic, count: kind === "quiz" ? 5 : undefined, sessionId: sid });
+    d = await api("/api/agent/task-pi", {
+      kind: kind,
+      kbId: state.kb || "",
+      topic: topic,
+      count: kind === "quiz" ? 5 : undefined,
+      sessionId: sid,
+      web: "auto",
+      perm: state.cfg.agentPerm || "ask",
+    });
   } catch (e) {
     fail = e.message;
   }
   if (poll) clearInterval(poll);
-  card._stop();
+  clearInterval(timerId);
   card.remove();
 
-  if (fail) {
-    const box = cardOf({ cls: "dialog", title: "生成失败" });
-    box.appendChild(el("p", "muted", fail));
-    const row = el("div", "row");
-    row.appendChild(btn("检查模型设置", "primary", () => go("models")));
-    row.appendChild(btn("看全部会话", "", () => go("chat", "overview")));
-    row.appendChild(btn("关闭", "ghost", () => box.remove()));
-    box.appendChild(row);
-    v.insertBefore(box, v.firstChild);
-    return;
-  }
-
-  if (d && d.cancelled === true) {
-    // 取消不是失败：说清楚停在哪、有没有落盘，并给一个重来的入口
-    const box = cardOf({ cls: "dialog", title: (kind === "lecture" ? "讲义生成已取消" : "练习册生成已取消"), tag: "未落盘" });
-    box.appendChild(el("p", "muted", (d && d.message) || "已取消"));
+  if (fail || !d || d.ok !== true) {
+    const msg = fail || (d && d.message) || "内核没有返回内容";
+    // 取消不是失败：说清"这次没落盘"，别让用户以为草稿还在
+    const cancelled = String(msg).indexOf("取消") >= 0;
+    const box = cardOf({
+      cls: "dialog",
+      title: cancelled ? title + "已取消" : title + "没有完成",
+      tag: cancelled ? "未保存" : "",
+      tagCls: cancelled ? "warn" : "",
+    });
+    box.appendChild(el("p", "muted", msg));
     const row = el("div", "row");
     row.appendChild(btn("重新生成", "primary", () => { box.remove(); askTopic(kind, topic); }));
-    row.appendChild(btn("关闭", "ghost", () => box.remove()));
-    box.appendChild(row);
-    v.insertBefore(box, v.firstChild);
-    box.scrollIntoView({ block: "start" });
-    return;
-  }
-
-  if (!d || d.ok !== true) {
-    const msg = (d && d.message) || "内核没有返回内容";
-    const box = cardOf({ cls: "dialog", title: "没有生成成功" });
-    box.appendChild(el("p", "muted", msg + "（「全部会话」里能看到这次调用停在哪一步）"));
-    const row = el("div", "row");
-    row.appendChild(btn("去设置模型", "primary", () => go("models")));
-    row.appendChild(btn("看全部会话", "", () => go("chat", "overview")));
+    if (!cancelled) row.appendChild(btn("检查模型设置", "", () => go("models")));
     row.appendChild(btn("关闭", "ghost", () => box.remove()));
     box.appendChild(row);
     v.insertBefore(box, v.firstChild);
@@ -2012,24 +1993,28 @@ async function generateArtifact(kind, topic) {
 
   await loadArtifacts();
   await loadSessions();
+  const name = artifactNameFromPath(d.artifactPath);
   const result = cardOf({
     cls: "dialog ok-dialog",
     title: (kind === "lecture" ? "讲义已生成" : "练习册已生成") + "：" + topic,
-    tag: "已落盘",
+    tag: "已保存到我的资源",
     tagCls: "ok",
   });
-  if (kind === "lecture" && d.sections) {
-    result.appendChild(el("div", "meta", d.sections.length + " 个小节 · " + (d.content || "").length + " 字"));
-  }
   if (d.citationReport) result.appendChild(citationBox(null, d.citationReport));
+  let content = "";
+  if (name) {
+    try {
+      content = (await api("/api/artifacts/read", { name: name })).content || "";
+    } catch (e) { /* 读不到也能用下面的按钮打开 */ }
+  }
+  if (name) result.appendChild(el("div", "meta", name + (content ? " · " + content.length + " 字" : "")));
   const preview = el("div", "artifact-preview");
-  preview.innerHTML = md(d.content || "");
+  preview.innerHTML = md(content.slice(0, 1200));
   result.appendChild(preview);
   const row = el("div", "row");
-  row.appendChild(btn("按页播放", "primary", () => openSlidePlayer(artifactNameFromPath(d.artifactPath), d.content)));
-  row.appendChild(btn("打开全文", "", () => openArtifactByName(artifactNameFromPath(d.artifactPath), d.content)));
-  row.appendChild(btn("去我的资源", "", () => go("resources")));
-  row.appendChild(copyButton(() => d.content || "", "复制 Markdown"));
+  row.appendChild(btn("按页播放", "primary", () => openSlidePlayer(name, content || undefined)));
+  row.appendChild(btn("打开全文", "", () => openArtifactByName(name, content || undefined)));
+  row.appendChild(copyButton(() => content, "复制 Markdown"));
   row.appendChild(btn("收起", "ghost", () => result.remove()));
   result.appendChild(row);
   v.insertBefore(result, v.firstChild);
@@ -4709,7 +4694,7 @@ PANELS.chat = {
   // ＋ = 沿用"当前这段对话的资料范围"再开一段；要换范围用上面那排 chip（通用 / 某个库）
   actions: () => [
     panelBtn("plus", "新建对话", () => newChat(undefined), "rail-new"),
-    panelBtn("search", "全部会话与步骤", () => go("chat", "overview"), "rail-all"),
+    panelBtn("search", "全部会话", () => go("chat", "overview"), "rail-all"),
   ],
   async render(body, ui) {
     await loadCfg();
@@ -5545,26 +5530,12 @@ const EVENT_LABEL = {
   "assistant/delta": "流式增量",
   "turn/start": "开始一轮",
   "user/message": "用户输入",
-  "step/start": "步骤开始",
-  "step/end": "步骤结束",
   "tool/call": "调用工具",
   "tool/result": "工具结果",
   "assistant/message": "模型回复",
   "validation": "引用自检",
   "turn/end": "一轮结束",
 };
-const STEP_LABEL = {
-  retrieve: "检索资料",
-  answer: "生成回答",
-  outline: "拟大纲",
-  write_section: "逐节写作",
-  quiz_create: "出题",
-  citation_check: "引用自检",
-  artifact_save: "保存产物",
-  model_call: "调用模型",
-  tool_exec: "执行工具",
-};
-
 function openSession(sessionId) {
   state.sessionId = sessionId;
   go("chat", "overview");
@@ -5581,8 +5552,8 @@ const SESSIONS_VIEW = {
     await loadSessions();
     const v = $("view");
     v.innerHTML = "";
-    $("page-title").textContent = "全部会话与步骤";
-    $("page-sub").textContent = "每一次检索、生成都留了可追溯的过程";
+    $("page-title").textContent = "全部会话";
+    $("page-sub").textContent = "每段对话都留下了只追加的记录，可以回看它当时做了什么";
     const ta = $("top-actions");
     ta.innerHTML = "";
     ta.appendChild(btn("回到对话", "sm primary", () => go("chat")));
@@ -5600,7 +5571,7 @@ const SESSIONS_VIEW = {
       card.appendChild(emptyState({
         art: "clock",
         title: "还没有任何会话",
-        text: "去伴学助手提一个问题，或者生成一份讲义，这里会记录检索、模型调用、引用自检的每一步。",
+        text: "去伴学助手提一个问题，或者生成一份讲义，这里会留下这次调用用到的工具与出处。",
         actions: [btn("去提问", "primary", () => go("chat")), btn("去生成讲义", "", () => go("learn"))],
       }));
     } else {
@@ -5682,7 +5653,6 @@ async function renderSessionDetail(v, sessionId) {
       let text = "";
       if (e.type === "user/message") text = p.text || "";
       else if (e.type === "assistant/message") text = String(p.text || "").slice(0, 180);
-      else if (e.type === "step/start" || e.type === "step/end") text = (p.index !== undefined ? "#" + p.index + " " : "") + (STEP_LABEL[p.name] || p.name || "");
       else if (e.type === "tool/call") text = (p.tool || "") + " " + (p.query || "");
       else if (e.type === "validation") {
         const r = p.report || {};

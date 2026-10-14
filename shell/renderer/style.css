@@ -838,17 +838,8 @@ body.chat-mode .topbar { display: none; }
 }
 @media (max-width: 900px) { .unit-step { flex-wrap: wrap; } }
 /* ---------- 生成过程的实时进度 ---------- */
-.gen-live { margin-top: 10px; }
-.gen-stage { font-size: calc(14px * var(--fs, 1)); font-weight: 600; color: var(--brand); }
-.gen-text {
-  margin-top: 6px; max-height: 168px; overflow: auto;
-  font-family: ui-monospace, Consolas, "Courier New", monospace;
-  font-size: calc(13px * var(--fs, 1)); line-height: 1.7; color: var(--ink-2);
-  background: var(--panel-sunk); border: 1px solid var(--line-soft); border-radius: 8px;
-  padding: 8px 10px; white-space: pre-wrap; word-break: break-word;
-}
-.gen-text:empty { display: none; }
-.gen-sections { margin-top: 6px; font-size: calc(13px * var(--fs, 1)); color: var(--muted); }
+.gen-card .gen-thread { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; max-height: 52vh; overflow-y: auto; }
+.gen-thread .msg-body { margin: 0; }
 /* ---------- 产物管理 ---------- */
 .artifact-tools { margin-bottom: 12px; }
 .artifact-tools input { flex: 1 1 220px; max-width: 320px; }

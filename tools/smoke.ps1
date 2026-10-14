@@ -98,13 +98,13 @@ $r = Api $base "/api/agent/ask" "POST" '{ "kbId": "demo", "question": "分块是
 $s = if ($r.body.Length -gt 420) { $r.body.Substring(0, 420) } else { $r.body }
 Write-Output ("agent/ask -> {0} {1}" -f $r.status, $s)
 
-$r = Api $base "/api/agent/lecture" "POST" '{ "kbId": "demo", "topic": "分块" }'
+$r = Api $base "/api/agent/task-pi" "POST" '{ "kind": "lecture", "kbId": "demo", "topic": "分块" }'
 $lec = $r
 $s = if ($r.body.Length -gt 300) { $r.body.Substring(0, 300) } else { $r.body }
-Write-Output ("agent/lecture -> {0} {1}" -f $r.status, $s)
+Write-Output ("agent/task-pi(讲义) -> {0} {1}" -f $r.status, $s)
 
-$r = Api $base "/api/agent/quiz" "POST" '{ "kbId": "demo", "topic": "分块", "count": 3 }'
-Write-Output ("agent/quiz -> {0}" -f $r.status)
+$r = Api $base "/api/agent/task-pi" "POST" '{ "kind": "quiz", "kbId": "demo", "topic": "分块", "count": 3 }'
+Write-Output ("agent/task-pi(练习册) -> {0}" -f $r.status)
 
 $r = Api $base "/api/sessions/list" "POST" '{}'
 Write-Output ("sessions/list -> {0}" -f $r.status)
@@ -221,13 +221,13 @@ $r = Api $base "/api/agent/ask" "POST" '{ "kbId": "demo", "question": "分块是
 $s = if ($r.body.Length -gt 420) { $r.body.Substring(0, 420) } else { $r.body }
 Write-Output ("agent/ask -> {0} {1}" -f $r.status, $s)
 
-$r = Api $base "/api/agent/lecture" "POST" '{ "kbId": "demo", "topic": "分块" }'
+$r = Api $base "/api/agent/task-pi" "POST" '{ "kind": "lecture", "kbId": "demo", "topic": "分块" }'
 $lec = $r
 $s = if ($r.body.Length -gt 300) { $r.body.Substring(0, 300) } else { $r.body }
-Write-Output ("agent/lecture -> {0} {1}" -f $r.status, $s)
+Write-Output ("agent/task-pi(讲义) -> {0} {1}" -f $r.status, $s)
 
-$r = Api $base "/api/agent/quiz" "POST" '{ "kbId": "demo", "topic": "分块", "count": 3 }'
-Write-Output ("agent/quiz -> {0}" -f $r.status)
+$r = Api $base "/api/agent/task-pi" "POST" '{ "kind": "quiz", "kbId": "demo", "topic": "分块", "count": 3 }'
+Write-Output ("agent/task-pi(练习册) -> {0}" -f $r.status)
 
 $r = Api $base "/api/sessions/list" "POST" '{}'
 Write-Output ("sessions/list -> {0}" -f $r.status)

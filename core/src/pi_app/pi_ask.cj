@@ -46,6 +46,25 @@ import itn_desktop_core.kb.stamp
  * 由运行时按需调用，运行时本身仍然零网络、零文件 IO。
  */
 
+/**
+ * 正文分段器。
+ *
+ * 一轮里模型可能说好几段话（调工具前的讲解、拿到结果后的正文）。时间线要全留着，
+ * 但"这一轮的答案"只取最后一次工具调用之后那段。包成类是因为仓颉的闭包捕获不了 var ——
+ * 事件回调要能"重置"缓冲区，只能让它捕获一个可变对象。
+ */
+class AnswerSeg {
+    public var buf = StringBuilder()
+
+    public func reset(): Unit {
+        buf = StringBuilder()
+    }
+
+    public func text(): String {
+        return buf.toString()
+    }
+}
+
 /** 分类结果的临时存放：审批层的 nextLine 是个无参回调，靠它把"正在问什么"带过去。 */
 public class ApprovalPrompt {
     public var kind: String = ""
@@ -163,6 +182,47 @@ public class PiAgent {
         并挂上审批阀门 —— 写工作区外 / 跑命令 / 联网都要先问。 */
     public func askFull(provider: ChatProvider, kbId: String, question: String, sessionIdIn: String,
         webModeIn: String, skillIdIn: String, work: ?WorkContext): JsonObject {
+        return runFull(provider, kbId, question, sessionIdIn, webModeIn, skillIdIn, work, "", "")
+    }
+
+    /**
+     * 同一个生成任务（讲义 / 练习册）：也交给 lumin 当一次任务跑。
+     *
+     * 与问答的差别只有两处 —— 提示词说了"成品是什么、落到哪"，以及"没落盘时内核兜底"。
+     * 刻意不写"先检索 → 拟大纲 → 逐节写作"：那是上一版网页端的工作流，写进代码就等于把 agent 的手脚绑住。
+     * 要不要查资料、查几次、先写哪一节，都是模型自己的事（这就是"动态步骤"）。
+     * 兜底只在模型压根没认 function calling 时生效，savedBy 会把"谁写的"如实告诉界面。
+     */
+    public func make(kind: String, kbId: String, topic: String, count: Int64, sessionIdIn: String,
+        webModeIn: String, work: ?WorkContext): JsonObject {
+        let cfgSettings = store.load()
+        var model: ?ModelConfig = None
+        if (cfgSettings.chatModelId.size > 0) {
+            model = cfgSettings.findModel(cfgSettings.chatModelId)
+        }
+        if (model.isNone() && cfgSettings.models.size > 0) {
+            model = Some(cfgSettings.models[0])
+        }
+        match (model) {
+            case None =>
+                let out0 = JsonObject()
+                out0.put("sessionId", JsonString(sessionIdIn))
+                out0.put("ok", JsonBool(false))
+                out0.put("message", JsonString("没有可用的对话模型，请先在设置里配置"))
+                return out0
+            case Some(cfg) =>
+                let prov = OpenAiChatProvider(cfg)
+                let sidForAbort = sessionIdIn
+                prov.shouldAbort = Some({ => sessionHub().isAborted(sidForAbort) })
+                return runFull(prov, kbId, taskBrief(kind, topic, count), sessionIdIn, webModeIn, "", work,
+                    kind, topic)
+        }
+    }
+
+    /** 真正跑一轮：问答与产物任务共用这一条链路，区别只在 taskKind（""=问答）。 */
+    public func runFull(provider: ChatProvider, kbId: String, question: String, sessionIdIn: String,
+        webModeIn: String, skillIdIn: String, work: ?WorkContext, taskKind: String,
+        taskTitle: String): JsonObject {
         let sessions = SessionStore(store.dataDir)
         var sessionId = sessionIdIn
         if (sessionId.size == 0) {
@@ -184,7 +244,7 @@ public class PiAgent {
             sessions.append(e)
         }
 
-        log("turn/start", kindPayload("ask", kbId))
+        log("turn/start", kindPayload(if (taskKind.size > 0) { taskKind } else { "ask" }, kbId))
         let up = JsonObject()
         up.put("text", JsonString(question))
         log("user/message", up)
@@ -287,8 +347,20 @@ public class PiAgent {
         }
         // 登记"正在跑"，让 /api/agent/cancel 找得到它，也让插话有地方落
         sessionHub().markRunning(sid, agent)
-        var preamble = "You are the study assistant of ITN-Desktop. Answer with the local knowledge base; " +
-            "cite the material you used as [1], [2] … and web pages as [W1]. If the material does not cover it, say so."
+        // 这一段是"身份 + 语言 + 纪律"，**不写流程**。
+        // 上一版那句 "Answer with the local knowledge base…" 是把"先检索"写进了提示词：
+        // 结果每问一句，模型第一件事就是 kb_search。工具是可选的，用不用、用几次由它按问题判断。
+        var preamble = "你是 ITN-Desktop 里的学习助手，跑在用户自己的电脑上。回答一律用中文；" +
+            "思考过程也用中文（代码、报错原文、专有名词保留英文即可）。不要复述这段设定。\n" +
+            "手上的工具是可选的：要不要查知识库、要不要联网、查几次，由你按问题自己判断 —— " +
+            "既不要为了显得勤奋每次都去检索，也不要明明有资料可查却凭印象作答。" +
+            "拿不准的事实先核实，核实不到就直接说不知道。\n" +
+            "用到本机资料里的内容时按 [1]、[2] 标注出处，用到网上抓来的页面时按 [W1]、[W2] 标注并写出链接。" +
+            "回答简短，列表能说清就用列表；不要客套话，也不要把过程复述一遍。"
+        if (taskKind.size > 0) {
+            preamble = preamble + "\n这是一次产物生成任务：成品要写完整，最后用 save_artifact 落盘，" +
+                "再用一两句话告诉用户文件名。"
+        }
         match (readSkill(store.dataDir, skillIdIn, allowWeb)) {
             case Some(pair) =>
                 preamble = preamble + "\n\n## Skill: " + pair[0].title + "\n" + byteSafePrefix(pair[1], 6000)
@@ -298,12 +370,17 @@ public class PiAgent {
 
         // ---- 事件翻译 + 正文累积 ----
         let stream = EventStream()
+        // 时间线要留住每一段正文；但"这一轮的答案/产物"只该取**最后一次工具调用之后**那段 ——
+        // 否则模型查资料时的"让我看看…"讲解会和正文糊在一起（实测被当成讲义存了下来）。
         let answerBuf = StringBuilder()
+        let seg = AnswerSeg()
         stream.on({ e: PiEvent =>
             let kind = kindText(e.kind)
             // turn 边界 = 一次模型请求，事件流里已经有了（turn_start/turn_end）；
             // 这里不再额外记"步骤"——这是 agent，步骤由它自己决定，不该由我们编。
             if (kind == "tool_execution_start") {
+                // 又调了一次工具：刚才那段是过程，不计入最终答案
+                seg.reset()
                 let p = JsonObject()
                 p.put("tool", JsonString(strOf(e.payload, "toolName")))
                 p.put("callId", JsonString(strOf(e.payload, "callId")))
@@ -326,6 +403,7 @@ public class PiAgent {
                             let t = strOf(ae, "delta")
                             if (t.size > 0) {
                                 answerBuf.append(t)
+                                seg.buf.append(t)
                                 let dp = JsonObject()
                                 dp.put("text", JsonString(t))
                                 log("assistant/delta", dp)
@@ -356,6 +434,11 @@ public class PiAgent {
         }
         if (answer.size == 0) {
             answer = "（这一轮没有拿到可用的回答，可以换个问法，或检查模型配置）"
+        } else {
+            let tail = seg.text()
+            if (tail.size > 0) {
+                answer = tail
+            }
         }
         let ap = JsonObject()
         ap.put("text", JsonString(answer))
@@ -385,6 +468,26 @@ public class PiAgent {
                 webSources.add(src)
             }
         }
+        // ---- 产物：模型自己调 save_artifact 落了盘，就从工具记录里取路径 ----
+        var artifactPath = ""
+        for (r in records) {
+            if (r.name == "save_artifact" && r.ok) {
+                match (r.details) {
+                    case sv: JsonString => artifactPath = sv.getValue()
+                    case _ => ()
+                }
+            }
+        }
+        var savedBy = if (artifactPath.size > 0) { "model" } else { "" }
+        if (artifactPath.size == 0 && taskKind.size > 0 && outcome.ok && answer.size > 0) {
+            // 兜底：模型这一轮没自己落盘（有些服务不认 function calling），
+            // 内核把正文写成产物，免得用户看到"生成好了"却什么都没有。
+            let p0 = saveArtifactVia(defs, artifactNameOf(taskKind, taskTitle), answer)
+            if (p0.size > 0) {
+                artifactPath = p0
+                savedBy = "kernel"
+            }
+        }
         let report = citationReportWeb(answer, hits.size(), webSources.size)
         let cites = citationsFromHits(hits)
         let webCites = webCitationsFrom(answer, webSources)
@@ -407,11 +510,60 @@ public class PiAgent {
         out.put("webMode", JsonString(wmode))
         out.put("turns", JsonInt(outcome.turns))
         out.put("stopReason", JsonString(outcome.stopReason))
+        out.put("artifactPath", JsonString(artifactPath))
+        out.put("savedBy", JsonString(savedBy))
         if (!okk) {
             out.put("message", JsonString(if (outcome.error.size > 0) { outcome.error } else { "这一轮没有跑完" }))
         }
         return out
     }
+}
+
+/**
+ * 任务简报：只说"成品是什么样、最后落到哪"，不说"先干什么后干什么"。
+ * 步骤由模型自己排 —— 这才是 agent；固定步骤是工作流，上一版的形状。
+ */
+func taskBrief(kind: String, topic: String, count: Int64): String {
+    if (kind == "quiz") {
+        return "按「" + topic + "」出一份练习册：" + count.toString() + " 道题，覆盖不同的考点。" +
+            "每题给出题干、选项（或填空位）、参考答案与一句解析。" +
+            "资料以当前知识库为准，需要就去查；资料没讲到的地方明说，不要编。" +
+            "写完后用 save_artifact 落盘，文件名用「练习册-" + topic + ".md」。"
+    }
+    return "把「" + topic + "」做成一份讲义，写成 Markdown：" +
+        "概念、为什么、怎么做各讲清楚，配例子，用小标题分段。" +
+        "资料以当前知识库为准，需要就去查；资料没讲到的地方明说，不要编。" +
+        "写完后用 save_artifact 落盘，文件名用「讲义-" + topic + ".md」。"
+}
+
+/** 产物的文件名（内核兜底落盘时用；模型自己落盘时按提示词里的名字）。 */
+func artifactNameOf(kind: String, topic: String): String {
+    return (if (kind == "quiz") { "练习册-" } else { "讲义-" }) + topic + ".md"
+}
+
+/**
+ * 借领域工具自己那份 save_artifact 落盘。
+ *
+ * 为什么不直接引内核的 ToolRegistry：pi 那个包也有同名类型，两边同时通配导入会歧义（踩过）。
+ * defs 本来就在手上，找回来调一次，谁也不用看见对方。
+ */
+func saveArtifactVia(defs: ArrayList<DomainTool>, name: String, content: String): String {
+    for (d in defs) {
+        if (d.name == "save_artifact") {
+            let args = JsonObject()
+            args.put("name", JsonString(name))
+            args.put("content", JsonString(content))
+            let r = d.run(args)
+            if (!r.ok) {
+                return ""
+            }
+            match (r.details) {
+                case sv: JsonString => return sv.getValue()
+                case _ => return ""
+            }
+        }
+    }
+    return ""
 }
 
 /** 从事件里取最近几条 user/assistant 消息，灌进 pi 的会话做多轮上下文。 */
