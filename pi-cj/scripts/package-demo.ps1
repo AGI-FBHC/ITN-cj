@@ -1,4 +1,4 @@
-# 把 pi-cj 的演示程序打成"双击就能跑"的绿色目录（目标机器无需装仓颉）。
+# 把 pi-cj 打成"双击就能跑"的绿色目录（目标机器无需装仓颉）。
 $ErrorActionPreference = 'Stop'
 
 . "$PSScriptRoot\..\..\scripts\env.ps1"
@@ -21,10 +21,14 @@ if ($newest -and $newest.LastWriteTimeUtc -gt $builtTime) {
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
 
 $runtimeLib = "$SdkRoot\cangjie\runtime\lib\windows_x86_64_cjnative"
+$opensslBin = "$SdkRoot\openssl\mingw64\bin"
 $artifacts = @(
     @{ from = $built; to = "pi-cj-demo.exe" },
     @{ from = "$runtimeLib\libcangjie-runtime.dll"; to = "libcangjie-runtime.dll" },
-    @{ from = "$runtimeLib\libboundscheck.dll"; to = "libboundscheck.dll" }
+    @{ from = "$runtimeLib\libboundscheck.dll"; to = "libboundscheck.dll" },
+    # 真实模型走 HTTPS：TLS 来自 stdx.net.tls，缺这两个 DLL 起不来
+    @{ from = "$opensslBin\libssl-3-x64.dll"; to = "libssl-3-x64.dll" },
+    @{ from = "$opensslBin\libcrypto-3-x64.dll"; to = "libcrypto-3-x64.dll" }
 )
 
 foreach ($a in $artifacts) {
@@ -41,24 +45,39 @@ $launcher = @'
 @echo off
 chcp 65001 > nul
 cd /d "%~dp0"
-pi-cj-demo.exe
+pi-cj-demo.exe demo
 echo.
 echo （按任意键关闭）
 pause > nul
 '@
 Set-Content -LiteralPath (Join-Path $dist "运行演示.cmd") -Value $launcher -Encoding OEM
 
-$readme = @'
-pi-cj 演示（Pi-Agent 风格的仓颉 Agent 运行时）
+# 对话启动器：回到工程目录再跑，这样能自动读到 pi-cj\.env.local 里的 Key（Key 不进 dist）
+$chat = @'
+@echo off
+chcp 65001 > nul
+cd /d "%~dp0..\.."
+target\release\bin\main.exe chat --workspace . %*
+echo.
+echo （按任意键关闭）
+pause > nul
+'@
+Set-Content -LiteralPath (Join-Path $dist "对话.cmd") -Value $chat -Encoding OEM
 
-双击「运行演示.cmd」即可看到四段输出：
+$readme = @'
+pi-cj —— Pi-Agent 风格的仓颉 Agent 运行时
+
+【运行演示.cmd】离线走路演示，不联网、不读写文件：
   1. 流式解析：工具参数边到边解析（半截 JSON 也能实时读出工具名和已到齐的参数）
-  2. 标准模式跑一轮：turn/step 事件流、工具执行、结果回灌、最终回答
+  2. 标准模式一轮：turn/step 事件流、工具执行、结果回灌、最终回答
   3. 研究模式：联网工具出现，回答里的 [W9] 会被引用自检抓出来
   4. 护栏：模式白名单、最大模型轮数、可中止
 
-这里跑的是假模型（脚本播放器）与假工具，不联网、不读写任何文件，纯离线演示运行时行为。
-源码与单元测试在 ..\..\（cjpm test，56 个用例）。
+【对话.cmd】连真实模型聊天（需要 pi-cj\.env.local 里有 PI_CJ_KEY）。
+  能用真工具：读/写/改/搜文件（都关在工作区里）、算数、看时间；加 --allow-exec 后还能跑本机命令。
+  对话里 :mode research 换模式、:tools 看工具、:help 看命令。
+
+单元测试与源码在 ..\..\（cjpm test，69 个用例）。
 '@
 Set-Content -LiteralPath (Join-Path $dist "说明.txt") -Value $readme -Encoding UTF8
 

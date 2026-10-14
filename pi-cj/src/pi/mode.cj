@@ -54,25 +54,46 @@ public func modePlain(): Mode {
     return Mode("plain", "极简", "纯对话：不给任何工具")
 }
 
+/**
+ * 「标准」模式的本机工具清单。
+ *
+ * 前半段（kb_search…save_artifact）是内核 tools/registry.cj 那 8 件，合并过去时名字能对上；
+ * 后半段是 Pi 风格的"读-写-改-搜"文件工具（pi_cj.tools 里实现）。
+ * 两种名字并存是刻意的：宿主注册了哪些工具，模式就允许哪些，模式只做白名单过滤。
+ */
+func localToolNames(): Array<String> {
+    return ["kb_search", "list_documents", "read_chunk", "current_time", "calc", "save_note", "save_artifact",
+        "read_file", "list_files", "search_text", "write_file", "edit_file"]
+}
+
 public func modeStandard(): Mode {
-    let m = Mode("standard", "标准", "只读工具 + 写本机工具，不对外发请求")
-    m.allow(["kb_search", "list_documents", "read_chunk", "current_time", "calc", "save_note", "save_artifact"])
+    let m = Mode("standard", "标准", "只读工具 + 写本机文件，不对外发请求")
+    m.allow(localToolNames())
     return m
 }
 
 public func modeResearch(): Mode {
-    let m = Mode("research", "研究", "标准工具 + 联网检索（对外发请求）")
-    m.allow(["kb_search", "list_documents", "read_chunk", "current_time", "calc", "save_note", "save_artifact"])
+    let m = Mode("research", "研究", "标准 + 联网检索（对外发请求）")
+    m.allow(localToolNames())
     m.allow(["web_search", "web_fetch"])
     return m
 }
 
-/** 内置模式表：界面里选的就是它。 */
+/** 「代理」：标准 + 跑本机命令。风险等级最高的一档，必须用户显式切过来。 */
+public func modeAgent(): Mode {
+    let m = Mode("agent", "代理", "标准 + 执行本机命令（能改动你的电脑）")
+    m.allow(localToolNames())
+    m.allow(["run_command"])
+    return m
+}
+
+/** 内置模式表：界面里选的就是它。四档风险由低到高：极简 / 标准 / 研究 / 代理。 */
 public func builtinModes(): ArrayList<Mode> {
     let out = ArrayList<Mode>()
     out.add(modePlain())
     out.add(modeStandard())
     out.add(modeResearch())
+    out.add(modeAgent())
     return out
 }
 

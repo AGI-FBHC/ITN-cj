@@ -8,8 +8,8 @@ public class RunConfig {
     /** 系统提示词（由宿主拼好；PiSession 会往里补工具协议说明） */
     public var system: String = ""
     public var turnId: String = "t1"
-    /** 最大模型轮数（护栏）：模型反复调工具时靠它兜底 */
-    public var maxSteps: Int64 = 6
+    /** 最大模型轮数（护栏）：模型反复调工具时靠它兜底。多件工具串起来用，6 轮很紧，给 8。 */
+    public var maxSteps: Int64 = 8
 }
 
 /** 一轮运行的结果。 */
@@ -97,6 +97,7 @@ public class PiRunner {
             ctx.system = cfg.system
             ctx.messages = history.freeze()
             ctx.tools = toolProtocolText(registry, mode)
+            ctx.toolSpecs = registry.specsOf(mode)
             ctx.turnId = cfg.turnId
             ctx.step = steps
             var reply = ModelReply()
@@ -110,14 +111,24 @@ public class PiRunner {
                 stream.emit(StepEnd, cfg.turnId, steps, "")
                 break
             }
-            match (reply.tool) {
-                case Some(req) =>
+            if (reply.requests.size == 0) {
+                finalText = reply.text
+                gotFinal = true
+                history.add("assistant", finalText)
+                stream.emit(StepEnd, cfg.turnId, steps, "")
+                history.thaw()
+            } else {
+                // 先把"这一步要调的工具"整体记一条（原生协议要求全写在同一条 assistant 消息里），
+                // 再逐个执行、逐个回灌结果并广播事件。
+                history.addToolCalls(reply.requests)
+                for (req in reply.requests) {
                     let res = registry.execute(mode, req.name, req.args)
-                    // 回灌：模型要的调用 + 工具结果都进历史，否则下一轮它看不见自己刚查到了什么
-                    history.add("assistant", "（调用工具 " + req.name + " 参数 " + req.args.toString() + "）")
-                    history.add("tool", res.summary)
+                    history.addToolResult(req.id, req.name, res.modelText())
                     let rp = JsonObject()
                     rp.put("tool", JsonString(req.name))
+                    if (req.id.size > 0) {
+                        rp.put("callId", JsonString(req.id))
+                    }
                     rp.put("ok", JsonBool(res.ok))
                     rp.put("summary", JsonString(res.summary))
                     out.toolResults.add(rp)
@@ -125,6 +136,7 @@ public class PiRunner {
                     re.turnId = cfg.turnId
                     re.step = steps
                     re.tool = req.name
+                    re.callId = req.id
                     re.text = res.summary
                     re.ok = res.ok
                     stream.push(re)
@@ -134,14 +146,9 @@ public class PiRunner {
                     if (registry.isExternal(req.name) && res.ok) {
                         webSources = webSources + sourceCount(res)
                     }
-                    stream.emit(StepEnd, cfg.turnId, steps, "")
-                    history.thaw()
-                case None =>
-                    finalText = reply.text
-                    gotFinal = true
-                    history.add("assistant", finalText)
-                    stream.emit(StepEnd, cfg.turnId, steps, "")
-                    history.thaw()
+                }
+                stream.emit(StepEnd, cfg.turnId, steps, "")
+                history.thaw()
             }
             if (gotFinal) {
                 break

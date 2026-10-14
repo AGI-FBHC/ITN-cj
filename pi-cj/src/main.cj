@@ -3,6 +3,7 @@ package pi_cj
 import std.collection.*
 import stdx.encoding.json.*
 import pi_cj.pi.*
+import pi_cj.cli.*
 
 /**
  * 走路演示：把运行时能干的四件事依次跑一遍，输出全部事件。
@@ -166,7 +167,7 @@ func demoGuards(): Unit {
     println("")
 }
 
-main(): Int64 {
+func runDemo(): Int64 {
     println("================ pi-cj 走路演示 ================")
     println("版本：" + piVersion() + "（Pi-Agent 风格实现，不是 Pi 源码移植）")
     println("")
@@ -176,4 +177,19 @@ main(): Int64 {
     demoGuards()
     println("================ 演示结束 ================")
     return 0
+}
+
+/**
+ * 入口：
+ *   pi-cj-demo.exe            走路演示（离线：假模型 + 假工具，不联网不读写文件）
+ *   pi-cj-demo.exe demo       同上
+ *   pi-cj-demo.exe chat ...   真实模型对话（配置见 scripts/chat.ps1 或 .env.local）
+ */
+main(args: Array<String>): Int64 {
+    for (a in args) {
+        if (a == "chat" || a == "ask") {
+            return runChat(args)
+        }
+    }
+    return runDemo()
 }

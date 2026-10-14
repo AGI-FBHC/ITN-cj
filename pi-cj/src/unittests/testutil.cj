@@ -2,6 +2,7 @@ package pi_cj.unittests
 
 import std.collection.*
 import pi_cj.pi.*
+import pi_cj.tools.*
 import stdx.encoding.json.*
 
 /*
@@ -136,5 +137,98 @@ public class BoomTool <: Tool {
 public class FailingProvider <: ChatProvider {
     public func respond(ctx: StepContext, stream: EventStream): ModelReply {
         throw PiException("模型接口返回 404 Not Found")
+    }
+}
+
+/** 假"列目录"工具：data 是字符串数组（真实工具也是这样回结构化载荷的）。 */
+public class FakeListTool <: Tool {
+    public func spec(): ToolSpec {
+        return ToolSpec("list_files", "列出文件", "{}", "列出工作区里的文件与子目录", "read")
+    }
+
+    public func run(args: JsonObject): ToolResult {
+        let arr = JsonArray()
+        arr.add(JsonString("note.md  171 字节"))
+        arr.add(JsonString("src/"))
+        return ToolResult.good("工作区根目录 下共 2 项", arr)
+    }
+}
+
+/** 模拟"原生 function calling"的模型：工具调用带 id（call_xxx），第二步才给最终回答。 */
+public class NativeToolProvider <: ChatProvider {
+    private var step: Int64 = 0
+    private let toolName: String
+    private let toolArgs: String
+    public let seenToolsText = ArrayList<String>()
+    public let seenSpecCounts = ArrayList<Int64>()
+
+    public init(toolName: String, toolArgs: String) {
+        this.toolName = toolName
+        this.toolArgs = toolArgs
+    }
+
+    public func respond(ctx: StepContext, stream: EventStream): ModelReply {
+        step = step + 1
+        seenToolsText.add(ctx.tools)
+        seenSpecCounts.add(ctx.toolSpecs.size)
+        let r = ModelReply()
+        if (step == 1) {
+            let e = PiEvent(ToolCallStart)
+            e.turnId = ctx.turnId
+            e.step = ctx.step
+            e.tool = toolName
+            e.callId = "call_test01"
+            stream.push(e)
+            let req = ToolRequest()
+            req.id = "call_test01"
+            req.name = toolName
+            req.args = objOf(JsonValue.fromStr(toolArgs)).getOrThrow()
+            r.requests.add(req)
+            r.stopReason = "tool_call"
+            return r
+        }
+        r.text = "做完了"
+        return r
+    }
+}
+
+/** 造一个 {"k": "v"} 的参数对象（测试里省点字）。 */
+func strObj(k: String, v: String): JsonObject {
+    let o = JsonObject()
+    o.put(k, JsonString(v))
+    return o
+}
+
+/** 造一个 {"k1": "v1", "k2": "v2"} 的参数对象。 */
+func twoObj(k1: String, v1: String, k2: String, v2: String): JsonObject {
+    let o = JsonObject()
+    o.put(k1, JsonString(v1))
+    o.put(k2, JsonString(v2))
+    return o
+}
+
+/** 一步里**并行**调两个工具的模型（实测 MiMo 就会这么干，第一版只接了第一条，第二条被丢掉）。 */
+public class NativeTwoCallProvider <: ChatProvider {
+    private var step: Int64 = 0
+
+    public func respond(ctx: StepContext, stream: EventStream): ModelReply {
+        step = step + 1
+        let r = ModelReply()
+        if (step == 1) {
+            let a = ToolRequest()
+            a.id = "call_a"
+            a.name = "list_files"
+            a.args = JsonObject()
+            let b = ToolRequest()
+            b.id = "call_b"
+            b.name = "calc"
+            b.args = strObj("expr", "1+1")
+            r.requests.add(a)
+            r.requests.add(b)
+            r.stopReason = "tool_call"
+            return r
+        }
+        r.text = "两件事都做了"
+        return r
     }
 }

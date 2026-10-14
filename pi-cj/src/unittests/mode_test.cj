@@ -87,13 +87,22 @@ class ModeAndToolTest {
     }
 
     @TestCase
-    func builtinModesAreTheThreeTheUiExpects(): Unit {
+    func builtinModesGoFromSafestToMostDangerous(): Unit {
         let ms = builtinModes()
-        @Expect(ms.size, 3)
+        @Expect(ms.size, 4)
         @Expect(ms[0].name, "plain")
         @Expect(ms[1].name, "standard")
         @Expect(ms[2].name, "research")
+        @Expect(ms[3].name, "agent")
         @Expect(findMode("standard").getOrThrow().title, "标准")
+        // 四档风险递增：工具只增不减
+        @Expect(ms[0].toolCount(), 0)
+        @Expect(ms[1].toolCount() > 0, true)
+        @Expect(ms[2].toolCount(), ms[1].toolCount() + 2)
+        @Expect(ms[3].toolCount(), ms[1].toolCount() + 1)
+        @Expect(ms[3].allows("run_command"), true)
+        @Expect(ms[2].allows("run_command"), false)
+        @Expect(ms[1].allows("run_command"), false)
         match (findMode("nope")) {
             case Some(_) => @Fail("不该找到 nope 这个模式")
             case None => ()

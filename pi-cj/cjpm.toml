@@ -4,7 +4,7 @@ name = "pi_cj"
 version = "0.1.0"
 description = "Pi-Agent 风格 Agent 运行时（仓颉实现）：事件流 / 增量工具调用 / 模式=工具集"
 output-type = "executable"
-compile-option = "-Woff unused --diagnostic-format=noColor"
+compile-option = "-Woff unused --diagnostic-format=noColor -lssl -lcrypto -lcangjie-dynamicLoader-opensslFFI -lcrypt32"
 
 [dependencies]
 

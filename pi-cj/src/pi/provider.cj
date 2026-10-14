@@ -10,9 +10,14 @@ public class StepContext {
     public var messages: JsonArray = JsonArray()
     /**
      * 本步的工具提示词段：可用工具清单 + "只输出一行 JSON" 的调用协议。
-     * 提供方自己决定怎么用（放进 system，还是塞进 tools 字段，还是转成原生 function 定义）。
+     * 只在"服务端不支持原生 function calling"时才需要拼进 system。
      */
     public var tools: String = ""
+    /**
+     * 本步可用工具的**结构化定义**（名字 / 说明 / 参数示例 / 风险）。
+     * 支持原生 function calling 的提供方拿它转成 tools 数组 —— 比让模型"照着文字输出 JSON"可靠得多。
+     */
+    public var toolSpecs = ArrayList<ToolSpec>()
     public var turnId: String = ""
     public var step: Int64 = 0
 
@@ -23,11 +28,16 @@ public class StepContext {
 
 /** 模型请求的一次工具调用（参数已经收齐）。 */
 public class ToolRequest {
+    /** 服务端给的调用 id（原生 function calling 才有）。回填历史时必须原样带回去。 */
+    public var id: String = ""
     public var name: String = ""
     public var args: JsonObject = JsonObject()
 
     public func toJson(): JsonObject {
         let o = JsonObject()
+        if (id.size > 0) {
+            o.put("id", JsonString(id))
+        }
         o.put("tool", JsonString(name))
         o.put("args", args)
         return o
@@ -38,8 +48,11 @@ public class ModelReply {
     /** 本步正文（最终回答，或"我要调工具"那句说明） */
     public var text: String = ""
     public var reasoning: String = ""
-    /** 本步请求的工具调用；None = 这就是最终回答 */
-    public var tool: ?ToolRequest = None
+    /**
+     * 本步请求的工具调用。**可以有多条**：模型会并行调多个工具（实测常见），
+     * 少接一条它就以为自己的调用丢了，然后反复重试到撞上限。空 = 这就是最终回答。
+     */
+    public let requests = ArrayList<ToolRequest>()
     public var stopReason: String = "stop"
     /** 原始返回（诊断用） */
     public var raw: String = ""
@@ -132,7 +145,7 @@ public class ScriptedProvider <: ChatProvider {
             let req = ToolRequest()
             req.name = parser.view().name
             req.args = parser.view().argsJson()
-            reply.tool = Some(req)
+            reply.requests.add(req)
             reply.stopReason = "tool_call"
             return reply
         }

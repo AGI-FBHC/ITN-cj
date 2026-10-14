@@ -53,15 +53,34 @@ public class ToolSpec {
     }
 }
 
+/**
+ * 工具结果。三个字段分工要清楚，别混：
+ *   summary —— 一行给人看的（界面上的 "[OK] read_file：读到 note.md（171 字节）"）
+ *   content —— **回灌给模型的正文**（文件内容、命令输出、检索命中……）
+ *   data    —— 结构化载荷，给界面用
+ *
+ * 一开始只回灌 summary，结果模型看到"共 2 项"却看不到是哪 2 项，于是反复瞎试到撞上限
+ * （实测 6 轮都没答出来）。工具结果没内容 = 模型没能力。
+ */
 public class ToolResult {
     public var ok: Bool = true
     public var summary: String = ""
+    public var content: String = ""
     public var data: JsonValue = JsonNull()
 
     public static func good(summary: String, data: JsonValue): ToolResult {
         let r = ToolResult()
         r.ok = true
         r.summary = summary
+        r.data = data
+        return r
+    }
+
+    public static func goodWith(summary: String, content: String, data: JsonValue): ToolResult {
+        let r = ToolResult()
+        r.ok = true
+        r.summary = summary
+        r.content = content
         r.data = data
         return r
     }
@@ -73,11 +92,45 @@ public class ToolResult {
         return r
     }
 
+    /** 回灌给模型的那段文本：优先 content，其次把 data 摊平，最后退回 summary。 */
+    public func modelText(): String {
+        var t = content
+        if (t.size == 0) {
+            t = flattenJson(data)
+        }
+        if (t.size == 0) {
+            t = summary
+        }
+        return byteSafePrefix(t, 8000)
+    }
+
     public func toJson(): JsonObject {
         let o = JsonObject()
         o.put("ok", JsonBool(ok))
         o.put("summary", JsonString(summary))
         return o
+    }
+}
+
+/** 把 JSON 摊成纯文本：字符串原样、数组逐项换行、其它类型不摊（交给 summary）。 */
+public func flattenJson(v: JsonValue): String {
+    match (v) {
+        case s: JsonString => return s.getValue()
+        case a: JsonArray =>
+            var out = ""
+            var i = 0
+            while (i < a.size()) {
+                let piece = flattenJson(a[i])
+                if (piece.size > 0) {
+                    if (out.size > 0) {
+                        out = out + "\n"
+                    }
+                    out = out + piece
+                }
+                i = i + 1
+            }
+            return out
+        case _ => return ""
     }
 }
 

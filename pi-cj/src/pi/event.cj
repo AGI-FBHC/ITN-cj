@@ -34,6 +34,8 @@ public class PiEvent {
     public var text: String = ""
     /** 工具名或工具结果里的工具名 */
     public var tool: String = ""
+    /** 工具调用 id（原生 function calling 才有；用来把"调用"和"结果"对上） */
+    public var callId: String = ""
     /** 参数键 */
     public var key: String = ""
     /** 参数值（已能解析出来的部分） */
@@ -55,6 +57,7 @@ public class PiEvent {
         if (step > 0) { o.put("step", JsonInt(step)) }
         if (text.size > 0) { o.put("text", JsonString(text)) }
         if (tool.size > 0) { o.put("tool", JsonString(tool)) }
+        if (callId.size > 0) { o.put("callId", JsonString(callId)) }
         if (key.size > 0) { o.put("key", JsonString(key)) }
         if (value.size > 0) { o.put("value", JsonString(value)) }
         if (!complete) { o.put("complete", JsonBool(false)) }

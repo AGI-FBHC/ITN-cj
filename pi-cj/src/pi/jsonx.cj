@@ -26,6 +26,18 @@ public func intOf(o: JsonObject, key: String): Int64 {
     }
 }
 
+/** 取布尔值；缺失或类型不对时返回 dflt。 */
+public func boolOf(o: JsonObject, key: String, dflt: Bool): Bool {
+    match (o.get(key)) {
+        case Some(v) =>
+            match (v) {
+                case b: JsonBool => return b.getValue()
+                case _ => return dflt
+            }
+        case None => return dflt
+    }
+}
+
 public func objOf(v: JsonValue): ?JsonObject {
     match (v) {
         case o: JsonObject => Some(o)
