@@ -56,6 +56,12 @@ public func buildSystemPrompt(preamble: String, tools: ArrayList<ToolSpec>, skil
     return sb.toString()
 }
 
+/** 压缩时用的系统提示词（让摘要"能接着干"，而不是复述）。 */
+public func compactPrompt(): String {
+    return "把下面这段对话压缩成要点摘要：保留结论、决定、涉及的文件路径、未完成事项与用户偏好；" +
+        "不要评论、不要客套，直接给摘要。摘要要让后续对话不必回看原文就能接着干。"
+}
+
 /** 存进会话的 section 快照。 */
 public func promptSections(preamble: String, tools: ArrayList<ToolSpec>, skillsText: String, cwd: String): JsonObject {
     let o = JsonObject()

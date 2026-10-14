@@ -201,7 +201,11 @@ func attachPrinter(stream: EventStream): UiState {
 func runOnce(agent: Agent, text: String): Unit {
     let stream = EventStream()
     attachPrinter(stream)
+    let compactBefore = agent.compactCount
     let out = agent.prompt(text, stream)
+    if (agent.compactCount > compactBefore) {
+        println("[上下文] " + agent.lastCompactNote)
+    }
     println("")
     if (out.ok) {
         println("[完成] 轮次 " + out.turns.toString() + "，工具 " + out.toolResults.size.toString() +
@@ -237,61 +241,6 @@ func pickSession(dataDir: String, cwd: String, continueLast: Bool, sessionId: St
         println("没找到可续的会话，开个新的。")
     }
     return newSession(dataDir, cwd, "", "")
-}
-
-func compactNow(agent: Agent, provider: HttpChatProvider, model: String): Unit {
-    let branch = agent.session.branchEntries()
-    let ids = ArrayList<String>()
-    for (e in branch) {
-        if (strOf(e, "type") == "message") {
-            match (e.get("message")) {
-                case Some(mv) =>
-                    match (objOf(mv)) {
-                        case Some(mo) =>
-                            if (strOf(mo, "role") != "system") {
-                                ids.add(strOf(e, "id"))
-                            }
-                        case None => ()
-                    }
-                case None => ()
-            }
-        }
-    }
-    if (ids.size <= 3) {
-        println("对话还短，不用压缩。")
-        return
-    }
-    let firstKept = ids[ids.size - 2]
-    let all = agent.session.messagesForModel()
-    let sb = StringBuilder()
-    var i: Int64 = 0
-    while (i + 2 < all.size) {
-        let m = all[i]
-        sb.append("[")
-        sb.append(roleName(m.role))
-        sb.append("] ")
-        sb.append(m.text)
-        sb.append("\n")
-        i = i + 1
-    }
-    let ctx = StepContext()
-    ctx.model = model
-    ctx.system = "把下面这段对话压缩成要点摘要：保留结论、决定、涉及的文件路径、未完成事项；不要评论，直接给摘要。"
-    let um = Message(UserMsg)
-    um.text = sb.toString()
-    ctx.messages.add(um)
-    let r = provider.respond(ctx, EventStream())
-    if (r.stopReason == "error") {
-        println("[失败] 压缩没成功：" + r.errorMessage)
-        return
-    }
-    if (r.text.size == 0) {
-        println("[失败] 模型没给出摘要。")
-        return
-    }
-    agent.session.appendCompaction(r.text, firstKept)
-    println("已压缩：" + sb.toString().size.toString() + " 字节的对话 -> " +
-        r.text.size.toString() + " 字节摘要（保留下来的最后两条照旧）")
 }
 
 /* ---------- 入口 ---------- */
@@ -468,7 +417,8 @@ public func runChat(args: Array<String>): Int64 {
             continue
         }
         if (t == "/compact") {
-            compactNow(agent, provider, model)
+            agent.compact(2, EventStream())
+            println(agent.lastCompactNote)
             continue
         }
         if (hasPrefix(t, "/mode")) {

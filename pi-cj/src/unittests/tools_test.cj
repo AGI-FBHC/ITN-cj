@@ -203,13 +203,28 @@ class ToolsTest {
     @TestCase
     func powershellActuallyRunsAndReportsExitCode(): Unit {
         let ws = Workspace(freshDir("tools-exec2"))
-        let r = ws.runPowerShell("Write-Output '你好 world'", "")
+        let r = ws.runPowerShell("Write-Output '你好 world'", "", 10)
         @Expect(r.code, 0)
         @Expect(containsSub(r.out, "world"), true)
         // 中文输出不能乱码（命令前插了 UTF-8 输出编码设置）
         @Expect(containsSub(r.out, "你好"), true)
-        let bad = ws.runPowerShell("exit 3", "")
+        let bad = ws.runPowerShell("exit 3", "", 10)
         @Expect(bad.code, 3)
+    }
+
+    @TestCase
+    func commandTimeoutKillsTheChildAndReports(): Unit {
+        let ws = Workspace(freshDir("tools-timeout"))
+        // ping 6 次大约 5 秒；给它 1 秒超时
+        let r = ws.runPowerShell("ping -n 6 127.0.0.1", "", 1)
+        @Expect(r.timedOut, true)
+        @Assert(r.wallMs < 4000)
+        @Expect(containsSub(r.err, "超过"), true)
+        // 正常命令带超时也要能跑完并拿到退出码
+        let ok = ws.runPowerShell("Write-Output ok", "", 10)
+        @Expect(ok.timedOut, false)
+        @Expect(ok.code, 0)
+        @Expect(containsSub(ok.out, "ok"), true)
     }
 
     @TestCase

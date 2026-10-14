@@ -1,6 +1,7 @@
 package pi_cj.pi
 
 import std.collection.*
+import std.sync.*
 import stdx.encoding.json.*
 
 /*
@@ -22,6 +23,12 @@ import stdx.encoding.json.*
  *   - 工具**顺序**执行（Pi 支持 parallel）；
  *   - 只有 steering / follow-up 两个队列的注入点，没有 Pi 的 prepareNextTurn/压缩钩子（压缩用手动命令）。
  */
+
+/** 并行执行工具时的结果槽（子线程写、主线程 join 完之后读，读到的一定是写好的值）。 */
+class ToolSlot {
+    var res: ?ToolResult = None
+    var durationMs: Int64 = 0
+}
 
 public class RunOutcome {
     public var ok: Bool = true
@@ -65,6 +72,12 @@ public class AgentOptions {
     public var beforeToolCall: ?(String, String, JsonObject) -> String = None
     /** 模型跑着的时候用户又输了几条（Pi 的 getSteeringMessages） */
     public var getSteering: ?() -> ArrayList<String> = None
+    /** 上下文估算超过这么多字节就自动压缩（0 = 关）。Pi 用 prepareNextTurn 钩子做，位置一样（每轮请求前）。 */
+    public var autoCompactBytes: Int64 = 120000
+    /** 压缩时最近几条消息不参与摘要 */
+    public var compactKeepRecent: Int64 = 2
+    /** "sequential"（默认，可复现）或 "parallel"（一步并发跑多个工具） */
+    public var toolExecution: String = "sequential"
 }
 
 public class Agent {
@@ -79,6 +92,9 @@ public class Agent {
     private let provider: ChatProvider
     private var abortedFlag = false
     private var lastSystemText = ""
+    /** 最近一次压缩的结果说明 */
+    public var lastCompactNote: String = ""
+    public var compactCount: Int64 = 0
     private var steeringQueue = ArrayList<String>()
     private var followUpQueue = ArrayList<String>()
 
@@ -177,6 +193,11 @@ public class Agent {
                 drainFollowUps(stream)
             }
 
+            // 上下文太大就先压缩（Pi 的 prepareNextTurn 钩子位置）
+            if (options.autoCompactBytes > 0 && contextBytes() > options.autoCompactBytes) {
+                compact(options.compactKeepRecent, EventStream())
+            }
+
             let ctx = StepContext()
             ctx.model = options.model
             ctx.system = systemPromptNow()
@@ -215,48 +236,7 @@ public class Agent {
                 break
             }
 
-            let summaries = ArrayList<String>()
-            if (am.hasToolCalls()) {
-                for (tc in am.toolCalls) {
-                    if (abortedFlag) {
-                        break
-                    }
-                    let startMs = nowMillis()
-                    let args = tc.args()
-                    stream.push(evToolStart(tc.id, tc.name, tc.argsJson))
-                    var blocked = ""
-                    match (options.beforeToolCall) {
-                        case Some(f) => blocked = f(tc.id, tc.name, args)
-                        case None => ()
-                    }
-                    var res: ToolResult
-                    if (blocked.size > 0) {
-                        res = ToolResult.err(blocked)
-                    } else {
-                        res = registry.execute(mode, tc.id, tc.name, args)
-                    }
-                    let dur = nowMillis() - startMs
-                    stream.push(evToolEnd(tc.id, tc.name, res.summary, res.isError, dur))
-                    let trm = Message(ToolResultMsg)
-                    trm.toolCallId = tc.id
-                    trm.toolName = tc.name
-                    trm.text = res.modelText()
-                    trm.isError = res.isError
-                    session.appendMessage(trm)
-                    stream.push(evMessageStart(trm))
-                    stream.push(evMessageEnd(trm))
-                    summaries.add(res.summary)
-                    let rp = JsonObject()
-                    rp.put("tool", JsonString(tc.name))
-                    rp.put("callId", JsonString(tc.id))
-                    rp.put("ok", JsonBool(!res.isError))
-                    rp.put("summary", JsonString(res.summary))
-                    out.toolResults.add(rp)
-                    if (res.isError) {
-                        out.warnings.add("工具 " + tc.name + " 出错：" + res.summary)
-                    }
-                }
-            }
+            let summaries = executeToolCalls(am.toolCalls, stream, out)
             stream.push(evTurnEnd(am, summaries))
 
             if (!am.hasToolCalls()) {
@@ -278,6 +258,173 @@ public class Agent {
             stream.fail(out.error)
         }
         return out
+    }
+
+    /** 当前分支的上下文大小估算（字节；中文大约 3 字节一个 token）。 */
+    public func contextBytes(): Int64 {
+        var n: Int64 = 64
+        for (m in session.messagesForModel()) {
+            n = n + m.text.size + 32
+            for (tc in m.toolCalls) {
+                n = n + tc.argsJson.size + 16
+            }
+        }
+        return n
+    }
+
+    /**
+     * 压缩：把较早的消息交给模型总结，然后写一条 compaction entry（原文保留、只是不再进上下文）。
+     * Pi 在 prepareNextTurn 里自动做；这里既能自动（超过 autoCompactBytes）也能手动 /compact。
+     */
+    public func compact(keepRecent: Int64, quiet: EventStream): Bool {
+        let ids = ArrayList<String>()
+        for (e in session.branchEntries()) {
+            if (strOf(e, "type") == "message") {
+                match (e.get("message")) {
+                    case Some(mv) =>
+                        match (objOf(mv)) {
+                            case Some(mo) =>
+                                if (strOf(mo, "role") != "system") {
+                                    ids.add(strOf(e, "id"))
+                                }
+                            case None => ()
+                        }
+                    case None => ()
+                }
+            }
+        }
+        if (ids.size <= keepRecent + 1) {
+            lastCompactNote = "对话还短，不用压缩"
+            return false
+        }
+        let firstKept = ids[ids.size - keepRecent]
+        let all = session.messagesForModel()
+        let sb = StringBuilder()
+        var i: Int64 = 0
+        while (i + keepRecent < all.size) {
+            sb.append("[")
+            sb.append(roleName(all[i].role))
+            sb.append("] ")
+            sb.append(all[i].text)
+            sb.append("\n")
+            i = i + 1
+        }
+        let ctx = StepContext()
+        ctx.model = options.model
+        ctx.system = compactPrompt()
+        let um = Message(UserMsg)
+        um.text = sb.toString()
+        ctx.messages.add(um)
+        let r = provider.respond(ctx, quiet)
+        if (r.stopReason == "error") {
+            lastCompactNote = "压缩失败：" + r.errorMessage
+            return false
+        }
+        let summary = trimStr(r.text)
+        if (summary.size == 0) {
+            lastCompactNote = "压缩失败：模型没给摘要"
+            return false
+        }
+        session.appendCompaction(summary, firstKept)
+        compactCount = compactCount + 1
+        lastCompactNote = "已压缩：" + sb.toString().size.toString() + " 字节对话 -> " +
+            summary.size.toString() + " 字节摘要"
+        return true
+    }
+
+    /**
+     * 执行这一轮的（可能多条）工具调用。
+     *
+     * 事件与会话都在**主线程**按源顺序写：并行只在工具内部并发，
+     * 这样既拿到并发收益，又不用给事件流/会话加锁，也就不会出现事件交错。
+     */
+    private func executeToolCalls(calls: ArrayList<ToolCallBlock>, stream: EventStream, out: RunOutcome): ArrayList<String> {
+        let summaries = ArrayList<String>()
+        if (calls.size == 0) {
+            return summaries
+        }
+        for (tc in calls) {
+            stream.push(evToolStart(tc.id, tc.name, tc.argsJson))
+        }
+        let slots = ArrayList<ToolSlot>()
+        var k: Int64 = 0
+        while (k < calls.size) {
+            slots.add(ToolSlot())
+            k = k + 1
+        }
+        if (options.toolExecution == "parallel" && calls.size > 1) {
+            let futures = ArrayList<Future<Unit>>()
+            var i: Int64 = 0
+            while (i < calls.size) {
+                // 通过带参函数发起：闭包捕获参数时每次调用绑定独立，不会两个线程共享同一个循环变量
+                spawnToolRun(calls[i], slots[i], futures)
+                i = i + 1
+            }
+            for (f in futures) {
+                try {
+                    f.get()
+                } catch (e: Exception) {
+                    ()
+                }
+            }
+        } else {
+            var i: Int64 = 0
+            while (i < calls.size) {
+                runOneTool(calls[i], slots[i])
+                i = i + 1
+            }
+        }
+        var i: Int64 = 0
+        while (i < calls.size) {
+            let tc = calls[i]
+            let slot = slots[i]
+            let res = match (slot.res) {
+                case Some(r) => r
+                case None => ToolResult.err("工具没有返回结果")
+            }
+            stream.push(evToolEnd(tc.id, tc.name, res.summary, res.isError, slot.durationMs))
+            let trm = Message(ToolResultMsg)
+            trm.toolCallId = tc.id
+            trm.toolName = tc.name
+            trm.text = res.modelText()
+            trm.isError = res.isError
+            session.appendMessage(trm)
+            stream.push(evMessageStart(trm))
+            stream.push(evMessageEnd(trm))
+            summaries.add(res.summary)
+            let rp = JsonObject()
+            rp.put("tool", JsonString(tc.name))
+            rp.put("callId", JsonString(tc.id))
+            rp.put("ok", JsonBool(!res.isError))
+            rp.put("summary", JsonString(res.summary))
+            out.toolResults.add(rp)
+            if (res.isError) {
+                out.warnings.add("工具 " + tc.name + " 出错：" + res.summary)
+            }
+            i = i + 1
+        }
+        return summaries
+    }
+
+    private func spawnToolRun(tc: ToolCallBlock, slot: ToolSlot, futures: ArrayList<Future<Unit>>): Unit {
+        futures.add(spawn { runOneTool(tc, slot) })
+    }
+
+    /** 跑一个工具（可能跑在子线程里：只碰工具自己的东西，不碰事件流与会话）。 */
+    private func runOneTool(tc: ToolCallBlock, slot: ToolSlot): Unit {
+        let startMs = nowMillis()
+        let args = tc.args()
+        var blocked = ""
+        match (options.beforeToolCall) {
+            case Some(f) => blocked = f(tc.id, tc.name, args)
+            case None => ()
+        }
+        if (blocked.size > 0) {
+            slot.res = Some(ToolResult.err(blocked))
+        } else {
+            slot.res = Some(registry.execute(mode, tc.id, tc.name, args))
+        }
+        slot.durationMs = nowMillis() - startMs
     }
 
     /** 把排队的 steering 消息写成 user 消息（Pi 的 steering drain 点）。 */

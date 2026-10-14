@@ -456,9 +456,9 @@ class PowerShellTool <: Tool {
     public func spec(): ToolSpec {
         let s = ToolSpec("powershell", "跑命令", "Execute PowerShell commands",
             "Run a PowerShell command inside the workspace. Output (stdout+stderr) is returned; a non-zero exit code is reported as an error. Do not run interactive or long-running commands.",
-            "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"Shell command to execute\"},\"cwd\":{\"type\":\"string\",\"description\":\"Working directory inside the workspace (optional)\"}},\"required\":[\"command\"]}",
+            "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"Shell command to execute\"},\"timeout\":{\"type\":\"number\",\"description\":\"Timeout in seconds (optional, no default timeout)\"},\"cwd\":{\"type\":\"string\",\"description\":\"Working directory inside the workspace (optional)\"}},\"required\":[\"command\"]}",
             "external")
-        s.guidelines = ["不要跑交互式或常驻的命令：这版没有超时保护，会一直挂着。"]
+        s.guidelines = ["不要跑交互式或常驻的命令；长任务自己带 timeout 参数（不加就没有超时保护）。"]
         return s
     }
 
@@ -468,7 +468,11 @@ class PowerShellTool <: Tool {
             return ToolResult.err("缺少 command 参数")
         }
         let cwd = strOf(args, "cwd")
-        let r = ws.runPowerShell(cmd, cwd)
+        let timeout = intOf(args, "timeout")
+        let r = ws.runPowerShell(cmd, cwd, timeout)
+        if (r.timedOut) {
+            return ToolResult.err("命令超过 " + timeout.toString() + " 秒还没结束，已被终止（子进程可能残留）")
+        }
         let body = "命令：" + cmd + "\n退出码：" + r.code.toString() + "\n耗时：" +
             (r.wallMs / 1000).toString() + "s\nstdout：\n" + r.out + "\nstderr：\n" + r.err
         if (r.code != 0) {

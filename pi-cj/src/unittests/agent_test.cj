@@ -1,6 +1,7 @@
 package pi_cj.unittests
 
 import std.collection.*
+import std.time.*
 import stdx.encoding.json.*
 import pi_cj.pi.*
 import std.unittest.*
@@ -233,6 +234,93 @@ class AgentLoopTest {
         let ok = agent.resume(EventStream())
         @Expect(ok.ok, true)
         @Expect(s.messagesForModel().size, 4)
+    }
+
+    @TestCase
+    func autoCompactionKicksInWhenContextGrows(): Unit {
+        let d = freshDir("loop-autocompact")
+        let s = newSession(d, "cwd", "", "")
+        // 先把历史堆到阈值以上
+        var i: Int64 = 0
+        while (i < 12) {
+            let u = Message(UserMsg)
+            u.text = "这是第 " + i.toString() + " 条历史消息，用来把上下文撑大。"
+            s.appendMessage(u)
+            let a = Message(AssistantMsg)
+            a.text = "收到第 " + i.toString() + " 条。"
+            s.appendMessage(a)
+            i = i + 1
+        }
+        // 脚本：第一步是"压缩用的摘要"，第二步才是正式回答
+        let provider = ScriptedProvider([scriptText("之前聊了 12 轮，结论是 A，未完成 B。"), scriptText("正式回答")])
+        let opts = AgentOptions()
+        opts.autoCompactBytes = 1000        // 人为压低阈值
+        opts.compactKeepRecent = 2
+        let agent = Agent(provider, s, ToolRegistry(), modeChat(), opts)
+        @Assert(agent.contextBytes() > opts.autoCompactBytes)
+        let out = agent.prompt("接着聊", EventStream())
+        @Expect(out.ok, true)
+        @Expect(agent.compactCount, 1)
+        @Expect(containsSub(agent.lastCompactNote, "已压缩"), true)
+        // 会话里落了 compaction entry，且组装上下文时用的是摘要
+        var hasCompaction = false
+        for (e in s.entries) {
+            if (strOf(e, "type") == "compaction") {
+                hasCompaction = true
+                @Assert(strOf(e, "summary").size > 0)
+                @Assert(strOf(e, "firstKeptEntryId").size > 0)
+            }
+        }
+        @Expect(hasCompaction, true)
+        let msgs = s.messagesForModel()
+        @Expect(roleName(msgs[0].role), "user")
+        @Expect(containsSub(msgs[0].text, "摘要"), true)
+        @Expect(containsSub(msgs[0].text, "结论是 A"), true)
+    }
+
+    @TestCase
+    func nothingIsCompactedWhenContextIsStillSmall(): Unit {
+        let d = freshDir("loop-nocompact")
+        let s = newSession(d, "cwd", "", "")
+        let provider = ScriptedProvider([scriptText("回答")])
+        let agent = Agent(provider, s, ToolRegistry(), modeChat(), AgentOptions())
+        let out = agent.prompt("一个问题", EventStream())
+        @Expect(out.ok, true)
+        @Expect(agent.compactCount, 0)
+        @Expect(provider.remaining(), 0)
+    }
+
+    @TestCase
+    func parallelToolExecutionRunsThemConcurrently(): Unit {
+        let d = freshDir("loop-parallel-exec")
+        let s = newSession(d, "cwd", "", "")
+        let reg = ToolRegistry()
+        // 名字要与 TwoCallProvider 发的一致（twice）
+        let spec = ToolSpec("twice", "慢工具", "Slow", "睡一会儿再返回。",
+            "{\"type\":\"object\",\"properties\":{\"tag\":{\"type\":\"string\"}}}", "read")
+        reg.add(FuncTool(spec, { callId: String, args: JsonObject =>
+            sleep(Duration.millisecond * 300)
+            ToolResult.ok("睡了 300ms", "正文 " + strOf(args, "tag") + " " + callId, JsonNull())
+        }))
+        let opts = AgentOptions()
+        opts.toolExecution = "parallel"
+        let agent = Agent(TwoCallProvider(), s, reg, onlyMode("twice"), opts)
+        let stream = EventStream()
+        let t0 = nowMillis()
+        let out = agent.prompt("并发跑两个", stream)
+        let wall = nowMillis() - t0
+        @Expect(out.ok, true)
+        @Expect(out.toolResults.size, 2)
+        // 顺序执行要 600ms 以上；并发应当在 600ms 以内（留足余量，避免偶发抖动）
+        @Assert(wall < 600)
+        // 事件与结果仍按源顺序（并发只在工具内部）
+        let msgs = s.messagesForModel()
+        @Expect(msgs[2].toolCallId, "call_a")
+        @Expect(msgs[3].toolCallId, "call_b")
+        @Expect(containsSub(msgs[2].text, "call_a"), true)
+        let kinds = kindsOf(stream.drain())
+        @Expect(countOf(kinds, "tool_execution_start"), 2)
+        @Expect(countOf(kinds, "tool_execution_end"), 2)
     }
 
     @TestCase

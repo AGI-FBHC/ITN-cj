@@ -1531,3 +1531,48 @@ ITN-Desktop"；最后要求"做好之后先让我单独试试效果"。
 
 **教训**：`LearnerProfile.selfScores` 是两条平行数组（`selfScores` + `selfScoreValues`），要用 `scoreOf()` 读；
 "没填"和"填了 0"必须在接口层就分开（-1 vs 0），否则界面上"没填"会长成一根 0 分的柱子。
+
+---
+
+## 第十九轮（2026-10-14）：补齐三个缺口（命令超时 / 自动压缩 / 并行工具执行），51 例测试全绿
+
+**用户要求**："完整做好，不要问我" —— 按上一轮列出的已知差距继续做，不再逐项确认。
+
+### 做完的三件
+
+1. **命令超时**（对齐 Pi 的 `timeout` 参数）：
+   - 无超时 → `executeWithOutput`（会给分离的 stdout/stderr 与退出码）；
+   - 有超时 → `Process.start` + `wait(timeout)` 计时 + 超时 `terminate(force)` 杀子进程，
+     输出让 PowerShell 重定向到临时文件再读回（与 Pi 的 bash 一样是合并流）。
+   - 工具说明里也写清"长任务自己带 timeout"。
+2. **自动压缩**（对齐 Pi 的 `prepareNextTurn` 钩子位置）：每轮模型请求之前，估算当前分支上下文字节数，
+   超过 `autoCompactBytes`（默认 12 万字节）就把**较早的消息**交给模型总结，写一条 `compaction` entry
+   （`summary + firstKeptEntryId`，原文保留、只是不再进上下文）。手动 `/compact` 也走同一条代码路径。
+3. **并行工具执行**（Pi 的 `ToolExecutionMode`）：`AgentOptions.toolExecution = "parallel"` 时，
+   一步里的多条工具调用各起一个线程并发跑；**事件与会话仍在主线程按源顺序落地**（工具只在内部并发），
+   所以既拿到并发收益，又不用给事件流/会话加锁、也不会事件交错。另外给文件写入加了互斥（Pi 的 `file-mutation-queue` 同理）。
+
+### 顺手挖出来并修掉的坑（写给接手的人）
+
+- **`Process.start` 默认不接管管道**：`waitOutput()` 拿到空字符串，子进程输出会漏到控制台。
+  实测对比：`Process.start + waitOutput` → outlen=0；`executeWithOutput` → outlen=8。
+  所以"带超时"那条路必须自己重定向到文件。
+- **`SubProcess.wait(timeout:)` 超时时是抛异常**（不是返回哨兵值），`Future.get(timeout:)` 不存在（只有无参 get）。
+- **`p.terminate(force: true)` 可用**，超时能真的杀掉子进程（但它再拉起的孙进程管不到）。
+- **`spawn` 不能捕获可变变量**（编译期就拦），要 `let` 或用类字段；闭包捕获参数是每次调用独立绑定
+  （用"带参函数里 spawn"的写法最稳，直接把循环变量塞进 spawn 会在两个线程间共享同一个变量）。
+- 仓颉的 **`Duration` 没有 count()`**，临时文件名只能用毫秒数凑。
+
+### 验证
+
+- `cjpm test` → **51/51 全绿**（新增 5 例：命令超时杀进程、带超时的正常命令、超阈值才自动压缩、没超阈值不压、
+  两个各睡 300ms 的工具并发跑总墙钟 < 600ms 且事件/结果仍按源顺序）。
+- 真机回归（mimo-v2.6-flash，agent 档 + `--allow-exec`）："读 readme 说三要素 + 跑一条 PowerShell 打印" →
+  4 轮 3 次工具调用全对，powershell 走的是无超时路径（252ms，退出码 0）。
+- 绿色包与干净环境自检照旧通过。
+
+### 还剩什么（写在 `pi-cj/README.md` 第 6 节，没有"悄悄少东西"）
+
+1. **MCP / 扩展装载**：要长工具生态走 MCP 客户端（JSON-RPC，不引 Node 也能做）。
+2. **TUI / RPC / SDK**：只有单一 CLI（桌面版会自己画界面）。
+3. 超时路径的输出是合并流、孙进程可能残留、读操作不加锁（Pi 同样如此）。

@@ -42,12 +42,15 @@ CLI 命令（与 Pi 同形）：`/help /tools /skills /sessions /new /resume <id
 
 工具集四档（这是 DeepSeek 那套"模式=工具集"，Pi 本身没有 mode）：`chat`（不给工具）/ `standard`（文件读写，默认）/ `research`（+联网）/ `agent`（+跑命令）。
 
-## 4. 测试（47 例，`cjpm test` 全绿）
+## 4. 测试（51 例，`cjpm test` 全绿）
 
 - **事件流**：顺序、on 不重放、drain 只取一次、finish/fail/abort、事件 JSON 字段名与 Pi 一致。
 - **会话**：JSONL 形状（header + 每行一条 entry + id/parentId 链）、重新载入后分支一致、**分叉**（回到旧 entry 再追加）、**compaction**（摘要替代旧消息、原文留档）、model_change/session_info、按目录分文件、toolResult 的 callId/isError 往返。
 - **工具**：read（整文件 + offset/limit）、write 往返、edit（多段替换 / 找不到 / 不唯一都拒）、ls、find（glob）、grep（正则 / literal / ignoreCase / glob 过滤）、**越界一律拒**、命令工具被 `--allow-exec` 门住、真跑 PowerShell（含中文不乱码、退出码）。
-- **循环**：完整事件序列（agent_start → turn_start → message_* → tool_execution_* → turn_end → agent_end）、**一条 assistant 里两条工具调用都执行且各自有 tool_call_id**、beforeToolCall 拦截、工具失败不中断、模型报错不抛、最大轮数、steering 注入点、follow-up 注入点、resume 的前置校验、系统提示词快照写进会话。
+- **循环**：完整事件序列（agent_start → turn_start → message_* → tool_execution_* → turn_end → agent_end）、**一条 assistant 里两条工具调用都执行且各自有 tool_call_id**、beforeToolCall 拦截、工具失败不中断、模型报错不抛、最大轮数、steering 注入点、follow-up 注入点、resume 的前置校验、系统提示词快照写进会话；**自动压缩**（超阈值才压、压完上下文改用摘要）；**并行执行**（两个各睡 300ms 的工具并发跑，总墙钟 < 600ms，事件与结果仍按源顺序）。
+- **自动压缩**：上下文超阈值时自动压（写 compaction entry、上下文改用摘要）、没超阈值时不压。
+- **并行执行**：两个各睡 300ms 的工具并发跑，总墙钟 < 600ms（顺序执行必然超），且事件与工具结果仍按源顺序落地。
+- **命令超时**：`ping -n 6` 给 1 秒超时 → 判定超时、杀子进程、耗时 < 4 秒；正常命令带超时照样拿到退出码与输出。
 - **Skills**：扫描、frontmatter 校验（缺 name/description 跳过）、播报只带 name/description/location、`disable-model-invocation` 只手动可触发。
 - **流式解析**：分片无关性、截断缓冲不抛、字节安全（汉字不被切断）、转义引号、原生 arguments 形态。
 
@@ -57,14 +60,16 @@ CLI 命令（与 Pi 同形）：`/help /tools /skills /sessions /new /resume <id
 - 「跑命令 + 算数」（agent 档 + `--allow-exec`）：一步并行两条调用，2 轮 0 失败。
 - 越界读 `../../windows/win.ini`：被拒，模型如实转述。
 - 无 Key / 错 Key / 429 限流：分别给出配置指引 / 401 原文 / 退避重试（实测有一次 115 秒才成功）。
+- 并行工具（agent 档，ls + powershell echo）：一步两条，2 轮 0 失败。
 
 ## 6. 已知差距（按影响排序）
 
-1. **压缩是手动的**（`/compact`）：Pi 有自动触发钩子（`prepareNextTurn`）。
-2. **工具顺序执行**：Pi 支持 parallel（`executionMode`），我们一次跑一条；模型并行发多条时也能全部执行，只是不并发。
-3. **命令没有超时**：仓颉这版 `executeWithOutput` 不带 timeout（Pi 的 bash 有），已写进工具说明警告模型别跑交互命令。
-4. **没有 MCP / 扩展装载**：要长工具生态得走 MCP 客户端。
-5. **没有 TUI / RPC / SDK**：只有单一 CLI；桌面版会自己画界面。
+1. **没有 MCP / 扩展装载**：要长工具生态得走 MCP 客户端（JSON-RPC，不引 Node 也能做）。
+2. **没有 TUI / RPC / SDK**：只有单一 CLI，桌面版会自己画界面。
+3. **超时路径的输出是合并流**：带 `timeout` 时走"重定向到临时文件"（stdout+stderr 合并，与 Pi 的 bash 一致），不带超时时
+   `executeWithOutput` 会给分离的 stdout/stderr；两条路径的差别写在 `workspace.cj` 注释里。
+4. **子进程可能残留**：超时后我们会 `terminate(force)`，但它自己再拉起的孙进程管不到（Pi 也差不多）。
+5. **读操作不加锁**：并行时读到"别人正在写"的半旧内容是可能的（Pi 同样如此，只对写加了 file-mutation-queue）。
 
 ## 7. 合并进 ITN-Desktop
 

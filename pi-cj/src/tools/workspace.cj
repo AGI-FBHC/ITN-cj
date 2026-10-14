@@ -1,8 +1,11 @@
 package pi_cj.tools
 
 import std.collection.*
+import std.env.*
 import std.fs.*
 import std.process.*
+import std.sync.*
+import std.time.*
 import std.time.*
 import pi_cj.pi.*
 
@@ -11,6 +14,13 @@ import pi_cj.pi.*
  * 模型给的是相对路径，先归一化（反斜杠当分隔符、消掉 . 与 .. 段），
  * 越界、带盘符、带冒号一律拒绝；命令的 cwd 也钉在工作区里。
  */
+
+/**
+ * 文件写入串行化。
+ * Pi 有 file-mutation-queue.ts 做同一件事：并行执行工具时，两个写操作不能同时改同一个文件。
+ * 读操作不锁（Pi 也不锁），所以"读到的可能是半旧内容"这一点两边一样。
+ */
+let FILE_MUTEX = Mutex()
 
 public class Workspace {
     public let root: String
@@ -67,11 +77,14 @@ public class Workspace {
                         }
                     }
                 }
+                FILE_MUTEX.lock()
                 try {
                     File.writeTo(full, text.toArray())
                     return true
                 } catch (e: Exception) {
                     return false
+                } finally {
+                    FILE_MUTEX.unlock()
                 }
             case None => return false
         }
@@ -162,12 +175,13 @@ public class Workspace {
     }
 
     /**
-     * 在工作区里跑 PowerShell 命令。
+     * 在工作区里跑 PowerShell 命令（可选超时，与 Pi 的 bash/powershell 同参数）。
      *
-     * 已知缺口：这版 std.process 的 executeWithOutput 不带 timeout 参数（Pi 的 bash/powershell 有），
-     * 所以交互式/常驻命令会一直挂着 —— 工具说明里已经警告模型别这么干。
+     * 实现要点：std.process 的 executeWithOutput 不带 timeout，所以这里用
+     * Process.start + 一个读线程把管道抽干（否则输出超过管道缓冲会卡住子进程）+
+     * 主线程 wait(timeout) 计时；超时就 terminate(force) 杀掉再返回。
      */
-    public func runPowerShell(cmd: String, rel: String): CmdOutcome {
+    public func runPowerShell(cmd: String, rel: String, timeoutSec: Int64): CmdOutcome {
         var dir: ?Path = None
         match (resolve(rel)) {
             case Some(d) => dir = Some(Path(d))
@@ -176,13 +190,48 @@ public class Workspace {
         let start = nowMillis()
         // Pi 在命令前插一句把控制台输出编码设成 UTF-8 —— Windows 上不设，中文输出就是乱码
         let prefix = "try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}\n"
+        if (timeoutSec <= 0) {
+            // 没给超时：用 executeWithOutput。它会把 stdout/stderr 接管并返回三元组；
+            // Process.start 默认**不接管管道**（实测输出会漏到控制台、waitOutput 拿到空），所以这里不能用它。
+            try {
+                let (code, out, err) = executeWithOutput("powershell",
+                    ["-NoProfile", "-NonInteractive", "-Command", prefix + cmd], workingDirectory: dir)
+                return CmdOutcome(code, cap(safeUtf8(out, 0, out.size)), cap(safeUtf8(err, 0, err.size)),
+                    nowMillis() - start, false)
+            } catch (ex: Exception) {
+                return CmdOutcome(-1, "", "命令没能正常结束：" + ex.message, nowMillis() - start, false)
+            }
+        }
+        // 给了超时：没有带 timeout 的 executeWithOutput，只能自己起进程 + 计时 + 超时杀。
+        // 输出让 PowerShell 重定向到临时文件（与 Pi 的 bash 一样输出是 stdout+stderr 合并的）。
+        let tmp = tempFilePath()
+        let script = prefix + "& { " + cmd + " } *>&1 | Out-File -FilePath '" + tmp + "' -Encoding utf8\n" +
+            "if ($LASTEXITCODE -ne $null) { exit $LASTEXITCODE } else { exit 0 }"
         try {
-            let (code, out, err) = executeWithOutput("powershell",
-                ["-NoProfile", "-NonInteractive", "-Command", prefix + cmd], workingDirectory: dir)
-            return CmdOutcome(code, cap(safeUtf8(out, 0, out.size)), cap(safeUtf8(err, 0, err.size)),
-                nowMillis() - start)
+            let proc = Process.start("powershell", ["-NoProfile", "-NonInteractive", "-Command", script])
+            var code: Int64 = -1
+            try {
+                code = proc.wait(timeout: Duration.second * timeoutSec)
+            } catch (ex: Exception) {
+                try {
+                    proc.terminate(force: true)
+                } catch (e2: Exception) {
+                    ()
+                }
+                return CmdOutcome(-1, readTmp(tmp), "命令超过 " + timeoutSec.toString() +
+                    " 秒还没结束，已终止（输出是终止前写下的部分）", nowMillis() - start, true)
+            }
+            return CmdOutcome(code, cap(readTmp(tmp)), "", nowMillis() - start, false)
         } catch (ex: Exception) {
-            return CmdOutcome(-1, "", "命令没能正常结束：" + ex.message, nowMillis() - start)
+            return CmdOutcome(-1, "", "命令没能启动：" + ex.message, nowMillis() - start, false)
+        }
+    }
+
+    private func readTmp(path: String): String {
+        try {
+            return cap(safeUtf8(File.readFrom(path), 0, 2 * 1024 * 1024))
+        } catch (e: Exception) {
+            return ""
         }
     }
 
@@ -196,14 +245,17 @@ public class CmdOutcome {
     public let out: String
     public let err: String
     public let wallMs: Int64
+    public let timedOut: Bool
 
-    public init(code: Int64, out: String, err: String, wallMs: Int64) {
+    public init(code: Int64, out: String, err: String, wallMs: Int64, timedOut: Bool) {
         this.code = code
         this.out = out
         this.err = err
         this.wallMs = wallMs
+        this.timedOut = timedOut
     }
 }
+
 
 /** 这些目录不列也不搜。 */
 func skipDirName(nm: String): Bool {
@@ -213,6 +265,31 @@ func skipDirName(nm: String): Bool {
     }
     return nm == "node_modules" || nm == "target" || nm == "dist" || nm == "build" ||
         nm == "venv" || nm == "__pycache__" || nm == "artifacts" || nm == "out"
+}
+
+/** 临时文件路径（超时路径下用文件接命令输出；名字带毫秒，避免并行调用互相覆盖）。 */
+func tempFilePath(): String {
+    var dir = ""
+    match (getVariable("TEMP")) {
+        case Some(v) =>
+            if (v.size > 0) {
+                dir = v
+            }
+        case None => ()
+    }
+    if (dir.size == 0) {
+        match (getVariable("TMP")) {
+            case Some(v2) =>
+                if (v2.size > 0) {
+                    dir = v2
+                }
+            case None => ()
+        }
+    }
+    if (dir.size == 0) {
+        dir = "."
+    }
+    return dir + "/pi-cj-cmd-" + (nowMillis() % 100000000).toString() + ".txt"
 }
 
 func stripTrailingSeps(s: String): String {
