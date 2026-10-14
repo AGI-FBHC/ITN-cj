@@ -2,8 +2,10 @@ package itn_desktop_core.api
 
 import stdx.net.http.*
 import std.collection.*
+import std.convert.*
 import stdx.encoding.json.*
 import itn_desktop_core.store.*
+import itn_desktop_core.db.*
 import itn_desktop_core.llm.*
 import itn_desktop_core.kb.*
 import itn_desktop_core.agent.*
@@ -558,12 +560,19 @@ public class Api {
             ensureDir(dir)
             let arr = JsonArray()
             try {
+                let pdb = DbHub.open(store.dataDir)
                 Directory.walk(Path(dir), { fi: FileInfo =>
                     if (!fi.isDirectory()) {
                         let o = JsonObject()
                         o.put("name", JsonString(fi.name))
                         o.put("path", JsonString(dir + Path.Separator + fi.name))
                         o.put("size", JsonInt(fi.size))
+                        // 播放进度存在 meta 键值表里，形如 "3|12|2026-10-14T..."
+                        let raw = pdb.getKv("meta", "artprog:" + fi.name, "")
+                        let parts = raw.split("|")
+                        o.put("page", JsonInt(kvInt(parts, 0)))
+                        o.put("pageCount", JsonInt(kvInt(parts, 1)))
+                        o.put("progressAt", JsonString(kvStr(parts, 2)))
                         arr.add(o)
                     }
                     true
@@ -574,6 +583,56 @@ public class Api {
             let o = JsonObject()
             o.put("artifacts", arr)
             ok(ctx, o)
+            return
+        }
+
+        // ---------- 学习者档案 ----------
+
+        // ---------- 课件播放进度 ----------
+
+        if (path == "/api/artifacts/progress" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let name = strOf(b, "name")
+                    if (name.size == 0) {
+                        fail(ctx, 400, "缺少 name")
+                        return
+                    }
+                    let parts = DbHub.open(store.dataDir).getKv("meta", "artprog:" + name, "").split("|")
+                    let o = JsonObject()
+                    o.put("name", JsonString(name))
+                    o.put("page", JsonInt(kvInt(parts, 0)))
+                    o.put("pageCount", JsonInt(kvInt(parts, 1)))
+                    o.put("progressAt", JsonString(kvStr(parts, 2)))
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/artifacts/progress/save" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let name = strOf(b, "name")
+                    if (name.size == 0) {
+                        fail(ctx, 400, "缺少 name")
+                        return
+                    }
+                    var page: Int64 = 0
+                    let reqPage = intOf(b, "page")
+                    if (reqPage > 0) {
+                        page = reqPage
+                    }
+                    var total: Int64 = 0
+                    let reqTotal = intOf(b, "pageCount")
+                    if (reqTotal > 0) {
+                        total = reqTotal
+                    }
+                    DbHub.open(store.dataDir).putKv("meta", "artprog:" + name,
+                        page.toString() + "|" + total.toString() + "|" + nowStamp())
+                    ok(ctx, JsonString("ok"))
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
             return
         }
 
@@ -918,6 +977,24 @@ func serveStatic(ctx: HttpContext, uiDir: String, rel: String): Unit {
  * 数据库被占用是本产品最可能碰到的"看不懂的错"：驱动用锁文件做跨进程互斥，
  * 上一次进程被强杀就会留下锁文件，之后每个要读库的请求都会 busy。
  */
+func kvInt(parts: Array<String>, idx: Int64): Int64 {
+    if (idx >= parts.size) {
+        return 0
+    }
+    try {
+        return Int64.parse(trimStr(parts[idx]))
+    } catch (e: Exception) {
+        return 0
+    }
+}
+
+func kvStr(parts: Array<String>, idx: Int64): String {
+    if (idx >= parts.size) {
+        return ""
+    }
+    return trimStr(parts[idx])
+}
+
 func describeFailure(message: String): String {
     if (message.split("cjflock").size > 1 || message.split("database is locked").size > 1) {
         return "本地数据库被另一个进程占用，无法读写：" + message +
@@ -964,6 +1041,8 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/study/wrong",
         "/api/study/report",
         "/api/artifacts/list",
+        "/api/artifacts/progress",
+        "/api/artifacts/progress/save",
         "/api/artifacts/read"
     ]
     for (r in routes) {

@@ -203,6 +203,47 @@ func matchBrace(b: Array<UInt8>, start: Int64): Int64 {
  * 之所以不用 OpenAI 的 function calling：那套要供应商支持，而用户可能接任何
  * OpenAI 兼容服务（比如只提供 /chat/completions 的自建网关）。提示词协议到处都能跑。
  */
+/**
+ * 去掉正文开头重复的标题行。
+ *
+ * 模型写小节正文时经常先把小节标题再抄一遍，于是落盘的讲义里同一句话会出现三次
+ * （大纲一行、我们拼的 `## n 标题` 一行、模型正文里一行），翻页播放时还会多出一页空白。
+ * 只去 1~2 级标题：`###` 及以下属于真正的子结构，保留。
+ */
+func stripLeadingSectionHeadings(text: String): String {
+    let lines = text.split("\n")
+    var i: Int64 = 0
+    while (i < lines.size) {
+        let t = trimStr(lines[i])
+        if (t.size == 0) {
+            i = i + 1
+            continue
+        }
+        var hashes: Int64 = 0
+        let b = t.toArray()
+        while (hashes < b.size && b[hashes] == 35) {
+            hashes = hashes + 1
+        }
+        if (hashes > 0 && hashes <= 2) {
+            i = i + 1
+            continue
+        }
+        break
+    }
+    let sb = StringBuilder()
+    var first = true
+    var j = i
+    while (j < lines.size) {
+        if (!first) {
+            sb.append("\n")
+        }
+        sb.append(lines[j])
+        first = false
+        j = j + 1
+    }
+    return trimStr(sb.toString())
+}
+
 func extractToolCall(text: String): ?JsonObject {
     let b = text.toArray()
     var i = 0
@@ -646,7 +687,7 @@ public class Agent {
                     body.append(" ")
                     body.append(section)
                     body.append("\n\n")
-                    body.append(text)
+                    body.append(stripLeadingSectionHeadings(text))
                     body.append("\n\n")
                     let sp = JsonObject()
                     sp.put("section", JsonString(section))

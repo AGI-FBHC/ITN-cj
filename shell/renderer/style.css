@@ -505,3 +505,76 @@ body.chat-mode .view { display: flex; flex-direction: column; gap: 12px; overflo
 .composer textarea { resize: vertical; min-height: 68px; }
 .composer-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 @media (max-width: 1180px) { .session-rail { flex-basis: 208px; width: 208px; } }
+/* ============================================================
+  课件播放器：把讲义/练习/章节按页铺开，逐页讲授
+   ============================================================ */
+body.player-open { overflow: hidden; }
+body.chat-mode .topbar { display: none; }
+
+.player {
+  --slide-font: 18px;
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; flex-direction: column;
+  background: #f4f2ec;
+}
+.player[hidden] { display: none; }
+.player-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 22px; background: #fff; border-bottom: 1px solid var(--line);
+}
+.player-info { flex: 1; min-width: 0; }
+.player-name { font-size: 14px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-counter { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.player-tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.player-toc {
+  max-height: 42vh; overflow: auto; background: #fff;
+  border-bottom: 1px solid var(--line); padding: 8px 16px 12px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px;
+}
+.toc-item {
+  display: flex; gap: 10px; align-items: baseline; text-align: left;
+  border: 0; background: none; border-radius: 8px; padding: 6px 8px;
+  font: inherit; cursor: pointer;
+}
+.toc-item:hover { background: var(--panel-soft); }
+.toc-item.active { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+.toc-idx { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.toc-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-body { flex: 1; overflow: auto; padding: 30px 22px 40px; }
+.player-page {
+  max-width: 920px; margin: 0 auto; background: #fff;
+  border: 1px solid var(--line); border-radius: 16px;
+  padding: 34px 44px 42px; box-shadow: var(--shadow);
+  font-size: var(--slide-font); line-height: 1.85;
+}
+.slide-title {
+  margin: 0; font-family: var(--font-serif);
+  font-size: calc(var(--slide-font) * 1.7); font-weight: 600; letter-spacing: -.01em;
+}
+.player-page .slide-title + .slide-content { border-top: 3px solid var(--brand); margin-top: 14px; padding-top: 18px; }
+.player-page .md p, .player-page .md li { font-size: var(--slide-font); }
+.player-page .md h1 { font-size: calc(var(--slide-font) * 1.45); }
+.player-page .md h2 { font-size: calc(var(--slide-font) * 1.2); }
+.player-page .md h3 { font-size: var(--slide-font); }
+.player-page .md code, .player-page .md pre { font-size: calc(var(--slide-font) * .88); }
+.player-foot {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 22px; background: #fff; border-top: 1px solid var(--line);
+}
+.player-bar { flex: 1; max-width: 440px; }
+.player-hint { font-size: 11.5px; color: var(--muted); }
+.progress-note { color: var(--brand); }
+
+/* ============================================================
+  画像校准
+   ============================================================ */
+.calib-row { padding: 14px 0; border-bottom: 1px dashed var(--line); }
+.calib-row:last-child { border-bottom: 0; }
+.calib-row input { margin-top: 8px; }
+.calib-hint {
+  margin: 10px 0; padding: 10px 14px;
+  background: var(--brand-soft); border-radius: 10px;
+  font-size: 13.5px; color: var(--ink-2);
+}
+.seg-wide { display: flex; flex-wrap: wrap; margin: 8px 0 0; }
+.seg-flag { margin-left: 6px; font-size: 10px; color: var(--amber); }

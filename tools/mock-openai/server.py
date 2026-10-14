@@ -17,6 +17,7 @@
 """
 import json
 import os
+import re
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -28,16 +29,17 @@ CHUNK_DELAY = float(os.environ.get("ITN_MOCK_CHUNK_DELAY_MS", "5")) / 1000.0
 
 OUTLINE = ["第一节 基本概念", "第二节 典型流程", "第三节 常见问题与做法"]
 
-SECTION_MD = """## 基本概念
+# 正文（不含标题）：真模型写小节时通常会把小节标题再抄一遍，strip 掉的那行标题由 reply_for 加上
+SECTION_BODY = """mock 模型依据资料写的一段正文，用来验证讲义链路。资料里强调过：把任务、约束和输出格式写清楚，产出会更稳定。[1]
 
-mock 模型依据资料写的一段正文，用来验证讲义链路。资料里强调过：把任务、约束和输出格式写清楚，产出会更稳定。[1]
-
-## 做法
+### 做法
 
 1. 先检索资料，再让模型作答。[1]
 2. 每个论断后面标注出处编号。[2]
 
 > 注意：这里的内容只用于自测，不是真实模型输出。"""
+
+SECTION_MD = "## 基本概念\n\n" + SECTION_BODY
 
 QUIZ_MD = """### 第 1 题（单选）
 
@@ -131,7 +133,10 @@ def reply_for(body):
     if "分层练习题" in joined or "测评设计者" in joined:
         return QUIZ_MD
     if "撰写" in joined or "教培内容作者" in joined:
-        return SECTION_MD
+        # 把小节标题照抄进正文，模拟真模型的行为（内核应当把这一行去掉）
+        m = re.search(r"讲义的第 \d+ 节：「([^」]+)」", joined)
+        title = m.group(1) if m else "本节"
+        return "## " + title + "\n\n" + SECTION_BODY
     return "MOCK_REPLY:" + ask[:80]
 
 

@@ -82,6 +82,13 @@ function fmtStamp(s) {
 
 function plural(n, unit) { return Number(n || 0) + " " + unit; }
 
+/** 本地时间戳，形如 2026-10-14T11:30（只用于笔记标题这类展示用途）。 */
+function nowStamp() {
+  const d = new Date();
+  const p = (x) => String(x).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + "T" + p(d.getHours()) + ":" + p(d.getMinutes());
+}
+
 /* ---------- 图标 ---------- */
 
 const ICONS = {
@@ -103,6 +110,7 @@ const ICONS = {
   alert: "M12 3l9 16H3zM12 9v5M12 17h.5",
   layers: "M12 3l9 5-9 5-9-5zM3 14l9 5 9-5",
   refresh: "M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6",
+  target: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z",
 };
 
 function icon(name, box) {
@@ -308,6 +316,27 @@ async function loadCfg() {
   }
 }
 async function loadProfile() { state.profile = (await api("/api/profile/get", {})) || {}; }
+
+/**
+ * 保存档案。
+ *
+ * 内核的 /api/profile/save 是"整个档案覆盖写"：请求里没带的字段会被写成空。
+ * 所以这里统一由一处拼装完整对象，调用方只传要改的部分——否则「保存自评分」会把
+ * 昵称、学习目标、偏好格式全清掉（这是个真实的数据丢失口子）。
+ */
+async function saveProfile(patch) {
+  const p = state.profile || {};
+  const body = {
+    nickname: patch.nickname !== undefined ? patch.nickname : (p.nickname || ""),
+    goal: patch.goal !== undefined ? patch.goal : (p.goal || ""),
+    weeklyHours: patch.weeklyHours !== undefined ? patch.weeklyHours : (p.weeklyHours || 0),
+    preferredFormats: p.preferredFormats || [],
+    selfScores: Object.assign({}, p.selfScores || {}, patch.selfScores || {}),
+  };
+  const d = await api("/api/profile/save", body);
+  state.profile = d || state.profile;
+  return state.profile;
+}
 async function loadReport() { state.report = (await api("/api/study/report", {})) || {}; }
 async function loadArtifacts() {
   try { state.artifacts = (await api("/api/artifacts/list", {})).artifacts || []; }
@@ -361,6 +390,7 @@ const NAV = [
     { id: "notes", label: "我的笔记", icon: "note" },
     { id: "wrong", label: "错题本", icon: "flag" },
     { id: "report", label: "我的成长", icon: "chart" },
+    { id: "calibrate", label: "画像校准", icon: "target" },
   ]},
   { group: "内容", items: [
     { id: "resources", label: "我的资源", icon: "file" },
@@ -382,6 +412,7 @@ const PAGE_META = {
   notes: { title: "我的笔记", sub: "随手记下的要点" },
   wrong: { title: "错题本", sub: "做错的题在这里复习" },
   report: { title: "我的成长", sub: "学习记录与能力变化" },
+  calibrate: { title: "画像校准", sub: "用真实练习数据与自己的判断对齐六维能力" },
   resources: { title: "我的资源", sub: "生成的讲义与练习，全部在本机" },
   kb: { title: "领域知识库", sub: "检索资料，每一句都能追到原文" },
   chat: { title: "伴学助手", sub: "就你的资料提问" },
@@ -767,7 +798,8 @@ async function renderChapter(v) {
   head.appendChild(tag(readCount + " / " + chunks.length + " 片已读", readCount === chunks.length && chunks.length ? "ok" : ""));
   const acts = el("div", "row");
   acts.style.marginTop = "10px";
-  acts.appendChild(btn("生成讲义", "primary sm", () => askTopic("lecture", state.chapter)));
+  acts.appendChild(btn("按节播放", "primary sm", () => playChapter(state.chapter)));
+  acts.appendChild(btn("生成讲义", "sm", () => askTopic("lecture", state.chapter)));
   acts.appendChild(btn("生成练习册", "sm", () => askTopic("quiz", state.chapter)));
   acts.appendChild(btn("出题练习", "sm", () => openQuiz(v, state.chapter)));
   acts.appendChild(btn("写笔记", "sm ghost", () => openNoteEditor(null, state.kb, state.chapter)));
@@ -779,6 +811,7 @@ async function renderChapter(v) {
     toast("已标记整章");
     go("learn");
   }));
+  bar.appendChild(head);
   bar.appendChild(acts);
   const prog = el("div", "bar");
   prog.innerHTML = '<i style="width:' + pct(readCount, chunks.length) + '%"></i>';
@@ -918,7 +951,8 @@ async function generateArtifact(kind, topic) {
   preview.innerHTML = md(d.content || "");
   result.appendChild(preview);
   const row = el("div", "row");
-  row.appendChild(btn("打开产物全文", "primary", () => openArtifactByName(artifactNameFromPath(d.artifactPath), d.content)));
+  row.appendChild(btn("按页播放", "primary", () => openSlidePlayer(artifactNameFromPath(d.artifactPath), d.content)));
+  row.appendChild(btn("打开全文", "", () => openArtifactByName(artifactNameFromPath(d.artifactPath), d.content)));
   row.appendChild(btn("去我的资源", "", () => go("resources")));
   row.appendChild(copyButton(() => d.content || "", "复制 Markdown"));
   row.appendChild(btn("收起", "ghost", () => result.remove()));
@@ -1164,6 +1198,196 @@ PAGES.report = {
   },
 };
 
+/* ---------- 画像校准：用真实练习数据与自己的判断对齐六维能力 ---------- */
+
+const ABILITY_DIMENSIONS = [
+  { key: "概念理解", hint: "说得清概念之间的区别与联系", ask: "举一个你最近给别人讲清楚的例子" },
+  { key: "逻辑推理", hint: "能从条件推到结论，并说明依据", ask: "举一个你最近做过的推理或判断" },
+  { key: "工程实践", hint: "能把想法落成能跑起来的东西", ask: "举一个你最近亲手做出来的东西" },
+  { key: "问题诊断", hint: "能找到问题出在哪一环", ask: "举一个你最近排查并解决的问题" },
+  { key: "系统设计", hint: "能拆解复杂任务并排出先后", ask: "举一个你最近拆解过的任务" },
+  { key: "学习迁移", hint: "能把学过的东西用到新场景", ask: "举一个你最近迁移过的用法" },
+];
+
+const ABILITY_LEVELS = [
+  { value: 20, label: "刚起步", note: "需要照着做" },
+  { value: 35, label: "能跟做", note: "有人带就能完成" },
+  { value: 50, label: "能独立", note: "自己能把事做完" },
+  { value: 65, label: "能带人", note: "能讲清并纠正别人" },
+  { value: 80, label: "能设计", note: "能设计做法与标准" },
+];
+
+/** 当前分值落在哪一档（与五档自评互逆）。 */
+function levelIndexOf(score) {
+  const v = Number(score || 50);
+  let best = 0, bestDiff = 1e9;
+  ABILITY_LEVELS.forEach((lv, i) => {
+    const d = Math.abs(lv.value - v);
+    if (d < bestDiff) { bestDiff = d; best = i; }
+  });
+  return best;
+}
+
+/**
+ * 真实练习数据给出的参考档位。
+ * 题量少于 4 道就不给建议——拿噪声当依据比不给建议更糟。
+ */
+function measuredLevelIndex() {
+  const r = state.report || {};
+  const total = Number(r.quizTotal || 0);
+  if (total < 4) return null;
+  const acc = pct(r.quizRight || 0, total);
+  let idx = 0;
+  if (acc >= 85) idx = 4;
+  else if (acc >= 70) idx = 3;
+  else if (acc >= 55) idx = 2;
+  else if (acc >= 40) idx = 1;
+  return { index: idx, accuracy: acc, total: total };
+}
+
+function calibrationNoteText() {
+  const r = state.report || {};
+  const m = measuredLevelIndex();
+  const lines = [
+    "# 画像校准记录 " + new Date().toLocaleString("zh-CN"),
+    "",
+    "## 本次校准结果",
+    "",
+    "| 维度 | 档位 | 分值 | 我的依据 |",
+    "| --- | --- | --- | --- |",
+  ];
+  ABILITY_DIMENSIONS.forEach((d) => {
+    const lv = ABILITY_LEVELS[state.calib[d.key] || 0];
+    lines.push("| " + d.key + " | " + lv.label + " | " + lv.value + " | " + ((state.calibNote || {})[d.key] || "—") + " |");
+  });
+  lines.push("", "## 当时的实测参考", "");
+  lines.push("- 答题总数：" + (r.quizTotal || 0) + "，错题：" + (r.quizWrong || 0));
+  if (m) {
+    lines.push("- 正确率：" + m.accuracy + "%（" + m.total + " 题）→ 参考档位「" + ABILITY_LEVELS[m.index].label + "」");
+  } else {
+    lines.push("- 练习数据还不足 4 题，本次以自评为主");
+  }
+  lines.push("- 已读切片：" + (r.readChunks || 0) + " · 完成章节：" + (r.completedChapters || 0));
+  lines.push("", "> 自评与实测不一致时优先看实测：正确率反映「能不能做对」，自评反映「敢不敢接活」。");
+  lines.push("");
+  return lines.join("\n");
+}
+
+PAGES.calibrate = {
+  async render() {
+    await loadCfg();
+    await loadProfile();
+    await loadReport();
+    const v = $("view");
+    v.innerHTML = "";
+    const scores = (state.profile && state.profile.selfScores) || {};
+    if (!state.calib) state.calib = {};
+    if (!state.calibNote) state.calibNote = {};
+    for (const d of ABILITY_DIMENSIONS) {
+      if (state.calib[d.key] === undefined) state.calib[d.key] = levelIndexOf(scores[d.key]);
+    }
+    const m = measuredLevelIndex();
+    const r = state.report || {};
+
+    const steps = cardOf({ title: "校准怎么做" });
+    const ul = el("ul", "about-list");
+    [
+      "六维能力各选一个档位：从「刚起步」到「能设计」，档位对应 20 / 35 / 50 / 65 / 80 分。",
+      "右侧给出实测参考——你在这个知识库里的答题正确率。两者不一致时，优先相信自己最近的做题结果。",
+      "保存后写回本机档案，「我的成长」页会立刻按新分值显示；也可以生成一条校准记录笔记，之后回看当时怎么判断的。",
+    ].forEach((t) => ul.appendChild(el("li", null, t)));
+    steps.appendChild(ul);
+    v.appendChild(steps);
+
+    const actual = cardOf({
+      title: "实测参考",
+      sub: "来自本机的真实作答记录",
+      actions: [btn("去练一组题", "sm", () => go("learn"))],
+    });
+    const grid = el("div", "grid grid-4");
+    grid.appendChild(statCard("答题总数", r.quizTotal || 0, "题"));
+    grid.appendChild(statCard("正确率", r.quizTotal ? pct(r.quizRight, r.quizTotal) : 0, "%"));
+    grid.appendChild(statCard("已读切片", r.readChunks || 0, ""));
+    grid.appendChild(statCard("错题", r.quizWrong || 0, "条"));
+    actual.appendChild(grid);
+    if (m) {
+      const hint = el("p", "calib-hint");
+      hint.innerHTML = "近 " + m.total + " 题正确率 <b>" + m.accuracy + "%</b>，" +
+        "参考档位「<b>" + ABILITY_LEVELS[m.index].label + "</b>」（" + ABILITY_LEVELS[m.index].value + " 分）。";
+      actual.appendChild(hint);
+      actual.appendChild(btn("六维都先按实测参考填", "", () => {
+        ABILITY_DIMENSIONS.forEach((d) => { state.calib[d.key] = m.index; });
+        go("calibrate");
+      }));
+    } else {
+      actual.appendChild(el("p", "muted", "练习数据还不足 4 题，这次以自评为主。先去「学 · 练」做一组题，校准会更有依据。"));
+    }
+    v.appendChild(actual);
+
+    const rows = cardOf({
+      title: "六维自评",
+      sub: "点档位即可，下面那行字是给自己留的依据（可留空）",
+      tag: Object.keys(scores).length + " 项已有分值",
+    });
+    for (const d of ABILITY_DIMENSIONS) {
+      const cur = state.calib[d.key];
+      const box = el("div", "calib-row");
+      const head = el("div", "row");
+      const main = el("div", "grow");
+      main.appendChild(el("div", "item-title", d.key));
+      main.appendChild(el("div", "meta", d.hint));
+      head.appendChild(main);
+      head.appendChild(tag("当前 " + (scores[d.key] === undefined ? "未填" : scores[d.key])));
+      box.appendChild(head);
+      const seg = el("div", "seg seg-wide");
+      ABILITY_LEVELS.forEach((lv, i) => {
+        const b = el("button", "seg-item" + (i === cur ? " active" : ""), lv.label + " · " + lv.value);
+        b.title = lv.note;
+        if (m && m.index === i) b.appendChild(el("span", "seg-flag", "实测"));
+        b.onclick = () => { state.calib[d.key] = i; go("calibrate"); };
+        seg.appendChild(b);
+      });
+      box.appendChild(seg);
+      const noteInput = inputOf("", d.ask + "（选填）", state.calibNote[d.key] || "");
+      noteInput.oninput = () => { state.calibNote[d.key] = noteInput.value; };
+      box.appendChild(noteInput);
+      rows.appendChild(box);
+    }
+    v.appendChild(rows);
+
+    const foot = el("div", "card");
+    const row = el("div", "row");
+    row.appendChild(btn("保存校准", "primary", async () => {
+      const selfScores = {};
+      ABILITY_DIMENSIONS.forEach((d) => { selfScores[d.key] = ABILITY_LEVELS[state.calib[d.key] || 0].value; });
+      try {
+        await saveProfile({ selfScores: selfScores });
+        toast("已写回本机档案");
+        go("report");
+      } catch (e) { toast("保存失败：" + e.message); }
+    }));
+    row.appendChild(btn("保存并生成校准记录笔记", "", async () => {
+      try {
+        const selfScores = {};
+        ABILITY_DIMENSIONS.forEach((d) => { selfScores[d.key] = ABILITY_LEVELS[state.calib[d.key] || 0].value; });
+        await saveProfile({ selfScores: selfScores });
+        await api("/api/study/notes/save", {
+          id: "", kbId: state.kb || "", chapter: "",
+          title: "画像校准记录 " + fmtStamp(nowStamp()) ,
+          text: calibrationNoteText(),
+        });
+        await loadReport();
+        toast("已写回档案，并生成一条校准记录笔记");
+        go("notes");
+      } catch (e) { toast("失败：" + e.message); }
+    }));
+    row.appendChild(btn("看看我的成长", "ghost", () => go("report")));
+    foot.appendChild(row);
+    foot.appendChild(el("p", "muted sm", "校准只改「自评能力」这一项，不会动你的昵称、学习目标与知识库。"));
+    v.appendChild(foot);
+  },
+};
+
 /* ---------- 我的资源 ---------- */
 
 const ARTIFACT_KIND = (name) => {
@@ -1186,12 +1410,16 @@ function artifactItem(a, clickable) {
   meta.appendChild(el("span", null, ARTIFACT_KIND_LABEL[kind]));
   meta.appendChild(el("span", null, fmtSize(a.size)));
   meta.appendChild(el("span", null, "本机 Markdown"));
+  if (a.page > 0 && a.pageCount > 0) {
+    meta.appendChild(el("span", "progress-note", "上次讲到第 " + a.page + " / " + a.pageCount + " 页"));
+  }
   main.appendChild(meta);
   row.appendChild(ic);
   row.appendChild(main);
   row.appendChild(tag(ARTIFACT_KIND_LABEL[kind], kind === "lecture" ? "ok" : ""));
+  row.appendChild(btn("播放", "sm primary", () => openSlidePlayer(a.name)));
   it.appendChild(row);
-  it.onclick = () => openArtifactByName(a.name);
+  it.onclick = (ev) => { if (!ev.target.closest("button")) openArtifactByName(a.name); };
   return it;
 }
 
@@ -1256,12 +1484,230 @@ async function openArtifactByName(name, fallbackContent) {
     cls: "dialog",
     title: name,
     tag: "本机文件",
-    actions: [copyButton(() => content, "复制全文"), btn("← 返回我的资源", "ghost sm", () => go("resources"))],
+    actions: [
+      btn("按页播放", "sm primary", () => openSlidePlayer(name, content)),
+      copyButton(() => content, "复制全文"),
+      btn("← 返回我的资源", "ghost sm", () => go("resources")),
+    ],
   });
   v.appendChild(top);
   const body = el("div", "card");
   body.innerHTML = md(content || "");
   v.appendChild(body);
+}
+
+/* ---------- 课件播放器：把讲义/练习/章节按二级标题切成页，逐页讲授 ---------- */
+
+const playerState = { key: "", name: "", slides: [], index: 0, fontSize: 18, tocOpen: false, saveTimer: null };
+
+/**
+ * 按标题把一份 Markdown 切成"页"。
+ *
+ * 优先按 `##`（讲义的小节）；如果整篇只有一个 `##` 页，再退回按 `###`（练习册每题一个三级标题）。
+ * 都不行就整篇一页——宁可少切，也不要把一段话拦腰截断。
+ */
+function splitSlides(name, content) {
+  const text = String(content || "");
+  const base = String(name || "").replace(/\.md$/i, "");
+
+  function cut(prefix) {
+    const re = new RegExp("^" + prefix + "\\s+(.*)$");
+    const out = [];
+    let cur = null;
+    for (const line of text.split("\n")) {
+      const m = line.match(re);
+      if (m) {
+        if (cur) out.push(cur);
+        cur = { title: m[1].trim(), body: [] };
+        continue;
+      }
+      const h1 = line.match(/^#\s+(.*)$/);
+      if (h1 && !cur && !out.length) {
+        cur = { title: h1[1].trim(), body: [] };
+        continue;
+      }
+      if (!cur) cur = { title: "", body: [] };
+      cur.body.push(line);
+    }
+    if (cur) out.push(cur);
+    return out.map((x) => ({ title: x.title, body: x.body.join("\n").replace(/\n{3,}/g, "\n\n").trim() }))
+      .filter((x) => (x.title + x.body).trim().length > 0);
+  }
+
+  let slides = cut("##");
+  if (slides.length <= 1) {
+    const finer = cut("###");
+    if (finer.length > 1) slides = finer;
+  }
+  if (!slides.length) slides = [{ title: base, body: text }];
+  // 有的文档会出现"光有标题没有正文"的一页（模型在大纲标题下又写了一遍小节标题）。
+  // 只要还有至少两页是有正文的，就把空白页去掉，免得讲课时翻到一页空白。
+  const solid = slides.filter((x) => x.body.trim().length > 0);
+  if (solid.length >= 2 && solid.length < slides.length) {
+    const cover = slides[0].body.trim().length === 0 ? [slides[0]] : [];
+    slides = cover.concat(solid);
+  }
+  return slides;
+}
+
+function applyPlayerFont() {
+  const root = $("player");
+  if (root) root.style.setProperty("--slide-font", playerState.fontSize + "px");
+}
+
+async function openSlidePlayer(name, content, key) {
+  const root = $("player");
+  if (!root) return;
+  let text = content;
+  if (text === undefined) {
+    try {
+      text = (await api("/api/artifacts/read", { name: name })).content;
+    } catch (e) {
+      toast("读不到这份产物：" + e.message);
+      return;
+    }
+  }
+  playerState.slides = splitSlides(name, text);
+  playerState.name = name;
+  playerState.key = key || name;
+  playerState.tocOpen = false;
+  let resume = 0;
+  try {
+    const p = await api("/api/artifacts/progress", { name: playerState.key });
+    if (p && p.page > 0) resume = p.page;
+  } catch (e) { /* 没有进度也能播 */ }
+  playerState.index = Math.max(0, Math.min(playerState.slides.length - 1, resume - 1));
+  root.hidden = false;
+  document.body.classList.add("player-open");
+  applyPlayerFont();
+  renderPlayer();
+  if (resume > 1) toast("从上次看到的第 " + resume + " 页继续");
+}
+
+function savePlayProgress(immediate) {
+  if (!playerState.key) return;
+  const body = { name: playerState.key, page: playerState.index + 1, pageCount: playerState.slides.length };
+  if (playerState.saveTimer) { clearTimeout(playerState.saveTimer); playerState.saveTimer = null; }
+  if (immediate) return api("/api/artifacts/progress/save", body).catch(() => {});
+  playerState.saveTimer = setTimeout(() => {
+    playerState.saveTimer = null;
+    api("/api/artifacts/progress/save", body).catch(() => {});
+  }, 500);
+  return Promise.resolve();
+}
+
+function playerGo(index) {
+  const max = playerState.slides.length - 1;
+  const next = Math.max(0, Math.min(max, index));
+  if (next === playerState.index) return;
+  playerState.index = next;
+  renderPlayer();
+  savePlayProgress(false);
+}
+
+async function closePlayer() {
+  const root = $("player");
+  if (!root || root.hidden) return;
+  if (document.fullscreenElement) {
+    try { await document.exitFullscreen(); } catch (e) { /* ignore */ }
+  }
+  await savePlayProgress(true);
+  root.hidden = true;
+  document.body.classList.remove("player-open");
+  if (current === "resources") go("resources");
+}
+
+async function togglePlayerFullscreen() {
+  const root = $("player");
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await root.requestFullscreen();
+  } catch (e) {
+    toast("这个环境不支持全屏，可以先用窗口最大化");
+  }
+  renderPlayer();
+}
+
+function renderPlayer() {
+  const root = $("player");
+  if (!root) return;
+  const total = playerState.slides.length;
+  const slide = playerState.slides[playerState.index] || { title: "", body: "" };
+  root.innerHTML = "";
+
+  const head = el("div", "player-head");
+  const info = el("div", "player-info");
+  info.appendChild(el("div", "player-name", playerState.name));
+  info.appendChild(el("div", "player-counter", "第 " + (playerState.index + 1) + " / " + total + " 页"));
+  head.appendChild(info);
+  const tools = el("div", "player-tools");
+  tools.appendChild(btn("目录", "sm " + (playerState.tocOpen ? "primary" : "ghost"), () => {
+    playerState.tocOpen = !playerState.tocOpen;
+    renderPlayer();
+  }));
+  tools.appendChild(btn("A−", "sm ghost", () => { playerState.fontSize = Math.max(14, playerState.fontSize - 2); applyPlayerFont(); }));
+  tools.appendChild(btn("A+", "sm ghost", () => { playerState.fontSize = Math.min(30, playerState.fontSize + 2); applyPlayerFont(); }));
+  tools.appendChild(btn(document.fullscreenElement ? "退出全屏" : "全屏", "sm ghost", () => togglePlayerFullscreen()));
+  tools.appendChild(btn("关闭", "sm", () => closePlayer()));
+  head.appendChild(tools);
+  root.appendChild(head);
+
+  if (playerState.tocOpen) {
+    const toc = el("div", "player-toc");
+    playerState.slides.forEach((sl, i) => {
+      const b = el("button", "toc-item" + (i === playerState.index ? " active" : ""));
+      b.appendChild(el("span", "toc-idx", String(i + 1).padStart(2, "0")));
+      b.appendChild(el("span", "toc-title", sl.title || "（无标题）"));
+      b.onclick = () => { playerState.tocOpen = false; playerGo(i); };
+      toc.appendChild(b);
+    });
+    root.appendChild(toc);
+  }
+
+  const body = el("div", "player-body");
+  const page = el("article", "player-page");
+  if (slide.title) page.appendChild(el("h1", "slide-title", slide.title));
+  if (!slide.body) {
+    // 封面页只有标题：说清楚这是封面，以及怎么往下走
+    page.appendChild(el("p", "muted sm slide-cover-hint", "共 " + total + " 页 · 按「下一页」或 → 开始"));
+  }
+  const contentBox = el("div", "slide-content");
+  contentBox.innerHTML = md(slide.body || "");
+  page.appendChild(contentBox);
+  body.appendChild(page);
+  root.appendChild(body);
+
+  const foot = el("div", "player-foot");
+  const prev = btn("← 上一页", "", () => playerGo(playerState.index - 1));
+  prev.disabled = playerState.index === 0;
+  const next = btn("下一页 →", "primary", () => playerGo(playerState.index + 1));
+  next.disabled = playerState.index >= total - 1;
+  foot.appendChild(prev);
+  foot.appendChild(next);
+  const bar = el("div", "bar player-bar");
+  bar.innerHTML = '<i style="width:' + pct(playerState.index + 1, total) + '%"></i>';
+  foot.appendChild(bar);
+  foot.appendChild(el("span", "player-hint", "← → 翻页 · 空格下一页 · T 目录 · Esc 关闭"));
+  root.appendChild(foot);
+
+  const bodyEl = root.querySelector(".player-body");
+  if (bodyEl) bodyEl.scrollTop = 0;
+}
+
+async function playChapter(chapter) {
+  try {
+    const chap = await api("/api/study/chapter", { kbId: state.kb, chapter: chapter });
+    const parts = ["# " + chapter, ""];
+    for (const c of chap.chunks || []) {
+      parts.push("## " + (c.headingPath || c.docTitle || "片段"));
+      parts.push("");
+      parts.push(c.text || "");
+      parts.push("");
+    }
+    await openSlidePlayer(chapter, parts.join("\n"), "chapter:" + state.kb + ":" + chapter);
+  } catch (e) {
+    toast("取章节内容失败：" + e.message);
+  }
 }
 
 /* ---------- 领域知识库 ---------- */
@@ -2099,13 +2545,18 @@ PAGES.settings = {
       title: "学习者档案",
       sub: "只存在本机数据库",
       actions: [btn("保存档案", "primary sm", async () => {
-        const body = { nickname: $("pf-nick").value.trim(), goal: $("pf-goal").value.trim(), weeklyHours: Number($("pf-hours").value) || 0, selfScores: {} };
+        const selfScores = {};
         for (const k of SELF_SCORE_KEYS) {
           const val = Number((document.getElementById("pf-score-" + k) || {}).value);
-          if (val > 0) body.selfScores[k] = Math.max(0, Math.min(100, val));
+          if (val > 0) selfScores[k] = Math.max(0, Math.min(100, val));
         }
         try {
-          await api("/api/profile/save", body);
+          await saveProfile({
+            nickname: $("pf-nick").value.trim(),
+            goal: $("pf-goal").value.trim(),
+            weeklyHours: Number($("pf-hours").value) || 0,
+            selfScores: selfScores,
+          });
           toast("档案已保存");
           go("settings");
         } catch (e) { toast("保存失败：" + e.message); }
@@ -2426,6 +2877,30 @@ async function boot() {
   if (railNew) railNew.onclick = () => newChat();
   const railAll = $("rail-all");
   if (railAll) railAll.onclick = () => go("sessions");
+  document.addEventListener("keydown", (e) => {
+    const root = $("player");
+    if (!root || root.hidden) return;
+    const tag = String((e.target && e.target.tagName) || "").toLowerCase();
+    const typing = tag === "input" || tag === "textarea" || tag === "select";
+    if (e.key === "Escape") { e.preventDefault(); closePlayer(); return; }
+    if (typing) return;
+    if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") {
+      e.preventDefault();
+      playerGo(playerState.index + 1);
+    } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+      e.preventDefault();
+      playerGo(playerState.index - 1);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      playerGo(0);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      playerGo(playerState.slides.length - 1);
+    } else if (e.key === "t" || e.key === "T") {
+      playerState.tocOpen = !playerState.tocOpen;
+      renderPlayer();
+    }
+  });
   window.addEventListener("hashchange", () => {
     const p = pageFromHash();
     if (p !== current) go(p);

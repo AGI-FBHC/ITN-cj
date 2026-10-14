@@ -247,6 +247,19 @@ $r = Api $base "/api/artifacts/list" "POST" '{}'
 $arts = ($r.body | ConvertFrom-Json).data.artifacts
 Write-Output ("产物数: {0}" -f $arts.Count)
 
+# 课件播放进度：写一次、读回来，并确认产物列表带回该进度
+$progName = $arts[0].name
+if ($progName) {
+    $r = Api $base "/api/artifacts/progress/save" "POST" (@{ name = $progName; page = 2; pageCount = 7 } | ConvertTo-Json -Compress)
+    Write-Output ("播放进度保存 -> {0}" -f $r.status)
+    $r = Api $base "/api/artifacts/progress" "POST" (@{ name = $progName } | ConvertTo-Json -Compress)
+    $pdata = ($r.body | ConvertFrom-Json).data
+    Write-Output ("播放进度读取 -> 第 {0} / {1} 页（{2}）" -f $pdata.page, $pdata.pageCount, $pdata.progressAt)
+    $r = Api $base "/api/artifacts/list" "POST" '{}'
+    $withProg = (($r.body | ConvertFrom-Json).data.artifacts | Where-Object { $_.name -eq $progName })
+    Write-Output ("产物列表带回进度 -> {0}/{1}" -f $withProg.page, $withProg.pageCount)
+}
+
 $lecJson = $lec.body | ConvertFrom-Json
 $ap = $lecJson.data.artifactPath
 if ($ap -and (Test-Path -LiteralPath $ap)) {

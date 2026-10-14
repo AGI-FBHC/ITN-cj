@@ -214,6 +214,12 @@ function assert(cond, msg) {
   };
 
   const nav = async (label) => {
+    // 播放器是全屏遮罩：任何导航前先把它收起来，否则点击会被它挡住
+    await page.evaluate(() => {
+      const p = document.querySelector('#player');
+      if (p) p.hidden = true;
+      document.body.classList.remove('player-open');
+    });
     await page.locator('.nav-item', { hasText: label }).first().click();
     await page.waitForTimeout(500);
     await page.waitForFunction(() => !document.querySelector('#view .empty .spinner'), null, { timeout: 20000 }).catch(() => {});
@@ -227,7 +233,7 @@ function assert(cond, msg) {
 
   await step('首页渲染 + 导航 11 项', async () => {
     const items = await page.$$eval('.nav-item', (els) => els.map((e) => e.textContent.trim()));
-    assert(items.length === 11, '导航项应为 11 条，实际 ' + items.length);
+    assert(items.length === 12, '导航项应为 12 条，实际 ' + items.length);
     return items.join('/');
   });
 
@@ -319,7 +325,11 @@ function assert(cond, msg) {
   /* ---------- 学 · 练：读章节 + 标记已读 ---------- */
   await step('学 · 练 出现章节树', async () => {
     await nav('学 · 练');
-    await page.waitForSelector('.chapter-idx', { timeout: 20000 });
+    await page.waitForSelector('.chapter-idx, .chunk-card', { timeout: 20000 });
+    if (await page.locator('.chunk-card').count()) {
+      await page.getByRole('button', { name: /返回目录/ }).first().click();
+      await page.waitForSelector('.chapter-idx', { timeout: 15000 });
+    }
     const n = await page.locator('.chapter-idx').count();
     assert(n >= 2, '应至少解析出 2 章，实际 ' + n);
     await shot('05-章节树');
@@ -335,6 +345,15 @@ function assert(cond, msg) {
     assert(body.indexOf('提示词') >= 0, '切片正文应含资料原文');
     await shot('06-章节正文');
     return n + ' 片';
+  });
+
+  await step('章节页有返回目录的出口（标题/已读比例也要在）', async () => {
+    const labels = await page.$$eval('#view button', (els) => els.map((e) => e.textContent.trim()));
+    assert(labels.some((x) => x.indexOf('返回目录') >= 0), '章节页必须有「返回目录」，实际按钮：' + labels.join(' / '));
+    const head = await page.locator('#view .card-head').first().innerText();
+    assert(head.indexOf('提示词工程基础') >= 0, '章节标题应显示，实际：' + head.replace(/\s+/g, ' '));
+    assert(/\d+ \/ \d+ 片已读/.test(head), '应显示已读比例，实际：' + head.replace(/\s+/g, ' '));
+    return head.replace(/\s+/g, ' ').slice(0, 40);
   });
 
   await step('标记切片已读并回写进度', async () => {
@@ -411,6 +430,29 @@ function assert(cond, msg) {
   });
 
   /* ---------- 伴学助手：会话栏 + 主对话框 ---------- */
+  await step('讲义正文不重复小节标题（内核去重）', async () => {
+    const list = await page.evaluate(() => fetch('/api/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()));
+    const lec = list.data.artifacts.filter((a) => a.name.indexOf('讲义-') === 0)[0];
+    const read = await page.evaluate((n) => fetch('/api/artifacts/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: n }) }).then((x) => x.json()), lec.name);
+    const lines = String(read.data.content).split('\n');
+    let echoed = 0;
+    for (let i = 0; i < lines.length; i += 1) {
+      const m = lines[i].trim().match(/^##\s+\d+\s+(.+)$/);
+      if (!m) continue;
+      const want = m[1].trim();
+      for (let j = i + 1; j < Math.min(i + 4, lines.length); j += 1) {
+        const t2 = lines[j].trim();
+        if (!t2) continue;
+        const h = t2.match(/^#+\s+(.+)$/);
+        if (h && h[1].trim() === want) echoed += 1;
+        break;
+      }
+    }
+    assert(echoed === 0, '正文里不该再抄一遍小节标题，实际抄了 ' + echoed + ' 处');
+    const heads = lines.map((x) => x.trim()).filter((x) => x.indexOf('## ') === 0);
+    return heads.length + ' 个二级标题，无重复抄写';
+  });
+
   await step('伴学助手是「会话栏 + 主对话框」两栏形态', async () => {
     await nav('伴学助手');
     await page.waitForSelector('#chat-input', { timeout: 20000 });
@@ -504,6 +546,128 @@ function assert(cond, msg) {
     const cards = await page.locator('.turn-block').count();
     assert(cards === 0, '新会话应是空的，实际 ' + cards + ' 轮');
     return '空会话就绪';
+  });
+
+  /* ---------- 课件播放器 ---------- */
+  await step('产物能按页播放，翻页/键盘/目录都能用', async () => {
+    await nav('我的资源');
+    await page.locator('.item', { hasText: '讲义-' }).getByRole('button', { name: '播放' }).first().click();
+    await page.waitForSelector('.player:not([hidden])', { timeout: 15000 });
+    const pages = await page.locator('.toc-item').count().catch(() => 0);
+    await page.waitForSelector('.player-counter', { timeout: 10000 });
+    const first = await page.textContent('.player-counter');
+    assert(/第 1 \/ \d+ 页/.test(first), '应停在第 1 页，实际 ' + first);
+    // 第 1 页是封面（只有标题），正文从第 2 页开始
+    const cover = await page.locator('.player-page').innerText();
+    assert(cover.trim().length > 2, '封面页应至少显示标题');
+    await page.getByRole('button', { name: '下一页 →' }).click();
+    await page.waitForFunction(() => /第 2 \//.test(document.querySelector('.player-counter').textContent), null, { timeout: 10000 });
+    const body = await page.locator('.slide-content').innerText();
+    assert(body.trim().length > 10, '第 2 页应有正文，实际长度 ' + body.trim().length);
+    await page.locator('.player').press('ArrowRight');
+    await page.waitForFunction(() => /第 3 \//.test(document.querySelector('.player-counter').textContent), null, { timeout: 10000 });
+    await page.getByRole('button', { name: '目录' }).click();
+    await page.waitForSelector('.toc-item', { timeout: 10000 });
+    const total = await page.locator('.toc-item').count();
+    assert(total >= 3, '目录应列出各页，实际 ' + total);
+    await shot('16-课件播放器');
+    // 用目录逐页跳一遍：既验证跳页，也确认没有"只有标题没有正文"的空白页
+    let blanks = 0;
+    for (let i = 0; i < total; i += 1) {
+      // 目录抽屉是切换式的：先看它是不是已经开着（上一步点开过），别把它又关掉
+      if (!(await page.locator('.toc-item').count())) {
+        await page.getByRole('button', { name: '目录' }).click();
+        await page.waitForSelector('.toc-item', { timeout: 8000 });
+      }
+      await page.locator('.toc-item').nth(i).click();
+      await page.waitForTimeout(130);
+      const t = await page.locator('.player-page').innerText();
+      if (i > 0 && t.trim().length <= 4) blanks += 1;
+    }
+    assert(blanks === 0, '不应有空白页，实际 ' + blanks + ' 页');
+    return first + ' → 目录 ' + total + ' 页，逐页翻完无空白页' + (pages ? '' : '');
+  });
+
+  await step('播放进度写回本机，重新打开能续播', async () => {
+    await page.locator('.player').press('Escape');
+    await page.waitForFunction(() => document.querySelector('#player').hidden, null, { timeout: 10000 });
+    await page.locator('.item', { hasText: '讲义-' }).getByRole('button', { name: '播放' }).first().click();
+    await page.waitForSelector('.player:not([hidden])', { timeout: 15000 });
+    await page.waitForFunction(() => /第 [2-9]\d* \//.test(document.querySelector('.player-counter').textContent), null, { timeout: 15000 });
+    const resumed = await page.textContent('.player-counter');
+    const list = await page.evaluate(() => fetch('/api/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()));
+    const withProgress = list.data.artifacts.filter((a) => a.page > 0);
+    assert(withProgress.length >= 1, '产物列表里应带回播放进度');
+    await page.locator('.player').press('End');
+    await page.waitForTimeout(300);
+    await page.getByRole('button', { name: '关闭' }).click();
+    await page.waitForFunction(() => document.querySelector('#player').hidden, null, { timeout: 10000 });
+    return '续播到 ' + resumed + '；列表进度 ' + withProgress.map((a) => a.name + ' ' + a.page + '/' + a.pageCount).join('，');
+  });
+
+  await step('章节能整章按节播放', async () => {
+    await nav('学 · 练');
+    // state.chapter 会记住上一次进去的章节，先退回目录再进章节
+    if (await page.locator('.chunk-card').count()) {
+      await page.getByRole('button', { name: /返回目录/ }).first().click();
+      await page.waitForTimeout(600);
+    }
+    await page.locator('.item', { hasText: '提示词工程基础' }).getByRole('button', { name: '开始学' }).click();
+    await page.waitForSelector('.chunk-card', { timeout: 20000 });
+    await page.getByRole('button', { name: '按节播放' }).first().click();
+    await page.waitForSelector('.player:not([hidden])', { timeout: 15000 });
+    const counter = await page.textContent('.player-counter');
+    const page1 = await page.locator('.player-page').innerText();
+    assert(page1.indexOf('提示词') >= 0, '播放页应含章节原文，实际：' + page1.slice(0, 40));
+    await page.getByRole('button', { name: '下一页 →' }).click();
+    await page.waitForTimeout(300);
+    const page2 = await page.locator('.player-page').innerText();
+    assert(page2.trim().length > 10, '章节第 2 页应有正文');
+    await shot('17-章节播放');
+    await page.locator('.player').press('Escape');
+    await page.waitForFunction(() => document.querySelector('#player').hidden, null, { timeout: 10000 });
+    return counter;
+  });
+
+  /* ---------- 画像校准 ---------- */
+  await step('档案页能写入称呼与学习目标', async () => {
+    await nav('档案与知识库');
+    await page.fill('#pf-nick', '自测同学');
+    await page.fill('#pf-goal', '两周讲完提示词工程');
+    await page.getByRole('button', { name: '保存档案' }).click();
+    await page.waitForTimeout(1200);
+    const pr = await page.evaluate(() => fetch('/api/profile/get', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()));
+    assert(pr.data.nickname === '自测同学', '称呼应写回，实际 ' + pr.data.nickname);
+    assert(pr.data.goal === '两周讲完提示词工程', '学习目标应写回');
+    return pr.data.nickname + ' / ' + pr.data.goal;
+  });
+
+  await step('画像校准：六维选档位并写回档案（不清空其它字段）', async () => {
+    await nav('画像校准');
+    await page.waitForSelector('.calib-row', { timeout: 15000 });
+    const rows = await page.locator('.calib-row').count();
+    assert(rows === 6, '应有六个维度，实际 ' + rows);
+    await shot('18-画像校准');
+    await page.locator('.calib-row').first().getByRole('button', { name: /能带人/ }).click();
+    await page.waitForTimeout(500);
+    await page.getByRole('button', { name: '保存校准', exact: true }).click();
+    await page.waitForTimeout(1500);
+    const pr = await page.evaluate(() => fetch('/api/profile/get', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()));
+    assert(pr.data.selfScores['概念理解'] === 65, '概念理解应写成 65，实际 ' + pr.data.selfScores['概念理解']);
+    assert(pr.data.nickname === '自测同学', '校准不应清空称呼，实际 ' + pr.data.nickname);
+    assert(pr.data.goal === '两周讲完提示词工程', '校准不应清空学习目标');
+    return '六维档位已写回，称呼/目标保持不变';
+  });
+
+  await step('校准能生成一条可回看的记录笔记', async () => {
+    await nav('画像校准');
+    await page.waitForSelector('.calib-row', { timeout: 15000 });
+    await page.getByRole('button', { name: '保存并生成校准记录笔记' }).click();
+    await page.waitForSelector('.item:has-text("画像校准记录")', { timeout: 20000 });
+    const text = await page.locator('.item', { hasText: '画像校准记录' }).first().innerText();
+    assert(text.indexOf('实测参考') >= 0 || text.indexOf('参考') >= 0, '校准笔记应含实测参考');
+    await shot('19-校准记录笔记');
+    return '已生成并可回看';
   });
 
   /* ---------- 会话记录 ---------- */
