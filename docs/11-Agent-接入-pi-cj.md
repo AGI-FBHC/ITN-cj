@@ -78,6 +78,15 @@ pi-cj 的运行时**零网络、零文件 IO**（它的 README 明确写了这�
 > **下一步（R25）**：把 `/api/kb/organize` 挂到这个运行时上——一次模型调用让它产出 `outline.json`
 > （`Outline` 与 `chunkAllWith` 已就位），知识库的章节就由 lumin 组织，而不是只靠规则。
 
+> **桌面版现在真的用上 lumin 了（2026-10-15，第三十七轮）**：指定工作目录之后，对话就走 `/api/agent/ask-pi`
+> （lumin 主循环 + 原生 function calling），并挂上：
+> - **工作区工具**（read/write/edit/ls/find/grep，可选 powershell）：`registerWorkspaceTools`；
+> - **审批阀门**：`Approver.checkTool` 挂到 `beforeToolCall`，把它的 `nextLine` 换成"登记待批 → 等界面点按钮"，
+>   于是分类（path-outside / command / command-dangerous / web）、四答、记住规则、批了把目录记进沙箱白名单全都原样复用；
+> - **插话**：`AgentOptions.getSteering` 接到 `sessionHub` 的队列（`/api/agent/steer`）；
+> - **停止**：`sessionHub.abort` 让 `/api/agent/cancel` 也能停 lumin 那一轮。
+> 没指定工作目录时仍走原来那条"只问答"的链路（先小步切换，等真实模型上同题对照过再全量换）。
+
 > **第二次重新同步（2026-10-14，本轮）已完成**：按上面的手册把 lumin 当前版本重新拷进内核，包名替换为
 > `itn_desktop_core.*`。拷了 `lumin/src/pi/*`（15）→`core/src/pi/`、`lumin/src/tools/*`（3）→`core/src/pi_tools/`、
 > `lumin/src/cli/{trust,util,workspaces}.cj`（3）→`core/src/lumin_cli/`（unittests 里有 `import lumin.cli.*`，

@@ -2557,3 +2557,54 @@ lumin 那边这轮动得不少（`lumin/CHANGELOG.md` 的 Unreleased 段 + `docs
 **策略层不用另写**：`Approver.checkTool(agent, name, args)` 就是挂在 pi `beforeToolCall` 上的钩子，
 `Approver.nextLine` 是个"取一行输入"的回调 —— 桌面版只要把它换成"登记待批 → 等界面点按钮"，
 就能原样复用 lumin 验证过的分类、四答、记忆与白名单副作用。
+
+---
+
+## 第三十七轮（2026-10-15）：对话框重做（一行只留三样）+ 让 lumin 真的动手（权限 / 审批 / 插话 / 停止）
+
+**用户拍桌子**："输入框问题很大，谁让你搞这么乱七八糟的配置了，Codex 主打一个简洁……一切默认都是 agent 判断，
+那几个选项就是对应的 lumin 里的 permissions 权限，技能选项也不用你放啊，还有发送按钮的发送和暂停状态、
+插话功能……看看人家 harness 是怎么做的。"——这一轮就是照这个重做的。
+
+### 一、对话框（`shell/renderer/app.js` 的 composer 整段重写）
+
+| 之前 | 现在 |
+| --- | --- |
+| 三个 chip：联网方式（交给 agent / 优先联网 / 不联网）+ 技能（自动 / 某个技能）+ 模型 | **一枚 chip：权限档位**（就是 lumin 的 `ask / auto / full`，选中就地存内核） |
+| 模型是一个 chip 按钮 | 一行小字（muted），点了去设置 |
+| 发送按钮 + 另一个"停止"按钮 | **一个按钮两种状态**：空闲是 ↑，跑着是 ■（`aria-label`/tooltip 跟着换） |
+| 跑着的时候输入被拒绝（toast「上一轮还在生成中」） | **能打字：Enter = 插话**（`/api/agent/steer`，在下一次模型请求之前注进当前这一轮） |
+| Esc 只关弹层 | 跑着时 **Esc = 停止**（有弹层时仍然先关弹层） |
+| ＋ 菜单 10 项（含联网方式两级菜单、技能列表） | ＋ 菜单 ≤4 项：读取网页 / 添加资料目录 / 做成讲义 / 工作目录与权限；技能只在输入 `/` 时出现 |
+| —— | 发送按钮 `margin-left:auto` **永远贴着最右**（模型名再长也只吃省略号） |
+
+联网开关从输入框里彻底拿掉：**要不要联网由 agent 判断**，档位只决定"要不要先问你"（ask 每次都问 / auto 只对风险问 / full 不问）。
+
+### 二、让 lumin 动手（真正的"应用进来"）
+
+- `core/src/pi_app/approval_hub.cj`：把 lumin 审批层的 `Approver.nextLine` 换成"登记待批 → 阻塞等界面点按钮"；
+  四答 `once/session/always/deny` 映射成它认的 `y/s/a/n`，超时 15 分钟按拒绝处理（不让工具线程永久挂着）。
+- `core/src/pi_app/session_hub.cj`：按会话的**插话队列** + **正在跑的 Agent 登记**（给 `/api/agent/steer` 与 `/api/agent/cancel` 用）。
+- `pi_ask.cj`：`WorkContext{dir, perm, allowExec}`；给了工作目录就 `registerWorkspaceTools`（read/write/edit/ls/find/grep，可选 powershell）、
+  把 `Approver.checkTool` 挂到 `beforeToolCall`、`getSteering` 接插话队列、并把这一轮登记进 `sessionHub`。
+- 新路由：`/api/agent/approvals`（列待批）、`/api/agent/approvals/answer`（四答）、`/api/agent/steer`；
+  `/api/agent/cancel` 现在也能 abort lumin 那一轮。偏好新增 `agentWorkDir / agentPerm / agentExec`。
+- 设置新增第 8 个分区**「智能体」**：工作目录（系统对话框选）+ 权限三档 + 「允许运行命令」（默认关）+ 三条红线。
+- 对话框新增**批准卡**（琥珀色）：说清动作（写入工作区外的目录 / 运行命令 / 访问网络）+ 目标路径 + 四个按钮；
+  空闲时也每 2 秒看一次待批（批准可能来自内核里任何一轮）。
+
+### 三、修掉的真 bug（都是这轮 E2E 抓出来的）
+
+1. **`state.cfg` 里根本没有 agent 偏好** —— 它来自 `/api/settings`，而 `agentPerm/agentWorkDir/agentExec` 在 `/api/prefs` 里。
+   结果："设置 → 智能体"永远显示默认值、刚选的权限下一次 `loadCfg()` 就被冲掉。现在 `applyPrefs` 把这几项合到 `cfg` 上，
+   并留一份 `state.agentPrefs` 给 `loadCfg()` 合回来。
+2. 批准卡只在"从界面发起的那一轮"里轮询 → 内核里跑的轮次弹不出来。改成页面挂载期间一直每 2 秒轮询一次。
+3. 权限复原那一步按 `.first()` 点"选它"点到了 disabled 的按钮 —— 改成按行定位（这条是测试自己的问题）。
+
+### 四、验证
+
+- `tools/agent-work-check.ps1` **11 项全过**（离线假模型会真的调 `write`）：默认不给工作区=碰不到文件；
+  工作区内写直接放行；**写工作区外挂起等批准**（`kind=path-outside`）→ 允许一次 → 文件真落盘；`full` 档不问；插话入队。
+- `node tools/ui-e2e.cjs` → **81/81**，新增/改写：对话框（只一枚 chip、＋ 菜单 ≤4 项、没有"联网方式"）、
+  权限三档写回内核、技能只在 `/` 里、**批准卡 → 允许一次 → 文件真的落盘（evil.md，16 字节）**。
+- `node tools/ui-audit.cjs` 16/16；`cjpm test` 66/66；`pi-ask-check`、`kb-organize-check` 全过。

@@ -23,6 +23,11 @@ import itn_desktop_core.agent.citationReportWeb
 import itn_desktop_core.agent.webCitationsFrom
 import itn_desktop_core.tools.effectiveWebMode
 import itn_desktop_core.tools.webSearchReady
+import itn_desktop_core.pi_tools.Workspace
+import itn_desktop_core.pi_tools.registerWorkspaceTools
+import itn_desktop_core.lumin_cli.Approver
+import itn_desktop_core.lumin_cli.permissionModeText
+import itn_desktop_core.lumin_cli.classifyTool
 // strOf / objOf / intOf / boolOf / byteSafePrefix 用 pi 包自带的那份（与 util 同名，通配 pi 已经带进来）：
 // 两个包的同名函数同时具名导入会歧义，这是踩过的坑
 import itn_desktop_core.kb.stamp
@@ -40,6 +45,16 @@ import itn_desktop_core.kb.stamp
  * 领域能力（知识库检索、联网策略、技能白名单、引用自检）一点没变——它们现在是"工具"，
  * 由运行时按需调用，运行时本身仍然零网络、零文件 IO。
  */
+
+/** 分类结果的临时存放：审批层的 nextLine 是个无参回调，靠它把"正在问什么"带过去。 */
+public class ApprovalPrompt {
+    public var kind: String = ""
+    public var value: String = ""
+    public var detail: String = ""
+    public var tool: String = ""
+
+    public init() {}
+}
 
 /* 事件里那三个小载荷（与 agent.cj 里的形状逐字一致，界面靠它渲染步骤与轮次） */
 func kindPayload(kind: String, kbId: String): JsonObject {
@@ -65,6 +80,24 @@ func stepPayload(index: Int64, name: String): JsonObject {
     return o
 }
 
+/**
+ * 这一轮能不能动用户的电脑：工作目录 + 权限档位（就是 lumin 那三档）+ 要不要放开跑命令。
+ *
+ * 默认（不传）什么都不给：只有知识库检索、联网、技能那几个领域工具，
+ * 模型碰不到本机文件 —— "一切默认都是 agent 判断"说的是**要不要联网/检索**，
+ * 而"能不能改你的文件"这种事必须用户先点头（见设置里的开关）。
+ */
+public class WorkContext {
+    public var dir: String = ""
+    /** ask / auto / full —— 与 lumin 的权限档位同名同义 */
+    public var perm: String = "ask"
+    public var allowExec: Bool = false
+    /** 测试用：非空就不等界面点，直接当回答（y/s/a/n） */
+    public var autoAnswer: String = ""
+
+    public init() {}
+}
+
 public class PiAgent {
     private let store: Store
 
@@ -79,6 +112,12 @@ public class PiAgent {
      * 这样测试可以塞一个 ScriptedProvider 进来，离线把整条链路（工具桥接、事件翻译、引用自检）跑一遍。
      */
     public func ask(kbId: String, question: String, sessionIdIn: String, webModeIn: String, skillIdIn: String): JsonObject {
+        return askTask(kbId, question, sessionIdIn, webModeIn, skillIdIn, None)
+    }
+
+    /** 桌面版走这条：除了问答参数，还带上"能不能动本机文件"（工作目录 + 权限档位）。 */
+    public func askTask(kbId: String, question: String, sessionIdIn: String, webModeIn: String, skillIdIn: String,
+        work: ?WorkContext): JsonObject {
         let cfgSettings = store.load()
         var model: ?ModelConfig = None
         if (cfgSettings.chatModelId.size > 0) {
@@ -106,13 +145,20 @@ public class PiAgent {
                 out0.put("message", JsonString("没有可用的对话模型，请先在设置里配置"))
                 return out0
             case Some(cfg) =>
-                return askWithProvider(OpenAiChatProvider(cfg), kbId, question, sessionIdIn, webModeIn, skillIdIn)
+                return askFull(OpenAiChatProvider(cfg), kbId, question, sessionIdIn, webModeIn, skillIdIn, work)
         }
     }
 
     /** 一轮问答（用给定的 provider）。返回形状与 /api/agent/ask 完全一致：界面与自检脚本可以同题对照。 */
     public func askWithProvider(provider: ChatProvider, kbId: String, question: String, sessionIdIn: String,
         webModeIn: String, skillIdIn: String): JsonObject {
+        return askFull(provider, kbId, question, sessionIdIn, webModeIn, skillIdIn, None)
+    }
+
+    /** 带工作区的那一版：给了 WorkContext 就会注册 read/write/edit/ls/find/grep（+ 可选 powershell），
+        并挂上审批阀门 —— 写工作区外 / 跑命令 / 联网都要先问。 */
+    public func askFull(provider: ChatProvider, kbId: String, question: String, sessionIdIn: String,
+        webModeIn: String, skillIdIn: String, work: ?WorkContext): JsonObject {
         let sessions = SessionStore(store.dataDir)
         var sessionId = sessionIdIn
         if (sessionId.size == 0) {
@@ -152,10 +198,43 @@ public class PiAgent {
         log("web/policy", pp)
 
         // ---- 工具 ----
+        // 默认只给领域工具（检索/联网/技能/笔记/产物）：模型碰不到本机文件。
+        // 用户在设置里指定了工作目录之后，才把 read/write/edit/ls/find/grep（可选 powershell）挂上。
         let defs = buildDomainToolDefs(store, kbId, allowWeb)
         let records = ArrayList<ToolRecord>()
         let registry = piRegistryOf(defs, records)
         let mode = piModeOf(defs, "desktop")
+        var ws: ?Workspace = None
+        var perm = "ask"
+        match (work) {
+            case Some(w) =>
+                perm = if (w.perm.size > 0) { w.perm } else { "ask" }
+                if (w.dir.size > 0) {
+                    // 两条红线跟着 lumin：模型自己在用的配置、本应用的数据目录
+                    let denyRoots = ArrayList<String>()
+                    denyRoots.add(store.dataDir)
+                    let denyFiles = ArrayList<String>()
+                    denyFiles.add(".env.local")
+                    denyFiles.add(".env")
+                    let w0 = Workspace(w.dir, denyRoots, denyFiles, perm)
+                    registerWorkspaceTools(registry, w0, w.allowExec && perm != "ask")
+                    let names = ArrayList<String>()
+                    names.add("read")
+                    names.add("write")
+                    names.add("edit")
+                    names.add("ls")
+                    names.add("find")
+                    names.add("grep")
+                    if (w.allowExec && perm != "ask") {
+                        names.add("powershell")
+                    }
+                    for (nm in names) {
+                        mode.allow([nm])
+                    }
+                    ws = Some(w0)
+                }
+            case None => ()
+        }
 
         // ---- 会话：历史先灌进去，本轮提问由 prompt() 注入 ----
         let cwd = if (kbId.size > 0) { kbRootOf(cfgSettings, kbId, store.dataDir) } else { store.dataDir }
@@ -170,7 +249,40 @@ public class PiAgent {
         opts.maxTurns = 24
         opts.toolExecution = "parallel"
         opts.autoCompactBytes = 120000
+        // 模型跑着的时候用户又打字：在"下一次模型请求之前"插进去（pi 的 steering）
+        let sidForSteer = sid
+        opts.getSteering = Some({ => sessionHub().takeSteering(sidForSteer) })
         let agent = Agent(provider, session, registry, mode, opts)
+        match (ws) {
+            case Some(w0) =>
+                agent.workspaceRoot = w0.root
+                // 审批阀门：分类 → 决策 → 审计。桌面版只把"取一行输入"换成"等界面点按钮"，
+                // lumin 那套（四答、记住规则、批了把目录记进沙箱白名单）原样复用。
+                let approver = Approver(store.dataDir, perm)
+                approver.ws = Some(w0)
+                match (work) {
+                    case Some(w1) =>
+                        if (w1.autoAnswer.size > 0) {
+                            approver.autoAnswer = w1.autoAnswer
+                        }
+                    case None => ()
+                }
+                let holder = ApprovalPrompt()
+                approver.nextLine = Some({ =>
+                    approvalHub().ask(holder.kind, holder.value, holder.detail, holder.tool)
+                })
+                opts.beforeToolCall = Some({ callId: String, name: String, args: JsonObject =>
+                    let cls = classifyTool(name, args, w0.root)
+                    holder.kind = cls[0]
+                    holder.value = cls[1]
+                    holder.detail = cls[2]
+                    holder.tool = name
+                    approver.checkTool(agent, name, args)
+                })
+            case None => ()
+        }
+        // 登记"正在跑"，让 /api/agent/cancel 找得到它，也让插话有地方落
+        sessionHub().markRunning(sid, agent)
         var preamble = "You are the study assistant of ITN-Desktop. Answer with the local knowledge base; " +
             "cite the material you used as [1], [2] … and web pages as [W1]. If the material does not cover it, say so."
         match (readSkill(store.dataDir, skillIdIn, allowWeb)) {
@@ -229,6 +341,7 @@ public class PiAgent {
         })
 
         let outcome = agent.prompt(question, stream)
+        sessionHub().clearRunning(sid)
         log("step/end", stepPayload(1, "retrieve"))
 
         // 没有流式增量时（例如服务端一次性返回），退回会话里最后一条 assistant 正文

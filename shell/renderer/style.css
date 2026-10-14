@@ -666,6 +666,47 @@ body.chat-mode .topbar { display: none; }
 /* ============================================================
   画像校准
    ============================================================ */
+/* 对话框：模型只用一行小字（不是按钮）；发送按钮跑着时变"停止" */
+.composer-model {
+  font-size: calc(12px * var(--fs, 1));
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+.composer-model:hover { color: var(--ink-2); }
+.composer-send.stop { background: var(--danger); }
+.composer-send.stop:hover { background: var(--danger); filter: brightness(1.08); }
+
+/* 需要批准的动作用户确认：贴在对话流末尾，琥珀色（"要你点头"的语气） */
+.approval-card {
+  border: 1px solid var(--amber-line);
+  background: var(--amber-soft);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 10px 0 0;
+}
+.approval-title { font-size: calc(14px * var(--fs, 1)); font-weight: 600; color: var(--ink); }
+.approval-path {
+  font-family: var(--font-mono);
+  font-size: calc(12px * var(--fs, 1));
+  color: var(--ink-2);
+  background: var(--panel-sunk);
+  border-radius: 8px;
+  padding: 4px 8px;
+  margin: 6px 0 4px;
+  word-break: break-all;
+}
+.approval-acts { gap: 6px; margin-top: 8px; }
+
+/* 设置 → 智能体：一行一个开关，左文右按钮 */
+.setting-row { gap: 12px; align-items: flex-start; padding: 8px 0; border-bottom: 1px dashed var(--line); }
+.setting-row:last-child { border-bottom: 0; }
+.setting-row .switch-label { font-weight: 600; }
+
 /* 我的资源：页面顶部的"笔记 / 错题本"分段（原来这两个各占一个根入口） */
 .res-tabs { padding: 10px 16px; }
 .res-tabs .seg { margin-bottom: 0; }
@@ -1148,7 +1189,10 @@ body.panel-hidden .panel { display: none; }
 }
 .composer textarea:focus { outline: none; }
 .composer textarea::placeholder { color: var(--muted); }
+/* 一行控件：[＋] [权限] …… [模型小字] [发送/停止]。
+   发送按钮永远贴着最右边：中间用 margin-left:auto 撑开，模型名再长也只吃省略号。 */
 .composer-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.composer-row .composer-send { margin-left: auto; }
 .composer-icon {
   width: 28px; height: 28px; flex: 0 0 auto;
   display: grid; place-items: center;

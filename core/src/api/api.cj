@@ -638,8 +638,16 @@ public class Api {
                         return
                     }
                     try {
-                        ok(ctx, PiAgent(store).ask(strOf(b, "kbId"), question, strOf(b, "sessionId"),
-                            strOf(b, "web"), trimStr(strOf(b, "skill"))))
+                        // 工作目录 + 权限档位来自设置；没设目录就是"只问答，不碰本机文件"
+                        let db = DbHub.open(store.dataDir)
+                        let work = WorkContext()
+                        work.dir = db.getKv("settings", "agent_work_dir", "")
+                        let permReq = strOf(b, "perm")
+                        work.perm = if (permReq.size > 0) { permReq } else { db.getKv("settings", "agent_perm", "ask") }
+                        let execReq = strOf(b, "exec")
+                        work.allowExec = if (execReq.size > 0) { execReq == "1" } else { db.getKv("settings", "agent_exec", "0") == "1" }
+                        ok(ctx, PiAgent(store).askTask(strOf(b, "kbId"), question,
+                            strOf(b, "sessionId"), strOf(b, "web"), trimStr(strOf(b, "skill")), Some(work)))
                     } catch (e: Exception) {
                         fail(ctx, 500, "问答失败（lumin）：" + e.message)
                     }
@@ -702,6 +710,10 @@ public class Api {
             // 显示大小：页面缩放与字体大小分开存（两者是两件事：缩放管"多大一块"、字体管"字多大"）
             o.put("uiZoom", JsonString(db.getKv("settings", "ui_zoom", "1")))
             o.put("uiFont", JsonString(db.getKv("settings", "ui_font", "1")))
+            // 让 lumin 动手的那几个开关（默认全关：只问答、不碰本机文件）
+            o.put("agentWorkDir", JsonString(db.getKv("settings", "agent_work_dir", "")))
+            o.put("agentPerm", JsonString(db.getKv("settings", "agent_perm", "ask")))
+            o.put("agentExec", JsonString(db.getKv("settings", "agent_exec", "0")))
             ok(ctx, o)
             return
         }
@@ -732,12 +744,30 @@ public class Api {
                     if (font >= 0.85 && font <= 1.4) {
                         db.putKv("settings", "ui_font", font.toString())
                     }
+                    let workDir = strOf(b, "agentWorkDir")
+                    if (workDir.size > 0) {
+                        db.putKv("settings", "agent_work_dir", workDir)
+                    }
+                    if (boolOf(b, "agentWorkDirClear")) {
+                        db.putKv("settings", "agent_work_dir", "")
+                    }
+                    let perm = strOf(b, "agentPerm")
+                    if (perm == "ask" || perm == "auto" || perm == "full") {
+                        db.putKv("settings", "agent_perm", perm)
+                    }
+                    let execPref = strOf(b, "agentExec")
+                    if (execPref == "0" || execPref == "1") {
+                        db.putKv("settings", "agent_exec", execPref)
+                    }
                     let o = JsonObject()
                     o.put("theme", JsonString(db.getKv("settings", "ui_theme", "system")))
                     o.put("sessionRail", JsonString(db.getKv("settings", "ui_session_rail", "1")))
                     o.put("rail", JsonString(db.getKv("settings", "ui_rail", "1")))
                     o.put("uiZoom", JsonString(db.getKv("settings", "ui_zoom", "1")))
                     o.put("uiFont", JsonString(db.getKv("settings", "ui_font", "1")))
+                    o.put("agentWorkDir", JsonString(db.getKv("settings", "agent_work_dir", "")))
+                    o.put("agentPerm", JsonString(db.getKv("settings", "agent_perm", "ask")))
+                    o.put("agentExec", JsonString(db.getKv("settings", "agent_exec", "0")))
                     ok(ctx, o)
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -986,6 +1016,54 @@ public class Api {
             return
         }
 
+        // 待批准的动作用户确认（界面显示批准卡，用户点四个按钮之一）
+        if (path == "/api/agent/approvals" && method == "POST") {
+            let o = JsonObject()
+            o.put("requests", approvalHub().list())
+            o.put("pending", JsonInt(approvalHub().pendingCount()))
+            ok(ctx, o)
+            return
+        }
+
+        if (path == "/api/agent/approvals/answer" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let id = strOf(b, "id")
+                    let decision = strOf(b, "decision")
+                    if (id.size == 0 || decision.size == 0) {
+                        fail(ctx, 400, "缺少 id 或 decision")
+                        return
+                    }
+                    let hit = approvalHub().answer(id, decision)
+                    let o = JsonObject()
+                    o.put("ok", JsonBool(hit))
+                    o.put("pending", JsonInt(approvalHub().pendingCount()))
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        // 中途插话：模型跑着的时候又打了一句，插进当前这一轮的下一次模型请求之前
+        if (path == "/api/agent/steer" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let sid = strOf(b, "sessionId")
+                    let text = trimStr(strOf(b, "text"))
+                    if (sid.size == 0 || text.size == 0) {
+                        fail(ctx, 400, "缺少 sessionId 或 text")
+                        return
+                    }
+                    sessionHub().pushSteering(sid, text)
+                    let o = JsonObject()
+                    o.put("queued", JsonBool(true))
+                    o.put("pending", JsonInt(sessionHub().pendingSteering(sid)))
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         if (path == "/api/agent/cancel" && method == "POST") {
             // 置一个取消标记：正在跑的那一轮会在下一段流式增量处停下来
             match (bodyJson(ctx)) {
@@ -995,7 +1073,9 @@ public class Api {
                         fail(ctx, 400, "缺少 sessionId")
                         return
                     }
+                    // 手写链路看的是取消标记；lumin 那一轮要直接 abort（它登记在 sessionHub 里）
                     requestCancel(sid)
+                    sessionHub().abort(sid)
                     ok(ctx, JsonString("ok"))
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -1999,6 +2079,9 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/kb/search",
         "/api/agent/ask",
         "/api/agent/ask-pi",
+        "/api/agent/approvals",
+        "/api/agent/approvals/answer",
+        "/api/agent/steer",
         "/api/agent/lecture",
         "/api/agent/quiz",
         "/api/maintenance/status",

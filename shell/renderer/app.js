@@ -346,6 +346,8 @@ let current = "home";
 
 async function loadCfg() {
   state.cfg = await api("/api/settings");
+  // /api/settings 里没有界面与智能体偏好：用最近一次读到的合回来，别把设置页上的开关冲掉
+  if (state.agentPrefs) Object.assign(state.cfg, state.agentPrefs);
   if (!state.cfg.models) state.cfg.models = [];
   if (!state.cfg.knowledgeBases) state.cfg.knowledgeBases = [];
   if (!state.kb || !state.cfg.knowledgeBases.some((k) => k.id === state.kb)) {
@@ -3495,6 +3497,15 @@ async function savePrefs(patch) {
 function applyPrefs(p) {
   applyTheme(p.theme);
   setPanelVisible(p.sessionRail !== "0");
+  // 智能体那几项也在偏好里（/api/settings 不带它们），拷到 cfg 上给设置页与对话框用。
+  // 另外留一份 state.agentPrefs：loadCfg() 会把 cfg 整个换掉，换完要用它合回来，
+  // 否则"刚在设置里选的权限"会被下一次 loadCfg 冲成默认值（踩过）。
+  state.agentPrefs = {
+    agentWorkDir: p.agentWorkDir === undefined ? (state.agentPrefs ? state.agentPrefs.agentWorkDir : "") : p.agentWorkDir,
+    agentPerm: p.agentPerm === undefined ? (state.agentPrefs ? state.agentPrefs.agentPerm : "ask") : p.agentPerm,
+    agentExec: p.agentExec === undefined ? (state.agentPrefs ? state.agentPrefs.agentExec : "0") : p.agentExec,
+  };
+  Object.assign(state.cfg, state.agentPrefs);
   // 没存过就用默认（1 / 1）；刷新后按内核里记的来
   applyZoom(p.uiZoom === undefined || p.uiZoom === "" ? 1 : p.uiZoom);
   applyFont(p.uiFont === undefined || p.uiFont === "" ? 1 : p.uiFont);
@@ -4135,6 +4146,17 @@ PAGES.kb = {
 const KIND_LABEL = { ask: "问答", lecture: "讲义", quiz: "练习", "": "对话" };
 /** 联网档位的中文名（三处界面共用一份，免得各写各的）。 */
 const WEB_MODE_LABEL = { off: "不联网", auto: "交给 agent 判断", always: "优先联网" };
+
+/**
+ * 权限档位：就是 lumin 的 permissions 三档。对话框左下角那枚 chip 与"设置 → 智能体"共用这一份文案。
+ * 它与"联网开关"的关系：不再单独让用户选联不联网 —— 联网按档位走（ask 每次都问、auto 只对风险问、full 不问）。
+ */
+const PERM_LABEL = { ask: "请求批准", auto: "帮我批准", full: "完全访问权限" };
+const PERM_HINT = {
+  ask: "编辑工作区外的文件、跑命令、联网时都先问你",
+  auto: "只有检测到的风险操作才问（危险命令、写工作区外、联网）",
+  full: "不再逐条问（仍然不把你自己在用的 API Key 交出去）",
+};
 const TOOL_LABEL = {
   kb_search: "检索知识库",
   web_search: "联网搜索（Tavily）",
@@ -4796,9 +4818,14 @@ PAGES.chat = {
     thread.id = "chat-thread";
     v.appendChild(thread);
 
-    /* 对话框：Codex 那种"一整块圆角输入区"——
-       上面是任务描述，下面一行是 [＋ 动作] [权限/联网] … [当前模型] [发送]。
-       这是 agent：能不能联网由 agent 自己判断，不在这里让用户选工作流。 */
+    /* 对话框：Codex 那种"一整块输入区"。一行控件只留三样：
+       [＋ 动作] [权限档位] …… [↑ 发送 / ■ 停止]。
+
+       刻意不放的东西（放过一轮，被用户指着说"乱七八糟"）：
+       - 联网开关：这是 agent，要不要联网由它自己判断，工具直接给它；
+       - 技能选择：技能用 "/" 调（占位符里就写着），不必占一个常驻入口；
+       - 模型选择：那是设置里的东西，这里用一行小字告诉你现在是哪个模型。
+       权限档位就是 lumin 的三档：请求批准 / 帮我批准 / 完全访问权限。 */
     const inputRow = el("div", "composer");
     const ta = el("textarea");
     ta.id = "chat-input";
@@ -4814,64 +4841,51 @@ PAGES.chat = {
     plusBtn.innerHTML = icon("plus");
     crow.appendChild(plusBtn);
 
-    const webChip = el("button", "composer-chip", "");
-    webChip.type = "button";
-    const paintWebChip = () => {
-      const off = (state.webMode || "auto") === "off";
-      webChip.classList.toggle("off", off);
-      webChip.innerHTML = icon("shield") +
-        "<span>" + (off ? "不联网" : "交给 agent 判断") + "</span>" + icon("chevron");
-      webChip.title = off ? "本次对话不允许联网（点开 ＋ 可改）" : "需要最新信息时，agent 自己决定要不要联网";
+    /* ---- 权限档位（= lumin 的 permissions，文案在模块级的 PERM_LABEL） ---- */
+    const permChip = el("button", "composer-chip", "");
+    permChip.type = "button";
+    const workDirName = () => {
+      const d = state.cfg.agentWorkDir || "";
+      return d ? (d.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || d) : "";
     };
-    paintWebChip();
-    crow.appendChild(webChip);
-
-    const skillChip = el("button", "composer-chip", "");
-    skillChip.type = "button";
-    const paintSkillChip = () => {
-      const cur = (state.skills || []).find((x) => x.id === state.skill);
-      skillChip.classList.toggle("off", !cur);
-      skillChip.innerHTML = icon("book") + "<span>技能：" + esc(cur ? cur.title : "自动") + "</span>" + icon("chevron");
-      skillChip.title = cur
-        ? "这次对话用技能「" + cur.title + "」，只允许：" + (cur.tools || []).join("/")
-        : "让模型自己决定要不要读技能（输入 / 也能直接挑）";
+    const paintPermChip = () => {
+      const m = state.cfg.agentPerm || "ask";
+      permChip.innerHTML = icon("shield") + "<span>" + esc(PERM_LABEL[m] || m) + "</span>" + icon("chevron");
+      const wd = workDirName();
+      permChip.title = (PERM_HINT[m] || "") + (wd
+        ? "\n工作目录：" + state.cfg.agentWorkDir
+        : "\n还没有指定工作目录：lumin 现在只能问答，指定后它才能读写文件");
+      permChip.classList.toggle("off", !wd);
     };
-    paintSkillChip();
-    crow.appendChild(skillChip);
+    paintPermChip();
+    crow.appendChild(permChip);
     crow.appendChild(spacer());
 
-    const modelChip = el("button", "composer-chip", "");
-    modelChip.type = "button";
-    modelChip.title = "当前对话模型（点开去设置）";
-    modelChip.innerHTML = '<span class="composer-dot"></span><span>' +
-      esc(modelLabel(state.cfg.chatModelId) || state.cfg.chatModelId || "未配置模型") + "</span>" + icon("chevron");
-    modelChip.onclick = () => go("settings", "models");
-    crow.appendChild(modelChip);
+    /* 模型：一行小字，不是按钮（改模型是设置里的事） */
+    const modelText = el("span", "composer-model", modelLabel(state.cfg.chatModelId) || "未配置模型");
+    modelText.title = "当前对话模型（设置 → 模型与接口 里改）";
+    modelText.onclick = () => go("settings", "models");
+    crow.appendChild(modelText);
 
-    const stopBtn = el("button", "composer-icon", "");
-    stopBtn.type = "button";
-    stopBtn.setAttribute("aria-label", "停止");
-    stopBtn.title = "停止这一轮";
-    stopBtn.innerHTML = icon("check");
-    stopBtn.style.display = "none";
-    stopBtn.onclick = async () => {
-      stopBtn.disabled = true;
-      try {
-        await api("/api/agent/cancel", { sessionId: state.chatSessionId });
-        toast("已请求停止，正在收尾…");
-      } catch (e) {
-        toast("停止失败：" + e.message);
-      }
+    /* 一个按钮两种状态：空闲是"发送"，跑着是"停止"（Codex 也是这么干的） */
+    const actionBtn = el("button", "composer-send", "");
+    actionBtn.style.marginLeft = "auto";
+    actionBtn.type = "button";
+    const ICON_SEND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>';
+    const ICON_STOP = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>';
+    const paintActionBtn = () => {
+      const busy = !!state.busyTurn;
+      actionBtn.innerHTML = busy ? ICON_STOP : ICON_SEND;
+      actionBtn.classList.toggle("stop", busy);
+      actionBtn.title = busy ? "停止（Esc）" : "发送（Enter，Shift+Enter 换行）";
+      actionBtn.setAttribute("aria-label", busy ? "停止" : "发送");
+      actionBtn.disabled = false;
     };
-    crow.appendChild(stopBtn);
-
-    const sendBtn = el("button", "composer-send", "");
-    sendBtn.type = "button";
-    sendBtn.setAttribute("aria-label", "发送");
-    sendBtn.title = "发送（Enter）";
-    sendBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>';
-    sendBtn.onclick = () => send();
-    crow.appendChild(sendBtn);
+    actionBtn.onclick = () => {
+      if (state.busyTurn) stopTurn();
+      else send();
+    };
+    crow.appendChild(actionBtn);
 
     // 菜单懒建：没打开过就一个按钮都不存在，免得和页面别处的同名按钮撞上
     const menu = el("div", "composer-menu");
@@ -4880,97 +4894,86 @@ PAGES.chat = {
     inputRow.appendChild(crow);
     v.appendChild(inputRow);
 
-    /* ＋ 菜单：只放真做得成的事，不放"技能""编排模式"这类还没有的东西 */
+    /* ＋ 菜单：只放真做得成的事。联网方式与技能列表都不在这儿（见上面那段注释）。 */
     let closeMenu = () => { menu.hidden = true; };
     const buildMenu = () => {
       const actionsBox = el("div", "cm-actions");
-    const menuItem = (iconName, label, hint, onClick) => {
-      const b2 = el("button", "composer-menu-item");
-      b2.type = "button";
-      b2.innerHTML = icon(iconName) + '<span class="cm-text"><span class="cm-label">' + esc(label) + "</span>" +
-        (hint ? '<span class="cm-hint">' + esc(hint) + "</span>" : "") + "</span>";
-      b2.onclick = () => { closeMenu(); onClick(); };
-      return b2;
-    };
+      const menuItem = (iconName, label, hint, onClick) => {
+        const b2 = el("button", "composer-menu-item");
+        b2.type = "button";
+        b2.innerHTML = icon(iconName) + '<span class="cm-text"><span class="cm-label">' + esc(label) + "</span>" +
+          (hint ? '<span class="cm-hint">' + esc(hint) + "</span>" : "") + "</span>";
+        b2.onclick = () => { closeMenu(); onClick(); };
+        return b2;
+      };
       actionsBox.appendChild(menuItem("globe", "读取网页…", "贴一个链接，抓正文落到本机", () => openUrlFetchDialog()));
       actionsBox.appendChild(menuItem("db", "添加资料目录…", "选一个本机目录加入知识库", async () => {
-      const a2 = window.itnWindow;
-      if (!a2 || typeof a2.pickDirectory !== "function") {
-        toast("选目录只在桌面应用窗口里可用");
-        go("settings", "kb");
-        return;
-      }
-      const dir = await a2.pickDirectory();
-      if (!dir) return;
-      go("settings", "kb");
-      const el2 = $("kb-dir");
-      if (el2) {
-        el2.value = dir;
-        const base = dir.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "";
-        const idEl = $("kb-id");
-        if (idEl && !idEl.value.trim() && base) idEl.value = base.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24);
-        const nameEl = $("kb-name");
-        if (nameEl && !nameEl.value.trim()) nameEl.value = base;
-      }
-    }));
-      actionsBox.appendChild(menuItem("layers", "做成讲义 / 练习册…", "把某一章做成产物", () => {
-      const topic = topicFromText(state.lastQuestion || "");
-      askTopic("lecture", topic);
-    }));
-      actionsBox.appendChild(menuItem("refresh", "清空抓取缓存…", "删掉所有抓回来的网页", async () => {
-      try {
-        const c = await api("/api/web/cache", {});
-        for (const pg of (c.pages || [])) {
-          await api("/api/web/cache/delete", { name: pg.name });
+        const a2 = window.itnWindow;
+        if (!a2 || typeof a2.pickDirectory !== "function") {
+          toast("选目录只在桌面应用窗口里可用");
+          go("settings", "kb");
+          return;
         }
-        toast("已清空 " + (c.pages || []).length + " 页抓取缓存");
-      } catch (e) { toast("清空失败：" + e.message); }
-    }));
-      actionsBox.appendChild(menuItem("target", "联网方式", "默认交给 agent 自己判断", () => {}));
-      const webBox = el("div", "composer-menu-sub");
-    for (const m of ["auto", "always", "off"]) {
-        const b3 = el("button", "composer-menu-item" + (m === (state.webMode || "auto") ? " active" : ""), "");
-      b3.type = "button";
-      b3.innerHTML = '<span class="cm-text"><span class="cm-label">' + esc(WEB_MODE_LABEL[m]) + "</span></span>";
-      b3.onclick = async () => {
-        closeMenu();
-        state.webMode = m;
-        paintWebChip();
-        try {
-          // 还没开始对话就先开一段：联网方式是"这一段会话"的，得有会话才存得住
-          if (!state.chatSessionId) {
-            state.chatSessionId = (await api("/api/sessions/new", {})).sessionId;
-          }
-          await api("/api/web/session", { sessionId: state.chatSessionId, mode: m });
-          paint();
-          toast("这次对话的联网方式：" + WEB_MODE_LABEL[m]);
-        } catch (e) { toast("设置失败：" + e.message); }
-      };
-        webBox.appendChild(b3);
-      }
-      actionsBox.appendChild(webBox);
+        const dir = await a2.pickDirectory();
+        if (!dir) return;
+        go("settings", "kb");
+        const el2 = $("kb-dir");
+        if (el2) {
+          el2.value = dir;
+          const base = dir.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "";
+          const idEl = $("kb-id");
+          if (idEl && !idEl.value.trim() && base) idEl.value = base.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24);
+          const nameEl = $("kb-name");
+          if (nameEl && !nameEl.value.trim()) nameEl.value = base;
+        }
+      }));
+      actionsBox.appendChild(menuItem("layers", "做成讲义 / 练习册…", "把某一章做成产物", () => {
+        const topic = topicFromText(state.lastQuestion || "");
+        askTopic("lecture", topic);
+      }));
+      actionsBox.appendChild(menuItem("target", "工作目录与权限…", workDirName() ? ("现在：" + workDirName()) : "让 lumin 能在本机读写文件", () => go("settings", "agent")));
       menu.appendChild(actionsBox);
 
-      // 技能：自动 / 每个技能（不可用的标出来，点了不假装能跑）
+      /* 权限档位：就是 lumin 的三档，和左边那枚 chip 同步（这儿是"改"，chip 是"看"）。 */
+      const permBox = el("div", "cm-perm");
+      permBox.hidden = true;
+      const mkPerm = (id) => {
+        const b = menuItem("shield", PERM_LABEL[id], PERM_HINT[id], async () => {
+          state.cfg.agentPerm = id;
+          paintPermChip();
+          try {
+            await savePrefs({ agentPerm: id });
+          } catch (e) { toast("保存失败：" + e.message); }
+          toast("权限：" + PERM_LABEL[id]);
+        });
+        if ((state.cfg.agentPerm || "ask") === id) b.classList.add("active");
+        return b;
+      };
+      permBox.appendChild(mkPerm("ask"));
+      permBox.appendChild(mkPerm("auto"));
+      permBox.appendChild(mkPerm("full"));
+      permBox.appendChild(menuItem("db",
+        workDirName() ? ("工作目录：" + workDirName()) : "指定工作目录…",
+        workDirName() ? "lumin 可以在这个目录里读写文件" : "不指定的话，lumin 只能问答、碰不到本机文件",
+        () => go("settings", "agent")));
+      menu.appendChild(permBox);
+
+      /* 技能：只在输入 "/" 时出现。它是"调用一个技能"的动作，不是常驻配置项。 */
       const skillBox = el("div", "cm-skills");
       const pick = async (id) => {
         closeMenu();
         const prev = state.skill;
         state.skill = id;
-        paintSkillChip();
         try {
           if (!state.chatSessionId) {
             state.chatSessionId = (await api("/api/sessions/new", {})).sessionId;
           }
           await api("/api/skills/bind", { sessionId: state.chatSessionId, skill: id });
-          // 整页重画一次：工具面板上那句"这次只允许…"、chip、会话 id 都要跟着更新
-          // （会话正文是从事件里还原的，重画不会丢东西）
           go("chat");
           const cur = (state.skills || []).find((x) => x.id === id);
           toast(id ? "这次对话用技能：「" + (cur ? cur.title : id) + "」" : "技能交给模型自己决定");
         } catch (e) {
           state.skill = prev;
-          paintSkillChip();
           toast("绑定技能失败：" + e.message);
         }
       };
@@ -4989,7 +4992,7 @@ PAGES.chat = {
       menu.appendChild(skillBox);
     };
 
-    /** 两种开法：＋ 打开全部；输入 / 只挑技能。 */
+    /** 两种开法：＋ 打开全部动作；输入 "/" 只挑技能。 */
     const openMenu = (mode) => {
       if (!menuBuilt) {
         buildMenu();
@@ -5000,15 +5003,19 @@ PAGES.chat = {
       menu.hidden = false;
       const acts = menu.querySelector(".cm-actions");
       if (acts) acts.hidden = mode === "skills";
+      const sk = menu.querySelector(".cm-skills");
+      if (sk) sk.hidden = mode !== "skills";
+      const pf = menu.querySelector(".cm-perm");
+      if (pf) pf.hidden = mode !== "perm";
     };
+
 
     plusBtn.onclick = (ev) => {
       ev.stopPropagation();
       if (menuBuilt && !menu.hidden) { closeMenu(); return; }
       openMenu("all");
     };
-    webChip.onclick = (ev) => { ev.stopPropagation(); openMenu("all"); };
-    skillChip.onclick = (ev) => { ev.stopPropagation(); openMenu("skills"); };
+    permChip.onclick = (ev) => { ev.stopPropagation(); openMenu("perm"); };
 
     // 输入框随内容长高（最多 8 行），像桌面聊天客户端那样
     const grow = () => {
@@ -5025,6 +5032,81 @@ PAGES.chat = {
     if (state.pendingQuestion) {
       ta.value = state.pendingQuestion;
       state.pendingQuestion = "";
+    }
+
+    /** 停下来：手写链路看取消标记，lumin 那一轮直接 abort。 */
+    async function stopTurn() {
+      const sid = state.chatSessionId;
+      if (!sid) return;
+      try {
+        await api("/api/agent/cancel", { sessionId: sid });
+        toast("已请求停止");
+      } catch (e) {
+        toast("停止失败：" + e.message);
+      }
+    }
+
+    /**
+     * 跑着的时候还能打字 —— Enter 就是"插话"：这句话在下一次模型请求之前注入当前这一轮。
+     * （pi 的 steering；不是排队等下一轮，也不是把输入框锁死。）
+     */
+    async function steer() {
+      const text = ta.value.trim();
+      const sid = state.chatSessionId;
+      if (!text || !sid) return;
+      ta.value = "";
+      grow();
+      try {
+        await api("/api/agent/steer", { sessionId: sid, text: text });
+        // 先在正文里显示出来（内核把它注进这一轮时会再写一条 user/message 事件，正好对上）
+        state.chatTurns.push({ id: "steer-" + Date.now(), kind: "ask", user: text, answer: "", deltas: "", tools: [], report: null, citations: [], ok: null, message: "", steer: true });
+        paint();
+        toast("已插入当前这一轮");
+      } catch (e) {
+        toast("插话失败：" + e.message);
+      }
+    }
+
+    /* ---- 需要批准的动作用户确认（写工作区外 / 跑命令 / 联网） ---- */
+    const APPROVAL_LABEL = {
+      "path-outside": "写入工作区外的目录",
+      command: "运行命令",
+      "command-dangerous": "运行有风险的命令",
+      web: "访问网络",
+    };
+    function approvalCard(req) {
+      const card = el("div", "approval-card");
+      const head = el("div", "row");
+      head.appendChild(el("div", "grow approval-title", "lumin 想在你的电脑上" + (APPROVAL_LABEL[req.kind] || req.kind)));
+      head.appendChild(tag("需要批准", "warn"));
+      card.appendChild(head);
+      if (req.value) card.appendChild(el("div", "approval-path", req.value));
+      if (req.detail) card.appendChild(el("div", "muted sm", String(req.detail).slice(0, 200)));
+      const row = el("div", "row approval-acts");
+      const answer = async (decision) => {
+        try {
+          await api("/api/agent/approvals/answer", { id: req.id, decision: decision });
+          state.approvals = state.approvals.filter((x) => x.id !== req.id);
+          paint();
+        } catch (e) { toast("提交失败：" + e.message); }
+      };
+      row.appendChild(btn("允许一次", "primary sm", () => answer("once")));
+      row.appendChild(btn("本会话都允许", "sm", () => answer("session")));
+      row.appendChild(btn("总是允许", "sm", () => answer("always")));
+      row.appendChild(btn("拒绝", "ghost sm", () => answer("deny")));
+      card.appendChild(row);
+      return card;
+    }
+
+    async function pollApprovals() {
+      try {
+        const d = await api("/api/agent/approvals", {});
+        const pend = (d.requests || []).filter((x) => !x.decision);
+        const changed = pend.length !== (state.approvals || []).length ||
+          pend.some((x, i) => (state.approvals[i] || {}).id !== x.id);
+        state.approvals = pend;
+        if (changed) paint();
+      } catch (e) { /* 轮询失败不打扰 */ }
     }
 
     function paint() {
@@ -5046,10 +5128,8 @@ PAGES.chat = {
       } else {
         for (const t of state.chatTurns) thread.appendChild(renderTurnBlock(t, !t.answer && state.busyTurn));
       }
-      // 正在生成时才显示「停止」：用户点错了主题/问题，不用等它跑完
-      stopBtn.style.display = state.busyTurn ? "" : "none";
-      stopBtn.disabled = false;
-      stopBtn.textContent = "停止";
+      for (const req of (state.approvals || [])) thread.appendChild(approvalCard(req));
+      paintActionBtn();
       thread.scrollTop = thread.scrollHeight;
       const main = document.querySelector(".main");
       if (main) main.scrollTop = main.scrollHeight;
@@ -5059,7 +5139,8 @@ PAGES.chat = {
     async function send() {
       const text = ta.value.trim();
       if (!text) return;
-      if (state.busyTurn) { toast("上一轮还在生成中"); return; }
+      // 跑着的时候 Enter = 插话，不是"等这一轮跑完再说"
+      if (state.busyTurn) { steer(); return; }
       if (!state.chatSessionId) {
         try {
           state.chatSessionId = (await api("/api/sessions/new", {})).sessionId;
@@ -5067,6 +5148,7 @@ PAGES.chat = {
       }
       const sid = state.chatSessionId;
       ta.value = "";
+      grow();
       state.lastQuestion = text;
       state.busyTurn = true;
       // 允许"已取消"的那一轮一键重问（取消多半是因为问题写错了）
@@ -5079,7 +5161,8 @@ PAGES.chat = {
       paint();
 
       // 生成过程中轮询会话事件，把 assistant/delta 渲染成"打字机"效果。
-      // 内核 HTTP 是多线程的，长生成不会挡住这个轮询。
+      // 内核 HTTP 是多线程的，长生成不会挡住这个轮询；顺便每 1.5 秒看一眼有没有要批准的动作。
+      let approvalTick = 0;
       const poll = setInterval(async () => {
         try {
           const d = await api("/api/sessions/events", { sessionId: sid });
@@ -5090,22 +5173,30 @@ PAGES.chat = {
             paint();
           }
         } catch (e) { /* 轮询失败不打扰用户，最终结果以收尾时那次为准 */ }
+        approvalTick = approvalTick + 1;
+        if (approvalTick % 3 === 0) await pollApprovals();
       }, 400);
 
       let failure = "";
       try {
-        const res = await api("/api/agent/ask", { kbId: state.kb, question: text, sessionId: sid, web: state.webMode, skill: state.skill });
+        // 指定了工作目录 → 走 lumin（它才认权限档位与审批）；否则走原来那条"只问答"的链路。
+        // 技能不再从输入框选：交给模型自己按 "/" 的语义挑（skill 传空）。
+        const useLumin = !!(state.cfg.agentWorkDir || "");
+        const payload = { kbId: state.kb, question: text, sessionId: sid, web: "auto", skill: state.skill || "" };
+        if (useLumin) payload.perm = state.cfg.agentPerm || "ask";
+        const res = await api(useLumin ? "/api/agent/ask-pi" : "/api/agent/ask", payload);
         if (res.ok !== true) failure = res.message || "这一轮没有完成";
       } catch (e) {
         failure = e.message;
       }
       clearInterval(poll);
+      await pollApprovals();
       try {
         const d = await api("/api/sessions/events", { sessionId: sid });
         state.chatEvents = d.events || [];
         state.chatTurns = turnsFromEvents(state.chatEvents);
       } catch (e) {
-        state.chatTurns = state.chatTurns.filter((t) => t.id !== "local");
+        state.chatTurns = state.chatTurns.filter((t) => t.id !== "local" && !String(t.id).startsWith("steer-"));
       }
       state.busyTurn = false;
       // 取消不是失败，别把提示写成"生成失败"
@@ -5114,13 +5205,29 @@ PAGES.chat = {
       paint();
     }
 
+    // Enter 发送 / 跑着时 Enter 插话；Shift+Enter 换行；Esc 停止（有弹层时 Esc 先关弹层）
     ta.onkeydown = (e) => {
+      if (e.isComposing) return;
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         send();
+        return;
+      }
+      if (e.key === "Escape" && state.busyTurn) {
+        e.preventDefault();
+        stopTurn();
       }
     };
-    sendBtn.onclick = send;
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && state.busyTurn && !document.querySelector(".card.dialog")) stopTurn();
+    });
+    // 待批准的动作可能来自任何一轮（包括直接打接口起的那一轮）：空闲时也要看
+    await pollApprovals();
+    if (state.approvalTimer) clearInterval(state.approvalTimer);
+    state.approvalTimer = setInterval(() => {
+      if (current !== "chat") return;
+      pollApprovals();
+    }, 2000);
 
     /* 已有会话：把历史事件还原成线程 */
     if (state.chatSessionId) {
@@ -5701,6 +5808,7 @@ const SETTINGS_SECTIONS = [
   { id: "appearance", label: "外观", icon: "sun", title: "外观" },
   { id: "kb", label: "知识库", icon: "db", title: "知识库" },
   { id: "models", label: "模型与接口", icon: "gear", title: "模型与接口" },
+  { id: "agent", label: "智能体", icon: "shield", title: "智能体" },
   { id: "data", label: "数据与备份", icon: "layers", title: "数据与备份" },
   { id: "skills", label: "技能", icon: "book", title: "技能" },
   { id: "about", label: "关于", icon: "file", title: "关于 ITN-Desktop" },
@@ -5735,6 +5843,7 @@ PAGES.settings = {
 /** 设置分区的路由表；每个 builder 返回一个可以整体塞进内容区的节点。 */
 function settingsSection(id) {
   if (id === "appearance") return settingsAppearance();
+  if (id === "agent") return settingsAgent();
   if (id === "skills") return settingsSkills();
   if (id === "kb") return settingsKb();
   if (id === "models") return settingsModels();
@@ -5773,6 +5882,110 @@ function settingsGeneral() {
   hint.appendChild(btn("去校准", "sm", () => openCalibration()));
   prof.appendChild(hint);
   g.appendChild(prof);
+  return g;
+}
+
+/**
+ * 设置 · 智能体：lumin 能不能动你的电脑。
+ *
+ * 三件事，别多：
+ *   工作目录（不给就只能问答）；
+ *   权限档位（就是 lumin 的三档：请求批准 / 帮我批准 / 完全访问权限）；
+ *   要不要放开跑命令（默认关 —— 命令比写文件危险得多）。
+ * 红线写清楚：你自己在用的 API Key 不会被交出去；工作区里的 .env / .git / .ssh 写不进去。
+ */
+function settingsAgent() {
+  const g = document.createDocumentFragment();
+  const dir = state.cfg.agentWorkDir || "";
+  const perm = state.cfg.agentPerm || "ask";
+
+  const card = cardOf({
+    title: "工作目录",
+    tag: dir ? "已指定" : "未指定",
+    tagCls: dir ? "ok" : "warn",
+  });
+  const row = el("div", "row dir-row");
+  const dirInput = inputOf("agent-dir", "还没指定。指定之后 lumin 才能读写文件", dir);
+  dirInput.className = "grow";
+  dirInput.readOnly = true;
+  row.appendChild(dirInput);
+  row.appendChild(btn("选择…", "", async () => {
+    const a = window.itnWindow;
+    if (!a || typeof a.pickDirectory !== "function") {
+      toast("选目录只在桌面应用窗口里可用");
+      return;
+    }
+    const picked = await a.pickDirectory();
+    if (!picked) return;
+    try {
+      await savePrefs({ agentWorkDir: picked });
+      state.cfg.agentWorkDir = picked;
+      toast("工作目录：" + picked);
+      go("settings", "agent");
+    } catch (e) { toast("保存失败：" + e.message); }
+  }));
+  if (dir) {
+    row.appendChild(btn("清除", "ghost", async () => {
+      try {
+        await savePrefs({ agentWorkDirClear: true });
+        state.cfg.agentWorkDir = "";
+        toast("已清除：lumin 回到只能问答");
+        go("settings", "agent");
+      } catch (e) { toast("清除失败：" + e.message); }
+    }));
+  }
+  card.appendChild(row);
+  card.appendChild(el("p", "muted sm", dir
+    ? "lumin 能在这个目录里读写文件、按下面的档位决定要不要先问你。"
+    : "不指定的话，lumin 只能问答与检索 —— 它碰不到你电脑上的任何文件。"));
+  g.appendChild(card);
+
+  const permCard = cardOf({ title: "权限", sub: "与对话框左下角那枚开关是同一个设置" });
+  for (const m of ["ask", "auto", "full"]) {
+    const line = el("div", "row setting-row");
+    const left = el("div", "grow");
+    left.appendChild(el("div", "switch-label", PERM_LABEL[m]));
+    left.appendChild(el("div", "muted sm", PERM_HINT[m]));
+    line.appendChild(left);
+    const b = btn(m === perm ? "已选" : "选它", m === perm ? "sm" : "sm primary", async () => {
+      state.cfg.agentPerm = m;
+      try {
+        await savePrefs({ agentPerm: m });
+        toast("权限：" + PERM_LABEL[m]);
+        go("settings", "agent");
+      } catch (e) { toast("保存失败：" + e.message); }
+    });
+    if (m === perm) b.disabled = true;
+    line.appendChild(b);
+    permCard.appendChild(line);
+  }
+  const execLine = el("div", "row setting-row");
+  const execLeft = el("div", "grow");
+  execLeft.appendChild(el("div", "switch-label", "允许运行命令"));
+  execLeft.appendChild(el("div", "muted sm", "默认关。开了之后 lumin 可以在工作目录里跑 PowerShell（每条命令仍然按上面的档位处理）。"));
+  execLine.appendChild(execLeft);
+  const execOn = state.cfg.agentExec === "1";
+  execLine.appendChild(btn(execOn ? "关掉" : "打开", "sm" + (execOn ? " ghost" : ""), async () => {
+    const next = execOn ? "0" : "1";
+    try {
+      await savePrefs({ agentExec: next });
+      state.cfg.agentExec = next;
+      toast(next === "1" ? "已允许跑命令" : "已关掉跑命令");
+      go("settings", "agent");
+    } catch (e) { toast("保存失败：" + e.message); }
+  }));
+  permCard.appendChild(execLine);
+  g.appendChild(permCard);
+
+  const safe = cardOf({ title: "红线" });
+  const ul = el("ul", "about-list");
+  [
+    "你自己在用的 API Key 不会被交出去（配置里那份含 Key 的文件永远不读）。",
+    "工作目录里的 .env / .git / .ssh 写不进去。",
+    "写工作目录之外的路径、跑命令、联网都会按上面的档位先问你 —— 每一次决定都留在会话里可回看。",
+  ].forEach((t) => ul.appendChild(el("li", null, t)));
+  safe.appendChild(ul);
+  g.appendChild(safe);
   return g;
 }
 

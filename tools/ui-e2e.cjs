@@ -198,6 +198,14 @@ fs.writeFileSync(singleFile, [
       env: Object.assign({}, process.env, { ITN_MOCK_CHUNK_DELAY_MS: '120' }) });
   children.push(mock);
   const mockBase = 'http://127.0.0.1:' + mockPort + '/v1';
+
+  // 第二个 mock：会真的返回原生 tool_call（write）——用来验"让 lumin 动手 + 审批"
+  const mockToolPort = await freePort();
+  const mockTool = spawn('python', [path.join(__dirname, 'mock-toolcall', 'server.py'), String(mockToolPort)],
+    { cwd: REPO, windowsHide: true, stdio: 'ignore' });
+  children.push(mockTool);
+  await sleep(600);
+  const mockToolBase = 'http://127.0.0.1:' + mockToolPort + '/v1';
   await sleep(600); // 给 python mock 一点启动时间
 
   // 内核日志落盘：失败时没有日志就只能靠猜（本轮就吃过这个亏）
@@ -1740,10 +1748,11 @@ fs.writeFileSync(singleFile, [
     return '深色 ' + darkBg + ' → 浅色 ' + st.bg + '（重载后仍生效）';
   });
 
-  await step('设置页：左侧七个分区、右侧跟着换、深链直达、老路由兼容', async () => {
+  await step('设置页：左侧八个分区、右侧跟着换、深链直达、老路由兼容', async () => {
     await nav('设置');
     const secs = await page.$$eval('.settings-nav button', (els) => els.map((e) => e.textContent.trim()));
-    assert(secs.length === 7, '设置应有 7 个分区，实际 ' + secs.length + '：' + secs.join('/'));
+    assert(secs.length === 8, '设置应有 8 个分区（多了「智能体」），实际 ' + secs.length + '：' + secs.join('/'));
+    assert(secs.join('/').indexOf('智能体') >= 0, '应有「智能体」分区（工作目录 / 权限）');
     assert(secs.join('/').indexOf('模型与接口') >= 0, '模型配置应该收在设置里');
     await page.goto(base + '#/settings/models', { waitUntil: 'load', timeout: 30000 });
     await page.waitForSelector('#m-id', { timeout: 20000 });
@@ -1812,23 +1821,25 @@ fs.writeFileSync(singleFile, [
     return '保存 → 掩码回显 → 工具变可用 → 清除复原';
   });
 
-  await step('对话框是 Codex 那种一整块输入区：＋ 动作 / 联网交给 agent / 模型 / 圆形发送', async () => {
+  await step('对话框：一整块输入区，一行只留 ＋ / 权限 / 发送（模型只是一行小字）', async () => {
     await nav('伴学助手');
     await page.waitForSelector('.composer', { timeout: 15000 });
     const ph = await page.getAttribute('#chat-input', 'placeholder');
     assert(ph.indexOf('描述任务') >= 0, '输入框应是"描述任务，输入 / 调用技能"，实际：' + ph);
+    // 输入框上只该有一枚 chip：权限档位。联网与技能都不该在这儿占位置。
     const chips = await page.$$eval('.composer-chip', (els) => els.map((e) => e.innerText.trim()));
-    assert(chips.length >= 2, '输入区应有权限/联网 chip 与模型 chip，实际 ' + JSON.stringify(chips));
-    assert(chips.join('/').indexOf('agent') >= 0, '默认应是"交给 agent 判断"，实际 ' + JSON.stringify(chips));
+    assert(chips.length === 1, '输入区只该有一枚 chip（权限档位），实际 ' + JSON.stringify(chips));
+    assert(/请求批准|帮我批准|完全访问/.test(chips[0]), '这枚 chip 应是权限档位，实际 ' + chips[0]);
+    const modelText = await page.locator('.composer-model').innerText();
+    assert(modelText.length > 0, '右边应有一行"当前模型"的小字');
     assert((await page.locator('.composer-send svg').count()) === 1, '发送按钮应是圆形箭头按钮');
-    // ＋ 菜单懒建：不点开就不该有那些按钮
     assert((await page.locator('.composer-menu-item').count()) === 0, '＋ 菜单没点开时不该存在');
     await page.locator('.composer-row .composer-icon').first().click();
-    await page.waitForSelector('.composer-menu-item', { timeout: 8000 });
-    const items = await page.$$eval('.composer-menu-item .cm-label', (els) => els.map((e) => e.textContent));
+    await page.waitForSelector('.cm-actions .composer-menu-item', { timeout: 8000 });
+    const items = await page.$$eval('.cm-actions .cm-label', (els) => els.map((e) => e.textContent));
     assert(items.join('/').indexOf('读取网页') >= 0, '＋ 菜单里应有「读取网页…」，实际 ' + items.join('/'));
-    assert(items.join('/').indexOf('联网方式') >= 0, '＋ 菜单里应有「联网方式」');
-    assert(items.join('/').indexOf('技能') < 0, '技能还没做，不该放一个点不动的入口');
+    assert(items.join('/').indexOf('联网方式') < 0, '联网方式不该再出现在 ＋ 菜单里（联网交给 agent 判断）');
+    assert(items.length <= 4, '＋ 菜单只放真做得成的事，实际 ' + items.length + ' 项：' + items.join('/'));
     await shot('44-对话框');
     // 输入框随内容长高
     await page.fill('#chat-input', '第一行\n第二行\n第三行\n第四行');
@@ -1837,51 +1848,45 @@ fs.writeFileSync(singleFile, [
     assert(h > 60, '输入框应随内容长高，实际 ' + Math.round(h));
     await page.fill('#chat-input', '');
     await page.locator('body').click({ position: { x: 5, y: 5 } });
-    return '占位符「' + ph + '」· chip ' + chips.join(' / ') + ' · ＋ 菜单 ' + items.length + ' 项';
+    return '占位符「' + ph + '」· 一枚 chip ' + chips[0] + ' · 模型小字 ' + modelText + ' · ＋ 菜单 ' + items.length + ' 项';
   });
 
-  await step('联网：默认交给 agent 判断，开关由 ＋ 菜单改，设置里能存', async () => {
+  await step('权限：那三档就是 lumin 的 permissions（选完写回内核）', async () => {
     await nav('伴学助手');
     await page.waitForSelector('.composer-chip', { timeout: 15000 });
-    // 从 ＋ 菜单把这一轮会话改成"不联网"
-    await page.locator('.composer-row .composer-icon').first().click();
-    await page.waitForSelector('.composer-menu-item', { timeout: 8000 });
-    await page.locator('.composer-menu-item', { hasText: '不联网' }).click();
-    await page.waitForTimeout(900);
-    const chip = await page.locator('.composer-chip').first().innerText();
-    assert(chip.indexOf('不联网') >= 0, '选完之后输入区的联网 chip 应变成"不联网"，实际 ' + chip);
-    // 会话级档位存在内核里：拿刚建的那段会话再问一次，应该回 off
-    // 用页面上标着的那段会话（刚点开时才建的，不一定在 sessions/list 里）
-    let sid = await page.evaluate(() => (document.querySelector('#chat-thread') ? document.querySelector('#chat-thread').dataset.session : ""));
-    if (!sid) {
-      sid = await page.evaluate(() => fetch('/api/sessions/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => r.json()).then((j) => ((j.data.sessions || [])[0] || {}).sessionId || ""));
+    await page.locator('.composer-chip').first().click();
+    await page.waitForSelector('.cm-perm .composer-menu-item', { timeout: 8000 });
+    const modes = await page.$$eval('.cm-perm .cm-label', (els) => els.map((e) => e.textContent));
+    for (const m of ['请求批准', '帮我批准', '完全访问权限']) {
+      assert(modes.indexOf(m) >= 0, '权限菜单里应有「' + m + '」，实际 ' + modes.join('/'));
     }
-    const mode = await page.evaluate((id) => fetch('/api/web/cache', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: id }) }).then((r) => r.json()).then((j) => j.data.mode), sid);
-    assert(mode === 'off', '会话级开关应存在内核里，实际 ' + mode + '（sessionId=' + sid + '）');
-    // 设置里的联网卡片：三档 + 手动抓取
-    await settings('模型与接口');
-    await page.waitForSelector('#ws-mode', { timeout: 15000 });
-    const opts = await page.$$eval('#ws-mode option', (els) => els.map((e) => e.textContent));
-    assert(opts.length === 3, '联网档位应有三档，实际 ' + JSON.stringify(opts));
-    assert((await page.locator('button', { hasText: '抓取' }).count()) >= 1, '应能手动贴链接抓取');
-    await page.selectOption('#ws-mode', 'auto');
-    await page.getByRole('button', { name: '保存', exact: true }).click();
-    await page.waitForTimeout(1200);
-    const st = await page.evaluate(() => fetch('/api/websearch/get', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => r.json()).then((j) => j.data));
-    assert(st.mode === 'auto', '档位应写回内核，实际 ' + JSON.stringify(st.mode));
-    await shot('45-联网设置');
-    // 复原：会话档位回到"交给 agent"（必须带上刚才那段会话，空 id 是 400）
-    await page.evaluate((id) => fetch('/api/web/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: id, mode: 'auto' }) }), sid);
-    return '三档：' + opts.join(' / ');
+    await page.locator('.cm-perm .composer-menu-item', { hasText: '帮我批准' }).click();
+    await page.waitForTimeout(900);
+    let pref = await page.evaluate(() => fetch('/api/prefs/get', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => r.json()).then((j) => j.data.agentPerm));
+    assert(pref === 'auto', '选「帮我批准」应把 agentPerm 写成 auto，实际 ' + pref);
+    const chip1 = await page.locator('.composer-chip').first().innerText();
+    assert(chip1.indexOf('帮我批准') >= 0, 'chip 应跟着变，实际 ' + chip1);
+    await shot('45-权限档位');
+    // 设置 → 智能体：同一份设置（工作目录 / 权限 / 跑命令）
+    await settings('智能体');
+    await page.waitForSelector('#agent-dir', { timeout: 15000 });
+    const cardText = await page.locator('#view').innerText();
+    assert(cardText.indexOf('工作目录') >= 0, '智能体页应有工作目录');
+    assert(cardText.indexOf('允许运行命令') >= 0, '智能体页应有"允许运行命令"开关');
+    await shot('46-智能体设置');
+    // 复原成默认的「请求批准」
+    await page.locator('.setting-row', { hasText: '请求批准' }).getByRole('button').click();
+    await page.waitForTimeout(700);
+    pref = await page.evaluate(() => fetch('/api/prefs/get', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => r.json()).then((j) => j.data.agentPerm));
+    assert(pref === 'ask', '复原成请求批准，实际 ' + pref);
+    return '三档：' + modes.join(' / ') + ' · 选完写回内核 · 设置页同一份';
   });
 
-  await step('技能：输入 / 就能挑，绑到这一段会话；工具边界写在面板上', async () => {
+  await step('技能：输入 / 就能挑，绑到这一段会话（输入框上不再有技能选项）', async () => {
     await nav('伴学助手');
     await page.waitForSelector('.composer-chip', { timeout: 15000 });
     await page.waitForTimeout(600);
-    const chips0 = await page.$$eval('.composer-chip', (els) => els.map((e) => e.innerText.trim()));
-    assert(chips0.join('/').indexOf('技能') >= 0, '输入区应有技能 chip，实际 ' + JSON.stringify(chips0));
-    assert(chips0.join('/').indexOf('技能：自动') >= 0, '默认应是"技能：自动"，实际 ' + JSON.stringify(chips0));
+    // 技能不在输入框上（用户明确不要那个选项）：它的入口就是输入 "/"
     // 输入 / 打开技能菜单：只出技能，不出别的动作
     await page.fill('#chat-input', '/');
     await page.waitForSelector('.cm-skills .composer-menu-item', { timeout: 8000 });
@@ -1892,8 +1897,7 @@ fs.writeFileSync(singleFile, [
     await shot('47-技能菜单');
     await page.locator('.cm-skills .composer-menu-item', { hasText: '联网专题研究' }).click();
     await page.waitForTimeout(1200);
-    const chips1 = await page.$$eval('.composer-chip', (els) => els.map((e) => e.innerText.trim()));
-    assert(chips1.join('/').indexOf('联网专题研究') >= 0, '选完 chip 应显示技能名，实际 ' + JSON.stringify(chips1));
+    // 选完之后输入框清空、壳上不再显示技能名（技能是会话级的，写在工具面板里）
     // 会话里真的绑上了（按对话区标着的会话 id 去问）
     const sid = await page.evaluate(() => (document.querySelector('#chat-thread') ? document.querySelector('#chat-thread').dataset.session : ''));
     assert(sid, '挑技能时应顺手开一段会话（对话区上要标着 sessionId）');
@@ -1908,7 +1912,7 @@ fs.writeFileSync(singleFile, [
     await page.locator('.chat-head button', { hasText: '工具' }).click();
     // 复原：解绑，别影响后面的步骤
     await page.evaluate((id) => fetch('/api/skills/bind', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: id, skill: '' }) }), sid);
-    return '技能：自动 → ' + chips1.join(' / ');
+    return '输入 / 挑技能 → 会话里绑上 web-research → 工具面板同步';
   });
 
   await step('设置 · 技能：清单、允许的工具、能打开正文', async () => {
@@ -1941,6 +1945,50 @@ fs.writeFileSync(singleFile, [
     title = await page.textContent('#page-title');
     assert(title.indexOf('伴学助手') >= 0, '应回到对话，实际 ' + title);
     return '一个入口 → 两种视图（对话 / 全部会话）';
+  });
+
+  await step('让 lumin 动手：写工作区外会弹批准卡，批了就真落盘', async () => {
+    const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'itn-e2e-work-'));
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'itn-e2e-outside-'));
+    const outsideFile = path.join(outsideDir, 'evil.md');
+    // 换成"会真的调 write"的模型，并给 lumin 一个工作目录（权限档位 = 请求批准）
+    await page.evaluate(async (b) => {
+      const post = (u, body) => fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
+      await post('/api/models/save', { id: 'tc', name: '会调工具的模型', baseUrl: b, apiKey: 'k', model: 'mock-tool' });
+      await post('/api/models/roles', { chatModelId: 'tc', embedModelId: '', chunkModelId: '' });
+    }, mockToolBase);
+    await page.evaluate((d) => fetch('/api/prefs/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentWorkDir: d, agentPerm: 'ask', agentExec: '0' }) }), workDir);
+    const sid = await page.evaluate(() => fetch('/api/sessions/new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => r.json()).then((j) => j.data.sessionId));
+
+    // 让模型往"工作区外面"写：这一步必须弹批准卡
+    const rel = '../' + path.basename(outsideDir) + '/evil.md';
+    await page.evaluate(([id, r]) => {
+      window.__askResult = null;
+      fetch('/api/agent/ask-pi', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kbId: 'course', question: '把结论写进 @@TARGET:' + r + '@@ 里', sessionId: id, web: 'off' }),
+      }).then((x) => x.json()).then((j) => { window.__askResult = j; });
+    }, [sid, rel]);
+    await page.waitForSelector('.approval-card', { timeout: 30000 });
+    const card = await page.locator('.approval-card').innerText();
+    assert(card.indexOf('需要批准') >= 0, '批准卡应标出"需要批准"，实际：' + card.replace(/\s+/g, ' ').slice(0, 80));
+    assert(card.indexOf('写入工作区外') >= 0 || card.indexOf('工作区外') >= 0, '批准卡应说清是什么动作，实际：' + card.replace(/\s+/g, ' ').slice(0, 80));
+    await shot('53-批准卡');
+    await page.locator('.approval-card button', { hasText: '允许一次' }).click();
+    await page.waitForFunction(() => window.__askResult && window.__askResult.data && window.__askResult.data.ok === true, null, { timeout: 60000 });
+    assert(fs.existsSync(outsideFile), '批准之后文件应真的落到工作区外：' + outsideFile);
+    assert(fs.readFileSync(outsideFile, 'utf8').length > 0, '写进去的内容不该是空的');
+    assert((await page.locator('.approval-card').count()) === 0, '批准过之后卡片应消失');
+
+    // 复原：模型绑回 mock，清掉工作目录，别影响后面的步骤
+    await page.evaluate(async (b) => {
+      const post = (u, body) => fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
+      await post('/api/models/save', { id: 'mock', name: 'mock', baseUrl: b, apiKey: 'k', model: 'mock-chat' });
+      await post('/api/models/roles', { chatModelId: 'mock', embedModelId: 'mock', chunkModelId: 'mock' });
+      await post('/api/prefs/save', { agentWorkDirClear: true, agentPerm: 'ask' });
+    }, mockBase);
+    await page.evaluate((nm) => fetch('/api/models/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: nm }) }), 'tc');
+    return '工作区外写 → 弹批准卡 → 允许一次 → 文件真的落盘（' + path.basename(outsideFile) + '，' + fs.readFileSync(outsideFile, 'utf8').length + ' 字节）';
   });
 
   await step('全程没有前端报错', async () => {
