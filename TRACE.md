@@ -2217,3 +2217,43 @@ web-fetch / skill / graph / study-api / ui-check / smoke / package-smoke 全过�
 - 真机测这类交互**必须用 .NET Process + 定时写 stdin**（`Start-Process` 给不了可写的 stdin）；
   顺带一个坑：**子进程没正常退出**时 `ReadToEndAsync` 拿不到已缓冲的 stdout（我第一次就看到"输出是空的"，
   其实是进程还活着），排查时先看 `$p.WaitForExit()` 的返回值和会话 jsonl。
+
+---
+
+## 第三十二轮（2026-10-14）：接上 lumin 的问答链路（P3 后半 + P4），离线两套验证全过
+
+**用户这条线的诉求**（从很早就开始）："我另一个会话在做 pi-cj/lumin … 你接 lumin"。这轮把"接"这件事做到底：
+领域工具桥接到运行时、用运行时跑一轮问答、事件翻译回界面已经在用的名字。
+
+### 新增（三个文件 + 一个路由 + 一个自测）
+
+| 文件 | 干什么 |
+| --- | --- |
+| `core/src/agent/pi_bridge.cj` | 中立层 `DomainTool` → pi 的 `FuncTool` / `ToolRegistry` / `Mode`；顺手记 `ToolRecord`（结构化载荷留给引用自检）。**只认识 pi** |
+| `core/src/pi_app/pi_ask.cj` | `PiAgent.ask()` / `askWithProvider()`：用 lumin 跑一轮问答，事件翻译成界面认的那几个，引用自检复用同一套算法 |
+| `core/src/unittests/pi_ask_test.cj` | 离线单测两例（ScriptedProvider：先调 `kb_search` 再作答；`web=off` 时工具数 8、`auto` 时 10） |
+| `tools/pi-ask-check.ps1` | 离线 HTTP 自测 7 项（mock 模型）：接口形状、事件落库、联网留痕、旧链路没坏 |
+| `/api/agent/ask-pi` | 与 `/api/agent/ask` 同形的对照路由（手写链路仍是默认，等真实模型同题对照后再切） |
+
+### 这一轮踩的坑（都是"仓颉 + 两个同名世界"惹的）
+
+1. **块注释里的 `*/`**：注释写 `message_*/tool_execution_*`，`*/` 提前把注释关掉了，后面整段中文变成代码 → 一串
+   "unknown start of token: ）"。注释里别出现 `*/`。
+2. **`Agent` 撞名**：agent 包里有我们自己的 `Agent(store)`，pi 包里也有 `Agent(provider, session, …)`；
+   同一个包里两个都在作用域，编译器报 "extra arguments for (Class-Store)"。**把运行时那条链路单独放一个包**
+   （`itn_desktop_core.pi_app`），内核侧一律具名导入，pi 侧才通配。
+3. **`strOf`/`intOf`/`boolOf`/`byteSafePrefix` 两边都有**：pi 的 `jsonx.cj` 与内核 `util` 同名（pi 的 `boolOf` 还是三参）。
+   通配 pi + 具名 util **仍然歧义**；解决办法是"只用一边"：pi 侧文件用 pi 的那份，别再导 util。
+4. **lambda 不能捕获可变变量（连传递性也算）**：事件回调里调了一个捕获 `var sessionId` 的嵌套函数 → 编译不过。
+   留一份 `let sid = sessionId` 只读副本即可（agent.cj 里早就是这么干的）。
+5. **单测的宏用法**：`@Expect(actual, expected)`、`@Assert(actual, true)`——写 `@Assert(cond, "消息")` 会
+   "macro evaluation has failed"。消息只能当 `@Expect` 的第二个参数之外的场景不要用。
+
+### 验证
+
+- `cjpm test` → **61/61**（含新增两例：工具真的执行、`[1]` 引用算出来、事件名字齐、联网工具随档位增减）。
+- `tools/pi-ask-check.ps1` → **7 项全过**（离线 mock）：`/api/agent/ask-pi` 跑完一轮、返回形状与手写链路一致、
+  事件落在 `turn/start / user/message / assistant/delta / assistant/message / validation / turn/end`、
+  `web/policy` 留痕、`/api/agent/ask` 没被弄坏。
+- 顺带把打包好的 `dist/ITN-Desktop` 更新到最新（用户之前开着应用导致覆盖失败，这轮他关掉了）：
+  `tools/package-smoke.ps1` → `PRELOAD=ok / TITLEBAR=ok / NAV=8 / RESULT=OK`。

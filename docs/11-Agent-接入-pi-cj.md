@@ -62,6 +62,22 @@ pi-cj 的运行时**零网络、零文件 IO**（它的 README 明确写了这�
 >   `allowWeb=false` 时**根本不生成**联网工具）。编译通过、`cjpm test` 54/54。
 >   剩下"把 DomainTool 包成 pi 的 Tool + 跑一轮"那一半**暂停**：用户发现 pi-cj 还有小 bug，等那边修完再继续。
 >
+> **P3 后半 + P4 已完成（2026-10-14，第三十二轮）**：
+> - `core/src/agent/pi_bridge.cj`：中立层 `DomainTool` → pi 的 `FuncTool`/`ToolRegistry`/`Mode`，
+>   并顺手记一份 `ToolRecord`（工具结果的结构化载荷要留给"引用自检"用）。**这个文件只认识 pi**，
+>   和只认识内核工具的 `pi_tools_spec.cj` 配对——因为两边同名类型太多，通配导入会歧义。
+> - `core/src/pi_app/pi_ask.cj`（**单独一个包**，避免和 agent 包里自己的 `Agent` 撞名）：`PiAgent.ask()` /
+>   `askWithProvider()` 用 lumin 跑一轮问答，把 pi 的事件翻译成界面已经在用的名字
+>   （`turn/start`、`assistant/delta`、`tool/call`、`tool/result`、`validation`、`turn/end`…），
+>   引用自检复用 `citationsFromHits` / `citationReportWeb` / `webCitationsFrom`。
+> - 路由 `/api/agent/ask-pi`（临时对照用，手写链路照旧是默认）。
+> - 验证：`cjpm test` **61/61**（新增 `pi_ask_test.cj` 两例：ScriptedProvider 让模型先调 `kb_search`
+>   再作答 → 断言工具真的执行、`[1]` 引用算出来、事件名字齐；`web=off` 时工具数 8、`auto` 时 10）；
+>   `tools/pi-ask-check.ps1`（离线 mock，7 项全过：HTTP 形状、事件落库、联网留痕、旧链路没坏）。
+>
+> **下一步（R25）**：把 `/api/kb/organize` 挂到这个运行时上——一次模型调用让它产出 `outline.json`
+> （`Outline` 与 `chunkAllWith` 已就位），知识库的章节就由 lumin 组织，而不是只靠规则。
+
 > **第二次重新同步（2026-10-14，本轮）已完成**：按上面的手册把 lumin 当前版本重新拷进内核，包名替换为
 > `itn_desktop_core.*`。拷了 `lumin/src/pi/*`（15）→`core/src/pi/`、`lumin/src/tools/*`（3）→`core/src/pi_tools/`、
 > `lumin/src/cli/{trust,util,workspaces}.cj`（3）→`core/src/lumin_cli/`（unittests 里有 `import lumin.cli.*`，

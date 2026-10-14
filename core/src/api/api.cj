@@ -10,6 +10,7 @@ import itn_desktop_core.db.*
 import itn_desktop_core.llm.*
 import itn_desktop_core.kb.*
 import itn_desktop_core.agent.*
+import itn_desktop_core.pi_app.*
 import itn_desktop_core.session.*
 import itn_desktop_core.study.*
 import itn_desktop_core.tools.*
@@ -593,6 +594,26 @@ public class Api {
                             strOf(b, "web"), trimStr(strOf(b, "skill"))))
                     } catch (e: Exception) {
                         fail(ctx, 500, "问答失败：" + e.message)
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        // lumin（pi 运行时）跑一轮问答：与 /api/agent/ask 同形，用来同题对照（见 docs/11）
+        if (path == "/api/agent/ask-pi" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let question = strOf(b, "question")
+                    if (question.size == 0) {
+                        fail(ctx, 400, "缺少 question")
+                        return
+                    }
+                    try {
+                        ok(ctx, PiAgent(store).ask(strOf(b, "kbId"), question, strOf(b, "sessionId"),
+                            strOf(b, "web"), trimStr(strOf(b, "skill"))))
+                    } catch (e: Exception) {
+                        fail(ctx, 500, "问答失败（lumin）：" + e.message)
                     }
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -1934,6 +1955,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/kb/stats",
         "/api/kb/search",
         "/api/agent/ask",
+        "/api/agent/ask-pi",
         "/api/agent/lecture",
         "/api/agent/quiz",
         "/api/maintenance/status",
