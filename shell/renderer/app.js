@@ -5970,6 +5970,8 @@ function settingsKb() {
       it.appendChild(row);
       const acts = el("div", "row item-actions");
       acts.appendChild(btn((k.chunkCount || 0) > 0 ? "重建索引" : "建立索引", "sm primary", () => buildIndex(k.id)));
+      // 资料散乱时让模型读一遍、给出一份教学目录；建索引时按它组织（结果可清除）
+      acts.appendChild(btn("让 lumin 整理", "sm", () => organizeKb(k.id)));
       if (state.kb !== k.id) acts.appendChild(btn("设为当前", "sm", () => { state.kb = k.id; toast("已切换为当前知识库"); go("learn"); }));
       acts.appendChild(btn("去检索", "sm ghost", () => { state.kb = k.id; go("kb"); }));
       acts.appendChild(btn("删除", "sm ghost", () => {
@@ -6326,6 +6328,53 @@ function openNoteEditor(note, kbId, chapter, chunk) {
   v.insertBefore(dlg, v.firstChild);
   dlg.scrollIntoView({ block: "start" });
   $("nt-title").focus();
+}
+
+/**
+ * 让 lumin 把这份资料整理成一份教学目录。
+ *
+ * 这是一次模型调用（不是让模型去读写文件）：内核把资料清单喂给模型，模型只回一份 JSON，
+ * 校验后落成 <数据目录>/kb/<id>/outline.json，建索引时自动按它组织章节。
+ */
+async function organizeKb(kbId) {
+  if (!kbId) { toast("先选择一个知识库"); return; }
+  const v = $("view");
+  const card = progressCard("正在整理：「" + kbName(kbId) + "」", ["读资料清单", "让模型给出目录", "校验并落盘"]);
+  v.insertBefore(card, v.firstChild);
+  card.scrollIntoView({ block: "start" });
+  try {
+    const r = await api("/api/kb/organize", { id: kbId });
+    card._stop();
+    card.remove();
+    const box = cardOf({ cls: "dialog ok-dialog", title: "整理好了", tag: r.chapters + " 章", tagCls: "ok" });
+    box.appendChild(el("p", "muted", r.note || ""));
+    box.appendChild(el("p", "muted sm", "章节：" + r.chapters + " · 归入文档：" + r.docs + " 篇" +
+      (r.missing > 0 ? " · 模型没提到的 " + r.missing + " 篇已接在「其他资料」里" : "") +
+      (r.dropped > 0 ? " · 丢掉了 " + r.dropped + " 条无效路径" : "")));
+    const row = el("div", "row");
+    row.appendChild(btn("按这份目录重建索引", "primary", () => { box.remove(); buildIndex(kbId); }));
+    row.appendChild(btn("清除整理", "ghost", async () => {
+      try {
+        await api("/api/kb/organize", { id: kbId, clear: true });
+        toast("已清除，回到按材料标题分章");
+        box.remove();
+        go("settings", "kb");
+      } catch (e) { toast("清除失败：" + e.message); }
+    }));
+    row.appendChild(btn("收起", "ghost", () => box.remove()));
+    box.appendChild(row);
+    v.insertBefore(box, v.firstChild);
+    toast("整理完成：" + r.chapters + " 章");
+  } catch (e) {
+    card._stop();
+    card.remove();
+    const box = cardOf({ cls: "dialog", title: "整理失败" });
+    box.appendChild(el("p", "muted", e.message));
+    box.appendChild(el("p", "muted sm", "整理只是一次模型调用；失败不影响原有索引，可以直接重建索引或稍后重试。"));
+    box.appendChild(btn("关闭", "ghost", () => box.remove()));
+    v.insertBefore(box, v.firstChild);
+    toast("整理失败：" + e.message);
+  }
 }
 
 async function buildIndex(kbId) {

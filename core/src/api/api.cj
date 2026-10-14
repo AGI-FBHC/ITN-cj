@@ -496,6 +496,34 @@ public class Api {
             return
         }
 
+        // 让 lumin 把资料整理成一份教学目录（outline.json）；建索引时会自动按它组织
+        if (path == "/api/kb/organize" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let id = strOf(b, "id")
+                    if (id.size == 0) {
+                        fail(ctx, 400, "缺少 id")
+                        return
+                    }
+                    if (boolOf(b, "clear")) {
+                        ok(ctx, clearOutline(store, id))
+                        return
+                    }
+                    try {
+                        let r = organizeKb(store, id)
+                        if (boolOf(r, "ok")) {
+                            ok(ctx, r)
+                        } else {
+                            fail(ctx, 400, strOf(r, "message"))
+                        }
+                    } catch (e: Exception) {
+                        fail(ctx, 500, "整理失败：" + e.message)
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         if (path == "/api/kb/stats" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) =>
@@ -1950,6 +1978,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/chat",
         "/api/kb/save",
         "/api/kb/import",
+        "/api/kb/organize",
         "/api/kb/delete",
         "/api/kb/build",
         "/api/kb/stats",
