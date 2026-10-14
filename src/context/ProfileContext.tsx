@@ -103,8 +103,15 @@ function readJSON<T>(key: string, fallback: T): T {
 }
 
 function readInitialMode(): ViewMode {
+  /* 「系统透视 / 评委视角」整套控制台布局已按用户要求移除（导览是它唯一的入口，也已删除）。
+     这里不再读取历史值，并把残留的 localStorage 键清掉 —— 否则升级后仍会进到已经删掉的版式。 */
   if (typeof window === 'undefined') return 'learner';
-  return window.localStorage.getItem(K_VIEW) === 'expert' ? 'expert' : 'learner';
+  try {
+    window.localStorage.removeItem(K_VIEW);
+  } catch {
+    /* 无痕模式下 localStorage 可能不可用，忽略 */
+  }
+  return 'learner';
 }
 
 const NEW_KP_NAMES: Record<string, string> = {

@@ -12,6 +12,13 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3002,
       strictPort: true,
+      /*
+       * 必须双栈监听。本机 `localhost` 先解析到 ::1，而默认只监听 IPv4 时，
+       * 浏览器每个模块请求都要先等一次 IPv6 连接超时再回落 —— 实测每个请求固定慢约 2 秒，
+       * 首屏几十个模块就是几十秒，表现成"页面一直在加载、刷新又好了（第二次走缓存）"。
+       * 绑定 '::' 后 ::1 与 127.0.0.1 都能直连（Windows 默认 ipv6only=false）。
+       */
+      host: '::',
       proxy: {
         /*
          * dev 代理目标：

@@ -92,7 +92,7 @@ interface AgentContextValue {
   /** 发起一条建议问题 */
   askSuggestion: (text: string, askType: string) => void;
   confidence: Record<string, number>;
-  /** 决策日志（评委透视用） */
+  /** 决策日志（伴学助手浮窗里的执行过程展示） */
   decisions: DecisionEntry[];
   pushSignal: (s: Signal) => void;
   ask: (kind: AskKind) => void;
