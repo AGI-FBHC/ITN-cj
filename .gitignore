@@ -20,3 +20,4 @@ tmp/
 # 本地安装的第三方 agent skills（npx skills add ...）与它生成的锁文件
 .agents/
 skills-lock.json
+target/
