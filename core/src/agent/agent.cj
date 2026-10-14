@@ -836,7 +836,8 @@ public class Agent {
                 }
 
                 log(sessionId, turnId, "step/start", stepPayload(4, "artifact_save"))
-                let saved = tools.saveArtifact("练习-" + topic + ".md", full.toString())
+                // 文件名与界面用词保持一致（界面按钮叫「生成练习册」）
+                let saved = tools.saveArtifact("练习册-" + topic + ".md", full.toString())
                 var artifactPath = ""
                 match (saved.data) {
                     case s: JsonString => artifactPath = s.getValue()

@@ -299,7 +299,7 @@ function citationBox(citations, report) {
 const state = {
   cfg: { models: [], knowledgeBases: [], chatModelId: "", embedModelId: "", chunkModelId: "" },
   profile: {}, report: {}, artifacts: [], sessions: [],
-  kb: "", chapter: null,
+  kb: "", chapter: null, artifactQuery: "",
   chatSessionId: "", chatTurns: [], chatEvents: [], tools: null,
   busyTurn: false, pendingQuestion: "", lastQuestion: "",
 };
@@ -1536,9 +1536,70 @@ function artifactItem(a, clickable) {
   row.appendChild(main);
   row.appendChild(tag(ARTIFACT_KIND_LABEL[kind], kind === "lecture" ? "ok" : ""));
   row.appendChild(btn("播放", "sm primary", () => openSlidePlayer(a.name)));
+  if (clickable) {
+    row.appendChild(btn("打开", "sm ghost", () => openArtifactByName(a.name)));
+    row.appendChild(btn("重命名", "sm ghost", () => renameArtifactDialog(a)));
+    row.appendChild(btn("删除", "sm ghost", () => {
+      confirmDialog("删除这份产物？", "会从本机 artifacts 目录里删掉「" + a.name + "」，同时清掉它的播放进度。这一步不可撤销。", async () => {
+        try {
+          await api("/api/artifacts/delete", { name: a.name });
+          toast("已删除：" + a.name);
+          await loadArtifacts();
+          go("resources");
+        } catch (e) { toast("删除失败：" + e.message); }
+      });
+    }));
+  }
   it.appendChild(row);
   it.onclick = (ev) => { if (!ev.target.closest("button")) openArtifactByName(a.name); };
   return it;
+}
+
+/** 通用确认弹层。用于删除这类不可撤销的动作（不用 window.confirm：桌面壳里观感差）。 */
+function confirmDialog(title, text, onOk) {
+  const v = $("view");
+  const dlg = el("div", "card dialog");
+  dlg.appendChild(cardHeadOnly(title));
+  dlg.appendChild(el("p", "muted", text));
+  const row = el("div", "row");
+  row.appendChild(btn("确认删除", "primary", async () => {
+    dlg.remove();
+    await onOk();
+  }));
+  row.appendChild(btn("取消", "ghost", () => dlg.remove()));
+  dlg.appendChild(row);
+  v.insertBefore(dlg, v.firstChild);
+  dlg.scrollIntoView({ block: "start" });
+}
+
+function renameArtifactDialog(a) {
+  const v = $("view");
+  const dlg = el("div", "card dialog");
+  dlg.appendChild(cardHeadOnly("重命名产物"));
+  const base = String(a.name || "").replace(/\.md$/i, "");
+  const input = inputOf("rename-input", "新的文件名", base);
+  dlg.appendChild(fieldOf("文件名（不写 .md 会自动补上）", input));
+  const row = el("div", "row");
+  const submit = async () => {
+    const next = input.value.trim();
+    if (!next) { toast("名字不能为空"); return; }
+    if (next === base) { dlg.remove(); return; }
+    try {
+      const r = await api("/api/artifacts/rename", { name: a.name, newName: next });
+      toast("已改名为：" + r);
+      dlg.remove();
+      await loadArtifacts();
+      go("resources");
+    } catch (e) { toast("改名失败：" + e.message); }
+  };
+  row.appendChild(btn("改名", "primary", submit));
+  row.appendChild(btn("取消", "ghost", () => dlg.remove()));
+  dlg.appendChild(row);
+  v.insertBefore(dlg, v.firstChild);
+  dlg.scrollIntoView({ block: "start" });
+  input.focus();
+  input.select();
+  input.onkeydown = (e) => { if (e.key === "Enter") submit(); };
 }
 
 PAGES.resources = {
@@ -1559,12 +1620,21 @@ PAGES.resources = {
       return;
     }
     const filter = state.artifactFilter || "all";
+    const q = String(state.artifactQuery || "").trim().toLowerCase();
     const card = cardOf({
       title: "已生成的产物",
       sub: "全部存在本机 artifacts 目录",
       tag: state.artifacts.length + " 份",
       actions: [btn("再生成一份", "sm primary", () => go("learn")), btn("刷新", "sm ghost", () => go("resources"))],
     });
+
+    const tools = el("div", "row artifact-tools");
+    const search = inputOf("artifact-search", "按文件名搜索，例如 提示词", state.artifactQuery || "");
+    search.oninput = () => {
+      state.artifactQuery = search.value;
+      renderArtifactList();
+    };
+    tools.appendChild(search);
     const seg = el("div", "seg");
     const kinds = [["all", "全部"], ["lecture", "讲义"], ["quiz", "练习册"]];
     for (const [k, label] of kinds) {
@@ -1572,16 +1642,51 @@ PAGES.resources = {
       b.onclick = () => { state.artifactFilter = k; go("resources"); };
       seg.appendChild(b);
     }
-    card.appendChild(seg);
+    tools.appendChild(seg);
+    const count = el("span", "muted sm artifact-count");
+    tools.appendChild(count);
+    card.appendChild(tools);
+
     const list = el("div", "list");
-    const items = state.artifacts.filter((a) => filter === "all" || ARTIFACT_KIND(a.name) === filter);
-    if (!items.length) {
-      card.appendChild(emptyState({ inline: true, art: "file", title: "这个分类下还没有产物", text: "换个分类看看，或者现在生成一份。", actions: [btn("去生成", "primary", () => go("learn"))] }));
-    } else {
+    card.appendChild(list);
+    function renderArtifactList() {
+      list.innerHTML = "";
+      const query = String(state.artifactQuery || "").trim().toLowerCase();
+      const kind = state.artifactFilter || "all";
+      const items = state.artifacts.filter((a) =>
+        (kind === "all" || ARTIFACT_KIND(a.name) === kind) &&
+        (!query || String(a.name).toLowerCase().indexOf(query) >= 0));
+      // 没有筛选/搜索时不必重复总数（头部标签已经写了），只在筛过时说明"显示了多少"
+      const filtering = (kind !== "all") || (query.length > 0);
+      count.textContent = filtering ? ("筛选后 " + items.length + " / 共 " + state.artifacts.length + " 份") : "";
+      if (!items.length) {
+        list.appendChild(emptyState({
+          inline: true,
+          art: "search",
+          title: state.artifacts.length ? "没有匹配的产物" : "这个分类下还没有产物",
+          text: state.artifacts.length ? "换个关键词，或者切回「全部」。" : "换个分类看看，或者现在生成一份。",
+          actions: [btn("清空搜索", "", () => { state.artifactQuery = ""; go("resources"); }),
+                    btn("去生成", "primary", () => go("learn"))],
+        }));
+        return;
+      }
       for (const a of items) list.appendChild(artifactItem(a, true));
-      card.appendChild(list);
     }
+    renderArtifactList();
     v.appendChild(card);
+
+    const where = cardOf({
+      title: "这些文件在哪",
+      sub: "讲义与练习册就是普通 Markdown，可以直接拷走或用别的编辑器打开",
+    });
+    where.appendChild(el("p", "path-line", (state.cfg.dataDir || "（内核没有返回数据目录）") + "\\artifacts"));
+    const wrow = el("div", "row");
+    wrow.appendChild(btn("复制数据目录路径", "", () => {
+      const p = (state.cfg.dataDir || "") + "\\artifacts";
+      navigator.clipboard.writeText(p).then(() => toast("路径已复制"), () => toast("复制失败，请手动选择"));
+    }));
+    where.appendChild(wrow);
+    v.appendChild(where);
   },
 };
 

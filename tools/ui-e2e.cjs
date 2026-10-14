@@ -601,13 +601,13 @@ function assert(cond, msg) {
     // 第 1 页是封面（只有标题），正文从第 2 页开始
     const cover = await page.locator('.player-page').innerText();
     assert(cover.trim().length > 2, '封面页应至少显示标题');
-    await page.getByRole('button', { name: '下一页 →' }).click();
+    await page.locator('#player').getByRole('button', { name: '下一页 →' }).click();
     await page.waitForFunction(() => /第 2 \//.test(document.querySelector('.player-counter').textContent), null, { timeout: 10000 });
     const body = await page.locator('.slide-content').innerText();
     assert(body.trim().length > 10, '第 2 页应有正文，实际长度 ' + body.trim().length);
     await page.locator('.player').press('ArrowRight');
     await page.waitForFunction(() => /第 3 \//.test(document.querySelector('.player-counter').textContent), null, { timeout: 10000 });
-    await page.getByRole('button', { name: '目录' }).click();
+    await page.locator('#player').getByRole('button', { name: '目录', exact: true }).click();
     await page.waitForSelector('.toc-item', { timeout: 10000 });
     const total = await page.locator('.toc-item').count();
     assert(total >= 3, '目录应列出各页，实际 ' + total);
@@ -617,7 +617,7 @@ function assert(cond, msg) {
     for (let i = 0; i < total; i += 1) {
       // 目录抽屉是切换式的：先看它是不是已经开着（上一步点开过），别把它又关掉
       if (!(await page.locator('.toc-item').count())) {
-        await page.getByRole('button', { name: '目录' }).click();
+        await page.locator('#player').getByRole('button', { name: '目录', exact: true }).click();
         await page.waitForSelector('.toc-item', { timeout: 8000 });
       }
       await page.locator('.toc-item').nth(i).click();
@@ -641,9 +641,68 @@ function assert(cond, msg) {
     assert(withProgress.length >= 1, '产物列表里应带回播放进度');
     await page.locator('.player').press('End');
     await page.waitForTimeout(300);
-    await page.getByRole('button', { name: '关闭' }).click();
+    await page.locator('#player').getByRole('button', { name: '关闭' }).click();
     await page.waitForFunction(() => document.querySelector('#player').hidden, null, { timeout: 10000 });
     return '续播到 ' + resumed + '；列表进度 ' + withProgress.map((a) => a.name + ' ' + a.page + '/' + a.pageCount).join('，');
+  });
+
+  await step('产物管理：搜索、重命名（进度跟着走）、删除（文件真的没了）', async () => {
+    const listApi = async () => (await page.evaluate(() => fetch('/api/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()))).data.artifacts;
+    await nav('我的资源');
+    const total = (await listApi()).length;
+    assert(total >= 2, '这一步至少需要两份产物，实际 ' + total);
+
+    // 1) 按名字搜索
+    await page.fill('#artifact-search', '练习册');  // 文件名前缀就是 练习册-（与界面用词一致）
+    await page.waitForTimeout(300);
+    const shown = await page.locator('.list .item').count();
+    if (shown === 0) {
+      const dump = await page.evaluate(() => ({
+        input: (document.querySelector('#artifact-search') || {}).value,
+        counter: (document.querySelector('.artifact-count') || {}).textContent,
+        listText: ((document.querySelector('.list') || {}).innerText || '').slice(0, 160),
+        itemsInView: document.querySelectorAll('#view .item').length,
+        cards: document.querySelectorAll('#view .card').length,
+      }));
+      throw new Error('搜索后列表为空，现场：' + JSON.stringify(dump) + '（API 报 ' + total + ' 份）');
+    }
+    assert(shown >= 1 && shown < total, '搜索应筛掉一部分，实际 ' + shown + ' / ' + total);
+    await shot('23-产物搜索');
+    await page.fill('#artifact-search', '');
+    await page.waitForTimeout(300);
+    assert((await page.locator('.list .item').count()) === total, '清空搜索后应恢复全部');
+
+    // 2) 重命名：讲义的播放进度必须跟着走
+    const lec = (await listApi()).filter((a) => a.name.indexOf('讲义-') === 0)[0];
+    assert(lec && lec.page > 0, '讲义这时应有播放进度（前面播过），实际 ' + JSON.stringify(lec));
+    await page.locator('.item', { hasText: lec.name }).getByRole('button', { name: '重命名' }).click();
+    await page.waitForSelector('#rename-input', { timeout: 10000 });
+    await page.fill('#rename-input', '讲义-阶段小结');
+    await page.getByRole('button', { name: '改名' }).click();
+    await page.waitForSelector('.item:has-text("讲义-阶段小结.md")', { timeout: 15000 });
+    const artDir = path.join(dataDir, 'artifacts');
+    assert(fs.existsSync(path.join(artDir, '讲义-阶段小结.md')), '磁盘上应出现新名字');
+    assert(!fs.existsSync(path.join(artDir, lec.name)), '磁盘上不应再有旧名字');
+    const moved = await page.evaluate(() => fetch('/api/artifacts/progress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '讲义-阶段小结.md' }) }).then((x) => x.json()));
+    assert(moved.data.page === lec.page, '播放进度应跟着改名走：原 ' + lec.page + '，新 ' + moved.data.page);
+
+    // 3) 删除：文件与播放进度都要清掉
+    const quiz = (await listApi()).filter((a) => a.name.indexOf('练习册-') === 0)[0];
+    assert(quiz, '应有一份练习册可供删除');
+    await page.evaluate((n) => fetch('/api/artifacts/progress/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: n, page: 2, pageCount: 5 }) }), quiz.name);
+    await page.locator('.item', { hasText: quiz.name }).getByRole('button', { name: '删除' }).click();
+    await page.getByRole('button', { name: '确认删除' }).click();
+    // 删除后会 go('resources') 重渲染，重渲染瞬间 .list 还不存在，判断要容错
+    await page.waitForFunction((n) => {
+      const l = document.querySelector('.list');
+      return !!l && !l.innerText.includes(n);
+    }, quiz.name, { timeout: 15000 });
+    assert(!fs.existsSync(path.join(artDir, quiz.name)), '删除后文件应真的没了');
+    const gone = await page.evaluate((n) => fetch('/api/artifacts/progress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: n }) }).then((x) => x.json()), quiz.name);
+    assert(gone.data.page === 0, '删除后播放进度也应清掉，实际 ' + gone.data.page);
+    await page.waitForTimeout(500);   // 等重渲染的进场动画结束再截图
+    await shot('24-产物管理');
+    return '搜索 ' + shown + '/' + total + ' 份；改名后进度 ' + moved.data.page + ' 页；删除后文件与进度都清掉';
   });
 
   await step('章节能整章按节播放', async () => {
@@ -660,7 +719,7 @@ function assert(cond, msg) {
     const counter = await page.textContent('.player-counter');
     const page1 = await page.locator('.player-page').innerText();
     assert(page1.indexOf('提示词') >= 0, '播放页应含章节原文，实际：' + page1.slice(0, 40));
-    await page.getByRole('button', { name: '下一页 →' }).click();
+    await page.locator('#player').getByRole('button', { name: '下一页 →' }).click();
     await page.waitForTimeout(300);
     const page2 = await page.locator('.player-page').innerText();
     assert(page2.trim().length > 10, '章节第 2 页应有正文');

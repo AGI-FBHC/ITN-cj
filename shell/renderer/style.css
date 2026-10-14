@@ -618,3 +618,14 @@ body.chat-mode .topbar { display: none; }
 }
 .gen-text:empty { display: none; }
 .gen-sections { margin-top: 6px; font-size: 12px; color: var(--muted); }
+/* ---------- 产物管理 ---------- */
+.artifact-tools { margin-bottom: 12px; }
+.artifact-tools input { flex: 1 1 220px; max-width: 320px; }
+.artifact-count { margin-left: auto; }
+.path-line {
+  margin: 0 0 10px; padding: 8px 12px;
+  font-family: ui-monospace, Consolas, "Courier New", monospace;
+  font-size: 12px; color: var(--ink-2);
+  background: #f8f7f3; border: 1px solid var(--line-soft); border-radius: 8px;
+  word-break: break-all; user-select: text;
+}

@@ -62,6 +62,8 @@ public class Api {
             arr.add(m.toPublicJson())
         }
         o.put("models", arr)
+        // 数据目录：界面要拿它显示"所有东西都存在这个文件夹，可以整体备份"
+        o.put("dataDir", JsonString(store.dataDir))
         return o
     }
 
@@ -590,6 +592,87 @@ public class Api {
 
         // ---------- 学习者档案 ----------
 
+        if (path == "/api/artifacts/delete" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let name = strOf(b, "name")
+                    if (name.size == 0) {
+                        fail(ctx, 400, "缺少 name")
+                        return
+                    }
+                    // sanitizeName 会把分隔符等换成下划线；换完与原名不同，说明名字里有不该有的字符
+                    if (sanitizeName(name) != name) {
+                        fail(ctx, 400, "产物名不合法：" + name)
+                        return
+                    }
+                    let full = store.dataDir + Path.Separator + "artifacts" + Path.Separator + name
+                    if (!exists(full)) {
+                        fail(ctx, 404, "找不到产物：" + name)
+                        return
+                    }
+                    try {
+                        remove(full)
+                        // 播放进度也一起清掉，免得换个同名文件时"续播"到不该有的页码
+                        DbHub.open(store.dataDir).putKv("meta", "artprog:" + name, "")
+                        ok(ctx, JsonString("ok"))
+                    } catch (e: Exception) {
+                        fail(ctx, 500, "删除失败：" + e.message)
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/artifacts/rename" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let name = strOf(b, "name")
+                    var newName = trimStr(strOf(b, "newName"))
+                    if (name.size == 0 || newName.size == 0) {
+                        fail(ctx, 400, "缺少 name 或 newName")
+                        return
+                    }
+                    // 没写扩展名就补 .md（产物本来就是 Markdown）
+                    let nb = newName.toArray()
+                    if (nb.size < 3 || nb[nb.size - 3] != 46 || nb[nb.size - 2] != 109 || nb[nb.size - 1] != 100) {
+                        newName = newName + ".md"
+                    }
+                    if (sanitizeName(name) != name || sanitizeName(newName) != newName) {
+                        fail(ctx, 400, "产物名不合法")
+                        return
+                    }
+                    let dir = store.dataDir + Path.Separator + "artifacts"
+                    let from = dir + Path.Separator + name
+                    let to = dir + Path.Separator + newName
+                    if (!exists(from)) {
+                        fail(ctx, 404, "找不到产物：" + name)
+                        return
+                    }
+                    if (exists(to)) {
+                        fail(ctx, 400, "已经有同名产物：" + newName)
+                        return
+                    }
+                    try {
+                        // 这版标准库没有 File.copy，按字节读写
+                        let bytes = File.readFrom(from)
+                        File.writeTo(to, bytes)
+                        remove(from)
+                        // 播放进度跟着改名走
+                        let kv = DbHub.open(store.dataDir)
+                        let prog = kv.getKv("meta", "artprog:" + name, "")
+                        if (prog.size > 0) {
+                            kv.putKv("meta", "artprog:" + newName, prog)
+                            kv.putKv("meta", "artprog:" + name, "")
+                        }
+                        ok(ctx, JsonString(newName))
+                    } catch (e: Exception) {
+                        fail(ctx, 500, "改名失败：" + e.message)
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         // ---------- 课件播放进度 ----------
 
         if (path == "/api/artifacts/progress" && method == "POST") {
@@ -1087,6 +1170,8 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/study/wrong",
         "/api/study/report",
         "/api/artifacts/list",
+        "/api/artifacts/delete",
+        "/api/artifacts/rename",
         "/api/artifacts/progress",
         "/api/artifacts/progress/save",
         "/api/artifacts/read"
