@@ -2529,8 +2529,9 @@ function railRender() {
     const b = el("button", "rail-item" + (s.sessionId === state.chatSessionId ? " active" : ""));
     b.appendChild(el("div", "rail-item-title", s.title || "新对话"));
     b.appendChild(el("div", "rail-item-meta",
-      (KIND_LABEL[s.kind || ""] || "对话") + " · " + s.eventCount + " 步 · " + fmtStamp(s.lastAt).slice(6)));
-    b.onclick = () => { state.chatSessionId = s.sessionId; go("chat"); };
+      (KIND_LABEL[s.kind || ""] || "对话") + (s.kbId ? " · " + kbName(s.kbId) : "") +
+      " · " + s.eventCount + " 步 · " + fmtStamp(s.lastAt).slice(6)));
+    b.onclick = () => openChatSession(s.sessionId);
     list.appendChild(b);
   }
 }
@@ -2539,6 +2540,22 @@ async function reloadSessions() {
   await loadSessions();
   buildNav();
   railRender();
+}
+
+/**
+ * 打开一段旧会话。
+ *
+ * 一次会话是关于某个知识库的：打开它就把当前知识库切回去——否则用户会拿着「数学」的资料
+ * 去问「语文」的会话，答出来的东西自然对不上。
+ */
+async function openChatSession(id) {
+  const meta = (state.sessions || []).filter((x) => x.sessionId === id)[0];
+  if (meta && meta.kbId && state.kb !== meta.kbId && state.cfg.knowledgeBases.some((k) => k.id === meta.kbId)) {
+    state.kb = meta.kbId;
+    toast("已切回这次会话用的知识库：" + kbName(meta.kbId));
+  }
+  state.chatSessionId = id;
+  go("chat");
 }
 
 async function newChat() {
@@ -2679,7 +2696,15 @@ PAGES.chat = {
 
     /* 顶部工具条 */
     const bar = el("div", "chat-head");
-    if (hasKb()) bar.appendChild(kbSelector(() => { state.chatSessionId = ""; state.chatTurns = []; go("chat"); }));
+    if (hasKb()) bar.appendChild(kbSelector(() => {
+      // 换知识库等于换了一套资料：接着用旧会话会把两边的资料混在一起，
+      // 所以明确开一段新会话，并把原因说出来（旧会话仍留在会话栏里）
+      state.chatSessionId = "";
+      state.chatTurns = [];
+      state.chatEvents = [];
+      toast("已切到「" + kbName(state.kb) + "」，从这条消息开始用新资料（已开新会话）");
+      go("chat");
+    }));
     else bar.appendChild(tag("未配知识库 · 直接问模型", "warn"));
     bar.appendChild(spacer());
     bar.appendChild(tag("模型 " + (modelLabel(state.cfg.chatModelId) || state.cfg.chatModelId), "ok"));
@@ -2931,7 +2956,9 @@ PAGES.sessions = {
         const row = el("div", "row");
         const main = el("div", "grow");
         main.appendChild(el("div", "item-title", s.title || "（无标题会话）"));
-        main.appendChild(el("div", "meta", s.eventCount + " 条事件 · 最后 " + (EVENT_LABEL[s.lastType] || s.lastType || "—") + " · " + fmtStamp(s.lastAt)));
+        main.appendChild(el("div", "meta",
+          (s.kbId ? kbName(s.kbId) + " · " : "") +
+          s.eventCount + " 条事件 · 最后 " + (EVENT_LABEL[s.lastType] || s.lastType || "—") + " · " + fmtStamp(s.lastAt)));
         row.appendChild(main);
         row.appendChild(tag(KIND_LABEL[s.kind || ""] || "对话", s.kind && s.kind !== "ask" ? "ok" : ""));
         row.appendChild(btn("查看", "sm", () => openSession(s.sessionId)));

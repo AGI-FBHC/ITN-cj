@@ -112,10 +112,20 @@ public class ToolRegistry {
         r.name = "artifact_save"
         let dir = store.dataDir + Path.Separator + "artifacts"
         ensureDir(dir)
-        let p = dir + Path.Separator + sanitizeName(name)
+        let safe = sanitizeName(name)
+        // 重名不覆盖：不同知识库/不同时间生成同一个主题（例如都叫「讲义-第一章.md」）时，
+        // 直接写会静默把上一份冲掉——用户看不到任何提示就丢了东西。这里改成自动加序号。
+        var finalName = safe
+        var n = 2
+        while (exists(dir + Path.Separator + finalName)) {
+            let base = if (safe.size > 3 && hasSuffix(safe, ".md")) { String.fromUtf8(safe.toArray()[0..(safe.size - 3)]) } else { safe }
+            finalName = base + "-" + n.toString() + ".md"
+            n = n + 1
+        }
+        let p = dir + Path.Separator + finalName
         writeText(p, content)
         r.data = JsonString(p)
-        r.summary = "已写出产物"
+        r.summary = "已写出产物 " + finalName
         return r
     }
 }

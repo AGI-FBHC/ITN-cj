@@ -884,6 +884,80 @@ function assert(cond, msg) {
   });
 
   /* ---------- 会话记录 ---------- */
+  await step('同主题生成两次不覆盖（第二份自动加序号）', async () => {
+    const mk = async () => {
+      await nav('学 · 练');
+      if (!(await page.locator('.chunk-card').count())) {
+        await page.locator('.item', { hasText: '提示词工程基础' }).getByRole('button', { name: '开始学' }).click();
+        await page.waitForSelector('.chunk-card', { timeout: 20000 });
+      }
+      await page.getByRole('button', { name: '生成练习册' }).first().click();
+      await page.waitForSelector('#topic-input', { timeout: 10000 });
+      await page.fill('#topic-input', '提示词');
+      await page.getByRole('button', { name: '开始生成练习册' }).click();
+      await page.waitForSelector('.ok-dialog:has-text("练习册已生成")', { timeout: 60000 });
+      await page.locator('.ok-dialog').getByRole('button', { name: '收起' }).click();
+    };
+    await mk();
+    await mk();
+    const arts = (await page.evaluate(() => fetch('/api/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()))).data.artifacts.map((a) => a.name);
+    const first = arts.filter((n) => n === '练习册-提示词.md').length;
+    const second = arts.filter((n) => n === '练习册-提示词-2.md').length;
+    assert(first === 1 && second === 1, '同主题两次生成应得到两份文件，实际：' + arts.join(' / '));
+    await nav('我的资源');
+    const shown = await page.locator('#view').innerText();
+    assert(shown.indexOf('练习册-提示词-2.md') >= 0, '资源页应能看到第二份');
+    return '两份都在：练习册-提示词.md / 练习册-提示词-2.md';
+  });
+
+  await step('会话标注知识库；切库开新会话，回旧会话自动切回', async () => {
+    await nav('伴学助手');
+    await page.waitForSelector('.rail-item', { timeout: 15000 });
+    const railText = await page.locator('#rail-list').innerText();
+    assert(railText.indexOf('课程资料') >= 0, '会话栏应标出知识库，实际：' + railText.replace(/\s+/g, ' ').slice(0, 120));
+
+    // 建第二个知识库：用来验证"切库 → 新会话"和"回旧会话 → 切回旧库"
+    const kb2Dir = fs.mkdtempSync(path.join(os.tmpdir(), 'itn-e2e-kb2-'));
+    fs.writeFileSync(path.join(kb2Dir, 'b.md'), '# 第二门课\n\n## 要点\n\n这是第二门课的资料。\n', 'utf8');
+    await page.evaluate((dir) => fetch('/api/kb/save', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: 'course2', name: '第二门课', rootDir: dir }),
+    }), kb2Dir);
+    // 这个库也要建成可用状态（有索引），否则后面所有依赖"有章节可学"的步骤都会被它带偏
+    await page.evaluate(() => fetch('/api/kb/build', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: 'course2' }),
+    }).then((x) => x.json()));
+    await nav('伴学助手');
+    await page.selectOption('.chat-head select', 'course2');
+    await page.waitForFunction(() => {
+      const t = document.querySelector('#toast');
+      return !!t && t.classList.contains('show') && t.innerText.indexOf('新会话') >= 0;
+    }, null, { timeout: 10000 });
+    // 切库会开新会话并重渲染：等 select 回来再读值（否则读到的是加载态里的 null）
+    await page.waitForFunction(() => !!document.querySelector('.chat-head select'), null, { timeout: 10000 });
+    const kbNow = await page.evaluate(() => document.querySelector('.chat-head select').value);
+    assert(kbNow === 'course2', '应切到第二个知识库，实际 ' + kbNow);
+    const fresh = await page.locator('.turn-block').count();
+    assert(fresh === 0, '切库后应是空的新会话，实际 ' + fresh + ' 轮');
+
+    await page.locator('.rail-item').last().click();
+    await page.waitForTimeout(1500);
+    const kbBack = await page.evaluate(() => document.querySelector('.chat-head select').value);
+    assert(kbBack === 'course', '打开旧会话应切回它自己的知识库，实际 ' + kbBack);
+    const turns = await page.locator('.turn-block').count();
+    assert(turns >= 1, '旧会话应还原出对话，实际 ' + turns);
+    await shot('36-会话标注知识库');
+    // 切库会把"当前章节"清掉（这是对的：换了资料就不该停在旧章节上）。
+    // 但后面的步骤默认"当前停在第 1 章"，所以这里把上下文恢复回去，保持步骤之间可独立推理。
+    await nav('学 · 练');
+    if (!(await page.locator('.chunk-card').count())) {
+      await page.locator('.item', { hasText: '提示词工程基础' }).getByRole('button', { name: '开始学' }).click();
+      await page.waitForSelector('.chunk-card', { timeout: 20000 });
+    }
+    return '会话栏标知识库；切库开新会话（0 轮）；回旧会话切回 ' + kbBack + ' 并还原 ' + turns + ' 轮';
+  });
+
   await step('会话记录能列出会话并展开每一步事件', async () => {
     await nav('会话记录');
     await page.waitForSelector('.item', { timeout: 15000 });
@@ -1034,6 +1108,11 @@ function assert(cond, msg) {
   });
 
   await step('Ctrl+K 全局检索：资料/章节/笔记/产物一起找', async () => {
+    // Ctrl+K 是切换式的：先确保它是关着的，避免上一次失败留下的开着状态把这次"切没了"
+    await page.evaluate(() => {
+      const p = document.querySelector('#palette');
+      if (p) p.hidden = true;
+    });
     await page.keyboard.press('Control+k');
     await page.waitForSelector('#palette:not([hidden]) #palette-input', { timeout: 10000 });
     await page.fill('#palette-input', '提示词');
@@ -1060,6 +1139,10 @@ function assert(cond, msg) {
   });
 
   await step('Ctrl+K 能找到产物并直接播放', async () => {
+    await page.evaluate(() => {
+      const p = document.querySelector('#palette');
+      if (p) p.hidden = true;
+    });
     await page.keyboard.press('Control+k');
     await page.waitForSelector('#palette:not([hidden]) #palette-input', { timeout: 10000 });
     await page.fill('#palette-input', '讲义-');

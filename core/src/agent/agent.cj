@@ -458,7 +458,7 @@ public class Agent {
         let sid = sessionId
         let tid = turnId
         clearCancel(sessionId)
-        log(sessionId, turnId, "turn/start", kindPayload("ask"))
+        log(sessionId, turnId, "turn/start", kindPayload("ask", kbId))
         let up = JsonObject()
         up.put("text", JsonString(question))
         log(sessionId, turnId, "user/message", up)
@@ -607,7 +607,7 @@ public class Agent {
         let sidL = sessionId
         let tidL = turnId
         clearCancel(sessionId)
-        log(sessionId, turnId, "turn/start", kindPayload("lecture"))
+        log(sessionId, turnId, "turn/start", kindPayload("lecture", kbId))
         let up = JsonObject()
         up.put("text", JsonString("生成讲义：" + topic))
         log(sessionId, turnId, "user/message", up)
@@ -801,7 +801,7 @@ public class Agent {
         let sidQ = sessionId
         let tidQ = turnId
         clearCancel(sessionId)
-        log(sessionId, turnId, "turn/start", kindPayload("quiz"))
+        log(sessionId, turnId, "turn/start", kindPayload("quiz", kbId))
         let up = JsonObject()
         up.put("text", JsonString("生成练习：" + topic))
         log(sessionId, turnId, "user/message", up)
@@ -904,9 +904,16 @@ public class Agent {
     }
 }
 
-func kindPayload(kind: String): JsonObject {
+/**
+ * 一轮开始的 payload。
+ *
+ * 带上 kbId：一次会话是关于哪个知识库的，这个信息只在这里能拿到。
+ * 有了它，会话列表才能标明"这段对话用的是哪份资料"，多个知识库并用时才分得清。
+ */
+func kindPayload(kind: String, kbId: String): JsonObject {
     let o = JsonObject()
     o.put("kind", JsonString(kind))
+    o.put("kbId", JsonString(kbId))
     return o
 }
 

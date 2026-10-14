@@ -116,18 +116,21 @@ public class SessionStore {
         if (title.size > 40) {
             title = byteSafePrefix(title, 40)
         }
-        // 这一轮是问答 / 讲义 / 练习，界面用它给会话列表分类
+        // 这一轮是问答 / 讲义 / 练习，以及它用的是哪个知识库：界面用它给会话列表分类和标注
         var kind = ""
+        var kbId = ""
         match (db().one("SELECT payload FROM session_events WHERE session_id = ? AND kind = ? ORDER BY id LIMIT 1",
             va([tv(sessionId), tv("turn/start")]))) {
             case Some(r) =>
                 kind = payloadText(r.text(0), "kind")
+                kbId = payloadText(r.text(0), "kbId")
             case None => ()
         }
         o.put("title", JsonString(title))
         o.put("lastType", JsonString(lastType))
         o.put("lastAt", JsonString(lastAt))
         o.put("kind", JsonString(kind))
+        o.put("kbId", JsonString(kbId))
         return o
     }
 
