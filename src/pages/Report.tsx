@@ -786,6 +786,38 @@ export default function Report() {
   const analyticsMinutes = analytics?.stats.totalStudyMinutes ?? 0;
   const journalMinutes = Math.round(journalStats.durationSeconds / 60);
   const totalMinutesShown = Math.max(analyticsMinutes, journalMinutes);
+
+  /*
+   * 计划完成度 / 资源偏好（W2）：两个都不新增接口，直接用页面上已经在手的两份真数据 ——
+   *   计划完成度 = 知识网络章节进度与目标门槛（rag 树 + 学习事件算出来的 chapterProgress/mastery/nodeTargets）；
+   *   资源偏好   = /learning-resources 返回的本人资源，按形态（讲义/实操/分阶题）统计可用与已学。
+   * 数字旁边都写了来源，用户能自己核对，这也是报告页"能解释数字来源"的要求。
+   */
+  const planChapters = learningMap.domains.map((chapter) => ({
+    id: chapter.id,
+    name: chapter.name,
+    progress: Math.round(learningMap.chapterProgress[chapter.id] ?? 0),
+    mastery: Math.round(learningMap.mastery[chapter.id] ?? 0),
+    target: Math.round(learningMap.nodeTargets[chapter.id]?.target ?? 80),
+  }));
+  const planDone = planChapters.filter((chapter) => chapter.progress >= 100).length;
+  const planAvg = planChapters.length
+    ? Math.round(planChapters.reduce((sum, chapter) => sum + chapter.progress, 0) / planChapters.length)
+    : 0;
+  // 只列"已经动过"的章节：0% 的行只是把计划原样抄一遍，对决策没用
+  const planTop = [...planChapters]
+    .filter((chapter) => chapter.progress > 0)
+    .sort((a, b) => b.progress - a.progress || b.mastery - a.mastery)
+    .slice(0, 4);
+  const preferenceRows = (['lecture', 'practice', 'quiz'] as const).map((type) => {
+    const sameType = resources.filter((resource) => resource.type === type);
+    return {
+      type,
+      total: sameType.length,
+      learned: sameType.filter((resource) => resource.learned).length,
+      started: sameType.filter((resource) => resource.started && !resource.learned).length,
+    };
+  });
   const totalMinutesNote = (analytics?.stats.totalDays ?? 0) > 0
     ? `${analytics?.stats.totalDays ?? 0} 个学习日`
     : journalMinutes > 0
@@ -1067,6 +1099,90 @@ export default function Report() {
           >
             {nextResource ? '继续学习' : '进入课程'} <ArrowRight size={14} />
           </button>
+        </div>
+      </section>
+
+      {/* 计划完成度 + 资源偏好（W2 补齐） */}
+      <section className="mt-12">
+        <SectionHeader
+          en="PLAN & PREFERENCE"
+          title="计划完成度与资源偏好"
+          desc="左边看计划走到哪，右边看你实际用什么形式在学；两个数字都能追到来源。"
+        />
+        <div className="grid gap-5 lg:grid-cols-2">
+          <div className="lf-card p-5">
+            <div className="flex items-center gap-2 text-[12px] text-ink-muted">
+              <Route size={15} className="text-brand" />
+              计划完成度
+            </div>
+            <div className="mt-3 flex flex-wrap items-end gap-x-3 gap-y-1">
+              <span className="font-serif text-[30px] font-semibold text-ink">
+                {analytics?.currentGoal ? Math.round(analytics.currentGoal.progress) : planAvg}%
+              </span>
+              <span className="pb-1 text-[12.5px] text-ink-muted">
+                {analytics?.currentGoal
+                  ? `学习目标「${analytics.currentGoal.title}」的推进度`
+                  : planChapters.length
+                    ? `${planDone}/${planChapters.length} 章完成 · 平均推进 ${planAvg}%`
+                    : '还没有可对照的章节计划'}
+              </span>
+            </div>
+            <div className="mt-4 space-y-3">
+              {planTop.map((chapter) => (
+                <div key={chapter.id}>
+                  <div className="flex items-center justify-between gap-3 text-[12.5px]">
+                    <span className="truncate text-ink-2">{chapter.name}</span>
+                    <span className="shrink-0 font-mono text-[11px] text-ink-muted">
+                      进度 {chapter.progress}% · 掌握 {chapter.mastery}% / 目标 {chapter.target}%
+                    </span>
+                  </div>
+                  <div className="relative mt-1.5 h-1.5 overflow-hidden rounded-full bg-hairline">
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-full bg-brand"
+                      style={{ width: `${Math.min(100, chapter.progress)}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+              {planTop.length === 0 && <p className="text-[12.5px] text-ink-muted">还没有推进中的章节：从「学 · 练」挑一章开始，这里会列出推进最快的几章。</p>}
+            </div>
+            <p className="mt-4 border-t border-hairline pt-2 text-[11.5px] text-ink-muted">
+              来源：知识网络章节进度与目标门槛（实时计算，不是估算）
+            </p>
+          </div>
+
+          <div className="lf-card p-5">
+            <div className="flex items-center gap-2 text-[12px] text-ink-muted">
+              <BookOpen size={15} className="text-brand" />
+              资源偏好
+            </div>
+            <div className="mt-4 space-y-4">
+              {preferenceRows.map((row) => {
+                const pct = row.total ? Math.round((row.learned / row.total) * 100) : 0;
+                return (
+                  <div key={row.type}>
+                    <div className="flex items-center justify-between text-[12.5px]">
+                      <span className="text-ink-2">{resourceLabel[row.type]}</span>
+                      <span className="font-mono text-[11px] text-ink-muted">
+                        可用 {row.total} 份 · 已学 {row.learned}{row.started ? ` · 在读 ${row.started}` : ''}
+                      </span>
+                    </div>
+                    <div className="relative mt-1.5 h-1.5 overflow-hidden rounded-full bg-hairline">
+                      <div
+                        className="absolute inset-y-0 left-0 rounded-full bg-ochre"
+                        style={{ width: `${Math.min(100, pct)}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-4 border-t border-hairline pt-2 text-[11.5px] text-ink-muted">
+              {preferenceRows.every((row) => row.total === 0)
+                ? '这个账号还没有学习资源：去「学 · 练」生成一章讲义或分阶题，这里就有数了。'
+                : `来源：/learning-resources 的 ${resources.length} 份资源（按形态统计，含机构模板）`}
+            </p>
+          </div>
         </div>
       </section>
 
