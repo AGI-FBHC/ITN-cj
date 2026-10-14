@@ -248,3 +248,128 @@ JSON 在真实规模下有三个硬伤，都在实测里撞到过：向量与切
 - **修复**：按原语义重建 shell/renderer/index.html（1038 字节、32 行、结构校验通过），并同步覆盖 dist 下的打包副本。
 - **顺带交付**：新增 	ools/ui-shot.cjs —— 桌面端界面自检脚本（无头 Edge 直连内核 HTTP 界面，逐页截图 + 结构摘要 + console error 收集，playwright 路径自动解析），已用它验证修复：标题 ITN-Desktop · 本地教培工作台、10 个导航项、九页全部渲染正常。
 - **教训（写进约定）**：往仓库写 .html 这类文件时**不要用 PowerShell 的 Set-Content -Value ** 这类会按行输出的写法；写完必须读回校验字节数/换行数。	ools/ui-shot.cjs 可作为"界面是否真的渲染"的常规自检手段。
+
+
+## 2026-10-14 桌面版：11 页工作台 → Codex 式对话 + 仓颉 Agent 工具回路（提交 479215e / d406692）
+
+### 一、本轮的用户指令与范围界定（重要）
+
+用户在本轮给出了一条**边界指令**：「你这边应该只是做 **Desktop 版**的页面，不要与网页版冲突」。
+
+- 本仓 `D:\Desktop\ITN\ITN-Desktop` 是 Desktop 版（仓颉内核 + Electron 壳），**本轮所有改动都在这里**。
+- `D:\Desktop\ITN\ITN\src\front`（网页版 React）由**另一个并行会话**负责，本轮一行未动；用户提到的
+  「评委导览全部删掉、知识库接口保留、MiMo tokenplan 换模型」都在网页版/agents 那条线上完成（见主仓
+  `docs/change-trace.md` 与 `src/agents/app/config.py` 的 `mimo_*` 配置），Desktop 侧只做**对应的能力**：
+  模型页加了 MiMo TokenPlan 预设。
+- 用户另要求：「页面做得像 Codex 那样」「要有主对话框和 session 栏」「对话框就是之前网页版里那个，
+  但要有 Agent 的功能，把 Pi Agent / DeepSeek Harness 那一套拿过来，一些能直接用的工具链也支持一下，
+  不过我们的版本一定要基于仓颉开发」。本轮就是按这条做。
+
+### 二、做了什么（两刀）
+
+**第一刀（提交 479215e）：把九页列表改成任务导向的 11 页工作台，并补上前端完全缺失的核心入口**
+
+- 首页第一屏是「开始使用」五步清单：配置模型接口 / 指定资料目录 / 建立索引 / 问第一个问题 / 生成第一份产物。
+  完成状态全部读真实数据（`settings`、`knowledgeBases[].chunkCount`、`sessions`、`artifacts`），未完成项带跳转按钮。
+- **全站空态都给出可点的下一步**。`tools/ui-shot.cjs` 新增统计：空态数量、**没有按钮的空态（死胡同）数量**、
+  清单完成数。改动前首页 0 个按钮；改动后每页都有出口，11 页 deadEnds=0。
+- **补上此前界面完全点不到的能力**：`/api/agent/lecture`（生成讲义）与 `/api/agent/quiz`（生成练习册）
+  在旧界面里根本没有入口（「我的资源」却提示"到学·练里生成"）。现在章节行与工具栏都有按钮。
+- 新增「会话记录」页：`/api/sessions/list` 与 `/api/sessions/events` 从来没被界面用过，现在能展开
+  每一轮的 retrieve / outline / write_section / 引用自检 / 落盘。
+- 模型页加**预设**（MiMo TokenPlan v2.6 flash / v2.6 pro、DeepSeek、其它 OpenAI 兼容）、测试连通、
+  诊断连接（`/api/models/diagnose`）、一键绑定三种用途；档案页补知识库管理（索引进度、统计、切换、删除）。
+- 侧栏加真实计数徽标；改用 hash 路由（刷新与前进后退不丢页面）。
+
+**第二刀（提交 d406692）：内核补齐 Agent 工具回路与流式输出；对话页改成 Codex 式两栏**
+
+- `llm.cj`：流式请求支持增量回调（`postStream(path, payload, onDelta)` / `chatStream` / `chatMessagesStream`）。
+- `tools/registry.cj`（新增，396 行）：`ToolSpec` + `toolCatalog()`（界面与提示词共用同一份定义）+
+  `ToolBox`。7 个工具：
+
+  | 名字 | 用途 |
+  | --- | --- |
+  | `kb_search` | 检索当前知识库（向量或关键词） |
+  | `list_documents` | 列出文档与切片数 |
+  | `read_chunk` | 按切片 id 取完整原文 |
+  | `current_time` | 本机当前时间 |
+  | `calc` | 四则运算（自带递归下降求值器，`Float64` 没有 `%` 运算符，取余用 `v - Int64(v/d)*d` 实现） |
+  | `save_note` | 写一条笔记到本机库 |
+  | `save_artifact` | 写一份 Markdown 产物 |
+
+- `agent.cj`：`ask` = 取最近 6 轮历史 → 检索 → 最多 4 轮模型调用（可插工具）→ 引用自检 → `turn/end`；
+  流式增量写 `assistant/delta`；工具调用写 `tool/call`（带 `args`）与 `tool/result`。
+  **工具协议不用 OpenAI 的 function calling**——用户可能接任意 OpenAI 兼容服务，改让模型输出一行
+  `{"tool":"名字","args":{...}}`，内核按花括号配对扫描（跳过字符串与转义）取出来执行。
+  工具结果的检索条目用 `[T1]` 前缀编号，与正文引用 `[n]` 区分，避免模型拿工具序号去引用。
+- `api.cj`：新增 `/api/tools/list`、`/api/sessions/new`；`handle` 拆成 `handle`（统一捕获异常）+ `route`（真路由），
+  异常返回带原因与处理办法的 JSON。
+- `session.cj`：会话摘要补 `kind`（问答/讲义/练习），供会话栏分类。
+- 界面：`index.html` 多一列 `#session-rail`；`app.js` 的 `PAGES.chat` 重写为
+  「会话栏（可搜索/切换/显示类型与步数）+ 主对话框（工具行、出处列表、打字机式流式输出、快捷动作）」。
+  **流式实现方式**：内核 HTTP 服务是多线程的（先做了实测：一次 30 秒的生成期间，`/api/kb/stats` 十次调用
+  耗时 3~34ms 全部返回），所以生成过程中前端可以直接轮询 `/api/sessions/events` 拿 `assistant/delta`
+  渲染增量，**不需要 SSE**。会话记录页把增量事件过滤掉（只提示"另有 N 条流式增量"）。
+
+### 三、真实缺陷（本轮测试里抓出来的，都修了）
+
+1. **强杀进程会让数据目录永久打不开（严重）**。打包版 `--smoke` 启动后首页报
+   「内核返回的不是 JSON（HTTP 500）」。定位：`%LOCALAPPDATA%\ITN-Desktop\itn.db-cjflock` 是上一轮
+   被强杀的进程留下的锁文件，内核日志为
+   `SqlException: sqlite busy: database is locked by another process holding ...itn.db-cjflock (waited 5000 ms)`。
+   根因在内置驱动的 `storage_lockfile.cj`：它靠 `/proc/<pid>` 判断持锁进程是否存活，
+   **Windows 上没有 `/proc` 就一律认为持锁者还活着**，于是陈旧锁无人接管。
+   两层修复：① 外壳 `shell/main.js` 在启动内核前用 `process.kill(pid, 0)` 判断并接管残留锁
+   （改名成 `itn.db-cjflock.stale-<ts>`，不删）；② 内核把未预期异常转成带原因与处理办法的 JSON，
+   界面能直接看到"关掉其它实例、删掉 itn.db-cjflock"。两条都验证过（见第五节）。
+   **注意**：`dist/` 里的内核与外壳产物已用 `scripts/package-app.ps1` 重新生成（zip 162.8MB）。
+2. `shell/main.js` 的 `--smoke` 检查数的是 `.panel` —— 那个类名在九页改版时就没了，等于一直在数 0，
+   报 `PANELS=0` 却仍打印 `RESULT=OK`。现在改为等首页真正渲染完（有卡片且不在加载态），
+   再统计 `NAV`（导航项）与 `VIEW_NODES`（首屏节点），`RESULT` 也据此判定。
+3. `tools/ui-e2e.cjs` 里等待助手回复时只判断"有文字"——加载中的气泡里也有字，导致断言在生成中就通过。
+   改为等最后一个助手气泡不再带 spinner。同时给 E2E 加了**源码比 dist 内核新就拒绝跑**的前置检查，
+   彻底堵掉"验证跑的是旧二进制"（TRACE 里记过一次的坑）。
+4. 中文引号写进了仓颉字符串字面量（`"资料里有什么"`）导致编译失败；`Float64` 不支持 `%`；闭包不能捕获
+   `var`（流式回调里的 `sessionId` 先拷成 `let sid`）；`JsonArray` 不能直接 for-in。都是编译期错误，已修。
+
+### 四、验证证据（都是实跑）
+
+- `node tools/ui-e2e.cjs`：**32 步全过**。自带 mock + 内核 + 无头 Edge，覆盖配模型（预设）→ 绑三种用途 →
+  登记知识库并建索引（2 篇 / 3 片 / 1 图 / 1 条图片描述）→ 读章节并标记已读 → 出题作答（对错反馈、错题入本）→
+  生成练习册与讲义 → 读产物全文 → 对话提问（3 条出处）→ **Agent 自己调工具算数**
+  （工具行显示「检索知识库 / 计算：(12+8)*3/4」，回答 15）→ 点会话栏还原历史（2 轮 / 6 条出处）→
+  新建空会话 → 会话记录展开（2 轮 / 32 条事件）→ 写笔记 → 复核成长统计 → 全程 0 条 console error。
+- `node tools/ui-shot.cjs`（v5 截图，`tmp/ui-shots-v5/`）：11 页全渲染，**deadEnds 全为 0**，consoleErrors 空。
+- `tools/smoke.ps1` 全部 200（含 `/api/agent/ask` 带 3 条出处、讲义落盘含「资料来源」与引用标记）；
+  `tools/study-api-check.ps1`、`tools/keyword-mode-check.ps1` 通过。
+- 内核级探针：`/api/tools/list` 返回 7 个工具；第二轮 ask 时 mock 侧收到
+  `roles=[system,user,assistant,user]`（历史确实带上了）；第三轮 ask `toolCalls=1 / toolsUsed=[calc]`，
+  事件分布 `assistant/delta: 8, tool/call: 3, tool/result: 3, validation: 1`。
+- 打包版：`dist/ITN-Desktop/ITN-Desktop.exe --smoke` →
+  `TITLE=ITN-Desktop · 本地教培工作台 / STATUS=内核已连接 · 1.2.0 / NAV=11 / VIEW_NODES=6 / RESULT=OK`；
+  数据目录里的陈旧锁被外壳接管为 `itn.db-cjflock.stale-*`，界面正常渲染。
+- 锁占用时的错误提示：手工造一个"持有者 pid 活着"的锁，接口返回
+  `{"code":1,"message":"本地数据库被另一个进程占用，无法读写：... 请先关闭所有 ITN-Desktop 窗口与内核进程再重试；确认没有进程在运行后，删除数据目录里的 itn.db-cjflock 即可恢复 ..."}`，
+  不再是 `Internal Server Error`。
+- 真实模型端点（用户本轮给的 MiMo TokenPlan）：`GET /v1/models` 返回
+  `mimo-v2.5 / mimo-v2.5-pro / mimo-v2.6-flash / mimo-v2.6-pro` 等；`mimo-v2.6-pro` 非流式对话正常；
+  **带图片请求也能正确读出界面截图里的中文内容**（说明多模态可用，据此把预设的"多模态模型"填成
+  `mimo-v2.6-pro`）；流式返回是标准 SSE（首行 `: PROCESSING` 注释前导 + `reasoning_content` 增量），
+  内核解析正常；`/embeddings` 返回 404（该服务不提供向量），Desktop 侧因此走关键词兜底检索并在界面注明。
+  用 `tools/real-model-check.ps1`（`mimo-v2.6-flash`）跑通真实问答；
+  `tools/real-lecture-check.ps1` 跑通真实讲义：**139.5 秒 / 5 小节 / 段落 99 · 带引用 70 · 越界 0**，
+  产物落盘。密钥只放在 `%TEMP%` 的临时 env 文件里，未入库。
+
+### 五、当前状态与下一步
+
+- 仓颉内核行数：5648 行（`core/src` 下 `.cj`）。构建 `scripts/build.ps1`；打包 `scripts/package.ps1`；
+  出绿色包 `scripts/package-app.ps1`（**改了内核或界面后必须重跑，否则 dist 里是旧产物**）。
+- 界面自检两条命令：`node tools/ui-shot.cjs <UI_URL>`（渲染+截图）与 `node tools/ui-e2e.cjs`（全流程点击，
+  自带环境，**推荐**）。`tools/ui-flow.ps1` 仍可用，但用 `$out = & ...` 捕获输出时会挂住子进程句柄，
+  已在脚本头注释里写明。
+- 已知未做：① 讲义/练习生成还没有流式增量（只有 `ask` 有）；② 对话没有"停止生成"（内核无取消接口）；
+  ③ 产物仍是目录扫描、没登记进库；④ 界面没有数据库备份/导出入口；⑤ 不做联网检索（产品边界）；
+  ⑥ 讲义正文偶尔把小节标题重复输出（模型在大纲与正文里都写了标题），属生成质量，未在界面层掩盖。
+- 给接手的人：改 `shell/renderer/*` 只要 3 个白名单文件（`api.cj` 的 `serveStatic` 限制），
+  新增静态文件要同时改 `allowed` 与路由并更新 `docs/02-接口契约.md`；
+  往这几个文件写内容**不要用 PowerShell 的 Set-Content -Value 数组写法**（TRACE 里记过 P0）。
