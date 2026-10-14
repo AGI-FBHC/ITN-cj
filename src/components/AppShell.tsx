@@ -2,7 +2,8 @@
  * AppShell — 应用外壳（学习者视角单一布局）
  * 顶部导航外壳（logo + 居中 4 站 + AI 教研组 + 画像 + 模式）；移动端底部 tab；内容单列。
  * 「系统透视 / 评委视角」控制台布局与「评委导览」已按用户要求整体移除，现在只剩学习者外壳；
- * 原先只挂在系统透视侧栏的「交互导学」已并入「更多」菜单。
+ * 原先只挂在系统透视侧栏的「交互导学」在学习者视角下本来就是重定向到校准页，
+ * 因此不再给它补入口（导航项另见 docs/change-trace.md 的说明）。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -13,8 +14,6 @@ import {
   BarChart3,
   PenLine,
   Database,
-  PanelLeftClose,
-  PanelLeftOpen,
   NotebookPen,
   LogOut,
   Loader2,
@@ -42,6 +41,7 @@ import { resources } from '@/data/resources';
 import KBDrawer from './KBDrawer';
 import AgentDock from './agent/AgentDock';
 import ResumeLearningFab from './ResumeLearningFab';
+import CompanionPet from './CompanionPet';
 import { SparkField } from './heal/Flora';
 import { cn } from '@/lib/utils';
 
@@ -68,7 +68,6 @@ const learnerNav: NavItem[] = [
 const learnerMoreItems: { path: string; label: string; note: string }[] = [
   { path: '/resources', label: '我的资源', note: '定制讲义 / 实操 / 分阶题' },
   { path: '/knowledge', label: '领域知识库', note: '切片检索与原文溯源' },
-  { path: '/tutoring', label: '交互导学', note: '苏格拉底式追问导学' },
   { path: '/chat', label: '伴学助手', note: '就当前进度提问' },
   { path: '/profiles', label: '学情画像', note: '六维能力与盲区' },
   { path: '/agents', label: '协同调度', note: '五个 Agent 的执行过程（需先生成课程）' },
@@ -76,17 +75,6 @@ const learnerMoreItems: { path: string; label: string; note: string }[] = [
 ];
 
 
-const pageTitleMap: Record<string, { title: string; crumb: string }> = {
-  '/': { title: '总览 Dashboard', crumb: '智训云枢 / OVERVIEW' },
-  '/me': { title: '我的学习', crumb: '智训云枢 / MY LEARNING' },
-  '/learn': { title: '学 · 练 · 我的课程', crumb: '智训云枢 / COURSE' },
-  '/profiles': { title: '学情画像', crumb: '智训云枢 / PROFILES' },
-  '/agents': { title: '多智能体协同调度', crumb: '智训云枢 / AGENTS' },
-  '/resources': { title: '个性化资源生成', crumb: '智训云枢 / RESOURCES' },
-  '/report': { title: '学情报告', crumb: '智训云枢 / REPORT' },
-  '/tutoring': { title: '交互导学', crumb: '智训云枢 / TUTORING' },
-  '/knowledge': { title: '知识库', crumb: '智训云枢 / KNOWLEDGE' },
-};
 
 
 
@@ -145,7 +133,6 @@ useEffect(() => {
   };
 
   const base = useMemo(() => '/' + (location.pathname.split('/')[1] ?? ''), [location.pathname]);
-  const pageInfo = pageTitleMap[base] ?? pageTitleMap['/me'];
 
   /* 学习者视角进入根路径 → 落到「我的学习」 */
   useEffect(() => {
@@ -326,6 +313,9 @@ useEffect(() => {
 
           {/* 全局「继续学习」浮标 · 左下角，随时回到当前路径节点 */}
           {!isSlideMode && <ResumeLearningFab />}
+
+          {/* 伴学角色「小鼋」· 右下角（伴学浮窗之上）：可拖拽、点开有快捷入口（旧版桌宠的核心交互） */}
+          {(!focusMode || isSlideMode) && <CompanionPet />}
 
           {/* 移动端底部 tab */}
           {!(focusMode || isSlideMode) && (
