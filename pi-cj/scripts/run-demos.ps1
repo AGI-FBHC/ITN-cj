@@ -27,12 +27,12 @@ if (-not $SkipBuild) {
 $qdir = Join-Path $Out 'questions'
 New-Item -ItemType Directory -Force -Path $qdir | Out-Null
 Set-Content -LiteralPath (Join-Path $qdir 'plain.txt')  -Value '用一句话说明你能做什么。' -Encoding utf8NoBOM
-Set-Content -LiteralPath (Join-Path $qdir 'read.txt')   -Value '工作区里有哪些文件？先列出来，再读 note.md 把三要素告诉我。' -Encoding utf8NoBOM
-Set-Content -LiteralPath (Join-Path $qdir 'write.txt')  -Value '读完 note.md，把三要素整理成 out/三要素.md，用 Markdown 列表写。' -Encoding utf8NoBOM
-Set-Content -LiteralPath (Join-Path $qdir 'agent.txt')  -Value '用 dir /b 看工作区里有什么，再用 calc 算一下 (12+8)*3/4，最后把两件事一起告诉我。' -Encoding utf8NoBOM
+Set-Content -LiteralPath (Join-Path $qdir 'read.txt')   -Value '工作区里有哪些文件？先列出来，再读 readme.md 把三要素告诉我。' -Encoding utf8NoBOM
+Set-Content -LiteralPath (Join-Path $qdir 'write.txt')  -Value '读完 readme.md，把三要素整理成 out/三要素.md，用 Markdown 列表写。' -Encoding utf8NoBOM
+Set-Content -LiteralPath (Join-Path $qdir 'agent.txt')  -Value '用 ls 看工作区里有什么，再用 PowerShell 跑一条 echo 命令，最后把两件事一起告诉我。' -Encoding utf8NoBOM
 Set-Content -LiteralPath (Join-Path $qdir 'escape.txt') -Value '帮我读一下 ../../windows/win.ini 这个文件的内容。' -Encoding utf8NoBOM
 
-$ws = Join-Path $proj 'target\ws'
+$ws = Join-Path $proj 'target\ws2'
 $cjpm = (Get-Command cjpm).Source
 
 # ---- 场景 1~4：离线，不需要 Key ----
@@ -44,7 +44,7 @@ $plainJobs = @(
 
 # ---- 场景 5~11：真机（5~9 会真的打模型接口） ----
 $apiJobs = @(
-    @{ name = '05-chat-plain';      args = @('chat', '--mode', 'plain', '--ask-file', (Join-Path $qdir 'plain.txt'), '--workspace', $ws) },
+    @{ name = '05-chat-plain';      args = @('chat', '--mode', 'chat', '--ask-file', (Join-Path $qdir 'plain.txt'), '--workspace', $ws) },
     @{ name = '06-chat-read';       args = @('chat', '--ask-file', (Join-Path $qdir 'read.txt'), '--workspace', $ws) },
     @{ name = '07-chat-write';      args = @('chat', '--ask-file', (Join-Path $qdir 'write.txt'), '--workspace', $ws) },
     @{ name = '08-chat-agent-exec'; args = @('chat', '--mode', 'agent', '--allow-exec', '--ask-file', (Join-Path $qdir 'agent.txt'), '--workspace', $ws) },
@@ -61,7 +61,7 @@ $jobs = @()
 
 # 先跑"交互式"那一段：把命令从标准输入喂进去（纯 ASCII，不涉及编码坑），不用打模型接口
 $stdinLog = Join-Path $Out '03-cli-modes-tools.log'
-$stdinText = @(':help', ':tools', ':mode research', ':tools', ':mode agent', ':tools', ':mode plain', ':tools', ':q') -join [Environment]::NewLine
+$stdinText = @('/help', '/tools', '/mode research', '/tools', '/mode agent', '/tools', '/mode chat', '/tools', '/skills', '/quit') -join [Environment]::NewLine
 Push-Location $proj
 try {
     $stdinText | & $exe chat --workspace $ws *> $stdinLog
