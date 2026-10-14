@@ -490,8 +490,47 @@ fs.writeFileSync(singleFile, [
     return n + ' 章';
   });
 
+  await step('学习路径：一章一段、点一段跳到那一章', async () => {
+    await nav('学 · 练');
+    await page.waitForSelector('.path-track .path-seg', { timeout: 20000 });
+    const segs = await page.locator('.path-track .path-seg').count();
+    const tree = await page.evaluate(() => fetch('/api/study/tree', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kbId: 'course' }) }).then((r) => r.json()).then((j) => j.data));
+    assert(segs === (tree.chapters || []).length, '路径上一章一段，实际 ' + segs + ' vs ' + (tree.chapters || []).length);
+    const pct = await page.locator('.path-row .muted').innerText();
+    assert(pct.indexOf('/') >= 0 && pct.indexOf('%') >= 0, '应给出"已完成 N / M 章 · x%"，实际 ' + pct);
+    await shot('55-学习路径');
+    // 点第一段：应进到那一章（主区出现该章的正文或单元卡）
+    const name = await page.locator('.path-track .path-seg').first().getAttribute('title');
+    const chapterName = String(name).split(' · ')[0];
+    await page.locator('.path-track .path-seg').first().click();
+    await page.waitForTimeout(1200);
+    const view = await page.locator('#view').innerText();
+    assert(view.indexOf(chapterName) >= 0, '点路径上的段应进到那一章，实际视图里没有 ' + name);
+    // 复原到"步骤之间默认停在第 1 章（提示词工程基础）"的上下文，别把后面的步骤带偏
+    await nav('学 · 练');
+    await page.waitForTimeout(600);
+    const inFirst = await page.evaluate(() => {
+      const h = document.querySelector('.chapter-head h2, #view .card-head h2');
+      return !!(document.querySelector('.chunk-card') && h && h.textContent.indexOf('提示词工程基础') >= 0);
+    });
+    if (!inFirst) {
+      if (await page.locator('.chunk-card').count()) {
+        await page.getByRole('button', { name: /返回目录/ }).first().click();
+        await page.waitForSelector('.chapter-idx', { timeout: 15000 });
+      }
+      await page.locator('.item', { hasText: '提示词工程基础' })
+        .getByRole('button', { name: /开始学|继续学/ }).first().click();
+      await page.waitForSelector('.chunk-card', { timeout: 15000 });
+    }
+    return segs + ' 段 · ' + pct.trim() + ' · 点第一段进到「' + chapterName + '」';
+  });
+
   await step('进入章节能看到切片正文', async () => {
-    await page.locator('.item', { hasText: '提示词工程基础' }).getByRole('button', { name: '开始学' }).click();
+    // 已经在章节里就别再点一次（按钮那时叫「继续学」；点它会重新进同一章，白等）
+    if (!(await page.locator('.chunk-card').count())) {
+      await page.locator('.item', { hasText: '提示词工程基础' })
+        .getByRole('button', { name: /开始学|继续学/ }).first().click();
+    }
     await page.waitForSelector('.chunk-card', { timeout: 20000 });
     const n = await page.locator('.chunk-card').count();
     const body = await page.locator('.chunk-card').first().innerText();
@@ -1460,6 +1499,31 @@ fs.writeFileSync(singleFile, [
     assert(vals[2] >= 1, '答题总数应 >= 1，实际 ' + vals[2]);
     await shot('16-我的成长');
     return '已读 ' + vals[0] + ' / 完成章节 ' + vals[1] + ' / 答题 ' + vals[2] + ' / 正确率 ' + vals[3] + '%';
+  });
+
+  await step('学习日历：连续打卡按真实活动算，当月网格画得出来', async () => {
+    await nav('我的成长');
+    await page.waitForSelector('.streak-grid', { timeout: 20000 });
+    const info = await page.evaluate(() => {
+      const cells = Array.from(document.querySelectorAll('.streak-cell'));
+      const days = cells.filter((c) => !c.classList.contains('empty'));
+      return {
+        total: days.length,
+        studied: cells.filter((c) => c.classList.contains('studied')).length,
+        today: cells.filter((c) => c.classList.contains('today')).length,
+        tag: (document.querySelector('.card-head .tag') || {}).innerText || '',
+      };
+    });
+    const now = new Date();
+    const expectDays = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    assert(info.total === expectDays, '当月网格应有 ' + expectDays + ' 天，实际 ' + info.total);
+    assert(info.today === 1, '今天应有且只有一个格子被标出，实际 ' + info.today);
+    assert(info.studied >= 1, '这一段自测里明明有学习活动，日历上应至少有一天是"学过"');
+    const api = await page.evaluate(() => fetch('/api/study/report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kbId: 'course' }) }).then((r) => r.json()).then((j) => j.data));
+    const todayKey = new Date().toLocaleDateString('sv-SE');
+    assert((api.studyDates || []).indexOf(todayKey) >= 0, '接口应把今天算进学习日期，实际 ' + JSON.stringify((api.studyDates || []).slice(-2)));
+    await shot('54-学习日历');
+    return '网格 ' + info.total + ' 天 · 学过 ' + info.studied + ' 天 · 今天已计入 · 徽标「' + info.tag + '」';
   });
 
   await step('我的成长：六维雷达图 + 依据表 + 重点建议（与接口同口径）', async () => {

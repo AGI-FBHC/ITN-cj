@@ -1615,6 +1615,7 @@ function kbSelector(onChange) {
 async function renderChapterTree(v) {
   const tree = await api("/api/study/tree", { kbId: state.kb });
   const chapters = tree.chapters || [];
+  v.appendChild(pathBar(tree));
   const card = cardOf({
     title: "知识库目录",
     sub: "按 Markdown 标题自动分章",
@@ -2265,6 +2266,45 @@ async function renderWrongSection(v) {
     }
 }
 
+/**
+ * 学习路径：把这一章一节的完成度画成一条（网页版那根 PathProgressBar 的意思）。
+ *
+ * 和网页版不同的一点：那边是"六阶段路线图"（写死的学习法），这里就是**你自己的章节**——
+ * 完成/在读/未开始三段颜色，点一下就跳到那一章。
+ */
+function pathBar(tree) {
+  const chapters = (tree && tree.chapters) || [];
+  const card = cardOf({ title: "学习路径", tag: chapters.length ? chapters.length + " 章" : "" });
+  if (!chapters.length) {
+    card.appendChild(emptyState({
+      inline: true,
+      art: "book",
+      title: "还没有章节",
+      text: "建立索引后，这里会按你的资料列出学习路径。",
+      actions: [btn("去建立索引", "primary", () => go("settings", "kb"))],
+    }));
+    return card;
+  }
+  const done = chapters.filter((c) => c.done).length;
+  const reading = chapters.filter((c) => !c.done && (c.readCount || 0) > 0).length;
+  const pct = Math.round((done / chapters.length) * 100);
+  const row = el("div", "path-row");
+  row.appendChild(el("div", "muted sm", "已完成 " + done + " / " + chapters.length + " 章 · " + pct + "%"));
+  const track = el("div", "path-track");
+  for (const c of chapters) {
+    const seg = el("button", "path-seg" + (c.done ? " done" : ((c.readCount || 0) > 0 ? " reading" : "")));
+    seg.type = "button";
+    seg.title = c.name + " · " + (c.done ? "已完成" : (c.readCount || 0) > 0 ? "在读 " + c.readCount + "/" + c.chunkCount : "未开始");
+    seg.dataset.chapter = c.name;
+    if (state.chapter === c.name) seg.classList.add("active");
+    seg.onclick = () => { state.chapter = c.name; go("learn"); };
+    track.appendChild(seg);
+  }
+  row.appendChild(track);
+  card.appendChild(row);
+  return card;
+}
+
 /** 重做一道错题：存了原题就给一样的选项，没存就对着参考答案自评（不假装能判分）。 */
 function openRedo(rec) {
   const v = $("view");
@@ -2380,6 +2420,86 @@ function abilityCard() {
 
   // 画完再画一次：字体与颜色要等布局稳定
   setTimeout(() => drawRadar(cv, rows), 0);
+  return card;
+}
+
+/**
+ * 学习日历（网页版那张 StreakCalendar 搬过来）。
+ *
+ * 连续打卡只认"这一天有没有真实的活"：读切片 / 章节完成 / 记笔记 / 答题 / 问过一次，
+ * 都算（数据来自内核按天汇总的 studyDates）。日历运算放在前端做 —— 浏览器知道本地时区，
+ * 内核硬算只会算错。
+ */
+function streakInfo(dates) {
+  const set = new Set(dates || []);
+  const key = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return y + "-" + m + "-" + day;
+  };
+  const today = new Date();
+  let cur = 0;
+  const probe = new Date(today);
+  if (!set.has(key(probe))) {
+    // 今天还没学：连续天数从昨天算（今天还没开始不等于断了）
+    probe.setDate(probe.getDate() - 1);
+  }
+  while (set.has(key(probe))) {
+    cur += 1;
+    probe.setDate(probe.getDate() - 1);
+  }
+  // 最长连续：按升序走一遍
+  const sorted = Array.from(set).sort();
+  let best = 0;
+  let run = 0;
+  let prev = null;
+  for (const d of sorted) {
+    if (prev) {
+      const a = new Date(prev + "T00:00:00");
+      a.setDate(a.getDate() + 1);
+      run = key(a) === d ? run + 1 : 1;
+    } else {
+      run = 1;
+    }
+    best = Math.max(best, run);
+    prev = d;
+  }
+  return { current: cur, longest: best, activeDays: set.size, todayActive: set.has(key(today)), dates: set };
+}
+
+function streakCard() {
+  const info = streakInfo((state.report || {}).studyDates || []);
+  const card = cardOf({
+    title: "学习日历",
+    tag: info.current > 0 ? "已连续 " + info.current + " 天" : (info.todayActive ? "今天已学" : "今天还没开始"),
+    tagCls: info.current > 0 ? "ok" : "",
+  });
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth();
+  const firstWeekday = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const grid = el("div", "streak-grid");
+  for (const wd of ["日", "一", "二", "三", "四", "五", "六"]) {
+    grid.appendChild(el("div", "streak-wd", wd));
+  }
+  for (let i = 0; i < firstWeekday; i++) grid.appendChild(el("div", "streak-cell empty"));
+  const keyOf = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  for (let d = 1; d <= daysInMonth; d++) {
+    const cell = el("div", "streak-cell");
+    const dt = new Date(year, month, d);
+    cell.dataset.date = keyOf(dt);
+    cell.textContent = String(d);
+    if (info.dates.has(keyOf(dt))) cell.classList.add("studied");
+    if (keyOf(dt) === keyOf(today)) cell.classList.add("today");
+    if (dt > today) cell.classList.add("future");
+    grid.appendChild(cell);
+  }
+  card.appendChild(grid);
+  card.appendChild(el("div", "muted sm", "累计学习 " + info.activeDays + " 天" +
+    (info.longest > 0 ? " · 最长连续 " + info.longest + " 天" : "") +
+    "。读切片、记笔记、答题、问助手都算一天。"));
   return card;
 }
 
@@ -2835,6 +2955,7 @@ PAGES.report = {
       v.appendChild(line);
     }
 
+    v.appendChild(streakCard());
     v.appendChild(calibrationCard());
     v.appendChild(abilityCard());
     v.appendChild(trendCard());

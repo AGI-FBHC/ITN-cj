@@ -110,6 +110,16 @@ try {
     $r2 = (Post2 '/api/study/report' @{}).data
     $b2 = ($r2.abilities | Where-Object { $_.key -eq '逻辑推理' })[0]
     Check '没练习时不给参考分（-1）并说明原因' ($b2.evidence -eq -1 -and ([string]$b2.basis).Contains('不足')) ('ev=' + $b2.evidence + ' basis=' + $b2.basis)
+    Write-Output "== 学习日历 / 连续打卡 =="
+    $today = (Get-Date).ToString('yyyy-MM-dd')
+    $empty = @((Post2 '/api/study/report' @{}).data.studyDates)
+    Check '没有任何活动时不给假日期' ($empty.Count -eq 0) ('dates=' + ($empty -join ','))
+    # 真做一件事（记一条笔记）→ 今天就该进学习日期
+    Post2 '/api/study/notes/save' @{ id = ''; kbId = 'course'; chapter = '第一章'; title = '日历自测'; text = '记一条，今天就算学过了。' } | Out-Null
+    $dates = @((Post2 '/api/study/report' @{}).data.studyDates)
+    Check '接口给出按天汇总的学习日期' ($dates.Count -ge 1) ($dates -join ',')
+    Check '今天的活动算进学习日期' ($dates.Contains($today)) ('today=' + $today + ' dates=' + ($dates -join ','))
+    Check '日期是升序且形如 YYYY-MM-DD' (($dates.Count -eq 0) -or (($dates[0] -match '^\d{4}-\d{2}-\d{2}$') -and (($dates.Count -eq 1) -or ($dates[0] -le $dates[$dates.Count - 1])))) ($dates -join ',')
     Stop-Quiet $core2
 }
 finally {

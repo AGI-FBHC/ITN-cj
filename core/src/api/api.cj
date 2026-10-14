@@ -1875,6 +1875,12 @@ public class Api {
             o.put("quizWrong", JsonInt(wrong))
         o.put("wrongDue", JsonInt(dueCount))
             o.put("profile", d.profile.toJson())
+            // 学习日历 / 连续打卡：给日期，日历运算在前端做（本地时区才准）
+            let dateArr = JsonArray()
+            for (day in studyDates(store.dataDir)) {
+                dateArr.add(JsonString(day))
+            }
+            o.put("studyDates", dateArr)
 
             // 六维：自评（用户填的）+ 实测参考（真实信号推的）。界面画雷达图与写依据都用这一段。
             var kbId = ""

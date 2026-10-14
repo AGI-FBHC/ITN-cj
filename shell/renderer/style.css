@@ -685,6 +685,31 @@ body.chat-mode .topbar { display: none; }
 .panel-group-count { color: var(--muted); font-variant-numeric: tabular-nums; }
 .panel-group-head:hover { color: var(--ink-2); }
 
+/* 学习日历（连续打卡）：7 列网格，学过的那天填品牌色，今天描边，未来的日子淡掉 */
+.streak-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin: 10px 0 8px; max-width: 460px; }
+.streak-wd { text-align: center; font-size: calc(12px * var(--fs, 1)); color: var(--muted); }
+.streak-cell {
+  aspect-ratio: 1 / 1; display: grid; place-items: center;
+  border-radius: 8px; border: 1px solid var(--line);
+  font-size: calc(12px * var(--fs, 1)); color: var(--muted);
+}
+.streak-cell.empty { border: 0; }
+.streak-cell.studied { background: var(--brand-soft); border-color: var(--brand-line); color: var(--brand); font-weight: 600; }
+.streak-cell.today { box-shadow: 0 0 0 2px var(--brand-line); }
+.streak-cell.future { opacity: .45; }
+
+/* 学习路径：一章一段，完成=实心、在读=半实心、未开始=空 */
+.path-row { display: flex; flex-direction: column; gap: 6px; }
+.path-track { display: flex; gap: 3px; align-items: stretch; height: 10px; }
+.path-seg {
+  flex: 1 1 0; min-width: 6px; border: 1px solid var(--line); border-radius: 4px;
+  background: var(--panel-sunk); cursor: pointer; padding: 0;
+}
+.path-seg.reading { background: var(--brand-soft); border-color: var(--brand-line); }
+.path-seg.done { background: var(--brand); border-color: var(--brand); }
+.path-seg.active { box-shadow: 0 0 0 2px var(--brand-line); }
+.path-seg:hover { border-color: var(--brand); }
+
 /* 对话时间线（照 Codex 的形状）：用户的话是一段浅底文本，助手正文是纯文本，工具调用是一行。
    上一版每轮套一张卡片、每条消息一个气泡 + "我 / 伴学助手"，读起来全是框，已经去掉。 */
 .msg { margin: 0; }

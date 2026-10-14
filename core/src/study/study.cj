@@ -796,6 +796,73 @@ public func chunksOfChapter(index: KbIndex, progress: StudyProgress, kbId: Strin
  * 日期串直接取时间戳的前 10 位（内核写进去的就是本地时间），**故意不做日历运算**：
  * "最近 14 天有哪几天"这种活交给前端（JS 里一行就是本地日期），内核只按已有数据分桶。
  */
+/**
+ * 有学习活动的日期（升序，最多最近 180 天）——给"学习日历 / 连续打卡"用。
+ *
+ * 与 trendByDay 同一批数据源（进度 / 章节完成 / 笔记 / 答题 / 会话），
+ * 但这里只要日期：**连续多少天、这个月哪几天学过** 这类日历运算交给前端做
+ * （JS 里一行就是本地日期，内核这边硬算时区只会算错）。
+ */
+public func studyDates(dataDir: String): ArrayList<String> {
+    let db = DbHub.open(dataDir)
+    let seen = HashSet<String>()
+    let order = ArrayList<String>()
+    func mark(day: String): Unit {
+        if (day.size < 10) {
+            return
+        }
+        let d = String.fromUtf8(day.toArray()[0..10])
+        if (!seen.contains(d)) {
+            seen.add(d)
+            order.add(d)
+        }
+    }
+    for (r in db.query("SELECT at FROM progress", ArrayList<DbValue>())) {
+        mark(r.text(0))
+    }
+    for (r in db.query("SELECT at FROM chapter_done", ArrayList<DbValue>())) {
+        mark(r.text(0))
+    }
+    for (r in db.query("SELECT created_at FROM notes", ArrayList<DbValue>())) {
+        mark(r.text(0))
+    }
+    for (r in db.query("SELECT created_at FROM quiz_records", ArrayList<DbValue>())) {
+        mark(r.text(0))
+    }
+    for (r in db.query("SELECT ts FROM session_events WHERE kind = 'turn/start'", ArrayList<DbValue>())) {
+        mark(r.text(0))
+    }
+    // 升序（字符串比较 = 日期比较），只留最近 180 天
+    let all = ArrayList<String>()
+    for (d in order) {
+        all.add(d)
+    }
+    var i = 0
+    while (i < all.size) {
+        var j = i + 1
+        while (j < all.size) {
+            if (all[j] < all[i]) {
+                let t = all[i]
+                all[i] = all[j]
+                all[j] = t
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    let out = ArrayList<String>()
+    var start = all.size - 180
+    if (start < 0) {
+        start = 0
+    }
+    var k = start
+    while (k < all.size) {
+        out.add(all[k])
+        k = k + 1
+    }
+    return out
+}
+
 public func trendByDay(dataDir: String): JsonArray {
     let db = DbHub.open(dataDir)
     let readCount = HashMap<String, Int64>()
