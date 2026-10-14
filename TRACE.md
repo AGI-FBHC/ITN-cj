@@ -2159,3 +2159,61 @@ web-fetch / skill / graph / study-api / ui-check / smoke / package-smoke 全过�
   星云团数=该库章节数、点星云中心切当前库、点章节出动作卡；切页不残留、reduced-motion 下坐标稳定）。
 - 性能：8 库 / 1200 点（每库 150 章）→ `paintMs` **4.8ms**（判据 < 33ms）；5 库 / 20 点 → 0.1~1.2ms。
 - 截图：`tmp/ui-shots/nebula-card-light.png`、`nebula-card-dark.png`（浅色下点与线不靠发光也看得清）。
+
+## 第三十一轮（2026-10-14）：lumin 支持**中途插话**（+ /stop，+ 顺手补上审批与读键盘抢 stdin 的坑）
+
+**用户需求（原话摘要）**："先给我用用看" → "可以中途插话吗"。
+
+### 一、先回答问题：改之前**不行**，改之后**行**
+
+- 运行时（`src/pi/agent.cj`）**一直**有 Pi 的 steering / follow-up：`steer()`、`followUp()`、
+  两个注入点（每个 turn 开头 `drainSteering`；本该收工时 `drainFollowUps`），单测也有（`steeringMessagesAreInjectedBeforeTheModelRequest`）。
+- 但**行式 CLI 没把它接出来**：主循环是 `print("> "); readln()` 阻塞读，一轮跑完之前根本不读键盘，
+  所以你在终端里中途敲的话进不来（也没有 abort 的接线）。**这次把它接上了。**
+
+### 二、实现（`src/cli/lines.cj` 新增 + `chat.cj` 接线）
+
+| 件 | 作用 |
+| --- | --- |
+| `LineQueue` | 跨线程行队列（Mutex 护住 ArrayList）：`push` / `drain` / `takeBlocking` / `close` / `isClosed` |
+| `readStdinLoop` | **单独的读键盘线程**：读到就往队列里放；EOF（管道输入跑完）就 `close()`，主循环据此收工 |
+| `typedLineKind` | 行分类：`empty` / `stop`（`/stop` `/abort` `/cancel`）/ `slash` / `ask` |
+| `RunControl` | 取消开关（lambda 不能捕获可变变量，所以用一个对象兜住 `Agent` 的 `abort()`） |
+
+接线（chat.cj）：`agent.options.getSteering = {=> 把队列里的普通句子交给运行时}`；
+斜杠命令**不**当插话，记进 `deferred` 等这一轮结束再执行（换档位不能和正在跑的一轮打架）；
+主循环改成"先取 deferred 再取 inbox，空了就 25ms 轮询"，提示符只在真正开始等的时候打一次。
+
+### 三、顺带发现并修掉的两个坑
+
+1. **审批提示跟读键盘线程抢 stdin**（真机必现，只是难复现）：`Approver.prompt` 是直接 `readln()` 的，
+   而读键盘线程也在 `readln()` 同一个 stdin —— 谁先抢到谁读到，审批可能永远等不到回答。
+   修法：`Approver` 加 `nextLine: ?() -> String`，CLI 挂 `{=> inbox.takeBlocking()}`，两边统一走队列。
+2. **`takeBlocking` 把多行按倒序塞回队尾**：一次拿到多行（粘贴 / 管道）时，剩下的要按**正序** push 回队尾。
+   我最初写成了倒序 → 粘贴三行会变成"1,3,2"。**被这次新加的单测逮到**（`takeBlockingWaitsAndKeepsTheRestInOrder`）。
+
+### 四、验证
+
+- `cjpm test` → **70/70**（新增 4 例：`lineQueueCarriesLinesAcrossThreads`、`takeBlockingWaitsAndKeepsTheRestInOrder`、
+  `typedLineKindsClassify`、`keyboardLinesFeedTheSteeringInjectionPoint`、`stopFlagEndsTheRunningTurn` 里前面几例）。
+- **真机 e2e 两条**（用 .NET Process 起子进程 + 定时往 stdin 写行，模拟"跑着的时候打字"）：
+  1. **steering**：让模型逐个读 4 个 md；跑到一半插"先别继续读了，用一句话告诉我读了哪几个文件" →
+     输出 `[插话] 插进这一轮：…`，模型在同一轮里改口回答（`[完成] 轮次 3，工具 5 次`）。
+  2. **审批 + /stop**：让它跑 `Start-Sleep -Seconds 10`（agent 档 + `--allow-exec`）→
+     审批提示出现 → 跑动中喂 `y` → `[审批] 放行 command：Start-Sleep` → 命令真跑了 10.6s →
+     命令还在跑的时候敲 `/stop` → 下一轮开头打印 `[插话] /stop —— 这一次回复说完就停这一轮` →
+     当前回复说完后 `[失败] aborted：已取消`，提示符回来，`/quit` 正常退出。
+     四项断言全 True（审批提示出现过 / [审批] 放行 / [插话] /stop / aborted）。
+- 文档同步：README（命令表加 `/stop`、专门一段讲插话、测试清单加"键盘与插话"、目录结构加 `lines.cj`）、
+  CHANGELOG（Added + Fixed）、roadmap（`/stop` 不打断已在流的 HTTP 响应，写进 C 表）、
+  AGENTS 硬约束第 5 条（**stdin 只有一个主人：一律走 LineQueue，别直接 readln**）、例数 65 → 70。
+
+### 五、给下一个接手的人
+
+- **`/stop` 的语义是"当前这句回复说完就停"**：`abortedFlag` 的检查点在"一次模型回复结束之后"与"每个 turn 开头"，
+  不打断已经在流的 SSE。要真打断得把 abort 传进 `HttpChatProvider.respond` 的读取循环（改动面比收益大，先记着）。
+- 用户敲的行有两条路：闲着 = 普通提问；跑着 = steering。**同一行只会走一条**（谁先 `drain` 谁拿走），
+  所以"审批那一行"和"插话那一行"理论上可能被对方抢到 —— 概率低，且抢错也只是多问一次，先不做优先级。
+- 真机测这类交互**必须用 .NET Process + 定时写 stdin**（`Start-Process` 给不了可写的 stdin）；
+  顺带一个坑：**子进程没正常退出**时 `ReadToEndAsync` 拿不到已缓冲的 stdout（我第一次就看到"输出是空的"，
+  其实是进程还活着），排查时先看 `$p.WaitForExit()` 的返回值和会话 jsonl。
