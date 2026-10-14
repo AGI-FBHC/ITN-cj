@@ -2,7 +2,7 @@
   "name": "itn-desktop",
   "version": "0.1.0",
   "private": true,
-  "description": "ITN-Desktop 本地教培 Agent 工作台",
+  "description": "ITN-Desktop 本地教培 Agent",
   "main": "main.js",
   "scripts": {
     "start": "electron ."

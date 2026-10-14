@@ -519,6 +519,114 @@ public class Api {
             return
         }
 
+        // ---------- 界面偏好 ----------
+        // 存进那张一直空着的 settings 键值表。
+        // 为什么不放 localStorage：内核端口每次启动都不同，浏览器把不同端口当不同站点，
+        // localStorage 根本活不过一次重启。界面偏好必须跟着数据目录走。
+        if (path == "/api/prefs/get" && method == "POST") {
+            let db = DbHub.open(store.dataDir)
+            let o = JsonObject()
+            o.put("theme", JsonString(db.getKv("settings", "ui_theme", "system")))
+            o.put("sessionRail", JsonString(db.getKv("settings", "ui_session_rail", "1")))
+            o.put("rail", JsonString(db.getKv("settings", "ui_rail", "1")))
+            ok(ctx, o)
+            return
+        }
+
+        if (path == "/api/prefs/save" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let db = DbHub.open(store.dataDir)
+                    let theme = strOf(b, "theme")
+                    if (theme == "light" || theme == "dark" || theme == "system") {
+                        db.putKv("settings", "ui_theme", theme)
+                    }
+                    let rail = strOf(b, "sessionRail")
+                    if (rail == "0" || rail == "1") {
+                        db.putKv("settings", "ui_session_rail", rail)
+                    }
+                    // 图标侧栏的显隐（Ctrl+Shift+S）也要记住：它和"对话页要不要会话栏"是两件事
+                    let railPref = strOf(b, "rail")
+                    if (railPref == "0" || railPref == "1") {
+                        db.putKv("settings", "ui_rail", railPref)
+                    }
+                    let o = JsonObject()
+                    o.put("theme", JsonString(db.getKv("settings", "ui_theme", "system")))
+                    o.put("sessionRail", JsonString(db.getKv("settings", "ui_session_rail", "1")))
+                    o.put("rail", JsonString(db.getKv("settings", "ui_rail", "1")))
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        // ---------- 联网搜索（Tavily） ----------
+        // 和模型配置并列的一类"外部服务"：密钥只写进本机数据库，读回来只给掩码，
+        // 不给前端回传完整密钥。enabled 用 "0"/"1" 字符串，和界面偏好保持同一种约定。
+        if (path == "/api/websearch/get" && method == "POST") {
+            ok(ctx, webSearchJson(store.dataDir))
+            return
+        }
+
+        if (path == "/api/websearch/save" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    var n: Int64 = 0
+                    let r = intOf(b, "results")
+                    if (r > 0) {
+                        n = r
+                    } else {
+                        n = webSearchResults(store.dataDir)
+                    }
+                    // 留空 = 保留原密钥；要真的删掉得显式说 clearKey=1（否则用户永远清不掉一把填错的密钥）
+                    if (strOf(b, "clearKey") == "1") {
+                        DbHub.open(store.dataDir).delKv(WEB_SEARCH_TABLE, "web_search_key")
+                    }
+                    saveWebSearch(store.dataDir, strOf(b, "apiKey"), strOf(b, "enabled") == "1", n)
+                    ok(ctx, webSearchJson(store.dataDir))
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/websearch/test" && method == "POST") {
+            // 允许"还没保存就先试一下"：请求里带了 apiKey 就先用它
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    var key = trimStr(strOf(b, "apiKey"))
+                    if (key.size == 0) {
+                        key = webSearchKey(store.dataDir)
+                    }
+                    if (key.size == 0) {
+                        fail(ctx, 400, "还没有填 Tavily API Key")
+                        return
+                    }
+                    var q = trimStr(strOf(b, "query"))
+                    if (q.size == 0) {
+                        q = "Tavily 联网搜索连通性测试"
+                    }
+                    var limit: Int64 = 3
+                    let rq = intOf(b, "results")
+                    if (rq > 0) {
+                        limit = rq
+                    }
+                    try {
+                        let hits = WebSearchClient(key).search(q, limit)
+                        let o = JsonObject()
+                        o.put("ok", JsonBool(true))
+                        o.put("count", JsonInt(hits.size()))
+                        o.put("first", JsonString(pickStr(hits[0], ["title"])))
+                        o.put("url", JsonString(pickStr(hits[0], ["url"])))
+                        ok(ctx, o)
+                    } catch (e: Exception) {
+                        // 502：上游（Tavily）的问题，不是本机的问题
+                        fail(ctx, 502, e.message)
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         if (path == "/api/agent/cancel" && method == "POST") {
             // 置一个取消标记：正在跑的那一轮会在下一段流式增量处停下来
             match (bodyJson(ctx)) {
@@ -1499,6 +1607,12 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/maintenance/backup",
         "/api/maintenance/backups/delete",
         "/api/agent/cancel",
+        "/api/prefs/get",
+        "/api/prefs/save",
+        // 联网搜索（Tavily）：新增接口一定要在这里登记，否则分发器按精确路径匹配会直接 404
+        "/api/websearch/get",
+        "/api/websearch/save",
+        "/api/websearch/test",
         "/api/tools/list",
         "/api/sessions/new",
         "/api/sessions/list",

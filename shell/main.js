@@ -117,10 +117,11 @@ async function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: "ITN-Desktop",
+    icon: path.join(__dirname, "assets", "logo.png"),
     // 自绘标题栏：Electron 的 frame:false 会把系统标题栏整条去掉，
     // 界面自己在顶部画一条深绿色的框（brand + 窗口按钮），看起来才是"一个软件"。
     frame: false,
-    backgroundColor: "#f7f5ef",
+    backgroundColor: "#ffffff",
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -128,6 +129,12 @@ async function createWindow() {
     },
   });
   if (win.removeMenu) win.removeMenu();
+  // 窗口与任务栏都用网页版那个 logo（打包脚本会把 assets 一起带进 resources/app）
+  try {
+    win.setIcon(path.join(__dirname, "assets", "logo.png"));
+  } catch (e) {
+    console.log("设置窗口图标失败：" + ((e && e.message) || e));
+  }
 
   // 窗口按钮走 IPC：渲染层只拿到三个方法，拿不到 Node
   ipcMain.on("win:minimize", () => { if (win) win.minimize(); });

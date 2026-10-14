@@ -116,7 +116,8 @@ const ICONS = {
   chat: "M4 4h16v12H8l-4 4z",
   note: "M5 3h14v18H5zM8 8h8M8 12h8M8 16h5",
   flag: "M6 3v18M6 4h11l-2 4 2 4H6",
-  gear: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM4 12h2M18 12h2M12 4v2M12 18v2",
+  // 齿轮：外圈六个齿 + 内圈，画法和太阳明显不同（之前那个是"圆 + 六条短线"，太像太阳）
+  gear: '<path d="M12.2 2h-.4a2 2 0 0 0-2 2v.2a2 2 0 0 1-1 1.7l-.4.3a2 2 0 0 1-2 0l-.2-.1a2 2 0 0 0-2.7.7l-.2.4a2 2 0 0 0 .7 2.7l.2.1a2 2 0 0 1 1 1.7v.5a2 2 0 0 1-1 1.8l-.2.1a2 2 0 0 0-.7 2.7l.2.4a2 2 0 0 0 2.7.7l.2-.1a2 2 0 0 1 2 0l.4.3a2 2 0 0 1 1 1.7V20a2 2 0 0 0 2 2h.4a2 2 0 0 0 2-2v-.2a2 2 0 0 1 1-1.7l.4-.3a2 2 0 0 1 2 0l.2.1a2 2 0 0 0 2.7-.7l.2-.4a2 2 0 0 0-.7-2.7l-.2-.1a2 2 0 0 1-1-1.8v-.5a2 2 0 0 1 1-1.7l.2-.1a2 2 0 0 0 .7-2.7l-.2-.4a2 2 0 0 0-2.7-.7l-.2.1a2 2 0 0 1-2 0l-.4-.3a2 2 0 0 1-1-1.7V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3.1"/>',
   clock: "M12 7v5l3 2M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z",
   sliders: "M4 8h9M17 8h3M4 16h3M11 16h9M15 5v6M7 13v6",
   search: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM16 16l4 4",
@@ -127,13 +128,22 @@ const ICONS = {
   layers: "M12 3l9 5-9 5-9-5zM3 14l9 5 9-5",
   refresh: "M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6",
   target: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z",
+  sun: "M12 7.6a4.4 4.4 0 1 0 0 8.8 4.4 4.4 0 0 0 0-8.8zM12 2.2v2.1M12 19.7v2.1M2.2 12h2.1M19.7 12h2.1M5.2 5.2l1.5 1.5M17.3 17.3l1.5 1.5M18.8 5.2l-1.5 1.5M6.7 17.3l-1.5 1.5",
+  moon: "M20.4 14.4A8.4 8.4 0 0 1 9.6 3.6 8.4 8.4 0 1 0 20.4 14.4z",
 };
 
+/**
+ * 画一个图标。
+ *
+ * ICONS 里存的通常是 path 的 d；个别图标（齿轮）需要不止一段，就直接写整段
+ * SVG 子元素——以 "<" 开头即按原样插入。
+ */
 function icon(name, box) {
   const d = ICONS[name] || ICONS.home;
   const vb = box ? "0 0 32 32" : "0 0 24 24";
+  const inner = d.charAt(0) === "<" ? d : '<path d="' + d + '"/>';
   return '<svg viewBox="' + vb + '" fill="none" stroke="currentColor" stroke-width="1.7" ' +
-    'stroke-linecap="round" stroke-linejoin="round"><path d="' + d + '"/></svg>';
+    'stroke-linecap="round" stroke-linejoin="round">' + inner + "</svg>";
 }
 
 /* ---------- Markdown（够用就好，不做完整实现） ---------- */
@@ -318,6 +328,8 @@ const state = {
   kb: "", chapter: null, artifactQuery: "", wrongTab: "due", wrongQuery: "",
   chatSessionId: "", chatTurns: [], chatEvents: [], tools: null,
   busyTurn: false, pendingQuestion: "", lastQuestion: "",
+  // 主题与会话栏偏好存在内核的 settings 表里（内核端口每次启动都变，localStorage 活不过一次重启）
+  theme: "system", dark: false, sessionRailPref: true, railHidden: false, kernel: null,
 };
 
 let current = "home";
@@ -388,9 +400,9 @@ function modelLabel(id) {
 function checklist() {
   const kbs = state.cfg.knowledgeBases;
   const steps = [
-    { done: hasChatModel(), title: "配置模型接口", text: "填一次 Base URL 和 API Key，并把「对话与生成」绑定到它。", go: () => go("models"), act: "去配置" },
-    { done: kbs.length > 0, title: "指定资料目录", text: "选一个本机的 Markdown / 纯文本目录，作为这门课的知识库。", go: () => go("settings"), act: "去指定" },
-    { done: kbs.some((k) => (k.chunkCount || 0) > 0), title: "建立索引", text: "扫描目录并按标题切片；这一步过后检索才有内容。", go: () => go("settings"), act: "去建立" },
+    { done: hasChatModel(), title: "配置模型接口", text: "填一次 Base URL 和 API Key，并把「对话与生成」绑定到它。", go: () => go("settings", "models"), act: "去配置" },
+    { done: kbs.length > 0, title: "指定资料目录", text: "选一个本机的 Markdown / 纯文本目录，作为这门课的知识库。", go: () => go("settings", "kb"), act: "去指定" },
+    { done: kbs.some((k) => (k.chunkCount || 0) > 0), title: "建立索引", text: "扫描目录并按标题切片；这一步过后检索才有内容。", go: () => go("settings", "kb"), act: "去建立" },
     { done: state.sessions.length > 0, title: "问第一个问题", text: "在伴学助手里就你的资料提问，答案会标出出处编号。", go: () => go("chat"), act: "去提问" },
     { done: state.artifacts.length > 0, title: "生成第一份产物", text: "把一章做成讲义或练习，落成本机 Markdown 文件。", go: () => go("learn"), act: "去生成" },
   ];
@@ -399,28 +411,28 @@ function checklist() {
 
 /* ---------- 导航与路由 ---------- */
 
-const NAV = [
-  { group: "学习", items: [
+/* 窄侧栏：只有图标，分组之间一条细线。
+   文字靠悬停提示（.rail-tip），不靠常驻标签——栏窄了才不抢主区的空间。 */
+const RAIL_GROUPS = [
+  [
     { id: "home", label: "我的学习", icon: "home" },
     { id: "learn", label: "学 · 练", icon: "book" },
     { id: "notes", label: "我的笔记", icon: "note" },
     { id: "wrong", label: "错题本", icon: "flag" },
     { id: "report", label: "我的成长", icon: "chart" },
     { id: "calibrate", label: "画像校准", icon: "target" },
-  ]},
-  { group: "内容", items: [
-    { id: "resources", label: "我的资源", icon: "file" },
+  ],
+  [
+    { id: "resources", label: "我的资源", icon: "layers" },
     { id: "kb", label: "领域知识库", icon: "db" },
-  ]},
-  { group: "助手", items: [
-    { id: "chat", label: "伴学助手", icon: "chat" },
-    { id: "sessions", label: "会话记录", icon: "clock" },
-  ]},
-  { group: "系统", items: [
-    { id: "models", label: "模型与接口", icon: "gear" },
-    { id: "settings", label: "档案与知识库", icon: "sliders" },
-  ]},
+  ],
+  // 对话与会话记录本来是同一件事的两面：会话栏就挂在对话页左侧。
+  // 上一版把「会话记录」单列成一项，等于同一份数据两个入口，已经合并。
+  [{ id: "chat", label: "伴学助手", icon: "chat" }],
 ];
+
+
+/* ---------- 页面表 ---------- */
 
 const PAGE_META = {
   home: { title: "我的学习", sub: "今天学什么，从这里开始" },
@@ -432,9 +444,9 @@ const PAGE_META = {
   resources: { title: "我的资源", sub: "生成的讲义与练习，全部在本机" },
   kb: { title: "领域知识库", sub: "检索资料，每一句都能追到原文" },
   chat: { title: "伴学助手", sub: "就你的资料提问" },
-  sessions: { title: "会话记录", sub: "每一次检索、生成都留了可追溯的过程" },
+  sessions: { title: "全部会话与步骤", sub: "每一次检索、生成都留了可追溯的过程" },
   models: { title: "模型与接口", sub: "填写自己的模型服务，统一 OpenAI 兼容格式" },
-  settings: { title: "档案与知识库", sub: "学习者档案与本地资料目录" },
+  settings: { title: "设置", sub: "档案、外观、知识库、模型与数据都收在这里" },
 };
 
 function navBadge(id) {
@@ -445,37 +457,127 @@ function navBadge(id) {
   return 0;
 }
 
+/**
+ * 窄侧栏上的一个"页面入口"。
+ *
+ * 栏只有 56px，写不下标签，所以文字做成悬停提示（.rail-tip）；
+ * 有数量的入口在右上角点一个小徽标。类名统一叫 .nav-item —— 工具链
+ * （tools/ui-shot.cjs、tools/ui-e2e.cjs）靠它枚举页面，改名会让自检失效。
+ */
+function railButton(item) {
+  const b = el("button", "nav-item");
+  b.type = "button";
+  b.dataset.page = item.id;
+  b.setAttribute("aria-label", item.label);
+  const n = navBadge(item.id);
+  b.innerHTML = icon(item.icon) +
+    (n > 0 ? '<span class="nav-badge">' + (n > 99 ? "99+" : n) + "</span>" : "") +
+    '<span class="rail-tip">' + esc(item.label) + (n > 0 ? " · " + n : "") + "</span>";
+  b.onclick = () => go(item.id);
+  return b;
+}
+
+/** 侧栏上的"动作"按钮（检索、主题、设置不进任何分组）。刻意不用 .nav-item，免得被当成页面。 */
+function railAction(id, iconName, label, onClick) {
+  const b = el("button", "rail-btn");
+  b.type = "button";
+  if (id) b.id = id;
+  b.setAttribute("aria-label", label);
+  b.innerHTML = icon(iconName) + '<span class="rail-tip">' + esc(label) + "</span>";
+  b.onclick = onClick;
+  return b;
+}
+
 function buildNav() {
-  const nav = $("nav");
-  nav.innerHTML = "";
-  for (const g of NAV) {
-    const box = el("div", "nav-group");
-    box.appendChild(el("div", "nav-group-title", g.group));
-    for (const it of g.items) {
-      const b = el("button", "nav-item" + (it.id === current ? " active" : ""));
-      const n = navBadge(it.id);
-      b.innerHTML = icon(it.icon) + '<span class="nav-label">' + esc(it.label) + "</span>" +
-        (n > 0 ? '<span class="nav-badge">' + n + "</span>" : "");
-      b.onclick = () => go(it.id);
-      box.appendChild(b);
+  const rail = $("rail");
+  if (!rail) return;
+  rail.innerHTML = "";
+
+  // 检索放在最上面：它是"入口"，不属于任何一页
+  rail.appendChild(railAction("rail-search-btn", "search", "检索资料与笔记（Ctrl+K）", () => openPalette()));
+  rail.appendChild(el("div", "rail-sep"));
+
+  RAIL_GROUPS.forEach((group, gi) => {
+    if (gi > 0) rail.appendChild(el("div", "rail-sep"));
+    for (const it of group) {
+      const b = railButton(it);
+      if (it.id === current) b.classList.add("active");
+      rail.appendChild(b);
     }
-    nav.appendChild(box);
-  }
+  });
+
+  rail.appendChild(el("div", "rail-spacer"));
+  rail.appendChild(el("div", "rail-sep"));
+
+  rail.appendChild(railAction("rail-theme", state.dark ? "moon" : "sun",
+    (state.dark ? "切到浅色" : "切到深色") + "（设置里可以跟随系统）", () => toggleTheme()));
+
+  const setBtn = railButton({ id: "settings", label: "设置（模型与接口 / 外观 / 数据）", icon: "gear" });
+  if (current === "settings") setBtn.classList.add("active");
+  rail.appendChild(setBtn);
+  // 齿轮是"设置"的通用记号：上一版用的图形像太阳，和主题按钮撞脸，已换成真正的齿轮
 }
 
 function pageFromHash() {
-  const m = String(location.hash || "").match(/^#\/([a-z]+)/);
-  return m && PAGES[m[1]] ? m[1] : "home";
+  const m = String(location.hash || "").match(/^#\/([a-z]+)(?:\/([a-z]+))?/);
+  const page = m && PAGES[m[1]] ? m[1] : "home";
+  return { page: page, section: m && m[2] ? m[2] : "" };
 }
 
-async function go(page, opts) {
+/* 自己维护一份访问栈：前进/后退交给浏览器（pushState + popstate），
+   箭头是否可点按这份栈来算——只看 history.length 分不出"在哪一格"。 */
+const navStack = [];
+let navIndex = -1;
+
+function rememberHash(hash) {
+  if (navStack[navIndex] === hash) return;
+  navStack.length = navIndex + 1;
+  navStack.push(hash);
+  navIndex = navStack.length - 1;
+  updateNavButtons();
+}
+
+function updateNavButtons() {
+  const back = $("nav-back");
+  const fwd = $("nav-forward");
+  if (back) back.disabled = navIndex <= 0;
+  if (fwd) fwd.disabled = navIndex >= navStack.length - 1;
+}
+
+let currentSection = "";
+
+async function go(page, section, opts) {
   const target = PAGES[page] ? page : "home";
   current = target;
-  const hash = "#/" + target;
-  if (location.hash !== hash) {
-    try { history.replaceState(null, "", hash); } catch (e) { location.hash = hash; }
+  currentSection = section || "";
+  const hash = "#/" + target + (currentSection ? "/" + currentSection : "");
+  try {
+    if (opts && opts.replace) {
+      history.replaceState(null, "", hash);
+    } else if (location.hash !== hash) {
+      history.pushState(null, "", hash);
+    }
+  } catch (e) {
+    location.hash = hash;
   }
-  if (target !== "chat") railShow(false);
+  // 历史回退/前进时**不能**再 rememberHash：那会把栈截断再压一条新记录，
+  // 于是"后退之后前进按钮亮不起来"（前进栈被自己冲掉了）。回退只会去找已有位置。
+  if (opts && opts.fromHistory) {
+    var at = -1;
+    if (opts.index !== undefined && opts.index >= 0) {
+      at = opts.index;
+    } else {
+      at = navStack.lastIndexOf(hash);
+    }
+    if (at >= 0) navIndex = at;
+    updateNavButtons();
+  } else {
+    rememberHash(hash);
+  }
+  // 把"这一格在访问栈里的位置"写进 history.state：光比 URL 分不出同一地址出现过两次
+  try { history.replaceState({ i: navIndex }, "", location.href); } catch (e) { /* 忽略 */ }
+  // 「会话总览」是对话页里的列表视图，不是对话框：标题栏与主区都要正常显示
+  if (target !== "chat" || currentSection === "overview") railShow(false);
   buildNav();
   const meta = PAGE_META[target];
   $("page-title").textContent = meta.title;
@@ -496,10 +598,11 @@ async function go(page, opts) {
       art: "alert",
       title: "这一页没能加载出来",
       text: e.message,
-      actions: [btn("重试", "primary", () => go(target))],
+      actions: [btn("重试", "primary", () => go(target, currentSection))],
     }));
   }
   buildNav();
+  updateNavButtons();
 }
 
 const PAGES = {};
@@ -517,12 +620,11 @@ PAGES.home = {
     /* 第一屏：我是谁、现在该干什么 */
     const hero = el("div", "card hero");
     const main = el("div", "hero-main");
-    main.appendChild(el("div", "eyebrow", "本地教培工作台 · 资料不出本机"));
     main.appendChild(el("h2", "hero-title",
       (state.profile.nickname ? state.profile.nickname + "，" : "") + "今天从哪一段开始？"));
     main.appendChild(el("p", "hero-sub", state.profile.goal
       ? "学习目标：" + state.profile.goal + (state.profile.weeklyHours ? " · 每周可投入 " + state.profile.weeklyHours + " 小时" : "")
-      : "还没有写学习目标。到「档案与知识库」补一句，首页建议会跟着变。"));
+      : "还没有写学习目标。到设置里补一句，首页建议会跟着变。"));
     const chips = el("div", "meta");
     chips.appendChild(tag(state.cfg.models.length ? "模型 " + state.cfg.models.length + " 个" : "未配置模型", state.cfg.models.length ? "" : "warn"));
     chips.appendChild(tag(kbs.length ? "知识库 " + kbs.length + " 个" : "未指定资料目录", kbs.length ? "" : "warn"));
@@ -535,9 +637,9 @@ PAGES.home = {
     const heroAct = el("div", "hero-actions");
     if (!hasChatModel()) {
       heroAct.appendChild(btn("配置模型接口", "primary", () => go("models")));
-      heroAct.appendChild(btn("先看看资料目录", "", () => go("settings")));
+      heroAct.appendChild(btn("先看看资料目录", "", () => go("settings", "kb")));
     } else if (!idx) {
-      heroAct.appendChild(btn("建立知识库索引", "primary", () => go("settings")));
+      heroAct.appendChild(btn("建立知识库索引", "primary", () => go("settings", "kb")));
       heroAct.appendChild(btn("先和助手聊聊", "", () => go("chat")));
     } else {
       heroAct.appendChild(btn("继续学习", "primary", () => continueStudy()));
@@ -568,6 +670,8 @@ PAGES.home = {
       v.appendChild(ok);
     } else {
       const body = el("div", "checklist");
+      // 一列五个绿按钮太吵：只有"现在就该做的那一步"用主色
+      const firstOpen = steps.filter((x) => !x.done)[0];
       steps.forEach((s, i) => {
         const item = el("div", "check-item" + (s.done ? " done" : ""));
         item.appendChild(el("div", "idx", s.done ? "✓" : String(i + 1)));
@@ -575,13 +679,12 @@ PAGES.home = {
         txt.appendChild(el("b", null, s.title));
         txt.appendChild(el("span", null, s.text));
         item.appendChild(txt);
-        if (!s.done) item.appendChild(btn(s.act, "sm primary", s.go));
+        if (!s.done) item.appendChild(btn(s.act, "sm" + (s === firstOpen ? " primary" : ""), s.go));
         else item.appendChild(tag("已完成", "ok"));
         body.appendChild(item);
       });
       v.appendChild(cardOf({
         title: "开始使用（还剩 " + (steps.length - doneCount) + " 步）",
-        sub: "五步走完，这个工作台就能自己出讲义了",
         body,
       }));
     }
@@ -596,7 +699,7 @@ PAGES.home = {
         text: hasKb()
           ? "「" + kbName(state.kb) + "」已登记目录但还没建索引，建立索引后才会出现章节。"
           : "先指定一个本机资料目录并建立索引，这里就会出现章节进度和下一步动作。",
-        actions: [btn(hasKb() ? "去建立索引" : "去指定资料目录", "primary", () => go("settings")),
+        actions: [btn(hasKb() ? "去建立索引" : "去指定资料目录", "primary", () => go("settings", "kb")),
                   btn("看看模型配置", "", () => go("models"))],
       }));
     } else {
@@ -692,7 +795,7 @@ PAGES.learn = {
           art: "db",
           title: "还没有知识库",
           text: "桌面版只读你本机的资料。指定一个目录、建立一次索引，之后读讲义、出题、生成文档都从这份资料出发。",
-          actions: [btn("去指定资料目录", "primary", () => go("settings")),
+          actions: [btn("去指定资料目录", "primary", () => go("settings", "kb")),
                     btn("先配置模型", "", () => go("models"))],
         }),
       }));
@@ -755,7 +858,7 @@ async function renderChapterTree(v) {
         ? "索引里有切片，但没有标题层级。给资料加上 # / ## 标题会更整齐。"
         : "这个目录里没有 Markdown 或纯文本文件，或者还没建立索引。",
       actions: [btn("重新建立索引", "primary", () => buildIndex(state.kb)),
-                btn("换一个目录", "", () => go("settings"))],
+                btn("换一个目录", "", () => go("settings", "kb"))],
     }));
     v.appendChild(card);
     return;
@@ -1111,7 +1214,7 @@ async function generateArtifact(kind, topic) {
     box.appendChild(el("p", "muted", fail));
     const row = el("div", "row");
     row.appendChild(btn("检查模型设置", "primary", () => go("models")));
-    row.appendChild(btn("看会话记录", "", () => go("sessions")));
+    row.appendChild(btn("看全部会话", "", () => go("chat", "overview")));
     row.appendChild(btn("关闭", "ghost", () => box.remove()));
     box.appendChild(row);
     v.insertBefore(box, v.firstChild);
@@ -1134,10 +1237,10 @@ async function generateArtifact(kind, topic) {
   if (!d || d.ok !== true) {
     const msg = (d && d.message) || "内核没有返回内容";
     const box = cardOf({ cls: "dialog", title: "没有生成成功" });
-    box.appendChild(el("p", "muted", msg + "（查看「会话记录」可以看到这次调用停在哪一步）"));
+    box.appendChild(el("p", "muted", msg + "（「全部会话」里能看到这次调用停在哪一步）"));
     const row = el("div", "row");
     row.appendChild(btn("去设置模型", "primary", () => go("models")));
-    row.appendChild(btn("看会话记录", "", () => go("sessions")));
+    row.appendChild(btn("看全部会话", "", () => go("chat", "overview")));
     row.appendChild(btn("关闭", "ghost", () => box.remove()));
     box.appendChild(row);
     v.insertBefore(box, v.firstChild);
@@ -1450,8 +1553,8 @@ PAGES.report = {
     const keys = Object.keys(scores);
     const ability = cardOf({
       title: "自评能力",
-      sub: "由你在「档案与知识库」里维护",
-      actions: [btn("去更新", "sm ghost", () => go("settings"))],
+      sub: "由你在设置里维护",
+      actions: [btn("去更新", "sm ghost", () => go("settings", "general"))],
     });
     if (!keys.length) {
       ability.appendChild(emptyState({
@@ -1459,7 +1562,7 @@ PAGES.report = {
         art: "chart",
         title: "还没有填写自评能力",
         text: "填 0-100 的自评分，成长页就能和做题正确率对照着看。",
-        actions: [btn("去填写", "primary", () => go("settings"))],
+        actions: [btn("去填写", "primary", () => go("settings", "general"))],
       }));
     } else {
       for (const k of keys) {
@@ -1505,13 +1608,13 @@ PAGES.report = {
     const activity = cardOf({
       title: "最近的学习活动",
       sub: "来自 Agent 会话日志",
-      actions: [btn("看全部会话", "sm ghost", () => go("sessions"))],
+      actions: [btn("看全部会话", "sm ghost", () => go("chat", "overview"))],
     });
     if (!state.sessions.length) {
       activity.appendChild(emptyState({
         inline: true,
         art: "clock",
-        title: "还没有会话记录",
+        title: "还没有会话",
         text: "每次问答、出题、生成讲义都会记录成一条会话，过程可追溯。",
         actions: [btn("问第一个问题", "primary", () => go("chat"))],
       }));
@@ -1938,6 +2041,62 @@ async function openArtifactByName(name, fallbackContent) {
   v.appendChild(body);
 }
 
+/* ---------- 主题（浅色 / 深色 / 跟随系统） ---------- */
+
+/** 主题与应用偏好都存在内核里：内核端口每次都变，localStorage 活不过一次重启。 */
+function applyTheme(theme) {
+  const t = theme || "system";
+  state.theme = t;
+  const root = document.documentElement;
+  if (t === "system") root.removeAttribute("data-theme");
+  else root.setAttribute("data-theme", t);
+  state.dark = t === "dark" ||
+    (t === "system" && !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches));
+}
+
+function toggleTheme() {
+  // 从"跟随系统"点一下时，切到与当前实际明暗相反的那一档（符合直觉）
+  const next = state.dark ? "light" : "dark";
+  applyTheme(next);
+  savePrefs({ theme: next });
+  buildNav();
+  toast(next === "dark" ? "已切到深色" : "已切到浅色");
+}
+
+async function loadPrefs() {
+  try {
+    const p = await api("/api/prefs/get", {});
+    applyPrefs(p);
+  } catch (e) {
+    applyTheme("system");
+  }
+}
+
+async function savePrefs(patch) {
+  try {
+    applyPrefs(await api("/api/prefs/save", patch));
+  } catch (e) {
+    toast("偏好保存失败：" + e.message);
+  }
+}
+
+/** 把内核返回的偏好一次性应用到界面上（主题 + 两个侧栏状态）。 */
+function applyPrefs(p) {
+  applyTheme(p.theme);
+  state.sessionRailPref = p.sessionRail !== "0";
+  state.railHidden = p.rail === "0";
+  document.body.classList.toggle("rail-hidden", state.railHidden);
+}
+
+/** 显示 / 隐藏窄侧栏（标题栏那个按钮、Ctrl+Shift+S）。状态跟着数据目录走。 */
+function toggleRail(force) {
+  const hidden = force === undefined ? !document.body.classList.contains("rail-hidden") : !!force;
+  state.railHidden = hidden;
+  document.body.classList.toggle("rail-hidden", hidden);
+  savePrefs({ rail: hidden ? "0" : "1" });
+  toast(hidden ? "已隐藏侧栏（Ctrl+Shift+S 恢复）" : "已显示侧栏");
+}
+
 /* ---------- 自绘窗口框：最小化 / 最大化 / 关闭 ---------- */
 
 /**
@@ -1975,6 +2134,14 @@ function initTitlebar() {
     });
     if (!api) bar.classList.add("tb-browser");
   }
+  const back = $("nav-back");
+  const fwd = $("nav-forward");
+  if (back) back.onclick = () => history.back();
+  if (fwd) fwd.onclick = () => history.forward();
+  const railToggle = $("rail-toggle");
+  if (railToggle) railToggle.onclick = () => toggleRail();
+  updateNavButtons();
+
   if (api && typeof api.onStateChange === "function") {
     api.onStateChange((st) => {
       const maximized = !!(st && st.maximized);
@@ -2068,7 +2235,7 @@ async function runPaletteSearch(raw) {
       }
     } catch (e) {
       // 没有索引时检索会 404：给出可点的下一步，而不是静默空白
-      groups.push(["资料切片", [paletteItemMain("还没法检索资料", e.message || "知识库没有索引", "提示", () => go("settings"))]]);
+      groups.push(["资料切片", [paletteItemMain("还没法检索资料", e.message || "知识库没有索引", "提示", () => go("settings", "kb"))]]);
     }
   }
 
@@ -2430,7 +2597,7 @@ PAGES.kb = {
           art: "db",
           title: "还没有知识库",
           text: "指定一个本机资料目录后，这里可以按关键词或向量检索，命中的每一段都能指回原文档位置。",
-          actions: [btn("去指定资料目录", "primary", () => go("settings"))],
+          actions: [btn("去指定资料目录", "primary", () => go("settings", "kb"))],
         }),
       }));
       return;
@@ -2510,7 +2677,7 @@ PAGES.kb = {
     const stats = cardOf({
       title: "索引状态",
       sub: kbName(state.kb),
-      actions: [btn("重建索引", "sm", () => buildIndex(state.kb)), btn("管理知识库", "sm ghost", () => go("settings"))],
+      actions: [btn("重建索引", "sm", () => buildIndex(state.kb)), btn("管理知识库", "sm ghost", () => go("settings", "kb"))],
     });
     if (!(k.chunkCount || 0)) {
       stats.appendChild(emptyState({
@@ -2543,6 +2710,7 @@ PAGES.kb = {
 const KIND_LABEL = { ask: "问答", lecture: "讲义", quiz: "练习", "": "对话" };
 const TOOL_LABEL = {
   kb_search: "检索知识库",
+  web_search: "联网搜索（Tavily）",
   list_documents: "列出文档",
   read_chunk: "读取切片",
   current_time: "当前时间",
@@ -2551,10 +2719,18 @@ const TOOL_LABEL = {
   save_artifact: "写产物",
 };
 
+/**
+ * 对话页的两栏形态开关。
+ *
+ * chat-mode 控制的是"整页变成对话框布局"（工具条、消息流、输入区固定）；
+ * 会话栏是否真的显示是另一件事——用户可以把它收起来只留对话框。
+ * 两个状态分开管，收起会话栏就不会把布局退回普通长页面。
+ */
 function railShow(on) {
   const rail = $("session-rail");
-  if (rail) rail.hidden = !on;
-  document.body.classList.toggle("chat-mode", !!on);
+  const chatMode = !!on;
+  document.body.classList.toggle("chat-mode", chatMode);
+  if (rail) rail.hidden = !(chatMode && state.sessionRailPref !== false);
 }
 
 function railRender() {
@@ -2721,6 +2897,8 @@ function renderTurnBlock(t, live) {
 
 PAGES.chat = {
   async render() {
+    // 会话总览（原「会话记录」页）并进来的入口：同一个页面，两种视图
+    if (currentSection === "overview") { await renderSessionsOverview(); return; }
     await loadCfg();
     railShow(true);
     const v = $("view");
@@ -2759,7 +2937,10 @@ PAGES.chat = {
       if (box) box.hidden = !box.hidden;
     });
     bar.appendChild(toolBtn);
-    bar.appendChild(btn("全部会话", "sm ghost", () => go("sessions")));
+    bar.appendChild(btn(state.sessionRailPref === false ? "展开会话栏" : "收起会话栏", "sm ghost", () => {
+      savePrefs({ sessionRail: state.sessionRailPref === false ? "1" : "0" }).then(() => railShow(true));
+    }));
+    bar.appendChild(btn("全部会话", "sm ghost", () => go("chat", "overview")));
     bar.appendChild(btn("新建对话", "sm primary", () => newChat()));
     v.appendChild(bar);
 
@@ -2767,9 +2948,8 @@ PAGES.chat = {
     sheet.id = "tool-sheet";
     sheet.hidden = true;
     sheet.appendChild(el("div", "card-head", ""));
-    sheet.querySelector(".card-head").appendChild(el("h2", null, "Agent 可调用的本地工具"));
+    sheet.querySelector(".card-head").appendChild(el("h2", null, "Agent 可调用的工具"));
     sheet.querySelector(".card-head").appendChild(spacer());
-    sheet.querySelector(".card-head").appendChild(el("span", "card-sub", "模型按需自己调，不需要你操作"));
     const tlist = el("div", "list");
     const tools = state.tools || [];
     if (!tools.length) {
@@ -2777,8 +2957,17 @@ PAGES.chat = {
     } else {
       for (const t of tools) {
         const it = el("div", "item");
-        it.appendChild(el("div", "item-title", (TOOL_LABEL[t.name] || t.name) + "  " + t.name));
-        it.appendChild(el("div", "muted sm", t.desc));
+        const head = el("div", "row");
+        const main = el("div", "grow");
+        main.appendChild(el("div", "item-title", (TOOL_LABEL[t.name] || t.name) + "  " + t.name));
+        main.appendChild(el("div", "muted sm", t.desc));
+        head.appendChild(main);
+        // 只有联网搜索需要先配置：没配就不进提示词，这里如实标出来并给出入口
+        if (t.available === false) {
+          head.appendChild(tag("需先配置", "warn"));
+          head.appendChild(btn("去配置", "sm", () => go("settings", "models")));
+        }
+        it.appendChild(head);
         it.appendChild(el("div", "meta", "参数示例 " + t.usage));
         tlist.appendChild(it);
       }
@@ -2839,7 +3028,7 @@ PAGES.chat = {
           actions: hasKb() ? [
             btn("问：这一章的核心结论是什么", "", () => { ta.value = "这一章的核心结论是什么？"; send(); }),
             btn("看知识库里有什么", "ghost", () => go("kb")),
-          ] : [btn("去指定资料目录", "", () => go("settings"))],
+          ] : [btn("去指定资料目录", "", () => go("settings", "kb"))],
         }));
       } else {
         for (const t of state.chatTurns) thread.appendChild(renderTurnBlock(t, !t.answer && state.busyTurn));
@@ -2969,20 +3158,31 @@ const STEP_LABEL = {
 
 function openSession(sessionId) {
   state.sessionId = sessionId;
-  go("sessions");
+  go("chat", "overview");
 }
 
-PAGES.sessions = {
+/**
+ * 会话总览（原独立的「会话记录」页）。
+ *
+ * 会话栏已经挂在对话页左侧了，同一份数据再占一个侧栏入口，用户根本分不清
+ * 「对话」和「记录」有什么区别。所以这里只保留一个视图对象，由对话页转发进来。
+ */
+const SESSIONS_VIEW = {
   async render() {
     await loadSessions();
     const v = $("view");
     v.innerHTML = "";
+    $("page-title").textContent = "全部会话与步骤";
+    $("page-sub").textContent = "每一次检索、生成都留了可追溯的过程";
+    const ta = $("top-actions");
+    ta.innerHTML = "";
+    ta.appendChild(btn("回到对话", "sm primary", () => go("chat")));
     if (state.sessionId) {
       await renderSessionDetail(v, state.sessionId);
       return;
     }
     const card = cardOf({
-      title: "会话记录",
+      title: "全部会话",
       sub: "每次问答与生成都会留下只追加的事件",
       tag: state.sessions.length + " 条",
       actions: [btn("问一个问题", "sm primary", () => go("chat"))],
@@ -3017,6 +3217,11 @@ PAGES.sessions = {
   },
 };
 
+/** 老路由 #/sessions 仍然可用：直接落到对话页的总览视图。 */
+PAGES.sessions = { async render() { await go("chat", "overview", { replace: true }); } };
+
+async function renderSessionsOverview() { await SESSIONS_VIEW.render(); }
+
 async function renderSessionDetail(v, sessionId) {
   const d = await api("/api/sessions/events", { sessionId: sessionId });
   const events = d.events || [];
@@ -3024,12 +3229,12 @@ async function renderSessionDetail(v, sessionId) {
   const card = cardOf({
     title: meta.title || sessionId,
     sub: events.length + " 条事件 · " + fmtStamp(meta.lastAt),
-    actions: [btn("← 返回列表", "ghost sm", () => { state.sessionId = ""; go("sessions"); })],
+    actions: [btn("← 返回列表", "ghost sm", () => { state.sessionId = ""; go("chat", "overview"); })],
   });
   if (!events.length) {
     card.appendChild(emptyState({
       inline: true, art: "clock", title: "这个会话没有事件", text: "可能已经被清理。",
-      actions: [btn("返回列表", "", () => { state.sessionId = ""; go("sessions"); })],
+      actions: [btn("返回列表", "", () => { state.sessionId = ""; go("chat", "overview"); })],
     }));
     v.appendChild(card);
     return;
@@ -3131,15 +3336,24 @@ const MODEL_PRESETS = [
   },
 ];
 
+/**
+ * 模型与接口。
+ *
+ * 用户明确要求"模型和接口配置都放到设置页里"：这里只剩老路由的转发，
+ * 真正的界面是设置页的「模型与接口」分区（settingsModels）。
+ */
 PAGES.models = {
-  async render() {
-    await loadCfg();
-    const v = $("view");
-    v.innerHTML = "";
+  async render() { await go("settings", "models", { replace: true }); },
+};
+
+async function settingsModels() {
+  await loadCfg();
+  // 先用 DocumentFragment 攒起来，设置页再整体塞进右侧内容区
+  const v = document.createDocumentFragment();
 
     const mcard = el("div", "card");
     mcard.innerHTML = '<div class="card-head"><h2>添加 / 更新模型</h2><div class="spacer"></div>' +
-      '<span class="card-sub">密钥只写进本机数据库，接口永不回传</span></div>';
+      '<span class="card-sub">密钥只写进本机数据库</span></div>';
     const presetRow = el("div", "presets");
     presetRow.appendChild(el("span", "presets-label", "快速填入："));
     const hint = el("p", "muted sm preset-note", "");
@@ -3194,10 +3408,10 @@ PAGES.models = {
           embeddingModel: $("m-embed").value.trim(),
         });
         toast("模型已保存");
-        go("models");
+        go("settings", "models");
       } catch (e) { toast("保存失败：" + e.message); }
     }));
-    mact.appendChild(btn("清空表单", "ghost", () => go("models")));
+    mact.appendChild(btn("清空表单", "ghost", () => go("settings", "models")));
     mcard.appendChild(mact);
     v.appendChild(mcard);
 
@@ -3211,7 +3425,7 @@ PAGES.models = {
         actions: [btn("填入 MiMo v2.6 flash 预设", "primary", () => {
           const b = document.querySelector(".chip");
           if (b) b.click();
-          document.querySelector(".main").scrollTop = 0;
+          $("view").scrollTop = 0;
           toast("已填入，请补 API Key");
         })],
       }));
@@ -3248,7 +3462,7 @@ PAGES.models = {
         acts.appendChild(btn("设为对话模型", "sm", async () => {
           await api("/api/models/roles", { chatModelId: m.id, embedModelId: state.cfg.embedModelId, chunkModelId: state.cfg.chunkModelId });
           toast("已绑定「对话与生成」");
-          go("models");
+          go("settings", "models");
         }));
         acts.appendChild(btn("填到表单", "sm ghost", () => {
           $("m-id").value = m.id;
@@ -3258,7 +3472,7 @@ PAGES.models = {
           $("m-vision").value = m.visionModel || "";
           $("m-embed").value = m.embeddingModel || "";
           $("m-key").value = "";
-          document.querySelector(".main").scrollTop = 0;
+          $("view").scrollTop = 0;
         }));
         if (m.hasApiKey) {
           acts.appendChild(btn("诊断连接", "sm ghost", async (ev) => {
@@ -3277,7 +3491,7 @@ PAGES.models = {
         acts.appendChild(btn("删除", "sm ghost", async () => {
           await api("/api/models/delete", { id: m.id });
           toast("已删除");
-          go("models");
+          go("settings", "models");
         }));
         it.appendChild(acts);
         box.appendChild(it);
@@ -3308,260 +3522,454 @@ PAGES.models = {
           chunkModelId: $("role-chunk").value,
         });
         toast("已保存");
-        go("models");
+        go("settings", "models");
       } catch (e) { toast("保存失败：" + e.message); }
     }));
     v.appendChild(role);
-  },
-};
+
+  /* ---------- 联网搜索（Tavily） ----------
+     Agent 唯一的外部通道。默认关着：不配就不把 web_search 交给模型。
+     服务选 Tavily 是沿用网页版（src/agents 的 web_search_tool.py）的做法，保持两边一致。 */
+  let ws = { provider: "tavily", enabled: false, hasKey: false, keyHint: "", results: 5 };
+  try {
+    ws = await api("/api/websearch/get", {});
+  } catch (e) {
+    // 内核没有这个接口时不该整页崩掉：卡片照常显示，只是状态读不到
+  }
+  const wsCard = cardOf({
+    title: "联网搜索",
+    tag: ws.enabled ? "已启用" : "未启用",
+    tagCls: ws.enabled ? "ok" : "warn",
+    sub: "Tavily",
+  });
+  const wsRow = el("div", "row");
+  const wsKey = inputOf("ws-key", ws.hasKey ? "已设置，留空则保留原密钥" : "tvly-…");
+  wsKey.type = "password";
+  wsRow.appendChild(fieldOf("Tavily API Key", wsKey));
+  wsRow.appendChild(fieldOf("开关", selectOf("ws-enabled", [
+    { value: "0", label: "关闭（不交给模型）" },
+    { value: "1", label: "开启" },
+  ], ws.enabled ? "1" : "0")));
+  wsRow.appendChild(fieldOf("每次返回条数", selectOf("ws-results", [
+    { value: "3", label: "3 条" },
+    { value: "5", label: "5 条" },
+    { value: "10", label: "10 条" },
+  ], String(ws.results || 5))));
+  wsCard.appendChild(wsRow);
+  const wsActs = el("div", "row");
+  wsActs.appendChild(btn("保存", "primary", async () => {
+    try {
+      await api("/api/websearch/save", {
+        apiKey: $("ws-key").value.trim(),
+        enabled: $("ws-enabled").value,
+        results: Number($("ws-results").value) || 5,
+      });
+      toast("联网搜索已保存");
+      go("settings", "models");
+    } catch (e) { toast("保存失败：" + e.message); }
+  }));
+  wsActs.appendChild(btn("测试连接", "", async (ev) => {
+    const b = ev.target;
+    b.disabled = true;
+    b.textContent = "搜索中…";
+    try {
+      const r = await api("/api/websearch/test", { apiKey: $("ws-key").value.trim(), results: 3 });
+      toast("通了：搜到 " + r.count + " 条 · " + String(r.first || "").slice(0, 20));
+      b.textContent = "再测一次";
+    } catch (e) {
+      toast("测试失败：" + e.message);
+      b.textContent = "测试连接";
+    }
+    b.disabled = false;
+  }));
+  wsActs.appendChild(copyButton(() => "https://app.tavily.com/home", "复制申请地址"));
+  wsActs.appendChild(btn("清除密钥", "sm ghost", async () => {
+    try {
+      await api("/api/websearch/save", { clearKey: "1", enabled: "0", results: Number($("ws-results").value) || 5 });
+      toast("已清除密钥，并关闭联网搜索");
+      go("settings", "models");
+    } catch (e) { toast("清除失败：" + e.message); }
+  }));
+  wsCard.appendChild(wsActs);
+  wsCard.appendChild(el("p", "muted sm", "当前：" + (ws.hasKey ? "已设置密钥 " + ws.keyHint : "还没有密钥") +
+    " · " + (ws.enabled ? "已启用" : "未启用") + "。开启后「伴学助手」的工具里会多出「联网搜索」。"));
+  v.appendChild(wsCard);
+  return v;
+}
+
 /* ---------- 档案与知识库 ---------- */
 
 const SELF_SCORE_KEYS = ["概念理解", "逻辑推理", "工程实践", "问题诊断", "系统设计", "学习迁移"];
 
+const SETTINGS_SECTIONS = [
+  { id: "general", label: "常规", icon: "sliders", title: "常规" },
+  { id: "appearance", label: "外观", icon: "sun", title: "外观" },
+  { id: "kb", label: "知识库", icon: "db", title: "知识库" },
+  { id: "models", label: "模型与接口", icon: "gear", title: "模型与接口" },
+  { id: "data", label: "数据与备份", icon: "layers", title: "数据与备份" },
+  { id: "about", label: "关于", icon: "file", title: "关于 ITN-Desktop" },
+];
+
+/**
+ * 设置页。
+ *
+ * 参照用户给的设置页截图：左边一条窄分区栏，右边一块内容区，一次只显示一块。
+ * 分区写在 hash 里（#/settings/models），所以刷新、后退、从别处深链进来都能落到同一块。
+ * 之前"档案与知识库""模型与接口"各占一个侧栏入口，现在是同一页里的两个分区。
+ */
 PAGES.settings = {
   async render() {
     await loadCfg();
-    await loadProfile();
+    const sec = SETTINGS_SECTIONS.filter((x) => x.id === currentSection)[0] || SETTINGS_SECTIONS[0];
+    if (sec.id === "general") await loadProfile();
+
     const v = $("view");
     v.innerHTML = "";
-    const p = state.profile || {};
+    const shell = el("div", "settings-shell");
 
-    const prof = cardOf({
-      title: "学习者档案",
-      sub: "只存在本机数据库",
-      actions: [btn("保存档案", "primary sm", async () => {
-        const selfScores = {};
-        for (const k of SELF_SCORE_KEYS) {
-          const val = Number((document.getElementById("pf-score-" + k) || {}).value);
-          if (val > 0) selfScores[k] = Math.max(0, Math.min(100, val));
-        }
-        try {
-          await saveProfile({
-            nickname: $("pf-nick").value.trim(),
-            goal: $("pf-goal").value.trim(),
-            weeklyHours: Number($("pf-hours").value) || 0,
-            selfScores: selfScores,
-          });
-          toast("档案已保存");
-          go("settings");
-        } catch (e) { toast("保存失败：" + e.message); }
-      })],
-    });
-    const prow1 = el("div", "row");
-    prow1.appendChild(fieldOf("称呼", inputOf("pf-nick", "例如 李老师", p.nickname || "")));
-    prow1.appendChild(fieldOf("学习目标", inputOf("pf-goal", "例如 两周内讲完提示词工程", p.goal || "")));
-    prow1.appendChild(fieldOf("每周投入（小时）", inputOf("pf-hours", "8", p.weeklyHours || "")));
-    prof.appendChild(prow1);
-    const scores = p.selfScores || {};
-    const grid = el("div", "grid grid-3");
-    for (const k of SELF_SCORE_KEYS) {
-      grid.appendChild(fieldOf(k + "（0-100）", inputOf("pf-score-" + k, "", scores[k] === undefined ? "" : scores[k])));
+    const nav = el("nav", "settings-nav");
+    nav.setAttribute("aria-label", "设置分区");
+    for (const x of SETTINGS_SECTIONS) {
+      const b = el("button", x.id === sec.id ? "active" : "");
+      b.type = "button";
+      b.dataset.section = x.id;
+      b.innerHTML = icon(x.icon) + "<span>" + esc(x.label) + "</span>";
+      b.onclick = () => { if (x.id !== sec.id) go("settings", x.id); };
+      nav.appendChild(b);
     }
-    prof.appendChild(grid);
-    prof.appendChild(el("p", "muted sm", "自评分只在「我的成长」里用来和做题正确率对照，不参与评分。"));
-    v.appendChild(prof);
 
-    const kbCard = cardOf({
-      title: "知识库",
-      sub: "指定本机目录，递归读取 Markdown 与纯文本",
-      tag: state.cfg.knowledgeBases.length + " 个",
-    });
-    const form = el("div", "kb-form");
-    const fr = el("div", "row");
-    fr.appendChild(fieldOf("标识（英文短名）", inputOf("kb-id", "course")));
-    fr.appendChild(fieldOf("显示名称", inputOf("kb-name", "我的课程资料")));
-    form.appendChild(fr);
-    const dirInput = inputOf("kb-dir", "D:\\资料\\课程");
-    dirInput.className = "grow";
-    form.appendChild(fieldOf("目录绝对路径", dirInput));
-    const facts = el("div", "row");
-    facts.appendChild(btn("保存知识库", "primary", async () => {
-      const id = $("kb-id").value.trim();
-      if (!id) { toast("请填写标识"); return; }
-      const dir = $("kb-dir").value.trim();
-      if (!dir) { toast("请填写目录绝对路径"); return; }
-      try {
-        await api("/api/kb/save", { id: id, name: $("kb-name").value.trim(), rootDir: dir });
-        toast("已保存，接着建立索引");
-        state.kb = id;
-        go("settings");
-      } catch (e) { toast("保存失败：" + e.message); }
-    }));
-    facts.appendChild(btn("保存并建立索引", "", async () => {
-      const id = $("kb-id").value.trim();
-      const dir = $("kb-dir").value.trim();
-      if (!id || !dir) { toast("标识与目录都要填"); return; }
-      try {
-        await api("/api/kb/save", { id: id, name: $("kb-name").value.trim(), rootDir: dir });
-        state.kb = id;
-        await buildIndex(id);
-      } catch (e) { toast("失败：" + e.message); }
-    }));
-    form.appendChild(facts);
-    kbCard.appendChild(form);
+    const body = el("div", "settings-body");
+    const head = el("div", "settings-head");
+    head.appendChild(el("h2", null, sec.title));
+    body.appendChild(head);
+    body.appendChild(await settingsSection(sec.id));
 
-    if (!state.cfg.knowledgeBases.length) {
-      kbCard.appendChild(emptyState({
-        inline: true,
-        art: "db",
-        title: "还没有知识库",
-        text: "填一个英文标识（例如 course）、一个显示名称和资料目录的绝对路径，保存后建立索引。",
-        actions: [btn("填一个示例", "ghost", () => {
-          $("kb-id").value = "course";
-          $("kb-name").value = "我的课程资料";
-          $("kb-dir").focus();
-        })],
-      }));
-    } else {
-      const kbox = el("div", "list");
-      kbox.style.marginTop = "12px";
-      for (const k of state.cfg.knowledgeBases) {
-        const it = el("div", "item");
-        const row = el("div", "row");
-        const main = el("div", "grow");
-        main.appendChild(el("div", "item-title", k.name || k.id));
-        main.appendChild(el("div", "meta", (k.rootDir || "未设置目录") + " · " + (k.docCount || 0) + " 篇 · " + (k.chunkCount || 0) + " 片 · " + (k.imageCount || 0) + " 张图"));
-        if (k.builtAt) main.appendChild(el("div", "meta", "索引于 " + fmtStamp(k.builtAt)));
-        row.appendChild(main);
-        row.appendChild((k.chunkCount || 0) > 0 ? tag("已索引", "ok") : tag("未索引", "warn"));
-        if (state.kb === k.id) row.appendChild(tag("当前"));
-        it.appendChild(row);
-        const acts = el("div", "row item-actions");
-        acts.appendChild(btn((k.chunkCount || 0) > 0 ? "重建索引" : "建立索引", "sm primary", () => buildIndex(k.id)));
-        if (state.kb !== k.id) acts.appendChild(btn("设为当前", "sm", () => { state.kb = k.id; toast("已切换为当前知识库"); go("learn"); }));
-        acts.appendChild(btn("去检索", "sm ghost", () => { state.kb = k.id; go("kb"); }));
-        acts.appendChild(btn("删除", "sm ghost", () => {
-          // 删知识库是"连带"操作：登记没了，索引、阅读进度、本章学习记录就都找不回来了（原文件不动）
-          confirmDialog("删除知识库登记？",
-            "会把「" + (k.name || k.id) + "」的登记从本机删掉，索引与这一章的学习进度也会一起消失。\n" +
-            "你目录里的原始资料不会被删，之后可以重新登记并建立索引。",
-            async () => {
-              try {
-                await api("/api/kb/delete", { id: k.id });
-                toast("已删除登记（本机原文件不会被删）");
-                await loadCfg();
-                go("settings");
-              } catch (e) { toast("删除失败：" + e.message); }
-            });
-        }));
-        it.appendChild(acts);
-        kbox.appendChild(it);
-      }
-      kbCard.appendChild(kbox);
-    }
-    v.appendChild(kbCard);
-
-    /* ---------- 数据与备份 ----------
-       用户最怕的是"攒了两个月的东西，一旦坏了就没了"。数据全在本机一个 SQLite 文件里，
-       所以这里给一个明确的"立即备份"和一个看得见的备份列表。 */
-    const bk = cardOf({
-      cls: "data-backup",
-      title: "数据与备份",
-      sub: "所有数据都在本机这一个 SQLite 文件里，备份就是把它复制一份",
-    });
-    let maint = { dataDir: state.cfg.dataDir || "", dbSize: 0, backups: [] };
-    try {
-      maint = await api("/api/maintenance/status", {});
-    } catch (e) {
-      bk.appendChild(el("p", "muted", "读不到数据状态：" + e.message));
-    }
-    const info = el("div", "kv-list");
-    const dirLine = el("div", "kv-line");
-    dirLine.appendChild(el("span", "kv-key", "数据目录"));
-    dirLine.appendChild(el("span", "path-line grow", maint.dataDir || "（未返回）"));
-    dirLine.appendChild(btn("复制路径", "sm ghost", () => {
-      navigator.clipboard.writeText(maint.dataDir || "").then(() => toast("路径已复制"), () => toast("复制失败，请手动选择"));
-    }));
-    info.appendChild(dirLine);
-    const dbLine = el("div", "kv-line");
-    dbLine.appendChild(el("span", "kv-key", "本地数据库"));
-    dbLine.appendChild(el("span", "muted", "itn.db · " + fmtSize(maint.dbSize) + " · " + (maint.backups || []).length + " 份备份"));
-    info.appendChild(dbLine);
-    bk.appendChild(info);
-
-    const bkActs = el("div", "row");
-    bkActs.appendChild(btn("立即备份", "primary", async (ev) => {
-      const b = ev.target;
-      b.disabled = true;
-      b.textContent = "备份并校验中…";
-      try {
-        const r = await api("/api/maintenance/backup", {});
-        toast("备份完成（已校验可打开）：" + r.name + " · " + fmtSize(r.size));
-        go("settings");
-      } catch (e) {
-        toast("备份失败：" + e.message);
-        b.disabled = false;
-        b.textContent = "立即备份";
-      }
-    }));
-    bkActs.appendChild(btn("复制备份目录", "ghost", () => {
-      navigator.clipboard.writeText((maint.dataDir || "") + "\\backups").then(() => toast("路径已复制"), () => toast("复制失败"));
-    }));
-    bk.appendChild(bkActs);
-
-    if (!(maint.backups || []).length) {
-      bk.appendChild(emptyState({
-        inline: true,
-        art: "layers",
-        title: "还没有备份",
-        text: "点「立即备份」会把整个数据库复制到数据目录的 backups 子目录，并立刻打开副本校验一次——拷出来打不开的备份不算备份。",
-        actions: [btn("立即备份", "primary", async (ev) => {
-          const b = ev.target;
-          b.disabled = true;
-          b.textContent = "备份并校验中…";
-          try {
-            const r = await api("/api/maintenance/backup", {});
-            toast("备份完成（已校验可打开）：" + r.name + " · " + fmtSize(r.size));
-            go("settings");
-          } catch (e) {
-            toast("备份失败：" + e.message);
-            b.disabled = false;
-            b.textContent = "立即备份";
-          }
-        })],
-      }));
-    } else {
-      const bl = el("div", "list");
-      bl.style.marginTop = "10px";
-      for (const b of maint.backups) {
-        const it = el("div", "item backup-item");
-        const row = el("div", "row");
-        const main = el("div", "grow");
-        main.appendChild(el("div", "item-title", b.name));
-        main.appendChild(el("div", "meta", fmtSize(b.size) + " · " + b.name.replace(/^itn-/, "").replace(/\.db$/, "")));
-        row.appendChild(main);
-        row.appendChild(btn("复制路径", "sm ghost", () => {
-          navigator.clipboard.writeText(b.path || "").then(() => toast("路径已复制"), () => toast("复制失败"));
-        }));
-        row.appendChild(btn("删除", "sm ghost", () => {
-          confirmDialog("删除这份备份？", "会删掉 " + b.name + "。它只是一份副本，删了不影响当前数据。", async () => {
-            try {
-              await api("/api/maintenance/backups/delete", { name: b.name });
-              toast("已删除备份");
-              go("settings");
-            } catch (e) { toast("删除失败：" + e.message); }
-          });
-        }));
-        it.appendChild(row);
-        bl.appendChild(it);
-      }
-      bk.appendChild(bl);
-    }
-    bk.appendChild(el("p", "muted sm", "恢复方式：先退出应用，把备份文件改名成 itn.db 覆盖数据目录里的同名文件（若旁边还有 itn.db-journal，一并删掉），再启动即可。"));
-    v.appendChild(bk);
-
-    const about = cardOf({ title: "数据与隐私" });
-    const ul = el("ul", "about-list");
-    [
-      "所有配置、学习记录、切片与向量都存在本机的 SQLite 单文件数据库里，可以整体拷走或备份。",
-      "资料只发给你自己配置的模型服务，不经过任何第三方服务器。",
-      "API Key 只写进本机数据库；「模型与接口」页面读取配置时永不回传密钥本身。",
-      "讲义与练习是可复现的本地 Markdown 文件，放在数据目录的 artifacts 子目录下。",
-    ].forEach((t) => ul.appendChild(el("li", null, t)));
-    about.appendChild(ul);
-    v.appendChild(about);
+    shell.appendChild(nav);
+    shell.appendChild(body);
+    v.appendChild(shell);
   },
 };
+
+/** 设置分区的路由表；每个 builder 返回一个可以整体塞进内容区的节点。 */
+function settingsSection(id) {
+  if (id === "appearance") return settingsAppearance();
+  if (id === "kb") return settingsKb();
+  if (id === "models") return settingsModels();
+  if (id === "data") return settingsData();
+  if (id === "about") return settingsAbout();
+  return settingsGeneral();
+}
+
+/* ---------- 设置 · 常规：学习者档案 ---------- */
+function settingsGeneral() {
+  const g = document.createDocumentFragment();
+  const p = state.profile || {};
+
+  const prof = cardOf({
+    title: "学习者档案",
+    actions: [btn("保存档案", "primary sm", async () => {
+      const selfScores = {};
+      for (const k of SELF_SCORE_KEYS) {
+        const val = Number((document.getElementById("pf-score-" + k) || {}).value);
+        if (val > 0) selfScores[k] = Math.max(0, Math.min(100, val));
+      }
+      try {
+        await saveProfile({
+          nickname: $("pf-nick").value.trim(),
+          goal: $("pf-goal").value.trim(),
+          weeklyHours: Number($("pf-hours").value) || 0,
+          selfScores: selfScores,
+        });
+        toast("档案已保存");
+        go("settings", "general");
+      } catch (e) { toast("保存失败：" + e.message); }
+    })],
+  });
+  const prow1 = el("div", "row");
+  prow1.appendChild(fieldOf("称呼", inputOf("pf-nick", "例如 李老师", p.nickname || "")));
+  prow1.appendChild(fieldOf("学习目标", inputOf("pf-goal", "例如 两周内讲完提示词工程", p.goal || "")));
+  prow1.appendChild(fieldOf("每周投入（小时）", inputOf("pf-hours", "8", p.weeklyHours || "")));
+  prof.appendChild(prow1);
+  const scores = p.selfScores || {};
+  const grid = el("div", "grid grid-3");
+  for (const k of SELF_SCORE_KEYS) {
+    grid.appendChild(fieldOf(k + "（0-100）", inputOf("pf-score-" + k, "", scores[k] === undefined ? "" : scores[k])));
+  }
+  prof.appendChild(grid);
+  g.appendChild(prof);
+
+  /* 设置页最容易变成"填完就没人来"的地方，所以每个分区都给一条回到干活的捷径 */
+  const jump = cardOf({ title: "下一步" });
+  const jr = el("div", "row");
+  jr.appendChild(btn("去配置模型接口", "primary sm", () => go("settings", "models")));
+  jr.appendChild(btn("去指定资料目录", "sm", () => go("settings", "kb")));
+  jr.appendChild(btn("去学 · 练", "sm ghost", () => go("learn")));
+  jump.appendChild(jr);
+  g.appendChild(jump);
+  return g;
+}
+
+/* ---------- 设置 · 外观 ---------- */
+function settingsAppearance() {
+  const g = document.createDocumentFragment();
+
+  const themeCard = cardOf({ title: "主题" });
+  const picker = el("div", "theme-picker");
+  const options = [
+    { id: "light", cls: "light", label: "浅色" },
+    { id: "dark", cls: "dark", label: "深色" },
+    { id: "system", cls: "system", label: "跟随系统" },
+  ];
+  for (const o of options) {
+    const b = el("button", "theme-card " + o.cls + (state.theme === o.id ? " active" : ""));
+    b.type = "button";
+    b.dataset.theme = o.id;
+    b.appendChild(el("span", "swatch"));
+    b.appendChild(el("span", "t-name", o.label));
+    b.onclick = async () => {
+      await savePrefs({ theme: o.id });
+      toast(o.id === "system" ? "已跟随系统" : "已切到" + o.label);
+      go("settings", "appearance");
+    };
+    picker.appendChild(b);
+  }
+  themeCard.appendChild(picker);
+  g.appendChild(themeCard);
+
+  const railCard = cardOf({ title: "侧栏" });
+  const mkRow = (label, action, actLabel) => {
+    const row = el("div", "row switch-row");
+    row.appendChild(el("div", "grow switch-label", label));
+    row.appendChild(btn(actLabel, "sm", action));
+    return row;
+  };
+  const railHidden = document.body.classList.contains("rail-hidden");
+  railCard.appendChild(mkRow("图标侧栏（Ctrl+Shift+S）", () => {
+    toggleRail();
+    go("settings", "appearance");
+  }, railHidden ? "显示" : "隐藏"));
+  railCard.appendChild(mkRow("对话页的会话栏", () => {
+    savePrefs({ sessionRail: state.sessionRailPref === false ? "1" : "0" }).then(() => go("settings", "appearance"));
+  }, state.sessionRailPref === false ? "显示" : "隐藏"));
+  g.appendChild(railCard);
+  return g;
+}
+
+/* ---------- 设置 · 知识库 ---------- */
+function settingsKb() {
+  const g = document.createDocumentFragment();
+  const kbCard = cardOf({
+    title: "登记一个知识库",
+    tag: state.cfg.knowledgeBases.length + " 个",
+  });
+  const form = el("div", "kb-form");
+  const fr = el("div", "row");
+  fr.appendChild(fieldOf("标识（英文短名）", inputOf("kb-id", "course")));
+  fr.appendChild(fieldOf("显示名称", inputOf("kb-name", "我的课程资料")));
+  form.appendChild(fr);
+  const dirInput = inputOf("kb-dir", "D:\\资料\\课程");
+  dirInput.className = "grow";
+  form.appendChild(fieldOf("目录绝对路径", dirInput));
+  const facts = el("div", "row");
+  facts.appendChild(btn("保存知识库", "primary", async () => {
+    const id = $("kb-id").value.trim();
+    if (!id) { toast("请填写标识"); return; }
+    const dir = $("kb-dir").value.trim();
+    if (!dir) { toast("请填写目录绝对路径"); return; }
+    try {
+      await api("/api/kb/save", { id: id, name: $("kb-name").value.trim(), rootDir: dir });
+      toast("已保存，接着建立索引");
+      state.kb = id;
+      go("settings", "kb");
+    } catch (e) { toast("保存失败：" + e.message); }
+  }));
+  facts.appendChild(btn("保存并建立索引", "", async () => {
+    const id = $("kb-id").value.trim();
+    const dir = $("kb-dir").value.trim();
+    if (!id || !dir) { toast("标识与目录都要填"); return; }
+    try {
+      await api("/api/kb/save", { id: id, name: $("kb-name").value.trim(), rootDir: dir });
+      state.kb = id;
+      await buildIndex(id);
+    } catch (e) { toast("失败：" + e.message); }
+  }));
+  form.appendChild(facts);
+  kbCard.appendChild(form);
+
+  if (!state.cfg.knowledgeBases.length) {
+    kbCard.appendChild(emptyState({
+      inline: true,
+      art: "db",
+      title: "还没有知识库",
+      text: "填一个英文标识（例如 course）、一个显示名称和资料目录的绝对路径，保存后建立索引。",
+      actions: [btn("填一个示例", "ghost", () => {
+        $("kb-id").value = "course";
+        $("kb-name").value = "我的课程资料";
+        $("kb-dir").focus();
+      })],
+    }));
+  } else {
+    const kbox = el("div", "list");
+    kbox.style.marginTop = "12px";
+    for (const k of state.cfg.knowledgeBases) {
+      const it = el("div", "item");
+      const row = el("div", "row");
+      const main = el("div", "grow");
+      main.appendChild(el("div", "item-title", k.name || k.id));
+      main.appendChild(el("div", "meta", (k.rootDir || "未设置目录") + " · " + (k.docCount || 0) + " 篇 · " + (k.chunkCount || 0) + " 片 · " + (k.imageCount || 0) + " 张图"));
+      if (k.builtAt) main.appendChild(el("div", "meta", "索引于 " + fmtStamp(k.builtAt)));
+      row.appendChild(main);
+      row.appendChild((k.chunkCount || 0) > 0 ? tag("已索引", "ok") : tag("未索引", "warn"));
+      if (state.kb === k.id) row.appendChild(tag("当前"));
+      it.appendChild(row);
+      const acts = el("div", "row item-actions");
+      acts.appendChild(btn((k.chunkCount || 0) > 0 ? "重建索引" : "建立索引", "sm primary", () => buildIndex(k.id)));
+      if (state.kb !== k.id) acts.appendChild(btn("设为当前", "sm", () => { state.kb = k.id; toast("已切换为当前知识库"); go("learn"); }));
+      acts.appendChild(btn("去检索", "sm ghost", () => { state.kb = k.id; go("kb"); }));
+      acts.appendChild(btn("删除", "sm ghost", () => {
+        // 删知识库是"连带"操作：登记没了，索引、阅读进度、本章学习记录就都找不回来了（原文件不动）
+        confirmDialog("删除知识库登记？",
+          "会把「" + (k.name || k.id) + "」的登记从本机删掉，索引与这一章的学习进度也会一起消失。\n" +
+          "你目录里的原始资料不会被删，之后可以重新登记并建立索引。",
+          async () => {
+            try {
+              await api("/api/kb/delete", { id: k.id });
+              toast("已删除登记（本机原文件不会被删）");
+              await loadCfg();
+              go("settings", "kb");
+            } catch (e) { toast("删除失败：" + e.message); }
+          });
+      }));
+      it.appendChild(acts);
+      kbox.appendChild(it);
+    }
+    kbCard.appendChild(kbox);
+  }
+  g.appendChild(kbCard);
+  return g;
+}
+
+/* ---------- 设置 · 数据与备份 ---------- */
+async function settingsData() {
+  const g = document.createDocumentFragment();
+  /* 用户最怕的是"攒了两个月的东西，一旦坏了就没了"。数据全在本机一个 SQLite 文件里，
+     所以这里给一个明确的"立即备份"和一个看得见的备份列表。 */
+  const bk = cardOf({
+    cls: "data-backup",
+    title: "数据与备份",
+  });
+  let maint = { dataDir: state.cfg.dataDir || "", dbSize: 0, backups: [] };
+  try {
+    maint = await api("/api/maintenance/status", {});
+  } catch (e) {
+    bk.appendChild(el("p", "muted", "读不到数据状态：" + e.message));
+  }
+  const info = el("div", "kv-list");
+  const dirLine = el("div", "kv-line");
+  dirLine.appendChild(el("span", "kv-key", "数据目录"));
+  dirLine.appendChild(el("span", "path-line grow", maint.dataDir || "（未返回）"));
+  dirLine.appendChild(btn("复制路径", "sm ghost", () => {
+    navigator.clipboard.writeText(maint.dataDir || "").then(() => toast("路径已复制"), () => toast("复制失败，请手动选择"));
+  }));
+  info.appendChild(dirLine);
+  const dbLine = el("div", "kv-line");
+  dbLine.appendChild(el("span", "kv-key", "本地数据库"));
+  dbLine.appendChild(el("span", "muted", "itn.db · " + fmtSize(maint.dbSize) + " · " + (maint.backups || []).length + " 份备份"));
+  info.appendChild(dbLine);
+  bk.appendChild(info);
+
+  const doBackup = async (ev) => {
+    const b = ev.target;
+    b.disabled = true;
+    b.textContent = "备份并校验中…";
+    try {
+      const r = await api("/api/maintenance/backup", {});
+      toast("备份完成（已校验可打开）：" + r.name + " · " + fmtSize(r.size));
+      go("settings", "data");
+    } catch (e) {
+      toast("备份失败：" + e.message);
+      b.disabled = false;
+      b.textContent = "立即备份";
+    }
+  };
+  const bkActs = el("div", "row");
+  bkActs.appendChild(btn("立即备份", "primary", doBackup));
+  bkActs.appendChild(btn("复制备份目录", "ghost", () => {
+    navigator.clipboard.writeText((maint.dataDir || "") + "\\backups").then(() => toast("路径已复制"), () => toast("复制失败"));
+  }));
+  bk.appendChild(bkActs);
+
+  if (!(maint.backups || []).length) {
+    bk.appendChild(emptyState({
+      inline: true,
+      art: "layers",
+      title: "还没有备份",
+      text: "点「立即备份」会把整个数据库复制到数据目录的 backups 子目录，并立刻打开副本校验一次——拷出来打不开的备份不算备份。",
+      actions: [btn("立即备份", "primary", doBackup)],
+    }));
+  } else {
+    const bl = el("div", "list");
+    bl.style.marginTop = "10px";
+    for (const b of maint.backups) {
+      const it = el("div", "item backup-item");
+      const row = el("div", "row");
+      const main = el("div", "grow");
+      main.appendChild(el("div", "item-title", b.name));
+      main.appendChild(el("div", "meta", fmtSize(b.size) + " · " + b.name.replace(/^itn-/, "").replace(/\.db$/, "")));
+      row.appendChild(main);
+      row.appendChild(btn("复制路径", "sm ghost", () => {
+        navigator.clipboard.writeText(b.path || "").then(() => toast("路径已复制"), () => toast("复制失败"));
+      }));
+      row.appendChild(btn("删除", "sm ghost", () => {
+        confirmDialog("删除这份备份？", "会删掉 " + b.name + "。它只是一份副本，删了不影响当前数据。", async () => {
+          try {
+            await api("/api/maintenance/backups/delete", { name: b.name });
+            toast("已删除备份");
+            go("settings", "data");
+          } catch (e) { toast("删除失败：" + e.message); }
+        });
+      }));
+      it.appendChild(row);
+      bl.appendChild(it);
+    }
+    bk.appendChild(bl);
+  }
+  bk.appendChild(el("p", "muted sm", "恢复方式：先退出应用，把备份文件改名成 itn.db 覆盖数据目录里的同名文件（若旁边还有 itn.db-journal，一并删掉），再启动即可。"));
+  g.appendChild(bk);
+  return g;
+}
+
+/* ---------- 设置 · 关于 ---------- */
+function settingsAbout() {
+  const g = document.createDocumentFragment();
+  const k = state.kernel || {};
+  const ver = cardOf({ title: "当前版本" });
+  const kv = el("div", "kv-list");
+  const line = (key, val) => {
+    const l = el("div", "kv-line");
+    l.appendChild(el("span", "kv-key", key));
+    l.appendChild(el("span", "grow", val));
+    return l;
+  };
+  kv.appendChild(line("应用", "ITN-Desktop · 桌面端"));
+  kv.appendChild(line("内核", "仓颉（Cangjie）运行时" + (k.cangjie ? " · " + k.cangjie : "")));
+  kv.appendChild(line("数据目录", state.cfg.dataDir || "（启动时由内核决定，可在「数据与备份」里复制路径）"));
+  ver.appendChild(kv);
+  g.appendChild(ver);
+
+  const about = cardOf({ title: "数据与隐私" });
+  const ul = el("ul", "about-list");
+  [
+    "所有配置、学习记录、切片与向量都存在本机的 SQLite 单文件数据库里，可以整体拷走或备份。",
+    "资料只发给你自己配置的模型服务，不经过任何第三方服务器。",
+    "API Key 只写进本机数据库；「模型与接口」读取配置时永不回传密钥本身。",
+    "讲义与练习是可复现的本地 Markdown 文件，放在数据目录的 artifacts 子目录下。",
+  ].forEach((t) => ul.appendChild(el("li", null, t)));
+  about.appendChild(ul);
+  g.appendChild(about);
+  return g;
+}
+
 /* ---------- 弹层：出题练习 / 笔记 / 建立索引 ---------- */
 
 function cardHeadOnly(title, extra) {
@@ -3742,7 +4150,7 @@ async function buildIndex(kbId) {
     box.appendChild(el("p", "muted", e.message));
     box.appendChild(el("p", "muted sm", "常见原因：目录路径写错、目录里没有 .md/.txt 文件、目录不可读。"));
     const row = el("div", "row");
-    row.appendChild(btn("去检查目录", "primary", () => go("settings")));
+    row.appendChild(btn("去检查目录", "primary", () => go("settings", "kb")));
     row.appendChild(btn("关闭", "ghost", () => box.remove()));
     box.appendChild(row);
     v.insertBefore(box, v.firstChild);
@@ -3755,8 +4163,12 @@ async function buildIndex(kbId) {
 async function boot() {
   initTitlebar();
   buildNav();
+  // 偏好要在首屏之前读：否则深色用户会先看到一帧白底
+  await loadPrefs();
+  buildNav();
   try {
     const h = await api("/health");
+    state.kernel = h;
     setStatus("内核已连接 · " + h.cangjie);
   } catch (e) {
     setStatus("内核未连接", true);
@@ -3780,19 +4192,23 @@ async function boot() {
   } catch (e) {
     state.tools = [];
   }
-  const navSearch = $("nav-search");
-  if (navSearch) navSearch.onclick = () => openPalette();
   const railSearch = $("rail-search");
   if (railSearch) railSearch.oninput = () => railRender();
   const railNew = $("rail-new");
   if (railNew) railNew.onclick = () => newChat();
   const railAll = $("rail-all");
-  if (railAll) railAll.onclick = () => go("sessions");
+  if (railAll) railAll.onclick = () => go("chat", "overview");
   document.addEventListener("keydown", (e) => {
     // 网页版就是 ⌘K / Ctrl+K，这里保持同一个习惯
     if ((e.ctrlKey || e.metaKey) && String(e.key || "").toLowerCase() === "k") {
       e.preventDefault();
       if (palette.open) closePalette(); else openPalette();
+      return;
+    }
+    // Ctrl+Shift+S：显示 / 隐藏图标侧栏（和 Codex 的同一个习惯）
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && String(e.key || "").toLowerCase() === "s") {
+      e.preventDefault();
+      toggleRail();
       return;
     }
     const playerRoot = $("player");
@@ -3829,11 +4245,24 @@ async function boot() {
       renderPlayer();
     }
   });
-  window.addEventListener("hashchange", () => {
+  /* 前进 / 后退。
+     pushState 不会触发 hashchange，所以两个事件都得听：地址变了就按地址重渲染。
+     自己维护的 navStack 只用来算两个箭头能不能点——history.length 分不出"在哪一格"。 */
+  const onLocationChange = (ev) => {
+    const st = ev && ev.state;
+    const at = st && typeof st.i === "number" ? st.i : -1;
     const p = pageFromHash();
-    if (p !== current) go(p);
-  });
-  await go(pageFromHash());
+    if (p.page === current && (p.section || "") === (currentSection || "")) {
+      if (at >= 0 && at !== navIndex) { navIndex = at; updateNavButtons(); }
+      return;
+    }
+    go(p.page, p.section, { replace: true, fromHistory: true, index: at });
+  };
+  window.addEventListener("popstate", onLocationChange);
+  window.addEventListener("hashchange", onLocationChange);
+
+  const first = pageFromHash();
+  await go(first.page, first.section, { replace: true });
 }
 
 boot();

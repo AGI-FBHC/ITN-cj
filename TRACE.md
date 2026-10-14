@@ -1051,3 +1051,63 @@ E2E 里固化了这一步：同一个主题连续生成两次 → 断言磁盘�
 - 另附**反模式清单**（静默联网、结果灌进正文、联网内容自动进索引不标来源、递归爬取、用我们的 Key 提供免费搜索、抓不到就编来源）。
 
 这份文档只新增文件，不改任何共享文件，因此与并行会话当前的改动没有冲突。
+
+---
+
+## 第十五轮（2026-10-14）：Codex 式布局改版 + 品牌改名 + 设置页分区 + 浅色/深色 + 联网搜索
+
+**这一轮用户提的**（逐条登记在 `docs/10-需求与实施计划.md` 的 R1~R10）：
+窄侧栏（图标 + 分组 + 悬停提示）、标题栏前进后退与侧栏显隐、左下角齿轮进设置、设置页按截图做分区、
+浅色/深色（白底/黑底 + 角落绿渐变，绿色收敛）、品牌改成 `ITN-Desktop` 且 logo 用网页版那个、
+"伴学助手"与"会话记录"合并、"稀碎的小字"清掉（AI 味太重）、设置按钮换真齿轮、
+模型与接口里加联网搜索（Tavily）配置。
+
+### 关键改动
+
+- `shell/renderer/index.html` 整体重写：`#titlebar`（品牌 logo + 前进/后退/侧栏显隐 + 状态 + 窗口按钮）、
+  `.app`（`#rail` 窄侧栏 + `#session-rail` 会话栏 + `.main`）。**注意 `id="titlebar"` 必须留着**：
+  E2E 与 `main.js --smoke` 都按它判断自绘标题栏是否在。
+- `shell/renderer/style.css`：token 层重写成浅色/深色两套（`--bg-glow` 角落绿渐变、`--rail-*`、`--toast-*` 等），
+  旧 `.sidebar/.nav-group/#nav-search` 全部换成 `.rail/.nav-item/.rail-tip/.rail-btn`；绿只留给主按钮与激活态。
+  末尾追加"覆盖段"（标题栏浅色化、设置页两栏、会话栏换色）——**后来的规则覆盖前面的**，改配色先看末尾。
+- `shell/renderer/app.js`：
+  - `RAIL_GROUPS` 取代旧 `NAV`；`railButton()` 保留 `.nav-item`（工具链靠它枚举页面），
+    动作按钮用 `.rail-btn`（刻意不是 `.nav-item`，否则 `ui-shot` 会把"检索/主题"当页面点，弹出层会挡住后续点击）。
+  - 路由：`go(page, section)` + `history.pushState`；自己维护 `navStack/navIndex` 算箭头可用态，
+    并把下标写进 `history.state.i`——**回退时不能再 `rememberHash`**（会把栈截断，
+    表现为"后退之后前进按钮亮不起来"）。popstate 与 hashchange 都要听（pushState 不触发 hashchange）。
+  - 主题/侧栏偏好存内核 `/api/prefs`（内核端口每次启动都变，localStorage 活不过一次重启）。
+  - 设置页拆成 `settingsGeneral/Appearance/Kb/Models/Data/About` 六个分区，`#/settings/models` 可深链，
+    老路由 `#/models` 自动换成它。
+  - `PAGES.sessions` → `SESSIONS_VIEW`，作为对话页的「会话总览」视图（会话栏底部入口）。
+  - 联网搜索卡片 + 工具清单里 `available=false` 的"需先配置"标记。
+  - 顺手清掉上一轮遗留的**整块重复声明**（`loadCfg`…`checklist` 13 个函数各两份）与死代码 `const NAV`。
+- 内核（仓颉，改完必须 `build.ps1` + `package.ps1`）：
+  - `core/src/tools/websearch.cj`（新）：Tavily 客户端 + 配置读写（`settings` 键值表存 `web_search_key/enabled/results`）。
+    做法对齐网页版 `src/agents/app/tools/web_search_tool.py`（`search_depth="advanced"`，密钥自带）。
+  - `core/src/tools/registry.cj`：工具清单加 `web_search`；`toolPrompt(webSearch)` 未配置时**不写进提示词**；
+    `ToolBox.webSearch()`。
+  - `core/src/agent/agent.cj`：分发表加 `web_search`；`toolsJson()` 每条加 `available`。
+  - `core/src/api/api.cj`：`/api/websearch/get|save|test`，**并在 `buildServer` 的 `routes` 白名单里登记**
+    （分发器是精确路径匹配：只加 handler 不登记 = 静默 404，本轮踩过一次）。
+  - `/api/prefs` 增加 `ui_rail`（侧栏显隐也记住）。
+- 文档：`PRODUCT.md` 的"不做联网检索"按 `docs/09` 提案改成"默认不联网、可显式开启 + 三条红线"；
+  `docs/02-接口契约.md` 补三个接口 + 路由白名单的坑；新增 `docs/10-需求与实施计划.md`（需求台账 + P1~P4 计划）。
+
+### 验证
+
+- `node tools/ui-e2e.cjs` → **68 通过 / 0 失败**（新增 7 步：窄侧栏几何、标题栏前进后退、侧栏显隐与持久化、
+  主题三档、设置分区与深链、设置里保存模型并测连通、联网搜索配置与密钥不回传；工具清单断言 ≥8 个且含联网搜索）。
+- `node tools/ui-shot.cjs` → 10 页全部渲染、deadEnds 0、0 console error。
+- 真实出网验证：`/api/websearch/test` 带一个假 Key → Tavily 返回 401，
+  内核如实转成 `502 {"message":"联网搜索接口返回 401：{\"detail\":{\"error\":\"Unauthorized: missing or invalid API key.\"}}"}`。
+  （有效 Key 需用户自己填，代码里绝不内置。）
+- `tools/package-smoke.ps1` → 打包版启动 `PRELOAD=ok / TITLEBAR=ok / NAV=10 / RESULT=OK`。
+- 交付：`dist/ITN-Desktop/ITN-Desktop.exe`（绿色目录）与 `dist/ITN-Desktop-win-x64.zip`。
+
+### 教训（给接手的人）
+
+1. **新增内核接口必须同时登记 `routes` 白名单**，否则 404 且无日志。
+2. 侧栏动作按钮不要用 `.nav-item`，否则自检工具会把它当页面点击（检索会弹出遮罩层挡住后续操作）。
+3. 历史回退进 `go()` 时不能再压栈（用 `history.state.i` 定位）。
+4. 内核端口每次启动都变 → 任何"要记住"的界面状态都得存内核，不能只放 localStorage。

@@ -338,6 +338,9 @@ public class Agent {
         if (name == "save_artifact") {
             return tools.saveArtifact(strOf(args, "name"), strOf(args, "content"))
         }
+        if (name == "web_search") {
+            return box.webSearch(strOf(args, "query"), intOf(args, "limit"))
+        }
         let r = ToolResult()
         r.name = name
         r.ok = false
@@ -390,8 +393,9 @@ public class Agent {
         return sb.toString()
     }
 
-    /** 供界面展示的工具清单。 */
+    /** 供界面展示的工具清单。available=false 的（目前只有联网搜索）会标成"需要先配置"。 */
     public func toolsJson(): JsonArray {
+        let web = webSearchReady(store.dataDir)
         let arr = JsonArray()
         for (t in toolCatalog()) {
             let o = JsonObject()
@@ -399,6 +403,7 @@ public class Agent {
             o.put("title", JsonString(t.title))
             o.put("usage", JsonString(t.usage))
             o.put("desc", JsonString(t.desc))
+            o.put("available", JsonBool(if (t.name == "web_search") { web } else { true }))
             arr.add(o)
         }
         return arr
@@ -477,7 +482,8 @@ public class Agent {
                 let hits = retrieve(sessionId, turnId, kbId, question, 6)
                 log(sessionId, turnId, "step/end", stepPayload(1, "retrieve"))
 
-                let system = "你是教培内容助手。只能依据给定资料回答，每个论断后用 [编号] 标注出处；资料中没有的内容要明确说明不知道，不要补充资料之外的信息。" + "\n\n" + toolPrompt()
+                let system = "你是教培内容助手。优先依据给定资料回答，每个论断后用 [编号] 标注出处；资料中没有的内容要明确说明不知道，不要补充资料之外的信息。" +
+                "如果开启了联网搜索，可以用它补充资料里没有的公开信息，并写出来源链接。" + "\n\n" + toolPrompt(webSearchReady(store.dataDir))
                 let msgs = JsonArray()
                 let sysMsg = JsonObject()
                 sysMsg.put("role", JsonString("system"))

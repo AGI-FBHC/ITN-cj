@@ -28,6 +28,7 @@ New-Item -ItemType Directory -Force -Path $kernelDir | Out-Null
 Copy-Item -LiteralPath (Join-Path $repo "shell\main.js") -Destination $appDir -Force
 Copy-Item -LiteralPath (Join-Path $repo "shell\preload.js") -Destination $appDir -Force
 Copy-Item -Path (Join-Path $repo "shell\renderer") -Destination $appDir -Recurse -Force
+Copy-Item -Path (Join-Path $repo "shell\assets") -Destination $appDir -Recurse -Force
 
 $pkgJson = '{ "name": "itn-desktop", "version": "0.1.0", "private": true, "main": "main.js" }'
 Set-Content -LiteralPath (Join-Path $appDir "package.json") -Value $pkgJson -Encoding utf8

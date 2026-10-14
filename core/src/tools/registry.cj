@@ -13,8 +13,9 @@ import itn_desktop_core.util.*
  * Agent 能用的一组工具。
  *
  * 设计取舍（写给接手的人）：
- * - 这里只放**本地能力**：检索自己的资料、按 id 取原文、看有哪些文档、算数、看时间、写笔记、写产物。
- *   不做联网检索——产品边界是"只用用户自己的资料和自己的模型"。
+ * - 默认全是**本地能力**：检索自己的资料、按 id 取原文、看有哪些文档、算数、看时间、写笔记、写产物。
+ * - 唯一的外部通道是 web_search（Tavily，见 websearch.cj）：本地资料里没有的、或者用户明确说
+ *   "上网查一下"的时候才用；没配 API Key / 没启用时这个工具根本不出现在提示词里。
  * - 工具与模型解耦：模型只要能输出一段 JSON，就能调用工具。这样不管供应商支不支持
  *   OpenAI 的 function calling，行为都一致；能支持原生 tool_calls 的服务以后再单独适配。
  * - 每个工具都是纯本地操作，失败就返回 ok=false + 原因，不抛异常、不静默。
@@ -78,14 +79,30 @@ public func toolCatalog(): ArrayList<ToolSpec> {
     g.usage = "{\"name\": \"小结-主题.md\", \"content\": \"Markdown 正文\"}"
     g.desc = "把整理好的 Markdown 写成本地产物文件，出现在「我的资源」里。"
     out.add(g)
+
+    let h = ToolSpec()
+    h.name = "web_search"
+    h.title = "联网搜索"
+    h.usage = "{\"query\": \"2026 年提示词工程有哪些新做法\", \"limit\": 5}"
+    h.desc = "用 Tavily 在互联网上搜公开资料（文档、论文、新闻），返回标题、链接和摘要。" +
+        "只在本地资料里找不到、或用户明确要求上网查的时候用；引用它给出的信息要带上链接。"
+    out.add(h)
     return out
 }
 
-/** 给模型看的工具说明。要求它只输出一个 JSON 对象来发起调用。 */
-public func toolPrompt(): String {
+/**
+ * 给模型看的工具说明。要求它只输出一个 JSON 对象来发起调用。
+ *
+ * webSearch 为 false（没配 Tavily 密钥，或者用户把开关关了）时不写进提示词：
+ * 提示词里列了却调用不起来，模型会反复重试同一个死工具。
+ */
+public func toolPrompt(webSearch: Bool): String {
     let sb = StringBuilder()
-    sb.append("你可以调用以下本地工具来获取事实（不要凭空猜）：\n")
+    sb.append("你可以调用以下工具来获取事实（不要凭空猜）：\n")
     for (t in toolCatalog()) {
+        if (t.name == "web_search" && !webSearch) {
+            continue
+        }
         sb.append("- ")
         sb.append(t.name)
         sb.append("：")
@@ -375,6 +392,35 @@ public class ToolBox {
         r.data = o
         r.summary = "已写入笔记：" + title
         return r
+    }
+
+    /**
+     * 联网搜索（Tavily）。
+     *
+     * 没配密钥 / 没启用时返回 ok=false 而不是抛异常：界面上这个工具本来就标着"不可用"，
+     * 真的走到这里说明是模型自己越界调用了，如实告诉它原因即可。
+     */
+    public func webSearch(query: String, limit: Int64): ToolResult {
+        if (!webSearchReady(store.dataDir)) {
+            return fail("web_search", "联网搜索还没启用（设置 → 模型与接口 → 联网搜索，填 Tavily API Key 并打开开关）")
+        }
+        if (query.size == 0) {
+            return fail("web_search", "缺少搜索词 query")
+        }
+        var n = limit
+        if (n <= 0) {
+            n = webSearchResults(store.dataDir)
+        }
+        try {
+            let hits = WebSearchClient(webSearchKey(store.dataDir)).search(query, n)
+            let r = ToolResult()
+            r.name = "web_search"
+            r.data = hits
+            r.summary = "联网搜索「" + query + "」命中 " + hits.size().toString() + " 条（来源 Tavily）"
+            return r
+        } catch (e: Exception) {
+            return fail("web_search", e.message)
+        }
     }
 
     public func saveArtifact(name: String, content: String): ToolResult {

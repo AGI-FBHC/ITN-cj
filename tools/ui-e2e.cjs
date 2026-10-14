@@ -249,15 +249,56 @@ function assert(cond, msg) {
     await page.waitForTimeout(200);
   };
 
+  /* 设置现在是"左侧分区 + 右侧内容"的一页：先点侧栏的齿轮进设置，再点分区。 */
+  const settings = async (label) => {
+    await nav('设置');
+    await page.waitForSelector('.settings-nav', { timeout: 15000 });
+    await page.locator('.settings-nav button', { hasText: label }).first().click();
+    await page.waitForTimeout(400);
+    await page.waitForFunction(() => !document.querySelector('#view .empty .spinner'), null, { timeout: 20000 }).catch(() => {});
+    await page.waitForTimeout(150);
+  };
+
   /* ---------- 首页：首次使用清单 ---------- */
   await page.goto(base, { waitUntil: 'load', timeout: 30000 });
   await page.waitForSelector('.nav-item', { timeout: 20000 });
   await page.waitForTimeout(800);
 
-  await step('首页渲染 + 导航 11 项', async () => {
-    const items = await page.$$eval('.nav-item', (els) => els.map((e) => e.textContent.trim()));
-    assert(items.length === 12, '导航项应为 12 条，实际 ' + items.length);
+  await step('首页渲染 + 窄侧栏 10 个入口', async () => {
+    const items = await page.$$eval('.nav-item', (els) => els.map((e) => {
+      const tip = e.querySelector('.rail-tip');
+      return tip ? tip.textContent.trim() : e.textContent.trim();
+    }));
+    assert(items.length === 10, '侧栏入口应为 10 个，实际 ' + items.length + '：' + items.join('/'));
+    assert(items.indexOf('伴学助手') >= 0 && items.indexOf('会话记录') < 0,
+      '「会话记录」应已并入「伴学助手」，实际：' + items.join('/'));
+    assert(items.some((x) => x.indexOf('设置') === 0), '左下角应是设置，实际：' + items.join('/'));
     return items.join('/');
+  });
+
+  await step('窄侧栏：只有图标、分组之间有分隔线', async () => {
+    const geo = await page.evaluate(() => {
+      const rail = document.querySelector('#rail');
+      const box = rail.getBoundingClientRect();
+      const vis = Array.from(document.querySelectorAll('#rail .nav-item')).filter((e) => {
+        const t = e.querySelector('.rail-tip');
+        if (!t) return false;
+        const cs = getComputedStyle(t);
+        return cs.opacity !== '0' || cs.visibility === 'hidden';
+      }).length;
+      return {
+        w: Math.round(box.width),
+        seps: document.querySelectorAll('#rail .rail-sep').length,
+        visibleLabels: vis,
+        actions: document.querySelectorAll('#rail .rail-btn').length,
+        items: document.querySelectorAll('#rail .nav-item').length,
+      };
+    });
+    assert(geo.w >= 48 && geo.w <= 72, '窄侧栏宽度应在 48~72px，实际 ' + geo.w);
+    assert(geo.items === 10, '侧栏页面入口应为 10 个，实际 ' + geo.items);
+    assert(geo.seps >= 2, '分组之间应有分隔线，实际 ' + geo.seps);
+    assert(geo.actions === 2, '侧栏底部应有两个动作按钮（主题 / 齿轮之外只有检索），实际 ' + geo.actions);
+    return geo.w + 'px · ' + geo.items + ' 入口 · ' + geo.seps + ' 条分隔线';
   });
 
   await step('首页首次使用清单 5 步且都未完成', async () => {
@@ -269,11 +310,15 @@ function assert(cond, msg) {
     return '5 项，0 完成';
   });
 
-  await step('清单第 1 步可直接跳到模型页', async () => {
+  await step('清单第 1 步直接跳到设置里的「模型与接口」分区', async () => {
     await page.locator('.check-item', { hasText: '配置模型接口' }).getByRole('button', { name: '去配置' }).click();
     await page.waitForSelector('#m-id', { timeout: 10000 });
     const title = await page.textContent('#page-title');
-    assert(title.indexOf('模型') >= 0, '应跳到模型页，实际 ' + title);
+    assert(title.indexOf('设置') >= 0, '应跳到设置页，实际 ' + title);
+    const active = await page.locator('.settings-nav button.active').innerText();
+    assert(active.indexOf('模型与接口') >= 0, '设置页应停在「模型与接口」分区，实际 ' + active);
+    assert((await page.evaluate(() => location.hash)) === '#/settings/models',
+      '设置分区要写进 hash，实际 ' + (await page.evaluate(() => location.hash)));
   });
 
   /* ---------- 模型：预设 + 保存 + 绑定 ---------- */
@@ -323,7 +368,7 @@ function assert(cond, msg) {
   });
   /* ---------- 知识库：登记 + 建立索引 ---------- */
   await step('登记知识库并建立索引', async () => {
-    await nav('档案与知识库');
+    await settings('知识库');
     await page.fill('#kb-id', 'course');
     await page.fill('#kb-name', '自测课程资料');
     await page.fill('#kb-dir', kbDir);
@@ -357,7 +402,7 @@ function assert(cond, msg) {
   });
 
   await step('读不了的文件会被如实报出来（不是静默跳过）', async () => {
-    await nav('档案与知识库');
+    await settings('知识库');
     // 这个知识库已经建过索引，按钮叫「重建索引」；用 exact 免得匹配到表单里的「保存并建立索引」
     await page.getByRole('button', { name: '重建索引', exact: true }).first().click();
     await page.waitForSelector('.ok-dialog:has-text("索引完成")', { timeout: 60000 });
@@ -599,7 +644,11 @@ function assert(cond, msg) {
     await page.locator('.chat-head button', { hasText: '工具' }).click();
     await page.waitForSelector('#tool-sheet:not([hidden]) .item', { timeout: 10000 });
     const names = await page.$$eval('#tool-sheet .item .item-title', (els) => els.map((e) => e.textContent.trim()));
-    assert(names.length >= 7, '工具应至少 7 个，实际 ' + names.length);
+    assert(names.length >= 8, '工具应至少 8 个（含联网搜索），实际 ' + names.length);
+    assert(names.join('/').indexOf('联网搜索') >= 0, '工具清单里应有联网搜索，实际：' + names.join('/'));
+    // 默认没配 Tavily：这个工具应被标成"需先配置"，而不是假装能用
+    const needCfg = await page.locator('#tool-sheet .item', { hasText: '联网搜索' }).innerText();
+    assert(needCfg.indexOf('需先配置') >= 0, '没配密钥时联网搜索应标"需先配置"，实际：' + needCfg.replace(/\s+/g, ' '));
     await shot('12-工具清单');
     await page.locator('.chat-head button', { hasText: '工具' }).click();
     return names.length + ' 个工具';
@@ -820,7 +869,7 @@ function assert(cond, msg) {
 
   /* ---------- 画像校准 ---------- */
   await step('档案页能写入称呼与学习目标', async () => {
-    await nav('档案与知识库');
+    await settings('常规');
     await page.fill('#pf-nick', '自测同学');
     await page.fill('#pf-goal', '两周讲完提示词工程');
     await page.getByRole('button', { name: '保存档案' }).click();
@@ -999,8 +1048,12 @@ function assert(cond, msg) {
     return '会话栏标知识库；切库开新会话（0 轮）；回旧会话切回 ' + kbBack + ' 并还原 ' + turns + ' 轮';
   });
 
-  await step('会话记录能列出会话并展开每一步事件', async () => {
-    await nav('会话记录');
+  await step('会话总览（原「会话记录」）从对话页进得去，能展开每一步事件', async () => {
+    await nav('伴学助手');
+    await page.locator('#rail-all').click();
+    await page.waitForSelector('.settings-head, #view .item', { timeout: 15000 });
+    const title = await page.textContent('#page-title');
+    assert(title.indexOf('会话') >= 0, '应落到会话总览，实际 ' + title);
     await page.waitForSelector('.item', { timeout: 15000 });
     const n = await page.locator('.item').count();
     assert(n >= 3, '问答/出题/讲义/练习册应各留一条会话，实际 ' + n);
@@ -1125,7 +1178,9 @@ function assert(cond, msg) {
     const bar = await page.locator('#titlebar').count();
     assert(bar === 1, '应有自绘标题栏');
     const text = await page.locator('#titlebar .tb-brand').innerText();
-    assert(text.indexOf('教培工作台') >= 0, '标题栏应有应用名，实际：' + text.replace(/\s+/g, ' '));
+    assert(text.indexOf('ITN-Desktop') >= 0, '标题栏应显示应用名 ITN-Desktop，实际：' + text.replace(/\s+/g, ' '));
+    const logoOk = await page.evaluate(() => { const i = document.querySelector('#titlebar .tb-logo'); return !!i && i.complete && i.naturalWidth > 0; });
+    assert(logoOk, '标题栏应显示网页版那个 logo（图片要真的加载出来）');
     for (const id of ['win-min', 'win-max', 'win-close']) {
       const n = await page.locator('#' + id).count();
       assert(n === 1, '缺少窗口按钮 #' + id);
@@ -1224,8 +1279,8 @@ function assert(cond, msg) {
   });
 
   await step('Esc 能关掉弹层，而且不会误删东西', async () => {
-    await nav('档案与知识库');
-    await page.waitForSelector('.data-backup', { timeout: 15000 });
+    await settings('知识库');
+    await page.waitForSelector('.item:has-text("自测课程资料")', { timeout: 15000 });
     const kbBefore = await page.evaluate(() => fetch('/api/settings').then((r) => r.json()).then((j) => (j.data.knowledgeBases || []).length));
     await page.locator('.item', { hasText: '自测课程资料' }).getByRole('button', { name: '删除' }).first().click();
     await page.waitForSelector('#view .card.dialog', { timeout: 10000 });
@@ -1250,7 +1305,7 @@ function assert(cond, msg) {
       throw new Error('等待备份数变成 ' + want + ' 超时');
     };
 
-    await nav('档案与知识库');
+    await settings('数据与备份');
     await page.waitForSelector('.data-backup .kv-line', { timeout: 15000 });
     const info = await page.locator('.data-backup').innerText();
     assert(info.indexOf('数据与备份') >= 0 || info.indexOf('数据目录') >= 0, '应有「数据与备份」卡片');
@@ -1289,9 +1344,10 @@ function assert(cond, msg) {
   await step('侧栏徽标反映真实数量', async () => {
     const badges = await page.$$eval('.nav-item', (els) => els.map((e) => {
       const b = e.querySelector('.nav-badge');
-      return b ? e.querySelector('.nav-label').textContent + '=' + b.textContent : null;
+      const t = e.querySelector('.rail-tip');
+      return b ? (t ? t.textContent.trim().split('·')[0].trim() : '?') + '=' + b.textContent : null;
     }).filter(Boolean));
-    assert(badges.length >= 3, '笔记/错题本/资源/会话都应有徽标，实际 ' + JSON.stringify(badges));
+    assert(badges.length >= 3, '笔记/错题本/资源都应有徽标，实际 ' + JSON.stringify(badges));
     return badges.join('，');
   });
 
@@ -1302,6 +1358,150 @@ function assert(cond, msg) {
     const title = await page.textContent('#page-title');
     assert(title.indexOf('学') >= 0, '刷新后应停在学 · 练，实际 ' + title);
     return title;
+  });
+
+  /* ---------- 新壳：标题栏前后箭头 / 侧栏显隐 / 主题 / 设置分区 ---------- */
+  await step('标题栏的前进后退真的能换页（按钮可用态按访问栈算）', async () => {
+    await nav('我的学习');
+    await nav('我的笔记');
+    assert(await page.evaluate(() => !document.querySelector('#nav-back').disabled), '走过一页之后「后退」应可点');
+    await page.locator('#nav-back').click();
+    await page.waitForFunction(() => (document.querySelector('#page-title') || {}).textContent === '我的学习', null, { timeout: 10000 });
+    assert(await page.evaluate(() => !document.querySelector('#nav-forward').disabled), '后退之后「前进」应可点');
+    await page.locator('#nav-forward').click();
+    await page.waitForFunction(() => (document.querySelector('#page-title') || {}).textContent === '我的笔记', null, { timeout: 10000 });
+    return '后退 → 我的学习，前进 → 我的笔记';
+  });
+
+  await step('侧栏显隐：标题栏按钮与 Ctrl+Shift+S 都能收放，并且被记住', async () => {
+    await page.locator('#rail-toggle').click();
+    await page.waitForTimeout(350);
+    let hidden = await page.evaluate(() => document.body.classList.contains('rail-hidden'));
+    assert(hidden, '点按钮应收起侧栏');
+    const w = await page.evaluate(() => { const r = document.querySelector('#rail'); return r ? r.getBoundingClientRect().width : -1; });
+    assert(w < 1, '收起后侧栏不该占宽度，实际 ' + w);
+    await page.keyboard.press('Control+Shift+S');
+    await page.waitForTimeout(350);
+    hidden = await page.evaluate(() => document.body.classList.contains('rail-hidden'));
+    assert(!hidden, 'Ctrl+Shift+S 应能把侧栏放回来');
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForSelector('.nav-item', { timeout: 20000 });
+    await page.waitForTimeout(900);
+    hidden = await page.evaluate(() => document.body.classList.contains('rail-hidden'));
+    assert(!hidden, '侧栏状态存在内核里，重载后应保持显示');
+    return '收起 → Ctrl+Shift+S 放回 → 重载后保持';
+  });
+
+  await step('主题三档：切换立即生效、写进内核、重载后仍然生效', async () => {
+    await settings('外观');
+    const cards = await page.locator('.theme-card').count();
+    assert(cards === 3, '应有浅色 / 深色 / 跟随系统三档，实际 ' + cards);
+    await page.locator('.theme-card.dark').click();
+    await page.waitForTimeout(700);
+    let st = await page.evaluate(() => ({ attr: document.documentElement.getAttribute('data-theme'), bg: getComputedStyle(document.body).backgroundColor }));
+    assert(st.attr === 'dark', '选深色后 html 应带 data-theme=dark，实际 ' + st.attr);
+    const darkBg = st.bg;
+    await shot('40-深色模式');
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForSelector('.nav-item', { timeout: 20000 });
+    await page.waitForTimeout(1200);
+    st = await page.evaluate(() => ({ attr: document.documentElement.getAttribute('data-theme'), bg: getComputedStyle(document.body).backgroundColor }));
+    assert(st.attr === 'dark' && st.bg === darkBg, '主题应重载后仍然生效，实际 ' + JSON.stringify(st));
+    await settings('外观');
+    await page.locator('.theme-card.light').click();
+    await page.waitForTimeout(700);
+    st = await page.evaluate(() => ({ attr: document.documentElement.getAttribute('data-theme'), bg: getComputedStyle(document.body).backgroundColor }));
+    assert(st.attr === 'light' && st.bg !== darkBg, '切回浅色后背景应变白，实际 ' + JSON.stringify(st));
+    return '深色 ' + darkBg + ' → 浅色 ' + st.bg + '（重载后仍生效）';
+  });
+
+  await step('设置页：左侧六个分区、右侧跟着换、深链直达、老路由兼容', async () => {
+    await nav('设置');
+    const secs = await page.$$eval('.settings-nav button', (els) => els.map((e) => e.textContent.trim()));
+    assert(secs.length === 6, '设置应有 6 个分区，实际 ' + secs.length + '：' + secs.join('/'));
+    assert(secs.join('/').indexOf('模型与接口') >= 0, '模型配置应该收在设置里');
+    await page.goto(base + '#/settings/models', { waitUntil: 'load', timeout: 30000 });
+    await page.waitForSelector('#m-id', { timeout: 20000 });
+    let active = await page.locator('.settings-nav button.active').innerText();
+    assert(active.indexOf('模型与接口') >= 0, '深链应停在模型分区，实际 ' + active);
+    await page.goto(base + '#/models', { waitUntil: 'load', timeout: 30000 });
+    await page.waitForSelector('#m-id', { timeout: 20000 });
+    const hash = await page.evaluate(() => location.hash);
+    assert(hash === '#/settings/models', '老路由 #/models 应换成 #/settings/models，实际 ' + hash);
+    await shot('41-设置分区');
+    return secs.join('/');
+  });
+
+  await step('设置里能保存模型并测通连通性（模型配置已并入设置）', async () => {
+    await settings('模型与接口');
+    await page.fill('#m-id', 'mock2');
+    await page.fill('#m-name', '设置页保存的模型');
+    await page.fill('#m-base', mockBase);
+    await page.fill('#m-key', 'mock-key');
+    await page.fill('#m-model', 'mock-chat');
+    await page.getByRole('button', { name: '保存模型' }).click();
+    await page.waitForSelector('.item:has-text("设置页保存的模型")', { timeout: 15000 });
+    await page.locator('.item', { hasText: '设置页保存的模型' }).getByRole('button', { name: '测试连通' }).click();
+    await page.waitForSelector('.tag:has-text("连通")', { timeout: 20000 }).catch(() => {});
+    const txt = await page.locator('.item', { hasText: '设置页保存的模型' }).innerText();
+    assert(txt.indexOf('mock') >= 0, '设置里的模型条目应显示配置信息');
+    await page.locator('.item', { hasText: '设置页保存的模型' }).getByRole('button', { name: '删除' }).click();
+    await page.waitForTimeout(900);
+    return '保存 → 测试连通 → 删除';
+  });
+
+  await step('联网搜索（Tavily）：配置能保存、密钥不回传、开启后工具变可用', async () => {
+    const wsGet = async () => page.evaluate(() => fetch('/api/websearch/get', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => r.json()).then((j) => j.data));
+    await settings('模型与接口');
+    await page.waitForSelector('#ws-key', { timeout: 15000 });
+    let ws = await wsGet();
+    assert(ws.provider === 'tavily', '联网搜索服务应是 Tavily，实际 ' + JSON.stringify(ws));
+    assert(ws.enabled === false && ws.hasKey === false, '默认应是未启用、无密钥，实际 ' + JSON.stringify(ws));
+
+    // 填一个假密钥并开启：接口只能回掩码，任何地方都不能把密钥原样吐回来
+    await page.fill('#ws-key', 'tvly-e2e-fake-key-1234567890');
+    await page.selectOption('#ws-enabled', '1');
+    await page.selectOption('#ws-results', '5');
+    await page.getByRole('button', { name: '保存', exact: true }).click();
+    await page.waitForTimeout(1400);
+    ws = await wsGet();
+    assert(ws.enabled === true && ws.hasKey === true, '保存后应是已启用且已设置密钥，实际 ' + JSON.stringify(ws));
+    const raw = await page.evaluate(() => fetch('/api/websearch/get', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => r.text()));
+    assert(raw.indexOf('tvly-e2e-fake-key-1234567890') < 0, '整个响应体都不该出现完整密钥，实际 ' + raw.slice(0, 120));
+
+    const tools = await page.evaluate(() => fetch('/api/tools/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => r.json()));
+    const web = (tools.data.tools || []).filter((t) => t.name === 'web_search')[0];
+    assert(web && web.available === true, '开启后 web_search 应变为可用，实际 ' + JSON.stringify(web));
+    await shot('42-联网搜索配置');
+
+    // 复原：清除密钥并关掉，后面的步骤不该被它影响
+    await settings('模型与接口');
+    await page.waitForSelector('#ws-key', { timeout: 15000 });
+    await page.getByRole('button', { name: '清除密钥' }).click();
+    await page.waitForTimeout(1400);
+    ws = await wsGet();
+    assert(ws.hasKey === false && ws.enabled === false, '清除后应回到未配置，实际 ' + JSON.stringify(ws));
+    const again = await page.evaluate(() => fetch('/api/tools/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => r.json()));
+    const web2 = (again.data.tools || []).filter((t) => t.name === 'web_search')[0];
+    assert(web2 && web2.available === false, '清除后应重新标成不可用，实际 ' + JSON.stringify(web2));
+    return '保存 → 掩码回显 → 工具变可用 → 清除复原';
+  });
+
+  await step('伴学助手与会话记录合并成一个入口（会话栏挂在对话页左侧）', async () => {
+    await nav('伴学助手');
+    await page.waitForTimeout(700);
+    assert(await page.locator('#session-rail').isVisible(), '对话页左侧应是会话栏');
+    assert((await page.locator('#rail-all').count()) === 1, '会话栏底部应有「全部会话与步骤」入口');
+    await page.locator('#rail-all').click();
+    await page.waitForTimeout(800);
+    let title = await page.textContent('#page-title');
+    assert(title.indexOf('会话') >= 0, '应落到会话总览，实际 ' + title);
+    assert((await page.locator('#top-actions button').count()) >= 1, '会话总览应能一键回到对话');
+    await page.locator('#top-actions button').first().click();
+    await page.waitForTimeout(800);
+    title = await page.textContent('#page-title');
+    assert(title.indexOf('伴学助手') >= 0, '应回到对话，实际 ' + title);
+    return '一个入口 → 两种视图（对话 / 全部会话）';
   });
 
   await step('全程没有前端报错', async () => {
