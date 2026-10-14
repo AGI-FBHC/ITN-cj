@@ -5069,6 +5069,12 @@ async function settingsModels() {
   ], String(ws.results || 5))));
   wsCard.appendChild(modeRow);
   wsCard.appendChild(wsRow);
+
+  /* 域名黑白名单：黑名单优先；允许名单留空 = 不限制（默认） */
+  const hostRow = el("div", "row");
+  hostRow.appendChild(fieldOf("允许的域名（留空 = 不限制）", inputOf("ws-allow", "例如 example.com, *.gov.cn", ws.allowHosts || "")));
+  hostRow.appendChild(fieldOf("禁止的域名（优先于允许名单）", inputOf("ws-block", "例如 *.doubleclick.net", ws.blockHosts || "")));
+  wsCard.appendChild(hostRow);
   const wsActs = el("div", "row");
   wsActs.appendChild(btn("保存", "primary", async () => {
     try {
@@ -5077,6 +5083,8 @@ async function settingsModels() {
         enabled: $("ws-enabled").value,
         results: Number($("ws-results").value) || 5,
         mode: $("ws-mode").value,
+        allowHosts: $("ws-allow").value.trim(),
+        blockHosts: $("ws-block").value.trim(),
       });
       toast("联网搜索已保存");
       go("settings", "models");

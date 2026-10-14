@@ -96,6 +96,29 @@ try {
     $r4 = Post '/api/web/fetch' @{ url = "ftp://example.com/a" }
     Check '非 http/https 被拒' ($r4.code -ne 0) ([string]$r4.message)
 
+    Write-Output "== 域名黑白名单：黑名单优先、允许名单留空=不限制 =="
+    # 取域名（去掉 scheme、路径与端口：名单说的是域名）
+    $allowHost = ([string]$r.data.url) -replace '^https?://', '' -replace '/.*$', '' -replace ':\d+$', ''
+    # 默认（两张名单都空）能抓
+    Check '默认不限制域名' ((Post '/api/web/fetch' @{ url = "$web/big.html" }).code -eq 0) 'ok'
+    # 禁止名单里加上它 → 拒绝，且原因说人话
+    Post '/api/websearch/save' @{ apiKey = ''; enabled = '0'; mode = 'auto'; allowHosts = ''; blockHosts = $allowHost } | Out-Null
+    $blocked = Post '/api/web/fetch' @{ url = "$web/big.html" }
+    Check '禁止名单命中时拒绝' ($blocked.code -ne 0 -and ([string]$blocked.message).Contains('禁止名单')) ([string]$blocked.message)
+    # 同时在允许名单里也照样拒绝：黑名单优先
+    Post '/api/websearch/save' @{ apiKey = ''; enabled = '0'; mode = 'auto'; allowHosts = $allowHost; blockHosts = $allowHost } | Out-Null
+    $both = Post '/api/web/fetch' @{ url = "$web/big.html" }
+    Check '两张名单都在时黑名单优先' ($both.code -ne 0 -and ([string]$both.message).Contains('禁止名单')) ([string]$both.message)
+    # 只填允许名单、且不含它 → 拒绝
+    Post '/api/websearch/save' @{ apiKey = ''; enabled = '0'; mode = 'auto'; allowHosts = 'example.com'; blockHosts = '' } | Out-Null
+    $notAllowed = Post '/api/web/fetch' @{ url = "$web/big.html" }
+    Check '不在允许名单里时拒绝' ($notAllowed.code -ne 0 -and ([string]$notAllowed.message).Contains('允许名单')) ([string]$notAllowed.message)
+    # 允许名单里有通配 → 放行
+    Post '/api/websearch/save' @{ apiKey = ''; enabled = '0'; mode = 'auto'; allowHosts = '*.test, ' + $allowHost; blockHosts = '' } | Out-Null
+    Check '允许名单命中时可以抓' ((Post '/api/web/fetch' @{ url = "$web/big.html" }).code -eq 0) 'ok'
+    # 清空，别影响后面的用例
+    Post '/api/websearch/save' @{ apiKey = ''; enabled = '0'; mode = 'auto'; allowHosts = ''; blockHosts = '' } | Out-Null
+
     Write-Output "== 缓存可删 =="
     $d = Post '/api/web/cache/delete' @{ name = $page.name }
     Check '删除成功' ($d.code -eq 0) ("code=" + $d.code)

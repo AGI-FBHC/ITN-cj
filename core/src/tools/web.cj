@@ -267,6 +267,11 @@ public func fetchPage(dataDir: String, url: String): JsonObject {
     if (!isHttpUrl(url)) {
         throw WebFetchException("只支持 http/https 链接，收到的是：" + byteSafePrefix(url, 60))
     }
+    // 先过域名黑白名单：不静默外发，也不等发出去才拦
+    let host = hostOfUrl(url)
+    if (!webHostAllowed(dataDir, host)) {
+        throw WebFetchException(webHostDenyReason(dataDir, host))
+    }
     var current = url
     var hop: Int64 = 0
     var resp = httpGet(current)
@@ -278,6 +283,10 @@ public func fetchPage(dataDir: String, url: String): JsonObject {
         current = if (isHttpUrl(loc)) { loc } else { joinUrl(current, loc) }
         if (!isHttpUrl(current)) {
             throw WebFetchException("跳转到了一个不支持的地址：" + byteSafePrefix(current, 80))
+        }
+        // 跳转后的域名同样要过名单，别让"先给个白名单域名、再跳到别处"绕过
+        if (!webHostAllowed(dataDir, hostOfUrl(current))) {
+            throw WebFetchException("跳转到了不允许的域名：" + webHostDenyReason(dataDir, hostOfUrl(current)))
         }
         resp = httpGet(current)
         hop = hop + 1

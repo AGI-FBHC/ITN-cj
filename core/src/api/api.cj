@@ -599,7 +599,8 @@ public class Api {
                     }
                     // enabled 既可能是 JSON 布尔也可能是 "0"/"1" 字符串，两种都认
                     saveWebSearch(store.dataDir, strOf(b, "apiKey"),
-                        boolOf(b, "enabled") || strOf(b, "enabled") == "1", n)
+                        boolOf(b, "enabled") || strOf(b, "enabled") == "1", n,
+                        strOf(b, "allowHosts"), strOf(b, "blockHosts"))
                     let m = strOf(b, "mode")
                     if (m == "off" || m == "auto" || m == "always") {
                         saveWebMode(store.dataDir, m)

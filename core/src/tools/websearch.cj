@@ -160,12 +160,85 @@ public func webSearchResults(dataDir: String): Int64 {
     return n
 }
 
+/* ---------- 域名黑白名单 ---------- */
+
+/** 允许访问的域名（空 = 不限制）；逗号分隔，支持 *.example.com。 */
+public func webAllowHosts(dataDir: String): String {
+    return trimStr(DbHub.open(dataDir).getKv(WEB_SEARCH_TABLE, "web_allow_hosts", ""))
+}
+
+/** 禁止访问的域名；**优先级高于允许列表**。 */
+public func webBlockHosts(dataDir: String): String {
+    return trimStr(DbHub.open(dataDir).getKv(WEB_SEARCH_TABLE, "web_block_hosts", ""))
+}
+
+/** 去掉域名里的端口（"127.0.0.1:8080" → "127.0.0.1"）。 */
+func hostOnly(s: String): String {
+    let b = s.toArray()
+    var i = 0
+    while (i < b.size) {
+        if (b[i] == 58) {
+            return String.fromUtf8(b[0..i])
+        }
+        i = i + 1
+    }
+    return s
+}
+
+func hostInList(host: String, list: String): Bool {
+    let h = hostOnly(host.toAsciiLower())
+    for (raw in list.split(",")) {
+        let pat = hostOnly(trimStr(raw).toAsciiLower())
+        if (pat.size == 0) {
+            continue
+        }
+        if (pat == h) {
+            return true
+        }
+        // *.example.com 这种通配：只匹配子域，不匹配 example.com 本身
+        if (hasPrefix(pat, "*.")) {
+            let suffix = String.fromUtf8(pat.toArray()[1..pat.size])
+            if (hasSuffix(h, suffix)) {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+/**
+ * 这个域名允许抓吗？
+ *
+ * 规则刻意简单：**黑名单优先**；允许列表为空表示"不限制"（默认，用户装完就能用）；
+ * 一旦填了允许列表，就只放行列表里的域名——这是"我只让它看我信任的几个站"的用法。
+ */
+public func webHostAllowed(dataDir: String, host: String): Bool {
+    let block = webBlockHosts(dataDir)
+    if (block.size > 0 && hostInList(host, block)) {
+        return false
+    }
+    let allow = webAllowHosts(dataDir)
+    if (allow.size == 0) {
+        return true
+    }
+    return hostInList(host, allow)
+}
+
+/** 不允许时给出人话原因（界面直接把这句显示出来）。 */
+public func webHostDenyReason(dataDir: String, host: String): String {
+    if (webBlockHosts(dataDir).size > 0 && hostInList(host, webBlockHosts(dataDir))) {
+        return "「" + host + "」在禁止名单里（设置 → 模型与接口 → 联网）"
+    }
+    return "「" + host + "」不在允许名单里（设置 → 模型与接口 → 联网）"
+}
+
 /** 联网搜索是否可用：启用 + 有密钥。 */
 public func webSearchReady(dataDir: String): Bool {
     return webSearchEnabled(dataDir) && webSearchKey(dataDir).size > 0
 }
 
-public func saveWebSearch(dataDir: String, apiKey: String, enabled: Bool, results: Int64): Unit {
+public func saveWebSearch(dataDir: String, apiKey: String, enabled: Bool, results: Int64,
+    allowHosts: String, blockHosts: String): Unit {
     let db = DbHub.open(dataDir)
     let k = trimStr(apiKey)
     if (k.size > 0) {
@@ -177,6 +250,9 @@ public func saveWebSearch(dataDir: String, apiKey: String, enabled: Bool, result
         n = 5
     }
     db.putKv(WEB_SEARCH_TABLE, "web_search_results", n.toString())
+    // 名单允许清空（清空 = 回到默认：不限允许、不禁止）
+    db.putKv(WEB_SEARCH_TABLE, "web_allow_hosts", trimStr(allowHosts))
+    db.putKv(WEB_SEARCH_TABLE, "web_block_hosts", trimStr(blockHosts))
 }
 
 /** 只露头尾，用于界面回显：接口永不回传完整密钥。 */
@@ -252,6 +328,8 @@ public func webSearchJson(dataDir: String): JsonObject {
     o.put("keyHint", JsonString(webSearchKeyHint(key)))
     o.put("results", JsonInt(webSearchResults(dataDir)))
     o.put("mode", JsonString(webMode(dataDir)))
+    o.put("allowHosts", JsonString(webAllowHosts(dataDir)))
+    o.put("blockHosts", JsonString(webBlockHosts(dataDir)))
     o.put("cacheCount", JsonInt(listWebCache(dataDir).size()))
     return o
 }
