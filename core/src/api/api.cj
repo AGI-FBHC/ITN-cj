@@ -484,6 +484,7 @@ public class Api {
                                 o.put("skippedTotal", JsonInt(idx.scan.total()))
                                 // 也记一份在库里，方便以后在知识库页面回看
                                 DbHub.open(store.dataDir).putKv("meta", "kb-skipped:" + id, idx.scan.summary())
+                                DbHub.open(store.dataDir).putKv("meta", "kb-skipped-count:" + id, idx.scan.total().toString())
                                 DbHub.open(store.dataDir).putKv("meta", "kb-embed-error:" + id, embedError)
                                 ok(ctx, o)
                             } catch (e: Exception) {
@@ -535,7 +536,43 @@ public class Api {
                             let o = kb.toJson()
                             o.put("loadedChunks", JsonInt(idx.chunks.size))
                             o.put("skippedSummary", JsonString(DbHub.open(store.dataDir).getKv("meta", "kb-skipped:" + id, "")))
+                            // 未纳入的个数也回一个：界面要写"没纳入 N 个文件"，别让它自己数顿号
+                            var skippedN: Int64 = 0
+                            let skippedRaw = DbHub.open(store.dataDir).getKv("meta", "kb-skipped-count:" + id, "")
+                            if (skippedRaw.size > 0) {
+                                try {
+                                    skippedN = Int64.parse(skippedRaw)
+                                } catch (e: Exception) {
+                                    skippedN = 0
+                                }
+                            }
+                            o.put("skippedTotal", JsonInt(skippedN))
                             o.put("embedError", JsonString(DbHub.open(store.dataDir).getKv("meta", "kb-embed-error:" + id, "")))
+                            // 这个库里到底有什么：按文档聚合（网页版那个知识库详情抽屉里最主要的一块）
+                            let docsArr = JsonArray()
+                            let docOrder = ArrayList<String>()
+                            let docChunks = HashMap<String, Int64>()
+                            let docImages = HashMap<String, Int64>()
+                            let docTitles = HashMap<String, String>()
+                            for (c in idx.chunks) {
+                                if (!docChunks.contains(c.docPath)) {
+                                    docOrder.add(c.docPath)
+                                    docChunks[c.docPath] = 0
+                                    docImages[c.docPath] = 0
+                                    docTitles[c.docPath] = c.docTitle
+                                }
+                                docChunks[c.docPath] = docChunks[c.docPath] + 1
+                                docImages[c.docPath] = docImages[c.docPath] + c.images.size
+                            }
+                            for (dp in docOrder) {
+                                let one = JsonObject()
+                                one.put("path", JsonString(dp))
+                                one.put("title", JsonString(docTitles[dp]))
+                                one.put("chunks", JsonInt(docChunks[dp]))
+                                one.put("images", JsonInt(docImages[dp]))
+                                docsArr.add(one)
+                            }
+                            o.put("docs", docsArr)
                             let ol2 = Outline.load(kbDir(store.dataDir, id) + Path.Separator + "outline.json")
                             match (ol2) {
                                 case Some(oo) =>

@@ -4157,6 +4157,69 @@ PAGES.kb = {
     }
 
     const k = state.cfg.knowledgeBases.find((x) => x.id === state.kb) || {};
+
+    /* 这个库里有什么（网页版那个"知识库详情抽屉"最主要的一块）：
+       统计 + 来源 + 未纳入 + 整理状态 + 文档清单，动作就三个（重建索引 / 让 lumin 整理 / 去设置改）。 */
+    let st = null;
+    try { st = await api("/api/kb/stats", { id: state.kb }); } catch (e) { st = null; }
+    const info = cardOf({
+      title: k.name || state.kb,
+      tag: (k.chunkCount || 0) > 0 ? "已索引" : "未索引",
+      tagCls: (k.chunkCount || 0) > 0 ? "ok" : "warn",
+      actions: [
+        btn((k.chunkCount || 0) > 0 ? "重建索引" : "建立索引", "sm", () => buildIndex(k.id)),
+        btn("让 lumin 整理", "sm", () => organizeKb(k.id)),
+        btn("设置里改", "sm ghost", () => go("settings", "kb")),
+      ],
+    });
+    const grid = el("div", "grid grid-4");
+    grid.appendChild(statCard("文档", k.docCount || 0, "篇"));
+    grid.appendChild(statCard("切片", k.chunkCount || 0, "片"));
+    grid.appendChild(statCard("图片", k.imageCount || 0, "张"));
+    grid.appendChild(statCard("建立时间", fmtStamp(k.builtAt) || "—", ""));
+    info.appendChild(grid);
+    const rows = [
+      ["来源", (k.sourcePath && k.sourcePath !== k.rootDir) ? k.sourcePath : (k.rootDir || "未设置目录")],
+      ["检索方式", state.cfg.embedModelId ? "向量 + 关键词" : "关键词（未绑向量模型）"],
+    ];
+    if (st && st.organizedBy) rows.push(["目录整理", "由 " + st.organizedBy + " 整理 · " + (st.outlineChapters || 0) + " 章" + (st.outlineNote ? "：" + st.outlineNote : "")]);
+    for (const [label, value] of rows) {
+      const line = el("div", "kv-line");
+      line.appendChild(el("span", "kv-key", label));
+      line.appendChild(el("span", "path-line grow", String(value)));
+      info.appendChild(line);
+    }
+    if (st && st.skippedSummary) {
+      info.appendChild(el("div", "skip-note", ""));
+      const last = info.querySelector(".skip-note");
+      last.appendChild(el("div", "skip-title", "没纳入 " + (st.skippedTotal || 0) + " 个文件：" + st.skippedSummary));
+    }
+    if (st && st.embedError) {
+      const w = el("div", "skip-note");
+      w.appendChild(el("div", "skip-title", "没开启向量检索，关键词检索照常"));
+      w.appendChild(el("div", "muted sm", "原因：" + shortReason(st.embedError)));
+      info.appendChild(w);
+    }
+    if (st && (st.docs || []).length) {
+      const det = el("details", "kb-docs");
+      const sum = el("summary", null, "文档 " + st.docs.length + " 篇（点开看清单）");
+      det.appendChild(sum);
+      const list = el("div", "list");
+      for (const d of st.docs) {
+        const it = el("div", "item");
+        const row = el("div", "row");
+        const main = el("div", "grow");
+        main.appendChild(el("div", "item-title", d.title || d.path));
+        main.appendChild(el("div", "meta", d.path + " · " + d.chunks + " 片" + (d.images ? " · " + d.images + " 张图" : "")));
+        row.appendChild(main);
+        it.appendChild(row);
+        list.appendChild(it);
+      }
+      det.appendChild(list);
+      info.appendChild(det);
+    }
+    v.appendChild(info);
+
     const card = el("div", "card");
     const head = el("div", "card-head");
     head.appendChild(el("h2", null, "检索"));
@@ -4223,50 +4286,12 @@ PAGES.kb = {
     }
     q.onkeydown = (e) => { if (e.key === "Enter") run(); };
 
-    let kbStats = null;
-    try {
-      kbStats = await api("/api/kb/stats", { id: state.kb });
-    } catch (e) { /* 没建过索引就没有统计 */ }
-    const stats = cardOf({
-      title: "索引状态",
-      sub: kbName(state.kb),
-      actions: [btn("重建索引", "sm", () => buildIndex(state.kb)), btn("管理知识库", "sm ghost", () => go("settings", "kb"))],
-    });
-    if (!(k.chunkCount || 0)) {
-      stats.appendChild(emptyState({
-        inline: true,
-        art: "alert",
-        title: "还没有索引",
-        text: "目录已登记（" + (k.rootDir || "未填写") + "），但还没有切片。建立索引后才能检索。",
-        actions: [btn("现在建立索引", "primary", () => buildIndex(state.kb))],
-      }));
-    } else {
-      const grid = el("div", "grid grid-4");
-      grid.appendChild(statCard("文档", k.docCount || 0, "篇"));
-      grid.appendChild(statCard("切片", k.chunkCount || 0, "片"));
-      grid.appendChild(statCard("图片", k.imageCount || 0, "张"));
-      grid.appendChild(statCard("建立时间", fmtStamp(k.builtAt) || "—", ""));
-      stats.appendChild(grid);
-      stats.appendChild(el("p", "muted sm", "目录：" + (k.rootDir || "")));
-      // 向量服务不给 /embeddings 时索引照样建好了：这里如实说清楚，别让人以为坏了
-      if (kbStats && kbStats.embedError) {
-        // 少了一种检索方式而已：一行说清楚，别糊一大段
-        const w = el("div", "skip-note");
-        w.appendChild(el("div", "skip-title", "没开启向量检索，关键词检索照常"));
-        w.appendChild(el("div", "muted sm", "原因：" + shortReason(kbStats.embedError)));
-        stats.appendChild(w);
-      }
-      if (kbStats && kbStats.skippedSummary) {
-        const warn = el("div", "skip-note");
-        warn.appendChild(el("div", "skip-title", "上次有 " + (kbStats.skippedTotal || kbStats.skippedSummary.split("、").length) +
-          " 个文件没纳入：" + kbStats.skippedSummary));
-        warn.appendChild(el("div", "muted sm", "内核读的是 Markdown / 文本 / CSV / HTML / 日志 / JSON。"));
-        stats.appendChild(warn);
-      }
-    }
-    v.appendChild(stats);
+    // 原来这里还有一张「索引状态」卡：统计、目录、未纳入、动作和上面的详情卡是同一批信息，
+    // 两处显示同一件事只会让人怀疑哪个是对的 —— 已经并进上面那张卡。
+    v.appendChild(card);
   },
 };
+
 /* ---------- 伴学助手：会话栏 + 主对话框（对标 Codex 的形态） ---------- */
 
 const KIND_LABEL = { ask: "问答", lecture: "讲义", quiz: "练习", "": "对话" };

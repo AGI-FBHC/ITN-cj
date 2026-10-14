@@ -458,6 +458,36 @@ fs.writeFileSync(singleFile, [
     return '章节含「网页讲义」；style 被剥掉';
   });
 
+  await step('领域知识库：这个库里有什么（统计 / 来源 / 文档清单 / 动作都在这一页）', async () => {
+    await nav('领域知识库');
+    await page.waitForSelector('#view .grid .stat', { timeout: 20000 });
+    const head = await page.locator('#view .card').first().innerText();
+    for (const want of ['文档', '切片', '图片', '来源', '检索方式']) {
+      assert(head.indexOf(want) >= 0, '知识库详情里应有「' + want + '」，实际：' + head.replace(/\s+/g, ' ').slice(0, 120));
+    }
+    // 统计与接口同口径
+    const api = await page.evaluate(() => fetch('/api/kb/stats', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 'course' }) }).then((r) => r.json()).then((j) => j.data));
+    const nums = await page.$$eval('#view .grid .stat .v', (els) => els.map((e) => parseInt(e.textContent, 10) || 0));
+    assert(nums[0] === api.docCount, '文档数应与接口一致（界面 ' + nums[0] + ' / 接口 ' + api.docCount + '）');
+    assert(nums[1] === api.chunkCount, '切片数应与接口一致（界面 ' + nums[1] + ' / 接口 ' + api.chunkCount + '）');
+    // 文档清单（折叠块）里应有真实文件名，且每篇带切片数
+    const sum = await page.locator('#view .kb-docs summary').innerText();
+    assert(sum.indexOf('文档') >= 0, '应有文档清单折叠块，实际 ' + sum);
+    await page.locator('#view .kb-docs summary').click();
+    await page.waitForTimeout(400);
+    const first = await page.locator('#view .kb-docs .item').first().innerText();
+    assert(first.indexOf('片') >= 0, '每篇文档应带切片数，实际 ' + first.replace(/\s+/g, ' '));
+    const titles = await page.$$eval('#view .kb-docs .item-title', (els) => els.map((e) => e.textContent.trim()));
+    assert(titles.join('/').indexOf('提示词') >= 0, '文档清单里应有 E2E 造的 01-提示词.md，实际 ' + titles.join('/'));
+    // 动作就三个：重建索引 / 让 lumin 整理 / 设置里改
+    const acts = await page.$$eval('#view .card-head button', (els) => els.map((e) => e.textContent.trim()));
+    assert(acts.join('/').indexOf('重建索引') >= 0 && acts.join('/').indexOf('让 lumin 整理') >= 0, '详情卡上应有这两个动作，实际 ' + acts.join('/'));
+    // 接口也把文档清单回出来了（界面不自己拼）
+    assert((api.docs || []).length === api.docCount, '接口的 docs 数与 docCount 应一致，实际 ' + (api.docs || []).length + ' vs ' + api.docCount);
+    await shot('56-知识库详情');
+    return titles.length + ' 篇文档 · ' + nums[0] + ' 篇 / ' + nums[1] + ' 片 · 动作 ' + acts.join('/');
+  });
+
   await step('读不了的文件会被如实报出来（不是静默跳过）', async () => {
     await settings('知识库');
     // 这个知识库已经建过索引，按钮叫「重建索引」；用 exact 免得匹配到表单里的「保存并建立索引」

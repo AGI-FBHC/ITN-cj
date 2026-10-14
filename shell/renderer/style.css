@@ -685,6 +685,15 @@ body.chat-mode .topbar { display: none; }
 .panel-group-count { color: var(--muted); font-variant-numeric: tabular-nums; }
 .panel-group-head:hover { color: var(--ink-2); }
 
+/* 知识库详情：文档清单折叠块 */
+.kb-docs { margin-top: 10px; }
+.kb-docs > summary {
+  cursor: pointer; list-style: none; color: var(--ink-2);
+  font-size: calc(13px * var(--fs, 1)); padding: 4px 0;
+}
+.kb-docs > summary::-webkit-details-marker { display: none; }
+.kb-docs > summary:hover { color: var(--brand); }
+
 /* 学习日历（连续打卡）：7 列网格，学过的那天填品牌色，今天描边，未来的日子淡掉 */
 .streak-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin: 10px 0 8px; max-width: 460px; }
 .streak-wd { text-align: center; font-size: calc(12px * var(--fs, 1)); color: var(--muted); }
