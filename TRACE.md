@@ -667,3 +667,60 @@ JSON 在真实规模下有三个硬伤，都在实测里撞到过：向量与切
 - 没有"停止生成"（内核暂无可取消机制；一个写错主题的讲义只能等它跑完）。
 - 产物仍未登记进库（文件即权威）。
 - 备份策略上不做自动轮转（不会自动删旧备份）——备份归用户管，界面只给大小和删除。
+
+
+## 2026-10-14 桌面版第八轮：可以随时停止生成 + 冻结第一版（提交 ccd5a64，标签 freeze-1-20261014）
+
+### 一、这一轮做的：停止生成
+
+**为什么**：之前写错主题的讲义只能等它跑完（实测最久 92 秒），对话也一样。
+这是 `docs/08` 里"还没做"清单上最后一项较大的空白。
+
+**内核**：
+- 新增 `core/src/agent/cancel.cj`：取消登记表（`Mutex` 护住的 `HashMap`，用 sessionId 做键）
+  + `CancelException`（继承 `LlmException`，为此把 `LlmException` 改成 `open`，
+  这样 `postStream` 的 `catch (e: LlmException)` 会原样重抛，不会被包成"请求模型失败"）。
+- `ask` / `lecture` / `quiz` 三条链路：每轮开始 `clearCancel`，流式回调里 `if (isCancelled) throw CancelException()`，
+  收到取消就地收尾并写 `turn/end`；**讲义不保存半成品**，返回「已取消（已完成 N 小节，未保存产物）」。
+- 新增 `/api/agent/cancel`。
+
+**界面**：对话输入框旁的「停止」、生成进度卡上的「停止生成」；
+被取消的一轮渲染成**灰色说明**（不是红色报错）+ 「重新问一次 / 重新生成」入口。
+
+### 二、两个坑（都值得记）
+
+1. **取消被静默吞掉**：`llm.handleSseLine` 原来是
+   `try { 解析 JSON; out.append(piece); onDelta(piece) } catch (e: Exception) { () }` ——
+   这个 catch 本意是"单行解析失败不影响整体"，但把 `onDelta` 也圈进去了，
+   于是回调里抛的取消异常被吞，用户点了停止却继续生成到底。
+   现在 try 只保护解析，`onDelta` 移到 try 之外。
+   （第一次实测时"问答取消"没生效、"讲义取消"生效，就是因为讲义还有循环顶部的 `isCancelled` 兜底。）
+2. **对话在"提问后、第一段文字到达前"什么都不显示**：点没点上都看不出来。
+   这是本轮写 E2E 断言时暴露的（我按旧代码的记忆等 `.spinner` 等不到），已补等待占位。
+   顺带把 E2E 里两处"等回答"的判断都加上 `!spinner`——占位气泡里也有文字，
+   只看"有文字"会让断言在生成中通过（这个坑第三轮踩过一次，这次是它换了张脸再来一次）。
+
+### 三、冻结第一版（提交 ccd5a64 / 标签 freeze-1-20261014）
+
+用户要求"先冻结一个版本先用用看"。冻结内容：
+
+- **代码**：`git tag freeze-1-20261014`（annotated），指向 ccd5a64；本地仓库，未推送。
+- **绿色包**：`dist\ITN-Desktop-freeze-1-20261014.zip`（由 `scripts/package-app.ps1` 从同一提交产出）。
+- **本机已预置好模型配置**：在默认数据目录 `%LOCALAPPDATA%\ITN-Desktop` 里写入 MiMo TokenPlan
+  （baseUrl `https://token-plan-cn.xiaomimimo.com/v1`，对话 `mimo-v2.6-flash`，多模态 `mimo-v2.6-pro`，
+  密钥只在本机数据库里，不进 Git），并绑定「对话与生成」；用户只需再指定一个资料目录并建立索引。
+- 打包版自检：`ITN-Desktop.exe --smoke` → `NAV=12 / VIEW_NODES=? / RESULT=OK`（见当轮输出）。
+
+### 四、验证
+
+- `node tools/ui-e2e.cjs`：**47 步全过**。新增 2 步：
+  「生成中可以停止：写明停在哪、且不落产物」（停前阶段可见、产物数不变、会话里有取消事件）与
+  「回答可以停止，并且能一键重问」（出现取消态 → 点重问 → 真的拿到回答）。
+- API 级探针：问答中途取消 **502ms** 返回 `cancelled:true`；讲义中途取消 **1683ms**、提示"已完成 1 小节"、
+  产物数不变；取消后再发一轮正常。
+- `tools/smoke.ps1`、`tools/study-api-check.ps1`、`tools/keyword-mode-check.ps1` 通过；绿色包已重出。
+
+### 五、冻结期间我在做什么
+
+用户会先拿冻结版试用并提新需求。我这边继续按"改一处 → 端到端验证 → 提交并写 TRACE"推进，
+**但冻结版对应的提交不会被动**：新改动都提交到 ccd5a64 之后，标签 freeze-1-20261014 是回滚锚点。
