@@ -39,7 +39,7 @@ $cjpm = (Get-Command cjpm).Source
 $plainJobs = @(
     @{ name = '01-unit-tests';        file = $cjpm;  args = @('test'); work = $proj },
     @{ name = '02-offline-demo';      file = $exe;   args = @('demo'); work = $proj },
-    @{ name = '04-clean-env-package'; file = 'pwsh'; args = @('-NoProfile', '-File', (Join-Path $proj 'target\verify-clean.ps1')); work = $proj }
+    @{ name = '04-clean-env-package'; file = 'pwsh'; args = @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'verify-clean.ps1')); work = $proj }
 )
 
 # ---- 场景 5~11：真机（5~9 会真的打模型接口） ----

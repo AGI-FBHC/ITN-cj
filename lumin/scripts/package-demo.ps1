@@ -77,9 +77,9 @@ Lumin —— Pi-Agent 风格的仓颉 Agent 运行时
 
 【对话.cmd】连真实模型聊天（需要 lumin\.env.local 里有 LUMIN_KEY）。
   能用真工具：读/写/改/搜/找文件（都关在工作区里）；加 --allow-exec 后还能跑 PowerShell 命令。
-  对话里 :mode research 换模式、:tools 看工具、:help 看命令。
+  对话里用斜杠命令：/mode research 换工具集、/tools 看工具、/permissions 换权限档位、/help 看全部。
 
-单元测试与源码在 ..\..\（cjpm test，69 个用例）。
+源码与单元测试在仓库根目录（cjpm test，62 个用例）。
 '@
 Set-Content -LiteralPath (Join-Path $dist "说明.txt") -Value $readme -Encoding UTF8
 
