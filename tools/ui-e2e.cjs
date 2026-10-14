@@ -1436,6 +1436,67 @@ function assert(cond, msg) {
     return '面板点「' + want.trim() + '」→ 主区滚动并高亮';
   });
 
+  await step('首页学习网络图：节点=章节，点节点出动作卡', async () => {
+    await nav('首页');
+    await page.waitForSelector('.graph-canvas', { timeout: 20000 });
+    await page.waitForTimeout(900);
+    const tree = await page.evaluate(() => fetch('/api/study/tree', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kbId: 'course' }) }).then((r) => r.json()).then((j) => (j.data.chapters || []).length));
+    const drawn = await page.evaluate(() => {
+      const c = document.querySelector('.graph-canvas');
+      const g = window.itnGraphPick;
+      return { nodes: Number(c.dataset.nodes || 0), pickable: typeof g === 'function' };
+    });
+    assert(drawn.nodes === tree, '图上的节点数应等于章节数，实际 ' + drawn.nodes + ' vs ' + tree);
+    assert(drawn.pickable, '应能从图上按章节名定位节点（自检接缝）');
+    const first = await page.evaluate(() => {
+      const t = document.querySelector('.graph-canvas').dataset.nodes;
+      return t;
+    });
+    // 点最大的那一章（按 /api/graph 里 chunkCount 最多的）
+    const name = await page.evaluate(() => fetch('/api/graph', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kbId: 'course' }) }).then((r) => r.json()).then((j) => j.data.nodes.slice().sort((a, b) => b.chunkCount - a.chunkCount)[0].name));
+    const pos = await page.evaluate((nm) => window.itnGraphPick(nm), name);
+    assert(pos, '应能拿到节点「' + name + '」在画布上的坐标');
+    // 画布在首页很靠下：先滚到可见位置，否则鼠标点在了窗口外面
+    await page.locator('.graph-canvas').scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+    const box = await page.locator('.graph-canvas').boundingBox();
+    await page.mouse.click(box.x + pos.x * (box.width / pos.w), box.y + pos.y * (box.height / pos.h));
+    await page.waitForSelector('.graph-side:not([hidden])', { timeout: 8000 });
+    const side = await page.locator('.graph-side').innerText();
+    assert(side.indexOf(name) >= 0, '侧卡应显示章节名，实际：' + side.replace(/\s+/g, ' ').slice(0, 60));
+    for (const label of ['继续学', '出练习', '生成讲义']) {
+      assert(side.indexOf(label) >= 0, '侧卡里应有「' + label + '」，实际：' + side.replace(/\s+/g, ' ').slice(0, 80));
+    }
+    await shot('46-学习网络图');
+    // 清掉选择，免得影响后面的步骤
+    await page.evaluate(() => { const g = window.itnGraphPick; return g ? 1 : 0; });
+    return '节点 ' + first + ' 个 · 点「' + name + '」出侧卡（继续学/出练习/生成讲义）';
+  });
+
+  await step('学习网络图：切页不残留、回来还能画；减少动态时不自动旋转', async () => {
+    await nav('我的笔记');
+    await page.waitForTimeout(400);
+    await nav('首页');
+    await page.waitForSelector('.graph-canvas', { timeout: 20000 });
+    await page.waitForTimeout(900);
+    const again = await page.evaluate(() => Number(document.querySelector('.graph-canvas').dataset.nodes || 0));
+    assert(again > 0, '切回来还能画出图，实际节点 ' + again);
+    // 减少动态：不该自己转（两次采样坐标应当一致）
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await nav('首页');
+    await page.waitForSelector('.graph-canvas', { timeout: 20000 });
+    await page.waitForTimeout(1200);
+    const p1 = await page.evaluate(() => window.itnGraphPick(document.querySelector('.graph-canvas').dataset.first || ''));
+    const who = await page.evaluate(() => fetch('/api/graph', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kbId: 'course' }) }).then((r) => r.json()).then((j) => j.data.nodes[0].name));
+    const a1 = await page.evaluate((nm) => window.itnGraphPick(nm), who);
+    await page.waitForTimeout(1500);
+    const a2 = await page.evaluate((nm) => window.itnGraphPick(nm), who);
+    assert(Math.abs(a1.x - a2.x) < 0.5 && Math.abs(a1.y - a2.y) < 0.5,
+      'prefers-reduced-motion 下不该自动旋转，实际 ' + JSON.stringify([a1.x, a2.x]));
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    return '切页回来节点 ' + again + ' · 减少动态时坐标稳定';
+  });
+
   await step('登记知识库：目录用系统对话框选，浏览器里如实说明', async () => {
     await settings('知识库');
     await page.waitForSelector('#kb-dir', { timeout: 15000 });

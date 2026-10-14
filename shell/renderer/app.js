@@ -764,6 +764,9 @@ PAGES.home = {
     }
     v.appendChild(sug);
 
+    /* 第三屏半：学习网络图（从真实学习状态算出来的，每次进首页重算） */
+    v.appendChild(await graphCard());
+
     /* 第四屏：概览 + 最近产物 */
     const r = state.report;
     const grid = el("div", "grid grid-4");
@@ -809,6 +812,446 @@ async function continueStudy() {
 }
 
 /* ---------- 学 · 练 ---------- */
+
+
+/* ============================================================
+   学习网络图（首页第三屏半）
+   ------------------------------------------------------------
+   三句设计说明：
+   1. 不引三方库（桌面版前端只有三个白名单文件），用 canvas 2D 自己做透视投影；
+   2. 每次进首页按**当前学习状态**重算：节点=章节（大小=切片数、颜色=进度），
+      笔记/错题/产物挂在章节上，所以学完一章、做错一题，图自己就变；
+   3. 有节制：>200 个章节只画主干并明说"折叠了多少"；切页就停渲染；
+      prefers-reduced-motion 不自动旋转。
+   ============================================================ */
+
+const graphView = {
+  canvas: null,
+  raf: 0,
+  spin: true,
+  yaw: 0.6,
+  pitch: -0.32,
+  zoom: 1,
+  vYaw: 0,
+  vPitch: 0,
+  drag: null,
+  filter: "all",
+  selected: "",
+  hover: "",
+  nodes: [],
+  edges: [],
+  folded: 0,
+  data: null,
+  pulse: 0,
+};
+
+/** 拉一次图数据；首页每次渲染都会调，所以"图会跟着学习状态变"。 */
+async function graphCard() {
+  const card = el("div", "card graph-card");
+  const head = el("div", "card-head");
+  head.appendChild(el("h2", null, "学习网络"));
+  head.appendChild(spacer());
+  const stat = el("span", "card-sub", "");
+  head.appendChild(stat);
+  const fullBtn = btn("全屏", "sm ghost", () => toggleGraphFull());
+  head.appendChild(fullBtn);
+  card.appendChild(head);
+
+  let data = null;
+  try {
+    data = await api("/api/graph", { kbId: state.kb });
+  } catch (e) {
+    card.appendChild(emptyState({
+      art: "alert",
+      title: "算不出学习网络",
+      text: e.message,
+      actions: [btn("重试", "primary", () => go("home"))],
+    }));
+    return card;
+  }
+  if (!data || data.empty) {
+    // 没索引就不画空图：给一条能走下去的路
+    card.appendChild(emptyState({
+      art: "db",
+      title: "还没有可画的章节",
+      text: (data && data.reason ? data.reason + "。" : "") + "指定资料目录并建立索引后，这里会按章节长出一张能点、能转的图。",
+      actions: [btn("去指定资料目录", "primary", () => go("settings", "kb")),
+                btn("去建立索引", "", () => { if (state.kb) buildIndex(state.kb); else go("settings", "kb"); })],
+    }));
+    return card;
+  }
+
+  graphView.data = data;
+  graphView.folded = data.folded || 0;
+  graphView.selected = "";
+  graphView.hover = "";
+  graphView.filter = "all";
+  graphView.yaw = 0.6;
+  graphView.pitch = -0.32;
+  graphView.zoom = 1;
+  graphView.vYaw = 0;
+  graphView.vPitch = 0;
+  // 布局直接改这两个数组里的坐标；graphView 持有它们，渲染与自检都读同一份
+  graphView.nodes = data.nodes || [];
+  graphView.edges = data.edges || [];
+  layoutGraph(graphView.nodes, graphView.edges);
+
+  const body = el("div", "graph-body");
+  const canvas = el("canvas", "graph-canvas");
+  canvas.width = 1200;
+  canvas.height = 380;
+  body.appendChild(canvas);
+  const side = el("div", "graph-side");
+  side.hidden = true;
+  body.appendChild(side);
+  const tools = el("div", "graph-tools");
+  const filters = [["all", "全部"], ["reading", "只在读"], ["wrong", "只看错题"], ["artifact", "只看产物"]];
+  for (const [k, label] of filters) {
+    const b = el("button", "seg-item" + (k === "all" ? " active" : ""), label);
+    b.dataset.filter = k;
+    b.onclick = () => {
+      graphView.filter = k;
+      for (const x of tools.querySelectorAll("[data-filter]")) x.classList.toggle("active", x.dataset.filter === k);
+      graphView.selected = "";
+      side.hidden = true;
+    };
+    tools.appendChild(b);
+  }
+  const reset = btn("回到全图", "sm ghost", () => {
+    graphView.yaw = 0.6;
+    graphView.pitch = -0.32;
+    graphView.zoom = 1;
+    graphView.vYaw = 0;
+    graphView.vPitch = 0;
+    graphView.filter = "all";
+    for (const x of tools.querySelectorAll("[data-filter]")) x.classList.toggle("active", x.dataset.filter === "all");
+    graphView.selected = "";
+    side.hidden = true;
+  });
+  tools.appendChild(reset);
+  const hint = el("span", "muted sm graph-hint", "拖动旋转 · 滚轮缩放 · 点节点看细节");
+  tools.appendChild(hint);
+  body.appendChild(tools);
+  card.appendChild(body);
+  stat.textContent = "章节 " + (data.stats ? data.stats.chapters : graphView.nodes.length) +
+    (graphView.folded > 0 ? "（只画主干，已折叠 " + graphView.folded + " 个）" : "") +
+    " · 笔记 " + ((data.stats && data.stats.notes) || 0) + " · 已读切片 " + ((data.stats && data.stats.readChunks) || 0);
+
+  attachGraphControls(canvas, side);
+  startGraphLoop(canvas, side, tools);
+  canvas.dataset.nodes = String(graphView.nodes.length);
+  // 自检接缝：给一个章节名，返回它在画布上的像素坐标。
+  // 自动化点节点不必去猜坐标，也顺便让"图上这个点对应哪一章"这件事可查。
+  window.itnGraphPick = (name) => {
+    const n = graphView.nodes.find((x) => x.id === name);
+    if (!n) return null;
+    const pr = graphProject(n, canvas.width, canvas.height, graphView);
+    return { x: pr.x, y: pr.y, w: canvas.width, h: canvas.height, nodes: graphView.nodes.length };
+  };
+  // 全屏状态是挂在 card 上的，重渲染后要保持
+  if (document.body.classList.contains("graph-full")) card.classList.add("full");
+  return card;
+}
+
+/* ---------- 3D 位置：球面螺旋打底 + 一点斥力，够用就好 ---------- */
+function layoutGraph(nodes, edges) {
+  const n = nodes.length;
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < n; i += 1) {
+    const t = (i + 0.5) / n;
+    const y = 1 - 2 * t;
+    const r = Math.sqrt(Math.max(0, 1 - y * y));
+    const th = golden * i;
+    const node = nodes[i];
+    node.x = Math.cos(th) * r;
+    node.y = y;
+    node.z = Math.sin(th) * r;
+    // 切片多的往外站一点：视觉上"主干更大"，也避免小章节被挤在中间
+    const w = 0.72 + Math.min(1, (node.chunkCount || 1) / 12) * 0.5;
+    node.wgt = w;
+    node.x *= w;
+    node.y *= w;
+    node.z *= w;
+  }
+  // 只给最大的若干节点写标签：全写会糊成一片
+  const bySize = nodes.slice().sort((x, y) => (y.chunkCount || 0) - (x.chunkCount || 0));
+  bySize.forEach((x, i) => { x.big = i < 12; });
+
+  // 连边当弹簧拉几下：不追求漂亮布局，只求"相连的章节离得近"
+  const idx = {};
+  nodes.forEach((x, i) => { idx[x.id] = i; });
+  const links = edges.map((e) => [idx[e.from], idx[e.to]]).filter(([a, b]) => a !== undefined && b !== undefined);
+  for (let it = 0; it < 30; it += 1) {
+    for (const [a, b] of links) {
+      const na = nodes[a];
+      const nb = nodes[b];
+      const dx = nb.x - na.x;
+      const dy = nb.y - na.y;
+      const dz = nb.z - na.z;
+      const d = Math.max(0.08, Math.sqrt(dx * dx + dy * dy + dz * dz));
+      const push = (d - 0.9) * 0.05;
+      na.x += (dx / d) * push; na.y += (dy / d) * push; na.z += (dz / d) * push;
+      nb.x -= (dx / d) * push; nb.y -= (dy / d) * push; nb.z -= (dz / d) * push;
+    }
+    // 每轮往球壳上拉一把：只靠弹簧会把小图挤成一条线
+    for (const n of nodes) {
+      const d = Math.max(1e-6, Math.hypot(n.x, n.y, n.z));
+      const f = (n.wgt || 0.9) / d;
+      n.x *= f;
+      n.y *= f;
+      n.z *= f;
+    }
+  }
+}
+
+/**
+ * 透视投影：简单到不能再简单——先绕 y 轴转、再绕 x 轴转，最后除以深度。
+ * k 是"单位长度在屏幕上多少像素"：球半径 1 ≈ 画布短边的 28%，远近差由 depth 决定。
+ */
+const GRAPH_CAM = 3.6;
+function graphProject(p, w, h, gv) {
+  const cy = Math.cos(gv.yaw);
+  const sy = Math.sin(gv.yaw);
+  const cp = Math.cos(gv.pitch);
+  const sp = Math.sin(gv.pitch);
+  let x = p.x * cy - p.z * sy;
+  let z = p.x * sy + p.z * cy;
+  let y = p.y * cp - z * sp;
+  z = p.y * sp + z * cp;
+  const depth = GRAPH_CAM + z;
+  const k = (Math.min(w, h) * 1.15 * gv.zoom) / Math.max(0.6, depth);
+  return { x: w / 2 + x * k, y: h / 2 + y * k, k: k, z: depth };
+}
+
+/** 节点半径：切片越多越大；再按当前缩放等比例缩，避免远处一堆大圆。 */
+function graphNodeRadius(n, pr) {
+  const base = Math.max(4, Math.min(20, 4 + Math.sqrt(n.chunkCount || 1) * 2.6));
+  return base * ((pr.k || 120) / 120);
+}
+
+function graphNodeVisible(node) {
+  const f = graphView.filter;
+  if (f === "all") return true;
+  if (f === "reading") return node.status === "reading" || node.status === "todo";
+  if (f === "wrong") return (node.wrong || 0) > 0;
+  if (f === "artifact") return (node.artifacts || []).length > 0;
+  return true;
+}
+
+function graphColor(node) {
+  if (node.status === "done") return "#2f7053";
+  if (node.status === "reading") return "#4f9a74";
+  return "#b9c3bd";
+}
+
+function startGraphLoop(canvas, side, tools) {
+  const gv = graphView;
+  gv.canvas = canvas;
+  const ctx = canvas.getContext("2d");
+  const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const fit = () => {
+    const cw = Math.max(320, Math.round(canvas.clientWidth * dpr));
+    const ch = Math.max(240, Math.round(canvas.clientHeight * dpr));
+    if (canvas.width !== cw || canvas.height !== ch) {
+      canvas.width = cw;
+      canvas.height = ch;
+    }
+  };
+  const frame = () => {
+    // 切页/重渲染后这个 canvas 就脱离文档了：自己停下，不做后台空转
+    if (!canvas.isConnected) { gv.raf = 0; return; }
+    fit();
+    const w = canvas.width;
+    const h = canvas.height;
+    if (!gv.drag) {
+      gv.yaw += gv.vYaw;
+      gv.pitch += gv.vPitch;
+      gv.vYaw *= 0.94;
+      gv.vPitch *= 0.94;
+      if (!reduce && gv.spin && !gv.selected) gv.yaw += 0.0016;
+    }
+    gv.pulse = (gv.pulse + 0.05) % (Math.PI * 2);
+    ctx.clearRect(0, 0, w, h);
+    const proj = new Map();
+    for (const n of gv.nodes) {
+      proj.set(n.id, graphProject(n, w, h, gv));
+    }
+    // 连边
+    for (const e of gv.edges) {
+      const a = proj.get(e.from);
+      const b = proj.get(e.to);
+      if (!a || !b) continue;
+      const dim = !graphNodeVisible(gv.nodes.find((x) => x.id === e.from)) || !graphNodeVisible(gv.nodes.find((x) => x.id === e.to));
+      ctx.strokeStyle = dim ? "rgba(140,150,145,.10)" : "rgba(47,112,83," + (0.10 + e.weight * 0.35).toFixed(3) + ")";
+      ctx.lineWidth = (1 + Math.min(3, e.weight * 4)) * dpr;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+    // 节点：先按深度排序，远的先画（伪遮挡）
+    const order = gv.nodes.slice().sort((p1, p2) => (proj.get(p2.id).z - proj.get(p1.id).z));
+    for (const n of order) {
+      const p = proj.get(n.id);
+      const vis = graphNodeVisible(n);
+      const alpha = vis ? 1 : 0.25;
+      const r = graphNodeRadius(n, p);
+      const isSel = gv.selected === n.id;
+      const isHover = gv.hover === n.id;
+      ctx.globalAlpha = alpha;
+      // 笔记：节点外圈的小点
+      const notes = Math.min(6, n.notes || 0);
+      for (let i = 0; i < notes; i += 1) {
+        const ang = (i / notes) * Math.PI * 2;
+        ctx.fillStyle = "#8a9a90";
+        ctx.beginPath();
+        ctx.arc(p.x + Math.cos(ang) * (r + 5 * dpr), p.y + Math.sin(ang) * (r + 5 * dpr), 1.8 * dpr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // 产物：两侧的方点（讲义=绿、练习=琥珀）
+      (n.artifacts || []).slice(0, 4).forEach((a, i) => {
+        ctx.fillStyle = a.kind === "lecture" ? "#2f7053" : "#b9762a";
+        const bx = p.x - r - 6 * dpr;
+        const by = p.y - 5 * dpr + i * 6 * dpr;
+        ctx.fillRect(bx, by, 4 * dpr, 4 * dpr);
+      });
+      ctx.fillStyle = graphColor(n);
+      ctx.globalAlpha = alpha * (isSel ? 1 : isHover ? 0.95 : 0.88);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      if (isSel || isHover) {
+        ctx.strokeStyle = "#2f7053";
+        ctx.lineWidth = 2 * dpr;
+        ctx.stroke();
+      }
+      // 错题：红点；今天该复习的脉冲
+      if ((n.wrong || 0) > 0) {
+        const pulse = (n.wrongDue || 0) > 0 ? 1 + 0.5 * (1 + Math.sin(gv.pulse)) : 1;
+        ctx.fillStyle = (n.wrongDue || 0) > 0 ? "#b0443b" : "rgba(176,68,59,.55)";
+        ctx.beginPath();
+        ctx.arc(p.x + r + 3 * dpr, p.y - r - 2 * dpr, 2.6 * dpr * pulse, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // 标签：只给最大的若干个 + 选中的/悬停的，免得糊成一片
+      if (n.big || isSel || isHover) {
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = "#3a4640";
+        ctx.font = Math.round(11 * dpr) + "px -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif";
+        ctx.fillText(String(n.name).slice(0, 14), p.x + r + 4 * dpr, p.y + 3 * dpr);
+      }
+      ctx.globalAlpha = 1;
+    }
+  };
+  const loop = () => {
+    frame();
+    if (!canvas.isConnected) { gv.raf = 0; return; }
+    gv.raf = requestAnimationFrame(loop);
+  };
+  if (gv.raf) cancelAnimationFrame(gv.raf);
+  gv.raf = requestAnimationFrame(loop);
+}
+
+/** 鼠标/触摸：拖动转、滚轮缩放、点击选节点（带惯性）。 */
+function attachGraphControls(canvas, side) {
+  const gv = graphView;
+  const hit = (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = (ev.clientX - rect.left) * (canvas.width / rect.width);
+    const y = (ev.clientY - rect.top) * (canvas.height / rect.height);
+    let best = null;
+    let bestD = 1e9;
+    for (const n of gv.nodes) {
+      const p = graphProject(n, canvas.width, canvas.height, gv);
+      const r = graphNodeRadius(n, p);
+      const d = Math.hypot(p.x - x, p.y - y);
+      if (d < r + 4 && d < bestD) { bestD = d; best = n; }
+    }
+    return best;
+  };
+  canvas.onpointerdown = (ev) => {
+    canvas.setPointerCapture(ev.pointerId);
+    gv.drag = { x: ev.clientX, y: ev.clientY, moved: 0 };
+    gv.vYaw = 0;
+    gv.vPitch = 0;
+  };
+  canvas.onpointermove = (ev) => {
+    if (gv.drag) {
+      const dx = ev.clientX - gv.drag.x;
+      const dy = ev.clientY - gv.drag.y;
+      gv.drag.x = ev.clientX;
+      gv.drag.y = ev.clientY;
+      gv.drag.moved += Math.abs(dx) + Math.abs(dy);
+      gv.yaw += dx * 0.006;
+      gv.pitch = Math.max(-1.3, Math.min(1.3, gv.pitch + dy * 0.006));
+      gv.vYaw = dx * 0.0016;
+      gv.vPitch = dy * 0.0016;
+      return;
+    }
+    const n = hit(ev);
+    gv.hover = n ? n.id : "";
+    canvas.style.cursor = n ? "pointer" : "grab";
+  };
+  canvas.onpointerup = (ev) => {
+    const moved = gv.drag ? gv.drag.moved : 0;
+    gv.drag = null;
+    if (moved > 6) return; // 拖动结束不算点击
+    const n = hit(ev);
+    if (!n) {
+      gv.selected = "";
+      side.hidden = true;
+      return;
+    }
+    gv.selected = n.id;
+    paintGraphSide(side, n);
+  };
+  canvas.onpointerleave = () => { gv.hover = ""; };
+  canvas.onwheel = (ev) => {
+    ev.preventDefault();
+    gv.zoom = Math.max(0.45, Math.min(3.2, gv.zoom * (ev.deltaY > 0 ? 0.9 : 1.1)));
+  };
+}
+
+/** 点节点后的侧卡：这一章学到哪了 + 能直接做的三件事。 */
+function paintGraphSide(side, n) {
+  side.innerHTML = "";
+  side.hidden = false;
+  side.appendChild(el("div", "graph-side-title", n.name));
+  const rows = [
+    ["进度", (n.readCount || 0) + " / " + (n.chunkCount || 0) + " 片" + (n.done ? "（已完成）" : "")],
+    ["小节", (n.sectionCount || 0) + " 节 · " + (n.docCount || 0) + " 篇文档"],
+  ];
+  if (n.notes) rows.push(["笔记", n.notes + " 条"]);
+  if (n.wrong) rows.push(["错题", n.wrong + " 条" + ((n.wrongDue || 0) > 0 ? "（今天该重做 " + n.wrongDue + "）" : "")]);
+  if ((n.artifacts || []).length) rows.push(["产物", n.artifacts.map((a) => a.name).join("、")]);
+  for (const [k, v] of rows) {
+    const line = el("div", "graph-side-row");
+    line.appendChild(el("span", "k", k));
+    line.appendChild(el("span", "v", String(v)));
+    side.appendChild(line);
+  }
+  const acts = el("div", "row graph-side-acts");
+  acts.appendChild(btn("继续学", "sm primary", () => { state.chapter = n.name; go("learn"); }));
+  acts.appendChild(btn("出练习", "sm", () => { go("learn"); setTimeout(() => openQuiz($("view"), n.name), 200); }));
+  acts.appendChild(btn("生成讲义", "sm", () => { go("learn"); setTimeout(() => askTopic("lecture", n.name), 200); }));
+  side.appendChild(acts);
+}
+
+/** 全屏展开：卡片铺满主区，图更大。 */
+function toggleGraphFull() {
+  const card = document.querySelector(".graph-card");
+  if (!card) return;
+  const on = !document.body.classList.contains("graph-full");
+  document.body.classList.toggle("graph-full", on);
+  card.classList.toggle("full", on);
+  const cv = card.querySelector("canvas");
+  if (cv) {
+    cv.height = on ? 900 : 380;
+  }
+  const b = card.querySelector(".card-head .btn:last-child");
+  if (b) b.textContent = on ? "退出全屏" : "全屏";
+}
 
 PAGES.learn = {
   async render() {

@@ -2,6 +2,7 @@ package itn_desktop_core.util
 
 import std.fs.*
 import std.env.*
+import std.convert.*
 import std.collection.*
 import std.io.*
 import stdx.encoding.json.*
@@ -243,6 +244,25 @@ public func splitLines(s: String): ArrayList<String> {
         out.add(String.fromUtf8(bytes[start..bytes.size]))
     }
     return out
+}
+
+/** 读 "a|b|c" 这种键值串里的第 idx 段（读不出来当 0 / 空串）。 */
+public func kvInt(parts: Array<String>, idx: Int64): Int64 {
+    if (idx >= parts.size) {
+        return 0
+    }
+    try {
+        return Int64.parse(trimStr(parts[idx]))
+    } catch (e: Exception) {
+        return 0
+    }
+}
+
+public func kvStr(parts: Array<String>, idx: Int64): String {
+    if (idx >= parts.size) {
+        return ""
+    }
+    return trimStr(parts[idx])
 }
 
 public func trimStr(s: String): String {

@@ -714,6 +714,29 @@ public class Api {
             return
         }
 
+        // ---------- 学习网络图（只读聚合） ----------
+        // 前端不拼 N 个接口：一次给它"节点 + 连边 + 统计 + 折叠了多少"。
+        if (path == "/api/graph" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    // 不指定就取登记的第一个知识库：界面没选库时也画得出图
+                    var kb = strOf(b, "kbId")
+                    if (kb.size == 0) {
+                        let cfg = store.load()
+                        if (cfg.knowledgeBases.size > 0) {
+                            kb = cfg.knowledgeBases[0].id
+                        }
+                    }
+                    try {
+                        ok(ctx, buildGraph(store.dataDir, kb))
+                    } catch (e: Exception) {
+                        fail(ctx, 500, "算不出学习网络：" + e.message)
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         if (path == "/api/agent/cancel" && method == "POST") {
             // 置一个取消标记：正在跑的那一轮会在下一段流式增量处停下来
             match (bodyJson(ctx)) {
@@ -1537,24 +1560,6 @@ func serveStatic(ctx: HttpContext, uiDir: String, rel: String): Unit {
  * 数据库被占用是本产品最可能碰到的"看不懂的错"：驱动用锁文件做跨进程互斥，
  * 上一次进程被强杀就会留下锁文件，之后每个要读库的请求都会 busy。
  */
-func kvInt(parts: Array<String>, idx: Int64): Int64 {
-    if (idx >= parts.size) {
-        return 0
-    }
-    try {
-        return Int64.parse(trimStr(parts[idx]))
-    } catch (e: Exception) {
-        return 0
-    }
-}
-
-func kvStr(parts: Array<String>, idx: Int64): String {
-    if (idx >= parts.size) {
-        return ""
-    }
-    return trimStr(parts[idx])
-}
-
 /** 文件名安全的时间戳：20261014-110804。用不了就退回毫秒数。 */
 func fileStamp(): String {
     let raw = nowStamp()
@@ -1617,50 +1622,7 @@ func boolValueOf(v: JsonValue): ?Bool {
  * 没错过的题当天就该复习；答对一次之后，隔 1 / 3 / 7 / 16 / 35 天再出现。
  * 这是错题本里唯一"算法"，单独写在一处，界面不再重复这套规则。
  */
-func reviewIntervalMs(reviews: Int64): Int64 {
-    let day: Int64 = 24 * 60 * 60 * 1000
-    if (reviews <= 0) {
-        return 0
-    }
-    if (reviews == 1) {
-        return day
-    }
-    if (reviews == 2) {
-        return 3 * day
-    }
-    if (reviews == 3) {
-        return 7 * day
-    }
-    if (reviews == 4) {
-        return 16 * day
-    }
-    return 35 * day
-}
-
 /** 把一条错题记录附上复习状态（存在 meta 键值表里，不动表结构，老数据目录也能直接用）。 */
-func attachReviewState(db: Db, o: JsonObject, id: String, nowMs: Int64): Unit {
-    let parts = db.getKv("meta", "quiz-review:" + id, "").split("|")
-    let reviews = kvInt(parts, 0)
-    let lastMs = kvInt(parts, 1)
-    let mastered = kvInt(parts, 2) == 1
-    let due = !mastered && (reviews == 0 || nowMs >= lastMs + reviewIntervalMs(reviews))
-    o.put("reviews", JsonInt(reviews))
-    o.put("lastMs", JsonInt(lastMs))
-    o.put("mastered", JsonBool(mastered))
-    o.put("due", JsonBool(due))
-    o.put("dueMs", JsonInt(lastMs + reviewIntervalMs(reviews)))
-    // 原始题目（选项/正确项/解析）也一起回传，这样"重做"给的是一模一样的题
-    let q = db.getKv("meta", "quiz-q:" + id, "")
-    o.put("hasOptions", JsonBool(q.size > 0))
-    if (q.size > 0) {
-        try {
-            o.put("origin", JsonValue.fromStr(q))
-        } catch (e: Exception) {
-            ()
-        }
-    }
-}
-
 func describeFailure(message: String): String {
     if (message.split("cjflock").size > 1 || message.split("database is locked").size > 1) {
         return "本地数据库被另一个进程占用，无法读写：" + message +
@@ -1704,6 +1666,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/web/cache",
         "/api/web/cache/delete",
         "/api/web/session",
+        "/api/graph",
         "/api/tools/list",
         "/api/sessions/new",
         "/api/sessions/list",

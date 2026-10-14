@@ -261,6 +261,55 @@ public class QuizRecord {
     }
 }
 
+/* ==================== 错题的间隔复习 ====================
+ * 曲线与"某条错题现在什么状态"都放在这一层：HTTP 层和学习图都直接用它，
+ * 不再各写一份（之前 api.cj 里私有版本只有它能用，图那边只能干瞪眼）。
+ * 状态存在 meta 键值表的 "quiz-review:<id>" 里，形如 "重做次数|上次时间|是否已掌握"。
+ */
+public func reviewIntervalMs(reviews: Int64): Int64 {
+    let day: Int64 = 24 * 60 * 60 * 1000
+    if (reviews <= 0) {
+        return 0
+    }
+    if (reviews == 1) {
+        return day
+    }
+    if (reviews == 2) {
+        return 3 * day
+    }
+    if (reviews == 3) {
+        return 7 * day
+    }
+    if (reviews == 4) {
+        return 16 * day
+    }
+    return 35 * day
+}
+
+/** 把一条错题记录附上复习状态（不动表结构，老数据目录也能直接用）。 */
+public func attachReviewState(db: Db, o: JsonObject, id: String, nowMs: Int64): Unit {
+    let parts = db.getKv("meta", "quiz-review:" + id, "").split("|")
+    let reviews = kvInt(parts, 0)
+    let lastMs = kvInt(parts, 1)
+    let mastered = kvInt(parts, 2) == 1
+    let due = !mastered && (reviews == 0 || nowMs >= lastMs + reviewIntervalMs(reviews))
+    o.put("reviews", JsonInt(reviews))
+    o.put("lastMs", JsonInt(lastMs))
+    o.put("mastered", JsonBool(mastered))
+    o.put("due", JsonBool(due))
+    o.put("dueMs", JsonInt(lastMs + reviewIntervalMs(reviews)))
+    // 原始题目（选项/正确项/解析）也一起回传，这样"重做"给的是一模一样的题
+    let q = db.getKv("meta", "quiz-q:" + id, "")
+    o.put("hasOptions", JsonBool(q.size > 0))
+    if (q.size > 0) {
+        try {
+            o.put("origin", JsonValue.fromStr(q))
+        } catch (e: Exception) {
+            ()
+        }
+    }
+}
+
 // ==================== 本地存储 ====================
 // 单人本地使用，所有学习数据放一个文件，够用且好备份。
 
