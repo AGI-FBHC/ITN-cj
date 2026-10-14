@@ -37,6 +37,44 @@ function waitForPort(portFile, timeoutMs) {
   });
 }
 
+/**
+ * 清掉「上次没正常退出」留下的数据库锁文件。
+ *
+ * 仓颉驱动用 <db>-cjflock 做跨进程互斥，但它在 Windows 上无法判断持锁进程是否已死
+ * （见 third_party/sqlite-driver/src/storage_lockfile.cj：没有 /proc 时一律认为持锁者还活着），
+ * 于是一次强杀（任务管理器 / 崩溃 / 自动化 smoke 的 kill）就会让数据目录永久不可用：
+ * 之后每个要读库的接口都返回 500。外壳比驱动更适合做这件事——Node 能用
+ * process.kill(pid, 0) 判断进程是否还在。
+ */
+function cleanStaleDbLock(dataDir) {
+  const lock = path.join(dataDir, "itn.db-cjflock");
+  try {
+    if (!fs.existsSync(lock)) return false;
+    const text = fs.readFileSync(lock, "utf8").trim();
+    const pid = parseInt(String(text).split(/\s+/)[0], 10);
+    let alive = false;
+    if (Number.isFinite(pid) && pid > 0) {
+      try {
+        process.kill(pid, 0);
+        alive = true;
+      } catch (e) {
+        alive = !!(e && e.code === "EPERM"); // 存在但没权限：当成还活着，宁可多等
+      }
+    }
+    if (alive) {
+      console.log("数据库锁的持有者 pid " + pid + " 仍在运行，保留锁文件");
+      return false;
+    }
+    const aside = lock + ".stale-" + Date.now();
+    fs.renameSync(lock, aside);
+    console.log("清理了残留的数据库锁（pid " + pid + " 已不存在）：" + aside);
+    return true;
+  } catch (e) {
+    console.log("清理数据库锁失败：" + ((e && e.message) || e));
+    return false;
+  }
+}
+
 async function startKernel() {
   const exe = kernelPath();
   if (!exe) throw new Error("找不到内核可执行文件，请先运行 scripts/package.ps1");
@@ -47,6 +85,7 @@ async function startKernel() {
   const dataRoot = process.env.LOCALAPPDATA || app.getPath("userData");
   const dataDir = path.join(dataRoot, "ITN-Desktop");
   fs.mkdirSync(dataDir, { recursive: true });
+  cleanStaleDbLock(dataDir);
 
   kernel = spawn(exe, ["--data-dir", dataDir, "--port-file", portFile, "--ui-dir", uiDir], {
     cwd: path.dirname(exe),
@@ -94,11 +133,29 @@ async function createWindow() {
     try {
       const title = await win.webContents.executeJavaScript("document.title");
       const status = await win.webContents.executeJavaScript("document.getElementById('status').textContent");
-      const panels = await win.webContents.executeJavaScript("document.querySelectorAll('.panel').length");
+      // 界面改成多页面后，用"导航项数 + 首屏节点数"判断界面真的渲染出来了；
+      // 原来数的是 .panel，那个类名早就没有了，等于一直在数 0。
+      const navs = await win.webContents.executeJavaScript("document.querySelectorAll('.nav-item').length");
+      // did-finish-load 只是页面加载完，boot() 里还要等内核握手与读配置，
+      // 这里最多等 10 秒，直到首页真的渲染出内容为止。
+      let nodes = 0;
+      for (let i = 0; i < 48; i++) {
+        // 等到"首页真的渲染完"：有卡片，且不在加载态（加载态里有个 spinner）
+        const ready = await win.webContents.executeJavaScript(
+          "document.querySelectorAll('#view .card').length > 0 && !document.querySelector('#view .spinner')");
+        if (ready) {
+          nodes = await win.webContents.executeJavaScript("document.querySelectorAll('#view .card, #view .empty').length");
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      const check = await win.webContents.executeJavaScript("(document.querySelector('#view')||{}).innerText");
       lines.push("TITLE=" + title);
       lines.push("STATUS=" + status);
-      lines.push("PANELS=" + panels);
-      lines.push("RESULT=OK");
+      lines.push("NAV=" + navs);
+      lines.push("VIEW_NODES=" + nodes);
+      lines.push("VIEW_TEXT=" + String(check || "").replace(/\s+/g, " ").slice(0, 60));
+      lines.push("RESULT=" + (navs > 0 && nodes > 0 ? "OK" : "ERR 界面没渲染出来"));
     } catch (e) {
       lines.push("RESULT=ERR " + ((e && e.message) || e));
     }

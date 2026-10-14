@@ -114,9 +114,18 @@ public class SessionStore {
         if (title.size > 40) {
             title = String.fromUtf8(title.toArray()[0..40])
         }
+        // 这一轮是问答 / 讲义 / 练习，界面用它给会话列表分类
+        var kind = ""
+        match (db().one("SELECT payload FROM session_events WHERE session_id = ? AND kind = ? ORDER BY id LIMIT 1",
+            va([tv(sessionId), tv("turn/start")]))) {
+            case Some(r) =>
+                kind = payloadText(r.text(0), "kind")
+            case None => ()
+        }
         o.put("title", JsonString(title))
         o.put("lastType", JsonString(lastType))
         o.put("lastAt", JsonString(lastAt))
+        o.put("kind", JsonString(kind))
         return o
     }
 

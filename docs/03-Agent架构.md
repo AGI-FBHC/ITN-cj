@@ -126,3 +126,50 @@ turn/end
 每一步都进事件日志，于是三件事自然成立：界面能显示"正在写第 3 节"；中断后能从日志续上；产物能追回具体资料。
 
 这就是这个 harness 的样子。
+
+
+---
+
+## 六、落地情况（2026-10-14 更新）
+
+上面这份架构已经按下面的样子落进 `core/`，与规划的差异一并记在这里。
+
+### 已实现
+
+| 规划项 | 实际实现 |
+| --- | --- |
+| 只追加的事件日志 | `session/session.cj`，事件存在 SQLite 的 `session_events` 表（不再是 JSONL，加入 `sessions/` 目录的一次性导入） |
+| 工具注册表与执行管线 | `tools/registry.cj` 的 `ToolBox` + `tools/tools.cj` 的 `ToolRegistry`，工具定义（`toolCatalog`）与执行分离，界面通过 `/api/tools/list` 读同一份定义 |
+| Agent 循环 | `agent/agent.cj` 的 `ask`：`retrieve → 多轮模型调用（可插工具调用）→ 引用自检 → turn/end`，最多 4 轮工具回路 |
+| 多轮上下文 | `ask` 会从事件流里取最近 6 轮（12 条消息，单条截断 800 字节且不切断多字节字符）拼进 messages |
+| 流式输出 | 每段正文写一条 `assistant/delta` 事件；内核 HTTP 服务是多线程的（实测生成期间其他接口 3~34ms 返回），界面轮询事件即可做出"打字机"效果，不需要 SSE |
+| 引用自检 | `citationReport(markdown, sourceCount)` → `{paragraphs, citedParagraphs, outOfRange}`，结果写进 `validation` 事件 |
+
+### 与原规划的两处偏差
+
+1. **工具调用协议不用 OpenAI 的 function calling，改用提示词协议。**
+   原规划假设供应商支持 `tools` 字段；实际用户可能接任意 OpenAI 兼容服务（例如只提供 `/chat/completions` 的自建网关，或本次接入的 MiMo TokenPlan）。
+   现在的做法是：系统提示词里列出工具清单并要求"需要工具时只输出一行 `{"tool":...,"args":{...}}`"，
+   内核按花括号配对扫描出这个对象再执行。任何能输出 JSON 的模型都能用。
+2. **工具集与规划不同。** 规划里的 `outline` / `write_section` / `quiz_create` 没有做成模型可调用的工具，
+   而是留在 `lecture` / `quiz` 两条**固定流水线**里——它们的步骤编排本身就是产品价值（保证每节都带引用），
+   交给模型自由调度反而更不稳定。模型可调的是一组**本地事实类工具**：
+
+| 工具 | 作用 |
+| --- | --- |
+| `kb_search` | 检索当前知识库，返回带出处的切片 |
+| `list_documents` | 列出知识库里的文档与切片数 |
+| `read_chunk` | 按切片 id 取完整原文 |
+| `current_time` | 本机当前时间 |
+| `calc` | 四则运算（自带的递归下降求值器，无外部依赖） |
+| `save_note` | 写一条学习笔记到本机库 |
+| `save_artifact` | 写一份 Markdown 产物到 artifacts 目录 |
+
+工具结果文本里，检索类结果统一用 `[T1]` 前缀编号，与正文引用 `[n]` 区分开，避免模型的引用编号与界面出处列表错位。
+
+### 验证
+
+- `tools/ui-e2e.cjs`：25 → 32 步全过，其中包含"Agent 会自己调用工具（算数）"与"流式增量事件真的写进了会话"。
+- `tools/smoke.ps1` / `study-api-check.ps1` / `keyword-mode-check.ps1` 全部通过。
+- 真实端点：MiMo TokenPlan `mimo-v2.6-flash`（对话、流式）与 `mimo-v2.6-pro`（看图）均实测可用；
+  该服务不提供 `/embeddings`，走关键词兜底检索。

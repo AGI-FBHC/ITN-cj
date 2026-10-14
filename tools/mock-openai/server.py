@@ -23,6 +23,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
 EMBED_DIM = int(os.environ.get("ITN_MOCK_EMBED_DIM", "3"))
+# 每段流式分片之间的间隔，用来模拟慢模型，验证内核能否并发处理其他请求
+CHUNK_DELAY = float(os.environ.get("ITN_MOCK_CHUNK_DELAY_MS", "5")) / 1000.0
 
 OUTLINE = ["第一节 基本概念", "第二节 典型流程", "第三节 常见问题与做法"]
 
@@ -115,6 +117,13 @@ def reply_for(body):
         return "MOCK 图片描述：这是一张教学资料里的示意图，画的是提示词与输出之间的对应关系。"
     joined = all_text(messages)
     ask = text_of(messages)
+    # 工具回路：第一次问算术 -> 发起工具调用；拿到工具结果后再给最终回答
+    if "工具 calc 的结果" in joined:
+        return "算出来的结果是 15（按 (12+8)*3/4 计算）[1]。"
+    if "调用工具" in joined and ("计算" in ask or "算一下" in ask or "多少" in ask):
+        return json.dumps({"tool": "calc", "args": {"expr": "(12+8)*3/4"}}, ensure_ascii=False)
+    if "调用工具" in joined and ("几点" in ask or "现在时间" in ask or "今天几号" in ask):
+        return json.dumps({"tool": "current_time", "args": {}}, ensure_ascii=False)
     if "answerIndex" in joined or ("单选题" in joined and "JSON 数组" in joined):
         return json.dumps(MC_QUESTIONS, ensure_ascii=False)
     if "JSON 字符串数组" in joined:
@@ -139,6 +148,13 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path.endswith("/chat/completions"):
             model = body.get("model", "mock")
+            logpath = os.environ.get("ITN_MOCK_LOG")
+            if logpath:
+                msgs = body.get("messages") or []
+                rec = {"model": model, "stream": bool(body.get("stream")),
+                       "roles": [m.get("role") for m in msgs], "n": len(msgs)}
+                with open(logpath, "a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
             content = reply_for(body)
             if body.get("stream"):
                 self.sse(model, content)
@@ -204,7 +220,7 @@ class Handler(BaseHTTPRequestHandler):
                      "choices": [{"index": 0, "delta": {"content": piece, "reasoning_content": None}, "finish_reason": None}]}
             self.wfile.write(("data: " + json.dumps(chunk, ensure_ascii=False) + "\n\n").encode("utf-8"))
             self.wfile.flush()
-            time.sleep(0.005)
+            time.sleep(CHUNK_DELAY)
         tail = {"id": "mock-chat", "object": "chat.completion.chunk", "model": model, "choices": []}
         self.wfile.write(("data: " + json.dumps(tail, ensure_ascii=False) + "\n\n").encode("utf-8"))
         self.wfile.write(b"data: [DONE]\n\n")

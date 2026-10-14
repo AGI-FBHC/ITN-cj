@@ -135,6 +135,36 @@ function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 (async () => {
+  // 先确认测的是当前源码编出来的内核：历史上踩过「验证跑的是旧二进制」的坑，
+  // 这里直接把这种可能掐掉——源码比 dist 里的内核新就拒绝跑。
+  if (!fs.existsSync(CORE_EXE)) {
+    console.error('找不到内核产物：' + CORE_EXE + '\n先运行 scripts/package.ps1（或 scripts/build.ps1 + package.ps1）。');
+    process.exit(2);
+  }
+  const coreMtime = fs.statSync(CORE_EXE).mtimeMs;
+  const newestSrc = (() => {
+    let newest = 0;
+    const walk = (dir) => {
+      if (!fs.existsSync(dir)) return;
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) { walk(full); continue; }
+        if (!/\.(cj|toml)$/.test(e.name)) continue;
+        const m = fs.statSync(full).mtimeMs;
+        if (m > newest) newest = m;
+      }
+    };
+    walk(path.join(REPO, 'core'));
+    walk(path.join(REPO, 'third_party'));
+    return newest;
+  })();
+  if (newestSrc > coreMtime) {
+    console.error('内核产物比源码旧，说明测的会是旧二进制。请先运行 scripts/package.ps1。');
+    console.error('  内核 mtime ' + new Date(coreMtime).toISOString());
+    console.error('  源码 mtime ' + new Date(newestSrc).toISOString());
+    process.exit(2);
+  }
+
   const outDir = path.join(process.cwd(), 'tmp', 'ui-e2e-shots');
   fs.mkdirSync(outDir, { recursive: true });
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'itn-e2e-data-'));
@@ -380,27 +410,100 @@ function assert(cond, msg) {
     return n + ' 份';
   });
 
-  /* ---------- 伴学助手 ---------- */
-  await step('伴学助手能就资料作答并给出出处', async () => {
+  /* ---------- 伴学助手：会话栏 + 主对话框 ---------- */
+  await step('伴学助手是「会话栏 + 主对话框」两栏形态', async () => {
     await nav('伴学助手');
-    await page.fill('.chat-input input', '提示词要怎么写才稳定？');
+    await page.waitForSelector('#chat-input', { timeout: 20000 });
+    const railVisible = await page.locator('#session-rail').isVisible();
+    assert(railVisible, '对话页应显示左侧会话栏');
+    const hasThread = await page.locator('.chat-thread').count();
+    const hasComposer = await page.locator('.composer textarea').count();
+    assert(hasThread === 1 && hasComposer === 1, '应有主对话框与输入区');
+    await shot('11-对话两栏');
+    return '会话栏 + 对话框 + 输入区';
+  });
+
+  await step('工具清单能展开（Agent 的本地工具）', async () => {
+    await page.locator('.chat-head button', { hasText: '工具' }).click();
+    await page.waitForSelector('#tool-sheet:not([hidden]) .item', { timeout: 10000 });
+    const names = await page.$$eval('#tool-sheet .item .item-title', (els) => els.map((e) => e.textContent.trim()));
+    assert(names.length >= 7, '工具应至少 7 个，实际 ' + names.length);
+    await shot('12-工具清单');
+    await page.locator('.chat-head button', { hasText: '工具' }).click();
+    return names.length + ' 个工具';
+  });
+
+  await step('提问后能就资料作答并给出出处', async () => {
+    await page.fill('#chat-input', '提示词要怎么写才稳定？');
     await page.getByRole('button', { name: '发送' }).click();
-    // 注意：等待时不能只看"有文字"——加载中的气泡里也有字。
-    // 必须等最后一个助手气泡不再带 spinner，才算这一轮真的结束。
     await page.waitForFunction(() => {
       const bodies = document.querySelectorAll('.msg-ai .msg-body');
       if (!bodies.length) return false;
       const last = bodies[bodies.length - 1];
-      return !last.querySelector('.spinner') && last.innerText.trim().length > 5;
+      return !last.querySelector('.caret') && last.innerText.trim().length > 5;
     }, null, { timeout: 60000 });
-    const answers = await page.locator('.msg-ai').count();
-    assert(answers >= 1, '应有助手回复');
     const answer = await page.locator('.msg-ai .msg-body').last().innerText();
     assert(answer.indexOf('失败') < 0, '回答不应是失败信息：' + answer.slice(0, 60));
     const cites = await page.locator('.cite-list li').count();
     assert(cites >= 1, '应带出处列表，实际 ' + cites);
-    await shot('11-伴学助手');
+    await shot('13-问答与出处');
     return '回答 ' + answer.length + ' 字，出处 ' + cites + ' 条';
+  });
+
+  await step('会话栏出现这条对话并可切换', async () => {
+    await page.waitForSelector('.rail-item', { timeout: 15000 });
+    const n = await page.locator('.rail-item').count();
+    assert(n >= 1, '会话栏应至少有 1 条会话，实际 ' + n);
+    const active = await page.locator('.rail-item.active').count();
+    assert(active === 1, '当前会话应高亮');
+    return n + ' 条会话';
+  });
+
+  await step('Agent 会自己调用工具（算数）', async () => {
+    await page.fill('#chat-input', '帮我算一下 (12+8)*3/4 是多少？');
+    await page.getByRole('button', { name: '发送' }).click();
+    await page.waitForSelector('.tool-row:has-text("计算")', { timeout: 30000 });
+    await page.waitForFunction(() => {
+      const bodies = document.querySelectorAll('.msg-ai .msg-body');
+      if (!bodies.length) return false;
+      const last = bodies[bodies.length - 1];
+      return !last.querySelector('.caret') && last.innerText.indexOf('15') >= 0;
+    }, null, { timeout: 60000 });
+    const tools = await page.$$eval('.tool-row .tool-name', (els) => els.map((e) => e.textContent.trim()));
+    await shot('14-工具调用');
+    return '调用链：' + tools.slice(-2).join(' / ');
+  });
+
+  await step('流式增量事件真的写进了会话', async () => {
+    const r = await page.evaluate(() => fetch('/api/sessions/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()));
+    const sid = r.data.sessions[0].sessionId;
+    const ev = await page.evaluate((id) => fetch('/api/sessions/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: id }) }).then((x) => x.json()), sid);
+    const deltas = ev.data.events.filter((e) => e.type === 'assistant/delta').length;
+    assert(deltas >= 1, '应有流式增量事件，实际 ' + deltas);
+    const toolEvents = ev.data.events.filter((e) => e.type === 'tool/call').length;
+    assert(toolEvents >= 1, '应有工具调用事件');
+    const kind = r.data.sessions[0].kind;
+    assert(kind === 'ask', '会话类型应为 ask，实际 ' + kind);
+    return deltas + ' 条增量 / ' + toolEvents + ' 次工具调用 / kind=' + kind;
+  });
+
+  await step('点会话栏能还原历史对话与出处', async () => {
+    await page.locator('.rail-item').first().click();
+    await page.waitForSelector('.turn-block', { timeout: 20000 });
+    const turns = await page.locator('.turn-block').count();
+    const cites = await page.locator('.cite-list li').count();
+    assert(turns >= 1, '应还原出对话轮次');
+    assert(cites >= 1, '历史会话也应能还原出处列表，实际 ' + cites);
+    await shot('15-历史会话还原');
+    return turns + ' 轮，出处 ' + cites + ' 条';
+  });
+
+  await step('「新建对话」会开一条空会话', async () => {
+    await page.locator('#rail-new').click();
+    await page.waitForTimeout(900);
+    const cards = await page.locator('.turn-block').count();
+    assert(cards === 0, '新会话应是空的，实际 ' + cards + ' 轮');
+    return '空会话就绪';
   });
 
   /* ---------- 会话记录 ---------- */

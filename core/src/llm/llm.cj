@@ -117,7 +117,16 @@ public class LlmClient {
     /** 流式请求：逐块读取 SSE，累积正文后返回。
         长生成如果用非流式，服务端不刷新响应体会让单次读阻塞过久而被断开；
         改流式后数据持续到达，读不再长时间阻塞。 */
+    /** 不带回调的流式请求：只为兼容旧调用点。 */
     func postStream(path: String, payload: JsonValue): String {
+        return postStream(path, payload, { piece: String => () })
+    }
+
+    /**
+     * 流式请求。每收到一段正文就回调一次 onDelta，界面靠它做"打字机"输出。
+     * 之所以要回调而不是等整段返回：真模型一段几千字要等几十秒，用户看不到任何进展。
+     */
+    func postStream(path: String, payload: JsonValue, onDelta: (String) -> Unit): String {
         let url = endpoint(path)
         var tls = TlsClientConfig()
         tls.serverName = Some(hostOf(url))
@@ -145,7 +154,7 @@ public class LlmClient {
                 throw LlmException("模型接口返回 " + st.toString() + "：" + readAllString(resp.body))
             }
             stage = "读取响应体"
-            return readSse(resp.body)
+            return readSse(resp.body, onDelta)
         } catch (e: LlmException) {
             throw e
         } catch (e: Exception) {
@@ -179,16 +188,37 @@ public class LlmClient {
     }
 
     public func chatMessages(messages: JsonArray): String {
+        return chatMessagesStream(messages, { piece: String => () })
+    }
+
+    /** 带增量回调的多轮对话：messages 可以含历史轮次与工具结果。 */
+    public func chatMessagesStream(messages: JsonArray, onDelta: (String) -> Unit): String {
         let payload = JsonObject()
         payload.put("model", JsonString(modelName()))
         payload.put("messages", messages)
         payload.put("temperature", JsonFloat(0.3))
         payload.put("stream", JsonBool(true))
-        let content = postStream("/chat/completions", payload)
+        let content = postStream("/chat/completions", payload, onDelta)
         if (content.size == 0) {
             throw LlmException("模型返回内容为空")
         }
         return content
+    }
+
+    /** 单轮对话的流式版本。 */
+    public func chatStream(systemPrompt: String, userPrompt: String, onDelta: (String) -> Unit): String {
+        let msgs = JsonArray()
+        if (systemPrompt.size > 0) {
+            let sys = JsonObject()
+            sys.put("role", JsonString("system"))
+            sys.put("content", JsonString(systemPrompt))
+            msgs.add(sys)
+        }
+        let usr = JsonObject()
+        usr.put("role", JsonString("user"))
+        usr.put("content", JsonString(userPrompt))
+        msgs.add(usr)
+        return chatMessagesStream(msgs, onDelta)
     }
 
     /** 多模态对话：一张图加一段提示词，返回模型描述。 */
@@ -279,7 +309,7 @@ public class LlmClient {
 
 // ---------- 流式响应解析 ----------
 
-func handleSseLine(line: String, out: StringBuilder): Unit {
+func handleSseLine(line: String, out: StringBuilder, onDelta: (String) -> Unit): Unit {
     if (!hasPrefix(line, "data:")) {
         return
     }
@@ -296,6 +326,9 @@ func handleSseLine(line: String, out: StringBuilder): Unit {
             piece = pickStr(v, ["choices", "0", "message", "content"])
         }
         out.append(piece)
+        if (piece.size > 0) {
+            onDelta(piece)
+        }
     } catch (e: Exception) {
         // 单行解析失败不影响整体
         ()
@@ -303,6 +336,10 @@ func handleSseLine(line: String, out: StringBuilder): Unit {
 }
 
 func readSse(input: InputStream): String {
+    return readSse(input, { piece: String => () })
+}
+
+func readSse(input: InputStream, onDelta: (String) -> Unit): String {
     let out = StringBuilder()
     let raw = StringBuilder()
     let buf = Array<UInt8>(4096, repeat: 0)
@@ -316,7 +353,7 @@ func readSse(input: InputStream): String {
         var i = 0
         while (i < n) {
             if (buf[i] == 10) {
-                handleSseLine(trimStr(String.fromUtf8(pending.toArray())), out)
+                handleSseLine(trimStr(String.fromUtf8(pending.toArray())), out, onDelta)
                 pending = ArrayList<UInt8>()
             } else {
                 pending.add(buf[i])
@@ -325,7 +362,7 @@ func readSse(input: InputStream): String {
         }
     }
     if (pending.size > 0) {
-        handleSseLine(trimStr(String.fromUtf8(pending.toArray())), out)
+        handleSseLine(trimStr(String.fromUtf8(pending.toArray())), out, onDelta)
     }
     if (out.toString().size > 0) {
         return out.toString()

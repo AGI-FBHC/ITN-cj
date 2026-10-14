@@ -85,7 +85,27 @@ public class Api {
         return o
     }
 
+    /**
+     * 所有路由的统一入口。
+     *
+     * 任何未预期的异常都在这里转成带原因的 JSON —— 框架默认只回一句
+     * "Internal Server Error"，用户在界面上看到它完全无从下手
+     * （本轮就踩过：数据目录残留锁文件，界面只显示 HTTP 500）。
+     */
     public func handle(ctx: HttpContext): Unit {
+        try {
+            route(ctx)
+        } catch (e: Exception) {
+            try {
+                fail(ctx, 500, describeFailure(e.message))
+            } catch (_: Exception) {
+                ()
+            }
+        }
+    }
+
+    /** 真正的路由分发。 */
+    func route(ctx: HttpContext): Unit {
         let path = ctx.request.url.path
         let method = ctx.request.method
 
@@ -481,7 +501,24 @@ public class Api {
             return
         }
 
+        if (path == "/api/tools/list" && method == "POST") {
+            let o = JsonObject()
+            o.put("tools", Agent(store).toolsJson())
+            ok(ctx, o)
+            return
+        }
+
         // ---------- 会话与产物 ----------
+
+        if (path == "/api/sessions/new" && method == "POST") {
+            // 界面点「新建对话」时先开一个会话 id，这样提问前就能把它显示在会话栏里，
+            // 生成过程中也能按这个 id 轮询事件做流式输出。
+            let ss = SessionStore(store.dataDir)
+            let o = JsonObject()
+            o.put("sessionId", JsonString(ss.newId()))
+            ok(ctx, o)
+            return
+        }
 
         if (path == "/api/sessions/list" && method == "POST") {
             let ss = SessionStore(store.dataDir)
@@ -875,6 +912,20 @@ func serveStatic(ctx: HttpContext, uiDir: String, rel: String): Unit {
     ctx.responseBuilder.body(File.readFrom(full))
 }
 
+/**
+ * 把异常信息翻译成用户能照做的提示。
+ *
+ * 数据库被占用是本产品最可能碰到的"看不懂的错"：驱动用锁文件做跨进程互斥，
+ * 上一次进程被强杀就会留下锁文件，之后每个要读库的请求都会 busy。
+ */
+func describeFailure(message: String): String {
+    if (message.split("cjflock").size > 1 || message.split("database is locked").size > 1) {
+        return "本地数据库被另一个进程占用，无法读写：" + message +
+            "。请先关闭所有 ITN-Desktop 窗口与内核进程再重试；确认没有进程在运行后，删除数据目录里的 itn.db-cjflock 即可恢复（该文件只是锁标记，删掉不影响数据）。"
+    }
+    return message
+}
+
 public func buildServer(dataDir: String, uiDir: String): Server {
     let server = ServerBuilder().addr("127.0.0.1").port(0).build()
     let api = Api(Store(dataDir))
@@ -896,6 +947,8 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/agent/ask",
         "/api/agent/lecture",
         "/api/agent/quiz",
+        "/api/tools/list",
+        "/api/sessions/new",
         "/api/sessions/list",
         "/api/sessions/events",
         "/api/profile/get",

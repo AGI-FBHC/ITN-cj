@@ -292,7 +292,8 @@ const state = {
   cfg: { models: [], knowledgeBases: [], chatModelId: "", embedModelId: "", chunkModelId: "" },
   profile: {}, report: {}, artifacts: [], sessions: [],
   kb: "", chapter: null,
-  chat: [], chatSessionId: "",
+  chatSessionId: "", chatTurns: [], chatEvents: [], tools: null,
+  busyTurn: false, pendingQuestion: "", lastQuestion: "",
 };
 
 let current = "home";
@@ -427,6 +428,7 @@ async function go(page, opts) {
   if (location.hash !== hash) {
     try { history.replaceState(null, "", hash); } catch (e) { location.hash = hash; }
   }
+  if (target !== "chat") railShow(false);
   buildNav();
   const meta = PAGE_META[target];
   $("page-title").textContent = meta.title;
@@ -815,7 +817,7 @@ async function renderChapter(v) {
 }
 
 async function askAboutChunk(chunk) {
-  state.chatQuestion = "请解释这段资料：" + String(chunk.headingPath || chunk.docTitle || "");
+  state.pendingQuestion = "请解释这段资料：" + String(chunk.headingPath || chunk.docTitle || "");
   go("chat");
 }
 
@@ -1373,138 +1375,335 @@ PAGES.kb = {
     v.appendChild(stats);
   },
 };
-/* ---------- 伴学助手 ---------- */
+/* ---------- 伴学助手：会话栏 + 主对话框（对标 Codex 的形态） ---------- */
+
+const KIND_LABEL = { ask: "问答", lecture: "讲义", quiz: "练习", "": "对话" };
+const TOOL_LABEL = {
+  kb_search: "检索知识库",
+  list_documents: "列出文档",
+  read_chunk: "读取切片",
+  current_time: "当前时间",
+  calc: "计算",
+  save_note: "写笔记",
+  save_artifact: "写产物",
+};
+
+function railShow(on) {
+  const rail = $("session-rail");
+  if (rail) rail.hidden = !on;
+  document.body.classList.toggle("chat-mode", !!on);
+}
+
+function railRender() {
+  const rail = $("session-rail");
+  if (!rail || rail.hidden) return;
+  const list = $("rail-list");
+  if (!list) return;
+  const q = String(($("rail-search") || {}).value || "").trim().toLowerCase();
+  const items = state.sessions.filter((s) => !q || String(s.title || "").toLowerCase().indexOf(q) >= 0);
+  list.innerHTML = "";
+  if (!items.length) {
+    list.appendChild(el("div", "rail-empty",
+      state.sessions.length ? "没有匹配的会话" : "还没有对话。点上面的「新建」开始第一轮。"));
+    return;
+  }
+  for (const s of items) {
+    const b = el("button", "rail-item" + (s.sessionId === state.chatSessionId ? " active" : ""));
+    b.appendChild(el("div", "rail-item-title", s.title || "新对话"));
+    b.appendChild(el("div", "rail-item-meta",
+      (KIND_LABEL[s.kind || ""] || "对话") + " · " + s.eventCount + " 步 · " + fmtStamp(s.lastAt).slice(6)));
+    b.onclick = () => { state.chatSessionId = s.sessionId; go("chat"); };
+    list.appendChild(b);
+  }
+}
+
+async function reloadSessions() {
+  await loadSessions();
+  buildNav();
+  railRender();
+}
+
+async function newChat() {
+  try {
+    const d = await api("/api/sessions/new", {});
+    state.chatSessionId = d.sessionId;
+    state.chatEvents = [];
+    state.chatTurns = [];
+    go("chat");
+  } catch (e) {
+    toast("新建会话失败：" + e.message);
+  }
+}
+
+/** 把只追加的事件还原成可渲染的轮次。界面永远以事件为准，不自己编对话。 */
+function turnsFromEvents(events) {
+  const turns = [];
+  const byKey = {};
+  for (const e of events) {
+    const key = e.turnId || "—";
+    if (!byKey[key]) {
+      byKey[key] = { id: key, kind: "", user: "", answer: "", deltas: "", tools: [], report: null, citations: [], ok: null, message: "" };
+      turns.push(byKey[key]);
+    }
+    const t = byKey[key];
+    const p = e.payload || {};
+    if (e.type === "turn/start") t.kind = p.kind || "";
+    else if (e.type === "user/message") t.user = p.text || "";
+    else if (e.type === "assistant/delta") t.deltas += (p.text || "");
+    else if (e.type === "assistant/message") t.answer = p.text || "";
+    else if (e.type === "tool/call") t.tools.push({ name: p.tool || "", args: p.args || {}, summary: "" });
+    else if (e.type === "tool/result") {
+      let target = null;
+      for (const x of t.tools) { if (x.name === p.tool && !x.summary) target = x; }
+      if (!target && t.tools.length) target = t.tools[t.tools.length - 1];
+      if (target) target.summary = p.summary || "";
+    } else if (e.type === "validation") {
+      t.report = p.report || null;
+      t.citations = p.citations || [];
+    } else if (e.type === "turn/end") {
+      t.ok = p.ok !== false;
+      t.message = p.message || "";
+    }
+  }
+  return turns;
+}
+
+function renderToolRows(tools) {
+  const box = el("div", "tool-rows");
+  for (const tool of tools) {
+    const row = el("div", "tool-row" + (tool.summary ? "" : " running"));
+    row.appendChild(el("span", "tool-dot"));
+    let label = TOOL_LABEL[tool.name] || tool.name || "工具";
+    if (tool.args && tool.args.query) label += "：「" + tool.args.query + "」";
+    if (tool.args && tool.args.expr) label += "：" + tool.args.expr;
+    if (tool.args && tool.args.chunk_id) label += "：" + tool.args.chunk_id;
+    row.appendChild(el("span", "tool-name", label));
+    row.appendChild(el("span", "tool-sum", tool.summary || "执行中…"));
+    box.appendChild(row);
+  }
+  return box;
+}
+
+function renderTurnBlock(t, live) {
+  const box = el("div", "turn-block");
+  if (t.user) {
+    const u = el("div", "msg msg-user");
+    u.appendChild(el("div", "msg-who", "我"));
+    const b = el("div", "msg-body");
+    b.innerHTML = md(t.user);
+    u.appendChild(b);
+    box.appendChild(u);
+  }
+  if (t.tools.length) box.appendChild(renderToolRows(t.tools));
+  const text = t.answer || (live ? t.deltas : "");
+  if (text) {
+    const a = el("div", "msg msg-ai");
+    a.appendChild(el("div", "msg-who", "伴学助手"));
+    const b = el("div", "msg-body");
+    b.innerHTML = md(text);
+    if (live && !t.answer) b.appendChild(el("span", "caret"));
+    a.appendChild(b);
+    if (!live && (t.citations.length || t.report)) a.appendChild(citationBox(t.citations, t.report));
+    if (!live && t.answer) {
+      const acts = el("div", "row msg-actions");
+      acts.appendChild(btn("做成讲义", "sm ghost", () => askTopic("lecture", topicFromText(t.user || t.answer))));
+      acts.appendChild(btn("做成练习册", "sm ghost", () => askTopic("quiz", topicFromText(t.user || t.answer))));
+      acts.appendChild(copyButton(() => t.answer, "复制"));
+      a.appendChild(acts);
+    }
+    box.appendChild(a);
+  } else if (!live && t.ok === false) {
+    const e = el("div", "msg msg-ai");
+    e.appendChild(el("div", "msg-who", "伴学助手"));
+    e.appendChild(el("div", "msg-body err-text", t.message || "这一轮没有完成"));
+    box.appendChild(e);
+  }
+  return box;
+}
 
 PAGES.chat = {
   async render() {
     await loadCfg();
+    railShow(true);
     const v = $("view");
     v.innerHTML = "";
-
-    const bar = el("div", "card");
-    const row = el("div", "row");
-    if (hasKb()) row.appendChild(kbSelector(() => { state.chat = []; state.chatSessionId = ""; go("chat"); }));
-    else row.appendChild(tag("未配置知识库 · 纯模型对话", "warn"));
-    row.appendChild(spacer());
-    if (hasChatModel()) row.appendChild(tag("模型：" + (modelLabel(state.cfg.chatModelId) || state.cfg.chatModelId), "ok"));
-    else row.appendChild(tag("未绑定对话模型", "warn"));
-    row.appendChild(btn("新会话", "sm", () => { state.chat = []; state.chatSessionId = ""; go("chat"); }));
-    row.appendChild(btn("会话记录", "sm ghost", () => go("sessions")));
-    bar.appendChild(row);
-    if (!hasKb()) {
-      bar.appendChild(el("p", "muted sm", "没有知识库时，问题会直接发给模型（不检索资料）。指定资料目录后，回答会带出处编号。"));
-    }
-    v.appendChild(bar);
 
     if (!hasChatModel()) {
       v.appendChild(cardOf({
         body: emptyState({
           art: "gear",
           title: "还没有可用的对话模型",
-          text: "桌面版用你自己的模型服务。填一次 Base URL 和 API Key，把「对话与生成」绑上去就能开始。",
+          text: "桌面版用你自己的模型服务：填一次 Base URL 和 API Key，把「对话与生成」绑上去，就能开始对话。",
           actions: [btn("去配置模型", "primary", () => go("models"))],
         }),
       }));
+      railRender();
       return;
     }
 
-    const box = el("div", "card chat-box");
-    v.appendChild(box);
+    /* 顶部工具条 */
+    const bar = el("div", "chat-head");
+    if (hasKb()) bar.appendChild(kbSelector(() => { state.chatSessionId = ""; state.chatTurns = []; go("chat"); }));
+    else bar.appendChild(tag("未配知识库 · 直接问模型", "warn"));
+    bar.appendChild(spacer());
+    bar.appendChild(tag("模型 " + (modelLabel(state.cfg.chatModelId) || state.cfg.chatModelId), "ok"));
+    if (hasKb()) bar.appendChild(tag("检索：" + kbName(state.kb)));
+    const toolBtn = btn("工具 " + (state.tools ? state.tools.length : ""), "sm ghost", () => {
+      const box = $("tool-sheet");
+      if (box) box.hidden = !box.hidden;
+    });
+    bar.appendChild(toolBtn);
+    bar.appendChild(btn("全部会话", "sm ghost", () => go("sessions")));
+    bar.appendChild(btn("新建对话", "sm primary", () => newChat()));
+    v.appendChild(bar);
 
-    const inputRow = el("div", "card chat-input");
-    const q = el("input");
-    q.className = "grow";
-    q.placeholder = hasKb() ? "就你的资料提一个问题，回答会标出出处" : "提一个问题";
-    inputRow.appendChild(q);
-    const send = btn("发送", "primary", () => ask());
-    inputRow.appendChild(send);
+    const sheet = el("div", "card tool-sheet");
+    sheet.id = "tool-sheet";
+    sheet.hidden = true;
+    sheet.appendChild(el("div", "card-head", ""));
+    sheet.querySelector(".card-head").appendChild(el("h2", null, "Agent 可调用的本地工具"));
+    sheet.querySelector(".card-head").appendChild(spacer());
+    sheet.querySelector(".card-head").appendChild(el("span", "card-sub", "模型按需自己调，不需要你操作"));
+    const tlist = el("div", "list");
+    const tools = state.tools || [];
+    if (!tools.length) {
+      tlist.appendChild(el("div", "muted sm", "（还没读到工具清单）"));
+    } else {
+      for (const t of tools) {
+        const it = el("div", "item");
+        it.appendChild(el("div", "item-title", (TOOL_LABEL[t.name] || t.name) + "  " + t.name));
+        it.appendChild(el("div", "muted sm", t.desc));
+        it.appendChild(el("div", "meta", "参数示例 " + t.usage));
+        tlist.appendChild(it);
+      }
+    }
+    sheet.appendChild(tlist);
+    v.appendChild(sheet);
+
+    /* 对话正文 */
+    const thread = el("div", "chat-thread");
+    thread.id = "chat-thread";
+    v.appendChild(thread);
+
+    const inputRow = el("div", "composer");
+    const ta = el("textarea");
+    ta.id = "chat-input";
+    ta.rows = 3;
+    ta.placeholder = hasKb()
+      ? "就你的资料提问，回答会标出处；也可以直接说「帮我算一下」「看下有哪些文档」。Enter 发送，Shift+Enter 换行"
+      : "提一个问题。Enter 发送，Shift+Enter 换行";
+    inputRow.appendChild(ta);
+    const crow = el("div", "composer-row");
+    const quick = el("div", "row");
+    quick.appendChild(btn("生成讲义", "sm ghost", () => askTopic("lecture", topicFromText(state.lastQuestion || ""))));
+    quick.appendChild(btn("生成练习册", "sm ghost", () => askTopic("quiz", topicFromText(state.lastQuestion || ""))));
+    crow.appendChild(quick);
+    crow.appendChild(spacer());
+    const sendBtn = btn("发送", "primary", () => send());
+    crow.appendChild(sendBtn);
+    inputRow.appendChild(crow);
     v.appendChild(inputRow);
 
-    if (state.chatQuestion) {
-      q.value = state.chatQuestion;
-      state.chatQuestion = "";
-      q.focus();
+    if (state.pendingQuestion) {
+      ta.value = state.pendingQuestion;
+      state.pendingQuestion = "";
     }
 
     function paint() {
-      box.innerHTML = "";
-      if (!state.chat.length) {
-        box.appendChild(emptyState({
-          inline: true,
+      thread.innerHTML = "";
+      if (!state.chatTurns.length) {
+        thread.appendChild(emptyState({
           art: "chat",
-          title: "开始一段对话",
+          title: state.chatSessionId ? "这个会话还没有内容" : "开始一段对话",
           text: hasKb()
-            ? "例如：「这一章的核心结论是什么？」——回答会先检索「" + kbName(state.kb) + "」，再逐条标注出处。"
-            : "例如：「用三句话介绍检索增强生成」。",
+            ? "例如：「这一章的核心结论是什么？」「资料里提到哪三种手法？」。回答会先检索「" + kbName(state.kb) + "」，逐条标注出处。"
+            : "当前没有知识库，问题会直接发给模型；指定资料目录后回答会带出处。",
           actions: hasKb() ? [
-            btn("问：这一章的核心结论是什么", "", () => { q.value = "这一章的核心结论是什么？"; ask(); }),
+            btn("问：这一章的核心结论是什么", "", () => { ta.value = "这一章的核心结论是什么？"; send(); }),
             btn("看知识库里有什么", "ghost", () => go("kb")),
-          ] : [btn("去配置知识库", "", () => go("settings"))],
+          ] : [btn("去指定资料目录", "", () => go("settings"))],
         }));
-        return;
+      } else {
+        for (const t of state.chatTurns) thread.appendChild(renderTurnBlock(t, !t.answer && state.busyTurn));
       }
-      for (const m of state.chat) {
-        const it = el("div", "msg " + (m.role === "user" ? "msg-user" : "msg-ai"));
-        it.appendChild(el("div", "msg-who", m.role === "user" ? "我" : "伴学助手"));
-        if (m.pending) {
-          const p = el("div", "msg-body");
-          p.innerHTML = '<span class="spinner"></span> ' + esc(m.text);
-          it.appendChild(p);
-          it.appendChild(el("div", "muted sm", ((Date.now() - m.since) / 1000).toFixed(1) + " 秒"));
-        } else {
-          const body = el("div", "msg-body");
-          body.innerHTML = md(m.text);
-          it.appendChild(body);
-          if (m.citations || m.report) it.appendChild(citationBox(m.citations, m.report));
-          if (m.role === "ai" && m.text && m.text.indexOf("失败") !== 0) {
-            const acts = el("div", "row");
-            acts.appendChild(btn("做成讲义", "sm ghost", () => askTopic("lecture", topicFromText(m.text))));
-            acts.appendChild(btn("做成练习册", "sm ghost", () => askTopic("quiz", topicFromText(m.text))));
-            acts.appendChild(copyButton(() => m.text, "复制"));
-            it.appendChild(acts);
-          }
-        }
-        box.appendChild(it);
-      }
+      thread.scrollTop = thread.scrollHeight;
+      const main = document.querySelector(".main");
+      if (main) main.scrollTop = main.scrollHeight;
     }
     paint();
 
-    async function ask() {
-      const text = q.value.trim();
+    async function send() {
+      const text = ta.value.trim();
       if (!text) return;
-      if (state.asking) { toast("上一条还在生成中"); return; }
-      state.asking = true;
-      q.value = "";
-      state.chat.push({ role: "user", text: text });
-      state.chat.push({ role: "ai", text: "正在检索资料并作答…", pending: true, since: Date.now() });
-      paint();
-      const tick = setInterval(paint, 200);
-      const last = state.chat.length - 1;
-      try {
-        let d;
-        if (hasKb()) {
-          d = await api("/api/agent/ask", { kbId: state.kb, question: text, sessionId: state.chatSessionId });
-          state.chatSessionId = d.sessionId || state.chatSessionId;
-          if (d.ok !== true) {
-            state.chat[last] = { role: "ai", text: "没能答上来：" + (d.message || "内核没有返回内容") };
-          } else {
-            state.chat[last] = { role: "ai", text: d.answer || "", citations: d.citations, report: d.citationReport };
-          }
-        } else {
-          d = await api("/api/chat", { user: text });
-          state.chat[last] = { role: "ai", text: d.reply || "" };
-        }
-        await loadSessions();
-      } catch (e) {
-        state.chat[last] = { role: "ai", text: "失败：" + e.message };
+      if (state.busyTurn) { toast("上一轮还在生成中"); return; }
+      if (!state.chatSessionId) {
+        try {
+          state.chatSessionId = (await api("/api/sessions/new", {})).sessionId;
+        } catch (e) { toast("新建会话失败：" + e.message); return; }
       }
-      clearInterval(tick);
-      state.asking = false;
+      const sid = state.chatSessionId;
+      ta.value = "";
+      state.lastQuestion = text;
+      state.busyTurn = true;
+      state.chatTurns.push({ id: "local", kind: "ask", user: text, answer: "", deltas: "", tools: [], report: null, citations: [], ok: null, message: "" });
       paint();
-      buildNav();
+
+      // 生成过程中轮询会话事件，把 assistant/delta 渲染成"打字机"效果。
+      // 内核 HTTP 是多线程的，长生成不会挡住这个轮询。
+      const poll = setInterval(async () => {
+        try {
+          const d = await api("/api/sessions/events", { sessionId: sid });
+          const all = d.events || [];
+          if (all.length !== (state.chatEvents || []).length) {
+            state.chatEvents = all;
+            state.chatTurns = turnsFromEvents(all);
+            paint();
+          }
+        } catch (e) { /* 轮询失败不打扰用户，最终结果以收尾时那次为准 */ }
+      }, 400);
+
+      let failure = "";
+      try {
+        const res = await api("/api/agent/ask", { kbId: state.kb, question: text, sessionId: sid });
+        if (res.ok !== true) failure = res.message || "这一轮没有完成";
+      } catch (e) {
+        failure = e.message;
+      }
+      clearInterval(poll);
+      try {
+        const d = await api("/api/sessions/events", { sessionId: sid });
+        state.chatEvents = d.events || [];
+        state.chatTurns = turnsFromEvents(state.chatEvents);
+      } catch (e) {
+        state.chatTurns = state.chatTurns.filter((t) => t.id !== "local");
+      }
+      state.busyTurn = false;
+      if (failure) toast("生成失败：" + failure);
+      await reloadSessions();
+      paint();
     }
-    send.onclick = ask;
-    q.onkeydown = (e) => { if (e.key === "Enter") ask(); };
+
+    ta.onkeydown = (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        send();
+      }
+    };
+    sendBtn.onclick = send;
+
+    /* 已有会话：把历史事件还原成线程 */
+    if (state.chatSessionId) {
+      try {
+        const d = await api("/api/sessions/events", { sessionId: state.chatSessionId });
+        state.chatEvents = d.events || [];
+        state.chatTurns = turnsFromEvents(state.chatEvents);
+        paint();
+      } catch (e) {
+        toast("读取会话失败：" + e.message);
+      }
+    }
+    railRender();
+    ta.focus();
   },
 };
 
@@ -1512,9 +1711,11 @@ function topicFromText(text) {
   const first = String(text || "").split("\n").map((s) => s.replace(/^[#>*\-\s]+/, "").trim()).filter(Boolean)[0] || "";
   return first.slice(0, 24) || "本段内容";
 }
+
 /* ---------- 会话记录：Agent 每一步都留痕 ---------- */
 
 const EVENT_LABEL = {
+  "assistant/delta": "流式增量",
   "turn/start": "开始一轮",
   "user/message": "用户输入",
   "step/start": "步骤开始",
@@ -1533,8 +1734,9 @@ const STEP_LABEL = {
   quiz_create: "出题",
   citation_check: "引用自检",
   artifact_save: "保存产物",
+  model_call: "调用模型",
+  tool_exec: "执行工具",
 };
-const KIND_LABEL = { ask: "问答", lecture: "生成讲义", quiz: "生成练习" };
 
 function openSession(sessionId) {
   state.sessionId = sessionId;
@@ -1572,6 +1774,7 @@ PAGES.sessions = {
         main.appendChild(el("div", "item-title", s.title || "（无标题会话）"));
         main.appendChild(el("div", "meta", s.eventCount + " 条事件 · 最后 " + (EVENT_LABEL[s.lastType] || s.lastType || "—") + " · " + fmtStamp(s.lastAt)));
         row.appendChild(main);
+        row.appendChild(tag(KIND_LABEL[s.kind || ""] || "对话", s.kind && s.kind !== "ask" ? "ok" : ""));
         row.appendChild(btn("查看", "sm", () => openSession(s.sessionId)));
         it.appendChild(row);
         it.onclick = (ev) => { if (!ev.target.closest("button")) openSession(s.sessionId); };
@@ -1601,10 +1804,16 @@ async function renderSessionDetail(v, sessionId) {
     return;
   }
   const turns = {};
+  var deltaCount = 0;
   for (const e of events) {
+    // assistant/delta 是流式增量，条数多且内容已包含在最终回复里，时间线里不逐条展示
+    if (e.type === "assistant/delta") { deltaCount += 1; continue; }
     const key = e.turnId || "—";
     if (!turns[key]) turns[key] = [];
     turns[key].push(e);
+  }
+  if (deltaCount) {
+    card.appendChild(el("p", "muted sm", "（另有 " + deltaCount + " 条流式增量事件未逐条列出）"));
   }
   const wrap = el("div", "timeline");
   Object.keys(turns).forEach((key, ti) => {
@@ -2206,6 +2415,17 @@ async function boot() {
   } catch (e) {
     toast("读取配置失败：" + e.message);
   }
+  try {
+    state.tools = (await api("/api/tools/list", {})).tools || [];
+  } catch (e) {
+    state.tools = [];
+  }
+  const railSearch = $("rail-search");
+  if (railSearch) railSearch.oninput = () => railRender();
+  const railNew = $("rail-new");
+  if (railNew) railNew.onclick = () => newChat();
+  const railAll = $("rail-all");
+  if (railAll) railAll.onclick = () => go("sessions");
   window.addEventListener("hashchange", () => {
     const p = pageFromHash();
     if (p !== current) go(p);
