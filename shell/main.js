@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
@@ -117,10 +117,31 @@ async function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: "ITN-Desktop",
-    backgroundColor: "#fbfcfd",
-    webPreferences: { contextIsolation: true, nodeIntegration: false },
+    // 自绘标题栏：Electron 的 frame:false 会把系统标题栏整条去掉，
+    // 界面自己在顶部画一条深绿色的框（brand + 窗口按钮），看起来才是"一个软件"。
+    frame: false,
+    backgroundColor: "#f7f5ef",
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: path.join(__dirname, "preload.js"),
+    },
   });
   if (win.removeMenu) win.removeMenu();
+
+  // 窗口按钮走 IPC：渲染层只拿到三个方法，拿不到 Node
+  ipcMain.on("win:minimize", () => { if (win) win.minimize(); });
+  ipcMain.on("win:toggle-maximize", () => {
+    if (!win) return;
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+  });
+  ipcMain.on("win:close", () => { if (win) win.close(); });
+  const pushWindowState = () => {
+    if (win) win.webContents.send("win:state", { maximized: win.isMaximized() });
+  };
+  win.on("maximize", pushWindowState);
+  win.on("unmaximize", pushWindowState);
 
   win.webContents.on("did-fail-load", (_e, code, desc) => {
     console.log("SMOKE_LOAD_FAIL " + code + " " + desc);
@@ -135,6 +156,11 @@ async function createWindow() {
       const status = await win.webContents.executeJavaScript("document.getElementById('status').textContent");
       // 界面改成多页面后，用"导航项数 + 首屏节点数"判断界面真的渲染出来了；
       // 原来数的是 .panel，那个类名早就没有了，等于一直在数 0。
+      // preload 没挂上就没有自绘窗口按钮可用：这一条必须能在打包版里验证
+      const preloadOk = await win.webContents.executeJavaScript("!!(window.itnWindow && window.itnWindow.minimize)");
+      const titlebar = await win.webContents.executeJavaScript("!!document.querySelector('#titlebar')");
+      lines.push("PRELOAD=" + (preloadOk ? "ok" : "missing"));
+      lines.push("TITLEBAR=" + (titlebar ? "ok" : "missing"));
       const navs = await win.webContents.executeJavaScript("document.querySelectorAll('.nav-item').length");
       // did-finish-load 只是页面加载完，boot() 里还要等内核握手与读配置，
       // 这里最多等 10 秒，直到首页真的渲染出内容为止。

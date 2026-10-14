@@ -9,12 +9,31 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+  <header id="titlebar" class="titlebar">
+    <div class="tb-brand">
+      <span class="tb-mark">ITN</span>
+      <span class="tb-name">教培工作台</span>
+      <span class="tb-sub">本地运行 · 资料不出本机</span>
+    </div>
+    <div class="tb-drag"></div>
+    <div class="tb-controls">
+      <button id="win-min" class="tb-btn" type="button" aria-label="最小化" title="最小化">
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 6h8" /></svg>
+      </button>
+      <button id="win-max" class="tb-btn" type="button" aria-label="最大化" title="最大化">
+        <svg class="icon-max" viewBox="0 0 12 12" aria-hidden="true"><rect x="2.5" y="2.5" width="7" height="7" rx="1.2" /></svg>
+        <svg class="icon-restore" viewBox="0 0 12 12" aria-hidden="true"><rect x="2" y="3.6" width="6.4" height="6.4" rx="1.1" /><path d="M4.4 3.6V2.4A1 1 0 0 1 5.4 1.4h4.2a1 1 0 0 1 1 1v4.2a1 1 0 0 1-1 1h-1.2" /></svg>
+      </button>
+      <button id="win-close" class="tb-btn tb-close" type="button" aria-label="关闭窗口" title="关闭窗口">
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3L3 9" /></svg>
+      </button>
+    </div>
+  </header>
   <div class="app">
     <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-mark">ITN</div>
-        <div class="brand-text"><strong>教培工作台</strong><span>本地运行 · 无后端</span></div>
-      </div>
+      <button id="nav-search" class="nav-search">
+        <span>检索资料与笔记</span><kbd>Ctrl K</kbd>
+      </button>
       <nav id="nav" class="nav"></nav>
       <div class="sidebar-foot"><span id="status" class="status">连接中…</span></div>
     </aside>
@@ -38,6 +57,7 @@
       <div id="view" class="view"></div>
     </main>
   </div>
+  <div id="palette" class="palette" hidden></div>
   <div id="player" class="player" hidden></div>
   <div id="toast" class="toast"></div>
   <script src="/app.js"></script>

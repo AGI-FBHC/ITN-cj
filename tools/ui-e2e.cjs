@@ -951,6 +951,99 @@ function assert(cond, msg) {
     return '目录标已完成，四步 ' + after + ' / 4';
   });
 
+  await step('自绘窗口框：标题栏在、按钮有接线、浏览器里不假装能用', async () => {
+    const bar = await page.locator('#titlebar').count();
+    assert(bar === 1, '应有自绘标题栏');
+    const text = await page.locator('#titlebar .tb-brand').innerText();
+    assert(text.indexOf('教培工作台') >= 0, '标题栏应有应用名，实际：' + text.replace(/\s+/g, ' '));
+    for (const id of ['win-min', 'win-max', 'win-close']) {
+      const n = await page.locator('#' + id).count();
+      assert(n === 1, '缺少窗口按钮 #' + id);
+    }
+    // 浏览器里没有预加载脚本：点窗口按钮应给出明确说明，而不是静默无效
+    const hasApi = await page.evaluate(() => !!(window.itnWindow && window.itnWindow.minimize));
+    assert(!hasApi, '无头浏览器里不应存在 itnWindow（这条同时也验证了"桌面专属能力不依赖浏览器"）');
+    await page.locator('#win-min').click();
+    await page.waitForFunction(() => {
+      const t = document.querySelector('#toast');
+      return !!t && t.classList.contains('show') && t.innerText.indexOf('桌面应用窗口') >= 0;
+    }, null, { timeout: 8000 });
+    const toastText = await page.textContent('#toast');
+    // 标题栏高度必须真的让出位置：内容区从标题栏下面开始
+    const box = await page.locator('#titlebar').boundingBox();
+    const appBox = await page.locator('.app').boundingBox();
+    assert(box.height > 30 && box.height < 48, '标题栏高度应在 30~48px，实际 ' + box.height);
+    assert(Math.abs(appBox.y - box.height) <= 2, '内容区应紧贴标题栏下方，实际 appY=' + appBox.y + ' barH=' + box.height);
+    await shot('32-自绘标题栏');
+    return '标题栏 ' + Math.round(box.height) + 'px，三个按钮已接线，浏览器里提示：' + toastText.replace(/\s+/g, ' ').slice(0, 24);
+  });
+
+  await step('Ctrl+K 全局检索：资料/章节/笔记/产物一起找', async () => {
+    await page.keyboard.press('Control+k');
+    await page.waitForSelector('#palette:not([hidden]) #palette-input', { timeout: 10000 });
+    await page.fill('#palette-input', '提示词');
+    await page.waitForSelector('.palette-group-title', { timeout: 15000 });
+    await page.waitForFunction(() => document.querySelectorAll('.palette-item').length >= 2, null, { timeout: 20000 });
+    // 资料切片是走服务端检索的（有 220ms 防抖），必须单独等它回来——这是网页版 ⌘K 的核心能力
+    await page.waitForSelector('.palette-item .pi-kind:has-text("资料")', { timeout: 20000 });
+    const groups = await page.$$eval('.palette-group-title', (els) => els.map((e) => e.textContent.trim()));
+    const labels = await page.$$eval('.palette-item', (els) => els.map((e) => e.innerText.replace(/\s+/g, ' ').slice(0, 40)));
+    assert(groups.length >= 2, '应同时给出多组结果，实际：' + groups.join(' / '));
+    assert(groups.indexOf('资料切片') >= 0, '应能搜到知识库切片，实际：' + groups.join(' / '));
+    await shot('30-全局检索');
+    // 键盘可用：↓ 选下一条，Enter 打开
+    const before = await page.locator('.palette-item.active').innerText();
+    await page.keyboard.press('ArrowDown');
+    const after = await page.locator('.palette-item.active').innerText();
+    assert(before !== after, '↓ 应切换选中项');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => document.querySelector('#palette').hidden, null, { timeout: 10000 });
+    const title = await page.textContent('#page-title');
+    assert(title.indexOf('学') >= 0, '打开章节条目后应落到学 · 练，实际 ' + title);
+    return '分组：' + groups.join(' / ') + '；条目 ' + labels.length + ' 条';
+
+  });
+
+  await step('Ctrl+K 能找到产物并直接播放', async () => {
+    await page.keyboard.press('Control+k');
+    await page.waitForSelector('#palette:not([hidden]) #palette-input', { timeout: 10000 });
+    await page.fill('#palette-input', '讲义-');
+    await page.waitForSelector('.palette-item .pi-kind:has-text("产物")', { timeout: 15000 });
+    await page.locator('.palette-item', { hasText: '讲义-' }).first().click();
+    await page.waitForSelector('.player:not([hidden])', { timeout: 15000 });
+    const counter = await page.textContent('.player-counter');
+    await page.locator('#player').press('Escape');
+    await page.waitForFunction(() => document.querySelector('#player').hidden, null, { timeout: 10000 });
+    // Esc 也能关掉检索弹层
+    await page.keyboard.press('Control+k');
+    await page.waitForSelector('#palette:not([hidden])', { timeout: 10000 });
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => document.querySelector('#palette').hidden, null, { timeout: 10000 });
+    return '从检索直接播放到 ' + counter + '；Esc 关闭正常';
+  });
+
+  await step('就这段记笔记会带上原文摘录（笔记可溯源）', async () => {
+    await nav('学 · 练');
+    if (!(await page.locator('.chunk-card').count())) {
+      await page.locator('.item', { hasText: '提示词工程基础' }).getByRole('button', { name: '开始学' }).click();
+      await page.waitForSelector('.chunk-card', { timeout: 20000 });
+    }
+    await page.locator('.chunk-card').first().getByRole('button', { name: '就这段记笔记' }).click();
+    await page.waitForSelector('#nt-text', { timeout: 10000 });
+    const value = await page.inputValue('#nt-text');
+    assert(value.indexOf('原文摘录') >= 0, '笔记应预填原文摘录，实际：' + value.slice(0, 60));
+    await page.fill('#nt-title', 'E2E 溯源笔记');
+    await page.getByRole('button', { name: '保存' }).click();
+    await page.waitForTimeout(1200);
+    const notes = await page.evaluate(() => fetch('/api/study/notes/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()));
+    const mine = notes.data.notes.filter((n) => n.title === 'E2E 溯源笔记')[0];
+    assert(mine, '笔记应写入成功');
+    assert(String(mine.text).indexOf('原文摘录') >= 0, '存下来的笔记应带原文摘录');
+    assert(mine.chapter && mine.chapter.length > 0, '笔记应记下它属于哪一章，实际：' + mine.chapter);
+    await shot('31-溯源笔记');
+    return '笔记带原文摘录，章节记为「' + mine.chapter + '」';
+  });
+
   await step('数据与备份：备份能被打开校验，也能删掉', async () => {
     const statusApi = async () => (await page.evaluate(() => fetch('/api/maintenance/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()))).data;
     const waitBackups = async (want) => {

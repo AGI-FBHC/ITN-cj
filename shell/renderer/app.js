@@ -909,6 +909,7 @@ async function renderChapter(v) {
       toast("已标记");
       go("learn");
     }));
+    row.appendChild(btn("就这段记笔记", "sm ghost", () => openNoteEditor(null, state.kb, state.chapter, c)));
     row.appendChild(btn("就这段提问", "sm ghost", () => askAboutChunk(c)));
     row.appendChild(btn("把这章做成讲义", "sm ghost", () => askTopic("lecture", state.chapter)));
     box.appendChild(row);
@@ -1747,6 +1748,271 @@ async function openArtifactByName(name, fallbackContent) {
   const body = el("div", "card");
   body.innerHTML = md(content || "");
   v.appendChild(body);
+}
+
+/* ---------- 自绘窗口框：最小化 / 最大化 / 关闭 ---------- */
+
+/**
+ * 标题栏按钮接到预加载脚本暴露的三个方法上。
+ *
+ * 浏览器里打开同一份界面时（开发自测、E2E）没有这套能力，
+ * 这时按钮不去假装能用——点一下会明确告诉你原因，也方便自动化验证接线。
+ */
+function initTitlebar() {
+  const api = window.itnWindow || null;
+  const bar = $("titlebar");
+  const min = $("win-min");
+  const max = $("win-max");
+  const close = $("win-close");
+
+  const wire = (node, label, run) => {
+    if (!node) return;
+    node.onclick = () => {
+      if (api) {
+        run(api);
+      } else {
+        toast(label + "只在桌面应用窗口里可用");
+      }
+    };
+  };
+  wire(min, "最小化", (a) => a.minimize());
+  wire(max, "最大化", (a) => a.toggleMaximize());
+  wire(close, "关闭窗口", (a) => a.close());
+
+  if (bar) {
+    // 双击标题栏切换最大化：Windows 上的习惯动作
+    bar.addEventListener("dblclick", (e) => {
+      if (e.target.closest(".tb-btn")) return;
+      if (api) api.toggleMaximize();
+    });
+    if (!api) bar.classList.add("tb-browser");
+  }
+  if (api && typeof api.onStateChange === "function") {
+    api.onStateChange((st) => {
+      const maximized = !!(st && st.maximized);
+      document.body.classList.toggle("win-maximized", maximized);
+      if (max) {
+        const label = maximized ? "还原" : "最大化";
+        max.title = label;
+        max.setAttribute("aria-label", label);
+      }
+    });
+  }
+}
+
+/* ---------- 全局检索（Ctrl/Cmd + K）：一条命令找遍资料、章节、笔记、产物 ---------- */
+
+const palette = { open: false, query: "", items: [], active: 0, timer: null, cache: null, seq: 0 };
+
+/** 打开时把章节/笔记/产物读一次，之后每次输入只在本地过滤；只有资料切片走服务端检索。 */
+async function loadPaletteCache() {
+  if (palette.cache) return palette.cache;
+  await loadCfg();
+  const [tree, notes, arts] = await Promise.all([
+    api("/api/study/tree", { kbId: state.kb }).catch(() => ({ chapters: [] })),
+    api("/api/study/notes/list", {}).catch(() => ({ notes: [] })),
+    api("/api/artifacts/list", {}).catch(() => ({ artifacts: [] })),
+  ]);
+  palette.cache = { chapters: tree.chapters || [], tree: tree, notes: notes.notes || [], artifacts: arts.artifacts || [] };
+  return palette.cache;
+}
+
+function paletteItemMain(label, sub, kind, run) {
+  return { label: label, sub: sub || "", kind: kind || "", run: run, group: "" };
+}
+
+async function runPaletteSearch(raw) {
+  const q = String(raw || "").trim();
+  const lower = q.toLowerCase();
+  const seq = (palette.seq = palette.seq + 1);
+  const groups = [];
+  const cache = palette.cache || { chapters: [], notes: [], artifacts: [] };
+  const hit = (s) => String(s || "").toLowerCase().indexOf(lower) >= 0;
+
+  if (q) {
+    groups.push(["动作", [
+      paletteItemMain("问助手：" + q, "就你的资料提问，会标出处", "对话", () => { state.pendingQuestion = q; go("chat"); }),
+      paletteItemMain("就这个主题生成讲义：" + q, "检索资料 → 拟大纲 → 逐节写作", "生成", () => { go("learn"); setTimeout(() => askTopic("lecture", q), 300); }),
+    ]]);
+  }
+
+  const chapters = cache.chapters.filter((c) => hit(c.name)).slice(0, 5)
+    .map((c) => paletteItemMain(c.name, c.chunkCount + " 片 · 已读 " + c.readCount + (c.done ? " · 已完成" : ""), "章节", () => {
+      state.chapter = c.name;
+      go("learn");
+    }));
+  if (chapters.length) groups.push(["章节", chapters]);
+
+  const notes = cache.notes.filter((n) => hit(n.title) || hit(n.text)).slice(0, 5)
+    .map((n) => paletteItemMain(n.title || "无标题", (n.chapter ? n.chapter + " · " : "") + String(n.text || "").slice(0, 40), "笔记", () => go("notes")));
+  if (notes.length) groups.push(["笔记", notes]);
+
+  const arts = cache.artifacts.filter((a) => hit(a.name)).slice(0, 5)
+    .map((a) => paletteItemMain(a.name, fmtSize(a.size) + (a.page > 0 ? " · 上次讲到第 " + a.page + " 页" : ""), "产物", () => openSlidePlayer(a.name)));
+  if (arts.length) groups.push(["产物", arts]);
+
+  let flat = [];
+  for (const [title, items] of groups) {
+    for (const it of items) {
+      it.group = title;
+      flat.push(it);
+    }
+  }
+
+  // 资料切片：唯一需要打服务端的部分，输入 2 个字以上才查
+  if (q.length >= 2 && state.kb) {
+    try {
+      const d = await api("/api/kb/search", { id: state.kb, query: q, topK: 5 });
+      if (seq !== palette.seq) return;   // 期间用户又改了输入，这次结果作废
+      const hits = (d.hits || []).map((h) => paletteItemMain(
+        "《" + (h.docTitle || "") + "》" + (h.headingPath ? " · " + h.headingPath : ""),
+        String(h.text || "").replace(/\s+/g, " ").slice(0, 70),
+        "资料",
+        () => {
+          state.chapter = chapterNameOfHit(h);
+          go("learn");
+        }));
+      if (hits.length) {
+        const first = flat.length;
+        flat = flat.concat(hits);
+        groups.push(["资料切片", hits]);
+        if (palette.active >= first) palette.active = 0;
+      }
+    } catch (e) {
+      // 没有索引时检索会 404：给出可点的下一步，而不是静默空白
+      groups.push(["资料切片", [paletteItemMain("还没法检索资料", e.message || "知识库没有索引", "提示", () => go("settings"))]]);
+    }
+  }
+
+  flat = [];
+  for (const [title, items] of groups) {
+    for (const it of items) {
+      it.group = title;
+      flat.push(it);
+    }
+  }
+  palette.items = flat;
+  if (palette.active >= flat.length) palette.active = 0;
+  renderPaletteList();
+}
+
+/** 切片命中 → 它属于哪一章（章节目录用的是章节名）。 */
+function chapterNameOfHit(h) {
+  const path = String((h && h.headingPath) || "");
+  const first = path.split(" > ")[0];
+  if (first) return first;
+  return String((h && h.docTitle) || "");
+}
+
+function renderPaletteList() {
+  const root = $("palette");
+  if (!root || root.hidden) return;
+  const list = root.querySelector(".palette-list");
+  if (!list) return;
+  list.innerHTML = "";
+  if (!palette.items.length) {
+    list.appendChild(el("div", "palette-empty", palette.query ? "没有匹配的内容" : "输入关键词：资料切片、章节、笔记、产物都会一起找"));
+    return;
+  }
+  let lastGroup = "";
+  palette.items.forEach((it, i) => {
+    if (it.group !== lastGroup) {
+      lastGroup = it.group;
+      list.appendChild(el("div", "palette-group-title", it.group));
+    }
+    const b = el("button", "palette-item" + (i === palette.active ? " active" : ""));
+    const main = el("div", "pi-main");
+    main.appendChild(el("div", "pi-label", it.label));
+    if (it.sub) main.appendChild(el("div", "pi-sub", it.sub));
+    b.appendChild(main);
+    if (it.kind) b.appendChild(el("span", "pi-kind", it.kind));
+    b.onmouseenter = () => { palette.active = i; markPaletteActive(); };
+    b.onclick = () => runPaletteItem(i);
+    list.appendChild(b);
+  });
+}
+
+function markPaletteActive() {
+  const root = $("palette");
+  if (!root) return;
+  const nodes = root.querySelectorAll(".palette-item");
+  nodes.forEach((n, i) => n.classList.toggle("active", i === palette.active));
+  const cur = nodes[palette.active];
+  if (cur && cur.scrollIntoView) cur.scrollIntoView({ block: "nearest" });
+}
+
+function runPaletteItem(i) {
+  const it = palette.items[i];
+  if (!it) return;
+  closePalette();
+  try {
+    it.run();
+  } catch (e) {
+    toast("打开失败：" + e.message);
+  }
+}
+
+async function openPalette() {
+  const root = $("palette");
+  if (!root) return;
+  palette.open = true;
+  palette.query = "";
+  palette.active = 0;
+  palette.items = [];
+  palette.cache = null;
+  root.hidden = false;
+  root.innerHTML = "";
+
+  const box = el("div", "palette-box");
+  const head = el("div", "palette-head");
+  const input = el("input", "palette-input");
+  input.id = "palette-input";
+  input.placeholder = "找资料切片、章节、笔记、产物，或者直接问助手…";
+  head.appendChild(input);
+  const tip = el("div", "palette-tip");
+  tip.innerHTML = "<kbd>↑</kbd><kbd>↓</kbd> 选择 · <kbd>Enter</kbd> 打开 · <kbd>Esc</kbd> 关闭";
+  head.appendChild(tip);
+  box.appendChild(head);
+  box.appendChild(el("div", "palette-list"));
+  root.appendChild(box);
+
+  input.oninput = () => {
+    palette.query = input.value;
+    palette.active = 0;
+    if (palette.timer) clearTimeout(palette.timer);
+    palette.timer = setTimeout(() => { runPaletteSearch(input.value); }, 220);
+  };
+  input.onkeydown = (e) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      palette.active = Math.min(palette.items.length - 1, palette.active + 1);
+      markPaletteActive();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      palette.active = Math.max(0, palette.active - 1);
+      markPaletteActive();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      runPaletteItem(palette.active);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      closePalette();
+    }
+  };
+  root.onclick = (e) => { if (e.target === root) closePalette(); };
+
+  input.focus();
+  await loadPaletteCache();
+  await runPaletteSearch("");
+}
+
+function closePalette() {
+  const root = $("palette");
+  if (!root) return;
+  if (palette.timer) { clearTimeout(palette.timer); palette.timer = null; }
+  palette.open = false;
+  root.hidden = true;
+  root.innerHTML = "";
 }
 
 /* ---------- 课件播放器：把讲义/练习/章节按二级标题切成页，逐页讲授 ---------- */
@@ -3168,18 +3434,24 @@ async function openQuiz(container, chapter) {
   dlg.appendChild(foot);
 }
 
-function openNoteEditor(note, kbId, chapter) {
+function openNoteEditor(note, kbId, chapter, chunk) {
   const v = $("view");
   const dlg = el("div", "card dialog");
   const head = cardHeadOnly(note ? "编辑笔记" : "写笔记");
   if (chapter) head.appendChild(tag(chapter));
   if (kbId) head.appendChild(tag(kbName(kbId)));
   dlg.appendChild(head);
-  dlg.appendChild(fieldOf("标题", inputOf("nt-title", "这一段的要点", note ? note.title : "")));
+  // 从某个切片进来时，把原文摘录一起带上：笔记以后能追回它到底是哪一段的
+  const quote = chunk ? String(chunk.text || "").replace(/\s+/g, " ").slice(0, 160) : "";
+  const srcName = chunk ? String(chunk.headingPath || chunk.docTitle || "").split(" > ").pop() : "";
+  const title0 = note ? note.title : (chunk ? srcName : "");
+  const text0 = note ? (note.text || "")
+    : (chunk ? "> 原文摘录（" + (chunk.headingPath || chunk.docTitle || "") + "）：" + quote + "\n\n我的想法：\n" : "");
+  dlg.appendChild(fieldOf("标题", inputOf("nt-title", "这一段的要点", title0)));
   const ta = el("textarea");
   ta.id = "nt-text";
   ta.rows = 8;
-  ta.value = note ? (note.text || "") : "";
+  ta.value = text0;
   dlg.appendChild(fieldOf("内容（支持 Markdown）", ta));
   const row = el("div", "row");
   row.appendChild(btn("保存", "primary", async () => {
@@ -3256,6 +3528,7 @@ async function buildIndex(kbId) {
 /* ---------- 启动 ---------- */
 
 async function boot() {
+  initTitlebar();
   buildNav();
   try {
     const h = await api("/health");
@@ -3282,6 +3555,8 @@ async function boot() {
   } catch (e) {
     state.tools = [];
   }
+  const navSearch = $("nav-search");
+  if (navSearch) navSearch.onclick = () => openPalette();
   const railSearch = $("rail-search");
   if (railSearch) railSearch.oninput = () => railRender();
   const railNew = $("rail-new");
@@ -3289,6 +3564,12 @@ async function boot() {
   const railAll = $("rail-all");
   if (railAll) railAll.onclick = () => go("sessions");
   document.addEventListener("keydown", (e) => {
+    // 网页版就是 ⌘K / Ctrl+K，这里保持同一个习惯
+    if ((e.ctrlKey || e.metaKey) && String(e.key || "").toLowerCase() === "k") {
+      e.preventDefault();
+      if (palette.open) closePalette(); else openPalette();
+      return;
+    }
     const root = $("player");
     if (!root || root.hidden) return;
     const tag = String((e.target && e.target.tagName) || "").toLowerCase();
