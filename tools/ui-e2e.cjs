@@ -178,6 +178,16 @@ function assert(cond, msg) {
   fs.mkdirSync(outDir, { recursive: true });
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'itn-e2e-data-'));
   const kbDir = makeKbDir();
+
+/** 单独一份文件：放在自己的目录里，用来验证"不用先整理成文件夹也能导入"。 */
+const singleSrcDir = fs.mkdtempSync(path.join(os.tmpdir(), 'itn-e2e-one-'));
+const singleFile = path.join(singleSrcDir, '散落的一课.md');
+fs.writeFileSync(singleFile, [
+  '# 散落的一课',
+  '',
+  '这一课是单独一份文件导入进来的，用来验证「手上只有一份资料」时也能直接用。',
+  '',
+].join('\n'), 'utf8');
   const portFile = path.join(dataDir, 'core.port');
   const children = [];
 
@@ -409,7 +419,7 @@ function assert(cond, msg) {
     await page.getByRole('button', { name: '重建索引', exact: true }).first().click();
     await page.waitForSelector('.ok-dialog:has-text("索引完成")', { timeout: 60000 });
     const text = await page.locator('.ok-dialog').innerText();
-    assert(text.indexOf('未纳入') >= 0, '索引完成弹层应说明未纳入的文件，实际：' + text.replace(/\s+/g, ' ').slice(0, 160));
+    assert(text.indexOf('未纳入') >= 0 || text.indexOf('没纳入') >= 0, '索引完成弹层应说明未纳入的文件，实际：' + text.replace(/\s+/g, ' ').slice(0, 160));
     assert(text.indexOf('pdf') >= 0, '应点名 pdf，实际：' + text.replace(/\s+/g, ' ').slice(0, 160));
     await shot('28-未纳入的文件');
     await page.locator('.ok-dialog').getByRole('button', { name: '收起' }).click();
@@ -1573,6 +1583,29 @@ function assert(cond, msg) {
     const t = await page.textContent('#toast');
     await shot('43-目录选择');
     return '按钮在，浏览器里提示：' + t.replace(/\s+/g, ' ').slice(0, 26);
+  });
+
+  await step('导入资料：单独一份文件（不用先整理成文件夹）', async () => {
+    await settings('知识库');
+    await page.waitForSelector('#kb-import-path', { timeout: 15000 });
+    assert((await page.locator('button', { hasText: '选文件…' }).count()) >= 1, '导入卡片里应有「选文件…」按钮');
+    const readKbs = () => page.evaluate(() => fetch('/api/settings').then((r) => r.json()).then((j) => (j.data.knowledgeBases || [])));
+    const before = (await readKbs()).length;
+    await page.fill('#kb-import-path', singleFile);
+    await page.fill('#kb-import-name', '散落的一课');
+    await page.getByRole('button', { name: '导入并建立索引', exact: true }).click();
+    await page.waitForSelector('.ok-dialog:has-text("索引完成")', { timeout: 60000 });
+    const kbs = await readKbs();
+    assert(kbs.length === before + 1, '导入后应多一个知识库，实际 ' + before + ' → ' + kbs.length);
+    const info = kbs.find((k) => (k.name || '') === '散落的一课');
+    assert(!!info, '应能在知识库列表里看到刚导入的那份资料');
+    assert(/[\\/]source$/.test(info.rootDir || ''), '单文件应复制进受管资料目录（…/kb/<id>/source），实际 ' + (info && info.rootDir));
+    assert((info.sourcePath || '') === singleFile, '登记里应记住原始路径（sourcePath），实际 ' + (info && info.sourcePath));
+    const chunks = info.chunkCount || 0;
+    assert(chunks > 0, '导入后应真的建成索引，实际切片 ' + chunks);
+    await page.locator('.ok-dialog').getByRole('button', { name: '收起' }).click();
+    await shot('44-导入单文件');
+    return '新增知识库 ' + info.id + ' · 切片 ' + chunks + ' 片 · 资料目录 …\\source · 来源已记住';
   });
 
   await step('主题三档：切换立即生效、写进内核、重载后仍然生效', async () => {

@@ -12,6 +12,21 @@ import itn_desktop_core.util.*
 
 // 用 open：上层需要区分"网络/模型报错"与"用户取消"（取消例外继承它，
 // 这样 postStream 的 catch (e: LlmException) 会把它原样重抛，不会被包成网络错误）
+/** 上游报错时别把整页 HTML 原样丢给用户：折成一句话。 */
+func briefErrorBody(text: String): String {
+    let t = trimStr(text)
+    if (t.size == 0) {
+        return "（响应体是空的）"
+    }
+    if (t.toArray()[0] == 60) {
+        return "（服务返回的是网页，说明这个地址没有模型接口）"
+    }
+    if (t.size > 160) {
+        return byteSafePrefix(t, 160) + "…"
+    }
+    return t
+}
+
 public open class LlmException <: Exception {
     public init(message: String) {
         super(message)
@@ -104,7 +119,7 @@ public class LlmClient {
             let text = readAllString(resp.body)
             let status = resp.status
             if (status != 200) {
-                throw LlmException("模型接口返回 " + status.toString() + "：" + text)
+                throw LlmException("模型接口返回 " + status.toString() + "：" + briefErrorBody(text))
             }
             return JsonValue.fromStr(text)
         } catch (e: LlmException) {
@@ -153,7 +168,7 @@ public class LlmClient {
             stage = "读取状态"
             let st = resp.status
             if (st != 200) {
-                throw LlmException("模型接口返回 " + st.toString() + "：" + readAllString(resp.body))
+                throw LlmException("模型接口返回 " + st.toString() + "：" + briefErrorBody(readAllString(resp.body)))
             }
             stage = "读取响应体"
             return readSse(resp.body, onDelta)
@@ -262,7 +277,7 @@ public class LlmClient {
             result = postJson("/embeddings", payload)
         } catch (e: LlmException) {
             // 不少对话类服务不提供向量接口，这里给出明确指引而不是抛原始 HTML
-            throw LlmException(e.message + "；若返回 404，说明该服务未提供 /embeddings 接口，请为「向量」用途单独绑定一个支持向量化的模型")
+            throw LlmException(e.message + "；这个服务没有 /embeddings 接口（向量检索用不了，关键词检索照常）")
         }
         let out = ArrayList<Array<Float64>>()
         match (pick(result, ["data"])) {

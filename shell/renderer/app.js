@@ -3729,16 +3729,17 @@ PAGES.kb = {
       stats.appendChild(el("p", "muted sm", "目录：" + (k.rootDir || "")));
       // 向量服务不给 /embeddings 时索引照样建好了：这里如实说清楚，别让人以为坏了
       if (kbStats && kbStats.embedError) {
+        // 少了一种检索方式而已：一行说清楚，别糊一大段
         const w = el("div", "skip-note");
-        w.appendChild(el("div", "skip-title", "向量检索没启用（索引本身是好的）"));
-        w.appendChild(el("div", "muted sm", String(kbStats.embedError).slice(0, 200) +
-          "。当前用关键词检索；想用向量检索，把一个提供 /embeddings 的模型绑到「向量检索」后重建索引。"));
+        w.appendChild(el("div", "skip-title", "没开启向量检索，关键词检索照常"));
+        w.appendChild(el("div", "muted sm", "原因：" + shortReason(kbStats.embedError)));
         stats.appendChild(w);
       }
       if (kbStats && kbStats.skippedSummary) {
         const warn = el("div", "skip-note");
-        warn.appendChild(el("div", "skip-title", "上次建索引时未纳入：" + kbStats.skippedSummary));
-        warn.appendChild(el("div", "muted sm", "这些文件读不了（PDF / Word / PPT 等），要么先转成 Markdown/文本，要么确认它们不需要参与检索。"));
+        warn.appendChild(el("div", "skip-title", "上次有 " + (kbStats.skippedTotal || kbStats.skippedSummary.split("、").length) +
+          " 个文件没纳入：" + kbStats.skippedSummary));
+        warn.appendChild(el("div", "muted sm", "内核读的是 Markdown / 文本 / CSV / HTML / 日志 / JSON。"));
         stats.appendChild(warn);
       }
     }
@@ -5481,12 +5482,102 @@ async function pickKbDir() {
   toast("已选：" + dir);
 }
 
+/** 上游报错很长时只留第一句（界面上的琥珀提示不该是一条小字报）。 */
+function shortReason(msg) {
+  const t = String(msg || "").split("；")[0].trim();
+  return t.length > 120 ? t.slice(0, 120) + "…" : t;
+}
+
+/**
+ * 选要导入的文件夹 / 文件。
+ *
+ * 这里刻意分成两个按钮：系统的"选文件夹"和"选文件"是两个不同的对话框，
+ * 而且用户自己的意图本来就只有他自己知道——界面不该让他去猜"这条路径会被当成什么"。
+ */
+async function pickImportPath(kind) {
+  const a = window.itnWindow;
+  const fn = kind === "file" ? (a && a.pickFile) : (a && a.pickDirectory);
+  const el0 = $("kb-import-path");
+  if (!fn) {
+    toast(kind === "file" ? "选文件只在桌面应用窗口里可用；这里可以直接粘贴路径" : "选文件夹只在桌面应用窗口里可用；这里可以直接粘贴路径");
+    if (el0) { el0.focus(); el0.select && el0.select(); }
+    return;
+  }
+  let picked = "";
+  try {
+    picked = await fn();
+  } catch (e) {
+    toast("打开对话框失败：" + e.message);
+    return;
+  }
+  if (!picked) return; // 取消不是错误
+  if (el0) {
+    el0.value = picked;
+    el0.dataset.kind = kind;
+  }
+  const base = picked.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "";
+  const nameEl = $("kb-import-name");
+  if (nameEl && !nameEl.value.trim() && base) nameEl.value = base.replace(/\.[^.]+$/, "");
+  toast("已选：" + picked);
+}
+
+/** 导入一种资料（文件夹原地登记 / 单文件复制进资料目录），然后可按需要立刻建索引。 */
+async function importKbMaterial(withIndex) {
+  const el0 = $("kb-import-path");
+  const path = (el0 && el0.value || "").trim();
+  if (!path) { toast("先选一个文件夹或一份文件"); return; }
+  const nameEl = $("kb-import-name");
+  const payload = { path: path, kind: (el0 && el0.dataset.kind) || "auto", name: (nameEl && nameEl.value.trim()) || "" };
+  try {
+    const r = await api("/api/kb/import", payload);
+    const info = (r && r.imported) || {};
+    const id = info.id || "";
+    state.kb = id || state.kb;
+    await loadCfg();
+    if (!id) { toast("导入完成"); go("settings", "kb"); return; }
+    if (withIndex) {
+      await buildIndex(id);
+    } else {
+      toast("已导入 " + (info.docs || 0) + " 篇资料，还没建立索引");
+      go("settings", "kb");
+    }
+  } catch (e) {
+    toast("导入失败：" + e.message);
+  }
+}
+
 /* ---------- 设置 · 知识库 ---------- */
 function settingsKb() {
   const g = document.createDocumentFragment();
+  /* 「导入资料」放在最上面：这才是用户真正要做的事。
+     文件夹与单文件是两种形态，界面各给一个按钮，用户不用自己判断路径该怎么解析。 */
+  const impCard = cardOf({
+    title: "导入资料",
+    tag: state.cfg.knowledgeBases.length + " 个知识库",
+  });
+  const impForm = el("div", "kb-form");
+  const nameRow = el("div", "row");
+  nameRow.appendChild(fieldOf("名称（可以不填）", inputOf("kb-import-name", "这门课的名字")));
+  impForm.appendChild(nameRow);
+  const pickRow = el("div", "row dir-row");
+  const pickInput = inputOf("kb-import-path", "点右边的按钮选一个文件夹或一份文件");
+  pickInput.className = "grow";
+  pickRow.appendChild(pickInput);
+  pickRow.appendChild(btn("选文件夹…", "", () => pickImportPath("dir")));
+  pickRow.appendChild(btn("选文件…", "ghost", () => pickImportPath("file")));
+  impForm.appendChild(pickRow);
+  const impFacts = el("div", "row");
+  impFacts.appendChild(btn("导入并建立索引", "primary", () => importKbMaterial(true)));
+  impFacts.appendChild(btn("只导入", "", () => importKbMaterial(false)));
+  impForm.appendChild(impFacts);
+  impForm.appendChild(el("p", "muted sm",
+    "文件夹原地登记，不改动你的资料；单独一份文件会复制进本机资料目录，原文件挪走也不影响。" +
+    "章节是自适应的：有标题按标题，没有标题就认它自己的编号（第X章 / 一、 / 1.2）。"));
+  impCard.appendChild(impForm);
+  g.appendChild(impCard);
+
   const kbCard = cardOf({
-    title: "登记一个知识库",
-    tag: state.cfg.knowledgeBases.length + " 个",
+    title: "手工登记（高级）",
   });
   const form = el("div", "kb-form");
   const fr = el("div", "row");
@@ -5547,6 +5638,7 @@ function settingsKb() {
       const main = el("div", "grow");
       main.appendChild(el("div", "item-title", k.name || k.id));
       main.appendChild(el("div", "meta", (k.rootDir || "未设置目录") + " · " + (k.docCount || 0) + " 篇 · " + (k.chunkCount || 0) + " 片 · " + (k.imageCount || 0) + " 张图"));
+      if (k.sourcePath && k.sourcePath !== k.rootDir) main.appendChild(el("div", "meta", "来源：" + k.sourcePath));
       if (k.builtAt) main.appendChild(el("div", "meta", "索引于 " + fmtStamp(k.builtAt)));
       row.appendChild(main);
       row.appendChild((k.chunkCount || 0) > 0 ? tag("已索引", "ok") : tag("未索引", "warn"));
@@ -5934,20 +6026,17 @@ async function buildIndex(kbId) {
     if (st.embedError) {
       // 向量服务不给 /embeddings 是"少了一种检索方式"，不是"索引失败"——用琥珀色说清楚
       const warn = el("div", "skip-note");
-      warn.appendChild(el("div", "skip-title", "索引已建好，但向量检索没启用"));
-      warn.appendChild(el("div", "muted sm", "「" + modelLabel(state.cfg.embedModelId) + "」调用向量接口失败：" +
-        String(st.embedError).slice(0, 160) + "。当前用关键词检索，不影响正常使用；" +
-        "想用向量检索，把一个提供 /embeddings 的模型绑到「向量检索」。"));
+      warn.appendChild(el("div", "skip-title", "索引已建好，只是没开启向量检索"));
+      warn.appendChild(el("div", "muted sm", "原因：" + shortReason(st.embedError) + "（关键词检索照常）"));
       box.appendChild(warn);
     } else if (!st.embedded) {
-      box.appendChild(el("p", "muted sm", "没有绑定向量模型，当前用关键词检索，不影响正常使用；想用向量检索，把带 /embeddings 的模型绑到「向量检索」。"));
+      box.appendChild(el("p", "muted sm", "没有绑定向量模型，用关键词检索（不影响正常使用）。"));
     }
     if (st.skippedTotal > 0) {
       // 用户最可能遇到的情况：把 PDF/Word 放进目录却没被读到。静默跳过等于让他以为软件坏了。
       const warn = el("div", "skip-note");
-      warn.appendChild(el("div", "skip-title", "未纳入 " + st.skippedTotal + " 个文件：" + (st.skippedSummary || "")));
-      warn.appendChild(el("div", "muted sm", "桌面版能读的是 Markdown / 纯文本 / CSV / HTML / 日志 / JSON（含中文的 HTML 会按标题分章）。" +
-        "PDF、Word、PPT 这类格式在纯仓颉里没有解析依赖，读不了——可以先另存为 Markdown 或文本再放进来。"));
+      warn.appendChild(el("div", "skip-title", "有 " + st.skippedTotal + " 个文件没纳入：" + (st.skippedSummary || "")));
+      warn.appendChild(el("div", "muted sm", "内核读 Markdown / 文本 / CSV / HTML / 日志 / JSON；PDF、Word、PPT 请先转成 Markdown 或文本。"));
       box.appendChild(warn);
     }
     const row = el("div", "row");

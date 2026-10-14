@@ -20,7 +20,8 @@ let ddl = [
     "CREATE TABLE IF NOT EXISTS models (id TEXT PRIMARY KEY, name TEXT, base_url TEXT, api_key TEXT, model TEXT, " +
     "vision_model TEXT, embedding_model TEXT, capabilities TEXT, ord INTEGER)",
     "CREATE TABLE IF NOT EXISTS roles (kind TEXT PRIMARY KEY, model_id TEXT)",
-    "CREATE TABLE IF NOT EXISTS knowledge_bases (id TEXT PRIMARY KEY, name TEXT, root_dir TEXT, doc_count INTEGER, " +
+    "CREATE TABLE IF NOT EXISTS knowledge_bases (id TEXT PRIMARY KEY, name TEXT, root_dir TEXT, source_path TEXT, " +
+    "doc_count INTEGER, " +
     "chunk_count INTEGER, image_count INTEGER, built_at TEXT, ord INTEGER)",
     "CREATE TABLE IF NOT EXISTS chunks (id INTEGER PRIMARY KEY AUTOINCREMENT, kb_id TEXT NOT NULL, chunk_key TEXT NOT NULL, " +
     "doc_path TEXT, doc_title TEXT, heading_path TEXT, ord INTEGER, text TEXT, caption TEXT, caption_error TEXT, images TEXT)",

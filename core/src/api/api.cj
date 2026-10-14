@@ -263,6 +263,95 @@ public class Api {
 
         // ---------- 知识库 ----------
 
+        // 导入资料：文件夹原地登记；单独一个文件复制进受管资料目录（连它引用的图片一起）
+        if (path == "/api/kb/import" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let src = strOf(b, "path")
+                    if (src.size == 0) {
+                        fail(ctx, 400, "缺少 path（要导入的文件或文件夹的绝对路径）")
+                        return
+                    }
+                    let kind = strOf(b, "kind")
+                    let s = store.load()
+                    let base = baseNameOf(src)
+                    var id = strOf(b, "id")
+                    if (id.size == 0) {
+                        // 同一处资料再导入一次：认出来（sourcePath 相同）就用回原来的库，别又建一个
+                        for (k in s.knowledgeBases) {
+                            if (k.sourcePath.size > 0 && k.sourcePath == src) {
+                                id = k.id
+                            }
+                        }
+                    }
+                    if (id.size == 0) {
+                        // 用"去掉扩展名的文件名"挤英文短名；中文名挤不出来就退到显示名，
+                        // 再不行给一个带时间的兜底标识（别把标识挤成像 "md" 这种没意义的碎片）
+                        id = slugOf(Path(base).fileNameWithoutExtension)
+                        if (id.size == 0) {
+                            id = slugOf(strOf(b, "name"))
+                        }
+                        if (id.size == 0) {
+                            id = "kb"
+                        }
+                        var n = 2
+                        var taken = true
+                        while (taken) {
+                            taken = false
+                            match (s.findKb(id)) {
+                                case Some(_) => taken = true
+                                case None => ()
+                            }
+                            if (taken) {
+                                id = id + "-" + n.toString()
+                                n = n + 1
+                            }
+                        }
+                    }
+                    let info = importMaterial(store.dataDir, id, src, kind)
+                    if (!info.ok) {
+                        fail(ctx, 400, info.note)
+                        return
+                    }
+                    var replaced = false
+                    var i = 0
+                    while (i < s.knowledgeBases.size) {
+                        if (s.knowledgeBases[i].id == id) {
+                            s.knowledgeBases[i].rootDir = info.rootDir
+                            s.knowledgeBases[i].sourcePath = src
+                            let given = strOf(b, "name")
+                            if (given.size > 0) {
+                                s.knowledgeBases[i].name = given
+                            } else if (s.knowledgeBases[i].name.size == 0) {
+                                s.knowledgeBases[i].name = base
+                            }
+                            replaced = true
+                        }
+                        i = i + 1
+                    }
+                    if (!replaced) {
+                        let kb = KnowledgeBase()
+                        kb.id = id
+                        var nm = strOf(b, "name")
+                        if (nm.size == 0) {
+                            nm = base
+                        }
+                        kb.name = nm
+                        kb.rootDir = info.rootDir
+                        kb.sourcePath = src
+                        s.knowledgeBases.add(kb)
+                    }
+                    store.save(s)
+                    let o = settingsJson()
+                    let ij = info.toJson()
+                    ij.put("id", JsonString(id))
+                    o.put("imported", ij)
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         if (path == "/api/kb/save" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) =>
@@ -330,7 +419,9 @@ public class Api {
                             let requested = intOf(b, "maxChars")
                             if (requested > 0) { maxChars = requested }
                             try {
-                                let idx = chunkAll(kb.rootDir, maxChars)
+                                // 整理好的目录（lumin 整理过就有）：有就按它组织章节
+                                let ol = Outline.load(kbDir(store.dataDir, id) + Path.Separator + "outline.json")
+                                let idx = chunkAllWith(kb.rootDir, maxChars, ol)
                                 if (idx.chunks.size == 0) {
                                     var why = "目录里没有找到可读的文件（支持 Markdown / 文本 / CSV / HTML / 日志 / JSON）"
                                     if (idx.scan.total() > 0) {
@@ -382,6 +473,12 @@ public class Api {
                                 o.put("captioned", JsonInt(captioned))
                                 // 这次扫描跳过了什么，一并回给界面
                                 o.put("skipped", idx.scan.toJson())
+                                match (ol) {
+                                    case Some(oo) =>
+                                        o.put("organizedBy", JsonString(oo.source))
+                                        o.put("outlineChapters", JsonInt(oo.chapters.size))
+                                    case None => ()
+                                }
                                 o.put("skippedSummary", JsonString(idx.scan.summary()))
                                 o.put("skippedTotal", JsonInt(idx.scan.total()))
                                 // 也记一份在库里，方便以后在知识库页面回看
@@ -410,6 +507,15 @@ public class Api {
                             o.put("loadedChunks", JsonInt(idx.chunks.size))
                             o.put("skippedSummary", JsonString(DbHub.open(store.dataDir).getKv("meta", "kb-skipped:" + id, "")))
                             o.put("embedError", JsonString(DbHub.open(store.dataDir).getKv("meta", "kb-embed-error:" + id, "")))
+                            let ol2 = Outline.load(kbDir(store.dataDir, id) + Path.Separator + "outline.json")
+                            match (ol2) {
+                                case Some(oo) =>
+                                    o.put("organizedBy", JsonString(oo.source))
+                                    o.put("outlineNote", JsonString(oo.note))
+                                    o.put("outlineChapters", JsonInt(oo.chapters.size))
+                                    o.put("outlineDocs", JsonInt(oo.docCount()))
+                                case None => ()
+                            }
                             ok(ctx, o)
                         case None => fail(ctx, 404, "找不到知识库：" + id)
                     }
@@ -1812,6 +1918,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/models/diagnose",
         "/api/chat",
         "/api/kb/save",
+        "/api/kb/import",
         "/api/kb/delete",
         "/api/kb/build",
         "/api/kb/stats",

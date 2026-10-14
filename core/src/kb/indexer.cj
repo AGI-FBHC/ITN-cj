@@ -191,22 +191,200 @@ func va2(ops: Array<DbOp>): ArrayList<DbOp> {
 }
 
 /** 扫描目录并按 Markdown 结构分块。不调用模型。 */
+
+/* ---------- 整理后的目录（outline） ---------- */
+
+/**
+ * 一个"整理好的目录"。
+ *
+ * 为什么要有它：用户随手丢进来的资料常常是散乱的——文件名没规律、一篇长文没有标题层次、
+ * 多个文档其实是同一门课的不同章节。靠规则很难猜对，交给 agent（lumin）读一遍、给出一份
+ * 目录计划，索引就按这份计划组织：章节名、章节顺序、哪几篇归到同一章。
+ *
+ * 文件落在 <数据目录>/kb/<kbId>/outline.json，格式：
+ *   {"source":"lumin","note":"...","chapters":[{"name":"第一章 概述","docs":["a.md","sub/b.md"]}]}
+ */
+public class OutlineChapter {
+    public var name: String = ""
+    public var docs: ArrayList<String> = ArrayList<String>()
+
+    public func toJson(): JsonObject {
+        let o = JsonObject()
+        o.put("name", JsonString(name))
+        let arr = JsonArray()
+        for (d in docs) {
+            arr.add(JsonString(d))
+        }
+        o.put("docs", arr)
+        return o
+    }
+}
+
+public class Outline {
+    public var source: String = ""
+    public var note: String = ""
+    public var chapters: ArrayList<OutlineChapter> = ArrayList<OutlineChapter>()
+
+    public func docCount(): Int64 {
+        var n: Int64 = 0
+        for (c in chapters) {
+            n = n + c.docs.size
+        }
+        return n
+    }
+
+    public func chapterOfDoc(rel: String): String {
+        for (c in chapters) {
+            for (d in c.docs) {
+                if (d == rel) {
+                    return c.name
+                }
+            }
+        }
+        return ""
+    }
+
+    public func toJson(): JsonObject {
+        let o = JsonObject()
+        o.put("source", JsonString(source))
+        o.put("note", JsonString(note))
+        let arr = JsonArray()
+        for (c in chapters) {
+            arr.add(c.toJson())
+        }
+        o.put("chapters", arr)
+        return o
+    }
+
+    public static func fromJson(v: JsonValue): Outline {
+        let ol = Outline()
+        match (objOf(v)) {
+            case Some(o) =>
+                ol.source = strOf(o, "source")
+                ol.note = strOf(o, "note")
+                match (o.get("chapters")) {
+                    case Some(cv) =>
+                        match (cv) {
+                            case ca: JsonArray =>
+                                var i = 0
+                                while (i < ca.size()) {
+                                    let ch = OutlineChapter()
+                                    match (objOf(ca[i])) {
+                                        case Some(co) =>
+                                            ch.name = strOf(co, "name")
+                                            ch.docs = strArrayOf(co, "docs")
+                                        case None => ()
+                                    }
+                                    if (ch.name.size > 0) {
+                                        ol.chapters.add(ch)
+                                    }
+                                    i = i + 1
+                                }
+                            case _ => ()
+                        }
+                    case None => ()
+                }
+            case None => ()
+        }
+        return ol
+    }
+
+    public func save(path: String): Unit {
+        writeText(path, toJson().toString())
+    }
+
+    public static func load(path: String): ?Outline {
+        let raw = readTextOr(path, "")
+        if (raw.size == 0) {
+            return None
+        }
+        try {
+            let ol = Outline.fromJson(JsonValue.fromStr(raw))
+            if (ol.chapters.size == 0) {
+                return None
+            }
+            return Some(ol)
+        } catch (e: Exception) {
+            return None
+        }
+    }
+}
+
 public func chunkAll(rootDir: String, maxChars: Int64): KbIndex {
+    return chunkAllWith(rootDir, maxChars, None)
+}
+
+/**
+ * 建索引。给了整理好的目录（outline）就按它组织：章名与章顺序都以目录为准，
+ * 目录里没提到的文档接在后面（不丢资料）。
+ *
+ * rootDir 既可以是文件夹，也可以是单独一个文件——导入的两种形态走同一条路。
+ */
+public func chunkAllWith(rootDir: String, maxChars: Int64, outline: ?Outline): KbIndex {
     let idx = KbIndex()
     idx.rootDir = rootDir
     // 带上"漏掉了什么"的报告：用户把 PDF/Word 放进目录时，界面要能说清楚为什么没被读到
     let docs = scanDocsReport(rootDir, idx.scan)
-    for (d in docs) {
-        var content = String.fromUtf8(File.readFrom(d.fullPath))
+    let order = orderDocs(docs, outline)
+    for (d in order) {
+        var raw: Array<UInt8> = []
+        try {
+            raw = File.readFrom(d.fullPath)
+        } catch (e: Exception) {
+            idx.scan.tooBig = idx.scan.tooBig + 1
+            continue
+        }
+        if (raw.size > MAX_DOC_BYTES) {
+            idx.scan.tooBig = idx.scan.tooBig + 1
+            continue
+        }
+        var content = String.fromUtf8(raw.toArray())
         let ext = String.fromUtf8(Path(d.fullPath).extensionName.toArray()).toAsciiLower()
         if (ext == "html" || ext == "htm") {
             content = htmlToText(content)
         }
+        let chName = chapterNameOfDoc(outline, d.relPath)
         for (c in chunkDocument(d, content, maxChars)) {
+            if (chName.size > 0) {
+                c.headingPath = if (c.headingPath.size > 0) { chName + " > " + c.headingPath } else { chName }
+            }
             idx.chunks.add(c)
         }
     }
     return idx
+}
+
+/** 有目录就按目录排序（章内按目录给的顺序），没提到的接在后面。 */
+func orderDocs(docs: ArrayList<ScannedDoc>, outline: ?Outline): ArrayList<ScannedDoc> {
+    let out = ArrayList<ScannedDoc>()
+    let used = ArrayList<String>()
+    let ol = match (outline) {
+        case Some(o) => o
+        case None => Outline()
+    }
+    for (c in ol.chapters) {
+        for (rel in c.docs) {
+            for (d in docs) {
+                if (d.relPath == rel && !used.contains(rel)) {
+                    out.add(d)
+                    used.add(rel)
+                }
+            }
+        }
+    }
+    for (d in docs) {
+        if (!used.contains(d.relPath)) {
+            out.add(d)
+        }
+    }
+    return out
+}
+
+func chapterNameOfDoc(outline: ?Outline, rel: String): String {
+    match (outline) {
+        case Some(o) => return o.chapterOfDoc(rel)
+        case None => return ""
+    }
 }
 
 /** 对尚未向量化的切片补齐向量。返回本次处理的切片数。 */

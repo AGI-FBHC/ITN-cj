@@ -163,6 +163,27 @@ async function createWindow() {
     if (r.canceled || !r.filePaths || !r.filePaths.length) return "";
     return r.filePaths[0];
   });
+  /**
+   * 选一份资料文件（导入单个文件用）。
+   *
+   * 与"选目录"分开：系统对话框本身就分 openFile / openDirectory 两种，
+   * 分开之后"这条路径是文件还是文件夹"就不需要再去猜了。
+   */
+  ipcMain.handle("dlg:pick-file", async () => {
+    if (!win) return "";
+    const r = await dialog.showOpenDialog(win, {
+      title: "选择一份资料文件",
+      properties: ["openFile"],
+      filters: [
+        { name: "可读的资料", extensions: ["md", "markdown", "txt", "text", "csv", "tsv", "log", "json", "html", "htm"] },
+        { name: "所有文件", extensions: ["*"] },
+      ],
+      buttonLabel: "用这个文件",
+    });
+    if (r.canceled || !r.filePaths || !r.filePaths.length) return "";
+    return r.filePaths[0];
+  });
+
   const pushWindowState = () => {
     if (win) win.webContents.send("win:state", { maximized: win.isMaximized() });
   };

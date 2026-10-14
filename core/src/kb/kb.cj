@@ -284,6 +284,88 @@ public func ignoreInSkipReport(ext: String): Bool {
     return false
 }
 
+/**
+ * 点开头的文件（`.nojekyll`、`.DS_Store`、`.gitignore`…）是工具/系统产物，不是用户资料。
+ * 之前 `.nojekyll` 会被算进"未纳入 N 个文件"里，用户看到只会莫名其妙。
+ */
+public func ignoreEntryName(name: String): Bool {
+    if (name.size == 0) {
+        return false
+    }
+    return name.toArray()[0] == 46
+}
+
+/* ---------- 路径助手（标准库这版没有 stat，也没有现成的"取父目录"） ---------- */
+
+/** 去掉末尾分隔符后取最后一段。 */
+public func baseNameOf(p: String): String {
+    let b = p.toArray()
+    var n = b.size
+    while (n > 0 && (b[n - 1] == 92 || b[n - 1] == 47)) {
+        n = n - 1
+    }
+    var i = n
+    while (i > 0 && b[i - 1] != 92 && b[i - 1] != 47) {
+        i = i - 1
+    }
+    return String.fromUtf8(b[i..n])
+}
+
+/** 父目录。`D:\a.md` → `D:\`；`D:\x\y\a.md` → `D:\x\y`。 */
+public func parentDirOf(p: String): String {
+    let b = p.toArray()
+    var n = b.size
+    while (n > 0 && (b[n - 1] == 92 || b[n - 1] == 47)) {
+        n = n - 1
+    }
+    var i = n
+    while (i > 0 && b[i - 1] != 92 && b[i - 1] != 47) {
+        i = i - 1
+    }
+    if (i == 0) {
+        return p
+    }
+    let cut = i - 1
+    if (cut == 2 && n > 2 && b[1] == 58) {
+        return String.fromUtf8(b[0..3])
+    }
+    if (cut == 0) {
+        return String.fromUtf8(b[0..1])
+    }
+    return String.fromUtf8(b[0..cut])
+}
+
+/**
+ * 是不是目录。
+ *
+ * 用"能不能列出内容"判断：列得出 → 目录；列不出但读得出 → 文件。
+ * 之所以不直接问系统：这版标准库既没有 stat，也拿不到 FileInfo（只能从 walk 的回调里得到）。
+ */
+public func looksLikeDirectory(p: String): Bool {
+    let box = ArrayList<Bool>()
+    try {
+        Directory.walk(Path(p), { fi: FileInfo =>
+            box.add(fi.isDirectory())
+            false
+        })
+        if (box.size > 0) {
+            return true
+        }
+    } catch (e: Exception) {
+        return false
+    }
+    try {
+        let head = File.readFrom(p)
+        if (head.size >= 0) {
+            return false
+        }
+        return false
+    } catch (e: Exception) {
+        // 列不出、也读不出：按（空）目录处理，让扫描如实报"没有可读文件"
+        return true
+    }
+}
+
 /** 单文件体积上限：超过就跳过（一本 500 页的书大约 1.5MB，4MB 足够大）。 */
 const MAX_DOC_BYTES: Int64 = 4 * 1024 * 1024
 
@@ -484,7 +566,7 @@ func walkDocs(dir: String, rel: String, out: ArrayList<ScannedDoc>, report: Scan
                 } else {
                     out.add(ScannedDoc(childRel, nm, childFull))
                 }
-            } else if (!ignoreInSkipReport(ext)) {
+            } else if (!ignoreInSkipReport(ext) && !ignoreEntryName(nm)) {
                 report.note(ext)
             }
         }
@@ -492,9 +574,30 @@ func walkDocs(dir: String, rel: String, out: ArrayList<ScannedDoc>, report: Scan
     })
 }
 
+/** 把单独一个文件当成一篇资料（导入单文件时走这条）。 */
+func scanOneDoc(full: String, rel: String, out: ArrayList<ScannedDoc>, report: ScanReport): Unit {
+    let nm = baseNameOf(full)
+    if (ignoreEntryName(nm)) {
+        return
+    }
+    let ext = String.fromUtf8(Path(rel).extensionName.toArray()).toAsciiLower()
+    if (!isTextDocExt(ext)) {
+        if (!ignoreInSkipReport(ext)) {
+            report.note(ext)
+        }
+        return
+    }
+    out.add(ScannedDoc(rel, nm, full))
+}
+
+/** 扫描根目录：既可以是文件夹，也可以是单独一个文件（导入的两种形态）。 */
 public func scanDocsReport(root: String, report: ScanReport): ArrayList<ScannedDoc> {
     let out = ArrayList<ScannedDoc>()
-    walkDocs(root, "", out, report)
+    if (looksLikeDirectory(root)) {
+        walkDocs(root, "", out, report)
+    } else {
+        scanOneDoc(root, baseNameOf(root), out, report)
+    }
     return out
 }
 
@@ -515,6 +618,360 @@ public func firstH1(content: String): String {
     return ""
 }
 
+/* ---------- 导入资料 ---------- */
+
+/** 一次导入的结果（给界面用）。 */
+public class ImportInfo {
+    public var ok: Bool = true
+    public var kind: String = ""
+    public var rootDir: String = ""
+    public var source: String = ""
+    /** 复制了几个文件（单文件导入时连同引用的图片一起复制） */
+    public var copied: Int64 = 0
+    /** 这次导入后能读到的资料篇数 */
+    public var docs: Int64 = 0
+    public var note: String = ""
+
+    public func toJson(): JsonObject {
+        let o = JsonObject()
+        o.put("ok", JsonBool(ok))
+        o.put("kind", JsonString(kind))
+        o.put("rootDir", JsonString(rootDir))
+        o.put("source", JsonString(source))
+        o.put("copied", JsonInt(copied))
+        o.put("docs", JsonInt(docs))
+        o.put("note", JsonString(note))
+        return o
+    }
+}
+
+public func isAssetExt(ext: String): Bool {
+    if (ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "gif" || ext == "webp" || ext == "bmp" || ext == "svg") {
+        return true
+    }
+    return false
+}
+
+/** 标识：英文短名，从文件名/显示名里挤出来。挤不出来返回空串，交给调用方兜底。 */
+public func slugOf(name: String): String {
+    let sb = StringBuilder()
+    var lastDash = false
+    var n: Int64 = 0
+    for (b in name.toArray()) {
+        let c = lowerAscii(b)
+        if ((c >= 97 && c <= 122) || (c >= 48 && c <= 57)) {
+            sb.append(String.fromUtf8([c]))
+            lastDash = false
+            n = n + 1
+        } else if (!lastDash && n > 0 && n < 24) {
+            sb.append("-")
+            lastDash = true
+        }
+    }
+    var out = sb.toString()
+    while (out.size > 0 && out.toArray()[out.size - 1] == 45) {
+        out = String.fromUtf8(out.toArray()[0..out.size - 1])
+    }
+    return out
+}
+
+func copyFileBytes(from: String, to: String): Bool {
+    try {
+        let bytes = File.readFrom(from)
+        File.writeTo(to, bytes)
+        return true
+    } catch (e: Exception) {
+        return false
+    }
+}
+
+/** 把 md 里引用的相对路径图片也照位置复制过去（否则复制完图就断了）。 */
+func copyReferencedAssets(content: String, srcDir: String, destDir: String): Int64 {
+    let refs = ArrayList<String>()
+    for (line in splitLines(content)) {
+        extractImages(line, refs)
+    }
+    var copied: Int64 = 0
+    for (r in refs) {
+        if (r.size == 0 || r.size > 200) {
+            continue
+        }
+        if (hasPrefix(r, "http://") || hasPrefix(r, "https://") || hasPrefix(r, "data:")) {
+            continue
+        }
+        var rel = r.replace("\\", "/")
+        if (hasPrefix(rel, "/")) {
+            continue
+        }
+        if (hasPrefix(rel, "./")) {
+            rel = rel.replace("./", "")
+        }
+        if (rel.contains("..")) {
+            continue
+        }
+        let ext = String.fromUtf8(Path(rel).extensionName.toArray()).toAsciiLower()
+        if (!isAssetExt(ext)) {
+            continue
+        }
+        let to = destDir + Path.Separator + rel.replace("/", Path.Separator.toString())
+        let folder = parentDirOf(to)
+        if (folder.size > 0 && folder != destDir) {
+            ensureDir(folder)
+        }
+        if (copyFileBytes(srcDir + Path.Separator + rel.replace("/", Path.Separator.toString()), to)) {
+            copied = copied + 1
+        }
+    }
+    return copied
+}
+
+/**
+ * 导入一种资料。
+ *
+ * 两种形态都从这一个入口走：
+ *   - 文件夹：**原地登记**（不复制，几十 GB 的资料不应该被拷一遍）；
+ *   - 单独一个文件：复制进受管资料目录 `<数据目录>/kb/<id>/source/`（连它引用的图片一起），
+ *     这样原文件被移走/改名之后知识库还在。
+ */
+public func importMaterial(dataDir: String, kbId: String, path: String, kind: String): ImportInfo {
+    let info = ImportInfo()
+    info.source = path
+    var isDir = kind == "dir"
+    if (kind != "file" && kind != "dir") {
+        isDir = looksLikeDirectory(path)
+    }
+    if (isDir) {
+        if (!looksLikeDirectory(path)) {
+            info.ok = false
+            info.note = "读不到这个文件夹，检查一下路径对不对"
+            return info
+        }
+        info.kind = "dir"
+        info.rootDir = path
+        info.docs = scanDocsReport(path, ScanReport()).size
+        return info
+    }
+    let nm = baseNameOf(path)
+    if (nm.size == 0) {
+        info.ok = false
+        info.note = "读不到这个文件，检查一下路径对不对"
+        return info
+    }
+    let ext = String.fromUtf8(Path(nm).extensionName.toArray()).toAsciiLower()
+    if (!isTextDocExt(ext)) {
+        let shown = if (ext.size == 0) { "（无扩展名）" } else { ext }
+        info.ok = false
+        info.note = "这个格式现在读不了" + shown + "。内核只读 Markdown / 文本 / CSV / HTML / 日志 / JSON；" +
+            "PDF、Word、PPT 请先转成 Markdown 或文本，或者把整个文件夹导入（能读的会被读，读不了的会列出来）。"
+        return info
+    }
+    let destDir = kbDir(dataDir, kbId) + Path.Separator + "source"
+    ensureDir(destDir)
+    if (!copyFileBytes(path, destDir + Path.Separator + nm)) {
+        info.ok = false
+        info.note = "复制失败：" + path
+        return info
+    }
+    info.copied = 1
+    var content = ""
+    try {
+        content = String.fromUtf8(File.readFrom(destDir + Path.Separator + nm))
+    } catch (e: Exception) {
+        content = ""
+    }
+    if (content.size > 0) {
+        let extra = copyReferencedAssets(content, parentDirOf(path), destDir)
+        info.copied = info.copied + extra
+        if (extra > 0) {
+            info.note = "已把这篇资料和它引用的 " + extra.toString() + " 个图片一起复制进来"
+        }
+    }
+    info.kind = "file"
+    info.rootDir = destDir
+    info.docs = scanDocsReport(destDir, ScanReport()).size
+    return info
+}
+
+/* ---------- 自适应分章：材料自己怎么编号，就怎么分章 ---------- */
+
+/** 取开头的一个 UTF-8 字符。 */
+public func firstCharOf(s: String): String {
+    let b = s.toArray()
+    if (b.size == 0) {
+        return ""
+    }
+    var n: Int64 = 1
+    if (b[0] >= 224) { n = 3 } else if (b[0] >= 192) { n = 2 }
+    if (n > b.size) { n = b.size }
+    return String.fromUtf8(b[0..n])
+}
+
+/** 取末尾的一个 UTF-8 字符。 */
+public func lastCharOf(s: String): String {
+    let b = s.toArray()
+    if (b.size == 0) {
+        return ""
+    }
+    var i = b.size - 1
+    while (i > 0 && (b[i] & 192) == 128) {
+        i = i - 1
+    }
+    return String.fromUtf8(b[i..b.size])
+}
+
+/** 从第 i 个字节开始读一个字符。 */
+func charAtByte(b: Array<UInt8>, i: Int64): String {
+    if (i >= b.size) {
+        return ""
+    }
+    var n: Int64 = 1
+    if (b[i] >= 224) { n = 3 } else if (b[i] >= 192) { n = 2 }
+    if (i + n > b.size) { n = b.size - i }
+    return String.fromUtf8(b[i..(i + n)])
+}
+
+func isCnNumeral(ch: String): Bool {
+    for (x in ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十", "百", "零", "两"]) {
+        if (ch == x) {
+            return true
+        }
+    }
+    return false
+}
+
+func endsLikeSentence(ch: String): Bool {
+    if (ch == "。" || ch == "，" || ch == "；" || ch == "：" || ch == "！" || ch == "？" || ch == "、") {
+        return true
+    }
+    return false
+}
+
+/**
+ * 这一行像不像"章节标题"？返回 1/2/3（级别），0 表示不像。
+ *
+ * 只认很硬的信号，宁可漏认也不要把正文句子当成标题：
+ *   - 「第一章 / 第 2 节 / 第三部分 / 第5单元」——数字或中文数字 + 章节单位，不看下文；
+ *   - 「一、」「二、」这种中文序号——要求后面确实跟着一段正文（nextLen 够长）；
+ *   - 「1.2」「3、」这种数字序号——同上，且行本身要短。
+ */
+func pseudoHeadingLevelOf(line: String, nextLen: Int64): Int64 {
+    let t = trimStr(line)
+    if (t.size == 0 || t.size > 60) {
+        return 0
+    }
+    if (endsLikeSentence(lastCharOf(t))) {
+        return 0
+    }
+    let b = t.toArray()
+    if (b[0] == 35) {
+        return 0
+    }
+    if (hasPrefix(t, "第")) {
+        var i: Int64 = 3
+        var digits: Int64 = 0
+        while (i < b.size && digits < 4) {
+            let ch = charAtByte(b, i)
+            if (ch.size == 0) {
+                break
+            }
+            let isDigit = b[i] >= 48 && b[i] <= 57
+            if (!isDigit && !isCnNumeral(ch)) {
+                break
+            }
+            i = i + ch.size
+            digits = digits + 1
+        }
+        if (digits > 0 && i < b.size) {
+            let unit = charAtByte(b, i)
+            if (unit == "章" || unit == "篇" || unit == "部" || unit == "单") {
+                return 1
+            }
+            if (unit == "节" || unit == "讲" || unit == "课" || unit == "目") {
+                return 2
+            }
+        }
+        return 0
+    }
+    let f = firstCharOf(t)
+    let fl = f.toArray().size
+    if (isCnNumeral(f) && fl < b.size) {
+        let sep = charAtByte(b, fl)
+        if ((sep == "、" || sep == "." || sep == "．" || sep == ")" || sep == "）") && t.size <= 40 && nextLen >= 16) {
+            return 1
+        }
+        return 0
+    }
+    if (b[0] >= 48 && b[0] <= 57) {
+        var i: Int64 = 0
+        var nums: Int64 = 0
+        var dots: Int64 = 0
+        while (i < b.size) {
+            if (b[i] >= 48 && b[i] <= 57) {
+                nums = nums + 1
+            } else if (b[i] == 46) {
+                dots = dots + 1
+            } else {
+                break
+            }
+            if (nums > 6) {
+                return 0
+            }
+            i = i + 1
+        }
+        var ok = false
+        if (i < b.size) {
+            let sep = charAtByte(b, i)
+            if (sep == "、" || sep == ")" || sep == "）") {
+                ok = true
+            } else if (sep == "." || sep == "．" || sep == " " || sep == "　" || sep == "-") {
+                ok = true
+            }
+        } else if (dots > 0) {
+            ok = true
+        }
+        if (ok && nums > 0 && t.size <= 40 && nextLen >= 16) {
+            if (dots > 1) {
+                return 3
+            }
+            return 2
+        }
+    }
+    return 0
+}
+
+/** 预扫描整篇：没有 Markdown 标题时，看看它自己的编号能不能当结构。返回 行号 → 级别。 */
+func detectPseudoHeadings(lines: ArrayList<String>): HashMap<Int64, Int64> {
+    let map = HashMap<Int64, Int64>()
+    var inCode = false
+    var i = 0
+    while (i < lines.size) {
+        let t = trimStr(lines[i])
+        if (lineStartsWith(t, "```")) {
+            inCode = !inCode
+            i = i + 1
+            continue
+        }
+        if (!inCode && t.size > 0 && t.size <= 60) {
+            var nextLen: Int64 = 0
+            var j = i + 1
+            while (j < lines.size) {
+                let nt = trimStr(lines[j])
+                if (nt.size > 0) {
+                    nextLen = nt.size
+                    break
+                }
+                j = j + 1
+            }
+            let lvl = pseudoHeadingLevelOf(t, nextLen)
+            if (lvl > 0) {
+                map[i] = lvl
+            }
+        }
+        i = i + 1
+    }
+    return map
+}
+
 public func chunkDocument(doc: ScannedDoc, content: String, maxChars: Int64): ArrayList<KbChunk> {
     let chunks = ArrayList<KbChunk>()
     let lines = splitLines(content)
@@ -526,6 +983,19 @@ public func chunkDocument(doc: ScannedDoc, content: String, maxChars: Int64): Ar
     let h1 = firstH1(content)
     let title = if (h1.size > 0) { h1 } else { doc.title }
 
+    // 自适应：材料自己有 Markdown 标题就按它分；没有就用它自己的编号习惯（第一章 / 一、/ 1.2）；
+    // 都没有且篇幅很长时，再按长度切成几块、拿每块的头一行当节名。
+    var mdHeadings: Int64 = 0
+    for (l in lines) {
+        if (headingLevel(trimStr(l)) > 0) {
+            mdHeadings = mdHeadings + 1
+        }
+    }
+    let pseudo = if (mdHeadings == 0) { detectPseudoHeadings(lines) } else { HashMap<Int64, Int64>() }
+    let synthetic = mdHeadings == 0 && pseudo.size == 0 && content.size > maxChars * 3
+    var autoLeft: Int64 = 0
+    var autoBlocks: Int64 = 0
+
     func headingPathStr(): String {
         let parts = ArrayList<String>()
         var i = 0
@@ -536,9 +1006,43 @@ public func chunkDocument(doc: ScannedDoc, content: String, maxChars: Int64): Ar
         return joinWith(parts, " > ")
     }
 
+    func setHeading(lvl: Int64, name: String): Unit {
+        if (lvl < 1 || lvl > 6) {
+            return
+        }
+        headingStack[lvl - 1] = name
+        var k = lvl
+        while (k < 6) {
+            headingStack[k] = ""
+            k = k + 1
+        }
+    }
+
+    /** 长文按长度切块时，给这一块起个名字：优先用它的第一行（像个标题才算）。 */
+    func autoTitleOf(text: String, n: Int64): String {
+        for (l in splitLines(text)) {
+            let t = trimStr(l)
+            if (t.size > 24) {
+                return byteSafePrefix(t, 60)
+            }
+            if (t.size >= 2 && !t.contains(",")) {
+                return t
+            }
+        }
+        return doc.title + " · 第" + n.toString() + "部分"
+    }
+
     func flush(): Unit {
         let text = trimStr(buffer.toString())
         if (text.size == 0) { return }
+        if (synthetic) {
+            if (autoLeft <= 0) {
+                autoBlocks = autoBlocks + 1
+                autoLeft = 3
+                setHeading(1, autoTitleOf(text, autoBlocks))
+            }
+            autoLeft = autoLeft - 1
+        }
         let c = KbChunk()
         c.id = doc.relPath + "#" + ordinal.toString()
         c.docPath = doc.relPath
@@ -553,7 +1057,9 @@ public func chunkDocument(doc: ScannedDoc, content: String, maxChars: Int64): Ar
         bufferImages = ArrayList<String>()
     }
 
+    var lineIdx: Int64 = -1
     for (line in lines) {
+        lineIdx = lineIdx + 1
         let trimmed = trimStr(line)
         if (lineStartsWith(trimmed, "```")) {
             inCode = !inCode
@@ -565,13 +1071,17 @@ public func chunkDocument(doc: ScannedDoc, content: String, maxChars: Int64): Ar
             let lvl = headingLevel(trimmed)
             if (lvl > 0) {
                 flush()
-                headingStack[lvl - 1] = headingText(trimmed, lvl)
-                var k = lvl
-                while (k < 6) {
-                    headingStack[k] = ""
-                    k = k + 1
-                }
+                setHeading(lvl, headingText(trimmed, lvl))
                 continue
+            }
+            if (pseudo.size > 0) {
+                match (pseudo.get(lineIdx)) {
+                    case Some(pl) =>
+                        flush()
+                        setHeading(pl, trimmed)
+                        continue
+                    case None => ()
+                }
             }
         }
         extractImages(line, bufferImages)

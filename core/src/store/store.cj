@@ -65,6 +65,8 @@ public class KnowledgeBase {
     public var id: String = ""
     public var name: String = ""
     public var rootDir: String = ""
+    /** 这份资料是从哪儿来的（导入的原始路径）。重新导入同一处时用它认出来，不会又建一个库。 */
+    public var sourcePath: String = ""
     public var docCount: Int64 = 0
     public var chunkCount: Int64 = 0
     public var imageCount: Int64 = 0
@@ -77,6 +79,7 @@ public class KnowledgeBase {
         o.put("id", JsonString(id))
         o.put("name", JsonString(name))
         o.put("rootDir", JsonString(rootDir))
+        o.put("sourcePath", JsonString(sourcePath))
         o.put("docCount", JsonInt(docCount))
         o.put("chunkCount", JsonInt(chunkCount))
         o.put("imageCount", JsonInt(imageCount))
@@ -91,6 +94,7 @@ public class KnowledgeBase {
                 b.id = strOf(o, "id")
                 b.name = strOf(o, "name")
                 b.rootDir = strOf(o, "rootDir")
+                b.sourcePath = strOf(o, "sourcePath")
                 b.docCount = intOf(o, "docCount")
                 b.chunkCount = intOf(o, "chunkCount")
                 b.imageCount = intOf(o, "imageCount")
@@ -204,6 +208,13 @@ public class Store {
 
     public func ensure(): Unit {
         ensureDir(dataDir)
+        // 新加的列要自己补：`CREATE TABLE IF NOT EXISTS` 不会给老库加列。
+        // 已经有了就报错，忽略即可（幂等）。
+        try {
+            db().exec("ALTER TABLE knowledge_bases ADD COLUMN source_path TEXT")
+        } catch (e: Exception) {
+            ()
+        }
     }
 
     public func load(): Settings {
@@ -226,16 +237,17 @@ public class Store {
             m.capabilities = splitCsv(r.text(7))
             s.models.add(m)
         }
-        for (r in db().querySql("SELECT id, name, root_dir, doc_count, chunk_count, image_count, built_at " +
+        for (r in db().querySql("SELECT id, name, root_dir, source_path, doc_count, chunk_count, image_count, built_at " +
             "FROM knowledge_bases ORDER BY ord")) {
             let b = KnowledgeBase()
             b.id = r.text(0)
             b.name = r.text(1)
             b.rootDir = r.text(2)
-            b.docCount = r.int(3)
-            b.chunkCount = r.int(4)
-            b.imageCount = r.int(5)
-            b.builtAt = r.text(6)
+            b.sourcePath = r.text(3)
+            b.docCount = r.int(4)
+            b.chunkCount = r.int(5)
+            b.imageCount = r.int(6)
+            b.builtAt = r.text(7)
             s.knowledgeBases.add(b)
         }
         return s
@@ -256,9 +268,9 @@ public class Store {
         ops.add(DbOp("DELETE FROM knowledge_bases", ArrayList<DbValue>()))
         ord = 0
         for (b in s.knowledgeBases) {
-            ops.add(DbOp("INSERT INTO knowledge_bases (id, name, root_dir, doc_count, chunk_count, image_count, built_at, ord) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                va([tv(b.id), tv(b.name), tv(b.rootDir), nv(b.docCount), nv(b.chunkCount), nv(b.imageCount), tv(b.builtAt), nv(ord)])))
+            ops.add(DbOp("INSERT INTO knowledge_bases (id, name, root_dir, source_path, doc_count, chunk_count, image_count, built_at, ord) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                va([tv(b.id), tv(b.name), tv(b.rootDir), tv(b.sourcePath), nv(b.docCount), nv(b.chunkCount), nv(b.imageCount), tv(b.builtAt), nv(ord)])))
             ord += 1
         }
         ops.add(DbOp("DELETE FROM roles", ArrayList<DbValue>()))

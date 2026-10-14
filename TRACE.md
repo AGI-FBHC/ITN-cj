@@ -1853,3 +1853,68 @@ web-fetch / skill / graph / study-api / ui-check / smoke / package-smoke 全过�
 1. `ask` 档下，位于工作区**外**的 skills（比如 `~/.agents/skills/...`）我们播报了名字却读不到文件 ——
    要么读技能文件放行（只读白名单），要么在 `ask` 档只播报工作区内的技能。真机里模型就撞过这个（它想去读 agent-reach 的 SKILL.md）。
 2. 命令审批的粒度还是"首词"；"这条命令再危险也要一次问具体参数"这种更细的规则以后再加。
+
+---
+
+## 第二十八轮（2026-10-14）：知识库支持"导入"（文件夹 / 单文件）+ 分章自适应 + 两个真 bug
+
+**用户需求（原话摘要）**："知识库支持由用户导入，可以是文件夹的形式或者单独一个文件形式，具体这个知识库怎么组织，
+我们要自适应，通过 lumin 去做，这样具有一定的泛化特性"；同时报了两个 bug：向量 404 的长文案、`.nojekyll ×1` 被算成读不了的资料。
+
+### 一、导入（内核 `/api/kb/import` + 设置页新卡片）
+
+- **两种形态共用一条入口**：`kind=dir` **原地登记**（不复制——几十 GB 的资料不该被拷一遍）；`kind=file` **复制进受管资料目录**
+  `<数据目录>/kb/<id>/source/`，**连同它引用的相对路径图片一起复制**（否则 md 里的图会断，图片路径原地保留），
+  原文件挪走/改名也不影响知识库。`kind` 省略时自动判断（能不能列内容 → 目录；列不出但读得出 → 文件）。
+- **标识**：`去掉扩展名的文件名 → 显示名 → kb` 挤英文短名并自动去重（之前中文名会挤出一个没意义的 `md`——
+  因为 `.md` 扩展名也是"英文字母"；所以先去掉扩展名再挤）。
+- **`sourcePath`（新列）**：登记里记住"这份资料是从哪儿导进来的"，**同一处再导入一次会复用原来的库**，不会又建一个。
+  SQLite 的 `CREATE TABLE IF NOT EXISTS` 不会给老库加列，所以 `Store.ensure()` 里带了一次幂等的
+  `ALTER TABLE knowledge_bases ADD COLUMN source_path TEXT`（已经有了就报错，吞掉）。
+- **界面**：设置 → 知识库 → 最上面一张「导入资料」卡片：`选文件夹…` / `选文件…` 两个系统对话框（Electron 新开
+  `dlg:pick-file`，过滤器只放内核读得懂的格式）+「导入并建立索引」/「只导入」；原来的手工表单收进「手工登记（高级）」。
+  浏览器打开同一份界面时如实说明"选文件夹只在桌面窗口里可用"，可以手填路径。
+
+### 二、分章自适应（不靠手工摆目录）
+
+- 有 Markdown 标题 → 照旧按标题。
+- **没有标题** → 认材料自己的编号：`第X章/篇/部/单(元)`、`一、` 是一级；`第X节/讲/课/目` 是二级；`1.1.1` 是三级。
+  认得很保守（行长 ≤ 60、不以句读结尾、后面确实跟着一段正文 ≥16 字的算标题，避免把正文句子当标题）。
+- 两者都没有、篇幅又超过 3×`maxChars` → 按长度切块，用每块的头一行当节名。
+- 实现落在 `kb.cj` 的 `detectPseudoHeadings` / `pseudoHeadingLevelOf` / `chunkDocument`；**识别不出来就完全退回原来的行为**，
+  所以老知识库的章节不会因为这次改动而变化。
+
+### 三、文档里说的"用 lumin 做泛化"：先把地基打好，循环接上就能用
+
+- 新增 `Outline`（`itn_desktop_core.kb.Outline`）：`{"source":"lumin","note":"…","chapters":[{"name":"…","docs":["a.md"]}]}`，
+  存 `<数据目录>/kb/<id>/outline.json`；`chunkAllWith(rootDir, maxChars, outline)` 按它排文档顺序、按它定章名
+  （目录里没提到的文档接在后面，不丢资料）。`/api/kb/build` 已经会自动读 outline，`/api/kb/stats` 回传
+  `organizedBy/outlineNote/outlineChapters/outlineDocs`。**等 lumin 主循环接上来挂 `/api/kb/organize` 即可**（R25）。
+
+### 四、两个真 bug
+
+1. **`.nojekyll` 被算成"读不了的资料"** → `kb.cj` 加 `ignoreEntryName`：点开头的文件（`.nojekyll` / `.DS_Store` / `.gitignore`…）
+   不进"未纳入"清单；真读不了的 PDF/Word 照旧如实报。
+2. **向量 404 的长文案** → `llm.cj` 加 `briefErrorBody`：上游返回网页时折成一句「服务返回的是网页，说明这个地址没有模型接口」，
+   正文超 160 字节才截断（原来把整页 `<html>…openresty…</html>` 原样吐给用户）；前端两处琥珀提示统一用 `shortReason()`
+   只留第一句，那两段"请为「向量」用途单独绑定…"的小字报删掉。
+
+### 五、验证
+
+- 新增 `tools/kb-import-check.ps1`（**22 项全过**）：文件夹原地登记 / 单文件复制进 `…/kb/<id>/source` 且连带 2 个文件（含引用的图片）/
+  `.nojekyll` 不进清单而 `pdf` 仍报 / 无标题 txt 按 `第一章`、`一、`、`第二章` 分章 / Markdown 仍按标题 /
+  **同一处资料再导入 id 不变且不新建库** / PDF 单文件被拒且给"转成 Markdown"的建议 /
+  向量服务返 404 HTML 时 `embedded=0` 且错误里没有 HTML、长度 ≤120。
+- `node tools/ui-e2e.cjs` → **79/79**（新增一步：设置里手填一份文件 → 「导入并建立索引」→ 断言多一个库、
+  `rootDir` 以 `…\kb\<id>\source` 结尾、`sourcePath` 记住了原路径、切片 > 0；另把"未纳入/没纳入"两种文案都认）。
+- `cjpm test` **59/59**；report / skill / graph / web-fetch / study-api / ui-check / smoke 全过。
+- `tools/package-smoke.ps1` 这次**跳过**：用户正开着打包好的 `dist/ITN-Desktop`（父进程是 explorer），
+  `locales/zh-CN.pak` 被占用，`scripts/package-app.ps1` 覆盖不了——**关掉应用后重新打包即可**（内核与界面源码都是最新的）。
+
+### 六、踩到的坑（给下一个接手的人）
+
+- 测试脚本用 `curl.exe` 抓返回体时，**控制台编码不是 UTF-8 会把中文解坏、连逗号都吃掉**（`ConvertFrom-Json` 直接报
+  "unexpected character: c"）。改成 `Invoke-WebRequest` + 脚本开头 `[Console]::OutputEncoding = UTF-8` 就没这问题。
+- `Start-Process` 起的子进程若**没有重定向输出**，会继承调用者的输出管道；脚本跑完后上层 `pwsh -File ... | Select-Object`
+  一直等不到 EOF，看起来像"脚本卡死"。给 `-RedirectStandardOutput/-RedirectStandardError` 就好。
+- 打包/覆盖内核产物前先确认没有内核在跑（Windows 会锁住 exe，`scripts/package.ps1` 只会报 "another process"）。
