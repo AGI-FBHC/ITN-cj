@@ -788,6 +788,108 @@ public func chunksOfChapter(index: KbIndex, progress: StudyProgress, kbId: Strin
     return out
 }
 
+/**
+ * 按天汇总学习活动（给成长页那张"最近两周"的趋势图）。
+ *
+ * 数据源全是库里**已经存着时间戳**的列：`progress.at`（读了哪片）、`chapter_done.at`、
+ * `notes.created_at`、`quiz_records.created_at`、`session_events.ts`（只数 turn/start）。
+ * 日期串直接取时间戳的前 10 位（内核写进去的就是本地时间），**故意不做日历运算**：
+ * "最近 14 天有哪几天"这种活交给前端（JS 里一行就是本地日期），内核只按已有数据分桶。
+ */
+public func trendByDay(dataDir: String): JsonArray {
+    let db = DbHub.open(dataDir)
+    let readCount = HashMap<String, Int64>()
+    let quizCount = HashMap<String, Int64>()
+    let noteCount = HashMap<String, Int64>()
+    let doneCount = HashMap<String, Int64>()
+    let turnCount = HashMap<String, Int64>()
+    let order = ArrayList<String>()
+    let seen = HashSet<String>()
+
+    func bump(map: HashMap<String, Int64>, day: String): Unit {
+        if (day.size < 10) {
+            return
+        }
+        let d = String.fromUtf8(day.toArray()[0..10])
+        let cur = match (map.get(d)) {
+            case Some(v) => v
+            case None => 0
+        }
+        map[d] = cur + 1
+    }
+
+    func mark(day: String): Unit {
+        if (day.size < 10) {
+            return
+        }
+        let d = String.fromUtf8(day.toArray()[0..10])
+        if (!seen.contains(d)) {
+            seen.add(d)
+            order.add(d)
+        }
+    }
+
+    // 注意：已读切片在 progress 表里的 kind 是 'chunk'（不是 'read'），别照名字猜
+    for (r in db.query("SELECT at FROM progress WHERE kind = 'chunk'", ArrayList<DbValue>())) {
+        bump(readCount, r.text(0))
+        mark(r.text(0))
+    }
+    for (r in db.query("SELECT at FROM chapter_done", ArrayList<DbValue>())) {
+        bump(doneCount, r.text(0))
+        mark(r.text(0))
+    }
+    for (r in db.query("SELECT created_at FROM notes", ArrayList<DbValue>())) {
+        bump(noteCount, r.text(0))
+        mark(r.text(0))
+    }
+    for (r in db.query("SELECT created_at FROM quiz_records", ArrayList<DbValue>())) {
+        bump(quizCount, r.text(0))
+        mark(r.text(0))
+    }
+    for (r in db.query("SELECT ts FROM session_events WHERE kind = 'turn/start'", ArrayList<DbValue>())) {
+        bump(turnCount, r.text(0))
+        mark(r.text(0))
+    }
+
+    // 日期升序；只回最近 60 天（够画图，也不至于把几十年数据一次性吐出去）
+    var days = ArrayList<String>()
+    for (d in order) {
+        days.add(d)
+    }
+    var i = 0
+    while (i < days.size) {
+        var j = i + 1
+        while (j < days.size) {
+            if (days[j] < days[i]) {
+                let t = days[i]
+                days[i] = days[j]
+                days[j] = t
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    let out = JsonArray()
+    var start = 0
+    if (days.size > 60) {
+        start = days.size - 60
+    }
+    i = start
+    while (i < days.size) {
+        let d = days[i]
+        let o = JsonObject()
+        o.put("date", JsonString(d))
+        o.put("read", JsonInt(match (readCount.get(d)) { case Some(v) => v; case None => 0 }))
+        o.put("quiz", JsonInt(match (quizCount.get(d)) { case Some(v) => v; case None => 0 }))
+        o.put("notes", JsonInt(match (noteCount.get(d)) { case Some(v) => v; case None => 0 }))
+        o.put("done", JsonInt(match (doneCount.get(d)) { case Some(v) => v; case None => 0 }))
+        o.put("turns", JsonInt(match (turnCount.get(d)) { case Some(v) => v; case None => 0 }))
+        out.add(o)
+        i = i + 1
+    }
+    return out
+}
+
 public func nowStamp(): String {
     return DateTime.now().toString()
 }

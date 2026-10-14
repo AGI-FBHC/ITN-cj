@@ -1604,6 +1604,8 @@ public class Api {
             }
             o.put("abilities", abil)
             o.put("weakest", JsonString(weakestKey))
+            // 按天汇总：成长页画"最近两周"。日历运算在前端做，内核只按已有时间戳分桶
+            o.put("trend", trendByDay(store.dataDir))
             o.put("artifactCount", JsonInt(artifactCount))
             ok(ctx, o)
             return

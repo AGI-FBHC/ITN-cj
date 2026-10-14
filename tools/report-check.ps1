@@ -73,6 +73,12 @@ try {
     Check '每一维都有依据句' ((@($abil | Where-Object { ([string]$_.basis).Length -eq 0 }).Count) -eq 0) 'ok'
     Check '给出最该补的一维' (([string]$rep.weakest).Length -gt 0) ('weakest=' + $rep.weakest)
     Check '产物数也一并回给界面' ($null -ne $rep.artifactCount) ('artifactCount=' + $rep.artifactCount)
+    Write-Output "== 最近两周：按天汇总，字段齐全 =="
+    $trend = @($rep.trend)
+    Check '趋势里有今天这一天' (($trend | Where-Object { $_.date -eq (Get-Date -Format 'yyyy-MM-dd') }).Count -eq 1) (($trend | ForEach-Object { $_.date }) -join ',')
+    $today = ($trend | Where-Object { $_.date -eq (Get-Date -Format 'yyyy-MM-dd') })[0]
+    Check '今天的读/做/记与总数对得上' ($today.read -eq 1 -and $today.quiz -eq 5 -and $today.notes -eq 1) ("read=" + $today.read + " quiz=" + $today.quiz + " notes=" + $today.notes)
+    Check '每一天都带 read/quiz/notes/done/turns 五个字段' (($trend | Where-Object { $null -eq $_.read -or $null -eq $_.quiz -or $null -eq $_.notes -or $null -eq $_.done -or $null -eq $_.turns }).Count -eq 0) 'ok'
 
     Write-Output "== 不够就不给：练习不足 4 题时逻辑推理不给参考 =="
     $dataDir2 = Join-Path $env:TEMP ("itn-rep2-data-" + [guid]::NewGuid().ToString("N"))

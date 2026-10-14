@@ -1369,7 +1369,25 @@ function assert(cond, msg) {
     const noData = api.abilities.filter((a) => a.evidence < 0);
     assert(noData.every((a) => a.basis.length > 0), '没有参考分的维度也要说明原因');
     await shot('49-六维能力画像');
-    return '六维 ' + drawn.rows + ' 行有依据 · 重点：' + api.weakest;
+    // 最近两周：图要真画出来，且"今天"那一格与接口一致
+    await page.waitForSelector('.trend-chart', { timeout: 15000 });
+    await page.waitForTimeout(600);
+    const trend = await page.evaluate(() => ({
+      cw: (document.querySelector('.trend-chart') || {}).width || 0,
+      side: (document.querySelector('.trend-side') || {}).innerText || '',
+      advice: (document.querySelector('.trend-side .trend-advice') || {}).innerText || '',
+    }));
+    assert(trend.cw > 100, '趋势图应真的画出来，实际 ' + trend.cw);
+    assert(trend.side.indexOf('本周') >= 0 && trend.side.indexOf('上周') >= 0, '要给出本周/上周对照，实际：' + trend.side.replace(/\s+/g, ' ').slice(0, 80));
+    assert(trend.advice.length > 4, '要有一句每周建议');
+    assert(api.trend && api.trend.length >= 1, '接口应回按天汇总，实际 ' + JSON.stringify(api.trend));
+    const today = new Date().toLocaleDateString('sv-SE');
+    const apiToday = api.trend.filter((x) => x.date === today)[0];
+    if (apiToday) {
+      assert(trend.side.indexOf('今天：') >= 0, '今天有记录时右侧应写"今天：…"，实际：' + trend.side.replace(/\s+/g, ' ').slice(0, 80));
+    }
+    await shot('50-最近两周');
+    return '六维 ' + drawn.rows + ' 行有依据 · 重点：' + api.weakest + ' · 趋势 ' + api.trend.length + ' 天有数据';
   });
 
   await step('侧栏徽标反映真实数量', async () => {

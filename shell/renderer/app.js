@@ -2180,6 +2180,189 @@ function drawRadar(canvas, rows) {
   ctx.fillText("100", cx + 3, cy - R + 10);
 }
 
+
+/* ============================================================
+   我的成长 · 最近两周（网页版 Report 的 GrowthTrend 搬过来）
+   ------------------------------------------------------------
+   数据来自库里**已经存着的时间戳**（读了哪片 / 答题 / 笔记 / 完成章节 / 会话轮次）。
+   内核只按已有日期分桶；"最近 14 天是哪几天"在前端算（JS 一行就是本地日期），
+   两边各干自己擅长的，不用在仓颉里写日历。
+   ============================================================ */
+function trendCard() {
+  const r = state.report || {};
+  const byDate = {};
+  for (const row of (r.trend || [])) byDate[row.date] = row;
+  const DAY = 86400000;
+  const days = [];
+  for (let i = 13; i >= 0; i -= 1) {
+    const key = new Date(Date.now() - i * DAY).toLocaleDateString("sv-SE");
+    const row = byDate[key] || {};
+    days.push({
+      key: key,
+      label: key.slice(5),
+      read: Number(row.read || 0),
+      quiz: Number(row.quiz || 0),
+      notes: Number(row.notes || 0),
+      done: Number(row.done || 0),
+    });
+  }
+  const last7 = days.slice(7);
+  const prev7 = days.slice(0, 7);
+  const sum = (arr, k) => arr.reduce((acc, x) => acc + x[k], 0);
+  const lRead = sum(last7, "read"), pRead = sum(prev7, "read");
+  const lQuiz = sum(last7, "quiz"), pQuiz = sum(prev7, "quiz");
+  const today = days[days.length - 1];
+  const active = days.filter((d) => d.read + d.quiz + d.notes + d.done > 0).length;
+
+  const card = cardOf({
+    title: "最近两周",
+    tag: active ? "有 " + active + " 天在学" : "还没有记录",
+    tagCls: active ? "" : "warn",
+    actions: [btn("去学 · 练", "sm", () => go("learn"))],
+  });
+
+  const body = el("div", "trend-body");
+  const cv = el("canvas", "trend-chart");
+  body.appendChild(cv);
+  const side = el("div", "trend-side");
+  const legend = el("div", "trend-legend");
+  legend.innerHTML = '<span class="lg self">读了（片）</span><span class="lg ev">做了（题）</span>';
+  side.appendChild(legend);
+
+  const lineOf = (label, now, before, unit) => {
+    const line = el("div", "trend-row");
+    const head = el("div", "row");
+    head.appendChild(el("span", "grow trend-key", label));
+    head.appendChild(el("span", "trend-num", "本周 " + now + unit));
+    head.appendChild(el("span", "trend-num ev", "上周 " + before + unit + diffText(now, before)));
+    line.appendChild(head);
+    side.appendChild(line);
+  };
+  lineOf("读了", lRead, pRead, " 片");
+  lineOf("做了", lQuiz, pQuiz, " 题");
+  const extra = el("div", "trend-row");
+  const extraHead = el("div", "row");
+  extraHead.appendChild(el("span", "grow trend-key", "其他"));
+  extraHead.appendChild(el("span", "trend-num", "笔记 " + sum(last7, "notes") + " · 完成章节 " + sum(last7, "done")));
+  extra.appendChild(extraHead);
+  side.appendChild(extra);
+  side.appendChild(el("div", "muted sm trend-basis",
+    today.read + today.quiz + today.notes + today.done > 0
+      ? "今天：读了 " + today.read + " 片 · 做了 " + today.quiz + " 题"
+      : "今天还没有记录"));
+  side.appendChild(weeklyAdvice(days, { lRead: lRead, pRead: pRead, lQuiz: lQuiz, pQuiz: pQuiz }));
+  body.appendChild(side);
+  card.appendChild(body);
+  setTimeout(() => drawTrend(cv, days), 0);
+  return card;
+}
+
+function diffText(now, before) {
+  const d = now - before;
+  if (d === 0) return "（持平）";
+  return d > 0 ? "（+" + d + "）" : "（" + d + "）";
+}
+
+/** 每周建议：只说数据支持得住的话——没有上周可比就直说。 */
+function weeklyAdvice(days, t) {
+  const box = el("div", "trend-advice");
+  const total = t.lRead + t.lQuiz;
+  const prev = t.pRead + t.pQuiz;
+  let title = "这个节奏可以保持";
+  let text = "上周读了 " + t.pRead + " 片、做了 " + t.pQuiz + " 题。";
+  if (total === 0 && prev === 0) {
+    title = "这两周还没有学习记录";
+    text = "从今天读一片开始：十分钟也算。";
+  } else if (total === 0) {
+    title = "这周还是零";
+    text = "上周有 " + prev + " 次活动，挑一章接着往下读就好。";
+  } else if (prev === 0) {
+    title = "开了个头";
+    text = "上周没有可比的数据，先把这个节奏保持住。";
+  } else if (t.lRead > t.pRead && t.lQuiz <= t.pQuiz) {
+    title = "读得多、练得少";
+    text = "读的片数涨了，题数没跟上：挑刚读完的一章出几道题巩固。";
+  } else if (t.lQuiz > t.pQuiz && t.lRead <= t.pRead) {
+    title = "练得多、读得少";
+    text = "题做得多，读的原文少了：把错题对应的那几段原文再看一遍。";
+  } else if (t.lRead > t.pRead && t.lQuiz > t.pQuiz) {
+    title = "两项都比上周多";
+    text = "保持这个量，别忘了把做错的题重做一遍。";
+  } else if (t.lRead < t.pRead && t.lQuiz < t.pQuiz) {
+    title = "比上周少了";
+    text = "每天十分钟也比周末赶工强，挑最短的一章先动起来。";
+  }
+  box.appendChild(el("div", "ability-advice-title", title));
+  box.appendChild(el("div", "muted sm", text));
+  return box;
+}
+
+/** 两周折线：只画"读了 / 做了"两条线（其他三项在右边文字里）。 */
+function drawTrend(canvas, days) {
+  const css = getComputedStyle(document.documentElement);
+  const line = (css.getPropertyValue("--line") || "#e5e9e6").trim();
+  const muted = (css.getPropertyValue("--muted") || "#6c7a72").trim();
+  const brand = (css.getPropertyValue("--brand") || "#2f7053").trim();
+  const amber = (css.getPropertyValue("--amber") || "#9a6a1c").trim();
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = 420;
+  const h = 240;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = "100%";
+  canvas.style.maxWidth = w + "px";
+  canvas.style.height = h + "px";
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const padL = 26, padR = 10, padT = 14, padB = 26;
+  const iw = w - padL - padR;
+  const ih = h - padT - padB;
+  let max = 1;
+  for (const d of days) max = Math.max(max, d.read, d.quiz);
+  const x = (i) => padL + (days.length <= 1 ? 0 : (i / (days.length - 1)) * iw);
+  const y = (v) => padT + ih - (v / max) * ih;
+
+  // 网格 + 刻度
+  ctx.strokeStyle = line;
+  ctx.lineWidth = 1;
+  ctx.fillStyle = muted;
+  ctx.font = "10px -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif";
+  ctx.textAlign = "right";
+  for (let g = 0; g <= 2; g += 1) {
+    const v = (max * g) / 2;
+    const yy = y(v);
+    ctx.beginPath();
+    ctx.moveTo(padL, yy);
+    ctx.lineTo(w - padR, yy);
+    ctx.stroke();
+    ctx.fillText(max < 4 ? String(Math.round(v * 10) / 10) : String(Math.round(v)), padL - 5, yy + 3);
+  }
+  // 日期（每三天一个标签）
+  ctx.textAlign = "center";
+  for (let i = 0; i < days.length; i += 1) {
+    if (i % 3 === 0 || i === days.length - 1) ctx.fillText(days[i].label, x(i), h - 8);
+  }
+  // 两条线
+  for (const se of [{ k: "read", color: brand }, { k: "quiz", color: amber }]) {
+    ctx.beginPath();
+    days.forEach((d, i) => {
+      const px = x(i), py = y(d[se.k]);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    });
+    ctx.strokeStyle = se.color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    days.forEach((d, i) => {
+      ctx.beginPath();
+      ctx.arc(x(i), y(d[se.k]), d[se.k] > 0 ? 3 : 1.6, 0, Math.PI * 2);
+      ctx.fillStyle = d[se.k] > 0 ? se.color : line;
+      ctx.fill();
+    });
+  }
+}
+
 /* ---------- 我的成长 ---------- */
 
 PAGES.report = {
@@ -2206,6 +2389,7 @@ PAGES.report = {
     }
 
     v.appendChild(abilityCard());
+    v.appendChild(trendCard());
 
     const recent = cardOf({
       title: "错题回顾",

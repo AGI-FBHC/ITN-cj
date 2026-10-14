@@ -1255,22 +1255,29 @@ body.graph-full { overflow: hidden; }
 @media (max-width: 900px) { .ability-body { grid-template-columns: minmax(0, 1fr); } }
 .ability-radar { display: block; }
 .ability-side { min-width: 0; }
-.ability-legend { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
-.ability-legend .lg { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-2); }
-.ability-legend .lg::before { content: ""; width: 10px; height: 3px; border-radius: 2px; }
-.ability-legend .lg.self::before { background: var(--brand); }
-.ability-legend .lg.ev::before { background: var(--amber); }
+.ability-legend, .trend-legend { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
+.ability-legend .lg, .trend-legend .lg { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--ink-2); }
+.ability-legend .lg::before, .trend-legend .lg::before { content: ""; width: 10px; height: 3px; border-radius: 2px; }
+.ability-legend .lg.self::before, .trend-legend .lg.self::before { background: var(--brand); }
+.ability-legend .lg.ev::before, .trend-legend .lg.ev::before { background: var(--amber); }
 .ability-table { display: flex; flex-direction: column; gap: 8px; }
-.ability-row { border-top: 1px dashed var(--line); padding-top: 7px; }
-.ability-row:first-child { border-top: 0; padding-top: 0; }
-.ability-key { font-size: 13px; font-weight: 600; }
-.ability-num { font-size: 12px; color: var(--muted); margin-left: 10px; }
-.ability-num.ev { color: var(--amber); }
-.ability-basis { margin-top: 2px; }
-.ability-advice {
+.ability-row, .trend-row { border-top: 1px dashed var(--line); padding-top: 7px; }
+.ability-row:first-child, .trend-row:first-child { border-top: 0; padding-top: 0; }
+.ability-key, .trend-key { font-size: 13px; font-weight: 600; }
+.ability-num, .trend-num { font-size: 12px; color: var(--muted); margin-left: 10px; }
+.ability-num.ev, .trend-num.ev { color: var(--amber); }
+.ability-basis, .trend-basis { margin-top: 2px; }
+.ability-advice, .trend-advice {
   margin-top: 12px; padding: 10px 12px;
   border: 1px solid var(--brand-line); border-radius: var(--radius-sm);
   background: var(--brand-soft);
 }
-.ability-advice-title { font-size: 13px; font-weight: 650; color: var(--brand); margin-bottom: 4px; }
-.ability-advice .btn { margin-top: 8px; }
+.ability-advice-title, .trend-advice-title { font-size: 13px; font-weight: 650; color: var(--brand); margin-bottom: 4px; }
+.ability-advice .btn, .trend-advice .btn { margin-top: 8px; }
+
+
+/* ---------- 我的成长 · 最近两周 ---------- */
+.trend-body { display: grid; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 900px) { .trend-body { grid-template-columns: minmax(0, 1fr); } }
+.trend-chart { display: block; }
+.trend-side { min-width: 0; }
