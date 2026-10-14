@@ -1714,3 +1714,17 @@ P4：新增一条 `/api/agent/ask-pi`（临时）跑 pi 循环，与现有 agent
 
 **验证**：`tools/web-fetch-check.ps1` → **21 项全过**（新增 5 条：默认不限 / 黑名单命中拒 / 两张都在时黑名单优先 / 不在允许名单拒 / 允许名单命中放行）；
 `node tools/ui-e2e.cjs` → **78/78**；report/skill/graph/study-api/ui-check/smoke 全过；`cjpm test` 54/54。
+
+### 第二十轮补充：名字再改一次 —— **XBot → lumin**
+
+用户看完第一版改名后改主意："算了，叫 lumin 吧"。所以：
+
+- 目录 `xbot/ → lumin/`；包名 `xbot.* → lumin.*`；cjpm 包名 `xbot → lumin`；
+- 环境变量 `XBOT_* → LUMIN_*`；数据目录 `~/.xbot → ~/.lumin`；打包产物 `xbot-demo.exe → lumin-demo.exe`、
+  `dist\xbot-demo → dist\lumin-demo`；产品名统一 **Lumin**；系统提示词里也改成 "You are Lumin, ..."。
+- **上面第二十轮正文里凡是写 XBot / xbot / XBOT_ 的地方，一律按 lumin / LUMIN_ 读**（历史记录不改写，只加这条说明，
+  免得后来的人以为有两个项目）。真实 Pi 项目的引用照旧不动。
+- 顺带修掉两个自己踩的小坑：`absPath(".") / absPath("./") / absPath("x/.")` 现在都会归一化（之前信任提示里
+  出现过 `D:\...\xbot/.` 这种难看的路径，会话目录也跟着被切成 `--...-xbot-.--`）。
+- 验证：改名后 `cjpm build` 通过、`cjpm test` **56/56 全绿**、重新打包 `dist\lumin-demo\`、
+  干净环境自检 `CLEAN-ENV-OK`。旧 `dist\xbot-demo` 已删。
