@@ -2000,7 +2000,8 @@ async function generateArtifact(kind, topic) {
     tag: "已保存到我的资源",
     tagCls: "ok",
   });
-  if (d.citationReport) result.appendChild(citationBox(null, d.citationReport));
+  // 不再挂引用自检那行小字：「段落 N · 带引用 M · 越界 K」放在成品正文上面只是噪声，
+  // 正文就在下面，引用对不对一眼能看见。
   let content = "";
   if (name) {
     try {
