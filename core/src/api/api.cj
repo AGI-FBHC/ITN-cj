@@ -331,7 +331,11 @@ public class Api {
                             try {
                                 let idx = chunkAll(kb.rootDir, maxChars)
                                 if (idx.chunks.size == 0) {
-                                    fail(ctx, 400, "目录里没有找到 Markdown 或纯文本文件")
+                                    var why = "目录里没有找到可读的文件（支持 Markdown / 文本 / CSV / HTML / 日志 / JSON）"
+                                    if (idx.scan.total() > 0) {
+                                        why = why + "；这个目录里被跳过的是：" + idx.scan.summary()
+                                    }
+                                    fail(ctx, 400, why)
                                     return
                                 }
                                 var captioned: Int64 = 0
@@ -364,6 +368,12 @@ public class Api {
                                 let o = kb.toJson()
                                 o.put("embedded", JsonInt(done))
                                 o.put("captioned", JsonInt(captioned))
+                                // 这次扫描跳过了什么，一并回给界面
+                                o.put("skipped", idx.scan.toJson())
+                                o.put("skippedSummary", JsonString(idx.scan.summary()))
+                                o.put("skippedTotal", JsonInt(idx.scan.total()))
+                                // 也记一份在库里，方便以后在知识库页面回看
+                                DbHub.open(store.dataDir).putKv("meta", "kb-skipped:" + id, idx.scan.summary())
                                 ok(ctx, o)
                             } catch (e: Exception) {
                                 fail(ctx, 500, "建立索引失败：" + e.message)
@@ -385,6 +395,7 @@ public class Api {
                             let idx = loadIndexCached(store.dataDir, id)
                             let o = kb.toJson()
                             o.put("loadedChunks", JsonInt(idx.chunks.size))
+                            o.put("skippedSummary", JsonString(DbHub.open(store.dataDir).getKv("meta", "kb-skipped:" + id, "")))
                             ok(ctx, o)
                         case None => fail(ctx, 404, "找不到知识库：" + id)
                     }

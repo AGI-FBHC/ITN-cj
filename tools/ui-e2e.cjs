@@ -113,6 +113,15 @@ function makeKbDir() {
     '先把资料切片并向量化，检索时按相似度取回相关片段，再交给模型作答，这样答案可以标注出处。',
     '',
   ].join('\n'), 'utf8');
+  // 纯文本类的新格式：CSV 与 HTML（HTML 的 h1/h2 应当变成章节）
+  fs.writeFileSync(path.join(dir, '03-成绩.csv'), '姓名,分数\n小明,88\n小红,92\n', 'utf8');
+  fs.writeFileSync(path.join(dir, '04-网页讲义.html'), [
+    '<html><head><title>网页讲义</title><style>p{color:red}</style></head><body>',
+    '<h1>网页讲义</h1><h2>要点</h2><p>这是从网页另存下来的资料。</p>',
+    '<script>var a=1;</script><ul><li>记得标注出处</li></ul></body></html>',
+  ].join(''), 'utf8');
+  // 读不了的格式：PDF 必须被如实报出来，而不是静默消失
+  fs.writeFileSync(path.join(dir, '05-课件.pdf'), Buffer.from('%PDF-1.4 not a real pdf'), 'binary');
   fs.writeFileSync(path.join(dir, 'img', 'demo.png'),
     Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'));
   return dir;
@@ -331,9 +340,38 @@ function assert(cond, msg) {
   await step('索引含图片描述（多模态链路走通）', async () => {
     const cfg = await page.evaluate(() => fetch('/api/settings').then((r) => r.json()));
     const kb = (cfg.data.knowledgeBases || []).find((k) => k.id === 'course');
-    assert(kb && kb.docCount === 2, '应有 2 篇文档，实际 ' + (kb && kb.docCount));
+    assert(kb && kb.docCount === 4, '应有 4 篇可读文档（含 CSV 与 HTML），实际 ' + (kb && kb.docCount));
     assert(kb.imageCount >= 1, '应识别到 1 张图片');
     return kb.docCount + ' 篇 / ' + kb.chunkCount + ' 片 / ' + kb.imageCount + ' 图 / 索引于 ' + kb.builtAt;
+  });
+
+  await step('HTML 资料按标题分章（网页另存的资料也能用）', async () => {
+    const tree = await page.evaluate(() => fetch('/api/study/tree', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kbId: 'course' }) }).then((r) => r.json()));
+    const names = tree.data.chapters.map((c) => c.name);
+    assert(names.indexOf('网页讲义') >= 0, 'HTML 的 h1 应当成为章节名，实际章节：' + names.join(' / '));
+    const hit = await page.evaluate(() => fetch('/api/kb/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 'course', query: '另存', topK: 3 }) }).then((r) => r.json()));
+    const texts = (hit.data.hits || []).map((h) => h.text).join(' ');
+    assert(texts.indexOf('网页') >= 0 || texts.indexOf('另存') >= 0, '应能检索到 HTML 里的正文，实际：' + texts.slice(0, 80));
+    assert(texts.indexOf('color:red') < 0, 'style 里的内容不该进索引');
+    return '章节含「网页讲义」；style 被剥掉';
+  });
+
+  await step('读不了的文件会被如实报出来（不是静默跳过）', async () => {
+    await nav('档案与知识库');
+    // 这个知识库已经建过索引，按钮叫「重建索引」；用 exact 免得匹配到表单里的「保存并建立索引」
+    await page.getByRole('button', { name: '重建索引', exact: true }).first().click();
+    await page.waitForSelector('.ok-dialog:has-text("索引完成")', { timeout: 60000 });
+    const text = await page.locator('.ok-dialog').innerText();
+    assert(text.indexOf('未纳入') >= 0, '索引完成弹层应说明未纳入的文件，实际：' + text.replace(/\s+/g, ' ').slice(0, 160));
+    assert(text.indexOf('pdf') >= 0, '应点名 pdf，实际：' + text.replace(/\s+/g, ' ').slice(0, 160));
+    await shot('28-未纳入的文件');
+    await page.locator('.ok-dialog').getByRole('button', { name: '收起' }).click();
+    await nav('领域知识库');
+    await page.waitForSelector('.skip-note', { timeout: 15000 });
+    const note = await page.locator('.skip-note').innerText();
+    assert(note.indexOf('pdf') >= 0, '领域知识库页应能回看未纳入的文件，实际：' + note.replace(/\s+/g, ' '));
+    await shot('29-知识库漏读提示');
+    return note.replace(/\s+/g, ' ').slice(0, 60);
   });
 
   /* ---------- 学 · 练：读章节 + 标记已读 ---------- */

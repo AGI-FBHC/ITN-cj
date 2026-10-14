@@ -194,9 +194,14 @@ func va2(ops: Array<DbOp>): ArrayList<DbOp> {
 public func chunkAll(rootDir: String, maxChars: Int64): KbIndex {
     let idx = KbIndex()
     idx.rootDir = rootDir
-    let docs = scanDocs(rootDir)
+    // 带上"漏掉了什么"的报告：用户把 PDF/Word 放进目录时，界面要能说清楚为什么没被读到
+    let docs = scanDocsReport(rootDir, idx.scan)
     for (d in docs) {
-        let content = String.fromUtf8(File.readFrom(d.fullPath))
+        var content = String.fromUtf8(File.readFrom(d.fullPath))
+        let ext = String.fromUtf8(Path(d.fullPath).extensionName.toArray()).toAsciiLower()
+        if (ext == "html" || ext == "htm") {
+            content = htmlToText(content)
+        }
         for (c in chunkDocument(d, content, maxChars)) {
             idx.chunks.add(c)
         }

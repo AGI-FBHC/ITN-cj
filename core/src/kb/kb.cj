@@ -148,6 +148,8 @@ public class KbIndex {
     public var rootDir: String = ""
     public var builtAt: String = ""
     public var chunks: ArrayList<KbChunk> = ArrayList<KbChunk>()
+    /** 这次扫描"漏掉了什么"：不做这个，用户把 PDF 放进来只会看到"没有找到文件" */
+    public var scan: ScanReport = ScanReport()
 
     public init() {}
 
@@ -200,6 +202,260 @@ public class KbIndex {
     }
 }
 
+/**
+ * 一次目录扫描的"漏掉了什么"报告。
+ *
+ * 动机很直接：老师的资料大量是 PDF/Word，而桌面版只读纯文本类文件。
+ * 如果只是静默跳过，用户看到"没有找到文件"根本不知道问题出在哪。
+ * 这里按扩展名统计跳过的文件数，随建设索引的结果一起回给界面。
+ */
+public class ScanReport {
+    public var skipExts: ArrayList<String> = ArrayList<String>()
+    public var skipCounts: ArrayList<Int64> = ArrayList<Int64>()
+    /** 超过体积上限被跳过的个数 */
+    public var tooBig: Int64 = 0
+
+    public func note(ext: String): Unit {
+        let key = if (ext.size == 0) { "（无扩展名）" } else { ext }
+        var i = 0
+        while (i < skipExts.size) {
+            if (skipExts[i] == key) {
+                skipCounts[i] = skipCounts[i] + 1
+                return
+            }
+            i = i + 1
+        }
+        skipExts.add(key)
+        skipCounts.add(1)
+    }
+
+    public func total(): Int64 {
+        var n = tooBig
+        for (c in skipCounts) { n = n + c }
+        return n
+    }
+
+    /** 形如「pdf ×3、docx ×1」。 */
+    public func summary(): String {
+        let sb = StringBuilder()
+        var i = 0
+        while (i < skipExts.size) {
+            if (i > 0) { sb.append("、") }
+            sb.append(skipExts[i])
+            sb.append(" ×")
+            sb.append(skipCounts[i].toString())
+            i = i + 1
+        }
+        if (tooBig > 0) {
+            if (sb.toString().size > 0) { sb.append("、") }
+            sb.append("超过体积上限 ×")
+            sb.append(tooBig.toString())
+        }
+        return sb.toString()
+    }
+
+    public func toJson(): JsonArray {
+        let arr = JsonArray()
+        var i = 0
+        while (i < skipExts.size) {
+            let o = JsonObject()
+            o.put("ext", JsonString(skipExts[i]))
+            o.put("count", JsonInt(skipCounts[i]))
+            arr.add(o)
+            i = i + 1
+        }
+        return arr
+    }
+}
+
+/**
+ * 这些后缀不进"未纳入"清单。
+ *
+ * 两类：① 图片——它们本来就该以 `![](x.png)` 的形式被文档引用，不该算"读不了的资料"；
+ * ② 系统与工具产物（可执行文件、数据库、锁文件等），报出来只会让提示变噪音。
+ */
+public func ignoreInSkipReport(ext: String): Bool {
+    if (ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "gif" || ext == "webp" || ext == "bmp" || ext == "svg" || ext == "ico") {
+        return true
+    }
+    if (ext == "exe" || ext == "dll" || ext == "so" || ext == "bin" || ext == "db" || ext == "lock" || ext == "tmp" || ext == "cache" || ext == "ini" || ext == "lnk") {
+        return true
+    }
+    return false
+}
+
+/** 单文件体积上限：超过就跳过（一本 500 页的书大约 1.5MB，4MB 足够大）。 */
+const MAX_DOC_BYTES: Int64 = 4 * 1024 * 1024
+
+/**
+ * 认得的纯文本类扩展名。
+ * 只收"不需要额外依赖就能读成文本"的格式；PDF/Word 这类不是不想支持，
+ * 是纯仓颉里解析它们不现实，因此跳过它们并如实告诉用户。
+ */
+public func isTextDocExt(ext: String): Bool {
+    if (ext == "md" || ext == "markdown" || ext == "txt" || ext == "text") {
+        return true
+    }
+    if (ext == "csv" || ext == "tsv" || ext == "log" || ext == "json") {
+        return true
+    }
+    if (ext == "html" || ext == "htm") {
+        return true
+    }
+    return false
+}
+
+/** 目录级忽略：隐藏目录（.obsidian 之类）与 node_modules 里的东西不是用户资料。 */
+func skipDirName(nm: String): Bool {
+    if (nm.size == 0) {
+        return false
+    }
+    if (nm == "node_modules" || nm == "target" || nm == "dist") {
+        return true
+    }
+    return nm.toArray()[0] == 46
+}
+
+/**
+ * HTML 转文本：去掉 script/style，把 h1~h6 变成 Markdown 标题（这样分章照旧），
+ * 其余标签丢掉，常见实体还原。够用即可，不做完整解析器。
+ */
+/** ASCII 大写转小写（只处理标签名这种 ASCII 场景）。 */
+func lowerAscii(b: UInt8): UInt8 {
+    if (b >= 65 && b <= 90) {
+        return b + 32
+    }
+    return b
+}
+
+/** 从 start 开始若正好是 </name>，返回 '>' 的下标；否则 -1。 */
+func closingTagEnd(src: Array<UInt8>, start: Int64, name: String): Int64 {
+    var j = start + 1
+    if (j >= src.size || src[j] != 47) {
+        return -1
+    }
+    j = j + 1
+    let nb = name.toArray()
+    if (j + nb.size > src.size) {
+        return -1
+    }
+    var k: Int64 = 0
+    while (k < nb.size) {
+        if (lowerAscii(src[j + k]) != nb[k]) {
+            return -1
+        }
+        k = k + 1
+    }
+    j = j + nb.size
+    while (j < src.size && src[j] != 62) {
+        j = j + 1
+    }
+    if (j >= src.size) {
+        return -1
+    }
+    return j
+}
+
+/**
+ * HTML 转文本：去掉 script/style 的内容，把 h1~h6 变成 Markdown 标题（这样分章照旧），
+ * 其余标签丢掉，常见实体还原，块级标签补换行。够用即可，不做完整解析器。
+ */
+public func htmlToText(raw: String): String {
+    let src = raw.toArray()
+    // 输出按字节攒着、最后统一转字符串：逐字节 String.fromUtf8 遇到中文会立刻抛 Invalid utf8
+    let out = ArrayList<UInt8>()
+    var i = 0
+    var inSkip = ""      // "script" / "style"
+    while (i < src.size) {
+        let c = src[i]
+        // 正在跳过 script/style：里面的内容一律不要（不能只在遇到 '<' 时判断）
+        if (inSkip.size > 0) {
+            if (c == 60) {
+                let stop = closingTagEnd(src, i, inSkip)
+                if (stop > i) {
+                    inSkip = ""
+                    i = stop + 1
+                    continue
+                }
+            }
+            i = i + 1
+            continue
+        }
+        if (c == 60) {   // '<'
+            var j = i + 1
+            var closing = false
+            if (j < src.size && src[j] == 47) {
+                closing = true
+                j = j + 1
+            }
+            let nameStart = j
+            // 标签名允许字母与数字：h1/h2 这类必须把数字也吃进来
+            while (j < src.size) {
+                let d = src[j]
+                if ((d >= 65 && d <= 90) || (d >= 97 && d <= 122) || (d >= 48 && d <= 57)) {
+                    j = j + 1
+                } else {
+                    break
+                }
+            }
+            let name = String.fromUtf8(src[nameStart..j]).toAsciiLower()
+            var k = j
+            while (k < src.size && src[k] != 62) {   // '>'
+                k = k + 1
+            }
+            if (!closing && (name == "script" || name == "style")) {
+                inSkip = name
+                i = k + 1
+                continue
+            }
+            var level: Int64 = 0
+            // 只有开始标签才输出标题标记：否则 </h2> 会在正文里留下一行空的 "## "
+            if (!closing && name.size == 2 && name.toArray()[0] == 104) {   // 'h'
+                let d = name.toArray()[1]
+                if (d >= 49 && d <= 54) {                                    // '1'..'6'
+                    level = Int64(d - 48)
+                }
+            }
+            var blockTag = false
+            if (name == "p" || name == "div" || name == "br" || name == "li") {
+                blockTag = true
+            }
+            if (name == "tr" || name == "td" || name == "th" || name == "section" || name == "article") {
+                blockTag = true
+            }
+            if (level > 0) {
+                out.add(10)      // 换行 + "#"*level + 空格
+                var h: Int64 = 0
+                while (h < level) {
+                    out.add(35)
+                    h = h + 1
+                }
+                out.add(32)
+            } else if (blockTag) {
+                out.add(10)
+            } else {
+                out.add(32)
+            }
+            i = k + 1
+            continue
+        }
+        out.add(c)
+        i = i + 1
+    }
+    var text = String.fromUtf8(out.toArray())
+    text = text.replace("&nbsp;", " ")
+    text = text.replace("&amp;", "&")
+    text = text.replace("&lt;", "<")
+    text = text.replace("&gt;", ">")
+    text = text.replace("&quot;", "\"")
+    text = text.replace("&#39;", "'")
+    var trimmed = text
+    while (trimmed.split("\n\n\n").size > 1) {
+        trimmed = trimmed.replace("\n\n\n", "\n\n")
+    }
+    return trimStr(trimmed)
+}
+
 public class ScannedDoc {
     public var relPath: String = ""
     public var title: String = ""
@@ -211,26 +467,40 @@ public class ScannedDoc {
     }
 }
 
-func walkDocs(dir: String, rel: String, out: ArrayList<ScannedDoc>): Unit {
+func walkDocs(dir: String, rel: String, out: ArrayList<ScannedDoc>, report: ScanReport): Unit {
     Directory.walk(Path(dir), { fi: FileInfo =>
         let nm = fi.name
         let childRel = if (rel.size == 0) { nm } else { rel + "/" + nm }
         let childFull = dir + Path.Separator + nm
         if (fi.isDirectory()) {
-            walkDocs(childFull, childRel, out)
+            if (!skipDirName(nm)) {
+                walkDocs(childFull, childRel, out, report)
+            }
         } else {
-            let ext = Path(nm).extensionName
-            if (ext == "md" || ext == "txt") {
-                out.add(ScannedDoc(childRel, nm, childFull))
+            let ext = String.fromUtf8(Path(nm).extensionName.toArray()).toAsciiLower()
+            if (isTextDocExt(ext)) {
+                if (fi.size > MAX_DOC_BYTES) {
+                    report.tooBig = report.tooBig + 1
+                } else {
+                    out.add(ScannedDoc(childRel, nm, childFull))
+                }
+            } else if (!ignoreInSkipReport(ext)) {
+                report.note(ext)
             }
         }
         true
     })
 }
 
+public func scanDocsReport(root: String, report: ScanReport): ArrayList<ScannedDoc> {
+    let out = ArrayList<ScannedDoc>()
+    walkDocs(root, "", out, report)
+    return out
+}
+
 public func scanDocs(root: String): ArrayList<ScannedDoc> {
     let out = ArrayList<ScannedDoc>()
-    walkDocs(root, "", out)
+    walkDocs(root, "", out, ScanReport())
     return out
 }
 

@@ -2049,6 +2049,10 @@ PAGES.kb = {
     }
     q.onkeydown = (e) => { if (e.key === "Enter") run(); };
 
+    let kbStats = null;
+    try {
+      kbStats = await api("/api/kb/stats", { id: state.kb });
+    } catch (e) { /* 没建过索引就没有统计 */ }
     const stats = cardOf({
       title: "索引状态",
       sub: kbName(state.kb),
@@ -2070,6 +2074,12 @@ PAGES.kb = {
       grid.appendChild(statCard("建立时间", fmtStamp(k.builtAt) || "—", ""));
       stats.appendChild(grid);
       stats.appendChild(el("p", "muted sm", "目录：" + (k.rootDir || "")));
+      if (kbStats && kbStats.skippedSummary) {
+        const warn = el("div", "skip-note");
+        warn.appendChild(el("div", "skip-title", "上次建索引时未纳入：" + kbStats.skippedSummary));
+        warn.appendChild(el("div", "muted sm", "这些文件读不了（PDF / Word / PPT 等），要么先转成 Markdown/文本，要么确认它们不需要参与检索。"));
+        stats.appendChild(warn);
+      }
     }
     v.appendChild(stats);
   },
@@ -3212,6 +3222,14 @@ async function buildIndex(kbId) {
     box.appendChild(grid);
     if (!st.embedded) {
       box.appendChild(el("p", "muted sm", "没有绑定向量模型，当前用关键词检索，不影响正常使用；想用向量检索，把带 /embeddings 的模型绑到「向量检索」。"));
+    }
+    if (st.skippedTotal > 0) {
+      // 用户最可能遇到的情况：把 PDF/Word 放进目录却没被读到。静默跳过等于让他以为软件坏了。
+      const warn = el("div", "skip-note");
+      warn.appendChild(el("div", "skip-title", "未纳入 " + st.skippedTotal + " 个文件：" + (st.skippedSummary || "")));
+      warn.appendChild(el("div", "muted sm", "桌面版能读的是 Markdown / 纯文本 / CSV / HTML / 日志 / JSON（含中文的 HTML 会按标题分章）。" +
+        "PDF、Word、PPT 这类格式在纯仓颉里没有解析依赖，读不了——可以先另存为 Markdown 或文本再放进来。"));
+      box.appendChild(warn);
     }
     const row = el("div", "row");
     row.appendChild(btn("去学 · 练", "primary", () => go("learn")));

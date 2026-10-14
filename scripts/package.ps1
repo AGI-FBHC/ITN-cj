@@ -7,6 +7,20 @@ $ErrorActionPreference = 'Stop'
 
 $repo = Resolve-Path "$PSScriptRoot\.."
 $dist = Join-Path $repo "dist\core"
+
+# 先确认要打包的内核确实是当前源码编出来的：
+# 构建失败（或忘了 build）时 dist 里会留着上一次的产物，静默打进去就是"验证跑的是旧二进制"。
+$built = Join-Path $repo "core\target\release\bin\main.exe"
+if (-not (Test-Path -LiteralPath $built)) {
+    throw "找不到构建产物 $built，请先运行 scripts/build.ps1"
+}
+$builtTime = (Get-Item -LiteralPath $built).LastWriteTimeUtc
+$newest = Get-ChildItem -Path (Join-Path $repo "core\src"), (Join-Path $repo "third_party") -Recurse -File -Include *.cj,*.toml -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+if ($newest -and $newest.LastWriteTimeUtc -gt $builtTime) {
+    throw "构建产物比源码旧（最新源码：$($newest.FullName) @ $($newest.LastWriteTimeUtc)），请先运行 scripts/build.ps1 再打包"
+}
+
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
 
 $runtimeLib = "$SdkRoot\cangjie\runtime\lib\windows_x86_64_cjnative"
