@@ -1,6 +1,7 @@
 package itn_desktop_core.agent
 
 import std.collection.*
+import std.sync.*
 import stdx.encoding.json.*
 import itn_desktop_core.pi.*
 
@@ -31,6 +32,15 @@ public class ToolRecord {
     public init() {}
 }
 
+/**
+ * 工具记录表的锁。
+ *
+ * 工具在 parallel 模式下是**多个线程一起跑**的，而 ToolRecord 表是一个普通 ArrayList ——
+ * 并发 add 会丢记录（实测丢过一次 save_artifact：文件明明写出来了，产物路径却没取回来，
+ * 界面于是以为模型没落盘）。加一把锁，代价可以忽略。
+ */
+let recordLock = Mutex()
+
 /** 把中立工具包成 pi 的工具：失败走 isError，不抛（pi 的约定）。 */
 public func piToolFromDomain(d: DomainTool, sink: ArrayList<ToolRecord>): Tool {
     let spec = ToolSpec(d.name, d.label, d.snippet, d.description, d.schema, d.risk)
@@ -42,7 +52,9 @@ public func piToolFromDomain(d: DomainTool, sink: ArrayList<ToolRecord>): Tool {
         rec.ok = r.ok
         rec.summary = r.summary
         rec.details = r.details
+        recordLock.lock()
         sink.add(rec)
+        recordLock.unlock()
         if (r.ok) {
             ToolResult.ok(r.summary, r.content, r.details)
         } else {

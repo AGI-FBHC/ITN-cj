@@ -55,7 +55,8 @@ func flattenForModel(v: JsonValue): String {
         case s: JsonString => return s.getValue()
         case o: JsonObject =>
             let parts = ArrayList<String>()
-            for (key in ["text", "title", "docTitle", "headingPath", "docPath", "path", "content", "excerpt", "summary"]) {
+            // id 必须给：read_chunk 是按 id 取原文的，不给就只能猜（实测模型会连着猜十几轮）
+            for (key in ["id", "text", "title", "docTitle", "headingPath", "docPath", "path", "content", "excerpt", "summary"]) {
                 match (o.get(key)) {
                     case Some(x) =>
                         let t = strValue(x)
