@@ -40,6 +40,7 @@
 | 子进程可能残留 | 超时后 `terminate(force)`，但它自己再拉起的孙进程管不到 | 与 Pi 相同量级 |
 | 读操作不加锁 | 并行时可能读到"别人正在写"的半旧内容 | 与 Pi 相同（Pi 也只对写加 file-mutation-queue） |
 | 编辑没有差异预览 | 只有一行 summary + 结果正文；Pi 有 `edit-diff.ts` + renderers | 要 UI 配合，纯 CLI 下意义不大 |
+| `/stop` 不打断已经在流的响应 | 按了 /stop 会把当前这一次回复让模型说完，下一个 turn 开头才生效（`abortedFlag` 的检查点在那儿） | 想真打断得把 abort 传进 SSE 读取循环（`HttpChatProvider.respond`），改动面比收益大，先记着 |
 
 ## C2. 安全取舍（写下来，免得后面有人以为漏了）
 

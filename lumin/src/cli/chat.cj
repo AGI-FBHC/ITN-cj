@@ -2,6 +2,8 @@ package lumin.cli
 
 import std.collection.*
 import std.fs.*
+import std.sync.*
+import std.time.*
 import stdx.encoding.json.*
 import lumin.net.*
 import lumin.pi.*
@@ -47,8 +49,12 @@ func printHelp(): Unit {
     println("  /model <名字>             换模型（如 mimo-v2.6-pro）")
     println("  /mode <档位>              换工具集：" + modeListText() + "（research 档才有联网）")
     println("  /skill:<名字> [要求]       强制加载某个 skill 再干活")
+    println("  /stop                    停下正在跑的这一轮")
     println("  /quit                    退出")
     println("其它任何输入都当问题发给模型。")
+    println("")
+    println("插话：模型跑着的时候你也能直接打字 —— 普通句子会当成插话，在模型下一次请求前插进去；")
+    println("      斜杠命令（换档位之类）会等这一轮跑完再执行；/stop 让这一轮在当前这句回复说完后停下。")
 }
 
 func printTools(reg: ToolRegistry, mode: Mode): Unit {
@@ -577,26 +583,78 @@ public func runChat(args: Array<String>): Int64 {
         skills.size.toString() + " 个")
     println("联网：  " + (if (reg.available("web_search")) { "Tavily 已配置" } else { "未配置（.env.local 里写 LUMIN_TAVILY_KEY=...）" }) +
         "    research 档才把 web_search 给模型")
-    println("直接打字提问；/help 看命令；/quit 退出")
+    println("直接打字提问（跑着的时候也能打字插话）；/help 看命令；/quit 退出")
     if (once.size > 0) {
         runOnce(agent, once, ws.root)
         return 0
     }
 
-    while (true) {
-        print("\n> ")
-        var line = ""
-        try {
-            line = readln()
-        } catch (e: Exception) {
-            break
+    // ---- 读键盘的线程 + 队列：模型跑着的时候也能打字（Pi 的 steering 插话）----
+    let inbox = LineQueue()
+    let deferred = LineQueue()
+    let ctl = RunControl()
+    ctl.agent = Some(agent)
+    agent.options.getSteering = Some({ =>
+        let out = ArrayList<String>()
+        for (raw in inbox.drain()) {
+            let kind = typedLineKind(raw)
+            if (kind == "empty") {
+                continue
+            }
+            if (kind == "stop") {
+                ctl.stop()
+                println("\n[插话] /stop —— 这一次回复说完就停这一轮")
+                continue
+            }
+            if (kind == "slash") {
+                deferred.push(trimStr(raw))
+                println("\n[插话] 斜杠命令等这一轮结束再执行：" + trimStr(raw))
+                continue
+            }
+            println("\n[插话] 插进这一轮：" + trimStr(raw))
+            out.add(trimStr(raw))
         }
-        let t = trimStr(line)
+        out
+    })
+    spawn { readStdinLoop(inbox) }
+    // 审批提示也走这个队列（否则它会跟读键盘的线程抢 stdin，两边都读不痛快）
+    approver.nextLine = Some({ => inbox.takeBlocking() })
+
+    var running = true
+    var promptShown = false
+    while (running) {
+        // 跑着的时候敲的斜杠命令排在前面，然后是刚敲的行
+        let batch = ArrayList<String>()
+        for (d in deferred.drain()) {
+            batch.add(d)
+        }
+        for (l in inbox.drain()) {
+            batch.add(l)
+        }
+        if (batch.size == 0) {
+            if (inbox.isClosed()) {
+                break
+            }
+            if (!promptShown) {
+                print("\n> ")
+                promptShown = true
+            }
+            sleep(Duration.millisecond * 25)
+            continue
+        }
+        promptShown = false
+        for (raw in batch) {
+        let t = trimStr(raw)
         if (t.size == 0) {
             continue
         }
         if (t == "/quit" || t == "/q" || t == "/exit") {
+            running = false
             break
+        }
+        if (t == "/stop" || t == "/abort" || t == "/cancel") {
+            println("（现在没有在跑的一轮）")
+            continue
         }
         if (t == "/help" || t == "/h") {
             printHelp()
@@ -854,6 +912,7 @@ public func runChat(args: Array<String>): Int64 {
             continue
         }
         runOnce(agent, t, ws.root)
+        }
     }
     return 0
 }

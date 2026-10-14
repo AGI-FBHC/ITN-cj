@@ -149,6 +149,13 @@ lumin chat [选项]  显式进入对话
 | `/workspace`（`/ws`）`list \| add <目录> [名字] \| open <名字\|目录> \| rm <名字>` | 管理工作区 |
 | `/trust on \| off \| clear` | 管理项目信任 |
 | `/skill:<名字> [要求]` | 强制加载某个 skill 再干活 |
+| `/stop`（`/abort` `/cancel`） | 停下正在跑的这一轮 |
+
+**中途插话**：读键盘是单独一个线程（`src/cli/lines.cj` 的 `LineQueue`），所以模型跑着的时候你也能直接打字 ——
+普通句子当成 `steering` 消息，在**下一次模型请求之前**插进当前这一轮（Pi 的 steering 语义）；
+斜杠命令要等这一轮跑完才执行（换档位之类的不能和正在跑的一轮打架）；
+`/stop` 让这一轮在**当前这句回复说完之后**停下（不打断已经在流的 HTTP 响应，见 [roadmap](docs/roadmap.md)）。
+审批提示（y/s/a/n）也走同一个队列 —— 否则它会跟读键盘的线程抢 stdin。
 
 配置优先级：**命令行参数 > 环境变量 > `./.env.local`（当前目录）> `<LUMIN_HOME>/.env.local` > 默认值**。
 完整键名见 [`.env.example`](.env.example)。
@@ -260,11 +267,11 @@ LUMIN_TAVILY_RESULTS=5
 ## 9. 测试
 
 ```powershell
-pwsh -File .\scripts\test.ps1          # cjpm test，65 例
+pwsh -File .\scripts\test.ps1          # cjpm test，70 例
 pwsh -File .\scripts\run-demos.ps1     # 并行跑一组端到端场景，日志 + 汇总（会打模型接口）
 ```
 
-65 例覆盖：
+70 例覆盖：
 
 - **事件流**：顺序、`on` 不重放、`drain` 只取一次、finish/fail/abort、事件 JSON 字段名与 Pi 一致；
 - **会话**：JSONL 形状（header + 每行一条 entry + `id`/`parentId` 链）、重新载入后分支一致、
@@ -282,6 +289,8 @@ pwsh -File .\scripts\run-demos.ps1     # 并行跑一组端到端场景，日志
   审批分类先折叠路径（`ws/../outside/x.md` 不会被误判成工作区内）、批准后才真能落盘、
   档位记忆、信任向上继承、工作区登记表；
 - **Skills**：扫描、frontmatter 校验（缺 name/description 就跳过）、播报只带 name/description/location、`disable-model-invocation`；
+- **键盘与插话**：行队列跨线程传递（含"另一个线程 80ms 后才推"的阻塞等待）、斜杠命令不会被当成插话喂给模型、
+  插话真的在请求之前生效（`seenMessageCounts`）、`/stop` 让本轮以 `aborted` 收尾且下一次 prompt 自动复位；
 - **流式解析**：分片无关性、截断缓冲不抛、**字节安全**（汉字不被切断）、转义引号、原生 arguments 形态；
 - **Tavily**：结果编号带链接、错误形状如实上报、没 Key 时拒绝而不是偷偷发请求、spec 显式且标 `external`。
 
@@ -317,10 +326,11 @@ lumin/
 │   │   ├── http.cj            OpenAI 兼容提供方（SSE 流式 + 429 退避重试）
 │   │   ├── permissions.cj     三档权限（存 settings.json）
 │   │   ├── approvals.cj       审批层（y/s/a/n + 记住的规则 + 审计）
+│   │   ├── lines.cj          读键盘的线程 + 行队列（中途插话 / 审批取行都走它）
 │   │   ├── trust.cj           项目信任（向上继承）
 │   │   ├── workspaces.cj      工作区登记表
 │   │   └── util.cj            路径/文本小工具
-│   └── unittests/             65 例（cjpm test）
+│   └── unittests/             70 例（cjpm test）
 ├── samples/demo-workspace/    示例工作区（含一份示例 skill）
 ├── docs/
 │   ├── vs-pi.md               按 Pi 源码逐条核对（含两处更正）

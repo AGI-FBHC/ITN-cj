@@ -5,6 +5,12 @@ lumin 目前是 `0.x`，**对外契约（事件名 / 工具 schema / 会话 JSON
 
 ## [Unreleased]
 
+### Added
+- **中途插话（Pi 的 steering）**：读键盘改成**单独一个线程**（`src/cli/lines.cj` 的 `LineQueue`），
+  模型跑着的时候你也能直接打字 —— 普通句子在下一次模型请求之前插进当前这一轮；
+  斜杠命令等这一轮跑完再执行；`/stop` 让这一轮在当前这句回复说完后停下（`Agent.abort()`）。
+- 审批提示走同一个队列（`Approver.nextLine`）—— 否则它会跟读键盘的线程抢 stdin。
+
 ### Changed
 - **读写策略分开：沙箱只隔离写，不隔离读。** 三个档位现在调的是**写**：
   `ask` 写只在工作区（越界要批准）、`auto` 写不限（风险操作才问）、`full` 不问。
@@ -41,10 +47,14 @@ lumin 目前是 `0.x`，**对外契约（事件名 / 工具 schema / 会话 JSON
 - **Skills**：实现 Agent Skills 规范（`SKILL.md` + frontmatter），扫 `{工作区}/.pi/skills`、
   `{工作区}/.agents/skills`、`{数据目录}/skills`、`~/.agents/skills`；`/skill:<名字>` 强制加载。
 - **CLI**：`/help /tools /skills /sessions /new /resume /compact /model /mode /permissions /approvals /workspace /trust /quit`。
-- **单元测试 65 例**（`cjpm test` 全绿），覆盖事件流 / 会话树与分叉 / 压缩 / 并行执行 / 截断字节安全 /
+- **单元测试 70 例**（`cjpm test` 全绿），覆盖事件流 / 会话树与分叉 / 压缩 / 并行执行 / 截断字节安全 /
   7 个工具的边界 / 沙箱越界 / 命令超时 / skills 扫描 / 流式解析分片无关性 / 权限档位与审批 / Tavily 结果形状。
 
 ### Fixed
+- 读键盘的线程上线后，审批提示还是直接 `readln()`，两边抢同一个 stdin —— 谁先抢到谁读到，
+  审批可能永远等不到回答。现在统一走 `LineQueue.takeBlocking()`。
+- `takeBlocking` 一次拿到多行（粘贴/管道）时把剩下的按**倒序**塞回队尾，会把粘贴的多行顺序搞乱；
+  单测逮到后改成正序。
 - `ask` 档"越界写"以前是**自相矛盾**的：审批层问过、用户批了，工具层又被沙箱拒。
   现在批准过的目录会登记进本次会话的写白名单（`Approver.applyApproval`），批了就真能落盘。
 - 审批分类用的路径前缀是**字符串**比较，`<工作区>/../outside/x.md` 会被误判成"工作区内"，

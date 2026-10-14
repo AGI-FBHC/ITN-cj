@@ -23,7 +23,9 @@ lumin 是**照 Pi（`github.com/earendil-works/pi`，TypeScript，MIT）的架�
    写按档位（`denyReason`）：ask 档越界要审批层批准过（`allowWriteAt`）才放行。
    改这块时注意：**路径比较前必须先 `collapseDots`**（`..` 既能绕过红线，也能让审批误判）。
 4. **密钥不进仓**：`.env.local`、`.env`、真 Key 一律 gitignore。新增配置项要同步更新 `.env.example`。
-5. **窗口/编码**：终端一律 PowerShell 7（`pwsh`），不是 Windows PowerShell 5.1。
+5. **stdin 只有一个主人**：CLI 里读键盘的是 `src/cli/lines.cj` 的读线程，交互式读输入**一律走 `LineQueue`**
+   （`takeBlocking` / `drain`），**不要在别处直接 `readln()`** —— 会跟它抢 stdin（审批提示就踩过这个坑）。
+6. **窗口/编码**：终端一律 PowerShell 7（`pwsh`），不是 Windows PowerShell 5.1。
 
 ## 3. 改动流程
 

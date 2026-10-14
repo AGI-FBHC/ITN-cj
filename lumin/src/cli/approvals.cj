@@ -49,6 +49,11 @@ public class Approver {
     public var denyCount: Int64 = 0
     public var askCount: Int64 = 0
     /**
+     * 取一行用户输入。CLI 里必须挂上（走读键盘线程的队列），
+     * 否则审批提示会直接 readln()，跟那个线程抢 stdin。不挂就退回 readln（测试/其他宿主用）。
+     */
+    public var nextLine: ?() -> String = None
+    /**
      * 放行一次"写工作区外"之后，要把那个目录记进工作区的白名单 ——
      * 否则会出现"用户批了、沙箱还是拒"的自相矛盾（沙箱在 ask 档拦越界写）。
      */
@@ -241,10 +246,14 @@ public class Approver {
             line = autoAnswer
             println(line + "   （测试注入的回答）")
         } else {
-            try {
-                line = readln()
-            } catch (e: Exception) {
-                line = ""
+            match (nextLine) {
+                case Some(f) => line = f()
+                case None =>
+                    try {
+                        line = readln()
+                    } catch (e: Exception) {
+                        line = ""
+                    }
             }
         }
         let t = trimStr(line)
