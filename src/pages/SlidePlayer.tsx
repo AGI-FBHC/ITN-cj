@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
-import { BookOpen, Check, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Loader2, NotebookPen, Pause, Play, Presentation, Volume1, Volume2, VolumeX, X } from 'lucide-react';
-import { api, type CustomizeSlide, type CustomizeSlidesResponse, type LearningResource, type TtsSpeed } from '@/lib/api';
+import { BookOpen, Check, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, Download, Loader2, NotebookPen, Pause, Play, Presentation, Volume1, Volume2, VolumeX, X } from 'lucide-react';
+import { api, getToken, type CustomizeSlide, type CustomizeSlidesResponse, type LearningResource, type TtsSpeed } from '@/lib/api';
 import SourceCitationMarks from '@/components/resources/SourceCitationMarks';
 import { slideMdComponents, mdRemarkPluginsCited, mdRehypePlugins } from '@/components/resources/lecture-markdown';
 import { markdownList, normalizeMarkdownLists } from '@/lib/normalizeMarkdown';
@@ -347,6 +347,8 @@ export default function SlidePlayer() {
   const [noteText, setNoteText] = useState('');
   const [quizInteraction, setQuizInteraction] = useState<{ submitted: boolean; selectedAnswer?: string; correct?: boolean }>({ submitted: false });
   const [presentationImage, setPresentationImage] = useState('');
+  /** 课件下载地址：只有 ppt 且任务完成（后端给 downloadUrl）才有 */
+  const [pptDownloadUrl, setPptDownloadUrl] = useState('');
   const quizAssistantOpenedRef = useRef(false);
   const volumeLevels = [1, 0.6, 0.3, 0] as const;
 
@@ -402,19 +404,22 @@ export default function SlidePlayer() {
   useEffect(() => { if (slides.length && currentIndex >= slides.length) setCurrentIndex(slides.length - 1); }, [slides.length, currentIndex]);
   const slide = slides[currentIndex];
   useEffect(() => {
-    if (slide?.type !== 'presentation' || !slide.presentationId) {
+    // 幻灯图挂在"本人这份课件任务"上（customize 返回的 resourceId）。
+    // slide.presentationId 是机构母版资源 id，拿它请求 /slides/{i} 必然 404（实测）。
+    const assetTaskId = data?.resourceType === 'ppt' ? (data.resourceId ?? '') : '';
+    if (slide?.type !== 'presentation' || !assetTaskId) {
       setPresentationImage('');
       return;
     }
     let alive = true;
     let objectUrl = '';
-    void fetchSlideAsset(slide.presentationId, slide.unitIndex, 'slides').then((blob) => {
+    void fetchSlideAsset(assetTaskId, slide.unitIndex, 'slides').then((blob) => {
       if (!alive) return;
       objectUrl = URL.createObjectURL(blob);
       setPresentationImage(objectUrl);
     }).catch(() => { if (alive) setPresentationImage(''); });
     return () => { alive = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [slide?.type, slide?.presentationId, slide?.unitIndex]);
+  }, [slide?.type, slide?.unitIndex, data?.resourceId, data?.resourceType]);
   const isQuiz = data?.resourceType === 'quiz' || slide?.type === 'question';
   useEffect(() => {
     if (!isQuiz || quizAssistantOpenedRef.current) return;
@@ -460,7 +465,9 @@ export default function SlidePlayer() {
     }
   }, [data?.resourceType, quizAnsweredIds, slides]);
   useEffect(() => {
-    if (!data?.resourceId) return;
+    // 课件（ppt）的 resourceId 是 presentation 任务 id，不是 learning-resource；
+    // 拿它去查学习资源必然 404（实测两条 404 的另一条）。
+    if (!data?.resourceId || data?.resourceType === 'ppt') return;
     let alive = true;
     void api.getLearningResource(data.resourceId).then((resource) => {
       if (alive) {
@@ -474,6 +481,39 @@ export default function SlidePlayer() {
     }).catch(() => undefined);
     return () => { alive = false; };
   }, [data?.resourceId, data?.status]);
+  useEffect(() => {
+    if (data?.resourceType !== 'ppt' || !data.resourceId || data.status !== 'completed') { setPptDownloadUrl(''); return undefined; }
+    let alive = true;
+    void presentationApi.getPresentation(data.resourceId)
+      .then((task) => { if (alive) setPptDownloadUrl(task.downloadUrl ?? ''); })
+      .catch(() => { if (alive) setPptDownloadUrl(''); });
+    return () => { alive = false; };
+  }, [data?.resourceType, data?.resourceId, data?.status]);
+
+  /** 下载要带 Authorization（后端按登录用户校验），所以走 blob 而不是裸 <a download> */
+  const downloadPpt = async () => {
+    if (!pptDownloadUrl) return;
+    try {
+      const headers = new Headers();
+      const token = getToken();
+      if (token) headers.set('Authorization', 'Bearer ' + token);
+      const response = await fetch(pptDownloadUrl, { headers });
+      if (!response.ok) throw new Error('下载失败（' + response.status + '）');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = (data?.title || 'ITN-Presentation') + '.pptx';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      toast.success('课件已开始下载');
+    } catch (reason) {
+      toast.error(reason instanceof Error ? reason.message : '下载失败');
+    }
+  };
+
   const pageSources = useMemo(() => {
     if (slide?.sources?.length) return slide.sources;
     const ids = citedSourceIds(slide);
@@ -651,6 +691,16 @@ export default function SlidePlayer() {
                     ? `第 ${slides.length ? quizPosition : 0}/${expected || slides.length || 0} 题`
                     : `第 ${slides.length ? currentIndex + 1 : 0}/${expected || slides.length || 0} 页`}</div></div>
         {data?.resourceId && (data?.status !== 'generating' || data?.resourceType !== 'quiz') && <button type="button" onClick={() => { narration.stop(); navigate(data.resourceType === 'ppt' ? `/learn/${encodeURIComponent(data.kpId ?? '')}?ppt=${encodeURIComponent(data.resourceId!)}` : `/learn/resource/${encodeURIComponent(data.resourceId!)}?view=full`); }} className="inline-flex h-9 items-center gap-1.5 rounded-[10px] border border-hairline bg-paper px-3 text-[11px] font-medium text-ink-2 hover:border-brand/35 hover:text-brand"><BookOpen size={13} />完整阅读</button>}
+        {pptDownloadUrl && (
+          <button
+            type="button"
+            onClick={() => void downloadPpt()}
+            className="inline-flex h-9 items-center gap-1.5 rounded-[10px] border border-hairline bg-paper px-3 text-[11px] font-medium text-ink-2 hover:border-brand/35 hover:text-brand"
+          >
+            <Download size={13} />
+            下载课件
+          </button>
+        )}
         {activeTasks[0] && (
           <button
             type="button"
