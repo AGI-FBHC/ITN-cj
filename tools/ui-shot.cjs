@@ -53,9 +53,11 @@ const { chromium } = loadPlaywright();
   const summary = { base, title: await page.title(), navItems, pages: [] };
 
   for (let i = 0; i < navItems.length; i += 1) {
-    const items = await page.$$('.nav-item');
-    await items[i].click();
-    await page.waitForTimeout(1100);
+    // 页面切换会重建侧栏，必须每次按索引重新定位，不能复用 elementHandle
+    await page.locator('.nav-item').nth(i).click();
+    await page.waitForTimeout(900);
+    await page.waitForFunction(() => !document.querySelector('#view .empty .spinner'), null, { timeout: 20000 }).catch(() => {});
+    await page.waitForTimeout(200);
     const info = await page.evaluate(() => ({
       title: (document.querySelector('#page-title') || {}).textContent || '',
       sub: (document.querySelector('#page-sub') || {}).textContent || '',
@@ -63,6 +65,10 @@ const { chromium } = loadPlaywright();
       head: ((document.querySelector('#view') || {}).innerText || '').replace(/\s+/g, ' ').slice(0, 120),
       cards: document.querySelectorAll('#view .card').length,
       buttons: document.querySelectorAll('#view button').length,
+      emptyStates: document.querySelectorAll('#view .empty').length,
+      deadEnds: Array.from(document.querySelectorAll('#view .empty')).filter(function (e) { return !e.querySelector('button'); }).length,
+      checklistDone: document.querySelectorAll('#view .check-item.done').length,
+      topActions: ((document.querySelector('#top-actions') || {}).innerText || '').replace(/\s+/g, ' ').slice(0, 60),
     }));
     const safe = navItems[i].replace(/[^\w\u4e00-\u9fa5]+/g, '_');
     const file = path.join(outDir, String(i + 1).padStart(2, '0') + '-' + safe + '.png');
