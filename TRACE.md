@@ -1594,3 +1594,35 @@ ITN-Desktop"；最后要求"做好之后先让我单独试试效果"。
 
 **验证**：`tools/report-check.ps1` → **12 项全过**（新增：趋势里有今天 / 今天的读做记与总数对得上 / 每天都带五个字段）；
 `node tools/ui-e2e.cjs` → **78 通过 / 0 失败**（成长页那一步新增：趋势图真的画出来了、有本周/上周对照、有每周建议）。
+
+---
+
+## 第二十二轮（2026-10-14）：开始接 pi-cj —— P1 搬运行时、P2 接模型（54 例单测全绿）
+
+**背景**：用户说"那个会话应该做好 harness 了，你其他任务完成就帮我接入"。于是按 `docs/11` 的顺序动手，一次一步、一步一验证。
+
+### P1 搬运行时（只搬不改）
+
+- `pi-cj/src/pi/*`（15 个文件）→ `core/src/pi/`；`src/tools/*`（3 个）→ `core/src/pi_tools/`；`src/unittests/*`（7 个）→ `core/src/unittests/`。
+  包名 `pi_cj.pi` → `itn_desktop_core.pi`、`pi_cj.tools` → `itn_desktop_core.pi_tools`、`pi_cj.unittests` → `itn_desktop_core.unittests`（同包内引用，未加依赖）。
+- `scripts/build.ps1` 通过；**pi-cj 原来的 51 例单测在内核里全绿**（`cjpm test`）。
+  唯一提示：`workspace.cj` 用了已废弃的 `Process.start`（pi-cj 的代码），后续可换 `launch`。
+- **坑**：pi 的包和内核 util 撞了一堆同名函数（`hasPrefix`/`hasSuffix`/`byteSafePrefix`/`intOf`/`arrOf`/`boolOf`…）。
+  结论写进 docs/11：桥接文件不要同时 `.*` 导入 pi 与 util。
+
+### P2 接模型（`core/src/pi_provider/provider.cj`）
+
+- `OpenAiChatProvider <: itn_desktop_core.pi.ChatProvider`：吃内核的 `ModelConfig`；SSE 流式；
+  正文/思考/工具参数分别推 `text_delta`/`thinking_delta`/`toolcall_delta`；原生 `tool_calls` 按 index 拼装、
+  半截 JSON 交给 `PartialJsonParser`；`finish_reason` → `stopReason`（含 `toolUse`/`length`）；顺手记 usage；
+  **429/5xx 只在"一个事件都还没推出去"时退避重试**（推过一半再重试会让正文重复）；失败**不抛**，填 `stopReason="error"`。
+- 文件开头用**逐个具名 import**（不是 `.*`）：既避开与 util 的歧义，也把依赖写在明面上。
+- 自测 3 例（`core/src/unittests/provider_test.cj`）：**进程内 SSE 假服务**当模型，不起 python、不联网 ——
+  ① 增量拼装（正文 2 片 + 思考 1 片 + 工具参数 2 片 → 一条 `read` 调用、`argsJson` 含 a.txt、usage 100/7、事件流里三种 delta 都在）；
+  ② 429 重试（第 1 次 429、第 2 次成功，计数=2）；③ 500 只回报不抛（`stopReason=error`、错误原文带 500）。
+- `cjpm test` → **54/54**。
+
+### 下一步
+
+P3：把内核现有 10 个领域工具各包一层 pi `Tool`（`FuncTool` + 显式 JSON Schema + `risk`）；
+P4：新增一条 `/api/agent/ask-pi`（临时）跑 pi 循环，与现有 agent 做**同题对照**，验证过再切默认。

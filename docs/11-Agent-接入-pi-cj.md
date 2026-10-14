@@ -50,6 +50,19 @@ pi-cj 的运行时**零网络、零文件 IO**（它的 README 明确写了这�
 
 ## 四、落地顺序（每步都能独立验证，一步一提交）
 
+> **进度（2026-10-14）**：
+> - **P1 已完成**：`pi-cj/src/pi/*`（15 个文件）→ `core/src/pi/`、`src/tools/*`（3 个）→ `core/src/pi_tools/`、
+>   单测（7 个）→ `core/src/unittests/`，包名统一成 `itn_desktop_core.*`。`scripts/build.ps1` 通过；
+>   `cjpm test` 里 pi-cj 原来的 **51 例全绿**（唯一提示是 `Process.start` 已废弃，来自 pi-cj 的 `workspace.cj`，后续可换 `launch`）。
+> - **P2 已完成**：`core/src/pi_provider/provider.cj` —— `OpenAiChatProvider`（拿内核的 `ModelConfig`，SSE 流式 +
+>   原生 tool_calls 的增量拼装 + 429/5xx 退避重试 + usage），另加 3 例自测（**进程内 SSE 假服务**，不联网）：
+>   增量拼装 / 只在"还没推过事件"时重试 / 500 只回报不抛。`cjpm test` → **54/54**。
+> - P3 起未做。
+
+> 注：pi 那个包里有一批和内核 util 同名的工具函数（`hasPrefix`/`byteSafePrefix`/`intOf`…），
+> 所以桥接文件**不要同时 `.*` 导入 pi 与 util**；`provider.cj` 用的是"逐个具名 import"，歧义交给编译器是最后手段，不是第一手段。
+
+
 | 阶段 | 做什么 | 验证 |
 | --- | --- | --- |
 | **P1 搬运行时** | `pi-cj/src/pi/*` → `core/src/pi/`，包名 `pi_cj.pi` → `itn_desktop_core.pi`（同包内引用，不用加依赖）。**只搬不改**，先让它在内核里编译过 | `cjpm build`；把 pi-cj 的 69 例单测平移到 `core/src/unittests/` 并 `cjpm test` 全绿 |
