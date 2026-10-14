@@ -1411,3 +1411,30 @@ ITN-Desktop"；最后要求"做好之后先让我单独试试效果"。
 1. 又是 `String.replace(a, b)` 把替换串里的 `$$` 折成 `$`：`page.$$eval` 被写成 `page.$eval`（第三次踩）。**批量改代码一律传函数**。
 2. PowerShell 里不能写 `(if (...) { } else { })` 当表达式——先算到变量再传参。
 3. 菜单里"隐藏的那一组"仍在 DOM 里，自动化 `waitForSelector('.composer-menu-item')` 会挑到隐藏的第一个而超时：测试要收窄到具体分组（`.cm-skills`）。
+
+---
+
+## 第十九轮（2026-10-14）：读懂 pi-cj，写死"怎么接"（本轮不改代码，只出方案）
+
+**背景**：另一个会话在 `pi-cj/` 里按 Pi Agent 的架构重写了一个仓颉 Agent 运行时（Pi 的循环 + DeepSeek Harness 的"模式=工具集"），
+目标是**替换掉内核里手写的那个 while 循环**。用户让我"顺带理解一下，会话部分怎么利用 pi-cj"。
+
+**做了什么**：读了 `pi-cj/README.md`（含它自己的《合并清单》与"真机六个坑"）、`src/pi/`（provider / tool / agent / event / mode / skills）、
+`src/cli/http.cj`（OpenAI 兼容流式 + 原生 tool_calls）、`src/tools/`（工作区沙箱 + read/write/edit/ls/find/grep/run_command），
+然后写成 `docs/11-Agent-接入-pi-cj.md`。
+
+**方案要点（给后面动手的人）**：
+
+1. **边界只有两个接口 + 一条流**：`ChatProvider.respond(StepContext, EventStream)`、`Tool.spec()/run()`，事件流 `drain()` 写库 `on()` 推前端。
+   运行时不碰网络与文件——这条是 pi-cj 的硬约束，接的时候别破坏。
+2. **换的是循环与工具协议，不换领域能力**：知识库检索、联网策略、技能白名单与授权门、引用自检、SQLite 事件表全部保留。
+3. **三处必须改、一处不能让**：事件名从我们自定的 `tool/call` 换成 Pi 的 `tool_execution_*`（前端标签表跟着改，这是前端唯一要动的地方）；
+   工具协议从"提示词协议"换成原生 function calling（MiMo 实测不认"只输出一行 JSON"）；
+   **不接 pi-cj 的 session 文件持久化**，SQLite 事件表仍是唯一真相（并存两套历史只会分叉）。
+4. **不引它的四档 mode 替换"agent 自己判断联网"**：mode 只当"风险旋钮"（能不能改本机文件、能不能跑命令）用；
+   联网档位仍是我们自己的策略。
+5. **P1~P6 六步落地**，每步给了验证命令（`cjpm test` 69 例 → `smoke.ps1` → `ui-e2e.cjs` → `build/package`）。
+6. **四条红线**（pi-cj 真机踩出来的）：并行工具调用不能只接第一条、`tool_call_id` 必须回填、回灌用结果正文而不是 summary、
+   `core/src/pi/` 里不许出现网络/文件 IO。
+
+**本轮没有改任何代码**（用户说"后面打算替换"）。迁移动手时按 docs/11 的 P1 开始，一步一提交、一步一验证。
