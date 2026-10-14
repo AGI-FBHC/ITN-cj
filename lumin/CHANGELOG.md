@@ -6,6 +6,8 @@ lumin 目前是 `0.x`，**对外契约（事件名 / 工具 schema / 会话 JSON
 ## [Unreleased]
 
 ### Added
+- `/prompt` 命令：把**此刻真正发给模型的完整系统提示词**打出来（按 section 拼好的那一份），
+  调提示词时不用再猜；配套文档 `docs/system-prompt.md` 写清四段的来源与改法。
 - **中途插话（Pi 的 steering）**：读键盘改成**单独一个线程**（`src/cli/lines.cj` 的 `LineQueue`），
   模型跑着的时候你也能直接打字 —— 普通句子在下一次模型请求之前插进当前这一轮；
   斜杠命令等这一轮跑完再执行；`/stop` 让这一轮在当前这句回复说完后停下（`Agent.abort()`）。

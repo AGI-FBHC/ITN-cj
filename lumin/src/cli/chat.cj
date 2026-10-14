@@ -49,6 +49,7 @@ func printHelp(): Unit {
     println("  /model <名字>             换模型（如 mimo-v2.6-pro）")
     println("  /mode <档位>              换工具集：" + modeListText() + "（research 档才有联网）")
     println("  /skill:<名字> [要求]       强制加载某个 skill 再干活")
+    println("  /prompt                  把此刻发给模型的完整系统提示词打出来（含 skills 列表与工作目录）")
     println("  /stop                    停下正在跑的这一轮")
     println("  /quit                    退出")
     println("其它任何输入都当问题发给模型。")
@@ -667,6 +668,14 @@ public func runChat(args: Array<String>): Int64 {
         }
         if (t == "/tools") {
             printTools(reg, agent.mode)
+            continue
+        }
+        if (t == "/prompt") {
+            // 提示词是按 section 拼的（preamble + <tools> + skills + 工作目录），
+            // 这里打的就是"此刻真发出去的那一份"，方便对着调。
+            println("")
+            println(agent.systemPromptNow())
+            println("")
             continue
         }
         if (t == "/skills") {

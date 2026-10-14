@@ -149,6 +149,7 @@ lumin chat [选项]  显式进入对话
 | `/workspace`（`/ws`）`list \| add <目录> [名字] \| open <名字\|目录> \| rm <名字>` | 管理工作区 |
 | `/trust on \| off \| clear` | 管理项目信任 |
 | `/skill:<名字> [要求]` | 强制加载某个 skill 再干活 |
+| `/prompt` | 把**此刻发给模型的完整系统提示词**打出来（preamble + 工具清单 + skills 播报 + 工作目录） |
 | `/stop`（`/abort` `/cancel`） | 停下正在跑的这一轮 |
 
 **中途插话**：读键盘是单独一个线程（`src/cli/lines.cj` 的 `LineQueue`），所以模型跑着的时候你也能直接打字 ——
@@ -341,6 +342,7 @@ lumin/
 ├── samples/demo-workspace/    示例工作区（含一份示例 skill）
 ├── docs/
 │   ├── vs-pi.md               按 Pi 源码逐条核对（含两处更正）
+│   ├── system-prompt.md       系统提示词的结构、来源、样例（想改看这篇）
 │   ├── roadmap.md             已知差距与优先级
 │   └── merge-into-itn.md      合并进上层桌面应用的清单
 └── scripts/                    env / demo / chat / test / package-demo / run-demos
