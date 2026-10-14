@@ -87,6 +87,10 @@ interface LearningBlock {
   expectedOutput?: string;
   safety?: 'safe' | 'caution' | 'danger';
   warning?: string;
+  /** 验收清单（实操类）：页面上可勾选，勾选状态走既有的 completedStepIds 存到后端 */
+  checklist?: string[];
+  /** 常见故障：problem → solution 成对展示 */
+  troubleshooting?: { problem: string; solution: string }[];
   question?: Record<string, unknown>;
 }
 
@@ -185,7 +189,15 @@ function blocksOf(resource: LearningResource): LearningBlock[] {
       warning: step.warning ? String(step.warning) : undefined,
     }));
     const criteria = asStrings(content.acceptanceCriteria);
-    if (criteria.length) blocks.push({ id: 'practice-review', kind: 'review', eyebrow: '完成验收', title: '用结果判断是否真正完成', body: markdownList(criteria), citations: [] });
+    if (criteria.length) blocks.push({ id: 'practice-review', kind: 'review', eyebrow: '完成验收', title: '用结果判断是否真正完成', body: '做完每一步之后，用下面这几条自己验一遍；勾选会跟着学习进度存下来。', checklist: criteria, citations: [] });
+    /* 常见故障：旧版 LearningResourceStudio 有这一块，生成侧也一直在产出，网页版一直没展示 */
+    const troubleshooting = asRecords(content.troubleshooting)
+      .map((entry) => ({ problem: String(entry.problem ?? ''), solution: String(entry.solution ?? '') }))
+      .filter((entry) => entry.problem || entry.solution);
+    if (troubleshooting.length) {
+      blocks.push({ id: 'practice-trouble', kind: 'review', eyebrow: '常见故障', title: '卡住的时候先看这几条', troubleshooting, citations: [] });
+    }
+
     return blocks;
   }
   return asRecords(content.questions).map((question, index) => ({
@@ -746,6 +758,14 @@ export default function CourseResourcePlayer() {
     saveTimer.current = window.setTimeout(() => {
       void api.updateLearningResourceProgress(resource.id, {
         currentBlockId: nextCurrent, visitedBlockIds: unique(nextVisited), completedStepIds: unique(nextSteps), elapsedSeconds: elapsed,
+      }).then((result) => {
+        /*
+         * 把后端回写的 state 合并进 resource：这个页面的资源快照会写进 localStorage 缓存（5 分钟），
+         * 不回写的话，勾完验收立刻刷新会读到旧进度 —— 用户看到的是"我明明勾了，怎么又没了"。
+         */
+        setResource((current) => current
+          ? { ...current, state: result.resource.state, learned: Boolean(result.resource.state?.learned || result.resource.state?.completed) }
+          : result.resource);
       }).catch(() => undefined);
     }, 650);
   }, [resource]);
@@ -858,6 +878,19 @@ export default function CourseResourcePlayer() {
       saveProgress(id, nextVisited, next, elapsedBase + sessionSecondsRef.current);
       return nextVisited;
     });
+  };
+
+  /*
+   * 验收清单的勾选（W5）：只写 completedStepIds，不碰 currentBlockId / visited ——
+   * 那是"读到哪一块"的阅读位置，不该被验收动作改写（直接复用 toggleStep 会把 acceptance-N
+   * 当成当前块存下去，刷新后进度状态就被带歪了）。
+   */
+  const toggleAcceptance = (checkId: string) => {
+    const next = completedSteps.includes(checkId)
+      ? completedSteps.filter((item) => item !== checkId)
+      : [...completedSteps, checkId];
+    setCompletedSteps(next);
+    saveProgress(currentBlockId, visited, next, elapsedBase + sessionSecondsRef.current);
   };
 
   const speakCurrent = () => {
@@ -1376,6 +1409,55 @@ ${chatContext.content}
       {blocks.length === 0 ? <div className="rounded-[16px] border border-dashed border-hairline p-12 text-center"><p className="text-[14px] text-ink-muted">当前资源没有可学习的正文。</p><Link to={`/resources?courseId=${resource.courseId}&chapterId=${resource.chapterId}`} className="lf-btn-primary mt-4 inline-flex">重新生成资源</Link></div> : blocks.map((block, index) => <motion.section key={block.id} ref={(element) => { blockRefs.current[block.id] = element; }} data-block-id={block.id} data-assistant-context data-assistant-focus={block.id === currentBlockId ? 'true' : undefined} aria-current={block.id === currentBlockId ? 'true' : undefined} data-context-kind={block.kind === 'quiz' ? '当前题目' : resource.type === 'practice' ? '当前实操步骤' : '当前阅读段落'} data-context-title={block.title} data-context-index={index + 1} data-context-total={blocks.length} data-context-current-page={index + 1} data-context-total-pages={blocks.length} data-context-progress={`${displayedCompletedCount}/${blocks.length}`} data-context-assessed={effectiveAssessments[block.id] != null ? 'true' : undefined} data-context-assessment={selfAssessmentLabel(effectiveAssessments[block.id])} data-context-resource-id={resource.id} data-context-knowledge-point-id={resource.kpId} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: '-80px' }} className={cn('scroll-mt-28 rounded-[18px] border bg-card-warm p-5 shadow-xs transition md:p-7', block.id === currentBlockId ? 'border-brand/35 shadow-warm' : 'border-hairline', block.safety === 'danger' && 'border-l-2 border-l-brand-danger/60')}>
         <div className="flex items-start gap-4"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-brand-tint font-mono text-[11px] font-semibold text-brand">{block.kind === 'practice' ? `S${index}` : String(index + 1).padStart(2, '0')}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><div className="lf-mono-label !text-[10px]">{block.eyebrow}</div>{block.kind === 'practice' && block.safety && <span className={cn('rounded-md border px-1.5 py-0.5 font-mono text-[9.5px]', block.safety === 'danger' ? 'border-brand-danger/35 bg-brand-danger/10 text-brand-danger' : block.safety === 'caution' ? 'border-brand-amber/40 bg-brand-amber-tint text-ochre' : 'border-brand/25 bg-brand-tint text-brand')}>{block.safety === 'danger' ? '高风险' : block.safety === 'caution' ? '需谨慎' : '常规操作'}</span>}{block.kind === 'quiz' && (() => { const meta = difficultyMeta[String(block.question?.difficulty ?? 'easy') as keyof typeof difficultyMeta] ?? difficultyMeta.easy; return <span className="flex items-center gap-1 rounded-md border px-1.5 py-0.5 font-mono text-[9.5px]" style={{ borderColor: `${meta.color}55`, color: meta.color }}><DifficultyStars count={meta.stars} color={meta.color} />{meta.label}</span>; })()}</div><h2 className="mt-1 font-serif text-[22px] font-semibold leading-tight text-ink md:text-[25px]">{block.title}</h2></div>{block.kind === 'practice' && <button type="button" onClick={() => toggleStep(block.id)} className={cn('flex shrink-0 items-center gap-1.5 rounded-[10px] border px-3 py-2 text-[11.5px]', completedSteps.includes(block.id) ? 'border-brand bg-brand text-paper' : !safetyReady && block.id === blocks.find((item) => item.kind === 'practice')?.id ? 'cursor-not-allowed border-hairline bg-paper-deep text-ink-muted' : 'border-hairline bg-paper text-ink-muted hover:border-brand/40')} >{completedSteps.includes(block.id) ? <CheckCircle2 size={14} /> : <Circle size={14} />}完成步骤</button>}</div>
         {block.body && <div className="mt-5 max-w-[760px]"><ReactMarkdown remarkPlugins={mdRemarkPluginsCited} rehypePlugins={mdRehypePlugins} components={lectureMdComponents}>{normalizeMarkdownLists(block.body)}</ReactMarkdown></div>}
+        {/* 验收清单（W5）：可勾选，勾选状态随学习进度存后端（completedStepIds 里用 acceptance-N 标记） */}
+        {block.checklist && block.checklist.length > 0 && (
+          <div className="mt-4 space-y-2">
+            {block.checklist.map((item, index) => {
+              const checkId = 'acceptance-' + (index + 1);
+              const done = completedSteps.includes(checkId);
+              return (
+                <button
+                  key={checkId}
+                  type="button"
+                  onClick={() => toggleAcceptance(checkId)}
+                  aria-pressed={done}
+                  className={cn(
+                    'flex w-full items-start gap-2.5 rounded-[12px] border px-3.5 py-2.5 text-left transition-colors',
+                    done ? 'border-brand/40 bg-brand-tint/40' : 'border-hairline bg-paper hover:border-brand/35',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border',
+                      done ? 'border-brand bg-brand text-paper' : 'border-ink-muted/40 text-transparent',
+                    )}
+                  >
+                    <Check size={12} />
+                  </span>
+                  <span className={cn('text-[13px] leading-6', done ? 'text-ink-muted line-through' : 'text-ink-2')}>{item}</span>
+                </button>
+              );
+            })}
+            <p className="pt-0.5 text-[11.5px] text-ink-muted">
+              已验收 {block.checklist.filter((_, index) => completedSteps.includes('acceptance-' + (index + 1))).length}/{block.checklist.length}
+              ：勾选会跟着这份资源的学习进度存下来。
+            </p>
+          </div>
+        )}
+        {/* 常见故障（W5）：problem → solution */}
+        {block.troubleshooting && block.troubleshooting.length > 0 && (
+          <div className="mt-4 space-y-2.5">
+            {block.troubleshooting.map((entry, index) => (
+              <div key={index} className="rounded-[12px] border border-hairline bg-card-warm px-4 py-3">
+                <div className="flex items-start gap-2 text-[13px] font-medium text-ink">
+                  <TriangleAlert size={14} className="mt-0.5 shrink-0 text-brand-amber" />
+                  {entry.problem}
+                </div>
+                <p className="mt-1.5 pl-6 text-[12.5px] leading-6 text-ink-2">{entry.solution}</p>
+              </div>
+            ))}
+          </div>
+        )}
         {block.code && <pre className="mt-5 overflow-x-auto rounded-[12px] bg-ink px-4 py-4 text-[12px] leading-6 text-paper"><code>{block.code}</code></pre>}
         {block.expectedOutput && <div className="mt-4 rounded-[12px] border border-brand/20 bg-brand-tint/35 px-4 py-3 text-[13px] leading-6 text-ink-2"><strong className="text-brand">预期结果：</strong>{block.expectedOutput}</div>}
         {block.warning && <div className="mt-4 flex items-start gap-2 rounded-[12px] border border-brand-amber/40 bg-brand-amber-tint px-4 py-3 text-[12.5px] leading-5 text-ochre"><TriangleAlert size={15} className="mt-0.5 shrink-0" /><span><strong>操作提醒：</strong>{block.warning}</span></div>}
