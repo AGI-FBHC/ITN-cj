@@ -3,10 +3,10 @@
  * 顶部导航外壳下的单列内容：问候 → 继续学习(焦点) → 进度条 → 接下来先补两块 → 学习资源列表
  * 窄栏 + 大留白 + 一行一件事，去掉与导航/侧栏重复的板块。
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
-import { Play, ArrowRight, BookOpen, Target, PenLine, ListChecks, UserRoundCog, NotebookPen, ChevronDown, X } from 'lucide-react';
+import { History, Play, ArrowRight, BookOpen, Target, PenLine, ListChecks, UserRoundCog, NotebookPen, ChevronDown, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useProfile, dataIdOf } from '@/context/ProfileContext';
 import { reportForLearner } from '@/data/reportBuilder';
@@ -21,6 +21,8 @@ import TraceBadge from '@/components/TraceBadge';
 import { SprigTop, PottedPlant, LeafDivider } from '@/components/heal/Flora';
 import GardenCard from '@/components/heal/GardenCard';
 import { useWrongBook } from '@/context/WrongBookContext';
+import { api } from '@/lib/api';
+import type { LearnerGrowth } from '@/lib/api';
 import WeekReview from '@/components/heal/WeekReview';
 
 const fadeUp = {
@@ -199,6 +201,61 @@ export default function LearnerHome() {
         .filter((g) => g.gap > 0)
         .sort((a, b) => b.gap - a.gap)
         .slice(0, 2);
+  /*
+   * 最近学习轨迹（W2）：来源就是 /learner-profile/growth 的成长事件 —— 真实记录，不是编的。
+   * 原始事件里同一个知识点会反复出现（每答一题一条），所以先按天、按动作归类再计数：
+   * 页面上一行说清「哪天做了什么」，细节留给「我的成长」里的完整轨迹。
+   */
+  const [growth, setGrowth] = useState<LearnerGrowth | null>(null);
+  const growthLearnerId = currentLearner.custom && /^[0-9a-f]{8}-/i.test(currentLearner.id) ? currentLearner.id : '';
+  useEffect(() => {
+    if (!growthLearnerId) { setGrowth(null); return undefined; }
+    let cancelled = false;
+    api.getLearnerGrowth(growthLearnerId)
+      .then((data) => { if (!cancelled) setGrowth(data); })
+      .catch(() => { if (!cancelled) setGrowth(null); });
+    return () => { cancelled = true; };
+  }, [growthLearnerId]);
+  const trackDays = (() => {
+    const events = growth?.events ?? [];
+    if (!events.length) return [];
+    const actionOf = (eventType: string, title: string) => {
+      if (eventType === 'note-taken' || title.indexOf('笔记') >= 0) return '记笔记';
+      if (eventType === 'nourish') return '滋养园子';
+      if (eventType === 'focus-bonus' || title.indexOf('学习了') >= 0) return '答题学习';
+      if (title.indexOf('画像') >= 0) return '画像更新';
+      return '其他';
+    };
+    const pad = (value: number) => String(value).padStart(2, '0');
+    const dayKey = (value: string | Date) => {
+      const date = value instanceof Date ? value : new Date(value);
+      if (Number.isNaN(date.getTime())) return '';
+      return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+    };
+    const byDay = new Map<string, Map<string, number>>();
+    for (const event of events) {
+      const key = dayKey(event.createdAt);
+      if (!key) continue;
+      const action = actionOf(event.eventType, event.title);
+      if (!byDay.has(key)) byDay.set(key, new Map());
+      const bucket = byDay.get(key)!;
+      bucket.set(action, (bucket.get(action) ?? 0) + 1);
+    }
+    const todayKey = dayKey(new Date());
+    return Array.from(byDay.entries())
+      .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+      .slice(0, 4)
+      .map(([key, bucket]) => {
+        const parts = key.split('-');
+        const label = key === todayKey ? '今天' : (Number(parts[1]) + ' 月 ' + Number(parts[2]) + ' 日');
+        const summary = Array.from(bucket.entries())
+          .sort((a, b) => b[1] - a[1])
+          .map(([action, count]) => action + ' × ' + count)
+          .join(' · ');
+        return { key, label, summary };
+      });
+  })();
+
   /* 更多进展默认折叠：首屏只回答「现在做什么」 */
   const [moreOpen, setMoreOpen] = useState(false);
   const { items: wrongItems } = useWrongBook();
@@ -299,6 +356,30 @@ export default function LearnerHome() {
       {/* ============ 本周回顾（去焦虑：只讲长进，不算欠账） ============ */}
       <motion.section {...fadeUp} className="mt-4">
         <WeekReview />
+
+      {/* ============ 最近学习轨迹（W2）：真实成长事件，按天归类 ============ */}
+      {trackDays.length > 0 && (
+        <motion.section {...fadeUp} className="mt-5">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <History size={16} className="text-brand" />
+              <h3 className="font-serif text-[17px] font-semibold text-ink">最近学习轨迹</h3>
+            </div>
+            <Link to="/report" className="inline-flex items-center gap-1 text-[12.5px] font-medium text-brand hover:underline">
+              看完整报告
+              <ArrowRight size={13} />
+            </Link>
+          </div>
+          <div className="lf-card divide-y divide-hairline overflow-hidden">
+            {trackDays.map((day) => (
+              <div key={day.key} className="flex items-baseline gap-3 px-5 py-3">
+                <span className="w-[72px] shrink-0 font-mono text-[11.5px] text-ink-muted">{day.label}</span>
+                <span className="text-[13px] leading-[20px] text-ink-2">{day.summary}</span>
+              </div>
+            ))}
+          </div>
+        </motion.section>
+      )}
       </motion.section>
 
       {/* 叶形分割线 */}

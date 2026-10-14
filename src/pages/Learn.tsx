@@ -8,6 +8,7 @@ import { useProfile } from '@/context/ProfileContext';
 import { useLearningMap } from '@/hooks/useLearningMap';
 import KnowledgeGraph3D from '@/components/learn/KnowledgeGraph3D';
 import UnitQuickList from '@/components/learn/UnitQuickList';
+import ChapterSidebar, { type SidebarResource } from '@/components/learn/ChapterSidebar';
 import { Fern, GrassTuft } from '@/components/heal/Flora';
 import { cn } from '@/lib/utils';
 
@@ -151,6 +152,62 @@ export default function Learn() {
     return null;
   };
 
+  /* ---------- 右侧章节侧栏（W2）：选中章节 → 核心技能 + 推荐资源 ---------- */
+  const sidebarChapter = (() => {
+    if (selectedKp) {
+      const picked = knowledgePoints.find((kp) => kp.id === selectedKp);
+      if (picked) return picked;
+    }
+    const active = map.activeKp ? knowledgePoints.find((kp) => kp.id === map.activeKp) : null;
+    if (active) return active;
+    // 没选中也没有"在学"的章节时，退到最弱的一章 —— 与首页"今天就学这一件"同一套判断
+    return [...knowledgePoints].sort((a, b) => (map.mastery[a.id] ?? 0) - (map.mastery[b.id] ?? 0))[0] ?? null;
+  })();
+  const sidebarTopics = sidebarChapter
+    ? map.graphNodes
+        .filter((node) => node.kind === 'topic' && node.kpId === sidebarChapter.id)
+        .sort((a, b) => (a.topicIndex ?? 99) - (b.topicIndex ?? 99))
+        .map((node) => ({
+          id: node.id,
+          label: node.label,
+          progress: Math.round(map.topicProgress[node.id] ?? 0),
+          mastery: Math.round(map.topicMastery[node.id] ?? 0),
+          target: Math.round(map.nodeTargets[node.id]?.target ?? map.nodeTargets[sidebarChapter.id]?.target ?? 80),
+        }))
+    : [];
+  /** 资源形态：运行时对象是 LearningResourceSummary（有 type），hook 的声明类型写窄了，两种都认 */
+  const formOf = (resource: unknown): string => {
+    const raw = (resource as { type?: string; form?: string });
+    const kind = raw.type ?? raw.form ?? '';
+    return kind === 'guide' ? 'practice' : kind;
+  };
+  const sidebarResources = (() => {
+    const rows: SidebarResource[] = [];
+    for (const topic of sidebarTopics) {
+      for (const resource of map.resources[topic.id] ?? []) {
+        rows.push({
+          id: resource.id,
+          type: formOf(resource),
+          title: resource.title,
+          topic: topic.label,
+          learned: resource.learned,
+          started: resource.started,
+        });
+      }
+    }
+    // 推荐顺序：在读 → 未学 → 已学（正在学的最该接着做）
+    const rank = (row: SidebarResource) => (row.started && !row.learned ? 0 : row.learned ? 2 : 1);
+    return rows.sort((a, b) => rank(a) - rank(b));
+  })();
+  const openWeakestChapter = () => {
+    const weakest = [...knowledgePoints].sort((a, b) => (map.mastery[a.id] ?? 0) - (map.mastery[b.id] ?? 0))[0];
+    if (!weakest) return;
+    setSelectedKp(weakest.id);
+    setSelectedTopic(null);
+    setSingleExpandedKp(weakest.id);
+    setGraphFocus({ id: weakest.id, at: Date.now() });
+  };
+
   return (
     <div className="mx-auto max-w-[1280px] px-5 pb-24 pt-8 md:px-6">
       {/* 页头：标题 + 一句带动词的引导语 + 场景分段控件（全页唯一控件组） */}
@@ -189,7 +246,8 @@ export default function Learn() {
         className="mt-5 flex flex-col gap-0"
       >
         {/* 上层只承载网络与按需详情；章节速览在下方独立占满全局宽度。 */}
-        <motion.div layout="position" className="relative min-w-0">
+        <motion.div layout="position" className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_336px]">
+          <div className="relative min-w-0">
           <div className="absolute right-4 top-4 z-10 flex flex-col items-end gap-2">
             <button
               type="button"
@@ -232,6 +290,30 @@ export default function Learn() {
             persistenceKey={currentLearner.id}
             restorePersistedCamera={restoreMapState && !searchParams.get('kp')}
           />
+          </div>
+
+          {(map.loading || knowledgePoints.length > 0) && (
+            <ChapterSidebar
+              className="self-start lg:sticky lg:top-24"
+              loading={map.loading}
+              chapterName={sidebarChapter?.name ?? null}
+              chapterProgress={Math.round(map.chapterProgress[sidebarChapter?.id ?? ''] ?? 0)}
+              chapterMastery={Math.round(map.mastery[sidebarChapter?.id ?? ''] ?? 0)}
+              chapterTarget={Math.round(map.nodeTargets[sidebarChapter?.id ?? '']?.target ?? 80)}
+              topics={sidebarTopics}
+              resources={sidebarResources}
+              onPickTopic={(topicId) => {
+                const chapterId = sidebarChapter?.id ?? null;
+                setSelectedKp(chapterId);
+                setSingleExpandedKp(chapterId);
+                const topicNode = map.graphNodes.find((node) => node.id === topicId);
+                setSelectedTopic(topicNode?.topicIndex ?? null);
+                setFocusTopic({ id: topicId, at: Date.now() });
+              }}
+              onPickResource={(resourceId) => navigate(`/learn/resource/${encodeURIComponent(resourceId)}`)}
+              onPickWeakest={openWeakestChapter}
+            />
+          )}
         </motion.div>
       </motion.div>
 
