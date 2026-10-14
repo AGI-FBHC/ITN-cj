@@ -575,6 +575,48 @@ export interface RagTree {
   totalChunks: number;
 }
 
+export interface RagFigureSummary {
+  id: number;
+  documentId: number | null;
+  documentTitle: string | null;
+  occurrenceNo: number | null;
+  figureLabel: string | null;
+  caption: string | null;
+  altText: string | null;
+  sectionPath: string | null;
+  imageType: string | null;
+  fileSize: number | null;
+  width: number | null;
+  height: number | null;
+  mimeType: string | null;
+  downloadStatus: string | null;
+  uploadStatus: string | null;
+  vlmStatus: string | null;
+  hasStorage: boolean;
+  imageUrl: string | null;
+  vlmDescription: string | null;
+}
+
+export interface RagFigurePage {
+  total: number;
+  page: number;
+  size: number;
+  items: RagFigureSummary[];
+  stats: { total: number; described: number; pending: number; failed: number };
+}
+
+/** 详情比列表多这些字段（原始出处、库内路径、哈希、VLM 模型与三个时间戳） */
+export interface RagFigureDetail extends RagFigureSummary {
+  sourceUrl: string | null;
+  storageKey: string | null;
+  fileExtension: string | null;
+  sha256: string | null;
+  vlmModel: string | null;
+  downloadedAt: string | null;
+  uploadedAt: string | null;
+  describedAt: string | null;
+}
+
 export interface RagChunkSummary {
   id: number;
   chunkCode: string;
@@ -1418,6 +1460,15 @@ export const api = {
     const params = new URLSearchParams({ q: query, page: String(page), size: String(size) });
     return request<RagChunkPage>(`/api/v1/rag/chunks/search?${params.toString()}`);
   },
+  /** 知识配图（VLM 描述）：q 会在图注/描述/文档标题上做文本检索 */
+  listRagFigures: (params?: { query?: string; page?: number; size?: number }) => {
+    const search = new URLSearchParams();
+    if (params?.query) search.set('q', params.query);
+    search.set('page', String(params?.page ?? 0));
+    search.set('size', String(params?.size ?? 50));
+    return request<RagFigurePage>('/api/v1/rag/figures?' + search.toString());
+  },
+  getRagFigure: (figureId: number) => request<RagFigureDetail>('/api/v1/rag/figures/' + figureId),
   listNotes: () => requestDirect<{ notes: LearningNoteRecord[] }>('/v1/notes'),
   createNote: (body: {
     title: string; content: string; learnerId?: string; kpId?: string;
