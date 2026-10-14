@@ -111,8 +111,10 @@ public class SessionStore {
                 lastType = r.text(1)
             case None => ()
         }
+        // 不能直接切字节：中文标题（40 字节 ≈ 13 个字）会把某个汉字切成两半，
+        // 抛 Invalid utf8 让 sessions/list 整体 500。用 util 的安全截断。
         if (title.size > 40) {
-            title = String.fromUtf8(title.toArray()[0..40])
+            title = byteSafePrefix(title, 40)
         }
         // 这一轮是问答 / 讲义 / 练习，界面用它给会话列表分类
         var kind = ""

@@ -951,7 +951,13 @@ function askTopic(kind, defaultTopic) {
   input.onkeydown = (e) => { if (e.key === "Enter") goBtn.click(); };
 }
 
-/** 调内核的生成链路（讲义 / 练习册），结果落在 artifacts 目录。 */
+/**
+ * 调内核的生成链路（讲义 / 练习册），结果落在 artifacts 目录。
+ *
+ * 生成要跑几十秒到几分钟，所以这里先开一个会话、带着 sessionId 发请求，
+ * 然后轮询 /api/sessions/events 把内核写下的 assistant/delta（带 stage/label）渲染出来——
+ * 用户能看到"正在拟大纲 / 正在写第 2 节：常见问题"，而不是对着一句"生成中"干等。
+ */
 async function generateArtifact(kind, topic) {
   if (!hasChatModel()) {
     toast("还没有可用的对话模型");
@@ -963,17 +969,67 @@ async function generateArtifact(kind, topic) {
     ? ["检索资料", "拟大纲", "逐节写作", "引用自检", "落盘"]
     : ["检索资料", "批量出题", "引用自检", "落盘"];
   const card = progressCard((kind === "lecture" ? "正在生成讲义" : "正在生成练习册") + "：「" + topic + "」", steps);
+  const live = el("div", "gen-live");
+  const stageEl = el("div", "gen-stage", "准备中…");
+  const textEl = el("div", "gen-text");
+  const secEl = el("div", "gen-sections");
+  live.appendChild(stageEl);
+  live.appendChild(textEl);
+  live.appendChild(secEl);
+  card.appendChild(live);
   v.insertBefore(card, v.firstChild);
   card.scrollIntoView({ block: "start" });
-  let d;
+
+  let sid = "";
+  try {
+    sid = (await api("/api/sessions/new", {})).sessionId;
+  } catch (e) { /* 拿不到会话也能生成，只是没有实时进度 */ }
+
+  let poll = null;
+  if (sid) {
+    poll = setInterval(async () => {
+      try {
+        const d = await api("/api/sessions/events", { sessionId: sid });
+        let stage = "", label = "", buf = "";
+        const secs = [];
+        for (const e of d.events || []) {
+          const p = e.payload || {};
+          if (e.type === "section/done") {
+            secs.push(p.section || "");
+          } else if (e.type === "assistant/delta") {
+            const st = p.stage || "";
+            const lb = p.label || "";
+            if (st !== stage || lb !== label) { buf = ""; stage = st; label = lb; }
+            buf += (p.text || "");
+          }
+        }
+        if (stage === "outline") stageEl.textContent = "正在拟大纲…";
+        else if (stage === "section") stageEl.textContent = "正在写：" + (label || "正文");
+        else if (stage === "quiz") stageEl.textContent = "正在出题…";
+        else stageEl.textContent = "正在检索资料…";
+        textEl.textContent = buf.slice(-800);
+        if (secs.length) secEl.textContent = "已完成 " + secs.length + " 小节：" + secs.join(" / ");
+      } catch (e) {
+        // 轮询失败不打扰用户，最终结果以收尾时那次为准
+      }
+    }, 450);
+  }
+
+  let d = null;
+  let fail = "";
   try {
     d = await api(kind === "lecture" ? "/api/agent/lecture" : "/api/agent/quiz",
-      { kbId: state.kb, topic: topic, count: kind === "quiz" ? 5 : undefined });
+      { kbId: state.kb, topic: topic, count: kind === "quiz" ? 5 : undefined, sessionId: sid });
   } catch (e) {
-    card._stop();
-    card.remove();
+    fail = e.message;
+  }
+  if (poll) clearInterval(poll);
+  card._stop();
+  card.remove();
+
+  if (fail) {
     const box = cardOf({ cls: "dialog", title: "生成失败" });
-    box.appendChild(el("p", "muted", e.message));
+    box.appendChild(el("p", "muted", fail));
     const row = el("div", "row");
     row.appendChild(btn("检查模型设置", "primary", () => go("models")));
     row.appendChild(btn("看会话记录", "", () => go("sessions")));
@@ -982,24 +1038,16 @@ async function generateArtifact(kind, topic) {
     v.insertBefore(box, v.firstChild);
     return;
   }
-  card._stop();
-  card.remove();
+
   if (!d || d.ok !== true) {
     const msg = (d && d.message) || "内核没有返回内容";
-    const box = cardOf({
-      cls: "dialog",
-      title: "没有生成成功",
-      body: (() => {
-        const w = el("div");
-        w.appendChild(el("p", "muted", msg + "（查看「会话记录」可以看到这次调用停在哪一步）"));
-        const row = el("div", "row");
-        row.appendChild(btn("去设置模型", "primary", () => go("models")));
-        row.appendChild(btn("看会话记录", "", () => go("sessions")));
-        row.appendChild(btn("关闭", "ghost", () => box.remove()));
-        w.appendChild(row);
-        return w;
-      })(),
-    });
+    const box = cardOf({ cls: "dialog", title: "没有生成成功" });
+    box.appendChild(el("p", "muted", msg + "（查看「会话记录」可以看到这次调用停在哪一步）"));
+    const row = el("div", "row");
+    row.appendChild(btn("去设置模型", "primary", () => go("models")));
+    row.appendChild(btn("看会话记录", "", () => go("sessions")));
+    row.appendChild(btn("关闭", "ghost", () => box.remove()));
+    box.appendChild(row);
     v.insertBefore(box, v.firstChild);
     box.scrollIntoView({ block: "start" });
     return;

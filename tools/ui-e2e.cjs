@@ -174,16 +174,20 @@ function assert(cond, msg) {
 
   const mockPort = await freePort();
   const mock = spawn('python', [path.join(__dirname, 'mock-openai', 'server.py'), String(mockPort)],
-    { cwd: REPO, windowsHide: true, stdio: 'ignore' });
+    { cwd: REPO, windowsHide: true, stdio: 'ignore',
+      env: Object.assign({}, process.env, { ITN_MOCK_CHUNK_DELAY_MS: '60' }) });
   children.push(mock);
   const mockBase = 'http://127.0.0.1:' + mockPort + '/v1';
   await sleep(600); // 给 python mock 一点启动时间
 
+  // 内核日志落盘：失败时没有日志就只能靠猜（本轮就吃过这个亏）
+  const coreLogFile = path.join(outDir, 'core.log');
+  const coreLog = fs.openSync(coreLogFile, 'w');
   const core = spawn(CORE_EXE, [
     '--data-dir=' + dataDir,
     '--port-file=' + portFile,
     '--ui-dir=' + path.join(REPO, 'shell', 'renderer'),
-  ], { cwd: REPO, windowsHide: true, stdio: 'ignore', env: Object.assign({}, process.env, { cjHeapSize: '2GB' }) });
+  ], { cwd: REPO, windowsHide: true, stdio: ['ignore', coreLog, coreLog], env: Object.assign({}, process.env, { cjHeapSize: '2GB' }) });
   children.push(core);
 
   const cleanup = () => {
@@ -400,6 +404,43 @@ function assert(cond, msg) {
     await shot('08-练习册生成');
     await page.locator('.ok-dialog').getByRole('button', { name: '收起' }).click();
     return prev.length + ' 字';
+  });
+
+  await step('生成过程有实时进度（阶段 + 小节 + 增量文字）', async () => {
+    await page.getByRole('button', { name: '生成讲义' }).first().click();
+    await page.waitForSelector('#topic-input', { timeout: 10000 });
+    await page.fill('#topic-input', '提示词工程实时进度');
+    await page.getByRole('button', { name: '开始生成讲义' }).click();
+    // 进度卡必须在请求进行中就出现，而不是等结果回来才画
+    await page.waitForSelector('.progress-card .gen-stage', { timeout: 10000 });
+    // 等一拍再抓现场：第一帧一定是"准备中…"，想留下真正跑到某一节时的样子。
+    // 卡片在生成结束时会消失，所以读取要容错。
+    await page.waitForTimeout(900);
+    let stage = "", liveText = "", liveSecs = "";
+    stage = await page.textContent('.gen-stage').catch(() => stage);
+    liveText = await page.textContent('.gen-text').catch(() => liveText);
+    liveSecs = await page.textContent('.gen-sections').catch(() => liveSecs);
+    await shot('22-生成实时进度');
+    await page.waitForSelector('.ok-dialog:has-text("讲义已生成")', { timeout: 90000 });
+    await page.locator('.ok-dialog').getByRole('button', { name: '收起' }).click();
+    // 事件里应当留下逐节写作的增量与"本节完成"
+    const list = await page.evaluate(async () => {
+      const r = await fetch('/api/sessions/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      return { status: r.status, body: await r.json().catch(() => null) };
+    });
+    assert(list.body && list.body.data && list.body.data.sessions && list.body.data.sessions.length,
+      'sessions/list 没有返回会话：HTTP ' + list.status + ' ' + JSON.stringify(list.body).slice(0, 200));
+    const sid = list.body.data.sessions[0].sessionId;
+    const ev = await page.evaluate((id) => fetch('/api/sessions/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: id }) }).then((x) => x.json()), sid);
+    const evs = ev.data.events;
+    const stageDeltas = evs.filter((e) => e.type === 'assistant/delta' && (e.payload || {}).stage === 'section');
+    const sections = evs.filter((e) => e.type === 'section/done');
+    assert(stageDeltas.length >= 1, '应有逐节写作的增量事件，实际 ' + stageDeltas.length);
+    assert(sections.length >= 1, '应有 section/done 事件，实际 ' + sections.length);
+    const label = (stageDeltas[0].payload || {}).label || '';
+    assert(label.length > 0, '逐节增量应带上小节名');
+    return '请求中已显示「' + (stage || '（卡片已收）') + '」（实时文字 ' + liveText.length + ' 字' + (liveSecs ? '，' + liveSecs.slice(0, 30) : '') + '）；' +
+      stageDeltas.length + ' 段逐节增量 / ' + sections.length + ' 节完成（' + label + '）';
   });
 
   await step('生成讲义（大纲 → 逐节 → 引用自检）', async () => {

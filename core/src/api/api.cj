@@ -98,6 +98,8 @@ public class Api {
         try {
             route(ctx)
         } catch (e: Exception) {
+            // 这条日志是排障的命根子：只回一个 500 而不说话，前端和日志两边都看不出原因
+            println("[api] " + ctx.request.method + " " + ctx.request.url.path + " 失败：" + e.message)
             try {
                 fail(ctx, 500, describeFailure(e.message))
             } catch (_: Exception) {

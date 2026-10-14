@@ -23,6 +23,29 @@ public func writeText(path: String, text: String): Unit {
     File.writeTo(path, text.toArray())
 }
 
+/**
+ * 按字节数截断字符串，但绝不落在多字节字符中间。
+ *
+ * 这是一个必须记住的坑：仓颉里 `String.toArray()` 给的是 UTF-8 字节，
+ * 直接 `String.fromUtf8(b[0..40])` 一旦把某个汉字切成两半就抛
+ * `Invalid utf8 byte sequence` —— 而且是在读取路径上抛，会让整个接口 500。
+ * 中文一个字 3 字节，40 字节约等于 13 个字，随便一句中文提问都能踩到。
+ */
+public func byteSafePrefix(s: String, maxBytes: Int64): String {
+    let b = s.toArray()
+    if (b.size <= maxBytes) {
+        return s
+    }
+    var end = maxBytes
+    while (end > 0 && (b[end] & 192) == 128) {
+        end = end - 1
+    }
+    if (end <= 0) {
+        return ""
+    }
+    return String.fromUtf8(b[0..end])
+}
+
 public func hasPrefix(s: String, prefix: String): Bool {
     let sb = s.toArray()
     let pb = prefix.toArray()

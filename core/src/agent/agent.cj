@@ -147,22 +147,6 @@ func quotedStrings(text: String): ArrayList<String> {
     return out
 }
 
-/** 按字节数截断字符串，但不切断多字节字符（切断会抛 Invalid utf8）。 */
-func byteSafePrefix(s: String, maxBytes: Int64): String {
-    let b = s.toArray()
-    if (b.size <= maxBytes) {
-        return s
-    }
-    var end = maxBytes
-    while (end > 0 && (b[end] & 192) == 128) {
-        end = end - 1
-    }
-    if (end <= 0) {
-        return ""
-    }
-    return String.fromUtf8(b[0..end])
-}
-
 /** 从 start 处的左花括号找到配对的右花括号，返回下标；找不到返回 -1。 */
 func matchBrace(b: Array<UInt8>, start: Int64): Int64 {
     var depth = 0
@@ -609,6 +593,8 @@ public class Agent {
             sessionId = sessions.newId()
         }
         let turnId = sessions.newTurnId()
+        let sidL = sessionId
+        let tidL = turnId
         log(sessionId, turnId, "turn/start", kindPayload("lecture"))
         let up = JsonObject()
         up.put("text", JsonString("生成讲义：" + topic))
@@ -639,9 +625,15 @@ public class Agent {
                 log(sessionId, turnId, "step/start", stepPayload(2, "outline"))
                 var outline = ArrayList<String>()
                 try {
-                    let outlineText = client.chat(
+                    let outlineText = client.chatStream(
                         "你是教培内容编辑。",
-                        "依据下面的资料，为《" + topic + "》拟一份讲义大纲，最多 5 个小节。只输出一个 JSON 字符串数组，不要任何解释。\n\n资料：\n" + context
+                        "依据下面的资料，为《" + topic + "》拟一份讲义大纲，最多 5 个小节。只输出一个 JSON 字符串数组，不要任何解释。\n\n资料：\n" + context,
+                        { piece: String =>
+                            let dp = JsonObject()
+                            dp.put("text", JsonString(piece))
+                            dp.put("stage", JsonString("outline"))
+                            log(sidL, tidL, "assistant/delta", dp)
+                        }
                     )
                     outline = quotedStrings(outlineText)
                 } catch (e: Exception) {
@@ -674,10 +666,18 @@ public class Agent {
                     idx = idx + 1
                     log(sessionId, turnId, "step/start", stepPayload(2 + idx, "write_section"))
                     var text = ""
+                    let secName = section
                     try {
-                        text = client.chat(
+                        text = client.chatStream(
                             "你是教培内容作者。只能依据给定资料写作，每个论断后用 [编号] 标注出处，不要编造资料之外的内容。输出 Markdown。",
-                            "依据下面的资料，撰写《" + topic + "》讲义的第 " + idx.toString() + " 节：「" + section + "」。\n\n资料：\n" + context
+                            "依据下面的资料，撰写《" + topic + "》讲义的第 " + idx.toString() + " 节：「" + secName + "」。\n\n资料：\n" + context,
+                            { piece: String =>
+                                let dp = JsonObject()
+                                dp.put("text", JsonString(piece))
+                                dp.put("stage", JsonString("section"))
+                                dp.put("label", JsonString(secName))
+                                log(sidL, tidL, "assistant/delta", dp)
+                            }
                         )
                     } catch (e: Exception) {
                         text = "（本节生成失败：" + e.message + "）"
@@ -760,6 +760,8 @@ public class Agent {
             sessionId = sessions.newId()
         }
         let turnId = sessions.newTurnId()
+        let sidQ = sessionId
+        let tidQ = turnId
         log(sessionId, turnId, "turn/start", kindPayload("quiz"))
         let up = JsonObject()
         up.put("text", JsonString("生成练习：" + topic))
@@ -789,9 +791,15 @@ public class Agent {
                 log(sessionId, turnId, "step/start", stepPayload(2, "quiz_create"))
                 var text = ""
                 try {
-                    text = client.chat(
+                    text = client.chatStream(
                         "你是教培测评设计者。只能依据给定资料出题，题目必须可溯源，每题后标注 [编号] 出处。输出 Markdown，包含题干、答案与解析三部分。",
-                        "依据下面的资料，为《" + topic + "》出 " + count.toString() + " 道分层练习题。\n\n资料：\n" + context
+                        "依据下面的资料，为《" + topic + "》出 " + count.toString() + " 道分层练习题。\n\n资料：\n" + context,
+                        { piece: String =>
+                            let dp = JsonObject()
+                            dp.put("text", JsonString(piece))
+                            dp.put("stage", JsonString("quiz"))
+                            log(sidQ, tidQ, "assistant/delta", dp)
+                        }
                     )
                 } catch (e: Exception) {
                     log(sessionId, turnId, "turn/end", endPayload(false, e.message))

@@ -341,7 +341,9 @@ func readSse(input: InputStream): String {
 
 func readSse(input: InputStream, onDelta: (String) -> Unit): String {
     let out = StringBuilder()
-    let raw = StringBuilder()
+    // 整包字节先攒着：以前是每读一段就 String.fromUtf8(一段)，
+    // 一旦某个汉字被切在两次 read 中间就直接抛 Invalid utf8。
+    let raw = ArrayList<UInt8>()
     let buf = Array<UInt8>(4096, repeat: 0)
     var pending = ArrayList<UInt8>()
     while (true) {
@@ -349,7 +351,11 @@ func readSse(input: InputStream, onDelta: (String) -> Unit): String {
         if (n <= 0) {
             break
         }
-        raw.append(String.fromUtf8(buf[0..n]))
+        var ri = 0
+        while (ri < n) {
+            raw.add(buf[ri])
+            ri = ri + 1
+        }
         var i = 0
         while (i < n) {
             if (buf[i] == 10) {
@@ -369,7 +375,7 @@ func readSse(input: InputStream, onDelta: (String) -> Unit): String {
     }
     // 服务端忽略了 stream 参数，直接回了完整 JSON
     try {
-        let v = JsonValue.fromStr(trimStr(raw.toString()))
+        let v = JsonValue.fromStr(trimStr(String.fromUtf8(raw.toArray())))
         var content = pickStr(v, ["choices", "0", "message", "content"])
         if (content.size == 0) {
             content = pickStr(v, ["choices", "0", "delta", "content"])
