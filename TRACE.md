@@ -1918,3 +1918,71 @@ web-fetch / skill / graph / study-api / ui-check / smoke / package-smoke 全过�
 - `Start-Process` 起的子进程若**没有重定向输出**，会继承调用者的输出管道；脚本跑完后上层 `pwsh -File ... | Select-Object`
   一直等不到 EOF，看起来像"脚本卡死"。给 `-RedirectStandardOutput/-RedirectStandardError` 就好。
 - 打包/覆盖内核产物前先确认没有内核在跑（Windows 会锁住 exe，`scripts/package.ps1` 只会报 "another process"）。
+
+## 第二十九轮（2026-10-14）：lumin 独立建仓 —— 目录组织 + 开源化改写 + 推上 GitHub
+
+**用户需求（原话摘要）**："还没建仓，我想先把这个目录先组织一下，然后上传 github"。
+
+### 一、动手前先查的两件事（都过了）
+
+- **历史里没有密钥**：`git log --all -- lumin/.env.local` 空（从未提交）；按 Tavily key 前缀与 mimo token 全文搜
+  `git log --all -p -S` 也是空。`lumin/.gitignore` 第 2/3/7 行分别挡住 `target/`、`dist/`、`.env.local`，`git check-ignore -v` 逐个确认过。
+- **脚本真的独立了**：新写的 `lumin/scripts/env.ps1` 不再 dot-source 父仓的 env.ps1，
+  自己按 `CANGJIE_SDK_ROOT` → `SDK_ROOT` → `D:\cangjie-sdk\1.2.0` 找 SDK。
+  `pwsh -File lumin\scripts\test.ps1` → **62/62 全绿**（`cjpm test`）。
+
+### 二、目录组织（新增/改动）
+
+| 文件 | 说明 |
+| --- | --- |
+| `lumin/LICENSE` | MIT（与 Pi 同许可；**没有复制 Pi 的代码**，只是照架构重写，README 里写明） |
+| `lumin/.env.example` | 9 个键的示例（`LUMIN_BASE/KEY/MODEL/WORKSPACE/DATA/MODE/TAVILY_KEY/TAVILY_RESULTS/ALLOW_EXEC`）+ 优先级说明 |
+| `lumin/.gitattributes` | `* text=auto eol=lf`，消掉 CRLF 噪声；dll/exe 标 binary |
+| `lumin/.gitignore` | 补 `config/`（模型跑 mcporter 会往工作区写 `config/mcporter.json`，之前撞过一次）、`.vscode/`、`*.swp` 等 |
+| `lumin/AGENTS.md` | 给未来 agent：硬约束（分层不许破坏 / 对齐 Pi 的地方别顺手改 / 密钥不进仓）、改动流程、**仓颉语言坑清单** |
+| `lumin/CHANGELOG.md` | Keep-a-Changelog 格式；`Unreleased` + `0.1.0`（把已实现的能力按 Added/Known Issues 列全） |
+| `lumin/docs/roadmap.md` | 已知差距按优先级分四组：A 会挡路的（工作区外 skills 读不到、命令审批只到首词）/ B 与 Pi 的真差距（MCP 最该补）/ C 体验细节 / D 明确不做 |
+| `lumin/docs/merge-into-itn.md` | 从 README 里拆出来的"合并进 ITN-Desktop"清单（分层照搬 / 接模型 / 接事件 / 别丢的三样 / 验证顺序） |
+| `lumin/scripts/verify-clean.ps1` | **新写的**干净环境自检（原文在 `target/verify-clean.ps1`，被当产物清掉了）：把 PATH 收窄到"系统 + 绿色包目录"再跑 demo，通过打印 `CLEAN-ENV-OK`；绿色包被占用时自动跳过重新打包（见第六节） |
+| `lumin/samples/demo-workspace/` | 自包含示例工作区：README.md、src/app.js（带一个 TODO，方便试 edit）、notes/学习计划.md、`.pi/skills/weekly-summary/SKILL.md`（示例 skill，带真实可用的 frontmatter） |
+
+### 三、README 面向 GitHub 重写
+
+原来的 README 是"给 ITN 内部接手的人"看的（含 `D:\` 绝对路径、ITN 合并清单）。新版 12 节：
+
+1 这是什么/不是什么（**明说不是 Pi 源码移植**、不是给终端用户的成品、不做子 agent 与 plan mode —— 并给出 Pi 的原话依据）→
+2 与 Pi 对齐一览表 → 3 快速开始（离线 demo → 连真模型 → 打绿色包）→ 4 命令行（启动参数表 + 12 个斜杠命令表）→
+5 权限与审批（三档 + 四答 y/s/a/n + 为什么审批要进会话）→ 6 工具与工具集四档 → 7 Skills（扫描路径 + `disable-model-invocation`）→
+8 Tavily 配置 → 9 测试（62 例逐条列出**覆盖了什么**，不是只写"全绿"）→ 10 目录结构（每个 .cj 一句话职责）→
+11 已知差距（链 roadmap）→ 12 License。
+
+改写时顺手改掉两处错：旧 README 写"51 例"（实际 62）、`说明.txt` 写"69 个用例"（实际 62）和"对话里 :mode 换模式"（实际是 `/mode`）。
+
+### 四、发布链路
+
+- `gh repo create SuanXiangJi/lumin --private` 建仓 → **https://github.com/SuanXiangJi/lumin**
+  （**先建成 private**，要公开一条命令：`gh repo edit SuanXiangJi/lumin --visibility public --accept-visibility-change-consequences`）。
+- 导出方式用 **`git subtree split --prefix=lumin`**，不 `filter-repo`、不手工拷：
+  独立仓 6 个提交、根目录就是 lumin 的内容，历史对得上；ITN-Desktop 这边的目录布局一个字没动。
+- 新脚本 `scripts/publish-lumin.ps1`（**父仓这边**）：检查 `lumin/` 无未提交改动 → 重建 `lumin-standalone` 分支 →
+  push 到独立仓 `main`；直连失败时自动在 127.0.0.1 的常见代理端口里找一个重试（这台机器上是 7897）。
+  实测：首次推送 6 个提交成功，二次运行输出 `Everything up-to-date`。
+- `scripts/README.md` 补了脚本清单表。
+
+### 五、验证
+
+- `pwsh -File lumin\scripts\test.ps1` → **62/62**（TOTAL 62 / PASSED 62 / FAILED 0）。
+- `pwsh -File lumin\scripts\verify-clean.ps1` → `CLEAN-ENV-OK`。
+- `git subtree split` 后 `git ls-tree -r --name-only lumin-standalone` 逐个核对：**没有 `.env.local`、没有 `target/`、没有 `dist/`**。
+- `gh api repos/SuanXiangJi/lumin/git/trees/main?recursive=1` 回读远端树，与本地 split 分支一致。
+- 两次提交：`63a91cc`（建仓准备）、`73b944e`（verify-clean 归位 + 打包文案）。
+
+### 六、踩到的坑
+
+- **`git push` 直连 github.com 443 超时（21s）但 `gh` 和 `Invoke-WebRequest` 都 200** —— 本机有 Clash 类代理在
+  `127.0.0.1:7897`，git 没走它。所以 `publish-lumin.ps1` 里加了"直连失败 → 探本机常见代理端口 → 带 `-c http.proxy` 重试"。
+- **绿色包 exe 被占用就打不了包**：当时那份 `dist\lumin-demo\lumin-demo.exe` 还开着（21:15 起，
+  `bin\lumin.cmd` 起的 chat 会话）。`verify-clean.ps1` 因此先探一次文件锁：锁着就跳过重新打包、
+  直接对现有产物做干净环境自检，并打一行 `[注意]` 说明 —— **不杀用户的会话**。
+- `git subtree split` 只捡"碰过该路径"的提交：`lumin/` 目录是改名那一次才出现的（更早叫 pi-cj），
+  所以独立仓历史从改名那个提交开始（6 个）。要更早的历史得换成 `filter-repo --path` 重写，这次不需要。
