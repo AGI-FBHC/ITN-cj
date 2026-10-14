@@ -375,7 +375,7 @@ async function saveProfile(patch) {
   state.profile = d || state.profile;
   return state.profile;
 }
-async function loadReport() { state.report = (await api("/api/study/report", {})) || {}; }
+async function loadReport() { state.report = (await api("/api/study/report", { kbId: state.kb || "" })) || {}; }
 async function loadArtifacts() {
   try { state.artifacts = (await api("/api/artifacts/list", {})).artifacts || []; }
   catch (e) { state.artifacts = []; }
@@ -1996,6 +1996,190 @@ function openRedo(rec) {
   dlg.scrollIntoView({ block: "start" });
 }
 
+
+/* ============================================================
+   我的成长 · 六维能力画像（网页版 Report 那张雷达图搬过来的）
+   ------------------------------------------------------------
+   两条线：**自评**（设置里填的）与**实测参考**（真实信号推的）。
+   实测参考每一格都把依据写在表里——网页版靠的是手工维护的"章节→维度权重表"，
+   桌面版的章节来自用户自己的资料、没有那张表，所以改成"每维配一个真拿得到的信号"。
+   数据不够就画空心点并在表里写"数据不够"，不拿噪声当分数。
+   ============================================================ */
+function abilityCard() {
+  const r = state.report || {};
+  const rows = Array.isArray(r.abilities) ? r.abilities : [];
+  const card = cardOf({
+    title: "六维能力",
+    tag: r.weakest ? "该补：" + r.weakest : "",
+    tagCls: r.weakest ? "warn" : "",
+    actions: [btn("去画像校准", "sm", () => go("calibrate")), btn("去更新自评", "sm ghost", () => go("settings", "general"))],
+  });
+  if (!rows.length) {
+    card.appendChild(emptyState({
+      inline: true,
+      art: "chart",
+      title: "还没有可算的能力画像",
+      text: "先在设置里填一行自评，或者去「学 · 练」读几片资料、做几道题，这里就会长出雷达图。",
+      actions: [btn("去填写自评", "primary", () => go("settings", "general")), btn("去学 · 练", "", () => go("learn"))],
+    }));
+    return card;
+  }
+
+  const body = el("div", "ability-body");
+  const cv = el("canvas", "ability-radar");
+  body.appendChild(cv);
+  const side = el("div", "ability-side");
+  const legend = el("div", "ability-legend");
+  legend.innerHTML = '<span class="lg self">自评</span><span class="lg ev">实测参考</span><span class="muted sm">空心点 = 这一维数据还不够</span>';
+  side.appendChild(legend);
+  const table = el("div", "ability-table");
+  for (const row of rows) {
+    const line = el("div", "ability-row");
+    const head = el("div", "row");
+    head.appendChild(el("span", "grow ability-key", row.key));
+    head.appendChild(el("span", "ability-num", row.self >= 0 ? "自评 " + row.self : "自评 —"));
+    head.appendChild(el("span", "ability-num ev", row.evidence >= 0 ? "参考 " + row.evidence : "参考 —"));
+    line.appendChild(head);
+    line.appendChild(el("div", "muted sm ability-basis", row.basis || ""));
+    table.appendChild(line);
+  }
+  side.appendChild(table);
+  body.appendChild(side);
+  card.appendChild(body);
+  side.appendChild(suggestionBox(r.weakest, rows));
+
+  // 画完再画一次：字体与颜色要等布局稳定
+  setTimeout(() => drawRadar(cv, rows), 0);
+  return card;
+}
+
+/** 最该补的一维 → 一句人话 + 一个能直接点走的动作。 */
+const ABILITY_ADVICE = {
+  "概念理解": { text: "资料还有没读完的部分，先把剩下的切片看掉，概念才连得起来。", act: "去读资料", go: () => go("learn") },
+  "逻辑推理": { text: "答题正确率是这一维的主要依据：去做一组练习，错的会自动进错题本。", act: "出题练习", go: () => go("learn") },
+  "工程实践": { text: "走完一章的「讲 → 练 → 记 → 完成」，这一维才会动。", act: "去学一章", go: () => go("learn") },
+  "问题诊断": { text: "错题重做一次就能把这一维推上去，比再读一遍资料管用。", act: "去错题本", go: () => go("wrong") },
+  "系统设计": { text: "把学过的章节沉淀成讲义或练习册，产物数就是这一维的依据。", act: "生成讲义", go: () => go("learn") },
+  "学习迁移": { text: "写下一条自己的例子或用法，笔记是这一维的依据。", act: "写一条笔记", go: () => openNoteEditor(null, state.kb, state.chapter || "") },
+};
+
+function suggestionBox(weakest, rows) {
+  const box = el("div", "ability-advice");
+  if (!weakest) {
+    box.appendChild(el("div", "ability-advice-title", "数据还不足以下结论"));
+    box.appendChild(el("div", "muted sm", "读几片、做几题之后，这里会指出最该补的那一维。"));
+    return box;
+  }
+  const row = rows.filter((x) => x.key === weakest)[0] || { key: weakest };
+  const adv = ABILITY_ADVICE[weakest] || { text: "这一维的实测参考最低，先从这里补。", act: "去学 · 练", go: () => go("learn") };
+  box.appendChild(el("div", "ability-advice-title", "先补这一维：" + row.key));
+  box.appendChild(el("div", "muted sm", adv.text));
+  if (row.basis) box.appendChild(el("div", "muted sm", "依据：" + row.basis));
+  box.appendChild(btn(adv.act, "sm primary", adv.go));
+  return box;
+}
+
+/** 六维雷达：静态图（不做动画，减少动态的人也不会看到跳变）。 */
+function drawRadar(canvas, rows) {
+  const css = getComputedStyle(document.documentElement);
+  const ink = (css.getPropertyValue("--ink-2") || "#3a4640").trim();
+  const muted = (css.getPropertyValue("--muted") || "#6c7a72").trim();
+  const line = (css.getPropertyValue("--line") || "#e5e9e6").trim();
+  const brand = (css.getPropertyValue("--brand") || "#2f7053").trim();
+  const amber = (css.getPropertyValue("--amber") || "#9a6a1c").trim();
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = 380;
+  const h = 300;
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = "100%";
+  canvas.style.maxWidth = w + "px";
+  canvas.style.height = h + "px";
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const cx = w / 2;
+  const cy = h / 2 + 6;
+  const R = Math.min(w, h) / 2 - 46;
+  const n = rows.length;
+  const pt = (i, v) => {
+    const ang = -Math.PI / 2 + (i / n) * Math.PI * 2;
+    const r = (R * Math.max(0, Math.min(100, v))) / 100;
+    return [cx + Math.cos(ang) * r, cy + Math.sin(ang) * r];
+  };
+  // 网格：四圈 + 六条轴
+  ctx.strokeStyle = line;
+  ctx.lineWidth = 1;
+  for (let ring = 1; ring <= 4; ring += 1) {
+    ctx.beginPath();
+    for (let i = 0; i < n; i += 1) {
+      const [x, y] = pt(i, (ring * 100) / 4);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  for (let i = 0; i < n; i += 1) {
+    const [x, y] = pt(i, 100);
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // 两条数据线
+  const series = [
+    { key: "self", color: brand, fill: true },
+    { key: "evidence", color: amber, fill: false },
+  ];
+  for (const se of series) {
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < n; i += 1) {
+      const v = Number(rows[i][se.key]);
+      const [x, y] = pt(i, v >= 0 ? v : 0);
+      if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
+    }
+    ctx.closePath();
+    ctx.strokeStyle = se.color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    if (se.fill) {
+      ctx.save();
+      ctx.globalAlpha = 0.16;
+      ctx.fillStyle = se.color;
+      ctx.fill();
+      ctx.restore();
+    }
+    // 顶点：数据不够的画空心点
+    for (let i = 0; i < n; i += 1) {
+      const v = Number(rows[i][se.key]);
+      const [x, y] = pt(i, v >= 0 ? v : 0);
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fillStyle = v >= 0 ? se.color : "transparent";
+      ctx.strokeStyle = se.color;
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  // 维度名 + 25/50/75/100 刻度
+  ctx.fillStyle = muted;
+  ctx.font = "11px -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif";
+  ctx.textAlign = "center";
+  for (let i = 0; i < n; i += 1) {
+    const ang = -Math.PI / 2 + (i / n) * Math.PI * 2;
+    const x = cx + Math.cos(ang) * (R + 20);
+    const y = cy + Math.sin(ang) * (R + 20);
+    ctx.fillText(String(rows[i].key).slice(0, 4), x, y + 3);
+  }
+  ctx.fillStyle = ink;
+  ctx.textAlign = "left";
+  ctx.fillText("100", cx + 3, cy - R + 10);
+}
+
 /* ---------- 我的成长 ---------- */
 
 PAGES.report = {
@@ -2021,33 +2205,7 @@ PAGES.report = {
       v.appendChild(nudge);
     }
 
-    const scores = (r.profile && r.profile.selfScores) ? r.profile.selfScores : {};
-    const keys = Object.keys(scores);
-    const ability = cardOf({
-      title: "自评能力",
-      sub: "由你在设置里维护",
-      actions: [btn("去更新", "sm ghost", () => go("settings", "general"))],
-    });
-    if (!keys.length) {
-      ability.appendChild(emptyState({
-        inline: true,
-        art: "chart",
-        title: "还没有填写自评能力",
-        text: "填 0-100 的自评分，成长页就能和做题正确率对照着看。",
-        actions: [btn("去填写", "primary", () => go("settings", "general"))],
-      }));
-    } else {
-      for (const k of keys) {
-        const val = Number(scores[k]) || 0;
-        const line = el("div", "score-line");
-        line.innerHTML = '<div class="row"><span class="grow">' + esc(k) + '</span><span class="muted sm">' + val + "</span></div>";
-        const bar = el("div", "bar");
-        bar.innerHTML = '<i style="width:' + Math.max(0, Math.min(100, val)) + '%"></i>';
-        line.appendChild(bar);
-        ability.appendChild(line);
-      }
-    }
-    v.appendChild(ability);
+    v.appendChild(abilityCard());
 
     const recent = cardOf({
       title: "错题回顾",
@@ -2526,6 +2684,10 @@ function applyTheme(theme) {
   else root.setAttribute("data-theme", t);
   state.dark = t === "dark" ||
     (t === "system" && !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches));
+  // 成长页那张雷达图的颜色是从 CSS 变量读的：主题一换就重画一次
+  const cv = document.querySelector(".ability-radar");
+  const rows = state.report && state.report.abilities;
+  if (cv && Array.isArray(rows)) setTimeout(() => drawRadar(cv, rows), 0);
 }
 
 function toggleTheme() {

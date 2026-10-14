@@ -310,6 +310,121 @@ public func attachReviewState(db: Db, o: JsonObject, id: String, nowMs: Int64): 
     }
 }
 
+/* ==================== 六维能力：自评 + 实测参考 ====================
+ * 网页版那张雷达图是"六维 = 画像基线 + 学习证据"，但它的证据来自一张手工维护的
+ * 章节→维度权重表（CHAPTER_ABILITY_WEIGHTS）。桌面版的章节来自**用户自己的资料**，
+ * 不存在那张表，所以这里换成"每种维度配一个能真实拿到的信号"，并把依据一并回给界面——
+ * 界面必须写清"这一格是怎么算出来的"，否则就是编。
+ *
+ * 规矩继承「不够就不给」：练习少于 4 题就不给"逻辑推理"的参考分（拿噪声当依据更糟）。
+ */
+public class AbilityEvidence {
+    public var key: String = ""
+    public var evidence: Int64 = -1     // -1 = 数据不够，不给参考
+    public var basis: String = ""
+}
+
+func clampScore(v: Int64): Int64 {
+    if (v < 0) { return 0 }
+    if (v > 100) { return 100 }
+    return v
+}
+
+/** 六维的实测参考：每一维都配一个真实信号，并说明依据。 */
+public func abilityEvidence(dataDir: String, kbId: String, quizTotal: Int64, quizRight: Int64,
+    readChunks: Int64, completedChapters: Int64, noteCount: Int64, artifactCount: Int64): ArrayList<AbilityEvidence> {
+    let out = ArrayList<AbilityEvidence>()
+    let idx = loadIndexCached(dataDir, kbId)
+    var totalChunks: Int64 = Int64(idx.chunks.size)
+    var chapterCount: Int64 = 0
+    let seen = HashSet<String>()
+    for (c in idx.chunks) {
+        let name = chapterOf(c.headingPath, c.docTitle)
+        if (!seen.contains(name)) {
+            seen.add(name)
+        }
+    }
+    chapterCount = Int64(seen.size)
+
+    let a = AbilityEvidence()
+    a.key = "概念理解"
+    if (totalChunks > 0) {
+        a.evidence = clampScore(readChunks * 100 / totalChunks)
+        a.basis = "已读切片 " + readChunks.toString() + "/" + totalChunks.toString()
+    } else {
+        a.basis = "还没有索引，读得怎么样无从判断"
+    }
+    out.add(a)
+
+    let b = AbilityEvidence()
+    b.key = "逻辑推理"
+    if (quizTotal >= 4) {
+        b.evidence = clampScore(quizRight * 100 / quizTotal)
+        b.basis = "练习正确率（" + quizTotal.toString() + " 题）"
+    } else {
+        b.basis = "练习不足 4 题，先不给参考"
+    }
+    out.add(b)
+
+    let c2 = AbilityEvidence()
+    c2.key = "工程实践"
+    if (chapterCount > 0) {
+        c2.evidence = clampScore(completedChapters * 100 / chapterCount)
+        c2.basis = "走完「讲练记」的章节 " + completedChapters.toString() + "/" + chapterCount.toString()
+    } else {
+        c2.basis = "还没有章节"
+    }
+    out.add(c2)
+
+    let d = AbilityEvidence()
+    d.key = "问题诊断"
+    // 用错题的"重做后就掌握"来衡量：答错过的题里，有多少已经靠重做推过去了
+    var wrongTotal: Int64 = 0
+    var rescued: Int64 = 0
+    let st = StudyStore(dataDir).load()
+    let db = DbHub.open(dataDir)
+    for (r in st.quizRecords) {
+        if (r.correct) {
+            continue
+        }
+        wrongTotal = wrongTotal + 1
+        let parts = db.getKv("meta", "quiz-review:" + r.id, "").split("|")
+        let rev = kvInt(parts, 0)
+        let mas = kvInt(parts, 2) == 1
+        if (mas || rev >= 2) {
+            rescued = rescued + 1
+        }
+    }
+    if (wrongTotal >= 2) {
+        d.evidence = clampScore(rescued * 100 / wrongTotal)
+        d.basis = "错题里靠重做找回 " + rescued.toString() + "/" + wrongTotal.toString()
+    } else {
+        d.basis = "错题样本太少，先不给参考"
+    }
+    out.add(d)
+
+    let e = AbilityEvidence()
+    e.key = "系统设计"
+    if (chapterCount > 0) {
+        e.evidence = clampScore(artifactCount * 100 / chapterCount)
+        e.basis = "沉淀成产物 " + artifactCount.toString() + " 份 / 章节 " + chapterCount.toString() + " 章"
+    } else {
+        e.basis = "还没有章节"
+    }
+    out.add(e)
+
+    let f = AbilityEvidence()
+    f.key = "学习迁移"
+    if (chapterCount > 0) {
+        f.evidence = clampScore(noteCount * 100 / chapterCount)
+        f.basis = "留下笔记 " + noteCount.toString() + " 条 / 章节 " + chapterCount.toString() + " 章"
+    } else {
+        f.basis = "还没有章节"
+    }
+    out.add(f)
+    return out
+}
+
 // ==================== 本地存储 ====================
 // 单人本地使用，所有学习数据放一个文件，够用且好备份。
 

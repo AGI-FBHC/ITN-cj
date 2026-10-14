@@ -1549,6 +1549,62 @@ public class Api {
             o.put("quizWrong", JsonInt(wrong))
         o.put("wrongDue", JsonInt(dueCount))
             o.put("profile", d.profile.toJson())
+
+            // 六维：自评（用户填的）+ 实测参考（真实信号推的）。界面画雷达图与写依据都用这一段。
+            var kbId = ""
+            match (bodyJson(ctx)) {
+                case Some(b) => kbId = strOf(b, "kbId")
+                case None => ()
+            }
+            // 闭包里不能改外层 var，所以先收名字再数
+            let artNames = ArrayList<String>()
+            let artDir = store.dataDir + Path.Separator + "artifacts"
+            if (exists(artDir)) {
+                try {
+                    Directory.walk(Path(artDir), { fi: FileInfo =>
+                        if (!fi.isDirectory() && hasSuffix(fi.name, ".md")) {
+                            artNames.add(fi.name)
+                        }
+                        false
+                    })
+                } catch (e: Exception) {
+                    ()
+                }
+            }
+            let artifactCount = Int64(artNames.size)
+            let abil = JsonArray()
+            var weakestKey = ""
+            var weakestGap: Int64 = -1
+            for (ev in abilityEvidence(store.dataDir, kbId, d.quizRecords.size, right,
+                    Int64(d.progress.readChunks.size), Int64(d.progress.completedChapters.size),
+                    Int64(d.notes.size), artifactCount)) {
+                let one = JsonObject()
+                one.put("key", JsonString(ev.key))
+                // scoreOf 没填就是 0；这里用 -1 表示"没填"，界面才不会把 0 分当成"很差"
+                let selfRaw = d.profile.scoreOf(ev.key)
+                var selfVal: Int64 = selfRaw
+                if (selfRaw <= 0) {
+                    selfVal = -1
+                }
+                one.put("self", JsonInt(selfVal))
+                one.put("evidence", JsonInt(ev.evidence))
+                one.put("basis", JsonString(ev.basis))
+                abil.add(one)
+                // 最该补的一维：自评与实测都在、且差距最大（或实测最低）
+                if (ev.evidence >= 0) {
+                    var gap = ev.evidence
+                    if (selfVal >= 0) {
+                        gap = ev.evidence - selfVal
+                    }
+                    if (weakestGap < 0 || gap < weakestGap) {
+                        weakestGap = gap
+                        weakestKey = ev.key
+                    }
+                }
+            }
+            o.put("abilities", abil)
+            o.put("weakest", JsonString(weakestKey))
+            o.put("artifactCount", JsonInt(artifactCount))
             ok(ctx, o)
             return
         }

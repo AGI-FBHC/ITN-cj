@@ -1343,6 +1343,35 @@ function assert(cond, msg) {
     return '已读 ' + vals[0] + ' / 完成章节 ' + vals[1] + ' / 答题 ' + vals[2] + ' / 正确率 ' + vals[3] + '%';
   });
 
+  await step('我的成长：六维雷达图 + 依据表 + 重点建议（与接口同口径）', async () => {
+    await nav('我的成长');
+    await page.waitForSelector('.ability-radar', { timeout: 20000 });
+    await page.waitForTimeout(900);
+    const drawn = await page.evaluate(() => ({
+      rows: document.querySelectorAll('.ability-row').length,
+      key: Array.from(document.querySelectorAll('.ability-key')).map((e) => e.textContent),
+      basis: Array.from(document.querySelectorAll('.ability-basis')).map((e) => e.textContent.trim()),
+      advice: (document.querySelector('.ability-advice') || {}).innerText || '',
+      cw: (document.querySelector('.ability-radar') || {}).width || 0,
+      hasSelf: !!document.querySelector('.ability-legend .lg.self'),
+      hasEv: !!document.querySelector('.ability-legend .lg.ev'),
+    }));
+    assert(drawn.rows === 6, '六维应各一行，实际 ' + drawn.rows);
+    assert(drawn.cw > 100, '雷达图应真的画出来了（canvas 有像素宽），实际 ' + drawn.cw);
+    assert(drawn.hasSelf && drawn.hasEv, '图例要同时标明"自评"与"实测参考"');
+    assert(drawn.basis.every((x) => x.length > 0), '每一维都要写清依据，实际：' + JSON.stringify(drawn.basis));
+    const api = await page.evaluate(() => fetch('/api/study/report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kbId: 'course' }) }).then((r) => r.json()).then((j) => j.data));
+    assert(api.abilities && api.abilities.length === 6, '接口应回六维，实际 ' + JSON.stringify(api.abilities && api.abilities.length));
+    const apiKeys = api.abilities.map((a) => a.key).join('/');
+    assert(drawn.key.join('/') === apiKeys, '界面与接口的六维顺序应一致：' + drawn.key.join('/') + ' vs ' + apiKeys);
+    assert(api.weakest && drawn.advice.indexOf(api.weakest) >= 0, '重点建议要指向接口给的那一维：' + drawn.advice.replace(/\s+/g, ' ').slice(0, 60));
+    // 数据不足时不给假分数：没练习的维度 evidence 必须是 -1
+    const noData = api.abilities.filter((a) => a.evidence < 0);
+    assert(noData.every((a) => a.basis.length > 0), '没有参考分的维度也要说明原因');
+    await shot('49-六维能力画像');
+    return '六维 ' + drawn.rows + ' 行有依据 · 重点：' + api.weakest;
+  });
+
   await step('侧栏徽标反映真实数量', async () => {
     const badges = await page.$$eval('.nav-item', (els) => els.map((e) => {
       const b = e.querySelector('.nav-badge');
