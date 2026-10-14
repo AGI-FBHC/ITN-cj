@@ -42,7 +42,10 @@ async function startKernel() {
   if (!exe) throw new Error("找不到内核可执行文件，请先运行 scripts/package.ps1");
   const portFile = path.join(os.tmpdir(), "itn-desktop-" + Date.now() + ".port");
   const uiDir = path.join(__dirname, "renderer");
-  const dataDir = path.join(app.getPath("userData"), "data");
+  // 与内核独立运行时的默认目录保持一致。此前用 Electron 的 userData，
+  // 导致同一个软件出现两个数据目录，用户和文档都会对不上。
+  const dataRoot = process.env.LOCALAPPDATA || app.getPath("userData");
+  const dataDir = path.join(dataRoot, "ITN-Desktop");
   fs.mkdirSync(dataDir, { recursive: true });
 
   kernel = spawn(exe, ["--data-dir", dataDir, "--port-file", portFile, "--ui-dir", uiDir], {
