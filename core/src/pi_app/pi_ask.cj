@@ -145,7 +145,11 @@ public class PiAgent {
                 out0.put("message", JsonString("没有可用的对话模型，请先在设置里配置"))
                 return out0
             case Some(cfg) =>
-                return askFull(OpenAiChatProvider(cfg), kbId, question, sessionIdIn, webModeIn, skillIdIn, work)
+                let prov = OpenAiChatProvider(cfg)
+                let sidForAbort = sessionIdIn
+                // 界面按了停止 → provider 在下一个增量处收手（不然一轮长回答"停不下来"）
+                prov.shouldAbort = Some({ => sessionHub().isAborted(sidForAbort) })
+                return askFull(prov, kbId, question, sessionIdIn, webModeIn, skillIdIn, work)
         }
     }
 
@@ -167,6 +171,7 @@ public class PiAgent {
         let turnId = sessions.newTurnId()
         // 事件回调是 lambda：它只能捕获不可变变量（仓颉的规矩），所以这里留一份只读副本
         let sid = sessionId
+        sessionHub().clearAbort(sid)
         let out = JsonObject()
         out.put("sessionId", JsonString(sid))
 
@@ -183,7 +188,6 @@ public class PiAgent {
         let up = JsonObject()
         up.put("text", JsonString(question))
         log("user/message", up)
-        log("step/start", stepPayload(1, "retrieve"))
 
         let cfgSettings = store.load()
 
@@ -297,14 +301,8 @@ public class PiAgent {
         let answerBuf = StringBuilder()
         stream.on({ e: PiEvent =>
             let kind = kindText(e.kind)
-            if (kind == "turn_start") {
-                log("step/start", stepPayload(2, "model"))
-                return
-            }
-            if (kind == "turn_end") {
-                log("step/end", stepPayload(2, "model"))
-                return
-            }
+            // turn 边界 = 一次模型请求，事件流里已经有了（turn_start/turn_end）；
+            // 这里不再额外记"步骤"——这是 agent，步骤由它自己决定，不该由我们编。
             if (kind == "tool_execution_start") {
                 let p = JsonObject()
                 p.put("tool", JsonString(strOf(e.payload, "toolName")))
@@ -342,7 +340,6 @@ public class PiAgent {
 
         let outcome = agent.prompt(question, stream)
         sessionHub().clearRunning(sid)
-        log("step/end", stepPayload(1, "retrieve"))
 
         // 没有流式增量时（例如服务端一次性返回），退回会话里最后一条 assistant 正文
         var answer = answerBuf.toString()
@@ -396,12 +393,10 @@ public class PiAgent {
             cites.add(webCites[wci])
             wci = wci + 1
         }
-        log("step/start", stepPayload(100, "citation_check"))
         let vp = JsonObject()
         vp.put("report", report)
         vp.put("citations", cites)
         log("validation", vp)
-        log("step/end", stepPayload(100, "citation_check"))
 
         let okk = outcome.ok
         log("turn/end", endPayload(okk, outcome.error))

@@ -666,6 +666,51 @@ body.chat-mode .topbar { display: none; }
 /* ============================================================
   画像校准
    ============================================================ */
+/* 会话栏：新建对话的"资料范围"选择（通用 / 各知识库）+ 按资料分组 */
+.rail-new { padding: 2px 8px 6px; display: flex; flex-wrap: wrap; gap: 4px; align-items: baseline; }
+.rail-new-title { flex: 0 0 100%; font-size: calc(12px * var(--fs, 1)); color: var(--muted); margin-bottom: 2px; }
+.rail-new-chip {
+  border: 1px solid var(--line); background: var(--panel); color: var(--ink-2);
+  border-radius: 999px; padding: 2px 9px; font-size: calc(12px * var(--fs, 1)); cursor: pointer;
+}
+.rail-new-chip:hover { border-color: var(--brand-line); color: var(--brand); background: var(--brand-soft); }
+.panel-group-head {
+  display: flex; align-items: center; gap: 6px; width: 100%; text-align: left;
+  border: 0; background: none; color: var(--muted); cursor: pointer;
+  font-size: calc(12px * var(--fs, 1)); padding: 8px 8px 4px;
+}
+.panel-group-head > svg { width: 12px; height: 12px; transition: transform 140ms var(--ease-out); }
+.panel-group-head.collapsed > svg { transform: rotate(-90deg); }
+.panel-group-head > span:first-of-type { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-group-count { color: var(--muted); font-variant-numeric: tabular-nums; }
+.panel-group-head:hover { color: var(--ink-2); }
+
+/* 对话时间线（照 Codex 的形状）：用户的话是一段浅底文本，助手正文是纯文本，工具调用是一行。
+   上一版每轮套一张卡片、每条消息一个气泡 + "我 / 伴学助手"，读起来全是框，已经去掉。 */
+.msg { margin: 0; }
+.msg-user {
+  background: var(--panel-sunk);
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin: 2px 0 10px;
+}
+.msg-user .msg-body { color: var(--ink); }
+.msg-ai { margin: 0 0 10px; }
+.msg-flag {
+  display: inline-block; margin-top: 4px;
+  font-size: calc(12px * var(--fs, 1)); color: var(--amber);
+}
+.tool-rows { margin: 0 0 10px; }
+.tool-detail { display: inline; }
+.tool-detail > summary { cursor: pointer; list-style: none; }
+.tool-detail > summary::-webkit-details-marker { display: none; }
+.tool-args {
+  margin: 6px 0 0; padding: 8px 10px; border-radius: 8px;
+  background: var(--panel-sunk); color: var(--ink-2);
+  font-size: calc(12px * var(--fs, 1)); overflow: auto; max-height: 200px;
+}
+.tool-row.failed .tool-dot { background: var(--danger); }
+
 /* 对话框：模型只用一行小字（不是按钮）；发送按钮跑着时变"停止" */
 .composer-model {
   font-size: calc(12px * var(--fs, 1));

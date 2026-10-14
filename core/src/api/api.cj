@@ -565,6 +565,20 @@ public class Api {
                     var topK: Int64 = 5
                     let reqK = intOf(b, "topK")
                     if (reqK > 0) { topK = reqK }
+                    // id 为空 = 通用：本机所有知识库一起搜（和对话里的通用模式同一套实现）
+                    if (id.size == 0) {
+                        let res = ToolRegistry(store).kbSearch("", query, topK)
+                        if (!res.ok) {
+                            fail(ctx, 400, res.summary)
+                            return
+                        }
+                        let o = JsonObject()
+                        o.put("hits", res.data)
+                        o.put("mode", JsonString("通用"))
+                        o.put("summary", JsonString(res.summary))
+                        ok(ctx, o)
+                        return
+                    }
                     let s = store.load()
                     let idx = loadIndexCached(store.dataDir, id)
                     if (idx.chunks.size == 0) {
@@ -1083,8 +1097,21 @@ public class Api {
         }
 
         if (path == "/api/tools/list" && method == "POST") {
+            let db = DbHub.open(store.dataDir)
             let o = JsonObject()
-            o.put("tools", Agent(store).toolsJson())
+            let arr = Agent(store).toolsJson()
+            // 指定了工作目录才把"本机文件"那几个列出来（与真正发给模型的工具一致）
+            let wd = db.getKv("settings", "agent_work_dir", "")
+            let perm = db.getKv("settings", "agent_perm", "ask")
+            let execOn = db.getKv("settings", "agent_exec", "0") == "1"
+            let wt = workspaceToolList(store.dataDir, wd, execOn, perm)
+            var wi = 0
+            while (wi < wt.size()) {
+                arr.add(wt[wi])
+                wi = wi + 1
+            }
+            o.put("tools", arr)
+            o.put("agentWorkDir", JsonString(wd))
             ok(ctx, o)
             return
         }

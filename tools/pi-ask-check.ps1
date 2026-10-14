@@ -64,6 +64,19 @@ try {
     Check '联网策略也留了痕（web/policy）' ($kinds -contains 'web/policy') ($kinds -join ',')
     Check '引用自检照旧跑（validation）' ($kinds -contains 'validation') ($kinds -join ',')
 
+    Write-Output "== 通用模式：一个请求搜遍本机所有知识库 =="
+    # 再建第二个库，然后 kbId 传空（通用）检索：两边都该有命中，出处的标题带上库名
+    $kb2 = Join-Path $env:TEMP ("itn-pi-kb2-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Force -Path $kb2 | Out-Null
+    [IO.File]::WriteAllText((Join-Path $kb2 "02.md"), "# 第二门课" + [char]10 + [char]10 + "提示词在这里是另一种说法，用来验证跨库检索。" + [char]10, [Text.UTF8Encoding]::new($false))
+    Post '/api/kb/save' @{ id = 't2'; name = '第二门课'; rootDir = $kb2 } | Out-Null
+    Post '/api/kb/build' @{ id = 't2' } | Out-Null
+    $all = Post '/api/kb/search' @{ id = ''; query = '提示词'; topK = 6 }
+    $titles = @($all.data.hits | ForEach-Object { [string]$_.docTitle })
+    Check '通用检索同时命中两个库' ($all.code -eq 0 -and $titles.Count -ge 2 -and (($titles -join '|') -match '自测库') -and (($titles -join '|') -match '第二门课')) (($titles | Select-Object -First 3) -join ' / ')
+    Check '通用检索的出处带上库名（引用才看得出出处）' (($titles -join '|') -match '《') ([string]$all.data.summary)
+    Check '指定某一个库时仍然只搜它' (@((Post '/api/kb/search' @{ id = 't2'; query = '提示词'; topK = 6 }).data.hits).Count -ge 1) 't2 命中 >=1'
+
     Write-Output "== 同题对照：手写链路仍然在 =="
     $r2 = Post '/api/agent/ask' @{ kbId = 't'; question = '提示词是什么？'; web = 'off' }
     Check '旧链路没被这次改动弄坏' ($r2.code -eq 0 -and $r2.data.ok -eq $true) ("answerLen=" + ([string]$r2.data.answer).Length)

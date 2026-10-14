@@ -45,6 +45,13 @@ import itn_desktop_core.pi.deltaToolCallDelta
  *
  * 重试：只在"一个事件都还没推出去"时重试 429/5xx（推过一半再重试会让正文重复）。
  */
+/** 用户按了停止：只在本文件内部用，用来把"读流"这件事干净地掐掉。 */
+class AbortedByUser <: Exception {
+    public init() {
+        super("用户停止")
+    }
+}
+
 public class OpenAiChatProvider <: ChatProvider {
     private let baseUrl: String
     private let apiKey: String
@@ -53,6 +60,14 @@ public class OpenAiChatProvider <: ChatProvider {
     /** 上一次请求耗时（毫秒），给界面显示"模型用了多久"。 */
     public var lastMillis: Int64 = 0
     public var lastFinish: String = ""
+    /**
+     * "要不要停下"的钩子（界面上按了停止就返回 true）。
+     *
+     * 为什么放在 provider 里：pi 的 abort 只在"下一轮请求之前"生效，而一次长回答往往就一轮 ——
+     * 那样停止按钮等于摆设。这里在**流式增量之间**问一句，用户按了就走。
+     * 已经吐出去的正文保留（界面照样能看到），只是不再继续读、也不再开下一轮。
+     */
+    public var shouldAbort: ?() -> Bool = None
 
     public init(cfg: ModelConfig) {
         var base = cfg.baseUrl
@@ -169,9 +184,18 @@ public class OpenAiChatProvider <: ChatProvider {
             }
             stage = "读取响应体"
             readSseChunks(resp.body, { obj: JsonObject =>
+                match (shouldAbort) {
+                    case Some(f) =>
+                        if (f()) {
+                            throw AbortedByUser()
+                        }
+                    case None => ()
+                }
                 state.emitted = state.emitted + 1
                 onChunk(obj)
             })
+            return AttemptResult(true, false, "")
+        } catch (e: AbortedByUser) {
             return AttemptResult(true, false, "")
         } catch (e: Exception) {
             return AttemptResult(false, true, "网络层失败（" + stage + "）：" + e.message)

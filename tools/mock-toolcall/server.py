@@ -1,10 +1,10 @@
-"""会调用工具的假模型（SSE 流式，OpenAI 兼容）：离线验证"lumin 动手 + 审批"。
+"""会调用工具的假模型（SSE 流式，OpenAI 兼容）：离线验证 lumin 的"动态步骤 + 工具 + 审批"。
 
 用法：python server.py [port]
-行为：
-  1) 请求里还没有工具结果 → 回一个原生 tool_call：write({"path": <由提示词里的目标决定>, "content": ...})
-     目标是"工作区内"还是"工作区外"由提示词里的路径决定（测试脚本会写清）。
-  2) 请求里已有工具结果 → 回一段正文收尾。
+行为（看请求里有没有标记）：
+  1) 提问里带 @@TARGET:<相对路径>@@ → 回一个原生 tool_call：write({path, content})；
+  2) 其它提问 → 回一个原生 tool_call：kb_search({query})；
+  3) 请求里已经有工具结果 → 回一段正文收尾（带 [1] 引用，方便验引用自检）。
 """
 import json
 import re
@@ -28,16 +28,20 @@ class Handler(BaseHTTPRequestHandler):
         already = any((m.get("role") == "tool") for m in msgs)
         text_all = json.dumps(msgs, ensure_ascii=False)
         m = re.search(r"@@TARGET:([^@]+)@@", text_all)
-        target = m.group(1).strip() if m else "notes.md"
+        tool = "write" if m else "kb_search"
         if already:
-            chunks = [{"choices": [{"delta": {"content": "写好了"}}]},
+            chunks = [{"choices": [{"delta": {"content": "资料里是这么说的 [1]。"}}]},
                       {"choices": [{"delta": {}, "finish_reason": "stop"}]}]
         else:
-            args = json.dumps({"path": target, "content": "这是 lumin 写进去的内容。"}, ensure_ascii=False)
+            if tool == "write":
+                args = json.dumps({"path": m.group(1).strip(), "content": "这是 lumin 写进去的内容。"}, ensure_ascii=False)
+            else:
+                args = json.dumps({"query": "提示词", "top_k": 3}, ensure_ascii=False)
+            half = len(args) // 2
             chunks = [
                 {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "call_1", "type": "function",
-                              "function": {"name": "write", "arguments": args[: len(args) // 2]}}]}}]},
-                {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": args[len(args) // 2:]}}]}}]},
+                              "function": {"name": tool, "arguments": args[:half]}}]}}]},
+                {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": args[half:]}}]}}]},
                 {"choices": [{"delta": {}, "finish_reason": "tool_calls"}]},
             ]
         body = ""

@@ -17,6 +17,8 @@ public class SessionHub {
     private let lock = Mutex()
     private let steer = HashMap<String, ArrayList<String>>()
     private let running = HashMap<String, Agent>()
+    /** 这一轮用户按过停止：provider 在流式增量之间读它，读到就收手 */
+    private let aborted = HashMap<String, Bool>()
 
     public init() {}
 
@@ -75,6 +77,7 @@ public class SessionHub {
     public func abort(sessionId: String): Bool {
         var hit = false
         lock.lock()
+        aborted[sessionId] = true
         match (running.get(sessionId)) {
             case Some(a) =>
                 a.abort()
@@ -83,6 +86,25 @@ public class SessionHub {
         }
         lock.unlock()
         return hit
+    }
+
+    /** provider 每个流式增量之间问一句"该停了吗"。 */
+    public func isAborted(sessionId: String): Bool {
+        var v = false
+        lock.lock()
+        match (aborted.get(sessionId)) {
+            case Some(b) => v = b
+            case None => ()
+        }
+        lock.unlock()
+        return v
+    }
+
+    /** 新一轮开始时清掉上一次的停止标记。 */
+    public func clearAbort(sessionId: String): Unit {
+        lock.lock()
+        aborted.remove(sessionId)
+        lock.unlock()
     }
 }
 

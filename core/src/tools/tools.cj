@@ -67,10 +67,10 @@ public class ToolRegistry {
     public func kbSearch(kbId: String, query: String, topK: Int64): ToolResult {
         let r = ToolResult()
         r.name = "kb_search"
+        // kbId 为空 = 通用模式：把本机登记的所有知识库都搜一遍，结果合并排序。
+        // 出处的标题会带上库名（《库名》标题），引用里才看得出这句出自哪一份资料。
         if (kbId.size == 0) {
-            r.ok = false
-            r.summary = "未指定知识库"
-            return r
+            return kbSearchAll(query, topK)
         }
         let s = store.load()
         let idx = loadIndexCached(store.dataDir, kbId)
@@ -106,6 +106,91 @@ public class ToolRegistry {
         r.summary = "命中 " + hits.size.toString() + " 个切片（" + mode + "）"
         return r
     }
+    /**
+     * 通用模式：本机所有知识库里一起搜。
+     *
+     * 每个库各取 topK 个候选，再用同一把尺子（分数）合并取前 topK 个 ——
+     * 不同库的分数来自同一套算法（向量余弦或关键词重叠度），可以直接比。
+     */
+    public func kbSearchAll(query: String, topK: Int64): ToolResult {
+        let r = ToolResult()
+        r.name = "kb_search"
+        let s = store.load()
+        let merged = ArrayList<JsonObject>()
+        var mode = "关键词"
+        var searched: Int64 = 0
+        var skipped: Int64 = 0
+        for (kb in s.knowledgeBases) {
+            let idx = loadIndexCached(store.dataDir, kb.id)
+            if (idx.chunks.size == 0) {
+                skipped = skipped + 1
+                continue
+            }
+            searched = searched + 1
+            var hits = ArrayList<SearchHit>()
+            if (s.embedModelId.size > 0) {
+                match (s.findModel(s.embedModelId)) {
+                    case Some(cfg) =>
+                        try {
+                            let qv = LlmClient(cfg).embed([query])
+                            hits = search(idx, qv[0], topK)
+                            mode = "向量"
+                        } catch (e: Exception) {
+                            hits = keywordSearch(idx, query, topK)
+                        }
+                    case None =>
+                        hits = keywordSearch(idx, query, topK)
+                }
+            } else {
+                hits = keywordSearch(idx, query, topK)
+            }
+            let kbName = if (kb.name.size > 0) { kb.name } else { kb.id }
+            for (h in hits) {
+                let o = hitJson(h.chunk, h.score)
+                o.put("kbId", JsonString(kb.id))
+                o.put("kbName", JsonString(kbName))
+                o.put("docTitle", JsonString("《" + kbName + "》" + h.chunk.docTitle))
+                merged.add(o)
+            }
+        }
+        if (searched == 0) {
+            r.ok = false
+            r.summary = "本机还没有建过索引的知识库"
+            return r
+        }
+        // 按分数从大到小取前 topK（选择排序，量级很小）
+        let n = merged.size
+        let k = if (topK < n) { topK } else { n }
+        let arr = JsonArray()
+        var taken: Int64 = 0
+        while (taken < k) {
+            var best = -1
+            var bestScore = -1.0e308
+            var i = 0
+            while (i < n) {
+                let sc = floatValue(match (merged[i].get("score")) { case Some(v) => v; case None => JsonNull() })
+                if (sc > bestScore) {
+                    bestScore = sc
+                    best = i
+                }
+                i = i + 1
+            }
+            if (best < 0) {
+                break
+            }
+            arr.add(merged[best])
+            merged[best] = JsonObject()
+            taken = taken + 1
+        }
+        r.data = arr
+        var extra = ""
+        if (skipped > 0) {
+            extra = "，" + skipped.toString() + " 个库还没有索引"
+        }
+        r.summary = "在 " + searched.toString() + " 个知识库里命中 " + taken.toString() + " 个切片（" + mode + "）" + extra
+        return r
+    }
+
     /** 工具：把产物写到本地文件。 */
     public func saveArtifact(name: String, content: String): ToolResult {
         let r = ToolResult()

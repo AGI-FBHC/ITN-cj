@@ -206,6 +206,14 @@ fs.writeFileSync(singleFile, [
   children.push(mockTool);
   await sleep(600);
   const mockToolBase = 'http://127.0.0.1:' + mockToolPort + '/v1';
+  // 第三个 mock：故意慢（每片 500ms）——"停止"这类步骤必须真的跑在半路上才有意义
+  const mockSlowPort = await freePort();
+  const mockSlow = spawn('python', [path.join(__dirname, 'mock-openai', 'server.py'), String(mockSlowPort)],
+    { cwd: REPO, windowsHide: true, stdio: 'ignore',
+      env: Object.assign({}, process.env, { ITN_MOCK_CHUNK_DELAY_MS: '500' }) });
+  children.push(mockSlow);
+  await sleep(600);
+  const mockSlowBase = 'http://127.0.0.1:' + mockSlowPort + '/v1';
   await sleep(600); // 给 python mock 一点启动时间
 
   // 内核日志落盘：失败时没有日志就只能靠猜（本轮就吃过这个亏）
@@ -689,8 +697,10 @@ fs.writeFileSync(singleFile, [
     return '会话栏 + 对话框 + 输入区';
   });
 
-  await step('工具清单能展开（Agent 的本地工具）', async () => {
-    await page.locator('.chat-head button', { hasText: '工具' }).click();
+  await step('工具与技能：从 ＋ 菜单打开，按用途分组（顶栏已经去掉）', async () => {
+    await page.locator('.composer-row .composer-icon').first().click();
+    await page.waitForSelector('.cm-actions .composer-menu-item', { timeout: 8000 });
+    await page.locator('.cm-actions .composer-menu-item', { hasText: '工具与技能' }).click();
     await page.waitForSelector('#tool-sheet:not([hidden]) .item', { timeout: 10000 });
     const names = await page.$$eval('#tool-sheet .item .item-title', (els) => els.map((e) => e.textContent.trim()));
     assert(names.length >= 8, '工具应至少 8 个（含联网搜索），实际 ' + names.length);
@@ -698,12 +708,19 @@ fs.writeFileSync(singleFile, [
     // 默认没配 Tavily：这个工具应被标成"需先配置"，而不是假装能用
     const needCfg = await page.locator('#tool-sheet .item', { hasText: '联网搜索' }).innerText();
     assert(needCfg.indexOf('需先配置') >= 0, '没配密钥时联网搜索应标"需先配置"，实际：' + needCfg.replace(/\s+/g, ' '));
+    // 按用途分组：知识库 / 联网 / 笔记与产物 …
+    const groups = await page.$$eval('#tool-sheet .panel-group-title', (els) => els.map((e) => e.textContent.trim()));
+    assert(groups.indexOf('知识库') >= 0 && groups.indexOf('联网') >= 0, '工具应按用途分组，实际 ' + groups.join('/'));
+    assert(groups.indexOf('本机文件') < 0, '没指定工作目录时不该列"本机文件"那组，实际 ' + groups.join('/'));
     await shot('12-工具清单');
-    await page.locator('.chat-head button', { hasText: '工具' }).click();
-    return names.length + ' 个工具';
+    await page.locator('#tool-sheet .card-head button').click();
+    return names.length + ' 个工具 · 分组 ' + groups.join('/');
   });
 
-  await step('提问后能就资料作答并给出出处', async () => {
+  await step('提问后能就资料作答并给出出处（工具由模型自己决定：它先调了检索）', async () => {
+    // 这段对话走 lumin：要不要检索是模型自己决定的，所以这里必须给它一个"会真的发 tool_call"的模型
+    await page.evaluate((b) => fetch('/api/models/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 'tc', name: '会调工具的模型', baseUrl: b, apiKey: 'k', model: 'mock-tool' }) }).then((r) => r.json()), mockToolBase);
+    await page.evaluate(() => fetch('/api/models/roles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatModelId: 'tc', embedModelId: 'mock', chunkModelId: 'mock' }) }).then((r) => r.json()));
     await page.fill('#chat-input', '提示词要怎么写才稳定？');
     await page.getByRole('button', { name: '发送' }).click();
     await page.waitForFunction(() => {
@@ -717,6 +734,8 @@ fs.writeFileSync(singleFile, [
     const cites = await page.locator('.cite-list li').count();
     assert(cites >= 1, '应带出处列表，实际 ' + cites);
     await shot('13-问答与出处');
+    // 复原：把对话模型绑回 mock-openai —— 生成讲义/练习册那条链路要的是"正文"，不是 tool_call
+    await page.evaluate(() => fetch('/api/models/roles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatModelId: 'mock', embedModelId: 'mock', chunkModelId: 'mock' }) }));
     return '回答 ' + answer.length + ' 字，出处 ' + cites + ' 条';
   });
 
@@ -729,19 +748,26 @@ fs.writeFileSync(singleFile, [
     return n + ' 条会话';
   });
 
-  await step('Agent 会自己调用工具（算数）', async () => {
-    await page.fill('#chat-input', '帮我算一下 (12+8)*3/4 是多少？');
+  await step('工具由模型自己挑（这一轮它调了检索，而不是内核写死"先检索"）', async () => {
+    await page.evaluate((b) => fetch('/api/models/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 'tc', name: '会调工具的模型', baseUrl: b, apiKey: 'k', model: 'mock-tool' }) }).then((r) => r.json()), mockToolBase);
+    await page.evaluate(() => fetch('/api/models/roles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatModelId: 'tc', embedModelId: 'mock', chunkModelId: 'mock' }) }).then((r) => r.json()));
+    await page.fill('#chat-input', '资料里说提示词要注意什么？');
     await page.getByRole('button', { name: '发送' }).click();
-    await page.waitForSelector('.tool-row:has-text("计算")', { timeout: 30000 });
+    await page.waitForSelector('.tool-row:has-text("检索知识库")', { timeout: 60000 });
     await page.waitForFunction(() => {
       const bodies = document.querySelectorAll('.msg-ai .msg-body');
       if (!bodies.length) return false;
       const last = bodies[bodies.length - 1];
-      return !last.querySelector('.spinner') && !last.querySelector('.caret') && last.innerText.indexOf('15') >= 0;
+      return !last.querySelector('.spinner') && !last.querySelector('.caret') && last.innerText.trim().length > 4;
     }, null, { timeout: 60000 });
+    // 工具行在模型的两段正文之间（时间线），不是"第 N 步"
+    const order = await page.evaluate(() => Array.from(document.querySelectorAll('.turn-block:last-child .msg, .turn-block:last-child .tool-row'))
+      .map((e) => (e.classList.contains('tool-row') ? 'tool' : (e.classList.contains('msg-user') ? 'user' : 'ai'))));
+    assert(order.join(',').indexOf('ai,tool,ai') >= 0 || order.join(',').indexOf('user,tool,ai') >= 0, '时间线应是"提问 → 工具 → 回答"，实际 ' + order.join(','));
     const tools = await page.$$eval('.tool-row .tool-name', (els) => els.map((e) => e.textContent.trim()));
     await shot('14-工具调用');
-    return '调用链：' + tools.slice(-2).join(' / ');
+    await page.evaluate(() => fetch('/api/models/roles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatModelId: 'mock', embedModelId: 'mock', chunkModelId: 'mock' }) }));
+    return '时间线 ' + order.join(' → ') + ' · 工具：' + tools.slice(-1).join('');
   });
 
   await step('流式增量事件真的写进了会话', async () => {
@@ -1007,6 +1033,9 @@ fs.writeFileSync(singleFile, [
   await step('回答可以停止，并且能一键重问', async () => {
     await nav('伴学助手');
     await page.waitForSelector('#chat-input', { timeout: 20000 });
+    // 用"慢模型"：回答要真的还在流的时候点停止，才叫验证停止
+    await page.evaluate((b) => fetch('/api/models/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 'slow', name: '慢模型', baseUrl: b, apiKey: 'k', model: 'mock-slow' }) }).then((r) => r.json()), mockSlowBase);
+    await page.evaluate(() => fetch('/api/models/roles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatModelId: 'slow', embedModelId: 'mock', chunkModelId: 'mock' }) }).then((r) => r.json()));
     await page.fill('#chat-input', '把这一章的内容完整讲一遍');
     await page.getByRole('button', { name: '发送' }).click();
     await page.waitForSelector('.msg-ai .msg-body .spinner', { timeout: 15000 });
@@ -1033,6 +1062,7 @@ fs.writeFileSync(singleFile, [
     }, null, { timeout: 60000 });
     const last = await page.locator('.msg-ai .msg-body').last().innerText();
     assert(last.indexOf('取消') < 0, '重问后应真的拿到回答，实际：' + last.slice(0, 40));
+    await page.evaluate(() => fetch('/api/models/roles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatModelId: 'mock', embedModelId: 'mock', chunkModelId: 'mock' }) }));
     return '停止 → 出现「已取消」与重问入口 → 重问拿到 ' + last.length + ' 字回答';
   });
 
@@ -1063,52 +1093,80 @@ fs.writeFileSync(singleFile, [
     return '两份都在：练习册-提示词.md / 练习册-提示词-2.md';
   });
 
-  await step('会话标注知识库；切库开新会话，回旧会话自动切回', async () => {
+  await step('会话按知识库管理：新建会话先选资料范围（通用 / 某个库），列表按库分组', async () => {
     await nav('伴学助手');
-    await page.waitForSelector('.panel-item', { timeout: 15000 });
-    const railText = await page.locator('#panel-body').innerText();
-    assert(railText.indexOf('课程资料') >= 0, '会话栏应标出知识库，实际：' + railText.replace(/\s+/g, ' ').slice(0, 120));
-
-    // 建第二个知识库：用来验证"切库 → 新会话"和"回旧会话 → 切回旧库"
+    await page.waitForSelector('.rail-new', { timeout: 15000 });
+    // 建第二个知识库，用来验证"分组"与"通用"
     const kb2Dir = fs.mkdtempSync(path.join(os.tmpdir(), 'itn-e2e-kb2-'));
     fs.writeFileSync(path.join(kb2Dir, 'b.md'), '# 第二门课\n\n## 要点\n\n这是第二门课的资料。\n', 'utf8');
     await page.evaluate((dir) => fetch('/api/kb/save', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: 'course2', name: '第二门课', rootDir: dir }),
     }), kb2Dir);
-    // 这个库也要建成可用状态（有索引），否则后面所有依赖"有章节可学"的步骤都会被它带偏
     await page.evaluate(() => fetch('/api/kb/build', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: 'course2' }),
     }).then((x) => x.json()));
     await nav('伴学助手');
-    await page.selectOption('.chat-head select', 'course2');
-    await page.waitForFunction(() => {
-      const t = document.querySelector('#toast');
-      return !!t && t.classList.contains('show') && t.innerText.indexOf('新会话') >= 0;
-    }, null, { timeout: 10000 });
-    // 切库会开新会话并重渲染：等 select 回来再读值（否则读到的是加载态里的 null）
-    await page.waitForFunction(() => !!document.querySelector('.chat-head select'), null, { timeout: 10000 });
-    const kbNow = await page.evaluate(() => document.querySelector('.chat-head select').value);
-    assert(kbNow === 'course2', '应切到第二个知识库，实际 ' + kbNow);
-    const fresh = await page.locator('.turn-block').count();
-    assert(fresh === 0, '切库后应是空的新会话，实际 ' + fresh + ' 轮');
+    await page.waitForSelector('.rail-new-chip', { timeout: 15000 });
+    const chips = await page.$$eval('.rail-new-chip', (els) => els.map((e) => e.textContent.trim()));
+    assert(chips.indexOf('通用') >= 0, '新建会话应能选「通用」，实际 ' + chips.join('/'));
+    assert(chips.join('/').indexOf('第二门课') >= 0, '新建会话应能选具体知识库，实际 ' + chips.join('/'));
 
+    // 选"第二门课"开一段新会话：范围跟着会话走
+    await page.locator('.rail-new-chip', { hasText: '第二门课' }).click();
+    await page.waitForTimeout(1200);
+    const fresh = await page.locator('.turn-block').count();
+    assert(fresh === 0, '新建后应是空会话，实际 ' + fresh + ' 轮');
+    const scope = await page.evaluate(() => {
+      const t = document.querySelector('#chat-thread');
+      return t ? t.dataset.session : null;
+    });
+    assert(scope, '新会话应有 sessionId');
+    // 问一句，这段会话才会带着"它用的是哪个库"入库（会话列表按 turn/start 里的 kbId 分组）
+    await page.fill('#chat-input', '这门课讲什么？');
+    await page.getByRole('button', { name: '发送' }).click();
+    await page.waitForFunction(() => document.querySelectorAll('.msg-ai .msg-body').length > 0, null, { timeout: 60000 });
+    // 分组：会话栏里两个库各成一组（通用在最上）
+    await nav('伴学助手');
+    await page.waitForSelector('.panel-group-head', { timeout: 15000 });
+    const groupNames = await page.$$eval('.panel-group-head span:first-of-type', (els) => els.map((e) => e.textContent.trim()));
+    assert(groupNames.join('/').indexOf('第二门课') >= 0, '新会话应归到「第二门课」组下，实际 ' + groupNames.join('/'));
+    assert(groupNames.join('/').indexOf('自测课程资料') >= 0, '旧的会话应还在它自己那一组里，实际 ' + groupNames.join('/'));
+    await shot('36-会话按库分组');
+
+    // 折叠/展开：点组头
+    const before = await page.locator('.panel-item').count();
+    await page.locator('.panel-group-head[data-group="course2"]').click();
+    await page.waitForTimeout(500);
+    const after = await page.locator('.panel-item').count();
+    assert(after < before, '折叠一组后条目应变少：' + before + ' -> ' + after);
+    await page.locator('.panel-group-head', { hasText: '第二门课' }).click();
+    await page.waitForTimeout(400);
+
+    // 回旧会话：范围跟着那一段会话切回来（旧会话属于 course）
     await page.locator('.panel-item').last().click();
     await page.waitForTimeout(1500);
-    const kbBack = await page.evaluate(() => document.querySelector('.chat-head select').value);
-    assert(kbBack === 'course', '打开旧会话应切回它自己的知识库，实际 ' + kbBack);
     const turns = await page.locator('.turn-block').count();
     assert(turns >= 1, '旧会话应还原出对话，实际 ' + turns);
-    await shot('36-会话标注知识库');
-    // 切库会把"当前章节"清掉（这是对的：换了资料就不该停在旧章节上）。
-    // 但后面的步骤默认"当前停在第 1 章"，所以这里把上下文恢复回去，保持步骤之间可独立推理。
+    // 通用模式：新开一段"通用"会话，检索应能跨库（用接口核对，界面只负责把 kbId 传空）
+    await page.locator('.rail-new-chip', { hasText: '通用' }).click();
+    await page.waitForTimeout(800);
+    const all = await page.evaluate(() => fetch('/api/kb/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: '', query: '资料', topK: 20 }) }).then((r) => r.json()));
+    assert(all.code === 0 && all.data.hits.length >= 2, '通用模式应跨库命中，实际 ' + JSON.stringify(all.data.hits.length));
+    const hitKbs = new Set(all.data.hits.map((h) => (h.docTitle || '').split('》')[0]));
+    assert(hitKbs.size >= 2, '通用检索的命中应来自两个库，实际 ' + Array.from(hitKbs).join('/'));
+    assert(String(all.data.summary || '').indexOf('在 2 个知识库里') >= 0, '概览应写明搜了几个库，实际 ' + all.data.summary);
+    // 通用这一段也问一句，会话栏里才会出现「通用」组
+    await page.fill('#chat-input', '这门课讲什么？');
+    await page.getByRole('button', { name: '发送' }).click();
+    await page.waitForFunction(() => document.querySelectorAll('.msg-ai .msg-body').length > 0, null, { timeout: 60000 });
+    await page.waitForTimeout(1400);
+    const groups2 = await page.$$eval('.panel-group-head span:first-of-type', (els) => els.map((e) => e.textContent.trim()));
+    assert(groups2.join('/').indexOf('通用（全部知识库）') >= 0, '开过通用会话后应出现「通用」分组，实际 ' + groups2.join('/'));
+    // 切回学 · 练，保持后续步骤的上下文
     await nav('学 · 练');
-    if (!(await page.locator('.chunk-card').count())) {
-      await page.locator('.item', { hasText: '提示词工程基础' }).getByRole('button', { name: '开始学' }).click();
-      await page.waitForSelector('.chunk-card', { timeout: 20000 });
-    }
-    return '会话栏标知识库；切库开新会话（0 轮）；回旧会话切回 ' + kbBack + ' 并还原 ' + turns + ' 轮';
+    return '新建可选范围（' + chips.join('/') + '）· 列表按库分组（' + groupNames.join('/') + '）· 可折叠 · 通用跨 ' + hitKbs.size + ' 个库命中';
   });
 
   await step('会话总览（原「会话记录」）从对话页进得去，能展开每一步事件', async () => {
@@ -1839,7 +1897,8 @@ fs.writeFileSync(singleFile, [
     const items = await page.$$eval('.cm-actions .cm-label', (els) => els.map((e) => e.textContent));
     assert(items.join('/').indexOf('读取网页') >= 0, '＋ 菜单里应有「读取网页…」，实际 ' + items.join('/'));
     assert(items.join('/').indexOf('联网方式') < 0, '联网方式不该再出现在 ＋ 菜单里（联网交给 agent 判断）');
-    assert(items.length <= 4, '＋ 菜单只放真做得成的事，实际 ' + items.length + ' 项：' + items.join('/'));
+    assert(items.join('/').indexOf('工具与技能') >= 0, '＋ 菜单里应有「工具与技能…」，实际 ' + items.join('/'));
+    assert(items.length <= 5, '＋ 菜单只放真做得成的事，实际 ' + items.length + ' 项：' + items.join('/'));
     await shot('44-对话框');
     // 输入框随内容长高
     await page.fill('#chat-input', '第一行\n第二行\n第三行\n第四行');
@@ -1905,11 +1964,11 @@ fs.writeFileSync(singleFile, [
     assert(bound === 'web-research', '绑定的技能应存在内核里，实际 ' + bound);
     await page.fill('#chat-input', '');
     // 工具面板上说清"这次只允许这些工具"
-    await page.locator('.chat-head button', { hasText: '工具' }).click();
+    await page.evaluate(() => { const b = document.querySelector('#tool-sheet'); if (b) b.hidden = false; });
     await page.waitForSelector('#tool-sheet:not([hidden])', { timeout: 10000 });
     const sheet = await page.locator('#tool-sheet').innerText();
     assert(sheet.indexOf('联网专题研究') >= 0, '工具面板应说明这次用的是哪个技能');
-    await page.locator('.chat-head button', { hasText: '工具' }).click();
+    await page.evaluate(() => { const b = document.querySelector('#tool-sheet'); if (b) b.hidden = true; });
     // 复原：解绑，别影响后面的步骤
     await page.evaluate((id) => fetch('/api/skills/bind', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: id, skill: '' }) }), sid);
     return '输入 / 挑技能 → 会话里绑上 web-research → 工具面板同步';

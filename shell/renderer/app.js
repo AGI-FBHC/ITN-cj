@@ -336,7 +336,7 @@ const state = {
   profile: {}, report: {}, artifacts: [], sessions: [],
   kb: "", chapter: null, artifactQuery: "", wrongTab: "due", wrongQuery: "",
   chatSessionId: "", chatTurns: [], chatEvents: [], tools: null, chatQuery: "", artifactFocus: "",
-  webMode: "auto", skill: "", skills: [], lastReportArtifact: "",
+  webMode: "auto", skill: "", skills: [], lastReportArtifact: "", chatKb: null, railGroups: {},
   busyTurn: false, pendingQuestion: "", lastQuestion: "",
   // 主题与会话栏偏好存在内核的 settings 表里（内核端口每次启动都变，localStorage 活不过一次重启）
   theme: "system", dark: false, panelHidden: false, kernel: null, uiZoom: 1, uiFont: 1,
@@ -399,6 +399,11 @@ async function loadOverview() {
 function hasChatModel() { return state.cfg.models.length > 0 && !!state.cfg.chatModelId; }
 function hasKb() { return state.cfg.knowledgeBases.length > 0; }
 function indexedKb() { return state.cfg.knowledgeBases.find((k) => (k.chunkCount || 0) > 0) || null; }
+/** 这一段对话的资料范围："" = 通用（全部知识库）；没定过就跟着当前知识库。 */
+function scopeNow() {
+  return state.chatKb === null ? (state.kb || "") : state.chatKb;
+}
+
 function kbName(id) {
   const k = state.cfg.knowledgeBases.find((x) => x.id === id);
   return k ? (k.name || k.id) : (id || "未选择");
@@ -4157,6 +4162,16 @@ const PERM_HINT = {
   auto: "只有检测到的风险操作才问（危险命令、写工作区外、联网）",
   full: "不再逐条问（仍然不把你自己在用的 API Key 交出去）",
 };
+/** 工具按用途分组（面板上分节显示；"本机文件"那几个只有指定了工作目录才会出现） */
+const TOOL_GROUP = {
+  kb_search: "知识库", list_documents: "知识库", read_chunk: "知识库",
+  web_search: "联网", web_fetch: "联网",
+  save_note: "笔记与产物", save_artifact: "笔记与产物",
+  current_time: "其他", calc: "其他", skill_read: "技能",
+  read: "本机文件", write: "本机文件", edit: "本机文件", ls: "本机文件", find: "本机文件", grep: "本机文件", powershell: "本机文件",
+};
+const TOOL_GROUP_ORDER = ["知识库", "联网", "笔记与产物", "技能", "本机文件", "其他"];
+
 const TOOL_LABEL = {
   kb_search: "检索知识库",
   web_search: "联网搜索（Tavily）",
@@ -4545,35 +4560,89 @@ PANELS.kb = {
 /* ---------- 伴学助手：会话列表 ---------- */
 PANELS.chat = {
   title: "对话",
-  actions: () => [panelBtn("plus", "新建对话", () => newChat(), "rail-new")],
+  // ＋ = 沿用"当前这段对话的资料范围"再开一段；要换范围用上面那排 chip（通用 / 某个库）
+  actions: () => [
+    panelBtn("plus", "新建对话", () => newChat(undefined), "rail-new"),
+    panelBtn("search", "全部会话与步骤", () => go("chat", "overview"), "rail-all"),
+  ],
   async render(body, ui) {
+    await loadCfg();
     await loadSessions();
-    const search = inputOf("rail-search", "搜索会话标题", state.chatQuery || "");
+
+    /* 新建会话：先选资料范围。Codex 里新开一段对话要先选项目，这里是"选知识库或通用"。 */
+    const newRow = el("div", "rail-new");
+    const mkNew = (kbId, label, hint) => {
+      const b = el("button", "rail-new-chip", label);
+      b.type = "button";
+      b.title = hint;
+      b.dataset.kb = kbId === undefined ? "" : kbId;
+      b.onclick = async () => {
+        await newChat(kbId === undefined ? "" : kbId);
+        toast("新对话 · " + (kbId ? kbName(kbId) : "通用（全部知识库）"));
+      };
+      return b;
+    };
+    newRow.appendChild(el("div", "rail-new-title", "新建对话"));
+    newRow.appendChild(mkNew(undefined, "通用", "检索本机所有知识库"));
+    for (const kb of (state.cfg.knowledgeBases || [])) {
+      newRow.appendChild(mkNew(kb.id, kb.name || kb.id, (kb.chunkCount || 0) > 0 ? "只用这一份资料" : "还没建索引"));
+    }
+    body.appendChild(newRow);
+
+    const search = inputOf("rail-search", "搜索会话", state.chatQuery || "");
     search.className = "panel-search";
     search.oninput = () => { state.chatQuery = search.value; renderPanel(); };
     body.appendChild(search);
+
     const q = String(state.chatQuery || "").trim().toLowerCase();
     const items = state.sessions.filter((x) => !q || String(x.title || "").toLowerCase().indexOf(q) >= 0);
     if (!items.length) {
-      const only = btn("全部会话与步骤 →", "sm ghost", () => go("chat", "overview"));
-      only.id = "rail-all";
-      body.appendChild(panelEmpty(state.sessions.length ? "没有匹配的会话。" : "还没有对话。点右上角的 ＋ 开一段。"));
-      ui.foot(only);
+      body.appendChild(panelEmpty(state.sessions.length ? "没有匹配的会话。" : "还没有对话。上面选一个资料范围就能开一段。"));
       return;
     }
-    body.appendChild(panelGroup("共 " + state.sessions.length + " 段"));
+
+    /* 按知识库分组（Codex 的会话列也是按项目分组的）：通用在最上，其余按最近动静排 */
+    const groups = new Map();
     for (const x of items) {
-      body.appendChild(panelItem({
-        id: x.sessionId,
-        active: x.sessionId === state.chatSessionId,
-        title: x.title || "新对话",
-        meta: (KIND_LABEL[x.kind || ""] || "对话") + (x.kbId ? " · " + kbName(x.kbId) : "") + " · " + fmtStamp(x.lastAt).slice(6),
-        onClick: () => openChatSession(x.sessionId),
-      }));
+      const key = x.kbId || "";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(x);
     }
-    const all = btn("全部会话与步骤 →", "sm ghost", () => go("chat", "overview"));
-    all.id = "rail-all";
-    ui.foot(all);
+    const order = [""];
+    for (const kb of (state.cfg.knowledgeBases || [])) {
+      if (groups.has(kb.id)) order.push(kb.id);
+    }
+    for (const k of groups.keys()) {
+      if (order.indexOf(k) < 0) order.push(k);
+    }
+    body.appendChild(panelGroup("共 " + state.sessions.length + " 段 · 按资料分组"));
+    for (const key of order) {
+      const mine = groups.get(key);
+      if (!mine || !mine.length) continue;
+      const name = key ? (kbName(key) || key) : "通用（全部知识库）";
+      const collapsed = !!state.railGroups[key];
+      const head = el("button", "panel-group-head");
+      head.type = "button";
+      head.dataset.group = key;
+      head.innerHTML = icon("chevron") + "<span>" + esc(name) + "</span><span class='panel-group-count'>" + mine.length + "</span>";
+      head.classList.toggle("collapsed", collapsed);
+      head.onclick = () => {
+        state.railGroups[key] = !collapsed;
+        renderPanel();
+      };
+      body.appendChild(head);
+      if (collapsed) continue;
+      // 组内按最近动静倒序
+      mine.slice().sort((a, b) => String(b.lastAt || "").localeCompare(String(a.lastAt || ""))).forEach((x) => {
+        body.appendChild(panelItem({
+          id: x.sessionId,
+          active: x.sessionId === state.chatSessionId,
+          title: x.title || "新对话",
+          meta: (KIND_LABEL[x.kind || ""] || "对话") + " · " + fmtStamp(x.lastAt).slice(6),
+          onClick: () => openChatSession(x.sessionId),
+        }));
+      });
+    }
   },
 };
 
@@ -4605,17 +4674,22 @@ PANELS.settings = {
  */
 async function openChatSession(id) {
   const meta = (state.sessions || []).filter((x) => x.sessionId === id)[0];
-  if (meta && meta.kbId && state.kb !== meta.kbId && state.cfg.knowledgeBases.some((k) => k.id === meta.kbId)) {
-    state.kb = meta.kbId;
-    toast("已切回这次会话用的知识库：" + kbName(meta.kbId));
-  }
+  // 这一段对话用哪份资料，跟着会话走（kbId 为空 = 通用：全部知识库）
+  state.chatKb = meta ? (meta.kbId || "") : "";
   state.chatSessionId = id;
   go("chat");
 }
 
-async function newChat() {
+/**
+ * 新建一段对话。
+ *
+ * kbId 必须由用户给（""=通用：本机所有知识库都能检索）——"这段对话用哪份资料"是开工前就该定的事，
+ * 让它猜或者事后切库，都会把两边的资料混进同一段对话里。
+ */
+async function newChat(kbId) {
   try {
     const d = await api("/api/sessions/new", {});
+    state.chatKb = kbId === undefined ? (state.chatKb === null ? (state.kb || "") : state.chatKb) : kbId;
     state.chatSessionId = d.sessionId;
     state.chatEvents = [];
     state.chatTurns = [];
@@ -4626,27 +4700,54 @@ async function newChat() {
 }
 
 /** 把只追加的事件还原成可渲染的轮次。界面永远以事件为准，不自己编对话。 */
+/**
+ * 把只追加的事件还原成"一段对话"。
+ *
+ * 形状照 Codex：**一条时间线**，用户的话、模型的每一段正文、每一次工具调用按发生顺序排开。
+ * 刻意没有"第 1 步：检索"这种东西 —— 这是 agent，先检索还是先问、要不要检索，都由模型自己决定；
+ * 那套固定步骤是上一版网页工作流留下的，已经删掉（也删掉了内核里写死的那两条 step 事件）。
+ */
 function turnsFromEvents(events) {
   const turns = [];
   const byKey = {};
   for (const e of events) {
     const key = e.turnId || "—";
     if (!byKey[key]) {
-      byKey[key] = { id: key, kind: "", user: "", answer: "", deltas: "", tools: [], report: null, citations: [], ok: null, message: "" };
+      byKey[key] = { id: key, kind: "", user: "", items: [], report: null, citations: [], ok: null, message: "", webMode: "" };
       turns.push(byKey[key]);
     }
     const t = byKey[key];
     const p = e.payload || {};
     if (e.type === "turn/start") t.kind = p.kind || "";
     else if (e.type === "user/message") t.user = p.text || "";
-    else if (e.type === "assistant/delta") t.deltas += (p.text || "");
-    else if (e.type === "assistant/message") t.answer = p.text || "";
-    else if (e.type === "tool/call") t.tools.push({ name: p.tool || "", args: p.args || {}, summary: "" });
-    else if (e.type === "tool/result") {
+    else if (e.type === "assistant/delta") {
+      const last = t.items[t.items.length - 1];
+      if (last && last.t === "a") last.text += (p.text || "");
+      else t.items.push({ t: "a", text: p.text || "", streaming: true });
+    } else if (e.type === "assistant/message") {
+      const last = t.items[t.items.length - 1];
+      if (last && last.t === "a") {
+        // 增量与整段是同一段话：以整段为准（流式可能在收尾处少几个字）
+        last.text = p.text || last.text;
+        last.streaming = false;
+      } else {
+        t.items.push({ t: "a", text: p.text || "", streaming: false });
+      }
+    } else if (e.type === "tool/call") {
+      t.items.push({ t: "tool", name: p.tool || "", args: p.args || {}, summary: "", ok: null, running: true });
+    } else if (e.type === "tool/result") {
       let target = null;
-      for (const x of t.tools) { if (x.name === p.tool && !x.summary) target = x; }
-      if (!target && t.tools.length) target = t.tools[t.tools.length - 1];
-      if (target) target.summary = p.summary || "";
+      for (let i = t.items.length - 1; i >= 0; i--) {
+        const x = t.items[i];
+        if (x.t === "tool" && x.name === (p.tool || "") && x.running) { target = x; break; }
+      }
+      if (target) {
+        target.summary = p.summary || "";
+        target.ok = p.ok !== false;
+        target.running = false;
+      }
+    } else if (e.type === "web/policy") {
+      t.webMode = p.mode || "";
     } else if (e.type === "validation") {
       t.report = p.report || null;
       t.citations = p.citations || [];
@@ -4655,20 +4756,48 @@ function turnsFromEvents(events) {
       t.message = p.message || "";
     }
   }
+  // 收尾：还挂在 running 上的工具说明这一轮没跑完（取消/出错）
+  for (const t of turns) {
+    for (const it of t.items) {
+      if (it.t === "tool" && it.running && t.ok === false) {
+        it.running = false;
+        it.ok = false;
+        if (!it.summary) it.summary = "未完成";
+      }
+    }
+  }
   return turns;
 }
 
+/** 一轮里的一段正文（Codex 里就是一条 assistant 消息，没有气泡与"谁说的"标签）。 */
+function assistantBlock(text, live) {
+  const a = el("div", "msg msg-ai");
+  const b = el("div", "msg-body");
+  b.innerHTML = md(text);
+  if (live) b.appendChild(el("span", "caret"));
+  a.appendChild(b);
+  return a;
+}
+
+/** 工具调用：一行，左边一个点（跑着时是转圈），右边一行摘要。点一下展开参数。 */
 function renderToolRows(tools) {
   const box = el("div", "tool-rows");
   for (const tool of tools) {
-    const row = el("div", "tool-row" + (tool.summary ? "" : " running"));
+    const row = el("div", "tool-row" + (tool.running ? " running" : (tool.ok === false ? " failed" : "")));
     row.appendChild(el("span", "tool-dot"));
     let label = TOOL_LABEL[tool.name] || tool.name || "工具";
-    if (tool.args && tool.args.query) label += "：「" + tool.args.query + "」";
+    if (tool.args && tool.args.query) label += "：" + tool.args.query;
     if (tool.args && tool.args.expr) label += "：" + tool.args.expr;
     if (tool.args && tool.args.chunk_id) label += "：" + tool.args.chunk_id;
+    if (tool.args && tool.args.path) label += "：" + tool.args.path;
     row.appendChild(el("span", "tool-name", label));
-    row.appendChild(el("span", "tool-sum", tool.summary || "执行中…"));
+    const det = el("details", "tool-detail");
+    const sum = el("summary", "tool-sum", tool.summary || (tool.running ? "执行中…" : ""));
+    det.appendChild(sum);
+    if (tool.args && Object.keys(tool.args).length) {
+      det.appendChild(el("pre", "tool-args", JSON.stringify(tool.args, null, 2)));
+    }
+    row.appendChild(det);
     box.appendChild(row);
   }
   return box;
@@ -4678,53 +4807,49 @@ function renderTurnBlock(t, live) {
   const box = el("div", "turn-block");
   if (t.user) {
     const u = el("div", "msg msg-user");
-    u.appendChild(el("div", "msg-who", "我"));
     const b = el("div", "msg-body");
     b.innerHTML = md(t.user);
     u.appendChild(b);
+    if (t.steer) u.appendChild(el("span", "msg-flag", "插话"));
     box.appendChild(u);
   }
-  if (t.tools.length) box.appendChild(renderToolRows(t.tools));
-  const text = t.answer || (live ? t.deltas : "");
-  if (text) {
-    const a = el("div", "msg msg-ai");
-    a.appendChild(el("div", "msg-who", "伴学助手"));
+  // 时间线：模型的每一段正文、每一次工具调用，按发生顺序
+  for (const it of t.items) {
+    if (it.t === "tool") box.appendChild(renderToolRows([it]));
+    else if (it.text) box.appendChild(assistantBlock(it.text, live && it.streaming && !t.ok === false));
+  }
+  const running = live && !t.items.some((x) => x.t === "a" && x.text);
+  if (running) {
+    const p2 = el("div", "msg msg-ai");
     const b = el("div", "msg-body");
-    b.innerHTML = md(text);
-    if (live && !t.answer) b.appendChild(el("span", "caret"));
-    a.appendChild(b);
-    if (!live && (t.citations.length || t.report)) a.appendChild(citationBox(t.citations, t.report));
-    if (!live && t.answer) {
-      const acts = el("div", "row msg-actions");
-      acts.appendChild(btn("做成讲义", "sm ghost", () => askTopic("lecture", topicFromText(t.user || t.answer))));
-      acts.appendChild(btn("做成练习册", "sm ghost", () => askTopic("quiz", topicFromText(t.user || t.answer))));
-      acts.appendChild(copyButton(() => t.answer, "复制"));
-      a.appendChild(acts);
-    }
-    box.appendChild(a);
-  } else if (live) {
-    // 提问后到第一段文字到达之间，什么都不显示会让人以为没点上——
-    // 这里给一个明确的"正在进行"占位
-    const p = el("div", "msg msg-ai");
-    p.appendChild(el("div", "msg-who", "伴学助手"));
-    const b = el("div", "msg-body");
-    b.innerHTML = '<span class="spinner"></span> 正在检索资料并作答…';
-    p.appendChild(b);
-    box.appendChild(p);
-  } else if (!live && t.ok === false) {
+    b.innerHTML = '<span class="spinner"></span> 正在思考…';
+    p2.appendChild(b);
+    box.appendChild(p2);
+  }
+  if (!live && t.ok === false) {
     const cancelled = String(t.message || "").indexOf("取消") >= 0;
     const e = el("div", "msg msg-ai");
-    e.appendChild(el("div", "msg-who", "伴学助手"));
-    e.appendChild(el("div", "msg-body " + (cancelled ? "muted" : "err-text"),
-      t.message || "这一轮没有完成"));
+    e.appendChild(el("div", "msg-body " + (cancelled ? "muted" : "err-text"), t.message || "这一轮没有完成"));
     if (cancelled && t.user) {
       const acts = el("div", "row msg-actions");
-      acts.appendChild(btn("重新问一次", "sm ghost", () => {
-        if (state.chatResend) state.chatResend(t.user);
-      }));
+      acts.appendChild(btn("重新问一次", "sm ghost", () => { if (state.chatResend) state.chatResend(t.user); }));
       e.appendChild(acts);
     }
     box.appendChild(e);
+  }
+  const lastText = (() => {
+    for (let i = t.items.length - 1; i >= 0; i--) {
+      if (t.items[i].t === "a" && t.items[i].text) return t.items[i].text;
+    }
+    return "";
+  })();
+  if (!live && (t.citations.length || t.report)) box.appendChild(citationBox(t.citations, t.report));
+  if (!live && lastText) {
+    const acts = el("div", "row msg-actions");
+    acts.appendChild(btn("做成讲义", "sm ghost", () => askTopic("lecture", topicFromText(t.user || lastText))));
+    acts.appendChild(btn("做成练习册", "sm ghost", () => askTopic("quiz", topicFromText(t.user || lastText))));
+    acts.appendChild(copyButton(() => lastText, "复制"));
+    box.appendChild(acts);
   }
   return box;
 }
@@ -4753,37 +4878,22 @@ PAGES.chat = {
       return;
     }
 
-    /* 顶部工具条 */
-    const bar = el("div", "chat-head");
-    if (hasKb()) bar.appendChild(kbSelector(() => {
-      // 换知识库等于换了一套资料：接着用旧会话会把两边的资料混在一起，
-      // 所以明确开一段新会话，并把原因说出来（旧会话仍留在会话栏里）
-      state.chatSessionId = "";
-      state.chatTurns = [];
-      state.chatEvents = [];
-      toast("已切到「" + kbName(state.kb) + "」，从这条消息开始用新资料（已开新会话）");
-      go("chat");
-    }));
-    else bar.appendChild(tag("未配知识库 · 直接问模型", "warn"));
-    bar.appendChild(spacer());
-    if (hasKb()) bar.appendChild(tag("检索：" + kbName(state.kb)));
-    const toolBtn = btn("工具 " + (state.tools ? state.tools.length : ""), "sm ghost", () => {
-      const box = $("tool-sheet");
-      if (box) box.hidden = !box.hidden;
-    });
-    bar.appendChild(toolBtn);
-    bar.appendChild(btn("全部会话", "sm ghost", () => go("chat", "overview")));
-    v.appendChild(bar);
+    /* 这里原来有一条顶栏（知识库选择 + 检索标签 + 工具 + 全部会话）。
+       用户说"很奇怪"，去掉了：知识库归会话管（见左侧会话栏的分组与新建），
+       工具清单挪进 ＋ 菜单（「工具与技能…」），"全部会话"侧栏底部本来就有。 */
 
+    /* 工具与技能：从 ＋ 菜单点开（原来是顶栏一个按钮，现在顶栏没了） */
     const sheet = el("div", "card tool-sheet");
     sheet.id = "tool-sheet";
     sheet.hidden = true;
-    sheet.appendChild(el("div", "card-head", ""));
-    sheet.querySelector(".card-head").appendChild(el("h2", null, "Agent 可调用的工具"));
-    sheet.querySelector(".card-head").appendChild(spacer());
+    const shHead = el("div", "card-head");
+    shHead.appendChild(el("h2", null, "工具与技能"));
+    shHead.appendChild(spacer());
     const curSkill = (state.skills || []).find((x) => x.id === state.skill);
+    if (curSkill) shHead.appendChild(tag("技能：" + curSkill.title, "ok"));
+    shHead.appendChild(btn("收起", "sm ghost", () => { sheet.hidden = true; }));
+    sheet.appendChild(shHead);
     if (curSkill) {
-      sheet.querySelector(".card-head").appendChild(tag("技能：" + curSkill.title, "ok"));
       sheet.appendChild(el("p", "muted sm",
         "这次对话绑了技能「" + curSkill.title + "」：只有它声明的工具（" + (curSkill.tools || []).join(" / ") +
         "）能调用，别的会被拒绝并记进会话。"));
@@ -4793,21 +4903,28 @@ PAGES.chat = {
     if (!tools.length) {
       tlist.appendChild(el("div", "muted sm", "（还没读到工具清单）"));
     } else {
-      for (const t of tools) {
-        const it = el("div", "item");
-        const head = el("div", "row");
-        const main = el("div", "grow");
-        main.appendChild(el("div", "item-title", (TOOL_LABEL[t.name] || t.name) + "  " + t.name));
-        main.appendChild(el("div", "muted sm", t.desc));
-        head.appendChild(main);
-        // 只有联网搜索需要先配置：没配就不进提示词，这里如实标出来并给出入口
-        if (t.available === false) {
-          head.appendChild(tag("需先配置", "warn"));
-          head.appendChild(btn("去配置", "sm", () => go("settings", "models")));
+      for (const g of TOOL_GROUP_ORDER) {
+        const mine = tools.filter((t) => (TOOL_GROUP[t.name] || "其他") === g);
+        if (!mine.length) continue;
+        tlist.appendChild(el("div", "panel-group-title", g));
+        for (const t of mine) {
+          const it = el("div", "item");
+          const head = el("div", "row");
+          const main = el("div", "grow");
+          main.appendChild(el("div", "item-title", (TOOL_LABEL[t.name] || t.label || t.name) + "  " + t.name));
+          main.appendChild(el("div", "muted sm", t.desc));
+          head.appendChild(main);
+          if (t.available === false) {
+            head.appendChild(tag("需先配置", "warn"));
+            head.appendChild(btn("去配置", "sm", () => go("settings", "models")));
+          }
+          it.appendChild(head);
+          if (t.usage) it.appendChild(el("div", "meta", "参数示例 " + t.usage));
+          tlist.appendChild(it);
         }
-        it.appendChild(head);
-        it.appendChild(el("div", "meta", "参数示例 " + t.usage));
-        tlist.appendChild(it);
+      }
+      if (!(state.cfg.agentWorkDir || "")) {
+        tlist.appendChild(el("div", "muted sm", "「本机文件」那组要等你在「设置 → 智能体」里指定工作目录之后才会出现。"));
       }
     }
     sheet.appendChild(tlist);
@@ -4932,6 +5049,12 @@ PAGES.chat = {
         askTopic("lecture", topic);
       }));
       actionsBox.appendChild(menuItem("target", "工作目录与权限…", workDirName() ? ("现在：" + workDirName()) : "让 lumin 能在本机读写文件", () => go("settings", "agent")));
+      actionsBox.appendChild(menuItem("sliders", "工具与技能…", (state.tools || []).length + " 个工具 · 看看这一轮能用什么", () => {
+        const box = $("tool-sheet");
+        if (!box) return;
+        box.hidden = false;
+        box.scrollIntoView({ block: "start" });
+      }));
       menu.appendChild(actionsBox);
 
       /* 权限档位：就是 lumin 的三档，和左边那枚 chip 同步（这儿是"改"，chip 是"看"）。 */
@@ -5038,9 +5161,13 @@ PAGES.chat = {
     async function stopTurn() {
       const sid = state.chatSessionId;
       if (!sid) return;
+      // 记下来：这一轮按过停止，收尾时按"已取消"处理。
+      // 内核那边的 abort 只在"下一轮请求之前"生效（运行时就是这么设计的），
+      // 所以已经流出去的那半段保留着，剩下的不再继续 —— 这比假装它还是正常结束要诚实。
+      state.cancelRequested = sid;
       try {
         await api("/api/agent/cancel", { sessionId: sid });
-        toast("已请求停止");
+        toast("已停止");
       } catch (e) {
         toast("停止失败：" + e.message);
       }
@@ -5059,7 +5186,7 @@ PAGES.chat = {
       try {
         await api("/api/agent/steer", { sessionId: sid, text: text });
         // 先在正文里显示出来（内核把它注进这一轮时会再写一条 user/message 事件，正好对上）
-        state.chatTurns.push({ id: "steer-" + Date.now(), kind: "ask", user: text, answer: "", deltas: "", tools: [], report: null, citations: [], ok: null, message: "", steer: true });
+        state.chatTurns.push({ id: "steer-" + Date.now(), kind: "ask", user: text, items: [], report: null, citations: [], ok: null, message: "", steer: true });
         paint();
         toast("已插入当前这一轮");
       } catch (e) {
@@ -5117,9 +5244,11 @@ PAGES.chat = {
         thread.appendChild(emptyState({
           art: "chat",
           title: state.chatSessionId ? "这个会话还没有内容" : "开始一段对话",
-          text: hasKb()
-            ? "例如：「这一章的核心结论是什么？」「资料里提到哪三种手法？」。回答会先检索「" + kbName(state.kb) + "」，逐条标注出处。"
-            : "当前没有知识库，问题会直接发给模型；指定资料目录后回答会带出处。",
+          // 顶栏去掉了，作用范围在这里说清：这一段对话到底用哪份资料
+          text: (scopeNow() ? ("这一段对话只用「" + kbName(scopeNow()) + "」。问什么都从这份资料里找，答案带出处。")
+                            : "这一段对话是通用模式：本机所有知识库一起检索。"),
+          // 一句例子，别的都是废话
+
           actions: hasKb() ? [
             btn("问：这一章的核心结论是什么", "", () => { ta.value = "这一章的核心结论是什么？"; send(); }),
             btn("看知识库里有什么", "ghost", () => go("kb")),
@@ -5157,7 +5286,7 @@ PAGES.chat = {
         if (input) input.value = q;
         send();
       };
-      state.chatTurns.push({ id: "local", kind: "ask", user: text, answer: "", deltas: "", tools: [], report: null, citations: [], ok: null, message: "" });
+      state.chatTurns.push({ id: "local", kind: "ask", user: text, items: [], report: null, citations: [], ok: null, message: "" });
       paint();
 
       // 生成过程中轮询会话事件，把 assistant/delta 渲染成"打字机"效果。
@@ -5179,12 +5308,15 @@ PAGES.chat = {
 
       let failure = "";
       try {
-        // 指定了工作目录 → 走 lumin（它才认权限档位与审批）；否则走原来那条"只问答"的链路。
-        // 技能不再从输入框选：交给模型自己按 "/" 的语义挑（skill 传空）。
-        const useLumin = !!(state.cfg.agentWorkDir || "");
-        const payload = { kbId: state.kb, question: text, sessionId: sid, web: "auto", skill: state.skill || "" };
-        if (useLumin) payload.perm = state.cfg.agentPerm || "ask";
-        const res = await api(useLumin ? "/api/agent/ask-pi" : "/api/agent/ask", payload);
+        // 对话一律走 lumin（pi 运行时）：工具交给模型自己挑，步骤由它自己决定。
+        // 原来那条手写循环（先检索、再生成、最后引用自检）不再参与对话——它是上一版的形状。
+        // 工作目录与权限档位：没指定工作目录时，模型拿不到"本机文件"那几个工具，只能检索与联网。
+        const scopeKb = state.chatKb === null ? (state.kb || "") : state.chatKb;
+        const payload = {
+          kbId: scopeKb, question: text, sessionId: sid, web: "auto",
+          skill: state.skill || "", perm: state.cfg.agentPerm || "ask",
+        };
+        const res = await api("/api/agent/ask-pi", payload);
         if (res.ok !== true) failure = res.message || "这一轮没有完成";
       } catch (e) {
         failure = e.message;
@@ -5199,8 +5331,19 @@ PAGES.chat = {
         state.chatTurns = state.chatTurns.filter((t) => t.id !== "local" && !String(t.id).startsWith("steer-"));
       }
       state.busyTurn = false;
-      // 取消不是失败，别把提示写成"生成失败"
-      if (failure) toast(String(failure).indexOf("取消") >= 0 ? "已取消" : ("生成失败：" + failure));
+      const stopped = state.cancelRequested === sid;
+      state.cancelRequested = null;
+      if (stopped && !failure) {
+        // 按过停止：这一轮标成"已取消"（正文保留），并把重问入口挂上
+        const last = state.chatTurns[state.chatTurns.length - 1];
+        if (last && last.id === "local") {
+          last.ok = false;
+          last.message = "已取消";
+        }
+        toast("已取消");
+      } else if (failure) {
+        toast(String(failure).indexOf("取消") >= 0 ? "已取消" : ("生成失败：" + failure));
+      }
       await reloadSessions();
       paint();
     }
