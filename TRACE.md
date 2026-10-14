@@ -1111,3 +1111,86 @@ E2E 里固化了这一步：同一个主题连续生成两次 → 断言磁盘�
 2. 侧栏动作按钮不要用 `.nav-item`，否则自检工具会把它当页面点击（检索会弹出遮罩层挡住后续操作）。
 3. 历史回退进 `go()` 时不能再压栈（用 `history.state.i` 定位）。
 4. 内核端口每次启动都变 → 任何"要记住"的界面状态都得存内核，不能只放 localStorage。
+
+---
+
+## 第十六轮（2026-10-14）：把 Pi Agent 转成仓颉版（pi-cj），独立工程 + 56 例测试全绿
+
+**用户提的**（讨论会话）：先问"目前这软件有没有 harness 能力、能不能引 piagent、工作会话有没有真的用
+piagent 的设计思想"；随后要求"先把 piagent 转成仓颉版并测试通过，注意设计上要方便后期合并进
+ITN-Desktop"；最后要求"做好之后先让我单独试试效果"。
+
+**范围声明（重要）**：本轮**只新增** `pi-cj/`（独立 cjpm 工程），**没有改动** `core/`、`shell/`、`tools/`、`docs/`
+的任何文件 —— 另一个会话当时正在改 `core/src/{agent,api,study,tools,util}` 与 `shell/renderer`。两边工作区互不重叠。
+`pi-cj/` 自带 `.gitignore`（忽略 `target/` 与 `dist/`），单独一个提交：**e5f942b**。
+
+### 交付物（`D:\Desktop\ITN\ITN-Desktop\pi-cj\`）
+
+| 文件 | 作用 |
+| --- | --- |
+| `src/pi/event.cj` | 10 种细粒度事件（turn/step/text/think/tool.call/result）+ `toJson()` |
+| `src/pi/stream.cj` | 事件流：`on()` 实时消费者 / `drain()` 持久消费者 / `finish()/fail()/abort()` |
+| `src/pi/partialjson.cj` | **流式解析不完整 JSON**（工具参数边到边解析），支持内核协议 `{"tool":..,"args":..}` 与 OpenAI 原生 `function.arguments` |
+| `src/pi/tool.cj` | `Tool` 接口 / `ToolRegistry`（模式过滤、可用性、风险分级 read-write-external、异常转 ok=false）/ `FuncTool` |
+| `src/pi/mode.cj` | 模式 = 工具集白名单（plain / standard / research） |
+| `src/pi/history.cj` | 多轮历史 + **冻结视图**（同一 step 内上下文不可变） |
+| `src/pi/provider.cj` | `ChatProvider` 接口（模型通信层）+ `ScriptedProvider`（离线脚本播放器，模拟网络分片） |
+| `src/pi/runner.cj` | 主循环（turn/step、回灌、最大轮数、可中止）+ 引用自检 `citationWarning()` |
+| `src/pi/pi.cj` | `PiSession` 门面 + 工具协议文本 `toolProtocolText()` |
+| `src/pi/examples.cj` | KbSearchTool / SaveNoteTool / WebSearchTool（内存假数据，给演示与测试当夹具） |
+| `src/main.cj` | 走路演示（四段：流式解析 / 标准一轮 / 研究模式+引用自检 / 护栏） |
+| `src/unittests/` 8 个文件 | 56 例单元测试 |
+| `scripts/{test,demo,package-demo}.ps1` | 跑测试 / 跑演示 / 打绿色包 |
+| `README.md` | 模块表、借了哪几条、仓颉特有取舍、测试覆盖、**合并清单** |
+
+**性质说明（写进 README 第一行）**：仓库里没有 Pi Agent 源码（`docs/03-Agent架构.md` 记的是"参考架构思想，非源码"），
+所以这是"按 Pi 思想用仓颉重写"，不是源码移植。借自 Pi 三条（三层分离 / 事件流 / 流式解析半截 JSON）
++ 借自 DeepSeek Harness 一条（模式 = 工具集的组合）；**不引** Pi 的 TS/Node 运行时。
+
+### 本轮修掉的三个真 bug（写测试和跑演示才暴露出来）
+
+1. **顶层工具参数永远收集不到**：`partialjson.collectMembers` 的 `depth` 从 0 起算，但这个函数的 `start`
+   就是对象自己的 `{`（`i = start + 1` 已在对象内部），成员层级其实是 1。
+   后果：`argsJson()` 永远是 `{}`、工具拿到空参数（演示第一版打出"本地命中 1 条切片（）"）。已改成 1。
+2. **工具名提前播报**：名字字符串还没闭合就把已到达部分当工具名发事件，按 5 字节分片喂
+   `{"tool":"kb_search",...}` 时前端会先看到 "k"。已改成"字符串闭合才算 nameKnown"。
+3. **字节安全判据不严**：原 `safeUtf8` 只判"末字节不是续字节"，对"切在 3 字节汉字的第 1 个字节之后"
+   仍会解出半个字符并抛异常 —— 这正是内核 `util.cj readAllString` 报 `Invalid utf8 byte sequence` 的同一类问题。
+   已改成"按首字节算字符长度、只保留完整字符"，并把 `safeUtf8` 公开（宿主 SSE 读取可以直接复用）。
+
+### 编译器/语言踩坑（都写进代码注释了）
+
+- `with` 是**仓颉关键字**：`m.with([...])` 会被当限定名解析，报 `expected a member name after '.'`。模式方法改名 `allow`。
+- `String.size` 是**字节数**不是字符数（"提示词工程在 2026 年有哪些新做法" = 45）。
+- `ArrayList.size` 是属性，`JsonArray.size()` 是方法（写错就是 `expected 'Int64', found '() -> Int64'`）。
+- 包内类名会**遮蔽**同名枚举项：`ToolResult` 类遮蔽了 `PiEventKind.ToolResult`，得写全限定名。
+- 注意 `pi-cj/target/release/bin/main.exe` 需要先 dot-source `scripts/env.ps1` 才能跑（否则 0xC0000135 = 找不到运行时 DLL）。
+
+### 验证
+
+- `cjpm build` → success；`cjpm test` → **TOTAL 56 / PASSED 56 / FAILED 0**。
+  覆盖：事件流语义、分片无关性（12 种负载 × 1~12 字节分片结果必须与整段一致）、截断缓冲不抛异常且
+  已完整参数不再变、汉字被切断、转义引号、嵌套对象/数组/布尔/数字/null、JSON 前后带文本、
+  模式白名单与越权/未注册/不可用/抛异常四种失败路径、冻结视图（1/3/5 三档历史条数）、
+  最大轮数、工具结果后中止、模型抛异常、空回答、引用自检。
+- `scripts/package-demo.ps1` → `dist\pi-cj-demo\`（`pi-cj-demo.exe` + 2 个运行时 DLL + `运行演示.cmd` + 说明）。
+  在**干净环境**（`PATH` 只留 System32、清空 `CANGJIE_HOME`）实测：`exit=0`、48 行输出、四段演示齐全 → 绿色包成立（只要 2 个 DLL，不需要 OpenSSL）。
+- 演示输出要点：半截 JSON 边到边解析出 `query`（45 字节）→ `tool/call_arg` 到齐 → `tool/call_end`；
+  标准模式只曝露 kb_search/save_note（web_search 未配密钥不出现）；研究模式回答里的 `[W9]` 被引用自检抓出；
+  护栏三种结果 `end / max-steps / abort` 都按预期。
+
+### 给接手/合并的人（详细步骤在 `pi-cj/README.md` 第 6 节）
+
+合并路线：`src/pi/` 整体复制成 `core/src/pi/` 并改包名 `pi_cj.pi` → `itn_desktop_core.pi`（同包，`core/cjpm.toml` 不用加依赖）；
+给内核 `llm.cj` 的 `LlmClient` 写一个 `ChatProvider` 适配器（正文→text/delta、reasoning→think/delta、
+`tool_calls.arguments` 增量→`PartialJsonParser`）；把内核 8 个工具各包一层 `Tool`（`ToolSpec` 字段名已对齐 `name/title/usage/desc`，
+多一个 `risk`）；`drain()` 的事件逐条写 `session_events`、`on()` 那路上 SSE 推前端；`RunOutcome.toJson()` 当一轮收尾 payload。
+**运行时不碰网络和文件**，边界就是 `ChatProvider` 与 `Tool` 两个接口。
+
+### 教训（给接手的人）
+
+1. 流式解析的两个坑：**层级起点**（函数拿到的是不是对象自身的 `{`）和**什么算"已知"**（字符串闭合才算）。
+   两者都不会崩，只会安静地给出错的值 —— 必须有"分片无关性"这类不变量测试才抓得住。
+2. 写"不会崩"的字节代码时，"退到非续字节"是不够的判据；要按首字节算长度。
+3. 只做讨论的会话里如果用户又明确要求产出代码，要**把产出放进独立目录并单独提交**，不碰并行会话的
+   工作区文件，这样两边都不会互相踩。
