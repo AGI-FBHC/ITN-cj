@@ -157,7 +157,8 @@ function assert(cond, msg) {
       if (!fs.existsSync(dir)) return;
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
         const full = path.join(dir, e.name);
-        if (e.isDirectory()) { walk(full); continue; }
+        // target 是构建/测试产物目录（cjpm test 会往里写临时 .cj），不该让"跑过测试"把守卫判成源码更新
+        if (e.isDirectory()) { if (e.name !== 'target') walk(full); continue; }
         if (!/\.(cj|toml)$/.test(e.name)) continue;
         const m = fs.statSync(full).mtimeMs;
         if (m > newest) newest = m;
@@ -261,6 +262,14 @@ fs.writeFileSync(singleFile, [
     await page.waitForTimeout(200);
   };
 
+  /** 笔记与错题本已合成一个根「我的资源」，页内用分段切换：测试里统一走这个助手。 */
+  const openRes = async (tab) => {
+    await nav('我的资源');
+    await page.waitForSelector('#view .res-tabs', { timeout: 15000 });
+    await page.locator('#view .res-tabs button', { hasText: tab === 'wrong' ? '错题本' : '笔记' }).first().click();
+    await page.waitForTimeout(700);
+  };
+
   /* 设置现在是"左侧分区 + 右侧内容"的一页：先点侧栏的齿轮进设置，再点分区。 */
   const settings = async (label) => {
     await nav('设置');
@@ -276,14 +285,16 @@ fs.writeFileSync(singleFile, [
   await page.waitForSelector('.nav-item', { timeout: 20000 });
   await page.waitForTimeout(800);
 
-  await step('首页渲染 + 窄侧栏 10 个入口', async () => {
+  await step('首页渲染 + 窄侧栏 8 个入口', async () => {
     const items = await page.$$eval('.nav-item', (els) => els.map((e) => {
       const tip = e.querySelector('.rail-tip');
       return tip ? tip.textContent.trim() : e.textContent.trim();
     }));
-    assert(items.length === 10, '侧栏入口应为 10 个，实际 ' + items.length + '：' + items.join('/'));
+    assert(items.length === 8, '侧栏入口应为 8 个，实际 ' + items.length + '：' + items.join('/'));
     assert(items.indexOf('伴学助手') >= 0 && items.indexOf('会话记录') < 0,
       '「会话记录」应已并入「伴学助手」，实际：' + items.join('/'));
+    assert(items.indexOf('画像校准') < 0 && items.indexOf('错题本') < 0 && items.indexOf('我的笔记') < 0,
+      '校准应并入「我的成长」、笔记与错题本应并入「我的资源」，实际：' + items.join('/'));
     assert(items.some((x) => x.indexOf('设置') === 0), '左下角应是设置，实际：' + items.join('/'));
     return items.join('/');
   });
@@ -307,7 +318,7 @@ fs.writeFileSync(singleFile, [
       };
     });
     assert(geo.w >= 48 && geo.w <= 72, '窄侧栏宽度应在 48~72px，实际 ' + geo.w);
-    assert(geo.items === 10, '侧栏页面入口应为 10 个，实际 ' + geo.items);
+    assert(geo.items === 8, '侧栏页面入口应为 8 个，实际 ' + geo.items);
     assert(geo.seps >= 2, '分组之间应有分隔线，实际 ' + geo.seps);
     assert(geo.actions === 2, '侧栏底部应有两个动作按钮（主题 / 齿轮之外只有检索），实际 ' + geo.actions);
     return geo.w + 'px · ' + geo.items + ' 入口 · ' + geo.seps + ' 条分隔线';
@@ -502,7 +513,7 @@ fs.writeFileSync(singleFile, [
     await page.waitForTimeout(150);
     const before = await page.evaluate(() => document.querySelector('.view').scrollTop);
     assert(before > 100, '先滚下去，实际 ' + before);
-    await nav('我的笔记');
+    await openRes('notes');
     await page.waitForTimeout(400);
     const after = await page.evaluate(() => document.querySelector('.view').scrollTop);
     assert(after === 0, '切页后应回到顶部，实际 ' + after);
@@ -605,7 +616,7 @@ fs.writeFileSync(singleFile, [
   });
 
   await step('我的资源里能看到两份产物并打开阅读', async () => {
-    await nav('我的资源');
+    await nav('个性化资源');
     const n = await page.locator('.item').count();
     assert(n >= 2, '应至少两份产物，实际 ' + n);
     await shot('10-我的资源');
@@ -741,7 +752,7 @@ fs.writeFileSync(singleFile, [
 
   /* ---------- 课件播放器 ---------- */
   await step('产物能按页播放，翻页/键盘/目录都能用', async () => {
-    await nav('我的资源');
+    await nav('个性化资源');
     await page.locator('.item', { hasText: '讲义-' }).getByRole('button', { name: '播放' }).first().click();
     await page.waitForSelector('.player:not([hidden])', { timeout: 15000 });
     const pages = await page.locator('.toc-item').count().catch(() => 0);
@@ -798,7 +809,7 @@ fs.writeFileSync(singleFile, [
 
   await step('产物管理：搜索、重命名（进度跟着走）、删除（文件真的没了）', async () => {
     const listApi = async () => (await page.evaluate(() => fetch('/api/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()))).data.artifacts;
-    await nav('我的资源');
+    await nav('个性化资源');
     const total = (await listApi()).length;
     assert(total >= 2, '这一步至少需要两份产物，实际 ' + total);
 
@@ -892,32 +903,46 @@ fs.writeFileSync(singleFile, [
     return pr.data.nickname + ' / ' + pr.data.goal;
   });
 
-  await step('画像校准：六维选档位并写回档案（不清空其它字段）', async () => {
-    await nav('画像校准');
-    await page.waitForSelector('.calib-row', { timeout: 15000 });
-    const rows = await page.locator('.calib-row').count();
-    assert(rows === 6, '应有六个维度，实际 ' + rows);
-    await shot('18-画像校准');
-    await page.locator('.calib-row').first().getByRole('button', { name: /能带人/ }).click();
-    await page.waitForTimeout(500);
-    await page.getByRole('button', { name: '保存校准', exact: true }).click();
-    await page.waitForTimeout(1500);
+  await step('能力校准：就地展开、一次只问一条、三条按钮就能写回档案', async () => {
+    await nav('我的成长');
+    await page.waitForSelector('.card', { timeout: 20000 });
+    // 校准不再是另一个页面：它是成长页里就地展开的一段
+    await page.getByRole('button', { name: '校准我的能力' }).first().click();
+    await page.waitForSelector('.calib-step', { timeout: 15000 });
+    const first = (await page.locator('.calib-step').innerText()).replace(/\s+/g, ' ');
+    assert(first.indexOf('第 1 / 6 条') >= 0, '应一次只问一条（第 1 / 6 条），实际：' + first.slice(0, 80));
+    const picks = await page.locator('.calib-step .calib-pick button').count();
+    assert(picks === 3, '每条只给三个按钮（偏低 / 差不多 / 偏高），实际 ' + picks);
+    const boxes = await page.locator('.calib-step input:not([type=checkbox])').count();
+    assert(boxes <= 1, '每条最多一个选填输入框，实际 ' + boxes);
+    await shot('18-能力校准');
+    for (let i = 0; i < 6; i++) {
+      await page.locator('.calib-step .calib-pick button', { hasText: '偏高' }).first().click();
+      await page.waitForTimeout(320);
+    }
+    await page.waitForSelector('.calib-done', { timeout: 10000 });
+    await page.getByRole('button', { name: '保存', exact: true }).first().click();
+    await page.waitForTimeout(1800);
     const pr = await page.evaluate(() => fetch('/api/profile/get', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()));
     assert(pr.data.selfScores['概念理解'] === 65, '概念理解应写成 65，实际 ' + pr.data.selfScores['概念理解']);
     assert(pr.data.nickname === '自测同学', '校准不应清空称呼，实际 ' + pr.data.nickname);
     assert(pr.data.goal === '两周讲完提示词工程', '校准不应清空学习目标');
-    return '六维档位已写回，称呼/目标保持不变';
+    return '六条各一句话；值 65；称呼/目标保持不变';
   });
 
-  await step('校准能生成一条可回看的记录笔记', async () => {
-    await nav('画像校准');
-    await page.waitForSelector('.calib-row', { timeout: 15000 });
-    await page.getByRole('button', { name: '保存并生成校准记录笔记' }).click();
+  await step('校准记录笔记：勾一个小选项就有，能在「我的资源 → 笔记」回看', async () => {
+    await nav('我的成长');
+    await page.getByRole('button', { name: '校准我的能力' }).first().click();
+    await page.waitForSelector('.calib-step', { timeout: 15000 });
+    await page.locator('.calib-notebox input[type=checkbox]').first().check();
+    await page.getByRole('button', { name: '保存', exact: true }).first().click();
+    await page.waitForTimeout(2000);
+    await openRes('notes');
     await page.waitForSelector('.item:has-text("画像校准记录")', { timeout: 20000 });
     const text = await page.locator('.item', { hasText: '画像校准记录' }).first().innerText();
-    assert(text.indexOf('实测参考') >= 0 || text.indexOf('参考') >= 0, '校准笔记应含实测参考');
+    assert(text.indexOf('参考') >= 0, '校准笔记应含实测参考');
     await shot('19-校准记录笔记');
-    return '已生成并可回看';
+    return '勾一下就有记录，可在笔记里回看';
   });
 
   /* ---------- 停止生成 / 停止回答 ---------- */
@@ -1006,7 +1031,7 @@ fs.writeFileSync(singleFile, [
     const first = arts.filter((n) => n === '练习册-提示词.md').length;
     const second = arts.filter((n) => n === '练习册-提示词-2.md').length;
     assert(first === 1 && second === 1, '同主题两次生成应得到两份文件，实际：' + arts.join(' / '));
-    await nav('我的资源');
+    await nav('个性化资源');
     const shown = await page.locator('#view').innerText();
     assert(shown.indexOf('练习册-提示词-2.md') >= 0, '资源页应能看到第二份');
     return '两份都在：练习册-提示词.md / 练习册-提示词-2.md';
@@ -1081,7 +1106,7 @@ fs.writeFileSync(singleFile, [
 
   /* ---------- 笔记 / 错题 / 成长 ---------- */
   await step('写笔记并出现在笔记列表', async () => {
-    await nav('我的笔记');
+    await openRes('notes');
     await page.locator('#view').getByRole('button', { name: '写一条笔记' }).click();
     await page.waitForSelector('#nt-title', { timeout: 10000 });
     await page.fill('#nt-title', 'E2E 自测笔记');
@@ -1093,7 +1118,7 @@ fs.writeFileSync(singleFile, [
   });
 
   await step('错题本有条目且可回到对应章节', async () => {
-    await nav('错题本');
+    await openRes('wrong');
     const n = await page.locator('.item').count();
     assert(n >= 1, '错题本应有条目，实际 ' + n);
     await shot('15-错题本');
@@ -1101,7 +1126,7 @@ fs.writeFileSync(singleFile, [
   });
 
   await step('错题本能重做同一道题，并按间隔把复习往后推', async () => {
-    await nav('错题本');
+    await openRes('wrong');
     await page.waitForSelector('.review-banner', { timeout: 15000 });
     const banner = await page.locator('.review-banner').innerText();
     assert(banner.indexOf('今天该复习') >= 0, '应显示今天该复习的条数，实际：' + banner.replace(/\s+/g, ' '));
@@ -1136,7 +1161,7 @@ fs.writeFileSync(singleFile, [
     await page.evaluate((id) => fetch('/api/study/wrong/review', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, correct: false }),
     }), target.id);
-    await nav('错题本');
+    await openRes('wrong');
     await page.waitForSelector('.review-banner.due', { timeout: 15000 });
     const dueBefore = (await reportApi()).wrongDue;
     assert(dueBefore === 1, '答错后应回到待复习，实际 ' + dueBefore);
@@ -1399,11 +1424,11 @@ fs.writeFileSync(singleFile, [
     await shot('50-最近两周');
     // 学习报告：存成产物 → 能读回内容
     const before = await page.evaluate(() => fetch('/api/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => r.json()).then((j) => (j.data.artifacts || []).length));
-    await page.locator('#view button', { hasText: '存成产物' }).first().click();
+    await page.locator('#view button', { hasText: '导出报告' }).first().click();
     await page.waitForFunction((n) => fetch('/api/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => r.json()).then((j) => (j.data.artifacts || []).length > n), before, { timeout: 15000 });
     const arts = await page.evaluate(() => fetch('/api/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((r) => r.json()).then((j) => j.data.artifacts.map((x) => x.name)));
-    const made = arts.filter((x) => x.indexOf('成长报告-') === 0)[0];
-    assert(made, '应生成一份 成长报告-*.md，实际：' + arts.join(','));
+    const made = arts.filter((x) => x.indexOf('我的成长-') === 0)[0];
+    assert(made, '应生成一份 我的成长-*.md，实际：' + arts.join(','));
     const body = await page.evaluate((nm) => fetch('/api/artifacts/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: nm }) }).then((r) => r.json()).then((j) => j.data.content), made);
     assert(String(body).indexOf('六维能力') >= 0 && String(body).indexOf('最近两周') >= 0, '报告里应有六维与最近两周，实际：' + String(body).slice(0, 80));
     // 清理：删掉这份产物，别影响后面的资源页断言
@@ -1418,7 +1443,7 @@ fs.writeFileSync(singleFile, [
       const t = e.querySelector('.rail-tip');
       return b ? (t ? t.textContent.trim().split('·')[0].trim() : '?') + '=' + b.textContent : null;
     }).filter(Boolean));
-    assert(badges.length >= 3, '笔记/错题本/资源都应有徽标，实际 ' + JSON.stringify(badges));
+    assert(badges.length >= 2, '我的资源与个性化资源都应有徽标，实际 ' + JSON.stringify(badges));
     return badges.join('，');
   });
 
@@ -1434,17 +1459,18 @@ fs.writeFileSync(singleFile, [
   /* ---------- 新壳：标题栏前后箭头 / 侧栏显隐 / 主题 / 设置分区 ---------- */
   await step('标题栏的前进后退真的能换页（按钮可用态按访问栈算）', async () => {
     await nav('首页');
-    await nav('我的笔记');
+    await openRes('notes');
     assert(await page.evaluate(() => !document.querySelector('#nav-back').disabled), '走过一页之后「后退」应可点');
     await page.locator('#nav-back').click();
     await page.waitForFunction(() => (document.querySelector('#page-title') || {}).textContent === '首页', null, { timeout: 10000 });
     assert(await page.evaluate(() => !document.querySelector('#nav-forward').disabled), '后退之后「前进」应可点');
     await page.locator('#nav-forward').click();
-    await page.waitForFunction(() => (document.querySelector('#page-title') || {}).textContent === '我的笔记', null, { timeout: 10000 });
-    return '后退 → 首页，前进 → 我的笔记';
+    await page.waitForFunction(() => (document.querySelector('#page-title') || {}).textContent === '我的资源', null, { timeout: 10000 });
+    return '后退 → 首页，前进 → 我的资源';
   });
 
   await step('折叠的是第二层：窄栏固定不动，收起后仍可点、重载仍保持', async () => {
+    try {
     await page.locator('#rail-toggle').click();
     await page.waitForTimeout(350);
     let st = await page.evaluate(() => ({
@@ -1458,7 +1484,7 @@ fs.writeFileSync(singleFile, [
     // 窄栏还在，就还能换页
     await page.locator('[data-page="notes"]').click();
     await page.waitForTimeout(600);
-    assert((await page.textContent('#page-title')).indexOf('笔记') >= 0, '面板收起时窄栏仍应能切页');
+    assert((await page.textContent('#page-title')).indexOf('资源') >= 0, '面板收起时窄栏仍应能切页');
     await page.keyboard.press('Control+Shift+S');
     await page.waitForTimeout(400);
     st = await page.evaluate(() => ({ hidden: document.body.classList.contains('panel-hidden') }));
@@ -1469,10 +1495,20 @@ fs.writeFileSync(singleFile, [
     st = await page.evaluate(() => ({ hidden: document.body.classList.contains('panel-hidden') }));
     assert(!st.hidden, '面板状态存在内核里，重载后应保持展开');
     return '第二层收起 → 窄栏仍可点 → Ctrl+Shift+S 放回 → 重载保持';
+    } finally {
+      // 这一步会把面板收起并存进内核：失败也要还原，否则后面所有用面板的步骤都会被连累。
+      // 注意只看"当前是不是收起的"——已经展开时再按一次快捷键等于又把它收起来。
+      const stillHidden = await page.evaluate(() => document.body.classList.contains('panel-hidden')).catch(() => false);
+      if (stillHidden) {
+        await page.keyboard.press('Control+Shift+S').catch(() => {});
+        await page.waitForTimeout(500);
+      }
+    }
   });
 
   await step('每个根功能都有自己的第二层（功能目录 / 列表）', async () => {
-    const roots = ['首页', '学 · 练', '我的笔记', '错题本', '我的成长', '画像校准', '我的资源', '领域知识库', '伴学助手', '设置'];
+    // 成长与校准合成一个根；笔记与错题本合成「我的资源」；原来的产物页改叫「个性化资源」
+    const roots = ['首页', '学 · 练', '我的成长', '我的资源', '个性化资源', '领域知识库', '伴学助手', '设置'];
     const seen = [];
     for (const label of roots) {
       await nav(label);
@@ -1491,7 +1527,7 @@ fs.writeFileSync(singleFile, [
   });
 
   await step('面板挑一个 → 主区滚到并高亮同一条（两栏联动）', async () => {
-    await nav('我的笔记');
+    await openRes('notes');
     await page.waitForSelector('#panel-body .panel-item', { timeout: 15000 });
     const first = await page.locator('#panel-body .panel-item').first();
     const want = await first.locator('.panel-item-title').innerText();
@@ -1545,7 +1581,7 @@ fs.writeFileSync(singleFile, [
   });
 
   await step('学习网络图：切页不残留、回来还能画；减少动态时不自动旋转', async () => {
-    await nav('我的笔记');
+    await openRes('notes');
     await page.waitForTimeout(400);
     await nav('首页');
     await page.waitForSelector('.graph-canvas', { timeout: 20000 });

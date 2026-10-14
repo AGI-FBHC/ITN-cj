@@ -427,13 +427,13 @@ const RAIL_GROUPS = [
   [
     { id: "home", label: "首页", icon: "home" },
     { id: "learn", label: "学 · 练", icon: "book" },
-    { id: "notes", label: "我的笔记", icon: "note" },
-    { id: "wrong", label: "错题本", icon: "flag" },
+    // 成长与校准合成一个根：校准是成长页里的一个动作，不再自己占一个入口（原来两个根互相甩按钮）
     { id: "report", label: "我的成长", icon: "chart" },
-    { id: "calibrate", label: "画像校准", icon: "target" },
   ],
   [
-    { id: "resources", label: "我的资源", icon: "layers" },
+    // 笔记与错题本都是"自己攒下来的学习记录"，合成一个根；生成的产物另起一项
+    { id: "notes", label: "我的资源", icon: "note" },
+    { id: "resources", label: "个性化资源", icon: "layers" },
     { id: "kb", label: "领域知识库", icon: "db" },
   ],
   // 对话与会话记录本来是同一件事的两面：会话栏就挂在对话页左侧。
@@ -447,11 +447,11 @@ const RAIL_GROUPS = [
 const PAGE_META = {
   home: { title: "首页", sub: "今天学什么，从这里开始" },
   learn: { title: "学 · 练", sub: "按章节读资料、出题、生成讲义" },
-  notes: { title: "我的笔记", sub: "随手记下的要点" },
+  notes: { title: "我的资源", sub: "笔记与错题，都是自己攒下来的记录" },
   wrong: { title: "错题本", sub: "做错的题在这里复习" },
-  report: { title: "我的成长", sub: "学习记录与能力变化" },
-  calibrate: { title: "画像校准", sub: "用真实练习数据与自己的判断对齐六维能力" },
-  resources: { title: "我的资源", sub: "生成的讲义与练习，全部在本机" },
+  report: { title: "我的成长", sub: "记录、能力画像与校准都在这一页" },
+  calibrate: { title: "我的成长", sub: "校准" },
+  resources: { title: "个性化资源", sub: "生成的讲义与练习，全部在本机" },
   kb: { title: "领域知识库", sub: "检索资料，每一句都能追到原文" },
   chat: { title: "伴学助手", sub: "就你的资料提问" },
   sessions: { title: "全部会话与步骤", sub: "每一次检索、生成都留了可追溯的过程" },
@@ -465,6 +465,36 @@ function navBadge(id) {
   if (id === "resources") return state.artifacts.length || 0;
   if (id === "sessions") return state.sessions.length || 0;
   return 0;
+}
+
+/**
+ * 错题本是「我的资源」里的一栏（原来自己占一个根入口，还和"我的成长"互相甩按钮）。
+ * 所有"打开错题本"都走这里，页面与第二层面板共用同一份状态。
+ */
+function openWrong(opts) {
+  state.resTab = "wrong";
+  go("notes", null, opts || {});
+}
+
+/** 笔记是「我的资源」的另一栏。 */
+function openNotes(opts) {
+  state.resTab = "notes";
+  go("notes", null, opts || {});
+}
+
+/**
+ * 能力校准不是单独一页：它是成长页里就地展开的一段（一次问一条，三个按钮）。
+ * key 为某一维时直接跳到那一条。
+ */
+function openCalibration(key) {
+  state.calibOpen = true;
+  if (key) {
+    const i = ABILITY_DIMENSIONS.findIndex((d) => d.key === key);
+    state.calibStep = i >= 0 ? i : 0;
+  } else if (!(state.calibStep >= 0 && state.calibStep <= ABILITY_DIMENSIONS.length)) {
+    state.calibStep = 0;
+  }
+  go("report");
 }
 
 /**
@@ -770,10 +800,11 @@ PAGES.home = {
     /* 第四屏：概览 + 最近产物 */
     const r = state.report;
     const grid = el("div", "grid grid-4");
-    grid.appendChild(statCard("已读切片", r.readChunks || 0, "", () => go("report")));
-    grid.appendChild(statCard("完成章节", r.completedChapters || 0, "", () => go("report")));
-    grid.appendChild(statCard("笔记", r.noteCount || 0, "条", () => go("notes")));
-    grid.appendChild(statCard("答题正确率", r.quizTotal ? pct(r.quizRight, r.quizTotal) : 0, "%", () => go("wrong")));
+    // 统计卡点了要能去"改变这个数字的地方"，不是去报表页：读/完成 → 学 · 练，笔记/正确率 → 我的资源
+    grid.appendChild(statCard("已读切片", r.readChunks || 0, "", () => go("learn")));
+    grid.appendChild(statCard("完成章节", r.completedChapters || 0, "", () => go("learn")));
+    grid.appendChild(statCard("笔记", r.noteCount || 0, "条", () => openNotes()));
+    grid.appendChild(statCard("答题正确率", r.quizTotal ? pct(r.quizRight, r.quizTotal) : 0, "%", () => openWrong()));
     v.appendChild(grid);
 
     const recent = el("div", "card");
@@ -1449,13 +1480,13 @@ async function renderChapter(v) {
       desc: stat.total > 0 ? ("本章已答 " + stat.total + " 题 · 对 " + stat.right + " · 错 " + stat.wrong)
                           : "还没有针对本章的作答记录",
       acts: [btn("出题练习", "primary sm", () => openQuiz(v, state.chapter)),
-             btn("错题本", "sm ghost", () => go("wrong"))],
+             btn("错题本", "sm ghost", () => openWrong())],
     },
     {
       n: 3, title: "记一条", done: chapterNotes.length > 0,
       desc: chapterNotes.length > 0 ? ("本章已有 " + chapterNotes.length + " 条笔记") : "把这一章的想法留下来",
       acts: [btn("写笔记", "primary sm", () => openNoteEditor(null, state.kb, state.chapter)),
-             btn("全部笔记", "sm ghost", () => go("notes"))],
+             btn("全部笔记", "sm ghost", () => openNotes())],
     },
     {
       n: 4, title: "完成本章", done: !!chapterMeta.done,
@@ -1752,11 +1783,48 @@ function artifactNameFromPath(p) {
 }
 /* ---------- 我的笔记 ---------- */
 
+/**
+ * 我的资源 = 笔记 + 错题本。
+ *
+ * 左边栏只给一个根入口，页内用一排分段切换——这两样都是"自己攒下来的学习记录"，
+ * 原来是两个并列的根功能，结果页里页外互相甩按钮，点两下就不知道自己在哪了。
+ */
 PAGES.notes = {
   async render() {
     await loadCfg();
     const v = $("view");
     v.innerHTML = "";
+    const tab = state.resTab === "wrong" ? "wrong" : "notes";
+    let wrongCount = 0;
+    try {
+      wrongCount = ((await api("/api/study/wrong", {})).records || []).length;
+    } catch (e) { wrongCount = 0; }
+    let noteCount = 0;
+    try {
+      noteCount = ((await api("/api/study/notes/list", {})).notes || []).length;
+    } catch (e) { noteCount = 0; }
+    const bar = el("div", "card res-tabs");
+    const seg = el("div", "seg");
+    [["notes", "笔记 " + noteCount], ["wrong", "错题本 " + wrongCount]].forEach(([k, label]) => {
+      const b = el("button", "seg-item" + (tab === k ? " active" : ""), label);
+      b.dataset.tab = k;
+      b.onclick = () => {
+        if (k === "wrong") openWrong();
+        else openNotes();
+      };
+      seg.appendChild(b);
+    });
+    bar.appendChild(seg);
+    v.appendChild(bar);
+    if (tab === "wrong") {
+      await renderWrongSection(v);
+    } else {
+      await renderNotesSection(v);
+    }
+  },
+};
+
+async function renderNotesSection(v) {
     const data = await api("/api/study/notes/list", {});
     const notes = data.notes || [];
     const card = cardOf({
@@ -1801,16 +1869,19 @@ PAGES.notes = {
       card.appendChild(list);
     }
     v.appendChild(card);
+}
+
+/* ---------- 错题本（合并进「我的资源」，见 PAGES.notes） ---------- */
+
+PAGES.wrong = {
+  // 错题本合并进「我的资源」：老的深链（#/wrong）要照旧能用
+  async render() {
+    state.resTab = "wrong";
+    await go("notes", null, { replace: true });
   },
 };
 
-/* ---------- 错题本 ---------- */
-
-PAGES.wrong = {
-  async render() {
-    await loadCfg();
-    const v = $("view");
-    v.innerHTML = "";
+async function renderWrongSection(v) {
     const data = await api("/api/study/wrong", {});
     const all = data.records || [];
     const due = all.filter((r) => r.due);
@@ -1842,7 +1913,7 @@ PAGES.wrong = {
     const tabs = [["due", "待复习 " + due.length], ["mastered", "已掌握 " + mastered.length], ["all", "全部 " + all.length]];
     for (const [k, label] of tabs) {
       const b = el("button", "seg-item" + (tab === k ? " active" : ""), label);
-      b.onclick = () => { state.wrongTab = k; go("wrong"); };
+      b.onclick = () => { state.wrongTab = k; openWrong(); };
       seg.appendChild(b);
     }
     tools.appendChild(seg);
@@ -1869,7 +1940,7 @@ PAGES.wrong = {
           art: all.length ? "search" : "flag",
           title: all.length ? "这个条件下没有错题" : "还没有错题",
           text: all.length ? "换个分类或关键词看看。" : "在「学 · 练」里对某一章出题练习，答错的题会进这里，并按间隔复习安排提醒你重做。",
-          actions: all.length ? [btn("看清空条件", "", () => { state.wrongTab = "all"; state.wrongQuery = ""; go("wrong"); })]
+          actions: all.length ? [btn("看清空条件", "", () => { state.wrongTab = "all"; state.wrongQuery = ""; openWrong(); })]
                              : [btn("去做一组练习", "primary", () => go("learn")), btn("看我的成长", "", () => go("report"))],
         }));
         return;
@@ -1898,7 +1969,7 @@ PAGES.wrong = {
           try {
             await api("/api/study/wrong/review", { id: r.id, mastered: !r.mastered });
             toast(r.mastered ? "已移回待复习" : "已标记掌握");
-            go("wrong");
+            openWrong();
           } catch (e) { toast("操作失败：" + e.message); }
         }));
         it.appendChild(acts);
@@ -1932,8 +2003,7 @@ PAGES.wrong = {
     } else {
       v.appendChild(card);
     }
-  },
-};
+}
 
 /** 重做一道错题：存了原题就给一样的选项，没存就对着参考答案自评（不假装能判分）。 */
 function openRedo(rec) {
@@ -1952,7 +2022,7 @@ function openRedo(rec) {
       const now = (w.records || []).filter((x) => x.id === rec.id)[0];
       if (correct) toast("答对了 · 下次复习：" + (now && now.dueMs ? fmtMs(now.dueMs) + "（" + daysUntil(now.dueMs) + " 天后）" : "—"));
       else toast("没关系，这条回到今天，明天再来一次");
-      go("wrong");
+      openWrong();
     } catch (e) {
       toast("记录失败：" + e.message);
     }
@@ -2012,7 +2082,7 @@ function abilityCard() {
     title: "六维能力",
     tag: r.weakest ? "该补：" + r.weakest : "",
     tagCls: r.weakest ? "warn" : "",
-    actions: [btn("去画像校准", "sm", () => go("calibrate")), btn("去更新自评", "sm ghost", () => go("settings", "general"))],
+    actions: [btn("校准我的能力", "sm", () => openCalibration())],
   });
   if (!rows.length) {
     card.appendChild(emptyState({
@@ -2058,7 +2128,7 @@ const ABILITY_ADVICE = {
   "概念理解": { text: "资料还有没读完的部分，先把剩下的切片看掉，概念才连得起来。", act: "去读资料", go: () => go("learn") },
   "逻辑推理": { text: "答题正确率是这一维的主要依据：去做一组练习，错的会自动进错题本。", act: "出题练习", go: () => go("learn") },
   "工程实践": { text: "走完一章的「讲 → 练 → 记 → 完成」，这一维才会动。", act: "去学一章", go: () => go("learn") },
-  "问题诊断": { text: "错题重做一次就能把这一维推上去，比再读一遍资料管用。", act: "去错题本", go: () => go("wrong") },
+  "问题诊断": { text: "错题重做一次就能把这一维推上去，比再读一遍资料管用。", act: "去错题本", go: () => openWrong() },
   "系统设计": { text: "把学过的章节沉淀成讲义或练习册，产物数就是这一维的依据。", act: "生成讲义", go: () => go("learn") },
   "学习迁移": { text: "写下一条自己的例子或用法，笔记是这一维的依据。", act: "写一条笔记", go: () => openNoteEditor(null, state.kb, state.chapter || "") },
 };
@@ -2443,41 +2513,28 @@ function growthReportText() {
   return lines.join("\n");
 }
 
+/** 学习报告：一个动作「导出报告」，导出后就地给一个"在个性化资源里看"的入口。 */
 function growthReportCard() {
   const card = cardOf({
-    title: "学习报告",
-    sub: "按当前记录现拼的 Markdown",
-    actions: [
-      btn("存成产物", "sm primary", async () => {
-        const text = growthReportText();
-        const name = "成长报告-" + new Date().toLocaleDateString("sv-SE") + ".md";
-        try {
-          const r = await api("/api/artifacts/save", { name: name, content: text });
-          state.lastReportArtifact = r.name;
-          toast("已存成产物：" + r.name + "（在「我的资源」里）");
-          go("report");
-        } catch (e) { toast("保存失败：" + e.message); }
-      }),
-      copyButton(() => growthReportText(), "复制 Markdown"),
-      btn("看预览", "sm ghost", () => {
-        const back = $("view");
-        const dlg = el("div", "card dialog");
-        dlg.appendChild(cardHeadOnly("学习报告预览"));
-        const pre = el("div", "artifact-preview");
-        pre.innerHTML = md(growthReportText());
-        dlg.appendChild(pre);
-        const row = el("div", "row");
-        row.appendChild(btn("收起", "ghost", () => dlg.remove()));
-        row.appendChild(copyButton(() => growthReportText(), "复制 Markdown"));
-        dlg.appendChild(row);
-        back.insertBefore(dlg, back.firstChild);
-      }),
-    ],
+    title: "我的成长",
+    sub: "按当前记录现拼一份 Markdown",
   });
+  const row = el("div", "row");
+  row.appendChild(btn("导出报告", "primary sm", async () => {
+    const name = "我的成长-" + new Date().toLocaleDateString("sv-SE") + ".md";
+    try {
+      const r = await api("/api/artifacts/save", { name: name, content: growthReportText() });
+      state.lastReportArtifact = r.name;
+      toast("已导出：" + r.name);
+      go("report");
+    } catch (e) { toast("导出失败：" + e.message); }
+  }));
+  row.appendChild(el("span", "muted sm", "含概览、六维依据、最近两周与下一步。"));
+  card.appendChild(row);
   if (state.lastReportArtifact) {
     const line = el("div", "row");
-    line.appendChild(el("span", "muted sm grow", "刚存成：" + state.lastReportArtifact));
-    line.appendChild(btn("去我的资源", "sm ghost", () => go("resources")));
+    line.appendChild(el("span", "muted sm grow", "刚导出：" + state.lastReportArtifact));
+    line.appendChild(btn("在个性化资源里看", "sm ghost", () => go("resources")));
     card.appendChild(line);
   }
   return card;
@@ -2485,13 +2542,23 @@ function growthReportCard() {
 
 /* ---------- 我的成长 ---------- */
 
+/**
+ * 我的成长：一页装完"记录 + 能力画像 + 校准"。
+ *
+ * 上一版把校准单列成一个根功能，于是成长页、校准页、两边第二层面板互相甩按钮
+ * （去画像校准 / 看看我的成长 / 去我的成长…）。现在校准是这页里就地展开的一段，
+ * 页面上不再存在"另一个页面"可以跳。
+ * 一屏按钮的规矩：每张卡最多一个主动作，其余降成文字或列表里的链接。
+ */
 PAGES.report = {
   async render() {
     await loadOverview();
+    await loadProfile();
     const v = $("view");
     v.innerHTML = "";
     const r = state.report;
 
+    // 四张统计卡：顺序固定（自检按这个顺序读）
     const grid = el("div", "grid grid-4");
     grid.appendChild(statCard("已读切片", r.readChunks || 0, ""));
     grid.appendChild(statCard("完成章节", r.completedChapters || 0, ""));
@@ -2499,80 +2566,181 @@ PAGES.report = {
     grid.appendChild(statCard("正确率", r.quizTotal ? pct(r.quizRight, r.quizTotal) : 0, "%"));
     v.appendChild(grid);
 
-    v.appendChild(growthReportCard());
-
-    /* 错题的"今天该复习"直接摆到成长页：不然用户不会想起来去错题本 */
-    if (r.quizWrong > 0) {
-      const nudge = el("div", "row review-nudge");
+    // 错题只留一行摘要：详细列表在「我的资源 → 错题本」，不在这页再抄一遍
+    if ((r.quizWrong || 0) > 0) {
       const dueN = Number(r.wrongDue || 0);
-      nudge.appendChild(el("span", "muted grow", "错题 " + r.quizWrong + " 条，其中 " + dueN + " 条今天该复习"));
-      nudge.appendChild(btn(dueN > 0 ? "去复习 " + dueN + " 条" : "打开错题本", dueN > 0 ? "primary sm" : "sm", () => go("wrong")));
-      v.appendChild(nudge);
+      const line = el("div", "row review-nudge");
+      line.appendChild(el("span", "muted grow",
+        "错题 " + r.quizWrong + " 条" + (dueN > 0 ? "，其中 " + dueN + " 条今天该复习" : "")));
+      line.appendChild(btn("去错题本", "sm", () => openWrong()));
+      v.appendChild(line);
     }
 
+    v.appendChild(calibrationCard());
     v.appendChild(abilityCard());
     v.appendChild(trendCard());
-
-    const recent = cardOf({
-      title: "错题回顾",
-      tag: (r.quizWrong || 0) + " 条",
-      actions: [btn("全部错题", "sm ghost", () => go("wrong"))],
-    });
-    const wrong = await api("/api/study/wrong", {});
-    const records = wrong.records || [];
-    if (!records.length) {
-      recent.appendChild(emptyState({
-        inline: true,
-        art: "check",
-        title: "还没有错题",
-        text: "做题之后这里会出现需要复习的题目。",
-        actions: [btn("去做一组练习", "primary", () => go("learn"))],
-      }));
-    } else {
-      const list = el("div", "list");
-      for (const q of records.slice(0, 5)) {
-        const it = el("div", "item");
-        it.appendChild(el("div", "item-title", q.question || ""));
-        it.appendChild(el("div", "answer-line wrong-line", "我的答案：" + (q.myAnswer || "")));
-        if (q.reference) it.appendChild(el("div", "answer-line", "参考答案：" + q.reference));
-        list.appendChild(it);
-      }
-      recent.appendChild(list);
-    }
-    v.appendChild(recent);
-
-    const activity = cardOf({
-      title: "最近的学习活动",
-      sub: "来自 Agent 会话日志",
-      actions: [btn("看全部会话", "sm ghost", () => go("chat", "overview"))],
-    });
-    if (!state.sessions.length) {
-      activity.appendChild(emptyState({
-        inline: true,
-        art: "clock",
-        title: "还没有会话",
-        text: "每次问答、出题、生成讲义都会记录成一条会话，过程可追溯。",
-        actions: [btn("问第一个问题", "primary", () => go("chat"))],
-      }));
-    } else {
-      const list = el("div", "list");
-      for (const s of state.sessions.slice(0, 5)) {
-        const it = el("div", "item clickable");
-        const row = el("div", "row");
-        const main = el("div", "grow");
-        main.appendChild(el("div", "item-title", s.title || "（无标题会话）"));
-        main.appendChild(el("div", "meta", s.eventCount + " 条事件 · " + fmtStamp(s.lastAt)));
-        row.appendChild(main);
-        row.appendChild(tag(EVENT_LABEL[s.lastType] || s.lastType || ""));
-        it.appendChild(row);
-        it.onclick = () => openSession(s.sessionId);
-        list.appendChild(it);
-      }
-      activity.appendChild(list);
-    }
-    v.appendChild(activity);
+    v.appendChild(growthReportCard());
+    v.appendChild(await activityCard());
   },
 };
+
+/** 最近的学习活动（来自会话日志）。 */
+async function activityCard() {
+  const card = cardOf({
+    title: "最近的学习活动",
+    sub: "来自会话日志",
+  });
+  if (!state.sessions.length) {
+    card.appendChild(emptyState({
+      inline: true,
+      art: "clock",
+      title: "还没有会话",
+      text: "每次问答、出题、生成讲义都会记成一条会话，过程可追溯。",
+      actions: [btn("问第一个问题", "primary", () => go("chat"))],
+    }));
+    return card;
+  }
+  const list = el("div", "list");
+  for (const s of state.sessions.slice(0, 5)) {
+    const it = el("div", "item clickable");
+    const row = el("div", "row");
+    const main = el("div", "grow");
+    main.appendChild(el("div", "item-title", s.title || "（无标题会话）"));
+    main.appendChild(el("div", "meta", s.eventCount + " 条事件 · " + fmtStamp(s.lastAt)));
+    row.appendChild(main);
+    row.appendChild(tag(EVENT_LABEL[s.lastType] || s.lastType || ""));
+    it.appendChild(row);
+    it.onclick = () => openSession(s.sessionId);
+    list.appendChild(it);
+  }
+  card.appendChild(list);
+  card.appendChild(el("div", "muted sm", "全部会话与每一步事件在「伴学助手 → 全部会话」里。"));
+  return card;
+}
+
+/**
+ * 能力校准：就地展开，一次只问一条。
+ *
+ * 上一版是"六维 × 五档 + 六个输入框 + 两个保存按钮"（39 个控件）还外加一次跳页——
+ * 那是在让人批量拍分。现在一次只问一条：跟参考比"偏高 / 差不多 / 偏低"三个按钮，
+ * 依据选填，答完给一个「保存」，笔记变成一个可勾选的小选项。
+ */
+function calibrationCard() {
+  const dims = ABILITY_DIMENSIONS;
+  const scores = (state.profile && state.profile.selfScores) || {};
+  if (!state.calib) state.calib = {};
+  if (!state.calibNote) state.calibNote = {};
+  const m = measuredLevelIndex();
+  const open = !!state.calibOpen;
+  const answered = dims.filter((d) => state.calib[d.key] !== undefined).length;
+
+  const baseOf = (d) => (m ? m.index : levelIndexOf(scores[d.key]));
+  const valueOf = (d) => {
+    const idx = state.calib[d.key];
+    if (idx !== undefined) return ABILITY_LEVELS[idx].value;
+    return ABILITY_LEVELS[baseOf(d)].value;
+  };
+
+  const card = cardOf({
+    title: "能力校准",
+    sub: open ? "一条一条来" : null,
+    tag: open ? "已答 " + answered + " / " + dims.length : "",
+  });
+  card.appendChild(el("div", "row calib-head"));
+  if (!open) {
+    card.appendChild(el("div", "muted sm", answered || Object.keys(scores).length
+      ? "自评和最近的实测对不上时校准一下：六个维度各一句话，答完保存。"
+      : "还没有自评分。用六句话给自己定个起点，雷达图才有第二条线。"));
+    const row = el("div", "row");
+    row.appendChild(btn(answered ? "继续校准" : "校准我的能力", "sm primary", () => {
+      state.calibOpen = true;
+      if (!(state.calibStep >= 0 && state.calibStep < dims.length)) state.calibStep = 0;
+      go("report");
+    }));
+    card.appendChild(row);
+    return card;
+  }
+
+  const step = Math.max(0, Math.min(Number(state.calibStep || 0), dims.length));
+  if (step < dims.length) {
+    const d = dims[step];
+    const base = baseOf(d);
+    const box = el("div", "calib-step");
+    box.dataset.id = d.key;
+    const head = el("div", "row");
+    head.appendChild(el("div", "grow", "第 " + (step + 1) + " / " + dims.length + " 条 · " + d.key));
+    head.appendChild(tag(ABILITY_LEVELS[base].label + " " + ABILITY_LEVELS[base].value + " 分"));
+    box.appendChild(head);
+    box.appendChild(el("div", "muted sm", d.hint));
+    box.appendChild(el("div", "meta", m
+      ? "参考：近 " + m.total + " 题正确率 " + m.accuracy + "%（约「" + ABILITY_LEVELS[m.index].label + "」）——你比它？"
+      : "参考：你上次填的是「" + ABILITY_LEVELS[base].label + "」——你比它？"));
+    const row = el("div", "row calib-pick");
+    [["偏低", -1], ["差不多", 0], ["偏高", 1]].forEach(([label, delta]) => {
+      const idx = Math.max(0, Math.min(ABILITY_LEVELS.length - 1, base + Number(delta)));
+      const b = el("button", "seg-item" + (state.calib[d.key] === idx ? " active" : ""),
+        label + " · " + ABILITY_LEVELS[idx].value);
+      b.onclick = () => {
+        state.calib[d.key] = idx;
+        state.calibStep = step + 1;
+        go("report");
+      };
+      row.appendChild(b);
+    });
+    box.appendChild(row);
+    const noteInput = inputOf("calib-note", d.ask + "（选填）", state.calibNote[d.key] || "");
+    noteInput.oninput = () => { state.calibNote[d.key] = noteInput.value; };
+    box.appendChild(noteInput);
+    card.appendChild(box);
+  } else {
+    card.appendChild(el("p", "muted", "六条都答完了。保存后雷达图会立刻按新的自评重画。"));
+  }
+
+  // 已答一览：想改哪条点哪条（这就是"就地修改"，不用回退流程）
+  if (answered > 0) {
+    const doneRow = el("div", "row calib-done");
+    dims.forEach((d, i) => {
+      const idx = state.calib[d.key];
+      const b = el("button", "seg-item" + (i === step ? " active" : ""),
+        d.key + (idx === undefined ? " —" : " " + ABILITY_LEVELS[idx].value));
+      b.onclick = () => { state.calibStep = i; go("report"); };
+      doneRow.appendChild(b);
+    });
+    card.appendChild(doneRow);
+  }
+
+  const foot = el("div", "row");
+  foot.appendChild(btn("保存", "primary", async () => {
+    const selfScores = {};
+    dims.forEach((d) => { selfScores[d.key] = valueOf(d); });
+    try {
+      await saveProfile({ selfScores: selfScores });
+      if (state.calibWantNote) {
+        await api("/api/study/notes/save", {
+          id: "", kbId: state.kb || "", chapter: "",
+          title: "画像校准记录 " + fmtStamp(nowStamp()),
+          text: calibrationNoteText(),
+        });
+      }
+      await loadReport();
+      state.calibOpen = false;
+      state.calibStep = 0;
+      toast(state.calibWantNote ? "已保存，并记了一条校准笔记" : "已保存");
+      go("report");
+    } catch (e) { toast("保存失败：" + e.message); }
+  }));
+  const wantNote = el("label", "muted sm calib-notebox");
+  const cb = el("input");
+  cb.type = "checkbox";
+  cb.checked = !!state.calibWantNote;
+  cb.onchange = () => { state.calibWantNote = cb.checked; };
+  wantNote.appendChild(cb);
+  wantNote.appendChild(el("span", null, " 顺手记一条校准笔记"));
+  foot.appendChild(wantNote);
+  foot.appendChild(btn("收起", "ghost sm", () => { state.calibOpen = false; go("report"); }));
+  card.appendChild(foot);
+  return card;
+}
 
 /* ---------- 画像校准：用真实练习数据与自己的判断对齐六维能力 ---------- */
 
@@ -2650,118 +2818,10 @@ function calibrationNoteText() {
 }
 
 PAGES.calibrate = {
+  // 校准不再是一页：老的深链（#/calibrate）重定向到成长页并就地展开那一段
   async render() {
-    await loadCfg();
-    await loadProfile();
-    await loadReport();
-    const v = $("view");
-    v.innerHTML = "";
-    const scores = (state.profile && state.profile.selfScores) || {};
-    if (!state.calib) state.calib = {};
-    if (!state.calibNote) state.calibNote = {};
-    for (const d of ABILITY_DIMENSIONS) {
-      if (state.calib[d.key] === undefined) state.calib[d.key] = levelIndexOf(scores[d.key]);
-    }
-    const m = measuredLevelIndex();
-    const r = state.report || {};
-
-    const steps = cardOf({ title: "校准怎么做" });
-    const ul = el("ul", "about-list");
-    [
-      "六维能力各选一个档位：从「刚起步」到「能设计」，档位对应 20 / 35 / 50 / 65 / 80 分。",
-      "右侧给出实测参考——你在这个知识库里的答题正确率。两者不一致时，优先相信自己最近的做题结果。",
-      "保存后写回本机档案，「我的成长」页会立刻按新分值显示；也可以生成一条校准记录笔记，之后回看当时怎么判断的。",
-    ].forEach((t) => ul.appendChild(el("li", null, t)));
-    steps.appendChild(ul);
-    v.appendChild(steps);
-
-    const actual = cardOf({
-      title: "实测参考",
-      sub: "来自本机的真实作答记录",
-      actions: [btn("去练一组题", "sm", () => go("learn"))],
-    });
-    const grid = el("div", "grid grid-4");
-    grid.appendChild(statCard("答题总数", r.quizTotal || 0, "题"));
-    grid.appendChild(statCard("正确率", r.quizTotal ? pct(r.quizRight, r.quizTotal) : 0, "%"));
-    grid.appendChild(statCard("已读切片", r.readChunks || 0, ""));
-    grid.appendChild(statCard("错题", r.quizWrong || 0, "条"));
-    actual.appendChild(grid);
-    if (m) {
-      const hint = el("p", "calib-hint");
-      hint.innerHTML = "近 " + m.total + " 题正确率 <b>" + m.accuracy + "%</b>，" +
-        "参考档位「<b>" + ABILITY_LEVELS[m.index].label + "</b>」（" + ABILITY_LEVELS[m.index].value + " 分）。";
-      actual.appendChild(hint);
-      actual.appendChild(btn("六维都先按实测参考填", "", () => {
-        ABILITY_DIMENSIONS.forEach((d) => { state.calib[d.key] = m.index; });
-        go("calibrate");
-      }));
-    } else {
-      actual.appendChild(el("p", "muted", "练习数据还不足 4 题，这次以自评为主。先去「学 · 练」做一组题，校准会更有依据。"));
-    }
-    v.appendChild(actual);
-
-    const rows = cardOf({
-      title: "六维自评",
-      sub: "点档位即可，下面那行字是给自己留的依据（可留空）",
-      tag: Object.keys(scores).length + " 项已有分值",
-    });
-    for (const d of ABILITY_DIMENSIONS) {
-      const cur = state.calib[d.key];
-      const box = el("div", "calib-row");
-      box.dataset.id = d.key;
-      const head = el("div", "row");
-      const main = el("div", "grow");
-      main.appendChild(el("div", "item-title", d.key));
-      main.appendChild(el("div", "meta", d.hint));
-      head.appendChild(main);
-      head.appendChild(tag("当前 " + (scores[d.key] === undefined ? "未填" : scores[d.key])));
-      box.appendChild(head);
-      const seg = el("div", "seg seg-wide");
-      ABILITY_LEVELS.forEach((lv, i) => {
-        const b = el("button", "seg-item" + (i === cur ? " active" : ""), lv.label + " · " + lv.value);
-        b.title = lv.note;
-        if (m && m.index === i) b.appendChild(el("span", "seg-flag", "实测"));
-        b.onclick = () => { state.calib[d.key] = i; go("calibrate"); };
-        seg.appendChild(b);
-      });
-      box.appendChild(seg);
-      const noteInput = inputOf("", d.ask + "（选填）", state.calibNote[d.key] || "");
-      noteInput.oninput = () => { state.calibNote[d.key] = noteInput.value; };
-      box.appendChild(noteInput);
-      rows.appendChild(box);
-    }
-    v.appendChild(rows);
-
-    const foot = el("div", "card");
-    const row = el("div", "row");
-    row.appendChild(btn("保存校准", "primary", async () => {
-      const selfScores = {};
-      ABILITY_DIMENSIONS.forEach((d) => { selfScores[d.key] = ABILITY_LEVELS[state.calib[d.key] || 0].value; });
-      try {
-        await saveProfile({ selfScores: selfScores });
-        toast("已写回本机档案");
-        go("report");
-      } catch (e) { toast("保存失败：" + e.message); }
-    }));
-    row.appendChild(btn("保存并生成校准记录笔记", "", async () => {
-      try {
-        const selfScores = {};
-        ABILITY_DIMENSIONS.forEach((d) => { selfScores[d.key] = ABILITY_LEVELS[state.calib[d.key] || 0].value; });
-        await saveProfile({ selfScores: selfScores });
-        await api("/api/study/notes/save", {
-          id: "", kbId: state.kb || "", chapter: "",
-          title: "画像校准记录 " + fmtStamp(nowStamp()) ,
-          text: calibrationNoteText(),
-        });
-        await loadReport();
-        toast("已写回档案，并生成一条校准记录笔记");
-        go("notes");
-      } catch (e) { toast("失败：" + e.message); }
-    }));
-    row.appendChild(btn("看看我的成长", "ghost", () => go("report")));
-    foot.appendChild(row);
-    foot.appendChild(el("p", "muted sm", "校准只改「自评能力」这一项，不会动你的昵称、学习目标与知识库。"));
-    v.appendChild(foot);
+    state.calibOpen = true;
+    await go("report", null, { replace: true });
   },
 };
 
@@ -3231,7 +3291,7 @@ async function runPaletteSearch(raw) {
   if (chapters.length) groups.push(["章节", chapters]);
 
   const notes = cache.notes.filter((n) => hit(n.title) || hit(n.text)).slice(0, 5)
-    .map((n) => paletteItemMain(n.title || "无标题", (n.chapter ? n.chapter + " · " : "") + String(n.text || "").slice(0, 40), "笔记", () => go("notes")));
+    .map((n) => paletteItemMain(n.title || "无标题", (n.chapter ? n.chapter + " · " : "") + String(n.text || "").slice(0, 40), "笔记", () => openNotes()));
   if (notes.length) groups.push(["笔记", notes]);
 
   const arts = cache.artifacts.filter((a) => hit(a.name)).slice(0, 5)
@@ -3881,13 +3941,14 @@ PANELS.home = {
       body.appendChild(panelItem({
         title: "今天该复习 " + r.wrongDue + " 条错题",
         meta: "按间隔复习排出来的",
-        onClick: () => go("wrong"),
+        onClick: () => openWrong(),
       }));
     }
     if (r.readChunks || r.completedChapters) {
       body.appendChild(panelItem({
         title: "已读 " + (r.readChunks || 0) + " 片 · 完成 " + (r.completedChapters || 0) + " 章",
-        onClick: () => go("report"),
+        meta: "去「学 · 练」接着读",
+        onClick: () => go("learn"),
       }));
     }
     const arts = (state.artifacts || []).slice(0, 5);
@@ -3905,7 +3966,7 @@ PANELS.home = {
     if (!body.querySelector(".panel-item")) {
       body.appendChild(panelEmpty("先从主区的「开始使用」五步走一遍。"));
     }
-    ui.foot(btn("去我的资源", "sm", () => go("resources")));
+    ui.foot(btn("去个性化资源", "sm", () => go("resources")));
   },
 };
 
@@ -3946,48 +4007,58 @@ PANELS.learn = {
   },
 };
 
-/* ---------- 笔记 ---------- */
+/* ---------- 我的资源（笔记 + 错题本）：第二层面板 ---------- */
 PANELS.notes = {
-  title: "笔记",
+  title: "我的资源",
   actions: () => [panelBtn("plus", "写一条笔记", () => openNoteEditor(null, state.kb, state.chapter || ""))],
-  async render(body) {
-    await loadCfg();
-    let notes = [];
-    try { notes = (await api("/api/study/notes/list", {})).notes || []; } catch (e) { notes = []; }
-    if (!notes.length) {
-      body.appendChild(panelEmpty("还没有笔记。读资料时点「就这段记笔记」会存到这里。"));
-      return;
-    }
-    body.appendChild(panelGroup("共 " + notes.length + " 条"));
-    for (const n of notes) {
-      body.appendChild(panelItem({
-        id: n.id,
-        title: n.title || "无标题",
-        meta: (n.chapter ? n.chapter + " · " : "") + (n.updatedAt ? fmtStamp(n.updatedAt).slice(6) : ""),
-        onClick: () => go("notes", null, { focus: n.id }),
-      }));
-    }
-  },
-};
-
-/* ---------- 错题本 ---------- */
-PANELS.wrong = {
-  title: "错题",
   async render(body, ui) {
     await loadCfg();
-    let all = [];
-    try { all = (await api("/api/study/wrong", {})).records || []; } catch (e) { all = []; }
-    const due = all.filter((r) => r.due);
-    const mastered = all.filter((r) => r.mastered);
-    const tab = state.wrongTab || "due";
-    const pool = tab === "due" ? due : tab === "mastered" ? mastered : all;
+    const tab = state.resTab === "wrong" ? "wrong" : "notes";
+    let notes = [];
+    let wrongs = [];
+    try { notes = (await api("/api/study/notes/list", {})).notes || []; } catch (e) { notes = []; }
+    try { wrongs = (await api("/api/study/wrong", {})).records || []; } catch (e) { wrongs = []; }
+    const due = wrongs.filter((r) => r.due);
+    body.appendChild(panelSeg([
+      { key: "notes", label: "笔记 " + notes.length },
+      { key: "wrong", label: "错题本 " + wrongs.length },
+    ], tab, (k) => {
+      if (k === "wrong") openWrong();
+      else openNotes();
+    }));
+
+    if (tab === "notes") {
+      if (!notes.length) {
+        body.appendChild(panelEmpty("还没有笔记。读资料时点「就这段记笔记」会存到这里。"));
+        return;
+      }
+      body.appendChild(panelGroup("共 " + notes.length + " 条"));
+      for (const n of notes) {
+        body.appendChild(panelItem({
+          id: n.id,
+          title: n.title || "无标题",
+          meta: (n.chapter ? n.chapter + " · " : "") + (n.updatedAt ? fmtStamp(n.updatedAt).slice(6) : ""),
+          onClick: () => openNotes({ focus: n.id }),
+        }));
+      }
+      return;
+    }
+
+    if (!wrongs.length) {
+      body.appendChild(panelEmpty("还没有错题。答题答错会自动进来，并按间隔安排复习。"));
+      ui.foot(btn("去做一组练习", "primary sm", () => go("learn")));
+      return;
+    }
+    const mastered = wrongs.filter((r) => r.mastered);
+    const wtab = state.wrongTab || "due";
+    const pool = wtab === "due" ? due : wtab === "mastered" ? mastered : wrongs;
     body.appendChild(panelSeg([
       { key: "due", label: "待复习 " + due.length },
       { key: "mastered", label: "已掌握 " + mastered.length },
-      { key: "all", label: "全部 " + all.length },
-    ], tab, (k) => { state.wrongTab = k; go("wrong"); }));
+      { key: "all", label: "全部 " + wrongs.length },
+    ], wtab, (k) => { state.wrongTab = k; openWrong(); }));
     if (!pool.length) {
-      body.appendChild(panelEmpty(all.length ? "这个分类下是空的。" : "还没有错题。答题答错会自动进来，并按间隔安排复习。"));
+      body.appendChild(panelEmpty("这个分类下是空的。"));
       return;
     }
     for (const r of pool) {
@@ -3995,18 +4066,19 @@ PANELS.wrong = {
         id: r.id,
         title: r.question || "（题干缺失）",
         meta: (r.chapter ? r.chapter + " · " : "") + (r.mastered ? "已掌握" : r.due ? "今天该重做" : r.dueMs ? daysUntil(r.dueMs) + " 天后复习" : ""),
-        onClick: () => go("wrong", null, { focus: r.id }),
+        onClick: () => openWrong({ focus: r.id }),
       }));
     }
     if (due.length) ui.foot(btn("开始复习（" + due.length + " 条）", "primary sm", () => openRedo(due[0])));
   },
 };
 
-/* ---------- 我的成长 ---------- */
+/* ---------- 我的成长（含就地校准）：第二层面板 ---------- */
 PANELS.report = {
   title: "我的成长",
   async render(body, ui) {
     await loadOverview();
+    await loadProfile();
     const r = state.report || {};
     body.appendChild(panelGroup("概览"));
     const rows = [
@@ -4021,41 +4093,32 @@ PANELS.report = {
       line.appendChild(el("span", "v", String(v)));
       body.appendChild(line);
     }
+    if ((r.wrongDue || 0) > 0) {
+      body.appendChild(panelItem({
+        title: "今天该复习 " + r.wrongDue + " 条错题",
+        meta: "在「我的资源 → 错题本」里重做",
+        onClick: () => openWrong(),
+      }));
+    }
     const scores = (state.profile || {}).selfScores || {};
     body.appendChild(panelGroup("能力维度（自评）"));
     for (const d of ABILITY_DIMENSIONS) {
+      const idx = state.calib ? state.calib[d.key] : undefined;
       body.appendChild(panelItem({
         id: d.key,
         title: d.key,
-        meta: scores[d.key] === undefined ? "未填" : scores[d.key] + " 分",
-        onClick: () => go("calibrate", null, { focus: d.key }),
+        meta: idx !== undefined
+          ? "这次校准选到 " + ABILITY_LEVELS[idx].value + " 分"
+          : (scores[d.key] === undefined ? "未填" : scores[d.key] + " 分"),
+        onClick: () => openCalibration(d.key),
       }));
     }
-    ui.foot(btn("去做画像校准", "sm primary", () => go("calibrate")));
+    ui.foot(btn("校准我的能力", "sm primary", () => openCalibration()));
   },
 };
 
-/* ---------- 画像校准 ---------- */
-PANELS.calibrate = {
-  title: "六个维度",
-  async render(body, ui) {
-    await loadCfg();
-    await loadProfile();
-    const scores = (state.profile || {}).selfScores || {};
-    body.appendChild(panelGroup("点一个维度，直接跳到它那一档"));
-    for (const d of ABILITY_DIMENSIONS) {
-      const cur = state.calib ? state.calib[d.key] : undefined;
-      const lv = cur !== undefined ? ABILITY_LEVELS[cur] : null;
-      body.appendChild(panelItem({
-        id: d.key,
-        title: d.key,
-        meta: lv ? "选到「" + lv.label + "」" : (scores[d.key] === undefined ? "未填" : "已填 " + scores[d.key]),
-        onClick: () => go("calibrate", null, { focus: d.key }),
-      }));
-    }
-    ui.foot(btn("去我的成长", "sm", () => go("report")));
-  },
-};
+// 老的深链（#/calibrate）落到同一个面板上
+PANELS.calibrate = PANELS.report;
 
 /* ---------- 我的资源 ---------- */
 PANELS.resources = {
@@ -5960,7 +6023,7 @@ async function openQuiz(container, chapter) {
   const foot = el("div", "row");
   foot.appendChild(score);
   foot.appendChild(btn("收起", "", () => { dlg.remove(); go("learn"); }));
-  foot.appendChild(btn("去错题本", "ghost", () => go("wrong")));
+  foot.appendChild(btn("去错题本", "ghost", () => openWrong()));
   foot.appendChild(btn("把这章做成讲义", "ghost", () => { dlg.remove(); askTopic("lecture", chapter); }));
   dlg.appendChild(foot);
 }

@@ -14,8 +14,10 @@
              radial-gradient(80% 105% at 0% 100%, var(--glow-2), transparent 60%);
   --panel: #ffffff;
   --panel-soft: #f6f8f7;
-  --panel-sunk: #f1f4f2;
-  --topbar-bg: rgba(255, 255, 255, .82);
+  --panel-sunk: #eef2f0;
+  /* 三层深浅：顶栏与最左侧窄栏同一层（最深）→ 第二层面板一层 → 主区最浅 */
+  --panel-bg: #f8faf9;
+  --topbar-bg: rgba(240, 243, 241, .90);
   --empty-bg: linear-gradient(180deg, rgba(255, 255, 255, .55), var(--panel-soft));
 
   --ink: #0f1713;
@@ -25,7 +27,7 @@
   --line-soft: #eff2f0;
 
   /* 窄侧栏 */
-  --rail-bg: #f7f9f8;
+  --rail-bg: #f0f3f1;
   --rail-ink: #5a6960;
   --rail-ink-hi: #121b16;
   --rail-hi: rgba(47, 112, 83, .10);
@@ -63,18 +65,20 @@
 /* 显式选了深色 → 直接用；跟着系统走 → 只在没被显式设成浅色时生效 */
 html[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0b0e0c;
-  --panel: #131714;
-  --panel-soft: #171c18;
+  --bg: #121714;
+  --panel: #171c18;
+  --panel-soft: #1a201b;
   --panel-sunk: #1c221d;
-  --topbar-bg: rgba(19, 23, 20, .78);
+  /* 三层深浅：顶栏与最左侧窄栏最深 → 第二层面板稍浅 → 主区再浅一点；卡片比主区亮，浮得起来 */
+  --panel-bg: #0e1310;
+  --topbar-bg: rgba(8, 11, 9, .86);
   --empty-bg: linear-gradient(180deg, rgba(23,28,24,.65), var(--panel-soft));
   --ink: #e9edea;
   --ink-2: #bcc6bf;
   --muted: #8b978f;
   --line: #262e28;
   --line-soft: #1e251f;
-  --rail-bg: #0e1210;
+  --rail-bg: #080b09;
   --rail-ink: #8e9b93;
   --rail-ink-hi: #f1f5f2;
   --rail-hi: rgba(103, 214, 160, .13);
@@ -102,18 +106,20 @@ html[data-theme="dark"] {
 @media (prefers-color-scheme: dark) {
   html:not([data-theme="light"]):not([data-theme="dark"]) {
     color-scheme: dark;
-    --bg: #0b0e0c;
-    --panel: #131714;
-    --panel-soft: #171c18;
+    --bg: #121714;
+    --panel: #171c18;
+    --panel-soft: #1a201b;
     --panel-sunk: #1c221d;
-    --topbar-bg: rgba(19, 23, 20, .78);
+    /* 三层深浅：顶栏与最左侧窄栏最深 → 第二层面板稍浅 → 主区再浅一点；卡片比主区亮，浮得起来 */
+    --panel-bg: #0e1310;
+    --topbar-bg: rgba(8, 11, 9, .86);
     --empty-bg: linear-gradient(180deg, rgba(23,28,24,.65), var(--panel-soft));
     --ink: #e9edea;
     --ink-2: #bcc6bf;
     --muted: #8b978f;
     --line: #262e28;
     --line-soft: #1e251f;
-    --rail-bg: #0e1210;
+    --rail-bg: #080b09;
     --rail-ink: #8e9b93;
     --rail-ink-hi: #f1f5f2;
     --rail-hi: rgba(103, 214, 160, .13);
@@ -657,6 +663,19 @@ body.chat-mode .topbar { display: none; }
 /* ============================================================
   画像校准
    ============================================================ */
+/* 我的资源：页面顶部的"笔记 / 错题本"分段（原来这两个各占一个根入口） */
+.res-tabs { padding: 10px 16px; }
+.res-tabs .seg { margin-bottom: 0; }
+
+/* 能力校准：就地展开，一次一条 */
+.calib-head { margin-bottom: 4px; }
+.calib-step { padding: 12px 0 4px; border-top: 1px dashed var(--line); }
+.calib-step .meta { margin: 2px 0 10px; }
+.calib-pick { gap: 8px; }
+.calib-pick .seg-item { flex: 1; text-align: center; }
+.calib-done { flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.calib-done .seg-item { font-size: 12px; }
+.calib-notebox { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; }
 .calib-row { padding: 14px 0; border-bottom: 1px dashed var(--line); }
 .calib-row:last-child { border-bottom: 0; }
 .calib-row input { margin-top: 8px; }
@@ -1021,8 +1040,9 @@ body.panel-hidden #rail-toggle { background: var(--rail-hi); color: var(--brand)
 .panel {
   flex: 0 0 250px; width: 250px;
   display: flex; flex-direction: column; min-height: 0;
-  background: var(--rail-bg);
-  border-right: 1px solid var(--rail-line);
+  /* 第二层：与最左侧窄栏刻意不同深浅，四块（顶栏 / 窄栏 / 第二层 / 主区）才有层次 */
+  background: var(--panel-bg);
+  border-right: 1px solid var(--line);
 }
 .panel[hidden] { display: none; }
 body.panel-hidden .panel { display: none; }
