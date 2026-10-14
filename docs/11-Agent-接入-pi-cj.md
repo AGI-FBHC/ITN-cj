@@ -62,6 +62,14 @@ pi-cj 的运行时**零网络、零文件 IO**（它的 README 明确写了这�
 >   `allowWeb=false` 时**根本不生成**联网工具）。编译通过、`cjpm test` 54/54。
 >   剩下"把 DomainTool 包成 pi 的 Tool + 跑一轮"那一半**暂停**：用户发现 pi-cj 还有小 bug，等那边修完再继续。
 >
+> **第二次重新同步（2026-10-14，本轮）已完成**：按上面的手册把 lumin 当前版本重新拷进内核，包名替换为
+> `itn_desktop_core.*`。拷了 `lumin/src/pi/*`（15）→`core/src/pi/`、`lumin/src/tools/*`（3）→`core/src/pi_tools/`、
+> `lumin/src/cli/{trust,util,workspaces}.cj`（3）→`core/src/lumin_cli/`（unittests 里有 `import lumin.cli.*`，
+> 只需这三个；**`cli/chat.cj`、`cli/http.cj` 刻意不拷**——那是 CLI 本体与它自带的 provider，内核用不着）、
+> `lumin/src/unittests/*`（8）→`core/src/unittests/`。同步后残留检查无旧包名。
+> 结果：`scripts/build.ps1` 通过（只剩 `Process.start` 废弃警告，来自 pi_tools 的 `workspace.cj`）；
+> `cjpm test` → **59/59 全绿**（lumin 自己的 56 + 我们 P2 的 `provider_test` 3）。P3 后半可以开工了。
+>
 > **改名历史（2026-10-14 一天内改了两次）**：`pi-cj/` → `xbot/` → **`lumin/`**（现在的名字，包名 `lumin.pi` / `lumin.tools` / `lumin.cli`）。
 > 所以我内核里那份 `core/src/pi/**` 是**旧名字时代的快照**，重新开工前必须先重新同步一次。
 >

@@ -24,6 +24,11 @@ let FILE_MUTEX = Mutex()
 
 public class Workspace {
     public let root: String
+    /**
+     * 保护目录（绝对路径前缀）：CLI 的数据目录（trust.json / workspaces.json / 会话文件）在里面，
+     * 落在这些前缀下的路径一律拒绝。
+     */
+    private var denyRoots = ArrayList<String>()
     public let maxListEntries: Int64 = 500
     public let maxFindResults: Int64 = 1000
     public let maxGrepMatches: Int64 = 100
@@ -31,6 +36,39 @@ public class Workspace {
 
     public init(root: String) {
         this.root = stripTrailingSeps(root)
+    }
+
+    public init(root: String, denyRoots: ArrayList<String>) {
+        this.root = stripTrailingSeps(root)
+        for (d in denyRoots) {
+            if (d.size > 0) {
+                this.denyRoots.add(stripTrailingSeps(d))
+            }
+        }
+    }
+
+    /**
+     * 拒绝原因（空串 = 允许）：越出工作区、或命中敏感路径/保护目录。
+     *
+     * 敏感路径 = 任何一段以 .env 开头、或叫 .git / .ssh / trust.json / workspaces.json。
+     * 为什么比 Pi 严：Pi 不拦这些（它信任"项目里的可执行资源"，工具用进程系统权限），
+     * 而我们的 Key 就在项目里的 .env.local，默认工作区又是启动目录 —— 不拦等于把 Key 摆在模型面前。
+     */
+    public func denyReason(rel: String): String {
+        match (normalizeRel(rel)) {
+            case None => return "路径越出工作区，拒绝访问"
+            case Some(n) =>
+                if (hasSensitiveSegment(n)) {
+                    return "这是敏感路径（.env / .git / .ssh 之类），已拒绝访问"
+                }
+                let full = if (n.size == 0) { root } else { root + "/" + n }
+                for (d in denyRoots) {
+                    if (hasPrefix(full, d)) {
+                        return "这个路径在受保护目录里，拒绝访问"
+                    }
+                }
+                return ""
+        }
     }
 
     public func relOf(rel: String): String {
@@ -257,6 +295,25 @@ public class CmdOutcome {
 }
 
 
+/** 路径里有没有敏感段（.env*、.git、.ssh、CLI 数据文件名）。 */
+func hasSensitiveSegment(rel: String): Bool {
+    let b = rel.toArray()
+    var start: Int64 = 0
+    var i: Int64 = 0
+    while (i <= b.size) {
+        if (i == b.size || b[i] == 47 || b[i] == 92) {
+            let seg = safeUtf8(b, start, i)
+            if (hasPrefix(seg, ".env") || seg == ".git" || seg == ".ssh" ||
+                seg == "trust.json" || seg == "workspaces.json") {
+                return true
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    return false
+}
+
 /** 这些目录不列也不搜。 */
 func skipDirName(nm: String): Bool {
     let nb = nm.toArray()
@@ -289,7 +346,7 @@ func tempFilePath(): String {
     if (dir.size == 0) {
         dir = "."
     }
-    return dir + "/pi-cj-cmd-" + (nowMillis() % 100000000).toString() + ".txt"
+    return dir + "/lumin-cmd-" + (nowMillis() % 100000000).toString() + ".txt"
 }
 
 func stripTrailingSeps(s: String): String {

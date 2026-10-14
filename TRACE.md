@@ -1766,3 +1766,37 @@ P3 前半（`core/src/agent/pi_tools_spec.cj` 中立工具定义层）。**P3 �
 **验证**：`tools/report-check.ps1` → **17 项全过**（新增：保存成功回文件名 / 文件真在 artifacts 里 / 内容对 / **重名自动加序号** / 缺参数被拒）；
 `node tools/ui-e2e.cjs` → **78 通过 / 0 失败**（成长页那一步新增"存成产物 → 读回来断言含六维与最近两周 → 清理"）；
 web-fetch / skill / graph / study-api / ui-check / smoke / package-smoke 全过。
+
+---
+
+## 第二十七轮（2026-10-14）：lumin 重新同步进内核（P1 重做），`cjpm test` 59/59
+
+**背景**：第二十五轮发现内核里的 `core/src/pi/**` 是 **旧名字时代（pi-cj）的快照**，而 lumin 那边又改了两轮
+（改名 + 工作区管理 + 命令超时/自动压缩/并行工具），所以接入前必须先重新同步。这一轮做的就是这件事。
+
+**同步的动作（按 `docs/11` 的重新同步手册执行）**：
+
+| 从 | 到 | 文件数 | 包名替换 |
+| --- | --- | --- | --- |
+| `lumin/src/pi/*` | `core/src/pi/` | 15 | `lumin.pi` → `itn_desktop_core.pi` |
+| `lumin/src/tools/*` | `core/src/pi_tools/` | 3 | `lumin.tools` → `itn_desktop_core.pi_tools`（`import lumin.pi.*` 也跟着换） |
+| `lumin/src/cli/{trust,util,workspaces}.cj` | `core/src/lumin_cli/` | 3 | `lumin.cli` → `itn_desktop_core.lumin_cli` |
+| `lumin/src/unittests/*` | `core/src/unittests/` | 8 | `lumin.unittests` → `itn_desktop_core.unittests` |
+
+- **为什么还要拷 `cli/` 的 3 个文件**：lumin 的 unittests 里有 `import lumin.cli.*`（用到了 `Workspace`/信任表/`absPath`），
+  只拷 `pi/` 与 `tools/` 会缺符号。**`cli/chat.cj`、`cli/http.cj` 刻意不拷**——一个是 CLI 本体、一个是它自带的 provider，
+  内核不需要，也不该把 CLI 的 main 环搬进来。
+- 同步是**字符串级替换**（`package`、`import`、全限定 `lumin.*` 引用），同步后做了残留检查：内核 `core/src/**` 里
+  **再无 `pi_cj` / `xbot` / `lumin.pi` 字样**。
+- 我上一轮自己写的 `core/src/unittests/provider_test.cj`（P2 的 3 例）**没有被覆盖**，仍在。
+- **没动 `lumin/` 本体任何一个字节**（用户硬约束：那个智能体会单独上传到别的仓库；我们只改自己的副本）。
+
+**验证**：
+- `pwsh -File scripts/build.ps1` → **通过**（只有 `Process.start` 已废弃的警告，来自 `pi_tools/workspace.cj`，
+  是 lumin 自己的写法，不动它）。
+- `cd core && cjpm test` → **59/59 全绿**（lumin 自己的 56 例 + 我们的 `provider_test` 3 例）。
+- 这批 `lumin/src/*` 里的新东西也一并进来了：工作区登记表 + 项目信任 + 敏感路径拒绝
+  （`WorkspaceManagementTest` 5 例）、`run_command` 超时、并行工具执行。
+
+**下一步**：P3 后半（把 `core/src/agent/pi_tools_spec.cj` 的中立 `DomainTool` 包成 pi 的 `Tool`）+ P4（换主循环，
+先挂临时路由 `/api/agent/ask-pi` 同题对照）。

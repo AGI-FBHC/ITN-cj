@@ -52,9 +52,9 @@ class ReadTool <: Tool {
         if (path.size == 0) {
             return ToolResult.err("缺少 path 参数")
         }
-        match (ws.resolve(path)) {
-            case None => return ToolResult.err("路径越出工作区，拒绝访问：" + path)
-            case Some(_) => ()
+        let why = ws.denyReason(path)
+        if (why.size > 0) {
+            return ToolResult.err(why + "：" + path)
         }
         let raw = match (ws.readText(path)) {
             case Some(t) => t
@@ -121,9 +121,9 @@ class WriteTool <: Tool {
         if (path.size == 0) {
             return ToolResult.err("缺少 path 参数")
         }
-        match (ws.resolve(path)) {
-            case None => return ToolResult.err("路径越出工作区，拒绝写入：" + path)
-            case Some(_) => ()
+        let why = ws.denyReason(path)
+        if (why.size > 0) {
+            return ToolResult.err(why + "：" + path)
         }
         let content = strOf(args, "content")
         if (ws.writeText(path, content)) {
@@ -160,9 +160,9 @@ class EditTool <: Tool {
         if (path.size == 0) {
             return ToolResult.err("缺少 path 参数")
         }
-        match (ws.resolve(path)) {
-            case None => return ToolResult.err("路径越出工作区，拒绝访问：" + path)
-            case Some(_) => ()
+        let why = ws.denyReason(path)
+        if (why.size > 0) {
+            return ToolResult.err(why + "：" + path)
         }
         let edits = match (args.get("edits")) {
             case Some(v) =>
@@ -232,9 +232,9 @@ class LsTool <: Tool {
 
     public func run(callId: String, args: JsonObject): ToolResult {
         let path = strOf(args, "path")
-        match (ws.resolve(path)) {
-            case None => return ToolResult.err("路径越出工作区：" + path)
-            case Some(_) => ()
+        let why = ws.denyReason(path)
+        if (why.size > 0) {
+            return ToolResult.err(why + "：" + path)
         }
         var limit = intOf(args, "limit")
         if (limit <= 0) {
@@ -276,9 +276,9 @@ class FindTool <: Tool {
             return ToolResult.err("缺少 pattern 参数")
         }
         let path = strOf(args, "path")
-        match (ws.resolve(path)) {
-            case None => return ToolResult.err("路径越出工作区：" + path)
-            case Some(_) => ()
+        let why = ws.denyReason(path)
+        if (why.size > 0) {
+            return ToolResult.err(why + "：" + path)
         }
         var limit = intOf(args, "limit")
         if (limit <= 0) {
@@ -337,9 +337,9 @@ class GrepTool <: Tool {
             return ToolResult.err("缺少 pattern 参数")
         }
         let path = strOf(args, "path")
-        match (ws.resolve(path)) {
-            case None => return ToolResult.err("路径越出工作区：" + path)
-            case Some(_) => ()
+        let why = ws.denyReason(path)
+        if (why.size > 0) {
+            return ToolResult.err(why + "：" + path)
         }
         let literal = boolOf(args, "literal", false)
         let ic = boolOf(args, "ignoreCase", false)

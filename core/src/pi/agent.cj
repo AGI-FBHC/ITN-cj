@@ -82,7 +82,7 @@ public class AgentOptions {
 
 public class Agent {
     public var session: Session
-    public let registry: ToolRegistry
+    public var registry: ToolRegistry
     public var mode: Mode
     public let options: AgentOptions
     /** 角色设定（系统提示词的第一段） */

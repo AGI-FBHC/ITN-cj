@@ -100,6 +100,11 @@ func freshDir(name: String): String {
     return d
 }
 
+/** 直接写文件（绕过工作区工具，用来铺测试数据）。 */
+func fsWrite(path: String, text: String): Unit {
+    File.writeTo(path, text.toArray())
+}
+
 /** 读整个文本文件（测试里读会话文件用）。 */
 func slurp(path: String): String {
     try {

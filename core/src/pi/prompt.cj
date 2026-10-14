@@ -52,6 +52,8 @@ public func buildSystemPrompt(preamble: String, tools: ArrayList<ToolSpec>, skil
         sb.append(cwd)
         sb.append("\nAll paths you pass to tools are relative to this working directory. Do not prefix them with it" +
             " (for example pass \"readme.md\", not \"<workspace>/readme.md\").")
+        sb.append("\nWhen you create or change a file, tell the user its path relative to this working directory, " +
+            "and do not claim the file is somewhere else. .env / .git / .ssh are off limits.")
     }
     return sb.toString()
 }
