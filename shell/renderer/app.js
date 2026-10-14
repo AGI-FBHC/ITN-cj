@@ -846,416 +846,425 @@ async function continueStudy() {
 
 
 /* ============================================================
-   学习网络图（首页第三屏半）
+   首页·星云图（所有知识库一屏看完）
    ------------------------------------------------------------
-   三句设计说明：
-   1. 不引三方库（桌面版前端只有三个白名单文件），用 canvas 2D 自己做透视投影；
-   2. 每次进首页按**当前学习状态**重算：节点=章节（大小=切片数、颜色=进度），
-      笔记/错题/产物挂在章节上，所以学完一章、做错一题，图自己就变；
-   3. 有节制：>200 个章节只画主干并明说"折叠了多少"；切页就停渲染；
-      prefers-reduced-motion 不自动旋转。
+   中间一棵核 = 全部；每个库一团星云；库间一线相连。
+   为什么不引三方库：桌面版前端只有 index.html / app.js / style.css 三个白名单文件，
+   所以投影、呼吸、发光全用 canvas 2D 自己写，并用一张预渲染的发光贴图代替成百个 radialGradient。
+   与 /api/graph 的分工：那个接口算"一个库里的章节网络"，星云图用 /api/nebula 拿所有库，
+   库内的聚合在内核里复用同一套 buildGraph——前端只负责画。
+   位置全部由 id/名字哈希决定（确定性，不跑力学模拟）：加库不重排、刷新不跳动。
    ============================================================ */
 
-const graphView = {
+const NEBULA = {
   canvas: null,
+  side: null,
   raf: 0,
-  spin: true,
-  yaw: 0.6,
-  pitch: -0.32,
+  yaw: 0.55,
+  pitch: -0.22,
   zoom: 1,
-  vYaw: 0,
-  vPitch: 0,
   drag: null,
+  hover: null,
+  selected: null,      // {kbId, chapter} 或 {kbId, core:true}
   filter: "all",
-  selected: "",
-  hover: "",
-  nodes: [],
-  edges: [],
-  folded: 0,
   data: null,
-  pulse: 0,
+  points: [],          // 投影前的世界坐标点
+  sprite: null,
+  parX: 0,
+  parY: 0,
+  lastActive: 0,
+  lastFrame: 0,
+  lastPaintMs: 0,
+  reduced: false,
 };
 
-/** 拉一次图数据；首页每次渲染都会调，所以"图会跟着学习状态变"。 */
-async function graphCard() {
-  const card = el("div", "card graph-card");
-  const head = el("div", "card-head");
-  head.appendChild(el("h2", null, "学习网络"));
-  head.appendChild(spacer());
-  const stat = el("span", "card-sub", "");
-  head.appendChild(stat);
-  const fullBtn = btn("全屏", "sm ghost", () => toggleGraphFull());
-  head.appendChild(fullBtn);
-  card.appendChild(head);
+const NEBULA_FILTERS = [
+  ["all", "全部"],
+  ["reading", "只在读"],
+  ["wrong", "只看错题"],
+  ["artifact", "只看产物"],
+];
 
-  let data = null;
-  try {
-    data = await api("/api/graph", { kbId: state.kb });
-  } catch (e) {
-    card.appendChild(emptyState({
-      art: "alert",
-      title: "算不出学习网络",
-      text: e.message,
-      actions: [btn("重试", "primary", () => go("home"))],
-    }));
-    return card;
-  }
-  if (!data || data.empty) {
-    // 没索引就不画空图：给一条能走下去的路
-    card.appendChild(emptyState({
-      art: "db",
-      title: "还没有可画的章节",
-      text: (data && data.reason ? data.reason + "。" : "") + "指定资料目录并建立索引后，这里会按章节长出一张能点、能转的图。",
-      actions: [btn("去指定资料目录", "primary", () => go("settings", "kb")),
-                btn("去建立索引", "", () => { if (state.kb) buildIndex(state.kb); else go("settings", "kb"); })],
-    }));
-    return card;
-  }
-
-  graphView.data = data;
-  graphView.folded = data.folded || 0;
-  graphView.selected = "";
-  graphView.hover = "";
-  graphView.filter = "all";
-  graphView.yaw = 0.6;
-  graphView.pitch = -0.32;
-  graphView.zoom = 1;
-  graphView.vYaw = 0;
-  graphView.vPitch = 0;
-  // 布局直接改这两个数组里的坐标；graphView 持有它们，渲染与自检都读同一份
-  graphView.nodes = data.nodes || [];
-  graphView.edges = data.edges || [];
-  layoutGraph(graphView.nodes, graphView.edges);
-
-  const body = el("div", "graph-body");
-  const canvas = el("canvas", "graph-canvas");
-  canvas.width = 1200;
-  canvas.height = 380;
-  body.appendChild(canvas);
-  const side = el("div", "graph-side");
-  side.hidden = true;
-  body.appendChild(side);
-  const tools = el("div", "graph-tools");
-  const filters = [["all", "全部"], ["reading", "只在读"], ["wrong", "只看错题"], ["artifact", "只看产物"]];
-  for (const [k, label] of filters) {
-    const b = el("button", "seg-item" + (k === "all" ? " active" : ""), label);
-    b.dataset.filter = k;
-    b.onclick = () => {
-      graphView.filter = k;
-      for (const x of tools.querySelectorAll("[data-filter]")) x.classList.toggle("active", x.dataset.filter === k);
-      graphView.selected = "";
-      side.hidden = true;
-    };
-    tools.appendChild(b);
-  }
-  const reset = btn("回到全图", "sm ghost", () => {
-    graphView.yaw = 0.6;
-    graphView.pitch = -0.32;
-    graphView.zoom = 1;
-    graphView.vYaw = 0;
-    graphView.vPitch = 0;
-    graphView.filter = "all";
-    for (const x of tools.querySelectorAll("[data-filter]")) x.classList.toggle("active", x.dataset.filter === "all");
-    graphView.selected = "";
-    side.hidden = true;
-  });
-  tools.appendChild(reset);
-  const hint = el("span", "muted sm graph-hint", "拖动旋转 · 滚轮缩放 · 点节点看细节");
-  tools.appendChild(hint);
-  body.appendChild(tools);
-  card.appendChild(body);
-  stat.textContent = "章节 " + (data.stats ? data.stats.chapters : graphView.nodes.length) +
-    (graphView.folded > 0 ? "（只画主干，已折叠 " + graphView.folded + " 个）" : "") +
-    " · 笔记 " + ((data.stats && data.stats.notes) || 0) + " · 已读切片 " + ((data.stats && data.stats.readChunks) || 0);
-
-  attachGraphControls(canvas, side);
-  startGraphLoop(canvas, side, tools);
-  canvas.dataset.nodes = String(graphView.nodes.length);
-  // 自检接缝：给一个章节名，返回它在画布上的像素坐标。
-  // 自动化点节点不必去猜坐标，也顺便让"图上这个点对应哪一章"这件事可查。
-  window.itnGraphPick = (name) => {
-    const n = graphView.nodes.find((x) => x.id === name);
-    if (!n) return null;
-    const pr = graphProject(n, canvas.width, canvas.height, graphView);
-    return { x: pr.x, y: pr.y, w: canvas.width, h: canvas.height, nodes: graphView.nodes.length };
-  };
-  // 全屏状态是挂在 card 上的，重渲染后要保持
-  if (document.body.classList.contains("graph-full")) card.classList.add("full");
-  return card;
+/** 一张 64px 的发光贴图：所有点/光晕都 drawImage 缩放 + globalAlpha 画。 */
+function nebulaSprite() {
+  if (NEBULA.sprite) return NEBULA.sprite;
+  const s = 64;
+  const c = document.createElement("canvas");
+  c.width = s;
+  c.height = s;
+  const g = c.getContext("2d");
+  const rg = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  rg.addColorStop(0, "rgba(255,255,255,1)");
+  rg.addColorStop(0.30, "rgba(255,255,255,0.62)");
+  rg.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = rg;
+  g.fillRect(0, 0, s, s);
+  NEBULA.sprite = c;
+  return c;
 }
 
-/* ---------- 3D 位置：球面螺旋打底 + 一点斥力，够用就好 ---------- */
-function layoutGraph(nodes, edges) {
-  const n = nodes.length;
-  const golden = Math.PI * (3 - Math.sqrt(5));
-  for (let i = 0; i < n; i += 1) {
-    const t = (i + 0.5) / n;
-    const y = 1 - 2 * t;
-    const r = Math.sqrt(Math.max(0, 1 - y * y));
-    const th = golden * i;
-    const node = nodes[i];
-    node.x = Math.cos(th) * r;
-    node.y = y;
-    node.z = Math.sin(th) * r;
-    // 切片多的往外站一点：视觉上"主干更大"，也避免小章节被挤在中间
-    const w = 0.72 + Math.min(1, (node.chunkCount || 1) / 12) * 0.5;
-    node.wgt = w;
-    node.x *= w;
-    node.y *= w;
-    node.z *= w;
+/** 稳定哈希：同一个 id 永远同一个值（位置、相位都靠它）。 */
+function hashStr(text, salt) {
+  let h = 7 + (salt || 0) * 131;
+  const s = String(text || "");
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) + h + s.charCodeAt(i)) & 2147483647;
   }
-  // 只给最大的若干节点写标签：全写会糊成一片
-  const bySize = nodes.slice().sort((x, y) => (y.chunkCount || 0) - (x.chunkCount || 0));
-  bySize.forEach((x, i) => { x.big = i < 12; });
+  return h;
+}
 
-  // 连边当弹簧拉几下：不追求漂亮布局，只求"相连的章节离得近"
-  const idx = {};
-  nodes.forEach((x, i) => { idx[x.id] = i; });
-  const links = edges.map((e) => [idx[e.from], idx[e.to]]).filter(([a, b]) => a !== undefined && b !== undefined);
-  for (let it = 0; it < 30; it += 1) {
-    for (const [a, b] of links) {
-      const na = nodes[a];
-      const nb = nodes[b];
-      const dx = nb.x - na.x;
-      const dy = nb.y - na.y;
-      const dz = nb.z - na.z;
-      const d = Math.max(0.08, Math.sqrt(dx * dx + dy * dy + dz * dz));
-      const push = (d - 0.9) * 0.05;
-      na.x += (dx / d) * push; na.y += (dy / d) * push; na.z += (dz / d) * push;
-      nb.x -= (dx / d) * push; nb.y -= (dy / d) * push; nb.z -= (dz / d) * push;
-    }
-    // 每轮往球壳上拉一把：只靠弹簧会把小图挤成一条线
-    for (const n of nodes) {
-      const d = Math.max(1e-6, Math.hypot(n.x, n.y, n.z));
-      const f = (n.wgt || 0.9) / d;
-      n.x *= f;
-      n.y *= f;
-      n.z *= f;
-    }
-  }
+function hashUnit(text, salt) {
+  return (hashStr(text, salt) % 10000) / 10000;
+}
+
+/** 球壳上的均匀点（未成形的库、团内子团中心用它）。 */
+function shellPoint(id, salt) {
+  const u = hashUnit(id, 1 + (salt || 0));
+  const v = hashUnit(id, 2 + (salt || 0));
+  const z = 1 - 2 * u;
+  const r = Math.sqrt(Math.max(0, 1 - z * z));
+  const phi = 2 * Math.PI * v;
+  return { x: r * Math.cos(phi), y: r * Math.sin(phi) * 0.85, z: z };
 }
 
 /**
- * 透视投影：简单到不能再简单——先绕 y 轴转、再绕 x 轴转，最后除以深度。
- * k 是"单位长度在屏幕上多少像素"：球半径 1 ≈ 画布短边的 28%，远近差由 depth 决定。
+ * 星云中心占的"空位"：球壳上固定 16 个斐波那契空位，库按 id 哈希挑一个，
+ * 被占了就顺着往后找一个空的。
+ *
+ * 为什么不是纯哈希坐标：纯哈希点会挤在一侧（哈希不保证均匀），而且加了新库会让"整体偏一点"。
+ * 空位制下**新库只占空位，谁都不用挪**，也不换色——这正是规格里要的"加库不重排"。
  */
-const GRAPH_CAM = 3.6;
-function graphProject(p, w, h, gv) {
-  const cy = Math.cos(gv.yaw);
-  const sy = Math.sin(gv.yaw);
-  const cp = Math.cos(gv.pitch);
-  const sp = Math.sin(gv.pitch);
+const NEBULA_SLOTS = 16;
+
+function slotPoint(i) {
+  const n = NEBULA_SLOTS;
+  const y = 1 - 2 * (i + 0.5) / n;
+  const r = Math.sqrt(Math.max(0, 1 - y * y));
+  const phi = Math.PI * (3 - Math.sqrt(5)) * i;
+  // 画布是扁的（宽 ≈ 2.4 倍高）：空位在 x 上摊开 1.5 倍，团才不挤成一团
+  return { x: r * Math.cos(phi) * 1.5, y: y * 0.92, z: r * Math.sin(phi) };
+}
+
+function pointVisible(p) {
+  if (NEBULA.filter === "all") return true;
+  if (NEBULA.filter === "reading") return p.kind === "chapter" && p.readCount > 0 && !p.done;
+  if (NEBULA.filter === "wrong") return p.kind === "chapter" && p.wrong > 0;
+  if (NEBULA.filter === "artifact") return p.kind === "chapter" && p.artifactCount > 0;
+  return true;
+}
+
+/**
+ * 布局：三层 + 团内一层。
+ *   中心核(0,0,0) → 星云中心(球壳上，半径按活跃度微调) → 文档子团中心 → 章节点(散在子团中心附近)
+ */
+function nebulaLayout(data) {
+  const pts = [];
+  const clusters = [];
+  const clustersArr = (data && data.clusters) || [];
+  const maxActive = Math.max(1, ...clustersArr.map((c) => Number(c.chapterCount || 0)));
+  const usedSlots = {};
+  clustersArr.forEach((c) => {
+    let slot = hashStr(c.id, 3) % NEBULA_SLOTS;
+    let guard = 0;
+    while (usedSlots[slot] && guard < NEBULA_SLOTS) {
+      slot = (slot + 1) % NEBULA_SLOTS;
+      guard += 1;
+    }
+    usedSlots[slot] = true;
+    const base = slotPoint(slot);
+    // 活跃度微调：章节多的团往外站一点（0.82~1.12），但不改变排序
+    const act = 0.86 + 0.20 * (Number(c.chapterCount || 0) / maxActive);
+    const center = { x: base.x * act, y: base.y * act, z: base.z * act };
+    clusters.push({ id: c.id, name: c.name, hue: c.hue, center: center, data: c });
+    const chapters = c.chapters || [];
+    // 团内按文档分子团：文档 = 子团中心，章节散在它附近
+    const docKeys = [];
+    for (const ch of chapters) {
+      const k = ch.docKey || "（未分组）";
+      if (docKeys.indexOf(k) < 0) docKeys.push(k);
+    }
+    const cloudR = 0.18 + 0.30 * Math.sqrt(chapters.length / 24);
+    docKeys.forEach((dk, di) => {
+      const off = shellPoint(c.id + "#" + dk, di);
+      const sub = {
+        x: center.x + off.x * cloudR * 0.8,
+        y: center.y + off.y * cloudR * 0.8,
+        z: center.z + off.z * cloudR * 0.8,
+      };
+      const mine = chapters.filter((ch) => (ch.docKey || "（未分组）") === dk);
+      mine.forEach((ch, ci) => {
+        const f = shellPoint(dk + "#" + ch.name, ci);
+        const jitter = 0.55 + 0.9 * hashUnit(ch.name, 7);
+        pts.push({
+          kind: "chapter",
+          kbId: c.id,
+          name: ch.name,
+          hue: c.hue,
+          x: sub.x + f.x * cloudR * jitter,
+          y: sub.y + f.y * cloudR * jitter,
+          z: sub.z + f.z * cloudR * jitter,
+          chunkCount: Number(ch.chunkCount || 0),
+          readCount: Number(ch.readCount || 0),
+          done: !!ch.done,
+          wrong: Number(ch.wrong || 0),
+          wrongDue: Number(ch.wrongDue || 0),
+          artifactCount: Number(ch.artifactCount || 0),
+          notes: Number(ch.notes || 0),
+          raw: ch,
+        });
+      });
+    });
+  });
+  // 星云中心与"未成形"的库
+  clusters.forEach((c) => {
+    pts.push({ kind: "cluster", kbId: c.id, name: c.name, hue: c.hue, x: c.center.x, y: c.center.y, z: c.center.z, data: c.data });
+  });
+  ((data && data.unformed) || []).forEach((u) => {
+    const b = shellPoint(u.id, 3);
+    const act = 0.9;
+    pts.push({ kind: "unformed", kbId: u.id, name: u.name, hue: u.hue, x: b.x * act, y: b.y * act, z: b.z * act, reason: u.reason });
+  });
+  pts.push({ kind: "core", kbId: "", name: "全部", hue: 0, x: 0, y: 0, z: 0 });
+  return { points: pts, clusters: clusters };
+}
+
+/** 透视投影：先按 yaw/pitch 旋转，再按距离缩放。返回 null 表示跑到相机后面。 */
+function nebulaProject(p, w, h, base) {
+  const cy = Math.cos(NEBULA.yaw), sy = Math.sin(NEBULA.yaw);
+  const cp = Math.cos(NEBULA.pitch), sp = Math.sin(NEBULA.pitch);
   let x = p.x * cy - p.z * sy;
   let z = p.x * sy + p.z * cy;
   let y = p.y * cp - z * sp;
   z = p.y * sp + z * cp;
-  const depth = GRAPH_CAM + z;
-  const k = (Math.min(w, h) * 1.15 * gv.zoom) / Math.max(0.6, depth);
-  return { x: w / 2 + x * k, y: h / 2 + y * k, k: k, z: depth };
+  // focal/dist：单位球壳大约占 min(w,h) 的 35%，团内的小点也还看得见、点得中
+  const dist = 4.1 / NEBULA.zoom + z;
+  if (dist < 0.4) return null;
+  // 单位球壳大致占满画布：min(w,h) 的高度，半径 1 的团落在 ~0.4*min(w,h) 处
+  const k = (Math.min(w, h) * 1.4) / dist;
+  // base=true：不带鼠标视差的基础坐标（自检接缝与命中测试都用它，屏幕位置才对得上）
+  const ox = base ? 0 : NEBULA.parX;
+  const oy = base ? 0 : NEBULA.parY;
+  return { x: w / 2 + x * k + ox, y: h / 2 + y * k + oy, k: k, z: z, dist: dist };
 }
 
-/** 节点半径：切片越多越大；再按当前缩放等比例缩，避免远处一堆大圆。 */
-function graphNodeRadius(n, pr) {
-  const base = Math.max(4, Math.min(20, 4 + Math.sqrt(n.chunkCount || 1) * 2.6));
-  return base * ((pr.k || 120) / 120);
+/**
+ * 点的半径是**屏幕像素**（规格：1.5~2.5px），不是世界单位——
+ * 早先乘了投影比例 k，远处缩没事、近处会放大成几百像素的白团，把整块画布糊成白色。
+ */
+function nebulaRadius(p, pr) {
+  const shrink = Math.max(0.75, Math.min(1.12, pr.k / 140));
+  if (p.kind === "core") return 7 * shrink;
+  if (p.kind === "cluster") return 4.2 * shrink;
+  if (p.kind === "unformed") return 3 * shrink;
+  return (1.6 + Math.min(1.0, p.chunkCount / 12)) * shrink;
 }
 
-function graphNodeVisible(node) {
-  const f = graphView.filter;
-  if (f === "all") return true;
-  if (f === "reading") return node.status === "reading" || node.status === "todo";
-  if (f === "wrong") return (node.wrong || 0) > 0;
-  if (f === "artifact") return (node.artifacts || []).length > 0;
-  return true;
+/** 呼吸：周期 4~8s，相位由 id 哈希决定（不同步才有星云感）。 */
+function nebulaBreath(p, now) {
+  if (NEBULA.reduced) return { a: 1, r: 1, dx: 0, dy: 0 };
+  const period = 4000 + (hashStr(p.name + p.kbId, 5) % 4000);
+  const ph = (hashStr(p.name + p.kbId, 9) % 1000) / 1000;
+  const t = ((now / period) + ph) % 1;
+  const s = Math.sin(t * Math.PI * 2);
+  return { a: 1 + 0.25 * s, r: 1 + 0.15 * s, dx: 1.5 * s, dy: -1.0 * s };
 }
 
-function graphColor(node) {
-  if (node.status === "done") return "#2f7053";
-  if (node.status === "reading") return "#4f9a74";
-  return "#b9c3bd";
+function nebulaPickAt(canvas, sx, sy) {
+  // 团内的章节点离星云中心很近，所以按"有效距离"取最近的：章节点优先（它更具体），
+  // 但星云中心在 18px 内仍然可点——两件事都要能用。
+  let best = null;
+  let bestScore = 1e9;
+  for (const p of NEBULA.points) {
+    if (!pointVisible(p) && p.kind !== "cluster" && p.kind !== "unformed") continue;
+    const pr = nebulaProject(p, canvas.width, canvas.height);
+    if (!pr) continue;
+    const d = Math.hypot(pr.x - sx, pr.y - sy);
+    const isCenter = p.kind === "cluster" || p.kind === "unformed" || p.kind === "core";
+    const limit = isCenter ? 18 : 14;
+    if (d > limit) continue;
+    // 星云中心那一坨是"切库/看全局"的把手：正中间 8px 内直接优先，
+    // 免得团里的章节点离得近、把它抢走（小库尤其明显）。
+    const score = isCenter ? (d < 8 ? -10 : d) : d - 3;
+    if (score < bestScore) {
+      bestScore = score;
+      best = p;
+    }
+  }
+  return best;
 }
 
-function startGraphLoop(canvas, side, tools) {
-  const gv = graphView;
-  gv.canvas = canvas;
+function nebulaPaint() {
+  const canvas = NEBULA.canvas;
+  if (!canvas) return;
+  const paintStart = performance.now();
   const ctx = canvas.getContext("2d");
-  const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const fit = () => {
-    const cw = Math.max(320, Math.round(canvas.clientWidth * dpr));
-    const ch = Math.max(240, Math.round(canvas.clientHeight * dpr));
-    if (canvas.width !== cw || canvas.height !== ch) {
-      canvas.width = cw;
-      canvas.height = ch;
+  const w = canvas.width;
+  const h = canvas.height;
+  const dark = document.documentElement.getAttribute("data-theme") === "dark" ||
+    (!document.documentElement.getAttribute("data-theme") && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  ctx.clearRect(0, 0, w, h);
+  const now = performance.now();
+  const sprite = nebulaSprite();
+
+  // 库间连线：星云中心 ↔ 中心核（每个库只画一条）
+  const center = { x: w / 2 + NEBULA.parX, y: h / 2 + NEBULA.parY };
+  for (const p of NEBULA.points) {
+    if (p.kind !== "cluster" && p.kind !== "unformed") continue;
+    const pr = nebulaProject(p, w, h);
+    if (!pr) continue;
+    ctx.globalCompositeOperation = dark ? "lighter" : "source-over";
+    ctx.globalAlpha = dark ? 0.25 : 0.45;
+    ctx.strokeStyle = "hsl(" + p.hue + " 60% " + (dark ? 62 : 42) + "%)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(center.x, center.y);
+    ctx.lineTo(pr.x, pr.y);
+    ctx.stroke();
+    if (p.kind === "unformed") {
+      // 未成形的库：不画星云，画一团模糊
+      ctx.globalAlpha = dark ? 0.18 : 0.10;
+      const s = 46 * pr.k * 0.5;
+      ctx.drawImage(sprite, pr.x - s / 2, pr.y - s / 2, s, s);
     }
-  };
-  const frame = () => {
-    // 切页/重渲染后这个 canvas 就脱离文档了：自己停下，不做后台空转
-    if (!canvas.isConnected) { gv.raf = 0; return; }
-    fit();
-    const w = canvas.width;
-    const h = canvas.height;
-    if (!gv.drag) {
-      gv.yaw += gv.vYaw;
-      gv.pitch += gv.vPitch;
-      gv.vYaw *= 0.94;
-      gv.vPitch *= 0.94;
-      if (!reduce && gv.spin && !gv.selected) gv.yaw += 0.0016;
+  }
+
+  // 团内不画连线：一节一节连出来是一片网，看着乱（用户明确要求）。
+  // 库里"哪几节挨着"靠点的位置（同一文档的子团）与颜色表达就够，真要找关系用检索。
+  for (const p of NEBULA.points) {
+    const pr = nebulaProject(p, w, h);
+    if (!pr) continue;
+    const visible = pointVisible(p);
+    const br = nebulaBreath(p, now);
+    const r = nebulaRadius(p, pr) * br.r;
+    // 近处的亮、远处的暗（z 是世界坐标的深度）
+    const depth = 0.62 + 0.38 * (1 - (pr.z + 1) / 2);
+    const alpha = (visible ? depth : 0.12) * br.a;
+    const ox = br.dx;
+    const oy = br.dy;
+    const selected = NEBULA.selected && NEBULA.selected.kbId === p.kbId && NEBULA.selected.chapter === p.name;
+    const hovered = NEBULA.hover && NEBULA.hover === p;
+    const light = dark ? 66 : 46;
+    const sat = p.kind === "core" ? 40 : 62;
+
+    // 光晕（贴图缩放，别每帧算 gradient）
+    ctx.globalCompositeOperation = dark ? "lighter" : "source-over";
+    ctx.globalAlpha = alpha * (p.kind === "chapter" ? (dark ? 0.35 : 0.12) : (dark ? 0.5 : 0.18));
+    const gs = r * (p.kind === "chapter" ? 7 : 9);
+    ctx.drawImage(sprite, pr.x + ox - gs / 2, pr.y + oy - gs / 2, gs, gs);
+
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = "hsl(" + p.hue + " " + sat + "% " + light + "%)";
+    ctx.beginPath();
+    ctx.arc(pr.x + ox, pr.y + oy, r, 0, Math.PI * 2);
+    if (p.kind === "chapter" && !p.done) {
+      // 未读完 = 空心（浅色主题下加 1px 同色深边，不靠发光也看得清）
+      ctx.globalAlpha = alpha * (dark ? 1 : 0.9);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "hsl(" + p.hue + " 55% " + (dark ? 70 : 38) + "%)";
+      ctx.stroke();
+      if (p.readCount > 0) {
+        ctx.globalAlpha = alpha * 0.55;
+        ctx.fill();
+      }
+    } else {
+      ctx.fill();
     }
-    gv.pulse = (gv.pulse + 0.05) % (Math.PI * 2);
-    ctx.clearRect(0, 0, w, h);
-    const proj = new Map();
-    for (const n of gv.nodes) {
-      proj.set(n.id, graphProject(n, w, h, gv));
-    }
-    // 连边
-    for (const e of gv.edges) {
-      const a = proj.get(e.from);
-      const b = proj.get(e.to);
-      if (!a || !b) continue;
-      const dim = !graphNodeVisible(gv.nodes.find((x) => x.id === e.from)) || !graphNodeVisible(gv.nodes.find((x) => x.id === e.to));
-      ctx.strokeStyle = dim ? "rgba(140,150,145,.10)" : "rgba(47,112,83," + (0.10 + e.weight * 0.35).toFixed(3) + ")";
-      ctx.lineWidth = (1 + Math.min(3, e.weight * 4)) * dpr;
+
+    // 状态外圈：红环=有错题，亮环=有产物（不新增点类型，只加环）
+    if (p.kind === "chapter" && p.wrong > 0) {
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = "hsl(2 65% " + (dark ? 66 : 48) + "%)";
+      ctx.lineWidth = 1.2;
       ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
+      ctx.arc(pr.x + ox, pr.y + oy, r + 2.4, 0, Math.PI * 2);
       ctx.stroke();
     }
-    // 节点：先按深度排序，远的先画（伪遮挡）
-    const order = gv.nodes.slice().sort((p1, p2) => (proj.get(p2.id).z - proj.get(p1.id).z));
-    for (const n of order) {
-      const p = proj.get(n.id);
-      const vis = graphNodeVisible(n);
-      const alpha = vis ? 1 : 0.25;
-      const r = graphNodeRadius(n, p);
-      const isSel = gv.selected === n.id;
-      const isHover = gv.hover === n.id;
-      ctx.globalAlpha = alpha;
-      // 笔记：节点外圈的小点
-      const notes = Math.min(6, n.notes || 0);
-      for (let i = 0; i < notes; i += 1) {
-        const ang = (i / notes) * Math.PI * 2;
-        ctx.fillStyle = "#8a9a90";
-        ctx.beginPath();
-        ctx.arc(p.x + Math.cos(ang) * (r + 5 * dpr), p.y + Math.sin(ang) * (r + 5 * dpr), 1.8 * dpr, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      // 产物：两侧的方点（讲义=绿、练习=琥珀）
-      (n.artifacts || []).slice(0, 4).forEach((a, i) => {
-        ctx.fillStyle = a.kind === "lecture" ? "#2f7053" : "#b9762a";
-        const bx = p.x - r - 6 * dpr;
-        const by = p.y - 5 * dpr + i * 6 * dpr;
-        ctx.fillRect(bx, by, 4 * dpr, 4 * dpr);
-      });
-      ctx.fillStyle = graphColor(n);
-      ctx.globalAlpha = alpha * (isSel ? 1 : isHover ? 0.95 : 0.88);
+    if (p.kind === "chapter" && p.artifactCount > 0) {
+      ctx.globalAlpha = alpha * 0.9;
+      ctx.strokeStyle = "hsl(" + p.hue + " 70% " + (dark ? 80 : 60) + "%)";
+      ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-      ctx.fill();
-      if (isSel || isHover) {
-        ctx.strokeStyle = "#2f7053";
-        ctx.lineWidth = 2 * dpr;
-        ctx.stroke();
-      }
-      // 错题：红点；今天该复习的脉冲
-      if ((n.wrong || 0) > 0) {
-        const pulse = (n.wrongDue || 0) > 0 ? 1 + 0.5 * (1 + Math.sin(gv.pulse)) : 1;
-        ctx.fillStyle = (n.wrongDue || 0) > 0 ? "#b0443b" : "rgba(176,68,59,.55)";
-        ctx.beginPath();
-        ctx.arc(p.x + r + 3 * dpr, p.y - r - 2 * dpr, 2.6 * dpr * pulse, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      // 标签：只给最大的若干个 + 选中的/悬停的，免得糊成一片
-      if (n.big || isSel || isHover) {
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = "#3a4640";
-        ctx.font = Math.round(11 * dpr) + "px -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif";
-        ctx.fillText(String(n.name).slice(0, 14), p.x + r + 4 * dpr, p.y + 3 * dpr);
-      }
+      ctx.arc(pr.x + ox, pr.y + oy, r + 4.4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (selected || hovered) {
       ctx.globalAlpha = 1;
+      ctx.strokeStyle = dark ? "rgba(255,255,255,.85)" : "rgba(20,30,24,.75)";
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(pr.x + ox, pr.y + oy, r + 6.5, 0, Math.PI * 2);
+      ctx.stroke();
     }
-  };
-  const loop = () => {
-    frame();
-    if (!canvas.isConnected) { gv.raf = 0; return; }
-    gv.raf = requestAnimationFrame(loop);
-  };
-  if (gv.raf) cancelAnimationFrame(gv.raf);
-  gv.raf = requestAnimationFrame(loop);
+    if (p.kind === "core") {
+      ctx.globalAlpha = dark ? 0.95 : 0.9;
+      ctx.fillStyle = dark ? "#e9edea" : "#1d2a23";
+      ctx.font = "600 11px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("全部", pr.x, pr.y + r + 14);
+    }
+    if (p.kind === "cluster") {
+      ctx.globalAlpha = dark ? 0.85 : 0.8;
+      ctx.fillStyle = dark ? "#cfe0d6" : "#2c3a33";
+      ctx.font = "500 11px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(p.name, pr.x, pr.y + r + 13);
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = "source-over";
+  NEBULA.lastPaintMs = performance.now() - paintStart;
 }
 
-/** 鼠标/触摸：拖动转、滚轮缩放、点击选节点（带惯性）。 */
-function attachGraphControls(canvas, side) {
-  const gv = graphView;
-  const hit = (ev) => {
-    const rect = canvas.getBoundingClientRect();
-    const x = (ev.clientX - rect.left) * (canvas.width / rect.width);
-    const y = (ev.clientY - rect.top) * (canvas.height / rect.height);
-    let best = null;
-    let bestD = 1e9;
-    for (const n of gv.nodes) {
-      const p = graphProject(n, canvas.width, canvas.height, gv);
-      const r = graphNodeRadius(n, p);
-      const d = Math.hypot(p.x - x, p.y - y);
-      if (d < r + 4 && d < bestD) { bestD = d; best = n; }
-    }
-    return best;
-  };
-  canvas.onpointerdown = (ev) => {
-    canvas.setPointerCapture(ev.pointerId);
-    gv.drag = { x: ev.clientX, y: ev.clientY, moved: 0 };
-    gv.vYaw = 0;
-    gv.vPitch = 0;
-  };
-  canvas.onpointermove = (ev) => {
-    if (gv.drag) {
-      const dx = ev.clientX - gv.drag.x;
-      const dy = ev.clientY - gv.drag.y;
-      gv.drag.x = ev.clientX;
-      gv.drag.y = ev.clientY;
-      gv.drag.moved += Math.abs(dx) + Math.abs(dy);
-      gv.yaw += dx * 0.006;
-      gv.pitch = Math.max(-1.3, Math.min(1.3, gv.pitch + dy * 0.006));
-      gv.vYaw = dx * 0.0016;
-      gv.vPitch = dy * 0.0016;
-      return;
-    }
-    const n = hit(ev);
-    gv.hover = n ? n.id : "";
-    canvas.style.cursor = n ? "pointer" : "grab";
-  };
-  canvas.onpointerup = (ev) => {
-    const moved = gv.drag ? gv.drag.moved : 0;
-    gv.drag = null;
-    if (moved > 6) return; // 拖动结束不算点击
-    const n = hit(ev);
-    if (!n) {
-      gv.selected = "";
-      side.hidden = true;
-      return;
-    }
-    gv.selected = n.id;
-    paintGraphSide(side, n);
-  };
-  canvas.onpointerleave = () => { gv.hover = ""; };
-  canvas.onwheel = (ev) => {
-    ev.preventDefault();
-    gv.zoom = Math.max(0.45, Math.min(3.2, gv.zoom * (ev.deltaY > 0 ? 0.9 : 1.1)));
-  };
+function nebulaLoop() {
+  const canvas = NEBULA.canvas;
+  if (!canvas || !document.contains(canvas)) {
+    NEBULA.raf = 0;
+    NEBULA.canvas = null;
+    return;
+  }
+  const now = performance.now();
+  const idle = now - NEBULA.lastActive;
+  const fps = NEBULA.drag ? 0 : idle < 3000 ? 30 : idle < 8000 ? 20 : 15;
+  const minGap = fps === 0 ? 0 : 1000 / fps;
+  if (minGap === 0 || now - NEBULA.lastFrame >= minGap) {
+    NEBULA.lastFrame = now;
+    nebulaPaint();
+  }
+  NEBULA.raf = requestAnimationFrame(nebulaLoop);
 }
 
-/** 点节点后的侧卡：这一章学到哪了 + 能直接做的三件事。 */
-function paintGraphSide(side, n) {
+function nebulaResetView() {
+  NEBULA.yaw = 0.55;
+  NEBULA.pitch = -0.22;
+  NEBULA.zoom = 1;
+  NEBULA.parX = 0;
+  NEBULA.parY = 0;
+}
+
+function nebulaSelect(p) {
+  NEBULA.selected = p ? { kbId: p.kbId, chapter: p.name, kind: p.kind } : null;
+  nebulaPaintSide(p);
+}
+
+/** 星云中心：点了就切当前库（同步库下拉与 state.kb）。 */
+async function nebulaSwitchKb(kbId) {
+  if (!kbId || state.kb === kbId) return;
+  state.kb = kbId;
+  state.chapter = null;
+  toast("已切到「" + (kbName(kbId) || kbId) + "」");
+}
+
+function nebulaSideChapter(p) {
+  const side = NEBULA.side;
   side.innerHTML = "";
-  side.hidden = false;
-  side.appendChild(el("div", "graph-side-title", n.name));
+  side.appendChild(el("div", "graph-side-title", p.name));
   const rows = [
-    ["进度", (n.readCount || 0) + " / " + (n.chunkCount || 0) + " 片" + (n.done ? "（已完成）" : "")],
-    ["小节", (n.sectionCount || 0) + " 节 · " + (n.docCount || 0) + " 篇文档"],
+    ["所属知识库", kbName(p.kbId) || p.kbId],
+    ["切片", p.chunkCount + " 片（已读 " + p.readCount + "）"],
+    ["笔记", p.notes + " 条"],
+    ["错题", p.wrong + " 条" + (p.wrongDue > 0 ? "（今天该复习 " + p.wrongDue + " 条）" : "")],
+    ["产物", p.artifactCount + " 份"],
   ];
-  if (n.notes) rows.push(["笔记", n.notes + " 条"]);
-  if (n.wrong) rows.push(["错题", n.wrong + " 条" + ((n.wrongDue || 0) > 0 ? "（今天该重做 " + n.wrongDue + "）" : "")]);
-  if ((n.artifacts || []).length) rows.push(["产物", n.artifacts.map((a) => a.name).join("、")]);
   for (const [k, v] of rows) {
     const line = el("div", "graph-side-row");
     line.appendChild(el("span", "k", k));
@@ -1263,13 +1272,264 @@ function paintGraphSide(side, n) {
     side.appendChild(line);
   }
   const acts = el("div", "row graph-side-acts");
-  acts.appendChild(btn("继续学", "sm primary", () => { state.chapter = n.name; go("learn"); }));
-  acts.appendChild(btn("出练习", "sm", () => { go("learn"); setTimeout(() => openQuiz($("view"), n.name), 200); }));
-  acts.appendChild(btn("生成讲义", "sm", () => { go("learn"); setTimeout(() => askTopic("lecture", n.name), 200); }));
+  acts.appendChild(btn("继续学", "primary sm", () => { state.kb = p.kbId; state.chapter = p.name; go("learn"); }));
+  acts.appendChild(btn("出练习", "sm", () => openQuiz($("view"), p.name)));
+  acts.appendChild(btn("生成讲义", "sm ghost", () => { state.kb = p.kbId; askTopic("lecture", p.name); }));
   side.appendChild(acts);
 }
 
-/** 全屏展开：卡片铺满主区，图更大。 */
+function nebulaSideCluster(c) {
+  const side = NEBULA.side;
+  side.innerHTML = "";
+  side.appendChild(el("div", "graph-side-title", c.name || c.id));
+  const rows = [
+    ["章节", String(c.chapterCount || 0)],
+    ["已读切片", String(c.readChunks || 0)],
+    ["错题", String(c.wrongCount || 0) + (Number(c.wrongDue || 0) > 0 ? "（今天该复习 " + c.wrongDue + " 条）" : "")],
+    ["产物", String(c.artifactCount || 0)],
+    ["最近动静", fmtStamp(c.lastActiveAt) || "—"],
+  ];
+  for (const [k, v] of rows) {
+    const line = el("div", "graph-side-row");
+    line.appendChild(el("span", "k", k));
+    line.appendChild(el("span", "v", String(v)));
+    side.appendChild(line);
+  }
+  const acts = el("div", "row graph-side-acts");
+  acts.appendChild(btn(state.kb === c.id ? "当前知识库" : "切到这一库", state.kb === c.id ? "sm" : "primary sm",
+    () => nebulaSwitchKb(c.id)));
+  acts.appendChild(btn("去这个库", "sm ghost", () => { state.kb = c.id; go("kb"); }));
+  side.appendChild(acts);
+}
+
+function nebulaPaintSideForKb(kbId) {
+  const c = ((NEBULA.data && NEBULA.data.clusters) || []).filter((x) => x.id === kbId)[0];
+  if (c) nebulaSideCluster(c);
+}
+
+function nebulaPaintSide(p) {
+  const side = NEBULA.side;
+  if (!side) return;
+  // 没选中就不占版面（CSS 用 :has(.graph-side:not([hidden])) 决定画布占满还是并排）
+  side.hidden = !p;
+  if (!p) {
+    side.innerHTML = "";
+    return;
+  }
+  if (p.kind === "chapter") {
+    nebulaSideChapter(p);
+    return;
+  }
+  if (p.kind === "cluster") {
+    nebulaSideCluster(p.data || { id: p.kbId, name: p.name });
+    return;
+  }
+  if (p.kind === "unformed") {
+    side.innerHTML = "";
+    side.appendChild(el("div", "graph-side-title", p.name));
+    side.appendChild(el("div", "muted sm", p.reason || "这个知识库还没有索引"));
+    side.appendChild(el("div", "row graph-side-acts"));
+    side.appendChild(btn("去建立索引", "primary sm", () => go("settings", "kb")));
+    return;
+  }
+  // 中心核 = 全局概览
+  const core = (NEBULA.data && NEBULA.data.core) || {};
+  side.innerHTML = "";
+  side.appendChild(el("div", "graph-side-title", "全部"));
+  const rows = [
+    ["知识库", String(core.clusters || 0) + " 个" + (Number((NEBULA.data || {}).foldedClusters || 0) > 0 ? "（已折叠 " + NEBULA.data.foldedClusters + " 个）" : "")],
+    ["章节", String(core.chapters || 0)],
+    ["已读切片", String(core.readChunks || 0)],
+    ["今天该复习", String(core.wrongDue || 0) + " 条"],
+    ["产物", String(core.artifactCount || 0) + " 份"],
+  ];
+  for (const [k, v] of rows) {
+    const line = el("div", "graph-side-row");
+    line.appendChild(el("span", "k", k));
+    line.appendChild(el("span", "v", String(v)));
+    side.appendChild(line);
+  }
+  const acts = el("div", "row graph-side-acts");
+  acts.appendChild(btn("继续学习", "primary sm", () => continueStudy()));
+  acts.appendChild(btn("去看错题", "sm", () => openWrong()));
+  side.appendChild(acts);
+}
+
+/** 首页那张卡：标题 + 过滤 + 画布 + 侧卡。 */
+async function graphCard() {
+  const card = el("div", "card graph-card");
+  const head = el("div", "card-head");
+  head.appendChild(el("h2", null, "知识网络"));
+  head.appendChild(spacer());
+  const stat = el("span", "card-sub", "");
+  head.appendChild(stat);
+  head.appendChild(btn("全屏", "sm ghost", () => toggleGraphFull()));
+  card.appendChild(head);
+
+  const body = el("div", "graph-body");
+  const canvas = el("canvas", "graph-canvas");
+  canvas.width = 900;
+  canvas.height = 380;
+  body.appendChild(canvas);
+  const side = el("div", "graph-side");
+  body.appendChild(side);
+  card.appendChild(body);
+
+  const tools = el("div", "graph-tools");
+  card.appendChild(tools);
+
+  NEBULA.canvas = canvas;
+  NEBULA.side = side;
+  NEBULA.reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  let data = null;
+  try {
+    data = await api("/api/nebula", {});
+  } catch (e) {
+    card.appendChild(emptyState({
+      inline: true,
+      art: "alert",
+      title: "星云图没算出来",
+      text: e.message,
+      actions: [btn("去建立索引", "primary", () => go("settings", "kb"))],
+    }));
+    return card;
+  }
+  NEBULA.data = data;
+  const clusters = (data.clusters || []).length;
+  const unformed = (data.unformed || []).length;
+  if (!clusters && !unformed) {
+    // 空态：一个库都没有（或都没索引）时不画空图
+    card.appendChild(emptyState({
+      inline: true,
+      art: "db",
+      title: "还没有可画的星云",
+      text: hasKb() ? "已登记知识库但还没建立索引，建立索引后这里会长出星云。" : "先导入一份资料并建立索引，这里就会出现你的知识网络。",
+      actions: [btn(hasKb() ? "去建立索引" : "去导入资料", "primary", () => go("settings", "kb"))],
+    }));
+    return card;
+  }
+
+  const lay = nebulaLayout(data);
+  NEBULA.points = lay.points;
+  const chapterPoints = lay.points.filter((p) => p.kind === "chapter");
+  canvas.dataset.nodes = String(chapterPoints.length);
+  canvas.dataset.clusters = String(clusters);
+  canvas.dataset.first = chapterPoints.length ? chapterPoints[0].name : "";
+  stat.textContent = clusters + " 个库 · " + chapterPoints.length + " 章" +
+    (unformed ? " · " + unformed + " 个待建索引" : "") +
+    (Number(data.foldedClusters || 0) > 0 ? " · 其余 " + data.foldedClusters + " 个库已折叠" : "");
+
+  // 过滤（跨所有星云生效）
+  NEBULA.filter = "all";
+  for (const [key, label] of NEBULA_FILTERS) {
+    const b = el("button", "seg-item" + (key === "all" ? " active" : ""), label);
+    b.dataset.filter = key;
+    b.onclick = () => {
+      NEBULA.filter = key;
+      for (const other of tools.querySelectorAll(".seg-item")) {
+        other.classList.toggle("active", other.dataset.filter === key);
+      }
+      nebulaPaint();
+    };
+    tools.appendChild(b);
+  }
+  tools.appendChild(btn("回到全图", "sm ghost", () => { nebulaResetView(); nebulaPaint(); }));
+
+  // 拖动旋转 / 滚轮缩放 / 鼠标轻微视差（不做自动旋转）
+  canvas.onpointerdown = (ev) => {
+    NEBULA.drag = { x: ev.clientX, y: ev.clientY };
+    NEBULA.lastActive = performance.now();
+    canvas.setPointerCapture(ev.pointerId);
+  };
+  canvas.onpointermove = (ev) => {
+    NEBULA.lastActive = performance.now();
+    if (NEBULA.drag) {
+      NEBULA.yaw += (ev.clientX - NEBULA.drag.x) * 0.008;
+      NEBULA.pitch += (ev.clientY - NEBULA.drag.y) * 0.006;
+      NEBULA.pitch = Math.max(-1.2, Math.min(1.2, NEBULA.pitch));
+      NEBULA.drag = { x: ev.clientX, y: ev.clientY };
+    } else {
+      const r = canvas.getBoundingClientRect();
+      NEBULA.parX = ((ev.clientX - r.left) / r.width - 0.5) * 12;
+      NEBULA.parY = ((ev.clientY - r.top) / r.height - 0.5) * 8;
+      const hit = nebulaPickAt(canvas,
+        (ev.clientX - r.left) * (canvas.width / r.width),
+        (ev.clientY - r.top) * (canvas.height / r.height));
+      if (hit !== NEBULA.hover) {
+        NEBULA.hover = hit;
+        canvas.style.cursor = hit ? "pointer" : "default";
+      }
+    }
+  };
+  canvas.onpointerup = (ev) => {
+    const wasDrag = NEBULA.drag && Math.hypot(ev.clientX - NEBULA.drag.x, ev.clientY - NEBULA.drag.y) > 3;
+    NEBULA.drag = null;
+    if (wasDrag) return;
+    const r = canvas.getBoundingClientRect();
+    // 所见即所点：画的时候加了视差，命中就用屏幕坐标直接比
+    const hit = nebulaPickAt(canvas,
+      (ev.clientX - r.left) * (canvas.width / r.width),
+      (ev.clientY - r.top) * (canvas.height / r.height));
+    if (!hit) return;
+    // 先切库再画侧卡：侧卡上的按钮文案要反映"切完之后"的当前库
+    if (hit.kind === "cluster") nebulaSwitchKb(hit.kbId);
+    nebulaSelect(hit);
+  };
+  canvas.onwheel = (ev) => {
+    ev.preventDefault();
+    NEBULA.lastActive = performance.now();
+    NEBULA.zoom = Math.max(0.55, Math.min(2.4, NEBULA.zoom * (ev.deltaY > 0 ? 0.92 : 1.08)));
+    nebulaPaint();
+  };
+
+  nebulaPaintSide(null);
+  nebulaPaint();
+  if (!NEBULA.raf) NEBULA.raf = requestAnimationFrame(nebulaLoop);
+
+  // 自检接缝：按 (kbId, 章节名) 定位点；只给 kbId 时给星云中心
+  // 自检接缝：两参 = (库 id, 章节名) 定位章节点；一参 = 库 id 定位星云中心（其次当章节名）
+  window.itnGraphPick = (a, b) => {
+    const proj = (pt) => {
+      const pr = nebulaProject(pt, canvas.width, canvas.height);
+      return pr ? { x: pr.x, y: pr.y, w: canvas.width, h: canvas.height } : null;
+    };
+    if (b !== undefined) {
+      for (const pt of NEBULA.points) {
+        if (pt.kind === "chapter" && pt.kbId === a && pt.name === b) return proj(pt);
+      }
+      return null;
+    }
+    for (const pt of NEBULA.points) {
+      if ((pt.kind === "cluster" || pt.kind === "unformed") && pt.kbId === a) return proj(pt);
+    }
+    for (const pt of NEBULA.points) {
+      if (pt.kind === "chapter" && pt.name === a) return proj(pt);
+    }
+    return null;
+  };
+  window.itnGraphInfo = () => {
+    const per = {};
+    for (const p of NEBULA.points) {
+      if (p.kind !== "chapter") continue;
+      per[p.kbId] = (per[p.kbId] || 0) + 1;
+    }
+    return {
+      clusters: clusters,
+      chapters: NEBULA.points.filter((p) => p.kind === "chapter").length,
+      perCluster: per,
+      // 真实重绘耗时（ms）：性能判据看这个，别看 rAF 间隔
+      paintMs: Math.round((NEBULA.lastPaintMs || 0) * 100) / 100,
+    };
+  };
+  window.itnGraphSelect = (kbId, chapter) => {
+    const p = NEBULA.points.filter((x) => x.kbId === kbId && x.name === chapter)[0];
+    if (p) nebulaSelect(p);
+    return !!p;
+  };
+  return card;
+}
+
 function toggleGraphFull() {
   const card = document.querySelector(".graph-card");
   if (!card) return;
@@ -1279,6 +1539,7 @@ function toggleGraphFull() {
   const cv = card.querySelector("canvas");
   if (cv) {
     cv.height = on ? 900 : 380;
+    nebulaPaint();
   }
   const b = card.querySelector(".card-head .btn:last-child");
   if (b) b.textContent = on ? "退出全屏" : "全屏";

@@ -91,6 +91,41 @@ try {
     Check '产物挂到了对应章节' (@($n2.artifacts).Count -ge 1) ((@($n2.artifacts) | ForEach-Object { $_.name + '(' + $_.kind + ')' }) -join ', ')
     Check '概览统计同步' ($g2.data.stats.chapters -eq 2 -and $g2.data.stats.notes -ge 1) ('chapters=' + $g2.data.stats.chapters + ' notes=' + $g2.data.stats.notes)
 
+    Write-Output "== 星云图：所有库一屏看完 =="
+    # 先注册一个建不了索引的库：它不该画星云，而应进 unformed（界面画未成形模糊团 + 建立索引）
+    $emptyDir = Join-Path $env:TEMP ("itn-graph-empty-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Force -Path $emptyDir | Out-Null
+    Set-Content -Path (Join-Path $emptyDir "a.md") -Value "# 还没建索引" -Encoding utf8
+    Post '/api/kb/save' @{ id = 'gempty'; name = '没建索引的库'; rootDir = $emptyDir } | Out-Null
+
+    $nb = Post '/api/nebula' @{}
+    Check '星云接口可用' ($nb.code -eq 0) ([string]$nb.msg)
+    $c1 = (@($nb.data.clusters) | Where-Object { $_.id -eq 'g' })[0]
+    Check '有索引的库是一团星云' ($null -ne $c1) ("clusters=" + @($nb.data.clusters).Count)
+    Check '章节点 = 章节数，且带 docKey（前端按文档分子团）' (@($c1.chapters).Count -eq 2 -and ([string]@($c1.chapters)[0].docKey).Length -gt 0) ((@($c1.chapters) | ForEach-Object { $_.name }) -join ' / ')
+    Check '团内有连边' (@($c1.edges).Count -ge 1) ("edges=" + @($c1.edges).Count)
+    Check 'hue 来自 8 色调色板' ($c1.hue -in @(152, 196, 240, 284, 328, 8, 40, 96)) ("hue=" + $c1.hue)
+    $u1 = (@($nb.data.unformed) | Where-Object { $_.id -eq 'gempty' })[0]
+    Check '没索引的库进 unformed 并给出原因' ($null -ne $u1 -and ([string]$u1.reason).Length -gt 0) ([string]$u1.reason)
+    Check '中心核给出总览' ([int]$nb.data.core.clusters -ge 1 -and [int]$nb.data.core.chapters -ge 2) ("clusters=" + $nb.data.core.clusters + " chapters=" + $nb.data.core.chapters + " wrongDue=" + $nb.data.core.wrongDue)
+
+    $nb2 = Post '/api/nebula' @{}
+    $c2 = (@($nb2.data.clusters) | Where-Object { $_.id -eq 'g' })[0]
+    Check '同一个库每次都是同一个颜色（加库不重排/不换色）' ($c1.hue -eq $c2.hue) ("hue=" + $c1.hue + " -> " + $c2.hue)
+
+    Write-Output "== 上限：库数超过 8 只画最近活跃的 8 个 =="
+    for ($i = 1; $i -le 9; $i++) {
+        $d = Join-Path $env:TEMP ("itn-graph-many-" + $i + "-" + [guid]::NewGuid().ToString("N"))
+        New-Item -ItemType Directory -Force -Path $d | Out-Null
+        Set-Content -Path (Join-Path $d "a.md") -Value ("# 第 " + $i + " 门课" + [char]10 + [char]10 + "这一门课的资料，用来把库数顶过上限。") -Encoding utf8
+        Post '/api/kb/save' @{ id = ("m" + $i); name = ("第 " + $i + " 门课"); rootDir = $d } | Out-Null
+        Post '/api/kb/build' @{ id = ("m" + $i) } | Out-Null
+    }
+    $nb3 = Post '/api/nebula' @{}
+    Check '只画 8 个团' (@($nb3.data.clusters).Count -eq 8) ("drawn=" + @($nb3.data.clusters).Count)
+    Check '其余折成计数（foldedClusters）' ([int]$nb3.data.foldedClusters -ge 1) ("folded=" + $nb3.data.foldedClusters)
+    Check '点数不超过全局上限' ([int]$nb3.data.stats.points -le [int]$nb3.data.stats.pointCap) ("points=" + $nb3.data.stats.points + " cap=" + $nb3.data.stats.pointCap)
+
     Write-Output "== 只读：取图不改学习数据 =="
     $before = (Post '/api/study/report' @{}).data.quizTotal
     Post '/api/graph' @{ kbId = 'g' } | Out-Null

@@ -913,6 +913,16 @@ public class Api {
             return
         }
 
+        // 星云图：所有知识库一屏看完（只读聚合，复用 /api/graph 的每库聚合）
+        if (path == "/api/nebula" && method == "POST") {
+            try {
+                ok(ctx, buildNebula(store.dataDir))
+            } catch (e: Exception) {
+                fail(ctx, 500, "算不出星云图：" + e.message)
+            }
+            return
+        }
+
         if (path == "/api/agent/cancel" && method == "POST") {
             // 置一个取消标记：正在跑的那一轮会在下一段流式增量处停下来
             match (bodyJson(ctx)) {
@@ -1941,6 +1951,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/web/cache/delete",
         "/api/web/session",
         "/api/graph",
+        "/api/nebula",
         "/api/skills/list",
         "/api/skills/read",
         "/api/skills/bind",

@@ -270,6 +270,24 @@ fs.writeFileSync(singleFile, [
     await page.waitForTimeout(700);
   };
 
+  /**
+   * 点星云图上的某个点。
+   *
+   * 用 Playwright 的 position 点击（相对元素左上角），它会自己把画布滚进视口 ——
+   * 早先手动算 viewport 坐标，画布一变宽/一被挤出视口就点空，白折腾了三轮。
+   */
+  const clickGraphPoint = async (pick) => {
+    const size = await page.evaluate(() => {
+      const c = document.querySelector('.graph-canvas');
+      const r = c.getBoundingClientRect();
+      return { cssW: r.width, cssH: r.height };
+    });
+    await page.locator('.graph-canvas').click({
+      position: { x: pick.x * (size.cssW / pick.w), y: pick.y * (size.cssH / pick.h) },
+    });
+    await page.waitForTimeout(600);
+  };
+
   /* 设置现在是"左侧分区 + 右侧内容"的一页：先点侧栏的齿轮进设置，再点分区。 */
   const settings = async (label) => {
     await nav('设置');
@@ -1543,65 +1561,69 @@ fs.writeFileSync(singleFile, [
     return '面板点「' + want.trim() + '」→ 主区滚动并高亮';
   });
 
-  await step('首页学习网络图：节点=章节，点节点出动作卡', async () => {
+  await step('首页星云图：一库一团，点章节出动作卡', async () => {
     await nav('首页');
     await page.waitForSelector('.graph-canvas', { timeout: 20000 });
-    await page.waitForTimeout(900);
+    await page.waitForTimeout(1000);
     const tree = await page.evaluate(() => fetch('/api/study/tree', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kbId: 'course' }) }).then((r) => r.json()).then((j) => (j.data.chapters || []).length));
-    const drawn = await page.evaluate(() => {
-      const c = document.querySelector('.graph-canvas');
-      const g = window.itnGraphPick;
-      return { nodes: Number(c.dataset.nodes || 0), pickable: typeof g === 'function' };
-    });
-    assert(drawn.nodes === tree, '图上的节点数应等于章节数，实际 ' + drawn.nodes + ' vs ' + tree);
-    assert(drawn.pickable, '应能从图上按章节名定位节点（自检接缝）');
-    const first = await page.evaluate(() => {
-      const t = document.querySelector('.graph-canvas').dataset.nodes;
-      return t;
-    });
-    // 点最大的那一章（按 /api/graph 里 chunkCount 最多的）
-    const name = await page.evaluate(() => fetch('/api/graph', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kbId: 'course' }) }).then((r) => r.json()).then((j) => j.data.nodes.slice().sort((a, b) => b.chunkCount - a.chunkCount)[0].name));
-    const pos = await page.evaluate((nm) => window.itnGraphPick(nm), name);
-    assert(pos, '应能拿到节点「' + name + '」在画布上的坐标');
-    // 画布在首页很靠下：先滚到可见位置，否则鼠标点在了窗口外面
-    await page.locator('.graph-canvas').scrollIntoViewIfNeeded();
-    await page.waitForTimeout(300);
-    const box = await page.locator('.graph-canvas').boundingBox();
-    await page.mouse.click(box.x + pos.x * (box.width / pos.w), box.y + pos.y * (box.height / pos.h));
+    const info = await page.evaluate(() => (window.itnGraphInfo ? window.itnGraphInfo() : null));
+    assert(!!info, '应有星云图自检接缝 itnGraphInfo');
+    assert(info.clusters >= 1, '至少一团星云，实际 ' + info.clusters);
+    assert(info.perCluster['course'] === tree, '这一团的章节数应等于章节数（每库 ≤200 的折叠规则之外），实际 ' + JSON.stringify(info.perCluster) + ' vs ' + tree);
+    // 点星云中心 → 切当前库（这一团就是当前库时，侧卡上应写"当前知识库"）
+    const cpos = await page.evaluate(() => window.itnGraphPick('course'));
+    assert(cpos, '应能定位到 course 这团星云的中心');
+    await clickGraphPoint(cpos);
     await page.waitForSelector('.graph-side:not([hidden])', { timeout: 8000 });
-    const side = await page.locator('.graph-side').innerText();
+    let side = await page.locator('.graph-side').innerText();
+    assert(side.indexOf('章节') >= 0 && side.indexOf('当前知识库') >= 0, '点星云中心应给出这一团的概览，实际：' + side.replace(/\s+/g, ' ').slice(0, 80));
+    await shot('46-星云图-一团');
+    // 点章节 → 侧卡（继续学 / 出练习 / 生成讲义）
+    const name = await page.evaluate(() => fetch('/api/graph', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kbId: 'course' }) }).then((r) => r.json()).then((j) => j.data.nodes.slice().sort((a, b) => b.chunkCount - a.chunkCount)[0].name));
+    const pos = await page.evaluate((nm) => window.itnGraphPick('course', nm), name);
+    assert(pos, '应能拿到章节「' + name + '」在画布上的坐标');
+    await clickGraphPoint(pos);
+    await page.waitForSelector('.graph-side:not([hidden])', { timeout: 8000 });
+    side = await page.locator('.graph-side').innerText();
     assert(side.indexOf(name) >= 0, '侧卡应显示章节名，实际：' + side.replace(/\s+/g, ' ').slice(0, 60));
     for (const label of ['继续学', '出练习', '生成讲义']) {
       assert(side.indexOf(label) >= 0, '侧卡里应有「' + label + '」，实际：' + side.replace(/\s+/g, ' ').slice(0, 80));
     }
-    await shot('46-学习网络图');
-    // 清掉选择，免得影响后面的步骤
-    await page.evaluate(() => { const g = window.itnGraphPick; return g ? 1 : 0; });
-    return '节点 ' + first + ' 个 · 点「' + name + '」出侧卡（继续学/出练习/生成讲义）';
+    await shot('47-星云图-章节侧卡');
+    return '一团 ' + info.perCluster['course'] + ' 章 · 点星云出概览 · 点章节出动作卡';
   });
 
-  await step('学习网络图：切页不残留、回来还能画；减少动态时不自动旋转', async () => {
+  await step('星云图：点另一个星云切库、切页不残留、减少动态时不呼吸', async () => {
+    // 点 course2 那团星云中心 → 当前库跟着切
+    const c2 = await page.evaluate(() => window.itnGraphPick('course2'));
+    assert(c2, '应能定位到第二团的中心');
+    await clickGraphPoint(c2);
+    let side = await page.locator('.graph-side').innerText();
+    assert(side.indexOf('当前知识库') >= 0, '点了第二团之后，侧卡应显示它为当前库，实际：' + side.replace(/\s+/g, ' ').slice(0, 80));
+    await shot('48-星云图-切库');
+    // 切回第一个库，别影响后面的步骤
+    await clickGraphPoint(await page.evaluate(() => window.itnGraphPick('course')));
+
     await openRes('notes');
     await page.waitForTimeout(400);
     await nav('首页');
     await page.waitForSelector('.graph-canvas', { timeout: 20000 });
     await page.waitForTimeout(900);
     const again = await page.evaluate(() => Number(document.querySelector('.graph-canvas').dataset.nodes || 0));
-    assert(again > 0, '切回来还能画出图，实际节点 ' + again);
-    // 减少动态：不该自己转（两次采样坐标应当一致）
+    assert(again > 0, '切回来还能画出星云，实际节点 ' + again);
+    // 减少动态：呼吸静止（两次采样坐标应当一致）
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await nav('首页');
     await page.waitForSelector('.graph-canvas', { timeout: 20000 });
     await page.waitForTimeout(1200);
-    const p1 = await page.evaluate(() => window.itnGraphPick(document.querySelector('.graph-canvas').dataset.first || ''));
     const who = await page.evaluate(() => fetch('/api/graph', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kbId: 'course' }) }).then((r) => r.json()).then((j) => j.data.nodes[0].name));
-    const a1 = await page.evaluate((nm) => window.itnGraphPick(nm), who);
+    const a1 = await page.evaluate((nm) => window.itnGraphPick('course', nm), who);
     await page.waitForTimeout(1500);
-    const a2 = await page.evaluate((nm) => window.itnGraphPick(nm), who);
+    const a2 = await page.evaluate((nm) => window.itnGraphPick('course', nm), who);
     assert(Math.abs(a1.x - a2.x) < 0.5 && Math.abs(a1.y - a2.y) < 0.5,
-      'prefers-reduced-motion 下不该自动旋转，实际 ' + JSON.stringify([a1.x, a2.x]));
+      'prefers-reduced-motion 下不该呼吸位移，实际 ' + JSON.stringify([a1.x, a2.x]));
     await page.emulateMedia({ reducedMotion: 'no-preference' });
-    return '切页回来节点 ' + again + ' · 减少动态时坐标稳定';
+    return '切页回来 ' + again + ' 点 · 减少动态时坐标稳定';
   });
 
   await step('登记知识库：目录用系统对话框选，浏览器里如实说明', async () => {

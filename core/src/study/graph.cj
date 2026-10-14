@@ -7,6 +7,7 @@ import std.time.*
 import stdx.encoding.json.*
 import itn_desktop_core.db.*
 import itn_desktop_core.kb.*
+import itn_desktop_core.store.*
 import itn_desktop_core.util.*
 
 /**
@@ -308,6 +309,12 @@ public func buildGraph(dataDir: String, kbId: String): JsonObject {
                     arts.add(a)
                 }
                 o.put("artifacts", arts)
+                // 这篇章节出自哪些文档：星云图按它把章节分成"子团"（文档 = 子团中心）
+                let docArr = JsonArray()
+                for (doc in node.docs) {
+                    docArr.add(JsonString(doc))
+                }
+                o.put("docs", docArr)
                 nodes.add(o)
             case None => ()
         }
@@ -388,6 +395,312 @@ public func buildGraph(dataDir: String, kbId: String): JsonObject {
     out.put("nodes", nodes)
     out.put("edges", edges)
     out.put("folded", JsonInt(folded))
+    out.put("stats", stats)
+    return out
+}
+
+
+/* ============================================================
+   星云图（首页"所有知识库一屏看完"）
+   ------------------------------------------------------------
+   与 /api/graph 的分工：graph 是"一个库里的章节网络"；nebula 是"所有库 + 每库一团"，
+   聚合直接复用 buildGraph，不重写一遍。
+   内核只给**数据**（每个库的章节、库内连边、hue、最近动静）与**上限**；
+   球壳位置这类布局留给前端算——那里才知道画布多大、要不要按 reduced-motion 收着点。
+   颜色按库 id 哈希：同一个库永远同一团颜色，加库/删库不会让整张图换色或重排。
+   ============================================================ */
+
+const NEBULA_DRAW_CLUSTERS: Int64 = 8
+const NEBULA_MAX_POINTS: Int64 = 1200
+
+/** 8 色调色板（色相彼此拉开 ≥40°）。色相与主题无关，主题只换背景与叠加方式。 */
+let NEBULA_HUES: Array<Int64> = [152, 196, 240, 284, 328, 8, 40, 96]
+
+/** 稳定哈希（同一个库 id 永远同一个值）。 */
+func hashOf(text: String): Int64 {
+    let b = text.toArray()
+    var h: Int64 = 7
+    var i = 0
+    while (i < b.size) {
+        h = ((h << 5) + h + Int64(b[i])) & 2147483647
+        i = i + 1
+    }
+    return h
+}
+
+public func hueOf(kbId: String): Int64 {
+    return NEBULA_HUES[hashOf(kbId) % NEBULA_HUES.size]
+}
+
+/** 这个库最近一次动静：进度 / 笔记 / 答题三张表里最新的时间戳（都没有就用索引时间）。 */
+func lastActiveAt(db: Db, kbId: String, fallback: String): String {
+    var best = fallback
+    let sqls = [
+        "SELECT MAX(at) FROM progress WHERE kb_id = ?",
+        "SELECT MAX(created_at) FROM notes WHERE kb_id = ?",
+        "SELECT MAX(created_at) FROM quiz_records WHERE kb_id = ?"
+    ]
+    for (sql in sqls) {
+        try {
+            let t = db.scalarText(sql, va([tv(kbId)]))
+            if (t.size > 0 && t > best) {
+                best = t
+            }
+        } catch (e: Exception) {
+            ()
+        }
+    }
+    return best
+}
+
+func sumInt(nodes: JsonArray, key: String): Int64 {
+    var n: Int64 = 0
+    var i = 0
+    while (i < nodes.size()) {
+        n = n + intOf(match (objOf(nodes[i])) { case Some(o) => o; case None => JsonObject() }, key)
+        i = i + 1
+    }
+    return n
+}
+
+func countArtifacts(nodes: JsonArray): Int64 {
+    var n: Int64 = 0
+    var i = 0
+    while (i < nodes.size()) {
+        match (objOf(nodes[i])) {
+            case Some(o) =>
+                match (o.get("artifacts")) {
+                    case Some(v) =>
+                        match (v) {
+                            case arr: JsonArray => n = n + arr.size()
+                            case _ => ()
+                        }
+                    case None => ()
+                }
+            case None => ()
+        }
+        i = i + 1
+    }
+    return n
+}
+
+/** 章节 → 星云图里那个点（带 docKey，前端据此把章节分成子团）。 */
+func nebulaChapter(node: JsonObject): JsonObject {
+    let o = JsonObject()
+    o.put("name", JsonString(strOf(node, "name")))
+    o.put("chunkCount", JsonInt(intOf(node, "chunkCount")))
+    o.put("readCount", JsonInt(intOf(node, "readCount")))
+    o.put("done", JsonBool(boolOf(node, "done")))
+    o.put("status", JsonString(strOf(node, "status")))
+    o.put("notes", JsonInt(intOf(node, "notes")))
+    o.put("wrong", JsonInt(intOf(node, "wrong")))
+    o.put("wrongDue", JsonInt(intOf(node, "wrongDue")))
+    let names = JsonArray()
+    var artCount: Int64 = 0
+    match (node.get("artifacts")) {
+        case Some(v) =>
+            match (v) {
+                case arr: JsonArray =>
+                    var i = 0
+                    while (i < arr.size()) {
+                        match (objOf(arr[i])) {
+                            case Some(ao) =>
+                                names.add(JsonString(strOf(ao, "name")))
+                                artCount = artCount + 1
+                            case None => ()
+                        }
+                        i = i + 1
+                    }
+                case _ => ()
+            }
+        case None => ()
+    }
+    o.put("artifactNames", names)
+    o.put("artifactCount", JsonInt(artCount))
+    var docKey = ""
+    match (node.get("docs")) {
+        case Some(v) =>
+            match (v) {
+                case arr: JsonArray =>
+                    if (arr.size() > 0) {
+                        docKey = strValue(arr[0])
+                    }
+                case _ => ()
+            }
+        case None => ()
+    }
+    o.put("docKey", JsonString(docKey))
+    return o
+}
+
+/**
+ * 星云图数据。
+ *
+ * 一道闸门：库数超过上限时只画最近活跃的那几个（其余折成计数）；点数超过全局上限时，
+ * 每个库按比例留前若干章（其余记进这个库的 folded）。
+ */
+public func buildNebula(dataDir: String): JsonObject {
+    let out = JsonObject()
+    let db = DbHub.open(dataDir)
+    let cfg = Store(dataDir).load()
+
+    let ids = ArrayList<String>()
+    let names = ArrayList<String>()
+    let acts = ArrayList<String>()
+    for (kb in cfg.knowledgeBases) {
+        ids.add(kb.id)
+        names.add(if (kb.name.size > 0) { kb.name } else { kb.id })
+        acts.add(lastActiveAt(db, kb.id, kb.builtAt))
+    }
+    // 按最近动静排序（选择排序：库的数量级很小）
+    var i = 0
+    while (i < ids.size) {
+        var j = i + 1
+        while (j < ids.size) {
+            if (acts[j] > acts[i]) {
+                let t = ids[i]
+                ids[i] = ids[j]
+                ids[j] = t
+                let nm = names[i]
+                names[i] = names[j]
+                names[j] = nm
+                let at = acts[i]
+                acts[i] = acts[j]
+                acts[j] = at
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+
+    let clusterList = ArrayList<JsonObject>()
+    let clusterNodes = ArrayList<JsonArray>()
+    let unformed = JsonArray()
+    var foldedClusters: Int64 = 0
+    var drawn: Int64 = 0
+    var readChunks: Int64 = 0
+    var wrongDue: Int64 = 0
+    var artifactCount: Int64 = 0
+    var chaptersAll: Int64 = 0
+
+    var k = 0
+    while (k < ids.size) {
+        let g = buildGraph(dataDir, ids[k])
+        if (boolOf(g, "empty")) {
+            // 没索引的库：不画星云，画"未成形模糊团 + 建立索引"
+            let u = JsonObject()
+            u.put("id", JsonString(ids[k]))
+            u.put("name", JsonString(names[k]))
+            u.put("hue", JsonInt(hueOf(ids[k])))
+            u.put("reason", JsonString(strOf(g, "reason")))
+            u.put("lastActiveAt", JsonString(acts[k]))
+            unformed.add(u)
+            k = k + 1
+            continue
+        }
+        if (drawn >= NEBULA_DRAW_CLUSTERS) {
+            foldedClusters = foldedClusters + 1
+            k = k + 1
+            continue
+        }
+        drawn = drawn + 1
+        let nodes = match (g.get("nodes")) { case Some(v) => match (v) { case a: JsonArray => a; case _ => JsonArray() }; case None => JsonArray() }
+        let folded = intOf(g, "folded")
+        let c = JsonObject()
+        c.put("id", JsonString(ids[k]))
+        c.put("name", JsonString(names[k]))
+        c.put("hue", JsonInt(hueOf(ids[k])))
+        c.put("lastActiveAt", JsonString(acts[k]))
+        c.put("chapterCount", JsonInt(nodes.size() + folded))
+        c.put("folded", JsonInt(folded))
+        c.put("readChunks", JsonInt(sumInt(nodes, "readCount")))
+        c.put("wrongCount", JsonInt(sumInt(nodes, "wrong")))
+        c.put("wrongDue", JsonInt(sumInt(nodes, "wrongDue")))
+        c.put("artifactCount", JsonInt(countArtifacts(nodes)))
+        let chapterArr = JsonArray()
+        var n = 0
+        while (n < nodes.size()) {
+            match (objOf(nodes[n])) {
+                case Some(o) => chapterArr.add(nebulaChapter(o))
+                case None => ()
+            }
+            n = n + 1
+        }
+        match (g.get("edges")) {
+            case Some(v) => c.put("edges", v)
+            case None => c.put("edges", JsonArray())
+        }
+        clusterList.add(c)
+        clusterNodes.add(chapterArr)
+        readChunks = readChunks + sumInt(nodes, "readCount")
+        wrongDue = wrongDue + sumInt(nodes, "wrongDue")
+        artifactCount = artifactCount + countArtifacts(nodes)
+        chaptersAll = chaptersAll + nodes.size() + folded
+        k = k + 1
+    }
+
+    // 全局点数上限：按比例留前若干章（每个库至少留 1 章，不然那团星云就没了）
+    var totalPoints: Int64 = 0
+    var ci = 0
+    while (ci < clusterNodes.size) {
+        totalPoints = totalPoints + clusterNodes[ci].size()
+        ci = ci + 1
+    }
+    ci = 0
+    while (ci < clusterNodes.size) {
+        let arr = clusterNodes[ci]
+        if (totalPoints > NEBULA_MAX_POINTS && arr.size() > 1) {
+            var keep = (NEBULA_MAX_POINTS * Int64(arr.size())) / totalPoints
+            if (keep < 1) {
+                keep = 1
+            }
+            if (keep < Int64(arr.size())) {
+                let trimmed = JsonArray()
+                var t = 0
+                while (t < keep) {
+                    trimmed.add(arr[t])
+                    t = t + 1
+                }
+                let dropped = Int64(arr.size()) - keep
+                clusterNodes[ci] = trimmed
+                totalPoints = totalPoints - dropped
+                let c = clusterList[ci]
+                c.put("folded", JsonInt(intOf(c, "folded") + dropped))
+                c.put("chapterCount", JsonInt(intOf(c, "chapterCount") - dropped))
+            }
+        }
+        ci = ci + 1
+    }
+
+    let clusters = JsonArray()
+    ci = 0
+    while (ci < clusterList.size) {
+        let c = clusterList[ci]
+        c.put("chapters", clusterNodes[ci])
+        clusters.add(c)
+        ci = ci + 1
+    }
+
+    let core = JsonObject()
+    core.put("clusters", JsonInt(drawn))
+    core.put("chapters", JsonInt(chaptersAll))
+    core.put("readChunks", JsonInt(readChunks))
+    core.put("wrongDue", JsonInt(wrongDue))
+    core.put("artifactCount", JsonInt(artifactCount))
+    core.put("unformed", JsonInt(unformed.size()))
+
+    let stats = JsonObject()
+    stats.put("clusters", JsonInt(drawn))
+    stats.put("drawnClusters", JsonInt(drawn))
+    stats.put("unformedClusters", JsonInt(unformed.size()))
+    stats.put("foldedClusters", JsonInt(foldedClusters))
+    stats.put("points", JsonInt(totalPoints))
+    stats.put("pointCap", JsonInt(NEBULA_MAX_POINTS))
+
+    out.put("clusters", clusters)
+    out.put("unformed", unformed)
+    out.put("core", core)
+    out.put("foldedClusters", JsonInt(foldedClusters))
     out.put("stats", stats)
     return out
 }
