@@ -4,3 +4,8 @@
 # 二进制产物不参与换行转换
 *.dll  binary
 *.exe  binary
+
+# 批处理必须 CRLF：LF 结尾的 .cmd 会让 cmd.exe 把自己在文件里的位置读错
+# （症状是 'm' 不是内部或外部命令 这种片段报错），所以覆盖上面那条 eol=lf
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
