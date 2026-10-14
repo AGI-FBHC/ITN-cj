@@ -2042,3 +2042,71 @@ web-fetch / skill / graph / study-api / ui-check / smoke / package-smoke 全过�
 **知识网络 → 「星云图」**：`docs/10` 已登记为 **R26**，规格（调色板 / 呼吸 / 三层布局 / 上限 / 交互 / 性能降级）写在
 `docs/09` 的第七节，接口 `GET /api/nebula`（或 `/api/graph?all=true`）的字段约定写在 `docs/02`。本轮的实现分四步，
 **一步一提交**：P1 内核接口 → P2 渲染重写 → P3 交互与过滤 → P4 性能与降级。
+
+## 第三十轮（2026-10-14）：lumin 读写策略 —— **沙箱只隔离写，不隔离读**（+ 顺手挖出 4 个真 bug）
+
+**用户需求（原话摘要）**："我想让 lumin 有能完全访问的权限该怎么做，在 cli 里" / "我希望它能拥有整机的读权限，
+如果是沙箱，那应该只是对写做隔离，不应该对读做隔离啊"。
+
+### 一、怎么在 CLI 里给"完全访问权限"（先回答这个问题）
+
+- 对话里：`/permissions full`（简写 `/perm full`），**会记住**，写进 `<数据目录>/settings.json`（默认 `%USERPROFILE%\.lumin`）。
+- 启动时：`lumin --permissions full`，或设环境变量 `LUMIN_PERMISSIONS=full`。
+- 开发脚本也补了参数：`pwsh -File scripts\chat.ps1 -Permissions full -Trust`（原来缺这两项，只能手敲 exe 参数）。
+- 效果（实测截取）：`权限：完全访问权限（full）…[来源：命令行]`、`信任：已信任 依据：权限档位…直接放行`、
+  `工具集：全部工具（8 件） 命令执行：开`。**full 档会自动带 `--allow-exec`**，不再逐条问。
+
+### 二、策略改成"读不设限、写才隔离"（这次的主要改动）
+
+| | 改之前 | 改之后 |
+| --- | --- | --- |
+| 读 | ask 档锁在工作区内；`.env`/`.git`/`.ssh` 段一律拒 | **任何档位都能读整机**；只剩两条红线 |
+| 写 | ask 档越界**直接拒** | ask 档越界**先问你**，批了就能写；`auto`/`full` 不设界 |
+
+**红线（读和写都挡）**：① 模型自己在用的那份含 Key 的配置（`.env.local`，cwd 与 `LUMIN_HOME` 两份都列）；
+② CLI 自己的数据目录（`settings.json` / `trust.json` / `approvals.json` / 会话）。
+除这两条外**没有凭据启发式**（不拦 `id_rsa` / `*.pem` 之类）—— 名单永远列不全，假阳性还会挡住正常读日志。
+补偿手段是**可见性**：读到工作区外时，CLI 会把绝对路径打出来并标 `（工作区外）`。
+
+落点：
+- `src/tools/workspace.cj`：新增 `denyReasonRead`（读的红线检查）、`resolveRead`（读路径解析，不设界）、
+  `displayPath`/`shownPath`（展示：里面给相对、外面给绝对）、`allowWriteAt`/`writeApprovedAt`（已批准的越界写目录）、
+  `collapseDots`（把 `.`/`..` 折叠成规范绝对路径）、`isDriveSeg`；`readText`/`list`/`walkFiles` 改走读路径，
+  `walkFiles` 改成**返回绝对路径**（搜索根可能在工作区外）。
+- `src/tools/tools.cj`：`read`/`ls`/`find`/`grep` 改用 `denyReasonRead`；`find`/`grep` 的**匹配与展示**都用 `displayPath`
+  （工作区内是相对路径，外面是绝对路径），读文件本身用绝对路径。
+- `src/cli/approvals.cj`：`Approver` 新增 `ws` 句柄与 `applyApproval`（批准越界写 → 登记进沙箱写白名单）。
+- `src/cli/chat.cj`：三层档位的启动横幅重写；文件类工具都会打路径（写入一律打，读越界额外标"读不设限，所以不问你"）；
+  打印器改成 `attachPrinter(stream, agent)`，工作区换了之后提示里的路径跟着换。
+
+### 三、顺带挖出并修掉的 4 个真 bug（都是"要么测不到、要么用户会撞"）
+
+1. **越界写"批了也写不了"**：ask 档下审批层问过、用户答 y，工具层又被沙箱拒 —— 两层各说各话。
+   修法就是上面的 `applyApproval` → `Workspace.allowWriteAt`（本次会话的写白名单）。**实测**：写工作区外的文件时出现
+   `[需要你批准]` → 喂 `y` → `[审批] 放行 path-outside` → `[完成] write：已写入 …（17B）` → 磁盘上真有那个文件。
+2. **`..` 让审批层失声**：`classifyTool` 用**字符串前缀**判断 `ws/../outside/x.md` 在不在工作区内 ——
+   字符串上它以工作区开头，于是"不用问"，可工具层按越界拒了。用户只看到一个失败，看不到本该出现的提问。
+   现在先 `collapseDots` 再比（且要求目录边界，不是裸前缀）。
+3. **`..` 能绕 Key 红线**：`<目录>/sub/../.env.local` 与 `<目录>/.env.local` 字符串不等，
+   而红线是按字符串比的 → 绕一下就能读到含 Key 的配置。现在红线比较前统一折叠。
+4. **`/workspace open` 悄悄重置档位与红线**：那儿用的是两参构造 `Workspace(path, denyRoots)`，
+   `level` 落回默认 `ask`，`denyFiles` 也丢了。改成四参构造并重新挂 `approver.ws`。
+
+### 四、验证
+
+- `pwsh -File scripts\test.ps1` → **65/65**（新增 2 例：`approvalClassificationUsesCollapsedPaths`、
+  `approvingAnOutsideWriteActuallyUnlocksTheSandbox`；改写 2 例：`sensitivePathsAreRefusedByTools`、
+  `pathEscapesAreReadableButNotWritableWithoutApproval`；新增 `dotsCannotBypassTheRedLine`）。
+- **真机 e2e**（两个场景都打了模型接口，日志见 TRACE 附录）：
+  A. ask 档读工作区外的文件 → **不弹审批**，`[完成] read：读到 D:/…/outside/外面.txt（工作区外）（41B）`，模型答出内容；
+  B. ask 档写工作区外的文件 → 弹 `-- 需要你批准 --` → 喂 `y` → `[审批] 放行 path-outside` →
+  `[完成] write：已写入 ../outside/写出来的.md（17B）` → 脚本核对磁盘：文件存在、内容 `hello-from-lumin`。
+- 文档同步：README §5 重写（先讲"读写分开"，再给三档表）、CHANGELOG（Changed/Fixed 各一条）、
+  roadmap 增 `C2. 安全取舍`、AGENTS 硬约束新增第 3 条（**改这块必须先 `collapseDots`**）、docs/vs-pi.md 权限行、
+  测试例数 62 → 65 全仓同步。
+
+### 五、给下一个接手的人
+
+- **读不设限是刻意的**，别"顺手加回沙箱"。要挡就用外层手段（把工作区设在项目目录、把密钥放在工作区外）。
+- 任何"路径比前缀"的地方都必须先 `collapseDots`，否则 `..` 既绕红线也绕审批 —— 这两个洞都真出现过。
+- 沙箱"只隔离写"意味着 `/permissions ask` 不再是"最安全的默认"，而是"最啰嗦的默认"。
