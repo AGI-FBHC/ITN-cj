@@ -417,6 +417,47 @@ function assert(cond, msg) {
   });
 
   /* ---------- 出题作答 ---------- */
+  await step('标记已读就地更新，不把阅读位置冲掉', async () => {
+    await page.evaluate(() => { document.querySelector('.view').scrollTop = 420; });
+    await page.waitForTimeout(200);
+    const before = await page.evaluate(() => document.querySelector('.view').scrollTop);
+    assert(before > 100, '应先把页面滚下去，实际 ' + before);
+    // 最后一片还没读过：点它的「标记已读」
+    const card = page.locator('.chunk-card').last();
+    await card.getByRole('button', { name: '标记已读' }).click();
+    await page.waitForFunction(() => {
+      const cards = document.querySelectorAll('.chunk-card');
+      return cards.length > 0 && !!cards[cards.length - 1].querySelector('.tag');
+    }, null, { timeout: 10000 });
+    await page.waitForTimeout(300);
+    const after = await page.evaluate(() => document.querySelector('.view').scrollTop);
+    assert(Math.abs(after - before) <= 40, '就地更新不该改变滚动位置：前 ' + before + ' 后 ' + after);
+    const headTag = await page.locator('#view .card-head .tag').first().innerText();
+    assert(/\d+ \/ \d+ 片已读/.test(headTag), '卡头进度应就地更新，实际：' + headTag);
+    const unitTag = await page.locator('.unit-step.done').count();
+    assert(unitTag >= 1, '学习单元第一步应随之变成已完成');
+    await shot('37-就地标记已读');
+    return '滚动位置保持 ' + before + '→' + after + '；卡头「' + headTag + '」';
+  });
+
+  await step('切到别的页面会把滚动位置归零（此前重置错了元素）', async () => {
+    await page.evaluate(() => { document.querySelector('.view').scrollTop = 500; });
+    await page.waitForTimeout(150);
+    const before = await page.evaluate(() => document.querySelector('.view').scrollTop);
+    assert(before > 100, '先滚下去，实际 ' + before);
+    await nav('我的笔记');
+    await page.waitForTimeout(400);
+    const after = await page.evaluate(() => document.querySelector('.view').scrollTop);
+    assert(after === 0, '切页后应回到顶部，实际 ' + after);
+    // 后面的步骤默认"停在第一章里"，这里把上下文恢复回去（步骤之间别给别人留坑）
+    await nav('学 · 练');
+    if (!(await page.locator('.chunk-card').count())) {
+      await page.locator('.item', { hasText: '提示词工程基础' }).getByRole('button', { name: '开始学' }).click();
+      await page.waitForSelector('.chunk-card', { timeout: 20000 });
+    }
+    return '切页前 ' + before + ' → 切页后 ' + after;
+  });
+
   await step('出题练习能生成题目并作答', async () => {
     await page.getByRole('button', { name: '出题练习' }).first().click();
     await page.waitForSelector('.quiz-q', { timeout: 40000 });
@@ -1180,6 +1221,22 @@ function assert(cond, msg) {
     assert(mine.chapter && mine.chapter.length > 0, '笔记应记下它属于哪一章，实际：' + mine.chapter);
     await shot('31-溯源笔记');
     return '笔记带原文摘录，章节记为「' + mine.chapter + '」';
+  });
+
+  await step('Esc 能关掉弹层，而且不会误删东西', async () => {
+    await nav('档案与知识库');
+    await page.waitForSelector('.data-backup', { timeout: 15000 });
+    const kbBefore = await page.evaluate(() => fetch('/api/settings').then((r) => r.json()).then((j) => (j.data.knowledgeBases || []).length));
+    await page.locator('.item', { hasText: '自测课程资料' }).getByRole('button', { name: '删除' }).first().click();
+    await page.waitForSelector('#view .card.dialog', { timeout: 10000 });
+    const dlgText = await page.locator('#view .card.dialog').first().innerText();
+    assert(dlgText.indexOf('删除知识库登记') >= 0, '应弹出确认弹层，实际：' + dlgText.replace(/\s+/g, ' ').slice(0, 60));
+    await shot('38-确认弹层');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('#view .card.dialog'), null, { timeout: 8000 });
+    const kbAfter = await page.evaluate(() => fetch('/api/settings').then((r) => r.json()).then((j) => (j.data.knowledgeBases || []).length));
+    assert(kbAfter === kbBefore, 'Esc 只是关弹层，不该真的删掉知识库：前 ' + kbBefore + ' 后 ' + kbAfter);
+    return '弹层被 Esc 关掉，知识库仍是 ' + kbAfter + ' 个';
   });
 
   await step('数据与备份：备份能被打开校验，也能删掉', async () => {

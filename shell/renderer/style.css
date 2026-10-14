@@ -99,8 +99,7 @@ body {
 .topbar-text p { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; }
 .top-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 .view { flex: 1; overflow: auto; padding: 24px 30px 48px; }
-.view > * { animation: rise .22s ease both; }
-@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
 
 /* ---------- 卡片 ---------- */
 .card {

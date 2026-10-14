@@ -485,7 +485,9 @@ async function go(page, opts) {
   if (meta.actions) for (const a of meta.actions()) ta.appendChild(a);
   const v = $("view");
   v.innerHTML = '<div class="empty inline"><span class="spinner"></span> 加载中…</div>';
-  document.querySelector(".main").scrollTop = 0;
+  // 真正滚动的是 #view（.main 是 overflow:hidden）。此前重置的是 .main，等于没重置，
+  // 于是从长页面切到别的页面会停在半截。就地更新（例如标记已读）则刻意不调用 go()，保住阅读位置。
+  v.scrollTop = 0;
   try {
     await PAGES[target].render();
   } catch (e) {
@@ -811,7 +813,8 @@ async function renderChapter(v) {
   head.appendChild(btn("← 返回目录", "ghost sm", () => { state.chapter = null; go("learn"); }));
   head.appendChild(el("h2", null, state.chapter));
   head.appendChild(spacer());
-  head.appendChild(tag(readCount + " / " + chunks.length + " 片已读", readCount === chunks.length && chunks.length ? "ok" : ""));
+  const headTag = tag(readCount + " / " + chunks.length + " 片已读", readCount === chunks.length && chunks.length ? "ok" : "");
+  head.appendChild(headTag);
   // 学 · 练 的一章就是一个"学习单元"：讲 → 练 → 记 → 完成。
   // 四步是否完成全部由真实记录判定（切片已读、本章答题、本章笔记、章节完成标记），
   // 不存"向导进度"这种东西，也就不会出现"界面说你做完了但记录是空的"。
@@ -840,6 +843,26 @@ async function renderChapter(v) {
   prog.style.marginTop = "12px";
   bar.appendChild(prog);
   v.appendChild(bar);
+  const progFill = prog.querySelector("i");
+
+  /**
+   * 就地刷新"已读进度"，不重渲染整页。
+   *
+   * 之前每标记一片就 go("learn") 重渲染，页面跳回顶部——一章几十片，读着读着就找不到位置了。
+   * 阅读类操作必须保住滚动位置，所以这里只改该改的那几个节点。
+   */
+  const refreshReadProgress = () => {
+    const n = chunks.filter((c) => c.read).length;
+    headTag.textContent = n + " / " + chunks.length + " 片已读";
+    headTag.className = "tag" + (n === chunks.length && chunks.length ? " ok" : "");
+    if (progFill) progFill.style.width = pct(n, chunks.length) + "%";
+    const step1 = unit.querySelector(".unit-step");
+    if (step1) step1.classList.toggle("done", n > 0);
+    const desc1 = step1 ? step1.querySelector(".unit-desc") : null;
+    if (desc1) desc1.textContent = "按节翻一遍本章：已读 " + n + " / " + chunks.length + " 片";
+    const unitTag = unit.querySelector(".card-head .tag");
+    if (unitTag) unitTag.textContent = "已完成 " + unit.querySelectorAll(".unit-step.done").length + " / 4";
+  };
 
   const steps = [
     {
@@ -920,11 +943,33 @@ async function renderChapter(v) {
       box.appendChild(cap);
     }
     const row = el("div", "row chunk-actions");
-    row.appendChild(btn(c.read ? "取消已读标记？重读一次" : "标记已读", "sm " + (c.read ? "ghost" : ""), async () => {
+    let readTag = null;
+    if (c.read) {
+      // 已在卡头挂了"已读"标签，这里记住它，取消/恢复时一起改
+      readTag = ch.querySelector(".tag");
+    }
+    const readBtn = btn(c.read ? "取消已读标记？重读一次" : "标记已读", "sm " + (c.read ? "ghost" : ""), async () => {
+      const next = !c.read;
       await api("/api/study/read", { kbId: state.kb, chunkId: c.id, chapter: state.chapter });
-      toast("已标记");
-      go("learn");
-    }));
+      c.read = next;
+      if (next) {
+        if (!readTag) {
+          readTag = tag("已读", "ok");
+          ch.appendChild(readTag);
+        }
+        toast("已标记");
+      } else {
+        if (readTag) {
+          readTag.remove();
+          readTag = null;
+        }
+        toast("已取消标记");
+      }
+      readBtn.textContent = c.read ? "取消已读标记？重读一次" : "标记已读";
+      readBtn.className = "btn sm " + (c.read ? "ghost" : "");
+      refreshReadProgress();
+    });
+    row.appendChild(readBtn);
     row.appendChild(btn("就这段记笔记", "sm ghost", () => openNoteEditor(null, state.kb, state.chapter, c)));
     row.appendChild(btn("就这段提问", "sm ghost", () => askAboutChunk(c)));
     row.appendChild(btn("把这章做成讲义", "sm ghost", () => askTopic("lecture", state.chapter)));
@@ -3385,11 +3430,19 @@ PAGES.settings = {
         acts.appendChild(btn((k.chunkCount || 0) > 0 ? "重建索引" : "建立索引", "sm primary", () => buildIndex(k.id)));
         if (state.kb !== k.id) acts.appendChild(btn("设为当前", "sm", () => { state.kb = k.id; toast("已切换为当前知识库"); go("learn"); }));
         acts.appendChild(btn("去检索", "sm ghost", () => { state.kb = k.id; go("kb"); }));
-        acts.appendChild(btn("删除", "sm ghost", async () => {
-          await api("/api/kb/delete", { id: k.id });
-          toast("已删除登记（本机原文件不会被删）");
-          await loadCfg();
-          go("settings");
+        acts.appendChild(btn("删除", "sm ghost", () => {
+          // 删知识库是"连带"操作：登记没了，索引、阅读进度、本章学习记录就都找不回来了（原文件不动）
+          confirmDialog("删除知识库登记？",
+            "会把「" + (k.name || k.id) + "」的登记从本机删掉，索引与这一章的学习进度也会一起消失。\n" +
+            "你目录里的原始资料不会被删，之后可以重新登记并建立索引。",
+            async () => {
+              try {
+                await api("/api/kb/delete", { id: k.id });
+                toast("已删除登记（本机原文件不会被删）");
+                await loadCfg();
+                go("settings");
+              } catch (e) { toast("删除失败：" + e.message); }
+            });
         }));
         it.appendChild(acts);
         kbox.appendChild(it);
@@ -3742,7 +3795,18 @@ async function boot() {
       if (palette.open) closePalette(); else openPalette();
       return;
     }
-    const root = $("player");
+    const playerRoot = $("player");
+    const playerOpen = playerRoot && !playerRoot.hidden;
+    // 检索弹层与播放器都不在时，Esc 关掉最上面那个弹层（比找右上角的按钮快）
+    if (!palette.open && !playerOpen && e.key === "Escape") {
+      const dlg = document.querySelector("#view .card.dialog");
+      if (dlg) {
+        e.preventDefault();
+        dlg.remove();
+        return;
+      }
+    }
+    const root = playerRoot;
     if (!root || root.hidden) return;
     const tag = String((e.target && e.target.tagName) || "").toLowerCase();
     const typing = tag === "input" || tag === "textarea" || tag === "select";
