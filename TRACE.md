@@ -166,3 +166,76 @@
 - 应用数据目录统一：此前 Electron 用 `%APPDATA%\itn-desktop\data`，内核独立运行用 `%LOCALAPPDATA%\ITN-Desktop`，同一个软件两个目录。现统一为 `%LOCALAPPDATA%\ITN-Desktop`，与文档一致。
 - 实测：只配对话模型时建索引 2 篇 / 4 片（embedded 0），检索命中正确切片，完整问答给出三种手法并标注出处。
 - 新增 `tools/keyword-mode-check.ps1`、`samples/示例资料`（三篇示例 Markdown，便于开箱试用）。
+
+## 2026-10-14T09:45:00+08:00 存储层整体换成 SQLite（含中文 SQL 词法器修复、向量 BLOB 化）
+
+**这一轮做了什么**：内核所有本地数据从 JSON 文件改为 SQLite 单文件 `itn.db`，同时修掉内置驱动里一个会让中文 SQL 完全无法解析的词法器缺陷。提交：`a9731dc`。
+
+### 一、为什么换
+
+JSON 在真实规模下有三个硬伤，都在实测里撞到过：向量与切片要整份读进内存；统计类操作（正确率、完成度、按章节聚合）只能自己遍历；改一条记录要重写整个文件。SQLite 是单文件、零服务、可整体备份，正好对上"本地单人使用"。
+
+驱动选型：`sqlite-driver`（上游 <https://gitcode.com/zhangyin_gitcode/sqlite-driver>，Apache-2.0），**纯仓颉实现的 SQLite 驱动与嵌入引擎**，直接读写 SQLite 3 文件格式，不依赖本机 libsqlite3，实现标准库 `std.database.sql` 接口。源码已内置到 `third_party/sqlite-driver/`（见该目录 `VENDOR.md`），保证离网也能一条命令构建。
+
+### 二、踩到的真问题：中文写进 SQL 就崩（根因在词法器，不在"中文"）
+
+现象：`INSERT INTO t (name) VALUES ('中文')`、`CREATE TABLE "表" (...)`、`SELECT length('中文')` 全部抛 `IllegalArgumentException: Invalid utf8 byte sequence`，栈顶固定 `sql_lexer.cj` 的 `Lexer::lexPunct`。而参数绑定中文（`VALUES (?)`）却完全正常 —— 这个对比很容易把人引到"中文不能进 SQL"的错误结论。
+
+定位过程（值得照抄）：先用 11 条 SQL 逐条二分，发现「`SELECT '中文'` 通过、`SELECT length('中文')` 失败」「`INSERT ... VALUES ('中文一')` 失败、`INSERT ... SELECT '中文二'` 通过」，共同点是**标点后面紧跟中文**；再让异常不被捕获，由仓颉运行时打出完整栈，直接看到 `lexPunct` 第 342 行的 `sliceText(pos, pos + 3)`。
+
+根因：`lexPunct` 为了找 `->>` 会**无条件切 3 个字节**再解码比较，紧跟其后的双字符运算符判断又切 2 个字节。只要标点后是多字节字符（`VALUES ('中文')` 里的 `(` 紧跟 `'`、`CREATE TABLE 表 (...)` 里的 `(` 紧跟中文列名），切出来的字节序列就落在字符中间，`String.fromUtf8` 立即抛异常。报错只指向词法器，与真正的原因（语句里有中文）毫无关系。
+
+修复（`third_party/sqlite-driver/src/sql_lexer.cj`）：新增 `matchAsciiBytes(at, lit)` 按字节逐个比较 ASCII 运算符，不再解码；单字符标点只在确认 `c < 128` 之后才切片；报错路径改用 `describeAt` 整字符解码，解码失败退回字节值，保证报错本身不再抛异常。
+
+验证：`third_party/probe` 的 23 条用例全过（中文标识符 / 中文字面量 / 参数绑定 / LIKE 中文 / 168KB 长文本 / 引号与 emoji / Int64 与 Float64 与 NULL / 事务提交与回滚 / 1024 维 BLOB 向量 / 自增主键 / 排序分页 / 幂等 DDL / 中文的 UPDATE 与 DELETE），另单独验了 `->>`、`->`、`<=`、`>=`、`<>`、`||`、`<<`、`>>`、`==`、`!=` 以及带中文键的 JSON 箭头取值。运行 `third_party/probe` 的方法：` . scripts\env.ps1` → `cd third_party/probe` → `cjpm build` → `.\target\release\bin\main.exe`（结尾应打印 `PASS=23 FAIL=0`）。
+
+### 三、代码结构
+
+| 文件 | 作用 |
+| --- | --- |
+| `core/src/db/db.cj` | `Db`（连接 + 互斥锁 + 绑定参数 + 事务/批量）、`DbRow`、`DbValue`、`DbOp`、`DbHub`（进程内共享连接）、向量编解码（每维 4 字节小端 Float32） |
+| `core/src/db/schema.cj` | 全部 DDL（幂等，全部 `IF NOT EXISTS`，升级只需追加语句）、迁移标记、老文件留副本 |
+| `core/src/store/store.cj` | 模型接口 / 用途绑定 / 知识库登记 → 查库；签名不变 |
+| `core/src/study/study.cj` | 档案 / 进度 / 笔记 / 答题记录 → 查库；签名不变 |
+| `core/src/session/session.cj` | 会话与事件 → 查库（事件表只插入）；摘要与列表改为 SQL 聚合 |
+| `core/src/kb/indexer.cj` | 切片 → `chunks` 表、向量 → `embeddings.vec` BLOB；切片主键显式分配，切片与向量同一批写入 |
+
+两条必须遵守的规矩（都写进了 `db.cj` 的注释）：**参数一律走绑定，不把用户文本拼进 SQL 字面量**；**表名列名只用 ASCII**。
+
+### 四、数据迁移
+
+每个模块自带一次性导入：`store`← `settings.json`、`study`← `study.json`、`session`← `sessions/*.jsonl`、`kb`← `kb/<id>/index.json` + `vectors.txt`。导入完成后在 `meta` 表置位（`migrated_store` / `migrated_study` / `migrated_sessions` / `migrated_kb_<id>`），并把老文件/老目录复制成 `*.migrated` **保留不删**（标准库这版没有 `File.copy`，按字节读写复制）。所以升级不会丢配置与学习记录，出问题原始数据还在。
+
+实测（老数据目录首次打开内核）：`sessions/list` 直接读出 21 个会话，事件类型完整；`settings.json.migrated`、`sessions/*.jsonl.migrated` 生成；模型列表、角色绑定正常读出。
+
+### 五、实测数字（100 篇 Markdown / 3500 切片 / 1024 维，`tools/kb-scale-check.ps1`）
+
+| 指标 | JSON + vectors.txt | SQLite | 变化 |
+| --- | --- | --- | --- |
+| 建索引耗时 | 10 秒 | 5.4 秒 | 1.9× |
+| 落盘体积 | index.json 4.65MB + vectors.txt 30.76MB = 35.4MB | itn.db 6.46MB | 5.5× 更小 |
+| 冷启动首次检索 | 2.4~2.6 秒 | 0.73 秒 | 3.4× |
+| 热态检索 | 0.31 秒 | 0.02~0.04 秒 | 约 10× |
+
+冷启动那一步是本轮最该被量化的：老实现要按十进制文本逐个 `Float64.parse` 三十多万个浮点，现在是一次 BLOB 读取 + 位移解码。`kb-scale-check.ps1` 已改为自动重启内核测冷启动。
+
+### 六、回归（全部通过）
+
+- `tools/smoke.ps1`：模型配置、用途绑定、连通性测试、对话、知识库建索引（3 篇 / 5 片 / 1 图 / 1 条图片描述 / 5 条向量）、统计、向量检索、完整问答带 3 条出处、讲义落盘、出题、会话 14 条事件、产物列表全部 200；`settings` 不回传密钥。
+- `tools/study-api-check.ps1`：档案存取（中文）、章节树 2 章、标记已读、笔记、答题记录、错题、学习报告全通。
+- `tools/keyword-mode-check.ps1`：不绑向量模型也能建索引与检索（关键词兜底），完整问答链路正常。
+- 驱动自带 `cjpm test`：615 例通过 570。未通过的全部集中在需要外部参照 sqlite 的用例类（`InteropForward/Reverse`、`Wal*`、`Vacuum`、`WithoutRowid*`、`MathFunctionValueTest`），它们靠 `python3` 起参照 sqlite 做差分，本机 `python3` 一是指向 Store 版 Python（打不开临时目录下的库文件），二是指向 Anaconda 版（其 sqlite 未开启数学函数，报 `no such function: sqrt`）——两种环境下失败集合互补，都是参照环境问题。纯仓颉侧（引擎、DDL/DML、表达式、窗口函数）用例全部通过。
+
+### 七、这一轮踩的坑（写给后来的人）
+
+1. `no such column: k`：我把 `getKv/putKv`（键值表专用，列名 `k`/`v`）用在了 `roles` 表上（该表是 `kind`/`model_id`）。教训是**键值表和其他实体表不能共用同一套读写助手**，现在 `roles` 单独走 `roleOf()`。
+2. 用 PowerShell 做"按行区间替换"生成代码时，`RemoveRange` + 循环 `Insert(固定下标)` 会把插入块**倒序**。当场用"取头部 + 新块 + 尾部"重新拼装修好了，但这类批量改文件的脚本必须写完后立刻读回校验边界行。
+3. 仓颉的块注释**可以嵌套**，所以注释里写 `sessions/*.jsonl` 会因为 `/*` 开了一个永不闭合的嵌套注释，报 `unterminated block comment`。注释里不要出现 `/*`。
+4. `Int64.parse` / `Float64.parse` 需要 `import std.convert.*`；`driver.open` 的第二个参数要 `Array` 不是 `ArrayList`；路径父目录直接 `Path(p).parent.toString()` 取，别去 match 成 `Some/None`。
+5. `File.copy` / `Directory.copy` 在这版标准库里不存在，复制文件只能按字节读写。
+
+### 八、还没做的
+
+- UI 仍是我上一轮那套九页布局，用户明确说"太简单太丑、缺网页版的主要功能与交互"（已在并行线上处理）。
+- 产物（`artifacts`）仍是目录扫描，没有登记进库；本轮判断文件本身就是权威、没有额外查询需求，先不动。
+- 数据库备份/导出入口还没做进界面（`docs/08-整体规划.md` 里列的风险项）。
