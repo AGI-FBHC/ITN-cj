@@ -2,19 +2,16 @@ package pi_cj.pi
 
 import std.collection.*
 
-/**
- * 模式 = 工具集的组合（从 DeepSeek Harness 借的第 4 条）。
+/*
+ * 工具集预设（DeepSeek Harness 那套"模式 = 工具集的组合"；Pi 本身没有 mode 概念，
+ * 它是"装了哪些扩展/工具就用哪些"）。这里保留四档是因为桌面端界面需要一个显式的风险旋钮：
  *
- * 同一套运行时，换一组工具就是另一种用法：
- *   极简   plain     —— 不给工具，纯对话（验证最小可用）
- *   标准   standard  —— 只读工具 + 写本机工具（默认）
- *   研究   research  —— 标准 + 对外发请求的工具（联网），需要用户显式开启
+ *   chat      纯对话        —— 不给工具
+ *   standard  标准（默认）  —— 读 + 写，工作区内
+ *   research  研究          —— 标准 + 联网（对外发请求）
+ *   agent     代理          —— 标准 + 执行本机命令
  *
- * 工具名不在任何模式里也没关系：模式只做**白名单过滤**，不做存在性校验，
- * 这样宿主注册新工具时不必回来改模式定义。
- *
- * 命名踩坑：方法不能叫 with —— with 是仓颉关键字，写成 x.with([...]) 会被当成限定名去解析，
- * 编译器报 "expected a member name after '.' in qualified name"；所以这里叫 allow，且不做链式调用。
+ * 模式只做白名单过滤，不做存在性校验：宿主注册了哪些工具，模式允许哪些，就这样。
  */
 public class Mode {
     public var name: String = ""
@@ -28,7 +25,7 @@ public class Mode {
         this.description = description
     }
 
-    /** 追加允许的工具名；返回自身，宿主可以继续追加。 */
+    /** 追加允许的工具名（with 是仓颉关键字，所以叫 allow）。 */
     public func allow(names: Array<String>): Mode {
         for (n in names) {
             toolNames.add(n)
@@ -50,47 +47,38 @@ public class Mode {
     }
 }
 
-public func modePlain(): Mode {
-    return Mode("plain", "极简", "纯对话：不给任何工具")
+/** 标准档的工具清单：就是 Pi 那套文件工具。 */
+func fileToolNames(): Array<String> {
+    return ["read", "write", "edit", "ls", "find", "grep"]
 }
 
-/**
- * 「标准」模式的本机工具清单。
- *
- * 前半段（kb_search…save_artifact）是内核 tools/registry.cj 那 8 件，合并过去时名字能对上；
- * 后半段是 Pi 风格的"读-写-改-搜"文件工具（pi_cj.tools 里实现）。
- * 两种名字并存是刻意的：宿主注册了哪些工具，模式就允许哪些，模式只做白名单过滤。
- */
-func localToolNames(): Array<String> {
-    return ["kb_search", "list_documents", "read_chunk", "current_time", "calc", "save_note", "save_artifact",
-        "read_file", "list_files", "search_text", "write_file", "edit_file"]
+public func modeChat(): Mode {
+    return Mode("chat", "纯对话", "不给任何工具")
 }
 
 public func modeStandard(): Mode {
-    let m = Mode("standard", "标准", "只读工具 + 写本机文件，不对外发请求")
-    m.allow(localToolNames())
+    let m = Mode("standard", "标准", "在工作区里读写文件，不对外发请求")
+    m.allow(fileToolNames())
     return m
 }
 
 public func modeResearch(): Mode {
     let m = Mode("research", "研究", "标准 + 联网检索（对外发请求）")
-    m.allow(localToolNames())
+    m.allow(fileToolNames())
     m.allow(["web_search", "web_fetch"])
     return m
 }
 
-/** 「代理」：标准 + 跑本机命令。风险等级最高的一档，必须用户显式切过来。 */
 public func modeAgent(): Mode {
-    let m = Mode("agent", "代理", "标准 + 执行本机命令（能改动你的电脑）")
-    m.allow(localToolNames())
-    m.allow(["run_command"])
+    let m = Mode("agent", "代理", "标准 + 执行本机命令（能改动这台电脑）")
+    m.allow(fileToolNames())
+    m.allow(["powershell"])
     return m
 }
 
-/** 内置模式表：界面里选的就是它。四档风险由低到高：极简 / 标准 / 研究 / 代理。 */
 public func builtinModes(): ArrayList<Mode> {
     let out = ArrayList<Mode>()
-    out.add(modePlain())
+    out.add(modeChat())
     out.add(modeStandard())
     out.add(modeResearch())
     out.add(modeAgent())

@@ -3,49 +3,58 @@ package pi_cj.pi
 import std.collection.*
 import stdx.encoding.json.*
 
-/**
- * 工具。
+/*
+ * 工具：形状照 Pi 的 AgentTool。
  *
- * 运行时**不知道**具体工具怎么实现（Pi 的三层分离）：它只认识这个接口，
- * 谁把工具注册进来、工具内部读知识库还是读文件，运行时一概不管。
- * 这样"业务能力"和"Agent 循环"才拆得开，才能把运行时整体搬进别的产品。
+ *   name / label / description / parameters(JSON Schema) / execute(callId, params)
  *
- * 字段名与内核 tools/registry.cj 的 ToolSpec 保持一致（name/title/usage/desc），
- * 只多一个 risk —— 合并进 ITN-Desktop 时两边可以合成一个类型，不用改调用点。
- *
- * 每个工具还要声明**风险等级**，这是"审批门"的挂点：
- *   read     只读（检索、取时间、算数）
- *   write    写本机（写笔记、写产物文件）
- *   external 对外发请求（联网检索）
+ * 参数 schema 是**显式**的 JSON Schema（Pi 用 TypeBox），直接放进请求的 tools 字段发给服务端，
+ * 不再靠"参数示例"去猜类型。工具结果里 content 是给模型的正文、details 是给我们自己看的结构化载荷
+ * —— 这两者的分工是 Pi 定死的，混起来就会出现"模型看不到数据"（我们踩过）。
  */
+
 public class ToolSpec {
     public var name: String = ""
-    public var title: String = ""
-    public var usage: String = ""
-    public var desc: String = ""
+    /** 界面上显示的名字（Pi 的 label） */
+    public var label: String = ""
+    /** 系统提示词里那一行短说明（Pi 的 snippet） */
+    public var snippet: String = ""
+    public var description: String = ""
+    /** 使用要点，会以要点列表的形式进系统提示词（Pi 的 guidelines） */
+    public var guidelines: Array<String> = []
+    /** 参数 JSON Schema 文本，例如 {"type":"object","properties":{...}} */
+    public var parameters: String = "{\"type\":\"object\",\"properties\":{}}"
+    /** 风险档：read / write / external（我们自己的审批挂点） */
     public var risk: String = "read"
 
-    public init(name: String, title: String, usage: String, desc: String, risk: String) {
+    public init(name: String, label: String, snippet: String, description: String, parameters: String, risk: String) {
         this.name = name
-        this.title = title
-        this.usage = usage
-        this.desc = desc
+        this.label = label
+        this.snippet = snippet
+        this.description = description
+        this.parameters = parameters
         this.risk = risk
+    }
+
+    public func parametersJson(): JsonObject {
+        try {
+            match (JsonValue.fromStr(parameters)) {
+                case o: JsonObject => return o
+                case _ => return JsonObject()
+            }
+        } catch (e: Exception) {
+            return JsonObject()
+        }
     }
 
     public func toJson(): JsonObject {
         let o = JsonObject()
         o.put("name", JsonString(name))
-        o.put("title", JsonString(title))
-        o.put("usage", JsonString(usage))
-        o.put("desc", JsonString(desc))
+        o.put("label", JsonString(label))
+        o.put("description", JsonString(description))
+        o.put("parameters", parametersJson())
         o.put("risk", JsonString(risk))
         return o
-    }
-
-    /** 给模型的提示词一行：名字 + 说明 + 参数示例（与内核 toolPrompt 同一口径）。 */
-    public func promptLine(): String {
-        return "- " + name + "：" + desc + " 参数示例 " + usage
     }
 
     public func isExternal(): Bool {
@@ -53,66 +62,46 @@ public class ToolSpec {
     }
 }
 
-/**
- * 工具结果。三个字段分工要清楚，别混：
- *   summary —— 一行给人看的（界面上的 "[OK] read_file：读到 note.md（171 字节）"）
- *   content —— **回灌给模型的正文**（文件内容、命令输出、检索命中……）
- *   data    —— 结构化载荷，给界面用
- *
- * 一开始只回灌 summary，结果模型看到"共 2 项"却看不到是哪 2 项，于是反复瞎试到撞上限
- * （实测 6 轮都没答出来）。工具结果没内容 = 模型没能力。
- */
 public class ToolResult {
-    public var ok: Bool = true
-    public var summary: String = ""
+    /** true 表示这次调用失败（Pi 的 isError）：模型看到的 content 是错误说明 */
+    public var isError: Bool = false
+    /** 回灌给模型的正文 */
     public var content: String = ""
-    public var data: JsonValue = JsonNull()
+    /** 结构化载荷，给界面/程序用，不进模型上下文 */
+    public var details: JsonValue = JsonNull()
+    /** 一行给人看的摘要 */
+    public var summary: String = ""
 
-    public static func good(summary: String, data: JsonValue): ToolResult {
+    public static func ok(summary: String, content: String, details: JsonValue): ToolResult {
         let r = ToolResult()
-        r.ok = true
-        r.summary = summary
-        r.data = data
-        return r
-    }
-
-    public static func goodWith(summary: String, content: String, data: JsonValue): ToolResult {
-        let r = ToolResult()
-        r.ok = true
         r.summary = summary
         r.content = content
-        r.data = data
+        r.details = details
         return r
     }
 
-    public static func bad(summary: String): ToolResult {
+    public static func err(message: String): ToolResult {
         let r = ToolResult()
-        r.ok = false
-        r.summary = summary
+        r.isError = true
+        r.summary = message
+        r.content = message
         return r
     }
 
-    /** 回灌给模型的那段文本：优先 content，其次把 data 摊平，最后退回 summary。 */
+    /** 回灌给模型的文本（缺 content 时退回 summary），按字节截断。 */
     public func modelText(): String {
         var t = content
         if (t.size == 0) {
-            t = flattenJson(data)
+            t = flattenJson(details)
         }
         if (t.size == 0) {
             t = summary
         }
-        return byteSafePrefix(t, 8000)
-    }
-
-    public func toJson(): JsonObject {
-        let o = JsonObject()
-        o.put("ok", JsonBool(ok))
-        o.put("summary", JsonString(summary))
-        return o
+        return byteSafePrefix(t, 50000)
     }
 }
 
-/** 把 JSON 摊成纯文本：字符串原样、数组逐项换行、其它类型不摊（交给 summary）。 */
+/** 把 JSON 摊成纯文本：字符串原样、数组逐项换行。 */
 public func flattenJson(v: JsonValue): String {
     match (v) {
         case s: JsonString => return s.getValue()
@@ -136,21 +125,16 @@ public func flattenJson(v: JsonValue): String {
 
 public interface Tool {
     func spec(): ToolSpec
-    func run(args: JsonObject): ToolResult
+    /** callId 是服务端给的调用 id；返回错误要放在 ToolResult.isError 里，不要抛。 */
+    func run(callId: String, args: JsonObject): ToolResult
 }
 
-/**
- * 把"一段函数"包成工具。
- *
- * 宿主注册自己的工具时最省事的一种写法（测试里也用它）：
- *   reg.add(FuncTool(ToolSpec("calc", "计算", "{...}", "四则运算", "read"),
- *                    { a: JsonObject => ToolResult.good("= 12", JsonFloat(12.0)) }))
- */
+/** 把一段函数包成工具（Pi 的 createTool 那种写法，最省事）。 */
 public class FuncTool <: Tool {
     private let s: ToolSpec
-    private let fn: (JsonObject) -> ToolResult
+    private let fn: (String, JsonObject) -> ToolResult
 
-    public init(s: ToolSpec, fn: (JsonObject) -> ToolResult) {
+    public init(s: ToolSpec, fn: (String, JsonObject) -> ToolResult) {
         this.s = s
         this.fn = fn
     }
@@ -159,12 +143,12 @@ public class FuncTool <: Tool {
         return s
     }
 
-    public func run(args: JsonObject): ToolResult {
-        return fn(args)
+    public func run(callId: String, args: JsonObject): ToolResult {
+        return fn(callId, args)
     }
 }
 
-/** 工具不可用（没配密钥、开关关着）时的统一表达：让它出现在清单里但不给模型。 */
+/** 工具当前不可用（没配密钥、开关关着）：出现在清单里但不发给模型。 */
 public class ToolAvailability {
     public var name: String = ""
     public var available: Bool = false
@@ -187,7 +171,6 @@ public class ToolRegistry {
         tools.add(t)
     }
 
-    /** 标记某个工具当前不可用（例如没配 Tavily 密钥）：提示词里就不列它，调用也直接拒绝。 */
     public func markUnavailable(name: String, reason: String): Unit {
         unavail.add(ToolAvailability(name, false, reason))
     }
@@ -210,32 +193,8 @@ public class ToolRegistry {
         return ""
     }
 
-    /** 这个工具是不是"对外发请求"（审批门的判据）。 */
-    public func isExternal(name: String): Bool {
-        match (find(name)) {
-            case Some(t) => return t.spec().isExternal()
-            case None => return false
-        }
-    }
-
     public func size(): Int64 {
         return tools.size
-    }
-
-    public func names(): ArrayList<String> {
-        let out = ArrayList<String>()
-        for (t in tools) {
-            out.add(t.spec().name)
-        }
-        return out
-    }
-
-    public func specs(): ArrayList<ToolSpec> {
-        let out = ArrayList<ToolSpec>()
-        for (t in tools) {
-            out.add(t.spec())
-        }
-        return out
     }
 
     public func find(name: String): ?Tool {
@@ -247,7 +206,15 @@ public class ToolRegistry {
         return None
     }
 
-    /** 按模式过滤，并剔掉"当前不可用"的：提示词里列了却调不起来，模型会反复重试同一个死工具。 */
+    public func allSpecs(): ArrayList<ToolSpec> {
+        let out = ArrayList<ToolSpec>()
+        for (t in tools) {
+            out.add(t.spec())
+        }
+        return out
+    }
+
+    /** 模式（工具集白名单）+ 可用性双重过滤后，真正发给模型的那些。 */
     public func specsOf(mode: Mode): ArrayList<ToolSpec> {
         let out = ArrayList<ToolSpec>()
         for (t in tools) {
@@ -259,33 +226,30 @@ public class ToolRegistry {
         return out
     }
 
-    /** 执行；模式不允许 / 工具不存在 / 工具不可用都返回 ok=false，而不是抛异常——运行时据此回灌给模型。 */
-    public func execute(mode: Mode, name: String, args: JsonObject): ToolResult {
+    public func isExternal(name: String): Bool {
+        match (find(name)) {
+            case Some(t) => return t.spec().isExternal()
+            case None => return false
+        }
+    }
+
+    /** 执行；模式不允许 / 不存在 / 不可用都返回 isError，不抛。 */
+    public func execute(mode: Mode, callId: String, name: String, args: JsonObject): ToolResult {
         if (!mode.allows(name)) {
-            return ToolResult.bad("当前模式「" + mode.title + "」不允许使用工具 " + name)
+            return ToolResult.err("当前工具集不允许使用工具 " + name)
         }
         if (!available(name)) {
-            return ToolResult.bad("工具 " + name + " 当前不可用：" + unavailableReason(name))
+            return ToolResult.err("工具 " + name + " 当前不可用：" + unavailableReason(name))
         }
         match (find(name)) {
             case Some(t) =>
                 try {
-                    return t.run(args)
+                    return t.run(callId, args)
                 } catch (e: Exception) {
-                    return ToolResult.bad("工具执行失败：" + e.message)
+                    return ToolResult.err("工具执行失败：" + e.message)
                 }
             case None =>
-                return ToolResult.bad("没有这个工具：" + name)
+                return ToolResult.err("没有这个工具：" + name)
         }
-    }
-
-    /** 给提示词用的工具清单。 */
-    public func promptText(mode: Mode): String {
-        let sb = StringBuilder()
-        for (s in specsOf(mode)) {
-            sb.append(s.promptLine())
-            sb.append("\n")
-        }
-        return sb.toString()
     }
 }

@@ -1,18 +1,14 @@
 package pi_cj.unittests
 
 import std.collection.*
+import std.fs.*
+import std.time.*
+import stdx.encoding.json.*
 import pi_cj.pi.*
 import pi_cj.tools.*
-import stdx.encoding.json.*
 
-/*
- * 测试公用夹具。
- *
- * 约定：断言里凡是直接调用库 API 的地方都走公共接口（测试包看不到 pi_cj.pi 的包内函数），
- * 这样测试同时也是"接口够不够用"的体检。
- */
+/* 测试公用夹具。 */
 
-/** ?String 取值（不用 Option.getOrThrow，避免不同版本 API 差异）。 */
 func orEmpty(o: ?String): String {
     match (o) {
         case Some(x) => return x
@@ -20,6 +16,7 @@ func orEmpty(o: ?String): String {
     }
 }
 
+/** 事件序列 -> 类型名列表（断言顺序用）。 */
 func kindsOf(events: ArrayList<PiEvent>): ArrayList<String> {
     let out = ArrayList<String>()
     for (e in events) {
@@ -38,12 +35,7 @@ func countOf(kinds: ArrayList<String>, name: String): Int64 {
     return n
 }
 
-/** 一轮结束的标志：事件序列里出现过 turn/end。 */
-func producedTurnEnd(kinds: ArrayList<String>): Bool {
-    return countOf(kinds, "turn/end") > 0
-}
-
-/** 子序列判定：要求保序，不要求相邻。 */
+/** 子序列判定：保序不要求相邻。 */
 func hasSubseq(kinds: ArrayList<String>, seq: Array<String>): Bool {
     var i: Int64 = 0
     var j: Int64 = 0
@@ -72,134 +64,12 @@ func isPrefix(prefix: String, full: String): Bool {
     return true
 }
 
-/** 把一个字符串切成"不切断字符"的片段，模拟网络分片（chunk 是字节数）。 */
-func fragments(raw: String, chunk: Int64): ArrayList<String> {
-    let b = raw.toArray()
-    let out = ArrayList<String>()
-    var i: Int64 = 0
-    while (i < b.size) {
-        var j = i + chunk
-        if (j > b.size) {
-            j = b.size
-        }
-        while (j < b.size && (b[j] & 192) == 128) {
-            j = j + 1
-        }
-        out.add(String.fromUtf8(b[i..j]))
-        i = j
-    }
-    return out
-}
-
-func hasKey(o: JsonObject, k: String): Bool {
-    match (o.get(k)) {
-        case Some(_) => return true
-        case None => return false
-    }
-}
-
-func boolOf(o: JsonObject, k: String): Bool {
-    match (o.get(k)) {
-        case Some(v) =>
-            match (v) {
-                case b: JsonBool => return b.getValue()
-                case _ => return false
-            }
-        case None => return false
-    }
-}
-
-/** 往注册表里塞一个好用的假工具。 */
-func addFake(reg: ToolRegistry, name: String, risk: String): Unit {
-    reg.add(FuncTool(ToolSpec(name, name, "{\"k\":\"v\"}", "测试工具 " + name, risk),
-        { a: JsonObject => ToolResult.good("ok:" + name, JsonNull()) }))
-}
-
-/** 只允许一个自定义工具的模式（顺便验证"模式只做白名单过滤，不校存在性"）。 */
-func onlyMode(name: String): Mode {
-    let m = Mode("only-" + name, "只给一个工具", "测试用")
-    m.allow([name])
-    return m
-}
-
-/** 故意抛异常的工具：注册表要把它转成 ok=false，而不是让异常穿出去。 */
-public class BoomTool <: Tool {
-    public func spec(): ToolSpec {
-        return ToolSpec("boom", "会炸的工具", "{}", "无论如何都抛异常", "read")
-    }
-
-    public func run(args: JsonObject): ToolResult {
-        throw PiException("boom 抛出来的异常")
-    }
-}
-
-/** 一调用就失败的模型：运行时要把模型错误转成 RunOutcome.ok = false。 */
-public class FailingProvider <: ChatProvider {
-    public func respond(ctx: StepContext, stream: EventStream): ModelReply {
-        throw PiException("模型接口返回 404 Not Found")
-    }
-}
-
-/** 假"列目录"工具：data 是字符串数组（真实工具也是这样回结构化载荷的）。 */
-public class FakeListTool <: Tool {
-    public func spec(): ToolSpec {
-        return ToolSpec("list_files", "列出文件", "{}", "列出工作区里的文件与子目录", "read")
-    }
-
-    public func run(args: JsonObject): ToolResult {
-        let arr = JsonArray()
-        arr.add(JsonString("note.md  171 字节"))
-        arr.add(JsonString("src/"))
-        return ToolResult.good("工作区根目录 下共 2 项", arr)
-    }
-}
-
-/** 模拟"原生 function calling"的模型：工具调用带 id（call_xxx），第二步才给最终回答。 */
-public class NativeToolProvider <: ChatProvider {
-    private var step: Int64 = 0
-    private let toolName: String
-    private let toolArgs: String
-    public let seenToolsText = ArrayList<String>()
-    public let seenSpecCounts = ArrayList<Int64>()
-
-    public init(toolName: String, toolArgs: String) {
-        this.toolName = toolName
-        this.toolArgs = toolArgs
-    }
-
-    public func respond(ctx: StepContext, stream: EventStream): ModelReply {
-        step = step + 1
-        seenToolsText.add(ctx.tools)
-        seenSpecCounts.add(ctx.toolSpecs.size)
-        let r = ModelReply()
-        if (step == 1) {
-            let e = PiEvent(ToolCallStart)
-            e.turnId = ctx.turnId
-            e.step = ctx.step
-            e.tool = toolName
-            e.callId = "call_test01"
-            stream.push(e)
-            let req = ToolRequest()
-            req.id = "call_test01"
-            req.name = toolName
-            req.args = objOf(JsonValue.fromStr(toolArgs)).getOrThrow()
-            r.requests.add(req)
-            r.stopReason = "tool_call"
-            return r
-        }
-        r.text = "做完了"
-        return r
-    }
-}
-
-/** 造一个 {"k": "v"} 的参数对象（测试里省点字）。 */
 func strObj(k: String, v: String): JsonObject {
     let o = JsonObject()
     o.put(k, JsonString(v))
     return o
 }
 
-/** 造一个 {"k1": "v1", "k2": "v2"} 的参数对象。 */
 func twoObj(k1: String, v1: String, k2: String, v2: String): JsonObject {
     let o = JsonObject()
     o.put(k1, JsonString(v1))
@@ -207,28 +77,83 @@ func twoObj(k1: String, v1: String, k2: String, v2: String): JsonObject {
     return o
 }
 
-/** 一步里**并行**调两个工具的模型（实测 MiMo 就会这么干，第一版只接了第一条，第二条被丢掉）。 */
-public class NativeTwoCallProvider <: ChatProvider {
+/** 注册表里某个名字的工具是否在这一档的清单里。 */
+func exposes(reg: ToolRegistry, mode: Mode, name: String): Bool {
+    for (s in reg.specsOf(mode)) {
+        if (s.name == name) {
+            return true
+        }
+    }
+    return false
+}
+
+/** 每个用例一个全新目录（跑在 target/ 下，已被 gitignore）。 */
+var dirSeq: Int64 = 0
+
+func freshDir(name: String): String {
+    dirSeq = dirSeq + 1
+    // 毫秒 + 计数：同一次运行内唯一，重复运行也不会撞上上次留下的目录
+    let d = "target/ut/" + name + "-" + (nowMillis() % 1000000).toString() + "-" + dirSeq.toString()
+    if (!exists(d)) {
+        Directory.create(d, recursive: true)
+    }
+    return d
+}
+
+/** 读整个文本文件（测试里读会话文件用）。 */
+func slurp(path: String): String {
+    try {
+        return String.fromUtf8(File.readFrom(path))
+    } catch (e: Exception) {
+        return ""
+    }
+}
+
+/** 收集一次流里的事件，供断言用。 */
+func collect(run: (EventStream) -> Unit): ArrayList<PiEvent> {
+    let s = EventStream()
+    run(s)
+    return s.drain()
+}
+
+/** 一个总是失败的工具（测错误路径）。 */
+public class BoomTool <: Tool {
+    public func spec(): ToolSpec {
+        return ToolSpec("boom", "会炸的工具", "Always fails", "无论如何都失败。",
+            "{\"type\":\"object\",\"properties\":{}}", "read")
+    }
+
+    public func run(callId: String, args: JsonObject): ToolResult {
+        return ToolResult.err("boom 按计划失败了")
+    }
+}
+
+/** 只给一个自定义工具的工具集。 */
+func onlyMode(name: String): Mode {
+    let m = Mode("only-" + name, "只给一个", "测试用")
+    m.allow([name])
+    return m
+}
+
+/** 一步里回**两条**工具调用的提供方（实测 MiMo 会这么干；漏接第二条会引发重试风暴）。 */
+public class TwoCallProvider <: ChatProvider {
     private var step: Int64 = 0
 
     public func respond(ctx: StepContext, stream: EventStream): ModelReply {
         step = step + 1
         let r = ModelReply()
         if (step == 1) {
-            let a = ToolRequest()
-            a.id = "call_a"
-            a.name = "list_files"
-            a.args = JsonObject()
-            let b = ToolRequest()
-            b.id = "call_b"
-            b.name = "calc"
-            b.args = strObj("expr", "1+1")
-            r.requests.add(a)
-            r.requests.add(b)
-            r.stopReason = "tool_call"
+            r.toolCalls.add(ToolCallBlock("call_a", "twice", "{\"text\":\"a\"}"))
+            r.toolCalls.add(ToolCallBlock("call_b", "twice", "{\"text\":\"b\"}"))
+            r.stopReason = "toolUse"
+            let partial = Message(AssistantMsg)
+            for (tc in r.toolCalls) {
+                partial.toolCalls.add(tc)
+            }
+            stream.push(evMessageUpdate(deltaToolCallStart(), "", partial))
             return r
         }
-        r.text = "两件事都做了"
+        r.text = "两件都做了"
         return r
     }
 }

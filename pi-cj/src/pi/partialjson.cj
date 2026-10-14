@@ -205,39 +205,6 @@ func unescapeJson(s: String): String {
 
 /** 转义成 JSON 字符串内容（把"半截字符串值"安全地放进事件里展示）。 */
 /** 转义成 JSON 字符串内容（把"半截字符串值"安全地放进事件里展示）。 */
-func escapeJson(s: String): String {
-    let b = s.toArray()
-    let sb = StringBuilder()
-    var i: Int64 = 0
-    while (i < b.size) {
-        let c = b[i]
-        if (c == 34) {
-            sb.append("\\\"")
-        } else if (c == 92) {
-            sb.append("\\\\")
-        } else if (c == 10) {
-            sb.append("\\n")
-        } else if (c == 13) {
-            sb.append("\\r")
-        } else if (c == 9) {
-            sb.append("\\t")
-        } else if (c < 128) {
-            sb.append(String.fromUtf8(b[i..i + 1]))
-        } else {
-            // 多字节字符必须整块追加：逐字节调 safeUtf8 会因为"半个字符"被判为不完整而全部丢掉
-            let n = utf8CharLen(c)
-            var j = i + n
-            if (j > b.size) {
-                j = b.size
-            }
-            sb.append(String.fromUtf8(b[i..j]))
-            i = j
-            continue
-        }
-        i = i + 1
-    }
-    return sb.toString()
-}
 
 
 public class PartialJsonParser {
@@ -252,17 +219,20 @@ public class PartialJsonParser {
 
     public init() {}
 
-    public func push(fragment: String): ArrayList<PiEvent> {
+    /**
+     * 喂一片（可能是半截的）JSON。
+     *
+     * 早先这里还会顺手产出 tool/call_* 事件；改成对齐 Pi 之后，增量事件由提供方按
+     * toolcall_delta 直接推（Pi 也是把 arguments 的原样片段推给上层），这里只负责"把视图算出来"。
+     */
+    public func push(fragment: String): Unit {
         let fb = fragment.toArray()
         var i = 0
         while (i < fb.size) {
             buf.add(fb[i])
             i = i + 1
         }
-        let v = scan()
-        let events = diff(lastView, v)
-        lastView = v
-        return events
+        lastView = scan()
     }
 
     public func view(): ToolCallView {
@@ -589,54 +559,40 @@ public class PartialJsonParser {
         let to = if (r.closed) { r.end - 1 } else { r.end }
         return TextValue(unescapeJson(safeUtf8(bytes, r.start + 1, to)), r.closed)
     }
+}
 
-    /* ---------- 差量：把"视图变化"翻成事件 ---------- */
-
-    private func diff(old: ToolCallView, now: ToolCallView): ArrayList<PiEvent> {
-        let out = ArrayList<PiEvent>()
-        if (!old.nameKnown && now.nameKnown) {
-            let e = PiEvent(ToolCallStart)
-            e.tool = now.name
-            out.add(e)
-        }
-        var i = 0
-        while (i < now.keys.size) {
-            let k = now.keys[i]
-            var already = false
-            var j = 0
-            while (j < old.keys.size) {
-                if (old.keys[j] == k) {
-                    already = true
-                }
-                j = j + 1
+/** 把字符串重新转义成 JSON 串内容（值要存成 JSON 文本，交给 argsJson 再解析）。 */
+func escapeJson(s: String): String {
+    let b = s.toArray()
+    let sb = StringBuilder()
+    var i: Int64 = 0
+    while (i < b.size) {
+        let c = b[i]
+        if (c == 34) {
+            sb.append("\\\"")
+        } else if (c == 92) {
+            sb.append("\\\\")
+        } else if (c == 10) {
+            sb.append("\\n")
+        } else if (c == 13) {
+            sb.append("\\r")
+        } else if (c == 9) {
+            sb.append("\\t")
+        } else if (c < 128) {
+            sb.append(String.fromUtf8(b[i..i + 1]))
+        } else {
+            let n = utf8CharLen(c)
+            var j = i + n
+            if (j > b.size) {
+                j = b.size
             }
-            if (!already) {
-                let e = PiEvent(ToolCallArg)
-                e.key = k
-                e.value = stripQuotes(now.values[i])
-                e.complete = true
-                out.add(e)
-            }
-            i = i + 1
+            sb.append(String.fromUtf8(b[i..j]))
+            i = j
+            continue
         }
-        if (now.partialKey.size > 0 && now.partialValue.size > 0) {
-            let prevLen = if (old.partialKey == now.partialKey) { old.partialValue.size } else { 0 }
-            let nowLen = now.partialValue.size
-            if (nowLen > prevLen && (prevLen == 0 || nowLen - prevLen >= partialChunkBytes)) {
-                let e = PiEvent(ToolCallArg)
-                e.key = now.partialKey
-                e.value = now.partialValue
-                e.complete = false
-                out.add(e)
-            }
-        }
-        if (!old.complete && now.complete) {
-            let e = PiEvent(ToolCallEnd)
-            e.tool = now.name
-            out.add(e)
-        }
-        return out
+        i = i + 1
     }
+    return sb.toString()
 }
 
 func isSpace(b: UInt8): Bool {

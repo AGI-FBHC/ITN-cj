@@ -1,37 +1,37 @@
 package pi_cj.tools
 
 import std.collection.*
-import std.convert.*
-import std.time.*
+import std.regex.*
 import stdx.encoding.json.*
 import pi_cj.pi.*
 
-/**
- * 工作区的真实工具（对齐 Pi/Codex 那套"读-写-改-搜-跑"）：
+/*
+ * 八个真实工具，名字/参数/说明都对齐 Pi 的内置工具：
+ *   read     读文件（offset/limit 分段）        read
+ *   write    写文件（整个覆盖）                  write
+ *   edit     精确替换（一次可多段，匹配原文）     write
+ *   ls       列目录                             read
+ *   find     按 glob 找文件                     read
+ *   grep     按正则/字面量搜内容                 read
+ *   powershell 执行命令（Windows 上代替 bash）   external
  *
- *   read_file / list_files / search_text   read      只读
- *   write_file / edit_file                 write     改本机文件
- *   run_command                            external  执行本机命令（最危险的一档）
- *   current_time / calc                    read      不碰文件
- *
- * allowExec = false 时 run_command 会被标记成"不可用"：它仍然出现在清单里（前端能看到有这件
- * 武器、以及为什么关着），但不会写进提示词、调也调不动。这就是"审批门"在运行时的着落点。
+ * 与 Pi 的差别：路径被关在工作区里（Pi 用进程的系统权限）；命令执行要显式开 --allow-exec。
  */
+
 public func registerWorkspaceTools(reg: ToolRegistry, ws: Workspace, allowExec: Bool): Unit {
-    reg.add(ReadFileTool(ws))
-    reg.add(ListFilesTool(ws))
-    reg.add(SearchTextTool(ws))
-    reg.add(WriteFileTool(ws))
-    reg.add(EditFileTool(ws))
-    reg.add(CurrentTimeTool())
-    reg.add(CalcTool())
-    reg.add(RunCommandTool(ws))
+    reg.add(ReadTool(ws))
+    reg.add(WriteTool(ws))
+    reg.add(EditTool(ws))
+    reg.add(LsTool(ws))
+    reg.add(FindTool(ws))
+    reg.add(GrepTool(ws))
+    reg.add(PowerShellTool(ws))
     if (!allowExec) {
-        reg.markUnavailable("run_command", "启动时没有加 --allow-exec，执行本机命令被关掉了")
+        reg.markUnavailable("powershell", "启动时没有加 --allow-exec，执行本机命令被关掉了")
     }
 }
 
-class ReadFileTool <: Tool {
+class ReadTool <: Tool {
     private let ws: Workspace
 
     public init(ws: Workspace) {
@@ -39,36 +39,68 @@ class ReadFileTool <: Tool {
     }
 
     public func spec(): ToolSpec {
-        return ToolSpec("read_file", "读文件", "{\"path\": \"note.md\"}",
-            "读工作区里的一个文本文件（最多 32KB，超出会截断）。path 必填，是相对工作区的路径。", "read")
+        let s = ToolSpec("read", "读文件", "Read file contents",
+            "Read a file from the workspace. Optional offset (1-indexed line) and limit (lines) for large files.",
+            "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Path to the file to read (relative or absolute)\"},\"offset\":{\"type\":\"number\",\"description\":\"Line number to start reading from (1-indexed)\"},\"limit\":{\"type\":\"number\",\"description\":\"Maximum number of lines to read\"}},\"required\":[\"path\"]}",
+            "read")
+        s.guidelines = ["Use read to examine files instead of cat or sed.", "大文件用 offset/limit 分段读，不要整篇塞进上下文。"]
+        return s
     }
 
-    public func run(args: JsonObject): ToolResult {
+    public func run(callId: String, args: JsonObject): ToolResult {
         let path = strOf(args, "path")
         if (path.size == 0) {
-            return ToolResult.bad("缺少 path 参数")
+            return ToolResult.err("缺少 path 参数")
         }
         match (ws.resolve(path)) {
-            case None => return ToolResult.bad("路径越出工作区，拒绝访问：" + path +
-                "（模型只能读工作区里的文件）")
+            case None => return ToolResult.err("路径越出工作区，拒绝访问：" + path)
             case Some(_) => ()
         }
-        match (ws.readText(path)) {
-            case Some(t) =>
-                let arr = JsonArray()
-                let o = JsonObject()
-                o.put("path", JsonString(ws.relOf(path)))
-                o.put("content", JsonString(t))
-                arr.add(o)
-                return ToolResult.goodWith("读到 " + ws.relOf(path) + "（" + t.size.toString() + " 字节）",
-                    "文件 " + ws.relOf(path) + " 的内容：\n" + t, arr)
-            case None =>
-                return ToolResult.bad("读不到 " + path + "（不存在、是目录，或者越出了工作区）")
+        let raw = match (ws.readText(path)) {
+            case Some(t) => t
+            case None => return ToolResult.err("读不到 " + path + "（不存在、是目录，或者没有权限）")
         }
+        let rel = ws.relOf(path)
+        let details = JsonObject()
+        details.put("path", JsonString(rel))
+        let offset = intOf(args, "offset")
+        let limit = intOf(args, "limit")
+        if (offset <= 0 && limit <= 0) {
+            let t = truncateHead(raw, DEFAULT_MAX_LINES, DEFAULT_MAX_BYTES)
+            details.put("truncated", JsonBool(t.truncated))
+            let head = "读到 " + rel + "（" + formatSize(raw.size) + "）"
+            if (t.truncated) {
+                return ToolResult.ok(head + "，已截断", t.content, details)
+            }
+            return ToolResult.ok(head, t.content, details)
+        }
+        let lines = splitLines(raw)
+        var start: Int64 = 0
+        if (offset > 1) {
+            start = offset - 1
+        }
+        if (start > lines.size) {
+            start = lines.size
+        }
+        var end = lines.size
+        if (limit > 0 && start + limit < end) {
+            end = start + limit
+        }
+        let sb = StringBuilder()
+        sb.append("文件 " + rel + " 第 " + (start + 1).toString() + "-" + end.toString() + " 行（共 " +
+            lines.size.toString() + " 行）：\n")
+        var i = start
+        while (i < end) {
+            sb.append(lines[i])
+            sb.append("\n")
+            i = i + 1
+        }
+        details.put("truncated", JsonBool(false))
+        return ToolResult.ok("读到 " + rel + " 的 " + (end - start).toString() + " 行", sb.toString(), details)
     }
 }
 
-class ListFilesTool <: Tool {
+class WriteTool <: Tool {
     private let ws: Workspace
 
     public init(ws: Workspace) {
@@ -76,94 +108,33 @@ class ListFilesTool <: Tool {
     }
 
     public func spec(): ToolSpec {
-        return ToolSpec("list_files", "列出文件", "{}",
-            "列出工作区里的文件与子目录。path 可省略（默认整个工作区），recursive 默认 true。" +
-            "先用它搞清楚有什么，再决定读哪个。", "read")
+        let s = ToolSpec("write", "写文件", "Create or overwrite files",
+            "Write content to a file in the workspace. Overwrites existing files; creates parent directories.",
+            "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Path to the file to write (relative or absolute)\"},\"content\":{\"type\":\"string\",\"description\":\"Content to write to the file\"}},\"required\":[\"path\",\"content\"]}",
+            "write")
+        s.guidelines = ["Use write only for new files or complete rewrites.", "改几处小地方用 edit，不要整篇重写。"]
+        return s
     }
 
-    public func run(args: JsonObject): ToolResult {
-        let path = strOf(args, "path")
-        let rec = boolOf(args, "recursive", true)
-        match (ws.resolve(path)) {
-            case Some(_) =>
-                let items = ws.list(path, rec)
-                if (items.size == 0) {
-                    let place = if (ws.relOf(path).size == 0) { "工作区根目录" } else { ws.relOf(path) }
-                    return ToolResult.goodWith(place + " 是空的", place + " 下没有任何文件或子目录。", JsonNull())
-                }
-                let arr = JsonArray()
-                for (it in items) {
-                    arr.add(JsonString(it))
-                }
-                let head = if (ws.relOf(path).size == 0) { "工作区根目录" } else { ws.relOf(path) }
-                return ToolResult.good(head + " 下共 " + items.size.toString() + " 项", arr)
-            case None =>
-                return ToolResult.bad("路径越出工作区，拒绝访问：" + path)
-        }
-    }
-}
-
-class SearchTextTool <: Tool {
-    private let ws: Workspace
-
-    public init(ws: Workspace) {
-        this.ws = ws
-    }
-
-    public func spec(): ToolSpec {
-        return ToolSpec("search_text", "搜内容", "{\"query\": \"要找的字\"}",
-            "在工作区的文本文件里逐行找一段字，返回 文件:行号: 内容。path 可省略（默认整个工作区）。" +
-            "比一个个读文件快得多。", "read")
-    }
-
-    public func run(args: JsonObject): ToolResult {
-        let query = strOf(args, "query")
-        if (query.size == 0) {
-            return ToolResult.bad("缺少 query 参数")
-        }
-        let path = strOf(args, "path")
-        let hits = ws.search(query, path)
-        if (hits.size == 0) {
-            return ToolResult.bad("没搜到「" + query + "」")
-        }
-        let arr = JsonArray()
-        for (h in hits) {
-            arr.add(JsonString(h))
-        }
-        return ToolResult.good("在 " + hits.size.toString() + " 处找到「" + query + "」", arr)
-    }
-}
-
-class WriteFileTool <: Tool {
-    private let ws: Workspace
-
-    public init(ws: Workspace) {
-        this.ws = ws
-    }
-
-    public func spec(): ToolSpec {
-        return ToolSpec("write_file", "写文件", "{\"path\": \"相对路径\", \"content\": \"完整内容\"}",
-            "把内容整个写进一个文件（已有文件会被覆盖，父目录会自动建）。批量改造用 edit_file 更稳。", "write")
-    }
-
-    public func run(args: JsonObject): ToolResult {
+    public func run(callId: String, args: JsonObject): ToolResult {
         let path = strOf(args, "path")
         if (path.size == 0) {
-            return ToolResult.bad("缺少 path 参数")
+            return ToolResult.err("缺少 path 参数")
         }
         match (ws.resolve(path)) {
-            case None => return ToolResult.bad("路径越出工作区，拒绝写入：" + path)
+            case None => return ToolResult.err("路径越出工作区，拒绝写入：" + path)
             case Some(_) => ()
         }
         let content = strOf(args, "content")
         if (ws.writeText(path, content)) {
-            return ToolResult.good("已写入 " + ws.relOf(path) + "（" + content.size.toString() + " 字节）", JsonNull())
+            return ToolResult.ok("已写入 " + ws.relOf(path) + "（" + formatSize(content.size) + "）",
+                "已写入 " + ws.relOf(path) + "（" + content.size.toString() + " 字节）", JsonNull())
         }
-        return ToolResult.bad("写不进去 " + path + "（路径越出工作区，或者没有权限）")
+        return ToolResult.err("写不进去 " + path)
     }
 }
 
-class EditFileTool <: Tool {
+class EditTool <: Tool {
     private let ws: Workspace
 
     public init(ws: Workspace) {
@@ -171,45 +142,79 @@ class EditFileTool <: Tool {
     }
 
     public func spec(): ToolSpec {
-        return ToolSpec("edit_file", "改文件",
-            "{\"path\": \"相对路径\", \"old_text\": \"原文\", \"new_text\": \"新文\"}",
-            "把文件里**唯一出现**的一段原文换成新文。找不到、或出现多次都会拒绝（避免改错地方）。", "write")
+        let s = ToolSpec("edit", "改文件", "Make precise file edits with exact text replacement, including multiple disjoint edits in one call",
+            "Replace exact text in a file. Each edits[].oldText must match the original file uniquely; edits are matched against the original content, not incrementally.",
+            "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Path to the file to edit (relative or absolute)\"},\"edits\":{\"type\":\"array\",\"description\":\"One or more targeted replacements; each is matched against the original file\",\"items\":{\"type\":\"object\",\"properties\":{\"oldText\":{\"type\":\"string\",\"description\":\"Exact text for one targeted replacement; must be unique in the original file\"},\"newText\":{\"type\":\"string\",\"description\":\"Replacement text\"}},\"required\":[\"oldText\",\"newText\"]}}},\"required\":[\"path\",\"edits\"]}",
+            "write")
+        s.guidelines = [
+            "Use edit for precise changes (edits[].oldText must match exactly)",
+            "When changing multiple separate locations in one file, use one edit call with multiple edits[] instead of multiple edit calls",
+            "Each edits[].oldText is matched against the original file, not after earlier edits are applied",
+            "Keep edits[].oldText as small as possible while still being unique"
+        ]
+        return s
     }
 
-    public func run(args: JsonObject): ToolResult {
+    public func run(callId: String, args: JsonObject): ToolResult {
         let path = strOf(args, "path")
-        let oldText = strOf(args, "old_text")
-        let newText = strOf(args, "new_text")
-        if (path.size == 0 || oldText.size == 0) {
-            return ToolResult.bad("需要 path 与 old_text")
+        if (path.size == 0) {
+            return ToolResult.err("缺少 path 参数")
         }
         match (ws.resolve(path)) {
-            case None => return ToolResult.bad("路径越出工作区，拒绝访问：" + path)
+            case None => return ToolResult.err("路径越出工作区，拒绝访问：" + path)
             case Some(_) => ()
         }
-        var text = ""
-        match (ws.readText(path)) {
-            case Some(t) => text = t
-            case None => return ToolResult.bad("读不到 " + path)
+        let edits = match (args.get("edits")) {
+            case Some(v) =>
+                match (v) {
+                    case a: JsonArray => a
+                    case _ => JsonArray()
+                }
+            case None => JsonArray()
         }
-        let idx = indexOfSub(text, oldText)
-        if (idx < 0) {
-            return ToolResult.bad("在 " + path + " 里找不到那段 old_text，先 read_file 看清楚再改")
+        if (edits.size() == 0) {
+            return ToolResult.err("缺少 edits 参数（至少一段 oldText/newText）")
         }
-        if (indexOfSub(safeUtf8(text.toArray(), idx + oldText.size, text.size), oldText) >= 0) {
-            return ToolResult.bad("old_text 在 " + path + " 里出现了不止一次，先写出更长的上下文再改")
+        let raw = match (ws.readText(path)) {
+            case Some(t) => t
+            case None => return ToolResult.err("读不到 " + path)
         }
-        let b = text.toArray()
-        let replaced = safeUtf8(b, 0, idx) + newText + safeUtf8(b, idx + oldText.size, b.size)
-        if (!ws.writeText(path, replaced)) {
-            return ToolResult.bad("改完写不回去：" + path)
+        var text = raw
+        var applied: Int64 = 0
+        var i: Int64 = 0
+        while (i < edits.size()) {
+            let e = match (edits[i]) {
+                case o: JsonObject => o
+                case _ => JsonObject()
+            }
+            let oldText = strOf(e, "oldText")
+            let newText = strOf(e, "newText")
+            if (oldText.size == 0) {
+                return ToolResult.err("edits[" + i.toString() + "].oldText 是空的")
+            }
+            let idx = indexOfSub(text, oldText)
+            if (idx < 0) {
+                return ToolResult.err("edits[" + i.toString() + "] 在原文里找不到那段 oldText（先 read 看清楚）")
+            }
+            let b = text.toArray()
+            let after = safeUtf8(b, idx + oldText.size, b.size)
+            if (indexOfSub(after, oldText) >= 0) {
+                return ToolResult.err("edits[" + i.toString() + "] 的 oldText 在文件里不唯一，写长一点再改")
+            }
+            text = safeUtf8(b, 0, idx) + newText + after
+            applied = applied + 1
+            i = i + 1
         }
-        return ToolResult.good("已改 " + ws.relOf(path) + "（替换 1 处，长度 " + text.size.toString() +
-            " -> " + replaced.size.toString() + " 字节）", JsonNull())
+        if (!ws.writeText(path, text)) {
+            return ToolResult.err("改完写不回去：" + path)
+        }
+        let rel = ws.relOf(path)
+        return ToolResult.ok("已改 " + rel + "（" + applied.toString() + " 处替换，" + formatSize(raw.size) +
+            " -> " + formatSize(text.size) + "）", "已改 " + rel + "，" + applied.toString() + " 处替换完成。", JsonNull())
     }
 }
 
-class RunCommandTool <: Tool {
+class LsTool <: Tool {
     private let ws: Workspace
 
     public init(ws: Workspace) {
@@ -217,200 +222,258 @@ class RunCommandTool <: Tool {
     }
 
     public func spec(): ToolSpec {
-        return ToolSpec("run_command", "执行命令", "{\"command\": \"dir /b\"}",
-            "在工作区目录里用 cmd /c 执行一条命令，返回退出码与输出。cwd 可省略。" +
-            "不要跑交互式或常驻的命令（没有超时保护，会一直挂着）。", "external")
+        let s = ToolSpec("ls", "列目录", "List directory contents",
+            "List the entries of one directory in the workspace (directories end with /).",
+            "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Directory to list (default: current directory)\"},\"limit\":{\"type\":\"number\",\"description\":\"Maximum number of entries to return (default: 500)\"}}}",
+            "read")
+        s.guidelines = ["先 ls 看清楚有什么，再决定读哪个文件。"]
+        return s
     }
 
-    public func run(args: JsonObject): ToolResult {
+    public func run(callId: String, args: JsonObject): ToolResult {
+        let path = strOf(args, "path")
+        match (ws.resolve(path)) {
+            case None => return ToolResult.err("路径越出工作区：" + path)
+            case Some(_) => ()
+        }
+        var limit = intOf(args, "limit")
+        if (limit <= 0) {
+            limit = ws.maxListEntries
+        }
+        let items = ws.list(path, limit)
+        let rel = ws.relOf(path)
+        let place = if (rel.size == 0) { "工作区根目录" } else { rel }
+        if (items.size == 0) {
+            return ToolResult.ok(place + " 是空的", place + " 下没有任何条目。", JsonNull())
+        }
+        let sb = StringBuilder()
+        for (it in items) {
+            sb.append(it)
+            sb.append("\n")
+        }
+        return ToolResult.ok(place + " 下 " + items.size.toString() + " 项", sb.toString(), JsonNull())
+    }
+}
+
+class FindTool <: Tool {
+    private let ws: Workspace
+
+    public init(ws: Workspace) {
+        this.ws = ws
+    }
+
+    public func spec(): ToolSpec {
+        let s = ToolSpec("find", "找文件", "Find files by glob pattern",
+            "Find files in the workspace by glob pattern, e.g. '*.md', '**/*.json' or 'src/**/*.cj'.",
+            "{\"type\":\"object\",\"properties\":{\"pattern\":{\"type\":\"string\",\"description\":\"Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'\"},\"path\":{\"type\":\"string\",\"description\":\"Directory to search in (default: current directory)\"},\"limit\":{\"type\":\"number\",\"description\":\"Maximum number of results (default: 1000)\"}},\"required\":[\"pattern\"]}",
+            "read")
+        return s
+    }
+
+    public func run(callId: String, args: JsonObject): ToolResult {
+        let pattern = strOf(args, "pattern")
+        if (pattern.size == 0) {
+            return ToolResult.err("缺少 pattern 参数")
+        }
+        let path = strOf(args, "path")
+        match (ws.resolve(path)) {
+            case None => return ToolResult.err("路径越出工作区：" + path)
+            case Some(_) => ()
+        }
+        var limit = intOf(args, "limit")
+        if (limit <= 0) {
+            limit = ws.maxFindResults
+        }
+        var re: ?Regex = None
+        try {
+            re = Some(Regex(globToRegex(pattern)))
+        } catch (e: Exception) {
+            return ToolResult.err("glob 写错了：" + e.message)
+        }
+        let files = ws.walkFiles(path, ws.maxFindResults * 4)
+        let hits = ArrayList<String>()
+        for (f in files) {
+            if (hits.size >= limit) {
+                break
+            }
+            match (re) {
+                case Some(r) =>
+                    if (r.matches(f)) {
+                        hits.add(f)
+                    }
+                case None => ()
+            }
+        }
+        if (hits.size == 0) {
+            return ToolResult.err("没有匹配 " + pattern + " 的文件")
+        }
+        let sb = StringBuilder()
+        for (h in hits) {
+            sb.append(h)
+            sb.append("\n")
+        }
+        return ToolResult.ok("找到 " + hits.size.toString() + " 个文件", sb.toString(), JsonNull())
+    }
+}
+
+class GrepTool <: Tool {
+    private let ws: Workspace
+
+    public init(ws: Workspace) {
+        this.ws = ws
+    }
+
+    public func spec(): ToolSpec {
+        let s = ToolSpec("grep", "搜内容", "Search file contents for patterns",
+            "Search the workspace for a pattern line by line. Returns path:line: text. Supports regex (default), literal, ignoreCase, glob filter and context lines.",
+            "{\"type\":\"object\",\"properties\":{\"pattern\":{\"type\":\"string\",\"description\":\"Search pattern (regex or literal string)\"},\"path\":{\"type\":\"string\",\"description\":\"Directory or file to search (default: current directory)\"},\"glob\":{\"type\":\"string\",\"description\":\"Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'\"},\"ignoreCase\":{\"type\":\"boolean\",\"description\":\"Case-insensitive search (default: false)\"},\"literal\":{\"type\":\"boolean\",\"description\":\"Treat pattern as literal string instead of regex (default: false)\"},\"context\":{\"type\":\"number\",\"description\":\"Number of lines to show before and after each match (default: 0)\"},\"limit\":{\"type\":\"number\",\"description\":\"Maximum number of matches to return (default: 100)\"}},\"required\":[\"pattern\"]}",
+            "read")
+        return s
+    }
+
+    public func run(callId: String, args: JsonObject): ToolResult {
+        let pattern = strOf(args, "pattern")
+        if (pattern.size == 0) {
+            return ToolResult.err("缺少 pattern 参数")
+        }
+        let path = strOf(args, "path")
+        match (ws.resolve(path)) {
+            case None => return ToolResult.err("路径越出工作区：" + path)
+            case Some(_) => ()
+        }
+        let literal = boolOf(args, "literal", false)
+        let ic = boolOf(args, "ignoreCase", false)
+        let ctxLines = intOf(args, "context")
+        var limit = intOf(args, "limit")
+        if (limit <= 0) {
+            limit = ws.maxGrepMatches
+        }
+        let globPat = strOf(args, "glob")
+        var re: ?Regex = None
+        if (!literal) {
+            try {
+                if (ic) {
+                    re = Some(Regex(pattern, RegexFlag.IgnoreCase))
+                } else {
+                    re = Some(Regex(pattern))
+                }
+            } catch (e: Exception) {
+                return ToolResult.err("正则写错了：" + e.message + "（要用字面量搜索请传 literal=true）")
+            }
+        }
+        var globRe: ?Regex = None
+        if (globPat.size > 0) {
+            try {
+                globRe = Some(Regex(globToRegex(globPat)))
+            } catch (e: Exception) {
+                return ToolResult.err("glob 写错了：" + e.message)
+            }
+        }
+        let files = ws.walkFiles(path, 4000)
+        let hits = ArrayList<String>()
+        var scanned: Int64 = 0
+        for (f in files) {
+            if (hits.size >= limit) {
+                break
+            }
+            var skip = false
+            match (globRe) {
+                case Some(gr) =>
+                    if (!gr.matches(f)) {
+                        skip = true
+                    }
+                case None => ()
+            }
+            if (skip) {
+                continue
+            }
+            var content = ""
+            match (ws.readText(f)) {
+                case Some(t) => content = t
+                case None => continue
+            }
+            if (content.size > ws.maxScanBytes) {
+                continue
+            }
+            scanned = scanned + 1
+            let lines = splitLines(content)
+            var i: Int64 = 0
+            while (i < lines.size && hits.size < limit) {
+                if (lineMatches(lines[i], pattern, literal, ic, re)) {
+                    var c = ctxLines
+                    while (c > 0) {
+                        let bi = i - c
+                        if (bi >= 0) {
+                            hits.add(f + ":" + (bi + 1).toString() + "-" + truncateLine(lines[bi]))
+                        }
+                        c = c - 1
+                    }
+                    hits.add(f + ":" + (i + 1).toString() + ": " + truncateLine(lines[i]))
+                    var a: Int64 = 1
+                    while (a <= ctxLines) {
+                        let ai = i + a
+                        if (ai < lines.size) {
+                            hits.add(f + ":" + (ai + 1).toString() + "-" + truncateLine(lines[ai]))
+                        }
+                        a = a + 1
+                    }
+                }
+                i = i + 1
+            }
+        }
+        if (hits.size == 0) {
+            return ToolResult.err("在 " + scanned.toString() + " 个文件里没搜到「" + pattern + "」")
+        }
+        let sb = StringBuilder()
+        for (h in hits) {
+            sb.append(h)
+            sb.append("\n")
+        }
+        return ToolResult.ok("在 " + hits.size.toString() + " 处找到「" + pattern + "」", sb.toString(), JsonNull())
+    }
+}
+
+func lineMatches(line: String, pattern: String, literal: Bool, ic: Bool, re: ?Regex): Bool {
+    if (literal) {
+        if (ic) {
+            return containsSub(line.toAsciiLower(), pattern.toAsciiLower())
+        }
+        return containsSub(line, pattern)
+    }
+    match (re) {
+        case Some(r) => return r.matches(line)
+        case None => return false
+    }
+}
+
+class PowerShellTool <: Tool {
+    private let ws: Workspace
+
+    public init(ws: Workspace) {
+        this.ws = ws
+    }
+
+    public func spec(): ToolSpec {
+        let s = ToolSpec("powershell", "跑命令", "Execute PowerShell commands",
+            "Run a PowerShell command inside the workspace. Output (stdout+stderr) is returned; a non-zero exit code is reported as an error. Do not run interactive or long-running commands.",
+            "{\"type\":\"object\",\"properties\":{\"command\":{\"type\":\"string\",\"description\":\"Shell command to execute\"},\"cwd\":{\"type\":\"string\",\"description\":\"Working directory inside the workspace (optional)\"}},\"required\":[\"command\"]}",
+            "external")
+        s.guidelines = ["不要跑交互式或常驻的命令：这版没有超时保护，会一直挂着。"]
+        return s
+    }
+
+    public func run(callId: String, args: JsonObject): ToolResult {
         let cmd = strOf(args, "command")
         if (cmd.size == 0) {
-            return ToolResult.bad("缺少 command 参数")
+            return ToolResult.err("缺少 command 参数")
         }
         let cwd = strOf(args, "cwd")
-        let r = ws.run(cmd, cwd)
-        let arr = JsonArray()
-        let o = JsonObject()
-        o.put("exitCode", JsonInt(r.code))
-        o.put("stdout", JsonString(r.out))
-        o.put("stderr", JsonString(r.err))
-        arr.add(o)
-        let head = "命令退出码 " + r.code.toString()
-        let body = "命令：" + cmd + "\n退出码：" + r.code.toString() + "\nstdout：\n" + r.out +
-            "\nstderr：\n" + r.err
+        let r = ws.runPowerShell(cmd, cwd)
+        let body = "命令：" + cmd + "\n退出码：" + r.code.toString() + "\n耗时：" +
+            (r.wallMs / 1000).toString() + "s\nstdout：\n" + r.out + "\nstderr：\n" + r.err
         if (r.code != 0) {
-            return ToolResult.goodWith(head + "（失败）", body, arr)
+            return ToolResult.err("命令退出码 " + r.code.toString() + "\n" + body)
         }
-        return ToolResult.goodWith(head, body, arr)
-    }
-}
-
-class CurrentTimeTool <: Tool {
-    public init() {}
-
-    public func spec(): ToolSpec {
-        return ToolSpec("current_time", "看当前时间", "{}",
-            "返回本机当前的日期时间，用来算「还剩几天」这类问题。", "read")
-    }
-
-    public func run(args: JsonObject): ToolResult {
-        let now = DateTime.now().toString()
-        return ToolResult.good("现在时间是 " + now, JsonString(now))
-    }
-}
-
-/* ---------- 四则运算求值器：与内核 core/src/tools/registry.cj 的 Calc 保持一致 ---------- */
-
-class Calc {
-    let src: Array<UInt8>
-    var pos: Int64 = 0
-    var err: String = ""
-
-    init(text: String) {
-        this.src = text.toArray()
-    }
-
-    func skip(): Unit {
-        while (pos < src.size && (src[pos] == 32 || src[pos] == 9)) {
-            pos = pos + 1
-        }
-    }
-
-    func peek(): UInt8 {
-        skip()
-        if (pos < src.size) {
-            return src[pos]
-        }
-        return 0
-    }
-
-    func expr(): Float64 {
-        var v = term()
-        while (err.size == 0) {
-            let c = peek()
-            if (c == 43) {
-                pos = pos + 1
-                v = v + term()
-            } else if (c == 45) {
-                pos = pos + 1
-                v = v - term()
-            } else {
-                break
-            }
-        }
-        return v
-    }
-
-    func term(): Float64 {
-        var v = unary()
-        while (err.size == 0) {
-            let c = peek()
-            if (c == 42) {
-                pos = pos + 1
-                v = v * unary()
-            } else if (c == 47) {
-                pos = pos + 1
-                let d = unary()
-                if (d == 0.0) {
-                    err = "除数不能为零"
-                    return 0.0
-                }
-                v = v / d
-            } else {
-                break
-            }
-        }
-        return v
-    }
-
-    func unary(): Float64 {
-        let c = peek()
-        if (c == 45) {
-            pos = pos + 1
-            return 0.0 - unary()
-        }
-        if (c == 43) {
-            pos = pos + 1
-            return unary()
-        }
-        return primary()
-    }
-
-    func primary(): Float64 {
-        let c = peek()
-        if (c == 40) {
-            pos = pos + 1
-            let v = expr()
-            if (peek() != 41) {
-                err = "括号不配对"
-                return 0.0
-            }
-            pos = pos + 1
-            return v
-        }
-        return number()
-    }
-
-    func number(): Float64 {
-        skip()
-        let start = pos
-        var dot = false
-        while (pos < src.size) {
-            let c = src[pos]
-            if (c >= 48 && c <= 57) {
-                pos = pos + 1
-            } else if (c == 46 && !dot) {
-                dot = true
-                pos = pos + 1
-            } else {
-                break
-            }
-        }
-        if (pos == start) {
-            err = "表达式里有无法识别的字符"
-            return 0.0
-        }
-        let t = safeUtf8(src, start, pos)
-        try {
-            return Float64.parse(t)
-        } catch (e: Exception) {
-            err = "无法解析数字：" + t
-            return 0.0
-        }
-    }
-
-    func done(): Bool {
-        skip()
-        return pos >= src.size
-    }
-
-    public func value(): Float64 {
-        let v = expr()
-        if (err.size == 0 && !done()) {
-            err = "表达式没写完，剩下的部分看不懂"
-        }
-        return v
-    }
-}
-
-class CalcTool <: Tool {
-    public init() {}
-
-    public func spec(): ToolSpec {
-        return ToolSpec("calc", "计算", "{\"expr\": \"(12+8)*3/4\"}",
-            "四则运算（支持 + - * / 与括号），别自己心算。", "read")
-    }
-
-    public func run(args: JsonObject): ToolResult {
-        let e = strOf(args, "expr")
-        if (e.size == 0) {
-            return ToolResult.bad("缺少 expr 参数")
-        }
-        let c = Calc(e)
-        let v = c.value()
-        if (c.err.size > 0) {
-            return ToolResult.bad(c.err)
-        }
-        return ToolResult.good(e + " = " + v.toString(), JsonFloat(v))
+        return ToolResult.ok("命令退出码 0，" + (r.wallMs / 1000).toString() + "s", body, JsonNull())
     }
 }

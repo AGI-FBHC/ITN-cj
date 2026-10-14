@@ -1,20 +1,22 @@
 package pi_cj.cli
 
 import std.collection.*
+import std.fs.*
 import pi_cj.pi.*
 import pi_cj.tools.*
 
-/**
- * 命令行对话界面。
+/*
+ * 命令行界面（不做 TUI，定位是"拿来测这个 harness"）。
  *
- * 配置来源（优先级从高到低）：命令行参数 > 环境变量 > 当前目录的 .env.local > 内置默认。
- * 用文件放 Key 是为了不让密钥出现在命令行里（进程列表能看到）。
+ * 命令照 Pi 用斜杠：
+ *   /help /tools /skills /sessions /new /resume <id> /compact /model <名字> /mode <档> /skill:<名字> /quit
+ * 配置：命令行参数 > 环境变量 > 当前目录的 .env.local；Key 不走命令行（进程列表能看到）。
  */
 
-/** 事件回调里要改的状态都放这里：类是引用类型，闭包改了外面才看得见。 */
+/** 事件回调里要改的状态：类是引用类型，闭包改了外面才看得见。 */
 class UiState {
-    var printedText = false
-    var thinkStarted = false
+    var thinkOpen = false
+    var textOpen = false
 }
 
 func modeListText(): String {
@@ -30,92 +32,269 @@ func modeListText(): String {
 
 func printHelp(): Unit {
     println("命令：")
-    println("  :mode            看当前模式与全部模式名")
-    println("  :mode research   切换模式（plain / standard / research / agent）")
-    println("  :tools           看这一模式下给模型的工具，以及为什么有的没给")
-    println("  :q               退出")
+    println("  /help                    看这份说明")
+    println("  /tools                   看当前档位给模型的工具（以及为什么有的没给）")
+    println("  /skills                  看扫到哪些 skills")
+    println("  /sessions                看这个目录下的会话")
+    println("  /new                     开一个新会话")
+    println("  /resume <id 前缀>         切到某个旧会话（续聊）")
+    println("  /compact                 把前面的对话压成摘要（省上下文）")
+    println("  /model <名字>             换模型（如 mimo-v2.6-pro）")
+    println("  /mode <档位>              换工具集：" + modeListText())
+    println("  /skill:<名字> [要求]       强制加载某个 skill 再干活")
+    println("  /quit                    退出")
     println("其它任何输入都当问题发给模型。")
 }
 
-func printTools(session: PiSession): Unit {
-    println("模式「" + session.mode.title + "」下曝露给模型的工具：")
-    let allowed = session.registry.specsOf(session.mode)
+func printTools(reg: ToolRegistry, mode: Mode): Unit {
+    println("工具集「" + mode.title + "」给模型的工具：")
+    let allowed = reg.specsOf(mode)
     if (allowed.size == 0) {
-        println("  （一个都没有：这是纯对话模式）")
+        println("  （一个都没有：纯对话）")
     }
     for (s in allowed) {
-        println("  " + s.name + "（" + s.risk + "）—— " + s.title)
+        println("  " + s.name + "（" + s.risk + "）—— " + s.snippet + "：" + s.label)
     }
-    println("已注册、但当前模式不给的：")
-    var listed = false
-    for (s in session.registry.specs()) {
-        if (!session.mode.allows(s.name)) {
-            listed = true
+    println("注册了但这一档不给的：")
+    var any = false
+    for (s in reg.allSpecs()) {
+        if (!mode.allows(s.name)) {
+            any = true
             println("  " + s.name)
         }
     }
-    if (!listed) {
+    if (!any) {
         println("  （无）")
     }
-    println("注册了但当下不可用的：")
     var un = false
-    for (s in session.registry.specs()) {
-        if (!session.registry.available(s.name)) {
+    for (s in reg.allSpecs()) {
+        if (!reg.available(s.name)) {
             un = true
-            println("  " + s.name + "：" + session.registry.unavailableReason(s.name))
+            println("  不可用：" + s.name + "：" + reg.unavailableReason(s.name))
         }
     }
     if (!un) {
-        println("  （无）")
+        println("  不可用：（无）")
     }
 }
 
-func askOnce(session: PiSession, provider: HttpChatProvider, question: String): Unit {
-    let stream = EventStream()
+func printSkills(skills: ArrayList<Skill>): Unit {
+    if (skills.size == 0) {
+        println("没扫到 skills。放法：<工作区>/.pi/skills/<名字>/SKILL.md，或 ~/.agents/skills/<名字>/SKILL.md")
+        return
+    }
+    println("扫到 " + skills.size.toString() + " 个 skill：")
+    for (s in skills) {
+        let flag = if (s.disableModelInvocation) { "（只允许手动 /skill: 触发）" } else { "" }
+        println("  " + s.name + flag)
+        println("     " + s.description)
+        println("     " + s.path)
+    }
+}
+
+/** 会话文件按文件名（内含时间戳）取最新。 */
+func latestSession(dataDir: String, cwd: String): String {
+    let files = listSessionFiles(dataDir, cwd)
+    var best = ""
+    for (f in files) {
+        if (f > best) {
+            best = f
+        }
+    }
+    return best
+}
+
+func sessionLabel(path: String): String {
+    let s = loadSession(path)
+    let nm = s.name()
+    let first = s.firstUserText()
+    let title = if (nm.size > 0) { nm } else if (first.size > 0) { first } else { "（空会话）" }
+    let slash = path.toArray()
+    var start: Int64 = path.size - 1
+    while (start > 0 && slash[start] != 47 && slash[start] != 92) {
+        start = start - 1
+    }
+    let file = safeUtf8(slash, start + 1, path.size)
+    return file + "  " + title
+}
+
+func printSessions(dataDir: String, cwd: String): Unit {
+    let files = listSessionFiles(dataDir, cwd)
+    if (files.size == 0) {
+        println("这个目录下还没有会话。")
+        return
+    }
+    println("会话（按文件名排序，新的在后）：")
+    var sorted = ArrayList<String>()
+    for (f in files) {
+        var inserted = false
+        var i = 0
+        while (i < sorted.size) {
+            if (f < sorted[i]) {
+                sorted.add("")
+                var j = sorted.size - 1
+                while (j > i) {
+                    sorted[j] = sorted[j - 1]
+                    j = j - 1
+                }
+                sorted[i] = f
+                inserted = true
+                break
+            }
+            i = i + 1
+        }
+        if (!inserted) {
+            sorted.add(f)
+        }
+    }
+    var k = sorted.size - 1
+    while (k >= 0) {
+        println("  " + sessionLabel(sorted[k]))
+        k = k - 1
+    }
+}
+
+/* ---------- 事件打印 ---------- */
+
+func attachPrinter(stream: EventStream): UiState {
     let ui = UiState()
     stream.on({ e: PiEvent =>
-        let k = kindText(e.kind)
-        if (k == "think/delta") {
-            if (!ui.thinkStarted) {
-                ui.thinkStarted = true
-                print("\n[思考] ")
+        let t = kindText(e.kind)
+        if (t == "message_update") {
+            let dt = e.deltaType()
+            let d = e.delta()
+            if (dt == deltaThinkingDelta()) {
+                if (!ui.thinkOpen) {
+                    ui.thinkOpen = true
+                    print("\n[思考] ")
+                }
+                print(d)
+            } else if (dt == deltaTextDelta()) {
+                if (ui.thinkOpen) {
+                    ui.thinkOpen = false
+                    print("\n")
+                }
+                print(d)
+                ui.textOpen = true
+            } else if (dt == deltaToolCallStart()) {
+                print("\n[工具] 模型决定调用：" + e.partialToolName())
+            } else if (dt == deltaToolCallDelta()) {
+                print(".")
             }
-            print(e.text)
-        } else if (k == "text/delta") {
-            if (!ui.printedText) {
-                ui.printedText = true
-                print("\n")
-            }
-            print(e.text)
-        } else if (k == "tool/call_start") {
-            let id = if (e.callId.size > 0) { "（call …" + tailBytes(e.callId, 8) + "）" } else { "" }
-            println("\n[工具] 模型决定调用 " + e.tool + id)
-        } else if (k == "tool/call_arg") {
-            if (e.complete) {
-                println("       " + e.key + " = " + preview(e.value, 200))
-            }
-        } else if (k == "tool/result") {
-            let mark = if (e.ok) { "OK" } else { "失败" }
-            println("[" + mark + "] " + e.tool + "：" + preview(e.text, 400))
+        } else if (t == "tool_execution_start") {
+            ui.thinkOpen = false
+            ui.textOpen = false
+            println("\n[执行] " + e.toolName() + "  参数 " + preview(e.str("args"), 200))
+        } else if (t == "tool_execution_end") {
+            let mark = if (e.isError()) { "失败" } else { "完成" }
+            println("[" + mark + "] " + e.toolName() + "：" + preview(e.str("summary"), 300) + "（" +
+                e.num("durationMs").toString() + "ms）")
+        } else if (t == "turn_end") {
+            println("")
         }
     })
-    let out = session.ask(question, provider, stream)
-    if (!ui.printedText && out.text.size > 0) {
-        println("\n" + out.text)
-    }
+    return ui
+}
+
+/* ---------- 一轮对话 ---------- */
+
+func runOnce(agent: Agent, text: String): Unit {
+    let stream = EventStream()
+    attachPrinter(stream)
+    let out = agent.prompt(text, stream)
     println("")
     if (out.ok) {
-        println("[完成] 模型轮次 " + out.steps.toString() + "，工具调用 " + out.toolResults.size.toString() +
-            " 次，本次请求耗时 " + provider.lastMillis.toString() + " ms，结束原因 " + provider.lastFinish +
-            "，用量 输入 " + provider.lastPromptTokens.toString() + " / 输出 " +
-            provider.lastCompletionTokens.toString() + " tokens")
+        println("[完成] 轮次 " + out.turns.toString() + "，工具 " + out.toolResults.size.toString() +
+            " 次，用量 " + out.usageIn.toString() + "/" + out.usageOut.toString() + " tokens")
     } else {
         println("[失败] " + out.stopReason + "：" + out.error)
     }
     for (w in out.warnings) {
-        println("[自检] " + w)
+        println("[注意] " + w)
     }
 }
+
+func pickSession(dataDir: String, cwd: String, continueLast: Bool, sessionId: String): Session {
+    if (continueLast || sessionId.size > 0) {
+        let files = listSessionFiles(dataDir, cwd)
+        var best = ""
+        var k = 0
+        while (k < files.size) {
+            let f = files[k]
+            if (sessionId.size == 0 || containsSub(f, sessionId)) {
+                if (f > best) {
+                    best = f
+                }
+            }
+            k = k + 1
+        }
+        if (best.size > 0) {
+            let s = loadSession(best)
+            if (s.entries.size > 0) {
+                return s
+            }
+        }
+        println("没找到可续的会话，开个新的。")
+    }
+    return newSession(dataDir, cwd, "", "")
+}
+
+func compactNow(agent: Agent, provider: HttpChatProvider, model: String): Unit {
+    let branch = agent.session.branchEntries()
+    let ids = ArrayList<String>()
+    for (e in branch) {
+        if (strOf(e, "type") == "message") {
+            match (e.get("message")) {
+                case Some(mv) =>
+                    match (objOf(mv)) {
+                        case Some(mo) =>
+                            if (strOf(mo, "role") != "system") {
+                                ids.add(strOf(e, "id"))
+                            }
+                        case None => ()
+                    }
+                case None => ()
+            }
+        }
+    }
+    if (ids.size <= 3) {
+        println("对话还短，不用压缩。")
+        return
+    }
+    let firstKept = ids[ids.size - 2]
+    let all = agent.session.messagesForModel()
+    let sb = StringBuilder()
+    var i: Int64 = 0
+    while (i + 2 < all.size) {
+        let m = all[i]
+        sb.append("[")
+        sb.append(roleName(m.role))
+        sb.append("] ")
+        sb.append(m.text)
+        sb.append("\n")
+        i = i + 1
+    }
+    let ctx = StepContext()
+    ctx.model = model
+    ctx.system = "把下面这段对话压缩成要点摘要：保留结论、决定、涉及的文件路径、未完成事项；不要评论，直接给摘要。"
+    let um = Message(UserMsg)
+    um.text = sb.toString()
+    ctx.messages.add(um)
+    let r = provider.respond(ctx, EventStream())
+    if (r.stopReason == "error") {
+        println("[失败] 压缩没成功：" + r.errorMessage)
+        return
+    }
+    if (r.text.size == 0) {
+        println("[失败] 模型没给出摘要。")
+        return
+    }
+    agent.session.appendCompaction(r.text, firstKept)
+    println("已压缩：" + sb.toString().size.toString() + " 字节的对话 -> " +
+        r.text.size.toString() + " 字节摘要（保留下来的最后两条照旧）")
+}
+
+/* ---------- 入口 ---------- */
 
 public func runChat(args: Array<String>): Int64 {
     let env = loadEnvFile(".env.local")
@@ -124,8 +303,11 @@ public func runChat(args: Array<String>): Int64 {
     var model = cfgValue(env, "PI_CJ_MODEL", "mimo-v2.6-flash")
     var modeName = cfgValue(env, "PI_CJ_MODE", "standard")
     var wsRoot = cfgValue(env, "PI_CJ_WORKSPACE", ".")
+    var dataDir = cfgValue(env, "PI_CJ_DATA", homeDir() + "/.pi-cj")
     var allowExec = false
     var once = ""
+    var continueLast = false
+    var sessionId = ""
 
     match (argValue(args, "--base")) {
         case Some(v) => base = v
@@ -147,14 +329,21 @@ public func runChat(args: Array<String>): Int64 {
         case Some(v) => wsRoot = v
         case None => ()
     }
+    match (argValue(args, "--data-dir")) {
+        case Some(v) => dataDir = v
+        case None => ()
+    }
+    match (argValue(args, "--session-id")) {
+        case Some(v) => sessionId = v
+        case None => ()
+    }
     match (argValue(args, "--ask")) {
         case Some(v) => once = v
         case None => ()
     }
-    // 中文不要走 argv（Windows 下会让运行时在 main 之前崩）；用文件或标准输入
     match (argValue(args, "--ask-file")) {
         case Some(v) =>
-            match (readTextFileSafe(v, 65536)) {
+            match (readTextFileSafe(v, 256 * 1024)) {
                 case Some(t) => once = trimStr(t)
                 case None =>
                     println("读不到问题文件：" + v)
@@ -176,6 +365,9 @@ public func runChat(args: Array<String>): Int64 {
         }
         once = trimStr(sb.toString())
     }
+    if (hasFlag(args, "--continue")) {
+        continueLast = true
+    }
     if (hasFlag(args, "--allow-exec") || envOr("PI_CJ_ALLOW_EXEC", "") == "1") {
         allowExec = true
     }
@@ -184,73 +376,154 @@ public func runChat(args: Array<String>): Int64 {
         println("没有找到 API Key。两种办法：")
         println("  1) 在当前目录建 .env.local，写一行 PI_CJ_KEY=你的key（推荐，文件已在 .gitignore 里）")
         println("  2) 或者先设环境变量再运行")
-        println("其它可配项：PI_CJ_BASE / PI_CJ_MODEL / PI_CJ_MODE / PI_CJ_WORKSPACE / PI_CJ_ALLOW_EXEC")
+        println("其它可配项：PI_CJ_BASE / PI_CJ_MODEL / PI_CJ_MODE / PI_CJ_WORKSPACE / PI_CJ_DATA / PI_CJ_ALLOW_EXEC")
         return 2
+    }
+
+    let mode = match (findMode(modeName)) {
+        case Some(m) => m
+        case None =>
+            println("没有这个档位：" + modeName + "（可用：" + modeListText() + "）")
+            return 2
     }
 
     let ws = Workspace(wsRoot)
-    let session = PiSession(modeStandard())
-    if (!session.switchMode(modeName)) {
-        println("没有这个模式：" + modeName + "（可用：" + modeListText() + "）")
-        return 2
-    }
-    registerWorkspaceTools(session.registry, ws, allowExec)
-    session.systemPrompt = "你是 ITN 桌面端的本地助教。先看工具返回的事实再回答，不要编造；" +
-        "工具没给到的信息就说不知道。回答用中文，简洁，需要时用列表。"
+    let roots = ArrayList<String>()
+    roots.add(ws.root + "/.pi/skills")
+    roots.add(ws.root + "/.agents/skills")
+    roots.add(dataDir + "/skills")
+    roots.add(homeDir() + "/.agents/skills")
+    let skills = loadSkills(roots)
 
+    let reg = ToolRegistry()
+    registerWorkspaceTools(reg, ws, allowExec)
+
+    var session = pickSession(dataDir, ws.root, continueLast, sessionId)
     let provider = HttpChatProvider(base, key, model)
+    let opts = AgentOptions()
+    opts.model = model
+    let agent = Agent(provider, session, reg, mode, opts)
+    agent.preamble = "You are a coding assistant running on the user's machine. Answer in Chinese. " +
+        "Use the tools to check facts instead of guessing; say so when you do not know. " +
+        "Keep answers short; use lists when they help."
+    agent.skillsText = formatSkillsForPrompt(skills)
 
-    println("================ pi-cj 对话（真实模型）================")
+    println("================ pi-cj（Pi 风格 harness）================")
     println("模型：" + model + "    接口：" + base)
-    println("工作区：" + ws.root + "（模型只能在这里读写，命令也只在这里跑）")
-    println("模式：" + session.mode.title + "    曝露工具 " +
-        session.registry.specsOf(session.mode).size.toString() + " 件    执行命令：" +
-        (if (allowExec) { "开" } else { "关（加 --allow-exec 才开）" }))
-    println("直接输入问题回车发送；:help 看命令；:q 退出；中文问题也可以直接打（控制台是 UTF-8）")
-    println("")
-
+    println("工作区：" + ws.root + "    会话：" + session.path)
+    println("工具集：" + mode.title + "（" + reg.specsOf(mode).size.toString() + " 件）    命令执行：" +
+        (if (allowExec) { "开" } else { "关（加 --allow-exec 才开）" }) + "    skills：" +
+        skills.size.toString() + " 个")
+    println("直接打字提问；/help 看命令；/quit 退出")
     if (once.size > 0) {
-        askOnce(session, provider, once)
+        runOnce(agent, once)
         return 0
     }
 
     while (true) {
-        print("> ")
+        print("\n> ")
         var line = ""
         try {
             line = readln()
         } catch (e: Exception) {
-            // EOF（管道喂完 / Ctrl+Z）就退出，不当成错误
             break
         }
         let t = trimStr(line)
         if (t.size == 0) {
             continue
         }
-        if (t == ":q" || t == ":quit" || t == ":exit") {
+        if (t == "/quit" || t == "/q" || t == "/exit") {
             break
         }
-        if (t == ":h" || t == ":help") {
+        if (t == "/help" || t == "/h") {
             printHelp()
             continue
         }
-        if (t == ":tools") {
-            printTools(session)
+        if (t == "/tools") {
+            printTools(reg, agent.mode)
             continue
         }
-        if (hasPrefix(t, ":mode")) {
-            let rest = trimStr(safeUtf8(t.toArray(), 5, t.size))
-            if (rest.size == 0) {
-                println("当前模式：" + session.mode.title + "（" + modeListText() + "）")
-            } else if (session.switchMode(rest)) {
-                println("已切到「" + session.mode.title + "」：" + session.mode.description + "；曝露工具 " +
-                    session.registry.specsOf(session.mode).size.toString() + " 件")
+        if (t == "/skills") {
+            printSkills(skills)
+            continue
+        }
+        if (t == "/sessions") {
+            printSessions(dataDir, ws.root)
+            continue
+        }
+        if (t == "/new") {
+            agent.session = newSession(dataDir, ws.root, "", "")
+            println("新会话：" + agent.session.path)
+            continue
+        }
+        if (hasPrefix(t, "/resume")) {
+            let rest = trimStr(safeUtf8(t.toArray(), 7, t.size))
+            let p = pickSession(dataDir, ws.root, true, rest)
+            if (p.entries.size == 0) {
+                println("没找到匹配的会话：" + rest)
             } else {
-                println("没有这个模式：" + rest + "（可用：" + modeListText() + "）")
+                agent.session = p
+                println("切到会话：" + p.path + "（" + p.entries.size.toString() + " 条记录）")
             }
             continue
         }
-        askOnce(session, provider, t)
+        if (t == "/compact") {
+            compactNow(agent, provider, model)
+            continue
+        }
+        if (hasPrefix(t, "/mode")) {
+            let rest = trimStr(safeUtf8(t.toArray(), 5, t.size))
+            if (rest.size == 0) {
+                println("当前档位：" + agent.mode.title + "（" + modeListText() + "）")
+            } else {
+                match (findMode(rest)) {
+                    case Some(m2) =>
+                        agent.mode = m2
+                        println("已切到「" + m2.title + "」：" + m2.description + "；工具 " +
+                            reg.specsOf(m2).size.toString() + " 件")
+                    case None => println("没有这个档位：" + rest + "（可用：" + modeListText() + "）")
+                }
+            }
+            continue
+        }
+        if (hasPrefix(t, "/model")) {
+            let rest = trimStr(safeUtf8(t.toArray(), 6, t.size))
+            if (rest.size == 0) {
+                println("当前模型：" + opts.model)
+            } else {
+                opts.model = rest
+                agent.session.appendModelChange(rest)
+                println("已切到模型：" + rest)
+            }
+            continue
+        }
+        if (hasPrefix(t, "/skill:")) {
+            let rest = trimStr(safeUtf8(t.toArray(), 7, t.size))
+            var namePart = rest
+            var argPart = ""
+            let sp = indexOfSub(rest, " ")
+            if (sp > 0) {
+                namePart = safeUtf8(rest.toArray(), 0, sp)
+                argPart = trimStr(safeUtf8(rest.toArray(), sp + 1, rest.size))
+            }
+            match (findSkill(skills, namePart)) {
+                case Some(sk) =>
+                    match (readTextFileSafe(sk.path, 256 * 1024)) {
+                        case Some(body) =>
+                            var promptText = "按这个 skill 的说明做事：\n\n" + body
+                            if (argPart.size > 0) {
+                                promptText = promptText + "\n\n用户要求：" + argPart
+                            }
+                            println("[skill] 已加载 " + sk.name + "（" + body.size.toString() + " 字节）")
+                            runOnce(agent, promptText)
+                        case None => println("读不到 " + sk.path)
+                    }
+                case None =>
+                    println("没有这个 skill：" + namePart + "（用 /skills 看有哪些）")
+            }
+            continue
+        }
+        runOnce(agent, t)
     }
     return 0
 }

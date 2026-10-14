@@ -1438,3 +1438,62 @@ ITN-Desktop"；最后要求"做好之后先让我单独试试效果"。
    `core/src/pi/` 里不许出现网络/文件 IO。
 
 **本轮没有改任何代码**（用户说"后面打算替换"）。迁移动手时按 docs/11 的 P1 开始，一步一提交、一步一验证。
+
+---
+
+## 第十八轮（2026-10-14）：按 Pi 源码把 pi-cj 重写对齐（会话树 / 事件名 / 工具 schema / skills），47 例测试全绿
+
+**用户要求**：① 去 GitHub 找 Pi 源码（"没有你不会去找吗"）；② "贴合原生 Pi 去设计"，模型只走 OpenAI 兼容，
+"我们的版本可以稍微简单一点，界面可以不用但要留 CLI 测试"，"一个基本的 agent 或 harness 是必要的"。
+
+**取源码的路子（供后人复用）**：`github.com` 直连被墙（`git clone` 与 `raw.githubusercontent` 都不通），但 `api.github.com` 通。
+用 `api.github.com/repos/earendil-works/pi/tarball/main` 一次拉下全量源码（7.9MB）解到 `pi-cj/target/ref-pi/`（gitignore 内，不进仓库）。
+口径：Pi = `packages/coding-agent` **v1.2.0**，**MIT**，Node ≥22.19，monorepo（agent / ai / coding-agent / mcp / tui / durable / codemode …）。
+
+**按源码更正了我上一轮凭印象说错的两处**（已写进 `pi-cj/docs/vs-pi.md`）：
+1. Pi **没有**子 agent / plan mode（README 原话 "skips features like sub-agents and plan mode"）——所以那不是我们的差距；
+2. Pi **没有**逐条弹窗审批，它是 **project trust + 启用工具直接用进程的系统权限**（`docs/how-pi-works.md`）——所以我们自己的工作区沙箱**比 Pi 更紧**。
+
+### 本轮改动（pi-cj 全面对齐，提交见下）
+
+- **事件模型**：改成 Pi 的 10 个名字与字段 —— `agent_start / turn_start / message_start / message_update / message_end /
+  tool_execution_start / tool_execution_update / tool_execution_end / turn_end / agent_end`；
+  `message_update` 里带 `assistantEvent`（`text_delta / thinking_delta / toolcall_delta`，名字取自 `packages/ai/src/types.ts` 的 AssistantMessageEvent）。
+  删掉了自己发明的事件名（turn/start、text/delta、tool/call_start…）。
+- **循环**：结构照 `packages/agent/src/agent-loop.ts` —— turn = 一次模型请求 + 它的工具；内层跑工具与 steering，
+  外层接 follow-up。steering 在"请求之前"注入，follow-up 在"本该收工"时注入（这两个注入点是分开的）。
+- **会话**（新 `src/pi/session.cj`）：照 `docs/session-format.md` —— JSONL，header v3，每条 entry 带 `id/parentId/timestamp`，
+  8 位十六进制 id；支持 **续聊（叶子上溯重建上下文）/ 分叉（回到旧 entry 再追加）/ compaction（summary + firstKeptEntryId，
+  原文留档）/ model_change / session_info**；文件按工作目录分目录（`--<path>--`）。
+  pi-cj 之前是**内存 History，退出即散**，这一轮把这个最大缺口补掉了。
+- **工具**（重写 `src/tools/`）：名字/参数/描述逐字对齐 Pi 的 `read / write / edit / ls / find / grep / powershell`
+  （`read(path,offset,limit)`、`edit(path,edits[{oldText,newText}])`、`find(pattern glob,path,limit)`、
+  `grep(pattern,path,glob,ignoreCase,literal,context,limit)`）；参数 schema 改成**显式 JSON Schema**（不再从"参数示例"猜）；
+  截断常量照 Pi（2000 行 / 50KB，grep 每行 500 字符）；glob 与正则都用 `std.regex` 实现；
+  PowerShell 工具在命令前插 `[Console]::OutputEncoding=[System.Text.Encoding]::UTF8`（Pi 的做法，Windows 中文输出必需）。
+- **Skills**（新 `src/pi/skills.cj`）：实现 Agent Skills 规范（`SKILL.md` + frontmatter 的 name/description/disable-model-invocation），
+  启动只播 `<available_skills>` 里的 name/description/location，正文让模型自己 read；新增 `/skill:<名字>` 强制加载。
+  扫描位置：`<工作区>/.pi/skills`、`<工作区>/.agents/skills`、`<PI_CJ_DATA>/skills`、`~/.agents/skills`
+  （最后一个是 Agent Skills 标准位置，本机已有一批 skills，实测扫到 12 个）。
+- **提示词**：按 Pi 的 section 思路组装（preamble / tools / skills / cwd），并作为 system 快照**写进会话**（回放能看到当时的提示词）。
+  另加一句"路径相对工作目录，别带前缀"——实测模型会把工作区路径当前缀，白跑三轮。
+- **CLI**（重写 `src/cli/chat.cj`）：斜杠命令与 Pi 同形（`/help /tools /skills /sessions /new /resume /compact /model /mode /skill:<名字> /quit`），
+  `--continue` 续聊、`--session-id` 指定会话；提供方（`src/cli/http.cj`）重写为按新事件推 `message_update`，
+  参数 schema 直发，仍保留 429/5xx 退避重试。
+- 删除：旧 `history.cj / runner.cj / pi.cj（门面）/ examples.cj` 与"提示词协议"（只输出一行 JSON）——
+  现在**只走原生 function calling**，与 Pi 一致。
+
+### 验证
+
+- `cjpm test` → **47/47 全绿**（事件序列、会话树/分叉/压缩、工具参数与沙箱、一条 assistant 两条工具调用、steering/follow-up 注入点、skills 规范、流式解析）。
+- 真机（mimo-v2.6-flash）："列文件 + 读 readme.md 说三要素" → **3 轮 3 次工具调用**答对（并行 ls+read），8475/187 tokens；
+  对比改前同一问题是 5 轮 6 次调用（多绕三轮）。agent 档 + `--allow-exec` 跑命令 + 算数：一步并行两条，2 轮 0 失败。
+- 绿色包在干净环境（PATH 只留 System32）自检通过（`CLEAN-ENV-OK`，30 行输出）。
+- 47 例测试里有一条是"**一条 assistant 消息里两条工具调用都要执行**"——这是当初漏接第二条引发重试风暴的那个 bug 的回归测试。
+
+### 教训 / 给接手的人
+
+1. **拿不到源码不代表拿不到信息**：`api.github.com` 通、`github.com` 不通时，用 tarball 接口（或 `contents` 接口取单文件）比"凭印象说"强得多。
+2. 仓库里 `docs/03-Agent架构.md` 当初"只借思想不搬源码"的判断是对的（语言不同），但**没看过源码就下结论**会错两处（见上）。
+3. 对齐的收益是具体的：会话持久化、事件命名、工具 schema、skills 规范这四样对齐后，**"接内核"从"重新设计"变成"照搬 + 换包名"**。
+4. 仍然没有的：自动 compaction 钩子、并行工具执行、命令超时、MCP、TUI/RPC/SDK。清单在 `pi-cj/README.md` 第 6 节。

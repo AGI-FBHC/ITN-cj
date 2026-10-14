@@ -3,28 +3,26 @@ package pi_cj.tools
 import std.collection.*
 import std.fs.*
 import std.process.*
+import std.time.*
 import pi_cj.pi.*
 
-/**
- * 工作区：所有文件/命令工具都被关在这个目录里。
- *
- * 这是"工具权限"最实在的一条：模型给的是相对路径，先归一化（反斜杠当分隔符、
- * 消掉 . 和 .. 段），任何越出工作区、带盘符或带冒号的写法一律拒绝，
- * 而不是"提示它别这么干"。命令的 cwd 也钉在工作区里。
+/*
+ * 工作区：所有文件/命令工具都被关在这个目录里（这是我们的收紧，Pi 是直接用进程的系统权限）。
+ * 模型给的是相对路径，先归一化（反斜杠当分隔符、消掉 . 与 .. 段），
+ * 越界、带盘符、带冒号一律拒绝；命令的 cwd 也钉在工作区里。
  */
+
 public class Workspace {
     public let root: String
-    public let maxReadBytes: Int64 = 32768
-    public let maxListEntries: Int64 = 400
-    public let maxOutputBytes: Int64 = 12000
-    public let maxMatches: Int64 = 120
-    public let maxScanBytes: Int64 = 262144
+    public let maxListEntries: Int64 = 500
+    public let maxFindResults: Int64 = 1000
+    public let maxGrepMatches: Int64 = 100
+    public let maxScanBytes: Int64 = 512 * 1024
 
     public init(root: String) {
         this.root = stripTrailingSeps(root)
     }
 
-    /** 归一化后的相对路径（用于展示与检索结果）。 */
     public func relOf(rel: String): String {
         match (normalizeRel(rel)) {
             case Some(n) => return n
@@ -32,7 +30,6 @@ public class Workspace {
         }
     }
 
-    /** 相对路径 -> 工作区内的实际路径；越界返回 None。 */
     public func resolve(rel: String): ?String {
         match (normalizeRel(rel)) {
             case Some(n) =>
@@ -48,12 +45,7 @@ public class Workspace {
         match (resolve(rel)) {
             case Some(full) =>
                 try {
-                    let bytes = File.readFrom(full)
-                    if (bytes.size > maxReadBytes) {
-                        return Some(safeUtf8(bytes, 0, maxReadBytes) + "\n\n（文件较大，只给了前 " +
-                            maxReadBytes.toString() + " 字节）")
-                    }
-                    return Some(safeUtf8(bytes, 0, bytes.size))
+                    return Some(safeUtf8(File.readFrom(full), 0, 32 * 1024 * 1024))
                 } catch (e: Exception) {
                     return None
                 }
@@ -64,7 +56,7 @@ public class Workspace {
     public func writeText(rel: String, text: String): Bool {
         match (resolve(rel)) {
             case Some(full) =>
-                let slash = lastSlash(full)
+                let slash = lastSlashOf(full)
                 if (slash > 0) {
                     let parent = safeUtf8(full.toArray(), 0, slash)
                     if (!exists(parent)) {
@@ -85,108 +77,117 @@ public class Workspace {
         }
     }
 
-    public func list(rel: String, recursive: Bool): ArrayList<String> {
+    /** 列目录（只列一层，名字后面带 / 表示目录）。 */
+    public func list(rel: String, limit: Int64): ArrayList<String> {
         let out = ArrayList<String>()
-        walkInto(relOf(rel), recursive, out)
+        match (resolve(rel)) {
+            case Some(full) =>
+                if (!exists(full)) {
+                    return out
+                }
+                try {
+                    Directory.walk(Path(full), { fi: FileInfo =>
+                        if (out.size < limit) {
+                            let nm = fi.name
+                            if (fi.isDirectory()) {
+                                out.add(nm + "/")
+                            } else {
+                                out.add(nm + "  " + formatSize(fi.size))
+                            }
+                        }
+                        true
+                    })
+                } catch (e: Exception) {
+                    ()
+                }
+            case None => ()
+        }
         return out
     }
 
-    public func search(query: String, rel: String): ArrayList<String> {
-        let hits = ArrayList<String>()
-        searchInto(relOf(rel), query, hits)
-        return hits
+    /** 递归列出文件（相对路径，跳过噪声目录）。 */
+    public func walkFiles(rel: String, maxFiles: Int64): ArrayList<String> {
+        let out = ArrayList<String>()
+        walkInto(relOf(rel), maxFiles, out)
+        return out
     }
 
-    /** 在工作区里跑一条命令（cmd /c），返回 (退出码, 输出)。 */
-    public func run(cmd: String, rel: String): CmdOutcome {
-        let cwd = resolve(rel)
+    private func walkInto(cur: String, maxFiles: Int64, out: ArrayList<String>): Unit {
+        if (out.size >= maxFiles) {
+            return
+        }
+        let full = if (cur.size == 0) { root } else { root + "/" + cur }
+        let dirs = ArrayList<String>()
+        try {
+            Directory.walk(Path(full), { fi: FileInfo =>
+                let nm = fi.name
+                if (fi.isDirectory()) {
+                    if (!skipDirName(nm)) {
+                        dirs.add(nm)
+                    }
+                } else {
+                    if (out.size < maxFiles) {
+                        out.add(if (cur.size == 0) { nm } else { cur + "/" + nm })
+                    }
+                }
+                true
+            })
+        } catch (e: Exception) {
+            ()
+        }
+        for (d in dirs) {
+            if (out.size >= maxFiles) {
+                return
+            }
+            walkInto(if (cur.size == 0) { d } else { cur + "/" + d }, maxFiles, out)
+        }
+    }
+
+    public func sizeOf(rel: String): Int64 {
+        match (resolve(rel)) {
+            case Some(full) =>
+                try {
+                    Directory.walk(Path(full), { fi: FileInfo =>
+                        if (!fi.isDirectory() && fi.size > 0) {
+                            ()
+                        }
+                        true
+                    })
+                } catch (e: Exception) {
+                    ()
+                }
+                return 0
+            case None => return 0
+        }
+    }
+
+    /**
+     * 在工作区里跑 PowerShell 命令。
+     *
+     * 已知缺口：这版 std.process 的 executeWithOutput 不带 timeout 参数（Pi 的 bash/powershell 有），
+     * 所以交互式/常驻命令会一直挂着 —— 工具说明里已经警告模型别这么干。
+     */
+    public func runPowerShell(cmd: String, rel: String): CmdOutcome {
         var dir: ?Path = None
-        match (cwd) {
+        match (resolve(rel)) {
             case Some(d) => dir = Some(Path(d))
             case None => dir = Some(Path(root))
         }
+        let start = nowMillis()
+        // Pi 在命令前插一句把控制台输出编码设成 UTF-8 —— Windows 上不设，中文输出就是乱码
+        let prefix = "try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}\n"
         try {
-            let (code, out, err) = executeWithOutput("cmd", ["/c", cmd], workingDirectory: dir)
-            let o = cap(safeUtf8(out, 0, out.size))
-            let e = cap(safeUtf8(err, 0, err.size))
-            return CmdOutcome(code, o, e)
+            let (code, out, err) = executeWithOutput("powershell",
+                ["-NoProfile", "-NonInteractive", "-Command", prefix + cmd], workingDirectory: dir)
+            return CmdOutcome(code, cap(safeUtf8(out, 0, out.size)), cap(safeUtf8(err, 0, err.size)),
+                nowMillis() - start)
         } catch (ex: Exception) {
-            return CmdOutcome(-1, "", "命令没能启动：" + ex.message)
+            return CmdOutcome(-1, "", "命令没能正常结束：" + ex.message, nowMillis() - start)
         }
     }
 
-    private func cap(s: String): String {
-        let b = s.toArray()
-        if (b.size <= maxOutputBytes) {
-            return s
-        }
-        return safeUtf8(b, 0, maxOutputBytes) + "\n（输出过长，已截断）"
-    }
-
-    private func walkInto(cur: String, recursive: Bool, out: ArrayList<String>): Unit {
-        if (out.size >= maxListEntries) {
-            return
-        }
-        let full = if (cur.size == 0) { root } else { root + "/" + cur }
-        try {
-            Directory.walk(Path(full), { fi: FileInfo =>
-                let nm = fi.name
-                let childRel = if (cur.size == 0) { nm } else { cur + "/" + nm }
-                if (fi.isDirectory()) {
-                    if (!skipDirName(nm)) {
-                        out.add(childRel + "/")
-                        if (recursive) {
-                            walkInto(childRel, recursive, out)
-                        }
-                    }
-                } else {
-                    out.add(childRel + "  " + fi.size.toString() + " 字节")
-                }
-                true
-            })
-        } catch (e: Exception) {
-            ()
-        }
-    }
-
-    private func searchInto(cur: String, query: String, hits: ArrayList<String>): Unit {
-        if (hits.size >= maxMatches) {
-            return
-        }
-        let full = if (cur.size == 0) { root } else { root + "/" + cur }
-        try {
-            Directory.walk(Path(full), { fi: FileInfo =>
-                let nm = fi.name
-                let childRel = if (cur.size == 0) { nm } else { cur + "/" + nm }
-                if (fi.isDirectory()) {
-                    if (!skipDirName(nm)) {
-                        searchInto(childRel, query, hits)
-                    }
-                } else if (fi.size <= maxScanBytes && isTextName(nm)) {
-                    scanFile(childRel, query, hits)
-                }
-                true
-            })
-        } catch (e: Exception) {
-            ()
-        }
-    }
-
-    private func scanFile(rel: String, query: String, hits: ArrayList<String>): Unit {
-        var text = ""
-        try {
-            text = safeUtf8(File.readFrom(root + "/" + rel), 0, maxReadBytes * 4)
-        } catch (e: Exception) {
-            return
-        }
-        let lines = splitLines(text)
-        var i = 0
-        while (i < lines.size && hits.size < maxMatches) {
-            if (containsSub(lines[i], query)) {
-                hits.add(rel + ":" + (i + 1).toString() + ": " + trimStr(byteSafePrefix(trimStr(lines[i]), 200)))
-            }
-            i = i + 1
-        }
+    public func cap(s: String): String {
+        return byteSafePrefix(s, 50 * 1024)
     }
 }
 
@@ -194,34 +195,24 @@ public class CmdOutcome {
     public let code: Int64
     public let out: String
     public let err: String
+    public let wallMs: Int64
 
-    public init(code: Int64, out: String, err: String) {
+    public init(code: Int64, out: String, err: String, wallMs: Int64) {
         this.code = code
         this.out = out
         this.err = err
+        this.wallMs = wallMs
     }
 }
 
-/** 这些目录不列也不搜：列出来只会把真正有用的内容挤掉。 */
+/** 这些目录不列也不搜。 */
 func skipDirName(nm: String): Bool {
     let nb = nm.toArray()
     if (nb.size == 0 || nb[0] == 46) {
         return true
     }
     return nm == "node_modules" || nm == "target" || nm == "dist" || nm == "build" ||
-        nm == "venv" || nm == "__pycache__" || nm == "artifacts"
-}
-
-func isTextName(nm: String): Bool {
-    let lower = nm.toAsciiLower()
-    let exts = [".md", ".txt", ".json", ".cj", ".py", ".js", ".ts", ".vue", ".html", ".css",
-        ".yml", ".yaml", ".toml", ".xml", ".csv", ".log", ".sh", ".ps1", ".bat", ".sql", ".ini", ".conf"]
-    for (e in exts) {
-        if (hasSuffix(lower, e)) {
-            return true
-        }
-    }
-    return false
+        nm == "venv" || nm == "__pycache__" || nm == "artifacts" || nm == "out"
 }
 
 func stripTrailingSeps(s: String): String {
@@ -233,7 +224,7 @@ func stripTrailingSeps(s: String): String {
     return safeUtf8(b, 0, n)
 }
 
-func lastSlash(s: String): Int64 {
+func lastSlashOf(s: String): Int64 {
     let b = s.toArray()
     var i = b.size
     while (i > 0) {
@@ -245,10 +236,7 @@ func lastSlash(s: String): Int64 {
     return -1
 }
 
-/**
- * 归一化相对路径：反斜杠当分隔符、丢掉 . 段、用栈消掉 .. 段。
- * 越出工作区（.. 多到栈空）、带盘符或冒号、空路径都返回 None。
- */
+/** 归一化相对路径：越界（.. 多到栈空）、带盘符或冒号都返回 None。 */
 public func normalizeRel(rel: String): ?String {
     let b = rel.toArray()
     var stack = ""
@@ -273,7 +261,7 @@ public func normalizeRel(rel: String): ?String {
                         e = e - 1
                     }
                     stack = safeUtf8(ob, 0, e)
-                } else if (hasColon(seg)) {
+                } else if (hasColonOf(seg)) {
                     return None
                 } else {
                     if (stack.size > 0) {
@@ -289,7 +277,7 @@ public func normalizeRel(rel: String): ?String {
     return Some(stack)
 }
 
-func hasColon(s: String): Bool {
+func hasColonOf(s: String): Bool {
     let b = s.toArray()
     var i: Int64 = 0
     while (i < b.size) {
