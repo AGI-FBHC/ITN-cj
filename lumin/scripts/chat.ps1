@@ -4,6 +4,8 @@ param(
     [string]$Mode = '',
     [string]$Workspace = '',
     [string]$AskFile = '',
+    [string]$Permissions = '',
+    [switch]$Trust,
     [switch]$AllowExec
 )
 
@@ -20,6 +22,8 @@ try {
     if ($Mode) { $cliArgs += @('--mode', $Mode) }
     if ($Workspace) { $cliArgs += @('--workspace', $Workspace) }
     if ($AskFile) { $cliArgs += @('--ask-file', $AskFile) }
+    if ($Permissions) { $cliArgs += @('--permissions', $Permissions) }
+    if ($Trust) { $cliArgs += '--trust' }
     if ($AllowExec) { $cliArgs += '--allow-exec' }
     & ".\target\release\bin\main.exe" @cliArgs
 } finally {

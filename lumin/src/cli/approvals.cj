@@ -4,6 +4,7 @@ import std.collection.*
 import std.fs.*
 import stdx.encoding.json.*
 import lumin.pi.*
+import lumin.tools.*
 
 /*
  * Human in the loop：审批层。
@@ -17,6 +18,9 @@ import lumin.pi.*
  *        ask  请求批准    —— 编辑外部文件 / 跑命令 / 联网：每次都问
  *        auto 帮我批准    —— 只有"检测到的风险"才问（危险命令、写工作区外、联网）；普通命令直接放行
  *        full 完全访问权限 —— 不问（但仍然审计，并且仍然不交出模型自己在用的 Key）
+ *
+ *   读不走审批、也不受沙箱限制：**沙箱只隔离写**（读整机是刻意放开的，见 workspace.cj 的 denyReasonRead）。
+ *   所以这里只处理三类动作：写工作区外、跑命令、联网。
  *   4. **可审计**：每次决定都打印一行，并往会话里写一条 custom entry（不进模型上下文）。
  *   5. **可脚本化**：full 档 / --permissions full 就是不问；测试里用 autoAnswer 注入回答。
  */
@@ -44,6 +48,11 @@ public class Approver {
     public var allowCount: Int64 = 0
     public var denyCount: Int64 = 0
     public var askCount: Int64 = 0
+    /**
+     * 放行一次"写工作区外"之后，要把那个目录记进工作区的白名单 ——
+     * 否则会出现"用户批了、沙箱还是拒"的自相矛盾（沙箱在 ask 档拦越界写）。
+     */
+    public var ws: ?Workspace = None
     private var dataDir: String = ""
 
     public init(dataDir: String, mode: String) {
@@ -252,6 +261,20 @@ public class Approver {
     }
 
     /**
+     * 批准之后要落实的副作用。目前只有一条：把"写工作区外"的那个目录登记进沙箱白名单 ——
+     * 否则会出现"用户批了、沙箱还是拒"的自相矛盾。（单独一个方法是为了能单测。）
+     */
+    public func applyApproval(kind: String, value: String): Unit {
+        if (kind != "path-outside") {
+            return
+        }
+        match (ws) {
+            case Some(w) => w.allowWriteAt(value)
+            case None => ()
+        }
+    }
+
+    /**
      * 工具调用入口：分类 -> 决策 -> 审计（打印 + 会话里写 custom entry）。
      * 返回 "" = 放行；非空 = 拒绝理由。放在 Approver 里是为了让挂到 Agent 上的 lambda
      * 只捕获一个不可变对象（仓颉不允许 lambda 捕获可变变量）。
@@ -262,6 +285,9 @@ public class Approver {
             return ""
         }
         let denial = decide(kind, value, detail)
+        if (denial.size == 0) {
+            applyApproval(kind, value)
+        }
         let o = JsonObject()
         o.put("tool", JsonString(name))
         o.put("kind", JsonString(kind))
@@ -291,8 +317,13 @@ public func classifyTool(name: String, args: JsonObject, wsRoot: String): (Strin
     }
     if (name == "write" || name == "edit") {
         let rel = strOf(args, "path")
-        let full = joinPath(wsRoot, rel)
-        if (!hasPrefix(full, wsRoot)) {
+        // 先归一化工作区根、再折叠 . 与 ..，最后才比前缀：
+        //   ws/../outside/x.md 是**外面**，字符串前缀会把它误判成里面
+        //（踩过：模型写 ../outside/x.md 时审批层说"不用问"，工具层却按越界拒了 → 用户看不到该看到的提问）
+        let rootNorm = collapseDots(wsRoot)
+        let full = collapseDots(joinPath(rootNorm, rel))
+        let inside = full == rootNorm || hasPrefix(full, rootNorm + "/")
+        if (!inside) {
             return ("path-outside", parentOf(full), rel)
         }
         return ("", "", "")

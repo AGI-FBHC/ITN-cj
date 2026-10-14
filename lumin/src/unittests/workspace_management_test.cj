@@ -11,8 +11,12 @@ import std.unittest.*
 import std.unittest.testmacro.*
 
 /*
- * 项目目录管理这一块：敏感路径拒读、保护目录、信任继承、工作区登记表。
+ * 项目目录管理这一块：读写策略、红线名单、保护目录、信任继承、工作区登记表。
  * 这几条是"模型能不能碰你的东西"的底线，所以断言都在行为上，不看文案。
+ *
+ * 策略（2026-10-14 改）：**沙箱只隔离写，不隔离读**。
+ *   读：整台机器都能读；只有两条红线 —— 模型自己在用的配置（含 API Key）、CLI 数据目录。
+ *   写：ask 档只写工作区（越界要批准后才行）；工作区内的敏感段（.env/.git/.ssh）照旧拒。
  */
 @Test
 class WorkspaceManagementTest {
@@ -21,20 +25,25 @@ class WorkspaceManagementTest {
         let ws = Workspace(freshDir("ws-deny"))
         @Assert(ws.writeText("a.md", "x"))
         @Expect(ws.denyReason("a.md"), "")
+        // 写：工作区内的敏感段照旧拒
         @Assert(ws.denyReason(".env.local").size > 0)
         @Assert(ws.denyReason(".env").size > 0)
         @Assert(ws.denyReason("sub/.env.local").size > 0)
         @Assert(ws.denyReason(".git/config").size > 0)
         @Assert(ws.denyReason(".ssh/id_rsa").size > 0)
+        // 写：越界（ask 档）没过批准就是"需要批准"，不是"永远不行"
         @Assert(ws.denyReason("../外面.md").size > 0)
+        @Expect(containsSub(ws.denyReason("../外面.md"), "批准"), true)
+        // 读：沙箱不管读，敏感段不再拦
+        @Expect(ws.denyReasonRead(".env.local"), "")
+        @Expect(ws.denyReasonRead("sub/.env.local"), "")
+        @Expect(ws.denyReasonRead("../外面.md"), "")
         let reg = ToolRegistry()
         registerWorkspaceTools(reg, ws, false)
-        let r = reg.execute(modeStandard(), "c", "read", strObj("path", ".env.local"))
+        let r = reg.execute(modeStandard(), "c", "write",
+            twoObj("path", ".env.local", "content", "SECRET=1"))
         @Expect(r.isError, true)
         @Expect(containsSub(r.content, "敏感"), true)
-        let r2 = reg.execute(modeStandard(), "c2", "write",
-            twoObj("path", ".env.local", "content", "SECRET=1"))
-        @Expect(r2.isError, true)
     }
 
     @TestCase
@@ -71,8 +80,24 @@ class WorkspaceManagementTest {
         let regFull = ToolRegistry()
         registerWorkspaceTools(regFull, full, false)
         let absNote = absPath(outside) + "/note.txt"
-        // ask 档：越界被拒
-        @Expect(regAsk.execute(modeStandard(), "c", "read", strObj("path", absNote)).isError, true)
+        // ask 档：**读**照旧能出工作区（沙箱只隔离写）
+        let rAsk = regAsk.execute(modeStandard(), "c", "read", strObj("path", absNote))
+        @Expect(rAsk.isError, false)
+        @Expect(containsSub(rAsk.content, "外面的文件"), true)
+        @Expect(containsSub(rAsk.summary, "工作区外"), true)
+        // ask 档：**写**越界要先批准
+        let outDir = absPath(outside)
+        let w1 = regAsk.execute(modeStandard(), "cw", "write",
+            twoObj("path", outDir + "/new.md", "content", "hello"))
+        @Expect(w1.isError, true)
+        @Expect(containsSub(w1.content, "批准"), true)
+        @Expect(exists(outDir + "/new.md"), false)
+        // 批准（模拟审批层放行一次）之后才真能落盘
+        ask.allowWriteAt(outDir)
+        let w2 = regAsk.execute(modeStandard(), "cw2", "write",
+            twoObj("path", outDir + "/new.md", "content", "hello"))
+        @Expect(w2.isError, false)
+        @Expect(exists(outDir + "/new.md"), true)
         // full 档：外面也能读
         let r = regFull.execute(modeStandard(), "c2", "read", strObj("path", absNote))
         @Expect(r.isError, false)
@@ -84,6 +109,73 @@ class WorkspaceManagementTest {
         // 沙箱开关跟着档位走
         @Expect(ask.sandboxed(), true)
         @Expect(full.sandboxed(), false)
+    }
+
+    @TestCase
+    func dotsCannotBypassTheRedLine(): Unit {
+        let root = freshDir("dots-root")
+        let rootAbs = absPath(root)
+        fsWrite(root + "/.env.local", "LUMIN_KEY=secret")
+        let denyFiles = ArrayList<String>()
+        denyFiles.add(rootAbs + "/.env.local")
+        let ws = Workspace(root, ArrayList<String>(), denyFiles, "full")
+        // 直接点名：拒
+        @Assert(ws.denyReasonRead(".env.local").size > 0)
+        // 用 . 和 .. 绕：折叠之后还是同一个文件，照样拒
+        @Assert(ws.denyReasonRead(rootAbs + "/./.env.local").size > 0)
+        @Assert(ws.denyReasonRead(rootAbs + "/sub/../.env.local").size > 0)
+        // 工具那层也拒（不能只在内部函数上正确）
+        let reg = ToolRegistry()
+        registerWorkspaceTools(reg, ws, false)
+        let r = reg.execute(modeStandard(), "c", "read",
+            strObj("path", rootAbs + "/sub/../.env.local"))
+        @Expect(r.isError, true)
+        @Expect(containsSub(r.content, "配置文件"), true)
+        // 同一层目录里别的文件不受影响
+        fsWrite(root + "/note.md", "普通文件")
+        @Expect(ws.denyReasonRead("note.md"), "")
+        @Expect(reg.execute(modeStandard(), "c2", "read", strObj("path", "note.md")).isError, false)
+    }
+
+    @TestCase
+    func approvalClassificationUsesCollapsedPaths(): Unit {
+        let rootAbs = absPath(freshDir("cls-root"))
+        let rootNorm = collapseDots(rootAbs)
+        // 工作区内：不用问
+        let (k0, _, _) = classifyTool("write", strObj("path", "a.md"), rootAbs)
+        @Expect(k0, "")
+        let (k1, _, _) = classifyTool("write", strObj("path", "sub/../a.md"), rootAbs)
+        @Expect(k1, "")
+        // ../ 出去：必须判成 path-outside
+        //（踩过：原来用字符串前缀比，ws/../outside 会被误判成"里面" → 该问的不问，工具层却又拒）
+        let (kind, value, _) = classifyTool("write", strObj("path", "../outside/x.md"), rootAbs)
+        @Expect(kind, "path-outside")
+        @Expect(value, parentOf(rootNorm) + "/outside")
+        // 绝对路径出去也一样
+        let (k3, _, _) = classifyTool("write", strObj("path", "D:/not-here/x.md"), rootAbs)
+        @Expect(k3, "path-outside")
+        // 读不参与审批（读不设限）
+        let (k4, _, _) = classifyTool("read", strObj("path", "C:/windows/win.ini"), rootAbs)
+        @Expect(k4, "")
+    }
+
+    @TestCase
+    func approvingAnOutsideWriteActuallyUnlocksTheSandbox(): Unit {
+        let data = freshDir("appr-data")
+        let ws = Workspace(freshDir("appr-ws"), ArrayList<String>(), ArrayList<String>(), "ask")
+        let outside = absPath(freshDir("appr-out"))
+        let file = outside + "/出新文件.md"
+        // 没批准：写不进去
+        @Assert(ws.denyReason(file).size > 0)
+        // 审批层批准一次 -> 副作用登记进沙箱白名单 -> 真能写
+        let ap = Approver(data, "ask")
+        ap.ws = Some(ws)
+        ap.applyApproval("path-outside", outside)
+        @Expect(ws.denyReason(file), "")
+        @Assert(ws.writeText(file, "批过了就能写"))
+        @Expect(exists(file), true)
+        // 登记的是目录前缀：同一层里的别的文件也放行
+        @Expect(ws.denyReason(outside + "/另一个.md"), "")
     }
 
     @TestCase

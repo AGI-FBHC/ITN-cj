@@ -27,7 +27,7 @@
 | 模型接入 | 多供应商 + `/login` 登录（订阅或 Key）+ model registry/resolver | 只走 OpenAI 兼容，Key 在 `.env.local` | 真差距（我们刻意只做一层） |
 | MCP | 有（`packages/mcp` + `core/mcp-servers.ts`） | 无 | 真差距，也是**最该补**的对外接口 |
 | 界面 | 交互 TUI（自建 `packages/tui`，含 native 部分）+ print 模式 + JSON 事件流模式 + **RPC**（stdin/stdout JSONL）+ TypeScript SDK | 行式 REPL + `--ask-file/--ask-stdin` | 差距，但桌面版会自己画界面，不算问题 |
-| 权限模型 | **project trust（项目信任）+ 启用工具直接用进程自身的操作系统权限**；扩展也跑在同一进程 | 工作区沙箱（路径归一化、越界拒）+ 四档模式白名单 + `--allow-exec` | **lumin 反而更紧**（见更正 2） |
+| 权限模型 | **project trust（项目信任）+ 启用工具直接用进程自身的操作系统权限**；扩展也跑在同一进程 | 三档权限（ask / auto / full）：**读不设限**（两条红线：自己的 Key 配置、CLI 数据目录），**写**按档位放开 + 越界动作逐条审批（y/s/a/n）+ 工具集白名单 + `--allow-exec` | **lumin 更细**：Pi 只有"信不信任这个项目"一个开关，我们有"问到哪一步"的档位（见更正 2） |
 | 遥测/评测 | `telemetry`、`evals`、`durable`、`codemode` 独立包 | 无 | 不照搬 |
 
 ## 2. 更正：我上一轮凭印象说错的两处

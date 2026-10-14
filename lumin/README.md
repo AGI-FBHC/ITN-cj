@@ -40,7 +40,8 @@ lumin 是一个**能跑起来的 Agent 内核**：给它一个 OpenAI 兼容的�
 - 一个**照 Pi 的架构重写的仓颉 Agent 运行时** —— 真的能连模型、真的能读写文件、真的能跑命令；
 - 一套**和 Pi 同名同形的对外契约**：10 个事件名、7 个工具及其 JSON Schema、JSONL 会话树（`id`/`parentId`）、
   `<available_skills>` 播报格式。因此**上层界面可以按 Pi 的语义来写**，将来换回 Pi 本体也不用改界面；
-- 一个**带权限档位与逐条审批的 harness** —— 比 Pi 的"项目信任 + 进程权限"更紧（见 [`docs/vs-pi.md`](docs/vs-pi.md) 的更正 2）；
+- 一个**带权限档位与逐条审批的 harness**：读不设限、写按档位放开，越界动作停下来问你 ——
+  比 Pi 的"项目信任 + 进程权限"更细（见 [权限与审批](#5-权限与审批human-in-the-loop)）；
 - **纯绿色包**：编译产物 + 4 个 DLL 就能在没有装仓颉的 Windows 上双击运行。
 
 **不是**：
@@ -65,7 +66,7 @@ lumin 是一个**能跑起来的 Agent 内核**：给它一个 OpenAI 兼容的�
 | 上下文治理 | 自动 compaction 钩子 | 自动（阈值 `autoCompactBytes`，默认 120000 字节）+ 手动 `/compact` |
 | Skills | Agent Skills 规范：`SKILL.md` + frontmatter，启动只播 name/description/location，正文按需 `read` | **同规范同播报格式**；支持 `disable-model-invocation` 与 `/skill:<名字>` 强制 |
 | 模型接入 | 二十多家 + `/login` | **只走 OpenAI 兼容**（刻意的，只做一层适配） |
-| 权限 | 项目信任 + 进程自身的系统权限（**没有逐条审批**） | 工作区沙箱（越界拒）+ 工具集白名单 + **三档权限 + 逐条审批**（比 Pi 更紧） |
+| 权限 | 项目信任 + 进程自身的系统权限（**没有逐条审批**） | **读不设限、写按档位**（ask/auto/full）+ 越界动作逐条审批 + 工具集白名单；工作区内 `.env`/`.git` 之类的**写**直接拒（比 Pi 更细） |
 | 界面 | TUI + print + JSON + RPC + TS SDK | **行式 CLI**（定位就是"拿来测 harness"）；斜杠命令与 Pi 同形 |
 | 扩展 / MCP | TS 扩展进程内装载 / MCP / 包管理 | 没有（`Tool` 接口 + 注册表；MCP 见 [roadmap](docs/roadmap.md)） |
 
@@ -154,13 +155,32 @@ lumin chat [选项]  显式进入对话
 
 ## 5. 权限与审批（human-in-the-loop）
 
+### 先分清"读"和"写"
+
+**沙箱只隔离写，不隔离读。** 这三档权限调的是**写**：
+
+| | 读 | 写 |
+| --- | --- | --- |
+| **所有档位** | 整台机器都能读 | 看下面三档 |
+| 红线（任何档位都不给） | 模型自己在用的那份配置（里面有 API Key）、CLI 自己的数据目录（配置与会话） | 同左 |
+
+理由：读不改你的东西，而"这个文件到底在哪、里面写了什么"是 agent 干活的前提 ——
+把读也关起来，模型就只能靠猜，反而更容易乱写。读的开销用**可见性**兜底：
+每次读到工作区外，CLI 都会把绝对路径打出来并标 `（工作区外）`。
+
+### 三档
+
 三档权限（存 `<数据目录>/settings.json`，`/permissions` 随时切）：
 
 | 档位 | 含义 | 行为 |
 | --- | --- | --- |
-| `ask` **请求批准** | 沙箱只到工作区 | 编辑**工作区外**的文件 / 跑命令 / 联网 **每次都要问你** |
-| `auto` **帮我批准** | 不再限制在工作区 | 只有风险操作（危险命令、联网、写外部文件）才问 |
-| `full` **完全访问权限** | 不限读写与命令 | **不问**。唯一红线：**不把模型自己在用的 API Key 交出去** |
+| `ask` **请求批准** | 写只在工作区，越界要批准 | 写**工作区外**的文件 / 跑命令 / 联网 **每次都要问你** |
+| `auto` **帮我批准** | 写不再限制工作区 | 只有风险操作（危险命令、联网、写外部文件）才问 |
+| `full` **完全访问权限** | 写也不限 | **不问**。唯一红线：**不把模型自己在用的 API Key 交出去** |
+
+`ask` 档里"越界写"的正确语义是**先问、批了就能写**，不是"永远不行"：
+批准过的目录会记进本次会话的写白名单（`/approvals` 能看到记住的规则）。
+工作区**内部**的 `.env` / `.git` / `.ssh` 这类路径，写依旧直接拒 —— 那不是"外面"，是"危险"。
 
 真正停下来问你的地方是**审批层**，按动作分类：`path-outside`（写工作区外）/ `command`（跑命令）/
 `command-dangerous`（危险命令）/ `web`（联网）。回答四选一：
@@ -240,11 +260,11 @@ LUMIN_TAVILY_RESULTS=5
 ## 9. 测试
 
 ```powershell
-pwsh -File .\scripts\test.ps1          # cjpm test，62 例
+pwsh -File .\scripts\test.ps1          # cjpm test，65 例
 pwsh -File .\scripts\run-demos.ps1     # 并行跑一组端到端场景，日志 + 汇总（会打模型接口）
 ```
 
-62 例覆盖：
+65 例覆盖：
 
 - **事件流**：顺序、`on` 不重放、`drain` 只取一次、finish/fail/abort、事件 JSON 字段名与 Pi 一致；
 - **会话**：JSONL 形状（header + 每行一条 entry + `id`/`parentId` 链）、重新载入后分支一致、
@@ -254,9 +274,12 @@ pwsh -File .\scripts\run-demos.ps1     # 并行跑一组端到端场景，日志
   `beforeToolCall` 拦截、工具失败不中断、模型报错不抛、最大轮数、steering/follow-up 注入点、resume 前置校验、
   系统提示词快照写进会话、**自动压缩**、**并行执行**（两个各睡 300ms 的工具并发跑，总墙钟 < 600ms）；
 - **工具**：`read`（整文件 + offset/limit）、`write` 往返、`edit`（多段替换 / 找不到 / 不唯一都拒）、`ls`、
-  `find`（glob）、`grep`（正则 / literal / ignoreCase / glob 过滤）、**越界一律拒**、命令工具被 `--allow-exec` 门住、
+  `find`（glob）、`grep`（正则 / literal / ignoreCase / glob 过滤）、**越界读放行 / 越界写要批准**、
+  命令工具被 `--allow-exec` 门住、
   真跑 PowerShell（含中文不乱码、退出码）、**命令超时**（1 秒超时 → 判定超时、杀子进程、耗时 < 4 秒）；
-- **权限与审批**：敏感路径拒、受保护根目录拒、`full` 档能出工作区但**永远碰不到 Key**、
+- **权限与审批**：读写策略分开（读越界放行、写越界要批准）、工作区内敏感路径写拒、受保护根目录拒、
+  `full` 档能出工作区但**永远碰不到 Key**、`..` 折叠过不掉 Key 红线、
+  审批分类先折叠路径（`ws/../outside/x.md` 不会被误判成工作区内）、批准后才真能落盘、
   档位记忆、信任向上继承、工作区登记表；
 - **Skills**：扫描、frontmatter 校验（缺 name/description 就跳过）、播报只带 name/description/location、`disable-model-invocation`；
 - **流式解析**：分片无关性、截断缓冲不抛、**字节安全**（汉字不被切断）、转义引号、原生 arguments 形态；
@@ -286,7 +309,7 @@ lumin/
 │   │   ├── jsonx.cj / textx.cj / errors.cj   工具函数与错误形状
 │   ├── tools/
 │   │   ├── tools.cj           7 个工具（read/write/edit/ls/find/grep/powershell）
-│   │   ├── workspace.cj       工作区沙箱 + 权限档位 + 命令执行 + 超时
+│   │   ├── workspace.cj       沙箱（读不设限 / 写按档位 + 红线名单）+ 命令执行 + 超时
 │   │   └── truncate.cj        结果截断（字节安全）
 │   ├── net/tavily.cj          联网检索（全项目唯一的联网处，risk=external）
 │   ├── cli/
@@ -297,7 +320,7 @@ lumin/
 │   │   ├── trust.cj           项目信任（向上继承）
 │   │   ├── workspaces.cj      工作区登记表
 │   │   └── util.cj            路径/文本小工具
-│   └── unittests/             62 例（cjpm test）
+│   └── unittests/             65 例（cjpm test）
 ├── samples/demo-workspace/    示例工作区（含一份示例 skill）
 ├── docs/
 │   ├── vs-pi.md               按 Pi 源码逐条核对（含两处更正）

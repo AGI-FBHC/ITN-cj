@@ -18,8 +18,12 @@ lumin 是**照 Pi（`github.com/earendil-works/pi`，TypeScript，MIT）的架�
    加新能力时先想"它属于哪一层"，别把网络调用塞进 `pi/`。
 2. **对齐 Pi 的地方不要"顺手改成更好看的"**：事件名、工具名、工具参数 schema、会话 JSONL 格式、
    `<available_skills>` 播报格式都是**对外契约**，改了就等于和 Pi 生态脱钩。要改先在 `docs/vs-pi.md` 记一笔。
-3. **密钥不进仓**：`.env.local`、`.env`、真 Key 一律 gitignore。新增配置项要同步更新 `.env.example`。
-4. **窗口/编码**：终端一律 PowerShell 7（`pwsh`），不是 Windows PowerShell 5.1。
+3. **读写策略不许回退**：**沙箱只隔离写**。读在任何档位都不设边界，只有两条红线 ——
+   模型自己在用的含 Key 的配置、CLI 数据目录（`Workspace.denyReasonRead` / `denyAtRedLine`）。
+   写按档位（`denyReason`）：ask 档越界要审批层批准过（`allowWriteAt`）才放行。
+   改这块时注意：**路径比较前必须先 `collapseDots`**（`..` 既能绕过红线，也能让审批误判）。
+4. **密钥不进仓**：`.env.local`、`.env`、真 Key 一律 gitignore。新增配置项要同步更新 `.env.example`。
+5. **窗口/编码**：终端一律 PowerShell 7（`pwsh`），不是 Windows PowerShell 5.1。
 
 ## 3. 改动流程
 

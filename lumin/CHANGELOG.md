@@ -5,6 +5,13 @@ lumin 目前是 `0.x`，**对外契约（事件名 / 工具 schema / 会话 JSON
 
 ## [Unreleased]
 
+### Changed
+- **读写策略分开：沙箱只隔离写，不隔离读。** 三个档位现在调的是**写**：
+  `ask` 写只在工作区（越界要批准）、`auto` 写不限（风险操作才问）、`full` 不问。
+  读在任何档位都不设边界，只保留两条红线 —— 模型自己在用的那份配置（含 API Key）、CLI 自己的数据目录。
+  读工作区外时 CLI 会把绝对路径打出来并标 `(工作区外)`，用可见性代替拦截。
+  理由：读不改用户的东西，而"文件在哪、写了什么"是干活的前提；把读也关起来只会让模型靠猜。
+
 ### Added
 - 独立的仓库骨架：`LICENSE`(MIT)、`.env.example`、`AGENTS.md`、`docs/roadmap.md`、`docs/merge-into-itn.md`。
 - `samples/demo-workspace/`：一个自包含的示例工作区（含一份示例 skill），克隆下来直接 `lumin --workspace samples/demo-workspace` 就能玩。
@@ -34,8 +41,18 @@ lumin 目前是 `0.x`，**对外契约（事件名 / 工具 schema / 会话 JSON
 - **Skills**：实现 Agent Skills 规范（`SKILL.md` + frontmatter），扫 `{工作区}/.pi/skills`、
   `{工作区}/.agents/skills`、`{数据目录}/skills`、`~/.agents/skills`；`/skill:<名字>` 强制加载。
 - **CLI**：`/help /tools /skills /sessions /new /resume /compact /model /mode /permissions /approvals /workspace /trust /quit`。
-- **单元测试 62 例**（`cjpm test` 全绿），覆盖事件流 / 会话树与分叉 / 压缩 / 并行执行 / 截断字节安全 /
+- **单元测试 65 例**（`cjpm test` 全绿），覆盖事件流 / 会话树与分叉 / 压缩 / 并行执行 / 截断字节安全 /
   7 个工具的边界 / 沙箱越界 / 命令超时 / skills 扫描 / 流式解析分片无关性 / 权限档位与审批 / Tavily 结果形状。
+
+### Fixed
+- `ask` 档"越界写"以前是**自相矛盾**的：审批层问过、用户批了，工具层又被沙箱拒。
+  现在批准过的目录会登记进本次会话的写白名单（`Approver.applyApproval`），批了就真能落盘。
+- 审批分类用的路径前缀是**字符串**比较，`<工作区>/../outside/x.md` 会被误判成"工作区内"，
+  于是该弹的审批不弹、工具层又拒绝 —— 用户只看到一个失败。现在先折叠 `.` / `..` 再比。
+- Key 红线可以被 `..` 绕过（`<目录>/sub/../.env.local` 字符串上不等于 `<目录>/.env.local`）。
+  红线比较前统一折叠路径段。
+- `/workspace open` 换工作区时用的是两参构造，会把权限档位和 Key 红线**悄悄重置成默认**。
+- 读操作不再返回工作区外的相对路径（`../../..` 拼出来的怪路径），外面一律显示绝对路径。
 
 ### Known Issues
 见 [`docs/roadmap.md`](docs/roadmap.md)。两条会挡路的：

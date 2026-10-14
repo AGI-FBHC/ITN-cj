@@ -177,7 +177,7 @@ func printSessions(dataDir: String, cwd: String): Unit {
 
 /* ---------- 事件打印 ---------- */
 
-func attachPrinter(stream: EventStream, wsRoot: String): UiState {
+func attachPrinter(stream: EventStream, agent: Agent): UiState {
     let ui = UiState()
     stream.on({ e: PiEvent =>
         let t = kindText(e.kind)
@@ -207,11 +207,19 @@ func attachPrinter(stream: EventStream, wsRoot: String): UiState {
             ui.textOpen = false
             let nm = e.toolName()
             println("\n[执行] " + nm + "  参数 " + preview(e.str("args"), 200))
-            // 写/改文件时把绝对路径打出来 —— 用户最需要的就是"文件到底在哪"
-            if (nm == "write" || nm == "edit") {
+            // 文件类工具都把绝对路径打出来 —— 用户最需要的就是"到底动了哪个文件"。
+            // 读操作越出工作区时额外标一下：那是不经批准就能发生的事，得让你看见。
+            if (nm == "read" || nm == "write" || nm == "edit" || nm == "ls" || nm == "find" || nm == "grep") {
                 let rel = pathFromArgs(e.str("args"))
                 if (rel.size > 0) {
-                    println("       → 文件绝对路径：" + joinPath(wsRoot, rel))
+                    let full = collapseDots(joinPath(agent.workspaceRoot, rel))
+                    let outside = !(full == agent.workspaceRoot || hasPrefix(full, agent.workspaceRoot + "/"))
+                    println("       → " + (if (outside) { "工作区外：" } else { "工作区：" }) + full +
+                        (if (outside && (nm == "read" || nm == "ls" || nm == "find" || nm == "grep")) {
+                            "（读不设限，所以不问你）"
+                        } else {
+                            ""
+                        }))
                 }
             }
         } else if (t == "tool_execution_end") {
@@ -270,7 +278,7 @@ func pathFromArgs(argsJson: String): String {
 
 func runOnce(agent: Agent, text: String, wsRoot: String): Unit {
     let stream = EventStream()
-    attachPrinter(stream, wsRoot)
+    attachPrinter(stream, agent)
     let compactBefore = agent.compactCount
     let out = agent.prompt(text, stream)
     if (agent.compactCount > compactBefore) {
@@ -529,6 +537,7 @@ public func runChat(args: Array<String>): Int64 {
     let opts = AgentOptions()
     opts.model = model
     let approver = Approver(dataDir, permName)
+    approver.ws = Some(ws)
     if (permName == "full") {
         mode = modeEverything(reg)
     }
@@ -550,9 +559,9 @@ public func runChat(args: Array<String>): Int64 {
     println("工作区：" + ws.root + "   （绝对路径）")
     println("权限：  " + permissionModeText(permName) + "   [来源：" + permFrom + "]")
     if (permName == "ask") {
-        println("        模型只能在这个工作区里读写；命令要 --allow-exec；联网要 research 档")
+        println("        读：整台机器都能读；写：只写工作区，越界要你批准；跑命令/联网也会问")
     } else if (permName == "auto") {
-        println("        读写不再限制在工作区；工作区外的写、跑命令之前会先问你一次")
+        println("        读：整台机器；写：不限工作区，越界写与跑命令之前会先问你一次")
     } else {
         println("        不受限制地读写这台电脑、跑命令（唯一红线：不交出模型自己在用的 API Key）")
     }
@@ -650,7 +659,9 @@ public func runChat(args: Array<String>): Int64 {
                     if (!exists(newPath)) {
                         println("这个目录不存在：" + newPath)
                     } else {
-                        ws = Workspace(newPath, denyRoots)
+                        // 换工作区时把档位与红线名单一起带过去 —— 2 参构造会让档位悄悄退回 ask
+                        ws = Workspace(newPath, denyRoots, denyFiles, permName)
+                        approver.ws = Some(ws)
                         let reg2 = ToolRegistry()
                         registerWorkspaceTools(reg2, ws, allowExec)
                         reg = reg2
@@ -724,6 +735,7 @@ public func runChat(args: Array<String>): Int64 {
                             agent.mode = modeEverything(reg)
                         }
                         ws = Workspace(ws.root, denyRoots, denyFiles, permName)
+                        approver.ws = Some(ws)
                         let reg3 = ToolRegistry()
                         if (trust.trusted) {
                             registerWorkspaceTools(reg3, ws, allowExec)
@@ -740,7 +752,7 @@ public func runChat(args: Array<String>): Int64 {
                         }
                         println("已切到：" + permissionModeText(permName))
                         println("  工具 " + reg.specsOf(agent.mode).size.toString() + " 件；工作区 " + ws.root +
-                            "；沙箱：" + (if (ws.sandboxed()) { "开" } else { "关" }))
+                            "；写的沙箱：" + (if (ws.sandboxed()) { "开（读不设限）" } else { "关" }))
                     case None =>
                         println("没有这个档位：" + rest + "（可用：ask / auto / full）")
                 }
