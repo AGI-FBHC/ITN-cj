@@ -630,26 +630,23 @@ public class Api {
                         fail(ctx, 404, "该知识库还没有索引，请先建立索引")
                         return
                     }
-                    // 向量模型可选，未配置时退回关键词检索
-                    var hits = ArrayList<SearchHit>()
-                    var mode = "关键词"
+                    // 混合检索（与模型侧 kb_search 同一个入口）：向量模型可选，没配就只用关键词那一路
+                    var qv: Option<Array<Float64>> = None
                     if (s.embedModelId.size > 0) {
                         match (s.findModel(s.embedModelId)) {
                             case Some(cfg) =>
                                 try {
-                                    let qv = LlmClient(cfg).embed([query])
-                                    hits = search(idx, qv[0], topK)
-                                    mode = "向量"
+                                    let vecs = LlmClient(cfg).embed([query])
+                                    if (vecs.size > 0) {
+                                        qv = Some(vecs[0])
+                                    }
                                 } catch (e: Exception) {
-                                    hits = keywordSearch(idx, query, topK)
-                                    mode = "关键词"
+                                    ()
                                 }
-                            case None =>
-                                hits = keywordSearch(idx, query, topK)
+                            case None => ()
                         }
-                    } else {
-                        hits = keywordSearch(idx, query, topK)
                     }
+                    let (hits, mode) = hybridSearch(idx, query, qv, topK)
                     let arr = JsonArray()
                     for (h in hits) {
                         arr.add(chunkJson(h.chunk, h.score))
@@ -1358,6 +1355,64 @@ public class Api {
             return
         }
 
+        /* 会话树：这一段里出现过的每一轮（含被放弃的分支），标出父轮次与"当前在哪条" */
+        if (path == "/api/sessions/tree" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let sid = strOf(b, "sessionId")
+                    if (sid.size == 0) {
+                        fail(ctx, 400, "缺少 sessionId")
+                        return
+                    }
+                    let ss = SessionStore(store.dataDir)
+                    let arr = JsonArray()
+                    for (node in ss.turnTree(sid)) {
+                        arr.add(node)
+                    }
+                    let o = JsonObject()
+                    o.put("turns", arr)
+                    o.put("leaf", JsonInt(ss.leafOf(sid)))
+                    // families：同一分叉点上的几兄弟（界面画 ‹ n/m › 用它）
+                    let info = ss.treeInfo(sid)
+                    match (info.get("families")) {
+                        case Some(f) => o.put("families", f)
+                        case None => o.put("families", JsonArray())
+                    }
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        /* 切到某条事件（会话树里点某一轮）：不删任何东西，只是换个末端 */
+        if (path == "/api/sessions/switch" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let sid = strOf(b, "sessionId")
+                    if (sid.size == 0) {
+                        fail(ctx, 400, "缺少 sessionId")
+                        return
+                    }
+                    let ss = SessionStore(store.dataDir)
+                    // 允许传 eventId（精确）或 turnId（那一条提问所在轮次的第一条）
+                    var target = intOf(b, "eventId")
+                    let tid = trimStr(strOf(b, "turnId"))
+                    if (target <= 0 && tid.size > 0) {
+                        target = ss.turnStartEventId(sid, tid)
+                    }
+                    if (!ss.setLeaf(sid, target)) {
+                        fail(ctx, 400, "找不到要切过去的那一条")
+                        return
+                    }
+                    let o = JsonObject()
+                    o.put("ok", JsonBool(true))
+                    o.put("leaf", JsonInt(ss.leafOf(sid)))
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         if (path == "/api/sessions/branch" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) =>
@@ -1378,6 +1433,60 @@ public class Api {
                     // 名字一起回给界面：新分支可能还没有事件（列表里暂时看不到），
                     // 顶栏那条面包屑得先有名字可显示
                     o.put("title", JsonString(ss.titleOf(nsid)))
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        // 会话内分支：从某一轮**之前**开一条新线（原线保留，可以用 ‹ n/m › 切回来）
+        if (path == "/api/sessions/split" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let sid = strOf(b, "sessionId")
+                    if (sid.size == 0) {
+                        fail(ctx, 400, "缺少 sessionId")
+                        return
+                    }
+                    let ss = SessionStore(store.dataDir)
+                    let o = JsonObject()
+                    if (boolOf(b, "cancel")) {
+                        ss.cancelSplit(sid)
+                        o.put("ok", JsonBool(true))
+                        ok(ctx, o)
+                        return
+                    }
+                    let tid = strOf(b, "turnId")
+                    if (tid.size == 0) {
+                        fail(ctx, 400, "缺少 turnId")
+                        return
+                    }
+                    let pt = ss.split(sid, tid)
+                    if (pt < 0) {
+                        fail(ctx, 400, "找不到这一轮")
+                        return
+                    }
+                    o.put("ok", JsonBool(true))
+                    o.put("parentEventId", JsonInt(pt))
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        // 切到某条分支（会话树的"切分支"）：末端 = 那一轮的最后一条事件
+        if (path == "/api/sessions/set-active" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let sid = strOf(b, "sessionId")
+                    let tid = strOf(b, "turnId")
+                    if (sid.size == 0 || tid.size == 0) {
+                        fail(ctx, 400, "缺少 sessionId / turnId")
+                        return
+                    }
+                    let done = SessionStore(store.dataDir).activateTurn(sid, tid)
+                    let o = JsonObject()
+                    o.put("ok", JsonBool(done))
                     ok(ctx, o)
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -1572,6 +1681,10 @@ public class Api {
                     let o = JsonObject()
                     o.put("events", arr)
                     o.put("lastId", JsonInt(lastId))
+                    // 会话树：只在全量拉取时算（轮询带 sinceId，不算这一遍，省一次索引构建）
+                    if (intOf(b, "sinceId") <= 0) {
+                        o.put("tree", ss.treeInfo(id))
+                    }
                     ok(ctx, o)
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -2648,6 +2761,10 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/sessions/new",
         "/api/sessions/rewind",
         "/api/sessions/branch",
+        "/api/sessions/tree",
+        "/api/sessions/switch",
+        "/api/sessions/split",
+        "/api/sessions/set-active",
         "/api/projects/pin",
         "/api/sessions/list",
         "/api/sessions/events",

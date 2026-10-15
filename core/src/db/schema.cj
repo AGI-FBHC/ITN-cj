@@ -56,6 +56,18 @@ public func ensureSchema(db: Db): Unit {
     for (sql in ddl) {
         db.exec(sql)
     }
+    /*
+     * 会话树：每条事件记下"它接在哪条后面"（parent_id = 父事件 id，0 = 根）。
+     *
+     * 老库没有这一列，加一次；已经有了会抛，忽略即可 —— 与 store.cj 里加列的做法一致。
+     * 有了它，"改一条重发"就不再是删数据，只是把这段会话的末端（leaf）挪到别处，
+     * 被放弃的那条线仍然留在库里、可以在会话树里切回来。
+     */
+    try {
+        db.exec("ALTER TABLE session_events ADD COLUMN parent_id INTEGER")
+    } catch (e: Exception) {
+        ()
+    }
 }
 
 /** 迁移标记：每个模块自己一段，迁移完置位，不会重复导入。 */

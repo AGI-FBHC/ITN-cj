@@ -2,6 +2,7 @@ package itn_desktop_core.session
 
 import std.fs.*
 import std.collection.*
+import std.convert.*
 import std.time.*
 import std.random.*
 import stdx.encoding.json.*
@@ -25,6 +26,18 @@ public class SessionEvent {
         o.put("payload", payload)
         return o
     }
+}
+
+/**
+ * 会话树索引：id 升序的事件列表 + 父子关系 + 每条事件属于哪一轮。
+ *
+ * 一次查询建出来，之后"当前分支是哪几条事件""某一轮属于哪条线"都在内存里算。
+ */
+public class SessionChain {
+    public var ids = ArrayList<Int64>()
+    public var parent = HashMap<Int64, Int64>()
+    public var children = HashMap<Int64, ArrayList<Int64>>()
+    public var turnOf = HashMap<Int64, String>()
 }
 
 /*
@@ -57,17 +70,69 @@ public class SessionStore {
             event.at = DateTime.now().toString()
         }
         migrateFromJson()
+        migrateTree()
+        // 接在当前末端后面：这就是"树"的全部 —— 事件只追加，分支由 leaf 决定
+        var parent = leafOf(event.sessionId)
+        // 待分叉（用户点了"从这条开分支"）：这条事件接在分叉点上，原来那条线一字不动
+        var branched = false
+        let pending = db().getKv("sessions_meta", "split:" + event.sessionId, "")
+        if (pending.size > 0) {
+            let parsed = try {
+                Int64.parse(pending)
+            } catch (e: Exception) {
+                -1
+            }
+            if (parsed >= 0) {
+                parent = parsed
+                branched = true
+            }
+        }
         let ops = ArrayList<DbOp>()
         ops.add(DbOp("INSERT OR IGNORE INTO sessions (id, created_at, updated_at) VALUES (?, ?, ?)",
             va([tv(event.sessionId), tv(event.at), tv(event.at)])))
         ops.add(DbOp("UPDATE sessions SET updated_at = ? WHERE id = ?", va([tv(event.at), tv(event.sessionId)])))
-        ops.add(DbOp("INSERT INTO session_events (session_id, ts, kind, turn_id, payload) VALUES (?, ?, ?, ?, ?)",
-            va([tv(event.sessionId), tv(event.at), tv(event.kind), tv(event.turnId), tv(event.payload.toString())])))
+        ops.add(DbOp("INSERT INTO session_events (session_id, ts, kind, turn_id, payload, parent_id) " +
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            va([tv(event.sessionId), tv(event.at), tv(event.kind), tv(event.turnId), tv(event.payload.toString()),
+                nv(parent)])))
+        // 追加之后"末端"就是这条新事件（= MAX(id)），显式 leaf 键与待分叉键都可以撤了
+        ops.add(DbOp("DELETE FROM sessions_meta WHERE k = ?", va([tv("leaf:" + event.sessionId)])))
+        ops.add(DbOp("DELETE FROM sessions_meta WHERE k = ?", va([tv("split:" + event.sessionId)])))
+        if (branched) {
+            // 真分了叉才打这个标记：之后这段会话的历史都按"当前分支"过滤
+            ops.add(DbOp("INSERT OR REPLACE INTO sessions_meta (k, v) VALUES (?, ?)",
+                va([tv("tree:" + event.sessionId), tv("1")])))
+        }
         db().batch(ops)
     }
 
+    /**
+     * 这一段会话的**当前分支**（根 → 末端），别的分支不在这里出现。
+     *
+     * 事件表里可能留着好几条线（改一条重发、从某轮开分支都只是挪末端），
+     * 但"对话"只该看见当前这条 —— 会话树面板负责让你看见并切到别条。
+     */
     public func events(sessionId: String): ArrayList<JsonObject> {
-        return eventsSince(sessionId, 0)
+        let all = eventsSince(sessionId, 0)
+        let ids = branchEventIds(sessionId)
+        if (ids.size == 0 || ids.size == all.size) {
+            return all
+        }
+        let keep = HashSet<Int64>()
+        for (x in ids) {
+            keep.add(x)
+        }
+        let out = ArrayList<JsonObject>()
+        for (e in all) {
+            match (e.get("id")) {
+                case Some(v) => match (v) {
+                    case n: JsonInt => if (keep.contains(n.getValue())) { out.add(e) }
+                    case _ => ()
+                }
+                case None => ()
+            }
+        }
+        return out
     }
 
     /**
@@ -85,9 +150,16 @@ public class SessionStore {
             "SELECT id, ts, kind, turn_id, payload FROM session_events WHERE session_id = ? ORDER BY id"
         }
         let args = if (sinceId > 0) { va([tv(sessionId), nv(sinceId)]) } else { va([tv(sessionId)]) }
+        // 分过叉的会话：只回**当前分支**上的事件（别的线还在库里，切过去才看得到）。
+        // 流式轮询也走这里，所以过滤必须在这一层做，否则增量那半段会把别的分支带回来。
+        let onChain = activeChainSet(sessionId)
         for (r in db().query(sql, args)) {
+            let id = r.int(0)
+            if (onChain.size > 0 && !onChain.contains(id)) {
+                continue
+            }
             let o = JsonObject()
-            o.put("id", JsonInt(r.int(0)))
+            o.put("id", JsonInt(id))
             o.put("sessionId", JsonString(sessionId))
             o.put("type", JsonString(r.text(2)))
             o.put("at", JsonString(r.text(1)))
@@ -107,6 +179,304 @@ public class SessionStore {
         return out
     }
 
+    /**
+     * 这一段的当前分支末端（leaf）的事件 id；0 = 还没有事件。
+     *
+     * 平时 leaf 就是最后一条事件（追加总是往末端接），所以只在"被显式挪过"时才往
+     * sessions_meta 里存 —— 追加之后这个键会被清掉（末端又回到最新那条）。
+     */
+    public func leafOf(sessionId: String): Int64 {
+        let raw = db().getKv("sessions_meta", "leaf:" + sessionId, "")
+        if (raw.size > 0) {
+            // 解析失败（键被人手改坏过）就退回"最后一条事件"这个默认语义，不要抛
+            let parsed = try {
+                Int64.parse(raw)
+            } catch (e: Exception) {
+                -1
+            }
+            if (parsed >= 0) {
+                return parsed
+            }
+        }
+        return db().scalarInt("SELECT MAX(id) FROM session_events WHERE session_id = ?", va([tv(sessionId)]))
+    }
+
+    /**
+     * 把这段会话切到某条事件（会话树的"切分支"）。
+     *
+     * 不删任何数据：事件只追加，切分支只是换个末端。上下文缓存与运行状态要清掉 ——
+     * 它们描述的是切换之前那条线，留着会让下一轮把不属于当前分支的历史发给模型。
+     */
+    public func setLeaf(sessionId: String, eventId: Int64): Bool {
+        if (sessionId.size == 0 || eventId < 0) {
+            return false
+        }
+        if (eventId > 0) {
+            let exists = db().scalarInt("SELECT COUNT(*) FROM session_events WHERE id = ? AND session_id = ?",
+                va([nv(eventId), tv(sessionId)]))
+            if (exists == 0) {
+                return false
+            }
+        }
+        db().putKv("sessions_meta", "leaf:" + sessionId, eventId.toString())
+        // 挪过末端就说明这段会话有分支/回退：历史从此按"当前分支"过滤
+        db().putKv("sessions_meta", "tree:" + sessionId, "1")
+        db().delKv("sessions_meta", "split:" + sessionId)
+        db().delKv("sessions_meta", "context:" + sessionId)
+        db().delKv("sessions_meta", "state:" + sessionId)
+        return true
+    }
+
+    /** 某条事件的父事件 id（0 = 根）。 */
+    public func parentOf(eventId: Int64): Int64 {
+        if (eventId <= 0) {
+            return 0
+        }
+        return db().scalarInt("SELECT parent_id FROM session_events WHERE id = ?", va([nv(eventId)]))
+    }
+
+    /**
+     * 会话树的索引：一次轻查询（只要 id / parent_id / turn_id）在内存里补成父子关系。
+     *
+     * 老事件没有 parent_id（NULL 或 0）：按线性回退成"上一条事件" —— 它们本来就在
+     * 一条线上，补完之后行为与分叉之前一模一样，只是从此可以分叉了。不能逐个事件去
+     * 发 SQL：长会话上那是几十次 prepare/close，界面每拉一次历史就卡一下。
+     */
+    public func chainIndex(sessionId: String): SessionChain {
+        let ci = SessionChain()
+        var prev: Int64 = 0
+        for (r in db().query("SELECT id, parent_id, turn_id FROM session_events WHERE session_id = ? ORDER BY id",
+            va([tv(sessionId)]))) {
+            let id = r.int(0)
+            var p: Int64 = 0
+            if (!r.isNull(1)) {
+                p = r.int(1)
+            } else if (prev != 0) {
+                /* 只有 NULL 才是"加这一列之前的老数据"，按线性回退成上一条（迁移会补齐）。
+                   0 是**真正的根** —— 从某一轮开分支长出来的新线，parent 就是 0；
+                   把它也当成"老数据"会让整棵树退化成一条线（实测踩过）。 */
+                p = prev
+            }
+            ci.ids.add(id)
+            ci.parent[id] = p
+            match (ci.children.get(p)) {
+                case Some(kids) => kids.add(id)
+                case None =>
+                    let kids = ArrayList<Int64>()
+                    kids.add(id)
+                    ci.children[p] = kids
+            }
+            ci.turnOf[id] = r.text(2)
+            prev = id
+        }
+        return ci
+    }
+
+    /** 从某条事件沿 parent 走到根，返回**顺序**的 id 列表（根在前、这条在后）。 */
+    public func chainTo(sessionId: String, eventId: Int64): ArrayList<Int64> {
+        return chainFromIndex(chainIndex(sessionId), eventId)
+    }
+
+    private func chainFromIndex(ci: SessionChain, eventId: Int64): ArrayList<Int64> {
+        let rev = ArrayList<Int64>()
+        var cur = eventId
+        var guard: Int64 = 0
+        var going = true
+        while (cur > 0 && guard < 200000 && going) {
+            match (ci.parent.get(cur)) {
+                case Some(p) =>
+                    rev.add(cur)
+                    cur = p
+                case None =>
+                    // 末端指向不存在的事件（库被人手改过）：停在这儿，别顺着乱走
+                    going = false
+            }
+            guard += 1
+        }
+        let out = ArrayList<Int64>()
+        var i = rev.size - 1
+        while (i >= 0) {
+            out.add(rev[i])
+            i -= 1
+        }
+        return out
+    }
+
+    /** 当前分支的事件 id（根 → 末端）。分支切换之后就是那条线。 */
+    public func branchEventIds(sessionId: String): ArrayList<Int64> {
+        return chainFromIndex(chainIndex(sessionId), leafOf(sessionId))
+    }
+
+    /** 这段会话分过叉吗。没分过叉的走线性快路径：连索引都不用建。 */
+    public func hasTree(sessionId: String): Bool {
+        return db().getKv("sessions_meta", "tree:" + sessionId, "").size > 0
+    }
+
+    /** 当前分支的事件 id 集合；空集合 = "没分过叉，全都可见"。 */
+    public func activeChainSet(sessionId: String): HashSet<Int64> {
+        let out = HashSet<Int64>()
+        if (!hasTree(sessionId)) {
+            return out
+        }
+        for (id in branchEventIds(sessionId)) {
+            out.add(id)
+        }
+        return out
+    }
+
+    /**
+     * 从某一轮**之前**开一段会话内分支（pi 的 "edit → 兄弟分支" 语义）。
+     *
+     * 只是记下"下一条事件接在哪儿"：分叉点 = 这一轮第一条事件的父事件。用户真发出下一条
+     * 消息时，append 会把新的一轮接在分叉点上 —— 原来那条线（这一轮及其后续）一字不动地
+     * 留在树上，可以用 ‹ n/m › 切回去。用户没发就取消：什么都不变（重要：不能先把末端
+     * 挪走，那样界面上这一段会当场消失，用户还找不到切回来的入口）。
+     */
+    public func split(sessionId: String, turnId: String): Int64 {
+        let from = db().scalarInt("SELECT MIN(id) FROM session_events WHERE session_id = ? AND turn_id = ?",
+            va([tv(sessionId), tv(turnId)]))
+        if (from <= 0) {
+            return -1
+        }
+        let ci = chainIndex(sessionId)
+        let p = ci.parent.get(from) ?? 0
+        db().putKv("sessions_meta", "split:" + sessionId, p.toString())
+        return p
+    }
+
+    /** 取消"待分叉"（用户点了开分支又不想发了）。 */
+    public func cancelSplit(sessionId: String): Unit {
+        db().delKv("sessions_meta", "split:" + sessionId)
+    }
+
+    /**
+     * 切到某一轮所在的那条分支：末端 = 这一轮的最后一条事件。
+     *
+     * 不删数据，只是换个末端；上下文缓存与运行状态一起清掉 —— 它们描述的是切换之前那条线，
+     * 留着会让下一轮把不属于当前分支的历史发给模型。
+     */
+    public func activateTurn(sessionId: String, turnId: String): Bool {
+        let last = db().scalarInt("SELECT MAX(id) FROM session_events WHERE session_id = ? AND turn_id = ?",
+            va([tv(sessionId), tv(turnId)]))
+        if (last <= 0) {
+            return false
+        }
+        db().putKv("sessions_meta", "tree:" + sessionId, "1")
+        return setLeaf(sessionId, last)
+    }
+
+    /**
+     * 会话树里"同一个分叉点上的几兄弟"，给界面画 ‹ 2/3 › 用。
+     *
+     * 兄弟 = 首事件的父事件相同的那几轮：正常续写时父是上一轮的末事件，从某一轮开分支时
+     * 父是那一轮的前一个事件 —— 两种都落在"同一个父事件"上，正好是一族。每个兄弟带一个
+     * tipTurnId：那条线一直延伸到的末端轮次（切过去时拿它当末端）。
+     */
+    public func treeInfo(sessionId: String): JsonObject {
+        let o = JsonObject()
+        let fams = JsonArray()
+        o.put("families", fams)
+        if (!hasTree(sessionId)) {
+            return o
+        }
+        let ci = chainIndex(sessionId)
+        let turnFirst = HashMap<String, Int64>()
+        let turnLast = HashMap<String, Int64>()
+        let turnParent = HashMap<String, Int64>()
+        let order = ArrayList<String>()
+        for (id in ci.ids) {
+            let tid = ci.turnOf.get(id) ?? ""
+            if (tid.size == 0) {
+                continue
+            }
+            if (!turnFirst.contains(tid)) {
+                turnFirst[tid] = id
+                turnParent[tid] = ci.parent.get(id) ?? 0
+                order.add(tid)
+            }
+            turnLast[tid] = id
+        }
+        let groups = HashMap<Int64, ArrayList<String>>()
+        let groupOrder = ArrayList<Int64>()
+        for (tid in order) {
+            let key = turnParent.get(tid) ?? 0
+            match (groups.get(key)) {
+                case Some(g) => g.add(tid)
+                case None =>
+                    let g = ArrayList<String>()
+                    g.add(tid)
+                    groups[key] = g
+                    groupOrder.add(key)
+            }
+        }
+        let onChain = activeChainSet(sessionId)
+        for (key in groupOrder) {
+            let members = groups.get(key) ?? ArrayList<String>()
+            if (members.size < 2) {
+                continue
+            }
+            let arr = JsonArray()
+            var activeIndex: Int64 = -1
+            var idx: Int64 = 0
+            for (tid in members) {
+                if (onChain.contains(turnFirst.get(tid) ?? 0)) {
+                    activeIndex = idx
+                }
+                let m = JsonObject()
+                m.put("turnId", JsonString(tid))
+                m.put("tipTurnId", JsonString(lineTip(ci, turnLast, tid)))
+                arr.add(m)
+                idx += 1
+            }
+            if (activeIndex < 0) {
+                continue      // 这一族整条都不在活动链上（在别的分支的深处）：不显示
+            }
+            let f = JsonObject()
+            f.put("count", JsonInt(members.size))
+            f.put("activeIndex", JsonInt(activeIndex))
+            f.put("members", arr)
+            fams.add(f)
+        }
+        return o
+    }
+
+    /** 一条线延伸到的末端轮次：从这一轮的末事件往下走，每步取 id 最大的子事件那一轮。 */
+    private func lineTip(ci: SessionChain, turnLast: HashMap<String, Int64>, turnId: String): String {
+        var cur = turnId
+        var guard: Int64 = 0
+        while (guard < 500) {
+            let last = turnLast.get(cur) ?? 0
+            let kids = ci.children.get(last) ?? ArrayList<Int64>()
+            if (kids.size == 0) {
+                return cur
+            }
+            var best: Int64 = 0
+            for (k in kids) {
+                if (k > best) {
+                    best = k
+                }
+            }
+            let nextTurn = ci.turnOf.get(best) ?? ""
+            if (nextTurn.size == 0 || nextTurn == cur) {
+                return cur
+            }
+            cur = nextTurn
+            guard += 1
+        }
+        return cur
+    }
+
+    /** 这一轮第一条事件的父事件 id（-1 = 没有这一轮）。 */
+    public func parentOfTurn(sessionId: String, turnId: String): Int64 {
+        let from = turnStartEventId(sessionId, turnId)
+        if (from <= 0) {
+            return -1
+        }
+        // 走索引：老事件的 parent_id 是空的，直接读列会得到 0（当成根），那就分错地方了
+        let ci = chainIndex(sessionId)
+        return ci.parent.get(from) ?? 0
+    }
+
     /** 会话摘要：事件数、最后一条事件的时间与类型、首个用户提问作为标题。 */
     /**
      * 这一轮的第一条事件的 id；没有这一轮就返回 0。
@@ -121,50 +491,99 @@ public class SessionStore {
             va([tv(sessionId), tv(turnId)]))
     }
 
+    /** 这一轮最后一条事件的 id（"从这一轮分出去"要把这一轮一起带上）；没有这一轮就返回 0。 */
+    public func turnLastEventId(sessionId: String, turnId: String): Int64 {
+        if (sessionId.size == 0 || turnId.size == 0) {
+            return 0
+        }
+        return db().scalarInt("SELECT MAX(id) FROM session_events WHERE session_id = ? AND turn_id = ?",
+            va([tv(sessionId), tv(turnId)]))
+    }
+
     /**
-     * 退回到某一轮之前：把那一轮以及它之后的全部事件删掉，返回删掉的条数。
+     * 退回到某一轮之前（"我上一条说错了，改一下重发"）：**真删**这一轮及其后代。
      *
-     * 用途是"我上一条说错了，改一下重发"。删除是物理删除（列表与历史都以事件为准），
-     * 同时把这段会话的上下文缓存与运行状态清掉 —— 它们描述的是"删掉之前的对话"，
-     * 留着会让下一轮把已经不存在的历史发给模型。清掉之后下一轮会按剩下的事件重建。
+     * 用户要的语义是"改最近一条 → 最新的回复记录被删掉覆盖"。想保留原来那条线时走另一条路
+     * （"另开分支再发" = split），所以这里的删除是有意为之：删的是**这一轮及其后代**，
+     * 别的分支不受影响 —— 老实现按 `id >= from` 删，会把后来长出来的兄弟线一起带走。
+     * 删完把末端挪到这一轮之前，下一轮就从这里重新长。
      */
     public func rewind(sessionId: String, turnId: String): Int64 {
         let from = turnStartEventId(sessionId, turnId)
         if (from <= 0) {
             return 0
         }
-        let removed = db().run("DELETE FROM session_events WHERE session_id = ? AND id >= ?",
-            va([tv(sessionId), nv(from)]))
-        db().delKv("sessions_meta", "context:" + sessionId)
-        db().delKv("sessions_meta", "state:" + sessionId)
+        let ci = chainIndex(sessionId)
+        let doomed = ArrayList<Int64>()
+        let queue = ArrayList<Int64>()
+        queue.add(from)
+        var qi = 0
+        while (qi < queue.size && doomed.size < 200000) {
+            let cur = queue[qi]
+            qi += 1
+            doomed.add(cur)
+            match (ci.children.get(cur)) {
+                case Some(kids) =>
+                    for (k in kids) {
+                        queue.add(k)
+                    }
+                case None => ()
+            }
+        }
+        var removed: Int64 = 0
+        var chunkStart = 0
+        while (chunkStart < doomed.size) {
+            var chunkEnd = chunkStart + 200
+            if (chunkEnd > doomed.size) {
+                chunkEnd = doomed.size
+            }
+            let sb = StringBuilder("DELETE FROM session_events WHERE session_id = ? AND id IN (")
+            let args = ArrayList<DbValue>()
+            args.add(tv(sessionId))
+            var k = chunkStart
+            while (k < chunkEnd) {
+                if (k > chunkStart) {
+                    sb.append(", ")
+                }
+                sb.append("?")
+                args.add(nv(doomed[k]))
+                k += 1
+            }
+            sb.append(")")
+            removed += db().run(sb.toString(), args)
+            chunkStart = chunkEnd
+        }
+        // 末端挪到这一轮之前：下一轮从被删掉的位置重新长
+        let backTo = ci.parent.get(from) ?? 0
+        db().putKv("sessions_meta", "tree:" + sessionId, "1")
+        setLeaf(sessionId, backTo)
         return removed
     }
 
     /**
-     * 从某一轮分叉：新建一段会话，把这一轮**之前**的事件原样复制过去。
+     * 从某一轮分叉：新建一段会话，把**这一轮（含）以及之前**的事件原样复制过去。
      *
      * 与 rewind 的差别是原会话一字不动（Codex 里"从这里开个分支"就是这个意思：
      * 想换个问法重来，又不想丢掉原来那条线）。
      */
     /**
-     * 从某一轮分叉：新建一段会话，把这一轮**之前**的事件原样复制过去。
+     * 从某一轮分叉：新建一段会话，把**这一轮（含）以及之前**的事件原样复制过去。
      *
      * 与 rewind 的差别是原会话一字不动（Codex 里"从这里开个分支"就是这个意思：
      * 想换个问法重来，又不想丢掉原来那条线）。
      * 名字：在新会话上叫「旧名字（2）」，再开就是（3）（4）…… 谁也不覆盖谁。
      */
     public func branch(sessionId: String, turnId: String): String {
-        let from = turnStartEventId(sessionId, turnId)
+        let last = turnLastEventId(sessionId, turnId)
         let newSid = newId()
         let now = DateTime.now().toString()
         db().run("INSERT OR REPLACE INTO sessions (id, created_at, updated_at) VALUES (?, ?, ?)",
             va([tv(newSid), tv(now), tv(now)]))
-        if (from > 0) {
-            // 逐行复制：payload 是原始 JSON 文本，直接搬过去，不做解析再序列化
-            //（解析一遍会把大 payload 重新格式化，既慢又可能改动字符）
-            let stmt = "INSERT INTO session_events (session_id, ts, kind, turn_id, payload) " +
-                "SELECT ?, ts, kind, turn_id, payload FROM session_events WHERE session_id = ? AND id < ? ORDER BY id"
-            db().run(stmt, va([tv(newSid), tv(sessionId), nv(from)]))
+        if (last > 0) {
+            /* 复制的是"到这一轮为止的那条线"，**含这一轮**：分叉点自己留着，之后才分道
+               （界面"从这里开分支"就是这个意思）。必须沿 parent 走，不能按 `id <= last`：
+               事件表里可能同时躺着别的分支，那些行的 id 也满足条件（踩过）。 */
+            copyChain(sessionId, newSid, chainTo(sessionId, last))
         }
         // 起名：旧名字 +（N）。N 取"当前没被占用的最小序号"，所以开第 2、3、4 个分支也各自有名字
         let base = branchBaseTitle(sessionId)
@@ -212,8 +631,10 @@ public class SessionStore {
     public func summary(sessionId: String): JsonObject {
         let o = JsonObject()
         o.put("sessionId", JsonString(sessionId))
-        let count = db().scalarInt("SELECT COUNT(*) FROM session_events WHERE session_id = ?", va([tv(sessionId)]))
-        o.put("eventCount", JsonInt(count))
+        // 事件数算的是**当前分支**：库里可能还躺着被放弃的分支（改一条重发留下的），
+        // 它们不该出现在"这一段有多少条"里
+        let branchIds = branchEventIds(sessionId)
+        o.put("eventCount", JsonInt(branchIds.size))
         var title = ""
         var lastType = ""
         var lastAt = ""
@@ -223,7 +644,7 @@ public class SessionStore {
                 title = payloadText(r.text(2), "text")
             case None => ()
         }
-        match (db().one("SELECT ts, kind FROM session_events WHERE session_id = ? ORDER BY id DESC LIMIT 1", va([tv(sessionId)]))) {
+        match (db().one("SELECT ts, kind FROM session_events WHERE id = ?", va([nv(leafOf(sessionId))]))) {
             case Some(r) =>
                 lastAt = r.text(0)
                 lastType = r.text(1)
@@ -330,11 +751,123 @@ public class SessionStore {
         let now = DateTime.now().toString()
         db().run("INSERT OR REPLACE INTO sessions (id, created_at, updated_at) VALUES (?, ?, ?)",
             va([tv(newSid), tv(now), tv(now)]))
-        // 逐行复制原始 JSON 文本，不解析再序列化（大 payload 重排既慢又可能改字符）
-        let stmt = "INSERT INTO session_events (session_id, ts, kind, turn_id, payload) " +
-            "SELECT ?, ts, kind, turn_id, payload FROM session_events WHERE session_id = ? ORDER BY id"
-        db().run(stmt, va([tv(newSid), tv(sessionId)]))
+        copyChain(sessionId, newSid, branchEventIds(sessionId))
+        rename(newSid, branchTitleFor(branchBaseTitle(sessionId)))
         return newSid
+    }
+
+    /**
+     * 把一条链按原顺序复制到新会话，parent 关系一起搬。
+     *
+     * payload 原样搬（不解析再序列化：大 payload 重排既慢又可能改字符）。
+     * 返回新会话的末端 id（0 = 什么都没复制）。
+     */
+    private func copyChain(sessionId: String, newSid: String, chain: ArrayList<Int64>): Int64 {
+        var prevNew: Int64 = 0
+        for (oldId in chain) {
+            match (db().one("SELECT ts, kind, turn_id, payload FROM session_events WHERE id = ?", va([nv(oldId)]))) {
+                case Some(r) =>
+                    db().run("INSERT INTO session_events (session_id, ts, kind, turn_id, payload, parent_id) " +
+                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        va([tv(newSid), tv(r.text(0)), tv(r.text(1)), tv(r.text(2)), tv(r.text(3)), nv(prevNew)]))
+                    prevNew = db().scalarInt("SELECT MAX(id) FROM session_events WHERE session_id = ?", va([tv(newSid)]))
+                case None => ()
+            }
+        }
+        return prevNew
+    }
+
+    /**
+     * 会话树：把这段会话里出现过的每一轮列出来，并标出它们接在谁后面、现在这条分支在哪。
+     *
+     * 界面的「会话树」面板靠它：点某一轮就是"切到这条"（setLeaf），
+     * 从某一轮再往下接就是"在这条上继续"。
+     * 每个节点的形状：{turnId, eventId, user, at, parentTurnId, active, ok, tools}
+     */
+    public func turnTree(sessionId: String): ArrayList<JsonObject> {
+        let out = ArrayList<JsonObject>()
+        let activeIds = HashSet<Int64>()
+        for (id in branchEventIds(sessionId)) {
+            activeIds.add(id)
+        }
+        // 每轮的第一条事件 + 提问 + 是否完成
+        let firstOfTurn = ArrayList<(Int64, String)>()
+        var lastTurn = ""
+        for (r in db().query("SELECT id, turn_id FROM session_events WHERE session_id = ? ORDER BY id",
+            va([tv(sessionId)]))) {
+            let tid = r.text(1)
+            if (tid != lastTurn) {
+                firstOfTurn.add((r.int(0), tid))
+                lastTurn = tid
+            }
+        }
+        // 事件 id → 轮次，用来把"父事件"翻译成"父轮次"
+        let turnOfEvent = HashMap<Int64, String>()
+        var cur = ""
+        var i: Int64 = 0
+        for (r in db().query("SELECT id, turn_id FROM session_events WHERE session_id = ? ORDER BY id",
+            va([tv(sessionId)]))) {
+            turnOfEvent[r.int(0)] = r.text(1)
+        }
+        for ((evId, tid) in firstOfTurn) {
+            let o = JsonObject()
+            o.put("turnId", JsonString(tid))
+            o.put("eventId", JsonInt(evId))
+            // 父轮次：从这一轮的第一条往上一格；父事件还落在同一轮里就继续往上找
+            var parentTurn = ""
+            var probe = parentOf(evId)
+            var guard: Int64 = 0
+            while (probe > 0 && guard < 100000) {
+                let pt = turnOfEvent.get(probe) ?? ""
+                if (pt != tid) {
+                    parentTurn = pt
+                    break
+                }
+                probe = parentOf(probe)
+                guard += 1
+            }
+            o.put("parentTurnId", JsonString(parentTurn))
+            o.put("active", JsonBool(activeIds.contains(evId)))
+            var user = ""
+            var at = ""
+            var ok: Int64 = -1
+            var tools: Int64 = 0
+            for (r in db().query(
+                "SELECT kind, payload, ts FROM session_events WHERE session_id = ? AND turn_id = ? ORDER BY id",
+                va([tv(sessionId), tv(tid)]))) {
+                let kind = r.text(0)
+                if (kind == "user/message" && user.size == 0) {
+                    user = payloadText(r.text(1), "text")
+                    at = r.text(2)
+                } else if (kind == "tool/call") {
+                    tools += 1
+                } else if (kind == "turn/end") {
+                    ok = if (payloadBool(r.text(1), "ok", false)) { 1 } else { 0 }
+                }
+            }
+            o.put("user", JsonString(byteSafePrefix(user, 60)))
+            o.put("at", JsonString(at))
+            o.put("ok", JsonInt(ok))
+            o.put("tools", JsonInt(tools))
+            out.add(o)
+        }
+        return out
+    }
+
+    /** 从 payload 取一个布尔（缺省按 false）。 */
+    private func payloadBool(payload: String, key: String, fallback: Bool): Bool {
+        if (payload.size == 0) {
+            return fallback
+        }
+        try {
+            match (objOf(JsonValue.fromStr(payload))) {
+                case Some(o) => return boolOf(o, key)
+                case None => ()
+            }
+        } catch (e: Exception) {
+            ()
+        }
+        return fallback
     }
 
     /** 删掉一段会话（它自己的事件与摘要行 + 标题覆盖）。知识库、笔记、错题、产物都不是这段会话的数据，不动。 */
@@ -438,7 +971,8 @@ public class SessionStore {
         for (sid in ids) {
             let o = JsonObject()
             o.put("sessionId", JsonString(sid))
-            o.put("eventCount", JsonInt(counts.get(sid) ?? 0))
+            // 计数同样按**当前分支**：被放弃的分支不计入
+            o.put("eventCount", JsonInt(branchEventIds(sid).size))
             var title = titles.get(sid) ?? ""
             let custom = customTitles.get(sid) ?? ""
             if (custom.size > 0) {
@@ -448,7 +982,7 @@ public class SessionStore {
             }
             var lastAt = ""
             var lastType = ""
-            match (dbh.one("SELECT ts, kind FROM session_events WHERE id = ?", va([nv(lastIds.get(sid) ?? 0)]))) {
+            match (dbh.one("SELECT ts, kind FROM session_events WHERE id = ?", va([nv(leafOf(sid))]))) {
                 case Some(r) =>
                     lastAt = r.text(0)
                     lastType = r.text(1)
@@ -479,6 +1013,31 @@ public class SessionStore {
             ()
         }
         return ""
+    }
+
+    /**
+     * 老库一次性补 parent_id：按 (会话, id) 顺序把每段会话串成一条链 ——
+     * 它本来就是一条线，补完之后行为与原来一模一样，只是从此可以分叉了。
+     */
+    private func migrateTree(): Unit {
+        if (migrationDone(db(), "session_tree")) {
+            return
+        }
+        let ops = ArrayList<DbOp>()
+        var lastSid = ""
+        var lastId: Int64 = 0
+        for (r in db().querySql("SELECT id, session_id, parent_id FROM session_events ORDER BY session_id, id")) {
+            let id = r.int(0)
+            let sid = r.text(1)
+            if (r.isNull(2)) {
+                let parent = if (sid == lastSid) { lastId } else { 0 }
+                ops.add(DbOp("UPDATE session_events SET parent_id = ? WHERE id = ?", va([nv(parent), nv(id)])))
+            }
+            lastSid = sid
+            lastId = id
+        }
+        db().batch(ops)
+        markMigrationDone(db(), "session_tree")
     }
 
     /** 把老的 sessions 目录下的 jsonl 导进数据库，导完保留副本，只导一次。 */

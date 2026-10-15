@@ -1223,6 +1223,117 @@ public func keywordSearch(index: KbIndex, query: String, topK: Int64): ArrayList
 }
 
 
+// ---------- 混合检索：两路候选 → 名次融合 → 去冗 ----------
+/*
+ * 为什么不是"向量 or 关键词"：
+ *   向量擅长近义与意译，但对**专有名词、编号、代码符号**很钝（「1.2 节」「kb_search」「YAML」
+ *   这类词在向量空间里几乎挨在一起）；关键词（字符二元组）反过来 —— 精确命中很强，换个说法就全丢。
+ *   两边各取一批候选、按**名次**融合（RRF），比任何一侧单独用都稳。
+ *
+ * 为什么还要去冗：
+ *   同一份资料里相邻的切片高度相似，Top-K 经常是同一段的续写 —— 模型看到的是"同一件事说三遍"，
+ *   还挤掉了别的文档里的关键证据。这里对"同一份文档已经出过两片"的候选扣分，
+ *   让证据尽量分散（MMR 的简化版：相似度用"同文档/同标题"代理，不再算两两余弦）。
+ */
+
+/** 名次融合（Reciprocal Rank Fusion）：只看"排第几"，不看分数量纲，所以两路可以直接合。 */
+public func rrfFuse(rankings: ArrayList<ArrayList<SearchHit>>, topK: Int64): ArrayList<SearchHit> {
+    let scores = HashMap<String, Float64>()
+    let chunks = HashMap<String, KbChunk>()
+    for (rank in rankings) {
+        var i: Int64 = 0
+        while (i < rank.size) {
+            let h = rank[i]
+            let key = h.chunk.id
+            scores[key] = (scores.get(key) ?? 0.0) + 1.0 / (60.0 + Float64(i + 1))
+            chunks[key] = h.chunk
+            i += 1
+        }
+    }
+    let pool = ArrayList<SearchHit>()
+    for ((key, sc) in scores) {
+        match (chunks.get(key)) {
+            case Some(c) => pool.add(SearchHit(c, sc))
+            case None => ()
+        }
+    }
+    return topHits(pool, topK)
+}
+
+/**
+ * 去冗：同一份文档最多"优待"两片，之后明显降权；紧挨着的同一篇续写再降一档。
+ *
+ * 分数先按池子里的最高分归一化到 [0,1] 再扣分 —— 否则 RRF 分数（约 0.0x 量级）会被
+ * 0.3 级别的扣分直接压平，去冗变成"按扣分排序"。
+ */
+public func diversify(pool: ArrayList<SearchHit>, topK: Int64, lambda: Float64): ArrayList<SearchHit> {
+    let rest = ArrayList<SearchHit>(pool)
+    let picked = ArrayList<SearchHit>()
+    let perDoc = HashMap<String, Int64>()
+    var maxScore = 0.0000001
+    for (h in rest) {
+        if (h.score > maxScore) {
+            maxScore = h.score
+        }
+    }
+    while (picked.size < topK && rest.size > 0) {
+        var best = -1
+        var bestScore = -1.0e308
+        var i: Int64 = 0
+        while (i < rest.size) {
+            let h = rest[i]
+            let doc = h.chunk.docPath
+            let used = perDoc.get(doc) ?? 0
+            var penalty = 0.0
+            if (used >= 2) {
+                penalty = 0.35
+            } else if (used == 1) {
+                penalty = 0.12
+            }
+            if (picked.size > 0 && picked[picked.size - 1].chunk.docPath == doc) {
+                penalty = penalty + 0.18
+            }
+            let score = lambda * (h.score / maxScore) - penalty
+            if (score > bestScore) {
+                bestScore = score
+                best = i
+            }
+            i += 1
+        }
+        if (best < 0) {
+            break
+        }
+        let chosen = rest[best]
+        picked.add(SearchHit(chosen.chunk, chosen.score))
+        perDoc[chosen.chunk.docPath] = (perDoc.get(chosen.chunk.docPath) ?? 0) + 1
+        rest.remove(at: best)
+    }
+    return picked
+}
+
+/**
+ * 混合检索的唯一入口：向量（有就带上）+ 关键词两路 → 融合 → 去冗。
+ *
+ * candidates 是"两路各取多少候选"，比 topK 宽一些才有多余的能去冗。
+ * 返回的第二项是给人看的模式说明（界面与工具摘要里会写"向量+关键词 融合"）。
+ */
+public func hybridSearch(index: KbIndex, query: String, queryVector: Option<Array<Float64>>, topK: Int64): (ArrayList<SearchHit>, String) {
+    let wide = if (topK < 8) { 24 } else { topK * 3 }
+    let rankings = ArrayList<ArrayList<SearchHit>>()
+    var parts = ArrayList<String>()
+    match (queryVector) {
+        case Some(qv) =>
+            rankings.add(search(index, qv, wide))
+            parts.add("向量")
+        case None => ()
+    }
+    rankings.add(keywordSearch(index, query, wide))
+    parts.add("关键词")
+    let fused = rrfFuse(rankings, wide)
+    let out = diversify(fused, topK, 0.75)
+    return (out, joinWith(parts, "+") + " 融合")
+}
+
 /** 从候选里挑出得分最高的 topK 个。返回副本，避免内部标记值污染结果。 */
 public func topHits(pool: ArrayList<SearchHit>, topK: Int64): ArrayList<SearchHit> {
     let n = pool.size

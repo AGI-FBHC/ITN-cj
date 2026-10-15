@@ -6261,6 +6261,8 @@ function msgMeta(opts) {
   const icons = [];
   if (opts.onCopy) icons.push(iconBtn("复制", "copy", opts.onCopy));
   if (opts.onBranch) icons.push(iconBtn("从这里开分支", "branch", opts.onBranch));
+  // 会话内分支（原线保留、可以切回来）——与"复制成新会话"那条不同，文案要说清
+  if (opts.onSplit) icons.push(iconBtn("从这一轮开分支（同一会话内，原线保留）", "branch", opts.onSplit));
   if (opts.onRaw) icons.push(opts.onRaw);
   if (opts.onEdit) icons.push(iconBtn("改这条重发", "pencil", opts.onEdit));
   if (opts.side === "user") {
@@ -6291,8 +6293,12 @@ function renderTurnBlock(t, live) {
         side: "user",
         at: t.userAt,
         onCopy: () => copyText(t.user),
+        onSplit: (t.id && t.id !== "local") ? () => splitFromTurn(t) : null,
         onEdit: canEdit ? () => editTurnInline(t, box) : null,
       }));
+      // 这一轮要是"同一分叉点上的几兄弟"之一，气泡下面给 ‹ n/m ›（会话树）
+      const fam = (t.id && t.id !== "local") ? branchFamilyFor(t.id) : null;
+      if (fam) stack.appendChild(branchSwitchRow(fam));
     }
     u.appendChild(stack);
     if (t.steer) u.appendChild(el("span", "msg-flag", "插话"));
@@ -6450,15 +6456,96 @@ function editTurnInline(t, box) {
   });
 }
 
+/** 这一轮在会话树里属于哪一族分支（不在任何分支上时返回 null）。 */
+function branchFamilyFor(turnId) {
+  const fams = (state.chatTree && state.chatTree.families) || [];
+  for (const f of fams) {
+    const members = f.members || [];
+    for (let i = 0; i < members.length; i++) {
+      if (members[i].turnId === turnId) return { members, idx: i };
+    }
+  }
+  return null;
+}
+
+/** 气泡下面那行 ‹ n/m ›：同一分叉点上的几条线，点一下就换到那条线上。 */
+function branchSwitchRow(fam) {
+  const row = el("div", "branch-switch");
+  const prev = el("button", "bs-btn", "‹");
+  prev.type = "button";
+  prev.title = "上一条分支";
+  prev.disabled = fam.idx <= 0;
+  prev.onclick = () => switchToBranch(fam.members[fam.idx - 1]);
+  const count = el("span", "bs-count", (fam.idx + 1) + "/" + fam.members.length);
+  const next = el("button", "bs-btn", "›");
+  next.type = "button";
+  next.title = "下一条分支";
+  next.disabled = fam.idx >= fam.members.length - 1;
+  next.onclick = () => switchToBranch(fam.members[fam.idx + 1]);
+  row.appendChild(prev);
+  row.appendChild(count);
+  row.appendChild(next);
+  return row;
+}
+
+/** 切到另一条分支：换末端，然后按新分支重画这一段历史。 */
+async function switchToBranch(member) {
+  if (!member) return;
+  try {
+    const d = await api("/api/sessions/set-active", { sessionId: state.chatSessionId, turnId: member.tipTurnId });
+    if (d.ok !== true) { toast("切不过去：这条分支找不到了"); return; }
+    if (typeof state.chatOpenSession === "function") await state.chatOpenSession(state.chatSessionId);
+  } catch (e) {
+    toast("切换失败：" + e.message);
+  }
+}
+
+/** 输入框上面那条"待分叉"提示（取消 = 放弃这次分叉，什么都不会变）。 */
+function splitBarShow() {
+  const bar = document.querySelector(".split-hint");
+  if (!bar) return;
+  bar.hidden = false;
+  bar.innerHTML = "";
+  bar.appendChild(el("span", "sh-text", "已从这一轮开分支：下一条消息从这里长出去，原来那条线保留（发完可用 ‹ 2/2 › 切回去）"));
+  bar.appendChild(btn("取消", "sm ghost", () => { splitBarHide(); })); 
+}
+function splitBarHide() {
+  const bar = document.querySelector(".split-hint");
+  if (bar) { bar.hidden = true; bar.innerHTML = ""; }
+}
+
+/**
+ * 从这一轮开分支：下一条消息接在**这一轮之前**，原来那条线一字不动。
+ *
+ * 用户没发消息就取消的话什么都不该变 —— 所以内核只记下"待分叉点"，真正挪末端是
+ * 下一条事件追加时的事（见 session.cj 的 split / append）。
+ */
+async function splitFromTurn(t) {
+  if (!state.chatSessionId || !t || !t.id || t.id === "local") return;
+  try {
+    const d = await api("/api/sessions/split", { sessionId: state.chatSessionId, turnId: t.id });
+    if (d.ok !== true) { toast("找不到这一轮，刷新一下再试"); return; }
+    splitBarShow();
+    const input = $("chat-input");
+    if (input) {
+      input.value = t.user || "";
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
+  } catch (e) {
+    toast("开分支失败：" + e.message);
+  }
+}
+
 async function resendEdited(t, text, asBranch) {
   if (!text) { toast("内容不能为空"); return; }
   try {
     if (asBranch) {
-      const d = await api("/api/sessions/branch", { sessionId: state.chatSessionId, turnId: t.id });
-      state.chatSessionId = d.sessionId;
-      state.chatEvents = [];
-      state.lastEventId = 0;
-      state.chatTurns = [];
+      /* 同一会话内分叉（会话树）：原线留在库里，发完可以用 ‹ n/m › 切回来。
+         以前这里是"复制成一段新会话"，用户实际想要的是"同一条会话里的另一条线"。 */
+      const d = await api("/api/sessions/split", { sessionId: state.chatSessionId, turnId: t.id });
+      if (d.ok !== true) { toast("这一轮已经找不到了，刷新一下再试"); return; }
+      splitBarHide();
     } else {
       // 内核那边是物理删除：这一轮以及它之后的记录都会被删掉，再发新的
       const d = await api("/api/sessions/rewind", { sessionId: state.chatSessionId, turnId: t.id });
@@ -6466,6 +6553,7 @@ async function resendEdited(t, text, asBranch) {
       const fresh = await api("/api/sessions/events", { sessionId: state.chatSessionId });
       state.chatEvents = fresh.events || [];
       state.lastEventId = fresh.lastId || 0;
+      state.chatTree = fresh.tree || null;
       state.chatTurns = turnsFromEvents(state.chatEvents);
     }
     await reloadSessions();
@@ -6486,7 +6574,7 @@ async function resendEdited(t, text, asBranch) {
  * 与 branchFromTurn 的差别：那个是"从某一轮之前分"（连那一轮一起不要了，换个问法重来）；
  * 这个是"把这段对话整个带走，换条路继续走" —— 顶栏 ⋯ 里的「新建分支」用的是它。
  */
-/** 从这一轮开分支：原会话一字不动，新会话带过来这一轮之前的历史。 */
+/** 从这一轮开分支：原会话一字不动，新会话把这一轮（含）连同之前的历史一起带过去。 */
 async function branchFromTurn(t) {
   try {
     const d = await api("/api/sessions/branch", { sessionId: state.chatSessionId, turnId: t.id });
@@ -6697,6 +6785,10 @@ PAGES.chat = {
     menu.hidden = true;
     let menuBuilt = false;
     inputRow.appendChild(crow);
+    // "待分叉"提示条：坐在输入框上面（没点过"从这条开分支"时它一直 hidden）
+    const splitHint = el("div", "split-hint");
+    splitHint.hidden = true;
+    v.appendChild(splitHint);
     v.appendChild(inputRow);
 
     /* ＋ 菜单：只放真做得成的事。联网方式与技能列表都不在这儿（见上面那段注释）。 */
@@ -6954,6 +7046,10 @@ PAGES.chat = {
       const parts = [t.kind || "", t.user || "", t.ok === null ? "" : String(t.ok), t.message || "",
                      t.activity || "", t.steer ? 1 : 0, (t.citations || []).length, t.report ? 1 : 0,
                      t.resourceProgress ? (t.resourceProgress.name || "1") : ""];
+      // 会话树的分支行（‹ n/m ›）也要进指纹：这一轮跑完时先用旧树画过一版并进了缓存，
+      // 随后才拉到带 families 的新树 —— 指纹不含它的话，切换行要等整页重画才出现（实测踩过）
+      const famSig = (t.id && t.id !== "local") ? branchFamilyFor(t.id) : null;
+      parts.push("bf:" + (famSig ? famSig.idx + "/" + famSig.members.length : ""));
       for (const it of t.items) {
         parts.push(it.t, it.name || "", it.running ? 1 : 0, it.ok == null ? "" : (it.ok ? 1 : 0),
                    it.text ? it.text.length : 0, it.summary ? it.summary.length : 0, it.ms || 0);
@@ -7158,7 +7254,9 @@ PAGES.chat = {
         if (state.chatSessionId === sid) {
           state.chatEvents = d.events || [];
           state.lastEventId = d.lastId || state.lastEventId || 0;
+          state.chatTree = d.tree || null;
           state.chatTurns = turnsFromEvents(state.chatEvents);
+          splitBarHide();   // 这一轮已经发出去了，"待分叉"提示可以收了
         }
       } catch (e) {
         state.chatTurns = state.chatTurns.filter((t) => t.id !== "local" && !String(t.id).startsWith("steer-"));
@@ -7251,6 +7349,7 @@ PAGES.chat = {
         const d = await api("/api/sessions/events", { sessionId: id });
         state.chatEvents = d.events || [];
         state.lastEventId = d.lastId || 0;
+        state.chatTree = d.tree || null;
         state.chatTurns = turnsFromEvents(state.chatEvents);
       } catch (e) {
         toast("读取会话失败：" + e.message);
@@ -7271,6 +7370,7 @@ PAGES.chat = {
         const d = await api("/api/sessions/events", { sessionId: state.chatSessionId });
         state.chatEvents = d.events || [];
         state.lastEventId = d.lastId || 0;
+        state.chatTree = d.tree || null;
         state.chatTurns = turnsFromEvents(state.chatEvents);
         paint();
       } catch (e) {

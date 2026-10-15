@@ -80,28 +80,29 @@ public class ToolRegistry {
             r.summary = "知识库还没有索引"
             return r
         }
-        var hits = ArrayList<SearchHit>()
-        var mode = "关键词"
+        // 混合检索：向量（配了向量模型就带上）+ 关键词两路融合，再做去冗。
+        // 只在一处决定"怎么检索"，界面那条 /api/kb/search 与这里走的是同一个函数。
+        var qv: Option<Array<Float64>> = None
+        var note = ""
         if (s.embedModelId.size > 0) {
             match (s.findModel(s.embedModelId)) {
                 case Some(cfg) =>
                     try {
                         let modelClient = LlmClient(cfg)
                         modelClient.shouldAbort = shouldAbort
-                        let qv = modelClient.embed([query])
-                        hits = search(idx, qv[0], topK)
-                        mode = "向量"
+                        let vecs = modelClient.embed([query])
+                        if (vecs.size > 0) {
+                            qv = Some(vecs[0])
+                        }
                     } catch (e: Exception) {
                         if (shouldAbort()) { throw Exception("已取消") }
-                        hits = keywordSearch(idx, query, topK)
-                        mode = "关键词（向量调用失败：" + e.message + "）"
+                        note = "（向量调用失败，只用了关键词：" + e.message + "）"
                     }
-                case None =>
-                    hits = keywordSearch(idx, query, topK)
+                case None => ()
             }
-        } else {
-            hits = keywordSearch(idx, query, topK)
         }
+        let (hits, mode0) = hybridSearch(idx, query, qv, topK)
+        let mode = mode0 + note
         let arr = JsonArray()
         for (h in hits) {
             arr.add(hitJson(h.chunk, h.score))
@@ -131,26 +132,25 @@ public class ToolRegistry {
                 continue
             }
             searched = searched + 1
-            var hits = ArrayList<SearchHit>()
+            var qv: Option<Array<Float64>> = None
             if (s.embedModelId.size > 0) {
                 match (s.findModel(s.embedModelId)) {
                     case Some(cfg) =>
                         try {
                             let modelClient = LlmClient(cfg)
-                        modelClient.shouldAbort = shouldAbort
-                        let qv = modelClient.embed([query])
-                            hits = search(idx, qv[0], topK)
-                            mode = "向量"
+                            modelClient.shouldAbort = shouldAbort
+                            let vecs = modelClient.embed([query])
+                            if (vecs.size > 0) {
+                                qv = Some(vecs[0])
+                            }
                         } catch (e: Exception) {
                             if (shouldAbort()) { throw Exception("已取消") }
-                            hits = keywordSearch(idx, query, topK)
                         }
-                    case None =>
-                        hits = keywordSearch(idx, query, topK)
+                    case None => ()
                 }
-            } else {
-                hits = keywordSearch(idx, query, topK)
             }
+            let (hits, mode1) = hybridSearch(idx, query, qv, topK)
+            mode = mode1
             let kbName = if (kb.name.size > 0) { kb.name } else { kb.id }
             for (h in hits) {
                 let o = hitJson(h.chunk, h.score)

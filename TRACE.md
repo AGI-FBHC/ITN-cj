@@ -3668,3 +3668,54 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - `stop-check` 11/11；`learning-check --ui` 57/57；内核 `cjpm test` **104/104**。
 - 产物：`dist/Lumin-0.3.9` 与 `dist/Lumin-0.3.9-win-x64.zip`；空数据目录启动 RESULT=OK；启动器指向 0.3.9。
 - 参考仓库克隆在 `tmp/pi-studio-gh`、`tmp/PiDeck-gh`（tmp 已 gitignore）。
+
+
+## 2026-10-16 · 第十一轮：会话树一期（分支/切分支/退回）落地 + 混合检索（Lumin 0.4.0）
+
+### 这一轮做的是什么（对应 pi-studio 差距清单第 1 条"会话树/多分支"）
+
+**内核（`core/src/db/schema.cj`、`core/src/session/session.cj`、`core/src/api/api.cj`）**
+- `session_events` 新增 `parent_id`（父事件 id，0 = 根；老库先 `ALTER TABLE` 加列，加过就忽略）。带上这一列之后，
+  事件表就是一棵真正的树：**事件只追加，分支由"末端（leaf）"决定**，切分支不删任何数据。
+- `migrateTree()`：老数据（parent_id 为 NULL）按 (session,id) 线性补齐一次并打标记；`chainIndex()` 里对 NULL 仍做
+  线性回退（**只有 NULL 才算老数据** —— 曾经把 0 也当老数据回退，结果整棵树退化成一条线，分叉后历史没过滤，实测踩过）。
+- 新 API：`/api/sessions/split`（记"待分叉点"，下一条消息接在那儿）、`/api/sessions/set-active`（某轮所在线换末端）、
+  `/api/sessions/switch`（eventId/turnId 换末端）、`/api/sessions/tree`（每轮 + leaf + families）；
+  `/api/sessions/events` 全量拉取时带上 `tree`（families：同一分叉点上的几兄弟，界面画 ‹ n/m › 用）。
+- `rewind()`（"改这条重发"）= **按 children 递归真删**这一轮及其后代（用户要的"最新回复被覆盖"），
+  别的分支不受影响 —— 老实现按 `id >= from` 删会把兄弟线一起带走。
+- `branch()` / `branchAll()`（新会话分支）：`branchAll` = 当前线整段复制；`branch(turnId)` 本轮改成
+  **含分叉那一轮**（新增 `turnLastEventId`）—— "从这里开分支"时分支点自己留在新会话里，之后才分道；
+  之前是"只带这一轮之前"，与 ⋯ 菜单的"从最新的一条整段带走"自相矛盾（用户报过"新分支没继承历史"）。
+- 会话内 split 的语义固定为 **分叉点在"这一轮之前"**：新线接管这一轮的位置、原线一字不动（pi 的 edit→兄弟分支；
+  输入框预填原问题就是这个流程）。两条语义各司其职，互不冲突。
+
+**前端（`shell/renderer/app.js`、`style.css`）**
+- `state.chatTree` + 气泡下 `‹ n/m ›` 切换行（`.branch-switch`）、"已从这一轮开分支"提示条（`.split-hint`）、
+  `splitFromTurn()` / `switchToBranch()` / `resendEdited(asBranch)`。
+- **踩过的坑**：切换行一开始死活不出现。原因是渲染指纹 `turnSig()` 不含分支家族状态 —— 这轮跑完时先用旧树
+  画过一版并进了缓存，随后才拉到带 `families` 的新树，指纹没变就不重绘。指纹里加上 `bf:idx/count` 后正常。
+- 自检断言（`tools/glass-shot.cjs` 新增 SESSION-TREE）：第一轮气泡上点"从这一轮开分支"→ 发"分叉线的新问法"→
+  当前线只剩新问法且出现 `‹ 2/2 ›` → 点 ‹ 切回原线 `["第三轮，看看列表会不会闪","分支前的第二问"]`。
+
+### 顺带一起提交的：知识库混合检索（之前未提交、TRACE 里没记过）
+- `core/src/kb/kb.cj` 新增 `rrfFuse()`（名次融合，只看排名不看分数量纲）+ `hybridSearch()`
+  （向量 + 关键词两路候选 → RRF 融合 → 同文档去冗），`/api/kb/search` 与模型侧 `kb_search` 工具**同一个入口**。
+- 为什么：向量对专有名词/编号/代码符号很钝，关键词对"换个说法"很钝；两路融合比任何单边都稳；去冗是
+  因为同一份资料相邻切片高度相似，不扣分的话 Top-K 全是同一件事的续写。
+- 实测（隔离数据目录）：`mode=关键词 融合`、命中正确文档（向量模型没配时退化为关键词那一路）。
+
+### 验证与产物
+- 内核 `cjpm test` **109/109**（新增 `session_tree_test.cj`：分叉成兄弟线并保留原线 / rewind 只删子树 /
+  老数据线性兼容 / branchAll 只复制当前线 / branch 含分叉那一轮）。
+- `tools/glass-shot.cjs` 全过（新增 SESSION-TREE 断言；原有 TOPBAR / DRAG / CHAT-MODE / WORK-GROUP / BUBBLE-EDIT /
+  BRANCH 命名（2）（3）（2）（2）/ POPOVER / NEW-SESSION / RAIL-NO-FLASH 等照旧）。
+- `tools/stop-check.cjs` 11/11；`tools/learning-check.cjs --ui` 57/57。
+- 版本 0.3.9 → **0.4.0**；产物 `dist/Lumin-0.4.0` 与 `dist/Lumin-0.4.0-win-x64.zip`（164.2 MB）；
+  8 个关键文件与源文件哈希核对 **BAD=0**；空数据目录启动 RESULT=OK。
+
+### 一期还没做的（按价值排）
+1. `tool/result` 事件没存工具回灌正文：切分支后重建上下文时工具结果只剩"上次中断"占位（要补存才能完全还原）。
+2. 会话树面板（把每一轮画成可点的树，点某轮=切过去）还没做 —— 目前只有气泡下的 ‹ n/m › 行。
+3. 二期：AI 改动草稿与合并（write/edit 先落草稿区、变更文件卡给"看差异/撤销这次改动"、`/api/drafts/*`、设置开关）。
+4. 三期：docx/pptx 两段式（补 `.docx` 文字预览；`shell/deck-export.js` 做 Markdown→pptx/docx 导出，子代理被打断未产出，需重派）。
