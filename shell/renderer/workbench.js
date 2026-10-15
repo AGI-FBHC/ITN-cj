@@ -265,7 +265,6 @@ async function workbenchAfterPage() {
   document.querySelector('.wb-toolbar')?.remove();
   if (current !== 'chat' || currentSection === 'overview') { dock.hidden = true; return; }
   const bar = el('div', 'wb-toolbar');
-  bar.appendChild(el('span', 'wb-brand', 'lumin'));
   const scope = el('span', 'wb-scope', scopeNow() ? kbName(scopeNow()) : '全部本地知识库');
   scope.title = state.chapter ? '正在学习：' + state.chapter : '当前会话资料范围';
   bar.appendChild(scope);
@@ -284,6 +283,7 @@ async function workbenchAfterPage() {
       const d = await api('/api/sessions/events', {sessionId: sid});
       if (state.chatSessionId !== sid) return;
       state.chatEvents = d.events || [];
+      state.lastEventId = d.lastId || state.lastEventId || 0;   // 增量轮询的游标
       state.chatTurns = turnsFromEvents(state.chatEvents);
       syncWorkbenchEvents(state.chatEvents);
       if (!['running', 'cancelling'].includes(workbench.task?.status)) {

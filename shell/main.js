@@ -12,6 +12,7 @@ let kernel = null;
 /** 开发期用 dist/core，打包后用 resources/kernel。 */
 function kernelPath() {
   const candidates = [
+    process.resourcesPath ? path.join(process.resourcesPath, "kernel", "lumin-core.exe") : null,
     process.resourcesPath ? path.join(process.resourcesPath, "kernel", "itn-desktop-core.exe") : null,
     path.join(__dirname, "..", "dist", "core", "itn-desktop-core.exe"),
   ];
@@ -75,15 +76,42 @@ function cleanStaleDbLock(dataDir) {
   }
 }
 
+/**
+ * 数据目录。
+ *
+ * 软件从 ITN-Desktop 改名 Lumin，但**绝不能**让用户的学习数据看起来丢了：
+ * 新目录没有库、老目录有库时，先把老目录整体拷过来（老目录原样留着当备份）；
+ * 拷贝失败就继续用老目录 —— 宁可名字旧，也不能把数据放丢。
+ */
+function resolveDataDir(dataRoot) {
+  const fresh = path.join(dataRoot, "Lumin");
+  const legacy = path.join(dataRoot, "ITN-Desktop");
+  try {
+    if (fs.existsSync(path.join(fresh, "itn.db"))) return fresh;      // 新目录已经有数据
+    if (!fs.existsSync(path.join(legacy, "itn.db"))) return fresh;    // 老目录也没有，正常新建
+    fs.mkdirSync(fresh, { recursive: true });
+    fs.cpSync(legacy, fresh, { recursive: true, force: true });
+    // 拷过来的可能是"上次被强杀留下的锁标记"，在 Windows 上它会一直被认成有人持锁
+    for (const f of fs.readdirSync(fresh)) {
+      if (f.indexOf("itn.db-cjflock") === 0) fs.rmSync(path.join(fresh, f), { recursive: true, force: true });
+    }
+    console.log("DATA_MIGRATED " + legacy + " -> " + fresh);
+    return fresh;
+  } catch (e) {
+    console.log("DATA_MIGRATE_FAIL " + ((e && e.message) || e) + " —— 继续用老目录");
+    return legacy;
+  }
+}
+
 async function startKernel() {
   const exe = kernelPath();
   if (!exe) throw new Error("找不到内核可执行文件，请先运行 scripts/package.ps1");
-  const portFile = path.join(os.tmpdir(), "itn-desktop-" + Date.now() + ".port");
+  const portFile = path.join(os.tmpdir(), "lumin-" + Date.now() + ".port");
   const uiDir = path.join(__dirname, "renderer");
   // 与内核独立运行时的默认目录保持一致。此前用 Electron 的 userData，
   // 导致同一个软件出现两个数据目录，用户和文档都会对不上。
   const dataRoot = process.env.LOCALAPPDATA || app.getPath("userData");
-  const dataDir = path.join(dataRoot, "ITN-Desktop");
+  const dataDir = resolveDataDir(dataRoot);
   fs.mkdirSync(dataDir, { recursive: true });
   cleanStaleDbLock(dataDir);
 
@@ -118,7 +146,7 @@ async function createWindow() {
     height: 780,
     minWidth: 900,
     minHeight: 600,
-    title: "ITN-Desktop",
+    title: "Lumin",
     icon: path.join(__dirname, "assets", "logo.png"),
     // 自绘标题栏：Electron 的 frame:false 会把系统标题栏整条去掉，
     // 界面自己在顶部画一条深绿色的框（brand + 窗口按钮），看起来才是"一个软件"。
@@ -234,7 +262,7 @@ async function createWindow() {
     }
     for (const l of lines) console.log("SMOKE_" + l);
     // 打包后的 Electron 是 GUI 程序，控制台看不到输出，因此同时写文件
-    fs.writeFileSync(path.join(os.tmpdir(), "itn-desktop-smoke-result.txt"), lines.join("\n"), "utf8");
+    fs.writeFileSync(path.join(os.tmpdir(), "lumin-smoke-result.txt"), lines.join("\n"), "utf8");
     setTimeout(() => app.quit(), 200);
   });
 

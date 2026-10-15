@@ -67,15 +67,32 @@ public class SessionStore {
     }
 
     public func events(sessionId: String): ArrayList<JsonObject> {
+        return eventsSince(sessionId, 0)
+    }
+
+    /**
+     * 只取 id 大于 sinceId 的事件。
+     *
+     * 流式输出时前端每 200ms 拉一次：整段历史重传既费带宽也让浏览器反复解析大 JSON，
+     * 长会话里这正是"打字机"发卡的主因。带上游标只回增量，顺便把每条事件的 id 回给前端，
+     * 下一次接着从它开始拉。
+     */
+    public func eventsSince(sessionId: String, sinceId: Int64): ArrayList<JsonObject> {
         let out = ArrayList<JsonObject>()
-        for (r in db().query("SELECT ts, kind, turn_id, payload FROM session_events WHERE session_id = ? ORDER BY id",
-            va([tv(sessionId)]))) {
+        let sql = if (sinceId > 0) {
+            "SELECT id, ts, kind, turn_id, payload FROM session_events WHERE session_id = ? AND id > ? ORDER BY id"
+        } else {
+            "SELECT id, ts, kind, turn_id, payload FROM session_events WHERE session_id = ? ORDER BY id"
+        }
+        let args = if (sinceId > 0) { va([tv(sessionId), nv(sinceId)]) } else { va([tv(sessionId)]) }
+        for (r in db().query(sql, args)) {
             let o = JsonObject()
+            o.put("id", JsonInt(r.int(0)))
             o.put("sessionId", JsonString(sessionId))
-            o.put("type", JsonString(r.text(1)))
-            o.put("at", JsonString(r.text(0)))
-            o.put("turnId", JsonString(r.text(2)))
-            let payload = r.text(3)
+            o.put("type", JsonString(r.text(2)))
+            o.put("at", JsonString(r.text(1)))
+            o.put("turnId", JsonString(r.text(3)))
+            let payload = r.text(4)
             if (payload.size > 0) {
                 try {
                     o.put("payload", JsonValue.fromStr(payload))
@@ -135,6 +152,8 @@ public class SessionStore {
         o.put("lastAt", JsonString(lastAt))
         o.put("kind", JsonString(kind))
         o.put("kbId", JsonString(kbId))
+        // 会话挂在哪个项目下（侧栏按项目分组用；''=未归档）
+        o.put("projectId", JsonString(db().getKv("sessions_meta", "project:" + sessionId, "")))
         return o
     }
 
@@ -166,6 +185,7 @@ public class SessionStore {
         db().delKv("sessions_meta", "title:" + sessionId)
         db().delKv("sessions_meta", "context:" + sessionId)
         db().delKv("sessions_meta", "state:" + sessionId)
+        db().delKv("sessions_meta", "project:" + sessionId)
     }
 
     public func list(): ArrayList<JsonObject> {

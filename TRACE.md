@@ -3199,3 +3199,16 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - 产物：dist/ITN-Desktop-0.2.3/ITN-Desktop.exe 与 dist/ITN-Desktop-0.2.3-win-x64.zip（release.json: 0.2.3 / flat-chrome-20261015）；启动ITN-Desktop.cmd 指向 0.2.3；0.2.0~0.2.2 保留可回退。
 - 提交 a4b5336；重打包后 0.2.3 的 release.json 记录 sourceCommit=a4b5336245bccdcd6fa26f994fc6c08e6ab94670。
 
+
+## 2026-10-15 Lumin 改名 + 内部组件去玻璃 + 项目制 + 流式优化
+- 用户这批需求（按顺序）：① 新建对话不要按知识库区分，默认检索全部知识库，改成按项目/文件夹组织（像 Codex 一个项目一个文件夹）；② ＋ 菜单只留权限选择，其他动作撤掉；③ 对话文字输出卡顿要优化；④ 深色背景不要绿色，改黑灰渐变或纯色；⑤ 几个大组件框内部不要毛玻璃（菜单半透明导致底下文字透上来，看着像字体重叠）；⑥ 对话框不要任何毛玻璃，点进去那个方框也去掉；⑦ 权限菜单完全照 ChatGPT 那版做、小字不换行；⑧ 整个 harness 从 ITN-Desktop 改名 Lumin，接入三张 logo；⑨ 空态 Logo 换成主 logo 且跟随主题。
+- 视觉层：内部组件（卡片/列表行/按钮/输入框/气泡/代码块/选项）全部去掉 backdrop-filter 与扫光，改成实心面（--inner-fill，比外壳面板 92% 不透明）；浮层（＋菜单/检索/弹窗/播放页）改成完全不透明 —— 这是"字重叠"的真正原因（玻璃菜单把底下的正文透上来了）。对话框连玻璃带 focus 光圈一起去掉。深色环境光场去掉绿色，只留黑灰提亮。整个"磨砂玻璃"只剩下四块外壳：窄侧栏 / 会话栏 / 主区 / 成果面板。
+- 权限菜单：照 ChatGPT 那版重做 —— 标题行"应如何批准 Lumin 操作？" + 了解更多（指向 设置→智能体），三行各带专属图标（手/盾/警告三角）+ 标题 + 副标题，选中的那行用琥珀色 + 右侧打勾；副标题 nowrap，菜单按内容撑宽（min 300 / max 440）。同时修掉一个真 bug：点权限 chip 时 .cm-actions 没被隐藏，9 项挤在 545px 里溢出屏幕。
+- ＋ 菜单只留权限三档；原来那 5 个动作按用户要求撤掉，其中"工具与技能"清单挪到 设置→智能体（新增一张卡），工作目录那项改成一行提示（它不是"权限"）。
+- 流式优化：内核 /api/sessions/events 支持 sinceId，事件带回 id 与 lastId（SessionStore.eventsSince）；前端轮询从"每 400ms 拉全量历史 + thread.innerHTML 全量重建"改成"每 220ms 只拉增量 + 按轮次缓存节点、只重建变化的那一轮"。另外：用户往上翻时不再被强制拽回底部（原来每 200ms 强拉一次，历史根本翻不动）。
+- 项目制：新增 core/src/project/project.cj（项目 = 一个本机文件夹，清单存 settings/projects_json，会话归属存 sessions_meta project:<sid>）；接口 /api/projects/list|save|delete 与 /api/sessions/bind，/api/sessions/new 支持 projectId，会话摘要带 projectId；项目文件夹同时作为该会话的工作目录（workContextOf 里优先用它）。前端：新建对话那排 chip 从"通用 / 每个知识库"换成"每个项目 + 新建项目…"，会话按项目分组（未归档放最后），会话行的 ⋯ 菜单加"移到项目…"，发送时 kbId 恒为空串（= 检索本机全部知识库）。
+- 改名 Lumin：窗口标题/标题栏/状态栏/关于页/报告页脚/模型系统提示全部改掉；exe 改成 Lumin.exe、内核副本改成 lumin-core.exe（main.js 优先找新名、找不到退回老名）；启动器新增 启动Lumin.cmd；包名/版本 0.3.0。
+- 数据目录迁移（改名最容易出事的地方）：新目录 %LOCALAPPDATA%\Lumin，老目录 ITN-Desktop 有库而新目录没有时整体复制过去、清掉拷来的陈旧锁标记；拷贝失败就继续用老目录。新增 tools/data-migration-check.ps1 用真实老库做只读来源验证：老库 143,360 字节 / 会话 2 段 / 事件 25 条全部搬到 Lumin、旧目录一字未动、锁标记已清、启动 RESULT=OK。
+- Logo：D:\Downloads 的三张 1254px 图裁成 shell/renderer/logo-mark.png（透明 72px，标题栏与窗口图标）、logo-light.png / logo-dark.png（256px，关于页品牌位），另覆盖 shell/assets/logo.png（窗口图标）；内核静态白名单放行这三张；applyTheme 里按主题切换 logo（空态与关于页都跟着换）。
+- 验证：tools/glass-shot.cjs 13 页截图（浅/深/窄窗/菜单/滚动条）+ 顶部栏无模糊无投影断言 + 品牌断言（标题 Lumin、三张 logo 可取、关于页品牌位、对话框无单独标签）+ logo 主题切换断言（深色 logo-dark、浅色 logo-light）+ 控制台零报错；tools/scrollbar-check.cjs 原生 15px → 自绘 9px；tools/stop-check.cjs 11/11；tools/learning-check.cjs --ui 57/57；tools/package-isolated-smoke.ps1 用 Lumin-0.3.0 空数据目录启动 RESULT=OK；包内 style.css/app.js/logo-mark.png/lumin-core.exe 与源码 SHA256 一致。
+- 产物：dist/Lumin-0.3.0/Lumin.exe 与 dist/Lumin-0.3.0-win-x64.zip（release.json: 0.3.0 / lumin-rebrand-20261015）；启动Lumin.cmd 指向它；旧包 ITN-Desktop-0.2.0~0.2.3 与 启动ITN-Desktop.cmd 保留可回退。

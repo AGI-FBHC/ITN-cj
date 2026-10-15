@@ -73,9 +73,31 @@ const freePort = () => new Promise((res, rej) => {
     await nav('learn'); await shot('07-learn');
     await nav('report'); await shot('08-report');
     await nav('settings'); await shot('09-settings');
+    await page.evaluate(() => go('settings', 'about')); await sleep(700); await shot('09b-about');
+
+    // 改名 Lumin + logo 接入：标题、品牌名、静态白名单、对话框里不再有单独的标签
+    if (await page.title() !== 'Lumin') throw new Error('窗口标题应改成 Lumin，实际 ' + (await page.title()));
+    if ((await page.locator('.tb-name').innerText()).trim() !== 'Lumin') throw new Error('标题栏品牌名应为 Lumin');
+    if (await page.locator('.wb-brand').count()) throw new Error('对话框里不该再有单独的 lumin 标签');
+    for (const f of ['/logo-mark.png', '/logo-light.png', '/logo-dark.png']) {
+      const r = await page.request.get(base + f);
+      if (r.status() !== 200) throw new Error(f + ' 取不到（HTTP ' + r.status() + '），静态白名单没放行');
+    }
+    if (!(await page.locator('.about-logo').isVisible())) throw new Error('关于页应显示品牌 logo');
+    console.log('BRAND ok: title=Lumin / logo-mark /logo-light /logo-dark / about 品牌位');
     await nav('chat');
     await page.evaluate(() => applyTheme('dark')); await sleep(900);
     await shot('10-dark-workbench');
+    // 品牌 logo 必须跟着主题换（深色挂深底那版、浅色挂浅底那版）
+    await page.evaluate(() => go('settings', 'about')); await sleep(700);
+    let src = await page.locator('.about-logo').getAttribute('src');
+    if (!/logo-dark\.png$/.test(src)) throw new Error('深色下 about logo 应为深底那版，实际 ' + src);
+    await shot('10b-dark-about');
+    await page.evaluate(() => applyTheme('light')); await sleep(600);
+    src = await page.locator('.about-logo').getAttribute('src');
+    if (!/logo-light\.png$/.test(src)) throw new Error('浅色下 about logo 应为浅底那版，实际 ' + src);
+    console.log('LOGO-THEME ok: dark=logo-dark light=logo-light');
+    await page.evaluate(() => applyTheme('dark')); await sleep(400);
     await nav('resources'); await shot('11-dark-resources');
     await nav('settings'); await shot('12-dark-settings');
     await page.evaluate(() => applyTheme('light')); await sleep(400);

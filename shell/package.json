@@ -1,8 +1,8 @@
 {
-  "name": "itn-desktop",
-  "version": "0.2.3",
+  "name": "lumin",
+  "version": "0.3.0",
   "private": true,
-  "description": "ITN-Desktop 本地教培 Agent",
+  "description": "Lumin 本地个人学习 Agent",
   "main": "main.js",
   "scripts": {
     "start": "electron ."

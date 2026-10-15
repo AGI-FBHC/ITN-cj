@@ -1,6 +1,7 @@
 package itn_desktop_core.api
 
 import itn_desktop_core.learning.LearningStore
+import itn_desktop_core.project.ProjectStore
 import itn_desktop_core.agent.learningTools
 import itn_desktop_core.resource.isResourceKind
 
@@ -127,8 +128,8 @@ public class Api {
             o.put("status", JsonString("ok"))
             o.put("service", JsonString("itn-desktop-core"))
             o.put("cangjie", JsonString("1.2.0"))
-            o.put("version", JsonString("0.2.3"))
-            o.put("build", JsonString("flat-chrome-20261015"))
+            o.put("version", JsonString("0.3.0"))
+            o.put("build", JsonString("lumin-rebrand-20261015"))
             ok(ctx, o)
             return
         }
@@ -1292,9 +1293,61 @@ public class Api {
             // 界面点「新建对话」时先开一个会话 id，这样提问前就能把它显示在会话栏里，
             // 生成过程中也能按这个 id 轮询事件做流式输出。
             let ss = SessionStore(store.dataDir)
+            let sid = ss.newId()
             let o = JsonObject()
-            o.put("sessionId", JsonString(ss.newId()))
+            o.put("sessionId", JsonString(sid))
+            // 新建时可以指定项目：会话一出生就归到那个文件夹下
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let pid = strOf(b, "projectId")
+                    if (pid.size > 0) {
+                        ProjectStore(store.dataDir).bind(sid, pid)
+                    }
+                    o.put("projectId", JsonString(pid))
+                case None => ()
+            }
             ok(ctx, o)
+            return
+        }
+
+        // ---------- 项目（一个项目 = 一个本机文件夹） ----------
+        if (path == "/api/projects/list" && method == "POST") {
+            let arr = JsonArray()
+            for (p in ProjectStore(store.dataDir).list()) {
+                arr.add(p.toJson())
+            }
+            let o = JsonObject()
+            o.put("projects", arr)
+            ok(ctx, o)
+            return
+        }
+        if (path == "/api/projects/save" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => try {
+                    ok(ctx, ProjectStore(store.dataDir).save(strOf(b, "id"), strOf(b, "name"), strOf(b, "root")).toJson())
+                } catch (e: Exception) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/projects/delete" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    ProjectStore(store.dataDir).remove(strOf(b, "id"))
+                    ok(ctx, JsonString("ok"))
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/sessions/bind" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let sid = strOf(b, "sessionId")
+                    if (sid.size == 0) { fail(ctx, 400, "缺少 sessionId"); return }
+                    ProjectStore(store.dataDir).bind(sid, strOf(b, "projectId"))
+                    ok(ctx, JsonString("ok"))
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
             return
         }
 
@@ -1363,11 +1416,18 @@ public class Api {
                     }
                     let ss = SessionStore(store.dataDir)
                     let arr = JsonArray()
-                    for (ev in ss.events(id)) {
+                    // sinceId：前端流式轮询只拉增量，不再每次重传整段历史
+                    var lastId = intOf(b, "sinceId")
+                    for (ev in ss.eventsSince(id, lastId)) {
+                        match (ev.get("id")) {
+                            case Some(v) => match (v) { case n: JsonInt => lastId = n.getValue(); case _ => () }
+                            case None => ()
+                        }
                         arr.add(ev)
                     }
                     let o = JsonObject()
                     o.put("events", arr)
+                    o.put("lastId", JsonInt(lastId))
                     ok(ctx, o)
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -2205,7 +2265,8 @@ func contentTypeOf(name: String): String {
 func serveStatic(ctx: HttpContext, uiDir: String, rel: String): Unit {
     let name = if (rel == "/") { "index.html" } else { String.fromUtf8(rel.toArray()[1..rel.toArray().size]) }
     // 只允许白名单文件名，避免路径穿越
-    let allowed = ["index.html", "app.js", "style.css", "workbench.js", "workbench.css", "release.json"]
+    let allowed = ["index.html", "app.js", "style.css", "workbench.js", "workbench.css", "release.json",
+        "logo-mark.png", "logo-light.png", "logo-dark.png"]
     var ok = false
     for (a in allowed) {
         if (a == name) { ok = true }
@@ -2291,6 +2352,11 @@ func workContextOf(store: Store, b: JsonObject): WorkContext {
     let db = DbHub.open(store.dataDir)
     let work = WorkContext()
     work.dir = db.getKv("settings", "agent_work_dir", "")
+    // 会话挂在项目下时，工作目录跟着项目走（项目 = 用户自己选的那个文件夹）
+    let projectRoot = ProjectStore(store.dataDir).rootOf(strOf(b, "sessionId"))
+    if (projectRoot.size > 0) {
+        work.dir = projectRoot
+    }
     let permReq = strOf(b, "perm")
     work.perm = if (permReq.size > 0) { permReq } else { db.getKv("settings", "agent_perm", "ask") }
     let execReq = strOf(b, "exec")
@@ -2384,6 +2450,10 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/learning/memory/forget",
         "/api/learning/answer",
         "/api/learning/progress",
+        "/api/projects/list",
+        "/api/projects/save",
+        "/api/projects/delete",
+        "/api/sessions/bind",
         "/api/sessions/new",
         "/api/sessions/list",
         "/api/sessions/events",
@@ -2416,7 +2486,8 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         server.distributor.register(r, { ctx: HttpContext => api.handle(ctx) })
     }
     // 界面由内核托管，外壳与界面同源，避免跨域
-    let statics = ["/", "/index.html", "/app.js", "/style.css", "/workbench.js", "/workbench.css", "/release.json"]
+    let statics = ["/", "/index.html", "/app.js", "/style.css", "/workbench.js", "/workbench.css", "/release.json",
+        "/logo-mark.png", "/logo-light.png", "/logo-dark.png"]
     for (s in statics) {
         server.distributor.register(s, { ctx: HttpContext => serveStatic(ctx, uiDir, s) })
     }

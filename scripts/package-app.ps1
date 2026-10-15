@@ -1,9 +1,9 @@
 # 组装可独立分发的桌面应用（绿色压缩包，目标机器无需安装仓颉或 Node）
 param(
-    [string]$OutDir = "$PSScriptRoot\..\dist\ITN-Desktop",
-    [string]$ZipPath = "$PSScriptRoot\..\dist\ITN-Desktop-win-x64.zip",
+    [string]$OutDir = "$PSScriptRoot\..\dist\Lumin",
+    [string]$ZipPath = "$PSScriptRoot\..\dist\Lumin-win-x64.zip",
     # 包内 release.json 的构建标识（版本号取 shell/package.json）
-    [string]$Build = 'flat-chrome-20261015'
+    [string]$Build = 'lumin-rebrand-20261015'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -37,20 +37,25 @@ if (Test-Path -LiteralPath (Join-Path $repo "shell\skills")) {
 }
 
 $sourcePackage = Get-Content -LiteralPath (Join-Path $repo 'shell/package.json') -Raw | ConvertFrom-Json
-$pkgJson = @{ name = 'itn-desktop'; version = $sourcePackage.version; private = $true; main = 'main.js' } | ConvertTo-Json
+$pkgJson = @{ name = 'lumin'; version = $sourcePackage.version; private = $true; main = 'main.js' } | ConvertTo-Json
 Set-Content -LiteralPath (Join-Path $appDir "package.json") -Value $pkgJson -Encoding utf8
 
 Copy-Item -Path (Join-Path $repo "dist\core\*") -Destination $kernelDir -Recurse -Force
+# 内核副本改叫 lumin-core（任务管理器里看到的是产品名）；main.js 优先找新名字，找不到退回老名字
+$legacyKernel = Join-Path $kernelDir "itn-desktop-core.exe"
+if (Test-Path -LiteralPath $legacyKernel) {
+    Move-Item -LiteralPath $legacyKernel -Destination (Join-Path $kernelDir "lumin-core.exe") -Force
+}
 
 # 4) 用应用名替换默认启动文件名
 $srcExe = Join-Path $OutDir "electron.exe"
 if (Test-Path -LiteralPath $srcExe) {
-    Move-Item -LiteralPath $srcExe -Destination (Join-Path $OutDir "ITN-Desktop.exe") -Force
+    Move-Item -LiteralPath $srcExe -Destination (Join-Path $OutDir "Lumin.exe") -Force
 }
 
 # 4.5) 随包附带说明书，让解压的人不必翻仓库
-Copy-Item -LiteralPath (Join-Path $repo "docs\07-使用说明.md") -Destination (Join-Path $OutDir "使用说明.md") -Force
-Copy-Item -LiteralPath (Join-Path $repo "docs\05-仓颉杯提交说明.md") -Destination (Join-Path $OutDir "系统说明.md") -Force
+Copy-Item -LiteralPath (Join-Path $repo "docs\07-使用说明.md") -Destination (Join-Path $OutDir "Lumin-使用说明.md") -Force
+Copy-Item -LiteralPath (Join-Path $repo "docs\05-仓颉杯提交说明.md") -Destination (Join-Path $OutDir "Lumin-系统说明.md") -Force
 
 # 5) 压缩
 $sourceCommit = (git -C $repo rev-parse HEAD).Trim()
@@ -59,7 +64,7 @@ $assetFiles = @(
     'resources/app/main.js', 'resources/app/preload.js',
     'resources/app/renderer/index.html', 'resources/app/renderer/app.js',
     'resources/app/renderer/style.css', 'resources/app/renderer/workbench.js',
-    'resources/app/renderer/workbench.css', 'resources/kernel/itn-desktop-core.exe'
+    'resources/app/renderer/workbench.css', 'resources/kernel/lumin-core.exe'
 )
 foreach ($relative in $assetFiles) {
     $assetHashes[$relative] = (Get-FileHash -LiteralPath (Join-Path $OutDir $relative) -Algorithm SHA256).Hash

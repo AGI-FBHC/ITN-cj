@@ -494,7 +494,7 @@ fs.writeFileSync(singleFile, [
     assert(titles.join('/').indexOf('提示词') >= 0, '文档清单里应有 E2E 造的 01-提示词.md，实际 ' + titles.join('/'));
     // 动作就三个：重建索引 / 让 lumin 整理 / 设置里改
     const acts = await page.$$eval('#view .card-head button', (els) => els.map((e) => e.textContent.trim()));
-    assert(acts.join('/').indexOf('重建索引') >= 0 && acts.join('/').indexOf('让 lumin 整理') >= 0, '详情卡上应有这两个动作，实际 ' + acts.join('/'));
+    assert(acts.join('/').indexOf('重建索引') >= 0 && acts.join('/').indexOf('让 Lumin 整理') >= 0, '详情卡上应有这两个动作，实际 ' + acts.join('/'));
     // 接口也把文档清单回出来了（界面不自己拼）
     assert((api.docs || []).length === api.docCount, '接口的 docs 数与 docCount 应一致，实际 ' + (api.docs || []).length + ' vs ' + api.docCount);
     await shot('56-知识库详情');
@@ -1431,7 +1431,7 @@ fs.writeFileSync(singleFile, [
     const bar = await page.locator('#titlebar').count();
     assert(bar === 1, '应有自绘标题栏');
     const text = await page.locator('#titlebar .tb-brand').innerText();
-    assert(text.indexOf('ITN-Desktop') >= 0, '标题栏应显示应用名 ITN-Desktop，实际：' + text.replace(/\s+/g, ' '));
+    assert(text.indexOf('Lumin') >= 0, '标题栏应显示应用名 Lumin，实际：' + text.replace(/\s+/g, ' '));
     const logoOk = await page.evaluate(() => { const i = document.querySelector('#titlebar .tb-logo'); return !!i && i.complete && i.naturalWidth > 0; });
     assert(logoOk, '标题栏应显示网页版那个 logo（图片要真的加载出来）');
     for (const id of ['win-min', 'win-max', 'win-close']) {

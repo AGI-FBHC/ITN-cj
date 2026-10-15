@@ -2161,3 +2161,204 @@ body.panel-hidden #rail-toggle { background-color: color-mix(in srgb, var(--ink)
 }
 *::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--ink) 32%, transparent); }
 *::-webkit-scrollbar-thumb:active { background-color: color-mix(in srgb, var(--ink) 46%, transparent); }
+/* ============================================================
+   内部组件去毛玻璃（2026-10-15 第二轮）
+   ------------------------------------------------------------
+   用户反馈：内部组件再做毛玻璃很奇怪；菜单半透明时底下的正文会透上来，
+   看起来像"字与字叠在一起"；对话框点一下还冒出一个方框。
+   规则改成：
+     · 只有四块外壳（窄侧栏 / 会话栏 / 主区 / 成果面板）是磨砂玻璃；
+     · 壳里的一切（卡片、列表行、按钮、输入框、气泡、代码块）都是实心面，
+       不再吃 backdrop-filter，也不再叠扫光；
+     · 浮层（＋菜单、检索面板、对话弹窗、播放页）完全不透明 —— 它是盖在
+       内容上的，必须挡住下面的字；
+     · 对话框（composer）连玻璃带高光一起去掉，focus 也不再画光圈。
+   ============================================================ */
+:root {
+  /* 壳里的面：留一点点底色，不与外壳完全同色；浮层用完全不透明 */
+  --inner-fill: color-mix(in srgb, var(--panel) 92%, transparent);
+  --popover-fill: var(--panel);
+}
+
+/* 1) 去掉内部组件上的模糊与扫光 */
+.card, .chat-head, .composer, .composer-menu, .composer-chip, .item, .stat, .check-item,
+.theme-card, .review-banner, .review-nudge, .graph-side, .artifact-preview, .path-line,
+.quote-block, .md pre, .md code, .res-tabs, .btn, .seg, .panel-seg, .seg-item.active,
+.panel-item.active, .nav-item.active, .msg-user .msg-body, .think-text, .approval-card,
+.turn, .palette-box, .player-page, .empty, .resource-entry, .quiz-choice, .resource-notice,
+.wb-interrupted, .resource-diff-lines, .practice-output, .empty-badge, .nav-badge,
+.settings-nav button.active, .composer-icon, .panel-btn, .tool-row {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background-image: none;
+}
+
+/* 2) 壳里的面 = 实心 */
+.card, .chat-head, .item, .stat, .check-item, .theme-card, .review-banner, .review-nudge,
+.graph-side, .artifact-preview, .quote-block, .md pre, .res-tabs, .turn, .resource-entry,
+.quiz-choice, .practice-output, .resource-diff-lines, .think-text, .empty {
+  background-color: var(--inner-fill);
+}
+.stat, .check-item, .theme-card, .item, .quote-block, .md pre, .md code, .artifact-preview,
+.turn, .resource-entry, .quiz-choice, .practice-output, .resource-diff-lines {
+  box-shadow: inset 0 0 0 1px var(--glass-rim), var(--glass-lift-sm);
+}
+.md code { box-shadow: inset 0 0 0 1px var(--glass-rim); }
+/* 凹陷面（输入框、代码块、选项）保持一点内凹，但不再透明到能看见底下的字 */
+input, select, textarea { background-color: var(--inner-fill); box-shadow: var(--well-inner); }
+
+/* 3) 浮层 = 不透明，压在内容上必须挡得住 */
+.composer-menu, .palette-box, .card.dialog, .player-page, .player-head, .player-foot,
+.player-toc, .composer, .approval-card, .tool-sheet {
+  background-color: var(--popover-fill);
+  background-image: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.composer-menu, .palette-box, .card.dialog, .player-page {
+  box-shadow: inset 0 0 0 1px var(--glass-rim), var(--glass-lift-lg);
+}
+.player { background-color: color-mix(in srgb, var(--panel-soft) 94%, transparent); backdrop-filter: blur(6px); }
+
+/* 4) 按钮与小控件：实心，只留一点点边缘 */
+.btn, .composer-chip, .seg-item.active, .panel-item.active, .nav-item.active,
+.settings-nav button.active, .empty-badge, .tag {
+  background-color: var(--inner-fill);
+}
+.btn { box-shadow: inset 0 0 0 1px var(--glass-rim); }
+.btn:hover { background-color: color-mix(in srgb, var(--panel) 88%, var(--brand) 4%); }
+.btn.ghost { background-color: transparent; box-shadow: none; }
+.btn.ghost:hover { background-color: var(--brand-soft); box-shadow: none; }
+.btn.primary { background-color: var(--brand); }
+.btn.primary:hover { background-color: var(--brand-strong); }
+.nav-item.active { background-color: var(--rail-hi); box-shadow: inset 0 0 0 1px var(--glass-rim); }
+.panel-item.active { background-color: var(--inner-fill); }
+.msg-user .msg-body { background-color: var(--inner-fill); box-shadow: inset 0 0 0 1px var(--glass-rim); }
+
+/* 5) 对话框：不要玻璃，也不要 focus 方框 */
+.composer { border-radius: var(--glass-r-md); box-shadow: 0 1px 2px rgba(11, 34, 23, .05); }
+.composer:focus-within { box-shadow: 0 1px 2px rgba(11, 34, 23, .05); }
+.composer textarea, .composer textarea:focus, .composer input, .composer input:focus,
+.composer select, .composer select:focus {
+  background: transparent;
+  box-shadow: none;
+  outline: 0;
+  border: 0;
+}
+/* 输入框的 focus 只保留一圈很淡的描边，不再画那种 3px 的方框 */
+input:focus, select:focus, textarea:focus {
+  outline: 0;
+  box-shadow: inset 0 0 0 1px var(--brand-line), inset 0 1px 2px rgba(11, 34, 23, .05);
+}
+.tool-row:hover, .composer-menu-item:hover { background-color: color-mix(in srgb, var(--panel) 80%, var(--brand) 3%); }
+
+/* 6) 深色背景：去掉绿色，改成纯黑灰渐变 */
+html[data-theme="dark"] {
+  --amb-1: rgba(232, 238, 235, .075);
+  --amb-2: rgba(214, 220, 217, .06);
+  --amb-3: rgba(198, 204, 201, .05);
+  --amb-4: rgba(236, 242, 239, .055);
+  --amb-haze: rgba(255, 255, 255, .05);
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]):not([data-theme="dark"]) {
+    --amb-1: rgba(232, 238, 235, .075);
+    --amb-2: rgba(214, 220, 217, .06);
+    --amb-3: rgba(198, 204, 201, .05);
+    --amb-4: rgba(236, 242, 239, .055);
+    --amb-haze: rgba(255, 255, 255, .05);
+  }
+}
+
+/* 7) 降透明度 / 加强对比时，内部面也一起退回不透明 */
+@media (prefers-reduced-transparency: reduce) {
+  .card, .item, .stat, .check-item, .composer, .composer-menu, .palette-box, .resource-entry,
+  .quiz-choice, .turn, .btn, .msg-user .msg-body, input, select, textarea {
+    background-color: var(--panel) !important;
+    background-image: none !important;
+    backdrop-filter: none !important;
+  }
+}
+@media (prefers-contrast: more) {
+  .card, .item, .stat, .btn, .composer, .composer-menu, .palette-box, .resource-entry, .quiz-choice {
+    background-color: var(--panel) !important;
+    box-shadow: inset 0 0 0 1px var(--ink-2) !important;
+  }
+}
+/* ＋ 菜单里那行提示（不是按钮，所以不能套 composer-menu-item 的样式） */
+.cm-note { padding: 8px 10px 10px; font-size: calc(12px * var(--fs, 1)); line-height: 1.65; color: var(--muted); }
+/* ============================================================
+   ＋ 菜单 / 权限菜单：照 ChatGPT 那一版做
+   ------------------------------------------------------------
+   标题行（问句 + 了解更多）→ 三行（图标 + 标题 + 副标题）→ 选中的那行
+   用琥珀色标出来并在右边打勾。副标题一律不换行（菜单按内容撑宽）。
+   ============================================================ */
+.composer-menu {
+  width: max-content;
+  min-width: 300px;
+  max-width: min(440px, 92vw);
+  padding: 8px;
+  border-radius: 14px;
+}
+.cm-perm-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 6px 10px 10px;
+}
+.cm-perm-title { flex: 1; min-width: 0; font-size: calc(14px * var(--fs, 1)); color: var(--ink-2); white-space: nowrap; }
+.cm-perm-more {
+  flex: 0 0 auto; border: 0; background: none; padding: 2px 4px; border-radius: 6px;
+  color: var(--muted); font: inherit; font-size: calc(13px * var(--fs, 1));
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+}
+.cm-perm-more:hover { color: var(--ink); }
+
+.composer-menu-item.cm-perm-item { align-items: flex-start; gap: 11px; padding: 9px 10px; border-radius: 10px; }
+.composer-menu-item.cm-perm-item > svg.icon { width: 20px; height: 20px; flex: 0 0 20px; margin-top: 1px; color: var(--ink); }
+.composer-menu-item .cm-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.composer-menu-item .cm-label {
+  display: block; font-size: calc(14.5px * var(--fs, 1)); font-weight: 600; line-height: 1.42;
+  white-space: nowrap; color: var(--ink);
+}
+.composer-menu-item .cm-hint {
+  display: block; font-size: calc(13px * var(--fs, 1)); line-height: 1.5; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cm-check { flex: 0 0 auto; margin-left: auto; align-self: center; opacity: 0; color: var(--amber); }
+.cm-check svg.icon { width: 17px; height: 17px; }
+.cm-perm-item.active { background-color: color-mix(in srgb, var(--amber-soft) 78%, transparent); }
+.cm-perm-item.active .cm-label,
+.cm-perm-item.active .cm-hint,
+.cm-perm-item.active > svg.icon { color: var(--amber); }
+.cm-perm-item.active .cm-check { opacity: 1; }
+.cm-perm-item.full > svg.icon { color: var(--amber); }
+.cm-perm-item:hover { background-color: color-mix(in srgb, var(--panel) 82%, var(--brand) 4%); }
+.cm-perm-item.active:hover { background-color: color-mix(in srgb, var(--amber-soft) 90%, transparent); }
+/* 技能行也按同一套排版（图标 + 标题 + 副标题），副标题长就省略 */
+.composer-menu-item:not(.cm-perm-item) { align-items: center; }
+
+/* ---------- 关于页的品牌位 ---------- */
+.about-brand { display: flex; align-items: center; gap: 16px; padding: 4px 0 20px; }
+.about-logo { width: 68px; height: 68px; border-radius: 18px; flex: 0 0 auto; box-shadow: inset 0 0 0 1px var(--glass-rim); }
+.about-brand-name { font-size: calc(20px * var(--fs, 1)); font-weight: 650; letter-spacing: -.02em; }
+
+/* ---------- 新建对话那一排：项目 chip ---------- */
+.rail-new-chip { display: inline-flex; align-items: center; gap: 5px; }
+.rail-new-chip svg.icon { width: 14px; height: 14px; flex: 0 0 14px; opacity: .75; }
+.rail-new-chip.ghost { color: var(--muted); border-style: dashed; }
+.rail-new-chip.ghost:hover { color: var(--ink); }
+.rail-new-hint { display: block; margin: 6px 2px 0; line-height: 1.6; }
+/* ---------- 空态里的主 logo（跟着主题换浅底 / 深底）---------- */
+.empty-badge-brand { width: auto; height: auto; background: none; box-shadow: none; border-radius: 0; }
+.empty-logo {
+  width: 76px; height: 76px; display: block;
+  border-radius: 21px;
+  box-shadow: inset 0 0 0 1px var(--glass-rim), var(--glass-lift-sm);
+}
+body.chat-mode .view.chat-blank .empty-badge-brand { margin-bottom: 12px; }
+
+/* 新建对话的 chip：别被 flex 压成一条（原来长标签会被挤成圆圈，文字竖着叠） */
+.rail-new-chip { flex: 0 0 auto; white-space: nowrap; }
+/* 标题栏与窗口图标用的主 logo：透明版，按图形裁过方形，所以直接铺满即可 */
+.tb-logo { width: 22px; height: 22px; border-radius: 6px; object-fit: contain; }
+.about-logo { object-fit: contain; }
+.empty-logo { object-fit: contain; }

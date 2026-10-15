@@ -3,7 +3,7 @@ param([string]$Exe = "$PSScriptRoot\..\dist\ITN-Desktop\ITN-Desktop.exe")
 $ErrorActionPreference = 'Stop'
 $smokeRoot = Join-Path $env:TEMP ('itn-package-smoke-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $smokeRoot | Out-Null
-$resultPath = Join-Path $smokeRoot 'itn-desktop-smoke-result.txt'
+$resultPath = Join-Path $smokeRoot 'lumin-smoke-result.txt'
 $smokeProcess = $null
 try {
     $smokeProcess = Start-Process -FilePath (Resolve-Path -LiteralPath $Exe) -ArgumentList '--smoke' `

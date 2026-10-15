@@ -1,4 +1,4 @@
-/* ITN-Desktop 前端：无框架、无构建，界面由仓颉内核托管。
+/* Lumin 前端：无框架、无构建，界面由仓颉内核托管。
  *
  * 接手须知（写给下一个人）：
  * 1. 这份 app.js 就是桌面窗口里跑的全部前端逻辑。没有构建步骤，不能引外部依赖，不要加 npm 包。
@@ -135,6 +135,8 @@ const ICONS = {
   chevron: "M6 9.5 12 15.5 18 9.5",
   shield: "M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6zM9 12l2 2 4-4",
   dots: "M12 6h.01M12 12h.01M12 18h.01",
+  folder: "M3.5 6.5a1 1 0 0 1 1-1h4l2 2h8a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-14a1 1 0 0 1-1-1z",
+  hand: '<path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v-2a2 2 0 0 0-2-2 2 2 0 0 0-2 2v2.5"/><path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>',
 };
 
 /**
@@ -229,7 +231,17 @@ function emptyState(opt) {
   const o = opt || {};
   const box = el("div", "empty" + (o.inline ? " inline" : ""));
   const badge = el("div", "empty-badge");
-  badge.innerHTML = icon(o.art || "plus", true);
+  if (o.art === "brand") {
+    // 主 logo：浅色用浅底那版、深色用深底那版（applyTheme 里会跟着主题换）
+    badge.classList.add("empty-badge-brand");
+    const img = el("img", "empty-logo");
+    img.src = state.dark ? "/logo-dark.png" : "/logo-light.png";
+    img.alt = "Lumin";
+    img.draggable = false;
+    badge.appendChild(img);
+  } else {
+    badge.innerHTML = icon(o.art || "plus", true);
+  }
   box.appendChild(badge);
   box.appendChild(el("strong", null, o.title || "还没有内容"));
   if (o.text) box.appendChild(el("p", "empty-text", o.text));
@@ -338,6 +350,7 @@ const state = {
   kb: "", chapter: null, artifactQuery: "", wrongTab: "due", wrongQuery: "",
   chatSessionId: "", chatTurns: [], chatEvents: [], tools: null, chatQuery: "", artifactFocus: "",
   webMode: "auto", skill: "", skills: [], lastReportArtifact: "", chatKb: null, railGroups: {},
+  projects: [], chatProject: "",
   busyTurn: false, pendingQuestion: "", lastQuestion: "",
   // 主题与会话栏偏好存在内核的 settings 表里（内核端口每次启动都变，localStorage 活不过一次重启）
   theme: "system", dark: false, panelHidden: false, kernel: null, uiZoom: 1, uiFont: 1,
@@ -356,6 +369,20 @@ async function loadCfg() {
     state.kb = (indexed || state.cfg.knowledgeBases[0] || {}).id || "";
   }
 }
+/** 项目清单（一个项目 = 一个本机文件夹，对齐 Codex 的"一个项目一个文件夹"）。 */
+async function loadProjects() {
+  try {
+    state.projects = (await api("/api/projects/list", {})).projects || [];
+  } catch (e) {
+    state.projects = [];
+  }
+}
+
+function projectName(id) {
+  const p = (state.projects || []).find((x) => x.id === id);
+  return p ? (p.name || p.root || id) : "";
+}
+
 async function loadProfile() { state.profile = (await api("/api/profile/get", {})) || {}; }
 
 /**
@@ -400,9 +427,15 @@ async function loadOverview() {
 function hasChatModel() { return state.cfg.models.length > 0 && !!state.cfg.chatModelId; }
 function hasKb() { return state.cfg.knowledgeBases.length > 0; }
 function indexedKb() { return state.cfg.knowledgeBases.find((k) => (k.chunkCount || 0) > 0) || null; }
-/** 这一段对话的资料范围："" = 通用（全部知识库）；没定过就跟着当前知识库。 */
+/**
+ * 这一段对话的检索范围。
+ *
+ * 现在恒为"全部知识库"（空串）：会话按项目组织，资料范围不再按知识库切分，
+ * 所以这里不再回退到"当前知识库"—— 留着那个回退，工具条就会显示一个已经
+ * 不再生效的库名。
+ */
 function scopeNow() {
-  return state.chatKb === null ? (state.kb || "") : state.chatKb;
+  return "";
 }
 
 function kbName(id) {
@@ -1882,7 +1915,7 @@ function askTopic(kind, defaultTopic) {
 }
 
 /**
- * 生成讲义 / 练习册：交给 lumin 当**一次任务**跑（内核 /api/agent/task-pi）。
+ * 生成讲义 / 练习册：交给 Lumin 当**一次任务**跑（内核 /api/agent/task-pi）。
  *
  * 这里刻意没有"检索资料 → 拟大纲 → 逐节写作 → 引用自检 → 落盘"那条进度条：
  * 那是上一版网页端写死的工作流，和"步骤由 agent 自己决定"是两回事 —— 要不要查资料、查几次、
@@ -2995,7 +3028,7 @@ function growthReportText() {
     }
     lines.push("");
   }
-  lines.push("> 这份报告由 ITN-Desktop 在本机生成：数据只在本地数据库里，没有上传。");
+  lines.push("> 这份报告由 Lumin 在本机生成：数据只在本地数据库里，没有上传。");
   lines.push("");
   return lines.join("\n");
 }
@@ -3536,6 +3569,11 @@ function applyTheme(theme) {
   else root.setAttribute("data-theme", t);
   state.dark = t === "dark" ||
     (t === "system" && !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches));
+  // 品牌 logo 有浅底 / 深底两版：主题换了要跟着换，不然深色下会挂一张浅底图
+  const wantLogo = state.dark ? "/logo-dark.png" : "/logo-light.png";
+  for (const img of document.querySelectorAll("img.empty-logo, img.about-logo")) {
+    if (img.getAttribute("src") !== wantLogo) img.src = wantLogo;
+  }
   // 成长页那张雷达图的颜色是从 CSS 变量读的：主题一换就重画一次
   const cv = document.querySelector(".ability-radar");
   const rows = state.report && state.report.abilities;
@@ -3847,7 +3885,7 @@ async function runPaletteSearch(raw) {
   if (q) {
     groups.push(["动作", [
       paletteItemMain("问助手：" + q, "就你的资料提问，会标出处", "对话", () => { state.pendingQuestion = q; go("chat"); }),
-      paletteItemMain("就这个主题生成讲义：" + q, "交给 lumin 一次任务完成，步骤由它自己排", "生成", () => { go("learn"); setTimeout(() => askTopic("lecture", q), 300); }),
+      paletteItemMain("就这个主题生成讲义：" + q, "交给 Lumin 一次任务完成，步骤由它自己排", "生成", () => { go("learn"); setTimeout(() => askTopic("lecture", q), 300); }),
     ]]);
   }
 
@@ -4266,7 +4304,7 @@ PAGES.kb = {
     const k = state.cfg.knowledgeBases.find((x) => x.id === state.kb) || {};
 
     /* 这个库里有什么（网页版那个"知识库详情抽屉"最主要的一块）：
-       统计 + 来源 + 未纳入 + 整理状态 + 文档清单，动作就三个（重建索引 / 让 lumin 整理 / 去设置改）。 */
+       统计 + 来源 + 未纳入 + 整理状态 + 文档清单，动作就三个（重建索引 / 让 Lumin 整理 / 去设置改）。 */
     let st = null;
     try { st = await api("/api/kb/stats", { id: state.kb }); } catch (e) { st = null; }
     const info = cardOf({
@@ -4275,7 +4313,7 @@ PAGES.kb = {
       tagCls: (k.chunkCount || 0) > 0 ? "ok" : "warn",
       actions: [
         btn((k.chunkCount || 0) > 0 ? "重建索引" : "建立索引", "sm", () => buildIndex(k.id)),
-        btn("让 lumin 整理", "sm", () => organizeKb(k.id)),
+        btn("让 Lumin 整理", "sm", () => organizeKb(k.id)),
         btn("设置里改", "sm ghost", () => go("settings", "kb")),
       ],
     });
@@ -4419,10 +4457,18 @@ const KIND_LABEL = { ask: "问答", lecture: "讲义", quiz: "练习", "": "对�
 const WEB_MODE_LABEL = { off: "不联网", auto: "交给 agent 判断", always: "优先联网" };
 
 /**
- * 权限档位：就是 lumin 的 permissions 三档。对话框左下角那枚 chip 与"设置 → 智能体"共用这一份文案。
+ * 权限档位：就是 Lumin 的 permissions 三档。对话框左下角那枚 chip 与"设置 → 智能体"共用这一份文案。
  * 它与"联网开关"的关系：不再单独让用户选联不联网 —— 联网按档位走（ask 每次都问、auto 只对风险问、full 不问）。
  */
 const PERM_LABEL = { ask: "请求批准", auto: "帮我批准", full: "完全访问权限" };
+/* 菜单里的副标题：对齐 ChatGPT 那一版的长度，一行放得下，不换行 */
+const PERM_HINT_SHORT = {
+  ask: "编辑外部文件和使用互联网时始终询问",
+  auto: "仅对检测到的风险操作请求批准",
+  full: "可不受限制地访问文件和互联网",
+};
+/* 每一行自己的图标（和 ChatGPT 一样：手 / 盾 / 警告三角） */
+const PERM_ICON = { ask: "hand", auto: "shield", full: "alert" };
 const PERM_HINT = {
   ask: "编辑工作区外的文件、跑命令、联网时都先问你",
   auto: "只有检测到的风险操作才问（危险命令、写工作区外、联网）",
@@ -4844,23 +4890,50 @@ PANELS.chat = {
     await loadCfg();
     await loadSessions();
 
-    /* 新建会话：先选资料范围。Codex 里新开一段对话要先选项目，这里是"选知识库或通用"。 */
+    /* 新建会话：像 Codex 那样按项目（一个项目 = 一个文件夹）开一段。
+       检索范围不再按知识库切分：任何一段对话都能检索本机全部知识库。 */
+    await loadProjects();
     const newRow = el("div", "rail-new");
-    const mkNew = (kbId, label, hint) => {
-      const b = el("button", "rail-new-chip", label);
+    newRow.appendChild(el("div", "rail-new-title", "新建对话"));
+    const mkProject = (p) => {
+      const b = el("button", "rail-new-chip");
       b.type = "button";
-      b.title = hint;
-      b.dataset.kb = kbId === undefined ? "" : kbId;
+      b.dataset.project = p.id;
+      b.title = p.root + "\n新对话在这个文件夹里干活；检索范围始终是本机全部知识库。";
+      b.innerHTML = icon("folder") + "<span>" + esc(p.name || p.root) + "</span>";
       b.onclick = async () => {
-        await newChat(kbId === undefined ? "" : kbId);
-        toast("新对话 · " + (kbId ? kbName(kbId) : "通用（全部知识库）"));
+        await newChat(p.id);
+        toast("新对话 · " + (p.name || p.root));
       };
       return b;
     };
-    newRow.appendChild(el("div", "rail-new-title", "新建对话"));
-    newRow.appendChild(mkNew(undefined, "通用", "检索本机所有知识库"));
-    for (const kb of (state.cfg.knowledgeBases || [])) {
-      newRow.appendChild(mkNew(kb.id, kb.name || kb.id, (kb.chunkCount || 0) > 0 ? "只用这一份资料" : "还没建索引"));
+    for (const p of (state.projects || [])) {
+      newRow.appendChild(mkProject(p));
+    }
+    const addProject = el("button", "rail-new-chip ghost");
+    addProject.type = "button";
+    addProject.innerHTML = icon("plus") + "<span>新建项目…</span>";
+    addProject.title = "选一个本机文件夹作为一个项目";
+    addProject.onclick = async () => {
+      const a = window.itnWindow;
+      if (!a || typeof a.pickDirectory !== "function") {
+        toast("选文件夹只在桌面应用窗口里可用");
+        return;
+      }
+      const dir = await a.pickDirectory();
+      if (!dir) return;
+      try {
+        const p = await api("/api/projects/save", { root: dir });
+        await loadProjects();
+        await newChat(p.id);
+        toast("新项目 · " + (p.name || p.root));
+      } catch (e) {
+        toast("新建项目失败：" + e.message);
+      }
+    };
+    newRow.appendChild(addProject);
+    if (!(state.projects || []).length) {
+      newRow.appendChild(el("div", "muted sm rail-new-hint", "还没有项目。点「新建项目…」选一个文件夹，之后这段对话就在它里面干活（检索仍然是全部知识库）。"));
     }
     body.appendChild(newRow);
 
@@ -4872,29 +4945,30 @@ PANELS.chat = {
     const q = String(state.chatQuery || "").trim().toLowerCase();
     const items = state.sessions.filter((x) => !q || String(x.title || "").toLowerCase().indexOf(q) >= 0);
     if (!items.length) {
-      body.appendChild(panelEmpty(state.sessions.length ? "没有匹配的会话。" : "还没有对话。上面选一个资料范围就能开一段。"));
+      body.appendChild(panelEmpty(state.sessions.length ? "没有匹配的会话。" : "还没有对话。上面选一个项目就能开一段。"));
       return;
     }
 
-    /* 按知识库分组（Codex 的会话列也是按项目分组的）：通用在最上，其余按最近动静排 */
+    /* 按项目分组（Codex 的会话列就是这么分的）：项目按登记顺序，未归档放最后 */
     const groups = new Map();
     for (const x of items) {
-      const key = x.kbId || "";
+      const key = x.projectId || "";
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(x);
     }
-    const order = [""];
-    for (const kb of (state.cfg.knowledgeBases || [])) {
-      if (groups.has(kb.id)) order.push(kb.id);
+    const order = [];
+    for (const p of (state.projects || [])) {
+      if (groups.has(p.id)) order.push(p.id);
     }
+    if (groups.has("")) order.push("");
     for (const k of groups.keys()) {
       if (order.indexOf(k) < 0) order.push(k);
     }
-    body.appendChild(panelGroup("共 " + state.sessions.length + " 段 · 按资料分组"));
+    body.appendChild(panelGroup("共 " + state.sessions.length + " 段 · 按项目分组"));
     for (const key of order) {
       const mine = groups.get(key);
       if (!mine || !mine.length) continue;
-      const name = key ? (kbName(key) || key) : "通用（全部知识库）";
+      const name = key ? (projectName(key) || "已删除的项目") : "未归档";
       const collapsed = !!state.railGroups[key];
       const head = el("button", "panel-group-head");
       head.type = "button";
@@ -4952,8 +5026,9 @@ PANELS.settings = {
  */
 async function openChatSession(id) {
   const meta = (state.sessions || []).filter((x) => x.sessionId === id)[0];
-  // 这一段对话用哪份资料，跟着会话走（kbId 为空 = 通用：全部知识库）
-  state.chatKb = meta ? (meta.kbId || "") : "";
+  // 归属哪个项目跟着会话走；检索范围始终是全部知识库
+  state.chatProject = meta ? (meta.projectId || "") : "";
+  state.chatKb = "";
   state.chatSessionId = id;
   go("chat");
 }
@@ -4983,6 +5058,7 @@ function sessionRowMenu(s, rowEl) {
     if (menu) { close(); return; }
     menu = el("div", "session-menu");
     menu.appendChild(item("重命名…", "", () => renameSessionDialog(s)));
+    menu.appendChild(item("移到项目…", "", () => moveSessionDialog(s)));
     menu.appendChild(item("删除…", "danger", () => deleteSessionDialog(s)));
     rowEl.appendChild(menu);
     // 点别处收起（下一轮事件再挂，免得这次点击立刻把它关了）
@@ -4993,6 +5069,41 @@ function sessionRowMenu(s, rowEl) {
   };
   wrap.appendChild(trigger);
   return wrap;
+}
+
+/** 把一段已有对话挪到另一个项目（或挪回未归档）。 */
+function moveSessionDialog(s) {
+  if (!(state.projects || []).length) {
+    toast("还没有项目：先在「新建对话」里点「新建项目…」");
+    return;
+  }
+  const v = $("view");
+  const dlg = el("div", "card dialog");
+  dlg.appendChild(cardHeadOnly("移到项目"));
+  const sel = el("select");
+  const none = el("option", null, "未归档（不属于任何项目）");
+  none.value = "";
+  sel.appendChild(none);
+  for (const p of state.projects) {
+    const o = el("option", null, p.name || p.root);
+    o.value = p.id;
+    sel.appendChild(o);
+  }
+  sel.value = s.projectId || "";
+  dlg.appendChild(fieldOf("项目", sel));
+  const row = el("div", "row");
+  row.appendChild(btn("保存", "primary", async () => {
+    try {
+      await api("/api/sessions/bind", { sessionId: s.sessionId, projectId: sel.value });
+      dlg.remove();
+      await reloadSessions();
+      toast(sel.value ? ("已归到 " + projectName(sel.value)) : "已移回未归档");
+    } catch (e) { toast("失败：" + e.message); }
+  }));
+  row.appendChild(btn("取消", "ghost", () => dlg.remove()));
+  dlg.appendChild(row);
+  v.insertBefore(dlg, v.firstChild);
+  dlg.scrollIntoView({ block: "start" });
 }
 
 /** 重命名会话：只改列表里的名字，事件与内容一条不动。 */
@@ -5064,12 +5175,15 @@ function deleteSessionDialog(s) {
  * kbId 必须由用户给（""=通用：本机所有知识库都能检索）——"这段对话用哪份资料"是开工前就该定的事，
  * 让它猜或者事后切库，都会把两边的资料混进同一段对话里。
  */
-async function newChat(kbId) {
+async function newChat(projectId) {
   try {
-    const d = await api("/api/sessions/new", {});
-    state.chatKb = kbId === undefined ? (state.chatKb === null ? (state.kb || "") : state.chatKb) : kbId;
+    // 新对话只选项目；检索范围不再按知识库切分 —— 永远是本机全部知识库
+    const d = await api("/api/sessions/new", { projectId: projectId || "" });
+    state.chatProject = d.projectId || "";
+    state.chatKb = "";
     state.chatSessionId = d.sessionId;
     state.chatEvents = [];
+    state.lastEventId = 0;
     state.chatTurns = [];
     go("chat");
   } catch (e) {
@@ -5346,6 +5460,11 @@ PAGES.chat = {
     const thread = el("div", "chat-thread");
     thread.id = "chat-thread";
     v.appendChild(thread);
+    /* 用户往上翻的时候就别再把他拽回底部（原来每 200ms 强拉一次，翻历史根本翻不动） */
+    state.stickBottom = true;
+    thread.addEventListener("scroll", () => {
+      state.stickBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 80;
+    });
 
     /* 对话框：Codex 那种"一整块输入区"。一行控件只留三样：
        [＋ 动作] [权限档位] …… [↑ 发送 / ■ 停止]。
@@ -5354,7 +5473,7 @@ PAGES.chat = {
        - 联网开关：这是 agent，要不要联网由它自己判断，工具直接给它；
        - 技能选择：技能用 "/" 调（占位符里就写着），不必占一个常驻入口；
        - 模型选择：那是设置里的东西，这里用一行小字告诉你现在是哪个模型。
-       权限档位就是 lumin 的三档：请求批准 / 帮我批准 / 完全访问权限。 */
+       权限档位就是 Lumin 的三档：请求批准 / 帮我批准 / 完全访问权限。 */
     const inputRow = el("div", "composer");
     const ta = el("textarea");
     ta.id = "chat-input";
@@ -5370,7 +5489,7 @@ PAGES.chat = {
     plusBtn.innerHTML = icon("plus");
     crow.appendChild(plusBtn);
 
-    /* ---- 权限档位（= lumin 的 permissions，文案在模块级的 PERM_LABEL） ---- */
+    /* ---- 权限档位（= Lumin 的 permissions，文案在模块级的 PERM_LABEL） ---- */
     const permChip = el("button", "composer-chip", "");
     permChip.type = "button";
     const workDirName = () => {
@@ -5383,7 +5502,7 @@ PAGES.chat = {
       const wd = workDirName();
       permChip.title = (PERM_HINT[m] || "") + (wd
         ? "\n工作目录：" + state.cfg.agentWorkDir
-        : "\n还没有指定工作目录：lumin 现在只能问答，指定后它才能读写文件");
+        : "\n还没有指定工作目录：Lumin 现在只能问答，指定后它才能读写文件");
       permChip.classList.toggle("off", !wd);
     };
     paintPermChip();
@@ -5427,7 +5546,6 @@ PAGES.chat = {
     /* ＋ 菜单：只放真做得成的事。联网方式与技能列表都不在这儿（见上面那段注释）。 */
     let closeMenu = () => { menu.hidden = true; };
     const buildMenu = () => {
-      const actionsBox = el("div", "cm-actions");
       const menuItem = (iconName, label, hint, onClick) => {
         const b2 = el("button", "composer-menu-item");
         b2.type = "button";
@@ -5436,63 +5554,45 @@ PAGES.chat = {
         b2.onclick = () => { closeMenu(); onClick(); };
         return b2;
       };
-      actionsBox.appendChild(menuItem("globe", "读取网页…", "贴一个链接，抓正文落到本机", () => openUrlFetchDialog()));
-      actionsBox.appendChild(menuItem("db", "添加资料目录…", "选一个本机目录加入知识库", async () => {
-        const a2 = window.itnWindow;
-        if (!a2 || typeof a2.pickDirectory !== "function") {
-          toast("选目录只在桌面应用窗口里可用");
-          go("settings", "kb");
-          return;
-        }
-        const dir = await a2.pickDirectory();
-        if (!dir) return;
-        go("settings", "kb");
-        const el2 = $("kb-dir");
-        if (el2) {
-          el2.value = dir;
-          const base = dir.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "";
-          const idEl = $("kb-id");
-          if (idEl && !idEl.value.trim() && base) idEl.value = base.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24);
-          const nameEl = $("kb-name");
-          if (nameEl && !nameEl.value.trim()) nameEl.value = base;
-        }
-      }));
-      actionsBox.appendChild(menuItem("layers", "做成讲义 / 练习册…", "把某一章做成产物", () => {
-        const topic = topicFromText(state.lastQuestion || "");
-        askTopic("lecture", topic);
-      }));
-      actionsBox.appendChild(menuItem("target", "工作目录与权限…", workDirName() ? ("现在：" + workDirName()) : "让 lumin 能在本机读写文件", () => go("settings", "agent")));
-      actionsBox.appendChild(menuItem("sliders", "工具与技能…", (state.tools || []).length + " 个工具 · 看看这一轮能用什么", () => {
-        const box = $("tool-sheet");
-        if (!box) return;
-        box.hidden = false;
-        paintBlank();
-        box.scrollIntoView({ block: "start" });
-      }));
-      menu.appendChild(actionsBox);
 
-      /* 权限档位：就是 lumin 的三档，和左边那枚 chip 同步（这儿是"改"，chip 是"看"）。 */
+      /* 权限档位：就是 Lumin 的三档，和左边那枚 chip 同步（这儿是"改"，chip 是"看"）。 */
       const permBox = el("div", "cm-perm");
       permBox.hidden = true;
+      /* 标题行：左边一句问句，右边"了解更多"指向设置里的智能体页（那里把三档讲清楚）。 */
+      const permHead = el("div", "cm-perm-head");
+      permHead.appendChild(el("span", "cm-perm-title", "应如何批准 Lumin 操作？"));
+      const permMore = el("button", "cm-perm-more", "了解更多");
+      permMore.type = "button";
+      permMore.onclick = () => { closeMenu(); go("settings", "agent"); };
+      permHead.appendChild(permMore);
+      permBox.appendChild(permHead);
+
       const mkPerm = (id) => {
-        const b = menuItem("shield", PERM_LABEL[id], PERM_HINT[id], async () => {
+        const b = el("button", "composer-menu-item cm-perm-item" + (id === "full" ? " full" : ""));
+        b.type = "button";
+        b.dataset.perm = id;
+        b.innerHTML = icon(PERM_ICON[id]) +
+          '<span class="cm-text"><span class="cm-label">' + esc(PERM_LABEL[id]) + "</span>" +
+          '<span class="cm-hint">' + esc(PERM_HINT_SHORT[id]) + "</span></span>" +
+          '<span class="cm-check">' + icon("check") + "</span>";
+        b.onclick = async () => {
+          closeMenu();
           state.cfg.agentPerm = id;
           paintPermChip();
           try {
             await savePrefs({ agentPerm: id });
           } catch (e) { toast("保存失败：" + e.message); }
           toast("权限：" + PERM_LABEL[id]);
-        });
-        if ((state.cfg.agentPerm || "ask") === id) b.classList.add("active");
+        };
         return b;
       };
       permBox.appendChild(mkPerm("ask"));
       permBox.appendChild(mkPerm("auto"));
       permBox.appendChild(mkPerm("full"));
-      permBox.appendChild(menuItem("db",
-        workDirName() ? ("工作目录：" + workDirName()) : "指定工作目录…",
-        workDirName() ? "lumin 可以在这个目录里读写文件" : "不指定的话，lumin 只能问答、碰不到本机文件",
-        () => go("settings", "agent")));
+      /* 工作目录不是"权限"，不放进这个菜单；没设的时候给一行提示，指到设置里。 */
+      if (!workDirName()) {
+        permBox.appendChild(el("div", "cm-note", "还没指定工作目录：没有它，Lumin 只能问答、碰不到本机文件（设置 → 智能体）。"));
+      }
       menu.appendChild(permBox);
 
       /* 技能：只在输入 "/" 时出现。它是"调用一个技能"的动作，不是常驻配置项。 */
@@ -5538,19 +5638,23 @@ PAGES.chat = {
         document.addEventListener("click", closeMenu);
       }
       menu.hidden = false;
-      const acts = menu.querySelector(".cm-actions");
-      if (acts) acts.hidden = mode === "skills";
+      // ＋ 与权限 chip 都只出权限档位；输入 "/" 才出技能。
       const sk = menu.querySelector(".cm-skills");
       if (sk) sk.hidden = mode !== "skills";
       const pf = menu.querySelector(".cm-perm");
-      if (pf) pf.hidden = mode !== "perm";
+      if (pf) {
+        pf.hidden = mode === "skills";
+        for (const b of pf.querySelectorAll(".cm-perm-item")) {
+          b.classList.toggle("active", b.dataset.perm === (state.cfg.agentPerm || "ask"));
+        }
+      }
     };
 
 
     plusBtn.onclick = (ev) => {
       ev.stopPropagation();
       if (menuBuilt && !menu.hidden) { closeMenu(); return; }
-      openMenu("all");
+      openMenu("perm");
     };
     permChip.onclick = (ev) => { ev.stopPropagation(); openMenu("perm"); };
 
@@ -5571,7 +5675,7 @@ PAGES.chat = {
       state.pendingQuestion = "";
     }
 
-    /** 停下来：手写链路看取消标记，lumin 那一轮直接 abort。 */
+    /** 停下来：手写链路看取消标记，Lumin 那一轮直接 abort。 */
     async function stopTurn() {
       const sid = state.chatRequest ? state.chatRequest.sessionId : state.chatSessionId;
       if (!sid) return;
@@ -5622,7 +5726,7 @@ PAGES.chat = {
     function approvalCard(req) {
       const card = el("div", "approval-card");
       const head = el("div", "row");
-      head.appendChild(el("div", "grow approval-title", "lumin 想在你的电脑上" + (APPROVAL_LABEL[req.kind] || req.kind)));
+      head.appendChild(el("div", "grow approval-title", "Lumin 想在你的电脑上" + (APPROVAL_LABEL[req.kind] || req.kind)));
       head.appendChild(tag("需要批准", "warn"));
       card.appendChild(head);
       if (req.value) card.appendChild(el("div", "approval-path", req.value));
@@ -5654,20 +5758,41 @@ PAGES.chat = {
       } catch (e) { /* 轮询失败不打扰 */ }
     }
 
+    /* ---- 增量渲染 ----
+       原来每次轮询都 thread.innerHTML = "" 重建整段对话：长会话里等于每隔一两百毫秒
+       把全篇 Markdown 重排一遍，这正是"打字机发卡"的主因。现在按轮次缓存节点，
+       只有内容变了的那一轮（通常就是正在流式输出的那一轮）会重建，其余直接复用。 */
+    const paintCache = new Map();   // 轮次 id → { node, sig, live }
+    let paintOrder = "";            // 轮次顺序指纹：没变就不动 DOM 顺序
+    const elapsedSecs = (t) => (t.startedAt ? Math.max(0, Math.floor((Date.now() - Date.parse(t.startedAt)) / 1000)) : 0);
+    function turnSig(t, live) {
+      const parts = [t.kind || "", t.user || "", t.ok === null ? "" : String(t.ok), t.message || "",
+                     t.activity || "", t.steer ? 1 : 0, (t.citations || []).length, t.report ? 1 : 0,
+                     t.resourceProgress ? (t.resourceProgress.name || "1") : ""];
+      for (const it of t.items) {
+        parts.push(it.t, it.name || "", it.running ? 1 : 0, it.ok == null ? "" : (it.ok ? 1 : 0),
+                   it.text ? it.text.length : 0, it.summary ? it.summary.length : 0, it.ms || 0);
+      }
+      if (live) parts.push(elapsedSecs(t));   // "已用 N 秒"每秒跳一次就够
+      return parts.join("|");
+    }
+
     function paint() {
       // 会话 id 标在对话区上：自检要按"这一段会话"验联网档位，调试时也好对号
       thread.dataset.session = state.chatSessionId || "";
-      thread.innerHTML = "";
       if (typeof syncWorkbenchEvents === "function") syncWorkbenchEvents(state.chatEvents || []);
       paintBlank();
       if (!state.chatTurns.length) {
+        paintCache.clear();
+        paintOrder = "";
+        if (!thread.querySelector(".empty")) {
+          thread.innerHTML = "";
         thread.appendChild(emptyState({
           inline: true,
-          art: "chat",
+          art: "brand",
           title: "今天想学点什么？",
           // 作用范围在这里说清：这一段对话到底用哪份资料
-          text: (scopeNow() ? ("这一段对话只用「" + kbName(scopeNow()) + "」，答案带出处。")
-                            : "这一段对话是通用模式：本机所有知识库一起检索。") +
+          text: "检索范围是本机全部知识库，答案带出处。" +
                 (state.chapter ? " 会带上你正在学的《" + state.chapter + "》。" : ""),
           actions: hasKb() ? [
             // 第一条跟着"当前在学什么"走：学过某一章才问"这一章"，否则问一个一定有落点的问题
@@ -5677,15 +5802,39 @@ PAGES.chat = {
             btn("看知识库里有什么", "ghost", () => go("kb")),
           ] : [btn("去指定资料目录", "", () => go("settings", "kb"))],
         }));
+        }
       } else {
-        for (const t of state.chatTurns) thread.appendChild(renderTurnBlock(t,
-          !!state.busyTurn && t.ok == null && (!state.chatRequest || state.chatRequest.sessionId === state.chatSessionId)));
+        const empty = thread.querySelector(".empty");
+        if (empty) empty.remove();
+        const order = [];
+        for (const t of state.chatTurns) {
+          const live = !!state.busyTurn && t.ok == null && (!state.chatRequest || state.chatRequest.sessionId === state.chatSessionId);
+          const key = t.id || ("idx-" + order.length);
+          order.push(key);
+          const sig = turnSig(t, live);
+          const hit = paintCache.get(key);
+          if (!hit || hit.sig !== sig || hit.live !== live) {
+            const node = renderTurnBlock(t, live);
+            if (hit && hit.node.isConnected) hit.node.replaceWith(node);
+            else thread.appendChild(node);
+            paintCache.set(key, { node, sig, live });
+          }
+        }
+        const nowOrder = order.join(">");
+        if (nowOrder !== paintOrder) {
+          paintOrder = nowOrder;
+          for (const key of order) {
+            const hit = paintCache.get(key);
+            if (hit) thread.appendChild(hit.node);   // 已在文档里的节点是"移动"，不重建
+          }
+        }
+        for (const [key, hit] of [...paintCache]) {
+          if (order.indexOf(key) < 0) { hit.node.remove(); paintCache.delete(key); }
+        }
       }
       for (const req of (state.approvals || [])) thread.appendChild(approvalCard(req));
       paintActionBtn();
-      thread.scrollTop = thread.scrollHeight;
-      const main = document.querySelector(".main");
-      if (main) main.scrollTop = main.scrollHeight;
+      if (state.stickBottom !== false) thread.scrollTop = thread.scrollHeight;
     }
     paint();
 
@@ -5717,41 +5866,46 @@ PAGES.chat = {
         send();
       };
       state.chatTurns.push({ id: "local", kind: "ask", user: text, items: [], report: null, citations: [], ok: null, message: "" });
+      state.stickBottom = true;
       paint();
 
       // 生成过程中轮询会话事件，把 assistant/delta 渲染成"打字机"效果。
       // 内核 HTTP 是多线程的，长生成不会挡住这个轮询；顺便每 1.5 秒看一眼有没有要批准的动作。
       let approvalTick = 0;
+      request.baseId = state.lastEventId || 0;
       const poll = setInterval(async () => {
         try {
-          const d = await api("/api/sessions/events", { sessionId: sid });
-          const all = d.events || [];
-          if (!request.turnId) {
-            const start = all.slice(request.baseline).find((e) => e.type === "turn/start");
-            if (start) request.turnId = start.turnId;
-          }
-          if (state.chatSessionId === sid && all.length !== (state.chatEvents || []).length) {
-            state.chatEvents = all;
-            state.chatTurns = turnsFromEvents(all);
+          const d = await api("/api/sessions/events", { sessionId: sid, sinceId: state.lastEventId || 0 });
+          if (d.lastId) state.lastEventId = d.lastId;
+          const fresh = d.events || [];
+          if (state.chatSessionId !== sid) return;
+          if (fresh.length) {
+            /* 取 fresh 里最后一个 turn/start：带游标时它就是本轮的，
+               不带游标（老内核回全量）时最后一条同样是本轮的，两种情况都对。 */
+            for (const e of fresh) {
+              if (e.type === "turn/start") request.turnId = e.turnId;
+            }
+            state.chatEvents = (state.chatEvents || []).concat(fresh);
+            state.chatTurns = turnsFromEvents(state.chatEvents);
             paint();
           }
-          if (request.turnId && all.some((e) => e.type === "turn/end" && e.turnId === request.turnId)) {
+          if (request.turnId && state.chatEvents.some((e) => e.type === "turn/end" && e.turnId === request.turnId)) {
             request.endedByEvents = true;
             request.controller.abort();
           }
         } catch (e) { /* 轮询失败不打扰用户，最终结果以收尾时那次为准 */ }
         approvalTick = approvalTick + 1;
-        if (approvalTick % 3 === 0) await pollApprovals();
-      }, 400);
+        if (approvalTick % 6 === 0) await pollApprovals();
+      }, 220);
 
       let failure = "";
       try {
-        // 对话一律走 lumin（pi 运行时）：工具交给模型自己挑，步骤由它自己决定。
+        // 对话一律走 Lumin（pi 运行时）：工具交给模型自己挑，步骤由它自己决定。
         // 原来那条手写循环（先检索、再生成、最后引用自检）不再参与对话——它是上一版的形状。
         // 工作目录与权限档位：没指定工作目录时，模型拿不到"本机文件"那几个工具，只能检索与联网。
-        const scopeKb = state.chatKb === null ? (state.kb || "") : state.chatKb;
+        // 检索范围固定为"本机全部知识库"：空 kbId 在内核里就是通用模式的语义
         const payload = {
-          kbId: scopeKb, question: text, sessionId: sid, web: "auto",
+          kbId: "", question: text, sessionId: sid, web: "auto",
           skill: state.skill || "", perm: state.cfg.agentPerm || "ask",
           // 界面上下文：用户正在看哪一章——"这一章"才有落点，不用模型反查/反问
           ctxChapter: state.chapter || "",
@@ -5767,6 +5921,7 @@ PAGES.chat = {
         const d = await api("/api/sessions/events", { sessionId: sid });
         if (state.chatSessionId === sid) {
           state.chatEvents = d.events || [];
+          state.lastEventId = d.lastId || state.lastEventId || 0;
           state.chatTurns = turnsFromEvents(state.chatEvents);
         }
       } catch (e) {
@@ -5824,6 +5979,7 @@ PAGES.chat = {
       try {
         const d = await api("/api/sessions/events", { sessionId: state.chatSessionId });
         state.chatEvents = d.events || [];
+        state.lastEventId = d.lastId || 0;
         state.chatTurns = turnsFromEvents(state.chatEvents);
         paint();
       } catch (e) {
@@ -6388,7 +6544,7 @@ const SETTINGS_SECTIONS = [
   { id: "agent", label: "智能体", icon: "shield", title: "智能体" },
   { id: "data", label: "数据与备份", icon: "layers", title: "数据与备份" },
   { id: "skills", label: "技能", icon: "book", title: "技能" },
-  { id: "about", label: "关于", icon: "file", title: "关于 ITN-Desktop" },
+  { id: "about", label: "关于", icon: "file", title: "关于 Lumin" },
 ];
 
 /**
@@ -6463,11 +6619,11 @@ function settingsGeneral() {
 }
 
 /**
- * 设置 · 智能体：lumin 能不能动你的电脑。
+ * 设置 · 智能体：Lumin 能不能动你的电脑。
  *
  * 三件事，别多：
  *   工作目录（不给就只能问答）；
- *   权限档位（就是 lumin 的三档：请求批准 / 帮我批准 / 完全访问权限）；
+ *   权限档位（就是 Lumin 的三档：请求批准 / 帮我批准 / 完全访问权限）；
  *   要不要放开跑命令（默认关 —— 命令比写文件危险得多）。
  * 红线写清楚：你自己在用的 API Key 不会被交出去；工作区里的 .env / .git / .ssh 写不进去。
  */
@@ -6482,7 +6638,7 @@ function settingsAgent() {
     tagCls: dir ? "ok" : "warn",
   });
   const row = el("div", "row dir-row");
-  const dirInput = inputOf("agent-dir", "还没指定。指定之后 lumin 才能读写文件", dir);
+  const dirInput = inputOf("agent-dir", "还没指定。指定之后 Lumin 才能读写文件", dir);
   dirInput.className = "grow";
   dirInput.readOnly = true;
   row.appendChild(dirInput);
@@ -6506,16 +6662,43 @@ function settingsAgent() {
       try {
         await savePrefs({ agentWorkDirClear: true });
         state.cfg.agentWorkDir = "";
-        toast("已清除：lumin 回到只能问答");
+        toast("已清除：Lumin 回到只能问答");
         go("settings", "agent");
       } catch (e) { toast("清除失败：" + e.message); }
     }));
   }
   card.appendChild(row);
   card.appendChild(el("p", "muted sm", dir
-    ? "lumin 能在这个目录里读写文件、按下面的档位决定要不要先问你。"
-    : "不指定的话，lumin 只能问答与检索 —— 它碰不到你电脑上的任何文件。"));
+    ? "Lumin 能在这个目录里读写文件、按下面的档位决定要不要先问你。"
+    : "不指定的话，Lumin 只能问答与检索 —— 它碰不到你电脑上的任何文件。"));
   g.appendChild(card);
+
+  /* 工具与技能：原来挂在对话框的 ＋ 菜单里，按用户要求撤掉那边的入口，挪到这里。 */
+  const toolsCard = cardOf({
+    title: "工具与技能",
+    tag: (state.tools || []).length + " 个工具",
+    sub: "这一轮能用哪些由模型按任务自己挑；技能在对话框里输入 / 绑定到当前会话",
+  });
+  const tlist = el("div", "list");
+  for (const g of TOOL_GROUP_ORDER) {
+    const mine = (state.tools || []).filter((t) => (TOOL_GROUP[t.name] || "其他") === g);
+    if (!mine.length) continue;
+    tlist.appendChild(el("div", "panel-group-title", g));
+    for (const t of mine) {
+      const it = el("div", "item");
+      const head = el("div", "row");
+      const main = el("div", "grow");
+      main.appendChild(el("div", "item-title", (TOOL_LABEL[t.name] || t.label || t.name) + "　" + t.name));
+      if (t.desc) main.appendChild(el("div", "muted sm", t.desc));
+      head.appendChild(main);
+      if (t.available === false) head.appendChild(tag("需先配置", "warn"));
+      it.appendChild(head);
+      tlist.appendChild(it);
+    }
+  }
+  if (!tlist.childNodes.length) tlist.appendChild(el("div", "muted sm", "还没读到工具清单。"));
+  toolsCard.appendChild(tlist);
+  g.appendChild(toolsCard);
 
   const permCard = cardOf({ title: "权限", sub: "与对话框左下角那枚开关是同一个设置" });
   for (const m of ["ask", "auto", "full"]) {
@@ -6539,7 +6722,7 @@ function settingsAgent() {
   const execLine = el("div", "row setting-row");
   const execLeft = el("div", "grow");
   execLeft.appendChild(el("div", "switch-label", "允许运行命令"));
-  execLeft.appendChild(el("div", "muted sm", "默认关。开了之后 lumin 可以在工作目录里跑 PowerShell（每条命令仍然按上面的档位处理）。"));
+  execLeft.appendChild(el("div", "muted sm", "默认关。开了之后 Lumin 可以在工作目录里跑 PowerShell（每条命令仍然按上面的档位处理）。"));
   execLine.appendChild(execLeft);
   const execOn = state.cfg.agentExec === "1";
   execLine.appendChild(btn(execOn ? "关掉" : "打开", "sm" + (execOn ? " ghost" : ""), async () => {
@@ -6838,7 +7021,7 @@ function settingsKb() {
       const acts = el("div", "row item-actions");
       acts.appendChild(btn((k.chunkCount || 0) > 0 ? "重建索引" : "建立索引", "sm primary", () => buildIndex(k.id)));
       // 资料散乱时让模型读一遍、给出一份教学目录；建索引时按它组织（结果可清除）
-      acts.appendChild(btn("让 lumin 整理", "sm", () => organizeKb(k.id)));
+      acts.appendChild(btn("让 Lumin 整理", "sm", () => organizeKb(k.id)));
       if (state.kb !== k.id) acts.appendChild(btn("设为当前", "sm", () => { state.kb = k.id; toast("已切换为当前知识库"); go("learn"); }));
       acts.appendChild(btn("去检索", "sm ghost", () => { state.kb = k.id; go("kb"); }));
       acts.appendChild(btn("删除", "sm ghost", () => {
@@ -7034,6 +7217,17 @@ async function settingsSkills() {
 function settingsAbout() {
   const g = document.createDocumentFragment();
   const k = state.kernel || {};
+  /* 品牌位：浅色用带浅底的 logo，深色用带深底的 logo（透明那版留给标题栏与窗口图标）。 */
+  const brand = el("div", "about-brand");
+  const logo = el("img", "about-logo");
+  logo.src = state.dark ? "/logo-dark.png" : "/logo-light.png";
+  logo.alt = "Lumin";
+  brand.appendChild(logo);
+  const bt = el("div", "about-brand-text");
+  bt.appendChild(el("div", "about-brand-name", "Lumin"));
+  bt.appendChild(el("div", "muted sm", "本地个人学习 Agent · 数据只存在这台电脑上"));
+  brand.appendChild(bt);
+  g.appendChild(brand);
   const ver = cardOf({ title: "当前版本" });
   const kv = el("div", "kv-list");
   const line = (key, val) => {
@@ -7042,7 +7236,7 @@ function settingsAbout() {
     l.appendChild(el("span", "grow", val));
     return l;
   };
-  kv.appendChild(line("应用", "ITN-Desktop " + (state.release?.version || k.version || "0.2.0") + " · 个人学习 Agent"));
+  kv.appendChild(line("应用", "Lumin " + (state.release?.version || k.version || "0.2.0") + " · 个人学习 Agent"));
   kv.appendChild(line("构建", state.release?.sourceCommit || k.build || "开发版本"));
   kv.appendChild(line("内核", "仓颉（Cangjie）运行时" + (k.cangjie ? " · " + k.cangjie : "")));
   kv.appendChild(line("数据目录", state.cfg.dataDir || "（启动时由内核决定，可在「数据与备份」里复制路径）"));
@@ -7199,7 +7393,7 @@ function openNoteEditor(note, kbId, chapter, chunk) {
 }
 
 /**
- * 让 lumin 把这份资料整理成一份教学目录。
+ * 让 Lumin 把这份资料整理成一份教学目录。
  *
  * 这是一次模型调用（不是让模型去读写文件）：内核把资料清单喂给模型，模型只回一份 JSON，
  * 校验后落成 <数据目录>/kb/<id>/outline.json，建索引时自动按它组织章节。
@@ -7321,7 +7515,7 @@ async function boot() {
     const h = await api("/health");
     state.kernel = h;
     try { state.release = await fetch('/release.json').then(r=>r.ok?r.json():null); } catch(e) {state.release=null;}
-    setStatus("ITN " + (h.version || '0.2.0') + " · 已连接");
+    setStatus("Lumin " + (h.version || '0.3.0') + " · 已连接");
   } catch (e) {
     setStatus("内核未连接", true);
     const v = $("view");
