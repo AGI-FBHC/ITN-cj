@@ -284,6 +284,10 @@ def _thin_lecture_plan():
 
 def reply_for(body):
     messages = body.get("messages") or []
+    # 会话命名器：内核第一次提问后会另起一次很小的请求让模型给会话起名。
+    # 这里回一个"带引号又带句号"的名字，正好用来验清洗逻辑（见 cleanSessionTitle）。
+    if "只输出名字本身" in all_text(messages):
+        return '"Mock 会话名。"'
     if has_image(messages):
         return "MOCK 图片描述：这是一张教学资料里的示意图，画的是提示词与输出之间的对应关系。"
     joined = all_text(messages)

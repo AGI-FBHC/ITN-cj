@@ -31,7 +31,12 @@ const service = http.createServer(async (req, res) => {
     return;
   }
   let raw = ''; for await (const piece of req) raw += piece;
-  const body = JSON.parse(raw); modelCalls++;
+  const body = JSON.parse(raw);
+  /* 会话命名器是另一次很小的请求（第一轮收尾之后内核会发一次，给会话起名）。
+     它不该算进"这一轮有没有再发请求"里，所以单独回答、不计数。 */
+  const allText = (body.messages || []).map((m) => String(m.content || '')).join('\n');
+  if (allText.includes('只输出名字本身')) { sse(res, { content: '慢查询测试' }); return; }
+  modelCalls++;
   const last = body.messages.at(-1);
   if (last.role === 'user' && String(last.content).includes('slow-web')) {
     sse(res, { tool_calls: [{ index: 0, id: 'slow-call-' + modelCalls, type: 'function',

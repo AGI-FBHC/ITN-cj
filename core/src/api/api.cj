@@ -755,7 +755,7 @@ public class Api {
             o.put("agentWorkDir", JsonString(db.getKv("settings", "agent_work_dir", "")))
             // 用户没指定时界面要显示"当前用的是哪个目录"，所以默认目录也回给前端
             o.put("defaultWorkDir", JsonString(defaultWorkDir()))
-            o.put("agentPerm", JsonString(db.getKv("settings", "agent_perm", "ask")))
+            o.put("agentPerm", JsonString(db.getKv("settings", "agent_perm", "auto")))
             o.put("agentExec", JsonString(db.getKv("settings", "agent_exec", "1")))
             ok(ctx, o)
             return
@@ -821,7 +821,7 @@ public class Api {
                     o.put("uiDockW", JsonString(db.getKv("settings", "ui_dock_w", "")))
                     o.put("agentWorkDir", JsonString(db.getKv("settings", "agent_work_dir", "")))
                     o.put("defaultWorkDir", JsonString(defaultWorkDir()))
-                    o.put("agentPerm", JsonString(db.getKv("settings", "agent_perm", "ask")))
+                    o.put("agentPerm", JsonString(db.getKv("settings", "agent_perm", "auto")))
                     o.put("agentExec", JsonString(db.getKv("settings", "agent_exec", "1")))
                     ok(ctx, o)
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
@@ -1198,7 +1198,7 @@ public class Api {
             }
             // 指定了工作目录才把"本机文件"那几个列出来（与真正发给模型的工具一致）
             let wd = db.getKv("settings", "agent_work_dir", "")
-            let perm = db.getKv("settings", "agent_perm", "ask")
+            let perm = db.getKv("settings", "agent_perm", "auto")
             let execOn = db.getKv("settings", "agent_exec", "0") == "1"
             let wt = workspaceToolList(store.dataDir, wd, execOn, perm)
             var wi = 0
@@ -1480,7 +1480,9 @@ public class Api {
                     let ss = SessionStore(store.dataDir)
                     let o = JsonObject()
                     if (ss.titleReady(sid)) {
+                        // 已经有名字：原样回给它，别再生成（"只生成一次"）
                         o.put("generated", JsonBool(false))
+                        o.put("title", JsonString(ss.titleOf(sid)))
                         ok(ctx, o)
                         return
                     }
@@ -1490,8 +1492,6 @@ public class Api {
                         ok(ctx, o)
                         return
                     }
-                    // 先记"问过了"再真的去问：失败也不重试
-                    ss.markTitleAsked(sid)
                     match (chatModelOf(store)) {
                         case Some(cfg) =>
                             try {
@@ -1502,6 +1502,8 @@ public class Api {
                                 let name = cleanSessionTitle(client.chat(sys, ask))
                                 if (name.size > 0) {
                                     ss.rename(sid, name)
+                                    // 成了才落"已起名"标记：失败时下一轮还能补一次
+                                    ss.markTitleAsked(sid)
                                     o.put("generated", JsonBool(true))
                                     o.put("title", JsonString(name))
                                 } else {
@@ -2517,11 +2519,13 @@ func workContextOf(store: Store, b: JsonObject): WorkContext {
     work.chatMode = if (modeReq.size > 0) { modeReq != "work" } else { projectRoot.size == 0 }
     let permReq = strOf(b, "perm")
     work.perm = if (work.chatMode) {
+        // 常规对话是固定档：整机只读 + 只写默认工作目录。它没有任何可选项，界面也不给开关
         "ask"
     } else if (permReq.size > 0) {
         permReq
     } else {
-        db.getKv("settings", "agent_perm", "ask")
+        // 挂工作区的会话（Work）默认"帮我批准"
+        db.getKv("settings", "agent_perm", "auto")
     }
     let execReq = strOf(b, "exec")
     work.allowExec = if (execReq.size > 0) { execReq == "1" } else { db.getKv("settings", "agent_exec", "1") == "1" }

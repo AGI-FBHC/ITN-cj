@@ -184,6 +184,14 @@ public func floatValue(v: JsonValue): Float64 {
     match (v) {
         case f: JsonFloat => f.getValue()
         case i: JsonInt => Float64(i.getValue())
+        // 前端有些字段按界面偏好的约定发字符串数字（"663"、"1.15"）—— 必须认。
+        // 不认的后果不是报错而是**静默变成 0**：设置怎么改都存不进去（分栏宽度就踩过这条）。
+        case s: JsonString =>
+            try {
+                Float64.parse(trimStr(s.getValue()))
+            } catch (e: Exception) {
+                0.0
+            }
         case _ => 0.0
     }
 }

@@ -237,6 +237,11 @@ public class SessionStore {
      * 「第一次提问之后让模型起一次名」靠它守住"只做一次"：用户后来改写了第一条提问、
      * 或者把当前这轮删掉重发，都不会再生成第二个名字。
      */
+    /** 这段会话当前定的名字（没定过就是空串）。 */
+    public func titleOf(sessionId: String): String {
+        return db().getKv("sessions_meta", "title:" + sessionId, "")
+    }
+
     public func titleReady(sessionId: String): Bool {
         if (db().getKv("sessions_meta", "title:" + sessionId, "").size > 0) {
             return true
@@ -245,10 +250,13 @@ public class SessionStore {
     }
 
     /**
-     * 记下"已经问过模型了"。
+     * 记下"这个名字已经定下来了"（**只在对上之后才调**）。
      *
-     * 在真的去问之前就记上：起名失败也不重试 —— 标题只是列表上的一行字，
-     * 不值得为它反复打扰模型；失败时列表继续用第一句话兜着。
+     * 一开始是"问之前就记上、失败也不重试"，实测太脆：第一次提问时模型正忙着生成正文，
+     * 那次起名请求很可能撞上超时（单模型的本地服务尤其明显），于是这段对话永远只剩
+     * 第一句话当标题。现在只在**成功起名**时落这个标记：成功即"只做一次"照旧守住
+     * （用户后来改写第一条提问、删掉这轮重发都不会再生成第二个名字）；
+     * 失败则留待下一轮补一次（前端每轮最多问一次，见 maybeGenerateTitle）。
      */
     public func markTitleAsked(sessionId: String): Unit {
         db().putKv("sessions_meta", "titlegen:" + sessionId, "1")
@@ -303,10 +311,12 @@ public class SessionStore {
      * 150+ 条语句，每条都要 prepare/close，21MB 的库上界面每刷一次列表就卡一下（实测数百毫秒）。
      * 这里改成固定 4 趟：
      *   ① 分组统计（走 ix_session_events(session_id, id)）：条数与最后一条的 id；
-     *   ② 第一个 user/message（走 ix_session_events_kind(kind, id)）：标题；
-     *   ③ 第一个 turn/start（同一条索引）：类型与知识库；
-     *   ④ sessions_meta 一次读完：改过的标题与项目归属。
-     * 最后每段会话只余一次按主键取"最后一条事件的时间与类型"，那是 rowid 查找。
+     *   ② 每段的第一个 user/message（走 ix_session_events_kind(kind, id)）：标题；
+     *   ③ 每段的第一个 turn/start（同一条索引）：类型与知识库；
+     *   ④ 每段的最后一条事件（按 rowid 取，20 段会话 20 次主键查找）。
+     *   ⑤ sessions_meta 一次读完：改过的标题与项目归属。
+     * 注意别把 ②③ 改写成 GROUP BY + MIN 或 id IN (SELECT MAX...)：自研驱动对这些形状没有把握，
+     * 实测在 21MB 的真库上直接卡死（这版是回退后重新测过的）。
      */
     public func list(): ArrayList<JsonObject> {
         let out = ArrayList<JsonObject>()
@@ -326,6 +336,14 @@ public class SessionStore {
             return out
         }
 
+        /*
+         * 每个会话只要"第一条 user/message"。
+         *
+         * 不能写成 WHERE kind='user/message' ORDER BY id 之后在内存里去掉重复 ——
+         * 那会把**所有**提问的 payload 都从磁盘读出来（实测 20 段的库上这一条就占了
+         * 大半个 145ms）。SQLite 有"min/max 配 GROUP BY 时其它列取自那一行"的规矩，
+         * 正好拿来只读每段会话的第一条。
+         */
         let titles = HashMap<String, String>()
         for (r in dbh.querySql("SELECT session_id, payload FROM session_events WHERE kind = 'user/message' ORDER BY id")) {
             let sid = r.text(0)

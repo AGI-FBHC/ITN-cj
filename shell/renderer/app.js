@@ -2010,7 +2010,7 @@ async function generateArtifact(kind, topic) {
       count: kind === "quiz" ? 5 : undefined,
       sessionId: sid,
       web: "auto",
-      perm: state.cfg.agentPerm || "ask",
+      perm: state.cfg.agentPerm || "auto",
       ctxChapter: state.chapter || "",
     });
   } catch (e) {
@@ -3865,7 +3865,7 @@ function makeSplitter(k) {
     if (!dragging) return;
     dragging = false;
     document.body.classList.remove("splitting");
-    savePrefs({ [LAYOUT_COLS[k].key]: String(layoutW[k] || "") });
+    savePrefs({ [LAYOUT_COLS[k].key]: Number(layoutW[k] || 0) });
   };
   h.addEventListener("pointerup", end);
   h.addEventListener("pointercancel", end);
@@ -4164,7 +4164,12 @@ function baseName(p) {
 function sessionWorkDir(sid) {
   const id = sid || state.chatSessionId;
   const meta = (state.sessions || []).find((x) => x.sessionId === id) || {};
-  const project = (state.projects || []).find((p) => p.id === (meta.projectId || ""));
+  /* 归属以这两个来源为准，**不能只看会话列表**：
+     刚新建的会话还没有任何事件，列表里根本没有它（列表是按"有事件的会话"聚合的），
+     于是它会被误判成常规对话 —— 用户实测："我点项目的新会话按钮，怎么还出现了常规聊天"。 */
+  const isCurrent = !sid || sid === state.chatSessionId;
+  const pid = (isCurrent ? (state.chatProject || "") : "") || meta.projectId || "";
+  const project = (state.projects || []).find((p) => p.id === pid);
   if (project) {
     return { name: project.name || baseName(project.root) || project.root, path: project.root || "", project: project };
   }
@@ -4253,8 +4258,12 @@ function sessionMoreBtn() {
 async function maybeGenerateTitle(sid) {
   if (!sid) return;
   state.titleAsked = state.titleAsked || {};
-  if (state.titleAsked[sid]) return;
-  state.titleAsked[sid] = true;
+  const tries = state.titleAsked[sid] || 0;
+  /* 一次成功就够：内核那边已经有名字（自动或手动）时会直接回 generated=false。
+     失败允许再补 —— 第一次提问时模型正忙着生成正文，起名请求可能撞超时；
+     但最多补 3 次，别为了一行字反复打扰模型。 */
+  if (tries >= 3) return;
+  state.titleAsked[sid] = tries + 1;
   try {
     const d = await api("/api/sessions/title", { sessionId: sid });
     if (!d || !d.generated) return;
@@ -5065,6 +5074,11 @@ async function renderPanel(force) {
   const foot = $("panel-foot");
   if (!body || !foot) return;
   const key = current + "/" + (currentSection || "");
+  /* 指纹必须在**取完数**之后算：否则外部新建的项目/会话还没进 state，
+     指纹与上次一样 → 直接跳过渲染 → 侧栏里永远看不到它（踩过）。 */
+  if (def && typeof def.load === "function") {
+    try { await def.load(); } catch (e) { /* 取数失败就按现有 state 画 */ }
+  }
   const sig = def && def.sig ? String(def.sig()) : "";
   // 数据没变、还是同一块面板：连 DOM 都不碰（这是"列表老闪一下"的正解）
   if (!force && sig && sig === panelSig && key === panelSigFor && body.childNodes.length) {
@@ -5412,6 +5426,7 @@ PANELS.kb = {
 PANELS.chat = {
   title: "对话",
   sig: () => chatRailSig(),
+  load: async () => { await loadSessions(); await loadProjects(); },
   /**
    * 结构没变、只有内容变了（标题被模型起好了 / 这一轮跑完时间刷新了 / 换了一段会话）：
    * 就地改每一行的字与高亮，不重建行 —— 这就是"列表不再闪一下"的地方。
@@ -5442,8 +5457,6 @@ PANELS.chat = {
   ],
   async render(body, ui) {
     await loadCfg();
-    await loadSessions();
-    await loadProjects();
 
     /* 会话栏的骨架照 Codex：项目是一行可折叠的标题（文件夹 + 名字 + 计数，悬停时右侧
        出现 ⋯ 与"新建会话"），会话缩进列在它下面；没挂项目的会话归到"普通对话"。
@@ -5471,14 +5484,18 @@ PANELS.chat = {
     const orderedProjects = (state.projects || []).slice()
       .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
     const order = [];
-    for (const pr of orderedProjects) if (groups.has(pr.id)) order.push(pr.id);
+    /* 所有项目都列出来，哪怕它一段会话都还没有 —— 否则新建的项目在侧栏里看不见，
+       用户根本没法从它那里开第一段 Work 会话（用户实测：新建项目后找不到它）。
+       搜索时则只留有命中的：空标题挂在搜索结果里是噪音。 */
+    for (const pr of orderedProjects) {
+      if (!q || groups.has(pr.id)) order.push(pr.id);
+    }
     for (const k of groups.keys()) if (k !== "" && order.indexOf(k) < 0) order.push(k);
     if (groups.has("")) order.push("");
 
     const RAIL_OPEN_DEFAULT = 6;
     for (const key of order) {
-      const mine = groups.get(key);
-      if (!mine || !mine.length) continue;
+      const mine = groups.get(key) || [];
       const project = key ? (state.projects || []).find((x) => x.id === key) : null;
       const name = key ? (project ? (project.name || project.root) : "已删除的项目") : "普通对话";
       const collapsed = !!state.railGroups[key];
@@ -5492,7 +5509,7 @@ PANELS.chat = {
         '<span class="rail-group-chev">' + icon("chevron") + "</span>" +
         '<span class="rail-group-icon">' + icon(project ? "folder" : "chat") + "</span>" +
         "<span class='rail-group-text'>" + esc(name) + "</span>" +
-        "<span class='rail-group-count'>" + mine.length + "</span>";
+        (mine.length ? "<span class='rail-group-count'>" + mine.length + "</span>" : "");
       nameBtn.onclick = () => { state.railGroups[key] = !collapsed; renderPanel(); };
       head.appendChild(nameBtn);
       if (key) {
@@ -6398,6 +6415,8 @@ PAGES.chat = {
     wsChip.type = "button";
     const paintWsChip = () => {
       const wd = sessionWorkDir();
+      // 归属可能在切换会话时就变了：显隐也在这里定，别只在创建时判一次（踩过）
+      wsChip.hidden = !wd.project;
       wsChip.innerHTML = icon("folder") + "<span>" + esc(wd.name || "未指定工作区") + "</span>";
       wsChip.title = (wd.path ? "工作目录：" + wd.path + "\n" : "") +
         (wd.project ? "指定工作区（Work）：权限按右边那枚档位" : "常规聊天：整机只读，只对这个目录可写") +
@@ -6405,6 +6424,10 @@ PAGES.chat = {
       wsChip.classList.toggle("off", !wd.path);
     };
     paintWsChip();
+    const isWorkNow = () => !!sessionWorkDir().project;
+    /* 常规对话是固定行为：整机只读 + 只写默认目录，没有任何可选项，所以两个 chip 都不摆
+       （用户要求："常规对话就不要有任何的选项"、"常规聊天是默认路径，也不用显示"）。 */
+    wsChip.hidden = !isWorkNow();
     wsChip.onclick = (ev) => {
       ev.stopPropagation();
       const wd = sessionWorkDir();
@@ -6429,14 +6452,11 @@ PAGES.chat = {
     const paintPermChip = () => {
       const wd = workDirName();
       if (isChatMode()) {
-        permChip.innerHTML = icon("chat") + "<span>常规聊天</span>";
-        permChip.title = "整机只读 · 只对默认工作目录可写" +
-          "\n默认目录：" + (state.cfg.agentWorkDir || state.cfg.defaultWorkDir || "") +
-          "\n想让它改别的目录：在侧栏里为那个目录建一个 Work 会话";
-        permChip.classList.add("fixed");
+        permChip.hidden = true;      // 常规对话没有任何选项可给
         return;
       }
-      const m = state.cfg.agentPerm || "ask";
+      permChip.hidden = false;
+      const m = state.cfg.agentPerm || "auto";
       permChip.innerHTML = icon("shield") + "<span>" + esc(PERM_LABEL[m] || m) + "</span>" + icon("chevron");
       permChip.title = (PERM_HINT[m] || "") + (wd
         ? "\n工作目录：" + (state.cfg.agentWorkDir || state.cfg.defaultWorkDir || "")
@@ -6444,6 +6464,7 @@ PAGES.chat = {
       permChip.classList.remove("fixed");
     };
     paintPermChip();
+    state.chatRepaintChips = () => { paintWsChip(); paintPermChip(); };
     crow.appendChild(permChip);
     crow.appendChild(spacer());
 
@@ -6583,7 +6604,7 @@ PAGES.chat = {
       if (pf) {
         pf.hidden = mode === "skills";
         for (const b of pf.querySelectorAll(".cm-perm-item")) {
-          b.classList.toggle("active", b.dataset.perm === (state.cfg.agentPerm || "ask"));
+          b.classList.toggle("active", b.dataset.perm === (state.cfg.agentPerm || "auto"));
         }
       }
     };
@@ -6760,8 +6781,8 @@ PAGES.chat = {
             // 作用范围在这里说清：这一段对话在哪个目录干活、检索什么
             text: (wdEmpty.project
                     ? "工作目录：" + (wdEmpty.path || "") + "（权限见输入框左下角）"
-                    : "常规聊天：整机只读，只对「" + (wdEmpty.name || "默认工作目录") + "」可写") +
-                  " · 检索范围：本机全部知识库，答案带出处。" +
+                    : "") +
+                  "检索范围：本机全部知识库，答案带出处。" +
                   (state.chapter ? " 会带上你正在学的《" + state.chapter + "》。" : ""),
             actions: hasKb() ? [
               // 第一条跟着"当前在学什么"走：学过某一章才问"这一章"，否则问一个一定有落点的问题
@@ -6863,8 +6884,6 @@ PAGES.chat = {
       state.chatTurns.push({ id: "local", kind: "ask", user: text, items: [], report: null, citations: [], ok: null, message: "" });
       state.stickBottom = true;
       paint();
-      // 这段对话的第一句话：让模型起个名（只做一次；名字回来之前列表先用这句话兜着）
-      if ((state.chatTurns || []).filter((x) => x.user).length <= 1) maybeGenerateTitle(sid);
 
       // 生成过程中轮询会话事件，把 assistant/delta 渲染成"打字机"效果。
       // 内核 HTTP 是多线程的，长生成不会挡住这个轮询；顺便每 1.5 秒看一眼有没有要批准的动作。
@@ -6905,7 +6924,7 @@ PAGES.chat = {
           kbId: "", question: text, sessionId: sid, web: "auto",
           // 模式由会话决定：普通对话（没项目）＝ 常规聊天，内核据此锁死"只写默认目录"
           mode: (state.chatProject ? "work" : "chat"),
-          skill: state.skill || "", perm: state.cfg.agentPerm || "ask",
+          skill: state.skill || "", perm: state.cfg.agentPerm || "auto",
           // 界面上下文：用户正在看哪一章——"这一章"才有落点，不用模型反查/反问
           ctxChapter: state.chapter || "",
         };
@@ -6943,6 +6962,11 @@ PAGES.chat = {
         toast(String(failure).indexOf("取消") >= 0 ? "已取消" : ("生成失败：" + failure));
       }
       await reloadSessions();
+      /* 这一轮跑完了再给这段对话起名：起名是**另一次模型请求**，
+         和正文生成抢同一个模型（本地单线程服务甚至会直接撞超时），
+         放在轮次收尾之后既不打扰正文，也让"名字只在第一次提问后生成一次"更好解释。
+         名字回来之前，列表与顶栏先用第一句话兜着。 */
+      maybeGenerateTitle(sid);
       if (typeof refreshWorkbenchState === "function") await refreshWorkbenchState();
       if (current === "chat" && !thread.isConnected) await go("chat");
       else paint();
@@ -7018,6 +7042,9 @@ PAGES.chat = {
       for (const node of document.querySelectorAll("#panel-body .panel-item")) {
         node.classList.toggle("active", node.dataset.id === id);
       }
+      if (typeof state.chatRepaintChips === "function") state.chatRepaintChips();
+      // 顶栏那条面包屑（📁 工作区 | 会话名）也要跟着换，否则从项目新建会话后它还是上一段的
+      if (typeof refreshChatHeader === "function") refreshChatHeader();
       ta.focus();
     };
     /* 已有会话：把历史事件还原成线程 */
@@ -7676,7 +7703,7 @@ function settingsGeneral() {
 function settingsAgent() {
   const g = document.createDocumentFragment();
   const dir = state.cfg.agentWorkDir || "";
-  const perm = state.cfg.agentPerm || "ask";
+  const perm = state.cfg.agentPerm || "auto";
 
   const card = cardOf({
     title: "默认工作目录",

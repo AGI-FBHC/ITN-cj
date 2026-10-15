@@ -182,6 +182,30 @@ const freePort = () => new Promise((res, rej) => {
     if (dockInfo.found && !dockInfo.splitter) throw new Error('成果面板边缘应当有可拖的宽度手柄');
     console.log('DOCK-INLINE position=' + dockInfo.pos + ' splitter=' + dockInfo.splitter + ' w=' + dockInfo.w);
 
+    /* 拖动条真的能改宽度，而且记住 —— 只挂手柄不改宽度是最容易骗过自己的假实现
+       （踩过：--dock-w 设上了，但 workbench.css 里同特异性的宽度把它盖掉了）。 */
+    const dragCheck = async (sel, splitterSel, dx) => {
+      const before = await page.evaluate((x) => Math.round(document.querySelector(x).getBoundingClientRect().width), sel);
+      const box = await page.locator(splitterSel).first().boundingBox();
+      await page.mouse.move(box.x + 3, box.y + 150);
+      await page.mouse.down();
+      await page.mouse.move(box.x + 3 + dx, box.y + 150, { steps: 6 });
+      await page.mouse.up();
+      await sleep(500);
+      const after = await page.evaluate((x) => Math.round(document.querySelector(x).getBoundingClientRect().width), sel);
+      return { before, after };
+    };
+    const panelDrag = await dragCheck('.panel', '.splitter-panel', 60);
+    if (Math.abs((panelDrag.after - panelDrag.before) - 60) > 8) throw new Error('会话栏宽度没跟着拖动：' + JSON.stringify(panelDrag));
+    const dockDrag = await dragCheck('.resource-dock', '.splitter-dock', -80);
+    if (Math.abs((dockDrag.after - dockDrag.before) - 80) > 8) throw new Error('成果面板宽度没跟着拖动：' + JSON.stringify(dockDrag));
+    const prefsAfterDrag = await post('/api/prefs/get', {});
+    if (!prefsAfterDrag.data.uiDockW || !prefsAfterDrag.data.uiPanelW) {
+      throw new Error('拖过的宽度应当写进偏好，实际 ' + JSON.stringify([prefsAfterDrag.data.uiDockW, prefsAfterDrag.data.uiPanelW]));
+    }
+    console.log('DRAG 会话栏 ' + panelDrag.before + '→' + panelDrag.after + ' / 成果面板 ' + dockDrag.before + '→' + dockDrag.after +
+      ' （存下 ' + prefsAfterDrag.data.uiPanelW + ' / ' + prefsAfterDrag.data.uiDockW + '）');
+
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.evaluate(() => { const d = document.getElementById('resource-dock'); if (d) d.hidden = true; });
     await nav('chat');
@@ -191,11 +215,35 @@ const freePort = () => new Promise((res, rej) => {
     await page.waitForSelector('.rail-menu.new-menu', { timeout: 5000 });
     await page.locator('.rail-menu.new-menu .rail-menu-item').first().click();
     await sleep(700);
-    const chipText = (await page.locator('.composer-chip.fixed').innerText()).replace(/\s+/g, "");
-    if (chipText.indexOf('常规聊天') < 0) throw new Error('常规聊天会话的 chip 应当是固定档「常规聊天」，实际：' + chipText);
-    console.log('CHAT-MODE 常规聊天 chip=' + chipText);
+    /* 常规对话：不给任何选项（工作区 chip 与权限 chip 都不摆）——
+       用户要求"常规对话就不要有任何的选项"。 */
+    const chatChips = await page.locator('.composer-chip:not([hidden])').count();
+    if (chatChips !== 0) throw new Error('常规对话不该有工作区/权限选项，实际 ' + chatChips + ' 个');
+    console.log('CHAT-MODE 常规对话没有任何选项');
+
+    /* Work 模式（挂工作区的会话）：才给选项，权限默认"帮我批准"。
+       顺带验一个真实踩过的坑：刚新建的空会话还没进会话列表，不能因此被当成常规对话。 */
+    const projDir = fs.mkdtempSync(path.join(os.tmpdir(), 'itn-work-'));
+    const projSaved = await post('/api/projects/save', { root: projDir });
+    const proj = projSaved.data;
+    await nav('chat');
+    await page.locator('#panel-body .rail-group-head[data-group="' + proj.id + '"] .rail-group-btn').last().click();
+    await sleep(1000);
+    const workCrumb = (await page.locator('.wb-crumb').innerText()).replace(/\s+/g, " ");
+    if (workCrumb.indexOf(proj.name) < 0) throw new Error('从项目新建的会话，顶栏应当显示这个工作区：' + workCrumb);
+    const workChips = await page.locator('.composer-chip:not([hidden])').allInnerTexts();
+    const workChipsText = workChips.join(' | ').replace(/\s+/g, " ");
+    if (workChipsText.indexOf(proj.name) < 0) throw new Error('Work 会话应当显示工作区 chip，实际：' + workChipsText);
+    if (workChipsText.indexOf('帮我批准') < 0) throw new Error('Work 会话的权限默认应当是「帮我批准」，实际：' + workChipsText);
+    console.log('WORK-MODE 面包屑=' + workCrumb + ' / chip=' + workChipsText);
+    await page.locator('#chat-input').fill('工作区第一问');
+    await page.locator('.composer-send').click();
+    await page.waitForFunction(() => !state.busyTurn, null, { timeout: 90000 });
+    await sleep(600);
+    await nav('chat');
 
     await page.locator('#chat-input').fill('第二个会话');
+    await page.waitForTimeout(50);
     await page.locator('.composer-send').click();
     await page.waitForFunction(() => !state.busyTurn, null, { timeout: 90000 });
     await sleep(800);
@@ -221,12 +269,50 @@ const freePort = () => new Promise((res, rej) => {
     if (!(await page.locator('#chat-thread .msg-meta.left').count())) throw new Error('回答下面应当有复制/分支与时间');
     if (!(await page.locator('#chat-thread .msg-meta .msg-time').count())) throw new Error('消息底下应当显示时间');
 
+    /* 会话名：第一轮提问后由模型起一次，列表里那行字要换掉"第一句话兜底"的默认标题；
+       起过之后不再变（只生成一次）。 */
+    let generatedTitle = "";
+    for (let i = 0; i < 40; i++) {
+      const titles = await page.locator('#panel-body .panel-item-title').allInnerTexts();
+      const hit = titles.find((x) => x.indexOf('Mock 会话名') >= 0);
+      if (hit) { generatedTitle = hit; break; }
+      await sleep(250);
+    }
+    if (!generatedTitle) {
+      throw new Error('第一轮之后会话标题应当被模型起名替换（期望含「Mock 会话名」），实际：' +
+        (await page.locator('#panel-body .panel-item-title').allInnerTexts()).join(' / '));
+    }
+    if (generatedTitle.indexOf('"') >= 0 || generatedTitle.indexOf('。') >= 0) {
+      throw new Error('标题里的引号/句号应当被清洗掉，实际：' + generatedTitle);
+    }
+    console.log('SESSION-TITLE 生成=' + generatedTitle);
+
+    /* 已经起过名的那段：再调一次端点必须原样返回、不再生成（"只生成一次"是用户明确要的语义）。 */
+    const titleAgain = await page.evaluate(async () => {
+      const list = (await (await fetch('/api/sessions/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json()).data.sessions;
+      const target = list.find((x) => String(x.title || '').indexOf('Mock 会话名') >= 0);
+      if (!target) return { found: false, titles: list.map((x) => x.title) };
+      const r = await (await fetch('/api/sessions/title', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: target.sessionId }) })).json();
+      return { found: true, data: r.data, title: target.title };
+    });
+    if (!titleAgain.found) throw new Error('找不到起过名的那段会话：' + JSON.stringify(titleAgain.titles));
+    if (titleAgain.data.generated) throw new Error('标题只能生成一次，第二次调用不该再生成：' + JSON.stringify(titleAgain.data));
+    if (String(titleAgain.data.title || '') !== titleAgain.title) {
+      throw new Error('第二次调用不该改标题：' + JSON.stringify(titleAgain));
+    }
+    console.log('SESSION-TITLE-ONCE 二次调用 generated=false，标题仍是 ' + titleAgain.title);
+
+
     // 旧的"项目 chip 一排"必须消失
     if (await page.locator('.rail-new').count()) throw new Error('新建对话那一排 chip 应该已经去掉（改成右上角 ＋ 的模式菜单）');
     const heads = await page.locator('#panel-body .rail-group-head').count();
     if (!heads) throw new Error('会话栏应当有分组标题（普通对话 / 项目）');
-    const headText = (await page.locator('#panel-body .rail-group-name').first().innerText()).replace(/\s+/g, "");
-    if (headText.indexOf('普通对话') < 0) throw new Error('第一组应当是「普通对话」，实际：' + headText);
+    const headTexts = await page.locator('#panel-body .rail-group-name').allInnerTexts();
+    const headClean = headTexts.map((x) => x.replace(/\s+/g, ""));
+    if (!headClean.some((x) => x.indexOf('普通对话') >= 0)) throw new Error('会话栏里应当有「普通对话」这一组，实际：' + headClean.join(' / '));
+    // 项目在前、普通对话固定收尾（项目是这版的组织单元）
+    if (headClean[headClean.length - 1].indexOf('普通对话') < 0) throw new Error('「普通对话」应当排在最后，实际：' + headClean.join(' / '));
+    console.log('RAIL-GROUPS ' + headClean.join(' | '));
     if (await page.locator('#panel-body .rail-group-head[data-group=""] .rail-group-actions').count()) {
       throw new Error('「普通对话」行不该有项目动作（⋯ / 新建会话）');
     }
