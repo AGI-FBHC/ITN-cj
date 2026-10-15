@@ -2987,3 +2987,14 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - 用户回答此前定位问题，明确是“论文调研仍显示思考中”。结合已保存的12:02:21 turn/end成功终态，确认该反馈是前端等待状态未退出，不是该任务仍在后台调研。
 - 再次只读核对当前进程：主窗口74924、内核67276，仍来自 dist/ITN-Desktop 原目录；尚未启动 dist/ITN-Desktop-stop-fix 修复版。没有关闭或重启用户窗口。
 - 修复版已包含终态轮询解除HTTP等待及按钮状态恢复，提交4b99359/9dfc055，专项11/11已验证。下一步使用操作为关闭旧窗口，再打开并排修复版，沿用同一数据目录。
+
+## 2026-10-15 讨论：lumin如何接入、为何体验仍别扭、工作台方向（未实施）
+- 用户认为接入后仍沿用不满意的对话页面，要求解释实际接入，并讨论更接近Codex/Claude Code的方案。本轮只读核对架构与官方资料；没有改业务代码、没有新开目标模式、没有启动改版。
+- 当前是编译期嵌入lumin运行时与工具副本，不是把lumin CLI进程套壳。Electron启动仓颉HTTP服务，PiAgent适配ITN领域工具/模型provider/技能/审批/事件，ask-pi与task-pi运行同一Agent循环；原renderer/app.js仍负责页面和轮询。23份副本归一化检查仍匹配。
+- 关键已核实缺口：runFull每请求newSession/newAgent；historyMessages只恢复最后最多8条user/message和assistant/message文本，历史工具调用结果没有一并恢复。SQLite里可见完整记录并不等于模型下一轮拿到完整上下文。重新创建对象本身不是问题，缺的是完整会话恢复与统一权威状态。
+- 界面仍以首页/学练/成长/我的资源/个性化资源/知识库/伴学助手/设置为主，聊天是其中一页；全局busyTurn等前端状态与HTTP请求、数据库轮询并存。它没有按工作区→会话→轮次→操作/文件的产品形态重构，不能把通过接口测试等同于交互完成。
+- 官方对照已读取：Codex App Server文档的Thread/Turn/Item、通知、steer/interrupt/terminal lifecycle；Claude Code Desktop的sessions sidebar、diff review；Interactive mode的折叠工具记录与Esc中断。仅参考公开交互和协议，不推断其内部实现。
+- 讨论建议A（推荐，未获选择）：保留仓颉+lumin引擎，宿主做清晰的长期会话服务/事件协议，重建桌面工作台：左工作区与会话，中对话/实际进展，右按需报告/来源/文件差异。原教学功能保留在“学习中心”或技能/工具入口，主工作台优先任务→产物→继续修改，不要求用户跨多个资源页。
+- 讨论建议B：同一lumin/ITN工具后端提供终端Agent/TUI，适合开发者和命令操作；现有lumin CLI不是Claude Code级完整TUI，仍需交互开发，图文资料与报告查看不如桌面面板直接。
+- 待讨论的核心选择：将整个软件主入口改为Agent工作台，还是保留现有学习主入口、先只重构对话区域。没有把建议当作用户已批准的实现决定。
+- 官方来源：https://learn.chatgpt.com/docs/app-server ，https://code.claude.com/docs/en/desktop ，https://code.claude.com/docs/en/interactive-mode 。
