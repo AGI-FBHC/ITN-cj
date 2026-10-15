@@ -52,7 +52,7 @@ public func learningTools(store: Store, kbId: String, shouldAbort: () -> Bool, s
             return learningResult(ls.resource(strOf(args, "id"), intOf(args, "version")), "已读取资源")
         }))
     out.add(makeTool("generate_learning_resource", "生成学习资源", "讲义、实操、分阶测试或在线演示",
-        "仅在用户需要学习资料或你判断确有教学价值时生成一种资源。kind=lecture/practice/quiz/ppt；count 为题量或页数。内部执行结构化生成、质检和有限返修，失败如实返回，不要声称生成成功。返回稳定资源 id 和版本，可在工作台预览、作答或播放。",
+        "仅在用户需要学习资料或你判断确有教学价值时生成一种资源。kind 取 lecture（讲义）/ practice（练习册）/ quiz（测试）/ ppt（演示）；count 为题量或页数。内部执行结构化生成、质检和有限返修，失败如实返回，不要声称生成成功。返回稳定资源 id 和版本，可在工作台预览、作答或播放。",
         "{\"type\":\"object\",\"properties\":{\"kind\":{\"type\":\"string\",\"enum\":[\"lecture\",\"practice\",\"quiz\",\"ppt\"]},\"topic\":{\"type\":\"string\"},\"detail\":{\"type\":\"string\",\"enum\":[\"concise\",\"balanced\",\"detailed\"]},\"count\":{\"type\":\"integer\"}},\"required\":[\"kind\",\"topic\"]}", "write", { args: JsonObject =>
             let req = ResourceRequest()
             req.kind = strOf(args, "kind")

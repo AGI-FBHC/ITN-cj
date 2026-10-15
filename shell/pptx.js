@@ -107,6 +107,75 @@ function looseTextFromPpt(buf) {
   return runs.join("\n");
 }
 
+/** 还原 XML 实体（pptx / docx 两处都用）。 */
+function unescapeXml(s) {
+  return String(s).replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"").replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+}
+
+/**
+ * word/document.xml → [{ level, text }]。
+ *
+ * level：段落样式是 Heading1..6（中文模板里可能叫"1 级标题"）就给 1..6，其余 0。
+ * 表格里的段落也走同一条路（<w:p> 在 <w:tbl> 里照样匹配得到），所以表格文字不会漏。
+ */
+function textOfDocXml(xml) {
+  const out = [];
+  const pRe = /<w:p\b[\s\S]*?<\/w:p>|<w:p\b[^>]*\/>/g;
+  const blocks = xml.match(pRe) || [];
+  for (const block of blocks) {
+    let level = 0;
+    const st = /<w:pStyle\b[^>]*w:val="([^"]+)"/.exec(block);
+    if (st) {
+      const m = /^Heading(\d)$/i.exec(st[1]) || /^(\d)级标题$/.exec(st[1]) || /^heading\s*(\d)$/i.exec(st[1]);
+      if (m) level = Math.min(6, Number(m[1]));
+    }
+    const soft = block.replace(/<w:br\b[^>]*\/?>/g, "\n").replace(/<w:tab\b[^>]*\/?>/g, "\t");
+    const runs = [];
+    const tRe = /<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/g;
+    let m;
+    while ((m = tRe.exec(soft)) !== null) runs.push(m[1]);
+    const text = unescapeXml(runs.join("")).replace(/\u0000/g, "");
+    if (text.trim()) out.push({ level: level, text: text });
+  }
+  return out;
+}
+
+/**
+ * 读 .docx 的正文（离线、只读，为了在窗口里预览）。
+ *
+ * 和 pptx 同一套路子：docx 也是 ZIP，正文在 word/document.xml。老 .doc（OLE）没有 ZIP 结构，
+ * 退回"扫 UTF-16LE 可读串"的粗办法 —— 给不出段落层级，但能让用户看到写了什么。
+ */
+function readDoc(file) {
+  const buf = fs.readFileSync(file);
+  const lower = String(file).toLowerCase();
+  if (lower.endsWith(".docx") || lower.endsWith(".docm")) {
+    const entries = listEntries(buf);
+    const main = entries.find((e) => e.name === "word/document.xml");
+    if (main) {
+      const xml = readEntry(buf, main);
+      if (xml) {
+        const paragraphs = textOfDocXml(xml.toString("utf8"));
+        if (paragraphs.length) return { kind: "docx", paragraphs: paragraphs };
+      }
+    }
+    // 有些导出工具把正文拆到别的部件里；退到"所有 xml 里找 w:t"
+    const loose = [];
+    for (const e of entries) {
+      if (!/\.xml$/.test(e.name)) continue;
+      const x = readEntry(buf, e);
+      if (!x) continue;
+      const s = x.toString("utf8");
+      if (s.indexOf("<w:t") < 0) continue;
+      for (const p of textOfDocXml(s)) loose.push(p);
+    }
+    return { kind: "docx", paragraphs: loose };
+  }
+  const text = looseTextFromPpt(buf);
+  return { kind: "doc", paragraphs: text.split("\n").filter((x) => x.trim()).map((x) => ({ level: 0, text: x })) };
+}
+
 /** 入口：给定文件路径，返回 [{index, text}]。读不动就抛，由主进程转成错误信息。 */
 function readDeck(file) {
   const buf = fs.readFileSync(file);
@@ -128,4 +197,4 @@ function readDeck(file) {
   return { kind: "ppt", slides: [{ index: 1, text: looseTextFromPpt(buf) }] };
 }
 
-module.exports = { readDeck };
+module.exports = { readDeck, readDoc };

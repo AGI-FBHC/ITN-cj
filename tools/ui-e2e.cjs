@@ -272,7 +272,7 @@ fs.writeFileSync(singleFile, [
       if (p) p.hidden = true;
       document.body.classList.remove('player-open');
     });
-    const aliases = {'首页':'学习中心','伴学助手':'Agent 工作台','领域知识库':'知识库','个性化资源':'学习资源'};
+    const aliases = {'首页':'学习中心','伴学助手':'智能体工作台','领域知识库':'知识库','个性化资源':'学习资源'};
     if (['学 · 练','我的成长','我的资源'].includes(label)) {
       await page.locator('#rail .nav-item[data-page="home"]').click();
       await page.waitForSelector('.center-links');
@@ -337,7 +337,7 @@ fs.writeFileSync(singleFile, [
       return tip ? tip.textContent.trim() : e.textContent.trim();
     }));
     assert(items.length === 6, '侧栏入口应为 6 个，实际 ' + items.length + '：' + items.join('/'));
-    assert(items.indexOf('Agent 工作台') >= 0 && items.indexOf('会话记录') < 0,
+    assert(items.indexOf('智能体工作台') >= 0 && items.indexOf('会话记录') < 0,
       '「会话记录」应已并入「伴学助手」，实际：' + items.join('/'));
     assert(items.indexOf('画像校准') < 0 && items.indexOf('错题本') < 0 && items.indexOf('我的笔记') < 0,
       '校准应并入「我的成长」、笔记与错题本应并入「我的资源」，实际：' + items.join('/'));
@@ -2159,7 +2159,7 @@ fs.writeFileSync(singleFile, [
     await page.locator('#top-actions button').first().click();
     await page.waitForTimeout(800);
     title = await page.textContent('#page-title');
-    assert(title.indexOf('Agent 工作台') >= 0, '应回到对话，实际 ' + title);
+    assert(title.indexOf('智能体工作台') >= 0, '应回到对话，实际 ' + title);
     return '一个入口 → 两种视图（对话 / 全部会话）';
   });
 

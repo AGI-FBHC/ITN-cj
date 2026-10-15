@@ -20,6 +20,12 @@ contextBridge.exposeInMainWorld("itnWindow", {
   pickDeck: () => ipcRenderer.invoke("dlg:pick-deck"),
   /** 读一份演示文稿（.pptx / .ppt）的文字，给"在线演示"做离线预览。 */
   readDeck: (p) => ipcRenderer.invoke("deck:read", String(p || "")),
+  /** 打开系统的"选文档"对话框（.docx / .doc）。 */
+  pickDoc: () => ipcRenderer.invoke("dlg:pick-doc"),
+  /** 读一份文档（.docx / .doc）的文字，做离线预览。 */
+  readDoc: (p) => ipcRenderer.invoke("doc:read", String(p || "")),
+  /** 把一份 Markdown 导成可编辑的 .pptx / .docx（会弹"另存为"对话框）。 */
+  exportResource: (payload) => ipcRenderer.invoke("export:resource", payload || {}),
   /**
    * 订阅深链接：`lumin://thread/<会话id>`。
    *

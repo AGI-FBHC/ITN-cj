@@ -3743,3 +3743,36 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 ### 验证与产物
 - 内核 `cjpm test` **112/112**；`glass-shot` 全过（新增 DRAFT）；`stop-check` 11/11；`learning-check --ui` 57/57。
 - 版本 **0.4.1**；产物 `dist/Lumin-0.4.1` 与 `dist/Lumin-0.4.1-win-x64.zip`；关键文件哈希 BAD=0；空数据目录启动 RESULT=OK。
+
+
+## 2026-10-16 · 第十三轮：界面中文化（工具名 / 模式名 / 接口词）· Lumin 0.4.2
+
+### 为什么
+用户："前面用中文里夹杂的英文，尽量做成中文的界面"。
+
+### 做法：先量，再改（不靠猜）
+- 新增探针 `tools/zh-audit.cjs`：起隔离环境（mock 模型 + 独立数据目录），把每个页面**真实渲染出来**的文字
+  与 title / placeholder / aria-label 全抓下来，按"含英文且不含中文"过滤，并断言三件事：
+  ① 禁用词表（Agent / Work / API Key / Base URL）零命中；② 工具卡标题不许以英文工具名开头；
+  ③ 纯英文行只允许路径 / 型号 / 品牌。跑法 `node tools/zh-audit.cjs`，末行 `RESULT=OK`。
+- 抓到并修掉的（都是真实渲染出来的）：
+  - **工具名**：`TOOL_LABEL` 缺 pi 运行时的本机工具，工具卡直接显示 `write：mock-test.md` / `read` /
+    `powershell`；技能页还出现 `skill_read　skill_read` 这种同名重复。补齐 read/write/edit/ls/find/grep/
+    powershell/skill_read 的中文名；`web_search` 去掉"（Tavily）"后缀（提供商名留在密钥那一栏）。
+  - **模式名**：`Work` 全部改中文「指定工作区」（6 处，含设置页与斜杠命令提示）。
+  - **接口词**：Base URL → 接口地址；API Key → 密钥（模型页、权限说明、关于页、联网搜索密钥行）。
+  - **Agent → 智能体 / Lumin**（导航"智能体工作台"、 "让 Lumin 修改" 等 8 处；`tools/ui-e2e.cjs` 3 条断言同步改）。
+  - 关于页"构建：development" → "开发版"（release.json 里 sourceCommit=development 时不再直接露英文）。
+  - **版本号**：内核 `/api/health` 里的版本还停在 0.3.0（打包版状态栏跟着显示 0.3.0）——改成 0.4.2；
+    前端状态栏改成优先用包内 release.json 的版本。
+  - 工具描述里 `kind=lecture/practice/quiz/ppt` 补中文注（lecture（讲义）/ practice（练习册）/ quiz（测试）/ ppt（演示））。
+- 保留没动：Markdown / GitHub / JSON / PowerShell / SQLite / Cangjie / Ctrl+K / Enter 与工具 id（模型侧参数名与
+  技术专名，翻掉反而看不懂）；模型名（MiMo TokenPlan / DeepSeek）与文件路径原样。
+
+### 验证与产物
+- `tools/zh-audit.cjs` **RESULT=OK**（工具卡实测 `生成学习资源：输入与输出 | 写文件：mock-test.md`）。
+- `glass-shot` 全过（DRAFT / SESSION-TREE / BRANCH / 无控制台报错照旧）、`stop-check` 11/11、`learning-check --ui` 57/57。
+- 版本 **0.4.2**；产物 `dist/Lumin-0.4.2` 与 `dist/Lumin-0.4.2-win-x64.zip`。
+- 注：本提交同时带上并行线程正在做的 .docx 预览改动（`shell/main.js` 的 `doc:read`、`shell/pptx.js` 的
+  `readDoc`、`app.js` 的 `docToSlides` / "打开文档…"、`shell/preload.js`），它们在同一工作区，未单独再分一次提交；
+  其导出用的 `shell/deck-export.js` **还没落地**（UI 里也还没接），所以是"只读预览可用、导出未接线"的状态。

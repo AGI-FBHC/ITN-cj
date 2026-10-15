@@ -294,6 +294,63 @@ async function createWindow() {
     }
   });
 
+  /** 选一份文档（.docx / .doc）—— 学习资源页的"打开文档…"用。 */
+  ipcMain.handle("dlg:pick-doc", async () => {
+    if (!win) return "";
+    const r = await dialog.showOpenDialog(win, {
+      title: "选一份文档",
+      properties: ["openFile"],
+      filters: [
+        { name: "文档", extensions: ["docx", "docm", "doc"] },
+        { name: "所有文件", extensions: ["*"] },
+      ],
+      buttonLabel: "打开它",
+    });
+    if (r.canceled || !r.filePaths || !r.filePaths.length) return "";
+    return r.filePaths[0];
+  });
+
+  ipcMain.handle("doc:read", async (_e, p) => {
+    if (!p) return { ok: false, error: "没有路径" };
+    if (!fs.existsSync(p)) return { ok: false, error: "文件不存在：" + p };
+    try {
+      const doc = require("./pptx").readDoc(p);
+      return { ok: true, kind: doc.kind, paragraphs: doc.paragraphs };
+    } catch (e) {
+      return { ok: false, error: String((e && e.message) || e) };
+    }
+  });
+
+  /**
+   * 把一份 Markdown 导成**可编辑**的 .pptx / .docx（离线、零依赖，写包的是 shell/deck-export.js）。
+   *
+   * 学习成果本来就是 Markdown；要交给别人、或者自己接着改，就得有 Office 文件。
+   * 保存路径让用户自己挑（系统对话框），失败原样返回错误，不假装成功。
+   */
+  ipcMain.handle("export:resource", async (_e, payload) => {
+    const md = String((payload && payload.markdown) || "");
+    const kind = String((payload && payload.kind) || "pptx").toLowerCase();
+    const suggested = String((payload && payload.name) || "学习资源").replace(/[\\/:*?"<>|]/g, "_").slice(0, 60);
+    if (!md.trim()) return { ok: false, error: "这份资源没有内容可导出" };
+    if (!win) return { ok: false, error: "没有窗口" };
+    const isPptx = kind === "pptx";
+    const r = await dialog.showSaveDialog(win, {
+      title: isPptx ? "导出为 PowerPoint" : "导出为 Word 文档",
+      defaultPath: suggested + (isPptx ? ".pptx" : ".docx"),
+      filters: isPptx ? [{ name: "PowerPoint 演示文稿", extensions: ["pptx"] }]
+                      : [{ name: "Word 文档", extensions: ["docx"] }],
+    });
+    if (r.canceled || !r.filePath) return { ok: false, canceled: true };
+    try {
+      const mod = require("./deck-export");
+      if (isPptx) mod.exportPptx(md, r.filePath);
+      else mod.exportDocx(md, r.filePath);
+      return { ok: true, path: r.filePath };
+    } catch (e) {
+      return { ok: false, error: String((e && e.message) || e) };
+    }
+  });
+
   ipcMain.handle("dlg:pick-file", async () => {
     if (!win) return "";
     const r = await dialog.showOpenDialog(win, {
@@ -332,7 +389,7 @@ async function createWindow() {
       // 界面改成多页面后，用"导航项数 + 首屏节点数"判断界面真的渲染出来了；
       // 原来数的是 .panel，那个类名早就没有了，等于一直在数 0。
       // preload 没挂上就没有自绘窗口按钮可用：这一条必须能在打包版里验证
-      const preloadOk = await win.webContents.executeJavaScript("!!(window.itnWindow && window.itnWindow.minimize && window.itnWindow.onDeepLink && window.itnWindow.readDeck)");
+      const preloadOk = await win.webContents.executeJavaScript("!!(window.itnWindow && window.itnWindow.minimize && window.itnWindow.onDeepLink && window.itnWindow.readDeck && window.itnWindow.readDoc)");
       const titlebar = await win.webContents.executeJavaScript("!!document.querySelector('#titlebar')");
       lines.push("PRELOAD=" + (preloadOk ? "ok" : "missing"));
       lines.push("TITLEBAR=" + (titlebar ? "ok" : "missing"));
@@ -356,7 +413,18 @@ async function createWindow() {
       lines.push("NAV=" + navs);
       lines.push("VIEW_NODES=" + nodes);
       lines.push("VIEW_TEXT=" + String(check || "").replace(/\s+/g, " ").slice(0, 60));
-      lines.push("RESULT=" + (navs > 0 && nodes > 0 ? "OK" : "ERR 界面没渲染出来"));
+      /* 文档预览的完整链路（渲染层 → preload → 主进程 → pptx.js）：给了样张就真读一遍。
+         用 executeJavaScript 调 window.itnWindow.readDoc = 真的过一次 IPC，不是直接调模块。 */
+      const docFixture = process.env.LUMIN_SMOKE_DOC || "";
+      let docOk = true;
+      if (docFixture) {
+        const r = await win.webContents.executeJavaScript("window.itnWindow.readDoc(" + JSON.stringify(docFixture) + ")");
+        docOk = !!(r && r.ok && (r.paragraphs || []).length > 0);
+        lines.push("DOCX=" + (docOk ? ("ok paragraphs=" + (r.paragraphs || []).length) : ("ERR " + ((r && r.error) || "?"))));
+      } else {
+        lines.push("DOCX=skipped（没有样张）");
+      }
+      lines.push("RESULT=" + (navs > 0 && nodes > 0 && docOk ? "OK" : "ERR 界面没渲染出来"));
     } catch (e) {
       lines.push("RESULT=ERR " + ((e && e.message) || e));
     }

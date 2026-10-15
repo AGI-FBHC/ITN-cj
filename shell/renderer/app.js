@@ -469,7 +469,7 @@ function modelLabel(id) {
 function checklist() {
   const kbs = state.cfg.knowledgeBases;
   const steps = [
-    { done: hasChatModel(), title: "配置模型接口", text: "填 Base URL 与 API Key，绑定到「对话与生成」。", go: () => go("settings", "models"), act: "去配置" },
+    { done: hasChatModel(), title: "配置模型接口", text: "填接口地址与密钥，绑定到「对话与生成」。", go: () => go("settings", "models"), act: "去配置" },
     { done: kbs.length > 0, title: "指定资料目录", text: "选一个本机资料目录（Markdown / 文本）。", go: () => go("settings", "kb"), act: "去指定" },
     { done: kbs.some((k) => (k.chunkCount || 0) > 0), title: "建立索引", text: "扫描目录并切片，建完才能检索。", go: () => go("settings", "kb"), act: "去建立" },
     { done: state.sessions.length > 0, title: "问第一个问题", text: "就你的资料提问，答案带出处编号。", go: () => go("chat"), act: "去提问" },
@@ -3494,6 +3494,15 @@ PAGES.resources = {
           const short = String(file).replace(/\\/g, "/").split("/").pop();
           openSlidePlayer(short, undefined, undefined, file);
         }),
+        // Word 文档同理：别处生成的 .docx 也能在窗口里读（文字预览，按标题分页）
+        btn("打开文档…", "sm ghost", async () => {
+          const a = window.itnWindow;
+          if (!a || typeof a.pickDoc !== "function") { toast("只在桌面应用窗口里可用"); return; }
+          const file = await a.pickDoc();
+          if (!file) return;
+          const short = String(file).replace(/\\/g, "/").split("/").pop();
+          openSlidePlayer(short, undefined, undefined, file);
+        }),
         btn("刷新", "sm ghost", () => go("resources")),
       ],
     });
@@ -3999,7 +4008,7 @@ async function slashModel(arg) {
 }
 
 async function slashPerm(arg) {
-  if (state.chatProject === "") { toast("常规聊天是固定档（只写默认目录）；权限档位在 Work 会话里选"); return; }
+  if (state.chatProject === "") { toast("常规聊天是固定档（只写默认目录）；权限档位在「指定工作区」会话里选"); return; }
   const m = String(arg || "").toLowerCase();
   if (m !== "ask" && m !== "auto" && m !== "full") { toast("用法：/perm ask | auto | full"); return; }
   state.cfg.agentPerm = m;
@@ -4058,7 +4067,7 @@ function slashSessionInfo() {
   const ul = el("ul", "about-list");
   ul.appendChild(el("li", null, "名字：" + ((meta.title) || "（还没有名字）")));
   ul.appendChild(el("li", null, "会话 id：" + sid + "（链接：lumin://thread/" + sid + "）"));
-  ul.appendChild(el("li", null, "工作区：" + (wd.project ? "Work · " : "常规对话 · ") + (wd.path || "未指定")));
+  ul.appendChild(el("li", null, "工作区：" + (wd.project ? "指定工作区 · " : "常规对话 · ") + (wd.path || "未指定")));
   ul.appendChild(el("li", null, "轮次：" + turns.filter((t) => t.user).length + " · 事件：" + (state.chatEvents || []).length + " 条"));
   ul.appendChild(el("li", null, "上一轮 token：输入 " + ((turns[turns.length - 1] || {}).usageIn || 0) +
     " · 输出 " + ((turns[turns.length - 1] || {}).usageOut || 0)));
@@ -4338,7 +4347,7 @@ function sessionCrumb() {
   const folder = el("span", "wb-crumb-ws");
   folder.innerHTML = icon("folder") + "<span>" + esc(wd.name || "未指定工作区") + "</span>";
   folder.title = (wd.path ? wd.path + "\n" : "") +
-    (wd.project ? "指定工作区（Work）：权限按对话框下面的档位来" : "常规聊天：只对默认工作目录可写") +
+    (wd.project ? "指定工作区：权限按对话框下面的档位来" : "常规聊天：只对默认工作目录可写") +
     "\n检索范围：本机全部知识库";
   if (wd.path && window.itnWindow && typeof window.itnWindow.openPath === "function") {
     folder.classList.add("clickable");
@@ -4717,13 +4726,66 @@ function deckToSlides(deck) {
   });
 }
 
+/** 一份 .docx 的文字 → 播放器要的 {title, body}：按一/二级标题分页，太长再按段落数切开。 */
+function docToSlides(doc) {
+  const paras = doc.paragraphs || [];
+  const pages = [];
+  let cur = null;
+  const flush = () => {
+    if (cur && (cur.title || cur.lines.length)) pages.push(cur);
+    cur = null;
+  };
+  for (const p of paras) {
+    const level = Number(p.level || 0);
+    if (level >= 1 && level <= 2) { flush(); cur = { title: p.text, lines: [] }; continue; }
+    if (!cur) cur = { title: "", lines: [] };
+    cur.lines.push(level >= 3 ? "## " + p.text : p.text);
+    if (cur.lines.length >= 14 || cur.lines.join("\n").length > 1000) flush();
+  }
+  flush();
+  if (!pages.length && paras.length) pages.push({ title: "", lines: paras.map((p) => p.text) });
+  return pages.map((p, i) => ({ title: p.title || ("第 " + (i + 1) + " 页"), body: p.lines.join("\n") }));
+}
+
 async function openSlidePlayer(name, content, key, path) {
   const root = $("player");
   if (!root) return;
   playerState.path = path || "";
   playerState.deck = false;
+  playerState.openLabel = "";
   let text = content;
   const isDeck = /\.(pptx|pptm|ppt)$/i.test(String(name || ""));
+  const isDoc = /\.(docx|docm|doc)$/i.test(String(name || ""));
+  if (isDoc && text === undefined) {
+    // 文档也不是 Markdown：交给壳去解（离线、只读），文字按标题分页看
+    const a = window.itnWindow;
+    if (!a || typeof a.readDoc !== "function") {
+      toast("读文档只在桌面应用窗口里可用");
+      return;
+    }
+    const r = await a.readDoc(path || name);
+    if (!r.ok) {
+      toast("读不了这份文档：" + r.error);
+      return;
+    }
+    playerState.deck = true;       // 复用"用系统程序打开"那个按钮
+    playerState.openLabel = "用 Word 打开";
+    playerState.slides = docToSlides(r);
+    if (!playerState.slides.length) {
+      toast("这份文档里没有可显示的文字");
+      return;
+    }
+    playerState.name = name;
+    playerState.key = key || name;
+    playerState.tocOpen = false;
+    playerState.index = 0;
+    root.hidden = false;
+    document.body.classList.add("player-open");
+    applyPlayerFont();
+    renderPlayer();
+    toast(r.kind === "doc" ? "旧版 .doc 只能给出文字预览" : "文档按标题分页预览（文字）");
+    return;
+  }
   if (isDeck && text === undefined) {
     // 演示文稿不是 Markdown：交给壳去解（离线、只读），失败就如实说读不了
     const a = window.itnWindow;
@@ -4847,7 +4909,7 @@ function renderPlayer() {
     renderPlayer();
   }));
   if (playerState.deck && playerState.path) {
-    tools.appendChild(btn("用 PowerPoint 打开", "sm ghost", () => {
+    tools.appendChild(btn(playerState.openLabel || "用 PowerPoint 打开", "sm ghost", () => {
       const a = window.itnWindow;
       if (a && typeof a.openPath === "function") {
         a.openPath(playerState.path).then((r) => { if (r && r.ok === false) toast(r.error); });
@@ -5110,7 +5172,7 @@ const PERM_ICON = { ask: "hand", auto: "shield", full: "alert" };
 const PERM_HINT = {
   ask: "编辑工作区外的文件、跑命令、联网时都先问你",
   auto: "只有检测到的风险操作才问（危险命令、写工作区外、联网）",
-  full: "不再逐条问（仍然不把你自己在用的 API Key 交出去）",
+  full: "不再逐条问（仍然不把你自己在用的密钥交出去）",
 };
 /** 工具按用途分组（面板上分节显示；"本机文件"那几个只有指定了工作目录才会出现） */
 const TOOL_GROUP = {
@@ -5126,7 +5188,7 @@ const TOOL_GROUP_ORDER = ["知识库", "联网", "笔记与产物", "技能", "�
 const TOOL_LABEL = {
   kb_stage: "暂存知识资料", kb_ingest: "请求并入确认",
   kb_search: "检索知识库",
-  web_search: "联网搜索（Tavily）",
+  web_search: "联网搜索",
   web_fetch: "读取网页",
   list_documents: "列出文档",
   read_chunk: "读取切片",
@@ -5134,6 +5196,10 @@ const TOOL_LABEL = {
   calc: "计算",
   save_note: "写笔记",
   save_artifact: "写产物",
+  skill_read: "读技能说明",
+  // pi 运行时的本机工具：工具卡标题直接显示这个名字，缺了就露出 read / powershell 这种英文
+  read: "读文件", write: "写文件", edit: "改文件", ls: "列目录", find: "找文件",
+  grep: "搜内容", powershell: "跑命令",
 };
 
 /**
@@ -5822,7 +5888,7 @@ function buildNewChatMenu(menu) {
   const projects = state.projects || [];
   if (projects.length) {
     menu.appendChild(el("div", "rail-menu-sep"));
-    menu.appendChild(el("div", "rail-menu-title", "指定工作区（Work）"));
+    menu.appendChild(el("div", "rail-menu-title", "指定工作区"));
     for (const pr of projects) {
       const b = el("button", "rail-menu-item", "");
       b.type = "button";
@@ -6712,7 +6778,7 @@ PAGES.chat = {
         body: emptyState({
           art: "gear",
           title: "还没有可用的对话模型",
-          text: "桌面版用你自己的模型服务：填一次 Base URL 和 API Key，把「对话与生成」绑上去，就能开始对话。",
+          text: "桌面版用你自己的模型服务：填一次接口地址和密钥，把「对话与生成」绑上去，就能开始对话。",
           actions: [btn("去配置模型", "primary", () => go("models"))],
         }),
       }));
@@ -6767,7 +6833,7 @@ PAGES.chat = {
       }
       tlist.appendChild(el("div", "muted sm", "工作目录：常规聊天用默认目录（" +
         esc(state.cfg.agentWorkDir || state.cfg.defaultWorkDir || "") +
-        "），Work 会话用项目文件夹 —— 可在「设置 → 智能体」里改默认目录。"));
+        "），指定工作区用项目文件夹 —— 可在「设置 → 智能体」里改默认目录。"));
     }
     sheet.appendChild(tlist);
     v.appendChild(sheet);
@@ -7027,7 +7093,7 @@ PAGES.chat = {
     permChip.onclick = (ev) => {
       ev.stopPropagation();
       if (isChatMode()) {
-        toast("常规聊天：整机可读，只对默认工作目录可写。要放开权限，请为那个目录建一个 Work 会话");
+        toast("常规聊天：整机可读，只对默认工作目录可写。要放开权限，请为那个目录建一个「指定工作区」会话");
         return;
       }
       openMenu("perm");
@@ -7723,10 +7789,10 @@ async function settingsModels() {
     f1.appendChild(fieldOf("显示名称", inputOf("m-name", "MiMo TokenPlan")));
     mcard.appendChild(f1);
     const f2 = el("div", "row");
-    f2.appendChild(fieldOf("Base URL", inputOf("m-base", "https://token-plan-cn.xiaomimimo.com/v1")));
+    f2.appendChild(fieldOf("接口地址", inputOf("m-base", "https://token-plan-cn.xiaomimimo.com/v1")));
     const keyInput = inputOf("m-key", "留空则保留原密钥");
     keyInput.type = "password";
-    f2.appendChild(fieldOf("API Key", keyInput));
+    f2.appendChild(fieldOf("密钥", keyInput));
     mcard.appendChild(f2);
     const f3 = el("div", "row");
     f3.appendChild(fieldOf("对话模型", inputOf("m-model", "mimo-v2.6-flash")));
@@ -7739,7 +7805,7 @@ async function settingsModels() {
       if (!id) { toast("请填写标识"); return; }
       const base = $("m-base").value.trim();
       const model = $("m-model").value.trim();
-      if (!base || !model) { toast("Base URL 与对话模型不能为空"); return; }
+      if (!base || !model) { toast("接口地址与对话模型不能为空"); return; }
       try {
         await api("/api/models/save", {
           id: id,
@@ -7764,12 +7830,12 @@ async function settingsModels() {
         inline: true,
         art: "gear",
         title: "还没有配置模型",
-        text: "点上面任意一个「快速填入」，地址与模型名会自动写进表单，补一个 API Key 保存即可。",
+        text: "点上面任意一个「快速填入」，地址与模型名会自动写进表单，补一个密钥保存即可。",
         actions: [btn("填入 MiMo v2.6 flash 预设", "primary", () => {
           const b = document.querySelector(".chip");
           if (b) b.click();
           $("view").scrollTop = 0;
-          toast("已填入，请补 API Key");
+          toast("已填入，请补密钥");
         })],
       }));
     } else {
@@ -7897,7 +7963,7 @@ async function settingsModels() {
   const wsRow = el("div", "row");
   const wsKey = inputOf("ws-key", ws.hasKey ? "已设置，留空则保留原密钥" : "tvly-…");
   wsKey.type = "password";
-  wsRow.appendChild(fieldOf("Tavily API Key", wsKey));
+  wsRow.appendChild(fieldOf("联网搜索密钥（Tavily）", wsKey));
   wsRow.appendChild(fieldOf("开关", selectOf("ws-enabled", [
     { value: "0", label: "关闭（不交给模型）" },
     { value: "1", label: "开启" },
@@ -8126,7 +8192,7 @@ function settingsAgent() {
     title: "默认工作目录",
     tag: dir ? "已指定" : "用默认值",
     tagCls: dir ? "ok" : "",
-    sub: "常规聊天用它：整机可读，只有这个目录能写。指定工作区（Work）会话则用项目自己的文件夹。",
+    sub: "常规聊天用它：整机可读，只有这个目录能写。指定工作区的会话则用项目自己的文件夹。",
   });
   const row = el("div", "row dir-row");
   const dirInput = inputOf("agent-dir", "默认目录", dir || (state.cfg.defaultWorkDir || ""));
@@ -8160,9 +8226,9 @@ function settingsAgent() {
   }
   card.appendChild(row);
   card.appendChild(el("p", "muted sm", dir
-    ? "Lumin 在常规聊天里只能写这个目录；想让它改别的位置，在侧栏里为那个目录建一个 Work 会话。"
+    ? "Lumin 在常规聊天里只能写这个目录；想让它改别的位置，在侧栏里为那个目录建一个「指定工作区」会话。"
     : "现在用的是默认目录：" + (state.cfg.defaultWorkDir || "") +
-      " —— Lumin 在常规聊天里只能写它；想放开别的位置，在侧栏里为那个目录建一个 Work 会话。"));
+      " —— Lumin 在常规聊天里只能写它；想放开别的位置，在侧栏里为那个目录建一个「指定工作区」会话。"));
   g.appendChild(card);
 
   /* 工具与技能：原来挂在对话框的 ＋ 菜单里，按用户要求撤掉那边的入口，挪到这里。 */
@@ -8192,7 +8258,7 @@ function settingsAgent() {
   toolsCard.appendChild(tlist);
   g.appendChild(toolsCard);
 
-  const permCard = cardOf({ title: "权限（Work 会话）", sub: "与对话框左下角那枚开关是同一个设置；常规聊天是固定档：只写默认工作目录" });
+  const permCard = cardOf({ title: "权限（指定工作区）", sub: "与对话框左下角那枚开关是同一个设置；常规聊天是固定档：只写默认工作目录" });
   for (const m of ["ask", "auto", "full"]) {
     const line = el("div", "row setting-row");
     const left = el("div", "grow");
@@ -8232,10 +8298,10 @@ function settingsAgent() {
   const safe = cardOf({ title: "红线" });
   const ul = el("ul", "about-list");
   [
-    "你自己在用的 API Key 不会被交出去（配置里那份含 Key 的文件永远不读）。",
+    "你自己在用的密钥不会被交出去（配置里那份含密钥的文件永远不读）。",
     "工作目录里的 .env / .git / .ssh 写不进去。",
     "写工作目录之外的路径、跑命令、联网都会按上面的档位先问你 —— 每一次决定都留在会话里可回看。",
-    "常规聊天不问你也不放行：工作目录之外一律拒绝（想改别的位置，就为它建一个 Work 会话）。",
+    "常规聊天不问你也不放行：工作目录之外一律拒绝（想改别的位置，就为它建一个「指定工作区」会话）。",
   ].forEach((t) => ul.appendChild(el("li", null, t)));
   safe.appendChild(ul);
   g.appendChild(safe);
@@ -8718,7 +8784,7 @@ function settingsAbout() {
   brand.appendChild(logo);
   const bt = el("div", "about-brand-text");
   bt.appendChild(el("div", "about-brand-name", "Lumin"));
-  bt.appendChild(el("div", "muted sm", "本地个人学习 Agent · 数据只存在这台电脑上"));
+  bt.appendChild(el("div", "muted sm", "本地个人学习助手 · 数据只存在这台电脑上"));
   brand.appendChild(bt);
   g.appendChild(brand);
   const ver = cardOf({ title: "当前版本" });
@@ -8729,8 +8795,9 @@ function settingsAbout() {
     l.appendChild(el("span", "grow", val));
     return l;
   };
-  kv.appendChild(line("应用", "Lumin " + (state.release?.version || k.version || "0.2.0") + " · 个人学习 Agent"));
-  kv.appendChild(line("构建", state.release?.sourceCommit || k.build || "开发版本"));
+  kv.appendChild(line("应用", "Lumin " + (state.release?.version || k.version || "0.2.0") + " · 个人学习助手"));
+  kv.appendChild(line("构建", (state.release?.sourceCommit && state.release.sourceCommit !== "development")
+    ? state.release.sourceCommit : "开发版"));
   kv.appendChild(line("内核", "仓颉（Cangjie）运行时" + (k.cangjie ? " · " + k.cangjie : "")));
   kv.appendChild(line("数据目录", state.cfg.dataDir || "（启动时由内核决定，可在「数据与备份」里复制路径）"));
   ver.appendChild(kv);
@@ -8741,7 +8808,7 @@ function settingsAbout() {
   [
     "所有配置、学习记录、切片与向量都存在本机的 SQLite 单文件数据库里，可以整体拷走或备份。",
     "资料只发给你自己配置的模型服务，不经过任何第三方服务器。",
-    "API Key 只写进本机数据库；「模型与接口」读取配置时永不回传密钥本身。",
+    "密钥只写进本机数据库；「模型与接口」读取配置时永不回传密钥本身。",
     "讲义与练习是可复现的本地 Markdown 文件，放在数据目录的 artifacts 子目录下。",
   ].forEach((t) => ul.appendChild(el("li", null, t)));
   about.appendChild(ul);
@@ -9016,7 +9083,7 @@ async function boot() {
     const h = await api("/health");
     state.kernel = h;
     try { state.release = await fetch('/release.json').then(r=>r.ok?r.json():null); } catch(e) {state.release=null;}
-    setStatus("Lumin " + (h.version || '0.3.0') + " · 已连接");
+    setStatus("Lumin " + (state.release?.version || h.version || '0.4.2') + " · 已连接");
   } catch (e) {
     setStatus("内核未连接", true);
     const v = $("view");

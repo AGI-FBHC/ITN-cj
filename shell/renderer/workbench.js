@@ -4,14 +4,14 @@ const TASK_LABEL = {running: '正在执行', cancelling: '正在停止', complet
 const workbench = {selected: null, open: false, loadToken: 0, seenSaved: new Set(), task: null};
 
 RAIL_GROUPS.splice(0, RAIL_GROUPS.length,
-  [{id: 'chat', label: 'Agent 工作台', icon: 'chat'}],
+  [{id: 'chat', label: '智能体工作台', icon: 'chat'}],
   [{id: 'kb', label: '知识库', icon: 'db'}, {id: 'resources', label: '学习资源', icon: 'layers'}],
   [{id: 'home', label: '学习中心', icon: 'book'}, {id: 'memory', label: '学习记忆', icon: 'note'}]);
 Object.assign(PAGE_META, {
-  chat: {title: 'Agent 工作台', sub: '围绕你的资料、目标和学习记录开展任务'},
+  chat: {title: '智能体工作台', sub: '围绕你的资料、目标和学习记录开展任务'},
   home: {title: '学习中心', sub: '阅读、练习、笔记、错题与成长记录'},
   resources: {title: '学习资源', sub: '讲义 · 实操 · 分阶测试 · 在线演示'},
-  memory: {title: '学习记忆', sub: '你决定 Agent 记住什么，也能随时修改和忘记'},
+  memory: {title: '学习记忆', sub: '你决定 Lumin 记住什么，也能随时修改和忘记'},
 });
 Object.assign(TOOL_LABEL, {
   generate_learning_resource: '生成学习资源', revise_learning_resource: '修改学习资源',
@@ -81,6 +81,20 @@ async function openLearningResource(id, version) {
   } catch (e) { toast('读取资源失败：' + e.message); }
 }
 
+/** 把当前这份资源导出成 Office 文件（壳里弹"另存为"，写完给一句实话）。 */
+async function exportResourceAs(res, kind) {
+  const a = window.itnWindow;
+  if (!a || typeof a.exportResource !== 'function') { toast('导出只在桌面应用窗口里可用'); return; }
+  try {
+    const r = await a.exportResource({ markdown: res.markdown || '', kind: kind, name: res.title || '学习资源' });
+    if (r && r.ok) toast('已导出：' + String(r.path || '').replace(/\\/g, '/').split('/').pop());
+    else if (r && r.canceled) { /* 用户自己取消的，不打扰 */ }
+    else toast('导出失败：' + ((r && r.error) || '未知错误'));
+  } catch (e) {
+    toast('导出失败：' + e.message);
+  }
+}
+
 function renderResourceDock() {
   const dock = ensureResourceDock();
   // innerHTML 一清，挂在面板边缘的拖动条也没了：刷完内容再挂一次（installSplitters 是幂等的）
@@ -94,7 +108,7 @@ function renderResourceDock() {
   dock.appendChild(body);
   if (!res) {
     body.appendChild(el('h2', null, '学习成果在这里展开'));
-    body.appendChild(el('p', 'muted', '告诉 Agent 你的学习目标。需要讲义、实操、测试或演示时，它会调用工具生成，结果会自动出现在这里。'));
+    body.appendChild(el('p', 'muted', '告诉 Lumin 你的学习目标。需要讲义、实操、测试或演示时，它会调用工具生成，结果会自动出现在这里。'));
     body.appendChild(btn('查看全部资源', '', () => go('resources')));
     return;
   }
@@ -112,10 +126,16 @@ function renderResourceDock() {
   meta.appendChild(tag(issues.length ? '需检查' : '结构质检通过', issues.length ? 'warn' : 'ok'));
   body.appendChild(meta);
   const actions = el('div', 'row resource-actions');
-  actions.appendChild(btn('让 Agent 修改', 'sm', () => {
+  actions.appendChild(btn('让 Lumin 修改', 'sm', () => {
     promptLearning('请先读取学习资源 ' + res.id + ' 的最新版本，再按以下要求修改并保存新版本：');
   }));
   actions.appendChild(copyButton(() => res.markdown || '', '复制 Markdown'));
+  /* 学习成果是 Markdown，但要交给别人 / 自己接着改的时候，得有 Office 文件。
+     导出在壳里做（离线、零依赖，见 shell/deck-export.js），这里只负责给入口与结果提示。 */
+  if (window.itnWindow && typeof window.itnWindow.exportResource === 'function') {
+    actions.appendChild(btn('导出 pptx', 'sm ghost', () => exportResourceAs(res, 'pptx')));
+    actions.appendChild(btn('导出 docx', 'sm ghost', () => exportResourceAs(res, 'docx')));
+  }
   if (res.kind === 'ppt') actions.appendChild(btn('开始演示', 'primary sm', () => openResourcePresentation(res)));
   if (res.version > 1) actions.appendChild(btn('查看修改差异', 'sm ghost', async () => {
     try {
@@ -384,7 +404,7 @@ PAGES.resources.render = async function() {
   while (view.firstChild) legacy.appendChild(view.firstChild);
   const heading = el('div', 'resource-library-head');
   heading.appendChild(el('h2', null, '你的学习资源'));
-  heading.appendChild(el('p', 'muted', '由 Agent 按学习目标生成，保留资料依据、质检与历史版本。'));
+  heading.appendChild(el('p', 'muted', '由 Lumin 按学习目标生成，保留资料依据、质检与历史版本。'));
   const actions = el('div', 'row');
   for (const [kind, label] of Object.entries(RESOURCE_LABEL).filter(([k])=>k!=='legacy')) actions.appendChild(btn(label, 'sm', () => {state.pendingQuestion = '请围绕我当前的学习目标生成一份' + label + '，主题：'; go('chat');}));
   heading.appendChild(actions); view.appendChild(heading);
@@ -395,7 +415,7 @@ PAGES.resources.render = async function() {
   const paint = () => {
     grid.innerHTML = '';
     const rows = all.filter(r => (r.title || '').toLowerCase().includes(search.value.toLowerCase()));
-    if (!rows.length) grid.appendChild(el('p', 'muted', all.length ? '没有匹配的资源' : '还没有生成资源。描述你想学的主题，Agent 会按需调用生成工具。'));
+    if (!rows.length) grid.appendChild(el('p', 'muted', all.length ? '没有匹配的资源' : '还没有生成资源。描述你想学的主题，Lumin 会按需调用生成工具。'));
     for (const r of rows) grid.appendChild(resourceCard(r));
   };
   search.oninput = paint; paint(); view.appendChild(grid); view.appendChild(legacy);
@@ -455,6 +475,6 @@ PAGES.memory = {
     view.appendChild(saved);
   }
 };
-PANELS.memory = {title:'学习记忆',async render(body){body.appendChild(el('p','panel-empty','目标和偏好帮助 Agent 选择解释方式与资源。能力依据来自真实作答，记录数量不当作能力分。'));}};
+PANELS.memory = {title:'学习记忆',async render(body){body.appendChild(el('p','panel-empty','目标和偏好帮助 Lumin 选择解释方式与资源。能力依据来自真实作答，记录数量不当作能力分。'));}};
 
 boot();

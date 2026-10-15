@@ -2816,7 +2816,8 @@ html[data-theme="dark"] .main { background-color: rgba(255, 255, 255, .02); }
 /* hidden 必须**真的**不显示。
    .composer-chip 这类元素自己写了 display（inline-flex），会盖掉浏览器对 [hidden] 的默认处理 ——
    属性设上了、屏幕上还在（用户实测："常规聊天就不用显示那个框了"，说的就是这个框）。 */
-.composer-chip[hidden], .wb-crumb-ws[hidden], .rail-group-btn[hidden], .msg-icon-btn[hidden] { display: none !important; }
+.composer-chip[hidden], .wb-crumb-ws[hidden], .rail-group-btn[hidden], .msg-icon-btn[hidden],
+.split-hint[hidden], .composer-usage[hidden] { display: none !important; }
 
 
 /* ============================================================
@@ -2883,9 +2884,10 @@ html[data-theme="dark"] {
 .tool-args, .tool-result { background-color: var(--card-lite-inner); }
 .think-text { background-color: var(--card-lite); }
 
-/* 2 · 输入框：默认更高一点、立体感更重（深色下"抬起来"要靠内侧高光 + 两层投影） */
-.composer { padding: 12px 14px 10px; min-height: 108px; }
-.composer textarea { min-height: 30px; }
+/* 2 · 输入框：默认更高一点、立体感更重（深色下"抬起来"要靠内侧高光 + 两层投影）。
+   高度给**输入区**，不要给容器：给容器 min-height 会在底下留一条点不动的死留白（用户实测报过）。 */
+.composer { padding: 12px 14px 10px; }
+.composer textarea { min-height: 52px; }
 .composer {
   box-shadow: inset 0 1px 0 var(--glass-edge), inset 0 -1px 0 var(--glass-edge-2),
               0 2px 4px rgba(11, 34, 23, .07), 0 22px 44px -26px rgba(11, 34, 23, .42);

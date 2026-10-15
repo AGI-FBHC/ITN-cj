@@ -384,6 +384,29 @@ const freePort = () => new Promise((res, rej) => {
       throw new Error('模型名应当紧贴发送键左边：' + JSON.stringify(composerRight));
     }
     if (composerRight.rowRight - composerRight.sendRight > 60) throw new Error('发送键应当贴右：' + JSON.stringify(composerRight));
+
+    /* 输入框：不许在底部留一条点不动的死留白，也不许在上面常驻一条空的"待分叉"横条（用户实测报过）。
+       原因是 .composer 的 min-height 比内容高，和 .split-hint 自己写了 display:flex 把 [hidden] 盖掉了。 */
+    const composerFit = await page.evaluate(() => {
+      const c = document.querySelector('.composer');
+      const ta = c && c.querySelector('textarea');
+      const row = c && c.querySelector('.composer-row');
+      const sh = document.querySelector('.split-hint');
+      const cs = getComputedStyle(c);
+      const inner = (ta ? ta.getBoundingClientRect().height : 0) + (row ? row.getBoundingClientRect().height : 0);
+      const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+      return {
+        height: Math.round(c.getBoundingClientRect().height),
+        inner: Math.round(inner),
+        gap: Math.round(c.getBoundingClientRect().height - inner - pad),
+        splitDisplay: sh ? getComputedStyle(sh).display : 'missing',
+      };
+    });
+    if (composerFit.gap > 8) throw new Error('输入框底部不该留死白：容器比内容高 ' + composerFit.gap + 'px');
+    if (composerFit.splitDisplay !== 'none') {
+      throw new Error('没点过"开分支"时，待分叉提示条不该占位置（实际 display=' + composerFit.splitDisplay + '）');
+    }
+    console.log('COMPOSER-FIT 高 ' + composerFit.height + 'px（余量 ' + composerFit.gap + 'px）· split-hint=' + composerFit.splitDisplay);
     console.log('COMPOSER-ORDER 模型右缘 ' + composerRight.modelRight + ' → 发送键 ' + composerRight.sendLeft);
 
     /* 与 pi 对齐的那几条本地命令：/session /name /export /reload /hotkeys /copy 都要能跑，
