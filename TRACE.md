@@ -3077,3 +3077,9 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - 限制（照旧记录）：删会话不会去清理 Pi 运行时自己写在 `<dataDir>/sessions/` 下的 jsonl（那是运行时的日志，
   内核不再引用它；后续要做的话按前缀匹配清一次即可）。
 
+### 提交与试跑包（2026-10-15 14:22）
+- 提交：`2f9ba0b`（feat(chat): 会话重命名与删除（Codex 式列表），删除只动这段会话自己的记录），10 个文件；`docs/10` 增 P6 行、`docs/02` 补两个接口。
+- 老库迁移路径已实测：把用户真实数据目录的 `itn.db` 复制一份起内核 → 列表 2 条会话 → 重命名后列表读新名字 → 删除后 2→1、目标不在列表（`RESULT=OK`，脚本 `tmp/sess-mig-check.ps1`，只动副本）。
+- 试跑包就地刷新：`dist/ITN-Desktop-chat-ctx/` 与 `dist/ITN-Desktop-chat-ctx-win-x64.zip`；`--smoke` 自检 `RESULT=OK`；
+  源码 / 包目录 / ZIP 三处哈希一致：app.js `2A56DAD1…92D3`、style.css `944DE710…075B`、内核 `9694BE00…9E27`（内核本轮变了，hash 与上轮不同）。
+
