@@ -146,21 +146,101 @@ public class SessionStore {
      * 与 rewind 的差别是原会话一字不动（Codex 里"从这里开个分支"就是这个意思：
      * 想换个问法重来，又不想丢掉原来那条线）。
      */
+    /**
+     * 从某一轮分叉：新建一段会话，把这一轮**之前**的事件原样复制过去。
+     *
+     * 与 rewind 的差别是原会话一字不动（Codex 里"从这里开个分支"就是这个意思：
+     * 想换个问法重来，又不想丢掉原来那条线）。
+     * 名字：在新会话上叫「旧名字（2）」，再开就是（3）（4）…… 谁也不覆盖谁。
+     */
     public func branch(sessionId: String, turnId: String): String {
         let from = turnStartEventId(sessionId, turnId)
         let newSid = newId()
         let now = DateTime.now().toString()
         db().run("INSERT OR REPLACE INTO sessions (id, created_at, updated_at) VALUES (?, ?, ?)",
             va([tv(newSid), tv(now), tv(now)]))
-        if (from <= 0) {
-            return newSid
+        if (from > 0) {
+            // 逐行复制：payload 是原始 JSON 文本，直接搬过去，不做解析再序列化
+            //（解析一遍会把大 payload 重新格式化，既慢又可能改动字符）
+            let stmt = "INSERT INTO session_events (session_id, ts, kind, turn_id, payload) " +
+                "SELECT ?, ts, kind, turn_id, payload FROM session_events WHERE session_id = ? AND id < ? ORDER BY id"
+            db().run(stmt, va([tv(newSid), tv(sessionId), nv(from)]))
         }
-        // 逐行复制：payload 是原始 JSON 文本，直接搬过去，不做解析再序列化
-        //（解析一遍会把大 payload 重新格式化，既慢又可能改动字符）
-        let stmt = "INSERT INTO session_events (session_id, ts, kind, turn_id, payload) " +
-            "SELECT ?, ts, kind, turn_id, payload FROM session_events WHERE session_id = ? AND id < ? ORDER BY id"
-        db().run(stmt, va([tv(newSid), tv(sessionId), nv(from)]))
+        // 起名：旧名字 +（N）。N 取"当前没被占用的最小序号"，所以开第 2、3、4 个分支也各自有名字
+        let base = branchBaseTitle(sessionId)
+        rename(newSid, branchTitleFor(base))
         return newSid
+    }
+
+    /** 分叉的基线名字：优先用当前标题，没有就用第一句提问，再没有就叫"新对话"。 */
+    private func branchBaseTitle(sessionId: String): String {
+        let t = trimStr(titleOf(sessionId))
+        if (t.size > 0) {
+            return stripBranchSuffix(t)
+        }
+        let first = trimStr(firstUserText(sessionId))
+        if (first.size > 0) {
+            return byteSafePrefix(first, 24)
+        }
+        return "新对话"
+    }
+
+    /**
+     * 去掉结尾的「（N）」。
+     *
+     * 从一个分支再开分支时，基线名字得回到原来的那条线上：
+     * 否则「X（2）」会被当成基线，编号叠成「X（2）（2）」（实测过）。
+     */
+    private func stripBranchSuffix(t: String): String {
+        let s = trimStr(t)
+        let b = s.toArray()
+        if (b.size < 6) {
+            return s
+        }
+        // 「）」= EF BC 89，「（」= EF BC 88
+        if (!(b[b.size - 3] == 0xEF && b[b.size - 2] == 0xBC && b[b.size - 1] == 0x89)) {
+            return s
+        }
+        var i: Int64 = b.size - 4
+        while (i >= 2) {
+            if (b[i] == 0x88 && b[i - 1] == 0xBC && b[i - 2] == 0xEF) {
+                let numLen = b.size - 3 - (i + 1)
+                if (numLen <= 0 || numLen > 3) {
+                    return s
+                }
+                var ok = true
+                var k = i + 1
+                while (k < b.size - 3) {
+                    if (b[k] < 0x30 || b[k] > 0x39) {
+                        ok = false
+                    }
+                    k += 1
+                }
+                if (!ok) {
+                    return s
+                }
+                return String.fromUtf8(b[0..(i - 2)])
+            }
+            i -= 1
+        }
+        return s
+    }
+
+    /** 「基线（N）」：N 从 2 起，取当前没有任何会话占用的最小序号。 */
+    private func branchTitleFor(base: String): String {
+        let used = HashSet<String>()
+        for (s in list()) {
+            used.add(trimStr(strOf(s, "title")))
+        }
+        var n: Int64 = 2
+        while (n < 1000) {
+            let candidate = base + "（" + n.toString() + "）"
+            if (!used.contains(candidate)) {
+                return candidate
+            }
+            n += 1
+        }
+        return base + "（" + n.toString() + "）"
     }
 
     public func summary(sessionId: String): JsonObject {
@@ -323,14 +403,26 @@ public class SessionStore {
         migrateFromJson()
         let dbh = db()
 
-        let ids = ArrayList<String>()
         let counts = HashMap<String, Int64>()
         let lastIds = HashMap<String, Int64>()
-        for (r in dbh.querySql("SELECT session_id, COUNT(*), MAX(id) FROM session_events GROUP BY session_id ORDER BY MAX(id) DESC")) {
+        for (r in dbh.querySql("SELECT session_id, COUNT(*), MAX(id) FROM session_events GROUP BY session_id")) {
+            counts[r.text(0)] = r.int(1)
+            lastIds[r.text(0)] = r.int(2)
+        }
+        /* 清单以 sessions 表为准，而不是"有事件的会话"：
+           分叉出来的新会话（以及刚开、还没说话的空会话）在里面有行但可能还没有事件 ——
+           它们同样要出现在侧栏里，否则用户点了"新建分支"就像什么也没发生（实测反馈）。 */
+        let ids = ArrayList<String>()
+        let createdAt = HashMap<String, String>()
+        for (r in dbh.querySql("SELECT id, created_at FROM sessions ORDER BY updated_at DESC")) {
             let sid = r.text(0)
             ids.add(sid)
-            counts[sid] = r.int(1)
-            lastIds[sid] = r.int(2)
+            createdAt[sid] = r.text(1)
+        }
+        for ((sid, _) in counts) {
+            if (!createdAt.contains(sid)) {
+                ids.add(sid)   // 老数据里可能只有事件、没有 sessions 行
+            }
         }
         if (ids.size == 0) {
             return out
@@ -394,7 +486,8 @@ public class SessionStore {
                 case Some(r) =>
                     lastAt = r.text(0)
                     lastType = r.text(1)
-                case None => ()
+                case None =>
+                    lastAt = createdAt.get(sid) ?? ""
             }
             o.put("title", JsonString(title))
             o.put("lastType", JsonString(lastType))

@@ -4215,7 +4215,9 @@ function sessionCrumb() {
   wrap.appendChild(folder);
   wrap.appendChild(el("span", "wb-crumb-sep", "|"));
   const meta = sessionMetaOf();
-  const title = el("span", "wb-crumb-title", (meta && meta.title) || (state.chatSessionId ? "新对话" : "还没有对话"));
+  const hint = (state.chatTitleHint || {})[state.chatSessionId] || "";
+  const title = el("span", "wb-crumb-title",
+    (meta && meta.title) || hint || (state.chatSessionId ? "新对话" : "还没有对话"));
   title.title = "这段对话的名字（右上角 ⋯ 可以改）";
   wrap.appendChild(title);
   return wrap;
@@ -4250,7 +4252,13 @@ function sessionMoreBtn() {
     popoverAt(trigger, (menu) => {
       menu.appendChild(el("div", "rail-menu-title", "这段会话"));
       menu.appendChild(item("修改会话名称…", "pencil", () => renameSessionDialog(meta)));
-      menu.appendChild(item("新建分支", "branch", () => branchFromLatest()));
+      menu.appendChild(item("新建分支", "branch", () => {
+        /* 从**最新一轮**分出去：那一轮之前的历史原样带进新会话（用户要的语义）。
+           传空 turnId 等于"什么都不复制"，内核会直接拒 —— 这里必须真拿一个轮次 id。 */
+        const turns = (state.chatTurns || []).filter((x) => x.id && x.id !== "local");
+        if (!turns.length) { toast("这一段还没有可以分支的轮次"); return; }
+        branchFromTurn(turns[turns.length - 1]);
+      }));
       menu.appendChild(item("复制会话链接", "copy", () => copyText("lumin://thread/" + sid)));
     }, { side: "right", cls: "session-menu-right" });
   };
@@ -6020,8 +6028,9 @@ function toolCard(tool, live) {
     '<span class="tool-title">' + esc(toolLabel(tool)) + "</span>" +
     '<span class="tool-state">' + esc(state2) + "</span>" +
     '<span class="tool-chev">' + icon("chevron") + "</span>";
-  // 跑的时候展开（能看见它在干什么），这一轮结束就收起（用户要的：加载完默认折叠）
-  if (live) d.open = true;
+  /* 这个调用**自己**结束就折起来，不等整轮回复完 ——
+     跑着的时候展开（能看见它在干什么），一旦完成就收起。 */
+  if (tool.running) d.open = true;
   d.appendChild(sum);
   const body = el("div", "tool-body");
   if (tool.args && Object.keys(tool.args).length) {
@@ -6051,10 +6060,10 @@ function toolLabel(tool) {
  * 思考段：默认展开（用户要能看见它在想什么），点一下收起。
  * 摘要只报真实耗时 —— "已思考 N 秒"，不编造步骤。
  */
-function thinkRow(it, live) {
+function thinkRow(it, live, isTail) {
   const d = el("details", "think-row");
-  // 只有正在跑的这一轮默认展开：跑完了就折起来，别让思考过程一直占着屏幕
-  d.open = !!live;
+  // 只有"正在写的最后一段"展开：这段思考一结束（开始出正文或动工具）就折起来
+  d.open = !!(live && isTail);
   const secs = Math.max(1, Math.round(Number(it.ms || 0) / 1000));
   const s = el("summary", "think-sum", "思考过程 · " + secs + " 秒");
   d.appendChild(s);
@@ -6148,8 +6157,10 @@ function renderTurnBlock(t, live) {
     box.appendChild(u);
   }
   // 时间线：模型的每一段正文、每一次工具调用，按发生顺序
-  for (const it of t.items) {
-    if (it.t === "think") box.appendChild(thinkRow(it, live));
+  for (let i = 0; i < t.items.length; i++) {
+    const it = t.items[i];
+    const isTail = i === t.items.length - 1;
+    if (it.t === "think") box.appendChild(thinkRow(it, live, isTail));
     else if (it.t === "tool") box.appendChild(toolCard(it, live));
     else if (it.t === "resource") box.appendChild(resourceCard(it.resource, true));
     else if (it.text) box.appendChild(assistantBlock(it.text, live && it.streaming));
@@ -6212,40 +6223,51 @@ function renderTurnBlock(t, live) {
  * 那是"分支"该干的事（原会话留着，另开一段重来）。
  * 两个去处：保存并重发（把这一轮起的历史删掉重发）/ 另开分支再发（原会话一字不动）。
  */
+/**
+ * 改一下这条用户消息再重发。
+ *
+ * 只对**最后一条**用户消息开放：中间某一条改掉，后面的回答就全对不上了 ——
+ * 那是"分支"该干的事（原会话留着，另开一段重来）。
+ * 编辑器就长在**气泡里面**（用户要求："我要直接在气泡里编辑"）；点取消原样还回去。
+ */
 function editTurnInline(t, box) {
   const u = box.querySelector(".msg-user");
-  if (!u || u.querySelector(".msg-editor")) return;
-  const stack = u.querySelector(".msg-stack") || u;
+  if (!u || u.querySelector(".bubble-edit")) return;
+  const body = u.querySelector(".msg-body");
   const original = t.user || "";
-  // 气泡留着，编辑器挂在它下面（用户要的形状：改的是"我发的这条"，看得到原文）
-  const meta = stack.querySelector(".msg-meta");
-  if (meta) meta.style.display = "none";
-  const wrap = el("div", "msg-editor");
-  const ta = el("textarea", "msg-editor-input");
+  // 原正文先搬到一个"暂存盒"里：取消时原样放回去，一个字都不改
+  const keep = el("div", "bubble-original");
+  keep.hidden = true;
+  while (body.firstChild) keep.appendChild(body.firstChild);
+  body.appendChild(keep);
+  const ta = el("textarea", "bubble-edit");
   ta.value = original;
-  wrap.appendChild(ta);
-  const growEditor = () => {
+  body.appendChild(ta);
+  const grow = () => {
     ta.style.height = "auto";
-    ta.style.height = Math.min(220, ta.scrollHeight + 2) + "px";
+    ta.style.height = Math.max(22, Math.min(320, ta.scrollHeight + 2)) + "px";
   };
-  ta.addEventListener("input", growEditor);
-  const row = el("div", "row msg-editor-actions");
-  const closeEditor = () => { wrap.remove(); if (meta) meta.style.display = ""; };
+  ta.addEventListener("input", grow);
+  const row = el("div", "row bubble-edit-actions");
+  const restore = () => {
+    ta.remove();
+    row.remove();
+    while (keep.firstChild) body.appendChild(keep.firstChild);
+    keep.remove();
+  };
   row.appendChild(btn("保存并重发", "sm primary", () => resendEdited(t, ta.value.trim(), false)));
   row.appendChild(btn("另开分支再发", "sm ghost", () => resendEdited(t, ta.value.trim(), true)));
-  row.appendChild(btn("取消", "sm ghost", closeEditor));
-  wrap.appendChild(row);
-  stack.appendChild(wrap);
+  row.appendChild(btn("取消", "sm ghost", restore));
+  body.parentElement.appendChild(row);   // 按钮挂在这一列下面，气泡本身保持原样
   ta.focus();
   ta.setSelectionRange(ta.value.length, ta.value.length);
-  setTimeout(growEditor, 0);
+  setTimeout(grow, 0);
   ta.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); resendEdited(t, ta.value.trim(), false); }
-    if (e.key === "Escape") closeEditor();
+    if (e.key === "Escape") restore();
   });
 }
 
-/** 改主意了：把这一轮起的历史删掉再发新的（或另开一段分支发）。 */
 async function resendEdited(t, text, asBranch) {
   if (!text) { toast("内容不能为空"); return; }
   try {
@@ -6282,27 +6304,18 @@ async function resendEdited(t, text, asBranch) {
  * 与 branchFromTurn 的差别：那个是"从某一轮之前分"（连那一轮一起不要了，换个问法重来）；
  * 这个是"把这段对话整个带走，换条路继续走" —— 顶栏 ⋯ 里的「新建分支」用的是它。
  */
-async function branchFromLatest() {
-  if (!state.chatSessionId) { toast("先开一段对话"); return; }
-  try {
-    const d = await api("/api/sessions/branch", { sessionId: state.chatSessionId, turnId: "" });
-    await loadProjects();
-    await reloadSessions();
-    openChatSession(d.sessionId);
-    toast("已从最新的一条开出新分支（原会话还在）");
-  } catch (e) {
-    toast("分支失败：" + e.message);
-  }
-}
-
 /** 从这一轮开分支：原会话一字不动，新会话带过来这一轮之前的历史。 */
 async function branchFromTurn(t) {
   try {
     const d = await api("/api/sessions/branch", { sessionId: state.chatSessionId, turnId: t.id });
+    // 新分支可能还没有事件（从第一轮分出去时"之前的历史"是空的）：先把名字记在界面里，
+    // 列表加载完之后 summary 会给出同一个名字（内核在分叉时就写进了 title:<sid>）
+    state.chatTitleHint = state.chatTitleHint || {};
+    if (d.title) state.chatTitleHint[d.sessionId] = d.title;
     await loadProjects();
     await reloadSessions();
     openChatSession(d.sessionId);
-    toast("已从这一轮开出新分支（原会话还在）");
+    toast(d.title ? ("已开新分支：" + d.title + "（原会话还在）") : "已从这一轮开出新分支（原会话还在）");
   } catch (e) {
     toast("分支失败：" + e.message);
   }
@@ -6416,82 +6429,52 @@ PAGES.chat = {
     inputRow.appendChild(ta);
 
     const crow = el("div", "composer-row");
+    /* ＋ ＝ 添加附件（对齐 Codex：加号是"把资料交给这一轮"，不是配置项）。
+       权限是另一枚 chip 的事，别混在一个按钮里。 */
     const plusBtn = el("button", "composer-icon", "");
     plusBtn.type = "button";
-    plusBtn.setAttribute("aria-label", "更多动作");
-    plusBtn.title = "更多动作";
+    plusBtn.setAttribute("aria-label", "添加附件");
+    plusBtn.title = "添加附件（把文件/文件夹交给 Lumin 读）";
     plusBtn.innerHTML = icon("plus");
     crow.appendChild(plusBtn);
-
-    /* 这段对话在哪个工作区干活。
-       Codex 的输入框左下角也是这么写的（项目 + 权限）—— 只写"常规聊天"，
-       用户根本不知道自己现在在哪开工、写出来的东西会落在哪。 */
-    const wsChip = el("button", "composer-chip", "");
-    wsChip.type = "button";
-    const paintWsChip = () => {
-      const wd = sessionWorkDir();
-      // 归属可能在切换会话时就变了：显隐也在这里定，别只在创建时判一次（踩过）
-      wsChip.hidden = !wd.project;
-      wsChip.innerHTML = icon("folder") + "<span>" + esc(wd.name || "未指定工作区") + "</span>";
-      wsChip.title = (wd.path ? "工作目录：" + wd.path + "\n" : "") +
-        (wd.project ? "指定工作区（Work）：权限按右边那枚档位" : "常规聊天：整机只读，只对这个目录可写") +
-        "\n点一下用资源管理器打开";
-      wsChip.classList.toggle("off", !wd.path);
-    };
-    paintWsChip();
-    const isWorkNow = () => !!sessionWorkDir().project;
-    /* 常规对话是固定行为：整机只读 + 只写默认目录，没有任何可选项，所以两个 chip 都不摆
-       （用户要求："常规对话就不要有任何的选项"、"常规聊天是默认路径，也不用显示"）。 */
-    wsChip.hidden = !isWorkNow();
-    wsChip.onclick = (ev) => {
+    /* ＋ ＝ 添加附件（不是权限）；权限在右边那枚 chip 上，两枚按钮各开各的菜单。 */
+    plusBtn.onclick = (ev) => {
       ev.stopPropagation();
-      const wd = sessionWorkDir();
-      if (wd.path && window.itnWindow && typeof window.itnWindow.openPath === "function") {
-        window.itnWindow.openPath(wd.path).then((r) => { if (r && r.ok === false) toast(r.error); });
-      } else {
-        toast("工作目录：" + (wd.path || "未指定"));
-      }
+      const at = menu.querySelector(".cm-attach");
+      if (menuBuilt && !menu.hidden && at && !at.hidden) { closeMenu(); return; }
+      openMenu("attach");
     };
-    crow.appendChild(wsChip);
 
-    /* ---- 权限档位（= Lumin 的 permissions，文案在模块级的 PERM_LABEL） ---- */
+    /* ---- 权限档位（= Lumin 的 permissions，文案在模块级的 PERM_LABEL）----
+       只有挂工作区的会话才给档位；常规对话是固定行为（整机只读 + 只写默认目录），不给任何选项。 */
     const permChip = el("button", "composer-chip", "");
     permChip.type = "button";
-    const workDirName = () => {
-      const d = state.cfg.agentWorkDir || "";
-      return d ? (d.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || d) : "";
-    };
-    /* 常规聊天是固定档：整机可读，只对默认工作目录可写 —— 这枚 chip 只做指示，
-       想放开权限得在侧栏里为那个目录建一个 Work 会话（否则"完全访问"就成了默认值）。 */
-    const isChatMode = () => !state.chatProject;
+    const isChatMode = () => !sessionWorkDir().project;
     const paintPermChip = () => {
-      const wd = workDirName();
       if (isChatMode()) {
-        permChip.hidden = true;      // 常规对话没有任何选项可给
+        permChip.hidden = true;
         return;
       }
       permChip.hidden = false;
       const m = state.cfg.agentPerm || "auto";
       permChip.innerHTML = icon("shield") + "<span>" + esc(PERM_LABEL[m] || m) + "</span>" + icon("chevron");
-      permChip.title = (PERM_HINT[m] || "") + (wd
-        ? "\n工作目录：" + (state.cfg.agentWorkDir || state.cfg.defaultWorkDir || "")
-        : "");
-      permChip.classList.remove("fixed");
+      permChip.title = (PERM_HINT[m] || "") + "\\n工作目录：" + (sessionWorkDir().path || "");
     };
     paintPermChip();
-    state.chatRepaintChips = () => { paintWsChip(); paintPermChip(); };
+    state.chatRepaintChips = () => { paintPermChip(); };
     crow.appendChild(permChip);
     crow.appendChild(spacer());
 
-    /* 模型：一行小字，不是按钮（改模型是设置里的事） */
-    const modelText = el("span", "composer-model", modelLabel(state.cfg.chatModelId) || "未配置模型");
-    modelText.title = "当前对话模型（设置 → 模型与接口 里改）";
+    /* 模型：一行小字，贴在发送键左边（用户要求：模型靠右、就放在发送键旁边） */
+    const modelText = el("button", "composer-model", modelLabel(state.cfg.chatModelId) || "未配置模型");
+    modelText.type = "button";
+    modelText.title = "当前对话模型（点一下去设置里改）";
     modelText.onclick = () => go("settings", "models");
     crow.appendChild(modelText);
 
     /* 一个按钮两种状态：空闲是"发送"，跑着是"停止"（Codex 也是这么干的） */
     const actionBtn = el("button", "composer-send", "");
-    actionBtn.style.marginLeft = "auto";
+    actionBtn.style.marginLeft = "2px";
     actionBtn.type = "button";
     const ICON_SEND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>';
     const ICON_STOP = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>';
@@ -6563,11 +6546,34 @@ PAGES.chat = {
       permBox.appendChild(mkPerm("ask"));
       permBox.appendChild(mkPerm("auto"));
       permBox.appendChild(mkPerm("full"));
-      /* 工作目录不是"权限"，不放进这个菜单；没设的时候给一行提示，指到设置里。 */
-      if (!workDirName()) {
-        permBox.appendChild(el("div", "cm-note", "还没指定工作目录：没有它，Lumin 只能问答、碰不到本机文件（设置 → 智能体）。"));
-      }
+      /* 工作目录不是"权限"，不放进这个菜单；常规对话现在也总有一个默认目录，所以不再给这行提示。 */
       menu.appendChild(permBox);
+
+      /* 附件：＋ 的那一块。把本机文件/文件夹的路径交给这一轮（路径进输入框，发出去之后
+         Lumin 会自己用 read/ls 去读；不复制、不改动你的文件）。 */
+      const attachBox = el("div", "cm-attach");
+      attachBox.hidden = true;
+      const attachPick = (isDir) => async () => {
+        const a = window.itnWindow;
+        const fn = isDir ? (a && a.pickDirectory) : (a && a.pickFile);
+        if (typeof fn !== "function") {
+          toast("选文件只在桌面应用窗口里可用");
+          return;
+        }
+        const picked = await (isDir ? a.pickDirectory() : a.pickFile());
+        if (!picked) return;
+        const box = $("chat-input");
+        const line = (isDir ? "看一下这个目录：" : "看一下这个文件：") + picked;
+        const cur = box.value.replace(/\s+$/, "");
+        box.value = cur ? (cur + "\n" + line) : line;
+        box.focus();
+        box.dispatchEvent(new Event("input"));
+        toast("已加到输入框（发送后 Lumin 会去读）");
+      };
+      attachBox.appendChild(menuItem("file", "选文件…", "把文件路径加到输入框，让它读这份文件", attachPick(false)));
+      attachBox.appendChild(menuItem("folder", "选文件夹…", "把目录路径加到输入框，让它看这个目录", attachPick(true)));
+      attachBox.appendChild(el("div", "cm-note", "只把路径交给它，不复制、不改动你的文件。"));
+      menu.appendChild(attachBox);
 
       /* 技能：只在输入 "/" 时出现。它是"调用一个技能"的动作，不是常驻配置项。 */
       const skillBox = el("div", "cm-skills");
@@ -6615,9 +6621,11 @@ PAGES.chat = {
       // ＋ 与权限 chip 都只出权限档位；输入 "/" 才出技能。
       const sk = menu.querySelector(".cm-skills");
       if (sk) sk.hidden = mode !== "skills";
+      const at = menu.querySelector(".cm-attach");
+      if (at) at.hidden = mode !== "attach";
       const pf = menu.querySelector(".cm-perm");
       if (pf) {
-        pf.hidden = mode === "skills";
+        pf.hidden = mode !== "perm";
         for (const b of pf.querySelectorAll(".cm-perm-item")) {
           b.classList.toggle("active", b.dataset.perm === (state.cfg.agentPerm || "auto"));
         }
@@ -6625,11 +6633,7 @@ PAGES.chat = {
     };
 
 
-    plusBtn.onclick = (ev) => {
-      ev.stopPropagation();
-      if (menuBuilt && !menu.hidden) { closeMenu(); return; }
-      openMenu("perm");
-    };
+    /* ＋ 与权限 chip：两枚按钮各自的开法（在按钮创建处已经绑好，这里不再重复绑定） */
     permChip.onclick = (ev) => {
       ev.stopPropagation();
       if (isChatMode()) {
@@ -6638,7 +6642,6 @@ PAGES.chat = {
       }
       openMenu("perm");
     };
-
     // 输入框随内容长高（最多 8 行），像桌面聊天客户端那样
     const grow = () => {
       ta.style.height = "auto";

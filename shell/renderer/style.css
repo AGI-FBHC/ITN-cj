@@ -2853,3 +2853,70 @@ html[data-theme="dark"] .main { background-color: rgba(255, 255, 255, .02); }
   padding: 0;
   margin: 2px 0 10px;
 }
+
+/* ============================================================
+   第九轮：调用框底色更淡、输入框更高更立体、LUMIN 居中大写、顶栏 logo 对齐、气泡内编辑
+   ============================================================ */
+
+/* 1 · 工具卡与思考段：底色比周围**更淡**（原来是 --panel-sunk，比背景更深，用户说难看）。
+       深色下尤其明显：这里用一层"提亮"的叠加，而不是加深。 */
+:root {
+  --card-lite: rgba(255, 255, 255, .55);
+  --card-lite-inner: rgba(255, 255, 255, .40);
+}
+html[data-theme="dark"] {
+  --card-lite: rgba(255, 255, 255, .055);
+  --card-lite-inner: rgba(255, 255, 255, .035);
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]):not([data-theme="dark"]) {
+    --card-lite: rgba(255, 255, 255, .055);
+    --card-lite-inner: rgba(255, 255, 255, .035);
+  }
+}
+.tool-card {
+  background-color: var(--card-lite);
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--glass-rim);
+}
+.tool-head:hover { background-color: var(--card-lite-inner); }
+.tool-args, .tool-result { background-color: var(--card-lite-inner); }
+.think-text { background-color: var(--card-lite); }
+
+/* 2 · 输入框：默认更高一点、立体感更重（深色下"抬起来"要靠内侧高光 + 两层投影） */
+.composer { padding: 12px 14px 10px; min-height: 108px; }
+.composer textarea { min-height: 30px; }
+.composer {
+  box-shadow: inset 0 1px 0 var(--glass-edge), inset 0 -1px 0 var(--glass-edge-2),
+              0 2px 4px rgba(11, 34, 23, .07), 0 22px 44px -26px rgba(11, 34, 23, .42);
+}
+html[data-theme="dark"] .composer {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), inset 0 -1px 0 rgba(255, 255, 255, .03),
+              0 2px 6px rgba(0, 0, 0, .45), 0 26px 52px -26px rgba(0, 0, 0, .75);
+}
+
+/* 3 · 顶部栏：LUMIN 全大写、更大、字距更开；logo 放大并与下面窄栏的图标对齐（中心都在 36px 处） */
+.tb-name {
+  font-size: calc(17px * var(--fs, 1));
+  letter-spacing: .12em;
+  font-weight: 700;
+  padding-left: .12em;   /* 字距是加在字后面的：补回来才真正居中 */
+}
+.titlebar { padding-left: 23px; }
+.tb-logo { width: 26px; height: 26px; border-radius: 7px; }
+
+/* 4 · 气泡里直接编辑：编辑器填满气泡本身，取消就把原正文放回去 */
+.bubble-original[hidden] { display: none; }
+.bubble-edit {
+  display: block; width: 100%; box-sizing: border-box;
+  min-height: 24px; max-height: 320px; resize: vertical;
+  border: 0; outline: 0; background: none; color: inherit;
+  font: inherit; font-size: calc(14px * var(--fs, 1)); line-height: 1.65;
+  padding: 0; margin: 0;
+}
+.msg-user .msg-body:has(.bubble-edit) { min-width: 220px; }
+.bubble-edit-actions { justify-content: flex-end; gap: 6px; margin-top: 6px; }
+
+/* 输入框那一行里的 spacer 要真的"撑开"：.spacer 原来只在 .card-head 里被定义过，
+   在输入框里它是个 0 宽的空 div —— 于是"模型 + 发送"不会靠右（踩过）。 */
+.composer-row .spacer { flex: 1 1 auto; min-width: 8px; }

@@ -1375,6 +1375,9 @@ public class Api {
                     ps.bind(nsid, ps.projectOf(sid))
                     let o = JsonObject()
                     o.put("sessionId", JsonString(nsid))
+                    // 名字一起回给界面：新分支可能还没有事件（列表里暂时看不到），
+                    // 顶栏那条面包屑得先有名字可显示
+                    o.put("title", JsonString(ss.titleOf(nsid)))
                     ok(ctx, o)
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }

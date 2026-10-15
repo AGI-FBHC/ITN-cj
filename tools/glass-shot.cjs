@@ -77,7 +77,7 @@ const freePort = () => new Promise((res, rej) => {
 
     // 改名 Lumin + logo 接入：标题、品牌名、静态白名单、对话框里不再有单独的标签
     if (await page.title() !== 'Lumin') throw new Error('窗口标题应改成 Lumin，实际 ' + (await page.title()));
-    if ((await page.locator('.tb-name').innerText()).trim() !== 'Lumin') throw new Error('标题栏品牌名应为 Lumin');
+    if ((await page.locator('.tb-name').innerText()).trim() !== 'LUMIN') throw new Error('标题栏品牌名应为大写 LUMIN');
     if (await page.locator('.wb-brand').count()) throw new Error('对话框里不该再有单独的 lumin 标签');
     for (const f of ['/logo-mark.png', '/logo-light.png', '/logo-dark.png']) {
       const r = await page.request.get(base + f);
@@ -268,8 +268,9 @@ const freePort = () => new Promise((res, rej) => {
     if (workCrumb.indexOf(proj.name) < 0) throw new Error('从项目新建的会话，顶栏应当显示这个工作区：' + workCrumb);
     const workChips = await page.locator('.composer-chip:visible').allInnerTexts();
     const workChipsText = workChips.join(' | ').replace(/\s+/g, " ");
-    if (workChipsText.indexOf(proj.name) < 0) throw new Error('Work 会话应当显示工作区 chip，实际：' + workChipsText);
+    // 输入框里只有"权限"这一枚 chip：工作区在顶栏面包屑上，不再在输入框里摆目录（用户要求）
     if (workChipsText.indexOf('帮我批准') < 0) throw new Error('Work 会话的权限默认应当是「帮我批准」，实际：' + workChipsText);
+    if (workChipsText.indexOf(proj.name) >= 0) throw new Error('输入框里不该再出现工作区/目录 chip，实际：' + workChipsText);
     console.log('WORK-MODE 面包屑=' + workCrumb + ' / chip=' + workChipsText);
     await page.locator('#chat-input').fill('工作区第一问');
     await page.locator('.composer-send').click();
@@ -307,17 +308,38 @@ const freePort = () => new Promise((res, rej) => {
     if (!(await page.locator('#chat-thread .think-row').count())) throw new Error('这一段应当有思考段（假模型也会回 reasoning）');
     console.log('COLLAPSED-BY-DEFAULT 思考段与工具卡都是收起的');
 
-    // 顶栏那三个点：横排、够大（用户说太小、要横着放）
-    const dotInfo = await page.evaluate(() => {
-      const b = document.querySelector('.wb-menu-btn');
-      const svg = b && b.querySelector('svg');
-      const r = b ? b.getBoundingClientRect() : null;
-      return { dots: svg ? svg.querySelectorAll('circle').length : 0, size: r ? Math.round(r.width) : 0 };
-    });
-    if (dotInfo.dots !== 3) throw new Error('顶栏的"更多"应当是横排三个点，实际圆点数 ' + dotInfo.dots);
-    if (dotInfo.size < 28) throw new Error('顶栏的"更多"按钮太小：' + dotInfo.size + 'px');
-    console.log('DOTS 三个点 size=' + dotInfo.size + 'px');
 
+    /* ＋ 是"添加附件"，不是权限选项；权限只在权限 chip 上（用户明确要求）。 */
+    await page.locator('.composer-icon').first().click();
+    await page.waitForSelector('.cm-attach:not([hidden])', { timeout: 5000 });
+    const attachText = (await page.locator('.composer-menu').innerText()).replace(/\s+/g, " ");
+    if (attachText.indexOf('选文件') < 0 || attachText.indexOf('选文件夹') < 0) {
+      throw new Error('＋ 里应当是添加附件，实际：' + attachText);
+    }
+    if (attachText.indexOf('批准') >= 0 || attachText.indexOf('完全访问') >= 0) {
+      throw new Error('＋ 里不该出现权限选项，实际：' + attachText);
+    }
+    await page.keyboard.press('Escape');
+    await sleep(200);
+    console.log('ATTACH-MENU ' + attachText);
+
+    // 模型名靠右、紧贴发送键左边
+    const composerRight = await page.evaluate(() => {
+      const m = document.querySelector('.composer-model');
+      const s = document.querySelector('.composer-send');
+      const row = document.querySelector('.composer-row') || (m && m.parentElement);
+      if (!m || !s || !row) return null;
+      const mr = m.getBoundingClientRect();
+      const sr = s.getBoundingClientRect();
+      const rr = row.getBoundingClientRect();
+      return { modelRight: Math.round(mr.right), sendLeft: Math.round(sr.left), sendRight: Math.round(sr.right), rowRight: Math.round(rr.right) };
+    });
+    if (!composerRight) throw new Error('找不到模型名或发送键');
+    if (composerRight.sendLeft < composerRight.modelRight || composerRight.sendLeft - composerRight.modelRight > 40) {
+      throw new Error('模型名应当紧贴发送键左边：' + JSON.stringify(composerRight));
+    }
+    if (composerRight.rowRight - composerRight.sendRight > 60) throw new Error('发送键应当贴右：' + JSON.stringify(composerRight));
+    console.log('COMPOSER-ORDER 模型右缘 ' + composerRight.modelRight + ' → 发送键 ' + composerRight.sendLeft);
     // 消息行：用户气泡下面是"时间 · 复制 · 重写"，回答下面是"复制 · 分支 · 时间\"
     if (!(await page.locator('#chat-thread .msg-user .msg-meta').count())) throw new Error('用户气泡下面应当有时间与图标');
     if (!(await page.locator('#chat-thread .msg-meta.left').count())) throw new Error('回答下面应当有复制/分支与时间');
@@ -441,6 +463,46 @@ const freePort = () => new Promise((res, rej) => {
     if (active !== 1) throw new Error('切过去之后应只有一条高亮，实际 ' + active);
     console.log('SESSION-SWITCH 就地切换 ' + ms + 'ms，未整页重建');
     await shot('15-session-switch');
+
+    /* 气泡里直接编辑：点"重写"就地变成输入框（不是另开一个窗口），取消要原样还回来。 */
+    const lastUser = page.locator('#chat-thread .msg-user').last();
+    const beforeEdit = (await lastUser.innerText()).trim();
+    await lastUser.locator('.msg-meta .msg-icon-btn').last().click();
+    await sleep(300);
+    if (!(await page.locator('#chat-thread .msg-user .msg-body .bubble-edit').count())) {
+      throw new Error('编辑器应当长在气泡里面');
+    }
+    await page.locator('.bubble-edit-actions button', { hasText: '取消' }).click();
+    await sleep(250);
+    if (await page.locator('#chat-thread .bubble-edit').count()) throw new Error('取消之后编辑器应当消失');
+    const afterEdit = (await lastUser.innerText()).trim();
+    if (afterEdit !== beforeEdit) throw new Error('取消之后应当原样还回原来的文字：' + beforeEdit + ' → ' + afterEdit);
+    console.log('BUBBLE-EDIT 就地编辑 + 取消还原 ✓');
+
+    /* 新建分支：切到新会话、带着分支点之前的历史、名字叫「旧名（2）」；再开一次是（3）。 */
+    await page.locator('#chat-input').fill('分支前的第二问');
+    await page.locator('.composer-send').click();
+    await page.waitForFunction(() => !state.busyTurn, null, { timeout: 90000 });
+    await sleep(900);
+    const sidBefore = await page.evaluate(() => state.chatSessionId);
+    const openBranch = async () => {
+      await page.locator('.wb-menu-btn').click();
+      await page.waitForSelector('.session-menu-right', { timeout: 5000 });
+      await page.locator('.session-menu-right .rail-menu-item', { hasText: '新建分支' }).click();
+      await sleep(1800);
+      return page.evaluate(() => ({
+        sid: state.chatSessionId,
+        turns: (state.chatTurns || []).length,
+        title: (document.querySelector('.wb-crumb-title') || {}).textContent || '',
+      }));
+    };
+    const b2 = await openBranch();
+    if (b2.sid === sidBefore) throw new Error('开分支之后应当切到新会话');
+    if (b2.turns < 1) throw new Error('新分支应当继承分支点之前的历史，实际 ' + b2.turns + ' 轮');
+    if (b2.title.indexOf('（2）') < 0) throw new Error('分支会话名应当是「旧名（2）」，实际 ' + b2.title);
+    const b3 = await openBranch();
+    if (b3.title.indexOf('（3）') < 0) throw new Error('第二个分支应当是（3），实际 ' + b3.title);
+    console.log('BRANCH 切换 ✓ 继承 ' + b2.turns + ' 轮 · 命名 ' + b2.title + ' → ' + b3.title);
 
     await page.evaluate(() => { state.chatSessionId = ''; go('resources'); });
     await sleep(600);
