@@ -29,8 +29,10 @@ New-Item -ItemType Directory -Force -Path $kernelDir | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $repo "shell\main.js") -Destination $appDir -Force
 Copy-Item -LiteralPath (Join-Path $repo "shell\preload.js") -Destination $appDir -Force
-# pptx 文字预览是同目录里 require 进来的模块，必须一起进包（漏了包里的 main.js 会 require 失败）
+# pptx / docx 文字预览、以及 Markdown → Office 导出，都是同目录里 require 进来的模块，
+# 必须一起进包（漏了包里的 main.js 会 require 失败）
 Copy-Item -LiteralPath (Join-Path $repo "shell\pptx.js") -Destination $appDir -Force
+Copy-Item -LiteralPath (Join-Path $repo "shell\deck-export.js") -Destination $appDir -Force
 Copy-Item -Path (Join-Path $repo "shell\renderer") -Destination $appDir -Recurse -Force
 Copy-Item -Path (Join-Path $repo "shell\assets") -Destination $appDir -Recurse -Force
 # 随包内置的技能（只读，用户改不了）：外壳用 --skills-dir 指给内核

@@ -3776,3 +3776,46 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - 注：本提交同时带上并行线程正在做的 .docx 预览改动（`shell/main.js` 的 `doc:read`、`shell/pptx.js` 的
   `readDoc`、`app.js` 的 `docToSlides` / "打开文档…"、`shell/preload.js`），它们在同一工作区，未单独再分一次提交；
   其导出用的 `shell/deck-export.js` **还没落地**（UI 里也还没接），所以是"只读预览可用、导出未接线"的状态。
+
+
+## 2026-10-16 · 第十四轮：输入框两处实测问题 + .docx 只读预览 + Markdown→Office 导出 · Lumin 0.4.2
+
+### 用户实测两个问题（都是真 bug，已修 + 固化成断言）
+1. **"对话框上面平白无故出现了一个横条"**：`.split-hint`（"已从这一轮开分支"的提示条）自己写了 `display: flex`，
+   把浏览器对 `[hidden]` 的默认 `display: none` 盖掉了 —— 没点过开分支时它一直以一个 18px 空条占着位置。
+   修法：把它加进 `[hidden] { display: none !important }` 兜底那条规则（这是这个坑第二次踩：上次是 `.composer-chip`）。
+2. **"对话框底部留空了那么多"**：`.composer { min-height: 108px }` 比内容高 16px，多出来的是**点不动的死留白**。
+   修法：把高度给**输入区**（textarea `min-height: 52px`），容器不再设 min-height —— 盒子总高差不多，但每一寸都能点。
+   实测：容器 106px = padding 22 + 输入区 52 + 行 30 + 缝 2，余量 0。
+- 两条都写进 `tools/glass-shot.cjs` 的 COMPOSER-FIT 断言（余量 > 8px、或待分叉条 display≠none 就报错）。
+
+### .docx 只读预览（与并行线程一起落地，这一段由本线程写）
+- `shell/pptx.js` 新增 `readDoc()`：docx 同样是 ZIP + OOXML，正文在 `word/document.xml`；
+  逐个 `<w:p>` 取 `<w:t>`（`<w:br/>` 当换行、表格里的段落照样收），段落样式 `Heading1..6` / "N 级标题" → 层级 1..6；
+  老 `.doc`（OLE）退回"扫 UTF-16LE 可读串"的粗办法，并在返回值里如实标出 kind。
+- `shell/main.js` 加 `dlg:pick-doc` / `doc:read`；`shell/preload.js` 暴露 `pickDoc` / `readDoc`；
+  界面：资源页新增「打开文档…」，`docToSlides()` 把段落按**一/二级标题分页**（太长再按 14 段 / 1000 字切），
+  复用在线演示那套播放器（目录、A−/A+、全屏、折叠、进度），多一个「用 Word 打开」直达系统程序。
+- 新增 `tools/docx-check.cjs`：真 .docx 样张（python-docx 生成）验解析层级与正文 + 无头浏览器验分页/标题/按钮，9/9 通过。
+
+### Markdown → 可编辑 Office 文件（这一段是本轮的主体）
+- 新增 `shell/deck-export.js`（**零依赖**，壳里自写 ZIP：CRC32 自算、`deflateRawSync`、固定 1980 时间戳 → 同输入同字节）：
+  - `exportPptx(md, out)`：`---` 分页，每页第一个 `# ` 当标题，`## ` 小标题、`- ` 项目符号、`1. ` 编号、`> ` 引用；
+    包内是完整的最小合法部件集（presentation/slideMaster/slideLayout/theme/每页 slide + rels + Content_Types + docProps）。
+  - `exportDocx(md, out)`：`# / ## / ### / ####` → Heading1..4、`- ` 项目符号、`1. ` 编号、`> ` 引用、`**粗体**` 行内加粗，
+    带 styles.xml（东亚字体 Microsoft YaHei）与 numbering.xml。
+  - 不支持的：图片、表格、自定义主题色（写在文件头注释里，不装懂）。
+- 接线：`shell/main.js` 加 `export:resource`（系统"另存为"对话框 → 调模块 → 失败原样报错）；
+  `shell/preload.js` 暴露 `exportResource`；资源面板动作行加「导出 pptx / 导出 docx」两个按钮；
+  `scripts/package-app.ps1` 把 `shell/deck-export.js` 一起拷进包（**漏拷会在打包版里 require 失败**，这条已经写进脚本注释）。
+- 新增 `tools/deck-export-check.cjs`（10 项全过）：真导两份文件 → `python-pptx` / `python-docx` 打开核对页数与文字、
+  `zipfile` 完整性 + 包内每个 XML 过 `minidom`、同输入两次导出字节一致、无头浏览器点资源面板两个按钮验传参（kind/markdown/标题）。
+
+### 验证与产物
+- `tools/deck-export-check.cjs` **all passed**；`tools/docx-check.cjs` **9/9**；
+  `glass-shot` 全过（新增 COMPOSER-FIT；DRAFT / SESSION-TREE / BRANCH 等照旧）；`stop-check` 11/11；`learning-check --ui` 57/57。
+- 版本 **0.4.2**；产物 `dist/Lumin-0.4.2` 与 `dist/Lumin-0.4.2-win-x64.zip`（172 MB）；
+  **源码↔包 8 个关键文件哈希 BAD=0**，包里 `release.json` 记的 9 项资产哈希也逐一对上（BAD=0）；
+  空数据目录冒烟 `RESULT=OK`，并且新增的 `DOCX=ok paragraphs=4` 证明**打包版**里 preload→主进程→pptx.js 这条链路是通的。
+- 说明：`daea6a7`（并行线程的中文化轮）当时把本线程**未提交**的 docx 只读预览一并收编了；
+  这次提交只补"导出"那一半 + 两个自检工具 + 打包脚本里的模块拷入 + 启动器指向 0.4.2。
