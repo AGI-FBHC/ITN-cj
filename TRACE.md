@@ -2976,3 +2976,9 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - 新目录空数据启动自检RESULT=OK、NAV=8、VIEW_NODES=8，未碰用户实际数据库；renderer/app.js哈希与源码匹配，等待ZIP写入后再核验ZIP内界面/内核哈希。
 - 原路径 D:/Desktop/ITN/ITN-Desktop/dist/ITN-Desktop 的应用仍是用户正在运行的旧版；本轮不强制关闭它。使用修复版需先关闭旧窗口再打开新exe，两者默认都沿用 LOCALAPPDATA/ITN-Desktop，旧会话与配置保留。
 - docs/10的用户反馈专项已据实回填。全部修改仅在Desktop宿主、测试和交接，不动lumin本体与网页版；提交号随后追加。
+
+### 停止修复完成与提交
+- 实现已本地提交：4b99359（fix(desktop): cancel network tools and recover chat controls on terminal events），15个明确文件。lumin副本23/23归一化匹配，本体没有改动。
+- 修复ZIP已写入完成并读取校验：renderer/app.js与kernel/itn-desktop-core.exe的SHA256分别匹配当前源码/构建产物。空目录启动自检RESULT=OK。
+- 原窗口未重启、用户实际数据库未修改；修复版默认读取同一 LOCALAPPDATA/ITN-Desktop。使用时关闭旧窗口再打开 dist/ITN-Desktop-stop-fix/ITN-Desktop.exe，避免两个内核同时使用同一数据库。
+- 本条独立文档提交记录实现hash；随后工作区应干净。未推送远程。
