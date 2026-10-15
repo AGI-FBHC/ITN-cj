@@ -8,7 +8,11 @@ module.exports=async function({base,post,check,dir}) {
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   const shots=path.resolve(__dirname,'../tmp/workbench-shots');fs.mkdirSync(shots,{recursive:true});
   const nav=async name=>{await page.locator('#rail [data-page="'+name+'"]').click();await page.waitForTimeout(250);};
-  const send=async text=>{await page.locator('#chat-input').fill(text);await page.locator('.composer-send[aria-label="发送"]').click();await page.waitForFunction(()=>!state.busyTurn,{timeout:30000});};
+  const send=async text=>{
+    const count=await page.evaluate(()=>state.chatTurns.length);
+    await page.locator('#chat-input').fill(text);await page.locator('.composer-send[aria-label="发送"]').click();
+    await page.waitForFunction(n=>state.chatTurns.length>n&&state.chatTurns[state.chatTurns.length-1].ok!==null&&!state.busyTurn,count,{timeout:30000});
+  };
   try {
     await page.goto(base);
     await page.waitForSelector('#chat-input');
@@ -62,7 +66,9 @@ module.exports=async function({base,post,check,dir}) {
     await page.locator('.memory-entry').getByRole('button',{name:'忘记',exact:true}).click();
     await page.waitForFunction(()=>!document.querySelector('.memory-entry'));
     check('memory forget updates backend',(await post('/api/learning/memories',{})).memories.length===0);
+    const policySaved = page.waitForResponse(r=>r.url().endsWith('/api/learning/memory/policy')&&r.request().method()==='POST');
     await page.locator('#memory-auto').uncheck();
+    await policySaved;
     check('automatic memory policy persists',(await post('/api/learning/memory/policy',{})).autoRemember===false);
     const lecture=(await post('/api/learning/resources',{})).resources.find(r=>r.kind==='lecture');
     await page.evaluate(id=>openLearningResource(id),lecture.id);

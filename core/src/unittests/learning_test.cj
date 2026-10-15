@@ -3,6 +3,7 @@ package itn_desktop_core.unittests
 import std.unittest.*
 import std.unittest.testmacro.*
 import stdx.encoding.json.*
+import std.fs.*
 import itn_desktop_core.learning.*
 import itn_desktop_core.store.Store
 import itn_desktop_core.resource.ResourceRequest
@@ -18,6 +19,23 @@ func savedQuiz(ls: LearningStore): JsonObject {
     o.put("title", JsonString("输入与输出测试"))
     o.put("content", JsonValue.fromStr(quizJson()))
     return ls.saveResource(o, "kb", "sid", "turn", "", 0)
+}
+
+@Test
+func legacyResourcesMigrateOnceWithoutInventingMetadata(): Unit {
+    let dir = freshDir("learning-legacy")
+    Directory.create(dir + "/artifacts")
+    File.writeTo(dir + "/artifacts/原讲义.md", "# 原讲义\n\n保留这段历史内容".toArray())
+    let ls = LearningStore(dir)
+    let rows = ls.resources("")
+    @Expect(rows.size(), 1)
+    let id = strOf(objOf(rows[0]).getOrThrow(), "id")
+    let res = ls.resource(id, 0)
+    @Expect(strOf(res, "kind"), "legacy")
+    @Expect(arrOf(res, "citations").size(), 0)
+    @Expect(strOf(res, "markdown").contains("保留这段历史内容"), true)
+    @Expect(exists(dir + "/artifacts/原讲义.md"), true)
+    @Expect(LearningStore(dir).resources("").size(), 1)
 }
 
 @Test

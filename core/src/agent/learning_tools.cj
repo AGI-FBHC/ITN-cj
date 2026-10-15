@@ -79,13 +79,17 @@ public func learningTools(store: Store, kbId: String, shouldAbort: () -> Bool, s
         }))
     out.add(makeTool("revise_learning_resource", "修改学习资源", "根据要求创建新版本，保留旧版本",
         "先读资源，再按用户修改要求重新生成并质检新版本。baseVersion 必须为已读的最新版本；旧版本保留。instruction 写具体修改要求。默认沿用生成时的来源；用户要求更新资料时设 refreshSources=true。",
-        "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"baseVersion\":{\"type\":\"integer\"},\"refreshSources\":{ \"type\":\"boolean\"},\"instruction\":{\"type\":\"string\"}},\"required\":[\"id\",\"baseVersion\",\"instruction\"]}", "write", { args: JsonObject =>
+        "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"baseVersion\":{\"type\":\"integer\"},\"kind\":{\"type\":\"string\",\"enum\":[\"lecture\",\"practice\",\"quiz\",\"ppt\"]},\"refreshSources\":{ \"type\":\"boolean\"},\"instruction\":{\"type\":\"string\"}},\"required\":[\"id\",\"baseVersion\",\"instruction\"]}", "write", { args: JsonObject =>
             let id = strOf(args, "id")
             let version = intOf(args, "baseVersion")
             let old = ls.resource(id, 0)
             if (intOf(old, "version") != version) { throw Exception("资源已更新，请先重新读取最新版本") }
             let req = ResourceRequest()
             req.kind = strOf(old, "kind")
+            if (req.kind == "legacy") {
+                req.kind = strOf(args, "kind")
+                if (!isResourceKind(req.kind)) { throw Exception("历史文件没有结构化类型，请按用户要求明确目标 kind=lecture/practice/quiz/ppt") }
+            }
             req.topic = if (strOf(old, "topic").size > 0) { strOf(old, "topic") } else { strOf(old, "title") }
             req.kbId = strOf(old, "kbId")
             if (!boolOf(args, "refreshSources")) { req.sourceSnapshots = arrOf(old, "citations") }
@@ -111,6 +115,8 @@ public func learningTools(store: Store, kbId: String, shouldAbort: () -> Bool, s
             brief.put("id", JsonString(id))
             brief.put("version", saved.get("version").getOrThrow())
             brief.put("title", saved.get("title").getOrThrow())
+            brief.put("artifactPath", saved.get("artifactPath").getOrDefault({ => JsonString("") }))
+            brief.put("quality", saved.get("quality").getOrThrow())
             return learningResult(brief, "已创建资源新版本，旧版本保留")
         }))
     return out

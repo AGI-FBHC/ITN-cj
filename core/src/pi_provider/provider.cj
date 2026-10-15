@@ -127,6 +127,11 @@ public class OpenAiChatProvider <: ChatProvider {
         lastFinish = acc.finishReason
 
         let reply = ModelReply()
+        if (abortRequested()) {
+            reply.stopReason = "aborted"
+            reply.errorMessage = "已取消"
+            return reply
+        }
         if (err.size > 0) {
             reply.stopReason = "error"
             reply.errorMessage = err

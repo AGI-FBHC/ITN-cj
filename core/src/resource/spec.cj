@@ -35,7 +35,7 @@ public func resourceKinds(): ArrayList<ResourceKind> {
     let out = ArrayList<ResourceKind>()
     out.add(ResourceKind("lecture", "定制讲义", "讲义", "分章分节的长文，逐节引用资料"))
     out.add(ResourceKind("practice", "实操指南", "实操", "可执行步骤 + 验收标准 + 故障排查"))
-    out.add(ResourceKind("quiz", "分阶测试", "练习", "知识点 + 易/中/难三档选择题"))
+    out.add(ResourceKind("quiz", "分阶测试", "练习册", "知识点 + 易/中/难三档选择题"))
     out.add(ResourceKind("ppt", "演示稿", "演示", "一页一个要点，能直接进播放器"))
     return out
 }

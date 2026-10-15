@@ -42,6 +42,7 @@ class ProviderTest {
         let result = PiAgent(Store(dir)).askWithProvider(provider, "", "hello", "", "off", "")
         canceller.get()
         @Expect(boolOf(result, "ok", true), false)
+        @Expect(strOf(result, "message").contains("取消"), true)
         @Expect((DateTime.now() - started).toMilliseconds() < 2000, true)
         server.close()
     }
@@ -66,7 +67,9 @@ class ProviderTest {
         let provider = OpenAiChatProvider(modelCfg(Int64(server.port)))
         let started = DateTime.now()
         provider.shouldAbort = Some({ => (DateTime.now() - started).toMilliseconds() >= 250 })
-        provider.respond(StepContext(), EventStream())
+        let cancelled = provider.respond(StepContext(), EventStream())
+        @Expect(cancelled.stopReason, "aborted")
+        @Expect(cancelled.errorMessage.contains("取消"), true)
         @Expect((DateTime.now() - started).toMilliseconds() < 2000, true)
         server.close()
     }

@@ -283,6 +283,7 @@ fs.writeFileSync(singleFile, [
     await page.waitForTimeout(500);
     await page.waitForFunction(() => !document.querySelector('#view .empty .spinner'), null, { timeout: 20000 }).catch(() => {});
     await page.waitForTimeout(200);
+    await page.waitForFunction(()=>!state.busyTurn,null,{timeout:60000});
     if (label === '个性化资源') {
       await page.waitForSelector('.legacy-artifacts');
       await page.locator('.legacy-artifacts').evaluate(e=>e.open=true);
@@ -672,7 +673,10 @@ fs.writeFileSync(singleFile, [
     await page.waitForSelector('.ok-dialog:has-text("练习册已生成")', { timeout: 60000 });
     const prev = await page.locator('.ok-dialog .artifact-preview').innerText();
     assert(prev.length > 80, '练习册正文应有一定长度，实际 ' + prev.length);
-    assert(/资料来源/.test(prev), '产物末尾应带「资料来源」');
+    const quizFiles = await page.evaluate(() => fetch('/api/artifacts/list', {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json()).then(j=>j.data.artifacts));
+    const quizFile = quizFiles.find(a=>a.name.startsWith('练习册-提示词工程'));
+    const quizContent = await page.evaluate(name=>fetch('/api/artifacts/read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})}).then(r=>r.json()).then(j=>j.data.content),quizFile.name);
+    assert(/资料来源/.test(quizContent), '完整产物末尾应带资料来源，预览可以截断');
     await shot('08-练习册生成');
     await page.locator('.ok-dialog').getByRole('button', { name: '收起' }).click();
     return prev.length + ' 字';
@@ -716,7 +720,10 @@ fs.writeFileSync(singleFile, [
     assert(/讲义-提示词工程/.test(head), '结果卡里应写出产物名，实际：' + head.replace(/\s+/g, ' ').slice(0, 80));
     const prev = await page.locator('.ok-dialog .artifact-preview').innerText();
     assert(prev.length > 100, '讲义正文应有一定长度');
-    assert(/资料来源/.test(prev), '讲义末尾应带资料来源');
+    const lectureFiles=await page.evaluate(()=>fetch('/api/artifacts/list',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(r=>r.json()).then(j=>j.data.artifacts));
+    const lectureFile=lectureFiles.find(a=>a.name.startsWith('讲义-提示词工程-'));
+    const lectureContent=await page.evaluate(name=>fetch('/api/artifacts/read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})}).then(r=>r.json()).then(j=>j.data.content),lectureFile.name);
+    assert(/资料来源/.test(lectureContent),'完整讲义末尾应带资料来源');
     await shot('09-讲义生成');
     await page.locator('.ok-dialog').getByRole('button', { name: '收起' }).click();
     return head.replace(/\s+/g, ' ').slice(0, 60);
@@ -909,6 +916,7 @@ fs.writeFileSync(singleFile, [
     await page.getByRole('button', { name: '删除', exact: true }).click();
     await page.waitForFunction((id) => fetch('/api/sessions/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
       .then((x) => x.json()).then((r) => !(r.data.sessions || []).some((s) => s.sessionId === id)), sid, { timeout: 10000 });
+    await page.waitForSelector('.panel-item-title:has-text("E2E 重命名会话")',{state:'detached'});
     const gone = await page.locator('.panel-item-title', { hasText: 'E2E 重命名会话' }).count();
     assert(gone === 0, '会话栏里不应再有被删掉的会话');
     return '重命名 + 删除都落到内核（' + sid + '）';
@@ -1111,6 +1119,15 @@ fs.writeFileSync(singleFile, [
 
   /* ---------- 停止生成 / 停止回答 ---------- */
   await step('生成中可以停止：写明停在哪、且不落产物', async () => {
+    const genSlowPort=await freePort();
+    const genSlow=spawn('python',[path.join(__dirname,'mock-openai','server.py'),String(genSlowPort)],{cwd:REPO,windowsHide:true,stdio:'ignore',env:{...process.env,ITN_MOCK_CHUNK_DELAY_MS:'250'}});
+    children.push(genSlow);await sleep(500);
+    await page.evaluate(async base=>{
+      const post=(url,b)=>fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+      await post('/api/models/save',{id:'gen-slow',name:'生成停止测试',baseUrl:base,apiKey:'k',model:'mock'});
+      await post('/api/models/roles',{chatModelId:'gen-slow',embedModelId:'mock',chunkModelId:'mock'});
+    },'http://127.0.0.1:'+genSlowPort+'/v1');
+    try {
     await nav('学 · 练');
     if (await page.locator('.chunk-card').count()) {
       await page.getByRole('button', { name: /返回目录/ }).first().click();
@@ -1124,7 +1141,7 @@ fs.writeFileSync(singleFile, [
     await page.fill('#topic-input', '提示词工程-会被取消');
     await page.getByRole('button', { name: '开始生成讲义' }).click();
     await page.waitForSelector('.gen-card', { timeout: 15000 });
-    await page.waitForTimeout(900);   // 让它真的开始跑，再停
+    await page.waitForSelector('.gen-card .tool-row.running', {timeout:10000});
     const stage = await page.textContent('.gen-card .card-head h2').catch(() => '');
     await page.getByRole('button', { name: '停止生成' }).click();
     await page.waitForSelector('.dialog:has-text("已取消")', { timeout: 30000 });
@@ -1140,6 +1157,9 @@ fs.writeFileSync(singleFile, [
       '会话里应留下"被取消"的收尾事件，实际：' + JSON.stringify(end));
     await page.locator('.dialog', { hasText: '已取消' }).getByRole('button', { name: '关闭' }).click();
     return '停止前阶段「' + stage + '」；产物未增加（' + after + ' 份）；事件：' + end.payload.message;
+    } finally {
+      await page.evaluate(()=>fetch('/api/models/roles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chatModelId:'mock',embedModelId:'mock',chunkModelId:'mock'})}));
+    }
   });
 
   await step('回答可以停止，并且能一键重问', async () => {
@@ -1196,13 +1216,12 @@ fs.writeFileSync(singleFile, [
     await mk();
     await mk();
     const arts = (await page.evaluate(() => fetch('/api/artifacts/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()))).data.artifacts.map((a) => a.name);
-    const first = arts.filter((n) => n === '练习册-提示词.md').length;
-    const second = arts.filter((n) => n === '练习册-提示词-2.md').length;
-    assert(first === 1 && second === 1, '同主题两次生成应得到两份文件，实际：' + arts.join(' / '));
+    const copies = arts.filter(n=>n.startsWith('练习册-提示词-'));
+    assert(copies.length === 2 && new Set(copies).size === 2, '同主题两次生成应得到两份文件，实际：' + arts.join(' / '));
     await nav('个性化资源');
     const shown = await page.locator('#view').innerText();
-    assert(shown.indexOf('练习册-提示词-2.md') >= 0, '资源页应能看到第二份');
-    return '两份都在：练习册-提示词.md / 练习册-提示词-2.md';
+    assert(copies.every(n=>shown.includes(n)), '资源页应能看到两份独立文件');
+    return '两份独立文件都在：'+copies.join(' / ');
   });
 
   await step('会话按知识库管理：新建会话先选资料范围（通用 / 某个库），列表按库分组', async () => {
@@ -1242,6 +1261,7 @@ fs.writeFileSync(singleFile, [
     // 分组：会话栏里两个库各成一组（通用在最上）
     await nav('伴学助手');
     await page.waitForSelector('.panel-group-head', { timeout: 15000 });
+    await page.waitForSelector('.panel-group-head[data-group="course2"]');
     const groupNames = await page.$$eval('.panel-group-head span:first-of-type', (els) => els.map((e) => e.textContent.trim()));
     assert(groupNames.join('/').indexOf('第二门课') >= 0, '新会话应归到「第二门课」组下，实际 ' + groupNames.join('/'));
     assert(groupNames.join('/').indexOf('自测课程资料') >= 0, '旧的会话应还在它自己那一组里，实际 ' + groupNames.join('/'));
@@ -1620,7 +1640,7 @@ fs.writeFileSync(singleFile, [
     assert(api.abilities && api.abilities.length === 6, '接口应回六维，实际 ' + JSON.stringify(api.abilities && api.abilities.length));
     const apiKeys = api.abilities.map((a) => a.key).join('/');
     assert(drawn.key.join('/') === apiKeys, '界面与接口的六维顺序应一致：' + drawn.key.join('/') + ' vs ' + apiKeys);
-    assert(api.weakest && drawn.advice.indexOf(api.weakest) >= 0, '重点建议要指向接口给的那一维：' + drawn.advice.replace(/\s+/g, ' ').slice(0, 60));
+    assert(api.weakest ? drawn.advice.indexOf(api.weakest) >= 0 : drawn.advice.includes('不足'), '重点建议要指向接口给的那一维：' + drawn.advice.replace(/\s+/g, ' ').slice(0, 60));
     // 数据不足时不给假分数：没练习的维度 evidence 必须是 -1
     const noData = api.abilities.filter((a) => a.evidence < 0);
     assert(noData.every((a) => a.basis.length > 0), '没有参考分的维度也要说明原因');
@@ -1736,7 +1756,7 @@ fs.writeFileSync(singleFile, [
       await page.waitForSelector('#panel-title', { timeout: 15000 });
       const info = await page.evaluate(() => ({
         title: ((document.querySelector('#panel-title') || {}).textContent || '').trim(),
-        items: document.querySelectorAll('#panel-body .panel-item, #panel-body .settings-nav button').length,
+        items: document.querySelectorAll('#panel-body .panel-item, #panel-body .resource-entry, #panel-body .settings-nav button').length,
         empty: document.querySelectorAll('#panel-body .panel-empty').length,
         foot: document.querySelectorAll('#panel-foot button').length,
       }));
@@ -2020,7 +2040,7 @@ fs.writeFileSync(singleFile, [
     await nav('伴学助手');
     await page.waitForSelector('.composer', { timeout: 15000 });
     const ph = await page.getAttribute('#chat-input', 'placeholder');
-    assert(ph.indexOf('描述任务') >= 0, '输入框应是"描述任务，输入 / 调用技能"，实际：' + ph);
+    assert(ph.indexOf('学习目标') >= 0, '输入框应是"描述任务，输入 / 调用技能"，实际：' + ph);
     // 输入框上只该有一枚 chip：权限档位。联网与技能都不该在这儿占位置。
     const chips = await page.$$eval('.composer-chip', (els) => els.map((e) => e.innerText.trim()));
     assert(chips.length === 1, '输入区只该有一枚 chip（权限档位），实际 ' + JSON.stringify(chips));

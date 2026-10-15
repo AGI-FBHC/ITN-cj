@@ -234,13 +234,14 @@ func retrieveHits(store: Store, kbId: String, topic: String, topK: Int64, should
 /* ---------- 提示词 ---------- */
 
 const WRITER_SYSTEM = "你是教培内容作者。只能依据给定资料写作，每个论断后用 [编号] 标注出处，不要编造资料之外的内容。输出 Markdown 正文，不要重复小节标题。"
+const STRUCTURED_SYSTEM = "你是严谨的学习内容作者。严格按用户给出的结构输出一个合法 JSON 对象，不输出解释或 Markdown 围栏。文字字段可含 Markdown，换行必须转义。依据给定资料，用 [编号] 标注真实来源，不编造编号。"
 
 func lecturePlanPrompt(topic: String, detail: String, digest: String): String {
     let minCh = detailMinChapters(detail)
     let minSec = detailMinSections(detail)
     return "你是课程设计者。只输出一个 JSON 对象（不要解释、不要 Markdown 围栏），结构：\n" +
         "{\"title\":\"\",\"objective\":\"\",\"objectives\":[\"\",\"\"],\"chapters\":[{\"title\":\"\",\"introduction\":\"\",\"sections\":[{\"title\":\"\"}]}]}\n" +
-        "要求：" + minCh.toString() + "~4 章，每章 2~3 节，全篇至少 " + minSec.toString() + " 节；" +
+        (if (detail == "concise") { "要求：正好2章，每章2节，全篇4节；" } else { "要求：" + minCh.toString() + "~4 章，每章 2~3 节，全篇至少 " + minSec.toString() + " 节；" }) +
         "章节标题要具体（写清对象与范围），不要出现「第一章 概述」这类空标题；objectives 写 3 条可检验的学习目标。\n" +
         "主题：" + topic + "\n已有资料线索：\n" + digest
 }
@@ -308,6 +309,7 @@ class Run {
     var cancelKey: String = ""
     var warnings: ArrayList<String> = ArrayList<String>()
     var deltas: Int64 = 0
+    var repairRounds: Int64 = 0
 
     init(client: ChatProvider, store: Store, emit: (String, JsonObject) -> Unit) {
         this.client = client
@@ -389,7 +391,7 @@ func askJson(run: Run, system: String, user: String, label: String): ?JsonObject
     }
     var text = ""
     try {
-        text = resourceModel(run, system, user, { piece: String =>
+        text = resourceModel(run, STRUCTURED_SYSTEM, user, { piece: String =>
             if (run.shouldAbort()) {
                 throw CancelException()
             }
@@ -594,63 +596,18 @@ func generateStructured(run: Run, req: ResourceRequest, hits: JsonArray): ?JsonO
 
 /** 分阶测试：先定知识点，再按三档难度分批出题。 */
 func generateQuiz(run: Run, req: ResourceRequest, hits: JsonArray): ?JsonObject {
-    let context = evidenceContext(hits)
-    let digest = evidenceDigest(hits)
-    stepStart(run, 2, "knowledge_points")
-    let kpObj = askJson(run, WRITER_SYSTEM, quizKnowledgePrompt(req.topic, digest), "知识点")
-    stepEnd(run, 2, "knowledge_points")
-    var content = JsonObject()
-    match (kpObj) {
-        case Some(o) => content = o
-        case None => return None
-    }
-    let kps = objsOf(content, "knowledgePoints")
-    if (kps.size == 0) {
-        run.warnings.add("知识点没有生成出来")
-        return Some(content)
-    }
-    let kpText = StringBuilder()
-    for (k in kps) {
-        kpText.append("- ")
-        kpText.append(txt(k, "id"))
-        kpText.append("：")
-        kpText.append(txt(k, "name"))
-        kpText.append("（")
-        kpText.append(txt(k, "description"))
-        kpText.append("）\n")
-    }
-    // 一次出 3 题（三档各一道），凑够题量
-    let questions = JsonArray()
-    var batch: Int64 = 0
-    while (questions.size() < req.count) {
-        batch = batch + 1
-        let before = questions.size()
-        let left = req.count - questions.size()
-        let want = if (left < 3) { left } else { 3 }
-        stepStart(run, 2 + batch, "questions")
-        let part = askJson(run, WRITER_SYSTEM, quizQuestionsPrompt(req.topic, want, kpText.toString(), context), "第 " + batch.toString() + " 组题目")
-        stepEnd(run, 2 + batch, "questions")
-        match (part) {
-            case Some(o) =>
-                for (q in objsOf(o, "questions")) {
-                    if (questions.size() < req.count) {
-                        q.put("id", JsonString("q-" + (questions.size() + 1).toString()))
-                        questions.add(q)
-                    }
-                }
-            case None => ()
-        }
-        var exhausted = false
-        match (part) {
-            case None => exhausted = true
-            case Some(_) => ()
-        }
-        if (exhausted || questions.size() == before || batch > req.count) {
-            break
-        }
-    }
-    content.put("questions", questions)
-    return Some(content)
+    stepStart(run, 2, "questions")
+    let prompt = "只输出一个 JSON 对象，完整结构：" +
+        "{\"title\":\"\",\"knowledgePoints\":[{\"id\":\"kp-1\",\"name\":\"\",\"description\":\"\"}]," +
+        "\"questions\":[{\"id\":\"q-1\",\"knowledgePointId\":\"kp-1\",\"difficulty\":\"easy\",\"stem\":\"\"," +
+        "\"options\":[\"\",\"\",\"\",\"\"],\"correctIndex\":0,\"explanation\":\"\"}]}。\n" +
+        "正好 " + req.count.toString() + " 题；3~5 个知识点；每题 id 唯一并关联有效知识点；" +
+        "difficulty 用 easy/medium/hard，至少覆盖三档；题干给出不同的具体场景；4 个互不重复的选项；" +
+        "correctIndex 必须是 0~3 的整数且答案位置分散；解析说明正确与错误选项的原因，至少40字，依据资料标注引用。\n" +
+        "主题：" + req.topic + "\n资料原文：\n" + evidenceContext(hits)
+    let result = askJson(run, STRUCTURED_SYSTEM, prompt, "分阶测试")
+    stepEnd(run, 2, "questions")
+    return result
 }
 
 /* ---------- 质检 + 定向返修 ---------- */
@@ -680,6 +637,7 @@ func repairContent(run: Run, kind: String, content: JsonObject, detail: String, 
             return cur
         }
         round = round + 1
+        run.repairRounds = round
         stepStart(run, 90 + round, "repair")
         let fixed = askJson(run, WRITER_SYSTEM, repairPrompt(kind, issues, cur.toString()), "返修第 " + round.toString() + " 轮")
         stepEnd(run, 90 + round, "repair")
@@ -903,6 +861,7 @@ public func generateResourceWithCancel(store: Store, reqIn: ResourceRequest, sho
         res.ok = false
         res.message = "模型没有返回可用的" + labelOf(kind) + "，未保存资源，请重试或更换模型。"
         for (w in run.warnings) { res.warnings.add(w) }
+        if (res.warnings.size > 0) { res.message = res.message + " 原因：" + byteSafePrefix(joinWith(res.warnings, "；"), 600) }
         emit("turn/end", endEvent(false, res.message))
         return res
     }
@@ -912,7 +871,7 @@ public func generateResourceWithCancel(store: Store, reqIn: ResourceRequest, sho
         try {
             content = repairContent(run, kind, content, req.detail, req.count, hits, req.maxRepair)
         } catch (e: CancelException) { res.ok = false; res.message = "已取消"; return res }
-        rounds = req.maxRepair
+        rounds = run.repairRounds
     }
 
     let issues = checkContent(kind, content, req.detail, req.count, hits)

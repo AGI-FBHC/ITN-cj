@@ -34,7 +34,8 @@ if (Test-Path -LiteralPath (Join-Path $repo "shell\skills")) {
     Copy-Item -Path (Join-Path $repo "shell\skills") -Destination $appDir -Recurse -Force
 }
 
-$pkgJson = '{ "name": "itn-desktop", "version": "0.1.0", "private": true, "main": "main.js" }'
+$sourcePackage = Get-Content -LiteralPath (Join-Path $repo 'shell/package.json') -Raw | ConvertFrom-Json
+$pkgJson = @{ name = 'itn-desktop'; version = $sourcePackage.version; private = $true; main = 'main.js' } | ConvertTo-Json
 Set-Content -LiteralPath (Join-Path $appDir "package.json") -Value $pkgJson -Encoding utf8
 
 Copy-Item -Path (Join-Path $repo "dist\core\*") -Destination $kernelDir -Recurse -Force
@@ -50,6 +51,23 @@ Copy-Item -LiteralPath (Join-Path $repo "docs\07-使用说明.md") -Destination 
 Copy-Item -LiteralPath (Join-Path $repo "docs\05-仓颉杯提交说明.md") -Destination (Join-Path $OutDir "系统说明.md") -Force
 
 # 5) 压缩
+$sourceCommit = (git -C $repo rev-parse HEAD).Trim()
+$assetHashes = [ordered]@{}
+$assetFiles = @(
+    'resources/app/main.js', 'resources/app/preload.js',
+    'resources/app/renderer/index.html', 'resources/app/renderer/app.js',
+    'resources/app/renderer/style.css', 'resources/app/renderer/workbench.js',
+    'resources/app/renderer/workbench.css', 'resources/kernel/itn-desktop-core.exe'
+)
+foreach ($relative in $assetFiles) {
+    $assetHashes[$relative] = (Get-FileHash -LiteralPath (Join-Path $OutDir $relative) -Algorithm SHA256).Hash
+}
+$manifest = [ordered]@{
+    version = $sourcePackage.version; build = 'learning-workbench-20261015'
+    sourceCommit = $sourceCommit; builtAt = [DateTime]::UtcNow.ToString('o'); assets = $assetHashes
+} | ConvertTo-Json -Depth 5
+[IO.File]::WriteAllText((Join-Path $appDir 'renderer/release.json'), $manifest, [Text.UTF8Encoding]::new($false))
+[IO.File]::WriteAllText((Join-Path $OutDir 'release.json'), $manifest, [Text.UTF8Encoding]::new($false))
 Compress-Archive -Path (Join-Path $OutDir "*") -DestinationPath $ZipPath -CompressionLevel Optimal -Force
 
 $size = [math]::Round((Get-Item -LiteralPath $ZipPath).Length / 1MB, 1)

@@ -103,8 +103,8 @@ public class LlmClient {
         // mock 是瞬时返回的，这个差异只有在真实模型上才会暴露。
         let client = ClientBuilder()
             .tlsConfig(tls)
-            .readTimeout(Duration.minute * 10)
-            .writeTimeout(Duration.minute * 10)
+            .readTimeout(Duration.second * 90)
+            .writeTimeout(Duration.second * 90)
             .build()
         if (shouldAbort()) { client.close(); throw LlmException("已取消") }
         let watch = LlmCancelWatch(shouldAbort)
@@ -117,7 +117,7 @@ public class LlmClient {
                 .header("Authorization", "Bearer " + cfg.apiKey)
                 .header("Accept", "application/json")
                 .body(payload.toString())
-                .readTimeout(Duration.minute * 10)
+                .readTimeout(Duration.second * 90)
                 .build()
             let resp = client.send(req)
             let text = readAllString(resp.body)

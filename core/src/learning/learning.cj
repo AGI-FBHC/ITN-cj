@@ -3,6 +3,7 @@ package itn_desktop_core.learning
 import std.collection.*
 import std.random.*
 import std.sync.*
+import std.fs.*
 import stdx.encoding.json.*
 import itn_desktop_core.db.*
 import itn_desktop_core.study.StudyStore
@@ -10,14 +11,58 @@ import itn_desktop_core.kb.stamp
 import itn_desktop_core.util.*
 
 let resourceLock = Mutex()
+let legacyLock = Mutex()
 
 func uid(prefix: String): String { return prefix + Random().nextUInt64().toString() }
 func parsed(raw: String): JsonObject { return objOf(JsonValue.fromStr(raw)).getOrThrow() }
 
 public class LearningStore {
     public let dataDir: String
-    public init(dataDir: String) { this.dataDir = dataDir }
+    public init(dataDir: String) { this.dataDir = dataDir; importLegacy() }
     private func db(): Db { return DbHub.open(dataDir) }
+
+    private func importLegacy(): Unit {
+        synchronized(legacyLock) {
+            if (db().getKv("meta", "learning_legacy_registered", "") == "1") { return }
+            let dir = dataDir + Path.Separator + "artifacts"
+            let names = ArrayList<String>()
+            if (exists(dir)) {
+                Directory.walk(Path(dir), { fi: FileInfo =>
+                    if (!fi.isDirectory() && Path(fi.name).extensionName == "md") { names.add(fi.name) }
+                    false
+                })
+            }
+            let known = HashSet<String>()
+            for (r in db().querySql("SELECT body FROM learning_resource_versions")) { known.add(strOf(parsed(r.text(0)), "artifactName")) }
+            for (name in names) {
+                if (known.contains(name)) { continue }
+                let path = dir + Path.Separator + name
+                let text = readTextOr(path, "")
+                if (text.size == 0) { continue }
+                let body = JsonObject()
+                body.put("kind", JsonString("legacy"))
+                body.put("title", JsonString(name))
+                body.put("markdown", JsonString(text))
+                body.put("content", JsonNull())
+                body.put("citations", JsonArray())
+                body.put("profileSnapshot", JsonNull())
+                body.put("artifactName", JsonString(name))
+                body.put("artifactPath", JsonString(path))
+                body.put("origin", JsonString("legacy-file"))
+                let issues = JsonArray()
+                issues.add(JsonString("历史文件未执行结构质检"))
+                let quality = JsonObject()
+                quality.put("issues", issues)
+                body.put("quality", quality)
+                let warnings = JsonArray()
+                warnings.add(JsonString("保留原文件与迁移时原文；未补造出处、题目结构或生成画像。"))
+                body.put("warnings", warnings)
+                saveResource(body, "", "", "", "", 0)
+            }
+            db().putKv("meta", "learning_legacy_registered", "1")
+            db().putKv("meta", "schema_learning_workbench", "1")
+        }
+    }
 
     public func resources(kbId: String): JsonArray {
         let a = JsonArray()
@@ -202,7 +247,7 @@ public class LearningStore {
     public func progress(id: String, version: Int64, item: String, done: Bool): JsonObject {
         let res = resource(id, version)
         let kind = strOf(res, "kind")
-        if (kind != "lecture" && kind != "practice" && kind != "ppt") { throw Exception("此资源不支持完成标记") }
+        if (kind != "lecture" && kind != "practice" && kind != "ppt" && kind != "legacy") { throw Exception("此资源不支持完成标记") }
         let key = "learning-progress:" + id + ":" + intOf(res, "version").toString() + ":" + item
         let o = JsonObject()
         o.put("done", JsonBool(done))

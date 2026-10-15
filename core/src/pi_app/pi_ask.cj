@@ -14,6 +14,7 @@ import itn_desktop_core.store.Store
 import itn_desktop_core.session.SessionEvent
 import itn_desktop_core.session.SessionStore
 import itn_desktop_core.learning.LearningStore
+import itn_desktop_core.resource.labelOf
 import itn_desktop_core.agent.learningTools
 import itn_desktop_core.agent.DomainTool
 import itn_desktop_core.agent.ToolRecord
@@ -360,6 +361,7 @@ public class PiAgent {
         }
 
         let typedTask = hasPrefix(taskKind, "resource:")
+        if (typedTask) { sessions.rename(sid, "生成" + labelOf(taskKind.replace("resource:", "")) + "：" + taskTitle) }
         log("turn/start", kindPayload(if (taskKind.size > 0) { taskKind.replace("resource:", "") } else { "ask" }, kbId))
         let up = JsonObject()
         up.put("text", JsonString(question))
@@ -649,7 +651,7 @@ public class PiAgent {
                 i = i - 1
             }
         }
-        if (answer.size == 0 && outcome.ok) {
+        if (answer.size == 0 && outcome.ok && !sessionHub().isAborted(sid)) {
             answer = "（这一轮没有拿到可用的回答，可以换个问法，或检查模型配置）"
         } else {
             let tail = seg.text()
@@ -723,8 +725,9 @@ public class PiAgent {
         vp.put("citations", cites)
         log("validation", vp)
 
-        let okk = outcome.ok && (!typedTask || typedSaved)
-        let failure = if (typedTask && !typedSaved && outcome.ok) { "模型没有生成通过质检的结构化资源，请重试或使用支持工具调用的模型" } else { outcome.error }
+        let cancelled = sessionHub().isAborted(sid)
+        let okk = outcome.ok && !cancelled && (!typedTask || typedSaved)
+        let failure = if (cancelled) { "已取消" } else if (typedTask && !typedSaved && outcome.ok) { "模型没有生成通过质检的结构化资源，请重试或使用支持工具调用的模型" } else { outcome.error }
         log("turn/end", endPayload(okk, failure))
         out.put("ok", JsonBool(okk))
         out.put("answer", JsonString(answer))
@@ -732,7 +735,7 @@ public class PiAgent {
         out.put("citationReport", report)
         out.put("webMode", JsonString(wmode))
         out.put("turns", JsonInt(outcome.turns))
-        out.put("stopReason", JsonString(outcome.stopReason))
+        out.put("stopReason", JsonString(if (cancelled) { "aborted" } else { outcome.stopReason }))
         out.put("artifactPath", JsonString(artifactPath))
         out.put("savedBy", JsonString(savedBy))
         if (!okk) {
@@ -747,8 +750,8 @@ public class PiAgent {
  * 步骤由模型自己排 —— 这才是 agent；固定步骤是工作流，上一版的形状。
  */
 func taskBrief(kind: String, topic: String, count: Int64): String {
-    return "请用 generate_learning_resource 生成 " + kind + " 类型的学习资源，主题「" + topic +
-        "」，题量或页数 " + count.toString() + "（仅 quiz/ppt 有效）。使用当前知识库与真实学习上下文。生成成功后简要告诉我成果；失败请如实说明。"
+    return "请生成一份" + labelOf(kind) + "，主题「" + topic +
+        "」，题量或页数 " + count.toString() + "（仅测试和演示有效）。使用当前知识库与真实学习上下文。生成成功后简要告诉我成果；失败请如实说明。"
 }
 
 /** 产物的文件名（内核兜底落盘时用；模型自己落盘时按提示词里的名字）。 */

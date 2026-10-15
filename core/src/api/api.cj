@@ -2205,7 +2205,7 @@ func contentTypeOf(name: String): String {
 func serveStatic(ctx: HttpContext, uiDir: String, rel: String): Unit {
     let name = if (rel == "/") { "index.html" } else { String.fromUtf8(rel.toArray()[1..rel.toArray().size]) }
     // 只允许白名单文件名，避免路径穿越
-    let allowed = ["index.html", "app.js", "style.css", "workbench.js", "workbench.css"]
+    let allowed = ["index.html", "app.js", "style.css", "workbench.js", "workbench.css", "release.json"]
     var ok = false
     for (a in allowed) {
         if (a == name) { ok = true }
@@ -2416,7 +2416,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         server.distributor.register(r, { ctx: HttpContext => api.handle(ctx) })
     }
     // 界面由内核托管，外壳与界面同源，避免跨域
-    let statics = ["/", "/index.html", "/app.js", "/style.css", "/workbench.js", "/workbench.css"]
+    let statics = ["/", "/index.html", "/app.js", "/style.css", "/workbench.js", "/workbench.css", "/release.json"]
     for (s in statics) {
         server.distributor.register(s, { ctx: HttpContext => serveStatic(ctx, uiDir, s) })
     }

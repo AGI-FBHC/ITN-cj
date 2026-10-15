@@ -58,7 +58,10 @@ public func piToolFromDomain(d: DomainTool, sink: ArrayList<ToolRecord>): Tool {
         if (r.ok) {
             ToolResult.ok(r.summary, r.content, r.details)
         } else {
-            ToolResult.err(if (r.summary.size > 0) { r.summary } else { r.content })
+            let failed = ToolResult.err(if (r.summary.size > 0) { r.summary } else { r.content })
+            failed.content = r.content
+            failed.details = r.details
+            failed
         }
     })
 }

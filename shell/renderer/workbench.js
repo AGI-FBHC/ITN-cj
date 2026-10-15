@@ -1,5 +1,5 @@
 /* Personal learning workspace. Data and task truth come from the Cangjie API. */
-const RESOURCE_LABEL = {lecture: '定制讲义', practice: '实操指南', quiz: '分阶测试', ppt: '在线演示'};
+const RESOURCE_LABEL = {lecture: '定制讲义', practice: '实操指南', quiz: '分阶测试', ppt: '在线演示', legacy:'历史资料'};
 const TASK_LABEL = {running: '正在执行', cancelling: '正在停止', completed: '已完成', failed: '未完成', cancelled: '已取消', interrupted: '上次任务已中断'};
 const workbench = {selected: null, open: false, loadToken: 0, seenSaved: new Set(), task: null};
 
@@ -348,13 +348,15 @@ PAGES.resources.render = async function() {
   await originalResources.call(this);
   const view = $('view');
   const legacy = el('details', 'legacy-artifacts');
+  legacy.open = !!state.legacyArtifactsOpen;
+  legacy.ontoggle = () => {state.legacyArtifactsOpen = legacy.open;};
   legacy.appendChild(el('summary', null, '本地 Markdown 文件与历史产物'));
   while (view.firstChild) legacy.appendChild(view.firstChild);
   const heading = el('div', 'resource-library-head');
   heading.appendChild(el('h2', null, '你的学习资源'));
   heading.appendChild(el('p', 'muted', '由 Agent 按学习目标生成，保留资料依据、质检与历史版本。'));
   const actions = el('div', 'row');
-  for (const [kind, label] of Object.entries(RESOURCE_LABEL)) actions.appendChild(btn(label, 'sm', () => {state.pendingQuestion = '请围绕我当前的学习目标生成一份' + label + '，主题：'; go('chat');}));
+  for (const [kind, label] of Object.entries(RESOURCE_LABEL).filter(([k])=>k!=='legacy')) actions.appendChild(btn(label, 'sm', () => {state.pendingQuestion = '请围绕我当前的学习目标生成一份' + label + '，主题：'; go('chat');}));
   heading.appendChild(actions); view.appendChild(heading);
   const all = (await api('/api/learning/resources', {})).resources || [];
   const search = inputOf('learning-resource-search', '搜索资源标题', ''); search.setAttribute('aria-label', '搜索学习资源');

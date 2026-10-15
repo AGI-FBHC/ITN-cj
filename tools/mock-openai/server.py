@@ -312,9 +312,11 @@ def reply_for(body):
         return json.dumps(res_practice(), ensure_ascii=False)
     if "你是演示稿设计者" in joined:
         return json.dumps(res_ppt(_res_count(joined, 8), "演示主题"), ensure_ascii=False)
-    if "你是测评设计者" in joined:
+    if "你是测评设计者" in joined or ('"knowledgePoints"' in ask and '"questions"' in ask):
         if '"questions"' in joined:
-            return json.dumps(res_quiz_questions(_res_count(joined, 3), "测试主题" + str(body.get("request_id", ask[-80:]))), ensure_ascii=False)
+            result = res_quiz_questions(_res_count(joined, 3), "测试主题")
+            if '"knowledgePoints"' in joined: result.update(res_quiz_kp())
+            return json.dumps(result, ensure_ascii=False)
         return json.dumps(res_quiz_kp(), ensure_ascii=False)
     if "（属于《" in joined:
         # 桌面版四种资源的讲义逐节写作：回一段够长、带引用、带具体性信号的正文（开头那行标题故意重复，考验内核去重）
@@ -353,6 +355,9 @@ def native_reply(body):
     user_at = max((i for i, m in enumerate(msgs) if m.get("role") == "user"), default=-1)
     ask = text_of([msgs[user_at]]) if user_at >= 0 else ""
     if any(m.get("role") == "tool" for m in msgs[user_at + 1:]):
+        last_tools = [m for m in msgs[user_at + 1:] if m.get("role") == "tool"]
+        if any(m.get("name") == "kb_search" or "命中" in str(m.get("content")) for m in last_tools):
+            return "提示词要写清任务、约束和输出格式；使用资料时标注出处，方便回到原文核实 [1]。"
         return "已完成工具调用，可在右侧成果中查看。"
     def call(name, args):
         return {"tool_calls": [{"id": "mock-call-1", "type": "function", "function": {"name": name, "arguments": json.dumps(args, ensure_ascii=False)}}]}
@@ -371,7 +376,11 @@ def native_reply(body):
     if kind and any(x in ask for x in ("生成", "做成", "make:", "出一份")):
         match = re.search(r"(?:题量或页数 |count:)(\d+)", ask)
         count = int(match.group(1)) if match else (4 if kind == "quiz" else 8)
-        return call("generate_learning_resource", {"kind": kind, "topic": "输入与输出", "detail": "balanced", "count": count})
+        topic_match = re.search(r"主题[「：]([^」]+)", ask)
+        topic = topic_match.group(1) if topic_match else "输入与输出"
+        return call("generate_learning_resource", {"kind": kind, "topic": topic, "detail": "balanced", "count": count})
+    if any(t in ask for t in ("提示词", "资料", "这门课")) and not kind:
+        return call("kb_search", {"query": "提示词", "top_k": 4})
     if "计算" in ask or "算一下" in ask:
         return call("calc", {"expr": "(12+8)*3/4"})
     return reply_for(body)

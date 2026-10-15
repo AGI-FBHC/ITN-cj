@@ -2623,7 +2623,8 @@ function suggestionBox(weakest, rows) {
   const box = el("div", "ability-advice");
   if (!weakest) {
     box.appendChild(el("div", "ability-advice-title", "数据还不足以下结论"));
-    box.appendChild(el("div", "muted sm", "读几片、做几题之后，这里会指出最该补的一维。"));
+    box.appendChild(el("div", "muted sm", "六维档案保留本人自评。阅读量不代表掌握度；资源测验的知识点证据可在「学习记忆」查看。"));
+    box.appendChild(btn("查看学习证据", "sm ghost", () => go("memory")));
     return box;
   }
   const row = rows.filter((x) => x.key === weakest)[0] || { key: weakest };
@@ -5408,7 +5409,7 @@ PAGES.chat = {
       actionBtn.classList.toggle("stop", busy);
       actionBtn.title = stopping ? "正在停止当前任务" : busy ? "停止（Esc）" : "发送（Enter，Shift+Enter 换行）";
       actionBtn.setAttribute("aria-label", stopping ? "正在停止" : busy ? "停止" : "发送");
-      actionBtn.disabled = !!stopping;
+      actionBtn.disabled = !!stopping || !!state.chatStarting;
     };
     actionBtn.onclick = () => {
       if (state.busyTurn) stopTurn();
@@ -5693,10 +5694,14 @@ PAGES.chat = {
       if (!text) return;
       // 跑着的时候 Enter = 插话，不是"等这一轮跑完再说"
       if (state.busyTurn) { steer(); return; }
+      if (state.chatStarting) return;
       if (!state.chatSessionId) {
+        state.chatStarting = true;
+        paintActionBtn();
         try {
           state.chatSessionId = (await api("/api/sessions/new", {})).sessionId;
         } catch (e) { toast("新建会话失败：" + e.message); return; }
+        finally {state.chatStarting = false; paintActionBtn();}
       }
       const sid = state.chatSessionId;
       ta.value = "";
@@ -7037,7 +7042,8 @@ function settingsAbout() {
     l.appendChild(el("span", "grow", val));
     return l;
   };
-  kv.appendChild(line("应用", "ITN-Desktop · 桌面端"));
+  kv.appendChild(line("应用", "ITN-Desktop " + (state.release?.version || k.version || "0.2.0") + " · 个人学习 Agent"));
+  kv.appendChild(line("构建", state.release?.sourceCommit || k.build || "开发版本"));
   kv.appendChild(line("内核", "仓颉（Cangjie）运行时" + (k.cangjie ? " · " + k.cangjie : "")));
   kv.appendChild(line("数据目录", state.cfg.dataDir || "（启动时由内核决定，可在「数据与备份」里复制路径）"));
   ver.appendChild(kv);
@@ -7314,7 +7320,8 @@ async function boot() {
   try {
     const h = await api("/health");
     state.kernel = h;
-    setStatus("内核已连接 · " + h.cangjie);
+    try { state.release = await fetch('/release.json').then(r=>r.ok?r.json():null); } catch(e) {state.release=null;}
+    setStatus("ITN " + (h.version || '0.2.0') + " · 已连接");
   } catch (e) {
     setStatus("内核未连接", true);
     const v = $("view");

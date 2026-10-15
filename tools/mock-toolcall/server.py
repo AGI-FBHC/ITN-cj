@@ -25,8 +25,9 @@ class Handler(BaseHTTPRequestHandler):
         raw = self.rfile.read(n)
         req = body_of(raw)
         msgs = req.get("messages") or []
-        already = any((m.get("role") == "tool") for m in msgs)
-        text_all = json.dumps(msgs, ensure_ascii=False)
+        user_at = max((i for i, m in enumerate(msgs) if m.get("role") == "user"), default=-1)
+        already = any((m.get("role") == "tool") for m in msgs[user_at + 1:])
+        text_all = json.dumps(msgs[user_at:user_at + 1], ensure_ascii=False)
         m = re.search(r"@@TARGET:([^@]+)@@", text_all)
         tool = "write" if m else "kb_search"
         if already:

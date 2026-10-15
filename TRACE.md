@@ -3130,3 +3130,22 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - 旧85项 UI脚本正在回归，已发现旧文件名/旧导航/能力分假设的断言需适配，尚未宣称全回归通过。真实模型正在隔离数据库副本验证四类资源和学习闭环，未用模拟结果代替真实内容质量。
 - 同期其他会话修改 lumin/src/cli/approvals.cj 并新增 lumin/docs/serve-rpc.md、lumin/shell；本轮未触碰/提交这些文件，未改 root ITN 网页和后端。
 - 本轮功能提交号由随后 Git 提交记录，下一条 TRACE 追加精确 hash。下一步：修正实际回归问题、历史资源登记迁移、真实模型验收与固定版本打包。
+
+## 2026-10-15 lumin 桌面端 v1 交付（serve + Electron 壳 + UI）
+- 范围：仅 lumin/ 目录，未触碰 ITN core/ 与顶层 shell/。契约先落盘 docs/serve-rpc.md，三方（内核/壳/界面）按契约并行开发后集成。
+- 内核：新增 src/cli/serve.cj（~1300 行）——HTTP 127.0.0.1 随机端口 + 长轮询事件总线（POST /api/events since，20s 挂起，2000 条缓冲 reset 缺口）、审批桥挂 Approver.onAsk（新增钩子，默认 None 不影响 CLI）、消息/插话/停止/审批/会话列表续聊分叉/模式权限信任模型工作区在线切换/skills/prompt/审批规则，静态白名单托管 shell/ui。
+- 壳：shell/main.js + preload.js（外部会话交付后接入）——拉起 serve 等端口文件 loadURL；term 子进程 StringDecoder 流式解码；window.lumin 契约 §8 四组 IPC。
+- 界面：shell/ui/（外部会话交付后接入）——对话流式渲染、审批卡片、插话、会话树回退、skills、设置、xterm 终端页签。
+- 集成修正：壳不再传 --workspace shellDir（serve 缺省 chat-workspace）；重打绿色包使 lumin-demo.exe 含 serve；启动器纯 ASCII+CRLF 过体检。
+- 验证：cjpm build 成功；cjpm test 70/70；serve 真机冒烟（health/state/真模型消息 run_end ok/防重 409/sessions/entries/prompt/skills）；Electron 整机联调（壳启动→serve 端口 58591→UI 已加载→退出无残留进程）。
+- 提交：0f9e961（15 文件 +5890 行）。产物：dist/lumin-demo 绿色包已重打；启动方式：双击 lumin/shell/启动Lumin桌面版.cmd 或 npm start。
+
+## 2026-10-15 试用交付收尾（用户要求立即打包）
+- 前阶段本地提交 0a0b221；同期另一会话提交 0f9e961 仅 lumin 独立桌面壳，本轮保留且不混入顶层 Desktop 包。
+- 最新用户强调急需成果，不继续扩大深度测试，优先打磨基本形态并打包。本轮据此停止旧 UI 全量回归扩展，交付试用版，不宣称所有旧入口完全验收。
+- 真实模型首轮发现 JSON 结构生成却使用要求 Markdown 的 WRITER_SYSTEM，导致工具无法解析结构；分离 STRUCTURED_SYSTEM 与正文系统提示，测验改成一次生成知识点和完整题目，减少调用与重复题风险。修复后真模型完整闭环通过：quiz4题、判错、画像更新后的practice、ppt4页、lecture、practice第二版、忘记记忆。日志 real-learning.log；隔离目录 itn-real-learning-dd6a3b9d53b0458590283b9a0a24327d。
+- 进一步补充错误工具结果内容/详情，返修轮数记录实际次数，向量请求可停止并限制90秒等待；精简讲义限制2章4节；历史Markdown一次登记为legacy，保留原文件和无推断元数据，迁移标记schema_learning_workbench=1。
+- 修复模型正文尚未返回时取消被误标成空响应/成功：provider识别aborted，host依据会话取消令牌确定终态并禁止伪造空回答。资源任务会话标题改成类型+主题，用户界面不再暴露内部工具协议。
+- UI：保留历史文件展开状态，避免搜索后自动折叠；新建会话发送加短暂防重锁；画像默认说明不再承诺从阅读数推断能力；加入版本0.2.0、构建清单、固定启动器。
+- 验证已知：工作台57/57通过；真实模型闭环通过；迁移新增测试曾101/101通过；最新加强取消断言发现上述取消竞态并已修复，交付时只做基本启动/停止检查。旧UI最后全量为78/85，旧断言与异步交互场景未全部复验，详见docs/14。用户明确要求现在先打包试用。
+- 待紧随步骤：编译最新内核、本地提交本轮指定文件、组装dist/ITN-Desktop-0.2.0与zip、基础启动检查。包内release.json记录实际提交及关键文件SHA256。不得覆盖另一会话的lumin/shell/ui/app.js改动。
