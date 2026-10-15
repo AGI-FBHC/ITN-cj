@@ -3,6 +3,7 @@ package itn_desktop_core.pi_app
 import std.collection.*
 import std.convert.*
 import std.time.*
+import std.sync.*
 import stdx.encoding.json.*
 // pi 与内核有同名符号（Agent 尤其明显），所以这里通配 pi，内核侧一律具名导入
 import itn_desktop_core.pi.*
@@ -18,6 +19,8 @@ import itn_desktop_core.agent.buildDomainToolDefs
 import itn_desktop_core.agent.piRegistryOf
 import itn_desktop_core.agent.piModeOf
 import itn_desktop_core.agent.readSkill
+import itn_desktop_core.agent.SkillInfo
+import itn_desktop_core.agent.skillPrompt
 import itn_desktop_core.agent.citationsFromHits
 import itn_desktop_core.agent.citationReportWeb
 import itn_desktop_core.agent.webCitationsFrom
@@ -31,6 +34,36 @@ import itn_desktop_core.lumin_cli.classifyTool
 // strOf / objOf / intOf / boolOf / byteSafePrefix 用 pi 包自带的那份（与 util 同名，通配 pi 已经带进来）：
 // 两个包的同名函数同时具名导入会歧义，这是踩过的坑
 import itn_desktop_core.kb.stamp
+
+func usableHostSkill(dataDir: String, id: String, web: Bool): ?(SkillInfo, String) {
+    match (readSkill(dataDir, id, web)) {
+        case Some(pair) => if (pair[0].available) { return Some(pair) }
+        case None => ()
+    }
+    return None
+}
+
+// The host skill allowlist is a product rule, kept outside lumin's runtime.
+class HostSkillScope {
+    let lock = Mutex()
+    var id = ""
+    var tools = ArrayList<String>()
+    public func install(info: SkillInfo): Unit {
+        synchronized(lock) { id = info.id; tools = info.tools }
+    }
+    public func check(dataDir: String, name: String, args: JsonObject, allowWeb: Bool): String {
+        synchronized(lock) {
+            if (id.size > 0 && !tools.contains(name)) { return "技能「" + id + "」未允许工具 " + name }
+            if (name == "skill_read") {
+                match (usableHostSkill(dataDir, strOf(args, "id"), allowWeb)) {
+                    case Some(pair) => id = pair[0].id; tools = pair[0].tools
+                    case None => return "技能不存在或在当前联网权限下不可用"
+                }
+            }
+            return ""
+        }
+    }
+}
 
 /*
  * 用 lumin（pi 运行时）跑一轮问答。
@@ -254,6 +287,24 @@ public class PiAgent {
         // ---- 联网策略（与手写那条链路同一套判断，不另立规矩）----
         let wmode = effectiveWebMode(store.dataDir, sessionId, webModeIn)
         let allowWeb = wmode != "off"
+        let skillScope = HostSkillScope()
+        if (skillIdIn.size > 0) {
+            match (usableHostSkill(store.dataDir, skillIdIn, allowWeb)) {
+                case Some(pair) =>
+                    skillScope.install(pair[0])
+                    let sp = JsonObject()
+                    sp.put("id", JsonString(pair[0].id))
+                    log("skill/read", sp)
+                case None =>
+                    let sp = JsonObject()
+                    sp.put("id", JsonString(skillIdIn))
+                    log("skill/unavailable", sp)
+                    log("turn/end", endPayload(false, "技能不存在或当前权限不允许使用"))
+                    out.put("ok", JsonBool(false))
+                    out.put("message", JsonString("技能不存在或当前权限不允许使用"))
+                    return out
+            }
+        }
         let pp = JsonObject()
         pp.put("mode", JsonString(wmode))
         pp.put("webSearch", JsonBool(allowWeb && webSearchReady(store.dataDir)))
@@ -348,6 +399,28 @@ public class PiAgent {
         // 登记"正在跑"，让 /api/agent/cancel 找得到它，也让插话有地方落
         sessionHub().markRunning(sid, agent)
         // 这一段是"身份 + 语言 + 纪律"，**不写流程**。
+        // Compose the host's skill guard with lumin's permission gate; neither replaces the other.
+        let permissionGate = opts.beforeToolCall
+        opts.beforeToolCall = Some({ callId: String, name: String, args: JsonObject =>
+            let denied = skillScope.check(store.dataDir, name, args, allowWeb)
+            if (denied.size > 0) {
+                let sp = JsonObject()
+                sp.put("tool", JsonString(name))
+                sp.put("reason", JsonString(denied))
+                log("tool/denied", sp)
+                return denied
+            }
+            if (name == "skill_read") {
+                let sp = JsonObject()
+                sp.put("id", JsonString(strOf(args, "id")))
+                log("skill/read", sp)
+            }
+            return match (permissionGate) {
+                case Some(gate) => gate(callId, name, args)
+                case None => ""
+            }
+        })
+
         // 上一版那句 "Answer with the local knowledge base…" 是把"先检索"写进了提示词：
         // 结果每问一句，模型第一件事就是 kb_search。工具是可选的，用不用、用几次由它按问题判断。
         var preamble = "你是 ITN-Desktop 里的学习助手，跑在用户自己的电脑上。回答一律用中文；" +
@@ -361,12 +434,13 @@ public class PiAgent {
             preamble = preamble + "\n这是一次产物生成任务：成品要写完整，最后用 save_artifact 落盘，" +
                 "再用一两句话告诉用户文件名。"
         }
-        match (readSkill(store.dataDir, skillIdIn, allowWeb)) {
+        match (usableHostSkill(store.dataDir, skillIdIn, allowWeb)) {
             case Some(pair) =>
                 preamble = preamble + "\n\n## Skill: " + pair[0].title + "\n" + byteSafePrefix(pair[1], 6000)
             case None => ()
         }
-        agent.preamble = preamble
+        // Advertise metadata only. The model loads a skill body through skill_read as needed.
+        agent.preamble = preamble + skillPrompt(store.dataDir, allowWeb)
 
         // ---- 事件翻译 + 正文累积 ----
         let stream = EventStream()

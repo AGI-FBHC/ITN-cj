@@ -109,5 +109,5 @@ func switchingWebOffRemovesWebTools(): Unit {
     @Expect(off.seenToolCounts[0], 8)
     let auto = ScriptedProvider([scriptText("好的。")])
     PiAgent(store).askWithProvider(auto, "t", "在吗", "", "auto", "")
-    @Expect(auto.seenToolCounts[0], 10)
+    @Expect(auto.seenToolCounts[0], 12)
 }

@@ -454,7 +454,7 @@ const RAIL_GROUPS = [
 const PAGE_META = {
   home: { title: "首页", sub: "今天学什么，从这里开始" },
   learn: { title: "学 · 练", sub: "按章节读资料、出题、生成讲义" },
-  notes: { title: "我的资源", sub: "笔记与错题，都是自己攒下来的记录" },
+  notes: { title: "我的资源", sub: "笔记、错题与收集的网络资料，都留在本机" },
   wrong: { title: "错题本", sub: "做错的题在这里复习" },
   report: { title: "我的成长", sub: "记录、能力画像与校准都在这一页" },
   calibrate: { title: "我的成长", sub: "校准" },
@@ -1233,7 +1233,7 @@ function nebulaLoop() {
   }
   const now = performance.now();
   const idle = now - NEBULA.lastActive;
-  const fps = NEBULA.drag ? 0 : idle < 3000 ? 30 : idle < 8000 ? 20 : 15;
+  const fps = NEBULA.drag ? 0 : idle < 3000 ? 30 : 15;
   const minGap = fps === 0 ? 0 : 1000 / fps;
   if (minGap === 0 || now - NEBULA.lastFrame >= minGap) {
     NEBULA.lastFrame = now;
@@ -2041,7 +2041,7 @@ PAGES.notes = {
     await loadCfg();
     const v = $("view");
     v.innerHTML = "";
-    const tab = state.resTab === "wrong" ? "wrong" : "notes";
+    const tab = ["wrong", "network"].includes(state.resTab) ? state.resTab : "notes";
     let wrongCount = 0;
     try {
       wrongCount = ((await api("/api/study/wrong", {})).records || []).length;
@@ -2052,24 +2052,140 @@ PAGES.notes = {
     } catch (e) { noteCount = 0; }
     const bar = el("div", "card res-tabs");
     const seg = el("div", "seg");
-    [["notes", "笔记 " + noteCount], ["wrong", "错题本 " + wrongCount]].forEach(([k, label]) => {
+    [["notes", "笔记 " + noteCount], ["wrong", "错题本 " + wrongCount], ["network", "网络资料"]].forEach(([k, label]) => {
       const b = el("button", "seg-item" + (tab === k ? " active" : ""), label);
       b.dataset.tab = k;
       b.onclick = () => {
-        if (k === "wrong") openWrong();
+        if (k === "network") { state.resTab = "network"; go("notes"); }
+        else if (k === "wrong") openWrong();
         else openNotes();
       };
       seg.appendChild(b);
     });
     bar.appendChild(seg);
     v.appendChild(bar);
-    if (tab === "wrong") {
+    if (tab === "network") {
+      const networkBody = el("div");
+      v.appendChild(networkBody);
+      await renderHarvest(networkBody);
+    } else if (tab === "wrong") {
       await renderWrongSection(v);
     } else {
       await renderNotesSection(v);
     }
   },
 };
+
+async function renderHarvest(v, embedded) {
+  v.innerHTML = "";
+  const explanation = "先存本机，检查文件后再并入知识库。暂存资料不会出现在检索结果里。";
+  const card = embedded ? el("div") : cardOf({ title: "收集资料", sub: explanation });
+  if (embedded) card.appendChild(el("p", "muted sm", explanation));
+  card.classList.add("harvest-panel");
+  const row = el("div", "row wrap");
+  const kind = selectOf("harvest-kind", [{ value: "url", label: "网页链接" }, { value: "repo", label: "GitHub 仓库" }], "url");
+  const url = inputOf("harvest-url", "https://… 或 owner/repo", "");
+  url.classList.add("grow");
+  const ref = inputOf("harvest-ref", "分支 / tag（可选）", "");
+  ref.hidden = true;
+  kind.onchange = () => { ref.hidden = kind.value !== "repo"; };
+  kind.setAttribute("aria-label", "资料来源类型");
+  url.setAttribute("aria-label", "资料链接或仓库");
+  ref.setAttribute("aria-label", "仓库版本");
+  row.appendChild(kind); row.appendChild(url); row.appendChild(ref);
+  const status = el("p", "muted sm");
+  status.setAttribute("role", "status");
+  const start = btn("抓取到暂存区", "primary", async () => {
+    if (!url.value.trim()) { status.textContent = "先填写链接或仓库。"; url.focus(); return; }
+    start.disabled = true; status.textContent = "正在抓取，只写入本机暂存区…";
+    card.setAttribute("aria-busy", "true");
+    try {
+      await api("/api/kb/stage", { kind: kind.value, url: url.value.trim(), ref: ref.value.trim() });
+      status.textContent = "已暂存，请检查下面的文件清单。";
+      await listSources();
+    } catch (e) { status.textContent = "抓取失败：" + e.message; }
+    finally { start.disabled = false; card.setAttribute("aria-busy", "false"); }
+  });
+  row.appendChild(start); card.appendChild(row); card.appendChild(status);
+  const list = el("div", "list");
+  card.appendChild(list); v.appendChild(card);
+
+  async function listSources() {
+    list.innerHTML = "";
+    let data;
+    try { data = await api("/api/kb/sources", {}); }
+    catch (e) { list.appendChild(el("p", "muted", "来源清单读取失败：" + e.message)); return; }
+    const sources = (data.sources || []).filter((s) => s.status !== "discarded")
+      .sort((a, b) => b.fetchedAt.localeCompare(a.fetchedAt));
+    if (!sources.length) {
+      list.appendChild(el("p", "muted", "还没有收集的网络资料。可以粘贴链接，或让伴学助手用 /kb-harvest 收集。"));
+      return;
+    }
+    for (const s of sources) {
+      const item = el("div", "item harvest-source");
+      item.dataset.sourceId = s.id;
+      const title = el("div", "row wrap");
+      title.appendChild(el("strong", "grow", s.title || s.url));
+      title.appendChild(tag(s.status === "ingested" ? "已并入 · " + kbName(s.kbId) : "待确认", s.status === "ingested" ? "ok" : "warn"));
+      item.appendChild(title);
+      item.appendChild(el("p", "path-line", s.url));
+      if (s.commit) item.appendChild(el("p", "path-line", "版本 " + s.ref + " · commit " + s.commit));
+      item.appendChild(el("p", "muted sm", "抓取于 " + fmtStamp(s.fetchedAt) + " · " + s.files.length + " 个文件 · 跳过 " + (s.skipped || 0) + " 个"));
+      const files = el("details");
+      files.appendChild(el("summary", null, "查看文件清单与内容（" + s.files.length + "，单文件预览最多 20KB）"));
+      const preview = el("pre", "hit-body harvest-preview");
+      preview.style.whiteSpace = "pre-wrap";
+      preview.style.maxHeight = "320px"; preview.style.overflow = "auto";
+      for (const f of s.files) {
+        files.appendChild(btn(f.path + " · " + fmtSize(f.bytes), "sm ghost", async () => {
+          preview.textContent = "读取中…";
+          try {
+            const text = (await api("/api/kb/source/preview", { id: s.id, path: f.path })).text;
+            preview.textContent = s.kind === "url" ? text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "") : text;
+          }
+          catch (e) { preview.textContent = e.message; }
+        }));
+      }
+      files.appendChild(preview); item.appendChild(files);
+      const actions = el("div", "row wrap");
+      const feedback = el("p", "muted sm"); feedback.setAttribute("role", "status");
+      if (s.status === "staged") {
+        const target = selectOf("harvest-target-" + s.id, [{ value: "", label: "选择要并入的知识库" }]
+          .concat(state.cfg.knowledgeBases.map((k) => ({ value: k.id, label: k.name || k.id }))), state.kb || "");
+        target.setAttribute("aria-label", "并入目标知识库");
+        const checked = el("input"); checked.type = "checkbox";
+        const label = el("label", "row");
+        label.appendChild(checked); label.appendChild(el("span", null, "我已检查清单与来源"));
+        const ingest = btn("确认并入并建索引", "primary sm", async () => {
+          ingest.disabled = true; feedback.textContent = "正在并入…";
+          try {
+            await api("/api/kb/ingest", { id: s.id, kbId: target.value, confirmed: checked.checked });
+            feedback.textContent = "资料已并入，正在重建索引…";
+            await buildIndex(target.value);
+            await listSources();
+          } catch (e) { feedback.textContent = "并入失败：" + e.message; ingest.disabled = false; }
+        });
+        ingest.disabled = true;
+        const ready = () => { ingest.disabled = !checked.checked || !target.value; };
+        checked.onchange = ready; target.onchange = ready;
+        actions.appendChild(target); actions.appendChild(label); actions.appendChild(ingest);
+        actions.appendChild(btn("不并入", "sm ghost", async () => {
+          try { await api("/api/kb/source/discard", { id: s.id }); await listSources(); }
+          catch (e) { feedback.textContent = e.message; }
+        }));
+      } else {
+        actions.appendChild(btn("重建此库索引", "sm", () => buildIndex(s.kbId)));
+      }
+      const refetch = btn("重新抓取", "sm ghost", async () => {
+        refetch.disabled = true; feedback.textContent = "重新抓取中；原版本保留…";
+        try { await api("/api/kb/source/refetch", { id: s.id }); await listSources(); }
+        catch (e) { feedback.textContent = e.message; refetch.disabled = false; }
+      });
+      actions.appendChild(refetch); item.appendChild(actions); item.appendChild(feedback); list.appendChild(item);
+    }
+  }
+  await listSources();
+}
 
 async function renderNotesSection(v) {
     const data = await api("/api/study/notes/list", {});
@@ -4206,6 +4322,19 @@ PAGES.kb = {
     }
     v.appendChild(info);
 
+    const harvest = el("details", "card harvest-entry");
+    harvest.appendChild(el("summary", "item-title", "收集资料 · 网页 / GitHub"));
+    const harvestBody = el("div");
+    harvest.appendChild(harvestBody);
+    let harvestLoaded = false;
+    harvest.ontoggle = async () => {
+      if (harvest.open && !harvestLoaded) {
+        harvestLoaded = true;
+        await renderHarvest(harvestBody, true);
+      }
+    };
+    v.appendChild(harvest);
+
     const card = el("div", "card");
     const head = el("div", "card-head");
     head.appendChild(el("h2", null, "检索"));
@@ -4296,6 +4425,7 @@ const PERM_HINT = {
 };
 /** 工具按用途分组（面板上分节显示；"本机文件"那几个只有指定了工作目录才会出现） */
 const TOOL_GROUP = {
+  kb_stage: "知识库", kb_ingest: "知识库",
   kb_search: "知识库", list_documents: "知识库", read_chunk: "知识库",
   web_search: "联网", web_fetch: "联网",
   save_note: "笔记与产物", save_artifact: "笔记与产物",
@@ -4305,6 +4435,7 @@ const TOOL_GROUP = {
 const TOOL_GROUP_ORDER = ["知识库", "联网", "笔记与产物", "技能", "本机文件", "其他"];
 
 const TOOL_LABEL = {
+  kb_stage: "暂存知识资料", kb_ingest: "请求并入确认",
   kb_search: "检索知识库",
   web_search: "联网搜索（Tavily）",
   web_fetch: "读取网页",
@@ -4506,7 +4637,7 @@ PANELS.notes = {
   actions: () => [panelBtn("plus", "写一条笔记", () => openNoteEditor(null, state.kb, state.chapter || ""))],
   async render(body, ui) {
     await loadCfg();
-    const tab = state.resTab === "wrong" ? "wrong" : "notes";
+    const tab = ["wrong", "network"].includes(state.resTab) ? state.resTab : "notes";
     let notes = [];
     let wrongs = [];
     try { notes = (await api("/api/study/notes/list", {})).notes || []; } catch (e) { notes = []; }
@@ -4515,11 +4646,18 @@ PANELS.notes = {
     body.appendChild(panelSeg([
       { key: "notes", label: "笔记 " + notes.length },
       { key: "wrong", label: "错题本 " + wrongs.length },
+      { key: "network", label: "网络资料" },
     ], tab, (k) => {
-      if (k === "wrong") openWrong();
+      if (k === "network") { state.resTab = "network"; go("notes"); }
+      else if (k === "wrong") openWrong();
       else openNotes();
     }));
 
+    if (tab === "network") {
+      body.appendChild(panelEmpty("收集的网页与仓库先暂存，检查后才并入知识库。"));
+      ui.foot(btn("去领域知识库", "sm", () => go("knowledge")));
+      return;
+    }
     if (tab === "notes") {
       if (!notes.length) {
         body.appendChild(panelEmpty("还没有笔记。读资料时点「就这段记笔记」会存到这里。"));

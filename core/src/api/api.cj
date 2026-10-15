@@ -14,6 +14,7 @@ import itn_desktop_core.pi_app.*
 import itn_desktop_core.session.*
 import itn_desktop_core.study.*
 import itn_desktop_core.tools.*
+import itn_desktop_core.harvest.*
 import std.fs.*
 import itn_desktop_core.util.*
 
@@ -877,6 +878,37 @@ public class Api {
             return
         }
 
+        if (path == "/api/kb/sources" && method == "POST") {
+            let o = JsonObject()
+            o.put("sources", harvestSources(store.dataDir))
+            ok(ctx, o)
+            return
+        }
+        if (method == "POST" && (path == "/api/kb/stage" || path == "/api/kb/ingest" ||
+            path == "/api/kb/source/preview" || path == "/api/kb/source/discard" || path == "/api/kb/source/refetch")) {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    try {
+                        var o = JsonObject()
+                        if (path == "/api/kb/stage") {
+                            o = harvestStage(store.dataDir, strOf(b, "kind"), strOf(b, "url"), strOf(b, "ref"))
+                        } else if (path == "/api/kb/ingest") {
+                            if (!boolOf(b, "confirmed")) { fail(ctx, 400, "请先在界面检查清单并确认并入"); return }
+                            o = harvestIngest(store, strOf(b, "kbId"), strOf(b, "id"))
+                        } else if (path == "/api/kb/source/preview") {
+                            o = harvestPreview(store.dataDir, strOf(b, "id"), strOf(b, "path"))
+                        } else if (path == "/api/kb/source/discard") {
+                            o = harvestDiscard(store.dataDir, strOf(b, "id"))
+                        } else {
+                            o = harvestRefetch(store.dataDir, strOf(b, "id"))
+                        }
+                        ok(ctx, o)
+                    } catch (e: Exception) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         // ---------- 联网抓取（web_fetch 的手动入口 + 缓存审计） ----------
         if (path == "/api/web/fetch" && method == "POST") {
             match (bodyJson(ctx)) {
@@ -1115,6 +1147,17 @@ public class Api {
             let db = DbHub.open(store.dataDir)
             let o = JsonObject()
             let arr = Agent(store).toolsJson()
+            for (d in buildDomainToolDefs(store, "", true)) {
+                if (d.name == "kb_stage" || d.name == "kb_ingest") {
+                    let t = JsonObject()
+                    t.put("name", JsonString(d.name))
+                    t.put("title", JsonString(d.label))
+                    t.put("desc", JsonString(d.description))
+                    t.put("usage", JsonString(d.schema))
+                    t.put("available", JsonBool(webMode(store.dataDir) != "off"))
+                    arr.add(t)
+                }
+            }
             // 指定了工作目录才把"本机文件"那几个列出来（与真正发给模型的工具一致）
             let wd = db.getKv("settings", "agent_work_dir", "")
             let perm = db.getKv("settings", "agent_perm", "ask")
@@ -2159,6 +2202,12 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/websearch/save",
         "/api/websearch/test",
         "/api/web/fetch",
+        "/api/kb/stage",
+        "/api/kb/sources",
+        "/api/kb/source/preview",
+        "/api/kb/source/discard",
+        "/api/kb/source/refetch",
+        "/api/kb/ingest",
         "/api/web/cache",
         "/api/web/cache/delete",
         "/api/web/session",

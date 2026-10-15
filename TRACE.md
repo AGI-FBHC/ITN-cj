@@ -2869,3 +2869,73 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 顺带一提：`tools/package-smoke.ps1` 起的是**打包好的真应用**、不带 `--data-dir`，
 所以它会写到 `%LOCALAPPDATA%\ITN-Desktop`（用户真数据目录）。这是它原本的行为（验的就是"装好的应用能不能开"），
 但如果你在跑真机探针，别用它当"隔离验证"，用 `tmp/parked/live-ui.ps1` 那种"复制一份数据目录"的写法。
+
+## 2026-10-15 跨会话接续：范围纠正与 R29 开工
+
+- 用户要求读取线程 01a13454-b116-7801-a92e-c8d582e00a30 并继续未完成目标模式。已分页核对历史、其引用的早期体验审查线程与 lumin 线程，以及本库 TRACE/docs/10/docs/11。
+- 历史目标仍写 src/front，导致最后自动续跑误回网页版。用户本轮明确选择 ITN-Desktop；本轮只修改本桌面库，不动 ITN 网页版三个未提交文件、不动 lumin 本体。
+- 已开启本窗口目标模式：R29 收集→暂存→用户确认→并入，R26/N4 折叠状态验收，编译/隔离界面回归/打包/本地提交。
+- 在途 tmp/parked/staging.cj 保留原样参考；新实现放 core/src/harvest，避免 kb 与 tools 包循环依赖。来源用不可变快照；模型 kb_ingest 只能请求界面确认，不能自行传 confirmed 绕过用户。
+- 接口契约已先更新；验证与提交号待后续追加。
+
+## 2026-10-15 本轮重点：lumin 宿主接线修复与资料收集实现
+
+### 用户确认与范围
+- 用户明确选择 ITN-Desktop，不接续 src/front 网页版；随后强调先整理清单、逐项完成并测试，当前最重要是 lumin 接入。
+- docs/10 顶部新增按 P0.1/P0.2/P0.3/P1/P2/P3 排序的验收清单。读取原线程及引用线程后，确认旧目标自动续跑偏回网页版，已在当前目标模式纠正。
+- 网页版原有 LearningGoalResponse.java、api.ts、Report.tsx 三处未提交改动与未跟踪数据均保持原状态；lumin 本体没有写入。
+
+### lumin 接入的客观状态与本轮修复
+- 对话 ask-pi、讲义/练习 task-pi 已共用 PiAgent.runFull；旧 ask 仅保留对照和回滚，不参与界面默认对话。
+- tools/lumin-sync-check.py 只读归一化比对23个副本：pi15、tools3、CLI适配5；全部匹配。唯一声明的宿主差异：kb_stage 与 web_fetch 共用联网审批分类。
+- 新增技能后全页回归发现原 web-research 消失：scanSkillDir 的 Directory.walk 回调 false 会终止枚举，并非跳过子目录；修正为逐一枚举所有兄弟技能。暂存来源枚举同样修正，新增双技能/双来源验证。
+- 新链路的技能菜单已有，但元信息未进入模型提示词，且旧 Agent 的工具白名单未搬到 lumin 宿主。现由 HostSkillScope 在 beforeToolCall 检查，和原权限审批组合；显式绑定或 skill_read 成功后都生效。不可用技能记录 skill/unavailable，不请求模型；越权工具记录 tool/denied，不执行。
+- 保留动态工具选择；不写固定先检索步骤。新增模型伪造 confirmed=true 也不能调用 kb_ingest 实际并入的测试。
+
+### R29 实现与设计调整
+- 新包 core/src/harvest/staging.cj，避免 kb/tools 循环依赖；原 tmp/parked/staging.cj 保留作历史，未覆盖。
+- 网页暂存复制 fetchPage 持久化的完整正文，避免误用给模型的6000字节摘要。GitHub通过 api.github.com 解析完整commit后取固定blob；URL与ref编码，拒绝截断文件树，300文件/4MB单文件/32MB总量，忽略点目录、node_modules、dist、target与非文本。
+- 来源权威记录为 staging/id/.source.json，保存url/ref/完整commit/fetchedAt/files/skipped/kbId/status；确认并入后同一清单随库副本保存。不在 knowledge_bases 添加一组只能代表单一来源的重复字段，因为同一库可以多来源。
+- 新接口：stage/sources/source-preview/source-refetch/source-discard/ingest。未确认不进索引；确认后复制到注册库的 sources/id，界面重建索引。重复并入拒绝覆盖；重抓新建待确认快照；不并入是可审计的逻辑移除，已并入文件不会被该动作删除。
+- lumen工具 kb_stage 真正暂存，kb_ingest 只返回 requiresConfirmation 与界面指引，不接受模型代替用户确认。随包技能 kb-harvest 与 tools 清单接好。
+- 入口：领域知识库的“收集资料”折叠区；我的资源第三栏“网络资料”，第二层面板同步。可查看真实文件清单与预览，选目标库并勾选检查确认后才启用并入按钮；失败保留理由与重建入口。
+- 支持公开GitHub文本仓库；本轮走固定blob通道，tarball退路未启用；遇限流/超时明确失败，不标记收集成功。未扩展搜索供应商与独立审批工作流。
+
+### R26/N4
+- 纠正文档与实现的帧率偏差：原实现8秒才到15fps，现在3秒无交互即降15fps，拖动期间全速。
+- tools/harvest-check.cjs 用10个真实索引库验证8库上限与“其余2个库已折叠”；截图拍实际 graph-card，空闲绘制仪表验证15fps且单次绘制<33ms。
+
+### 验证过程与交接注意
+- 构建与 cjpm test 不可并行：本轮一次同时操作共享 target 导致链接undefined symbol，已按顺序重新构建和测试。不是业务链接缺失。
+- 新桥接测试初版误断言不存在的 toolCalls 返回字段，改为检查真实 tool/result 事件和turns；不可用技能测试发现 readSkill 可供界面预览禁用技能，运行时改用 usableHostSkill 检查 available，不破坏预览接口。
+- 界面探针必须等首页初始化完成再点击导航；最初只等浏览器load产生启动导航覆盖的探针竞态，修正为等待首页图与加载结束后再走真实入口。
+- 当前已确认：cjpm test 74/74；skill-check、pi-ask-check、agent-work-check通过；harvest最终离线20项通过，含多来源枚举、完整正文、确认闸门、并入检索、重启持久化与N4。另一次 live GitHub 探针通过，octocat/Spoon-Knife commit d0dd1f61b33d64e29d8bc1372a94ef6a2fee76a9，读取2个真实文本文件。
+- 完整UI/最新真模型/绿色包结果与提交号将在下一条追加；本条不提前宣称尚未结束的检查通过。
+
+## 2026-10-15 最终真模型复验发现的等待/取消缺陷
+- 最新真模型复验中一次工具后续请求静默，原 provider 的 read/writeTimeout 为10分钟，shouldAbort 只在下一段SSE到来时才检查；界面探针240秒超时。只说明当次真实调用未完成，不归因为本机技能逻辑。
+- 加入每请求独立的 RequestWatch：约100ms检查取消与90秒空闲上限，主动关闭当前HTTP客户端，使没有任何流式增量的请求同样可取消；退避期间也检查取消。不限制持续有增量的长生成总时长。
+- 追加三个 provider 测试：完全静默的服务中取消<2秒；空闲超时<2秒且不重试（测试用250ms阈值）；HTTP200但只有DONE的空完成必须报失败。最终 cjpm test 77/77。
+- 原 real-agent-compare.ps1 仅看ok会把“没有拿到可用回答”占位文案误判成功；已强化有效回答判断并在未全通过时非零退出。此前某次输出3/3中的计算题实际只有占位回复，该轮不作为成功证据。
+- 较早本轮真模型成功证据仍保留：带引用问答、只调calc得15、另一题无工具直接回答，以及140秒生成2268字讲义。最后将用修复后的版本单独复验真实界面，不并发发起两条真实模型探针。
+
+### 本轮验收范围与后续排期
+- 本轮以 lumin 宿主接入、R29基本收集闭环和R26/N4为范围。公开仓库已经真抓取验证；未将tarball解压作为失败时的隐式退路，避免版本/下载域名/解压边界与固定blob来源不一致。
+- 暂存来源的“不并入”保留本机审计快照；本轮不增加自动物理清理或删除已并入库文件的功能。
+- 后续独立任务：更多搜索供应商、GitHub认证/限流退路、用户主动清理暂存快照、旧手写agent对照入口是否移除。它们不混入本轮的lumin接线验收。
+
+## 2026-10-15 本轮代码最终验收（打包与提交待下一条）
+- 最终编译通过，cjpm test 77/77。新增共9例（含技能作用域/动态读取/禁用技能、并入确认边界与完全静默模型取消/超时/空完成）。
+- 最终 provider 修复后，node tools/ui-e2e.cjs：84/84、前端console error 0；包括原生工具调用、按知识库管理会话、停止/重问、审批后真实落盘、生成/播放/续播/资源管理等。
+- node tools/harvest-check.cjs：最终20/20；此前 --github 额外真实固定commit抓取通过。其独立截图已目视检查，图谱折叠专用截图显示真实8库与其余2库提示。
+- node tools/ui-audit.cjs：16/16（浅/深色8页）；tools/lumin-sync-check.py：23/23；pi-ask-check、agent-work-check、skill-check均通过。
+- 真模型最后单独复验成功（tmp/lumin-real-ui-release.log）：问答6秒、检索工具1行，讲义87秒/2667字、0个固定步骤条、console errors 0，真实Markdown产物落盘。验证数据目录均为副本，未写用户真库。
+- 额外“你好”真模型探针在执行前被自动审批拒绝（复制模型配置并启动新内核的组合命令；仅返回 blocked by policy），没有执行、没有计为通过，也没有绕过该限制。真实问答和讲义链路已经独立通过。
+- 本轮也出现过并行真模型探针的240秒静默超时与空完成，均保留在上文，不使用“每一次都稳定成功”的表述。
+
+## 2026-10-15 绿色包验收与本地提交准备
+- scripts/package-app.ps1 重新组装本轮产物，路径 dist/ITN-Desktop/ITN-Desktop.exe 与 dist/ITN-Desktop-win-x64.zip。
+- 新增 tools/package-isolated-smoke.ps1：不复制任何凭据，将 LOCALAPPDATA/APPDATA/TEMP/TMP 指向新建空目录，启动 --smoke 自检。实际 RESULT=OK、NAV=8、VIEW_NODES=8、PRELOAD=ok、TITLEBAR=ok；用户真数据目录不参与这项测试。
+- 已校验包内 renderer/app.js、resources/kernel/itn-desktop-core.exe、skills/kb-harvest/SKILL.md 的 SHA256 与源码/构建产物相等。zip最终写入与提交号随后确认。
+- docs/10 当前清单按实际结果回填，R26/N4与R29基本闭环已完成；docs/11顶部纠正“未开始迁移”的过期状态；PRODUCT与使用说明移除“固定先检索/拟大纲/逐节写作”等旧说法。
+- git diff --check通过；提交只显式暂存本轮代码、测试与文档。密钥、模型配置副本、tmp、dist不纳入Git；无远程推送。

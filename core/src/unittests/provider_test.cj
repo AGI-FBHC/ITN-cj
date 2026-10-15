@@ -22,6 +22,57 @@ import std.unittest.testmacro.*
 @Test
 class ProviderTest {
 
+    func silentServer(): Server {
+        let server = ServerBuilder().addr("127.0.0.1").port(0).build()
+        server.distributor.register("/v1/chat/completions", { ctx: HttpContext =>
+            readAllString(ctx.request.body)
+            sleep(Duration.second * 3)
+            ctx.responseBuilder.status(200)
+            ctx.responseBuilder.header("Content-Type", "text/event-stream")
+            ctx.responseBuilder.body("data: [DONE]\n\n".toArray())
+        })
+        spawn { server.serve() }
+        sleep(Duration.millisecond * 150)
+        return server
+    }
+
+    @TestCase
+    func cancellationInterruptsACompletelySilentModel(): Unit {
+        let server = silentServer()
+        let provider = OpenAiChatProvider(modelCfg(Int64(server.port)))
+        let started = DateTime.now()
+        provider.shouldAbort = Some({ => (DateTime.now() - started).toMilliseconds() >= 250 })
+        provider.respond(StepContext(), EventStream())
+        @Expect((DateTime.now() - started).toMilliseconds() < 2000, true)
+        server.close()
+    }
+
+    @TestCase
+    func idleTimeoutDoesNotRetryASilentRequest(): Unit {
+        let server = silentServer()
+        let provider = OpenAiChatProvider(modelCfg(Int64(server.port)))
+        provider.idleTimeoutMillis = 250
+        let started = DateTime.now()
+        let reply = provider.respond(StepContext(), EventStream())
+        @Expect(reply.stopReason, "error")
+        @Expect(reply.errorMessage.contains("长时间未返回"), true)
+        @Expect((DateTime.now() - started).toMilliseconds() < 2000, true)
+        server.close()
+    }
+
+    @TestCase
+    func emptyCompletionIsReportedAsFailure(): Unit {
+        let counter = ArrayList<Int64>()
+        counter.add(0)
+        let server = startServer("data: [DONE]\n\n", 200, counter, false)
+        let provider = OpenAiChatProvider(modelCfg(Int64(server.port)))
+        let reply = provider.respond(StepContext(), EventStream())
+        @Expect(reply.stopReason, "error")
+        @Expect(reply.errorMessage.contains("未返回可用正文"), true)
+        @Expect(counter[0], 1)
+        server.close()
+    }
+
     func modelCfg(port: Int64): ModelConfig {
         let cfg = ModelConfig()
         cfg.id = "mock"

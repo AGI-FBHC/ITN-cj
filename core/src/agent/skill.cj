@@ -176,10 +176,8 @@ func scanSkillDir(dir: String, source: String, out: ArrayList<SkillInfo>): Unit 
                     case Some(info) => out.add(info)
                     case None => ()
                 }
-                false   // 技能目录不往下递归：一层一个技能
-            } else {
-                false
             }
+            true // Directory.walk enumerates this directory; false stops before the next sibling.
         })
     } catch (e: Exception) {
         ()

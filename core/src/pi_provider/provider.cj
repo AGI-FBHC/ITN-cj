@@ -4,6 +4,7 @@ import std.collection.*
 import std.convert.*
 import std.io.*
 import std.time.*
+import std.sync.*
 import stdx.net.http.*
 import stdx.net.tls.*
 import stdx.net.tls.common.*
@@ -52,11 +53,28 @@ class AbortedByUser <: Exception {
     }
 }
 
+class RequestWatch {
+    let lock = Mutex()
+    var finished = false
+    var aborted = false
+    var expired = false
+    var lastData = DateTime.now()
+    public func touch(): Unit { synchronized(lock) { lastData = DateTime.now() } }
+    public func finish(): Unit { synchronized(lock) { finished = true } }
+    public func isFinished(): Bool { synchronized(lock) { return finished } }
+    public func idleMillis(): Int64 { synchronized(lock) { return (DateTime.now() - lastData).toMilliseconds() } }
+    public func stop(user: Bool): Unit { synchronized(lock) { aborted = user; expired = !user } }
+    public func wasAborted(): Bool { synchronized(lock) { return aborted } }
+    public func timedOut(): Bool { synchronized(lock) { return expired } }
+}
+
 public class OpenAiChatProvider <: ChatProvider {
     private let baseUrl: String
     private let apiKey: String
     private let defaultModel: String
     public var maxAttempts: Int64 = 3
+    /** Idle, not total generation time. Continuous responses may run longer. */
+    public var idleTimeoutMillis: Int64 = 90000
     /** 上一次请求耗时（毫秒），给界面显示"模型用了多久"。 */
     public var lastMillis: Int64 = 0
     public var lastFinish: String = ""
@@ -123,7 +141,10 @@ public class OpenAiChatProvider <: ChatProvider {
                 reply.toolCalls.add(ToolCallBlock(call.id, call.name, normalizeArgs(call.args.toString())))
             }
         }
-        if (acc.finishReason == "length") {
+        if (trimStr(reply.text).size == 0 && reply.toolCalls.size == 0) {
+            reply.stopReason = "error"
+            reply.errorMessage = "模型未返回可用正文，请重试或检查模型服务"
+        } else if (acc.finishReason == "length") {
             reply.stopReason = "length"
         } else if (reply.toolCalls.size > 0) {
             reply.stopReason = "toolUse"
@@ -139,6 +160,7 @@ public class OpenAiChatProvider <: ChatProvider {
         var attempt: Int64 = 0
         var lastMsg = ""
         while (attempt < maxAttempts) {
+            if (abortRequested()) { return "" }
             attempt = attempt + 1
             let r = oneShot(url, payload, onChunk, state)
             if (r.ok) {
@@ -149,9 +171,16 @@ public class OpenAiChatProvider <: ChatProvider {
                 break
             }
             // 套餐限流会回 429：退避重试，但只在还没推过事件时
-            sleep(Duration.second * (attempt * 2))
+            for (_ in 0..(attempt * 20)) {
+                if (abortRequested()) { return "" }
+                sleep(Duration.millisecond * 100)
+            }
         }
         return lastMsg
+    }
+
+    private func abortRequested(): Bool {
+        return match (shouldAbort) { case Some(f) => f(); case None => false }
     }
 
     private func oneShot(url: String, payload: JsonValue, onChunk: (JsonObject) -> Unit, state: RetryState): AttemptResult {
@@ -160,9 +189,24 @@ public class OpenAiChatProvider <: ChatProvider {
         tls.supportedAlpnProtocols = ["http/1.1"]
         let client = ClientBuilder()
             .tlsConfig(tls)
-            .readTimeout(Duration.minute * 10)
-            .writeTimeout(Duration.minute * 10)
+            .readTimeout(Duration.second * 90)
+            .writeTimeout(Duration.second * 90)
             .build()
+        let watch = RequestWatch()
+        let idleLimit = idleTimeoutMillis
+        // Closing the request's client interrupts send/read even when no SSE delta arrives.
+        let watcher = spawn {
+            while (!watch.isFinished()) {
+                sleep(Duration.millisecond * 100)
+                if (watch.isFinished()) { break }
+                let cancelled = abortRequested()
+                if (cancelled || watch.idleMillis() >= idleLimit) {
+                    watch.stop(cancelled)
+                    client.close()
+                    break
+                }
+            }
+        }
         var stage = "构造请求"
         try {
             let req = HttpRequestBuilder()
@@ -184,6 +228,7 @@ public class OpenAiChatProvider <: ChatProvider {
             }
             stage = "读取响应体"
             readSseChunks(resp.body, { obj: JsonObject =>
+                watch.touch()
                 match (shouldAbort) {
                     case Some(f) =>
                         if (f()) {
@@ -194,13 +239,18 @@ public class OpenAiChatProvider <: ChatProvider {
                 state.emitted = state.emitted + 1
                 onChunk(obj)
             })
+            if (watch.timedOut()) { return AttemptResult(false, false, "模型长时间未返回数据，请重试或检查模型服务") }
             return AttemptResult(true, false, "")
         } catch (e: AbortedByUser) {
             return AttemptResult(true, false, "")
         } catch (e: Exception) {
+            if (watch.wasAborted()) { return AttemptResult(true, false, "") }
+            if (watch.timedOut()) { return AttemptResult(false, false, "模型长时间未返回数据，请重试或检查模型服务") }
             return AttemptResult(false, true, "网络层失败（" + stage + "）：" + e.message)
         } finally {
+            watch.finish()
             client.close()
+            watcher.get()
         }
     }
 }

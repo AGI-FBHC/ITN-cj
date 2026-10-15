@@ -337,7 +337,7 @@ public func classifyTool(name: String, args: JsonObject, wsRoot: String): (Strin
         }
         return ("", "", "")
     }
-    if (name == "web_search" || name == "web_fetch") {
+    if (name == "web_search" || name == "web_fetch" || name == "kb_stage") {
         let url = strOf(args, "url")
         let q = strOf(args, "query")
         let key = if (url.size > 0) { url } else { firstWord(q) }

@@ -5,6 +5,7 @@ import std.convert.*
 import stdx.encoding.json.*
 import itn_desktop_core.store.*
 import itn_desktop_core.tools.*
+import itn_desktop_core.harvest.*
 import itn_desktop_core.util.*
 
 /*
@@ -197,6 +198,31 @@ public func buildDomainToolDefs(store: Store, kbId: String, allowWeb: Bool): Arr
         }))
 
     if (allowWeb) {
+        out.add(makeTool("kb_stage", "暂存知识资料", "抓取网页或 GitHub 仓库，只进暂存区",
+            "将公开网页或 GitHub 仓库暂存到本机，返回真实来源和文件清单。暂存不会进入知识库索引；只能请用户在领域知识库页面确认并入。",
+            "{\"type\":\"object\",\"properties\":{\"kind\":{\"type\":\"string\",\"enum\":[\"url\",\"repo\"]},\"url\":{\"type\":\"string\"},\"ref\":{\"type\":\"string\"}},\"required\":[\"kind\",\"url\"]}", "external",
+            { args: JsonObject =>
+                let r = DomainToolRun()
+                try {
+                    r.details = harvestStage(store.dataDir, strOf(args, "kind"), strOf(args, "url"), strOf(args, "ref"))
+                    r.summary = "已暂存，尚未进索引。请到领域知识库 → 收集资料检查并确认并入。"
+                    r.content = r.summary + "\n" + r.details.toString()
+                } catch (e: Exception) { r.ok = false; r.summary = e.message; r.content = e.message }
+                return r
+            }))
+        out.add(makeTool("kb_ingest", "请求并入确认", "提示用户检查并入，模型不能自行确认",
+            "返回界面确认指引，不执行并入。只有用户在领域知识库页面检查真实文件清单并点击确认并入，才能改变知识库。",
+            "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"]}", "read",
+            { args: JsonObject =>
+                let r = DomainToolRun()
+                let o = JsonObject()
+                o.put("id", JsonString(strOf(args, "id")))
+                o.put("requiresConfirmation", JsonBool(true))
+                r.details = o
+                r.summary = "尚未并入。请用户在领域知识库 → 收集资料检查清单，选择目标库，再点确认并入。"
+                r.content = r.summary
+                return r
+            }))
         out.add(makeTool("web_search", "联网搜索", "用 Tavily 搜公开资料",
             "用 Tavily 在互联网上搜公开资料，返回标题、链接与摘要。只在本地资料里找不到、或用户明确要求上网查的时候用。",
             "{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\"},\"limit\":{\"type\":\"integer\",\"description\":\"返回条数，默认 5\"}},\"required\":[\"query\"]}",

@@ -57,7 +57,7 @@ function AskBoth($route, $question) {
         $tools = @($ev.data.events | Where-Object { $_.type -eq "tool/call" } | ForEach-Object { [string]$_.payload.tool })
     }
     return [pscustomobject]@{
-        ok = ($r.code -eq 0 -and $r.data.ok -eq $true)
+        ok = ($r.code -eq 0 -and $r.data.ok -eq $true -and ([string]$r.data.answer).Length -gt 0 -and ([string]$r.data.answer) -notmatch '没有拿到可用的回答')
         ms = [int]$sw.Elapsed.TotalMilliseconds
         len = ([string]$r.data.answer).Length
         cites = @($r.data.citations).Count
@@ -109,3 +109,4 @@ try {
 
 Write-Output ""
 Write-Output ("数据目录副本：" + $work + "（模型配置只在副本里，没碰你的真库）")
+if ($bothOk -ne $rows.Count) { exit 1 }
