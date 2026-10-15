@@ -134,6 +134,7 @@ const ICONS = {
   globe: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3.5 9h17M3.5 15h17M12 3c2.4 2.4 3.6 5.4 3.6 9s-1.2 6.6-3.6 9c-2.4-2.4-3.6-5.4-3.6-9S9.6 5.4 12 3z",
   chevron: "M6 9.5 12 15.5 18 9.5",
   shield: "M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6zM9 12l2 2 4-4",
+  dots: "M12 6h.01M12 12h.01M12 18h.01",
 };
 
 /**
@@ -4906,13 +4907,16 @@ PANELS.chat = {
       if (collapsed) continue;
       // 组内按最近动静倒序
       mine.slice().sort((a, b) => String(b.lastAt || "").localeCompare(String(a.lastAt || ""))).forEach((x) => {
-        body.appendChild(panelItem({
+        const rowEl = el("div", "panel-item-row");
+        rowEl.appendChild(panelItem({
           id: x.sessionId,
           active: x.sessionId === state.chatSessionId,
           title: x.title || "新对话",
           meta: ((x.kind && x.kind !== "ask") ? (KIND_LABEL[x.kind] || "对话") + " · " : "") + fmtStamp(x.lastAt).slice(6),
           onClick: () => openChatSession(x.sessionId),
         }));
+        rowEl.appendChild(sessionRowMenu(x, rowEl));
+        body.appendChild(rowEl);
       });
     }
   },
@@ -4950,6 +4954,106 @@ async function openChatSession(id) {
   state.chatKb = meta ? (meta.kbId || "") : "";
   state.chatSessionId = id;
   go("chat");
+}
+
+/**
+ * 会话行的"⋯"菜单：重命名 / 删除 —— 会话多了总得管起来（Codex 的列表也是这么做的）。
+ *
+ * 只动这一段对话自己的记录：知识库、笔记、错题、产物都不是它的数据，不跟着动。
+ */
+function sessionRowMenu(s, rowEl) {
+  const wrap = el("span", "panel-item-actions");
+  const trigger = el("button", "panel-item-more", "");
+  trigger.type = "button";
+  trigger.title = "更多操作";
+  trigger.setAttribute("aria-label", "更多操作");
+  trigger.innerHTML = icon("dots");
+  let menu = null;
+  const close = () => { if (menu) { menu.remove(); menu = null; } };
+  const item = (label, cls, fn) => {
+    const b = el("button", cls || "", label);
+    b.type = "button";
+    b.onclick = (ev) => { ev.stopPropagation(); close(); fn(); };
+    return b;
+  };
+  trigger.onclick = (ev) => {
+    ev.stopPropagation();
+    if (menu) { close(); return; }
+    menu = el("div", "session-menu");
+    menu.appendChild(item("重命名…", "", () => renameSessionDialog(s)));
+    menu.appendChild(item("删除…", "danger", () => deleteSessionDialog(s)));
+    rowEl.appendChild(menu);
+    // 点别处收起（下一轮事件再挂，免得这次点击立刻把它关了）
+    const away = (e2) => {
+      if (!rowEl.contains(e2.target)) { close(); document.removeEventListener("click", away); }
+    };
+    setTimeout(() => document.addEventListener("click", away), 0);
+  };
+  wrap.appendChild(trigger);
+  return wrap;
+}
+
+/** 重命名会话：只改列表里的名字，事件与内容一条不动。 */
+function renameSessionDialog(s) {
+  const v = $("view");
+  const dlg = el("div", "card dialog");
+  dlg.appendChild(cardHeadOnly("重命名会话"));
+  const input = inputOf("session-rename-input", "新的名字", s.title || "新对话");
+  dlg.appendChild(fieldOf("名字", input));
+  const row = el("div", "row");
+  const submit = async () => {
+    const next = input.value.trim();
+    if (!next) { toast("名字不能为空"); return; }
+    try {
+      await api("/api/sessions/rename", { sessionId: s.sessionId, title: next });
+      dlg.remove();
+      await reloadSessions();
+      toast("已重命名");
+    } catch (e) { toast("重命名失败：" + e.message); }
+  };
+  row.appendChild(btn("保存", "primary", submit));
+  row.appendChild(btn("取消", "ghost", () => dlg.remove()));
+  dlg.appendChild(row);
+  v.insertBefore(dlg, v.firstChild);
+  dlg.scrollIntoView({ block: "start" });
+  input.focus();
+  input.select();
+  input.onkeydown = (e) => { if (e.key === "Enter") submit(); };
+}
+
+/** 删除会话：删掉这段对话自己的记录，删前说清"别的东西都不动"。 */
+function deleteSessionDialog(s) {
+  if (state.busyTurn && state.chatSessionId === s.sessionId) {
+    toast("这段会话正在跑，先停止或等它跑完");
+    return;
+  }
+  const v = $("view");
+  const dlg = el("div", "card dialog");
+  dlg.appendChild(cardHeadOnly("删除这段会话？"));
+  dlg.appendChild(el("p", "muted", "只删这一段对话的记录（" + (s.eventCount || 0) +
+    " 条事件）；知识库、笔记、错题、产物都不动。"));
+  const row = el("div", "row");
+  row.appendChild(btn("删除", "primary danger", async () => {
+    try {
+      await api("/api/sessions/delete", { sessionId: s.sessionId });
+      dlg.remove();
+      if (state.chatSessionId === s.sessionId) {
+        // 删的正是现在打开的这一段：清空并回到新会话空态
+        state.chatSessionId = "";
+        state.chatTurns = [];
+        state.chatEvents = [];
+        await reloadSessions();
+        await go("chat");
+      } else {
+        await reloadSessions();
+      }
+      toast("已删除");
+    } catch (e) { toast("删除失败：" + e.message); }
+  }));
+  row.appendChild(btn("取消", "ghost", () => dlg.remove()));
+  dlg.appendChild(row);
+  v.insertBefore(dlg, v.firstChild);
+  dlg.scrollIntoView({ block: "start" });
 }
 
 /**

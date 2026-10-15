@@ -873,6 +873,35 @@ fs.writeFileSync(singleFile, [
     return '空会话就绪 · 输入区居中';
   });
 
+  await step('会话能重命名与删除（像 Codex 那样管起来）', async () => {
+    const rows = page.locator('.panel-item-row');
+    const n = await rows.count();
+    assert(n >= 1, '应至少有一条会话可管理，实际 ' + n);
+    const target = rows.first();
+    const sid = await target.locator('.panel-item').getAttribute('data-id');
+    assert(!!sid, '会话行应带 sessionId');
+    await target.hover();
+    await target.locator('.panel-item-more').click();
+    await page.locator('.session-menu button', { hasText: '重命名' }).click();
+    await page.fill('#session-rename-input', 'E2E 重命名会话');
+    await page.getByRole('button', { name: '保存' }).click();
+    await page.waitForFunction(() => document.body.innerText.indexOf('E2E 重命名会话') >= 0, null, { timeout: 10000 });
+    const listed = await page.evaluate(() => fetch('/api/sessions/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then((x) => x.json()));
+    const renamed = (listed.data.sessions || []).filter((s) => s.sessionId === sid)[0];
+    assert(renamed && renamed.title === 'E2E 重命名会话', '内核里的标题应改成新名字，实际 ' + JSON.stringify(renamed && renamed.title));
+
+    const row2 = page.locator('.panel-item-row').filter({ hasText: 'E2E 重命名会话' }).first();
+    await row2.hover();
+    await row2.locator('.panel-item-more').click();
+    await page.locator('.session-menu button', { hasText: '删除' }).click();
+    await page.getByRole('button', { name: '删除', exact: true }).click();
+    await page.waitForFunction((id) => fetch('/api/sessions/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      .then((x) => x.json()).then((r) => !(r.data.sessions || []).some((s) => s.sessionId === id)), sid, { timeout: 10000 });
+    const gone = await page.locator('.panel-item-title', { hasText: 'E2E 重命名会话' }).count();
+    assert(gone === 0, '会话栏里不应再有被删掉的会话');
+    return '重命名 + 删除都落到内核（' + sid + '）';
+  });
+
   /* ---------- 课件播放器 ---------- */
   await step('产物能按页播放，翻页/键盘/目录都能用', async () => {
     await nav('个性化资源');

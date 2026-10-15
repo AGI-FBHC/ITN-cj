@@ -38,6 +38,7 @@ let ddl = [
     "reference TEXT, correct INTEGER, created_at TEXT, ord INTEGER)",
     "CREATE INDEX IF NOT EXISTS ix_quiz_kb ON quiz_records (kb_id, chapter)",
     "CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, created_at TEXT, updated_at TEXT)",
+    "CREATE TABLE IF NOT EXISTS sessions_meta (k TEXT PRIMARY KEY, v TEXT)",
     "CREATE TABLE IF NOT EXISTS session_events (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, ts TEXT, " +
     "kind TEXT, turn_id TEXT, payload TEXT)",
     "CREATE INDEX IF NOT EXISTS ix_session_events ON session_events (session_id, id)"

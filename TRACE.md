@@ -3063,3 +3063,17 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - 用户当前仍在运行旧目录 `dist/ITN-Desktop`（12:43 启动的进程）；试用新包前请先关掉旧窗口，再打开
   `dist/ITN-Desktop-chat-ctx/ITN-Desktop.exe`（沿用同一数据目录，旧会话与配置都还在）。
 
+## 2026-10-15 14:18 会话管理：重命名 / 删除（Codex 式列表）
+
+- 内核：`sessions_meta` 键值表（`k/v`，建表语句进 `schema.cj`，老数据目录下次打开自动补）；
+  `SessionStore.rename(sessionId, title)`（空名字 = 去掉覆盖、回到"首个提问"标题；名字截 60 字节 + `…`）
+  与 `SessionStore.remove(sessionId)`（删该会话的事件、摘要行、标题覆盖三处；知识库/笔记/错题/产物不动）。
+  新接口 `POST /api/sessions/rename|delete`，并在路由表登记。
+- 界面：会话行 hover 出现「⋯」（`.panel-item-row` 包一层 + `.panel-item-more`），菜单两项「重命名… / 删除…」；
+  重命名走 `#session-rename-input` 卡片（Enter 保存），删除弹确认卡（写清"只删这段对话的记录"），
+  正在跑的那段会话不让删（先停止或等它跑完）。删除的就是当前打开的会话时，清空状态回到新会话空态。
+- 验证：`cjpm test` **84/84**（新增 `SessionStoreTest`）；`tools/ui-e2e.cjs` **85/85**（新增步骤：
+  重命名后 `/api/sessions/list` 里标题变成新名字；删除后内核列表与会话栏都没有它）；截图 `tmp/vis-session-menu.png`、`tmp/vis-session-rename.png`。
+- 限制（照旧记录）：删会话不会去清理 Pi 运行时自己写在 `<dataDir>/sessions/` 下的 jsonl（那是运行时的日志，
+  内核不再引用它；后续要做的话按前缀匹配清一次即可）。
+

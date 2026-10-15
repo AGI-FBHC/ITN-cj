@@ -1217,6 +1217,31 @@ body.panel-hidden .panel { display: none; }
 .panel-item.active .panel-item-title { font-weight: 600; color: var(--brand); }
 .panel-item .tag { flex: 0 0 auto; }
 
+/* 会话行：hover 出现的"⋯"（重命名 / 删除），菜单绝对定位在这一行下面 */
+.panel-item-row { position: relative; display: flex; align-items: center; gap: 2px; }
+.panel-item-row .panel-item { flex: 1; min-width: 0; }
+.panel-item-actions { flex: 0 0 auto; display: inline-flex; }
+.panel-item-more {
+  opacity: 0; width: 22px; height: 22px; padding: 0; border: 0; background: none; border-radius: 6px;
+  color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+}
+.panel-item-row:hover .panel-item-more, .panel-item-more:focus-visible { opacity: 1; }
+.panel-item-more:hover { background: var(--panel); color: var(--ink); }
+.panel-item-more svg { width: 15px; height: 15px; }
+.session-menu {
+  position: absolute; right: 6px; top: calc(100% - 4px); z-index: 40;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 9px;
+  box-shadow: var(--shadow); padding: 3px; min-width: 116px;
+}
+.session-menu button {
+  display: block; width: 100%; text-align: left; border: 0; background: none; font: inherit;
+  font-size: calc(13px * var(--fs, 1)); color: var(--ink-2); padding: 6px 8px; border-radius: 7px; cursor: pointer;
+}
+.session-menu button:hover { background: var(--panel-soft); }
+.session-menu button.danger { color: var(--danger); }
+.btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn.danger:hover { filter: brightness(1.06); }
+
 .panel-group-title {
   font-size: calc(12px * var(--fs, 1)); color: var(--muted); padding: 10px 9px 3px;
 }

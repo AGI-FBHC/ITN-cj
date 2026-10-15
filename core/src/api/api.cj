@@ -1198,6 +1198,40 @@ public class Api {
             return
         }
 
+        if (path == "/api/sessions/rename" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let id = strOf(b, "sessionId")
+                    if (id.size == 0) {
+                        fail(ctx, 400, "缺少 sessionId")
+                        return
+                    }
+                    SessionStore(store.dataDir).rename(id, strOf(b, "title"))
+                    let o = JsonObject()
+                    o.put("ok", JsonBool(true))
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/sessions/delete" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let id = strOf(b, "sessionId")
+                    if (id.size == 0) {
+                        fail(ctx, 400, "缺少 sessionId")
+                        return
+                    }
+                    SessionStore(store.dataDir).remove(id)
+                    let o = JsonObject()
+                    o.put("ok", JsonBool(true))
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         if (path == "/api/sessions/events" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) =>
@@ -2223,6 +2257,8 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/sessions/new",
         "/api/sessions/list",
         "/api/sessions/events",
+        "/api/sessions/rename",
+        "/api/sessions/delete",
         "/api/profile/get",
         "/api/profile/save",
         "/api/study/tree",

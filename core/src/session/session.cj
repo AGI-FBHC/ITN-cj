@@ -111,9 +111,13 @@ public class SessionStore {
                 lastType = r.text(1)
             case None => ()
         }
-        // 不能直接切字节：中文标题会把某个汉字切成两半，抛 Invalid utf8 让 sessions/list 整体 500。
-        // 用 util 的安全截断；60 字节 ≈ 20 个汉字，够看清是哪一段对话，再长由界面按宽度省略。
-        if (title.size > 60) {
+        // 改过名的会话用用户给的名字（空 = 没改过，标题仍是首个提问）
+        let custom = db().getKv("sessions_meta", "title:" + sessionId, "")
+        if (custom.size > 0) {
+            title = custom
+        } else if (title.size > 60) {
+            // 不能直接切字节：中文标题会把某个汉字切成两半，抛 Invalid utf8 让 sessions/list 整体 500。
+            // 用 util 的安全截断；60 字节 ≈ 20 个汉字，够看清是哪一段对话，再长由界面按宽度省略。
             title = byteSafePrefix(title, 60) + "…"
         }
         // 这一轮是问答 / 讲义 / 练习，以及它用的是哪个知识库：界面用它给会话列表分类和标注
@@ -132,6 +136,34 @@ public class SessionStore {
         o.put("kind", JsonString(kind))
         o.put("kbId", JsonString(kbId))
         return o
+    }
+
+    /**
+     * 给一段会话改个名字（列表里用）。
+     *
+     * 空名字 = 恢复默认标题（首个提问）；名字截到 60 字节，跟自动标题同一套规矩。
+     */
+    public func rename(sessionId: String, title: String): Unit {
+        let t = trimStr(title)
+        if (t.size == 0) {
+            db().delKv("sessions_meta", "title:" + sessionId)
+            return
+        }
+        let capped = if (t.size > 60) {
+            byteSafePrefix(t, 60) + "…"
+        } else {
+            t
+        }
+        db().putKv("sessions_meta", "title:" + sessionId, capped)
+    }
+
+    /** 删掉一段会话（它自己的事件与摘要行 + 标题覆盖）。知识库、笔记、错题、产物都不是这段会话的数据，不动。 */
+    public func remove(sessionId: String): Unit {
+        let ops = ArrayList<DbOp>()
+        ops.add(DbOp("DELETE FROM session_events WHERE session_id = ?", va([tv(sessionId)])))
+        ops.add(DbOp("DELETE FROM sessions WHERE id = ?", va([tv(sessionId)])))
+        db().batch(ops)
+        db().delKv("sessions_meta", "title:" + sessionId)
     }
 
     public func list(): ArrayList<JsonObject> {
