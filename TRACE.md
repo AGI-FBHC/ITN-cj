@@ -3083,3 +3083,12 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - 试跑包就地刷新：`dist/ITN-Desktop-chat-ctx/` 与 `dist/ITN-Desktop-chat-ctx-win-x64.zip`；`--smoke` 自检 `RESULT=OK`；
   源码 / 包目录 / ZIP 三处哈希一致：app.js `2A56DAD1…92D3`、style.css `944DE710…075B`、内核 `9694BE00…9E27`（内核本轮变了，hash 与上轮不同）。
 
+
+## 2026-10-15 14:29后续接：限额后其他模型修改核对，继续讨论工作台
+- 用户告知限额后又在01a13454-b116-7801-a92e-c8d582e00a30让其他模型继续工作；本窗口读取最新5轮及必要旧轮，并核对Git与源码，保持此前“想讨论一下”的范围，不直接续改界面。
+- 已发生的新实现：e67dbc4（ctxChapter、assistant/thinking折叠时间线、会话标题/空态/引用统计整理）；d601366（空会话输入区居中、扁平工具行、工具面板让位）；2f9ba0b（会话重命名/删除、sessions_meta表），及各自trace提交。新试跑包为dist/ITN-Desktop-chat-ctx。测试数字84/85属于该线程报告，本轮未重跑。
+- 最新被中断的工作是扫描旧设计残留与“全部会话”管理一致性，尚无后续提交。已完成的新能力不重复实现。
+- 再核对当前pi_ask.cj：每轮仍newSession，historyMessages仍仅取最后最多8条user/message和assistant/message文本；完整历史工具结果没有恢复。ctxChapter解决章节指代，未解决长期会话上下文。当前renderer仍为全局state与轮询组织。
+- 另有未跟踪lumin/shell依赖目录（Electron+xterm），目前只有package/依赖，未见main.js等可运行界面入口；不把它算成已完成的桌面/TUI，也不写入/提交它。
+- 讨论结论待用户选择：推荐保留仓颉+lumin执行核心，完善长期会话服务/权威状态/事件协议，重建以会话和产物为中心的桌面工作台；备选为终端TUI。原学练、成长、知识网络、笔记错题等保留到学习中心，不因聊天简化而丢弃。
+- 本轮只有交接记录追加，业务源码未修改。未将讨论建议当成已授权的实施方案。
