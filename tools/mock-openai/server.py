@@ -152,12 +152,175 @@ def has_image(messages):
     return False
 
 
+def _res_long_body(topic, i, title):
+    """一段够长的讲义正文：带 [n] 引用，且含"示例/输入/输出/步骤/验证"这类具体性信号。"""
+    return (
+        "以「" + title + "」为例：先写清输入是什么、期望的输出是什么，再按步骤执行，最后逐条验证结果。[1]\n\n"
+        "输入：一组可以重现的最小样例，例如把参数固定为默认值后只改一个字段；输出：能直接对照的结论或文件。[2]\n\n"
+        "做法分三步：第一步把任务拆成能单独验证的小步；第二步每步都留下中间结果，出问题时能定位到具体一步；"
+        "第三步用边界样例再跑一遍，确认限制条件与失败表现。[1]\n\n"
+        "常见错误是把整个过程当成黑盒：一旦结果不对，只能整体重来。把中间状态写下来，既能定位错误，也方便别人复现。[2]\n\n"
+        "验证方法：换一个人按这份说明从空目录做一遍；如果他不用口头提示也能得到同样结果，说明说明书写清楚了。[2]"
+    )
+
+
+def res_lecture_plan():
+    sections = ["基本概念与适用范围", "输入与输出的约定", "按步骤执行", "中间状态怎么留证", "边界与失败表现", "验证与复盘"]
+    chapters = [
+        {"title": "第一部分 认识与准备", "introduction": "先把概念和边界说清楚，后面每一步才有判断依据。",
+         "sections": [{"title": s} for s in sections[:3]]},
+        {"title": "第二部分 执行与验证", "introduction": "把流程跑通，并且留下能复查的证据。",
+         "sections": [{"title": s} for s in sections[3:]]},
+    ]
+    return {"title": "动手做一遍的完整讲义", "objective": "读完能独立按步骤完成一次任务并留下证据。",
+            "objectives": ["说清输入与输出的约定", "按步骤完成一次执行", "用边界样例验证并复盘"],
+            "chapters": chapters}
+
+
+def res_lecture_full():
+    plan = res_lecture_plan()
+    for ch in plan["chapters"]:
+        for sec in ch["sections"]:
+            sec["content"] = _res_long_body("", 1, sec["title"])
+        ch["summary"] = "这一章的重点是把判断依据写下来。"
+    return plan
+
+
+def res_practice():
+    def step(title, instr, out, safety, warn=""):
+        return {"title": title, "instruction": instr, "code": "", "expectedOutput": out, "safety": safety, "warning": warn}
+    return {
+        "title": "从零跑通一次完整流程",
+        "objective": "照着做完一次可复现的执行，并留下输入、过程与输出的记录。",
+        "estimatedMinutes": 60,
+        "prerequisites": ["能创建和编辑文本文件", "读过本章讲义或了解基本术语"],
+        "environment": ["任意可编辑 Markdown 的本地环境"],
+        "steps": [
+            step("准备输入与标准",
+                 "新建一个以任务命名的练习目录，在 README.md 里写下这次任务的输入、处理步骤、预期输出和验收标准，并复制一份原始输入作为备份，确认主目录与副本都在。",
+                 "README.md 能看清输入与完成标准，原始输入有备份。", "caution", "先确认输入不含敏感信息。"),
+            step("按最小样例执行一次",
+                 "用最小的一个样例执行完整流程，把每一步的输入、关键中间状态、输出和耗时写进 result.md；如果中途失败，保留完整错误信息并按发生位置定位原因，修改后重新执行。",
+                 "result.md 有一组从输入到输出的完整记录，重复执行结果一致。", "safe"),
+            step("换成边界样例再执行",
+                 "把样例换成边界情况（最小、最大、异常输入各一个）再执行一遍，记录每一步输出与最终结果，说明从哪一步开始与预期不一致。",
+                 "result.md 至少两组完整记录，能区分正常路径与边界路径。", "safe"),
+            step("验收与复盘",
+                 "依据 README.md 里的标准逐条验收，对不满足项写明证据和修复动作；再补一段复盘，说明当前方案的适用条件、一个已知限制、一个常见错误及改进方向。",
+                 "每条验收标准都有结论和证据，复盘里有明确的限制与改进方向。", "safe"),
+        ],
+        "safetyChecklist": ["已备份原始输入与当前成果", "已确认输入中不含不应使用的敏感信息"],
+        "safetyNotice": "改动文件前先留副本；涉及真实账号或生产数据时，先在测试环境验证。",
+        "acceptanceCriteria": ["输入、过程和输出记录完整，别人照着能复现", "最小样例与边界样例都有明确结果和判断依据",
+                               "至少记录一个限制、一个错误及对应修复动作"],
+        "troubleshooting": [
+            {"problem": "执行结果与预期不一致", "solution": "从输入字段、参数、中间状态到输出逐项比对，用最小样例定位第一处偏差。"},
+            {"problem": "别人无法按文档复现", "solution": "补齐环境版本、文件位置与完整命令，并在空目录里重新走一遍。"},
+        ],
+        "challenge": "换一个与现有样例不同的异常输入，先预测结果再执行验证，并说明流程需要怎样调整。",
+    }
+
+
+def res_quiz_kp():
+    return {"knowledgePoints": [
+        {"id": "kp-1", "name": "输入与输出的约定", "description": "判断什么是输入、什么算完成。"},
+        {"id": "kp-2", "name": "中间状态留证", "description": "判断出错时能否定位到具体一步。"},
+        {"id": "kp-3", "name": "边界样例", "description": "判断方案在极端情况下是否仍然成立。"},
+    ]}
+
+
+def res_quiz_questions(n, topic):
+    diff = ["easy", "medium", "hard"]
+    out = []
+    for i in range(n):
+        target = i % 4
+        correct = "先写清输入与完成标准，再执行并留下中间结果"
+        options = [
+            "先扩大任务范围，再决定要验证什么",
+            "只记录最终结论，不保留输入与过程",
+            "忽略边界条件，只要一次成功即可",
+        ]
+        options.insert(target, correct)
+        out.append({
+            "id": "q-" + str(i + 1),
+            "knowledgePointId": "kp-" + str(i % 3 + 1),
+            "difficulty": diff[i % 3],
+            "stem": "在「" + topic + "」的第 " + str(i + 1) + " 个练习场景里，哪种做法最能让结论可复现、可验证？",
+            "options": options,
+            "correctIndex": target,
+            "explanation": "正确做法同时保留输入、过程、输出与验收依据，所以别人能复现、出错能定位；其余做法会丢掉证据、扩大不确定性或忽略边界风险。",
+        })
+    return {"title": topic + "分阶测试", "questions": out}
+
+
+def res_ppt(n, topic):
+    slides = []
+    for i in range(n):
+        slides.append({
+            "title": "第 " + str(i + 1) + " 页 · " + topic + " 要点" + str(i + 1),
+            "bullets": ["要点一：先写清输入与输出", "要点二：每步留下中间结果",
+                        "要点三：用边界样例验证"],
+            "speakerNote": "这一页讲清第 " + str(i + 1) + " 个要点，并给一个最小例子说明它为什么重要。",
+        })
+    return {"title": topic + "演示稿", "subtitle": "一页一个要点", "slides": slides}
+
+
+def _res_count(prompt, default):
+    m = re.search(r"正好 (\d+) ", prompt)
+    return int(m.group(1)) if m else default
+
+
+# 自检开关：ITN_MOCK_THIN_FIRST=1 时，讲义大纲第一次故意给薄（1 章 1 节），
+# 用来验证内核的质检→返修链路真的会跑（而不是摆设）。
+_THIN_LEFT = 1 if os.environ.get("ITN_MOCK_THIN_FIRST") else 0
+
+
+def _thin_lecture_plan():
+    return {"title": "太薄的大纲", "chapters": [{"title": "只有一章", "sections": [{"title": "只有一节"}]}]}
+
+
+
+
+
 def reply_for(body):
     messages = body.get("messages") or []
     if has_image(messages):
         return "MOCK 图片描述：这是一张教学资料里的示意图，画的是提示词与输出之间的对应关系。"
     joined = all_text(messages)
     ask = text_of(messages)
+    # ---- 四种资源（桌面版内核的新链路）----
+    if "你是内容质检员" in joined:
+        # 返修：按 resourceType 回一份"肯定能过质检"的内容
+        if "resourceType: practice" in joined:
+            return json.dumps(res_practice(), ensure_ascii=False)
+        if "resourceType: quiz" in joined:
+            m = re.search(r"应为 (\d+) 题", joined)
+            n = int(m.group(1)) if m else 6
+            fixed = res_quiz_questions(n, "返修主题")
+            fixed.update(res_quiz_kp())
+            return json.dumps(fixed, ensure_ascii=False)
+        if "resourceType: ppt" in joined:
+            return json.dumps(res_ppt(_res_count(joined, 8), "返修主题"), ensure_ascii=False)
+        return json.dumps(res_lecture_full(), ensure_ascii=False)
+    if "你是课程设计者" in joined:
+        global _THIN_LEFT
+        if _THIN_LEFT > 0:
+            _THIN_LEFT -= 1
+            return json.dumps(_thin_lecture_plan(), ensure_ascii=False)
+        return json.dumps(res_lecture_plan(), ensure_ascii=False)
+    if "你是实训导师" in joined:
+        return json.dumps(res_practice(), ensure_ascii=False)
+    if "你是演示稿设计者" in joined:
+        return json.dumps(res_ppt(_res_count(joined, 8), "演示主题"), ensure_ascii=False)
+    if "你是测评设计者" in joined:
+        if '"questions"' in joined:
+            return json.dumps(res_quiz_questions(_res_count(joined, 3), "测试主题" + str(body.get("request_id", ask[-80:]))), ensure_ascii=False)
+        return json.dumps(res_quiz_kp(), ensure_ascii=False)
+    if "（属于《" in joined:
+        # 桌面版四种资源的讲义逐节写作：回一段够长、带引用、带具体性信号的正文（开头那行标题故意重复，考验内核去重）
+        m = re.search(r"讲义的第 \d+ 节：「([^」]+)」", joined)
+        title = m.group(1) if m else "本节"
+        return "## " + title + "\n\n" + _res_long_body("", 1, title)
     # 工具回路：第一次问算术 -> 发起工具调用；拿到工具结果后再给最终回答
     if "工具 calc 的结果" in joined:
         return "算出来的结果是 15（按 (12+8)*3/4 计算）[1]。"
@@ -183,6 +346,37 @@ def reply_for(body):
     return "MOCK_REPLY:" + ask[:80]
 
 
+def native_reply(body):
+    if not body.get("tools"):
+        return reply_for(body)
+    msgs = body.get("messages") or []
+    user_at = max((i for i, m in enumerate(msgs) if m.get("role") == "user"), default=-1)
+    ask = text_of([msgs[user_at]]) if user_at >= 0 else ""
+    if any(m.get("role") == "tool" for m in msgs[user_at + 1:]):
+        return "已完成工具调用，可在右侧成果中查看。"
+    def call(name, args):
+        return {"tool_calls": [{"id": "mock-call-1", "type": "function", "function": {"name": name, "arguments": json.dumps(args, ensure_ascii=False)}}]}
+    if "记住：" in ask:
+        text = ask.split("记住：", 1)[1]
+        return call("remember_learning_fact", {"kind": "preference", "text": text, "quote": text})
+    if "修改资源" in ask:
+        match = re.search(r"res-\d+", ask)
+        if match:
+            return call("revise_learning_resource", {"id": match.group(), "baseVersion": 1, "instruction": ask})
+    kind = None
+    for token, value in [("lecture", "lecture"), ("practice", "practice"), ("quiz", "quiz"), ("ppt", "ppt"), ("讲义", "lecture"), ("实操", "practice"), ("分阶测试", "quiz"), ("练习册", "quiz"), ("演示", "ppt")]:
+        if token in ask:
+            kind = value
+            break
+    if kind and any(x in ask for x in ("生成", "做成", "make:", "出一份")):
+        match = re.search(r"(?:题量或页数 |count:)(\d+)", ask)
+        count = int(match.group(1)) if match else (4 if kind == "quiz" else 8)
+        return call("generate_learning_resource", {"kind": kind, "topic": "输入与输出", "detail": "balanced", "count": count})
+    if "计算" in ask or "算一下" in ask:
+        return call("calc", {"expr": "(12+8)*3/4"})
+    return reply_for(body)
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -203,7 +397,7 @@ class Handler(BaseHTTPRequestHandler):
                        "roles": [m.get("role") for m in msgs], "n": len(msgs)}
                 with open(logpath, "a", encoding="utf-8") as fh:
                     fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
-            content = reply_for(body)
+            content = native_reply(body)
             if body.get("stream"):
                 self.sse(model, content)
             else:
@@ -213,7 +407,7 @@ class Handler(BaseHTTPRequestHandler):
                     "model": model,
                     "choices": [{
                         "index": 0,
-                        "message": {"role": "assistant", "content": content},
+                        "message": ({"role": "assistant", "content": None, **content} if isinstance(content, dict) else {"role": "assistant", "content": content}),
                         "finish_reason": "stop",
                     }],
                 }
@@ -261,6 +455,13 @@ class Handler(BaseHTTPRequestHandler):
         head = {"id": "mock-chat", "object": "chat.completion.chunk", "model": model,
                 "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": None}]}
         self.wfile.write(("data: " + json.dumps(head, ensure_ascii=False) + "\n\n").encode("utf-8"))
+        if isinstance(content, dict):
+            chunk = {"id": "mock-chat", "object": "chat.completion.chunk", "model": model,
+                     "choices": [{"index": 0, "delta": {"tool_calls": [{"index": i, **c} for i, c in enumerate(content["tool_calls"])]}, "finish_reason": "tool_calls"}]}
+            self.wfile.write(("data: " + json.dumps(chunk, ensure_ascii=False) + "\n\n").encode("utf-8"))
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+            return
         step = 24
         for i in range(0, len(content), step):
             piece = content[i:i + step]

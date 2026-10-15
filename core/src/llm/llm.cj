@@ -81,6 +81,7 @@ public func pickStr(v: JsonValue, path: Array<String>): String {
 
 public class LlmClient {
     public let cfg: ModelConfig
+    public var shouldAbort: () -> Bool = { => false }
 
     public init(cfg: ModelConfig) {
         this.cfg = cfg
@@ -105,6 +106,9 @@ public class LlmClient {
             .readTimeout(Duration.minute * 10)
             .writeTimeout(Duration.minute * 10)
             .build()
+        if (shouldAbort()) { client.close(); throw LlmException("已取消") }
+        let watch = LlmCancelWatch(shouldAbort)
+        let watcher = spawn { watch.run({ => client.close() }) }
         try {
             let req = HttpRequestBuilder()
                 .method("POST")
@@ -125,9 +129,12 @@ public class LlmClient {
         } catch (e: LlmException) {
             throw e
         } catch (e: Exception) {
+            if (shouldAbort()) { throw LlmException("已取消") }
             throw LlmException("请求模型失败：" + e.message)
         } finally {
+            watch.finish()
             client.close()
+            watcher.get()
         }
     }
 
@@ -153,6 +160,9 @@ public class LlmClient {
             .readTimeout(Duration.minute * 10)
             .writeTimeout(Duration.minute * 10)
             .build()
+        if (shouldAbort()) { client.close(); throw LlmException("已取消") }
+        let watch = LlmCancelWatch(shouldAbort)
+        let watcher = spawn { watch.run({ => client.close() }) }
         var stage = "构造请求"
         try {
             let req = HttpRequestBuilder()
@@ -175,9 +185,12 @@ public class LlmClient {
         } catch (e: LlmException) {
             throw e
         } catch (e: Exception) {
+            if (shouldAbort()) { throw LlmException("已取消") }
             throw LlmException("请求模型失败（" + stage + " 阶段）：" + e.message)
         } finally {
+            watch.finish()
             client.close()
+            watcher.get()
         }
     }
 

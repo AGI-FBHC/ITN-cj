@@ -56,6 +56,7 @@ public func hitJson(chunk: KbChunk, score: Float64): JsonObject {
 
 public class ToolRegistry {
     public let store: Store
+    public var shouldAbort: () -> Bool = { => false }
 
     public init(store: Store) {
         this.store = store
@@ -85,10 +86,13 @@ public class ToolRegistry {
             match (s.findModel(s.embedModelId)) {
                 case Some(cfg) =>
                     try {
-                        let qv = LlmClient(cfg).embed([query])
+                        let modelClient = LlmClient(cfg)
+                        modelClient.shouldAbort = shouldAbort
+                        let qv = modelClient.embed([query])
                         hits = search(idx, qv[0], topK)
                         mode = "向量"
                     } catch (e: Exception) {
+                        if (shouldAbort()) { throw Exception("已取消") }
                         hits = keywordSearch(idx, query, topK)
                         mode = "关键词（向量调用失败：" + e.message + "）"
                     }
@@ -132,10 +136,13 @@ public class ToolRegistry {
                 match (s.findModel(s.embedModelId)) {
                     case Some(cfg) =>
                         try {
-                            let qv = LlmClient(cfg).embed([query])
+                            let modelClient = LlmClient(cfg)
+                        modelClient.shouldAbort = shouldAbort
+                        let qv = modelClient.embed([query])
                             hits = search(idx, qv[0], topK)
                             mode = "向量"
                         } catch (e: Exception) {
+                            if (shouldAbort()) { throw Exception("已取消") }
                             hits = keywordSearch(idx, query, topK)
                         }
                     case None =>

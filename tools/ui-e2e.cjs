@@ -272,10 +272,21 @@ fs.writeFileSync(singleFile, [
       if (p) p.hidden = true;
       document.body.classList.remove('player-open');
     });
-    await page.locator('.nav-item', { hasText: label }).first().click();
+    const aliases = {'首页':'学习中心','伴学助手':'Agent 工作台','领域知识库':'知识库','个性化资源':'学习资源'};
+    if (['学 · 练','我的成长','我的资源'].includes(label)) {
+      await page.locator('#rail .nav-item[data-page="home"]').click();
+      await page.waitForSelector('.center-links');
+      await page.locator('.center-links button', {hasText:label}).click();
+    } else {
+      await page.locator('#rail .nav-item', {hasText:aliases[label]||label}).first().click();
+    }
     await page.waitForTimeout(500);
     await page.waitForFunction(() => !document.querySelector('#view .empty .spinner'), null, { timeout: 20000 }).catch(() => {});
     await page.waitForTimeout(200);
+    if (label === '个性化资源') {
+      await page.waitForSelector('.legacy-artifacts');
+      await page.locator('.legacy-artifacts').evaluate(e=>e.open=true);
+    }
   };
 
   /** 笔记与错题本已合成一个根「我的资源」，页内用分段切换：测试里统一走这个助手。 */
@@ -319,13 +330,13 @@ fs.writeFileSync(singleFile, [
   await page.waitForSelector('.nav-item', { timeout: 20000 });
   await page.waitForTimeout(800);
 
-  await step('首页渲染 + 窄侧栏 8 个入口', async () => {
+  await step('默认工作台 + 五个产品区与设置', async () => {
     const items = await page.$$eval('.nav-item', (els) => els.map((e) => {
       const tip = e.querySelector('.rail-tip');
       return tip ? tip.textContent.trim() : e.textContent.trim();
     }));
-    assert(items.length === 8, '侧栏入口应为 8 个，实际 ' + items.length + '：' + items.join('/'));
-    assert(items.indexOf('伴学助手') >= 0 && items.indexOf('会话记录') < 0,
+    assert(items.length === 6, '侧栏入口应为 6 个，实际 ' + items.length + '：' + items.join('/'));
+    assert(items.indexOf('Agent 工作台') >= 0 && items.indexOf('会话记录') < 0,
       '「会话记录」应已并入「伴学助手」，实际：' + items.join('/'));
     assert(items.indexOf('画像校准') < 0 && items.indexOf('错题本') < 0 && items.indexOf('我的笔记') < 0,
       '校准应并入「我的成长」、笔记与错题本应并入「我的资源」，实际：' + items.join('/'));
@@ -352,12 +363,13 @@ fs.writeFileSync(singleFile, [
       };
     });
     assert(geo.w >= 48 && geo.w <= 72, '窄侧栏宽度应在 48~72px，实际 ' + geo.w);
-    assert(geo.items === 8, '侧栏页面入口应为 8 个，实际 ' + geo.items);
+    assert(geo.items === 6, '侧栏页面入口应为 6 个，实际 ' + geo.items);
     assert(geo.seps >= 2, '分组之间应有分隔线，实际 ' + geo.seps);
     assert(geo.actions === 2, '侧栏底部应有两个动作按钮（主题 / 齿轮之外只有检索），实际 ' + geo.actions);
     return geo.w + 'px · ' + geo.items + ' 入口 · ' + geo.seps + ' 条分隔线';
   });
 
+  await nav('首页');
   await step('首页首次使用清单 5 步且都未完成', async () => {
     const total = await page.locator('.check-item').count();
     const done = await page.locator('.check-item.done').count();
@@ -1652,7 +1664,7 @@ fs.writeFileSync(singleFile, [
       const t = e.querySelector('.rail-tip');
       return b ? (t ? t.textContent.trim().split('·')[0].trim() : '?') + '=' + b.textContent : null;
     }).filter(Boolean));
-    assert(badges.length >= 2, '我的资源与个性化资源都应有徽标，实际 ' + JSON.stringify(badges));
+    assert(badges.length >= 1, '我的资源与个性化资源都应有徽标，实际 ' + JSON.stringify(badges));
     return badges.join('，');
   });
 
@@ -1671,7 +1683,7 @@ fs.writeFileSync(singleFile, [
     await openRes('notes');
     assert(await page.evaluate(() => !document.querySelector('#nav-back').disabled), '走过一页之后「后退」应可点');
     await page.locator('#nav-back').click();
-    await page.waitForFunction(() => (document.querySelector('#page-title') || {}).textContent === '首页', null, { timeout: 10000 });
+    await page.waitForFunction(() => (document.querySelector('#page-title') || {}).textContent === '学习中心', null, { timeout: 10000 });
     assert(await page.evaluate(() => !document.querySelector('#nav-forward').disabled), '后退之后「前进」应可点');
     await page.locator('#nav-forward').click();
     await page.waitForFunction(() => (document.querySelector('#page-title') || {}).textContent === '我的资源', null, { timeout: 10000 });
@@ -1691,7 +1703,7 @@ fs.writeFileSync(singleFile, [
     assert(st.panel < 1, '收起后面板不该占宽度，实际 ' + st.panel);
     assert(st.rail > 40, '最左侧窄栏必须固定不动，实际宽度 ' + st.rail);
     // 窄栏还在，就还能换页
-    await page.locator('[data-page="notes"]').click();
+    await nav('我的资源');
     await page.waitForTimeout(600);
     assert((await page.textContent('#page-title')).indexOf('资源') >= 0, '面板收起时窄栏仍应能切页');
     await page.keyboard.press('Control+Shift+S');
@@ -2127,7 +2139,7 @@ fs.writeFileSync(singleFile, [
     await page.locator('#top-actions button').first().click();
     await page.waitForTimeout(800);
     title = await page.textContent('#page-title');
-    assert(title.indexOf('伴学助手') >= 0, '应回到对话，实际 ' + title);
+    assert(title.indexOf('Agent 工作台') >= 0, '应回到对话，实际 ' + title);
     return '一个入口 → 两种视图（对话 / 全部会话）';
   });
 

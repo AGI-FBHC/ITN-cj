@@ -3115,3 +3115,18 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - 同会话运行预约防止重入覆盖取消标记，异常释放；新增状态接口，进程重启把悬挂状态记 interrupted；取消支持 turnId，正在运行的会话后端拒绝删除。会话删除清理上下文与状态。
 - 测试：cjpm test 86/86（含长于四轮、工具结果恢复、提问唯一、中断工具、状态重启与重入）；build/package 成功；node tools/stop-check.cjs 11/11，通过真实 UI + 隔离模拟服务验证停止、会话切换、HTTP 挂起、同名并行工具配对。
 - 未触碰独立 lumin 源码、用户真实数据库及其他会话的 lumin/shell 未跟踪目录。提交号由紧随其后的本地 Git 提交记录，下一阶段追加精确 hash。
+
+## 2026-10-15 16:17 实施 C/D/E：个人学习 Agent 工具与工作台
+- 上阶段会话修复提交：c630c15。用户要求今天下午尽快完成，基于已有 Desktop 的知识库检索/笔记/错题/学习记录，不重复实现基础设施。
+- 从资源独立分支 86dd698 选择性迁入 resource/spec、validate、render、generate 与纯函数测试；没有整体 merge/覆盖旧共享代码。资源模块去掉对 agent 的依赖，避免工具注册产生包依赖环；模型调用接 OpenAiChatProvider，享有静默超时与取消。
+- lumin 可选工具：generate_learning_resource、read_learning_resource、revise_learning_resource、get_learning_context、remember_learning_fact、forget_learning_fact。默认普通对话不生成；明确资源任务要求结构化工具交付，失败不把普通聊天伪装为成品。专业生成工具内部规划/质检/最多2轮返修，由 Agent 决定调用时机与类型。
+- 四类结构化资源：lecture/practice/quiz/ppt；题量保留精确4题，不向3倍数取整；空题批次终止，防止死循环；质检失败不落资源。引用越界是硬错误，覆盖率不足仅提醒；完全无来源时仍禁止假引用。演示只做在线播放，按结构化 slides 精确分页。
+- 新 learning 表保存稳定资源 id、不可变版本、内容、来源切片快照、生成当时画像快照、任务来源；修改默认沿用原来源，可明确 refreshSources。乐观版本检查防止覆盖并发修改，历史Markdown可继续读。
+- 作答由后端根据对应资源版本的 correctIndex 核验；attemptId 幂等，重练不增加首次样本；写入既有 quiz_records 保留错题/报告功能；资源重开恢复最近答案。画像按知识点首次作答汇总，不把阅读量/产物数/笔记数映射成能力分。
+- 记忆只保存可核对的用户原话（不存模型扩写猜测），带会话与轮次；管理页可添加、更正、忘记，支持关闭自动积累；仍允许本人明确要求记住。当前上下文接入 lumin 与生成器，资源保留生成时快照。
+- 默认入口改 Agent 工作台：会话栏、任务时间线、按需成果侧栏；支持讲义、展开实操、在线作答、在线演示/续播、版本切换、行差异、来源切片。保留旧功能到学习中心。沿用无框架 Electron Renderer，新能力拆至 workbench.js/css，避免引入构建/依赖迁移拖延交付。
+- 补充 native message_end 检查点，进程中断时也能保留当前问题/工具；任务重启记 interrupted 并补真实终态事件；界面可继续任务/接管仍运行任务；向量检索网络请求也可取消，避免停止后继续回退关键词工作。
+- 当前验证：cjpm test 100/100；tools/learning-check.cjs --ui 57/57（真HTTP、原生工具、四类资源、精确题页、画像、记忆、修改版本、界面）；tools/stop-check.cjs 11/11；JS/Python语法检查通过；截图位于 tmp/workbench-shots。
+- 旧85项 UI脚本正在回归，已发现旧文件名/旧导航/能力分假设的断言需适配，尚未宣称全回归通过。真实模型正在隔离数据库副本验证四类资源和学习闭环，未用模拟结果代替真实内容质量。
+- 同期其他会话修改 lumin/src/cli/approvals.cj 并新增 lumin/docs/serve-rpc.md、lumin/shell；本轮未触碰/提交这些文件，未改 root ITN 网页和后端。
+- 本轮功能提交号由随后 Git 提交记录，下一条 TRACE 追加精确 hash。下一步：修正实际回归问题、历史资源登记迁移、真实模型验收与固定版本打包。

@@ -13,6 +13,8 @@ import itn_desktop_core.store.ModelConfig
 import itn_desktop_core.store.Store
 import itn_desktop_core.session.SessionEvent
 import itn_desktop_core.session.SessionStore
+import itn_desktop_core.learning.LearningStore
+import itn_desktop_core.agent.learningTools
 import itn_desktop_core.agent.DomainTool
 import itn_desktop_core.agent.ToolRecord
 import itn_desktop_core.agent.buildDomainToolDefs
@@ -290,7 +292,7 @@ public class PiAgent {
                 let sidForAbort = sessionIdIn
                 prov.shouldAbort = Some({ => sessionHub().isAborted(sidForAbort) })
                 return runFull(prov, kbId, taskBrief(kind, topic, count), sessionIdIn, webModeIn, "", work,
-                    kind, topic)
+                    "resource:" + kind, topic)
         }
     }
 
@@ -357,7 +359,8 @@ public class PiAgent {
             sessions.append(e)
         }
 
-        log("turn/start", kindPayload(if (taskKind.size > 0) { taskKind } else { "ask" }, kbId))
+        let typedTask = hasPrefix(taskKind, "resource:")
+        log("turn/start", kindPayload(if (taskKind.size > 0) { taskKind.replace("resource:", "") } else { "ask" }, kbId))
         let up = JsonObject()
         up.put("text", JsonString(question))
         log("user/message", up)
@@ -396,6 +399,20 @@ public class PiAgent {
         // 默认只给领域工具（检索/联网/技能/笔记/产物）：模型碰不到本机文件。
         // 用户在设置里指定了工作目录之后，才把 read/write/edit/ls/find/grep（可选 powershell）挂上。
         let defs = buildDomainToolDefsWithCancel(store, kbId, allowWeb, { => sessionHub().isAborted(sid) })
+        let progressClock = ActivityClock()
+        for (d in learningTools(store, kbId, { => sessionHub().isAborted(sid) }, sid, turnId, question,
+            { kind: String, payload: JsonObject =>
+                if (kind == "resource/saved") { log(kind, payload) }
+                else if (kind == "step/start" || kind == "step/end" || kind == "validation" || kind == "turn/end") {
+                    payload.put("event", JsonString(kind))
+                    log("resource/progress", payload)
+                } else if (progressClock.ready()) {
+                    let p = JsonObject()
+                    p.put("phase", JsonString("resource"))
+                    p.put("label", JsonString(strOf(payload, "label")))
+                    log("assistant/activity", p)
+                }
+            })) { defs.add(d) }
         let records = ArrayList<ToolRecord>()
         let registry = piRegistryOf(defs, records)
         let mode = piModeOf(defs, "desktop")
@@ -516,12 +533,16 @@ public class PiAgent {
             "拿不准的事实先核实，核实不到就直接说不知道。\n" +
             "用到本机资料里的内容时按 [1]、[2] 标注出处，用到网上抓来的页面时按 [W1]、[W2] 标注并写出链接。" +
             "回答简短，列表能说清就用列表；不要客套话，也不要把过程复述一遍。"
+        preamble = preamble + "\n你是个人学习 Agent。四类学习资源通过 generate_learning_resource 工具生成；不需要时正常交流，不默认一次生成四份。" +
+            "已有资源用 read_learning_resource 读取，用 revise_learning_resource 修改并保留版本。工具失败时如实说明，不能声称已生成。" +
+            "目标、偏好可用记忆工具记录，必须引用本轮明确原话，不推测能力。下方当前学习记忆是权威状态，已删除的记忆不得从历史重新采用。" +
+            "需要更多资源或测验证据时调用 get_learning_context。\n当前学习上下文：" + byteSafePrefix(LearningStore(store.dataDir).context(kbId).toString(), 9000)
         if (uiChapter.size > 0) {
             preamble = preamble + "\n用户此刻在应用里正在学《" + uiChapter + "》这一章；" +
                 "他说「这一章 / 这章 / 这节」时指的就是它 —— 直接按这一章处理，不要再让他重复说是哪一章。"
         }
         if (taskKind.size > 0) {
-            preamble = preamble + "\n这是一次产物生成任务：成品要写完整，最后用 save_artifact 落盘，" +
+            preamble = preamble + "\n这是一次学习资源生成任务：使用 generate_learning_resource 生成请求的类型并通过质检，" +
                 "再用一两句话告诉用户文件名。"
         }
         match (usableHostSkill(store.dataDir, skillIdIn, allowWeb)) {
@@ -553,7 +574,7 @@ public class PiAgent {
         }
         stream.on({ e: PiEvent =>
             let kind = kindText(e.kind)
-            if (kind == "turn_end") { checkpointContext(store.dataDir, sid, session) }
+            if (kind == "turn_end" || kind == "message_end") { checkpointContext(store.dataDir, sid, session) }
             // turn 边界 = 一次模型请求，事件流里已经有了（turn_start/turn_end）；
             // 这里不再额外记"步骤"——这是 agent，步骤由它自己决定，不该由我们编。
             if (kind == "tool_execution_start") {
@@ -563,6 +584,7 @@ public class PiAgent {
                 let p = JsonObject()
                 p.put("tool", JsonString(strOf(e.payload, "toolName")))
                 p.put("callId", JsonString(strOf(e.payload, "toolCallId")))
+                try { p.put("args", JsonValue.fromStr(strOf(e.payload, "args"))) } catch (ex: Exception) { () }
                 log("tool/call", p)
                 return
             }
@@ -665,7 +687,12 @@ public class PiAgent {
         }
         // ---- 产物：模型自己调 save_artifact 落了盘，就从工具记录里取路径 ----
         var artifactPath = ""
+        var typedSaved = false
         for (r in records) {
+            if ((r.name == "generate_learning_resource" || r.name == "revise_learning_resource") && r.ok) {
+                typedSaved = true
+                match (r.details) { case o: JsonObject => artifactPath = strOf(o, "artifactPath"); case _ => () }
+            }
             if (r.name == "save_artifact" && r.ok) {
                 match (r.details) {
                     case sv: JsonString => artifactPath = sv.getValue()
@@ -674,7 +701,7 @@ public class PiAgent {
             }
         }
         var savedBy = if (artifactPath.size > 0) { "model" } else { "" }
-        if (artifactPath.size == 0 && taskKind.size > 0 && outcome.ok && answer.size > 0) {
+        if (artifactPath.size == 0 && taskKind.size > 0 && !typedTask && outcome.ok && answer.size > 0) {
             // 兜底：模型这一轮没自己落盘（有些服务不认 function calling），
             // 内核把正文写成产物，免得用户看到"生成好了"却什么都没有。
             let p0 = saveArtifactVia(defs, artifactNameOf(taskKind, taskTitle), answer)
@@ -696,8 +723,9 @@ public class PiAgent {
         vp.put("citations", cites)
         log("validation", vp)
 
-        let okk = outcome.ok
-        log("turn/end", endPayload(okk, outcome.error))
+        let okk = outcome.ok && (!typedTask || typedSaved)
+        let failure = if (typedTask && !typedSaved && outcome.ok) { "模型没有生成通过质检的结构化资源，请重试或使用支持工具调用的模型" } else { outcome.error }
+        log("turn/end", endPayload(okk, failure))
         out.put("ok", JsonBool(okk))
         out.put("answer", JsonString(answer))
         out.put("citations", cites)
@@ -708,7 +736,7 @@ public class PiAgent {
         out.put("artifactPath", JsonString(artifactPath))
         out.put("savedBy", JsonString(savedBy))
         if (!okk) {
-            out.put("message", JsonString(if (outcome.error.size > 0) { outcome.error } else { "这一轮没有跑完" }))
+            out.put("message", JsonString(if (failure.size > 0) { failure } else { "这一轮没有跑完" }))
         }
         return out
     }
@@ -719,16 +747,8 @@ public class PiAgent {
  * 步骤由模型自己排 —— 这才是 agent；固定步骤是工作流，上一版的形状。
  */
 func taskBrief(kind: String, topic: String, count: Int64): String {
-    if (kind == "quiz") {
-        return "按「" + topic + "」出一份练习册：" + count.toString() + " 道题，覆盖不同的考点。" +
-            "每题给出题干、选项（或填空位）、参考答案与一句解析。" +
-            "资料以当前知识库为准，需要就去查；资料没讲到的地方明说，不要编。" +
-            "写完后用 save_artifact 落盘，文件名用「练习册-" + topic + ".md」。"
-    }
-    return "把「" + topic + "」做成一份讲义，写成 Markdown：" +
-        "概念、为什么、怎么做各讲清楚，配例子，用小标题分段。" +
-        "资料以当前知识库为准，需要就去查；资料没讲到的地方明说，不要编。" +
-        "写完后用 save_artifact 落盘，文件名用「讲义-" + topic + ".md」。"
+    return "请用 generate_learning_resource 生成 " + kind + " 类型的学习资源，主题「" + topic +
+        "」，题量或页数 " + count.toString() + "（仅 quiz/ppt 有效）。使用当前知识库与真实学习上下文。生成成功后简要告诉我成果；失败请如实说明。"
 }
 
 /** 产物的文件名（内核兜底落盘时用；模型自己落盘时按提示词里的名字）。 */

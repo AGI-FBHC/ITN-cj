@@ -30,9 +30,13 @@ class ProviderTest {
         let dir = freshDir("cancel-auto-session")
         let provider = OpenAiChatProvider(modelCfg(Int64(server.port)))
         let canceller = spawn {
-            sleep(Duration.millisecond * 400)
-            let sessions = SessionStore(dir).list()
-            if (sessions.size > 0) { sessionHub().abort(strOf(sessions[0], "sessionId")) }
+            var tries = 0
+            while (tries < 100) {
+                let sessions = SessionStore(dir).list()
+                if (sessions.size > 0) { sessionHub().abort(strOf(sessions[0], "sessionId")); break }
+                sleep(Duration.millisecond * 20)
+                tries = tries + 1
+            }
         }
         let started = DateTime.now()
         let result = PiAgent(Store(dir)).askWithProvider(provider, "", "hello", "", "off", "")

@@ -16,6 +16,8 @@ import itn_desktop_core.pi.scriptText
 import itn_desktop_core.pi.boolOf
 import itn_desktop_core.pi.strOf
 import itn_desktop_core.store.Store
+import itn_desktop_core.store.ModelConfig
+import itn_desktop_core.llm.LlmClient
 import itn_desktop_core.util.readAllString
 
 func slowToolServer(): Server {
@@ -45,6 +47,30 @@ func cancelClosesAStalledWebFetchWithoutCaching(): Unit {
     @Expect(cancelled, true)
     @Expect((DateTime.now() - started).toMilliseconds() < 2000, true)
     @Expect(exists(dir + "/webcache"), false)
+    server.close()
+}
+
+@Test
+func cancelClosesAStalledEmbeddingRequest(): Unit {
+    let server = ServerBuilder().addr("127.0.0.1").port(0).build()
+    server.distributor.register("/v1/embeddings", { ctx: HttpContext =>
+        readAllString(ctx.request.body)
+        sleep(Duration.second * 3)
+        ctx.responseBuilder.status(200)
+        ctx.responseBuilder.body("{}".toArray())
+    })
+    spawn { server.serve() }
+    sleep(Duration.millisecond * 150)
+    let cfg = ModelConfig()
+    cfg.baseUrl = "http://127.0.0.1:" + server.port.toString() + "/v1"
+    cfg.model = "test"
+    let client = LlmClient(cfg)
+    let started = DateTime.now()
+    client.shouldAbort = { => (DateTime.now() - started).toMilliseconds() > 250 }
+    var cancelled = false
+    try { client.embed(["test"]) } catch (e: Exception) { cancelled = e.message.contains("取消") }
+    @Expect(cancelled, true)
+    @Expect((DateTime.now() - started).toMilliseconds() < 2000, true)
     server.close()
 }
 

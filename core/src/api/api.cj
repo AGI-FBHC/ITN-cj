@@ -1,5 +1,9 @@
 package itn_desktop_core.api
 
+import itn_desktop_core.learning.LearningStore
+import itn_desktop_core.agent.learningTools
+import itn_desktop_core.resource.isResourceKind
+
 import stdx.net.http.*
 import std.collection.*
 import std.convert.*
@@ -123,6 +127,8 @@ public class Api {
             o.put("status", JsonString("ok"))
             o.put("service", JsonString("itn-desktop-core"))
             o.put("cangjie", JsonString("1.2.0"))
+            o.put("version", JsonString("0.2.0"))
+            o.put("build", JsonString("learning-workbench-20261015"))
             ok(ctx, o)
             return
         }
@@ -712,7 +718,8 @@ public class Api {
                         fail(ctx, 400, "缺少 topic")
                         return
                     }
-                    let kind = if (strOf(b, "kind") == "quiz") { "quiz" } else { "lecture" }
+                    let kind = strOf(b, "kind")
+                    if (!isResourceKind(kind)) { fail(ctx, 400, "资源类型不支持"); return }
                     var count: Int64 = 5
                     let reqCount = intOf(b, "count")
                     if (reqCount > 0) { count = reqCount }
@@ -1162,6 +1169,15 @@ public class Api {
                     arr.add(t)
                 }
             }
+            for (d in learningTools(store, "", { => false }, "", "", "", { kind: String, payload: JsonObject => () })) {
+                let t = JsonObject()
+                t.put("name", JsonString(d.name))
+                t.put("title", JsonString(d.label))
+                t.put("desc", JsonString(d.description))
+                t.put("usage", JsonString(d.schema))
+                t.put("available", JsonBool(true))
+                arr.add(t)
+            }
             // 指定了工作目录才把"本机文件"那几个列出来（与真正发给模型的工具一致）
             let wd = db.getKv("settings", "agent_work_dir", "")
             let perm = db.getKv("settings", "agent_perm", "ask")
@@ -1175,6 +1191,98 @@ public class Api {
             o.put("tools", arr)
             o.put("agentWorkDir", JsonString(wd))
             ok(ctx, o)
+            return
+        }
+
+        if (path == "/api/learning/resources" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let o = JsonObject()
+                    o.put("resources", LearningStore(store.dataDir).resources(strOf(b, "kbId")))
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/learning/resource" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => try {
+                    let ls = LearningStore(store.dataDir)
+                    let o = ls.resource(strOf(b, "id"), intOf(b, "version"))
+                    o.put("progress", ls.progressOf(strOf(o, "id"), intOf(o, "version"), "complete"))
+                    ok(ctx, o)
+                } catch (e: Exception) { fail(ctx, 404, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/learning/context" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => ok(ctx, LearningStore(store.dataDir).context(strOf(b, "kbId")))
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/learning/memories" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let o = JsonObject()
+                    o.put("memories", LearningStore(store.dataDir).memories(strOf(b, "kbId")))
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/learning/memory/policy" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let ls = LearningStore(store.dataDir)
+                    match (b.get("autoRemember")) {
+                        case Some(v) => match (v) {
+                            case flag: JsonBool => ls.setAutoRemember(flag.getValue())
+                            case _ => fail(ctx, 400, "autoRemember 必须为布尔值"); return
+                        }
+                        case None => ()
+                    }
+                    let o = JsonObject()
+                    o.put("autoRemember", JsonBool(ls.autoRemember()))
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/learning/memory/save" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => try {
+                    ok(ctx, LearningStore(store.dataDir).remember(strOf(b, "id"), strOf(b, "kbId"), strOf(b, "kind"), strOf(b, "text"), "", "", "", "user"))
+                } catch (e: Exception) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/learning/memory/forget" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => LearningStore(store.dataDir).forget(strOf(b, "id")); ok(ctx, JsonString("ok"))
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/learning/answer" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => try {
+                    ok(ctx, LearningStore(store.dataDir).answer(strOf(b, "id"), intOf(b, "version"), strOf(b, "questionId"), intOf(b, "choice"), strOf(b, "attemptId")))
+                } catch (e: Exception) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/learning/progress" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => try {
+                    ok(ctx, LearningStore(store.dataDir).progress(strOf(b, "id"), intOf(b, "version"), "complete", boolOf(b, "done")))
+                } catch (e: Exception) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
             return
         }
 
@@ -2097,7 +2205,7 @@ func contentTypeOf(name: String): String {
 func serveStatic(ctx: HttpContext, uiDir: String, rel: String): Unit {
     let name = if (rel == "/") { "index.html" } else { String.fromUtf8(rel.toArray()[1..rel.toArray().size]) }
     // 只允许白名单文件名，避免路径穿越
-    let allowed = ["index.html", "app.js", "style.css"]
+    let allowed = ["index.html", "app.js", "style.css", "workbench.js", "workbench.css"]
     var ok = false
     for (a in allowed) {
         if (a == name) { ok = true }
@@ -2267,6 +2375,15 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/skills/bind",
         "/api/skills/template",
         "/api/tools/list",
+        "/api/learning/resources",
+        "/api/learning/resource",
+        "/api/learning/context",
+        "/api/learning/memories",
+        "/api/learning/memory/save",
+        "/api/learning/memory/policy",
+        "/api/learning/memory/forget",
+        "/api/learning/answer",
+        "/api/learning/progress",
         "/api/sessions/new",
         "/api/sessions/list",
         "/api/sessions/events",
@@ -2299,7 +2416,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         server.distributor.register(r, { ctx: HttpContext => api.handle(ctx) })
     }
     // 界面由内核托管，外壳与界面同源，避免跨域
-    let statics = ["/", "/index.html", "/app.js", "/style.css"]
+    let statics = ["/", "/index.html", "/app.js", "/style.css", "/workbench.js", "/workbench.css"]
     for (s in statics) {
         server.distributor.register(s, { ctx: HttpContext => serveStatic(ctx, uiDir, s) })
     }

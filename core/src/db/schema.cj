@@ -41,7 +41,12 @@ let ddl = [
     "CREATE TABLE IF NOT EXISTS sessions_meta (k TEXT PRIMARY KEY, v TEXT)",
     "CREATE TABLE IF NOT EXISTS session_events (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, ts TEXT, " +
     "kind TEXT, turn_id TEXT, payload TEXT)",
-    "CREATE INDEX IF NOT EXISTS ix_session_events ON session_events (session_id, id)"
+    "CREATE INDEX IF NOT EXISTS ix_session_events ON session_events (session_id, id)",
+    "CREATE TABLE IF NOT EXISTS learning_resources (id TEXT PRIMARY KEY, kind TEXT, title TEXT, kb_id TEXT, latest_version INTEGER, updated_at TEXT)",
+    "CREATE TABLE IF NOT EXISTS learning_resource_versions (resource_id TEXT, version INTEGER, body TEXT, PRIMARY KEY (resource_id, version))",
+    "CREATE TABLE IF NOT EXISTS learning_memories (id TEXT PRIMARY KEY, kb_id TEXT, body TEXT, updated_at TEXT)",
+    "CREATE TABLE IF NOT EXISTS learning_events (id TEXT PRIMARY KEY, kind TEXT, kb_id TEXT, resource_id TEXT, version INTEGER, item_key TEXT, topic TEXT, correct INTEGER, first_attempt INTEGER, payload TEXT, at TEXT)",
+    "CREATE INDEX IF NOT EXISTS ix_learning_events_resource ON learning_events (resource_id, version, item_key)"
 ]
 
 public func ensureSchema(db: Db): Unit {

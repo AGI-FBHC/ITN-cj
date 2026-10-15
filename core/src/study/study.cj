@@ -349,8 +349,7 @@ public func abilityEvidence(dataDir: String, kbId: String, quizTotal: Int64, qui
     let a = AbilityEvidence()
     a.key = "概念理解"
     if (totalChunks > 0) {
-        a.evidence = clampScore(readChunks * 100 / totalChunks)
-        a.basis = "已读切片 " + readChunks.toString() + "/" + totalChunks.toString()
+        a.basis = "阅读记录，不代表概念掌握：已读切片 " + readChunks.toString() + "/" + totalChunks.toString()
     } else {
         a.basis = "还没有索引，读得怎么样无从判断"
     }
@@ -359,8 +358,7 @@ public func abilityEvidence(dataDir: String, kbId: String, quizTotal: Int64, qui
     let b = AbilityEvidence()
     b.key = "逻辑推理"
     if (quizTotal >= 4) {
-        b.evidence = clampScore(quizRight * 100 / quizTotal)
-        b.basis = "练习正确率（" + quizTotal.toString() + " 题）"
+        b.basis = "练习记录，不单独推断逻辑能力（" + quizTotal.toString() + " 题）"
     } else {
         b.basis = "练习不足 4 题，先不给参考"
     }
@@ -369,8 +367,7 @@ public func abilityEvidence(dataDir: String, kbId: String, quizTotal: Int64, qui
     let c2 = AbilityEvidence()
     c2.key = "工程实践"
     if (chapterCount > 0) {
-        c2.evidence = clampScore(completedChapters * 100 / chapterCount)
-        c2.basis = "走完「讲练记」的章节 " + completedChapters.toString() + "/" + chapterCount.toString()
+        c2.basis = "章节完成记录，不代表工程能力：" + completedChapters.toString() + "/" + chapterCount.toString()
     } else {
         c2.basis = "还没有章节"
     }
@@ -396,8 +393,7 @@ public func abilityEvidence(dataDir: String, kbId: String, quizTotal: Int64, qui
         }
     }
     if (wrongTotal >= 2) {
-        d.evidence = clampScore(rescued * 100 / wrongTotal)
-        d.basis = "错题里靠重做找回 " + rescued.toString() + "/" + wrongTotal.toString()
+        d.basis = "手动复习记录，不代表诊断能力：" + rescued.toString() + "/" + wrongTotal.toString()
     } else {
         d.basis = "错题样本太少，先不给参考"
     }
@@ -406,8 +402,7 @@ public func abilityEvidence(dataDir: String, kbId: String, quizTotal: Int64, qui
     let e = AbilityEvidence()
     e.key = "系统设计"
     if (chapterCount > 0) {
-        e.evidence = clampScore(artifactCount * 100 / chapterCount)
-        e.basis = "沉淀成产物 " + artifactCount.toString() + " 份 / 章节 " + chapterCount.toString() + " 章"
+        e.basis = "资源生成记录，不代表设计能力：" + artifactCount.toString() + " 份 / 章节 " + chapterCount.toString() + " 章"
     } else {
         e.basis = "还没有章节"
     }
@@ -416,8 +411,7 @@ public func abilityEvidence(dataDir: String, kbId: String, quizTotal: Int64, qui
     let f = AbilityEvidence()
     f.key = "学习迁移"
     if (chapterCount > 0) {
-        f.evidence = clampScore(noteCount * 100 / chapterCount)
-        f.basis = "留下笔记 " + noteCount.toString() + " 条 / 章节 " + chapterCount.toString() + " 章"
+        f.basis = "笔记数量，不代表迁移能力：" + noteCount.toString() + " 条 / 章节 " + chapterCount.toString() + " 章"
     } else {
         f.basis = "还没有章节"
     }

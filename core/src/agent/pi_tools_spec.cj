@@ -123,6 +123,7 @@ public func buildDomainToolDefsWithCancel(store: Store, kbId: String, allowWeb: 
     let box = ToolBox(store)
     box.shouldAbort = shouldAbort
     let tools = ToolRegistry(store)
+    tools.shouldAbort = shouldAbort
     let out = ArrayList<DomainTool>()
 
     out.add(makeTool("kb_search", "检索知识库", "按语义/关键词检索当前知识库",

@@ -568,7 +568,7 @@ function buildNav() {
 
 function pageFromHash() {
   const m = String(location.hash || "").match(/^#\/([a-z]+)(?:\/([a-z]+))?/);
-  const page = m && PAGES[m[1]] ? m[1] : "home";
+  const page = m && PAGES[m[1]] ? m[1] : "chat";
   return { page: page, section: m && m[2] ? m[2] : "" };
 }
 
@@ -659,6 +659,7 @@ async function go(page, section, opts) {
   buildNav();
   updateNavButtons();
   if (opts && opts.focus) focusInView(opts.focus);
+  if (typeof workbenchAfterPage === "function") await workbenchAfterPage();
 }
 
 /** 面板里点过的条目：滚到主区对应位置并闪一下描边，不弹窗、不跳页。 */
@@ -5124,6 +5125,10 @@ function turnsFromEvents(events) {
         target.ok = p.ok !== false;
         target.running = false;
       }
+    } else if (e.type === "resource/saved") {
+      t.items.push({t: "resource", resource: p});
+    } else if (e.type === "resource/progress") {
+      t.resourceProgress = p;
     } else if (e.type === "web/policy") {
       t.webMode = p.mode || "";
     } else if (e.type === "validation") {
@@ -5205,7 +5210,12 @@ function renderTurnBlock(t, live) {
   for (const it of t.items) {
     if (it.t === "think") box.appendChild(thinkRow(it));
     else if (it.t === "tool") box.appendChild(renderToolRows([it]));
+    else if (it.t === "resource") box.appendChild(resourceCard(it.resource, true));
     else if (it.text) box.appendChild(assistantBlock(it.text, live && it.streaming));
+  }
+  if (live && t.resourceProgress) {
+    const names = {retrieve: "检索资料", plan: "规划结构", write_section: "撰写讲义", knowledge_points: "梳理知识点", questions: "生成题目", repair: "根据质检修订", artifact_save: "保存成果"};
+    box.appendChild(el("div", "resource-progress", names[t.resourceProgress.name] || "正在生成与检查学习资源"));
   }
   const running = live && !t.items.some((x) => x.t === "a" && x.text);
   if (running) {
@@ -5241,6 +5251,8 @@ function renderTurnBlock(t, live) {
     const acts = el("div", "row msg-actions");
     acts.appendChild(btn("做成讲义", "sm ghost", () => askTopic("lecture", topicFromText(t.user || lastText))));
     acts.appendChild(btn("做成练习册", "sm ghost", () => askTopic("quiz", topicFromText(t.user || lastText))));
+    acts.appendChild(btn("做成实操", "sm ghost", () => promptLearning("请围绕「" + topicFromText(t.user || lastText) + "」生成一份实操指南")));
+    acts.appendChild(btn("做成演示", "sm ghost", () => promptLearning("请围绕「" + topicFromText(t.user || lastText) + "」生成一份在线演示课件")));
     acts.appendChild(copyButton(() => lastText, "复制"));
     box.appendChild(acts);
   }
@@ -5346,7 +5358,7 @@ PAGES.chat = {
     const ta = el("textarea");
     ta.id = "chat-input";
     ta.rows = 1;
-    ta.placeholder = "描述任务，输入 / 调用技能";
+    ta.placeholder = "描述你的学习目标，或让我围绕资料完成一个任务…";
     inputRow.appendChild(ta);
 
     const crow = el("div", "composer-row");
@@ -5569,7 +5581,7 @@ PAGES.chat = {
       state.cancelRequested = sid;
       paintActionBtn();
       try {
-        await api("/api/agent/cancel", { sessionId: sid });
+        await api("/api/agent/cancel", { sessionId: sid, turnId: state.chatRequest?.turnId || undefined });
         toast("正在停止当前任务…");
       } catch (e) {
         state.cancelRequested = null;
@@ -5645,12 +5657,13 @@ PAGES.chat = {
       // 会话 id 标在对话区上：自检要按"这一段会话"验联网档位，调试时也好对号
       thread.dataset.session = state.chatSessionId || "";
       thread.innerHTML = "";
+      if (typeof syncWorkbenchEvents === "function") syncWorkbenchEvents(state.chatEvents || []);
       paintBlank();
       if (!state.chatTurns.length) {
         thread.appendChild(emptyState({
           inline: true,
           art: "chat",
-          title: state.chatSessionId ? "这个会话还没有内容" : "开始一段对话",
+          title: "今天想学点什么？",
           // 作用范围在这里说清：这一段对话到底用哪份资料
           text: (scopeNow() ? ("这一段对话只用「" + kbName(scopeNow()) + "」，答案带出处。")
                             : "这一段对话是通用模式：本机所有知识库一起检索。") +
@@ -5754,6 +5767,7 @@ PAGES.chat = {
       } catch (e) {
         state.chatTurns = state.chatTurns.filter((t) => t.id !== "local" && !String(t.id).startsWith("steer-"));
       }
+      if (typeof syncWorkbenchEvents === "function") syncWorkbenchEvents(state.chatEvents || []);
       state.busyTurn = false;
       if (state.chatRequest === request) state.chatRequest = null;
       const stopped = state.cancelRequested === sid;
@@ -5770,6 +5784,7 @@ PAGES.chat = {
         toast(String(failure).indexOf("取消") >= 0 ? "已取消" : ("生成失败：" + failure));
       }
       await reloadSessions();
+      if (typeof refreshWorkbenchState === "function") await refreshWorkbenchState();
       if (current === "chat" && !thread.isConnected) await go("chat");
       else paint();
     }
@@ -5798,6 +5813,7 @@ PAGES.chat = {
       pollApprovals();
     }, 2000);
 
+    state.chatPaint = paint;
     /* 已有会话：把历史事件还原成线程 */
     if (state.chatSessionId) {
       try {
@@ -7388,4 +7404,3 @@ async function boot() {
   await go(first.page, first.section, { replace: true });
 }
 
-boot();

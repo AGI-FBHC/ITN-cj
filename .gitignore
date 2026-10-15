@@ -21,3 +21,7 @@ tmp/
 .agents/
 skills-lock.json
 target/
+
+# Python test caches
+__pycache__/
+*.pyc
