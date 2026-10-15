@@ -135,6 +135,8 @@ const ICONS = {
   chevron: "M6 9.5 12 15.5 18 9.5",
   shield: "M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6zM9 12l2 2 4-4",
   dots: "M12 6h.01M12 12h.01M12 18h.01",
+  // 横排三个点（顶栏"更多"用）：画成实心圆，比描边小点清楚
+  dotsH: '<circle cx="5.2" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="18.8" cy="12" r="2" fill="currentColor" stroke="none"/>',
   folder: "M3.5 6.5a1 1 0 0 1 1-1h4l2 2h8a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-14a1 1 0 0 1-1-1z",
   // 新会话：一个方框 + 一支笔（Codex 侧栏项目行右边那个）
   compose: "M4 5.5A1.5 1.5 0 0 1 5.5 4H12M20 12v6.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-13A1.5 1.5 0 0 1 5.5 4M17.5 3.2l3.3 3.3-7.6 7.6-4.2.9.9-4.2z",
@@ -3846,20 +3848,30 @@ function makeSplitter(k) {
   const h = el("div", "splitter splitter-" + k, "");
   h.title = "拖动调整宽度 · 双击恢复默认";
   h.setAttribute("aria-label", "调整宽度");
-  let startX = 0, startW = 0, dragging = false;
+  let startX = 0, startW = 0, startZoom = 1, dragging = false;
   h.addEventListener("pointerdown", (e) => {
     const target = document.querySelector(L.sel);
     if (!target) return;
     dragging = true;
     startX = e.clientX;
-    startW = target.getBoundingClientRect().width;
+    /* 宽度换算成**布局坐标**再算，别直接拿屏幕坐标：
+       界面上的"显示大小"是 body 的 zoom，指针事件给的是屏幕坐标、CSS 宽度是布局坐标，
+       不换算的话拖动会按缩放比例滞后（实测 zoom 1.3 时鼠标走 100px、边界只走 78px —— 用户报的"偏移"）。
+       zoom 不去读设置里的值，而是**就地自校准**：量出来的宽度 ÷ 计算样式的宽度就是实际缩放，
+       这样无论缩放是怎么来的（设置、Ctrl +/-、还是别处写的 body zoom）都成立。
+       起点优先取 CSS 变量本身（它就是要改的那个值），取不到再退回布局宽度。 */
+    const layoutW = parseFloat(getComputedStyle(target).width) || 0;
+    const screenW = target.getBoundingClientRect().width;
+    startZoom = (layoutW > 0 && screenW > 0) ? (screenW / layoutW) : 1;
+    const cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(L.css));
+    startW = (Number.isFinite(cur) && cur > 0) ? cur : layoutW;
     try { h.setPointerCapture(e.pointerId); } catch (err) { /* 老环境 */ }
     document.body.classList.add("splitting");
     e.preventDefault();
   });
   h.addEventListener("pointermove", (e) => {
     if (!dragging) return;
-    setColWidth(k, startW + L.dir * (e.clientX - startX));
+    setColWidth(k, startW + L.dir * ((e.clientX - startX) / startZoom));
   });
   const end = () => {
     if (!dragging) return;
@@ -4221,7 +4233,7 @@ function sessionMoreBtn() {
   trigger.type = "button";
   trigger.title = state.chatSessionId ? "这段会话的更多操作" : "先开一段对话";
   trigger.setAttribute("aria-label", "会话操作");
-  trigger.innerHTML = icon("dots");
+  trigger.innerHTML = icon("dotsH");
   trigger.disabled = !state.chatSessionId;
   const item = (label, ic, fn) => {
     const b = el("button", "rail-menu-item", "");
@@ -5999,7 +6011,7 @@ function assistantBlock(text, live) {
  * 折起来只看"做了什么 + 成没成"，展开看传入参数与返回结果 —— 工具调用是过程，
  * 不该把正文挤没；但用户想核对时，又能一眼看到实际传了什么、拿回了什么。
  */
-function toolCard(tool) {
+function toolCard(tool, live) {
   const state2 = tool.running ? "执行中" : (tool.ok === false ? "失败" : "完成");
   const d = el("details", "tool-card" + (tool.running ? " running" : (tool.ok === false ? " failed" : "")));
   const sum = el("summary", "tool-head");
@@ -6008,6 +6020,8 @@ function toolCard(tool) {
     '<span class="tool-title">' + esc(toolLabel(tool)) + "</span>" +
     '<span class="tool-state">' + esc(state2) + "</span>" +
     '<span class="tool-chev">' + icon("chevron") + "</span>";
+  // 跑的时候展开（能看见它在干什么），这一轮结束就收起（用户要的：加载完默认折叠）
+  if (live) d.open = true;
   d.appendChild(sum);
   const body = el("div", "tool-body");
   if (tool.args && Object.keys(tool.args).length) {
@@ -6037,9 +6051,10 @@ function toolLabel(tool) {
  * 思考段：默认展开（用户要能看见它在想什么），点一下收起。
  * 摘要只报真实耗时 —— "已思考 N 秒"，不编造步骤。
  */
-function thinkRow(it) {
+function thinkRow(it, live) {
   const d = el("details", "think-row");
-  d.open = true;
+  // 只有正在跑的这一轮默认展开：跑完了就折起来，别让思考过程一直占着屏幕
+  d.open = !!live;
   const secs = Math.max(1, Math.round(Number(it.ms || 0) / 1000));
   const s = el("summary", "think-sum", "思考过程 · " + secs + " 秒");
   d.appendChild(s);
@@ -6134,8 +6149,8 @@ function renderTurnBlock(t, live) {
   }
   // 时间线：模型的每一段正文、每一次工具调用，按发生顺序
   for (const it of t.items) {
-    if (it.t === "think") box.appendChild(thinkRow(it));
-    else if (it.t === "tool") box.appendChild(toolCard(it));
+    if (it.t === "think") box.appendChild(thinkRow(it, live));
+    else if (it.t === "tool") box.appendChild(toolCard(it, live));
     else if (it.t === "resource") box.appendChild(resourceCard(it.resource, true));
     else if (it.text) box.appendChild(assistantBlock(it.text, live && it.streaming));
   }

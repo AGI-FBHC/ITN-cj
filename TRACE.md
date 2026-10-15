@@ -3477,3 +3477,41 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - `tools/stop-check.cjs` 11/11（它的假模型现在要认出命名请求、不计入轮次计数）；`tools/learning-check.cjs --ui` 57/57。
 - 产物：`dist/Lumin-0.3.3` 与 `dist/Lumin-0.3.3-win-x64.zip`；包内 9 项资产 SHA256 与源码逐项一致；
   空数据目录启动 `RESULT=OK`；`启动Lumin.cmd` 指向 0.3.3（0.2.0~0.3.2 全部保留）。
+## 2026-10-15 深夜 · 第七轮：思考/工具跑完默认折叠、横排三个点、拖动跟随鼠标（zoom 自校准）
+
+用户这一轮的三条反馈：
+
+### 1. "问个问题为什么跳出来这么多东西"
+- 查清了：用户把 `lumin://thread/<id>` 粘进输入框并让模型"读一下这个会话"。模型手上**没有读会话的工具**，
+  于是自己用 find/grep/powershell 去磁盘上翻——翻到的是改名前的**老 jsonl 快照**
+  （`%LOCALAPPDATA%\Lumin\sessions\--D--Desktop-仓颉杯-test--\*.jsonl`，同一条会话被切成十几个文件、
+  总共约 390KB），所以一路 find/grep/powershell + 思考段全堆在界面上。
+- 界面侧按用户要求改了：**思考段与工具卡在轮次跑完后默认折叠**（跑的时候仍然展开，能看着它想），
+  自然就不会一直铺满屏幕。内核侧没有给模型加"读会话"的工具（那是能力与隐私决定，留给用户拍板）。
+
+### 2. 顶栏三个点太小
+- 原来用的是**竖排**三个点（`M12 6h.01M12 12h.01M12 18h.01`）。改成横排实心圆点（新图标 `dotsH`，
+  三个 r=2 的 circle），按钮 28px、图标 16px。glass-shot 里加了断言：圆点数必须是 3、按钮不得小于 28px。
+
+### 3. 拖动条不跟鼠标
+- 根因找到了：界面上的"显示大小"是 `body` 的 `zoom`，**指针事件给的是屏幕坐标、CSS 宽度是布局坐标**，
+  直接拿 `clientX` 的差值当宽度增量，拖动就会按缩放比例滞后 —— 实测 zoom=1.3 时鼠标走 100px、
+  边界只走 78px（正好差 22%），用户说的"偏移那个点很多"就是这条。
+- 修法不去读设置里的 zoom，而是**就地自校准**：`屏幕宽度 ÷ 计算样式宽度` 就是实际缩放，
+  这样无论缩放来自设置、Ctrl±，还是别处写的 body zoom 都成立；起点宽度优先取 CSS 变量本身（取不到再退回布局宽度）。
+  另外给三栏 + 成果面板统一 `box-sizing: border-box`，CSS 宽度就等于量出来的宽度，不再有 1px 漂移。
+- 实测（`tmp/probe-dragoff.cjs`）：zoom 1 与 1.3 下，拖动边界与鼠标位移**偏移都是 0**。
+
+### 顺带
+- 假模型（tools/mock-openai）现在会先推一段 `reasoning_content`：以前它从不推推理内容，
+  "思考过程"那块在自检里根本没被渲染过（踩到一个小坑：加这段时 `step` 变量在定义前被引用，
+  直接让假模型半路崩掉、资源生成整条链路失败；已修）。
+- glass-shot 新增/更新断言：跑完的轮次里 `.think-row[open]` 与 `.tool-card[open]` 必须为 0、
+  顶栏三个点是横排三点且 ≥28px；`stop-check` 的假模型要认出"会话命名"请求并不计入轮次计数。
+
+### 验证与产物
+- `tools/glass-shot.cjs` 全过（COLLAPSED-BY-DEFAULT / DOTS / SESSION-TITLE / WORK-MODE / DRAG / POPOVER /
+  RAIL-GROUPS / NEW-SESSION / RAIL-NO-FLASH / SESSION-SWITCH / 控制台零报错）。
+- `tools/stop-check.cjs` 11/11；`tools/learning-check.cjs --ui` 57/57。
+- 产物：`dist/Lumin-0.3.4` 与 `dist/Lumin-0.3.4-win-x64.zip`；包内 8 项资产与源码哈希逐项一致；
+  空数据目录启动 `RESULT=OK`；`启动Lumin.cmd` 指向 0.3.4（0.2.0~0.3.3 全部保留）。

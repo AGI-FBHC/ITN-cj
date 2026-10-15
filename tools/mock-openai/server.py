@@ -475,7 +475,17 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
             return
+        # 真供应商会先推一段推理内容（reasoning_content）。这里也推一小段，
+        # 好让"思考过程"那一块在自检里真的被渲染出来（否则前端那条路径没人验）。
         step = 24
+        think = "先看懂问题，再决定要不要检索。"
+        for i in range(0, len(think), step):
+            piece = think[i:i + step]
+            chunk = {"id": "mock-chat", "object": "chat.completion.chunk", "model": model,
+                     "choices": [{"index": 0, "delta": {"reasoning_content": piece}, "finish_reason": None}]}
+            self.wfile.write(("data: " + json.dumps(chunk, ensure_ascii=False) + "\n\n").encode("utf-8"))
+            self.wfile.flush()
+            time.sleep(CHUNK_DELAY)
         for i in range(0, len(content), step):
             piece = content[i:i + step]
             chunk = {"id": "mock-chat", "object": "chat.completion.chunk", "model": model,

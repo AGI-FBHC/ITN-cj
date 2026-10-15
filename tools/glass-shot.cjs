@@ -264,7 +264,26 @@ const freePort = () => new Promise((res, rej) => {
     await sleep(200);
     console.log('CHAT-HEADER 面包屑=' + crumb.replace(/\s+/g, " ") + ' / 菜单=' + smText);
 
-    // 消息行：用户气泡下面是"时间 · 复制 · 重写"，回答下面是"复制 · 分支 · 时间"
+    /* 思考段与工具卡：**跑完就默认折叠**（用户要的"加载完之后就默认折叠，不要一直展开着"）。 */
+    const openThink = await page.locator('#chat-thread .think-row[open]').count();
+    if (openThink) throw new Error('跑完的轮次里思考段应当默认折叠，实际还有 ' + openThink + ' 个展开着');
+    const openTool = await page.locator('#chat-thread .tool-card[open]').count();
+    if (openTool) throw new Error('跑完的轮次里工具卡应当默认折叠，实际还有 ' + openTool + ' 个展开着');
+    if (!(await page.locator('#chat-thread .think-row').count())) throw new Error('这一段应当有思考段（假模型也会回 reasoning）');
+    console.log('COLLAPSED-BY-DEFAULT 思考段与工具卡都是收起的');
+
+    // 顶栏那三个点：横排、够大（用户说太小、要横着放）
+    const dotInfo = await page.evaluate(() => {
+      const b = document.querySelector('.wb-menu-btn');
+      const svg = b && b.querySelector('svg');
+      const r = b ? b.getBoundingClientRect() : null;
+      return { dots: svg ? svg.querySelectorAll('circle').length : 0, size: r ? Math.round(r.width) : 0 };
+    });
+    if (dotInfo.dots !== 3) throw new Error('顶栏的"更多"应当是横排三个点，实际圆点数 ' + dotInfo.dots);
+    if (dotInfo.size < 28) throw new Error('顶栏的"更多"按钮太小：' + dotInfo.size + 'px');
+    console.log('DOTS 三个点 size=' + dotInfo.size + 'px');
+
+    // 消息行：用户气泡下面是"时间 · 复制 · 重写"，回答下面是"复制 · 分支 · 时间\"
     if (!(await page.locator('#chat-thread .msg-user .msg-meta').count())) throw new Error('用户气泡下面应当有时间与图标');
     if (!(await page.locator('#chat-thread .msg-meta.left').count())) throw new Error('回答下面应当有复制/分支与时间');
     if (!(await page.locator('#chat-thread .msg-meta .msg-time').count())) throw new Error('消息底下应当显示时间');

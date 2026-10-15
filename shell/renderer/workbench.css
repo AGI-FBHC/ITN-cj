@@ -237,6 +237,7 @@ body.chat-mode .view.chat-blank .empty-title {font-size:28px;letter-spacing:-.02
    本文件在 style.css 之后加载：同特异性的宽度规则以这里为准，
    否则上面那条 .resource-dock 会把拖动结果盖掉（踩过：拖动条动了、宽度不动）。
    ============================================================ */
+.rail, .panel, .resource-dock { box-sizing: border-box; }
 .rail { flex: 0 0 var(--rail-w, 56px); width: var(--rail-w, 56px); }
 .panel { flex: 0 0 var(--panel-w, 250px); width: var(--panel-w, 250px); }
 .resource-dock {
