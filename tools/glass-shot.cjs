@@ -168,6 +168,61 @@ const freePort = () => new Promise((res, rej) => {
       if (over > 0) throw new Error(w + 'x' + h + ' 横向溢出 ' + over + 'px');
       await shot('13-narrow-' + w);
     }
+    /* 会话栏：形状照 Codex（项目 = 一行可折叠标题 + 缩进的会话），并且点一下必须"就地换"、
+       不许整页重建（原来会闪一次"加载中…"）。
+       成果面板是覆盖式的（窄窗口下盖住整个右侧），验点击前先把它收起。 */
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.evaluate(() => { const d = document.getElementById('resource-dock'); if (d) d.hidden = true; });
+    await nav('chat');
+
+    // ＋ → 常规聊天：新模式菜单必须真的能建出会话，并且那枚 chip 变成固定档
+    await page.locator('#rail-new').click();
+    await page.waitForSelector('.rail-menu.new-menu', { timeout: 5000 });
+    await page.locator('.rail-menu.new-menu .rail-menu-item').first().click();
+    await sleep(700);
+    const chipText = (await page.locator('.composer-chip.fixed').innerText()).replace(/\s+/g, "");
+    if (chipText.indexOf('常规聊天') < 0) throw new Error('常规聊天会话的 chip 应当是固定档「常规聊天」，实际：' + chipText);
+    console.log('CHAT-MODE 常规聊天 chip=' + chipText);
+
+    await page.locator('#chat-input').fill('第二个会话');
+    await page.locator('.composer-send').click();
+    await page.waitForFunction(() => !state.busyTurn, null, { timeout: 90000 });
+    await sleep(800);
+
+    // 旧的"项目 chip 一排"必须消失
+    if (await page.locator('.rail-new').count()) throw new Error('新建对话那一排 chip 应该已经去掉（改成右上角 ＋ 的模式菜单）');
+    const heads = await page.locator('#panel-body .rail-group-head').count();
+    if (!heads) throw new Error('会话栏应当有分组标题（普通对话 / 项目）');
+    const headText = (await page.locator('#panel-body .rail-group-name').first().innerText()).replace(/\s+/g, "");
+    if (headText.indexOf('普通对话') < 0) throw new Error('第一组应当是「普通对话」，实际：' + headText);
+    if (await page.locator('#panel-body .rail-group-head[data-group=""] .rail-group-actions').count()) {
+      throw new Error('「普通对话」行不该有项目动作（⋯ / 新建会话）');
+    }
+
+    // 右上角 ＋ ＝ 新模式菜单：常规聊天 / 指定工作区 / 新建项目
+    await page.locator('#rail-new').click();
+    await page.waitForSelector('.rail-menu.new-menu', { timeout: 5000 });
+    const menuText = (await page.locator('.rail-menu.new-menu').innerText()).replace(/\s+/g, " ");
+    if (menuText.indexOf('常规聊天') < 0) throw new Error('＋ 菜单里应当有「常规聊天」，实际：' + menuText);
+    if (menuText.indexOf('新建项目') < 0) throw new Error('＋ 菜单里应当有「新建项目…」，实际：' + menuText);
+    await page.keyboard.press('Escape');           // Esc 收起菜单
+    await sleep(200);
+    if (await page.locator('.rail-menu.new-menu').count()) throw new Error('点了别处，＋ 菜单应该收起');
+
+    const rows = await page.locator('#panel-body .panel-item').count();
+    if (rows < 2) throw new Error('至少要两段会话才能验切换，实际 ' + rows);
+    await page.evaluate(() => { window.__thread = document.querySelector('.chat-thread'); });
+    const t0 = Date.now();
+    await page.locator('#panel-body .panel-item').nth(1).click();
+    await page.waitForFunction(() => state.chatTurns.length > 0, null, { timeout: 15000 });
+    const ms = Date.now() - t0;
+    const same = await page.evaluate(() => window.__thread === document.querySelector('.chat-thread'));
+    if (!same) throw new Error('点会话把这页整页重建了（.chat-thread 换了节点）');
+    const active = await page.locator('#panel-body .panel-item.active').count();
+    if (active !== 1) throw new Error('切过去之后应只有一条高亮，实际 ' + active);
+    console.log('SESSION-SWITCH 就地切换 ' + ms + 'ms，未整页重建');
+    await shot('15-session-switch');
+
     await page.evaluate(() => { state.chatSessionId = ''; go('resources'); });
     await sleep(600);
     console.log('SHOTS ' + shots);

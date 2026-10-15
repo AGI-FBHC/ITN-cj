@@ -108,6 +108,61 @@ public class SessionStore {
     }
 
     /** 会话摘要：事件数、最后一条事件的时间与类型、首个用户提问作为标题。 */
+    /**
+     * 这一轮的第一条事件的 id；没有这一轮就返回 0。
+     *
+     * rewind / branch 都以它为分界：**从这一轮的第一条开始删（或从这里往后复制）**。
+     */
+    public func turnStartEventId(sessionId: String, turnId: String): Int64 {
+        if (sessionId.size == 0 || turnId.size == 0) {
+            return 0
+        }
+        return db().scalarInt("SELECT MIN(id) FROM session_events WHERE session_id = ? AND turn_id = ?",
+            va([tv(sessionId), tv(turnId)]))
+    }
+
+    /**
+     * 退回到某一轮之前：把那一轮以及它之后的全部事件删掉，返回删掉的条数。
+     *
+     * 用途是"我上一条说错了，改一下重发"。删除是物理删除（列表与历史都以事件为准），
+     * 同时把这段会话的上下文缓存与运行状态清掉 —— 它们描述的是"删掉之前的对话"，
+     * 留着会让下一轮把已经不存在的历史发给模型。清掉之后下一轮会按剩下的事件重建。
+     */
+    public func rewind(sessionId: String, turnId: String): Int64 {
+        let from = turnStartEventId(sessionId, turnId)
+        if (from <= 0) {
+            return 0
+        }
+        let removed = db().run("DELETE FROM session_events WHERE session_id = ? AND id >= ?",
+            va([tv(sessionId), nv(from)]))
+        db().delKv("sessions_meta", "context:" + sessionId)
+        db().delKv("sessions_meta", "state:" + sessionId)
+        return removed
+    }
+
+    /**
+     * 从某一轮分叉：新建一段会话，把这一轮**之前**的事件原样复制过去。
+     *
+     * 与 rewind 的差别是原会话一字不动（Codex 里"从这里开个分支"就是这个意思：
+     * 想换个问法重来，又不想丢掉原来那条线）。
+     */
+    public func branch(sessionId: String, turnId: String): String {
+        let from = turnStartEventId(sessionId, turnId)
+        let newSid = newId()
+        let now = DateTime.now().toString()
+        db().run("INSERT OR REPLACE INTO sessions (id, created_at, updated_at) VALUES (?, ?, ?)",
+            va([tv(newSid), tv(now), tv(now)]))
+        if (from <= 0) {
+            return newSid
+        }
+        // 逐行复制：payload 是原始 JSON 文本，直接搬过去，不做解析再序列化
+        //（解析一遍会把大 payload 重新格式化，既慢又可能改动字符）
+        let stmt = "INSERT INTO session_events (session_id, ts, kind, turn_id, payload) " +
+            "SELECT ?, ts, kind, turn_id, payload FROM session_events WHERE session_id = ? AND id < ? ORDER BY id"
+        db().run(stmt, va([tv(newSid), tv(sessionId), nv(from)]))
+        return newSid
+    }
+
     public func summary(sessionId: String): JsonObject {
         let o = JsonObject()
         o.put("sessionId", JsonString(sessionId))

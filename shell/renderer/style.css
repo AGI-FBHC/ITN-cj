@@ -2362,3 +2362,262 @@ body.chat-mode .view.chat-blank .empty-badge-brand { margin-bottom: 12px; }
 .tb-logo { width: 22px; height: 22px; border-radius: 6px; object-fit: contain; }
 .about-logo { object-fit: contain; }
 .empty-logo { object-fit: contain; }
+/* 项目那一行：只有文件夹 chip 与一个"＋"，不再有标题和说明文字 */
+.rail-new { align-items: center; gap: 6px; padding: 4px 8px 8px; }
+.rail-new-chip.icon-only { padding: 3px 6px; color: var(--muted); }
+.rail-new-chip.icon-only:hover { color: var(--ink); }
+
+/* ---------- 会话栏：Codex 形状的分组标题（项目 = 一行可折叠标题 + 缩进的会话） ---------- */
+.rail-group-head { position: relative; display: flex; align-items: center; margin: 5px 4px 1px; border-radius: 9px; }
+.rail-group-head:hover { background: var(--rail-hi); }
+.rail-group-name {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px;
+  padding: 7px 8px; border: 0; border-radius: 9px; background: none; cursor: pointer;
+  color: var(--ink); font-size: calc(12.5px * var(--fs, 1)); font-weight: 600; text-align: left;
+}
+.rail-group-chev svg { width: 12px; height: 12px; display: block; color: var(--muted); transition: transform 140ms var(--ease-out); }
+.rail-group-head.collapsed .rail-group-chev svg { transform: rotate(-90deg); }
+.rail-group-icon { display: grid; place-items: center; color: var(--muted); }
+.rail-group-icon svg { width: 15px; height: 15px; }
+.rail-group-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-group-count { color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; font-size: calc(11.5px * var(--fs, 1)); }
+.rail-group-actions { position: absolute; right: 5px; display: none; align-items: center; gap: 2px; }
+.rail-group-head:hover .rail-group-actions, .rail-group-head:focus-within .rail-group-actions { display: inline-flex; }
+.rail-group-actions-slot { position: relative; display: inline-flex; }
+.rail-group-btn {
+  width: 24px; height: 24px; padding: 0; display: grid; place-items: center;
+  border: 0; border-radius: 7px; background: var(--panel); color: var(--muted); cursor: pointer;
+}
+.rail-group-btn:hover { color: var(--ink); }
+.rail-group-btn svg { width: 15px; height: 15px; }
+/* 会话缩进：视觉上"挂在这个项目下面"，而不是和项目平级 */
+.rail-session { padding-left: 14px; }
+.rail-more {
+  margin: 1px 4px 6px 22px; padding: 5px 8px; border: 0; border-radius: 8px; background: none;
+  color: var(--muted); font-size: calc(12px * var(--fs, 1)); text-align: left; cursor: pointer;
+}
+.rail-more:hover { color: var(--ink); background: var(--rail-hi); }
+
+/* 侧栏浮层菜单：项目操作 / 新建对话。浮层一律不透明（玻璃会把下面的字透上来） */
+.rail-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 60;
+  min-width: 232px; max-width: 340px; padding: 6px; border-radius: 12px;
+  background: var(--panel); border: 1px solid var(--line);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, .18);
+}
+.rail-menu-title { padding: 6px 8px 4px; color: var(--muted); font-size: calc(11.5px * var(--fs, 1)); }
+.rail-menu-head {
+  display: flex; align-items: center; gap: 7px; padding: 7px 8px;
+  font-weight: 600; font-size: calc(12.5px * var(--fs, 1)); color: var(--ink);
+}
+.rail-menu-head svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--muted); }
+.rail-menu-head > span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-menu-pin svg { width: 14px; height: 14px; }
+.rail-menu-sub { padding: 0 8px 8px; color: var(--muted); font-size: calc(11.5px * var(--fs, 1)); word-break: break-all; }
+.rail-menu-sep { height: 1px; margin: 5px 6px; background: var(--line-soft); }
+.rail-menu-item {
+  width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 8px; border: 0; border-radius: 9px; background: none; cursor: pointer; text-align: left;
+  color: var(--ink); font-size: calc(12.5px * var(--fs, 1));
+}
+.rail-menu-item:hover { background: var(--panel-soft); }
+.rail-menu-item svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--muted); }
+.rail-menu-item.danger, .rail-menu-item.danger svg { color: var(--danger); }
+.rail-menu-main { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-menu-note { flex: 0 0 100%; padding-left: 23px; color: var(--muted); font-size: calc(11.5px * var(--fs, 1)); word-break: break-all; }
+.rail-menu.new-menu { min-width: 286px; }
+.panel-actions { position: relative; }
+
+/* 常规聊天那枚 chip 是"说明"不是"开关"，所以不给悬停反馈 */
+.composer-chip.fixed { cursor: default; }
+.composer-chip.fixed:hover { background: none; }
+
+
+/* ============================================================
+   第三轮视觉（2026-10-15 晚）：平顶栏 / 更紧的缝隙 / 简约气泡 /
+   深色流光金 + 黑（金色只留给控件与激活态）
+   ============================================================ */
+
+/* 1 · 顶部栏与页面背景同色：它不再是一块"带色承重面"，就是页面顶上的一条控制带 */
+.titlebar {
+  background-color: transparent;
+  background-image: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* 2 · 板块之间的缝隙收一半：外壳仍在，但不占那么多地方 */
+.app { padding: 6px 8px 8px; gap: 8px; }
+.rail { border-radius: var(--glass-r-md); }
+.panel { border-radius: var(--glass-r-md); }
+.resource-dock { border-radius: var(--glass-r-md); }
+.main { border-radius: var(--glass-r-md); }
+/* 主区自己也是一块外壳：给它与其它三块同一种承载面，四块才是"并列"而不是"拼在一起" */
+.main {
+  background-color: var(--glass-struct);
+  background-image: var(--glass-sheen-sm);
+  backdrop-filter: blur(var(--glass-blur-xl)) saturate(var(--glass-sat));
+  box-shadow: var(--glass-inner-lg), var(--glass-lift);
+  overflow: hidden;
+}
+.main > .topbar { padding: 14px 20px 10px; }
+.main > .view { padding: 12px 20px 40px; }
+body.chat-mode .view { padding: 0 16px 12px; }
+
+/* 3 · 用户气泡：简约 —— 一层浅底、无投影、无描边，宽度随内容 */
+.msg-user { display: flex; justify-content: flex-end; }
+.msg-user .msg-body {
+  max-width: min(760px, 78%);
+  padding: 9px 13px;
+  border-radius: 14px;
+  background-color: var(--bubble-user);
+  box-shadow: none;
+  color: var(--ink);
+  font-size: calc(14px * var(--fs, 1));
+  line-height: 1.6;
+}
+
+/* 4 · 深色主题：黑底 + 背景里的一点流光金。
+     金色只进背景光场（--glow / --amb-*），控件与文字仍是白 / 灰 —— 金色一大片就俗了，
+     它只该在角落里流动。 */
+html[data-theme="dark"] {
+  --bubble-user: rgba(255, 255, 255, .075);
+  /* 背景：偏暖的近黑（不是纯黑，也不是绿黑） */
+  --bg: #15140f;
+  --panel-bg: #100f0b;
+  --topbar-bg: transparent;
+  --glow: rgba(214, 174, 104, .10);
+  --glow-2: rgba(180, 142, 78, .07);
+  --amb-1: rgba(214, 174, 104, .17);
+  --amb-2: rgba(255, 232, 190, .055);
+  --amb-3: rgba(186, 190, 189, .045);
+  --amb-4: rgba(120, 92, 46, .16);
+  --amb-haze: rgba(255, 236, 200, .05);
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]):not([data-theme="dark"]) {
+    --bubble-user: rgba(255, 255, 255, .075);
+    --bg: #15140f;
+    --panel-bg: #100f0b;
+    --topbar-bg: transparent;
+    --glow: rgba(214, 174, 104, .10);
+    --glow-2: rgba(180, 142, 78, .07);
+    --amb-1: rgba(214, 174, 104, .17);
+    --amb-2: rgba(255, 232, 190, .055);
+    --amb-3: rgba(186, 190, 189, .045);
+    --amb-4: rgba(120, 92, 46, .16);
+    --amb-haze: rgba(255, 236, 200, .05);
+  }
+}
+:root { --bubble-user: rgba(20, 26, 22, .05); }
+
+
+/* ---------- 回复流：工具卡 / 思考段 / 那排 icon / 原始事件 ---------- */
+.tool-card {
+  margin: 6px 0 10px; border-radius: 11px; overflow: hidden;
+  background-color: var(--inner-fill, var(--panel-soft));
+  border: 1px solid var(--line);
+}
+.tool-card summary { list-style: none; }
+.tool-card summary::-webkit-details-marker { display: none; }
+.tool-head {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: pointer;
+  font-size: calc(12.5px * var(--fs, 1)); color: var(--ink-2);
+}
+.tool-head:hover { background-color: var(--panel-soft); }
+.tool-icon { display: grid; place-items: center; color: var(--muted); }
+.tool-icon svg { width: 14px; height: 14px; }
+.tool-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-state { color: var(--muted); font-size: calc(11.5px * var(--fs, 1)); }
+.tool-chev svg { width: 13px; height: 13px; color: var(--muted); transition: transform 140ms var(--ease-out); display: block; }
+.tool-card[open] .tool-chev svg { transform: rotate(180deg); }
+.tool-card.failed { border-color: var(--danger-soft); }
+.tool-card.failed .tool-state { color: var(--danger); }
+.tool-body { padding: 2px 10px 10px; }
+.tool-sub { color: var(--muted); font-size: calc(11.5px * var(--fs, 1)); margin: 6px 0 3px; }
+.tool-args, .tool-result {
+  margin: 0; padding: 8px 10px; border-radius: 9px; max-height: 260px; overflow: auto;
+  background-color: var(--panel-sunk); color: var(--ink-2);
+  font-size: calc(12px * var(--fs, 1)); line-height: 1.55; white-space: pre-wrap; word-break: break-word;
+}
+
+/* 思考段：默认展开，但比正文弱一档 */
+.think-row { margin: 4px 0 8px; border-left: 2px solid var(--line); padding-left: 10px; }
+.think-row summary { list-style: none; cursor: pointer; color: var(--muted); font-size: calc(12px * var(--fs, 1)); }
+.think-row summary::-webkit-details-marker { display: none; }
+.think-row summary:hover { color: var(--ink-2); }
+.think-text {
+  margin-top: 6px; padding: 8px 10px; border-radius: 9px;
+  background-color: var(--inner-fill, var(--panel-soft)); color: var(--ink-2);
+  font-size: calc(12.5px * var(--fs, 1)); line-height: 1.65; white-space: pre-wrap;
+}
+
+/* 回答下面那排：只有 icon，不要文字 */
+.turn-actions { gap: 2px; margin-top: 4px; opacity: .55; transition: opacity .15s var(--ease-out); }
+.turn-block:hover .turn-actions { opacity: 1; }
+.msg-icon-btn {
+  width: 26px; height: 26px; padding: 0; display: grid; place-items: center;
+  border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer;
+}
+.msg-icon-btn:hover { background-color: var(--panel-soft); color: var(--ink); }
+.msg-icon-btn svg { width: 15px; height: 15px; }
+.turn-raw { margin-top: 8px; }
+.turn-raw-title { color: var(--muted); font-size: calc(11.5px * var(--fs, 1)); margin-bottom: 4px; }
+.turn-raw-pre {
+  margin: 0; padding: 10px; border-radius: 10px; max-height: 320px; overflow: auto;
+  background-color: var(--panel-sunk); color: var(--ink-2);
+  font-size: calc(11.5px * var(--fs, 1)); line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+}
+
+/* 就地改这条消息 */
+.msg-editor { width: min(760px, 88%); }
+.msg-editor-input {
+  width: 100%; box-sizing: border-box; resize: vertical; padding: 10px 12px;
+  border-radius: 12px; border: 1px solid var(--brand-line); background-color: var(--panel);
+  color: var(--ink); font: inherit; font-size: calc(14px * var(--fs, 1)); line-height: 1.6;
+}
+.msg-editor-actions { margin-top: 8px; justify-content: flex-end; }
+
+
+/* ---------- 可拖的分栏边界 ---------- */
+.panel { position: relative; }
+.splitter {
+  position: absolute; top: 0; bottom: 0; width: 8px; z-index: 30;
+  cursor: col-resize; background: transparent; touch-action: none;
+}
+.splitter-panel { right: -4px; }
+.splitter-dock { left: 0; }
+.splitter::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px;
+  background: transparent; transition: background-color .14s var(--ease-out);
+}
+.splitter:hover::after, body.splitting .splitter::after { background-color: var(--brand-line); }
+body.splitting { cursor: col-resize; user-select: none; }
+body.splitting * { user-select: none !important; }
+
+.rail { flex: 0 0 var(--rail-w, 56px); width: var(--rail-w, 56px); }
+.panel { flex: 0 0 var(--panel-w, 250px); width: var(--panel-w, 250px); }
+.resource-dock { flex: 0 0 var(--dock-w, clamp(380px, 38vw, 620px)); width: var(--dock-w, clamp(380px, 38vw, 620px)); }
+
+/* ---------- 斜杠命令提示 ---------- */
+.slash-hint {
+  margin: 0 0 6px; padding: 5px; border-radius: 11px;
+  background-color: var(--panel); border: 1px solid var(--line);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, .12);
+}
+.slash-row {
+  display: flex; gap: 10px; align-items: baseline; width: 100%; padding: 6px 9px;
+  border: 0; border-radius: 8px; background: none; cursor: pointer; text-align: left;
+  color: var(--ink-2); font-size: calc(12.5px * var(--fs, 1));
+}
+.slash-row:hover { background-color: var(--panel-soft); }
+.slash-row b { color: var(--ink); font-weight: 600; }
+.slash-row span { color: var(--muted); }
+
+/* 折叠后的演示播放器：只留一条标题带 */
+.player.collapsed { bottom: auto; }
+.player.collapsed .player-head { border-bottom: 0; }
+
+/* 深色下的主区：跟着背景走一点暖色，别是死黑 */
+html[data-theme="dark"] .main { background-color: rgba(255, 255, 255, .035); }

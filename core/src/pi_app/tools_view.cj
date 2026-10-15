@@ -44,7 +44,7 @@ public func workspaceToolList(dataDir: String, workDir: String, allowExec: Bool,
     denyFiles.add(".env.local")
     let ws = Workspace(workDir, denyRoots, denyFiles, perm)
     let reg = ToolRegistry()
-    registerWorkspaceTools(reg, ws, allowExec && perm != "ask")
+    registerWorkspaceTools(reg, ws, allowExec)
     for (s in reg.allSpecs()) {
         arr.add(specJson(s))
     }

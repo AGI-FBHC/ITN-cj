@@ -239,6 +239,21 @@ func parseCell(page: Page, i: Int64, usableSize: Int64): CellInfo {
  * `case PT_TABLE_INTERIOR =>` 会把 t 绑给一个新名字并匹配一切, 后续分支永不可达,
  * 且编译器不报错。常量分派必须走 if/else 或 `case _ where t == C`。
  */
+/**
+ * cell 必须整块落在页内。
+ *
+ * 页里出现"越界的 cell"只有一个来源 —— 页内容已损坏(写坏的 cell 指针、被覆盖的 cell 头、
+ * 别的实现留下的垃圾)。这时要报"哪一页、哪个偏移、多少字节", 而不是放任 readU32 抛出
+ * 数组越界: 后者只留下一句 `The length of the array is 4096, but the index is 4922.`,
+ * 既看不到页号也定位不到 cell, 排查成本极高。
+ */
+func requireCellFits(page: Page, start: Int64, end: Int64, usableSize: Int64): Unit {
+    if (start < 0 || end > usableSize) {
+        throw SqliteFormatException(
+            "page ${page.pageNo}: cell at ${start} ends at ${end}, beyond the usable page end ${usableSize}")
+    }
+}
+
 func parseCellAt(page: Page, start: Int64, usableSize: Int64): CellInfo {
     let t = pageType(page)
     let buf = page.data
@@ -246,6 +261,7 @@ func parseCellAt(page: Page, start: Int64, usableSize: Int64): CellInfo {
         // 4 字节左子页 + rowid varint, 无 payload。
         let child = readU32(buf, start)
         let key = readVarint(buf, start + 4)
+        requireCellFits(page, start, start + 4 + key.size, usableSize)
         return CellInfo(start, 4 + key.size, 0, 0, 0, key.value, child, 0)
     }
     if (t == PT_TABLE_LEAF) {
@@ -254,6 +270,7 @@ func parseCellAt(page: Page, start: Int64, usableSize: Int64): CellInfo {
         let headSize = plen.size + key.size
         let local = localPayloadSize(plen.value, usableSize, true)
         let hasOverflow = local < plen.value
+        requireCellFits(page, start, start + headSize + local + (if (hasOverflow) { 4 } else { 0 }), usableSize)
         let ovfl = if (hasOverflow) {
             readU32(buf, start + headSize + local)
         } else {
@@ -270,6 +287,7 @@ func parseCellAt(page: Page, start: Int64, usableSize: Int64): CellInfo {
         let plen = readVarint(buf, start)
         let local = localPayloadSize(plen.value, usableSize, false)
         let hasOverflow = local < plen.value
+        requireCellFits(page, start, start + plen.size + local + (if (hasOverflow) { 4 } else { 0 }), usableSize)
         let ovfl = if (hasOverflow) {
             readU32(buf, start + plen.size + local)
         } else {
@@ -287,6 +305,7 @@ func parseCellAt(page: Page, start: Int64, usableSize: Int64): CellInfo {
         let plen = readVarint(buf, start + 4)
         let local = localPayloadSize(plen.value, usableSize, false)
         let hasOverflow = local < plen.value
+        requireCellFits(page, start, start + 4 + plen.size + local + (if (hasOverflow) { 4 } else { 0 }), usableSize)
         let ovfl = if (hasOverflow) {
             readU32(buf, start + 4 + plen.size + local)
         } else {
@@ -300,6 +319,14 @@ func parseCellAt(page: Page, start: Int64, usableSize: Int64): CellInfo {
         return CellInfo(start, size, plen.value, start + 4 + plen.size, local, 0, child, ovfl)
     }
     throw SqliteFormatException("page ${page.pageNo} has an unknown B-tree page type ${t}")
+}
+
+/** 空闲块偏移必须落在页内, 否则链已经损坏。 */
+func requireFreeblockFits(page: Page, off: Int64, usableSize: Int64): Unit {
+    if (off < FREEBLOCK_HEADER || off + FREEBLOCK_HEADER > usableSize) {
+        throw SqliteFormatException(
+            "page ${page.pageNo}: freeblock offset ${off} is outside the usable page 0..${usableSize}")
+    }
 }
 
 /** 页内剩余可用字节: 未分配的间隙 + 空闲链 + 碎片。 */
@@ -317,6 +344,7 @@ func totalFreeBytes(page: Page, pageSize: Int64, usableSize: Int64): Int64 {
         if (guard > usableSize / FREEBLOCK_HEADER + 1) {
             throw SqliteFormatException("page ${page.pageNo} has a circular freeblock chain")
         }
+        requireFreeblockFits(page, fb, usableSize)
         free += readU16(page.data, fb + 2)
         fb = readU16(page.data, fb)
     }
@@ -328,15 +356,27 @@ func totalFreeBytes(page: Page, pageSize: Int64, usableSize: Int64): Int64 {
  *
  * 必须按"内容区从高地址向低地址重排"来做, 且用一份临时拷贝 —— 原地搬会在 cell 区间
  * 重叠时互相覆盖。
+ *
+ * **解析也一律走快照**: 重排是从页尾往上贴, 放第 i 个 cell 时写入的位置就可能压住
+ * 后面那些 cell 的旧位置。若这时还从 page.data 解析, 那些 cell 会按"被覆盖后的字节"
+ * 解出长度, 进而算出离谱的本地长度、再去页内读溢出页号 —— 索引越过页尾, 报出来的却是
+ * 一句毫无线索的数组越界。用户实测到的那条
+ * `The length of the array is 4096, but the index is 4922.`
+ * 就出自这里 (readU32 ← parseCellAt ← defragmentPage)。tmp 整轮只读不写, 从它解析安全。
  */
 func defragmentPage(page: Page, pageSize: Int64, usableSize: Int64): Unit {
     let _ = pageSize
     let n = cellCount(page)
     let tmp = Array<Byte>(page.data.size, repeat: 0)
     page.data.copyTo(tmp, 0, 0, page.data.size)
+    let snapshot = Page(page.pageNo, tmp)
     var cursor = usableSize
     for (i in 0..n) {
-        let info = parseCellAt(page, readU16(tmp, cellPointerArrayOffset(page) + i * 2), usableSize)
+        let info = parseCellAt(snapshot, readU16(tmp, cellPointerArrayOffset(page) + i * 2), usableSize)
+        if (info.size <= 0 || info.size > usableSize) {
+            throw SqliteFormatException(
+                "page ${page.pageNo}: cell ${i} at ${info.offset} claims ${info.size} bytes, which cannot fit a page")
+        }
         cursor -= info.size
         tmp.copyTo(page.data, info.offset, cursor, info.size)
         setCellOffset(page, i, cursor)

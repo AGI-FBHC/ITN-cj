@@ -136,6 +136,14 @@ const ICONS = {
   shield: "M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6zM9 12l2 2 4-4",
   dots: "M12 6h.01M12 12h.01M12 18h.01",
   folder: "M3.5 6.5a1 1 0 0 1 1-1h4l2 2h8a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-14a1 1 0 0 1-1-1z",
+  // 新会话：一个方框 + 一支笔（Codex 侧栏项目行右边那个）
+  compose: "M4 5.5A1.5 1.5 0 0 1 5.5 4H12M20 12v6.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-13A1.5 1.5 0 0 1 5.5 4M17.5 3.2l3.3 3.3-7.6 7.6-4.2.9.9-4.2z",
+  pin: "M9 3h6l-.8 5.2 3.3 3.3v1.7H13v4.6l-1 2.2-1-2.2v-4.6H6.5v-1.7l3.3-3.3z",
+  close: "M6 6l12 12M18 6L6 18",
+  copy: "M9 9h11v11H9zM5 15V4h11",
+  branch: "M7 4v10a3 3 0 0 0 3 3h8M18 14l3 3-3 3M7 4a2 2 0 1 1 0 0",
+  code: "M9 8l-4 4 4 4M15 8l4 4-4 4",
+  pencil: "M4 20h4L20 8l-4-4L4 16z",
   hand: '<path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v-2a2 2 0 0 0-2-2 2 2 0 0 0-2 2v2.5"/><path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>',
 };
 
@@ -350,7 +358,7 @@ const state = {
   kb: "", chapter: null, artifactQuery: "", wrongTab: "due", wrongQuery: "",
   chatSessionId: "", chatTurns: [], chatEvents: [], tools: null, chatQuery: "", artifactFocus: "",
   webMode: "auto", skill: "", skills: [], lastReportArtifact: "", chatKb: null, railGroups: {},
-  projects: [], chatProject: "",
+  projects: [], chatProject: "", chatMode: "chat", railExpanded: {},
   busyTurn: false, pendingQuestion: "", lastQuestion: "",
   // 主题与会话栏偏好存在内核的 settings 表里（内核端口每次启动都变，localStorage 活不过一次重启）
   theme: "system", dark: false, panelHidden: false, kernel: null, uiZoom: 1, uiFont: 1,
@@ -668,6 +676,7 @@ async function go(page, section, opts) {
   if (meta.actions) for (const a of meta.actions()) ta.appendChild(a);
   const v = $("view");
   v.classList.remove("chat-blank");
+  state.chatOpenSession = null;   // 整页要重建了，就地换会话的句柄作废
   v.innerHTML = '<div class="empty inline"><span class="spinner"></span> 加载中…</div>';
   // 真正滚动的是 #view（.main 是 overflow:hidden）。此前重置的是 .main，等于没重置，
   // 于是从长页面切到别的页面会停在半截。就地更新（例如标记已读）则刻意不调用 go()，保住阅读位置。
@@ -3374,7 +3383,7 @@ function artifactItem(a, clickable) {
   row.appendChild(ic);
   row.appendChild(main);
   row.appendChild(tag(ARTIFACT_KIND_LABEL[kind], kind === "lecture" ? "ok" : ""));
-  row.appendChild(btn("播放", "sm primary", () => openSlidePlayer(a.name)));
+  row.appendChild(btn("播放", "sm primary", () => openSlidePlayer(a.name, undefined, undefined, a.path)));
   if (clickable) {
     row.appendChild(btn("打开", "sm ghost", () => openArtifactByName(a.name)));
     row.appendChild(btn("重命名", "sm ghost", () => renameArtifactDialog(a)));
@@ -3464,7 +3473,19 @@ PAGES.resources = {
       title: "已生成的产物",
       sub: "全部存在本机 artifacts 目录",
       tag: state.artifacts.length + " 份",
-      actions: [btn("再生成一份", "sm primary", () => go("learn")), btn("刷新", "sm ghost", () => go("resources"))],
+      actions: [
+        btn("再生成一份", "sm primary", () => go("learn")),
+        // 演示文稿很可能是别的工具生成的（PowerPoint / python-pptx），这里给一条直通预览的路
+        btn("打开演示文稿…", "sm ghost", async () => {
+          const a = window.itnWindow;
+          if (!a || typeof a.pickDeck !== "function") { toast("只在桌面应用窗口里可用"); return; }
+          const file = await a.pickDeck();
+          if (!file) return;
+          const short = String(file).replace(/\\/g, "/").split("/").pop();
+          openSlidePlayer(short, undefined, undefined, file);
+        }),
+        btn("刷新", "sm ghost", () => go("resources")),
+      ],
     });
 
     const tools = el("div", "row artifact-tools");
@@ -3768,18 +3789,238 @@ async function savePrefs(patch) {
 function applyPrefs(p) {
   applyTheme(p.theme);
   setPanelVisible(p.sessionRail !== "0");
+  applyWidths(p);
   // 智能体那几项也在偏好里（/api/settings 不带它们），拷到 cfg 上给设置页与对话框用。
   // 另外留一份 state.agentPrefs：loadCfg() 会把 cfg 整个换掉，换完要用它合回来，
   // 否则"刚在设置里选的权限"会被下一次 loadCfg 冲成默认值（踩过）。
   state.agentPrefs = {
     agentWorkDir: p.agentWorkDir === undefined ? (state.agentPrefs ? state.agentPrefs.agentWorkDir : "") : p.agentWorkDir,
     agentPerm: p.agentPerm === undefined ? (state.agentPrefs ? state.agentPrefs.agentPerm : "ask") : p.agentPerm,
-    agentExec: p.agentExec === undefined ? (state.agentPrefs ? state.agentPrefs.agentExec : "0") : p.agentExec,
+    // 命令默认开（内核那边 agent_exec 也默认 "1"）；用户关过就按关的来
+    agentExec: p.agentExec === undefined ? (state.agentPrefs ? state.agentPrefs.agentExec : "1") : p.agentExec,
+    // 用户没指定工作目录时，界面要显示"现在实际用的是哪个目录"，所以内核把默认目录也回过来
+    defaultWorkDir: p.defaultWorkDir === undefined ? (state.agentPrefs ? state.agentPrefs.defaultWorkDir : "") : p.defaultWorkDir,
   };
   Object.assign(state.cfg, state.agentPrefs);
   // 没存过就用默认（1 / 1）；刷新后按内核里记的来
   applyZoom(p.uiZoom === undefined || p.uiZoom === "" ? 1 : p.uiZoom);
   applyFont(p.uiFont === undefined || p.uiFont === "" ? 1 : p.uiFont);
+}
+
+/* ---------- 分栏宽度可拖（对话页的会话栏 / 成果面板） ---------- */
+
+/**
+ * 两个可拖的边界。
+ *
+ * 拖动条做成"贴在面板边缘的一条细窄条"，而不是插到 .app 里当兄弟节点 ——
+ * 成果面板是工作台脚本按需创建/移除的，插兄弟节点会在它出现时错位。
+ */
+const LAYOUT_COLS = {
+  panel: { key: "uiPanelW", css: "--panel-w", min: 180, max: 520, dir: 1, sel: ".panel" },
+  dock: { key: "uiDockW", css: "--dock-w", min: 300, max: 900, dir: -1, sel: ".resource-dock" },
+};
+const layoutW = { panel: null, dock: null };
+
+function setColWidth(k, v) {
+  const L = LAYOUT_COLS[k];
+  const n = Math.max(L.min, Math.min(L.max, Math.round(Number(v))));
+  layoutW[k] = n;
+  document.documentElement.style.setProperty(L.css, n + "px");
+  return n;
+}
+
+function applyWidths(p) {
+  for (const k of Object.keys(LAYOUT_COLS)) {
+    const raw = p ? p[LAYOUT_COLS[k].key] : "";
+    const v = Number(raw);
+    if (v && !Number.isNaN(v)) setColWidth(k, v);
+  }
+}
+
+function makeSplitter(k) {
+  const L = LAYOUT_COLS[k];
+  const h = el("div", "splitter splitter-" + k, "");
+  h.title = "拖动调整宽度 · 双击恢复默认";
+  h.setAttribute("aria-label", "调整宽度");
+  let startX = 0, startW = 0, dragging = false;
+  h.addEventListener("pointerdown", (e) => {
+    const target = document.querySelector(L.sel);
+    if (!target) return;
+    dragging = true;
+    startX = e.clientX;
+    startW = target.getBoundingClientRect().width;
+    try { h.setPointerCapture(e.pointerId); } catch (err) { /* 老环境 */ }
+    document.body.classList.add("splitting");
+    e.preventDefault();
+  });
+  h.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    setColWidth(k, startW + L.dir * (e.clientX - startX));
+  });
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.classList.remove("splitting");
+    savePrefs({ [LAYOUT_COLS[k].key]: String(layoutW[k] || "") });
+  };
+  h.addEventListener("pointerup", end);
+  h.addEventListener("pointercancel", end);
+  h.addEventListener("dblclick", () => {
+    layoutW[k] = null;
+    document.documentElement.style.removeProperty(LAYOUT_COLS[k].css);
+    savePrefs({ [LAYOUT_COLS[k].key]: "" });
+    toast("这一栏恢复默认宽度");
+  });
+  return h;
+}
+
+/** 幂等：面板每次渲染都调一次，已挂过就不重复挂（成果面板是动态创建/移除的）。 */
+function installSplitters() {
+  for (const k of Object.keys(LAYOUT_COLS)) {
+    const target = document.querySelector(LAYOUT_COLS[k].sel);
+    if (target && !target.querySelector(".splitter-" + k)) target.appendChild(makeSplitter(k));
+  }
+}
+
+/* ---------- 斜杠命令：窗口里也能用 lumin 那几个开关 ---------- */
+
+/**
+ * 输入框里以 / 开头的就是命令，不当正文发出去。
+ *
+ * 命令行那版 lumin 的 \ 开关（模型 / 联网 / 权限 / 技能）在窗口里没有等价入口，
+ * 用户得跑到设置页去点；这里把它们搬到手边，语义与设置页完全一致 ——
+ * 都是改同一份设置，不存在"命令行里改了、设置页看不见"的第二套状态。
+ */
+const SLASH_COMMANDS = [
+  { cmd: "/help", args: "", desc: "看这一页能用哪些命令", run: () => showSlashHelp() },
+  { cmd: "/new", args: "", desc: "开一段新的常规聊天", run: () => newChat("", "chat") },
+  { cmd: "/model", args: "名字", desc: "切换对话模型（不带参数＝列出并打开设置）", run: (a) => slashModel(a) },
+  { cmd: "/perm", args: "ask|auto|full", desc: "权限档位（常规聊天锁死在 ask）", run: (a) => slashPerm(a) },
+  { cmd: "/web", args: "off|auto|on", desc: "联网档位", run: (a) => slashWeb(a) },
+  { cmd: "/skill", args: "名字", desc: "绑定技能（不带参数＝列出可用技能）", run: (a) => slashSkill(a) },
+  { cmd: "/dir", args: "", desc: "改默认工作目录（打开选择框）", run: () => slashDir() },
+  { cmd: "/branch", args: "", desc: "从最后一轮开一段分支会话", run: () => slashBranch() },
+  { cmd: "/stop", args: "", desc: "停止正在跑的这一轮", run: () => { const b = document.querySelector(".composer-send"); if (b) b.click(); } },
+  { cmd: "/clear", args: "", desc: "清空输入框", run: () => { const t = $("chat-input"); if (t) { t.value = ""; t.focus(); } } },
+];
+
+function slashMatches(text) {
+  const t = String(text || "");
+  if (t.charAt(0) !== "/") return [];
+  const word = t.split(/\s+/)[0].toLowerCase();
+  return SLASH_COMMANDS.filter((c) => c.cmd.indexOf(word) === 0);
+}
+
+function slashHintShow(on, text) {
+  let box = $("slash-hint");
+  if (!box) {
+    box = el("div", "slash-hint");
+    box.id = "slash-hint";
+    const ta = $("chat-input");
+    if (ta && ta.parentElement) ta.parentElement.insertBefore(box, ta);
+  }
+  if (!on) { box.hidden = true; return; }
+  const hits = slashMatches(text);
+  box.innerHTML = "";
+  if (!hits.length) {
+    box.appendChild(el("div", "slash-row", "没有这个命令 · 输入 /help 看全部"));
+  } else {
+    for (const c of hits.slice(0, 6)) {
+      const row = el("button", "slash-row", "");
+      row.type = "button";
+      row.innerHTML = "<b>" + esc(c.cmd + (c.args ? " " + c.args : "")) + "</b><span>" + esc(c.desc) + "</span>";
+      row.onmousedown = (e) => { e.preventDefault(); const ta = $("chat-input"); if (ta) { ta.value = c.cmd + " "; ta.focus(); } slashHintShow(true, c.cmd + " "); };
+      box.appendChild(row);
+    }
+  }
+  box.hidden = false;
+}
+
+function showSlashHelp() {
+  const v = $("view");
+  const dlg = el("div", "card dialog");
+  dlg.appendChild(cardHeadOnly("窗口里的命令"));
+  const ul = el("ul", "about-list");
+  for (const c of SLASH_COMMANDS) {
+    ul.appendChild(el("li", null, c.cmd + (c.args ? " " + c.args : "") + " — " + c.desc));
+  }
+  dlg.appendChild(ul);
+  dlg.appendChild(el("p", "muted sm", "命令改的就是设置页里那份状态：模型、联网、权限、技能、工作目录。"));
+  const row = el("div", "row");
+  row.appendChild(btn("知道了", "primary", () => dlg.remove()));
+  dlg.appendChild(row);
+  v.insertBefore(dlg, v.firstChild);
+  dlg.scrollIntoView({ block: "start" });
+}
+
+async function slashModel(arg) {
+  const models = state.cfg.models || [];
+  if (!arg) {
+    toast("当前：" + (modelLabel(state.cfg.chatModelId) || "未配置") + "（" + models.length + " 个可用）");
+    go("settings", "models");
+    return;
+  }
+  const hit = models.find((m) => m.id === arg || (m.name || "").toLowerCase() === arg.toLowerCase()
+    || (m.model || "").toLowerCase() === arg.toLowerCase());
+  if (!hit) { toast("没有这个模型：" + arg + "（用 /model 不带参数看清单）"); return; }
+  await api("/api/models/roles", { chatModelId: hit.id, embedModelId: state.cfg.embedModelId, chunkModelId: state.cfg.chunkModelId });
+  await loadCfg();
+  toast("对话模型已切到「" + (hit.name || hit.id) + "」");
+  renderPanel();
+  go("chat");
+}
+
+async function slashPerm(arg) {
+  if (state.chatProject === "") { toast("常规聊天是固定档（只写默认目录）；权限档位在 Work 会话里选"); return; }
+  const m = String(arg || "").toLowerCase();
+  if (m !== "ask" && m !== "auto" && m !== "full") { toast("用法：/perm ask | auto | full"); return; }
+  state.cfg.agentPerm = m;
+  await savePrefs({ agentPerm: m });
+  toast("权限：" + (PERM_LABEL[m] || m));
+  go("chat");
+}
+
+async function slashWeb(arg) {
+  const m = String(arg || "").toLowerCase();
+  if (m !== "off" && m !== "auto" && m !== "on") { toast("用法：/web off | auto | on（当前 " + (state.webMode || "auto") + "）"); return; }
+  try {
+    await api("/api/websearch/save", { mode: m });
+    state.webMode = m;
+    toast("联网档位：" + m);
+    go("chat");
+  } catch (e) { toast("改不了：" + e.message); }
+}
+
+function slashSkill(arg) {
+  const list = state.skills || [];
+  if (!arg) {
+    const names = list.map((s) => s.id).filter(Boolean);
+    toast(names.length ? "可用技能：" + names.slice(0, 6).join("、") : "没有可用技能（先在设置里放技能目录）");
+    return;
+  }
+  const hit = list.find((s) => s.id === arg || (s.title || "") === arg);
+  if (!hit) { toast("没有这个技能：" + arg); return; }
+  state.skill = hit.id;
+  toast("已绑定技能：" + (hit.title || hit.id));
+  go("chat");
+}
+
+async function slashDir() {
+  const a = window.itnWindow;
+  if (!a || typeof a.pickDirectory !== "function") { toast("选目录只在桌面应用窗口里可用"); return; }
+  const picked = await a.pickDirectory();
+  if (!picked) return;
+  await savePrefs({ agentWorkDir: picked });
+  state.cfg.agentWorkDir = picked;
+  toast("默认工作目录：" + picked);
+  go("chat");
+}
+
+async function slashBranch() {
+  const turns = state.chatTurns || [];
+  const t = turns[turns.length - 1];
+  if (!t || !t.id || t.id === "local") { toast("这一段还没有可以分支的轮次"); return; }
+  await branchFromTurn(t);
 }
 
 /**
@@ -3901,7 +4142,7 @@ async function runPaletteSearch(raw) {
   if (notes.length) groups.push(["笔记", notes]);
 
   const arts = cache.artifacts.filter((a) => hit(a.name)).slice(0, 5)
-    .map((a) => paletteItemMain(a.name, fmtSize(a.size) + (a.page > 0 ? " · 上次讲到第 " + a.page + " 页" : ""), "产物", () => openSlidePlayer(a.name)));
+    .map((a) => paletteItemMain(a.name, fmtSize(a.size) + (a.page > 0 ? " · 上次讲到第 " + a.page + " 页" : ""), "产物", () => openSlidePlayer(a.name, undefined, undefined, a.path)));
   if (arts.length) groups.push(["产物", arts]);
 
   let flat = [];
@@ -4070,7 +4311,7 @@ function closePalette() {
 
 /* ---------- 课件播放器：把讲义/练习/章节按二级标题切成页，逐页讲授 ---------- */
 
-const playerState = { key: "", name: "", slides: [], index: 0, fontSize: 18, tocOpen: false, saveTimer: null };
+const playerState = { key: "", name: "", slides: [], index: 0, fontSize: 18, tocOpen: false, collapsed: false, saveTimer: null };
 
 /**
  * 按标题把一份 Markdown 切成"页"。
@@ -4127,10 +4368,56 @@ function applyPlayerFont() {
   if (root) root.style.setProperty("--slide-font", playerState.fontSize + "px");
 }
 
-async function openSlidePlayer(name, content, key) {
+/**
+ * 一份演示文稿的每一页 → 播放器要的 {title, body}。
+ *
+ * pptx 的文字是壳里解出来的（见 shell/pptx.js）：第一行当标题，其余当正文。
+ * 这是**文字预览** —— 排版、图片、动画还在 PowerPoint 里，按钮里给了直达入口。
+ */
+function deckToSlides(deck) {
+  return (deck.slides || []).map((sl, i) => {
+    const lines = String(sl.text || "").split("\n");
+    const title = (lines.shift() || "").trim() || ("第 " + (i + 1) + " 页");
+    return { title: title, body: lines.join("\n").trim() };
+  });
+}
+
+async function openSlidePlayer(name, content, key, path) {
   const root = $("player");
   if (!root) return;
+  playerState.path = path || "";
+  playerState.deck = false;
   let text = content;
+  const isDeck = /\.(pptx|pptm|ppt)$/i.test(String(name || ""));
+  if (isDeck && text === undefined) {
+    // 演示文稿不是 Markdown：交给壳去解（离线、只读），失败就如实说读不了
+    const a = window.itnWindow;
+    if (!a || typeof a.readDeck !== "function") {
+      toast("读演示文稿只在桌面应用窗口里可用");
+      return;
+    }
+    const r = await a.readDeck(path || name);
+    if (!r.ok) {
+      toast("读不了这份演示文稿：" + r.error);
+      return;
+    }
+    playerState.deck = true;
+    playerState.slides = deckToSlides(r);
+    if (!playerState.slides.length) {
+      toast("这份演示文稿里没有可显示的页面");
+      return;
+    }
+    playerState.name = name;
+    playerState.key = key || name;
+    playerState.tocOpen = false;
+    playerState.index = 0;
+    root.hidden = false;
+    document.body.classList.add("player-open");
+    applyPlayerFont();
+    renderPlayer();
+    toast(r.kind === "ppt" ? "旧版 .ppt 只能给出文字预览" : "演示文稿按文字预览打开");
+    return;
+  }
   if (text === undefined) {
     try {
       text = (await api("/api/artifacts/read", { name: name })).content;
@@ -4220,9 +4507,25 @@ function renderPlayer() {
   tools.appendChild(btn("A−", "sm ghost", () => { playerState.fontSize = Math.max(14, playerState.fontSize - 2); applyPlayerFont(); }));
   tools.appendChild(btn("A+", "sm ghost", () => { playerState.fontSize = Math.min(30, playerState.fontSize + 2); applyPlayerFont(); }));
   tools.appendChild(btn(document.fullscreenElement ? "退出全屏" : "全屏", "sm ghost", () => togglePlayerFullscreen()));
+  tools.appendChild(btn(playerState.collapsed ? "展开" : "折叠", "sm ghost", () => {
+    playerState.collapsed = !playerState.collapsed;
+    renderPlayer();
+  }));
+  if (playerState.deck && playerState.path) {
+    tools.appendChild(btn("用 PowerPoint 打开", "sm ghost", () => {
+      const a = window.itnWindow;
+      if (a && typeof a.openPath === "function") {
+        a.openPath(playerState.path).then((r) => { if (r && r.ok === false) toast(r.error); });
+      } else {
+        toast("用系统程序打开只在桌面应用窗口里可用");
+      }
+    }));
+  }
   tools.appendChild(btn("关闭", "sm", () => closePlayer()));
   head.appendChild(tools);
   root.appendChild(head);
+  root.classList.toggle("collapsed", !!playerState.collapsed);
+  if (playerState.collapsed) return;   // 折叠 = 只留这一条，页面主体让出来
 
   if (playerState.tocOpen) {
     const toc = el("div", "player-toc");
@@ -4585,6 +4888,7 @@ async function renderPanel() {
   body.innerHTML = "";
   foot.innerHTML = "";
   panelHead(def ? def.title : (PAGE_META[current] || {}).title, def && def.actions ? def.actions() : []);
+  installSplitters();
   if (!def || !def.render) return;
   const ui = { foot: (node) => { foot.innerHTML = ""; foot.appendChild(node); } };
   await def.render(body, ui);
@@ -4881,62 +5185,19 @@ PANELS.kb = {
 /* ---------- 伴学助手：会话列表 ---------- */
 PANELS.chat = {
   title: "对话",
-  // ＋ = 沿用"当前这段对话的资料范围"再开一段；要换范围用上面那排 chip（通用 / 某个库）
+  // ＋ ＝ 新建对话：点它选"常规聊天"还是某个项目的 Work（见 newChatMenu）
   actions: () => [
-    panelBtn("plus", "新建对话", () => newChat(undefined), "rail-new"),
+    panelBtn("plus", "新建对话", () => newChatMenu($("rail-new")), "rail-new"),
     panelBtn("search", "全部会话", () => go("chat", "overview"), "rail-all"),
   ],
   async render(body, ui) {
     await loadCfg();
     await loadSessions();
-
-    /* 新建会话：像 Codex 那样按项目（一个项目 = 一个文件夹）开一段。
-       检索范围不再按知识库切分：任何一段对话都能检索本机全部知识库。 */
     await loadProjects();
-    const newRow = el("div", "rail-new");
-    newRow.appendChild(el("div", "rail-new-title", "新建对话"));
-    const mkProject = (p) => {
-      const b = el("button", "rail-new-chip");
-      b.type = "button";
-      b.dataset.project = p.id;
-      b.title = p.root + "\n新对话在这个文件夹里干活；检索范围始终是本机全部知识库。";
-      b.innerHTML = icon("folder") + "<span>" + esc(p.name || p.root) + "</span>";
-      b.onclick = async () => {
-        await newChat(p.id);
-        toast("新对话 · " + (p.name || p.root));
-      };
-      return b;
-    };
-    for (const p of (state.projects || [])) {
-      newRow.appendChild(mkProject(p));
-    }
-    const addProject = el("button", "rail-new-chip ghost");
-    addProject.type = "button";
-    addProject.innerHTML = icon("plus") + "<span>新建项目…</span>";
-    addProject.title = "选一个本机文件夹作为一个项目";
-    addProject.onclick = async () => {
-      const a = window.itnWindow;
-      if (!a || typeof a.pickDirectory !== "function") {
-        toast("选文件夹只在桌面应用窗口里可用");
-        return;
-      }
-      const dir = await a.pickDirectory();
-      if (!dir) return;
-      try {
-        const p = await api("/api/projects/save", { root: dir });
-        await loadProjects();
-        await newChat(p.id);
-        toast("新项目 · " + (p.name || p.root));
-      } catch (e) {
-        toast("新建项目失败：" + e.message);
-      }
-    };
-    newRow.appendChild(addProject);
-    if (!(state.projects || []).length) {
-      newRow.appendChild(el("div", "muted sm rail-new-hint", "还没有项目。点「新建项目…」选一个文件夹，之后这段对话就在它里面干活（检索仍然是全部知识库）。"));
-    }
-    body.appendChild(newRow);
 
+    /* 会话栏的骨架照 Codex：项目是一行可折叠的标题（文件夹 + 名字 + 计数，悬停时右侧
+       出现 ⋯ 与"新建会话"），会话缩进列在它下面；没挂项目的会话归到"普通对话"。
+       "新建对话"只有一处入口 —— 右上角那个 ＋。 */
     const search = inputOf("rail-search", "搜索会话", state.chatQuery || "");
     search.className = "panel-search";
     search.oninput = () => { state.chatQuery = search.value; renderPanel(); };
@@ -4945,45 +5206,68 @@ PANELS.chat = {
     const q = String(state.chatQuery || "").trim().toLowerCase();
     const items = state.sessions.filter((x) => !q || String(x.title || "").toLowerCase().indexOf(q) >= 0);
     if (!items.length) {
-      body.appendChild(panelEmpty(state.sessions.length ? "没有匹配的会话。" : "还没有对话。上面选一个项目就能开一段。"));
+      body.appendChild(panelEmpty(state.sessions.length ? "没有匹配的会话。" : "还没有对话。点右上角 ＋ 开一段。"));
       return;
     }
 
-    /* 按项目分组（Codex 的会话列就是这么分的）：项目按登记顺序，未归档放最后 */
+    /* 分组键："" ＝ 普通对话（没挂项目，工作目录就是默认目录），其余是项目 id。
+       置顶的项目排最前，普通对话固定排最后 —— 它最常开，也最不需要找。 */
     const groups = new Map();
     for (const x of items) {
       const key = x.projectId || "";
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(x);
     }
+    const orderedProjects = (state.projects || []).slice()
+      .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
     const order = [];
-    for (const p of (state.projects || [])) {
-      if (groups.has(p.id)) order.push(p.id);
-    }
+    for (const pr of orderedProjects) if (groups.has(pr.id)) order.push(pr.id);
+    for (const k of groups.keys()) if (k !== "" && order.indexOf(k) < 0) order.push(k);
     if (groups.has("")) order.push("");
-    for (const k of groups.keys()) {
-      if (order.indexOf(k) < 0) order.push(k);
-    }
-    body.appendChild(panelGroup("共 " + state.sessions.length + " 段 · 按项目分组"));
+
+    const RAIL_OPEN_DEFAULT = 6;
     for (const key of order) {
       const mine = groups.get(key);
       if (!mine || !mine.length) continue;
-      const name = key ? (projectName(key) || "已删除的项目") : "未归档";
+      const project = key ? (state.projects || []).find((x) => x.id === key) : null;
+      const name = key ? (project ? (project.name || project.root) : "已删除的项目") : "普通对话";
       const collapsed = !!state.railGroups[key];
-      const head = el("button", "panel-group-head");
-      head.type = "button";
+
+      const head = el("div", "rail-group-head" + (collapsed ? " collapsed" : ""));
       head.dataset.group = key;
-      head.innerHTML = icon("chevron") + "<span>" + esc(name) + "</span><span class='panel-group-count'>" + mine.length + "</span>";
-      head.classList.toggle("collapsed", collapsed);
-      head.onclick = () => {
-        state.railGroups[key] = !collapsed;
-        renderPanel();
-      };
+      const nameBtn = el("button", "rail-group-name", "");
+      nameBtn.type = "button";
+      nameBtn.title = project ? project.root : "没挂项目的对话（工作目录 = 默认目录）";
+      nameBtn.innerHTML =
+        '<span class="rail-group-chev">' + icon("chevron") + "</span>" +
+        '<span class="rail-group-icon">' + icon(project ? "folder" : "chat") + "</span>" +
+        "<span class='rail-group-text'>" + esc(name) + "</span>" +
+        "<span class='rail-group-count'>" + mine.length + "</span>";
+      nameBtn.onclick = () => { state.railGroups[key] = !collapsed; renderPanel(); };
+      head.appendChild(nameBtn);
+      if (key) {
+        const acts = el("span", "rail-group-actions");
+        acts.appendChild(projectMenu(project, key));
+        if (project) {
+          const add = el("button", "rail-group-btn", "");
+          add.type = "button";
+          add.title = "在「" + name + "」里开新会话";
+          add.setAttribute("aria-label", "新建会话");
+          add.innerHTML = icon("compose");
+          add.onclick = (ev) => { ev.stopPropagation(); newChat(key, "work"); };
+          acts.appendChild(add);
+        }
+        head.appendChild(acts);
+      }
       body.appendChild(head);
       if (collapsed) continue;
-      // 组内按最近动静倒序
-      mine.slice().sort((a, b) => String(b.lastAt || "").localeCompare(String(a.lastAt || ""))).forEach((x) => {
-        const rowEl = el("div", "panel-item-row");
+
+      const sorted = mine.slice()
+        .sort((a, b) => String(b.lastAt || "").localeCompare(String(a.lastAt || "")));
+      const expanded = !!state.railExpanded[key];
+      const shown = expanded ? sorted : sorted.slice(0, RAIL_OPEN_DEFAULT);
+      for (const x of shown) {
+        const rowEl = el("div", "panel-item-row rail-session");
         rowEl.appendChild(panelItem({
           id: x.sessionId,
           active: x.sessionId === state.chatSessionId,
@@ -4993,10 +5277,201 @@ PANELS.chat = {
         }));
         rowEl.appendChild(sessionRowMenu(x, rowEl));
         body.appendChild(rowEl);
-      });
+      }
+      if (sorted.length > RAIL_OPEN_DEFAULT) {
+        const more = el("button", "rail-more", expanded
+          ? "收起"
+          : "展开显示（还有 " + (sorted.length - RAIL_OPEN_DEFAULT) + " 段）");
+        more.type = "button";
+        more.onclick = () => { state.railExpanded[key] = !expanded; renderPanel(); };
+        body.appendChild(more);
+      }
     }
   },
 };
+
+/**
+ * 项目行的 ⋯ 菜单：置顶 / 编辑 / 在资源管理器中打开 / 移除项目。
+ *
+ * 只放引擎真的做得到的几件事（分区、归档这些还没有对应能力，先不摆出来当摆设）。
+ */
+function projectMenu(project, key) {
+  const wrap = el("span", "rail-group-actions-slot");
+  const trigger = el("button", "rail-group-btn", "");
+  trigger.type = "button";
+  trigger.title = "项目操作";
+  trigger.setAttribute("aria-label", "项目操作");
+  trigger.innerHTML = icon("dots");
+  let menu = null;
+  const close = () => { if (menu) { menu.remove(); menu = null; } };
+  const item = (label, ic, cls, fn) => {
+    const b = el("button", cls || "", "");
+    b.type = "button";
+    b.innerHTML = icon(ic || "chevron") + "<span>" + esc(label) + "</span>";
+    b.onclick = (ev) => { ev.stopPropagation(); close(); fn(); };
+    return b;
+  };
+  trigger.onclick = (ev) => {
+    ev.stopPropagation();
+    if (menu) { close(); return; }
+    menu = el("div", "rail-menu project-menu");
+    if (project) {
+      const head = el("div", "rail-menu-head");
+      head.innerHTML = icon("folder") + "<span>" + esc(project.name || project.root) + "</span>" +
+        (project.pinned ? '<span class="rail-menu-pin">' + icon("pin") + "</span>" : "");
+      menu.appendChild(head);
+      menu.appendChild(el("div", "rail-menu-sub", project.root));
+      menu.appendChild(item(project.pinned ? "取消置顶" : "置顶", "pin", "", async () => {
+        try {
+          await api("/api/projects/pin", { id: project.id, pinned: project.pinned ? "0" : "1" });
+          await loadProjects();
+          renderPanel();
+          toast(project.pinned ? "已取消置顶" : "已置顶");
+        } catch (e) { toast("失败：" + e.message); }
+      }));
+      menu.appendChild(item("编辑项目…", "gear", "", () => editProjectDialog(project)));
+      menu.appendChild(item("在资源管理器中打开", "folder", "", () => {
+        const a = window.itnWindow;
+        if (a && typeof a.openPath === "function") a.openPath(project.root);
+        else toast("打开文件夹只在桌面应用窗口里可用");
+      }));
+      menu.appendChild(el("div", "rail-menu-sep"));
+      menu.appendChild(item("移除项目", "close", "danger", async () => {
+        if (!window.confirm("移除项目「" + (project.name || project.root) + "」？\n\n只把它从列表里拿掉，对话与文件都不动 —— 那些对话会回到「普通对话」。")) return;
+        try {
+          await api("/api/projects/delete", { id: project.id });
+          await loadProjects();
+          await reloadSessions();
+          renderPanel();
+          toast("已移除项目");
+        } catch (e) { toast("失败：" + e.message); }
+      }));
+    }
+    wrap.appendChild(menu);
+    const onKey = (e2) => {
+      if (e2.key === "Escape") {
+        close();
+        document.removeEventListener("click", away);
+        document.removeEventListener("keydown", onKey);
+      }
+    };
+    const away = (e2) => {
+      if (!wrap.contains(e2.target)) {
+        close();
+        document.removeEventListener("click", away);
+        document.removeEventListener("keydown", onKey);
+      }
+    };
+    setTimeout(() => {
+      document.addEventListener("click", away);
+      document.addEventListener("keydown", onKey);
+    }, 0);
+  };
+  wrap.appendChild(trigger);
+  return wrap;
+}
+
+/** 编辑项目：改名（文件夹不动；改工作目录是另一件事）。 */
+function editProjectDialog(project) {
+  const v = $("view");
+  const dlg = el("div", "card dialog");
+  dlg.appendChild(cardHeadOnly("编辑项目"));
+  const input = inputOf("project-name", "项目名字", project.name || "");
+  dlg.appendChild(fieldOf("名字", input));
+  dlg.appendChild(el("p", "muted sm", "文件夹不变：" + project.root));
+  const row = el("div", "row");
+  row.appendChild(btn("保存", "primary", async () => {
+    const next = input.value.trim();
+    if (!next) { toast("名字不能为空"); return; }
+    try {
+      await api("/api/projects/save", { id: project.id, name: next, root: project.root });
+      dlg.remove();
+      await loadProjects();
+      renderPanel();
+      toast("已改名");
+    } catch (e) { toast("失败：" + e.message); }
+  }));
+  row.appendChild(btn("取消", "ghost", () => dlg.remove()));
+  dlg.appendChild(row);
+  v.insertBefore(dlg, v.firstChild);
+  dlg.scrollIntoView({ block: "start" });
+}
+
+/**
+ * 右上角 ＋ 的菜单：常规聊天 / 某个项目的 Work / 新建项目。
+ *
+ * 两种模式的差别只有"工作目录"和"能写哪儿"，所以把这两句写在选项下面 ——
+ * 用户点之前就该知道它能碰自己哪些文件。
+ */
+function newChatMenu(anchor) {
+  if (!anchor) return;
+  const host = anchor.parentElement || document.body;
+  const live = host.querySelector(".rail-menu.new-menu");
+  if (live) { live.remove(); return; }
+  const menu = el("div", "rail-menu new-menu");
+  const pick = (projectId, mode) => { menu.remove(); newChat(projectId, mode); };
+
+  menu.appendChild(el("div", "rail-menu-title", "新建对话"));
+
+  const reg = el("button", "rail-menu-item", "");
+  reg.type = "button";
+  reg.innerHTML = icon("chat") + "<span class='rail-menu-main'>常规聊天</span>" +
+    "<span class='rail-menu-note'>整机只读 · 只对默认工作目录可写</span>";
+  reg.onclick = () => pick("", "chat");
+  menu.appendChild(reg);
+
+  const projects = state.projects || [];
+  if (projects.length) {
+    menu.appendChild(el("div", "rail-menu-sep"));
+    menu.appendChild(el("div", "rail-menu-title", "指定工作区（Work）"));
+    for (const pr of projects) {
+      const b = el("button", "rail-menu-item", "");
+      b.type = "button";
+      b.innerHTML = icon("folder") + "<span class='rail-menu-main'>" + esc(pr.name || pr.root) + "</span>" +
+        "<span class='rail-menu-note'>" + esc(pr.root) + "</span>";
+      b.onclick = () => pick(pr.id, "work");
+      menu.appendChild(b);
+    }
+  }
+
+  menu.appendChild(el("div", "rail-menu-sep"));
+  const mk = el("button", "rail-menu-item", "");
+  mk.type = "button";
+  mk.innerHTML = icon("plus") + "<span class='rail-menu-main'>新建项目…</span>" +
+    "<span class='rail-menu-note'>选一个本机文件夹</span>";
+  mk.onclick = async () => {
+    menu.remove();
+    const a = window.itnWindow;
+    if (!a || typeof a.pickDirectory !== "function") {
+      toast("选文件夹只在桌面应用窗口里可用");
+      return;
+    }
+    const dir = await a.pickDirectory();
+    if (!dir) return;
+    try {
+      const project = await api("/api/projects/save", { root: dir });
+      await loadProjects();
+      await newChat(project.id, "work");
+      toast("新项目 · " + (project.name || project.root));
+    } catch (e) {
+      toast("新建项目失败：" + e.message);
+    }
+  };
+  menu.appendChild(mk);
+
+  host.appendChild(menu);
+  const closeAll = () => {
+    menu.remove();
+    document.removeEventListener("click", away);
+    document.removeEventListener("keydown", onKey);
+  };
+  const away = (e) => { if (!host.contains(e.target)) closeAll(); };
+  const onKey = (e) => { if (e.key === "Escape") closeAll(); };
+  setTimeout(() => {
+    document.addEventListener("click", away);
+    document.addEventListener("keydown", onKey);
+  }, 0);
+}
 
 /* ---------- 设置：分区 ---------- */
 PANELS.settings = {
@@ -5028,8 +5503,14 @@ async function openChatSession(id) {
   const meta = (state.sessions || []).filter((x) => x.sessionId === id)[0];
   // 归属哪个项目跟着会话走；检索范围始终是全部知识库
   state.chatProject = meta ? (meta.projectId || "") : "";
+  state.chatMode = state.chatProject ? "work" : "chat";
   state.chatKb = "";
   state.chatSessionId = id;
+  // 已经在对话页：就地换这一段，不整页重建 —— 原来点一下就闪一次"加载中…"
+  if (current === "chat" && currentSection !== "overview" && typeof state.chatOpenSession === "function") {
+    await state.chatOpenSession(id);
+    return;
+  }
   go("chat");
 }
 
@@ -5175,16 +5656,22 @@ function deleteSessionDialog(s) {
  * kbId 必须由用户给（""=通用：本机所有知识库都能检索）——"这段对话用哪份资料"是开工前就该定的事，
  * 让它猜或者事后切库，都会把两边的资料混进同一段对话里。
  */
-async function newChat(projectId) {
+async function newChat(projectId, mode) {
   try {
-    // 新对话只选项目；检索范围不再按知识库切分 —— 永远是本机全部知识库
+    // 新对话只选模式与项目；检索范围不再按知识库切分 —— 永远是本机全部知识库。
+    // mode: "chat" = 常规聊天（只写默认工作目录）/ "work" = 指定工作区（权限由 chip 定）
     const d = await api("/api/sessions/new", { projectId: projectId || "" });
     state.chatProject = d.projectId || "";
+    state.chatMode = (mode === "work" || (d.projectId || "")) ? "work" : "chat";
     state.chatKb = "";
     state.chatSessionId = d.sessionId;
     state.chatEvents = [];
     state.lastEventId = 0;
     state.chatTurns = [];
+    if (current === "chat" && currentSection !== "overview" && typeof state.chatOpenSession === "function") {
+      await state.chatOpenSession(state.chatSessionId);
+      return;
+    }
     go("chat");
   } catch (e) {
     toast("新建会话失败：" + e.message);
@@ -5278,36 +5765,93 @@ function assistantBlock(text, live) {
 }
 
 /** 工具调用：一行，左边一个点（跑着时是转圈），右边一行摘要。点一下展开参数。 */
-function renderToolRows(tools) {
-  const box = el("div", "tool-rows");
-  for (const tool of tools) {
-    const row = el("div", "tool-row" + (tool.running ? " running" : (tool.ok === false ? " failed" : "")));
-    row.appendChild(el("span", "tool-dot"));
-    let label = TOOL_LABEL[tool.name] || tool.name || "工具";
-    if (tool.args && tool.args.query) label += "：" + tool.args.query;
-    if (tool.args && tool.args.expr) label += "：" + tool.args.expr;
-    if (tool.args && tool.args.chunk_id) label += "：" + tool.args.chunk_id;
-    if (tool.args && tool.args.path) label += "：" + tool.args.path;
-    row.appendChild(el("span", "tool-name", label));
-    const det = el("details", "tool-detail");
-    const sum = el("summary", "tool-sum", tool.summary || (tool.running ? "执行中…" : ""));
-    det.appendChild(sum);
-    if (tool.args && Object.keys(tool.args).length) {
-      det.appendChild(el("pre", "tool-args", JSON.stringify(tool.args, null, 2)));
-    }
-    row.appendChild(det);
-    box.appendChild(row);
+/**
+ * 工具调用：一张可折叠的卡。
+ *
+ * 折起来只看"做了什么 + 成没成"，展开看传入参数与返回结果 —— 工具调用是过程，
+ * 不该把正文挤没；但用户想核对时，又能一眼看到实际传了什么、拿回了什么。
+ */
+function toolCard(tool) {
+  const state2 = tool.running ? "执行中" : (tool.ok === false ? "失败" : "完成");
+  const d = el("details", "tool-card" + (tool.running ? " running" : (tool.ok === false ? " failed" : "")));
+  const sum = el("summary", "tool-head");
+  sum.innerHTML =
+    '<span class="tool-icon">' + (tool.running ? '<span class="spinner"></span>' : icon("gear")) + "</span>" +
+    '<span class="tool-title">' + esc(toolLabel(tool)) + "</span>" +
+    '<span class="tool-state">' + esc(state2) + "</span>" +
+    '<span class="tool-chev">' + icon("chevron") + "</span>";
+  d.appendChild(sum);
+  const body = el("div", "tool-body");
+  if (tool.args && Object.keys(tool.args).length) {
+    body.appendChild(el("div", "tool-sub", "传入参数"));
+    body.appendChild(el("pre", "tool-args", JSON.stringify(tool.args, null, 2)));
   }
-  return box;
+  if (tool.summary) {
+    body.appendChild(el("div", "tool-sub", "返回结果"));
+    body.appendChild(el("pre", "tool-result", tool.summary));
+  } else if (!tool.running) {
+    body.appendChild(el("div", "tool-sub muted sm", "（这个工具没有回内容）"));
+  }
+  d.appendChild(body);
+  return d;
 }
 
-/** 思考段：一行折叠摘要（Codex 那种"已思考 N 秒"），点开才看内容 —— 时间线是"想 → 动手 → 回答"。 */
+/** 工具卡标题：名字 + 最有信息量的那个参数（查询词 / 命令 / 路径）。 */
+function toolLabel(tool) {
+  let label = TOOL_LABEL[tool.name] || tool.name || "工具";
+  const a = tool.args || {};
+  const key = a.query || a.command || a.expr || a.chunk_id || a.path || a.url || a.topic || a.kind;
+  if (key) label += "：" + String(key).slice(0, 80);
+  return label;
+}
+
+/**
+ * 思考段：默认展开（用户要能看见它在想什么），点一下收起。
+ * 摘要只报真实耗时 —— "已思考 N 秒"，不编造步骤。
+ */
 function thinkRow(it) {
   const d = el("details", "think-row");
+  d.open = true;
   const secs = Math.max(1, Math.round(Number(it.ms || 0) / 1000));
-  d.appendChild(el("summary", "think-sum", "已思考 " + secs + " 秒"));
+  const s = el("summary", "think-sum", "思考过程 · " + secs + " 秒");
+  d.appendChild(s);
   if (it.text) d.appendChild(el("div", "think-text", it.text));
   return d;
+}
+
+/** 正文下面那排 icon：复制 / 改这条重发 / 从这里开分支 / 看内部事件。 */
+function iconBtn(label, iconName, onClick, cls) {
+  const b = el("button", "msg-icon-btn" + (cls ? " " + cls : ""), "");
+  b.type = "button";
+  b.title = label;
+  b.setAttribute("aria-label", label);
+  b.innerHTML = icon(iconName);
+  b.onclick = onClick;
+  return b;
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("已复制到剪贴板");
+  } catch (e) {
+    toast("复制失败，请手动选择文本");
+  }
+}
+
+/** 这一轮的原始事件（界面显示的一切都是从它们渲染出来的，这里给出原始 JSON）。 */
+function rawTurnToggle(t, box) {
+  const b = iconBtn("看这一轮的内部事件（原始 JSON）", "code", () => {
+    const live = box.querySelector(".turn-raw");
+    if (live) { live.remove(); return; }
+    const evs = (state.chatEvents || []).filter((e) => (e.turnId || "—") === t.id);
+    const wrap = el("div", "turn-raw");
+    wrap.appendChild(el("div", "turn-raw-title", "这一轮实际传输的事件（" + evs.length + " 条）"));
+    wrap.appendChild(el("pre", "turn-raw-pre", JSON.stringify(evs, null, 2)));
+    box.appendChild(wrap);
+    wrap.scrollIntoView({ block: "nearest" });
+  });
+  return b;
 }
 
 function renderTurnBlock(t, live) {
@@ -5324,7 +5868,7 @@ function renderTurnBlock(t, live) {
   // 时间线：模型的每一段正文、每一次工具调用，按发生顺序
   for (const it of t.items) {
     if (it.t === "think") box.appendChild(thinkRow(it));
-    else if (it.t === "tool") box.appendChild(renderToolRows([it]));
+    else if (it.t === "tool") box.appendChild(toolCard(it));
     else if (it.t === "resource") box.appendChild(resourceCard(it.resource, true));
     else if (it.text) box.appendChild(assistantBlock(it.text, live && it.streaming));
   }
@@ -5362,17 +5906,99 @@ function renderTurnBlock(t, live) {
     return "";
   })();
   if (!live && t.ok !== false && (t.citations.length || t.report)) box.appendChild(citationBox(t.citations, t.report));
-  if (!live && t.ok !== false && lastText) {
-    const acts = el("div", "row msg-actions");
-    acts.appendChild(btn("做成讲义", "sm ghost", () => askTopic("lecture", topicFromText(t.user || lastText))));
-    acts.appendChild(btn("做成练习册", "sm ghost", () => askTopic("quiz", topicFromText(t.user || lastText))));
-    acts.appendChild(btn("做成实操", "sm ghost", () => promptLearning("请围绕「" + topicFromText(t.user || lastText) + "」生成一份实操指南")));
-    acts.appendChild(btn("做成演示", "sm ghost", () => promptLearning("请围绕「" + topicFromText(t.user || lastText) + "」生成一份在线演示课件")));
-    acts.appendChild(copyButton(() => lastText, "复制"));
+  if (!live) {
+    /* 这一排只放"对这段回答本身"的三个动作。
+       上一版这里是"做成讲义 / 练习册 / 实操 / 演示"四个文字按钮 —— 生成什么资源是
+       由你开口决定的事（直接说"做成讲义"就行），不该在每条回答下面摆一排快捷方式。 */
+    const acts = el("div", "row msg-actions turn-actions");
+    const last = (state.chatTurns || [])[state.chatTurns.length - 1];
+    const isLast = !!last && last.id === t.id;
+    if (lastText) acts.appendChild(iconBtn("复制这段回答", "copy", () => copyText(lastText)));
+    if (t.user && t.id && t.id !== "local" && isLast) {
+      acts.appendChild(iconBtn("改这条重发", "pencil", () => editTurnInline(t, box)));
+    }
+    if (t.id && t.id !== "local") {
+      acts.appendChild(iconBtn("从这里开分支", "branch", () => branchFromTurn(t)));
+    }
+    acts.appendChild(rawTurnToggle(t, box));
     box.appendChild(acts);
   }
   return box;
 }
+
+/**
+ * 改一下这条用户消息再重发。
+ *
+ * 只对**最后一条**用户消息开放：中间某一条改掉，后面的回答就全对不上了 ——
+ * 那是"分支"该干的事（原会话留着，另开一段重来）。
+ */
+function editTurnInline(t, box) {
+  const u = box.querySelector(".msg-user");
+  if (!u || u.querySelector(".msg-editor")) return;
+  const body = u.querySelector(".msg-body");
+  const original = t.user || "";
+  const wrap = el("div", "msg-editor");
+  const ta = el("textarea", "msg-editor-input");
+  ta.value = original;
+  ta.rows = Math.min(8, Math.max(2, original.split("\n").length));
+  wrap.appendChild(ta);
+  const row = el("div", "row msg-editor-actions");
+  row.appendChild(btn("保存并重发", "sm primary", () => resendEdited(t, ta.value.trim(), false)));
+  row.appendChild(btn("另开分支再发", "sm ghost", () => resendEdited(t, ta.value.trim(), true)));
+  row.appendChild(btn("取消", "sm ghost", () => wrap.remove()));
+  wrap.appendChild(row);
+  body.replaceWith(wrap);
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+  ta.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); resendEdited(t, ta.value.trim(), false); }
+    if (e.key === "Escape") wrap.remove();
+  });
+}
+
+/** 改主意了：把这一轮起的历史删掉再发新的（或另开一段分支发）。 */
+async function resendEdited(t, text, asBranch) {
+  if (!text) { toast("内容不能为空"); return; }
+  try {
+    if (asBranch) {
+      const d = await api("/api/sessions/branch", { sessionId: state.chatSessionId, turnId: t.id });
+      state.chatSessionId = d.sessionId;
+      state.chatEvents = [];
+      state.lastEventId = 0;
+      state.chatTurns = [];
+    } else {
+      const d = await api("/api/sessions/rewind", { sessionId: state.chatSessionId, turnId: t.id });
+      if (!d.ok) { toast("这一轮已经找不到了，刷新一下再试"); return; }
+      const fresh = await api("/api/sessions/events", { sessionId: state.chatSessionId });
+      state.chatEvents = fresh.events || [];
+      state.lastEventId = fresh.lastId || 0;
+      state.chatTurns = turnsFromEvents(state.chatEvents);
+    }
+    await reloadSessions();
+    if (current === "chat" && typeof state.chatOpenSession === "function") {
+      await state.chatOpenSession(state.chatSessionId);
+    } else {
+      go("chat");
+    }
+    if (state.chatResend) state.chatResend(text);
+  } catch (e) {
+    toast("没改成：" + e.message);
+  }
+}
+
+/** 从这一轮开分支：原会话一字不动，新会话带过来这一轮之前的历史。 */
+async function branchFromTurn(t) {
+  try {
+    const d = await api("/api/sessions/branch", { sessionId: state.chatSessionId, turnId: t.id });
+    await loadProjects();
+    await reloadSessions();
+    openChatSession(d.sessionId);
+    toast("已从这一轮开出新分支（原会话还在）");
+  } catch (e) {
+    toast("分支失败：" + e.message);
+  }
+}
+
 
 PAGES.chat = {
   async render() {
@@ -5449,9 +6075,9 @@ PAGES.chat = {
           tlist.appendChild(it);
         }
       }
-      if (!(state.cfg.agentWorkDir || "")) {
-        tlist.appendChild(el("div", "muted sm", "「本机文件」那组要等你在「设置 → 智能体」里指定工作目录之后才会出现。"));
-      }
+      tlist.appendChild(el("div", "muted sm", "工作目录：常规聊天用默认目录（" +
+        esc(state.cfg.agentWorkDir || state.cfg.defaultWorkDir || "") +
+        "），Work 会话用项目文件夹 —— 可在「设置 → 智能体」里改默认目录。"));
     }
     sheet.appendChild(tlist);
     v.appendChild(sheet);
@@ -5496,14 +6122,25 @@ PAGES.chat = {
       const d = state.cfg.agentWorkDir || "";
       return d ? (d.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || d) : "";
     };
+    /* 常规聊天是固定档：整机可读，只对默认工作目录可写 —— 这枚 chip 只做指示，
+       想放开权限得在侧栏里为那个目录建一个 Work 会话（否则"完全访问"就成了默认值）。 */
+    const isChatMode = () => !state.chatProject;
     const paintPermChip = () => {
+      const wd = workDirName();
+      if (isChatMode()) {
+        permChip.innerHTML = icon("chat") + "<span>常规聊天</span>";
+        permChip.title = "整机只读 · 只对默认工作目录可写" +
+          "\n默认目录：" + (state.cfg.agentWorkDir || state.cfg.defaultWorkDir || "") +
+          "\n想让它改别的目录：在侧栏里为那个目录建一个 Work 会话";
+        permChip.classList.add("fixed");
+        return;
+      }
       const m = state.cfg.agentPerm || "ask";
       permChip.innerHTML = icon("shield") + "<span>" + esc(PERM_LABEL[m] || m) + "</span>" + icon("chevron");
-      const wd = workDirName();
       permChip.title = (PERM_HINT[m] || "") + (wd
-        ? "\n工作目录：" + state.cfg.agentWorkDir
-        : "\n还没有指定工作目录：Lumin 现在只能问答，指定后它才能读写文件");
-      permChip.classList.toggle("off", !wd);
+        ? "\n工作目录：" + (state.cfg.agentWorkDir || state.cfg.defaultWorkDir || "")
+        : "");
+      permChip.classList.remove("fixed");
     };
     paintPermChip();
     crow.appendChild(permChip);
@@ -5656,7 +6293,14 @@ PAGES.chat = {
       if (menuBuilt && !menu.hidden) { closeMenu(); return; }
       openMenu("perm");
     };
-    permChip.onclick = (ev) => { ev.stopPropagation(); openMenu("perm"); };
+    permChip.onclick = (ev) => {
+      ev.stopPropagation();
+      if (isChatMode()) {
+        toast("常规聊天：整机可读，只对默认工作目录可写。要放开权限，请为那个目录建一个 Work 会话");
+        return;
+      }
+      openMenu("perm");
+    };
 
     // 输入框随内容长高（最多 8 行），像桌面聊天客户端那样
     const grow = () => {
@@ -5665,8 +6309,10 @@ PAGES.chat = {
     };
     ta.addEventListener("input", () => {
       grow();
-      // 输入 / 就是"调用技能"（和 Codex 一样）：只出技能，不出别的动作
-      if (ta.value.trimStart().startsWith("/")) openMenu("skills");
+      /* 以 / 开头就是命令（窗口里的 lumin 开关），列出匹配项；
+         原来这里只弹技能菜单 —— 现在技能是其中一条（/skill）。 */
+      const v = ta.value.trimStart();
+      slashHintShow(v.startsWith("/"), v);
     });
     grow();
 
@@ -5906,6 +6552,8 @@ PAGES.chat = {
         // 检索范围固定为"本机全部知识库"：空 kbId 在内核里就是通用模式的语义
         const payload = {
           kbId: "", question: text, sessionId: sid, web: "auto",
+          // 模式由会话决定：普通对话（没项目）＝ 常规聊天，内核据此锁死"只写默认目录"
+          mode: (state.chatProject ? "work" : "chat"),
           skill: state.skill || "", perm: state.cfg.agentPerm || "ask",
           // 界面上下文：用户正在看哪一章——"这一章"才有落点，不用模型反查/反问
           ctxChapter: state.chapter || "",
@@ -5954,12 +6602,35 @@ PAGES.chat = {
       if (e.isComposing) return;
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
+        const raw = ta.value.trim();
+        // 命令优先：/xxx 交给命令表，不发给模型（模型那头没有 lumin 的开关）
+        if (raw.startsWith("/")) {
+          const parts = raw.slice(1).split(/\s+/);
+          const hit = SLASH_COMMANDS.find((c) => c.cmd === "/" + (parts[0] || "").toLowerCase());
+          if (hit) {
+            ta.value = "";
+            grow();
+            slashHintShow(false);
+            hit.run(parts.slice(1).join(" ").trim());
+            return;
+          }
+        }
         send();
         return;
       }
-      if (e.key === "Escape" && state.busyTurn) {
-        e.preventDefault();
-        stopTurn();
+      if (e.key === "Escape") {
+        const v = ta.value.trimStart();
+        if (v.startsWith("/")) {
+          e.preventDefault();
+          ta.value = "";
+          grow();
+          slashHintShow(false);
+          return;
+        }
+        if (state.busyTurn) {
+          e.preventDefault();
+          stopTurn();
+        }
       }
     };
     window.addEventListener("keydown", (e) => {
@@ -5974,6 +6645,30 @@ PAGES.chat = {
     }, 2000);
 
     state.chatPaint = paint;
+    /* 就地换会话：只换对话区那一段正文，不整页重建、也不重拉会话列表。
+       会话栏只把高亮挪过去 —— 点一次就闪一次"加载中…"的问题就出在原来走的是整页 go()。 */
+    state.chatOpenSession = async (id) => {
+      state.chatSessionId = id;
+      state.chatEvents = [];
+      state.lastEventId = 0;
+      state.chatTurns = [];
+      paintCache.clear();
+      paintOrder = "";
+      try {
+        const d = await api("/api/sessions/events", { sessionId: id });
+        state.chatEvents = d.events || [];
+        state.lastEventId = d.lastId || 0;
+        state.chatTurns = turnsFromEvents(state.chatEvents);
+      } catch (e) {
+        toast("读取会话失败：" + e.message);
+      }
+      state.stickBottom = true;
+      paint();
+      for (const node of document.querySelectorAll("#panel-body .panel-item")) {
+        node.classList.toggle("active", node.dataset.id === id);
+      }
+      ta.focus();
+    };
     /* 已有会话：把历史事件还原成线程 */
     if (state.chatSessionId) {
       try {
@@ -6633,12 +7328,13 @@ function settingsAgent() {
   const perm = state.cfg.agentPerm || "ask";
 
   const card = cardOf({
-    title: "工作目录",
-    tag: dir ? "已指定" : "未指定",
-    tagCls: dir ? "ok" : "warn",
+    title: "默认工作目录",
+    tag: dir ? "已指定" : "用默认值",
+    tagCls: dir ? "ok" : "",
+    sub: "常规聊天用它：整机可读，只有这个目录能写。指定工作区（Work）会话则用项目自己的文件夹。",
   });
   const row = el("div", "row dir-row");
-  const dirInput = inputOf("agent-dir", "还没指定。指定之后 Lumin 才能读写文件", dir);
+  const dirInput = inputOf("agent-dir", "默认目录", dir || (state.cfg.defaultWorkDir || ""));
   dirInput.className = "grow";
   dirInput.readOnly = true;
   row.appendChild(dirInput);
@@ -6669,8 +7365,9 @@ function settingsAgent() {
   }
   card.appendChild(row);
   card.appendChild(el("p", "muted sm", dir
-    ? "Lumin 能在这个目录里读写文件、按下面的档位决定要不要先问你。"
-    : "不指定的话，Lumin 只能问答与检索 —— 它碰不到你电脑上的任何文件。"));
+    ? "Lumin 在常规聊天里只能写这个目录；想让它改别的位置，在侧栏里为那个目录建一个 Work 会话。"
+    : "现在用的是默认目录：" + (state.cfg.defaultWorkDir || "") +
+      " —— Lumin 在常规聊天里只能写它；想放开别的位置，在侧栏里为那个目录建一个 Work 会话。"));
   g.appendChild(card);
 
   /* 工具与技能：原来挂在对话框的 ＋ 菜单里，按用户要求撤掉那边的入口，挪到这里。 */
@@ -6700,7 +7397,7 @@ function settingsAgent() {
   toolsCard.appendChild(tlist);
   g.appendChild(toolsCard);
 
-  const permCard = cardOf({ title: "权限", sub: "与对话框左下角那枚开关是同一个设置" });
+  const permCard = cardOf({ title: "权限（Work 会话）", sub: "与对话框左下角那枚开关是同一个设置；常规聊天是固定档：只写默认工作目录" });
   for (const m of ["ask", "auto", "full"]) {
     const line = el("div", "row setting-row");
     const left = el("div", "grow");
@@ -6722,7 +7419,7 @@ function settingsAgent() {
   const execLine = el("div", "row setting-row");
   const execLeft = el("div", "grow");
   execLeft.appendChild(el("div", "switch-label", "允许运行命令"));
-  execLeft.appendChild(el("div", "muted sm", "默认关。开了之后 Lumin 可以在工作目录里跑 PowerShell（每条命令仍然按上面的档位处理）。"));
+  execLeft.appendChild(el("div", "muted sm", "两种模式都默认允许跑 PowerShell，每条命令仍然按上面的档位处理（ask 档每条都会先问你）。"));
   execLine.appendChild(execLeft);
   const execOn = state.cfg.agentExec === "1";
   execLine.appendChild(btn(execOn ? "关掉" : "打开", "sm" + (execOn ? " ghost" : ""), async () => {
@@ -6743,6 +7440,7 @@ function settingsAgent() {
     "你自己在用的 API Key 不会被交出去（配置里那份含 Key 的文件永远不读）。",
     "工作目录里的 .env / .git / .ssh 写不进去。",
     "写工作目录之外的路径、跑命令、联网都会按上面的档位先问你 —— 每一次决定都留在会话里可回看。",
+    "常规聊天不问你也不放行：工作目录之外一律拒绝（想改别的位置，就为它建一个 Work 会话）。",
   ].forEach((t) => ul.appendChild(el("li", null, t)));
   safe.appendChild(ul);
   g.appendChild(safe);

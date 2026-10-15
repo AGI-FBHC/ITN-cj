@@ -3214,3 +3214,87 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - 产物：dist/Lumin-0.3.0/Lumin.exe 与 dist/Lumin-0.3.0-win-x64.zip（release.json: 0.3.0 / lumin-rebrand-20261015）；启动Lumin.cmd 指向它；旧包 ITN-Desktop-0.2.0~0.2.3 与 启动ITN-Desktop.cmd 保留可回退。
 - 提交 416fe37；用户随后把 logo 换成新版三张（D:\Downloads\透明/浅色/深色.png）。原图是 1254 方画布里一块 1066x668 的金色曲线，直接缩放会显得很小，所以先按图形实际范围裁成方形（1173px，四周留 5%）再缩放：透明→logo-mark.png(96，标题栏/窗口图标)、浅色→logo-light.png(256)、深色→logo-dark.png(256)、透明→shell/assets/logo.png(256，窗口图标)。.tb-logo 由 20px 提到 22px。
 - 重打包后 dist/Lumin-0.3.0/release.json 记录 sourceCommit=416fe37efa2f273db4ec52e509b2356e7bef4775；style.css/app.js/三张 logo/lumin-core.exe 六项与源码 SHA256 一致；空数据目录启动 RESULT=OK；数据迁移自检再次通过。
+# 2026-10-15 晚 · Lumin 0.3.1：修驱动越界崩溃 + 会话栏照 Codex 重排 + 权限/工作区双模式 + 回复流与视觉第二轮
+
+## 1. 修用户实测报错（最高优先）
+- 现象：对话里报 `The length of the array is 4096, but the index is 4922.`（19:38 那一段会话，事件 8382 turn/end）。
+- 定位：报错来自**自研 SQLite 驱动的页内碎片整理** `defragmentPage`。它把 cell 从页尾往上重排，
+  却一边往 `page.data` 写、一边还从 `page.data` 解析后面那些 cell —— 先放下的 cell 会盖住后面 cell 的旧位置，
+  于是它们被按"被覆盖后的垃圾字节"解出长度，算出一个离谱的本地长度后去页内读溢出页号，索引越过 4096 页尾。
+  栈：`readU32 (bytes_varint.cj:166) ← parseCellAt (btree_node.cj:258) ← defragmentPage (btree_node.cj:339)`。
+- 复现：新增驱动单测 `third_party/sqlite-driver/src/unittests/defragment_overlap_test.cj`。
+  构造一个"两个 cell 从低地址的空闲块抠出来 + 第三个紧贴页尾"的页（payload0=1497 / payload1=397，偏移 1000 与 3600），
+  并让覆盖到 cell1 头部的字节恰好解码成 5408 → `local = 489 + (5408-489)%4092 = 1316` → `readU32` 偏移 `3600+6+1316 = 4922`。
+  修复前它抛出的正文与用户看到的一字不差；修复后通过。
+- 修复（btree_node.cj）：
+  ① `defragmentPage` 一律从**快照**解析（新加 `let snapshot = Page(page.pageNo, tmp)`），并校验 `info.size` 合理；
+  ② 新增 `requireCellFits`：cell 越界时报"哪一页、哪个偏移、多少字节"，不再伪装成数组越界；
+  ③ 新增 `requireFreeblockFits`：空闲块偏移越界同样给可读报错。
+- 验证：驱动全量 `cjpm test` = 616 项 **571 通过 / 45 失败**，失败集合与 `VENDOR.md` 记载的"需要外部参照 sqlite 的用例类"完全一致
+  （Wal*/Vacuum*/Interop*/WithoutRowid*，python3 参照环境问题），比基线多的一项就是新增的这个用例。
+
+## 2. 权限/工作区模型改成用户描述的两档
+- 常规聊天（没挂项目的会话）：整机只读 + **只对默认工作目录可写**；工作目录之外的写**直接拒**（不问、不批准）。
+- 指定工作区 Work（挂在项目下）：工作目录 = 项目文件夹，档位由对话框下面那枚 chip 选（ask/auto/full，full = 任意目录读写）。
+- 默认工作目录：设置里没指定就用 `%USERPROFILE%\Documents\Lumin`（`util.cj` 新增 `defaultWorkDir()`，缺失自动创建）。
+  工作目录不再允许为空 —— 否则常规聊天连"把答案写成文件"都做不到。
+- 终端命令与档位解耦：以前 `ask` 档连 powershell 都不注册，用户开了"允许跑命令"却什么也跑不了。
+  现在按设置挂上（默认开，`agent_exec` 默认 "1"），每条命令仍按档位审批。
+- 顺带修一个自己踩出来的回归：工作目录从"可空"变成"总是有"之后，桌面链路第一次挂上了审批层，
+  于是**联网也开始弹审批**（原来没工作区就没有审批层）。桌面版的联网本来就由界面上那枚"联网档位"管，
+  所以给 `Approver` 加了 `askWeb`（CLI 仍为 true，桌面宿主置 false）。
+- 内核：`api.cj::workContextOf` 重写（mode/chatMode/perm 锁定/exec 默认）；`pi_ask.cj` 的 `WorkContext.chatMode`；
+  `workspace.cj` 的 `chatMode` 硬拒；`approvals.cj::decide` 里 chatMode 的 path-outside 不打扰。
+
+## 3. 会话栏照 Codex 重排
+- 去掉"项目 chip 一排 + 按项目分组"两段式。现在：**项目 = 一行可折叠标题**（箭头 + 文件夹 + 名字 + 计数，
+  悬停右侧出现 `⋯` 与"新建会话"），会话缩进列在它下面；超过 6 段折叠成"展开显示（还有 N 段）"。
+- 没挂项目的会话归到 **"普通对话"**（原来叫"未归档"），固定排最后；置顶项目排最前。
+- 项目 `⋯` 菜单按截图：置顶 / 编辑项目… / 在资源管理器中打开 / 移除项目（分区、归档这些引擎还没有的能力先不放）。
+  置顶存进 `projects_json` 的 `pinned`（`/api/projects/pin`）；"在资源管理器中打开"走新增的 `shell:open-path` IPC。
+- 右上角 `＋` 变成**模式菜单**：常规聊天 / 指定工作区（Work，逐个项目）/ 新建项目…。
+  每个选项下面写清"它能碰我哪些文件"。Esc 关闭；点别处关闭。
+- 项目行右侧那个"新建会话"icon（compose）＝ 直接在该项目下开一段 Work 会话。
+
+## 4. 回复流（工具调用 / 思考 / 内部响应 / 那排按钮）
+- 工具调用改成**可折叠卡**：折起来"名字 + 最有信息量的那个参数 + 完成/失败"，展开看"传入参数 / 返回结果"。
+- 思考段默认展开（`思考过程 · N 秒` + 正文），点一下收起 —— 用户要能看见它在想什么。
+- 新增**内部响应**按钮：把这一轮实际传输的事件（原始 JSON）就地铺出来。
+- 回答下面那排：删掉"做成讲义 / 练习册 / 实操 / 演示"四个文字按钮（生成什么资源由用户开口决定，
+  也能直接用四类工具生成），改成**四个 icon**：复制 / 改这条重发 / 从这里开分支 / 看内部事件。
+- 改这条重发只对**最后一条**用户消息开放（中间那条改掉，后面的回答全对不上 —— 那是分支的事）：
+  就地变成输入框，两个去处："保存并重发"（删掉这一轮起的历史重发）/ "另开分支再发"（原会话留着）。
+- 内核新增 `/api/sessions/rewind`（物理删掉该轮及之后的事件，并清掉这段会话的上下文缓存与运行状态）
+  与 `/api/sessions/branch`（新会话 + 复制该轮之前的事件 + 继承项目归属，不继承上下文）。
+  `SessionStore` 加 `turnStartEventId / rewind / branch`。
+
+## 5. 窗口里的斜杠命令（对齐 lumin 的 \ 开关）
+- 输入 `/` 出命令表：`/help /new /model /perm /web /skill /dir /branch /stop /clear`，Enter 执行（不当正文发）。
+- 这些命令改的就是设置页那一份状态（同一个 `/api/prefs/save`、`/api/models/roles`），不存在第二套。
+  `/dir` 打开目录选择框；`/branch` = 最后一轮开分支；`/model` 不带参数列出并跳到设置。
+
+## 6. 在线演示支持 ppt / pptx + 全屏 / 折叠
+- 新增 `shell/pptx.js`：**离线**读 pptx（自己解 ZIP 中央目录 + inflateRaw，抽 `ppt/slides/slideN.xml` 里的 `<a:t>`），
+  旧版 .ppt 退回"扫 UTF-16LE 可读串"。实测用户的 `ReAct_Agent项目讲解.pptx` 解出 13 页正文。
+- 播放器：pptx 按文字预览打开（如实提示"排版图片还在 PowerPoint 里"），旁边给"用 PowerPoint 打开"（`shell:open-path`）。
+  关闭按钮旁新增"全屏"与"折叠"（折叠只留一条标题带）。学习资源页新增"打开演示文稿…"（`dlg:pick-deck`）。
+- 分栏宽度可拖：会话栏与成果面板边缘各有一条拖动条（双击恢复默认），宽度存内核偏好 `ui_panel_w` / `ui_dock_w`。
+
+## 7. 视觉第二轮
+- **顶部栏与页面背景同色**：`--topbar-bg: transparent`、去扫光去投影去圆角，它只是页面上的一条控制带。
+- **深色 = 黑 + 背景里一点流光金**（用户澄清：金色是背景渐变，不是字和控件）：
+  `--bg #15140f`、`--glow/#amb-*` 换成暖金；控件与文字仍是白/灰（`--brand` 保持 #f2f5f3）。
+- 板块缝隙收一半（`.app padding 10/12 → 6/8`、`gap 12 → 8`），主区自己也是一块外壳（四块并列而不是拼在一起）。
+- 用户气泡重做：右上对齐、浅底、无投影无描边、宽度随内容。
+- 演示播放器折叠态样式；斜杠命令提示样式。
+
+## 8. 验证
+- 驱动 `cjpm test`：571/616（45 项失败＝VENDOR.md 记载的参照环境问题）。
+- 内核 `cjpm test`：**101/101 通过**。
+- `node tools/glass-shot.cjs`：13+ 页截图 + 顶部栏无模糊无投影 + 品牌 + logo 主题 + 控制台零报错；
+  新增断言：旧的项目 chip 一排必须消失、分组标题第一组必须是"普通对话"、＋ 菜单必须有常规聊天/新建项目、
+  Esc 能收起菜单、常规聊天那枚 chip 必须是固定档「常规聊天」、点会话必须就地切换（实测 33~38ms，不整页重建）。
+- `node tools/stop-check.cjs`：**11/11**。
+- `node tools/learning-check.cjs --ui`：**57/57**。
+
+（提交与打包信息见下一条追加）

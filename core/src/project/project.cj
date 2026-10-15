@@ -23,12 +23,15 @@ public class Project {
     public var id: String = ""
     public var name: String = ""
     public var root: String = ""
+    /** 置顶：侧栏里排在最前面（对齐 Codex 的"置顶项目"）。 */
+    public var pinned: Bool = false
 
     public func toJson(): JsonObject {
         let o = JsonObject()
         o.put("id", JsonString(id))
         o.put("name", JsonString(name))
         o.put("root", JsonString(root))
+        o.put("pinned", JsonBool(pinned))
         return o
     }
 }
@@ -88,6 +91,7 @@ public class ProjectStore {
                                 p.id = strOf(o, "id")
                                 p.name = strOf(o, "name")
                                 p.root = strOf(o, "root")
+                                p.pinned = boolOf(o, "pinned")
                                 if (p.id.size > 0) {
                                     out.add(p)
                                 }
@@ -121,6 +125,17 @@ public class ProjectStore {
             }
         }
         return None
+    }
+
+    /** 置顶/取消置顶。 */
+    public func setPinned(id: String, pinned: Bool): Unit {
+        let items = list()
+        for (p in items) {
+            if (p.id == id) {
+                p.pinned = pinned
+            }
+        }
+        persist(items)
     }
 
     /** 新建或更新一个项目；同一个文件夹不会登记两次。 */

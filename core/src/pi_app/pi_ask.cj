@@ -186,6 +186,12 @@ public class WorkContext {
     public var dir: String = ""
     /** ask / auto / full —— 与 lumin 的权限档位同名同义 */
     public var perm: String = "ask"
+    /**
+     * 常规聊天：整机只读 + 只对工作目录可写，工作目录之外直接拒。
+     * 它和"档位"是两件事：常规聊天锁死在 ask 这一档的写边界上，但不需要用户每次点批准。
+     */
+    public var chatMode: Bool = false
+    /** 终端命令：两种模式都默认开（每条命令按档位处理），见设置里的开关 */
     public var allowExec: Bool = false
     /** 测试用：非空就不等界面点，直接当回答（y/s/a/n） */
     public var autoAnswer: String = ""
@@ -431,7 +437,10 @@ public class PiAgent {
                     denyFiles.add(".env.local")
                     denyFiles.add(".env")
                     let w0 = Workspace(w.dir, denyRoots, denyFiles, perm)
-                    registerWorkspaceTools(registry, w0, w.allowExec && perm != "ask")
+                    w0.chatMode = w.chatMode
+                    // 执行命令不再跟档位绑死：以前 ask 档连 powershell 都不挂，用户开了"允许跑命令"
+                    // 却什么也跑不了。现在按设置挂上，危险与否交给审批层（ask 档每条命令都会问）。
+                    registerWorkspaceTools(registry, w0, w.allowExec)
                     let names = ArrayList<String>()
                     names.add("read")
                     names.add("write")
@@ -439,7 +448,7 @@ public class PiAgent {
                     names.add("ls")
                     names.add("find")
                     names.add("grep")
-                    if (w.allowExec && perm != "ask") {
+                    if (w.allowExec) {
                         names.add("powershell")
                     }
                     for (nm in names) {
@@ -478,6 +487,8 @@ public class PiAgent {
                 // lumin 那套（四答、记住规则、批了把目录记进沙箱白名单）原样复用。
                 let approver = Approver(store.dataDir, perm)
                 approver.ws = Some(w0)
+                // 联网归界面上的"联网档位"管，审批层不再问一次（桌面版的既有语义）
+                approver.askWeb = false
                 match (work) {
                     case Some(w1) =>
                         if (w1.autoAnswer.size > 0) {

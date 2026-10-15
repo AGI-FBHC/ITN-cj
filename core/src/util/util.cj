@@ -132,6 +132,27 @@ public func defaultDataDir(): String {
     }
 }
 
+/**
+ * 默认工作目录：用户没有在设置里指定时，Lumin 就用它。
+ *
+ * 为什么要有默认值：常规聊天是"整机只读 + 只对默认工作目录可写"，没有这个目录，
+ * 常规聊天就变成了纯只读 —— 用户想让 Lumin 帮他把答案写成文件都做不到。
+ * 选 Documents\\Lumin 是因为它在用户自己的文档目录里、看得见、可备份，而且不用管理员权限。
+ */
+public func defaultWorkDir(): String {
+    let base = match (getVariable("USERPROFILE")) {
+        case Some(v) => v
+        case None => "."
+    }
+    let d = base + "\\Documents\\Lumin"
+    try {
+        ensureDir(d)
+    } catch (e: Exception) {
+        ()
+    }
+    return d
+}
+
 // ---------- JSON 取值辅助 ----------
 
 public func strValue(v: JsonValue): String {

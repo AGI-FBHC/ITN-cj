@@ -41,6 +41,13 @@ func dangerousHead(head: String): Bool {
 
 public class Approver {
     public var mode: String = "ask"
+    /**
+     * 联网要不要走审批层。
+     *
+     * CLI 里要（那里没有别的联网开关）；桌面版不要 —— 界面上已经有一枚"联网档位"
+     * （关闭 / 自动 / 允许），再问一次是重复。桌面宿主建 Approver 时把它置 false。
+     */
+    public var askWeb: Bool = true
     /** 测试用：非空就不读键盘，直接拿它当回答 */
     public var autoAnswer: String = ""
     public let rules = ArrayList<ApprovalRule>()
@@ -188,6 +195,17 @@ public class Approver {
         if (kind.size == 0) {
             return ""
         }
+        // 桌面版：联网由界面上的"联网档位"管，不在审批层重复问
+        if (kind == "web" && !askWeb) {
+            allowCount = allowCount + 1
+            return ""
+        }
+        // 常规聊天：只对默认工作目录可写。越界写不是"问一下能不能批"，而是直接拒 ——
+        // 用户选这个模式就是想"别让它碰别的目录"，再弹一次批准反而自相矛盾。
+        if (kind == "path-outside" && chatMode()) {
+            denyCount = denyCount + 1
+            return "这是常规聊天：只能在默认工作目录里写文件。要改其他位置，请在侧栏里为它建一个 Work 会话"
+        }
         if (mode == "full") {
             allowCount = allowCount + 1
             return ""
@@ -229,6 +247,14 @@ public class Approver {
         }
         denyCount = denyCount + 1
         return "用户拒绝了这一步（" + describe(kind, value) + "）"
+    }
+
+    /** 当前这轮是不是常规聊天（看工作区上的标记；没有工作区就不是）。 */
+    public func chatMode(): Bool {
+        return match (ws) {
+            case Some(w) => w.chatMode
+            case None => false
+        }
     }
 
     func prompt(kind: String, value: String, detail: String): String {

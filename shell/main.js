@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
@@ -197,6 +197,56 @@ async function createWindow() {
    * 与"选目录"分开：系统对话框本身就分 openFile / openDirectory 两种，
    * 分开之后"这条路径是文件还是文件夹"就不需要再去猜了。
    */
+  /**
+   * 用系统默认程序打开路径。
+   *
+   * 侧栏项目菜单里的"在资源管理器中打开"、演示页的"用 PowerPoint 打开"都走这一条：
+   * 路径由渲染层给，但只做"打开"，不读内容、不执行任何东西。
+   */
+  ipcMain.handle("shell:open-path", async (_e, p) => {
+    if (!p) return { ok: false, error: "没有路径" };
+    try {
+      if (!fs.existsSync(p)) return { ok: false, error: "路径不存在：" + p };
+      const msg = await shell.openPath(p);
+      return msg ? { ok: false, error: msg } : { ok: true };
+    } catch (e) {
+      return { ok: false, error: String((e && e.message) || e) };
+    }
+  });
+
+  /**
+   * 读演示文稿的文字（离线，只读）。
+   *
+   * pptx 就是一个 ZIP，壳里自己解一次中央目录就够了 —— 不引入依赖，
+   * 打包后照样能用；老 .ppt 只能给出粗提取的文本，这一点在返回值里如实标出来。
+   */
+  /** 选一份演示文稿（.pptx / .ppt）—— 学习资源页的"打开演示文稿…"用。 */
+  ipcMain.handle("dlg:pick-deck", async () => {
+    if (!win) return "";
+    const r = await dialog.showOpenDialog(win, {
+      title: "选一份演示文稿",
+      properties: ["openFile"],
+      filters: [
+        { name: "演示文稿", extensions: ["pptx", "pptm", "ppt"] },
+        { name: "所有文件", extensions: ["*"] },
+      ],
+      buttonLabel: "打开它",
+    });
+    if (r.canceled || !r.filePaths || !r.filePaths.length) return "";
+    return r.filePaths[0];
+  });
+
+  ipcMain.handle("deck:read", async (_e, p) => {
+    if (!p) return { ok: false, error: "没有路径" };
+    if (!fs.existsSync(p)) return { ok: false, error: "文件不存在：" + p };
+    try {
+      const deck = require("./pptx").readDeck(p);
+      return { ok: true, kind: deck.kind, slides: deck.slides };
+    } catch (e) {
+      return { ok: false, error: String((e && e.message) || e) };
+    }
+  });
+
   ipcMain.handle("dlg:pick-file", async () => {
     if (!win) return "";
     const r = await dialog.showOpenDialog(win, {

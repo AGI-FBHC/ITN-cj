@@ -45,6 +45,13 @@ public class Workspace {
      * 只保留"不交出自己在用的 Key"这一条红线。
      */
     public var level: String = "ask"
+    /**
+     * 常规聊天：只对工作目录可写，工作目录之外一律拒绝（连"问一下就能批"都没有）。
+     *
+     * 与 Work 会话的差别就在这里：Work 里越界写会停下来问用户（可批准），
+     * 常规聊天是用户明确选了"我不打算让它动别的目录"，所以这里直接拒，不打扰。
+     */
+    public var chatMode: Bool = false
     public let maxListEntries: Int64 = 500
     public let maxFindResults: Int64 = 1000
     public let maxGrepMatches: Int64 = 100
@@ -113,6 +120,10 @@ public class Workspace {
                 case None =>
                     // 越出工作区：批准过就能写，没批准过就拒 —— 并说清"要批准"，不是"永远不行"
                     let abs = collapseDots(joinAbs(t))
+                    if (chatMode) {
+                        return "这是常规聊天：只能在默认工作目录（" + root + "）里写文件。" +
+                            "要改这个位置，请在侧栏里为它建一个 Work 会话"
+                    }
                     if (!writeApprovedAt(abs)) {
                         return "路径越出工作区，需要先获得批准（写工作区外的文件会停下来问你）"
                     }

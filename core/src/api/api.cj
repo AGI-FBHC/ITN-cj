@@ -748,10 +748,15 @@ public class Api {
             // 显示大小：页面缩放与字体大小分开存（两者是两件事：缩放管"多大一块"、字体管"字多大"）
             o.put("uiZoom", JsonString(db.getKv("settings", "ui_zoom", "1")))
             o.put("uiFont", JsonString(db.getKv("settings", "ui_font", "1")))
+            // 分栏宽度（会话栏 / 成果面板）：用户拖过就记住，下次打开还是这个宽度
+            o.put("uiPanelW", JsonString(db.getKv("settings", "ui_panel_w", "")))
+            o.put("uiDockW", JsonString(db.getKv("settings", "ui_dock_w", "")))
             // 让 lumin 动手的那几个开关（默认全关：只问答、不碰本机文件）
             o.put("agentWorkDir", JsonString(db.getKv("settings", "agent_work_dir", "")))
+            // 用户没指定时界面要显示"当前用的是哪个目录"，所以默认目录也回给前端
+            o.put("defaultWorkDir", JsonString(defaultWorkDir()))
             o.put("agentPerm", JsonString(db.getKv("settings", "agent_perm", "ask")))
-            o.put("agentExec", JsonString(db.getKv("settings", "agent_exec", "0")))
+            o.put("agentExec", JsonString(db.getKv("settings", "agent_exec", "1")))
             ok(ctx, o)
             return
         }
@@ -782,6 +787,15 @@ public class Api {
                     if (font >= 0.85 && font <= 1.4) {
                         db.putKv("settings", "ui_font", font.toString())
                     }
+                    // 分栏宽度：限幅，别让手滑把会话栏拖成整屏
+                    let panelW = floatValue(match (b.get("uiPanelW")) { case Some(z) => z; case None => JsonNull() })
+                    if (panelW >= 180.0 && panelW <= 520.0) {
+                        db.putKv("settings", "ui_panel_w", Int64(panelW).toString())
+                    }
+                    let dockW = floatValue(match (b.get("uiDockW")) { case Some(z) => z; case None => JsonNull() })
+                    if (dockW >= 300.0 && dockW <= 900.0) {
+                        db.putKv("settings", "ui_dock_w", Int64(dockW).toString())
+                    }
                     let workDir = strOf(b, "agentWorkDir")
                     if (workDir.size > 0) {
                         db.putKv("settings", "agent_work_dir", workDir)
@@ -803,9 +817,12 @@ public class Api {
                     o.put("rail", JsonString(db.getKv("settings", "ui_rail", "1")))
                     o.put("uiZoom", JsonString(db.getKv("settings", "ui_zoom", "1")))
                     o.put("uiFont", JsonString(db.getKv("settings", "ui_font", "1")))
+                    o.put("uiPanelW", JsonString(db.getKv("settings", "ui_panel_w", "")))
+                    o.put("uiDockW", JsonString(db.getKv("settings", "ui_dock_w", "")))
                     o.put("agentWorkDir", JsonString(db.getKv("settings", "agent_work_dir", "")))
+                    o.put("defaultWorkDir", JsonString(defaultWorkDir()))
                     o.put("agentPerm", JsonString(db.getKv("settings", "agent_perm", "ask")))
-                    o.put("agentExec", JsonString(db.getKv("settings", "agent_exec", "0")))
+                    o.put("agentExec", JsonString(db.getKv("settings", "agent_exec", "1")))
                     ok(ctx, o)
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -1321,6 +1338,68 @@ public class Api {
             ok(ctx, o)
             return
         }
+        // 退回到某一轮之前（改一下上一条消息重发）/ 从某一轮分叉出新会话
+        if (path == "/api/sessions/rewind" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let sid = strOf(b, "sessionId")
+                    let tid = strOf(b, "turnId")
+                    if (sid.size == 0 || tid.size == 0) {
+                        fail(ctx, 400, "缺少 sessionId / turnId")
+                        return
+                    }
+                    let removed = SessionStore(store.dataDir).rewind(sid, tid)
+                    let o = JsonObject()
+                    o.put("ok", JsonBool(removed > 0))
+                    o.put("removed", JsonInt(removed))
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/sessions/branch" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let sid = strOf(b, "sessionId")
+                    let tid = strOf(b, "turnId")
+                    if (sid.size == 0 || tid.size == 0) {
+                        fail(ctx, 400, "缺少 sessionId / turnId")
+                        return
+                    }
+                    let ss = SessionStore(store.dataDir)
+                    let nsid = ss.branch(sid, tid)
+                    // 分支继承原会话的项目归属，但**不**继承上下文缓存：它是新的一段
+                    let ps = ProjectStore(store.dataDir)
+                    ps.bind(nsid, ps.projectOf(sid))
+                    let o = JsonObject()
+                    o.put("sessionId", JsonString(nsid))
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/projects/pin" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let id = strOf(b, "id")
+                    if (id.size == 0) {
+                        fail(ctx, 400, "缺少 id")
+                        return
+                    }
+                    // 没带 pinned 就当作"置顶"（界面上那个菜单项就是置顶）
+                    let wantPin = match (b.get("pinned")) {
+                        case Some(_) => boolOf(b, "pinned")
+                        case None => true
+                    }
+                    ProjectStore(store.dataDir).setPinned(id, wantPin)
+                    ok(ctx, JsonObject())
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         if (path == "/api/projects/save" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) => try {
@@ -2348,6 +2427,19 @@ func verifyBackup(path: String): Int64 {
  * 请求里带了就用请求里的（界面上的那枚 chip 是会话级的选择），没带就跟着设置走。
  * 没指定工作目录 = 模型拿不到本机文件那几个工具 —— 这是默认，也是最安全的默认。
  */
+/**
+ * 这一轮"能不能动用户的电脑"。
+ *
+ * 两种模式（对齐用户自己的说法）：
+ *   - 常规聊天：整机只读 + 只对**默认工作目录**可写。工作目录外的写直接拒，不问也不批。
+ *     所以它的档位被钉死在 ask（沙箱在），界面那枚权限 chip 对它无效。
+ *   - Work（指定工作区）：工作目录 = 项目文件夹，档位 = 用户在对话框下面选的（ask/auto/full）；
+ *     full 就是"任意目录读写"。
+ *
+ * 两种模式都默认允许调用终端命令 —— 命令按档位走审批（ask 档每条都会问）。
+ * 工作目录不再允许"空"：没设过就用默认目录（用户目录\Documents\Lumin），否则常规聊天
+ * 连"把答案写成文件"都做不到。
+ */
 func workContextOf(store: Store, b: JsonObject): WorkContext {
     let db = DbHub.open(store.dataDir)
     let work = WorkContext()
@@ -2357,10 +2449,22 @@ func workContextOf(store: Store, b: JsonObject): WorkContext {
     if (projectRoot.size > 0) {
         work.dir = projectRoot
     }
+    if (work.dir.size == 0) {
+        work.dir = defaultWorkDir()
+    }
+    // mode 由界面明说（chat / work）；没带就按会话归属推断：没挂项目 = 常规聊天
+    let modeReq = trimStr(strOf(b, "mode"))
+    work.chatMode = if (modeReq.size > 0) { modeReq != "work" } else { projectRoot.size == 0 }
     let permReq = strOf(b, "perm")
-    work.perm = if (permReq.size > 0) { permReq } else { db.getKv("settings", "agent_perm", "ask") }
+    work.perm = if (work.chatMode) {
+        "ask"
+    } else if (permReq.size > 0) {
+        permReq
+    } else {
+        db.getKv("settings", "agent_perm", "ask")
+    }
     let execReq = strOf(b, "exec")
-    work.allowExec = if (execReq.size > 0) { execReq == "1" } else { db.getKv("settings", "agent_exec", "0") == "1" }
+    work.allowExec = if (execReq.size > 0) { execReq == "1" } else { db.getKv("settings", "agent_exec", "1") == "1" }
     // 界面上下文：用户正在看哪一章（"这一章"的落点）。只进提示词，不改变工具与流程。
     work.ctxChapter = trimStr(strOf(b, "ctxChapter"))
     return work
@@ -2455,6 +2559,9 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/projects/delete",
         "/api/sessions/bind",
         "/api/sessions/new",
+        "/api/sessions/rewind",
+        "/api/sessions/branch",
+        "/api/projects/pin",
         "/api/sessions/list",
         "/api/sessions/events",
         "/api/sessions/state",
