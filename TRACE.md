@@ -3173,3 +3173,5 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - 可访问性：prefers-reduced-transparency: reduce 下退回不透明面并去掉模糊；prefers-contrast: more 下近实心 + 1px 实描边；沿用原有的 prefers-reduced-motion 分支。
 - 验证：node tools/glass-shot.cjs 起隔离环境逐页截图 12 张（浅色 9 页 + 深色 3 页）+ 1280/1120/980 三档窄窗口无横向溢出，控制台零报错，截图在 tmp/glass-shots/；node tools/stop-check.cjs 11/11（含"界面无 JS 报错"）；包内 4 个关键文件与源码 SHA256 逐项一致；dist/ITN-Desktop-0.2.1 绿色包用空临时数据目录启动 RESULT=OK。本次只做视觉改动，未重跑旧 UI 全量回归。
 - 产物：dist/ITN-Desktop-0.2.1/ITN-Desktop.exe、dist/ITN-Desktop-0.2.1-win-x64.zip（163.9 MB，release.json 记录版本 0.2.1 / 构建 liquid-glass-20261015 / sourceCommit 与 8 项资源哈希）。旧包 0.2.0 保留可回退。
+- 本轮视觉提交 1694730；重新打包后 dist/ITN-Desktop-0.2.1/release.json 记录 sourceCommit=16947309e481bb48253486c412da6a725c2a7990，包内 style.css / workbench.css 与源码 SHA256 一致。
+
