@@ -384,7 +384,7 @@ public class Agent {
                 case Some(r) => r
                 case None => ToolResult.err("工具没有返回结果")
             }
-            stream.push(evToolEnd(tc.id, tc.name, res.summary, res.isError, slot.durationMs))
+            stream.push(evToolEnd(tc.id, tc.name, res.summary, res.isError, slot.durationMs, res.details))
             let trm = Message(ToolResultMsg)
             trm.toolCallId = tc.id
             trm.toolName = tc.name

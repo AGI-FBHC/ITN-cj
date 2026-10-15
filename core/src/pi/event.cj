@@ -221,13 +221,14 @@ public func evToolUpdate(callId: String, toolName: String, partial: String): PiE
         .putStr("partialResult", partial)
 }
 
-public func evToolEnd(callId: String, toolName: String, summary: String, isError: Bool, durationMs: Int64): PiEvent {
+public func evToolEnd(callId: String, toolName: String, summary: String, isError: Bool, durationMs: Int64,
+    details: JsonValue): PiEvent {
     let r = JsonObject()
     r.put("content", JsonString(summary))
     r.put("isError", JsonBool(isError))
     return PiEvent(ToolExecEnd).putStr("toolCallId", callId).putStr("toolName", toolName)
         .put("result", r).putBool("isError", isError).putInt("durationMs", durationMs)
-        .putStr("summary", summary)
+        .putStr("summary", summary).put("details", details)
 }
 
 public func evTurnEnd(m: Message, toolResults: ArrayList<String>): PiEvent {

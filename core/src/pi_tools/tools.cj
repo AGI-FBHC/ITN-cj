@@ -100,6 +100,30 @@ class ReadTool <: Tool {
     }
 }
 
+/**
+ * 文本行数（按 \n 数；末尾没有换行也算一行）。
+ *
+ * 只在"改了哪个文件、增删多少行"这类给人看的统计上用，不参与任何权限或流程判断。
+ */
+func countLines(text: String): Int64 {
+    if (text.size == 0) {
+        return 0
+    }
+    var n: Int64 = 1
+    var i = 0
+    let b = text.toArray()
+    while (i < b.size) {
+        if (b[i] == 10) {
+            n += 1
+        }
+        i += 1
+    }
+    if (b[b.size - 1] == 10) {
+        n -= 1
+    }
+    return n
+}
+
 class WriteTool <: Tool {
     private let ws: Workspace
 
@@ -126,9 +150,22 @@ class WriteTool <: Tool {
             return ToolResult.err(why + "：" + path)
         }
         let content = strOf(args, "content")
+        // 覆盖写之前先量一下旧文件的行数：界面要拿它算"这一轮改了多少行"（+/-），
+        // 没有旧内容时（新建）增行数就是全部、减行数为 0。
+        var oldLines: Int64 = 0
+        match (ws.readText(path)) {
+            case Some(before) => oldLines = countLines(before)
+            case None => ()
+        }
         if (ws.writeText(path, content)) {
+            let add = countLines(content)
+            let d = JsonObject()
+            d.put("path", JsonString(ws.relOf(path)))
+            d.put("add", JsonInt(add))
+            d.put("del", JsonInt(oldLines))
+            d.put("created", JsonBool(oldLines == 0))
             return ToolResult.ok("已写入 " + ws.relOf(path) + "（" + formatSize(content.size) + "）",
-                "已写入 " + ws.relOf(path) + "（" + content.size.toString() + " 字节）", JsonNull())
+                "已写入 " + ws.relOf(path) + "（" + content.size.toString() + " 字节）", d)
         }
         return ToolResult.err("写不进去 " + path)
     }
@@ -209,8 +246,15 @@ class EditTool <: Tool {
             return ToolResult.err("改完写不回去：" + path)
         }
         let rel = ws.relOf(path)
+        // 增删行数按"新旧正文各自的行数差"算：这是给人看的量级，不是逐行 diff（逐行 diff 太贵，
+        // 而且模型自己改了什么，摘要里已经写清楚了）
+        let d = JsonObject()
+        d.put("path", JsonString(rel))
+        d.put("add", JsonInt(countLines(text)))
+        d.put("del", JsonInt(countLines(raw)))
+        d.put("applied", JsonInt(applied))
         return ToolResult.ok("已改 " + rel + "（" + applied.toString() + " 处替换，" + formatSize(raw.size) +
-            " -> " + formatSize(text.size) + "）", "已改 " + rel + "，" + applied.toString() + " 处替换完成。", JsonNull())
+            " -> " + formatSize(text.size) + "）", "已改 " + rel + "，" + applied.toString() + " 处替换完成。", d)
     }
 }
 

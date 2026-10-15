@@ -272,6 +272,32 @@ const freePort = () => new Promise((res, rej) => {
     if (workChipsText.indexOf('帮我批准') < 0) throw new Error('Work 会话的权限默认应当是「帮我批准」，实际：' + workChipsText);
     if (workChipsText.indexOf(proj.name) >= 0) throw new Error('输入框里不该再出现工作区/目录 chip，实际：' + workChipsText);
     console.log('WORK-MODE 面包屑=' + workCrumb + ' / chip=' + workChipsText);
+
+    /* 工作过程折叠组 + 变更文件卡（借鉴 pi-studio）：跑完只剩一行，改了哪些文件一目了然。
+       在 Work 会话里验 —— 写文件的工具只在有工作目录时挂上。 */
+    await page.locator('#chat-input').fill('帮我写个文件：写文件测试');
+    await page.locator('.composer-send').click();
+    await page.waitForFunction(() => !state.busyTurn, null, { timeout: 90000 });
+    await sleep(900);
+    const workOut = await page.evaluate(() => {
+      const g = document.querySelector('.chat-thread .work-group');
+      const f = document.querySelector('.chat-thread .file-card');
+      return {
+        group: !!g, open: g ? g.open : null, head: g ? g.querySelector('.work-head').innerText.replace(/\s+/g, ' ') : '',
+        file: !!f, fileHead: f ? f.querySelector('.file-head').innerText.replace(/\s+/g, ' ') : '',
+        row: f && f.querySelector('.file-row') ? f.querySelector('.file-row').textContent.replace(/\s+/g, ' ') : '',
+      };
+    });
+    if (!workOut.group) throw new Error('一轮里有工具调用时应当出现「工作过程」折叠组');
+    if (workOut.open) throw new Error('跑完之后工作过程应当收起，实际还开着');
+    if (workOut.head.indexOf('工作过程') < 0) throw new Error('组头应当是「工作过程 …」，实际：' + workOut.head);
+    if (!workOut.file) throw new Error('写了文件之后应当出现「改了 N 个文件」卡');
+    if (workOut.fileHead.indexOf('改了 1 个文件') < 0 || workOut.fileHead.indexOf('+') < 0) {
+      throw new Error('文件卡应当写着改了 1 个文件与 +/-，实际：' + workOut.fileHead);
+    }
+    if (workOut.row.indexOf('mock-test.md') < 0) throw new Error('文件卡里应当列出改了哪个文件，实际：' + workOut.row);
+    console.log('WORK-GROUP ' + workOut.head + ' · FILE-CARD ' + workOut.fileHead + ' · ' + workOut.row);
+
     await page.locator('#chat-input').fill('工作区第一问');
     await page.locator('.composer-send').click();
     await page.waitForFunction(() => !state.busyTurn, null, { timeout: 90000 });

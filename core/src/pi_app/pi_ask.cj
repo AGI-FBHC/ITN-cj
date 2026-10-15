@@ -607,6 +607,12 @@ public class PiAgent {
                 p.put("callId", JsonString(strOf(e.payload, "toolCallId")))
                 p.put("ok", JsonBool(!boolOf(e.payload, "isError", false)))
                 p.put("summary", JsonString(strOf(e.payload, "summary")))
+                // 结构化细节（写文件/改文件会带 path 与增删行数）：界面用它渲染"这一轮改了哪些文件"
+                match (e.payload.get("details")) {
+                    // JsonNull = 这个工具没有结构化细节，不进事件（别写一堆空对象）
+                    case Some(d) => if (!(d is JsonNull)) { p.put("details", d) }
+                    case None => ()
+                }
                 log("tool/result", p)
                 return
             }

@@ -76,7 +76,7 @@ class EventStreamTest {
         @Expect(ts.toolCallId(), "call_1")
         @Expect(ts.toolName(), "read")
         @Expect(strOf(ts.toJson(), "type"), "tool_execution_start")
-        let te = evToolEnd("call_1", "read", "读到 a", false, 12)
+        let te = evToolEnd("call_1", "read", "读到 a", false, 12, JsonNull())
         @Expect(te.isError(), false)
         @Expect(te.num("durationMs"), 12)
     }

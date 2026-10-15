@@ -387,6 +387,9 @@ def native_reply(body):
         return call("kb_search", {"query": "提示词", "top_k": 4})
     if "计算" in ask or "算一下" in ask:
         return call("calc", {"expr": "(12+8)*3/4"})
+    # 写文件：用来验"这一轮改了哪些文件 + 逐文件 +/-"那张卡（details 里带 path/add/del）
+    if "写个文件" in ask or "写文件测试" in ask:
+        return call("write", {"path": "mock-test.md", "content": "# 测试文件\n\n第一行\n第二行\n第三行\n"})
     return reply_for(body)
 
 

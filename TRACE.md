@@ -3627,3 +3627,44 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - `glass-shot` 的断言改成三层：实测输出 `Mock 会话名（2） → Mock 会话名（3） → Mock 会话名（2）（2）`。
 - 验证：`glass-shot` 全过、`stop-check` 11/11、`learning-check --ui` 57/57、内核 `cjpm test` 104/104。
 - 产物：`dist/Lumin-0.3.8` 与 `dist/Lumin-0.3.8-win-x64.zip`；空数据目录启动 RESULT=OK；启动器指向 0.3.8。
+
+## 2026-10-16 · 第十轮：借鉴 pi-studio / PiDeck（工作过程折叠组 + 变更文件卡）
+
+### 看的是哪两个
+- **AACS111/pi-studio**（5⭐，10-13 更新）：pi 的桌面工作台（Web UI + Electron 壳，基于 agegr/pi-web）。
+  README 里的关键做法：iMessage 风格玻璃聊天流、**思考+工具折叠组**、**每轮变更文件卡与逐文件 diff 统计**、
+  会话 fork/会话内分支、模型/思考级别/技能开关都在 UI 里；Univer 表格引擎 + docx/pptx 两段式（预览 → AI 编辑
+  → 导回原件）；**表/文档的 AI 改动放在 git worktree 草稿里，从不未经同意写回原件**；内置浏览器面板 +
+  语义控制桥；项目组多智能体协作；Origin/Host 校验、路径防穿越 + realpath 写防护、**项目信任门控**。
+  它还有一份 `DESIGN.md`（token 表 + 对比度硬约束 + 半径阶梯 + 字阶收敛规则），是"反向抽取的现值"，很值得照抄纪律。
+- **ayuayue/PiDeck**（1084⭐，昨天还在更新）：pi 桌面工作台（Electron 38 + React 19）。
+  定位不同：**多项目工作区 + 会话管理 + 导入 Codex/Claude 本地会话统一浏览与恢复 + Git 集成 + 内置终端 +
+  模型配置 + 插件管理**；它不自己实现 agent，而是起多个 `pi --mode rpc` 子进程，会话文件仍由 pi 原生读写。
+
+### 这一轮直接落地（Lumin 0.3.9）
+- **工作过程折叠组**（pi-studio 形状）：一轮里所有"思考 + 工具调用"收进一个 `<details>`，跑着时展开、
+  这一轮结束就只剩一行 `工作过程 · N 秒 · M 步`；组内每条仍然"自己结束就折叠"（工具跑完收、思考段写完收）。
+- **每轮变更文件卡**（pi-studio 形状）：write/edit 工具的 details 现在带 `{path,add,del,created}`（内核
+  `evToolEnd` 增加 details 透传、ToolRegistry 里新增 `countLines`），tool/result 事件把它带给界面；
+  界面渲染成 `改了 N 个文件  +A −D` 的卡，展开逐文件列出 `+N −M` 与"新建"标记。
+- 假模型新增"写文件"触发（`写文件测试`），自检里真跑一遍：`WORK-GROUP 工作过程 1 步 · FILE-CARD 改了 1 个文件 +5 −0 · mock-test.md新建+5 −0`。
+- 顺手修：`core/src/unittests/event_stream_test.cj` 的 evToolEnd 调用点（签名多了 details）。
+
+### 还没有做、但从这两个项目看明显该做的（按价值排）
+1. **会话树/多分支**（pi-studio 有 fork + 会话内分支；pi 有 /tree、/fork、/clone）——见上一轮差距清单第 1 条，仍是最该做的。
+2. **AI 改动的草稿与合并**（pi-studio 的 worktree 模式："从不未经同意写回原件"）：我们的 write/edit 直接改用户文件，
+   只靠权限档位把关。可以做成"Work 会话里的写操作先落草稿 + 变更文件卡里给『合并 / 丢弃』"，风险面小、体验提升大。
+3. **docx/pptx 两段式**（预览 + AI 编辑 + 导回原件）：我们目前只有 pptx 文字预览、讲义是 Markdown。
+   这直接关系到你的"四类课件要能交付可编辑文件"。
+4. **项目信任门控 + realpath 写防护**（两家都有）：等我们允许项目自带 skills/配置时必须补。
+5. **内置终端面板**（PiDeck）：我们现在只有工具卡里的命令输出。
+6. **导入外部会话**（PiDeck 能导入 Codex/Claude 会话）：适合"把别的工具里的学习记录并进来"。
+7. **插件/扩展管理**（两家都有）：我们只有 skills。
+8. **DESIGN.md 式的设计纪律**：把 token/对比度/半径/字阶写成契约文件，避免每次改样式都靠感觉（我们这几轮反复调配色，
+   有这份东西会稳很多）。
+
+### 验证与产物
+- `glass-shot` 全过（新增 WORK-GROUP / FILE-CARD 断言；原有 ATTACH / COMPOSER-ORDER / BUBBLE-EDIT / BRANCH / TOPBAR / DRAG 等照旧）。
+- `stop-check` 11/11；`learning-check --ui` 57/57；内核 `cjpm test` **104/104**。
+- 产物：`dist/Lumin-0.3.9` 与 `dist/Lumin-0.3.9-win-x64.zip`；空数据目录启动 RESULT=OK；启动器指向 0.3.9。
+- 参考仓库克隆在 `tmp/pi-studio-gh`、`tmp/PiDeck-gh`（tmp 已 gitignore）。

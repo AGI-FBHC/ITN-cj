@@ -6094,6 +6094,19 @@ function turnsFromEvents(events) {
     } else if (e.type === "tool/call") {
       t.items.push({ t: "tool", callId: p.callId || "", name: p.tool || "", args: p.args || {}, summary: "", ok: null, running: true });
     } else if (e.type === "tool/result") {
+      // 写/改文件的工具会带回 {path, add, del}：攒成"这一轮改了哪些文件"（pi-studio 也有这张卡）
+      const det = p.details;
+      if (det && det.path) {
+        t.fileChanges = t.fileChanges || [];
+        const hit = t.fileChanges.find((x) => x.path === det.path);
+        if (hit) {
+          hit.add = Math.max(hit.add || 0, Number(det.add || 0));
+          hit.del = Math.max(hit.del || 0, Number(det.del || 0));
+          hit.created = !!(hit.created || det.created);
+        } else {
+          t.fileChanges.push({ path: String(det.path), add: Number(det.add || 0), del: Number(det.del || 0), created: !!det.created });
+        }
+      }
       let target = null;
       for (let i = t.items.length - 1; i >= 0; i--) {
         const x = t.items[i];
@@ -6285,14 +6298,54 @@ function renderTurnBlock(t, live) {
     if (t.steer) u.appendChild(el("span", "msg-flag", "插话"));
     box.appendChild(u);
   }
-  // 时间线：模型的每一段正文、每一次工具调用，按发生顺序
-  for (let i = 0; i < t.items.length; i++) {
-    const it = t.items[i];
-    const isTail = i === t.items.length - 1;
-    if (it.t === "think") box.appendChild(thinkRow(it, live, isTail));
-    else if (it.t === "tool") box.appendChild(toolCard(it, live));
-    else if (it.t === "resource") box.appendChild(resourceCard(it.resource, true));
+  /* 时间线：模型的每一段正文、每一次工具调用，按发生顺序。
+     其中"思考 + 工具"收进**一个折叠组**（pi-studio 的"思考+工具折叠组"、Codex 的"已工作 N 秒"都是这个形状）：
+     跑着的时候组是开的，能看见它此刻在干什么；这一轮结束就只剩一行"工作过程 · N 秒 · M 步"。
+     组里的每条仍然是"自己结束就折叠"（工具跑完收、思考段写完收）。 */
+  const work = t.items.filter((x) => x.t === "think" || x.t === "tool");
+  const rest = t.items.filter((x) => x.t !== "think" && x.t !== "tool");
+  if (work.length) {
+    const secs = Math.max(0, Math.round(work.reduce((n, x) => n + Number(x.ms || 0), 0) / 1000));
+    const steps = work.filter((x) => x.t === "tool").length;
+    const g = el("details", "work-group");
+    g.open = !!live;
+    const gs = el("summary", "work-head");
+    gs.innerHTML = '<span class="work-chev">' + icon("chevron") + "</span>" +
+      "<span>工作过程</span>" +
+      '<span class="work-stat">' + (live ? "进行中" : (secs ? secs + " 秒" : "")) +
+      (steps ? (secs ? " · " : "") + steps + " 步" : "") + "</span>";
+    g.appendChild(gs);
+    const gbody = el("div", "work-body");
+    work.forEach((it, idx) => {
+      const isTail = it === work[work.length - 1] && rest.length === 0 && idx === work.length - 1;
+      if (it.t === "think") gbody.appendChild(thinkRow(it, live, isTail));
+      else gbody.appendChild(toolCard(it, live));
+    });
+    g.appendChild(gbody);
+    box.appendChild(g);
+  }
+  for (const it of rest) {
+    if (it.t === "resource") box.appendChild(resourceCard(it.resource, true));
     else if (it.text) box.appendChild(assistantBlock(it.text, live && it.streaming));
+  }
+  // 这一轮改了哪些文件：一张小卡（逐文件 +/-），有就显示，没有就不占地方
+  if (t.fileChanges && t.fileChanges.length) {
+    const card = el("details", "file-card");
+    const sum = el("summary", "file-head");
+    const addAll = t.fileChanges.reduce((n, x) => n + (x.add || 0), 0);
+    const delAll = t.fileChanges.reduce((n, x) => n + (x.del || 0), 0);
+    sum.innerHTML = icon("file") + "<span>改了 " + t.fileChanges.length + " 个文件</span>" +
+      '<span class="file-stat"><b class="add">+' + addAll + '</b> <b class="del">−' + delAll + "</b></span>";
+    card.appendChild(sum);
+    const list = el("div", "file-list");
+    for (const f of t.fileChanges) {
+      const row = el("div", "file-row");
+      row.innerHTML = "<span class='file-name'>" + esc(f.path) + (f.created ? "<i class='file-tag'>新建</i>" : "") + "</span>" +
+        "<span class='file-stat'><b class='add'>+" + (f.add || 0) + "</b> <b class='del'>−" + (f.del || 0) + "</b></span>";
+      list.appendChild(row);
+    }
+    card.appendChild(list);
+    box.appendChild(card);
   }
   if (live && t.resourceProgress) {
     const names = {retrieve: "检索资料", plan: "规划结构", write_section: "撰写讲义", knowledge_points: "梳理知识点", questions: "生成题目", repair: "根据质检修订", artifact_save: "保存成果"};
