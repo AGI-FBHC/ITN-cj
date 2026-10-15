@@ -54,6 +54,12 @@ public class Approver {
      */
     public var nextLine: ?() -> String = None
     /**
+     * 宿主要求接管整个"提问→等回答"的闭环时挂这个（serve 模式：提问变成 approval_request
+     * 事件推给界面，回答由 POST /api/approval 送回）。返回 "y"/"s"/"a"/"n"。
+     * 挂上之后不再走 println + nextLine。CLI 不挂（None），行为不变。
+     */
+    public var onAsk: ?(String, String, String) -> String = None
+    /**
      * 放行一次"写工作区外"之后，要把那个目录记进工作区的白名单 ——
      * 否则会出现"用户批了、沙箱还是拒"的自相矛盾（沙箱在 ask 档拦越界写）。
      */
@@ -232,6 +238,13 @@ public class Approver {
     }
 
     func prompt(kind: String, value: String, detail: String): String {
+        // 宿主接管优先于一切（serve 的 HTTP 审批闭环）；autoAnswer 仍归测试。
+        if (autoAnswer.size == 0) {
+            match (onAsk) {
+                case Some(f) => return f(kind, value, detail)
+                case None => ()
+            }
+        }
         println("")
         println("-- 需要你批准 ------------------------------------------")
         println("   动作：" + describe(kind, value))

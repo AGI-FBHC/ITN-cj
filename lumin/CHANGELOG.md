@@ -6,6 +6,25 @@ lumin 目前是 `0.x`，**对外契约（事件名 / 工具 schema / 会话 JSON
 ## [Unreleased]
 
 ### Added
+- **`serve` 模式（桌面端内核服务）**：`src/cli/serve.cj`，按 `docs/serve-rpc.md` 契约实现——
+  HTTP + 长轮询事件总线（20s 挂起、2000 条环形缓冲、`reset` 缺口重建）、审批桥（`Approver.onAsk`
+  钩子推 `approval_request` 事件、阻塞等 `POST /api/approval`）、插话/停止/会话树分叉、
+  模式/权限/信任/模型/工作区在线切换、skills/prompt/审批规则查询、静态界面白名单托管。
+  只加在 cli 层，pi 层零改动；`Approver.onAsk` 默认 None，CLI 行为不变。
+- **Electron 桌面壳 `shell/`**：`main.js`（拉起 serve → 端口文件 → loadURL；term 子进程管道 +
+  StringDecoder 流式解码；win/dlg/term/paths 四组 IPC）、`preload.js`（contextBridge 暴露
+  `window.lumin`，契约 §8 逐字对齐）。自带 `--no-serve` 占位页自测。
+- **界面 `shell/ui/`**：原生 HTML/CSS/JS 单页——对话流式渲染（思考折叠/工具卡/edit diff 预览）、
+  审批卡片 y/s/a/n、跑动中插话、会话树回退分叉、skills 面板、设置（模式/权限/信任/模型/compact/
+  完整提示词）、xterm 终端页签、断线退避与 reset 对账。
+- `启动Lumin桌面版.cmd`：双击启动（纯 ASCII + CRLF，已过批处理体检）。
+- `docs/serve-rpc.md`：内核/壳/界面三方共享的接口契约 v1。
+
+### 验证
+- `cjpm test` 70/70；真机冒烟：serve `/health` `/api/state` 真模型消息（run_end ok、防重 409）、
+  sessions/entries/prompt/skills 全过；整机联调：Electron 壳拉起绿色包 serve、UI 加载成功。
+
+### Added
 - `/prompt` 命令：把**此刻真正发给模型的完整系统提示词**打出来（按 section 拼好的那一份），
   调提示词时不用再猜；配套文档 `docs/system-prompt.md` 写清四段的来源与改法。
 - **中途插话（Pi 的 steering）**：读键盘改成**单独一个线程**（`src/cli/lines.cj` 的 `LineQueue`），

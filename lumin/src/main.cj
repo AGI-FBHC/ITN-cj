@@ -107,6 +107,9 @@ main(args: Array<String>): Int64 {
         if (a == "chat" || a == "ask") {
             return runChat(args)
         }
+        if (a == "serve") {
+            return runServe(args)
+        }
     }
     return runDemo()
 }

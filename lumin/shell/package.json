@@ -1,0 +1,1 @@
+{"name":"lumin-shell","version":"0.1.0","private":true,"description":"Lumin 桌面壳","main":"main.js","scripts":{"start":"electron .","dev":"electron . --no-serve","check":"node --check main.js && node --check preload.js"},"devDependencies":{"electron":"^44.7.1"},"dependencies":{"@xterm/xterm":"^5.5.0"}}
