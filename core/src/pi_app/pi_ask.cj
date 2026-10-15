@@ -109,6 +109,35 @@ class AnswerSeg {
     }
 }
 
+/**
+ * 思考段的累积器。
+ *
+ * provider 只推 reasoning_content 的增量（thinking_delta），没有显式边界，
+ * 所以这里按"下一件事"来切段：开始出正文 / 开始动工具 / 这一轮跑完时各封一次。
+ * 每个思考段记一条 assistant/thinking 事件 —— 界面据此画 Codex 那样的"已思考 N 秒"，
+ * 折叠着，点开才看内容；它证明的是"模型先想、再决定要不要动工具"，而不是写死的步骤。
+ */
+class ThinkSeg {
+    public var buf = StringBuilder()
+    public var startMs: Int64 = 0
+    public var started: Bool = false
+
+    public func add(t: String, now: Int64): Unit {
+        if (!started) {
+            started = true
+            startMs = now
+        }
+        buf.append(t)
+    }
+
+    public func take(): String {
+        let t = buf.toString()
+        buf = StringBuilder()
+        started = false
+        return t
+    }
+}
+
 /** 分类结果的临时存放：审批层的 nextLine 是个无参回调，靠它把"正在问什么"带过去。 */
 public class ApprovalPrompt {
     public var kind: String = ""
@@ -157,6 +186,8 @@ public class WorkContext {
     public var allowExec: Bool = false
     /** 测试用：非空就不等界面点，直接当回答（y/s/a/n） */
     public var autoAnswer: String = ""
+    /** 界面此刻在看什么（例如正在学的那一章）。空 = 没有可用上下文；只影响提示词里的一句指代说明。 */
+    public var ctxChapter: String = ""
 
     public init() {}
 }
@@ -366,6 +397,13 @@ public class PiAgent {
                 }
             case None => ()
         }
+        // 界面上"正在看什么"（例如正在学的那一章）。只给含糊的指代（"这一章"）一个落点，
+        // 不是流程：用不用它、要不要再查资料，仍然是模型自己判断。
+        var uiChapter = ""
+        match (work) {
+            case Some(w) => uiChapter = w.ctxChapter
+            case None => ()
+        }
 
         // ---- 会话：历史先灌进去，本轮提问由 prompt() 注入 ----
         let cwd = if (kbId.size > 0) { kbRootOf(cfgSettings, kbId, store.dataDir) } else { store.dataDir }
@@ -448,6 +486,10 @@ public class PiAgent {
             "拿不准的事实先核实，核实不到就直接说不知道。\n" +
             "用到本机资料里的内容时按 [1]、[2] 标注出处，用到网上抓来的页面时按 [W1]、[W2] 标注并写出链接。" +
             "回答简短，列表能说清就用列表；不要客套话，也不要把过程复述一遍。"
+        if (uiChapter.size > 0) {
+            preamble = preamble + "\n用户此刻在应用里正在学《" + uiChapter + "》这一章；" +
+                "他说「这一章 / 这章 / 这节」时指的就是它 —— 直接按这一章处理，不要再让他重复说是哪一章。"
+        }
         if (taskKind.size > 0) {
             preamble = preamble + "\n这是一次产物生成任务：成品要写完整，最后用 save_artifact 落盘，" +
                 "再用一两句话告诉用户文件名。"
@@ -466,7 +508,19 @@ public class PiAgent {
         // 否则模型查资料时的"让我看看…"讲解会和正文糊在一起（实测被当成讲义存了下来）。
         let answerBuf = StringBuilder()
         let seg = AnswerSeg()
+        let think = ThinkSeg()
         let activityClock = ActivityClock()
+        // 思考段封段：开始出正文 / 开始动工具 / 这一轮跑完时各刷一次
+        func flushThink(): Unit {
+            let t = think.take()
+            if (t.size == 0) {
+                return
+            }
+            let p = JsonObject()
+            p.put("text", JsonString(byteSafePrefix(t, 6000)))
+            p.put("ms", JsonInt(DateTime.now().toUnixTimeStamp().toMilliseconds() - think.startMs))
+            log("assistant/thinking", p)
+        }
         stream.on({ e: PiEvent =>
             let kind = kindText(e.kind)
             // turn 边界 = 一次模型请求，事件流里已经有了（turn_start/turn_end）；
@@ -474,6 +528,7 @@ public class PiAgent {
             if (kind == "tool_execution_start") {
                 // 又调了一次工具：刚才那段是过程，不计入最终答案
                 seg.reset()
+                flushThink()
                 let p = JsonObject()
                 p.put("tool", JsonString(strOf(e.payload, "toolName")))
                 p.put("callId", JsonString(strOf(e.payload, "toolCallId")))
@@ -492,11 +547,20 @@ public class PiAgent {
             if (kind == "message_update") {
                 match (objOf(match (e.payload.get("assistantEvent")) { case Some(av) => av; case None => JsonNull() })) {
                     case Some(ae) =>
-                        if (strOf(ae, "type") == "thinking_delta" && activityClock.ready()) {
-                            let dp = JsonObject()
-                            dp.put("phase", JsonString("thinking"))
-                            log("assistant/activity", dp)
+                        if (strOf(ae, "type") == "thinking_delta") {
+                            let th = strOf(ae, "delta")
+                            if (th.size > 0) {
+                                think.add(th, DateTime.now().toUnixTimeStamp().toMilliseconds())
+                            }
+                            if (activityClock.ready()) {
+                                let dp = JsonObject()
+                                dp.put("phase", JsonString("thinking"))
+                                log("assistant/activity", dp)
+                            }
+                        } else if (strOf(ae, "type") == "thinking_end") {
+                            flushThink()
                         } else if (strOf(ae, "type") == "text_delta") {
+                            flushThink()
                             let t = strOf(ae, "delta")
                             if (t.size > 0) {
                                 answerBuf.append(t)
@@ -514,6 +578,7 @@ public class PiAgent {
         })
 
         let outcome = agent.prompt(question, stream)
+        flushThink()
         sessionHub().clearRunning(sid)
 
         // 没有流式增量时（例如服务端一次性返回），退回会话里最后一条 assistant 正文

@@ -2140,6 +2140,8 @@ func workContextOf(store: Store, b: JsonObject): WorkContext {
     work.perm = if (permReq.size > 0) { permReq } else { db.getKv("settings", "agent_perm", "ask") }
     let execReq = strOf(b, "exec")
     work.allowExec = if (execReq.size > 0) { execReq == "1" } else { db.getKv("settings", "agent_exec", "0") == "1" }
+    // 界面上下文：用户正在看哪一章（"这一章"的落点）。只进提示词，不改变工具与流程。
+    work.ctxChapter = trimStr(strOf(b, "ctxChapter"))
     return work
 }
 

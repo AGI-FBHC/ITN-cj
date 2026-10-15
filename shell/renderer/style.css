@@ -1421,3 +1421,21 @@ body.graph-full { overflow: hidden; }
 @media (max-width: 900px) { .trend-body { grid-template-columns: minmax(0, 1fr); } }
 .trend-chart { display: block; }
 .trend-side { min-width: 0; }
+
+/* ---------- 思考段：Codex 那种"已思考 N 秒"，折叠着，点开才看内容 ---------- */
+.think-row { margin: 6px 0 4px; }
+.think-sum {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer; list-style: none;
+  font-size: calc(12.5px * var(--fs, 1)); color: var(--muted);
+}
+.think-sum::-webkit-details-marker { display: none; }
+.think-sum::before {
+  content: ""; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--line); border: 1px solid var(--muted);
+}
+.think-row[open] .think-sum::before { background: var(--brand); border-color: var(--brand); }
+.think-text {
+  margin: 6px 0 2px; padding: 8px 10px; border-left: 2px solid var(--line);
+  color: var(--muted); font-size: calc(12.5px * var(--fs, 1)); line-height: 1.7;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}

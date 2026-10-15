@@ -309,10 +309,9 @@ function progressCard(title, steps) {
 function citationBox(citations, report) {
   const box = el("div", "cites");
   if (report) {
+    // 一切正常时不摆统计（"段落 N · 带引用 M" 这类小字只是噪声）；只有真有问题才提醒
     const bad = (report.outOfRange || 0) + (report.outOfRangeWeb || 0);
-    const webBit = report.webCited ? " · 网络引用 " + report.webCited : "";
-    box.appendChild(tag("段落 " + report.paragraphs + " · 带引用 " + report.citedParagraphs + webBit +
-      " · 越界 " + bad, bad > 0 ? "warn" : "ok"));
+    if (bad > 0) box.appendChild(tag("有 " + bad + " 处引用越界，正文编号可能对不上", "warn"));
   }
   if (citations && citations.length) {
     const ul = el("ul", "cite-list");
@@ -1963,6 +1962,7 @@ async function generateArtifact(kind, topic) {
       sessionId: sid,
       web: "auto",
       perm: state.cfg.agentPerm || "ask",
+      ctxChapter: state.chapter || "",
     });
   } catch (e) {
     fail = e.message;
@@ -3843,7 +3843,7 @@ async function runPaletteSearch(raw) {
   if (q) {
     groups.push(["动作", [
       paletteItemMain("问助手：" + q, "就你的资料提问，会标出处", "对话", () => { state.pendingQuestion = q; go("chat"); }),
-      paletteItemMain("就这个主题生成讲义：" + q, "检索资料 → 拟大纲 → 逐节写作", "生成", () => { go("learn"); setTimeout(() => askTopic("lecture", q), 300); }),
+      paletteItemMain("就这个主题生成讲义：" + q, "交给 lumin 一次任务完成，步骤由它自己排", "生成", () => { go("learn"); setTimeout(() => askTopic("lecture", q), 300); }),
     ]]);
   }
 
@@ -4909,7 +4909,7 @@ PANELS.chat = {
           id: x.sessionId,
           active: x.sessionId === state.chatSessionId,
           title: x.title || "新对话",
-          meta: (KIND_LABEL[x.kind || ""] || "对话") + " · " + fmtStamp(x.lastAt).slice(6),
+          meta: ((x.kind && x.kind !== "ask") ? (KIND_LABEL[x.kind] || "对话") + " · " : "") + fmtStamp(x.lastAt).slice(6),
           onClick: () => openChatSession(x.sessionId),
         }));
       });
@@ -4991,6 +4991,7 @@ function turnsFromEvents(events) {
     const p = e.payload || {};
     if (e.type === "turn/start") { t.kind = p.kind || ""; t.startedAt = e.at; }
     else if (e.type === "assistant/activity") t.activity = p.phase || "";
+    else if (e.type === "assistant/thinking") t.items.push({ t: "think", text: p.text || "", ms: p.ms || 0 });
     else if (e.type === "user/message") t.user = p.text || "";
     else if (e.type === "assistant/delta") {
       const last = t.items[t.items.length - 1];
@@ -5075,6 +5076,15 @@ function renderToolRows(tools) {
   return box;
 }
 
+/** 思考段：一行折叠摘要（Codex 那种"已思考 N 秒"），点开才看内容 —— 时间线是"想 → 动手 → 回答"。 */
+function thinkRow(it) {
+  const d = el("details", "think-row");
+  const secs = Math.max(1, Math.round(Number(it.ms || 0) / 1000));
+  d.appendChild(el("summary", "think-sum", "已思考 " + secs + " 秒"));
+  if (it.text) d.appendChild(el("div", "think-text", it.text));
+  return d;
+}
+
 function renderTurnBlock(t, live) {
   live = !!live && t.ok == null;
   const box = el("div", "turn-block");
@@ -5088,7 +5098,8 @@ function renderTurnBlock(t, live) {
   }
   // 时间线：模型的每一段正文、每一次工具调用，按发生顺序
   for (const it of t.items) {
-    if (it.t === "tool") box.appendChild(renderToolRows([it]));
+    if (it.t === "think") box.appendChild(thinkRow(it));
+    else if (it.t === "tool") box.appendChild(renderToolRows([it]));
     else if (it.text) box.appendChild(assistantBlock(it.text, live && it.streaming));
   }
   const running = live && !t.items.some((x) => x.t === "a" && x.text);
@@ -5097,7 +5108,7 @@ function renderTurnBlock(t, live) {
     const b = el("div", "msg-body");
     const active = t.items.filter((x) => x.t === "tool" && x.running);
     const phase = active.length ? "正在执行：" + active.map((x) => TOOL_LABEL[x.name] || x.name).join("、")
-      : t.activity === "thinking" ? "模型正在准备回复…" : "等待模型返回…";
+      : t.activity === "thinking" ? "正在思考…" : "等待模型返回…";
     const elapsed = t.startedAt ? Math.max(0, Math.floor((Date.now() - Date.parse(t.startedAt)) / 1000)) : 0;
     b.innerHTML = '<span class="spinner"></span> ' + esc(phase) + (elapsed ? " · 已用 " + elapsed + " 秒" : "");
     p2.appendChild(b);
@@ -5524,15 +5535,17 @@ PAGES.chat = {
       thread.innerHTML = "";
       if (!state.chatTurns.length) {
         thread.appendChild(emptyState({
+          inline: true,
           art: "chat",
           title: state.chatSessionId ? "这个会话还没有内容" : "开始一段对话",
-          // 顶栏去掉了，作用范围在这里说清：这一段对话到底用哪份资料
-          text: (scopeNow() ? ("这一段对话只用「" + kbName(scopeNow()) + "」。问什么都从这份资料里找，答案带出处。")
+          // 作用范围在这里说清：这一段对话到底用哪份资料
+          text: (scopeNow() ? ("这一段对话只用「" + kbName(scopeNow()) + "」，答案带出处。")
                             : "这一段对话是通用模式：本机所有知识库一起检索。"),
-          // 一句例子，别的都是废话
-
           actions: hasKb() ? [
-            btn("问：这一章的核心结论是什么", "", () => { ta.value = "这一章的核心结论是什么？"; send(); }),
+            // 第一条跟着"当前在学什么"走：学过某一章才问"这一章"，否则问一个一定有落点的问题
+            (state.chapter
+              ? btn("问：这一章的核心结论是什么", "", () => { ta.value = "这一章的核心结论是什么？"; send(); })
+              : btn("问：资料里都有哪些重点", "", () => { ta.value = "我这边的资料里都有哪些重点？"; send(); })),
             btn("看知识库里有什么", "ghost", () => go("kb")),
           ] : [btn("去指定资料目录", "", () => go("settings", "kb"))],
         }));
@@ -5608,6 +5621,8 @@ PAGES.chat = {
         const payload = {
           kbId: scopeKb, question: text, sessionId: sid, web: "auto",
           skill: state.skill || "", perm: state.cfg.agentPerm || "ask",
+          // 界面上下文：用户正在看哪一章——"这一章"才有落点，不用模型反查/反问
+          ctxChapter: state.chapter || "",
         };
         const res = await api("/api/agent/ask-pi", payload, request.controller.signal);
         if (res.ok !== true) failure = res.message || "这一轮没有完成";
@@ -5701,6 +5716,7 @@ const EVENT_LABEL = {
   "assistant/message": "模型回复",
   "validation": "引用自检",
   "turn/end": "一轮结束",
+  "assistant/thinking": "思考",
 };
 function openSession(sessionId) {
   state.sessionId = sessionId;
@@ -5823,7 +5839,8 @@ async function renderSessionDetail(v, sessionId) {
       else if (e.type === "validation") {
         const r = p.report || {};
         text = "段落 " + r.paragraphs + " · 带引用 " + r.citedParagraphs + " · 越界 " + r.outOfRange;
-      } else if (e.type === "turn/end") text = p.ok === false ? (p.message || "失败") : "完成";
+      } else if (e.type === "assistant/thinking") text = "已思考 " + Math.max(1, Math.round(Number(p.ms || 0) / 1000)) + " 秒";
+      else if (e.type === "turn/end") text = p.ok === false ? (p.message || "失败") : "完成";
       line.appendChild(el("span", "ev-text", text));
       box.appendChild(line);
     }

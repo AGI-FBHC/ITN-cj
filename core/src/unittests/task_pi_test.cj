@@ -7,6 +7,7 @@ import std.fs.*
 import stdx.encoding.json.*
 import itn_desktop_core.pi.*
 import itn_desktop_core.pi_app.PiAgent
+import itn_desktop_core.pi_app.WorkContext
 import itn_desktop_core.store.*
 import itn_desktop_core.session.SessionStore
 import itn_desktop_core.kb.*
@@ -75,6 +76,46 @@ func lectureTaskFallsBackToTheKernelWhenTheModelCannotCallTools(): Unit {
     @Expect(slurp(p).contains("这一段就是正文"), true)
     // 文件名跟着主题走，用户能在「我的资源」里一眼认出来
     @Expect(p.contains("讲义-兜底"), true)
+}
+
+/*
+ * 对话链路：界面上的"正在看什么"要进提示词（"这一章"不用再反问是哪一章），
+ * 思考段要按时序记成 assistant/thinking（界面据此画"已思考 N 秒"，证明是模型先想再动手）。
+ */
+@Test
+func chatCarriesUiContextAndThinkingTimeline(): Unit {
+    let dataDir = freshDir("chat-ctx-data")
+    let root = freshDir("chat-ctx-kb")
+    setupTaskKb(root, dataDir, "t")
+    let store = Store(dataDir)
+    let step = scriptTool("save_note", "{\"title\":\"小结\",\"text\":\"这一章讲上下文工程 [1]\"}")
+    step.thinking = "用户问的是正在学的这一章，先想清楚再动手。"
+    let provider = ScriptedProvider([step, scriptText("已经把小结记进笔记了 [1]。")])
+    let work = WorkContext()
+    work.ctxChapter = "第九章 上下文工程"
+    let out = PiAgent(store).runFull(provider, "t", "这一章的核心结论是什么？", "", "off", "", Some(work), "", "")
+
+    @Expect(boolOf(out, "ok", false), true)
+    // ① 上下文进了提示词：模型不用再反问"哪一章"
+    @Expect(provider.seenSystems[0].contains("第九章 上下文工程"), true)
+
+    // ② 会话里先记思考、再记工具：时间线是"想 → 动手"，不是写死的步骤
+    let sessionId = strOf(out, "sessionId")
+    var thinkAt: Int64 = -1
+    var toolAt: Int64 = -1
+    var i: Int64 = 0
+    for (e in SessionStore(dataDir).events(sessionId)) {
+        let k = strOf(e, "type")
+        if (k == "assistant/thinking" && thinkAt < 0) {
+            thinkAt = i
+        }
+        if (k == "tool/call" && toolAt < 0) {
+            toolAt = i
+        }
+        i = i + 1
+    }
+    @Expect(thinkAt >= 0, true)
+    @Expect(toolAt > thinkAt, true)
 }
 
 /** 一份最小知识库：一篇 md + 索引 + 登记。 */

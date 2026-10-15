@@ -801,7 +801,7 @@ fs.writeFileSync(singleFile, [
     return n + ' 条会话';
   });
 
-  await step('工具由模型自己挑（这一轮它调了检索，而不是内核写死"先检索"）', async () => {
+  await step('工具由模型自己挑：先思考、再动工具（不是内核写死"先检索"）', async () => {
     await page.evaluate((b) => fetch('/api/models/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 'tc', name: '会调工具的模型', baseUrl: b, apiKey: 'k', model: 'mock-tool' }) }).then((r) => r.json()), mockToolBase);
     await page.evaluate(() => fetch('/api/models/roles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatModelId: 'tc', embedModelId: 'mock', chunkModelId: 'mock' }) }).then((r) => r.json()));
     await page.fill('#chat-input', '资料里说提示词要注意什么？');
@@ -813,10 +813,17 @@ fs.writeFileSync(singleFile, [
       const last = bodies[bodies.length - 1];
       return !last.querySelector('.spinner') && !last.querySelector('.caret') && last.innerText.trim().length > 4;
     }, null, { timeout: 60000 });
-    // 工具行在模型的两段正文之间（时间线），不是"第 N 步"
-    const order = await page.evaluate(() => Array.from(document.querySelectorAll('.turn-block:last-child .msg, .turn-block:last-child .tool-row'))
-      .map((e) => (e.classList.contains('tool-row') ? 'tool' : (e.classList.contains('msg-user') ? 'user' : 'ai'))));
-    assert(order.join(',').indexOf('ai,tool,ai') >= 0 || order.join(',').indexOf('user,tool,ai') >= 0, '时间线应是"提问 → 工具 → 回答"，实际 ' + order.join(','));
+    // 时间线按发生顺序：提问 → 思考 → 工具 → 回答；不是"第 N 步"那种写死的步骤条
+    const order = await page.evaluate(() => Array.from(document.querySelectorAll(
+        '.turn-block:last-child .msg, .turn-block:last-child .tool-row, .turn-block:last-child .think-row'))
+      .map((e) => (e.classList.contains('tool-row') ? 'tool'
+        : e.classList.contains('think-row') ? 'think'
+        : (e.classList.contains('msg-user') ? 'user' : 'ai'))));
+    const toolAt = order.indexOf('tool'), aiAt = order.lastIndexOf('ai'), thinkAt = order.indexOf('think');
+    assert(toolAt >= 0 && aiAt > toolAt, '时间线应是"提问 → 工具 → 回答"，实际 ' + order.join(','));
+    assert(thinkAt >= 0 && thinkAt < toolAt, '思考段应在工具之前（模型先想再动手），实际 ' + order.join(','));
+    const thinkSum = await page.locator('.turn-block:last-child .think-sum').last().innerText();
+    assert(thinkSum.indexOf('已思考') >= 0, '思考行应是"已思考 N 秒"，实际：' + thinkSum);
     const tools = await page.$$eval('.tool-row .tool-name', (els) => els.map((e) => e.textContent.trim()));
     await shot('14-工具调用');
     await page.evaluate(() => fetch('/api/models/roles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatModelId: 'mock', embedModelId: 'mock', chunkModelId: 'mock' }) }));

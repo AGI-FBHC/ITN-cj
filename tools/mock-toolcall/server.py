@@ -30,7 +30,8 @@ class Handler(BaseHTTPRequestHandler):
         m = re.search(r"@@TARGET:([^@]+)@@", text_all)
         tool = "write" if m else "kb_search"
         if already:
-            chunks = [{"choices": [{"delta": {"content": "资料里是这么说的 [1]。"}}]},
+            chunks = [{"choices": [{"delta": {"reasoning_content": "工具结果回来了：按资料里的说法收尾，并带上引用编号。"}}]},
+                      {"choices": [{"delta": {"content": "资料里是这么说的 [1]。"}}]},
                       {"choices": [{"delta": {}, "finish_reason": "stop"}]}]
         else:
             if tool == "write":
@@ -39,6 +40,7 @@ class Handler(BaseHTTPRequestHandler):
                 args = json.dumps({"query": "提示词", "top_k": 3}, ensure_ascii=False)
             half = len(args) // 2
             chunks = [
+                {"choices": [{"delta": {"reasoning_content": "先想一下：用户问的是资料里的说法，应该先检索知识库。"}}]},
                 {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "call_1", "type": "function",
                               "function": {"name": tool, "arguments": args[:half]}}]}}]},
                 {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": args[half:]}}]}}]},

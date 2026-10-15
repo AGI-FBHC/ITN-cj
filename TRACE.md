@@ -2998,3 +2998,41 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - 讨论建议B：同一lumin/ITN工具后端提供终端Agent/TUI，适合开发者和命令操作；现有lumin CLI不是Claude Code级完整TUI，仍需交互开发，图文资料与报告查看不如桌面面板直接。
 - 待讨论的核心选择：将整个软件主入口改为Agent工作台，还是保留现有学习主入口、先只重构对话区域。没有把建议当作用户已批准的实现决定。
 - 官方来源：https://learn.chatgpt.com/docs/app-server ，https://code.claude.com/docs/en/desktop ，https://code.claude.com/docs/en/interactive-mode 。
+
+## 2026-10-15 13:36 对话：界面上下文 + 思考时间线（Codex 形状收口）
+
+### 用户反馈与只读复盘
+- 用户："lumin 接的还是不对……一问个问题首先还是检索，lumin 不是分动态步骤执行的吗，不要写死啊；对话界面参考 codex，不要还像着之前那个网页版乱设计。"
+- 只读核对用户真实会话（`%LOCALAPPDATA%\ITN-Desktop\sessions\...jsonl`，12:44:16 那条"这一章的核心结论是什么？"）：
+  lumin **没有**被写死先检索——是模型自己 `list_documents` + `kb_search`；
+  真正的问题是**对话没有界面上下文**："这一章"没有落点，模型只能先找一遍再反问"哪一章"，界面上就长成"先检索"。
+- 运行中的构建与源码只差停止修复（app.js 归一化 diff 20+/47-），所以界面已是新版；本轮把"体验仍然别扭"的根因补掉。
+
+### 改动（Desktop 宿主 + 界面；`lumin/` 本体一行未动）
+1. `ctxChapter`：界面把"正在学的那一章"随 `ask-pi` / `task-pi` 带进来（`state.chapter`），
+   内核在提示词里加**一句指代说明**（`WorkContext.ctxChapter`，`/api/agent/*` 的 `workContextOf` 解析）——
+   "这一章/这节"有落点；要不要再查资料仍然由模型判断。
+2. `assistant/thinking`：provider 只推 `reasoning_content` 增量（没有 start/end 边界），内核按
+   **"开始出正文 / 开始动工具 / 一轮结束"** 三处封段，记 `{text(≤6000B), ms}`；
+   界面画成 Codex 那种 **「已思考 N 秒」折叠行**。时间线形状：提问 → 思考 → 工具 → 思考 → 回答。
+3. 会话列表：标题截断 40→**60 字节**并补 `…`（40 字节 ≈ 13 个汉字，之前看着像硬切）；问答类不再重复标"问答"。
+4. 对话空态：去卡片、居中；第一条建议**跟着"当前在学什么"走**——没学过章节时问"资料里都有哪些重点"，
+   不再给一个点了必然撞"哪一章"的死问题。
+5. 引用自检那行小字（`段落 N · 带引用 M · 越界 K`）只在 **越界>0** 时以警告形式出现（正常时不摆统计）。
+6. `Ctrl+K` 里"生成讲义"的旧副标题 `检索资料 → 拟大纲 → 逐节写作` → `交给 lumin 一次任务完成，步骤由它自己排`。
+
+### 验证（全部在最终构建上跑）
+- `cjpm test` **83/83**；新增 `chatCarriesUiContextAndThinkingTimeline`（上下文进 `seenSystems[0]`；`assistant/thinking` 排在 `tool/call` 之前）。
+- `node tools/ui-e2e.cjs` **84/84**；新步骤结果：`时间线 user → think → tool → think → ai · 工具：检索知识库`；
+  截图 `tmp/ui-e2e-shots/11-对话两栏.png`（空态）、`14-工具调用.png`（思考行 + 工具行 + 会话列表省略号）。
+- 真模型 `tools/real-ctx-check.ps1`（复制数据目录，MiMo TokenPlan）：
+  ① 带 `ctxChapter="提示词工程"` 问"这一章的核心结论是什么？" → 直接答到该章、无反问、3 条思考事件；
+  ② 闲聊"你好" → **0 工具**；③ `(12+8)*3/4` → **只调 `calc`**。
+- `tools/mock-toolcall/server.py` 先推一段 `reasoning_content` 再发 tool_call，E2E 因此能断言"想 → 动手"的顺序。
+- 契约同步：`docs/02` 增 `ctxChapter` 请求字段与 `assistant/thinking` 事件；`docs/11` 状态注记；`docs/10` 增 P4 行。
+
+### 交接注意
+- 本轮不动 `lumin/`；`tools/lumin-sync-check.py` 的 23 份副本未受影响（改动全在宿主与界面）。
+- `tools/real-ctx-check.ps1` 会复制数据目录再跑，模型配置（含 Key）只进副本；用完可删。
+- 用户运行中的 `dist/ITN-Desktop` 是旧包；新包另放目录并附 ZIP，关掉旧窗口再开（沿用同一数据目录）。
+

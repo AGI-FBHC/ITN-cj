@@ -111,10 +111,10 @@ public class SessionStore {
                 lastType = r.text(1)
             case None => ()
         }
-        // 不能直接切字节：中文标题（40 字节 ≈ 13 个字）会把某个汉字切成两半，
-        // 抛 Invalid utf8 让 sessions/list 整体 500。用 util 的安全截断。
-        if (title.size > 40) {
-            title = byteSafePrefix(title, 40)
+        // 不能直接切字节：中文标题会把某个汉字切成两半，抛 Invalid utf8 让 sessions/list 整体 500。
+        // 用 util 的安全截断；60 字节 ≈ 20 个汉字，够看清是哪一段对话，再长由界面按宽度省略。
+        if (title.size > 60) {
+            title = byteSafePrefix(title, 60) + "…"
         }
         // 这一轮是问答 / 讲义 / 练习，以及它用的是哪个知识库：界面用它给会话列表分类和标注
         var kind = ""
