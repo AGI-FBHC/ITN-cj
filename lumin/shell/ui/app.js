@@ -1187,6 +1187,8 @@
     loopStarted = true;
 
     function step() {
+      // 每次响应（成功 / 失败恢复 / reset 对账后）恰好续轮一次：step 挪到整条链尾。
+      // 成功分支曾经漏掉续轮，第一次 /api/events 返回后循环就停了（并行会话自测抓到的致命 bug）。
       apiPost('/api/events', { since: cursor }).then(function (resp) {
         if (offline) setOffline(false);
 
@@ -1215,16 +1217,16 @@
         if (!offline) setOffline(true, '等待内核…');
         var wait = backoff;
         backoff = Math.min(backoff * 2, 10000);
-        sleep(wait).then(function () {
+        return sleep(wait).then(function () {
           return reconcile();
         }).then(function () {
           if (offline) setOffline(false);
           backoff = 1000;
         }).catch(function () {
           // 内核仍未恢复：保持横幅，继续退避
-        }).then(function () {
-          step();
         });
+      }).then(function () {
+        step();
       });
     }
 
