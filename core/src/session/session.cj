@@ -172,58 +172,24 @@ public class SessionStore {
         return newSid
     }
 
-    /** 分叉的基线名字：优先用当前标题，没有就用第一句提问，再没有就叫"新对话"。 */
+    /**
+     * 分叉的基线名字：优先用当前标题，没有就用第一句提问，再没有就叫"新对话"。
+     *
+     * 名字是**一层一层接上去**的（用户定的规矩）：
+     *   同一段会话开第 2、3 个分支 → X（2）、X（3）；
+     *   从一个分支再分出去 → 接在这个分支自己的名字后面 → X（2）（2）、X（2）（3）。
+     * 所以基线取"父会话当前的名字本身"，不剥尾号。
+     */
     private func branchBaseTitle(sessionId: String): String {
         let t = trimStr(titleOf(sessionId))
         if (t.size > 0) {
-            return stripBranchSuffix(t)
+            return t
         }
         let first = trimStr(firstUserText(sessionId))
         if (first.size > 0) {
             return byteSafePrefix(first, 24)
         }
         return "新对话"
-    }
-
-    /**
-     * 去掉结尾的「（N）」。
-     *
-     * 从一个分支再开分支时，基线名字得回到原来的那条线上：
-     * 否则「X（2）」会被当成基线，编号叠成「X（2）（2）」（实测过）。
-     */
-    private func stripBranchSuffix(t: String): String {
-        let s = trimStr(t)
-        let b = s.toArray()
-        if (b.size < 6) {
-            return s
-        }
-        // 「）」= EF BC 89，「（」= EF BC 88
-        if (!(b[b.size - 3] == 0xEF && b[b.size - 2] == 0xBC && b[b.size - 1] == 0x89)) {
-            return s
-        }
-        var i: Int64 = b.size - 4
-        while (i >= 2) {
-            if (b[i] == 0x88 && b[i - 1] == 0xBC && b[i - 2] == 0xEF) {
-                let numLen = b.size - 3 - (i + 1)
-                if (numLen <= 0 || numLen > 3) {
-                    return s
-                }
-                var ok = true
-                var k = i + 1
-                while (k < b.size - 3) {
-                    if (b[k] < 0x30 || b[k] > 0x39) {
-                        ok = false
-                    }
-                    k += 1
-                }
-                if (!ok) {
-                    return s
-                }
-                return String.fromUtf8(b[0..(i - 2)])
-            }
-            i -= 1
-        }
-        return s
     }
 
     /** 「基线（N）」：N 从 2 起，取当前没有任何会话占用的最小序号。 */

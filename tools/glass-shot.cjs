@@ -523,13 +523,22 @@ const freePort = () => new Promise((res, rej) => {
         title: (document.querySelector('.wb-crumb-title') || {}).textContent || '',
       }));
     };
+    const baseTitle = (await page.evaluate(() => (document.querySelector('.wb-crumb-title') || {}).textContent || '')).trim();
     const b2 = await openBranch();
     if (b2.sid === sidBefore) throw new Error('开分支之后应当切到新会话');
     if (b2.turns < 1) throw new Error('新分支应当继承分支点之前的历史，实际 ' + b2.turns + ' 轮');
     if (b2.title.indexOf('（2）') < 0) throw new Error('分支会话名应当是「旧名（2）」，实际 ' + b2.title);
+    /* 从**同一个父会话**再开一个分支 → 名字继续往后排（3） */
+    await page.locator('#panel-body .panel-item', { hasText: baseTitle }).first().click();
+    await sleep(1200);
     const b3 = await openBranch();
-    if (b3.title.indexOf('（3）') < 0) throw new Error('第二个分支应当是（3），实际 ' + b3.title);
-    console.log('BRANCH 切换 ✓ 继承 ' + b2.turns + ' 轮 · 命名 ' + b2.title + ' → ' + b3.title);
+    if (b3.title.indexOf('（3）') < 0) throw new Error('同一会话的第二个分支应当是（3），实际 ' + b3.title);
+    /* 从**分支**再分出去 → 接在这个分支自己的名字后面 →（2）（2） */
+    await page.locator('#panel-body .panel-item', { hasText: '（2）' }).first().click();
+    await sleep(1200);
+    const b4 = await openBranch();
+    if (b4.title.indexOf('（2）（2）') < 0) throw new Error('分支的分支应当是「旧名（2）（2）」，实际 ' + b4.title);
+    console.log('BRANCH 切换 ✓ 继承 ' + b2.turns + ' 轮 · 命名 ' + b2.title + ' → ' + b3.title + ' → ' + b4.title);
 
     await page.evaluate(() => { state.chatSessionId = ''; go('resources'); });
     await sleep(600);

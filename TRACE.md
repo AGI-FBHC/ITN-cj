@@ -3615,3 +3615,15 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
   原有 ATTACH / COMPOSER-ORDER / BUBBLE-EDIT / BRANCH / TOPBAR / DRAG 等断言照旧）。
 - `stop-check` 11/11；`learning-check --ui` 57/57；内核 `cjpm test` 104/104。
 - 产物：`dist/Lumin-0.3.7` 与 `dist/Lumin-0.3.7-win-x64.zip`；空数据目录启动 RESULT=OK；`启动Lumin.cmd` 指向 0.3.7。
+
+## 2026-10-16 · 分支命名的正确规矩（Lumin 0.3.8）
+
+用户澄清：**同一个会话的第 2、3 个分支是「X（2）」「X（3）」；而从某个分支再分出去的分支，
+名字接着那个分支自己的名字往后加 ——「X（2）」的分支叫「X（2）（2）」。**
+（上一轮我理解反了，加了"剥掉结尾（N）"的 `stripBranchSuffix`，把它删掉了。）
+
+- 内核 `branchBaseTitle()` 改回"基线 = 父会话当前的名字本身"，配合原本的"取最小空号"规则，
+  三层命名自然成立：`X` → `X（2）` / 同一父会话再来一次 → `X（3）` / 从 `X（2）` 分出去 → `X（2）（2）`。
+- `glass-shot` 的断言改成三层：实测输出 `Mock 会话名（2） → Mock 会话名（3） → Mock 会话名（2）（2）`。
+- 验证：`glass-shot` 全过、`stop-check` 11/11、`learning-check --ui` 57/57、内核 `cjpm test` 104/104。
+- 产物：`dist/Lumin-0.3.8` 与 `dist/Lumin-0.3.8-win-x64.zip`；空数据目录启动 RESULT=OK；启动器指向 0.3.8。
