@@ -77,6 +77,11 @@ public class ApprovalHub {
      * 只在"真的要问"的时候才会被调到（分类为空、档位是 full、命中已记住的规则，审批层自己就放行了）。
      */
     public func ask(kind: String, value: String, detail: String, tool: String): String {
+        return askWithCancel(kind, value, detail, tool, { => false })
+    }
+
+    public func askWithCancel(kind: String, value: String, detail: String, tool: String,
+        shouldAbort: () -> Bool): String {
         lock.lock()
         seq = seq + 1
         let req = ApprovalRequest()
@@ -91,6 +96,7 @@ public class ApprovalHub {
 
         let deadline = nowMs() + waitSec * 1000
         while (nowMs() < deadline) {
+            if (shouldAbort()) { answer(req.id, "cancelled"); return "n" }
             var d = ""
             lock.lock()
             for (it in items) {

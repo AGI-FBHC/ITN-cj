@@ -115,7 +115,13 @@ func makeTool(name: String, label: String, snippet: String, description: String,
  * 与"不静默联网"是同一件事的两面。
  */
 public func buildDomainToolDefs(store: Store, kbId: String, allowWeb: Bool): ArrayList<DomainTool> {
+    return buildDomainToolDefsWithCancel(store, kbId, allowWeb, { => false })
+}
+
+public func buildDomainToolDefsWithCancel(store: Store, kbId: String, allowWeb: Bool,
+    shouldAbort: () -> Bool): ArrayList<DomainTool> {
     let box = ToolBox(store)
+    box.shouldAbort = shouldAbort
     let tools = ToolRegistry(store)
     let out = ArrayList<DomainTool>()
 

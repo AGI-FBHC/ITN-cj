@@ -286,6 +286,7 @@ class Calc {
 /* ---------- 工具执行 ---------- */
 
 public class ToolBox {
+    public var shouldAbort: () -> Bool = { => false }
     public let store: Store
 
     public init(store: Store) {
@@ -435,7 +436,9 @@ public class ToolBox {
             n = webSearchResults(store.dataDir)
         }
         try {
-            let hits = WebSearchClient(webSearchKey(store.dataDir)).search(query, n)
+            let client = WebSearchClient(webSearchKey(store.dataDir))
+            client.shouldAbort = shouldAbort
+            let hits = client.search(query, n)
             let r = ToolResult()
             r.name = "web_search"
             r.data = hits
@@ -456,7 +459,7 @@ public class ToolBox {
             return fail("web_fetch", "缺少 url")
         }
         try {
-            let page = fetchPage(store.dataDir, trimStr(url))
+            let page = fetchPageWithCancel(store.dataDir, trimStr(url), shouldAbort)
             let r = ToolResult()
             r.name = "web_fetch"
             r.data = page

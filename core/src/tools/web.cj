@@ -180,6 +180,10 @@ func hostOfUrl(url: String): String {
  * 状态码只在本函数里和字面量比（llm.cj 里也是这么比的），对外给的是布尔，免得依赖状态类型的内部结构。
  */
 public func httpGet(url: String): JsonObject {
+    return httpGetWithCancel(url, { => false })
+}
+
+public func httpGetWithCancel(url: String, shouldAbort: () -> Bool): JsonObject {
     var tls = TlsClientConfig()
     tls.serverName = Some(hostOfUrl(url))
     tls.supportedAlpnProtocols = ["http/1.1"]
@@ -188,7 +192,10 @@ public func httpGet(url: String): JsonObject {
         .readTimeout(Duration.second * 20)
         .writeTimeout(Duration.second * 20)
         .build()
+    let watch = NetCancelWatch(shouldAbort)
+    let watcher = spawn { watch.run({ => client.close() }) }
     try {
+        watch.check()
         let req = HttpRequestBuilder()
             .method("GET")
             .url(url)
@@ -198,6 +205,7 @@ public func httpGet(url: String): JsonObject {
         let resp = client.send(req)
         let st = resp.status
         let body = readAllString(resp.body)
+        watch.check()
         var loc = ""
         var ctype = ""
         match (resp.headers.getFirst("location")) {
@@ -219,9 +227,12 @@ public func httpGet(url: String): JsonObject {
     } catch (e: WebFetchException) {
         throw e
     } catch (e: Exception) {
+        if (shouldAbort()) { throw WebFetchException("已取消") }
         throw WebFetchException("抓取失败：" + e.message)
     } finally {
+        watch.finish()
         client.close()
+        watcher.get()
     }
 }
 
@@ -264,6 +275,10 @@ func looksBinary(body: String): Bool {
  * text 是给模型看的正文（已截断），excerpt 给界面预览。
  */
 public func fetchPage(dataDir: String, url: String): JsonObject {
+    return fetchPageWithCancel(dataDir, url, { => false })
+}
+
+public func fetchPageWithCancel(dataDir: String, url: String, shouldAbort: () -> Bool): JsonObject {
     if (!isHttpUrl(url)) {
         throw WebFetchException("只支持 http/https 链接，收到的是：" + byteSafePrefix(url, 60))
     }
@@ -274,7 +289,7 @@ public func fetchPage(dataDir: String, url: String): JsonObject {
     }
     var current = url
     var hop: Int64 = 0
-    var resp = httpGet(current)
+    var resp = httpGetWithCancel(current, shouldAbort)
     while (hop < 3 && boolOf(resp, "redirect")) {
         let loc = strOf(resp, "location")
         if (loc.size == 0) {
@@ -288,7 +303,7 @@ public func fetchPage(dataDir: String, url: String): JsonObject {
         if (!webHostAllowed(dataDir, hostOfUrl(current))) {
             throw WebFetchException("跳转到了不允许的域名：" + webHostDenyReason(dataDir, hostOfUrl(current)))
         }
-        resp = httpGet(current)
+        resp = httpGetWithCancel(current, shouldAbort)
         hop = hop + 1
     }
     if (!boolOf(resp, "ok")) {
@@ -312,6 +327,7 @@ public func fetchPage(dataDir: String, url: String): JsonObject {
     let file = dir + Path.Separator + urlHash(url) + ".md"
     let fm = "---\nurl: " + url + "\ntitle: " + title + "\nfetchedAt: " + now +
         "\nbytes: " + raw.size.toString() + "\nstatus: 200\n---\n\n"
+    if (shouldAbort()) { throw WebFetchException("已取消") }
     writeText(file, fm + "# " + title + "\n\n" + text)
     let o = JsonObject()
     o.put("url", JsonString(url))

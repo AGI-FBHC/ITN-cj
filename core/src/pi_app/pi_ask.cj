@@ -16,6 +16,7 @@ import itn_desktop_core.session.SessionStore
 import itn_desktop_core.agent.DomainTool
 import itn_desktop_core.agent.ToolRecord
 import itn_desktop_core.agent.buildDomainToolDefs
+import itn_desktop_core.agent.buildDomainToolDefsWithCancel
 import itn_desktop_core.agent.piRegistryOf
 import itn_desktop_core.agent.piModeOf
 import itn_desktop_core.agent.readSkill
@@ -62,6 +63,16 @@ class HostSkillScope {
             }
             return ""
         }
+    }
+}
+
+class ActivityClock {
+    var lastMillis: Int64 = 0
+    public func ready(): Bool {
+        let now = DateTime.now().toUnixTimeStamp().toMilliseconds()
+        if (now - lastMillis < 1000) { return false }
+        lastMillis = now
+        return true
     }
 }
 
@@ -264,6 +275,11 @@ public class PiAgent {
         let turnId = sessions.newTurnId()
         // 事件回调是 lambda：它只能捕获不可变变量（仓颉的规矩），所以这里留一份只读副本
         let sid = sessionId
+        // Bind cancellation after the actual session id exists, including API-created sessions.
+        match (provider) {
+            case p: OpenAiChatProvider => p.shouldAbort = Some({ => sessionHub().isAborted(sid) })
+            case _ => ()
+        }
         sessionHub().clearAbort(sid)
         let out = JsonObject()
         out.put("sessionId", JsonString(sid))
@@ -315,7 +331,7 @@ public class PiAgent {
         // ---- 工具 ----
         // 默认只给领域工具（检索/联网/技能/笔记/产物）：模型碰不到本机文件。
         // 用户在设置里指定了工作目录之后，才把 read/write/edit/ls/find/grep（可选 powershell）挂上。
-        let defs = buildDomainToolDefs(store, kbId, allowWeb)
+        let defs = buildDomainToolDefsWithCancel(store, kbId, allowWeb, { => sessionHub().isAborted(sid) })
         let records = ArrayList<ToolRecord>()
         let registry = piRegistryOf(defs, records)
         let mode = piModeOf(defs, "desktop")
@@ -384,7 +400,8 @@ public class PiAgent {
                 }
                 let holder = ApprovalPrompt()
                 approver.nextLine = Some({ =>
-                    approvalHub().ask(holder.kind, holder.value, holder.detail, holder.tool)
+                    approvalHub().askWithCancel(holder.kind, holder.value, holder.detail, holder.tool,
+                        { => sessionHub().isAborted(sid) })
                 })
                 opts.beforeToolCall = Some({ callId: String, name: String, args: JsonObject =>
                     let cls = classifyTool(name, args, w0.root)
@@ -402,6 +419,7 @@ public class PiAgent {
         // Compose the host's skill guard with lumin's permission gate; neither replaces the other.
         let permissionGate = opts.beforeToolCall
         opts.beforeToolCall = Some({ callId: String, name: String, args: JsonObject =>
+            if (sessionHub().isAborted(sid)) { return "已取消" }
             let denied = skillScope.check(store.dataDir, name, args, allowWeb)
             if (denied.size > 0) {
                 let sp = JsonObject()
@@ -448,6 +466,7 @@ public class PiAgent {
         // 否则模型查资料时的"让我看看…"讲解会和正文糊在一起（实测被当成讲义存了下来）。
         let answerBuf = StringBuilder()
         let seg = AnswerSeg()
+        let activityClock = ActivityClock()
         stream.on({ e: PiEvent =>
             let kind = kindText(e.kind)
             // turn 边界 = 一次模型请求，事件流里已经有了（turn_start/turn_end）；
@@ -457,14 +476,14 @@ public class PiAgent {
                 seg.reset()
                 let p = JsonObject()
                 p.put("tool", JsonString(strOf(e.payload, "toolName")))
-                p.put("callId", JsonString(strOf(e.payload, "callId")))
+                p.put("callId", JsonString(strOf(e.payload, "toolCallId")))
                 log("tool/call", p)
                 return
             }
             if (kind == "tool_execution_end") {
                 let p = JsonObject()
                 p.put("tool", JsonString(strOf(e.payload, "toolName")))
-                p.put("callId", JsonString(strOf(e.payload, "callId")))
+                p.put("callId", JsonString(strOf(e.payload, "toolCallId")))
                 p.put("ok", JsonBool(!boolOf(e.payload, "isError", false)))
                 p.put("summary", JsonString(strOf(e.payload, "summary")))
                 log("tool/result", p)
@@ -473,7 +492,11 @@ public class PiAgent {
             if (kind == "message_update") {
                 match (objOf(match (e.payload.get("assistantEvent")) { case Some(av) => av; case None => JsonNull() })) {
                     case Some(ae) =>
-                        if (strOf(ae, "type") == "text_delta") {
+                        if (strOf(ae, "type") == "thinking_delta" && activityClock.ready()) {
+                            let dp = JsonObject()
+                            dp.put("phase", JsonString("thinking"))
+                            log("assistant/activity", dp)
+                        } else if (strOf(ae, "type") == "text_delta") {
                             let t = strOf(ae, "delta")
                             if (t.size > 0) {
                                 answerBuf.append(t)
@@ -499,6 +522,7 @@ public class PiAgent {
             let msgs = session.messagesForModel()
             var i = msgs.size - 1
             while (i >= 0) {
+                if (msgs[i].role == UserMsg) { break }
                 if (msgs[i].role == AssistantMsg && msgs[i].text.size > 0) {
                     answer = msgs[i].text
                     break
@@ -506,7 +530,7 @@ public class PiAgent {
                 i = i - 1
             }
         }
-        if (answer.size == 0) {
+        if (answer.size == 0 && outcome.ok) {
             answer = "（这一轮没有拿到可用的回答，可以换个问法，或检查模型配置）"
         } else {
             let tail = seg.text()
@@ -516,7 +540,7 @@ public class PiAgent {
         }
         let ap = JsonObject()
         ap.put("text", JsonString(answer))
-        log("assistant/message", ap)
+        if (answer.size > 0) { log("assistant/message", ap) }
 
         // ---- 引用自检：命中来自 kb_search 的工具记录（结构化载荷），与手写链路同一套算法 ----
         var hits = JsonArray()

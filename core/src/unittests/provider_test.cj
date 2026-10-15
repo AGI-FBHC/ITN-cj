@@ -8,6 +8,9 @@ import stdx.encoding.json.*
 import itn_desktop_core.pi.*
 import itn_desktop_core.pi_provider.*
 import itn_desktop_core.store.*
+import itn_desktop_core.pi_app.PiAgent
+import itn_desktop_core.pi_app.sessionHub
+import itn_desktop_core.session.SessionStore
 import itn_desktop_core.util.readAllString
 import std.unittest.*
 import std.unittest.testmacro.*
@@ -21,6 +24,23 @@ import std.unittest.testmacro.*
  */
 @Test
 class ProviderTest {
+    @TestCase
+    func automaticallyAllocatedSessionCanStopItsSilentModel(): Unit {
+        let server = silentServer()
+        let dir = freshDir("cancel-auto-session")
+        let provider = OpenAiChatProvider(modelCfg(Int64(server.port)))
+        let canceller = spawn {
+            sleep(Duration.millisecond * 400)
+            let sessions = SessionStore(dir).list()
+            if (sessions.size > 0) { sessionHub().abort(strOf(sessions[0], "sessionId")) }
+        }
+        let started = DateTime.now()
+        let result = PiAgent(Store(dir)).askWithProvider(provider, "", "hello", "", "off", "")
+        canceller.get()
+        @Expect(boolOf(result, "ok", true), false)
+        @Expect((DateTime.now() - started).toMilliseconds() < 2000, true)
+        server.close()
+    }
 
     func silentServer(): Server {
         let server = ServerBuilder().addr("127.0.0.1").port(0).build()

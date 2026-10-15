@@ -37,6 +37,8 @@ func tavilyHost(): String {
 
 public class WebSearchClient {
     public let apiKey: String
+    public var shouldAbort: () -> Bool = { => false }
+    public var endpoint: String = tavilyUrl()
 
     public init(apiKey: String) {
         this.apiKey = apiKey
@@ -101,16 +103,20 @@ public class WebSearchClient {
             .readTimeout(Duration.minute * 2)
             .writeTimeout(Duration.minute * 2)
             .build()
+        let watch = NetCancelWatch(shouldAbort)
+        let watcher = spawn { watch.run({ => client.close() }) }
         try {
+            watch.check()
             let req = HttpRequestBuilder()
                 .method("POST")
-                .url(tavilyUrl())
+                .url(endpoint)
                 .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
                 .body(payload.toString())
                 .build()
             let resp = client.send(req)
             let text = readAllString(resp.body)
+            watch.check()
             let status = resp.status
             if (status != 200) {
                 throw WebSearchException("联网搜索接口返回 " + status.toString() + "：" + byteSafePrefix(text, 300))
@@ -119,9 +125,12 @@ public class WebSearchClient {
         } catch (e: WebSearchException) {
             throw e
         } catch (e: Exception) {
+            if (shouldAbort()) { throw WebSearchException("已取消") }
             throw WebSearchException("请求 Tavily 失败：" + e.message)
         } finally {
+            watch.finish()
             client.close()
+            watcher.get()
         }
     }
 }

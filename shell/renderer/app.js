@@ -25,8 +25,9 @@ function esc(s) {
     .replace(/"/g, "&quot;");
 }
 
-async function api(path, body) {
+async function api(path, body, signal) {
   const init = { method: body === undefined ? "GET" : "POST" };
+  if (signal) init.signal = signal;
   if (body !== undefined) {
     init.headers = { "Content-Type": "application/json" };
     init.body = JSON.stringify(body);
@@ -4988,7 +4989,8 @@ function turnsFromEvents(events) {
     }
     const t = byKey[key];
     const p = e.payload || {};
-    if (e.type === "turn/start") t.kind = p.kind || "";
+    if (e.type === "turn/start") { t.kind = p.kind || ""; t.startedAt = e.at; }
+    else if (e.type === "assistant/activity") t.activity = p.phase || "";
     else if (e.type === "user/message") t.user = p.text || "";
     else if (e.type === "assistant/delta") {
       const last = t.items[t.items.length - 1];
@@ -5004,12 +5006,12 @@ function turnsFromEvents(events) {
         t.items.push({ t: "a", text: p.text || "", streaming: false });
       }
     } else if (e.type === "tool/call") {
-      t.items.push({ t: "tool", name: p.tool || "", args: p.args || {}, summary: "", ok: null, running: true });
+      t.items.push({ t: "tool", callId: p.callId || "", name: p.tool || "", args: p.args || {}, summary: "", ok: null, running: true });
     } else if (e.type === "tool/result") {
       let target = null;
       for (let i = t.items.length - 1; i >= 0; i--) {
         const x = t.items[i];
-        if (x.t === "tool" && x.name === (p.tool || "") && x.running) { target = x; break; }
+        if (x.t === "tool" && x.running && (p.callId ? x.callId === p.callId : x.name === (p.tool || ""))) { target = x; break; }
       }
       if (target) {
         target.summary = p.summary || "";
@@ -5074,6 +5076,7 @@ function renderToolRows(tools) {
 }
 
 function renderTurnBlock(t, live) {
+  live = !!live && t.ok == null;
   const box = el("div", "turn-block");
   if (t.user) {
     const u = el("div", "msg msg-user");
@@ -5086,13 +5089,17 @@ function renderTurnBlock(t, live) {
   // 时间线：模型的每一段正文、每一次工具调用，按发生顺序
   for (const it of t.items) {
     if (it.t === "tool") box.appendChild(renderToolRows([it]));
-    else if (it.text) box.appendChild(assistantBlock(it.text, live && it.streaming && !t.ok === false));
+    else if (it.text) box.appendChild(assistantBlock(it.text, live && it.streaming));
   }
   const running = live && !t.items.some((x) => x.t === "a" && x.text);
   if (running) {
     const p2 = el("div", "msg msg-ai");
     const b = el("div", "msg-body");
-    b.innerHTML = '<span class="spinner"></span> 正在思考…';
+    const active = t.items.filter((x) => x.t === "tool" && x.running);
+    const phase = active.length ? "正在执行：" + active.map((x) => TOOL_LABEL[x.name] || x.name).join("、")
+      : t.activity === "thinking" ? "模型正在准备回复…" : "等待模型返回…";
+    const elapsed = t.startedAt ? Math.max(0, Math.floor((Date.now() - Date.parse(t.startedAt)) / 1000)) : 0;
+    b.innerHTML = '<span class="spinner"></span> ' + esc(phase) + (elapsed ? " · 已用 " + elapsed + " 秒" : "");
     p2.appendChild(b);
     box.appendChild(p2);
   }
@@ -5113,8 +5120,8 @@ function renderTurnBlock(t, live) {
     }
     return "";
   })();
-  if (!live && (t.citations.length || t.report)) box.appendChild(citationBox(t.citations, t.report));
-  if (!live && lastText) {
+  if (!live && t.ok !== false && (t.citations.length || t.report)) box.appendChild(citationBox(t.citations, t.report));
+  if (!live && t.ok !== false && lastText) {
     const acts = el("div", "row msg-actions");
     acts.appendChild(btn("做成讲义", "sm ghost", () => askTopic("lecture", topicFromText(t.user || lastText))));
     acts.appendChild(btn("做成练习册", "sm ghost", () => askTopic("quiz", topicFromText(t.user || lastText))));
@@ -5262,11 +5269,12 @@ PAGES.chat = {
     const ICON_STOP = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>';
     const paintActionBtn = () => {
       const busy = !!state.busyTurn;
+      const stopping = busy && state.chatRequest && state.cancelRequested === state.chatRequest.sessionId;
       actionBtn.innerHTML = busy ? ICON_STOP : ICON_SEND;
       actionBtn.classList.toggle("stop", busy);
-      actionBtn.title = busy ? "停止（Esc）" : "发送（Enter，Shift+Enter 换行）";
-      actionBtn.setAttribute("aria-label", busy ? "停止" : "发送");
-      actionBtn.disabled = false;
+      actionBtn.title = stopping ? "正在停止当前任务" : busy ? "停止（Esc）" : "发送（Enter，Shift+Enter 换行）";
+      actionBtn.setAttribute("aria-label", stopping ? "正在停止" : busy ? "停止" : "发送");
+      actionBtn.disabled = !!stopping;
     };
     actionBtn.onclick = () => {
       if (state.busyTurn) stopTurn();
@@ -5429,16 +5437,20 @@ PAGES.chat = {
 
     /** 停下来：手写链路看取消标记，lumin 那一轮直接 abort。 */
     async function stopTurn() {
-      const sid = state.chatSessionId;
+      const sid = state.chatRequest ? state.chatRequest.sessionId : state.chatSessionId;
       if (!sid) return;
+      if (state.cancelRequested === sid) return;
       // 记下来：这一轮按过停止，收尾时按"已取消"处理。
       // 内核那边的 abort 只在"下一轮请求之前"生效（运行时就是这么设计的），
       // 所以已经流出去的那半段保留着，剩下的不再继续 —— 这比假装它还是正常结束要诚实。
       state.cancelRequested = sid;
+      paintActionBtn();
       try {
         await api("/api/agent/cancel", { sessionId: sid });
-        toast("已停止");
+        toast("正在停止当前任务…");
       } catch (e) {
+        state.cancelRequested = null;
+        paintActionBtn();
         toast("停止失败：" + e.message);
       }
     }
@@ -5525,7 +5537,8 @@ PAGES.chat = {
           ] : [btn("去指定资料目录", "", () => go("settings", "kb"))],
         }));
       } else {
-        for (const t of state.chatTurns) thread.appendChild(renderTurnBlock(t, !t.answer && state.busyTurn));
+        for (const t of state.chatTurns) thread.appendChild(renderTurnBlock(t,
+          !!state.busyTurn && t.ok == null && (!state.chatRequest || state.chatRequest.sessionId === state.chatSessionId)));
       }
       for (const req of (state.approvals || [])) thread.appendChild(approvalCard(req));
       paintActionBtn();
@@ -5549,6 +5562,8 @@ PAGES.chat = {
       ta.value = "";
       grow();
       state.lastQuestion = text;
+      const request = { sessionId: sid, controller: new AbortController(), baseline: (state.chatEvents || []).length, turnId: "", endedByEvents: false };
+      state.chatRequest = request;
       state.busyTurn = true;
       // 允许"已取消"的那一轮一键重问（取消多半是因为问题写错了）
       state.chatResend = (q) => {
@@ -5566,10 +5581,18 @@ PAGES.chat = {
         try {
           const d = await api("/api/sessions/events", { sessionId: sid });
           const all = d.events || [];
-          if (all.length !== (state.chatEvents || []).length) {
+          if (!request.turnId) {
+            const start = all.slice(request.baseline).find((e) => e.type === "turn/start");
+            if (start) request.turnId = start.turnId;
+          }
+          if (state.chatSessionId === sid && all.length !== (state.chatEvents || []).length) {
             state.chatEvents = all;
             state.chatTurns = turnsFromEvents(all);
             paint();
+          }
+          if (request.turnId && all.some((e) => e.type === "turn/end" && e.turnId === request.turnId)) {
+            request.endedByEvents = true;
+            request.controller.abort();
           }
         } catch (e) { /* 轮询失败不打扰用户，最终结果以收尾时那次为准 */ }
         approvalTick = approvalTick + 1;
@@ -5586,21 +5609,24 @@ PAGES.chat = {
           kbId: scopeKb, question: text, sessionId: sid, web: "auto",
           skill: state.skill || "", perm: state.cfg.agentPerm || "ask",
         };
-        const res = await api("/api/agent/ask-pi", payload);
+        const res = await api("/api/agent/ask-pi", payload, request.controller.signal);
         if (res.ok !== true) failure = res.message || "这一轮没有完成";
       } catch (e) {
-        failure = e.message;
+        failure = request.endedByEvents ? "" : e.message;
       }
       clearInterval(poll);
       await pollApprovals();
       try {
         const d = await api("/api/sessions/events", { sessionId: sid });
-        state.chatEvents = d.events || [];
-        state.chatTurns = turnsFromEvents(state.chatEvents);
+        if (state.chatSessionId === sid) {
+          state.chatEvents = d.events || [];
+          state.chatTurns = turnsFromEvents(state.chatEvents);
+        }
       } catch (e) {
         state.chatTurns = state.chatTurns.filter((t) => t.id !== "local" && !String(t.id).startsWith("steer-"));
       }
       state.busyTurn = false;
+      if (state.chatRequest === request) state.chatRequest = null;
       const stopped = state.cancelRequested === sid;
       state.cancelRequested = null;
       if (stopped && !failure) {
@@ -5615,7 +5641,8 @@ PAGES.chat = {
         toast(String(failure).indexOf("取消") >= 0 ? "已取消" : ("生成失败：" + failure));
       }
       await reloadSessions();
-      paint();
+      if (current === "chat" && !thread.isConnected) await go("chat");
+      else paint();
     }
 
     // Enter 发送 / 跑着时 Enter 插话；Shift+Enter 换行；Esc 停止（有弹层时 Esc 先关弹层）
