@@ -3197,3 +3197,5 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - 另一个坑：headless Chromium 的滚动条永远是覆盖式的（槽宽恒为 0，也不绘制自绘滑块），所以这类改动必须在**真窗口**里量。新增 tools/scrollbar-check.cjs：带窗口（挪到屏幕外）加载 style.css 量探针元素，断言 原生 15px → 自绘 9px、轨道透明、滑块不透明、样式里不含被禁属性。
 - 验证：tools/scrollbar-check.cjs PASS（原生 15px → 自绘 9px / 视觉滑块 5.57px）；tools/glass-shot.cjs 12 页截图 + 窄窗口无溢出 + 控制台零报错，并新增"顶部栏必须无模糊/无扫光/无投影"的断言；tools/stop-check.cjs 11/11；0.2.3 包内 style.css/app.js/workbench.css/内核与源码 SHA256 一致；绿色包空数据目录启动 RESULT=OK。
 - 产物：dist/ITN-Desktop-0.2.3/ITN-Desktop.exe 与 dist/ITN-Desktop-0.2.3-win-x64.zip（release.json: 0.2.3 / flat-chrome-20261015）；启动ITN-Desktop.cmd 指向 0.2.3；0.2.0~0.2.2 保留可回退。
+- 提交 a4b5336；重打包后 0.2.3 的 release.json 记录 sourceCommit=a4b5336245bccdcd6fa26f994fc6c08e6ab94670。
+
