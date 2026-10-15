@@ -3563,3 +3563,55 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - 过程教训（写给后续接手的人）：这一轮我用"按起止标记整段替换"的方式改 app.js，连续三次误删了相邻代码块
   （skillBox / permChip / paintActionBtn / workDirName），每次都是靠 `tmp/probe-err2.cjs`（加载页面并打印
   `#view` 里的报错）发现的。**改 app.js 请用唯一字符串的定点替换，并在每次编辑后跑一次页面探针。**
+
+## 2026-10-16 · 上游调研（pi / pi-mono）+ 对齐改动（Lumin 0.3.7）
+
+### 调研结论
+- 上游是 **earendil-works/pi**（原 pi-mono，MIT；描述 "AI agent toolkit: unified LLM API, agent loop, TUI, coding agent CLI"）。
+  我们的内核本来就是它的仓颉重写版（`file-mutation-queue`、`EventStream`、`toolcall_delta`、`partialjson`、
+  `steering` 这些注释里的名字都能在它源码里对上号：`packages/durable/src/tools/file-mutation-queue.ts` 等）。
+- **pi 没有官方桌面端**：它的交互层是 TUI（`packages/tui` + `packages/coding-agent`）；
+  `pi-chat` 是 Discord/Telegram 桥，不是桌面 GUI。生态里有第三方桌面端（如 Bitterbot-AI/bitterbot-desktop，
+  它 vendor 了 pi 的 runtime）可以参考，但"直接复用它代码"不可行：TS vs 仓颉、TUI vs Electron。
+  **可复用的是设计与规格**：它的 docs（sessions / compaction / slash-commands / security / settings…）
+  就是一份现成的功能规格书。
+
+### 这一轮照着它对齐并已落地（0.3.7）
+- 命令面补齐（都是本地动作、不花模型调用）：`/session`（会话信息与用量）、`/name`（改名/看名字）、
+  `/export`（把这一段导成 Markdown 落到成果里）、`/reload`（重读配置/技能/项目/会话，不用重启）、
+  `/hotkeys`（列出窗口里真正可用的键位）、`/copy`（复制最后一条回答）。
+- 输入框显示**上一轮真实 token 用量**（↑输入 ↓输出）—— pi 的 TUI 在页脚显示同一个数，
+  它是用户判断"上下文是不是快满了"的唯一依据；内核新增 `turn/usage` 事件（来自供应商回的 usage，不估算）。
+- 分支语义按 pi 的 `/fork` 对齐（上一轮已做）：切换过去、继承分支点之前的历史、名字基线递延（X（2）、X（3）…）。
+
+### 对比后的差距清单（按价值排序，尚未做）
+1. **会话是树，不是线性日志**（pi: `/tree` 会话内多分支 + `/fork` 从更早的用户消息开新会话 + `/clone` 复制当前分支）。
+   pi 明确"回到早先的点不会毁掉你离开的那条分支"；`/tree` 里选中一条用户消息会把文字放回编辑器，改完提交长出一条**兄弟分支**。
+   我们目前：`/api/sessions/rewind` 是**破坏性删除**（"改这条重发"会删掉那一轮起的全部事件），`branch` 只从最新一轮复制。
+   → 建议下一步做"事件表加 parentId + 会话树 + /tree 面板"，一次解决编辑/分支/回退三件事。
+2. **上下文压缩（compaction）**：pi 的自动压缩按 `contextTokens > contextWindow - reserveTokens(默认 16384)` 触发，
+   支持 `/compact [instructions]` 手动压缩，加**摘要**并保留最近消息，**原始条目一条不删**；切分支时还能给离开的分支生成摘要带走。
+   我们只有 `autoCompactBytes = 120000` 的字节阈值，没有手动命令、没有摘要可见性、没有分支摘要。
+3. **用量与费用的完整视图**：pi 页脚常显 context 用量，`/session` 给出 message 数、token、花费。
+   我们刚做了"上一轮 ↑↓"，但**没有上下文上限与百分比**（需要在模型配置里加 contextWindow），也没有累计费用。
+4. **会话选择器**：pi 的 picker 支持搜索/改名/删除/显示路径/**换排序**/**只看有名字的会话**；我们侧栏只有搜索/改名/删除。
+5. **项目信任（trust）**：pi 在工作目录发现 `.pi/settings.json`、`.pi/extensions`、`.agents/skills` 这类**可执行资源**时
+   要求显式信任（`/trust`），拒绝就不加载 —— 这是安全边界。我们目前只加载内置 skills，所以还没有这个风险面；
+   一旦允许"项目自带技能/配置"，**必须**补这个门禁。
+6. **提示词模板**（pi: 项目/用户级 prompt templates，用 `/<模板名>` 调用）与 **技能当命令跑**（pi: `/<skill:name>`）：
+   我们的 `/skill` 是"绑定到会话"，不是"跑一次"。
+7. **`/import <path>`**（导入 JSONL 会话）、**`/share`**（上传得到 viewer 链接）、`/export` 支持 HTML：我们只做了导 Markdown。
+8. **`/reload` 的完整语义**：pi 重载键位/扩展/技能/模板/主题/**上下文文件**；我们目前重读配置+技能+项目+会话。
+9. **扩展系统**：pi 的核心是 extensions（hooks / 自定义 UI / 命令 / 工具）。我们只有 skills，没有插件机制。
+
+### 我们比 pi 更该保留的部分（别抄过去）
+- 审批/权限三档 + 审批闸门（pi 明确"不每次问"，它靠容器/VM 隔离；桌面单人场景需要审批）。
+- 学习资源四件套 + 知识库/学习记忆/画像：pi 没有这些，这是我们的产品特性。
+- 图形界面本身：并排栏、可拖宽度、成果面板、在线演示（含 pptx 文字预览）。
+- 会话标题自动生成（pi 靠 `/name` 手动）。
+
+### 验证与产物
+- `glass-shot` 全过（新增：命令表里必须有 /session /name /export /reload /hotkeys /copy，且 /session、/hotkeys、/copy 实测可用；
+  原有 ATTACH / COMPOSER-ORDER / BUBBLE-EDIT / BRANCH / TOPBAR / DRAG 等断言照旧）。
+- `stop-check` 11/11；`learning-check --ui` 57/57；内核 `cjpm test` 104/104。
+- 产物：`dist/Lumin-0.3.7` 与 `dist/Lumin-0.3.7-win-x64.zip`；空数据目录启动 RESULT=OK；`启动Lumin.cmd` 指向 0.3.7。

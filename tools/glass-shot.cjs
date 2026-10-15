@@ -340,6 +340,33 @@ const freePort = () => new Promise((res, rej) => {
     }
     if (composerRight.rowRight - composerRight.sendRight > 60) throw new Error('发送键应当贴右：' + JSON.stringify(composerRight));
     console.log('COMPOSER-ORDER 模型右缘 ' + composerRight.modelRight + ' → 发送键 ' + composerRight.sendLeft);
+
+    /* 与 pi 对齐的那几条本地命令：/session /name /export /reload /hotkeys /copy 都要能跑，
+       而且不花模型调用（命令表里必须能查到）。 */
+    const cmdList = await page.evaluate(() => SLASH_COMMANDS.map((c) => c.cmd).join(" "));
+    for (const need of ['/session', '/name', '/export', '/reload', '/hotkeys', '/copy']) {
+      if (cmdList.indexOf(need) < 0) throw new Error('命令表里缺少 ' + need + '，实际：' + cmdList);
+    }
+    await page.locator('#chat-input').fill('/session');
+    await page.keyboard.press('Enter');
+    await sleep(500);
+    const sessionDlg = (await page.locator('#view .card.dialog').first().innerText()).replace(/\s+/g, " ");
+    if (sessionDlg.indexOf('会话 id') < 0 || sessionDlg.indexOf('工作区') < 0) {
+      throw new Error('/session 应当给出会话信息，实际：' + sessionDlg.slice(0, 120));
+    }
+    await page.locator('#view .card.dialog button', { hasText: '知道了' }).first().click();
+    await sleep(200);
+    await page.locator('#chat-input').fill('/hotkeys');
+    await page.keyboard.press('Enter');
+    await sleep(400);
+    const hk = (await page.locator('#view .card.dialog').first().innerText()).replace(/\s+/g, " ");
+    if (hk.indexOf('Enter') < 0) throw new Error('/hotkeys 应当列出快捷键，实际：' + hk.slice(0, 120));
+    await page.locator('#view .card.dialog button', { hasText: '知道了' }).first().click();
+    await sleep(200);
+    await page.locator('#chat-input').fill('/copy');
+    await page.keyboard.press('Enter');
+    await sleep(400);
+    console.log('PI-COMMANDS 本地命令可用（/session /hotkeys /copy 已实测）');
     // 消息行：用户气泡下面是"时间 · 复制 · 重写"，回答下面是"复制 · 分支 · 时间\"
     if (!(await page.locator('#chat-thread .msg-user .msg-meta').count())) throw new Error('用户气泡下面应当有时间与图标');
     if (!(await page.locator('#chat-thread .msg-meta.left').count())) throw new Error('回答下面应当有复制/分支与时间');

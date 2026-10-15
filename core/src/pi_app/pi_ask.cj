@@ -645,6 +645,15 @@ public class PiAgent {
 
         let outcome = agent.prompt(question, stream)
         checkpointContext(store.dataDir, sid, session)
+        /* 这一轮真实用掉的 token（供应商回的 usage）。
+           界面上"上下文用了多少"只能从这里来 —— 自己按字符估算是骗人的。
+           pi 的 TUI 在页脚也显示这个数，它是用户判断"该不该 /compact"的唯一依据。 */
+        if (outcome.usageIn > 0 || outcome.usageOut > 0) {
+            let up = JsonObject()
+            up.put("in", JsonInt(outcome.usageIn))
+            up.put("out", JsonInt(outcome.usageOut))
+            log("turn/usage", up)
+        }
         flushThink()
         sessionHub().clearRunning(sid)
 

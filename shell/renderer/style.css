@@ -2920,3 +2920,9 @@ html[data-theme="dark"] .composer {
 /* 输入框那一行里的 spacer 要真的"撑开"：.spacer 原来只在 .card-head 里被定义过，
    在输入框里它是个 0 宽的空 div —— 于是"模型 + 发送"不会靠右（踩过）。 */
 .composer-row .spacer { flex: 1 1 auto; min-width: 8px; }
+
+/* 输入框里那一小段 token 用量：比模型名更淡一档，不抢注意力 */
+.composer-usage {
+  font-size: calc(11.5px * var(--fs, 1)); color: var(--muted);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}

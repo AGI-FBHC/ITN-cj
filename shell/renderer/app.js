@@ -3918,6 +3918,14 @@ const SLASH_COMMANDS = [
   { cmd: "/branch", args: "", desc: "从最后一轮开一段分支会话", run: () => slashBranch() },
   { cmd: "/stop", args: "", desc: "停止正在跑的这一轮", run: () => { const b = document.querySelector(".composer-send"); if (b) b.click(); } },
   { cmd: "/clear", args: "", desc: "清空输入框", run: () => { const t = $("chat-input"); if (t) { t.value = ""; t.focus(); } } },
+  /* 下面这几条是照着 pi 的命令面补的（docs/slash-commands.md）：
+     会话信息、改名、导出、重载、快捷键、复制上一条回答 —— 都是"本地动作"，不花模型调用。 */
+  { cmd: "/session", args: "", desc: "看这一段会话的信息与用量", run: () => slashSessionInfo() },
+  { cmd: "/name", args: "名字", desc: "给这段会话改名（不带参数＝看当前名字）", run: (a) => slashName(a) },
+  { cmd: "/export", args: "", desc: "把这一段对话导出成 Markdown 存到成果里", run: () => slashExport() },
+  { cmd: "/reload", args: "", desc: "重新读配置、技能、项目与会话列表", run: () => slashReload() },
+  { cmd: "/hotkeys", args: "", desc: "看窗口里可用的快捷键", run: () => slashHotkeys() },
+  { cmd: "/copy", args: "", desc: "复制最后一条回答", run: () => slashCopyLast() },
 ];
 
 function slashMatches(text) {
@@ -4030,6 +4038,126 @@ async function slashDir() {
   state.cfg.agentWorkDir = picked;
   toast("默认工作目录：" + picked);
   go("chat");
+}
+
+/** /session：这一段会话的身份与用量（pi 的 /session 是同一种"本地体检"）。 */
+function slashSessionInfo() {
+  const sid = state.chatSessionId;
+  if (!sid) { toast("还没有会话"); return; }
+  const meta = sessionMetaOf(sid) || {};
+  const wd = sessionWorkDir();
+  const turns = (state.chatTurns || []);
+  let usageIn = 0, usageOut = 0;
+  for (const t of turns) { usageIn += Number(t.usageIn || 0); usageOut += Number(t.usageOut || 0); }
+  const dlg = el("div", "card dialog");
+  dlg.appendChild(cardHeadOnly("这一段会话"));
+  const ul = el("ul", "about-list");
+  ul.appendChild(el("li", null, "名字：" + ((meta.title) || "（还没有名字）")));
+  ul.appendChild(el("li", null, "会话 id：" + sid + "（链接：lumin://thread/" + sid + "）"));
+  ul.appendChild(el("li", null, "工作区：" + (wd.project ? "Work · " : "常规对话 · ") + (wd.path || "未指定")));
+  ul.appendChild(el("li", null, "轮次：" + turns.filter((t) => t.user).length + " · 事件：" + (state.chatEvents || []).length + " 条"));
+  ul.appendChild(el("li", null, "上一轮 token：输入 " + ((turns[turns.length - 1] || {}).usageIn || 0) +
+    " · 输出 " + ((turns[turns.length - 1] || {}).usageOut || 0)));
+  ul.appendChild(el("li", null, "累计（本窗口看到的）：输入 " + usageIn + " · 输出 " + usageOut));
+  dlg.appendChild(ul);
+  const row = el("div", "row");
+  row.appendChild(btn("复制会话链接", "", () => copyText("lumin://thread/" + sid)));
+  row.appendChild(btn("知道了", "primary", () => dlg.remove()));
+  dlg.appendChild(row);
+  $("view").insertBefore(dlg, $("view").firstChild);
+  dlg.scrollIntoView({ block: "start" });
+}
+
+/** /name [名字]：不带参数就报当前名字（与 pi 的 /name 一致）。 */
+async function slashName(arg) {
+  const sid = state.chatSessionId;
+  if (!sid) { toast("还没有会话"); return; }
+  const meta = sessionMetaOf(sid) || {};
+  if (!arg) { toast("当前名字：" + (meta.title || "（没有名字，用第一句话兜着）")); return; }
+  try {
+    await api("/api/sessions/rename", { sessionId: sid, title: arg });
+    // 起过名字就不再让模型改名（内核那边 titleReady 已经守住了）
+    state.chatTitleHint = state.chatTitleHint || {};
+    state.chatTitleHint[sid] = arg;
+    await reloadSessions();
+    if (typeof refreshChatHeader === "function") refreshChatHeader();
+    toast("已改名：" + arg);
+  } catch (e) { toast("改名失败：" + e.message); }
+}
+
+/** /export：把这一段对话导成 Markdown 落到本机成果里（pi 的 /export 是导 HTML/JSONL）。 */
+async function slashExport() {
+  const sid = state.chatSessionId;
+  const turns = state.chatTurns || [];
+  if (!sid || !turns.length) { toast("这一段还没有可导出的内容"); return; }
+  const meta = sessionMetaOf(sid) || {};
+  const lines = ["# " + (meta.title || "会话记录"), "", "> 会话 id：" + sid + " · 导出时间：" + fmtStamp(new Date().toISOString())];
+  for (const t of turns) {
+    lines.push("", "## " + (t.user || "（无提问）").split("\n")[0]);
+    if (t.user) lines.push("", "**我**：", "", t.user);
+    for (const it of t.items) {
+      if (it.t === "think" && it.text) lines.push("", "<details><summary>思考过程</summary>", "", it.text, "", "</details>");
+      else if (it.t === "tool") lines.push("", "**工具 `" + (it.name || "") + "`**：" + (it.ok === false ? "失败" : "完成") +
+        (it.args ? "\n\n```json\n" + JSON.stringify(it.args, null, 2) + "\n```" : ""));
+      else if (it.text) lines.push("", "**Lumin**：", "", it.text);
+    }
+    if (t.ok === false) lines.push("", "_（这一轮没有完成：" + (t.message || "") + "）_");
+  }
+  const name = "会话-" + String(meta.title || sid).replace(/[\\/:*?"<>|]/g, "_").slice(0, 40) + "-" +
+    new Date().toISOString().slice(0, 10) + ".md";
+  try {
+    const r = await api("/api/artifacts/save", { name: name, content: lines.join("\n") });
+    await loadArtifacts();
+    toast("已导出到成果：" + (r && r.path ? r.path.split(/[\\/]/).pop() : name));
+    if (typeof refreshWorkbenchState === "function") refreshWorkbenchState().catch(() => {});
+  } catch (e) { toast("导出失败：" + e.message); }
+}
+
+/** /reload：改了设置/技能/新建项目之后不用重启（pi 的 /reload 同义）。 */
+async function slashReload() {
+  try {
+    await loadCfg();
+    await loadProjects();
+    await loadSessions();
+    await loadSkills(state.chatSessionId || "");
+    renderPanel();
+    if (typeof refreshChatHeader === "function") refreshChatHeader();
+    toast("已重新读取配置、技能、项目与会话列表");
+  } catch (e) { toast("重载失败：" + e.message); }
+}
+
+/** /hotkeys：把窗口里真正可用的键位列出来（不是抄一份用不上的清单）。 */
+function slashHotkeys() {
+  const dlg = el("div", "card dialog");
+  dlg.appendChild(cardHeadOnly("快捷键"));
+  const ul = el("ul", "about-list");
+  [
+    "Enter 发送 · Shift+Enter 换行（跑着的时候 Enter 是插话）",
+    "Esc 停止这一轮（有浮层时先关浮层）",
+    "Ctrl/Cmd + K 全局检索",
+    "Ctrl/Cmd + Shift + S 显示/隐藏会话栏",
+    "Ctrl/Cmd + 加号/减号 调整显示大小 · Ctrl/Cmd + 0 复位",
+    "输入 / 出命令表 · /help 看全部命令",
+    "空格键悬停…（不必）",
+  ].forEach((x) => { if (x.indexOf("不必") < 0) ul.appendChild(el("li", null, x)); });
+  dlg.appendChild(ul);
+  const row = el("div", "row");
+  row.appendChild(btn("知道了", "primary", () => dlg.remove()));
+  dlg.appendChild(row);
+  $("view").insertBefore(dlg, $("view").firstChild);
+  dlg.scrollIntoView({ block: "start" });
+}
+
+/** /copy：复制最后一条回答（pi 的 /copy 同义）。 */
+function slashCopyLast() {
+  const turns = state.chatTurns || [];
+  for (let i = turns.length - 1; i >= 0; i--) {
+    for (let k = turns[i].items.length - 1; k >= 0; k--) {
+      const it = turns[i].items[k];
+      if (it.t === "a" && it.text) { copyText(it.text); return; }
+    }
+  }
+  toast("还没有可复制的回答");
 }
 
 async function slashBranch() {
@@ -5945,6 +6073,7 @@ function turnsFromEvents(events) {
     const t = byKey[key];
     const p = e.payload || {};
     if (e.type === "turn/start") { t.kind = p.kind || ""; t.startedAt = e.at; }
+    else if (e.type === "turn/usage") { t.usageIn = Number(p["in"] || 0); t.usageOut = Number(p.out || 0); }
     else if (e.type === "assistant/activity") t.activity = p.phase || "";
     else if (e.type === "assistant/thinking") t.items.push({ t: "think", text: p.text || "", ms: p.ms || 0 });
     else if (e.type === "user/message") { t.user = p.text || ""; t.userAt = e.at; }
@@ -6470,6 +6599,23 @@ PAGES.chat = {
     modelText.type = "button";
     modelText.title = "当前对话模型（点一下去设置里改）";
     modelText.onclick = () => go("settings", "models");
+    /* 上一轮的 token 用量：这是用户判断"上下文是不是快满了"的唯一依据
+       （pi 的 TUI 也在页脚显示同一个数）。没有数据就不显示，不写 0 糊弄人。 */
+    const usageText = el("span", "composer-usage", "");
+    usageText.hidden = true;
+    const paintUsage = () => {
+      const turns = (state.chatTurns || []).filter((t) => t.usageIn || t.usageOut);
+      const last = turns[turns.length - 1];
+      if (!last) { usageText.hidden = true; return; }
+      const fmt = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n));
+      usageText.hidden = false;
+      usageText.textContent = "↑" + fmt(last.usageIn || 0) + " ↓" + fmt(last.usageOut || 0);
+      usageText.title = "上一轮真实用掉的 token（供应商回的 usage）：输入 " + (last.usageIn || 0) +
+        " · 输出 " + (last.usageOut || 0) + "\n上下文接近上限时该 /compact —— 现在还没有手动压缩，暂时只能靠它提示";
+    };
+    paintUsage();
+    state.chatRepaintUsage = paintUsage;
+    crow.appendChild(usageText);
     crow.appendChild(modelText);
 
     /* 一个按钮两种状态：空闲是"发送"，跑着是"停止"（Codex 也是这么干的） */
@@ -6866,6 +7012,7 @@ PAGES.chat = {
       reconcileThread(keep);
       for (const req of (state.approvals || [])) thread.appendChild(approvalCache.get(req.id));
       paintActionBtn();
+      if (typeof state.chatRepaintUsage === "function") state.chatRepaintUsage();
       if (state.stickBottom !== false) thread.scrollTop = thread.scrollHeight;
     }
     paint();
