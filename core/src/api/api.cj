@@ -127,8 +127,8 @@ public class Api {
             o.put("status", JsonString("ok"))
             o.put("service", JsonString("itn-desktop-core"))
             o.put("cangjie", JsonString("1.2.0"))
-            o.put("version", JsonString("0.2.1"))
-            o.put("build", JsonString("liquid-glass-20261015"))
+            o.put("version", JsonString("0.2.2"))
+            o.put("build", JsonString("mono-glass-20261015"))
             ok(ctx, o)
             return
         }

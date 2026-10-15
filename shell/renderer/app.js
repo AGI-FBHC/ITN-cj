@@ -2642,7 +2642,7 @@ function drawRadar(canvas, rows) {
   const ink = (css.getPropertyValue("--ink-2") || "#3a4640").trim();
   const muted = (css.getPropertyValue("--muted") || "#6c7a72").trim();
   const line = (css.getPropertyValue("--line") || "#e5e9e6").trim();
-  const brand = (css.getPropertyValue("--brand") || "#2f7053").trim();
+  const brand = (css.getPropertyValue("--brand") || "#1c211e").trim();
   const amber = (css.getPropertyValue("--amber") || "#9a6a1c").trim();
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const w = 380;
@@ -2859,7 +2859,7 @@ function drawTrend(canvas, days) {
   const css = getComputedStyle(document.documentElement);
   const line = (css.getPropertyValue("--line") || "#e5e9e6").trim();
   const muted = (css.getPropertyValue("--muted") || "#6c7a72").trim();
-  const brand = (css.getPropertyValue("--brand") || "#2f7053").trim();
+  const brand = (css.getPropertyValue("--brand") || "#1c211e").trim();
   const amber = (css.getPropertyValue("--amber") || "#9a6a1c").trim();
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const w = 420;

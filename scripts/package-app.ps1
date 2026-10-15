@@ -3,7 +3,7 @@ param(
     [string]$OutDir = "$PSScriptRoot\..\dist\ITN-Desktop",
     [string]$ZipPath = "$PSScriptRoot\..\dist\ITN-Desktop-win-x64.zip",
     # 包内 release.json 的构建标识（版本号取 shell/package.json）
-    [string]$Build = 'liquid-glass-20261015'
+    [string]$Build = 'mono-glass-20261015'
 )
 
 $ErrorActionPreference = 'Stop'

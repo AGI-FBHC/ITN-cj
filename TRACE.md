@@ -3175,3 +3175,14 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - 产物：dist/ITN-Desktop-0.2.1/ITN-Desktop.exe、dist/ITN-Desktop-0.2.1-win-x64.zip（163.9 MB，release.json 记录版本 0.2.1 / 构建 liquid-glass-20261015 / sourceCommit 与 8 项资源哈希）。旧包 0.2.0 保留可回退。
 - 本轮视觉提交 1694730；重新打包后 dist/ITN-Desktop-0.2.1/release.json 记录 sourceCommit=16947309e481bb48253486c412da6a725c2a7990，包内 style.css / workbench.css 与源码 SHA256 一致。
 
+
+## 2026-10-15 配色调整：深色去绿转黑灰、控件绿→白/黑灰
+- 用户要求：深色模式下绿色少一点，以黑 灰 + 一点点一点点的绿色渐变渲染；深色下按钮等绿色组件切为白色；浅色下按钮等绿色组件改为黑色或灰色。
+- 做法（只改配色令牌与少量写死色值，不动结构与交互）：浅色 --brand 由 #2f7053 换成 #1c211e（近黑）、--brand-2 → #566260（灰）、--brand-strong → #000000、--brand-ink → #ffffff、--brand-soft → #eff1f0、--brand-line → #d7dbd9、--rail-hi/--glow* 一起转中性；深色 --brand 由 #55b98c 换成 #f2f5f3（近白）、--brand-strong → #ffffff、--brand-ink → #0c100e、--brand-soft → rgba(255,255,255,.10)、--brand-line → rgba(255,255,255,.22)。
+- 深色中性色一并去绿：--bg/#121714→#141614、--panel/#171c18→#191c1a、--panel-soft→#1c1e1d、--panel-sunk→#1e201f、--panel-bg/#0e1310→#101211、--line/#262e28→#282b29、--line-soft/--rail-line→#202321、--rail-bg→#0a0c0b、--ink-2→#c2c6c3、--muted→#929896、--rail-ink→#949a97；--ok（答对/成功）保留绿色，这是语义不是品牌。
+- 深色环境光场：--amb-1 由 rgba(70,200,145,.16) 收到 rgba(56,130,98,.12)（"一点点点点绿"），--amb-2/--amb-3 由蓝/暖改成中性灰提亮 rgba(206,212,210,.075) / rgba(186,190,189,.065)，--amb-4 收成暗灰绿；新增 --amb-haze 令牌接管原来写死的中心白雾（浅色 .22 / 深色 .055），深色下不再糊一层白。
+- 深色玻璃的物理方向修正：原来 --glass-fill/--glass-struct 是"比底色更暗"的半透明黑，在近黑底上等于隐形；改成"接光"的提亮 rgba(255,255,255,.055/.05)，--well-fill 反而加深到 rgba(0,0,0,.26)，这样在纯黑底上才分得出"浮起的玻璃"和"凹进去的槽"。
+- 写死的绿色值一并处理：.card.hero 的角部光晕、.stat::after 的下划线渐变、.empty-badge 的描边、两个主题预览色卡；.stat::after 的渐变终点从 rgba(47,112,83,0) 改成 color-mix(in srgb, var(--brand) 8%, transparent)，避免向"透明黑"插值在深色下发灰；.btn:hover 不再固定 rgba(255,255,255,.9)（深色下会白得刺眼），改成按 --glass-fill-strong 与 --brand 混合；.btn.primary 的外发光从 brand 80% 降到 55%。app.js 里 --brand 的两个兜底值同步改成 #1c211e。
+- 防漏改：两个深色令牌块（html[data-theme="dark"] 与 @media 里跟随系统那一份）用脚本按块对齐，并在结尾断言两块内容完全一致（各 50 项），避免"改一处漏一处"。
+- 验证：node tools/glass-shot.cjs 12 页截图（浅 9 + 深 3）+ 三档窄窗口无横向溢出 + 控制台零报错；node tools/stop-check.cjs 11/11；0.2.2 包内 style.css/workbench.css/app.js/内核与源码 SHA256 一致；dist/ITN-Desktop-0.2.2 绿色包空数据目录启动 RESULT=OK。
+- 产物：dist/ITN-Desktop-0.2.2/ITN-Desktop.exe 与 dist/ITN-Desktop-0.2.2-win-x64.zip（release.json: 0.2.2 / mono-glass-20261015）；启动ITN-Desktop.cmd 指向 0.2.2；0.2.0 与 0.2.1 保留可回退。
