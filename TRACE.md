@@ -3036,3 +3036,12 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - `tools/real-ctx-check.ps1` 会复制数据目录再跑，模型配置（含 Key）只进副本；用完可删。
 - 用户运行中的 `dist/ITN-Desktop` 是旧包；新包另放目录并附 ZIP，关掉旧窗口再开（沿用同一数据目录）。
 
+### 提交与可运行包（2026-10-15 13:39）
+- 实现已本地提交：`e67dbc4`（feat(chat): 对话接上界面上下文与思考时间线（Codex 形状），会话列表/空态/引用统计收敛），13 个文件。
+- 绿色包：`dist/ITN-Desktop-chat-ctx/`（+ `dist/ITN-Desktop-chat-ctx-win-x64.zip`，163.7 MB）；
+  `--smoke` 空目录自检 `RESULT=OK`（NAV=8，标题栏/预加载 ok，未碰用户真实数据目录）；
+  zip 内 `resources/app/renderer/app.js` 与 `resources/kernel/itn-desktop-core.exe` 的 SHA256 与源码/`dist/core` 一致
+  （app.js `E6691531…681D`，内核 `BE0221EB…A028`）。
+- 用户当前运行的 `dist/ITN-Desktop` 仍是旧包；本轮不覆盖它（进程占用会拷贝失败）。试用新包：关掉旧窗口，再打开
+  `dist/ITN-Desktop-chat-ctx/ITN-Desktop.exe`（沿用同一数据目录 `%LOCALAPPDATA%\ITN-Desktop`）。
+
