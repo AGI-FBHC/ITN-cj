@@ -3188,3 +3188,12 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - 产物：dist/ITN-Desktop-0.2.2/ITN-Desktop.exe 与 dist/ITN-Desktop-0.2.2-win-x64.zip（release.json: 0.2.2 / mono-glass-20261015）；启动ITN-Desktop.cmd 指向 0.2.2；0.2.0 与 0.2.1 保留可回退。
 - 提交 0cc7d9e；重打包后 0.2.2 的 release.json 记录 sourceCommit=0cc7d9e24c2963439cbe1ba56db5f6891b259ec6，style.css/app.js/workbench.css/内核四项哈希与源码逐项一致。
 
+
+## 2026-10-15 顶部栏去玻璃 + 全局细滚动条
+- 用户要求：顶部栏与其中的控件不做玻璃效果；界面里所有滚动条 / 拖动条细一点，现在还是系统原生的观感。
+- 顶部栏：.titlebar 去掉 backdrop 模糊、斜向扫光、下圆角与外投影，还原成一条平的控制带（--topbar-bg + 底部一条两端淡出的发丝光）；.tb-btn（前进后退 / 折叠 / 三个窗口按钮）改纯透明 + 7px 圆角，悬停只给一点点填充；.topbar / .wb-toolbar / .chat-head 里的 .btn 一律去玻璃芯片（无模糊、无扫光、无投影），primary 只在顶栏里保留纯色底。实测计算样式：titlebar blur=none/img=none/shadow=none/radius=0，tbBtn 与工具条按钮 bg=transparent、无模糊无投影。
+- 滚动条：原来只有 .rail / .view / .artifact-preview 三处覆盖，其余容器（会话栏、成果面板、播放器、检索面板、代码块、输入框…）都还是系统原生。现在用 *::-webkit-scrollbar 全局接管：9px 命中区 + 2px 透明边 + background-clip:padding-box，视觉滑块约 5.6px，轨道全透明、无箭头按钮，悬停加深、按下更深。
+- 关键坑（写进注释与验收脚本）：主样式里**不能**写 scrollbar-width / scrollbar-color —— Chromium 一见这两个属性就忽略整套 ::-webkit-scrollbar，退回原生观感（实测：只写 webkit 槽宽 9px，加上 scrollbar-width:thin 变 10px，加上 scrollbar-color 直接变回 15px 原生）。
+- 另一个坑：headless Chromium 的滚动条永远是覆盖式的（槽宽恒为 0，也不绘制自绘滑块），所以这类改动必须在**真窗口**里量。新增 tools/scrollbar-check.cjs：带窗口（挪到屏幕外）加载 style.css 量探针元素，断言 原生 15px → 自绘 9px、轨道透明、滑块不透明、样式里不含被禁属性。
+- 验证：tools/scrollbar-check.cjs PASS（原生 15px → 自绘 9px / 视觉滑块 5.57px）；tools/glass-shot.cjs 12 页截图 + 窄窗口无溢出 + 控制台零报错，并新增"顶部栏必须无模糊/无扫光/无投影"的断言；tools/stop-check.cjs 11/11；0.2.3 包内 style.css/app.js/workbench.css/内核与源码 SHA256 一致；绿色包空数据目录启动 RESULT=OK。
+- 产物：dist/ITN-Desktop-0.2.3/ITN-Desktop.exe 与 dist/ITN-Desktop-0.2.3-win-x64.zip（release.json: 0.2.3 / flat-chrome-20261015）；启动ITN-Desktop.cmd 指向 0.2.3；0.2.0~0.2.2 保留可回退。

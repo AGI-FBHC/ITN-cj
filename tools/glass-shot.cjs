@@ -80,6 +80,64 @@ const freePort = () => new Promise((res, rej) => {
     await nav('settings'); await shot('12-dark-settings');
     await page.evaluate(() => applyTheme('light')); await sleep(400);
 
+    // 滚动条：确认是自绘的细样式（9px 命中区 + 5px 视觉滑块），而不是系统原生
+    await nav('resources');   // 对话页的 .view 是 overflow:hidden，量不到滚动条，换个正常滚动的页
+    await page.evaluate(() => {
+      const d = document.createElement('div');
+      d.id = 'sb-probe';
+      d.style.height = '3000px';
+      document.getElementById('view').appendChild(d);
+    });
+    await sleep(400);
+    const sb = await page.evaluate(() => {
+      const v = document.getElementById('view');
+      const rail = document.querySelector('.panel-body');
+      return {
+        gutter: v.offsetWidth - v.clientWidth,
+        width: getComputedStyle(v, '::-webkit-scrollbar').width,
+        thumbBorder: getComputedStyle(v, '::-webkit-scrollbar-thumb').borderLeftWidth,
+        thin: getComputedStyle(v).scrollbarWidth,   // 必须为 auto：写了标准属性会顶掉自绘样式
+        railGutter: rail.scrollHeight > rail.clientHeight ? rail.offsetWidth - rail.clientWidth : -1,
+        topbarBlur: getComputedStyle(document.querySelector('.titlebar')).backdropFilter,
+      };
+    });
+    if (sb.thin === 'thin') throw new Error('不该写 scrollbar-width（会让 Chromium 忽略自绘滚动条）');
+    if (sb.topbarBlur !== 'none') throw new Error('顶部栏不该再有 backdrop 模糊，实际 ' + sb.topbarBlur);
+    await page.locator('#view').evaluate((el) => { el.scrollTop = 400; });
+    await sleep(300);
+    await page.screenshot({ path: path.join(shots, '14-scrollbar-full.png') });
+    await page.screenshot({ path: path.join(shots, '14-scrollbar.png'), clip: { x: 1180, y: 200, width: 260, height: 620 } });
+    await page.evaluate(() => document.getElementById('sb-probe').remove());
+    console.log('SCROLLBAR gutter=' + sb.gutter + 'px width=' + sb.width + ' thumb=' + sb.thumbBorder + ' rail-gutter=' + sb.railGutter + ' topbar-blur=' + sb.topbarBlur);
+
+    // 顶部栏与其控件必须"平"：无模糊、无扫光、无投影
+    await nav('chat');
+    await page.waitForSelector('#resource-dock:not([hidden])');
+    await sleep(400);
+    const chrome = await page.evaluate(() => {
+      const css = (el) => {
+        if (!el) return null;
+        const c = getComputedStyle(el);
+        return { blur: c.backdropFilter, img: c.backgroundImage === 'none' ? 'none' : 'has-image',
+                 bg: c.backgroundColor, shadow: c.boxShadow === 'none' ? 'none' : 'has-shadow',
+                 radius: c.borderRadius };
+      };
+      return {
+        titlebar: css(document.querySelector('.titlebar')),
+        tbBtn: css(document.querySelector('.tb-btn')),
+        toolbarBtn: css(document.querySelector('#wb-artifacts')),
+        dockClose: css(document.querySelector('.resource-dock-head .btn')),
+        activeNav: css(document.querySelector('.nav-item.active')),
+      };
+    });
+    for (const [k, v] of Object.entries(chrome)) console.log('CHROME ' + k + ' ' + JSON.stringify(v));
+    const flatChecks = [['titlebar', chrome.titlebar], ['tbBtn', chrome.tbBtn], ['toolbarBtn', chrome.toolbarBtn]];
+    for (const [k, v] of flatChecks) {
+      if (v.blur !== 'none') throw new Error(k + ' 不该有 backdrop 模糊：' + v.blur);
+      if (v.img !== 'none') throw new Error(k + ' 不该有玻璃扫光背景图');
+      if (v.shadow !== 'none') throw new Error(k + ' 不该有投影');
+    }
+
     // 窄窗口：三块玻璃并排时不允许出现横向溢出（留白 + 圆角会吃掉宽度）
     for (const [w, h] of [[1280, 800], [1120, 760], [980, 720]]) {
       await page.setViewportSize({ width: w, height: h });
