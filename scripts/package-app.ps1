@@ -29,6 +29,8 @@ New-Item -ItemType Directory -Force -Path $kernelDir | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $repo "shell\main.js") -Destination $appDir -Force
 Copy-Item -LiteralPath (Join-Path $repo "shell\preload.js") -Destination $appDir -Force
+# pptx 文字预览是同目录里 require 进来的模块，必须一起进包（漏了包里的 main.js 会 require 失败）
+Copy-Item -LiteralPath (Join-Path $repo "shell\pptx.js") -Destination $appDir -Force
 Copy-Item -Path (Join-Path $repo "shell\renderer") -Destination $appDir -Recurse -Force
 Copy-Item -Path (Join-Path $repo "shell\assets") -Destination $appDir -Recurse -Force
 # 随包内置的技能（只读，用户改不了）：外壳用 --skills-dir 指给内核
@@ -61,7 +63,7 @@ Copy-Item -LiteralPath (Join-Path $repo "docs\05-仓颉杯提交说明.md") -Des
 $sourceCommit = (git -C $repo rev-parse HEAD).Trim()
 $assetHashes = [ordered]@{}
 $assetFiles = @(
-    'resources/app/main.js', 'resources/app/preload.js',
+    'resources/app/main.js', 'resources/app/preload.js', 'resources/app/pptx.js',
     'resources/app/renderer/index.html', 'resources/app/renderer/app.js',
     'resources/app/renderer/style.css', 'resources/app/renderer/workbench.js',
     'resources/app/renderer/workbench.css', 'resources/kernel/lumin-core.exe'

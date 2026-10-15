@@ -3298,3 +3298,20 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - `node tools/learning-check.cjs --ui`：**57/57**。
 
 （提交与打包信息见下一条追加）
+## 2026-10-15 晚 · 提交与产物（Lumin 0.3.1）
+- 提交 `4827cdb`（17 个文件，+1805 / -141）：驱动越界修复 + 驱动回归单测 + 权限/工作区分档 + 会话栏重排 +
+  回复流（工具卡/思考/内部事件/四个 icon/改这条重发/分支）+ 窗口内斜杠命令 + pptx 预览与播放器折叠 +
+  分栏可拖 + 顶部栏与页面同色 + 深色黑金背景 + 缝隙收紧 + 气泡重做。
+- 打包：`scripts/package-app.ps1 -OutDir dist/Lumin-0.3.1 -ZipPath dist/Lumin-0.3.1-win-x64.zip
+  -Build lumin-sidebar-work-perms-20261015`（版本号取自 shell/package.json，已提到 0.3.1）。
+- 包内 release.json 记录 sourceCommit=4827cdb61b8804f0cebd86e5f960e5cdd77b1421；
+  app.js / style.css / main.js / pptx.js（新加，之前漏进包会让 require 失败）/ preload.js /
+  lumin-core.exe 六项 SHA256 与源码逐项一致（self-check BAD=0）。
+- 绿色包空数据目录启动自检：`tools/package-isolated-smoke.ps1 -Exe dist\Lumin-0.3.1\Lumin.exe` → RESULT=OK
+  （PRELOAD=ok / TITLEBAR=ok / TITLE=Lumin / NAV=6）。注意该脚本的参数是 -Exe，不是 -PackageDir。
+- `启动Lumin.cmd` 指向 0.3.1；0.2.0~0.3.0 全部保留，可回退。滚动条真窗口复检：原生 15px → 自绘 9px PASS。
+- 接手须知：
+  ① 工作目录从"可空"变成"总是有默认值"以后，桌面链路第一次挂上了审批层，联网因此一度开始弹审批；
+     已用 `Approver.askWeb`（桌面 false / CLI true）解耦 —— 联网归界面上的"联网档位"管。
+  ② 会话栏分组折叠态在前端 `state.railGroups`，展开态在 `state.railExpanded`（界面态，不进库）。
+  ③ `tmp/repro-data`（21MB，已 gitignore）是本次复现时从用户数据目录拷来的副本，可随时删。
