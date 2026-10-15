@@ -2939,3 +2939,10 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - 已校验包内 renderer/app.js、resources/kernel/itn-desktop-core.exe、skills/kb-harvest/SKILL.md 的 SHA256 与源码/构建产物相等。zip最终写入与提交号随后确认。
 - docs/10 当前清单按实际结果回填，R26/N4与R29基本闭环已完成；docs/11顶部纠正“未开始迁移”的过期状态；PRODUCT与使用说明移除“固定先检索/拟大纲/逐节写作”等旧说法。
 - git diff --check通过；提交只显式暂存本轮代码、测试与文档。密钥、模型配置副本、tmp、dist不纳入Git；无远程推送。
+
+## 2026-10-15 本轮交付完成与本地Git记录
+- 功能实现提交：1ffb829（feat(desktop): finish lumin skill integration and staged knowledge collection），22个明确文件；包含lumin技能接线、静默模型取消/超时/空完成处理、资料收集、N4、回归与交接。
+- ZIP最终已生成，171656095字节；读取ZIP中央目录并逐一计算 renderer/app.js、kernel/itn-desktop-core.exe、kb-harvest/SKILL.md 的SHA256，三项均与当前源码/构建产物一致。
+- 可运行应用：D:/Desktop/ITN/ITN-Desktop/dist/ITN-Desktop/ITN-Desktop.exe；分发包：D:/Desktop/ITN/ITN-Desktop/dist/ITN-Desktop-win-x64.zip。
+- docs/10本轮P0.1/P0.2/P0.3/P1/P2/P3按实际验收回填。额外闲聊探针未执行、上游模型偶发静默、GitHub认证/限流退路/暂存物理清理等边界已明示，未当成通过或已实现。
+- 本条与清单状态以独立文档提交记录，提交后工作区应干净；未推送远程，lumin本体与ITN网页版工作区不变。
