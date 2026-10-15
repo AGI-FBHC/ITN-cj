@@ -633,6 +633,7 @@ async function go(page, section, opts) {
   ta.innerHTML = "";
   if (meta.actions) for (const a of meta.actions()) ta.appendChild(a);
   const v = $("view");
+  v.classList.remove("chat-blank");
   v.innerHTML = '<div class="empty inline"><span class="spinner"></span> 加载中…</div>';
   // 真正滚动的是 #view（.main 是 overflow:hidden）。此前重置的是 .main，等于没重置，
   // 于是从长页面切到别的页面会停在半截。就地更新（例如标记已读）则刻意不调用 go()，保住阅读位置。
@@ -5152,6 +5153,12 @@ PAGES.chat = {
     setChatMode(true);
     const v = $("view");
     v.innerHTML = "";
+    // 空会话：欢迎块 + 输入区居中（Codex 新开一段的形状）。
+    // 工具面板打开时先让位 —— 居中布局下内容高于窗口时顶部会被裁掉，收起按钮就点不到了。
+    const paintBlank = () => {
+      const sheetNow = $("tool-sheet");
+      v.classList.toggle("chat-blank", !state.chatTurns.length && !(sheetNow && !sheetNow.hidden));
+    };
 
     if (!hasChatModel()) {
       v.appendChild(cardOf({
@@ -5179,7 +5186,7 @@ PAGES.chat = {
     shHead.appendChild(spacer());
     const curSkill = (state.skills || []).find((x) => x.id === state.skill);
     if (curSkill) shHead.appendChild(tag("技能：" + curSkill.title, "ok"));
-    shHead.appendChild(btn("收起", "sm ghost", () => { sheet.hidden = true; }));
+    shHead.appendChild(btn("收起", "sm ghost", () => { sheet.hidden = true; paintBlank(); }));
     sheet.appendChild(shHead);
     if (curSkill) {
       sheet.appendChild(el("p", "muted sm",
@@ -5342,6 +5349,7 @@ PAGES.chat = {
         const box = $("tool-sheet");
         if (!box) return;
         box.hidden = false;
+        paintBlank();
         box.scrollIntoView({ block: "start" });
       }));
       menu.appendChild(actionsBox);
@@ -5533,6 +5541,7 @@ PAGES.chat = {
       // 会话 id 标在对话区上：自检要按"这一段会话"验联网档位，调试时也好对号
       thread.dataset.session = state.chatSessionId || "";
       thread.innerHTML = "";
+      paintBlank();
       if (!state.chatTurns.length) {
         thread.appendChild(emptyState({
           inline: true,
@@ -5540,7 +5549,8 @@ PAGES.chat = {
           title: state.chatSessionId ? "这个会话还没有内容" : "开始一段对话",
           // 作用范围在这里说清：这一段对话到底用哪份资料
           text: (scopeNow() ? ("这一段对话只用「" + kbName(scopeNow()) + "」，答案带出处。")
-                            : "这一段对话是通用模式：本机所有知识库一起检索。"),
+                            : "这一段对话是通用模式：本机所有知识库一起检索。") +
+                (state.chapter ? " 会带上你正在学的《" + state.chapter + "》。" : ""),
           actions: hasKb() ? [
             // 第一条跟着"当前在学什么"走：学过某一章才问"这一章"，否则问一个一定有落点的问题
             (state.chapter

@@ -573,6 +573,10 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--brand-soft)
 /* ---------- 主对话框 ---------- */
 /* 对话页固定高度：头部与输入区固定，只有中间的消息流滚动（和桌面聊天客户端一致） */
 body.chat-mode .view { display: flex; flex-direction: column; gap: 12px; overflow: hidden; padding-bottom: 20px; }
+/* 还没有内容的新会话：欢迎块 + 输入区整体居中（Codex 新开一段的形状），
+   有内容之后恢复"消息流滚动、输入区贴底" */
+body.chat-mode .view.chat-blank { justify-content: center; }
+body.chat-mode .view.chat-blank .chat-thread { flex: 0 1 auto; overflow: auto; }
 .chat-head {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
@@ -581,13 +585,13 @@ body.chat-mode .view { display: flex; flex-direction: column; gap: 12px; overflo
 .chat-head select { width: auto; max-width: 220px; }
 .chat-thread { flex: 1; overflow: auto; padding-right: 6px; min-height: 120px; }
 .turn-block { margin-bottom: 20px; }
-.tool-rows { display: flex; flex-direction: column; gap: 4px; margin: 8px 0 10px; }
+.tool-rows { display: flex; flex-direction: column; gap: 2px; margin: 6px 0 8px; }
 .tool-row {
   display: flex; align-items: center; gap: 8px;
   font-size: calc(13px * var(--fs, 1)); color: var(--muted);
-  background: var(--panel-soft); border: 1px solid var(--line-soft);
-  border-radius: 8px; padding: 5px 10px;
+  background: none; border: 0; border-radius: 6px; padding: 3px 6px; margin-left: -6px;
 }
+.tool-row:hover { background: var(--panel-soft); }
 .tool-row .tool-dot { flex: 0 0 6px; width: 6px; height: 6px; border-radius: 50%; background: var(--brand); }
 .tool-row.running .tool-dot { animation: pulsedot 1s ease-in-out infinite; }
 .tool-row .tool-name { color: var(--ink-2); }

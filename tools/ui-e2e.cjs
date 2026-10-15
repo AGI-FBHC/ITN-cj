@@ -863,12 +863,14 @@ fs.writeFileSync(singleFile, [
     return turns + ' 轮，出处 ' + cites + ' 条（共 ' + n + ' 条会话）';
   });
 
-  await step('「新建对话」会开一条空会话', async () => {
+  await step('「新建对话」会开一条空会话（输入区居中，Codex 形状）', async () => {
     await page.locator('#rail-new').click();
     await page.waitForTimeout(900);
     const cards = await page.locator('.turn-block').count();
     assert(cards === 0, '新会话应是空的，实际 ' + cards + ' 轮');
-    return '空会话就绪';
+    const blank = await page.evaluate(() => document.getElementById('view').classList.contains('chat-blank'));
+    assert(blank, '空会话应把欢迎块与输入区居中（view.chat-blank）');
+    return '空会话就绪 · 输入区居中';
   });
 
   /* ---------- 课件播放器 ---------- */
