@@ -3055,3 +3055,11 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
   可视化冒烟 `tmp/vis-empty.png`（居中）、`tmp/vis-thread.png`（扁平工具行 + 越界提醒）；截图刷新 `tmp/ui-e2e-shots/11-对话两栏.png`、`14-工具调用.png`。
 - 提交号与试跑包哈希见下条。
 
+### 提交与试跑包（2026-10-15 13:57）
+- 提交：`d601366`（polish(chat): 空会话居中与扁平工具行，空态写明会带上正在学的那一章），5 个文件；`docs/10` 增 P5 行。
+- 试跑包已就地刷新：`dist/ITN-Desktop-chat-ctx/` 与 `dist/ITN-Desktop-chat-ctx-win-x64.zip`；
+  `--smoke` 空目录自检 `RESULT=OK`；源码 / 包目录 / ZIP 三处哈希一致：
+  app.js `9E38ACDA…0679`、style.css `2370F908…27BB`、内核 `BE0221EB…A028`（内核本轮未改，hash 与上轮相同）。
+- 用户当前仍在运行旧目录 `dist/ITN-Desktop`（12:43 启动的进程）；试用新包前请先关掉旧窗口，再打开
+  `dist/ITN-Desktop-chat-ctx/ITN-Desktop.exe`（沿用同一数据目录，旧会话与配置都还在）。
+
