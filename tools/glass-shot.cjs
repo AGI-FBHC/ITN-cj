@@ -171,6 +171,17 @@ const freePort = () => new Promise((res, rej) => {
     /* 会话栏：形状照 Codex（项目 = 一行可折叠标题 + 缩进的会话），并且点一下必须"就地换"、
        不许整页重建（原来会闪一次"加载中…"）。
        成果面板是覆盖式的（窄窗口下盖住整个右侧），验点击前先把它收起。 */
+    // 成果面板与对话同平面：窄窗口下也不许变成覆盖式抽屉，而且有拖动条
+    const dockInfo = await page.evaluate(() => {
+      const d = document.getElementById('resource-dock');
+      if (!d) return { found: false };
+      const cs = getComputedStyle(d);
+      return { found: true, pos: cs.position, splitter: !!d.querySelector('.splitter-dock'), w: Math.round(d.getBoundingClientRect().width) };
+    });
+    if (dockInfo.found && dockInfo.pos === 'absolute') throw new Error('成果面板不该是覆盖式抽屉（会盖住对话）');
+    if (dockInfo.found && !dockInfo.splitter) throw new Error('成果面板边缘应当有可拖的宽度手柄');
+    console.log('DOCK-INLINE position=' + dockInfo.pos + ' splitter=' + dockInfo.splitter + ' w=' + dockInfo.w);
+
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.evaluate(() => { const d = document.getElementById('resource-dock'); if (d) d.hidden = true; });
     await nav('chat');
@@ -189,6 +200,27 @@ const freePort = () => new Promise((res, rej) => {
     await page.waitForFunction(() => !state.busyTurn, null, { timeout: 90000 });
     await sleep(800);
 
+    /* 顶栏那条面包屑：📁 工作区 | 会话名（名字是这一段对话的，不是全书/全库的） */
+    const crumb = await page.locator('.wb-crumb').innerText();
+    if (crumb.indexOf('|') < 0) throw new Error('对话页顶栏应当是「工作区 | 会话名」，实际：' + crumb.replace(/\s+/g, " "));
+    if (await page.locator('.wb-crumb .wb-crumb-ws svg').count() !== 1) throw new Error('工作区前面应当有一个文件夹图标');
+    // 右上角的三个点：改名字 / 新建分支 / 复制会话链接
+    await page.locator('.wb-menu-btn').click();
+    await page.waitForSelector('.session-menu-right', { timeout: 5000 });
+    const smText = (await page.locator('.session-menu-right').innerText()).replace(/\s+/g, " ");
+    for (const need of ['修改会话名称', '新建分支', '复制会话链接']) {
+      if (smText.indexOf(need) < 0) throw new Error('会话菜单里缺少「' + need + '」，实际：' + smText);
+    }
+    if (smText.indexOf('（从最新') >= 0 || smText.indexOf('(从最新') >= 0) throw new Error('分支项不该带括号说明');
+    await page.keyboard.press('Escape');
+    await sleep(200);
+    console.log('CHAT-HEADER 面包屑=' + crumb.replace(/\s+/g, " ") + ' / 菜单=' + smText);
+
+    // 消息行：用户气泡下面是"时间 · 复制 · 重写"，回答下面是"复制 · 分支 · 时间"
+    if (!(await page.locator('#chat-thread .msg-user .msg-meta').count())) throw new Error('用户气泡下面应当有时间与图标');
+    if (!(await page.locator('#chat-thread .msg-meta.left').count())) throw new Error('回答下面应当有复制/分支与时间');
+    if (!(await page.locator('#chat-thread .msg-meta .msg-time').count())) throw new Error('消息底下应当显示时间');
+
     // 旧的"项目 chip 一排"必须消失
     if (await page.locator('.rail-new').count()) throw new Error('新建对话那一排 chip 应该已经去掉（改成右上角 ＋ 的模式菜单）');
     const heads = await page.locator('#panel-body .rail-group-head').count();
@@ -205,12 +237,59 @@ const freePort = () => new Promise((res, rej) => {
     const menuText = (await page.locator('.rail-menu.new-menu').innerText()).replace(/\s+/g, " ");
     if (menuText.indexOf('常规聊天') < 0) throw new Error('＋ 菜单里应当有「常规聊天」，实际：' + menuText);
     if (menuText.indexOf('新建项目') < 0) throw new Error('＋ 菜单里应当有「新建项目…」，实际：' + menuText);
+    // 浮窗必须挂在 body 上（fixed）：面板是玻璃层，absolute 的菜单比面板宽就会被侧栏盖住
+    const popInfo = await page.evaluate(() => {
+      const m = document.querySelector('.rail-menu.popover');
+      if (!m) return null;
+      const r = m.getBoundingClientRect();
+      return { pos: getComputedStyle(m).position, left: Math.round(r.left), top: Math.round(r.top),
+               right: Math.round(r.right), bottom: Math.round(r.bottom),
+               vw: window.innerWidth, vh: window.innerHeight, parent: m.parentElement.tagName };
+    });
+    if (!popInfo) throw new Error('＋ 的浮窗没出来');
+    if (popInfo.pos !== 'fixed' || popInfo.parent !== 'BODY') throw new Error('浮窗应当是挂在 body 上的 fixed 层，实际 ' + JSON.stringify(popInfo));
+    if (popInfo.left < 8 || popInfo.right > popInfo.vw - 8 || popInfo.top < 8 || popInfo.bottom > popInfo.vh - 8) {
+      throw new Error('浮窗超出可视区（会被裁掉）：' + JSON.stringify(popInfo));
+    }
+    console.log('POPOVER fixed left=' + popInfo.left + ' top=' + popInfo.top + ' 视口=' + popInfo.vw + 'x' + popInfo.vh);
+    await shot('16-new-menu');
     await page.keyboard.press('Escape');           // Esc 收起菜单
     await sleep(200);
     if (await page.locator('.rail-menu.new-menu').count()) throw new Error('点了别处，＋ 菜单应该收起');
 
+    /* 新建会话必须把对话区清空。
+       上一版只清了渲染缓存（paintCache）没摘 DOM，旧节点还挂在对话区上，
+       用户看到的是"新会话把上一段的记录也带过来了"（实测报过）。 */
+    const beforeNew = await page.locator('#chat-thread .turn-block').count();
+    if (beforeNew < 1) throw new Error('这一段本来就该有内容，实际 ' + beforeNew);
+    await page.locator('#rail-new').click();
+    await page.waitForSelector('.rail-menu.new-menu', { timeout: 5000 });
+    await page.locator('.rail-menu.new-menu .rail-menu-item').first().click();
+    await sleep(900);
+    const afterNew = await page.locator('#chat-thread .turn-block').count();
+    if (afterNew !== 0) throw new Error('新建会话后对话区应当清空，实际还剩 ' + afterNew + ' 轮（旧记录没摘掉）');
+    console.log('NEW-SESSION 新会话对话区已清空（旧内容 ' + beforeNew + ' 轮不再显示）');
+
+    // 空会话不进列表（列表是按"有事件"的会话聚合出来的），所以这里数到 2 就够验切换
     const rows = await page.locator('#panel-body .panel-item').count();
     if (rows < 2) throw new Error('至少要两段会话才能验切换，实际 ' + rows);
+    /* 会话列表不能每轮被整块重建：以前 renderPanel 先清空再等 HTTP，用户看到列表闪一下。
+       这里数"面板被清空过几次" —— 一轮问答里应当只有收尾那一次（标题/时间变了才需要重建）。 */
+    await page.evaluate(() => {
+      window.__panelRebuilds = 0;
+      const b = document.getElementById('panel-body');
+      new MutationObserver((recs) => {
+        for (const r of recs) if (r.type === 'childList' && r.removedNodes.length > 3) window.__panelRebuilds++;
+      }).observe(b, { childList: true });
+    });
+    await page.locator('#chat-input').fill('第三轮，看看列表会不会闪');
+    await page.locator('.composer-send').click();
+    await page.waitForFunction(() => !state.busyTurn, null, { timeout: 90000 });
+    await sleep(1200);
+    const rebuilds = await page.evaluate(() => window.__panelRebuilds);
+    if (rebuilds > 1) throw new Error('跑一轮期间会话列表被整块重建 ' + rebuilds + ' 次（就是"闪一下"的来源）');
+    console.log('RAIL-NO-FLASH 一轮里列表重建 ' + rebuilds + ' 次');
+
     await page.evaluate(() => { window.__thread = document.querySelector('.chat-thread'); });
     const t0 = Date.now();
     await page.locator('#panel-body .panel-item').nth(1).click();

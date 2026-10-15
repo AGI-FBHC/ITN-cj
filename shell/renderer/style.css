@@ -2621,3 +2621,193 @@ body.splitting * { user-select: none !important; }
 
 /* 深色下的主区：跟着背景走一点暖色，别是死黑 */
 html[data-theme="dark"] .main { background-color: rgba(255, 255, 255, .035); }
+
+
+/* ============================================================
+   第四轮：消息行重做 / 成果面板与对话同平面 / 深色金色再收一半
+   ============================================================ */
+
+/* 1 · 用户气泡：一层浅底 + 大圆角，不要描边不要投影；下面一行小字（时间 · 复制 · 重写） */
+.msg-user { display: flex; justify-content: flex-end; align-items: flex-start; }
+.msg-stack { display: flex; flex-direction: column; align-items: flex-end; max-width: min(760px, 78%); }
+.msg-user .msg-body {
+  padding: 8px 13px;
+  border-radius: 16px;
+  border: 0;
+  background-color: var(--bubble-user);
+  box-shadow: none;
+  color: var(--ink);
+  font-size: calc(14px * var(--fs, 1));
+  line-height: 1.65;
+  word-break: break-word;
+}
+.msg-user .msg-body p:first-child { margin-top: 0; }
+.msg-user .msg-body p:last-child { margin-bottom: 0; }
+
+/* 助手回答下面那行同样的小字：icon 常显但很淡，悬停变清楚 */
+.msg-meta {
+  display: flex; align-items: center; gap: 4px; margin: 4px 2px 0;
+  color: var(--muted); font-size: calc(11.5px * var(--fs, 1));
+}
+.msg-meta.right { justify-content: flex-end; }
+.msg-meta .msg-time { padding: 0 4px; font-variant-numeric: tabular-nums; }
+.msg-meta .msg-icon-btn { width: 24px; height: 24px; opacity: .55; }
+.msg-meta .msg-icon-btn:hover { opacity: 1; background-color: var(--panel-soft); }
+.msg-meta .msg-icon-btn svg { width: 14px; height: 14px; }
+.turn-block:hover .msg-meta .msg-icon-btn { opacity: .85; }
+.turn-actions { display: none; }   /* 旧的整行动作条已经拆进两条 msg-meta */
+
+/* 2 · 学习成果与对话同平面：窗口变窄也不再盖住对话，只是各自变窄；宽度可拖 */
+@media (max-width: 1180px) {
+  .resource-dock { position: relative; width: auto; box-shadow: var(--glass-inner-lg), var(--glass-lift); }
+}
+@media (max-width: 720px) {
+  .resource-dock { position: relative; }
+  body.chat-mode .main { min-width: 0; }
+}
+.main { min-width: 0; }
+.resource-dock { min-width: 260px; }
+.panel { min-width: 180px; }
+
+/* 3 · 深色：金色再收一半，以黑为主（金色只在角落淡淡地流一点） */
+html[data-theme="dark"] {
+  --bg: #111110;
+  --panel-bg: #0d0d0c;
+  --glow: rgba(198, 162, 100, .06);
+  --glow-2: rgba(150, 122, 74, .04);
+  --amb-1: rgba(203, 166, 102, .10);
+  --amb-2: rgba(255, 232, 190, .035);
+  --amb-3: rgba(186, 190, 189, .03);
+  --amb-4: rgba(92, 74, 42, .09);
+  --amb-haze: rgba(255, 236, 200, .03);
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]):not([data-theme="dark"]) {
+    --bg: #111110;
+    --panel-bg: #0d0d0c;
+    --glow: rgba(198, 162, 100, .06);
+    --glow-2: rgba(150, 122, 74, .04);
+    --amb-1: rgba(203, 166, 102, .10);
+    --amb-2: rgba(255, 232, 190, .035);
+    --amb-3: rgba(186, 190, 189, .03);
+    --amb-4: rgba(92, 74, 42, .09);
+    --amb-haze: rgba(255, 236, 200, .03);
+  }
+}
+/* 主区在深色下只比背景亮一点点，别再叠一层暖色 */
+html[data-theme="dark"] .main { background-color: rgba(255, 255, 255, .025); }
+
+
+/* 就地改这条消息：跟气泡同一列宽，不要一个占满整行的大方框 */
+.msg-editor { width: 100%; }
+.msg-editor-input {
+  width: 100%; box-sizing: border-box; min-height: 42px; max-height: 220px; resize: vertical;
+  padding: 8px 12px; border-radius: 14px; border: 1px solid var(--brand-line);
+  background-color: var(--panel); color: var(--ink);
+  font: inherit; font-size: calc(14px * var(--fs, 1)); line-height: 1.6;
+}
+.msg-editor-input:focus { outline: none; border-color: var(--brand); }
+.msg-editor-actions { margin-top: 6px; justify-content: flex-end; gap: 6px; }
+
+
+/* ---------- 对话页顶栏：面包屑（📁 工作区 | 会话名）与会话菜单 ---------- */
+.wb-crumb { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
+.wb-crumb-ws {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0;
+  color: var(--ink-2); font-size: calc(12.5px * var(--fs, 1)); font-weight: 600;
+}
+.wb-crumb-ws svg { width: 15px; height: 15px; flex: 0 0 auto; color: var(--muted); }
+.wb-crumb-ws > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-crumb-ws.clickable { cursor: pointer; border-radius: 8px; padding: 2px 6px; margin-left: -6px; }
+.wb-crumb-ws.clickable:hover { background-color: var(--panel-soft); color: var(--ink); }
+.wb-crumb-sep { color: var(--line); font-weight: 400; }
+.wb-crumb-title {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ink); font-size: calc(13px * var(--fs, 1)); font-weight: 600;
+}
+.wb-menu-wrap { position: relative; display: inline-flex; }
+.wb-menu-btn {
+  width: 28px; height: 28px; padding: 0; display: grid; place-items: center;
+  border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer;
+}
+.wb-menu-btn:hover:not(:disabled) { background-color: var(--panel-soft); color: var(--ink); }
+.wb-menu-btn:disabled { opacity: .4; cursor: default; }
+.wb-menu-btn svg { width: 16px; height: 16px; }
+.session-menu-right { right: 0; left: auto; min-width: 200px; }
+
+
+/* ---------- 浮层菜单（＋ / 项目 / 会话 ⋯）：挂在 body 上，永远不被侧栏压住 ---------- */
+.rail-menu.popover {
+  position: fixed; top: 0; left: 0; right: auto; bottom: auto; z-index: 90;
+  max-height: min(70vh, 560px); overflow: auto;
+}
+.rail-menu.popover.new-menu { min-width: 268px; }
+
+/* 工作区 chip：与权限 chip 并排，长得一样（它是"在哪儿干活"，权限是"能改哪儿"） */
+.composer-chip .cp-folder { display: inline-flex; }
+
+
+/* ============================================================
+   第五轮：列表不再闪（就地刷新）/ 深色再收金 / 成果面板与对话同一平面
+   ============================================================ */
+
+/* 1 · 深色：黑是底，金色只在角落里流一点 —— 比上一轮再收一半。
+       金色只进背景光场，控件与文字仍是白 / 灰。 */
+html[data-theme="dark"] {
+  --glow: rgba(198, 162, 100, .035);
+  --glow-2: rgba(150, 122, 74, .02);
+  --amb-1: rgba(203, 166, 102, .055);
+  --amb-2: rgba(255, 232, 190, .02);
+  --amb-3: rgba(186, 190, 189, .018);
+  --amb-4: rgba(92, 74, 42, .05);
+  --amb-haze: rgba(255, 236, 200, .018);
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]):not([data-theme="dark"]) {
+    --glow: rgba(198, 162, 100, .035);
+    --glow-2: rgba(150, 122, 74, .02);
+    --amb-1: rgba(203, 166, 102, .055);
+    --amb-2: rgba(255, 232, 190, .02);
+    --amb-3: rgba(186, 190, 189, .018);
+    --amb-4: rgba(92, 74, 42, .05);
+    --amb-haze: rgba(255, 236, 200, .018);
+  }
+}
+/* 主区在深色下只比背景亮一点点，别再叠一层暖色 */
+html[data-theme="dark"] .main { background-color: rgba(255, 255, 255, .02); }
+
+/* 2 · 成果面板：与主区并列的一块，不再是覆盖式抽屉（窗口窄了也各占各的宽）。
+       它也是 .splitter-dock 的定位祖先，所以 position 不能是 static。 */
+.resource-dock { position: relative; }
+
+/* 3 · 气泡宽度：78% 的钳制只加在"那一列"（.msg-stack）上。
+       之前 .msg-body 自己也带 min(760px,78%)，百分比按 96px 的窄列解析 → 75px 就把
+       「第二个会话」折成两行（实测）。气泡自己不再设百分比上限。 */
+.msg-stack .msg-body { max-width: none; }
+
+/* 4 · 就地改写：气泡留着，编辑器挂在它下面，宽度跟着那一列走 */
+.msg-stack .msg-editor { width: 100%; margin-top: 6px; }
+.msg-stack .msg-editor-input { background-color: var(--panel-sunk); }
+
+/* 5 · 会话行"就地刷新"时不要有过渡，改字就是改字，不带动画 */
+.panel-item-title, .panel-item-meta { transition: none; }
+
+/* 6 · 窗口变窄：三栏一起收，对话区永远留得下（成果面板不再变成盖在对话上的抽屉） */
+.wb-crumb-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wb-crumb-ws { max-width: 36vw; }
+@media (max-width: 1180px) {
+  .panel { flex: 0 0 200px; width: 200px; }
+  .resource-dock { flex: 0 1 clamp(260px, 34vw, 420px); width: auto; min-width: 240px; }
+  .main { min-width: 300px; }
+  .wb-toolbar { gap: 8px; padding: 8px 12px; }
+  .wb-crumb { min-width: 0; flex: 0 1 auto; }
+  .wb-crumb-title { max-width: 26vw; }
+  .wb-task { display: none; }
+}
+@media (max-width: 720px) {
+  .wb-crumb-ws > span { max-width: 22vw; }
+  .wb-crumb-title { max-width: 30vw; }
+}
+
+/* 7 · 窄窗口下输入框下面那几枚 chip 不折行（「常规聊天」被折成两行过） */
+.composer-chip, .composer-model { white-space: nowrap; }

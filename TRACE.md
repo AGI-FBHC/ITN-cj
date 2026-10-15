@@ -3315,3 +3315,88 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
      已用 `Approver.askWeb`（桌面 false / CLI true）解耦 —— 联网归界面上的"联网档位"管。
   ② 会话栏分组折叠态在前端 `state.railGroups`，展开态在 `state.railExpanded`（界面态，不进库）。
   ③ `tmp/repro-data`（21MB，已 gitignore）是本次复现时从用户数据目录拷来的副本，可随时删。
+
+## 2026-10-15 深夜 · 第五轮：列表不再闪 / 深色再收金 / 会话名与链接 / 成果面板同平面
+
+用户这一轮的原话（按条对应下面各节）：
+"对话列表老是会刷新，闪一下"、"暗色主题下金色有点多，黑色多些"、"这样的气泡丑死了，重写一个放到我发的那条气泡下面，
+我发的气泡下面要有时间、复制icon、重写icon，agent 回复下面要有复制icon、分支icon和时间，改最近一条内容要删掉最新回复"、
+"学习成果的侧边栏与对话放在同一平面，缩小窗口时盖住对话框了，要支持宽度拖拽"、
+"新建会话把之前的旧会话记录也放到对话框页面里了"、
+"对话栏顶部放文件夹图标 + 工作区名称 + 竖杠 + 会话名称"、
+"会话名在第一次提问后另起一次请求让模型生成，先用第一句话+省略号，名字回来只更新一次；以后改写第一条提问也不动它"、
+"对话栏右上角三个点：修改会话名称 / 新建分支（从最新的一条） / 复制会话链接"。
+
+### 1. 会话列表"闪一下"（两处根因）
+- **重读列表时整列重建**：`shell/renderer/app.js` 的 `PANELS.chat.sig` / `chatRailSig` 原来把标题、最后活动时间、
+  当前会话都算进指纹 —— 每跑完一轮 `reloadSessions()` 都会让指纹变化，于是整列 DOM 被 `replaceChildren` 换掉。
+  现在指纹只留**结构**（会话 id 顺序 + 项目 + 搜索词 + 折叠/展开态），内容变化走新增的 `PANELS.chat.refresh(body)`，
+  只改 `title/meta/highlight` 那几处文字；`renderPanel()` 在"指纹没变"的分支里会调用 `def.refresh`。
+- **内核 list() 的 N+1**：`core/src/session/session.cj` 的 `SessionStore.list()` 原来按 sessionId 逐条 `summary()`，
+  40 段会话要发 150+ 条语句；现在固定 4 趟查询（分组统计 / 首个 user/message / 首个 turn/start / sessions_meta 一次读完），
+  并为 `session_events(kind, id)` 加了索引 `ix_session_events_kind`（`core/src/db/schema.cj`，IF NOT EXISTS，老库自动补）。
+- 验证：`tools/glass-shot.cjs` 里新增的 `RAIL-NO-FLASH` 计数（一轮里"删掉 >3 个子节点"的 MutationRecord 次数）
+  实测 1 次 —— 那一次是新会话第一次进列表（结构真的变了），其余都是就地改字。
+
+### 2. 深色：黑是底，金只在角落里流一点
+- `shell/renderer/style.css` 末尾追加第五轮覆盖块：`--glow .10→.035`、`--amb-1 .17→.055`、`--amb-4 .16→.05`、
+  `--amb-haze .05→.018`（含 `prefers-color-scheme` 分支）。金色**只**进背景光场，控件/文字仍是白灰。
+
+### 3. 消息行重做（气泡 + 两行小字）
+- 用户气泡：右上对齐、一层浅底、无描边无投影、圆角 16px；气泡下面一行 `时间 · 复制 · 重写`。
+- 助手回答：正文保持无气泡（Codex 形状），下面一行 `复制 · 分支 · 内部事件 · 时间`。
+- 新增 `msgMeta(opts)`（app.js）统一拼这一行；`turn-block` 的旧 `.turn-actions` 整条废掉。
+- **顺带修掉一个真 bug**：`.msg-body` 自己带的 `max-width: min(760px,78%)` 里的 78% 是按窄列（96px）解析的，
+  把「第二个会话」折成两行（实测气泡只有 75px）。现在百分比只留在 `.msg-stack` 上，`.msg-stack .msg-body { max-width: none }`。
+- 改写不再是"整块替换气泡"：`editTurnInline()` 把编辑器**挂在气泡下面**（气泡留着、那行小字让位），
+  两个去处仍是"保存并重发"（`/api/sessions/rewind` 物理删掉这一轮起的事件再发）与"另开分支再发"。
+
+### 4. 学习成果面板与对话同一平面
+- `shell/renderer/workbench.css` 与 `style.css`：≤1180px 不再把 `.resource-dock` 变成 `position:absolute` 的抽屉
+  （那会盖住对话框），改成 `position:relative` 留在同一行里 —— 注意**不能**用 `static`：
+  面板里的拖动条 `.splitter-dock` 是绝对定位，`static` 会让它跑到别处去。
+- 宽度可拖：`LAYOUT_COLS.dock` + `installSplitters()`（成果面板是动态创建的，`ensureResourceDock()` 里补挂一次）。
+- 窄窗口：三栏一起收（panel 200 / dock clamp(260,34vw,420) / main 最小 300），顶栏不折行（省略号 + 隐藏任务状态）。
+
+### 5. 新建会话不再带出旧记录
+- 根因在渲染层：`paint()` 在"这一轮没有内容"的分支里只补空态、**不摘旧节点**，上一段会话的 `turn-block` 还挂在
+  `#chat-thread` 上。现在每次 `paint()` 都算一份 `keep` 集合并 `reconcileThread(keep)` 摘掉无人认领的节点
+  （待批准卡片同样改成按 id 复用/摘除）。
+- glass-shot 里 `NEW-SESSION` 断言：新建后 `#chat-thread .turn-block` 必须为 0。
+
+### 6. 对话页顶栏：📁 工作区 | 会话名，右上角 ⋯
+- `sessionCrumb()` / `sessionMoreBtn()`（app.js）+ `.wb-crumb*` / `.wb-menu-btn` 样式；工作区名点击可在资源管理器打开。
+- ⋯ 菜单三项：`修改会话名称…` / `新建分支` / `复制会话链接`（`lumin://thread/<会话id>`）。
+- 深链接闭环：`shell/main.js` 注册 `lumin://` 协议 + 单实例 + `deeplink:thread` 转发（本轮补齐），
+  `shell/preload.js` 新增 `onDeepLink`，`boot()` 收到就 `loadSessions()` 之后 `openChatSession(id)`；
+  打包自检的 PRELOAD 断言也扩到了 `onDeepLink`。
+- 「新建分支」= **从最新的一条分**：`/api/sessions/branch` 允许 `turnId` 为空，内核走新增的
+  `SessionStore.branchAll()`（整段事件复制过去，含最后一轮；继承项目归属，不继承上下文缓存）。
+
+### 7. 会话标题：第一次提问之后生成一次
+- 内核新增 `POST /api/sessions/title`：`titleReady()`（用户改过名字 / 已经问过模型 → 直接 `generated:false`）、
+  `markTitleAsked()`（**先记后问**，失败不重试）、`firstUserText()`、`cleanSessionTitle()`（只取第一行 → 剥「标题：」前缀 →
+  来回剥成对引号与结尾标点 → 砍到 24 字节）。
+- 前端 `maybeGenerateTitle(sid)` 在第一轮发送后调一次（`state.titleAsked` 去重）；名字没回来之前，
+  列表与顶栏用"第一句话 + 省略号"兜着（`summary()` 本来就这么兜）。
+- 改名之后 `loadSessions()` 末尾新增 `refreshChatHeader()` —— 否则会出现"列表里已经有名字、顶栏还写着新对话"（实测）。
+
+### 8. 验证（都是本轮跑出来的）
+- 内核 `cjpm test`：**104/104**（原 101 + 本轮 3 条：一次性起名 / branchAll / 标题清洗；并修掉之前那个 list() 重构）。
+- 驱动不受影响（本轮没动 third_party）。
+- `node tools/glass-shot.cjs`：全过。含 DOCK-INLINE(position=relative, splitter=true)、
+  CHAT-HEADER(面包屑 + 菜单三项)、POPOVER(fixed)、NEW-SESSION(清空)、RAIL-NO-FLASH(1)、SESSION-SWITCH(35~37ms 未整页重建)、
+  `no console errors`。
+- `node tools/stop-check.cjs`：**11/11**；`node tools/learning-check.cjs --ui`：**57/57**。
+- 打包：`scripts/build.ps1` → `scripts/package.ps1` → `scripts/package-app.ps1 -OutDir dist\Lumin-0.3.2
+  -ZipPath dist\Lumin-0.3.2-win-x64.zip -Build lumin-032-rail-noflicker-chathead-20261015`；
+  包内 8 项哈希与源码逐项一致（BAD=0）；`tools/package-isolated-smoke.ps1 -Exe dist\Lumin-0.3.2\Lumin.exe` →
+  RESULT=OK（PRELOAD/TITLEBAR/TITLE=Lumin/NAV=6）。启动器已指向 0.3.2。
+
+### 9. 接手须知
+- `style.css` 是**多层追加**（后面覆盖前面）：材质令牌 → defrost → 菜单排版 → 平顶栏+滚动条 → logo → rail-new →
+  第四轮（气泡/深色/编辑器）→ 第五轮（深色再收金 / 气泡宽度 / 成果面板 / 窄窗口）。新增改动继续往末尾追加。
+- `.msg-stack` 是用户气泡那一列：百分比宽度上限只放在它身上，别再给 `.msg-body` 加百分比。
+- `.resource-dock` 必须保持"有定位"（relative），否则里面的 `.splitter-dock` 会跑位。
+- 会话栏的"结构指纹 vs 内容就地刷新"是**成对**的：改 `PANELS.chat.render` 里行的形状时，
+  记得同步 `PANELS.chat.refresh`，否则会出现"数据变了但界面不改字"。

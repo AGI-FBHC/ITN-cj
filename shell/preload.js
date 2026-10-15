@@ -20,6 +20,17 @@ contextBridge.exposeInMainWorld("itnWindow", {
   pickDeck: () => ipcRenderer.invoke("dlg:pick-deck"),
   /** 读一份演示文稿（.pptx / .ppt）的文字，给"在线演示"做离线预览。 */
   readDeck: (p) => ipcRenderer.invoke("deck:read", String(p || "")),
+  /**
+   * 订阅深链接：`lumin://thread/<会话id>`。
+   *
+   * 两种情况都会走到这里：窗口是被链接拉起来的（启动参数里带 URL），
+   * 或程序已经在跑、第二个实例把链接转交过来。返回取消订阅的函数。
+   */
+  onDeepLink: (cb) => {
+    const handler = (_e, sid) => cb(String(sid || ""));
+    ipcRenderer.on("deeplink:thread", handler);
+    return () => ipcRenderer.removeListener("deeplink:thread", handler);
+  },
   /** 订阅最大化/还原状态，用来切换按钮图标；返回取消订阅的函数。 */
   onStateChange: (cb) => {
     const handler = (_e, payload) => cb(payload);

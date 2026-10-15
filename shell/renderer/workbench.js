@@ -48,11 +48,20 @@ function ensureResourceDock() {
     dock.id = 'resource-dock';
     dock.setAttribute('aria-label', '学习成果预览');
     document.querySelector('.app').appendChild(dock);
+    // 成果面板的宽度也要能拖：面板是动态创建的，拖动条得在这时候挂
+    if (typeof installSplitters === 'function') installSplitters();
   }
   dock.hidden = current !== 'chat' || !workbench.open;
   document.body.classList.toggle('resource-open', !dock.hidden);
   return dock;
 }
+
+const renderResourceDockInner = renderResourceDock;
+renderResourceDock = function () {
+  const r = renderResourceDockInner.apply(this, arguments);
+  if (typeof installSplitters === 'function') installSplitters();
+  return r;
+};
 
 function closeResourceDock() {
   workbench.open = false;
@@ -74,6 +83,7 @@ async function openLearningResource(id, version) {
 
 function renderResourceDock() {
   const dock = ensureResourceDock();
+  // innerHTML 一清，挂在面板边缘的拖动条也没了：刷完内容再挂一次（installSplitters 是幂等的）
   dock.innerHTML = '';
   const res = workbench.selected;
   const head = el('header', 'resource-dock-head');
@@ -265,11 +275,12 @@ async function workbenchAfterPage() {
   document.querySelector('.wb-toolbar')?.remove();
   if (current !== 'chat' || currentSection === 'overview') { dock.hidden = true; return; }
   const bar = el('div', 'wb-toolbar');
-  const scope = el('span', 'wb-scope', scopeNow() ? kbName(scopeNow()) : '全部本地知识库');
-  scope.title = state.chapter ? '正在学习：' + state.chapter : '当前会话资料范围';
-  bar.appendChild(scope);
+  /* 左边是这段对话的身份：📁 工作区 | 会话名（会话名由第一次提问自动生成，也能手动改） */
+  bar.appendChild(typeof sessionCrumb === 'function' ? sessionCrumb()
+    : el('span', 'wb-scope', scopeNow() ? kbName(scopeNow()) : '全部本地知识库'));
   const status = el('span', 'wb-task', ''); status.id = 'wb-task-state'; status.setAttribute('role', 'status'); bar.appendChild(status);
   bar.appendChild(spacer());
+  bar.appendChild(typeof sessionMoreBtn === 'function' ? sessionMoreBtn() : spacer());
   const artifacts = btn('学习成果', 'ghost sm', () => {workbench.open = !workbench.open; renderResourceDock();}); artifacts.id = 'wb-artifacts'; bar.appendChild(artifacts);
   document.querySelector('.main').insertBefore(bar, $('view'));
   if (workbench.open) renderResourceDock();
@@ -292,6 +303,25 @@ async function workbenchAfterPage() {
       state.chatPaint?.();
     } catch (e) { /* Preserve the last confirmed state while disconnected. */ }
   }, 1500);
+}
+
+/**
+ * 只刷新对话页顶栏（面包屑 + 会话菜单）。
+ * 标题是异步生成的、切换会话也会改名字，这两处都不该重建整个工作台，所以单独留一个入口。
+ */
+function refreshChatHeader() {
+  if (current !== 'chat' || currentSection === 'overview') return;
+  const main = document.querySelector('.main');
+  const old = document.querySelector('.wb-toolbar');
+  if (!main || typeof sessionCrumb !== 'function') return;
+  const bar = el('div', 'wb-toolbar');
+  bar.appendChild(sessionCrumb());
+  const status = el('span', 'wb-task', ''); status.id = 'wb-task-state'; status.setAttribute('role', 'status'); bar.appendChild(status);
+  bar.appendChild(spacer());
+  bar.appendChild(sessionMoreBtn());
+  const artifacts = btn('学习成果', 'ghost sm', () => {workbench.open = !workbench.open; renderResourceDock();}); artifacts.id = 'wb-artifacts'; bar.appendChild(artifacts);
+  if (old && old.parentElement) old.replaceWith(bar); else main.insertBefore(bar, $('view'));
+  refreshWorkbenchState().catch(() => {});
 }
 
 async function refreshWorkbenchState() {

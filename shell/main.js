@@ -6,6 +6,53 @@ const os = require("os");
 
 const SMOKE = process.argv.includes("--smoke");
 
+/**
+ * 深链接：`lumin://thread/<会话id>`。
+ *
+ * 复制会话链接给同事/未来的自己，点开就能回到那一段对话 —— 与 Codex 的
+ * `codex://threads/<id>` 同一个用法。实现靠两件事：
+ *   ① 把 lumin 注册成系统协议的处理者（装一次，之后 click 链接就会拉起本程序）；
+ *   ② 单实例：第二次启动只把 URL 交给已经在跑的那个实例，不新开窗口。
+ * 单实例锁按 userData 目录区分，所以测试用的隔离数据目录与用户自己的实例互不打扰。
+ */
+const PROTOCOL = "lumin";
+
+function threadIdFromArgs(args) {
+  for (const a of args || []) {
+    const m = String(a).match(/^lumin:\/\/thread\/([A-Za-z0-9_-]+)/i);
+    if (m) return m[1];
+  }
+  return "";
+}
+
+function registerProtocol() {
+  try {
+    if (process.defaultApp) {
+      // 开发期（npm start / electron .）：要把脚本路径一起注册，否则系统拉起来的是空壳
+      if (process.argv.length >= 2) {
+        app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
+      }
+    } else {
+      app.setAsDefaultProtocolClient(PROTOCOL);
+    }
+  } catch (e) {
+    console.log("注册 " + PROTOCOL + ":// 失败（不影响其它功能）：" + ((e && e.message) || e));
+  }
+}
+
+function openThreadFromArgs(args) {
+  const sid = threadIdFromArgs(args);
+  if (!sid) return false;
+  if (win) {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    win.webContents.send("deeplink:thread", sid);
+    console.log("DEEPLINK thread=" + sid);
+  }
+  return true;
+}
+
 let win = null;
 let kernel = null;
 
@@ -274,6 +321,9 @@ async function createWindow() {
   });
 
   win.webContents.on("did-finish-load", async () => {
+    // 本次是被链接拉起来的：等界面就绪后把那段会话打开
+    const bootSid = threadIdFromArgs(process.argv);
+    if (bootSid) setTimeout(() => { if (win) win.webContents.send("deeplink:thread", bootSid); console.log("DEEPLINK thread=" + bootSid); }, 1200);
     if (!SMOKE) return;
     const lines = [];
     try {
@@ -282,7 +332,7 @@ async function createWindow() {
       // 界面改成多页面后，用"导航项数 + 首屏节点数"判断界面真的渲染出来了；
       // 原来数的是 .panel，那个类名早就没有了，等于一直在数 0。
       // preload 没挂上就没有自绘窗口按钮可用：这一条必须能在打包版里验证
-      const preloadOk = await win.webContents.executeJavaScript("!!(window.itnWindow && window.itnWindow.minimize)");
+      const preloadOk = await win.webContents.executeJavaScript("!!(window.itnWindow && window.itnWindow.minimize && window.itnWindow.onDeepLink && window.itnWindow.readDeck)");
       const titlebar = await win.webContents.executeJavaScript("!!document.querySelector('#titlebar')");
       lines.push("PRELOAD=" + (preloadOk ? "ok" : "missing"));
       lines.push("TITLEBAR=" + (titlebar ? "ok" : "missing"));
@@ -319,6 +369,20 @@ async function createWindow() {
   win.loadURL("http://127.0.0.1:" + port + "/");
   win.on("closed", () => { win = null; });
 }
+
+registerProtocol();
+/* 第二个实例只负责把链接转交给第一个实例。
+   --smoke 时不抢锁：自检会连续起进程，锁会让后面的实例直接退出。 */
+if (!SMOKE) {
+  const gotLock = app.requestSingleInstanceLock();
+  if (!gotLock) {
+    app.quit();
+  } else {
+    app.on("second-instance", (_e, argv) => { openThreadFromArgs(argv); });
+  }
+}
+/* macOS 的链接走 open-url 事件（Windows/Linux 走 argv） */
+app.on("open-url", (e, url) => { e.preventDefault(); openThreadFromArgs([url]); });
 
 app.whenReady().then(createWindow);
 app.on("window-all-closed", () => app.quit());

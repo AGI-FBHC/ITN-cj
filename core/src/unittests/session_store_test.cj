@@ -5,11 +5,12 @@ import std.unittest.*
 import std.unittest.testmacro.*
 import stdx.encoding.json.*
 import itn_desktop_core.session.SessionEvent
+import itn_desktop_core.session.cleanSessionTitle
 import itn_desktop_core.session.SessionStore
 import itn_desktop_core.util.*
 
 /*
- * 内核会话仓库（SQLite 那份）：列表标题与删除。
+ * 内核会话仓库（SQLite 那份）：列表标题、删除、一次性起名、整段分支。
  *
  * 断言点：默认标题取首个提问；重命名覆盖默认标题并进列表；删除后事件、摘要、标题覆盖一起清掉。
  */
@@ -57,5 +58,74 @@ class SessionStoreTest {
             }
         }
         @Expect(stillThere, false)
+    }
+
+    /** 起名只做一次：问过之后改写第一条提问也不再问；手动改过名字同样不再问。 */
+    @TestCase
+    func titleIsAskedOnlyOnce(): Unit {
+        let d = freshDir("store-title")
+        let ss = SessionStore(d)
+        let sid = ss.newId()
+        let ev = SessionEvent()
+        ev.sessionId = sid
+        ev.kind = "user/message"
+        let payload = JsonObject()
+        payload.put("text", JsonString("帮我把这一章的习题整理成一份练习册"))
+        ev.payload = payload
+        ss.append(ev)
+
+        // 还没问过：列表先用第一句话兜着
+        @Expect(ss.titleReady(sid), false)
+        @Expect(ss.firstUserText(sid), "帮我把这一章的习题整理成一份练习册")
+        @Expect(strOf(ss.summary(sid), "title"), "帮我把这一章的习题整理成一份练习册")
+
+        // 问过一次（哪怕模型失败）就不再问
+        ss.markTitleAsked(sid)
+        @Expect(ss.titleReady(sid), true)
+
+        // 名字回来了：写进 title 覆盖
+        ss.rename(sid, "习题整理")
+        @Expect(strOf(ss.summary(sid), "title"), "习题整理")
+        @Expect(ss.titleReady(sid), true)
+
+        // 删掉这段会话，"问过"的标记跟着走：会话没了就不该留下它的痕迹
+        ss.remove(sid)
+        @Expect(ss.titleReady(sid), false)
+    }
+
+    /** 整段分支：事件一条不少地复制过去，原会话一动不动。 */
+    @TestCase
+    func branchAllCopiesEverything(): Unit {
+        let d = freshDir("store-branchall")
+        let ss = SessionStore(d)
+        let sid = ss.newId()
+        for (k in ["turn/start", "user/message", "assistant/message"]) {
+            let ev = SessionEvent()
+            ev.sessionId = sid
+            ev.turnId = "t1"
+            ev.kind = k
+            ev.payload = JsonObject()
+            ss.append(ev)
+        }
+        let copy = ss.branchAll(sid)
+        @Expect(copy != sid, true)
+        @Expect(ss.events(copy).size, 3)
+        @Expect(ss.events(sid).size, 3)
+        // 复制的是同一段内容：最新一段的标题也一样
+        @Expect(strOf(ss.summary(copy), "lastType"), "assistant/message")
+    }
+
+    /** 模型给的"名字"要清成一行短标题：剥解释、剥引号、剥尾标点、砍到 24 字节。 */
+    @TestCase
+    func generatedTitleIsCleaned(): Unit {
+        @Expect(cleanSessionTitle("“上下文工程入门”。\n因为用户问的是……"), "上下文工程入门")
+        @Expect(cleanSessionTitle("标题：RAG 检索增强生成"), "RAG 检索增强生成")
+        @Expect(cleanSessionTitle("  \"复习计划\"  "), "复习计划")
+        @Expect(cleanSessionTitle(""), "")
+        @Expect(cleanSessionTitle("   "), "")
+        // 太长就砍到 24 字节（中文 8 字），不会切出半个汉字
+        let long = cleanSessionTitle("这是一个非常非常非常冗长的会话名字已经超过二十四个字节了")
+        @Expect(long.size <= 24, true)
+        @Expect(long.size > 0, true)
     }
 }

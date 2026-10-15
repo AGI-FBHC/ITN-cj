@@ -231,6 +231,58 @@ public class SessionStore {
         db().putKv("sessions_meta", "title:" + sessionId, capped)
     }
 
+    /**
+     * 这段会话的标题已经定了吗（模型起过名，或用户手动改过）。
+     *
+     * 「第一次提问之后让模型起一次名」靠它守住"只做一次"：用户后来改写了第一条提问、
+     * 或者把当前这轮删掉重发，都不会再生成第二个名字。
+     */
+    public func titleReady(sessionId: String): Bool {
+        if (db().getKv("sessions_meta", "title:" + sessionId, "").size > 0) {
+            return true
+        }
+        return db().getKv("sessions_meta", "titlegen:" + sessionId, "").size > 0
+    }
+
+    /**
+     * 记下"已经问过模型了"。
+     *
+     * 在真的去问之前就记上：起名失败也不重试 —— 标题只是列表上的一行字，
+     * 不值得为它反复打扰模型；失败时列表继续用第一句话兜着。
+     */
+    public func markTitleAsked(sessionId: String): Unit {
+        db().putKv("sessions_meta", "titlegen:" + sessionId, "1")
+    }
+
+    /** 这段会话的第一句用户提问（模型起名、列表兜底标题都用它）。 */
+    public func firstUserText(sessionId: String): String {
+        var t = ""
+        match (db().one("SELECT payload FROM session_events WHERE session_id = ? AND kind = ? ORDER BY id LIMIT 1",
+            va([tv(sessionId), tv("user/message")]))) {
+            case Some(r) => t = payloadText(r.text(0), "text")
+            case None => ()
+        }
+        return t
+    }
+
+    /**
+     * 从"现在"分叉：新会话把这段会话的事件**全部**原样复制过去（含最后一轮）。
+     *
+     * 与 branch 的差别：branch 是"从某一轮之前分"—— 删掉那一轮换个问法；
+     * 这个是"整段带走，换条路继续走"，界面 ⋯ 里的「新建分支」用的是它。
+     */
+    public func branchAll(sessionId: String): String {
+        let newSid = newId()
+        let now = DateTime.now().toString()
+        db().run("INSERT OR REPLACE INTO sessions (id, created_at, updated_at) VALUES (?, ?, ?)",
+            va([tv(newSid), tv(now), tv(now)]))
+        // 逐行复制原始 JSON 文本，不解析再序列化（大 payload 重排既慢又可能改字符）
+        let stmt = "INSERT INTO session_events (session_id, ts, kind, turn_id, payload) " +
+            "SELECT ?, ts, kind, turn_id, payload FROM session_events WHERE session_id = ? ORDER BY id"
+        db().run(stmt, va([tv(newSid), tv(sessionId)]))
+        return newSid
+    }
+
     /** 删掉一段会话（它自己的事件与摘要行 + 标题覆盖）。知识库、笔记、错题、产物都不是这段会话的数据，不动。 */
     public func remove(sessionId: String): Unit {
         let ops = ArrayList<DbOp>()
@@ -238,16 +290,101 @@ public class SessionStore {
         ops.add(DbOp("DELETE FROM sessions WHERE id = ?", va([tv(sessionId)])))
         db().batch(ops)
         db().delKv("sessions_meta", "title:" + sessionId)
+        db().delKv("sessions_meta", "titlegen:" + sessionId)
         db().delKv("sessions_meta", "context:" + sessionId)
         db().delKv("sessions_meta", "state:" + sessionId)
         db().delKv("sessions_meta", "project:" + sessionId)
     }
 
+    /**
+     * 会话列表。
+     *
+     * 形状是"每段会话一行摘要"，但**不能按 sessionId 逐条查** —— 那样 40 段会话要发
+     * 150+ 条语句，每条都要 prepare/close，21MB 的库上界面每刷一次列表就卡一下（实测数百毫秒）。
+     * 这里改成固定 4 趟：
+     *   ① 分组统计（走 ix_session_events(session_id, id)）：条数与最后一条的 id；
+     *   ② 第一个 user/message（走 ix_session_events_kind(kind, id)）：标题；
+     *   ③ 第一个 turn/start（同一条索引）：类型与知识库；
+     *   ④ sessions_meta 一次读完：改过的标题与项目归属。
+     * 最后每段会话只余一次按主键取"最后一条事件的时间与类型"，那是 rowid 查找。
+     */
     public func list(): ArrayList<JsonObject> {
         let out = ArrayList<JsonObject>()
         migrateFromJson()
-        for (r in db().querySql("SELECT session_id, MAX(id) FROM session_events GROUP BY session_id ORDER BY MAX(id) DESC")) {
-            out.add(summary(r.text(0)))
+        let dbh = db()
+
+        let ids = ArrayList<String>()
+        let counts = HashMap<String, Int64>()
+        let lastIds = HashMap<String, Int64>()
+        for (r in dbh.querySql("SELECT session_id, COUNT(*), MAX(id) FROM session_events GROUP BY session_id ORDER BY MAX(id) DESC")) {
+            let sid = r.text(0)
+            ids.add(sid)
+            counts[sid] = r.int(1)
+            lastIds[sid] = r.int(2)
+        }
+        if (ids.size == 0) {
+            return out
+        }
+
+        let titles = HashMap<String, String>()
+        for (r in dbh.querySql("SELECT session_id, payload FROM session_events WHERE kind = 'user/message' ORDER BY id")) {
+            let sid = r.text(0)
+            if (titles.contains(sid)) {
+                continue
+            }
+            titles[sid] = payloadText(r.text(1), "text")
+        }
+
+        let kinds = HashMap<String, String>()
+        let kbs = HashMap<String, String>()
+        for (r in dbh.querySql("SELECT session_id, payload FROM session_events WHERE kind = 'turn/start' ORDER BY id")) {
+            let sid = r.text(0)
+            if (kinds.contains(sid)) {
+                continue
+            }
+            let p = r.text(1)
+            kinds[sid] = payloadText(p, "kind")
+            kbs[sid] = payloadText(p, "kbId")
+        }
+
+        let customTitles = HashMap<String, String>()
+        let projectOf = HashMap<String, String>()
+        for (r in dbh.querySql("SELECT k, v FROM sessions_meta")) {
+            let k = r.text(0)
+            let v = r.text(1)
+            if (hasPrefix(k, "title:")) {
+                customTitles[k.replace("title:", "")] = v
+            } else if (hasPrefix(k, "project:")) {
+                projectOf[k.replace("project:", "")] = v
+            }
+        }
+
+        for (sid in ids) {
+            let o = JsonObject()
+            o.put("sessionId", JsonString(sid))
+            o.put("eventCount", JsonInt(counts.get(sid) ?? 0))
+            var title = titles.get(sid) ?? ""
+            let custom = customTitles.get(sid) ?? ""
+            if (custom.size > 0) {
+                title = custom
+            } else if (title.size > 60) {
+                title = byteSafePrefix(title, 60) + "…"
+            }
+            var lastAt = ""
+            var lastType = ""
+            match (dbh.one("SELECT ts, kind FROM session_events WHERE id = ?", va([nv(lastIds.get(sid) ?? 0)]))) {
+                case Some(r) =>
+                    lastAt = r.text(0)
+                    lastType = r.text(1)
+                case None => ()
+            }
+            o.put("title", JsonString(title))
+            o.put("lastType", JsonString(lastType))
+            o.put("lastAt", JsonString(lastAt))
+            o.put("kind", JsonString(kinds.get(sid) ?? ""))
+            o.put("kbId", JsonString(kbs.get(sid) ?? ""))
+            o.put("projectId", JsonString(projectOf.get(sid) ?? ""))
+            out.add(o)
         }
         return out
     }
@@ -334,4 +471,73 @@ public class SessionStore {
         }
         markMigrationDone(db(), "sessions")
     }
+}
+
+/**
+ * 把模型给的"名字"清成一行短标题。
+ *
+ * 模型偶尔会连解释一起吐出来（"标题：X\n因为……"），也会用引号包一层、结尾带句号；
+ * 列表那一行只放得下十来个字，所以这里：只取第一行 -> 剥前缀 -> 剥成对引号 -> 去尾标点 ->
+ * 砍到 24 字节（中文 8 字）。清不出东西就返回空串，调用方退回"第一句话 + 省略号"。
+ */
+public func cleanSessionTitle(raw: String): String {
+    var t = trimStr(raw)
+    if (t.size == 0) {
+        return ""
+    }
+    // 只取第一行
+    let b0 = t.toArray()
+    var cut = b0.size
+    var i = 0
+    while (i < b0.size) {
+        if (b0[i] == 10 || b0[i] == 13) {
+            cut = i
+            break
+        }
+        i = i + 1
+    }
+    t = trimStr(String.fromUtf8(b0[0..cut]))
+    // "标题：X" / "Title: X" 这类前缀
+    for (pre in ["标题：", "标题:", "名字：", "名字:", "会话名称：", "会话名称:", "Title:", "title:"]) {
+        if (hasPrefix(t, pre)) {
+            t = trimStr(String.fromUtf8(t.toArray()[pre.size..t.size]))
+        }
+    }
+    /*
+     * 剥"结尾标点"与"成对的引号"，来回过几遍：
+     * 模型常给成 "“上下文工程入门”。" 这一种 —— 先看到的是句号，把句号剥掉才看得见成对引号。
+     */
+    var pass = 0
+    while (pass < 4) {
+        pass = pass + 1
+        // 结尾的标点不要（起名不是造句）
+        for (tl in ["。", "，", "！", "？", "、", ".", ",", "!", "?"]) {
+            if (t.size > tl.size && hasSuffix(t, tl)) {
+                t = trimStr(String.fromUtf8(t.toArray()[0..(t.size - tl.size)]))
+            }
+        }
+        // 成对的引号才剥（单边引号可能真是名字的一部分）；34 = 双引号
+        let qb = t.toArray()
+        if (qb.size >= 2 && qb[0] == 34 && qb[qb.size - 1] == 34) {
+            t = trimStr(String.fromUtf8(qb[1..(qb.size - 1)]))
+            continue
+        }
+        var stripped = false
+        for (pair in ["“”", "《》", "「」"]) {
+            let open = String.fromUtf8(pair.toArray()[0..3])
+            let close = String.fromUtf8(pair.toArray()[3..6])
+            if (t.size >= 6 && hasPrefix(t, open) && hasSuffix(t, close)) {
+                t = trimStr(String.fromUtf8(t.toArray()[3..(t.size - 3)]))
+                stripped = true
+                break
+            }
+        }
+        if (!stripped) {
+            break
+        }
+    }
+    if (t.size > 24) {
+        t = byteSafePrefix(t, 24)
+    }
+    return t
 }

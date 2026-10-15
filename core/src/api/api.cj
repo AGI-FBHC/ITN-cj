@@ -1363,12 +1363,13 @@ public class Api {
                 case Some(b) =>
                     let sid = strOf(b, "sessionId")
                     let tid = strOf(b, "turnId")
-                    if (sid.size == 0 || tid.size == 0) {
-                        fail(ctx, 400, "缺少 sessionId / turnId")
+                    if (sid.size == 0) {
+                        fail(ctx, 400, "缺少 sessionId")
                         return
                     }
                     let ss = SessionStore(store.dataDir)
-                    let nsid = ss.branch(sid, tid)
+                    // turnId 空 = 「从最新的一条分」：整段复制过去（界面 ⋯ 里的新建分支走这条）
+                    let nsid = if (tid.size > 0) { ss.branch(sid, tid) } else { ss.branchAll(sid) }
                     // 分支继承原会话的项目归属，但**不**继承上下文缓存：它是新的一段
                     let ps = ProjectStore(store.dataDir)
                     ps.bind(nsid, ps.projectOf(sid))
@@ -1453,6 +1454,65 @@ public class Api {
                     SessionStore(store.dataDir).rename(id, strOf(b, "title"))
                     let o = JsonObject()
                     o.put("ok", JsonBool(true))
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        /**
+         * 会话标题：**第一次提问之后**让模型起一次名。
+         *
+         * 三条规矩（用户定的）：
+         *   ① 只做一次 —— 手动改过名字、或已经问过模型了，这里直接回 generated=false；
+         *   ② 名字没回来之前，列表/顶栏先用"第一句话 + 省略号"兜着（summary 本来就这么兜）；
+         *   ③ 用户后来改写第一条提问也不重新生成 —— 标题是"这段对话的名字"，不是那句话的摘要。
+         * 起名失败不进重试：标题只是列表上的一行字，不值得为它反复打扰模型。
+         */
+        if (path == "/api/sessions/title" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let sid = strOf(b, "sessionId")
+                    if (sid.size == 0) {
+                        fail(ctx, 400, "缺少 sessionId")
+                        return
+                    }
+                    let ss = SessionStore(store.dataDir)
+                    let o = JsonObject()
+                    if (ss.titleReady(sid)) {
+                        o.put("generated", JsonBool(false))
+                        ok(ctx, o)
+                        return
+                    }
+                    let first = ss.firstUserText(sid)
+                    if (first.size == 0) {
+                        o.put("generated", JsonBool(false))
+                        ok(ctx, o)
+                        return
+                    }
+                    // 先记"问过了"再真的去问：失败也不重试
+                    ss.markTitleAsked(sid)
+                    match (chatModelOf(store)) {
+                        case Some(cfg) =>
+                            try {
+                                let client = LlmClient(cfg)
+                                let sys = "你是会话命名器：读用户的第一句话，给这段对话起一个短名字。"
+                                let ask = "用户的第一句话：\n" + first +
+                                    "\n\n要求：只输出名字本身，不超过 12 个汉字，不要引号、不要标点、不要解释。"
+                                let name = cleanSessionTitle(client.chat(sys, ask))
+                                if (name.size > 0) {
+                                    ss.rename(sid, name)
+                                    o.put("generated", JsonBool(true))
+                                    o.put("title", JsonString(name))
+                                } else {
+                                    o.put("generated", JsonBool(false))
+                                }
+                            } catch (e: Exception) {
+                                o.put("generated", JsonBool(false))
+                                o.put("message", JsonString(e.message))
+                            }
+                        case None => o.put("generated", JsonBool(false))
+                    }
                     ok(ctx, o)
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -2492,6 +2552,26 @@ func describeFailure(message: String): String {
     return message
 }
 
+/**
+ * 界面绑定的那个对话模型（没绑就用第一个）。
+ *
+ * 起名这类"小活儿"与对话共用一个模型：换模型是用户在设置里做的一次选择，
+ * 不该出现"对话用 A、起名偷偷用 B"这种第二套状态。
+ */
+func chatModelOf(store: Store): ?ModelConfig {
+    let s = store.load()
+    if (s.chatModelId.size > 0) {
+        match (s.findModel(s.chatModelId)) {
+            case Some(m) => return m
+            case None => ()
+        }
+    }
+    if (s.models.size > 0) {
+        return s.models[0]
+    }
+    return None
+}
+
 public func buildServer(dataDir: String, uiDir: String): Server {
     let server = ServerBuilder().addr("127.0.0.1").port(0).build()
     let api = Api(Store(dataDir))
@@ -2566,6 +2646,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/sessions/events",
         "/api/sessions/state",
         "/api/sessions/rename",
+        "/api/sessions/title",
         "/api/sessions/delete",
         "/api/profile/get",
         "/api/profile/save",

@@ -42,6 +42,9 @@ let ddl = [
     "CREATE TABLE IF NOT EXISTS session_events (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, ts TEXT, " +
     "kind TEXT, turn_id TEXT, payload TEXT)",
     "CREATE INDEX IF NOT EXISTS ix_session_events ON session_events (session_id, id)",
+    // 会话列表要"每段会话的第一个 user/message（标题）与第一个 turn/start（类型）"。
+    // 没这条索引就是全表扫 8000+ 行、逐行解 payload，21MB 的库上每拉一次列表就卡一下。
+    "CREATE INDEX IF NOT EXISTS ix_session_events_kind ON session_events (kind, id)",
     "CREATE TABLE IF NOT EXISTS learning_resources (id TEXT PRIMARY KEY, kind TEXT, title TEXT, kb_id TEXT, latest_version INTEGER, updated_at TEXT)",
     "CREATE TABLE IF NOT EXISTS learning_resource_versions (resource_id TEXT, version INTEGER, body TEXT, PRIMARY KEY (resource_id, version))",
     "CREATE TABLE IF NOT EXISTS learning_memories (id TEXT PRIMARY KEY, kb_id TEXT, body TEXT, updated_at TEXT)",

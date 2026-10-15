@@ -421,6 +421,10 @@ async function loadArtifacts() {
 async function loadSessions() {
   try { state.sessions = (await api("/api/sessions/list", {})).sessions || []; }
   catch (e) { state.sessions = []; }
+  /* 列表是"会话元信息"的唯一来源：顶栏那条面包屑（工作区 | 会话名）也吃这份数据。
+     标题是模型异步起好的、跑完一轮时间会变 —— 读一次列表就把顶栏一起对齐，
+     否则会出现"列表里已经有名字、顶栏还写着新对话"（实测）。 */
+  if (typeof refreshChatHeader === "function") refreshChatHeader();
 }
 
 /** 一次性把首页/侧栏需要的四类数据拉齐。 */
@@ -4017,10 +4021,7 @@ async function slashDir() {
 }
 
 async function slashBranch() {
-  const turns = state.chatTurns || [];
-  const t = turns[turns.length - 1];
-  if (!t || !t.id || t.id === "local") { toast("这一段还没有可以分支的轮次"); return; }
-  await branchFromTurn(t);
+  await branchFromLatest();
 }
 
 /**
@@ -4091,6 +4092,179 @@ function initTitlebar() {
         max.setAttribute("aria-label", label);
       }
     });
+  }
+}
+
+/**
+ * 在锚点旁边浮出一块菜单。
+ *
+ * 挂到 document.body 上用 fixed 定位，而不是当面板里的 absolute 子节点 ——
+ * 面板自己有层叠上下文（玻璃层的 backdrop-filter 就会建一层），菜单一旦比面板宽，
+ * 左边伸出去的那截就被最左侧栏盖住了（用户实测：＋ 的浮窗左边被侧栏遮住）。
+ * fixed 层不受祖先的层叠与裁剪影响，再做一次夹取就永远在屏幕里。
+ */
+let activePopover = null;
+
+function closePopover() {
+  if (!activePopover) return;
+  activePopover.menu.remove();
+  document.removeEventListener("click", activePopover.away, true);
+  document.removeEventListener("keydown", activePopover.onKey, true);
+  window.removeEventListener("resize", activePopover.onAway);
+  window.removeEventListener("scroll", activePopover.onAway, true);
+  activePopover = null;
+}
+
+function popoverAt(anchor, build, opts) {
+  closePopover();
+  const menu = el("div", "rail-menu popover" + (opts && opts.cls ? " " + opts.cls : ""));
+  build(menu);
+  document.body.appendChild(menu);
+  const rect = anchor.getBoundingClientRect();
+  const mw = menu.offsetWidth || 240;
+  const mh = menu.offsetHeight || 160;
+  let left;
+  if (opts && opts.side === "panel") {
+    // 贴着整个面板的左缘（＋ 在面板右上角，菜单比面板宽，右对齐会伸到最左侧栏上面去）
+    const panelEl = anchor.closest(".panel");
+    left = panelEl ? panelEl.getBoundingClientRect().left : rect.left;
+  } else if (opts && opts.side === "left") {
+    left = rect.left;
+  } else {
+    left = rect.right - mw;
+  }
+  left = Math.max(8, Math.min(window.innerWidth - mw - 8, left));
+  let top = rect.bottom + 6;
+  if (top + mh > window.innerHeight - 8) top = Math.max(8, rect.top - mh - 6);
+  menu.style.left = Math.round(left) + "px";
+  menu.style.top = Math.round(top) + "px";
+  const entry = {
+    menu: menu,
+    away: (e) => { if (!menu.contains(e.target) && !anchor.contains(e.target)) closePopover(); },
+    onKey: (e) => { if (e.key === "Escape") { e.stopPropagation(); closePopover(); } },
+    onAway: () => closePopover(),
+  };
+  activePopover = entry;
+  setTimeout(() => {
+    document.addEventListener("click", entry.away, true);
+    document.addEventListener("keydown", entry.onKey, true);
+    window.addEventListener("resize", entry.onAway);
+    window.addEventListener("scroll", entry.onAway, true);
+  }, 0);
+  return menu;
+}
+
+/** 路径最后一段（面包屑上用短名，完整路径放 tooltip）。 */
+function baseName(p) {
+  const t = String(p || "").replace(/[\\/]+$/, "");
+  return t.split(/[\\/]/).pop() || "";
+}
+
+/** 这段会话干活的目录：挂在项目下就用项目文件夹，否则用默认工作目录。 */
+function sessionWorkDir(sid) {
+  const id = sid || state.chatSessionId;
+  const meta = (state.sessions || []).find((x) => x.sessionId === id) || {};
+  const project = (state.projects || []).find((p) => p.id === (meta.projectId || ""));
+  if (project) {
+    return { name: project.name || baseName(project.root) || project.root, path: project.root || "", project: project };
+  }
+  const dir = state.cfg.agentWorkDir || state.cfg.defaultWorkDir || "";
+  return { name: baseName(dir) || "默认工作目录", path: dir, project: null };
+}
+
+/** 这一段会话的摘要（列表里那一行）。 */
+function sessionMetaOf(sid) {
+  return (state.sessions || []).find((x) => x.sessionId === (sid || state.chatSessionId)) || null;
+}
+
+/**
+ * 对话页顶栏左边那条面包屑：📁 工作区名 | 会话名。
+ *
+ * 会话名是"这段对话的名字"：第一次提问后由模型起一次（见 maybeGenerateTitle），
+ * 在那之前先用第一句话兜着；用户也能在右边的 ⋯ 里手动改。
+ */
+function sessionCrumb() {
+  const wrap = el("span", "wb-crumb");
+  const wd = sessionWorkDir();
+  const folder = el("span", "wb-crumb-ws");
+  folder.innerHTML = icon("folder") + "<span>" + esc(wd.name || "未指定工作区") + "</span>";
+  folder.title = (wd.path ? wd.path + "\n" : "") +
+    (wd.project ? "指定工作区（Work）：权限按对话框下面的档位来" : "常规聊天：只对默认工作目录可写") +
+    "\n检索范围：本机全部知识库";
+  if (wd.path && window.itnWindow && typeof window.itnWindow.openPath === "function") {
+    folder.classList.add("clickable");
+    folder.onclick = () => window.itnWindow.openPath(wd.path).then((r) => { if (r && r.ok === false) toast(r.error); });
+  }
+  wrap.appendChild(folder);
+  wrap.appendChild(el("span", "wb-crumb-sep", "|"));
+  const meta = sessionMetaOf();
+  const title = el("span", "wb-crumb-title", (meta && meta.title) || (state.chatSessionId ? "新对话" : "还没有对话"));
+  title.title = "这段对话的名字（右上角 ⋯ 可以改）";
+  wrap.appendChild(title);
+  return wrap;
+}
+
+/**
+ * 对话页顶栏右边那三个点：改名字 / 新建分支 / 复制会话链接。
+ *
+ * "新建分支"是从**最新一轮**分出去的：想换个问法重来、又想留着原来那条线时用它。
+ * 链接是 `lumin://thread/<会话id>` —— 点开就回到这一段对话（与 Codex 的深度链接同一个用法）。
+ */
+function sessionMoreBtn() {
+  const wrap = el("span", "wb-menu-wrap");
+  const trigger = el("button", "wb-menu-btn", "");
+  trigger.type = "button";
+  trigger.title = state.chatSessionId ? "这段会话的更多操作" : "先开一段对话";
+  trigger.setAttribute("aria-label", "会话操作");
+  trigger.innerHTML = icon("dots");
+  trigger.disabled = !state.chatSessionId;
+  const item = (label, ic, fn) => {
+    const b = el("button", "rail-menu-item", "");
+    b.type = "button";
+    b.innerHTML = icon(ic) + "<span class='rail-menu-main'>" + esc(label) + "</span>";
+    b.onclick = (ev) => { ev.stopPropagation(); closePopover(); fn(); };
+    return b;
+  };
+  trigger.onclick = (ev) => {
+    ev.stopPropagation();
+    const sid = state.chatSessionId;
+    if (!sid) return;
+    const meta = sessionMetaOf(sid) || { sessionId: sid, title: "" };
+    popoverAt(trigger, (menu) => {
+      menu.appendChild(el("div", "rail-menu-title", "这段会话"));
+      menu.appendChild(item("修改会话名称…", "pencil", () => renameSessionDialog(meta)));
+      menu.appendChild(item("新建分支", "branch", () => branchFromLatest()));
+      menu.appendChild(item("复制会话链接", "copy", () => copyText("lumin://thread/" + sid)));
+    }, { side: "right", cls: "session-menu-right" });
+  };
+  wrap.appendChild(trigger);
+  return wrap;
+}
+
+/**
+ * 会话标题：第一次提问之后，另起一次很小的模型请求给这段对话起名。
+ *
+ * 三条规矩（用户定的）：
+ *   ① **只生成一次** —— 这段会话已经有名字（自动生成的、或用户手动改的）就不再问；
+ *   ② 名字没回来之前，列表与顶栏先用第一句话 + 省略号兜着（内核的 summary 本来就这么兜）；
+ *   ③ 用户后来改写了第一条提问也不重新生成 —— 标题是"这段对话的名字"，不是那句话的摘要。
+ * 起名失败不影响对话：静默留着第一句话当名字。
+ */
+async function maybeGenerateTitle(sid) {
+  if (!sid) return;
+  state.titleAsked = state.titleAsked || {};
+  if (state.titleAsked[sid]) return;
+  state.titleAsked[sid] = true;
+  try {
+    const d = await api("/api/sessions/title", { sessionId: sid });
+    if (!d || !d.generated) return;
+    await loadSessions();
+    if (current === "chat" && currentSection !== "overview") {
+      await renderPanel();
+      if (typeof refreshChatHeader === "function") refreshChatHeader();
+    }
+  } catch (e) {
+    // 起名是锦上添花：拿不到就继续用第一句话兜着，不打扰用户
   }
 }
 
@@ -4880,18 +5054,70 @@ function panelSeg(items, activeKey, onPick) {
 }
 
 /** 渲染当前页的第二层面板。 */
-async function renderPanel() {
+/* 上一次面板渲染的"数据指纹"与它属于哪块面板：内容没变就不重建 DOM
+   （renderPanel 会被会话结束、切页、改设置等好几个地方调到）。 */
+let panelSig = "";
+let panelSigFor = "";
+
+async function renderPanel(force) {
   const def = PANELS[current];
   const body = $("panel-body");
   const foot = $("panel-foot");
   if (!body || !foot) return;
-  body.innerHTML = "";
-  foot.innerHTML = "";
+  const key = current + "/" + (currentSection || "");
+  const sig = def && def.sig ? String(def.sig()) : "";
+  // 数据没变、还是同一块面板：连 DOM 都不碰（这是"列表老闪一下"的正解）
+  if (!force && sig && sig === panelSig && key === panelSigFor && body.childNodes.length) {
+    // 结构没变、内容变了：给面板一次就地改字的机会（会话栏靠它做到"列表不闪"）
+    if (def && def.refresh) def.refresh(body);
+    installSplitters();
+    return;
+  }
   panelHead(def ? def.title : (PAGE_META[current] || {}).title, def && def.actions ? def.actions() : []);
   installSplitters();
-  if (!def || !def.render) return;
-  const ui = { foot: (node) => { foot.innerHTML = ""; foot.appendChild(node); } };
-  await def.render(body, ui);
+  if (!def || !def.render) {
+    body.innerHTML = "";
+    foot.innerHTML = "";
+    panelSig = sig;
+    panelSigFor = key;
+    return;
+  }
+  /* 渲染到**离屏片段**里，最后一次性换上去。
+     以前是先 body.innerHTML = "" 再 await 数据，于是"空面板"要挂着一个来回，
+     用户看到的就是闪一下；顺带把滚动位置与正在输入的搜索词也保住了。 */
+  const nextBody = document.createDocumentFragment();
+  const nextFoot = document.createDocumentFragment();
+  const scrollTop = body.scrollTop;
+  const ui = { foot: (node) => nextFoot.appendChild(node) };
+  await def.render(nextBody, ui);
+  body.replaceChildren(nextBody);
+  foot.replaceChildren(nextFoot);
+  body.scrollTop = scrollTop;
+  panelSig = sig;
+  panelSigFor = key;
+}
+
+/**
+ * 会话栏的**结构**指纹：只有"有哪些行、怎么分组"变了才值得重建那一列。
+ *
+ * 标题、最后活动时间这类**内容**刻意不进指纹 —— 每跑完一轮都会重读会话列表，
+ * 内容一旦进了指纹，用户看到的就是整列重建（"老是刷新，闪一下"）。
+ * 内容变化走 PANELS.chat.refresh 就地改字，行与滚动位置都留着。
+ * 顺序（内核按最后一条事件排）算结构：位置变了要重排。
+ */
+function chatRailSig() {
+  const sessions = (state.sessions || []).map((x) => x.sessionId + ":" + (x.projectId || "")).join(",");
+  const projects = (state.projects || []).map((x) => x.id + (x.pinned ? "1" : "")).join(",");
+  // 搜索过滤用的是标题：带着搜索词时标题也算结构（过滤结果会跟着变）
+  const q = String(state.chatQuery || "").trim().toLowerCase();
+  const titles = q ? (state.sessions || []).map((x) => String(x.title || "")).join("\u0001") : "";
+  return JSON.stringify([sessions, projects, q, titles,
+    JSON.stringify(state.railGroups || {}), JSON.stringify(state.railExpanded || {})]);
+}
+
+/** 会话行下面那行小字：类型 + 最后活动时间。渲染与就地刷新共用同一份拼法。 */
+function railMetaOf(x) {
+  return ((x.kind && x.kind !== "ask") ? (KIND_LABEL[x.kind] || "对话") + " · " : "") + fmtStamp(x.lastAt).slice(6);
 }
 
 /* ---------- 我的学习：开始 + 最近产物 ---------- */
@@ -5185,6 +5411,30 @@ PANELS.kb = {
 /* ---------- 伴学助手：会话列表 ---------- */
 PANELS.chat = {
   title: "对话",
+  sig: () => chatRailSig(),
+  /**
+   * 结构没变、只有内容变了（标题被模型起好了 / 这一轮跑完时间刷新了 / 换了一段会话）：
+   * 就地改每一行的字与高亮，不重建行 —— 这就是"列表不再闪一下"的地方。
+   */
+  refresh(body) {
+    const host = body || $("panel-body");
+    if (!host) return;
+    for (const row of host.querySelectorAll(".panel-item-row.rail-session")) {
+      const item = row.querySelector(".panel-item");
+      if (!item || !item.dataset) continue;
+      const sid = item.dataset.id || "";
+      const x = (state.sessions || []).find((y) => y.sessionId === sid);
+      if (x) {
+        const titleEl = item.querySelector(".panel-item-title");
+        const title = x.title || "新对话";
+        if (titleEl && titleEl.textContent !== title) titleEl.textContent = title;
+        const metaEl = item.querySelector(".panel-item-meta");
+        const meta = railMetaOf(x);
+        if (metaEl && metaEl.textContent !== meta) metaEl.textContent = meta;
+      }
+      item.classList.toggle("active", sid === state.chatSessionId);
+    }
+  },
   // ＋ ＝ 新建对话：点它选"常规聊天"还是某个项目的 Work（见 newChatMenu）
   actions: () => [
     panelBtn("plus", "新建对话", () => newChatMenu($("rail-new")), "rail-new"),
@@ -5272,7 +5522,7 @@ PANELS.chat = {
           id: x.sessionId,
           active: x.sessionId === state.chatSessionId,
           title: x.title || "新对话",
-          meta: ((x.kind && x.kind !== "ask") ? (KIND_LABEL[x.kind] || "对话") + " · " : "") + fmtStamp(x.lastAt).slice(6),
+          meta: railMetaOf(x),
           onClick: () => openChatSession(x.sessionId),
         }));
         rowEl.appendChild(sessionRowMenu(x, rowEl));
@@ -5302,19 +5552,16 @@ function projectMenu(project, key) {
   trigger.title = "项目操作";
   trigger.setAttribute("aria-label", "项目操作");
   trigger.innerHTML = icon("dots");
-  let menu = null;
-  const close = () => { if (menu) { menu.remove(); menu = null; } };
   const item = (label, ic, cls, fn) => {
     const b = el("button", cls || "", "");
     b.type = "button";
     b.innerHTML = icon(ic || "chevron") + "<span>" + esc(label) + "</span>";
-    b.onclick = (ev) => { ev.stopPropagation(); close(); fn(); };
+    b.onclick = (ev) => { ev.stopPropagation(); closePopover(); fn(); };
     return b;
   };
   trigger.onclick = (ev) => {
     ev.stopPropagation();
-    if (menu) { close(); return; }
-    menu = el("div", "rail-menu project-menu");
+    popoverAt(trigger, (menu) => {
     if (project) {
       const head = el("div", "rail-menu-head");
       head.innerHTML = icon("folder") + "<span>" + esc(project.name || project.root) + "</span>" +
@@ -5347,25 +5594,7 @@ function projectMenu(project, key) {
         } catch (e) { toast("失败：" + e.message); }
       }));
     }
-    wrap.appendChild(menu);
-    const onKey = (e2) => {
-      if (e2.key === "Escape") {
-        close();
-        document.removeEventListener("click", away);
-        document.removeEventListener("keydown", onKey);
-      }
-    };
-    const away = (e2) => {
-      if (!wrap.contains(e2.target)) {
-        close();
-        document.removeEventListener("click", away);
-        document.removeEventListener("keydown", onKey);
-      }
-    };
-    setTimeout(() => {
-      document.addEventListener("click", away);
-      document.addEventListener("keydown", onKey);
-    }, 0);
+    }, { side: "left", cls: "project-menu" });
   };
   wrap.appendChild(trigger);
   return wrap;
@@ -5405,11 +5634,12 @@ function editProjectDialog(project) {
  */
 function newChatMenu(anchor) {
   if (!anchor) return;
-  const host = anchor.parentElement || document.body;
-  const live = host.querySelector(".rail-menu.new-menu");
-  if (live) { live.remove(); return; }
-  const menu = el("div", "rail-menu new-menu");
-  const pick = (projectId, mode) => { menu.remove(); newChat(projectId, mode); };
+  const menu = popoverAt(anchor, (menu) => { buildNewChatMenu(menu); }, { side: "panel", cls: "new-menu" });
+  return menu;
+}
+
+function buildNewChatMenu(menu) {
+  const pick = (projectId, mode) => { closePopover(); newChat(projectId, mode); };
 
   menu.appendChild(el("div", "rail-menu-title", "新建对话"));
 
@@ -5440,7 +5670,7 @@ function newChatMenu(anchor) {
   mk.innerHTML = icon("plus") + "<span class='rail-menu-main'>新建项目…</span>" +
     "<span class='rail-menu-note'>选一个本机文件夹</span>";
   mk.onclick = async () => {
-    menu.remove();
+    closePopover();
     const a = window.itnWindow;
     if (!a || typeof a.pickDirectory !== "function") {
       toast("选文件夹只在桌面应用窗口里可用");
@@ -5458,19 +5688,6 @@ function newChatMenu(anchor) {
     }
   };
   menu.appendChild(mk);
-
-  host.appendChild(menu);
-  const closeAll = () => {
-    menu.remove();
-    document.removeEventListener("click", away);
-    document.removeEventListener("keydown", onKey);
-  };
-  const away = (e) => { if (!host.contains(e.target)) closeAll(); };
-  const onKey = (e) => { if (e.key === "Escape") closeAll(); };
-  setTimeout(() => {
-    document.addEventListener("click", away);
-    document.addEventListener("keydown", onKey);
-  }, 0);
 }
 
 /* ---------- 设置：分区 ---------- */
@@ -5509,6 +5726,7 @@ async function openChatSession(id) {
   // 已经在对话页：就地换这一段，不整页重建 —— 原来点一下就闪一次"加载中…"
   if (current === "chat" && currentSection !== "overview" && typeof state.chatOpenSession === "function") {
     await state.chatOpenSession(id);
+    if (typeof refreshChatHeader === "function") refreshChatHeader();
     return;
   }
   go("chat");
@@ -5526,27 +5744,19 @@ function sessionRowMenu(s, rowEl) {
   trigger.title = "更多操作";
   trigger.setAttribute("aria-label", "更多操作");
   trigger.innerHTML = icon("dots");
-  let menu = null;
-  const close = () => { if (menu) { menu.remove(); menu = null; } };
   const item = (label, cls, fn) => {
     const b = el("button", cls || "", label);
     b.type = "button";
-    b.onclick = (ev) => { ev.stopPropagation(); close(); fn(); };
+    b.onclick = (ev) => { ev.stopPropagation(); closePopover(); fn(); };
     return b;
   };
   trigger.onclick = (ev) => {
     ev.stopPropagation();
-    if (menu) { close(); return; }
-    menu = el("div", "session-menu");
-    menu.appendChild(item("重命名…", "", () => renameSessionDialog(s)));
-    menu.appendChild(item("移到项目…", "", () => moveSessionDialog(s)));
-    menu.appendChild(item("删除…", "danger", () => deleteSessionDialog(s)));
-    rowEl.appendChild(menu);
-    // 点别处收起（下一轮事件再挂，免得这次点击立刻把它关了）
-    const away = (e2) => {
-      if (!rowEl.contains(e2.target)) { close(); document.removeEventListener("click", away); }
-    };
-    setTimeout(() => document.addEventListener("click", away), 0);
+    popoverAt(trigger, (menu) => {
+      menu.appendChild(item("重命名…", "", () => renameSessionDialog(s)));
+      menu.appendChild(item("移到项目…", "", () => moveSessionDialog(s)));
+      menu.appendChild(item("删除…", "danger", () => deleteSessionDialog(s)));
+    }, { side: "left", cls: "session-menu" });
   };
   wrap.appendChild(trigger);
   return wrap;
@@ -5700,12 +5910,13 @@ function turnsFromEvents(events) {
     if (e.type === "turn/start") { t.kind = p.kind || ""; t.startedAt = e.at; }
     else if (e.type === "assistant/activity") t.activity = p.phase || "";
     else if (e.type === "assistant/thinking") t.items.push({ t: "think", text: p.text || "", ms: p.ms || 0 });
-    else if (e.type === "user/message") t.user = p.text || "";
+    else if (e.type === "user/message") { t.user = p.text || ""; t.userAt = e.at; }
     else if (e.type === "assistant/delta") {
       const last = t.items[t.items.length - 1];
       if (last && last.t === "a") last.text += (p.text || "");
       else t.items.push({ t: "a", text: p.text || "", streaming: true });
     } else if (e.type === "assistant/message") {
+      t.answerAt = e.at;
       const last = t.items[t.items.length - 1];
       if (last && last.t === "a") {
         // 增量与整段是同一段话：以整段为准（流式可能在收尾处少几个字）
@@ -5854,14 +6065,53 @@ function rawTurnToggle(t, box) {
   return b;
 }
 
+/**
+ * 一段消息下面的那行小字：时间 + 几个 icon。
+ *
+ * 用户消息：时间 · 复制 · 重写（重写只挂在最后一条 —— 中间那条改掉，
+ * 后面的回答就全对不上了，那是"分支"该干的事）。
+ * 助手回答：复制 · 分支 · 内部事件 · 时间。
+ */
+function msgMeta(opts) {
+  const meta = el("div", "msg-meta " + (opts.side === "user" ? "right" : "left"));
+  const stamp = el("span", "msg-time", fmtStamp(opts.at || "").slice(6) || "");
+  const icons = [];
+  if (opts.onCopy) icons.push(iconBtn("复制", "copy", opts.onCopy));
+  if (opts.onBranch) icons.push(iconBtn("从这里开分支", "branch", opts.onBranch));
+  if (opts.onRaw) icons.push(opts.onRaw);
+  if (opts.onEdit) icons.push(iconBtn("改这条重发", "pencil", opts.onEdit));
+  if (opts.side === "user") {
+    meta.appendChild(stamp);
+    for (const b of icons) meta.appendChild(b);
+  } else {
+    for (const b of icons) meta.appendChild(b);
+    meta.appendChild(stamp);
+  }
+  if (!stamp.textContent) stamp.remove();
+  return meta;
+}
+
 function renderTurnBlock(t, live) {
   live = !!live && t.ok == null;
   const box = el("div", "turn-block");
+  const last = (state.chatTurns || [])[(state.chatTurns || []).length - 1];
+  const isLast = !!last && last.id === t.id;
+  const canEdit = !!t.user && t.id && t.id !== "local" && isLast;
   if (t.user) {
     const u = el("div", "msg msg-user");
+    const stack = el("div", "msg-stack");
     const b = el("div", "msg-body");
     b.innerHTML = md(t.user);
-    u.appendChild(b);
+    stack.appendChild(b);
+    if (!live) {
+      stack.appendChild(msgMeta({
+        side: "user",
+        at: t.userAt,
+        onCopy: () => copyText(t.user),
+        onEdit: canEdit ? () => editTurnInline(t, box) : null,
+      }));
+    }
+    u.appendChild(stack);
     if (t.steer) u.appendChild(el("span", "msg-flag", "插话"));
     box.appendChild(u);
   }
@@ -5893,9 +6143,9 @@ function renderTurnBlock(t, live) {
     const e = el("div", "msg msg-ai");
     e.appendChild(el("div", "msg-body " + (cancelled ? "muted" : "err-text"), t.message || "这一轮没有完成"));
     if (cancelled && t.user) {
-      const acts = el("div", "row msg-actions");
-      acts.appendChild(btn("重新问一次", "sm ghost", () => { if (state.chatResend) state.chatResend(t.user); }));
-      e.appendChild(acts);
+      const eacts = el("div", "row msg-actions");
+      eacts.appendChild(btn("重新问一次", "sm ghost", () => { if (state.chatResend) state.chatResend(t.user); }));
+      e.appendChild(eacts);
     }
     box.appendChild(e);
   }
@@ -5907,52 +6157,59 @@ function renderTurnBlock(t, live) {
   })();
   if (!live && t.ok !== false && (t.citations.length || t.report)) box.appendChild(citationBox(t.citations, t.report));
   if (!live) {
-    /* 这一排只放"对这段回答本身"的三个动作。
-       上一版这里是"做成讲义 / 练习册 / 实操 / 演示"四个文字按钮 —— 生成什么资源是
-       由你开口决定的事（直接说"做成讲义"就行），不该在每条回答下面摆一排快捷方式。 */
-    const acts = el("div", "row msg-actions turn-actions");
-    const last = (state.chatTurns || [])[state.chatTurns.length - 1];
-    const isLast = !!last && last.id === t.id;
-    if (lastText) acts.appendChild(iconBtn("复制这段回答", "copy", () => copyText(lastText)));
-    if (t.user && t.id && t.id !== "local" && isLast) {
-      acts.appendChild(iconBtn("改这条重发", "pencil", () => editTurnInline(t, box)));
+    /* 回答下面那行：复制 / 分支 / 内部事件 / 时间。
+       上一版这里是"做成讲义 / 练习册 / 实操 / 演示"四个文字按钮 —— 生成什么资源由你开口决定，
+       不该在每条回答下面摆一排快捷方式。 */
+    const hasAnswer = !!lastText;
+    if (hasAnswer || (t.id && t.id !== "local")) {
+      box.appendChild(msgMeta({
+        side: "ai",
+        at: t.answerAt || t.startedAt,
+        onCopy: hasAnswer ? () => copyText(lastText) : null,
+        onBranch: (t.id && t.id !== "local") ? () => branchFromTurn(t) : null,
+        onRaw: (t.id && t.id !== "local") ? rawTurnToggle(t, box) : null,
+      }));
     }
-    if (t.id && t.id !== "local") {
-      acts.appendChild(iconBtn("从这里开分支", "branch", () => branchFromTurn(t)));
-    }
-    acts.appendChild(rawTurnToggle(t, box));
-    box.appendChild(acts);
   }
   return box;
 }
-
 /**
  * 改一下这条用户消息再重发。
  *
  * 只对**最后一条**用户消息开放：中间某一条改掉，后面的回答就全对不上了 ——
  * 那是"分支"该干的事（原会话留着，另开一段重来）。
+ * 两个去处：保存并重发（把这一轮起的历史删掉重发）/ 另开分支再发（原会话一字不动）。
  */
 function editTurnInline(t, box) {
   const u = box.querySelector(".msg-user");
   if (!u || u.querySelector(".msg-editor")) return;
-  const body = u.querySelector(".msg-body");
+  const stack = u.querySelector(".msg-stack") || u;
   const original = t.user || "";
+  // 气泡留着，编辑器挂在它下面（用户要的形状：改的是"我发的这条"，看得到原文）
+  const meta = stack.querySelector(".msg-meta");
+  if (meta) meta.style.display = "none";
   const wrap = el("div", "msg-editor");
   const ta = el("textarea", "msg-editor-input");
   ta.value = original;
-  ta.rows = Math.min(8, Math.max(2, original.split("\n").length));
   wrap.appendChild(ta);
+  const growEditor = () => {
+    ta.style.height = "auto";
+    ta.style.height = Math.min(220, ta.scrollHeight + 2) + "px";
+  };
+  ta.addEventListener("input", growEditor);
   const row = el("div", "row msg-editor-actions");
+  const closeEditor = () => { wrap.remove(); if (meta) meta.style.display = ""; };
   row.appendChild(btn("保存并重发", "sm primary", () => resendEdited(t, ta.value.trim(), false)));
   row.appendChild(btn("另开分支再发", "sm ghost", () => resendEdited(t, ta.value.trim(), true)));
-  row.appendChild(btn("取消", "sm ghost", () => wrap.remove()));
+  row.appendChild(btn("取消", "sm ghost", closeEditor));
   wrap.appendChild(row);
-  body.replaceWith(wrap);
+  stack.appendChild(wrap);
   ta.focus();
   ta.setSelectionRange(ta.value.length, ta.value.length);
+  setTimeout(growEditor, 0);
   ta.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); resendEdited(t, ta.value.trim(), false); }
-    if (e.key === "Escape") wrap.remove();
+    if (e.key === "Escape") closeEditor();
   });
 }
 
@@ -5967,6 +6224,7 @@ async function resendEdited(t, text, asBranch) {
       state.lastEventId = 0;
       state.chatTurns = [];
     } else {
+      // 内核那边是物理删除：这一轮以及它之后的记录都会被删掉，再发新的
       const d = await api("/api/sessions/rewind", { sessionId: state.chatSessionId, turnId: t.id });
       if (!d.ok) { toast("这一轮已经找不到了，刷新一下再试"); return; }
       const fresh = await api("/api/sessions/events", { sessionId: state.chatSessionId });
@@ -5986,6 +6244,25 @@ async function resendEdited(t, text, asBranch) {
   }
 }
 
+/**
+ * 从**最新的一条**开分支：整段对话（含最后一轮）复制到新会话，原会话一字不动。
+ *
+ * 与 branchFromTurn 的差别：那个是"从某一轮之前分"（连那一轮一起不要了，换个问法重来）；
+ * 这个是"把这段对话整个带走，换条路继续走" —— 顶栏 ⋯ 里的「新建分支」用的是它。
+ */
+async function branchFromLatest() {
+  if (!state.chatSessionId) { toast("先开一段对话"); return; }
+  try {
+    const d = await api("/api/sessions/branch", { sessionId: state.chatSessionId, turnId: "" });
+    await loadProjects();
+    await reloadSessions();
+    openChatSession(d.sessionId);
+    toast("已从最新的一条开出新分支（原会话还在）");
+  } catch (e) {
+    toast("分支失败：" + e.message);
+  }
+}
+
 /** 从这一轮开分支：原会话一字不动，新会话带过来这一轮之前的历史。 */
 async function branchFromTurn(t) {
   try {
@@ -5998,7 +6275,6 @@ async function branchFromTurn(t) {
     toast("分支失败：" + e.message);
   }
 }
-
 
 PAGES.chat = {
   async render() {
@@ -6114,6 +6390,31 @@ PAGES.chat = {
     plusBtn.title = "更多动作";
     plusBtn.innerHTML = icon("plus");
     crow.appendChild(plusBtn);
+
+    /* 这段对话在哪个工作区干活。
+       Codex 的输入框左下角也是这么写的（项目 + 权限）—— 只写"常规聊天"，
+       用户根本不知道自己现在在哪开工、写出来的东西会落在哪。 */
+    const wsChip = el("button", "composer-chip", "");
+    wsChip.type = "button";
+    const paintWsChip = () => {
+      const wd = sessionWorkDir();
+      wsChip.innerHTML = icon("folder") + "<span>" + esc(wd.name || "未指定工作区") + "</span>";
+      wsChip.title = (wd.path ? "工作目录：" + wd.path + "\n" : "") +
+        (wd.project ? "指定工作区（Work）：权限按右边那枚档位" : "常规聊天：整机只读，只对这个目录可写") +
+        "\n点一下用资源管理器打开";
+      wsChip.classList.toggle("off", !wd.path);
+    };
+    paintWsChip();
+    wsChip.onclick = (ev) => {
+      ev.stopPropagation();
+      const wd = sessionWorkDir();
+      if (wd.path && window.itnWindow && typeof window.itnWindow.openPath === "function") {
+        window.itnWindow.openPath(wd.path).then((r) => { if (r && r.ok === false) toast(r.error); });
+      } else {
+        toast("工作目录：" + (wd.path || "未指定"));
+      }
+    };
+    crow.appendChild(wsChip);
 
     /* ---- 权限档位（= Lumin 的 permissions，文案在模块级的 PERM_LABEL） ---- */
     const permChip = el("button", "composer-chip", "");
@@ -6423,32 +6724,57 @@ PAGES.chat = {
       return parts.join("|");
     }
 
+    /* DOM 认领表：这一轮渲染负责哪些子节点。
+       只清 paintCache 是不够的 —— 上一段会话留下的节点已经没人认领，但只要还挂在 thread 上
+       就会被看到（用户实测：新建会话后，上一段对话的历史继续显示在它上面，看着像被带过来了）。 */
+    const approvalCache = new Map();   // 待批准请求 id → 节点，免得每次 paint 都重建一张卡
+    function reconcileThread(keep) {
+      for (const child of [...thread.children]) {
+        if (!keep.has(child) && !child.classList.contains("empty")) child.remove();
+      }
+    }
+
     function paint() {
       // 会话 id 标在对话区上：自检要按"这一段会话"验联网档位，调试时也好对号
       thread.dataset.session = state.chatSessionId || "";
       if (typeof syncWorkbenchEvents === "function") syncWorkbenchEvents(state.chatEvents || []);
       paintBlank();
+      const keep = new Set();
       if (!state.chatTurns.length) {
         paintCache.clear();
         paintOrder = "";
-        if (!thread.querySelector(".empty")) {
-          thread.innerHTML = "";
-        thread.appendChild(emptyState({
-          inline: true,
-          art: "brand",
-          title: "今天想学点什么？",
-          // 作用范围在这里说清：这一段对话到底用哪份资料
-          text: "检索范围是本机全部知识库，答案带出处。" +
-                (state.chapter ? " 会带上你正在学的《" + state.chapter + "》。" : ""),
-          actions: hasKb() ? [
-            // 第一条跟着"当前在学什么"走：学过某一章才问"这一章"，否则问一个一定有落点的问题
-            (state.chapter
-              ? btn("问：这一章的核心结论是什么", "", () => { ta.value = "这一章的核心结论是什么？"; send(); })
-              : btn("问：资料里都有哪些重点", "", () => { ta.value = "我这边的资料里都有哪些重点？"; send(); })),
-            btn("看知识库里有什么", "ghost", () => go("kb")),
-          ] : [btn("去指定资料目录", "", () => go("settings", "kb"))],
-        }));
+        /* 空态的文案跟着"这一段对话"走，不是一句写死的欢迎语：
+           用户得先知道自己在哪个工作区、能写哪儿，再决定问什么（用户提的：
+           "不要定死一个页面，用户根本不知道我当前新对话要在哪开始"）。 */
+        const wdEmpty = sessionWorkDir();
+        const wsKey = (wdEmpty.project ? "work:" : "chat:") + (wdEmpty.path || wdEmpty.name || "");
+        let empty = thread.querySelector(".empty");
+        if (empty && empty.dataset.ws !== wsKey) { empty.remove(); empty = null; }   // 换了会话/工作区就重画
+        if (!empty) {
+          empty = emptyState({
+            inline: true,
+            art: "brand",
+            title: wdEmpty.project
+              ? ("在「" + (wdEmpty.name || "这个工作区") + "」里做什么？")
+              : "今天想学点什么？",
+            // 作用范围在这里说清：这一段对话在哪个目录干活、检索什么
+            text: (wdEmpty.project
+                    ? "工作目录：" + (wdEmpty.path || "") + "（权限见输入框左下角）"
+                    : "常规聊天：整机只读，只对「" + (wdEmpty.name || "默认工作目录") + "」可写") +
+                  " · 检索范围：本机全部知识库，答案带出处。" +
+                  (state.chapter ? " 会带上你正在学的《" + state.chapter + "》。" : ""),
+            actions: hasKb() ? [
+              // 第一条跟着"当前在学什么"走：学过某一章才问"这一章"，否则问一个一定有落点的问题
+              (state.chapter
+                ? btn("问：这一章的核心结论是什么", "", () => { ta.value = "这一章的核心结论是什么？"; send(); })
+                : btn("问：资料里都有哪些重点", "", () => { ta.value = "我这边的资料里都有哪些重点？"; send(); })),
+              btn("看知识库里有什么", "ghost", () => go("kb")),
+            ] : [btn("去指定资料目录", "", () => go("settings", "kb"))],
+          });
+          empty.dataset.ws = wsKey;
+          thread.appendChild(empty);
         }
+        keep.add(empty);
       } else {
         const empty = thread.querySelector(".empty");
         if (empty) empty.remove();
@@ -6462,7 +6788,6 @@ PAGES.chat = {
           if (!hit || hit.sig !== sig || hit.live !== live) {
             const node = renderTurnBlock(t, live);
             if (hit && hit.node.isConnected) hit.node.replaceWith(node);
-            else thread.appendChild(node);
             paintCache.set(key, { node, sig, live });
           }
         }
@@ -6477,8 +6802,30 @@ PAGES.chat = {
         for (const [key, hit] of [...paintCache]) {
           if (order.indexOf(key) < 0) { hit.node.remove(); paintCache.delete(key); }
         }
+        for (const key of order) {
+          const hit = paintCache.get(key);
+          if (hit) keep.add(hit.node);
+        }
       }
-      for (const req of (state.approvals || [])) thread.appendChild(approvalCard(req));
+      // 待批准的动作可能来自任何一轮：同一张请求复用同一个节点，避免每 200ms 重建一次卡片
+      const aliveApprovals = new Set();
+      for (const req of (state.approvals || [])) {
+        aliveApprovals.add(req.id);
+        let node = approvalCache.get(req.id);
+        if (!node) {
+          node = approvalCard(req);
+          approvalCache.set(req.id, node);
+        }
+        keep.add(node);
+      }
+      for (const [aid, node] of [...approvalCache]) {
+        if (!aliveApprovals.has(aid)) {
+          node.remove();
+          approvalCache.delete(aid);
+        }
+      }
+      reconcileThread(keep);
+      for (const req of (state.approvals || [])) thread.appendChild(approvalCache.get(req.id));
       paintActionBtn();
       if (state.stickBottom !== false) thread.scrollTop = thread.scrollHeight;
     }
@@ -6497,6 +6844,8 @@ PAGES.chat = {
           state.chatSessionId = (await api("/api/sessions/new", {})).sessionId;
         } catch (e) { toast("新建会话失败：" + e.message); return; }
         finally {state.chatStarting = false; paintActionBtn();}
+        // 顶栏的面包屑跟着换到这一段（会话名先空着，模型起好名字会再刷一次）
+        if (typeof refreshChatHeader === "function") refreshChatHeader();
       }
       const sid = state.chatSessionId;
       ta.value = "";
@@ -6514,6 +6863,8 @@ PAGES.chat = {
       state.chatTurns.push({ id: "local", kind: "ask", user: text, items: [], report: null, citations: [], ok: null, message: "" });
       state.stickBottom = true;
       paint();
+      // 这段对话的第一句话：让模型起个名（只做一次；名字回来之前列表先用这句话兜着）
+      if ((state.chatTurns || []).filter((x) => x.user).length <= 1) maybeGenerateTitle(sid);
 
       // 生成过程中轮询会话事件，把 assistant/delta 渲染成"打字机"效果。
       // 内核 HTTP 是多线程的，长生成不会挡住这个轮询；顺便每 1.5 秒看一眼有没有要批准的动作。
@@ -8205,6 +8556,14 @@ async function boot() {
   initTitlebar();
   initZoomKeys();
   buildNav();
+  /* 深链接：`lumin://thread/<id>`（窗口被链接拉起、或程序已在跑时把链接转交给它）。
+     点开会话链接就直达那一段对话 —— 与 Codex 的 codex://threads/<id> 同一个用法。 */
+  if (window.itnWindow && typeof window.itnWindow.onDeepLink === "function") {
+    window.itnWindow.onDeepLink((sid) => {
+      if (!sid) return;
+      loadSessions().then(() => openChatSession(sid)).catch(() => openChatSession(sid));
+    });
+  }
   // 偏好要在首屏之前读：否则深色用户会先看到一帧白底
   await loadPrefs();
   await loadWebMode();
