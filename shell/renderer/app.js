@@ -146,6 +146,10 @@ const ICONS = {
   branch: "M7 4v10a3 3 0 0 0 3 3h8M18 14l3 3-3 3M7 4a2 2 0 1 1 0 0",
   code: "M9 8l-4 4 4 4M15 8l4 4-4 4",
   pencil: "M4 20h4L20 8l-4-4L4 16z",
+  // 看差异（改了哪几行）：一条竖分隔 + 加号 / 减号
+  diff: "M12 4v16M6.5 8.5h4M8.5 6.5v4M15 14.5h4",
+  // 撤销（还原）：一个回头的箭头
+  undo: "M9 5 4 10l5 5M4 10h11a5 5 0 0 1 0 10h-2",
   hand: '<path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v-2a2 2 0 0 0-2-2 2 2 0 0 0-2 2v2.5"/><path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>',
 };
 
@@ -6103,8 +6107,10 @@ function turnsFromEvents(events) {
           hit.add = Math.max(hit.add || 0, Number(det.add || 0));
           hit.del = Math.max(hit.del || 0, Number(det.del || 0));
           hit.created = !!(hit.created || det.created);
+          if (det.draftId) hit.draftId = String(det.draftId);
         } else {
-          t.fileChanges.push({ path: String(det.path), add: Number(det.add || 0), del: Number(det.del || 0), created: !!det.created });
+          t.fileChanges.push({ path: String(det.path), add: Number(det.add || 0), del: Number(det.del || 0),
+                               created: !!det.created, draftId: det.draftId ? String(det.draftId) : "" });
         }
       }
       let target = null;
@@ -6348,7 +6354,21 @@ function renderTurnBlock(t, live) {
       const row = el("div", "file-row");
       row.innerHTML = "<span class='file-name'>" + esc(f.path) + (f.created ? "<i class='file-tag'>新建</i>" : "") + "</span>" +
         "<span class='file-stat'><b class='add'>+" + (f.add || 0) + "</b> <b class='del'>−" + (f.del || 0) + "</b></span>";
+      /* 改动草稿：写之前留了一份原样，所以每个文件都能"看差异 / 撤销"（用户要的可还原） */
+      if (f.draftId && !(state.draftSettled || {})[f.draftId]) {
+        row.dataset.draft = f.draftId;
+        const acts = el("span", "file-acts");
+        acts.appendChild(iconBtn("看差异", "diff", () => draftDiffDialog(f)));
+        acts.appendChild(iconBtn("撤销这次改动", "undo", () => draftDiscard(f)));
+        row.appendChild(acts);
+      }
       list.appendChild(row);
+    }
+    const pendingDrafts = t.fileChanges.filter((x) => x.draftId && !(state.draftSettled || {})[x.draftId]);
+    if (pendingDrafts.length > 1) {
+      const foot = el("div", "file-foot");
+      foot.appendChild(btn("全部撤销", "sm ghost", () => draftDiscardAll(pendingDrafts, foot)));
+      list.appendChild(foot);
     }
     card.appendChild(list);
     box.appendChild(card);
@@ -6454,6 +6474,85 @@ function editTurnInline(t, box) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); resendEdited(t, ta.value.trim(), false); }
     if (e.key === "Escape") restore();
   });
+}
+
+/* ---------- 改动草稿：看差异 / 撤销（写之前留的那份原样） ---------- */
+
+/** 记住这条草稿已经收摊（撤销 / 保留过）：重画时不再摆"看差异 / 撤销"。 */
+function draftSettledMark(id, how) {
+  state.draftSettled = state.draftSettled || {};
+  state.draftSettled[id] = how;
+  const acts = document.querySelector('.chat-thread .file-row[data-draft="' + id + '"] .file-acts');
+  if (acts) acts.innerHTML = "<i class='file-tag'>" + (how === "merged" ? "已保留" : "已还原") + "</i>";
+}
+
+/** 看这次改动改了什么：原样 vs 现在，行级差异（与工作台里的资源版本对比同一套画法）。 */
+async function draftDiffDialog(f) {
+  let d;
+  try {
+    d = await api("/api/drafts/diff", { id: f.draftId });
+  } catch (e) {
+    toast("看不了差异：" + e.message);
+    return;
+  }
+  if (d.ok !== true) { toast("这条改动已经收摊了"); return; }
+  const v = $("view");
+  const dlg = el("div", "card dialog");
+  dlg.appendChild(cardHeadOnly("改动差异 · " + (d.path || f.path || "")));
+  dlg.appendChild(el("div", "muted sm", d.existed ? "左：改动前　右：现在（+ 新增 / − 删掉）" : "这是新建的文件（原来不存在）"));
+  const pre = el("pre", "resource-diff-lines");
+  const lines = diffResourceLines(d.before || "", d.after || "");
+  let n = 0;
+  for (const [kind, text] of lines) {
+    if (n++ > 500) { pre.appendChild(el("div", "diff-same", "……（只显示前 500 行）")); break; }
+    pre.appendChild(el("div", "diff-" + kind, (kind === "add" ? "+ " : kind === "remove" ? "− " : "  ") + text));
+  }
+  const box = el("div", "diff-box");
+  box.appendChild(pre);
+  dlg.appendChild(box);
+  const row = el("div", "row");
+  row.appendChild(btn("撤销这次改动", "ghost", async () => {
+    if (await draftDiscard(f)) dlg.remove();
+  }));
+  row.appendChild(btn("保留改动", "primary", async () => {
+    try {
+      const r = await api("/api/drafts/merge", { id: f.draftId });
+      if (r.ok === true) { draftSettledMark(f.draftId, "merged"); toast("已保留这次改动"); }
+      else toast("这条改动已经收摊了");
+    } catch (e) { toast("保留失败：" + e.message); }
+    dlg.remove();
+  }));
+  dlg.appendChild(row);
+  v.insertBefore(dlg, v.firstChild);
+  dlg.scrollIntoView({ block: "start" });
+}
+
+/** 撤销一处改动：把写之前那份原样写回去（新建的文件则删掉）。 */
+async function draftDiscard(f) {
+  try {
+    const r = await api("/api/drafts/discard", { id: f.draftId });
+    if (r.ok !== true) { toast("还原失败（这条改动可能已经收摊）"); return false; }
+    draftSettledMark(f.draftId, "discarded");
+    toast("已还原 " + (f.path || ""));
+    return true;
+  } catch (e) {
+    toast("还原失败：" + e.message);
+    return false;
+  }
+}
+
+/** 一次撤销这一轮的所有文件改动。 */
+async function draftDiscardAll(changes, foot) {
+  const ids = changes.map((x) => x.draftId).filter(Boolean);
+  if (!ids.length) return;
+  try {
+    const r = await api("/api/drafts/discard-all", { sessionId: state.chatSessionId, ids });
+    for (const id of ids) draftSettledMark(id, "discarded");
+    if (foot && foot.isConnected) foot.remove();
+    toast("已还原 " + (r.restored || ids.length) + " 处改动");
+  } catch (e) {
+    toast("还原失败：" + e.message);
+  }
 }
 
 /** 这一轮在会话树里属于哪一族分支（不在任何分支上时返回 null）。 */

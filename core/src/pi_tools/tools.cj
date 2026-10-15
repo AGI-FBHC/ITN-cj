@@ -18,10 +18,10 @@ import itn_desktop_core.pi.*
  * 与 Pi 的差别：路径被关在工作区里（Pi 用进程的系统权限）；命令执行要显式开 --allow-exec。
  */
 
-public func registerWorkspaceTools(reg: ToolRegistry, ws: Workspace, allowExec: Bool): Unit {
+public func registerWorkspaceTools(reg: ToolRegistry, ws: Workspace, allowExec: Bool, drafts!: ?DraftStore = None): Unit {
     reg.add(ReadTool(ws))
-    reg.add(WriteTool(ws))
-    reg.add(EditTool(ws))
+    reg.add(WriteTool(ws, drafts))
+    reg.add(EditTool(ws, drafts))
     reg.add(LsTool(ws))
     reg.add(FindTool(ws))
     reg.add(GrepTool(ws))
@@ -124,11 +124,21 @@ func countLines(text: String): Int64 {
     return n
 }
 
+/** 草稿要记绝对路径（还原时不经过 Workspace）：解析不出来就退回原样。 */
+func absPathOf(ws: Workspace, path: String): String {
+    match (ws.resolve(path)) {
+        case Some(p) => return p
+        case None => return path
+    }
+}
+
 class WriteTool <: Tool {
     private let ws: Workspace
+    private let drafts: ?DraftStore
 
-    public init(ws: Workspace) {
+    public init(ws: Workspace, drafts: ?DraftStore) {
         this.ws = ws
+        this.drafts = drafts
     }
 
     public func spec(): ToolSpec {
@@ -153,8 +163,11 @@ class WriteTool <: Tool {
         // 覆盖写之前先量一下旧文件的行数：界面要拿它算"这一轮改了多少行"（+/-），
         // 没有旧内容时（新建）增行数就是全部、减行数为 0。
         var oldLines: Int64 = 0
+        var before: ?String = None
         match (ws.readText(path)) {
-            case Some(before) => oldLines = countLines(before)
+            case Some(b) =>
+                before = Some(b)
+                oldLines = countLines(b)
             case None => ()
         }
         if (ws.writeText(path, content)) {
@@ -164,6 +177,12 @@ class WriteTool <: Tool {
             d.put("add", JsonInt(add))
             d.put("del", JsonInt(oldLines))
             d.put("created", JsonBool(oldLines == 0))
+            // 改动草稿：写之前那份原样留在 drafts 里，界面据此给"看差异 / 撤销这次改动"
+            match (drafts) {
+                case Some(ds) =>
+                    d.put("draftId", JsonString(ds.record(ws.relOf(path), absPathOf(ws, path), before, add, oldLines)))
+                case None => ()
+            }
             return ToolResult.ok("已写入 " + ws.relOf(path) + "（" + formatSize(content.size) + "）",
                 "已写入 " + ws.relOf(path) + "（" + content.size.toString() + " 字节）", d)
         }
@@ -173,9 +192,11 @@ class WriteTool <: Tool {
 
 class EditTool <: Tool {
     private let ws: Workspace
+    private let drafts: ?DraftStore
 
-    public init(ws: Workspace) {
+    public init(ws: Workspace, drafts: ?DraftStore) {
         this.ws = ws
+        this.drafts = drafts
     }
 
     public func spec(): ToolSpec {
@@ -253,6 +274,11 @@ class EditTool <: Tool {
         d.put("add", JsonInt(countLines(text)))
         d.put("del", JsonInt(countLines(raw)))
         d.put("applied", JsonInt(applied))
+        match (drafts) {
+            case Some(ds) =>
+                d.put("draftId", JsonString(ds.record(rel, absPathOf(ws, path), Some(raw), countLines(text), countLines(raw))))
+            case None => ()
+        }
         return ToolResult.ok("已改 " + rel + "（" + applied.toString() + " 处替换，" + formatSize(raw.size) +
             " -> " + formatSize(text.size) + "）", "已改 " + rel + "，" + applied.toString() + " 处替换完成。", d)
     }

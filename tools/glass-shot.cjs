@@ -298,6 +298,25 @@ const freePort = () => new Promise((res, rej) => {
     if (workOut.row.indexOf('mock-test.md') < 0) throw new Error('文件卡里应当列出改了哪个文件，实际：' + workOut.row);
     console.log('WORK-GROUP ' + workOut.head + ' · FILE-CARD ' + workOut.fileHead + ' · ' + workOut.row);
 
+    /* 改动草稿：写文件之前留了一份原样 —— 文件卡上能"看差异"，也能一键撤销（可还原）。 */
+    await page.locator('.chat-thread .file-head').first().click();   // 文件卡默认折叠，先展开
+    await sleep(300);
+    const draftBtns = await page.locator('.chat-thread .file-row[data-draft] .file-acts .msg-icon-btn').count();
+    if (draftBtns !== 2) throw new Error('文件行上应当有「看差异 / 撤销」两枚按钮，实际 ' + draftBtns);
+    await page.locator('.chat-thread .file-row[data-draft] .file-acts .msg-icon-btn').first().click();
+    await page.waitForSelector('.card.dialog .resource-diff-lines .diff-add', { timeout: 8000 });
+    const diffLines = await page.locator('.card.dialog .resource-diff-lines > div').count();
+    if (diffLines < 2) throw new Error('差异弹窗里应当有内容，实际 ' + diffLines + ' 行');
+    const draftFile = path.join(projDir, 'mock-test.md');
+    if (!fs.existsSync(draftFile)) throw new Error('写文件的工具应当真的落了盘：' + draftFile);
+    await page.locator('.card.dialog button', { hasText: '撤销这次改动' }).click();
+    await sleep(800);
+    if (fs.existsSync(draftFile)) throw new Error('撤销之后文件应当被还原（新建的文件 = 删掉）');
+    if ((await page.locator('.chat-thread .file-row .file-acts .file-tag').count()) < 1) {
+      throw new Error('撤销之后那一行应当标上「已还原」');
+    }
+    console.log('DRAFT 看差异 ✓（' + diffLines + ' 行）· 撤销 ✓（mock-test.md 已删）');
+
     await page.locator('#chat-input').fill('工作区第一问');
     await page.locator('.composer-send').click();
     await page.waitForFunction(() => !state.busyTurn, null, { timeout: 90000 });

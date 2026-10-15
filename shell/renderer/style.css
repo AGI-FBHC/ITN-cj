@@ -2972,6 +2972,18 @@ html[data-theme="dark"] .composer {
 }
 
 
+.file-row .file-acts { display: inline-flex; gap: 2px; margin-left: 2px; }
+.file-row .file-acts .msg-icon-btn { width: 22px; height: 22px; opacity: .6; }
+.file-row .file-acts .msg-icon-btn:hover { opacity: 1; background-color: var(--panel-soft); }
+.file-row .file-acts .msg-icon-btn svg { width: 13px; height: 13px; }
+.file-row .file-acts .file-tag { margin-left: 0; }
+.file-foot { display: flex; justify-content: flex-end; padding-top: 6px; }
+.card.dialog .diff-box {
+  max-height: 46vh; overflow: auto; margin: 8px 0; padding: 8px 10px;
+  border-radius: 10px; background-color: var(--card-lite);
+}
+.card.dialog .muted.sm { margin: 2px 0 0; }
+
 /* ---------- 会话树：分支切换器 + 待分叉提示（追加在最后，后写的生效） ---------- */
 /* 用户气泡下面那行 ‹ 2/3 ›：同一分叉点上的几条线，点箭头就换线 */
 .branch-switch {

@@ -31,6 +31,7 @@ import itn_desktop_core.agent.webCitationsFrom
 import itn_desktop_core.tools.effectiveWebMode
 import itn_desktop_core.tools.webSearchReady
 import itn_desktop_core.pi_tools.Workspace
+import itn_desktop_core.pi_tools.DraftStore
 import itn_desktop_core.pi_tools.registerWorkspaceTools
 import itn_desktop_core.lumin_cli.Approver
 import itn_desktop_core.lumin_cli.permissionModeText
@@ -440,7 +441,7 @@ public class PiAgent {
                     w0.chatMode = w.chatMode
                     // 执行命令不再跟档位绑死：以前 ask 档连 powershell 都不挂，用户开了"允许跑命令"
                     // 却什么也跑不了。现在按设置挂上，危险与否交给审批层（ask 档每条命令都会问）。
-                    registerWorkspaceTools(registry, w0, w.allowExec)
+                    registerWorkspaceTools(registry, w0, w.allowExec, drafts: DraftStore(store.dataDir, sid, turnId))
                     let names = ArrayList<String>()
                     names.add("read")
                     names.add("write")

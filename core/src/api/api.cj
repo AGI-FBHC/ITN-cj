@@ -3,6 +3,7 @@ package itn_desktop_core.api
 import itn_desktop_core.learning.LearningStore
 import itn_desktop_core.project.ProjectStore
 import itn_desktop_core.agent.learningTools
+import itn_desktop_core.pi_tools.DraftStore
 import itn_desktop_core.resource.isResourceKind
 
 import stdx.net.http.*
@@ -1493,6 +1494,103 @@ public class Api {
             return
         }
 
+        /* 改动草稿：AI 写过的文件在写之前留了一份原样（列表 / 差异 / 确认保留 / 撤销） */
+        if (path == "/api/drafts/list" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let sid = strOf(b, "sessionId")
+                    if (sid.size == 0) {
+                        fail(ctx, 400, "缺少 sessionId")
+                        return
+                    }
+                    let arr = JsonArray()
+                    for (o in DraftStore(store.dataDir).listOpen(sid)) {
+                        arr.add(o)
+                    }
+                    let out = JsonObject()
+                    out.put("drafts", arr)
+                    ok(ctx, out)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/drafts/diff" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let id = strOf(b, "id")
+                    if (id.size == 0) {
+                        fail(ctx, 400, "缺少 id")
+                        return
+                    }
+                    let d = DraftStore(store.dataDir).diffOf(id)
+                    if (!boolOf(d, "ok")) {
+                        fail(ctx, 404, "找不到这条改动草稿")
+                        return
+                    }
+                    ok(ctx, d)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/drafts/merge" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let out = JsonObject()
+                    out.put("ok", JsonBool(DraftStore(store.dataDir).merge(strOf(b, "id"))))
+                    ok(ctx, out)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/drafts/discard" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let out = JsonObject()
+                    out.put("ok", JsonBool(DraftStore(store.dataDir).discard(strOf(b, "id"))))
+                    ok(ctx, out)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/drafts/discard-all" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let ds = DraftStore(store.dataDir)
+                    var n: Int64 = 0
+                    let ids = match (b.get("ids")) {
+                        case Some(v) =>
+                            match (v) {
+                                case a: JsonArray => a
+                                case _ => JsonArray()
+                            }
+                        case None => JsonArray()
+                    }
+                    if (ids.size() > 0) {
+                        for (i in 0..ids.size()) {
+                            let id = match (ids[i]) {
+                                case s: JsonString => s.getValue()
+                                case _ => ""
+                            }
+                            if (id.size > 0 && ds.discard(id)) {
+                                n += 1
+                            }
+                        }
+                    } else {
+                        n = ds.discardAllOf(strOf(b, "sessionId"))
+                    }
+                    let out = JsonObject()
+                    out.put("ok", JsonBool(true))
+                    out.put("restored", JsonInt(n))
+                    ok(ctx, out)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         if (path == "/api/projects/pin" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) =>
@@ -2765,6 +2863,11 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/sessions/switch",
         "/api/sessions/split",
         "/api/sessions/set-active",
+        "/api/drafts/list",
+        "/api/drafts/diff",
+        "/api/drafts/merge",
+        "/api/drafts/discard",
+        "/api/drafts/discard-all",
         "/api/projects/pin",
         "/api/sessions/list",
         "/api/sessions/events",

@@ -3719,3 +3719,27 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 2. 会话树面板（把每一轮画成可点的树，点某轮=切过去）还没做 —— 目前只有气泡下的 ‹ n/m › 行。
 3. 二期：AI 改动草稿与合并（write/edit 先落草稿区、变更文件卡给"看差异/撤销这次改动"、`/api/drafts/*`、设置开关）。
 4. 三期：docx/pptx 两段式（补 `.docx` 文字预览；`shell/deck-export.js` 做 Markdown→pptx/docx 导出，子代理被打断未产出，需重派）。
+
+
+## 2026-10-16 · 第十二轮：AI 改动草稿（看差异 / 撤销）· Lumin 0.4.1
+
+### 做了什么
+- 内核新增 `DraftStore`（`core/src/pi_tools/drafts.cj`）：write/edit **写之前**把原文件留一份到 `<dataDir>/drafts/<id>.bak`，
+  `drafts` 表记一行（id / 会话 / 轮次 / 文件 / 新增删除行数 / 状态）；工具结果 details 里多一个 `draftId`，
+  界面据此出按钮。状态：open → merged（确认保留，备份删掉）/ discarded（已还原，新建的文件=删掉）。
+- 工具接线：`registerWorkspaceTools(..., drafts!: ?DraftStore = None)`（可选参数；工具页预览与单测不传就不落草稿），
+  `pi_ask` 按本轮的 sessionId / turnId 建 DraftStore 传进去。
+- API：`/api/drafts/list|diff|merge|discard|discard-all`（diff 两侧各截 200KB；discard-all 支持按 ids 或整段会话）。
+- 前端：变更文件卡逐行给「看差异 / 撤销这次改动」（差分弹窗复用工作台"资源版本对比"那套行级 diff），
+  一轮里有两处以上改动时给「全部撤销」；撤销之后那一行标「已还原」，并记进 `state.draftSettled`（重画时不再摆按钮）。
+- 新增单测 `core/src/unittests/draft_store_test.cj` 3 例（还原/保留、新建文件撤销=删掉、全部撤销）。
+- `glass-shot` 新增 DRAFT 断言：写文件 → 文件行两枚按钮 → 看差异弹窗里有 `+` 行 → 撤销 → 文件真的从工作区消失且那一行标「已还原」。
+
+### 没做的那一半（明确写下来，别当成做过了）
+- pi-studio 那种"写进 worktree、确认后才落原件"**没有**做：它需要一整套影子文件系统（模型同一轮里 write 完再 read 要读到新内容、
+  用户跑构建要看到新内容），是另一个 feature。当前语义是"直接写 + 可看差异 + 可一键还原"，所以设置里那个"改动先落草稿"的开关
+  也**没有加** —— 不摆一个不生效的开关。
+
+### 验证与产物
+- 内核 `cjpm test` **112/112**；`glass-shot` 全过（新增 DRAFT）；`stop-check` 11/11；`learning-check --ui` 57/57。
+- 版本 **0.4.1**；产物 `dist/Lumin-0.4.1` 与 `dist/Lumin-0.4.1-win-x64.zip`；关键文件哈希 BAD=0；空数据目录启动 RESULT=OK。
