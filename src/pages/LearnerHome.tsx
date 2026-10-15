@@ -365,8 +365,8 @@ export default function LearnerHome() {
               <History size={16} className="text-brand" />
               <h3 className="font-serif text-[17px] font-semibold text-ink">最近学习轨迹</h3>
             </div>
-            <Link to="/report" className="inline-flex items-center gap-1 text-[12.5px] font-medium text-brand hover:underline">
-              看完整报告
+            <Link to="/me/journal" className="inline-flex items-center gap-1 text-[12.5px] font-medium text-brand hover:underline">
+              按天看
               <ArrowRight size={13} />
             </Link>
           </div>

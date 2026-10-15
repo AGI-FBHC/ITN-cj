@@ -67,6 +67,7 @@ const learnerNav: NavItem[] = [
  */
 const learnerMoreItems: { path: string; label: string; note: string }[] = [
   { path: '/resources', label: '我的资源', note: '定制讲义 / 实操 / 分阶题' },
+  { path: '/me/journal', label: '学习日志', note: '按天回看做了什么' },
   { path: '/knowledge', label: '领域知识库', note: '切片检索与原文溯源' },
   { path: '/chat', label: '伴学助手', note: '就当前进度提问' },
   { path: '/profiles', label: '学情画像', note: '六维能力与盲区' },
