@@ -3515,3 +3515,21 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - `tools/stop-check.cjs` 11/11；`tools/learning-check.cjs --ui` 57/57。
 - 产物：`dist/Lumin-0.3.4` 与 `dist/Lumin-0.3.4-win-x64.zip`；包内 8 项资产与源码哈希逐项一致；
   空数据目录启动 `RESULT=OK`；`启动Lumin.cmd` 指向 0.3.4（0.2.0~0.3.3 全部保留）。
+## 2026-10-16 · 第八轮：Lumin 文字居中（圆润字体）、去掉顶栏下的发丝线、用户消息整行不铺底色
+
+- 顶部栏：**只把 "Lumin" 文字**绝对定位到栏中央（`left:50% + translate(-50%,-50%)`，`pointer-events:none` 不挡拖动区），
+  **logo 位置不动**（仍在最左）。字体栈换圆润体：Quicksand / Varela Round / Nunito / Comfortaa，
+  Windows 上通常落到 Yu Gothic UI / Meiryo UI（笔画末端本来就是圆的）。
+- 顶栏下面那条发丝线去掉：`.titlebar { border-bottom: 0 }` + `.titlebar::after { display: none }`，
+  整条栏与页面背景融为一体。
+- 用户消息**整行**不再铺底色：老规则给 `.msg-user`（整行容器）铺了 `--panel-sunk`，
+  于是看起来是一条灰带；现在整行透明，**只有气泡本身**有底色（气泡仍按内容收缩，不拉满宽度）。
+  实测量：`.msg-user` 背景 = rgba(0,0,0,0)、`.msg-user .msg-body` = 气泡色 ✓。
+- glass-shot 新增断言：Lumin 文字中心与栏中心误差 ≤4px、`::after` 必须 display:none、无下边框、
+  logo 仍在最左（left ≤ 60）、`.msg-user` 行的背景必须是透明；另外"常规对话零选项"那条改成查**可见性**
+  （`:visible`）—— 之前只查 `[hidden]` 属性，而 `.composer-chip` 自己的 display 会把 [hidden] 盖掉，
+  属性设上了、屏幕上还在（正好是用户报的"常规聊天那个框还在"）。CSS 里补了 `[hidden] { display: none !important }`。
+- 验证：glass-shot 全过（TOPBAR 文字居中 720/720、发丝线 none、logo left=12；COLLAPSED-BY-DEFAULT；
+  DOTS 28px；SESSION-TITLE；WORK-MODE；DRAG 偏移 0；控制台零报错）；stop-check 11/11；learning-check 57/57。
+- 产物：`dist/Lumin-0.3.5` 与 `dist/Lumin-0.3.5-win-x64.zip`；包内 8 项资产哈希与源码一致；
+  空数据目录启动 RESULT=OK；`启动Lumin.cmd` 指向 0.3.5（0.2.0~0.3.4 保留）。

@@ -2811,3 +2811,45 @@ html[data-theme="dark"] .main { background-color: rgba(255, 255, 255, .02); }
 
 /* 7 · 窄窗口下输入框下面那几枚 chip 不折行（「常规聊天」被折成两行过） */
 .composer-chip, .composer-model { white-space: nowrap; }
+
+
+/* hidden 必须**真的**不显示。
+   .composer-chip 这类元素自己写了 display（inline-flex），会盖掉浏览器对 [hidden] 的默认处理 ——
+   属性设上了、屏幕上还在（用户实测："常规聊天就不用显示那个框了"，说的就是这个框）。 */
+.composer-chip[hidden], .wb-crumb-ws[hidden], .rail-group-btn[hidden], .msg-icon-btn[hidden] { display: none !important; }
+
+
+/* ============================================================
+   第八轮：顶部栏只留 logo 在左、Lumin 文字居中并换圆润字体；去掉栏下那条淡淡的分隔线
+   ============================================================ */
+
+/* 1 · Lumin 文字居中。logo 留在原来的位置不动 —— 所以只把"文字"绝对定位到中间，
+       而不是把整个品牌块搬过去。pointer-events: none 保证它不挡拖动区。 */
+.titlebar { position: relative; }
+.tb-name {
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  /* 圆润字形：这几款是常见的圆体，装了就用；Windows 上一般落到 Yu Gothic UI / Meiryo UI，
+     它们的笔画末端本来就是圆的，比默认的 Segoe UI 更贴合"圆润"这条要求。 */
+  font-family: "Quicksand", "Varela Round", "Nunito", "Comfortaa",
+               "Yu Gothic UI", "Meiryo UI", "Microsoft YaHei UI", system-ui, sans-serif;
+  font-size: calc(14.5px * var(--fs, 1));
+  font-weight: 600;
+  letter-spacing: .02em;
+  color: var(--ink);
+}
+
+/* 2 · 顶部栏下面那条"两端淡出的发丝线"去掉：整条栏直接与背景融为一体 */
+.titlebar { border-bottom: 0; }
+.titlebar::after { display: none; }
+
+/* 3 · 用户消息那一行不要底色（用户实测："不需要那个底色，只有气泡内部才需要有颜色"）。
+       .msg-user 是整行的容器，老规则给它铺了一层 --panel-sunk，于是整行一条灰带。 */
+.msg-user {
+  background: none;
+  border-radius: 0;
+  padding: 0;
+  margin: 2px 0 10px;
+}

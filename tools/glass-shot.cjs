@@ -153,6 +153,40 @@ const freePort = () => new Promise((res, rej) => {
       };
     });
     for (const [k, v] of Object.entries(chrome)) console.log('CHROME ' + k + ' ' + JSON.stringify(v));
+    /* 顶部栏：Lumin 文字居中、栏下那条发丝线不在、logo 位置不变 */
+    const bar = await page.evaluate(() => {
+      const t = document.querySelector('.titlebar');
+      const name = document.querySelector('.tb-name');
+      const logo = document.querySelector('.tb-logo');
+      const tr = t.getBoundingClientRect();
+      const nr = name.getBoundingClientRect();
+      const lr = logo.getBoundingClientRect();
+      const cs = getComputedStyle(t);
+      return {
+        barCenter: Math.round(tr.left + tr.width / 2),
+        nameCenter: Math.round(nr.left + nr.width / 2),
+        logoLeft: Math.round(lr.left),
+        after: getComputedStyle(t, '::after').display,
+        borderBottom: cs.borderBottomWidth,
+        font: getComputedStyle(name).fontFamily.split(',')[0].replace(/"/g, ''),
+      };
+    });
+    if (Math.abs(bar.barCenter - bar.nameCenter) > 4) {
+      throw new Error('Lumin 文字应当水平居中：栏中心 ' + bar.barCenter + ' vs 文字中心 ' + bar.nameCenter);
+    }
+    if (bar.after !== 'none') throw new Error('顶部栏下面那条发丝线应当去掉，实际 ::after display=' + bar.after);
+    if (bar.borderBottom !== '0px') throw new Error('顶部栏不该有下边框，实际 ' + bar.borderBottom);
+    if (bar.logoLeft > 60) throw new Error('logo 位置不该动（应当还在最左），实际 left=' + bar.logoLeft);
+    console.log('TOPBAR 文字居中 ' + bar.nameCenter + ' / 栏中心 ' + bar.barCenter + ' / 字体 ' + bar.font +
+      ' / 发丝线 ' + bar.after + ' / logo left=' + bar.logoLeft);
+
+    // 用户消息那一行不该有底色（只有气泡自己有）
+    const userRowBg = await page.evaluate(() => {
+      const u = document.querySelector('.msg-user');
+      return u ? getComputedStyle(u).backgroundColor : 'none';
+    });
+    if (userRowBg !== 'rgba(0, 0, 0, 0)') throw new Error('用户消息整行不该铺底色，实际 ' + userRowBg);
+
     const flatChecks = [['titlebar', chrome.titlebar], ['tbBtn', chrome.tbBtn], ['toolbarBtn', chrome.toolbarBtn]];
     for (const [k, v] of flatChecks) {
       if (v.blur !== 'none') throw new Error(k + ' 不该有 backdrop 模糊：' + v.blur);
@@ -217,8 +251,9 @@ const freePort = () => new Promise((res, rej) => {
     await sleep(700);
     /* 常规对话：不给任何选项（工作区 chip 与权限 chip 都不摆）——
        用户要求"常规对话就不要有任何的选项"。 */
-    const chatChips = await page.locator('.composer-chip:not([hidden])').count();
-    if (chatChips !== 0) throw new Error('常规对话不该有工作区/权限选项，实际 ' + chatChips + ' 个');
+    // 查"真的看得见"：只查 [hidden] 属性不够 —— 元素自己的 display 会把它盖掉（踩过）
+    const chatChips = await page.locator('.composer-chip:visible').count();
+    if (chatChips !== 0) throw new Error('常规对话不该有工作区/权限选项，实际可见 ' + chatChips + ' 个');
     console.log('CHAT-MODE 常规对话没有任何选项');
 
     /* Work 模式（挂工作区的会话）：才给选项，权限默认"帮我批准"。
@@ -231,7 +266,7 @@ const freePort = () => new Promise((res, rej) => {
     await sleep(1000);
     const workCrumb = (await page.locator('.wb-crumb').innerText()).replace(/\s+/g, " ");
     if (workCrumb.indexOf(proj.name) < 0) throw new Error('从项目新建的会话，顶栏应当显示这个工作区：' + workCrumb);
-    const workChips = await page.locator('.composer-chip:not([hidden])').allInnerTexts();
+    const workChips = await page.locator('.composer-chip:visible').allInnerTexts();
     const workChipsText = workChips.join(' | ').replace(/\s+/g, " ");
     if (workChipsText.indexOf(proj.name) < 0) throw new Error('Work 会话应当显示工作区 chip，实际：' + workChipsText);
     if (workChipsText.indexOf('帮我批准') < 0) throw new Error('Work 会话的权限默认应当是「帮我批准」，实际：' + workChipsText);
