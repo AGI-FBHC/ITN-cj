@@ -3400,3 +3400,9 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - `.resource-dock` 必须保持"有定位"（relative），否则里面的 `.splitter-dock` 会跑位。
 - 会话栏的"结构指纹 vs 内容就地刷新"是**成对**的：改 `PANELS.chat.render` 里行的形状时，
   记得同步 `PANELS.chat.refresh`，否则会出现"数据变了但界面不改字"。
+
+### 第五轮的提交与产物
+- 提交 `b8d9e92`（14 个文件，+1311 / -131）。
+- 打包 `dist/Lumin-0.3.2` + `dist/Lumin-0.3.2-win-x64.zip`(164.1MB)，启动器 `启动Lumin.cmd` 已指向 0.3.2；
+  release.json 里 sourceCommit 记的是打包当时的 HEAD（de547f0）—— 打包在提交之前做的，源码与包内容哈希逐项一致。
+- 0.2.0~0.3.1 全部保留，可回退。
