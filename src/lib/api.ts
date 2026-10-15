@@ -575,6 +575,34 @@ export interface RagTree {
   totalChunks: number;
 }
 
+export interface LearningGoal {
+  id: string;
+  knowledgeDomainId: number;
+  knowledgeDomainCode: string;
+  knowledgeDomainName: string;
+  goalType: string;
+  title: string;
+  description: string | null;
+  expectedLevel: string;
+  initialLevel: string | null;
+  assessmentMethod: string | null;
+  status: string;
+  targetDate: string | null;
+  current: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LearningGoalInput {
+  knowledgeDomainId: number;
+  goalType: string;
+  title: string;
+  description?: string;
+  expectedLevel: string;
+  status: string;
+  targetDate?: string | null;
+}
+
 export interface RagFigureSummary {
   id: number;
   documentId: number | null;
@@ -1469,6 +1497,11 @@ export const api = {
     return request<RagFigurePage>('/api/v1/rag/figures?' + search.toString());
   },
   getRagFigure: (figureId: number) => request<RagFigureDetail>('/api/v1/rag/figures/' + figureId),
+  listLearningGoals: () => request<LearningGoal[]>('/api/v1/learning-goals'),
+  createLearningGoal: (body: LearningGoalInput) =>
+    request<LearningGoal>('/api/v1/learning-goals', { method: 'POST', body: JSON.stringify(body) }),
+  setCurrentLearningGoal: (goalId: string) =>
+    request<LearningGoal>('/api/v1/learning-goals/' + encodeURIComponent(goalId) + '/current', { method: 'PUT' }),
   listNotes: () => requestDirect<{ notes: LearningNoteRecord[] }>('/v1/notes'),
   createNote: (body: {
     title: string; content: string; learnerId?: string; kpId?: string;

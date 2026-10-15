@@ -818,6 +818,73 @@ export default function Report() {
       started: sameType.filter((resource) => resource.started && !resource.learned).length,
     };
   });
+  /*
+   * 学习目标（W8）：后端的 /api/v1/learning-goals 有 6 个接口，但前端一直没人用 ——
+   * 报告页的"计划完成度"因此永远显示"还没有可对照的章节计划"。
+   * 这里给一个最小的设定入口（领域 / 目标 / 目的 / 期望水平 / 期限），结构化的目标才能被统计。
+   */
+  const [goalFormOpen, setGoalFormOpen] = useState(false);
+  const [goalDomains, setGoalDomains] = useState<{ id: number; name: string }[]>([]);
+  const [goalDomainId, setGoalDomainId] = useState<string>('');
+  const [goalTitle, setGoalTitle] = useState('');
+  const [goalType, setGoalType] = useState('JOB_PREPARATION');
+  const [goalLevel, setGoalLevel] = useState('PROFICIENT');
+  const [goalTargetDate, setGoalTargetDate] = useState('');
+  const [goalSaving, setGoalSaving] = useState(false);
+  const [goalError, setGoalError] = useState('');
+  const goalTypeLabels: { value: string; label: string }[] = [
+    { value: 'JOB_PREPARATION', label: '求职准备' },
+    { value: 'COURSE_STUDY', label: '系统学习一门课' },
+    { value: 'PROJECT_DEVELOPMENT', label: '做项目' },
+    { value: 'SKILL_IMPROVEMENT', label: '补技能' },
+    { value: 'EXAM_PREPARATION', label: '应试' },
+    { value: 'CUSTOM', label: '其他' },
+  ];
+  const goalLevelLabels: { value: string; label: string }[] = [
+    { value: 'BEGINNER', label: '入门' },
+    { value: 'ELEMENTARY', label: '能看懂' },
+    { value: 'PROFICIENT', label: '能独立做' },
+    { value: 'EXPERT', label: '能讲能带' },
+  ];
+  const openGoalForm = async () => {
+    setGoalFormOpen(true);
+    setGoalError('');
+    if (!goalDomains.length) {
+      try {
+        const listed = await api.listRagDomains();
+        setGoalDomains(listed.map((domain) => ({ id: domain.id, name: domain.name })));
+        if (listed.length && !goalDomainId) setGoalDomainId(String(listed[0].id));
+      } catch (reason) {
+        setGoalError(reason instanceof Error ? reason.message : '领域列表读取失败');
+      }
+    }
+  };
+  const submitGoal = async () => {
+    const title = goalTitle.trim();
+    if (!goalDomainId || !title) { setGoalError('先把领域和目标写清楚'); return; }
+    setGoalSaving(true);
+    setGoalError('');
+    try {
+      const created = await api.createLearningGoal({
+        knowledgeDomainId: Number(goalDomainId),
+        goalType,
+        title,
+        expectedLevel: goalLevel,
+        status: 'ACTIVE',
+        targetDate: goalTargetDate || null,
+      });
+      await api.setCurrentLearningGoal(created.id);
+      toast.success('学习目标已设定');
+      setGoalFormOpen(false);
+      setGoalTitle('');
+      await loadReport();
+    } catch (reason) {
+      setGoalError(reason instanceof Error ? reason.message : '目标保存失败');
+    } finally {
+      setGoalSaving(false);
+    }
+  };
+
   const totalMinutesNote = (analytics?.stats.totalDays ?? 0) > 0
     ? `${analytics?.stats.totalDays ?? 0} 个学习日`
     : journalMinutes > 0
@@ -1127,6 +1194,63 @@ export default function Report() {
                     : '还没有可对照的章节计划'}
               </span>
             </div>
+      {/* 学习目标（W8）：没有结构化目标时给最小设定入口，有目标就只留一个"改目标" */}
+      {goalFormOpen ? (
+        <div className="mt-4 space-y-2.5 border-t border-hairline pt-3">
+          <div className="flex flex-wrap gap-2">
+            <select
+              value={goalDomainId}
+              onChange={(event) => setGoalDomainId(event.target.value)}
+              aria-label="学习领域"
+              className="h-9 rounded-[10px] border border-hairline bg-paper px-2.5 text-[12.5px] text-ink-2"
+            >
+              {goalDomains.map((domain) => <option key={domain.id} value={String(domain.id)}>{domain.name}</option>)}
+            </select>
+            <select
+              value={goalType}
+              onChange={(event) => setGoalType(event.target.value)}
+              aria-label="学习目的"
+              className="h-9 rounded-[10px] border border-hairline bg-paper px-2.5 text-[12.5px] text-ink-2"
+            >
+              {goalTypeLabels.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            </select>
+            <select
+              value={goalLevel}
+              onChange={(event) => setGoalLevel(event.target.value)}
+              aria-label="期望水平"
+              className="h-9 rounded-[10px] border border-hairline bg-paper px-2.5 text-[12.5px] text-ink-2"
+            >
+              {goalLevelLabels.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            </select>
+            <input
+              type="date"
+              value={goalTargetDate}
+              onChange={(event) => setGoalTargetDate(event.target.value)}
+              aria-label="期望完成日期"
+              className="h-9 rounded-[10px] border border-hairline bg-paper px-2.5 text-[12.5px] text-ink-2"
+            />
+          </div>
+          <input
+            value={goalTitle}
+            onChange={(event) => setGoalTitle(event.target.value)}
+            placeholder="用一句话说清目标，例如：三个月内能独立搭一个 RAG 应用"
+            aria-label="目标标题"
+            className="h-9 w-full rounded-[10px] border border-hairline bg-paper px-3 text-[13px] text-ink outline-none focus:border-brand/50"
+          />
+          {goalError && <p className="text-[12px] text-brand-danger">{goalError}</p>}
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" disabled={goalSaving} onClick={() => void submitGoal()} className="lf-btn-primary !px-3.5 !py-1.5 text-[12.5px] disabled:opacity-60">
+              {goalSaving ? '保存中…' : '保存目标'}
+            </button>
+            <button type="button" onClick={() => setGoalFormOpen(false)} className="lf-btn-ghost !px-3.5 !py-1.5 text-[12.5px]">取消</button>
+            <span className="text-[11.5px] text-ink-muted">目标会存进你的档案，「计划完成度」以后按它算。</span>
+          </div>
+        </div>
+      ) : (
+        <button type="button" onClick={() => void openGoalForm()} className="lf-btn-ghost mt-3 !px-3.5 !py-1.5 text-[12.5px]">
+          {analytics?.currentGoal ? '改学习目标' : '设定学习目标'}
+        </button>
+      )}
             <div className="mt-4 space-y-3">
               {planTop.map((chapter) => (
                 <div key={chapter.id}>
