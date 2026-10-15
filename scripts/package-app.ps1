@@ -1,7 +1,9 @@
 # 组装可独立分发的桌面应用（绿色压缩包，目标机器无需安装仓颉或 Node）
 param(
     [string]$OutDir = "$PSScriptRoot\..\dist\ITN-Desktop",
-    [string]$ZipPath = "$PSScriptRoot\..\dist\ITN-Desktop-win-x64.zip"
+    [string]$ZipPath = "$PSScriptRoot\..\dist\ITN-Desktop-win-x64.zip",
+    # 包内 release.json 的构建标识（版本号取 shell/package.json）
+    [string]$Build = 'liquid-glass-20261015'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -63,7 +65,7 @@ foreach ($relative in $assetFiles) {
     $assetHashes[$relative] = (Get-FileHash -LiteralPath (Join-Path $OutDir $relative) -Algorithm SHA256).Hash
 }
 $manifest = [ordered]@{
-    version = $sourcePackage.version; build = 'learning-workbench-20261015'
+    version = $sourcePackage.version; build = $Build
     sourceCommit = $sourceCommit; builtAt = [DateTime]::UtcNow.ToString('o'); assets = $assetHashes
 } | ConvertTo-Json -Depth 5
 [IO.File]::WriteAllText((Join-Path $appDir 'renderer/release.json'), $manifest, [Text.UTF8Encoding]::new($false))

@@ -74,3 +74,159 @@ body.chat-mode .view.chat-blank .empty-title {font-size:28px;letter-spacing:-.02
   body.chat-mode .main {min-width:0;}
 }
 @media(prefers-reduced-motion:reduce) {.resource-entry {transition:none;}}
+
+/* ============================================================
+   工作台板块的液态玻璃覆写（在 style.css 之后加载，所以这里的规则最后生效）
+   目标：会话栏 / 任务区 / 成果面板之间不再用 1px 竖线分隔，改成
+   留白 + 圆角 + 各自投影；条内的横线换成两端淡出的发丝光。
+   ============================================================ */
+.wb-toolbar {
+  border-bottom: 0;
+  position: relative;
+  background-color: transparent;
+  padding: 10px 28px 8px;
+}
+.wb-toolbar::after {
+  content: "";
+  position: absolute;
+  left: 22px; right: 22px; bottom: 0; height: 1px;
+  background-image: var(--hair);
+}
+.wb-brand { letter-spacing: .06em; color: var(--ink-2); }
+
+/* 成果面板：与主区并列的第三块玻璃 */
+.resource-dock {
+  border-left: 0;
+  border-radius: var(--glass-r-xl);
+  background-color: var(--glass-fill);
+  background-image: var(--glass-sheen);
+  backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-sat));
+  box-shadow: var(--glass-inner-lg), var(--glass-lift);
+}
+.resource-dock-head {
+  border-bottom: 0;
+  box-shadow: inset 0 -1px 0 var(--glass-rim);
+}
+.resource-dock-body { padding: 26px; }
+
+/* 资源卡片：可点的抬升面 */
+.resource-entry {
+  background-color: var(--glass-fill);
+  background-image: var(--glass-sheen);
+  backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-sat));
+  border: 0;
+  border-radius: var(--glass-r-lg);
+  box-shadow: var(--glass-inner), var(--glass-lift-sm);
+  transition: background-color .16s var(--ease-out), box-shadow .16s var(--ease-out), transform .16s var(--ease-out);
+}
+.resource-entry:hover {
+  background-color: var(--glass-fill-strong);
+  border-color: transparent;
+  transform: translateY(-2px);
+  box-shadow: var(--glass-inner), var(--glass-lift);
+}
+.resource-entry.compact { border-radius: var(--glass-r-md); }
+.resource-entry.compact:hover { transform: none; }
+
+.legacy-artifacts, .resource-library-head { border-top: 0; }
+.legacy-artifacts {
+  position: relative;
+  margin-top: 30px;
+  padding-top: 18px;
+}
+.legacy-artifacts::before {
+  content: "";
+  position: absolute; left: 0; right: 0; top: 0; height: 1px;
+  background-image: var(--hair);
+}
+.center-links {
+  border-bottom: 0;
+  position: relative;
+  padding-bottom: 20px;
+}
+.center-links::after {
+  content: "";
+  position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+  background-image: var(--hair);
+}
+
+/* 测验 / 实操 / 记忆：行分隔用发丝光，选项与预期结果用凹陷面 */
+.resource-question, .practice-step, .memory-entry {
+  border-bottom: 0;
+  border-top: 0;
+  position: relative;
+}
+.resource-question::after, .practice-step::after, .memory-entry::after {
+  content: "";
+  position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+  background-image: var(--hair);
+}
+.resource-question:last-child::after, .practice-step:last-child::after, .memory-entry:last-child::after { display: none; }
+.quiz-choice {
+  border: 0;
+  border-radius: var(--glass-r-md);
+  background-color: var(--well-fill);
+  box-shadow: var(--well-inner);
+  transition: background-color .15s var(--ease-out), box-shadow .15s var(--ease-out);
+}
+.quiz-choice:hover { background-color: var(--glass-fill-soft); }
+.quiz-choice:has(input:checked) {
+  background-color: color-mix(in srgb, var(--brand-soft) 82%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55), 0 0 0 1px var(--brand-line), var(--glass-lift-sm);
+}
+.practice-output {
+  border-left: 0;
+  padding: 10px 12px;
+  border-radius: var(--glass-r-sm);
+  background-color: var(--well-fill);
+  background-image: linear-gradient(90deg, color-mix(in srgb, var(--brand) 13%, transparent), transparent 52%);
+  box-shadow: var(--well-inner);
+}
+.resource-provenance {
+  border-top: 0;
+  position: relative;
+  padding-top: 18px;
+}
+.resource-provenance::before {
+  content: "";
+  position: absolute; left: 0; right: 0; top: 0; height: 1px;
+  background-image: var(--hair);
+}
+.resource-notice {
+  border-radius: var(--glass-r-sm);
+  background-color: color-mix(in srgb, var(--amber-soft) 82%, transparent);
+  background-image: var(--glass-sheen-sm);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 0 0 1px var(--amber-line);
+}
+.wb-interrupted {
+  border-radius: var(--glass-r-md);
+  background-color: color-mix(in srgb, var(--amber-soft) 84%, transparent);
+  background-image: var(--glass-sheen-sm);
+  backdrop-filter: blur(var(--glass-blur-md)) saturate(1.5);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 0 0 1px var(--amber-line), var(--glass-lift-sm);
+}
+.memory-entry blockquote {
+  border-left: 0;
+  padding: 8px 12px;
+  border-radius: var(--glass-r-sm);
+  background-color: var(--well-fill);
+  background-image: var(--glass-sheen-sm);
+  box-shadow: var(--well-inner);
+}
+.resource-diff-lines {
+  border-radius: var(--glass-r-sm);
+  background-color: var(--well-fill);
+  box-shadow: var(--well-inner);
+  padding: 8px 10px;
+}
+.diff-add { background-color: color-mix(in srgb, var(--brand-soft) 72%, transparent); border-radius: 4px; }
+.diff-remove { background-color: color-mix(in srgb, var(--danger-soft) 76%, transparent); border-radius: 4px; }
+
+@media(max-width:1180px) {
+  /* 与主区上下对齐（标题栏 38 + .app 上留白 10 = 48，底部再留 12） */
+  .resource-dock {
+    top: 48px;
+    bottom: 12px;
+    box-shadow: var(--glass-inner-lg), -18px 0 52px -22px rgba(11, 34, 23, .38);
+  }
+}

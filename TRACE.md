@@ -3162,3 +3162,14 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - 产物：dist/ITN-Desktop-0.2.0/ITN-Desktop.exe；dist/ITN-Desktop-0.2.0-win-x64.zip，163.9 MB。仓库根目录启动ITN-Desktop.cmd固定指向该版本，旧包保留。
 - 最新内核编译成功；交付前停止专项11/11；绿色包用空临时数据目录启动检查 RESULT=OK，PRELOAD/TITLEBAR正常，导航6个入口，初始模型设置引导可见；8项包内/源码哈希一致。未启动额外深度回归，遵循用户要求尽快先给试用版。
 - 真实模型四类资源、答题画像、版本修改与遗忘此前已通过。旧UI全量78/85的剩余场景保留在日志与交付说明，后续按真实反馈修整。最新“取消早于Agent挂载”竞态由host取消令牌统一判定终态，正文为空不再伪造成功；基础停止检查已通过。
+
+## 2026-10-15 视觉层：立体圆角液态玻璃 + 去掉生硬的板块分割
+- 用户要求：各板块用立体圆角液态玻璃质感承载，不要生硬地把板块切开。只改前端视觉，不动任何交互与接口。
+- 改动文件：shell/renderer/style.css（新增"液态玻璃视觉层"一节，约 520 行）、shell/renderer/workbench.css（工作台板块覆写，约 156 行）、shell/renderer/release.json 与 shell/package.json 版本 0.2.1、core/src/api/api.cj 的 /health 版本与构建标识、scripts/package-app.ps1 增加 -Build 参数、启动ITN-Desktop.cmd 指向 0.2.1；新增 tools/glass-shot.cjs 视觉验收脚本。
+- 材料分四层（材料重量编码层级）：① 环境光场 = body::before 上固定的四团柔光（绿/蓝/暖/紫）+ 中心白雾；半透明面板必须有东西可折，否则只是灰块。② 承重面 = 标题栏 / 窄侧栏 / 第二层面板：偏凉的品牌白、blur 40px、saturate 2、投影最深。③ 内容面 = 卡片 / 输入区 / 弹层 / 成果面板 / 播放页：偏白、blur 24-30px。④ 凹陷面 = 卡片内的列表行 / 输入框 / 代码块 / 测验选项：向内凹（内阴影 + 半透明灰），避免"亮面板上再叠亮面板"压垮可读性。
+- 立体感 = 上缘一道内高光 + 四周 1px 内勾边 + 右下极淡压暗（读出弧面）+ 两层外投影（近处贴地、远处扩散）。另外把左上高光做成 157° 斜向扫光（--glass-sheen），这就是"液态"的那一层。
+- 去分割：标题栏去掉 border-bottom 并加下圆角；窄侧栏与第二层面板去掉 border-right，改成 .app 的 padding + gap（留白 + 各自圆角与投影），边界靠光而不是靠线；条内分隔线（topbar / panel-foot / 消息 / 测验题 / 实操步骤 / 记忆条目 / 资源出处 / 学习中心入口）统一换成两端淡出的发丝光（--hair）；激活项原来那根贴着圆角边缘的 2px 绿条改成玻璃高亮块。
+- 实现要点（给接手的人）：a) 环境光场用 position:fixed 铺满窗口，靠 .app/.titlebar 的 z-index 压在它上面（flex item 不需要 position 就能吃 z-index）；b) 故意不给 .app 加 position:relative —— 一旦加了，workbench.css 里"窄窗口下成果面板 absolute top:48px"的包含块会变成 .app 而不是视口，面板会被推下 38px，所以那条 media 规则改成 top:48px / bottom:12px 与主区对齐；c) 反向也成立：所有 position:fixed 元素（toast / player / palette）都在 .app 之外，往 .main/.card 上加 backdrop-filter 不会改变它们的包含块；d) 不做循环的背景动画——大面 backdrop-filter 每帧重算会一直占着 GPU，改用静态光场 + 交互时的短过渡；e) 无 JS 改动，app.js 用到的类名全部保留，图表读的 --brand/--amber/--line 等令牌一个没改，只新增 --glass-*/--well-*/--amb-* 并覆写组件外观。
+- 可访问性：prefers-reduced-transparency: reduce 下退回不透明面并去掉模糊；prefers-contrast: more 下近实心 + 1px 实描边；沿用原有的 prefers-reduced-motion 分支。
+- 验证：node tools/glass-shot.cjs 起隔离环境逐页截图 12 张（浅色 9 页 + 深色 3 页）+ 1280/1120/980 三档窄窗口无横向溢出，控制台零报错，截图在 tmp/glass-shots/；node tools/stop-check.cjs 11/11（含"界面无 JS 报错"）；包内 4 个关键文件与源码 SHA256 逐项一致；dist/ITN-Desktop-0.2.1 绿色包用空临时数据目录启动 RESULT=OK。本次只做视觉改动，未重跑旧 UI 全量回归。
+- 产物：dist/ITN-Desktop-0.2.1/ITN-Desktop.exe、dist/ITN-Desktop-0.2.1-win-x64.zip（163.9 MB，release.json 记录版本 0.2.1 / 构建 liquid-glass-20261015 / sourceCommit 与 8 项资源哈希）。旧包 0.2.0 保留可回退。
