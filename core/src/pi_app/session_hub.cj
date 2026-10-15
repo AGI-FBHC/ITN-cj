@@ -17,10 +17,28 @@ public class SessionHub {
     private let lock = Mutex()
     private let steer = HashMap<String, ArrayList<String>>()
     private let running = HashMap<String, Agent>()
+    private let activeTurns = HashMap<String, String>()
     /** 这一轮用户按过停止：provider 在流式增量之间读它，读到就收手 */
     private let aborted = HashMap<String, Bool>()
 
     public init() {}
+
+    public func reserve(sessionId: String, turnId: String): Bool {
+        synchronized(lock) {
+            if (activeTurns.contains(sessionId)) { return false }
+            activeTurns[sessionId] = turnId
+            aborted.remove(sessionId)
+            return true
+        }
+    }
+
+    public func activeTurn(sessionId: String): String {
+        synchronized(lock) { return activeTurns.get(sessionId).getOrDefault({ => "" }) }
+    }
+
+    public func release(sessionId: String): Unit {
+        synchronized(lock) { activeTurns.remove(sessionId); running.remove(sessionId) }
+    }
 
     /** 插一句话，等这一轮的下一次模型请求之前注入。 */
     public func pushSteering(sessionId: String, text: String): Unit {

@@ -164,6 +164,8 @@ public class SessionStore {
         ops.add(DbOp("DELETE FROM sessions WHERE id = ?", va([tv(sessionId)])))
         db().batch(ops)
         db().delKv("sessions_meta", "title:" + sessionId)
+        db().delKv("sessions_meta", "context:" + sessionId)
+        db().delKv("sessions_meta", "state:" + sessionId)
     }
 
     public func list(): ArrayList<JsonObject> {

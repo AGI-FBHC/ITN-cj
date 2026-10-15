@@ -304,6 +304,40 @@ public class PiAgent {
             sessionId = sessions.newId()
         }
         let turnId = sessions.newTurnId()
+        if (!sessionHub().reserve(sessionId, turnId)) {
+            let o = JsonObject()
+            o.put("sessionId", JsonString(sessionId))
+            o.put("ok", JsonBool(false))
+            o.put("message", JsonString("此会话已有任务运行，请停止或等待完成"))
+            return o
+        }
+        setTaskState(store.dataDir, sessionId, turnId, "running")
+        try {
+            let out = executeFull(provider, kbId, question, sessionId, webModeIn, skillIdIn, work, taskKind, taskTitle, turnId)
+            setTaskState(store.dataDir, sessionId, turnId,
+                if (sessionHub().isAborted(sessionId)) { "cancelled" } else if (boolOf(out, "ok", false)) { "completed" } else { "failed" })
+            out.put("turnId", JsonString(turnId))
+            return out
+        } catch (e: Exception) {
+            setTaskState(store.dataDir, sessionId, turnId, "failed")
+            let ev = SessionEvent()
+            ev.sessionId = sessionId
+            ev.turnId = turnId
+            ev.kind = "turn/end"
+            ev.payload = endPayload(false, e.message)
+            sessions.append(ev)
+            let out = JsonObject()
+            out.put("sessionId", JsonString(sessionId))
+            out.put("ok", JsonBool(false))
+            out.put("message", JsonString(e.message))
+            return out
+        } finally { sessionHub().release(sessionId) }
+    }
+
+    private func executeFull(provider: ChatProvider, kbId: String, question: String, sessionId: String,
+        webModeIn: String, skillIdIn: String, work: ?WorkContext, taskKind: String,
+        taskTitle: String, turnId: String): JsonObject {
+        let sessions = SessionStore(store.dataDir)
         // 事件回调是 lambda：它只能捕获不可变变量（仓颉的规矩），所以这里留一份只读副本
         let sid = sessionId
         // Bind cancellation after the actual session id exists, including API-created sessions.
@@ -311,7 +345,6 @@ public class PiAgent {
             case p: OpenAiChatProvider => p.shouldAbort = Some({ => sessionHub().isAborted(sid) })
             case _ => ()
         }
-        sessionHub().clearAbort(sid)
         let out = JsonObject()
         out.put("sessionId", JsonString(sid))
 
@@ -406,13 +439,10 @@ public class PiAgent {
         }
 
         // ---- 会话：历史先灌进去，本轮提问由 prompt() 注入 ----
-        let cwd = if (kbId.size > 0) { kbRootOf(cfgSettings, kbId, store.dataDir) } else { store.dataDir }
+        var cwd = if (kbId.size > 0) { kbRootOf(cfgSettings, kbId, store.dataDir) } else { store.dataDir }
+        match (work) { case Some(w) => if (w.dir.size > 0) { cwd = w.dir }; case None => () }
         let session = newSession(store.dataDir, cwd, "pi-" + sessionId, "")
-        for (h in historyMessages(sessions, sessionId)) {
-            let m = Message(if (strOf(h, "role") == "user") { UserMsg } else { AssistantMsg })
-            m.text = strOf(h, "text")
-            session.appendMessage(m)
-        }
+        for (m in restoreContext(store.dataDir, sessionId, turnId)) { session.appendMessage(m) }
 
         let opts = AgentOptions()
         opts.maxTurns = 24
@@ -523,6 +553,7 @@ public class PiAgent {
         }
         stream.on({ e: PiEvent =>
             let kind = kindText(e.kind)
+            if (kind == "turn_end") { checkpointContext(store.dataDir, sid, session) }
             // turn 边界 = 一次模型请求，事件流里已经有了（turn_start/turn_end）；
             // 这里不再额外记"步骤"——这是 agent，步骤由它自己决定，不该由我们编。
             if (kind == "tool_execution_start") {
@@ -578,6 +609,7 @@ public class PiAgent {
         })
 
         let outcome = agent.prompt(question, stream)
+        checkpointContext(store.dataDir, sid, session)
         flushThink()
         sessionHub().clearRunning(sid)
 
@@ -727,45 +759,6 @@ func saveArtifactVia(defs: ArrayList<DomainTool>, name: String, content: String)
         }
     }
     return ""
-}
-
-/** 从事件里取最近几条 user/assistant 消息，灌进 pi 的会话做多轮上下文。 */
-func historyMessages(sessions: SessionStore, sessionId: String): ArrayList<JsonObject> {
-    let all = ArrayList<JsonObject>()
-    for (e in sessions.events(sessionId)) {
-        let kind = strOf(e, "type")
-        if (kind != "user/message" && kind != "assistant/message") {
-            continue
-        }
-        var text = ""
-        match (e.get("payload")) {
-            case Some(pv) =>
-                match (objOf(pv)) {
-                    case Some(po) => text = strOf(po, "text")
-                    case None => ()
-                }
-            case None => ()
-        }
-        if (text.size == 0) {
-            continue
-        }
-        let m = JsonObject()
-        m.put("role", JsonString(if (kind == "user/message") { "user" } else { "assistant" }))
-        m.put("text", JsonString(text))
-        all.add(m)
-    }
-    // 只留最后 8 条（4 轮），免得每次请求都背着整段历史
-    let out = ArrayList<JsonObject>()
-    var start = all.size - 8
-    if (start < 0) {
-        start = 0
-    }
-    var i = start
-    while (i < all.size) {
-        out.add(all[i])
-        i = i + 1
-    }
-    return out
 }
 
 /** 这个知识库的资料目录（给 pi 会话当工作目录用；没有就退回数据目录）。 */

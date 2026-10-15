@@ -1135,6 +1135,10 @@ public class Api {
                         return
                     }
                     // 手写链路看的是取消标记；lumin 那一轮要直接 abort（它登记在 sessionHub 里）
+                    let expected = strOf(b, "turnId")
+                    let active = sessionHub().activeTurn(sid)
+                    if (expected.size > 0 && expected != active) { fail(ctx, 409, "该轮任务已经结束"); return }
+                    if (active.size > 0) { setTaskState(store.dataDir, sid, active, "cancelling") }
                     requestCancel(sid)
                     sessionHub().abort(sid)
                     ok(ctx, JsonString("ok"))
@@ -1223,10 +1227,19 @@ public class Api {
                         fail(ctx, 400, "缺少 sessionId")
                         return
                     }
+                    if (sessionHub().activeTurn(id).size > 0) { fail(ctx, 409, "请先停止正在运行的任务"); return }
                     SessionStore(store.dataDir).remove(id)
                     let o = JsonObject()
                     o.put("ok", JsonBool(true))
                     ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/sessions/state" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => ok(ctx, taskState(store.dataDir, strOf(b, "sessionId")))
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
             return
@@ -2257,6 +2270,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/sessions/new",
         "/api/sessions/list",
         "/api/sessions/events",
+        "/api/sessions/state",
         "/api/sessions/rename",
         "/api/sessions/delete",
         "/api/profile/get",
