@@ -3186,3 +3186,5 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
 - 防漏改：两个深色令牌块（html[data-theme="dark"] 与 @media 里跟随系统那一份）用脚本按块对齐，并在结尾断言两块内容完全一致（各 50 项），避免"改一处漏一处"。
 - 验证：node tools/glass-shot.cjs 12 页截图（浅 9 + 深 3）+ 三档窄窗口无横向溢出 + 控制台零报错；node tools/stop-check.cjs 11/11；0.2.2 包内 style.css/workbench.css/app.js/内核与源码 SHA256 一致；dist/ITN-Desktop-0.2.2 绿色包空数据目录启动 RESULT=OK。
 - 产物：dist/ITN-Desktop-0.2.2/ITN-Desktop.exe 与 dist/ITN-Desktop-0.2.2-win-x64.zip（release.json: 0.2.2 / mono-glass-20261015）；启动ITN-Desktop.cmd 指向 0.2.2；0.2.0 与 0.2.1 保留可回退。
+- 提交 0cc7d9e；重打包后 0.2.2 的 release.json 记录 sourceCommit=0cc7d9e24c2963439cbe1ba56db5f6891b259ec6，style.css/app.js/workbench.css/内核四项哈希与源码逐项一致。
+
