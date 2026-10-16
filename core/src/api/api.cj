@@ -6,6 +6,8 @@ import itn_desktop_core.presentation.DesktopJobs
 import itn_desktop_core.personal.PersonalStore
 import itn_desktop_core.knowledge.KnowledgeStore
 import itn_desktop_core.agent.learningTools
+import itn_desktop_core.agent.sharedSkillRoots
+import itn_desktop_core.agent.userHomeDir
 import itn_desktop_core.pi_tools.DraftStore
 import itn_desktop_core.resource.isResourceKind
 
@@ -1109,6 +1111,12 @@ public class Api {
             o.put("bound", JsonString(bound))
             o.put("userDir", JsonString(userSkillsDir(store.dataDir)))
             o.put("bundledDir", JsonString(SKILLS_BUNDLED_DIR))
+            // 与 Codex / Claude 共用的技能目录（只读列出）：界面上要把它们标出来
+            let sharedArr = JsonArray()
+            for (r in sharedSkillRoots(userHomeDir())) {
+                sharedArr.add(JsonString(r))
+            }
+            o.put("sharedDirs", sharedArr)
             ok(ctx, o)
             return
         }

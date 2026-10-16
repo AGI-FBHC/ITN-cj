@@ -8878,7 +8878,7 @@ async function settingsData() {
  */
 async function settingsSkills() {
   const g = document.createDocumentFragment();
-  let data = { skills: [], userDir: "", bundledDir: "" };
+  let data = { skills: [], userDir: "", bundledDir: "", sharedDirs: [] };
   try {
     data = await api("/api/skills/list", {});
   } catch (e) {
@@ -8901,7 +8901,8 @@ async function settingsSkills() {
   });
   card.appendChild(el("p", "muted sm",
     "技能 = 一份 Markdown 说明书（用法步骤 + 允许用哪些工具）。工具是内核的能力，技能只是怎么用它们的说明。" +
-    "内置技能随包只读；自己的技能放在上面那个目录里，一层一个目录，里面放 SKILL.md。"));
+    "内置技能随包只读；自己的技能放在上面那个目录里，一层一个目录，里面放 SKILL.md。" +
+    "共享目录里的技能（Codex / Claude / .agents 约定）只读列出，正文可以看；声明了内核工具的才能在对话里绑定使用。"));
   const list = el("div", "list");
   for (const sk of (data.skills || [])) {
     const it = el("div", "item");
@@ -8912,7 +8913,7 @@ async function settingsSkills() {
     const meta = el("div", "meta");
     meta.appendChild(el("span", null, "允许工具：" + ((sk.tools || []).join(" / ") || "（没声明）")));
     if (sk.requiresConsent) meta.appendChild(el("span", null, "需要授权：" + sk.requiresConsent));
-    meta.appendChild(el("span", null, sk.source === "bundled" ? "内置（只读）" : "自己的"));
+    meta.appendChild(el("span", null, sk.source === "bundled" ? "内置（只读）" : sk.source === "shared" ? "共享目录（Codex/Claude）" : "自己的"));
     main.appendChild(meta);
     row.appendChild(main);
     row.appendChild(sk.available ? tag("可用", "ok") : tag(sk.reason || "不可用", "warn"));
@@ -8937,11 +8938,11 @@ async function settingsSkills() {
   card.appendChild(list);
   g.appendChild(card);
 
-  if (data.bundledDir) {
-    const b = cardOf({ title: "内置技能目录", sub: "随包只读，升级软件时跟着更新" });
-    b.appendChild(el("p", "path-line", data.bundledDir));
-    g.appendChild(b);
-  }
+  const dirs = cardOf({ title: "扫描的目录", sub: "自己的技能可改可加；共享目录只读（与 Codex / Claude 共用同一套 SKILL.md 约定）" });
+  if (data.userDir) dirs.appendChild(el("p", "path-line", "我的技能：" + data.userDir));
+  for (const d of (data.sharedDirs || [])) dirs.appendChild(el("p", "path-line", "共享目录：" + d));
+  if (data.bundledDir) dirs.appendChild(el("p", "path-line", "内置技能：" + data.bundledDir));
+  g.appendChild(dirs);
   return g;
 }
 

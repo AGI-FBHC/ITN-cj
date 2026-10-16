@@ -2,6 +2,7 @@ package itn_desktop_core.agent
 
 import std.collection.*
 import std.convert.*
+import std.env.*
 import std.fs.*
 import stdx.encoding.json.*
 import itn_desktop_core.tools.*
@@ -41,6 +42,33 @@ public var SKILLS_BUNDLED_DIR: String = ""
 
 public func userSkillsDir(dataDir: String): String {
     return dataDir + Path.Separator + "skills"
+}
+
+/** 用户主目录（共享技能目录以它为锚点）。 */
+public func userHomeDir(): String {
+    match (getVariable("USERPROFILE")) {
+        case Some(v) => v
+        case None =>
+            match (getVariable("HOME")) {
+                case Some(h) => h
+                case None => ""
+            }
+    }
+}
+
+/**
+ * 共享技能目录：与 Codex / Claude 等 Agent 工具**共用同一套 SKILL.md 约定**。
+ * 只读列出（不改、不复制）；重名时以用户自己的技能为准，其次内置，最后共享。
+ */
+public func sharedSkillRoots(home: String): ArrayList<String> {
+    let out = ArrayList<String>()
+    if (home.size == 0) {
+        return out
+    }
+    out.add(home + Path.Separator + ".agents" + Path.Separator + "skills")
+    out.add(home + Path.Separator + ".claude" + Path.Separator + "skills")
+    out.add(home + Path.Separator + ".codex" + Path.Separator + "skills")
+    return out
 }
 
 public func skillBodyPath(dir: String, id: String): String {
@@ -184,13 +212,33 @@ func scanSkillDir(dir: String, source: String, out: ArrayList<SkillInfo>): Unit 
     }
 }
 
-/** 列出全部技能：用户的在前，内置的在后；重名以用户为准。 */
+/** 列出全部技能：用户的在前，内置的其次，共享目录最后；重名靠前为准。 */
 public func listSkills(dataDir: String, webAllowed: Bool): ArrayList<SkillInfo> {
+    return listSkillsWithHome(dataDir, webAllowed, userHomeDir())
+}
+
+/** 显式传入主目录的版本（测试用）：共享目录的优先级最低，且不会重复同名技能。 */
+public func listSkillsWithHome(dataDir: String, webAllowed: Bool, home: String): ArrayList<SkillInfo> {
     let out = ArrayList<SkillInfo>()
     scanSkillDir(userSkillsDir(dataDir), "user", out)
     if (SKILLS_BUNDLED_DIR.size > 0) {
         let extra = ArrayList<SkillInfo>()
         scanSkillDir(SKILLS_BUNDLED_DIR, "bundled", extra)
+        for (s in extra) {
+            var dup = false
+            for (t in out) {
+                if (t.id == s.id) {
+                    dup = true
+                }
+            }
+            if (!dup) {
+                out.add(s)
+            }
+        }
+    }
+    for (root in sharedSkillRoots(home)) {
+        let extra = ArrayList<SkillInfo>()
+        scanSkillDir(root, "shared", extra)
         for (s in extra) {
             var dup = false
             for (t in out) {
@@ -212,7 +260,7 @@ public func listSkills(dataDir: String, webAllowed: Bool): ArrayList<SkillInfo> 
         if (s.tools.size == 0) {
             s.available = false
             if (s.reason.size == 0) {
-                s.reason = "技能没有声明 tools（只能引用内核已注册的工具）"
+                s.reason = if (s.source == "shared") { "外部技能还没有声明内核工具（可以在设置里查看正文）" } else { "技能没有声明 tools（只能引用内核已注册的工具）" }
             }
         }
     }

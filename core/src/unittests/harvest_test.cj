@@ -7,6 +7,7 @@ import stdx.encoding.json.*
 import itn_desktop_core.harvest.*
 import itn_desktop_core.agent.buildDomainToolDefs
 import itn_desktop_core.agent.listSkills
+import itn_desktop_core.agent.listSkillsWithHome
 import itn_desktop_core.store.Store
 import itn_desktop_core.pi.ScriptedProvider
 import itn_desktop_core.pi.scriptTool
@@ -123,4 +124,47 @@ func luminRejectsUnavailableBoundSkills(): Unit {
     let result = PiAgent(Store(dir)).askWithProvider(model, "", "读网页", "", "off", "network")
     @Expect(boolOf(result, "ok"), false)
     @Expect(model.seenSystems.size, 0)
+}
+
+@Test
+func sharedSkillRootsExposeCodexClaudeAndAgentsConventions(): Unit {
+    let dir = freshDir("shared-skills-data")
+    let home = freshDir("shared-skills-home")
+    // .agents / .claude / .codex 三个共享目录都要被扫到
+    Directory.create(Path(home + "/.agents/skills/agents-ref"), recursive: true)
+    File.writeTo(home + "/.agents/skills/agents-ref/SKILL.md",
+        ("---\nname: agents-ref\ndescription: 与 Codex 共用的说明型技能。\n---\n正文").toArray())
+    Directory.create(Path(home + "/.claude/skills/claude-tool"), recursive: true)
+    File.writeTo(home + "/.claude/skills/claude-tool/SKILL.md",
+        ("---\nname: claude-tool\ntools: [list_documents]\n---\n正文").toArray())
+    Directory.create(Path(home + "/.codex/skills/codex-ref"), recursive: true)
+    File.writeTo(home + "/.codex/skills/codex-ref/SKILL.md",
+        ("---\nname: codex-ref\ndescription: 只读参考。\n---\n正文").toArray())
+    // 用户自己的同名技能要盖过共享的（共享副本不再出现）
+    Directory.create(Path(dir + "/skills/agents-ref"), recursive: true)
+    File.writeTo(dir + "/skills/agents-ref/SKILL.md",
+        ("---\nname: agents-ref\ntools: [list_documents]\n---\n本地覆盖").toArray())
+    let skills = listSkillsWithHome(dir, true, home)
+    var agentsCount: Int64 = 0
+    var agentsUser = false
+    var agentsShared = false
+    var sharedUsable = 0
+    var refListedWithReason = false
+    for (s in skills) {
+        if (s.id == "agents-ref") {
+            agentsCount = agentsCount + 1
+            if (s.source == "user") { agentsUser = true }
+            if (s.source == "shared") { agentsShared = true }
+        }
+        if (s.id == "claude-tool" && s.source == "shared" && s.available) { sharedUsable = sharedUsable + 1 }
+        if (s.id == "codex-ref" && s.source == "shared") {
+            sharedUsable = sharedUsable + 1
+            refListedWithReason = !s.available && s.reason.size > 0
+        }
+    }
+    @Expect(agentsCount, 1)      // 同名去重：只留用户那一份
+    @Expect(agentsUser, true)
+    @Expect(agentsShared, false)
+    @Expect(sharedUsable, 2)     // .claude 的可用 + .codex 的列出
+    @Expect(refListedWithReason, true)  // 没声明 tools 的共享技能：列出且标原因
 }
