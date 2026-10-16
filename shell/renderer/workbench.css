@@ -472,3 +472,7 @@ body.workspace-wide #view > .study-workspace { max-width:none; }
 .plain-document,.deck-text-slide pre { white-space:pre-wrap; overflow-wrap:anywhere; font:14px/1.8 var(--font-mono,monospace); }
 .deck-text-slide { padding:20px; margin-bottom:16px; border:1px solid var(--line); border-radius:8px; }
 .file-artifact { max-width:420px; margin:12px 0; }
+.kb-management > summary { cursor:pointer; padding:8px 0; }
+.kb-management-content { padding-top:18px; }
+.kb-management-content .card { box-shadow:none; }
+.outcome-toolbar ~ p[role="status"] { overflow-wrap:anywhere; }

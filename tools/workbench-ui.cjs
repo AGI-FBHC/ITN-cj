@@ -118,7 +118,7 @@ module.exports=async function({base,post,check,dir}) {
     await page.getByRole('button',{name:'打开文档…',exact:true}).waitFor();
     check('local Office opening controls remain available',await page.getByRole('button',{name:'打开文档…',exact:true}).isVisible()&&await page.getByRole('button',{name:'打开演示文稿…',exact:true}).isVisible());
     await nav('settings');
-    check('settings keeps five groups and every original section',await page.locator('.settings-group').count()===5&&await page.locator('.settings-group [data-section]').count()===9);
+    check('settings keeps five groups while knowledge management moves into its page',await page.locator('.settings-group').count()===5&&await page.locator('.settings-group [data-section]').count()===8);
     await page.getByLabel('搜索设置').fill('模型');
     check('settings search narrows categories',await page.locator('.settings-group [data-section]').count()===1);
     await page.getByLabel('搜索设置').fill('');

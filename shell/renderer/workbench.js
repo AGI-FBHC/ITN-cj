@@ -17,7 +17,7 @@ document.addEventListener('visibilitychange',refreshLiveTimers);
 // Four daily destinations. Existing routes stay intact for history and deep links.
 RAIL_GROUPS.splice(0, RAIL_GROUPS.length,
   [{id: 'chat', label: '对话', icon: 'chat'}],
-  [{id: 'home', label: '学习', icon: 'book'}, {id: 'kb', label: '资料', icon: 'db'}, {id: 'resources', label: '成果', icon: 'layers'}]);
+  [{id: 'home', label: '学习', icon: 'book'}, {id: 'kb', label: '知识库', icon: 'db'}, {id: 'resources', label: '成果', icon: 'layers'}]);
 function navigationRoot(page) {
   if (['learn', 'report', 'calibrate'].includes(page)) return 'home';
   if (['notes', 'wrong'].includes(page)) return 'resources';
@@ -31,7 +31,7 @@ Object.assign(PAGE_META, {
   report: {title: '学习', sub: '阅读记录、练习表现与能力自评'},
   resources: {title: '学习成果', sub: '讲义、练习、笔记与错题，都在这里'},
   notes: {title: '学习成果', sub: '讲义、练习、笔记与错题，都在这里'},
-  kb: {title: '资料库', sub: '找到资料、读原文，再开始学习'},
+  kb: {title: '知识库', sub: '找到资料、读原文，再开始学习'},
   memory: {title: '学习记忆', sub: '查看、修改或删除 Lumin 记住的内容'},
 });
 function decorateWorkspace() {
@@ -636,7 +636,7 @@ const SETTINGS_GROUPS = [
   ['我的档案', ['general', 'memory']],
   ['模型与接口', ['models']],
   ['外观', ['appearance']],
-  ['资料与备份', ['kb', 'data']],
+  ['数据与备份', ['data']],
   ['高级与关于', ['agent', 'skills', 'about']],
 ];
 PANELS.settings = {
@@ -695,6 +695,20 @@ PAGES.kb.render = async function() {
   documents.appendChild(btn('返回文档列表', 'ghost sm search-reset', () => { results.innerHTML = ''; view.querySelector('[aria-label="搜索资料内容"]').value = ''; }));
   const first = documents.querySelector('.library-document[data-status="ready"] button:not([disabled])') || documents.querySelector('.library-document button:not([disabled])');
   if (first) { first.dataset.autoPreview='true'; first.click(); delete first.dataset.autoPreview; }
+};
+
+const knowledgeLibraryBeforeManagement=PAGES.kb.render;
+PAGES.kb.render=async function(){
+  const generation=state.navigationGeneration;
+  await knowledgeLibraryBeforeManagement.call(this);if(generation!==state.navigationGeneration||current!=='kb')return;
+  const view=$('view'),management=el('details','card kb-management');management.id='kb-management';
+  management.appendChild(el('summary','item-title','添加与管理知识库'));
+  const content=el('section','kb-management-content');content.appendChild(settingsKb());management.appendChild(content);
+  management.open=currentSection==='manage'||!hasKb();
+  if(!hasKb())view.replaceChildren(management);else view.appendChild(management);
+  const toolbar=view.querySelector('.library-toolbar');if(toolbar)toolbar.appendChild(btn('管理知识库','ghost sm',()=>{management.open=true;management.scrollIntoView({block:'start'});}));
+  if(currentSection==='manage')management.scrollIntoView({block:'start'});
+  if(currentSection==='harvest'){const harvest=view.querySelector('.harvest-entry');if(harvest){harvest.open=true;harvest.scrollIntoView({block:'start'});}}
 };
 
 /* A course is read one lecture section at a time; source material stays in citations. */
