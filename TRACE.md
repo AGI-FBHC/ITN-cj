@@ -4154,3 +4154,18 @@ read_chunk 读得到原文并带回库标识与正文。
 - 回归与打包补充（最终状态）：0.8.2 包在 work-group 修复后重打包（包内 sourceCommit=558e7be），9 项资产哈希与源码一致（BAD=0），隔离冒烟 RESULT=OK（Lumin 0.8.2 · 已连接）。16 组检查全过：knowledge 57、nonchat 25、session-switch 12、learning 99、personal 23、presentation 9、deck-export、palette 14、stop 13、attachments 16、splash 4、tray 4、busy-caret 6、kb-general、text-menu 6、glass-shot；skill-check 全过；cjpm test 133/133。
 - 顺带修复一个自测暴露的偶发 UI bug（提交 ee36dd4 + 558e7be）：批量跑 glass-shot 时"跑完后工作过程应当收起"偶发失败。根因是 `<details>` 会为"创建时就 open"异步补发一次 toggle，被 renderTurnBlock 当成用户的展开偏好写进 state.workExpansions，轮次结束重绘时被这个记忆值顶住不收。修法：初始值相同的首个 toggle 视为浏览器补发、不记；glass-shot 的固定 900ms 等待也改成"等工作过程真正收起"。修复后 glass-shot 连跑 3 次全过。
 - 与开发者报告的对应关系：自测里"分阶测试 JSON 被截断"对应 respondForWriting（8192 截断→32768 重发 + 关思考）与 askJson 失败自动重试；"读技能后 X 未允许工具"对应 HostSkillScope 的 skill_read 装白名单问题。两条真实用例已固化：python tools/real-features-check.py --case skill_read_no_lock,resources。
+
+
+## 2026-10-16 · 回复格式对齐 pi-studio：GFM 表格/任务清单/删除线/链接（0.8.3）
+- 用户报障：Lumin 回复里的表格没有被渲染（当普通文本显示）；并建议"回复格式那一块学习 pi-studio"。追加要求：能复用的地方尽量复用（前几轮就多次点过这个项目）。
+- 参考实现来源：上次会话留在 tmp/pi-studio-gh 的浅克隆（AACS111/pi-studio，MIT，最新提交 49eca7d）；这次 SSH 重新 clone 网络不稳，直接用旧克隆。
+- 参考要点：pi-studio 的回复渲染走 react-markdown + remark-gfm（表格/删除线/任务清单/自动链接）+ remark-math/rehype-katex（数学）+ rehype-raw/sanitize；表格自定义组件包一层 `.markdown-table-wrap`（app/globals.css：外框 1px 边框 + 圆角 + overflow-x auto；表头 panel 底色、行分隔线、tbody 偶数行斑马纹、min-width:100%）。它的 MarkdownBody 还给 http(s) 链接接右侧面板打开、本地文件链接走文件 API。
+- 本次落地的（提交 d841e33）：
+  - 内核侧渲染器 md()（无 React 依赖，手写解析）新增 GFM 支持：表格（表头 + |---|:--:| 分隔行 + 对齐类 ta-l/ta-c/ta-r + `\|` 转义、缺尾竖线也能解析、正文行以空行或非竖线行结束）、任务清单（- [x]/- [ ]）、删除线（~~x~~）、安全链接（只放行 http/https/mailto/lumin 协议，其余保持纯文本）。
+  - 样式按 pi-studio 结构改造、配色换成本项目变量（.md-table-wrap/.md table/th/td/奇数行、.md-link、.md-task-box 等）。
+  - 外壳（main.js）：setWindowOpenHandler 把 http(s) 交给系统浏览器并 deny 新窗口；will-navigate 阻断应用窗口被链接导航走 —— 这样回复里的链接点了不会吞掉工作台。
+  - 未做（诚实说明）：数学公式（KaTeX）与 mermaid 图 —— 需要随包引入对应前端库，留作后续。
+- 验证：新增 tools/markdown-check.cjs 14/14（真实 DOM：表格结构/对齐类/单元格内联代码、任务清单勾选态、删除线、链接 target/rel、760px 窄屏整页不溢出而表格内部横滚、转义竖线/无分隔行/无外框竖线/代码围栏内竖线四组解析边界、无 JS 异常）；截图 tmp/markdown-shots/table-light.png 目视通过；mock 新增"表格渲染测试"分支；全量回归与 0.8.3 打包结果见下。
+- 发布：版本 0.8.2→0.8.3（提交 bf1f41e）；dist/Lumin-0.8.3 + zip；9 项资产哈希一致（BAD=0）；隔离冒烟 RESULT=OK；启动Lumin.cmd 指向 0.8.3。
+
+- 回归（0.8.3 包二进制）：17 组 + skill-check 全过 —— markdown 14、knowledge 57、nonchat 25、session-switch 12、learning 99、personal 23、presentation 9、deck-export、palette 14、stop 13、attachments 16、splash 4、tray 4、busy-caret 6、kb-general、text-menu 6、glass-shot 无 console 错误；skill-check 全过。本轮未动内核（cjpm 133/133 沿用上一轮结论）。
