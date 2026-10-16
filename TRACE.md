@@ -3910,3 +3910,11 @@ read_chunk 读得到原文并带回库标识与正文。
 - scripts/build.ps1 成功；内核单测117/117；新页面与文件变更展示19/19；learning-check --ui 57/57；stop-check 11/11；kb-general-check 8/8；glass-shot全过、无JS错误。并发审批回归修前异常，修后通过；已有工具并行耗时回归亦通过。
 - 视觉检查发现即时切主题的截图处于过渡中，已在截图工具等待主题过渡结束；资料列表收成真正文件行，筛选框与状态同一行。重新验证19/19，人工复看浅/深色截图。
 - 版本升0.4.4，启动Lumin.cmd指向dist/Lumin-0.4.4/Lumin.exe，保留0.4.3。源码提交后再打包，确保release清单sourceCommit可追溯。
+
+### 最终产物与交接边界
+- 页面提交 2a4c2a7；Agent修复与0.4.4版本提交 1cbbb5d。打包目录 dist/Lumin-0.4.4，压缩包 dist/Lumin-0.4.4-win-x64.zip；启动器已指向新包，旧0.4.3保留。
+- release.json 的9项资产哈希与实际一致；源码app.js/style.css/workbench.js和内核产物对比包内哈希一致（BAD=0）。清单sourceCommit=1cbbb5d861d89899d09f9b84bce6c6546b128c19。
+- 空数据目录打包冒烟：PRELOAD=ok、TITLEBAR=ok、DOCX=ok paragraphs=4、RESULT=OK。没有启动包去占用户现有数据库，也未关闭其现有窗口。
+- 精确性补充：上文“该轮配置实际为mimo-v2.6-flash”的表述范围过强。证据是排查时当前roles/models配置与隔离复验使用该模型；原异常轮未记录请求模型/响应ID，不能仅凭当前配置证明09:58当时的请求身份。新审计事件用于弥补这个证据缺口。
+- 待后续：原异常串题是否在新版本仍出现；若复现，先读对应model/request的latestUser与responseModel/responseId，再区分本地上下文和上游响应。旧错误回答仍保留，复验建议新建会话。非对话后续批次为学习成果合并、学练/设置/成长/记忆；资料库单篇写操作、增量更新、真实后台进度另行实现。
+- 初始两份未跟踪调研文档仍原样保留，未纳入本次代码提交；所有本轮功能代码与测试均已本地Git提交。
