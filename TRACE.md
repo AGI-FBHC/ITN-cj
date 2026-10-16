@@ -4169,3 +4169,19 @@ read_chunk 读得到原文并带回库标识与正文。
 - 发布：版本 0.8.2→0.8.3（提交 bf1f41e）；dist/Lumin-0.8.3 + zip；9 项资产哈希一致（BAD=0）；隔离冒烟 RESULT=OK；启动Lumin.cmd 指向 0.8.3。
 
 - 回归（0.8.3 包二进制）：17 组 + skill-check 全过 —— markdown 14、knowledge 57、nonchat 25、session-switch 12、learning 99、personal 23、presentation 9、deck-export、palette 14、stop 13、attachments 16、splash 4、tray 4、busy-caret 6、kb-general、text-menu 6、glass-shot 无 console 错误；skill-check 全过。本轮未动内核（cjpm 133/133 沿用上一轮结论）。
+
+
+## 2026-10-16 · 知识网络独立成页 + 节点配置重做 + 时间线视图（0.8.4）
+- 方案先行（按用户要求"先交流方案再开工"）：给出两版视觉稿（tmp/network-mock/page.png、edit-dialog.png、timeline-view.png）。用户确认：按推荐版执行（右侧宽抽屉 + 宽编辑弹层 + 色点快速换色）；旧总览里多出来的内容直接删掉不搬迁；时间线默认范围"全部"、手动创建的知识点占一条"手动添加"小卡；并纠正一条边界——顶部窗口栏不动，只改页面框架内的东西。
+- 页面结构（提交 341adeb）：
+  - 「总览」tab 改名「知识网络」，页面标题/副标题同步（"对话里沉淀的概念与记录，都在这张网里"）；tab id 仍为 home，旧链接不失效。
+  - 旧总览内容整体退场：接着学 hero、今日建议、最近成果、未配置提示条，以及**旧知识网络（首页星云图 graphCard + NEBULA 整套渲染）**全部删除（app.js 净 -560 行左右；连带 style.css 的 .graph-card/.home-summary 死样式）。顶部窗口栏未动。
+  - 页面骨架重做：工具条一行（网络图/时间线分段开关 + 搜索 + 时间范围 + 关系说明/重置视角 + ＋添加知识点）；画布铺满（min 520px）当主角；计数收进底部胶囊。
+  - 详情抽屉 360→420px：色点（点击即换色 popover）/大标题/别名 chips；四个图标行动作（提问/写笔记/手动连线/编辑）；分区卡片（概念/对话中的记录/我的笔记/手动连接）；删除压到底部。记录条目显示"去掉知识点背景前缀"的提问原话 + 时间 + 工作区 + 回到这次对话。
+  - 编辑弹层 640→720px 两列：左字段右调色盘 + 实时预览球；9 个色板 + 原生取色器。
+  - 时间线视图：按天分组（今天/昨天/日期）的倒序事件流；每条=一次对话记录（色点/标题/时间/提问/AI 要点/工作区 chip/回到这次对话），无记录的手动节点显示虚线"手动添加"小卡；整卡点击开同一抽屉；「在图里看」切回网络图并选中该节点；范围下拉 全部/近7天/近30天（默认全部，前端过滤）；搜索在时间线内按标题/问题/笔记子串过滤。视图选择存偏好（ui_knowledge_view），刷新后保持。
+  - 内核：新增只读接口 /api/knowledge/timeline（records JOIN nodes 倒序 + 无记录节点，limit≤500）；prefs 增加 knowledgeView。
+- 验证：单测新增 timelineMergesRecordsAndManualNodes → 134/134；tools/knowledge-check.cjs 重写为新结构 42→68/69 项（旧总览已删、tab 改名、抽屉/编辑弹层/快速换色/时间线/视图持久化/在里在图里看联动/来源工作区与删除项目边界/回到这次对话定位/删除保留笔记/窄屏并排或堆叠，全过）；截图 tmp/knowledge-shots/network-graph.png、network-timeline.png、network-compact.png 逐张目视（期间修掉两处外观问题：has-detail 加错元素导致抽屉被堆叠、下拉继承全局 100% 宽度撑出一行；时间戳挤压竖排与记录标题带背景前缀一并修）。
+- 发布：版本 0.8.3→0.8.4（提交 e68cbf1）；dist/Lumin-0.8.4 + zip；9 项资产哈希一致（BAD=0）；隔离冒烟 RESULT=OK；启动Lumin.cmd 指向 0.8.4。全量回归结果见下。
+
+- 回归（0.8.4 包二进制）：18 组 + skill-check 全过 —— knowledge 69、markdown 14、nonchat 25、session-switch 12、learning 98（原 99：总览"接着学"入口随旧总览退场，workbench-ui 里对应的两条断言合并为一条 continueStudy 断言）、personal 23、presentation 9、deck-export、palette 14、stop 13、attachments 16、splash 4、tray 4、busy-caret 6、kb-general、text-menu 6、glass-shot 无 console 错误；skill-check 全过。
