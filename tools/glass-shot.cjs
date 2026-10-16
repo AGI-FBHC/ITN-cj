@@ -278,7 +278,13 @@ const freePort = () => new Promise((res, rej) => {
     await page.locator('#chat-input').fill('帮我写个文件：写文件测试');
     await page.locator('.composer-send').click();
     await page.waitForFunction(() => !state.busyTurn, null, { timeout: 90000 });
-    await sleep(900);
+    // 收起是重绘后才生效的：等它真的收起（批量跑时固定 900ms 会偶发抢跑）
+    await page.waitForFunction(() => {
+      const g = document.querySelector('.chat-thread .work-group');
+      const f = document.querySelector('.chat-thread .file-card');
+      return !!g && !!f && !g.open;
+    }, null, { timeout: 30000 }).catch(() => {});
+    await sleep(300);
     const workOut = await page.evaluate(() => {
       const g = document.querySelector('.chat-thread .work-group');
       const f = document.querySelector('.chat-thread .file-card');
