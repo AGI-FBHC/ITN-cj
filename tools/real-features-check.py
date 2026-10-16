@@ -210,6 +210,23 @@ def main():
             assert any(e['type']=='assistant/activity' and e['payload'].get('phase')=='tool_input' for e in events), 'no live tool-input stage'
             return 'HTML=%d bytes; writes=%d; no failed write or agent test command' % (files[0].stat().st_size,len(writes))
 
+        def case_presentation():
+            bridge = subprocess.Popen(['node',str(ROOT/'shell/desktop-bridge.js'),core.base,str(core.dir)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=NO_WINDOW)
+            try:
+                sid = new_session()
+                response = ask(sid, '无需确认PPT细节，直接制作一份4页可编辑PowerPoint（.pptx）。主题是输入与输出的约定，面向初学者课堂讲解，风格简洁。请使用create_presentation设计不同版式并提供讲者备注，暂不存入个性资源。')
+                events = core.events(sid)
+                saved = [e['payload'] for e in events if e['type']=='artifact/created']
+                assert response.get('ok') and saved, 'no editable PPTX created'
+                result = saved[-1]
+                assert Path(result['path']).exists() and result['slides']==4
+                import zipfile
+                with zipfile.ZipFile(result['path']) as archive:
+                    assert archive.testzip() is None
+                return 'editable PPTX slides=%d; native builder and candidate preview passed' % result['slides']
+            finally:
+                bridge.kill()
+
         def case_course():
             kb = work / 'course-kb'
             kb.mkdir()
@@ -232,7 +249,7 @@ def main():
 
         cases = [('chat', case_chat), ('stream', case_stream), ('vision', case_vision),
                  ('session_read', case_session_read), ('file_read', case_file_read),
-                 ('memory', case_memory), ('generate', case_generate), ('course', case_course), ('crocodile', case_crocodile)]
+                 ('memory', case_memory), ('generate', case_generate), ('course', case_course), ('crocodile', case_crocodile), ('presentation', case_presentation)]
         for name, fn in cases:
             if only and name not in only:
                 continue

@@ -147,7 +147,7 @@ const freePort = () => new Promise((res, rej) => {
       return {
         titlebar: css(document.querySelector('.titlebar')),
         tbBtn: css(document.querySelector('.tb-btn')),
-        toolbarBtn: css(document.querySelector('#wb-artifacts')),
+        toolbarBtn: css(document.querySelector('.wb-toolbar button')),
         dockClose: css(document.querySelector('.resource-dock-head .btn')),
         activeNav: css(document.querySelector('.nav-item.active')),
       };

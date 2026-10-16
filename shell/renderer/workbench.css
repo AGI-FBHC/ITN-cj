@@ -461,3 +461,14 @@ body.workspace-wide #view > .study-workspace { max-width:none; }
 .study-citation .path-line { word-break:break-all; }
 @media(max-width:1080px) { .study-side { position:static; max-height:300px; border-radius:16px 16px 0 0; } .study-detail { padding:24px 20px; } }
 @media(max-width:780px) { .topbar > .workspace-tabs { flex-basis:100%; } .topbar .workspace-tab { padding:8px 10px; } }
+.task-modal { position:fixed; inset:0; display:grid; place-items:center; background:rgba(0,0,0,.25); backdrop-filter:blur(6px); z-index:100; padding:24px; }
+.task-modal-card { width:min(620px,100%); max-height:90vh; overflow:auto; padding:28px; background:var(--panel); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow); }
+.task-modal-card h2 { margin-top:0; }
+.file-preview-tools { padding:10px 16px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; border-bottom:1px solid var(--line); }
+.file-preview-body { flex:1; min-height:0; overflow:auto; padding:18px; }
+.file-preview-body:has(.artifact-frame) { display:flex; padding:0; overflow:hidden; }
+.artifact-frame { width:100%; flex:1; min-height:400px; border:0; background:white; }
+.artifact-image { max-width:100%; height:auto; display:block; margin:auto; }
+.plain-document,.deck-text-slide pre { white-space:pre-wrap; overflow-wrap:anywhere; font:14px/1.8 var(--font-mono,monospace); }
+.deck-text-slide { padding:20px; margin-bottom:16px; border:1px solid var(--line); border-radius:8px; }
+.file-artifact { max-width:420px; margin:12px 0; }

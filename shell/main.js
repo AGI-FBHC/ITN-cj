@@ -55,6 +55,8 @@ function openThreadFromArgs(args) {
 
 let win = null;
 let kernel = null;
+let kernelDataDir = '';
+let stopDesktopBridge = null;
 let tray = null;
 let quitting = false;
 let trayHintShown = false;
@@ -162,6 +164,7 @@ async function startKernel() {
   // 导致同一个软件出现两个数据目录，用户和文档都会对不上。
   const dataRoot = process.env.LOCALAPPDATA || app.getPath("userData");
   const dataDir = resolveDataDir(dataRoot);
+  kernelDataDir = dataDir;
   fs.mkdirSync(dataDir, { recursive: true });
   cleanStaleDbLock(dataDir);
 
@@ -253,6 +256,8 @@ async function createWindow() {
   let port;
   try {
     port = await startKernel();
+    stopDesktopBridge?.();
+    stopDesktopBridge = require('./desktop-bridge').startDesktopBridge('http://127.0.0.1:'+port,kernelDataDir);
   } catch (e) {
     dialog.showErrorBox("启动失败", String((e && e.message) || e));
     app.quit();
@@ -384,6 +389,26 @@ async function createWindow() {
     return r.filePaths[0];
   });
 
+  ipcMain.handle('resource:read',async (_event,p)=>{
+    try{
+      const file=path.resolve(String(p||'')),ext=path.extname(file).toLowerCase(),stat=fs.statSync(file);
+      if(!stat.isFile()||stat.size>32*1024*1024)throw Error('预览文件须小于32MiB');
+      const base={ok:true,path:file,name:path.basename(file),size:stat.size};
+      if(['.pptx','.pptm','.ppt'].includes(ext)){
+        const deck=require('./pptx').readDeck(file),preview=file+'.preview.html';
+        return {...base,kind:'pptx',slides:deck.slides||[],text:(deck.slides||[]).map(s=>s.text||'').join('\n\n'),html:fs.existsSync(preview)?fs.readFileSync(preview,'utf8'):''};
+      }
+      if(['.docx','.docm','.doc'].includes(ext)){const doc=require('./pptx').readDoc(file);return {...base,kind:'docx',text:doc.text||(doc.paragraphs||[]).map(p=>p.text||p).join('\n')};}
+      if(['.html','.htm','.md','.markdown','.txt','.json','.csv','.js','.css','.svg'].includes(ext)){
+        const text=fs.readFileSync(file,'utf8');return {...base,kind:['.html','.htm'].includes(ext)?'html':ext==='.svg'?'svg':['.md','.markdown'].includes(ext)?'markdown':'text',text};
+      }
+      if(['.png','.jpg','.jpeg','.webp','.gif','.pdf'].includes(ext)){
+        const mime=ext==='.pdf'?'application/pdf':ext==='.jpg'||ext==='.jpeg'?'image/jpeg':'image/'+ext.slice(1);
+        return {...base,kind:ext==='.pdf'?'pdf':'image',dataUrl:'data:'+mime+';base64,'+fs.readFileSync(file).toString('base64'),text:''};
+      }
+      throw Error('此格式暂不支持内嵌预览，可用系统应用打开');
+    }catch(e){return {ok:false,error:String(e.message||e)};}
+  });
   ipcMain.handle("deck:read", async (_e, p) => {
     if (!p) return { ok: false, error: "没有路径" };
     if (!fs.existsSync(p)) return { ok: false, error: "文件不存在：" + p };

@@ -53,7 +53,8 @@ let ddl = [
     // 改动草稿：AI 写过的每个文件留一份原样（界面据此"看差异 / 撤销这次改动"）
     "CREATE TABLE IF NOT EXISTS drafts (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, turn_id TEXT, rel TEXT, " +
     "abs_path TEXT, existed INTEGER, add_n INTEGER, del_n INTEGER, created_at TEXT, state TEXT)",
-    "CREATE INDEX IF NOT EXISTS ix_drafts_session ON drafts (session_id, state)"
+    "CREATE INDEX IF NOT EXISTS ix_drafts_session ON drafts (session_id, state)",
+    "CREATE TABLE IF NOT EXISTS desktop_jobs (id TEXT PRIMARY KEY, kind TEXT, status TEXT, body TEXT, result TEXT, error TEXT, created_at TEXT)"
 ]
 
 public func ensureSchema(db: Db): Unit {

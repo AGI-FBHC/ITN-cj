@@ -127,7 +127,7 @@ async function openLearningResource(id, version) {
     const resource = await api('/api/learning/resource', {id, version: version || 0});
     if (token !== workbench.loadToken) return;
     if (current !== 'chat' && !(current === 'resources' && $('outcome-reader'))) await go('chat');
-    workbench.selected = resource;
+    workbench.file=null;workbench.selected = resource;
     workbench.open = true;
     renderResourceDock();
     document.querySelectorAll('.outcome-grid .resource-entry').forEach(node => {
@@ -138,7 +138,57 @@ async function openLearningResource(id, version) {
 }
 
 /** 把当前这份资源导出成 Office 文件（壳里弹"另存为"，写完给一句实话）。 */
+async function startAgentTask(question,projectId) {
+  const fresh=await api('/api/sessions/new',{projectId:projectId || state.chatProject || ''});
+  state.chatSessionId=fresh.sessionId;state.chatProject=fresh.projectId || '';state.chatMode=state.chatProject?'work':'chat';
+  await go('chat');const input=$('chat-input');if(!input)throw Error('对话输入区未就绪');
+  input.value=question;input.dispatchEvent(new Event('input'));document.querySelector('.composer-send[aria-label="发送"]')?.click();
+}
+function openPresentationBrief(res) {
+  document.querySelector('.presentation-brief')?.remove();
+  const overlay=el('div','task-modal presentation-brief'),dialog=el('section','task-modal-card');dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-label','确认PPT制作需求');
+  dialog.append(el('h2',null,'这份 PPT 要讲给谁？'),el('p','muted','Lumin会根据确认的需求重新设计页面，制作可编辑的PowerPoint文件。'));
+  const audience=inputOf('ppt-audience','例如：初学者、项目评审','初学者'),purpose=inputOf('ppt-purpose','例如：课堂讲解、项目汇报','清楚讲解核心概念与应用'),pages=inputOf('ppt-pages','页数','8'),style=inputOf('ppt-style','配色、版式或参考风格','简洁，墨绿与暖金，图文结合');
+  pages.type='number';pages.min='1';pages.max='60';
+  dialog.append(fieldOf('受众',audience),fieldOf('用途',purpose),fieldOf('页数',pages),fieldOf('风格',style));
+  const source=res?.id?'请先读取学习资源 '+res.id+' 的第'+res.version+'版，依据其内容重新设计。':'请依据当前主题与资料设计。';
+  const submit=async waive=>{
+    if(!waive&&(!audience.value.trim()||!purpose.value.trim()||!style.value.trim()||Number(pages.value)<1||Number(pages.value)>60)){toast('请填写完整需求，页数1至60');return;}
+    const details=waive?'无需确认PPT细节，受众、页数和风格由你决定，直接制作。':'已确认PPT细节：受众='+audience.value+'；用途='+purpose.value+'；页数='+pages.value+'；风格='+style.value+'。';
+    overlay.remove();try{await startAgentTask(details+source+'请使用create_presentation逐页设计并制作真实.pptx文件，包括合适的版式与讲者备注。先提供候选产物让我看，不要自动存入个性资源。');}catch(e){toast(e.message);}
+  };
+  const actions=el('div','row');actions.append(btn('按这些要求制作','primary',()=>submit(false)),btn('无需确认，直接制作','ghost',()=>submit(true)),btn('取消','ghost',()=>overlay.remove()));dialog.appendChild(actions);overlay.appendChild(dialog);document.body.appendChild(overlay);audience.focus();
+  overlay.onkeydown=e=>{if(e.key==='Escape')overlay.remove();};overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+}
+function fileArtifactCard(artifact) {
+  const button=btn('','resource-entry compact file-artifact',()=>openFilePreview(artifact.path,artifact));
+  button.dataset.artifactPath=artifact.path;button.append(el('span','resource-entry-type',(artifact.kind || String(artifact.path || '').split('.').pop()).toUpperCase()+' · 候选产物'),el('strong',null,artifact.title || String(artifact.path || '').replace(/\\/g,'/').split('/').pop()),el('span','resource-entry-open','打开预览'));
+  return button;
+}
+async function openFilePreview(file,metadata={}) {
+  if(!window.itnWindow?.readResourceFile){toast('文件预览只在桌面窗口中可用');return;}
+  const token=++workbench.loadToken,data=await window.itnWindow.readResourceFile(file);if(token!==workbench.loadToken)return;
+  if(!data.ok){toast('无法预览：'+data.error);return;}
+  workbench.file={...data,...metadata,path:data.path};workbench.selected=null;workbench.open=true;renderResourceDock();
+}
+function renderFilePreview(dock,file) {
+  const head=el('header','resource-dock-head');head.append(el('strong','grow',file.title || file.name),btn('关闭','ghost sm',closeResourceDock));dock.appendChild(head);
+  const tools=el('div','file-preview-tools');tools.append(el('span','muted sm',String(file.kind).toUpperCase()),btn('系统打开','ghost sm',()=>window.itnWindow.openPath(file.path)));
+  if(typeof offerPersonalSave==='function')tools.appendChild(btn('存入个性资源','sm',()=>offerPersonalSave(file)));
+  dock.appendChild(tools);const body=el('section','file-preview-body');body.setAttribute('aria-label','文件预览');dock.appendChild(body);
+  if(file.kind==='html' || file.html || file.kind==='pdf'){
+    const frame=el('iframe','artifact-frame');frame.title=file.title || file.name;frame.setAttribute('sandbox',file.kind==='html'?'allow-scripts':'');
+    if(file.kind==='pdf')frame.src=file.dataUrl;else frame.srcdoc=file.html || file.text;body.appendChild(frame);
+  }else if(file.kind==='image' || file.kind==='svg'){
+    const img=el('img','artifact-image');img.alt=file.title || file.name;img.src=file.dataUrl || 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(file.text);body.appendChild(img);
+  }else if(file.kind==='pptx'){
+    body.appendChild(el('p','muted sm','文字预览；完整排版可用PowerPoint打开。'));
+    for(const slide of file.slides || []){const section=el('article','deck-text-slide');section.append(el('span','muted sm','第'+slide.index+'页'),el('pre',null,slide.text || '此页没有可提取文字'));body.appendChild(section);}
+  }else{const article=el('article',file.kind==='markdown'?'md':'plain-document');if(file.kind==='markdown')article.innerHTML=md(file.text || '');else article.textContent=file.text || '';body.appendChild(article);}
+}
+
 async function exportResourceAs(res, kind) {
+  if(kind==='pptx'){openPresentationBrief(res);return;}
   const a = window.itnWindow;
   if (!a || typeof a.exportResource !== 'function') { toast('导出只在桌面应用窗口里可用'); return; }
   try {
@@ -155,6 +205,7 @@ function renderResourceDock() {
   const dock = ensureResourceDock();
   // innerHTML 一清，挂在面板边缘的拖动条也没了：刷完内容再挂一次（installSplitters 是幂等的）
   dock.innerHTML = '';
+  if(workbench.file){renderFilePreview(dock,workbench.file);return;}
   const res = workbench.selected;
   const head = el('header', 'resource-dock-head');
   head.appendChild(el('div', 'grow', res ? (RESOURCE_LABEL[res.kind] || res.kind) : '学习成果'));
@@ -189,7 +240,7 @@ function renderResourceDock() {
   /* 学习成果是 Markdown，但要交给别人 / 自己接着改的时候，得有 Office 文件。
      导出在壳里做（离线、零依赖，见 shell/deck-export.js），这里只负责给入口与结果提示。 */
   if (window.itnWindow && typeof window.itnWindow.exportResource === 'function') {
-    actions.appendChild(btn('导出 pptx', 'sm ghost', () => exportResourceAs(res, 'pptx')));
+    actions.appendChild(btn('让 Lumin 制作 PPTX', 'sm ghost', () => exportResourceAs(res, 'pptx')));
     actions.appendChild(btn('导出 docx', 'sm ghost', () => exportResourceAs(res, 'docx')));
   }
   if (res.kind === 'ppt') actions.appendChild(btn('开始演示', 'primary sm', () => openResourcePresentation(res)));
@@ -244,6 +295,7 @@ function renderResourceDock() {
 }
 
 async function openResourcePresentation(res) {
+  playerState.resourceForPpt=res;
   const slides = res.content?.slides || [];
   if (!slides.length) {toast('这份资源没有演示页面'); return;}
   playerState.slides = slides.map(s => ({title: s.title || '', body: (s.bullets || []).map(t => '- ' + t).join('\n') + (s.speakerNote ? '\n\n> 讲稿：' + s.speakerNote : '')}));
@@ -359,7 +411,7 @@ async function workbenchAfterPage() {
   const status = el('span', 'wb-task', ''); status.id = 'wb-task-state'; status.setAttribute('role', 'status'); bar.appendChild(status);
   bar.appendChild(spacer());
   bar.appendChild(typeof sessionMoreBtn === 'function' ? sessionMoreBtn() : spacer());
-  const artifacts = btn('学习成果', 'ghost sm', () => {workbench.open = !workbench.open; renderResourceDock();}); artifacts.id = 'wb-artifacts'; bar.appendChild(artifacts);
+  // The right pane opens explicit conversation artifacts; it has no random-resource toggle.
   document.querySelector('.main').insertBefore(bar, $('view'));
   if (workbench.open) renderResourceDock();
   await refreshWorkbenchState();
@@ -397,7 +449,7 @@ function refreshChatHeader() {
   const status = el('span', 'wb-task', ''); status.id = 'wb-task-state'; status.setAttribute('role', 'status'); bar.appendChild(status);
   bar.appendChild(spacer());
   bar.appendChild(sessionMoreBtn());
-  const artifacts = btn('学习成果', 'ghost sm', () => {workbench.open = !workbench.open; renderResourceDock();}); artifacts.id = 'wb-artifacts'; bar.appendChild(artifacts);
+  // The right pane opens explicit conversation artifacts; it has no random-resource toggle.
   if (old && old.parentElement) old.replaceWith(bar); else main.insertBefore(bar, $('view'));
   refreshWorkbenchState().catch(() => {});
 }

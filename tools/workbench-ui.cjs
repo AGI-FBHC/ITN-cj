@@ -194,7 +194,7 @@ module.exports=async function({base,post,check,dir}) {
     check('compact outcomes do not overflow',await page.locator('#view').evaluate(e=>e.scrollWidth<=e.clientWidth+1));
     await page.screenshot({path:path.join(shots,'09-simple-compact.png')});
     await page.setViewportSize({width:1440,height:960});
-    await nav('chat');if(await page.locator('#resource-dock').isHidden())await page.locator('#wb-artifacts').click();
+    await nav('chat');if(await page.locator('#resource-dock').isHidden())await page.locator('.chat-thread [data-resource]').last().click();
     await page.setViewportSize({width:1024,height:768});
     await page.screenshot({path:path.join(shots,'07-compact.png')});
     check('compact preview has reachable close control',await page.locator('#resource-dock').getByRole('button',{name:'关闭',exact:true}).isVisible());

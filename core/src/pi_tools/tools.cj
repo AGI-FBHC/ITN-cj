@@ -174,6 +174,7 @@ class WriteTool <: Tool {
             let add = countLines(content)
             let d = JsonObject()
             d.put("path", JsonString(ws.relOf(path)))
+            d.put("absPath",JsonString(absPathOf(ws,path)))
             d.put("add", JsonInt(add))
             d.put("del", JsonInt(oldLines))
             d.put("created", JsonBool(oldLines == 0))
@@ -271,6 +272,7 @@ class EditTool <: Tool {
         // 而且模型自己改了什么，摘要里已经写清楚了）
         let d = JsonObject()
         d.put("path", JsonString(rel))
+        d.put("absPath",JsonString(absPathOf(ws,path)))
         d.put("add", JsonInt(countLines(text)))
         d.put("del", JsonInt(countLines(raw)))
         d.put("applied", JsonInt(applied))

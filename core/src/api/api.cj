@@ -2,6 +2,7 @@ package itn_desktop_core.api
 
 import itn_desktop_core.learning.*
 import itn_desktop_core.project.ProjectStore
+import itn_desktop_core.presentation.DesktopJobs
 import itn_desktop_core.agent.learningTools
 import itn_desktop_core.pi_tools.DraftStore
 import itn_desktop_core.resource.isResourceKind
@@ -1289,6 +1290,16 @@ public class Api {
             o.put("agentWorkDir", JsonString(wd))
             ok(ctx, o)
             return
+        }
+
+        if (path == "/api/desktop/jobs/list" && method == "POST") {
+            let o=JsonObject();o.put("jobs",DesktopJobs(store.dataDir).pending());ok(ctx,o);return
+        }
+        if (path == "/api/desktop/jobs/claim" && method == "POST") {
+            match(bodyJson(ctx)){case Some(b)=>ok(ctx,DesktopJobs(store.dataDir).claim(strOf(b,"id")));case None=>fail(ctx,400,"请求体不是合法JSON")};return
+        }
+        if (path == "/api/desktop/jobs/finish" && method == "POST") {
+            match(bodyJson(ctx)){case Some(b)=>DesktopJobs(store.dataDir).finish(strOf(b,"id"),b);ok(ctx,JsonObject());case None=>fail(ctx,400,"请求体不是合法JSON")};return
         }
 
         if (path == "/api/learning/resources" && method == "POST") {
@@ -3041,6 +3052,9 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/skills/template",
         "/api/tools/list",
         "/api/learning/resources",
+        "/api/desktop/jobs/list",
+        "/api/desktop/jobs/claim",
+        "/api/desktop/jobs/finish",
         "/api/learning/resource",
         "/api/learning/context",
         "/api/learning/memories",

@@ -4082,3 +4082,11 @@ read_chunk 读得到原文并带回库标识与正文。
 - tmp/write-budget-real.log：real-crocodile 1/1，316.4秒，真实mimo-v2.6-flash生成16173字节SVG动画HTML，write一次且成功，未出现失败write，未运行测试命令。隔离目录lumin-real-features-y9f84qg4；保留此前352秒失败和600秒超时记录，未混称全都通过。
 - 仍存在上游生成耗时长的事实；本轮解决截断工具误执行、无法形成输出时有限恢复，以及UI计时/参数接收状态。不能宣称真实模型生成只需几秒。前端顺序修复已在8f70544独立提交；provider恢复补强在4ba9574，单元126/126。
 - 开始后续PPT/资源工作。已核实npm官方元数据pptxgenjs4.0.1并安装为shell精确版本依赖，使用打包内Electron/Node能力，不要求最终用户额外安装工具。
+
+### Agent PPTX与候选预览阶段完成
+- 内核新增presentation模块和create_presentation工具，PPT任务先确认受众/用途/页数/风格；明确免确认可直接执行。在线演示/资源面板的PPT入口改为需求确认→真实Agent制作任务，不再直接Markdown转PPT冒充制作。Agent逐页设计cover/bullets/comparison/process/metrics与讲者备注，实际PPTX由随包PptxGenJS4.0.1构建。
+- desktop_jobs原子领取任务，桌面主进程在后台执行，候选保存<dataDir>/drafts并保留设计JSON/HTML预览；60秒制作等待上限与取消检查，文件不存在不报成功；输出路径限制drafts/ppt-数字.pptx。打包复制生产依赖和许可，目标用户不需Node/Python/Office。
+- 去掉随机展开资源的wb-artifacts“学习成果”按钮；对话新增明确的文件产物卡和文件改动“预览”，写/改工具回传absPath。右侧支持HTML（脚本沙箱）、SVG/图片、Markdown/文本、PPTX（本工具设计预览/其他PPT文字预览）、DOCX、PDF。尚未完成个性资源确认入库/索引，不提前宣称支持全部格式索引。
+- tools/presentation-check.cjs9/9：未确认时不建PPT、明确免确认生成真实PK/OOXML、草稿不进已确认目录、设计与预览保存、4页+4份讲者备注可由python-pptx打开、无工具栏随机按钮、确认字段齐全、明确产物卡、无JS异常。PowerPoint真实渲染4页至tmp/presentation-shots/actual，逐页目视无文字溢出或相互遮盖。
+- 真实mimo-v2.6-flash制作实测--case presentation1/1，28.8秒，4页可编辑PPTX、原生构建服务/候选预览通过；独立临时目录lumin-real-features-3p0l37_e，不写用户库。包最终统一升版交付，旧0.7.0可回滚。
+- 后续继续：确认后复制“个性资源”、多格式内容索引/笔记错题索引与跨会话搜索；再知识库管理迁移和知识网络。

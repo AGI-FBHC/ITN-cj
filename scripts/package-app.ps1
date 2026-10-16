@@ -33,6 +33,16 @@ Copy-Item -LiteralPath (Join-Path $repo "shell\preload.js") -Destination $appDir
 # 必须一起进包（漏了包里的 main.js 会 require 失败）
 Copy-Item -LiteralPath (Join-Path $repo "shell\pptx.js") -Destination $appDir -Force
 Copy-Item -LiteralPath (Join-Path $repo "shell\deck-export.js") -Destination $appDir -Force
+Copy-Item -LiteralPath (Join-Path $repo "shell\presentation-builder.js") -Destination $appDir -Force
+Copy-Item -LiteralPath (Join-Path $repo "shell\desktop-bridge.js") -Destination $appDir -Force
+# Production dependencies only; the Electron runtime itself is already copied above.
+foreach ($dependency in @('pptxgenjs','jszip','image-size','queue','https','pako','lie','immediate','setimmediate','readable-stream','core-util-is','inherits','isarray','process-nextick-args','safe-buffer','string_decoder','util-deprecate')) {
+    $sourceDependency = Join-Path $repo ('shell\node_modules\' + $dependency)
+    if (Test-Path -LiteralPath $sourceDependency) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $appDir 'node_modules') | Out-Null
+        Copy-Item -LiteralPath $sourceDependency -Destination (Join-Path $appDir 'node_modules') -Recurse -Force
+    }
+}
 Copy-Item -Path (Join-Path $repo "shell\renderer") -Destination $appDir -Recurse -Force
 Copy-Item -Path (Join-Path $repo "shell\assets") -Destination $appDir -Recurse -Force
 # 随包内置的技能（只读，用户改不了）：外壳用 --skills-dir 指给内核

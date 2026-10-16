@@ -378,6 +378,12 @@ def native_reply(body):
         if any(m.get("name") == "kb_search" or "命中" in str(m.get("content")) for m in last_tools):
             return "提示词要写清任务、约束和输出格式；使用资料时标注出处，方便回到原文核实 [1]。"
         return "已完成工具调用，可在右侧成果中查看。"
+    if 'PPTX_BRIDGE' in ask or 'create_presentation' in ask:
+        return call('create_presentation', {'title':'输入与输出的约定','audience':'初学者','purpose':'课堂讲解','style':'简洁墨绿','slides':[
+            {'title':'输入与输出的约定','layout':'cover','notes':'介绍今天的学习目标。'},
+            {'title':'先把约定写清楚','layout':'bullets','bullets':['给出输入样例','明确期望输出','保留验证依据'],'notes':'引导学生先写输入和输出。'},
+            {'title':'好约定与坏约定','layout':'comparison','columns':[{'title':'明确','body':'字段、边界和输出格式都有示例。'},{'title':'含糊','body':'只有一句尽量做好，没有验收依据。'}],'notes':'用两种写法对比说明。'},
+            {'title':'把一次执行做完整','layout':'process','bullets':['约定输入','执行并记录','验证并复盘'],'notes':'总结三个步骤。'}]})
     session_link = re.search(r"lumin://thread/([A-Za-z0-9_-]+)", ask)
     if session_link:
         return call("read_session", {"session_id": session_link.group(0)})

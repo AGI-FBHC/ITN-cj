@@ -4891,6 +4891,7 @@ function renderPlayer() {
   info.appendChild(el("div", "player-counter", "第 " + (playerState.index + 1) + " / " + total + " 页"));
   head.appendChild(info);
   const tools = el("div", "player-tools");
+  if(playerState.resourceForPpt)tools.appendChild(btn('制作 PPTX','sm',()=>{closePlayer();openPresentationBrief(playerState.resourceForPpt);}));
   tools.appendChild(btn("目录", "sm " + (playerState.tocOpen ? "primary" : "ghost"), () => {
     playerState.tocOpen = !playerState.tocOpen;
     renderPlayer();
@@ -6171,7 +6172,7 @@ function turnsFromEvents(events) {
           hit.created = !!(hit.created || det.created);
           if (det.draftId) hit.draftId = String(det.draftId);
         } else {
-          t.fileChanges.push({ path: String(det.path), add: Number(det.add || 0), del: Number(det.del || 0),
+          t.fileChanges.push({ path: String(det.path), absPath:String(det.absPath || ''), add: Number(det.add || 0), del: Number(det.del || 0),
                                created: !!det.created, draftId: det.draftId ? String(det.draftId) : "" });
         }
       }
@@ -6185,6 +6186,8 @@ function turnsFromEvents(events) {
         target.ok = p.ok !== false;
         target.running = false;
       }
+    } else if (e.type === "artifact/created") {
+      t.items.push({t:"file",artifact:p});
     } else if (e.type === "resource/saved") {
       t.items.push({t: "resource", resource: p});
     } else if (e.type === "resource/progress") {
@@ -6398,7 +6401,8 @@ function renderTurnBlock(t, live) {
   const {processBlocks,answerBlocks}=splitAssistantDisplayBlocks(t.items);
   let pending=[],groupIndex=0;
   const appendContent=it=>{
-    if(it.t==='resource')box.appendChild(resourceCard(it.resource,true));
+    if(it.t==='file')box.appendChild(fileArtifactCard(it.artifact));
+    else if(it.t==='resource')box.appendChild(resourceCard(it.resource,true));
     else if(it.text){const node=assistantBlock(it.text,live&&it.streaming);node.dataset.timelineKind='text';box.appendChild(node);}
   };
   const flushProcess=()=>{
@@ -6432,6 +6436,7 @@ function renderTurnBlock(t, live) {
       const row = el("div", "file-row");
       row.innerHTML = "<span class='file-name'>" + esc(f.path) + (f.created ? "<i class='file-tag'>新建</i>" : "") + "</span>" +
         "<span class='file-stat'><b class='add'>+" + (f.add || 0) + "</b> <b class='del'>−" + (f.del || 0) + "</b></span>";
+      const preview=btn('预览','ghost sm',()=>openFilePreview(f.absPath || (sessionWorkDir().path.replace(/[\\/]$/, '')+'/' + f.path),{title:f.path}));row.appendChild(preview);
       /* 改动草稿：写之前留了一份原样，所以每个文件都能"看差异 / 撤销"（用户要的可还原） */
       if (f.draftId && !(state.draftSettled || {})[f.draftId]) {
         row.dataset.draft = f.draftId;

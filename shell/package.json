@@ -9,14 +9,8 @@
   },
   "devDependencies": {
     "electron": "^44.7.1"
+  },
+  "dependencies": {
+    "pptxgenjs": "4.0.1"
   }
 }
-
-
-
-
-
-
-
-
-
