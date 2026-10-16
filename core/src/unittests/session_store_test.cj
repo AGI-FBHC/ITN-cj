@@ -129,3 +129,48 @@ class SessionStoreTest {
         @Expect(long.size > 0, true)
     }
 }
+
+
+/** 列表聚合：标题/kind 取每个会话的**第一条**（不是最后一条），事件计数覆盖全部事件。 */
+@Test
+class SessionListAggregationTest {
+    @TestCase
+    func listReadsTheFirstEventPerKindAndCountsEverything(): Unit {
+        let d = freshDir("store-list-firsts")
+        let ss = SessionStore(d)
+        let a = ss.newId()
+        let b = ss.newId()
+        let p1 = JsonObject(); p1.put("kind", JsonString("ask")); p1.put("kbId", JsonString("kb1"))
+        let p2 = JsonObject(); p2.put("text", JsonString("第一个问题"))
+        let p3 = JsonObject(); p3.put("text", JsonString("第一个回答"))
+        let p4 = JsonObject(); p4.put("kind", JsonString("quiz")); p4.put("kbId", JsonString("kb9"))
+        let p5 = JsonObject(); p5.put("text", JsonString("第二个问题"))
+        let p6 = JsonObject(); p6.put("text", JsonString("另一个会话的问题"))
+        let e1 = SessionEvent(); e1.sessionId = a; e1.kind = "turn/start"; e1.payload = p1; ss.append(e1)
+        let e2 = SessionEvent(); e2.sessionId = a; e2.kind = "user/message"; e2.payload = p2; ss.append(e2)
+        let e3 = SessionEvent(); e3.sessionId = a; e3.kind = "assistant/message"; e3.payload = p3; ss.append(e3)
+        let e4 = SessionEvent(); e4.sessionId = a; e4.kind = "turn/start"; e4.payload = p4; ss.append(e4)
+        let e5 = SessionEvent(); e5.sessionId = a; e5.kind = "user/message"; e5.payload = p5; ss.append(e5)
+        let e6 = SessionEvent(); e6.sessionId = b; e6.kind = "user/message"; e6.payload = p6; ss.append(e6)
+        var seenA = 0
+        var seenB = 0
+        for (sm in ss.list()) {
+            let sid = strOf(sm, "sessionId")
+            if (sid == a) {
+                seenA = seenA + 1
+                @Expect(strOf(sm, "title"), "第一个问题")
+                @Expect(strOf(sm, "kind"), "ask")
+                @Expect(strOf(sm, "kbId"), "kb1")
+                @Expect(intOf(sm, "eventCount"), 5)
+            }
+            if (sid == b) {
+                seenB = seenB + 1
+                @Expect(strOf(sm, "title"), "另一个会话的问题")
+                @Expect(strOf(sm, "kind"), "")
+                @Expect(intOf(sm, "eventCount"), 1)
+            }
+        }
+        @Expect(seenA, 1)
+        @Expect(seenB, 1)
+    }
+}

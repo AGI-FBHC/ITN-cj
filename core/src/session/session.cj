@@ -5,6 +5,7 @@ import std.collection.*
 import std.convert.*
 import std.time.*
 import std.random.*
+import std.sync.*
 import stdx.encoding.json.*
 import itn_desktop_core.db.*
 import itn_desktop_core.util.*
@@ -46,6 +47,18 @@ public class SessionChain {
  * 每条事件一行，只插入不更新，与原来的 JSONL 语义一致；区别是列表和摘要不再需要
  * 把每个会话的整个文件读进来解析一遍。
  */
+/*
+ * 会话列表的进程内缓存。
+ *
+ * 为什么必须缓存：仓颉的 sqlite 驱动在涉及全表聚合/连表的语句上极慢（实测 1.8 万条事件的
+ * 库，组装一次列表要 1–2 秒，JOIN 版本更夸张到 65 秒）。列表只需要“有变化才重算”：
+ * 指纹没变就把上次结果直接返回。多线程 HTTP 下用锁保护；换数据目录时目录名不匹配自然失效。
+ */
+let sessionListCacheLock = Mutex()
+var sessionListCache: ?ArrayList<JsonObject> = None
+var sessionListCacheDir: String = ""
+var sessionListCacheEpoch: Int64 = -1
+
 public class SessionStore {
     public let dataDir: String
 
@@ -964,6 +977,22 @@ public class SessionStore {
         let out = ArrayList<JsonObject>()
         migrateFromJson()
         let dbh = db()
+        // 纪元命中直接回缓存：凡是写 sessions/session_events/sessions_meta 的 SQL 都会把
+        // 纪元 +1（见 db.cj），没变就是没变。组装一次要 ~1 秒（引擎怕全表聚合），
+        // 聊天期间每轮都会来读，缓存把稳态压到几毫秒。
+        let epoch = sessionEpoch()
+        sessionListCacheLock.lock()
+        try {
+            if (sessionListCacheDir == dataDir && sessionListCacheEpoch == epoch) {
+                match (sessionListCache) {
+                    case Some(cached) =>
+                        return copySessionList(cached)
+                    case None => ()
+                }
+            }
+        } finally {
+            sessionListCacheLock.unlock()
+        }
 
         let counts = HashMap<String, Int64>()
         let lastIds = HashMap<String, Int64>()
@@ -998,29 +1027,41 @@ public class SessionStore {
          * 大半个 145ms）。SQLite 有"min/max 配 GROUP BY 时其它列取自那一行"的规矩，
          * 正好拿来只读每段会话的第一条。
          */
+        // 每个会话只取第一条消息 / 第一条 turn/start：按 (session_id, id) 索引逐会话 LIMIT 1。
+        // 不要写成 JOIN + MIN(id) 子查询——third_party 那个纯仓颉 SQL 引擎对这类连表在
+        // 1.8 万条事件的库上要 65 秒/条（官方 SQLite 同句 6ms，已对照实测），页面切换全被它拖死。
+        // 两条信息一条语句拿：按 id 升序扫这个会话最前面的若干条，
+        // 见到第一条第 user/message 与第一条 turn/start 就收工。
+        // （引擎每条语句固定开销 ~8ms，56 个会话从 112 条语句减到 56 条，省掉近半秒）
         let titles = HashMap<String, String>()
-        for (r in dbh.querySql("SELECT session_id, payload FROM session_events WHERE kind = 'user/message' ORDER BY id")) {
-            let sid = r.text(0)
-            if (titles.contains(sid)) {
-                continue
-            }
-            titles[sid] = payloadText(r.text(1), "text")
-        }
-
         let kinds = HashMap<String, String>()
         let kbs = HashMap<String, String>()
-        for (r in dbh.querySql("SELECT session_id, payload FROM session_events WHERE kind = 'turn/start' ORDER BY id")) {
-            let sid = r.text(0)
-            if (kinds.contains(sid)) {
-                continue
+        for (sid in ids) {
+            var gotTitle = false
+            var gotTurn = false
+            for (r in dbh.query("SELECT kind, payload FROM session_events WHERE session_id = ? AND (kind = 'user/message' OR kind = 'turn/start') ORDER BY id LIMIT 12", va([tv(sid)]))) {
+                let kind = r.text(0)
+                if (kind == "user/message" && !gotTitle) {
+                    titles[sid] = payloadText(r.text(1), "text")
+                    gotTitle = true
+                } else if (kind == "turn/start" && !gotTurn) {
+                    let p = r.text(1)
+                    kinds[sid] = payloadText(p, "kind")
+                    kbs[sid] = payloadText(p, "kbId")
+                    gotTurn = true
+                }
+                if (gotTitle && gotTurn) {
+                    break
+                }
             }
-            let p = r.text(1)
-            kinds[sid] = payloadText(p, "kind")
-            kbs[sid] = payloadText(p, "kbId")
         }
 
         let customTitles = HashMap<String, String>()
         let projectOf = HashMap<String, String>()
+        // 顺手把 leaf/tree 标记也读出来：行的循环里就不用每个会话再单独 getKv 一次
+        //（纯仓颉引擎上每多一条语句都是毫秒级开销，56 个会话就是几百毫秒）
+        let leafMap = HashMap<String, Int64>()
+        let treeSet = HashSet<String>()
         for (r in dbh.querySql("SELECT k, v FROM sessions_meta")) {
             let k = r.text(0)
             let v = r.text(1)
@@ -1028,14 +1069,19 @@ public class SessionStore {
                 customTitles[k.replace("title:", "")] = v
             } else if (hasPrefix(k, "project:")) {
                 projectOf[k.replace("project:", "")] = v
+            } else if (hasPrefix(k, "leaf:")) {
+                try { leafMap[k.replace("leaf:", "")] = Int64.parse(v) } catch (e: Exception) { () }
+            } else if (hasPrefix(k, "tree:")) {
+                treeSet.add(k.replace("tree:", ""))
             }
         }
 
         for (sid in ids) {
             let o = JsonObject()
             o.put("sessionId", JsonString(sid))
-            // 计数同样按**当前分支**：被放弃的分支不计入
-            o.put("eventCount", JsonInt(branchEventIds(sid).size))
+            // 计数同样按**当前分支**：被放弃的分支不计入。
+            // 没分过叉的会话两值恒等：直接用前面已聚合的 counts，省掉逐会话扫全表建链。
+            o.put("eventCount", JsonInt(if (treeSet.contains(sid)) { branchEventIds(sid).size } else { counts.get(sid) ?? 0 }))
             var title = titles.get(sid) ?? ""
             let custom = customTitles.get(sid) ?? ""
             if (custom.size > 0) {
@@ -1045,7 +1091,11 @@ public class SessionStore {
             }
             var lastAt = ""
             var lastType = ""
-            match (dbh.one("SELECT ts, kind FROM session_events WHERE id = ?", va([nv(leafOf(sid))]))) {
+            let leaf = match (leafMap.get(sid)) {
+                case Some(v) => v
+                case None => lastIds.get(sid) ?? 0   // 没挪过末端：leaf 就是最后一条事件
+            }
+            match (dbh.one("SELECT ts, kind FROM session_events WHERE id = ?", va([nv(leaf)]))) {
                 case Some(r) =>
                     lastAt = r.text(0)
                     lastType = r.text(1)
@@ -1058,6 +1108,21 @@ public class SessionStore {
             o.put("kind", JsonString(kinds.get(sid) ?? ""))
             o.put("kbId", JsonString(kbs.get(sid) ?? ""))
             o.put("projectId", JsonString(projectOf.get(sid) ?? ""))
+            out.add(o)
+        }
+        sessionListCacheLock.lock()
+        try {
+            sessionListCache = Some(out)
+            sessionListCacheDir = dataDir
+            sessionListCacheEpoch = epoch
+        } finally {
+            sessionListCacheLock.unlock()
+        }
+        return copySessionList(out)
+    }
+    private func copySessionList(src: ArrayList<JsonObject>): ArrayList<JsonObject> {
+        let out = ArrayList<JsonObject>()
+        for (o in src) {
             out.add(o)
         }
         return out

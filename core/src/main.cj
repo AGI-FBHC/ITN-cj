@@ -2,8 +2,10 @@ package itn_desktop_core
 
 import std.sync.*
 import std.time.*
+import std.convert.*
 import itn_desktop_core.api.*
 import itn_desktop_core.agent.*
+import itn_desktop_core.dev.*
 import itn_desktop_core.util.*
 
 main(args: Array<String>): Int64 {
@@ -22,6 +24,21 @@ main(args: Array<String>): Int64 {
     // 随包内置的技能目录（外壳指进来；只读，用户改不了）
     match (argValue(args, "--skills-dir")) {
         case Some(v) => SKILLS_BUNDLED_DIR = v
+        case None => ()
+    }
+
+    // 开发/自测夹具：灌一批会话数据（只在空库上生效；见 dev/fixture.cj）
+    match (argValue(args, "--seed-fixture")) {
+        case Some(v) =>
+            var total: Int64 = 0
+            try {
+                total = Int64.parse(v)
+            } catch (e: Exception) {
+                total = 0
+            }
+            if (total > 0) {
+                seedSessionFixture(dataDir, total)
+            }
         case None => ()
     }
 

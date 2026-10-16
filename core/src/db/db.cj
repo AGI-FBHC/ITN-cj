@@ -169,7 +169,10 @@ public class Db {
     public func run(sql: String, args: ArrayList<DbValue>): Int64 {
         guard.lock()
         try {
-            prepareAndRun(sql, args)
+            if (sql.contains("session")) {
+                bumpSessionEpoch()
+            }
+            return prepareAndRun(sql, args)
         } finally {
             guard.unlock()
         }
@@ -203,6 +206,9 @@ public class Db {
             var affected: Int64 = 0
             try {
                 for (op in ops) {
+                    if (op.sql.contains("session")) {
+                        bumpSessionEpoch()
+                    }
                     affected += prepareAndRun(op.sql, op.args)
                 }
                 tx.commit()
@@ -234,6 +240,9 @@ public class Db {
                 let st = conn.prepareStatement(sql)
                 try {
                     for (row in rows) {
+                        if (sql.contains("session")) {
+                            bumpSessionEpoch()
+                        }
                         bindAll(st, row)
                         affected += st.update().rowCount
                     }
@@ -406,6 +415,33 @@ public class Db {
  * 之前每个仓库类各持一个文件路径、各读自己的 JSON；共享连接后，写与读看到同一份状态，
  * 不会再出现「这个页面刚存的，另一个页面读不到」。
  */
+/*
+ * 会话相关表的写纪元。
+ *
+ * sessions/list 的组装在纯仓颉引擎上要 ~1 秒，所以它在 session.cj 里做了进程内缓存；
+ * 缓存靠这个计数器失效：凡是写到 sessions / session_events / sessions_meta 的 SQL
+ * 都让纪元 +1（表名都含 "session"，判定就按这个来）。比“每次重新查 MAX(id)/摘要”便宜得多
+ * ——那个指纹本身在这台引擎上就要 380ms。
+ */
+let sessionEpochLock = Mutex()
+var sessionEpochValue: Int64 = 0
+public func bumpSessionEpoch(): Unit {
+    sessionEpochLock.lock()
+    try {
+        sessionEpochValue += 1
+    } finally {
+        sessionEpochLock.unlock()
+    }
+}
+public func sessionEpoch(): Int64 {
+    sessionEpochLock.lock()
+    try {
+        return sessionEpochValue
+    } finally {
+        sessionEpochLock.unlock()
+    }
+}
+
 public class DbHub {
     private static let lock = Mutex()
     private static var current: ?Db = None
