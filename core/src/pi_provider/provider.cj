@@ -73,8 +73,12 @@ public class OpenAiChatProvider <: ChatProvider {
     private let apiKey: String
     private let defaultModel: String
     public var maxAttempts: Int64 = 3
-    /** Idle, not total generation time. Continuous responses may run longer. */
-    public var idleTimeoutMillis: Int64 = 90000
+    /**
+     * Idle, not total generation time. Continuous responses may run longer.
+     * 上游在长上下文时首包可能要一分多钟（实测 39K token 的请求约 90s 才回第一段内容），
+     * 原来的 90s 上限会把这种慢请求直接掐断；放宽到 5 分钟，用户随时可以点停止。
+     */
+    public var idleTimeoutMillis: Int64 = 300000
     /** 上一次请求耗时（毫秒），给界面显示"模型用了多久"。 */
     public var lastMillis: Int64 = 0
     public var lastFinish: String = ""
@@ -217,8 +221,10 @@ public class OpenAiChatProvider <: ChatProvider {
         tls.supportedAlpnProtocols = ["http/1.1"]
         let client = ClientBuilder()
             .tlsConfig(tls)
-            .readTimeout(Duration.second * 90)
-            .writeTimeout(Duration.second * 90)
+            // 传输层超时必须大于上面的语义空闲上限：否则会在 watch 判定"长时间无数据"
+            // 之前先抛底层 Read body timeout（实测：90s 读超时把刚开始到达的正文掐断）。
+            .readTimeout(Duration.minute * 10)
+            .writeTimeout(Duration.minute * 10)
             .build()
         let watch = RequestWatch()
         let idleLimit = idleTimeoutMillis

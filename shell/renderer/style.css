@@ -1243,6 +1243,7 @@ body.panel-hidden .panel { display: none; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .panel-item.active .panel-item-title { font-weight: 600; color: var(--brand); }
+.panel-item-spin { width: 11px; height: 11px; min-width: 11px; border-width: 2px; margin-right: 7px; vertical-align: -1px; }
 .panel-item .tag { flex: 0 0 auto; }
 
 /* 会话行：hover 出现的"⋯"（重命名 / 删除），菜单绝对定位在这一行下面 */

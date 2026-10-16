@@ -427,6 +427,19 @@ async function loadArtifacts() {
 async function loadSessions() {
   try { state.sessions = (await api("/api/sessions/list", {})).sessions || []; }
   catch (e) { state.sessions = []; }
+  /* 正在跑、但还没出现在列表里的会话（新建的会话要等第一条事件落库才进列表接口）
+     先补一行：转圈必须马上看得见，不能等这一轮跑完才冒出来。真实数据一到自然顶掉。 */
+  const running = runningSessionId();
+  if (running && !state.sessions.some((x) => x.sessionId === running)) {
+    state.sessions.unshift({
+      sessionId: running,
+      title: state.lastQuestion || "新对话",
+      projectId: "",
+      kind: "ask",
+      lastAt: new Date().toISOString(),
+      eventCount: 0,
+    });
+  }
   /* 列表是"会话元信息"的唯一来源：顶栏那条面包屑（工作区 | 会话名）也吃这份数据。
      标题是模型异步起好的、跑完一轮时间会变 —— 读一次列表就把顶栏一起对齐，
      否则会出现"列表里已经有名字、顶栏还写着新对话"（实测）。 */
@@ -5133,10 +5146,19 @@ function panelItem(opt) {
   const b = el("button", "panel-item" + (opt.active ? " active" : ""));
   b.type = "button";
   if (opt.id !== undefined) b.dataset.id = String(opt.id);
-  b.appendChild(el("div", "panel-item-title", opt.title || ""));
+  const title = el("div", "panel-item-title");
+  title.appendChild(el("span", "panel-item-label", opt.title || ""));
+  if (opt.busy) title.insertBefore(el("span", "spinner panel-item-spin"), title.firstChild);
+  b.appendChild(title);
   if (opt.meta) b.appendChild(el("div", "panel-item-meta", opt.meta));
   b.onclick = opt.onClick;
   return b;
+}
+
+/** 正在跑的那段会话：AI 执行/回复中给列表行挂转圈用；没跑时返回空串。 */
+function runningSessionId() {
+  if (!state.busyTurn) return "";
+  return (state.chatRequest && state.chatRequest.sessionId) || state.chatSessionId || "";
 }
 
 function panelGroup(text) { return el("div", "panel-group-title", text); }
@@ -5533,13 +5555,19 @@ PANELS.chat = {
       const sid = item.dataset.id || "";
       const x = (state.sessions || []).find((y) => y.sessionId === sid);
       if (x) {
-        const titleEl = item.querySelector(".panel-item-title");
+        const titleEl = item.querySelector(".panel-item-label");
         const title = x.title || "新对话";
         if (titleEl && titleEl.textContent !== title) titleEl.textContent = title;
         const metaEl = item.querySelector(".panel-item-meta");
         const meta = railMetaOf(x);
         if (metaEl && metaEl.textContent !== meta) metaEl.textContent = meta;
       }
+      /* 转圈是就地开关，不进结构指纹：跑起来的会话不该让整列重建。 */
+      const titleBox = item.querySelector(".panel-item-title");
+      const busy = sid === runningSessionId();
+      const spin = titleBox ? titleBox.querySelector(".panel-item-spin") : null;
+      if (busy && titleBox && !spin) titleBox.insertBefore(el("span", "spinner panel-item-spin"), titleBox.firstChild);
+      else if (!busy && spin) spin.remove();
       item.classList.toggle("active", sid === state.chatSessionId);
     }
   },
@@ -5631,6 +5659,7 @@ PANELS.chat = {
         rowEl.appendChild(panelItem({
           id: x.sessionId,
           active: x.sessionId === state.chatSessionId,
+          busy: x.sessionId === runningSessionId(),
           title: x.title || "新对话",
           meta: railMetaOf(x),
           onClick: () => openChatSession(x.sessionId),
@@ -6096,9 +6125,23 @@ function assistantBlock(text, live) {
   const a = el("div", "msg msg-ai");
   const b = el("div", "msg-body");
   b.innerHTML = md(text);
-  if (live) b.appendChild(el("span", "caret"));
+  if (live) caretInto(b);
   a.appendChild(b);
   return a;
+}
+
+/**
+ * 把闪烁光标塞进正文最后一个文字块的末尾（段落/列表项/代码块……）。
+ * 以前直接挂在 msg-body 上：md() 输出的是块级 <div class="md">，光标就成了它下面
+ * 的独立一行 —— 看起来像"光标总是另起一行"。光标属于正在写的那一句话，不属于下一行。
+ */
+function caretInto(host) {
+  const caret = el("span", "caret");
+  let target = host;
+  while (target.lastElementChild && !["IMG", "BR", "HR", "INPUT", "BUTTON", "SVG"].includes(target.lastElementChild.tagName)) {
+    target = target.lastElementChild;
+  }
+  target.appendChild(caret);
 }
 
 /** 工具调用：一行，左边一个点（跑着时是转圈），右边一行摘要。点一下展开参数。 */
@@ -7292,6 +7335,7 @@ PAGES.chat = {
       const request = { sessionId: sid, controller: new AbortController(), baseline: (state.chatEvents || []).length, turnId: "", endedByEvents: false };
       state.chatRequest = request;
       state.busyTurn = true;
+      renderPanel();   // 会话列表立刻给这一段挂上"正在回复"的转圈
       // 允许"已取消"的那一轮一键重问（取消多半是因为问题写错了）
       state.chatResend = (q, attached) => {
         if(attached?.some(a=>a.kind==='image'&&!a.dataUrl)){toast('请重新添加图片后再发送');return;}
@@ -7369,6 +7413,7 @@ PAGES.chat = {
       if (typeof syncWorkbenchEvents === "function") syncWorkbenchEvents(state.chatEvents || []);
       state.busyTurn = false;
       if (state.chatRequest === request) state.chatRequest = null;
+      renderPanel();   // 跑完了把转圈摘掉（还是就地刷新，不动列表结构）
       const stopped = state.cancelRequested === sid;
       state.cancelRequested = null;
       if (stopped && !failure) {
@@ -7550,7 +7595,9 @@ const SESSIONS_VIEW = {
         const it = el("div", "item clickable");
         const row = el("div", "row");
         const main = el("div", "grow");
-        main.appendChild(el("div", "item-title", s.title || "（无标题会话）"));
+        const titleEl = el("div", "item-title", s.title || "（无标题会话）");
+        if (s.sessionId === runningSessionId()) titleEl.insertBefore(el("span", "spinner panel-item-spin"), titleEl.firstChild);
+        main.appendChild(titleEl);
         main.appendChild(el("div", "meta",
           (s.kbId ? kbName(s.kbId) + " · " : "") +
           s.eventCount + " 条事件 · 最后 " + (EVENT_LABEL[s.lastType] || s.lastType || "—") + " · " + fmtStamp(s.lastAt)));
