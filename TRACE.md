@@ -4318,3 +4318,29 @@ read_chunk 读得到原文并带回库标识与正文。
 - 新交互方案文件：C:/Users/GeJie/.codex/visualizations/2026/10/16/01a145e8-c441-7d72-86f4-fb90649c8ebc/learning-map-modal-plan.html。可点击节点、切换Agent/Python示例知识库、示意生成空库导图、搜索节点、查看归档/回收站、演示删除/恢复；所有状态只在预演内存中，不调用产品API，不改真实数据。旧版learning-resource-plan.html保留供对照。
 - 仅方案展示QA：check-modal-plan.cjs在1024/736/320宽验证图占满内容宽度、弹窗2列且不越界、Esc关闭、删除资源仍保留10个节点、回收站恢复、知识库独立切换/生成；无JS错误、无水平溢出。浅/深截图为learning-map-page-v2.png、learning-map-dialog-v2.png、learning-map-dialog-dark-v2.png，页面与弹窗截图已目视，桌面整体约640px高。不是实际产品验收，功能未实施、未升版、未打包。
 - 继续遵守“先给图+白话方案，用户认可再开工”。本轮项目内只追加本TRACE并本地文档提交。
+
+## 2026-10-17 用户批准开工：思维导图学·练 + 节点四资源弹窗 + 依赖/归档 + 我的成长
+- 用户在确认第二版铺满导图与居中四资源弹窗方案后明确“差不多到我意思了，那你开工吧”。承接前轮完整方案与依赖保护约定实施，避免把仅改UI当作完成。
+- 实际仓库仍D:/Desktop/ITN/ITN-Desktop。先读AGENTS并核对main工作树；原有两份未跟踪调研稿保持不动。接口契约已先追加docs/02（新/course接口、任务、精确版本、节点会话目标、确认收录与归档/回收站规则）。
+- 实施次序：仓颉存储/任务/归档与同源Agent工具→节点目标会话/确认收录→新学·练与成长页→有意义单测/真实HTTP与UI/真实模型→提交/打包。新增内核与造数使用仓颉，新增mock如需使用既有Node工具；不修改独立lumin/本体。
+- 当前已只读核对已有LearningStore、PersonalStore、SessionStore、知识库索引、provider respondForWriting、现有资源预览/保存入口。重点是让界面与Agent用同一状态，删除资源不删图、重建不丢资源、生成候选不提前归档旧版。
+
+### 0.8.11 实施完成与交接收尾（2026-10-17，接手会话补录）
+- 上一条“开工”记录之后，实施在另一会话内推进到“兼容性回归与发布包核对”前被中断；本次接手先全面盘点了未提交工作树并独立复核，然后完成收尾。
+- 实现范围（全部在工作树、本次提交）：
+  - 仓颉内核新增 course 模块：course.cj（导图/节点/资源槽位/归档/回收站/文件迁移恢复/节点会话目标/学习报告）、generate.cj（固定流水线：全库分批阅读→树形归纳→校验出处与层级；任务可取消、失败不落半成品；生成期间资料变化会被拒绝）、dev/course_fixture.cj（空目录专用夹具：内置本机 mock 模型 + 示例知识库，供检查用；真实模型检查只读专用副本配置）。
+  - 新表：course_maps / course_assets / course_slots / course_targets / course_jobs / course_files / course_events；知识库删除改为存档快照（CourseStore.removeKb），可恢复。
+  - API：完整 /api/course/* 家族（state/generate/job/cancel/map/publish/history/node/start/target/commit/attach-existing/resources/unlinked/resource/resource/action/resource/relocate/report/deleted-kbs/kb/restore），契约见 docs/02 新增章节。
+  - Lumin 工具 13 个：read_course_map、generate_course_map、publish_course_map、manage_course_node、list_course_resources、read_course_resource、manage_course_resource、get_course_progress、save_course_resource、cancel_course_map、list_course_history、attach_existing_course_resource、restore_course_library；get_learning_context 增加 courseTarget。
+  - 学·练页重做（coursemap.js/css）：上方工具栏（知识库选择/搜索/生成·重建/归档/回收站/历史导图）+ 铺满的思维导图（自绘 canvas，缩放/拖动/搜索定位）；点节点弹居中四资源弹窗（定制讲义/实操指南/分阶测试/在线演示，2×2，状态/主动作/更多），底部资料出处/编辑节点/标记学完/关联已有资源；“资料有更新”只提示不自动重建；重建先预览候选再确认切换，旧资源归档待关联。
+  - 生成入口走节点会话：服务端保存 kb/map/node/kind 目标（course/target），客户端切换知识库也覆盖不了；候选必须经确认（course/commit，含 expectedResourceId 并发校验）才成为当前资源，旧版归档；回收站恢复、恢复即交换、学习证据不重复计分。
+  - 我的成长页重做（coursemap.js PAGES.report）：接着学什么/各节点真实证据/学习记录时间线/我的目标与记忆；不再合成掌握度分数。
+  - personal_tools.save_personal_resource 在节点会话内改为走 course/commit；workbench.js 按钮文案区分“加入我的学习资源”。
+- 本次接手复核（不是转述）：
+  - `cjpm build` 通过；核心单测 **151/151**（含 course_test.cj 新增套件）。
+  - `node tools/course-check.cjs` **56/56**（真内核+仓颉夹具+mock 模型+真 HTTP+Playwright：四类资源全流程、替换归档、删除保图、回收站恢复、重建候选/切换、过期会话拒绝、知识库移除与恢复、进程重启后关系保持、130% 页面缩放弹窗、无浏览器异常）。
+  - 真实模型证据沿用实施轮日志 tmp/course-real.log：mimo-v2.6-flash、隔离目录，8/8、约275秒（含一次讲义质检未过自动重生成且未收录未通过版本）；本轮未重复消耗真实模型额度。
+  - 兼容性回归（0.8.11 内核）：course 56、knowledge 92、knowledge-hit 281、session-list 10、markdown 14、nonchat 25、session-switch 12、learning 92（含 workbench-ui 新学·练断言）、personal 23、presentation 9、deck-export、palette 14、stop 13、attachments 16、splash 7、tray 4、busy-caret 6、kb-general、text-menu 6、glass-shot、scrollbar、panel-sticky 3、docx、skill-check 全部通过。
+  - 发现并记录一个仓库卫生问题：tools/harvest-check.cjs 自 0.8.4 起引用已删除的旧首页 .graph-card/.graph-canvas 与旧导航文案，从未纳入标准回归因此长期未暴露；不在 0.8.11 范围内修复，已在本 TRACE 标注，后续更新到当前 UI 或裁剪过时段落。
+- 发布：0.8.10→0.8.11；dist/Lumin-0.8.11 + zip（190.2MB）；资产清单扩到 **11 项**（+coursemap.js/css），逐项 SHA256 BAD=0；隔离冒烟 RESULT=OK（Lumin 0.8.11 · 已连接）；启动Lumin.cmd 指向 0.8.11。
+- 后续（下一阶段，用户新要求）：补“学·练资源单独打开页”（参考网页版 CourseResourcePlayer/SlidePlayer 设计，含交互导学=ppt）；对对话页/知识网络/学·练做对抗式测试并修正不合理处。
