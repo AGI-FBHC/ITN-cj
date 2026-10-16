@@ -580,24 +580,25 @@ const freePort = () => new Promise((res, rej) => {
     await page.waitForFunction(() => !state.busyTurn, null, { timeout: 90000 });
     await sleep(900);
     const sidBefore = await page.evaluate(() => state.chatSessionId);
-    /* 会话树（同一会话内的分叉）：气泡下那枚"从这一轮开分支"发出去之后，
-       当前线只看得到新问法、原线一字不动，气泡下面出现 ‹ n/m › 并且切得回去。 */
+    /* 会话树（同一会话内的分叉）：用户气泡上的分支入口已按用户要求移除，
+       改从"改这条重发 → 另开分支再发"进入；分出去后原线一字不动，
+       气泡下面出现 ‹ n/m › 并且切得回去。 */
     const treeBefore = await page.evaluate(() => state.chatTurns.map((t) => t.user));
     if (treeBefore.length < 2) throw new Error('会话树断言需要至少两轮，实际 ' + treeBefore.length);
-    await page.locator('#chat-thread .turn-block').first().locator('.msg-user .msg-meta .msg-icon-btn').nth(1).click();
-    await sleep(500);
-    if (!(await page.locator('.split-hint:not([hidden])').count())) throw new Error('点开分支后应当出现「待分叉」提示条');
-    await page.locator('#chat-input').fill('分叉线的新问法');
-    await page.locator('.composer-send').click();
-    await page.waitForFunction(() => !state.busyTurn, null, { timeout: 90000 });
+    const lastBlock = page.locator('#chat-thread .turn-block').last();
+    await lastBlock.locator('.msg-user .msg-meta .msg-icon-btn').last().click();
+    await page.waitForSelector('.bubble-edit', { timeout: 5000 });
+    await page.fill('.bubble-edit', '分叉线的新问法');
+    await page.getByRole('button', { name: '另开分支再发', exact: true }).click();
+    await page.waitForFunction((want) => state.chatTurns.some((t) => t.user === want) && !state.busyTurn, '分叉线的新问法', { timeout: 90000 });
     await sleep(1200);
     const treeAfter = await page.evaluate(() => ({
       turns: state.chatTurns.map((t) => t.user),
       rows: document.querySelectorAll('#chat-thread .branch-switch').length,
       label: ((document.querySelector('#chat-thread .branch-switch') || {}).innerText || '').replace(/\s+/g, ''),
     }));
-    if (treeAfter.turns.length !== 1 || treeAfter.turns[0] !== '分叉线的新问法') {
-      throw new Error('分叉之后当前线应当只剩新问法，实际 ' + JSON.stringify(treeAfter.turns));
+    if (treeAfter.turns.length !== 2 || treeAfter.turns[1] !== '分叉线的新问法') {
+      throw new Error('分叉之后当前线应当是新问法（继承第一轮），实际 ' + JSON.stringify(treeAfter.turns));
     }
     if (!treeAfter.rows) throw new Error('分叉之后气泡下面应当出现 ‹ n/m › 切换行（渲染指纹踩过坑）');
     if (treeAfter.label !== '‹2/2›') throw new Error('切换行应当是 ‹ 2/2 ›，实际 ' + treeAfter.label);

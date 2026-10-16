@@ -1,0 +1,32 @@
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net'),{spawn}=require('node:child_process');
+const {chromium}=require(process.env.ITN_PLAYWRIGHT_DIR?path.join(process.env.ITN_PLAYWRIGHT_DIR,'playwright'):'D:/Desktop/ITN/ITN/src/frontend/agent-demo/node_modules/playwright');
+const root=path.resolve(__dirname,'..'),sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function freePort(){const s=net.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p;}
+(async()=>{const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lumin-sticky-'));
+ const mp=await freePort();const mock=spawn('python',[path.join(root,'tools/mock-openai/server.py'),String(mp)],{windowsHide:true,stdio:'ignore',env:{...process.env,ITN_MOCK_CHUNK_DELAY_MS:'0'}});
+ const portFile=path.join(dir,'port');const core=spawn(path.join(root,'dist/core/itn-desktop-core.exe'),['--data-dir='+dir,'--port-file='+portFile,'--ui-dir='+path.join(root,'shell/renderer')],{windowsHide:true,stdio:'ignore'});let browser,passed=0;
+ const check=(n,b)=>{if(!b)throw Error(n);passed++;console.log('PASS '+n);};
+ try{for(let i=0;i<100&&!fs.existsSync(portFile);i++)await sleep(100);const base='http://127.0.0.1:'+fs.readFileSync(portFile,'utf8').trim();
+  const post=async(u,b)=>{const r=await fetch(base+u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});const j=await r.json();if(j.code!==0)throw Error(u+': '+j.message);return j.data;};
+  await post('/api/models/save',{id:'mock',name:'m',baseUrl:'http://127.0.0.1:'+mp+'/v1',apiKey:'k',model:'mock'});
+  await post('/api/models/roles',{chatModelId:'mock'});
+  for(let i=0;i<14;i++){const sid=(await post('/api/sessions/new',{})).sessionId;await post('/api/agent/ask-pi',{sessionId:sid,question:'第 '+i+' 个会话的测试消息',web:'off'});}
+  browser=await chromium.launch({channel:'msedge',headless:true});
+  const page=await browser.newPage({viewport:{width:1280,height:760}});
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(base);await page.waitForSelector('#rail-search');
+  await page.waitForFunction(()=>!document.getElementById('boot'),null,{timeout:15000}).catch(()=>{});
+  await page.waitForTimeout(300);
+  const style=await page.evaluate(()=>{const s=document.querySelector('#rail-search');return {pos:getComputedStyle(s).position,bg:getComputedStyle(s).backgroundColor};});
+  check('chat rail search is sticky',style.pos==='sticky');
+  await page.evaluate(async()=>{for(const b of [...document.querySelectorAll('.rail-more')]){b.click();await new Promise(r=>setTimeout(r,120));}});
+  await page.waitForTimeout(300);
+  const before=await page.evaluate(()=>Math.round(document.querySelector('#rail-search').getBoundingClientRect().top));
+  await page.evaluate(()=>{document.querySelector('#panel-body').scrollTop=500;});
+  await page.waitForTimeout(250);
+  const after=await page.evaluate(()=>({top:Math.round(document.querySelector('#rail-search').getBoundingClientRect().top),scrolled:document.querySelector('#panel-body').scrollTop}));
+  check('search stays pinned at the top while the list scrolls',after.scrolled>100&&Math.abs(after.top-before)<=2);
+  await page.evaluate(()=>{document.querySelector('#panel-body').scrollTop=0;});
+  check('no JavaScript errors',errors.length===0);
+  console.log('RESULT '+passed+' passed; '+dir);
+ }finally{if(browser)await browser.close();core.kill();mock.kill();}})().catch(e=>{console.error(e);process.exitCode=1;});

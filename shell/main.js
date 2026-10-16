@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell, Menu, nativeImage } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell, Menu, nativeImage, Tray, nativeTheme } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
@@ -55,6 +55,9 @@ function openThreadFromArgs(args) {
 
 let win = null;
 let kernel = null;
+let tray = null;
+let quitting = false;
+let trayHintShown = false;
 
 /** 开发期用 dist/core，打包后用 resources/kernel。 */
 function kernelPath() {
@@ -179,9 +182,41 @@ async function startKernel() {
   return await waitForPort(portFile, 20000);
 }
 
+/**
+ * 托盘：关掉窗口不退出，Lumin 留在右下角；点托盘图标就回来。
+ * --smoke 不建托盘（自检会连续起进程，别在任务栏留一堆图标）。
+ */
+function createTray() {
+  if (tray || SMOKE) return;
+  try {
+    const image = nativeImage.createFromPath(path.join(__dirname, "assets", "logo.png"));
+    tray = new Tray(image.resize({ width: 16, height: 16 }));
+    tray.setToolTip("Lumin");
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: "打开 Lumin", click: () => showMainWindow() },
+      { type: "separator" },
+      { label: "退出", click: () => { quitting = true; app.quit(); } },
+    ]));
+    tray.on("click", () => showMainWindow());
+    tray.on("double-click", () => showMainWindow());
+    if (process.env.LUMIN_TRAY_TEST === "1") { global.__luminTray = tray; global.__luminShowWindow = showMainWindow; }
+  } catch (e) {
+    console.log("TRAY_FAIL " + ((e && e.message) || e));
+  }
+}
+
+function showMainWindow() {
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
 async function createWindow() {
   win = new BrowserWindow({
-    show: !process.argv.includes("--ui-check"),
+    // 先不显示：等启动动画页真正画出来（ready-to-show）再亮窗口 ——
+    // 否则会先看到一段白/空窗口，就是用户说的"动画出现前卡一下"。
+    show: false,
     width: 1180,
     height: 780,
     minWidth: 900,
@@ -191,7 +226,7 @@ async function createWindow() {
     // 自绘标题栏：Electron 的 frame:false 会把系统标题栏整条去掉，
     // 界面自己在顶部画一条深绿色的框（brand + 窗口按钮），看起来才是"一个软件"。
     frame: false,
-    backgroundColor: "#ffffff",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#141614" : "#ffffff",
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -199,6 +234,15 @@ async function createWindow() {
     },
   });
   if (win.removeMenu) win.removeMenu();
+  let winShown = false;
+  const showWindowNow = () => {
+    if (winShown || process.argv.includes("--ui-check")) return;
+    winShown = true;
+    if (win && !win.isDestroyed()) win.show();
+  };
+  win.once("ready-to-show", showWindowNow);
+  setTimeout(showWindowNow, 3000);   // 兜底：万一 ready-to-show 没来，3 秒后照常显示
+  createTray();
   /* 先把启动动画放出来，再去等内核：仓颉内核冷启动要一两秒，这段时间不该只有一个空窗口。
      动画页在 renderer/splash.html（透明底 logo 的呼吸 + 光影扫过），内核起来后整页切到应用。
      --smoke 跳过动画页：冒烟脚本的 did-finish-load 检查只认应用页。 */
@@ -430,6 +474,18 @@ async function createWindow() {
   win.on("maximize", pushWindowState);
   win.on("unmaximize", pushWindowState);
 
+  /* 点右上角 × 只是把窗口收进托盘：任务继续在本地跑，点托盘图标就回来。
+     真正的退出走托盘菜单"退出"/应用退出流程（before-quit 里把 quitting 置位）。 */
+  win.on("close", (event) => {
+    if (SMOKE || quitting) return;
+    event.preventDefault();
+    win.hide();
+    if (tray && !trayHintShown && process.env.LUMIN_TRAY_TEST !== "1") {
+      trayHintShown = true;
+      try { tray.displayBalloon({ title: "Lumin 在后台待命", content: "点右下角托盘图标就能回到应用。" }); } catch (e) { /* 系统不支持气球提示就算了 */ }
+    }
+  });
+
   win.webContents.on("did-fail-load", (_e, code, desc) => {
     console.log("SMOKE_LOAD_FAIL " + code + " " + desc);
     if (SMOKE) app.quit();
@@ -506,14 +562,15 @@ if (!SMOKE) {
   if (!gotLock) {
     app.quit();
   } else {
-    app.on("second-instance", (_e, argv) => { openThreadFromArgs(argv); });
+    app.on("second-instance", (_e, argv) => { openThreadFromArgs(argv); showMainWindow(); });
   }
 }
 /* macOS 的链接走 open-url 事件（Windows/Linux 走 argv） */
 app.on("open-url", (e, url) => { e.preventDefault(); openThreadFromArgs([url]); });
 
 app.whenReady().then(createWindow);
-app.on("window-all-closed", () => app.quit());
+app.on("window-all-closed", () => { if (quitting) app.quit(); });
 app.on("before-quit", () => {
+  quitting = true;
   if (kernel) { try { kernel.kill(); } catch (e) { /* ignore */ } }
 });

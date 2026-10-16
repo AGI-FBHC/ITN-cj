@@ -162,7 +162,8 @@ const ICONS = {
   pin: "M9 3h6l-.8 5.2 3.3 3.3v1.7H13v4.6l-1 2.2-1-2.2v-4.6H6.5v-1.7l3.3-3.3z",
   close: "M6 6l12 12M18 6L6 18",
   copy: "M9 9h11v11H9zM5 15V4h11",
-  branch: "M7 4v10a3 3 0 0 0 3 3h8M18 14l3 3-3 3M7 4a2 2 0 1 1 0 0",
+  // 会话分支：照着 Codex 的图标画 —— 一条从左中拐向右上的箭头 + 一条右下斜箭头
+  branch: '<path d="M3.8 13.1h4.3a3.3 3.3 0 0 0 2.3-1l6.3-6.3"/><path d="M11.6 5.8h5.1v5.1"/><path d="M13.9 14.3l4.4 4.4"/><path d="M13.9 18.7h4.4v-4.4"/>',
   code: "M9 8l-4 4 4 4M15 8l4 4-4 4",
   pencil: "M4 20h4L20 8l-4-4L4 16z",
   // 看差异（改了哪几行）：一条竖分隔 + 加号 / 减号
@@ -4422,6 +4423,9 @@ function paletteItemMain(label, sub, kind, run) {
   return { label: label, sub: sub || "", kind: kind || "", run: run, group: "" };
 }
 
+/* 每一类结果配一枚小图标（和左侧栏同一套图标语言） */
+const PALETTE_ICON = { "对话": "chat", "生成": "plus", "章节": "book", "笔记": "note", "产物": "layers", "资料": "db", "提示": "alert" };
+
 async function runPaletteSearch(raw) {
   const q = String(raw || "").trim();
   const lower = q.toLowerCase();
@@ -4511,17 +4515,28 @@ function renderPaletteList() {
   const list = root.querySelector(".palette-list");
   if (!list) return;
   list.innerHTML = "";
+  const countEl = root.querySelector(".palette-count");
+  if (countEl) countEl.textContent = palette.items.length ? palette.items.length + " 条结果" : "";
   if (!palette.items.length) {
-    list.appendChild(el("div", "palette-empty", palette.query ? "没有匹配的内容" : "输入关键词：资料切片、章节、笔记、产物都会一起找"));
+    const empty = el("div", "palette-empty");
+    empty.innerHTML = icon("search");
+    empty.appendChild(el("span", null, palette.query ? "没有匹配的内容，换个关键词试试" : "输入关键词：资料切片、章节、笔记、产物都会一起找"));
+    list.appendChild(empty);
     return;
   }
   let lastGroup = "";
   palette.items.forEach((it, i) => {
     if (it.group !== lastGroup) {
       lastGroup = it.group;
-      list.appendChild(el("div", "palette-group-title", it.group));
+      const head = el("div", "palette-group-title");
+      head.appendChild(el("span", null, it.group));
+      head.appendChild(el("span", "palette-group-count", String(palette.items.filter((x) => x.group === it.group).length)));
+      list.appendChild(head);
     }
     const b = el("button", "palette-item" + (i === palette.active ? " active" : ""));
+    const mark = el("span", "pi-icon");
+    mark.innerHTML = icon(PALETTE_ICON[it.kind] || "search");
+    b.appendChild(mark);
     const main = el("div", "pi-main");
     main.appendChild(el("div", "pi-label", it.label));
     if (it.sub) main.appendChild(el("div", "pi-sub", it.sub));
@@ -4566,15 +4581,22 @@ async function openPalette() {
 
   const box = el("div", "palette-box");
   const head = el("div", "palette-head");
+  const search = el("div", "palette-search");
+  const lead = el("span", "palette-lead");
+  lead.innerHTML = icon("search");
+  search.appendChild(lead);
   const input = el("input", "palette-input");
   input.id = "palette-input";
   input.placeholder = "找资料切片、章节、笔记、产物，或者直接问助手…";
-  head.appendChild(input);
-  const tip = el("div", "palette-tip");
-  tip.innerHTML = "<kbd>↑</kbd><kbd>↓</kbd> 选择 · <kbd>Enter</kbd> 打开 · <kbd>Esc</kbd> 关闭";
-  head.appendChild(tip);
+  search.appendChild(input);
+  search.appendChild(el("span", "palette-esc", "Esc"));
+  head.appendChild(search);
   box.appendChild(head);
   box.appendChild(el("div", "palette-list"));
+  const foot = el("div", "palette-foot");
+  foot.appendChild(el("span", "palette-hint", "↑↓ 选择 · Enter 打开"));
+  foot.appendChild(el("span", "palette-count", ""));
+  box.appendChild(foot);
   root.appendChild(box);
 
   input.oninput = () => {
@@ -5711,9 +5733,10 @@ function projectMenu(project, key) {
   trigger.setAttribute("aria-label", "项目操作");
   trigger.innerHTML = icon("dots");
   const item = (label, ic, cls, fn) => {
-    const b = el("button", cls || "", "");
+    /* 别漏 rail-menu-item：图标尺寸、行高、hover 全在这个类里（漏了就会出现巨型图标） */
+    const b = el("button", "rail-menu-item" + (cls ? " " + cls : ""), "");
     b.type = "button";
-    b.innerHTML = icon(ic || "chevron") + "<span>" + esc(label) + "</span>";
+    b.innerHTML = icon(ic || "chevron") + '<span class="rail-menu-main">' + esc(label) + "</span>";
     b.onclick = (ev) => { ev.stopPropagation(); closePopover(); fn(); };
     return b;
   };
@@ -5752,7 +5775,7 @@ function projectMenu(project, key) {
         } catch (e) { toast("失败：" + e.message); }
       }));
     }
-    }, { side: "left", cls: "project-menu" });
+    }, { side: "panel", cls: "project-menu" });
   };
   wrap.appendChild(trigger);
   return wrap;
@@ -5914,7 +5937,7 @@ function sessionRowMenu(s, rowEl) {
       menu.appendChild(item("重命名…", "", () => renameSessionDialog(s)));
       menu.appendChild(item("移到项目…", "", () => moveSessionDialog(s)));
       menu.appendChild(item("删除…", "danger", () => deleteSessionDialog(s)));
-    }, { side: "left", cls: "session-menu" });
+    }, { cls: "session-menu" });
   };
   wrap.appendChild(trigger);
   return wrap;
@@ -6270,8 +6293,6 @@ function msgMeta(opts) {
   const icons = [];
   if (opts.onCopy) icons.push(iconBtn("复制", "copy", opts.onCopy));
   if (opts.onBranch) icons.push(iconBtn("从这里开分支", "branch", opts.onBranch));
-  // 会话内分支（原线保留、可以切回来）——与"复制成新会话"那条不同，文案要说清
-  if (opts.onSplit) icons.push(iconBtn("从这一轮开分支（同一会话内，原线保留）", "branch", opts.onSplit));
   if (opts.onRaw) icons.push(opts.onRaw);
   if (opts.onEdit) icons.push(iconBtn("改这条重发", "pencil", opts.onEdit));
   if (opts.side === "user") {
@@ -6303,7 +6324,6 @@ function renderTurnBlock(t, live) {
         side: "user",
         at: t.userAt,
         onCopy: () => copyText(t.user),
-        onSplit: (t.id && t.id !== "local") ? () => splitFromTurn(t) : null,
         onEdit: canEdit ? () => editTurnInline(t, box) : null,
       }));
       // 这一轮要是"同一分叉点上的几兄弟"之一，气泡下面给 ‹ n/m ›（会话树）
@@ -6889,15 +6909,21 @@ PAGES.chat = {
       permChip.title = (PERM_HINT[m] || "") + "\\n工作目录：" + (sessionWorkDir().path || "");
     };
     paintPermChip();
-    state.chatRepaintChips = () => { paintPermChip(); };
+    state.chatRepaintChips = () => { paintPermChip(); paintModelChip(); };
     crow.appendChild(permChip);
     crow.appendChild(spacer());
 
-    /* 模型：一行小字，贴在发送键左边（用户要求：模型靠右、就放在发送键旁边） */
-    const modelText = el("button", "composer-model", modelLabel(state.cfg.chatModelId) || "未配置模型");
+    /* 模型：一枚安静的 chip（圆点 + 模型名 + 下拉标），贴在发送键左边；点开直接切换 */
+    const modelText = el("button", "composer-model", "");
     modelText.type = "button";
-    modelText.title = "当前对话模型（点一下去设置里改）";
-    modelText.onclick = () => go("settings", "models");
+    modelText.title = "当前对话模型 · 点击切换";
+    const paintModelChip = () => {
+      const name = modelLabel(state.cfg.chatModelId) || "未配置模型";
+      modelText.innerHTML = '<span class="cm-dot"></span><span class="cm-name">' + esc(name) + "</span>" + icon("chevron");
+      modelText.dataset.model = state.cfg.chatModelId || "";
+    };
+    paintModelChip();
+    modelText.onclick = (ev) => { ev.stopPropagation(); openMenu("model"); };
     /* 上一轮的 token 用量：这是用户判断"上下文是不是快满了"的唯一依据
        （pi 的 TUI 也在页脚显示同一个数）。没有数据就不显示，不写 0 糊弄人。 */
     const usageText = el("span", "composer-usage", "");
@@ -6998,6 +7024,44 @@ PAGES.chat = {
       /* 工作目录不是"权限"，不放进这个菜单；常规对话现在也总有一个默认目录，所以不再给这行提示。 */
       menu.appendChild(permBox);
 
+      /* 模型：点聊天框那枚 chip 打开；列出所有已配置的模型，选中即切换。 */
+      const modelBox = el("div", "cm-model");
+      modelBox.hidden = true;
+      const modelHead = el("div", "cm-perm-head");
+      modelHead.appendChild(el("span", "cm-perm-title", "用哪个模型来对话？"));
+      const modelMore = el("button", "cm-perm-more", "管理模型");
+      modelMore.type = "button";
+      modelMore.onclick = () => { closeMenu(); go("settings", "models"); };
+      modelHead.appendChild(modelMore);
+      modelBox.appendChild(modelHead);
+      const pickModels = state.cfg.models || [];
+      if (!pickModels.length) {
+        modelBox.appendChild(el("div", "cm-hint", "还没有配置模型：设置 → 模型与接口"));
+      }
+      for (const m of pickModels) {
+        const b = el("button", "composer-menu-item cm-model-item");
+        b.type = "button";
+        b.dataset.model = m.id;
+        b.innerHTML = icon("sliders") +
+          '<span class="cm-text"><span class="cm-label">' + esc(m.name || m.id) + "</span>" +
+          '<span class="cm-hint">' + esc(m.model || "") + "</span></span>" +
+          '<span class="cm-check">' + icon("check") + "</span>";
+        b.onclick = async () => {
+          closeMenu();
+          try {
+            await api("/api/models/roles", { chatModelId: m.id, embedModelId: state.cfg.embedModelId, chunkModelId: state.cfg.chunkModelId });
+            await loadCfg();
+            paintModelChip();
+            state.chatRepaintChips();
+            toast("对话模型已切到「" + (m.name || m.id) + "」");
+          } catch (e) {
+            toast("切换失败：" + e.message);
+          }
+        };
+        modelBox.appendChild(b);
+      }
+      menu.appendChild(modelBox);
+
       /* 附件：＋ 的那一块。把本机文件/文件夹的路径交给这一轮（路径进输入框，发出去之后
          Lumin 会自己用 read/ls 去读；不复制、不改动你的文件）。 */
       const attachBox = el("div", "cm-attach");
@@ -7082,6 +7146,13 @@ PAGES.chat = {
         pf.hidden = mode !== "perm";
         for (const b of pf.querySelectorAll(".cm-perm-item")) {
           b.classList.toggle("active", b.dataset.perm === (state.cfg.agentPerm || "auto"));
+        }
+      }
+      const mb = menu.querySelector(".cm-model");
+      if (mb) {
+        mb.hidden = mode !== "model";
+        for (const b of mb.querySelectorAll(".cm-model-item")) {
+          b.classList.toggle("active", b.dataset.model === state.cfg.chatModelId);
         }
       }
     };
