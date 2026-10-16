@@ -3039,3 +3039,39 @@ html[data-theme="dark"] .composer {
   flex: 1;
   min-width: 0;
 }
+/* Non-chat workspaces: preserve the shared glass surfaces, give content the hierarchy. */
+.setup-banner, .library-toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.setup-banner { padding:14px 20px; }
+.study-continue .continue-title { font-size:calc(25px * var(--fs)); line-height:1.4; margin:12px 0; text-wrap:balance; }
+.study-continue .bar { margin:20px 0; max-width:640px; }
+.home-summary { margin:8px 4px 18px; }
+.home-network > summary, .library-info > summary { cursor:pointer; font-weight:600; padding:4px 0; }
+.home-network > .card { margin-top:18px; box-shadow:none; }
+.library-toolbar { margin:22px 2px 14px; }
+.library-toolbar h2 { margin:0; font-size:calc(18px * var(--fs)); }
+.library-search .row input, .library-documents .row input { min-width:160px; }
+.library-results:not(:empty) { margin-top:18px; }
+.library-add { position:relative; }
+.library-add > summary { list-style:none; cursor:pointer; }
+.library-add > summary::-webkit-details-marker { display:none; }
+.library-add-options { position:absolute; right:0; top:calc(100% + 8px); z-index:20; min-width:220px; display:grid; gap:6px; padding:10px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); }
+.library-documents { padding:18px 22px; }
+.library-document { display:flex; align-items:center; gap:14px; padding:16px 0; }
+.library-document .grow { min-width:0; }
+.library-document h3 { margin:0 0 4px; overflow-wrap:anywhere; }
+.library-document p { margin:4px 0; }
+.library-path { overflow-wrap:anywhere; }
+.library-document .file-icon { flex-shrink:0; }
+.library-preview:empty { display:none; }
+.document-preview h2 { overflow-wrap:anywhere; }
+.preview-chunk { padding:14px 0; border-bottom:1px solid var(--line-soft); }
+.library-info p { margin:14px 0; }
+.library-info .path-line { overflow-wrap:anywhere; }
+.library-info .row { margin-top:16px; }
+.library-add > summary:focus-visible, .library-info > summary:focus-visible, .home-network > summary:focus-visible { outline:2px solid var(--ok); outline-offset:4px; }
+@media (max-width:1100px) {
+  .library-document { flex-wrap:wrap; }
+  .library-document .grow { flex-basis:calc(100% - 64px); }
+  .library-document > .tag { margin-left:52px; }
+  .library-document .btn { min-height:36px; }
+}

@@ -573,12 +573,36 @@ public class Api {
                                 docChunks[c.docPath] = docChunks[c.docPath] + 1
                                 docImages[c.docPath] = docImages[c.docPath] + c.images.size
                             }
+                            // Scan supported sources once; previews remain database snapshots.
+                            let sourceSizes = HashMap<String, Int64>()
+                            var sourceReadable = false
+                            try {
+                                if (exists(kb.rootDir)) {
+                                    let report = ScanReport()
+                                    for (d in scanDocsReport(kb.rootDir, report)) {
+                                        sourceSizes[d.relPath] = fileSizeOf(d.fullPath)
+                                        if (!docChunks.contains(d.relPath)) {
+                                            docOrder.add(d.relPath)
+                                            docChunks[d.relPath] = 0
+                                            docImages[d.relPath] = 0
+                                            docTitles[d.relPath] = d.title
+                                        }
+                                    }
+                                    sourceReadable = true
+                                }
+                            } catch (_: Exception) { () }
                             for (dp in docOrder) {
                                 let one = JsonObject()
                                 one.put("path", JsonString(dp))
                                 one.put("title", JsonString(docTitles[dp]))
                                 one.put("chunks", JsonInt(docChunks[dp]))
                                 one.put("images", JsonInt(docImages[dp]))
+                                one.put("sizeBytes", JsonInt(if (sourceSizes.contains(dp)) { sourceSizes[dp] } else { -1 }))
+                                one.put("preparedAt", JsonString(if (docChunks[dp] > 0) { kb.builtAt } else { "" }))
+                                let status = if (!sourceReadable) { "unknown" } else if (!sourceSizes.contains(dp)) {
+                                    "missing"
+                                } else if (docChunks[dp] == 0) { "pending" } else { "ready" }
+                                one.put("status", JsonString(status))
                                 docsArr.add(one)
                             }
                             o.put("docs", docsArr)
@@ -594,6 +618,49 @@ public class Api {
                             ok(ctx, o)
                         case None => fail(ctx, 404, "找不到知识库：" + id)
                     }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/kb/document" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let id = strOf(b, "id")
+                    let dp = strOf(b, "path")
+                    let offset = intOf(b, "offset")
+                    var limit: Int64 = 12
+                    if (b.get("limit").isSome()) { limit = intOf(b, "limit") }
+                    if (offset < 0 || limit < 1 || limit > 24) {
+                        fail(ctx, 400, "分页范围不正确")
+                        return
+                    }
+                    if (store.load().findKb(id).isNone()) {
+                        fail(ctx, 404, "找不到资料库")
+                        return
+                    }
+                    let chunks = ArrayList<KbChunk>()
+                    for (c in loadIndexCached(store.dataDir, id).chunks) {
+                        if (c.docPath == dp) { chunks.add(c) }
+                    }
+                    if (chunks.size == 0) {
+                        fail(ctx, 404, "这篇资料还没有准备好的内容")
+                        return
+                    }
+                    let o = JsonObject()
+                    o.put("path", JsonString(dp))
+                    o.put("title", JsonString(chunks[0].docTitle))
+                    o.put("total", JsonInt(chunks.size))
+                    o.put("offset", JsonInt(offset))
+                    let arr = JsonArray()
+                    var i = offset
+                    while (i < chunks.size && i - offset < limit) {
+                        arr.add(chunkJson(chunks[i], 0.0))
+                        i += 1
+                    }
+                    o.put("nextOffset", JsonInt(if (i < chunks.size) { i } else { -1 }))
+                    o.put("chunks", arr)
+                    ok(ctx, o)
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
             return
@@ -2809,6 +2876,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/kb/delete",
         "/api/kb/build",
         "/api/kb/stats",
+        "/api/kb/document",
         "/api/kb/search",
         "/api/agent/ask",
         "/api/agent/ask-pi",

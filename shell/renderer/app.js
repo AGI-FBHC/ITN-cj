@@ -493,7 +493,7 @@ const RAIL_GROUPS = [
     // 笔记与错题本都是"自己攒下来的学习记录"，合成一个根；生成的产物另起一项
     { id: "notes", label: "我的资源", icon: "note" },
     { id: "resources", label: "个性化资源", icon: "layers" },
-    { id: "kb", label: "领域知识库", icon: "db" },
+    { id: "kb", label: "资料库", icon: "db" },
   ],
   // 对话与会话记录本来是同一件事的两面：会话栏就挂在对话页左侧。
   // 上一版把「会话记录」单列成一项，等于同一份数据两个入口，已经合并。
@@ -511,7 +511,7 @@ const PAGE_META = {
   report: { title: "我的成长", sub: "记录、能力画像与校准都在这一页" },
   calibrate: { title: "我的成长", sub: "校准" },
   resources: { title: "个性化资源", sub: "生成的讲义与练习，全部在本机" },
-  kb: { title: "领域知识库", sub: "检索资料，每一句都能追到原文" },
+  kb: { title: "资料库", sub: "找到资料、读原文，再开始学习" },
   chat: { title: "伴学助手", sub: "就你的资料提问" },
   sessions: { title: "全部会话", sub: "每段对话只追加地留了下来，可以回看" },
   models: { title: "模型与接口", sub: "填写自己的模型服务，统一 OpenAI 兼容格式" },
@@ -730,168 +730,59 @@ const PAGES = {};
 PAGES.home = {
   async render() {
     await loadOverview();
-    const v = $("view");
-    v.innerHTML = "";
-    const kbs = state.cfg.knowledgeBases;
-    const idx = indexedKb();
-
-    /* 第一屏：我是谁、现在该干什么 */
-    const hero = el("div", "card hero");
-    const main = el("div", "hero-main");
-    main.appendChild(el("h2", "hero-title",
-      (state.profile.nickname ? state.profile.nickname + "，" : "") + "今天从哪一段开始？"));
-    main.appendChild(el("p", "hero-sub", state.profile.goal
-      ? "学习目标：" + state.profile.goal + (state.profile.weeklyHours ? " · 每周可投入 " + state.profile.weeklyHours + " 小时" : "")
-      : "还没有学习目标。在设置里写一句，首页建议会跟着变。"));
-    /* 只留"会让人动手"的两三个标签：模型没配、资料没指定是警告，别的都是噪声 */
-    const chips = el("div", "meta");
-    if (!state.cfg.models.length) chips.appendChild(tag("未配置模型", "warn"));
-    if (!kbs.length) chips.appendChild(tag("未指定资料目录", "warn"));
-    if (state.cfg.models.length && kbs.length) {
-      chips.appendChild(tag("模型已就绪", "ok"));
-      chips.appendChild(tag("知识库 " + kbs.length + " 个"));
+    const v = $("view"); v.innerHTML = "";
+    const active = state.cfg.knowledgeBases.find(k => k.id === state.kb);
+    const ready = active && active.chunkCount > 0;
+    // Configuration is a prerequisite, asking/generating for the first time is not.
+    const missing = [];
+    if (!hasChatModel()) missing.push({text: "连接一个对话模型", act: "连接模型", go: () => go("models")});
+    if (!hasKb()) missing.push({text: "添加你的学习资料", act: "添加资料", go: () => go("settings", "kb")});
+    else if (!ready) missing.push({text: "准备当前资料库", act: "准备资料", go: () => go("kb")});
+    if (missing.length) {
+      const banner = el("div", "card setup-banner");
+      banner.appendChild(el("span", "grow", "开始前还差 " + missing.length + " 步 · " + missing[0].text));
+      banner.appendChild(btn(missing[0].act, "sm", missing[0].go)); v.appendChild(banner);
     }
-    main.appendChild(chips);
-    hero.appendChild(main);
-
-    const heroAct = el("div", "hero-actions");
-    if (!hasChatModel()) {
-      heroAct.appendChild(btn("配置模型接口", "primary", () => go("models")));
-      heroAct.appendChild(btn("先看看资料目录", "", () => go("settings", "kb")));
-    } else if (!idx) {
-      heroAct.appendChild(btn("建立知识库索引", "primary", () => go("settings", "kb")));
-      heroAct.appendChild(btn("先和助手聊聊", "", () => go("chat")));
-    } else {
-      heroAct.appendChild(btn("继续学习", "primary", () => continueStudy()));
-      heroAct.appendChild(btn("生成讲义", "", () => go("learn")));
-      heroAct.appendChild(btn("问助手", "", () => go("chat")));
+    let tree = null, treeError = "";
+    if (ready) try { tree = await api("/api/study/tree", {kbId: state.kb}); } catch(e) { treeError = e.message; }
+    const next = tree && ((tree.chapters || []).find(c => !c.done) || tree.chapters[0]);
+    const hero = cardOf({cls: "study-continue", title: "接着学", sub: active ? active.name : "从你的资料开始"});
+    hero.appendChild(el("h2", "continue-title", next ? next.name : treeError ? "章节暂时没能读取" : ready ? "这一轮已读完" : "先放进一份想学的资料"));
+    hero.appendChild(el("p", "muted", treeError || (next ? "已读 " + next.readCount + " / " + next.chunkCount + " 个内容片段 · 阅读进度会自动保存" : "选择本机文件或文件夹，准备好后就能按章节学习。")));
+    if (next) {
+      const bar = el("div", "bar"); bar.innerHTML = '<i style="width:' + pct(next.readCount, next.chunkCount) + '%"></i>'; hero.appendChild(bar);
     }
-    hero.appendChild(heroAct);
-    v.appendChild(hero);
-
-    /* 第二屏：首次使用清单 */
-    const steps = checklist();
-    const doneCount = steps.filter((s) => s.done).length;
-    if (doneCount === steps.length) {
-      const ok = cardOf({
-        title: "环境已就绪",
-        tag: doneCount + " / " + steps.length,
-        tagCls: "ok",
-        body: (() => {
-          const wrap = el("div");
-          wrap.appendChild(el("p", "muted", "五个环节都跑通了：模型、资料、索引、问答、产物。"));
-          const row = el("div", "row");
-          row.appendChild(btn("去学 · 练", "primary", () => go("learn")));
-          row.appendChild(btn("看我的资源", "", () => go("resources")));
-          wrap.appendChild(row);
-          return wrap;
-        })(),
-      });
-      v.appendChild(ok);
-    } else {
-      const body = el("div", "checklist");
-      // 一列五个绿按钮太吵：只有"现在就该做的那一步"用主色
-      const firstOpen = steps.filter((x) => !x.done)[0];
-      steps.forEach((s, i) => {
-        const item = el("div", "check-item" + (s.done ? " done" : ""));
-        item.appendChild(el("div", "idx", s.done ? "✓" : String(i + 1)));
-        const txt = el("div", "txt");
-        txt.appendChild(el("b", null, s.title));
-        txt.appendChild(el("span", null, s.text));
-        item.appendChild(txt);
-        if (!s.done) item.appendChild(btn(s.act, "sm" + (s === firstOpen ? " primary" : ""), s.go));
-        else item.appendChild(tag("已完成", "ok"));
-        body.appendChild(item);
-      });
-      v.appendChild(cardOf({
-        title: "开始使用（还剩 " + (steps.length - doneCount) + " 步）",
-        body,
-      }));
+    const actions = el("div", "row");
+    actions.appendChild(btn(next ? "继续学" : treeError ? "重新加载" : ready ? "挑选章节" : "添加与准备资料", "primary", () => {
+      if (treeError) { go("home"); return; }
+      if (next) state.chapter = next.name;
+      go(ready ? "learn" : "kb");
+    })); hero.appendChild(actions); v.appendChild(hero);
+    const suggestion = cardOf({title: "今日建议"});
+    suggestion.appendChild(el("p", "muted", next ? (next.done ? "已经读完了，可以做几道题检查理解，再把要点整理成讲义。" : "先读完「" + next.name + "」，再用练习检查理解。") : "准备资料后，这里会根据你的章节进度推荐下一步。"));
+    if (next) {
+      const row = el("div", "row");
+      row.appendChild(btn("出题练习", "", () => openQuiz(suggestion, next.name)));
+      row.appendChild(btn("生成讲义", "", () => askTopic("lecture", next.name))); suggestion.appendChild(row);
     }
-
-    /* 第三屏：今日建议 */
-    const sug = el("div", "card");
-    sug.innerHTML = '<div class="card-head"><h2>今日建议</h2><div class="spacer"></div><span class="card-sub">依据你的进度自动挑的下一章</span></div>';
-    if (!idx) {
-      sug.appendChild(emptyState({
-        art: "db",
-        title: hasKb() ? "知识库还没有索引" : "还没有可学的章节",
-        text: hasKb()
-          ? "「" + kbName(state.kb) + "」已登记目录但还没建索引，建立索引后才会出现章节。"
-          : "先指定一个本机资料目录并建立索引，这里就会出现章节进度和下一步动作。",
-        actions: [btn(hasKb() ? "去建立索引" : "去指定资料目录", "primary", () => go("settings", "kb")),
-                  btn("看看模型配置", "", () => go("models"))],
-      }));
-    } else {
-      try {
-        const tree = await api("/api/study/tree", { kbId: state.kb });
-        const next = (tree.chapters || []).find((c) => !c.done);
-        if (!next) {
-          sug.appendChild(emptyState({
-            art: "check",
-            title: "这一轮的章节都读完了",
-            text: "共计 " + tree.chapters.length + " 章 / " + tree.chunkCount + " 片。可以出题巩固，或者生成整章讲义沉淀下来。",
-            actions: [btn("出题巩固", "primary", () => openQuiz($("view"), (tree.chapters[0] || {}).name || "")),
-                      btn("挑一章生成讲义", "", () => go("learn")),
-                      btn("看我的资源", "", () => go("resources"))],
-          }));
-        } else {
-          const p = pct(next.readCount, next.chunkCount);
-          const box = el("div");
-          box.appendChild(el("div", "item-title", next.name));
-          box.appendChild(el("div", "meta", next.chunkCount + " 片 · " + next.sectionCount + " 个小节 · " + next.docCount + " 篇文档 · 已读 " + next.readCount + " 片"));
-          const bar = el("div", "bar");
-          bar.innerHTML = '<i style="width:' + p + '%"></i>';
-          box.appendChild(bar);
-          const row = el("div", "row");
-          row.style.marginTop = "12px";
-          row.appendChild(btn("继续学这一章", "primary", () => { state.chapter = next.name; go("learn"); }));
-          row.appendChild(btn("出题练习", "", () => openQuiz(box, next.name)));
-          row.appendChild(btn("生成讲义", "", () => askTopic("lecture", next.name)));
-          row.appendChild(btn("写一条笔记", "", () => openNoteEditor(null, state.kb, next.name)));
-          box.appendChild(row);
-          sug.appendChild(box);
-        }
-      } catch (e) {
-        sug.appendChild(emptyState({ art: "alert", title: "读取章节失败", text: e.message, actions: [btn("重试", "", () => go("home"))] }));
-      }
-    }
-    v.appendChild(sug);
-
-    /* 第三屏半：学习网络图（从真实学习状态算出来的，每次进首页重算） */
-    v.appendChild(await graphCard());
-
-    /* 第四屏：概览 + 最近产物 */
-    const r = state.report;
-    const grid = el("div", "grid grid-4");
-    // 统计卡点了要能去"改变这个数字的地方"，不是去报表页：读/完成 → 学 · 练，笔记/正确率 → 我的资源
-    grid.appendChild(statCard("已读切片", r.readChunks || 0, "", () => go("learn")));
-    grid.appendChild(statCard("完成章节", r.completedChapters || 0, "", () => go("learn")));
-    grid.appendChild(statCard("笔记", r.noteCount || 0, "条", () => openNotes()));
-    grid.appendChild(statCard("答题正确率", r.quizTotal ? pct(r.quizRight, r.quizTotal) : 0, "%", () => openWrong()));
-    v.appendChild(grid);
-
-    const recent = el("div", "card");
-    recent.innerHTML = '<div class="card-head"><h2>最近产物</h2><div class="spacer"></div><span class="card-sub">都在本机</span></div>';
-    if (!state.artifacts.length) {
-      recent.appendChild(emptyState({
-        inline: true,
-        art: "layers",
-        title: "还没有产物",
-        text: "在「学 · 练」里挑一章，点「生成讲义」或「生成练习册」，产出会出现在这里。",
-        actions: [btn("去生成", "primary", () => go("learn"))],
-      }));
-    } else {
-      const list = el("div", "list");
-      for (const a of state.artifacts.slice(0, 4)) {
-        list.appendChild(artifactItem(a, false));
-      }
-      recent.appendChild(list);
-      if (state.artifacts.length > 4) {
-        recent.appendChild(btn("查看全部 " + state.artifacts.length + " 份", "ghost sm", () => go("resources")));
-      }
-    }
+    v.appendChild(suggestion);
+    const recent = cardOf({title: "最近成果", actions: [btn("查看全部", "ghost sm", () => go("resources"))]});
+    try {
+      const all = (await api("/api/learning/resources", {})).resources || [];
+      const rows = all.slice().sort((a,b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || ""))).slice(0,3);
+      if (rows.length && typeof resourceCard === "function") {
+        const grid = el("div", "resource-grid"); rows.forEach(r => grid.appendChild(resourceCard(r))); recent.appendChild(grid);
+      } else if (state.artifacts.length) {
+        state.artifacts.slice(0,3).forEach(a => recent.appendChild(artifactItem(a, false)));
+      } else recent.appendChild(el("p", "muted", "还没有学习成果。在学 · 练中生成的讲义与练习会留在这里。"));
+    } catch(e) { recent.appendChild(el("p", "muted", "成果暂时没能读取：" + e.message)); }
     v.appendChild(recent);
+    const r = state.report;
+    v.appendChild(el("p", "home-summary muted sm", "累计阅读 " + (r.readChunks || 0) + " 个片段 · 完成 " + (r.completedChapters || 0) + " 章 · " + (r.noteCount || 0) + " 条笔记" + (r.quizTotal ? " · 答题正确率 " + pct(r.quizRight, r.quizTotal) + "%" : "")));
+    const network = el("details", "card home-network"); network.appendChild(el("summary", null, "看看知识之间的联系"));
+    let loaded = false;
+    network.ontoggle = async () => { if (network.open && !loaded) { loaded = true; try { network.appendChild(await graphCard()); } catch(e) { network.appendChild(el("p", "muted", e.message)); } } };
+    v.appendChild(network);
   },
 };
 
@@ -4987,166 +4878,103 @@ async function playChapter(chapter) {
 PAGES.kb = {
   async render() {
     await loadCfg();
-    const v = $("view");
-    v.innerHTML = "";
+    const v = $("view"); v.innerHTML = "";
     if (!hasKb()) {
-      v.appendChild(cardOf({
-        body: emptyState({
-          art: "db",
-          title: "还没有知识库",
-          text: "指定一个本机资料目录后，这里可以按关键词或向量检索，命中的每一段都能指回原文档位置。",
-          actions: [btn("去指定资料目录", "primary", () => go("settings", "kb"))],
-        }),
-      }));
-      return;
+      v.appendChild(cardOf({body: emptyState({art: "db", title: "把想学的资料放进来", text: "添加本机文件或文件夹，之后可以搜内容、读原文、按章节学习。支持 Markdown、文本与 CSV 等文本格式。", actions: [btn("添加资料", "primary", () => go("settings", "kb"))]})})); return;
     }
-
-    const k = state.cfg.knowledgeBases.find((x) => x.id === state.kb) || {};
-
-    /* 这个库里有什么（网页版那个"知识库详情抽屉"最主要的一块）：
-       统计 + 来源 + 未纳入 + 整理状态 + 文档清单，动作就三个（重建索引 / 让 Lumin 整理 / 去设置改）。 */
+    const id = state.kb;
+    const k = state.cfg.knowledgeBases.find(x => x.id === id) || {};
+    const search = cardOf({cls: "library-search", title: "搜资料", sub: "输入问题或关键词，找到有出处的内容"});
+    const row = el("div", "row");
+    const q = el("input", "grow"); q.placeholder = "例如：这份资料如何解释智能体？"; q.setAttribute("aria-label", "搜索资料内容");
+    const runButton = btn("搜索", "primary", () => run()); row.append(q, runButton); search.appendChild(row);
+    const out = el("div", "library-results"); out.setAttribute("aria-live", "polite"); search.appendChild(out); v.appendChild(search);
+    let searching = false;
+    async function run() {
+      if (searching) return;
+      const query = q.value.trim(); if (!query) { q.focus(); return; }
+      searching = true; runButton.disabled = true; out.setAttribute("aria-busy", "true"); out.textContent = "正在查找相关内容…";
+      try {
+        const d = await api("/api/kb/search", {id, query, topK: 6}); out.innerHTML = "";
+        out.appendChild(el("p", "muted sm", d.hits.length ? "找到 " + d.hits.length + " 段相关内容" : "没有找到相关内容，试试原文中的关键词，或检查资料是否已准备。"));
+        for (const h of d.hits) {
+          const item = el("div", "item"); item.appendChild(el("h3", "item-title", h.docTitle || h.docPath));
+          item.appendChild(el("p", "muted sm", h.headingPath || "资料正文"));
+          const body = el("div", "hit-body"); body.textContent = (h.text || "").slice(0, 280) + ((h.text || "").length > 280 ? "…" : ""); item.appendChild(body);
+          const acts = el("div", "row"); acts.append(btn("查看原文", "sm", e => preview(h.docPath, e.currentTarget)), btn("就这段提问", "sm ghost", () => askAboutChunk(h)), copyButton(() => h.text || "", "复制")); item.appendChild(acts); out.appendChild(item);
+        }
+      } catch(e) { out.textContent = "搜索失败：" + e.message + "。可以再次点击搜索重试。"; }
+      finally { searching = false; runButton.disabled = false; out.removeAttribute("aria-busy"); }
+    }
+    q.onkeydown = e => { if (e.key === "Enter" && !e.isComposing) run(); };
+    const toolbar = el("div", "library-toolbar"); toolbar.appendChild(el("h2", null, k.name || "我的资料")); toolbar.appendChild(spacer());
+    const add = el("details", "library-add"); add.appendChild(el("summary", "btn", "+ 添加资料"));
+    const options = el("div", "library-add-options"); options.append(btn("本机文件或文件夹", "ghost", () => go("settings", "kb")), btn("网页或 GitHub", "ghost", () => { harvest.open = true; harvest.scrollIntoView({block: "nearest"}); })); add.appendChild(options); toolbar.appendChild(add); v.appendChild(toolbar);
+    const listCard = cardOf({cls: "library-documents"});
+    const filters = el("div", "row");
+    const filter = el("input", "grow"); filter.placeholder = "按文档名称筛选"; filter.setAttribute("aria-label", "筛选文档名称");
+    const status = el("select"); status.setAttribute("aria-label", "筛选资料状态");
+    for (const [value, text] of [["", "全部状态"], ["ready", "已准备"], ["pending", "待准备"], ["missing", "原文件已移走"], ["unknown", "来源暂不可读"]]) { const o = el("option", null, text); o.value = value; status.appendChild(o); }
+    filters.append(filter, status); listCard.appendChild(filters);
+    const count = el("p", "muted sm"); count.setAttribute("aria-live", "polite"); listCard.appendChild(count);
+    const list = el("div", "list"); listCard.appendChild(list); v.appendChild(listCard);
+    const previewHost = el("section", "library-preview"); v.appendChild(previewHost);
     let st = null;
-    try { st = await api("/api/kb/stats", { id: state.kb }); } catch (e) { st = null; }
-    const info = cardOf({
-      title: k.name || state.kb,
-      tag: (k.chunkCount || 0) > 0 ? "已索引" : "未索引",
-      tagCls: (k.chunkCount || 0) > 0 ? "ok" : "warn",
-      actions: [
-        btn((k.chunkCount || 0) > 0 ? "重建索引" : "建立索引", "sm", () => buildIndex(k.id)),
-        btn("让 Lumin 整理", "sm", () => organizeKb(k.id)),
-        btn("设置里改", "sm ghost", () => go("settings", "kb")),
-      ],
-    });
-    const grid = el("div", "grid grid-4");
-    grid.appendChild(statCard("文档", k.docCount || 0, "篇"));
-    grid.appendChild(statCard("切片", k.chunkCount || 0, "片"));
-    grid.appendChild(statCard("图片", k.imageCount || 0, "张"));
-    grid.appendChild(statCard("建立时间", fmtStamp(k.builtAt) || "—", ""));
-    info.appendChild(grid);
-    const rows = [
-      ["来源", (k.sourcePath && k.sourcePath !== k.rootDir) ? k.sourcePath : (k.rootDir || "未设置目录")],
-      ["检索方式", state.cfg.embedModelId ? "向量 + 关键词" : "关键词（未绑向量模型）"],
-    ];
-    if (st && st.organizedBy) rows.push(["目录整理", "由 " + st.organizedBy + " 整理 · " + (st.outlineChapters || 0) + " 章" + (st.outlineNote ? "：" + st.outlineNote : "")]);
-    for (const [label, value] of rows) {
-      const line = el("div", "kv-line");
-      line.appendChild(el("span", "kv-key", label));
-      line.appendChild(el("span", "path-line grow", String(value)));
-      info.appendChild(line);
-    }
-    if (st && st.skippedSummary) {
-      info.appendChild(el("div", "skip-note", ""));
-      const last = info.querySelector(".skip-note");
-      last.appendChild(el("div", "skip-title", "没纳入 " + (st.skippedTotal || 0) + " 个文件：" + st.skippedSummary));
-    }
-    if (st && st.embedError) {
-      const w = el("div", "skip-note");
-      w.appendChild(el("div", "skip-title", "没开启向量检索，关键词检索照常"));
-      w.appendChild(el("div", "muted sm", "原因：" + shortReason(st.embedError)));
-      info.appendChild(w);
-    }
-    if (st && (st.docs || []).length) {
-      const det = el("details", "kb-docs");
-      const sum = el("summary", null, "文档 " + st.docs.length + " 篇（点开看清单）");
-      det.appendChild(sum);
-      const list = el("div", "list");
-      for (const d of st.docs) {
-        const it = el("div", "item");
-        const row = el("div", "row");
-        const main = el("div", "grow");
-        main.appendChild(el("div", "item-title", d.title || d.path));
-        main.appendChild(el("div", "meta", d.path + " · " + d.chunks + " 片" + (d.images ? " · " + d.images + " 张图" : "")));
-        row.appendChild(main);
-        it.appendChild(row);
-        list.appendChild(it);
-      }
-      det.appendChild(list);
-      info.appendChild(det);
-    }
-    v.appendChild(info);
-
-    const harvest = el("details", "card harvest-entry");
-    harvest.appendChild(el("summary", "item-title", "收集资料 · 网页 / GitHub"));
-    const harvestBody = el("div");
-    harvest.appendChild(harvestBody);
-    let harvestLoaded = false;
-    harvest.ontoggle = async () => {
-      if (harvest.open && !harvestLoaded) {
-        harvestLoaded = true;
-        await renderHarvest(harvestBody, true);
+    const labels = {ready: "已准备", pending: "待准备", missing: "原文件已移走", unknown: "来源暂不可读"};
+    const paint = () => {
+      list.innerHTML = "";
+      const docs = st.docs || [], rows = docs.filter(d => ((d.title || "") + " " + d.path).toLocaleLowerCase().includes(filter.value.toLocaleLowerCase()) && (!status.value || d.status === status.value));
+      count.textContent = "显示 " + rows.length + " / " + docs.length + " 篇资料";
+      if (!rows.length) list.appendChild(el("p", "muted", docs.length ? "没有匹配的文档，换个名称或状态试试。" : "还没有可读的资料。添加支持的文本文件后，点击准备资料。"));
+      for (const d of rows) {
+        const item = el("div", "item library-document"); const ic = el("div", "file-icon"); ic.innerHTML = icon("file"); item.appendChild(ic);
+        const main = el("div", "grow"); main.appendChild(el("h3", "item-title", d.title || d.path));
+        const meta = [d.sizeBytes >= 0 ? fmtSize(d.sizeBytes) : "大小暂不可用", d.chunks + " 个内容片段"];
+        main.appendChild(el("p", "meta", meta.join(" · "))); main.appendChild(el("p", "muted sm library-path", d.path)); item.appendChild(main);
+        item.appendChild(tag(labels[d.status] || "已准备", d.status === "ready" ? "ok" : "warn"));
+        const read = btn("看内容", "sm", e => preview(d.path, e.currentTarget)); read.disabled = !d.chunks; item.appendChild(read); list.appendChild(item);
       }
     };
-    v.appendChild(harvest);
-
-    const card = el("div", "card");
-    const head = el("div", "card-head");
-    head.appendChild(el("h2", null, "检索"));
-    head.appendChild(spacer());
-    head.appendChild(tag(state.cfg.embedModelId ? "向量 + 关键词" : "关键词检索（未绑向量模型）"));
-    card.appendChild(head);
-    const row = el("div", "row");
-    row.appendChild(kbSelector(null));
-    const q = el("input");
-    q.className = "grow";
-    q.placeholder = "输入关键词或问题，例如「什么是提示词」";
-    row.appendChild(q);
-    row.appendChild(btn("检索", "primary", () => run()));
-    card.appendChild(row);
-    const out = el("div");
-    out.style.marginTop = "14px";
-    card.appendChild(out);
-    v.appendChild(card);
-
-    async function run() {
-      const query = q.value.trim();
-      if (!query) { toast("先输入要检索的内容"); return; }
-      out.innerHTML = '<span class="spinner"></span> 检索中…';
-      try {
-        const d = await api("/api/kb/search", { id: state.kb, query: query, topK: 6 });
-        out.innerHTML = "";
-        out.appendChild(el("p", "muted sm", "命中 " + d.hits.length + " 段" + (d.mode ? " · " + d.mode + "检索" : "")));
-        if (!d.hits.length) {
-          out.appendChild(emptyState({
-            inline: true,
-            art: "search",
-            title: "没有命中",
-            text: "换一个更贴近资料原文的词试试；也可能是索引太旧了。",
-            actions: [btn("重建索引", "", () => buildIndex(state.kb)), btn("去学 · 练", "", () => go("learn"))],
-          }));
-          return;
-        }
-        const list = el("div", "list");
-        for (const h of d.hits) {
-          const it = el("div", "item");
-          it.appendChild(el("div", "item-title", "《" + (h.docTitle || "") + "》" + (h.headingPath ? " · " + h.headingPath : "")));
-          it.appendChild(el("div", "meta", h.docPath + " · 相关度 " + Number(h.score || 0).toFixed(3)));
-          const body = el("div", "hit-body");
-          body.innerHTML = md(h.text);
-          it.appendChild(body);
-          if (h.caption) it.appendChild(el("p", "caption-note", "图片说明：" + h.caption));
-          const acts = el("div", "row");
-          acts.appendChild(btn("就这段提问", "sm ghost", () => askAboutChunk(h)));
-          acts.appendChild(copyButton(() => h.text || "", "复制这段"));
-          it.appendChild(acts);
-          list.appendChild(it);
-        }
-        out.appendChild(list);
-      } catch (e) {
-        out.innerHTML = "";
-        out.appendChild(emptyState({
-          inline: true,
-          art: "alert",
-          title: "检索失败",
-          text: e.message,
-          actions: [btn("重建索引", "", () => buildIndex(state.kb)), btn("检查模型设置", "", () => go("models"))],
-        }));
+    const load = async () => {
+      list.textContent = "正在读取资料清单…";
+      try { st = await api("/api/kb/stats", {id}); paint(); }
+      catch(e) { list.innerHTML = ""; list.append(el("p", "muted", "清单读取失败：" + e.message), btn("重试", "sm", load)); }
+    };
+    filter.oninput = () => { if (st) paint(); }; status.onchange = () => { if (st) paint(); };
+    let previewRequest = 0;
+    async function preview(path, origin) {
+      const request = ++previewRequest; previewHost.innerHTML = "";
+      const box = cardOf({title: "资料原文", cls: "document-preview"}); previewHost.appendChild(box);
+      const close = btn("收起原文", "ghost sm", () => { ++previewRequest; previewHost.innerHTML = ""; origin?.focus(); }); box.querySelector(".card-head").appendChild(close);
+      box.appendChild(el("p", "muted sm", "这里展示上次准备资料时保存的内容，按片段顺序排列。"));
+      const content = el("div"); box.appendChild(content); const more = btn("加载更多", "sm", () => read()); box.appendChild(more);
+      let offset = 0;
+      async function read() {
+        more.disabled = true; more.textContent = "正在读取…";
+        try {
+          const d = await api("/api/kb/document", {id, path, offset, limit: 12}); if (request !== previewRequest) return;
+          box.querySelector("h2").textContent = d.title || "资料原文";
+          for (const c of d.chunks) { const item = el("article", "preview-chunk"); item.appendChild(el("p", "muted sm", c.headingPath || "正文")); const body = el("div", "md"); body.innerHTML = md(c.text); item.appendChild(body); content.appendChild(item); }
+          offset = d.nextOffset; more.hidden = offset < 0; more.textContent = "加载更多（共 " + d.total + " 个片段）";
+        } catch(e) { if (request !== previewRequest) return; more.textContent = "读取失败，点击重试"; toast(e.message); }
+        finally { more.disabled = false; }
       }
+      close.focus(); previewHost.scrollIntoView({block: "nearest"}); await read();
     }
-    q.onkeydown = (e) => { if (e.key === "Enter") run(); };
-
-    // 原来这里还有一张「索引状态」卡：统计、目录、未纳入、动作和上面的详情卡是同一批信息，
-    // 两处显示同一件事只会让人怀疑哪个是对的 —— 已经并进上面那张卡。
-    v.appendChild(card);
+    const harvest = el("details", "card harvest-entry"); harvest.appendChild(el("summary", "item-title", "从网页或 GitHub 收集资料"));
+    const harvestBody = el("div"); harvest.appendChild(harvestBody); let harvestLoaded = false;
+    harvest.ontoggle = async () => { if (harvest.open && !harvestLoaded) { harvestLoaded = true; await renderHarvest(harvestBody, true); } }; v.appendChild(harvest);
+    const details = el("details", "card library-info"); details.appendChild(el("summary", null, "资料库信息与管理"));
+    details.appendChild(el("p", "muted sm", "重新准备会扫描整个资料库，更新用于搜索的内容，原文件保留。AI 整理会生成章节目录与摘要。"));
+    details.appendChild(el("p", "muted sm", state.cfg.embedModelId ? "已选择语义搜索模型，同时按关键词查找。" : "尚未选择语义搜索模型，目前按关键词查找。"));
+    details.appendChild(el("p", "path-line muted sm", "本机位置：" + (k.sourcePath || k.rootDir || "未设置")));
+    const acts = el("div", "row");
+    const prepare = btn(k.chunkCount ? "重新准备资料" : "准备资料", "sm", async () => { prepare.disabled = true; try { const ok = await buildIndex(id); if (ok && current === "kb" && state.kb === id) await go("kb"); } finally { prepare.disabled = false; } });
+    acts.append(prepare, btn("AI 整理资料", "sm", () => organizeKb(id)), btn("管理来源", "ghost sm", () => go("settings", "kb"))); details.appendChild(acts); v.appendChild(details);
+    await load();
+    if (st?.skippedTotal) listCard.appendChild(el("p", "skip-note", "另有 " + st.skippedTotal + " 个文件未能纳入：" + st.skippedSummary));
+    if (st?.embedError) listCard.appendChild(el("p", "skip-note", "语义搜索暂不可用，关键词搜索仍可使用。原因：" + shortReason(st.embedError)));
+    if (st && !(k.chunkCount > 0)) { details.open = true; }
   },
 };
 
@@ -5610,8 +5438,8 @@ PANELS.resources = {
 
 /* ---------- 领域知识库 ---------- */
 PANELS.kb = {
-  title: "知识库",
-  actions: () => [panelBtn("plus", "登记知识库", () => go("settings", "kb"))],
+  title: "资料库",
+  actions: () => [panelBtn("plus", "添加资料库", () => go("settings", "kb"))],
   async render(body, ui) {
     await loadCfg();
     const kbs = state.cfg.knowledgeBases || [];
@@ -5627,7 +5455,7 @@ PANELS.kb = {
         title: k.name || k.id,
         meta: (k.chunkCount || 0) > 0
           ? (k.docCount || 0) + " 篇 · " + (k.chunkCount || 0) + " 片"
-          : "还没建索引",
+          : "资料待准备",
         onClick: () => {
           if (state.kb === k.id) return;
           state.kb = k.id;
@@ -5636,7 +5464,7 @@ PANELS.kb = {
         },
       }));
     }
-    ui.foot(btn("管理知识库目录", "sm", () => go("settings", "kb")));
+    ui.foot(btn("管理资料来源", "sm", () => go("settings", "kb")));
   },
 };
 
@@ -9041,6 +8869,7 @@ async function buildIndex(kbId) {
     box.appendChild(row);
     v.insertBefore(box, v.firstChild);
     toast("索引完成：" + st.docCount + " 篇 / " + st.chunkCount + " 片");
+    return true;
   } catch (e) {
     card._stop();
     card.remove();
@@ -9058,6 +8887,7 @@ async function buildIndex(kbId) {
     box.appendChild(row);
     v.insertBefore(box, v.firstChild);
     toast("索引失败：" + e.message);
+    return false;
   }
 }
 

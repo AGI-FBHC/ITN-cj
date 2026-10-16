@@ -390,7 +390,7 @@ PAGES.home.render = async function() {
   for (const [page, label, text] of [['learn', '学 · 练', '按章节读资料与练习'], ['report', '我的成长', '活动记录与自评档案'], ['notes', '我的资源', '笔记、错题与收集资料']]) {
     const b = btn(label, '', () => go(page)); b.dataset.page = page; b.title = text; links.appendChild(b);
   }
-  $('view').prepend(links);
+  $('view').appendChild(links);
 };
 
 const originalResources = PAGES.resources.render;
