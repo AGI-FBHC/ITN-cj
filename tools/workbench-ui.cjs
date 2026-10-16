@@ -7,7 +7,11 @@ module.exports=async function({base,post,check,dir}) {
   const page=await browser.newPage({viewport:{width:1440,height:960}});
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   const shots=path.resolve(__dirname,'../tmp/workbench-shots');fs.mkdirSync(shots,{recursive:true});
-  const nav=async name=>{await page.locator('#rail [data-page="'+name+'"]').click();await page.waitForTimeout(250);};
+  const nav=async name=>{
+    if(name==='memory') { await page.locator('#rail [data-page="settings"]').click(); await page.locator('#panel-body [data-section="memory"]').click(); }
+    else await page.locator('#rail [data-page="'+name+'"]').click();
+    await page.waitForTimeout(250);
+  };
   const send=async text=>{
     const count=await page.evaluate(()=>state.chatTurns.length);
     await page.locator('#chat-input').fill(text);await page.locator('.composer-send[aria-label="发送"]').click();
@@ -18,7 +22,7 @@ module.exports=async function({base,post,check,dir}) {
     await page.waitForSelector('#chat-input');
     await page.waitForSelector('.wb-toolbar');
     check('default page is Agent workbench',await page.evaluate(()=>current==='chat'));
-    check('five product areas plus settings',await page.locator('#rail .nav-item').count()===6);
+    check('four daily destinations plus settings',await page.locator('#rail .nav-item').count()===5);
     check('workbench toolbar available',await page.locator('.wb-toolbar').count()===1);
     await page.screenshot({path:path.join(shots,'01-workbench-empty.png')});
     await send('请生成一份 ppt 在线演示 count:4');
@@ -82,10 +86,44 @@ module.exports=async function({base,post,check,dir}) {
     await page.locator('#resource-dock').getByRole('button',{name:'关闭',exact:true}).click();
     await nav('home');
     await page.waitForSelector('.center-links');
-    check('learning center retains three functional entries',await page.locator('.center-links [data-page]').count()===3);
+    check('learning workspace exposes overview, study, and growth',await page.locator('.center-links [data-page]').count()===3);
     await page.locator('.center-links [data-page="report"]').click();
     check('growth report remains usable',await page.evaluate(()=>current==='report'));
     await page.screenshot({path:path.join(shots,'06-learning-center.png')});
+    await nav('resources');
+    check('outcome workspace keeps all five categories',await page.locator('.workspace-tabs [data-page]').count()===5);
+    check('outcomes have one create control',await page.locator('.outcome-create > summary').count()===1);
+    await page.getByLabel('筛选成果类型').selectOption('quiz');
+    check('outcome type filter retains only quizzes',await page.locator('.outcome-grid .resource-entry').count()>0&&await page.locator('.outcome-grid .resource-entry-type').evaluateAll(nodes=>nodes.every(n=>n.textContent.includes('测试'))));
+    await page.getByLabel('筛选成果类型').selectOption('');
+    await page.screenshot({path:path.join(shots,'08-simple-outcomes.png')});
+    for(const key of ['notes','wrong','network']) {
+      await page.locator('.workspace-tabs [data-page="'+key+'"]').click();
+      await page.waitForFunction(k=>current==='notes'&&state.resTab===k,key);
+      check(key+' remains reachable in outcome categories',await page.locator('#rail [data-page="resources"]').getAttribute('aria-current')==='page');
+    }
+    await page.locator('.workspace-tabs [data-page="files"]').click();
+    await page.waitForFunction(()=>current==='resources'&&currentSection==='files');
+    await page.getByRole('button',{name:'打开文档…',exact:true}).waitFor();
+    check('local Office opening controls remain available',await page.getByRole('button',{name:'打开文档…',exact:true}).isVisible()&&await page.getByRole('button',{name:'打开演示文稿…',exact:true}).isVisible());
+    await nav('settings');
+    check('settings keeps five groups and every original section',await page.locator('.settings-group').count()===5&&await page.locator('.settings-group [data-section]').count()===9);
+    await page.getByLabel('搜索设置').fill('模型');
+    check('settings search narrows categories',await page.locator('.settings-group [data-section]').count()===1);
+    await page.getByLabel('搜索设置').fill('');
+    await page.locator('#panel-body [data-section="memory"]').click();
+    check('memory is reachable inside settings',await page.locator('#memory-text').isVisible()&&await page.locator('#rail [data-page="settings"]').getAttribute('aria-current')==='page');
+    let delayedSettings = false;
+    await page.route('**/api/settings',async route=>{if(!delayedSettings){delayedSettings=true;await new Promise(r=>setTimeout(r,300));}await route.continue();});
+    const settingsRequest = page.waitForRequest(r=>r.url().endsWith('/api/settings'));
+    await page.evaluate(()=>{go('settings');});await settingsRequest;
+    await page.evaluate(()=>go('memory'));await page.waitForTimeout(400);
+    check('late settings response cannot overwrite memory page',await page.locator('#memory-text').isVisible()&&await page.locator('.settings-body').count()===0);
+    await page.unroute('**/api/settings');
+    await page.setViewportSize({width:1024,height:768});await nav('resources');
+    check('compact outcomes do not overflow',await page.locator('#view').evaluate(e=>e.scrollWidth<=e.clientWidth+1));
+    await page.screenshot({path:path.join(shots,'09-simple-compact.png')});
+    await page.setViewportSize({width:1440,height:960});
     await nav('chat');await page.locator('#wb-artifacts').click();
     await page.setViewportSize({width:1024,height:768});
     await page.screenshot({path:path.join(shots,'07-compact.png')});

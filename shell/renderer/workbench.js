@@ -3,16 +3,50 @@ const RESOURCE_LABEL = {lecture: '定制讲义', practice: '实操指南', quiz:
 const TASK_LABEL = {running: '正在执行', cancelling: '正在停止', completed: '已完成', failed: '未完成', cancelled: '已取消', interrupted: '上次任务已中断'};
 const workbench = {selected: null, open: false, loadToken: 0, seenSaved: new Set(), task: null};
 
+// Four daily destinations. Existing routes stay intact for history and deep links.
 RAIL_GROUPS.splice(0, RAIL_GROUPS.length,
-  [{id: 'chat', label: '智能体工作台', icon: 'chat'}],
-  [{id: 'kb', label: '知识库', icon: 'db'}, {id: 'resources', label: '学习资源', icon: 'layers'}],
-  [{id: 'home', label: '学习中心', icon: 'book'}, {id: 'memory', label: '学习记忆', icon: 'note'}]);
+  [{id: 'chat', label: '对话', icon: 'chat'}],
+  [{id: 'home', label: '学习', icon: 'book'}, {id: 'kb', label: '资料', icon: 'db'}, {id: 'resources', label: '成果', icon: 'layers'}]);
+function navigationRoot(page) {
+  if (['learn', 'report', 'calibrate'].includes(page)) return 'home';
+  if (['notes', 'wrong'].includes(page)) return 'resources';
+  if (['memory', 'models'].includes(page)) return 'settings';
+  return page;
+}
 Object.assign(PAGE_META, {
-  chat: {title: '智能体工作台', sub: '围绕你的资料、目标和学习记录开展任务'},
-  home: {title: '学习中心', sub: '阅读、练习、笔记、错题与成长记录'},
-  resources: {title: '学习资源', sub: '讲义 · 实操 · 分阶测试 · 在线演示'},
-  memory: {title: '学习记忆', sub: '你决定 Lumin 记住什么，也能随时修改和忘记'},
+  chat: {title: '对话', sub: '围绕你的资料和目标开展任务'},
+  home: {title: '学习', sub: '接着学，练一练，看看进步'},
+  learn: {title: '学习', sub: '按章节阅读与练习'},
+  report: {title: '学习', sub: '阅读记录、练习表现与能力自评'},
+  resources: {title: '学习成果', sub: '讲义、练习、笔记与错题，都在这里'},
+  notes: {title: '学习成果', sub: '讲义、练习、笔记与错题，都在这里'},
+  kb: {title: '资料库', sub: '找到资料、读原文，再开始学习'},
+  memory: {title: '学习记忆', sub: '查看、修改或删除 Lumin 记住的内容'},
 });
+function decorateWorkspace() {
+  const view = $('view');
+  const learning = ['home', 'learn', 'report', 'calibrate'].includes(current);
+  const outcomes = ['resources', 'notes', 'wrong'].includes(current);
+  if (!learning && !outcomes) return;
+  const nav = el('nav', 'workspace-tabs' + (learning ? ' center-links' : ''));
+  nav.setAttribute('aria-label', learning ? '学习功能' : '学习成果分类');
+  const selected = learning ? (current === 'calibrate' ? 'report' : current)
+    : current === 'resources' ? (currentSection === 'files' ? 'files' : 'generated') : (state.resTab || 'notes');
+  const tabs = learning ? [['home', '总览'], ['learn', '学 · 练'], ['report', '我的成长']]
+    : [['generated', '生成成果'], ['notes', '笔记'], ['wrong', '错题'], ['files', '本地文件'], ['network', '收集资料']];
+  for (const [key, label] of tabs) {
+    const button = btn(label, 'workspace-tab' + (key === selected ? ' active' : ''), () => {
+      if (learning) go(key);
+      else if (key === 'generated' || key === 'files') go('resources', key === 'files' ? 'files' : '');
+      else { state.resTab = key; go('notes'); }
+    });
+    button.dataset.page = key;
+    if (key === selected) button.setAttribute('aria-current', 'page');
+    nav.appendChild(button);
+  }
+  view.querySelector(':scope > .res-tabs')?.remove();
+  view.prepend(nav);
+}
 Object.assign(TOOL_LABEL, {
   generate_learning_resource: '生成学习资源', revise_learning_resource: '修改学习资源',
   read_learning_resource: '读取学习资源', get_learning_context: '读取学习上下文',
@@ -291,6 +325,7 @@ function renderResourcePractice(container, res) {
 
 async function workbenchAfterPage() {
   if (workbench.stateTimer) clearInterval(workbench.stateTimer);
+  decorateWorkspace();
   const dock = ensureResourceDock();
   document.querySelector('.wb-toolbar')?.remove();
   if (current !== 'chat' || currentSection === 'overview') { dock.hidden = true; return; }
@@ -383,46 +418,62 @@ function syncWorkbenchEvents(events) {
   }
 }
 
-const originalHome = PAGES.home.render;
-PAGES.home.render = async function() {
-  await originalHome.call(this);
-  const links = el('div', 'center-links');
-  for (const [page, label, text] of [['learn', '学 · 练', '按章节读资料与练习'], ['report', '我的成长', '活动记录与自评档案'], ['notes', '我的资源', '笔记、错题与收集资料']]) {
-    const b = btn(label, '', () => go(page)); b.dataset.page = page; b.title = text; links.appendChild(b);
-  }
-  $('view').appendChild(links);
-};
-
 const originalResources = PAGES.resources.render;
 PAGES.resources.render = async function() {
-  await originalResources.call(this);
-  const view = $('view');
-  const legacy = el('details', 'legacy-artifacts');
-  legacy.open = !!state.legacyArtifactsOpen;
-  legacy.ontoggle = () => {state.legacyArtifactsOpen = legacy.open;};
-  legacy.appendChild(el('summary', null, '本地 Markdown 文件与历史产物'));
-  while (view.firstChild) legacy.appendChild(view.firstChild);
-  const heading = el('div', 'resource-library-head');
-  heading.appendChild(el('h2', null, '你的学习资源'));
-  heading.appendChild(el('p', 'muted', '由 Lumin 按学习目标生成，保留资料依据、质检与历史版本。'));
-  const actions = el('div', 'row');
-  for (const [kind, label] of Object.entries(RESOURCE_LABEL).filter(([k])=>k!=='legacy')) actions.appendChild(btn(label, 'sm', () => {state.pendingQuestion = '请围绕我当前的学习目标生成一份' + label + '，主题：'; go('chat');}));
-  heading.appendChild(actions); view.appendChild(heading);
-  const all = (await api('/api/learning/resources', {})).resources || [];
-  const search = inputOf('learning-resource-search', '搜索资源标题', ''); search.setAttribute('aria-label', '搜索学习资源');
-  view.appendChild(search);
-  const grid = el('div', 'resource-grid');
+  if (currentSection === 'files') {
+    await originalResources.call(this);
+    // Local Office previews remain available even before the first generated file.
+    if (!state.artifacts.length) {
+      const actions = el('div', 'row');
+      actions.append(btn('打开演示文稿…', '', () => openLocalOutcome('deck')), btn('打开文档…', '', () => openLocalOutcome('doc')));
+      $('view').prepend(actions);
+    }
+    return;
+  }
+  const view = $('view'); view.innerHTML = '';
+  const toolbar = el('div', 'outcome-toolbar');
+  const search = inputOf('learning-resource-search', '搜索成果标题', state.outcomeQuery || ''); search.setAttribute('aria-label', '搜索学习资源');
+  const kind = el('select'); kind.setAttribute('aria-label', '筛选成果类型');
+  kind.appendChild(option('', '全部类型'));
+  for (const [value, label] of Object.entries(RESOURCE_LABEL)) kind.appendChild(option(value, label));
+  kind.value = state.outcomeKind || '';
+  const create = el('details', 'outcome-create'); create.appendChild(el('summary', 'btn primary', '+ 新建成果'));
+  const menu = el('div', 'outcome-menu');
+  for (const [value, label] of Object.entries(RESOURCE_LABEL).filter(([key]) => key !== 'legacy')) {
+    menu.appendChild(btn(label, 'ghost', () => {state.pendingQuestion = '请围绕我当前的学习目标生成一份' + label + '，主题：'; go('chat');}));
+  }
+  create.appendChild(menu); toolbar.append(search, kind, create); view.appendChild(toolbar);
+  const status = el('p', 'muted sm'); status.setAttribute('role', 'status'); view.appendChild(status);
+  const grid = el('div', 'resource-grid outcome-grid'); view.appendChild(grid);
+  let all = [];
   const paint = () => {
-    grid.innerHTML = '';
-    const rows = all.filter(r => (r.title || '').toLowerCase().includes(search.value.toLowerCase()));
-    if (!rows.length) grid.appendChild(el('p', 'muted', all.length ? '没有匹配的资源' : '还没有生成资源。描述你想学的主题，Lumin 会按需调用生成工具。'));
+    state.outcomeQuery = search.value; state.outcomeKind = kind.value; grid.innerHTML = '';
+    const rows = all.filter(r => (!kind.value || r.kind === kind.value) && (r.title || '').toLowerCase().includes(search.value.trim().toLowerCase()));
+    status.textContent = '共 ' + all.length + ' 份成果' + (rows.length !== all.length ? ' · 显示 ' + rows.length + ' 份' : '');
+    if (!rows.length) {
+      grid.appendChild(emptyState({inline: true, art: 'layers', title: all.length ? '没有找到匹配的成果' : '第一份成果，从一个主题开始', text: all.length ? '换个标题关键词或类型试试。' : '生成的讲义、实操、练习和演示会保存在这里，也可以切到上方查看笔记与错题。'}));
+    }
     for (const r of rows) grid.appendChild(resourceCard(r));
   };
-  search.oninput = paint; paint(); view.appendChild(grid); view.appendChild(legacy);
+  search.oninput = paint; kind.onchange = paint;
+  const load = async () => {
+    status.textContent = '正在读取学习成果…'; grid.innerHTML = '';
+    try { all = ((await api('/api/learning/resources', {})).resources || []).slice().sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))); paint(); }
+    catch(e) { status.textContent = '读取失败：' + e.message; grid.appendChild(btn('重试', '', load)); }
+  };
+  await load();
 };
+async function openLocalOutcome(kind) {
+  const a = window.itnWindow;
+  if (!a) { toast('只在桌面应用窗口里可用'); return; }
+  const file = kind === 'deck' ? await a.pickDeck?.() : await a.pickDoc?.();
+  if (!file) return;
+  const name = String(file).replace(/\\/g, '/').split('/').pop();
+  openSlidePlayer(name, undefined, undefined, file);
+}
 const originalResourcesPanel = PANELS.resources;
 PANELS.resources = {
-  title: '学习资源',
+  title: '学习成果',
   async render(body) {
     const rows = (await api('/api/learning/resources', {})).resources || [];
     if (!rows.length) body.appendChild(panelEmpty('新资源会保留结构、版本与学习记录。历史文件在主区下方。'));
@@ -432,8 +483,10 @@ PANELS.resources = {
 
 PAGES.memory = {
   async render() {
+    const renderingGeneration = state.navigationGeneration;
     const view = $('view'); view.innerHTML = '';
     const context = await api('/api/learning/context', {kbId: state.kb || ''});
+    if (renderingGeneration !== state.navigationGeneration) return;
     const overview = cardOf({title: '当前学习上下文', sub: '自述目标与偏好，和真实作答证据分别记录'});
     overview.appendChild(el('p', null, '目标：' + (context.profile?.goal || '尚未设置')));
     overview.appendChild(el('p', null, context.quizAttempts ? '资源测验首次作答 ' + context.quizAttempts + ' 题，答对 ' + context.quizCorrect + ' 题。' : '还没有资源测验作答证据，掌握度未知。'));
@@ -460,6 +513,7 @@ PAGES.memory = {
     })); view.appendChild(form);
     const saved = cardOf({title: '已保存的记忆', sub: '自动记录附带用户原话与来源'});
     const memories = (await api('/api/learning/memories', {})).memories || [];
+    if (renderingGeneration !== state.navigationGeneration) return;
     if (!memories.length) saved.appendChild(el('p', 'muted', '还没有保存的记忆。你也可以在对话中说“记住我的学习偏好……”。'));
     for (const m of memories) {
       const row=el('div','memory-entry');row.dataset.memory=m.id;
@@ -475,6 +529,40 @@ PAGES.memory = {
     view.appendChild(saved);
   }
 };
-PANELS.memory = {title:'学习记忆',async render(body){body.appendChild(el('p','panel-empty','目标和偏好帮助 Lumin 选择解释方式与资源。能力依据来自真实作答，记录数量不当作能力分。'));}};
+const SETTINGS_GROUPS = [
+  ['我的档案', ['general', 'memory']],
+  ['模型与接口', ['models']],
+  ['外观', ['appearance']],
+  ['资料与备份', ['kb', 'data']],
+  ['高级与关于', ['agent', 'skills', 'about']],
+];
+PANELS.settings = {
+  title: '设置',
+  async render(body) {
+    const search = inputOf('settings-search', '搜索设置', state.settingsQuery || ''); search.classList.add('panel-search'); search.setAttribute('aria-label', '搜索设置'); body.appendChild(search);
+    const list = el('nav', 'settings-nav grouped-settings'); list.setAttribute('aria-label', '设置分区'); body.appendChild(list);
+    const sections = SETTINGS_SECTIONS.concat([{id:'memory', label:'学习记忆', icon:'note'}]).map(x=>({...x,label:x.id==='general'?'学习档案':x.id==='kb'?'资料来源':x.label}));
+    const active = current === 'memory' ? 'memory' : currentSection || 'general';
+    const paint = () => {
+      state.settingsQuery = search.value; list.innerHTML = ''; const query = search.value.trim().toLowerCase(); let matches = 0;
+      for (const [title, ids] of SETTINGS_GROUPS) {
+        const items = sections.filter(x => ids.includes(x.id) && (!query || (title + x.label + (x.title || '')).toLowerCase().includes(query)));
+        if (!items.length) continue;
+        const group = el('section', 'settings-group'); group.appendChild(el('h3', 'settings-group-label', title));
+        for (const x of items) {
+          const button = el('button', x.id === active ? 'active' : ''); button.type = 'button'; button.dataset.section = x.id;
+          button.innerHTML = icon(x.icon) + '<span>' + esc(x.id === 'general' ? '学习档案' : x.id === 'kb' ? '资料来源' : x.label) + '</span>';
+          if (x.id === active) button.setAttribute('aria-current', 'page');
+          button.onclick = () => x.id === 'memory' ? go('memory') : go('settings', x.id);
+          group.appendChild(button); matches++;
+        }
+        list.appendChild(group);
+      }
+      if (!matches) list.appendChild(el('p', 'panel-empty', '没有匹配的设置。'));
+    };
+    search.oninput = paint; paint();
+  },
+};
+PANELS.memory = PANELS.settings;
 
 boot();

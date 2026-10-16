@@ -569,7 +569,7 @@ function railButton(item) {
   b.dataset.page = item.id;
   b.setAttribute("aria-label", item.label);
   const n = navBadge(item.id);
-  b.innerHTML = icon(item.icon) +
+  b.innerHTML = icon(item.icon) + '<span class="rail-caption">' + esc(item.label) + '</span>' +
     (n > 0 ? '<span class="nav-badge">' + (n > 99 ? "99+" : n) + "</span>" : "") +
     '<span class="rail-tip">' + esc(item.label) + (n > 0 ? " · " + n : "") + "</span>";
   b.onclick = () => go(item.id);
@@ -600,7 +600,9 @@ function buildNav() {
     if (gi > 0) rail.appendChild(el("div", "rail-sep"));
     for (const it of group) {
       const b = railButton(it);
-      if (it.id === current) b.classList.add("active");
+      if (it.id === (typeof navigationRoot === "function" ? navigationRoot(current) : current)) {
+        b.classList.add("active"); b.setAttribute("aria-current", "page");
+      }
       rail.appendChild(b);
     }
   });
@@ -612,7 +614,9 @@ function buildNav() {
     (state.dark ? "切到浅色" : "切到深色") + "（设置里可以跟随系统）", () => toggleTheme()));
 
   const setBtn = railButton({ id: "settings", label: "设置", icon: "gear" });
-  if (current === "settings") setBtn.classList.add("active");
+  if ((typeof navigationRoot === "function" ? navigationRoot(current) : current) === "settings") {
+    setBtn.classList.add("active"); setBtn.setAttribute("aria-current", "page");
+  }
   rail.appendChild(setBtn);
   // 齿轮是"设置"的通用记号：上一版用的图形像太阳，和主题按钮撞脸，已换成真正的齿轮
 }
@@ -646,9 +650,11 @@ function updateNavButtons() {
 let currentSection = "";
 
 async function go(page, section, opts) {
+  const navigation = state.navigationGeneration = (state.navigationGeneration || 0) + 1;
   const target = PAGES[page] ? page : "home";
   current = target;
   currentSection = section || "";
+  document.body.classList.toggle("workspace-wide", ["home", "report", "calibrate", "resources", "notes", "wrong"].includes(target));
   const hash = "#/" + target + (currentSection ? "/" + currentSection : "");
   try {
     if (opts && opts.replace) {
@@ -694,12 +700,15 @@ async function go(page, section, opts) {
   try {
     // 第二层面板先渲染：它决定这一层的"目录"长什么样（章节 / 笔记 / 产物 / 会话…）
     await renderPanel();
+    if (navigation !== state.navigationGeneration) return;
   } catch (e) {
     $("panel-body").innerHTML = '<div class="panel-empty">面板没能加载：' + esc(e.message) + "</div>";
   }
   try {
     await PAGES[target].render();
+    if (navigation !== state.navigationGeneration) return;
   } catch (e) {
+    if (navigation !== state.navigationGeneration) return;
     v.innerHTML = "";
     v.appendChild(emptyState({
       art: "alert",
@@ -729,7 +738,9 @@ const PAGES = {};
 
 PAGES.home = {
   async render() {
+    const renderingGeneration = state.navigationGeneration;
     await loadOverview();
+    if (renderingGeneration !== state.navigationGeneration) return;
     const v = $("view"); v.innerHTML = "";
     const active = state.cfg.knowledgeBases.find(k => k.id === state.kb);
     const ready = active && active.chunkCount > 0;
@@ -745,6 +756,7 @@ PAGES.home = {
     }
     let tree = null, treeError = "";
     if (ready) try { tree = await api("/api/study/tree", {kbId: state.kb}); } catch(e) { treeError = e.message; }
+    if (renderingGeneration !== state.navigationGeneration) return;
     const next = tree && ((tree.chapters || []).find(c => !c.done) || tree.chapters[0]);
     const hero = cardOf({cls: "study-continue", title: "接着学", sub: active ? active.name : "从你的资料开始"});
     hero.appendChild(el("h2", "continue-title", next ? next.name : treeError ? "章节暂时没能读取" : ready ? "这一轮已读完" : "先放进一份想学的资料"));
@@ -769,6 +781,7 @@ PAGES.home = {
     const recent = cardOf({title: "最近成果", actions: [btn("查看全部", "ghost sm", () => go("resources"))]});
     try {
       const all = (await api("/api/learning/resources", {})).resources || [];
+      if (renderingGeneration !== state.navigationGeneration) return;
       const rows = all.slice().sort((a,b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || ""))).slice(0,3);
       if (rows.length && typeof resourceCard === "function") {
         const grid = el("div", "resource-grid"); rows.forEach(r => grid.appendChild(resourceCard(r))); recent.appendChild(grid);
@@ -1502,7 +1515,9 @@ function toggleGraphFull() {
 
 PAGES.learn = {
   async render() {
+    const renderingGeneration = state.navigationGeneration;
     await loadCfg();
+    if (renderingGeneration !== state.navigationGeneration) return;
     const v = $("view");
     v.innerHTML = "";
     if (!hasKb()) {
@@ -1527,12 +1542,7 @@ PAGES.learn = {
       ? (k.docCount || 0) + " 篇 · " + k.chunkCount + " 片 · " + (k.imageCount || 0) + " 张图 · 索引于 " + fmtStamp(k.builtAt)
       : "这个知识库还没有索引，先建立索引。";
     row.appendChild(info);
-    if ((k.chunkCount || 0) > 0) {
-      row.appendChild(btn("重建索引", "sm", () => buildIndex(state.kb)));
-      row.appendChild(btn("去检索", "sm ghost", () => go("kb")));
-    } else {
-      row.appendChild(btn("建立索引", "sm primary", () => buildIndex(state.kb)));
-    }
+    row.appendChild(btn("管理资料", "sm ghost", () => go("kb")));
     head.appendChild(row);
     v.appendChild(head);
 
@@ -1559,7 +1569,9 @@ function kbSelector(onChange) {
 }
 
 async function renderChapterTree(v) {
+  const renderingGeneration = state.navigationGeneration;
   const tree = await api("/api/study/tree", { kbId: state.kb });
+  if (renderingGeneration !== state.navigationGeneration) return;
   const chapters = tree.chapters || [];
   v.appendChild(pathBar(tree));
   const card = cardOf({
@@ -1599,12 +1611,16 @@ async function renderChapterTree(v) {
     it.appendChild(bar);
     const acts = el("div", "row item-actions");
     acts.appendChild(btn("开始学", "sm primary", () => { state.chapter = c.name; go("learn"); }));
-    acts.appendChild(btn("出题练习", "sm ghost", () => openQuiz(v, c.name)));
-    acts.appendChild(btn("生成讲义", "sm ghost", () => askTopic("lecture", c.name)));
-    acts.appendChild(btn("生成练习册", "sm ghost", () => askTopic("quiz", c.name)));
+    const extra = el("details", "chapter-more");
+    extra.appendChild(el("summary", "btn sm ghost", "练习与生成"));
+    const secondary = el("div", "row");
+    secondary.appendChild(btn("出题练习", "sm ghost", () => openQuiz(v, c.name)));
+    secondary.appendChild(btn("生成讲义", "sm ghost", () => askTopic("lecture", c.name)));
+    secondary.appendChild(btn("生成练习册", "sm ghost", () => askTopic("quiz", c.name)));
+    extra.appendChild(secondary); acts.appendChild(extra);
     it.appendChild(acts);
     it.onclick = (ev) => {
-      if (ev.target.closest("button")) return;
+      if (ev.target.closest("button, details")) return;
       state.chapter = c.name;
       go("learn");
     };
@@ -1616,7 +1632,9 @@ async function renderChapterTree(v) {
 }
 
 async function renderChapter(v) {
+  const renderingGeneration = state.navigationGeneration;
   const chap = await api("/api/study/chapter", { kbId: state.kb, chapter: state.chapter });
+  if (renderingGeneration !== state.navigationGeneration) return;
   const chunks = chap.chunks || [];
   const readCount = chunks.filter((c) => c.read).length;
   const bar = el("div", "card");
@@ -1634,6 +1652,7 @@ async function renderChapter(v) {
     api("/api/study/notes/list", {}).catch(() => ({ notes: [] })),
     api("/api/study/tree", { kbId: state.kb }).catch(() => ({ chapters: [] })),
   ]);
+  if (renderingGeneration !== state.navigationGeneration) return;
   const stat = ((statRes.chapters || []).filter((x) => x.chapter === state.chapter && x.kbId === state.kb)[0]) ||
     { total: 0, right: 0, wrong: 0 };
   const chapterNotes = (noteRes.notes || []).filter((n) => n.chapter === state.chapter);
@@ -1727,8 +1746,9 @@ async function renderChapter(v) {
   }
   v.appendChild(unit);
 
-  v.appendChild(cardOf({
-    title: "还能做什么",
+  const moreActions = el("details", "card chapter-extra");
+  moreActions.appendChild(el("summary", null, "生成学习材料与提问"));
+  moreActions.appendChild(cardOf({
     body: (() => {
       const row = el("div", "row");
       row.appendChild(btn("生成讲义", "", () => askTopic("lecture", state.chapter)));
@@ -1739,6 +1759,7 @@ async function renderChapter(v) {
     })(),
   }));
 
+  v.appendChild(moreActions);
   for (const c of chunks) {
     const box = el("div", "card chunk-card");
     const ch = el("div", "card-head");
@@ -1985,7 +2006,9 @@ function artifactNameFromPath(p) {
  */
 PAGES.notes = {
   async render() {
+    const renderingGeneration = state.navigationGeneration;
     await loadCfg();
+    if (renderingGeneration !== state.navigationGeneration) return;
     const v = $("view");
     v.innerHTML = "";
     const tab = ["wrong", "network"].includes(state.resTab) ? state.resTab : "notes";
@@ -1997,6 +2020,7 @@ PAGES.notes = {
     try {
       noteCount = ((await api("/api/study/notes/list", {})).notes || []).length;
     } catch (e) { noteCount = 0; }
+    if (renderingGeneration !== state.navigationGeneration) return;
     const bar = el("div", "card res-tabs");
     const seg = el("div", "seg");
     [["notes", "笔记 " + noteCount], ["wrong", "错题本 " + wrongCount], ["network", "网络资料"]].forEach(([k, label]) => {
@@ -2981,8 +3005,10 @@ function growthReportCard() {
  */
 PAGES.report = {
   async render() {
+    const renderingGeneration = state.navigationGeneration;
     await loadOverview();
     await loadProfile();
+    if (renderingGeneration !== state.navigationGeneration) return;
     const v = $("view");
     v.innerHTML = "";
     const r = state.report;
@@ -3006,11 +3032,15 @@ PAGES.report = {
     }
 
     v.appendChild(streakCard());
-    v.appendChild(calibrationCard());
-    v.appendChild(abilityCard());
-    v.appendChild(trendCard());
-    v.appendChild(growthReportCard());
-    v.appendChild(await activityCard());
+    const abilities = el("details", "card growth-details");
+    abilities.open = !!state.calibOpen;
+    abilities.appendChild(el("summary", null, "我的能力 · 查看与自评"));
+    abilities.append(calibrationCard(), abilityCard()); v.appendChild(abilities);
+    const history = el("details", "card growth-details");
+    history.appendChild(el("summary", null, "学习趋势与活动记录"));
+    history.append(trendCard(), growthReportCard(), await activityCard());
+    if (renderingGeneration !== state.navigationGeneration) return;
+    v.appendChild(history);
   },
 };
 
@@ -3353,7 +3383,9 @@ function renameArtifactDialog(a) {
 
 PAGES.resources = {
   async render() {
+    const renderingGeneration = state.navigationGeneration;
     await loadArtifacts();
+    if (renderingGeneration !== state.navigationGeneration) return;
     const v = $("view");
     v.innerHTML = "";
     if (!state.artifacts.length) {
@@ -4877,7 +4909,9 @@ async function playChapter(chapter) {
 
 PAGES.kb = {
   async render() {
+    const renderingGeneration = state.navigationGeneration;
     await loadCfg();
+    if (renderingGeneration !== state.navigationGeneration) return;
     const v = $("view"); v.innerHTML = "";
     if (!hasKb()) {
       v.appendChild(cardOf({body: emptyState({art: "db", title: "把想学的资料放进来", text: "添加本机文件或文件夹，之后可以搜内容、读原文、按章节学习。支持 Markdown、文本与 CSV 等文本格式。", actions: [btn("添加资料", "primary", () => go("settings", "kb"))]})})); return;
@@ -5145,11 +5179,13 @@ async function renderPanel(force) {
   /* 渲染到**离屏片段**里，最后一次性换上去。
      以前是先 body.innerHTML = "" 再 await 数据，于是"空面板"要挂着一个来回，
      用户看到的就是闪一下；顺带把滚动位置与正在输入的搜索词也保住了。 */
+  const renderingGeneration = state.navigationGeneration;
   const nextBody = document.createDocumentFragment();
   const nextFoot = document.createDocumentFragment();
   const scrollTop = body.scrollTop;
   const ui = { foot: (node) => nextFoot.appendChild(node) };
   await def.render(nextBody, ui);
+  if (renderingGeneration !== state.navigationGeneration) return;
   body.replaceChildren(nextBody);
   foot.replaceChildren(nextFoot);
   body.scrollTop = scrollTop;
@@ -7940,10 +7976,13 @@ const SETTINGS_SECTIONS = [
  */
 PAGES.settings = {
   async render() {
+    const renderingGeneration = state.navigationGeneration;
     await loadCfg();
+    if (renderingGeneration !== state.navigationGeneration) return;
     const sec = SETTINGS_SECTIONS.filter((x) => x.id === currentSection)[0] || SETTINGS_SECTIONS[0];
     if (sec.id === "general") await loadProfile();
 
+    if (renderingGeneration !== state.navigationGeneration) return;
     const v = $("view");
     v.innerHTML = "";
     // 分区导航在第二层面板里（Codex 式），这里只放当前分区的内容
@@ -7953,6 +7992,7 @@ PAGES.settings = {
     if (sec.sub) head.appendChild(el("p", null, sec.sub));
     body.appendChild(head);
     body.appendChild(await settingsSection(sec.id));
+    if (renderingGeneration !== state.navigationGeneration) return;
     v.appendChild(body);
   },
 };
