@@ -3993,3 +3993,16 @@ read_chunk 读得到原文并带回库标识与正文。
 - 验证：learning-check --ui 82/82（原 77 + 新增 5 条：三页同宽版无侧栏闪变、切换条位置不漂移、目录在页内、切章不重载不压历史、窄屏无横向溢出）；新增 tools/learn-empty-check.cjs 4/4（无资料 / 未建索引路径同一外壳）；回归 nonchat 19/19、stop 11/11、busy-caret 4/4、attachments 16/16、glass-shot 全过无报错；截图 tmp/learn-shots/（home、learn、report、切章后），三个 tab 的切换条 left 均为 202px。
 - 交付：代码提交 65e94fb；打包 dist/Lumin-0.4.9 与 Lumin-0.4.9-win-x64.zip（164.3MB）；release.json sourceCommit=65e94fb694b777b574309b60a5cbfe1e332bc7fd，9 项资产哈希 BAD=0，源码与包内对应文件一致；隔离空目录冒烟 RESULT=OK；启动Lumin.cmd 已指向 0.4.9。
 - 边界：学习页里"生成讲义/在线演示"等任务仍跳到对话执行（任务在对话里跑、产出回流到成果），这是既有信息架构；本次消除的是布局与导航层面的跳变，任务级跳转保留。
+
+## 2026-10-16 · 启动动画（呼吸+光影）与真实模型案例测试（0.5.0）
+- 用户要求：① 基于透明底 logo 做启动加载动画（呼吸/光影流动）；② 用真实模型把最近功能做成案例测试，不要总让用户发现问题。
+- 启动动画（两段无缝）：
+  1) 冷启动段：main.js 改为"先亮窗口、再等内核"——窗口创建后立刻 loadFile(renderer/splash.html)（透明底 logo 呼吸 + 光影扫过 + 正在唤醒本地内核…），同时 spawn 内核；内核就绪后至少完整播 0.9 秒再切到应用页；--smoke 跳过动画页（冒烟只认应用页），did-finish-load 的深链/冒烟逻辑增加 http 页判断。
+  2) 应用段：index.html 增加同款 #boot 动画层（style.css 用主题变量、深浅色自动匹配），app.js 在 boot() 首屏渲染完成后淡出（最短 520ms、8 秒兜底；内核连接失败路径也会收掉）；overlay 全程 pointer-events:none，不影响既有自检交互。
+  验证：新增 tools/splash-check.cjs 4/4（splash.html 动画实际在跑 + 应用内动画层出现/淡出/交接、无 JS 报错）；text-menu-check 加固（等 boot 完成后操作 + copy 后落盘等待），连续两次 6/6 通过（此前偶发一次的时序失败已消除）。
+- 真实模型案例测试：新增 tools/real-features-check.py——只读 Lumin 里配置的对话模型（不打印密钥），隔离数据目录，7 个案例：
+  基础对话 / 流式长回复（校验上游 responseId）/ 图片识别（内置 K7P4 图）/ lumin://thread 会话读取（read_session 必须被调用且答出暗号）/ 项目内文件附件读取（读 secret.txt 答出编码）/ 学习记忆（记住→落库→清理）/ 学习资源生成（真实模型完整生成讲义：检索→generate_learning_resource→质检→保存→读回）。
+  结果：7/7 通过（generate 234 秒，引用 2 条、质检 0 问题；其余 2-7 秒）。首次跑 generate 用例曾发现"提示词是 mock 协议（make:lecture count:4）时真实模型会反问主题"——不是应用缺陷，用例已改成应用真实发出的自然语言提示（"请根据资料中的《…》生成一份定制讲义"）并保留断言。
+- 回归：splash 4/4、learn-empty 4/4、nonchat 19/19、stop 11/11、busy-caret 4/4、attachments 16/16、learning-check --ui 82/82、glass-shot 全过无 console 错误；内核编译通过。
+- 交付：代码提交 078970c；打包 dist/Lumin-0.5.0 与 Lumin-0.5.0-win-x64.zip（164.3MB）；release.json sourceCommit=078970c4358944448700852122ee474ea79fabd9，9 项资产 BAD=0，源码（含 splash.html）与包内一致；隔离空目录冒烟 RESULT=OK；启动Lumin.cmd 已指向 0.5.0。
+- 备注：启动动画截图在 tmp/splash-shots/（浅色/深色）；真实模型测试会产生真实调用费用，按需运行（python tools/real-features-check.py [--case 名称…]）。
