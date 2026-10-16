@@ -3975,3 +3975,13 @@ read_chunk 读得到原文并带回库标识与正文。
 - 验证：cjpm build 成功；cjpm test 120/120（新增 attachments 3 例：附件不进用户正文、远程图片URL与未知类型拒绝、普通/工作模式会话读取不依赖工作目录）；tools/text-menu-check.cjs 6/6（原生菜单可用性、复制/剪切/粘贴实际生效、只读区无剪切/粘贴、图片选择器解码受限预览）；tools/attachments-check.cjs 16/16（普通与 Work 模式 read_session、图片进模型内容、历史文本不重复图片字节、下一轮图片仍可用、远程URL拒绝、UI 附件 chip/移除/预览/发送载荷结构化、模型不支持图片时无法添加、无 JS 报错）；回归：nonchat 19/19、stop 11/11、glass-shot 全通过（无 console 错误）、workbench-ui exit 0。
 - 真实配置实测（只读配置、隔离数据目录、不打印任何密钥）：当前 chat 模型 mimo-v2.6-flash 通过 /api/models/vision-test（supported=true），并用内置 K7P4 测试图走完整 /api/agent/ask-pi 附件链路，真实模型回答 K7-P4——即用户配置的对话模型确实支持图片输入；真实会话 lumin://thread/s17810513749398769191 在真实数据库副本上用 read_session 直接读到（title=初次问候，6 条消息），全程 0 次 find/grep/read/powershell 调用。复验脚本 tmp/real-verify.py（tmp 不进 git，可重跑 inspect/real/session 三种模式）。
 - 边界与后续：两份未跟踪调研文档（知识库改进清单-v2、非对话页面改造方案-v1）仍原样未纳入提交；用户原库既有 SQLite 损坏证据不在本轮范围；mock 结论与真实模型结论已分开记录，避免混淆证据强度。
+
+## 2026-10-16 · 会话列表转圈、流式光标归位、慢模型首包超时修复（0.4.8）
+- 用户要求：① 对话列表给"AI 正在执行/正在回复"的会话加转圈；② 流式回复末尾那个闪烁光标不要总另起一行，要落在当前行末尾；③ 排查刚报错的会话 lumin://thread/s8955387769026293261。
+- 排查结论（只读真实库副本）：该会话 13:05:42 开跑，5 次工具轮（read make_ppt.py / agent.py / tools.py / workspace 文件等）都正常；13:06:42 发出最后一次模型请求（messageCount=18、6 条工具结果、上下文约 39K token），上游约 90 秒后才开始回第一段内容，正好撞上内核 90s 读超时，报"网络层失败（读取响应体）：Read body timeout and the connection is closed."；已到达的少量内容（思考+一句正文）仍保留展示，turn 标记失败。不是数据损坏、不是会话记录丢失，是客户端超时把慢请求掐断了。
+- 修复：pi_provider 空闲上限 90s→300s（idleTimeoutMillis=300000）；oneShot 传输层 read/writeTimeout 90s→10min（必须大于语义空闲上限，否则底层错误会抢先于"模型长时间未返回数据"）。验证：首包延迟 95s 的慢模型探针实测成功（elapsed=95.6s，回答完整；同形状请求在旧 90s 配置下必死）。
+- 转圈：会话列表行支持 busy（panel-item 标题前 11px 小转圈，就地开关、不进结构指纹）；runningSessionId() 由 busyTurn+chatRequest 推导；发送开始/结束各触发一次 renderPanel 就地刷新；loadSessions 为"正在跑但尚未落库进列表"的新会话补占位行（新建会话要等第一条事件落库才进列表接口，否则转圈会等跑完才出现——实测发现并修掉）。"全部会话"页同样显示转圈。
+- 光标：assistantBlock 的流式光标从"挂在 msg-body 后面"改为塞进正文最后一个文字块末尾（caretInto：段落/列表项/代码块会钻到最深层，遇到 IMG/BR/HR/INPUT/BUTTON/SVG 则停），光标落在当前行末尾，不再另起一行。
+- 验证：新增 tools/busy-caret-check.cjs 4/4（慢速流式下：光标与正文同块、运行中的会话行有转圈、结束后转圈与光标消失、无 JS 报错）；cjpm build 成功；cjpm test 120/120；回归 attachments 16/16、stop 11/11、nonchat 19/19、glass-shot 全过（RAIL-NO-FLASH 仍是每轮 1 次重建）。
+- 交付：代码提交 dfd6dd6；打包 dist/Lumin-0.4.8 与 dist/Lumin-0.4.8-win-x64.zip（164.3MB）；release.json sourceCommit=dfd6dd6d8b65e4b14ac14bef4ef67d62484e7f8a，9 项资产哈希 BAD=0，源码与包内对应文件哈希一致；隔离空目录启动冒烟 RESULT=OK；启动Lumin.cmd 已指向 0.4.8。
+- 边界与建议：用户那个失败轮可直接在原会话重发（0.4.8 下同类慢请求不会再被 90s 掐断）；慢首包探针与验证脚本在 tmp（不进 git）；两份未跟踪调研文档仍未纳入提交。
