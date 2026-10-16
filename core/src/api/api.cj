@@ -4,6 +4,7 @@ import itn_desktop_core.learning.*
 import itn_desktop_core.project.ProjectStore
 import itn_desktop_core.presentation.DesktopJobs
 import itn_desktop_core.personal.PersonalStore
+import itn_desktop_core.knowledge.KnowledgeStore
 import itn_desktop_core.agent.learningTools
 import itn_desktop_core.pi_tools.DraftStore
 import itn_desktop_core.resource.isResourceKind
@@ -1291,6 +1292,23 @@ public class Api {
             o.put("agentWorkDir", JsonString(wd))
             ok(ctx, o)
             return
+        }
+
+        if (path == "/api/knowledge/graph" && method == "POST") {ok(ctx,KnowledgeStore(store.dataDir).graph());return}
+        if (path == "/api/knowledge/node" && method == "POST") {
+            match(bodyJson(ctx)){case Some(b)=>try{ok(ctx,KnowledgeStore(store.dataDir).read(strOf(b,"id")))}catch(e: Exception){fail(ctx,404,e.message)};case None=>fail(ctx,400,"请求体不是合法JSON")};return
+        }
+        if (path == "/api/knowledge/save" && method == "POST") {
+            match(bodyJson(ctx)){case Some(b)=>try{ok(ctx,KnowledgeStore(store.dataDir).save(b,true,"","","",""))}catch(e: Exception){fail(ctx,400,e.message)};case None=>fail(ctx,400,"请求体不是合法JSON")};return
+        }
+        if (path == "/api/knowledge/note" && method == "POST") {
+            match(bodyJson(ctx)){case Some(b)=>try{ok(ctx,KnowledgeStore(store.dataDir).addNote(strOf(b,"id"),strOf(b,"text")))}catch(e: Exception){fail(ctx,400,e.message)};case None=>fail(ctx,400,"请求体不是合法JSON")};return
+        }
+        if (path == "/api/knowledge/link" && method == "POST") {
+            match(bodyJson(ctx)){case Some(b)=>try{KnowledgeStore(store.dataDir).link(strOf(b,"from"),strOf(b,"to"),strOf(b,"label"),boolOf(b,"remove"));ok(ctx,JsonObject())}catch(e: Exception){fail(ctx,400,e.message)};case None=>fail(ctx,400,"请求体不是合法JSON")};return
+        }
+        if (path == "/api/knowledge/delete" && method == "POST") {
+            match(bodyJson(ctx)){case Some(b)=>KnowledgeStore(store.dataDir).delete(strOf(b,"id"));ok(ctx,JsonObject());case None=>fail(ctx,400,"请求体不是合法JSON")};return
         }
 
         if (path == "/api/personal/list" && method == "POST") {
@@ -3073,6 +3091,12 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/tools/list",
         "/api/learning/resources",
         "/api/personal/list",
+        "/api/knowledge/graph",
+        "/api/knowledge/node",
+        "/api/knowledge/save",
+        "/api/knowledge/note",
+        "/api/knowledge/link",
+        "/api/knowledge/delete",
         "/api/personal/settings",
         "/api/personal/save",
         "/api/personal/search",

@@ -378,6 +378,11 @@ def native_reply(body):
         if any(m.get("name") == "kb_search" or "命中" in str(m.get("content")) for m in last_tools):
             return "提示词要写清任务、约束和输出格式；使用资料时标注出处，方便回到原文核实 [1]。"
         return "已完成工具调用，可在右侧成果中查看。"
+    # 知识点自动记录：内核的 record_knowledge_point 工具（quote 必须是本轮用户原话的逐字片段）
+    if "知识点别名测试" in ask:
+        return call("record_knowledge_point", {"title": "I/O 约定", "definition": "别名合并测试用的定义。", "quote": "请解释输入与输出", "note": "用已有知识点的确切别名发起记录。"})
+    if "知识点测试" in ask:
+        return call("record_knowledge_point", {"title": "输入与输出", "definition": "输入与输出是一种约定：先写清输入样例与期望输出，再执行并保留验证依据。", "quote": "请解释输入与输出的约定", "note": "本轮讨论了输入与输出的约定，并保留了一个具体例子。", "aliases": ["I/O 约定"]})
     if 'PPTX_BRIDGE' in ask or 'create_presentation' in ask:
         return call('create_presentation', {'title':'输入与输出的约定','audience':'初学者','purpose':'课堂讲解','style':'简洁墨绿','slides':[
             {'title':'输入与输出的约定','layout':'cover','notes':'介绍今天的学习目标。'},

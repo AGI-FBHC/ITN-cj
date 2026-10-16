@@ -117,6 +117,7 @@ public class PersonalStore {
         ops.add(DbOp("DELETE FROM content_index WHERE type='note' AND id NOT IN (SELECT id FROM notes)",ArrayList<DbValue>()))
         ops.add(DbOp("DELETE FROM content_index WHERE type='wrong' AND id NOT IN (SELECT id FROM quiz_records WHERE correct=0)",ArrayList<DbValue>()))
         db().batch(ops)
+        db().exec("UPDATE content_index SET title=(SELECT title FROM knowledge_nodes k WHERE k.id=content_index.id),body=(SELECT definition||char(10)||COALESCE((SELECT group_concat(question||char(10)||note,char(10)) FROM knowledge_records r WHERE r.node_id=k.id),'')||char(10)||COALESCE((SELECT group_concat(n.text,char(10)) FROM notes n JOIN knowledge_notes l ON l.note_id=n.id WHERE l.node_id=k.id),'') FROM knowledge_nodes k WHERE k.id=content_index.id) WHERE type='knowledge'")
     }
     public func search(query: String,limitIn: Int64): JsonArray{
         scan();refreshStudyIndex();let out=JsonArray();let q=trimStr(byteSafePrefix(query,300))

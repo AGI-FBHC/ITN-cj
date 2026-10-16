@@ -106,8 +106,10 @@ func switchingWebOffRemovesWebTools(): Unit {
     // 领域工具 10 个，其中 web_search / web_fetch 两个联网工具在"不联网"时压根不该生成
     let off = ScriptedProvider([scriptText("好的。")])
     PiAgent(store).askWithProvider(off, "t", "在吗", "", "off", "")
-    @Expect(off.seenToolCounts[0], 15)
+    @Expect(off.seenToolNames[0].contains("web_search"),false)
+    @Expect(off.seenToolNames[0].contains("web_fetch"),false)
     let auto = ScriptedProvider([scriptText("好的。")])
     PiAgent(store).askWithProvider(auto, "t", "在吗", "", "auto", "")
-    @Expect(auto.seenToolCounts[0], 19)
+    @Expect(auto.seenToolNames[0].contains("web_search"),true)
+    @Expect(auto.seenToolNames[0].contains("web_fetch"),true)
 }

@@ -210,6 +210,34 @@ def main():
             assert any(e['type']=='assistant/activity' and e['payload'].get('phase')=='tool_input' for e in events), 'no live tool-input stage'
             return 'HTML=%d bytes; writes=%d; no failed write or agent test command' % (files[0].stat().st_size,len(writes))
 
+        def case_knowledge():
+            sid = new_session()
+            r = ask(sid, '请用一段话解释「输入与输出」的约定：先给定什么、再验证什么，并举一个具体例子。')
+            events = core.events(sid)
+            called = any(e.get('type') == 'tool/result' and (e.get('payload') or {}).get('tool') == 'record_knowledge_point' and (e.get('payload') or {}).get('ok') for e in events)
+            assert r.get('ok') is True, 'turn failed: %s' % (r.get('message') or '')
+            assert called, '模型没有调用 record_knowledge_point'
+            graph = core.call('/api/knowledge/graph', {})
+            node = next((n for n in graph.get('nodes') or [] if n.get('recordCount')), None)
+            assert node, '知识网络没有带来源记录的节点'
+            detail = core.call('/api/knowledge/node', {'id': node['id']})
+            rec = (detail.get('records') or [])[0]
+            assert rec.get('question') and rec.get('note'), '记录缺少问题或要点'
+            return 'title=%r records=%d notecut=%d' % (node['title'], node['recordCount'], len(rec['note']))
+
+        def case_personal_search():
+            seed = work / 'personal-seed.md'
+            seed.write_text('# 检索暗号\n\n跨会话检索暗号是 PL-3097，只有正文里有。\n', encoding='utf-8')
+            core.call('/api/personal/save', {'path': str(seed), 'title': '检索暗号资料', 'confirmed': True})
+            sid = new_session()
+            r = ask(sid, '请用 search_personal_resources 在我的个性资源里找「检索暗号」，告诉我暗号是什么。')
+            events = core.events(sid)
+            used = any(e.get('type') == 'tool/result' and (e.get('payload') or {}).get('tool') == 'search_personal_resources' and (e.get('payload') or {}).get('ok') for e in events)
+            ans = r.get('answer') or ''
+            assert used, '模型没有调用 search_personal_resources：%r' % ans[:120]
+            assert 'PL-3097' in ans, '回答里没有暗号：%r' % ans[:120]
+            return 'tool=search_personal_resources ok; answer=%r' % ans[:30]
+
         def case_presentation():
             bridge = subprocess.Popen(['node',str(ROOT/'shell/desktop-bridge.js'),core.base,str(core.dir)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=NO_WINDOW)
             try:
@@ -249,7 +277,8 @@ def main():
 
         cases = [('chat', case_chat), ('stream', case_stream), ('vision', case_vision),
                  ('session_read', case_session_read), ('file_read', case_file_read),
-                 ('memory', case_memory), ('generate', case_generate), ('course', case_course), ('crocodile', case_crocodile), ('presentation', case_presentation)]
+                 ('memory', case_memory), ('generate', case_generate), ('course', case_course), ('crocodile', case_crocodile), ('presentation', case_presentation),
+                 ('knowledge', case_knowledge), ('personal_search', case_personal_search)]
         for name, fn in cases:
             if only and name not in only:
                 continue

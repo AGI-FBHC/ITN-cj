@@ -580,6 +580,7 @@ app.on("open-url", (e, url) => { e.preventDefault(); openThreadFromArgs([url]); 
 app.whenReady().then(createWindow);
 app.on("window-all-closed", () => { if (quitting) app.quit(); });
 app.on("before-quit", () => {
+  stopDesktopBridge?.();stopDesktopBridge=null;
   quitting = true;
   if (kernel) { try { kernel.kill(); } catch (e) { /* ignore */ } }
 });

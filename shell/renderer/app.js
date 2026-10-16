@@ -6197,6 +6197,8 @@ function turnsFromEvents(events) {
         target.ok = p.ok !== false;
         target.running = false;
       }
+    } else if(e.type==="knowledge/recorded"){
+      t.items.push({t:"knowledge",point:p});
     } else if (e.type === "artifact/created") {
       t.items.push({t:"file",artifact:p});
     } else if (e.type === "resource/saved") {
@@ -6412,7 +6414,8 @@ function renderTurnBlock(t, live) {
   const {processBlocks,answerBlocks}=splitAssistantDisplayBlocks(t.items);
   let pending=[],groupIndex=0;
   const appendContent=it=>{
-    if(it.t==='file')box.appendChild(fileArtifactCard(it.artifact));
+    if(it.t==='knowledge'){const button=btn('知识点已记录：'+it.point.title,'ghost sm knowledge-recorded',()=>openKnowledgePoint(it.point.id));box.appendChild(button);}
+    else if(it.t==='file')box.appendChild(fileArtifactCard(it.artifact));
     else if(it.t==='resource')box.appendChild(resourceCard(it.resource,true));
     else if(it.text){const node=assistantBlock(it.text,live&&it.streaming);node.dataset.timelineKind='text';box.appendChild(node);}
   };

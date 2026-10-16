@@ -42,6 +42,7 @@ public class ScriptedProvider <: ChatProvider {
     /** 诊断用：每次请求看到的系统提示词 / 工具数 / 消息数 */
     public let seenSystems = ArrayList<String>()
     public let seenToolCounts = ArrayList<Int64>()
+    public let seenToolNames = ArrayList<ArrayList<String>>()
     public let seenMessageCounts = ArrayList<Int64>()
     public var chunkBytes: Int64 = 24
 
@@ -58,6 +59,7 @@ public class ScriptedProvider <: ChatProvider {
     public func respond(ctx: StepContext, stream: EventStream): ModelReply {
         seenSystems.add(ctx.system)
         seenToolCounts.add(ctx.tools.size)
+        let names=ArrayList<String>();for(tool in ctx.tools){names.add(tool.name)};seenToolNames.add(names)
         seenMessageCounts.add(ctx.messages.size)
         let reply = ModelReply()
         if (cursor >= steps.size) {

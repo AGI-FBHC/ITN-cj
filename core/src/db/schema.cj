@@ -56,7 +56,12 @@ let ddl = [
     "CREATE INDEX IF NOT EXISTS ix_drafts_session ON drafts (session_id, state)",
     "CREATE TABLE IF NOT EXISTS desktop_jobs (id TEXT PRIMARY KEY, kind TEXT, status TEXT, body TEXT, result TEXT, error TEXT, created_at TEXT)",
     "CREATE TABLE IF NOT EXISTS personal_resources (id TEXT PRIMARY KEY,title TEXT,path TEXT UNIQUE,source_path TEXT,kind TEXT,version INTEGER,learning_id TEXT,session_id TEXT,turn_id TEXT,created_at TEXT)",
-    "CREATE TABLE IF NOT EXISTS content_index (type TEXT,id TEXT,title TEXT,body TEXT,path TEXT,learning_id TEXT,updated_at TEXT,PRIMARY KEY(type,id))"
+    "CREATE TABLE IF NOT EXISTS content_index (type TEXT,id TEXT,title TEXT,body TEXT,path TEXT,learning_id TEXT,updated_at TEXT,PRIMARY KEY(type,id))",
+    "CREATE TABLE IF NOT EXISTS knowledge_nodes (id TEXT PRIMARY KEY,canonical TEXT UNIQUE,title TEXT,definition TEXT,aliases TEXT,user_edited INTEGER,created_at TEXT,updated_at TEXT)",
+    "CREATE TABLE IF NOT EXISTS knowledge_records (id TEXT PRIMARY KEY,node_id TEXT,session_id TEXT,turn_id TEXT,project_id TEXT,workspace_name TEXT,workspace_root TEXT,question TEXT,note TEXT,at TEXT,UNIQUE(node_id,session_id,turn_id))",
+    "CREATE INDEX IF NOT EXISTS ix_knowledge_records_node ON knowledge_records(node_id,at)",
+    "CREATE TABLE IF NOT EXISTS knowledge_notes (node_id TEXT,note_id TEXT,PRIMARY KEY(node_id,note_id))",
+    "CREATE TABLE IF NOT EXISTS knowledge_links (from_id TEXT,to_id TEXT,label TEXT,created_at TEXT,PRIMARY KEY(from_id,to_id))"
 ]
 
 public func ensureSchema(db: Db): Unit {
