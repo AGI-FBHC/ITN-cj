@@ -60,161 +60,188 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   check('links to missing nodes are rejected',(await raw('/api/knowledge/link',{from:nodeId,to:'kp-missing'})).code!==0);
 
   browser=await chromium.launch({channel:'msedge',headless:true});
-  const page=await browser.newPage({viewport:{width:1440,height:960}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const page=await browser.newPage({viewport:{width:1500,height:1000}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(base);await page.waitForSelector('#chat-input');
   await page.waitForFunction(()=>!document.getElementById('boot'),null,{timeout:15000}).catch(()=>{});
+  const shots=path.join(root,'tmp/knowledge-shots');fs.mkdirSync(shots,{recursive:true});
+  const openNode=async(id)=>{await page.evaluate(async nid=>{await go('home');await openKnowledgePoint(nid);},id);await page.waitForSelector('#knowledge-detail:not([hidden])');};
 
+  // —— 页面框架：旧总览内容全部不在；tab 已改名；默认网络图
+  await page.evaluate(()=>go('home'));await page.waitForSelector('.knowledge-network');
+  check('the old overview content is gone from this page',await page.locator('.study-continue').count()===0&&await page.locator('.setup-banner').count()===0&&await page.locator('.home-network').count()===0);
+  check('the tab is renamed to the knowledge network',(await page.locator('.workspace-tabs [data-page="home"]').innerText()).includes('知识网络'));
+  check('the page defaults to the graph view',await page.locator('.knowledge-seg[data-view="graph"].on').count()===1&&await page.locator('.knowledge-canvas').count()===1);
+  const pill=(await page.locator('#knowledge-count').innerText());
+  check('counts live in a single pill',pill.includes('1 个知识点')&&pill.includes('0 条手动连接'));
+
+  // —— 聊天卡 → 详情抽屉
   await page.evaluate(pid=>startAgentTask('知识点测试：请解释输入与输出的约定',pid),proj.id);
   await page.waitForSelector('.knowledge-recorded',{timeout:60000});
   check('the chat turn shows a knowledge-recorded card',(await page.locator('.knowledge-recorded').innerText()).includes('输入与输出'));
   await page.locator('.knowledge-recorded').click();
   await page.waitForSelector('#knowledge-detail:not([hidden])');
-  check('the card opens the detail with the user-edited definition',(await page.locator('#knowledge-detail .knowledge-definition').innerText()).includes('本人修订'));
+  check('the card opens the wide drawer with the user-edited definition',(await page.locator('#knowledge-detail .knowledge-definition').innerText()).includes('本人修订'));
+  check('the drawer offers four icon actions',await page.locator('#knowledge-detail .knowledge-act').count()===4&&await page.locator('#knowledge-detail .knowledge-act[data-act="ask"]').count()===1);
+  check('drawer sections group concept, records and notes',await page.locator('#knowledge-detail .knowledge-sec').count()>=3);
+  check('the drawer shows the source workspace of the newest record',(await page.locator('#knowledge-detail').innerText()).includes('知识网络测试项目'));
+
+  // —— 快速换色：点头部色点
+  check('the drawer header shows the node color dot',await page.locator('#knowledge-detail .knowledge-color-dot').count()===1);
+  await page.locator('#knowledge-detail .knowledge-color-dot').click();
+  await page.waitForSelector('.knowledge-pop .knowledge-swatch');
+  await page.locator('.knowledge-pop .knowledge-swatch[data-color="#2FB8A6"]').click();
+  await until(async()=>(await post('/api/knowledge/node',{id:nodeId})).color==='#2FB8A6');
+  check('picking a swatch on the dot saves the color immediately',true);
+  check('the drawer dot follows the new color',await page.locator('#knowledge-detail .knowledge-color-dot').evaluate(e=>getComputedStyle(e).backgroundColor==='rgb(47, 184, 166)'));
+
+  // —— 编辑弹层：宽版两列 + 预览球 + 调色盘
   await page.getByRole('button',{name:'编辑',exact:true}).click();
-  check('the edit dialog offers a palette plus a native color picker',await page.locator('.knowledge-dialog .knowledge-swatch').count()===9&&await page.locator('#knowledge-color-picker').count()===1);
+  check('the edit sheet is wide with two columns',await page.locator('.knowledge-dialog .task-modal-card.wide').count()===1&&await page.locator('.knowledge-edit-cols').count()===1);
+  check('the edit sheet previews the node orb',await page.locator('.knowledge-preview-orb').count()===1);
+  check('the palette keeps the native picker and nine swatches',await page.locator('#knowledge-color-picker').count()===1&&await page.locator('.knowledge-dialog .knowledge-swatch').count()===9);
   await page.locator('.knowledge-swatch[data-color="#C77DFF"]').click();
   await page.getByRole('button',{name:'保存知识点',exact:true}).click();
   await until(async()=>(await post('/api/knowledge/node',{id:nodeId})).color==='#C77DFF');
-  check('picking a palette color saves it on the node',true);
-  check('the detail shows the node color dot',await page.locator('#knowledge-detail .knowledge-color-dot').count()===1);
-  check('the node list mirrors the node color',await page.locator('.knowledge-node-button[data-knowledge-id="'+nodeId+'"] .knowledge-color-dot').count()===1);
+  check('saving from the palette persists through the edit sheet',true);
 
-  const uiSession=await page.evaluate(()=>state.chatSessionId);
-  const countText0=await page.locator('#knowledge-count').innerText();
-  check('the overview counts one node and zero manual links',countText0.includes('1 个知识点')&&countText0.includes('0 条手动连接'));
-  check('the node list shows four records for the point',(await page.locator('.knowledge-node-button').innerText()).includes('4 次记录'));
-  check('the empty-state prompt is gone once a node exists',await page.locator('.knowledge-empty').count()===0);
-  check('the detail shows the source workspace of the newest record',(await page.locator('#knowledge-detail').innerText()).includes('知识网络测试项目'));
-
-  await page.locator('#knowledge-detail .knowledge-record').first().getByRole('button',{name:'回到这次对话'}).click();
-  await page.waitForSelector('.turn-block.search-focus',{timeout:20000});
-  check('a source record reveals and highlights the exact chat turn',(await page.locator('.turn-block.search-focus').innerText()).includes('请解释输入与输出的约定'));
-  check('revealing jumps back to the chat page',await page.evaluate(()=>current==='chat'));
-
-  await page.evaluate(()=>go('home'));await page.waitForSelector('.knowledge-network');
-  await page.locator('.knowledge-node-button').first().click();
-  await page.waitForSelector('#knowledge-detail:not([hidden])');
+  // —— 笔记（铅笔）
   check('the notes section offers a pencil button',await page.locator('.knowledge-note-add').count()===1);
-  check('the text note action stays available in the actions row',await page.getByRole('button',{name:'写笔记',exact:true}).count()===1);
   await page.locator('.knowledge-note-add').click();
   await page.locator('#knowledge-note').fill('MANUAL-NOTE-9527 先写清输入再谈输出');
   await page.getByRole('button',{name:'保存笔记',exact:true}).click();
   await until(async()=>(await page.locator('#knowledge-detail').innerText()).includes('MANUAL-NOTE-9527'));
-  check('the node detail lists the personal note',(await page.locator('#knowledge-detail').innerText()).includes('MANUAL-NOTE-9527'));
-  const noteHits=await post('/api/personal/search',{query:'MANUAL-NOTE-9527'});
-  check('the note enters the global personal search index',noteHits.hits.some(h=>h.type==='note'||h.type==='knowledge'));
+  check('the drawer lists the personal note',true);
+  check('the note enters the global personal search index',(await post('/api/personal/search',{query:'MANUAL-NOTE-9527'})).hits.some(h=>h.type==='note'||h.type==='knowledge'));
 
+  // —— 图内搜索：画布高亮 + 计数
   await page.locator('#knowledge-search').fill('MANUAL-NOTE');
-  await until(async()=>await page.locator('.knowledge-node-button').count()===1);
-  check('network search filters down to the indexed hit',await page.locator('.knowledge-node-button').count()===1);
+  await until(async()=>await page.evaluate(()=>knowledgeNet.visible&&knowledgeNet.visible.length===1));
+  check('graph search narrows to the indexed hit',true);
   await page.locator('#knowledge-search').fill('绝不存在-ZZQ-7788');
-  await until(async()=>await page.locator('.knowledge-node-button').count()===0);
-  check('unmatched search shows nothing instead of everything',await page.locator('.knowledge-node-button').count()===0);
+  await until(async()=>await page.evaluate(()=>knowledgeNet.visible&&knowledgeNet.visible.length===0));
+  check('unmatched search shows nothing instead of everything',true);
   await page.locator('#knowledge-search').fill('');
-  await until(async()=>await page.locator('.knowledge-node-button').count()===1);
+  await until(async()=>await page.evaluate(()=>knowledgeNet.visible===null));
+  check('clearing search restores the whole graph',true);
 
-  await page.getByRole('button',{name:'添加知识点',exact:true}).click();
+  // —— 手动新增节点 + 连线 + 关系说明开关
+  await page.evaluate(()=>editKnowledgePoint());
   await page.locator('#knowledge-title').fill('验证与边界');
   await page.locator('#knowledge-definition').fill('验证要覆盖正常、最小、最大与异常样例。');
   await page.getByRole('button',{name:'保存知识点',exact:true}).click();
-  await until(async()=>await page.locator('.knowledge-node-button').count()===2);
-  check('manual node creation opens its own detail',(await page.locator('#knowledge-detail').innerText()).includes('验证与边界'));
-  g=await post('/api/knowledge/graph',{});
-  const second=g.nodes.find(n=>n.title==='验证与边界').id;
-
+  await until(async()=>(await post('/api/knowledge/graph',{})).nodes.length===2);
+  g=await post('/api/knowledge/graph',{});const second=g.nodes.find(n=>n.title==='验证与边界').id;
+  await until(async()=>(await page.locator('#knowledge-detail').innerText()).includes('验证与边界'));
+  check('manual node creation opens its own drawer',true);
   await page.getByRole('button',{name:'手动连线',exact:true}).click();
   await page.selectOption('#knowledge-link-target',nodeId);
   await page.locator('#knowledge-link-label').fill('对比');
   await page.getByRole('button',{name:'添加连线',exact:true}).click();
-  await until(async()=>(await page.locator('#knowledge-detail').innerText()).includes('对比'));
-  g=await post('/api/knowledge/graph',{});
-  check('manual linking stores one edge and renders it in the detail',g.links.length===1&&(await page.locator('#knowledge-detail').innerText()).includes('对比'));
+  await until(async()=>await page.evaluate(()=>knowledgeNet.linkLabels.some(l=>l.text==='对比')));
+  check('the relation label is drawn on the connection line',true);
+  check('manual linking stores one edge',(await post('/api/knowledge/graph',{})).links.length===1);
   await page.locator('#knowledge-detail').getByRole('button',{name:'移除',exact:true}).click();
   await until(async()=>(await post('/api/knowledge/graph',{})).links.length===0);
   check('removing the only manual edge returns to zero edges',true);
-
   await page.getByRole('button',{name:'手动连线',exact:true}).click();
-  await page.selectOption('#knowledge-link-target',nodeId);
-  await page.locator('#knowledge-link-label').fill('对比');
+  await page.selectOption('#knowledge-link-target',nodeId);await page.locator('#knowledge-link-label').fill('对比');
   await page.getByRole('button',{name:'添加连线',exact:true}).click();
-  await until(async()=>(await post('/api/knowledge/graph',{})).links.length===1);
+  await until(async()=>await page.evaluate(()=>knowledgeNet.linkLabels.some(l=>l.text==='对比')));
+  await page.locator('.knowledge-labels-toggle').click();
+  await until(async()=>await page.evaluate(()=>knowledgeNet.linkLabels.length===0&&!knowledgeNet.showLinkLabels));
+  check('the icon toggle hides the relation labels and stores the preference',(await post('/api/prefs/get',{})).knowledgeLinkLabels==='0');
+  await page.locator('.knowledge-labels-toggle').click();
+  await until(async()=>await page.evaluate(()=>knowledgeNet.linkLabels.some(l=>l.text==='对比'))&&(await post('/api/prefs/get',{})).knowledgeLinkLabels==='1');
+  check('turning the labels back on restores them',true);
 
+  // —— 时间线视图
+  await page.locator('.knowledge-seg[data-view="timeline"]').click();
+  await page.waitForSelector('.knowledge-timeline');
+  check('the timeline replaces the canvas',await page.locator('.knowledge-canvas').count()===0&&await page.locator('.knowledge-timeline').count()===1);
+  check('the range selector defaults to all',await page.locator('#knowledge-range').inputValue()==='0');
+  check('the timeline groups entries by day',await page.locator('.knowledge-day').count()>=1);
+  const recEv=page.locator('.knowledge-ev').filter({hasText:'请解释输入与输出的约定'}).first();
+  check('records appear as cards with question and workspace',(await recEv.innerText()).includes('知识网络测试项目'));
+  check('a record card links back to the chat and to the graph',await recEv.getByRole('button',{name:'回到这次对话'}).count()===1&&await recEv.getByRole('button',{name:'在图里看'}).count()===1);
+  check('a record-less manual node shows as a dashed created entry',await page.locator('.knowledge-ev.mini').count()===1&&(await page.locator('.knowledge-ev.mini').innerText()).includes('手动添加'));
+  await page.locator('#knowledge-search').fill('绝不存在-ZZQ-7788');
+  await until(async()=>await page.locator('.knowledge-ev').count()===0);
+  check('unmatched timeline search shows nothing',true);
+  await page.locator('#knowledge-search').fill('解释输入与输出');
+  await until(async()=>await page.locator('.knowledge-ev').count()>=3);
+  check('timeline search matches the question text',true);
+  await page.locator('#knowledge-search').fill('');
+  await until(async()=>await page.locator('.knowledge-ev').count()>=5);
+  await page.screenshot({path:path.join(shots,'network-timeline.png')});
+  await page.locator('.knowledge-ev').filter({hasText:'请解释输入与输出的约定'}).first().getByRole('button',{name:'在图里看'}).click();
+  await page.waitForSelector('.knowledge-canvas');
+  await page.waitForSelector('#knowledge-detail:not([hidden])');
+  check('在图里看 returns to the graph with the node selected',await page.evaluate(nid=>knowledgeNet.selected===nid,nodeId));
+
+  // —— 视图偏好持久化
+  await page.locator('.knowledge-seg[data-view="timeline"]').click();await page.waitForSelector('.knowledge-timeline');
+  await page.reload({waitUntil:'load'});
+  await page.waitForFunction(()=>state.knowledgeView==='timeline',null,{timeout:15000});
+  await page.evaluate(()=>go('home'));await page.waitForSelector('.knowledge-timeline');
+  check('the chosen view survives a reload',true);
+  await page.locator('.knowledge-seg[data-view="graph"]').click();await page.waitForSelector('.knowledge-canvas');
+
+  // —— 提问来源工作区 / 删除项目后的去向
+  await openNode(nodeId);
+  await page.getByRole('button',{name:'提问',exact:true}).click();
+  check('the ask dialog defaults to the record source workspace',await page.locator('#knowledge-question-project').inputValue()===proj.id);
+  check('the dialog explains the source directory',(await page.locator('.knowledge-dialog').innerText()).includes('来源记录中的目录'));
+  await page.getByRole('button',{name:'新建会话并提问',exact:true}).click();
+  await page.waitForFunction(pid=>state.chatProject===pid&&!!state.chatSessionId,proj.id,{timeout:20000});
+  await sleep(400);
+  await until(async()=>(await page.locator('#chat-thread').innerText()).includes('请进一步讲解'),20000);
+  check('asking from a node opens a session in its source workspace',true);
+  await post('/api/projects/delete',{id:proj.id});
+  await openNode(nodeId);
+  await page.getByRole('button',{name:'提问',exact:true}).click();
+  check('a deleted source workspace is marked and disabled',(await page.locator('#knowledge-question-project option[disabled]').first().innerText()).startsWith('已删除工作区'));
+  check('the dialog refuses to silently switch directories',(await page.locator('.knowledge-dialog').innerText()).includes('原工作区已删除，请明确选择新的去向'));
+  check('starting stays blocked with the deleted workspace selected',await page.getByRole('button',{name:'新建会话并提问',exact:true}).isDisabled());
+  await page.selectOption('#knowledge-question-project','');
+  check('choosing a new destination unblocks the start button',!(await page.getByRole('button',{name:'新建会话并提问',exact:true}).isDisabled()));
+  await page.getByRole('button',{name:'取消',exact:true}).click();
+
+  // —— 全局搜索打开知识点
   await page.locator('#rail-search-btn').click();await page.waitForSelector('.palette-box');
   await page.fill('#palette-input','本人修订');
   await page.waitForFunction(()=>palette.items.some(x=>x.group==='知识点'),null,{timeout:8000});
   await page.locator('.palette-item').filter({hasText:'本人修订'}).filter({hasText:'章节'}).first().click();
   await page.waitForSelector('#knowledge-detail:not([hidden])');
-  check('the global palette finds the knowledge point and opens it',(await page.locator('#knowledge-detail .knowledge-definition').innerText()).includes('本人修订'));
+  check('the global palette finds the knowledge point and opens the drawer',(await page.locator('#knowledge-detail .knowledge-definition').innerText()).includes('本人修订'));
 
-  await page.evaluate(()=>go('home'));await page.waitForSelector('.knowledge-network');
-  check('the relation label is drawn on the connection line',await page.evaluate(()=>knowledgeNet.showLinkLabels&&knowledgeNet.linkLabels.some(l=>l.text==='对比')));
-  await page.locator('.knowledge-labels-toggle').click();
-  await until(async()=>await page.evaluate(()=>knowledgeNet.linkLabels.length===0&&!knowledgeNet.showLinkLabels));
-  check('the icon toggle hides the relation labels',await page.evaluate(()=>document.querySelector('.knowledge-labels-toggle').getAttribute('aria-pressed')==='false'));
-  check('the hidden state is stored as a preference',(await post('/api/prefs/get',{})).knowledgeLinkLabels==='0');
-  await page.reload({waitUntil:'load'});
-  await page.waitForFunction(()=>state.knowledgeLinkLabels===false,null,{timeout:15000});
-  await page.evaluate(()=>go('home'));await page.waitForSelector('.knowledge-network');
-  check('the preference survives a reload',await page.evaluate(()=>knowledgeNet.showLinkLabels===false&&knowledgeNet.linkLabels.length===0));
-  await page.locator('.knowledge-labels-toggle').click();
-  await until(async()=>await page.evaluate(()=>knowledgeNet.showLinkLabels===true&&knowledgeNet.linkLabels.some(l=>l.text==='对比')));
-  await until(async()=>(await post('/api/prefs/get',{})).knowledgeLinkLabels==='1');
-  check('turning the toggle back on restores the labels',true);
+  // —— 来源轮次定位
+  await page.locator('#knowledge-detail .knowledge-record').first().getByRole('button',{name:'回到这次对话'}).click();
+  await page.waitForSelector('.turn-block.search-focus',{timeout:20000});
+  check('a source record reveals and highlights the exact chat turn',(await page.locator('.turn-block.search-focus').innerText()).includes('请解释输入与输出的约定'));
+  check('revealing jumps back to the chat page',await page.evaluate(()=>current==='chat'));
 
-  const shots=path.join(root,'tmp/knowledge-shots');fs.mkdirSync(shots,{recursive:true});
-  await page.evaluate(()=>go('home'));await page.waitForSelector('.knowledge-network');
-  await page.locator('.knowledge-node-button').filter({hasText:'输入与输出（本人修订）'}).click();
-  await page.waitForSelector('#knowledge-detail:not([hidden])');
-  await page.waitForFunction(()=>knowledgeNet.projected.length===2);
-  check('the canvas projects every node and edge',await page.evaluate(()=>knowledgeNet.projected.length===2&&knowledgeNet.data.links.length===1));
-  await page.screenshot({path:path.join(shots,'network-light.png')});
-  await page.evaluate(()=>applyTheme('dark'));await sleep(900);
-  await page.screenshot({path:path.join(shots,'network-dark.png')});
-  await page.evaluate(()=>applyTheme('light'));await sleep(700);
-  await page.setViewportSize({width:1024,height:768});
-  check('no horizontal overflow at 1024px',await page.locator('#view').evaluate(e=>e.scrollWidth<=e.clientWidth+1));
-  check('detail sits beside the canvas on wide screens',(await page.locator('#knowledge-workspace').evaluate(e=>getComputedStyle(e).gridTemplateColumns)).trim().includes(' '));
-  await page.screenshot({path:path.join(shots,'network-compact.png')});
-  await page.setViewportSize({width:820,height:768});
-  await until(async()=>!(await page.locator('#knowledge-workspace').evaluate(e=>getComputedStyle(e).gridTemplateColumns)).trim().includes(' '));
-  check('detail stacks below the canvas on narrow screens',true);
-  await page.setViewportSize({width:1440,height:960});
-
-  await page.getByRole('button',{name:'提问',exact:true}).click();
-  check('the ask dialog defaults to the record source workspace',await page.locator('#knowledge-question-project').inputValue()===proj.id);
-  check('the dialog explains the source directory instead of guessing',(await page.locator('.knowledge-dialog').innerText()).includes('来源记录中的目录'));
-  await page.getByRole('button',{name:'新建会话并提问',exact:true}).click();
-  await page.waitForFunction(pid=>state.chatProject===pid&&!!state.chatSessionId,proj.id,{timeout:20000});
-  check('asking from a node opens a new session in its source workspace',true);
-  await sleep(400);
-  await until(async()=>(await page.locator('#chat-thread').innerText()).includes('请进一步讲解'),20000);
-  await until(async()=>(await page.locator('#chat-thread').innerText()).includes('知识点背景'),20000);
-  check('the new session carries the question and the node context',true);
-  await page.waitForFunction(()=>!state.busyTurn,null,{timeout:60000});
-
-  await post('/api/projects/delete',{id:proj.id});
-  await page.evaluate(()=>go('home'));await page.waitForSelector('.knowledge-network');
-  await page.locator('.knowledge-node-button').filter({hasText:'输入与输出（本人修订）'}).click();
-  await page.getByRole('button',{name:'提问',exact:true}).click();
-  check('a deleted source workspace is marked and disabled in the dialog',(await page.locator('#knowledge-question-project option[disabled]').first().innerText()).startsWith('已删除工作区'));
-  check('the dialog refuses to silently switch directories',(await page.locator('.knowledge-dialog').innerText()).includes('原工作区已删除，请明确选择新的去向'));
-  check('starting stays blocked while the deleted workspace is selected',await page.getByRole('button',{name:'新建会话并提问',exact:true}).isDisabled());
-  await page.selectOption('#knowledge-question-project','');
-  check('choosing a new destination unblocks the start button',!(await page.getByRole('button',{name:'新建会话并提问',exact:true}).isDisabled()));
-  await page.getByRole('button',{name:'取消',exact:true}).click();
-
+  // —— 删除知识点：笔记保留、连线清掉
   await post('/api/knowledge/note',{id:second,text:'MANUAL-NOTE-2211 删除节点后仍保留'});
-  await page.evaluate(()=>go('home'));await page.waitForSelector('.knowledge-network');
-  await page.locator('.knowledge-node-button').filter({hasText:'验证与边界'}).click();
-  await page.waitForSelector('#knowledge-detail:not([hidden])');
+  await openNode(second);
   await page.getByRole('button',{name:'删除知识点',exact:true}).click();
   await page.getByRole('button',{name:'确认删除',exact:true}).click();
-  await until(async()=>await page.locator('.knowledge-node-button').count()===1);
+  await until(async()=>(await post('/api/knowledge/graph',{})).nodes.length===1);
   g=await post('/api/knowledge/graph',{});
-  check('deleting a node removes it and its links in one step',g.nodes.length===1&&g.links.length===0&&g.nodes[0].id===nodeId);
-  const kept=await post('/api/personal/search',{query:'MANUAL-NOTE-2211'});
-  check('notes of a deleted node stay searchable in the notes page',kept.hits.some(h=>h.type==='note'));
+  check('deleting a node removes it and its links in one step',g.nodes.length===1&&g.links.length===0);
+  check('notes of a deleted node stay searchable',(await post('/api/personal/search',{query:'MANUAL-NOTE-2211'})).hits.some(h=>h.type==='note'));
 
+  // —— 截图与窄屏
+  await openNode(nodeId);
+  check('the drawer sits beside the canvas on wide screens',(await page.locator('#knowledge-workspace').evaluate(e=>getComputedStyle(e).gridTemplateColumns)).trim().includes(' '));
+  await page.screenshot({path:path.join(shots,'network-graph.png')});
+  await page.setViewportSize({width:1024,height:860});
+  await sleep(300);
+  check('no horizontal overflow at 1024px',await page.locator('#view').evaluate(e=>e.scrollWidth<=e.clientWidth+1));
+  await page.screenshot({path:path.join(shots,'network-compact.png')});
+  await page.setViewportSize({width:820,height:860});
+  await until(async()=>!(await page.locator('#knowledge-workspace').evaluate(e=>getComputedStyle(e).gridTemplateColumns)).trim().includes(' '));
+  check('the drawer stacks below the canvas on narrow screens',true);
+  await page.setViewportSize({width:1500,height:1000});
   check('no JavaScript exceptions',errors.length===0);
   console.log('RESULT=OK '+passed+' checks; shots: '+shots+' ; data: '+dir);
  }finally{if(browser)await browser.close();core.kill();mock.kill();}

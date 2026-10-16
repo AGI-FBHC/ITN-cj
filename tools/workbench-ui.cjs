@@ -164,10 +164,8 @@ module.exports=async function({base,post,check,dir}) {
     await page.locator('.complete-section:not([disabled])').click();await completion;
     check('learned button saves a section rather than chunk progress',(await post('/api/study/course',{kbId:'kb'})).doneCount===completedBefore+1);
     const courseBefore=await post('/api/study/course',{kbId:'kb'});
-    await page.evaluate(()=>go('home'));await page.waitForSelector('.continue-title');
-    check('home continue points to the next section title',(await page.locator('.continue-title').innerText())===courseBefore.next.title);
-    await page.locator('.study-continue .primary').click();await page.waitForSelector('.lecture-article');
-    check('home continue opens the exact next section',await page.evaluate(id=>state.studySection===id,courseBefore.next.sectionId));
+    await page.evaluate(()=>continueStudy());await page.waitForSelector('.lecture-article');
+    check('continue-study opens the exact next section',await page.evaluate(id=>state.studySection===id,courseBefore.next.sectionId));
     let lectureRequests=0;page.on('request',r=>{if(r.url().endsWith('/api/study/lecture'))lectureRequests++;});
     await page.route('**/api/study/lecture',async route=>{await new Promise(r=>setTimeout(r,500));await route.continue();});
     fs.writeFileSync(path.join(dir,'kb','new-section.md'),'# 新增章节\n\n## 验证新增章节\n\n新增内容用于验证没有讲义时，就地生成和自动打开。\n\n## 复核新增章节\n\n新增章节需要核对内容、引用与完成记录，按节保存进度。');

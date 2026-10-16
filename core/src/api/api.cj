@@ -843,6 +843,8 @@ public class Api {
             o.put("agentExec", JsonString(db.getKv("settings", "agent_exec", "1")))
             // 知识网络：连线上的"关系说明"是否显示（默认显示）
             o.put("knowledgeLinkLabels", JsonString(db.getKv("settings", "ui_knowledge_link_labels", "1")))
+            // 知识网络默认视图：graph（网络图）/ timeline（时间线）
+            o.put("knowledgeView", JsonString(db.getKv("settings", "ui_knowledge_view", "graph")))
             ok(ctx, o)
             return
         }
@@ -901,6 +903,10 @@ public class Api {
                     if (linkLabelsPref == "0" || linkLabelsPref == "1") {
                         db.putKv("settings", "ui_knowledge_link_labels", linkLabelsPref)
                     }
+                    let knowledgeViewPref = strOf(b, "knowledgeView")
+                    if (knowledgeViewPref == "graph" || knowledgeViewPref == "timeline") {
+                        db.putKv("settings", "ui_knowledge_view", knowledgeViewPref)
+                    }
                     let o = JsonObject()
                     o.put("theme", JsonString(db.getKv("settings", "ui_theme", "system")))
                     o.put("sessionRail", JsonString(db.getKv("settings", "ui_session_rail", "1")))
@@ -914,6 +920,7 @@ public class Api {
                     o.put("agentPerm", JsonString(db.getKv("settings", "agent_perm", "auto")))
                     o.put("agentExec", JsonString(db.getKv("settings", "agent_exec", "1")))
                     o.put("knowledgeLinkLabels", JsonString(db.getKv("settings", "ui_knowledge_link_labels", "1")))
+                    o.put("knowledgeView", JsonString(db.getKv("settings", "ui_knowledge_view", "graph")))
                     ok(ctx, o)
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -1316,6 +1323,9 @@ public class Api {
         }
 
         if (path == "/api/knowledge/graph" && method == "POST") {ok(ctx,KnowledgeStore(store.dataDir).graph());return}
+        if (path == "/api/knowledge/timeline" && method == "POST") {
+            match(bodyJson(ctx)){case Some(b)=>try{ok(ctx,KnowledgeStore(store.dataDir).timeline(intOf(b,"limit")))}catch(e: Exception){fail(ctx,400,e.message)};case None=>fail(ctx,400,"请求体不是合法JSON")};return
+        }
         if (path == "/api/knowledge/node" && method == "POST") {
             match(bodyJson(ctx)){case Some(b)=>try{ok(ctx,KnowledgeStore(store.dataDir).read(strOf(b,"id")))}catch(e: Exception){fail(ctx,404,e.message)};case None=>fail(ctx,400,"请求体不是合法JSON")};return
         }
@@ -3113,6 +3123,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/learning/resources",
         "/api/personal/list",
         "/api/knowledge/graph",
+        "/api/knowledge/timeline",
         "/api/knowledge/node",
         "/api/knowledge/save",
         "/api/knowledge/note",

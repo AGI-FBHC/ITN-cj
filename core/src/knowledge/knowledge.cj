@@ -96,6 +96,19 @@ public class KnowledgeStore {
             indexNode(id);return read(id)
         }
     }
+    /** 时间线：最近的对话记录（带节点标题与颜色）＋还没有记录的手动节点（"创建"事件）。 */
+    public func timeline(limitIn: Int64): JsonObject{
+        let limit=if(limitIn>0&&limitIn<=500){limitIn}else{300}
+        let out=JsonObject();let items=JsonArray()
+        for(r in db().query("SELECT r.node_id,n.title,n.color,r.session_id,r.turn_id,r.project_id,r.workspace_name,r.workspace_root,r.question,r.note,r.at FROM knowledge_records r JOIN knowledge_nodes n ON n.id=r.node_id ORDER BY r.at DESC LIMIT ?",va([nv(limit)]))){
+            let o=JsonObject();o.put("type",JsonString("record"));o.put("nodeId",JsonString(r.text(0)));o.put("title",JsonString(r.text(1)));o.put("color",JsonString(r.text(2)))
+            o.put("sessionId",JsonString(r.text(3)));o.put("turnId",JsonString(r.text(4)));o.put("projectId",JsonString(r.text(5)));o.put("workspaceName",JsonString(r.text(6)));o.put("workspaceRoot",JsonString(r.text(7)));o.put("question",JsonString(r.text(8)));o.put("note",JsonString(r.text(9)));o.put("at",JsonString(r.text(10)));items.add(o)
+        }
+        for(r in db().query("SELECT id,title,color,created_at FROM knowledge_nodes WHERE NOT EXISTS(SELECT 1 FROM knowledge_records rr WHERE rr.node_id=knowledge_nodes.id) ORDER BY created_at DESC LIMIT ?",va([nv(limit)]))){
+            let o=JsonObject();o.put("type",JsonString("created"));o.put("nodeId",JsonString(r.text(0)));o.put("title",JsonString(r.text(1)));o.put("color",JsonString(r.text(2)));o.put("at",JsonString(r.text(3)));items.add(o)
+        }
+        out.put("items",items);return out
+    }
     public func addNote(id: String,text: String): JsonObject{
         let node=read(id);if(trimStr(text).size==0){throw Exception("请写下笔记内容")}
         let noteId="kn-"+Random().nextUInt64().toString();let now=DateTime.now().toString();let ops=ArrayList<DbOp>()

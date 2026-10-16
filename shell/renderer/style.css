@@ -1424,68 +1424,8 @@ body.panel-hidden .panel { display: none; }
 .cite-list li.cite-web { color: var(--ink); }
 
 
-/* ============================================================
-   学习网络图（首页）
-   一张 380px 高的卡：左画布右细节卡；可以全屏展开。
-   ============================================================ */
-.graph-card .graph-body {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 0;
-  gap: 12px;
-  align-items: start;
-}
-.graph-card .graph-body:has(.graph-side:not([hidden])) {
-  grid-template-columns: minmax(0, 1fr) 260px;
-}
-@media (max-width: 1000px) {
-  .graph-card .graph-body:has(.graph-side:not([hidden])) { grid-template-columns: minmax(0, 1fr); }
-}
-.graph-canvas {
-  width: 100%; height: 380px; display: block;
-  border: 1px solid var(--line-soft); border-radius: 12px;
-  background:
-    radial-gradient(90% 110% at 100% 0%, var(--glow-2), transparent 60%),
-    var(--panel-soft);
-  touch-action: none; cursor: grab;
-}
-.graph-side {
-  border: 1px solid var(--line); border-radius: 12px;
-  background: var(--panel); padding: 12px 14px;
-  box-shadow: var(--shadow-sm);
-}
-.graph-side[hidden] { display: none; }
-.graph-side-title { font-size: calc(15px * var(--fs, 1)); font-weight: 650; margin-bottom: 8px; }
-.graph-side-row { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; font-size: calc(13px * var(--fs, 1)); }
-.graph-side-row .k { flex: 0 0 40px; color: var(--muted); }
-.graph-side-row .v { flex: 1; min-width: 0; color: var(--ink-2); word-break: break-all; }
-.graph-side-acts { margin-top: 10px; gap: 6px; }
-/* 工具条横跨整行：图表是两列的 grid，光给它 flex 会被挤成一条竖线 */
-.graph-tools { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
-.graph-tools .seg-item {
-  border: 1px solid var(--line); background: var(--panel); color: var(--ink-2);
-  font-size: calc(13px * var(--fs, 1)); padding: 3px 10px; border-radius: 999px; cursor: pointer;
-}
-.graph-tools .seg-item.active { background: var(--brand-soft); border-color: var(--brand-line); color: var(--brand); font-weight: 600; }
-.graph-hint { margin-left: auto; }
 
-/* 全屏：卡片铺满**主区**（窄栏与第二层面板照样在、照样能点，不弹新窗口） */
 .main { position: relative; }
-.graph-card.full {
-  position: absolute; inset: 0;
-  margin: 0; border-radius: 0; border: 0; z-index: 40;
-  display: flex; flex-direction: column;
-  background: var(--bg-glow), var(--bg);
-  padding: 18px 22px;
-  overflow: hidden;
-}
-.graph-card.full .graph-body {
-  /* 全屏时竖直排：画布吃掉剩余高度，细节卡浮在右上角 */
-  display: flex; flex-direction: column; flex: 1; min-height: 0;
-}
-.graph-card.full .graph-canvas { flex: 1; min-height: 0; height: auto; }
-.graph-card.full .graph-side { position: absolute; right: 22px; top: 62px; width: 260px; z-index: 2; }
-body.graph-full { overflow: hidden; }
 
 
 /* ============================================================
@@ -3098,7 +3038,6 @@ html[data-theme="dark"] .composer {
 .setup-banner { padding:14px 20px; }
 .study-continue .continue-title { font-size:calc(25px * var(--fs)); line-height:1.4; margin:12px 0; text-wrap:balance; }
 .study-continue .bar { margin:20px 0; max-width:640px; }
-.home-summary { margin:8px 4px 18px; }
 .home-network > summary, .library-info > summary { cursor:pointer; font-weight:600; padding:4px 0; }
 .home-network > .card { margin-top:18px; box-shadow:none; }
 .library-toolbar { margin:22px 2px 14px; }

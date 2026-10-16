@@ -60,4 +60,20 @@ class KnowledgeStoreTest {
         try{ks.save(point("HTML","定义","创建HTML文件"),false,"s","t","创建HTML文件","")}catch(e: Exception){rejected=true};@Expect(rejected,true)
         let nodes=match(ks.graph().get("nodes")){case Some(v: JsonArray)=>v;case _=>JsonArray()};@Expect(nodes.size(),0)
     }
+
+    @TestCase
+    func timelineMergesRecordsAndManualNodes(): Unit {
+        let dir=freshDir("knowledge-timeline");let ks=KnowledgeStore(dir)
+        let a=ks.save(point("时间线甲","定义甲","请解释时间线甲"),false,"s1","t1","请解释时间线甲","")
+        let b=ks.save(point("时间线乙","定义乙",""),true,"","","","")
+        let tl=ks.timeline(50)
+        let items=match(tl.get("items")){case Some(v: JsonArray)=>v;case _=>JsonArray()}
+        var record=false;var created=false;var i=0
+        while(i<items.size()){
+            let o=objOf(items[i]).getOrThrow();i+=1
+            if(strOf(o,"type")=="record"&&strOf(o,"nodeId")==strOf(a,"id")&&strOf(o,"question").size>0){record=true}
+            if(strOf(o,"type")=="created"&&strOf(o,"nodeId")==strOf(b,"id")){created=true}
+        }
+        @Expect(record,true);@Expect(created,true)
+    }
 }
