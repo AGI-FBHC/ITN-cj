@@ -4099,3 +4099,17 @@ read_chunk 读得到原文并带回库标识与正文。
 - Agent新增search_personal_resources/read_personal_resource/save_personal_resource，保存工具必须本轮用户明确要求存入，且文件必须本会话候选或本轮点名路径；满意不自动等于保存。新个人内容检索不暴露未确认候选文件。
 - 验证personal-check23/23：不确认不入库/不进搜索、确认副本/旧版不变/幂等/第二版、PPT原格式与伴随预览、DOCX/PDF正文可搜、笔记/错题索引与删除、首页无随机文件、HTML脚本沙箱无same-origin、取消确认无副本、全局搜索正文、无JS异常。learning-check --ui99/99（增加不可变确认版本），deck-export-check全通过（PPT入口先确认且不再直接交旧导出器，DOCX保留）。PDF样例用Poppler实际渲染tmp/personal-pdf-check.png，文本正常。索引开发中的空learningId分割问题、PDF.js6清理API变化已在验收前修复。
 - 后续：知识库管理迁移与旧网页版主节点知识网络/自动记录/手动连线/笔记/来源工作区新会话。最后统一升版、全回归、打包及哈希/隔离冒烟。
+
+
+## 2026-10-16 · 知识库管理迁移 + 对话知识网络（0.8.0 定版）
+- 接手来源：会话 01a14383 的中断交接（其最后一条为任务清单）。先读 tmp/knowledge-unit.log：中断前那次 cjpm test 已成功（129/129，含 KnowledgeStoreTest 3 例）；个人资源阶段 125/126 的旧失败是硬编码工具数量，已改为 ScriptedProvider.seenToolNames 实际存在性检查，随本次一并通过。
+- 构建与内核：补跑 scripts/build.ps1 + scripts/package.ps1，把 17:57 之后的知识模块源码真正编进 dist/core（打包脚本的「产物比源码新」校验通过）；随后又因提示词强化重编一次；cjpm test 两次均 129/129（tmp/knowledge-unit2.log、knowledge-unit3.log）。
+- 知识库管理迁移（提交 dfc13ab）：左侧「资料」改名「知识库」；settingsKb() 管理界面内嵌为知识库页「添加与管理知识库」折叠区；settings/kb 旧路由重定向 kb/manage；设置导航 9 段变 8 段。补验收：tools/nonchat-check.cjs 19→25 例（新增：旧路由落点、导入后回到管理区、新库立即出现、未建索引的新库不被当成已准备、1024px 无横向溢出），截图 tmp/nonchat-shots/library-manage-compact.png。
+- 对话知识网络（提交 8ad08ce）：
+  - 内核：新增 knowledge 模块（knowledge_nodes / knowledge_records / knowledge_notes / knowledge_links；canonical 标题与明确别名去重、同会话同轮幂等、本人编辑不可被模型覆盖、闲聊与一次性制文件过滤）、record_knowledge_point / read_knowledge_point 工具、/api/knowledge/* 六个接口；节点、记录与关联笔记进入全局内容索引。
+  - 前端：学习页总览「我的知识网络」卡片（沿用旧网页版 KnowledgeGraph3D 的柔光紫色主节点形态，Canvas 实现，不引入 React/Three）；节点详情含来源记录、本人笔记、手动连线/移除、编辑、删除、按来源工作区新建会话提问；左下搜索与全局 palette 可检索知识点，来源记录可「回到这次对话」精确定位原轮次。
+  - 端到端验收：新增 tools/knowledge-check.cjs，42/42 全过（mock 模型全链路）：自动记录（对话触发生成节点）、记录带问题/时间/会话/来源项目名与目录、别名合并、本人编辑保护、默认零边零子节点、手工连线与移除、自连/悬空连线拒绝、笔记入全局索引、网络内搜索过滤、来源轮次高亮定位、提问默认来源工作区且新会话携带节点背景、删除项目后选项禁用并提示「请明确选择新的去向」、删除节点保留笔记并清除连线、1024/820px 窄屏布局、无 JS 异常。截图 tmp/knowledge-shots/network-{light,dark,compact}.png 已逐张目视验收（柔光紫色主节点、手动连线、右侧详情、计数与提示）。
+  - 真实模型（只读用户配置、隔离数据目录；MiMo tokenplan / mimo-v2.6-flash）：第一次真实提问未触发自动记录（模型只调 kb_search/list_documents 后直接回答）；据此把 preamble 与工具描述由「应适时调用」改为「必须调用」（明确触发器：解释/讲解/什么是/为什么等），重编重打包后复测：real-knowledge 通过（43.9s，节点「输入与输出的约定」，1 条记录、note 65 字）；real-personal_search 通过（7.0s，search_personal_resources 找到跨会话暗号 PL-3097）。两例已固化进 tools/real-features-check.py（--case knowledge,personal_search）。
+- 回归：最终包二进制上 15 组全过 —— knowledge 42、nonchat 25、learning 99（含 workbench-ui）、personal 23、presentation 9、deck-export、palette 14、stop 12、attachments 16、splash 4、tray 4、busy-caret 6、kb-general、text-menu 6、glass-shot 无 console 错误；知识强化提示词之前的首轮 13 组回归同样全过。日志在 tmp/final-*.log 与 tmp/reg-*.log。
+- 发布：版本 0.7.1→0.8.0（提交 ea88bc3）；产出 dist/Lumin-0.8.0 + dist/Lumin-0.8.0-win-x64.zip（215MB）；包内 release.json version=0.8.0、sourceCommit=ea88bc3；9 项资产哈希与源码逐一一致（BAD=0）；隔离空目录冒烟 RESULT=OK（TITLE=Lumin、STATUS=Lumin 0.8.0 · 已连接、PRELOAD/TITLEBAR/DOCX 全 ok，NAV=5 与 0.7.0 包相同）；启动Lumin.cmd 已指向 dist\Lumin-0.8.0\Lumin.exe。
+- 备注：同会话同轮幂等由单测覆盖（重复 save 只留 1 条记录），端到端用别名合并 + 多会话多记录验证。两份未跟踪调研文档（知识库改进清单-v2、非对话页面改造方案-v1）按约定保持未跟踪、未提交。测试工具链同样入版本管理：tools/knowledge-check.cjs（新增）、tools/nonchat-check.cjs（扩到 25）、tools/real-features-check.py（加 knowledge / personal_search 两例）、tools/mock-openai/server.py（加知识点自动记录的脚本分支）。
