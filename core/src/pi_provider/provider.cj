@@ -112,6 +112,27 @@ public class OpenAiChatProvider <: ChatProvider {
         return respondWithLimit(ctx, stream, maxOutputTokens, true)
     }
 
+    /**
+     * "一次成文"（资源 JSON / 逐节正文）的调用：正文流被截断时 respond() 会保留半截不重发，
+     * 但一次成文的半截没有意义 —— 宁可把上限抬到 32768（MiMo 顺带关掉思考）完整重来一次。
+     * 只有真的截断（finishReason=length）才重发，正常路径的代价为零。
+     */
+    public func respondForWriting(ctx: StepContext, stream: EventStream): ModelReply {
+        let reply = respondWithLimit(ctx, stream, maxOutputTokens, true)
+        if (reply.stopReason != "length" || maxOutputTokens >= 32768) {
+            return reply
+        }
+        let model = if (ctx.model.size > 0) { ctx.model } else { defaultModel }
+        let audit = JsonObject()
+        audit.put("reason", JsonString("text_truncated"))
+        audit.put("nextMaxTokens", JsonInt(32768))
+        if (model.toAsciiLower().contains("mimo")) {
+            audit.put("recoveryThinking", JsonString("disabled"))
+        }
+        match (onAudit) { case Some(f) => f("model/retry", audit); case None => () }
+        return respondWithLimit(ctx, stream, 32768, false)
+    }
+
     private func respondWithLimit(ctx: StepContext, stream: EventStream, outputLimit: Int64, canRecover: Bool): ModelReply {
         let model = if (ctx.model.size > 0) { ctx.model } else { defaultModel }
         let payload = JsonObject()

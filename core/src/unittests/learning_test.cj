@@ -132,3 +132,25 @@ func emptyQuizGenerationIsBoundedAndCancellationDoesNotSave(): Unit {
     @Expect(cancelled.message, "已取消")
     @Expect(LearningStore(store.dataDir).resources("").size(), 0)
 }
+
+@Test
+func unparsableJsonIsRetriedOnceBeforeSaving(): Unit {
+    let store = Store(freshDir("resource-quiz-parse-retry"))
+    let req = ResourceRequest()
+    req.kind = "quiz"
+    req.topic = "输入与输出"
+    req.count = 3
+    req.maxRepair = 0
+    req.provider = Some(ScriptedProvider([
+        scriptText("{\"title\":\"半截\",\"knowledgePoints\":[{\"id\":\"kp-1\""),
+        scriptText("{\"title\":\"输入与输出\",\"knowledgePoints\":[{\"id\":\"kp-1\",\"name\":\"输入\",\"description\":\"先定输入样例\"},{\"id\":\"kp-2\",\"name\":\"输出\",\"description\":\"先定期望输出\"},{\"id\":\"kp-3\",\"name\":\"验证\",\"description\":\"保留验证依据\"}],\"questions\":[{\"id\":\"q-1\",\"knowledgePointId\":\"kp-1\",\"difficulty\":\"easy\",\"stem\":\"写清输入样例最主要的作用是什么？\",\"options\":[\"让别人能复现这次结果\",\"让页面更好看\",\"减少题目数量\",\"跳过验证步骤\"],\"correctIndex\":0,\"explanation\":\"输入样例固定了起点，别人才可能复现这次结果，也方便在出错时定位到具体是哪一个字段出的问题。\"},{\"id\":\"q-2\",\"knowledgePointId\":\"kp-2\",\"difficulty\":\"medium\",\"stem\":\"关于期望输出与验收标准，哪种做法更稳妥？\",\"options\":[\"事后凭感觉补一份\",\"执行前先写明并对照\",\"只保留最后结论\",\"完全不需要验收标准\"],\"correctIndex\":1,\"explanation\":\"执行前把期望输出和验收标准写清楚，结果好坏才有对照依据，不依赖事后的主观感觉判断。\"},{\"id\":\"q-3\",\"knowledgePointId\":\"kp-3\",\"difficulty\":\"hard\",\"stem\":\"边界样例验证时最容易遗漏的步骤是什么？\",\"options\":[\"只跑一个正常样例\",\"跳过失败时的记录\",\"直接给出最终结论\",\"记录预期与实际的差异\"],\"correctIndex\":3,\"explanation\":\"边界样例的价值在于把预期与实际的差异记录下来，漏掉这一步就只剩一个孤立的通过或失败结论，无法定位原因。\"}]}")
+    ]))
+    let r = generateResourceWithCancel(store, req, { => false }, { kind: String, p: JsonObject => () })
+    @Expect(r.ok, true)
+    @Expect(r.artifactPath.size > 0, true)
+    var warned = false
+    for (w in r.warnings) {
+        if (w.contains("已自动重试一遍")) { warned = true }
+    }
+    @Expect(warned, true)
+}

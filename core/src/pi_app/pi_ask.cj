@@ -61,13 +61,18 @@ class HostSkillScope {
     }
     public func check(dataDir: String, name: String, args: JsonObject, allowWeb: Bool): String {
         synchronized(lock) {
-            if (id.size > 0 && !tools.contains(name)) { return "技能「" + id + "」未允许工具 " + name }
+            // skill_read 只是"看说明书"：永远放行，而且**不再**把技能的工具集装进这段会话。
+            // （2026-10-16 实机修正：以前读一次技能就会把白名单钉死到整轮，之后不在名单里的
+            //   工具全被拦——连同一轮的并行调用都会被误伤，跨轮还会因为模型反复读技能而延续。
+            //   白名单现在只由"用户显式绑定"建立；绑定后也允许 skill_read 自身。）
             if (name == "skill_read") {
                 match (usableHostSkill(dataDir, strOf(args, "id"), allowWeb)) {
-                    case Some(pair) => id = pair[0].id; tools = pair[0].tools
+                    case Some(_) => ()
                     case None => return "技能不存在或在当前联网权限下不可用"
                 }
+                return ""
             }
+            if (id.size > 0 && !tools.contains(name)) { return "技能「" + id + "」未允许工具 " + name }
             return ""
         }
     }

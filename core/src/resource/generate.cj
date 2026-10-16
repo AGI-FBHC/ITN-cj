@@ -378,8 +378,12 @@ func resourceModel(run: Run, system: String, user: String, delta: (String) -> Un
             }
         }
     })
-    let reply = run.client.respond(ctx, stream)
+    let reply = match (run.client) {
+        case p: OpenAiChatProvider => p.respondForWriting(ctx, stream)
+        case _ => run.client.respond(ctx, stream)
+    }
     if (run.shouldAbort() || reply.stopReason == "aborted") { throw CancelException() }
+    if (reply.stopReason == "length") { throw Exception("输出被截断：已按更大上限重发过一次仍不完整，请重试或缩小篇幅") }
     if (reply.stopReason == "error" || reply.text.size == 0) { throw Exception("资源模型调用失败：" + reply.errorMessage) }
     return reply.text
 }
@@ -389,21 +393,38 @@ func askJson(run: Run, system: String, user: String, label: String): ?JsonObject
     if (run.shouldAbort()) {
         throw CancelException()
     }
+    let stream: (String) -> Unit = { piece: String =>
+        if (run.shouldAbort()) {
+            throw CancelException()
+        }
+        emitDelta(run, piece, label)
+    }
     var text = ""
     try {
-        text = resourceModel(run, STRUCTURED_SYSTEM, user, { piece: String =>
-            if (run.shouldAbort()) {
-                throw CancelException()
-            }
-            emitDelta(run, piece, label)
-        })
+        text = resourceModel(run, STRUCTURED_SYSTEM, user, stream)
     } catch (e: CancelException) {
         throw e
     } catch (e: Exception) {
         run.warnings.add(label + " 调用失败：" + e.message)
         return None
     }
-    let obj = jsonObjectFromModel(text)
+    var obj = jsonObjectFromModel(text)
+    if (obj.isNone() && !run.shouldAbort()) {
+        // 长 JSON 会偶发"字符串没转义 / 某一次被截断"这类坏样本。一次失败不等于这一轮没救：
+        // 同一份任务再要一遍，并把"只输出完整 JSON"说死；仍失败才把原因记进警告。
+        run.warnings.add(label + " 第一遍不是可解析的 JSON，已自动重试一遍")
+        try {
+            text = resourceModel(run, STRUCTURED_SYSTEM,
+                user + "\n\n注意：上一次输出不是合法 JSON（可能被截断，或字符串里有未转义的引号/换行）。请完整重发上面这个 JSON 对象，只输出 JSON，不要任何解释。",
+                stream)
+        } catch (e: CancelException) {
+            throw e
+        } catch (e: Exception) {
+            run.warnings.add(label + " 重试调用失败：" + e.message)
+            return None
+        }
+        obj = jsonObjectFromModel(text)
+    }
     match (obj) {
         case None => run.warnings.add(label + " 没有返回可解析的 JSON（" + byteSafePrefix(trimStr(text), 120) + "）")
         case Some(_) => ()

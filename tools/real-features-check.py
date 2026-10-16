@@ -210,6 +210,42 @@ def main():
             assert any(e['type']=='assistant/activity' and e['payload'].get('phase')=='tool_input' for e in events), 'no live tool-input stage'
             return 'HTML=%d bytes; writes=%d; no failed write or agent test command' % (files[0].stat().st_size,len(writes))
 
+        def case_skill_read_no_lock():
+            seed = work / 'skill-lock-seed.md'
+            seed.write_text('# 暗号\n\n技能污染回归暗号是 SL-7788。\n', encoding='utf-8')
+            core.call('/api/personal/save', {'path': str(seed), 'title': '技能污染回归资料', 'confirmed': True})
+            sid = new_session()
+            r = ask(sid, '先调用 skill_read 读「web-research」技能正文，然后用 search_personal_resources 在我的个性资源里找「暗号」，告诉我暗号是什么。', web='auto')
+            events = core.events(sid)
+            denied = [e for e in events if e.get('type') == 'tool/denied' and '未允许工具' in json.dumps(e.get('payload') or {}, ensure_ascii=False)]
+            read = any(e.get('type') == 'tool/result' and (e.get('payload') or {}).get('tool') == 'skill_read' and (e.get('payload') or {}).get('ok') for e in events)
+            searched = any(e.get('type') == 'tool/result' and (e.get('payload') or {}).get('tool') == 'search_personal_resources' and (e.get('payload') or {}).get('ok') for e in events)
+            ans = r.get('answer') or ''
+            assert read, 'skill_read 没成功：%r' % ans[:120]
+            assert searched, 'search_personal_resources 没成功（可能又被白名单拦了）：%r' % ans[:120]
+            assert not denied, '出现技能白名单误拦：%r' % denied[:1]
+            assert 'SL-7788' in ans, '回答里没有暗号：%r' % ans[:120]
+            return 'skill_read ok then search_personal_resources ok; no whitelist denial'
+
+        def case_resources():
+            kb = work / 'resources-kb'
+            kb.mkdir(exist_ok=True)
+            (kb / 'agent.md').write_text('# AI Agent 基础\n\n## 概念\n\nAgent 由模型、工具与循环组成：模型决定下一步，工具执行动作，循环把工具结果回填给模型。\n\n## 工具调用\n\n工具调用要给出 JSON 参数并处理失败；规划与记忆决定多步任务能否稳定完成。\n', encoding='utf-8')
+            core.call('/api/kb/save', {'id': 'rkb', 'name': '资源测试资料', 'rootDir': str(kb)})
+            core.call('/api/kb/build', {'id': 'rkb'})
+            results = []
+            for kind, prompt in [('quiz', '请根据资料生成一套 3 题的分阶测试，主题：Agent 工具调用。'),
+                                 ('practice', '请根据资料生成一份实操练习，主题：Agent 工具调用，3 个步骤。'),
+                                 ('ppt', '请根据资料生成一份 4 页在线演示，主题：Agent 工具调用。')]:
+                sid = new_session()
+                r = ask(sid, prompt, kbId='rkb', web='off')
+                events = core.events(sid)
+                saved = any(e.get('type') == 'resource/saved' and (e.get('payload') or {}).get('kind') == kind for e in events)
+                results.append((kind, saved, (r.get('message') or '')[:90]))
+            bad = [x for x in results if not x[1]]
+            assert not bad, '资源生成失败：%r' % bad
+            return '; '.join('%s ok' % k for k, _, _ in results)
+
         def case_knowledge():
             sid = new_session()
             r = ask(sid, '请用一段话解释「输入与输出」的约定：先给定什么、再验证什么，并举一个具体例子。')
@@ -278,7 +314,8 @@ def main():
         cases = [('chat', case_chat), ('stream', case_stream), ('vision', case_vision),
                  ('session_read', case_session_read), ('file_read', case_file_read),
                  ('memory', case_memory), ('generate', case_generate), ('course', case_course), ('crocodile', case_crocodile), ('presentation', case_presentation),
-                 ('knowledge', case_knowledge), ('personal_search', case_personal_search)]
+                 ('knowledge', case_knowledge), ('personal_search', case_personal_search),
+                 ('skill_read_no_lock', case_skill_read_no_lock), ('resources', case_resources)]
         for name, fn in cases:
             if only and name not in only:
                 continue

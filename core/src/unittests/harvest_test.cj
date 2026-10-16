@@ -94,6 +94,7 @@ func luminBridgeHonorsHostIngestGuard(): Unit {
 
 @Test
 func luminDiscoversSkillsAndEnforcesTheirTools(): Unit {
+    // 显式绑定（第 6 个参数）：白名单才生效；绑定后 skill_read 自身仍要放行。
     let dir = freshDir("lumin-skill-scope")
     Directory.create(Path(dir + "/skills/read-only"), recursive: true)
     File.writeTo(dir + "/skills/read-only/SKILL.md",
@@ -103,15 +104,42 @@ func luminDiscoversSkillsAndEnforcesTheirTools(): Unit {
         scriptTool("save_artifact", "{\"name\":\"must-not-exist.md\",\"content\":\"blocked\"}"),
         scriptText("这项技能只允许查看文档。")
     ])
-    let result = PiAgent(Store(dir)).askWithProvider(model, "", "看看资料", "", "off", "")
+    let result = PiAgent(Store(dir)).askWithProvider(model, "", "看看资料", "", "off", "read-only")
     @Expect(boolOf(result, "ok"), true)
     @Expect(model.seenSystems[0].contains("read-only"), true)
-    @Expect(exists(dir + "/artifacts/must-not-exist.md"), false)
+    @Expect(exists(dir + "/drafts/must-not-exist.md"), false)
+    var denied = false
+    var readDenied = false
+    for (e in SessionStore(dir).events(strOf(result, "sessionId"))) {
+        if (strOf(e, "type") == "tool/denied") {
+            denied = true
+            if (strOf(e, "payload").contains("skill_read")) { readDenied = true }
+        }
+    }
+    @Expect(denied, true)
+    @Expect(readDenied, false)
+}
+
+@Test
+func skillReadDoesNotLockTheToolset(): Unit {
+    // 只是读技能正文（没有绑定）：读完照常出产物，不该被技能白名单锁住。
+    let dir = freshDir("lumin-skill-read-free")
+    Directory.create(Path(dir + "/skills/read-only"), recursive: true)
+    File.writeTo(dir + "/skills/read-only/SKILL.md",
+        "---\nname: read-only\ndescription: Only inspect documents\ntools: [list_documents]\n---\nDo not create artifacts.".toArray())
+    let model = ScriptedProvider([
+        scriptTool("skill_read", "{\"id\":\"read-only\"}"),
+        scriptTool("save_artifact", "{\"name\":\"allowed-now.md\",\"content\":\"ok\"}"),
+        scriptText("读技能只是看说明，工具不受它限制。")
+    ])
+    let result = PiAgent(Store(dir)).askWithProvider(model, "", "看看资料", "", "off", "")
+    @Expect(boolOf(result, "ok"), true)
+    @Expect(exists(dir + "/drafts/allowed-now.md"), true)
     var denied = false
     for (e in SessionStore(dir).events(strOf(result, "sessionId"))) {
         if (strOf(e, "type") == "tool/denied") { denied = true }
     }
-    @Expect(denied, true)
+    @Expect(denied, false)
 }
 
 @Test
