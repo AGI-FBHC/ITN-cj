@@ -1556,6 +1556,33 @@ public class Api {
             return
         }
 
+        if (path == "/api/sessions/search" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let o = JsonObject()
+                    o.put("hits", SessionStore(store.dataDir).search(strOf(b, "query"), intOf(b, "limit")))
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/sessions/reveal" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let sid = strOf(b, "sessionId")
+                    let tid = strOf(b, "turnId")
+                    let status = strOf(taskState(store.dataDir, sid), "status")
+                    if (status == "running" || status == "cancelling") { fail(ctx, 409, "请等这段会话停止后再定位历史分支"); return }
+                    let ss = SessionStore(store.dataDir)
+                    if (sid.size == 0 || tid.size == 0 || !ss.revealTurn(sid, tid)) { fail(ctx, 404, "找不到这条对话"); return }
+                    let o = JsonObject()
+                    o.put("ok", JsonBool(true)); o.put("leaf", JsonInt(ss.leafOf(sid)))
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         // 切到某条分支（会话树的"切分支"）：末端 = 那一轮的最后一条事件
         if (path == "/api/sessions/set-active" && method == "POST") {
             match (bodyJson(ctx)) {
@@ -2947,6 +2974,8 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/sessions/switch",
         "/api/sessions/split",
         "/api/sessions/set-active",
+        "/api/sessions/search",
+        "/api/sessions/reveal",
         "/api/drafts/list",
         "/api/drafts/diff",
         "/api/drafts/merge",

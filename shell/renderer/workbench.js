@@ -582,6 +582,16 @@ PANELS.memory = PANELS.settings;
 
 // List and reader stay together; the existing document and learning actions remain live.
 const libraryPageBeforeWorkspace = PAGES.kb.render;
+async function revealLibrarySearchHit(hit) {
+  const host = document.querySelector('.library-preview');
+  if (!host || current !== 'kb') return;
+  const card = cardOf({title:hit.docTitle || '资料原文',cls:'document-preview search-focus'});
+  card.appendChild(el('p','muted sm',hit.headingPath || '正文'));
+  const article = el('article','md'); article.innerHTML=md(hit.text || hit.caption || '此处没有可显示的原文。');
+  card.appendChild(article);
+  card.querySelector('.card-head').appendChild(btn('收起原文','ghost sm',()=>host.replaceChildren()));
+  host.replaceChildren(card); card.scrollIntoView({block:'nearest'});
+}
 PAGES.kb.render = async function() {
   const generation = state.navigationGeneration;
   await libraryPageBeforeWorkspace.call(this);

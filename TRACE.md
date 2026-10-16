@@ -4019,3 +4019,16 @@ read_chunk 读得到原文并带回库标识与正文。
 - 验证汇总：tray 4/4、palette-chip 11/11、panel-sticky 3/3、splash 4/4、text-menu 6/6（顺手加固：等 boot 完成再操作、copy 后留落盘时间）、glass-shot 全过（含新分支路径）、nonchat 19/19、stop 11/11、busy-caret 4/4、attachments 16/16、learn-empty 4/4、learning-check --ui 82/82；内核编译通过。
 - 交付：代码提交 c28309c；打包 dist/Lumin-0.6.0 与 Lumin-0.6.0-win-x64.zip（164.3MB）；release.json sourceCommit=c28309c7747df3e68aedcba1b0b637e362dd6fba，9 项资产 BAD=0，源码与包内一致；隔离空目录冒烟 RESULT=OK；启动Lumin.cmd 已指向 0.6.0。
 - 截图：tmp/ui-redesign/（after-palette、after-dark-palette、after-composer、after-ai-meta、branch-icon-zoom、after-session-menu、after-project-menu）；启动动画在 tmp/splash-shots/。
+
+## 2026-10-16 · 接续 01a14302-45f6-7340-8125-d11ed157fa54（本会话 01a14383）
+- 用户要求先理解历史，再继续被中断的任务。读取指定会话最近3轮及其直接来源01a14268最近3轮，核对实际项目D:\Desktop\ITN\ITN-Desktop的AGENTS、TRACE和Git状态；当前聊天cwd是ITN平台worktree，真实目标是独立Desktop仓库。
+- 已确认0.6.0托盘/面板等改动已独立提交c28309c+c0f4192，无遗留功能改动；两份调研文档未跟踪，保持原样不纳入代码提交。
+- 未完成范围：会话正文搜索与精确定位（保留命中轮后续分支内容）；学习/成果顶部标题和tab合一且固定；学练改为章→节讲义阅读，引用核对、就地生成/进度、3~5题练习、按节完成、首页续学；按搜索与学习两次功能提交，升版本、完整回归、打包冒烟。
+- 历史记录中的通过结论仅作交接依据，本轮重新验证修改后的源码/二进制。使用PowerShell 7。接口先补docs/02-接口契约.md，所有操作和验收持续追加此文件。
+- 用户追加后续故障：创建SVG鳄鱼骑车HTML（原任务明确无需测试）时，思考102秒后write报“缺少path参数”，界面106秒长时间停滞后跳秒。用户指定先完成搜索/学习页，再核对真实事件并修复该故障；不能用推测当作实际根因。
+
+### 搜索功能完成（独立提交）
+- 先补接口契约，再加SessionStore.search与revealTurn，提供/api/sessions/search、/reveal；标题+用户+助手正文全文字面检索，流式delta合并，覆盖非当前分支；命中已在当前线上不改leaf，否则选包含它的最新后代末端，不截掉后文。运行/停止中禁止搜索定位改变分支。
+- 全局弹窗新增“对话内容”结果；会话栏输入防抖搜索正文、保留焦点且就地显示摘要；点击结果await打开会话后滚动/高亮具体turnId，处理异步错误与过期响应。笔记结果选中目标笔记；资料结果留在资料库原文区展示命中片段。
+- 源码涉及session.cj/api.cj/app.js/workbench.js/workbench.css；新增单测覆盖非活动分支、保留后代、字面%_、空查询、分段流式词、无效turn不改leaf。cjpm test通过（FAILED 0），cjpm build通过，scripts/package.ps1产物哈希一致；扩展palette-chip-check原脚本，14/14通过，覆盖两处正文检索+点击准确定位且无JS异常。日志tmp/search-{unit,build,ui}.log。
+- 搜索先独立落Git，学习页和之后追加的HTML写入/计时故障另做功能提交。当前版本仍0.6.0，最终统一升版打包。

@@ -355,6 +355,69 @@ public class SessionStore {
      * 不删数据，只是换个末端；上下文缓存与运行状态一起清掉 —— 它们描述的是切换之前那条线，
      * 留着会让下一轮把不属于当前分支的历史发给模型。
      */
+    /** Reveal a search hit without truncating the remainder of its branch. */
+    public func revealTurn(sessionId: String, turnId: String): Bool {
+        let ci = chainIndex(sessionId)
+        var target: Int64 = 0
+        for (id in ci.ids) { if ((ci.turnOf.get(id) ?? "") == turnId) { target = id } }
+        if (target == 0) { return false }
+        for (id in chainFromIndex(ci, leafOf(sessionId))) { if (id == target) { return true } }
+        let descendants = HashSet<Int64>()
+        descendants.add(target)
+        var tip = target
+        for (id in ci.ids) {
+            if (descendants.contains(ci.parent.get(id) ?? 0)) { descendants.add(id); tip = id }
+        }
+        return setLeaf(sessionId, tip)
+    }
+
+    /** Literal text search: streaming deltas are merged, final messages take precedence. */
+    public func search(query: String, limitIn: Int64): JsonArray {
+        let out = JsonArray()
+        let q = trimStr(byteSafePrefix(query, 300)).toAsciiLower()
+        if (q.size == 0) { return out }
+        let limit = if (limitIn > 0 && limitIn < 50) { limitIn } else { 50 }
+        for (s in list()) {
+            let sid = strOf(s, "sessionId")
+            let title = strOf(s, "title")
+            let texts = HashMap<String, String>()
+            let turns = HashMap<String, String>()
+            let roles = HashMap<String, String>()
+            let times = HashMap<String, String>()
+            let order = ArrayList<String>()
+            for (r in db().query("SELECT turn_id, kind, payload, ts FROM session_events WHERE session_id = ? AND kind IN ('user/message','assistant/message','assistant/delta') ORDER BY id", va([tv(sid)]))) {
+                let tid = r.text(0)
+                let role = if (r.text(1) == "user/message") { "user" } else { "assistant" }
+                let key = tid + ":" + role
+                if (!texts.contains(key)) { order.add(key); texts[key] = "" }
+                let text = payloadText(r.text(2), "text")
+                texts[key] = if (r.text(1) == "assistant/delta") { (texts.get(key) ?? "") + text } else { text }
+                turns[key] = tid; roles[key] = role; times[key] = r.text(3)
+            }
+            var found = false
+            for (key in order) {
+                let text = texts.get(key) ?? ""
+                if (!text.toAsciiLower().contains(q)) { continue }
+                let o = JsonObject()
+                o.put("sessionId", JsonString(sid)); o.put("title", JsonString(title))
+                o.put("turnId", JsonString(turns.get(key) ?? "")); o.put("role", JsonString(roles.get(key) ?? ""))
+                let start = text.toAsciiLower().indexOf(q).getOrDefault({ => 0 })
+                o.put("snippet", JsonString((if (start > 0) { "…" } else { "" }) + byteSafePrefix(String.fromUtf8(text.toArray()[start..]), 240)))
+                o.put("at", JsonString(times.get(key) ?? ""))
+                out.add(o); found = true
+                if (out.size() >= limit) { return out }
+            }
+            if (!found && title.toAsciiLower().contains(q)) {
+                let o = JsonObject()
+                o.put("sessionId", JsonString(sid)); o.put("title", JsonString(title))
+                o.put("turnId", JsonString("")); o.put("snippet", JsonString("会话标题匹配"))
+                o.put("role", JsonString("title")); out.add(o)
+                if (out.size() >= limit) { return out }
+            }
+        }
+        return out
+    }
+
     public func activateTurn(sessionId: String, turnId: String): Bool {
         let last = db().scalarInt("SELECT MAX(id) FROM session_events WHERE session_id = ? AND turn_id = ?",
             va([tv(sessionId), tv(turnId)]))

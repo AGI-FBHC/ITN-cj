@@ -17,6 +17,33 @@ import itn_desktop_core.util.*
  */
 @Test
 class SessionTreeTest {
+    @TestCase
+    func searchAndRevealPreserveDescendants(): Unit {
+        let d = freshDir("search-reveal")
+        let ss = SessionStore(d)
+        let sid = ss.newId()
+        appendTurn(ss, sid, "t1", "开场")
+        appendTurn(ss, sid, "t2", "暗号 NEEDLE-9527")
+        appendTurn(ss, sid, "t3", "命中之后的内容")
+        let originalLeaf = ss.leafOf(sid)
+        @Expect(ss.revealTurn(sid, "t2"), true)
+        @Expect(ss.leafOf(sid), originalLeaf)
+        ss.split(sid, "t2")
+        appendTurn(ss, sid, "other", "另一条线")
+        @Expect(turnCount(ss, sid, "t2"), 0)
+        @Expect(ss.search("needle-9527", 10).size() > 0, true)
+        @Expect(ss.search("%_", 10).size(), 0)
+        @Expect(ss.search("", 10).size(), 0)
+        @Expect(ss.revealTurn(sid, "t2"), true)
+        @Expect(ss.leafOf(sid), originalLeaf)
+        @Expect(turnCount(ss, sid, "t3"), 3)
+        @Expect(ss.revealTurn(sid, "missing"), false)
+        @Expect(ss.leafOf(sid), originalLeaf)
+        appendEvent(ss, sid, "stream", "assistant/delta", "SPLIT-")
+        appendEvent(ss, sid, "stream", "assistant/delta", "TOKEN")
+        @Expect(ss.search("SPLIT-TOKEN", 10).size(), 1)
+    }
+
     private func appendEvent(ss: SessionStore, sid: String, turn: String, kind: String, text: String): Unit {
         let e = SessionEvent()
         e.sessionId = sid

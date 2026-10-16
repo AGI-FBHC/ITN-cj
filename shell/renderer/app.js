@@ -4449,7 +4449,7 @@ async function runPaletteSearch(raw) {
   if (chapters.length) groups.push(["章节", chapters]);
 
   const notes = cache.notes.filter((n) => hit(n.title) || hit(n.text)).slice(0, 5)
-    .map((n) => paletteItemMain(n.title || "无标题", (n.chapter ? n.chapter + " · " : "") + String(n.text || "").slice(0, 40), "笔记", () => openNotes()));
+    .map((n) => paletteItemMain(n.title || "无标题", (n.chapter ? n.chapter + " · " : "") + String(n.text || "").slice(0, 40), "笔记", () => { state.objectFocus=n.id; state.resTab='notes'; return go('notes'); }));
   if (notes.length) groups.push(["笔记", notes]);
 
   const arts = cache.artifacts.filter((a) => hit(a.name)).slice(0, 5)
@@ -4464,7 +4464,15 @@ async function runPaletteSearch(raw) {
     }
   }
 
-  // 资料切片：唯一需要打服务端的部分，输入 2 个字以上才查
+  if (q) {
+    try {
+      const result = await api('/api/sessions/search', {query:q, limit:12});
+      if (seq !== palette.seq || !palette.open) return;
+      const hits = (result.hits || []).map(h => paletteItemMain(h.title || '新对话', h.snippet, '对话', () => revealChatHit(h)));
+      if (hits.length) groups.unshift(['对话内容', hits]);
+    } catch(e) { groups.push(['对话内容', [paletteItemMain('对话搜索暂时失败',e.message,'提示',()=>openPalette())]]); }
+  }
+  // 资料内容在服务器检索，打开后定位到原文。
   if (q.length >= 2 && state.kb) {
     try {
       const d = await api("/api/kb/search", { id: state.kb, query: q, topK: 5 });
@@ -4474,8 +4482,7 @@ async function runPaletteSearch(raw) {
         String(h.text || "").replace(/\s+/g, " ").slice(0, 70),
         "资料",
         () => {
-          state.chapter = chapterNameOfHit(h);
-          go("learn");
+          openLibraryHit(h);
         }));
       if (hits.length) {
         const first = flat.length;
@@ -4496,6 +4503,7 @@ async function runPaletteSearch(raw) {
       flat.push(it);
     }
   }
+  if (seq !== palette.seq || !palette.open) return;
   palette.items = flat;
   if (palette.active >= flat.length) palette.active = 0;
   renderPaletteList();
@@ -4562,7 +4570,7 @@ function runPaletteItem(i) {
   if (!it) return;
   closePalette();
   try {
-    it.run();
+    Promise.resolve(it.run()).catch(e => toast('打开失败：' + e.message));
   } catch (e) {
     toast("打开失败：" + e.message);
   }
@@ -4587,7 +4595,7 @@ async function openPalette() {
   search.appendChild(lead);
   const input = el("input", "palette-input");
   input.id = "palette-input";
-  input.placeholder = "找资料切片、章节、笔记、产物，或者直接问助手…";
+  input.placeholder = "搜索对话内容、资料、章节、笔记与成果…";
   search.appendChild(input);
   search.appendChild(el("span", "palette-esc", "Esc"));
   head.appendChild(search);
@@ -4626,7 +4634,7 @@ async function openPalette() {
 
   input.focus();
   await loadPaletteCache();
-  await runPaletteSearch("");
+  if (palette.open) await runPaletteSearch(input.value);
 }
 
 function closePalette() {
@@ -4634,6 +4642,7 @@ function closePalette() {
   if (!root) return;
   if (palette.timer) { clearTimeout(palette.timer); palette.timer = null; }
   palette.open = false;
+  palette.seq++;
   root.hidden = true;
   root.innerHTML = "";
 }
@@ -5625,10 +5634,32 @@ PANELS.chat = {
        "新建对话"只有一处入口 —— 右上角那个 ＋。 */
     const search = inputOf("rail-search", "搜索会话", state.chatQuery || "");
     search.className = "panel-search";
-    search.oninput = () => { state.chatQuery = search.value; renderPanel(); };
     body.appendChild(search);
+    const results = el('div','rail-search-results'); results.hidden = true; body.appendChild(results);
+    let searchTimer = null, searchSeq = 0;
+    const updateSearch = async () => {
+      const query = search.value.trim(), seq = ++searchSeq;
+      state.chatQuery = search.value;
+      for (const child of body.children) if (child !== search && child !== results) child.hidden = !!query;
+      results.hidden = !query;
+      if (!query) { results.replaceChildren(); return; }
+      results.textContent = '正在搜索对话内容…';
+      try {
+        const data = await api('/api/sessions/search',{query,limit:50});
+        if (seq !== searchSeq || !search.isConnected || query !== search.value.trim()) return;
+        results.replaceChildren();
+        for (const hit of data.hits || []) {
+          const row = btn('', 'panel-item search-result', () => revealChatHit(hit).catch(e=>toast(e.message)));
+          row.append(el('strong','panel-item-title',hit.title || '新对话'),el('span','search-result-snippet',hit.snippet));
+          results.appendChild(row);
+        }
+        if (!results.children.length) results.appendChild(panelEmpty('没有匹配的对话内容。'));
+      } catch(e) { if (seq === searchSeq) results.textContent = '搜索失败：'+e.message; }
+    };
+    search.oninput = () => { ++searchSeq; state.chatQuery = search.value; clearTimeout(searchTimer); searchTimer=setTimeout(updateSearch,220); };
+    if (search.value.trim()) setTimeout(updateSearch,0);
 
-    const q = String(state.chatQuery || "").trim().toLowerCase();
+    const q = '';
     const items = state.sessions.filter((x) => !q || String(x.title || "").toLowerCase().indexOf(q) >= 0);
     if (!items.length) {
       body.appendChild(panelEmpty(state.sessions.length ? "没有匹配的会话。" : "还没有对话。点右上角 ＋ 开一段。"));
@@ -5910,7 +5941,7 @@ async function openChatSession(id) {
     if (typeof refreshChatHeader === "function") refreshChatHeader();
     return;
   }
-  go("chat");
+  await go("chat");
 }
 
 /**
@@ -5918,6 +5949,22 @@ async function openChatSession(id) {
  *
  * 只动这一段对话自己的记录：知识库、笔记、错题、产物都不是它的数据，不跟着动。
  */
+async function revealChatHit(hit) {
+  if (hit.turnId) await api('/api/sessions/reveal', {sessionId:hit.sessionId, turnId:hit.turnId});
+  await openChatSession(hit.sessionId);
+  if (!hit.turnId) return;
+  const node = [...document.querySelectorAll('.turn-block')].find(n => n.dataset.turnId === hit.turnId);
+  if (!node) throw Error('对话已打开，但这条记录暂时无法定位');
+  state.stickBottom = false;
+  requestAnimationFrame(() => { node.scrollIntoView({block:'center',behavior:'instant'}); node.classList.add('search-focus'); });
+  setTimeout(() => node.classList.remove('search-focus'), 4000);
+}
+
+async function openLibraryHit(hit) {
+  await go('kb');
+  if (typeof revealLibrarySearchHit === 'function') await revealLibrarySearchHit(hit);
+}
+
 function sessionRowMenu(s, rowEl) {
   const wrap = el("span", "panel-item-actions");
   const trigger = el("button", "panel-item-more", "");
@@ -6309,6 +6356,7 @@ function msgMeta(opts) {
 function renderTurnBlock(t, live) {
   live = !!live && t.ok == null;
   const box = el("div", "turn-block");
+  box.dataset.turnId = t.id || '';
   const last = (state.chatTurns || [])[(state.chatTurns || []).length - 1];
   const isLast = !!last && last.id === t.id;
   const canEdit = !!t.user && t.id && t.id !== "local" && isLast && !(t.attachments || []).some(a=>a.kind==='image');
