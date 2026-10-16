@@ -100,6 +100,27 @@ class ProviderTest {
         server.close()
     }
 
+    @TestCase
+    func auditRetainsTaskAndServiceIdentityWithoutCredentials(): Unit {
+        let counter = ArrayList<Int64>(); counter.add(0)
+        let server = startServer(line("{\"id\":\"response-1\",\"model\":\"service-model\",\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}") + "data: [DONE]\n\n", 200, counter, false)
+        let provider = OpenAiChatProvider(modelCfg(Int64(server.port)))
+        let audits = ArrayList<JsonObject>()
+        provider.onAudit = Some({ kind: String, payload: JsonObject => audits.add(payload) })
+        let ctx = StepContext()
+        let user = Message(UserMsg); user.text = "分析 CSV"; ctx.messages.add(user)
+        let tool = Message(ToolResultMsg); tool.text = "private-tool-output"; tool.toolCallId = "id"; ctx.messages.add(tool)
+        provider.respond(ctx, EventStream())
+        @Expect(audits.size, 2)
+        @Expect(strOf(audits[0], "latestUser"), "分析 CSV")
+        @Expect(intOf(audits[0], "toolResultCount"), 1)
+        @Expect(strOf(audits[1], "responseModel"), "service-model")
+        @Expect(strOf(audits[1], "responseId"), "response-1")
+        @Expect(audits[0].toString().contains("test-key"), false)
+        @Expect(audits[0].toString().contains("private-tool-output"), false)
+        server.close()
+    }
+
     func modelCfg(port: Int64): ModelConfig {
         let cfg = ModelConfig()
         cfg.id = "mock"

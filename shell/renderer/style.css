@@ -3075,3 +3075,14 @@ html[data-theme="dark"] .composer {
   .library-document > .tag { margin-left:52px; }
   .library-document .btn { min-height:36px; }
 }
+.library-documents > .row { display:grid; grid-template-columns:minmax(0, 1fr) auto; }
+.library-documents > .row select { width:auto; min-width:170px; }
+.library-documents .library-document { display:grid; grid-template-columns:36px minmax(0, 1fr) auto auto; padding:16px 0; background:transparent; box-shadow:none; border:0; border-bottom:1px solid var(--line); border-radius:0; }
+.library-documents .library-document:last-child { border-bottom:0; }
+.library-document .item-title { font-size:calc(16px * var(--fs)); }
+.library-document .file-icon { margin:0; }
+@media (max-width:1100px) {
+  .library-documents .library-document { grid-template-columns:36px minmax(0, 1fr) auto; }
+  .library-documents .library-document > .tag { margin-left:0; grid-column:2; }
+  .library-documents .library-document > .btn { grid-column:3; grid-row:1 / span 2; }
+}

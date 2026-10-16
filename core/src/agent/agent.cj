@@ -73,6 +73,21 @@ public func citationsFromHits(hits: JsonArray): JsonArray {
     return arr
 }
 
+/** Only sources explicitly cited by the answer are evidence for that answer. */
+public func citationsUsedFromHits(answer: String, hits: JsonArray): JsonArray {
+    let all = citationsFromHits(hits)
+    let marks = scanCitations(answer)
+    let used = JsonArray()
+    var i: Int64 = 0
+    while (i < all.size()) {
+        var found = false
+        for (mark in marks) { if (mark == i + 1) { found = true } }
+        if (found) { used.add(all[i]) }
+        i += 1
+    }
+    return used
+}
+
 /** 统计产物的引用覆盖情况：段落数、带引用的段落数、越界引用编号。 */
 public func citationReport(markdown: String, sourceCount: Int64): JsonObject {
     var paragraphs: Int64 = 0

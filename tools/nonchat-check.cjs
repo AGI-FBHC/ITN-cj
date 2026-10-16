@@ -37,8 +37,8 @@ const pause = ms => new Promise(r=>setTimeout(r,ms));
   await page.getByLabel('搜索资料内容').fill('电力负荷');await page.getByLabel('搜索资料内容').press('Enter');await page.waitForFunction(()=>document.querySelector('.library-results')?.textContent.includes('找到'));check('Enter searches through real backend',await page.locator('.library-results .item').count()>0);
   const shots=path.join(root,'tmp/nonchat-shots');fs.mkdirSync(shots,{recursive:true});
   await page.evaluate(()=>go('kb'));await page.waitForSelector('.library-document');await page.screenshot({path:path.join(shots,'library-light.png')});
-  await page.evaluate(()=>applyTheme('dark'));await page.screenshot({path:path.join(shots,'library-dark.png')});
-  await page.evaluate(()=>applyTheme('light'));
+  await page.evaluate(()=>applyTheme('dark'));await pause(900);await page.screenshot({path:path.join(shots,'library-dark.png')});
+  await page.evaluate(()=>applyTheme('light'));await pause(900);
   await post('/api/models/save',{id:'unused',name:'已连接',baseUrl:'http://127.0.0.1:1/v1',apiKey:'test-only',model:'fixture'});await post('/api/models/roles',{chatModelId:'unused'});
   await page.evaluate(()=>go('home'));await page.waitForSelector('.study-continue');
   check('ready home hides configuration checklist',await page.locator('.setup-banner').count()===0&&!(await page.locator('#view').textContent()).includes('环境已就绪'));
@@ -46,6 +46,11 @@ const pause = ms => new Promise(r=>setTimeout(r,ms));
   await page.screenshot({path:path.join(shots,'home-light.png')});await page.setViewportSize({width:1024,height:768});await page.screenshot({path:path.join(shots,'home-compact.png')});
   check('compact view avoids horizontal overflow',await page.locator('#view').evaluate(e=>e.scrollWidth<=e.clientWidth+1));
   await page.evaluate(()=>go('kb'));await page.waitForSelector('.library-document');check('compact library avoids horizontal overflow',await page.locator('#view').evaluate(e=>e.scrollWidth<=e.clientWidth+1));await page.screenshot({path:path.join(shots,'library-compact.png')});
+  const changes = await page.evaluate(()=> {
+    const events=[{turnId:'read',type:'tool/result',payload:{tool:'read',ok:true,details:{path:'sample.csv'}}},{turnId:'failed',type:'tool/result',payload:{tool:'write',ok:false,details:{path:'failed.md',add:1}}},{turnId:'write',type:'tool/result',payload:{tool:'write',ok:true,details:{path:'note.md',add:2,del:0}}}];
+    return turnsFromEvents(events).map(t=>(t.fileChanges||[]).length);
+  });
+  check('reading files and failed writes do not appear as changes',changes[0]===0&&changes[1]===0&&changes[2]===1);
   check('no JavaScript exceptions',errors.length===0);
   console.log('RESULT=OK '+passed+' checks; '+shots);
  }finally{if(browser)await browser.close();core.kill();}

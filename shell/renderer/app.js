@@ -5994,7 +5994,7 @@ function turnsFromEvents(events) {
     } else if (e.type === "tool/result") {
       // 写/改文件的工具会带回 {path, add, del}：攒成"这一轮改了哪些文件"（pi-studio 也有这张卡）
       const det = p.details;
-      if (det && det.path) {
+      if (p.ok && (p.tool === "write" || p.tool === "edit") && det && det.path) {
         t.fileChanges = t.fileChanges || [];
         const hit = t.fileChanges.find((x) => x.path === det.path);
         if (hit) {
@@ -8830,7 +8830,7 @@ async function organizeKb(kbId) {
 async function buildIndex(kbId) {
   if (!kbId) { toast("先选择一个知识库"); return; }
   const v = $("view");
-  const card = progressCard("正在建立索引：「" + kbName(kbId) + "」", ["扫描目录", "按标题切片", "图片描述（配了多模态才做）", "向量化（配了向量模型才做）", "写入本机数据库"]);
+  const card = progressCard("正在准备资料：「" + kbName(kbId) + "」", ["扫描目录", "按章节整理内容片段", "识别图片（需要视觉模型）", "建立语义搜索（可选）", "写入本机数据库"]);
   v.insertBefore(card, v.firstChild);
   card.scrollIntoView({ block: "start" });
   try {
@@ -8839,17 +8839,17 @@ async function buildIndex(kbId) {
     card.remove();
     await loadCfg();
     await loadReport();
-    const box = cardOf({ cls: "dialog ok-dialog", title: "索引完成", tag: "已就绪", tagCls: "ok" });
+    const box = cardOf({ cls: "dialog ok-dialog", title: "资料准备完成", tag: "已就绪", tagCls: "ok" });
     const grid = el("div", "grid grid-4");
     grid.appendChild(statCard("文档", st.docCount || 0, "篇"));
-    grid.appendChild(statCard("切片", st.chunkCount || 0, "片"));
+    grid.appendChild(statCard("内容片段", st.chunkCount || 0, "片"));
     grid.appendChild(statCard("图片", st.imageCount || 0, "张"));
     grid.appendChild(statCard("图片描述", st.captioned || 0, "条"));
     box.appendChild(grid);
     if (st.embedError) {
-      // 向量服务不给 /embeddings 是"少了一种检索方式"，不是"索引失败"——用琥珀色说清楚
+      // 向量服务不给 /embeddings 是"少了一种检索方式"，不是"资料准备失败"——用琥珀色说清楚
       const warn = el("div", "skip-note");
-      warn.appendChild(el("div", "skip-title", "索引已建好，只是没开启向量检索"));
+      warn.appendChild(el("div", "skip-title", "索引已准备好，暂未开启语义搜索"));
       warn.appendChild(el("div", "muted sm", "原因：" + shortReason(st.embedError) + "（关键词检索照常）"));
       box.appendChild(warn);
     } else if (!st.embedded) {
@@ -8868,12 +8868,12 @@ async function buildIndex(kbId) {
     row.appendChild(btn("收起", "ghost", () => box.remove()));
     box.appendChild(row);
     v.insertBefore(box, v.firstChild);
-    toast("索引完成：" + st.docCount + " 篇 / " + st.chunkCount + " 片");
+    toast("资料准备完成：" + st.docCount + " 篇 / " + st.chunkCount + " 片");
     return true;
   } catch (e) {
     card._stop();
     card.remove();
-    const box = cardOf({ cls: "dialog", title: "建立索引失败" });
+    const box = cardOf({ cls: "dialog", title: "准备资料失败" });
     box.appendChild(el("p", "muted", e.message));
     // 只有"看起来像目录问题"的失败才给目录相关的排查提示；
     // 模型/网络类错误挂一句"目录路径写错"只会把人带偏。
@@ -8886,7 +8886,7 @@ async function buildIndex(kbId) {
     row.appendChild(btn("关闭", "ghost", () => box.remove()));
     box.appendChild(row);
     v.insertBefore(box, v.firstChild);
-    toast("索引失败：" + e.message);
+    toast("资料准备失败：" + e.message);
     return false;
   }
 }

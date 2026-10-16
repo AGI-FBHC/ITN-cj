@@ -354,6 +354,17 @@ public class Agent {
             slots.add(ToolSlot())
             k = k + 1
         }
+        // Approval callbacks mutate session history and permission state. Run those
+        // on the owning thread; only the approved tool bodies may run concurrently.
+        for (i in 0..calls.size) {
+            let start = nowMillis()
+            let blocked = match (options.beforeToolCall) {
+                case Some(f) => f(calls[i].id, calls[i].name, calls[i].args())
+                case None => ""
+            }
+            if (blocked.size > 0) { slots[i].res = Some(ToolResult.err(blocked)) }
+            slots[i].durationMs = nowMillis() - start
+        }
         if (options.toolExecution == "parallel" && calls.size > 1) {
             let futures = ArrayList<Future<Unit>>()
             var i: Int64 = 0
@@ -416,17 +427,10 @@ public class Agent {
     private func runOneTool(tc: ToolCallBlock, slot: ToolSlot): Unit {
         let startMs = nowMillis()
         let args = tc.args()
-        var blocked = ""
-        match (options.beforeToolCall) {
-            case Some(f) => blocked = f(tc.id, tc.name, args)
-            case None => ()
-        }
-        if (blocked.size > 0) {
-            slot.res = Some(ToolResult.err(blocked))
-        } else {
+        if (slot.res.isNone()) {
             slot.res = Some(registry.execute(mode, tc.id, tc.name, args))
         }
-        slot.durationMs = nowMillis() - startMs
+        slot.durationMs += nowMillis() - startMs
     }
 
     /** 把排队的 steering 消息写成 user 消息（Pi 的 steering drain 点）。 */

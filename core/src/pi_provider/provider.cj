@@ -86,6 +86,8 @@ public class OpenAiChatProvider <: ChatProvider {
      * 已经吐出去的正文保留（界面照样能看到），只是不再继续读、也不再开下一轮。
      */
     public var shouldAbort: ?() -> Bool = None
+    /** Metadata only; credentials and tool output never enter this callback. */
+    public var onAudit: ?(String, JsonObject) -> Unit = None
 
     public init(cfg: ModelConfig) {
         var base = cfg.baseUrl
@@ -120,11 +122,32 @@ public class OpenAiChatProvider <: ChatProvider {
             payload.put("tool_choice", JsonString("auto"))
         }
 
+        let requestAudit = JsonObject()
+        requestAudit.put("requestedModel", JsonString(model))
+        requestAudit.put("messageCount", JsonInt(msgs.size()))
+        requestAudit.put("turn", JsonInt(ctx.turn))
+        var latestUser = ""
+        var resultCount: Int64 = 0
+        for (m in ctx.messages) {
+            if (m.role == MsgRole.UserMsg) { latestUser = m.text }
+            if (m.role == MsgRole.ToolResultMsg) { resultCount += 1 }
+        }
+        requestAudit.put("latestUser", JsonString(byteSafePrefix(latestUser, 1200)))
+        requestAudit.put("toolResultCount", JsonInt(resultCount))
+        match (onAudit) { case Some(f) => f("model/request", requestAudit); case None => () }
+
         let acc = StreamAcc()
         let started = DateTime.now()
         let err = postSse("/chat/completions", payload, { obj: JsonObject => handleChunk(obj, acc, stream) })
         lastMillis = (DateTime.now() - started).toMilliseconds()
         lastFinish = acc.finishReason
+        let responseAudit = JsonObject()
+        responseAudit.put("requestedModel", JsonString(model))
+        responseAudit.put("responseModel", JsonString(acc.responseModel))
+        responseAudit.put("responseId", JsonString(acc.responseId))
+        responseAudit.put("finishReason", JsonString(acc.finishReason))
+        responseAudit.put("failed", JsonBool(err.size > 0 || abortRequested()))
+        match (onAudit) { case Some(f) => f("model/response", responseAudit); case None => () }
 
         let reply = ModelReply()
         if (abortRequested()) {
@@ -311,6 +334,8 @@ class StreamAcc {
     let reasoning = StringBuilder()
     let calls = ArrayList<NativeCall>()
     var finishReason = ""
+    var responseModel = ""
+    var responseId = ""
     var promptTokens: Int64 = 0
     var completionTokens: Int64 = 0
 
@@ -367,6 +392,10 @@ func normalizeArgs(text: String): String {
 }
 
 func handleChunk(obj: JsonObject, acc: StreamAcc, stream: EventStream): Unit {
+    let responseModel = pickStr(obj, ["model"])
+    let responseId = pickStr(obj, ["id"])
+    if (responseModel.size > 0) { acc.responseModel = responseModel }
+    if (responseId.size > 0) { acc.responseId = responseId }
     let fr = pickStr(obj, ["choices", "0", "finish_reason"])
     if (fr.size > 0) {
         acc.finishReason = fr
