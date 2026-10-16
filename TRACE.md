@@ -4239,3 +4239,20 @@ read_chunk 读得到原文并带回库标识与正文。
   5) 全量回归（0.8.8 内核）：18 组 + skill-check 全过 —— knowledge 84、markdown 14、nonchat 25、session-switch 12、learning 98、personal 23、presentation 9、deck-export、palette 14、stop 13、attachments 16、splash 7、tray 4、busy-caret 6、kb-general、text-menu 6、glass-shot 无 console 错误；skill-check 全过。
 - 发布：版本 0.8.7→0.8.8（提交 49f1cf3）；dist/Lumin-0.8.8 + zip（190MB）；9 项资产哈希 BAD=0；隔离冒烟 RESULT=OK（Lumin 0.8.8 · 已连接）；启动Lumin.cmd 指向 0.8.8。
 - 诚实说明/未覆盖：mock 模型不代表真模型的措辞习惯——工具数据已修正，但历史会话里旧回答不会变化；真模型是否稳定用“空 query 总览”取决于描述引导，后续观察。后续建议（按用户第 6 条原则）：把知识网络的写操作（加笔记/连线/编辑/删除）也补成 Lumin 工具，形成“界面能做的，Lumin 也能做”。
+
+
+## 2026-10-17 · 点选偏移 / 页面切换卡顿 / 抽屉主题（0.8.9）· 附：纯仓颉 SQL 引擎调查
+- 用户报障（带截图）：① 知识网络节点点击位置仍有偏移；② 页面之间切换很卡，常在"莫名的页面"卡住 0.5 秒；③ 右侧节点编辑抽屉不够美观大方；④ 抽屉上有个组件不适配主题色（截图里"提问"按钮是刺眼的白块）。另有两句关键交代：**"如果不用纯仓颉实现的 SQL 引擎，仓颉有没有自带框架？"**、**"不要用 Python，尽可能全 Cangjie，实在没招再决定用 Python"**（后者已写进 AGENTS.md 第 8 条）。
+- 根因与修复①：**点选偏移**。先写探针对齐坐标：dpr=1/1.25/1.5/2 四档下 canvas 与宿主矩形 0 偏差、点击中心必命中——坐标没偏。真问题是**命中区只有光球半径 ~24px**：节点文字标签（最显眼的部分，最长 160px）完全不响应点击，点名字两端就"点空"，用户感知就是"位置有点偏"。修复（提交 94f2753）：命中区 = 光球（max(26, r+2)）∪ 标签包围盒（labelW/2+8 × ±13），绘制时记录 labelW；hover 光标同逻辑。新增检查：点标签边（+70px，远在旧 24px 圈外）能选中、悬停文字出指针——用 HEAD 旧渲染文件跑必挂（已验证）。
+- 根因与修复②：**页面切换卡**。用真实用户库（56 会话/1.79 万事件）实测：`/api/sessions/list` 单次 ~2.1 秒，且一次切换被 Panel+Page 重复调 1–3 次（report/calibrate 页 4–6 秒全是它）。先按"官方 SQLite 经验"改成 JOIN+MIN(id)——结果灾难：单条 JOIN 在这台引擎要 **65 秒**（python 官方 SQLite 同句 6ms，已对照实测）。顺藤摸瓜发现 `third_party/sqlite-driver` 是**纯仓颉实现的 SQLite 引擎**（读写 sqlite 文件格式、零本机依赖），不能按 C SQLite 的习惯写 SQL。最终修法（提交 87ff9f3）：
+  - 不用 JOIN：按 (session_id,id) 索引逐会话 `LIMIT 1`（两信息合并为一条语句）；leaf/tree 标记从已有的 sessions_meta 全表扫描里顺带读出（省掉逐会话 getKv）；非分叉会话 eventCount 直接用聚合 counts。
+  - **进程内写纪元缓存**：db.cj 对所有写 sessions/session_events/sessions_meta 的 SQL 递增 epoch，list() 命中纪元直接返回缓存副本（改名/追加/切分支/删除全部天然失效）。
+  - UI 侧：loadSessions 加 1.5s 短窗缓存 + in-flight 去重，reloadSessions 强制刷新（绝不吞刚发生的变更）；loadOverview 与 chat 面板改并发取数。
+  - 结果（真实库）：冷启动 131s→1.1s，**温暖 16ms**；页面切换实测 32–192ms（此前 report/calibrate 4–6s）。旧内核同数据对照 1.4–1.6s/次。
+- 根因与修复③④：**抽屉/主题**。暗色下 `.btn.primary:hover` 会把底色刷成近白（--brand-strong=白），而"提问"是知识抽屉的主操作 → 白块+近白文字看不清（用户截图）。修复：`.knowledge-act.primary:hover` 用同特异性、后加载的规则压回"节点色浅底"；顺带整体刷新：头部节点色柔光（--k-aura 变量）、色点带光环、按钮组 58px/13px 圆角/微抬升/焦点环、分区卡片半透明底色、抽屉滚动条细化、删除按钮 ghost-danger 配色。新增暗色检查：hover 不白化（合成色 >235 即挂）、文字对比度 ≥4.5:1、--k-aura 已设置。
+- **纯仓颉 SQL 调查结论**（回答用户）：仓颉标准库自带 `std.database.sql`——只是 JDBC 式抽象框架（DriverManager/Connection/Statement），**不含任何具体数据库驱动**；SDK 1.2.0 的 stdx 也没有数据库模块（只有 actors/crypto/encoding/net/serialization 等，已列过）。所以现状三选一：a) 保留纯仓颉引擎、按它的脾气写 SQL（本次做法，零本机依赖、直读 sqlite 文件）；b) C FFI 绑真 SQLite（foreign func 调 sqlite3.dll，性能=官方 SQLite），代价是多一个本机依赖/打包工作；c) 改 third_party 引擎的 JOIN 实现（风险大）。建议：短期 a，等数据再大再评估 b（db.cj 已隔离在 std.database.sql 抽象之下，换驱动不动上层）。
+- **Python 排查**：新增代码里唯一一处 Python（检查脚本直写 sqlite 造数）已移除。替代方案落地为内核自带夹具 `--seed-fixture=总事件数`（core/src/dev/fixture.cj，全仓颉，只在空库生效，写库走驱动本身也算顺带压测）；tools/session-list-check.cjs 不再 import 任何 Python 造数（仅保留工程里历史遗留的 mock LLM 服务，那个不在本轮范围）。
+- 新检查 tools/session-list-check.cjs（10 条）：60 会话×250 事件+1 条分叉会话（末端第 100 条）契约一致；冷 <2.5s、温 <300ms；改名额缓存立即失效；一轮对话后新会话带计数出现；UI 切 report/chat/home <1.5s（旧实现必挂，已用 0.8.7 内核对照验证）。
+- 验证汇总：内核单测 138/138（+1 条列表聚合契约）；knowledge-check 84→**92**（+8）；全量回归 19 组 + skill-check 全过（knowledge 92、session-list 10、markdown 14、nonchat 25、session-switch 12、learning 98、personal 23、presentation 9、deck-export、palette 14、stop 13、attachments 16、splash 7、tray 4、busy-caret 6、kb-general、text-menu 6、glass-shot、skill-check）；探针 4 档 dpr 坐标 0 偏差；暗色抽屉截图 tmp/offset-shots/drawer-dark.png 目视。
+- 发布：0.8.8→0.8.9（提交 c20be8d）；dist/Lumin-0.8.9 + zip（190MB）；9 项资产哈希 BAD=0；隔离冒烟 RESULT=OK（Lumin 0.8.9 · 已连接）；启动Lumin.cmd 指向 0.8.9。功能提交 87ff9f3（内核）、94f2753（界面+AGENTS 第 8 条）。
+- 诚实说明：epoch 缓存是**进程内**的——单实例架构下内核自己写库全部覆盖；外部进程直写同一库文件不会触发失效（当前没有这类使用场景，CLI 直连库属于未来要单独评估的事）。
