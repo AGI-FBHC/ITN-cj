@@ -3853,3 +3853,32 @@ E2E 里写 `page.$$eval`，用 JS `String.replace(a, b)` 落盘时 `$$` 又被�
   源码↔包关键文件哈希 BAD=0、包内构建清单 9 项资产哈希 BAD=0；空数据目录冒烟 RESULT=OK（DOCX=ok paragraphs=4）；
   `启动Lumin.cmd` 已指向 0.4.3。
 - 提示：新旧版本同时开会撞数据库锁（外壳会如实提示"先关闭所有窗口再试"），换版本前先关掉旧窗口。
+
+
+## 2026-10-16 · 通用模式知识库工具的端到端自检（测试基建）
+
+### 为什么补
+上一轮修了"通用模式下 list_documents 报假错"（提交 89524df），但当时只有内核单测覆盖。用户说"测试一下"，
+于是补一条**端到端**的：假模型真的去调这两个工具，用真数据（副本）跑通整条 渲染层→IPC→工具 的链路。
+
+### 假模型（`tools/mock-openai/server.py`）新增两个触发词
+- `列资料 / 有哪些资料 / 资料清单` → 调 `list_documents`（空参数 = 通用模式）
+- `读原文` → 先 `kb_search` 拿切片 id，第二轮从上一轮工具回灌正文里解出 `id: 路径#序号` 再调 `read_chunk`；
+  读到过就收尾（判据是回灌正文里有"读到切片"，不再依赖工具消息的 name 字段 —— OpenAI 风格里那个字段是空的）。
+- 踩到的两个坑（都已修）：`call()` 定义在工具消息分支之后 → 新分支 UnboundLocalError 把连接弄断（内核报
+  `网络层失败：Socket is closed`）；id 的正则原来不认**带空格的路径**（`第十章 智能体通信协议.md`）。
+
+### 新增 `tools/kb-general-check.cjs`（8 项，末行 RESULT）
+自建样张知识库（2 篇）→ 普通对话（kbId 空）问"我这边的资料有哪些资料？" → 断言 list_documents 成功、
+摘要不再含"还没有索引"、列出 2 篇、标题带《示例资料》；再问"把 MCP 那段读原文给我" → 断言 kb_search 命中、
+read_chunk 读得到原文并带回库标识与正文。
+
+### 真实数据副本实测（不碰用户目录）
+复制 `%LOCALAPPDATA%\Lumin` 到临时目录、把模型换成假模型后跑同一套流程：
+- `list_documents` → ok，"在 1 个知识库里有 39 篇文档"，前三是 `《ha》README.md / 《ha》README_EN.md / 《ha》前言`；
+- `kb_search` → "在 1 个知识库里命中 3 个切片（关键词 融合）"；
+- `read_chunk` → "读到切片 chapter10/第十章 智能体通信协议.md#30（《ha》第十章 智能体通信协议，1219 字）"，kbId=ha。
+
+### 回归
+- 内核 `cjpm test` 114/114；`tools/kb-general-check.cjs` **8/8**；`glass-shot` 全过（假模型改了，重跑确认）；
+  `stop-check` 11/11；`learning-check --ui` 57/57；`docx-check` 9/9；`deck-export-check` 全过。

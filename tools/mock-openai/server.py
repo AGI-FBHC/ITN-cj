@@ -358,13 +358,20 @@ def native_reply(body):
     msgs = body.get("messages") or []
     user_at = max((i for i, m in enumerate(msgs) if m.get("role") == "user"), default=-1)
     ask = text_of([msgs[user_at]]) if user_at >= 0 else ""
+    def call(name, args):
+        return {"tool_calls": [{"id": "mock-call-1", "type": "function", "function": {"name": name, "arguments": json.dumps(args, ensure_ascii=False)}}]}
     if any(m.get("role") == "tool" for m in msgs[user_at + 1:]):
         last_tools = [m for m in msgs[user_at + 1:] if m.get("role") == "tool"]
+        # "读原文"：从上一轮检索结果的 `id: 路径#序号` 里取出切片 id 再读全文（读过了就收尾）。
+        # 用来端到端验通用模式下的 read_chunk（没绑定知识库时要在全部已建索引的库里找）。
+        if "读原文" in ask and not any("读到切片" in str(m.get("content")) for m in last_tools):
+            for m in reversed(last_tools):
+                mm = re.search(r"id:\s*([^\n#]+?)#(\d+)", str(m.get("content")))
+                if mm:
+                    return call("read_chunk", {"chunk_id": mm.group(1) + "#" + mm.group(2)})
         if any(m.get("name") == "kb_search" or "命中" in str(m.get("content")) for m in last_tools):
             return "提示词要写清任务、约束和输出格式；使用资料时标注出处，方便回到原文核实 [1]。"
         return "已完成工具调用，可在右侧成果中查看。"
-    def call(name, args):
-        return {"tool_calls": [{"id": "mock-call-1", "type": "function", "function": {"name": name, "arguments": json.dumps(args, ensure_ascii=False)}}]}
     if "记住：" in ask:
         text = ask.split("记住：", 1)[1]
         return call("remember_learning_fact", {"kind": "preference", "text": text, "quote": text})
@@ -383,6 +390,11 @@ def native_reply(body):
         topic_match = re.search(r"主题[「：]([^」]+)", ask)
         topic = topic_match.group(1) if topic_match else "输入与输出"
         return call("generate_learning_resource", {"kind": kind, "topic": topic, "detail": "balanced", "count": count})
+    # 通用模式的两个资料工具（会话没绑定知识库）：列资料 / 先检索再读原文
+    if any(t in ask for t in ("列资料", "有哪些资料", "资料清单")):
+        return call("list_documents", {})
+    if "读原文" in ask:
+        return call("kb_search", {"query": "MCP", "top_k": 3})
     if any(t in ask for t in ("提示词", "资料", "这门课")) and not kind:
         return call("kb_search", {"query": "提示词", "top_k": 4})
     if "计算" in ask or "算一下" in ask:
