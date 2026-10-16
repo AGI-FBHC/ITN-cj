@@ -4185,3 +4185,10 @@ read_chunk 读得到原文并带回库标识与正文。
 - 发布：版本 0.8.3→0.8.4（提交 e68cbf1）；dist/Lumin-0.8.4 + zip；9 项资产哈希一致（BAD=0）；隔离冒烟 RESULT=OK；启动Lumin.cmd 指向 0.8.4。全量回归结果见下。
 
 - 回归（0.8.4 包二进制）：18 组 + skill-check 全过 —— knowledge 69、markdown 14、nonchat 25、session-switch 12、learning 98（原 99：总览"接着学"入口随旧总览退场，workbench-ui 里对应的两条断言合并为一条 continueStudy 断言）、personal 23、presentation 9、deck-export、palette 14、stop 13、attachments 16、splash 4、tray 4、busy-caret 6、kb-general、text-menu 6、glass-shot 无 console 错误；skill-check 全过。
+
+
+## 2026-10-17 · 启动动画首帧修复：不再闪"纯文字裸页"（0.8.5）
+- 用户反馈：开屏时有 0.01 秒的"正在启动内核"裸页面一闪，希望藏在启动动画下面。
+- 根因：splash.html 的 logo 是外链图片（logo-mark.png）。窗口在 ready-to-show 时亮出，而**首帧**可能在图片解码完成前就画出来——那一帧只有 "Lumin" 与"正在唤醒本地内核…"两行文字，看起来就是一张裸页面。
+- 修复（提交 dcdb7ea）：logo 以 data URI 内联进 splash.html 与 index.html 的 #boot 动画层（源图 4KB → 内联约 5.5KB），动画 shine 的 CSS mask 同样内联；splash 增加"解码完成前 body 不显示（opacity:0），image.decode() 后淡入 + 250ms 兜底"，于是任何一帧要么是完整动画、要么是与主题同色的空背景，不可能再出现裸文字页。窗口栏与动画样式本身未动。
+- 验证：splash-check 4→7/7（新增：两处 logo 都是内联 data URI、cold-start 在解码后才 reveal）；0.8.5 打包（提交 a7a2af0）9 项资产哈希 BAD=0、隔离冒烟 RESULT=OK；全量回归 18 组 + skill-check 全过（knowledge 69、markdown 14、nonchat 25、session-switch 12、learning 98、personal 23、presentation 9、deck-export、palette 14、stop 13、attachments 16、splash 7、tray 4、busy-caret 6、kb-general、text-menu 6、glass-shot 无报错）。
