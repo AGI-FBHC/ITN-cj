@@ -16,7 +16,7 @@ function navigationRoot(page) {
 Object.assign(PAGE_META, {
   chat: {title: '对话', sub: '围绕你的资料和目标开展任务'},
   home: {title: '学习', sub: '接着学，练一练，看看进步'},
-  learn: {title: '学习', sub: '按章节阅读与练习'},
+  learn: {title: '学习', sub: '按节学讲义，练习并留下进度'},
   report: {title: '学习', sub: '阅读记录、练习表现与能力自评'},
   resources: {title: '学习成果', sub: '讲义、练习、笔记与错题，都在这里'},
   notes: {title: '学习成果', sub: '讲义、练习、笔记与错题，都在这里'},
@@ -25,6 +25,7 @@ Object.assign(PAGE_META, {
 });
 function decorateWorkspace() {
   const view = $('view');
+  document.querySelector('.topbar .workspace-tabs')?.remove();
   const learning = ['home', 'learn', 'report', 'calibrate'].includes(current);
   const outcomes = ['resources', 'notes', 'wrong'].includes(current);
   if (!learning && !outcomes) return;
@@ -45,7 +46,7 @@ function decorateWorkspace() {
     nav.appendChild(button);
   }
   view.querySelector(':scope > .res-tabs')?.remove();
-  view.prepend(nav);
+  document.querySelector('.topbar').insertBefore(nav, $('top-actions'));
 }
 Object.assign(TOOL_LABEL, {
   generate_learning_resource: '生成学习资源', revise_learning_resource: '修改学习资源',
@@ -609,124 +610,187 @@ PAGES.kb.render = async function() {
   if (first) { first.dataset.autoPreview='true'; first.click(); delete first.dataset.autoPreview; }
 };
 
-/* 学 · 练：章节目录常驻左栏，右侧就地切换 —— 三个学习页统一宽版，不再有
-   "二级栏忽隐忽现 / 切换条左右跳 / 点一章整页重载" 的混乱。 */
-PAGES.learn.render = async function() {
-  const generation = state.navigationGeneration;
-  await loadCfg(); if (generation !== state.navigationGeneration) return;
-  const view = $('view'); view.innerHTML = '';
-  const workspace = el('div', 'study-workspace');
-  const side = el('nav', 'study-side'); side.setAttribute('aria-label', '章节目录');
-  const detail = el('section', 'study-detail'); detail.setAttribute('aria-label', '章节内容');
-  workspace.append(side, detail); view.appendChild(workspace);
-
-  if ((state.cfg.knowledgeBases || []).length) {
-    const head = el('div', 'study-side-head');
-    const sel = kbSelector(() => { state.chapter = null; go('learn'); });
-    sel.setAttribute('aria-label', '学习资料范围');
-    head.appendChild(sel); side.appendChild(head);
-  }
-  if (!hasKb()) {
-    side.append(el('p', 'study-side-note', '还没有学习资料。'), btn('添加资料目录', 'primary sm', () => go('settings', 'kb')));
-    detail.appendChild(emptyState({ art: 'db', title: '先把资料放进来', text: '指定一个本机目录并建立一次索引，就能按章节阅读与练习。', actions: [btn('去指定资料目录', 'primary', () => go('settings', 'kb')), btn('先配置模型', '', () => go('models'))] }));
-    return;
-  }
-  if (!indexedKb()) {
-    side.append(el('p', 'study-side-note', '「' + kbName(state.kb) + '」还没有索引。'), btn('建立索引', 'primary sm', () => buildIndex(state.kb)));
-    detail.appendChild(emptyState({ art: 'alert', title: '这个资料库还没有索引', text: '扫描目录并切片后，章节会出现在左边。', actions: [btn('建立索引', 'primary', () => buildIndex(state.kb)), btn('去资料库看看', '', () => go('kb'))] }));
-    return;
-  }
-  let tree = { chapters: [] };
-  try { tree = await api('/api/study/tree', { kbId: state.kb }); } catch (e) { tree = { chapters: [] }; }
-  if (generation !== state.navigationGeneration) return;
-  const chapters = tree.chapters || [];
-  if (!chapters.length) {
-    side.appendChild(el('p', 'study-side-note', '没有解析出章节。'));
-    detail.appendChild(emptyState({ art: 'alert', title: '没有解析出章节', text: '索引里有切片，但没有标题层级；给资料加上 # / ## 标题会更整齐。', actions: [btn('重新建立索引', 'primary', () => buildIndex(state.kb)), btn('去资料库', '', () => go('kb'))] }));
-    return;
-  }
-  if (!chapters.some((c) => c.name === state.chapter)) state.chapter = (chapters.find((c) => !c.done) || chapters[0]).name;
-
-  side.appendChild(el('p', 'study-side-label', '共 ' + chapters.length + ' 章'));
-  const buttons = chapters.map((c, i) => {
-    const b = el('button', 'study-chapter');
-    b.type = 'button'; b.dataset.id = c.name;
-    b.append(el('span', 'study-chapter-idx', c.done ? '✓' : String(i + 1).padStart(2, '0')));
-    const main = el('span', 'study-chapter-main');
-    main.append(el('span', 'study-chapter-title', c.name),
-      el('span', 'study-chapter-meta', c.chunkCount + ' 片 · 已读 ' + c.readCount + (c.done ? ' · 已完成' : '')));
-    b.appendChild(main);
-    side.appendChild(b);
-    return b;
-  });
-  const paintList = () => {
-    for (const b of buttons) {
-      const on = b.dataset.id === state.chapter;
-      b.classList.toggle('active', on);
-      if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+/* A course is read one lecture section at a time; source material stays in citations. */
+const studyJobs = new Map();
+const studyQuizCache = new Map();
+function openStudyCitation(source, index, origin) {
+  document.querySelector('.study-citation')?.remove();
+  const drawer=el('aside','study-citation'); drawer.setAttribute('aria-label','引用原文'); drawer.setAttribute('role','dialog');
+  const head=el('div','row'); head.append(el('strong','grow','['+index+'] '+(source.docTitle || '资料原文')));
+  const close=btn('关闭','ghost sm',()=>{drawer.remove();origin?.focus();}); head.appendChild(close);
+  drawer.append(head,el('p','muted sm',source.headingPath || ''),el('p','muted sm path-line',source.docPath || ''));
+  const body=el('article','md'); body.innerHTML=md(source.text || source.caption || '生成时未保存原文，请在资料库核对。'); drawer.appendChild(body);
+  drawer.onkeydown=e=>{if(e.key==='Escape'){e.stopPropagation();close.click();}};
+  document.querySelector('.main').appendChild(drawer); close.focus();
+}
+function linkStudyCitations(article, citations) {
+  const walker=document.createTreeWalker(article,NodeFilter.SHOW_TEXT),nodes=[];
+  while(walker.nextNode()) if(!walker.currentNode.parentElement.closest('a,button,pre,code')) nodes.push(walker.currentNode);
+  for(const node of nodes) {
+    const text=node.textContent,re=/\[(\d+)\]/g;let match,last=0;const fragment=document.createDocumentFragment();let linked=false;
+    while((match=re.exec(text))) {
+      const index=Number(match[1]),source=citations.find((c,i)=>Number(c.index || i+1)===index);
+      if(!source)continue;
+      fragment.appendChild(document.createTextNode(text.slice(last,match.index)));
+      const button=btn('['+index+']','citation-link',()=>openStudyCitation(source,index,button));button.setAttribute('aria-label','查看引用 '+index+' 原文');
+      fragment.appendChild(button);last=match.index+match[0].length;linked=true;
     }
-  };
-  let detailToken = 0;
-  const paintDetail = async () => {
-    const mine = ++detailToken;
-    detail.innerHTML = '<div class="empty inline"><span class="spinner"></span> 正在打开本章…</div>';
-    // 渲染到离屏容器：迟到的旧章节渲染不会把内容拼进已经换过的右栏
-    const tmp = el('div');
-    await renderChapter(tmp);
-    if (mine !== detailToken || generation !== state.navigationGeneration) return;
-    const header = tmp.firstElementChild, unit = tmp.querySelector('.unit-steps')?.closest('.card'), extra = tmp.querySelector('.chapter-extra');
-    if (!header || !unit) return;
-    const chapter = state.chapter;
-    header.classList.add('reader-heading'); header.querySelector('button')?.remove();
-    const originalSteps = [...unit.querySelectorAll('.unit-step')];
-    const reader = el('section', 'study-reader study-mode-panel'); reader.setAttribute('aria-label', '章节原文');
-    const article = el('article', 'chapter-article');
-    for (const chunk of [...tmp.querySelectorAll('.chunk-card')]) {
-      const actions = chunk.querySelector('.chunk-actions'), more = actions ? [...actions.querySelectorAll('button')] : [];
-      if (actions && more.length > 1) {
-        const menu = el('details', 'reader-context'); menu.appendChild(el('summary', 'btn ghost sm', '更多操作'));
-        const menuBody = el('div', 'reader-context-menu'); more.slice(1).forEach(b => menuBody.appendChild(b)); menu.appendChild(menuBody); actions.appendChild(menu);
-      }
-      article.appendChild(chunk);
-    }
-    reader.appendChild(article);
-    const practice = el('section', 'study-mode-panel practice-mode'); practice.setAttribute('aria-label', '本章练习');
-    if (originalSteps[1]) {
-      const step = originalSteps[1]; step.querySelector('.unit-idx')?.remove();
-      const start = [...step.querySelectorAll('button')].find(b => b.textContent === '出题练习');
-      if (start) start.onclick = () => openQuiz(practice, chapter);
-      practice.appendChild(step);
-    }
-    practice.appendChild(el('p', 'muted', '围绕当前章节作答，答案与解释会保存到学习记录。答错的题可在错题本复习。'));
-    const generate = el('section', 'study-mode-panel generate-mode'); generate.setAttribute('aria-label', '本章生成');
-    generate.append(el('h2', null, '把这一章变成学习成果'), el('p', 'muted', '选择需要的形式，生成前可以修改主题。'));
-    const choices = el('div', 'generation-choices');
-    const known = extra ? [...extra.querySelectorAll('button')] : [];
-    const descriptions = ['整理本章概念、例子与要点', '生成带答案与解析的练习'];
-    known.slice(0, 2).forEach((button, i) => { const choice = el('div', 'generation-choice'); choice.append(button, el('p', 'muted sm', descriptions[i])); choices.appendChild(choice); });
-    for (const [label, description] of [['在线演示', '把章节重点整理成可播放的演示'], ['实操指南', '围绕章节设计可动手的任务']]) {
-      const choice = el('div', 'generation-choice'); choice.append(btn(label, '', () => promptLearning('请根据资料中的《' + chapter + '》生成一份' + label + '。')), el('p', 'muted sm', description)); choices.appendChild(choice);
-    }
-    generate.appendChild(choices);
-    const tabs = el('nav', 'study-mode-tabs'); tabs.setAttribute('aria-label', '本章任务'); tabs.setAttribute('role', 'tablist');
-    const modes = [['read', '阅读', reader], ['practice', '练习', practice], ['generate', '生成', generate]];
-    if (state.studyModeChapter !== chapter) { state.studyModeChapter = chapter; state.studyMode = 'read'; }
-    const select = key => { state.studyMode = key; for (const [id, , panel] of modes) { panel.hidden = id !== key; const button = tabs.querySelector('[data-mode="' + id + '"]'); button.setAttribute('aria-selected', String(id === key)); button.tabIndex = id === key ? 0 : -1; } };
-    for (const [key, label, panel] of modes) { const button = btn(label, '', () => select(key)); button.dataset.mode = key; button.setAttribute('role', 'tab'); button.id = 'study-tab-' + key; button.setAttribute('aria-controls', 'study-panel-' + key); panel.id = 'study-panel-' + key; panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', button.id); tabs.appendChild(button); }
-    tabs.onkeydown = event => { const keys = modes.map(m => m[0]); let index = keys.indexOf(state.studyMode); if (event.key === 'ArrowRight') index = (index + 1) % keys.length; else if (event.key === 'ArrowLeft') index = (index + keys.length - 1) % keys.length; else if (event.key === 'Home') index = 0; else if (event.key === 'End') index = keys.length - 1; else return; event.preventDefault(); select(keys[index]); tabs.querySelector('[data-mode="' + keys[index] + '"]').focus(); };
-    const complete = originalSteps[3]?.querySelector('button'); if (complete) { complete.className = 'btn sm ghost complete-chapter'; header.querySelector('.card-head').appendChild(complete); }
-    detail.replaceChildren(header, tabs, reader, practice, generate); select(state.studyMode || 'read');
-  };
-  buttons.forEach((b, i) => {
-    b.onclick = () => {
-      const c = chapters[i];
-      if (state.chapter === c.name) return;
-      state.chapter = c.name; state.studyMode = 'read';
-      paintList(); paintDetail();
+    if(linked){fragment.appendChild(document.createTextNode(text.slice(last)));node.replaceWith(fragment);}
+  }
+}
+async function getStudyLecture(kb, chapter, progress, existingSid) {
+  const key=kb+'\n'+chapter;
+  if(studyJobs.has(key)) { const job=studyJobs.get(key);job.listeners.add(progress);progress(job.message);return job.promise.finally(()=>job.listeners.delete(progress)); }
+  const job={listeners:new Set([progress]),message:'正在准备讲义…',sid:existingSid || ''};studyJobs.set(key,job);
+  const notify=message=>{job.message=message;for(const listener of job.listeners)listener(message);};
+  job.promise=(async()=>{
+    if(!job.sid)job.sid=(await api('/api/sessions/new',{})).sessionId;
+    let finished=false,lastId=0,polling=false;
+    const poll=async()=>{
+      if(polling)return;polling=true;
+      try {
+        const data=await api('/api/sessions/events',{sessionId:job.sid,sinceId:lastId});lastId=data.lastId || lastId;
+        for(const event of data.events || []) {
+          if(event.type==='resource/progress') {
+            const p=event.payload || {};if(p.event==='step/start')notify(({retrieve:'正在查找本章资料…',plan:'正在组织章节与小节…',write_section:'正在编写讲义正文…',repair:'正在校对和修订讲义…'})[p.name] || '正在编写讲义…');
+            else if(p.event==='validation')notify('正在核对内容与引用…');
+          }
+          if(event.type==='turn/end'){finished=true;if(event.payload?.ok===false)throw Error(event.payload.message || '生成未完成');}
+        }
+      } finally {polling=false;}
     };
+    let pollError;
+    const timer=setInterval(()=>poll().catch(e=>{pollError=e;}),400);
+    try {
+      notify('正在依据本章资料编写讲义…');
+      if(existingSid){
+        // A second visit attaches to the already running generation instead of starting another.
+        while(!finished){await new Promise(r=>setTimeout(r,450));await poll();if(pollError)throw pollError;}
+      } else {
+        const result=await api('/api/study/lecture',{kbId:kb,chapter,sessionId:job.sid});
+        if(result.busy){job.sid=result.sessionId;lastId=0;while(!finished){await new Promise(r=>setTimeout(r,450));await poll();}}
+      }
+      await poll(); if(pollError)throw pollError;
+      notify('讲义已准备好，正在打开…');
+    } finally {clearInterval(timer);studyJobs.delete(key);}
+  })();
+  return job.promise;
+}
+async function renderSectionQuiz(host, kb, chapter, section) {
+  const key=kb+'\n'+section.id;
+  host.replaceChildren(el('h3',null,'练一练'),el('p','muted sm','围绕这一节做 3 道题，作答会保存在学习记录中。'));
+  const start=btn('出 3 道练习题','sm',async()=>{
+    start.disabled=true;start.textContent='正在出题…';
+    try {
+      const data=await api('/api/study/quiz/generate',{kbId:kb,chapter,sectionId:section.id,count:3});
+      const questions=data.questions || [];
+      if(questions.length<3 || questions.length>5)throw Error('题量不符合要求，请重试');
+      studyQuizCache.set(key,questions);paint(questions);
+    } catch(e){start.disabled=false;start.textContent='重试出题';host.querySelector('.quiz-error')?.remove();host.appendChild(el('p','quiz-error muted',e.message));}
   });
-  paintList();
-  await paintDetail();
+  host.appendChild(start);
+  function paint(questions) {
+    start.remove();host.querySelector('.quiz-error')?.remove();
+    for(const [i,q] of questions.entries()) {
+      const box=el('div','quiz-q');box.appendChild(el('p','item-title',(i+1)+'. '+q.question));
+      const feedback=el('p','quiz-explain');
+      for(const [choice,option] of (q.options || []).entries()) {
+        const button=btn(option,'choice',async()=>{
+          if(box.dataset.saving || q.savedChoice!==undefined)return;box.dataset.saving='1';
+          try {
+            const correct=choice===q.answerIndex;
+            await api('/api/study/quiz/submit',{kbId:kb,chapter,sectionId:section.id,question:q.question,myAnswer:option,reference:q.options[q.answerIndex],correct,options:q.options,answerIndex:q.answerIndex,explain:q.explain || '',source:q.source || ''});
+            q.savedChoice=choice;box.querySelectorAll('button').forEach(b=>b.disabled=true);button.classList.add(correct?'right':'wrong');
+            feedback.textContent=(correct?'答对了。':'参考答案：'+q.options[q.answerIndex]+'。')+' '+(q.explain || '');
+          }catch(e){feedback.textContent='保存失败：'+e.message+'，可重新提交';}finally{delete box.dataset.saving;}
+        });
+        if(q.savedChoice!==undefined)button.disabled=true;box.appendChild(button);
+      }
+      if(q.savedChoice!==undefined)feedback.textContent=(q.savedChoice===q.answerIndex?'答对了。':'参考答案：'+q.options[q.answerIndex]+'。')+' '+(q.explain || '');
+      box.appendChild(feedback);host.appendChild(box);
+    }
+  }
+  if(studyQuizCache.has(key))paint(studyQuizCache.get(key));
+}
+PAGES.learn.render = async function() {
+  const generation=state.navigationGeneration;
+  await loadCfg();if(generation!==state.navigationGeneration)return;
+  const kb=state.kb,view=$('view');view.replaceChildren();
+  const workspace=el('div','study-workspace'),side=el('nav','study-side'),detail=el('section','study-detail');
+  side.setAttribute('aria-label','章与节目录');detail.setAttribute('aria-label','讲义内容');workspace.append(side,detail);view.appendChild(workspace);
+  const selector=kbSelector(()=>{state.studySection=null;go('learn');});selector.setAttribute('aria-label','学习资料范围');side.appendChild(selector);
+  if(!hasKb() || !indexedKb()) {
+    detail.appendChild(emptyState({art:'db',title:hasKb()?'先准备学习资料':'先添加学习资料',text:'准备好资料后，这里会把资料编成可以逐节学习的讲义。',actions:[btn('去资料库','primary',()=>go('kb'))]}));return;
+  }
+  let course,detailToken=0;
+  const valid=()=>generation===state.navigationGeneration && current==='learn';
+  async function loadCourse(){course=await api('/api/study/course',{kbId:kb});}
+  await loadCourse();if(!valid())return;
+  if(!(course.chapters || []).length){detail.appendChild(el('p','muted','还没有可学习的章节，请在资料库检查内容。'));return;}
+  function selectDefault(){
+    let c=course.chapters.find(c=>c.name===state.chapter) || course.chapters.find(c=>c.sourceChapter===state.chapter);
+    if(!c)c=course.chapters.find(c=>c.doneCount<c.sectionCount) || course.chapters[0];
+    state.chapter=c.name;
+    const section=c.sections.find(s=>s.id===state.studySection) || c.sections.find(s=>!s.done) || c.sections[0];
+    state.studySection=section?.id;return [c,section];
+  }
+  function paintSide(){
+    side.querySelectorAll('.study-chapter-group,.study-side-label').forEach(n=>n.remove());
+    side.appendChild(el('p','study-side-label',course.chapters.length+' 章 · 学完 '+course.doneCount+' / '+course.sectionCount+' 节'));
+    for(const c of course.chapters) {
+      const group=el('div','study-chapter-group');
+      const head=btn('','study-chapter'+(c.name===state.chapter?' active':''),()=>{state.chapter=c.name;state.studySection=null;selectDefault();paintSide();paintDetail();});head.dataset.id=c.name;
+      const main=el('span','study-chapter-main');
+      if(c.title)main.appendChild(el('span','study-chapter-meta',c.sourceChapter));
+      main.append(el('span','study-chapter-title',c.title || c.name),el('span','study-chapter-meta','本章 '+c.sectionCount+' 节，学完 '+c.doneCount+' 节'));head.appendChild(main);group.appendChild(head);
+      for(const section of c.sections) {
+        const button=btn('','study-section'+(section.id===state.studySection?' active':''),()=>{state.chapter=c.name;state.studySection=section.id;paintSide();paintDetail();});
+        button.dataset.section=section.id;button.append(el('span','grow',section.title),el('span','section-status',section.done?'学完':'未学'));
+        if(section.id===state.studySection)button.setAttribute('aria-current','page');group.appendChild(button);
+      }
+      side.appendChild(group);
+    }
+    const active=side.querySelector('.study-section.active');
+    if(active)side.scrollTop+=active.getBoundingClientRect().top-side.getBoundingClientRect().top-90;
+  }
+  async function paintDetail(){
+    const token=++detailToken,[chapter,section]=selectDefault();if(!section)return;
+    view.scrollTop=0;
+    const alive=()=>valid()&&token===detailToken;
+    detail.replaceChildren();
+    const heading=el('header','reader-heading');heading.append(el('p','muted sm',chapter.name),el('h2',null,section.title));detail.appendChild(heading);
+    if(!section.markdown) {
+      const status=el('div','study-generation');status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+      status.append(el('span','spinner'),el('p',null,'正在准备这一章的讲义…'));detail.appendChild(status);
+      try {
+        await getStudyLecture(kb,chapter.name,message=>{if(alive())status.querySelector('p').textContent=message;},chapter.generationSessionId);
+        if(!alive())return;
+        const title=section.title;await loadCourse();if(!alive())return;
+        const updated=course.chapters.find(c=>c.sourceChapter===chapter.name) || course.chapters.find(c=>c.name===chapter.name);
+        state.chapter=updated?.name || chapter.name;
+        state.studySection=updated?.sections.find(s=>s.title===title)?.id || updated?.sections[0]?.id;
+        paintSide();await paintDetail();
+      }catch(e){if(alive()){status.replaceChildren(el('p',null,'讲义还没生成成功：'+e.message),btn('重新生成','primary sm',()=>paintDetail()),btn('检查模型','ghost sm',()=>go('models')));}}
+      return;
+    }
+    const article=el('article','md lecture-article');article.innerHTML=md(section.markdown);linkStudyCitations(article,chapter.citations || []);detail.appendChild(article);
+    const practice=el('section','section-practice');practice.setAttribute('aria-label','本节练习');detail.appendChild(practice);renderSectionQuiz(practice,kb,chapter.name,section);
+    const complete=btn(section.done?'这节已学完':'学完这节','primary complete-section',async()=>{
+      if(section.done)return;complete.disabled=true;
+      try {
+        course=await api('/api/study/section/complete',{kbId:kb,chapter:chapter.name,sectionId:section.id});
+        if(!alive())return;section.done=true;complete.textContent='这节已学完';paintSide();
+        const next=(course.chapters.find(c=>c.name===chapter.name)?.sections || []).find(s=>!s.done);
+        if(next){const button=btn('下一节：'+next.title,'sm ghost',()=>{state.studySection=next.id;paintSide();paintDetail();});complete.after(button);}
+      }catch(e){toast('保存失败：'+e.message);complete.disabled=false;}
+    });complete.disabled=!!section.done;detail.appendChild(complete);
+    const footer=el('footer','section-generation');footer.appendChild(el('span','muted sm','更多学习方式'));
+    for(const [kind,label] of [['ppt','生成演示'],['practice','生成实操'],['quiz','生成练习册']]) {
+      footer.appendChild(btn(label,'sm ghost',()=>promptLearning('请依据资料中的《'+chapter.name+'》，围绕「'+section.title+'」生成一份'+(RESOURCE_LABEL[kind] || label)+'。')));
+    }
+    detail.appendChild(footer);
+  }
+  selectDefault();paintSide();await paintDetail();
 };
 
 const homePageBeforeWorkspace = PAGES.home.render;

@@ -726,6 +726,8 @@ async function go(page, section, opts) {
   const meta = PAGE_META[target];
   $("page-title").textContent = meta.title;
   $("page-sub").textContent = meta.sub;
+  document.querySelector(".study-citation")?.remove();
+  if (typeof decorateWorkspace === "function") decorateWorkspace();
   const ta = $("top-actions");
   ta.innerHTML = "";
   if (meta.actions) for (const a of meta.actions()) ta.appendChild(a);
@@ -796,27 +798,27 @@ PAGES.home = {
       banner.appendChild(btn(missing[0].act, "sm", missing[0].go)); v.appendChild(banner);
     }
     let tree = null, treeError = "";
-    if (ready) try { tree = await api("/api/study/tree", {kbId: state.kb}); } catch(e) { treeError = e.message; }
+    if (ready) try { tree = await api("/api/study/course", {kbId: state.kb}); } catch(e) { treeError = e.message; }
     if (renderingGeneration !== state.navigationGeneration) return;
-    const next = tree && ((tree.chapters || []).find(c => !c.done) || tree.chapters[0]);
+    const next = tree && tree.next;
     const hero = cardOf({cls: "study-continue", title: "接着学", sub: active ? active.name : "从你的资料开始"});
-    hero.appendChild(el("h2", "continue-title", next ? next.name : treeError ? "章节暂时没能读取" : ready ? "这一轮已读完" : "先放进一份想学的资料"));
-    hero.appendChild(el("p", "muted", treeError || (next ? "已读 " + next.readCount + " / " + next.chunkCount + " 个内容片段 · 阅读进度会自动保存" : "选择本机文件或文件夹，准备好后就能按章节学习。")));
+    hero.appendChild(el("h2", "continue-title", next ? next.title : treeError ? "章节暂时没能读取" : ready ? "这一轮已读完" : "先放进一份想学的资料"));
+    hero.appendChild(el("p", "muted", treeError || (next ? next.chapter + " · 学完 " + tree.doneCount + " / " + tree.sectionCount + " 节" : "选择本机文件或文件夹，准备好后就能按章节学习。")));
     if (next) {
-      const bar = el("div", "bar"); bar.innerHTML = '<i style="width:' + pct(next.readCount, next.chunkCount) + '%"></i>'; hero.appendChild(bar);
+      const bar = el("div", "bar"); bar.innerHTML = '<i style="width:' + pct(tree.doneCount, tree.sectionCount) + '%"></i>'; hero.appendChild(bar);
     }
     const actions = el("div", "row");
     actions.appendChild(btn(next ? "继续学" : treeError ? "重新加载" : ready ? "挑选章节" : "添加与准备资料", "primary", () => {
       if (treeError) { go("home"); return; }
-      if (next) state.chapter = next.name;
+      if (next) { state.chapter = next.chapter; state.studySection = next.sectionId; }
       go(ready ? "learn" : "kb");
     })); hero.appendChild(actions); v.appendChild(hero);
     const suggestion = cardOf({title: "今日建议"});
-    suggestion.appendChild(el("p", "muted", next ? (next.done ? "已经读完了，可以做几道题检查理解，再把要点整理成讲义。" : "先读完「" + next.name + "」，再用练习检查理解。") : "准备资料后，这里会根据你的章节进度推荐下一步。"));
+    suggestion.appendChild(el("p", "muted", next ? ("学完「" + next.title + "」，再用练习检查理解。") : "准备资料后，这里会根据你的章节进度推荐下一步。"));
     if (next) {
       const row = el("div", "row");
-      row.appendChild(btn("出题练习", "", () => openQuiz(suggestion, next.name)));
-      row.appendChild(btn("生成讲义", "", () => askTopic("lecture", next.name))); suggestion.appendChild(row);
+      row.appendChild(btn("出题练习", "", () => openQuiz(suggestion, next.chapter)));
+      row.appendChild(btn("生成讲义", "", () => askTopic("lecture", next.chapter))); suggestion.appendChild(row);
     }
     v.appendChild(suggestion);
     const recent = cardOf({title: "最近成果", actions: [btn("查看全部", "ghost sm", () => go("resources"))]});
@@ -832,7 +834,7 @@ PAGES.home = {
     } catch(e) { recent.appendChild(el("p", "muted", "成果暂时没能读取：" + e.message)); }
     v.appendChild(recent);
     const r = state.report;
-    v.appendChild(el("p", "home-summary muted sm", "累计阅读 " + (r.readChunks || 0) + " 个片段 · 完成 " + (r.completedChapters || 0) + " 章 · " + (r.noteCount || 0) + " 条笔记" + (r.quizTotal ? " · 答题正确率 " + pct(r.quizRight, r.quizTotal) + "%" : "")));
+    v.appendChild(el("p", "home-summary muted sm", "累计学完 " + (tree?.doneCount || 0) + " 节 · " + (r.noteCount || 0) + " 条笔记" + (r.quizTotal ? " · 答题正确率 " + pct(r.quizRight, r.quizTotal) + "%" : "")));
     const network = el("details", "card home-network"); network.appendChild(el("summary", null, "看看知识之间的联系"));
     let loaded = false;
     network.ontoggle = async () => { if (network.open && !loaded) { loaded = true; try { network.appendChild(await graphCard()); } catch(e) { network.appendChild(el("p", "muted", e.message)); } } };
@@ -842,13 +844,11 @@ PAGES.home = {
 
 async function continueStudy() {
   try {
-    const tree = await api("/api/study/tree", { kbId: state.kb });
-    const next = (tree.chapters || []).find((c) => !c.done);
-    state.chapter = next ? next.name : ((tree.chapters[0] || {}).name || null);
-  } catch (e) {
-    state.chapter = null;
-  }
-  go("learn");
+    const course=await api('/api/study/course',{kbId:state.kb});
+    state.chapter=course.next?.chapter || course.chapters?.[0]?.name || null;
+    state.studySection=course.next?.sectionId || null;
+  } catch(e) { state.chapter=null;state.studySection=null; }
+  await go('learn');
 }
 
 /* ---------- 学 · 练 ---------- */
@@ -3056,7 +3056,7 @@ PAGES.report = {
 
     // 四张统计卡：顺序固定（自检按这个顺序读）
     const grid = el("div", "grid grid-4");
-    grid.appendChild(statCard("已读切片", r.readChunks || 0, ""));
+    grid.appendChild(statCard("学完小节", r.completedSections || 0, ""));
     grid.appendChild(statCard("完成章节", r.completedChapters || 0, ""));
     grid.appendChild(statCard("答题总数", r.quizTotal || 0, ""));
     grid.appendChild(statCard("正确率", r.quizTotal ? pct(r.quizRight, r.quizTotal) : 0, "%"));
@@ -4411,7 +4411,7 @@ async function loadPaletteCache() {
   if (palette.cache) return palette.cache;
   await loadCfg();
   const [tree, notes, arts] = await Promise.all([
-    api("/api/study/tree", { kbId: state.kb }).catch(() => ({ chapters: [] })),
+    api("/api/study/course", { kbId: state.kb }).catch(() => ({ chapters: [] })),
     api("/api/study/notes/list", {}).catch(() => ({ notes: [] })),
     api("/api/artifacts/list", {}).catch(() => ({ artifacts: [] })),
   ]);
@@ -4442,7 +4442,7 @@ async function runPaletteSearch(raw) {
   }
 
   const chapters = cache.chapters.filter((c) => hit(c.name)).slice(0, 5)
-    .map((c) => paletteItemMain(c.name, c.chunkCount + " 片 · 已读 " + c.readCount + (c.done ? " · 已完成" : ""), "章节", () => {
+    .map((c) => paletteItemMain(c.title || c.name, "本章 " + c.sectionCount + " 节，学完 " + c.doneCount + " 节", "章节", () => {
       state.chapter = c.name;
       go("learn");
     }));
@@ -5473,7 +5473,7 @@ PANELS.report = {
     const r = state.report || {};
     body.appendChild(panelGroup("概览"));
     const rows = [
-      ["已读切片", r.readChunks || 0],
+      ["学完小节", r.completedSections || 0],
       ["完成章节", r.completedChapters || 0],
       ["答题总数", r.quizTotal || 0],
       ["答题正确率", (r.quizTotal ? Math.round((r.quizRight || 0) * 100 / r.quizTotal) : 0) + "%"],

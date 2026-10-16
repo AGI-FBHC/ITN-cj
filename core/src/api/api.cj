@@ -1,6 +1,6 @@
 package itn_desktop_core.api
 
-import itn_desktop_core.learning.LearningStore
+import itn_desktop_core.learning.*
 import itn_desktop_core.project.ProjectStore
 import itn_desktop_core.agent.learningTools
 import itn_desktop_core.pi_tools.DraftStore
@@ -2253,6 +2253,78 @@ public class Api {
 
         // ---------- 学习：知识网络与章节 ----------
 
+        if (path == "/api/study/course" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let kbId = strOf(b, "kbId")
+                    ok(ctx, studyCourse(store.dataDir, kbId, loadIndexCached(store.dataDir, kbId)))
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/study/section/complete" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => try {
+                    let kbId = strOf(b, "kbId"); let chapter = strOf(b, "chapter"); let id = strOf(b, "sectionId")
+                    let idx = loadIndexCached(store.dataDir, kbId)
+                    let section = findCourseSection(studyCourse(store.dataDir, kbId, idx), chapter, id)
+                    if (strOf(section, "markdown").size == 0) { fail(ctx, 400, "请先生成并阅读这一节讲义"); return }
+                    let db = DbHub.open(store.dataDir)
+                    db.run("INSERT OR IGNORE INTO progress(kb_id,kind,item_key,at) VALUES (?,'section',?,?)", va([tv(kbId),tv(id),tv(nowStamp())]))
+                    let course = studyCourse(store.dataDir, kbId, idx)
+                    let chapters = arrOf(course, "chapters"); var i = 0; var sourceChapter = ""
+                    while (i < chapters.size()) {
+                        let c = objOf(chapters[i]).getOrThrow(); i += 1
+                        if (strOf(c, "name") == chapter) { sourceChapter = strOf(c,"sourceChapter") }
+                    }
+                    var allDone = sourceChapter.size > 0; i = 0
+                    while (i < chapters.size()) { let c = objOf(chapters[i]).getOrThrow(); i += 1; if (strOf(c,"sourceChapter") == sourceChapter && intOf(c,"sectionCount") != intOf(c,"doneCount")) { allDone = false } }
+                    if (allDone) { db.run("INSERT OR IGNORE INTO chapter_done(kb_id,chapter,at) VALUES (?,?,?)", va([tv(kbId),tv(sourceChapter),tv(nowStamp())])) }
+                    ok(ctx, course)
+                } catch(e: Exception) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/study/lecture" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let kbId = strOf(b, "kbId"); let chapter = strOf(b, "chapter"); let sid = strOf(b, "sessionId")
+                    if (sid.size == 0 || chapter.size == 0) { fail(ctx, 400, "缺少章节或任务会话"); return }
+                    let course = studyCourse(store.dataDir, kbId, loadIndexCached(store.dataDir, kbId))
+                    let chapters = arrOf(course, "chapters"); var valid = false; var i = 0
+                    while (i < chapters.size()) { if (strOf(objOf(chapters[i]).getOrThrow(), "name") == chapter) { valid = true }; i += 1 }
+                    if (!valid) { fail(ctx, 404, "找不到这一章"); return }
+                    if (!claimStudyLecture(store.dataDir, kbId, chapter, sid)) {
+                        let o = JsonObject(); o.put("busy", JsonBool(true)); o.put("sessionId", JsonString(studyLectureSession(store.dataDir,kbId,chapter))); ok(ctx,o); return
+                    }
+                    let ss = SessionStore(store.dataDir); let tid = ss.newTurnId()
+                    let log = { kind: String, payload: JsonObject =>
+                        let e = SessionEvent(); e.sessionId = sid; e.turnId = tid; e.kind = kind; e.payload = payload; ss.append(e)
+                    }
+                    try {
+                        let start = JsonObject(); start.put("kind", JsonString("lecture")); start.put("kbId", JsonString(kbId)); log("turn/start",start)
+                        let question = JsonObject(); question.put("text",JsonString("学讲义：" + chapter)); log("user/message",question)
+                        let args = JsonObject(); args.put("kind",JsonString("lecture")); args.put("topic",JsonString(chapter)); args.put("studyChapter",JsonString(chapter)); args.put("detail",JsonString("balanced"))
+                        let emit = { kind: String, payload: JsonObject =>
+                            if (kind == "resource/saved") { log(kind,payload) }
+                            else if (kind == "step/start" || kind == "step/end" || kind == "validation" || kind == "turn/end") { payload.put("event",JsonString(kind)); log("resource/progress",payload) }
+                        }
+                        for (tool in learningTools(store,kbId,{ => false },sid,tid,"",emit)) {
+                            if (tool.name != "generate_learning_resource") { continue }
+                            let result = tool.run(args)
+                            let end = JsonObject(); end.put("ok",JsonBool(result.ok)); end.put("message",JsonString(result.summary)); log("turn/end",end)
+                            if (result.ok) { ok(ctx,result.details) } else { fail(ctx,502,result.summary) }
+                        }
+                    } catch(e: Exception) {
+                        let end = JsonObject(); end.put("ok",JsonBool(false)); end.put("message",JsonString(e.message)); log("turn/end",end)
+                        fail(ctx,502,e.message)
+                    } finally { releaseStudyLecture(store.dataDir,kbId,chapter) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         if (path == "/api/study/tree" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) =>
@@ -2323,12 +2395,24 @@ public class Api {
                         case Some(cfg) =>
                             let idx = loadIndexCached(store.dataDir, kbId)
                             let sd = StudyStore(store.dataDir).load()
-                            let chunks = chunksOfChapter(idx, sd.progress, kbId, chapter)
+                            let sectionId = strOf(b, "sectionId")
+                            var sourceChapter = chapter
+                            if (sectionId.size > 0) {
+                                let cs = arrOf(studyCourse(store.dataDir,kbId,idx),"chapters"); var ci = 0
+                                while (ci < cs.size()) { let c = objOf(cs[ci]).getOrThrow(); ci += 1; if (strOf(c,"name") == chapter) { sourceChapter = strOf(c,"sourceChapter") } }
+                            }
+                            let chunks = chunksOfChapter(idx, sd.progress, kbId, sourceChapter)
                             if (chunks.size() == 0) {
                                 fail(ctx, 404, "该章节没有可出题的内容")
                                 return
                             }
-                            let material = contextFromChunks(chunks, 8)
+                            var material = contextFromChunks(chunks, 8)
+                            if (sectionId.size > 0) {
+                                let section = findCourseSection(studyCourse(store.dataDir,kbId,idx),chapter,sectionId)
+                                material = strOf(section,"markdown")
+                                if (material.size == 0) { fail(ctx,400,"请先生成讲义"); return }
+                                count = 3
+                            }
                             let system = "你是教培测评设计者。只依据给定资料出题，题目必须能在资料里找到依据。"
                             let user = "依据下面的资料，为「" + chapter + "」出 " + count.toString() + " 道单选题。只输出一个 JSON 数组，不要任何解释、不要代码围栏。格式：[{\"question\":\"题干\",\"options\":[\"选项1\",\"选项2\",\"选项3\",\"选项4\"],\"answerIndex\":0,\"explain\":\"解析\",\"source\":\"对应章节\"}]\n\n资料：\n" + material
                             try {
@@ -2493,6 +2577,7 @@ public class Api {
                     origin.put("answerIndex", JsonInt(intOf(b, "answerIndex")))
                     origin.put("explain", JsonString(strOf(b, "explain")))
                     origin.put("source", JsonString(strOf(b, "source")))
+                    if (strOf(b, "sectionId").size > 0) { origin.put("sectionId", JsonString(strOf(b, "sectionId"))) }
                     if (origin.get("options").isSome()) {
                         DbHub.open(store.dataDir).putKv("meta", "quiz-q:" + r.id, origin.toString())
                     }
@@ -2604,6 +2689,7 @@ public class Api {
             }
             let o = JsonObject()
             o.put("readChunks", JsonInt(d.progress.readChunks.size))
+            o.put("completedSections",JsonInt(DbHub.open(store.dataDir).scalarInt("SELECT COUNT(*) FROM progress WHERE kind='section'",ArrayList<DbValue>())))
             o.put("completedChapters", JsonInt(d.progress.completedChapters.size))
             o.put("noteCount", JsonInt(d.notes.size))
             o.put("quizTotal", JsonInt(d.quizRecords.size))
@@ -2991,6 +3077,9 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/profile/get",
         "/api/profile/save",
         "/api/study/tree",
+        "/api/study/course",
+        "/api/study/lecture",
+        "/api/study/section/complete",
         "/api/study/chapter",
         "/api/study/read",
         "/api/study/notes/list",

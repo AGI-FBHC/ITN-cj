@@ -4032,3 +4032,14 @@ read_chunk 读得到原文并带回库标识与正文。
 - 全局弹窗新增“对话内容”结果；会话栏输入防抖搜索正文、保留焦点且就地显示摘要；点击结果await打开会话后滚动/高亮具体turnId，处理异步错误与过期响应。笔记结果选中目标笔记；资料结果留在资料库原文区展示命中片段。
 - 源码涉及session.cj/api.cj/app.js/workbench.js/workbench.css；新增单测覆盖非活动分支、保留后代、字面%_、空查询、分段流式词、无效turn不改leaf。cjpm test通过（FAILED 0），cjpm build通过，scripts/package.ps1产物哈希一致；扩展palette-chip-check原脚本，14/14通过，覆盖两处正文检索+点击准确定位且无JS异常。日志tmp/search-{unit,build,ui}.log。
 - 搜索先独立落Git，学习页和之后追加的HTML写入/计时故障另做功能提交。当前版本仍0.6.0，最终统一升版打包。
+
+### 学习页改造完成，0.7.0（独立功能提交）
+- 标题/副标题与学习tab、成果tab统一移动到.topbar；主区自身滚动，顶部不滚，窄窗口tab换行；切换前同步更新tab，避免加载后挪位。沿用工作区tab样式。
+- 新增learning/course.cj：读取最新讲义，按studyChapter绑定或topic/title精确匹配；把讲义content.chapters[].sections[]投影为真正章→节目录，记录sourceChapter防混淆；无讲义时只用资料#/##标题兜底目录，正文不拼KB片段。节ID按来源章/讲义章/节标题/重名序号形成稳定键，版本更新保留未改名节的完成记录。
+- 新增/course、/lecture、/section/complete契约与接口；/lecture直接复用generate_learning_resource领域工具，保存studyChapter，转resource/progress/saved事件；按数据目录+知识库+章节加锁防并发重复；章节切换期间可跟随同一后台任务，失败可就地重试，不导航到对话。讲义修订保留绑定。
+- 前端一页展示讲义正文→3题练习→学完这节→页面底部演示/实操/练习册小入口；去掉内层阅读/练习/生成tab与每片标记已读；正文[n]引用转可点击按钮，侧边窗显示生成时对应原文快照（键盘Esc可关闭）。目录显示未学/学完、本章n节学完m节；切节重置正文滚动，自动把选中节放进目录可见范围。
+- 完成度写现有progress(kind=section)，幂等校验，只允许完成已生成正文的节；修复StudyStore.save原先DELETE所有progress会误清新节记录，现仅替换kind=chunk；作答继续quiz_records/错题元数据并记录sectionId。整份来源章节所有节完成才计chapter_done，避免讲义子章重复累加；成长另提供completedSections；首页接着学显示并准确打开next节标题。
+- 验证：cjpm build成功；cjpm test121/121（最终重跑另见日志）；learning-check --ui96/96（含顶部稳定/滚动不动、讲义正文、引用核对、3题作答落库、按节完成、首页续学、无讲义就地生成/自动打开、切节期间只发一次生成、窄屏无横向溢出、无JS异常）；另learning-check44/44补整份讲义跨章累计与成长节数。nonchat19/19、glass-shot全过无console错误、splash4/4、palette-chip14/14。
+- 真实模型：tools/real-features-check.py新增--case course，用户当前mimo-v2.6-flash在隔离目录实测1/1，155.2秒，生成3章6节、引用2条，studyChapter正确、正文可读、resource/progress存在、完成与下一节定位保存成功；未写用户真实库、未输出密钥。
+- 测试修正记录：原UI脚本点击资源卡的检查缺少DOM等待，补waitForSelector；原新章测试只有1条来源而mock固定引用[2]，被真实质检正确拒绝，页面显示错误并可重试；改为2节来源样例后成功。没有放宽质检或用假进度掩盖问题。
+- 版本与启动器同步0.7.0，截图tmp/workbench-shots/10-lecture-study.png为隔离样例；旧0.6.0保留。搜索提交eafce56已独立保存。下一项：用户追加SVG动画任务的write缺path与计时停滞，学习包冒烟后再处理。

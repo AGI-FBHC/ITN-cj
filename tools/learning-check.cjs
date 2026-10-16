@@ -62,7 +62,29 @@ async function main() {
     check('Agent revision preserves stable resource identity',revised.id===lecture.id&&revised.version===2&&revised.versions.length===2);
     check('revision retains immutable original content',(await post('/api/learning/resource',{id:lecture.id,version:1})).markdown===before.markdown&&fs.existsSync(before.artifactPath));
     check('resource source snapshot can be inspected',!!revised.citations[0].text);
+    const course=await post('/api/study/course',{kbId:'kb'});
+    const learnedChapter=course.chapters.find(c=>c.resourceId===lecture.id);
+    check('course selects latest matching lecture version',learnedChapter?.version===2);
+    check('course exposes lecture sections and original citation snapshots',learnedChapter.sections.length>=2&&learnedChapter.sections[0].markdown.length>0&&learnedChapter.citations[0].text.length>0);
+    const section=learnedChapter.sections[0];
+    const done=await post('/api/study/section/complete',{kbId:'kb',chapter:learnedChapter.name,sectionId:section.id});
+    const repeated=await post('/api/study/section/complete',{kbId:'kb',chapter:learnedChapter.name,sectionId:section.id});
+    check('section completion is idempotent and counts actual sections',done.doneCount===1&&repeated.doneCount===1);
+    const chunks=(await post('/api/study/chapter',{kbId:'kb',chapter:learnedChapter.sourceChapter})).chunks;
+    await post('/api/study/read',{kbId:'kb',chapter:learnedChapter.name,chunkId:chunks[0].id});
+    const afterRead=await post('/api/study/course',{kbId:'kb'});
+    check('legacy read saves preserve section progress',afterRead.doneCount===1&&afterRead.next.sectionId!==section.id);
+    const fallback=course.chapters.find(c=>!c.resourceId);
+    check('ungenerated chapter uses headings without raw text cards',!!fallback&&fallback.sections.every(s=>!s.markdown));
+    let rejected=false;
+    try{await post('/api/study/section/complete',{kbId:'kb',chapter:fallback.name,sectionId:fallback.sections[0].id});}catch(e){rejected=true;}
+    check('cannot mark ungenerated lesson as learned',rejected);
     if(process.argv.includes('--ui')) await require('./workbench-ui.cjs')({base,post,check,dir});
+    const finishing=await post('/api/study/course',{kbId:'kb'});
+    let finishedCourse;
+    for(const c of finishing.chapters.filter(c=>c.resourceId===lecture.id))for(const section of c.sections)finishedCourse=await post('/api/study/section/complete',{kbId:'kb',chapter:c.name,sectionId:section.id});
+    check('whole lecture completion accumulates across its chapters',finishedCourse.chapters.filter(c=>c.resourceId===lecture.id).every(c=>c.doneCount===c.sectionCount));
+    check('growth report counts learned sections',(await post('/api/study/report',{kbId:'kb'})).completedSections===finishedCourse.doneCount);
     console.log('RESULT '+passed+' passed; isolated data='+dir);
   } finally {core.kill();mock.kill();}
 }

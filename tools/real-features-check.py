@@ -192,9 +192,29 @@ def main():
             assert cites, '资源没有引用'
             return 'title=%r citations=%d issues=%d' % (res.get('title'), len(cites), len(issues))
 
+        def case_course():
+            kb = work / 'course-kb'
+            kb.mkdir()
+            (kb / 'input.md').write_text('# 输入与输出\n\n## 先约定输入\n\n先写清输入样例和期望输出，再执行并保留中间状态。\n\n## 验证结果\n\n对正常、最小、最大和异常样例进行验证，记录预期与实际差异。', encoding='utf-8')
+            core.call('/api/kb/save', {'id': 'course-kb', 'name': '课程实测资料', 'rootDir': str(kb)})
+            core.call('/api/kb/build', {'id': 'course-kb'})
+            before = core.call('/api/study/course', {'kbId': 'course-kb'})
+            assert before['chapters'] and not before['chapters'][0].get('resourceId')
+            sid = new_session()
+            core.call('/api/study/lecture', {'kbId': 'course-kb', 'chapter': before['chapters'][0]['name'], 'sessionId': sid})
+            course = core.call('/api/study/course', {'kbId': 'course-kb'})
+            chapter = course['chapters'][0]
+            res = core.call('/api/learning/resource', {'id': chapter['resourceId']})
+            assert res.get('studyChapter') == before['chapters'][0]['name']
+            assert chapter['sections'][0]['markdown'] and chapter['citations']
+            assert any(e['type'] == 'resource/progress' for e in core.events(sid))
+            done = core.call('/api/study/section/complete', {'kbId':'course-kb','chapter':chapter['name'],'sectionId':chapter['sections'][0]['id']})
+            assert done['doneCount'] == 1 and done['next']['sectionId'] != chapter['sections'][0]['id']
+            return 'chapters=%d sections=%d citations=%d; exact next section saved' % (len(course['chapters']),course['sectionCount'],len(chapter['citations']))
+
         cases = [('chat', case_chat), ('stream', case_stream), ('vision', case_vision),
                  ('session_read', case_session_read), ('file_read', case_file_read),
-                 ('memory', case_memory), ('generate', case_generate)]
+                 ('memory', case_memory), ('generate', case_generate), ('course', case_course)]
         for name, fn in cases:
             if only and name not in only:
                 continue

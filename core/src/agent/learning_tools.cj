@@ -65,6 +65,7 @@ public func learningTools(store: Store, kbId: String, shouldAbort: () -> Bool, s
             let res = generateResourceWithCancel(store, req, shouldAbort, emit)
             let body = resultJson(res)
             body.put("topic", JsonString(req.topic))
+            if (strOf(args, "studyChapter").size > 0) { body.put("studyChapter", JsonString(strOf(args, "studyChapter"))) }
             body.put("profileSnapshot", JsonValue.fromStr(req.learningContext))
             if (!res.ok || shouldAbort()) {
                 let r = learningResult(body, res.message)
@@ -108,6 +109,7 @@ public func learningTools(store: Store, kbId: String, shouldAbort: () -> Bool, s
             if (!res.ok || shouldAbort()) { let r = learningResult(resultJson(res), res.message); r.ok = false; return r }
             let body = resultJson(res)
             body.put("topic", JsonString(req.topic))
+            if (strOf(old, "studyChapter").size > 0) { body.put("studyChapter", JsonString(strOf(old, "studyChapter"))) }
             body.put("profileSnapshot", JsonValue.fromStr(req.learningContext))
             let saved = ls.saveResource(body, req.kbId, sid, turnId, id, version)
             emit("resource/saved", saved)

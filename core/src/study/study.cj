@@ -587,7 +587,7 @@ public class StudyStore {
         ops.add(DbOp("INSERT INTO profile (k, v) VALUES (?, ?)", va([tv("formats"), tv(joinList(d.profile.preferredFormats))])))
         ops.add(DbOp("INSERT INTO profile (k, v) VALUES (?, ?)", va([tv("selfScores"), tv(selfScoresJson(d.profile))])))
 
-        ops.add(DbOp("DELETE FROM progress", ArrayList<DbValue>()))
+        ops.add(DbOp("DELETE FROM progress WHERE kind = 'chunk'", ArrayList<DbValue>()))
         var i = 0
         while (i < d.progress.readChunks.size) {
             let key = d.progress.readChunks[i]
