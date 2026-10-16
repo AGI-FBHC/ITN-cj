@@ -6139,9 +6139,11 @@ function turnsFromEvents(events) {
     else if (e.type === "turn/usage") { t.usageIn = Number(p["in"] || 0); t.usageOut = Number(p.out || 0); }
     else if (e.type === "assistant/activity") { t.activity = p.phase || ""; t.activityTool=p.tool || ''; t.toolInputBytes=Number(p.receivedBytes || 0); }
     else if (e.type === 'model/retry') t.activity='retrying';
+    else if(e.type==='model/request')t.activity='waiting';
     else if (e.type === "assistant/thinking") t.items.push({ t: "think", text: p.text || "", ms: p.ms || 0 });
     else if (e.type === "user/message") { t.user = p.text || ""; t.attachments = p.attachments || []; t.userAt = e.at; }
     else if (e.type === "assistant/delta") {
+      t.activity="responding";
       const last = t.items[t.items.length - 1];
       if (last && last.t === "a") last.text += (p.text || "");
       else t.items.push({ t: "a", text: p.text || "", streaming: true });
@@ -6354,6 +6356,14 @@ function msgMeta(opts) {
   return meta;
 }
 
+// Adapted from AACS111/pi-studio splitFinalAssistantBlocks, Copyright (c) 2026 agegr, MIT.
+function splitAssistantDisplayBlocks(items) {
+  const blocks=(items || []).filter(b=>b.t!=='think' || String(b.text || '').trim());
+  const lastProcessIndex=blocks.findLastIndex(b=>b.t==='think' || b.t==='tool');
+  if(lastProcessIndex===-1)return {answerBlocks:blocks,processBlocks:[]};
+  return {answerBlocks:blocks.slice(lastProcessIndex+1),processBlocks:blocks.slice(0,lastProcessIndex+1)};
+}
+
 function renderTurnBlock(t, live) {
   live = !!live && t.ok == null;
   const box = el("div", "turn-block");
@@ -6383,36 +6393,31 @@ function renderTurnBlock(t, live) {
     if (t.steer) u.appendChild(el("span", "msg-flag", "插话"));
     box.appendChild(u);
   }
-  /* 时间线：模型的每一段正文、每一次工具调用，按发生顺序。
-     其中"思考 + 工具"收进**一个折叠组**（pi-studio 的"思考+工具折叠组"、Codex 的"已工作 N 秒"都是这个形状）：
-     跑着的时候组是开的，能看见它此刻在干什么；这一轮结束就只剩一行"工作过程 · N 秒 · M 步"。
-     组里的每条仍然是"自己结束就折叠"（工具跑完收、思考段写完收）。 */
-  const work = t.items.filter((x) => x.t === "think" || x.t === "tool");
-  const rest = t.items.filter((x) => x.t !== "think" && x.t !== "tool");
-  if (work.length) {
-    const secs = Math.max(0, Math.round(work.reduce((n, x) => n + Number(x.ms || 0), 0) / 1000));
-    const steps = work.filter((x) => x.t === "tool").length;
-    const g = el("details", "work-group");
-    g.open = !!live;
-    const gs = el("summary", "work-head");
-    gs.innerHTML = '<span class="work-chev">' + icon("chevron") + "</span>" +
-      "<span>工作过程</span>" +
-      '<span class="work-stat">' + (live ? "进行中" : (secs ? secs + " 秒" : "")) +
-      (steps ? (secs ? " · " : "") + steps + " 步" : "") + "</span>";
-    g.appendChild(gs);
-    const gbody = el("div", "work-body");
-    work.forEach((it, idx) => {
-      const isTail = it === work[work.length - 1] && rest.length === 0 && idx === work.length - 1;
-      if (it.t === "think") gbody.appendChild(thinkRow(it, live, isTail));
-      else gbody.appendChild(toolCard(it, live));
-    });
-    g.appendChild(gbody);
-    box.appendChild(g);
-  }
-  for (const it of rest) {
-    if (it.t === "resource") box.appendChild(resourceCard(it.resource, true));
-    else if (it.text) box.appendChild(assistantBlock(it.text, live && it.streaming));
-  }
+  // Adapted from pi-studio lib/message-display.ts (MIT); see third_party/pi-studio-LICENSE.txt.
+  // Preserve original order. Only adjacent process blocks share a collapsible group.
+  const {processBlocks,answerBlocks}=splitAssistantDisplayBlocks(t.items);
+  let pending=[],groupIndex=0;
+  const appendContent=it=>{
+    if(it.t==='resource')box.appendChild(resourceCard(it.resource,true));
+    else if(it.text){const node=assistantBlock(it.text,live&&it.streaming);node.dataset.timelineKind='text';box.appendChild(node);}
+  };
+  const flushProcess=()=>{
+    if(!pending.length)return;
+    const items=pending;pending=[];
+    const tail=items[items.length-1]===processBlocks[processBlocks.length-1]&&answerBlocks.length===0;
+    const active=live&&tail,secs=Math.max(0,Math.round(items.reduce((n,x)=>n+Number(x.ms || 0),0)/1000));
+    const steps=items.filter(x=>x.t==='tool').length;
+    const group=el('details','work-group');group.dataset.timelineKind='process';
+    const key=(t.id || 'local')+':'+groupIndex++;
+    group.open=state.workExpansions?.[key] ?? active;
+    group.ontoggle=()=>{state.workExpansions=state.workExpansions || {};state.workExpansions[key]=group.open;};
+    const head=el('summary','work-head');head.innerHTML='<span class="work-chev">'+icon('chevron')+'</span><span>工作过程</span><span class="work-stat">'+(active?'进行中':secs?secs+' 秒':'')+(steps?' · '+steps+' 步':'')+'</span>';
+    const body=el('div','work-body');
+    items.forEach((it,i)=>body.appendChild(it.t==='think'?thinkRow(it,active,active&&i===items.length-1):toolCard(it,active)));
+    group.append(head,body);box.appendChild(group);
+  };
+  for(const item of processBlocks){if(item.t==='think'||item.t==='tool')pending.push(item);else{flushProcess();appendContent(item);}}
+  flushProcess();answerBlocks.forEach(appendContent);
   // 这一轮改了哪些文件：一张小卡（逐文件 +/-），有就显示，没有就不占地方
   if (t.fileChanges && t.fileChanges.length) {
     const card = el("details", "file-card");
@@ -6450,7 +6455,7 @@ function renderTurnBlock(t, live) {
     const names = {retrieve: "检索资料", plan: "规划结构", write_section: "撰写讲义", knowledge_points: "梳理知识点", questions: "生成题目", repair: "根据质检修订", artifact_save: "保存成果"};
     box.appendChild(el("div", "resource-progress", names[t.resourceProgress.name] || "正在生成与检查学习资源"));
   }
-  const running = live && !t.items.some((x) => x.t === "a" && x.text);
+  const running = live && t.activity !== "responding";
   if (running) {
     const p2 = el("div", "msg msg-ai");
     const b = el("div", "msg-body");

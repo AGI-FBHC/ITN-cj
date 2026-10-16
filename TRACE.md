@@ -4076,3 +4076,4 @@ read_chunk 读得到原文并带回库标识与正文。
 - 官方资料https://mimo.mi.com/docs/en-US/quick-start/usage-guide/other/deep-thinking说明thinking.type支持disabled，输出额度含思考与答案，工具历史需保留reasoning_content。基于实际证据：正常请求恢复原8192额度；纯thinking/工具输入被截断且未显示正文时最多恢复一次32768，MiMo仅恢复轮关闭思考，并回传工具历史reasoning_content。
 - 为防纯thinking一直消耗预算，MiMo纯思考超过24000字节且还无正文或工具时提前触发相同恢复；按真实字节计，不伪称token。SSE回调的中断必须在JSON解析catch之外传播，避免被吞掉。新增单测覆盖纯思考length和字节预算恢复，日志tmp/write-budget-unit.log。
 - 时间线前端已按pi-studio的原顺序逻辑改为相邻过程才合组，阶段文字回到对应工具前后；stop-check新增交错思考/阶段文本/工具/最终答复DOM顺序断言，12/12通过。MIT署名与完整许可证已存third_party/pi-studio-LICENSE.txt；参考源码仅取所需算法，不引入React/Univer运行依赖。
+- 时间线阶段已按MIT逻辑适配并通过stop12/12，参考上游49eca7d3f6524171b069405d8675dc67b23e1277；改为连续过程片段折叠，阶段文本与最终答复保留原位置；折叠展开状态按轮/片段保存。分发包附上pi-studio完整许可。PPT和多格式预览仍在后续工作中。

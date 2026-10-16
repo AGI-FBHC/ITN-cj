@@ -111,6 +111,23 @@ async function events(sid) { return (await api('/api/sessions/events', { session
     return t.items[0].summary === 'result A' && t.items[1].running;
   });
   check('parallel calls of the same tool match their own result ids', matching);
+  const timeline=await page.evaluate(()=>{
+    const events=[
+      {type:'assistant/thinking',payload:{text:'思考一',ms:1000}},
+      {type:'assistant/delta',payload:{text:'先检查文件。'}},
+      {type:'tool/call',payload:{tool:'read',callId:'read-one',args:{path:'a'}}},
+      {type:'tool/result',payload:{tool:'read',callId:'read-one',ok:true,summary:'检查完成'}},
+      {type:'assistant/thinking',payload:{text:'思考二',ms:1000}},
+      {type:'assistant/delta',payload:{text:'现在写入修改。'}},
+      {type:'tool/call',payload:{tool:'write',callId:'write-one',args:{path:'a',content:'ok'}}},
+      {type:'tool/result',payload:{tool:'write',callId:'write-one',ok:true,summary:'写入完成'}},
+      {type:'assistant/message',payload:{text:'已经完成。'}},
+      {type:'turn/end',payload:{ok:true}}
+    ].map(e=>({...e,turnId:'timeline-check'}));
+    const turn=turnsFromEvents(events)[0],node=renderTurnBlock(turn,false);
+    return [...node.children].filter(n=>n.dataset.timelineKind).map(n=>({kind:n.dataset.timelineKind,text:n.textContent}));
+  });
+  check('phase text stays between the process blocks that produced it',timeline.map(n=>n.kind).join(',')==='process,text,process,text,process,text'&&timeline[1].text==='先检查文件。'&&timeline[3].text==='现在写入修改。'&&timeline[5].text==='已经完成。');
   check('no JavaScript errors', errors.length === 0);
   console.log('RESULT ' + passed + ' passed; isolated data=' + dir);
 })().catch((e) => { console.error(e); process.exitCode = 1; }).finally(async () => {
