@@ -162,6 +162,7 @@ function openPresentationBrief(res) {
 }
 const PERSONAL_FORMAT={pptx:'PowerPoint',ppt:'PowerPoint',md:'Markdown',markdown:'Markdown',html:'网页',htm:'网页',docx:'Word',pdf:'PDF',png:'图片',jpg:'图片',jpeg:'图片',svg:'SVG',txt:'文本'};
 async function offerPersonalSave(file) {
+  if(typeof offerCourseSave==='function'&&await offerCourseSave(file))return;
   document.querySelector('.personal-save-confirm')?.remove();
   const settings=await api('/api/personal/settings',{}),overlay=el('div','task-modal personal-save-confirm'),dialog=el('section','task-modal-card');
   dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-label','确认存入个性资源');
@@ -294,7 +295,7 @@ function renderResourceDock() {
       diff.appendChild(pre); body.insertBefore(diff, body.querySelector('.resource-content')); diff.scrollIntoView({block: 'nearest'});
     } catch(e) {toast('比较失败：' + e.message);}
   }));
-  actions.appendChild(btn('存入个性资源','sm',()=>offerPersonalSave({path:res.artifactPath,title:res.title,text:res.markdown,learningId:res.id,learningVersion:res.version,sessionId:res.sessionId,turnId:res.turnId})));
+  actions.appendChild(btn(res.courseTarget?.nodeId?'加入我的学习资源':'存入个性资源','sm',()=>offerPersonalSave({path:res.artifactPath,title:res.title,text:res.markdown,learningId:res.id,learningVersion:res.version,sessionId:res.sessionId,turnId:res.turnId})));
   body.appendChild(actions);
   if ((res.warnings || []).length) body.appendChild(el('p', 'resource-notice', res.warnings.join('；')));
   const content = el('div', 'resource-content');

@@ -42,6 +42,8 @@ main(args: Array<String>): Int64 {
         case None => ()
     }
 
+    match(argValue(args,"--seed-course-fixture")){case Some(_)=>seedCourseFixture(dataDir);case None=>()}
+    match(argValue(args,"--course-model-copy")){case Some(copyDir)=>useCopiedCourseModel(dataDir,copyDir);case None=>()}
     let server = buildServer(dataDir, uiDir)
     spawn { server.serve() }
     sleep(Duration.millisecond * 300)

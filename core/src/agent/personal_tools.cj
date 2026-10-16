@@ -6,6 +6,7 @@ import itn_desktop_core.store.Store
 import itn_desktop_core.personal.PersonalStore
 import itn_desktop_core.session.SessionStore
 import itn_desktop_core.util.*
+import itn_desktop_core.course.CourseStore
 
 public func personalTools(store: Store,sid: String,tid: String,userText: String): ArrayList<DomainTool>{
     let ps=PersonalStore(store.dataDir);let out=ArrayList<DomainTool>()
@@ -33,6 +34,7 @@ public func personalTools(store: Store,sid: String,tid: String,userText: String)
             }
             if(!known){throw Exception("只能保存本会话产生的候选文件，或本轮明确指定的文件路径")}
             args.put("confirmed",JsonBool(true));args.put("sessionId",JsonString(sid));args.put("turnId",JsonString(tid))
+            let cs=CourseStore(store.dataDir);let target=cs.target(sid);if(strOf(target,"nodeId").size>0){args.put("expectedResourceId",JsonString(strOf(target,"expectedResourceId")));return learningResult(cs.commit(args),"已确认收录到节点，旧版如有已归档")}
             return learningResult(ps.save(args),"已把确认版本的副本存入个性资源并建立索引")
         }))
     return out

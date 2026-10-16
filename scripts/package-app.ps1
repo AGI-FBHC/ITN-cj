@@ -84,7 +84,8 @@ $assetFiles = @(
     'resources/app/main.js', 'resources/app/preload.js', 'resources/app/pptx.js',
     'resources/app/renderer/index.html', 'resources/app/renderer/app.js',
     'resources/app/renderer/style.css', 'resources/app/renderer/workbench.js',
-    'resources/app/renderer/workbench.css', 'resources/kernel/lumin-core.exe'
+    'resources/app/renderer/workbench.css', 'resources/kernel/lumin-core.exe',
+    'resources/app/renderer/coursemap.js', 'resources/app/renderer/coursemap.css'
 )
 foreach ($relative in $assetFiles) {
     $assetHashes[$relative] = (Get-FileHash -LiteralPath (Join-Path $OutDir $relative) -Algorithm SHA256).Hash

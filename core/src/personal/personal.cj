@@ -13,6 +13,11 @@ import itn_desktop_core.util.*
 import itn_desktop_core.presentation.DesktopJobs
 
 let personalLock=Mutex()
+/** Course archive/trash is hidden from default personal discovery, including Agent tools. */
+public func personalResourceVisible(dataDir: String,id: String): Bool{
+    let state=DbHub.open(dataDir).scalarText("SELECT status FROM course_assets WHERE id=?",va([tv(id)]))
+    return state.size==0||state=="current"
+}
 public class PersonalStore {
     let dataDir: String
     public init(dataDir: String){this.dataDir=dataDir}
@@ -50,7 +55,7 @@ public class PersonalStore {
         Directory.walk(Path(root),{fi: FileInfo =>
             if(!fi.isDirectory()){
                 let file=root+Path.Separator+fi.name;let kind=kindOf(file)
-                if(allowed(kind)&&!hasSuffix(file,".preview.html")&&!hasSuffix(file,".pptx.json")&&db().scalarInt("SELECT COUNT(*) FROM personal_resources WHERE path=?",va([tv(file)]))==0){
+                if(allowed(kind)&&!hasSuffix(file,".preview.html")&&!hasSuffix(file,".pptx.json")&&db().scalarInt("SELECT COUNT(*) FROM course_files WHERE from_path=?",va([tv(file)]))==0&&db().scalarInt("SELECT COUNT(*) FROM personal_resources WHERE path=?",va([tv(file)]))==0){
                     let id="personal-"+Random().nextUInt64().toString();let title=baseNameOf(file)
                     db().run("INSERT INTO personal_resources VALUES (?,?,?,?,?,1,'','','',?)",va([tv(id),tv(title),tv(file),tv(file),tv(kind),tv(DateTime.now().toString())]))
                     index("resource",id,title,nativeText(file,kind),file,"")
@@ -62,10 +67,11 @@ public class PersonalStore {
     }
     public func list(): JsonArray{
         scan();let out=JsonArray()
-        for(row in db().querySql("SELECT id,title,path,source_path,kind,version,learning_id,session_id,turn_id,created_at FROM personal_resources ORDER BY created_at DESC")){if(exists(row.text(2))&&hasPrefix(row.text(2),directory()+Path.Separator)){out.add(rowJson(row))}}
+        for(row in db().querySql("SELECT id,title,path,source_path,kind,version,learning_id,session_id,turn_id,created_at FROM personal_resources ORDER BY created_at DESC")){if(personalResourceVisible(dataDir,row.text(0))&&exists(row.text(2))&&hasPrefix(row.text(2),directory()+Path.Separator)){out.add(rowJson(row))}}
         return out
     }
     public func read(id: String): JsonObject{
+        if(!personalResourceVisible(dataDir,id)){throw Exception("资源已归档或移入回收站，请从对应管理入口明确读取")}
         let rows=db().query("SELECT id,title,path,source_path,kind,version,learning_id,session_id,turn_id,created_at FROM personal_resources WHERE id=?",va([tv(id)]))
         if(rows.size==0){throw Exception("找不到这份个性资源")}
         let o=rowJson(rows[0]);o.put("text",JsonString(db().scalarText("SELECT body FROM content_index WHERE type='resource' AND id=?",va([tv(id)]))));return o
@@ -91,7 +97,7 @@ public class PersonalStore {
             let baseLearning=strOf(body,"learningId");let encodedLearning=baseLearning+(if(intOf(body,"learningVersion")>0){":v"+intOf(body,"learningVersion").toString()}else{""})
             var version: Int64=1
             for(row in db().query("SELECT id,path,version,learning_id FROM personal_resources WHERE source_path=? OR (session_id<>'' AND session_id=? AND title=?) OR (?<>'' AND (learning_id=? OR instr(learning_id,?)=1)) ORDER BY version DESC",va([tv(source),tv(strOf(body,"sessionId")),tv(strOf(body,"title")),tv(baseLearning),tv(baseLearning),tv(baseLearning+":v")]))){
-                if((baseLearning.size==0||row.text(3)==encodedLearning)&&hasPrefix(row.text(1),directory()+Path.Separator)&&exists(row.text(1))&&identical(bytes,File.readFrom(row.text(1)))){return read(row.text(0))}
+                if(personalResourceVisible(dataDir,row.text(0))&&(baseLearning.size==0||row.text(3)==encodedLearning)&&hasPrefix(row.text(1),directory()+Path.Separator)&&exists(row.text(1))&&identical(bytes,File.readFrom(row.text(1)))){return read(row.text(0))}
                 if(row.int(2)>=version){version=row.int(2)+1}
             }
             let id="personal-"+Random().nextUInt64().toString();let root=directory();ensureDir(root)
@@ -129,7 +135,7 @@ public class PersonalStore {
         refreshStudyIndex();let o=JsonObject()
         for(k in ["knowledge","note","wrong"]){o.put(k,JsonInt(db().scalarInt("SELECT COUNT(*) FROM content_index WHERE type=?",va([tv(k)]))))}
         var live: Int64=0
-        for(row in db().querySql("SELECT path FROM content_index WHERE type='resource'")){if(exists(row.text(0))&&hasPrefix(row.text(0),directory()+Path.Separator)){live=live+1}}
+        for(row in db().querySql("SELECT path,id FROM content_index WHERE type='resource'")){if(personalResourceVisible(dataDir,row.text(1))&&exists(row.text(0))&&hasPrefix(row.text(0),directory()+Path.Separator)){live=live+1}}
         o.put("resource",JsonInt(live))
         return o
     }
@@ -139,7 +145,7 @@ public class PersonalStore {
         let rows=if(kind.size>0){db().query("SELECT type,id,title,body,path,learning_id FROM content_index WHERE type=? ORDER BY updated_at DESC LIMIT ?",va([tv(kind),nv(limit)]))}
             else{db().query("SELECT type,id,title,body,path,learning_id FROM content_index ORDER BY updated_at DESC LIMIT ?",va([nv(limit)]))}
         for(row in rows){
-            if(row.text(0)=="resource"&&(!exists(row.text(4))||!hasPrefix(row.text(4),directory()+Path.Separator))){continue}
+            if(row.text(0)=="resource"&&(!personalResourceVisible(dataDir,row.text(1))||!exists(row.text(4))||!hasPrefix(row.text(4),directory()+Path.Separator))){continue}
             out.add(hitJson(row,row.text(3)))
         }
         return out
@@ -153,7 +159,7 @@ public class PersonalStore {
             else{"SELECT type,id,title,body,path,learning_id FROM content_index WHERE instr(lower(title||' '||body),lower(?))>0 ORDER BY CASE WHEN instr(lower(title),lower(?))>0 THEN 0 ELSE 1 END,updated_at DESC LIMIT ?"}
         let rows=if(kind.size>0){db().query(sql,va([tv(kind),tv(q),tv(q),nv(limit)]))}else{db().query(sql,va([tv(q),tv(q),nv(limit)]))}
         for(row in rows){
-            if(row.text(0)=="resource"&&(!exists(row.text(4))||!hasPrefix(row.text(4),directory()+Path.Separator))){continue}
+            if(row.text(0)=="resource"&&(!personalResourceVisible(dataDir,row.text(1))||!exists(row.text(4))||!hasPrefix(row.text(4),directory()+Path.Separator))){continue}
             let text=row.text(3);let start=text.toAsciiLower().indexOf(q.toAsciiLower()).getOrDefault({=>0})
             out.add(hitJson(row,String.fromUtf8(text.toArray()[start..])))
         }

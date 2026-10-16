@@ -14,6 +14,14 @@ import itn_desktop_core.util.*
  * 结构相同，共用 Db 的 putKv/getKv。
  */
 let ddl = [
+    "CREATE TABLE IF NOT EXISTS course_maps (id TEXT PRIMARY KEY,kb_id TEXT,status TEXT,body TEXT,updated_at TEXT)",
+    "CREATE TABLE IF NOT EXISTS course_assets (id TEXT PRIMARY KEY,kb_id TEXT,map_id TEXT,node_id TEXT,kind TEXT,status TEXT,body TEXT,updated_at TEXT)",
+    "CREATE INDEX IF NOT EXISTS ix_course_assets ON course_assets(kb_id,status)",
+    "CREATE TABLE IF NOT EXISTS course_slots (node_id TEXT,kind TEXT,resource_id TEXT,PRIMARY KEY(node_id,kind))",
+    "CREATE TABLE IF NOT EXISTS course_targets (session_id TEXT PRIMARY KEY,kb_id TEXT,body TEXT)",
+    "CREATE TABLE IF NOT EXISTS course_jobs (id TEXT PRIMARY KEY,kb_id TEXT,status TEXT,body TEXT,created_at TEXT)",
+    "CREATE TABLE IF NOT EXISTS course_files (id TEXT PRIMARY KEY,from_path TEXT,to_path TEXT,status TEXT)",
+    "CREATE TABLE IF NOT EXISTS course_events (id TEXT PRIMARY KEY,kb_id TEXT,node_id TEXT,body TEXT,at TEXT)",
     "CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT)",
     "CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT)",
     "CREATE TABLE IF NOT EXISTS profile (k TEXT PRIMARY KEY, v TEXT)",

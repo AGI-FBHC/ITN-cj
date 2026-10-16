@@ -1,6 +1,7 @@
 package itn_desktop_core.api
 
 import itn_desktop_core.learning.*
+import itn_desktop_core.course.*
 import itn_desktop_core.project.ProjectStore
 import itn_desktop_core.presentation.DesktopJobs
 import itn_desktop_core.personal.PersonalStore
@@ -129,6 +130,37 @@ public class Api {
     func route(ctx: HttpContext): Unit {
         let path = ctx.request.url.path
         let method = ctx.request.method
+
+        if(hasPrefix(path,"/api/course/")&&method=="POST"){
+            match(bodyJson(ctx)){
+                case Some(b)=>try{
+                    let cs=CourseStore(store.dataDir);let kb=strOf(b,"kbId");var result=JsonObject()
+                    if(path=="/api/course/state"){result=cs.state(kb)}
+                    else if(path=="/api/course/generate"){let jobs=CourseJobs(store);result=jobs.start(kb);if(!boolOf(result,"existing")){let id=strOf(result,"id");spawn{jobs.run(id,None)}}}
+                    else if(path=="/api/course/job"){result=CourseJobs(store).read(strOf(b,"id"))}
+                    else if(path=="/api/course/cancel"){result=CourseJobs(store).cancel(strOf(b,"id"))}
+                    else if(path=="/api/course/map"){result=cs.map(strOf(b,"id"))}
+                    else if(path=="/api/course/publish"){result=cs.publish(strOf(b,"mapId"),strOf(b,"expectedMapId"),boolOf(b,"confirmed"))}
+                    else if(path=="/api/course/history"){result.put("maps",cs.history(kb))}
+                    else if(path=="/api/course/node"){result=cs.editNode(kb,strOf(b,"nodeId"),b)}
+                    else if(path=="/api/course/start"){result=cs.start(kb,strOf(b,"nodeId"),strOf(b,"kind"),strOf(b,"projectId"),boolOf(b,"regenerate"))}
+                    else if(path=="/api/course/target"){result=cs.target(strOf(b,"sessionId"))}
+                    else if(path=="/api/course/commit"){result=cs.commit(b)}
+                    else if(path=="/api/course/attach-existing"){result=cs.adopt(b)}
+                    else if(path=="/api/course/resources"){result.put("resources",cs.resources(kb,strOf(b,"status")))}
+                    else if(path=="/api/course/unlinked"){result.put("resources",cs.unlinked())}
+                    else if(path=="/api/course/resource"){result=cs.resource(strOf(b,"id"),boolOf(b,"includeTrash"));let lid=strOf(result,"learningId");if(lid.size>0){result.put("learning",LearningStore(store.dataDir).resource(lid,intOf(result,"learningVersion"),boolOf(b,"includeTrash")))}}
+                    else if(path=="/api/course/resource/action"){result=cs.action(strOf(b,"id"),strOf(b,"action"),kb,strOf(b,"nodeId"),strOf(b,"expectedResourceId"),boolOf(b,"confirmed"))}
+                    else if(path=="/api/course/resource/relocate"){result=cs.relocate(strOf(b,"id"),strOf(b,"path"),boolOf(b,"confirmed"))}
+                    else if(path=="/api/course/report"){result=cs.report(kb)}
+                    else if(path=="/api/course/deleted-kbs"){result.put("libraries",cs.deletedKbs())}
+                    else if(path=="/api/course/kb/restore"){result=cs.restoreKb(kb,boolOf(b,"confirmed"))}
+                    else{fail(ctx,404,"学习地图接口不存在");return}
+                    ok(ctx,result)
+                }catch(e: Exception){fail(ctx,400,e.message)}
+                case None=>fail(ctx,400,"请求体不是合法JSON")
+            };return
+        }
 
         if (path == "/health" && method == "GET") {
             let o = JsonObject()
@@ -418,15 +450,7 @@ public class Api {
             match (bodyJson(ctx)) {
                 case Some(b) =>
                     let id = strOf(b, "id")
-                    let s = store.load()
-                    let kept = ArrayList<KnowledgeBase>()
-                    for (kb in s.knowledgeBases) {
-                        if (kb.id != id) {
-                            kept.add(kb)
-                        }
-                    }
-                    s.knowledgeBases = kept
-                    store.save(s)
+                    CourseStore(store.dataDir).removeKb(id)
                     ok(ctx, settingsJson())
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -2894,7 +2918,7 @@ func contentTypeOf(name: String): String {
 func serveStatic(ctx: HttpContext, uiDir: String, rel: String): Unit {
     let name = if (rel == "/") { "index.html" } else { String.fromUtf8(rel.toArray()[1..rel.toArray().size]) }
     // 只允许白名单文件名，避免路径穿越
-    let allowed = ["index.html", "app.js", "style.css", "workbench.js", "workbench.css", "release.json",
+    let allowed = ["index.html", "app.js", "style.css", "workbench.js", "workbench.css", "coursemap.js", "coursemap.css", "release.json",
         "logo-mark.png", "logo-light.png", "logo-dark.png"]
     var ok = false
     for (a in allowed) {
@@ -3070,6 +3094,13 @@ public func buildServer(dataDir: String, uiDir: String): Server {
     let api = Api(Store(dataDir))
     // 默认分发器按精确路径匹配，所有路由必须显式注册
     let routes = [
+        "/api/course/state", "/api/course/generate", "/api/course/job", "/api/course/cancel", "/api/course/map",
+        "/api/course/publish", "/api/course/history", "/api/course/node", "/api/course/start", "/api/course/target",
+        "/api/course/commit", "/api/course/resources", "/api/course/resource", "/api/course/resource/action",
+        "/api/course/report", "/api/course/deleted-kbs", "/api/course/kb/restore",
+        "/api/course/attach-existing",
+        "/api/course/unlinked",
+        "/api/course/resource/relocate",
         "/health",
         "/api/settings",
         "/api/models/save",
@@ -3199,7 +3230,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         server.distributor.register(r, { ctx: HttpContext => api.handle(ctx) })
     }
     // 界面由内核托管，外壳与界面同源，避免跨域
-    let statics = ["/", "/index.html", "/app.js", "/style.css", "/workbench.js", "/workbench.css", "/release.json",
+    let statics = ["/", "/index.html", "/app.js", "/style.css", "/workbench.js", "/workbench.css", "/coursemap.js", "/coursemap.css", "/release.json",
         "/logo-mark.png", "/logo-light.png", "/logo-dark.png"]
     for (s in statics) {
         server.distributor.register(s, { ctx: HttpContext => serveStatic(ctx, uiDir, s) })

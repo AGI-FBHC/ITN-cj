@@ -1,6 +1,7 @@
 package itn_desktop_core.learning
 
 import std.collection.*
+import std.convert.*
 import std.random.*
 import std.sync.*
 import std.fs.*
@@ -80,12 +81,15 @@ public class LearningStore {
         return a
     }
 
-    public func resource(id: String, versionIn: Int64): JsonObject {
+    public func resource(id: String,versionIn: Int64): JsonObject{return resource(id,versionIn,false)}
+    public func resource(id: String, versionIn: Int64,allowRemoved: Bool): JsonObject {
         var version = versionIn
         if (version <= 0) { version = db().scalarInt("SELECT latest_version FROM learning_resources WHERE id = ?", va([tv(id)])) }
+        if(!allowRemoved){var removed=false;var live=false;for(r in db().querySql("SELECT status,body FROM course_assets")){let a=parsed(r.text(1));if(strOf(a,"learningId")==id&&intOf(a,"learningVersion")==version){if(r.text(0)=="trash"||r.text(0)=="purged"){removed=true}else{live=true}}};if(removed&&!live){throw Exception("这份确认版本已删除，请从回收站明确预览或恢复")}}
         let raw = db().scalarText("SELECT body FROM learning_resource_versions WHERE resource_id = ? AND version = ?", va([tv(id), nv(version)]))
         if (raw.size == 0) { throw Exception("资源或版本不存在") }
         let out = parsed(raw)
+        let target=db().scalarText("SELECT body FROM course_targets WHERE session_id=?",va([tv(strOf(out,"sessionId"))]));if(target.size>0){out.put("courseTarget",parsed(target))}
         let versions = JsonArray()
         for (r in db().query("SELECT version FROM learning_resource_versions WHERE resource_id = ? ORDER BY version DESC", va([tv(id)]))) { versions.add(JsonInt(r.int(0))) }
         out.put("versions", versions)
@@ -101,10 +105,10 @@ public class LearningStore {
         let out=JsonArray();let all=resources(kbId);var i=0
         while(i<all.size()){
             let r=objOf(all[i]).getOrThrow();i+=1;let id=strOf(r,"id")
-            var approved=false
+            var approved=false;var approvedVersion: Int64=0;var latestHidden=false
             let root=db().getKv("settings","personal_resource_dir",dataDir+Path.Separator+"artifacts")+Path.Separator
-            for(copy in db().query("SELECT path FROM personal_resources WHERE learning_id=? OR instr(learning_id,?)=1",va([tv(id),tv(id+":v")]))){if(hasPrefix(copy.text(0),root)&&exists(copy.text(0))){approved=true}}
-            if(approved||strOf(resource(id,0),"sessionId")==sid){out.add(r)}
+            for(copy in db().query("SELECT path,id,learning_id FROM personal_resources WHERE learning_id=? OR instr(learning_id,?)=1",va([tv(id),tv(id+":v")]))){let status=db().scalarText("SELECT status FROM course_assets WHERE id=?",va([tv(copy.text(1))]));let parts=copy.text(2).split(":v");var v: Int64=1;if(parts.size>1){try{v=Int64.parse(parts[1])}catch(e: Exception){()}};if(v==intOf(r,"version")&&status.size>0&&status!="current"){latestHidden=true};if((status.size==0||status=="current")&&hasPrefix(copy.text(0),root)&&exists(copy.text(0))){approved=true;if(v>approvedVersion){approvedVersion=v}}}
+            if(!latestHidden&&strOf(resource(id,0),"sessionId")==sid){out.add(r)}else if(approved){r.put("version",JsonInt(approvedVersion));out.add(r)}
         }
         return out
     }
@@ -265,7 +269,8 @@ public class LearningStore {
         o.put("done", JsonBool(done))
         o.put("basis", JsonString("用户手动标记，不代表掌握度"))
         o.put("updatedAt", JsonString(stamp()))
-        db().putKv("meta", key, o.toString())
+        let before=parsed(db().getKv("meta",key,"{\"done\":false}"));db().putKv("meta", key, o.toString())
+        if(boolOf(before,"done")!=done){let event=JsonObject();event.put("done",JsonBool(done));event.put("resourceId",JsonString(id));event.put("version",JsonInt(intOf(res,"version")));db().run("INSERT INTO learning_events (id,kind,kb_id,resource_id,version,item_key,topic,correct,first_attempt,payload,at) VALUES (?,?,?,?,?,?,?,0,0,?,?)",va([tv(uid("completion-")),tv("completion"),tv(strOf(res,"kbId")),tv(id),nv(intOf(res,"version")),tv(item),tv(strOf(res,"title")),tv(event.toString()),tv(stamp())]))}
         return o
     }
 
