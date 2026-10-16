@@ -4344,3 +4344,27 @@ read_chunk 读得到原文并带回库标识与正文。
   - 发现并记录一个仓库卫生问题：tools/harvest-check.cjs 自 0.8.4 起引用已删除的旧首页 .graph-card/.graph-canvas 与旧导航文案，从未纳入标准回归因此长期未暴露；不在 0.8.11 范围内修复，已在本 TRACE 标注，后续更新到当前 UI 或裁剪过时段落。
 - 发布：0.8.10→0.8.11；dist/Lumin-0.8.11 + zip（190.2MB）；资产清单扩到 **11 项**（+coursemap.js/css），逐项 SHA256 BAD=0；隔离冒烟 RESULT=OK（Lumin 0.8.11 · 已连接）；启动Lumin.cmd 指向 0.8.11。
 - 后续（下一阶段，用户新要求）：补“学·练资源单独打开页”（参考网页版 CourseResourcePlayer/SlidePlayer 设计，含交互导学=ppt）；对对话页/知识网络/学·练做对抗式测试并修正不合理处。
+
+
+## 2026-10-17 · 接手未竟任务的收尾 + 资源单独打开页 + 对话/知识网络/学·练审计（0.8.12）
+- 背景：上一会话（01a145e8）把「知识库思维导图 + 节点四资源弹窗 + 依赖/归档 + 我的成长」实现推到"兼容性回归与发布包核对"前被中断，工作树全部未提交。本次接手先独立复核（编译、核心 151、course 56、全量回归），再补 0.8.11 发布与提交（79c9872 功能 + 04612b5 发布 + c9b4b02 trace），随后执行用户新目标：对对话页/知识网络/学·练做找 bug 式测试、修不合理处、并给学·练的四类资源做"单独打开页"（参考网页版 CourseResourcePlayer/SlidePlayer，交互导学=ppt 资源）。
+- 资源单独打开页（新文件 shell/renderer/studyplayer.js/.css，页面 id `study`，深链 `#/study/<resourceId>[@version]`）：
+  - 定制讲义：本讲导览（目标/预计用时）+ 章节块阅读 + 每节"标记已读"（服务端按条目持久化）+ 资料出处；
+  - 实操指南：步骤卡（做法/代码/预期结果/风险等级/提醒）+ 完成勾选 + 验收清单勾选；
+  - 分阶测试：逐题作答（未答题优先续答）、难度徽标、即时对错与解析、进度条、结束小结 + 再做一遍（重做不计新证据）；
+  - 在线演示（交互导学）：幻灯片舞台 + 方向键/空格/PgUp/PgDn 翻页 + 页码圆点 + 讲稿开关 + 断点续播（artifacts/progress，键 resource:<id>:v<version>）；
+  - 页头=面包屑（返回思维导图会聚焦并高亮来源节点）+ 类型/版本徽标 + 进度；"更多"=回到生成会话/导出/重新生成/归档/移入回收站；候选版本可在页内直接"加入我的学习资源"。
+  - 入口：节点弹窗按类型给主动作（打开学习/开始作答/开始导学=ppt）、对话侧栏预览新增"全屏打开"。
+- 内核：`/api/learning/progress` 支持 item 粒度（section-c-s/step-n/acceptance-n/complete，键限字母数字下划线连字符≤64）；resource JSON 增加 progressItems；完成标记变化写 learning_events(kind=completion)。核心单测 151→152（新增完成标记契约：逐条、幂等、取消、非法键拒绝、答题类拒绝）。
+- 审计发现并修复的问题（本轮真找出来的）：
+  1) **深链正则过窄**：pageFromHash 的 section 只允许小写字母，`#/study/res-xxx@1` 这类 id 会被截断 → 放宽为 `[^\/?#]+`（此前任何带数字/连字符的 section 深链都会坏）。
+  2) **讲义页排布 bug**：本讲导览卡被插到面包屑之前 → 调整 DOM 顺序（截图复核发现）。
+  3) **harvest-check 长期过时**（自 0.8.4 起）：还在等旧首页 .graph-card/.graph-canvas、旧导航"领域知识库/我的资源"、旧文案"索引完成"、已挪到顶栏的 .res-tabs、已下线的 NEBULA 帧率断言 → 全部更新到当前 UI/以服务端状态为准；20/20 通过，重新纳入回归。旧星云仅保留后端折叠接口断言（该接口目前无视图使用=孤立后端，候选后续清理，未删）。
+  4) **静态资源两份清单**：serveStatic 白名单与 buildServer 路由注册各存一份，新增 studyplayer.js 时只改一份导致 404 → 收敛为唯一来源 uiAssets，路由由白名单生成。
+- 测试方法与结果：
+  - course-check 56→**78**（+22）：四类资源页各自渲染与交互、讲义标记持久化+深链刷新、实操完成勾选持久化、测试逐题作答写证据/继续未答题/小结/重做重置、导学翻页/讲稿/断点续播、搜索过滤与清除、Esc 关弹窗焦点归还节点、离开导学后方向键不泄漏、dock"全屏打开"、页内归档释放槽位、旧断言不回退。
+  - 新增 tools/pages-audit.cjs（13 条，仓颉夹具+本机 mock 模型）：对话页空输入不建会话、Shift+Enter 换行、输入法组字 Enter 不发送、Enter 发送/清空输入/回复到达、运行中按钮变"停止"；知识网络空标题拒绝且不建节点、重名改名拒绝且原名保留。
+  - 全量回归 24 组 + skill-check 全过：course 78、pages-audit 13、harvest 20、knowledge 92、knowledge-hit 281、session-list 10、markdown 14、nonchat 25、session-switch 12、learning 92（含 workbench-ui 新学·练断言）、personal 23、presentation 9、deck-export、palette 14、stop 13、attachments 16、splash 7、tray 4、busy-caret 6、kb-general、text-menu 6、glass-shot、scrollbar、panel-sticky 3、docx。核心 152/152。新检查（course/pages-audit）各连跑两遍稳定；讲义/测试/导学/重做等关键页截图目视复核（tmp/course-shots/study-*.png）。
+  - 真实模型检查 real-course-check 需要账号额度：沿用实施轮日志（tmp/course-real.log，8/8、约275秒），本轮未重复消耗。
+- 发布：0.8.11→0.8.12；dist/Lumin-0.8.12 + zip（190.2MB）；资产清单 11→**13 项**（+studyplayer.js/css），逐项 SHA256 BAD=0；隔离冒烟 RESULT=OK（Lumin 0.8.12 · 已连接）；启动Lumin.cmd 指向 0.8.12。
+- 诚实说明：分阶测试页的"再做一遍"只在本地重置展示，服务端仍按 attemptId 记录（首次作答计入证据、重复作答不计分）；归档/回收站中的资源仍走对话框预览，不进"学习页"（避免把非当前版本当在学习）。
