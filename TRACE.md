@@ -4216,3 +4216,26 @@ read_chunk 读得到原文并带回库标识与正文。
   - 点击体验：**4px 指针死区**（手抖不转相机）+ **6px 以内都算点击**（选节点优先于转视角）；超过 6px 才认定拖拽旋转。
 - 验证：knowledge-check 73→**80/80**，新增 7 条：画布点选、开抽屉不再改变画布高度、开抽屉后页面无滚动条、所有节点都在画布内、3px 抖动仍能选中、抖动不再蹭动相机、真正拖拽只旋转不选中；并把"关系说明开关"断言改为连同偏好写库一起等待（消除异步竞态，批量跑时暴露过一次）。
 - 发布：版本 0.8.6→0.8.7（提交 a3ab005）；dist/Lumin-0.8.7 + zip；9 项资产哈希 BAD=0；隔离冒烟 RESULT=OK（Lumin 0.8.7 · 已连接）。批量全量回归：除 knowledge-check 首轮因上述断言竞态挂 1 条（已修并复跑 80/80 绿）外，其余 17 组 + skill-check 全过。
+
+
+## 2026-10-17 · Lumin 看不到知识网络：空 query 被误读为“空”（0.8.8）
+- 用户报障：问 Lumin“你能看到我的知识网络吗”，Lumin 答“知识点：0 条”——但界面里明明有节点。要求查“为什么看不到”，并强调长期原则：**以后 harness 每加一项功能，都要配一个 Lumin 可直接调用的工具；加工具时多测几遍**。追加要求：**测试任务要说明测试方法（测什么/怎么触发/能抓住什么），测试要有意义**——不能做抓不到真实错误的摆设测试。
+- 上述两条长期约定已写进 AGENTS.md：第 6 条（界面功能与 Lumin 工具成对，新增/修改工具多跑几遍）与第 7 条（测试要讲明白、要有意义；偶发失败要查明是产品竞态还是测试写法）。
+- 排查取证（直接读用户真实数据，未改动）：`%LOCALAPPDATA%\Lumin\itn.db` 里 knowledge_nodes=3（“输入与输出的约定（I/O 约定）”“MCP（模型上下文协议）”“Agent 工具调用”）、knowledge_records=3、content_index(knowledge)=3、notes=2、learning_memories=1。00:27 的会话事件（s13131417749969148514）原文：模型并行调用 `get_learning_context` + `search_personal_resources{"query":""}`，工具返回 `hits:[]`，模型据此回答“0 条”。
+- 根因（两层，都是“工具面”问题）：
+  1) 内核 `PersonalStore.search` 对空 query 直接 `return` 空数组；而 `search_personal_resources` 是 agent 侧唯一“看个人内容”的入口——用空 query 问“我有什么”必然拿到空结果；
+  2) `get_learning_context` 完全不含知识网络，“你能看到我的知识网络吗”没有任何工具能给出真实数字，空 hit 就被当成“没有内容”。
+- 修复（提交 efc85e3，9 个文件 +144/-10）：
+  - core/src/personal/personal.cj：新增 `counts()`（knowledge/note/wrong 计数；resource 只统计仍在个性资源目录里的文件）、`recent(kind,limit)`（按 updated_at 倒序、可按类型过滤）、`searchIn(kind,query,limit)`；公开 `search(query,limit)` 语义不变（`/api/personal/search` 与旧调用零影响）。
+  - core/src/agent/personal_tools.cj：`search_personal_resources` 空 query → 返回 `{counts, hits:[最近条目]}`；`type=knowledge|resource|note|wrong` 只看一类；描述明确“空命中不等于没有内容”“回答‘我的知识网络里有什么’必须用空 query 总览或 type 列举”。
+  - core/src/knowledge/knowledge.cj：新增 `overview(limit)` = `{total, recent:[{id,title,color,recordCount,updatedAt}]}`。
+  - core/src/agent/learning_tools.cj：`get_learning_context` 增加 `knowledge` 概览（回答知识网络相关询问前先读它）；描述/摘要同步。
+  - docs/02-接口契约.md 同步新增两条契约；AGENTS.md 新增第 6/7 条。
+- 测试方法与结果（按用户要求逐层说明）：
+  1) 核心单测（真 SQLite、直接跑工具函数；能抓：计数/过滤/回归破坏）：134→**137/137**。新增：空 query 返回总览而非空数组、type 过滤+关键词检索回归、get_learning_context 携带知识网络概况。
+  2) mock 端到端（真实 core.exe + 真实 HTTP + mock 模型 + Playwright；能抓：工具在真实 agent 循环里的接线、事件里的真实返回值、UI 回归）：tools/mock-openai/server.py 新增“知识网络可见性测试”分支——**复刻真实模型行为**：并行发 get_learning_context + search_personal_resources(空 query)；knowledge-check 80→**84/84**（+4：可见性轮完成、空 query 返回 counts+hits、总览里出现已知节点名、学习上下文报总数）。
+  3) 多跑几遍（按“加工具多测几遍”）：连跑约 10 遍，抓到 1 个偶发失败并定位——`the drawer dot follows the new color` 断言写法竞态：只等服务端保存成功就单次读 DOM，而界面是“保存成功→重取数据→重渲染”后才变色，存在真实异步间隙。判定为**测试写法问题而非产品缺陷**；改为等待 DOM 条件（超时才失败，真不更新会明确 FAIL）后连跑 **6/6 稳定**。
+  4) 真实数据验证（最有说服力的一层）：把用户真实 itn.db 拷贝到隔离目录，用 mock 模型跑同一条问句 → `search counts={knowledge:3,...}`，hits 列出 3 个真实节点；`get_learning_context.knowledge.total=3` → **REAL-DB VERIFY=OK**（脚本 tmp/verify-real-db.cjs，临时未入库）。
+  5) 全量回归（0.8.8 内核）：18 组 + skill-check 全过 —— knowledge 84、markdown 14、nonchat 25、session-switch 12、learning 98、personal 23、presentation 9、deck-export、palette 14、stop 13、attachments 16、splash 7、tray 4、busy-caret 6、kb-general、text-menu 6、glass-shot 无 console 错误；skill-check 全过。
+- 发布：版本 0.8.7→0.8.8（提交 49f1cf3）；dist/Lumin-0.8.8 + zip（190MB）；9 项资产哈希 BAD=0；隔离冒烟 RESULT=OK（Lumin 0.8.8 · 已连接）；启动Lumin.cmd 指向 0.8.8。
+- 诚实说明/未覆盖：mock 模型不代表真模型的措辞习惯——工具数据已修正，但历史会话里旧回答不会变化；真模型是否稳定用“空 query 总览”取决于描述引导，后续观察。后续建议（按用户第 6 条原则）：把知识网络的写操作（加笔记/连线/编辑/删除）也补成 Lumin 工具，形成“界面能做的，Lumin 也能做”。
