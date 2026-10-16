@@ -338,6 +338,15 @@ def reply_for(body):
         return json.dumps({"tool": "calc", "args": {"expr": "(12+8)*3/4"}}, ensure_ascii=False)
     if "调用工具" in joined and ("几点" in ask or "现在时间" in ask or "今天几号" in ask):
         return json.dumps({"tool": "current_time", "args": {}}, ensure_ascii=False)
+    if "表格渲染测试" in joined:
+        return ("下面是对照表：\n\n"
+                "| 做法 | 优点 | 风险 |\n"
+                "| :--- | :---: | ---: |\n"
+                "| 先定输入输出 | 可复现 `run.sh` | 前期多花几分钟 |\n"
+                "| 边做边补文档 | 上手快 | 边界容易漏 |\n\n"
+                "- [x] 已写清输入\n"
+                "- [ ] 补边界样例\n\n"
+                "详见 [文档](https://example.com/docs)，~~旧版本已废弃~~。")
     if "answerIndex" in joined or ("单选题" in joined and "JSON 数组" in joined):
         return json.dumps(MC_QUESTIONS, ensure_ascii=False)
     if "JSON 字符串数组" in joined:

@@ -237,6 +237,15 @@ async function createWindow() {
     },
   });
   if (win.removeMenu) win.removeMenu();
+  /* 聊天/资料预览里的链接：http(s) 交给系统浏览器，绝不把应用窗口导航走、也不冒新窗口。 */
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) { try { shell.openExternal(url); } catch (e) { /* ignore */ } }
+    return { action: "deny" };
+  });
+  win.webContents.on("will-navigate", (e, url) => {
+    const current = win.webContents.getURL();
+    if (url !== current) e.preventDefault();
+  });
   let winShown = false;
   const showWindowNow = () => {
     if (winShown || process.argv.includes("--ui-check")) return;

@@ -199,9 +199,39 @@ function md(src) {
   const inline = (s) => s
     .replace(/!\[([^\]]*)\]\(([^)]*)\)/g, '<span class="md-img">图片 · $1</span>')
     .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\[([^\]\n]+)\]\((https?:[^)\s]+|mailto:[^)\s]+|lumin:[^)\s]+)\)/g, '<a class="md-link" href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/~~([^~\n]+)~~/g, "<s>$1</s>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\[(\d+)\]/g, '<span class="cite">[$1]</span>');
-  for (const raw of lines) {
+  /* GFM 表格的单元格切分：\| 是转义竖线，不当分隔符（结构对照 pi-studio 的 MarkdownBody + remark-gfm，MIT）。 */
+  const cells = (row) => {
+    let r = row.trim();
+    if (r.startsWith("|")) r = r.slice(1);
+    if (r.endsWith("|") && !r.endsWith("\\|")) r = r.slice(0, -1);
+    const parts = [];
+    let cur = "";
+    for (let i = 0; i < r.length; i++) {
+      const ch = r[i];
+      if (ch === "\\" && r[i + 1] === "|") { cur += "|"; i++; continue; }
+      if (ch === "|") { parts.push(cur.trim()); cur = ""; continue; }
+      cur += ch;
+    }
+    parts.push(cur.trim());
+    return parts;
+  };
+  const alignments = (row) => {
+    const c = cells(row);
+    if (!c.length) return null;
+    const al = [];
+    for (const cell of c) {
+      const t = cell.replace(/\s/g, "");
+      if (!/^:?-{1,}:?$/.test(t)) return null;
+      al.push(t.startsWith(":") && t.endsWith(":") ? "ta-c" : t.endsWith(":") ? "ta-r" : "ta-l");
+    }
+    return al;
+  };
+  for (let li = 0; li < lines.length; li++) {
+    const raw = lines[li];
     const line = raw.replace(/\s+$/, "");
     if (/^\s*```/.test(line)) { closeList(); out.push(inCode ? "</code></pre>" : "<pre><code>"); inCode = !inCode; continue; }
     if (inCode) { out.push(raw); continue; }
@@ -209,8 +239,36 @@ function md(src) {
     if (h) { closeList(); const n = h[1].length; out.push("<h" + n + ">" + inline(h[2]) + "</h" + n + ">"); continue; }
     if (/^\s*$/.test(line)) { closeList(); continue; }
     if (/^\s*(---|\*\*\*)\s*$/.test(line)) { closeList(); out.push("<hr>"); continue; }
+    // GFM 表格：当前行是表头，下一行是 |---|:--:| 这类分隔行
+    if (line.includes("|") && li + 1 < lines.length) {
+      const al = alignments(lines[li + 1]);
+      const head = cells(line);
+      if (al && head.length > 0) {
+        closeList();
+        const align = head.map((_, i) => al[i] || "ta-l");
+        const rows = [];
+        let rj = li + 2;
+        while (rj < lines.length && lines[rj].trim() !== "" && lines[rj].includes("|")) { rows.push(cells(lines[rj])); rj++; }
+        const norm = (r) => { const a = r.slice(0, head.length); while (a.length < head.length) a.push(""); return a; };
+        let html = '<div class="md-table-wrap"><table><thead><tr>';
+        norm(head).forEach((c, i) => { html += '<th class="' + align[i] + '">' + inline(c) + "</th>"; });
+        html += "</tr></thead><tbody>";
+        for (const r of rows) { html += "<tr>"; norm(r).forEach((c, i) => { html += '<td class="' + align[i] + '">' + inline(c) + "</td>"; }); html += "</tr>"; }
+        html += "</tbody></table></div>";
+        out.push(html);
+        li = rj - 1;
+        continue;
+      }
+    }
     const bq = line.match(/^\s*&gt;\s?(.*)$/);
     if (bq) { closeList(); out.push("<blockquote>" + inline(bq[1]) + "</blockquote>"); continue; }
+    // 任务清单（GFM）：- [x] 完成 / - [ ] 未完成
+    const task = line.match(/^\s*[-*]\s+\[([ xX])\]\s+(.*)$/);
+    if (task) {
+      if (listType !== "ul") { closeList(); out.push("<ul>"); listType = "ul"; }
+      out.push('<li class="md-task"><span class="md-task-box' + (task[1] === " " ? "" : " done") + '"></span><span>' + inline(task[2]) + "</span></li>");
+      continue;
+    }
     const ul = line.match(/^\s*[-*]\s+(.*)$/);
     if (ul) { if (listType !== "ul") { closeList(); out.push("<ul>"); listType = "ul"; } out.push("<li>" + inline(ul[1]) + "</li>"); continue; }
     const ol = line.match(/^\s*\d+[.)]\s+(.*)$/);
