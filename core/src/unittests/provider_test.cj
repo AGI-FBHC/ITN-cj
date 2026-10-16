@@ -24,6 +24,44 @@ import std.unittest.testmacro.*
  */
 @Test
 class ProviderTest {
+    @TestCase
+    func mimoReasoningByteBudgetStopsBeforeExhaustingOutput(): Unit {
+        let requests=ArrayList<JsonObject>()
+        let server=ServerBuilder().addr("127.0.0.1").port(0).build()
+        server.distributor.register("/v1/chat/completions", { ctx: HttpContext =>
+            requests.add(objOf(JsonValue.fromStr(readAllString(ctx.request.body))).getOrThrow())
+            let body=if (requests.size == 1) { line("{\"choices\":[{\"delta\":{\"reasoning_content\":\"more than configured reasoning bytes\"}}]}") }
+                else { toolScript("{\"path\":\"a.html\",\"content\":\"<svg></svg>\"}","tool_calls") }
+            ctx.responseBuilder.status(200);ctx.responseBuilder.header("Content-Type","text/event-stream");ctx.responseBuilder.body(body.toArray())
+        })
+        spawn { server.serve() };sleep(Duration.millisecond * 150)
+        let cfg=modelCfg(Int64(server.port));cfg.model="mimo-v2.6-flash"
+        let provider=OpenAiChatProvider(cfg);provider.maxReasoningBytes=8
+        let reply=provider.respond(StepContext(),EventStream())
+        @Expect(requests.size,2);@Expect(reply.stopReason,"toolUse");@Expect(reply.toolCalls.size,1)
+        @Expect(strOf(objOf(requests[1].get("thinking").getOrThrow()).getOrThrow(),"type"),"disabled")
+        server.close()
+    }
+
+    @TestCase
+    func mimoReasoningOnlyLengthRecoversWithoutMoreThinking(): Unit {
+        let requests=ArrayList<JsonObject>()
+        let server=ServerBuilder().addr("127.0.0.1").port(0).build()
+        server.distributor.register("/v1/chat/completions", { ctx: HttpContext =>
+            requests.add(objOf(JsonValue.fromStr(readAllString(ctx.request.body))).getOrThrow())
+            let body=if (requests.size == 1) { line("{\"choices\":[{\"delta\":{\"reasoning_content\":\"long thinking\"},\"finish_reason\":\"length\"}]}") }
+                else { toolScript("{\"path\":\"a.html\",\"content\":\"<svg></svg>\"}","tool_calls") }
+            ctx.responseBuilder.status(200);ctx.responseBuilder.header("Content-Type","text/event-stream");ctx.responseBuilder.body(body.toArray())
+        })
+        spawn { server.serve() };sleep(Duration.millisecond * 150)
+        let cfg=modelCfg(Int64(server.port));cfg.model="mimo-v2.6-flash"
+        let reply=OpenAiChatProvider(cfg).respond(StepContext(),EventStream())
+        @Expect(requests.size,2)
+        @Expect(strOf(objOf(requests[1].get("thinking").getOrThrow()).getOrThrow(),"type"),"disabled")
+        @Expect(reply.stopReason,"toolUse");@Expect(reply.toolCalls.size,1)
+        server.close()
+    }
+
     func toolScript(args: String, finish: String): String {
         return line("{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"write-1\",\"function\":{\"name\":\"write\",\"arguments\":" + JsonString(args).toString() + "}}]}}]}") +
             line("{\"choices\":[{\"finish_reason\":\"" + finish + "\"}]}") + "data: [DONE]\n\n"
@@ -43,7 +81,7 @@ class ProviderTest {
         spawn { server.serve() }; sleep(Duration.millisecond * 150)
         let provider = OpenAiChatProvider(modelCfg(Int64(server.port)))
         let reply = provider.respond(StepContext(),EventStream())
-        @Expect(requests.size,2); @Expect(requests[0],16384); @Expect(requests[1],32768)
+        @Expect(requests.size,2); @Expect(requests[0],8192); @Expect(requests[1],32768)
         @Expect(reply.stopReason,"toolUse"); @Expect(reply.toolCalls.size,1)
         @Expect(strOf(reply.toolCalls[0].args(),"path"),"a.html")
         @Expect(strOf(reply.toolCalls[0].args(),"content"),"<svg></svg>")

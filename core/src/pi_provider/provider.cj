@@ -51,6 +51,9 @@ class AbortedByUser <: Exception {
         super("用户停止")
     }
 }
+class ReasoningBudgetReached <: Exception {
+    public init() { super("reasoning budget reached") }
+}
 
 class RequestWatch {
     let lock = Mutex()
@@ -72,7 +75,9 @@ public class OpenAiChatProvider <: ChatProvider {
     private let apiKey: String
     private let defaultModel: String
     public var maxAttempts: Int64 = 3
-    public var maxOutputTokens: Int64 = 16384
+    public var maxOutputTokens: Int64 = 8192
+    /** A client-side byte budget for MiMo's reasoning-only phase; 0 disables recovery. */
+    public var maxReasoningBytes: Int64 = 24000
     /**
      * Idle, not total generation time. Continuous responses may run longer.
      * 上游在长上下文时首包可能要一分多钟（实测 39K token 的请求约 90s 才回第一段内容），
@@ -119,12 +124,20 @@ public class OpenAiChatProvider <: ChatProvider {
             msgs.add(sys)
         }
         for (m in ctx.messages) {
-            msgs.add(m.toChatJson())
+            let serialized = m.toChatJson()
+            if (model.toAsciiLower().contains("mimo") && m.role == MsgRole.AssistantMsg && m.toolCalls.size > 0 && m.thinking.size > 0) {
+                serialized.put("reasoning_content",JsonString(m.thinking))
+            }
+            msgs.add(serialized)
         }
         payload.put("messages", msgs)
         payload.put("temperature", JsonFloat(0.3))
         payload.put("stream", JsonBool(true))
         payload.put("max_tokens", JsonInt(outputLimit))
+        if (!canRecover && model.toAsciiLower().contains("mimo")) {
+            // MiMo counts reasoning against the output budget. A recovery attempt must reach output.
+            let thinking = JsonObject(); thinking.put("type",JsonString("disabled")); payload.put("thinking",thinking)
+        }
         if (ctx.tools.size > 0) {
             payload.put("tools", toolsPayload(ctx.tools))
             payload.put("tool_choice", JsonString("auto"))
@@ -147,7 +160,13 @@ public class OpenAiChatProvider <: ChatProvider {
 
         let acc = StreamAcc()
         let started = DateTime.now()
-        let err = postSse("/chat/completions", payload, { obj: JsonObject => handleChunk(obj, acc, stream) })
+        let err = postSse("/chat/completions", payload, { obj: JsonObject =>
+            handleChunk(obj, acc, stream)
+            if (canRecover && model.toAsciiLower().contains("mimo") && maxReasoningBytes > 0 && acc.reasoningBytes > maxReasoningBytes && acc.calls.size == 0 && acc.text.toString().size == 0) {
+                acc.reasoningLimited = true; acc.finishReason = "reasoning_budget"
+                throw ReasoningBudgetReached()
+            }
+        })
         lastMillis = (DateTime.now() - started).toMilliseconds()
         lastFinish = acc.finishReason
         let responseAudit = JsonObject()
@@ -164,16 +183,17 @@ public class OpenAiChatProvider <: ChatProvider {
             reply.errorMessage = "已取消"
             return reply
         }
-        if (err.size > 0) {
+        if (err.size > 0 && !acc.reasoningLimited) {
             reply.stopReason = "error"
             reply.errorMessage = err
             return reply
         }
-        if (acc.finishReason == "length" && acc.calls.size > 0) {
+        if (acc.reasoningLimited || (acc.finishReason == "length" && (acc.calls.size > 0 || acc.reasoning.toString().size > 0))) {
             // Retrying a text stream would duplicate visible content. Only retry a pure tool input.
             if (canRecover && outputLimit < 32768 && trimStr(acc.text.toString()).size == 0) {
                 let audit = JsonObject()
-                audit.put("reason",JsonString("tool_arguments_truncated")); audit.put("nextMaxTokens",JsonInt(32768))
+                audit.put("reason",JsonString(if (acc.calls.size > 0) { "tool_arguments_truncated" } else { "reasoning_budget_exhausted" })); audit.put("nextMaxTokens",JsonInt(32768))
+                if (model.toAsciiLower().contains("mimo")) { audit.put("recoveryThinking",JsonString("disabled")) }
                 match (onAudit) { case Some(f) => f("model/retry",audit); case None => () }
                 return respondWithLimit(ctx,stream,32768,false)
             }
@@ -368,6 +388,8 @@ class StreamAcc {
     var responseId = ""
     var promptTokens: Int64 = 0
     var completionTokens: Int64 = 0
+    var reasoningBytes: Int64 = 0
+    var reasoningLimited = false
 
     func callAt(idx: Int64): NativeCall {
         while (calls.size <= idx) {
@@ -436,6 +458,7 @@ func handleChunk(obj: JsonObject, acc: StreamAcc, stream: EventStream): Unit {
     }
     if (think.size > 0) {
         acc.reasoning.append(think)
+        acc.reasoningBytes += think.size
         stream.push(evMessageUpdate(deltaThinkingDelta(), think, acc.partial()))
     }
 
@@ -535,14 +558,10 @@ func dispatchSseLine(line: ArrayList<UInt8>, onChunk: (JsonObject) -> Unit): Uni
     if (data.size == 0 || data == "[DONE]") {
         return
     }
-    try {
-        match (JsonValue.fromStr(data)) {
-            case o: JsonObject => onChunk(o)
-            case _ => ()
-        }
-    } catch (e: Exception) {
-        ()
-    }
+    var decoded: ?JsonObject = None
+    try { decoded = objOf(JsonValue.fromStr(data)) } catch(e: Exception) { return }
+    // Callback cancellation/recovery must reach the request owner, never the JSON parse catch.
+    match (decoded) { case Some(o) => onChunk(o); case None => () }
 }
 
 /**

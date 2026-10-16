@@ -4063,3 +4063,16 @@ read_chunk 读得到原文并带回库标识与正文。
 - 单测124/124（3个新增provider案例：截断后仅一次完整重试、重复截断无可执行工具、非法JSON不补空对象）；busy-caret6/6（新增无事件时计时持续、DOM不重建）；stop11/11、attachments16/16、palette14/14。build成功。
 - 真实同题隔离验证tools/real-features-check.py --case crocodile正在运行，日志tmp/write-fix-real.log，进程持有dist/core二进制，结束前不覆盖它；当前原始事件持续thinking，尚无结果，不能提前报通过。版本/启动器0.7.1已同步，待最终包装验证。
 - 参考仓库核对：gh repo view确认AACS111/pi-studio为MIT；clone因网络reset失败，改gh api按需获取树与LICENSE、message-display.ts、MessageView.tsx、PptReadonlyPreview等至系统TEMP，不改参考源码。
+
+### 用户继续追加：知识库管理与知识网络（排在此前任务之后）
+6. 左侧“资料”改“知识库”，页面专注知识库管理和查看；把设置中的知识库登记/来源/管理迁到知识库页面，而非留下两份重复入口。
+7. 学习-总览主区放知识网络，参考旧ITN网页版主节点视觉；默认无连线，暂不做子节点。对话中自动识别有价值知识点，合并同一概念；每个元知识点有标题、短概念说明、相关问题、AI记录、发生时间、sourceSession/turn/workspace（可多来源），依据可回到原会话。
+8. 节点详情可编辑、删除、写笔记、手动连线/移除线；默认不推断关系。节点与相关记录进入全局左上搜索。针对节点“提问”必须新建会话并回到节点来源工作区，来源被删时显式提示选择去向而非默默换目录。
+9. 自动记录方案：过滤闲聊/一次性操作指令，优先教学解释/概念讨论，有实质问答依据才记录；标准化标题去重、事件按会话轮次幂等追加，避免每次重画/重试重复；用户手工内容不被模型覆盖。先核对旧网页版知识网络具体文件和当前agent事件，再实施。用户授权按完善方案直接优化，不需要额外方案确认。
+- 当前顺序保持：写入/计时真实复验与时间线→PPT Agent流程→右侧多格式预览和个性资源/索引→知识库管理迁移→知识网络。所有需求集中本TRACE追加，不分散到其他追踪文件。
+
+### 真实复验进一步发现与恢复补强
+- 第一轮真实复验352.4秒失败：MiMo纯thinking耗尽16384，finishReason=length，既无正文也无工具；空参数调用已阻止，但不能据此报创建成功。第二轮600秒超时：模型先花约277秒推导几何并调用PowerShell计算腿部坐标（不是测试），之后又长时间思考；测试将所有PowerShell都误认为测试，已改成识别真实测试命令，保留用户不测试的约束。两次失败均完整保留日志和隔离目录，不覆盖。
+- 官方资料https://mimo.mi.com/docs/en-US/quick-start/usage-guide/other/deep-thinking说明thinking.type支持disabled，输出额度含思考与答案，工具历史需保留reasoning_content。基于实际证据：正常请求恢复原8192额度；纯thinking/工具输入被截断且未显示正文时最多恢复一次32768，MiMo仅恢复轮关闭思考，并回传工具历史reasoning_content。
+- 为防纯thinking一直消耗预算，MiMo纯思考超过24000字节且还无正文或工具时提前触发相同恢复；按真实字节计，不伪称token。SSE回调的中断必须在JSON解析catch之外传播，避免被吞掉。新增单测覆盖纯思考length和字节预算恢复，日志tmp/write-budget-unit.log。
+- 时间线前端已按pi-studio的原顺序逻辑改为相邻过程才合组，阶段文字回到对应工具前后；stop-check新增交错思考/阶段文本/工具/最终答复DOM顺序断言，12/12通过。MIT署名与完整许可证已存third_party/pi-studio-LICENSE.txt；参考源码仅取所需算法，不引入React/Univer运行依赖。

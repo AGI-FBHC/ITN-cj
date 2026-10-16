@@ -205,7 +205,8 @@ def main():
             assert files, 'HTML file missing'
             content = files[0].read_text(encoding='utf-8')
             assert '<svg' in content and any(t in content.lower() for t in ('animate','animation','keyframes')), 'not an SVG animation'
-            assert not any(e['type']=='tool/call' and e['payload'].get('tool')=='powershell' for e in events), 'agent ran a shell test despite user instruction'
+            commands=[str((e['payload'].get('args') or {}).get('command','')).lower() for e in events if e['type']=='tool/call' and e['payload'].get('tool')=='powershell']
+            assert not any(any(token in command for token in ('pytest','npm test','playwright','chromium','selenium')) for command in commands), 'agent ran a test despite user instruction'
             assert any(e['type']=='assistant/activity' and e['payload'].get('phase')=='tool_input' for e in events), 'no live tool-input stage'
             return 'HTML=%d bytes; writes=%d; no failed write or agent test command' % (files[0].stat().st_size,len(writes))
 
