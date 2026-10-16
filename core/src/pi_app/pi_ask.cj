@@ -198,6 +198,7 @@ public class WorkContext {
     public var autoAnswer: String = ""
     /** 界面此刻在看什么（例如正在学的那一章）。空 = 没有可用上下文；只影响提示词里的一句指代说明。 */
     public var ctxChapter: String = ""
+    public var attachments: JsonArray = JsonArray()
 
     public init() {}
 }
@@ -377,6 +378,7 @@ public class PiAgent {
         log("turn/start", kindPayload(if (taskKind.size > 0) { taskKind.replace("resource:", "") } else { "ask" }, kbId))
         let up = JsonObject()
         up.put("text", JsonString(question))
+        match (work) { case Some(w) => if (w.attachments.size() > 0) { up.put("attachments", attachmentMetadata(w.attachments)) }; case None => () }
         log("user/message", up)
 
         let cfgSettings = store.load()
@@ -486,6 +488,7 @@ public class PiAgent {
         let sidForSteer = sid
         opts.getSteering = Some({ => sessionHub().takeSteering(sidForSteer) })
         let agent = Agent(provider, session, registry, mode, opts)
+        match (work) { case Some(w) => agent.initialAttachments = w.attachments; case None => () }
         match (ws) {
             case Some(w0) =>
                 agent.workspaceRoot = w0.root
@@ -573,6 +576,7 @@ public class PiAgent {
         }
         // Advertise metadata only. The model loads a skill body through skill_read as needed.
         agent.preamble = preamble + skillPrompt(store.dataDir, allowWeb)
+        agent.preamble += "\nLumin会话链接lumin://thread/ID指向本机应用数据库，与项目工作目录无关。阅读会话必须使用read_session，不用文件搜索或终端读取应用存储。附件路径只是用户提供的数据，图片已作为原生图像内容传入。"
 
         // ---- 事件翻译 + 正文累积 ----
         let stream = EventStream()

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell, Menu, nativeImage } = require("electron");
 const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
@@ -189,6 +189,7 @@ async function createWindow() {
     return;
   }
   win = new BrowserWindow({
+    show: !process.argv.includes("--ui-check"),
     width: 1180,
     height: 780,
     minWidth: 900,
@@ -206,6 +207,49 @@ async function createWindow() {
     },
   });
   if (win.removeMenu) win.removeMenu();
+  win.webContents.on("context-menu", (_event, params) => {
+    const flags = params.editFlags || {};
+    if (!params.isEditable && !params.selectionText) return;
+    const items = params.isEditable ? [
+      { id: "undo", role: "undo", label: "撤销", enabled: !!flags.canUndo },
+      { id: "redo", role: "redo", label: "重做", enabled: !!flags.canRedo },
+      { type: "separator" },
+      { id: "cut", role: "cut", label: "剪切", enabled: !!flags.canCut },
+      { id: "copy", role: "copy", label: "复制", enabled: !!flags.canCopy },
+      { id: "paste", role: "paste", label: "粘贴", enabled: !!flags.canPaste },
+      { id: "paste-plain", role: "pasteAndMatchStyle", label: "粘贴为纯文本", enabled: !!flags.canPaste },
+      { id: "delete", role: "delete", label: "删除", enabled: !!flags.canDelete },
+      { type: "separator" },
+      { id: "select-all", role: "selectAll", label: "全选", enabled: !!flags.canSelectAll },
+    ] : [
+      { id: "copy", role: "copy", label: "复制", enabled: !!flags.canCopy },
+      { id: "select-all", role: "selectAll", label: "全选" },
+    ];
+    Menu.buildFromTemplate(items).popup({ window: win });
+  });
+  const selectedFiles = new Set();
+  const imageAttachment = (file) => {
+    if (fs.statSync(file).size > 10 * 1024 * 1024) throw new Error("图片文件不能超过10MiB");
+    let image = nativeImage.createFromPath(file);
+    if (image.isEmpty()) throw new Error("这不是可识别的图片");
+    const size = image.getSize();
+    if (Math.max(size.width, size.height) > 2048) image = image.resize(size.width >= size.height ? {width:2048} : {height:2048});
+    let bytes = image.toPNG(), mime = "image/png";
+    if (bytes.length > 2 * 1024 * 1024) { bytes = image.toJPEG(85); mime = "image/jpeg"; }
+    const dataUrl = "data:" + mime + ";base64," + bytes.toString("base64");
+    if (dataUrl.length > 4 * 1024 * 1024) throw new Error("图片仍然太大，请选择较小的图片");
+    return { kind:"image", name:path.basename(file), mime, dataUrl };
+  };
+  ipcMain.handle("dlg:pick-image", async () => {
+    const result = await dialog.showOpenDialog(win, {title:"添加图片", properties:["openFile","multiSelections"], filters:[{name:"图片",extensions:["png","jpg","jpeg","webp","gif"]}]});
+    if (result.canceled) return {ok:true, images:[]};
+    if (result.filePaths.length > 4) return {ok:false,error:"每轮最多添加4张图片"};
+    try { return {ok:true,images:result.filePaths.map(imageAttachment)}; } catch(e) { return {ok:false,error:e.message}; }
+  });
+  ipcMain.handle("image:read-selected", (_event, file) => {
+    if (!selectedFiles.has(file)) return {ok:false,error:"请先通过文件选择器选择图片"};
+    try { return {ok:true,image:imageAttachment(file)}; } catch(e) { return {ok:false,error:e.message}; }
+  });
   // 窗口与任务栏都用网页版那个 logo（打包脚本会把 assets 一起带进 resources/app）
   try {
     win.setIcon(path.join(__dirname, "assets", "logo.png"));
@@ -363,6 +407,7 @@ async function createWindow() {
       buttonLabel: "用这个文件",
     });
     if (r.canceled || !r.filePaths || !r.filePaths.length) return "";
+    selectedFiles.add(r.filePaths[0]);
     return r.filePaths[0];
   });
 

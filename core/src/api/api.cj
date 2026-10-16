@@ -23,6 +23,7 @@ import itn_desktop_core.tools.*
 import itn_desktop_core.harvest.*
 import std.fs.*
 import itn_desktop_core.util.*
+import itn_desktop_core.pi.validatedAttachments
 
 public class Api {
     let store: Store
@@ -129,7 +130,7 @@ public class Api {
             o.put("status", JsonString("ok"))
             o.put("service", JsonString("itn-desktop-core"))
             o.put("cangjie", JsonString("1.2.0"))
-            o.put("version", JsonString("0.4.4"))
+            o.put("version", JsonString("0.4.7"))
             o.put("build", JsonString("lumin-rebrand-20261015"))
             ok(ctx, o)
             return
@@ -222,6 +223,19 @@ public class Api {
                         case None => fail(ctx, 404, "找不到模型配置：" + id)
                     }
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/models/vision-test" && method == "POST") {
+            match (chatModelOf(store)) {
+                case Some(cfg) =>
+                    let reply = LlmClient(cfg).chatVision(cfg.model, "请读取图片中央的验证码，只输出验证码，不要猜测。", visionProbeImage())
+                    let passed = reply.replace(" ", "").replace("-", "").contains("K7P4")
+                    let o = JsonObject(); o.put("supported", JsonBool(passed)); o.put("model", JsonString(cfg.model))
+                    o.put("reason", JsonString(if (passed) { "当前对话模型已通过图片识别测试" } else { "当前对话模型未通过图片识别测试，请在设置中选择支持图片的模型" }))
+                    ok(ctx, o)
+                case None => fail(ctx, 400, "请先配置对话模型")
             }
             return
         }
@@ -2786,6 +2800,7 @@ func verifyBackup(path: String): Int64 {
 func workContextOf(store: Store, b: JsonObject): WorkContext {
     let db = DbHub.open(store.dataDir)
     let work = WorkContext()
+    work.attachments = validatedAttachments(b.get("attachments"))
     work.dir = db.getKv("settings", "agent_work_dir", "")
     // 会话挂在项目下时，工作目录跟着项目走（项目 = 用户自己选的那个文件夹）
     let projectRoot = ProjectStore(store.dataDir).rootOf(strOf(b, "sessionId"))
@@ -2869,6 +2884,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/models/roles",
         "/api/models/test",
         "/api/models/diagnose",
+        "/api/models/vision-test",
         "/api/chat",
         "/api/kb/save",
         "/api/kb/import",

@@ -368,7 +368,7 @@ public func loadSession(path: String): Session {
     s.path = path
     var text = ""
     try {
-        text = safeUtf8(File.readFrom(path), 0, 8 * 1024 * 1024)
+        text = safeUtf8(File.readFrom(path), 0, 64 * 1024 * 1024)
     } catch (e: Exception) {
         return s
     }

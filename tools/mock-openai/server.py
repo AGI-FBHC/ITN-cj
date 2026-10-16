@@ -288,6 +288,10 @@ def reply_for(body):
     # 这里回一个"带引号又带句号"的名字，正好用来验清洗逻辑（见 cleanSessionTitle）。
     if "只输出名字本身" in all_text(messages):
         return '"Mock 会话名。"'
+    if body.get("model") == "text-only" and has_image(messages):
+        return "这个测试模型不能查看图片"
+    if has_image(messages) and "验证码" in all_text(messages):
+        return "K7-P4，左侧红色正方形，右侧蓝色圆形。"
     if has_image(messages):
         return "MOCK 图片描述：这是一张教学资料里的示意图，画的是提示词与输出之间的对应关系。"
     joined = all_text(messages)
@@ -356,6 +360,8 @@ def native_reply(body):
     if not body.get("tools"):
         return reply_for(body)
     msgs = body.get("messages") or []
+    if has_image(msgs):
+        return reply_for(body)
     user_at = max((i for i, m in enumerate(msgs) if m.get("role") == "user"), default=-1)
     ask = text_of([msgs[user_at]]) if user_at >= 0 else ""
     def call(name, args):
@@ -372,6 +378,9 @@ def native_reply(body):
         if any(m.get("name") == "kb_search" or "命中" in str(m.get("content")) for m in last_tools):
             return "提示词要写清任务、约束和输出格式；使用资料时标注出处，方便回到原文核实 [1]。"
         return "已完成工具调用，可在右侧成果中查看。"
+    session_link = re.search(r"lumin://thread/([A-Za-z0-9_-]+)", ask)
+    if session_link:
+        return call("read_session", {"session_id": session_link.group(0)})
     if "记住：" in ask:
         text = ask.split("记住：", 1)[1]
         return call("remember_learning_fact", {"kind": "preference", "text": text, "quote": text})

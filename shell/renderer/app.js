@@ -5060,6 +5060,7 @@ const TOOL_GROUP_ORDER = ["知识库", "联网", "笔记与产物", "技能", "�
 const TOOL_LABEL = {
   kb_stage: "暂存知识资料", kb_ingest: "请求并入确认",
   kb_search: "检索知识库",
+  read_session: "读取应用会话",
   web_search: "联网搜索",
   web_fetch: "读取网页",
   list_documents: "列出文档",
@@ -6020,7 +6021,7 @@ function turnsFromEvents(events) {
     else if (e.type === "turn/usage") { t.usageIn = Number(p["in"] || 0); t.usageOut = Number(p.out || 0); }
     else if (e.type === "assistant/activity") t.activity = p.phase || "";
     else if (e.type === "assistant/thinking") t.items.push({ t: "think", text: p.text || "", ms: p.ms || 0 });
-    else if (e.type === "user/message") { t.user = p.text || ""; t.userAt = e.at; }
+    else if (e.type === "user/message") { t.user = p.text || ""; t.attachments = p.attachments || []; t.userAt = e.at; }
     else if (e.type === "assistant/delta") {
       const last = t.items[t.items.length - 1];
       if (last && last.t === "a") last.text += (p.text || "");
@@ -6227,13 +6228,14 @@ function renderTurnBlock(t, live) {
   const box = el("div", "turn-block");
   const last = (state.chatTurns || [])[(state.chatTurns || []).length - 1];
   const isLast = !!last && last.id === t.id;
-  const canEdit = !!t.user && t.id && t.id !== "local" && isLast;
+  const canEdit = !!t.user && t.id && t.id !== "local" && isLast && !(t.attachments || []).some(a=>a.kind==='image');
   if (t.user) {
     const u = el("div", "msg msg-user");
     const stack = el("div", "msg-stack");
     const b = el("div", "msg-body");
     b.innerHTML = md(t.user);
     stack.appendChild(b);
+    if (t.attachments?.length) stack.appendChild(attachmentChips(t.attachments, false));
     if (!live) {
       stack.appendChild(msgMeta({
         side: "user",
@@ -6335,7 +6337,7 @@ function renderTurnBlock(t, live) {
     e.appendChild(el("div", "msg-body " + (cancelled ? "muted" : "err-text"), t.message || "这一轮没有完成"));
     if (cancelled && t.user) {
       const eacts = el("div", "row msg-actions");
-      eacts.appendChild(btn("重新问一次", "sm ghost", () => { if (state.chatResend) state.chatResend(t.user); }));
+      eacts.appendChild(btn("重新问一次", "sm ghost", () => { if (state.chatResend) state.chatResend(t.user, t.attachments); }));
       e.appendChild(eacts);
     }
     box.appendChild(e);
@@ -6601,7 +6603,7 @@ async function resendEdited(t, text, asBranch) {
     } else {
       go("chat");
     }
-    if (state.chatResend) state.chatResend(text);
+    if (state.chatResend) state.chatResend(text, t.attachments);
   } catch (e) {
     toast("没改成：" + e.message);
   }
@@ -6628,6 +6630,53 @@ async function branchFromTurn(t) {
   } catch (e) {
     toast("分支失败：" + e.message);
   }
+}
+
+function attachmentKey() { return state.chatSessionId || ('new:' + (state.chatProject || 'chat')); }
+function chatAttachments() { state.attachmentDrafts ||= {}; return state.attachmentDrafts[attachmentKey()] ||= []; }
+function attachmentChips(items, editable) {
+  const strip = el('div', editable ? 'attachment-strip' : 'message-attachments');
+  strip.hidden = !items.length;
+  for (const item of items) {
+    const chip = el('div', 'attachment-chip'); chip.title = item.path || item.name;
+    if (item.kind === 'image' && item.dataUrl) { const image = el('img'); image.src=item.dataUrl; image.alt=item.name || '图片附件'; chip.appendChild(image); }
+    else { const mark=el('span','attachment-kind');mark.innerHTML=icon(item.kind==='directory'?'folder':'file');chip.appendChild(mark); }
+    chip.appendChild(el('span','attachment-name',item.name || '附件'));
+    if (editable) chip.appendChild(btn('×','attachment-remove',()=>{
+      const draft=chatAttachments(),index=draft.indexOf(item);if(index>=0)draft.splice(index,1);state.paintAttachments?.();
+    }));
+    if (editable) chip.lastElementChild.setAttribute('aria-label','移除附件 '+(item.name || ''));
+    strip.appendChild(chip);
+  }
+  return strip;
+}
+function addChatAttachments(items, draftKey=attachmentKey()) {
+  state.attachmentDrafts ||= {}; const draft=state.attachmentDrafts[draftKey] ||= [];
+  if(draft.length+items.length>8 || draft.filter(a=>a.kind==='image').length+items.filter(a=>a.kind==='image').length>4) {toast('每轮最多8个附件，其中图片最多4张');return;}
+  if([...draft,...items].reduce((n,a)=>n+(a.dataUrl?.length || 0),0)>12*1024*1024) {toast('图片总量不能超过12MiB');return;}
+  for(const item of items) {if(!draft.some(a=>a.kind===item.kind&&(item.path ? a.path===item.path : a.dataUrl===item.dataUrl)))draft.push(item);}
+  if(draftKey===attachmentKey())state.paintAttachments?.();
+}
+async function ensureImageSupport() {
+  if(state.busyTurn){toast('请等当前任务结束后添加图片');return false;}
+  const model=(state.cfg.models || []).find(m=>m.id===state.cfg.chatModelId);
+  if(!model){toast('请先配置对话模型');return false;}
+  const key=[model.id,model.model,model.baseUrl].join('|');state.visionChecks ||= new Map();
+  try {
+    if(!state.visionChecks.has(key)){toast('正在检测当前对话模型的图片支持…');state.visionChecks.set(key,api('/api/models/vision-test',{}));}
+    const result=await state.visionChecks.get(key);if(!result.supported)toast(result.reason);return !!result.supported;
+  }catch(e){state.visionChecks.delete(key);toast('图片能力检测失败：'+e.message);return false;}
+}
+async function imageFromBlob(file) {
+  if(file.size>10*1024*1024)throw Error('图片不能超过10MiB');
+  const original=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);});
+  const image=await new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(Error('图片无法识别'));img.src=original;});
+  let dataUrl=original;
+  if(Math.max(image.width,image.height)>2048 || dataUrl.length>4*1024*1024){
+    const ratio=Math.min(1,2048/Math.max(image.width,image.height)),canvas=document.createElement('canvas');canvas.width=Math.round(image.width*ratio);canvas.height=Math.round(image.height*ratio);canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);dataUrl=canvas.toDataURL('image/jpeg',.85);
+  }
+  if(dataUrl.length>4*1024*1024)throw Error('图片仍然太大，请选择较小的图片');
+  return {kind:'image',name:file.name || '粘贴图片.png',mime:dataUrl.slice(5,dataUrl.indexOf(';')),dataUrl};
 }
 
 PAGES.chat = {
@@ -6736,6 +6785,14 @@ PAGES.chat = {
     ta.rows = 1;
     ta.placeholder = "描述你的学习目标，或让我围绕资料完成一个任务…";
     inputRow.appendChild(ta);
+    let attachmentsStrip = attachmentChips(chatAttachments(), true); inputRow.prepend(attachmentsStrip);
+    state.paintAttachments = () => { const next=attachmentChips(chatAttachments(),true);attachmentsStrip.replaceWith(next);attachmentsStrip=next; };
+    ta.addEventListener('paste', async event => {
+      const images=[...(event.clipboardData?.items || [])].filter(i=>i.type.startsWith('image/')).map(i=>i.getAsFile()).filter(Boolean);
+      if(!images.length)return;event.preventDefault();const key=attachmentKey();
+      if(!(await ensureImageSupport()))return;
+      try{addChatAttachments(await Promise.all(images.map(imageFromBlob)),key);}catch(e){toast(e.message);}
+    });
 
     const crow = el("div", "composer-row");
     /* ＋ ＝ 添加附件（对齐 Codex：加号是"把资料交给这一轮"，不是配置项）。
@@ -6884,6 +6941,8 @@ PAGES.chat = {
       const attachBox = el("div", "cm-attach");
       attachBox.hidden = true;
       const attachPick = (isDir) => async () => {
+        const key=attachmentKey();
+        if(state.busyTurn){toast('请等当前任务结束后添加附件');return;}
         const a = window.itnWindow;
         const fn = isDir ? (a && a.pickDirectory) : (a && a.pickFile);
         if (typeof fn !== "function") {
@@ -6892,17 +6951,20 @@ PAGES.chat = {
         }
         const picked = await (isDir ? a.pickDirectory() : a.pickFile());
         if (!picked) return;
-        const box = $("chat-input");
-        const line = (isDir ? "看一下这个目录：" : "看一下这个文件：") + picked;
-        const cur = box.value.replace(/\s+$/, "");
-        box.value = cur ? (cur + "\n" + line) : line;
-        box.focus();
-        box.dispatchEvent(new Event("input"));
-        toast("已加到输入框（发送后 Lumin 会去读）");
+        if(!isDir && /\.(png|jpe?g|webp|gif)$/i.test(picked)) {
+          if(!(await ensureImageSupport()))return;
+          const result=await a.readSelectedImage(picked);if(!result.ok){toast(result.error);return;}addChatAttachments([result.image],key);
+        } else addChatAttachments([{kind:isDir?'directory':'file',name:String(picked).replace(/\\/g,'/').split('/').pop(),path:picked}],key);
+        closeMenu();$("chat-input").focus();
       };
-      attachBox.appendChild(menuItem("file", "选文件…", "把文件路径加到输入框，让它读这份文件", attachPick(false)));
-      attachBox.appendChild(menuItem("folder", "选文件夹…", "把目录路径加到输入框，让它看这个目录", attachPick(true)));
-      attachBox.appendChild(el("div", "cm-note", "只把路径交给它，不复制、不改动你的文件。"));
+      attachBox.appendChild(menuItem("file", "选文件…", "作为独立附件添加，正文只写你想做什么", attachPick(false)));
+      attachBox.appendChild(menuItem("folder", "选文件夹…", "添加文件夹附件，完整路径收在附件详情里", attachPick(true)));
+      attachBox.appendChild(menuItem("file", "添加图片…", "先检测当前对话模型，再添加可预览的图片", async()=>{
+        const key=attachmentKey();if(!(await ensureImageSupport()))return;
+        const a=window.itnWindow;if(!a?.pickImage){toast('选图片只在桌面应用窗口里可用，也可以粘贴图片');return;}
+        const result=await a.pickImage();if(!result.ok){toast(result.error);return;}addChatAttachments(result.images || [],key);closeMenu();
+      }));
+      attachBox.appendChild(el("div", "cm-note", "文件保留在原位置；图片识别由当前对话模型完成。支持粘贴截图。"));
       menu.appendChild(attachBox);
 
       /* 技能：只在输入 "/" 时出现。它是"调用一个技能"的动作，不是常驻配置项。 */
@@ -7206,7 +7268,8 @@ PAGES.chat = {
     paint();
 
     async function send() {
-      const text = ta.value.trim();
+      const draftKey=attachmentKey(),attachments=chatAttachments().slice();
+      const text = ta.value.trim() || (attachments.length ? '请查看这些附件。' : '');
       if (!text) return;
       // 跑着的时候 Enter = 插话，不是"等这一轮跑完再说"
       if (state.busyTurn) { steer(); return; }
@@ -7222,6 +7285,7 @@ PAGES.chat = {
         if (typeof refreshChatHeader === "function") refreshChatHeader();
       }
       const sid = state.chatSessionId;
+      delete state.attachmentDrafts[draftKey];state.paintAttachments?.();
       ta.value = "";
       grow();
       state.lastQuestion = text;
@@ -7229,12 +7293,14 @@ PAGES.chat = {
       state.chatRequest = request;
       state.busyTurn = true;
       // 允许"已取消"的那一轮一键重问（取消多半是因为问题写错了）
-      state.chatResend = (q) => {
+      state.chatResend = (q, attached) => {
+        if(attached?.some(a=>a.kind==='image'&&!a.dataUrl)){toast('请重新添加图片后再发送');return;}
+        if(attached?.length)addChatAttachments(attached);
         const input = $("chat-input");
         if (input) input.value = q;
         send();
       };
-      state.chatTurns.push({ id: "local", kind: "ask", user: text, items: [], report: null, citations: [], ok: null, message: "" });
+      state.chatTurns.push({ id: "local", kind: "ask", user: text, attachments, items: [], report: null, citations: [], ok: null, message: "" });
       state.stickBottom = true;
       paint();
 
@@ -7274,7 +7340,7 @@ PAGES.chat = {
         // 工作目录与权限档位：没指定工作目录时，模型拿不到"本机文件"那几个工具，只能检索与联网。
         // 检索范围固定为"本机全部知识库"：空 kbId 在内核里就是通用模式的语义
         const payload = {
-          kbId: "", question: text, sessionId: sid, web: "auto",
+          kbId: "", question: text, attachments, sessionId: sid, web: "auto",
           // 模式由会话决定：普通对话（没项目）＝ 常规聊天，内核据此锁死"只写默认目录"
           mode: (state.chatProject ? "work" : "chat"),
           skill: state.skill || "", perm: state.cfg.agentPerm || "auto",
@@ -7314,6 +7380,7 @@ PAGES.chat = {
         }
         toast("已取消");
       } else if (failure) {
+        if(attachments.length && current==='chat' && state.chatSessionId===sid && !chatAttachments().length) { addChatAttachments(attachments); if(!ta.value){ta.value=text;grow();} }
         toast(String(failure).indexOf("取消") >= 0 ? "已取消" : ("生成失败：" + failure));
       }
       await reloadSessions();

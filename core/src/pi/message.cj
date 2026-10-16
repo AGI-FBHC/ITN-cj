@@ -114,6 +114,7 @@ public class Message {
     public var stopReason: String = "stop"
     public var model: String = ""
     public var ts: Int64 = 0
+    public var attachments: JsonArray = JsonArray()
 
     public init(role: MsgRole) {
         this.role = role
@@ -163,6 +164,7 @@ public class Message {
         } else {
             o.put("content", JsonString(text))
         }
+        if (attachments.size() > 0) { o.put("attachments", attachments) }
         o.put("timestamp", JsonInt(ts))
         return o
     }
@@ -179,7 +181,23 @@ public class Message {
         if (role == ToolResultMsg) {
             o.put("tool_call_id", JsonString(toolCallId))
         }
-        o.put("content", JsonString(text))
+        o.put("content", JsonString(if (role == UserMsg) { messageTextWithAttachments(text, attachments) } else { text }))
+        if (role == UserMsg) {
+            let content = JsonArray()
+            let part = JsonObject(); part.put("type", JsonString("text")); part.put("text", JsonString(messageTextWithAttachments(text, attachments))); content.add(part)
+            var i: Int64 = 0
+            while (i < attachments.size()) {
+                match (objOf(attachments[i])) {
+                    case Some(a) => if (strOf(a, "kind") == "image") {
+                        let image = JsonObject(); image.put("type", JsonString("image_url"))
+                        let url = JsonObject(); url.put("url", JsonString(strOf(a, "dataUrl"))); image.put("image_url", url); content.add(image)
+                    }
+                    case None => ()
+                }
+                i += 1
+            }
+            if (content.size() > 1) { o.put("content", content) }
+        }
         if (role == AssistantMsg && toolCalls.size > 0) {
             let arr = JsonArray()
             for (tc in toolCalls) {
@@ -274,6 +292,7 @@ public func messageFromJson(o: JsonObject): ?Message {
                     case None => ()
                 }
             }
+            m.attachments = validatedAttachments(o.get("attachments"))
             return Some(m)
     }
 }

@@ -97,6 +97,7 @@ public class Agent {
     /** 最近一次压缩的结果说明 */
     public var lastCompactNote: String = ""
     public var compactCount: Int64 = 0
+    public var initialAttachments: JsonArray = JsonArray()
     private var steeringQueue = ArrayList<String>()
     private var followUpQueue = ArrayList<String>()
 
@@ -267,6 +268,7 @@ public class Agent {
         var n: Int64 = 64
         for (m in session.messagesForModel()) {
             n = n + m.text.size + 32
+            if (m.attachments.size() > 0) { n += m.attachments.size() * 12000 }
             for (tc in m.toolCalls) {
                 n = n + tc.argsJson.size + 16
             }
@@ -308,6 +310,7 @@ public class Agent {
             sb.append(roleName(all[i].role))
             sb.append("] ")
             sb.append(all[i].text)
+            if (all[i].attachments.size() > 0) { sb.append("\n附件：" + attachmentMetadata(all[i].attachments).toString()) }
             sb.append("\n")
             i = i + 1
         }
@@ -463,6 +466,8 @@ public class Agent {
     private func injectUser(text: String, stream: EventStream): Unit {
         let m = Message(UserMsg)
         m.text = text
+        m.attachments = initialAttachments
+        initialAttachments = JsonArray()
         session.appendMessage(m)
         stream.push(evMessageStart(m))
         stream.push(evMessageEnd(m))

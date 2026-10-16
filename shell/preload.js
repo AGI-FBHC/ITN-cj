@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld("itnWindow", {
   pickDirectory: () => ipcRenderer.invoke("dlg:pick-directory"),
   /** 打开系统的"选文件"对话框（导入单份资料用），同样返回绝对路径。 */
   pickFile: () => ipcRenderer.invoke("dlg:pick-file"),
+  pickImage: () => ipcRenderer.invoke("dlg:pick-image"),
+  readSelectedImage: (p) => ipcRenderer.invoke("image:read-selected", String(p || "")),
   /** 用系统默认程序打开一个路径（文件夹 → 资源管理器，文件 → 关联的应用）。 */
   openPath: (p) => ipcRenderer.invoke("shell:open-path", String(p || "")),
   /** 打开系统的"选演示文稿"对话框（.pptx / .ppt）。 */

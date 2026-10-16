@@ -403,3 +403,13 @@ body[data-page='notes'] #view > .card:not(.res-tabs) { background:transparent; b
 .object-reader > .item { border:0; box-shadow:none; background:transparent; padding:0; }
 .object-reader .note-body { max-width:72ch; font-size:15px; line-height:1.85; padding-top:20px; }
 .object-reader .item-title { font-size:22px; line-height:1.5; }
+/* Attachments stay independent from the user's words. */
+.attachment-strip[hidden] { display:none!important; }
+.attachment-strip, .message-attachments { display:flex; flex-wrap:wrap; gap:8px; padding:3px 0 8px; }
+.attachment-chip { display:flex; align-items:center; gap:7px; max-width:260px; min-height:34px; padding:5px 8px; border:1px solid var(--line); border-radius:10px; background:var(--panel-soft); font-size:12px; color:var(--ink); }
+.attachment-chip img { width:40px; height:36px; object-fit:cover; border-radius:5px; }
+.attachment-kind svg { width:16px; height:16px; }
+.attachment-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.attachment-remove { border:0; box-shadow:none; background:transparent; font-size:18px; min-width:24px; padding:0 3px; color:var(--muted); }
+.message-attachments { justify-content:flex-end; padding-top:8px; }
+.message-attachments .attachment-chip { background:transparent; }

@@ -125,6 +125,7 @@ public func buildDomainToolDefsWithCancel(store: Store, kbId: String, allowWeb: 
     let tools = ToolRegistry(store)
     tools.shouldAbort = shouldAbort
     let out = ArrayList<DomainTool>()
+    for (d in sessionTools(store)) { out.add(d) }
 
     out.add(makeTool("kb_search", "检索知识库", "按语义/关键词检索当前知识库",
         "检索当前知识库，返回带出处（文档、标题路径、编号）的切片。回答时用 [编号] 引用它们。",
