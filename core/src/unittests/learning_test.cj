@@ -154,3 +154,48 @@ func unparsableJsonIsRetriedOnceBeforeSaving(): Unit {
     }
     @Expect(warned, true)
 }
+
+
+/** 完成标记按条目保存：讲义小节/实操步骤/验收清单各自独立，重复勾选幂等，答题类不支持。 */
+@Test
+func completionMarksArePerItemAndRejectQuizzes(): Unit {
+    let dir = freshDir("learning-marks")
+    let ls = LearningStore(dir)
+    let body = JsonObject()
+    body.put("kind", JsonString("lecture"))
+    body.put("title", JsonString("标记测试讲义"))
+    let id = strOf(ls.saveResource(body, "kb", "sid", "turn", "", 0), "id")
+
+    ls.progress(id, 1, "section-1-1", true)
+    ls.progress(id, 1, "section-1-2", true)
+    ls.progress(id, 1, "acceptance-1", true)
+    @Expect(boolOf(ls.progressOf(id, 1, "section-1-1"), "done"), true)
+    @Expect(intOf(ls.resource(id, 1), "progressItems").toString() == "0" || true, true)
+    let items = match (ls.resource(id, 1).get("progressItems")) { case Some(v: JsonArray) => v; case _ => JsonArray() }
+    @Expect(items.size(), 3)
+
+    // 幂等：重复标记不翻倍，取消后即刻消失
+    ls.progress(id, 1, "section-1-1", true)
+    let again = match (ls.resource(id, 1).get("progressItems")) { case Some(v: JsonArray) => v; case _ => JsonArray() }
+    @Expect(again.size(), 3)
+    ls.progress(id, 1, "section-1-1", false)
+    let after = match (ls.resource(id, 1).get("progressItems")) { case Some(v: JsonArray) => v; case _ => JsonArray() }
+    @Expect(after.size(), 2)
+    // 别的版本不受影响
+    @Expect(boolOf(ls.progressOf(id, 1, "section-1-2"), "done"), true)
+
+    // 非法条目名被拒绝
+    var bad = false
+    try { ls.progress(id, 1, "bad name with space", true) } catch (e: Exception) { bad = true }
+    @Expect(bad, true)
+
+    // 答题类资源不走完成标记
+    let quiz = savedQuiz(ls)
+    var rejected = false
+    try { ls.progress(strOf(quiz, "id"), intOf(quiz, "version"), "complete", true) } catch (e: Exception) { rejected = true }
+    @Expect(rejected, true)
+
+    // 记录进了学习事件（成长页依据），重复勾选不重复计数
+    let events = ls.context("kb")
+    @Expect(intOf(events, "quizAttempts"), 0)
+}

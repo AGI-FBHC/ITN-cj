@@ -38,7 +38,7 @@ async function openCourseAsset(asset){
   if(full.missing){const d=courseDialog('文件暂时找不到',full.title);d.body.appendChild(el('p',null,'关联与学习记录仍保留。选择原文件后会验证内容，并恢复副本；不会把不同内容冒充这一版。'));const locate=btn('找回文件…','primary',async()=>{const chosen=await window.itnWindow?.pickFile?.();if(!chosen)return;try{await courseApi('resource/relocate',{id:full.id,path:chosen,confirmed:true});d.close();await courseRefresh();toast('已恢复原确认副本，节点与学习记录保持不变。');}catch(e){toast(e.message);}});locate.disabled=!window.itnWindow?.pickFile;d.body.appendChild(locate);const text=full.learning?.markdown||full.text;if(text){const details=el('details','course-archive-preview');details.appendChild(el('summary',null,'仍可查看保存的文本内容'));const article=el('article','md');article.innerHTML=md(text);details.appendChild(article);d.body.appendChild(details);}return;}
   if(asset.status==='current'){
     document.querySelector('.course-modal-overlay')?.remove();
-    if(full.learningId){await openLearningResource(full.learningId,full.learningVersion);}
+    if(full.learningId){courseUi.focusNode=asset.nodeId||'';await go('study',full.learningId+'@'+full.learningVersion);}
     else{await go('chat');await openFilePreview(full.path,{title:full.title,sessionId:full.sessionId,courseAssetId:full.id});}
     return;
   }
@@ -85,7 +85,8 @@ async function openCourseNode(id){
   for(const[kind,label,ic]of COURSE_KINDS){const asset=courseCurrent(id,kind),card=el('section','course-resource-tile');card.dataset.kind=kind;
     const title=el('div','course-resource-title');const glyph=el('span','course-resource-icon');glyph.innerHTML=icon(ic);title.append(glyph,el('strong',null,label));
     const text=asset?(asset.missing?'文件暂时找不到':asset.learningVersion?'已收录 · v'+asset.learningVersion:'已收录 · '+asset.title):'还没有'+label;
-    card.append(title,el('p','course-resource-status',text));const row=el('div','course-resource-actions');row.append(btn(asset?'打开学习':'去对话生成','primary sm',()=>asset?openCourseAsset(asset):courseStartResource(node,kind)));
+    card.append(title,el('p','course-resource-status',text));const row=el('div','course-resource-actions');const primary=asset?({lecture:'打开学习',practice:'打开学习',quiz:'开始作答',ppt:'开始导学'}[kind]||'打开学习'):'去对话生成';
+    row.append(btn(primary,'primary sm',()=>asset?openCourseAsset(asset):courseStartResource(node,kind)));
     if(asset)row.append(btn('更多','ghost sm',()=>{const more=courseDialog(label+'的更多操作',asset.title),actions=el('div','course-manage-actions');actions.append(btn('继续修改','',()=>courseStartResource(node,kind,false)),btn('重新生成','',()=>courseStartResource(node,kind,true)),btn('查看历史归档','ghost',()=>openCourseCollection('archive')),btn('移入回收站','ghost course-danger',()=>courseConfirm('移入回收站？','只清空这个节点的'+label+'位置，导图、其他资源和学习记录都保留。',async()=>{await courseApi('resource/action',{id:asset.id,action:'trash',confirmed:true});more.close();await courseRefresh();await openCourseNode(id);})));more.body.appendChild(actions);}));
     card.appendChild(row);grid.appendChild(card);
   }
@@ -159,7 +160,9 @@ async function renderCourseWorkspace(){
   const build=btn(courseUi.data?.map?'重建导图':'生成思维导图','sm',async()=>{build.disabled=true;try{const job=await courseApi('generate',{kbId:courseUi.kb});await watchCourseJob(job,stage);}catch(e){toast(e.message);}finally{build.disabled=false;}});build.id='course-generate';build.disabled=!state.kb;
   actions.append(build,btn('归档 '+(courseUi.data?.archiveCount||0),'ghost sm',()=>openCourseCollection('archive')),btn('回收站 '+(courseUi.data?.trashCount||0),'ghost sm',()=>openCourseCollection('trash')),btn('历史导图','ghost sm',async()=>{const data=await courseApi('history',{kbId:courseUi.kb});const d=courseDialog('历史思维导图');for(const m of data.maps){const row=el('article','course-collection-item');row.append(el('strong',null,m.title+' · '+m.status),el('p','muted sm',m.createdAt),btn(m.status==='draft'?'预览并切换':'查看旧结构','ghost sm',()=>m.status==='draft'?previewCourseCandidate(m):showCourseHistory(m)));d.body.appendChild(row);}}));
   if(!state.kb){stage.appendChild(emptyState({art:'db',title:'先选择一个知识库',text:'导入资料后，可以整理成思维导图并制作学习资源。',actions:[btn('去知识库','primary',()=>go('kb'))]}));return;}
-  if(courseUi.data?.map){const map=courseUi.data.map,tree=mountCourseTree(stage,map);search.oninput=()=>{tree.filter(search.value.trim());const match=map.nodes.find(n=>n.title.includes(search.value.trim()));if(search.value.trim()&&match)tree.focusNode(match.id);};stage.appendChild(el('p','course-map-caption',courseUi.data.sourceChanged?'资料有更新，可重建导图；旧资源继续保留。':'点选节点打开学习资源 · 拖动查看 · 滚轮缩放'));}
+  if(courseUi.data?.map){const map=courseUi.data.map,tree=mountCourseTree(stage,map);search.oninput=()=>{tree.filter(search.value.trim());const match=map.nodes.find(n=>n.title.includes(search.value.trim()));if(search.value.trim()&&match)tree.focusNode(match.id);};stage.appendChild(el('p','course-map-caption',courseUi.data.sourceChanged?'资料有更新，可重建导图；旧资源继续保留。':'点选节点打开学习资源 · 拖动查看 · 滚轮缩放'));
+    if(courseUi.focusNode){const fid=courseUi.focusNode;courseUi.focusNode='';stage.querySelector('.course-node[data-node="'+fid+'"]')?.classList.add('course-node-focus');requestAnimationFrame(()=>tree.focusNode(fid));}
+  }
   else{const empty=el('div','course-map-empty');empty.append(el('h2',null,'从这个知识库生成思维导图'),el('p','muted','Lumin会阅读资料并整理出树形学习大纲，通常两到三级。'),btn('生成思维导图','primary',()=>build.click()));stage.appendChild(empty);}
   const job=courseUi.data?.job;if(job?.status==='running')watchCourseJob(job,stage);else if(job?.status==='completed'&&job.mapId&&job.baseMapId&&job.mapId!==courseUi.data.map?.id){const pending=el('div','course-job');pending.append(el('span',null,'有一张新版导图待确认'),btn('预览新版','sm',async()=>previewCourseCandidate(await courseApi('map',{id:job.mapId}))));stage.appendChild(pending);}
 }

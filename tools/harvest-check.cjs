@@ -67,9 +67,12 @@ async function startKernel() {
   const errors = []; page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   await page.goto(base);
-  await page.locator('.graph-card').waitFor();
+  // 0.8.4 起首页不再有旧星云卡片；等应用壳就绪后直接按路由进入知识库页
+  await page.waitForFunction(() => !document.querySelector('#boot'));
+  await page.waitForSelector('.rail .nav-item');
+  await page.evaluate(() => go('kb'));
+  await page.waitForSelector('.harvest-entry');
   await page.waitForFunction(() => !document.querySelector('#view .spinner'));
-  await page.locator('.nav-item', { hasText: '领域知识库' }).click();
   await page.locator('.harvest-entry summary').first().click();
   const source = page.locator('.harvest-source', { hasText: '收集验收资料' }).first();
   await source.waitFor();
@@ -80,7 +83,14 @@ async function startKernel() {
   await source.screenshot({ path: path.join(out, '01-staging-review.png') });
   await source.getByRole('checkbox', { name: '我已检查清单与来源' }).check();
   await source.getByRole('button', { name: '确认并入并建索引' }).click();
-  await page.getByText('索引完成', { exact: true }).waitFor();
+  // 完成信号以服务端状态为准（旧文案“索引完成”已下线，现在是“已并入 + 重建索引”）
+  const ingestDeadline = Date.now() + 60000; let ingested = false;
+  while (Date.now() < ingestDeadline) {
+    const sources = (await api('/api/kb/sources')).sources || [];
+    if (sources.some((x) => x.id === staged.id && x.status === 'ingested')) { ingested = true; break; }
+    await sleep(500);
+  }
+  check('UI confirmation promotes the source to ingested', ingested);
   const searchAfter = await api('/api/kb/search', { id: 'accept', query: 'harvest-marker-version', topK: 3 });
   check('UI confirmation promotes source and search finds it', searchAfter.hits.length > 0);
   await rejected('duplicate ingest does not overwrite', '/api/kb/ingest', { id: staged.id, kbId: 'accept', confirmed: true });
@@ -93,11 +103,9 @@ async function startKernel() {
   await api('/api/kb/source/discard', { id: fresh.id });
   await rejected('discarded source cannot be ingested', '/api/kb/ingest', { id: fresh.id, kbId: 'accept', confirmed: true });
   await rejected('ingested source cannot be discarded', '/api/kb/source/discard', { id: staged.id });
-  await page.locator('.nav-item', { hasText: '我的资源' }).click();
-  await page.locator('.res-tabs').waitFor();
-  await page.waitForTimeout(700);
-  await page.locator('.res-tabs button', { hasText: '网络资料' }).click();
-  await page.waitForTimeout(700);
+  // 网络资料现在在“我的资源”页的标签里：直接把标签状态切到 network 再进入
+  await page.evaluate(() => { state.resTab = 'network'; return go('notes'); });
+  await page.waitForTimeout(900);   // 网络资料在“我的资源”页里直接渲染，标签栏已挪到顶栏工作区标签
   await page.locator('.harvest-source').waitFor().catch(async (e) => {
     console.log('NETWORK FAILURE ' + JSON.stringify(await page.evaluate(() => ({ tab: state.resTab, text: document.querySelector('#view').innerText, errors: [] }))));
     await page.screenshot({ path: path.join(out, 'network-failure.png') }); throw e;
@@ -114,21 +122,10 @@ async function startKernel() {
     await api('/api/kb/import', { id: 'kb-' + i, name: '知识库 ' + i, path: dir, kind: 'folder' });
     await api('/api/kb/build', { id: 'kb-' + i });
   }
-  await page.goto(base + '/#/home'); await page.locator('.graph-canvas').waitFor();
-  await page.getByText(/其余 2 个库已折叠/).waitFor();
+  // 旧首页的星云折叠视图已随 0.8.4 下线；后端折叠计算仍在，用接口断言守住它（将来若要复用视图可直接接回）
   const nebula = await api('/api/nebula');
-  check('10 real indexed libraries fold to 8 and report 2 hidden', nebula.foldedClusters === 2);
-  await page.locator('.graph-card').screenshot({ path: path.join(out, '03-nebula-folded.png') });
-  const idle = await page.evaluate(async () => {
-    NEBULA.lastActive = performance.now() - 4000;
-    const original = nebulaPaint;
-    let frames = 0;
-    nebulaPaint = () => { frames++; original(); };
-    await new Promise((r) => setTimeout(r, 1100));
-    nebulaPaint = original;
-    return { frames, paintMs: NEBULA.lastPaintMs };
-  });
-  check('after 3 seconds idle, animation drops to 15fps and paints below 33ms', idle.frames >= 8 && idle.frames <= 18 && idle.paintMs < 33);
+  check('10 real indexed libraries fold to 8 in the backend fold calculation', nebula.foldedClusters === 2);
+  // 星云渲染器本身已随旧首页下线（NEBULA/nebulaPaint 不再存在），对应的帧率断言一并退场。
   if (process.argv.includes('--github')) {
     const gh = await api('/api/kb/stage', { kind: 'repo', url: 'octocat/Spoon-Knife' });
     check('live GitHub source is pinned to full commit and has real files', gh.commit.length === 40 && gh.files.length > 0 && gh.status === 'staged');

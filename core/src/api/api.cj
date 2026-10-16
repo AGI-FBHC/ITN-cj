@@ -1480,7 +1480,8 @@ public class Api {
         if (path == "/api/learning/progress" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) => try {
-                    ok(ctx, LearningStore(store.dataDir).progress(strOf(b, "id"), intOf(b, "version"), "complete", boolOf(b, "done")))
+                    let markItem = strOf(b, "item")
+                    ok(ctx, LearningStore(store.dataDir).progress(strOf(b, "id"), intOf(b, "version"), if (markItem.size > 0) { markItem } else { "complete" }, boolOf(b, "done")))
                 } catch (e: Exception) { fail(ctx, 400, e.message) }
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -2915,13 +2916,17 @@ func contentTypeOf(name: String): String {
     return "application/octet-stream"
 }
 
+/* 界面静态资源白名单：serveStatic 校验与静态路由注册共用这一份。
+   曾经是两份清单（白名单一份、路由注册一份），新增 studyplayer.js 时只改了一份 → 页面 404。
+   只留一个来源，杜绝再次走偏。 */
+let uiAssets = ["index.html", "app.js", "style.css", "workbench.js", "workbench.css", "coursemap.js", "coursemap.css", "studyplayer.js", "studyplayer.css", "release.json",
+    "logo-mark.png", "logo-light.png", "logo-dark.png"]
+
 func serveStatic(ctx: HttpContext, uiDir: String, rel: String): Unit {
     let name = if (rel == "/") { "index.html" } else { String.fromUtf8(rel.toArray()[1..rel.toArray().size]) }
     // 只允许白名单文件名，避免路径穿越
-    let allowed = ["index.html", "app.js", "style.css", "workbench.js", "workbench.css", "coursemap.js", "coursemap.css", "release.json",
-        "logo-mark.png", "logo-light.png", "logo-dark.png"]
     var ok = false
-    for (a in allowed) {
+    for (a in uiAssets) {
         if (a == name) { ok = true }
     }
     if (!ok) {
@@ -3229,9 +3234,12 @@ public func buildServer(dataDir: String, uiDir: String): Server {
     for (r in routes) {
         server.distributor.register(r, { ctx: HttpContext => api.handle(ctx) })
     }
-    // 界面由内核托管，外壳与界面同源，避免跨域
-    let statics = ["/", "/index.html", "/app.js", "/style.css", "/workbench.js", "/workbench.css", "/coursemap.js", "/coursemap.css", "/release.json",
-        "/logo-mark.png", "/logo-light.png", "/logo-dark.png"]
+    // 界面由内核托管，外壳与界面同源，避免跨域。静态路由直接由白名单生成（单一来源）
+    let statics = ArrayList<String>()
+    statics.add("/")
+    for (a in uiAssets) {
+        statics.add("/" + a)
+    }
     for (s in statics) {
         server.distributor.register(s, { ctx: HttpContext => serveStatic(ctx, uiDir, s) })
     }

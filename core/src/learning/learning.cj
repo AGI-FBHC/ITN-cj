@@ -98,6 +98,7 @@ public class LearningStore {
             answers.put(r.text(0), parsed(r.text(1)))
         }
         out.put("answers", answers)
+        out.put("progressItems", progressItems(id, version))
         return out
     }
     /** Drafts are visible to their producing session, approved copies to other sessions. */
@@ -260,7 +261,13 @@ public class LearningStore {
         }
     }
 
+    /** 按条目的完成标记（讲义小节 / 实操步骤 / 验收清单），键只允许字母数字下划线与连字符。 */
     public func progress(id: String, version: Int64, item: String, done: Bool): JsonObject {
+        if (item.size == 0 || item.size > 64) { throw Exception("标记名称无效") }
+        for (b in item.toArray()) {
+            let ok = (b >= 48 && b <= 57) || (b >= 65 && b <= 90) || (b >= 97 && b <= 122) || b == 45 || b == 95
+            if (!ok) { throw Exception("标记名称无效") }
+        }
         let res = resource(id, version)
         let kind = strOf(res, "kind")
         if (kind != "lecture" && kind != "practice" && kind != "ppt" && kind != "legacy") { throw Exception("此资源不支持完成标记") }
@@ -276,6 +283,20 @@ public class LearningStore {
 
     public func progressOf(id: String, version: Int64, item: String): JsonObject {
         return parsed(db().getKv("meta", "learning-progress:" + id + ":" + version.toString() + ":" + item, "{\"done\":false}"))
+    }
+
+    /** 这份资源当前版本上所有已完成的条目键，供单页阅读/实操页回显对勾。 */
+    public func progressItems(id: String, version: Int64): JsonArray {
+        let prefix = "learning-progress:" + id + ":" + version.toString() + ":"
+        let out = JsonArray()
+        for (r in db().query("SELECT k FROM meta WHERE instr(k, ?) = 1", va([tv(prefix)]))) {
+            let key = r.text(0)
+            let item = String.fromUtf8(key.toArray()[prefix.toArray().size..])
+            if (item.size == 0) { continue }
+            let mark = parsed(db().getKv("meta", key, "{\"done\":false}"))
+            if (boolOf(mark, "done")) { out.add(JsonString(item)) }
+        }
+        return out
     }
 }
 

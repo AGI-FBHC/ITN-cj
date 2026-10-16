@@ -62,3 +62,7 @@ body.workspace-wide #view>.course-workspace{max-width:none;margin-inline:0}
 .course-growth-memories{padding:15px;border:1px solid var(--line);border-radius:14px}
 @media(max-width:1000px){.course-library-label select{width:140px}.course-toolbar-actions{margin-left:0}.course-toolbar>input{max-width:none}}
 @media(max-width:700px){.course-resource-tile{padding:13px}.course-modal{padding:18px}.course-resource-title{gap:7px;flex-wrap:wrap}.course-resource-title strong{font-size:14px}.course-resource-grid{gap:10px}.course-growth-columns{grid-template-columns:1fr}.course-modal-head h2{font-size:21px}.course-toolbar-actions .btn{padding:6px 8px}.course-map-caption{font-size:11px}}
+
+/* 从资源页返回时，给刚看过的节点一个定位脉冲 */
+.course-node.course-node-focus{ animation:course-node-pop 1.1s ease-out 1; }
+@keyframes course-node-pop{ 0%{ box-shadow:0 0 0 0 color-mix(in srgb,var(--brand) 45%,transparent);} 100%{ box-shadow:0 0 0 14px transparent;} }

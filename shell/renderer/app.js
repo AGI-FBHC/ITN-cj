@@ -727,7 +727,7 @@ function buildNav() {
 }
 
 function pageFromHash() {
-  const m = String(location.hash || "").match(/^#\/([a-z]+)(?:\/([a-z]+))?/);
+  const m = String(location.hash || "").match(/^#\/([a-z]+)(?:\/([^\/?#]+))?/);
   const page = m && PAGES[m[1]] ? m[1] : "chat";
   return { page: page, section: m && m[2] ? m[2] : "" };
 }

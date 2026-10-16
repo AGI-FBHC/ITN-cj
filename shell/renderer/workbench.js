@@ -19,7 +19,7 @@ RAIL_GROUPS.splice(0, RAIL_GROUPS.length,
   [{id: 'chat', label: '对话', icon: 'chat'}],
   [{id: 'home', label: '学习', icon: 'book'}, {id: 'kb', label: '知识库', icon: 'db'}, {id: 'resources', label: '成果', icon: 'layers'}]);
 function navigationRoot(page) {
-  if (['learn', 'report', 'calibrate'].includes(page)) return 'home';
+  if (['learn', 'report', 'calibrate', 'study'].includes(page)) return 'home';
   if (['notes', 'wrong'].includes(page)) return 'resources';
   if (['memory', 'models'].includes(page)) return 'settings';
   return page;
@@ -295,6 +295,7 @@ function renderResourceDock() {
       diff.appendChild(pre); body.insertBefore(diff, body.querySelector('.resource-content')); diff.scrollIntoView({block: 'nearest'});
     } catch(e) {toast('比较失败：' + e.message);}
   }));
+  if(res.id)actions.appendChild(btn('全屏打开','ghost sm',()=>go('study',res.id+'@'+res.version)));
   actions.appendChild(btn(res.courseTarget?.nodeId?'加入我的学习资源':'存入个性资源','sm',()=>offerPersonalSave({path:res.artifactPath,title:res.title,text:res.markdown,learningId:res.id,learningVersion:res.version,sessionId:res.sessionId,turnId:res.turnId})));
   body.appendChild(actions);
   if ((res.warnings || []).length) body.appendChild(el('p', 'resource-notice', res.warnings.join('；')));
