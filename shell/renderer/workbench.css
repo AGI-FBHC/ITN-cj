@@ -523,22 +523,33 @@ body.workspace-wide #view > .study-workspace { max-width:none; }
 /* 右侧宽抽屉：分区、行动作、大留白 */
 .knowledge-detail { min-width:0; display:flex; flex-direction:column; background:var(--panel); border-left:1px solid var(--line); }
 .knowledge-detail[hidden] { display:none; }
-.knowledge-detail-head { display:flex; align-items:center; gap:10px; padding:18px 20px 8px; }
+.knowledge-detail-head { position:relative; display:flex; align-items:center; gap:10px; padding:16px 20px 8px; }
+/* 节点色柔光洗在头部：抽屉跟着知识点的颜色走，而不是一块死板的灰卡 */
+.knowledge-detail-head::before { content:''; position:absolute; inset:0; pointer-events:none; background:radial-gradient(150px 70px at 36px 42px, color-mix(in srgb, var(--k-aura, #B5AACD) 20%, transparent), transparent 74%); }
 .knowledge-detail-head h2 { margin:0; flex:1; font-size:19px; overflow-wrap:anywhere; }
-.knowledge-color-dot { flex:none; width:12px; height:12px; border-radius:50%; border:1px solid rgba(0,0,0,.12); background:#B5AACD; cursor:pointer; padding:0; }
-.knowledge-color-dot.hollow { background:var(--panel); border:1.5px dashed var(--line); }
+.knowledge-color-dot { flex:none; width:13px; height:13px; border-radius:50%; border:1px solid color-mix(in srgb, var(--k-aura, #B5AACD) 62%, var(--line)); background:#B5AACD; cursor:pointer; padding:0; box-shadow:0 0 0 3px color-mix(in srgb, var(--k-aura, #B5AACD) 20%, transparent); }
+.knowledge-color-dot.hollow { background:var(--panel); border:1.5px dashed var(--line); box-shadow:none; }
 .knowledge-close { line-height:0; padding:6px; }
 .knowledge-close svg { width:15px; height:15px; }
 .knowledge-detail-sub { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:0 20px 12px; color:var(--muted); font-size:12.5px; }
 .knowledge-alias { border:1px solid var(--line); border-radius:999px; padding:2px 9px; background:var(--panel-soft); color:var(--ink-2); font-size:12px; }
-.knowledge-acts { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; padding:2px 20px 16px; }
-.knowledge-act { border:1px solid var(--line); border-radius:12px; background:var(--panel-soft); min-height:62px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; font-size:12.5px; color:var(--ink-2); cursor:pointer; }
-.knowledge-act:hover { background:var(--panel); }
-.knowledge-act.primary { background:var(--brand-soft); border-color:color-mix(in srgb, var(--brand) 22%, var(--line)); color:var(--brand); }
+.knowledge-acts { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; padding:4px 20px 16px; }
+.knowledge-act { border:1px solid var(--line); border-radius:13px; background:var(--panel-soft); min-height:58px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; font-size:12.5px; color:var(--ink-2); cursor:pointer; transition:background-color .15s ease, border-color .15s ease, transform .15s ease; }
+.knowledge-act:hover { background:color-mix(in srgb, var(--panel) 70%, var(--panel-soft)); transform:translateY(-1px); }
+.knowledge-act:active { transform:translateY(0) scale(.985); }
+.knowledge-act:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
+.knowledge-act.primary { background:color-mix(in srgb, var(--k-aura, var(--brand)) 12%, var(--panel-soft)); border-color:color-mix(in srgb, var(--k-aura, var(--brand)) 30%, var(--line)); color:var(--ink); }
+.knowledge-act.primary .knowledge-act-ic { color:color-mix(in srgb, var(--k-aura, var(--brand)) 72%, var(--ink) 28%); }
+/* 暗色下 .btn.primary:hover（--brand-strong=白）会把主操作刷成近白块、文字同色看不清：
+   这条同特异性、后加载的规则把它压回节点色浅底。 */
+.knowledge-act.primary:hover { background:color-mix(in srgb, var(--k-aura, var(--brand)) 20%, var(--panel-soft)); border-color:color-mix(in srgb, var(--k-aura, var(--brand)) 44%, var(--line)); }
 .knowledge-act-ic { line-height:0; }
 .knowledge-act-ic svg { width:18px; height:18px; }
-.knowledge-detail-body { flex:1; overflow:auto; padding:0 20px 16px; display:flex; flex-direction:column; gap:12px; }
-.knowledge-sec { border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+.knowledge-detail-body { flex:1; overflow:auto; padding:0 20px 14px; display:flex; flex-direction:column; gap:12px; scrollbar-gutter:stable; }
+.knowledge-detail-body::-webkit-scrollbar { width:10px; }
+.knowledge-detail-body::-webkit-scrollbar-thumb { background:var(--line); border-radius:6px; border:3px solid transparent; background-clip:content-box; }
+.knowledge-detail-body::-webkit-scrollbar-thumb:hover { background:color-mix(in srgb, var(--line) 60%, var(--muted)); background-clip:content-box; }
+.knowledge-sec { border:1px solid var(--line); border-radius:12px; padding:12px 14px; background:color-mix(in srgb, var(--panel-soft) 55%, transparent); }
 .knowledge-sec-title { display:flex; align-items:center; gap:8px; margin:0 0 8px; font-size:12px; font-weight:600; color:var(--muted); letter-spacing:.02em; }
 .knowledge-definition { margin:0; font-size:14.5px; line-height:1.9; overflow-wrap:anywhere; }
 .knowledge-record { border-top:1px solid var(--line); padding:10px 0; line-height:1.7; overflow-wrap:anywhere; }
@@ -552,7 +563,8 @@ body.workspace-wide #view > .study-workspace { max-width:none; }
 .knowledge-note-add { padding:4px 6px; line-height:0; margin-left:auto; }
 .knowledge-note-add svg { width:15px; height:15px; }
 .knowledge-link-row { flex-wrap:wrap; }
-.knowledge-delete { margin:0 20px 18px; border-color:color-mix(in srgb, #b3564f 35%, var(--line)); color:#b3564f; }
+.knowledge-delete { margin:2px 20px 18px; border-color:color-mix(in srgb, #c05e54 34%, var(--line)); color:color-mix(in srgb, #c05e54 62%, var(--ink) 38%); border-radius:12px; padding:9px 14px; justify-content:center; }
+.knowledge-delete:hover { background:color-mix(in srgb, #c05e54 12%, transparent); border-color:color-mix(in srgb, #c05e54 52%, var(--line)); }
 /* 计数胶囊 / 编辑弹层 / 快速换色 */
 .knowledge-network-foot { display:flex; justify-content:flex-end; }
 .knowledge-count-pill { background:var(--panel-soft); border:1px solid var(--line); border-radius:999px; padding:6px 14px; font-size:12.5px; color:var(--muted); }

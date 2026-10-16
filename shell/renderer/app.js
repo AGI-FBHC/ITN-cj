@@ -503,9 +503,23 @@ async function loadArtifacts() {
   try { state.artifacts = (await api("/api/artifacts/list", {})).artifacts || []; }
   catch (e) { state.artifacts = []; }
 }
-async function loadSessions() {
-  try { state.sessions = (await api("/api/sessions/list", {})).sessions || []; }
-  catch (e) { state.sessions = []; }
+/* 会话列表的短窗缓存：切一次页面 Panel 与 Page 会各读一次，之前每次切换打 1–3 个
+   重复请求（列表接口慢时就是"卡住 0.5 秒+"的来源之一）。被动读取 1.5s 内复用；
+   显式 reloadSessions()（新建/改名/删除后）强制刷新，绝不吞掉刚发生的变化。 */
+let sessionsCache = { at: 0, promise: null };
+async function loadSessions(force) {
+  const fresh = sessionsCache.at > 0 && Date.now() - sessionsCache.at < 1500;
+  if (force || !fresh) {
+    if (!sessionsCache.promise) {
+      sessionsCache.promise = (async () => {
+        try { state.sessions = (await api("/api/sessions/list", {})).sessions || []; }
+        catch (e) { state.sessions = []; }
+        sessionsCache.at = Date.now();
+        sessionsCache.promise = null;
+      })();
+    }
+    await sessionsCache.promise;
+  }
   /* 正在跑、但还没出现在列表里的会话（新建的会话要等第一条事件落库才进列表接口）
      先补一行：转圈必须马上看得见，不能等这一轮跑完才冒出来。真实数据一到自然顶掉。 */
   for (const running of state.chatRequests.keys()) {
@@ -529,10 +543,8 @@ async function loadSessions() {
 /** 一次性把首页/侧栏需要的四类数据拉齐。 */
 async function loadOverview() {
   await loadCfg();
-  await loadProfile();
-  await loadReport();
-  await loadArtifacts();
-  await loadSessions();
+  // 四份数据互不依赖：并发取，别让页面切换按 4 个串行来回等
+  await Promise.all([loadProfile(), loadReport(), loadArtifacts(), loadSessions()]);
 }
 
 function hasChatModel() { return state.cfg.models.length > 0 && !!state.cfg.chatModelId; }
@@ -4474,7 +4486,7 @@ function setPanelVisible(show) {
 }
 
 async function reloadSessions() {
-  await loadSessions();
+  await loadSessions(true);
   buildNav();
   // 会话列表就长在面板里：录完一轮要让它立刻出现
   if (current === "chat") await renderPanel();
@@ -4913,7 +4925,7 @@ PANELS.kb = {
 PANELS.chat = {
   title: "对话",
   sig: () => chatRailSig(),
-  load: async () => { await loadSessions(); await loadProjects(); },
+  load: async () => { await Promise.all([loadSessions(), loadProjects()]); },
   /**
    * 结构没变、只有内容变了（标题被模型起好了 / 这一轮跑完时间刷新了 / 换了一段会话）：
    * 就地改每一行的字与高亮，不重建行 —— 这就是"列表不再闪一下"的地方。

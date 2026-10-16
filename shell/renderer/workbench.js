@@ -1048,6 +1048,8 @@ async function openKnowledgePoint(id){
   const generation=state.navigationGeneration,node=await api('/api/knowledge/node',{id});if(generation!==state.navigationGeneration||current!=='home')return;
   knowledgeNet.selected=id;const drawer=$('knowledge-detail');if(!drawer)return;
   drawer.hidden=false;const workspace=$('knowledge-workspace');workspace?.classList.add('has-detail');drawer.replaceChildren();
+  // 节点色作为抽屉的主题色：头部柔光、色点光环、主操作按钮都跟着它走
+  drawer.style.setProperty('--k-aura',node.color || '#B5AACD');
   const head=el('div','knowledge-detail-head'),dot=el('button','knowledge-color-dot'+(node.color?'':' hollow'));dot.type='button';dot.title=node.color?('节点颜色 '+node.color+'（点击换色）'):'未设颜色（点击换色）';dot.setAttribute('aria-label','换节点颜色');if(node.color)dot.style.background=node.color;dot.onclick=()=>knowledgeQuickColor(node,dot);
   const h2=el('h2',null,node.title);const closeBtn=btn('','ghost sm knowledge-close',()=>{drawer.hidden=true;$('knowledge-workspace')?.classList.remove('has-detail');knowledgeNet.selected='';knowledgeNet.draw?.();});closeBtn.innerHTML=icon('close');closeBtn.title='收起';closeBtn.setAttribute('aria-label','收起');
   head.append(dot,h2,closeBtn);drawer.appendChild(head);
@@ -1113,7 +1115,7 @@ function installKnowledgeCanvas(canvas){
       let off=knowledgeNet.offsets[node.id];
       if(node.id===knowledgeNet.selected){if(!off){off={x:0,y:0};knowledgeNet.offsets[node.id]=off;}}
       else{const ph=knowledgePhase(node.id);off={x:Math.sin(tick*.22+ph)*7+Math.sin(tick*.09+ph*2.1)*3,y:Math.cos(tick*.19+ph*1.7)*6+Math.cos(tick*.07+ph*3.3)*2.5};knowledgeNet.offsets[node.id]=off;}
-      return {...node,x:w/2+xx*scale*perspective+off.x,y:h/2+yy*scale*perspective+off.y,z:depth,r:(23+Math.min(7,node.recordCount||0))*perspective};
+      return {...node,x:w/2+xx*scale*perspective+off.x,y:h/2+yy*scale*perspective+off.y,z:depth,r:(23+Math.min(7,node.recordCount||0))*perspective,labelW:0};
     }).sort((a,b)=>a.z-b.z);
   };
   const draw=()=>{
@@ -1135,11 +1137,18 @@ function installKnowledgeCanvas(canvas){
       ctx.globalAlpha=dimmed&&!dimmed.has(p.id)?0.22:1;
       ctx.fillStyle=gradient;ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fill();
       if(selected){ctx.beginPath();ctx.arc(p.x,p.y,r*.65,0,Math.PI*2);ctx.strokeStyle='rgba(184,146,70,.8)';ctx.lineWidth=1.5;ctx.stroke();}
-      if(points.length<80||selected||hover||(dimmed&&dimmed.has(p.id))){ctx.fillStyle=ink;ctx.font=(selected||hover?'600 ':'500 ')+(selected?15:13)+'px "Microsoft YaHei",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';let label=p.title;while(ctx.measureText(label).width>160&&label.length>3)label=label.slice(0,-2)+'…';ctx.fillText(label,p.x,p.y);}
+      if(points.length<80||selected||hover||(dimmed&&dimmed.has(p.id))){ctx.fillStyle=ink;ctx.font=(selected||hover?'600 ':'500 ')+(selected?15:13)+'px "Microsoft YaHei",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';let label=p.title;while(ctx.measureText(label).width>160&&label.length>3)label=label.slice(0,-2)+'…';p.labelW=ctx.measureText(label).width;ctx.fillText(label,p.x,p.y);}
       ctx.globalAlpha=1;
     }
   };
-  const hit=e=>{const rect=canvas.getBoundingClientRect(),x=e.clientX-rect.left,y=e.clientY-rect.top;return [...knowledgeNet.projected].reverse().find(p=>Math.hypot(p.x-x,p.y-y)<Math.max(24,p.r));};
+  // 命中区 = 光球（比可见半径再放宽一点）∪ 文字标签的包围盒。
+  // 用户经常直接点节点名字：此前只有 24px 光圈算命中，点文字两端就会"点空/点偏"。
+  const hit=e=>{const rect=canvas.getBoundingClientRect(),x=e.clientX-rect.left,y=e.clientY-rect.top;
+    return [...knowledgeNet.projected].reverse().find(p=>{
+      const dx=Math.abs(p.x-x),dy=Math.abs(p.y-y),r=Math.max(26,p.r+2);
+      if(dx*dx+dy*dy<r*r){return true;}
+      return p.labelW>0&&dx<=p.labelW/2+8&&dy<=13;
+    });};
   canvas.onpointerdown=e=>{drag={x:e.clientX,y:e.clientY,moved:false,dist:0};canvas.setPointerCapture(e.pointerId);};
   canvas.onpointermove=e=>{if(drag){
       const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.dist+=Math.abs(dx)+Math.abs(dy);

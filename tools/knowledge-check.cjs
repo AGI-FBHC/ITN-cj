@@ -7,10 +7,14 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lumin-knowledge-')),mp=await freePort(),pf=path.join(dir,'port');
  const projRoot=path.join(dir,'project');fs.mkdirSync(projRoot);
  const mock=spawn('python',[path.join(root,'tools/mock-openai/server.py'),String(mp)],{windowsHide:true,stdio:'ignore',env:{...process.env,ITN_MOCK_CHUNK_DELAY_MS:'0'}});
- const core=spawn(path.join(root,'dist/core/itn-desktop-core.exe'),['--data-dir='+dir,'--port-file='+pf,'--ui-dir='+path.join(root,'shell/renderer')],{windowsHide:true,stdio:'ignore'});
+ const core=spawn(path.join(root,'dist/core/itn-desktop-core.exe'),['--data-dir='+dir,'--port-file='+pf,'--ui-dir='+(process.env.KC_UI_DIR||path.join(root,'shell/renderer'))],{windowsHide:true,stdio:'ignore'});
  let browser,passed=0;
  const check=(n,b)=>{if(!b)throw Error(n);passed++;console.log('PASS '+n);};
  const until=async(fn,ms=25000)=>{const t0=Date.now();for(;;){if(await fn())return;if(Date.now()-t0>ms)throw Error('等待条件超时');await sleep(150);}};
+  const parseColor=s=>{const m=String(s).match(/rgba?\(([^)]+)\)/);if(m){const v=m[1].split(',').map(x=>parseFloat(x));return{r:v[0],g:v[1],b:v[2],a:v.length>3?v[3]:1};}const c=String(s).match(/color\(srgb ([^)]+)\)/);if(c){const v=c[1].split(/[\s\/]+/).filter(Boolean).map(x=>parseFloat(x));return{r:v[0]*255,g:v[1]*255,b:v[2]*255,a:v.length>3?v[3]:1};}return null;};
+  const overBg=(fg,bg)=>({r:fg.r*fg.a+bg.r*(1-fg.a),g:fg.g*fg.a+bg.g*(1-fg.a),b:fg.b*fg.a+bg.b*(1-fg.a),a:1});
+  const lum=c=>{const f=x=>{x/=255;return x<=0.03928?x/12.92:Math.pow((x+0.055)/1.055,2.4);};return 0.2126*f(c.r)+0.7152*f(c.g)+0.0722*f(c.b);};
+  const contrast=(a,b)=>{const L1=lum(a),L2=lum(b);return (Math.max(L1,L2)+0.05)/(Math.min(L1,L2)+0.05);};
  try{
   for(let i=0;i<100&&!fs.existsSync(pf);i++)await sleep(100);
   const base='http://127.0.0.1:'+fs.readFileSync(pf,'utf8').trim();
@@ -118,6 +122,25 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   await page.getByRole('button',{name:'收起',exact:true}).click();
   await until(async()=>await page.evaluate(()=>document.getElementById('knowledge-detail').hidden));
 
+  // —— 点文字标签也算点节点（此前只有光球 24px 算命中，点名字两端会"点空/点偏"）
+  const labelProbe=await page.evaluate(()=>{
+    const cand=[...knowledgeNet.projected].filter(p=>p.id!==knowledgeNet.selected).sort((a,b)=>String(b.title||'').length-String(a.title||'').length)[0];
+    const cv=document.querySelector('.knowledge-canvas').getBoundingClientRect();
+    return cand?{id:cand.id,title:cand.title,x:cand.x,y:cand.y,w:cand.labelW||0,r:Math.max(26,cand.r+2),cx:cv.x,cy:cv.y}:null;
+  });
+  check('a node with a wide text label is available for the hit test',!!labelProbe&&String(labelProbe.title||'').length>=5);
+  const labelOff=70;   // 落在文字标签里、远在光球 24px 之外——旧版在这里必点空
+  check('the probe offset sits well outside the old ball-only hit radius',labelOff>labelProbe.r+8);
+  await page.mouse.move(labelProbe.cx+labelProbe.x+labelOff,labelProbe.cy+labelProbe.y);
+  await sleep(120);
+  check('hovering the label shows the pointer cursor',await page.evaluate(()=>document.querySelector('.knowledge-canvas').style.cursor==='pointer'));
+  await page.mouse.click(labelProbe.cx+labelProbe.x+labelOff,labelProbe.cy+labelProbe.y);
+  await until(async()=>await page.evaluate(nid=>knowledgeNet.selected===nid,labelProbe.id));
+  check('clicking the label text selects its node',true);
+  check('the canvas recorded the drawn label width for hit testing',labelProbe.w>0);
+  await page.getByRole('button',{name:'收起',exact:true}).click();
+  await until(async()=>await page.evaluate(()=>document.getElementById('knowledge-detail').hidden));
+
   // —— 聊天卡 → 详情抽屉
   await page.evaluate(pid=>startAgentTask('知识点测试：请解释输入与输出的约定',pid),proj.id);
   await page.waitForSelector('.knowledge-recorded',{timeout:60000});
@@ -152,6 +175,26 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   await page.getByRole('button',{name:'保存知识点',exact:true}).click();
   await until(async()=>(await post('/api/knowledge/node',{id:nodeId})).color==='#C77DFF');
   check('saving from the palette persists through the edit sheet',true);
+
+  // —— 暗色主题：主操作 hover 不能变白块（旧版 .btn.primary:hover 用 --brand-strong=白 刷底、字同色看不清）
+  await page.emulateMedia({colorScheme:'dark'});
+  await openNode(nodeId);
+  const actBox=await page.locator('#knowledge-detail .knowledge-act.primary').boundingBox();
+  await page.mouse.move(actBox.x+actBox.width/2,actBox.y+actBox.height/2);
+  await sleep(200);
+  const darkSt=await page.evaluate(()=>{
+    const btn=document.querySelector('#knowledge-detail .knowledge-act.primary');
+    const detail=document.getElementById('knowledge-detail');
+    return {bg:getComputedStyle(btn).backgroundColor,fg:getComputedStyle(btn).color,panel:getComputedStyle(detail).backgroundColor,aura:getComputedStyle(detail).getPropertyValue('--k-aura').trim()};
+  });
+  const dPanel=parseColor(darkSt.panel)||{r:25,g:28,b:26,a:1},dBg=parseColor(darkSt.bg),dFg=parseColor(darkSt.fg);
+  const dEff=dBg?overBg(dBg,dPanel):null;
+  check('the primary action is not white-washed on hover in dark mode',!!dEff&&!(dEff.r>235&&dEff.g>235&&dEff.b>235));
+  check('its label keeps a readable contrast (>=4.5:1) on hover',!!dEff&&!!dFg&&contrast(dEff,dFg)>=4.5);
+  check('the drawer exposes the node color as the --k-aura theme variable',darkSt.aura.length>0);
+  await page.mouse.move(10,10);
+  await page.emulateMedia({colorScheme:'light'});
+  await openNode(nodeId);
 
   // —— 笔记（铅笔）
   check('the notes section offers a pencil button',await page.locator('.knowledge-note-add').count()===1);
