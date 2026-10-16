@@ -3953,3 +3953,9 @@ read_chunk 读得到原文并带回库标识与正文。
 - 成果右侧面板高度与最小尺寸限制在页面内，独立滚动；初始原文预览不强制抢键盘焦点。切页期间aria-busy明确加载状态，完成后才供验收读取。关闭Office播放器保留本地文件分类上下文。
 - 前端版本0.4.6，继续沿用已验证内核0.4.4。本轮无新后端接口、无数据库结构修改。原用户数据库未被本轮读写修复，既有损坏证据仍待单独处理。
 - 最终图片在tmp/internal-final-shots/（library、study、outcomes-light/dark、learning、growth、notes、memory、settings），均为真实运行界面的隔离样例，不是生成的设计稿。
+
+### 0.4.6最终交付
+- 代码提交033de2f；包目录dist/Lumin-0.4.6，zip为dist/Lumin-0.4.6-win-x64.zip；启动Lumin.cmd已指向0.4.6，旧包保留。
+- 包内release.json记录sourceCommit=033de2ff3f20907e1e06f0cfe1a3554560f21834；9项清单哈希BAD=0，源码4项renderer关键文件与包内一致。隔离空目录桌面启动冒烟DOCX=ok、RESULT=OK。
+- 最终对话/停止回归stop-check 11/11；资料库19/19；学习与内部工作区77/77；Office导出全过；浅深色与紧凑视口运行截图已查看。截图已尝试用open_in_codex显示，工具返回queued，最终答复应直接附本地截图，不声称窗口已展示。
+- 用户强调主区内部美观合理，最终说明应直接指向页面截图与可运行包，不再给大段导航方案。原数据的SQLite损坏仍未修复，本轮隔离验证不能充当原库恢复验收。
