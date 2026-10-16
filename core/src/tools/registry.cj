@@ -302,10 +302,66 @@ public class ToolBox {
     }
 
     public func listDocuments(kbId: String): ToolResult {
+        // kbId 为空 = 通用模式（会话没绑定某个库，默认看全部）：与 kb_search 的通用模式同一套语义。
+        // 以前这里直接拿空 id 去 loadIndex，得到 0 个切片就报"当前知识库还没有索引" ——
+        // 而同一轮的 kb_search 明明命中了，模型自己都看出矛盾（实测 2026-10-16 08:36 那两轮）。
+        if (kbId.size == 0) {
+            return listAllDocuments()
+        }
         let idx = loadIndexCached(store.dataDir, kbId)
         if (idx.chunks.size == 0) {
             return fail("list_documents", "当前知识库还没有索引")
         }
+        let arr = JsonArray()
+        for (o in docsOfIndex(idx)) {
+            arr.add(o)
+        }
+        let r = ToolResult()
+        r.name = "list_documents"
+        r.data = arr
+        r.summary = "共 " + arr.size().toString() + " 篇文档"
+        return r
+    }
+
+    /** 通用模式：本机所有建过索引的库一起列，标题带《库名》（与 kb_search 的出处写法一致）。 */
+    private func listAllDocuments(): ToolResult {
+        let s = store.load()
+        let arr = JsonArray()
+        var used: Int64 = 0
+        var skipped: Int64 = 0
+        var docs: Int64 = 0
+        for (kb in s.knowledgeBases) {
+            let idx = loadIndexCached(store.dataDir, kb.id)
+            if (idx.chunks.size == 0) {
+                skipped = skipped + 1
+                continue
+            }
+            used = used + 1
+            let kbName = if (kb.name.size > 0) { kb.name } else { kb.id }
+            for (o in docsOfIndex(idx)) {
+                o.put("kbId", JsonString(kb.id))
+                o.put("kbName", JsonString(kbName))
+                o.put("docTitle", JsonString("《" + kbName + "》" + strOf(o, "docTitle")))
+                arr.add(o)
+                docs = docs + 1
+            }
+        }
+        if (used == 0) {
+            return fail("list_documents", "本机还没有建过索引的知识库")
+        }
+        let r = ToolResult()
+        r.name = "list_documents"
+        r.data = arr
+        var extra = ""
+        if (skipped > 0) {
+            extra = "，" + skipped.toString() + " 个库还没有索引"
+        }
+        r.summary = "在 " + used.toString() + " 个知识库里有 " + docs.toString() + " 篇文档" + extra
+        return r
+    }
+
+    /** 一份索引里的文档聚合（同一篇文档的切片并成一条）。单库与通用模式共用。 */
+    private func docsOfIndex(idx: KbIndex): ArrayList<JsonObject> {
         let paths = ArrayList<String>()
         let titles = ArrayList<String>()
         let counts = ArrayList<Int64>()
@@ -326,24 +382,25 @@ public class ToolBox {
                 counts[found] = counts[found] + 1
             }
         }
-        let arr = JsonArray()
+        let out = ArrayList<JsonObject>()
         var i = 0
         while (i < paths.size) {
             let o = JsonObject()
             o.put("docPath", JsonString(paths[i]))
             o.put("docTitle", JsonString(titles[i]))
             o.put("chunkCount", JsonInt(counts[i]))
-            arr.add(o)
+            out.add(o)
             i = i + 1
         }
-        let r = ToolResult()
-        r.name = "list_documents"
-        r.data = arr
-        r.summary = "共 " + paths.size.toString() + " 篇文档"
-        return r
+        return out
     }
 
     public func readChunk(kbId: String, chunkId: String): ToolResult {
+        // 通用模式：不知道这个 id 属于哪个库 —— 每个建过索引的库都找一遍。id 是"路径#序号"，
+        // 跨库仍然可能撞名：取第一个命中的那份，摘要里说清来自哪个库。
+        if (kbId.size == 0) {
+            return readChunkAnywhere(chunkId)
+        }
         let idx = loadIndexCached(store.dataDir, kbId)
         for (c in idx.chunks) {
             if (c.id == chunkId) {
@@ -362,6 +419,38 @@ public class ToolBox {
             }
         }
         return fail("read_chunk", "找不到切片：" + chunkId)
+    }
+
+    /** 通用模式下的 read_chunk：所有建过索引的库找一遍。 */
+    private func readChunkAnywhere(chunkId: String): ToolResult {
+        let s = store.load()
+        for (kb in s.knowledgeBases) {
+            let idx = loadIndexCached(store.dataDir, kb.id)
+            if (idx.chunks.size == 0) {
+                continue
+            }
+            for (c in idx.chunks) {
+                if (c.id == chunkId) {
+                    let kbName = if (kb.name.size > 0) { kb.name } else { kb.id }
+                    let o = JsonObject()
+                    o.put("id", JsonString(c.id))
+                    o.put("docTitle", JsonString(c.docTitle))
+                    o.put("docPath", JsonString(c.docPath))
+                    o.put("headingPath", JsonString(c.headingPath))
+                    o.put("text", JsonString(c.text))
+                    o.put("caption", JsonString(c.caption))
+                    o.put("kbId", JsonString(kb.id))
+                    o.put("kbName", JsonString(kbName))
+                    let r = ToolResult()
+                    r.name = "read_chunk"
+                    r.data = o
+                    r.summary = "读到切片 " + c.id + "（《" + kbName + "》" + c.docTitle + "，" +
+                        c.text.size.toString() + " 字）"
+                    return r
+                }
+            }
+        }
+        return fail("read_chunk", "找不到切片：" + chunkId + "（本机没有任何知识库里有这个 id）")
     }
 
     public func calc(expr: String): ToolResult {

@@ -139,11 +139,11 @@ public func buildDomainToolDefsWithCancel(store: Store, kbId: String, allowWeb: 
             return fromResult(tools.kbSearch(kbId, strOf(args, "query"), topK))
         }))
 
-    out.add(makeTool("list_documents", "列出资料文档", "当前知识库有哪些文档",
+    out.add(makeTool("list_documents", "列出资料文档", "有哪些资料文档（会话绑定知识库时列该库，没绑定时列本机全部已建索引的库）",
         "列出当前知识库里的文档标题、路径与切片数量。", "{\"type\":\"object\",\"properties\":{}}", "read",
         { args: JsonObject => fromResult(box.listDocuments(kbId)) }))
 
-    out.add(makeTool("read_chunk", "读取切片原文", "按 id 取切片全文",
+    out.add(makeTool("read_chunk", "读取切片原文", "按 id 取切片全文（没绑定知识库时会在全部已建索引的库里找）",
         "按切片 id 取出完整原文，用于检索结果不够、需要看上下文的时候。",
         "{\"type\":\"object\",\"properties\":{\"chunk_id\":{\"type\":\"string\"}},\"required\":[\"chunk_id\"]}", "read",
         { args: JsonObject => fromResult(box.readChunk(kbId, strOf(args, "chunk_id"))) }))

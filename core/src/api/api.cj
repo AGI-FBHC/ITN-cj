@@ -129,7 +129,7 @@ public class Api {
             o.put("status", JsonString("ok"))
             o.put("service", JsonString("itn-desktop-core"))
             o.put("cangjie", JsonString("1.2.0"))
-            o.put("version", JsonString("0.4.2"))
+            o.put("version", JsonString("0.4.3"))
             o.put("build", JsonString("lumin-rebrand-20261015"))
             ok(ctx, o)
             return
