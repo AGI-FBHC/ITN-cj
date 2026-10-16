@@ -4006,3 +4006,16 @@ read_chunk 读得到原文并带回库标识与正文。
 - 回归：splash 4/4、learn-empty 4/4、nonchat 19/19、stop 11/11、busy-caret 4/4、attachments 16/16、learning-check --ui 82/82、glass-shot 全过无 console 错误；内核编译通过。
 - 交付：代码提交 078970c；打包 dist/Lumin-0.5.0 与 Lumin-0.5.0-win-x64.zip（164.3MB）；release.json sourceCommit=078970c4358944448700852122ee474ea79fabd9，9 项资产 BAD=0，源码（含 splash.html）与包内一致；隔离空目录冒烟 RESULT=OK；启动Lumin.cmd 已指向 0.5.0。
 - 备注：启动动画截图在 tmp/splash-shots/（浅色/深色）；真实模型测试会产生真实调用费用，按需运行（python tools/real-features-check.py [--case 名称…]）。
+
+## 2026-10-16 · 第六轮 UI 打磨：托盘驻留、检索弹层重做、模型chip、菜单修形、搜索吸顶、分支入口收敛（0.6.0）
+- 用户需求（多轮累积，均已逐项完成）：① 左上角搜索按钮弹层重新设计；② 对话页发送键旁的模型名（MiMo TokenPlan）太丑；③ 关窗要驻留右下角托盘、点击恢复；④ 用户发送的消息不要分支功能（去掉气泡下的分支 icon）；⑤ 分支 icon 按 Codex 截图重画；⑥ 启动动画出现前页面卡一下；⑦ 项目行 ⋯ 菜单显示畸形（巨型图标）；⑧ 项目/会话行 ⋯ 菜单离触发点太远；⑨ 会话栏顶部搜索框固定（吸顶）。
+- 启动卡顿：窗口改成先隐藏（show:false）+ 背景色跟随系统主题，等启动动画页 ready-to-show 后再显示（3 秒兜底）——不再先闪一段空白窗口。splash-check 4/4 复验。
+- 托盘驻留：main.js 新建 Tray（16px logo 缩放）；关窗拦截为 win.hide() 并首次弹气泡提示；托盘单击/双击/菜单"打开 Lumin"恢复窗口，菜单另含"退出"；second-instance 也会唤起已有窗口；quit 流程用 quitting 标记放行；--smoke 不建托盘；新增 LUMIN_TRAY_TEST 测试钩子。tray-check 4/4（托盘存在、关窗不退出只隐藏、可恢复、无报错）。
+- 检索弹层重做：搜索头（放大镜 + 输入 + Esc 提示）、分组标题带计数、每行加类别图标（对话/生成/章节/笔记/产物/资料）、右侧类别胶囊、页脚快捷键与结果数、入场动画、遮罩 blur 7px；深浅色都验证。palette-chip-check 覆盖。
+- 模型 chip：从"一行小字"改成圆点 + 名字 + 下拉标的 chip（玻璃材质与权限 chip 一致）；点开是就地模型切换菜单（列出全部模型、当前项打勾、"管理模型"入口），切换后立刻生效并刷新 chip。glass-shot 的 COMPOSER-ORDER 仍通过（chip 右缘 896 → 发送键 904）。
+- 分支：用户气泡下的分支入口按用户要求移除（msgMeta 的 onSplit 下线，编辑框"另开分支再发"保留为小白的进路）；AI 气泡的"从这里开分支"icon 按 Codex 截图重画为"左上斜箭头 + 右下斜箭头"（放大截图核对）；glass-shot 的会话树用例改从"改这条重发 → 另开分支再发"进入，‹2/2› 切换与回切全部通过。
+- 菜单修形：项目行 ⋯ 菜单缺 rail-menu-item 类导致 SVG 无约束（巨型图标）→ 补类并统一行排版；会话行 ⋯ 菜单原本以触发器左缘向右展开（一半飘到主区）→ 改为右缘对齐触发器向下展开；项目行 ⋯ 菜单改为与面板左缘对齐展开。实测坐标：会话菜单 82..314（触发器右缘 314）、项目菜单 72..412。
+- 搜索吸顶：`.panel-search` 改 sticky（top:0，背景用不透明的 --panel-bg，盖住玻璃主题下半透明 --well-fill 的透底问题）。panel-sticky-check 3/3（sticky 生效、滚动 500px 后位置不动、无报错）。
+- 验证汇总：tray 4/4、palette-chip 11/11、panel-sticky 3/3、splash 4/4、text-menu 6/6（顺手加固：等 boot 完成再操作、copy 后留落盘时间）、glass-shot 全过（含新分支路径）、nonchat 19/19、stop 11/11、busy-caret 4/4、attachments 16/16、learn-empty 4/4、learning-check --ui 82/82；内核编译通过。
+- 交付：代码提交 c28309c；打包 dist/Lumin-0.6.0 与 Lumin-0.6.0-win-x64.zip（164.3MB）；release.json sourceCommit=c28309c7747df3e68aedcba1b0b637e362dd6fba，9 项资产 BAD=0，源码与包内一致；隔离空目录冒烟 RESULT=OK；启动Lumin.cmd 已指向 0.6.0。
+- 截图：tmp/ui-redesign/（after-palette、after-dark-palette、after-composer、after-ai-meta、branch-icon-zoom、after-session-menu、after-project-menu）；启动动画在 tmp/splash-shots/。
