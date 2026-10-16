@@ -6435,8 +6435,15 @@ function renderTurnBlock(t, live) {
     const steps=items.filter(x=>x.t==='tool').length;
     const group=el('details','work-group');group.dataset.timelineKind='process';
     const key=(t.id || 'local')+':'+groupIndex++;
-    group.open=state.workExpansions?.[key] ?? active;
-    group.ontoggle=()=>{state.workExpansions=state.workExpansions || {};state.workExpansions[key]=group.open;};
+    const initial=state.workExpansions?.[key] ?? active;
+    group.open=initial;
+    group.ontoggle=()=>{
+      // <details> 会为"创建时就 open"异步补发一次 toggle —— 那不是用户操作，不能写进偏好，
+      // 否则"进行中默认展开"会在跑完后被当成用户要求，工作过程一直不收（实测偶发）。
+      if(group.open===initial&&group.dataset.userToggled!=='1')return;
+      group.dataset.userToggled='1';
+      state.workExpansions=state.workExpansions || {};state.workExpansions[key]=group.open;
+    };
     const head=el('summary','work-head');head.innerHTML='<span class="work-chev">'+icon('chevron')+'</span><span>工作过程</span><span class="work-stat">'+(active?'进行中':secs?secs+' 秒':'')+(steps?' · '+steps+' 步':'')+'</span>';
     const body=el('div','work-body');
     items.forEach((it,i)=>body.appendChild(it.t==='think'?thinkRow(it,active,active&&i===items.length-1):toolCard(it,active)));
