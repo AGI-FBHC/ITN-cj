@@ -397,6 +397,12 @@ def native_reply(body):
             return "提示词要写清任务、约束和输出格式；使用资料时标注出处，方便回到原文核实 [1]。"
         return "已完成工具调用，可在右侧成果中查看。"
     # 知识点自动记录：内核的 record_knowledge_point 工具（quote 必须是本轮用户原话的逐字片段）
+    # 知识网络可见性：真实模型对“你能看到我的知识网络吗”会用空 query 发起检索；旧版会拿到空数组并误报“0 条”。
+    if "知识网络可见性测试" in ask:
+        return {"tool_calls": [
+            {"id": "mock-call-1", "type": "function", "function": {"name": "get_learning_context", "arguments": "{}"}},
+            {"id": "mock-call-2", "type": "function", "function": {"name": "search_personal_resources", "arguments": json.dumps({"query": ""})}},
+        ]}
     if "知识点别名测试" in ask:
         return call("record_knowledge_point", {"title": "I/O 约定", "definition": "别名合并测试用的定义。", "quote": "请解释输入与输出", "note": "用已有知识点的确切别名发起记录。"})
     if "知识点测试" in ask:

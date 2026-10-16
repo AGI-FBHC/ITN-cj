@@ -4,6 +4,7 @@ import std.collection.*
 import stdx.encoding.json.*
 import itn_desktop_core.store.Store
 import itn_desktop_core.learning.LearningStore
+import itn_desktop_core.knowledge.KnowledgeStore
 import itn_desktop_core.learning.arrOf
 import itn_desktop_core.resource.ResourceRequest
 import itn_desktop_core.resource.generateResourceWithCancel
@@ -24,10 +25,11 @@ public func learningTools(store: Store, kbId: String, shouldAbort: () -> Bool, s
     userText: String, emit: (String, JsonObject) -> Unit): ArrayList<DomainTool> {
     let ls = LearningStore(store.dataDir)
     let out = ArrayList<DomainTool>()
-    out.add(makeTool("get_learning_context", "读取学习上下文", "目标、偏好、资源和真实测验记录",
-        "读取当前学习档案、可编辑记忆、资源列表和首次作答证据。掌握度未知时不得推断分数。",
+    out.add(makeTool("get_learning_context", "读取学习上下文", "目标、偏好、知识网络、资源和真实测验记录",
+        "读取当前学习档案、可编辑记忆、知识网络概况（知识点总数与最近节点）、资源列表和首次作答证据。掌握度未知时不得推断分数。回答知识网络/知识点相关询问前先读本工具；节点详情用 read_knowledge_point。",
         "{\"type\":\"object\",\"properties\":{}}", "read", { args: JsonObject =>
             let o = ls.context(kbId)
+            o.put("knowledge", KnowledgeStore(store.dataDir).overview(8))
             o.put("resources", ls.resourcesForSession(kbId,sid))
             return learningResult(o, "已读取学习上下文")
         }))

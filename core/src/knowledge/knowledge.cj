@@ -35,6 +35,19 @@ public class KnowledgeStore {
         for(r in db().querySql("SELECT from_id,to_id,label FROM knowledge_links")){let l=JsonObject();l.put("from",JsonString(r.text(0)));l.put("to",JsonString(r.text(1)));l.put("label",JsonString(r.text(2)));links.add(l)}
         out.put("nodes",nodes);out.put("links",links);return out
     }
+    /** 概况：知识点总数 + 最近节点（给 agent 回答"知识网络里有什么"用，避免只能空手检索）。 */
+    public func overview(limitIn: Int64): JsonObject{
+        let limit=if(limitIn>0&&limitIn<=50){limitIn}else{8}
+        let out=JsonObject()
+        out.put("total",JsonInt(db().scalarInt("SELECT COUNT(*) FROM knowledge_nodes",ArrayList<DbValue>())))
+        let recent=JsonArray()
+        for(r in db().query("SELECT id,title,color,updated_at FROM knowledge_nodes ORDER BY updated_at DESC LIMIT ?",va([nv(limit)]))){
+            let o=JsonObject();o.put("id",JsonString(r.text(0)));o.put("title",JsonString(r.text(1)));o.put("color",JsonString(r.text(2)));o.put("updatedAt",JsonString(r.text(3)))
+            o.put("recordCount",JsonInt(db().scalarInt("SELECT COUNT(*) FROM knowledge_records WHERE node_id=?",va([tv(r.text(0))]))));recent.add(o)
+        }
+        out.put("recent",recent)
+        return out
+    }
     public func read(id: String): JsonObject{
         let rows=db().query("SELECT id,title,definition,aliases,user_edited,created_at,updated_at,color FROM knowledge_nodes WHERE id=?",va([tv(id)]))
         if(rows.size==0){throw Exception("找不到这个知识点")};let out=nodeJson(rows[0]);let records=JsonArray();let notes=JsonArray()

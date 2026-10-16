@@ -5,6 +5,9 @@ import std.unittest.testmacro.*
 import stdx.encoding.json.*
 import itn_desktop_core.knowledge.KnowledgeStore
 import itn_desktop_core.personal.PersonalStore
+import itn_desktop_core.store.Store
+import itn_desktop_core.agent.personalTools
+import itn_desktop_core.agent.learningTools
 import itn_desktop_core.util.*
 
 @Test
@@ -75,5 +78,63 @@ class KnowledgeStoreTest {
             if(strOf(o,"type")=="created"&&strOf(o,"nodeId")==strOf(b,"id")){created=true}
         }
         @Expect(record,true);@Expect(created,true)
+    }
+}
+@Test
+class PersonalOverviewToolsTest {
+    func arr(o: JsonObject,key: String): JsonArray{
+        match(o.get(key)){case Some(v: JsonArray)=>return v;case _=>return JsonArray()}
+    }
+    func seedNode(dir: String): Unit {
+        let ks=KnowledgeStore(dir);let b=JsonObject()
+        b.put("title",JsonString("MCP 协议"));b.put("definition",JsonString("模型上下文协议：把工具与资源标准化暴露给模型。"))
+        b.put("quote",JsonString("请解释 MCP 协议"));b.put("note",JsonString("本轮围绕 MCP 的定位展开。"))
+        ks.save(b,false,"s1","t1","请解释 MCP 协议","")
+    }
+    @TestCase
+    func emptyQueryReturnsOverviewInsteadOfBlankHits(): Unit {
+        let dir=freshDir("personal-overview");seedNode(dir);let store=Store(dir)
+        var hits=-1;var knowledge=-1
+        for(d in personalTools(store,"s","t","你能看到我的知识网络吗")){
+            if(d.name!="search_personal_resources"){continue}
+            let details=objOf(d.run(JsonObject()).details).getOrThrow()
+            knowledge=intOf(objOf(details.get("counts").getOrThrow()).getOrThrow(),"knowledge")
+            hits=arr(details,"hits").size()
+        }
+        @Expect(hits>=1,true);@Expect(knowledge,1)
+    }
+    @TestCase
+    func typeFilterListsOneKindAndKeywordSearchStillWorks(): Unit {
+        let dir=freshDir("personal-overview-type");seedNode(dir);let store=Store(dir)
+        var listed=JsonArray();var invalid=false
+        for(d in personalTools(store,"s","t","列出知识点")){
+            if(d.name!="search_personal_resources"){continue}
+            let args=JsonObject();args.put("type",JsonString("knowledge"))
+            listed=arr(objOf(d.run(args).details).getOrThrow(),"hits")
+            let bad=JsonObject();bad.put("type",JsonString("draft"))
+            try{d.run(bad)}catch(e: Exception){invalid=true}
+        }
+        @Expect(listed.size(),1);@Expect(strOf(objOf(listed[0]).getOrThrow(),"type"),"knowledge")
+        @Expect(invalid,true)
+        var keyword=0
+        for(d in personalTools(store,"s","t","查 MCP")){
+            if(d.name!="search_personal_resources"){continue}
+            let args=JsonObject();args.put("query",JsonString("MCP"))
+            keyword=arr(objOf(d.run(args).details).getOrThrow(),"hits").size()
+        }
+        @Expect(keyword>=1,true)
+    }
+    @TestCase
+    func learningContextCarriesTheKnowledgeNetworkSummary(): Unit {
+        let dir=freshDir("personal-overview-context");seedNode(dir)
+        var seen=false
+        for(d in learningTools(Store(dir),"",{=>false},"s","t","你能看到我的知识网络吗",{kind: String,p: JsonObject=>()})){
+            if(d.name!="get_learning_context"){continue}
+            let details=objOf(d.run(JsonObject()).details).getOrThrow()
+            let k=objOf(details.get("knowledge").getOrThrow()).getOrThrow()
+            let recent=arr(k,"recent")
+            seen=intOf(k,"total")==1&&recent.size()==1&&strOf(objOf(recent[0]).getOrThrow(),"title")=="MCP 协议"
+        }
+        @Expect(seen,true)
     }
 }

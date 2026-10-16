@@ -56,6 +56,17 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   g=await post('/api/knowledge/graph',{});
   check('records alone never infer edges or child nodes',g.links.length===0&&g.nodes.length===1);
 
+  // —— Lumin 能否"看见"知识网络：空 query 检索必须返回总览而不是空数组（2026-10-17 修复回归）
+  const sD=(await post('/api/sessions/new',{})).sessionId;
+  const rD=await post('/api/agent/ask-pi',{sessionId:sD,question:'知识网络可见性测试：你能看到我的知识网络吗',web:'off'});
+  check('the visibility turn completes',rD.ok===true);
+  const evsD=(await post('/api/sessions/events',{sessionId:sD})).events;
+  const vis=(evsD.find(e=>e.type==='tool/result'&&e.payload.tool==='search_personal_resources')||{}).payload||{};
+  check('an empty-query search returns counts and hits, not a blank list',vis.ok===true&&vis.details&&vis.details.counts&&vis.details.counts.knowledge>=1&&Array.isArray(vis.details.hits)&&vis.details.hits.length>=1);
+  check('the overview names the existing knowledge node',JSON.stringify(vis.details&&vis.details.hits||[]).includes('输入与输出'));
+  const lc=(evsD.find(e=>e.type==='tool/result'&&e.payload.tool==='get_learning_context')||{}).payload||{};
+  check('get_learning_context also reports the knowledge total',!!(lc.details&&lc.details.knowledge)&&lc.details.knowledge.total>=1&&lc.details.knowledge.recent.length>=1);
+
   check('self links are rejected',(await raw('/api/knowledge/link',{from:nodeId,to:nodeId,label:'自连'})).code!==0);
   check('links to missing nodes are rejected',(await raw('/api/knowledge/link',{from:nodeId,to:'kp-missing'})).code!==0);
 
@@ -127,7 +138,10 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   await page.locator('.knowledge-pop .knowledge-swatch[data-color="#2FB8A6"]').click();
   await until(async()=>(await post('/api/knowledge/node',{id:nodeId})).color==='#2FB8A6');
   check('picking a swatch on the dot saves the color immediately',true);
-  check('the drawer dot follows the new color',await page.locator('#knowledge-detail .knowledge-color-dot').evaluate(e=>getComputedStyle(e).backgroundColor==='rgb(47, 184, 166)'));
+  // 色点要等抽屉按服务端结果重渲染后才变色：这里等 DOM 条件而不是单次读取，真不更新会超时失败
+  let dotFollows=false;
+  try{await until(async()=>{dotFollows=await page.locator('#knowledge-detail .knowledge-color-dot').evaluate(e=>getComputedStyle(e).backgroundColor==='rgb(47, 184, 166)');return dotFollows;});}catch(e){}
+  check('the drawer dot follows the new color',dotFollows);
 
   // —— 编辑弹层：宽版两列 + 预览球 + 调色盘
   await page.getByRole('button',{name:'编辑',exact:true}).click();

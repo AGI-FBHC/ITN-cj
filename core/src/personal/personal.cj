@@ -119,14 +119,43 @@ public class PersonalStore {
         db().batch(ops)
         db().exec("UPDATE content_index SET title=(SELECT title FROM knowledge_nodes k WHERE k.id=content_index.id),body=(SELECT definition||char(10)||COALESCE((SELECT group_concat(question||char(10)||note,char(10)) FROM knowledge_records r WHERE r.node_id=k.id),'')||char(10)||COALESCE((SELECT group_concat(n.text,char(10)) FROM notes n JOIN knowledge_notes l ON l.note_id=n.id WHERE l.node_id=k.id),'') FROM knowledge_nodes k WHERE k.id=content_index.id) WHERE type='knowledge'")
     }
-    public func search(query: String,limitIn: Int64): JsonArray{
+    func hitJson(row: DbRow,snippet: String): JsonObject{
+        let o=JsonObject();o.put("type",JsonString(row.text(0)));o.put("id",JsonString(row.text(1)));o.put("title",JsonString(row.text(2)))
+        o.put("path",JsonString(row.text(4)));o.put("learningId",JsonString(row.text(5)));o.put("snippet",JsonString(byteSafePrefix(snippet,240)))
+        return o
+    }
+    /** 各类已索引内容的数量；resource 只统计仍在个性资源目录里的文件。回答"我有什么"类问题用它，不能拿空命中当"没有内容"。 */
+    public func counts(): JsonObject{
+        refreshStudyIndex();let o=JsonObject()
+        for(k in ["knowledge","note","wrong"]){o.put(k,JsonInt(db().scalarInt("SELECT COUNT(*) FROM content_index WHERE type=?",va([tv(k)]))))}
+        var live: Int64=0
+        for(row in db().querySql("SELECT path FROM content_index WHERE type='resource'")){if(exists(row.text(0))&&hasPrefix(row.text(0),directory()+Path.Separator)){live=live+1}}
+        o.put("resource",JsonInt(live))
+        return o
+    }
+    /** 最近条目：按更新时间倒序，可按类型过滤；给"我的知识网络/笔记里有什么"这类问题兜底。 */
+    public func recent(kind: String,limitIn: Int64): JsonArray{
+        refreshStudyIndex();let out=JsonArray();let limit=if(limitIn>0&&limitIn<100){limitIn}else{30}
+        let rows=if(kind.size>0){db().query("SELECT type,id,title,body,path,learning_id FROM content_index WHERE type=? ORDER BY updated_at DESC LIMIT ?",va([tv(kind),nv(limit)]))}
+            else{db().query("SELECT type,id,title,body,path,learning_id FROM content_index ORDER BY updated_at DESC LIMIT ?",va([nv(limit)]))}
+        for(row in rows){
+            if(row.text(0)=="resource"&&(!exists(row.text(4))||!hasPrefix(row.text(4),directory()+Path.Separator))){continue}
+            out.add(hitJson(row,row.text(3)))
+        }
+        return out
+    }
+    public func search(query: String,limitIn: Int64): JsonArray{return searchIn("",query,limitIn)}
+    /** 带类型过滤的关键词检索；query 为空返回空数组（总览走 counts/recent）。 */
+    public func searchIn(kind: String,query: String,limitIn: Int64): JsonArray{
         scan();refreshStudyIndex();let out=JsonArray();let q=trimStr(byteSafePrefix(query,300))
         if(q.size==0){return out};let limit=if(limitIn>0&&limitIn<50){limitIn}else{50}
-        for(row in db().query("SELECT type,id,title,body,path,learning_id FROM content_index WHERE instr(lower(title||' '||body),lower(?))>0 ORDER BY CASE WHEN instr(lower(title),lower(?))>0 THEN 0 ELSE 1 END,updated_at DESC LIMIT ?",va([tv(q),tv(q),nv(limit)]))){
+        let sql=if(kind.size>0){"SELECT type,id,title,body,path,learning_id FROM content_index WHERE type=? AND instr(lower(title||' '||body),lower(?))>0 ORDER BY CASE WHEN instr(lower(title),lower(?))>0 THEN 0 ELSE 1 END,updated_at DESC LIMIT ?"}
+            else{"SELECT type,id,title,body,path,learning_id FROM content_index WHERE instr(lower(title||' '||body),lower(?))>0 ORDER BY CASE WHEN instr(lower(title),lower(?))>0 THEN 0 ELSE 1 END,updated_at DESC LIMIT ?"}
+        let rows=if(kind.size>0){db().query(sql,va([tv(kind),tv(q),tv(q),nv(limit)]))}else{db().query(sql,va([tv(q),tv(q),nv(limit)]))}
+        for(row in rows){
             if(row.text(0)=="resource"&&(!exists(row.text(4))||!hasPrefix(row.text(4),directory()+Path.Separator))){continue}
-            let o=JsonObject();o.put("type",JsonString(row.text(0)));o.put("id",JsonString(row.text(1)));o.put("title",JsonString(row.text(2)));o.put("path",JsonString(row.text(4)));o.put("learningId",JsonString(row.text(5)))
             let text=row.text(3);let start=text.toAsciiLower().indexOf(q.toAsciiLower()).getOrDefault({=>0})
-            o.put("snippet",JsonString(byteSafePrefix(String.fromUtf8(text.toArray()[start..]),240)));out.add(o)
+            out.add(hitJson(row,String.fromUtf8(text.toArray()[start..])))
         }
         return out
     }
