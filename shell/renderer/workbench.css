@@ -478,7 +478,7 @@ body.workspace-wide #view > .study-workspace { max-width:none; }
 .outcome-toolbar ~ p[role="status"] { overflow-wrap:anywhere; }
 /* 知识网络页（替代原「总览」）：网络图 / 时间线两种视图，共用右侧宽抽屉。
    表格化之前的占位样式全部删掉；配色与间距按"画布当主角、详情宽而松"重排。 */
-.knowledge-network { padding:16px 18px 14px; display:flex; flex-direction:column; gap:12px; min-height:calc(100vh - 200px); }
+.knowledge-network { padding:16px 18px 14px; display:flex; flex-direction:column; gap:12px; margin-bottom:0; }
 .knowledge-toolbar { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
 .knowledge-view-seg { display:flex; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--panel-sunk); flex:none; }
 .knowledge-seg { height:38px; padding:0 16px; border:0; background:transparent; color:var(--ink-2); font:inherit; font-size:13px; cursor:pointer; }
@@ -491,7 +491,7 @@ body.workspace-wide #view > .study-workspace { max-width:none; }
 .knowledge-labels-toggle[aria-pressed="false"] { opacity:.5; }
 .knowledge-reset { padding:8px 9px; line-height:0; }
 .knowledge-reset svg { width:16px; height:16px; }
-.knowledge-workspace { display:grid; grid-template-columns:minmax(0,1fr); border:1px solid var(--line); border-radius:16px; overflow:hidden; background:var(--panel-soft); flex:1; min-height:540px; }
+.knowledge-workspace { display:grid; grid-template-columns:minmax(0,1fr); border:1px solid var(--line); border-radius:16px; overflow:hidden; background:var(--panel-soft); flex:1; min-height:360px; }
 .knowledge-workspace.has-detail { grid-template-columns:minmax(0,1fr) 420px; }
 .knowledge-stage { min-width:0; display:flex; }
 .knowledge-scene { position:relative; flex:1; min-height:520px; background:radial-gradient(ellipse at 18% 0%,rgba(169,159,198,.10),transparent 58%),radial-gradient(ellipse at 85% 100%,rgba(120,160,140,.10),transparent 55%),var(--panel); }
@@ -521,7 +521,7 @@ body.workspace-wide #view > .study-workspace { max-width:none; }
 .knowledge-ev.mini .knowledge-ev-card { border-style:dashed; background:var(--panel); }
 .timeline-empty { position:static; inset:auto; min-height:360px; }
 /* 右侧宽抽屉：分区、行动作、大留白 */
-.knowledge-detail { min-width:0; display:flex; flex-direction:column; background:var(--panel); border-left:1px solid var(--line); max-height:calc(100vh - 240px); }
+.knowledge-detail { min-width:0; display:flex; flex-direction:column; background:var(--panel); border-left:1px solid var(--line); }
 .knowledge-detail[hidden] { display:none; }
 .knowledge-detail-head { display:flex; align-items:center; gap:10px; padding:18px 20px 8px; }
 .knowledge-detail-head h2 { margin:0; flex:1; font-size:19px; overflow-wrap:anywhere; }
@@ -568,6 +568,15 @@ body.workspace-wide #view > .study-workspace { max-width:none; }
 .knowledge-preview { margin:14px 0 4px; height:150px; border:1px dashed var(--line); border-radius:12px; display:flex; align-items:center; justify-content:center; background:var(--panel-soft); }
 .knowledge-preview-orb { width:112px; height:112px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:radial-gradient(circle at 35% 32%,rgba(181,170,205,.95),rgba(155,141,184,.5) 62%,rgba(155,141,184,0)); font-size:12.5px; text-align:center; padding:8px; overflow-wrap:anywhere; }
 .knowledge-pop .knowledge-pop-title { font-size:12px; color:var(--muted); margin-bottom:8px; }
+/* 图视图：刚好铺满、整页不出现拖动栏；时间线：自然生长，不强行铺满 */
+body[data-page="home"] .view { padding:14px 18px 14px; }
+.knowledge-network[data-view="graph"] { height:100%; }
+.knowledge-network[data-view="graph"] .knowledge-workspace { min-height:0; }
+.knowledge-network[data-view="graph"] .knowledge-scene { min-height:0; }
+.knowledge-network[data-view="graph"] .knowledge-detail { height:100%; }
+.knowledge-network[data-view="timeline"] .knowledge-workspace { min-height:0; }
+.knowledge-network[data-view="timeline"] .knowledge-timeline { overflow:visible; }
+.knowledge-network[data-view="timeline"] .knowledge-detail { max-height:70vh; position:sticky; top:0; align-self:start; }
 @media(max-width:1180px){.knowledge-workspace.has-detail{grid-template-columns:minmax(0,1fr) 380px}.knowledge-detail{max-height:none}}
 @media(max-width:900px){.knowledge-workspace.has-detail{grid-template-columns:1fr}.knowledge-detail{border-left:0;border-top:1px solid var(--line);max-height:60vh}.knowledge-scene{min-height:380px}.knowledge-edit-cols{grid-template-columns:1fr}.knowledge-toolbar #knowledge-search{width:100%;order:3}}
 

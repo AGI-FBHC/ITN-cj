@@ -956,6 +956,7 @@ const knowledgeNet={data:{nodes:[],links:[]},selected:'',yaw:.28,pitch:.12,zoom:
 const KNOWLEDGE_SWATCHES=['#8B7DA8','#5A8DEE','#2FB8A6','#E4B363','#E07A5F','#C77DFF','#7BC96F','#E5679B'];
 function normalizeKnowledgeColor(v){const m=/^#?([0-9a-f]{6})$/i.exec(String(v||'').trim());return m?('#'+m[1].toUpperCase()):'';}
 function knowledgeRgb(node){const c=normalizeKnowledgeColor(node?.color);if(!c)return null;const n=parseInt(c.slice(1),16);return[(n>>16)&255,(n>>8)&255,n&255];}
+function knowledgePhase(id){let h=0;const s=String(id||'');for(let i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return (h%1000)/1000*Math.PI*2;}
 function knowledgeQuestion(q){const t=String(q||'');const i=t.indexOf('\n\n知识点背景');return i>0?t.slice(0,i):t;}
 function knowledgeHM(at){const d=new Date(at);return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
 function knowledgeDay(at){const d=new Date(at),t=new Date(),y=new Date(Date.now()-864e5);const same=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate();if(same(d,t))return '今天';if(same(d,y))return '昨天';return (d.getMonth()+1)+' 月 '+d.getDate()+' 日';}
@@ -1103,10 +1104,16 @@ function installKnowledgeCanvas(canvas){
   const ctx=canvas.getContext('2d'),host=canvas.parentElement;knowledgeNet.canvas=canvas;let hovered='',drag=null;
   const project=()=>{
     const nodes=knowledgeNet.visible || knowledgeNet.data.nodes,n=Math.max(1,nodes.length),w=host.clientWidth,h=host.clientHeight,scale=Math.min(w*.34,h*.36)*knowledgeNet.zoom;
+    const tick=performance.now()/1000;
+    knowledgeNet.offsets=knowledgeNet.offsets||{};
     return nodes.map((node,i)=>{
       const y=n===1?0:1-2*(i+.5)/n,r=Math.sqrt(Math.max(0,1-y*y)),angle=i*Math.PI*(3-Math.sqrt(5));let x=Math.cos(angle)*r,z=Math.sin(angle)*r;
       const cy=Math.cos(knowledgeNet.yaw),sy=Math.sin(knowledgeNet.yaw),cp=Math.cos(knowledgeNet.pitch),sp=Math.sin(knowledgeNet.pitch),xx=x*cy+z*sy,zz=z*cy-x*sy,yy=y*cp-zz*sp,depth=y*sp+zz*cp,perspective=3.4/(3.4-depth*.45);
-      return {...node,x:w/2+xx*scale*perspective,y:h/2+yy*scale*perspective,z:depth,r:(23+Math.min(7,node.recordCount||0))*perspective};
+      // 漂浮：每个节点按自己的相位缓慢浮动；选中的节点冻结在当前偏移（不再动）
+      let off=knowledgeNet.offsets[node.id];
+      if(node.id===knowledgeNet.selected){if(!off){off={x:0,y:0};knowledgeNet.offsets[node.id]=off;}}
+      else{const ph=knowledgePhase(node.id);off={x:Math.sin(tick*.22+ph)*7+Math.sin(tick*.09+ph*2.1)*3,y:Math.cos(tick*.19+ph*1.7)*6+Math.cos(tick*.07+ph*3.3)*2.5};knowledgeNet.offsets[node.id]=off;}
+      return {...node,x:w/2+xx*scale*perspective+off.x,y:h/2+yy*scale*perspective+off.y,z:depth,r:(23+Math.min(7,node.recordCount||0))*perspective};
     }).sort((a,b)=>a.z-b.z);
   };
   const draw=()=>{
@@ -1121,8 +1128,9 @@ function installKnowledgeCanvas(canvas){
         ctx.beginPath();if(ctx.roundRect){ctx.roundRect(mx-tw/2,my-th/2,tw,th,9);}else{ctx.rect(mx-tw/2,my-th/2,tw,th);}ctx.fillStyle=panel;ctx.fill();ctx.strokeStyle=line;ctx.lineWidth=1;ctx.stroke();ctx.fillStyle=ink;ctx.fillText(text,mx,my);knowledgeNet.linkLabels.push({text,from:link.from,to:link.to,x:Math.round(mx),y:Math.round(my)});
       }
     }
-    for(const p of points){const selected=p.id===knowledgeNet.selected,hover=p.id===hovered,r=p.r*(selected||hover?1.16:1),gradient=ctx.createRadialGradient(p.x-r*.2,p.y-r*.2,0,p.x,p.y,r),rgb=knowledgeRgb(p);
-      if(rgb){const[cr,cg,cb]=rgb;gradient.addColorStop(0,`rgba(${cr},${cg},${cb},.92)`);gradient.addColorStop(.35,`rgba(${cr},${cg},${cb},.78)`);gradient.addColorStop(.55,`rgba(${cr},${cg},${cb},.56)`);gradient.addColorStop(.72,`rgba(${cr},${cg},${cb},.3)`);gradient.addColorStop(.88,`rgba(${cr},${cg},${cb},.12)`);gradient.addColorStop(1,`rgba(${cr},${cg},${cb},0)`);}
+    for(const p of points){const selected=p.id===knowledgeNet.selected,hover=p.id===hovered,r=p.r*(selected||hover?1.16:1),gradient=ctx.createRadialGradient(p.x-r*.2,p.y-r*.2,0,p.x,p.y,r);
+      const base=knowledgeRgb(p)||[169,155,196],deepen=selected?.72:1,ce=[Math.round(base[0]*deepen),Math.round(base[1]*deepen),Math.round(base[2]*deepen)];
+      if(knowledgeRgb(p)||selected){const[cr,cg,cb]=ce;gradient.addColorStop(0,`rgba(${cr},${cg},${cb},${selected?.96:.92})`);gradient.addColorStop(.35,`rgba(${cr},${cg},${cb},.78)`);gradient.addColorStop(.55,`rgba(${cr},${cg},${cb},.56)`);gradient.addColorStop(.72,`rgba(${cr},${cg},${cb},.3)`);gradient.addColorStop(.88,`rgba(${cr},${cg},${cb},.12)`);gradient.addColorStop(1,`rgba(${cr},${cg},${cb},0)`);}
       else{gradient.addColorStop(0,'rgba(181,170,205,.9)');gradient.addColorStop(.35,'rgba(169,155,196,.78)');gradient.addColorStop(.55,'rgba(155,141,184,.56)');gradient.addColorStop(.72,'rgba(155,141,184,.3)');gradient.addColorStop(.88,'rgba(155,141,184,.12)');gradient.addColorStop(1,'rgba(155,141,184,0)');}
       ctx.globalAlpha=dimmed&&!dimmed.has(p.id)?0.22:1;
       ctx.fillStyle=gradient;ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fill();
@@ -1136,7 +1144,11 @@ function installKnowledgeCanvas(canvas){
   canvas.onpointermove=e=>{if(drag){const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.abs(dx)+Math.abs(dy)>2)drag.moved=true;knowledgeNet.yaw+=dx*.006;knowledgeNet.pitch=Math.max(-1.25,Math.min(1.25,knowledgeNet.pitch+dy*.006));drag.x=e.clientX;drag.y=e.clientY;draw();}else{const p=hit(e);if((p?.id || '')!==hovered){hovered=p?.id || '';canvas.style.cursor=p?'pointer':'grab';canvas.title=p?.title || '拖动旋转，滚轮缩放';draw();}}};
   canvas.onpointerup=e=>{const moved=drag?.moved;drag=null;if(!moved){const node=hit(e);if(node)openKnowledgePoint(node.id).catch(err=>toast(err.message));}};canvas.onpointercancel=()=>{drag=null;};
   canvas.addEventListener('wheel',e=>{e.preventDefault();knowledgeNet.zoom=Math.max(.55,Math.min(1.8,knowledgeNet.zoom*Math.exp(-e.deltaY*.001)));draw();},{passive:false});
-  state.knowledgeObserver?.disconnect();state.knowledgeObserver=new ResizeObserver(draw);state.knowledgeObserver.observe(host);knowledgeNet.draw=draw;draw();
+  knowledgeNet.stop?.();
+  state.knowledgeObserver?.disconnect();state.knowledgeObserver=new ResizeObserver(draw);state.knowledgeObserver.observe(host);knowledgeNet.draw=draw;
+  const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if(reduced){draw();}
+  else{let raf=0;const frame=()=>{raf=0;if(!canvas.isConnected){return;}draw();raf=requestAnimationFrame(frame);};raf=requestAnimationFrame(frame);knowledgeNet.stop=()=>{if(raf)cancelAnimationFrame(raf);raf=0;};}
 }
 function renderKnowledgeGraphStage(stage){
   const scene=el('div','knowledge-scene'),canvas=el('canvas','knowledge-canvas');canvas.setAttribute('aria-hidden','true');scene.appendChild(canvas);
@@ -1217,7 +1229,7 @@ PAGES.home.render=async function(){
   knowledgeNet.view=state.knowledgeView==='timeline'?'timeline':'graph';
   knowledgeNet.showLinkLabels=state.knowledgeLinkLabels!==false;knowledgeNet.linkLabels=[];
   knowledgeNet.data=await api('/api/knowledge/graph',{});if(generation!==state.navigationGeneration)return;knowledgeNet.visible=null;knowledgeNet.timelineQuery='';
-  const page=el('section','card knowledge-network');page.id='knowledge-page';
+  const page=el('section','card knowledge-network');page.id='knowledge-page';page.dataset.view=knowledgeNet.view;
   const toolbar=el('div','knowledge-toolbar');
   const seg=el('div','knowledge-view-seg');
   for(const [key,label] of [['graph','网络图'],['timeline','时间线']]){const b=btn(label,'knowledge-seg'+(knowledgeNet.view===key?' on':''),()=>{if(knowledgeNet.view!==key)setKnowledgeView(key);});b.dataset.view=key;seg.appendChild(b);}

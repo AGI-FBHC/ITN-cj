@@ -73,6 +73,10 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   check('the page defaults to the graph view',await page.locator('.knowledge-seg[data-view="graph"].on').count()===1&&await page.locator('.knowledge-canvas').count()===1);
   const pill=(await page.locator('#knowledge-count').innerText());
   check('counts live in a single pill',pill.includes('1 个知识点')&&pill.includes('0 条手动连接'));
+  check('the graph view fills the page without a scrollbar',await page.locator('#view').evaluate(e=>e.scrollHeight<=e.clientHeight+1&&e.scrollWidth<=e.clientWidth+1));
+  const samplePos=async(id)=>page.evaluate(nid=>{const p=knowledgeNet.projected.find(x=>x.id===nid);return p?{x:p.x,y:p.y}:null;},id);
+  const drift0=await samplePos(nodeId);await sleep(1300);const drift1=await samplePos(nodeId);
+  check('nodes drift slowly while untouched',!!drift0&&!!drift1&&Math.hypot(drift1.x-drift0.x,drift1.y-drift0.y)>0.8);
 
   // —— 聊天卡 → 详情抽屉
   await page.evaluate(pid=>startAgentTask('知识点测试：请解释输入与输出的约定',pid),proj.id);
@@ -83,6 +87,8 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   check('the card opens the wide drawer with the user-edited definition',(await page.locator('#knowledge-detail .knowledge-definition').innerText()).includes('本人修订'));
   check('the drawer offers four icon actions',await page.locator('#knowledge-detail .knowledge-act').count()===4&&await page.locator('#knowledge-detail .knowledge-act[data-act="ask"]').count()===1);
   check('drawer sections group concept, records and notes',await page.locator('#knowledge-detail .knowledge-sec').count()>=3);
+  const frozen0=await samplePos(nodeId);await sleep(1100);const frozen1=await samplePos(nodeId);
+  check('the selected node stops drifting',!!frozen0&&!!frozen1&&Math.hypot(frozen1.x-frozen0.x,frozen1.y-frozen0.y)<=0.8);
   check('the drawer shows the source workspace of the newest record',(await page.locator('#knowledge-detail').innerText()).includes('知识网络测试项目'));
 
   // —— 快速换色：点头部色点
@@ -158,6 +164,7 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   await page.locator('.knowledge-seg[data-view="timeline"]').click();
   await page.waitForSelector('.knowledge-timeline');
   check('the timeline replaces the canvas',await page.locator('.knowledge-canvas').count()===0&&await page.locator('.knowledge-timeline').count()===1);
+  check('the timeline is not force-stretched and scrolls with the page',await page.evaluate(()=>{const pg=document.querySelector('.knowledge-network');const tl=document.querySelector('.knowledge-timeline');return pg.dataset.view==='timeline'&&getComputedStyle(tl).overflowY==='visible';}));
   check('the range selector defaults to all',await page.locator('#knowledge-range').inputValue()==='0');
   check('the timeline groups entries by day',await page.locator('.knowledge-day').count()>=1);
   const recEv=page.locator('.knowledge-ev').filter({hasText:'请解释输入与输出的约定'}).first();
