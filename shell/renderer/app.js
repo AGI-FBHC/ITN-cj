@@ -651,9 +651,15 @@ let currentSection = "";
 
 async function go(page, section, opts) {
   const navigation = state.navigationGeneration = (state.navigationGeneration || 0) + 1;
+  state.notesListObserver?.disconnect(); state.notesListObserver = null;
+  state.objectFocus = opts?.focus || null;
   const target = PAGES[page] ? page : "home";
   current = target;
   currentSection = section || "";
+  const persistentDock = $("resource-dock");
+  if (persistentDock && persistentDock.parentElement !== document.querySelector(".app")) document.querySelector(".app").appendChild(persistentDock);
+  document.body.dataset.page = target;
+  document.body.classList.toggle("library-workspace", target === "kb");
   document.body.classList.toggle("workspace-wide", ["home", "report", "calibrate", "resources", "notes", "wrong"].includes(target));
   const hash = "#/" + target + (currentSection ? "/" + currentSection : "");
   try {
@@ -691,6 +697,7 @@ async function go(page, section, opts) {
   ta.innerHTML = "";
   if (meta.actions) for (const a of meta.actions()) ta.appendChild(a);
   const v = $("view");
+  v.setAttribute("aria-busy", "true");
   v.classList.remove("chat-blank");
   state.chatOpenSession = null;   // 整页要重建了，就地换会话的句柄作废
   v.innerHTML = '<div class="empty inline"><span class="spinner"></span> 加载中…</div>';
@@ -721,6 +728,7 @@ async function go(page, section, opts) {
   updateNavButtons();
   if (opts && opts.focus) focusInView(opts.focus);
   if (typeof workbenchAfterPage === "function") await workbenchAfterPage();
+  if (navigation === state.navigationGeneration) v.setAttribute("aria-busy", "false");
 }
 
 /** 面板里点过的条目：滚到主区对应位置并闪一下描边，不弹窗、不跳页。 */
@@ -4793,7 +4801,7 @@ async function closePlayer() {
   await savePlayProgress(true);
   root.hidden = true;
   document.body.classList.remove("player-open");
-  if (current === "resources") go("resources");
+  if (current === "resources") go("resources", currentSection);
 }
 
 async function togglePlayerFullscreen() {
@@ -4961,7 +4969,7 @@ PAGES.kb = {
       count.textContent = "显示 " + rows.length + " / " + docs.length + " 篇资料";
       if (!rows.length) list.appendChild(el("p", "muted", docs.length ? "没有匹配的文档，换个名称或状态试试。" : "还没有可读的资料。添加支持的文本文件后，点击准备资料。"));
       for (const d of rows) {
-        const item = el("div", "item library-document"); const ic = el("div", "file-icon"); ic.innerHTML = icon("file"); item.appendChild(ic);
+        const item = el("div", "item library-document"); item.dataset.path = d.path; item.dataset.status = d.status; const ic = el("div", "file-icon"); ic.innerHTML = icon("file"); item.appendChild(ic);
         const main = el("div", "grow"); main.appendChild(el("h3", "item-title", d.title || d.path));
         const meta = [d.sizeBytes >= 0 ? fmtSize(d.sizeBytes) : "大小暂不可用", d.chunks + " 个内容片段"];
         main.appendChild(el("p", "meta", meta.join(" · "))); main.appendChild(el("p", "muted sm library-path", d.path)); item.appendChild(main);
@@ -4978,6 +4986,7 @@ PAGES.kb = {
     let previewRequest = 0;
     async function preview(path, origin) {
       const request = ++previewRequest; previewHost.innerHTML = "";
+      list.querySelectorAll(".library-document").forEach(node => node.classList.toggle("selected", node.dataset.path === path));
       const box = cardOf({title: "资料原文", cls: "document-preview"}); previewHost.appendChild(box);
       const close = btn("收起原文", "ghost sm", () => { ++previewRequest; previewHost.innerHTML = ""; origin?.focus(); }); box.querySelector(".card-head").appendChild(close);
       box.appendChild(el("p", "muted sm", "这里展示上次准备资料时保存的内容，按片段顺序排列。"));
@@ -4993,7 +5002,8 @@ PAGES.kb = {
         } catch(e) { if (request !== previewRequest) return; more.textContent = "读取失败，点击重试"; toast(e.message); }
         finally { more.disabled = false; }
       }
-      close.focus(); previewHost.scrollIntoView({block: "nearest"}); await read();
+      if (origin?.dataset.autoPreview !== "true") close.focus();
+      previewHost.scrollIntoView({block: "nearest"}); await read();
     }
     const harvest = el("details", "card harvest-entry"); harvest.appendChild(el("summary", "item-title", "从网页或 GitHub 收集资料"));
     const harvestBody = el("div"); harvest.appendChild(harvestBody); let harvestLoaded = false;

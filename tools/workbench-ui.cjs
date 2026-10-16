@@ -10,7 +10,7 @@ module.exports=async function({base,post,check,dir}) {
   const nav=async name=>{
     if(name==='memory') { await page.locator('#rail [data-page="settings"]').click(); await page.locator('#panel-body [data-section="memory"]').click(); }
     else await page.locator('#rail [data-page="'+name+'"]').click();
-    await page.waitForTimeout(250);
+    await page.waitForFunction(()=>document.querySelector('#view')?.getAttribute('aria-busy')==='false');
   };
   const send=async text=>{
     const count=await page.evaluate(()=>state.chatTurns.length);
@@ -44,6 +44,7 @@ module.exports=async function({base,post,check,dir}) {
     const quiz=rows.find(r=>r.kind==='quiz');
     await page.locator('#view [data-resource="'+quiz.id+'"]').click();
     await page.waitForSelector('.resource-question');
+    check('outcome opens in its own workspace',await page.evaluate(()=>current==='resources')&&await page.locator('#outcome-reader #resource-dock').count()===1);
     check('structured quiz has four questions',await page.locator('.resource-question').count()===4);
     const q=page.locator('.resource-question').nth(1);
     await q.locator('input[value="0"]').check();
@@ -51,7 +52,7 @@ module.exports=async function({base,post,check,dir}) {
     await q.getByRole('button',{name:'已记录',exact:true}).waitFor();
     check('quiz displays server explanation',await q.locator('.quiz-feedback').textContent().then(t=>t.includes('正确答案')||t.includes('回答正确')));
     await page.screenshot({path:path.join(shots,'04-quiz.png')});
-    await page.reload();await page.waitForSelector('#chat-input');
+    await page.reload();await page.waitForSelector('.outcome-toolbar');
     await page.evaluate(id=>openLearningResource(id,1),quiz.id);
     await page.waitForSelector('.resource-question');
     check('quiz answer survives page reload',await page.locator('.resource-question').nth(1).getByRole('button',{name:'已记录',exact:true}).isDisabled());
@@ -97,6 +98,15 @@ module.exports=async function({base,post,check,dir}) {
     check('outcome type filter retains only quizzes',await page.locator('.outcome-grid .resource-entry').count()>0&&await page.locator('.outcome-grid .resource-entry-type').evaluateAll(nodes=>nodes.every(n=>n.textContent.includes('测试'))));
     await page.getByLabel('筛选成果类型').selectOption('');
     await page.screenshot({path:path.join(shots,'08-simple-outcomes.png')});
+    await post('/api/study/notes/save',{kbId:'kb',chapter:'输入与输出',title:'阅读第一条笔记',text:'先检查数据，再写结论。'});
+    await post('/api/study/notes/save',{kbId:'kb',chapter:'输入与输出',title:'阅读第二条笔记',text:'保留输入样例与中间状态。'});
+    await page.locator('.workspace-tabs [data-page="notes"]').click();await page.waitForSelector('.object-browser');
+    check('notes use a list and a readable detail pane',await page.locator('.object-list .object-row').count()===2&&await page.locator('.object-reader .note-body').isVisible());
+    await page.locator('.object-list .object-row').last().click();
+    await page.locator('.object-reader').getByRole('button',{name:'编辑',exact:true}).click();await page.locator('#nt-text').fill('编辑后的笔记正文仍保存在数据库。');
+    await page.locator('.dialog').getByRole('button',{name:'保存',exact:true}).click();
+    await page.waitForFunction(()=>document.querySelector('.object-reader .note-body')?.textContent.includes('编辑后的笔记'));
+    check('inline note selection preserves editing and persistence',(await post('/api/study/notes/list',{})).notes.some(n=>n.text.includes('编辑后的笔记')));
     for(const key of ['notes','wrong','network']) {
       await page.locator('.workspace-tabs [data-page="'+key+'"]').click();
       await page.waitForFunction(k=>current==='notes'&&state.resTab===k,key);
@@ -112,6 +122,7 @@ module.exports=async function({base,post,check,dir}) {
     check('settings search narrows categories',await page.locator('.settings-group [data-section]').count()===1);
     await page.getByLabel('搜索设置').fill('');
     await page.locator('#panel-body [data-section="memory"]').click();
+    await page.waitForSelector('.memory-workspace');
     check('memory is reachable inside settings',await page.locator('#memory-text').isVisible()&&await page.locator('#rail [data-page="settings"]').getAttribute('aria-current')==='page');
     let delayedSettings = false;
     await page.route('**/api/settings',async route=>{if(!delayedSettings){delayedSettings=true;await new Promise(r=>setTimeout(r,300));}await route.continue();});
@@ -120,11 +131,26 @@ module.exports=async function({base,post,check,dir}) {
     await page.evaluate(()=>go('memory'));await page.waitForTimeout(400);
     check('late settings response cannot overwrite memory page',await page.locator('#memory-text').isVisible()&&await page.locator('.settings-body').count()===0);
     await page.unroute('**/api/settings');
+    await page.evaluate(()=>{state.chapter=null;return go('learn');});
+    await page.waitForSelector('.study-mode-tabs');
+    check('study opens current chapter instead of duplicate overview cards',await page.locator('.chapter-article .chunk-card').count()>0&&await page.locator('.unit-steps').count()===0);
+    await page.locator('.study-mode-tabs [data-mode="practice"]').click();
+    check('practice is a focused task within the same chapter',await page.locator('.practice-mode').isVisible()&&await page.locator('.study-reader').isHidden());
+    await page.locator('.study-mode-tabs [data-mode="generate"]').click();
+    check('all four generation formats remain accessible',await page.locator('.generation-choice').count()===4);
+    await page.locator('.study-mode-tabs [data-mode="read"]').click();
+    await page.locator('.study-mode-tabs [data-mode="read"]').press('ArrowRight');
+    check('study task tabs support keyboard switching',await page.locator('.practice-mode').isVisible());
+    await page.locator('.study-mode-tabs [data-mode="practice"]').press('ArrowLeft');
+    const readBefore=(await post('/api/study/report',{kbId:'kb'})).readChunks;
+    const readSaved=page.waitForResponse(r=>r.url().endsWith('/api/study/read'));
+    await page.locator('.chunk-actions > button').first().click();await readSaved;
+    check('reader action persists actual study progress',(await post('/api/study/report',{kbId:'kb'})).readChunks!==readBefore);
     await page.setViewportSize({width:1024,height:768});await nav('resources');
     check('compact outcomes do not overflow',await page.locator('#view').evaluate(e=>e.scrollWidth<=e.clientWidth+1));
     await page.screenshot({path:path.join(shots,'09-simple-compact.png')});
     await page.setViewportSize({width:1440,height:960});
-    await nav('chat');await page.locator('#wb-artifacts').click();
+    await nav('chat');if(await page.locator('#resource-dock').isHidden())await page.locator('#wb-artifacts').click();
     await page.setViewportSize({width:1024,height:768});
     await page.screenshot({path:path.join(shots,'07-compact.png')});
     check('compact preview has reachable close control',await page.locator('#resource-dock').getByRole('button',{name:'关闭',exact:true}).isVisible());

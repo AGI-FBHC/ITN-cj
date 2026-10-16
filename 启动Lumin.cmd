@@ -1,2 +1,2 @@
 @echo off
-start "Lumin" "%~dp0dist\Lumin-0.4.5\Lumin.exe"
+start "Lumin" "%~dp0dist\Lumin-0.4.6\Lumin.exe"

@@ -85,8 +85,14 @@ function ensureResourceDock() {
     // 成果面板的宽度也要能拖：面板是动态创建的，拖动条得在这时候挂
     if (typeof installSplitters === 'function') installSplitters();
   }
-  dock.hidden = current !== 'chat' || !workbench.open;
-  document.body.classList.toggle('resource-open', !dock.hidden);
+  const reader = current === 'resources' ? $('outcome-reader') : null;
+  const embedded = !!reader;
+  if (embedded && dock.parentElement !== reader) reader.appendChild(dock);
+  if (!embedded && dock.parentElement !== document.querySelector('.app')) document.querySelector('.app').appendChild(dock);
+  dock.classList.toggle('embedded-resource', embedded);
+  dock.hidden = !workbench.open || (!embedded && current !== 'chat');
+  if (reader) reader.classList.toggle('has-selection', !dock.hidden);
+  document.body.classList.toggle('resource-open', !embedded && !dock.hidden);
   return dock;
 }
 
@@ -100,7 +106,7 @@ renderResourceDock = function () {
 function closeResourceDock() {
   workbench.open = false;
   ensureResourceDock();
-  $('wb-artifacts')?.focus();
+  (current === 'resources' ? document.querySelector('.outcome-grid .resource-entry.selected') : $('wb-artifacts'))?.focus();
 }
 
 async function openLearningResource(id, version) {
@@ -108,10 +114,14 @@ async function openLearningResource(id, version) {
     const token = ++workbench.loadToken;
     const resource = await api('/api/learning/resource', {id, version: version || 0});
     if (token !== workbench.loadToken) return;
-    if (current !== 'chat') await go('chat');
+    if (current !== 'chat' && !(current === 'resources' && $('outcome-reader'))) await go('chat');
     workbench.selected = resource;
     workbench.open = true;
     renderResourceDock();
+    document.querySelectorAll('.outcome-grid .resource-entry').forEach(node => {
+      const selected = node.dataset.resource === resource.id;
+      node.classList.toggle('selected', selected); node.setAttribute('aria-pressed', String(selected));
+    });
   } catch (e) { toast('读取资源失败：' + e.message); }
 }
 
@@ -328,6 +338,7 @@ async function workbenchAfterPage() {
   decorateWorkspace();
   const dock = ensureResourceDock();
   document.querySelector('.wb-toolbar')?.remove();
+  if (current === 'resources' && $('outcome-reader')) { if (workbench.open) renderResourceDock(); return; }
   if (current !== 'chat' || currentSection === 'overview') { dock.hidden = true; return; }
   const bar = el('div', 'wb-toolbar');
   /* 左边是这段对话的身份：📁 工作区 | 会话名（会话名由第一次提问自动生成，也能手动改） */
@@ -444,7 +455,11 @@ PAGES.resources.render = async function() {
   }
   create.appendChild(menu); toolbar.append(search, kind, create); view.appendChild(toolbar);
   const status = el('p', 'muted sm'); status.setAttribute('role', 'status'); view.appendChild(status);
-  const grid = el('div', 'resource-grid outcome-grid'); view.appendChild(grid);
+  const split = el('div', 'outcome-workspace');
+  const grid = el('div', 'resource-grid outcome-grid outcome-list'); split.appendChild(grid);
+  const reader = el('section', 'outcome-reader'); reader.id = 'outcome-reader'; reader.setAttribute('aria-label', '成果阅读区');
+  const placeholder = el('div', 'outcome-placeholder'); placeholder.append(el('h2', null, '选择一份成果'), el('p', 'muted', '在左侧选择讲义、练习或演示，在这里阅读、作答和导出。')); reader.appendChild(placeholder);
+  split.appendChild(reader); view.appendChild(split);
   let all = [];
   const paint = () => {
     state.outcomeQuery = search.value; state.outcomeKind = kind.value; grid.innerHTML = '';
@@ -453,12 +468,12 @@ PAGES.resources.render = async function() {
     if (!rows.length) {
       grid.appendChild(emptyState({inline: true, art: 'layers', title: all.length ? '没有找到匹配的成果' : '第一份成果，从一个主题开始', text: all.length ? '换个标题关键词或类型试试。' : '生成的讲义、实操、练习和演示会保存在这里，也可以切到上方查看笔记与错题。'}));
     }
-    for (const r of rows) grid.appendChild(resourceCard(r));
+    for (const r of rows) { const card = resourceCard(r); card.classList.toggle('selected', r.id === workbench.selected?.id); card.setAttribute('aria-pressed', String(r.id === workbench.selected?.id)); grid.appendChild(card); }
   };
   search.oninput = paint; kind.onchange = paint;
   const load = async () => {
     status.textContent = '正在读取学习成果…'; grid.innerHTML = '';
-    try { all = ((await api('/api/learning/resources', {})).resources || []).slice().sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))); paint(); }
+    try { all = ((await api('/api/learning/resources', {})).resources || []).slice().sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))); paint(); if (current === 'resources' && all.length && (!workbench.open || !all.some(r=>r.id===workbench.selected?.id))) await openLearningResource(all.some(r=>r.id===workbench.selected?.id) ? workbench.selected.id : all[0].id); }
     catch(e) { status.textContent = '读取失败：' + e.message; grid.appendChild(btn('重试', '', load)); }
   };
   await load();
@@ -564,5 +579,149 @@ PANELS.settings = {
   },
 };
 PANELS.memory = PANELS.settings;
+
+// List and reader stay together; the existing document and learning actions remain live.
+const libraryPageBeforeWorkspace = PAGES.kb.render;
+PAGES.kb.render = async function() {
+  const generation = state.navigationGeneration;
+  await libraryPageBeforeWorkspace.call(this);
+  if (generation !== state.navigationGeneration || current !== 'kb') return;
+  const view = $('view'), documents = view.querySelector('.library-documents'), preview = view.querySelector('.library-preview');
+  if (!documents || !preview) return;
+  const toolbar = view.querySelector('.library-toolbar');
+  toolbar.querySelector('h2')?.remove();
+  const libraries = kbSelector(()=>go('kb')); libraries.setAttribute('aria-label', '当前资料库'); toolbar.prepend(libraries);
+  const browser = el('div', 'document-browser'); browser.append(documents, preview); view.insertBefore(browser, view.querySelector('.harvest-entry'));
+  preview.setAttribute('aria-label', '资料阅读区');
+  const results = view.querySelector('.library-results'); documents.appendChild(results);
+  documents.appendChild(btn('返回文档列表', 'ghost sm search-reset', () => { results.innerHTML = ''; view.querySelector('[aria-label="搜索资料内容"]').value = ''; }));
+  const first = documents.querySelector('.library-document[data-status="ready"] button:not([disabled])') || documents.querySelector('.library-document button:not([disabled])');
+  if (first) { first.dataset.autoPreview='true'; first.click(); delete first.dataset.autoPreview; }
+};
+
+const studyPageBeforeWorkspace = PAGES.learn.render;
+PAGES.learn.render = async function() {
+  const generation = state.navigationGeneration;
+  await loadCfg(); if (generation !== state.navigationGeneration) return;
+  if (!hasKb() || !indexedKb()) { await studyPageBeforeWorkspace.call(this); return; }
+  const tree = await api('/api/study/tree', {kbId: state.kb}); if (generation !== state.navigationGeneration) return;
+  const chapters = tree.chapters || [];
+  if (!chapters.length) { await studyPageBeforeWorkspace.call(this); return; }
+  if (!chapters.some(c=>c.name===state.chapter)) state.chapter = (chapters.find(c=>!c.done) || chapters[0]).name;
+  const chapter = state.chapter, view = $('view'); view.innerHTML = '';
+  await renderChapter(view); if (generation !== state.navigationGeneration) return;
+  const header = view.firstElementChild, unit = view.querySelector('.unit-steps')?.closest('.card'), extra = view.querySelector('.chapter-extra');
+  if (!header || !unit) return;
+  header.classList.add('reader-heading'); header.querySelector('button')?.remove();
+  const originalSteps = [...unit.querySelectorAll('.unit-step')];
+  const reader = el('section', 'study-reader study-mode-panel'); reader.setAttribute('aria-label', '章节原文');
+  const toolbar = el('div', 'reader-tools');
+  originalSteps[0]?.querySelectorAll('button').forEach(b=>toolbar.appendChild(b));
+  originalSteps[2]?.querySelectorAll('button').forEach(b=>toolbar.appendChild(b));
+  reader.appendChild(toolbar);
+  const article = el('article', 'chapter-article');
+  for (const chunk of [...view.querySelectorAll('.chunk-card')]) {
+    const actions = chunk.querySelector('.chunk-actions'), buttons = actions ? [...actions.querySelectorAll('button')] : [];
+    if (actions && buttons.length > 1) {
+      const menu = el('details', 'reader-context'); menu.appendChild(el('summary', 'btn ghost sm', '更多操作'));
+      const menuBody = el('div', 'reader-context-menu'); buttons.slice(1).forEach(b=>menuBody.appendChild(b)); menu.appendChild(menuBody); actions.appendChild(menu);
+    }
+    article.appendChild(chunk);
+  }
+  reader.appendChild(article);
+  const practice = el('section', 'study-mode-panel practice-mode'); practice.setAttribute('aria-label', '本章练习');
+  if (originalSteps[1]) {
+    const step = originalSteps[1]; step.querySelector('.unit-idx')?.remove();
+    const start = [...step.querySelectorAll('button')].find(b=>b.textContent==='出题练习');
+    if (start) start.onclick = () => openQuiz(practice, chapter);
+    practice.appendChild(step);
+  }
+  practice.appendChild(el('p', 'muted', '围绕当前章节作答，答案与解释会保存到学习记录。答错的题可在错题本复习。'));
+  const generate = el('section', 'study-mode-panel generate-mode'); generate.setAttribute('aria-label', '本章生成');
+  generate.append(el('h2', null, '把这一章变成学习成果'), el('p', 'muted', '选择需要的形式，生成前可以修改主题。'));
+  const choices = el('div', 'generation-choices');
+  const known = extra ? [...extra.querySelectorAll('button')] : [];
+  const descriptions = ['整理本章概念、例子与要点', '生成带答案与解析的练习'];
+  known.slice(0,2).forEach((button,i)=>{ const choice = el('div', 'generation-choice'); choice.append(button, el('p', 'muted sm', descriptions[i])); choices.appendChild(choice); });
+  for (const [label,description] of [['在线演示','把章节重点整理成可播放的演示'],['实操指南','围绕章节设计可动手的任务']]) {
+    const choice = el('div', 'generation-choice'); choice.append(btn(label, '', () => promptLearning('请根据资料中的《'+chapter+'》生成一份'+label+'。')), el('p', 'muted sm', description)); choices.appendChild(choice);
+  }
+  generate.appendChild(choices);
+  const tabs = el('nav', 'study-mode-tabs'); tabs.setAttribute('aria-label', '本章任务'); tabs.setAttribute('role','tablist');
+  const modes = [['read','阅读',reader], ['practice','练习',practice], ['generate','生成',generate]];
+  if (state.studyModeChapter !== chapter) {state.studyModeChapter=chapter; state.studyMode='read';}
+  const select = key => {state.studyMode=key; for (const [id,,panel] of modes) {panel.hidden=id!==key; const button=tabs.querySelector('[data-mode="'+id+'"]');button.setAttribute('aria-selected',String(id===key));button.tabIndex=id===key?0:-1;} };
+  for (const [key,label,panel] of modes) {const button=btn(label,'',()=>select(key));button.dataset.mode=key;button.setAttribute('role','tab');button.id='study-tab-'+key;button.setAttribute('aria-controls','study-panel-'+key);panel.id='study-panel-'+key;panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby',button.id);tabs.appendChild(button);}
+  tabs.onkeydown = event => { const keys=modes.map(m=>m[0]);let index=keys.indexOf(state.studyMode);if(event.key==='ArrowRight')index=(index+1)%keys.length;else if(event.key==='ArrowLeft')index=(index+keys.length-1)%keys.length;else if(event.key==='Home')index=0;else if(event.key==='End')index=keys.length-1;else return;event.preventDefault();select(keys[index]);tabs.querySelector('[data-mode="'+keys[index]+'"]').focus(); };
+  const complete = originalSteps[3]?.querySelector('button'); if (complete) { complete.className='btn sm ghost complete-chapter'; header.querySelector('.card-head').appendChild(complete); }
+  view.replaceChildren(header,tabs,reader,practice,generate); select(state.studyMode || 'read');
+  await renderPanel(true);
+};
+const studyPanelBeforeWorkspace = PANELS.learn;
+PANELS.learn = {...studyPanelBeforeWorkspace, async render(body) {
+  await studyPanelBeforeWorkspace.render(body, {foot:()=>{}});
+  if (hasKb()) { const selector = kbSelector(()=>{state.chapter=null;go('learn');}); selector.setAttribute('aria-label','学习资料范围'); body.prepend(selector); }
+}};
+
+const homePageBeforeWorkspace = PAGES.home.render;
+PAGES.home.render = async function() {
+  const generation=state.navigationGeneration;await homePageBeforeWorkspace.call(this);if(generation!==state.navigationGeneration)return;
+  const view=$('view'),hero=view.querySelector('.study-continue');if(!hero)return;
+  const sections=[...view.children],recent=sections.find(n=>n.querySelector('h2')?.textContent==='最近成果'),advice=sections.find(n=>n.querySelector('h2')?.textContent==='今日建议');
+  const layout=el('div','home-workspace'),main=el('div','home-primary'),aside=el('aside','home-recent');
+  main.appendChild(hero);if(advice)main.appendChild(advice);if(recent)aside.appendChild(recent);layout.append(main,aside);view.prepend(layout);
+};
+const growthPageBeforeWorkspace = PAGES.report.render;
+PAGES.report.render = async function() {
+  const generation=state.navigationGeneration;await growthPageBeforeWorkspace.call(this);if(generation!==state.navigationGeneration)return;
+  const view=$('view'),calendar=[...view.children].find(n=>n.querySelector('h2')?.textContent==='学习日历');if(!calendar)return;
+  const layout=el('div','growth-workspace'),aside=el('aside','growth-aside');
+  const nudge=view.querySelector('.review-nudge');if(nudge)aside.appendChild(nudge);
+  for(const details of [...view.querySelectorAll(':scope > .growth-details')])aside.appendChild(details);
+  layout.append(calendar,aside);view.appendChild(layout);
+};
+const memoryPageBeforeWorkspace = PAGES.memory.render;
+PAGES.memory.render = async function() {
+  const generation=state.navigationGeneration;await memoryPageBeforeWorkspace.call(this);if(generation!==state.navigationGeneration)return;
+  const view=$('view'),sections=[...view.children];if(sections.length<3)return;
+  const [overview,form,saved]=sections,layout=el('div','memory-workspace');layout.append(saved,form);
+  const explanation=el('details','memory-explanation');explanation.appendChild(el('summary',null,'学习记忆如何使用'));
+  const auto=overview.querySelector('label');if(auto)view.prepend(auto);explanation.appendChild(overview);
+  view.append(layout,explanation);overview.classList.add('memory-context');
+};
+
+const notesPageBeforeWorkspace = PAGES.notes.render;
+PAGES.notes.render = async function() {
+  const generation=state.navigationGeneration;
+  await notesPageBeforeWorkspace.call(this);
+  if(generation!==state.navigationGeneration || state.resTab==='network')return;
+  const view=$('view'),card=[...view.querySelectorAll(':scope > .card')].find(n=>!n.classList.contains('res-tabs'));
+  const source=card?.querySelector('.list');
+  if(!source || !source.querySelector('.item[data-id]'))return;
+  const browser=el('div','outcome-workspace object-browser'),list=el('nav','object-list'),reader=el('section','object-reader');
+  list.setAttribute('aria-label',state.resTab==='wrong'?'错题列表':'笔记列表');reader.setAttribute('aria-label',state.resTab==='wrong'?'错题详情':'笔记正文');
+  source.classList.add('object-source');source.hidden=true;browser.append(list,reader);card.appendChild(browser);
+  const observer=new MutationObserver(()=>sync());
+  function sync(){
+    observer.disconnect();
+    const items=[...source.querySelectorAll(':scope > .item[data-id]')];list.innerHTML='';
+    if(!items.length){reader.replaceChildren(source.firstElementChild || el('p','muted','这个条件下没有记录。'));observer.observe(source,{childList:true});return;}
+    const key=state.resTab==='wrong'?'selectedWrong':'selectedNote';
+    const selected=items.find(n=>n.dataset.id===(state.objectFocus || state[key])) || items[0];state.objectFocus=null;
+    function select(item){
+      observer.disconnect();
+      state[key]=item.dataset.id;reader.replaceChildren(item);
+      list.querySelectorAll('button').forEach(b=>{const active=b.dataset.id===item.dataset.id;b.classList.toggle('selected',active);b.setAttribute('aria-pressed',String(active));});
+      observer.observe(source,{childList:true});
+    }
+    for(const item of items){
+      const button=el('button','object-row');button.type='button';button.dataset.id=item.dataset.id;
+      button.append(el('strong',null,item.querySelector('.item-title')?.textContent || '无标题'),el('span','muted sm',item.querySelector('.meta')?.textContent || '本机记录'));
+      button.onclick=()=>select(item);list.appendChild(button);
+    }
+    select(selected);observer.observe(source,{childList:true});
+  }
+  sync();state.notesListObserver=observer;
+};
 
 boot();
