@@ -78,6 +78,35 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   const drift0=await samplePos(nodeId);await sleep(1300);const drift1=await samplePos(nodeId);
   check('nodes drift slowly while untouched',!!drift0&&!!drift1&&Math.hypot(drift1.x-drift0.x,drift1.y-drift0.y)>0.8);
 
+  // —— 点选：抽屉打开不改变画布高度、抖动也算点击、页面无滚动条
+  await post('/api/knowledge/save',{title:'点选测试节点',definition:'用于点选与抽屉稳定性回归。'});
+  await page.evaluate(()=>refreshKnowledgeNetwork());
+  await until(async()=>await page.evaluate(()=>knowledgeNet.data.nodes.length===2));
+  const rectNow=async()=>page.evaluate(()=>{const c=document.querySelector('.knowledge-canvas').getBoundingClientRect();return{x:Math.round(c.x),y:Math.round(c.y),w:Math.round(c.width),h:Math.round(c.height)};});
+  const rect0=await rectNow();
+  const pickProj=async(skip)=>page.evaluate(s=>{const arr=knowledgeNet.projected.filter(q=>q.id!==(s||knowledgeNet.selected||''));const q=arr[arr.length-1];return{x:q.x,y:q.y,id:q.id};},skip||'');
+  const probeA=await pickProj();
+  await page.mouse.click(rect0.x+probeA.x,rect0.y+probeA.y);
+  await page.waitForSelector('#knowledge-detail:not([hidden])');
+  check('clicking a node on the canvas selects it',await page.evaluate(nid=>knowledgeNet.selected===nid,probeA.id));
+  const rect1=await rectNow();
+  check('opening the drawer no longer resizes the canvas height',Math.abs(rect1.h-rect0.h)<=2);
+  check('the drawer opening keeps the page free of scrollbars',await page.locator('#view').evaluate(e=>e.scrollHeight<=e.clientHeight+1&&e.scrollWidth<=e.clientWidth+1));
+  check('every node stays inside the visible canvas',await page.evaluate(()=>{const c=document.querySelector('.knowledge-canvas');return knowledgeNet.projected.every(p=>p.x>=0&&p.y>=0&&p.x<=c.clientWidth&&p.y<=c.clientHeight);}));
+  const yaw0=await page.evaluate(()=>knowledgeNet.yaw);
+  const probeB=await pickProj(await page.evaluate(()=>knowledgeNet.selected));
+  const rect2=await rectNow();
+  await page.mouse.move(rect2.x+probeB.x,rect2.y+probeB.y);await page.mouse.down();await page.mouse.move(rect2.x+probeB.x+3,rect2.y+probeB.y+1);await page.mouse.up();
+  await until(async()=>await page.evaluate(nid=>knowledgeNet.selected===nid,probeB.id));
+  check('a slightly shaky click still selects the node',true);
+  check('tiny pointer jitter no longer nudges the camera',await page.evaluate(y=>Math.abs(knowledgeNet.yaw-y)<1e-9,yaw0));
+  const gRect=await rectNow();
+  const probeC=await pickProj(await page.evaluate(()=>knowledgeNet.selected));
+  await page.mouse.move(gRect.x+probeC.x,gRect.y+probeC.y);await page.mouse.down();await page.mouse.move(gRect.x+probeC.x+40,gRect.y+probeC.y+20);await page.mouse.up();
+  check('a real drag rotates instead of selecting',await page.evaluate(y=>Math.abs(knowledgeNet.yaw-y)>1e-6,yaw0)&&await page.evaluate(nid=>knowledgeNet.selected!==nid,probeC.id));
+  await page.getByRole('button',{name:'收起',exact:true}).click();
+  await until(async()=>await page.evaluate(()=>document.getElementById('knowledge-detail').hidden));
+
   // —— 聊天卡 → 详情抽屉
   await page.evaluate(pid=>startAgentTask('知识点测试：请解释输入与输出的约定',pid),proj.id);
   await page.waitForSelector('.knowledge-recorded',{timeout:60000});
@@ -135,7 +164,7 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   await page.locator('#knowledge-title').fill('验证与边界');
   await page.locator('#knowledge-definition').fill('验证要覆盖正常、最小、最大与异常样例。');
   await page.getByRole('button',{name:'保存知识点',exact:true}).click();
-  await until(async()=>(await post('/api/knowledge/graph',{})).nodes.length===2);
+  await until(async()=>(await post('/api/knowledge/graph',{})).nodes.length===3);
   g=await post('/api/knowledge/graph',{});const second=g.nodes.find(n=>n.title==='验证与边界').id;
   await until(async()=>(await page.locator('#knowledge-detail').innerText()).includes('验证与边界'));
   check('manual node creation opens its own drawer',true);
@@ -170,7 +199,7 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   const recEv=page.locator('.knowledge-ev').filter({hasText:'请解释输入与输出的约定'}).first();
   check('records appear as cards with question and workspace',(await recEv.innerText()).includes('知识网络测试项目'));
   check('a record card links back to the chat and to the graph',await recEv.getByRole('button',{name:'回到这次对话'}).count()===1&&await recEv.getByRole('button',{name:'在图里看'}).count()===1);
-  check('a record-less manual node shows as a dashed created entry',await page.locator('.knowledge-ev.mini').count()===1&&(await page.locator('.knowledge-ev.mini').innerText()).includes('手动添加'));
+  check('a record-less manual node shows as a dashed created entry',await page.locator('.knowledge-ev.mini').count()>=1&&(await page.locator('.knowledge-ev.mini').first().innerText()).includes('手动添加'));
   await page.locator('#knowledge-search').fill('绝不存在-ZZQ-7788');
   await until(async()=>await page.locator('.knowledge-ev').count()===0);
   check('unmatched timeline search shows nothing',true);
@@ -232,9 +261,9 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   await openNode(second);
   await page.getByRole('button',{name:'删除知识点',exact:true}).click();
   await page.getByRole('button',{name:'确认删除',exact:true}).click();
-  await until(async()=>(await post('/api/knowledge/graph',{})).nodes.length===1);
+  await until(async()=>(await post('/api/knowledge/graph',{})).nodes.length===2);
   g=await post('/api/knowledge/graph',{});
-  check('deleting a node removes it and its links in one step',g.nodes.length===1&&g.links.length===0);
+  check('deleting a node removes it and its links in one step',g.nodes.length===2&&g.links.length===0);
   check('notes of a deleted node stay searchable',(await post('/api/personal/search',{query:'MANUAL-NOTE-2211'})).hits.some(h=>h.type==='note'));
 
   // —— 截图与窄屏

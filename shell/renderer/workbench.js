@@ -1140,9 +1140,15 @@ function installKnowledgeCanvas(canvas){
     }
   };
   const hit=e=>{const rect=canvas.getBoundingClientRect(),x=e.clientX-rect.left,y=e.clientY-rect.top;return [...knowledgeNet.projected].reverse().find(p=>Math.hypot(p.x-x,p.y-y)<Math.max(24,p.r));};
-  canvas.onpointerdown=e=>{drag={x:e.clientX,y:e.clientY,moved:false};canvas.setPointerCapture(e.pointerId);};
-  canvas.onpointermove=e=>{if(drag){const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.abs(dx)+Math.abs(dy)>2)drag.moved=true;knowledgeNet.yaw+=dx*.006;knowledgeNet.pitch=Math.max(-1.25,Math.min(1.25,knowledgeNet.pitch+dy*.006));drag.x=e.clientX;drag.y=e.clientY;draw();}else{const p=hit(e);if((p?.id || '')!==hovered){hovered=p?.id || '';canvas.style.cursor=p?'pointer':'grab';canvas.title=p?.title || '拖动旋转，滚轮缩放';draw();}}};
-  canvas.onpointerup=e=>{const moved=drag?.moved;drag=null;if(!moved){const node=hit(e);if(node)openKnowledgePoint(node.id).catch(err=>toast(err.message));}};canvas.onpointercancel=()=>{drag=null;};
+  canvas.onpointerdown=e=>{drag={x:e.clientX,y:e.clientY,moved:false,dist:0};canvas.setPointerCapture(e.pointerId);};
+  canvas.onpointermove=e=>{if(drag){
+      const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.dist+=Math.abs(dx)+Math.abs(dy);
+      // 4px 死区：手抖不转相机（否则每次想点节点都会把视角蹭偏，"定位飘"就是这么来的）
+      if(drag.dist>4){drag.moved=true;knowledgeNet.yaw+=dx*.006;knowledgeNet.pitch=Math.max(-1.25,Math.min(1.25,knowledgeNet.pitch+dy*.006));draw();}
+      drag.x=e.clientX;drag.y=e.clientY;
+    }else{const p=hit(e);if((p?.id || '')!==hovered){hovered=p?.id || '';canvas.style.cursor=p?'pointer':'grab';canvas.title=p?.title || '拖动旋转，滚轮缩放';draw();}}};
+  // 6px 以内的抖动仍算"点击"（选节点优先于转视角）；超过 6px 才认定是拖拽
+  canvas.onpointerup=e=>{const wasDrag=drag&&drag.dist>6;drag=null;if(!wasDrag){const node=hit(e);if(node)openKnowledgePoint(node.id).catch(err=>toast(err.message));}};canvas.onpointercancel=()=>{drag=null;};
   canvas.addEventListener('wheel',e=>{e.preventDefault();knowledgeNet.zoom=Math.max(.55,Math.min(1.8,knowledgeNet.zoom*Math.exp(-e.deltaY*.001)));draw();},{passive:false});
   knowledgeNet.stop?.();
   state.knowledgeObserver?.disconnect();state.knowledgeObserver=new ResizeObserver(draw);state.knowledgeObserver.observe(host);knowledgeNet.draw=draw;

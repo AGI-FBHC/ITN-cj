@@ -491,7 +491,7 @@ body.workspace-wide #view > .study-workspace { max-width:none; }
 .knowledge-labels-toggle[aria-pressed="false"] { opacity:.5; }
 .knowledge-reset { padding:8px 9px; line-height:0; }
 .knowledge-reset svg { width:16px; height:16px; }
-.knowledge-workspace { display:grid; grid-template-columns:minmax(0,1fr); border:1px solid var(--line); border-radius:16px; overflow:hidden; background:var(--panel-soft); flex:1; min-height:360px; }
+.knowledge-workspace { display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr); border:1px solid var(--line); border-radius:16px; overflow:hidden; background:var(--panel-soft); flex:1; min-height:360px; }
 .knowledge-workspace.has-detail { grid-template-columns:minmax(0,1fr) 420px; }
 .knowledge-stage { min-width:0; display:flex; }
 .knowledge-scene { position:relative; flex:1; min-height:520px; background:radial-gradient(ellipse at 18% 0%,rgba(169,159,198,.10),transparent 58%),radial-gradient(ellipse at 85% 100%,rgba(120,160,140,.10),transparent 55%),var(--panel); }
@@ -569,11 +569,12 @@ body.workspace-wide #view > .study-workspace { max-width:none; }
 .knowledge-preview-orb { width:112px; height:112px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:radial-gradient(circle at 35% 32%,rgba(181,170,205,.95),rgba(155,141,184,.5) 62%,rgba(155,141,184,0)); font-size:12.5px; text-align:center; padding:8px; overflow-wrap:anywhere; }
 .knowledge-pop .knowledge-pop-title { font-size:12px; color:var(--muted); margin-bottom:8px; }
 /* 图视图：刚好铺满、整页不出现拖动栏；时间线：自然生长，不强行铺满 */
-body[data-page="home"] .view { padding:14px 18px 14px; }
-.knowledge-network[data-view="graph"] { height:100%; }
+body[data-page="home"] .view { padding:14px 18px 14px; min-height:0; }
+.knowledge-network[data-view="graph"] { height:100%; min-height:0; overflow:hidden; }
 .knowledge-network[data-view="graph"] .knowledge-workspace { min-height:0; }
+.knowledge-network[data-view="graph"] .knowledge-stage { min-height:0; }
 .knowledge-network[data-view="graph"] .knowledge-scene { min-height:0; }
-.knowledge-network[data-view="graph"] .knowledge-detail { height:100%; }
+.knowledge-network[data-view="graph"] .knowledge-detail { min-height:0; }
 .knowledge-network[data-view="timeline"] .knowledge-workspace { min-height:0; }
 .knowledge-network[data-view="timeline"] .knowledge-timeline { overflow:visible; }
 .knowledge-network[data-view="timeline"] .knowledge-detail { max-height:70vh; position:sticky; top:0; align-self:start; }
