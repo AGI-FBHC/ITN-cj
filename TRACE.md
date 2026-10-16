@@ -4090,3 +4090,12 @@ read_chunk 读得到原文并带回库标识与正文。
 - tools/presentation-check.cjs9/9：未确认时不建PPT、明确免确认生成真实PK/OOXML、草稿不进已确认目录、设计与预览保存、4页+4份讲者备注可由python-pptx打开、无工具栏随机按钮、确认字段齐全、明确产物卡、无JS异常。PowerPoint真实渲染4页至tmp/presentation-shots/actual，逐页目视无文字溢出或相互遮盖。
 - 真实mimo-v2.6-flash制作实测--case presentation1/1，28.8秒，4页可编辑PPTX、原生构建服务/候选预览通过；独立临时目录lumin-real-features-3p0l37_e，不写用户库。包最终统一升版交付，旧0.7.0可回滚。
 - 后续继续：确认后复制“个性资源”、多格式内容索引/笔记错题索引与跨会话搜索；再知识库管理迁移和知识网络。
+
+### 个性资源确认入库与索引阶段完成
+- 新增PersonalStore及personal_resources/content_index表：默认已确认目录<dataDir>/artifacts（可设置）；未来生成一律先drafts；只有用户确认的副本进目录，旧目录既有文件保留登记。保存前confirmed校验；相同来源/相同字节幂等，迭代创建独立副本并保留旧版，PPT的设计JSON/预览伴随复制且不会被误登记成三份资源。
+- 讲义/测验等副本绑定learningId+具体版本，即使后来模型修订，打开确认版仍读该不可变版本；跨会话get_learning_context只列当前会话草稿或当前个性目录内已确认的资源。API原资源版本读取仍保留，学习课程继续可读生成讲义，不因个性入库流程受阻。
+- 个性资源页替换原“生成成果”，多格式筛选+正文搜索，进页面不自动打开随机资源；“本地文件”只读预览/手工选择，确认入库才复制。右侧候选预览“存入个性资源”会显示来源、存放目录和名称并可选择“这版先不存”；不直接存所有不满意迭代。
+- 持久正文索引覆盖HTML/MD/文本、PPTX/DOCX、PDF；图片按名称检索。pdfjs-dist6.4.299随包部署（精确版本+平台生产依赖），PDF使用文本提取而非假装文件名检索即完成。资料目录外新文件不自动入库。笔记/作答保存后同步索引，删笔记移除索引；全局palette合并个性资源/笔记/错题（后续知识点同索引），点击定位对应项。
+- Agent新增search_personal_resources/read_personal_resource/save_personal_resource，保存工具必须本轮用户明确要求存入，且文件必须本会话候选或本轮点名路径；满意不自动等于保存。新个人内容检索不暴露未确认候选文件。
+- 验证personal-check23/23：不确认不入库/不进搜索、确认副本/旧版不变/幂等/第二版、PPT原格式与伴随预览、DOCX/PDF正文可搜、笔记/错题索引与删除、首页无随机文件、HTML脚本沙箱无same-origin、取消确认无副本、全局搜索正文、无JS异常。learning-check --ui99/99（增加不可变确认版本），deck-export-check全通过（PPT入口先确认且不再直接交旧导出器，DOCX保留）。PDF样例用Poppler实际渲染tmp/personal-pdf-check.png，文本正常。索引开发中的空learningId分割问题、PDF.js6清理API变化已在验收前修复。
+- 后续：知识库管理迁移与旧网页版主节点知识网络/自动记录/手动连线/笔记/来源工作区新会话。最后统一升版、全回归、打包及哈希/隔离冒烟。

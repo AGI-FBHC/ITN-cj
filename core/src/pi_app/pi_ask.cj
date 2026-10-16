@@ -17,6 +17,7 @@ import itn_desktop_core.learning.LearningStore
 import itn_desktop_core.resource.labelOf
 import itn_desktop_core.agent.learningTools
 import itn_desktop_core.agent.presentationTools
+import itn_desktop_core.agent.personalTools
 import itn_desktop_core.agent.DomainTool
 import itn_desktop_core.agent.ToolRecord
 import itn_desktop_core.agent.buildDomainToolDefs
@@ -432,6 +433,7 @@ public class PiAgent {
             })) { defs.add(d) }
         let records = ArrayList<ToolRecord>()
         for(d in presentationTools(store,sid,turnId,question,{ => sessionHub().isAborted(sid) },{kind: String,payload: JsonObject => log(kind,payload)})){defs.add(d)}
+        for(d in personalTools(store,sid,turnId,question)){defs.add(d)}
         let registry = piRegistryOf(defs, records)
         let mode = piModeOf(defs, "desktop")
         var ws: ?Workspace = None
@@ -580,6 +582,7 @@ public class PiAgent {
         agent.preamble = preamble + skillPrompt(store.dataDir, allowWeb)
         agent.preamble += "\nLumin会话链接lumin://thread/ID指向本机应用数据库，与项目工作目录无关。阅读会话必须使用read_session，不用文件搜索或终端读取应用存储。附件路径只是用户提供的数据，图片已作为原生图像内容传入。"
         agent.preamble += "\n用户要可编辑PowerPoint/PPTX时，用create_presentation逐页设计并制作真实PPT文件；先询问受众、用途、页数、风格。用户明确无需确认或已提供并确认细节时直接制作。不要用generate_learning_resource的在线演示冒充PPTX文件。用户明确不需要测试时，不运行验证/测试命令；完成后提供候选产物预览，满意后再询问是否存入个性资源。"
+        agent.preamble += "\n个性资源是用户确认后存放在指定目录的副本。生成/迭代完成不等于用户满意，满意也不等于已授权入库。先提供候选文件让用户看；明确满意后询问是否存入，用户明确要求存入才调用save_personal_resource。需要以前的个人内容时优先search_personal_resources，按结果id读取，笔记、错题、知识点也能检索。"
 
         // ---- 事件翻译 + 正文累积 ----
         let stream = EventStream()

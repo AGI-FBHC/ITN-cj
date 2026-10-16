@@ -202,7 +202,7 @@ public class ToolRegistry {
     public func saveArtifact(name: String, content: String): ToolResult {
         let r = ToolResult()
         r.name = "artifact_save"
-        let dir = store.dataDir + Path.Separator + "artifacts"
+        let dir = store.dataDir + Path.Separator + "drafts"
         ensureDir(dir)
         let safe = sanitizeName(name)
         // 重名不覆盖：不同知识库/不同时间生成同一个主题（例如都叫「讲义-第一章.md」）时，

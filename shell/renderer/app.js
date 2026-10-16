@@ -823,11 +823,11 @@ PAGES.home = {
     v.appendChild(suggestion);
     const recent = cardOf({title: "最近成果", actions: [btn("查看全部", "ghost sm", () => go("resources"))]});
     try {
-      const all = (await api("/api/learning/resources", {})).resources || [];
+      const all = (await api("/api/personal/list", {})).resources || [];
       if (renderingGeneration !== state.navigationGeneration) return;
       const rows = all.slice().sort((a,b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || ""))).slice(0,3);
       if (rows.length && typeof resourceCard === "function") {
-        const grid = el("div", "resource-grid"); rows.forEach(r => grid.appendChild(resourceCard(r))); recent.appendChild(grid);
+        const grid = el("div", "resource-grid"); rows.forEach(r => grid.appendChild(personalResourceCard(r))); recent.appendChild(grid);
       } else if (state.artifacts.length) {
         state.artifacts.slice(0,3).forEach(a => recent.appendChild(artifactItem(a, false)));
       } else recent.appendChild(el("p", "muted", "还没有学习成果。在学 · 练中生成的讲义与练习会留在这里。"));
@@ -4448,11 +4448,11 @@ async function runPaletteSearch(raw) {
     }));
   if (chapters.length) groups.push(["章节", chapters]);
 
-  const notes = cache.notes.filter((n) => hit(n.title) || hit(n.text)).slice(0, 5)
-    .map((n) => paletteItemMain(n.title || "无标题", (n.chapter ? n.chapter + " · " : "") + String(n.text || "").slice(0, 40), "笔记", () => { state.objectFocus=n.id; state.resTab='notes'; return go('notes'); }));
+  const notes = cache.notes.filter((n) => !q && (hit(n.title) || hit(n.text))).slice(0, 5)
+    .map((n) => paletteItemMain(n.title || "无标题", (n.chapter ? n.chapter + " · " : "") + String(n.text || "").slice(0, 40), "笔记", () => { state.resTab='notes'; return go('notes','',{focus:n.id}); }));
   if (notes.length) groups.push(["笔记", notes]);
 
-  const arts = cache.artifacts.filter((a) => hit(a.name)).slice(0, 5)
+  const arts = cache.artifacts.filter((a) => !q && hit(a.name)).slice(0, 5)
     .map((a) => paletteItemMain(a.name, fmtSize(a.size) + (a.page > 0 ? " · 上次讲到第 " + a.page + " 页" : ""), "产物", () => openSlidePlayer(a.name, undefined, undefined, a.path)));
   if (arts.length) groups.push(["产物", arts]);
 
@@ -4465,6 +4465,15 @@ async function runPaletteSearch(raw) {
   }
 
   if (q) {
+    try {
+      const personal = await api('/api/personal/search',{query:q,limit:15});
+      if(seq!==palette.seq || !palette.open)return;
+      const labels={resource:'个性资源',note:'笔记',wrong:'错题',knowledge:'知识点'};
+      for(const type of ['resource','knowledge','note','wrong']){
+        const hits=(personal.hits || []).filter(h=>h.type===type).map(h=>paletteItemMain(h.title,h.snippet,type==='resource'?'产物':type==='knowledge'?'章节':'笔记',()=>openPersonalSearchHit(h)));
+        if(hits.length)groups.push([labels[type],hits]);
+      }
+    }catch(e){groups.push(['个人内容',[paletteItemMain('个人内容搜索暂时失败',e.message,'提示',()=>openPalette())]]);}
     try {
       const result = await api('/api/sessions/search', {query:q, limit:12});
       if (seq !== palette.seq || !palette.open) return;

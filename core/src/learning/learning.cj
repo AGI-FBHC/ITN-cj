@@ -96,6 +96,18 @@ public class LearningStore {
         out.put("answers", answers)
         return out
     }
+    /** Drafts are visible to their producing session, approved copies to other sessions. */
+    public func resourcesForSession(kbId: String,sid: String): JsonArray {
+        let out=JsonArray();let all=resources(kbId);var i=0
+        while(i<all.size()){
+            let r=objOf(all[i]).getOrThrow();i+=1;let id=strOf(r,"id")
+            var approved=false
+            let root=db().getKv("settings","personal_resource_dir",dataDir+Path.Separator+"artifacts")+Path.Separator
+            for(copy in db().query("SELECT path FROM personal_resources WHERE learning_id=? OR instr(learning_id,?)=1",va([tv(id),tv(id+":v")]))){if(hasPrefix(copy.text(0),root)&&exists(copy.text(0))){approved=true}}
+            if(approved||strOf(resource(id,0),"sessionId")==sid){out.add(r)}
+        }
+        return out
+    }
 
     /** Atomic append with optimistic version checking; previous content stays readable. */
     public func saveResource(body: JsonObject, kbId: String, sid: String, turnId: String,

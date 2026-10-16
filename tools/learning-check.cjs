@@ -57,11 +57,14 @@ async function main() {
     check('ordinary chat does not generate resources',(await post('/api/learning/resources',{})).resources.length===4);
     const lecture=(await post('/api/learning/resources',{})).resources.find(r=>r.kind==='lecture');
     const before=await post('/api/learning/resource',{id:lecture.id,version:1});
+    const approvedBefore=await post('/api/personal/save',{path:before.artifactPath,title:before.title,text:before.markdown,learningId:before.id,learningVersion:1,sessionId:before.sessionId,confirmed:true});
     await post('/api/agent/ask-pi',{sessionId:sid,kbId:'kb',question:'修改资源 '+lecture.id+'，请补一个具体例子',web:'off'});
     const revised=await post('/api/learning/resource',{id:lecture.id});
     check('Agent revision preserves stable resource identity',revised.id===lecture.id&&revised.version===2&&revised.versions.length===2);
     check('revision retains immutable original content',(await post('/api/learning/resource',{id:lecture.id,version:1})).markdown===before.markdown&&fs.existsSync(before.artifactPath));
     check('resource source snapshot can be inspected',!!revised.citations[0].text);
+    const protectedCopy=await post('/api/personal/read',{id:approvedBefore.id});
+    check('approved lecture stays bound to its immutable version after revision',protectedCopy.learningVersion===1&&(await post('/api/learning/resource',{id:protectedCopy.learningId,version:protectedCopy.learningVersion})).markdown===before.markdown);
     const course=await post('/api/study/course',{kbId:'kb'});
     const learnedChapter=course.chapters.find(c=>c.resourceId===lecture.id);
     check('course selects latest matching lecture version',learnedChapter?.version===2);
@@ -79,7 +82,11 @@ async function main() {
     let rejected=false;
     try{await post('/api/study/section/complete',{kbId:'kb',chapter:fallback.name,sectionId:fallback.sections[0].id});}catch(e){rejected=true;}
     check('cannot mark ungenerated lesson as learned',rejected);
-    if(process.argv.includes('--ui')) await require('./workbench-ui.cjs')({base,post,check,dir});
+    if(process.argv.includes('--ui')) {
+      for(const r of (await post('/api/learning/resources',{})).resources){const body=await post('/api/learning/resource',{id:r.id});await post('/api/personal/save',{path:body.artifactPath,title:body.title,text:body.markdown,learningId:body.id,learningVersion:body.version,sessionId:body.sessionId,confirmed:true});}
+      await require('./workbench-ui.cjs')({base,post,check,dir});
+    }
+
     const finishing=await post('/api/study/course',{kbId:'kb'});
     let finishedCourse;
     for(const c of finishing.chapters.filter(c=>c.resourceId===lecture.id))for(const section of c.sections)finishedCourse=await post('/api/study/section/complete',{kbId:'kb',chapter:c.name,sectionId:section.id});

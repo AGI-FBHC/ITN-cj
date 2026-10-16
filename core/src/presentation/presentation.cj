@@ -28,6 +28,22 @@ public class DesktopJobs {
     public func finish(id: String, result: JsonObject): Unit {
         db().run("UPDATE desktop_jobs SET status=?,result=?,error=? WHERE id=? AND status='running'",va([tv(if(boolOf(result,"ok")){"completed"}else{"failed"}),tv(result.toString()),tv(strOf(result,"error")),tv(id)]))
     }
+    public func queueExtract(path: String,resourceId: String): String {
+        let id="extract-"+Random().nextUInt64().toString();let body=JsonObject();body.put("inputPath",JsonString(path))
+        body.put("resourceId",JsonString(resourceId))
+        db().run("INSERT INTO desktop_jobs(id,kind,status,body,result,error,created_at) VALUES (?,'extract','pending',?,'','','')",va([tv(id),tv(body.toString())]))
+        return id
+    }
+    public func extractFile(path: String): JsonObject {
+        let id=queueExtract(path,"")
+        var ticks=0
+        while(ticks<200){
+            let rows=db().query("SELECT status,result,error FROM desktop_jobs WHERE id=?",va([tv(id)]))
+            if(rows.size>0){if(rows[0].text(0)=="completed"){return objOf(JsonValue.fromStr(rows[0].text(1))).getOrThrow()};if(rows[0].text(0)=="failed"){throw Exception(rows[0].text(2))}}
+            sleep(Duration.millisecond*100);ticks+=1
+        }
+        db().run("UPDATE desktop_jobs SET status='failed',error='内容提取超时' WHERE id=?",va([tv(id)]));throw Exception("内容索引提取服务尚未就绪")
+    }
     public func buildPresentation(spec: JsonObject, sid: String, tid: String, shouldAbort: () -> Bool): JsonObject {
         let id="ppt-"+Random().nextUInt64().toString()
         let dir=dataDir+Path.Separator+"drafts";ensureDir(dir)

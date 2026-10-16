@@ -28,7 +28,7 @@ public func learningTools(store: Store, kbId: String, shouldAbort: () -> Bool, s
         "读取当前学习档案、可编辑记忆、资源列表和首次作答证据。掌握度未知时不得推断分数。",
         "{\"type\":\"object\",\"properties\":{}}", "read", { args: JsonObject =>
             let o = ls.context(kbId)
-            o.put("resources", ls.resources(kbId))
+            o.put("resources", ls.resourcesForSession(kbId,sid))
             return learningResult(o, "已读取学习上下文")
         }))
     out.add(makeTool("remember_learning_fact", "记住学习偏好", "保存本人明确表达的目标、偏好或事实",

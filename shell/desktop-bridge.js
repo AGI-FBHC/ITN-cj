@@ -1,4 +1,4 @@
-const fs=require('node:fs'),path=require('node:path');
+const path=require('node:path');
 function startDesktopBridge(base,dataDir){
   let stopped=false,busy=false;
   const post=async(url,body)=>{const r=await fetch(base+url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json();if(j.code!==0)throw Error(j.message);return j.data;};
@@ -9,7 +9,13 @@ function startDesktopBridge(base,dataDir){
       for(const job of jobs){
         if(stopped)break;const lease=await post('/api/desktop/jobs/claim',{id:job.id});if(!lease.claimed)continue;
         try{
-          const body=lease.body,root=path.resolve(dataDir,'drafts'),output=path.resolve(body.outputPath||'');
+          const body=lease.body;
+          if(job.kind==='extract'){
+            const file=await require('./resource-reader').readResourceFile(body.inputPath);
+            if(body.resourceId)await post('/api/personal/reindex',{id:body.resourceId,text:file.indexText || file.text || ''});
+            await post('/api/desktop/jobs/finish',{id:job.id,ok:true,text:file.indexText || file.text || '',kind:file.kind});continue;
+          }
+          const root=path.resolve(dataDir,'drafts'),output=path.resolve(body.outputPath||'');
           if(!output.startsWith(root+path.sep)||!/^ppt-\d+\.pptx$/.test(path.basename(output)))throw Error('PPT输出路径不属于候选产物目录');
           if(job.kind!=='presentation')throw Error('不支持的桌面任务');
           const result=await require('./presentation-builder').buildPresentation(body.spec,output);

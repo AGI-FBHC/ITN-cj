@@ -11,6 +11,7 @@
     "electron": "^44.7.1"
   },
   "dependencies": {
+    "pdfjs-dist": "6.4.299",
     "pptxgenjs": "4.0.1"
   }
 }

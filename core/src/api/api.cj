@@ -3,6 +3,7 @@ package itn_desktop_core.api
 import itn_desktop_core.learning.*
 import itn_desktop_core.project.ProjectStore
 import itn_desktop_core.presentation.DesktopJobs
+import itn_desktop_core.personal.PersonalStore
 import itn_desktop_core.agent.learningTools
 import itn_desktop_core.pi_tools.DraftStore
 import itn_desktop_core.resource.isResourceKind
@@ -1290,6 +1291,25 @@ public class Api {
             o.put("agentWorkDir", JsonString(wd))
             ok(ctx, o)
             return
+        }
+
+        if (path == "/api/personal/list" && method == "POST") {
+            let ps=PersonalStore(store.dataDir);let o=JsonObject();o.put("resources",ps.list());o.put("directory",JsonString(ps.directory()));ok(ctx,o);return
+        }
+        if (path == "/api/personal/settings" && method == "POST") {
+            try{let ps=PersonalStore(store.dataDir);match(bodyJson(ctx)){case Some(b)=>ps.configure(strOf(b,"directory"));case None=>()};let o=JsonObject();o.put("directory",JsonString(ps.directory()));ok(ctx,o)}catch(e: Exception){fail(ctx,400,e.message)};return
+        }
+        if (path == "/api/personal/save" && method == "POST") {
+            match(bodyJson(ctx)){case Some(b)=>try{ok(ctx,PersonalStore(store.dataDir).save(b))}catch(e: Exception){fail(ctx,400,e.message)};case None=>fail(ctx,400,"请求体不是合法JSON")};return
+        }
+        if (path == "/api/personal/search" && method == "POST") {
+            match(bodyJson(ctx)){case Some(b)=>let o=JsonObject();o.put("hits",PersonalStore(store.dataDir).search(strOf(b,"query"),intOf(b,"limit")));ok(ctx,o);case None=>fail(ctx,400,"请求体不是合法JSON")};return
+        }
+        if (path == "/api/personal/reindex" && method == "POST") {
+            match(bodyJson(ctx)){case Some(b)=>try{PersonalStore(store.dataDir).reindex(strOf(b,"id"),strOf(b,"text"));ok(ctx,JsonObject())}catch(e: Exception){fail(ctx,400,e.message)};case None=>fail(ctx,400,"请求体不是合法JSON")};return
+        }
+        if (path == "/api/personal/read" && method == "POST") {
+            match(bodyJson(ctx)){case Some(b)=>try{ok(ctx,PersonalStore(store.dataDir).read(strOf(b,"id")))}catch(e: Exception){fail(ctx,404,e.message)};case None=>fail(ctx,400,"请求体不是合法JSON")};return
         }
 
         if (path == "/api/desktop/jobs/list" && method == "POST") {
@@ -3052,6 +3072,12 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/skills/template",
         "/api/tools/list",
         "/api/learning/resources",
+        "/api/personal/list",
+        "/api/personal/settings",
+        "/api/personal/save",
+        "/api/personal/search",
+        "/api/personal/reindex",
+        "/api/personal/read",
         "/api/desktop/jobs/list",
         "/api/desktop/jobs/claim",
         "/api/desktop/jobs/finish",

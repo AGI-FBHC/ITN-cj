@@ -133,17 +133,16 @@ const MD = [
     renderResourceDock();
     const dock = document.getElementById("resource-dock");
     const labels = Array.from(dock.querySelectorAll(".resource-actions .btn")).map((b) => b.textContent);
-    const pptxBtn = Array.from(dock.querySelectorAll(".resource-actions .btn")).find((b) => b.textContent === "导出 pptx");
+    const pptxBtn = Array.from(dock.querySelectorAll(".resource-actions .btn")).find((b) => b.textContent === "让 Lumin 制作 PPTX");
     const docxBtn = Array.from(dock.querySelectorAll(".resource-actions .btn")).find((b) => b.textContent === "导出 docx");
     if (pptxBtn) pptxBtn.click();
     if (docxBtn) docxBtn.click();
     await new Promise((r) => setTimeout(r, 500));
-    return { labels: labels, calls: calls };
+    return { labels: labels, calls: calls, brief: document.querySelectorAll("#ppt-audience,#ppt-purpose,#ppt-pages,#ppt-style").length };
   });
-  check(ui.labels.indexOf("导出 pptx") >= 0 && ui.labels.indexOf("导出 docx") >= 0, "资源面板上有「导出 pptx / 导出 docx」：" + ui.labels.join(" / "));
-  check(ui.calls.length === 2, "两个按钮都真的调了外壳导出（" + ui.calls.length + " 次）");
-  check(!!ui.calls[0] && ui.calls[0].kind === "pptx" && String(ui.calls[0].markdown).indexOf("甲") >= 0 && ui.calls[0].name === "讲义：测试",
-    "导出传的是这份资源的正文与标题（kind=" + (ui.calls[0] && ui.calls[0].kind) + "）");
+  check(ui.labels.includes("让 Lumin 制作 PPTX") && ui.labels.includes("导出 docx"), "PPT由Agent制作，DOCX保留直接导出");
+  check(ui.brief === 4, "PPT入口先确认制作细节");
+  check(ui.calls.length === 1 && ui.calls[0].kind === "docx" && ui.calls[0].markdown.includes("甲"), "只有DOCX直接交给外壳转换");
   check(pageErrors.length === 0, "没有 JavaScript 报错" + (pageErrors.length ? "：" + pageErrors[0] : ""));
 
   await browser.close(); core.kill();

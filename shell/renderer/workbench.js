@@ -45,7 +45,7 @@ function decorateWorkspace() {
   const selected = learning ? (current === 'calibrate' ? 'report' : current)
     : current === 'resources' ? (currentSection === 'files' ? 'files' : 'generated') : (state.resTab || 'notes');
   const tabs = learning ? [['home', '总览'], ['learn', '学 · 练'], ['report', '我的成长']]
-    : [['generated', '生成成果'], ['notes', '笔记'], ['wrong', '错题'], ['files', '本地文件'], ['network', '收集资料']];
+    : [['generated', '个性资源'], ['notes', '笔记'], ['wrong', '错题'], ['files', '本地文件'], ['network', '收集资料']];
   for (const [key, label] of tabs) {
     const button = btn(label, 'workspace-tab' + (key === selected ? ' active' : ''), () => {
       if (learning) go(key);
@@ -160,6 +160,43 @@ function openPresentationBrief(res) {
   const actions=el('div','row');actions.append(btn('按这些要求制作','primary',()=>submit(false)),btn('无需确认，直接制作','ghost',()=>submit(true)),btn('取消','ghost',()=>overlay.remove()));dialog.appendChild(actions);overlay.appendChild(dialog);document.body.appendChild(overlay);audience.focus();
   overlay.onkeydown=e=>{if(e.key==='Escape')overlay.remove();};overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
 }
+const PERSONAL_FORMAT={pptx:'PowerPoint',ppt:'PowerPoint',md:'Markdown',markdown:'Markdown',html:'网页',htm:'网页',docx:'Word',pdf:'PDF',png:'图片',jpg:'图片',jpeg:'图片',svg:'SVG',txt:'文本'};
+async function offerPersonalSave(file) {
+  document.querySelector('.personal-save-confirm')?.remove();
+  const settings=await api('/api/personal/settings',{}),overlay=el('div','task-modal personal-save-confirm'),dialog=el('section','task-modal-card');
+  dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-label','确认存入个性资源');
+  dialog.append(el('h2',null,'满意这版，再存入个性资源'),el('p','muted','确认后会创建这一版的独立副本；后续修改候选稿不会覆盖它。'));
+  const title=inputOf('personal-save-title','资源名称',file.title || file.name || '个性资源');dialog.appendChild(fieldOf('资源名称',title));
+  dialog.append(el('p','path-line muted sm','来源：'+file.path),el('p','path-line muted sm','副本存放：'+settings.directory));
+  const actions=el('div','row'),confirm=btn('确认存入','primary',async()=>{
+    confirm.disabled=true;
+    try{
+      const saved=await api('/api/personal/save',{path:file.path,title:title.value.trim() || file.name,text:file.indexText || file.text || '',learningId:file.learningId || '',learningVersion:file.learningVersion || 0,sessionId:file.sessionId || state.chatSessionId || '',turnId:file.turnId || '',confirmed:true});
+      overlay.remove();toast('已存入个性资源 · 确认版本 '+saved.version);if(current==='resources')await go('resources');
+    }catch(e){toast('保存失败：'+e.message);confirm.disabled=false;}
+  });
+  actions.append(confirm,btn('这版先不存','ghost',()=>overlay.remove()));dialog.appendChild(actions);overlay.appendChild(dialog);document.body.appendChild(overlay);title.focus();
+  overlay.onkeydown=e=>{if(e.key==='Escape')overlay.remove();};overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+}
+async function openPersonalEntry(item) {
+  if(!['chat','resources'].includes(current))await go('resources');
+  workbench.personalId=item.id;
+  if(item.learningId)await openLearningResource(item.learningId,item.learningVersion || 0);
+  else await openFilePreview(item.path,{...item,title:item.title});
+  document.querySelectorAll('[data-personal-id]').forEach(n=>n.classList.toggle('selected',n.dataset.personalId===item.id));
+}
+function personalResourceCard(item) {
+  const button=btn('','resource-entry personal-entry',()=>openPersonalEntry(item));button.dataset.personalId=item.id;
+  if(item.learningId)button.dataset.resource=item.learningId;
+  button.append(el('span','resource-entry-type',(RESOURCE_LABEL[item.learningKind] || PERSONAL_FORMAT[item.kind] || item.kind.toUpperCase())+' · 确认版本 '+item.version),el('strong',null,item.title),el('span','muted sm',fmtStamp(item.createdAt)),el('span','resource-entry-open','打开预览'));
+  return button;
+}
+async function openPersonalSearchHit(hit) {
+  if(hit.type==='note' || hit.type==='wrong'){state.resTab=hit.type==='note'?'notes':'wrong';await go('notes','',{focus:hit.id});return;}
+  if(hit.type==='knowledge' && typeof openKnowledgePoint==='function'){await go('home');await openKnowledgePoint(hit.id);return;}
+  await openPersonalEntry(await api('/api/personal/read',{id:hit.id}));
+}
+
 function fileArtifactCard(artifact) {
   const button=btn('','resource-entry compact file-artifact',()=>openFilePreview(artifact.path,artifact));
   button.dataset.artifactPath=artifact.path;button.append(el('span','resource-entry-type',(artifact.kind || String(artifact.path || '').split('.').pop()).toUpperCase()+' · 候选产物'),el('strong',null,artifact.title || String(artifact.path || '').replace(/\\/g,'/').split('/').pop()),el('span','resource-entry-open','打开预览'));
@@ -168,7 +205,7 @@ function fileArtifactCard(artifact) {
 async function openFilePreview(file,metadata={}) {
   if(!window.itnWindow?.readResourceFile){toast('文件预览只在桌面窗口中可用');return;}
   const token=++workbench.loadToken,data=await window.itnWindow.readResourceFile(file);if(token!==workbench.loadToken)return;
-  if(!data.ok){toast('无法预览：'+data.error);return;}
+  if(!data.ok){workbench.file={kind:'file',path:file,name:String(file).replace(/\\/g,'/').split('/').pop(),error:data.error,...metadata};workbench.selected=null;workbench.open=true;renderResourceDock();return;}
   workbench.file={...data,...metadata,path:data.path};workbench.selected=null;workbench.open=true;renderResourceDock();
 }
 function renderFilePreview(dock,file) {
@@ -178,13 +215,13 @@ function renderFilePreview(dock,file) {
   dock.appendChild(tools);const body=el('section','file-preview-body');body.setAttribute('aria-label','文件预览');dock.appendChild(body);
   if(file.kind==='html' || file.html || file.kind==='pdf'){
     const frame=el('iframe','artifact-frame');frame.title=file.title || file.name;frame.setAttribute('sandbox',file.kind==='html'?'allow-scripts':'');
-    if(file.kind==='pdf')frame.src=file.dataUrl;else frame.srcdoc=file.html || file.text;body.appendChild(frame);
+    if(file.kind==='pdf')frame.src=file.dataUrl;else frame.srcdoc="<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; base-uri 'none'\">"+(file.html || file.text);body.appendChild(frame);
   }else if(file.kind==='image' || file.kind==='svg'){
     const img=el('img','artifact-image');img.alt=file.title || file.name;img.src=file.dataUrl || 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(file.text);body.appendChild(img);
   }else if(file.kind==='pptx'){
     body.appendChild(el('p','muted sm','文字预览；完整排版可用PowerPoint打开。'));
     for(const slide of file.slides || []){const section=el('article','deck-text-slide');section.append(el('span','muted sm','第'+slide.index+'页'),el('pre',null,slide.text || '此页没有可提取文字'));body.appendChild(section);}
-  }else{const article=el('article',file.kind==='markdown'?'md':'plain-document');if(file.kind==='markdown')article.innerHTML=md(file.text || '');else article.textContent=file.text || '';body.appendChild(article);}
+  }else{const article=el('article',file.kind==='markdown'?'md':'plain-document');if(file.kind==='markdown')article.innerHTML=md(file.text || '');else article.textContent=file.text || file.error || '';body.appendChild(article);}
 }
 
 async function exportResourceAs(res, kind) {
@@ -257,6 +294,7 @@ function renderResourceDock() {
       diff.appendChild(pre); body.insertBefore(diff, body.querySelector('.resource-content')); diff.scrollIntoView({block: 'nearest'});
     } catch(e) {toast('比较失败：' + e.message);}
   }));
+  actions.appendChild(btn('存入个性资源','sm',()=>offerPersonalSave({path:res.artifactPath,title:res.title,text:res.markdown,learningId:res.id,learningVersion:res.version,sessionId:res.sessionId,turnId:res.turnId})));
   body.appendChild(actions);
   if ((res.warnings || []).length) body.appendChild(el('p', 'resource-notice', res.warnings.join('；')));
   const content = el('div', 'resource-content');
@@ -495,52 +533,38 @@ function syncWorkbenchEvents(events) {
 
 const originalResources = PAGES.resources.render;
 PAGES.resources.render = async function() {
-  if (currentSection === 'files') {
-    await originalResources.call(this);
-    // Local Office previews remain available even before the first generated file.
-    if (!state.artifacts.length) {
-      const actions = el('div', 'row');
-      actions.append(btn('打开演示文稿…', '', () => openLocalOutcome('deck')), btn('打开文档…', '', () => openLocalOutcome('doc')));
-      $('view').prepend(actions);
-    }
-    return;
+  const generation=state.navigationGeneration,view=$('view');view.replaceChildren();
+  if(currentSection==='files') {
+    const toolbar=el('div','outcome-toolbar');
+    const open=async kind=>{
+      const api=window.itnWindow;if(!api){toast('请在桌面窗口选择文件');return;}
+      const file=kind==='deck'?await api.pickDeck():kind==='doc'?await api.pickDoc():await api.pickFile();if(file)await openFilePreview(file);
+    };
+    toolbar.append(btn('打开本地文件…','primary',()=>open('any')),btn('打开演示文稿…','',()=>open('deck')),btn('打开文档…','',()=>open('doc')));view.appendChild(toolbar);
+    view.appendChild(el('p','muted','本地文件先预览；满意后可选择存入个性资源。'));
+    const reader=el('section','local-file-reader');reader.id='outcome-reader';reader.appendChild(el('p','muted','选择要预览的网页、演示文稿、文档、PDF或图片。'));view.appendChild(reader);return;
   }
-  const view = $('view'); view.innerHTML = '';
-  const toolbar = el('div', 'outcome-toolbar');
-  const search = inputOf('learning-resource-search', '搜索成果标题', state.outcomeQuery || ''); search.setAttribute('aria-label', '搜索学习资源');
-  const kind = el('select'); kind.setAttribute('aria-label', '筛选成果类型');
-  kind.appendChild(option('', '全部类型'));
-  for (const [value, label] of Object.entries(RESOURCE_LABEL)) kind.appendChild(option(value, label));
-  kind.value = state.outcomeKind || '';
-  const create = el('details', 'outcome-create'); create.appendChild(el('summary', 'btn primary', '+ 新建成果'));
-  const menu = el('div', 'outcome-menu');
-  for (const [value, label] of Object.entries(RESOURCE_LABEL).filter(([key]) => key !== 'legacy')) {
-    menu.appendChild(btn(label, 'ghost', () => {state.pendingQuestion = '请围绕我当前的学习目标生成一份' + label + '，主题：'; go('chat');}));
-  }
-  create.appendChild(menu); toolbar.append(search, kind, create); view.appendChild(toolbar);
-  const status = el('p', 'muted sm'); status.setAttribute('role', 'status'); view.appendChild(status);
-  const split = el('div', 'outcome-workspace');
-  const grid = el('div', 'resource-grid outcome-grid outcome-list'); split.appendChild(grid);
-  const reader = el('section', 'outcome-reader'); reader.id = 'outcome-reader'; reader.setAttribute('aria-label', '成果阅读区');
-  const placeholder = el('div', 'outcome-placeholder'); placeholder.append(el('h2', null, '选择一份成果'), el('p', 'muted', '在左侧选择讲义、练习或演示，在这里阅读、作答和导出。')); reader.appendChild(placeholder);
-  split.appendChild(reader); view.appendChild(split);
-  let all = [];
-  const paint = () => {
-    state.outcomeQuery = search.value; state.outcomeKind = kind.value; grid.innerHTML = '';
-    const rows = all.filter(r => (!kind.value || r.kind === kind.value) && (r.title || '').toLowerCase().includes(search.value.trim().toLowerCase()));
-    status.textContent = '共 ' + all.length + ' 份成果' + (rows.length !== all.length ? ' · 显示 ' + rows.length + ' 份' : '');
-    if (!rows.length) {
-      grid.appendChild(emptyState({inline: true, art: 'layers', title: all.length ? '没有找到匹配的成果' : '第一份成果，从一个主题开始', text: all.length ? '换个标题关键词或类型试试。' : '生成的讲义、实操、练习和演示会保存在这里，也可以切到上方查看笔记与错题。'}));
-    }
-    for (const r of rows) { const card = resourceCard(r); card.classList.toggle('selected', r.id === workbench.selected?.id); card.setAttribute('aria-pressed', String(r.id === workbench.selected?.id)); grid.appendChild(card); }
+  const toolbar=el('div','outcome-toolbar'),search=inputOf('learning-resource-search','搜索个性资源标题或正文',state.outcomeQuery || ''),kind=el('select');
+  search.setAttribute('aria-label','搜索个性资源');kind.setAttribute('aria-label','筛选成果类型');kind.appendChild(option('','全部格式'));
+  for(const [value,label] of [['pptx','PowerPoint'],['html','网页'],['md','Markdown / 讲义'],['quiz','测验'],['docx','Word'],['pdf','PDF'],['png','图片']])kind.appendChild(option(value,label));kind.value=state.outcomeKind || '';
+  const create=el('details','outcome-create');create.appendChild(el('summary','btn primary','+ 添加资源'));
+  const menu=el('div','outcome-menu');menu.append(btn('让 Lumin 制作 PPTX','ghost',()=>openPresentationBrief()),btn('打开文件并确认存入','ghost',async()=>{if(!window.itnWindow?.pickFile)return toast('请在桌面窗口选择文件');const file=await window.itnWindow.pickFile();if(file){const data=await window.itnWindow.readResourceFile(file);if(data.ok)offerPersonalSave(data);else toast(data.error);}}),btn('设置存放目录','ghost',async()=>{const directory=await window.itnWindow?.pickDirectory?.();if(directory){await api('/api/personal/settings',{directory});await go('resources');}}));create.appendChild(menu);
+  toolbar.append(search,kind,create);view.appendChild(toolbar);
+  const status=el('p','muted sm');status.setAttribute('role','status');view.appendChild(status);
+  const split=el('div','outcome-workspace'),grid=el('div','resource-grid outcome-grid outcome-list'),reader=el('section','outcome-reader');reader.id='outcome-reader';reader.setAttribute('aria-label','个性资源阅读区');
+  reader.append(el('h2',null,'选择一份个性资源'),el('p','muted','只有确认后存入目录的副本会出现在这里。'));split.append(grid,reader);view.appendChild(split);
+  const data=await api('/api/personal/list',{});if(generation!==state.navigationGeneration)return;let all=data.resources || [],timer,seq=0;
+  status.title=data.directory;
+  const paint=async()=>{
+    const token=++seq,q=search.value.trim();state.outcomeQuery=search.value;state.outcomeKind=kind.value;
+    let ids;
+    if(q){const found=await api('/api/personal/search',{query:q});if(token!==seq||generation!==state.navigationGeneration)return;ids=new Set(found.hits.filter(h=>h.type==='resource').map(h=>h.id));}
+    const rows=all.filter(r=>(!kind.value||r.kind===kind.value||r.learningKind===kind.value)&&(!ids||ids.has(r.id)));
+    grid.replaceChildren();status.textContent=rows.length+' 份个性资源 · '+data.directory;
+    if(!rows.length)grid.appendChild(emptyState({inline:true,art:'layers',title:all.length?'没有匹配的资源':'先看看候选稿，满意再存入',text:'生成或打开文件后，在预览区选择“存入个性资源”。未确认的版本会留在会话中。'}));
+    rows.forEach(r=>grid.appendChild(personalResourceCard(r)));
   };
-  search.oninput = paint; kind.onchange = paint;
-  const load = async () => {
-    status.textContent = '正在读取学习成果…'; grid.innerHTML = '';
-    try { all = ((await api('/api/learning/resources', {})).resources || []).slice().sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))); paint(); if (current === 'resources' && all.length && (!workbench.open || !all.some(r=>r.id===workbench.selected?.id))) await openLearningResource(all.some(r=>r.id===workbench.selected?.id) ? workbench.selected.id : all[0].id); }
-    catch(e) { status.textContent = '读取失败：' + e.message; grid.appendChild(btn('重试', '', load)); }
-  };
-  await load();
+  search.oninput=()=>{clearTimeout(timer);seq++;timer=setTimeout(()=>paint().catch(e=>toast(e.message)),220);};kind.onchange=()=>paint();await paint();
 };
 async function openLocalOutcome(kind) {
   const a = window.itnWindow;

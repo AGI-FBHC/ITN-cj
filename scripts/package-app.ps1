@@ -35,13 +35,18 @@ Copy-Item -LiteralPath (Join-Path $repo "shell\pptx.js") -Destination $appDir -F
 Copy-Item -LiteralPath (Join-Path $repo "shell\deck-export.js") -Destination $appDir -Force
 Copy-Item -LiteralPath (Join-Path $repo "shell\presentation-builder.js") -Destination $appDir -Force
 Copy-Item -LiteralPath (Join-Path $repo "shell\desktop-bridge.js") -Destination $appDir -Force
-# Production dependencies only; the Electron runtime itself is already copied above.
-foreach ($dependency in @('pptxgenjs','jszip','image-size','queue','https','pako','lie','immediate','setimmediate','readable-stream','core-util-is','inherits','isarray','process-nextick-args','safe-buffer','string_decoder','util-deprecate')) {
-    $sourceDependency = Join-Path $repo ('shell\node_modules\' + $dependency)
-    if (Test-Path -LiteralPath $sourceDependency) {
-        New-Item -ItemType Directory -Force -Path (Join-Path $appDir 'node_modules') | Out-Null
-        Copy-Item -LiteralPath $sourceDependency -Destination (Join-Path $appDir 'node_modules') -Recurse -Force
-    }
+Copy-Item -LiteralPath (Join-Path $repo "shell\resource-reader.js") -Destination $appDir -Force
+# npm resolves the complete production dependency graph, including platform PDF bindings.
+$productionModules = & npm --prefix (Join-Path $repo 'shell') ls --omit=dev --all --parseable
+if ($LASTEXITCODE -ne 0) { throw "生产依赖不完整，请先在shell中npm install" }
+$modulesRoot = [IO.Path]::GetFullPath((Join-Path $repo 'shell/node_modules')) + [IO.Path]::DirectorySeparatorChar
+foreach ($modulePath in $productionModules) {
+    $absoluteModule = [IO.Path]::GetFullPath($modulePath)
+    if (-not $absoluteModule.StartsWith($modulesRoot, [StringComparison]::OrdinalIgnoreCase)) { continue }
+    $relativeModule = $absoluteModule.Substring($modulesRoot.Length)
+    $destinationModule = Join-Path (Join-Path $appDir 'node_modules') $relativeModule
+    New-Item -ItemType Directory -Force -Path (Split-Path $destinationModule) | Out-Null
+    Copy-Item -LiteralPath $absoluteModule -Destination $destinationModule -Recurse -Force
 }
 Copy-Item -Path (Join-Path $repo "shell\renderer") -Destination $appDir -Recurse -Force
 Copy-Item -Path (Join-Path $repo "shell\assets") -Destination $appDir -Recurse -Force

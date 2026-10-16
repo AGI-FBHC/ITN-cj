@@ -8,6 +8,7 @@ import stdx.encoding.json.*
 import itn_desktop_core.kb.*
 import itn_desktop_core.db.*
 import itn_desktop_core.util.*
+import itn_desktop_core.personal.PersonalStore
 
 // ==================== 学习者档案 ====================
 // 单人本地使用，档案只存在本机。没有账号体系，也不需要。
@@ -618,6 +619,7 @@ public class StudyStore {
             ord += 1
         }
         db().batch(ops)
+        PersonalStore(dataDir).refreshStudyIndex()
     }
 
     private func splitOnce(key: String): Array<String> {
