@@ -4133,3 +4133,24 @@ read_chunk 读得到原文并带回库标识与正文。
   - 验证：tools/knowledge-check.cjs 42→57/57（新增颜色存取/非法拒绝/调色盘 UI/圆点、标签绘制与开关、偏好持久化跨刷新、铅笔记笔记）；截图 network-light/dark/compact 已目视；cjpm test 131/131。
 - 回归与发布：最终包二进制上 16 组回归全过（knowledge 57、nonchat 25、session-switch 12、learning 99、personal 23、presentation 9、deck-export、palette 14、stop 13、attachments 16、splash 4、tray 4、busy-caret 6、kb-general、text-menu 6、glass-shot 无报错）+ skill-check.ps1 全过；版本 0.8.0→0.8.1（提交 9eeb9a6）；dist/Lumin-0.8.1 + zip，9 项资产哈希与源码一致（BAD=0），隔离冒烟 RESULT=OK（STATUS=Lumin 0.8.1 · 已连接）；启动Lumin.cmd 指向 0.8.1。
 - 备注：共享技能目前是「只读列出 + 可看正文」；要让某条外部技能能直接在对话里绑定使用，需要给它补内核工具的 `tools:` 声明（或后续专门放宽外部技能的工具边界）。两份未跟踪调研文档仍未纳入提交。
+
+
+## 2026-10-16 · Lumin 自测报告修复：技能白名单污染 + 生成类 JSON 截断（0.8.2）
+- 来源：开发者（用户）让 Lumin 自己批量调用工具做自测，报告两处故障：① 读一次技能（skill_read，如 web-research）之后，会话被钉在该技能的工具白名单里——search_personal_resources / read_chunk / generate_learning_resource 全部报「技能「web-research」未允许工具 X」，跨轮延续，并传染同一轮并行调用；② generate_learning_resource 的分阶测试两次都报「没有返回可解析的 JSON」，截断点在 knowledgePoints（上游输出被截断）。
+- ① 技能白名单污染（提交 6a32a9f 内）：根因在 HostSkillScope.check —— skill_read 成功时把技能 id/tools 装进本轮的检查器（"读一次技能 = 绑定"），而白名单一旦装上就不再清、并且连 skill_read 自己都会被第一条规则拦掉。修复：
+  - skill_read 永远放行，且**不再**改变工具集（读正文就是读正文）；白名单只由"用户显式绑定"建立（/skill 选择或会话 skill 参数）。
+  - 绑定态下 skill_read 也放行（此前绑定技能后模型连它的说明书都读不到）。
+  - 验证：单测改写/新增 —— luminDiscoversSkillsAndEnforcesTheirTools（改为显式绑定下才拦、且在绑定态读技能不拦）、skillReadDoesNotLockTheToolset（只读不绑：save_artifact 正常落盘、无 tool/denied）；133/133。
+- ② 生成类 JSON 截断/坏样本（同提交）：
+  - provider 新增 respondForWriting：资源生成这类"一次成文"的调用在被截断（finishReason=length）时，把单次上限抬到 32768（MiMo 顺带关思考）完整重发一次；resourceModel 改用该路径，并在仍截断时给出诚实报错（不再落成"解析失败"）。
+  - askJson 解析失败时自动把同一任务再要一遍（把"只输出完整 JSON"说死），两次都坏才记录原因；长 JSON 偶发的未转义引号/换行不再一次判死。
+  - 验证：单测 unparsableJsonIsRetriedOnceBeforeSaving（第一遍半截 → 自动重试 → 资源保存成功且有"已自动重试一遍"警告）；133/133。
+- 真实模型复验（隔离目录，MiMo tokenplan / mimo-v2.6-flash）：tools/real-features-check.py 新增并跑通两例 ——
+  - skill_read_no_lock：先 skill_read「web-research」再用 search_personal_resources 找暗号 → 11.5s 通过，全程没有「未允许工具」误拦；
+  - resources：quiz(3 题)/practice/ppt 三种生成都出成品并保存 → 266.0s 通过（此前分阶测试在同一模型上两次失败）。
+- 发布：版本 0.8.1→0.8.2（提交 6ccc8a3）；dist/Lumin-0.8.2 + zip（190MB）；9 项资产哈希一致（BAD=0）；隔离冒烟 RESULT=OK（Lumin 0.8.2 · 已连接）。
+- 备注：开发者自测方式（让 Lumin 自己批量触发工具、把失败信息贴回来）非常有效 —— 两条根因都是它先发现的。真实用例已固化，后续回归可直接 --case skill_read_no_lock,resources。
+
+- 回归与打包补充（最终状态）：0.8.2 包在 work-group 修复后重打包（包内 sourceCommit=558e7be），9 项资产哈希与源码一致（BAD=0），隔离冒烟 RESULT=OK（Lumin 0.8.2 · 已连接）。16 组检查全过：knowledge 57、nonchat 25、session-switch 12、learning 99、personal 23、presentation 9、deck-export、palette 14、stop 13、attachments 16、splash 4、tray 4、busy-caret 6、kb-general、text-menu 6、glass-shot；skill-check 全过；cjpm test 133/133。
+- 顺带修复一个自测暴露的偶发 UI bug（提交 ee36dd4 + 558e7be）：批量跑 glass-shot 时"跑完后工作过程应当收起"偶发失败。根因是 `<details>` 会为"创建时就 open"异步补发一次 toggle，被 renderTurnBlock 当成用户的展开偏好写进 state.workExpansions，轮次结束重绘时被这个记忆值顶住不收。修法：初始值相同的首个 toggle 视为浏览器补发、不记；glass-shot 的固定 900ms 等待也改成"等工作过程真正收起"。修复后 glass-shot 连跑 3 次全过。
+- 与开发者报告的对应关系：自测里"分阶测试 JSON 被截断"对应 respondForWriting（8192 截断→32768 重发 + 关思考）与 askJson 失败自动重试；"读技能后 X 未允许工具"对应 HostSkillScope 的 skill_read 装白名单问题。两条真实用例已固化：python tools/real-features-check.py --case skill_read_no_lock,resources。
