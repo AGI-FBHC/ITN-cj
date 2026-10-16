@@ -4113,3 +4113,23 @@ read_chunk 读得到原文并带回库标识与正文。
 - 回归：最终包二进制上 15 组全过 —— knowledge 42、nonchat 25、learning 99（含 workbench-ui）、personal 23、presentation 9、deck-export、palette 14、stop 12、attachments 16、splash 4、tray 4、busy-caret 6、kb-general、text-menu 6、glass-shot 无 console 错误；知识强化提示词之前的首轮 13 组回归同样全过。日志在 tmp/final-*.log 与 tmp/reg-*.log。
 - 发布：版本 0.7.1→0.8.0（提交 ea88bc3）；产出 dist/Lumin-0.8.0 + dist/Lumin-0.8.0-win-x64.zip（215MB）；包内 release.json version=0.8.0、sourceCommit=ea88bc3；9 项资产哈希与源码逐一一致（BAD=0）；隔离空目录冒烟 RESULT=OK（TITLE=Lumin、STATUS=Lumin 0.8.0 · 已连接、PRELOAD/TITLEBAR/DOCX 全 ok，NAV=5 与 0.7.0 包相同）；启动Lumin.cmd 已指向 dist\Lumin-0.8.0\Lumin.exe。
 - 备注：同会话同轮幂等由单测覆盖（重复 save 只留 1 条记录），端到端用别名合并 + 多会话多记录验证。两份未跟踪调研文档（知识库改进清单-v2、非对话页面改造方案-v1）按约定保持未跟踪、未提交。测试工具链同样入版本管理：tools/knowledge-check.cjs（新增）、tools/nonchat-check.cjs（扩到 25）、tools/real-features-check.py（加 knowledge / personal_search 两例）、tools/mock-openai/server.py（加知识点自动记录的脚本分支）。
+
+
+## 2026-10-16 · 知识网络标注/配色/笔记、会话并发修复、共享技能目录（0.8.1）
+- 用户需求（本轮对话）：① 关系说明标注在连线上 + 一个 icon 控制显隐；② 每个节点可自定义颜色（要有调色盘）；③「我的笔记」要能记笔记（铅笔 icon 弹窗）。随后追加报障：④ 一段会话在跑时，新建会话提问被当成「插话」卡住；以及疑问：⑤ 技能只剩两个，之前不是和 Codex/Claude 共用技能目录吗。
+- ④ 会话并发修复（提交 262e002）：
+  - 根因：`busyTurn/chatRequest` 是全局单例 —— 任何一段在跑时，在别的（新）会话按 Enter 都会走 `steer()`，把消息注给「当前会话」；新会话没有在跑的轮次，插话被排队后落空，界面就停在「插话」不再有下文；且 A 轮结束会把全局 busy 清掉。
+  - 修复：按会话记请求（`state.chatRequests: Map<sid, request>`），`busyTurn/chatRequest` 变成「当前会话」的镜像（`syncChatBusy()` 在发送/收尾/切会话时同步）；列表转圈、删除保护、图片/附件门禁、Esc/停止都按当前会话判断；`isSessionRunning(sid)` 供每行独立显示转圈；会话完成只清自己那一格。
+  - 内核加固：`/api/agent/steer` 只对「真的有轮次在跑」的会话生效，空闲会话直接 409（`这一段没有正在执行的轮次，直接发送即可`）；`SessionHub.release()` 顺带清掉没注入的插话，避免留到下一轮变「前世遗言」。
+  - 验证：新增 tools/session-switch-check.cjs 12/12（慢速 mock：A 跑着→新建 B→B 正常发送/作答且不带插话→切回 A 插话被这一轮消费→空闲会话插话被拒→无 JS 异常）；stop-check 12→13/13（新增「空闲会话显示发送按钮」断言，停止仍取消真正在跑的那段）；busy-caret 6/6（改用 isSessionRunning）；cjpm test 130/130→131/131。
+- ⑤ 共享技能目录（提交 48a9c70）：
+  - 事实核对：桌面版技能一直只扫 `<数据目录>/skills`（用户技能）+ 随包 `shell/skills`（kb-harvest、web-research 共 2 个）；「与 Codex 共用技能目录」是 lumin（CLI 子项目）的行为（`<工作区>/.agents/skills`、`~/.agents/skills`，README 明确写着与 Codex 共用）；当前用户数据目录没有 skills 文件夹 → 所以只显示 2 个。不是丢失，是桌面版没接。
+  - 修复：`core/src/agent/skill.cj` 新增共享根（`~/.agents/skills`、`~/.claude/skills`、`~/.codex/skills`，只读、重名用户优先、其次内置、最后共享）；没声明内核工具的共享技能如实标注「外部技能还没有声明内核工具（可以在设置里查看正文）」，正文仍可预览；`/api/skills/list` 增加 `sharedDirs`；设置·技能页把来源标成「共享目录（Codex/Claude）」并新增「扫描的目录」卡片。
+  - 验证：单测新增 sharedSkillRootsExposeCodexClaudeAndAgentsConventions（131/131）；真实环境 API 清单：内置 2 + 共享 22（agent-reach、nature-*、pptx、urdf、eric-write、apple-design、pdf、playwright…）；截图 tmp/skills-shots/settings-skills.png 目视通过；tools/skill-check.ps1 全部通过。
+- ①②③ 知识网络（提交 d7be37d）：
+  - 连线上的关系说明：Canvas 在连线中点画圆角标签（浅/深色都读得清），`knowledgeNet.linkLabels` 留痕；头部新增标签 icon 开关（默认显示，写进内核偏好 ui_knowledge_link_labels，刷新后保持）。
+  - 节点颜色：数据库加 color 列（老库自动 ALTER）；手动编辑必须 #RRGGBB（非法拒绝、模型记录不能覆盖用户颜色）；编辑弹窗加调色盘（8 个预设 + 原生 color picker + 默认）；节点球体渐变、详情标题圆点、节点列表圆点都用它。
+  - 笔记：详情「我的笔记」标题加铅笔 icon（点开就是记笔记弹窗），空态文案指向铅笔；原「写笔记」按钮保留。
+  - 验证：tools/knowledge-check.cjs 42→57/57（新增颜色存取/非法拒绝/调色盘 UI/圆点、标签绘制与开关、偏好持久化跨刷新、铅笔记笔记）；截图 network-light/dark/compact 已目视；cjpm test 131/131。
+- 回归与发布：最终包二进制上 16 组回归全过（knowledge 57、nonchat 25、session-switch 12、learning 99、personal 23、presentation 9、deck-export、palette 14、stop 13、attachments 16、splash 4、tray 4、busy-caret 6、kb-general、text-menu 6、glass-shot 无报错）+ skill-check.ps1 全过；版本 0.8.0→0.8.1（提交 9eeb9a6）；dist/Lumin-0.8.1 + zip，9 项资产哈希与源码一致（BAD=0），隔离冒烟 RESULT=OK（STATUS=Lumin 0.8.1 · 已连接）；启动Lumin.cmd 指向 0.8.1。
+- 备注：共享技能目前是「只读列出 + 可看正文」；要让某条外部技能能直接在对话里绑定使用，需要给它补内核工具的 `tools:` 声明（或后续专门放宽外部技能的工具边界）。两份未跟踪调研文档仍未纳入提交。
