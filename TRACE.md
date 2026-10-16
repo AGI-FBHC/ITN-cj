@@ -4192,3 +4192,15 @@ read_chunk 读得到原文并带回库标识与正文。
 - 根因：splash.html 的 logo 是外链图片（logo-mark.png）。窗口在 ready-to-show 时亮出，而**首帧**可能在图片解码完成前就画出来——那一帧只有 "Lumin" 与"正在唤醒本地内核…"两行文字，看起来就是一张裸页面。
 - 修复（提交 dcdb7ea）：logo 以 data URI 内联进 splash.html 与 index.html 的 #boot 动画层（源图 4KB → 内联约 5.5KB），动画 shine 的 CSS mask 同样内联；splash 增加"解码完成前 body 不显示（opacity:0），image.decode() 后淡入 + 250ms 兜底"，于是任何一帧要么是完整动画、要么是与主题同色的空背景，不可能再出现裸文字页。窗口栏与动画样式本身未动。
 - 验证：splash-check 4→7/7（新增：两处 logo 都是内联 data URI、cold-start 在解码后才 reveal）；0.8.5 打包（提交 a7a2af0）9 项资产哈希 BAD=0、隔离冒烟 RESULT=OK；全量回归 18 组 + skill-check 全过（knowledge 69、markdown 14、nonchat 25、session-switch 12、learning 98、personal 23、presentation 9、deck-export、palette 14、stop 13、attachments 16、splash 7、tray 4、busy-caret 6、kb-general、text-menu 6、glass-shot 无报错）。
+
+
+## 2026-10-17 · 知识网络：节点微漂浮 + 选中冻结/颜色加深 + 图视图刚好铺满（0.8.6）
+- 用户需求：① 网络里做持续的微动（悬浮感）——不只相机角度，节点也要在附近缓慢飘移；② 节点可选中，选中后该节点不动，并做"颜色加深"效果；③ 选中后侧边栏可编辑（已有能力，沿用）；④ 图页面不要出现拖动栏、默认刚好铺满；时间轴不用强行铺满。
+- 实现（提交 10785bc）：
+  - 漂浮：每个节点按 id 哈希出相位，两路低频正弦叠加（主振幅约 7px/6px，周期数十秒），requestAnimationFrame 持续重绘；prefers-reduced-motion 时退回静态绘制；切走页面时渲染循环自停（canvas 断开即退出），重装画布前先 cancel 旧循环。
+  - 选中：选中节点冻结在当前偏移（继续绘制但不更新相位），不再漂移；光球选中时整体颜色加深（×0.72，自定义色与默认色都走加深通道），保留细金圈与轻微放大。
+  - 铺满：页面根挂 data-view；`[data-view="graph"]` 高度 100%、工作区/场景 min-height 归零、抽屉 height:100%（内部滚动即可）；首页 `.view` 内边距收窄为 14/18，`.knowledge-network` 去掉 margin-bottom（否则 100%+16px 必然多出一条纵向滚动条）。`[data-view="timeline"]` 保持自然高度：时间线 overflow:visible、抽屉 sticky + 70vh 上限，整页可滚。
+- 验证：knowledge-check 69→73/73（新增：图视图刚好铺满且无滚动条、未选中节点 1.3s 内确有位移、选中节点 1.1s 内位置不动、时间线非强制铺满且随页面滚动）；截图 tmp/knowledge-shots/network-graph.png 目视（选中节点明显加深、页面无滚动条）。内核未动（134/134 沿用）。
+- 发布：版本 0.8.5→0.8.6（提交 1b6968c）；dist/Lumin-0.8.6 + zip；9 项资产哈希 BAD=0；隔离冒烟 RESULT=OK（Lumin 0.8.6 · 已连接）。全量回归结果见下。
+
+- 回归（0.8.6 包二进制）：18 组 + skill-check 全过 —— knowledge 73、markdown 14、nonchat 25、session-switch 12、learning 98、personal 23、presentation 9、deck-export、palette 14、stop 13、attachments 16、splash 7、tray 4、busy-caret 6、kb-general、text-menu 6、glass-shot 无 console 错误；skill-check 全过。
