@@ -4256,3 +4256,22 @@ read_chunk 读得到原文并带回库标识与正文。
 - 验证汇总：内核单测 138/138（+1 条列表聚合契约）；knowledge-check 84→**92**（+8）；全量回归 19 组 + skill-check 全过（knowledge 92、session-list 10、markdown 14、nonchat 25、session-switch 12、learning 98、personal 23、presentation 9、deck-export、palette 14、stop 13、attachments 16、splash 7、tray 4、busy-caret 6、kb-general、text-menu 6、glass-shot、skill-check）；探针 4 档 dpr 坐标 0 偏差；暗色抽屉截图 tmp/offset-shots/drawer-dark.png 目视。
 - 发布：0.8.8→0.8.9（提交 c20be8d）；dist/Lumin-0.8.9 + zip（190MB）；9 项资产哈希 BAD=0；隔离冒烟 RESULT=OK（Lumin 0.8.9 · 已连接）；启动Lumin.cmd 指向 0.8.9。功能提交 87ff9f3（内核）、94f2753（界面+AGENTS 第 8 条）。
 - 诚实说明：epoch 缓存是**进程内**的——单实例架构下内核自己写库全部覆盖；外部进程直写同一库文件不会触发失效（当前没有这类使用场景，CLI 直连库属于未来要单独评估的事）。
+
+## 2026-10-17 · 新会话交接：递归核对会话链与当前基线
+- 用户要求充分理解 01a1442a-5772-7bd3-a04b-b85bdde66636 及其引用的上文，然后在新窗口继续新任务。当前聊天 cwd 是 C:/Users/GeJie/.codex/worktrees/0dad/ITN；已核实实际工作目标是 D:/Desktop/ITN/ITN-Desktop，禁止因聊天 cwd 改错网页版仓库。
+- 已分页读完主链：01a1442a → 01a14383 → 01a14302 → 01a14268 → 01a13ed0 → 01a13454 → 01a1342d。补读非对话调研线程 01a140da 的关键方案、资源分支 01a13e4a 的交付轮、lumin 独立开发 01a13951/01a13ac8 的关键边界、网页版 01a135d6 的相关历史；01a130c9 仅查到旧线元信息与最新空轮，不宣称全史逐项复验。
+- 核对 PRODUCT.md、AGENTS.md、docs/01、02、11、13、两个未跟踪调研稿与 TRACE 历史。产品方向：个人学习桌面 Agent 工作台；lumin 决策，讲义/实操/测试/演示是按需调用的专业工具；宿主管理会话/权限/任务/学习证据；不另建每轮固定的生成工作流；lumin/ 独立本体不擅自改动，适配在 Desktop 副本与宿主完成。
+- 历史完成主线：会话树、停止/插话、项目与权限、附件/图像/会话链接、真实模型超时与残缺参数恢复、时间线顺序、GFM、Agent PPTX、候选资源预览与确认存副本、个人内容索引、知识库管理迁移、对话知识点及来源工作区、手动连线/配色/笔记/时间线、微漂浮与抽屉布局、每会话独立请求、技能白名单污染修复、知识网络可见性和列表性能。
+- 当前核对基线：Desktop main@4407727，shell 与启动器为 0.8.9；dist/Lumin-0.8.9 存在，压缩包实际叫 dist/Lumin-0.8.9.zip（不是 -win-x64.zip）；9 项清单哈希与包内及当前对应源码/内核一致。旧包 sourceCommit 为 55a5320，落后于功能提交，不能仅凭该字段推断包的源码；此轮交接没有重跑旧版功能/真实模型/生产服务验证。
+- 已确认未完边界：共享技能可发现/预览，外部未声明内核 tools 的技能不能直接绑定；knowledge_tools.cj 当前只有 record/read，知识网络 UI 的编辑/连线/删除等写操作尚未全部成为 Agent 工具；数学公式/Mermaid、完整影子工作树写回流程等历史建议不算已交付。README 初始“脚手架/工具链尚未安装”与 PRODUCT 早期“PPTX 不验收”已落后于后续实现，接手需按较新源码与记录判断。
+- 用户长期约定：功能改动本地 Git；同一个 TRACE 追加；PowerShell 7；接口先写契约；桌面能力配 Agent 工具；测试先讲触发/覆盖/限制并能抓真实 bug；新增内核/夹具优先仓颉；先交流根因与方案，页面改动守住窗口顶部栏边界。保留原有两份未跟踪调研稿，不混入提交，不记录密钥。
+- 交接期间未改业务、未起应用或碰真实数据。只读命令有一次 foreach 直接接管道的 ParserError，已用数组收集修正；一次 db.cj 路径判断错误，已定位到 core/src/db/db.cj。此后用户追加下面的修复任务，因此本轮转入已授权功能实施。
+
+## 2026-10-17 · 修复知识网络在页面缩放下的鼠标命中偏移（0.8.10，打包验收待追加）
+- 用户新反馈：“知识网络节点鼠标选中位置还是有偏移，分析根因并修复”。继续在 Desktop 实际仓库处理，不修改聊天 cwd 的 ITN worktree。
+- 根因：project()/draw() 用 host.clientWidth/Height 的布局像素绘制，hit() 却只做 clientX/Y 减 getBoundingClientRect.left/top，得到的是页面缩放后的屏幕 CSS 像素。应用设置与 Ctrl +/- 使用 body.zoom，非 100% 时两种单位不同，误差随节点距画布原点增大；此前 dpr=1/1.25/1.5/2 探针均保持 body.zoom=1，漏测真正的应用缩放。
+- 先复现：新增 tools/knowledge-hit-check.cjs。真实仓颉内核 + 隔离空数据目录，经 API 创建 3 个节点；Edge/Playwright 真鼠标移动/点击，从 Canvas 实际位图尺寸及绘制 transform 推导屏幕可见中心，不能直接调用 openKnowledgePoint 冒充点击。旧版在 DPI=1、页面85%就失败：绘图位置约(759,654)，矩形尺寸902×751、布局1062×884，旧命中读成约(645,556)，hover=false。进一步把 HEAD 旧 workbench.js 复制到 tmp/knowledge-hit-before 后用同一脚本实点中心，稳定报 selects the displayed node 失败（tmp/r0810-hit-before.log）。不触及用户数据/真实模型。
+- 修复：shell/renderer/workbench.js 的 hit() 先把屏幕相对坐标按 rect → canvas.width/height 还原到位图，再用 ctx.getTransform().inverse() 还原绘图坐标；DPR 只消除一次，覆盖 CSS zoom/显示缩放/位图取整。节点圆球与标签继续共用 hit()，悬停和点击都得到修复；保留漂浮、选中冻结、手动连线与原布局。没有新增产品能力或 API，因此不添加无关工具接口。
+- 检查说明已在对话中交代：本次重点覆盖实际可见坐标点选，DPI与页面缩放独立组合，抽屉开合后重取坐标；不声称这类检查证明真实模型行为或真实用户数据健康。
+- 首轮修后：knowledge-hit 281/281（DPI 1/1.25/1.5/2 × 页面85/100/115/130/160%，每组3节点抽屉关闭/打开后的中心点击、标签点击与hover）；knowledge-check 92/92（包含漂浮/抖动/真拖拽/抽屉/配色/笔记/来源/删除/窄屏等）；nonchat-check 25/25；node --check 两文件与 git diff --check 通过。后两项复用原有回归，其中 knowledge-check 使用历史既有 Python mock 服务；新增夹具与脚本没有引入 Python，造数通过仓颉 API。
+- 发版准备：shell/package.json、package-lock.json、renderer/release.json 与启动Lumin.cmd 同步为0.8.10。功能和发布信息一起提交，打包使用此提交的 sourceCommit；最终包与复测结果在下条追加，不提前宣称完成。

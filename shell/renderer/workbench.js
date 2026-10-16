@@ -1143,7 +1143,15 @@ function installKnowledgeCanvas(canvas){
   };
   // 命中区 = 光球（比可见半径再放宽一点）∪ 文字标签的包围盒。
   // 用户经常直接点节点名字：此前只有 24px 光圈算命中，点文字两端就会"点空/点偏"。
-  const hit=e=>{const rect=canvas.getBoundingClientRect(),x=e.clientX-rect.left,y=e.clientY-rect.top;
+  const hit=e=>{
+    const rect=canvas.getBoundingClientRect();if(!rect.width||!rect.height)return;
+    // clientX/Y 与 rect 是屏幕 CSS 坐标，节点是 ctx 绘图坐标。
+    // 先按显示尺寸还原到位图，再逆变换掉 DPR；同时覆盖 body.zoom、CSS 缩放与位图取整。
+    // 只减 rect.left/top 在页面缩放 != 100% 时会产生随节点位置增大的偏移。
+    const {x,y}=ctx.getTransform().inverse().transformPoint({
+      x:(e.clientX-rect.left)*canvas.width/rect.width,
+      y:(e.clientY-rect.top)*canvas.height/rect.height
+    });
     return [...knowledgeNet.projected].reverse().find(p=>{
       const dx=Math.abs(p.x-x),dy=Math.abs(p.y-y),r=Math.max(26,p.r+2);
       if(dx*dx+dy*dy<r*r){return true;}
