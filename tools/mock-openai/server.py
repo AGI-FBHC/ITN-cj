@@ -366,6 +366,15 @@ def native_reply(body):
     ask = text_of([msgs[user_at]]) if user_at >= 0 else ""
     def call(name, args):
         return {"tool_calls": [{"id": "mock-call-1", "type": "function", "function": {"name": name, "arguments": json.dumps(args, ensure_ascii=False)}}]}
+    # 慢速任务：验"一段会话在跑时，另一段会话照常新建/提问/插话"（每段自己跑自己的）
+    joined_all = "\n".join(text_of([m]) for m in msgs)
+    if "慢速任务测试" in joined_all:
+        time.sleep(float(os.environ.get("ITN_MOCK_SLOW_MS", "10000")) / 1000.0)
+        if "插话测试" in joined_all:
+            return "慢速任务完成：收到插话。"
+        if any(m.get("role") == "tool" for m in msgs[user_at + 1:]):
+            return "慢速任务完成：没有插话。"
+        return call("calc", {"expr": "1+1"})
     if any(m.get("role") == "tool" for m in msgs[user_at + 1:]):
         last_tools = [m for m in msgs[user_at + 1:] if m.get("role") == "tool"]
         # "读原文"：从上一轮检索结果的 `id: 路径#序号` 里取出切片 id 再读全文（读过了就收尾）。

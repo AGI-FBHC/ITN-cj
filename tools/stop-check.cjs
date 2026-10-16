@@ -76,6 +76,7 @@ async function events(sid) { return (await api('/api/sessions/events', { session
   const stopped = await events(activeSid);
   check('kernel persists cancelled terminal event', stopped.at(-1).type === 'turn/end' && stopped.at(-1).payload.ok === false);
   check('stopped turn starts no further model request', modelCalls === 1);
+  for (let i = 0; i < 40 && await page.locator('#chat-thread .spinner').count() > 0; i++) await page.waitForTimeout(100);
   check('cancelled turn no longer displays a spinner', await page.locator('#chat-thread .spinner').count() === 0);
   check('cancelled empty turn has no fabricated answer or generate actions',
     !(await page.locator('#chat-thread').innerText()).includes('没有拿到可用的回答') &&
@@ -87,7 +88,12 @@ async function events(sid) { return (await api('/api/sessions/events', { session
   await until(() => slowRequests === 2);
   const runningSid = await page.evaluate(() => state.chatRequest.sessionId);
   const other = (await api('/api/sessions/new')).sessionId;
-  await page.evaluate(async (sid) => { state.chatSessionId = sid; state.chatTurns = []; state.chatEvents = []; await go('chat'); }, other);
+  await page.evaluate(async (sid) => { await openChatSession(sid); }, other);
+  check('an idle session shows Send while another one keeps running',
+    await page.getByRole('button', { name: '发送', exact: true }).count() === 1 &&
+    await page.evaluate(() => state.busyTurn === false) &&
+    await page.evaluate((sid) => isSessionRunning(sid), runningSid));
+  await page.evaluate(async (sid) => { await openChatSession(sid); }, runningSid);
   await page.getByRole('button', { name: '停止', exact: true }).click();
   await page.getByRole('button', { name: '发送', exact: true }).waitFor({ timeout: 3000 });
   check('after switching sessions, Stop still cancels the actually running turn', (await events(runningSid)).at(-1).payload.ok === false);

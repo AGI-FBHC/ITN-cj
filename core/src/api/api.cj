@@ -1229,6 +1229,12 @@ public class Api {
                         fail(ctx, 400, "缺少 sessionId 或 text")
                         return
                     }
+                    // 只有真的有一轮在跑时才算"插话"；空闲会话直接报错，避免这句遗言
+                    // 悄悄排队、等下一轮提问时才冒出来（也避免界面把新会话的发送误当插话）。
+                    if (sessionHub().activeTurn(sid).size == 0) {
+                        fail(ctx, 409, "这一段没有正在执行的轮次，直接发送即可")
+                        return
+                    }
                     sessionHub().pushSteering(sid, text)
                     let o = JsonObject()
                     o.put("queued", JsonBool(true))

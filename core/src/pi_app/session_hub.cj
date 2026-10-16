@@ -37,7 +37,8 @@ public class SessionHub {
     }
 
     public func release(sessionId: String): Unit {
-        synchronized(lock) { activeTurns.remove(sessionId); running.remove(sessionId) }
+        // 轮次结束时把没来得及注入的插话一起清掉：留到下一轮会变成"上一轮的遗言"。
+        synchronized(lock) { activeTurns.remove(sessionId); running.remove(sessionId); steer.remove(sessionId) }
     }
 
     /** 插一句话，等这一轮的下一次模型请求之前注入。 */

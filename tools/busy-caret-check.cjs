@@ -37,14 +37,14 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
             inside:!!(body&&parent!==body&&body.contains(parent)),
             caretParent:parent.tagName+'/'+(parent.className||''),
             rowSpin:document.querySelectorAll('.panel-item-row.rail-session .panel-item-spin').length,
-            running:runningSessionId(),sid,activeSpin};
+            running:isSessionRunning(sid),sid,activeSpin};
   });
   check('caret sits at the end of the current text block instead of starting a new line',live.sameBlock&&live.inside);
-  check('the running session row shows a spinner ('+live.caretParent+')',live.rowSpin>=1&&live.activeSpin&&live.running===live.sid);
+  check('the running session row shows a spinner ('+live.caretParent+')',live.rowSpin>=1&&live.activeSpin&&live.running===true);
   await page.waitForFunction(()=>!state.busyTurn,null,{timeout:30000});
   await page.waitForFunction(()=>!document.querySelector('#chat-thread .caret'),null,{timeout:5000});
-  const idle=await page.evaluate(()=>({rowSpin:document.querySelectorAll('.panel-item-row.rail-session .panel-item-spin').length,caret:!!document.querySelector('#chat-thread .caret'),running:runningSessionId()}));
-  check('spinner disappears and caret is removed after the turn finishes',idle.rowSpin===0&&idle.running===''&&!idle.caret);
+  const idle=await page.evaluate(()=>({rowSpin:document.querySelectorAll('.panel-item-row.rail-session .panel-item-spin').length,caret:!!document.querySelector('#chat-thread .caret'),running:isSessionRunning(state.chatSessionId)}));
+  check('spinner disappears and caret is removed after the turn finishes',idle.rowSpin===0&&idle.running===false&&!idle.caret);
   check('no JavaScript errors',errors.length===0);
   console.log('RESULT '+passed+' passed; '+dir);
  }finally{if(browser)await browser.close();core.kill();mock.kill();}})().catch(e=>{console.error(e);process.exitCode=1;});

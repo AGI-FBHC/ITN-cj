@@ -386,7 +386,7 @@ const state = {
   chatSessionId: "", chatTurns: [], chatEvents: [], tools: null, chatQuery: "", artifactFocus: "",
   webMode: "auto", skill: "", skills: [], lastReportArtifact: "", chatKb: null, railGroups: {},
   projects: [], chatProject: "", chatMode: "chat", railExpanded: {},
-  busyTurn: false, pendingQuestion: "", lastQuestion: "",
+  busyTurn: false, pendingQuestion: "", lastQuestion: "", chatRequests: new Map(),
   // 主题与会话栏偏好存在内核的 settings 表里（内核端口每次启动都变，localStorage 活不过一次重启）
   theme: "system", dark: false, panelHidden: false, kernel: null, uiZoom: 1, uiFont: 1,
 };
@@ -450,16 +450,17 @@ async function loadSessions() {
   catch (e) { state.sessions = []; }
   /* 正在跑、但还没出现在列表里的会话（新建的会话要等第一条事件落库才进列表接口）
      先补一行：转圈必须马上看得见，不能等这一轮跑完才冒出来。真实数据一到自然顶掉。 */
-  const running = runningSessionId();
-  if (running && !state.sessions.some((x) => x.sessionId === running)) {
-    state.sessions.unshift({
-      sessionId: running,
-      title: state.lastQuestion || "新对话",
-      projectId: "",
-      kind: "ask",
-      lastAt: new Date().toISOString(),
-      eventCount: 0,
-    });
+  for (const running of state.chatRequests.keys()) {
+    if (!state.sessions.some((x) => x.sessionId === running)) {
+      state.sessions.unshift({
+        sessionId: running,
+        title: state.lastQuestion || "新对话",
+        projectId: "",
+        kind: "ask",
+        lastAt: new Date().toISOString(),
+        eventCount: 0,
+      });
+    }
   }
   /* 列表是"会话元信息"的唯一来源：顶栏那条面包屑（工作区 | 会话名）也吃这份数据。
      标题是模型异步起好的、跑完一轮时间会变 —— 读一次列表就把顶栏一起对齐，
@@ -5220,10 +5221,14 @@ function panelItem(opt) {
   return b;
 }
 
-/** 正在跑的那段会话：AI 执行/回复中给列表行挂转圈用；没跑时返回空串。 */
-function runningSessionId() {
-  if (!state.busyTurn) return "";
-  return (state.chatRequest && state.chatRequest.sessionId) || state.chatSessionId || "";
+/** 每一段会话自己跑自己的：按会话记正在执行的轮次（同会话最多一轮，跨会话可以同时跑）。
+ * 列表行转圈、删除保护、“Enter 是插话”都看这份状态，不再用一个全局布尔碰全部。 */
+function isSessionRunning(sid) { return !!sid && state.chatRequests.has(sid); }
+/** 把"当前会话是否正在跑"同步到全局镜像：busyTurn/chatRequest 只代表当前会话。 */
+function syncChatBusy() {
+  state.chatRequest = state.chatRequests.get(state.chatSessionId) || null;
+  state.busyTurn = !!state.chatRequest;
+  if (typeof state.chatRepaintBusy === "function") state.chatRepaintBusy();
 }
 
 function panelGroup(text) { return el("div", "panel-group-title", text); }
@@ -5629,7 +5634,7 @@ PANELS.chat = {
       }
       /* 转圈是就地开关，不进结构指纹：跑起来的会话不该让整列重建。 */
       const titleBox = item.querySelector(".panel-item-title");
-      const busy = sid === runningSessionId();
+      const busy = isSessionRunning(sid);
       const spin = titleBox ? titleBox.querySelector(".panel-item-spin") : null;
       if (busy && titleBox && !spin) titleBox.insertBefore(el("span", "spinner panel-item-spin"), titleBox.firstChild);
       else if (!busy && spin) spin.remove();
@@ -5746,7 +5751,7 @@ PANELS.chat = {
         rowEl.appendChild(panelItem({
           id: x.sessionId,
           active: x.sessionId === state.chatSessionId,
-          busy: x.sessionId === runningSessionId(),
+          busy: isSessionRunning(x.sessionId),
           title: x.title || "新对话",
           meta: railMetaOf(x),
           onClick: () => openChatSession(x.sessionId),
@@ -6070,7 +6075,7 @@ function renameSessionDialog(s) {
 
 /** 删除会话：删掉这段对话自己的记录，删前说清"别的东西都不动"。 */
 function deleteSessionDialog(s) {
-  if (state.busyTurn && state.chatSessionId === s.sessionId) {
+  if (isSessionRunning(s.sessionId)) {
     toast("这段会话正在跑，先停止或等它跑完");
     return;
   }
@@ -7500,8 +7505,8 @@ PAGES.chat = {
       grow();
       state.lastQuestion = text;
       const request = { sessionId: sid, controller: new AbortController(), baseline: (state.chatEvents || []).length, turnId: "", endedByEvents: false };
-      state.chatRequest = request;
-      state.busyTurn = true;
+      state.chatRequests.set(sid, request);
+      syncChatBusy();
       renderPanel();   // 会话列表立刻给这一段挂上"正在回复"的转圈
       // 允许"已取消"的那一轮一键重问（取消多半是因为问题写错了）
       state.chatResend = (q, attached) => {
@@ -7583,12 +7588,12 @@ PAGES.chat = {
         state.chatTurns = state.chatTurns.filter((t) => t.id !== "local" && !String(t.id).startsWith("steer-"));
       }
       if (typeof syncWorkbenchEvents === "function") syncWorkbenchEvents(state.chatEvents || []);
-      state.busyTurn = false;
-      if (state.chatRequest === request) state.chatRequest = null;
+      if (state.chatRequests.get(sid) === request) state.chatRequests.delete(sid);
+      syncChatBusy();
       renderPanel();   // 跑完了把转圈摘掉（还是就地刷新，不动列表结构）
       const stopped = state.cancelRequested === sid;
       state.cancelRequested = null;
-      if (stopped && !failure) {
+      if (stopped && !failure && state.chatSessionId === sid) {
         // 按过停止：这一轮标成"已取消"（正文保留），并把重问入口挂上
         const last = state.chatTurns[state.chatTurns.length - 1];
         if (last && last.id === "local") {
@@ -7659,10 +7664,12 @@ PAGES.chat = {
     }, 2000);
 
     state.chatPaint = paint;
+    state.chatRepaintBusy = paintActionBtn;
     /* 就地换会话：只换对话区那一段正文，不整页重建、也不重拉会话列表。
        会话栏只把高亮挪过去 —— 点一次就闪一次"加载中…"的问题就出在原来走的是整页 go()。 */
     state.chatOpenSession = async (id) => {
       state.chatSessionId = id;
+      syncChatBusy();
       state.chatEvents = [];
       state.lastEventId = 0;
       state.chatTurns = [];
@@ -7695,6 +7702,7 @@ PAGES.chat = {
         state.lastEventId = d.lastId || 0;
         state.chatTree = d.tree || null;
         state.chatTurns = turnsFromEvents(state.chatEvents);
+        syncChatBusy();
         paint();
       } catch (e) {
         toast("读取会话失败：" + e.message);
@@ -7768,7 +7776,7 @@ const SESSIONS_VIEW = {
         const row = el("div", "row");
         const main = el("div", "grow");
         const titleEl = el("div", "item-title", s.title || "（无标题会话）");
-        if (s.sessionId === runningSessionId()) titleEl.insertBefore(el("span", "spinner panel-item-spin"), titleEl.firstChild);
+        if (isSessionRunning(s.sessionId)) titleEl.insertBefore(el("span", "spinner panel-item-spin"), titleEl.firstChild);
         main.appendChild(titleEl);
         main.appendChild(el("div", "meta",
           (s.kbId ? kbName(s.kbId) + " · " : "") +
