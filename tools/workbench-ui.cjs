@@ -134,6 +134,29 @@ module.exports=async function({base,post,check,dir}) {
     await page.evaluate(()=>{state.chapter=null;return go('learn');});
     await page.waitForSelector('.study-mode-tabs');
     check('study opens current chapter instead of duplicate overview cards',await page.locator('.chapter-article .chunk-card').count()>0&&await page.locator('.unit-steps').count()===0);
+    const learningLayout=[];
+    for(const key of ['home','learn','report']) {
+      await page.evaluate(k=>go(k),key);
+      await page.waitForFunction(k=>current===k&&document.querySelector('#view')?.getAttribute('aria-busy')==='false',key);
+      learningLayout.push(await page.evaluate(()=>({wide:document.body.classList.contains('workspace-wide'),panel:getComputedStyle(document.querySelector('#panel')).display,toggle:getComputedStyle(document.querySelector('#rail-toggle')).visibility,left:Math.round(document.querySelector('.workspace-tabs').getBoundingClientRect().left)})));
+    }
+    check('learning tabs share one wide layout without panel flip-flop',learningLayout.every(x=>x.wide&&x.panel==='none'&&x.toggle==='hidden'));
+    check('learning tab bar stays put across the three tabs',Math.max(...learningLayout.map(x=>x.left))-Math.min(...learningLayout.map(x=>x.left))<=2);
+    await page.evaluate(()=>go('learn'));
+    await page.waitForSelector('.study-chapter');
+    check('chapter directory lives in the page instead of a second-level panel',await page.locator('.study-workspace .study-chapter').count()>=2);
+    const hashBefore=await page.evaluate(()=>location.hash);
+    const otherChapter=await page.evaluate(()=>{const items=[...document.querySelectorAll('.study-chapter')];const t=items.find(b=>!b.classList.contains('active'));return t?t.dataset.id:'';});
+    await page.evaluate(id=>{[...document.querySelectorAll('.study-chapter')].find(b=>b.dataset.id===id)?.click();},otherChapter);
+    await page.waitForFunction(c=>state.chapter===c&&document.querySelector('.reader-heading h2')?.textContent===c,otherChapter);
+    check('switching chapters updates in place without reload or history push',await page.evaluate(h=>location.hash===h,hashBefore)&&await page.locator('.study-chapter.active').count()===1&&await page.locator('.study-mode-tabs').count()===1);
+    await page.setViewportSize({width:1024,height:768});
+    await page.evaluate(()=>go('learn'));
+    await page.waitForSelector('.study-chapter');
+    check('compact learning workspace does not overflow horizontally',await page.locator('#view').evaluate(e=>e.scrollWidth<=e.clientWidth+1));
+    await page.setViewportSize({width:1440,height:960});
+    await page.evaluate(()=>{state.chapter=null;return go('learn');});
+    await page.waitForSelector('.study-mode-tabs');
     await page.locator('.study-mode-tabs [data-mode="practice"]').click();
     check('practice is a focused task within the same chapter',await page.locator('.practice-mode').isVisible()&&await page.locator('.study-reader').isHidden());
     await page.locator('.study-mode-tabs [data-mode="generate"]').click();

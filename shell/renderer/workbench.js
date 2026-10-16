@@ -599,69 +599,125 @@ PAGES.kb.render = async function() {
   if (first) { first.dataset.autoPreview='true'; first.click(); delete first.dataset.autoPreview; }
 };
 
-const studyPageBeforeWorkspace = PAGES.learn.render;
+/* 学 · 练：章节目录常驻左栏，右侧就地切换 —— 三个学习页统一宽版，不再有
+   "二级栏忽隐忽现 / 切换条左右跳 / 点一章整页重载" 的混乱。 */
 PAGES.learn.render = async function() {
   const generation = state.navigationGeneration;
   await loadCfg(); if (generation !== state.navigationGeneration) return;
-  if (!hasKb() || !indexedKb()) { await studyPageBeforeWorkspace.call(this); return; }
-  const tree = await api('/api/study/tree', {kbId: state.kb}); if (generation !== state.navigationGeneration) return;
+  const view = $('view'); view.innerHTML = '';
+  const workspace = el('div', 'study-workspace');
+  const side = el('nav', 'study-side'); side.setAttribute('aria-label', '章节目录');
+  const detail = el('section', 'study-detail'); detail.setAttribute('aria-label', '章节内容');
+  workspace.append(side, detail); view.appendChild(workspace);
+
+  if ((state.cfg.knowledgeBases || []).length) {
+    const head = el('div', 'study-side-head');
+    const sel = kbSelector(() => { state.chapter = null; go('learn'); });
+    sel.setAttribute('aria-label', '学习资料范围');
+    head.appendChild(sel); side.appendChild(head);
+  }
+  if (!hasKb()) {
+    side.append(el('p', 'study-side-note', '还没有学习资料。'), btn('添加资料目录', 'primary sm', () => go('settings', 'kb')));
+    detail.appendChild(emptyState({ art: 'db', title: '先把资料放进来', text: '指定一个本机目录并建立一次索引，就能按章节阅读与练习。', actions: [btn('去指定资料目录', 'primary', () => go('settings', 'kb')), btn('先配置模型', '', () => go('models'))] }));
+    return;
+  }
+  if (!indexedKb()) {
+    side.append(el('p', 'study-side-note', '「' + kbName(state.kb) + '」还没有索引。'), btn('建立索引', 'primary sm', () => buildIndex(state.kb)));
+    detail.appendChild(emptyState({ art: 'alert', title: '这个资料库还没有索引', text: '扫描目录并切片后，章节会出现在左边。', actions: [btn('建立索引', 'primary', () => buildIndex(state.kb)), btn('去资料库看看', '', () => go('kb'))] }));
+    return;
+  }
+  let tree = { chapters: [] };
+  try { tree = await api('/api/study/tree', { kbId: state.kb }); } catch (e) { tree = { chapters: [] }; }
+  if (generation !== state.navigationGeneration) return;
   const chapters = tree.chapters || [];
-  if (!chapters.length) { await studyPageBeforeWorkspace.call(this); return; }
-  if (!chapters.some(c=>c.name===state.chapter)) state.chapter = (chapters.find(c=>!c.done) || chapters[0]).name;
-  const chapter = state.chapter, view = $('view'); view.innerHTML = '';
-  await renderChapter(view); if (generation !== state.navigationGeneration) return;
-  const header = view.firstElementChild, unit = view.querySelector('.unit-steps')?.closest('.card'), extra = view.querySelector('.chapter-extra');
-  if (!header || !unit) return;
-  header.classList.add('reader-heading'); header.querySelector('button')?.remove();
-  const originalSteps = [...unit.querySelectorAll('.unit-step')];
-  const reader = el('section', 'study-reader study-mode-panel'); reader.setAttribute('aria-label', '章节原文');
-  const toolbar = el('div', 'reader-tools');
-  originalSteps[0]?.querySelectorAll('button').forEach(b=>toolbar.appendChild(b));
-  originalSteps[2]?.querySelectorAll('button').forEach(b=>toolbar.appendChild(b));
-  reader.appendChild(toolbar);
-  const article = el('article', 'chapter-article');
-  for (const chunk of [...view.querySelectorAll('.chunk-card')]) {
-    const actions = chunk.querySelector('.chunk-actions'), buttons = actions ? [...actions.querySelectorAll('button')] : [];
-    if (actions && buttons.length > 1) {
-      const menu = el('details', 'reader-context'); menu.appendChild(el('summary', 'btn ghost sm', '更多操作'));
-      const menuBody = el('div', 'reader-context-menu'); buttons.slice(1).forEach(b=>menuBody.appendChild(b)); menu.appendChild(menuBody); actions.appendChild(menu);
+  if (!chapters.length) {
+    side.appendChild(el('p', 'study-side-note', '没有解析出章节。'));
+    detail.appendChild(emptyState({ art: 'alert', title: '没有解析出章节', text: '索引里有切片，但没有标题层级；给资料加上 # / ## 标题会更整齐。', actions: [btn('重新建立索引', 'primary', () => buildIndex(state.kb)), btn('去资料库', '', () => go('kb'))] }));
+    return;
+  }
+  if (!chapters.some((c) => c.name === state.chapter)) state.chapter = (chapters.find((c) => !c.done) || chapters[0]).name;
+
+  side.appendChild(el('p', 'study-side-label', '共 ' + chapters.length + ' 章'));
+  const buttons = chapters.map((c, i) => {
+    const b = el('button', 'study-chapter');
+    b.type = 'button'; b.dataset.id = c.name;
+    b.append(el('span', 'study-chapter-idx', c.done ? '✓' : String(i + 1).padStart(2, '0')));
+    const main = el('span', 'study-chapter-main');
+    main.append(el('span', 'study-chapter-title', c.name),
+      el('span', 'study-chapter-meta', c.chunkCount + ' 片 · 已读 ' + c.readCount + (c.done ? ' · 已完成' : '')));
+    b.appendChild(main);
+    side.appendChild(b);
+    return b;
+  });
+  const paintList = () => {
+    for (const b of buttons) {
+      const on = b.dataset.id === state.chapter;
+      b.classList.toggle('active', on);
+      if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     }
-    article.appendChild(chunk);
-  }
-  reader.appendChild(article);
-  const practice = el('section', 'study-mode-panel practice-mode'); practice.setAttribute('aria-label', '本章练习');
-  if (originalSteps[1]) {
-    const step = originalSteps[1]; step.querySelector('.unit-idx')?.remove();
-    const start = [...step.querySelectorAll('button')].find(b=>b.textContent==='出题练习');
-    if (start) start.onclick = () => openQuiz(practice, chapter);
-    practice.appendChild(step);
-  }
-  practice.appendChild(el('p', 'muted', '围绕当前章节作答，答案与解释会保存到学习记录。答错的题可在错题本复习。'));
-  const generate = el('section', 'study-mode-panel generate-mode'); generate.setAttribute('aria-label', '本章生成');
-  generate.append(el('h2', null, '把这一章变成学习成果'), el('p', 'muted', '选择需要的形式，生成前可以修改主题。'));
-  const choices = el('div', 'generation-choices');
-  const known = extra ? [...extra.querySelectorAll('button')] : [];
-  const descriptions = ['整理本章概念、例子与要点', '生成带答案与解析的练习'];
-  known.slice(0,2).forEach((button,i)=>{ const choice = el('div', 'generation-choice'); choice.append(button, el('p', 'muted sm', descriptions[i])); choices.appendChild(choice); });
-  for (const [label,description] of [['在线演示','把章节重点整理成可播放的演示'],['实操指南','围绕章节设计可动手的任务']]) {
-    const choice = el('div', 'generation-choice'); choice.append(btn(label, '', () => promptLearning('请根据资料中的《'+chapter+'》生成一份'+label+'。')), el('p', 'muted sm', description)); choices.appendChild(choice);
-  }
-  generate.appendChild(choices);
-  const tabs = el('nav', 'study-mode-tabs'); tabs.setAttribute('aria-label', '本章任务'); tabs.setAttribute('role','tablist');
-  const modes = [['read','阅读',reader], ['practice','练习',practice], ['generate','生成',generate]];
-  if (state.studyModeChapter !== chapter) {state.studyModeChapter=chapter; state.studyMode='read';}
-  const select = key => {state.studyMode=key; for (const [id,,panel] of modes) {panel.hidden=id!==key; const button=tabs.querySelector('[data-mode="'+id+'"]');button.setAttribute('aria-selected',String(id===key));button.tabIndex=id===key?0:-1;} };
-  for (const [key,label,panel] of modes) {const button=btn(label,'',()=>select(key));button.dataset.mode=key;button.setAttribute('role','tab');button.id='study-tab-'+key;button.setAttribute('aria-controls','study-panel-'+key);panel.id='study-panel-'+key;panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby',button.id);tabs.appendChild(button);}
-  tabs.onkeydown = event => { const keys=modes.map(m=>m[0]);let index=keys.indexOf(state.studyMode);if(event.key==='ArrowRight')index=(index+1)%keys.length;else if(event.key==='ArrowLeft')index=(index+keys.length-1)%keys.length;else if(event.key==='Home')index=0;else if(event.key==='End')index=keys.length-1;else return;event.preventDefault();select(keys[index]);tabs.querySelector('[data-mode="'+keys[index]+'"]').focus(); };
-  const complete = originalSteps[3]?.querySelector('button'); if (complete) { complete.className='btn sm ghost complete-chapter'; header.querySelector('.card-head').appendChild(complete); }
-  view.replaceChildren(header,tabs,reader,practice,generate); select(state.studyMode || 'read');
-  await renderPanel(true);
+  };
+  let detailToken = 0;
+  const paintDetail = async () => {
+    const mine = ++detailToken;
+    detail.innerHTML = '<div class="empty inline"><span class="spinner"></span> 正在打开本章…</div>';
+    // 渲染到离屏容器：迟到的旧章节渲染不会把内容拼进已经换过的右栏
+    const tmp = el('div');
+    await renderChapter(tmp);
+    if (mine !== detailToken || generation !== state.navigationGeneration) return;
+    const header = tmp.firstElementChild, unit = tmp.querySelector('.unit-steps')?.closest('.card'), extra = tmp.querySelector('.chapter-extra');
+    if (!header || !unit) return;
+    const chapter = state.chapter;
+    header.classList.add('reader-heading'); header.querySelector('button')?.remove();
+    const originalSteps = [...unit.querySelectorAll('.unit-step')];
+    const reader = el('section', 'study-reader study-mode-panel'); reader.setAttribute('aria-label', '章节原文');
+    const article = el('article', 'chapter-article');
+    for (const chunk of [...tmp.querySelectorAll('.chunk-card')]) {
+      const actions = chunk.querySelector('.chunk-actions'), more = actions ? [...actions.querySelectorAll('button')] : [];
+      if (actions && more.length > 1) {
+        const menu = el('details', 'reader-context'); menu.appendChild(el('summary', 'btn ghost sm', '更多操作'));
+        const menuBody = el('div', 'reader-context-menu'); more.slice(1).forEach(b => menuBody.appendChild(b)); menu.appendChild(menuBody); actions.appendChild(menu);
+      }
+      article.appendChild(chunk);
+    }
+    reader.appendChild(article);
+    const practice = el('section', 'study-mode-panel practice-mode'); practice.setAttribute('aria-label', '本章练习');
+    if (originalSteps[1]) {
+      const step = originalSteps[1]; step.querySelector('.unit-idx')?.remove();
+      const start = [...step.querySelectorAll('button')].find(b => b.textContent === '出题练习');
+      if (start) start.onclick = () => openQuiz(practice, chapter);
+      practice.appendChild(step);
+    }
+    practice.appendChild(el('p', 'muted', '围绕当前章节作答，答案与解释会保存到学习记录。答错的题可在错题本复习。'));
+    const generate = el('section', 'study-mode-panel generate-mode'); generate.setAttribute('aria-label', '本章生成');
+    generate.append(el('h2', null, '把这一章变成学习成果'), el('p', 'muted', '选择需要的形式，生成前可以修改主题。'));
+    const choices = el('div', 'generation-choices');
+    const known = extra ? [...extra.querySelectorAll('button')] : [];
+    const descriptions = ['整理本章概念、例子与要点', '生成带答案与解析的练习'];
+    known.slice(0, 2).forEach((button, i) => { const choice = el('div', 'generation-choice'); choice.append(button, el('p', 'muted sm', descriptions[i])); choices.appendChild(choice); });
+    for (const [label, description] of [['在线演示', '把章节重点整理成可播放的演示'], ['实操指南', '围绕章节设计可动手的任务']]) {
+      const choice = el('div', 'generation-choice'); choice.append(btn(label, '', () => promptLearning('请根据资料中的《' + chapter + '》生成一份' + label + '。')), el('p', 'muted sm', description)); choices.appendChild(choice);
+    }
+    generate.appendChild(choices);
+    const tabs = el('nav', 'study-mode-tabs'); tabs.setAttribute('aria-label', '本章任务'); tabs.setAttribute('role', 'tablist');
+    const modes = [['read', '阅读', reader], ['practice', '练习', practice], ['generate', '生成', generate]];
+    if (state.studyModeChapter !== chapter) { state.studyModeChapter = chapter; state.studyMode = 'read'; }
+    const select = key => { state.studyMode = key; for (const [id, , panel] of modes) { panel.hidden = id !== key; const button = tabs.querySelector('[data-mode="' + id + '"]'); button.setAttribute('aria-selected', String(id === key)); button.tabIndex = id === key ? 0 : -1; } };
+    for (const [key, label, panel] of modes) { const button = btn(label, '', () => select(key)); button.dataset.mode = key; button.setAttribute('role', 'tab'); button.id = 'study-tab-' + key; button.setAttribute('aria-controls', 'study-panel-' + key); panel.id = 'study-panel-' + key; panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', button.id); tabs.appendChild(button); }
+    tabs.onkeydown = event => { const keys = modes.map(m => m[0]); let index = keys.indexOf(state.studyMode); if (event.key === 'ArrowRight') index = (index + 1) % keys.length; else if (event.key === 'ArrowLeft') index = (index + keys.length - 1) % keys.length; else if (event.key === 'Home') index = 0; else if (event.key === 'End') index = keys.length - 1; else return; event.preventDefault(); select(keys[index]); tabs.querySelector('[data-mode="' + keys[index] + '"]').focus(); };
+    const complete = originalSteps[3]?.querySelector('button'); if (complete) { complete.className = 'btn sm ghost complete-chapter'; header.querySelector('.card-head').appendChild(complete); }
+    detail.replaceChildren(header, tabs, reader, practice, generate); select(state.studyMode || 'read');
+  };
+  buttons.forEach((b, i) => {
+    b.onclick = () => {
+      const c = chapters[i];
+      if (state.chapter === c.name) return;
+      state.chapter = c.name; state.studyMode = 'read';
+      paintList(); paintDetail();
+    };
+  });
+  paintList();
+  await paintDetail();
 };
-const studyPanelBeforeWorkspace = PANELS.learn;
-PANELS.learn = {...studyPanelBeforeWorkspace, async render(body) {
-  await studyPanelBeforeWorkspace.render(body, {foot:()=>{}});
-  if (hasKb()) { const selector = kbSelector(()=>{state.chapter=null;go('learn');}); selector.setAttribute('aria-label','学习资料范围'); body.prepend(selector); }
-}};
 
 const homePageBeforeWorkspace = PAGES.home.render;
 PAGES.home.render = async function() {

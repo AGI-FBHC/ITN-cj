@@ -346,6 +346,23 @@ body[data-page='learn'] .reader-heading { border:0; box-shadow:none; background:
 .chapter-article .chunk-card { box-shadow:none; background:transparent; border:0; border-bottom:1px solid var(--line); border-radius:0; padding:28px 0; margin:0; font-size:15px; line-height:1.9; }
 .chapter-article .chunk-card:last-child { border-bottom:0; }
 .chapter-article .chunk-card > .card-head h2 { font-size:13px; }
+/* 学 · 练：目录常驻左栏，章节内容在右栏就地切换（和资料库同一套 master-detail）。 */
+.study-workspace { display:grid; grid-template-columns:290px minmax(0,1fr); border:1px solid var(--line); border-radius:16px; overflow:hidden; background:var(--panel); min-height:420px; }
+.study-side { margin:0; padding:16px 12px; background:var(--panel-soft); border-right:1px solid var(--line); display:flex; flex-direction:column; gap:6px; }
+.study-side-head { margin-bottom:8px; }
+.study-side-head select { width:100%; }
+.study-side-note { color:var(--muted); font-size:13px; margin:2px 2px 10px; }
+.study-side-label { color:var(--muted); font-size:12px; margin:10px 4px 2px; }
+.study-chapter { display:flex; gap:10px; align-items:flex-start; text-align:left; border:1px solid transparent; border-radius:10px; background:transparent; padding:9px 10px; color:var(--ink); font:inherit; cursor:pointer; }
+.study-chapter:hover { background:var(--panel); }
+.study-chapter.active { background:var(--panel); border-color:var(--line); box-shadow:var(--shadow-sm); }
+.study-chapter-idx { flex:0 0 auto; width:22px; height:22px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; font-size:12px; background:var(--panel-soft); color:var(--muted); }
+.study-chapter.active .study-chapter-idx { background:var(--brand-soft); color:var(--brand); }
+.study-chapter-main { min-width:0; display:flex; flex-direction:column; gap:2px; }
+.study-chapter-title { font-size:13px; font-weight:600; line-height:1.5; }
+.study-chapter-meta { font-size:12px; color:var(--muted); }
+.study-detail { min-width:0; padding:26px 32px; }
+@media (max-width:1080px) { .study-workspace { grid-template-columns:1fr; } .study-side { border-right:0; border-bottom:1px solid var(--line); } }
 .reader-context { position:relative; }
 .reader-context > summary { list-style:none; cursor:pointer; }
 .reader-context > summary::-webkit-details-marker { display:none; }

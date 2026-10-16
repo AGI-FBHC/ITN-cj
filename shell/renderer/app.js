@@ -673,7 +673,7 @@ async function go(page, section, opts) {
   if (persistentDock && persistentDock.parentElement !== document.querySelector(".app")) document.querySelector(".app").appendChild(persistentDock);
   document.body.dataset.page = target;
   document.body.classList.toggle("library-workspace", target === "kb");
-  document.body.classList.toggle("workspace-wide", ["home", "report", "calibrate", "resources", "notes", "wrong"].includes(target));
+  document.body.classList.toggle("workspace-wide", ["home", "learn", "report", "calibrate", "resources", "notes", "wrong"].includes(target));
   const hash = "#/" + target + (currentSection ? "/" + currentSection : "");
   try {
     if (opts && opts.replace) {
