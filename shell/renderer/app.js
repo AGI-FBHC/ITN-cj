@@ -568,7 +568,7 @@ function railButton(item) {
   b.type = "button";
   b.dataset.page = item.id;
   b.setAttribute("aria-label", item.label);
-  const n = navBadge(item.id);
+  const n = typeof navigationRoot === "function" ? 0 : navBadge(item.id);
   b.innerHTML = icon(item.icon) + '<span class="rail-caption">' + esc(item.label) + '</span>' +
     (n > 0 ? '<span class="nav-badge">' + (n > 99 ? "99+" : n) + "</span>" : "") +
     '<span class="rail-tip">' + esc(item.label) + (n > 0 ? " · " + n : "") + "</span>";

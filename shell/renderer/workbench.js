@@ -69,7 +69,7 @@ function resourceCard(resource, compact) {
   card.dataset.resource = resource.id;
   card.innerHTML = '<span class="resource-entry-type">' + esc(RESOURCE_LABEL[resource.kind] || resource.kind) + ' · v' + Number(resource.version || 1) + '</span>' +
     '<strong>' + esc(resource.title || '学习资源') + '</strong>' +
-    (compact ? '' : '<span class="muted sm">' + esc(kbName(resource.kbId) || '通用') + ' · ' + esc(fmtStamp(resource.updatedAt || resource.createdAt)) + '</span>') +
+    (compact ? '' : '<span class="muted sm">' + esc(resource.kbId ? kbName(resource.kbId) : '通用主题') + ' · ' + esc(fmtStamp(resource.updatedAt || resource.createdAt)) + '</span>') +
     '<span class="resource-entry-open">' + (resource.kind === 'quiz' ? '开始作答' : resource.kind === 'ppt' ? '预览与播放' : '打开阅读') + ' ↗</span>';
   card.onclick = () => openLearningResource(resource.id, resource.version);
   return card;
