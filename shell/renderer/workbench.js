@@ -959,7 +959,10 @@ boot();
 
 /* Main-node knowledge network: visual language adapted from the existing web KnowledgeGraph3D.
    The desktop projection keeps its soft purple orbs and spatial orbit, with no inferred edges. */
-const knowledgeNet={data:{nodes:[],links:[]},selected:'',yaw:.28,pitch:.12,zoom:1,canvas:null,draw:null,projected:[],visible:null};
+const knowledgeNet={data:{nodes:[],links:[]},selected:'',yaw:.28,pitch:.12,zoom:1,canvas:null,draw:null,projected:[],visible:null,showLinkLabels:true,linkLabels:[]};
+const KNOWLEDGE_SWATCHES=['#8B7DA8','#5A8DEE','#2FB8A6','#E4B363','#E07A5F','#C77DFF','#7BC96F','#E5679B'];
+function normalizeKnowledgeColor(v){const m=/^#?([0-9a-f]{6})$/i.exec(String(v||'').trim());return m?('#'+m[1].toUpperCase()):'';}
+function knowledgeRgb(node){const c=normalizeKnowledgeColor(node?.color);if(!c)return null;const n=parseInt(c.slice(1),16);return[(n>>16)&255,(n>>8)&255,n&255];}
 function knowledgeDialog(title,build){
   const overlay=el('div','task-modal knowledge-dialog'),panel=el('section','task-modal-card');panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label',title);panel.appendChild(el('h2',null,title));overlay.appendChild(panel);document.body.appendChild(overlay);
   const close=()=>overlay.remove();overlay.onkeydown=e=>{if(e.key==='Escape')close();};overlay.onclick=e=>{if(e.target===overlay)close();};build(panel,close);return overlay;
@@ -972,7 +975,15 @@ function editKnowledgePoint(node){
   knowledgeDialog(node?'编辑知识点':'添加知识点',(panel,close)=>{
     const title=inputOf('knowledge-title','概念名称',node?.title || ''),definition=el('textarea'),aliases=inputOf('knowledge-aliases','用顿号或逗号分隔',node?.aliases?.join('、') || '');definition.id='knowledge-definition';definition.rows=5;definition.value=node?.definition || '';
     panel.append(fieldOf('名称',title),fieldOf('简明定义',definition),fieldOf('确切别名',aliases));
-    panel.appendChild(btn('保存知识点','primary',async()=>{try{const saved=await api('/api/knowledge/save',{id:node?.id || '',title:title.value,definition:definition.value,aliases:aliases.value.split(/[、,，]/).map(t=>t.trim()).filter(Boolean)});close();await refreshKnowledgeNetwork();await openKnowledgePoint(saved.id);}catch(e){toast(e.message);}}));panel.appendChild(btn('取消','ghost',close));title.focus();
+    let picked=normalizeKnowledgeColor(node?.color);
+    const swatches=[],colorRow=el('div','knowledge-color-row'),mark=()=>swatches.forEach(b=>b.classList.toggle('active',b.dataset.color===picked));
+    for(const color of ['',...KNOWLEDGE_SWATCHES]){const swatch=btn('','knowledge-swatch'+(color?'':' default'));swatch.dataset.color=color;if(color)swatch.style.background=color;swatch.title=color||'默认颜色';swatch.setAttribute('aria-label',color?'节点颜色 '+color:'默认颜色');
+      swatch.onclick=()=>{picked=color;native.value=color||'#8B7DA8';mark();};swatches.push(swatch);colorRow.appendChild(swatch);}
+    const native=el('input');native.type='color';native.id='knowledge-color-picker';native.value=picked||'#8B7DA8';native.title='调色盘：选一个自定义颜色';native.setAttribute('aria-label','自定义节点颜色');
+    native.oninput=()=>{picked=native.value.toUpperCase();mark();};
+    colorRow.appendChild(native);mark();
+    panel.appendChild(fieldOf('节点颜色',colorRow));
+    panel.appendChild(btn('保存知识点','primary',async()=>{try{const saved=await api('/api/knowledge/save',{id:node?.id || '',title:title.value,definition:definition.value,color:picked,aliases:aliases.value.split(/[、,，]/).map(t=>t.trim()).filter(Boolean)});close();await refreshKnowledgeNetwork();await openKnowledgePoint(saved.id);}catch(e){toast(e.message);}}));panel.appendChild(btn('取消','ghost',close));title.focus();
   });
 }
 function writeKnowledgeNote(node){
@@ -1019,7 +1030,7 @@ async function openKnowledgePoint(id){
   const generation=state.navigationGeneration,node=await api('/api/knowledge/node',{id});if(generation!==state.navigationGeneration||current!=='home')return;
   knowledgeNet.selected=id;const workspace=$('knowledge-workspace'),aside=$('knowledge-detail');if(!workspace||!aside)return;
   workspace.classList.add('has-detail');aside.hidden=false;aside.replaceChildren();
-  const head=el('div','row');head.append(el('strong','grow',node.title),btn('收起','ghost sm',()=>{aside.hidden=true;workspace.classList.remove('has-detail');knowledgeNet.selected='';knowledgeNet.draw?.();paintKnowledgeNodeList();}));aside.appendChild(head);
+  const head=el('div','row'),headTitle=el('strong','grow');if(node.color){const dot=el('span','knowledge-color-dot');dot.style.background=node.color;dot.title='节点颜色 '+node.color;headTitle.appendChild(dot);}headTitle.append(node.title);head.append(headTitle,btn('收起','ghost sm',()=>{aside.hidden=true;workspace.classList.remove('has-detail');knowledgeNet.selected='';knowledgeNet.draw?.();paintKnowledgeNodeList();}));aside.appendChild(head);
   aside.append(el('p','knowledge-definition',node.definition || '还没有定义，可以补充你的理解。'),el('p','muted sm',(node.userEdited?'含本人编辑':'AI记录')+' · '+node.recordCount+' 次相关讨论'));
   if(node.aliases?.length)aside.appendChild(el('p','muted sm','也称：'+node.aliases.join('、')));
   const actions=el('div','knowledge-actions');actions.append(btn('提问','primary sm',()=>askKnowledgePoint(node)),btn('写笔记','sm',()=>writeKnowledgeNote(node)),btn('手动连线','sm ghost',()=>linkKnowledgePoint(node)),btn('编辑','sm ghost',()=>editKnowledgePoint(node)));aside.appendChild(actions);
@@ -1030,8 +1041,10 @@ async function openKnowledgePoint(id){
     if(record.workspaceRoot)item.appendChild(el('p','path-line muted sm',record.workspaceRoot));
     item.appendChild(btn('回到这次对话','ghost sm',()=>revealChatHit({sessionId:record.sessionId,turnId:record.turnId}).catch(e=>toast('无法打开来源：'+e.message))));aside.appendChild(item);
   }
-  aside.appendChild(el('h3',null,'我的笔记'));
-  if(!node.notes?.length)aside.appendChild(el('p','muted sm','写下你的理解，笔记也可以在全局搜索里找到。'));
+  const notesHead=el('h3','knowledge-notes-head');notesHead.appendChild(document.createTextNode('我的笔记'));
+  const noteAdd=btn('','ghost sm knowledge-note-add',()=>writeKnowledgeNote(node));noteAdd.innerHTML=icon('pencil');noteAdd.title='记一条笔记';noteAdd.setAttribute('aria-label','记笔记');notesHead.appendChild(noteAdd);
+  aside.appendChild(notesHead);
+  if(!node.notes?.length)aside.appendChild(el('p','muted sm','点铅笔写一条笔记；笔记也会进入全局搜索。'));
   for(const note of node.notes || []){const item=el('article','knowledge-record');item.append(el('p','muted sm',fmtStamp(note.at)),el('p',null,note.text),btn('打开笔记','ghost sm',()=>{state.resTab='notes';go('notes','',{focus:note.id});}));aside.appendChild(item);}
   const links=(knowledgeNet.data.links || []).filter(l=>l.from===id||l.to===id);if(links.length)aside.appendChild(el('h3',null,'手动连接'));
   for(const link of links){const other=knowledgeNet.data.nodes.find(n=>n.id===(link.from===id?link.to:link.from)),row=el('div','row knowledge-link-row');row.append(btn((other?.title || '知识点')+' · '+link.label,'ghost sm grow',()=>openKnowledgePoint(other.id)),btn('移除','ghost sm',async()=>{await api('/api/knowledge/link',{from:link.from,to:link.to,remove:true});await refreshKnowledgeNetwork();await openKnowledgePoint(id);}));aside.appendChild(row);}
@@ -1041,7 +1054,7 @@ async function openKnowledgePoint(id){
 function paintKnowledgeNodeList(){
   const list=$('knowledge-node-list');if(!list)return;list.replaceChildren();
   const nodes=knowledgeNet.visible || knowledgeNet.data.nodes;
-  for(const node of nodes){const button=btn('','knowledge-node-button'+(node.id===knowledgeNet.selected?' active':''),()=>openKnowledgePoint(node.id));button.dataset.knowledgeId=node.id;button.append(el('span','grow',node.title),el('span','muted sm',node.recordCount+' 次记录'));list.appendChild(button);}
+  for(const node of nodes){const button=btn('','knowledge-node-button'+(node.id===knowledgeNet.selected?' active':''),()=>openKnowledgePoint(node.id));button.dataset.knowledgeId=node.id;if(node.color){const dot=el('span','knowledge-color-dot');dot.style.background=node.color;button.appendChild(dot);}button.append(el('span','grow',node.title),el('span','muted sm',node.recordCount+' 次记录'));list.appendChild(button);}
   const count=$('knowledge-count');if(count)count.textContent=knowledgeNet.visible?nodes.length+' / '+knowledgeNet.data.nodes.length+' 个知识点':nodes.length+' 个知识点 · '+knowledgeNet.data.links.length+' 条手动连接';
 }
 function installKnowledgeCanvas(canvas){
@@ -1056,11 +1069,20 @@ function installKnowledgeCanvas(canvas){
   };
   const draw=()=>{
     if(!canvas.isConnected)return;const w=host.clientWidth,h=host.clientHeight,dpr=Math.min(2,devicePixelRatio || 1);if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);}ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
-    const ink=getComputedStyle(document.body).getPropertyValue('--ink').trim() || '#203C35',points=project();knowledgeNet.projected=points;
+    const css=getComputedStyle(document.body),ink=css.getPropertyValue('--ink').trim() || '#203C35',panel=css.getPropertyValue('--panel').trim() || '#ffffff',line=css.getPropertyValue('--line').trim() || '#dddddd',points=project();knowledgeNet.projected=points;
     for(const link of knowledgeNet.data.links){const a=points.find(n=>n.id===link.from),b=points.find(n=>n.id===link.to);if(!a||!b)continue;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.strokeStyle='rgba(139,125,168,.4)';ctx.lineWidth=1.2;ctx.stroke();}
-    for(const p of points){const selected=p.id===knowledgeNet.selected,hover=p.id===hovered,r=p.r*(selected||hover?1.16:1),gradient=ctx.createRadialGradient(p.x-r*.2,p.y-r*.2,0,p.x,p.y,r);
-      // Old web plush texture: opaque center, .55/.72/.88 soft falloff, lavender domain color.
-      gradient.addColorStop(0,'rgba(181,170,205,.9)');gradient.addColorStop(.35,'rgba(169,155,196,.78)');gradient.addColorStop(.55,'rgba(155,141,184,.56)');gradient.addColorStop(.72,'rgba(155,141,184,.3)');gradient.addColorStop(.88,'rgba(155,141,184,.12)');gradient.addColorStop(1,'rgba(155,141,184,0)');ctx.fillStyle=gradient;ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fill();
+    knowledgeNet.linkLabels=[];
+    if(knowledgeNet.showLinkLabels){
+      ctx.font='500 11px "Microsoft YaHei",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+      for(const link of knowledgeNet.data.links){const a=points.find(n=>n.id===link.from),b=points.find(n=>n.id===link.to);if(!a||!b)continue;const text=String(link.label || '关联') || '关联',mx=(a.x+b.x)/2,my=(a.y+b.y)/2,tw=ctx.measureText(text).width+14,th=18;
+        ctx.beginPath();if(ctx.roundRect){ctx.roundRect(mx-tw/2,my-th/2,tw,th,9);}else{ctx.rect(mx-tw/2,my-th/2,tw,th);}ctx.fillStyle=panel;ctx.fill();ctx.strokeStyle=line;ctx.lineWidth=1;ctx.stroke();ctx.fillStyle=ink;ctx.fillText(text,mx,my);knowledgeNet.linkLabels.push({text,from:link.from,to:link.to,x:Math.round(mx),y:Math.round(my)});
+      }
+    }
+    for(const p of points){const selected=p.id===knowledgeNet.selected,hover=p.id===hovered,r=p.r*(selected||hover?1.16:1),gradient=ctx.createRadialGradient(p.x-r*.2,p.y-r*.2,0,p.x,p.y,r),rgb=knowledgeRgb(p);
+      // Old web plush texture: opaque center, .55/.72/.88 soft falloff; the color comes from the node, default lavender.
+      if(rgb){const[cr,cg,cb]=rgb;gradient.addColorStop(0,`rgba(${cr},${cg},${cb},.92)`);gradient.addColorStop(.35,`rgba(${cr},${cg},${cb},.78)`);gradient.addColorStop(.55,`rgba(${cr},${cg},${cb},.56)`);gradient.addColorStop(.72,`rgba(${cr},${cg},${cb},.3)`);gradient.addColorStop(.88,`rgba(${cr},${cg},${cb},.12)`);gradient.addColorStop(1,`rgba(${cr},${cg},${cb},0)`);}
+      else{gradient.addColorStop(0,'rgba(181,170,205,.9)');gradient.addColorStop(.35,'rgba(169,155,196,.78)');gradient.addColorStop(.55,'rgba(155,141,184,.56)');gradient.addColorStop(.72,'rgba(155,141,184,.3)');gradient.addColorStop(.88,'rgba(155,141,184,.12)');gradient.addColorStop(1,'rgba(155,141,184,0)');}
+      ctx.fillStyle=gradient;ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fill();
       if(selected){ctx.beginPath();ctx.arc(p.x,p.y,r*.65,0,Math.PI*2);ctx.strokeStyle='rgba(184,146,70,.8)';ctx.lineWidth=1.5;ctx.stroke();}
       if(points.length<80||selected||hover){ctx.fillStyle=ink;ctx.font=(selected||hover?'600 ':'500 ')+(selected?15:13)+'px "Microsoft YaHei",sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';let label=p.title;while(ctx.measureText(label).width>160&&label.length>3)label=label.slice(0,-2)+'…';ctx.fillText(label,p.x,p.y);}
     }
@@ -1075,10 +1097,14 @@ function installKnowledgeCanvas(canvas){
 const homeBeforeKnowledgeNetwork=PAGES.home.render;
 PAGES.home.render=async function(){
   const generation=state.navigationGeneration;await homeBeforeKnowledgeNetwork.call(this);if(generation!==state.navigationGeneration)return;
-  const view=$('view');knowledgeNet.data=await api('/api/knowledge/graph',{});if(generation!==state.navigationGeneration)return;knowledgeNet.visible=null;
-  const card=el('section','card knowledge-network'),head=el('header','knowledge-network-head'),intro=el('div');intro.append(el('h2',null,'我的知识网络'),el('p','muted sm','对话中积累概念与记录；关系由你自己连接。'));
+  const view=$('view');knowledgeNet.data=await api('/api/knowledge/graph',{});if(generation!==state.navigationGeneration)return;knowledgeNet.visible=null;knowledgeNet.showLinkLabels=state.knowledgeLinkLabels!==false;knowledgeNet.linkLabels=[];
+  const card=el('section','card knowledge-network'),head=el('header','knowledge-network-head'),intro=el('div');intro.append(el('h2',null,'我的知识网络'),el('p','muted sm','对话中积累概念与记录；关系与颜色都由你来定。'));
   const search=inputOf('knowledge-search','搜索知识点、问题或笔记');search.setAttribute('aria-label','搜索知识网络');
-  const actions=el('div','row');actions.append(btn('添加知识点','sm',()=>editKnowledgePoint()),btn('重置视角','ghost sm',()=>{knowledgeNet.yaw=.28;knowledgeNet.pitch=.12;knowledgeNet.zoom=1;knowledgeNet.draw?.();}));head.append(intro,search,actions);card.appendChild(head);
+  const actions=el('div','row');
+  const labelToggle=btn('','ghost sm knowledge-labels-toggle',()=>{const next=!knowledgeNet.showLinkLabels;knowledgeNet.showLinkLabels=next;state.knowledgeLinkLabels=next;savePrefs({knowledgeLinkLabels:next?'1':'0'});syncLabelToggle();knowledgeNet.draw?.();});
+  const syncLabelToggle=()=>{const on=knowledgeNet.showLinkLabels;labelToggle.setAttribute('aria-pressed',on?'true':'false');const tip=on?'关系说明：显示中，点击隐藏':'关系说明：已隐藏，点击显示';labelToggle.title=tip;labelToggle.setAttribute('aria-label',tip);};
+  labelToggle.innerHTML=icon('label');syncLabelToggle();
+  actions.append(btn('添加知识点','sm',()=>editKnowledgePoint()),labelToggle,btn('重置视角','ghost sm',()=>{knowledgeNet.yaw=.28;knowledgeNet.pitch=.12;knowledgeNet.zoom=1;knowledgeNet.draw?.();}));head.append(intro,search,actions);card.appendChild(head);
   const workspace=el('div','knowledge-workspace');workspace.id='knowledge-workspace';const scene=el('div','knowledge-scene'),canvas=el('canvas','knowledge-canvas');canvas.setAttribute('aria-hidden','true');scene.appendChild(canvas);
   if(!knowledgeNet.data.nodes.length){const empty=el('div','knowledge-empty');empty.append(el('h3',null,'从一次知识讨论开始'),el('p','muted','解释概念或讨论方法时，Lumin会留下带来源的知识点；也可以自己添加。'),btn('开始讨论','primary sm',()=>startAgentTask('请用一个具体例子解释输入与输出的约定。','')));scene.appendChild(empty);}
   const detail=el('aside','knowledge-detail');detail.id='knowledge-detail';detail.hidden=true;detail.setAttribute('aria-label','知识点记录');workspace.append(scene,detail);card.appendChild(workspace);

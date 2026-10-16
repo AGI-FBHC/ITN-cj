@@ -35,6 +35,24 @@ class KnowledgeStoreTest {
         let remaining=match(ks.graph().get("links")){case Some(v: JsonArray)=>v;case _=>JsonArray()};@Expect(remaining.size(),0)
     }
     @TestCase
+    func nodeColorPersistsAndModelRecordsCannotOverrideIt(): Unit {
+        let dir=freshDir("knowledge-color");let ks=KnowledgeStore(dir)
+        let first=ks.save(point("配色约定","默认颜色",""),true,"","","","")
+        let id=strOf(first,"id");@Expect(strOf(first,"color"),"")
+        let edited=point("配色约定","自定义颜色","");edited.put("id",JsonString(id));edited.put("color",JsonString("#e07a5f"))
+        ks.save(edited,true,"","","","")
+        @Expect(strOf(ks.read(id),"color"),"#E07A5F")
+        let recorded=ks.save(point("配色约定","模型补记","请解释配色约定"),false,"s","t","请解释配色约定","")
+        @Expect(strOf(recorded,"color"),"#E07A5F")
+        var rejected=false
+        try{let bad=point("配色约定","坏颜色","");bad.put("id",JsonString(id));bad.put("color",JsonString("red"));ks.save(bad,true,"","","","")}catch(e: Exception){rejected=true}
+        @Expect(rejected,true);@Expect(strOf(ks.read(id),"color"),"#E07A5F")
+        let noField=point("配色约定","不带颜色字段","");noField.put("id",JsonString(id));ks.save(noField,true,"","","","")
+        @Expect(strOf(ks.read(id),"color"),"#E07A5F")
+        let cleared=point("配色约定","清空颜色","");cleared.put("id",JsonString(id));cleared.put("color",JsonString(""));ks.save(cleared,true,"","","","")
+        @Expect(strOf(ks.read(id),"color"),"")
+    }
+    @TestCase
     func fabricatedQuotesAndOneOffFileTasksDoNotCreateNodes(): Unit {
         let dir=freshDir("knowledge-filter");let ks=KnowledgeStore(dir);var rejected=false
         try{ks.save(point("编造","定义","没说过"),false,"s","t","你好","")}catch(e: Exception){rejected=true};@Expect(rejected,true)

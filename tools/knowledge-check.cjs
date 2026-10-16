@@ -41,14 +41,18 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   check('an exact alias merges the record into the existing node',g.nodes.length===1&&node.recordCount===2&&node.records.some(r=>r.sessionId===sB));
   check('model records never overwrite the existing title or definition',node.title==='输入与输出'&&node.definition.includes('先写清输入样例')&&node.userEdited===false);
 
-  await post('/api/knowledge/save',{id:nodeId,title:'输入与输出（本人修订）',definition:'本人修订：先定输入输出约定，再执行并留验证依据。',aliases:['I/O 约定']});
+  await post('/api/knowledge/save',{id:nodeId,title:'输入与输出（本人修订）',definition:'本人修订：先定输入输出约定，再执行并留验证依据。',color:'#e07a5f',aliases:['I/O 约定']});
   node=await post('/api/knowledge/node',{id:nodeId});
   check('a manual edit is marked as user-edited',node.userEdited===true&&node.title==='输入与输出（本人修订）');
+  check('the node color is stored as #RRGGBB',node.color==='#E07A5F');
+  check('invalid node colors are rejected',(await raw('/api/knowledge/save',{id:nodeId,title:'输入与输出（本人修订）',definition:'不该写进去',color:'red'})).code!==0);
+  check('the rejected save left the color untouched',(await post('/api/knowledge/node',{id:nodeId})).color==='#E07A5F');
 
   const sC=(await post('/api/sessions/new',{})).sessionId;
   await post('/api/agent/ask-pi',{sessionId:sC,question:qA,web:'off'});
   node=await post('/api/knowledge/node',{id:nodeId});
   check('later model records keep the user-edited definition and title',node.definition.startsWith('本人修订')&&node.title==='输入与输出（本人修订）'&&node.recordCount===3);
+  check('model records never overwrite the user-picked color',node.color==='#E07A5F');
   g=await post('/api/knowledge/graph',{});
   check('records alone never infer edges or child nodes',g.links.length===0&&g.nodes.length===1);
 
@@ -66,6 +70,14 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   await page.locator('.knowledge-recorded').click();
   await page.waitForSelector('#knowledge-detail:not([hidden])');
   check('the card opens the detail with the user-edited definition',(await page.locator('#knowledge-detail .knowledge-definition').innerText()).includes('本人修订'));
+  await page.getByRole('button',{name:'编辑',exact:true}).click();
+  check('the edit dialog offers a palette plus a native color picker',await page.locator('.knowledge-dialog .knowledge-swatch').count()===9&&await page.locator('#knowledge-color-picker').count()===1);
+  await page.locator('.knowledge-swatch[data-color="#C77DFF"]').click();
+  await page.getByRole('button',{name:'保存知识点',exact:true}).click();
+  await until(async()=>(await post('/api/knowledge/node',{id:nodeId})).color==='#C77DFF');
+  check('picking a palette color saves it on the node',true);
+  check('the detail shows the node color dot',await page.locator('#knowledge-detail .knowledge-color-dot').count()===1);
+  check('the node list mirrors the node color',await page.locator('.knowledge-node-button[data-knowledge-id="'+nodeId+'"] .knowledge-color-dot').count()===1);
 
   const uiSession=await page.evaluate(()=>state.chatSessionId);
   const countText0=await page.locator('#knowledge-count').innerText();
@@ -82,7 +94,9 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   await page.evaluate(()=>go('home'));await page.waitForSelector('.knowledge-network');
   await page.locator('.knowledge-node-button').first().click();
   await page.waitForSelector('#knowledge-detail:not([hidden])');
-  await page.getByRole('button',{name:'写笔记',exact:true}).click();
+  check('the notes section offers a pencil button',await page.locator('.knowledge-note-add').count()===1);
+  check('the text note action stays available in the actions row',await page.getByRole('button',{name:'写笔记',exact:true}).count()===1);
+  await page.locator('.knowledge-note-add').click();
   await page.locator('#knowledge-note').fill('MANUAL-NOTE-9527 先写清输入再谈输出');
   await page.getByRole('button',{name:'保存笔记',exact:true}).click();
   await until(async()=>(await page.locator('#knowledge-detail').innerText()).includes('MANUAL-NOTE-9527'));
@@ -121,6 +135,7 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
 
   await page.getByRole('button',{name:'手动连线',exact:true}).click();
   await page.selectOption('#knowledge-link-target',nodeId);
+  await page.locator('#knowledge-link-label').fill('对比');
   await page.getByRole('button',{name:'添加连线',exact:true}).click();
   await until(async()=>(await post('/api/knowledge/graph',{})).links.length===1);
 
@@ -130,6 +145,21 @@ const norm=p=>String(p||'').replace(/\\/g,'/').replace(/\/+$/,'').toLowerCase();
   await page.locator('.palette-item').filter({hasText:'本人修订'}).filter({hasText:'章节'}).first().click();
   await page.waitForSelector('#knowledge-detail:not([hidden])');
   check('the global palette finds the knowledge point and opens it',(await page.locator('#knowledge-detail .knowledge-definition').innerText()).includes('本人修订'));
+
+  await page.evaluate(()=>go('home'));await page.waitForSelector('.knowledge-network');
+  check('the relation label is drawn on the connection line',await page.evaluate(()=>knowledgeNet.showLinkLabels&&knowledgeNet.linkLabels.some(l=>l.text==='对比')));
+  await page.locator('.knowledge-labels-toggle').click();
+  await until(async()=>await page.evaluate(()=>knowledgeNet.linkLabels.length===0&&!knowledgeNet.showLinkLabels));
+  check('the icon toggle hides the relation labels',await page.evaluate(()=>document.querySelector('.knowledge-labels-toggle').getAttribute('aria-pressed')==='false'));
+  check('the hidden state is stored as a preference',(await post('/api/prefs/get',{})).knowledgeLinkLabels==='0');
+  await page.reload({waitUntil:'load'});
+  await page.waitForFunction(()=>state.knowledgeLinkLabels===false,null,{timeout:15000});
+  await page.evaluate(()=>go('home'));await page.waitForSelector('.knowledge-network');
+  check('the preference survives a reload',await page.evaluate(()=>knowledgeNet.showLinkLabels===false&&knowledgeNet.linkLabels.length===0));
+  await page.locator('.knowledge-labels-toggle').click();
+  await until(async()=>await page.evaluate(()=>knowledgeNet.showLinkLabels===true&&knowledgeNet.linkLabels.some(l=>l.text==='对比')));
+  await until(async()=>(await post('/api/prefs/get',{})).knowledgeLinkLabels==='1');
+  check('turning the toggle back on restores the labels',true);
 
   const shots=path.join(root,'tmp/knowledge-shots');fs.mkdirSync(shots,{recursive:true});
   await page.evaluate(()=>go('home'));await page.waitForSelector('.knowledge-network');

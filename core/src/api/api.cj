@@ -839,6 +839,8 @@ public class Api {
             o.put("defaultWorkDir", JsonString(defaultWorkDir()))
             o.put("agentPerm", JsonString(db.getKv("settings", "agent_perm", "auto")))
             o.put("agentExec", JsonString(db.getKv("settings", "agent_exec", "1")))
+            // 知识网络：连线上的"关系说明"是否显示（默认显示）
+            o.put("knowledgeLinkLabels", JsonString(db.getKv("settings", "ui_knowledge_link_labels", "1")))
             ok(ctx, o)
             return
         }
@@ -893,6 +895,10 @@ public class Api {
                     if (execPref == "0" || execPref == "1") {
                         db.putKv("settings", "agent_exec", execPref)
                     }
+                    let linkLabelsPref = strOf(b, "knowledgeLinkLabels")
+                    if (linkLabelsPref == "0" || linkLabelsPref == "1") {
+                        db.putKv("settings", "ui_knowledge_link_labels", linkLabelsPref)
+                    }
                     let o = JsonObject()
                     o.put("theme", JsonString(db.getKv("settings", "ui_theme", "system")))
                     o.put("sessionRail", JsonString(db.getKv("settings", "ui_session_rail", "1")))
@@ -905,6 +911,7 @@ public class Api {
                     o.put("defaultWorkDir", JsonString(defaultWorkDir()))
                     o.put("agentPerm", JsonString(db.getKv("settings", "agent_perm", "auto")))
                     o.put("agentExec", JsonString(db.getKv("settings", "agent_exec", "1")))
+                    o.put("knowledgeLinkLabels", JsonString(db.getKv("settings", "ui_knowledge_link_labels", "1")))
                     ok(ctx, o)
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }

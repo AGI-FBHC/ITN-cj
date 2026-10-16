@@ -166,6 +166,7 @@ const ICONS = {
   branch: '<path d="M3.8 13.1h4.3a3.3 3.3 0 0 0 2.3-1l6.3-6.3"/><path d="M11.6 5.8h5.1v5.1"/><path d="M13.9 14.3l4.4 4.4"/><path d="M13.9 18.7h4.4v-4.4"/>',
   code: "M9 8l-4 4 4 4M15 8l4 4-4 4",
   pencil: "M4 20h4L20 8l-4-4L4 16z",
+  label: '<path d="M3.6 11.2V5a1.4 1.4 0 0 1 1.4-1.4h6.2l9 9a1.4 1.4 0 0 1 0 2l-6 6a1.4 1.4 0 0 1-2 0z"/><circle cx="8.4" cy="8.4" r="1.4" fill="currentColor" stroke="none"/>',
   // 看差异（改了哪几行）：一条竖分隔 + 加号 / 减号
   diff: "M12 4v16M6.5 8.5h4M8.5 6.5v4M15 14.5h4",
   // 撤销（还原）：一个回头的箭头
@@ -3790,6 +3791,8 @@ function applyPrefs(p) {
   // 没存过就用默认（1 / 1）；刷新后按内核里记的来
   applyZoom(p.uiZoom === undefined || p.uiZoom === "" ? 1 : p.uiZoom);
   applyFont(p.uiFont === undefined || p.uiFont === "" ? 1 : p.uiFont);
+  // 知识网络连线上的“关系说明”是否显示（默认显示）；响应里缺这个字段时保留现值
+  if (p.knowledgeLinkLabels !== undefined) state.knowledgeLinkLabels = p.knowledgeLinkLabels !== "0";
 }
 
 /* ---------- 分栏宽度可拖（对话页的会话栏 / 成果面板） ---------- */
