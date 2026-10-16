@@ -6137,7 +6137,8 @@ function turnsFromEvents(events) {
     const p = e.payload || {};
     if (e.type === "turn/start") { t.kind = p.kind || ""; t.startedAt = e.at; }
     else if (e.type === "turn/usage") { t.usageIn = Number(p["in"] || 0); t.usageOut = Number(p.out || 0); }
-    else if (e.type === "assistant/activity") t.activity = p.phase || "";
+    else if (e.type === "assistant/activity") { t.activity = p.phase || ""; t.activityTool=p.tool || ''; t.toolInputBytes=Number(p.receivedBytes || 0); }
+    else if (e.type === 'model/retry') t.activity='retrying';
     else if (e.type === "assistant/thinking") t.items.push({ t: "think", text: p.text || "", ms: p.ms || 0 });
     else if (e.type === "user/message") { t.user = p.text || ""; t.attachments = p.attachments || []; t.userAt = e.at; }
     else if (e.type === "assistant/delta") {
@@ -6455,9 +6456,11 @@ function renderTurnBlock(t, live) {
     const b = el("div", "msg-body");
     const active = t.items.filter((x) => x.t === "tool" && x.running);
     const phase = active.length ? "正在执行：" + active.map((x) => TOOL_LABEL[x.name] || x.name).join("、")
+      : t.activity === 'tool_input' ? '正在接收'+(TOOL_LABEL[t.activityTool] || '工具')+'参数…'+(t.toolInputBytes?'（'+fmtSize(t.toolInputBytes)+'）':'')
+      : t.activity === 'retrying' ? '输出太长，正在重新生成完整参数…'
       : t.activity === "thinking" ? "正在思考…" : "等待模型返回…";
     const elapsed = t.startedAt ? Math.max(0, Math.floor((Date.now() - Date.parse(t.startedAt)) / 1000)) : 0;
-    b.innerHTML = '<span class="spinner"></span> ' + esc(phase) + (elapsed ? " · 已用 " + elapsed + " 秒" : "");
+    b.innerHTML = '<span class="spinner"></span> ' + esc(phase) + '<span class="live-elapsed" data-started-at="'+esc(t.startedAt || '')+'"> · 已用 '+elapsed+' 秒</span>';
     p2.appendChild(b);
     box.appendChild(p2);
   }
@@ -7323,10 +7326,9 @@ PAGES.chat = {
        只有内容变了的那一轮（通常就是正在流式输出的那一轮）会重建，其余直接复用。 */
     const paintCache = new Map();   // 轮次 id → { node, sig, live }
     let paintOrder = "";            // 轮次顺序指纹：没变就不动 DOM 顺序
-    const elapsedSecs = (t) => (t.startedAt ? Math.max(0, Math.floor((Date.now() - Date.parse(t.startedAt)) / 1000)) : 0);
     function turnSig(t, live) {
       const parts = [t.kind || "", t.user || "", t.ok === null ? "" : String(t.ok), t.message || "",
-                     t.activity || "", t.steer ? 1 : 0, (t.citations || []).length, t.report ? 1 : 0,
+                     t.activity || "", t.activityTool || '', t.toolInputBytes || 0, t.steer ? 1 : 0, (t.citations || []).length, t.report ? 1 : 0,
                      t.resourceProgress ? (t.resourceProgress.name || "1") : ""];
       // 会话树的分支行（‹ n/m ›）也要进指纹：这一轮跑完时先用旧树画过一版并进了缓存，
       // 随后才拉到带 families 的新树 —— 指纹不含它的话，切换行要等整页重画才出现（实测踩过）
@@ -7336,7 +7338,7 @@ PAGES.chat = {
         parts.push(it.t, it.name || "", it.running ? 1 : 0, it.ok == null ? "" : (it.ok ? 1 : 0),
                    it.text ? it.text.length : 0, it.summary ? it.summary.length : 0, it.ms || 0);
       }
-      if (live) parts.push(elapsedSecs(t));   // "已用 N 秒"每秒跳一次就够
+      // The local clock updates its own text node, independently of network events.
       return parts.join("|");
     }
 
@@ -7490,12 +7492,16 @@ PAGES.chat = {
       // 内核 HTTP 是多线程的，长生成不会挡住这个轮询；顺便每 1.5 秒看一眼有没有要批准的动作。
       let approvalTick = 0;
       request.baseId = state.lastEventId || 0;
+      request.lastId=request.baseId;
+      let pollInFlight=false;
       const poll = setInterval(async () => {
+        if(pollInFlight)return;pollInFlight=true;
         try {
-          const d = await api("/api/sessions/events", { sessionId: sid, sinceId: state.lastEventId || 0 });
-          if (d.lastId) state.lastEventId = d.lastId;
+          const d = await api("/api/sessions/events", { sessionId: sid, sinceId: request.lastId || 0 });
+          if (d.lastId) request.lastId = d.lastId;
           const fresh = d.events || [];
           if (state.chatSessionId !== sid) return;
+          if(d.lastId)state.lastEventId=d.lastId;
           if (fresh.length) {
             /* 取 fresh 里最后一个 turn/start：带游标时它就是本轮的，
                不带游标（老内核回全量）时最后一条同样是本轮的，两种情况都对。 */
@@ -7511,6 +7517,7 @@ PAGES.chat = {
             request.controller.abort();
           }
         } catch (e) { /* 轮询失败不打扰用户，最终结果以收尾时那次为准 */ }
+        finally { pollInFlight=false; }
         approvalTick = approvalTick + 1;
         if (approvalTick % 6 === 0) await pollApprovals();
       }, 220);

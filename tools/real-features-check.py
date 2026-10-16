@@ -192,6 +192,23 @@ def main():
             assert cites, '资源没有引用'
             return 'title=%r citations=%d issues=%d' % (res.get('title'), len(cites), len(issues))
 
+        def case_crocodile():
+            project = work / 'crocodile-project'
+            project.mkdir()
+            saved_project = core.call('/api/projects/save', {'name':'鳄鱼动画实测','root':str(project)})
+            sid = new_session(saved_project['id'])
+            response = ask(sid, '创建一个HTML，内容是用svg制作一个鳄鱼骑自行车的2d动画，你不需要进行任何测试。请直接创建HTML文件，完成后说明文件名。')
+            events = core.events(sid)
+            writes = [e for e in events if e['type']=='tool/result' and e['payload'].get('tool')=='write']
+            assert response.get('ok') and writes and all(e['payload'].get('ok') for e in writes), 'write failed or no artifact'
+            files = list(project.rglob('*.html'))
+            assert files, 'HTML file missing'
+            content = files[0].read_text(encoding='utf-8')
+            assert '<svg' in content and any(t in content.lower() for t in ('animate','animation','keyframes')), 'not an SVG animation'
+            assert not any(e['type']=='tool/call' and e['payload'].get('tool')=='powershell' for e in events), 'agent ran a shell test despite user instruction'
+            assert any(e['type']=='assistant/activity' and e['payload'].get('phase')=='tool_input' for e in events), 'no live tool-input stage'
+            return 'HTML=%d bytes; writes=%d; no failed write or agent test command' % (files[0].stat().st_size,len(writes))
+
         def case_course():
             kb = work / 'course-kb'
             kb.mkdir()
@@ -214,7 +231,7 @@ def main():
 
         cases = [('chat', case_chat), ('stream', case_stream), ('vision', case_vision),
                  ('session_read', case_session_read), ('file_read', case_file_read),
-                 ('memory', case_memory), ('generate', case_generate), ('course', case_course)]
+                 ('memory', case_memory), ('generate', case_generate), ('course', case_course), ('crocodile', case_crocodile)]
         for name, fn in cases:
             if only and name not in only:
                 continue

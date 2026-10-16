@@ -25,7 +25,6 @@ import itn_desktop_core.pi.ToolSpec
 import itn_desktop_core.pi.Message
 import itn_desktop_core.pi.MsgRole
 import itn_desktop_core.pi.objOf
-import itn_desktop_core.pi.PartialJsonParser
 import itn_desktop_core.pi.evMessageUpdate
 import itn_desktop_core.pi.deltaThinkingDelta
 import itn_desktop_core.pi.deltaTextDelta
@@ -73,6 +72,7 @@ public class OpenAiChatProvider <: ChatProvider {
     private let apiKey: String
     private let defaultModel: String
     public var maxAttempts: Int64 = 3
+    public var maxOutputTokens: Int64 = 16384
     /**
      * Idle, not total generation time. Continuous responses may run longer.
      * 上游在长上下文时首包可能要一分多钟（实测 39K token 的请求约 90s 才回第一段内容），
@@ -104,6 +104,10 @@ public class OpenAiChatProvider <: ChatProvider {
     }
 
     public func respond(ctx: StepContext, stream: EventStream): ModelReply {
+        return respondWithLimit(ctx, stream, maxOutputTokens, true)
+    }
+
+    private func respondWithLimit(ctx: StepContext, stream: EventStream, outputLimit: Int64, canRecover: Bool): ModelReply {
         let model = if (ctx.model.size > 0) { ctx.model } else { defaultModel }
         let payload = JsonObject()
         payload.put("model", JsonString(model))
@@ -120,7 +124,7 @@ public class OpenAiChatProvider <: ChatProvider {
         payload.put("messages", msgs)
         payload.put("temperature", JsonFloat(0.3))
         payload.put("stream", JsonBool(true))
-        payload.put("max_tokens", JsonInt(8192))
+        payload.put("max_tokens", JsonInt(outputLimit))
         if (ctx.tools.size > 0) {
             payload.put("tools", toolsPayload(ctx.tools))
             payload.put("tool_choice", JsonString("auto"))
@@ -128,6 +132,7 @@ public class OpenAiChatProvider <: ChatProvider {
 
         let requestAudit = JsonObject()
         requestAudit.put("requestedModel", JsonString(model))
+        requestAudit.put("maxOutputTokens", JsonInt(outputLimit))
         requestAudit.put("messageCount", JsonInt(msgs.size()))
         requestAudit.put("turn", JsonInt(ctx.turn))
         var latestUser = ""
@@ -164,13 +169,32 @@ public class OpenAiChatProvider <: ChatProvider {
             reply.errorMessage = err
             return reply
         }
+        if (acc.finishReason == "length" && acc.calls.size > 0) {
+            // Retrying a text stream would duplicate visible content. Only retry a pure tool input.
+            if (canRecover && outputLimit < 32768 && trimStr(acc.text.toString()).size == 0) {
+                let audit = JsonObject()
+                audit.put("reason",JsonString("tool_arguments_truncated")); audit.put("nextMaxTokens",JsonInt(32768))
+                match (onAudit) { case Some(f) => f("model/retry",audit); case None => () }
+                return respondWithLimit(ctx,stream,32768,false)
+            }
+            reply.stopReason = "error"
+            reply.errorMessage = "模型输出达到上限，工具参数被截断，未执行任何工具。请缩小文件内容或分段生成后重试。"
+            return reply
+        }
         reply.text = acc.text.toString()
         reply.thinking = acc.reasoning.toString()
         reply.usageIn = acc.promptTokens
         reply.usageOut = acc.completionTokens
         for (call in acc.calls) {
             if (call.name.size > 0) {
-                reply.toolCalls.add(ToolCallBlock(call.id, call.name, normalizeArgs(call.args.toString())))
+                let args = trimStr(call.args.toString())
+                if (!validToolArguments(args)) {
+                    reply.toolCalls.clear()
+                    reply.stopReason = "error"
+                    reply.errorMessage = "模型返回的 " + call.name + " 参数不是完整的 JSON 对象，未执行工具。请重试。"
+                    return reply
+                }
+                reply.toolCalls.add(ToolCallBlock(call.id, call.name, args))
             }
         }
         if (trimStr(reply.text).size == 0 && reply.toolCalls.size == 0) {
@@ -380,21 +404,18 @@ func toolsPayload(specs: ArrayList<ToolSpec>): JsonArray {
     return arr
 }
 
-/** 半截 JSON 用流式解析器补一把；实在解析不出就给 {}。 */
-func normalizeArgs(text: String): String {
+/** Partial JSON belongs to previews; execution accepts only complete objects. */
+func validToolArguments(text: String): Bool {
     let t = trimStr(text)
     if (t.size == 0) {
-        return "{}"
+        return false
     }
     try {
-        JsonValue.fromStr(t)
-        return t
+        return JsonValue.fromStr(t) is JsonObject
     } catch (e: Exception) {
         ()
     }
-    let p = PartialJsonParser()
-    p.push(t)
-    return p.view().argsJson().toString()
+    return false
 }
 
 func handleChunk(obj: JsonObject, acc: StreamAcc, stream: EventStream): Unit {

@@ -4043,3 +4043,23 @@ read_chunk 读得到原文并带回库标识与正文。
 - 真实模型：tools/real-features-check.py新增--case course，用户当前mimo-v2.6-flash在隔离目录实测1/1，155.2秒，生成3章6节、引用2条，studyChapter正确、正文可读、resource/progress存在、完成与下一节定位保存成功；未写用户真实库、未输出密钥。
 - 测试修正记录：原UI脚本点击资源卡的检查缺少DOM等待，补waitForSelector；原新章测试只有1条来源而mock固定引用[2]，被真实质检正确拒绝，页面显示错误并可重试；改为2节来源样例后成功。没有放宽质检或用假进度掩盖问题。
 - 版本与启动器同步0.7.0，截图tmp/workbench-shots/10-lecture-study.png为隔离样例；旧0.6.0保留。搜索提交eafce56已独立保存。下一项：用户追加SVG动画任务的write缺path与计时停滞，学习包冒烟后再处理。
+
+### 0.7.0打包与第三项故障证据
+- 学习提交1701842；最终单元121/121，learning --ui96/96、新增累计完成44/44。包dist/Lumin-0.7.0与zip已生成；release sourceCommit=170184247b0c793b04891323138fee6fcf66106f，9项资产BAD=0；隔离空目录冒烟DOCX=ok paragraphs=4、RESULT=OK，旧版本保留。
+- 随后只读真实库定位用户故障：会话s14817202128968253855、轮t6129229650197980267，用户原话“创建一个HTML，内容是用svg制作一个鳄鱼骑自行车的2d动画，你不需要进行任何测试”。15:04:24首请求，15:06:09响应finishReason=length，上游mimo-v2.6-flash；应用随后以空args调用write并报缺path。15:06:09第二请求，15:07:51响应tool_calls，参数path+content完整（正文19156字符），write成功写19KB鳄鱼骑自行车.html；15:08:08最终turn/end ok=true。证据为原事件，不推测文件写入阶段卡住。
+- 根因代码：provider.normalizeArgs把非法/截断JSON用PartialJsonParser修补成{}，Agent循环只拦error却仍执行length工具；UI仅fresh.length时paint，等待工具参数阶段未映射activity事件，时间文字没有独立本地更新。
+- 当前修复进行中：严格JSON、length工具拒执行，纯工具参数无正文时加大额度至32768有限重试一次（默认16384）；记录model/retry、tool_input接收字节阶段；计时局部更新不依赖事件。
+
+### 用户新增后续任务（按顺序继续，尚未实现）
+1. 聊天AI时间线：思考/命令/阶段性文字必须保持发生顺序，不能所有过程合为一团后再把正文堆底部；参考git@github.com:AACS111/pi-studio.git，审查实现与许可证后决定复用。
+2. 在线演示的PPTX不再简单由现有导出器直接转换，要让Agent制作PPT；Lumin先向用户确认PPT必要细节，用户明确无需确认则直接制作。
+3. 右侧会话预览栏：去掉顶部“学习成果”按钮，定位为打开当前会话所产网页/PPT/Markdown/框架支持资源；多格式真实预览。资源格式不能仅假定Markdown。
+4. 成果-生成成果改名“个性资源”，本质是用户设置的数据目录内“已生成产物”的受控副本；候选/不满意迭代不自动入库，用户较满意后再询问是否保存，只在用户确认时复制指定版本进该目录，避免所有草稿污染版本管理。
+5. 个性资源支持多格式，新增内容索引后可跨会话和个人搜索；笔记与错题同样建立索引。遵守用户“先把手头完成再做新增需求”，每项独立本地Git提交+同TRACE追加+适当验证，版本/打包最终同步，不能遗漏。
+
+### 写文件/计时修复已提交，真实案例后台验证中
+- 严格拒绝截断/非法JSON工具参数，不再normalize为{}；Agent同时阻止length工具执行。默认16384输出，纯工具参数无正文时最多一次32768重试，model/request记录额度、model/retry记录原因，不重复可见正文。
+- toolcall流映射为tool_input活动（工具名、接收字节，不泄露内容）；计时独立250ms本地时钟，只改文字、不整轮重建；事件轮询防重叠并按请求保存游标，避免切会话时旧任务污染新游标。
+- 单测124/124（3个新增provider案例：截断后仅一次完整重试、重复截断无可执行工具、非法JSON不补空对象）；busy-caret6/6（新增无事件时计时持续、DOM不重建）；stop11/11、attachments16/16、palette14/14。build成功。
+- 真实同题隔离验证tools/real-features-check.py --case crocodile正在运行，日志tmp/write-fix-real.log，进程持有dist/core二进制，结束前不覆盖它；当前原始事件持续thinking，尚无结果，不能提前报通过。版本/启动器0.7.1已同步，待最终包装验证。
+- 参考仓库核对：gh repo view确认AACS111/pi-studio为MIT；clone因网络reset失败，改gh api按需获取树与LICENSE、message-display.ts、MessageView.tsx、PptReadonlyPreview等至系统TEMP，不改参考源码。

@@ -4,7 +4,7 @@ const root=path.resolve(__dirname,'..'),sleep=ms=>new Promise(r=>setTimeout(r,ms
 async function freePort(){const s=net.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p;}
 (async()=>{const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lumin-busy-caret-'));
  // 慢速流式：让"正在回复"的中间态有足够窗口被观察（真模型本来就是这个形状）。
- const mockPort=await freePort(),mock=spawn('python',[path.join(root,'tools/mock-openai/server.py'),String(mockPort)],{windowsHide:true,stdio:'ignore',env:{...process.env,ITN_MOCK_CHUNK_DELAY_MS:'700'}});
+ const mockPort=await freePort(),mock=spawn('python',[path.join(root,'tools/mock-openai/server.py'),String(mockPort)],{windowsHide:true,stdio:'ignore',env:{...process.env,ITN_MOCK_CHUNK_DELAY_MS:'700',ITN_MOCK_SILENT_MS:'3500'}});
  const portFile=path.join(dir,'port'),core=spawn(path.join(root,'dist/core/itn-desktop-core.exe'),['--data-dir='+dir,'--port-file='+portFile,'--ui-dir='+path.join(root,'shell/renderer')],{windowsHide:true,stdio:'ignore'});let browser,passed=0;
  const check=(name,ok)=>{if(!ok)throw Error(name);passed++;console.log('PASS '+name);};
  try{for(let i=0;i<100&&!fs.existsSync(portFile);i++)await sleep(100);const base='http://127.0.0.1:'+fs.readFileSync(portFile,'utf8').trim();
@@ -18,6 +18,13 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await page.evaluate(()=>renderPanel(true));
   await page.locator('#chat-input').fill('帮我总结一下今天的学习内容，包括上午看的章节和下午练习的部分，用分点的方式写出来，最后再给一句明天的小建议');
   await page.locator('.composer-send').click();
+  await page.waitForFunction(()=>!!document.querySelector('.live-elapsed')?.dataset.startedAt);
+  const clockBefore=await page.locator('.live-elapsed').textContent();
+  const nodeBefore=await page.locator('.live-elapsed').evaluate(n=>{n.dataset.clockProbe='original';return n.closest('.turn-block').dataset.turnId;});
+  await page.waitForTimeout(1600);
+  const clockAfter=await page.locator('.live-elapsed').textContent();
+  check('elapsed clock advances during a silent upstream response',clockAfter!==clockBefore);
+  check('clock updates text without rebuilding the turn',await page.locator('.live-elapsed').getAttribute('data-clock-probe')==='original');
   // 等：轮次在跑 + 正文光标在 + 会话行转圈在，三个同时在场再做断言（否则抓不到中间态）
   await page.waitForFunction(()=>state.busyTurn&&document.querySelector('#chat-thread .caret')&&document.querySelector('.panel-item-row.rail-session .panel-item-spin'),null,{timeout:20000});
   const live=await page.evaluate(()=>{

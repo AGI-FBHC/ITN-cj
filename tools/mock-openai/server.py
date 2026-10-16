@@ -501,6 +501,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         # 真供应商会先推一段推理内容（reasoning_content）。这里也推一小段，
         # 好让"思考过程"那一块在自检里真的被渲染出来（否则前端那条路径没人验）。
+        initial_delay = float(os.environ.get('ITN_MOCK_SILENT_MS', '0')) / 1000.0
+        if initial_delay:
+            time.sleep(initial_delay)
         step = 24
         think = "先看懂问题，再决定要不要检索。"
         for i in range(0, len(think), step):

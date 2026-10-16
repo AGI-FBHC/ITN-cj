@@ -24,6 +24,52 @@ import std.unittest.testmacro.*
  */
 @Test
 class ProviderTest {
+    func toolScript(args: String, finish: String): String {
+        return line("{\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"write-1\",\"function\":{\"name\":\"write\",\"arguments\":" + JsonString(args).toString() + "}}]}}]}") +
+            line("{\"choices\":[{\"finish_reason\":\"" + finish + "\"}]}") + "data: [DONE]\n\n"
+    }
+
+    @TestCase
+    func truncatedToolInputRetriesOnceBeforeExecution(): Unit {
+        let requests = ArrayList<Int64>()
+        let server = ServerBuilder().addr("127.0.0.1").port(0).build()
+        server.distributor.register("/v1/chat/completions", { ctx: HttpContext =>
+            let request = objOf(JsonValue.fromStr(readAllString(ctx.request.body))).getOrThrow()
+            requests.add(intOf(request,"max_tokens"))
+            let body = if (requests.size == 1) { toolScript("{\"path\":\"a.html\",\"content\":\"<svg", "length") }
+                else { toolScript("{\"path\":\"a.html\",\"content\":\"<svg></svg>\"}", "tool_calls") }
+            ctx.responseBuilder.status(200); ctx.responseBuilder.header("Content-Type","text/event-stream"); ctx.responseBuilder.body(body.toArray())
+        })
+        spawn { server.serve() }; sleep(Duration.millisecond * 150)
+        let provider = OpenAiChatProvider(modelCfg(Int64(server.port)))
+        let reply = provider.respond(StepContext(),EventStream())
+        @Expect(requests.size,2); @Expect(requests[0],16384); @Expect(requests[1],32768)
+        @Expect(reply.stopReason,"toolUse"); @Expect(reply.toolCalls.size,1)
+        @Expect(strOf(reply.toolCalls[0].args(),"path"),"a.html")
+        @Expect(strOf(reply.toolCalls[0].args(),"content"),"<svg></svg>")
+        server.close()
+    }
+
+    @TestCase
+    func repeatedTruncationNeverReturnsExecutableTools(): Unit {
+        let counter=ArrayList<Int64>(); counter.add(0)
+        let server=startServer(toolScript("{\"path\":\"a.html\",\"content\":\"unfinished", "length"),200,counter,false)
+        let reply=OpenAiChatProvider(modelCfg(Int64(server.port))).respond(StepContext(),EventStream())
+        @Expect(counter[0],2); @Expect(reply.stopReason,"error"); @Expect(reply.toolCalls.size,0)
+        @Expect(reply.errorMessage.contains("截断"),true)
+        server.close()
+    }
+
+    @TestCase
+    func malformedFinishedArgumentsAreNotRepairedToEmptyObject(): Unit {
+        let counter=ArrayList<Int64>();counter.add(0)
+        let server=startServer(toolScript("{\"path\":\"a.html\",\"content\":\"unfinished", "tool_calls"),200,counter,false)
+        let reply=OpenAiChatProvider(modelCfg(Int64(server.port))).respond(StepContext(),EventStream())
+        @Expect(counter[0],1); @Expect(reply.stopReason,"error"); @Expect(reply.toolCalls.size,0)
+        @Expect(reply.errorMessage.contains("JSON"),true)
+        server.close()
+    }
+
     @TestCase
     func automaticallyAllocatedSessionCanStopItsSilentModel(): Unit {
         let server = silentServer()

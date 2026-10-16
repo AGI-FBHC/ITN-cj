@@ -3,6 +3,17 @@ const RESOURCE_LABEL = {lecture: '定制讲义', practice: '实操指南', quiz:
 const TASK_LABEL = {running: '正在执行', cancelling: '正在停止', completed: '已完成', failed: '未完成', cancelled: '已取消', interrupted: '上次任务已中断'};
 const workbench = {selected: null, open: false, loadToken: 0, seenSaved: new Set(), task: null};
 
+function refreshLiveTimers() {
+  for(const node of document.querySelectorAll('.live-elapsed[data-started-at]')) {
+    const start=Date.parse(node.dataset.startedAt);
+    if(!Number.isFinite(start))continue;
+    const text=' · 已用 '+Math.max(0,Math.floor((Date.now()-start)/1000))+' 秒';
+    if(node.textContent!==text)node.textContent=text;
+  }
+}
+setInterval(refreshLiveTimers,250);
+document.addEventListener('visibilitychange',refreshLiveTimers);
+
 // Four daily destinations. Existing routes stay intact for history and deep links.
 RAIL_GROUPS.splice(0, RAIL_GROUPS.length,
   [{id: 'chat', label: '对话', icon: 'chat'}],

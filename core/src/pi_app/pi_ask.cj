@@ -586,6 +586,7 @@ public class PiAgent {
         let seg = AnswerSeg()
         let think = ThinkSeg()
         let activityClock = ActivityClock()
+        let toolInputBytes = [0i64]
         // 思考段封段：开始出正文 / 开始动工具 / 这一轮跑完时各刷一次
         func flushThink(): Unit {
             let t = think.take()
@@ -640,6 +641,16 @@ public class PiAgent {
                                 let dp = JsonObject()
                                 dp.put("phase", JsonString("thinking"))
                                 log("assistant/activity", dp)
+                            }
+                        } else if (strOf(ae,"type") == "toolcall_start" || strOf(ae,"type") == "toolcall_delta") {
+                            let first = strOf(ae,"type") == "toolcall_start"
+                            flushThink()
+                            if (first) { toolInputBytes[0] = 0 }
+                            toolInputBytes[0] += strOf(ae,"delta").size
+                            if (first || activityClock.ready()) {
+                                let dp = JsonObject()
+                                dp.put("phase",JsonString("tool_input")); dp.put("tool",JsonString(e.partialToolName())); dp.put("receivedBytes",JsonInt(toolInputBytes[0]))
+                                log("assistant/activity",dp)
                             }
                         } else if (strOf(ae, "type") == "thinking_end") {
                             flushThink()

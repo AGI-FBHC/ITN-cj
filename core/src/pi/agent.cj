@@ -226,10 +226,10 @@ public class Agent {
             out.usageIn = out.usageIn + reply.usageIn
             out.usageOut = out.usageOut + reply.usageOut
 
-            if (reply.stopReason == "error") {
+            if (reply.stopReason == "error" || reply.stopReason == "length") {
                 out.ok = false
-                out.stopReason = "error"
-                out.error = reply.errorMessage
+                out.stopReason = reply.stopReason
+                out.error = if (reply.errorMessage.size > 0) { reply.errorMessage } else { "模型输出达到上限，本次输出不完整，未执行工具。请缩短内容后重试。" }
                 break
             }
             if (abortedFlag) {
