@@ -10,6 +10,9 @@ try{
  await cold.waitForSelector('.splash-mark img');
  const coldShot=await cold.evaluate(()=>{const img=document.querySelector('.splash-mark img');const mark=document.querySelector('.splash-mark');const shine=document.querySelector('.splash-shine');return {loaded:img.naturalWidth>0&&img.naturalHeight>0,breathe:getComputedStyle(mark).animationName,shine:getComputedStyle(shine).animationName};});
  check('cold-start page animates the transparent logo (breathing + light sweep)',coldShot.loaded&&coldShot.breathe.includes('breathe')&&coldShot.shine.includes('shine'));
+ check('cold-start logo is inlined so no bare text-only frame can show',String(await cold.evaluate(()=>document.querySelector('.splash-mark img').getAttribute('src'))).startsWith('data:image/png;base64,'));
+ await cold.waitForFunction(()=>document.body.classList.contains('ready'));
+ check('cold-start page reveals only after the mark is decoded',true);
  // 第二段：应用内动画层（reload 一次，完整看到"出现 → 淡出 → 交接"）
  app=await _electron.launch({executablePath:path.resolve('shell/node_modules/electron/dist/electron.exe'),args:[path.resolve('shell/main.js'),'--ui-check'],env:{...process.env,APPDATA:dir,LOCALAPPDATA:dir,TEMP:dir,TMP:dir},timeout:30000});
  const page=await app.firstWindow();const errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -18,6 +21,7 @@ try{
  await page.waitForSelector('#boot',{timeout:15000});
  const bootShot=await page.evaluate(()=>{const img=document.querySelector('#boot .boot-mark img');const mark=document.querySelector('#boot .boot-mark');const shine=document.querySelector('#boot .boot-shine');return {loaded:img.naturalWidth>0,breathe:getComputedStyle(mark).animationName,shine:getComputedStyle(shine).animationName};});
  check('in-app splash layers the same animation over the first paint',bootShot.loaded&&bootShot.breathe.includes('boot-breathe')&&bootShot.shine.includes('boot-shine'));
+ check('in-app splash logo is inlined too',String(await page.evaluate(()=>document.querySelector('#boot .boot-mark img').getAttribute('src'))).startsWith('data:image/png;base64,'));
  await page.waitForFunction(()=>!document.getElementById('boot'),null,{timeout:15000});
  check('splash fades out and hands over to the ready UI',await page.evaluate(()=>!!document.querySelector('#view')&&document.querySelectorAll('.nav-item').length>0));
  check('no JavaScript errors during startup',errors.length===0);
