@@ -65,6 +65,25 @@ function setStatus(text, isErr) {
   s.classList.toggle("err", !!isErr);
 }
 
+/* ---------- 启动动画收尾 ----------
+   启动动画分两段：内核冷启动时是 splash.html（窗口先亮出来），内核就绪后切到应用页，
+   应用页自带同款动画层，等首屏真正渲染完（boot() 返回）再淡出。这里负责第二段。 */
+const BOOT_AT = performance.now();
+let bootSplashDone = false;
+function finishBootSplash() {
+  if (bootSplashDone) return;
+  bootSplashDone = true;
+  const node = document.getElementById("boot");
+  if (!node) return;
+  const wait = Math.max(0, 520 - (performance.now() - BOOT_AT));
+  setTimeout(() => {
+    node.classList.add("done");
+    setTimeout(() => node.remove(), 460);
+  }, wait);
+}
+/* 兜底：无论哪一步卡住（内核慢、配置读不动），最多 8 秒后都不让开屏挡住界面 */
+setTimeout(finishBootSplash, 8000);
+
 function pct(a, b) { return b > 0 ? Math.round((a / b) * 100) : 0; }
 
 function fmtSize(n) {
@@ -9088,6 +9107,7 @@ async function boot() {
       text: e.message + "。桌面窗口会自动带起内核；如果是直接在浏览器里打开，请先运行 tools/ui-flow.ps1。",
       actions: [btn("重新连接", "primary", () => boot())],
     }));
+    finishBootSplash();   // 内核没连上也要把开屏收掉，错误页才看得见
     return;
   }
   try {
@@ -9165,5 +9185,6 @@ async function boot() {
 
   const first = pageFromHash();
   await go(first.page, first.section, { replace: true });
+  finishBootSplash();
 }
 

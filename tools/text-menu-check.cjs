@@ -2,13 +2,14 @@ const { _electron }=require('D:/Desktop/ITN/ITN/src/frontend/agent-demo/node_mod
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 (async()=>{const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lumin-text-menu-'));let app;let passed=0;const check=(n,b)=>{if(!b)throw Error(n);passed++;console.log('PASS '+n);};
 try{app=await _electron.launch({executablePath:path.resolve('shell/node_modules/electron/dist/electron.exe'),args:[path.resolve('shell/main.js'),'--ui-check'],env:{...process.env,APPDATA:dir,LOCALAPPDATA:dir,TEMP:dir,TMP:dir},timeout:30000});const page=await app.firstWindow();await page.waitForSelector('#view');
+ await page.waitForFunction(()=>!document.getElementById('boot'),null,{timeout:15000}).catch(()=>{});await page.waitForTimeout(150);
  await app.evaluate(async({Menu,clipboard})=>{global.__clipboardBackup=await clipboard.read();const build=Menu.buildFromTemplate.bind(Menu);Menu.buildFromTemplate=template=>{const menu=build(template);global.__textMenu=menu;global.__textTemplate=template;menu.popup=()=>{};return menu;};});
  await page.evaluate(()=>{const f=document.createElement('textarea');f.id='text-menu-fixture';f.style='position:fixed;left:400px;top:200px;width:300px;height:90px;z-index:999';f.value='复制剪切粘贴测试';document.body.appendChild(f);f.focus();f.select();});
  await page.locator('#text-menu-fixture').click({button:'right'});
  const menu=await app.evaluate(()=>global.__textTemplate.map(x=>({id:x.id,role:x.role,enabled:x.enabled})));
  check('native context menu is attached to actual editable content',['copy','cut','paste','undo','redo','select-all'].every(id=>menu.some(x=>x.id===id)));
  const run=async(id)=>app.evaluate(({BrowserWindow},id)=>{const win=BrowserWindow.getAllWindows()[0];global.__textMenu.getMenuItemById(id).click({},win,win.webContents);},id);
- await page.evaluate(()=>{const f=document.querySelector('#text-menu-fixture');f.focus();f.select();});await run('copy');
+ await page.evaluate(()=>{const f=document.querySelector('#text-menu-fixture');f.focus();f.select();});await run('copy');await page.waitForTimeout(200);
  check('native Copy writes selected text',await app.evaluate(async({clipboard})=>await clipboard.readText())==='复制剪切粘贴测试');
  await run('cut');await page.waitForFunction(()=>document.querySelector('#text-menu-fixture').value==='');check('native Cut deletes the selected editable text',await page.locator('#text-menu-fixture').inputValue()==='');
  await run('paste');await page.waitForFunction(()=>document.querySelector('#text-menu-fixture').value==='复制剪切粘贴测试');check('native Paste inserts clipboard text',await page.locator('#text-menu-fixture').inputValue()==='复制剪切粘贴测试');

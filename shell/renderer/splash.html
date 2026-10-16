@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Lumin</title>
+<style>
+  :root { color-scheme: light dark; --bg:#ffffff; --ink:#0f1713; --muted:#5f6b64; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141614; --ink:#eaebea; --muted:#9aa39d; } }
+  html,body { height:100%; }
+  body { margin:0; overflow:hidden; background:var(--bg); color:var(--ink); font-family:-apple-system,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif; }
+  .splash { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px; }
+  .splash-mark { position:relative; width:132px; height:132px; animation:breathe 2.8s ease-in-out infinite; }
+  .splash-mark img { width:100%; height:100%; object-fit:contain; display:block; }
+  .splash-shine { position:absolute; inset:0; background:linear-gradient(115deg, transparent 36%, rgba(255,255,255,.95) 50%, transparent 64%); background-size:280% 100%; background-position:130% 0; animation:shine 2.8s ease-in-out infinite; mix-blend-mode:screen; -webkit-mask:url(logo-mark.png) center/contain no-repeat; mask:url(logo-mark.png) center/contain no-repeat; }
+  .splash-word { font-size:14px; letter-spacing:.52em; text-indent:.52em; color:var(--muted); text-transform:uppercase; }
+  .splash-tip { font-size:12.5px; color:var(--muted); opacity:.8; }
+  @keyframes breathe { 0%,100% { transform:scale(.965); } 50% { transform:scale(1.035); } }
+  @keyframes shine { 0% { background-position:130% 0; opacity:0; } 15% { opacity:.9; } 55%,100% { background-position:-130% 0; opacity:0; } }
+  @media (prefers-reduced-motion: reduce) { .splash-mark,.splash-shine { animation:none; } }
+</style>
+</head>
+<body>
+  <div class="splash">
+    <div class="splash-mark"><img src="logo-mark.png" alt="Lumin"><span class="splash-shine"></span></div>
+    <div class="splash-word">Lumin</div>
+    <div class="splash-tip">正在唤醒本地内核…</div>
+  </div>
+</body>
+</html>

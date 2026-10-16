@@ -180,14 +180,6 @@ async function startKernel() {
 }
 
 async function createWindow() {
-  let port;
-  try {
-    port = await startKernel();
-  } catch (e) {
-    dialog.showErrorBox("启动失败", String((e && e.message) || e));
-    app.quit();
-    return;
-  }
   win = new BrowserWindow({
     show: !process.argv.includes("--ui-check"),
     width: 1180,
@@ -207,6 +199,27 @@ async function createWindow() {
     },
   });
   if (win.removeMenu) win.removeMenu();
+  /* 先把启动动画放出来，再去等内核：仓颉内核冷启动要一两秒，这段时间不该只有一个空窗口。
+     动画页在 renderer/splash.html（透明底 logo 的呼吸 + 光影扫过），内核起来后整页切到应用。
+     --smoke 跳过动画页：冒烟脚本的 did-finish-load 检查只认应用页。 */
+  const splashAt = Date.now();
+  if (!SMOKE) {
+    try { win.loadFile(path.join(__dirname, "renderer", "splash.html")); } catch (e) { /* 没有动画页就干等内核 */ }
+  }
+  let port;
+  try {
+    port = await startKernel();
+  } catch (e) {
+    dialog.showErrorBox("启动失败", String((e && e.message) || e));
+    app.quit();
+    return;
+  }
+  /* 让启动动画至少完整播一遍（约 0.9 秒）：内核在空数据目录上冷启很快，
+     若立刻切走只剩一闪而过的 logo，看起来反而像卡了一下。 */
+  if (!SMOKE) {
+    const elapsed = Date.now() - splashAt;
+    if (elapsed < 900) await new Promise((r) => setTimeout(r, 900 - elapsed));
+  }
   win.webContents.on("context-menu", (_event, params) => {
     const flags = params.editFlags || {};
     if (!params.isEditable && !params.selectionText) return;
@@ -423,6 +436,8 @@ async function createWindow() {
   });
 
   win.webContents.on("did-finish-load", async () => {
+    // 启动动画页也会触发 did-finish-load：只有应用页（http）才做深链与冒烟检查
+    if (!/^https?:/i.test(win.webContents.getURL())) return;
     // 本次是被链接拉起来的：等界面就绪后把那段会话打开
     const bootSid = threadIdFromArgs(process.argv);
     if (bootSid) setTimeout(() => { if (win) win.webContents.send("deeplink:thread", bootSid); console.log("DEEPLINK thread=" + bootSid); }, 1200);

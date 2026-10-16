@@ -3087,3 +3087,15 @@ html[data-theme="dark"] .composer {
   .library-documents .library-document > .tag { margin-left:0; grid-column:2; }
   .library-documents .library-document > .btn { grid-column:3; grid-row:1 / span 2; }
 }
+
+/* ---------- 启动动画：透明底 logo 的呼吸 + 光影流动 ---------- */
+/* 内核冷启动阶段用 splash.html 的同一套动画；这里负责应用首屏渲染完成前的最后一段。 */
+.boot { position:fixed; inset:0; z-index:240; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px; background:var(--bg); pointer-events:none; transition:opacity .38s ease; }
+.boot.done { opacity:0; }
+.boot-mark { position:relative; width:132px; height:132px; animation:boot-breathe 2.8s ease-in-out infinite; }
+.boot-mark img { width:100%; height:100%; object-fit:contain; display:block; }
+.boot-shine { position:absolute; inset:0; background:linear-gradient(115deg, transparent 36%, rgba(255,255,255,.95) 50%, transparent 64%); background-size:280% 100%; background-position:130% 0; animation:boot-shine 2.8s ease-in-out infinite; mix-blend-mode:screen; -webkit-mask:url(/logo-mark.png) center/contain no-repeat; mask:url(/logo-mark.png) center/contain no-repeat; }
+.boot-word { font-size:14px; letter-spacing:.52em; text-indent:.52em; color:var(--muted); text-transform:uppercase; }
+@keyframes boot-breathe { 0%,100% { transform:scale(.965); } 50% { transform:scale(1.035); } }
+@keyframes boot-shine { 0% { background-position:130% 0; opacity:0; } 15% { opacity:.9; } 55%,100% { background-position:-130% 0; opacity:0; } }
+@media (prefers-reduced-motion: reduce) { .boot-mark,.boot-shine { animation:none; } }
