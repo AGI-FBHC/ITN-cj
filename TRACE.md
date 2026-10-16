@@ -4275,3 +4275,11 @@ read_chunk 读得到原文并带回库标识与正文。
 - 检查说明已在对话中交代：本次重点覆盖实际可见坐标点选，DPI与页面缩放独立组合，抽屉开合后重取坐标；不声称这类检查证明真实模型行为或真实用户数据健康。
 - 首轮修后：knowledge-hit 281/281（DPI 1/1.25/1.5/2 × 页面85/100/115/130/160%，每组3节点抽屉关闭/打开后的中心点击、标签点击与hover）；knowledge-check 92/92（包含漂浮/抖动/真拖拽/抽屉/配色/笔记/来源/删除/窄屏等）；nonchat-check 25/25；node --check 两文件与 git diff --check 通过。后两项复用原有回归，其中 knowledge-check 使用历史既有 Python mock 服务；新增夹具与脚本没有引入 Python，造数通过仓颉 API。
 - 发版准备：shell/package.json、package-lock.json、renderer/release.json 与启动Lumin.cmd 同步为0.8.10。功能和发布信息一起提交，打包使用此提交的 sourceCommit；最终包与复测结果在下条追加，不提前宣称完成。
+
+### 0.8.10 最终交付与本地 Git（2026-10-17）
+- 功能/回归脚本/版本/启动器/交接记录提交：209e688（fix(knowledge): map screen pointers to canvas coordinates at any page zoom）。该提交是最终包 release.json 的 sourceCommit=209e688b0802aafe402e173799a08857a8de0750；本次修正了旧版包追溯字段落后的问题，未改旧包。
+- 使用 PowerShell 7 的 scripts/package-app.ps1 产出全新 dist/Lumin-0.8.10 与 dist/Lumin-0.8.10-win-x64.zip（约190MB），Build=knowledge-pointer-zoom-20261017。旧版目录和用户数据不改；启动Lumin.cmd 已指向0.8.10。构建/打包日志 tmp/r0810-package.log。
+- 包内再次验收：KC_CORE_EXE 指到包内 resources/kernel/lumin-core.exe，KC_UI_DIR 指到包内 resources/app/renderer，运行同一 tools/knowledge-hit-check.cjs，再次281/281（tmp/r0810-hit-package.log）。即源码态一次+最终包一次均通过20组DPI/页面缩放组合，旧渲染文件对照仍失败。130%页面缩放、抽屉已开实屏截图 tmp/knowledge-hit-shots/page-130-drawer.png 已目视：图与抽屉正常，状态 Lumin 0.8.10·已连接，标题/节点与选中状态一致。
+- manifest 9项资产（main/preload/pptx/index/app/style/workbench.js/workbench.css/kernel）与包内实际文件以及对应当前源码/内核逐一SHA256比较，bad=0；version=0.8.10，sourceCommit 等于功能提交。运行包检查没有修改用户配置或消耗真实模型额度。
+- Electron 空目录启动：通过 Start-Process -WindowStyle Hidden 启动新包 --smoke，APPDATA/LOCALAPPDATA/TEMP/TMP 仅对该子进程指向新建临时目录；RESULT=OK，PRELOAD/TITLEBAR正常、NAV=5。未生成DOCX样张，DOCX检查如实skipped（本轮不涉及文档）；测试应用自动退出/只清理本轮拥有的进程。没有使用全局按名称杀进程，没有启动/关闭用户原应用。
+- 本轮范围没有修改仓颉代码/API/lumin本体，未重跑无关的内核单测或真实模型生成；已完成的相关回归为 knowledge92、nonchat25、点选矩阵源码281+包内281与包启动/哈希。已有两份未跟踪调研文档仍保留未提交。后续如用户仍反馈100%缩放下的特殊场景，需追加其具体窗口/缩放/遮挡情况复现；不要再把只测DPI当作已覆盖页面缩放。
