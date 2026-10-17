@@ -4431,3 +4431,21 @@ read_chunk 读得到原文并带回库标识与正文。
   - 回归：course-check **78/78**；course-speed-check **18/18**；learning/workbench **45/45**；tasks-check **22/22**；pages-audit **13/13**；nonchat **25/25**。
   - 发布：0.8.14→**0.8.15**（release 提交 6765a83）；`dist/Lumin-0.8.15` + zip（190.3MB）；15 项资产 SHA256 BAD=0；隔离冒烟 `Lumin 0.8.15 · 已连接`、`RESULT=OK`；启动Lumin.cmd 指向 0.8.15。
   - 未重复消耗真实模型额度；活跃度只反映已有真实事件，不宣称学习时长或掌握度。两份未跟踪调研稿继续保持不跟踪。
+## 2026-10-17 · 修复导图 “Invalid utf8 byte sequence” + 足迹面板等高（0.8.16）
+- 用户反馈真实知识库生成思维导图仍报 `Invalid utf8 byte sequence.`，并要求交付前用真实模型实际生成一次，允许这一次 token 消耗。
+- 真实失败定位（只读复制 `%LOCALAPPDATA%\Lumin\itn.db`，不碰线上库）：知识库 `ha`，39 份文档、2528 个片段；旧失败任务 progress=62%、summarize 106/111，stage/message 都是 `Invalid utf8 byte sequence.`。判断失败发生在摘要合并前的字节切分：`splitParts` 按 23000 字节直接 `String.fromUtf8`，中文/emoji 落在边界中间就抛错。
+- 修复（提交 e0acac9）：
+  - `core/src/util/util.cj` 新增 `splitUtf8Safe`：按字节上限切分，但起点/终点强制落在 UTF-8 字符边界；单字符大于上限时也不会切半。
+  - `course/generate.cj` 的 `splitParts` 改用 `splitUtf8Safe`。
+  - 新增单测 `utf8BatchingNeverCutsChineseOrEmoji`：中文+emoji 多段重组必须完全等于原文，极小上限也不能抛。
+- 学习足迹底部一长一短（同提交）：左右面板改为 grid stretch 等高；学习足迹最高 320px 内部滚动，404? 不再是页面随记录无限拉长。新增 growth 检查：两面板 bottom 差 ≤2px、timeline scrollHeight > clientHeight、clientHeight ≤321。移动端仍保持 stacked，timeline max 360。
+- 真实模型验证（仅这一次，临时数据副本）：
+  - 模型配置从复制库读取，凭据未打印；原线上数据与配置未修改。
+  - 生成知识库 `ha`：**成功**，67 个节点、覆盖 39 份来源文档、耗时 **849 秒**、累计 **261,406 tokens**（入 193,062 / 出 68,344，28 次调用）；两轮合并后树生成一次通过。
+  - 日志：`tmp/live-course-once.log`；临时副本：`C:\Users\GeJie\AppData\Local\Temp\lumin-live-course-iOX0FS`。
+  - 结论：此前必现的 UTF-8 崩溃已越过；本次真实任务从 reading→summarize→merge 1→merge 2→tree→completed 全链路成功。
+- 验证：
+  - 核心单测 **155/155**（新增 UTF-8 边界测试）。
+  - growth-activity-check **20/20**：加入等高/内部滚动断言后仍通过。
+  - course-check **78/78**（第一次与 tasks-check 并行时 mock 候选被取消，单独复跑全绿；结论是并行重负载测试写法导致，非功能失败）；tasks-check **22/22**。
+  - 发布：0.8.15→**0.8.16**（提交 d4e058a）；`dist/Lumin-0.8.16` + zip（190.3MB）；15 项资产 SHA256 BAD=0；隔离冒烟 `Lumin 0.8.16 · 已连接`、`RESULT=OK`；启动Lumin.cmd 指向 0.8.16。
