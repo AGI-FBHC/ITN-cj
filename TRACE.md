@@ -4474,3 +4474,43 @@ read_chunk 读得到原文并带回库标识与正文。
   - `zh-audit` 通过（纯英文只剩路径/型号/合法 placeholder）。
   - learning/workbench **45/45**；tasks-check **22/22**；course-check **78/78**；growth-activity-check **21/21**；pages-audit **13/13**；nonchat **25/25**。
 - 待继续：真实模型 API 矩阵、对话压力矩阵、长数据页面审计、剩余低对比/排版人工复核、修复后全量回归与发布。该轮未升级版本、未重新打包。
+
+## 2026-10-18 · 全量测试后的 API/UI 修复与 0.8.18 验收
+- 用户要求：真实模型多问题对话、145 条接口、全部页面/功能、长数据、AI 味/小字/句子按钮审查；优化后继续测；以后新增 harness 功能要同步 Lumin 工具并至少多测几遍。
+- 本轮临时数据全部在 `%TEMP%`，真实模型配置只复制到临时目录，不打印密钥；大库导图沿用已有成功证据，不重复烧 token。
+- 代码提交：
+  - `ad0fc11 fix(api): validate edge inputs and keep artifacts out of drafts`
+  - `5490b1e fix(ui): focus mind maps and tighten product copy`
+  - `f50d0f8 chore(release): 0.8.18`
+  - `e637816 fix(api): surface vision connection failures as 502`
+- 发现的真实 Bug 与修复：
+  1. `/api/chat` 的空 `user` 会调用真实模型并生成 1300+ 字内容。现 trim 后为空直接 400，不发起模型请求；`tools/smoke.ps1` 增加回归。
+  2. `/api/kb/delete` 空 id 抛 `getOrThrow` 变成 500，未知 id 也 500。现空 id 400、未知 id 404，删除快照不变；`tools/smoke.ps1` 增加回归。
+  3. `/api/artifacts/save` 错走 `ToolRegistry.saveArtifact`，文件写入 `drafts`，随后成果页改名/读取在 `artifacts` 找不到，成长报告导出实际不可用。现新增 `saveArtifactTo(folder,...)`：模型候选仍写 `drafts`，界面成果写 `artifacts`。新增仓颉单测 `core/src/unittests/artifact_test.cj`，并更新接口契约。
+  4. 真实模型回答“这一章核心结论是什么”时，查到了正确切片、记录了知识点，但最终只回复“已记录”。在 `knowledge_tools.cj` 工具说明和 `pi_ask.cj` 系统提示中明确“记录是附带动作，记录后必须正文回答”。重跑真实模型后答案正确包含提示词三要素。
+  5. `/api/models/vision-test` 在不可达模型上未捕获异常，返回 500。现返回 502（“视觉测试失败：...”），并加入 `tools/api-feature-check.ps1` 回归。
+- UI/体验修复：
+  - 所有 renderer 可见文本的下限从 12px 抬到 13px，包含 `calc(12px * var(--fs))`、11.5/12.5/10.5px 的残留；`ui-audit.cjs` 阈值改为 12.5。
+  - 长数据思维导图：节点宽度改为 248px、层级间距 300px，默认视角聚焦当前选中节点或首个学习分支（不再强制 75% 把根节点推到画布外），保留拖动/滚轮缩放。
+  - 设置技能页从重复说明 + 22 张大卡改为紧凑列表：隐藏英文长描述、移除原始工具 ID、单行来源/工具数、右侧单一“查看”，存储位置折叠。
+  - 个性资源页不再把真实目录路径直接摆在计数旁；空态文案缩短；会话总览去掉“只追加事件”等开发者术语；成长页删除重复的“只统计...”顶部说明；按钮如“标记这个节点学完”改为“标记学完”。
+  - 数据与备份、关于、模型提示等文案改为短句/动作词；PPT 测试同步到现行“制作 PPT”按钮。
+- 新增/更新可重复测试：
+  - `tools/api-route-smoke.ps1`：解析 api.cj 实际路由表，逐条发空/坏 JSON，断言 145 条可达、无 5xx、无未注册路由；报告 `tmp/audit/api-route-smoke.json`。
+  - `tools/api-feature-check.ps1`：仓颉 fixture，不依赖外部模型；87/87，覆盖备份、联网配置、时间线、个性资源、项目、会话树/分支/回退/搜索、答题统计、成果落盘、不可达模型 502。
+  - `core/src/unittests/artifact_test.cj`：drafts/artifacts 目录语义。
+  - `tools/ui-audit.cjs`：20 个页面/设置分区 × 1440 浅/深、1280、1024、768、390，共 120 组合；支持 `ITN_AUDIT_DATA_DIR` 复用生产数据副本和 `ITN_AUDIT_OUT`。
+  - `tools/smoke.ps1`：空 chat、空/未知 kb 删除回归。
+- 验证结果（本轮实际执行，不是只写计划）：
+  - `api-route-smoke`：145/145；空/坏 JSON 无 5xx。
+  - `api-feature-check`：87/87，临时 fixture。
+  - `cjpm test`：156/156。
+  - `ui-audit`：空数据 120/120；生产数据副本（含 71 节点导图、长会话）120/120。
+  - `learning-check` 45/45；`tasks-check` 22/22；`growth-activity-check` 21/21；`course-check` 78/78；`session-switch-check` 12/12；`stop-check` 13/13；`attachments-check` 16/16；`knowledge-check` 92/92；`personal-check` 23/23；`pages-audit` 13/13；`nonchat-check` 25/25；`markdown-check` 14/14；`presentation-check` 9/9；`docx-check` 9/9；`deck-export-check` 9/9；`session-list-check` 10/10；`splash-check` 7/7；`tray-check` 4/4（单独跑；并行时 Electron GPU cache 锁会让它自身启动失败，非产品问题）；`busy-caret-check` 6/6；`palette-chip-check` 14/14；`scrollbar-check` 通过；`zh-audit` 通过。
+  - 真实模型：`models/test`、`models/diagnose`、`models/vision-test`、`/api/chat`（含空 user）、真实上下文/闲聊/算数、`real-features` 的 chat/vision/knowledge/personal_search/skill_read_no_lock 均通过；不可达模型路径返回 502 可读错误。
+  - 发布包：`dist/Lumin-0.8.18` + `dist/Lumin-0.8.18-win-x64.zip`（215.4MB）；隔离空目录 `RESULT=OK`；15 项资产 SHA256 BAD=0。
+- 重要测试债务：
+  - `tools/ui-e2e.cjs` 仍按旧版六入口 IA（“学习中心/智能体工作台/会话记录”）以及旧页面断言，首步就失败；本轮没有把它冒充通过。现行 IA 为 5 入口（对话/学习/知识库/成果/设置），当前回归以 `ui-audit` + `pages-audit` + `nonchat` + 各专项套件为准。后续恢复该单体脚本需按现行 IA 重写。
+  - Tavily 没有真实 Key，因此只验证未配置 400、配置写读和密钥不回传；没有伪造联网成功。
+  - 真实大库导图未重跑，沿用此前 39 文档/2528 切片、67 节点、849 秒、261,406 tokens 成功记录。
+- 后续接手建议：先读本 TRACE 末尾、`docs/15` 执行报告和 `tmp/audit/api-route-smoke.json`；再从 `api-feature-check`、`ui-audit`、`learning-check`、`course-check`、`real-ctx-check` 开始，不要先重跑大库或旧 `ui-e2e`。
