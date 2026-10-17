@@ -464,6 +464,33 @@ public class PresentationsStore {
         }
     }
 
+    /*
+     * store.py:404-416 output_for — the persisted output_path of a visible,
+     * non-archived, status='completed' task. Unlike getRaw this filters
+     * archived_at AND status, and skips serialization entirely.
+     *
+     * Python returns `row.get("output_path") if row else None`, so a NULL
+     * column and a missing row both come back falsy and the route raises the
+     * same 404. Collapsed here to None for both.
+     */
+    public func outputFor(userId: Array<Byte>, taskId: Array<Byte>): ?String {
+        let sql = "SELECT output_path FROM presentation_tasks WHERE id=" + sqlBinary(taskId) +
+            " AND archived_at IS NULL AND " + presentationVisibility(userId) +
+            " AND status='completed'"
+        match (conn.query(sql)) {
+            case QueryOutcome.Ok(_) => return None
+            case QueryOutcome.ResultSet(rs) =>
+                if (rs.rows.isEmpty()) {
+                    return None
+                }
+                let path = cellText(rs.rows[0], 0)
+                if (path.isEmpty()) {
+                    return None
+                }
+                return Some(path)
+        }
+    }
+
     private func loadRow(userId: Array<Byte>, taskId: Array<Byte>): ?RowPack {
         let sql = "SELECT " + presentationFullColumns() +
             " FROM presentation_tasks WHERE id=" + sqlBinary(taskId) +

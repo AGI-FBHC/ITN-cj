@@ -14,7 +14,7 @@ import soulsoft_extensions_injection.*
  * Mirrors src/agents/app/routers/public.py:
  *   GET    /v1/presentations
  *   GET    /v1/presentations/{task_id}
- *   GET    /v1/presentations/{task_id}/download   (copies the live decorator bug)
+ *   GET    /v1/presentations/{task_id}/download   (PPTX file; no learning state)
  *   POST   /v1/presentations/{task_id}/complete
  *   POST   /v1/presentations/{task_id}/progress
  *   DELETE /v1/presentations/{task_id}
@@ -34,11 +34,11 @@ public func registerPresentationRoutes(app: WebHost, cfg: AppConfig): Unit {
     app.mapGet("v1/presentations/{task_id}") {
         ctx => handleGetPresentation(ctx, cfg)
     }
-    /* public.py:1479-1486 — GET .../download is stacked on complete_presentation.
-     * download_presentation below it has no decorator and is dead code. Keep the
-     * live behaviour (mark learned + {"learned":true}) rather than the intent. */
+    /* P0 2026-10-17 (原负责人): download returns the PPTX file and does not
+     * touch learning state. Mark-learned stays on POST /complete and is fired
+     * by the courseware player during study. */
     app.mapGet("v1/presentations/{task_id}/download") {
-        ctx => handleCompletePresentation(ctx, cfg)
+        ctx => handleDownloadPresentation(ctx, cfg)
     }
     app.mapPost("v1/presentations/{task_id}/complete") {
         ctx => handleCompletePresentation(ctx, cfg)
@@ -233,12 +233,77 @@ func handleGetPresentation(ctx: HttpContext, cfg: AppConfig): Unit {
     }
 }
 
-/* -------- GET/POST .../download + .../complete -------- */
+/* -------- GET .../download -------- */
 
 /*
- * public.py:1479-1486. Both HTTP methods land on complete_presentation:
- * mark_learned, then {"learned": true}, or 404 "Completed presentation task not
- * found". The real FileResponse download below it is unreachable dead code.
+ * public.py download_presentation (the formerly-unreachable FileResponse).
+ * Returns the PPTX bytes and never touches learning state.
+ *
+ * Semantics, in order:
+ *   output_for(task, user) -> falsy            404 "Presentation file is not ready"
+ *   _resolve_presentation_output -> None       404 "Presentation file is missing"
+ *   FileResponse(pptx, application/vnd.openxmlformats-officedocument
+ *                .presentationml.presentation,
+ *                filename="ITN-Presentation-{task_id}.pptx")
+ *
+ * output_for already filters status='completed', so a still-generating task
+ * lands on "not ready" — never the 409 the slideshow routes use.
+ */
+func handleDownloadPresentation(ctx: HttpContext, cfg: AppConfig): Unit {
+    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+        case None => return
+        case Some(userId) =>
+            match (parsePathUuidFastApi(ctx, "task_id")) {
+                case None => return
+                case Some(taskId) =>
+                    if (storageUnavailable(cfg)) {
+                        writeDetail(ctx.response, 503, "Presentation storage is not configured")
+                        return
+                    }
+                    match (openDb(cfg)) {
+                        case None =>
+                            writeInternalDebug(ctx.response, "openDb failed: " + lastDbError)
+                        case Some(conn) =>
+                            try {
+                                let store = PresentationsStore(conn)
+                                match (store.outputFor(userId, taskId)) {
+                                    case None =>
+                                        conn.close()
+                                        writeDetail(ctx.response, 404, "Presentation file is not ready")
+                                    case Some(output) =>
+                                        conn.close()
+                                        let taskIdText = uuidFormat(taskId)
+                                        match (resolvePresentationOutput(taskIdText, output)) {
+                                            case None =>
+                                                writeDetail(ctx.response, 404, "Presentation file is missing")
+                                            case Some(pptxPath) =>
+                                                match (readWholeFile(pptxPath)) {
+                                                    case None =>
+                                                        writeDetail(ctx.response, 404, "Presentation file is missing")
+                                                    case Some(bytes) =>
+                                                        ctx.response.statusCode = 200
+                                                        ctx.response.contentType = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                                                        ctx.response.headers.add("Content-Disposition",
+                                                             "attachment; filename=\"ITN-Presentation-" +
+                                                                 taskIdText + ".pptx\"")
+                                                        ctx.response.write(bytes)
+                                                }
+                                        }
+                                }
+                            } catch (e: Exception) {
+                                conn.close()
+                                writeInternalDebug(ctx.response, "downloadPresentation: " + e.message)
+                            }
+                    }
+            }
+    }
+}
+
+/* -------- POST .../complete -------- */
+
+/*
+ * public.py complete_presentation. mark_learned then {"learned": true}, or
+ * 404 "Completed presentation task not found".
  */
 func handleCompletePresentation(ctx: HttpContext, cfg: AppConfig): Unit {
     match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {

@@ -345,9 +345,13 @@ public func writeFastApi422(response: HttpResponse, loc: Array<String>,
  * always the empty object — routing.py hard-codes `input={}`.
  */
 public func writeJsonInvalid422(response: HttpResponse, err: PyJsonError): Unit {
-    writeValidation422(response, ["body", err.pos.toString()], "json_invalid",
-                       "JSON decode error", "{}",
-                       Some("{\"error\":" + jsonQuote(err.msg) + "}"))
+    /* loc carries a NUMBER offset — ["body", 2], index not quoted. Same rule
+     * as list-item indices (see pyErrItemLocRaw); going through
+     * writeValidation422 would quote it as "2". */
+    let locRaw = "[\"body\"," + err.pos.toString() + "]"
+    writeValidation422Many(response, [
+        pyErrItemLocRaw(locRaw, "json_invalid", "JSON decode error", "{}",
+                        Some("{\"error\":" + jsonQuote(err.msg) + "}"))])
 }
 
 /*
