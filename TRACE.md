@@ -4389,3 +4389,24 @@ read_chunk 读得到原文并带回库标识与正文。
   - 0.8.13 打包：dist/Lumin-0.8.13 + zip（190.3MB），13 项资产 SHA256 BAD=0，隔离冒烟 STATUS=Lumin 0.8.13 · 已连接、RESULT=OK。
 - 交付：提交（见 git log）；启动Lumin.cmd 指向 0.8.13。用户旧进程里那张卡住的图：重启新版后该 running 任务会被判定失效，并在下一次生成时自动清理，不会影响旧导图（若之前从未生成成功，则从空图开始）。
 - 诚实说明：提速倍率取决于模型服务的并发能力——默认 3 并发并带单批重试；若上游限流严重，可后续把 WORKER_LIMIT 或加自适应降并发。真实大库从未成功出图，因此“已生成导图质量”无法用真实图复核，本轮用真实模型在隔离样例库上验证了树结构与出处覆盖。
+## 2026-10-17 · 桌面任务中心 + Lumin 对等工具 + 我的成长页重构（0.8.14）
+- 用户要求：实现右上角任务列表，把桌面端正在运行的任务显示出来；同时把“我的成长”页面做得更美观。沿用此前的先方案后实施约定，不改窗口顶部标题栏，只改页面框架内。
+- 任务中心实现（提交 eefc403）：
+  - 新增 core/src/pi_app/tasks.cj 只读聚合器 TaskFeed，统一汇总三类现有真相：对话轮次（sessionHub + sessions_meta + turn/end）、导图任务（course_jobs）、桌面任务（desktop_jobs）。没有另建任务表，避免双真相。
+  - 任务行提供 id/kind/title/status/stage/progress/tokens/startedAt/elapsedSeconds/updatedAt/link/cancelable。对话 id 为 turn:<sid>:<turnId>，导图 course:<jobId>，桌面 desktop:<jobId>。
+  - POST /api/tasks/list 和 /api/tasks/cancel 已注册；取消一律转发原 Agent / 导图 / 桌面任务路径。导图取消保留旧图，对话取消保留已产生事件。
+  - 右上角任务按钮与浮层：shell/renderer/tasks.js/.css。聊天页挂到对话工具条，其他页面挂页面 topbar；显示进行中数量、阶段、已运行、剩余 ETA、百分比、tokens（入/出）、进度条、停止/打开；最近完成显示完成/失败/取消/中断。打开对话回到精确会话，打开导图回到精确知识库的学·练。
+  - Lumin 对等工具：list_activity_tasks 与 cancel_activity_task。后者要求用户本轮明确说出停止/取消/终止，并禁止从当前任务内部取消自身。工具与 TaskFeed 同源；因循环依赖，聚合器与工具从独立 tasks 包上移到 pi_app 编排层。
+  - 修复真实 bug：任务状态此前跨 turn 继承 startedAt，导致第二个对话轮次已运行时长虚高；改为同 turn 才继承，新一轮重新计时。新增 activeSessionIds、桌面任务 active/recent、desktop_jobs.created_at 真实时间戳。
+  - 重启恢复：任务中心无需先打开会话即可把无活动 Agent 的 running/cancelling 收口为 interrupted，并在最近任务中与 failed 分开；修复“中断”被误判失败。
+  - 修复任务链接：无会话桌面任务从错误 page=artifacts 改到真实 resources 页面；导图/对话最近状态与 cancelable 逻辑同步。
+- 我的成长页（同提交）：
+  - 保留真实数据口径（本人标记学完、首次作答证据、资源不换算掌握度），重做布局：渐变 hero、完成环、四张统计卡（节点进度/首次作答/正确率/当前资源）、节点卡片（四类资源槽位、完成状态、作答依据）、按日期分组的真实学习足迹时间轴、依据说明、目标与学习记忆折叠区。
+  - 颜色全部走主题变量，支持深浅色和窄窗口；保持知识库切换与继续学习跳转。修复通用 el() 默认 textContent 导致小标题 HTML 被当字面文本显示的问题。
+  - 截图：tmp/course-shots/growth-redesign-light.png、growth-redesign-dark.png、task-center-final.png，均已目视复核。
+- 测试与验证（说明测什么/怎么触发/能抓住什么）：
+  - cjpm test：153/153。新增任务聚合单测覆盖：桌面 pending 任务出现、chat startedAt 新 turn 重置、Lumin 工具目录、未授权取消被拒、自取消被拒、重启后 interrupted。
+  - 新增 tools/tasks-check.cjs：22/22，连跑两遍稳定。用仓颉夹具把每次 mock 模型调用延迟 8 秒，同时制造慢对话 + 慢导图，真浏览器验证徽标=2、百分比/ETA/tokens、从浮层停止两类任务、最近状态、精确跳转；再让 mock Agent 真实调用 list_activity_tasks；强杀内核后用同一数据目录重启，验证任务显示 interrupted。覆盖不到真实 Windows PPT worker 的领取/回写，该聚合由内核单测覆盖，worker 由 presentation-check 覆盖。
+  - 回归：course-check 78/78；course-speed-check 18/18；pages-audit 13/13；knowledge-check 92/92；knowledge-hit-check 281/281；session-switch 12/12；stop-check 13/13；nonchat 25/25；palette 14/14；learning 45/45；presentation 9/9；skill-check 全过（技能目录实际列出 24 个内置技能，不再是此前提到的 2 个）。
+  - 发布：版本 0.8.13→0.8.14（提交 99bfeaa）；dist/Lumin-0.8.14 + zip（190.3MB）；release manifest 15 项资产 SHA256 BAD=0；隔离冒烟 STATUS=Lumin 0.8.14 · 已连接、RESULT=OK；启动Lumin.cmd 指向 0.8.14。
+  - 本轮未重复消耗真实模型额度；导图真实模型性能与质量沿用 0.8.13 的 8/8、339 秒日志。两份未跟踪调研稿 docs/知识库改进清单-v2.md、docs/非对话页面改造方案-v1.md 继续保持不跟踪。
