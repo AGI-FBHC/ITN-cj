@@ -4515,3 +4515,5 @@ read_chunk 读得到原文并带回库标识与正文。
   - Tavily 没有真实 Key，因此只验证未配置 400、配置写读和密钥不回传；没有伪造联网成功。
   - 真实大库导图未重跑，沿用此前 39 文档/2528 切片、67 节点、849 秒、261,406 tokens 成功记录。
 - 后续接手建议：先读本 TRACE 末尾、`docs/15` 执行报告和 `tmp/audit/api-route-smoke.json`；再从 `api-feature-check`、`ui-audit`、`learning-check`、`course-check`、`real-ctx-check` 开始，不要先重跑大库或旧 `ui-e2e`。
+
+- 文档提交：3efb2a6（完整验收/债务）、e33a8e（错误矩阵与工具数量口径）；最终包 dist/Lumin-0.8.18/release.json 的 sourceCommit 为 637816，15 项资产哈希 BAD=0。
