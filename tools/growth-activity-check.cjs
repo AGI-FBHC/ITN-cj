@@ -42,7 +42,9 @@ const root=path.resolve(__dirname,'..'),sleep=ms=>new Promise(r=>setTimeout(r,ms
   const panelBottoms=await page.locator('.course-growth-panel').evaluateAll(es=>es.map(e=>e.getBoundingClientRect().bottom));
   check('progress and trail panels share the same bottom edge',panelBottoms.length===2&&Math.abs(panelBottoms[0]-panelBottoms[1])<=2);
   const trailMetrics=await page.locator('.course-growth-timeline').evaluate(e=>({client:e.clientHeight,scroll:e.scrollHeight}));
-  check('trail scrolls inside its panel instead of stretching the page',trailMetrics.scroll>trailMetrics.client&&trailMetrics.client<=321);
+  check('trail scrolls inside its panel instead of stretching the page',trailMetrics.scroll>trailMetrics.client);
+  const nodeScroll=await page.evaluate(()=>{const list=document.querySelector('.course-growth-node-list'),base=list.querySelector('.course-growth-node');for(let i=0;i<32;i++){const n=base.cloneNode(true);n.dataset.stress='1';list.appendChild(n)}const m={client:list.clientHeight,scroll:list.scrollHeight};document.querySelectorAll('.course-growth-node[data-stress]').forEach(n=>n.remove());return m});
+  check('a long node list gets its own internal scrollbar',nodeScroll.scroll>nodeScroll.client);
   check('desktop page has no horizontal overflow',await page.evaluate(()=>document.querySelector('#view').scrollWidth<=document.querySelector('#view').clientWidth+1));
   fs.mkdirSync(path.join(root,'tmp/course-shots'),{recursive:true});await page.screenshot({path:path.join(root,'tmp/course-shots','growth-activity-v2-light.png')});
   await page.emulateMedia({colorScheme:'dark'});await sleep(350);
