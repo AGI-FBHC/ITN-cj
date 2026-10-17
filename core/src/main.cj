@@ -44,6 +44,7 @@ main(args: Array<String>): Int64 {
 
     match(argValue(args,"--fixture-delay-ms")){case Some(v)=>try{setCourseFixtureDelay(Int64.parse(v))}catch(e: Exception){()};case None=>()}
     match(argValue(args,"--seed-course-fixture")){case Some(_)=>seedCourseFixture(dataDir);case None=>()}
+    match(argValue(args,"--seed-growth-activity")){case Some(_)=>seedGrowthActivity(dataDir);case None=>()}
     match(argValue(args,"--course-model-copy")){case Some(copyDir)=>useCopiedCourseModel(dataDir,copyDir);case None=>()}
     let server = buildServer(dataDir, uiDir)
     spawn { server.serve() }

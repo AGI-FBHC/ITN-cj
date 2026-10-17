@@ -66,13 +66,13 @@ const root=path.resolve(__dirname,'..'),sleep=ms=>new Promise(r=>setTimeout(r,ms
   await post('course/commit',{sessionId:target.sessionId,path:saved.artifactPath,learningId:saved.id,learningVersion:saved.version,title:saved.title,expectedResourceId:'',targetNodeId:nid,confirmed:true});
   await post('learning/answer',{id:saved.id,version:saved.version,questionId:'q-1',choice:0,attemptId:'tasks-check-answer'});
   await page.goto(base);await page.waitForFunction(()=>!document.getElementById('boot'),null,{timeout:20000}).catch(()=>{});await page.evaluate(()=>{state.kb='course-alpha';return go('report')});
-  await page.waitForSelector('.course-growth');const hero=page.locator('.course-growth-hero');check('growth hero keeps real completion and first-attempt evidence',/1 \/ 2/.test(await hero.innerText())&&/答对 1/.test(await hero.innerText()));
-  check('growth page renders four evidence cards and node resource slots',await page.locator('.course-growth-stat').count()===4&&await page.locator('.course-growth-node').count()===2&&await page.locator('.course-growth-slot').count()===8);
+  await page.waitForSelector('.course-growth-activity');const growthText=await page.locator('.course-growth').innerText();check('growth page keeps real completion and first-attempt evidence',/1 \/ 2/.test(growthText)&&/首次作答 1 \/ 1/.test(growthText));
+  check('growth page renders inline activity stats, 53 weeks and node resource slots',await page.locator('.course-growth-activity-stats').count()===1&&await page.locator('.course-growth-cell').count()===371&&await page.locator('.course-growth-node').count()===2&&await page.locator('.course-growth-slot').count()===8);
   check('growth timeline groups real events under a dated marker',await page.locator('.course-growth-day').count()>=1&&await page.locator('.course-history-row').count()>=2&&await page.locator('.course-growth-dot').count()>=2);
   check('growth page has no horizontal overflow at desktop size',await page.locator('#view').evaluate(e=>e.scrollWidth<=e.clientWidth+1));
   fs.mkdirSync(path.join(root,'tmp/course-shots'),{recursive:true});await page.screenshot({path:path.join(root,'tmp/course-shots','growth-redesign-light.png'),fullPage:true});
   await page.emulateMedia({colorScheme:'dark'});await sleep(400);
-  const darkContrast=await page.evaluate(()=>{const rgb=s=>(s.match(/\d+/g)||[]).slice(0,3).map(Number),lum=s=>{const c=rgb(s).map(v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)});return .2126*c[0]+.7152*c[1]+.0722*c[2]},a=lum(getComputedStyle(document.querySelector('.course-growth-hero h2')).color),b=lum(getComputedStyle(document.body).backgroundColor);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05)});
+  const darkContrast=await page.evaluate(()=>{const rgb=s=>(s.match(/\d+/g)||[]).slice(0,3).map(Number),lum=s=>{const c=rgb(s).map(v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)});return .2126*c[0]+.7152*c[1]+.0722*c[2]},a=lum(getComputedStyle(document.querySelector('.course-growth-continue h2')).color),b=lum(getComputedStyle(document.querySelector('.course-growth-continue')).backgroundColor);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05)});
   check('dark theme keeps growth headings readable instead of black-on-black',darkContrast>=4.5);
   await page.screenshot({path:path.join(root,'tmp/course-shots','growth-redesign-dark.png'),fullPage:true});
 

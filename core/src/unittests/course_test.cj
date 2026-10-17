@@ -18,6 +18,8 @@ import itn_desktop_core.pi.StepContext
 import itn_desktop_core.pi.EventStream
 import itn_desktop_core.pi.ModelReply
 import itn_desktop_core.agent.courseTools
+import itn_desktop_core.dev.seedGrowthActivity
+import itn_desktop_core.kb.stamp
 import itn_desktop_core.util.*
 
 func courseTestDir(name: String): String{return getcwd().toString()+Path.Separator+freshDir(name)}
@@ -115,7 +117,19 @@ class CourseLifecycleTest {
     func courseToolsHaveReadWriteParityAndDoNotAcceptUnrequestedDeletion(): Unit{
         let dir=courseTestDir("course-tools");publishedCourse(dir);let names=HashSet<String>();var denied=false
         for(t in courseTools(Store(dir),"s","请看看我的学习进度")){names.add(t.name);if(t.name=="manage_course_resource"){let a=JsonObject();a.put("action",JsonString("trash"));try{t.run(a)}catch(e: Exception){denied=true}}}
-        @Expect(names.contains("read_course_map"),true);@Expect(names.contains("generate_course_map"),true);@Expect(names.contains("save_course_resource"),true);@Expect(names.contains("get_course_progress"),true);@Expect(denied,true)
+        @Expect(names.contains("read_course_map"),true);@Expect(names.contains("generate_course_map"),true);@Expect(names.contains("save_course_resource"),true);@Expect(names.contains("get_course_progress"),true);@Expect(names.contains("get_learning_activity"),true);@Expect(denied,true)
+    }
+    @TestCase
+    func growthActivityCountsOnlyEffectiveLearningEvidence(): Unit{
+        @Expect(activityDateAdd("2024-02-28",1),"2024-02-29");@Expect(activityDateAdd("2024-02-28",2),"2024-03-01");@Expect(activityDateAdd("2025-12-31",1),"2026-01-01")
+        let dir=courseTestDir("course-activity");seedGrowthActivity(dir)
+        let activity=CourseStore(dir).activity("course-alpha")
+        @Expect(intOf(activity,"total"),23);@Expect(intOf(activity,"activeDays"),7);@Expect(intOf(activity,"currentStreak"),3);@Expect(intOf(activity,"longestStreak"),3)
+        let today=String.fromUtf8(stamp().toArray()[0..10]);let days=arrOf(activity,"days");var todayCount: Int64=-1;var quiz: Int64=0;var node: Int64=0;var completion: Int64=0
+        var i: Int64=0
+        while(i<days.size()){let d=objOf(days[i]).getOrThrow();i+=1;if(strOf(d,"date")==today){todayCount=intOf(d,"count");quiz=intOf(d,"quiz");node=intOf(d,"node");completion=intOf(d,"completion")}}
+        @Expect(todayCount,5);@Expect(quiz,3);@Expect(node,1);@Expect(completion,1)
+        let report=CourseStore(dir).report("course-alpha");@Expect(strOf(objOf(report.get("activity").getOrThrow()).getOrThrow(),"to"),today)
     }
     @TestCase
     func retryIsIdempotentAndExistingFilesCanBeExplicitlyLinked(): Unit{

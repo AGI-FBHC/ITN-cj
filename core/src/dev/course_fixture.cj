@@ -58,6 +58,9 @@ func fixtureReply(b: JsonObject): (String,?JsonObject){
     while(i<messages.size()){let m=objOf(messages[i]).getOrThrow();i+=1;lastRole=strOf(m,"role");if(lastRole=="user"){user=strOf(m,"content")};if(lastRole=="system"){system+=strOf(m,"content")}}
     if(arrOf(b,"tools").size()>0){
         if(lastRole=="tool"){return("候选学习资源已生成，请预览；满意后点击加入我的学习资源。",None)}
+        if(user.contains("活跃度")){
+            let args=JsonObject();args.put("kbId",JsonString("course-alpha"));let function=JsonObject();function.put("name",JsonString("get_learning_activity"));function.put("arguments",JsonString(args.toString()));let call=JsonObject();call.put("index",JsonInt(0));call.put("id",JsonString(courseId("call-")));call.put("type",JsonString("function"));call.put("function",function);return("",Some(call))
+        }
         if(user.contains("任务中心")||user.contains("哪些任务")||user.contains("在跑什么")){
             let args=JsonObject();let function=JsonObject();function.put("name",JsonString("list_activity_tasks"));function.put("arguments",JsonString(args.toString()));let call=JsonObject();call.put("index",JsonInt(0));call.put("id",JsonString(courseId("call-")));call.put("type",JsonString("function"));call.put("function",function);return("",Some(call))
         }

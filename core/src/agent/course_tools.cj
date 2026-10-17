@@ -42,6 +42,10 @@ public func courseTools(store: Store,sid: String,userText: String): ArrayList<Do
     out.add(makeTool("get_course_progress","读取学习进展","节点完成标记和真实作答依据",
         "按知识库读取当前导图节点、学习资源、首次作答与历史证据。本人标记学完不等于掌握，资源份数不等于能力。",
         "{\"type\":\"object\",\"properties\":{\"kbId\":{\"type\":\"string\"}},\"required\":[\"kbId\"]}","read",{a: JsonObject=>return learningResult(cs.report(strOf(a,"kbId")),"已读取学习进展及依据")}))
+    out.add(makeTool("get_learning_activity","查看学习活跃度","按日汇总测验、学习条目完成与节点完成",
+        "读取当前知识库近53周的真实学习活跃度：每日次数、活跃天数、当前/最长连续。只统计测验作答、done=true的学习条目完成与节点完成；撤销、生成资源、打开页面和模型调用不算活跃，也不把活跃度当掌握度或学习时长。",
+        "{\"type\":\"object\",\"properties\":{\"kbId\":{\"type\":\"string\"}},\"required\":[\"kbId\"]}","read",{a: JsonObject=>
+            let kb=strOf(a,"kbId");if(kb.size==0){throw Exception("缺少知识库 id")};return learningResult(cs.activity(kb),"已读取学习活跃度，活跃不等于掌握度")}))
     out.add(makeTool("save_course_resource","收录节点学习资源","用户确认后保存精确候选并绑定节点",
         "仅在本轮用户明确要求加入/收录/替换学习资源时调用。候选必须来自本节点会话真实生成事件；expectedResourceId从courseTarget或当前节点读取。旧图失效时先让用户明确选择targetNodeId；保存成功才归档旧版。",
         "{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"},\"title\":{\"type\":\"string\"},\"expectedResourceId\":{\"type\":\"string\"},\"targetNodeId\":{\"type\":\"string\"}},\"required\":[\"path\",\"expectedResourceId\"]}","write",{a: JsonObject=>

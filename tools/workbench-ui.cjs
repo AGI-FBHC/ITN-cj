@@ -148,9 +148,9 @@ module.exports=async function({base,post,check,dir}) {
     }
     check('learning tabs share one wide layout without panel flip-flop',learningLayout.every(x=>x.wide&&x.panel==='none'&&x.toggle==='hidden'));
     check('title and tabs occupy a stable shared header',learningLayout.every(x=>x.inHeader)&&Math.max(...learningLayout.map(x=>x.left))-Math.min(...learningLayout.map(x=>x.left))<=2&&Math.max(...learningLayout.map(x=>x.top))-Math.min(...learningLayout.map(x=>x.top))<=2);
-    await page.evaluate(()=>go('report'));await page.waitForSelector('.course-growth');
+    await page.evaluate(()=>go('report'));await page.waitForSelector('.course-growth-activity');
     const evidence=await post('/api/course/report',{kbId:'kb'});
-    check('new growth page preserves existing real answer evidence',(await page.locator('.course-growth-hero').innerText()).includes('答对 '+evidence.quizCorrect));
+    check('new growth page preserves existing real answer evidence in the activity summary',evidence.quizAttempts>0&&evidence.activity.total>=evidence.quizAttempts&&(await page.locator('.course-growth-activity-stats').innerText()).includes(String(evidence.activity.total)));
     const unlinked=(await post('/api/course/unlinked',{})).resources;
     check('previously confirmed files remain available for explicit linking',unlinked.length>=1&&unlinked.some(r=>r.learningId));
     await page.evaluate(({id})=>openLearningResource(id,1),lecture);

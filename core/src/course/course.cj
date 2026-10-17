@@ -259,10 +259,12 @@ public class CourseStore {
             }
         }
         let history=JsonArray();var quizTotal: Int64=0;var quizRight: Int64=0
-        for(r in db().query("SELECT id,kind,resource_id,version,payload,at,correct,first_attempt,topic FROM learning_events WHERE kb_id=? ORDER BY at DESC",va([tv(kb)]))){let e=courseJson(r.text(4));e.put("eventId",JsonString(r.text(0)));e.put("kind",JsonString(r.text(1)));e.put("at",JsonString(r.text(5)));e.put("title",JsonString(r.text(8)));history.add(e);if(r.text(1)=="quiz"&&r.int(7)==1){quizTotal+=1;quizRight+=r.int(6)}}
+        for(r in db().query("SELECT id,kind,resource_id,version,payload,at,correct,first_attempt,topic FROM learning_events WHERE kb_id=? ORDER BY at DESC",va([tv(kb)]))){let e=courseJson(r.text(4));e.put("eventId",JsonString(r.text(0)));e.put("kind",JsonString(r.text(1)));e.put("at",JsonString(r.text(5)));e.put("title",JsonString(r.text(8)));e.put("correct",JsonBool(r.int(6)!=0));e.put("firstAttempt",JsonBool(r.int(7)!=0));history.add(e);if(r.text(1)=="quiz"&&r.int(7)==1){quizTotal+=1;quizRight+=r.int(6)}}
         for(r in db().query("SELECT id,body,at FROM course_events WHERE kb_id=? ORDER BY at DESC",va([tv(kb)]))){let e=courseJson(r.text(1));e.put("eventId",JsonString(r.text(0)));e.put("at",JsonString(r.text(2)));history.add(e)}
-        out.put("nodes",rows);out.put("completedNodes",JsonInt(done));out.put("totalNodes",JsonInt(total));out.put("history",history);out.put("quizAttempts",JsonInt(quizTotal));out.put("quizCorrect",JsonInt(quizRight));out.put("basis",JsonString("学完是本人标记；测验使用首次作答证据，归档不清除历史。资源份数和阅读量不换算为掌握度。"));return out
+        out.put("nodes",rows);out.put("completedNodes",JsonInt(done));out.put("totalNodes",JsonInt(total));out.put("history",history);out.put("quizAttempts",JsonInt(quizTotal));out.put("quizCorrect",JsonInt(quizRight));out.put("activity",courseActivity(dataDir,kb));out.put("basis",JsonString("学完是本人标记；测验使用首次作答证据，归档不清除历史。资源份数和阅读量不换算为掌握度。"));return out
     }
+    /** 学习活跃度聚合；与 report、Lumin 工具共用同一份计算。 */
+    public func activity(kb: String): JsonObject{return courseActivity(dataDir,kb)}
     public func removeKb(kb: String): Unit{
         synchronized(courseLock){
             let settings=Store(dataDir).load();let library=settings.findKb(kb).getOrThrow();let snapshot=library.toJson();snapshot.put("mapId",JsonString(head(kb)))
