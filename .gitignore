@@ -8,8 +8,18 @@ DEPLOY.md
 # Build output — large, regenerable
 /target/
 
-# Local verification harness (browser profiles, seeds, matrices) — not deployable
-/tmp_verify/
+# Local verification harness — keep the secret-free scripts (report numbers must
+# be reproducible), drop the bulky / regenerable runtime artifacts.
+/tmp_verify/edge_profile*/
+/tmp_verify/logs/
+/tmp_verify/ppt_out/
+/tmp_verify/__pycache__/
+/tmp_verify/ui_check/node_modules/
+/tmp_verify/spire_db_env.sh
+/tmp_verify/*.log
+/tmp_verify/*.pid
+/tmp_verify/edge_out.txt
+/tmp_verify/edge_err.txt
 
 # Real secrets — never commit. Only config/sample.env (placeholders) is tracked.
 .env

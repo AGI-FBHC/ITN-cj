@@ -1,0 +1,2628 @@
+{
+ "note": "measured FastAPI 0.115.6 / pydantic 2.10.4",
+ "progress": [
+  {
+   "label": "body:empty",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "missing",
+      "loc": [
+       "body"
+      ],
+      "msg": "Field required",
+      "input": null
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:ws",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "json_invalid",
+      "loc": [
+       "body",
+       2
+      ],
+      "msg": "JSON decode error",
+      "input": {},
+      "ctx": {
+       "error": "Expecting value"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:malformed",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "json_invalid",
+      "loc": [
+       "body",
+       1
+      ],
+      "msg": "JSON decode error",
+      "input": {},
+      "ctx": {
+       "error": "Expecting property name enclosed in double quotes"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:malformed2",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "json_invalid",
+      "loc": [
+       "body",
+       4
+      ],
+      "msg": "JSON decode error",
+      "input": {},
+      "ctx": {
+       "error": "Expecting ',' delimiter"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:malformed3",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "json_invalid",
+      "loc": [
+       "body",
+       0
+      ],
+      "msg": "JSON decode error",
+      "input": {},
+      "ctx": {
+       "error": "Expecting value"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:malformed4",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "json_invalid",
+      "loc": [
+       "body",
+       6
+      ],
+      "msg": "JSON decode error",
+      "input": {},
+      "ctx": {
+       "error": "Expecting value"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:malformed5",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "json_invalid",
+      "loc": [
+       "body",
+       16
+      ],
+      "msg": "JSON decode error",
+      "input": {},
+      "ctx": {
+       "error": "Expecting ',' delimiter"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:malformed_extra",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "json_invalid",
+      "loc": [
+       "body",
+       1
+      ],
+      "msg": "JSON decode error",
+      "input": {},
+      "ctx": {
+       "error": "Extra data"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:singlequote",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "json_invalid",
+      "loc": [
+       "body",
+       0
+      ],
+      "msg": "JSON decode error",
+      "input": {},
+      "ctx": {
+       "error": "Expecting value"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:null",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "missing",
+      "loc": [
+       "body"
+      ],
+      "msg": "Field required",
+      "input": null
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:int",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "model_attributes_type",
+      "loc": [
+       "body"
+      ],
+      "msg": "Input should be a valid dictionary or object to extract fields from",
+      "input": 123
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:str",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "model_attributes_type",
+      "loc": [
+       "body"
+      ],
+      "msg": "Input should be a valid dictionary or object to extract fields from",
+      "input": "str"
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:bool",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "model_attributes_type",
+      "loc": [
+       "body"
+      ],
+      "msg": "Input should be a valid dictionary or object to extract fields from",
+      "input": true
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:array",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "model_attributes_type",
+      "loc": [
+       "body"
+      ],
+      "msg": "Input should be a valid dictionary or object to extract fields from",
+      "input": [
+       1,
+       2
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:emptyobj",
+   "status": 200,
+   "body": {
+    "ok": true
+   }
+  },
+  {
+   "label": "body:pi_neg",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "greater_than_equal",
+      "loc": [
+       "body",
+       "pageIndex"
+      ],
+      "msg": "Input should be greater than or equal to 0",
+      "input": -1,
+      "ctx": {
+       "ge": 0
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:pi_str",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "int_parsing",
+      "loc": [
+       "body",
+       "pageIndex"
+      ],
+      "msg": "Input should be a valid integer, unable to parse string as an integer",
+      "input": "abc"
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:pi_float",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "int_from_float",
+      "loc": [
+       "body",
+       "pageIndex"
+      ],
+      "msg": "Input should be a valid integer, got a number with a fractional part",
+      "input": 1.5
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:pi_floatint",
+   "status": 200,
+   "body": {
+    "ok": true
+   }
+  },
+  {
+   "label": "body:pi_bool",
+   "status": 200,
+   "body": {
+    "ok": true
+   }
+  },
+  {
+   "label": "body:pi_strnum",
+   "status": 200,
+   "body": {
+    "ok": true
+   }
+  },
+  {
+   "label": "body:pi_explicit_null",
+   "status": 200,
+   "body": {
+    "ok": true
+   }
+  },
+  {
+   "label": "body:pi_extra",
+   "status": 200,
+   "body": {
+    "ok": true
+   }
+  },
+  {
+   "label": "body:snake_neg",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "greater_than_equal",
+      "loc": [
+       "body",
+       "page_index"
+      ],
+      "msg": "Input should be greater than or equal to 0",
+      "input": -1,
+      "ctx": {
+       "ge": 0
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:pc_zero",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "greater_than_equal",
+      "loc": [
+       "body",
+       "pageCount"
+      ],
+      "msg": "Input should be greater than or equal to 1",
+      "input": 0,
+      "ctx": {
+       "ge": 1
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:pc_str",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "int_parsing",
+      "loc": [
+       "body",
+       "pageCount"
+      ],
+      "msg": "Input should be a valid integer, unable to parse string as an integer",
+      "input": "two"
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:learned_yes",
+   "status": 200,
+   "body": {
+    "ok": true
+   }
+  },
+  {
+   "label": "body:learned_maybe",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "bool_parsing",
+      "loc": [
+       "body",
+       "learned"
+      ],
+      "msg": "Input should be a valid boolean, unable to interpret input",
+      "input": "maybe"
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:learned_int0",
+   "status": 200,
+   "body": {
+    "ok": true
+   }
+  },
+  {
+   "label": "body:mastery_neg",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "greater_than_equal",
+      "loc": [
+       "body",
+       "mastery"
+      ],
+      "msg": "Input should be greater than or equal to 0",
+      "input": -0.1,
+      "ctx": {
+       "ge": 0.0
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:mastery_over",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "less_than_equal",
+      "loc": [
+       "body",
+       "mastery"
+      ],
+      "msg": "Input should be less than or equal to 1",
+      "input": 1.5,
+      "ctx": {
+       "le": 1.0
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:mastery_2",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "less_than_equal",
+      "loc": [
+       "body",
+       "mastery"
+      ],
+      "msg": "Input should be less than or equal to 1",
+      "input": 2,
+      "ctx": {
+       "le": 1.0
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:mastery_str",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "float_parsing",
+      "loc": [
+       "body",
+       "mastery"
+      ],
+      "msg": "Input should be a valid number, unable to parse string as a number",
+      "input": "high"
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:ok",
+   "status": 200,
+   "body": {
+    "ok": true
+   }
+  },
+  {
+   "label": "body:both_aliases",
+   "status": 200,
+   "body": {
+    "ok": true
+   }
+  }
+ ],
+ "batch": [
+  {
+   "label": "body:empty",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "missing",
+      "loc": [
+       "body"
+      ],
+      "msg": "Field required",
+      "input": null
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:ws",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "json_invalid",
+      "loc": [
+       "body",
+       2
+      ],
+      "msg": "JSON decode error",
+      "input": {},
+      "ctx": {
+       "error": "Expecting value"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:malformed",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "json_invalid",
+      "loc": [
+       "body",
+       1
+      ],
+      "msg": "JSON decode error",
+      "input": {},
+      "ctx": {
+       "error": "Expecting property name enclosed in double quotes"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:null",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "missing",
+      "loc": [
+       "body"
+      ],
+      "msg": "Field required",
+      "input": null
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:int",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "dict_type",
+      "loc": [
+       "body"
+      ],
+      "msg": "Input should be a valid dictionary",
+      "input": 123
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:str",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "dict_type",
+      "loc": [
+       "body"
+      ],
+      "msg": "Input should be a valid dictionary",
+      "input": "str"
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:bool",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "dict_type",
+      "loc": [
+       "body"
+      ],
+      "msg": "Input should be a valid dictionary",
+      "input": true
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:array",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "dict_type",
+      "loc": [
+       "body"
+      ],
+      "msg": "Input should be a valid dictionary",
+      "input": []
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:array2",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "dict_type",
+      "loc": [
+       "body"
+      ],
+      "msg": "Input should be a valid dictionary",
+      "input": [
+       1,
+       2,
+       3
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "label": "body:emptyobj",
+   "status": 422,
+   "body": {
+    "detail": "taskIds must be a non-empty array"
+   }
+  },
+  {
+   "label": "body:ids_empty",
+   "status": 422,
+   "body": {
+    "detail": "taskIds must be a non-empty array"
+   }
+  },
+  {
+   "label": "body:ids_null",
+   "status": 422,
+   "body": {
+    "detail": "taskIds must be a non-empty array"
+   }
+  },
+  {
+   "label": "body:ids_str",
+   "status": 422,
+   "body": {
+    "detail": "taskIds must be a non-empty array"
+   }
+  },
+  {
+   "label": "body:ids_bad",
+   "status": 422,
+   "body": {
+    "detail": "taskIds contains invalid UUIDs"
+   }
+  },
+  {
+   "label": "body:ids_ok",
+   "status": 200,
+   "body": {
+    "deleted": [
+     "11111111-2222-4333-8444-555555555555"
+    ],
+    "count": 1
+   }
+  },
+  {
+   "label": "body:snake_ok",
+   "status": 200,
+   "body": {
+    "deleted": [
+     "11111111-2222-4333-8444-555555555555"
+    ],
+    "count": 1
+   }
+  },
+  {
+   "label": "body:ids_101",
+   "status": 422,
+   "body": {
+    "detail": "taskIds cannot contain more than 100 items"
+   }
+  }
+ ],
+ "batch_noct": [
+  {
+   "label": "nc:malformed",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "json_invalid",
+      "loc": [
+       "body",
+       1
+      ],
+      "msg": "JSON decode error",
+      "input": {},
+      "ctx": {
+       "error": "Expecting property name enclosed in double quotes"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "nc:null",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "missing",
+      "loc": [
+       "body"
+      ],
+      "msg": "Field required",
+      "input": null
+     }
+    ]
+   }
+  },
+  {
+   "label": "nc:empty",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "missing",
+      "loc": [
+       "body"
+      ],
+      "msg": "Field required",
+      "input": null
+     }
+    ]
+   }
+  },
+  {
+   "label": "nc:ok",
+   "status": 422,
+   "body": {
+    "detail": "taskIds must be a non-empty array"
+   }
+  }
+ ],
+ "uuid_path": [
+  {
+   "label": "uuid:not-a-uuid",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1",
+      "input": "not-a-uuid",
+      "ctx": {
+       "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:00000000-0000-0000-0000-0000000000z",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `z` at 35",
+      "input": "00000000-0000-0000-0000-0000000000z",
+      "ctx": {
+       "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `z` at 35"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:0000000000000000000000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid length: expected length 32 for simple format, found 31",
+      "input": "0000000000000000000000000000000",
+      "ctx": {
+       "error": "invalid length: expected length 32 for simple format, found 31"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:000000000000000000000000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid length: expected length 32 for simple format, found 33",
+      "input": "000000000000000000000000000000000",
+      "ctx": {
+       "error": "invalid length: expected length 32 for simple format, found 33"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:00000000-0000-0000-0000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group count: expected 5, found 4",
+      "input": "00000000-0000-0000-0000",
+      "ctx": {
+       "error": "invalid group count: expected 5, found 4"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:00000000-000-0000-0000-000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group length in group 1: expected 4, found 3",
+      "input": "00000000-000-0000-0000-000000000000",
+      "ctx": {
+       "error": "invalid group length in group 1: expected 4, found 3"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:URN:UUID:00000000-0000-0000-0000-000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `U` at 1",
+      "input": "URN:UUID:00000000-0000-0000-0000-000000000000",
+      "ctx": {
+       "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `U` at 1"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:urn:uuid:00000000-0000-0000-0000-000000000000",
+   "status": 200,
+   "body": {
+    "ok": true
+   }
+  },
+  {
+   "label": "uuid:urn:uuid:{00000000-0000-0000-0000-000000000000}",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `{` at 10",
+      "input": "urn:uuid:{00000000-0000-0000-0000-000000000000}",
+      "ctx": {
+       "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `{` at 10"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:{urn:uuid:00000000-0000-0000-0000-000000000000}",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `u` at 2",
+      "input": "{urn:uuid:00000000-0000-0000-0000-000000000000}",
+      "ctx": {
+       "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `u` at 2"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:{00000000-0000-0000-0000-000000000000}",
+   "status": 200,
+   "body": {
+    "ok": true
+   }
+  },
+  {
+   "label": "uuid:{00000000-0000-0000-0000-000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `{` at 1",
+      "input": "{00000000-0000-0000-0000-000000000000",
+      "ctx": {
+       "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `{` at 1"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:00000000000000000000000000000000",
+   "status": 200,
+   "body": {
+    "ok": true
+   }
+  },
+  {
+   "label": "uuid:-00000000-0000-0000-0000-000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group count: expected 5, found 6",
+      "input": "-00000000-0000-0000-0000-000000000000",
+      "ctx": {
+       "error": "invalid group count: expected 5, found 6"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:00000000-0000-0000-0000-000000000000-",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group count: expected 5, found 6",
+      "input": "00000000-0000-0000-0000-000000000000-",
+      "ctx": {
+       "error": "invalid group count: expected 5, found 6"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:00000000-0000-0000-0000-00000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group length in group 4: expected 12, found 11",
+      "input": "00000000-0000-0000-0000-00000000000",
+      "ctx": {
+       "error": "invalid group length in group 4: expected 12, found 11"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:00000000-0000-0000-0000-0000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group length in group 4: expected 12, found 13",
+      "input": "00000000-0000-0000-0000-0000000000000",
+      "ctx": {
+       "error": "invalid group length in group 4: expected 12, found 13"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:00000000-0000-0000-0000-000000000000-extra",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `x` at 39",
+      "input": "00000000-0000-0000-0000-000000000000-extra",
+      "ctx": {
+       "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `x` at 39"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:urn:uuid:00000000000000000000000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group count: expected 5, found 1",
+      "input": "urn:uuid:00000000000000000000000000000000",
+      "ctx": {
+       "error": "invalid group count: expected 5, found 1"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:urn:uuid:zzzzzzzz-0000-0000-0000-000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `z` at 1",
+      "input": "urn:uuid:zzzzzzzz-0000-0000-0000-000000000000",
+      "ctx": {
+       "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `z` at 1"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:{00000000-0000-0000-0000-00000000000}",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group length in group 4: expected 12, found 13",
+      "input": "{00000000-0000-0000-0000-00000000000}",
+      "ctx": {
+       "error": "invalid group length in group 4: expected 12, found 13"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:11111111-2222-4333-8444-555555555555",
+   "status": 200,
+   "body": {
+    "ok": true
+   }
+  },
+  {
+   "label": "uuid:batch-delete",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `t` at 3",
+      "input": "batch-delete",
+      "ctx": {
+       "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `t` at 3"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:{00000000-0000-0000-0000-00000000000}",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group length in group 4: expected 12, found 13",
+      "input": "{00000000-0000-0000-0000-00000000000}",
+      "ctx": {
+       "error": "invalid group length in group 4: expected 12, found 13"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:{00000000-0000-0000-0000-0000000000000}",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group length in group 4: expected 12, found 15",
+      "input": "{00000000-0000-0000-0000-0000000000000}",
+      "ctx": {
+       "error": "invalid group length in group 4: expected 12, found 15"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:{00000000000000000000000000000000}",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group count: expected 5, found 1",
+      "input": "{00000000000000000000000000000000}",
+      "ctx": {
+       "error": "invalid group count: expected 5, found 1"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:{0000000000000000000000000000000}",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group count: expected 5, found 1",
+      "input": "{0000000000000000000000000000000}",
+      "ctx": {
+       "error": "invalid group count: expected 5, found 1"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:{0000000-0000-0000-0000-000000000000}",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group length in group 0: expected 8, found 7",
+      "input": "{0000000-0000-0000-0000-000000000000}",
+      "ctx": {
+       "error": "invalid group length in group 0: expected 8, found 7"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:{00000000-000-0000-0000-000000000000}",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group length in group 1: expected 4, found 3",
+      "input": "{00000000-000-0000-0000-000000000000}",
+      "ctx": {
+       "error": "invalid group length in group 1: expected 4, found 3"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:{00000000-0000-0000-0000-00000000000z}",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `z` at 36",
+      "input": "{00000000-0000-0000-0000-00000000000z}",
+      "ctx": {
+       "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `z` at 36"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:{00000000-0000-0000-0000-0000000000zz}",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `z` at 35",
+      "input": "{00000000-0000-0000-0000-0000000000zz}",
+      "ctx": {
+       "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `z` at 35"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:urn:uuid:00000000000000000000000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group count: expected 5, found 1",
+      "input": "urn:uuid:00000000000000000000000000000000",
+      "ctx": {
+       "error": "invalid group count: expected 5, found 1"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:urn:uuid:0000000000000000000000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group count: expected 5, found 1",
+      "input": "urn:uuid:0000000000000000000000000000000",
+      "ctx": {
+       "error": "invalid group count: expected 5, found 1"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:urn:uuid:000000000000000000000000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group count: expected 5, found 1",
+      "input": "urn:uuid:000000000000000000000000000000000",
+      "ctx": {
+       "error": "invalid group count: expected 5, found 1"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:urn:uuid:000000000000000000000000000000000000000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group count: expected 5, found 1",
+      "input": "urn:uuid:000000000000000000000000000000000000000000000000",
+      "ctx": {
+       "error": "invalid group count: expected 5, found 1"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:urn:uuid:00000000-0000-0000-0000-00000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group length in group 4: expected 12, found 20",
+      "input": "urn:uuid:00000000-0000-0000-0000-00000000000",
+      "ctx": {
+       "error": "invalid group length in group 4: expected 12, found 20"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:urn:uuid:00000000-0000-0000-0000-0000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group length in group 4: expected 12, found 22",
+      "input": "urn:uuid:00000000-0000-0000-0000-0000000000000",
+      "ctx": {
+       "error": "invalid group length in group 4: expected 12, found 22"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:urn:uuid:0000000-0000-0000-0000-000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group length in group 0: expected 8, found 7",
+      "input": "urn:uuid:0000000-0000-0000-0000-000000000000",
+      "ctx": {
+       "error": "invalid group length in group 0: expected 8, found 7"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:urn:uuid:00000000-000-0000-0000-000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group length in group 1: expected 4, found 3",
+      "input": "urn:uuid:00000000-000-0000-0000-000000000000",
+      "ctx": {
+       "error": "invalid group length in group 1: expected 4, found 3"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:urn:uuid:00000000-0000-0000-0000-0000000000z",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `z` at 44",
+      "input": "urn:uuid:00000000-0000-0000-0000-0000000000z",
+      "ctx": {
+       "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `z` at 44"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:000000000000000000000000000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid length: expected length 32 for simple format, found 36",
+      "input": "000000000000000000000000000000000000",
+      "ctx": {
+       "error": "invalid length: expected length 32 for simple format, found 36"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:0000000-0000-0000-0000-000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group length in group 0: expected 8, found 7",
+      "input": "0000000-0000-0000-0000-000000000000",
+      "ctx": {
+       "error": "invalid group length in group 0: expected 8, found 7"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:00000000-000-0000-0000-000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group length in group 1: expected 4, found 3",
+      "input": "00000000-000-0000-0000-000000000000",
+      "ctx": {
+       "error": "invalid group length in group 1: expected 4, found 3"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:0000000000000000000000000000000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid length: expected length 32 for simple format, found 40",
+      "input": "0000000000000000000000000000000000000000",
+      "ctx": {
+       "error": "invalid length: expected length 32 for simple format, found 40"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:000000000000000000000000000000000000000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid length: expected length 32 for simple format, found 48",
+      "input": "000000000000000000000000000000000000000000000000",
+      "ctx": {
+       "error": "invalid length: expected length 32 for simple format, found 48"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:-00000000-0000-0000-0000-000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group count: expected 5, found 6",
+      "input": "-00000000-0000-0000-0000-000000000000",
+      "ctx": {
+       "error": "invalid group count: expected 5, found 6"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:00000000-0000-0000-0000-000000000000-",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group count: expected 5, found 6",
+      "input": "00000000-0000-0000-0000-000000000000-",
+      "ctx": {
+       "error": "invalid group count: expected 5, found 6"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:00000000--0000-0000-0000-000000000000",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid group count: expected 5, found 6",
+      "input": "00000000--0000-0000-0000-000000000000",
+      "ctx": {
+       "error": "invalid group count: expected 5, found 6"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:00000000-0000-0000-0000-000000000000-extra",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `x` at 39",
+      "input": "00000000-0000-0000-0000-000000000000-extra",
+      "ctx": {
+       "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `x` at 39"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:00000000-0000-0000-0000-0000000000z",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `z` at 35",
+      "input": "00000000-0000-0000-0000-0000000000z",
+      "ctx": {
+       "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `z` at 35"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "uuid:00000000-0000-0000-0000-00000000000z",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `z` at 36",
+      "input": "00000000-0000-0000-0000-00000000000z",
+      "ctx": {
+       "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `z` at 36"
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "uuid_rt": [
+  {
+   "label": "rt-uuid:not-a-uuid",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1",
+      "input": "not-a-uuid",
+      "ctx": {
+       "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `n` at 1"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "rt-uuid:urn:uuid:00000000-0000-0000-0000-000000000000",
+   "status": 200,
+   "body": {
+    "ok": true
+   }
+  },
+  {
+   "label": "rt-uuid:11111111-2222-4333-8444-555555555555",
+   "status": 200,
+   "body": {
+    "ok": true
+   }
+  }
+ ],
+ "query_rt": [
+  {
+   "label": "rt limit abc",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "int_parsing",
+      "loc": [
+       "query",
+       "limit"
+      ],
+      "msg": "Input should be a valid integer, unable to parse string as an integer",
+      "input": "abc"
+     }
+    ]
+   }
+  },
+  {
+   "label": "rt limit 0",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "greater_than_equal",
+      "loc": [
+       "query",
+       "limit"
+      ],
+      "msg": "Input should be greater than or equal to 1",
+      "input": "0",
+      "ctx": {
+       "ge": 1
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "rt limit 1001",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "less_than_equal",
+      "loc": [
+       "query",
+       "limit"
+      ],
+      "msg": "Input should be less than or equal to 1000",
+      "input": "1001",
+      "ctx": {
+       "le": 1000
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "rt summary bogus",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "bool_parsing",
+      "loc": [
+       "query",
+       "summary"
+      ],
+      "msg": "Input should be a valid boolean, unable to interpret input",
+      "input": "bogus"
+     }
+    ]
+   }
+  },
+  {
+   "label": "rt summary 1",
+   "status": 200,
+   "body": {
+    "ok": true
+   }
+  }
+ ],
+ "method_collision": [
+  {
+   "label": "GET batch-delete",
+   "status": 422,
+   "body": {
+    "detail": [
+     {
+      "type": "uuid_parsing",
+      "loc": [
+       "path",
+       "task_id"
+      ],
+      "msg": "Input should be a valid UUID, invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `t` at 3",
+      "input": "batch-delete",
+      "ctx": {
+       "error": "invalid character: expected an optional prefix of `urn:uuid:` followed by [0-9a-fA-F-], found `t` at 3"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "label": "DELETE batch-delete",
+   "status": 405,
+   "body": {
+    "detail": "Method Not Allowed"
+   }
+  }
+ ],
+ "json_errors": [
+  {
+   "in": "",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 0
+  },
+  {
+   "in": " ",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 1
+  },
+  {
+   "in": "  \t\n  ",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 6
+  },
+  {
+   "in": "{",
+   "ok": false,
+   "msg": "Expecting property name enclosed in double quotes",
+   "pos": 1
+  },
+  {
+   "in": "}",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 0
+  },
+  {
+   "in": "[",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 1
+  },
+  {
+   "in": "]",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 0
+  },
+  {
+   "in": "{,}",
+   "ok": false,
+   "msg": "Expecting property name enclosed in double quotes",
+   "pos": 1
+  },
+  {
+   "in": "{:}",
+   "ok": false,
+   "msg": "Expecting property name enclosed in double quotes",
+   "pos": 1
+  },
+  {
+   "in": "{\"a\":}",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 5
+  },
+  {
+   "in": "{\"a\":,}",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 5
+  },
+  {
+   "in": "{\"a\" 1}",
+   "ok": false,
+   "msg": "Expecting ':' delimiter",
+   "pos": 5
+  },
+  {
+   "in": "{\"a\":1,}",
+   "ok": false,
+   "msg": "Expecting property name enclosed in double quotes",
+   "pos": 7
+  },
+  {
+   "in": "{\"a\":1,,\"b\":2}",
+   "ok": false,
+   "msg": "Expecting property name enclosed in double quotes",
+   "pos": 7
+  },
+  {
+   "in": "[,]",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 1
+  },
+  {
+   "in": "[1,]",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 3
+  },
+  {
+   "in": "[1,,2]",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 3
+  },
+  {
+   "in": "[1 2]",
+   "ok": false,
+   "msg": "Expecting ',' delimiter",
+   "pos": 3
+  },
+  {
+   "in": "{\"a\":1 \"b\":2}",
+   "ok": false,
+   "msg": "Expecting ',' delimiter",
+   "pos": 7
+  },
+  {
+   "in": "{a:1}",
+   "ok": false,
+   "msg": "Expecting property name enclosed in double quotes",
+   "pos": 1
+  },
+  {
+   "in": "{'a':1}",
+   "ok": false,
+   "msg": "Expecting property name enclosed in double quotes",
+   "pos": 1
+  },
+  {
+   "in": "{not json",
+   "ok": false,
+   "msg": "Expecting property name enclosed in double quotes",
+   "pos": 1
+  },
+  {
+   "in": "[1,2",
+   "ok": false,
+   "msg": "Expecting ',' delimiter",
+   "pos": 4
+  },
+  {
+   "in": "nul",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 0
+  },
+  {
+   "in": "nu",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 0
+  },
+  {
+   "in": "nulll",
+   "ok": false,
+   "msg": "Extra data",
+   "pos": 4
+  },
+  {
+   "in": "true",
+   "ok": true
+  },
+  {
+   "in": "truex",
+   "ok": false,
+   "msg": "Extra data",
+   "pos": 4
+  },
+  {
+   "in": "fals",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 0
+  },
+  {
+   "in": "falsey",
+   "ok": false,
+   "msg": "Extra data",
+   "pos": 5
+  },
+  {
+   "in": "tru",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 0
+  },
+  {
+   "in": "None",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 0
+  },
+  {
+   "in": "01",
+   "ok": false,
+   "msg": "Extra data",
+   "pos": 1
+  },
+  {
+   "in": "1.",
+   "ok": false,
+   "msg": "Extra data",
+   "pos": 1
+  },
+  {
+   "in": "1e",
+   "ok": false,
+   "msg": "Extra data",
+   "pos": 1
+  },
+  {
+   "in": "1e+",
+   "ok": false,
+   "msg": "Extra data",
+   "pos": 1
+  },
+  {
+   "in": "+1",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 0
+  },
+  {
+   "in": ".5",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 0
+  },
+  {
+   "in": "-",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 0
+  },
+  {
+   "in": "-.5",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 0
+  },
+  {
+   "in": "0x10",
+   "ok": false,
+   "msg": "Extra data",
+   "pos": 1
+  },
+  {
+   "in": "1.2.3",
+   "ok": false,
+   "msg": "Extra data",
+   "pos": 3
+  },
+  {
+   "in": "1 2",
+   "ok": false,
+   "msg": "Extra data",
+   "pos": 2
+  },
+  {
+   "in": "00",
+   "ok": false,
+   "msg": "Extra data",
+   "pos": 1
+  },
+  {
+   "in": "1_",
+   "ok": false,
+   "msg": "Extra data",
+   "pos": 1
+  },
+  {
+   "in": "1.0e",
+   "ok": false,
+   "msg": "Extra data",
+   "pos": 3
+  },
+  {
+   "in": "0b10",
+   "ok": false,
+   "msg": "Extra data",
+   "pos": 1
+  },
+  {
+   "in": "'x'",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 0
+  },
+  {
+   "in": "\"abc",
+   "ok": false,
+   "msg": "Unterminated string starting at",
+   "pos": 0
+  },
+  {
+   "in": "\"abc\\",
+   "ok": false,
+   "msg": "Unterminated string starting at",
+   "pos": 0
+  },
+  {
+   "in": "\"ab\\q\"",
+   "ok": false,
+   "msg": "Invalid \\escape",
+   "pos": 3
+  },
+  {
+   "in": "\"ab\\u12\"",
+   "ok": false,
+   "msg": "Invalid \\uXXXX escape",
+   "pos": 4
+  },
+  {
+   "in": "\"ab\\uXXXX\"",
+   "ok": false,
+   "msg": "Invalid \\uXXXX escape",
+   "pos": 4
+  },
+  {
+   "in": "\"a\nb\"",
+   "ok": false,
+   "msg": "Invalid control character at",
+   "pos": 2
+  },
+  {
+   "in": "\"a\tb\"",
+   "ok": false,
+   "msg": "Invalid control character at",
+   "pos": 2
+  },
+  {
+   "in": "[1,2",
+   "ok": false,
+   "msg": "Expecting ',' delimiter",
+   "pos": 4
+  },
+  {
+   "in": "{} {}",
+   "ok": false,
+   "msg": "Extra data",
+   "pos": 3
+  },
+  {
+   "in": "\"x\" \"y\"",
+   "ok": false,
+   "msg": "Extra data",
+   "pos": 4
+  },
+  {
+   "in": "NaN",
+   "ok": true
+  },
+  {
+   "in": "Infinity",
+   "ok": true
+  },
+  {
+   "in": "-Infinity",
+   "ok": true
+  },
+  {
+   "in": "undefined",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 0
+  },
+  {
+   "in": "''",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 0
+  },
+  {
+   "in": "{\"a\": 1",
+   "ok": false,
+   "msg": "Expecting ',' delimiter",
+   "pos": 7
+  },
+  {
+   "in": "{\"a\": 1,",
+   "ok": false,
+   "msg": "Expecting property name enclosed in double quotes",
+   "pos": 8
+  },
+  {
+   "in": "{\"a\" 1}",
+   "ok": false,
+   "msg": "Expecting ':' delimiter",
+   "pos": 5
+  },
+  {
+   "in": "{\"a\": 1 } x",
+   "ok": false,
+   "msg": "Extra data",
+   "pos": 10
+  },
+  {
+   "in": "{\"a\": tru}",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 6
+  },
+  {
+   "in": "{\"a\": [1,2}",
+   "ok": false,
+   "msg": "Expecting ',' delimiter",
+   "pos": 10
+  },
+  {
+   "in": "{\"a\": {\"b\": 1}",
+   "ok": false,
+   "msg": "Expecting ',' delimiter",
+   "pos": 14
+  },
+  {
+   "in": "[中文,",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 1
+  },
+  {
+   "in": "{\"中\": }",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 6
+  },
+  {
+   "in": "\"中文\\q\"",
+   "ok": false,
+   "msg": "Invalid \\escape",
+   "pos": 3
+  },
+  {
+   "in": "😀{",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 0
+  },
+  {
+   "in": "\"ok😀\"",
+   "ok": true
+  },
+  {
+   "in": "é{",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 0
+  },
+  {
+   "in": "€ [1,",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 0
+  },
+  {
+   "in": "[😀😀,]",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 1
+  },
+  {
+   "in": "{\"k😀\": tru}",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 7
+  },
+  {
+   "in": "\"中文\" x",
+   "ok": false,
+   "msg": "Extra data",
+   "pos": 5
+  },
+  {
+   "in": "[\"中文\", ]",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 7
+  },
+  {
+   "in": "{\"中文\": 1, }",
+   "ok": false,
+   "msg": "Expecting property name enclosed in double quotes",
+   "pos": 10
+  },
+  {
+   "in": "[1, 中文]",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 4
+  },
+  {
+   "in": "{ ",
+   "ok": false,
+   "msg": "Expecting property name enclosed in double quotes",
+   "pos": 2
+  },
+  {
+   "in": "[ ",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 2
+  },
+  {
+   "in": "{\n",
+   "ok": false,
+   "msg": "Expecting property name enclosed in double quotes",
+   "pos": 2
+  },
+  {
+   "in": "[1,",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 3
+  },
+  {
+   "in": "{\"a\": ",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 6
+  },
+  {
+   "in": "{\"a\"",
+   "ok": false,
+   "msg": "Expecting ':' delimiter",
+   "pos": 4
+  },
+  {
+   "in": "[1 ",
+   "ok": false,
+   "msg": "Expecting ',' delimiter",
+   "pos": 3
+  },
+  {
+   "in": "[1",
+   "ok": false,
+   "msg": "Expecting ',' delimiter",
+   "pos": 2
+  },
+  {
+   "in": "{\"\" ",
+   "ok": false,
+   "msg": "Expecting ':' delimiter",
+   "pos": 4
+  },
+  {
+   "in": "\"\\u1\"",
+   "ok": false,
+   "msg": "Invalid \\uXXXX escape",
+   "pos": 2
+  },
+  {
+   "in": "\"\\u\"",
+   "ok": false,
+   "msg": "Invalid \\uXXXX escape",
+   "pos": 2
+  },
+  {
+   "in": "\"\\\"",
+   "ok": false,
+   "msg": "Unterminated string starting at",
+   "pos": 0
+  },
+  {
+   "in": "\"abc\\u12g\"",
+   "ok": false,
+   "msg": "Invalid \\uXXXX escape",
+   "pos": 5
+  },
+  {
+   "in": "[1,2,]",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 5
+  },
+  {
+   "in": "nulx",
+   "ok": false,
+   "msg": "Expecting value",
+   "pos": 0
+  },
+  {
+   "in": "null ",
+   "ok": true
+  },
+  {
+   "in": "true ",
+   "ok": true
+  },
+  {
+   "in": "truex ",
+   "ok": false,
+   "msg": "Extra data",
+   "pos": 4
+  },
+  {
+   "in": "[true]",
+   "ok": true
+  },
+  {
+   "in": "{\"a\":null}",
+   "ok": true
+  },
+  {
+   "in": "[NaN]",
+   "ok": true
+  },
+  {
+   "in": "null",
+   "ok": true
+  },
+  {
+   "in": "true",
+   "ok": true
+  },
+  {
+   "in": "false",
+   "ok": true
+  },
+  {
+   "in": "0",
+   "ok": true
+  },
+  {
+   "in": "-0",
+   "ok": true
+  },
+  {
+   "in": "1.5",
+   "ok": true
+  },
+  {
+   "in": "1e3",
+   "ok": true
+  },
+  {
+   "in": "-2.5E-4",
+   "ok": true
+  },
+  {
+   "in": "\"s\"",
+   "ok": true
+  },
+  {
+   "in": "{}",
+   "ok": true
+  },
+  {
+   "in": "[]",
+   "ok": true
+  },
+  {
+   "in": "{\"a\":1}",
+   "ok": true
+  },
+  {
+   "in": "{\"a\":[1,2,{\"b\":null}]}",
+   "ok": true
+  },
+  {
+   "in": " [ 1 , 2 ] ",
+   "ok": true
+  },
+  {
+   "in": "\"\\u00e9\"",
+   "ok": true
+  },
+  {
+   "in": "\"\\\\\"",
+   "ok": true
+  },
+  {
+   "in": "\"\\/\"",
+   "ok": true
+  },
+  {
+   "in": "[1, 2.0, -3, 4e5, \"six\", true, false, null]",
+   "ok": true
+  },
+  {
+   "in": "\"\\b\\f\\n\\r\\t\"",
+   "ok": true
+  },
+  {
+   "in": "{\n  \"a\": 1,\n  \"b\": [\n    2\n  ]\n}",
+   "ok": true
+  },
+  {
+   "in": "\"中文字符串\"",
+   "ok": true
+  }
+ ]
+}
