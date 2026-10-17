@@ -4463,6 +4463,15 @@ const TOOL_LABEL = {
   save_note: "写笔记",
   save_artifact: "写产物",
   skill_read: "读技能说明",
+  read_course_map: "读取导图", generate_course_map: "生成导图", publish_course_map: "切换导图",
+  manage_course_node: "管理节点", list_course_resources: "节点资源", read_course_resource: "读取资源",
+  manage_course_resource: "管理资源", get_course_progress: "学习进展", save_course_resource: "收录资源",
+  cancel_course_map: "取消导图", list_course_history: "导图历史", attach_existing_course_resource: "关联资源",
+  restore_course_library: "恢复知识库", record_knowledge_point: "记录知识点", read_knowledge_point: "读取知识点",
+  get_learning_context: "学习上下文", remember_learning_fact: "记住偏好", forget_learning_fact: "删除记忆",
+  read_learning_resource: "读取学习资源", generate_learning_resource: "生成学习资源", revise_learning_resource: "修改学习资源",
+  search_personal_resources: "搜索个人内容", read_personal_resource: "读取个人内容", save_personal_resource: "保存个人内容",
+  create_presentation: "制作演示", list_activity_tasks: "查看任务", cancel_activity_task: "停止任务",
   // pi 运行时的本机工具：工具卡标题直接显示这个名字，缺了就露出 read / powershell 这种英文
   read: "读文件", write: "写文件", edit: "改文件", ls: "列目录", find: "找文件",
   grep: "搜内容", powershell: "跑命令",
@@ -7190,7 +7199,7 @@ async function renderSessionDetail(v, sessionId) {
 const MODEL_PRESETS = [
   {
     key: "mimo-flash",
-    label: "MiMo TokenPlan · v2.6 flash",
+    label: "MiMo Flash",
     id: "mimo",
     name: "MiMo TokenPlan",
     base: "https://token-plan-cn.xiaomimimo.com/v1",
@@ -7201,7 +7210,7 @@ const MODEL_PRESETS = [
   },
   {
     key: "mimo-pro",
-    label: "MiMo TokenPlan · v2.6 pro",
+    label: "MiMo Pro",
     id: "mimo",
     name: "MiMo TokenPlan",
     base: "https://token-plan-cn.xiaomimimo.com/v1",
@@ -7223,7 +7232,7 @@ const MODEL_PRESETS = [
   },
   {
     key: "custom",
-    label: "其它 OpenAI 兼容服务",
+    label: "兼容服务",
     id: "",
     name: "",
     base: "",
@@ -7320,7 +7329,7 @@ async function settingsModels() {
         art: "gear",
         title: "还没有配置模型",
         text: "点上面任意一个「快速填入」，地址与模型名会自动写进表单，补一个密钥保存即可。",
-        actions: [btn("填入 MiMo v2.6 flash 预设", "primary", () => {
+        actions: [btn("填入预设", "primary", () => {
           const b = document.querySelector(".chip");
           if (b) b.click();
           $("view").scrollTop = 0;
@@ -8073,7 +8082,7 @@ function settingsKb() {
       const acts = el("div", "row item-actions");
       acts.appendChild(btn((k.chunkCount || 0) > 0 ? "重建索引" : "建立索引", "sm primary", () => buildIndex(k.id)));
       // 资料散乱时让模型读一遍、给出一份教学目录；建索引时按它组织（结果可清除）
-      acts.appendChild(btn("让 Lumin 整理", "sm", () => organizeKb(k.id)));
+      acts.appendChild(btn("整理", "sm", () => organizeKb(k.id)));
       if (state.kb !== k.id) acts.appendChild(btn("设为当前", "sm", () => { state.kb = k.id; toast("已切换为当前知识库"); go("learn"); }));
       acts.appendChild(btn("去检索", "sm ghost", () => { state.kb = k.id; go("kb"); }));
       acts.appendChild(btn("删除", "sm ghost", () => {
@@ -8341,7 +8350,7 @@ async function openQuiz(container, chapter) {
       text: e.message + "。可以换一章，或确认「对话与生成」绑定的是可用模型；也可以直接产出 Markdown 练习册。",
       actions: [btn("关闭", "", () => dlg.remove()),
                 btn("检查模型设置", "primary", () => go("models")),
-                btn("生成练习册（Markdown）", "", () => { dlg.remove(); askTopic("quiz", chapter); })],
+                btn("生成练习", "", () => { dlg.remove(); askTopic("quiz", chapter); })],
     }));
     return;
   }
@@ -8468,7 +8477,7 @@ async function organizeKb(kbId) {
       (r.missing > 0 ? " · 模型没提到的 " + r.missing + " 篇已接在「其他资料」里" : "") +
       (r.dropped > 0 ? " · 丢掉了 " + r.dropped + " 条无效路径" : "")));
     const row = el("div", "row");
-    row.appendChild(btn("按这份目录重建索引", "primary", () => { box.remove(); buildIndex(kbId); }));
+    row.appendChild(btn("重建索引", "primary", () => { box.remove(); buildIndex(kbId); }));
     row.appendChild(btn("清除整理", "ghost", async () => {
       try {
         await api("/api/kb/organize", { id: kbId, clear: true });

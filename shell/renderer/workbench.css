@@ -297,7 +297,7 @@ body.library-workspace #rail-toggle { visibility:hidden; }
 .document-browser .library-document h3 { font-size:14px; margin:0 0 6px; line-height:1.5; }
 .document-browser .library-document .meta { font-size:12px; }
 .document-browser .library-document .library-path { display:none; }
-.document-browser .library-document > .tag { margin:6px 0 0; font-size:11px; }
+.document-browser .library-document > .tag { margin:6px 0 0; font-size:12px; }
 .document-browser .library-document > .btn { float:right; margin-top:4px; border:0; background:transparent; box-shadow:none; font-size:12px; }
 .document-browser > .library-preview { display:block; overflow:auto; min-width:0; padding:26px 32px; scroll-margin-top:0; }
 .document-browser > .library-preview:empty::before { content:'选择左侧文档，在这里阅读原文'; display:block; padding:80px 20px; text-align:center; color:var(--muted); }
@@ -445,7 +445,7 @@ body.workspace-wide #view > .study-workspace { max-width:none; }
 .study-section { border:0; background:transparent; color:var(--ink); display:flex; align-items:baseline; gap:8px; padding:9px 10px 9px 20px; text-align:left; font:inherit; font-size:13px; border-radius:8px; cursor:pointer; line-height:1.5; }
 .study-section .grow { min-width:0; overflow-wrap:anywhere; }
 .study-section:hover, .study-section.active { background:var(--brand-soft); }
-.section-status { font-size:11px; color:var(--muted); white-space:nowrap; }
+.section-status { font-size:12px; color:var(--muted); white-space:nowrap; }
 .study-detail .reader-heading { margin:0 auto 24px; max-width:76ch; padding:0 0 18px; border-bottom:1px solid var(--line); background:none; }
 .study-detail .reader-heading h2 { margin:8px 0; font-size:24px; }
 .lecture-article, .section-practice, .section-generation { max-width:76ch; margin-inline:auto; overflow-wrap:anywhere; }

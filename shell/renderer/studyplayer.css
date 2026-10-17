@@ -19,14 +19,14 @@ body[data-page="study"] .view{ padding:18px 22px 40px; }
 .sp-block-head{ display:flex; align-items:flex-start; gap:12px; }
 .sp-num{ flex:none; width:38px; height:38px; border-radius:11px; display:flex; align-items:center; justify-content:center; background:var(--brand-soft); color:var(--brand); font-weight:600; font-size:12.5px; }
 .sp-block-text{ flex:1; min-width:0; }
-.sp-eyebrow{ font-size:11.5px; color:var(--muted); letter-spacing:.03em; }
+.sp-eyebrow{ font-size:12px; color:var(--muted); letter-spacing:.03em; }
 .sp-block-title{ margin:2px 0 0; font-size:17px; line-height:1.4; overflow-wrap:anywhere; }
 .sp-mark{ flex:none; }
 .sp-mark.on{ border-color:color-mix(in srgb,var(--brand) 40%,var(--line)); color:var(--brand); background:var(--brand-soft); }
 .sp-body{ margin-top:10px; }
 .sp-body > :first-child{ margin-top:0; }
 .sp-body > :last-child{ margin-bottom:0; }
-.sp-safety{ display:inline-block; margin-top:6px; font-size:11.5px; border-radius:999px; padding:2px 9px; border:1px solid var(--line); color:var(--muted); }
+.sp-safety{ display:inline-block; margin-top:6px; font-size:12px; border-radius:999px; padding:2px 9px; border:1px solid var(--line); color:var(--muted); }
 .sp-safety-danger{ border-color:color-mix(in srgb,#c05e54 50%,var(--line)); color:#c05e54; }
 .sp-safety-caution{ border-color:color-mix(in srgb,#b17818 50%,var(--line)); color:#b17818; }
 .sp-code{ margin:10px 0 0; padding:12px 14px; border-radius:12px; background:var(--panel-sunk); border:1px solid var(--line); overflow:auto; font-size:12.5px; line-height:1.7; }

@@ -157,7 +157,7 @@ function openPresentationBrief(res) {
     const details=waive?'无需确认PPT细节，受众、页数和风格由你决定，直接制作。':'已确认PPT细节：受众='+audience.value+'；用途='+purpose.value+'；页数='+pages.value+'；风格='+style.value+'。';
     overlay.remove();try{await startAgentTask(details+source+'请使用create_presentation逐页设计并制作真实.pptx文件，包括合适的版式与讲者备注。先提供候选产物让我看，不要自动存入个性资源。');}catch(e){toast(e.message);}
   };
-  const actions=el('div','row');actions.append(btn('按这些要求制作','primary',()=>submit(false)),btn('无需确认，直接制作','ghost',()=>submit(true)),btn('取消','ghost',()=>overlay.remove()));dialog.appendChild(actions);overlay.appendChild(dialog);document.body.appendChild(overlay);audience.focus();
+  const actions=el('div','row');actions.append(btn('按要求制作','primary',()=>submit(false)),btn('直接制作','ghost',()=>submit(true)),btn('取消','ghost',()=>overlay.remove()));dialog.appendChild(actions);overlay.appendChild(dialog);document.body.appendChild(overlay);audience.focus();
   overlay.onkeydown=e=>{if(e.key==='Escape')overlay.remove();};overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
 }
 const PERSONAL_FORMAT={pptx:'PowerPoint',ppt:'PowerPoint',md:'Markdown',markdown:'Markdown',html:'网页',htm:'网页',docx:'Word',pdf:'PDF',png:'图片',jpg:'图片',jpeg:'图片',svg:'SVG',txt:'文本'};
@@ -271,14 +271,14 @@ function renderResourceDock() {
   meta.appendChild(tag(issues.length ? '需检查' : '结构质检通过', issues.length ? 'warn' : 'ok'));
   body.appendChild(meta);
   const actions = el('div', 'row resource-actions');
-  actions.appendChild(btn('让 Lumin 修改', 'sm', () => {
+  actions.appendChild(btn('修改', 'sm', () => {
     promptLearning('请先读取学习资源 ' + res.id + ' 的最新版本，再按以下要求修改并保存新版本：');
   }));
   actions.appendChild(copyButton(() => res.markdown || '', '复制 Markdown'));
   /* 学习成果是 Markdown，但要交给别人 / 自己接着改的时候，得有 Office 文件。
      导出在壳里做（离线、零依赖，见 shell/deck-export.js），这里只负责给入口与结果提示。 */
   if (window.itnWindow && typeof window.itnWindow.exportResource === 'function') {
-    actions.appendChild(btn('让 Lumin 制作 PPTX', 'sm ghost', () => exportResourceAs(res, 'pptx')));
+    actions.appendChild(btn('制作 PPT', 'sm ghost', () => exportResourceAs(res, 'pptx')));
     actions.appendChild(btn('导出 docx', 'sm ghost', () => exportResourceAs(res, 'docx')));
   }
   if (res.kind === 'ppt') actions.appendChild(btn('开始演示', 'primary sm', () => openResourcePresentation(res)));
@@ -550,7 +550,7 @@ PAGES.resources.render = async function() {
   search.setAttribute('aria-label','搜索个性资源');kind.setAttribute('aria-label','筛选成果类型');kind.appendChild(option('','全部格式'));
   for(const [value,label] of [['pptx','PowerPoint'],['html','网页'],['md','Markdown / 讲义'],['quiz','测验'],['docx','Word'],['pdf','PDF'],['png','图片']])kind.appendChild(option(value,label));kind.value=state.outcomeKind || '';
   const create=el('details','outcome-create');create.appendChild(el('summary','btn primary','+ 添加资源'));
-  const menu=el('div','outcome-menu');menu.append(btn('让 Lumin 制作 PPTX','ghost',()=>openPresentationBrief()),btn('打开文件并确认存入','ghost',async()=>{if(!window.itnWindow?.pickFile)return toast('请在桌面窗口选择文件');const file=await window.itnWindow.pickFile();if(file){const data=await window.itnWindow.readResourceFile(file);if(data.ok)offerPersonalSave(data);else toast(data.error);}}),btn('设置存放目录','ghost',async()=>{const directory=await window.itnWindow?.pickDirectory?.();if(directory){await api('/api/personal/settings',{directory});await go('resources');}}));create.appendChild(menu);
+  const menu=el('div','outcome-menu');menu.append(btn('制作 PPT','ghost',()=>openPresentationBrief()),btn('导入文件','ghost',async()=>{if(!window.itnWindow?.pickFile)return toast('请在桌面窗口选择文件');const file=await window.itnWindow.pickFile();if(file){const data=await window.itnWindow.readResourceFile(file);if(data.ok)offerPersonalSave(data);else toast(data.error);}}),btn('设置目录','ghost',async()=>{const directory=await window.itnWindow?.pickDirectory?.();if(directory){await api('/api/personal/settings',{directory});await go('resources');}}));create.appendChild(menu);
   toolbar.append(search,kind,create);view.appendChild(toolbar);
   const status=el('p','muted sm');status.setAttribute('role','status');view.appendChild(status);
   const split=el('div','outcome-workspace'),grid=el('div','resource-grid outcome-grid outcome-list'),reader=el('section','outcome-reader');reader.id='outcome-reader';reader.setAttribute('aria-label','个性资源阅读区');
