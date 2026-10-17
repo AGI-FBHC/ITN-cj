@@ -70,6 +70,7 @@ func fixtureReply(b: JsonObject): (String,?JsonObject){
     }
     if(system.contains("你是学习思维导图设计者")){return(fixtureTreeFor(user),None)}
     if(system.contains("资料整理员")||system.contains("合并主题")){return("[D1] 工具调用：输入、输出、参数。[D2] 观察与验证：执行记录、边界、反馈。",None)}
+    if(system.contains("教培测评设计者")){return(arrOf(fixtureQuiz(),"questions").toString(),None)}
     if(user.contains("\"questions\"")){return(fixtureQuiz().toString(),None)}
     if(user.contains("\"knowledgePoints\"")){return(fixtureQuiz().toString(),None)}
     if(user.contains("\"steps\"")){return(fixturePractice().toString(),None)}

@@ -198,11 +198,14 @@ public class ToolRegistry {
         return r
     }
 
-    /** 工具：把产物写到本地文件。 */
-    public func saveArtifact(name: String, content: String): ToolResult {
+    /** 工具：把模型候选产物写到 drafts。 */
+    public func saveArtifact(name: String, content: String): ToolResult { return saveArtifactTo("drafts", name, content) }
+
+    /** 界面确认后的成果写到 artifacts；模型候选仍走 drafts。 */
+    public func saveArtifactTo(folder: String, name: String, content: String): ToolResult {
         let r = ToolResult()
         r.name = "artifact_save"
-        let dir = store.dataDir + Path.Separator + "drafts"
+        let dir = store.dataDir + Path.Separator + folder
         ensureDir(dir)
         let safe = sanitizeName(name)
         // 重名不覆盖：不同知识库/不同时间生成同一个主题（例如都叫「讲义-第一章.md」）时，

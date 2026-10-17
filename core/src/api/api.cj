@@ -294,6 +294,11 @@ public class Api {
         if (path == "/api/chat" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) =>
+                    let user = trimStr(strOf(b, "user"))
+                    if (user.size == 0) {
+                        fail(ctx, 400, "缺少 user")
+                        return
+                    }
                     let s = store.load()
                     let requested = strOf(b, "modelId")
                     let effectiveId = if (requested.size > 0) { requested } else { s.chatModelId }
@@ -305,7 +310,7 @@ public class Api {
                         case Some(cfg) =>
                             // 不加捕获会让异常直接变成不透明的 500，用户看不到原因
                             try {
-                                let reply = LlmClient(cfg).chat(strOf(b, "system"), strOf(b, "user"))
+                                let reply = LlmClient(cfg).chat(strOf(b, "system"), user)
                                 let o = JsonObject()
                                 o.put("reply", JsonString(reply))
                                 o.put("modelId", JsonString(effectiveId))
@@ -463,9 +468,21 @@ public class Api {
         if (path == "/api/kb/delete" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) =>
-                    let id = strOf(b, "id")
-                    CourseStore(store.dataDir).removeKb(id)
-                    ok(ctx, settingsJson())
+                    let id = trimStr(strOf(b, "id"))
+                    if (id.size == 0) {
+                        fail(ctx, 400, "缺少 id")
+                        return
+                    }
+                    if (store.load().findKb(id).isNone()) {
+                        fail(ctx, 404, "找不到知识库：" + id)
+                        return
+                    }
+                    try {
+                        CourseStore(store.dataDir).removeKb(id)
+                        ok(ctx, settingsJson())
+                    } catch (e: Exception) {
+                        fail(ctx, 500, "删除知识库失败：" + e.message)
+                    }
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
             return
@@ -2070,7 +2087,7 @@ public class Api {
                         return
                     }
                     try {
-                        let r = ToolRegistry(store).saveArtifact(name, content)
+                        let r = ToolRegistry(store).saveArtifactTo("artifacts", name, content)
                         if (!r.ok) {
                             fail(ctx, 400, r.summary)
                             return

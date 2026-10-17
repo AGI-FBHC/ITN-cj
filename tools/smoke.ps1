@@ -77,6 +77,13 @@ Set-Content -Path (Join-Path $kbRoot "notes.txt") -Value "纯文本笔记，无�
 $r = Api $base "/api/kb/save" "POST" (@{ id = "demo"; name = "示例库"; rootDir = $kbRoot } | ConvertTo-Json -Compress)
 Write-Output ("kb/save -> {0}" -f $r.status)
 
+# 删除知识库的无效 id 必须是可读的 4xx，不能由 CourseStore 异常冒成 500
+$r = Api $base "/api/kb/delete" "POST" '{}'
+if ($r.status -ne 400 -or $r.body -notmatch '缺少 id') { throw ("kb/delete 空 id 未按契约拒绝：status={0} body={1}" -f $r.status, $r.body) }
+$r = Api $base "/api/kb/delete" "POST" '{ "id": "does-not-exist" }'
+if ($r.status -ne 404 -or $r.body -notmatch '找不到知识库') { throw ("kb/delete 未知 id 未按契约返回 404：status={0} body={1}" -f $r.status, $r.body) }
+Write-Output "PASS kb/delete 空 id/未知 id 不写数据且返回 400/404"
+
 $r = Api $base "/api/kb/build" "POST" '{ "id": "demo" }'
 Write-Output ("kb/build -> {0} {1}" -f $r.status, $r.body)
 
@@ -164,6 +171,11 @@ Write-Output ("settings 中密钥是否泄漏: " + ($(if ($r.body -match "test-k
 $r = Api $base "/api/chat" "POST" '{ "modelId": "not-exist", "user": "hi" }'
 Write-Output ("chat 用未知模型 -> {0} {1}" -f $r.status, $r.body)
 
+# 空 user 必须在内核入口被拒绝，不能把空提示发给上游模型
+$r = Api $base "/api/chat" "POST" '{ "user": "   " }'
+if ($r.status -ne 400 -or $r.body -notmatch '缺少 user') { throw ("chat 空 user 未按契约拒绝：status={0} body={1}" -f $r.status, $r.body) }
+Write-Output "PASS chat 空 user 返回 400 且不调用模型"
+
 
 # ---------- 知识库链路 ----------
 $fence = ([string][char]96) * 3
@@ -199,6 +211,13 @@ Set-Content -Path (Join-Path $kbRoot "notes.txt") -Value "纯文本笔记，无�
 
 $r = Api $base "/api/kb/save" "POST" (@{ id = "demo"; name = "示例库"; rootDir = $kbRoot } | ConvertTo-Json -Compress)
 Write-Output ("kb/save -> {0}" -f $r.status)
+
+# 删除知识库的无效 id 必须是可读的 4xx，不能由 CourseStore 异常冒成 500
+$r = Api $base "/api/kb/delete" "POST" '{}'
+if ($r.status -ne 400 -or $r.body -notmatch '缺少 id') { throw ("kb/delete 空 id 未按契约拒绝：status={0} body={1}" -f $r.status, $r.body) }
+$r = Api $base "/api/kb/delete" "POST" '{ "id": "does-not-exist" }'
+if ($r.status -ne 404 -or $r.body -notmatch '找不到知识库') { throw ("kb/delete 未知 id 未按契约返回 404：status={0} body={1}" -f $r.status, $r.body) }
+Write-Output "PASS kb/delete 空 id/未知 id 不写数据且返回 400/404"
 
 $r = Api $base "/api/kb/build" "POST" '{ "id": "demo" }'
 Write-Output ("kb/build -> {0} {1}" -f $r.status, $r.body)
