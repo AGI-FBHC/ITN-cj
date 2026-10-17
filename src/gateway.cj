@@ -9,12 +9,13 @@ import soulsoft_web_hosting.*
 import soulsoft_extensions_injection.*
 
 /*
- * P3 forwarding gateway.
+ * P3 forwarding gateway (plus the P2 /api/v1 remainder).
  *
  * Spire is the entry point: the browser talks only to us. Routes Spire
  * implements are served from MySQL. Everything else on /v1 and /internal/v1
  * is relayed to the Python agents-service, which keeps the LLM keys, the
- * asyncio generation registry and the file/TTS pipelines.
+ * asyncio generation registry and the file/TTS pipelines. The un-migrated
+ * /api/v1 surface is relayed to Spring Boot the same way.
  *
  * Two relay shapes, both byte-faithful:
  *
@@ -215,14 +216,19 @@ func shouldStream(contentType: String): Bool {
 }
 
 /*
- * One request relayed to the Python unit. `forceStream` is used for the
+ * One request relayed to an upstream origin. `forceStream` is used for the
  * paths we know are streams before the response arrives (chat/stream,
  * agent/ask/stream, …) so a mislabeled upstream still gets incremental
  * delivery.
+ *
+ * Shared by the two catch-alls: /v1 and /internal/v1 go to the Python
+ * agents-service, /api/v1 to Spring Boot. The relay itself is identical and
+ * still byte-faithful — it does not know or care which envelope the upstream
+ * wraps its JSON in.
  */
-func forwardToAgents(cfg: AppConfig, request: HttpRequest, response: HttpResponse,
+func forwardToOrigin(origin: String, request: HttpRequest, response: HttpResponse,
                      forceStream: Bool): Unit {
-    match (parseUpstreamUrl(cfg.agentsUpstream)) {
+    match (parseUpstreamUrl(origin)) {
         case None =>
             writeDetail(response, 503, "Upstream service is not configured")
             return
@@ -313,25 +319,40 @@ func isKnownStreamPath(path: String): Bool {
     return false
 }
 
-func handleForward(ctx: HttpContext, cfg: AppConfig): Unit {
+func handleForwardToAgents(ctx: HttpContext, cfg: AppConfig): Unit {
     let path = pathAndQuery(ctx.request)
     let force = isKnownStreamPath(path)
-    forwardToAgents(cfg, ctx.request, ctx.response, force)
+    forwardToOrigin(cfg.agentsUpstream, ctx.request, ctx.response, force)
+}
+
+/*
+ * Spring Boot's un-migrated /api/v1 remainder. It has no SSE/PCM on the
+ * surface that is not already proxied elsewhere (the admin knowledge proxy
+ * is one of the routes still living in Java), so nothing is force-streamed
+ * here — the buffered path already streams when the upstream does.
+ */
+func handleForwardToJava(ctx: HttpContext, cfg: AppConfig): Unit {
+    forwardToOrigin(cfg.javaUpstream, ctx.request, ctx.response, false)
 }
 
 /*
  * Register the catch-all forwarders. Call this AFTER every local route so
  * ASP.NET-style precedence (literal > parameter > catch-all) keeps Spire's
- * own handlers winning and only the un-migrated surface reaches Python.
+ * own handlers winning and only the un-migrated surface reaches upstream.
  *
  * Coverage is not optional: the P3 gate is that every Python /v1 and
  * /internal/v1 route is either LOCAL or hit this catch-all — uncovered = 0.
+ * The same holds for P2: every Spring Boot /api/v1 route must be LOCAL or
+ * fall through to api/v1/{*rest}.
  */
 public func registerGatewayRoutes(app: WebHost, cfg: AppConfig): Unit {
     app.map("v1/{*rest}") {
-        ctx => handleForward(ctx, cfg)
+        ctx => handleForwardToAgents(ctx, cfg)
     }
     app.map("internal/v1/{*rest}") {
-        ctx => handleForward(ctx, cfg)
+        ctx => handleForwardToAgents(ctx, cfg)
+    }
+    app.map("api/v1/{*rest}") {
+        ctx => handleForwardToJava(ctx, cfg)
     }
 }

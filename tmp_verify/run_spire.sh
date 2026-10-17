@@ -22,6 +22,9 @@ export PRESENTATION_OUTPUT_DIR="${PRESENTATION_OUTPUT_DIR:-$HERE/tmp_verify/ppt_
 # P3 forwarding gateway upstream (Python agents-service, or the mock for
 # gateway verification). No secrets — just an origin.
 export AGENTS_UPSTREAM="${AGENTS_UPSTREAM:-http://127.0.0.1:8000}"
+# P2 catch-all origin: the Spring Boot surface not yet migrated. Same relay,
+# different service. No secrets.
+export JAVA_UPSTREAM="${JAVA_UPSTREAM:-http://127.0.0.1:8080}"
 
 BIN="$HERE/target/release/bin/main.exe"
 [ -x "$BIN" ] || { echo "!! binary missing: $BIN" >&2; exit 1; }

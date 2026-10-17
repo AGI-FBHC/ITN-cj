@@ -153,6 +153,21 @@ public func sqlNowUtc8Literal(): String {
 }
 
 /*
+ * java.time.Instant serialized by Jackson (ISO_INSTANT): UTC with a trailing
+ * Z and the fractional second only when non-zero. Used for ApiResponse's
+ * `timestamp` field, which is a Java Instant.
+ */
+public func isoUtcNowZ(): String {
+    let p = nowUtcParts()
+    var s = pad4(p.year) + "-" + pad2(p.month) + "-" + pad2(p.day) + "T" +
+        pad2(p.hour) + ":" + pad2(p.minute) + ":" + pad2(p.second)
+    if (p.micros != 0) {
+        s = s + "." + pad6(p.micros)
+    }
+    return s + "Z"
+}
+
+/*
  * Wrong-answer timestamps follow WrongAnswerStore._iso_utc: naive UTC with a
  * trailing Z, and microseconds omitted when zero (Python datetime.isoformat).
  */

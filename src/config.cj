@@ -11,12 +11,16 @@ public struct AppConfig {
     /* Python agents-service origin for the P3 forwarding gateway, e.g.
      * "http://127.0.0.1:8000". Spire never holds LLM keys — it only relays. */
     public let agentsUpstream: String
+    /* Spring Boot origin for the not-yet-migrated /api/v1 surface, e.g.
+     * "http://127.0.0.1:8080". Same relay, different service. */
+    public let javaUpstream: String
 
     public init() {
         jwtSecret = getVariable("JWT_SECRET")
         platformDbUrl = getVariable("PLATFORM_DB_URL")
         httpUrl = getVariable("SPIRE_HTTP_URL") ?? "http://127.0.0.1:8100"
         agentsUpstream = getVariable("AGENTS_UPSTREAM") ?? "http://127.0.0.1:8000"
+        javaUpstream = getVariable("JAVA_UPSTREAM") ?? "http://127.0.0.1:8080"
     }
 }
 
