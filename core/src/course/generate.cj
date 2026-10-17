@@ -46,12 +46,7 @@ func summaryKey(text: String): String{
     return text.size.toString()+"-"+h.toString()
 }
 func splitParts(text: String,limit: Int64): ArrayList<String>{
-    let out=ArrayList<String>();let bytes=text.toArray();var start: Int64=0
-    while(start<bytes.size){
-        let end=if(start+limit<bytes.size){start+limit}else{bytes.size}
-        let part=byteSafePrefix(String.fromUtf8(bytes[start..end]),limit);out.add(part);start+=Int64(part.size)
-    }
-    return out
+    return splitUtf8Safe(text,limit)
 }
 /** 生成任务累计的 token 用量（并行 worker 共享，随进度一起写进 job）。 */
 class UsageMeter{

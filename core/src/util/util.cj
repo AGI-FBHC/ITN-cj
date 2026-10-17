@@ -47,6 +47,29 @@ public func byteSafePrefix(s: String, maxBytes: Int64): String {
     return String.fromUtf8(b[0..end])
 }
 
+/** 按字节上限切分字符串，但每一段的起止都落在 UTF-8 字符边界上。 */
+public func splitUtf8Safe(s: String, maxBytes: Int64): ArrayList<String> {
+    let out = ArrayList<String>()
+    let bytes = s.toArray()
+    if (bytes.size == 0) { return out }
+    let limit = if (maxBytes > 0) { maxBytes } else { 1 }
+    var start: Int64 = 0
+    while (start < bytes.size) {
+        var end = start + limit
+        if (end > bytes.size) { end = bytes.size }
+        if (end < bytes.size) {
+            while (end > start && (bytes[end] & 192) == 128) { end = end - 1 }
+            if (end == start) {
+                end = start + 1
+                while (end < bytes.size && (bytes[end] & 192) == 128) { end = end + 1 }
+            }
+        }
+        out.add(String.fromUtf8(bytes[start..end]))
+        start = end
+    }
+    return out
+}
+
 public func hasPrefix(s: String, prefix: String): Bool {
     let sb = s.toArray()
     let pb = prefix.toArray()

@@ -132,6 +132,15 @@ class CourseLifecycleTest {
         let report=CourseStore(dir).report("course-alpha");@Expect(strOf(objOf(report.get("activity").getOrThrow()).getOrThrow(),"to"),today)
     }
     @TestCase
+    func utf8BatchingNeverCutsChineseOrEmoji(): Unit{
+        var sample="";var i: Int64=0;while(i<40){sample+="中文🙂工具调用边界测试";i+=1};sample+="尾部"
+        let parts=splitUtf8Safe(sample,17)
+        @Expect(joinWith(parts,""),sample)
+        @Expect(parts.size>1,true)
+        let tiny=splitUtf8Safe("🙂中文",2)
+        @Expect(joinWith(tiny,""),"🙂中文")
+    }
+    @TestCase
     func retryIsIdempotentAndExistingFilesCanBeExplicitlyLinked(): Unit{
         let dir=courseTestDir("course-retry-import");let map=publishedCourse(dir);let cs=CourseStore(dir);let nid=firstCourseNode(map);let sid=strOf(cs.start("course-kb",nid,"lecture","",false),"sessionId");let candidate=courseCandidate(dir,sid,"lecture","可重试的确认版本");let args=courseSaveArgs(sid,candidate,"");let first=cs.commit(args);let again=cs.commit(args);@Expect(strOf(first,"id"),strOf(again,"id"));@Expect(cs.resources("course-kb","archive").size(),0)
         let file=dir+Path.Separator+"import.md";fsWrite(file,"已有普通讲义");let save=JsonObject();save.put("path",JsonString(file));save.put("confirmed",JsonBool(true));let personal=PersonalStore(dir).save(save)

@@ -39,6 +39,10 @@ const root=path.resolve(__dirname,'..'),sleep=ms=>new Promise(r=>setTimeout(r,ms
   const timelineKinds=trail.includes('完成学习条目')&&trail.includes('标记节点学完')&&trail.includes('答对 · 首次作答');if(!timelineKinds)console.log('TIMELINE_TEXT:',trail);check('timeline shows correct, first-attempt quiz labels and distinguishes other event kinds',timelineKinds);
   await page.locator('.course-growth-day-filter').click();
   check('clearing the day filter restores the full trail',await page.locator('.course-growth-day-filter').isHidden());
+  const panelBottoms=await page.locator('.course-growth-panel').evaluateAll(es=>es.map(e=>e.getBoundingClientRect().bottom));
+  check('progress and trail panels share the same bottom edge',panelBottoms.length===2&&Math.abs(panelBottoms[0]-panelBottoms[1])<=2);
+  const trailMetrics=await page.locator('.course-growth-timeline').evaluate(e=>({client:e.clientHeight,scroll:e.scrollHeight}));
+  check('trail scrolls inside its panel instead of stretching the page',trailMetrics.scroll>trailMetrics.client&&trailMetrics.client<=321);
   check('desktop page has no horizontal overflow',await page.evaluate(()=>document.querySelector('#view').scrollWidth<=document.querySelector('#view').clientWidth+1));
   fs.mkdirSync(path.join(root,'tmp/course-shots'),{recursive:true});await page.screenshot({path:path.join(root,'tmp/course-shots','growth-activity-v2-light.png')});
   await page.emulateMedia({colorScheme:'dark'});await sleep(350);
