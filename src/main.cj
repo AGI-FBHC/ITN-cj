@@ -35,6 +35,8 @@ main(): Int64 {
     registerResourceTaskRoutes(app, cfg)
     registerCustomizeTaskRoutes(app, cfg)
     registerTutoringRoutes(app, cfg)
+    /* P3 catch-all forwarder — MUST be last so literal routes win. */
+    registerGatewayRoutes(app, cfg)
 
     let listen = cfg.httpUrl
     app.run(listen)

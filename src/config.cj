@@ -8,11 +8,15 @@ public struct AppConfig {
     public let jwtSecret: ?String
     public let platformDbUrl: ?String
     public let httpUrl: String
+    /* Python agents-service origin for the P3 forwarding gateway, e.g.
+     * "http://127.0.0.1:8000". Spire never holds LLM keys — it only relays. */
+    public let agentsUpstream: String
 
     public init() {
         jwtSecret = getVariable("JWT_SECRET")
         platformDbUrl = getVariable("PLATFORM_DB_URL")
         httpUrl = getVariable("SPIRE_HTTP_URL") ?? "http://127.0.0.1:8100"
+        agentsUpstream = getVariable("AGENTS_UPSTREAM") ?? "http://127.0.0.1:8000"
     }
 }
 

@@ -19,6 +19,9 @@ export SPIRE_HTTP_URL="http://127.0.0.1:${PORT}"
 # The matrix seeds PPTX fixtures here; the service must resolve them from the
 # same root or download returns "Presentation file is missing".
 export PRESENTATION_OUTPUT_DIR="${PRESENTATION_OUTPUT_DIR:-$HERE/tmp_verify/ppt_out}"
+# P3 forwarding gateway upstream (Python agents-service, or the mock for
+# gateway verification). No secrets — just an origin.
+export AGENTS_UPSTREAM="${AGENTS_UPSTREAM:-http://127.0.0.1:8000}"
 
 BIN="$HERE/target/release/bin/main.exe"
 [ -x "$BIN" ] || { echo "!! binary missing: $BIN" >&2; exit 1; }

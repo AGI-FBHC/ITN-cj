@@ -19,13 +19,16 @@ import soulsoft_extensions_injection.*
  *   POST /v1/learning-resource-tasks/{task_id}/cancel
  *   DELETE /v1/learning-resource-tasks/{task_id}
  *
- * Known limitation on the write side: public.py also runs
- * `_enqueue_generation(...)` / `_learning_resource_generation_tasks` (the
- * in-process asyncio generation chain) after create and restart, and pops that
- * registry on cancel/delete. That registry is Python-process memory; Spire
- * cannot replicate it. The DB row lifecycle is the whole behavior here —
- * the task is created/reset/cancelled in learning_resource_generation_tasks,
- * and the AI generation itself stays in the Python service.
+ * P3 routing split (2026-10-17):
+ *   GET  list / GET by id            → LOCAL (read side, already point-verified)
+ *   POST create / restart / cancel,
+ *   DELETE                          → NOT registered here. The catch-all
+ *     forwarder sends them to Python, because only Python can run
+ *     `_enqueue_generation(...)` / pop `_learning_resource_generation_tasks`.
+ *     A Spire-local write would create the DB row and never start or stop the
+ *     generation — the P3 §C5 trap. The local handleCreate/Restart/Cancel/
+ *     Delete bodies below are kept for differential comparison against
+ *     Python and are not on the live request path.
  *
  * Deliberate differences from the presentations list route:
  *   - limit is Query(30, ge=1, le=1000): out of range is a 422, not a clamp
@@ -33,23 +36,11 @@ import soulsoft_extensions_injection.*
  *   - no ETag / 304 support
  */
 public func registerResourceTaskRoutes(app: WebHost, cfg: AppConfig): Unit {
-    app.mapPost("v1/learning-resource-tasks/{resource_type}") {
-        ctx => handleCreateResourceTask(ctx, cfg)
-    }
     app.mapGet("v1/learning-resource-tasks") {
         ctx => handleListResourceTasks(ctx, cfg)
     }
     app.mapGet("v1/learning-resource-tasks/{task_id}") {
         ctx => handleGetResourceTask(ctx, cfg)
-    }
-    app.mapPost("v1/learning-resource-tasks/{task_id}/restart") {
-        ctx => handleRestartResourceTask(ctx, cfg)
-    }
-    app.mapPost("v1/learning-resource-tasks/{task_id}/cancel") {
-        ctx => handleCancelResourceTask(ctx, cfg)
-    }
-    app.mapDelete("v1/learning-resource-tasks/{task_id}") {
-        ctx => handleDeleteResourceTask(ctx, cfg)
     }
 }
 

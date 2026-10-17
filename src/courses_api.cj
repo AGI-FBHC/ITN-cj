@@ -19,12 +19,18 @@ import soulsoft_extensions_injection.*
  *   GET    /v1/courses/{course_id}
  *   PUT    /v1/courses/{course_id}
  *   PUT    /v1/courses/{course_id}/chapters/{chapter_id}
- *   DELETE /v1/courses/{course_id}
  *   GET    /v1/course-progress?learnerId=
  *
- * Phase 2 (still Python — needs the LLM task queue):
+ * P3 routing split (2026-10-17): generation-lifecycle writes stay in Python.
  *   POST /v1/courses, /regenerate, /retry,
  *   POST /v1/courses/{id}/chapters/{id}/resources/{type}/retry
+ *   DELETE /v1/courses/{course_id}   <-- NOT registered here
+ * DELETE is not registered because Python's handler cancels the in-process
+ * `_course_tasks` / `_course_resource_retry_tasks` asyncio jobs before it
+ * deletes the row (public.py:4438-4449). A Spire-local delete would remove the
+ * row and leave the generator running, which then writes to a deleted course.
+ * The catch-all forwarder sends it upstream. `handleDeleteCourse` is kept for
+ * differential comparison only and is not on the live request path.
  */
 public func registerCourseRoutes(app: WebHost, cfg: AppConfig): Unit {
     app.mapGet("v1/course-progress") {
@@ -42,9 +48,9 @@ public func registerCourseRoutes(app: WebHost, cfg: AppConfig): Unit {
     app.mapPut("v1/courses/{course_id}/chapters/{chapter_id}") {
         ctx => handleUpdateChapterMeta(ctx, cfg)
     }
-    app.mapDelete("v1/courses/{course_id}") {
-        ctx => handleDeleteCourse(ctx, cfg)
-    }
+    /* DELETE /v1/courses/{course_id} is intentionally not registered — see the
+     * header comment. It falls through to the catch-all so Python can cancel
+     * its in-process generation jobs first. */
 }
 
 /*

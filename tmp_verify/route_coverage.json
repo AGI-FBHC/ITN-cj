@@ -1,0 +1,919 @@
+{
+  "python_route_count": 149,
+  "spire_local_count": 61,
+  "catchalls": [
+    "/v1/{*rest}",
+    "/internal/v1/{*rest}"
+  ],
+  "uncovered_count": 0,
+  "uncovered": [],
+  "wrong_owner_count": 0,
+  "wrong_owner": [],
+  "gen_lifecycle_not_fwd": [],
+  "spire_local_without_python_twin": [
+    {
+      "method": "ANY",
+      "path": "/v1/{*rest}"
+    },
+    {
+      "method": "ANY",
+      "path": "/internal/v1/{*rest}"
+    }
+  ],
+  "rows": [
+    {
+      "method": "GET",
+      "path": "/v1/agents",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/teaching-group/agents",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/teaching-group/runs",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/teaching-group/runs/{run_id}",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/teaching-group/runs/stream",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/presentations",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/presentations/{task_id}/restart",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/presentations/{task_id}/cancel",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/presentations/{task_id}/generate",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/presentations",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/presentations"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/presentations/{task_id}",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/presentations/{task_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/presentations/{task_id}/complete",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/presentations/{task_id}/complete"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/presentations/{task_id}/download",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/presentations/{task_id}/download"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/presentations/{task_id}",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/presentations/{task_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/presentations/batch-delete",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/presentations/batch-delete"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/presentations/{task_id}/slides",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/presentations/{task_id}/slides"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/presentations/{task_id}/slides/{slide_index}",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/presentations/{task_id}/slides/{slide_index}"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/presentations/{task_id}/audio/{slide_index}",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/presentations/{task_id}/chat/sessions",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/presentations/{task_id}/chat/sessions",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/presentations/{task_id}/chat/sessions/{session_id}/messages",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/presentations/{task_id}/chat/sessions/{session_id}",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/presentations/{task_id}/chat/stream",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/presentations/{task_id}/progress",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/presentations/{task_id}/progress"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/presentations/{task_id}/chat/tts",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/assistant/tts",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/presentations/{task_id}/chat/audio-stream",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/presentations/{task_id}/chat/image-stream",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/assistant/asr",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/assistant/audio-plan",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/assistant/audio-stream",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/notes",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/notes"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/note-categories",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/note-categories"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/note-categories",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/note-categories"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/note-categories/{category_id}",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/note-categories/{category_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/note-categories/{category_id}",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/note-categories/{category_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/assistant/plan",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/assistant/plan-stream",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/notes",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/notes"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/notes/{note_id}",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/notes/{note_id}"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/notes/{note_id}",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/notes/{note_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/knowledge-categories/match",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/knowledge-categories/match"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/wrong-answers",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/wrong-answers"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/wrong-answers/{wrong_id}",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/wrong-answers/{wrong_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/wrong-answers/{wrong_id}/review",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/wrong-answers/{wrong_id}/review"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/wrong-answers/{wrong_id}",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/wrong-answers/{wrong_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/wrong-answers/add",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/wrong-answers/add"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/agent-sessions",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/agent-sessions"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/agent-sessions",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/agent-sessions"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/agent-sessions/{session_id}",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/agent-sessions/{session_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/agent-sessions/{session_id}",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/agent-sessions/{session_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/agent-sessions/{session_id}/complete",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/agent-sessions/{session_id}/complete"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/agent-sessions/{session_id}/messages",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/agent-sessions/{session_id}/messages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/agent-sessions/{session_id}/messages",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/agent-sessions/{session_id}/messages"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/agent-sessions/{session_id}/decisions",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/agent-sessions/{session_id}/decisions"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/agent-sessions/{session_id}/decisions",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/agent-sessions/{session_id}/decisions"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/agent/ask/stream",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/agent/ask/image-stream",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/agent/ask/suggestions",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/agent/ask/weekly-plan",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/agent/ask/similar-quiz",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/agent/ask",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/agent-sessions/{session_id}",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/agent-sessions/{session_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/agent/infer",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/tutoring/scripts/{learner_code}",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/tutoring/scripts/{learner_code}"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/learning-units/{kp_id}/topics/{topic_id}",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/learning-units/prewarm",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/tutoring/sessions",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/tutoring/sessions"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/tutoring/sessions/{session_id}",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/tutoring/sessions/{session_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/tutoring/sessions/{session_id}/answer",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/tutoring/sessions/{session_id}/answer"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/tutoring/sessions/{session_id}/complete",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/tutoring/sessions/{session_id}/complete"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/courses",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/courses/{course_id}/regenerate",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/courses/{course_id}/retry",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/course-progress",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/course-progress"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/courses",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/courses"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/courses/{course_id}",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/courses/{course_id}"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/courses/{course_id}",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/courses/{course_id}"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/courses/{course_id}/chapters/{chapter_id}",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/courses/{course_id}/chapters/{chapter_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/courses/{course_id}/chapters/{chapter_id}/resources/{resource_type}/retry",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/courses/{course_id}",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/learning-resources",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/learning-resources"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/learning-resources/{resource_id}/regenerate",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/learning-context",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/memories",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/memory/context",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/memories",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/memory/profile-analysis",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/profile/llm-score",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/learners/scores",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/memories/{memory_id}",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/course-recommendations",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/learning-resources/{resource_id}",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/learning-resources/{resource_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/learning-resources/{resource_id}/traceability",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/learning-resources/{resource_id}/traceability"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/learning-resources/{resource_id}/complete",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/learning-resources/{resource_id}/complete"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/learning-resources/{resource_id}/progress",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/learning-resources/{resource_id}/progress"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/learning-resources/{resource_id}/source-feedback",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/learning-resources/{resource_id}/source-feedback"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/learning-resources/batch-delete",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/learning-resource-tasks/{resource_type}",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/learning-resource-tasks",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/learning-resource-tasks"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin-generation-batches",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/customize-resource",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/customize-tasks",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/customize-tasks"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/customize-tasks/{task_id}",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/customize-tasks/{task_id}"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/customize-tasks/{task_id}/slides",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/customize-tasks/{task_id}/slides"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin-generation-groups",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin-generation-resources/{resource_id}",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/learning-resource-tasks/{task_id}",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/learning-resource-tasks/{task_id}"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/learning-resource-tasks/{task_id}/restart",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/learning-resource-tasks/{task_id}/cancel",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/learning-resource-tasks/{task_id}",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin-generation-tasks/{task_type}/{task_id}/stream",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin-generation-events/{task_type}/{task_id}/backfill-summaries",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin-generation-events/{task_type}/{task_id}/summarize",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/learning-resources/lectures",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/learning-resources/quizzes",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/learning-resources/practices",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/learning-resources/{resource_id}/next-question",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/learning-resources/{resource_id}/answers",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/learning-resources/{resource_id}/answers"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/learning-resources/{resource_id}/reset",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/learning-resources/{resource_id}/reset"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/learning-resources/{resource_id}/ability-reward",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/learning-resources/{resource_id}/ability-reward"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/learning-resources/{resource_id}/answers/grade",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/learning-resources/{resource_id}/answers/grade"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/learning-resources/{resource_id}/messages",
+      "owner": "LOCAL",
+      "local_pattern": "/v1/learning-resources/{resource_id}/messages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/learning-resources/{resource_id}/chat",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/presentations/{task_id}/notes/draft",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/agent-runs",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/agent-runs/stream",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/agent-runs/{run_id}",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chat/attachments",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/chat/attachments/{attachment_id}",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chat/sessions",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/chat/sessions",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/chat/sessions/{session_id}/messages",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/chat/sessions/{session_id}/rename",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/chat/sessions/{session_id}/archive",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/chat/sessions/{session_id}",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/graph-suggest",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chat",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/v1/chat/stream",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/chat/sessions/{session_id}/active",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/v1/chat/sessions/{session_id}/resume",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/internal/v1/admin/presentations/{task_id}",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "DELETE",
+      "path": "/internal/v1/admin/task-groups",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/internal/v1/agents",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/internal/v1/agent-runs",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/internal/v1/agent-runs/stream",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "GET",
+      "path": "/internal/v1/agent-runs/{run_id}",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/internal/v1/chat",
+      "owner": "FWD",
+      "local_pattern": null
+    },
+    {
+      "method": "POST",
+      "path": "/internal/v1/chat/stream",
+      "owner": "FWD",
+      "local_pattern": null
+    }
+  ]
+}
