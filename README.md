@@ -2,8 +2,9 @@
 
 Cangjie (仓颉) + Spire implementation of the ITN business modules.
 
-> Branch `itn-spire` holds this project. The `main` branch holds the original
-> Python/Java ITN-Beta codebase and is kept unchanged for reference.
+> Branch `zyqprojects` holds this project. The `main` branch of the ITN-Beta
+> repository holds the original Python/Java codebase and is kept unchanged for
+> reference.
 
 ## Modules
 

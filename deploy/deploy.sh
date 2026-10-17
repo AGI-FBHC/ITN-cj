@@ -5,7 +5,7 @@
 #   cd <your-project-dir> && bash deploy/deploy.sh
 #
 # Expects:
-#   - this directory is a git clone of the ITN-Beta repo, branch itn-spire
+#   - this directory is a git clone of the ITN-cj repo, branch zyqprojects
 #   - Cangjie SDK + STDX installed and CANGJIE_STDX_PATH set in the environment
 #   - JWT_SECRET / PLATFORM_DB_URL / SPIRE_HTTP_URL exported (never committed)
 #
@@ -19,8 +19,8 @@ mkdir -p logs
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 echo "==> branch: $BRANCH"
-if [ "$BRANCH" != "itn-spire" ]; then
-    echo "!! expected branch itn-spire, got $BRANCH" >&2
+if [ "$BRANCH" != "zyqprojects" ]; then
+    echo "!! expected branch zyqprojects, got $BRANCH" >&2
     exit 1
 fi
 
