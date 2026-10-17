@@ -1,0 +1,16 @@
+version = 0
+
+[requires]
+  soulsoft_extensions_options_configuration = {version = "1.0.20260528"}
+  soulsoft_web_routing = {version = "1.0.20260528"}
+  soulsoft_web_http = {version = "1.0.20260528"}
+  soulsoft_extensions_hosting = {version = "1.0.20260528"}
+  soulsoft_extensions_logging_console = {version = "1.0.20260528"}
+  soulsoft_extensions_logging = {version = "1.0.20260528"}
+  soulsoft_extensions_logging_configuration = {version = "1.0.20260528"}
+  soulsoft_extensions_configuration = {version = "1.0.20260528"}
+  soulsoft_web_hosting = {version = "1.0.20260528"}
+  soulsoft_identity_claims = {version = "1.0.20260528"}
+  soulsoft_extensions_options = {version = "1.0.20260528"}
+  soulsoft_serialization = {version = "1.0.20260528"}
+  soulsoft_extensions_injection = {version = "1.0.20260528"}

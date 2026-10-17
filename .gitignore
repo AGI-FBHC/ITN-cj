@@ -1,0 +1,31 @@
+# Public repo policy: source code + build config + resources + deploy script only.
+# Internal migration notes are NOT published (user decision 2026-10-17).
+
+# Internal work product — never push to the public repo
+笔记及分类模块的迁移任务/
+DEPLOY.md
+
+# Build output — large, regenerable
+/target/
+
+# Local verification harness (browser profiles, seeds, matrices) — not deployable
+/tmp_verify/
+
+# Real secrets — never commit. Only config/sample.env (placeholders) is tracked.
+.env
+**/.env
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# Raw credential notes handed over in chat — contain live passwords
+prompt.txt
+**/prompt.txt
+
+# Windows / editor noise
+.vs/
+*.pdb
+~$*
+Thumbs.db
+desktop.ini
