@@ -554,7 +554,7 @@ PAGES.resources.render = async function() {
   toolbar.append(search,kind,create);view.appendChild(toolbar);
   const status=el('p','muted sm');status.setAttribute('role','status');view.appendChild(status);
   const split=el('div','outcome-workspace'),grid=el('div','resource-grid outcome-grid outcome-list'),reader=el('section','outcome-reader');reader.id='outcome-reader';reader.setAttribute('aria-label','个性资源阅读区');
-  reader.append(el('h2',null,'选择一份个性资源'),el('p','muted','只有确认后存入目录的副本会出现在这里。'));split.append(grid,reader);view.appendChild(split);
+  reader.append(el('h2',null,'选择一份个性资源'),el('p','muted','确认保存的副本会显示在这里。'));split.append(grid,reader);view.appendChild(split);
   const data=await api('/api/personal/list',{});if(generation!==state.navigationGeneration)return;let all=data.resources || [],timer,seq=0;
   status.title=data.directory;
   const paint=async()=>{
@@ -562,8 +562,8 @@ PAGES.resources.render = async function() {
     let ids;
     if(q){const found=await api('/api/personal/search',{query:q});if(token!==seq||generation!==state.navigationGeneration)return;ids=new Set(found.hits.filter(h=>h.type==='resource').map(h=>h.id));}
     const rows=all.filter(r=>(!kind.value||r.kind===kind.value||r.learningKind===kind.value)&&(!ids||ids.has(r.id)));
-    grid.replaceChildren();status.textContent=rows.length+' 份个性资源 · '+data.directory;
-    if(!rows.length)grid.appendChild(emptyState({inline:true,art:'layers',title:all.length?'没有匹配的资源':'先看看候选稿，满意再存入',text:'生成或打开文件后，在预览区选择“存入个性资源”。未确认的版本会留在会话中。'}));
+    grid.replaceChildren();status.textContent=rows.length+' 份个性资源';status.title=data.directory;
+    if(!rows.length)grid.appendChild(emptyState({inline:true,art:'layers',title:all.length?'没有匹配的资源':'还没有个性资源',text:all.length?'换个关键词或格式再试。':'生成或导入文件后，确认保存即可在这里查看。'}));
     rows.forEach(r=>grid.appendChild(personalResourceCard(r)));
   };
   search.oninput=()=>{clearTimeout(timer);seq++;timer=setTimeout(()=>paint().catch(e=>toast(e.message)),220);};kind.onchange=()=>paint();await paint();

@@ -133,14 +133,14 @@ const MD = [
     renderResourceDock();
     const dock = document.getElementById("resource-dock");
     const labels = Array.from(dock.querySelectorAll(".resource-actions .btn")).map((b) => b.textContent);
-    const pptxBtn = Array.from(dock.querySelectorAll(".resource-actions .btn")).find((b) => b.textContent === "让 Lumin 制作 PPTX");
+    const pptxBtn = Array.from(dock.querySelectorAll(".resource-actions .btn")).find((b) => b.textContent === "制作 PPT");
     const docxBtn = Array.from(dock.querySelectorAll(".resource-actions .btn")).find((b) => b.textContent === "导出 docx");
     if (pptxBtn) pptxBtn.click();
     if (docxBtn) docxBtn.click();
     await new Promise((r) => setTimeout(r, 500));
     return { labels: labels, calls: calls, brief: document.querySelectorAll("#ppt-audience,#ppt-purpose,#ppt-pages,#ppt-style").length };
   });
-  check(ui.labels.includes("让 Lumin 制作 PPTX") && ui.labels.includes("导出 docx"), "PPT由Agent制作，DOCX保留直接导出");
+  check(ui.labels.includes("制作 PPT") && ui.labels.includes("导出 docx"), "PPT由Agent制作，DOCX保留直接导出");
   check(ui.brief === 4, "PPT入口先确认制作细节");
   check(ui.calls.length === 1 && ui.calls[0].kind === "docx" && ui.calls[0].markdown.includes("甲"), "只有DOCX直接交给外壳转换");
   check(pageErrors.length === 0, "没有 JavaScript 报错" + (pageErrors.length ? "：" + pageErrors[0] : ""));

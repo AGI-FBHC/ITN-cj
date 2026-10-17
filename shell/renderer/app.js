@@ -2412,7 +2412,7 @@ async function activityCard() {
       inline: true,
       art: "clock",
       title: "还没有会话",
-      text: "每次问答、出题、生成讲义都会记成一条会话，过程可追溯。",
+      text: "提问、出题和生成记录会出现在这里。",
       actions: [btn("问第一个问题", "primary", () => go("chat"))],
     }));
     return card;
@@ -4391,7 +4391,7 @@ PAGES.kb = {
           const d = await api("/api/kb/document", {id, path, offset, limit: 12}); if (request !== previewRequest) return;
           box.querySelector("h2").textContent = d.title || "资料原文";
           for (const c of d.chunks) { const item = el("article", "preview-chunk"); item.appendChild(el("p", "muted sm", c.headingPath || "正文")); const body = el("div", "md"); body.innerHTML = md(c.text); item.appendChild(body); content.appendChild(item); }
-          offset = d.nextOffset; more.hidden = offset < 0; more.textContent = "加载更多（共 " + d.total + " 个片段）";
+          offset = d.nextOffset; more.hidden = offset < 0; more.textContent = "加载更多"; more.title = "共 " + d.total + " 个片段";
         } catch(e) { if (request !== previewRequest) return; more.textContent = "读取失败，点击重试"; toast(e.message); }
         finally { more.disabled = false; }
       }
@@ -4419,7 +4419,7 @@ PAGES.kb = {
 
 const KIND_LABEL = { ask: "问答", lecture: "讲义", quiz: "练习", "": "对话" };
 /** 联网档位的中文名（三处界面共用一份，免得各写各的）。 */
-const WEB_MODE_LABEL = { off: "不联网", auto: "交给 agent 判断", always: "优先联网" };
+const WEB_MODE_LABEL = { off: "不联网", auto: "自动判断", always: "优先联网" };
 
 /**
  * 权限档位：就是 Lumin 的 permissions 三档。对话框左下角那枚 chip 与"设置 → 智能体"共用这一份文案。
@@ -6237,7 +6237,7 @@ PAGES.chat = {
           const it = el("div", "item");
           const head = el("div", "row");
           const main = el("div", "grow");
-          main.appendChild(el("div", "item-title", (TOOL_LABEL[t.name] || t.label || t.name) + "  " + t.name));
+          main.appendChild(el("div", "item-title", (TOOL_LABEL[t.name] || t.label || t.name)));it.title = t.name;
           main.appendChild(el("div", "muted sm", t.desc));
           head.appendChild(main);
           if (t.available === false) {
@@ -6746,8 +6746,8 @@ PAGES.chat = {
             actions: hasKb() ? [
               // 第一条跟着"当前在学什么"走：学过某一章才问"这一章"，否则问一个一定有落点的问题
               (state.chapter
-                ? btn("问：这一章的核心结论是什么", "", () => { ta.value = "这一章的核心结论是什么？"; send(); })
-                : btn("问：资料里都有哪些重点", "", () => { ta.value = "我这边的资料里都有哪些重点？"; send(); })),
+                ? btn("本章重点", "", () => { ta.value = "这一章的核心结论是什么？"; send(); })
+                : btn("资料重点", "", () => { ta.value = "我这边的资料里都有哪些重点？"; send(); })),
               btn("看知识库里有什么", "ghost", () => go("kb")),
             ] : [btn("去指定资料目录", "", () => go("settings", "kb"))],
           });
@@ -7078,7 +7078,7 @@ const SESSIONS_VIEW = {
     const v = $("view");
     v.innerHTML = "";
     $("page-title").textContent = "全部会话";
-    $("page-sub").textContent = "每段对话都留下了只追加的记录，可以回看它当时做了什么";
+    $("page-sub").textContent = "查看每次问答和生成的过程";
     const ta = $("top-actions");
     ta.innerHTML = "";
     ta.appendChild(btn("回到对话", "sm primary", () => go("chat")));
@@ -7088,7 +7088,7 @@ const SESSIONS_VIEW = {
     }
     const card = cardOf({
       title: "全部会话",
-      sub: "每次问答与生成都会留下只追加的事件",
+      sub: "提问、工具调用与生成结果",
       tag: state.sessions.length + " 条",
       actions: [btn("问一个问题", "sm primary", () => go("chat"))],
     });
@@ -7283,7 +7283,7 @@ async function settingsModels() {
     mcard.appendChild(hint);
 
     const f1 = el("div", "row");
-    f1.appendChild(fieldOf("标识（英文短名）", inputOf("m-id", "mimo")));
+    f1.appendChild(fieldOf("标识", inputOf("m-id", "mimo")));
     f1.appendChild(fieldOf("显示名称", inputOf("m-name", "MiMo TokenPlan")));
     mcard.appendChild(f1);
     const f2 = el("div", "row");
@@ -7417,9 +7417,9 @@ async function settingsModels() {
       f.appendChild(el("div", "field-hint", desc));
       return f;
     };
-    rr.appendChild(mk("role-chat", "对话与生成", state.cfg.chatModelId, "问答、讲义、练习册都走它"));
-    rr.appendChild(mk("role-embed", "向量检索", state.cfg.embedModelId, "留空则知识库退回关键词检索"));
-    rr.appendChild(mk("role-chunk", "切片与图片描述", state.cfg.chunkModelId, "需要多模态能力，才能读出图里的内容"));
+    rr.appendChild(mk("role-chat", "对话与生成", state.cfg.chatModelId, "主对话模型"));
+    rr.appendChild(mk("role-embed", "向量检索", state.cfg.embedModelId, "留空则用关键词检索"));
+    rr.appendChild(mk("role-chunk", "切片与图片描述", state.cfg.chunkModelId, "用于图片与截图"));
     role.appendChild(rr);
     role.appendChild(btn("保存绑定", "primary", async () => {
       try {
@@ -7454,9 +7454,9 @@ async function settingsModels() {
   const modeRow = el("div", "row");
   // 这是 agent：默认把决定权交给它；只有用户明确不想要外发请求时才关掉
   modeRow.appendChild(fieldOf("什么时候联网", selectOf("ws-mode", [
-    { value: "auto", label: "交给 agent 判断（默认）" },
-    { value: "always", label: "优先联网：能查就查" },
-    { value: "off", label: "不联网：一个请求都不发" },
+    { value: "auto", label: "自动判断（默认）" },
+    { value: "always", label: "优先联网" },
+    { value: "off", label: "不联网" },
   ], mode)));
   const wsRow = el("div", "row");
   const wsKey = inputOf("ws-key", ws.hasKey ? "已设置，留空则保留原密钥" : "tvly-…");
@@ -7694,7 +7694,7 @@ function settingsAgent() {
     title: "默认工作目录",
     tag: dir ? "已指定" : "用默认值",
     tagCls: dir ? "ok" : "",
-    sub: "常规聊天用它：整机可读，只有这个目录能写。指定工作区的会话则用项目自己的文件夹。",
+    sub: "常规会话只写入此目录。",
   });
   const row = el("div", "row dir-row");
   const dirInput = inputOf("agent-dir", "默认目录", dir || (state.cfg.defaultWorkDir || ""));
@@ -7712,7 +7712,7 @@ function settingsAgent() {
     try {
       await savePrefs({ agentWorkDir: picked });
       state.cfg.agentWorkDir = picked;
-      toast("工作目录：" + picked);
+      toast("目录已更新");
       go("settings", "agent");
     } catch (e) { toast("保存失败：" + e.message); }
   }));
@@ -7721,23 +7721,20 @@ function settingsAgent() {
       try {
         await savePrefs({ agentWorkDirClear: true });
         state.cfg.agentWorkDir = "";
-        toast("已清除：Lumin 回到只能问答");
+        toast("已恢复默认目录");
         go("settings", "agent");
       } catch (e) { toast("清除失败：" + e.message); }
     }));
   }
   card.appendChild(row);
-  card.appendChild(el("p", "muted sm", dir
-    ? "Lumin 在常规聊天里只能写这个目录；想让它改别的位置，在侧栏里为那个目录建一个「指定工作区」会话。"
-    : "现在用的是默认目录：" + (state.cfg.defaultWorkDir || "") +
-      " —— Lumin 在常规聊天里只能写它；想放开别的位置，在侧栏里为那个目录建一个「指定工作区」会话。"));
+  card.appendChild(el("p", "muted sm", "其他位置请使用独立工作区。"));
   g.appendChild(card);
 
   /* 工具与技能：原来挂在对话框的 ＋ 菜单里，按用户要求撤掉那边的入口，挪到这里。 */
   const toolsCard = cardOf({
     title: "工具与技能",
     tag: (state.tools || []).length + " 个工具",
-    sub: "这一轮能用哪些由模型按任务自己挑；技能在对话框里输入 / 绑定到当前会话",
+    sub: "由 Lumin 按任务选择；技能可在对话中绑定",
   });
   const tlist = el("div", "list");
   for (const g of TOOL_GROUP_ORDER) {
@@ -7748,7 +7745,7 @@ function settingsAgent() {
       const it = el("div", "item");
       const head = el("div", "row");
       const main = el("div", "grow");
-      main.appendChild(el("div", "item-title", (TOOL_LABEL[t.name] || t.label || t.name) + "　" + t.name));
+      main.appendChild(el("div", "item-title", (TOOL_LABEL[t.name] || t.label || t.name)));it.title = t.name;
       if (t.desc) main.appendChild(el("div", "muted sm", t.desc));
       head.appendChild(main);
       if (t.available === false) head.appendChild(tag("需先配置", "warn"));
@@ -8005,18 +8002,16 @@ function settingsKb() {
   impFacts.appendChild(btn("导入并建立索引", "primary", () => importKbMaterial(true)));
   impFacts.appendChild(btn("只导入", "", () => importKbMaterial(false)));
   impForm.appendChild(impFacts);
-  impForm.appendChild(el("p", "muted sm",
-    "文件夹原地登记，不改动你的资料；单独一份文件会复制进本机资料目录，原文件挪走也不影响。" +
-    "章节是自适应的：有标题按标题，没有标题就认它自己的编号（第X章 / 一、 / 1.2）。"));
+  impForm.appendChild(el("p", "muted sm", "文件夹原地使用；单个文件会复制到资料目录。章节自动识别。"));
   impCard.appendChild(impForm);
   g.appendChild(impCard);
 
   const kbCard = cardOf({
-    title: "手工登记（高级）",
+    title: "手动添加",
   });
   const form = el("div", "kb-form");
   const fr = el("div", "row");
-  fr.appendChild(fieldOf("标识（英文短名）", inputOf("kb-id", "course")));
+  fr.appendChild(fieldOf("标识", inputOf("kb-id", "course")));
   fr.appendChild(fieldOf("显示名称", inputOf("kb-name", "我的课程资料")));
   form.appendChild(fr);
   // 目录靠系统对话框选，不用手打路径（手打很容易错在盘符、反斜杠、中文目录名上）
@@ -8163,7 +8158,7 @@ async function settingsData() {
       inline: true,
       art: "layers",
       title: "还没有备份",
-      text: "点「立即备份」会把整个数据库复制到数据目录的 backups 子目录，并立刻打开副本校验一次——拷出来打不开的备份不算备份。",
+      text: "备份会校验副本是否可打开。",
       actions: [btn("立即备份", "primary", doBackup)],
     }));
   } else {
@@ -8193,7 +8188,7 @@ async function settingsData() {
     }
     bk.appendChild(bl);
   }
-  bk.appendChild(el("p", "muted sm", "恢复方式：先退出应用，把备份文件改名成 itn.db 覆盖数据目录里的同名文件（若旁边还有 itn.db-journal，一并删掉），再启动即可。"));
+  const restore = el("details", "kb-management");restore.appendChild(el("summary", null, "恢复方式"));restore.appendChild(el("p", "muted sm", "退出应用后，用备份覆盖 itn.db；如存在 itn.db-journal，一并移除，再重新启动。"));bk.appendChild(restore);
   g.appendChild(bk);
   return g;
 }
@@ -8217,58 +8212,56 @@ async function settingsSkills() {
   }
   const card = cardOf({
     title: "技能",
+    sub: "扩展 Lumin 的工作方式",
     tag: (data.skills || []).length + " 个",
     actions: [
-      btn("打开技能目录", "sm", async () => {
+      btn("新建技能", "sm", async () => {
         try {
           const r = await api("/api/skills/template", {});
-          toast("已准备好用户技能目录；示例技能：" + artifactNameFromPath(r.path));
+          toast("已创建技能：" + artifactNameFromPath(r.path));
           go("settings", "skills");
-        } catch (e) { toast("失败：" + e.message); }
+        } catch (e) { toast("创建失败：" + e.message); }
       }),
-      copyButton(() => data.userDir || "", "复制目录路径"),
+      copyButton(() => data.userDir || "", "复制目录"),
     ],
   });
-  card.appendChild(el("p", "muted sm",
-    "技能 = 一份 Markdown 说明书（用法步骤 + 允许用哪些工具）。工具是内核的能力，技能只是怎么用它们的说明。" +
-    "内置技能随包只读；自己的技能放在上面那个目录里，一层一个目录，里面放 SKILL.md。" +
-    "共享目录里的技能（Codex / Claude / .agents 约定）只读列出，正文可以看；声明了内核工具的才能在对话里绑定使用。"));
   const list = el("div", "list");
   for (const sk of (data.skills || [])) {
-    const it = el("div", "item");
-    const row = el("div", "row");
+    const it = el("div", "item skill-item");
+    const row = el("div", "row skill-row");
     const main = el("div", "grow");
-    main.appendChild(el("div", "item-title", sk.title + "　" + sk.id));
-    if (sk.description) main.appendChild(el("div", "meta", sk.description));
+    main.appendChild(el("div", "item-title", sk.title || sk.id));
+    if (sk.description && /[\u3400-\u9fff]/.test(sk.description)) main.appendChild(el("div", "meta skill-desc", sk.description));
     const meta = el("div", "meta");
-    meta.appendChild(el("span", null, "允许工具：" + ((sk.tools || []).join(" / ") || "（没声明）")));
-    if (sk.requiresConsent) meta.appendChild(el("span", null, "需要授权：" + sk.requiresConsent));
-    meta.appendChild(el("span", null, sk.source === "bundled" ? "内置（只读）" : sk.source === "shared" ? "共享目录（Codex/Claude）" : "自己的"));
+    const source = sk.source === "bundled" ? "内置" : sk.source === "shared" ? "共享" : "我的";
+    const toolCount = (sk.tools || []).length;
+    meta.appendChild(el("span", null, source));
+    meta.appendChild(el("span", null, toolCount ? "工具 " + toolCount + " 个" : "说明型"));
+    if (sk.requiresConsent) meta.appendChild(el("span", null, "需要联网"));
     main.appendChild(meta);
     row.appendChild(main);
-    row.appendChild(sk.available ? tag("可用", "ok") : tag(sk.reason || "不可用", "warn"));
-    it.appendChild(row);
-    const acts = el("div", "row item-actions");
-    acts.appendChild(btn("看正文", "sm", async () => {
+    if (sk.available) row.appendChild(tag("可用", "ok")); else it.title = sk.reason || "";
+    row.appendChild(btn("查看", "sm", async () => {
       try {
         const d = await api("/api/skills/read", { id: sk.id });
         const dlg = el("div", "card dialog");
-        dlg.appendChild(cardHeadOnly("技能正文 · " + d.title));
+        dlg.appendChild(cardHeadOnly("技能说明 · " + d.title));
         const pre = el("div", "artifact-preview");
         pre.innerHTML = md(d.body || "");
         dlg.appendChild(pre);
-        dlg.appendChild(btn("收起", "ghost", () => dlg.remove()));
+        dlg.appendChild(btn("关闭", "ghost", () => dlg.remove()));
         $("view").insertBefore(dlg, $("view").firstChild);
       } catch (e) { toast("读取失败：" + e.message); }
     }));
-    acts.appendChild(copyButton(() => sk.path || "", "复制路径"));
-    it.appendChild(acts);
+    it.appendChild(row);
     list.appendChild(it);
   }
+  if (!list.childNodes.length) list.appendChild(el("div", "muted", "还没有技能。"));
   card.appendChild(list);
   g.appendChild(card);
 
-  const dirs = cardOf({ title: "扫描的目录", sub: "自己的技能可改可加；共享目录只读（与 Codex / Claude 共用同一套 SKILL.md 约定）" });
+  const dirs = el("details", "kb-management");
+  dirs.appendChild(el("summary", null, "存储位置"));
   if (data.userDir) dirs.appendChild(el("p", "path-line", "我的技能：" + data.userDir));
   for (const d of (data.sharedDirs || [])) dirs.appendChild(el("p", "path-line", "共享目录：" + d));
   if (data.bundledDir) dirs.appendChild(el("p", "path-line", "内置技能：" + data.bundledDir));
@@ -8309,10 +8302,10 @@ function settingsAbout() {
   const about = cardOf({ title: "数据与隐私" });
   const ul = el("ul", "about-list");
   [
-    "所有配置、学习记录、切片与向量都存在本机的 SQLite 单文件数据库里，可以整体拷走或备份。",
-    "资料只发给你自己配置的模型服务，不经过任何第三方服务器。",
-    "密钥只写进本机数据库；「模型与接口」读取配置时永不回传密钥本身。",
-    "讲义与练习是可复现的本地 Markdown 文件，放在数据目录的 artifacts 子目录下。",
+    "配置、学习记录与索引保存在本机数据库，可整体备份。",
+    "资料只发送到你配置的模型服务。",
+    "密钥仅保存在本机，界面不会回传。",
+    "讲义与练习保存在本地 artifacts 目录。",
   ].forEach((t) => ul.appendChild(el("li", null, t)));
   about.appendChild(ul);
   g.appendChild(about);

@@ -130,7 +130,7 @@ function spRenderLecture(page,res,asset){
     const body=el('article','md sp-body');body.innerHTML=md(b.body||'');block.appendChild(body);
     page.appendChild(block);
   }
-  page.appendChild(el('p','sp-hint','读完记得到学·练里「标记这个节点学完」；阅读本身不换算成掌握度。'));
+  page.appendChild(el('p','sp-hint','读完可在学·练里「标记学完」；阅读本身不换算成掌握度。'));
   const sources=spSources(res);if(sources)page.appendChild(sources);
   return {countText:paint};
 }

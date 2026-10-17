@@ -2137,7 +2137,7 @@ fs.writeFileSync(singleFile, [
     const txt = await page.locator('#view .card').first().innerText();
     assert(txt.indexOf('允许工具') >= 0, '技能卡片应写明允许的工具，实际：' + txt.replace(/\s+/g, ' ').slice(0, 80));
     assert(txt.indexOf('内置') >= 0, '应标出内置技能（只读）');
-    await page.locator('#view .item', { hasText: 'web-research' }).getByRole('button', { name: '看正文' }).click();
+    await page.locator('#view .item', { hasText: 'web-research' }).getByRole('button', { name: '查看' }).click();
     await page.waitForSelector('#view .card.dialog .artifact-preview', { timeout: 10000 });
     const body = await page.locator('#view .card.dialog').innerText();
     assert(body.indexOf('联网专题研究') >= 0 || body.length > 100, '应能打开技能正文');
