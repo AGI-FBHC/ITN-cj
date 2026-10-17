@@ -31,8 +31,7 @@ import soulsoft_extensions_injection.*
  *      JSON null (weeklyHours, avatar, confidenceValue, …). Do not omit them.
  *
  * Not in this batch (still forwarded to Spring Boot by the api/v1 catch-all):
- *   POST/PUT /learners, GET /profile, GET /learner-profile (and its subpaths),
- *   growth writes.
+ *   POST/PUT /learners, GET /learner-profile (and its subpaths), growth writes.
  */
 
 /* ---- ApiResponse envelope (web/dto/ApiResponse.java) ---- */
@@ -73,6 +72,9 @@ public func registerLearnForgeRoutes(app: WebHost, cfg: AppConfig): Unit {
     }
     app.mapGet("api/v1/learners/{learnerId}") {
         ctx => handleGetLearner(ctx, cfg)
+    }
+    app.mapGet("api/v1/profile") {
+        ctx => handleGetProfile(ctx, cfg)
     }
 }
 
@@ -131,6 +133,112 @@ func handleGetLearner(ctx: HttpContext, cfg: AppConfig): Unit {
                             }
                     }
             }
+    }
+}
+
+/*
+ * GET /api/v1/profile — ProfileController.get -> ProfileService.get.
+ *
+ * This read never 404s. A missing row is synthesised as `new UserProfile(user)`
+ * and still returned as 200, with only userId set, profileCompleted false and
+ * the two non-null String columns at their field initialisers. createdAt and
+ * updatedAt are null on that path (the transient never hits @PrePersist).
+ */
+func handleGetProfile(ctx: HttpContext, cfg: AppConfig): Unit {
+    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+        case None => return
+        case Some(userId) =>
+            match (openDb(cfg)) {
+                case None =>
+                    writeApiErr(ctx.response, 500, CODE_INTERNAL_ERROR, "服务器内部错误")
+                case Some(conn) =>
+                    try {
+                        let store = LearnForgeStore(conn)
+                        var row = RawProfile(userId)
+                        match (store.getProfileByUser(userId)) {
+                            case Some(found) => row = found
+                            case None => ()
+                        }
+                        conn.close()
+                        writeJson(ctx.response, 200, apiOk(profileToJson(row)))
+                    } catch (e: Exception) {
+                        writeApiErr(ctx.response, 500, CODE_INTERNAL_ERROR, "服务器内部错误")
+                    }
+            }
+    }
+}
+
+/*
+ * ProfileResponse, field order = record component order (23 fields).
+ * No @JsonInclude on the record, so null scalars are emitted. The two map
+ * fields degrade to `{}` and the list to `[]` — never null.
+ */
+func profileToJson(row: RawProfile): String {
+    let w = JsonWriter()
+    w.putRaw("userId", jsonQuote(uuidFormat(row.userId)))
+    w.putOptStr("educationLevel", row.educationLevel)
+    w.putOptStr("major", row.major)
+    w.putOptStr("technicalFoundation", row.technicalFoundation)
+    w.putOptStr("learningPreference", row.learningPreference)
+    match (row.currentGoalId) {
+        case Some(b) => w.putRaw("currentGoalId", jsonQuote(uuidFormat(b)))
+        case None => w.putRaw("currentGoalId", "null")
+    }
+    w.putRaw("profileCompleted", if (row.profileCompleted) { "true" } else { "false" })
+    w.putStr("ttsVoice", row.ttsVoice)
+    w.putStr("ttsSpeed", row.ttsSpeed)
+    w.putOptStr("name", row.name)
+    w.putOptStr("avatar", row.avatar)
+    w.putOptStr("role", row.role)
+    w.putOptStr("jobTitle", row.jobTitle)
+    match (row.organizationId) {
+        case Some(b) => w.putRaw("organizationId", jsonQuote(uuidFormat(b)))
+        case None => w.putRaw("organizationId", "null")
+    }
+    match (row.departmentId) {
+        case Some(b) => w.putRaw("departmentId", jsonQuote(uuidFormat(b)))
+        case None => w.putRaw("departmentId", "null")
+    }
+    w.putOptInt("weeklyHours", row.weeklyHours)
+    w.putRaw("learningStyle", jsonStringArray(row.learningStyleJson))
+    w.putOptStr("goal", row.goal)
+    w.putOptStr("preferredFormat", row.preferredFormat)
+    w.putRaw("selfAssessment", jsonObjectField(row.selfAssessmentJson))
+    w.putRaw("diagnosisSummary", jsonObjectField(row.diagnosisSummaryJson))
+    match (row.createdAt) {
+        case Some(t) => w.putRaw("createdAt", jsonQuote(isoUtcZFromDb(t)))
+        case None => w.putRaw("createdAt", "null")
+    }
+    match (row.updatedAt) {
+        case Some(t) => w.putRaw("updatedAt", jsonQuote(isoUtcZFromDb(t)))
+        case None => w.putRaw("updatedAt", "null")
+    }
+    return w.toJson()
+}
+
+/*
+ * parseMap (ProfileResponse.java:63-70): Map<String, Object> from JSON text.
+ * Blank, unparseable, or not a JSON object yields Map.of() — `{}` on the
+ * wire. Nested objects/arrays/values go through valueToRaw, which walks the
+ * parsed tree rather than re-serialising with JsonObject.toJsonString()
+ * (broken for string values in this build).
+ */
+func jsonObjectField(rawJson: ?String): String {
+    var text = ""
+    match (rawJson) {
+        case Some(t) => text = t
+        case None => return "{}"
+    }
+    if (text.trimAscii().size == 0) {
+        return "{}"
+    }
+    match (jsonParse(text)) {
+        case None => return "{}"
+        case Some(v) =>
+            if (!isJsObject(v)) {
+                return "{}"
+            }
+            return jsonObjectToRaw(v.asObject())
     }
 }
 

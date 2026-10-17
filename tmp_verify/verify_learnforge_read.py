@@ -100,6 +100,23 @@ LEARNER_FIELDS = ["id", "code", "name", "avatar", "role", "education", "targetJo
                   "preferredFormat", "diagnosisSummary", "confidenceMethod",
                   "confidenceValue", "overallMastery", "createdAt", "updatedAt"]
 
+# ProfileResponse record components (ProfileResponse.java:13-37), 23 fields.
+PROFILE_FIELDS = ["userId", "educationLevel", "major", "technicalFoundation",
+                  "learningPreference", "currentGoalId", "profileCompleted",
+                  "ttsVoice", "ttsSpeed", "name", "avatar", "role", "jobTitle",
+                  "organizationId", "departmentId", "weeklyHours", "learningStyle",
+                  "goal", "preferredFormat", "selfAssessment", "diagnosisSummary",
+                  "createdAt", "updatedAt"]
+# User­Profile field initialisers, applied when ProfileService.get synthesises.
+PROFILE_SYNTH = {"educationLevel": None, "major": None, "technicalFoundation": None,
+                 "learningPreference": None, "currentGoalId": None,
+                 "profileCompleted": False, "ttsVoice": "苏打", "ttsSpeed": "normal",
+                 "name": None, "avatar": None, "role": None, "jobTitle": None,
+                 "organizationId": None, "departmentId": None, "weeklyHours": None,
+                 "learningStyle": [], "goal": None, "preferredFormat": None,
+                 "selfAssessment": {}, "diagnosisSummary": {},
+                 "createdAt": None, "updatedAt": None}
+
 
 def parse_scores(raw):
     """Jackson Map<String, Integer>, ACCEPT_FLOAT_AS_INT. Empty on any failure."""
@@ -331,13 +348,103 @@ def main():
         check("cross-user learner is 404, not 200", st == 404 and env.get("code") == 3004,
               "status=%d code=%s" % (st, env.get("code")))
 
+        # ---- 9. GET /api/v1/profile with no row: synthesised, never 404 ----
+        st, body = api_get(args.base, "/api/v1/profile", token)
+        env = json.loads(body)
+        check("profile (no row) HTTP 200, never 404", st == 200, "status=%d" % st)
+        pdata = env.get("data") or {}
+        check("profile field order matches ProfileResponse record",
+              list(pdata.keys()) == PROFILE_FIELDS, str(list(pdata.keys())))
+        check("profile envelope is ApiResponse", env.get("code") == 0 and env.get("message") == "success",
+              "code=%s message=%s" % (env.get("code"), env.get("message")))
+        check("synthesised userId is the caller's id",
+              pdata.get("userId") == user_id, str(pdata.get("userId")))
+        bad = {k: (pdata.get(k), v) for k, v in PROFILE_SYNTH.items() if pdata.get(k) != v}
+        check("synthesised defaults match UserProfile field initialisers",
+              not bad, "mismatch=%s" % bad)
+        # createdAt/updatedAt are the tell: @PrePersist never runs on a transient.
+        raw = body.decode("utf-8", "replace")
+        check("synthesised createdAt is JSON null (no @PrePersist)",
+              re.search(r'"createdAt"\s*:\s*null', raw) is not None,
+              raw[raw.find("createdAt") - 2:raw.find("createdAt") + 40] if "createdAt" in raw else "absent")
+
+        # ---- 10. GET /api/v1/profile with a real row ----
+        goal_id = uuid.uuid4()
+        cur.execute(
+            "INSERT INTO learning_goals (id, user_id, goal_type, title, expected_level,"
+            " status, created_at, updated_at)"
+            " VALUES (%s,%s,'COURSE',%s,'ADVANCED','ACTIVE',NOW(6),NOW(6))",
+            (goal_id.bytes, user_bin, "VF Goal " + runid)
+        )
+        cur.execute(
+            "INSERT INTO user_profiles (user_id, education_level, major, technical_foundation,"
+            " name, avatar, role, job_title, organization_id, department_id, weekly_hours,"
+            " learning_style_json, goal, preferred_format, self_assessment_json,"
+            " diagnosis_summary_json, learning_preference, current_goal_id, profile_completed,"
+            " tts_voice, tts_speed, created_at, updated_at)"
+            " VALUES (%s,'本科','软件工程','有 Python 基础','VF 名字','a.png','student','实习生',"
+            " NULL,NULL,12,'[\"visual\"]','进大厂','video','{\"level\":3,\"tags\":[\"a\",\"b\"]}',"
+            " '{\"risk\":\"low\"}','CASE_DRIVEN',%s,1,'晓晓','fast',NOW(6),NOW(6))",
+            (user_bin, goal_id.bytes)
+        )
+        st, body = api_get(args.base, "/api/v1/profile", token)
+        pdata = json.loads(body).get("data") or {}
+        check("profile (with row) field order unchanged",
+              list(pdata.keys()) == PROFILE_FIELDS, str(list(pdata.keys())))
+        check("profile scalars read from the row",
+              pdata.get("educationLevel") == "本科" and pdata.get("major") == "软件工程"
+              and pdata.get("name") == "VF 名字" and pdata.get("weeklyHours") == 12
+              and pdata.get("ttsVoice") == "晓晓" and pdata.get("ttsSpeed") == "fast",
+              "edu=%s major=%s name=%s wh=%s voice=%s speed=%s" % (
+                  pdata.get("educationLevel"), pdata.get("major"), pdata.get("name"),
+                  pdata.get("weeklyHours"), pdata.get("ttsVoice"), pdata.get("ttsSpeed")))
+        check("learningPreference is the enum name string",
+              pdata.get("learningPreference") == "CASE_DRIVEN", repr(pdata.get("learningPreference")))
+        check("currentGoalId is the joined learning_goals id",
+              pdata.get("currentGoalId") == str(goal_id), str(pdata.get("currentGoalId")))
+        check("profileCompleted is the primitive boolean true",
+              pdata.get("profileCompleted") is True, repr(pdata.get("profileCompleted")))
+        check("learningStyle parsed from json",
+              pdata.get("learningStyle") == ["visual"], str(pdata.get("learningStyle")))
+        check("selfAssessment keeps nested object + array",
+              pdata.get("selfAssessment") == {"level": 3, "tags": ["a", "b"]},
+              str(pdata.get("selfAssessment")))
+        check("diagnosisSummary parsed as a map",
+              pdata.get("diagnosisSummary") == {"risk": "low"}, str(pdata.get("diagnosisSummary")))
+        check("createdAt/updatedAt present on a real row",
+              bool(re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$", pdata.get("createdAt") or ""))
+              and bool(re.match(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$", pdata.get("updatedAt") or "")),
+              "createdAt=%s updatedAt=%s" % (pdata.get("createdAt"), pdata.get("updatedAt")))
+
+        # ---- 11. profile parse failures degrade to empty, not errors ----
+        cur.execute(
+            "UPDATE user_profiles SET learning_style_json='not json',"
+            " self_assessment_json='[1,2]', diagnosis_summary_json=NULL"
+            " WHERE user_id=%s", (user_bin,)
+        )
+        st, body = api_get(args.base, "/api/v1/profile", token)
+        pdata = json.loads(body).get("data") or {}
+        check("unparseable learningStyle degrades to [] (not 500)",
+              st == 200 and pdata.get("learningStyle") == [], "status=%d got=%s" % (st, pdata.get("learningStyle")))
+        check("non-object selfAssessment degrades to {} (Map.of())",
+              pdata.get("selfAssessment") == {}, str(pdata.get("selfAssessment")))
+        check("null diagnosisSummary degrades to {} (Map.of())",
+              pdata.get("diagnosisSummary") == {}, str(pdata.get("diagnosisSummary")))
+
     finally:
         for lid in learner_ids:
             cur.execute("DELETE FROM learners WHERE id=%s", (lid.bytes,))
+        try:
+            cur.execute("UPDATE user_profiles SET current_goal_id=NULL WHERE user_id=%s",
+                        (fixture_user.bytes,))
+            cur.execute("DELETE FROM user_profiles WHERE user_id=%s", (fixture_user.bytes,))
+            cur.execute("DELETE FROM learning_goals WHERE user_id=%s", (fixture_user.bytes,))
+        except Exception:
+            pass
         cur.execute("DELETE FROM users WHERE id=%s", (fixture_user.bytes,))
         cur.close()
         conn.close()
-        print("  cleaned up %d learner rows + 1 fixture user" % len(learner_ids), flush=True)
+        print("  cleaned up %d learner rows + profile/goals + fixture user" % len(learner_ids), flush=True)
 
     print()
     print("== summary ==")

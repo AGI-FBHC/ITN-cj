@@ -82,6 +82,26 @@ public class LearnForgeStore {
                 return Some(parseLearnerRow(rs.rows[0]))
         }
     }
+
+    /* -------- user profile (ProfileService.get) -------- */
+
+    /*
+     * profileRepository.findById(user.getId()) — the profile row keyed by the
+     * user's own id. None means "no row", which the caller must treat as a
+     * synthesised empty profile, NOT as a 404.
+     */
+    public func getProfileByUser(userId: Array<Byte>): ?RawProfile {
+        let sql = "SELECT " + profileColumns() +
+            " FROM user_profiles WHERE user_id=" + sqlBinary(userId)
+        match (conn.query(sql)) {
+            case QueryOutcome.Ok(_) => return None
+            case QueryOutcome.ResultSet(rs) =>
+                if (rs.rows.isEmpty()) {
+                    return None
+                }
+                return Some(parseProfileRow(rs.rows[0]))
+        }
+    }
 }
 
 /* One learner row, field-by-field as the table stores it. */
@@ -168,6 +188,149 @@ private func parseLearnerRow(row: Array<MyCell>): RawLearner {
         optCellInt(row, 15),
         cellText(row, 16),
         cellText(row, 17)
+    )
+}
+
+/* ============ user_profiles (GET /api/v1/profile) ============ */
+
+/*
+ * One user_profiles row, exactly as the table stores it. Nullability mirrors
+ * the DDL: only profile_completed / tts_voice / tts_speed / created_at /
+ * updated_at are NOT NULL, and the row is keyed by user_id (= users.id).
+ */
+public struct RawProfile {
+    public let userId: Array<Byte>
+    public let educationLevel: ?String
+    public let major: ?String
+    public let technicalFoundation: ?String
+    public let learningPreference: ?String
+    public let currentGoalId: ?Array<Byte>      /* BINARY(16) or absent */
+    public let profileCompleted: Bool
+    public let ttsVoice: String
+    public let ttsSpeed: String
+    public let name: ?String
+    public let avatar: ?String
+    public let role: ?String
+    public let jobTitle: ?String
+    public let organizationId: ?Array<Byte>
+    public let departmentId: ?Array<Byte>
+    public let weeklyHours: ?Int64
+    public let learningStyleJson: ?String
+    public let goal: ?String
+    public let preferredFormat: ?String
+    public let selfAssessmentJson: ?String
+    public let diagnosisSummaryJson: ?String
+    public let createdAt: ?String
+    public let updatedAt: ?String
+
+    /*
+     * The "no row" shape ProfileService.get synthesises via `new
+     * UserProfile(user)`: only userId is set, profileCompleted is false, and
+     * the two non-null String columns fall back to their field initialisers.
+     * createdAt/updatedAt stay null — @PrePersist never runs on a transient.
+     */
+    public init(synthUserId: Array<Byte>) {
+        userId = synthUserId
+        educationLevel = None; major = None; technicalFoundation = None
+        learningPreference = None; currentGoalId = None
+        profileCompleted = false
+        ttsVoice = "苏打"; ttsSpeed = "normal"
+        name = None; avatar = None; role = None; jobTitle = None
+        organizationId = None; departmentId = None; weeklyHours = None
+        learningStyleJson = None; goal = None; preferredFormat = None
+        selfAssessmentJson = None; diagnosisSummaryJson = None
+        createdAt = None; updatedAt = None
+    }
+
+    public init(userId: Array<Byte>, educationLevel: ?String, major: ?String,
+                technicalFoundation: ?String, learningPreference: ?String,
+                currentGoalId: ?Array<Byte>, profileCompleted: Bool,
+                ttsVoice: String, ttsSpeed: String, name: ?String, avatar: ?String,
+                role: ?String, jobTitle: ?String, organizationId: ?Array<Byte>,
+                departmentId: ?Array<Byte>, weeklyHours: ?Int64,
+                learningStyleJson: ?String, goal: ?String, preferredFormat: ?String,
+                selfAssessmentJson: ?String, diagnosisSummaryJson: ?String,
+                createdAt: ?String, updatedAt: ?String) {
+        this.userId = userId
+        this.educationLevel = educationLevel
+        this.major = major
+        this.technicalFoundation = technicalFoundation
+        this.learningPreference = learningPreference
+        this.currentGoalId = currentGoalId
+        this.profileCompleted = profileCompleted
+        this.ttsVoice = ttsVoice
+        this.ttsSpeed = ttsSpeed
+        this.name = name
+        this.avatar = avatar
+        this.role = role
+        this.jobTitle = jobTitle
+        this.organizationId = organizationId
+        this.departmentId = departmentId
+        this.weeklyHours = weeklyHours
+        this.learningStyleJson = learningStyleJson
+        this.goal = goal
+        this.preferredFormat = preferredFormat
+        this.selfAssessmentJson = selfAssessmentJson
+        this.diagnosisSummaryJson = diagnosisSummaryJson
+        this.createdAt = createdAt
+        this.updatedAt = updatedAt
+    }
+}
+
+/*
+ * Column order is NOT the record order — current_goal_id joins learning_goals
+ * and lives next to the FKs. parseProfileRow reads positionally, so any
+ * change here must move both.
+ */
+private func profileColumns(): String {
+    "user_id, education_level, major, technical_foundation, learning_preference," +
+        " current_goal_id, profile_completed, tts_voice, tts_speed, name, avatar," +
+        " role, job_title, organization_id, department_id, weekly_hours," +
+        " learning_style_json, goal, preferred_format, self_assessment_json," +
+        " diagnosis_summary_json, created_at, updated_at"
+}
+
+private func optCellUuid(row: Array<MyCell>, idx: Int64): ?Array<Byte> {
+    if (idx >= row.size || row[idx].isNull) {
+        return None
+    }
+    let b = row[idx].bytes
+    if (b.size != 16) {
+        return None
+    }
+    return Some(b)
+}
+
+private func parseProfileRow(row: Array<MyCell>): RawProfile {
+    var completed = false
+    match (optCellBool(row, 6)) {
+        case Some(b) => completed = b
+        case None => completed = false
+    }
+    RawProfile(
+        row[0].bytes,
+        optCellText(row, 1),
+        optCellText(row, 2),
+        optCellText(row, 3),
+        optCellText(row, 4),
+        optCellUuid(row, 5),
+        completed,
+        cellText(row, 7),
+        cellText(row, 8),
+        optCellText(row, 9),
+        optCellText(row, 10),
+        optCellText(row, 11),
+        optCellText(row, 12),
+        optCellUuid(row, 13),
+        optCellUuid(row, 14),
+        optCellInt(row, 15),
+        optCellText(row, 16),
+        optCellText(row, 17),
+        optCellText(row, 18),
+        optCellText(row, 19),
+        optCellText(row, 20),
+        optCellText(row, 21),
+        optCellText(row, 22)
     )
 }
 
