@@ -22,6 +22,7 @@ let ddl = [
     "CREATE TABLE IF NOT EXISTS course_jobs (id TEXT PRIMARY KEY,kb_id TEXT,status TEXT,body TEXT,created_at TEXT)",
     "CREATE TABLE IF NOT EXISTS course_files (id TEXT PRIMARY KEY,from_path TEXT,to_path TEXT,status TEXT)",
     "CREATE TABLE IF NOT EXISTS course_events (id TEXT PRIMARY KEY,kb_id TEXT,node_id TEXT,body TEXT,at TEXT)",
+    "CREATE TABLE IF NOT EXISTS course_summary_cache (kb_id TEXT,batch_key TEXT,summary TEXT,at TEXT,PRIMARY KEY(kb_id,batch_key))",
     "CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT)",
     "CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT)",
     "CREATE TABLE IF NOT EXISTS profile (k TEXT PRIMARY KEY, v TEXT)",

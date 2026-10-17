@@ -17,6 +17,7 @@ const root=path.resolve(__dirname,'..'),sleep=ms=>new Promise(r=>setTimeout(r,ms
    const job=await post('course/generate',{kbId:'course-alpha'});let status,lastStage='';
    await wait(async()=>{status=await post('course/job',{id:job.id});if(status.stage!==lastStage){console.log('STAGE '+status.stage);lastStage=status.stage;}return status.status!=='running';});
    check('real LLM generated and validated the knowledge-base tree',status.status==='completed');
+   console.log('TOKENS '+JSON.stringify(status.tokens||{}));
    const current=await post('course/state',{kbId:'course-alpha'}),map=current.map;
    check('one current map with maximum four levels',map.nodes.length>=2&&map.nodes.every(n=>n.depth>=1&&n.depth<=4));
    const coverage=new Set(map.nodes.filter(n=>n.depth>1).flatMap(n=>n.sources.map(s=>s.id)));

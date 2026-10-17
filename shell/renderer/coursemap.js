@@ -116,9 +116,24 @@ async function offerCourseSave(file){
 
 async function watchCourseJob(job,host){
   courseUi.jobs.set(courseUi.kb,job.id);const kb=courseUi.kb;
-  const old=host.querySelector('.course-job');old?.remove();const box=el('div','course-job'),stage=el('span');box.append(stage,btn('取消生成','ghost sm',()=>courseApi('cancel',{id:job.id})));host.appendChild(box);
+  const old=host.querySelector('.course-job');old?.remove();
+  const box=el('div','course-job'),head=el('div','course-job-head'),stage=el('span','course-job-stage'),tokens=el('span','course-job-tokens'),pct=el('span','course-job-pct','0%');
+  const bar=el('div','course-job-bar'),fill=el('span','course-job-fill');bar.appendChild(fill);
+  const foot=el('div','course-job-foot');foot.appendChild(btn('取消生成','ghost sm',()=>courseApi('cancel',{id:job.id})));
+  head.append(stage,tokens,pct);box.append(head,bar,foot);host.appendChild(box);
+  const fmtTok=n=>{n=Number(n)||0;if(n>=1000000)return (n/1000000).toFixed(1)+'M';if(n>=1000)return (n/1000).toFixed(1)+'k';return String(n);};
+  const paint=result=>{
+    const p=result.progress||{};const text=result.stage||result.message||'正在生成…';
+    stage.textContent=text;
+    const t=result.tokens||{};const total=Number(t.total)||0;
+    tokens.textContent=total>0?('tokens '+fmtTok(total)+'（入 '+fmtTok(t.in)+' / 出 '+fmtTok(t.out)+'）'):'';
+    tokens.title=total>0?('累计 '+Number(t.calls||0)+' 次模型调用'):'';
+    const raw=Number(p.percent);const percent=Number.isFinite(raw)?Math.max(0,Math.min(100,raw)):0;
+    pct.textContent=Math.round(percent)+'%';fill.style.width=percent+'%';
+  };
+  paint(job);
   try{
-    while(host.isConnected&&current==='learn'&&courseUi.kb===kb){const result=await courseApi('job',{id:job.id});stage.textContent=result.stage||result.message||'正在生成…';
+    while(host.isConnected&&current==='learn'&&courseUi.kb===kb){const result=await courseApi('job',{id:job.id});paint(result);
       if(result.status!=='running'){
         courseUi.jobs.delete(kb);box.remove();
         if(result.status==='completed'){await courseRefresh();const candidate=await courseApi('map',{id:result.mapId});if(candidate.baseMapId)await previewCourseCandidate(candidate);else toast('思维导图已生成。');}

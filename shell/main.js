@@ -519,7 +519,6 @@ async function createWindow() {
     const lines = [];
     try {
       const title = await win.webContents.executeJavaScript("document.title");
-      const status = await win.webContents.executeJavaScript("document.getElementById('status').textContent");
       // 界面改成多页面后，用"导航项数 + 首屏节点数"判断界面真的渲染出来了；
       // 原来数的是 .panel，那个类名早就没有了，等于一直在数 0。
       // preload 没挂上就没有自绘窗口按钮可用：这一条必须能在打包版里验证
@@ -542,6 +541,8 @@ async function createWindow() {
         await new Promise((r) => setTimeout(r, 250));
       }
       const check = await win.webContents.executeJavaScript("(document.querySelector('#view')||{}).innerText");
+      // 状态在内核握手完成后才会变成“已连接”：就绪后再读，避免采样到初始的“连接中…”
+      const status = await win.webContents.executeJavaScript("document.getElementById('status').textContent");
       lines.push("TITLE=" + title);
       lines.push("STATUS=" + status);
       lines.push("NAV=" + navs);

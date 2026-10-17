@@ -19,7 +19,14 @@ body.workspace-wide #view>.course-workspace{max-width:none;margin-inline:0}
 .course-map-caption{position:absolute;bottom:13px;left:16px;max-width:calc(100% - 170px);font-size:12px;color:var(--muted);margin:0;pointer-events:none}
 .course-map-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center}
 .course-map-empty h2{margin:0;font-size:24px;font-weight:500}
-.course-job{position:absolute;top:16px;left:16px;right:16px;z-index:3;display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:11px 14px;box-shadow:0 4px 20px rgba(0,0,0,.05)}
+.course-job{position:absolute;top:16px;left:16px;right:16px;z-index:3;display:flex;flex-direction:column;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px;box-shadow:0 10px 24px -18px rgba(0,0,0,.45)}
+.course-job-head{display:flex;align-items:center;gap:10px;justify-content:space-between}
+.course-job-stage{font-size:13px;color:var(--ink-2);min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.course-job-tokens{font-size:12px;color:var(--muted);flex:none;font-variant-numeric:tabular-nums}
+.course-job-pct{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums;flex:none}
+.course-job-bar{height:6px;border-radius:999px;background:var(--panel-sunk);overflow:hidden}
+.course-job-fill{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,color-mix(in srgb,var(--brand) 64%,transparent),var(--brand));transition:width .3s ease}
+.course-job-foot{display:flex;justify-content:flex-end}
 .course-modal-overlay{position:fixed;inset:0;z-index:2300;background:rgba(20,28,23,.2);backdrop-filter:blur(3px);display:grid;place-items:center;padding:20px}
 .course-modal{width:620px;box-sizing:border-box;overflow:auto;background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:24px;padding:24px;box-shadow:0 28px 80px rgba(0,0,0,.22)}
 .course-modal-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:20px}

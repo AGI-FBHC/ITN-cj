@@ -43,6 +43,8 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   check('the running session row shows a spinner ('+live.caretParent+')',live.rowSpin>=1&&live.activeSpin&&live.running===true);
   await page.waitForFunction(()=>!state.busyTurn,null,{timeout:30000});
   await page.waitForFunction(()=>!document.querySelector('#chat-thread .caret'),null,{timeout:5000});
+  // 会话栏的 spinner 与运行状态由面板刷新异步收尾：等最终空闲态，避免单次读取的时序抖动
+  await page.waitForFunction(()=>document.querySelectorAll('.panel-item-row.rail-session .panel-item-spin').length===0&&isSessionRunning(state.chatSessionId)===false,null,{timeout:15000});
   const idle=await page.evaluate(()=>({rowSpin:document.querySelectorAll('.panel-item-row.rail-session .panel-item-spin').length,caret:!!document.querySelector('#chat-thread .caret'),running:isSessionRunning(state.chatSessionId)}));
   check('spinner disappears and caret is removed after the turn finishes',idle.rowSpin===0&&idle.running===false&&!idle.caret);
   check('no JavaScript errors',errors.length===0);
