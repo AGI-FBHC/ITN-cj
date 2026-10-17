@@ -58,6 +58,9 @@ func fixtureReply(b: JsonObject): (String,?JsonObject){
     while(i<messages.size()){let m=objOf(messages[i]).getOrThrow();i+=1;lastRole=strOf(m,"role");if(lastRole=="user"){user=strOf(m,"content")};if(lastRole=="system"){system+=strOf(m,"content")}}
     if(arrOf(b,"tools").size()>0){
         if(lastRole=="tool"){return("候选学习资源已生成，请预览；满意后点击加入我的学习资源。",None)}
+        if(user.contains("任务中心")||user.contains("哪些任务")||user.contains("在跑什么")){
+            let args=JsonObject();let function=JsonObject();function.put("name",JsonString("list_activity_tasks"));function.put("arguments",JsonString(args.toString()));let call=JsonObject();call.put("index",JsonInt(0));call.put("id",JsonString(courseId("call-")));call.put("type",JsonString("function"));call.put("function",function);return("",Some(call))
+        }
         if(user.contains("请先")&&!user.contains("直接生成")){return("你希望面向什么学习程度？篇幅、题量或使用场景有什么要求？",None)}
         var kind="lecture";for(k in ["practice","quiz","ppt"]){if(system.contains("\"kind\":\""+k+"\"")){kind=k}}
         let args=JsonObject();args.put("kind",JsonString(kind));args.put("topic",JsonString("工具调用"));args.put("detail",JsonString("concise"));args.put("count",JsonInt(3));let function=JsonObject();function.put("name",JsonString("generate_learning_resource"));function.put("arguments",JsonString(args.toString()));let call=JsonObject();call.put("index",JsonInt(0));call.put("id",JsonString(courseId("call-")));call.put("type",JsonString("function"));call.put("function",function);return("",Some(call))
@@ -74,7 +77,7 @@ func fixtureReply(b: JsonObject): (String,?JsonObject){
 public func seedCourseFixture(dir: String): Unit{
     let db=DbHub.open(dir);if(db.scalarInt("SELECT COUNT(*) FROM knowledge_bases",ArrayList<DbValue>())>0||db.scalarInt("SELECT COUNT(*) FROM sessions",ArrayList<DbValue>())>0){throw Exception("course夹具只允许在空数据目录启动")}
     let mock=ServerBuilder().addr("127.0.0.1").port(0).build();mock.distributor.register("/v1/chat/completions",{ctx: HttpContext=>
-        let b=objOf(JsonValue.fromStr(readAllString(ctx.request.body))).getOrThrow();let kind=fixtureKindOf(b);fixtureBegin(kind);if(fixtureDelayMs>0&&kind!="other"){sleep(Duration.millisecond*fixtureDelayMs)}
+        let b=objOf(JsonValue.fromStr(readAllString(ctx.request.body))).getOrThrow();let kind=fixtureKindOf(b);fixtureBegin(kind);if(fixtureDelayMs>0){sleep(Duration.millisecond*fixtureDelayMs)}
         let (text,call)=fixtureReply(b);fixtureEnd(dir);let delta=JsonObject();delta.put("role",JsonString("assistant"));match(call){case Some(c)=>let calls=JsonArray();calls.add(c);delta.put("tool_calls",calls);case None=>delta.put("content",JsonString(text))};let choice=JsonObject();choice.put("index",JsonInt(0));choice.put("delta",delta);let choices=JsonArray();choices.add(choice);let response=JsonObject();response.put("id",JsonString(courseId("response-")));response.put("choices",choices)
         let first=response.toString();let end=JsonObject();end.put("index",JsonInt(0));end.put("delta",JsonObject());end.put("finish_reason",JsonString(if(call.isSome()){"tool_calls"}else{"stop"}));let ends=JsonArray();ends.add(end);response.put("choices",ends);let usage=JsonObject();usage.put("prompt_tokens",JsonInt(Int64(b.toString().size/4)+12));usage.put("completion_tokens",JsonInt(Int64(text.size/4)+8));response.put("usage",usage)
         ctx.responseBuilder.status(200);ctx.responseBuilder.header("Content-Type","text/event-stream");ctx.responseBuilder.body(("data: "+first+"\n\ndata: "+response.toString()+"\n\ndata: [DONE]\n\n").toArray())

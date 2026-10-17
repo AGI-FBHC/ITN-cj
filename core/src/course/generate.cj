@@ -134,6 +134,18 @@ public class CourseJobs {
             db().run("INSERT INTO course_jobs VALUES (?,?,'running',?,?)",va([tv(id),tv(kb),tv(o.toString()),tv(stamp())]));o.put("status",JsonString("running"));return o
         }
     }
+    /** 正在运行的导图任务（任务中心）。 */
+    public func active(): JsonArray{
+        let out=JsonArray()
+        for(r in db().querySql("SELECT id FROM course_jobs WHERE status='running' ORDER BY created_at DESC")){let j=read(r.text(0));if(strOf(j,"status")=="running"){out.add(j)}}
+        return out
+    }
+    /** 最近结束的导图任务。 */
+    public func recent(limitIn: Int64): JsonArray{
+        let limit=if(limitIn>0&&limitIn<20){limitIn}else{5};let out=JsonArray()
+        for(r in db().query("SELECT id FROM course_jobs WHERE status<>'running' ORDER BY created_at DESC LIMIT ?",va([nv(limit)]))){out.add(read(r.text(0)))}
+        return out
+    }
     public func cancel(id: String): JsonObject{synchronized(jobLock){cancelled.add(id)};let o=read(id);if(strOf(o,"status")=="running"){write(id,"cancelled","已取消，旧导图保持原样","")};return read(id)}
     private func isCancelled(id: String): Bool{synchronized(jobLock){return cancelled.contains(id)}}
     /** 读-改-写整段持锁：并行 worker 同时汇报进度时不会互相覆盖。 */

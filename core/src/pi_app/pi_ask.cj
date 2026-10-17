@@ -448,6 +448,7 @@ public class PiAgent {
         for(d in presentationTools(store,sid,turnId,question,{ => sessionHub().isAborted(sid) },{kind: String,payload: JsonObject => log(kind,payload)})){defs.add(d)}
         for(d in personalTools(store,sid,turnId,question)){defs.add(d)}
         for(d in courseTools(store,sid,question)){defs.add(d)}
+        for(d in taskTools(store,sid,question)){defs.add(d)}
         let originalWorkspace=match(work){case Some(w)=>w.dir;case None=>""}
         for(d in knowledgeTools(store,sid,turnId,question,originalWorkspace,{kind: String,payload: JsonObject=>log(kind,payload)})){defs.add(d)}
         let registry = piRegistryOf(defs, records)

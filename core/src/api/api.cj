@@ -2,11 +2,13 @@ package itn_desktop_core.api
 
 import itn_desktop_core.learning.*
 import itn_desktop_core.course.*
+import itn_desktop_core.pi_app.TaskFeed
 import itn_desktop_core.project.ProjectStore
 import itn_desktop_core.presentation.DesktopJobs
 import itn_desktop_core.personal.PersonalStore
 import itn_desktop_core.knowledge.KnowledgeStore
 import itn_desktop_core.agent.learningTools
+import itn_desktop_core.pi_app.taskTools
 import itn_desktop_core.agent.sharedSkillRoots
 import itn_desktop_core.agent.userHomeDir
 import itn_desktop_core.pi_tools.DraftStore
@@ -130,6 +132,18 @@ public class Api {
     func route(ctx: HttpContext): Unit {
         let path = ctx.request.url.path
         let method = ctx.request.method
+
+        if (path == "/api/tasks/list" && method == "POST") {
+            ok(ctx, TaskFeed(store).list())
+            return
+        }
+        if (path == "/api/tasks/cancel" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => try { ok(ctx, TaskFeed(store).cancel(strOf(b, "id"))) } catch (e: Exception) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
 
         if(hasPrefix(path,"/api/course/")&&method=="POST"){
             match(bodyJson(ctx)){
@@ -1322,6 +1336,15 @@ public class Api {
                 }
             }
             for (d in learningTools(store, "", { => false }, "", "", "", { kind: String, payload: JsonObject => () })) {
+                let t = JsonObject()
+                t.put("name", JsonString(d.name))
+                t.put("title", JsonString(d.label))
+                t.put("desc", JsonString(d.description))
+                t.put("usage", JsonString(d.schema))
+                t.put("available", JsonBool(true))
+                arr.add(t)
+            }
+            for (d in taskTools(store, "", "")) {
                 let t = JsonObject()
                 t.put("name", JsonString(d.name))
                 t.put("title", JsonString(d.label))
@@ -2919,7 +2942,7 @@ func contentTypeOf(name: String): String {
 /* 界面静态资源白名单：serveStatic 校验与静态路由注册共用这一份。
    曾经是两份清单（白名单一份、路由注册一份），新增 studyplayer.js 时只改了一份 → 页面 404。
    只留一个来源，杜绝再次走偏。 */
-let uiAssets = ["index.html", "app.js", "style.css", "workbench.js", "workbench.css", "coursemap.js", "coursemap.css", "studyplayer.js", "studyplayer.css", "release.json",
+let uiAssets = ["index.html", "app.js", "style.css", "workbench.js", "workbench.css", "coursemap.js", "coursemap.css", "studyplayer.js", "studyplayer.css", "tasks.js", "tasks.css", "release.json",
     "logo-mark.png", "logo-light.png", "logo-dark.png"]
 
 func serveStatic(ctx: HttpContext, uiDir: String, rel: String): Unit {
@@ -3099,6 +3122,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
     let api = Api(Store(dataDir))
     // 默认分发器按精确路径匹配，所有路由必须显式注册
     let routes = [
+        "/api/tasks/list", "/api/tasks/cancel",
         "/api/course/state", "/api/course/generate", "/api/course/job", "/api/course/cancel", "/api/course/map",
         "/api/course/publish", "/api/course/history", "/api/course/node", "/api/course/start", "/api/course/target",
         "/api/course/commit", "/api/course/resources", "/api/course/resource", "/api/course/resource/action",

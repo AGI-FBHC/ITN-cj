@@ -32,6 +32,15 @@ public class SessionHub {
         }
     }
 
+    /** 当前所有在跑的会话 id（任务中心用来枚举进行中的对话轮次）。 */
+    public func activeSessionIds(): ArrayList<String> {
+        synchronized(lock) {
+            let out = ArrayList<String>()
+            for ((sid, _) in activeTurns) { out.add(sid) }
+            return out
+        }
+    }
+
     public func activeTurn(sessionId: String): String {
         synchronized(lock) { return activeTurns.get(sessionId).getOrDefault({ => "" }) }
     }

@@ -186,17 +186,58 @@ PAGE_META.learn.title='学 · 练';PAGE_META.learn.sub='从知识库的思维导
 
 PAGES.report.render=async function(){
   const generation=state.navigationGeneration;await loadCfg();courseUi.kb=state.kb;const view=$('view');view.replaceChildren();const root=el('div','course-growth');view.appendChild(root);
-  const toolbar=el('div','course-toolbar'),label=el('label','course-library-label','知识库'),selector=kbSelector(()=>go('report'));selector.setAttribute('aria-label','选择成长知识库');label.appendChild(selector);toolbar.appendChild(label);root.appendChild(toolbar);
+  const toolbar=el('div','course-growth-toolbar'),label=el('label','course-library-label','知识库'),selector=kbSelector(()=>go('report'));selector.setAttribute('aria-label','选择成长知识库');label.appendChild(selector);
+  const scope=el('span','course-growth-scope');scope.innerHTML=icon('shield')+'<span>只统计本人标记与首次作答</span>';toolbar.append(label,scope);root.appendChild(toolbar);
   if(!state.kb){root.appendChild(emptyState({art:'db',title:'还没有学习记录',text:'先选择知识库、生成思维导图，再开始学习。',actions:[btn('去学 · 练','primary',()=>go('learn'))]}));return;}
   const data=await courseApi('report',{kbId:state.kb});if(generation!==state.navigationGeneration)return;
-  const next=(data.nodes||[]).find(n=>n.depth>1&&!n.done&&(n.resources||[]).length)||(data.nodes||[]).find(n=>n.depth>1&&!n.done);
-  const hero=el('section','course-growth-hero');hero.append(el('h2',null,next?'接着学「'+next.title+'」':data.totalNodes?'这一张导图的节点已全部标记学完':'从思维导图开始自己的学习路径'),el('p','muted',data.completedNodes+' / '+data.totalNodes+' 个节点本人标记学完 · '+data.quizAttempts+' 次首次作答，答对 '+data.quizCorrect+' 次'));
-  hero.appendChild(btn(next?'继续这个节点':'去学 · 练','primary',async()=>{await go('learn');if(next)await openCourseNode(next.id);}));root.appendChild(hero);
-  const sections=el('div','course-growth-columns'),progress=el('section','course-growth-panel'),history=el('section','course-growth-panel');progress.appendChild(el('h3',null,'各节点学到哪里了'));history.appendChild(el('h3',null,'真实学习记录'));
-  for(const n of (data.nodes||[]).filter(n=>n.depth>1)){const row=btn('','course-growth-node',async()=>{await go('learn');await openCourseNode(n.id);});row.append(el('strong',null,n.title),el('span','muted sm',(n.done?'本人标记学完':'还没标记学完')+' · '+(n.resources||[]).length+' / 4 份资源'),el('span','sm',n.quizAttempts?'本节点当前资源首次作答 '+n.quizCorrect+' / '+n.quizAttempts:'还没有当前资源的测验依据'));progress.appendChild(row);}
-  if(!data.nodes?.length)progress.appendChild(el('p','muted','先在学·练生成思维导图。'));
-  const days=el('select');days.setAttribute('aria-label','学习记录时间范围');for(const[n,label]of[[7,'近7天'],[30,'近30天'],[0,'全部时间']])days.appendChild(option(String(n),label));history.appendChild(days);const list=el('div');history.appendChild(list);
-  const paint=()=>{list.replaceChildren();const limit=Number(days.value),cutoff=Date.now()-limit*86400000;const events=(data.history||[]).filter(e=>!limit||Date.parse(e.at)>=cutoff).sort((a,b)=>Date.parse(b.at)-Date.parse(a.at)).slice(0,100);for(const e of events){const row=el('article','course-history-row');const text=e.kind==='quiz'?(e.correct?'答对':'答错')+(e.firstAttempt?' · 首次作答':' · 复习作答'):(e.done?'本人标记完成':'本人撤销完成标记');row.append(el('strong',null,e.title||'学习记录'),el('span','muted sm',e.at),el('p',null,text));list.appendChild(row);}if(!events.length)list.appendChild(el('p','muted','这个时间范围还没有记录，归档与恢复不会凭空增加作答次数。'));};days.onchange=paint;paint();sections.append(progress,history);root.append(sections,el('p','course-growth-basis',data.basis));
-  const memories=el('details','course-growth-memories');memories.append(el('summary',null,'我的目标与学习记忆'));const context=await api('/api/learning/context',{kbId:state.kb});for(const memory of context.memories||[])memories.appendChild(el('p',null,memory.text));memories.appendChild(btn('管理学习记忆','ghost sm',()=>go('settings','memory')));root.appendChild(memories);
+  const nodes=(data.nodes||[]).filter(n=>n.depth>1),next=nodes.find(n=>!n.done&&(n.resources||[]).length)||nodes.find(n=>!n.done);
+  const totalResources=nodes.reduce((sum,n)=>sum+(n.resources||[]).length,0),completion=data.totalNodes?Math.round(Number(data.completedNodes||0)/Number(data.totalNodes)*100):0,accuracy=Number(data.quizAttempts)>0?Math.round(Number(data.quizCorrect||0)/Number(data.quizAttempts)*100):null;
+  const hero=el('section','course-growth-hero'),intro=el('div','course-growth-intro');
+  const eyebrow=el('div','course-growth-eyebrow');eyebrow.innerHTML='<span></span>LEARNING JOURNEY';intro.appendChild(eyebrow);
+  intro.appendChild(el('h2',null,next?'继续学「'+next.title+'」':data.totalNodes?'这一张导图已经走完一轮':'从思维导图开始自己的学习路径'));
+  intro.appendChild(el('p','course-growth-lede',data.completedNodes+' / '+data.totalNodes+' 个节点本人标记学完 · '+data.quizAttempts+' 次首次作答，答对 '+data.quizCorrect+' 次'));
+  const hint=next?(next.quizAttempts?'这个节点已有首次作答依据，下一步可以复习错题或继续下一个概念。':'这个节点还没有测验依据，学完后用分阶测试留下真实记录。'):(data.totalNodes?'可以回看节点、复习测验，或回到学·练调整导图。':'先在学·练生成一张导图，成长页会按你的真实学习行为自动汇总。');
+  intro.appendChild(el('p','course-growth-context',hint));
+  const actions=el('div','course-growth-actions');actions.append(btn(next?'继续这个节点':'去学 · 练','primary',async()=>{await go('learn');if(next)await openCourseNode(next.id);}),btn('打开学 · 练','ghost',()=>go('learn')));intro.appendChild(actions);
+  const ring=el('div','course-growth-ring');ring.style.setProperty('--progress',completion+'%');ring.append(el('strong',null,completion+'%'),el('span',null,'节点完成'));hero.append(intro,ring);
+  const stats=el('div','course-growth-stats');
+  for(const spec of [
+    ['target','节点进度',data.completedNodes+' / '+data.totalNodes,'本人标记学完','violet'],
+    ['check','首次作答',String(data.quizAttempts||0),'答对 '+Number(data.quizCorrect||0)+' 次','green'],
+    ['chart','作答正确率',accuracy==null?'—':accuracy+'%',accuracy==null?'还没有首次作答':'按首次作答计算','amber'],
+    ['layers','当前学习资源',String(totalResources),'分布在各学习节点','blue']
+  ]){const card=el('article','course-growth-stat '+spec[4]),top=el('div','course-growth-stat-top'),ic=el('span','course-growth-stat-icon');ic.innerHTML=icon(spec[0]);top.append(ic,el('span',null,spec[1]));card.append(top,el('strong',null,spec[2]),el('small',null,spec[3]));stats.appendChild(card);}
+  hero.appendChild(stats);root.appendChild(hero);
+  const sections=el('div','course-growth-columns'),progress=el('section','course-growth-panel course-growth-nodes'),history=el('section','course-growth-panel course-growth-history');
+  const npHead=el('div','course-growth-panel-head'),npTitle=el('div','course-growth-panel-title');npTitle.innerHTML='<span class="course-growth-kicker">MAP PROGRESS</span><h3>节点学习进度</h3>';npHead.append(npTitle,el('span','course-growth-count',nodes.length+' 个节点'));progress.appendChild(npHead);
+  for(const n of nodes){
+    const resources=n.resources||[],row=btn('','course-growth-node'+(n.done?' is-done':''),async()=>{await go('learn');await openCourseNode(n.id);});row.setAttribute('aria-label','打开节点：'+n.title);
+    const top=el('div','course-growth-node-top'),mark=el('span','course-growth-node-mark');mark.innerHTML=icon(n.done?'check':'target');
+    const title=el('div','course-growth-node-title');title.append(el('strong',null,n.title),el('span','muted sm',n.done?'本人已标记学完':'待继续学习'));
+    const badge=el('span','course-growth-node-state'+(n.done?' done':''),n.done?'已完成':'进行中');top.append(mark,title,badge);
+    const slots=el('div','course-growth-slots');for(const[kind,label,ic]of COURSE_KINDS){const found=resources.find(r=>r.kind===kind);const slot=el('span','course-growth-slot'+(found?' has':''));slot.title=label+(found?' · 已收录':' · 未收录');slot.innerHTML=icon(ic)+'<em>'+label+'</em>';slots.appendChild(slot);}
+    const quiz=el('span','course-growth-evidence',n.quizAttempts?'首次作答 '+n.quizCorrect+' / '+n.quizAttempts:'还没有当前资源的测验依据');quiz.classList.toggle('ready',!!n.quizAttempts);
+    row.append(top,slots,quiz);progress.appendChild(row);
+  }
+  if(!nodes.length){const empty=el('div','course-growth-node-empty');empty.innerHTML=icon('layers');empty.append(el('strong',null,'还没有可统计的学习节点'),el('p','muted','先到学·练生成思维导图，再开始记录。'),btn('去生成导图','primary sm',()=>go('learn')));progress.appendChild(empty);}
+  const hiHead=el('div','course-growth-panel-head'),hiTitle=el('div','course-growth-panel-title');hiTitle.innerHTML='<span class="course-growth-kicker">LEARNING TRAIL</span><h3>学习足迹</h3>';hiHead.appendChild(hiTitle);const days=el('select','course-growth-days');days.setAttribute('aria-label','学习记录时间范围');for(const[n,label]of[[7,'近 7 天'],[30,'近 30 天'],[0,'全部时间']])days.appendChild(option(String(n),label));hiHead.appendChild(days);history.appendChild(hiHead);const list=el('div','course-growth-timeline');history.appendChild(list);
+  const dayKey=e=>{const d=new Date(e.at);return Number.isNaN(d.getTime())?'更早':d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+  const dayLabel=key=>{if(key==='更早')return key;const d=new Date(key+'T00:00:00'),now=new Date(),today=new Date(now.getFullYear(),now.getMonth(),now.getDate()),diff=Math.round((today-d)/86400000);if(diff===0)return '今天';if(diff===1)return '昨天';return d.toLocaleDateString('zh-CN',{month:'long',day:'numeric',weekday:'short'})};
+  const paint=()=>{
+    list.replaceChildren();const limit=Number(days.value),cutoff=Date.now()-limit*86400000;
+    const events=(data.history||[]).map(e=>({...e,time:Date.parse(e.at)})).filter(e=>!limit||(Number.isFinite(e.time)&&e.time>=cutoff)).sort((a,b)=>(b.time||0)-(a.time||0)).slice(0,100),groups=new Map();
+    for(const e of events){const key=dayKey(e);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(e);}
+    for(const[key,items]of groups){const day=el('section','course-growth-day'),head=el('header','course-growth-day-head');head.append(el('strong',null,dayLabel(key)),el('span',null,key==='更早'?'无日期记录':new Date(key+'T00:00:00').toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'})));day.appendChild(head);
+      for(const e of items){const label=e.kind==='quiz'?(e.correct?'答对':'答错')+(e.firstAttempt?' · 首次作答':' · 复习作答'):(e.done?'标记节点学完':'撤销完成标记');const tone=e.kind==='quiz'?(e.correct?'good':'bad'):(e.done?'good':'neutral');const item=el('article','course-history-row '+tone),dot=el('span','course-growth-dot');dot.innerHTML=icon(e.kind==='quiz'?(e.correct?'check':'alert'):'book');const body=el('div','course-growth-event');body.append(el('strong',null,e.title||'学习记录'),el('span','muted sm',label),el('time',null,Number.isFinite(e.time)?new Date(e.time).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}):''));item.append(dot,body);day.appendChild(item);}
+      list.appendChild(day);
+    }
+    if(!events.length){const empty=el('div','course-growth-history-empty');empty.innerHTML=icon('clock');empty.append(el('strong',null,'这个时间范围还没有学习记录'),el('p','muted','开始一个节点或完成一次首次作答后，这里会按日期留下真实足迹。'));list.appendChild(empty);}
+  };
+  days.onchange=paint;paint();sections.append(progress,history);root.appendChild(sections);
+  if(data.basis){const basis=el('p','course-growth-basis');basis.innerHTML=icon('shield')+'<span></span>';basis.lastChild.textContent=data.basis;root.appendChild(basis);}
+  const memories=el('details','course-growth-memories'),sum=el('summary');sum.innerHTML=icon('target')+'<span>我的目标与学习记忆</span>';memories.appendChild(sum);let context={memories:[]};try{context=await api('/api/learning/context',{kbId:state.kb});}catch(e){}if(generation!==state.navigationGeneration)return;
+  const memoryWrap=el('div','course-growth-memory-list');if(!(context.memories||[]).length)memoryWrap.appendChild(el('p','muted','还没有写入学习目标或偏好。'));
+  for(const memory of context.memories||[]){const item=el('p','course-growth-memory');item.innerHTML=icon('pencil')+'<span></span>';item.lastChild.textContent=memory.text;memoryWrap.appendChild(item);}
+  memoryWrap.appendChild(btn('管理学习记忆','ghost sm',()=>go('settings','memory')));memories.appendChild(memoryWrap);root.appendChild(memories);
 };
 PAGE_META.report.title='我的成长';PAGE_META.report.sub='看真实学习记录，决定接下来学什么';

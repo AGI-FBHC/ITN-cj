@@ -7,11 +7,40 @@ import std.fs.*
 import stdx.encoding.json.*
 import itn_desktop_core.db.*
 import itn_desktop_core.util.*
+import itn_desktop_core.kb.stamp
 
 public class DesktopJobs {
     let dataDir: String
     public init(dataDir: String) { this.dataDir = dataDir }
     func db(): Db { return DbHub.open(dataDir) }
+    /** 正在排队或执行中的桌面任务（任务中心）。 */
+    public func active(): JsonArray {
+        let out = JsonArray()
+        for (r in db().querySql("SELECT id,kind,status,body FROM desktop_jobs WHERE status IN ('pending','running') ORDER BY created_at DESC")) {
+            let o = JsonObject()
+            o.put("id", JsonString(r.text(0)))
+            o.put("kind", JsonString(r.text(1)))
+            o.put("status", JsonString(r.text(2)))
+            try { o.put("body", JsonValue.fromStr(r.text(3))) } catch (e: Exception) { o.put("body", JsonObject()) }
+            out.add(o)
+        }
+        return out
+    }
+    /** 最近结束的桌面任务。 */
+    public func recent(limitIn: Int64): JsonArray {
+        let limit = if (limitIn > 0 && limitIn < 20) { limitIn } else { 5 }
+        let out = JsonArray()
+        for (r in db().query("SELECT id,kind,status,body,created_at FROM desktop_jobs WHERE status IN ('completed','failed','cancelled') ORDER BY created_at DESC LIMIT ?", va([nv(limit)]))) {
+            let o = JsonObject()
+            o.put("id", JsonString(r.text(0)))
+            o.put("kind", JsonString(r.text(1)))
+            o.put("status", JsonString(r.text(2)))
+            try { o.put("body", JsonValue.fromStr(r.text(3))) } catch (e: Exception) { o.put("body", JsonObject()) }
+            o.put("createdAt", JsonString(r.text(4)))
+            out.add(o)
+        }
+        return out
+    }
     public func pending(): JsonArray {
         let out=JsonArray()
         for (r in db().querySql("SELECT id,kind FROM desktop_jobs WHERE status='pending' ORDER BY created_at LIMIT 8")) {
@@ -31,7 +60,7 @@ public class DesktopJobs {
     public func queueExtract(path: String,resourceId: String): String {
         let id="extract-"+Random().nextUInt64().toString();let body=JsonObject();body.put("inputPath",JsonString(path))
         body.put("resourceId",JsonString(resourceId))
-        db().run("INSERT INTO desktop_jobs(id,kind,status,body,result,error,created_at) VALUES (?,'extract','pending',?,'','','')",va([tv(id),tv(body.toString())]))
+        db().run("INSERT INTO desktop_jobs(id,kind,status,body,result,error,created_at) VALUES (?,'extract','pending',?,'','',?)",va([tv(id),tv(body.toString()),tv(stamp())]))
         return id
     }
     public func extractFile(path: String): JsonObject {
@@ -49,7 +78,7 @@ public class DesktopJobs {
         let dir=dataDir+Path.Separator+"drafts";ensureDir(dir)
         let path=dir+Path.Separator+id+".pptx"
         let body=JsonObject();body.put("id",JsonString(id));body.put("kind",JsonString("presentation"));body.put("spec",spec);body.put("outputPath",JsonString(path));body.put("sessionId",JsonString(sid));body.put("turnId",JsonString(tid))
-        db().run("INSERT INTO desktop_jobs(id,kind,status,body,result,error,created_at) VALUES (?,'presentation','pending',?,'','','')",va([tv(id),tv(body.toString())]))
+        db().run("INSERT INTO desktop_jobs(id,kind,status,body,result,error,created_at) VALUES (?,'presentation','pending',?,'','',?)",va([tv(id),tv(body.toString()),tv(stamp())]))
         var ticks=0
         while(ticks<600){
             if(shouldAbort()){db().run("UPDATE desktop_jobs SET status='cancelled' WHERE id=?",va([tv(id)]));throw Exception("已取消PPT制作")}
