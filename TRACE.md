@@ -4508,6 +4508,7 @@ read_chunk 读得到原文并带回库标识与正文。
   - `ui-audit`：空数据 120/120；生产数据副本（含 71 节点导图、长会话）120/120。
   - `learning-check` 45/45；`tasks-check` 22/22；`growth-activity-check` 21/21；`course-check` 78/78；`session-switch-check` 12/12；`stop-check` 13/13；`attachments-check` 16/16；`knowledge-check` 92/92；`personal-check` 23/23；`pages-audit` 13/13；`nonchat-check` 25/25；`markdown-check` 14/14；`presentation-check` 9/9；`docx-check` 9/9；`deck-export-check` 9/9；`session-list-check` 10/10；`splash-check` 7/7；`tray-check` 4/4（单独跑；并行时 Electron GPU cache 锁会让它自身启动失败，非产品问题）；`busy-caret-check` 6/6；`palette-chip-check` 14/14；`scrollbar-check` 通过；`zh-audit` 通过。
   - 真实模型：`models/test`、`models/diagnose`、`models/vision-test`、`/api/chat`（含空 user）、真实上下文/闲聊/算数、`real-features` 的 chat/vision/knowledge/personal_search/skill_read_no_lock 均通过；不可达模型路径返回 502 可读错误。
+  - HTTP 错误矩阵：本地 mock 返回 401/429/500 时，models/test 与 chat 均为 502；Agent 保留 HTTP 200 + data.ok=false，事件不丢。
   - 发布包：`dist/Lumin-0.8.18` + `dist/Lumin-0.8.18-win-x64.zip`（215.4MB）；隔离空目录 `RESULT=OK`；15 项资产 SHA256 BAD=0。
 - 重要测试债务：
   - `tools/ui-e2e.cjs` 仍按旧版六入口 IA（“学习中心/智能体工作台/会话记录”）以及旧页面断言，首步就失败；本轮没有把它冒充通过。现行 IA 为 5 入口（对话/学习/知识库/成果/设置），当前回归以 `ui-audit` + `pages-audit` + `nonchat` + 各专项套件为准。后续恢复该单体脚本需按现行 IA 重写。
