@@ -4410,3 +4410,24 @@ read_chunk 读得到原文并带回库标识与正文。
   - 回归：course-check 78/78；course-speed-check 18/18；pages-audit 13/13；knowledge-check 92/92；knowledge-hit-check 281/281；session-switch 12/12；stop-check 13/13；nonchat 25/25；palette 14/14；learning 45/45；presentation 9/9；skill-check 全过（技能目录实际列出 24 个内置技能，不再是此前提到的 2 个）。
   - 发布：版本 0.8.13→0.8.14（提交 99bfeaa）；dist/Lumin-0.8.14 + zip（190.3MB）；release manifest 15 项资产 SHA256 BAD=0；隔离冒烟 STATUS=Lumin 0.8.14 · 已连接、RESULT=OK；启动Lumin.cmd 指向 0.8.14。
   - 本轮未重复消耗真实模型额度；导图真实模型性能与质量沿用 0.8.13 的 8/8、339 秒日志。两份未跟踪调研稿 docs/知识库改进清单-v2.md、docs/非对话页面改造方案-v1.md 继续保持不跟踪。
+## 2026-10-17 · 学习活跃度网格 + 成长页去仪表盘化（0.8.15）
+- 用户先要求参考 GitHub 活跃度网格，方案交流中明确否定第一版“大 Hero + 完成环 + 四张统计卡”太像 AI 仪表盘；最终批准 V2：顶部改为紧凑“继续学习”状态条，活跃度网格作为主视觉，保留现有节点进度和学习足迹。
+- 方案按既有约定先做可点击预演和截图 QA：`C:\Users\GeJie\.codex\visualizations\2026\10\17\01a14383-0c3f-7642-af95-0cb85fb3bd94\growth-activity-plan-v2.html`（V1 保留对照）。V2 预演 13/13：53/26 周、日明细 tooltip、点击日筛选、深浅色对比、390px 无横向溢出、无 JS 异常。
+- 内核实现（feature 提交 3b59bae）：
+  - 新增 `core/src/course/activity.cj`，只读复用 `learning_events` 与 `course_events`，不新增表。窗口为当前周周一向前 52 周，共 53 周。
+  - 计数规则：每次 quiz 作答计 1；completion 只计 done=true，同一 resource/version/item/date 去重；node-complete 只计 done=true，同一 node/date 去重。撤销、生成资源、打开页面、模型调用都不计活跃。
+  - `/api/course/report` 新增 `activity{from,to,total,activeDays,currentStreak,longestStreak,days[]}`；`days` 稀疏返回有活动的日期及 quiz/node/completion 分解。
+  - 新增 Lumin 只读工具 `get_learning_activity {kbId}`，界面与 Agent 共用仓颉聚合；说明明确活跃度不等于掌握度/学习时长。
+  - 修复历史事件丢字段：report history 现在带回 `correct/firstAttempt`，时间轴不再把答对首次作答误显示成“答错 · 复习作答”。
+- 新增原生夹具 `core/src/dev/activity_fixture.cj` + 启动参数 `--seed-growth-activity`：造跨 200 天事件、重复 completion、撤销事件和 400 天窗口外事件；预期 7 个活跃日、当前/最长连续 3、总证据 23。
+- 产品 UI（同提交）：
+  - 删除旧 `course-growth-hero`、完成环和四张统计卡；改为紧凑继续学习条：知识库路径、当前节点、上次学习、线性节点进度、当前节点资源/首次作答、进入学·练。
+  - 新增学习活跃度面板：桌面 53 周、窄屏 26 周；五级主题色、月份/星期标签、今天描边、hover/focus 日明细；点击日期筛选学习足迹，再点日期 chip 清除。
+  - 活跃度摘要改为一行文本（活跃天数/连续/最长/证据数）；窄屏按可见 26 周重新汇总，桌面使用仓颉 53 周汇总。节点/足迹区块去掉英文大写眉题，降低模板感。
+  - 产品截图：`tmp/course-shots/growth-activity-v2-light.png`、`growth-activity-v2-dark.png`、`growth-activity-v2-mobile.png`，浅/深/窄屏均目视复核。
+- 验证：
+  - `cjpm test` **154/154**；新增活跃度单测覆盖重复/撤销去重、23 条证据、7 活跃日、连续 3 天、日期跨闰年与跨年。
+  - 新增 `tools/growth-activity-check.cjs` **18/18，连续两遍稳定**：真仓颉夹具 + 真 HTTP + mock Agent + Playwright；验证窗口外排除、重复/撤销不计数、Agent 真调用 `get_learning_activity`、V2 无大 Hero、371/182 格、tooltip、日筛选、时间轴事件分类、深色对比、窄屏无溢出。
+  - 回归：course-check **78/78**；course-speed-check **18/18**；learning/workbench **45/45**；tasks-check **22/22**；pages-audit **13/13**；nonchat **25/25**。
+  - 发布：0.8.14→**0.8.15**（release 提交 6765a83）；`dist/Lumin-0.8.15` + zip（190.3MB）；15 项资产 SHA256 BAD=0；隔离冒烟 `Lumin 0.8.15 · 已连接`、`RESULT=OK`；启动Lumin.cmd 指向 0.8.15。
+  - 未重复消耗真实模型额度；活跃度只反映已有真实事件，不宣称学习时长或掌握度。两份未跟踪调研稿继续保持不跟踪。
