@@ -281,11 +281,15 @@ public class Api {
         if (path == "/api/models/vision-test" && method == "POST") {
             match (chatModelOf(store)) {
                 case Some(cfg) =>
-                    let reply = LlmClient(cfg).chatVision(cfg.model, "请读取图片中央的验证码，只输出验证码，不要猜测。", visionProbeImage())
-                    let passed = reply.replace(" ", "").replace("-", "").contains("K7P4")
-                    let o = JsonObject(); o.put("supported", JsonBool(passed)); o.put("model", JsonString(cfg.model))
-                    o.put("reason", JsonString(if (passed) { "当前对话模型已通过图片识别测试" } else { "当前对话模型未通过图片识别测试，请在设置中选择支持图片的模型" }))
-                    ok(ctx, o)
+                    try {
+                        let reply = LlmClient(cfg).chatVision(cfg.model, "请读取图片中央的验证码，只输出验证码，不要猜测。", visionProbeImage())
+                        let passed = reply.replace(" ", "").replace("-", "").contains("K7P4")
+                        let o = JsonObject(); o.put("supported", JsonBool(passed)); o.put("model", JsonString(cfg.model))
+                        o.put("reason", JsonString(if (passed) { "当前对话模型已通过图片识别测试" } else { "当前对话模型未通过图片识别测试，请在设置中选择支持图片的模型" }))
+                        ok(ctx, o)
+                    } catch (e: Exception) {
+                        fail(ctx, 502, "视觉测试失败：" + e.message)
+                    }
                 case None => fail(ctx, 400, "请先配置对话模型")
             }
             return

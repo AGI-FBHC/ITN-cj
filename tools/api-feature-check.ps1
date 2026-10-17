@@ -158,6 +158,13 @@ try {
     Check '新建分支会话可删除' ($delSession.status -eq 200 -and $delSession.code -eq 0)
     $taskBad = Api '/api/tasks/cancel' @{ id = 'not-a-task' }
     Check '未知任务取消失败但不 500' ($taskBad.status -lt 500)
+
+    Ok (Api '/api/models/save' @{ id = 'unreachable'; name = '不可达模型'; baseUrl = 'http://127.0.0.1:1/v1'; apiKey = 'test-only'; model = 'bad' }) 'models/save unreachable'
+    Ok (Api '/api/models/roles' @{ chatModelId = 'unreachable' }) 'models/roles unreachable'
+    $visionBad = Api '/api/models/vision-test' @{}
+    Check '视觉测试连接失败返回可读 502' ($visionBad.status -eq 502 -and $visionBad.message -match '视觉测试失败') $visionBad.message
+    $chatBad = Api '/api/chat' @{ user = '你好' }
+    Check '普通对话连接失败返回可读 502' ($chatBad.status -eq 502 -and $chatBad.message -match '模型调用失败') $chatBad.message
 } catch {
     $script:failed++
     Write-Output ('FAIL  ' + $_.Exception.Message)
