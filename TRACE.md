@@ -4517,3 +4517,31 @@ read_chunk 读得到原文并带回库标识与正文。
 - 后续接手建议：先读本 TRACE 末尾、`docs/15` 执行报告和 `tmp/audit/api-route-smoke.json`；再从 `api-feature-check`、`ui-audit`、`learning-check`、`course-check`、`real-ctx-check` 开始，不要先重跑大库或旧 `ui-e2e`。
 
 - 文档提交：3efb2a6（完整验收/债务）、e33a8e（错误矩阵与工具数量口径）；最终包 dist/Lumin-0.8.18/release.json 的 sourceCommit 为 637816，15 项资产哈希 BAD=0。
+
+## 2026-10-18 · PPT 固定子 Agent + 知识网络拖动修复（0.8.19）
+- 用户要求：先完成上一会话未完成的 PPT 子 Agent/真实 PPTX 生成任务，然后修复知识网络节点文字上开始拖动时会选中文字、无法拖动的问题。
+- 功能提交：`bfe92d3`（子 Agent、渲染器、运行时、后台工具、UI、导图修复、测试）；发布准备提交：`2d15af4`（启动入口与 packaged smoke 环境变量）。未跟踪的 `docs/知识库改进清单-v2.md`、`docs/非对话页面改造方案-v1.md` 按要求继续保留，不纳入本次提交。
+- PPT 子 Agent：
+  - 新增 `core/src/agent/presentation_agent.cj`，固定流水线为需求归一化 → 真实对话模型结构化提纲 → 校验页数与每页标题 → 随包 python-pptx 渲染 → 候选产物；模型不自由编排流程。
+  - `create_presentation` 接受 `requirement/title/audience/purpose/style/backgroundStyle/language/slideCount/aspectRatio/detailLevel/includeSpeakerNotes/...`；带 `requirement` 的新请求走子 Agent，旧 `slides[]` 仍走兼容构建器。
+  - 修复 `slideCount` 为 JSON 整数时确认逻辑读不到值的问题；背景样式支持中文描述映射到内置背景族。
+  - 结果字段：`path/previewPath/designPath/slides/title/kinds/notes`；`previewPath` 统一为 `<候选>.pptx.preview.html`，桌面资源预览能直接找到；`designPath` 保存 `.json` 快照。
+  - 真实模型若输出页数不等于 `slideCount`，先做一次结构化修复请求；仍不一致则明确失败，不渲染坏结果。失败时提示不要复制/移动候选文件、不要调用 powershell。
+- 渲染器：
+  - 新增 `shell/renderer/ppt-renderer/`：`legacy_agent.py` 复用旧网页版排版引擎，`backgrounds.py` 本地背景选择，`render_ppt.py` 只接收已校验提纲并输出真实 `.pptx`、`.pptx.preview.html`、`.pptx.json`。
+  - 预览改为 16:9 幻灯片形态，包含封面/目录/章节页/正文卡片/代码/表格/讲者备注，不再像纯文本文档。
+  - 新增 `scripts/prepare-ppt-runtime.ps1`：下载/准备官方 embeddable Python 3.13.5 + `python-pptx==1.0.2`、`Pillow==11.1.0`、`lxml==5.3.0` 到忽略目录 `shell/renderer/ppt-renderer/python/`；打包脚本强制检查运行时，目标机器不需要预装 Python。
+  - Cangjie 调用 Python 时加 `-X utf8`，避免 Windows GBK stdout 破坏中文结果；本地运行时优先，开发态回退系统 python。
+- 知识网络拖动：
+  - `shell/renderer/coursemap.css` 对 stage/world/node 加 `user-select:none`，节点显示 grab 光标。
+  - `coursemap.js` 在拖动期间拦截 `selectstart`；无位移点击仍打开节点，拖动超过阈值仍平移。
+- 验证（命令与覆盖）：
+  - `cjpm test`：156/156 通过。
+  - `tools/presentation-check.cjs`：9/9；覆盖旧兼容链路、确认门槛、候选草稿、PPTX/备注/预览、PPT brief 6 个字段、对话产物卡。
+  - `tools/presentation-agent-check.cjs`：11/11，连续两轮 mock 子 Agent；覆盖页数精确校验、`rendered` 文件结构、notes、preview/design 伴随文件、候选不自动入库、预览形状。可用 `PRESENTATION_CORE_EXE`/`PRESENTATION_UI_DIR` 指向打包内核与 renderer 做隔离冒烟。
+  - `tools/real-ppt-check.cjs`：真实 `mimo-v2.6-flash`、隔离数据目录、两轮生成，9/9 checks；总耗时 508s；两轮实际均为 9 张 PowerPoint（6 个提纲页 + 3 个自动章节页）、9 份备注，内容长度 1212/1552 字符；PPTX 经 PowerPoint COM 导出 PNG 目视复核，产物在 `tmp/real-ppt-check/run1.pptx`、`run2.pptx`，截图在 `run1-shots-final/`、`run2-shots-final/`。
+  - `tools/course-check.cjs`：81/81；新增“从节点文字开始拖动时地图平移且无文字选中、拖动后点击仍可打开”的回归断言。
+  - `tools/ui-audit.cjs`：120 个页面/主题/尺寸组合，bad=0。
+  - `tools/deck-export-check.cjs`：全通过；`tools/knowledge-check.cjs`：92/92（确认导图/关系/笔记回归未被拖动修复影响）。
+  - 打包：`dist/Lumin-0.8.19` + `dist/Lumin-0.8.19-win-x64.zip`（244.9 MB）；`release.json` 19 项资产 SHA256 BAD=0，`sourceCommit=2d15af4`；使用打包内 `lumin-core.exe` + 渲染器跑 `presentation-agent-check` 11/11；`Lumin.exe --version` 退出码 0。
+- 交接：后续工作先看本段和 `docs/02-接口契约.md` 的 2026-10-18 PPT 子 Agent 段；真实模型测试会耗时数分钟且消耗额度，不要无目的重复。渲染器 Python 运行时不入 Git，重新打包前执行 `pwsh -File scripts/prepare-ppt-runtime.ps1`。
