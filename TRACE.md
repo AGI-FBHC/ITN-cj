@@ -4545,3 +4545,5 @@ read_chunk 读得到原文并带回库标识与正文。
   - `tools/deck-export-check.cjs`：全通过；`tools/knowledge-check.cjs`：92/92（确认导图/关系/笔记回归未被拖动修复影响）。
   - 打包：`dist/Lumin-0.8.19` + `dist/Lumin-0.8.19-win-x64.zip`（244.9 MB）；`release.json` 19 项资产 SHA256 BAD=0，`sourceCommit=2d15af4`；使用打包内 `lumin-core.exe` + 渲染器跑 `presentation-agent-check` 11/11；`Lumin.exe --version` 退出码 0。
 - 交接：后续工作先看本段和 `docs/02-接口契约.md` 的 2026-10-18 PPT 子 Agent 段；真实模型测试会耗时数分钟且消耗额度，不要无目的重复。渲染器 Python 运行时不入 Git，重新打包前执行 `pwsh -File scripts/prepare-ppt-runtime.ps1`。
+
+- 补充提交 `08a436a`：`detailLevel` 支持中文/英文归一化（精简/均衡/详细 → concise/balanced/detailed），准备运行时脚本增加仓库边界保护；重新打包后 `release.json` 的 `sourceCommit=08a436a`，19 项资产 SHA256 BAD=0，打包内核 + renderer 的 `presentation-agent-check` 11/11 通过。
