@@ -1,56 +1,75 @@
-# ITN-cj 仓颉版
+# ITN
 
-`main` 保存当前 20889 测试站点使用的完整源码，包含两条已集成的仓颉后端开发线和 React 前端：
+基于仓颉开发的 ITN（Intelligent Training Nexus）新版本，提供 Web 学习平台与本地桌面 Agent 工作台。
 
-- `zyqprojects`：数据/Agent API 层，直接访问 MySQL，并带 `/api/v1`、`/v1`、`/internal/v1` 转发网关。
-- `yjyprojects`：业务后端，覆盖认证、组织、管理员、学习者画像、成长报告等接口。
+本项目延续[原 ITN 项目](https://github.com/AGI-FBHC/ITN)的个性化学习与智能教培方向，使用仓颉开发服务端和桌面本地内核，并分别通过 React 网页和 Electron 桌面应用提供交互界面。
 
-## 目录
+## Web 与 Desktop
 
-| 路径 | 内容 |
-| --- | --- |
-| `src/`、`cjpm.toml` | zyq 的 Spire 服务（默认监听 `127.0.0.1:8100`） |
-| `backend-cj/` | yjy 的业务后端（独立 cjpm 工程） |
-| `deploy/` | 集成部署用的 compose、Nginx 配置 |
-| `frontend/` | React + TypeScript + Vite 前端，包含动态资源失败恢复修复和回归测试 |
+| | Web 网页版 | Desktop 桌面版 |
+| --- | --- | --- |
+| 使用方式 | 通过浏览器访问部署好的平台 | 在 Windows 本机运行桌面应用，应用名为 Lumin |
+| 使用场景 | 在线学习、训练与组织管理 | 个人学习、资料管理与本地 Agent 工作流 |
+| 运行组成 | React 前端、仓颉 API 与业务服务 | Electron 外壳、仓颉本地内核与 Lumin Agent 运行时 |
+| 数据存储 | 服务端 MySQL | 本机 SQLite、文件与会话记录 |
+| 模型接入 | 由服务端配置与接入 | 由用户配置模型接口 |
+| 开发入口 | [Web 说明](apps/web/README.md) | [Desktop 说明](apps/desktop/README.md) |
 
-## 运行关系
+### Web 网页版
+
+网页版提供学习内容、知识网络、笔记、错题和成长记录等入口，并通过服务端处理账号、组织、学习者画像与学习数据。仓颉服务承担 API 网关和业务处理，部分尚未迁移的 Agent 能力继续接入现有 Python 服务。
+
+### Desktop 桌面版
+
+桌面版面向个人学习与内容生成，将本地资料、知识库、对话、学习资源和学习记录组织在同一工作台。仓颉内核处理本地业务，Lumin 提供 Agent 执行能力，Electron 负责窗口、界面和系统集成。
+
+桌面端使用独立的本地数据目录。模型请求与联网操作仍可能把任务所需内容发送给用户配置的远程服务。产品定位与演进方向见 [Desktop 产品说明](apps/desktop/PRODUCT.md)。
+
+## 项目结构
 
 ```text
-浏览器 :20889
-  └─ Nginx
-       ├─ /            → 前端静态文件
-       └─ /api/v1 /v1 /internal/v1 → spire-api:8100（zyq）
-            ├─ 已迁移路由 → MySQL itn_cangjie_dev
-            ├─ 未迁移 /api/v1 → business-api:5000（yjy）
-            └─ 未迁移 /v1    → itn-agents-v2:8000（Python agents）
+ITN-cj/
+├── apps/
+│   ├── web/                 # React 网页前端
+│   └── desktop/             # 桌面应用
+│       ├── core/            # 仓颉本地业务内核
+│       ├── shell/           # Electron 外壳与界面
+│       ├── lumin/           # 仓颉 Agent 运行时
+│       ├── scripts/         # 构建与打包
+│       ├── tools/           # 检查与测试工具
+│       └── third_party/     # 桌面端依赖源码与许可
+├── services/
+│   ├── api/                 # 仓颉 API 与转发网关
+│   └── business/            # 仓颉业务服务
+├── deploy/
+│   └── web/                 # Web 部署配置
+├── docs/                    # 跨端架构与开发说明
+├── AGENTS.md                # 仓库协作约定
+└── TRACE.md                 # 操作与验证记录
 ```
 
-两套仓颉服务共用同一个 `JWT_SECRET`，数据库使用 `itn_cangjie_dev`。
-真实密钥只通过服务器上的 `0600` 环境文件注入，不进入 Git。
+## 开始开发
 
-## 前端开发与验证
+先检出仓库：
 
 ```bash
-cd frontend
-npm ci
-npm run dev
+git clone https://github.com/AGI-FBHC/ITN-cj.git
+cd ITN-cj
 ```
 
-生产构建和资源加载恢复测试：
+- **开发网页界面**：从 [apps/web/README.md](apps/web/README.md) 开始，配置后端地址后启动 Vite。
+- **开发桌面应用**：从 [apps/desktop/README.md](apps/desktop/README.md) 开始，准备仓颉工具链、构建本地内核并启动 Electron。
+- **开发服务端**：分别查看 [API 服务](services/api/README.md)和[业务服务](services/business/README.md)。
+- **部署网页版**：查看 [Web 部署说明](deploy/web/README.md)。
 
-```bash
-cd frontend
-node --test tests/chunkRecovery.test.mjs
-npx vite build
-```
+Web 服务端当前声明仓颉 SDK **1.1.3**，Desktop 内核与 Lumin 声明 **1.2.0**。各组件独立配置工具链和依赖；完整应用还需要对应界面运行时、数据库与模型服务。
 
-`npm run build` 还会运行全量 `tsc -b`，现有分支仍有历史类型错误；当前上线构建使用 `vite build`。构建输出为 `frontend/dist/`，不提交到 Git。
+## 文档
 
-## 本次纳入的版本
+- [整体架构](docs/architecture.md)
+- [开发与验证](docs/development.md)
+- [Desktop 产品定位](apps/desktop/PRODUCT.md)
+- [Desktop 使用说明](apps/desktop/docs/07-使用说明.md)
+- [原 ITN 仓库](https://github.com/AGI-FBHC/ITN)
 
-- 仓颉后端：`cangjie-integration` 的 `5b05a17`，已包含 zyq/yjy 合并及部署修复。
-- 网页前端：`front` 开发线的 `e00384c`，包含功能修复 `e1232b7`；通过 Git subtree 导入 `frontend/` 并保留原提交历史。
-- 开发分支继续保留；`main` 表示本次已部署版本，不自动包含开发分支后续新增的提交。
-
-部署方式见 [deploy/README.md](deploy/README.md)，操作和验收记录见根目录 `TRACE.md`；前端历史记录保留于 `frontend/TRACE.md`。
+当前仍在推进仓颉迁移与两端开发。已知构建限制和组件准备步骤写在各端 README 中，设计文档中的规划能力以对应实现和验证结果为准。

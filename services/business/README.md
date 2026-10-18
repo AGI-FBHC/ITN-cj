@@ -31,7 +31,7 @@
 
 先加载仓颉 SDK 环境，设置 `CANGJIE_STDX_PATH`，并将 STDX、OpenSSL、MySQL 客户端动态库目录加入系统动态库搜索路径。
 
-在 `src/backend-cj` 目录打开 PowerShell，执行：
+在仓库的 `services/business/` 目录打开 PowerShell 7，执行：
 
 ```powershell
 . .\load-db-env.ps1
@@ -41,7 +41,7 @@ cjpm run
 
 服务地址以启动输出为准。`cjpm.toml` 中的 MySQL 库路径需按本机安装目录调整。Linux 部署通过运行环境注入变量，不执行 PowerShell 加载脚本。
 
-## 旧前端连接
+## 网页前端连接
 
 - `VITE_API_PROXY_TARGET` 指向本业务服务。
 - `VITE_AGENT_BASE` 指向 Agent 服务。

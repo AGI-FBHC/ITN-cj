@@ -1,14 +1,12 @@
-# core —— 仓颉内核
+# Desktop 仓颉本地内核
 
-项目主体。计划中的模块：
+本工程使用仓颉 SDK 1.2.0，向 Electron 界面提供本地 HTTP 接口，处理知识库、会话、学习资源、画像和记忆等业务。SQLite 驱动通过 `../third_party/sqlite-driver` 源码依赖引入。
 
-| 模块 | 职责 |
-| --- | --- |
-| `kb` | 扫描目录、Markdown 结构分块、图片抽取与多模态描述 |
-| `index` | 向量索引的建立、存储与检索 |
-| `model` | OpenAI 兼容的文本、视觉、向量三类调用 |
-| `agent` | ReAct 循环、工具注册、会话记忆 |
-| `store` | 本地文件存储：配置、索引、会话、产物 |
-| `api` | 对内暴露的本地 HTTP 接口 |
+- `src/main.cj`：启动参数、本地服务入口与数据目录。
+- `src/api/`：本地接口。
+- `src/unittests/`：内核回归测试。
+- `cjpm.toml`：Windows x64 构建及原生依赖配置。
 
-尚未初始化 `cjpm` 工程，等 Windows 工具链装好、技术验证通过后再建。
+构建、环境和打包步骤见 [Desktop README](../README.md)。打包产物位于 `../dist/core/`；直接运行 `target/` 内的程序时需要额外的运行库环境。
+
+核心运行参数包括 `--data-dir`、`--ui-dir`、`--port-file`。检查时使用独立数据目录，避免写入个人正在使用的库。开发夹具和测试功能不代表正式用户流程。

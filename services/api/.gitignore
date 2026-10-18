@@ -1,0 +1,13 @@
+/target/
+/tmp_verify/edge_profile*/
+/tmp_verify/logs/
+/tmp_verify/ppt_out/
+/tmp_verify/__pycache__/
+/tmp_verify/ui_check/node_modules/
+/tmp_verify/spire_db_env.sh
+/tmp_verify/*.log
+/tmp_verify/*.pid
+/tmp_verify/edge_out.txt
+/tmp_verify/edge_err.txt
+/tmp_verify/_stdx*.txt
+/logs/

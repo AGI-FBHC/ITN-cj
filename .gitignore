@@ -1,47 +1,34 @@
-# Public repo policy: source code + build config + resources + deploy script only.
-# Internal migration notes are NOT published (user decision 2026-10-17).
-
-# Internal work product — never push to the public repo
-笔记及分类模块的迁移任务/
-DEPLOY.md
-
-# Build output — large, regenerable
-/target/
-
-# Local verification harness — keep the secret-free scripts (report numbers must
-# be reproducible), drop the bulky / regenerable runtime artifacts.
-/tmp_verify/edge_profile*/
-/tmp_verify/logs/
-/tmp_verify/ppt_out/
-/tmp_verify/__pycache__/
-/tmp_verify/ui_check/node_modules/
-/tmp_verify/spire_db_env.sh
-/tmp_verify/*.log
-/tmp_verify/*.pid
-/tmp_verify/edge_out.txt
-/tmp_verify/edge_err.txt
-
-# Real secrets — never commit. Only config/sample.env (placeholders) is tracked.
+# Local secrets and credentials
 .env
 **/.env
+.env.local
+.env.*.local
 *.pem
 *.key
 id_rsa*
 id_ed25519*
-
-# Raw credential notes handed over in chat — contain live passwords
 prompt.txt
 **/prompt.txt
 
-# Windows / editor noise
+# Reproducible build output and dependencies
+**/target/
+**/node_modules/
+**/dist/
+**/__pycache__/
+*.pyc
+
+# Private migration notes
+笔记及分类模块的迁移任务/
+DEPLOY.md
+
+# Web deployment runtime files
+/deploy/web/app/
+/deploy/web/env/*.env
+
+# Windows / editor files
 .vs/
 *.pdb
 ~$*
 Thumbs.db
 desktop.ini
-/tmp_verify/_stdx*.txt
-
-# Integrated deployment runtime files
-/deploy/app/
-/deploy/web/dist/
-/deploy/env/*.env
+.DS_Store

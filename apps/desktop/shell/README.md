@@ -1,8 +1,12 @@
-# shell —— Electron 外壳
+# Desktop Electron 外壳
 
-只负责窗口、系统文件对话框和打包，不写业务逻辑。
+提供桌面窗口、系统文件操作和界面集成。主进程入口是 `main.js`，界面资源在 `renderer/`。启动时查找打包目录或 `../dist/core/` 下的仓颉内核，再载入本地界面。
 
-计划：
-- 启动时拉起仓颉内核进程，读取标准输出里的端口。
-- 内核异常退出时在界面上给出明确提示，并提供重启入口。
-- 界面用原生 HTML/CSS/JS，不引入重型框架，保持极简。
+先按 [Desktop README](../README.md) 构建和打包内核，在本目录执行：
+
+```powershell
+npm ci
+npm start
+```
+
+完整应用打包使用上级 `scripts/package-app.ps1`。模型配置、用户数据与 API Key 不放入源码包。

@@ -2,10 +2,10 @@
 # Server-side deploy for itn_spire (Cangjie Spire).
 #
 # Usage (on the server):
-#   cd <your-project-dir> && bash deploy/deploy.sh
+#   cd <repository-root> && bash deploy/web/deploy.sh
 #
 # Expects:
-#   - this directory is a git clone of the ITN-cj repo, branch zyqprojects
+#   - the repository is checked out on main
 #   - Cangjie SDK + STDX installed and CANGJIE_STDX_PATH set in the environment
 #   - JWT_SECRET / PLATFORM_DB_URL / SPIRE_HTTP_URL exported (never committed)
 #
@@ -13,19 +13,21 @@
 
 set -euo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$HERE"
-mkdir -p logs
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+HERE="$ROOT/services/api"
+cd "$ROOT"
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 echo "==> branch: $BRANCH"
-if [ "$BRANCH" != "zyqprojects" ]; then
-    echo "!! expected branch zyqprojects, got $BRANCH" >&2
+if [ "$BRANCH" != "main" ]; then
+    echo "!! expected branch main, got $BRANCH" >&2
     exit 1
 fi
 
 echo "==> pull"
 git pull --ff-only
+cd "$HERE"
+mkdir -p logs
 
 echo "==> env check (presence + length only, values never printed)"
 missing=0

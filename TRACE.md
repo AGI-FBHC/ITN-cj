@@ -167,3 +167,53 @@ zyq 新增 07aa2c3（scores_json 单写入及鉴权深化）尚未部署；按�
 集成仓库是 blob:none 部分克隆，从本地前端 fetch 后只接入了历史和树对象，read-tree 触发 GitHub 拉取当前前端缺失的288个对象并停滞。中断该次导入并仅结束对应 read-tree/fetch/index-pack 进程，清理该工作树的遗留 index.lock；没有删除其他Git文件。
 
 用原前端副本导出已验证当前树328个对象（源副本全部存在）并 index-pack 到目标，再补入 b9af089..e00384c 的17个未公开本地提交所需对象。随后 subtree add 成功；未改全局 Git 配置、未覆盖开发分支、未重写历史。推送使用普通 git push origin main，若远端有并发变化会由 Git 拒绝，禁止强推。
+
+## 2026-10-19 总 README 重写、Desktop 纳入 main 与目录整理
+
+### 用户对话与授权
+
+用户指出上一版 README 像内部交接记录，要求先给方案审核；随后提出把 Desktop 一并放进 main。已只读检查 desktop 分支并给出 apps/web、apps/desktop、services/api、services/business、deploy/web 的结构方案。用户明确接受方案，要求落地、重写同时覆盖 Web 和 Desktop 的总 README，附原仓库链接，并说明本仓库是基于仓颉开发的新版本。实施期间用户进一步要求标题不要再加“仓颉版”，已将总标题定为 ITN，将仓颉背景放在正文介绍中。
+
+### 源码与来源
+
+- 操作目标 AGI-FBHC/ITN-cj/main，工作树 D:\Desktop\ITN\tmp\ITN-cj-main-release。开始时 main=10549a2；重新 fetch 和 ls-remote 确认 desktop=49ad7d234a4968d0b3298b9098ab5eff480f88c8。
+- 原项目地址 https://github.com/AGI-FBHC/ITN，通过旧项目 Git remote 和 GitHub 仓库元数据双重核实；名称为 ITN（Intelligent Training Nexus）。总 README 已附链接，未把 ITN-Beta 或其他分支误写成原项目。
+- Desktop 本机副本 D:\Desktop\ITN\ITN-Desktop 位于相同提交49ad7d2，另有两份未跟踪的方案笔记。本次只导入已提交的分支源码，不移动、覆盖或提交用户原副本中的笔记与运行数据。
+- 从原 Desktop Git 对象库导出当前树671个对象（9301882字节）到部分克隆对象库，避免前一轮 read-tree 触发网络补 blob 的停滞。使用 git subtree add --prefix=apps/desktop origin/desktop 创建合并 a3971c4，双亲10549a2和49ad7d2，保留Desktop提交历史。导入时子树83ce03b4052ab7535642f8c3ddfe8186ea8c6bd2与源分支根树一致。
+
+### 目录与文档
+
+- 原 frontend/ 移到 apps/web/。
+- 原根 src/、config/、resources/、tmp_verify/、cjpm.toml、cjpm.lock 移入 services/api/；原 backend-cj/ 移为 services/business/。
+- 原 deploy 下配置与脚本移入 deploy/web/。Desktop 内部的 core、shell、lumin、third_party、scripts、tools、docs 等布局整体保留。
+- Windows 目录移动前逐一检查源和目标绝对路径都在本工作树内，使用 git mv 保留移动关系。原 source worktrees 保持原分支和文件。
+- 总 README 以项目定位、原项目来源、Web/Desktop 对照、代码结构和开发文档导航组织；移除了根 README 中的具体服务器信息、开发者分工、提交哈希和故障交接记录。标题按用户最新要求为 ITN，简介说明基于仓颉开发的新版本，并如实写明 Web 部分 Agent 能力仍接入现有 Python 服务。
+- 重写 apps/web/README.md 和 apps/desktop/README.md；补充 API README、整体架构和开发验证文档。Desktop 原有“尚未初始化工程”等陈旧描述已从入口 README/core README/scripts README 中更新为当前源码与构建方式。Desktop 打包使用当前真实名称 Lumin 和 dist/Lumin 产物路径。
+- 根 AGENTS 统一协作入口；新操作只追加根 TRACE。Desktop AGENTS 中的 TRACE 指向 ../../TRACE.md；导入前的各端 TRACE 保留为历史，未删除、覆盖或继续分叉。
+
+### 路径和配置适配
+
+- deploy/web/build.sh 从脚本位置推导仓库根目录，显式检查 services/api 与 services/business 的 cjpm.toml，并按新目录挂载编译、复制可执行文件。
+- deploy/web/deploy.sh 的源码根、API工作目录和预期分支更新为新布局/main；本轮没有运行该部署脚本或修改线上进程。
+- Desktop publish-lumin.ps1 从当前Git顶层和当前目录前缀计算 apps/desktop/lumin，避免在子目录运行git subtree时找错前缀。只检查了路径和语法，没有向独立 Lumin 仓库发布。
+- Web .env.example 更新为仓颉 API 网关联调地址，/api和/v1可同指8100；真实地址由开发者在被忽略的.env.local中设置。未写入真实密钥。
+- 根/API .gitignore 随目录调整，覆盖依赖、构建产物和本地环境；增加Shell脚本LF、Windows批处理CRLF的.gitattributes。已核实4个已跟踪Desktop批处理为ASCII且使用CRLF。
+- 一条过长的批量写文件shell请求被工具策略拦截，没有执行；随后改用apply_patch完成逐文件修改，没有绕过执行权限或扩大操作范围。
+
+### 验证结果
+
+1. Web：从 apps/web 运行4组Node资源恢复回归测试，全部通过；npx vite build 成功（20.16秒）。首页 SHA256 f7ed31611d6d015b7d1d45ba260474d33babadf9d6edea280ee67f7ca41e0098，与之前已部署版本一致。
+2. Desktop：在迁移目录使用实际安装的仓颉1.2.0、STDX和OpenSSL构建，cjpm build 成功（2条既有废弃API告警）。core的cjpm test共156项全部通过，0失败/0跳过；package.ps1成功生成独立内核与4个DLL，并做拷贝哈希核验。
+3. Desktop本地API：既有 tools/api-route-smoke.ps1 在全新数据目录下检查145条路由的空JSON和坏JSON入口，结果 no5xx=yes、noUnknownRoute=yes。报告位于 apps/desktop/tmp/audit/api-route-smoke.json（忽略的本地产物）。
+4. Desktop界面：用新路径打包内核、全新临时数据目录、迁移后的shell/renderer启动本地服务；独立Chrome打开Lumin，显示“已连接”，6个导航入口、#view有渲染节点，资源请求无4xx/5xx。检查后关闭专用浏览器，核对进程路径和数据目录后仅结束本轮内核进程。未启动会注册用户lumin://协议的Electron主程序。
+5. 文档和脚本：新入口文档29个相对链接全部存在；PowerShell脚本AST检查与两份Bash脚本语法检查通过。用临时目录和mock docker验证 build.sh 默认根路径、带空格路径、两个新服务挂载、产物复制位置；缺失源目录时在调用Docker前拒绝。该检查只验证路径/调用约定，不等同于重新编译Linux服务端。
+6. 树一致性：移动后的6组源码/资源树与移动前完全相同：services/api/src、config、resources、tmp_verify，services/business/src，apps/web/src。Desktop核心、Lumin、第三方依赖和界面运行代码未修改；变化集中在目录、文档、忽略规则和辅助脚本路径。
+7. 依赖复用：apps/web保留了原验证工作树已有的node_modules链接；Desktop shell使用原副本node_modules的本地链接。依赖、dist、target、日志、个人配置均不提交。原Desktop副本仍仅有原先两份未跟踪笔记，原Web副本Git工作区仍干净。
+
+### 边界与交接
+
+- 本轮未重新部署服务器、未改数据库，也未把zyqprojects先前未部署的后续提交混入现有发布内容。
+- 本轮验证了Desktop本地内核、打包内核和托管界面；没有重新制作完整Electron分发包，没有验证真实远程模型生成质量，也没有发布独立Lumin仓库。
+- Web全量tsc既有错误、已知服务端资源接口500仍需各自处理；本轮没有宣称全部业务已完成或全部代码均已仓颉化。
+- 主要日志 D:\Temp\itn-monorepo-desktop-build-20261019.txt、itn-monorepo-desktop-tests-20261019.txt、itn-monorepo-desktop-package-20261019.txt、itn-monorepo-desktop-routes-20261019.txt、itn-monorepo-web-build-20261019.txt。界面检查进程信息 D:\Temp\itn-monorepo-ui-manifest-20261019.json。
+- 沿用用户前文提交main的授权，本轮在上述检查后提交整理结果并普通推送main，不强推。后续从仓库根README按组件进入开发，不再在根直接运行cjpm或Vite。
