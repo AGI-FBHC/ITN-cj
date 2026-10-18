@@ -225,3 +225,17 @@ zyq 新增 07aa2c3（scores_json 单写入及鉴权深化）尚未部署；按�
 从根 README 移除开发命令、源码目录树、工具链/SDK、前后端实现细节、类型检查和构建限制以及面向开发者的文档导航。各组件开发文档仍保留在原位置，不再作为总 README 的主体或用户入口。根 README 不把尚无发布包的 Desktop 写成已有下载：通过 gh release list 当前返回空数组核实，已如实说明暂无桌面应用下载包；应用包启动文件依据实际打包脚本写为 Lumin.exe。
 
 验证：当前网页版体验地址 http://43.160.236.121:20889/ 公网直连HTTP200；登录源码存在游客体验入口；使用说明及本地链接存在；检查总标题、两端内容、原仓库链接，并确认无开发命令和SDK/源码结构段落。本轮只修改 README 和追加 TRACE，没有重跑无关构建或改变功能、目录和线上环境。按前文 main 交付授权提交并普通推送 main。
+
+## 2026-10-19 Desktop docs 仅本地保留，停止在 main 与 desktop 发布
+
+用户明确要求“desktop版本的docs不用上传github 主分支和desktop分支都是 不需要”。本轮范围为 main 的 apps/desktop/docs/ 和 desktop 分支的根 docs/；保留 main 的跨端 docs/ 和 Lumin 自身的运行时文档，没有扩大到所有Markdown或改写历史。
+
+main起点cbe7070，desktop起点49ad7d2，均已重新fetch/ls-remote核实。为desktop创建独立工作树 D:\Desktop\ITN\tmp\ITN-cj-desktop-public（本地codex/private-desktop-docs），避免修改用户原 D:\Desktop\ITN\ITN-Desktop 中的本地笔记和工作区。
+
+对两处各18个已跟踪文件先保存SHA256清单，再用git rm --cached停止跟踪；本地文件没有删除。各Desktop .gitignore增加/docs/，AGENTS明确文档只在本地保存。根README和两分支Desktop README清理指向这些私有文档的链接，PRODUCT不再要求GitHub读者跳转本地设计文档。没有把docs内容复制到别的公开文件。
+
+scripts/package-app.ps1原来强制复制两份docs说明，公开检出缺docs时会失败；两分支均改为Copy-OptionalDocumentation，存在本地文件才附带。未改内核、Lumin工具或业务接口。
+
+验证：两个打包脚本PowerShell AST通过；分别从各脚本AST提取真实说明复制函数，在临时空工程验证无docs时不报错且不生成说明，在仅有一份本地说明时只复制该份且跳过另一份。未为这项局部变化重跑不相关的内核或完整应用打包。再次核验36个本地文件SHA256无变化；两个Git索引中各自docs均为0个；README相对链接均指向仍被跟踪的文件；diff --check通过。
+
+哈希清单 D:\Temp\itn-private-docs-preservation-20261019.json。两分支分别本地提交，再用普通原子推送更新main和desktop；禁止强推。文档在旧提交中仍存在，本轮只从最新版本停止跟踪，不重写历史，也未改变线上部署或数据库。
