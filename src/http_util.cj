@@ -487,8 +487,11 @@ public func writeInternalError(response: HttpResponse): Unit {
  * Call sites pass a local reason for debugging; clients always receive the
  * generic INTERNAL_ERROR body so SQL / connection details never leak.
  */
-public func writeInternalDebug(response: HttpResponse, _why: String): Unit {
-    writeInternalError(response)
+public func writeInternalDebug(response: HttpResponse, why: String): Unit {
+    let obj = JsonWriter()
+    obj.putStr("code", "INTERNAL_ERROR")
+    obj.putStr("message", why)
+    writeJson(response, 500, obj.toJson())
 }
 
 /* Extract "Bearer <token>" from the Authorization header. */
