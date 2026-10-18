@@ -71,7 +71,7 @@ def preview_html(outline: dict, request: SimpleNamespace | None = None) -> str:
             continue
         if i == 1:
             body.append('<section class="slide edge cover" style="background:' + bg + ';color:' + ink + '">'
-                        '<div class="kicker">' + html.escape(request.title if request else title) + '</div>'
+                        '<div class="kicker">' + html.escape(str((request.title if request else '') or title)) + '</div>'
                         '<h2>' + html.escape(str(slide.get("title") or title)) + '</h2>'
                         '<p class="subtitle">' + html.escape(str(outline.get("subtitle") or "核心概念、关键方法与实践应用")) + '</p>'
                         '<div class="page-no">' + str(i).zfill(2) + ' / ' + str(len(slides)).zfill(2) + '</div></section>')

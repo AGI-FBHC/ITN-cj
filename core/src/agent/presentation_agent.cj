@@ -45,7 +45,7 @@ public class PresentationAgent {
     func chooseSlideCount(args: JsonObject): Int64 {
         let requested = intOf(args, "slideCount")
         if (requested > 0) { return requested }
-        let detail = trimStr(presentationText(args, "detailLevel"))
+        let detail = presentationDetail(presentationText(args, "detailLevel"))
         if (detail == "concise") { return 12 }
         if (detail == "balanced") { return 20 }
         return 24
@@ -65,6 +65,13 @@ public class PresentationAgent {
         }
         return true
     }
+func presentationDetail(raw: String): String {
+    let value = trimStr(raw)
+    if (value == "精简" || value == "简洁" || value == "concise") { return "concise" }
+    if (value == "均衡" || value == "balanced") { return "balanced" }
+    if (value == "详细" || value == "detailed") { return "detailed" }
+    return "detailed"
+}
 func presentationBackground(raw: String): String {
     let value = trimStr(raw)
     let allowed = ["none", "colorful-ink", "sunset-mountains", "abstract-gradient", "clean-minimal",
@@ -96,7 +103,7 @@ func requestJson(args: JsonObject, requirement: String, title: String, slideCoun
         if (language.size == 0) { language = "zh-CN" }
         var ratio = trimStr(presentationText(args, "aspectRatio"))
         if (ratio.size == 0) { ratio = "16:9" }
-        var detail = trimStr(presentationText(args, "detailLevel"))
+        var detail = presentationDetail(presentationText(args, "detailLevel"))
         if (detail.size == 0) { detail = "detailed" }
         r.put("audience", JsonString(audience))
         r.put("purpose", JsonString(purpose))

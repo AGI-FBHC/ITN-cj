@@ -13,6 +13,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $repo = Resolve-Path "$PSScriptRoot\.."
 $targetPath = [IO.Path]::GetFullPath($Target)
+$repoPath = [IO.Path]::GetFullPath("$PSScriptRoot\..")
+if (-not $targetPath.StartsWith($repoPath + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "拒绝把 PPT runtime 写到仓库目录之外：$targetPath"
+}
 $cachePath = [IO.Path]::GetFullPath($CacheDir)
 $zipName = "python-$Version-embed-amd64.zip"
 $zipPath = Join-Path $cachePath $zipName
