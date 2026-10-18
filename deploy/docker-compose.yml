@@ -6,7 +6,7 @@ services:
     container_name: itn-cj-business
     restart: unless-stopped
     working_dir: /app
-    command: ["/app/main"]
+    command: ["bash", "-lc", "source /opt/cangjie/envsetup.sh && exec /app/main"]
     env_file:
       - env/business.env
     volumes:
@@ -44,7 +44,7 @@ services:
     container_name: itn-cj-api
     restart: unless-stopped
     working_dir: /app
-    command: ["/app/main"]
+    command: ["bash", "-lc", "source /opt/cangjie/envsetup.sh && exec /app/main"]
     env_file:
       - env/api.env
     volumes:
