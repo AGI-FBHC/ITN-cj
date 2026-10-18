@@ -1,6 +1,5 @@
 import { ArrowRight, BookOpen, ListChecks, PenLine, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { Fern, GrassTuft } from "@/components/heal/Flora"
 
 /*
  * 章节侧栏（W2）：把旧版 LearningPath 侧栏的两块拿回来 —— 核心技能 + 推荐资源。
@@ -90,13 +89,7 @@ export default function ChapterSidebar({
 
   return (
     <aside className={cn("flex flex-col gap-4", className)}>
-      <div className="lf-card relative overflow-hidden p-5">
-        <div aria-hidden className="pointer-events-none absolute -right-2 -top-3 opacity-25">
-          <Fern className="h-16 w-11" />
-        </div>
-        <div aria-hidden className="pointer-events-none absolute right-10 -top-1 opacity-20">
-          <GrassTuft className="h-8 w-10" />
-        </div>
+      <div className="lf-card p-5">
         <div className="flex items-center gap-2 text-[12px] text-ink-muted">
           <Sparkles size={14} className="text-brand" />
           本章导航
