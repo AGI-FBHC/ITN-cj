@@ -154,22 +154,74 @@ public func sqlNowUtc8Literal(): String {
 
 /*
  * java.time.Instant serialized by Jackson (ISO_INSTANT): UTC with a trailing
- * Z and the fractional second only when non-zero. Used for ApiResponse's
- * `timestamp` field, which is a Java Instant.
+ * Z. The fraction is the 9-digit nanosecond count with a trailing "000"
+ * group removed repeatedly — not "as many digits as are non-zero". So
+ * micros 123000 prints ".123Z", not ".123000Z"; micros 123450 prints
+ * ".123450Z". Used for ApiResponse's `timestamp` field.
  */
+private func isoInstantFraction(micros: Int64): String {
+    if (micros == 0) {
+        return ""
+    }
+    /* pad6(micros) is the 9-digit nanos with its trailing "000" already off */
+    var f = pad6(micros)
+    while (f.size >= 3 && f[(f.size - 3)..f.size] == "000") {
+        f = f[0..(f.size - 3)]
+    }
+    return "." + f
+}
+
 public func isoUtcNowZ(): String {
     let p = nowUtcParts()
+    return pad4(p.year) + "-" + pad2(p.month) + "-" + pad2(p.day) + "T" +
+        pad2(p.hour) + ":" + pad2(p.minute) + ":" + pad2(p.second) +
+        isoInstantFraction(p.micros) + "Z"
+}
+
+/*
+ * ISO_INSTANT for a Java Instant column read back out of MySQL. Same
+ * group-of-3 fraction rule as isoUtcNowZ. Used by the Spring Boot read
+ * contracts — ProfileResponse/LearnerResponse createdAt+updatedAt,
+ * TimelineItem.occurredAt, DailySummary.generatedAt.
+ *
+ * The text MUST already be UTC. MySQL renders timestamp(6) columns in the
+ * session time zone (SYSTEM = UTC+08:00 on this host), while java.time.Instant
+ * is an absolute instant and ISO_INSTANT prints UTC — so pass the value
+ * through shiftTimestampText first. See dbUtcOffsetMicros.
+ */
+public func isoInstantFromDb(text: String): String {
+    let p = parseDbDatetime(text)
+    return pad4(p.year) + "-" + pad2(p.month) + "-" + pad2(p.day) + "T" +
+        pad2(p.hour) + ":" + pad2(p.minute) + ":" + pad2(p.second) +
+        isoInstantFraction(p.micros) + "Z"
+}
+
+/*
+ * ISO_LOCAL_DATE_TIME — what Jackson writes for a field declared as a
+ * formatted String built with DateTimeFormatter.ISO_LOCAL_DATE_TIME
+ * (QuizSummary.createdAt). Seconds are always printed; the fraction is
+ * omitted when nanos == 0 and otherwise has ALL trailing zeros stripped
+ * (micros 123450 -> ".12345", micros 1 -> ".000001"). No zone suffix.
+ */
+public func isoLocalDatetimeFromDb(text: String): String {
+    let p = parseDbDatetime(text)
     var s = pad4(p.year) + "-" + pad2(p.month) + "-" + pad2(p.day) + "T" +
         pad2(p.hour) + ":" + pad2(p.minute) + ":" + pad2(p.second)
     if (p.micros != 0) {
-        s = s + "." + pad6(p.micros)
+        var f = pad6(p.micros)
+        while (f.size > 1 && f[(f.size - 1)..f.size] == "0") {
+            f = f[0..(f.size - 1)]
+        }
+        s = s + "." + f
     }
-    return s + "Z"
+    return s
 }
 
 /*
  * Wrong-answer timestamps follow WrongAnswerStore._iso_utc: naive UTC with a
  * trailing Z, and microseconds omitted when zero (Python datetime.isoformat).
+ * Not ISO_INSTANT — Python pads the fraction to six digits, Java strips
+ * trailing zero groups. Keep these two apart.
  */
 public func isoUtcZFromDb(text: String): String {
     let p = parseDbDatetime(text)
@@ -179,4 +231,114 @@ public func isoUtcZFromDb(text: String): String {
         s = s + "." + pad6(p.micros)
     }
     return s + "Z"
+}
+
+/* ===================================================================
+ * Civil-date arithmetic for the Spring Boot read contracts.
+ *
+ * LocalDate is a y/m/d with no zone; ChronoUnit.DAYS.between is just the
+ * difference of epoch days. The conversion is Howard Hinnant's
+ * days_from_civil / civil_from_days, exact for year >= 0.
+ * =================================================================== */
+
+public struct CivilDate {
+    public let year: Int64
+    public let month: Int64
+    public let day: Int64
+
+    public init(year: Int64, month: Int64, day: Int64) {
+        this.year = year
+        this.month = month
+        this.day = day
+    }
+}
+
+public func epochDayFromDate(d: CivilDate): Int64 {
+    var y = d.year
+    if (d.month <= 2) {
+        y = y - 1
+    }
+    let era = y / 400
+    let yoe = y - era * 400
+    let mp = if (d.month > 2) { d.month - 3 } else { d.month + 9 }
+    let doy = (153 * mp + 2) / 5 + d.day - 1
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+    return era * 146097 + doe - 719468
+}
+
+public func dateFromEpochDay(z0: Int64): CivilDate {
+    let z = z0 + 719468
+    let era = z / 146097
+    let doe = z - era * 146097
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
+    let y = yoe + era * 400
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100)
+    let mp = (5 * doy + 2) / 153
+    let d = doy - (153 * mp + 2) / 5 + 1
+    let m = if (mp < 10) { mp + 3 } else { mp - 9 }
+    return CivilDate(if (m <= 2) { y + 1 } else { y }, m, d)
+}
+
+public func addDays(d: CivilDate, n: Int64): CivilDate {
+    dateFromEpochDay(epochDayFromDate(d) + n)
+}
+
+/* ChronoUnit.DAYS.between(a, b) == b.toEpochDay() - a.toEpochDay(). */
+public func daysBetween(a: CivilDate, b: CivilDate): Int64 {
+    epochDayFromDate(b) - epochDayFromDate(a)
+}
+
+/* DateTimeFormatter.ISO_LOCAL_DATE — "yyyy-MM-dd". */
+public func dateIsoText(d: CivilDate): String {
+    pad4(d.year) + "-" + pad2(d.month) + "-" + pad2(d.day)
+}
+
+public func nowUtcDate(): CivilDate {
+    let p = nowUtcParts()
+    CivilDate(p.year, p.month, p.day)
+}
+
+/* LocalDate.now(ZoneId.of("Asia/Shanghai")) — a fixed +08:00, no DST. */
+public func nowUtc8Date(): CivilDate {
+    let p = nowUtc8Parts()
+    CivilDate(p.year, p.month, p.day)
+}
+
+public func timePartsToEpochMicros(p: TimeParts): Int64 {
+    epochDayFromDate(CivilDate(p.year, p.month, p.day)) * 86400000000 +
+        p.hour * 3600000000 + p.minute * 60000000 + p.second * 1000000 + p.micros
+}
+
+/* Exact for |us| below ~106751 days from the epoch — far beyond this schema. */
+public func epochMicrosToTimeParts(us: Int64): TimeParts {
+    var day = us / 86400000000
+    var rem = us - day * 86400000000
+    if (rem < 0) {
+        /* floor the day so the remainder is non-negative */
+        day = day - 1
+        rem = rem + 86400000000
+    }
+    let d = dateFromEpochDay(day)
+    let h = rem / 3600000000
+    rem = rem - h * 3600000000
+    let mi = rem / 60000000
+    rem = rem - mi * 60000000
+    let s = rem / 1000000
+    let micros = rem - s * 1000000
+    return TimeParts(d.year, d.month, d.day, h, mi, s, micros)
+}
+
+/*
+ * Move a timestamp(6) text value from the session time zone to UTC.
+ *
+ * MySQL renders timestamp(6) columns in the session time zone; java.time.Instant
+ * is absolute and ISO_INSTANT prints UTC. `offsetMicros` is
+ * NOW(6) - UTC_TIMESTAMP(6) for the session (see dbUtcOffsetMicros), so a
+ * session at UTC+08:00 yields +28800000000 and this subtracts eight hours.
+ *
+ * DATETIME columns are a naked wall clock and must NOT go through here.
+ */
+public func shiftTimestampText(text: String, offsetMicros: Int64): String {
+    let p = parseDbDatetime(text)
+    mysqlDatetime(epochMicrosToTimeParts(timePartsToEpochMicros(p) - offsetMicros))
 }

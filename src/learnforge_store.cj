@@ -25,9 +25,14 @@ import std.convert.*
  */
 public class LearnForgeStore {
     private let conn: MyConnection
+    /* Session offset, so timestamp(6) columns come back as UTC. See
+     * shiftTimestampText — createdAt/updatedAt are java.time.Instant and
+     * ISO_INSTANT prints UTC, while MySQL renders them in the session zone. */
+    private let utcOff: Int64
 
     public init(conn: MyConnection) {
         this.conn = conn
+        this.utcOff = dbUtcOffsetMicros(conn)
     }
 
     /* -------- knowledge points (the default-score keys) -------- */
@@ -62,9 +67,207 @@ public class LearnForgeStore {
             case QueryOutcome.ResultSet(rs) =>
                 let out = ArrayList<RawLearner>()
                 for (row in rs.rows) {
-                    out.add(parseLearnerRow(row))
+                    out.add(parseLearnerRow(row, utcOff))
                 }
                 return out.toArray()
+        }
+    }
+
+    /* findByUser_IdOrderByCreatedAtAsc — first row only (for resolveLearner). */
+    public func firstLearnerId(userId: Array<Byte>): ?Array<Byte> {
+        let sql = "SELECT id FROM learners WHERE user_id=" + sqlBinary(userId) +
+            " ORDER BY created_at ASC LIMIT 1"
+        match (conn.query(sql)) {
+            case QueryOutcome.Ok(_) => return None
+            case QueryOutcome.ResultSet(rs) =>
+                if (rs.rows.isEmpty()) { return None }
+                return Some(rs.rows[0][0].bytes)
+        }
+    }
+
+    /* ensureFromProfile seed — INSERT a minimal learner row. */
+    public func insertLearnerDefault(learnerId: Array<Byte>, userId: Array<Byte>,
+                                      name: String, scoresJson: String): Unit {
+        let sql = "INSERT INTO learners (id, user_id, code, name, scores_json, status," +
+            " created_at, updated_at) VALUES (" +
+            sqlBinary(learnerId) + "," + sqlBinary(userId) + "," +
+            sqlQuote("default") + "," + sqlQuote(name) + "," +
+            sqlQuote(scoresJson) + ",1,NOW(6),NOW(6))"
+        match (conn.query(sql)) {
+            case _ => ()
+        }
+    }
+
+    /* insertLearner — POST /learners create. */
+    public func insertLearner(learnerId: Array<Byte>, userId: Array<Byte>,
+                               code: String, name: String): Unit {
+        let sql = "INSERT INTO learners (id, user_id, code, name, status," +
+            " created_at, updated_at) VALUES (" +
+            sqlBinary(learnerId) + "," + sqlBinary(userId) + "," +
+            sqlQuote(code) + "," + sqlQuote(name) + ",1,NOW(6),NOW(6))"
+        match (conn.query(sql)) { case _ => () }
+    }
+
+    /* updateLearnerFields — applyRequest: null fields don't overwrite. */
+    public func updateLearnerFields(learnerId: Array<Byte>, userId: Array<Byte>,
+                                     name: ?String, avatar: ?String, role: ?String,
+                                     education: ?String, targetJob: ?String,
+                                     weeklyHours: ?Int64, learningStyle: ?String,
+                                     scores: ?String, goal: ?String,
+                                     blindSpots: ?String, preferredFormat: ?String,
+                                     diagnosisSummary: ?String,
+                                     confidenceMethod: ?String,
+                                     confidenceValue: ?Int64): Unit {
+        var sets = ArrayList<String>()
+        match (name) {
+            case Some(v) => sets.add("name=" + sqlQuote(v))
+            case None => ()
+        }
+        match (avatar) {
+            case Some(v) => sets.add("avatar=" + sqlQuote(v))
+            case None => ()
+        }
+        match (role) {
+            case Some(v) => sets.add("role=" + sqlQuote(v))
+            case None => ()
+        }
+        match (education) {
+            case Some(v) => sets.add("education=" + sqlQuote(v))
+            case None => ()
+        }
+        match (targetJob) {
+            case Some(v) => sets.add("target_job=" + sqlQuote(v))
+            case None => ()
+        }
+        match (weeklyHours) {
+            case Some(v) => sets.add("weekly_hours=" + v.toString())
+            case None => ()
+        }
+        match (learningStyle) {
+            case Some(v) => sets.add("learning_style_json=" + sqlQuote(v))
+            case None => ()
+        }
+        match (scores) {
+            case Some(v) => sets.add("scores_json=" + sqlQuote(v))
+            case None => ()
+        }
+        match (goal) {
+            case Some(v) => sets.add("goal=" + sqlQuote(v))
+            case None => ()
+        }
+        match (blindSpots) {
+            case Some(v) => sets.add("blind_spots_json=" + sqlQuote(v))
+            case None => ()
+        }
+        match (preferredFormat) {
+            case Some(v) => sets.add("preferred_format=" + sqlQuote(v))
+            case None => ()
+        }
+        match (diagnosisSummary) {
+            case Some(v) => sets.add("diagnosis_summary=" + sqlQuote(v))
+            case None => ()
+        }
+        match (confidenceMethod) {
+            case Some(v) => sets.add("confidence_method=" + sqlQuote(v))
+            case None => ()
+        }
+        match (confidenceValue) {
+            case Some(v) => sets.add("confidence_value=" + v.toString())
+            case None => ()
+        }
+        if (sets.size > 0) {
+            var sql = "UPDATE learners SET "
+            var first = true
+            for (s in sets) {
+                if (!first) { sql = sql + ", " }
+                sql = sql + s
+                first = false
+            }
+            sql = sql + ", updated_at=NOW(6) WHERE id=" + sqlBinary(learnerId) +
+                " AND user_id=" + sqlBinary(userId)
+            match (conn.query(sql)) { case _ => () }
+        }
+    }
+
+    /* upsertProfile — PUT /profile. */
+    public func upsertProfile(userId: Array<Byte>, edu: ?String, major: ?String,
+                               tech: ?String, pref: ?String, profileCompleted: Bool,
+                               voice: String, speed: String, name: ?String,
+                               avatar: ?String, role: ?String, jobTitle: ?String,
+                               orgId: ?String, deptId: ?String, weeklyHours: ?Int64,
+                               learningStyle: ?String, goal: ?String,
+                               preferredFormat: ?String, selfAssessment: ?String,
+                               diagnosisSummary: ?String): Unit {
+        /* check existing */
+        var exists = false
+        let sel = "SELECT 1 FROM user_profiles WHERE user_id=" + sqlBinary(userId)
+        match (conn.query(sel)) {
+            case QueryOutcome.Ok(_) => ()
+            case QueryOutcome.ResultSet(rs) =>
+                if (!rs.rows.isEmpty()) { exists = true }
+        }
+        let prefStr = match (pref) { case Some(p) => sqlQuote(p) case None => "NULL" }
+        let orgStr = match (orgId) {
+            case Some(o) =>
+                match (uuidParse(o)) {
+                    case Some(b) => sqlBinary(b)
+                    case None => "NULL"
+                }
+            case None => "NULL"
+        }
+        let deptStr = match (deptId) {
+            case Some(d) =>
+                match (uuidParse(d)) {
+                    case Some(b) => sqlBinary(b)
+                    case None => "NULL"
+                }
+            case None => "NULL"
+        }
+        let weeklyStr = match (weeklyHours) { case Some(w) => w.toString() case None => "NULL" }
+        let lsStr = match (learningStyle) { case Some(l) => sqlQuote(l) case None => "NULL" }
+        let goalStr = match (goal) { case Some(g) => sqlQuote(g) case None => "NULL" }
+        let pfStr = match (preferredFormat) { case Some(p) => sqlQuote(p) case None => "NULL" }
+        let saStr = match (selfAssessment) { case Some(s) => sqlQuote(s) case None => "NULL" }
+        let dsStr = match (diagnosisSummary) { case Some(d) => sqlQuote(d) case None => "NULL" }
+        let pcStr = if (profileCompleted) { "1" } else { "0" }
+
+        if (exists) {
+            let sql = "UPDATE user_profiles SET education_level=" + optSqlStr(edu) +
+                ", major=" + optSqlStr(major) +
+                ", technical_foundation=" + optSqlStr(tech) +
+                ", learning_preference=" + prefStr +
+                ", profile_completed=" + pcStr +
+                ", tts_voice=" + sqlQuote(voice) +
+                ", tts_speed=" + sqlQuote(speed) +
+                ", name=" + optSqlStr(name) +
+                ", avatar=" + optSqlStr(avatar) +
+                ", role=" + optSqlStr(role) +
+                ", job_title=" + optSqlStr(jobTitle) +
+                ", organization_id=" + orgStr +
+                ", department_id=" + deptStr +
+                ", weekly_hours=" + weeklyStr +
+                ", learning_style_json=" + lsStr +
+                ", goal=" + goalStr +
+                ", preferred_format=" + pfStr +
+                ", self_assessment_json=" + saStr +
+                ", diagnosis_summary_json=" + dsStr +
+                ", updated_at=NOW(6) WHERE user_id=" + sqlBinary(userId)
+            match (conn.query(sql)) { case _ => () }
+        } else {
+            let sql = "INSERT INTO user_profiles (user_id, education_level, major," +
+                " technical_foundation, learning_preference, profile_completed," +
+                " tts_voice, tts_speed, name, avatar, role, job_title," +
+                " organization_id, department_id, weekly_hours, learning_style_json," +
+                " goal, preferred_format, self_assessment_json, diagnosis_summary_json," +
+                " created_at, updated_at) VALUES (" +
+                sqlBinary(userId) + "," + optSqlStr(edu) + "," + optSqlStr(major) + "," +
+                optSqlStr(tech) + "," + prefStr + "," + pcStr + "," +
+                sqlQuote(voice) + "," + sqlQuote(speed) + "," +
+                optSqlStr(name) + "," + optSqlStr(avatar) + "," + optSqlStr(role) + "," +
+                optSqlStr(jobTitle) + "," + orgStr + "," + deptStr + "," +
+                weeklyStr + "," + lsStr + "," + goalStr + "," + pfStr + "," +
+                saStr + "," + dsStr + ",NOW(6),NOW(6))"
+            match (conn.query(sql)) { case _ => () }
         }
     }
 
@@ -79,7 +282,7 @@ public class LearnForgeStore {
                 if (rs.rows.isEmpty()) {
                     return None
                 }
-                return Some(parseLearnerRow(rs.rows[0]))
+                return Some(parseLearnerRow(rs.rows[0], utcOff))
         }
     }
 
@@ -99,7 +302,7 @@ public class LearnForgeStore {
                 if (rs.rows.isEmpty()) {
                     return None
                 }
-                return Some(parseProfileRow(rs.rows[0]))
+                return Some(parseProfileRow(rs.rows[0], utcOff))
         }
     }
 }
@@ -168,7 +371,7 @@ private func learnerColumns(): String {
         " diagnosis_summary, confidence_method, confidence_value, created_at, updated_at"
 }
 
-private func parseLearnerRow(row: Array<MyCell>): RawLearner {
+private func parseLearnerRow(row: Array<MyCell>, utcOff: Int64): RawLearner {
     RawLearner(
         row[0].bytes,
         optCellText(row, 1),
@@ -186,8 +389,8 @@ private func parseLearnerRow(row: Array<MyCell>): RawLearner {
         optCellText(row, 13),
         optCellText(row, 14),
         optCellInt(row, 15),
-        cellText(row, 16),
-        cellText(row, 17)
+        shiftTimestampText(cellText(row, 16), utcOff),
+        shiftTimestampText(cellText(row, 17), utcOff)
     )
 }
 
@@ -301,11 +504,21 @@ private func optCellUuid(row: Array<MyCell>, idx: Int64): ?Array<Byte> {
     return Some(b)
 }
 
-private func parseProfileRow(row: Array<MyCell>): RawProfile {
+private func parseProfileRow(row: Array<MyCell>, utcOff: Int64): RawProfile {
     var completed = false
     match (optCellBool(row, 6)) {
         case Some(b) => completed = b
         case None => completed = false
+    }
+    var createdAt: ?String = None
+    match (optCellText(row, 21)) {
+        case Some(t) => createdAt = Some(shiftTimestampText(t, utcOff))
+        case None => ()
+    }
+    var updatedAt: ?String = None
+    match (optCellText(row, 22)) {
+        case Some(t) => updatedAt = Some(shiftTimestampText(t, utcOff))
+        case None => ()
     }
     RawProfile(
         row[0].bytes,
@@ -329,8 +542,8 @@ private func parseProfileRow(row: Array<MyCell>): RawProfile {
         optCellText(row, 18),
         optCellText(row, 19),
         optCellText(row, 20),
-        optCellText(row, 21),
-        optCellText(row, 22)
+        createdAt,
+        updatedAt
     )
 }
 
@@ -645,4 +858,12 @@ func roundHalfUp1(x: Float64): Float64 {
         n = truncateFloat(scaled - 0.5)
     }
     return floatFromInt(n) / 10.0
+}
+
+/* ?String → SQL literal (quoted or NULL) */
+func optSqlStr(v: ?String): String {
+    match (v) {
+        case Some(s) => return sqlQuote(s)
+        case None => return "NULL"
+    }
 }

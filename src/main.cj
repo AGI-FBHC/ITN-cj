@@ -36,6 +36,20 @@ main(): Int64 {
     registerCustomizeTaskRoutes(app, cfg)
     registerTutoringRoutes(app, cfg)
     registerLearnForgeRoutes(app, cfg)
+    /* P2 batch 2 — literal routes, so still before the catch-all. */
+    registerLearnerProfileRoutes(app, cfg)
+    /* P2 batch 3 — growth / report / knowledge-graph. */
+    registerGrowthRoutes(app, cfg)
+    /* P2 batch 4 — knowledge-points / learning-path / review-states / goals / job-targets. */
+    registerLearnForgeB4Routes(app, cfg)
+    /* P2 batch 5 — onboarding reads. */
+    registerOnboardingRoutes(app, cfg)
+    /* P2 batch 6 — learner-profile write side (events/quiz/journal-summary). */
+    registerWriteRoutes(app, cfg)
+    /* P2 batch 8 — growth writes + goals CRUD + review complete. */
+    registerBatch8Routes(app, cfg)
+    /* P2 batch 9 — onboarding pure-compute POSTs. */
+    registerBatch9Routes(app, cfg)
     /* P3/P2 catch-all forwarders — MUST be last so literal routes win. */
     registerGatewayRoutes(app, cfg)
 

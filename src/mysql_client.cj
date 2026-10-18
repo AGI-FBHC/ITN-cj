@@ -710,3 +710,26 @@ private func parseGreetingPlugin(packet: Array<Byte>): String {
     }
     return "mysql_native_password"
 }
+
+/*
+ * Session time-zone offset in microseconds: NOW(6) - UTC_TIMESTAMP(6).
+ *
+ * MySQL renders timestamp(6) columns in the session time zone (SYSTEM, which
+ * is UTC+08:00 on this host) while java.time.Instant prints UTC. Query this
+ * once per connection and hand it to shiftTimestampText so TIMESTAMP columns
+ * come out as UTC. A DATETIME column is a naked wall clock and is unaffected.
+ */
+public func dbUtcOffsetMicros(conn: MyConnection): Int64 {
+    match (conn.query("SELECT TIMESTAMPDIFF(MICROSECOND, UTC_TIMESTAMP(6), NOW(6))")) {
+        case QueryOutcome.Ok(_) => return 0
+        case QueryOutcome.ResultSet(rs) =>
+            if (rs.rows.isEmpty()) {
+                return 0
+            }
+            let row = rs.rows[0]
+            if (row.isEmpty()) {
+                return 0
+            }
+            return Int64.tryParse(row[0].text()) ?? 0
+    }
+}

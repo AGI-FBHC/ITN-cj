@@ -31,7 +31,11 @@ import soulsoft_extensions_injection.*
  *      JSON null (weeklyHours, avatar, confidenceValue, …). Do not omit them.
  *
  * Not in this batch (still forwarded to Spring Boot by the api/v1 catch-all):
- *   POST/PUT /learners, GET /learner-profile (and its subpaths), growth writes.
+ *   POST/PUT /learners, growth writes.
+ *
+ * GET /api/v1/learner-profile and /learner-profile/journal were batch 2 and
+ * now live in learnforge_analytics_api.cj. The POST/PUT /events, /quiz and
+ * /journal/summary writes are still Spring Boot's.
  */
 
 /* ---- ApiResponse envelope (web/dto/ApiResponse.java) ---- */
@@ -64,6 +68,9 @@ func writeApiErr(response: HttpResponse, status: UInt16, code: Int64, message: S
 /* exception/ErrorCode.java */
 const CODE_VALIDATION_FAILED: Int64 = 1000
 const CODE_INTERNAL_ERROR: Int64 = 1500
+const CODE_PROFILE_NOT_FOUND: Int64 = 2000
+const CODE_LEARNING_GOAL_NOT_FOUND: Int64 = 2001
+const CODE_KNOWLEDGE_POINT_NOT_FOUND: Int64 = 3002
 const CODE_LEARNER_NOT_FOUND: Int64 = 3004
 
 public func registerLearnForgeRoutes(app: WebHost, cfg: AppConfig): Unit {
@@ -206,11 +213,11 @@ func profileToJson(row: RawProfile): String {
     w.putRaw("selfAssessment", jsonObjectField(row.selfAssessmentJson))
     w.putRaw("diagnosisSummary", jsonObjectField(row.diagnosisSummaryJson))
     match (row.createdAt) {
-        case Some(t) => w.putRaw("createdAt", jsonQuote(isoUtcZFromDb(t)))
+        case Some(t) => w.putRaw("createdAt", jsonQuote(isoInstantFromDb(t)))
         case None => w.putRaw("createdAt", "null")
     }
     match (row.updatedAt) {
-        case Some(t) => w.putRaw("updatedAt", jsonQuote(isoUtcZFromDb(t)))
+        case Some(t) => w.putRaw("updatedAt", jsonQuote(isoInstantFromDb(t)))
         case None => w.putRaw("updatedAt", "null")
     }
     return w.toJson()
@@ -268,8 +275,8 @@ func learnerToJson(row: RawLearner, kpCodes: Array<String>): String {
     w.putOptStr("confidenceMethod", row.confidenceMethod)
     w.putOptInt("confidenceValue", row.confidenceValue)
     w.putRaw("overallMastery", overallMasteryJson(scores))
-    w.putRaw("createdAt", jsonQuote(isoUtcZFromDb(row.createdAt)))
-    w.putRaw("updatedAt", jsonQuote(isoUtcZFromDb(row.updatedAt)))
+    w.putRaw("createdAt", jsonQuote(isoInstantFromDb(row.createdAt)))
+    w.putRaw("updatedAt", jsonQuote(isoInstantFromDb(row.updatedAt)))
     return w.toJson()
 }
 
