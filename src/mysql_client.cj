@@ -672,11 +672,16 @@ private func parseGreetingScramble(packet: Array<Byte>): Array<Byte> {
     var part2 = Array<Byte>(0, repeat: 0)
     if ((capabilityLower & 0x0008) != 0) {
         /* CLIENT_SECURE_CONNECTION present in lower flags */
-        idx += 2 /* charset */
+        /* From the capability_lower start, the fixed tail is:
+         * capability_lower(2B) + charset(1B) + status(2B) + capability_upper(2B)
+         * + auth_plugin_data_len(1B) + reserved(10B) = 18 bytes, and
+         * auth_plugin_data_part_2 starts right after. */
+        idx += 3 /* capability lower (2B) + charset (1B) */
         idx += 2 /* status */
         idx += 2 /* capability upper */
         idx += 1 /* auth plugin data length */
         idx += 10 /* reserved */
+        /* auth_plugin_data_len sits 11 bytes before the part-2 start. */
         let part2Len = if (packet.size > idx && byteToInt(packet[idx - 11]) > 8) {
             byteToInt(packet[idx - 11]) - 8
         } else {
