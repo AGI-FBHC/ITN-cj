@@ -116,15 +116,19 @@ DAILY_SUMMARY_FIELDS = ["content", "metricsJson", "generatedAt"]
 
 
 def iso_instant_utc(dt: datetime) -> str:
-    """ISO_INSTANT: group-of-3 fraction, trailing Z."""
+    """ISO_INSTANT: group-of-3 fraction, trailing Z.
+
+    Only complete trailing "000" groups are dropped (verified against real
+    Java 17): micros 422770 -> ".422770", 123450 -> ".123450", 123000 ->
+    ".123", 100000 -> ".100".
+    """
     dt = dt.astimezone(UTC)
     if dt.microsecond == 0:
         return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     frac = "%06d" % dt.microsecond
-    # strip trailing zeros, then group into 3s from the left
-    frac = frac.rstrip("0")
-    groups = [frac[i:i + 3] for i in range(0, len(frac), 3)]
-    return dt.strftime("%Y-%m-%dT%H:%M:%S") + "." + "".join(groups) + "Z"
+    while len(frac) > 3 and frac.endswith("000"):
+        frac = frac[:-3]
+    return dt.strftime("%Y-%m-%dT%H:%M:%S") + "." + frac + "Z"
 
 
 def iso_local_datetime_utc(dt: datetime) -> str:

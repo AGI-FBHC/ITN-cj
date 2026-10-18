@@ -170,11 +170,17 @@ def overall_mastery(scores):
 
 
 def iso_from_db(text):
-    """Java Instant via Hibernate timestamp(6) -> ISO-8601 with Z."""
+    """Java Instant via Hibernate timestamp(6) -> ISO-8601 with Z.
+
+    Only complete trailing "000" groups are dropped (verified against real
+    Java 17): micros 422770 -> ".422770", 123000 -> ".123".
+    """
     t = str(text).replace("T", " ").rstrip("Z")
     if "." in t:
         main, frac = t.split(".", 1)
-        frac = (frac + "000000")[:6].rstrip("0")
+        frac = (frac + "000000")[:6]
+        while len(frac) > 3 and frac.endswith("000"):
+            frac = frac[:-3]
         return (main + ("." + frac if frac else "")).replace(" ", "T") + "Z"
     return t.replace(" ", "T") + "Z"
 
