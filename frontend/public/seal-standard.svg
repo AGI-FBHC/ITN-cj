@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <path id="seal-ring" d="M32 7.5 a24.5 24.5 0 1 1 -0.01 0"/>
+  </defs>
+  <g color="#B0483B">
+    <!-- outer & inner rings -->
+    <circle cx="32" cy="32" r="30" stroke="currentColor" stroke-width="1.6"/>
+    <circle cx="32" cy="32" r="18.5" stroke="currentColor" stroke-width="0.9"/>
+    <!-- curved ring text -->
+    <text font-family="'Noto Sans SC', sans-serif" font-size="6.4" font-weight="600" letter-spacing="1.6" fill="currentColor">
+      <textPath href="#seal-ring" startOffset="2%">国家标准 · NATIONAL STANDARD · 权威溯源</textPath>
+    </text>
+    <!-- five-pointed star -->
+    <path d="M32 20.4 L33.9 26.1 L39.9 26.3 L34.9 30 L36.7 35.9 L32 32.7 L27.3 35.9 L29.1 30 L24.1 26.3 L30.1 26.1 Z"
+          fill="currentColor" opacity="0.92"/>
+    <!-- GB mark -->
+    <text x="32" y="46.5" text-anchor="middle" font-family="'IBM Plex Mono', monospace" font-size="9.5" font-weight="600" letter-spacing="1.5" fill="currentColor">GB</text>
+    <!-- distressed specks -->
+    <g fill="currentColor" opacity="0.35">
+      <circle cx="14.5" cy="22" r="0.7"/>
+      <circle cx="49" cy="16.5" r="0.6"/>
+      <circle cx="52.5" cy="41" r="0.8"/>
+      <circle cx="18" cy="48.5" r="0.6"/>
+      <circle cx="38" cy="53" r="0.7"/>
+      <circle cx="10.5" cy="34" r="0.5"/>
+      <circle cx="44" cy="49.5" r="0.5"/>
+    </g>
+    <!-- ring nicks (vintage wear) -->
+    <path d="M32 2 A30 30 0 0 1 41 3.4" stroke="#FDFCF9" stroke-width="2.4"/>
+    <path d="M55 47 A30 30 0 0 1 49.5 53" stroke="#FDFCF9" stroke-width="2.2"/>
+    <path d="M9 19 A30 30 0 0 1 13.5 13.8" stroke="#FDFCF9" stroke-width="2"/>
+  </g>
+</svg>

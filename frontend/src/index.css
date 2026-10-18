@@ -1,0 +1,807 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* shadcn tokens — 柔绿治愈系 */
+    --background: 45 33% 95%;         /* cream #F7F5EE */
+    --foreground: 110 12% 26%;        /* ink #3D4A3A */
+    --card: 48 33% 97%;               /* #FBFAF5 */
+    --card-foreground: 110 12% 26%;
+    --popover: 48 33% 97%;
+    --popover-foreground: 110 12% 26%;
+    --primary: 146 21% 39%;           /* sage #4E7860 */
+    --primary-foreground: 48 33% 97%;
+    --secondary: 120 20% 93%;         /* paper-deep */
+    --secondary-foreground: 110 12% 26%;
+    --muted: 100 14% 91%;
+    --muted-foreground: 96 11% 54%;   /* ink-muted #8A957F */
+    --accent: 140 27% 90%;            /* brand-tint */
+    --accent-foreground: 146 21% 39%;
+    --destructive: 7 50% 46%;
+    --destructive-foreground: 48 33% 97%;
+    --border: 132 16% 88%;            /* hairline #DCE6DE */
+    --input: 132 16% 88%;
+    --ring: 146 21% 39%;
+    --radius: 1rem;
+    --sidebar-background: 45 33% 95%;
+    --sidebar-foreground: 110 10% 30%;
+    --sidebar-primary: 146 21% 39%;
+    --sidebar-primary-foreground: 48 33% 97%;
+    --sidebar-accent: 140 27% 90%;
+    --sidebar-accent-foreground: 146 21% 39%;
+    --sidebar-border: 132 16% 88%;
+    --sidebar-ring: 146 21% 39%;
+
+    /* LearnForge tokens — 柔绿(主·成长) + 暖陶(副·人情味) + 金(庆祝)
+       中性色保持奶油/白（不带绿相），绿只留给强调 */
+    --paper: #F7F5EE;
+    --paper-deep: #F0EEE3;
+    --card-warm: #FBFAF5;
+    --hairline: #E5E3D7;
+    --ink: #3D4A3A;         /* 8.8:1 ✓ */
+    --ink-2: #5A6553;       /* 5.8:1 ✓ */
+    --ink-muted: #66725E;   /* 4.7:1 ✓（原 #8A957F 仅 2.9:1，玻璃上小字发虚） */
+    --brand: #4E7860;
+    --brand-hover: #3E6650;
+    --brand-tint: #E9F2EC;
+    --ochre: #B77552;        /* 暖陶 */
+    --ochre-tint: #F3E1D5;
+    --amber-lf: #E7B45A;     /* 金·庆祝 */
+    --amber-tint: #F6E7C6;
+    --success: #6BA080;
+    --danger: #B0483B;
+
+    /* 玻璃 / 光晕 */
+    --glass-fill: rgba(251, 250, 245, 0.70);
+    --glass-fill-deep: rgba(247, 245, 238, 0.55);
+    --glass-edge: rgba(255, 255, 255, 0.85);
+    --glass-edge-under: rgba(180, 200, 185, 0.40);
+    --glow-sage: rgba(120, 170, 140, 0.42);
+    --glow-sage-soft: rgba(120, 170, 140, 0.16);
+    --glow-gold: rgba(231, 180, 90, 0.42);
+    --shadow-sage: rgba(70, 100, 80, 0.24);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html { scroll-behavior: auto; }
+  body {
+    @apply text-ink font-sans antialiased;
+    font-feature-settings: "tnum" 0;
+    /* 梦幻奶油底：暖陶(右上) + 柔绿(左上/右下) 平衡，大面积保持奶油 */
+    background:
+      radial-gradient(640px 420px at 88% 0%, rgba(216, 155, 122, 0.22), transparent 62%),
+      radial-gradient(760px 700px at 2% 8%, rgba(155, 197, 172, 0.26), transparent 56%),
+      radial-gradient(680px 600px at 98% 96%, rgba(155, 197, 172, 0.15), transparent 60%),
+      linear-gradient(165deg, #F8F6EF 0%, #F3F3EB 52%, #EDF2EC 100%);
+    background-attachment: fixed;
+  }
+  /* 细颗粒纹理（去焦虑触感），去掉工业蓝图网格 */
+  body::after {
+    content: "";
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  #root { position: relative; z-index: 1; }
+  ::selection { background: rgba(120, 170, 140, 0.24); }
+  :focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #C4D3C8; border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: #AEC2B4; }
+  .tabular { font-variant-numeric: tabular-nums; }
+}
+
+@layer components {
+  /* 卡片 = 真玻璃（磨砂 + 边缘高光 + 内折射） */
+  .lf-card {
+    border-radius: 20px;
+    background: var(--glass-fill);
+    -webkit-backdrop-filter: blur(18px) saturate(1.2);
+    backdrop-filter: blur(18px) saturate(1.2);
+    border: 1px solid var(--glass-edge);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.85),
+      inset 0 -1px 0 var(--glass-edge-under),
+      0 18px 40px -22px var(--shadow-sage);
+    transition: transform 0.2s cubic-bezier(0.22,1,0.36,1), box-shadow 0.2s cubic-bezier(0.22,1,0.36,1), border-color 0.2s ease;
+  }
+  .lf-card-hover {
+    @apply cursor-pointer;
+  }
+  .lf-card-hover:hover {
+    transform: translateY(-3px);
+    border-color: rgba(155, 197, 172, 0.6);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      0 24px 46px -20px var(--shadow-sage);
+  }
+  .lf-chip {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[13px] font-medium text-ink-2;
+    background: rgba(255, 255, 255, 0.5);
+    border: 1px solid var(--glass-edge);
+  }
+  .lf-mono-label {
+    @apply font-mono text-[11.5px] uppercase tracking-[0.16em] text-ink-muted;
+  }
+
+  /* 有光感主按钮：柔绿渐变 + 白描边 + 浮起光环 + 按下回弹 */
+  .lf-btn-primary {
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+    border-radius: 14px; padding: 0.625rem 1.25rem; font-size: 15px; font-weight: 700;
+    color: #26402F; cursor: pointer;
+    background: linear-gradient(180deg, #CFE7D8, #9BC5AC);
+    border: 1px solid rgba(255, 255, 255, 0.72);
+    transition: transform 0.25s cubic-bezier(0.22,1,0.36,1), box-shadow 0.25s cubic-bezier(0.22,1,0.36,1);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.85),
+      0 8px 20px -6px var(--glow-sage),
+      0 2px 4px rgba(60, 100, 75, 0.2);
+  }
+  .lf-btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.95),
+      0 0 0 4px var(--glow-sage-soft),
+      0 14px 28px -8px var(--glow-sage);
+  }
+  .lf-btn-primary:active { transform: translateY(0) scale(0.985); }
+
+  /* 次按钮：玻璃描边浮动 */
+  .lf-btn-ghost {
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+    border-radius: 14px; padding: 0.625rem 1.25rem; font-size: 15px; font-weight: 700;
+    color: var(--brand); cursor: pointer;
+    background: rgba(255, 255, 255, 0.34);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-edge);
+    transition: transform 0.25s cubic-bezier(0.22,1,0.36,1), box-shadow 0.25s cubic-bezier(0.22,1,0.36,1), border-color 0.2s ease;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82), 0 6px 16px -8px var(--shadow-sage);
+  }
+  .lf-btn-ghost:hover {
+    transform: translateY(-2px);
+    border-color: rgba(183, 117, 82, 0.6);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92), 0 12px 24px -10px rgba(150, 110, 90, 0.35);
+  }
+  .lf-btn-ghost:active { transform: translateY(0) scale(0.985); }
+
+  /* 焦点卡光晕（柔绿） */
+  .lf-glow-card {
+    border-color: rgba(155, 197, 172, 0.45) !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.8),
+      0 18px 40px -20px var(--shadow-sage),
+      0 0 44px -10px var(--glow-sage-soft) !important;
+  }
+
+  /* 玻璃浮层（比卡片更透，用于抽屉/悬浮） */
+  .lf-glass {
+    background: var(--glass-fill-deep);
+    -webkit-backdrop-filter: blur(22px) saturate(1.25);
+    backdrop-filter: blur(22px) saturate(1.25);
+    border: 1px solid var(--glass-edge);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      inset 0 -1px 0 var(--glass-edge-under),
+      0 22px 46px -22px var(--shadow-sage);
+  }
+
+  /* 旧工业蓝图 → 中性（去网格） */
+  .lf-blueprint-bg { background-image: none; }
+
+  @keyframes lf-in-up {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: none; }
+  }
+  .lf-anim-in-up { animation: lf-in-up 0.5s cubic-bezier(0.22,1,0.36,1) both; }
+
+  /* 「灵光一闪」里程碑绽放（金·庆祝） */
+  @keyframes lf-bloom {
+    0% { transform: scale(0.62); opacity: 0; filter: blur(5px); }
+    55% { transform: scale(1.08); opacity: 1; filter: blur(0); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  @keyframes lf-glow-breathe {
+    0%, 100% { box-shadow: 0 0 24px 4px var(--glow-gold); }
+    50% { box-shadow: 0 0 48px 12px var(--glow-gold); }
+  }
+  .lf-bloom { animation: lf-bloom 0.7s cubic-bezier(0.22,1,0.36,1) both; }
+  .lf-orb {
+    border-radius: 9999px;
+    background: radial-gradient(circle at 40% 35%, #F6D98A 0%, #E7B45A 55%, rgba(231,180,90,0) 78%);
+    animation: lf-glow-breathe 2.4s ease-in-out infinite;
+  }
+
+  /* 路由转场：只做淡入，绝不能用 transform。
+     ⚠️ 带 transform 的祖先会成为 fixed 后代的定位基准，
+     曾导致课件页的播放工具条 / 举手提问面板 / 专注结算弹窗全部跑到屏幕外。
+     opacity 不会创建包含块，因此是唯一安全的选择。 */
+  @keyframes lf-page-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  .lf-page-in { animation: lf-page-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
+  /* 简单淡入：动画即使被节流也会应用到终值(不像 rAF 驱动的库会卡在起始态) */
+  @keyframes lf-fade-in { from { opacity: 0; } to { opacity: 1; } }
+  .lf-fade-in { animation: lf-fade-in 0.28s ease-out both; }
+
+  /* 浇水：水滴洒落 + 承接对象轻抖 */
+  @keyframes lf-drop {
+    0% { transform: translateY(-14px) scale(0.7); opacity: 0; }
+    25% { opacity: 0.9; }
+    100% { transform: translateY(26px) scale(1); opacity: 0; }
+  }
+  .lf-drop {
+    position: absolute;
+    width: 6px; height: 9px;
+    border-radius: 50% 50% 50% 50% / 62% 62% 38% 38%;
+    background: linear-gradient(180deg, rgba(190, 225, 240, 0.95), rgba(140, 190, 215, 0.8));
+    animation: lf-drop 0.85s cubic-bezier(0.4, 0, 0.7, 1) both;
+    pointer-events: none;
+  }
+  @keyframes lf-shake-soft {
+    0%, 100% { transform: rotate(0deg); }
+    22% { transform: rotate(-1.6deg); }
+    58% { transform: rotate(1.4deg); }
+    82% { transform: rotate(-0.6deg); }
+  }
+  .lf-shake-soft { animation: lf-shake-soft 0.75s ease-in-out both; transform-origin: 50% 100%; }
+
+  /* 答对：叶子飘落 */
+  @keyframes lf-leaf-fall {
+    0% { transform: translate(0, -6px) rotate(0deg); opacity: 0; }
+    18% { opacity: 0.95; }
+    100% { transform: translate(var(--lf-drift, 14px), 46px) rotate(var(--lf-spin, 160deg)); opacity: 0; }
+  }
+  .lf-leaf-fall { animation: lf-leaf-fall 1.5s cubic-bezier(0.35, 0, 0.6, 1) both; pointer-events: none; }
+
+  /* 骨架屏：柔和呼吸微光（替代转圈 spinner） */
+  @keyframes lf-shimmer {
+    0% { background-position: -180% 0; }
+    100% { background-position: 180% 0; }
+  }
+  .lf-skeleton {
+    background-image: linear-gradient(
+      100deg,
+      rgba(223, 237, 228, 0.45) 20%,
+      rgba(245, 251, 247, 0.85) 45%,
+      rgba(223, 237, 228, 0.45) 70%
+    );
+    background-size: 220% 100%;
+    animation: lf-shimmer 2.1s ease-in-out infinite;
+  }
+
+  /* ---- 植物摇摆 + 漂浮微光（Flora 点缀） ---- */
+  @keyframes lf-sway {
+    0%, 100% { transform: rotate(-2.5deg); }
+    50% { transform: rotate(2.5deg); }
+  }
+  .lf-sway { transform-origin: 50% 100%; animation: lf-sway 5.5s ease-in-out infinite; }
+  .lf-sway-slow { transform-origin: 50% 100%; animation: lf-sway 6.5s ease-in-out infinite; }
+  @keyframes lf-drift {
+    0% { transform: translateY(20px) scale(0.9); opacity: 0; }
+    24% { opacity: 0.6; }
+    80% { opacity: 0.45; }
+    100% { transform: translateY(-130px) scale(1.1); opacity: 0; }
+  }
+  .lf-spark {
+    position: absolute;
+    border-radius: 9999px;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0));
+    animation: lf-drift linear infinite;
+    opacity: 0.5;
+  }
+}
+
+/* 打印：学情报告导出（report.md S6「导出完整报告」→ window.print()）
+   纸感底色 → 纯白；导航壳(header/aside/nav)、悬浮 dock(.fixed)、Toaster、所有按钮全部隐藏，
+   只留报告正文；玻璃卡片去阴影/去模糊，避免打印机把光效渲染成灰底。 */
+@media print {
+  body {
+    background: #fff !important;
+  }
+  body::after {
+    display: none !important;
+  }
+  header,
+  aside,
+  nav,
+  button,
+  [data-sonner-toaster] {
+    display: none !important;
+  }
+  /* AgentDock / ResumeLearningFab 等常驻浮层均为 fixed 定位，非报告正文 */
+  .fixed {
+    display: none !important;
+  }
+  .lf-card {
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-color: #ddd !important;
+    background: #fff !important;
+  }
+}
+
+
+/* ================= 园子知识树动效 ================= */
+@keyframes kt-sway {
+  0%, 100% { transform: rotate(-1.4deg); }
+  50% { transform: rotate(1.4deg); }
+}
+.kt-sway {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: kt-sway 4.2s ease-in-out infinite;
+}
+@keyframes kt-fruit {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
+.kt-fruit {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+  animation: kt-fruit 2.1s ease-in-out infinite;
+}
+@keyframes kt-seed-breathe {
+  0%, 100% { opacity: 1; filter: drop-shadow(0 0 2px rgba(231,180,90,0.35)); }
+  50% { opacity: 0.72; filter: drop-shadow(0 0 6px rgba(231,180,90,0.55)); }
+}
+.kt-seed { animation: kt-seed-breathe 2.6s ease-in-out infinite; }
+
+/* 滋养：树长大弹一下 + 光晕扩散 + 星点 */
+@keyframes kt-grow-pop {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.1) rotate(-1.2deg); }
+  60% { transform: scale(0.98); }
+  100% { transform: scale(1); }
+}
+.lf-grow-pop { animation: kt-grow-pop 0.8s ease-out; }
+@keyframes kt-nourish-ring {
+  0% { transform: scale(0.5); opacity: 0.9; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+.lf-nourish-ring {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 190px; height: 190px;
+  margin: -95px 0 0 -95px;
+  border-radius: 9999px;
+  border: 2px solid rgba(231, 180, 90, 0.75);
+  pointer-events: none;
+  animation: kt-nourish-ring 0.9s ease-out forwards;
+}
+@keyframes kt-sparkle {
+  0% { transform: translate(0, 0) scale(0.5); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(1); opacity: 0; }
+}
+.lf-sparkle {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 8px; height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 9999px;
+  background: #E7B45A;
+  box-shadow: 0 0 6px rgba(231, 180, 90, 0.8);
+  pointer-events: none;
+  animation: kt-sparkle 0.9s ease-out forwards;
+}
+/* ================= 管理端 · LearnForge 商务清新版 ================= */
+/* 管理后台壳：奶油玻璃侧边栏（贴合全站柔绿治愈系，不再用深灰工业风） */
+.lf-sidebar {
+  background: var(--glass-fill-deep);
+  -webkit-backdrop-filter: blur(24px) saturate(1.25);
+  backdrop-filter: blur(24px) saturate(1.25);
+  border-right: 1px solid var(--glass-edge);
+  box-shadow: 10px 0 36px -26px var(--shadow-sage);
+}
+.lf-header-bar {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(251, 250, 245, 0.66));
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  backdrop-filter: blur(20px) saturate(1.2);
+  border-bottom: 1px solid var(--glass-edge);
+  box-shadow: 0 10px 30px -26px var(--shadow-sage);
+}
+/* 侧边栏导航胶囊 */
+.lf-nav-pill {
+  display: flex; align-items: center; gap: 0.65rem;
+  height: 2.55rem; padding: 0 0.9rem;
+  border-radius: 12px; font-size: 14px; font-weight: 500;
+  color: var(--ink-2);
+  transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.lf-nav-pill:hover { background: rgba(255, 255, 255, 0.62); color: var(--ink); }
+.lf-nav-pill-active {
+  background: linear-gradient(180deg, #CFE7D8, #9BC5AC);
+  color: #26402F; font-weight: 700;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 8px 18px -8px var(--glow-sage);
+}
+/* 输入 / 下拉 / 文本域：玻璃质感 */
+.lf-input {
+  width: 100%; height: 2.5rem;
+  border-radius: 12px; padding: 0 0.85rem;
+  font-size: 14px; color: var(--ink);
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 2px rgba(70, 100, 80, 0.06);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+.lf-input::placeholder { color: #9AA69B; }
+.lf-input:focus {
+  outline: none; background: #fff;
+  border-color: rgba(78, 120, 96, 0.55);
+  box-shadow: 0 0 0 3px var(--glow-sage-soft);
+}
+.lf-select {
+  width: 100%; height: 2.5rem;
+  border-radius: 12px; padding: 0 2.25rem 0 0.85rem;
+  font-size: 14px; color: var(--ink);
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 2px rgba(70, 100, 80, 0.06);
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2366725E' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 0.75rem center;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+.lf-select:focus {
+  outline: none; background-color: #fff;
+  border-color: rgba(78, 120, 96, 0.55);
+  box-shadow: 0 0 0 3px var(--glow-sage-soft);
+}
+.lf-textarea {
+  width: 100%; border-radius: 12px;
+  padding: 0.7rem 0.85rem;
+  font-size: 14px; color: var(--ink); line-height: 1.65;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 2px rgba(70, 100, 80, 0.06);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+.lf-textarea:focus {
+  outline: none; background: #fff;
+  border-color: rgba(78, 120, 96, 0.55);
+  box-shadow: 0 0 0 3px var(--glow-sage-soft);
+}
+/* 小号主按钮（管理端行内操作） */
+.lf-btn-sm { padding: 0.5rem 1rem; font-size: 13px; border-radius: 12px; }
+/* 表格行内按钮 */
+.lf-row-btn {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  border-radius: 10px; padding: 0.42rem 0.8rem;
+  font-size: 12px; font-weight: 600;
+  color: var(--brand);
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  transition: all 0.15s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.lf-row-btn:hover {
+  background: #fff; border-color: rgba(78, 120, 96, 0.45);
+  box-shadow: 0 6px 14px -8px var(--shadow-sage);
+  transform: translateY(-1px);
+}
+.lf-row-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+.lf-row-btn-primary {
+  color: #26402F;
+  background: linear-gradient(180deg, #CFE7D8, #9BC5AC);
+  border-color: rgba(255, 255, 255, 0.72);
+}
+.lf-row-btn-danger { color: var(--brand-danger); }
+/* 分段控制器（tab 胶囊） */
+.lf-seg {
+  display: inline-flex; align-items: center; gap: 2px;
+  padding: 4px; border-radius: 9999px;
+  background: rgba(240, 238, 227, 0.92);
+  border: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 2px rgba(70, 100, 80, 0.05);
+}
+.lf-seg-item {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.3rem;
+  padding: 0.42rem 0.95rem; border-radius: 9999px;
+  font-size: 12px; font-weight: 600; white-space: nowrap;
+  color: var(--ink-2); transition: all 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.lf-seg-item:hover { color: var(--ink); }
+.lf-seg-item-active {
+  background: linear-gradient(180deg, #CFE7D8, #9BC5AC);
+  color: #26402F;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 6px 14px -6px var(--glow-sage);
+}
+/* 表格玻璃容器：一改全站管理端表格观感 */
+.lf-table-card {
+  border-radius: 18px; overflow: hidden;
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  backdrop-filter: blur(16px) saturate(1.15);
+  border: 1px solid var(--glass-edge);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 18px 40px -24px var(--shadow-sage);
+}
+.lf-table-card table { width: 100%; }
+.lf-table-card thead th {
+  background: rgba(233, 242, 236, 0.7);
+  color: var(--ink-2);
+  font-size: 12px; font-weight: 600; text-align: left;
+  border-bottom: 1px solid rgba(220, 230, 222, 0.8);
+  white-space: nowrap;
+}
+.lf-table-card tbody tr {
+  border-bottom: 1px solid rgba(220, 230, 222, 0.55);
+  transition: background 0.14s ease;
+}
+.lf-table-card tbody tr:last-child { border-bottom: none; }
+.lf-table-card tbody tr:hover { background: rgba(233, 242, 236, 0.5); }
+.lf-table-card td { vertical-align: middle; }
+/* 状态徽标 */
+.lf-pill {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  border-radius: 9999px; padding: 0.22rem 0.75rem;
+  font-size: 11px; font-weight: 600; white-space: nowrap;
+  border: 1px solid transparent;
+}
+.lf-pill-dot { width: 0.42rem; height: 0.42rem; border-radius: 9999px; background: currentColor; }
+.lf-pill-ok { background: var(--brand-tint); color: #3E6650; }
+.lf-pill-warn { background: var(--ochre-tint); color: #9A5B3C; }
+.lf-pill-danger { background: #F8E4E1; color: var(--brand-danger); }
+.lf-pill-null { background: rgba(255, 255, 255, 0.6); color: var(--ink-muted); }
+/* 统计卡（工作台/领域概览） */
+.lf-stat-card {
+  border-radius: 20px; padding: 1.3rem 1.5rem;
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+  backdrop-filter: blur(16px) saturate(1.15);
+  border: 1px solid var(--glass-edge);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 18px 40px -24px var(--shadow-sage);
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.2s ease;
+}
+.lf-stat-card:hover { transform: translateY(-2px); box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 22px 44px -22px var(--shadow-sage); }
+.lf-stat-label {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.lf-stat-value {
+  margin-top: 0.45rem;
+  font-size: 1.9rem; line-height: 1.12; font-weight: 800;
+  font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.lf-stat-note { margin-top: 0.3rem; font-size: 11px; color: var(--ink-muted); }
+/* 空状态：虚线玻璃 */
+.lf-empty {
+  border: 1px dashed rgba(78, 120, 96, 0.35);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.42);
+  color: var(--ink-muted);
+}
+/* 弹窗遮罩 + 玻璃弹窗 */
+.lf-overlay {
+  background: rgba(45, 60, 48, 0.35);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+/* 页码胶囊 */
+.lf-page-pill {
+  display: inline-flex; align-items: center; gap: 0.55rem;
+  border-radius: 9999px; padding: 0.5rem 1.05rem;
+  font-size: 12.5px; font-weight: 600; color: var(--brand);
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  transition: all 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+  cursor: pointer;
+}
+.lf-page-pill:hover { background: #fff; border-color: rgba(78, 120, 96, 0.45); transform: translateY(-1px); }
+.lf-page-pill:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+/* 树节点激活态 */
+.lf-tree-active {
+  background: linear-gradient(180deg, #CFE7D8, #9BC5AC) !important;
+  color: #26402F !important;
+  font-weight: 700 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+/* 充电进度带（仿电动车充电 UI）：深色轨道 + 高亮渐变填充 + 上涌高光 + 流动斜纹 + 前沿光点 */
+.lf-charge { position: relative; overflow: hidden; border-radius: 12px; }
+.lf-charge .track {
+  position: absolute; inset: 0; border-radius: inherit;
+  background: linear-gradient(180deg, rgba(20,32,26,0.9), rgba(28,44,36,0.92));
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.35);
+}
+.lf-charge .fill {
+  position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: inherit;
+  background: linear-gradient(90deg, #2e6b53 0%, #3f8f6e 55%, #6cc39a 100%);
+  box-shadow: 0 0 14px rgba(91, 184, 138, 0.45);
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.lf-charge .fill.ok { background: linear-gradient(90deg, #1e8449 0%, #2e9e5b 55%, #4fc07f 100%); }
+.lf-charge .fill.bad { background: linear-gradient(90deg, #b23b3b 0%, #d45555 55%, #ef7f7f 100%); }
+.lf-charge .surge {
+  position: absolute; left: 0; right: 0; height: 55%; top: 0; pointer-events: none; border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0) 55%);
+  animation: lf-breathe 2.2s ease-in-out infinite;
+}
+.lf-charge .grain {
+  position: absolute; inset: 0; pointer-events: none; border-radius: inherit;
+  background: repeating-linear-gradient(112deg, rgba(255,255,255,0.16) 0 5px, transparent 5px 14px);
+  animation: lf-flow 0.9s linear infinite;
+}
+.lf-charge .head {
+  position: absolute; top: 1px; bottom: 1px; width: 10px; pointer-events: none; border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.85) 100%);
+  filter: drop-shadow(0 0 6px rgba(255,255,255,0.6));
+  animation: lf-head-pulse 1.2s ease-in-out infinite;
+}
+@keyframes lf-breathe { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@keyframes lf-flow { to { background-position: 28px 0; } }
+@keyframes lf-head-pulse { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
+
+/* 毛玻璃悬浮卡片（泳道等高对比组件） */
+.lf-glass-card {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 0 4px 16px rgba(48, 74, 60, 0.10);
+}
+
+/* 板块间数据流连接：顶部点 + 加粗虚线 + 高光亮条自上而下流动（闪烁） + 底部点 */
+.lf-flow-line { position: relative; width: 5px; height: 30px; }
+.lf-flow-line::before {
+  content: ''; position: absolute; inset: 0;
+  border-left: 3px dashed rgba(78, 120, 96, 0.6);
+  border-radius: 2px;
+}
+.lf-flow-line::after {
+  content: ''; position: absolute; top: -8px; left: -1px; width: 3px; height: 16px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.4), rgba(120, 216, 162, 0.95), rgba(78,120,96,0));
+  filter: drop-shadow(0 0 6px rgba(91, 184, 138, 0.9));
+  border-radius: 3px;
+  animation: lf-flow-down 0.9s linear infinite;
+}
+/* 折线数据流：流光沿拐弯路径流动（stroke-dashoffset 负向循环） */
+.lf-flow-glow {
+  stroke-dasharray: 26 130;
+  stroke-linecap: round;
+  animation: lf-dash-flow 1.15s linear infinite;
+}
+@keyframes lf-dash-flow { to { stroke-dashoffset: -156; } }
+
+/* 水平段流光：渐变光条从左向右流动 */
+.lf-flow-line-h { position: relative; height: 3px; }
+.lf-flow-line-h::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 0;
+  border-top: 3px dashed rgba(78, 120, 96, 0.5);
+  border-radius: 2px;
+}
+.lf-flow-line-h::after {
+  content: ''; position: absolute; top: -7px; width: 18px; height: 3px;
+  background: linear-gradient(90deg, rgba(78,120,96,0), rgba(170, 232, 196, 0.95), rgba(78,120,96,0));
+  filter: drop-shadow(0 0 5px rgba(91, 184, 138, 0.9));
+  border-radius: 3px;
+  animation: lf-flow-right 0.85s linear infinite;
+}
+/* 板块/连线随生成步骤实时入场：新元素 mount 时自动播放，逐步显示 */
+.board-enter { animation: lf-board-in 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes lf-board-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.flow-enter { animation: lf-flow-in 0.55s ease-out; }
+@keyframes lf-flow-in {
+  from { opacity: 0; scale: 0.6; }
+  to { opacity: 1; scale: 1; }
+}
+
+@keyframes lf-flow-right {
+  0% { left: -6%; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { left: 102%; opacity: 0; }
+}
+
+@keyframes lf-flow-down {
+  0% { transform: translateY(-10px); opacity: 0; }
+  14% { opacity: 1; }
+  82% { opacity: 1; }
+  100% { transform: translateY(34px); opacity: 0; }
+}
+.lf-glass-lane {
+  background: rgba(250, 247, 238, 0.45);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 4px 18px rgba(48, 74, 60, 0.08), inset 0 1px 0 rgba(255,255,255,0.8);
+}
+
+/* JSON 查看器：深色开发者面板（执行详情列） */
+.lf-json {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
+  background: #20301f;
+  color: #e8efe9;
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+}
+.lf-json .jk { color: #9fd3a8; }
+.lf-json .js { color: #f2c079; }
+.lf-json .jn { color: #8ab4f8; }
+.lf-json .jb { color: #d3aefb; }
+.lf-json .jz { color: #8fa39a; }
+.lf-json .jp { color: #8fa39a; }
+
+
+/* 泳道最新步骤板块：呼吸光晕闪烁（仅进行中任务的最新板块） */
+.lf-block-live-card {
+  animation: lf-block-pulse 1.6s ease-in-out infinite;
+}
+@keyframes lf-block-pulse {
+  0%, 100% { box-shadow: 0 4px 14px rgba(48,74,60,0.14); }
+  50% { box-shadow: 0 0 18px 4px rgba(78,120,96,0.38); }
+}
+
+/* 泳道 Agent 图标：当前正在执行时呼吸灯 */
+.lf-agent-live {
+  animation: lf-agent-breathe 1.8s ease-in-out infinite;
+}
+@keyframes lf-agent-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(78,120,96,0.35), 0 0 12px 2px rgba(78,120,96,0.16); transform: scale(1); }
+  50% { box-shadow: 0 0 0 5px rgba(78,120,96,0.08), 0 0 22px 7px rgba(78,120,96,0.42); transform: scale(1.06); }
+}
+
+/* ================= Markdown 渲染增强：公式（KaTeX）与代码高亮（highlight.js） ================= */
+/* 行内/块级公式：长公式横向滚动，避免撑破卡片 */
+.katex { font-size: 1.05em; }
+.katex-display { margin: 0.85em 0; overflow-x: auto; overflow-y: hidden; padding: 2px 0 4px; }
+
+/* 深色代码块（lf-codeblock，见 lecture-markdown.tsx）内的语法配色，对齐 lf 暖绿体系 */
+.lf-codeblock .hljs-comment,
+.lf-codeblock .hljs-quote { color: #7C9186; font-style: italic; }
+.lf-codeblock .hljs-keyword,
+.lf-codeblock .hljs-selector-tag,
+.lf-codeblock .hljs-literal,
+.lf-codeblock .hljs-type,
+.lf-codeblock .hljs-doctag { color: #8FD0B0; font-weight: 600; }
+.lf-codeblock .hljs-string,
+.lf-codeblock .hljs-regexp,
+.lf-codeblock .hljs-addition,
+.lf-codeblock .hljs-attribute,
+.lf-codeblock .hljs-selector-attr { color: #E7B45A; }
+.lf-codeblock .hljs-number,
+.lf-codeblock .hljs-built_in,
+.lf-codeblock .hljs-symbol,
+.lf-codeblock .hljs-bullet,
+.lf-codeblock .hljs-template-variable { color: #F0A46E; }
+.lf-codeblock .hljs-title,
+.lf-codeblock .hljs-name,
+.lf-codeblock .hljs-section,
+.lf-codeblock .hljs-selector-id,
+.lf-codeblock .hljs-selector-class { color: #9CC7E8; font-weight: 600; }
+.lf-codeblock .hljs-variable,
+.lf-codeblock .hljs-params,
+.lf-codeblock .hljs-property { color: #E2ECE7; }
+.lf-codeblock .hljs-meta,
+.lf-codeblock .hljs-deletion,
+.lf-codeblock .hljs-tag { color: #D9A0C0; }
+.lf-codeblock .hljs-emphasis { font-style: italic; }
+.lf-codeblock .hljs-strong { font-weight: 700; }

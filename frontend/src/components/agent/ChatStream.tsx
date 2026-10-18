@@ -1,0 +1,589 @@
+/**
+ * ChatStream — 共享的消息流 + composer 组件
+ *
+ * 被 AiChat 页面和 AgentDockSidebar 侧边栏复用。
+ */
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { Link } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
+import { Brain, Check, ChevronDown, Eye, EyeOff, ImagePlus, Mic, NotebookPen, Pencil, Plus, SendHorizonal, Trash2, X } from 'lucide-react';
+import { toast } from 'sonner';
+import { useAgent } from '@/context/AgentContext';
+import { api } from '@/lib/api';
+import { startWavRecording, type WavRecorder } from '@/lib/voiceRecorder';
+import type { AgentMessage } from '@/context/AgentContext';
+import { cn } from '@/lib/utils';
+import { collectLearningPageContext, describeLearningPageContext } from '@/lib/pageContext';
+import type { LearningPageContext } from '@/lib/pageContext';
+
+import { mdRemarkPlugins, mdRehypePlugins } from '@/components/resources/lecture-markdown';
+const shortLabel = (text: string | undefined, max = 18) => {
+  const value = String(text ?? '').replace(/\s+/g, ' ').trim();
+  return value ? (value.length > max ? `${value.slice(0, max)}…` : value) : '';
+};
+
+const cleanOptionLabel = (text: string) => String(text ?? '').replace(/^\s*[A-Ha-h][.、:：)）\s]+/, '').trim();
+
+const isQuizRequest = (text: string) => /出题|出个练习|练习题|类似题/.test(text);
+
+function pageAwareSuggestions(ctx: LearningPageContext): string[] {
+  const focusKind = ctx.focus?.kind ?? '';
+  const focusTitle = shortLabel(ctx.focus?.title);
+  const pageTitle = shortLabel(ctx.pageTitle);
+
+  if (ctx.interaction?.kind === 'quiz' || focusKind === '当前题目') {
+    return ctx.interaction?.submitted
+      ? ['讲解这道题', '分析错误选项', '这道题考的是哪个知识点', '把这道题整理成错题']
+      : ['分析题干', '给我一点提示', '帮我排除选项', '这道题会用到什么概念'];
+  }
+  if (focusKind === '当前实操步骤') {
+    return focusTitle
+      ? [`帮我讲一下「${focusTitle}」`, '这一步为什么这么做', '这个步骤容易踩哪些坑', '做完这一步怎么确认对错']
+      : ['帮我拆解这个操作步骤', '这一步为什么这么做', '这个步骤容易踩哪些坑', '做完怎么确认对错'];
+  }
+  if (ctx.pageType === '幻灯片学习' || focusKind === '当前学习卡片') {
+    return focusTitle
+      ? [`帮我讲一下「${focusTitle}」`, '这页有哪几个关键点', '这页内容怎么记更容易', '把这页整理成笔记']
+      : ['这页有哪几个关键点', '这页内容怎么记更容易', '帮我讲一下当前这一页', '把这页整理成笔记'];
+  }
+  if (ctx.pageType === '完整阅读' || focusKind === '当前阅读段落') {
+    return focusTitle
+      ? [`这段「${focusTitle}」我不太理解`, '帮我提炼这段的重点', '这个知识点怎么记', '根据这段给我出一道练习题']
+      : ['帮我提炼当前这段的重点', '这段我不太理解', '这个知识点怎么记', '根据当前内容给我出一道练习题'];
+  }
+  if (ctx.selection) {
+    return ['用更简单的说法讲一遍', '帮我总结选中内容的要点', '选中内容和我当前学的有什么关系', '根据选中内容出一道题'];
+  }
+  if (['知识点学习', '交互导学', '资源定制', '资源生成'].includes(ctx.pageType) && pageTitle) {
+    return [`帮我讲一下「${pageTitle}」`, '我该怎么理解当前内容', '帮我提炼当前页面重点', '根据当前页面内容出个练习'];
+  }
+  return [];
+}
+
+function extractTopic(ctx: LearningPageContext, replyText = ''): string {
+  const text = ctx.focus?.text || ctx.visibleText || replyText || '';
+  const quoted = text.match(/[“「]([^”」]{2,24})[”」]/)?.[1];
+  if (quoted) return quoted;
+  const firstSentence = text.split(/[。？?\n]/)[0].replace(/\s+/g, ' ').trim();
+  if (firstSentence.length > 2) return firstSentence.length > 18 ? `${firstSentence.slice(0, 18)}…` : firstSentence;
+  const title = ctx.focus?.title || ctx.pageTitle || '';
+  if (title.length > 2) return title.length > 18 ? `${title.slice(0, 18)}…` : title;
+  return '当前知识点';
+}
+
+function buildReplyOptions(message: AgentMessage, ctx: LearningPageContext): string[] {
+  const isQuiz = ctx.interaction?.kind === 'quiz' || ctx.focus?.kind === '当前题目';
+  if (isQuiz) {
+    const topic = extractTopic(ctx, message.text);
+    if (ctx.interaction?.submitted) {
+      if (ctx.interaction.correct === false) {
+        return [
+          '我选错了，帮我分析为什么错',
+          `正确答案为什么和「${topic}」相关`,
+          '换个说法再讲一遍这道题',
+          `再出一道和「${topic}」相近的题`,
+        ];
+      }
+      return [
+        `为什么这道题的关键是「${topic}」`,
+        '换一种方式解释这个概念',
+        `再出一道和「${topic}」相近的题`,
+        '帮我把这个知识点整理成一句话记忆',
+      ];
+    }
+    return [
+      `这道题里的「${topic}」在考什么`,
+      '先别给答案，给我一点提示',
+      '帮我排除明显不对的选项',
+      '这道题最容易错在哪个理解上',
+    ];
+  }
+  const page = pageAwareSuggestions(ctx).slice(0, 4);
+  return page.length
+    ? page
+    : ['结合当前内容再讲一遍', '帮我提炼一下当前重点', '根据当前内容出一道题'];
+}
+function sessionTag(title?: string | null): string {
+  const value = title || '';
+  if (/新对话/.test(value)) return '未开始';
+  if (/题目/.test(value)) return '题目';
+  if (/实操/.test(value)) return '实操';
+  if (/幻灯片/.test(value)) return '幻灯片';
+  if (/讲义|阅读|段落/.test(value)) return '讲义/阅读';
+  if (/盲区|下一步|学情|画像|分数/.test(value)) return '学情';
+  if (/导学/.test(value)) return '导学';
+  return '对话';
+}
+
+/* ===== 消息气泡 ===== */
+function MessageBubble({ message, onAnswerQuizCard }: { message: AgentMessage; onAnswerQuizCard: (msgId: string, optIndex: number) => void }) {
+  const isUser = message.kind === 'user';
+  const text = 'text' in message ? message.text : '';
+  const visibleText = isUser ? text.replace(/^\s*\[(?:当前页面|跨会话上下文)[：:][^\]]+\]\s*/g, '') : text;
+  const userImage = message.kind === 'user' && 'image' in message ? message.image : undefined;
+  const loading = 'loading' in message ? message.loading : false;
+  if (message.kind === 'stage') return (
+    <div className="flex justify-center py-1.5">
+      <div className="max-w-[90%] rounded-full border border-brand/20 bg-brand-tint/15 px-3 py-1 text-center text-[10.5px] leading-4 text-brand whitespace-pre-wrap">
+        {message.text}
+      </div>
+    </div>
+  );
+  if (message.kind === 'verify') return null;
+  if (message.kind === 'note') return (
+    <div className="flex justify-start">
+      <div className="w-[88%] rounded-2xl rounded-bl-md border border-brand/20 bg-brand-tint/30 p-3.5">
+        <div className="flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-paper"><NotebookPen size={13} /></span><div className="min-w-0"><div className="text-[10px] text-brand">已保存到笔记本</div><div className="truncate text-[13px] font-semibold text-ink">{message.title}</div></div></div>
+        <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-[11.5px] leading-5 text-ink-2">{message.text}</p>
+        <Link to="/me/notes" className="mt-2 inline-flex text-[11px] font-medium text-brand hover:underline">查看笔记</Link>
+      </div>
+    </div>
+  );
+  if (message.kind === 'quiz-card') {
+    const options = message.options ?? [];
+    return (
+      <div className="flex justify-start">
+        <div className="w-[92%] rounded-2xl rounded-bl-md border border-hairline bg-paper p-3.5">
+          <div className="flex items-center gap-2">
+            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-brand text-paper"><Brain size={13} /></span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-brand">随堂练习</span>
+          </div>
+          <p className="mt-2 whitespace-pre-wrap text-[13px] leading-[1.7] text-ink">{message.stem}</p>
+          <div className="mt-2.5 space-y-1.5">
+            {options.map((option, idx) => {
+              const picked = message.picked === idx;
+              const correct = message.answerIndex === idx;
+              const settled = !!message.settled;
+              return (
+                <button
+                  key={`${message.id}-${idx}`}
+                  type="button"
+                  disabled={settled}
+                  onClick={() => onAnswerQuizCard(message.id, idx)}
+                  className={cn(
+                    'flex w-full items-start gap-2 rounded-xl border px-3 py-2 text-left text-[12.5px] leading-5 transition',
+                    !settled && 'border-hairline bg-paper text-ink hover:border-brand/50 hover:bg-brand-tint/20',
+                    settled && correct && 'border-emerald-400 bg-emerald-50 text-emerald-900',
+                    settled && !correct && picked && 'border-brand-danger/60 bg-brand-danger/5 text-brand-danger',
+                    settled && !correct && !picked && 'border-hairline/70 text-ink-muted opacity-70',
+                  )}
+                >
+                  <span className="mt-0.5 shrink-0 font-semibold">{String.fromCharCode(65 + idx)}</span>
+                  <span className="min-w-0 flex-1 whitespace-pre-wrap">{cleanOptionLabel(option)}</span>
+                  {settled && correct && <Check size={14} className="mt-1 shrink-0 text-emerald-600" />}
+                  {settled && !correct && picked && <X size={14} className="mt-1 shrink-0 text-brand-danger" />}
+                </button>
+              );
+            })}
+          </div>
+          {message.settled && (
+            <div className={cn('mt-3 rounded-xl px-3 py-2 text-[12px] leading-5', message.correct ? 'bg-emerald-50 text-emerald-900' : 'bg-brand-tint/30 text-ink')}>
+              <div className="font-semibold">{message.correct ? '答对了' : '答错了'}，解析：</div>
+              <p className="mt-1 whitespace-pre-wrap">{message.analysis || '没有更多解析。'}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
+      <div className={cn(
+        'max-w-[85%] rounded-2xl px-4 py-2.5 text-[13px] leading-[1.7]',
+        isUser
+          ? 'rounded-br-md bg-ink text-paper'
+          : 'rounded-bl-md border border-hairline bg-paper text-ink',
+      )}>
+        {loading && !text ? (
+          <span className="inline-flex gap-1 text-ink-muted">
+            <span className="animate-pulse">●</span>
+            <span className="animate-pulse" style={{ animationDelay: '0.15s' }}>●</span>
+            <span className="animate-pulse" style={{ animationDelay: '0.3s' }}>●</span>
+          </span>
+        ) : isUser ? (
+          <div className="min-w-0">{userImage && (
+            <div className="mb-1.5 overflow-hidden rounded-lg">
+              <img src={userImage.url} alt={userImage.name} className="max-h-40 w-auto rounded-lg object-cover" />
+            </div>
+          )}<div className="whitespace-pre-wrap">{visibleText}</div></div>
+        ) : (
+          <div className="[&_a]:text-brand [&_a]:underline [&_code]:rounded [&_code]:bg-ink/[0.06] [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.9em] [&_li]:my-0.5 [&_li]:ml-4 [&_ol]:my-1.5 [&_ol]:list-decimal [&_p]:my-1.5 [&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-ink/[0.06] [&_pre]:p-2 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_strong]:font-semibold [&_ul]:my-1.5 [&_ul]:list-disc">
+            <ReactMarkdown remarkPlugins={mdRemarkPlugins} rehypePlugins={mdRehypePlugins}>{visibleText}</ReactMarkdown>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ===== 消息流 + composer ===== */
+export function ChatStream({ compact = false, pageContext }: { compact?: boolean; pageContext?: string }) {
+  const { messages, askFree, askFreeWithImage, askSimilarQuiz, answerQuizCard, isResponding, suggestions, weakest, currentLearnerId, pageContextEnabled, setPageContextEnabled } = useAgent();
+  const [input, setInput] = useState('');
+  const [image, setImage] = useState<{ name: string; url: string; blob?: Blob } | null>(null);
+  const [recording, setRecording] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const voiceRecRef = useRef<WavRecorder | null>(null);
+  const [contextOpen, setContextOpen] = useState(false);
+  const [currentContext, setCurrentContext] = useState<LearningPageContext>(() => collectLearningPageContext());
+  const [replyOptions, setReplyOptions] = useState<string[]>([]);
+  const [replyOptionsLoading, setReplyOptionsLoading] = useState(false);
+  const [replyMsgId, setReplyMsgId] = useState('');
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+  }, [messages]);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  useEffect(() => {
+    const refresh = () => setCurrentContext(collectLearningPageContext());
+    refresh();
+    const timer = window.setInterval(refresh, 1500);
+    document.addEventListener('selectionchange', refresh);
+    return () => { window.clearInterval(timer); document.removeEventListener('selectionchange', refresh); };
+  }, [pageContext]);
+
+  const handleSend = () => {
+    const text = input.trim();
+    if (isResponding || (!text && !image)) return;
+    const snapshot = collectLearningPageContext();
+    setCurrentContext(snapshot);
+    if (image) {
+      askFreeWithImage(text, image, snapshot);
+      setImage(null);
+    } else {
+      askFree(text, snapshot);
+    }
+    setInput('');
+  };
+
+  const finishVoice = async () => {
+    const recorder = voiceRecRef.current;
+    if (!recorder) return;
+    voiceRecRef.current = null;
+    setRecording(false);
+    if (isResponding) return;
+    try {
+      const blob = await recorder.stop();
+      const { transcript } = await api.transcribeAssistantAudio(blob);
+      const text = transcript.trim();
+      if (!text) return;
+      const snapshot = collectLearningPageContext();
+      setCurrentContext(snapshot);
+      askFree(text, snapshot);
+      setInput('');
+    } catch (reason) {
+      toast.error(reason instanceof Error ? reason.message : '语音识别失败');
+    }
+  };
+
+  const toggleVoice = async () => {
+    if (voiceRecRef.current) {
+      void finishVoice();
+      return;
+    }
+    if (isResponding) return;
+    try {
+      const recorder = await startWavRecording({
+        silenceMs: 1300,
+        maxDurationMs: 15000,
+        onSilence: () => { void finishVoice(); },
+      });
+      voiceRecRef.current = recorder;
+      setRecording(true);
+    } catch (reason) {
+      toast.error(reason instanceof Error ? reason.message : '无法开始录音');
+    }
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+  };
+
+  const resizeInput = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, compact ? 80 : 140)}px`;
+  };
+
+  const welcomeSuggestions = (() => {
+    const pageBased = pageAwareSuggestions(currentContext);
+    if (pageBased.length) return pageBased.slice(0, 4);
+    if (suggestions.length) return suggestions.map((s) => s.text);
+    return weakest
+      ? [`帮我理解「${weakest.name}」的核心概念`, `${weakest.name}有哪些常见错误？`]
+      : ['今天想学什么？', '帮我解释一个概念'];
+  })();
+  const lastQuizCardIdx = (() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].kind === 'quiz-card') return i;
+    }
+    return -1;
+  })();
+  const lastQuizCard = lastQuizCardIdx >= 0 && messages[lastQuizCardIdx].kind === 'quiz-card' ? messages[lastQuizCardIdx] : undefined;
+  const qaRoundsAfterQuiz = lastQuizCardIdx >= 0
+    ? messages.slice(lastQuizCardIdx + 1).filter((m) => m.kind === 'user').length
+    : 0;
+  const canOfferSimilarQuiz = !lastQuizCard || (lastQuizCard.settled && qaRoundsAfterQuiz >= 2);
+  const quizActions = currentContext.interaction?.kind === 'quiz'
+    ? currentContext.interaction.submitted
+      ? ['讲解这道题', '分析错误选项', '查看原文依据', ...(canOfferSimilarQuiz ? ['出一道类似的题'] : [])]
+      : ['分析题干', '给我一点提示', '帮我排除选项']
+    : [];
+  const hasChatMessage = messages.some((m) => m.kind !== 'stage');
+  const lastAgentMsg = (() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const m = messages[i];
+      if (m.kind === 'agent' && 'text' in m && m.text.trim()) return m;
+    }
+    return undefined;
+  })();
+  useEffect(() => {
+    if (!lastAgentMsg || isResponding) return;
+    const currentId = lastAgentMsg.id;
+    if (replyMsgId === currentId) return;
+    setReplyMsgId(currentId);
+    setReplyOptionsLoading(true);
+    const fallback = buildReplyOptions(lastAgentMsg, currentContext);
+    let alive = true;
+    api.askAgentSuggestions(currentLearnerId ?? '', weakest?.id, {
+      pageState: currentContext,
+      text: lastAgentMsg.text.slice(0, 1800),
+    }).then((res) => {
+      if (!alive) return;
+      const items = (res.questions ?? []).map((q) => q.text).filter(Boolean).slice(0, 4);
+      setReplyOptions(items.length >= 2 ? items : fallback);
+    }).catch(() => {
+      if (!alive) return;
+      setReplyOptions(fallback);
+    }).finally(() => {
+      if (alive) setReplyOptionsLoading(false);
+    });
+    return () => { alive = false; };
+  }, [lastAgentMsg, isResponding, currentLearnerId, weakest?.id, currentContext, replyMsgId]);
+
+  const showReplyOptions = Boolean(lastAgentMsg && !isResponding && !replyOptionsLoading && replyOptions.length > 0);
+
+
+  return (
+    <>
+      {(!compact || hasChatMessage) && (
+      <div className="shrink-0 border-b border-hairline/70 bg-brand-tint/20 px-3 py-2">
+        <div className="flex w-full items-center gap-2">
+          <button type="button" onClick={() => { setPageContextEnabled(!pageContextEnabled); if (pageContextEnabled) setContextOpen(false); }} title={pageContextEnabled ? '关闭当前所见' : '开启当前所见'} className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border bg-paper transition', pageContextEnabled ? 'border-brand/15 text-brand' : 'border-hairline text-ink-muted')}>
+            {pageContextEnabled ? <Eye size={12} /> : <EyeOff size={12} />}
+          </button>
+          <span className={cn('min-w-0 flex-1 truncate text-[11.5px] font-medium', pageContextEnabled ? 'text-ink-2' : 'text-ink-muted')}>
+            {pageContextEnabled ? `当前所见：${describeLearningPageContext(currentContext)}` : '当前所见已关闭'}
+          </span>
+          <button type="button" onClick={() => setContextOpen((value) => !value)} aria-expanded={contextOpen} className="shrink-0" disabled={!pageContextEnabled}>
+            <ChevronDown size={12} className={cn('text-ink-muted transition-transform', contextOpen && 'rotate-180', !pageContextEnabled && 'opacity-40')} />
+          </button>
+        </div>
+        {contextOpen && pageContextEnabled && (
+          <div className="mt-2 rounded-xl border border-hairline/70 bg-paper/80 px-3 py-2 text-[10.5px] leading-5 text-ink-muted">
+            <p>{currentContext.selection ? '将优先使用选中的文字' : currentContext.focus ? `当前焦点：${currentContext.focus.title || currentContext.focus.kind}` : '当前没有选中文字或专属卡片'}</p>
+            <p className="mt-0.5">可见内容约 {currentContext.visibleText.length} 字{currentContext.entities.resourceOrTaskId ? ' · 已关联当前资源' : ''}</p>
+          </div>
+        )}
+      </div>
+      )}
+      {/* 消息流 */}
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+        {messages.length === 0 ? (
+          <div className="mx-auto max-w-[400px] pt-[8vh] text-center">
+            <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-brand text-paper">
+              <Brain size={20} />
+            </div>
+            <h3 className={cn('font-bold text-ink', compact ? 'text-[15px]' : 'text-[18px]')}>
+              今天想学什么？
+            </h3>
+            <p className="mt-1 text-[12px] text-ink-muted">直接提问、解释概念、生成练习</p>
+            <div className={cn('mt-4 gap-2', compact ? 'grid grid-cols-1' : 'grid grid-cols-2')}>
+              {welcomeSuggestions.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => { if (isQuizRequest(s)) { void askSimilarQuiz(currentContext); } else { askFree(s, currentContext); } }}
+                  disabled={isResponding}
+                  className="rounded-xl border border-hairline bg-paper px-3 py-2 text-left text-[12px] text-ink transition hover:border-brand/40 hover:bg-brand-tint/20 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {messages.map((m) => (
+              <Fragment key={m.id}>
+                <MessageBubble message={m} onAnswerQuizCard={answerQuizCard} />
+                {showReplyOptions && m.id === lastAgentMsg?.id && (
+                  <div className="ml-1 flex flex-col items-start gap-1">
+                    {replyOptions.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        disabled={isResponding}
+                        onClick={() => {
+                          const ctx = collectLearningPageContext();
+                          if (isQuizRequest(option)) {
+                            void askSimilarQuiz(ctx);
+                          } else {
+                            askFree(option, ctx);
+                          }
+                        }}
+                        className="inline-flex items-center rounded-lg border border-hairline bg-paper px-2 py-1 text-left text-[10.5px] leading-4 text-ink transition hover:border-brand/40 hover:bg-brand-tint/20 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </Fragment>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {quizActions.length > 0 && (
+        <div className="flex shrink-0 gap-1.5 overflow-x-auto border-t border-hairline/70 bg-brand-tint/15 px-3 py-2">
+          {quizActions.map((action) => (
+            <button
+              key={action}
+              type="button"
+              disabled={isResponding}
+              onClick={() => {
+                const ctx = collectLearningPageContext();
+                if (isQuizRequest(action)) {
+                  void askSimilarQuiz(ctx);
+                } else {
+                  askFree(action, ctx);
+                }
+              }}
+              className="shrink-0 rounded-full border border-brand/20 bg-paper px-2.5 py-1 text-[10.5px] font-medium text-brand transition hover:border-brand/45 hover:bg-brand-tint/40 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {action}
+            </button>
+          ))}
+        </div>
+      )}
+      {/* Composer */}
+      <div className="shrink-0 border-t border-hairline px-3 py-2">
+        {image && (
+          <div className="mb-2 flex items-center gap-2 rounded-lg border border-hairline bg-paper p-1.5">
+            <img src={image.url} alt={image.name} className="h-9 w-9 rounded object-cover" />
+            <span className="min-w-0 flex-1 truncate text-[10.5px] text-ink-2">{image.name}</span>
+            <button type="button" onClick={() => setImage(null)} className="shrink-0 rounded p-1 text-ink-muted hover:text-brand-danger" title="移除图片"><X size={12} /></button>
+          </div>
+        )}
+        <div className="flex items-end gap-2 rounded-xl border border-hairline bg-paper px-2.5 py-1.5">
+          <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) setImage({ name: file.name, url: URL.createObjectURL(file), blob: file }); event.target.value = ''; }} />
+          <button
+            type="button"
+            onClick={() => void toggleVoice()}
+            disabled={isResponding && !recording}
+            title={recording ? '停止录音并发送' : '语音提问'}
+            aria-label="语音提问"
+            className={cn('shrink-0 rounded-lg border p-2 transition disabled:cursor-not-allowed disabled:opacity-40', recording ? 'animate-pulse border-brand-danger bg-brand-danger text-paper' : 'border-hairline text-ink-muted hover:border-brand/40 hover:text-brand')}
+          >
+            <Mic size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={() => imageInputRef.current?.click()}
+            disabled={isResponding}
+            title="上传图片提问"
+            className="shrink-0 rounded-lg border border-hairline p-2 text-ink-muted transition hover:border-brand/40 hover:text-brand disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <ImagePlus size={14} />
+          </button>
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e) => { setInput(e.target.value); resizeInput(); }}
+            onKeyDown={handleKeyDown}
+            placeholder="输入你的问题…"
+            rows={1}
+            disabled={isResponding}
+            className={cn(
+              'min-h-[24px] flex-1 resize-none bg-transparent text-[13px] leading-[1.6] text-ink outline-none placeholder:text-ink-muted',
+              isResponding && 'cursor-not-allowed opacity-60',
+              compact ? 'max-h-[80px]' : 'max-h-[140px]',
+            )}
+          />
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={isResponding || (!input.trim() && !image)}
+            className="shrink-0 rounded-lg bg-ink px-2.5 py-1.5 text-paper transition hover:opacity-90 disabled:opacity-30"
+          >
+            <SendHorizonal size={14} />
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ===== 会话列表（全屏页面用） ===== */
+export function SessionList() {
+  const { sessions, currentSessionId, createAgentSession, switchAgentSession, deleteAgentSession, renameAgentSession, isResponding, setPageContextEnabled } = useAgent();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftTitle, setDraftTitle] = useState('');
+
+  return (
+    <>
+      <div className="shrink-0 border-b border-hairline px-3 py-2">
+        <button
+          type="button"
+          disabled={isResponding}
+          onClick={() => { if (isResponding) return; setPageContextEnabled(false); void createAgentSession(); }}
+          className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-hairline bg-ink py-2 text-[13px] font-semibold text-paper transition hover:opacity-90"
+        >
+          <Plus size={14} />新对话
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+        {sessions.length === 0 && (
+          <p className="px-2 py-6 text-center text-[12px] text-ink-muted">暂无对话</p>
+        )}
+        {sessions.map((s) => (
+          <div
+            key={s.id}
+            className={cn(
+              'group mb-0.5 flex cursor-pointer items-center gap-2 rounded-xl px-2.5 py-2 transition',
+              s.id === currentSessionId ? 'bg-brand-tint/50' : 'hover:bg-paper-deep',
+            )}
+            onClick={() => { if (isResponding) return; void switchAgentSession(s.id); }}
+          >
+            <div className="min-w-0 flex-1">
+              {editingId === s.id ? <input autoFocus value={draftTitle} onChange={(event) => setDraftTitle(event.target.value)} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Enter' && draftTitle.trim()) { event.stopPropagation(); void renameAgentSession(s.id, draftTitle).then(() => setEditingId(null)); } if (event.key === 'Escape') setEditingId(null); }} className="w-full rounded-md border border-brand/30 bg-paper px-2 py-1 text-[12px] text-ink outline-none" /> : <p className="truncate text-[12px] font-medium text-ink">{s.title || '未命名对话'}</p>}
+              <p className="truncate text-[10px] text-ink-muted">{sessionTag(s.title)}</p>
+            </div>
+            {editingId === s.id ? <><button type="button" disabled={isResponding} onClick={(event) => { if (isResponding) return; event.stopPropagation(); if (draftTitle.trim()) void renameAgentSession(s.id, draftTitle).then(() => setEditingId(null)); }} className="shrink-0 rounded-md p-1 text-brand disabled:opacity-40"><Check size={12} /></button><button type="button" disabled={isResponding} onClick={(event) => { if (isResponding) return; event.stopPropagation(); setEditingId(null); }} className="shrink-0 rounded-md p-1 text-ink-muted disabled:opacity-40"><X size={12} /></button></> : <button type="button" disabled={isResponding} onClick={(event) => { if (isResponding) return; event.stopPropagation(); setEditingId(s.id); setDraftTitle(s.title || ''); }} title="重命名对话" aria-label="重命名对话" className="shrink-0 rounded-md p-1 text-ink-muted/70 transition hover:bg-brand-tint hover:text-brand focus-visible:opacity-100 group-hover:text-ink-muted disabled:cursor-not-allowed disabled:opacity-40"><Pencil size={12} /></button>}
+            <button
+              type="button"
+              disabled={isResponding}
+              onClick={(e) => { if (isResponding) return; e.stopPropagation(); void deleteAgentSession(s.id); }}
+              title="删除对话" aria-label="删除对话" className="shrink-0 rounded-md p-1 text-ink-muted/70 transition hover:bg-brand-danger/10 hover:text-brand-danger focus-visible:opacity-100 group-hover:text-ink-muted"
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+
+
+
+
+
