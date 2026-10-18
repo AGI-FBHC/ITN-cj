@@ -56,7 +56,7 @@ public class GuestDemoController {
             context.response.write(AuthController.errorJson(e.code, e.message))
         } catch (e: Exception) {
             context.response.statusCode = 500
-            context.response.write(AuthController.errorJson(ErrorCode.INTERNAL_ERROR, "服务器内部错误: " + e.message))
+            context.response.write(AuthController.errorJson(ErrorCode.INTERNAL_ERROR, "服务器内部错误"))
             println("Guest/demo login failed: " + e.message)
         }
     }
