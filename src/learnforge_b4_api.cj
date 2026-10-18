@@ -137,7 +137,7 @@ func handleGetKp(ctx: HttpContext, cfg: AppConfig): Unit {
  * Sorted by mastery ASC then sequence ASC, then re-sequenced 1..n.
  */
 func handleLearningPath(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (openDb(cfg)) {
@@ -222,7 +222,7 @@ func handleLearningPath(ctx: HttpContext, cfg: AppConfig): Unit {
 /* ---- ReviewStateResponse ---- */
 
 func handleReviewStates(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (openDb(cfg)) {
@@ -316,7 +316,7 @@ func goalB4ToJson(g: RawGoalB4, currentGoalId: ?Array<Byte>): String {
 }
 
 func handleListGoals(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (openDb(cfg)) {
@@ -338,7 +338,7 @@ func handleListGoals(ctx: HttpContext, cfg: AppConfig): Unit {
 }
 
 func handleGetGoal(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (parseRouteUuid(ctx, "goalId")) {

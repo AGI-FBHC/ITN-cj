@@ -55,7 +55,7 @@ public func registerWriteRoutes(app: WebHost, cfg: AppConfig): Unit {
  * normalizeSpeed: only very_slow/slow/fast/very_fast accepted, else "normal".
  */
 func handleUpsertProfile(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (readJsonBody(ctx)) {
@@ -126,7 +126,7 @@ func handleUpsertProfile(ctx: HttpContext, cfg: AppConfig): Unit {
  * updateFromRequest: null fields don't overwrite.
  */
 func handleCreateLearner(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (readJsonBody(ctx)) {
@@ -185,7 +185,7 @@ func handleCreateLearner(ctx: HttpContext, cfg: AppConfig): Unit {
  * Ownership check: findByIdAndUser_Id → 404 if not found.
  */
 func handleUpdateLearner(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (parseRouteUuid(ctx, "learnerId")) {
@@ -326,7 +326,7 @@ func jsonObjBool(obj: JsonValue, field: String): ?Bool {
 /* ---- POST /api/v1/learner-profile/events ---- */
 
 func handleRecordEvent(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             /* parse body */
@@ -392,7 +392,7 @@ func handleRecordEvent(ctx: HttpContext, cfg: AppConfig): Unit {
 /* ---- POST /api/v1/learner-profile/quiz ---- */
 
 func handleRecordQuiz(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (readJsonBody(ctx)) {
@@ -480,7 +480,7 @@ func handleRecordQuiz(ctx: HttpContext, cfg: AppConfig): Unit {
 /* ---- POST /api/v1/learner-profile/journal/summary ---- */
 
 func handleJournalSummary(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             /* parse ?date= */

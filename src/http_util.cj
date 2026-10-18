@@ -516,6 +516,11 @@ public func bearerToken(request: HttpRequest): ?String {
 /*
  * Resolve the caller identity using the same rules as
  * src/agents/app/security.py require_user_principal.
+ *
+ * NOTE: this is the /v1 face. Python's require_user_principal verifies the JWT
+ * signature only (security.py:80-94) — no session lookup, no active check — so
+ * the /v1 routes keep this function unchanged. The /api/v1 face uses
+ * requireUserApi below.
  */
 public func requireUser(request: HttpRequest, response: HttpResponse, secret: ?String): ?Array<Byte> {
     match (secret) {
@@ -536,6 +541,90 @@ public func requireUser(request: HttpRequest, response: HttpResponse, secret: ?S
                             return Some(principal.userId)
                     }
             }
+    }
+}
+
+/*
+ * /api/v1 face: JWT signature + a live user_sessions row + an active user.
+ *
+ * Mirrors src/backend/.../security/JwtAuthenticationFilter.java:
+ *   jwtService.parse(token);
+ *   session = sessionRepository.findByTokenHash(sha256(token));
+ *   if (session != null && session.isValidAt(now) && session.getUser().isActive())
+ *       authenticate(session.getUser());
+ *   — anything else leaves the request unauthenticated → 401.
+ *
+ * UserSession.isValidAt(instant) is `revokedAt == null && expiresAt.isAfter(instant)`.
+ * token_hash is SHA-256 of the raw bearer token as lowercase hex, 64 chars
+ * (HashingSupport.sha256 → HexFormat.of().formatHex).
+ *
+ * The authenticated identity is the SESSION's user, matching Java — it
+ * authenticates session.getUser(), not the JWT sub. They agree in practice
+ * because the token hash identifies the login session that issued this token.
+ *
+ * All three failure modes (bad signature, no live session, inactive user) are
+ * 401 "Invalid or expired token": Java's filter simply declines to
+ * authenticate, and Spring Security answers 401 for all of them. The 1007
+ * ACCOUNT_DISABLED code is a login-flow error, not a filter error.
+ */
+public func requireUserApi(request: HttpRequest, response: HttpResponse, cfg: AppConfig): ?Array<Byte> {
+    match (cfg.jwtSecret) {
+        case None =>
+            writeDetail(response, 503, "User authentication is not configured")
+            return None
+        case Some(sec) =>
+            match (bearerToken(request)) {
+                case None =>
+                    writeDetail(response, 401, "Bearer token required")
+                    return None
+                case Some(token) =>
+                    match (jwtVerify(token, sec)) {
+                        case None =>
+                            writeDetail(response, 401, "Invalid or expired token")
+                            return None
+                        case Some(_) =>
+                            match (activeSessionUser(cfg, token)) {
+                                case None =>
+                                    writeDetail(response, 401, "Invalid or expired token")
+                                    return None
+                                case Some(userId) =>
+                                    return Some(userId)
+                            }
+                    }
+            }
+    }
+}
+
+/*
+ * Look up the session row for this bearer token and return its user_id when
+ * the session is live and the user is active. The WHERE clause mirrors
+ * UserSession.isValidAt (revoked_at IS NULL AND expires_at > now) joined with
+ * User.isActive (u.active = 1).
+ *
+ * Both expires_at and NOW(6) are session-clock timestamps (the column is
+ * timestamp(6)), so the comparison needs no timezone shift.
+ */
+private func activeSessionUser(cfg: AppConfig, token: String): ?Array<Byte> {
+    let tokenHash = bytesToHex(sha256Bytes(token.toArray()))
+    match (openDb(cfg)) {
+        case None => return None
+        case Some(conn) =>
+            let sql = "SELECT s.user_id FROM user_sessions s" +
+                " JOIN users u ON u.id = s.user_id" +
+                " WHERE s.token_hash=" + sqlQuote(tokenHash) +
+                " AND s.revoked_at IS NULL" +
+                " AND s.expires_at > NOW(6)" +
+                " AND u.active=1 LIMIT 1"
+            var out: ?Array<Byte> = None
+            match (conn.query(sql)) {
+                case QueryOutcome.Ok(_) => ()
+                case QueryOutcome.ResultSet(rs) =>
+                    if (!rs.rows.isEmpty()) {
+                        out = Some(rs.rows[0][0].bytes)
+                    }
+            }
+            conn.close()
+            return out
     }
 }
 

@@ -94,7 +94,7 @@ func stageOf(watered: Int64): String {
 /* ---- POST /growth-events ---- */
 
 func handleGrowthEvent(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (readJsonBody(ctx)) {
@@ -179,7 +179,7 @@ func handleGrowthEvent(ctx: HttpContext, cfg: AppConfig): Unit {
 /* ---- POST /growth/nourish ---- */
 
 func handleNourish(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (openDb(cfg)) {
@@ -232,7 +232,7 @@ func handleNourish(ctx: HttpContext, cfg: AppConfig): Unit {
 
 /* POST /learning-goals */
 func handleCreateGoal(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (readJsonBody(ctx)) {
@@ -336,7 +336,7 @@ func handleCreateGoal(ctx: HttpContext, cfg: AppConfig): Unit {
 
 /* POST /learning-goals/domain/{domainId}/ensure */
 func handleEnsureGoal(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             let domainIdStr = routeParamStr(ctx, "domainId") ?? "0"
@@ -390,7 +390,7 @@ func handleEnsureGoal(ctx: HttpContext, cfg: AppConfig): Unit {
 
 /* PUT /learning-goals/{goalId} */
 func handleUpdateGoal(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (parseRouteUuid(ctx, "goalId")) {
@@ -456,7 +456,7 @@ func handleUpdateGoal(ctx: HttpContext, cfg: AppConfig): Unit {
 
 /* DELETE /learning-goals/{goalId} */
 func handleDeleteGoal(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (parseRouteUuid(ctx, "goalId")) {
@@ -491,7 +491,7 @@ func handleDeleteGoal(ctx: HttpContext, cfg: AppConfig): Unit {
 
 /* PUT /learning-goals/{goalId}/current */
 func handleSetCurrentGoal(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (parseRouteUuid(ctx, "goalId")) {
@@ -526,7 +526,7 @@ func handleSetCurrentGoal(ctx: HttpContext, cfg: AppConfig): Unit {
 
 /* DELETE /learning-goals/current */
 func handleClearCurrentGoal(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (openDb(cfg)) {
@@ -550,7 +550,7 @@ func handleClearCurrentGoal(ctx: HttpContext, cfg: AppConfig): Unit {
 /* ---- POST /review-states/{code}/complete ---- */
 
 func handleCompleteReview(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             let code = routeParamStr(ctx, "code") ?? ""

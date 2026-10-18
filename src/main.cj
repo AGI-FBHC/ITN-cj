@@ -56,6 +56,8 @@ main(): Int64 {
     registerBatch8Routes(app, cfg)
     /* P2 batch 9 — onboarding pure-compute POSTs. */
     registerBatch9Routes(app, cfg)
+    /* P2 scores_json single-writer step 1 — PUT /v1/learners/scores LOCAL. */
+    registerLearnerScoresRoutes(app, cfg)
     /* P3/P2 catch-all forwarders — MUST be last so literal routes win. */
     registerGatewayRoutes(app, cfg)
 
