@@ -34,7 +34,8 @@ bash deploy/build.sh /home/ubuntu/itn-cangjie-src
 ```bash
 git clone -b front git@github.com:AGI-FBHC/ITN-cj.git front
 cd front && npm ci && npm run build
-rsync -a --delete dist/ /home/ubuntu/itn-cangjie-stack/web/dist/
+rsync -a dist/ /home/ubuntu/itn-cangjie-stack/web/dist/
+# 不要加 --delete：保留旧哈希文件，避免已打开页面的懒加载 chunk 404
 ```
 
 ## 启动
