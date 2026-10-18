@@ -4,7 +4,7 @@ const freePort=()=>new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.
 (async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'lumin-ppt-agent-')),mp=await freePort(),pf=path.join(dir,'port');
  const mock=spawn('python',[path.join(root,'tools/mock-openai/server.py'),String(mp)],{windowsHide:true,stdio:'ignore',env:{...process.env,ITN_MOCK_CHUNK_DELAY_MS:'0'}});
- const core=spawn(path.join(root,'dist/core/itn-desktop-core.exe'),['--data-dir='+dir,'--port-file='+pf,'--ui-dir='+path.join(root,'shell/renderer')],{windowsHide:true,stdio:['ignore','ignore','pipe']});
+ const coreExe=process.env.PRESENTATION_CORE_EXE||path.join(root,'dist/core/itn-desktop-core.exe'),uiDir=process.env.PRESENTATION_UI_DIR||path.join(root,'shell/renderer');const core=spawn(coreExe,['--data-dir='+dir,'--port-file='+pf,'--ui-dir='+uiDir],{windowsHide:true,stdio:['ignore','ignore','pipe']});
  let passed=0; const check=(name,ok)=>{if(!ok)throw Error(name);passed++;console.log('PASS '+name);};
  try{
   for(let i=0;i<100&&!fs.existsSync(pf);i++)await sleep(100);
