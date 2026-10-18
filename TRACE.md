@@ -217,3 +217,11 @@ zyq 新增 07aa2c3（scores_json 单写入及鉴权深化）尚未部署；按�
 - Web全量tsc既有错误、已知服务端资源接口500仍需各自处理；本轮没有宣称全部业务已完成或全部代码均已仓颉化。
 - 主要日志 D:\Temp\itn-monorepo-desktop-build-20261019.txt、itn-monorepo-desktop-tests-20261019.txt、itn-monorepo-desktop-package-20261019.txt、itn-monorepo-desktop-routes-20261019.txt、itn-monorepo-web-build-20261019.txt。界面检查进程信息 D:\Temp\itn-monorepo-ui-manifest-20261019.json。
 - 沿用用户前文提交main的授权，本轮在上述检查后提交整理结果并普通推送main，不强推。后续从仓库根README按组件进入开发，不再在根直接运行cjpm或Vite。
+
+## 2026-10-19 明确总 README 面向使用者并修正
+
+用户先质疑“开始开发”，随后明确说明“README是写给用户看的 不是写给开发者看的”。此前仅解释写偏了，没有立即调整文档；本轮按这一明确要求重写根 README，保留 ITN 标题、原仓库链接和仓颉新版本背景，内容改为两种产品的用途、使用选择、网页版体验入口、桌面版使用步骤、用户资料与记录及使用手册。
+
+从根 README 移除开发命令、源码目录树、工具链/SDK、前后端实现细节、类型检查和构建限制以及面向开发者的文档导航。各组件开发文档仍保留在原位置，不再作为总 README 的主体或用户入口。根 README 不把尚无发布包的 Desktop 写成已有下载：通过 gh release list 当前返回空数组核实，已如实说明暂无桌面应用下载包；应用包启动文件依据实际打包脚本写为 Lumin.exe。
+
+验证：当前网页版体验地址 http://43.160.236.121:20889/ 公网直连HTTP200；登录源码存在游客体验入口；使用说明及本地链接存在；检查总标题、两端内容、原仓库链接，并确认无开发命令和SDK/源码结构段落。本轮只修改 README 和追加 TRACE，没有重跑无关构建或改变功能、目录和线上环境。按前文 main 交付授权提交并普通推送 main。
