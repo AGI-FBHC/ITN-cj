@@ -1,0 +1,12 @@
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+!.env.mail.example
+# Generated output and personal tooling
+target/
+.cache/
+.vscode/
+backups/
+*.log
+*.err.log
