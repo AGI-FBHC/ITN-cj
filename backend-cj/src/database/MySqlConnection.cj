@@ -73,13 +73,11 @@ public class MySqlConnection {
                     while (true) {
                         let row = mysql_fetch_row(result)
                         if (row.isNull()) { break }
-                        let lengths = mysql_fetch_lengths(result)
-                        if (lengths.isNull()) { throw Exception("MySQL field lengths unavailable") }
                         let cells = Array<Option<String>>(fieldCount, { _ => None })
                         for (i in 0..fieldCount) {
                             let value = (row + i).read()
                             if (!value.isNull()) {
-                                let size = Int64((lengths + i).read())
+                                let size = cStringLength(value)
                                 let bytes = Array<UInt8>(size, { j => (value.getChars() + j).read() })
                                 cells[i] = Some(String.fromUtf8(bytes))
                             }
@@ -93,6 +91,13 @@ public class MySqlConnection {
             } finally {
                 mysql_close(handle)
             }
+        }
+    }
+    private static func cStringLength(value: CString): Int64 {
+        unsafe {
+            var size: Int64 = 0
+            while ((value.getChars() + size).read() != 0) { size += 1 }
+            return size
         }
     }
     // INSERT / UPDATE / DELETE return affected rows rather than a result table.
