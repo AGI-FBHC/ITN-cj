@@ -77,13 +77,11 @@ public class DbTransaction {
                 while (true) {
                     let row = mysql_fetch_row(result)
                     if (row.isNull()) { break }
-                    let lengths = mysql_fetch_lengths(result)
-                    if (lengths.isNull()) { throw Exception("Missing MySQL field lengths") }
                     let cells = Array<Option<String>>(fields, { _ => None })
                     for (i in 0..fields) {
                         let value = (row + i).read()
                         if (!value.isNull()) {
-                            let size = Int64((lengths + i).read())
+                            let size = cStringLength(value)
                             cells[i] = Some(String.fromUtf8(Array<UInt8>(size,
                                 { j => (value.getChars() + j).read() })))
                         }
@@ -92,6 +90,14 @@ public class DbTransaction {
                 }
                 return rows.toArray()
             } finally { mysql_free_result(result) }
+        }
+    }
+
+    private static func cStringLength(value: CString): Int64 {
+        unsafe {
+            var size: Int64 = 0
+            while ((value.getChars() + size).read() != 0) { size += 1 }
+            return size
         }
     }
 }
