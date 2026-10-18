@@ -83,3 +83,18 @@ src/main.tsx:16-29 中先无条件 event.preventDefault()（第 17 行），再�
 - 控制台/快照 D:\Temp\itn-crash-audit-20261018-browser-logs\console-2026-10-18T14-29-01-631Z.log；关键原始 TypeError 及 RootErrorBoundary 栈均保存。
 - Playwright CLI 默认缓存目录 C:\Users\GeJie\AppData\Local\ms-playwright 为异常 reparse point，创建 daemon 失败。最终仅对测试进程设置 LOCALAPPDATA=D:\Temp\itn-browser-local、PWTEST_DAEMON_SESSION_DIR=D:\Temp\itn-playwright-audit 后成功运行；未改用户系统环境或目录。
 - 测试完成关闭独立浏览器，将 CLI 临时日志移到上述临时目录，保持前端源码工作区整洁。未运行构建，因为本轮没有功能变更。
+
+## 2026-10-18 修复动态资源加载失败的二次崩溃
+
+用户在审计结论后明确要求“帮我修复”，本轮授权实施修复和更新已有 20889 测试站点。
+
+- 新增 src/lib/chunkRecovery.ts：保留 Vite 原始 rejection，不再调用 preventDefault，避免 React.lazy 得到 undefined 后触发读取 default 的二次异常。按事件 payload 记录实际 preload 错误，兼容动态导入/CSS/chunk 常见错误消息。
+- 同一标签页用既有 lf.chunkReloadAt 标记最多自动刷新一次；不再经过 10 秒后重试。标记必须成功写入 sessionStorage 才自动刷新；读写异常则保留原始错误并转人工重试，避免存储不可用时无限刷新。既有重试标记继续生效；刷新不会清除标记，所以持续故障不会循环。
+- main.tsx 在 ensureStorageSchema 后安装处理，防止首次 schema 迁移删除刚写的恢复标记。
+- RootErrorBoundary 对资源失败显示“页面资源加载失败”、网络/稍后重试说明和“重新加载页面”按钮；该类错误不提供清空数据操作。一般渲染错误原有处理保持不变。
+- 新增 tests/chunkRecovery.test.mjs，使用 Node 内置测试框架和现有 TypeScript 编译器，未新增 npm 依赖。4 组测试通过，覆盖跨文档持续失败、保护期/旧标记、存储 get/set 异常、浏览器错误识别及无关错误不被误认。执行 node --test tests/chunkRecovery.test.mjs。
+- 修改的 TS/TSX 文件定向 ESLint 和 chunkRecovery 严格 TypeScript 检查通过；npx vite build 通过，入口 index-KTreDdLj.js。全量 tsc -b 仍失败（原有 ChatStream/KnowledgeGraph3D/Learn/CourseResourcePlayer 等类型问题），完整输出 D:\Temp\itn-typecheck-20261018.txt，不包含本次修改文件错误。没有宣称完整 npm run build 通过。
+- 本地生产预览 http://127.0.0.1:4002，API 同源代理至既有 20889。独立 Chrome 真实游客登录；浏览器故障注入通过：正常错题本和知识网络、单次失败 1 次文档刷新恢复、已有重试标记再次失败 0 次自动刷新、手动重试恢复、持续失败超过 11 秒仍仅 1 次自动刷新、sessionStorage 不可用 0 次自动刷新。每次错误保留原始动态导入消息，无 default 二次错误、无清数据提示；登录令牌与本地学习标记保持一致。
+- 浏览器回归脚本 D:\Temp\itn-regression-browser.js；错误页截图 D:\Temp\itn-regression-20261018\recoverable-error.png。仅在独立测试浏览器拦截 JS，没有删除线上文件。
+- 服务器预检：api/business healthy，web 运行；Nginx 配置检查通过，磁盘剩余约 9.6 GB。SSH 密钥登录不可用，复用前一授权部署会话中的已有凭据，仅运行时解析并认证，没有将密码写进新脚本、日志或 Git。
+- 功能代码先提交本地 Git，随后部署；发版采用先补齐 assets、最后原子替换 index.html，保留原 dist 目录及历史哈希资源，并备份旧入口以便回滚。线上验收结果在本文件后续追加。
