@@ -98,3 +98,16 @@ src/main.tsx:16-29 中先无条件 event.preventDefault()（第 17 行），再�
 - 浏览器回归脚本 D:\Temp\itn-regression-browser.js；错误页截图 D:\Temp\itn-regression-20261018\recoverable-error.png。仅在独立测试浏览器拦截 JS，没有删除线上文件。
 - 服务器预检：api/business healthy，web 运行；Nginx 配置检查通过，磁盘剩余约 9.6 GB。SSH 密钥登录不可用，复用前一授权部署会话中的已有凭据，仅运行时解析并认证，没有将密码写进新脚本、日志或 Git。
 - 功能代码先提交本地 Git，随后部署；发版采用先补齐 assets、最后原子替换 index.html，保留原 dist 目录及历史哈希资源，并备份旧入口以便回滚。线上验收结果在本文件后续追加。
+
+## 2026-10-18 修复上线与验收完成（功能提交 e1232b7）
+
+- 实际部署地址 http://43.160.236.121:20889/。仅更新前端静态文件，没有重启容器或修改后端/数据库。
+- 发布包 D:\Temp\chunk-recovery-e1232b7.tgz（8447657 字节）；先解包至服务器 _upload/chunk-recovery-e1232b7-ov9ra40l，再补齐资源，最后在现有 dist 目录内用 os.replace 原子替换 index.html，目录 inode 保持不变。387 个既有 assets 文件全部保留。
+- 新入口 /assets/index-KTreDdLj.js，当前错题本 WrongBook-YuEnpyPb.js。线上首页 SHA256 f7ed31611d6d015b7d1d45ba260474d33babadf9d6edea280ee67f7ca41e0098，与本地构建一致。
+- /、/learn 返回 200 和 no-cache, no-store, must-revalidate；/health 返回 200。旧 WrongBook-CeE7joW9.js、上一版 WrongBook-DHROjuqW.js 均仍为 200 application/javascript；原始报错 chunk 的 SHA256 与发版前一致。
+- 旧首页已备份为 /home/ubuntu/itn-cangjie-stack/_upload/index-before-chunk-recovery-e1232b7.html。回滚只需先把该备份复制为 web/dist/index.html.rollback，再 mv 到 web/dist/index.html；因旧 assets 保留，无需删除新资产或重启整个栈。回滚会恢复有缺陷的前端，只有需要时再执行。
+- 上线后独立 Chrome 重新真实游客登录，完整重复本地 7 个场景，全部通过：正常错题本/知识网络；瞬时失败 requests=2/documentReloads=1；已有恢复标记再次失败 documentReloads=0；手动重试成功；持续失败等待 11 秒 requests=2/documentReloads=1；恢复标记的 sessionStorage 读取被 SecurityError 拒绝时 documentReloads=0；最终登录令牌和本地学习标记均未变化。存储测试仅针对恢复处理访问的键，未声称整个应用所有存储调用都已适配禁用存储环境。
+- 错误页截图已经视觉核验：资源失败显示正确标题和原始导入错误，只提供“重新加载页面”；未出现 default 二次异常或清空数据按钮。浏览器请求 abort 均限独立测试会话，测试后解除并关闭浏览器；本地预览也已停止。
+- 验收文件：D:\Temp\itn-regression-20261018\live-browser-results.txt、local-browser-results.txt、deployment.json、recoverable-error.png；线上控制台 D:\Temp\.playwright-cli\console-2026-10-18T14-43-02-644Z.log。本轮未提交临时浏览器日志、凭据或构建包。
+- 4 组 Node 回归测试、定向 ESLint/严格 TS 检查和 Vite 生产构建通过。全量 tsc -b 仍有 19 条原有类型错误（与本次修改文件无关）；原有 learning-template-resources 接口 HTTP 500 仍可观测，未在本次动态模块恢复修复中处理。
+- Git 按用户要求只提交本地，没有推送远端：功能提交 e1232b7；本次追加记录另作文档提交。聊天旧主线根目录 TRACE.md 同步记录实际前端路径和部署交接信息，避免跨会话在错误工作树继续修改。
