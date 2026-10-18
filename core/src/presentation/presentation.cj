@@ -4,10 +4,15 @@ import std.collection.*
 import std.random.*
 import std.time.*
 import std.fs.*
+import std.process.*
 import stdx.encoding.json.*
 import itn_desktop_core.db.*
 import itn_desktop_core.util.*
 import itn_desktop_core.kb.stamp
+
+/** 由 main 设置，指向随包的 renderer 目录（开发态是 shell/renderer）。 */
+public var PRESENTATION_UI_DIR: String = ""
+public func setPresentationUiDir(dir: String): Unit { PRESENTATION_UI_DIR = dir }
 
 public class DesktopJobs {
     let dataDir: String
@@ -94,5 +99,49 @@ public class DesktopJobs {
         }
         db().run("UPDATE desktop_jobs SET status='failed',error='桌面制作服务超时' WHERE id=? AND status IN ('pending','running')",va([tv(id)]))
         throw Exception("桌面PPT制作服务未就绪或超时，请在Lumin桌面窗口中重试")
+    }
+    /** 用随包 python-pptx 兼容渲染器把已验证提纲写成真实 PPTX。 */
+    public func renderPresentationWithPython(request: JsonObject, outline: JsonObject, sid: String, tid: String): JsonObject {
+        let rendererDir = PRESENTATION_UI_DIR + Path.Separator + "ppt-renderer"
+        let script = rendererDir + Path.Separator + "render_ppt.py"
+        if (!exists(script)) {
+            throw Exception("找不到PPT渲染器：" + script)
+        }
+        let id = "ppt-" + Random().nextUInt64().toString()
+        let dir = dataDir + Path.Separator + "drafts"
+        ensureDir(dir)
+        let inputPath = dir + Path.Separator + id + ".request.json"
+        let outputPath = dir + Path.Separator + id + ".pptx"
+        let packet = JsonObject()
+        packet.put("request", request)
+        packet.put("outline", outline)
+        writeText(inputPath, packet.toString())
+        let localPython = rendererDir + Path.Separator + "python" + Path.Separator + "python.exe"
+        let python = if (exists(localPython)) { localPython } else { "python" }
+        try {
+            let (code, out, err) = executeWithOutput(python, ["-X", "utf8", script, inputPath, outputPath], workingDirectory: Some(Path(rendererDir)))
+            if (code != 0 || !exists(outputPath)) {
+                let reason = if (err.size > 0) { String.fromUtf8(err) } else { String.fromUtf8(out) }
+                throw Exception("PPT渲染失败：" + byteSafePrefix(reason, 1600))
+            }
+            let lines = String.fromUtf8(out).split("\n")
+            var last = ""
+            var i = lines.size - 1
+            while (i >= 0) {
+                if (trimStr(lines[i]).size > 0) { last = trimStr(lines[i]); break }
+                i = i - 1
+            }
+            if (last.size == 0) { throw Exception("PPT渲染器没有返回结果") }
+            let result = match (JsonValue.fromStr(last)) {
+                case o: JsonObject => o
+                case _ => throw Exception("PPT渲染器返回结果不是JSON")
+            }
+            result.put("path", JsonString(outputPath))
+            result.put("sid", JsonString(sid))
+            result.put("tid", JsonString(tid))
+            return result
+        } finally {
+            try { remove(inputPath) } catch (e: Exception) {}
+        }
     }
 }

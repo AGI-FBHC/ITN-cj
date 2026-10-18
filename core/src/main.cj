@@ -7,6 +7,7 @@ import itn_desktop_core.api.*
 import itn_desktop_core.agent.*
 import itn_desktop_core.dev.*
 import itn_desktop_core.util.*
+import itn_desktop_core.presentation.setPresentationUiDir
 
 main(args: Array<String>): Int64 {
     var dataDir = defaultDataDir()
@@ -20,6 +21,7 @@ main(args: Array<String>): Int64 {
         case Some(v) => uiDir = v
         case None => ()
     }
+    setPresentationUiDir(uiDir)
 
     // 随包内置的技能目录（外壳指进来；只读，用户改不了）
     match (argValue(args, "--skills-dir")) {

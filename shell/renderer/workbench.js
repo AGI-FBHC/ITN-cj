@@ -147,14 +147,18 @@ async function startAgentTask(question,projectId) {
 function openPresentationBrief(res) {
   document.querySelector('.presentation-brief')?.remove();
   const overlay=el('div','task-modal presentation-brief'),dialog=el('section','task-modal-card');dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-label','确认PPT制作需求');
-  dialog.append(el('h2',null,'这份 PPT 要讲给谁？'),el('p','muted','Lumin会根据确认的需求重新设计页面，制作可编辑的PowerPoint文件。'));
+  dialog.append(el('h2',null,'这份 PPT 要讲给谁？'),el('p','muted','Lumin 会按确认的需求重新设计页面，制作可编辑的 PowerPoint 文件。'));
   const audience=inputOf('ppt-audience','例如：初学者、项目评审','初学者'),purpose=inputOf('ppt-purpose','例如：课堂讲解、项目汇报','清楚讲解核心概念与应用'),pages=inputOf('ppt-pages','页数','8'),style=inputOf('ppt-style','配色、版式或参考风格','简洁，墨绿与暖金，图文结合');
   pages.type='number';pages.min='1';pages.max='60';
-  dialog.append(fieldOf('受众',audience),fieldOf('用途',purpose),fieldOf('页数',pages),fieldOf('风格',style));
+  const background=el('select'),detail=el('select');background.id='ppt-background';detail.id='ppt-detail';
+  for(const [value,label] of [['clean-minimal','极致简约'],['abstract-gradient','抽象渐变'],['blue-white-minimal','蓝白极简'],['business-gray','商务灰'],['watercolor','水彩'],['none','纯色排版']])background.appendChild(option(value,label));
+  for(const [value,label] of [['concise','精简'],['balanced','均衡'],['detailed','详细']])detail.appendChild(option(value,label));
+  background.value='clean-minimal';detail.value='balanced';
+  dialog.append(fieldOf('受众',audience),fieldOf('用途',purpose),fieldOf('页数',pages),fieldOf('风格',style),fieldOf('背景样式',background),fieldOf('内容密度',detail));
   const source=res?.id?'请先读取学习资源 '+res.id+' 的第'+res.version+'版，依据其内容重新设计。':'请依据当前主题与资料设计。';
   const submit=async waive=>{
     if(!waive&&(!audience.value.trim()||!purpose.value.trim()||!style.value.trim()||Number(pages.value)<1||Number(pages.value)>60)){toast('请填写完整需求，页数1至60');return;}
-    const details=waive?'无需确认PPT细节，受众、页数和风格由你决定，直接制作。':'已确认PPT细节：受众='+audience.value+'；用途='+purpose.value+'；页数='+pages.value+'；风格='+style.value+'。';
+    const details=waive?'无需确认PPT细节，受众、页数和风格由你决定，直接制作。':'已确认PPT细节：受众='+audience.value+'；用途='+purpose.value+'；页数='+pages.value+'；风格='+style.value+'；背景样式='+background.value+'；内容密度='+detail.value+'。';
     overlay.remove();try{await startAgentTask(details+source+'请使用create_presentation逐页设计并制作真实.pptx文件，包括合适的版式与讲者备注。先提供候选产物让我看，不要自动存入个性资源。');}catch(e){toast(e.message);}
   };
   const actions=el('div','row');actions.append(btn('按要求制作','primary',()=>submit(false)),btn('直接制作','ghost',()=>submit(true)),btn('取消','ghost',()=>overlay.remove()));dialog.appendChild(actions);overlay.appendChild(dialog);document.body.appendChild(overlay);audience.focus();

@@ -50,6 +50,13 @@ foreach ($modulePath in $productionModules) {
 }
 Copy-Item -Path (Join-Path $repo "shell\renderer") -Destination $appDir -Recurse -Force
 Copy-Item -Path (Join-Path $repo "shell\assets") -Destination $appDir -Recurse -Force
+# PPT 渲染器的 python-pptx 运行时不依赖目标机器安装 Python；缺少时不要静默打出一个坏包。
+$pptRuntime = Join-Path $appDir "renderer\ppt-renderer\python\python.exe"
+if (-not (Test-Path -LiteralPath $pptRuntime)) {
+    throw "缺少随包 PPT Python 运行时：$pptRuntime。请先运行 scripts\prepare-ppt-runtime.ps1"
+}
+& $pptRuntime -X utf8 -c "import pptx, PIL, lxml" | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "随包 PPT Python 运行时依赖不完整：$pptRuntime" }
 # 随包内置的技能（只读，用户改不了）：外壳用 --skills-dir 指给内核
 if (Test-Path -LiteralPath (Join-Path $repo "shell\skills")) {
     Copy-Item -Path (Join-Path $repo "shell\skills") -Destination $appDir -Recurse -Force
@@ -87,7 +94,11 @@ $assetFiles = @(
     'resources/app/renderer/workbench.css', 'resources/kernel/lumin-core.exe',
     'resources/app/renderer/coursemap.js', 'resources/app/renderer/coursemap.css',
     'resources/app/renderer/studyplayer.js', 'resources/app/renderer/studyplayer.css',
-    'resources/app/renderer/tasks.js', 'resources/app/renderer/tasks.css'
+    'resources/app/renderer/tasks.js', 'resources/app/renderer/tasks.css',
+    'resources/app/renderer/ppt-renderer/render_ppt.py',
+    'resources/app/renderer/ppt-renderer/legacy_agent.py',
+    'resources/app/renderer/ppt-renderer/backgrounds.py',
+    'resources/app/renderer/ppt-renderer/python/python.exe'
 )
 foreach ($relative in $assetFiles) {
     $assetHashes[$relative] = (Get-FileHash -LiteralPath (Join-Path $OutDir $relative) -Algorithm SHA256).Hash

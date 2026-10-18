@@ -6,11 +6,11 @@ body.workspace-wide #view>.course-workspace{max-width:none;margin-inline:0}
 .course-library-label select{width:180px;max-width:220px;margin:0}
 .course-toolbar>input{flex:1;min-width:110px;max-width:320px;margin:0}
 .course-toolbar-actions{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-left:auto}
-.course-stage{position:relative;min-width:0;min-height:0;overflow:hidden;border:1px solid var(--line);border-radius:18px;background:radial-gradient(ellipse at 15% 5%,rgba(169,155,196,.07),transparent 60%),var(--panel);touch-action:none}
-.course-world{position:absolute;left:0;top:0;transform-origin:0 0}
+.course-stage{position:relative;min-width:0;min-height:0;overflow:hidden;border:1px solid var(--line);border-radius:18px;background:radial-gradient(ellipse at 15% 5%,rgba(169,155,196,.07),transparent 60%),var(--panel);touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
+.course-world{position:absolute;left:0;top:0;transform-origin:0 0;user-select:none;-webkit-user-select:none}
 .course-edges{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .course-edges path{stroke:var(--line);stroke-width:1.8;fill:none}
-.course-node.btn{position:absolute;transform:translate(-50%,-50%);width:248px;box-sizing:border-box;min-height:54px;padding:13px 16px;border:1px solid var(--line);border-radius:13px;background:var(--panel);color:var(--ink);font-size:16px;white-space:normal;box-shadow:0 3px 10px rgba(0,0,0,.035);display:flex;flex-direction:column;gap:4px}
+.course-node.btn{position:absolute;transform:translate(-50%,-50%);width:248px;box-sizing:border-box;min-height:54px;padding:13px 16px;border:1px solid var(--line);border-radius:13px;background:var(--panel);color:var(--ink);font-size:16px;white-space:normal;box-shadow:0 3px 10px rgba(0,0,0,.035);display:flex;flex-direction:column;gap:4px;cursor:grab;user-select:none;-webkit-user-select:none}
 .course-node.btn.course-root{background:var(--brand-soft);font-weight:600}
 .course-node.btn[aria-pressed="true"]{border-color:#ae945a;background:color-mix(in srgb,var(--panel) 84%,#a99bc4 16%)}
 .course-node small{font-size:13px;color:var(--muted)}

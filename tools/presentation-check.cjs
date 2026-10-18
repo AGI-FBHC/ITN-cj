@@ -25,7 +25,7 @@ const freePort=()=>new Promise(r=>{const server=net.createServer();server.listen
  await page.goto(base);await page.waitForSelector('#chat-input');
  check('random learning-resource toolbar button is removed',await page.locator('#wb-artifacts').count()===0);
  await page.evaluate(()=>openPresentationBrief({id:'sample',version:2,title:'示例'}));await page.waitForSelector('.presentation-brief');
- check('PPT brief asks audience purpose pages and style',await page.locator('#ppt-audience,#ppt-purpose,#ppt-pages,#ppt-style').count()===4);
+ check('PPT brief asks audience purpose pages style background and density',await page.locator('#ppt-audience,#ppt-purpose,#ppt-pages,#ppt-style,#ppt-background,#ppt-detail').count()===6);
  await page.getByRole('button',{name:'取消',exact:true}).click();
  await page.evaluate(async(id)=>{await openChatSession(id);},sid);await page.waitForSelector('.file-artifact');
  check('created PPT appears as an explicit conversation artifact',await page.locator('.file-artifact').count()===1);

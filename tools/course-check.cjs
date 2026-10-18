@@ -44,6 +44,13 @@ const root=path.resolve(__dirname,'..'),sleep=ms=>new Promise(r=>setTimeout(r,ms
    check('mind map fills page without scrollbar',await page.locator('#view').evaluate(e=>e.scrollHeight<=e.clientHeight+1&&e.scrollWidth<=e.clientWidth+1));
    check('map uses all available page width',await page.locator('.course-workspace').evaluate(e=>e.clientWidth>=e.parentElement.clientWidth-50));
    check('initial map is centered vertically',await page.evaluate(()=>{const s=document.querySelector('.course-stage').getBoundingClientRect(),n=document.querySelector('.course-root').getBoundingClientRect();return Math.abs(n.y+n.height/2-(s.y+s.height/2))<100;}));
+    const dragNode=page.locator('.course-node').filter({hasText:'工具调用'}).first(),dragText=dragNode.locator('span').first(),dragBox=await dragText.boundingBox(),beforeDrag=await page.evaluate(()=>document.querySelector('.course-world').style.transform);
+    await page.mouse.move(dragBox.x+dragBox.width/2,dragBox.y+dragBox.height/2);await page.mouse.down();await page.mouse.move(dragBox.x+dragBox.width/2+72,dragBox.y+dragBox.height/2+38,{steps:8});await page.mouse.up();
+    const afterDrag=await page.evaluate(()=>document.querySelector('.course-world').style.transform),selection=await page.evaluate(()=>window.getSelection().toString());
+    check('dragging from node text pans the map',beforeDrag!==afterDrag);
+    check('dragging from node text does not select text',selection==='');
+    await dragNode.click();await page.waitForSelector('.course-resource-grid');await page.keyboard.press('Escape');
+    check('a node still opens after a text-drag gesture',await page.locator('.course-modal-overlay').count()===0);
    await openNode();check('four resources open in centered 2x2 modal',await page.locator('.course-resource-tile').count()===4&&await page.locator('.course-resource-grid').evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(' ').length===2));check('close button stays at dialog top right',await page.evaluate(()=>{const d=document.querySelector('.course-modal').getBoundingClientRect(),b=document.querySelector('.course-close').getBoundingClientRect();return d.right-b.right<40;}));await page.keyboard.press('Escape');check('Escape returns to same map',await page.locator('.course-modal-overlay').count()===0&&await page.locator('.course-node').count()===3);
    const lecture=await produce('lecture');const replacement=await produce('lecture',true);
    let current=await state();check('replacement archives one old confirmed version',current.resources.length===1&&current.archiveCount===1&&current.resources[0].id!==lecture.asset.id);

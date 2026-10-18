@@ -39,6 +39,47 @@ SECTION_BODY = """mock 模型依据资料写的一段正文，用来验证讲义
 
 > 注意：这里的内容只用于自测，不是真实模型输出。"""
 
+# 固定流水线 PPT 子 Agent 的自测提纲：6 个输入页，渲染器会按章节补 section 页。
+PPT_AGENT_OUTLINE = {
+    "title": "输入与输出的约定",
+    "subtitle": "从可复现样例到可靠验收",
+    "agendaPlan": [
+        {"title": "先约定输入", "objective": "让任务边界可检查", "keyTopics": ["输入样例", "范围"]},
+        {"title": "再做完整处理", "objective": "让过程可以复现", "keyTopics": ["执行", "证据"]},
+        {"title": "最后验收结果", "objective": "让结果可以被判断", "keyTopics": ["边界", "复盘"]},
+    ],
+    "slides": [
+        {"title": "输入与输出的约定", "kind": "title", "points": [],
+         "speakerNotes": "大家好，今天我们围绕输入、输出和验收建立一套可以复现的约定。先明确任务边界，再观察执行过程，最后用证据判断结果是否可靠。"},
+        {"title": "本讲路线", "kind": "agenda", "points": [
+            {"heading": "先约定输入", "detail": "写清数据来源、格式和允许范围。"},
+            {"heading": "再做完整处理", "detail": "记录关键中间结果和验证依据。"},
+            {"heading": "最后验收结果", "detail": "用正常、边界和异常样例判断结果。"},
+        ], "speakerNotes": "这次分享按三步推进：先约定输入，再做完整处理，最后用样例验收结果。"},
+        {"title": "输入样例要能被检查", "kind": "concept", "points": [
+            {"heading": "来源", "detail": "说明数据来自哪里，避免把猜测当成事实。"},
+            {"heading": "格式", "detail": "给出字段、类型和允许取值，让程序可以直接读取。"},
+            {"heading": "范围", "detail": "明确空值、极值和异常输入应该如何处理。"},
+        ], "speakerNotes": "输入不是一句自然语言要求，而是可以检查的样例集合。来源决定事实边界，格式决定程序能否读取，范围决定异常是否会被遗漏。"},
+        {"title": "把处理过程留下证据", "kind": "process", "process": [
+            {"label": "读取", "detail": "校验输入并记录版本。"},
+            {"label": "执行", "detail": "保存关键中间状态。"},
+            {"label": "校验", "detail": "对照预期输出检查结果。"},
+            {"label": "复盘", "detail": "记录失败原因和下一次改法。"},
+        ], "points": [
+            {"heading": "先校验", "detail": "读取后立刻检查字段和范围。"},
+            {"heading": "留证据", "detail": "把中间状态与错误信息保存下来。"},
+        ], "speakerNotes": "处理阶段最重要的是留下可追溯的证据。先校验输入，再执行操作，然后把关键中间状态保存下来，最后对照预期输出检查结果。"},
+        {"title": "好约定与坏约定", "kind": "comparison", "points": [
+            {"heading": "可验收", "detail": "输入、输出和失败条件都有明确样例。"},
+            {"heading": "不可验收", "detail": "只要求尽量做好，没有可观察的判断依据。"},
+        ], "speakerNotes": "可验收的约定会把输入、输出和失败条件都写成样例。相反，只写一句尽量做好，后续就无法判断结果到底是否达标。"},
+        {"title": "结论与下一步", "kind": "conclusion", "points": [
+            {"heading": "先写样例", "detail": "把正常、边界和异常输入写出来。"},
+            {"heading": "再做验证", "detail": "保存结果和证据，按约定复盘。"},
+        ], "speakerNotes": "最后记住两件事：先把正常、边界和异常样例写清楚，再用可复现的证据验证结果。这样每一次交付都能被检查和继续改进。"},
+    ],
+}
 SECTION_MD = "## 基本概念\n\n" + SECTION_BODY
 
 QUIZ_MD = """### 第 1 题（单选）
@@ -310,6 +351,8 @@ def reply_for(body):
         if "resourceType: ppt" in joined:
             return json.dumps(res_ppt(_res_count(joined, 8), "返修主题"), ensure_ascii=False)
         return json.dumps(res_lecture_full(), ensure_ascii=False)
+    if "请设计一份内容充实、可直接授课或汇报的交互课件" in joined:
+        return json.dumps(PPT_AGENT_OUTLINE, ensure_ascii=False)
     if "你是课程设计者" in joined:
         global _THIN_LEFT
         if _THIN_LEFT > 0:
@@ -407,6 +450,8 @@ def native_reply(body):
         return call("record_knowledge_point", {"title": "I/O 约定", "definition": "别名合并测试用的定义。", "quote": "请解释输入与输出", "note": "用已有知识点的确切别名发起记录。"})
     if "知识点测试" in ask:
         return call("record_knowledge_point", {"title": "输入与输出", "definition": "输入与输出是一种约定：先写清输入样例与期望输出，再执行并保留验证依据。", "quote": "请解释输入与输出的约定", "note": "本轮讨论了输入与输出的约定，并保留了一个具体例子。", "aliases": ["I/O 约定"]})
+    if 'PPTX_AGENT' in ask:
+        return call('create_presentation', {'requirement':'围绕输入、输出与验收制作一份 6 页交互课件，面向初学者，课堂讲解，简洁清新。','title':'输入与输出的约定','audience':'初学者','purpose':'课堂讲解','style':'简洁清新','backgroundStyle':'clean-minimal','language':'zh-CN','slideCount':6,'aspectRatio':'16:9','detailLevel':'balanced','includeSpeakerNotes':True})
     if 'PPTX_BRIDGE' in ask or 'create_presentation' in ask:
         return call('create_presentation', {'title':'输入与输出的约定','audience':'初学者','purpose':'课堂讲解','style':'简洁墨绿','slides':[
             {'title':'输入与输出的约定','layout':'cover','notes':'介绍今天的学习目标。'},
