@@ -134,3 +134,36 @@ docker start itn-cangjie-web
 - `front` 分支 `npm run build`（`tsc -b`）有历史类型错误：`Learn.tsx`、`Report.tsx`、`Resources.tsx`、`SlidePlayer.tsx`、`Welcome.tsx`。当前部署使用 `vite build` 绕过，建议前端负责人单独修复。
 - 服务器根盘使用率 92%，剩余约 9.6 GB；后续新增镜像/构建产物前需清理。
 - 旧版 Vue 前端与 `full` 分支未部署，仍保留在 GitHub 供对照。
+## 2026-10-18 将当前部署版本提交到 main（会话 01a14f66-003f-71f1-addf-07a76856b570）
+
+### 用户要求和发布范围
+
+用户先确认当前站点是否已合并，随后明确要求“提交到main分支”。目标仓库为 AGI-FBHC/ITN-cj，而非聊天原始工作树所对应的旧 ITN 仓库。本轮把当前已部署的前后端源码及崩溃修复纳入 main，并正常推送远端；不做服务重新部署或数据库操作。
+
+### 分支核查
+
+重新 fetch 并 ls-remote 核对：origin/main=4e4d202（初始提交），origin/cangjie-integration=5b05a17，origin/front=b9af089，origin/yjyprojects=15441d9，origin/zyqprojects=07aa2c3。当前部署后端来源 5b05a17，其中合并 1cf5ba4 已包含 zyq 基线 eafb941 与 yjy 15441d9。
+
+zyq 新增 07aa2c3（scores_json 单写入及鉴权深化）尚未部署；按用户要求提交“当前部署内容”，本轮保留在原开发分支，未混入 main。前端来源是本地 front 的 e00384c，包含功能修复 e1232b7 以及验收文档；该本地修复此前未单独推送 front，本轮随 main 的历史一起发布。
+
+### 合并方式和目录
+
+- 原检查工作树 D:\Desktop\ITN\tmp\ITN-cj-merge-inspect 仍保持 cangjie-integration；原前端 D:\Desktop\ITN\ITN-cj-front 保持 front。
+- 新建 Git 工作树 D:\Desktop\ITN\tmp\ITN-cj-main-release，检出已有 main。先 fast-forward 至 5b05a17，再用 git subtree add --prefix=frontend 导入前端 e00384c，创建双亲合并提交 57918b1（双亲 5b05a17、e00384c），保留两条开发线的提交历史。
+- main 根 src/ 和 cjpm.* 保持 zyq API；backend-cj/ 保持 yjy；frontend/ 包含 React 前端；deploy/ 提供部署配置。避免把两种 src/ 文件混到一起。
+- subtree 导入后的 frontend 树对象为 c79ddfa19e035057036321658ba3fef3176ed7b0，与来源 e00384c 的根树对象完全一致。git diff 5b05a17 -- src backend-cj cjpm.toml cjpm.lock config resources 无差异。
+- README.md 更新为 main 完整源码入口，说明 frontend 开发、构建、测试与来源；修正业务服务示意端口为5000。deploy/README.md 改为检出 main、构建 frontend/，保留旧 assets，先复制资源再原子替换 index.html；说明源码示例目录必须实际 clone，不假定服务器已有 /home/ubuntu/itn-cangjie-src。
+
+### 验证
+
+- 从 main/frontend 执行 node --test tests/chunkRecovery.test.mjs：4组全部通过。
+- main/frontend 执行 npx vite build：通过，18.82秒；入口 index-KTreDdLj.js，index.html SHA256 f7ed31611d6d015b7d1d45ba260474d33babadf9d6edea280ee67f7ca41e0098，与当前线上及原前端构建一致。
+- 仅在本地把 frontend/node_modules 链接到原已验证依赖以便复用；node_modules 和 dist 均由前端 .gitignore 忽略，不提交到 Git。构建日志 D:\Temp\itn-main-build-20261018.txt。
+- 验证 main 保留原 origin/main 及 e1232b7 的祖先关系；git diff --check 通过。后端源码未变，因此未重复运行仓颉编译或重新部署。
+- 原有全量 TypeScript 检查19条报错与资源接口500的限制继续存在，本轮不宣称这些已修复。
+
+### 部分克隆问题与处理
+
+集成仓库是 blob:none 部分克隆，从本地前端 fetch 后只接入了历史和树对象，read-tree 触发 GitHub 拉取当前前端缺失的288个对象并停滞。中断该次导入并仅结束对应 read-tree/fetch/index-pack 进程，清理该工作树的遗留 index.lock；没有删除其他Git文件。
+
+用原前端副本导出已验证当前树328个对象（源副本全部存在）并 index-pack 到目标，再补入 b9af089..e00384c 的17个未公开本地提交所需对象。随后 subtree add 成功；未改全局 Git 配置、未覆盖开发分支、未重写历史。推送使用普通 git push origin main，若远端有并发变化会由 Git 拒绝，禁止强推。

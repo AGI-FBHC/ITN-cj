@@ -2,7 +2,7 @@
 
 ## 组成
 
-- `api`：`cangjie-integration` 根目录的 Spire 服务，负责数据/Agent API 与 `/api/v1`、`/v1` 转发网关。
+- `api`：`main` 根目录的 Spire 服务，负责数据/Agent API 与 `/api/v1`、`/v1` 转发网关。
 - `business`：`backend-cj/` 的业务后端，负责认证、组织、管理员、学习者画像等。
 - `web`：Nginx，监听宿主机 `20889`，提供前端静态文件并反代到 `api`。
 
@@ -21,21 +21,30 @@
 
 ## 构建
 
+以下源码目录是检出示例；已经运行的 `/home/ubuntu/itn-cangjie-stack/` 是部署目录，不能据此假设服务器上已有源码检出。
+
 ```bash
+# 首次检出时执行；已有源码时跳过 clone。
+git clone --branch main git@github.com:AGI-FBHC/ITN-cj.git /home/ubuntu/itn-cangjie-src
 cd /home/ubuntu/itn-cangjie-src
-git fetch origin cangjie-integration
-git checkout cangjie-integration
+git fetch origin main
+git checkout main
 git pull --ff-only
 bash deploy/build.sh /home/ubuntu/itn-cangjie-src
 ```
 
-前端在 `front` 分支单独构建：
+前端从同一份 `main` 检出的 `frontend/` 构建：
 
 ```bash
-git clone -b front git@github.com:AGI-FBHC/ITN-cj.git front
-cd front && npm ci && npm run build
-rsync -a dist/ /home/ubuntu/itn-cangjie-stack/web/dist/
-# 不要加 --delete：保留旧哈希文件，避免已打开页面的懒加载 chunk 404
+cd /home/ubuntu/itn-cangjie-src/frontend
+npm ci
+node --test tests/chunkRecovery.test.mjs
+npx vite build
+# 先补齐资源，保留旧哈希文件，最后在原目录内原子替换 HTML。
+# 不要使用 --delete 或删除整个 web/dist 目录。
+rsync -a --exclude=/index.html dist/ /home/ubuntu/itn-cangjie-stack/web/dist/
+cp dist/index.html /home/ubuntu/itn-cangjie-stack/web/dist/index.html.next
+mv /home/ubuntu/itn-cangjie-stack/web/dist/index.html.next /home/ubuntu/itn-cangjie-stack/web/dist/index.html
 ```
 
 ## 启动
