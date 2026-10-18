@@ -17,3 +17,15 @@ compile-option = "-Woff unused --diagnostic-format=noColor -Woff deprecated -lcr
 
 [target.x86_64-w64-mingw32.bin-dependencies]
 path-option = ["${CANGJIE_STDX_PATH}"]
+
+[target.x86_64-unknown-linux-gnu]
+compile-option = "-Woff unused --diagnostic-format=noColor -Woff deprecated -ldl"
+
+[target.x86_64-unknown-linux-gnu.bin-dependencies]
+path-option = ["${CANGJIE_STDX_PATH}"]
+
+[target.aarch64-unknown-linux-gnu]
+compile-option = "-Woff unused --diagnostic-format=noColor -Woff deprecated -ldl"
+
+[target.aarch64-unknown-linux-gnu.bin-dependencies]
+path-option = ["${CANGJIE_STDX_PATH}"]
