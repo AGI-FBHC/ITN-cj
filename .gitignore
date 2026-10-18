@@ -28,3 +28,6 @@ __pycache__/
 
 # PPT renderer 的随包 Python 运行时（由 scripts/prepare-ppt-runtime.ps1 生成，不入库）
 shell/renderer/ppt-renderer/python/
+
+# Desktop notes and manuals are local-only.
+/docs/

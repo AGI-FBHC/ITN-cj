@@ -79,9 +79,20 @@ if (Test-Path -LiteralPath $srcExe) {
     Move-Item -LiteralPath $srcExe -Destination (Join-Path $OutDir "Lumin.exe") -Force
 }
 
-# 4.5) 随包附带说明书，让解压的人不必翻仓库
-Copy-Item -LiteralPath (Join-Path $repo "docs\07-使用说明.md") -Destination (Join-Path $OutDir "Lumin-使用说明.md") -Force
-Copy-Item -LiteralPath (Join-Path $repo "docs\05-仓颉杯提交说明.md") -Destination (Join-Path $OutDir "Lumin-系统说明.md") -Force
+# 4.5) 本地私有说明书存在时附带；公开源码不依赖 docs/。
+function Copy-OptionalDocumentation([string]$ProjectDir, [string]$OutputDir) {
+    $manuals = @(
+        @{ File = '07-使用说明.md'; Name = 'Lumin-使用说明.md' },
+        @{ File = '05-仓颉杯提交说明.md'; Name = 'Lumin-系统说明.md' }
+    )
+    foreach ($manual in $manuals) {
+        $source = Join-Path $ProjectDir ('docs\' + $manual.File)
+        if (Test-Path -LiteralPath $source -PathType Leaf) {
+            Copy-Item -LiteralPath $source -Destination (Join-Path $OutputDir $manual.Name) -Force
+        }
+    }
+}
+Copy-OptionalDocumentation -ProjectDir $repo -OutputDir $OutDir
 Copy-Item -LiteralPath (Join-Path $repo "third_party\pi-studio-LICENSE.txt") -Destination (Join-Path $OutDir "pi-studio-LICENSE.txt") -Force
 
 # 5) 压缩

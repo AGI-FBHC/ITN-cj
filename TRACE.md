@@ -4548,3 +4548,11 @@ read_chunk 读得到原文并带回库标识与正文。
 
 - 补充提交 `08a436a`：`detailLevel` 支持中文/英文归一化（精简/均衡/详细 → concise/balanced/detailed），准备运行时脚本增加仓库边界保护；重新打包后 `release.json` 的 `sourceCommit=08a436a`，19 项资产 SHA256 BAD=0，打包内核 + renderer 的 `presentation-agent-check` 11/11 通过。
 - 文档校正 dad6f17：接口契约同步 designPath，移除已不再返回的 outlineSlides 字段。
+
+## 2026-10-19 docs 目录不再发布到 GitHub
+
+用户明确要求桌面端docs不上传GitHub，main和desktop两个分支都移除。本分支以49ad7d2为基线，在独立工作树使用git rm --cached停止跟踪根docs/的18个文件，本地文件逐一做SHA256核验并保留；.gitignore新增/docs/，AGENTS同步本地文档政策。未修改用户原Desktop副本及其未跟踪笔记。
+
+README/PRODUCT移除面向公开读者的私有文档链接和引用。package-app.ps1改为本地说明存在时才复制，不再要求公开检出包含docs；通过PowerShell AST检查，并用实际说明复制函数验证无docs及仅有一份说明两个场景。未改内核、业务接口或Lumin工具，无需重跑整套原生测试。索引docs文件数为0，本地18份文件哈希不变，README相对链接均指向公开索引。
+
+本分支提交后与main变更一起正常推送到AGI-FBHC/ITN-cj，main对应目录为apps/desktop/docs/。仅停止最新版本跟踪，历史提交中的旧文档仍保留；没有重写历史或强推。哈希清单位于D:\Temp\itn-private-docs-preservation-20261019.json。
