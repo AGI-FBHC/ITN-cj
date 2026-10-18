@@ -58,6 +58,10 @@ main(): Int64 {
     registerBatch9Routes(app, cfg)
     /* P2 scores_json single-writer step 1 — PUT /v1/learners/scores LOCAL. */
     registerLearnerScoresRoutes(app, cfg)
+    /* P4-2 管理员资源中心 — literal /api/v1 routes before the catch-all. */
+    registerAdminResourceRoutes(app, cfg)
+    /* P4-F1 管理员知识服务代理 — literal catch-all，同样必须早于 gateway。 */
+    registerAdminKnowledgeProxyRoutes(app, cfg)
     /* P3/P2 catch-all forwarders — MUST be last so literal routes win. */
     registerGatewayRoutes(app, cfg)
 

@@ -205,17 +205,6 @@ func relayStreamed(response: HttpResponse, outcome: StreamOutcome): Unit {
 }
 
 /*
- * Decide stream vs buffer from the upstream Content-Type. SSE and PCM must
- * stream; so does a large binary download when we cannot know the length
- * up front. Everything else is buffered, which is what the JSON callers
- * expect (they read the whole body anyway).
- */
-func shouldStream(contentType: String): Bool {
-    let ct = contentType.toAsciiLower()
-    return ct.startsWith("text/event-stream") || ct.startsWith("audio/")
-}
-
-/*
  * One request relayed to an upstream origin. `forceStream` is used for the
  * paths we know are streams before the response arrives (chat/stream,
  * agent/ask/stream, …) so a mislabeled upstream still gets incremental
@@ -277,43 +266,42 @@ func forwardToOrigin(origin: String, request: HttpRequest, response: HttpRespons
 }
 
 /*
- * Paths that are streams by contract (P3 SSE table). Matched on the path
- * only — the upstream sets the Content-Type. forceStream is what makes a
- * POST with a JSON body still relay incrementally.
+ * Paths that are streams by contract (P3 SSE table / P4 admin feeds).
+ *
+ * Matching is deliberately broad: forcing the streaming relay is always
+ * byte-faithful (it only stops us from buffering the whole body), so a false
+ * positive costs nothing, while a false negative hangs the browser until
+ * API_READ_TIMEOUT_MS. Keep the explicit cases for SSE endpoints whose paths
+ * do NOT contain "/stream".
+ *
+ * request.path carries a leading slash, so never match on a bare
+ * "v1/..." prefix here — that mistake silently disabled the admin event feed.
  */
 func isKnownStreamPath(path: String): Bool {
-    if (path.startsWith("v1/chat/stream") || path.startsWith("/v1/chat/stream")) {
+    /* Every *-stream / /stream route: chat, agent/ask, agent-runs (also
+     * /internal/v1), assistant plan/audio, teaching-group, presentations chat,
+     * admin-generation-tasks. Note the hyphenated spellings (audio-stream,
+     * image-stream, plan-stream) — matching "/stream" alone misses those. */
+    if (path.contains("stream")) {
         return true
     }
-    if (path.startsWith("v1/agent/ask/stream") || path.startsWith("/v1/agent/ask/stream")) {
+    if (path.contains("/tts")) {
         return true
     }
-    if (path.startsWith("v1/agent/ask/image-stream") || path.startsWith("/v1/agent/ask/image-stream")) {
+    /* Slide audio: GET /v1/presentations/{task_id}/audio/{slide_index}. */
+    if (path.contains("/audio/")) {
         return true
     }
-    if (path.startsWith("v1/agent-runs/stream") || path.startsWith("/v1/agent-runs/stream")) {
+    /* SSE: profile analysis from recent memories (no "stream" in the path). */
+    if (path.contains("/memory/profile-analysis")) {
         return true
     }
-    if (path.startsWith("v1/assistant/plan-stream") || path.startsWith("/v1/assistant/plan-stream")) {
+    /* SSE: resume an in-flight chat session. */
+    if (path.contains("/chat/sessions/") && path.contains("/resume")) {
         return true
     }
-    if (path.startsWith("v1/assistant/audio-stream") || path.startsWith("/v1/assistant/audio-stream")) {
-        return true
-    }
-    if (path.startsWith("v1/assistant/asr") || path.startsWith("/v1/assistant/asr")) {
-        return true
-    }
-    if (path.contains("/chat/stream") || path.contains("/chat/audio-stream")
-        || path.contains("/chat/image-stream") || path.contains("/chat/tts")) {
-        return true
-    }
-    if (path.contains("/stream") && path.startsWith("v1/admin-generation-tasks")) {
-        return true
-    }
-    if (path.contains("/tts") || path.contains("/audio/")) {
-        return true
-    }
-    if (path.startsWith("v1/teaching-group/runs/stream") || path.startsWith("/v1/teaching-group/runs/stream")) {
+    /* SSE: predeal ingestion progress, proxied through Java. */
+    if (path.contains("/admin/predeal/progress/")) {
         return true
     }
     return false
@@ -326,13 +314,14 @@ func handleForwardToAgents(ctx: HttpContext, cfg: AppConfig): Unit {
 }
 
 /*
- * Spring Boot's un-migrated /api/v1 remainder. It has no SSE/PCM on the
- * surface that is not already proxied elsewhere (the admin knowledge proxy
- * is one of the routes still living in Java), so nothing is force-streamed
- * here — the buffered path already streams when the upstream does.
+ * Spring Boot's un-migrated /api/v1 remainder. Nothing on this face streams
+ * except the admin predeal progress feed, which is covered by
+ * isKnownStreamPath — everything else stays buffered so JSON callers get a
+ * complete body.
  */
 func handleForwardToJava(ctx: HttpContext, cfg: AppConfig): Unit {
-    forwardToOrigin(cfg.javaUpstream, ctx.request, ctx.response, false)
+    let path = pathAndQuery(ctx.request)
+    forwardToOrigin(cfg.javaUpstream, ctx.request, ctx.response, isKnownStreamPath(path))
 }
 
 /*

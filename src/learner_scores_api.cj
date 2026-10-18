@@ -78,10 +78,25 @@ func handleUpsertLearnerScores(ctx: HttpContext, cfg: AppConfig): Unit {
                                                 writeDetail(ctx.response, 404,
                                                     "Learner not found or no valid scores")
                                             case Some(learnerId) =>
-                                                let scoresJson = scoresCleanToJson(clean)
+                                                /* §17.4 step 2: merge the supplied
+                                                 * dimensions atomically (JSON_SET)
+                                                 * instead of replacing the whole
+                                                 * column, so a concurrent
+                                                 * ability-reward write cannot lose
+                                                 * keys. */
+                                                var setExpr = "COALESCE(NULLIF(scores_json,''),'{}')"
+                                                for (k in clean.keys()) {
+                                                    match (clean.get(k)) {
+                                                        case Some(n) =>
+                                                            setExpr = "JSON_SET(" + setExpr +
+                                                                ", '$.\"" + k + "\"', " +
+                                                                n.toString() + ")"
+                                                        case None => ()
+                                                    }
+                                                }
                                                 let now = mysqlDatetime(nowUtcParts())
                                                 let sql = "UPDATE learners SET scores_json=" +
-                                                    sqlQuote(scoresJson) + ", updated_at=" + sqlQuote(now) +
+                                                    setExpr + ", updated_at=" + sqlQuote(now) +
                                                     " WHERE id=" + sqlBinary(learnerId) +
                                                     " AND user_id=" + sqlBinary(userId)
                                                 match (conn.query(sql)) {
@@ -127,10 +142,6 @@ func parseScoresUpsert(ctx: HttpContext, root: JsonObject): ?HashMap<String, Int
                 case _ => bag.add(pyDictType(["body", "scores"], f.raw))
             }
     }
-    if (!bag.ok()) {
-        bag.write(ctx.response)
-        return None
-    }
     let clean = HashMap<String, Int64>()
     match (scoresObj) {
         case None => ()
@@ -138,13 +149,24 @@ func parseScoresUpsert(ctx: HttpContext, root: JsonObject): ?HashMap<String, Int
             for ((k, v) in so.getFields()) {
                 match (coerceScoreValue(v)) {
                     case Some(n) =>
-                        var clamped = n
-                        if (clamped < 0) { clamped = 0 }
-                        if (clamped > 100) { clamped = 100 }
-                        clean.add(k, clamped)
+                        /* §17.4 step 2: reject non-knowledge-point keys and
+                         * out-of-range values instead of clamping silently. */
+                        if (!isScoreKey(k)) {
+                            bag.add(pyDictValueType("scores", k, "value_error",
+                                "Value error, 非知识点键", valueToRaw(v)))
+                        } else if (n < 0 || n > 100) {
+                            bag.add(pyDictValueType("scores", k, "value_error",
+                                "Value error, 分数值必须在 0-100 之间", valueToRaw(v)))
+                        } else {
+                            clean.add(k, n)
+                        }
                     case None => ()
                 }
             }
+    }
+    if (!bag.ok()) {
+        bag.write(ctx.response)
+        return None
     }
     return Some(clean)
 }
@@ -188,4 +210,30 @@ func scoresCleanToJson(clean: HashMap<String, Int64>): String {
         }
     }
     return w.toJson()
+}
+
+/*
+ * A dimension key must be a knowledge-point code: "kp-" followed by ASCII
+ * alphanumerics, '_' or '-'. Besides enforcing §17.4 step 2, this keeps the key
+ * safe to embed verbatim in a JSON path literal.
+ */
+func isScoreKey(k: String): Bool {
+    let bs = k.toArray()
+    if (bs.size <= 3) {
+        return false
+    }
+    if (!(bs[0] == 0x6B && bs[1] == 0x70 && bs[2] == 0x2D)) {
+        return false
+    }
+    var i: Int64 = 3
+    while (i < bs.size) {
+        let b = bs[i]
+        let ok = (b >= 0x30 && b <= 0x39) || (b >= 0x41 && b <= 0x5A) ||
+            (b >= 0x61 && b <= 0x7A) || b == 0x5F || b == 0x2D
+        if (!ok) {
+            return false
+        }
+        i += 1
+    }
+    return true
 }
