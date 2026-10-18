@@ -35,6 +35,12 @@ main(): Int64 {
     registerResourceTaskRoutes(app, cfg)
     registerCustomizeTaskRoutes(app, cfg)
     registerTutoringRoutes(app, cfg)
+    /* C-a/b/c 数据搬迁：记忆 CRUD、chat / presentation-chat 会话 CRUD、管理端纯查询。
+       都是 literal 路由，必须在下面的 catch-all 之前注册。 */
+    registerMemoryRoutes(app, cfg)
+    registerChatRoutes(app, cfg)
+    registerPresentationChatRoutes(app, cfg)
+    registerAdminQueryRoutes(app, cfg)
     registerLearnForgeRoutes(app, cfg)
     /* P3/P2 catch-all forwarders — MUST be last so literal routes win. */
     registerGatewayRoutes(app, cfg)
