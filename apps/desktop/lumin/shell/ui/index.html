@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lumin</title>
+<link rel="stylesheet" href="vendor/xterm.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- 自绘标题栏（契约 §8：frame:false，窗口按钮走 window.lumin.win.*） -->
+<div id="titlebar">
+  <div class="tb-drag">
+    <span class="tb-brand">lumin</span>
+    <span id="tb-session" class="tb-session" title=""></span>
+  </div>
+  <div class="tb-controls">
+    <button id="btn-win-min" class="tb-btn" title="最小化" aria-label="最小化">&#8211;</button>
+    <button id="btn-win-max" class="tb-btn" title="最大化 / 还原" aria-label="最大化">&#9633;</button>
+    <button id="btn-win-close" class="tb-btn tb-close" title="关闭" aria-label="关闭">&#10005;</button>
+  </div>
+</div>
+
+<!-- 内核不可达时的横幅（不白屏） -->
+<div id="offline-banner" class="offline-banner" hidden>
+  <span class="ob-dot"></span><span id="offline-text">等待内核…</span>
+</div>
+
+<div id="layout">
+  <!-- 左栏 260px：会话 + 工作区 + 导航 -->
+  <aside id="sidebar">
+    <div class="side-section side-sessions">
+      <div class="side-head">
+        <span>会话</span>
+        <button id="btn-session-new" class="btn btn-ghost btn-sm" title="新建会话">新建</button>
+      </div>
+      <div id="session-list" class="session-list">
+        <div class="side-empty">等待内核…</div>
+      </div>
+    </div>
+
+    <div class="side-section side-workspace">
+      <div class="side-head"><span>工作区</span></div>
+      <div class="ws-row">
+        <code id="ws-path" class="ws-path" title="">—</code>
+        <button id="btn-ws-pick" class="btn btn-ghost btn-sm" title="选择工作区目录">更改…</button>
+      </div>
+    </div>
+
+    <nav id="nav" class="side-nav">
+      <button class="nav-item active" data-view="chat">对话</button>
+      <button class="nav-item" data-view="tree">会话树</button>
+      <button class="nav-item" data-view="skills">技能</button>
+      <button class="nav-item" data-view="settings">设置</button>
+      <button class="nav-item" data-view="terminal">终端</button>
+    </nav>
+  </aside>
+
+  <!-- 主区 -->
+  <main id="main">
+    <!-- 顶栏常驻状态（任务 11） -->
+    <div id="topbar">
+      <span id="st-model" class="st-chip st-mono" title="">模型 —</span>
+      <span id="st-mode" class="st-chip" title="">模式 —</span>
+      <span id="st-perm" class="st-chip" title="">权限 —</span>
+      <span id="st-ws" class="st-chip st-ws" title="">工作区 —</span>
+      <span class="st-spacer"></span>
+      <span id="st-usage" class="st-chip st-mono st-usage" title="最近一次运行的 tokens">↑0 ↓0</span>
+      <span id="st-run" class="st-run st-idle"><i class="dot"></i><span id="st-run-text">空闲</span></span>
+    </div>
+
+    <!-- ========== 对话 ========== -->
+    <section id="view-chat" class="view view-chat">
+      <div id="messages" class="messages">
+        <div id="msg-empty" class="msg-empty">还没有消息。在下方输入，开始一次对话。</div>
+      </div>
+
+      <div class="composer-zone">
+        <!-- 审批卡片：吸在输入区上方（任务 5） -->
+        <div id="approval-card" class="approval-card" hidden></div>
+
+        <!-- Key 未配置引导（任务 4） -->
+        <div id="key-banner" class="key-banner" hidden></div>
+
+        <!-- 动作错误行（服务器中文原因） -->
+        <div id="action-err" class="action-err" hidden></div>
+
+        <div class="composer">
+          <textarea id="input" rows="1" placeholder="发消息…" spellcheck="false"></textarea>
+          <div class="composer-bar">
+            <span id="composer-hint" class="composer-hint">Enter 发送 · Shift+Enter 换行</span>
+            <span class="st-spacer"></span>
+            <button id="btn-stop" class="btn btn-danger" hidden>停止</button>
+            <button id="btn-send" class="btn btn-primary">发送</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 会话树 ========== -->
+    <section id="view-tree" class="view" hidden>
+      <div class="view-toolbar">
+        <span class="view-title">会话树</span>
+        <span id="tree-notice" class="tree-notice" hidden></span>
+        <span class="st-spacer"></span>
+        <span class="toolbar-dim">点击消息条目可回退（fork）</span>
+        <button id="btn-tree-refresh" class="btn btn-ghost btn-sm">刷新</button>
+      </div>
+      <div id="tree-body" class="tree-body"><div class="side-empty">加载中…</div></div>
+    </section>
+
+    <!-- ========== 技能 ========== -->
+    <section id="view-skills" class="view" hidden>
+      <div class="view-toolbar">
+        <span class="view-title">技能</span>
+        <span class="st-spacer"></span>
+        <button id="btn-skills-refresh" class="btn btn-ghost btn-sm">刷新</button>
+      </div>
+      <div id="skills-body" class="skills-body"><div class="side-empty">加载中…</div></div>
+    </section>
+
+    <!-- ========== 设置 ========== -->
+    <section id="view-settings" class="view" hidden>
+      <div class="view-toolbar">
+        <span class="view-title">设置</span>
+        <span class="st-spacer"></span>
+        <button id="btn-settings-reload" class="btn btn-ghost btn-sm">刷新状态</button>
+      </div>
+      <div id="settings-body" class="settings-body"><div class="side-empty">加载中…</div></div>
+    </section>
+
+    <!-- ========== 终端 ========== -->
+    <section id="view-terminal" class="view" hidden>
+      <div class="view-toolbar">
+        <span class="view-title">终端</span>
+        <span class="toolbar-dim mono">lumin chat · 非 TTY 管道</span>
+        <span class="st-spacer"></span>
+        <span id="term-status" class="toolbar-dim">未启动</span>
+      </div>
+      <div id="term-wrap" class="term-wrap">
+        <div id="term-host"></div>
+        <div id="term-exit" class="term-exit" hidden>
+          <div class="term-exit-card">
+            <p class="term-exit-title">进程已退出</p>
+            <button id="btn-term-restart" class="btn btn-primary btn-sm">重启</button>
+          </div>
+        </div>
+        <div id="term-noshell" class="term-noshell" hidden>
+          <p>终端需要 Electron 壳（未找到 window.lumin.term）。</p>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="vendor/xterm.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

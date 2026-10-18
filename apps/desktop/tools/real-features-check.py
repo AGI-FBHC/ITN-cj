@@ -1,0 +1,332 @@
+# -*- coding: utf-8 -*-
+"""真实模型案例测试：用 Lumin 里配置的真实对话模型，在隔离数据目录里把近期功能逐项跑通。
+
+覆盖：基础对话 / 流式长回复 / 图片识别 / lumin://thread 会话读取 / 项目内文件附件 /
+学习记忆 / 学习资源生成（含引用与质检）。只读用户配置（不打印密钥），所有写入都在临时目录，
+不碰用户数据库。
+
+用法：
+    python tools/real-features-check.py                # 全部
+    python tools/real-features-check.py --case chat,vision
+"""
+import json, os, re, socket, sqlite3, subprocess, sys, tempfile, time, urllib.request
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+EXE = ROOT / 'dist/core/itn-desktop-core.exe'
+UI = ROOT / 'shell/renderer'
+SKILLS = ROOT / 'shell/skills'
+USERDATA = Path(os.path.expandvars(r'%LOCALAPPDATA%/Lumin'))
+DB = USERDATA / 'itn.db'
+NO_WINDOW = 0x08000000
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
+
+def read_config():
+    uri = 'file:' + str(DB).replace('\\', '/') + '?mode=ro'
+    db = sqlite3.connect(uri, uri=True)
+    db.row_factory = sqlite3.Row
+    models = [dict(r) for r in db.execute('SELECT * FROM models ORDER BY ord')]
+    roles = {r['kind']: r['model_id'] for r in db.execute('SELECT * FROM roles')}
+    db.close()
+    return models, roles
+
+
+class Core:
+    def __init__(self, data_dir):
+        self.dir = Path(data_dir)
+        self.dir.mkdir(parents=True, exist_ok=True)
+        pf = self.dir / 'port.txt'
+        self.proc = subprocess.Popen(
+            [str(EXE), '--data-dir', str(self.dir), '--port-file', str(pf), '--ui-dir', str(UI), '--skills-dir', str(SKILLS)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=NO_WINDOW)
+        for _ in range(200):
+            if pf.exists() and pf.read_text(encoding='utf-8', errors='replace').strip():
+                break
+            time.sleep(0.1)
+        else:
+            raise RuntimeError('core did not start')
+        self.base = 'http://127.0.0.1:' + pf.read_text(encoding='utf-8').strip()
+
+    def call(self, path, obj, timeout=600):
+        req = urllib.request.Request(self.base + path, data=json.dumps(obj).encode('utf-8'),
+                                     headers={'Content-Type': 'application/json'}, method='POST')
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            j = json.loads(r.read().decode('utf-8'))
+        if j.get('code') != 0:
+            raise RuntimeError('%s: %s' % (path, j.get('message')))
+        return j.get('data') or {}
+
+    def events(self, sid):
+        return self.call('/api/sessions/events', {'sessionId': sid}).get('events') or []
+
+    def close(self):
+        self.proc.kill()
+
+
+RESULTS = []
+
+
+def run_case(name, fn):
+    t0 = time.time()
+    try:
+        detail = fn() or ''
+        RESULTS.append((name, True, detail))
+        print('PASS %-18s %5.1fs  %s' % (name, time.time() - t0, detail))
+    except Exception as e:
+        RESULTS.append((name, False, str(e)))
+        print('FAIL %-18s %5.1fs  %s' % (name, time.time() - t0, e))
+    sys.stdout.flush()
+
+
+def main():
+    only = None
+    if '--case' in sys.argv:
+        only = set(sys.argv[sys.argv.index('--case') + 1].split(','))
+    models, roles = read_config()
+    chat = next((m for m in models if m['id'] == roles.get('chat')), None)
+    if chat is None:
+        print('没有找到已绑定的对话模型，先在 Lumin 设置里配置')
+        return 2
+    work = Path(tempfile.mkdtemp(prefix='lumin-real-features-'))
+    core = Core(work / 'data')
+    try:
+        caps = chat['capabilities'] or '[]'
+        try:
+            caps = json.loads(caps)
+        except Exception:
+            caps = []
+        core.call('/api/models/save', {'id': chat['id'], 'name': chat['name'], 'baseUrl': chat['base_url'],
+                                       'apiKey': chat['api_key'], 'model': chat['model'],
+                                       'visionModel': chat['vision_model'] or '', 'embeddingModel': chat['embedding_model'] or '',
+                                       'capabilities': caps})
+        core.call('/api/models/roles', {'chatModelId': chat['id']})
+        print('REAL model: %s (%s) · 隔离目录 %s' % (chat['name'], chat['model'], work))
+
+        def new_session(project=''):
+            return core.call('/api/sessions/new', {'projectId': project} if project else {})['sessionId']
+
+        def ask(sid, q, **kw):
+            payload = {'sessionId': sid, 'question': q, 'web': 'off'}
+            payload.update(kw)
+            return core.call('/api/agent/ask-pi', payload, timeout=600)
+
+        def case_chat():
+            sid = new_session()
+            r = ask(sid, '请只用一句话说明你是一款什么软件，不要调用任何工具。')
+            ans = (r.get('answer') or '').strip()
+            assert r.get('ok') is True, 'turn not ok: %s' % (r.get('message') or '')
+            assert len(ans) >= 4, '空回复'
+            return 'answer=%r' % ans[:36]
+
+        def case_stream():
+            sid = new_session()
+            r = ask(sid, '写三句话介绍「输入与输出」这个概念，不超过 80 个汉字。')
+            ans = (r.get('answer') or '').strip()
+            events = core.events(sid)
+            resp = [e for e in events if e.get('type') == 'model/response']
+            assert r.get('ok') is True and len(ans) >= 30, '回复不合格：ok=%s len=%s' % (r.get('ok'), len(ans))
+            assert resp and resp[-1]['payload'].get('responseId'), '缺少上游响应 ID（不是真实上游？）'
+            return 'answer=%d chars upstream=%s' % (len(ans), resp[-1]['payload'].get('responseModel'))
+
+        def case_vision():
+            src = (ROOT / 'core/src/llm/vision_probe.cj').read_text(encoding='utf-8')
+            probe = re.search(r'data:image/png;base64,[A-Za-z0-9+/=]+', src).group(0)
+            sid = new_session()
+            r = ask(sid, '请读取图片中央的验证码，只输出验证码，不要猜测。',
+                    attachments=[{'kind': 'image', 'name': 'probe.png', 'dataUrl': probe}])
+            ans = ((r.get('answer') or '').replace('-', '').replace(' ', ''))
+            assert 'K7P4' in ans, '图片回答不含验证码：%r' % (r.get('answer') or '')
+            return 'answer=%r' % (r.get('answer') or '')[:24]
+
+        def case_session_read():
+            a = new_session()
+            ask(a, '请只回复一句话：收到，暗号是 X42-NOTE。')
+            b = new_session()
+            r = ask(b, '必须用 read_session 工具读取会话 lumin://thread/%s，然后告诉我其中的暗号是什么。' % a)
+            events = core.events(b)
+            used = any(e.get('type') == 'tool/result' and (e.get('payload') or {}).get('tool') == 'read_session' and (e.get('payload') or {}).get('ok') for e in events)
+            ans = (r.get('answer') or '')
+            assert used, 'read_session 没有被成功调用：%r' % ans[:120]
+            assert 'X42-NOTE' in ans, '回答里没有暗号：%r' % ans[:120]
+            return 'tool=read_session ok, answer=%r' % ans[:32]
+
+        def case_file_read():
+            proj = work / 'project'
+            proj.mkdir(exist_ok=True)
+            (proj / 'secret.txt').write_text('内部编码：ZQ-7781\n负责人：测试组\n', encoding='utf-8')
+            p = core.call('/api/projects/save', {'name': '真实模型测试项目', 'root': str(proj)})
+            sid = new_session(p['id'])
+            r = ask(sid, '我附加了一份文件附件，请读取它并回答：内部编码是什么？只输出编码。',
+                    attachments=[{'kind': 'file', 'name': 'secret.txt', 'path': str(proj / 'secret.txt')}])
+            ans = (r.get('answer') or '')
+            assert 'ZQ-7781' in ans, '回答里没有文件内容：%r' % ans[:120]
+            return 'answer=%r' % ans[:24]
+
+        def case_memory():
+            sid = new_session()
+            ask(sid, '记住：我喜欢先看例子再看概念。')
+            mems = core.call('/api/learning/memories', {}).get('memories') or []
+            hit = [m for m in mems if '例子' in (m.get('text') or '')]
+            assert hit, '学习记忆没有保存（现有 %d 条）' % len(mems)
+            core.call('/api/learning/memory/forget', {'id': hit[0]['id']})
+            return 'memory=%r' % (hit[0].get('text') or '')[:24]
+
+        def case_generate():
+            kb = work / 'kb'
+            kb.mkdir(exist_ok=True)
+            (kb / 'io.md').write_text('# 输入与输出\n\n输入样例要写清范围与边界，输出要保留中间状态，方便复现与验证。\n\n# 验证与边界\n\n正常、最小、最大与异常样例都要覆盖，预期与实际差异要记录。\n', encoding='utf-8')
+            core.call('/api/kb/save', {'id': 'kb', 'name': '真实模型测试资料', 'rootDir': str(kb)})
+            core.call('/api/kb/build', {'id': 'kb'})
+            sid = new_session()
+            r = ask(sid, '请根据资料中的《输入与输出》生成一份定制讲义，讲给学生听。', kbId='kb')
+            events = core.events(sid)
+            saved = [e for e in events if e.get('type') == 'resource/saved']
+            called = any(e.get('type') == 'tool/call' and (e.get('payload') or {}).get('tool') == 'generate_learning_resource' for e in events)
+            assert called, '模型没有调用 generate_learning_resource'
+            assert r.get('ok') is True and saved, '生成失败：ok=%s msg=%s' % (r.get('ok'), r.get('message'))
+            res = core.call('/api/learning/resource', {'id': saved[-1]['payload']['id'], 'version': saved[-1]['payload']['version']})
+            cites = res.get('citations') or []
+            issues = ((res.get('quality') or {}).get('issues') or [])
+            assert (res.get('markdown') or '').strip(), '资源正文为空'
+            assert cites, '资源没有引用'
+            return 'title=%r citations=%d issues=%d' % (res.get('title'), len(cites), len(issues))
+
+        def case_crocodile():
+            project = work / 'crocodile-project'
+            project.mkdir()
+            saved_project = core.call('/api/projects/save', {'name':'鳄鱼动画实测','root':str(project)})
+            sid = new_session(saved_project['id'])
+            response = ask(sid, '创建一个HTML，内容是用svg制作一个鳄鱼骑自行车的2d动画，你不需要进行任何测试。请直接创建HTML文件，完成后说明文件名。')
+            events = core.events(sid)
+            writes = [e for e in events if e['type']=='tool/result' and e['payload'].get('tool')=='write']
+            assert response.get('ok') and writes and all(e['payload'].get('ok') for e in writes), 'write failed or no artifact'
+            files = list(project.rglob('*.html'))
+            assert files, 'HTML file missing'
+            content = files[0].read_text(encoding='utf-8')
+            assert '<svg' in content and any(t in content.lower() for t in ('animate','animation','keyframes')), 'not an SVG animation'
+            commands=[str((e['payload'].get('args') or {}).get('command','')).lower() for e in events if e['type']=='tool/call' and e['payload'].get('tool')=='powershell']
+            assert not any(any(token in command for token in ('pytest','npm test','playwright','chromium','selenium')) for command in commands), 'agent ran a test despite user instruction'
+            assert any(e['type']=='assistant/activity' and e['payload'].get('phase')=='tool_input' for e in events), 'no live tool-input stage'
+            return 'HTML=%d bytes; writes=%d; no failed write or agent test command' % (files[0].stat().st_size,len(writes))
+
+        def case_skill_read_no_lock():
+            seed = work / 'skill-lock-seed.md'
+            seed.write_text('# 暗号\n\n技能污染回归暗号是 SL-7788。\n', encoding='utf-8')
+            core.call('/api/personal/save', {'path': str(seed), 'title': '技能污染回归资料', 'confirmed': True})
+            sid = new_session()
+            r = ask(sid, '先调用 skill_read 读「web-research」技能正文，然后用 search_personal_resources 在我的个性资源里找「暗号」，告诉我暗号是什么。', web='auto')
+            events = core.events(sid)
+            denied = [e for e in events if e.get('type') == 'tool/denied' and '未允许工具' in json.dumps(e.get('payload') or {}, ensure_ascii=False)]
+            read = any(e.get('type') == 'tool/result' and (e.get('payload') or {}).get('tool') == 'skill_read' and (e.get('payload') or {}).get('ok') for e in events)
+            searched = any(e.get('type') == 'tool/result' and (e.get('payload') or {}).get('tool') == 'search_personal_resources' and (e.get('payload') or {}).get('ok') for e in events)
+            ans = r.get('answer') or ''
+            assert read, 'skill_read 没成功：%r' % ans[:120]
+            assert searched, 'search_personal_resources 没成功（可能又被白名单拦了）：%r' % ans[:120]
+            assert not denied, '出现技能白名单误拦：%r' % denied[:1]
+            assert 'SL-7788' in ans, '回答里没有暗号：%r' % ans[:120]
+            return 'skill_read ok then search_personal_resources ok; no whitelist denial'
+
+        def case_resources():
+            kb = work / 'resources-kb'
+            kb.mkdir(exist_ok=True)
+            (kb / 'agent.md').write_text('# AI Agent 基础\n\n## 概念\n\nAgent 由模型、工具与循环组成：模型决定下一步，工具执行动作，循环把工具结果回填给模型。\n\n## 工具调用\n\n工具调用要给出 JSON 参数并处理失败；规划与记忆决定多步任务能否稳定完成。\n', encoding='utf-8')
+            core.call('/api/kb/save', {'id': 'rkb', 'name': '资源测试资料', 'rootDir': str(kb)})
+            core.call('/api/kb/build', {'id': 'rkb'})
+            results = []
+            for kind, prompt in [('quiz', '请根据资料生成一套 3 题的分阶测试，主题：Agent 工具调用。'),
+                                 ('practice', '请根据资料生成一份实操练习，主题：Agent 工具调用，3 个步骤。'),
+                                 ('ppt', '请根据资料生成一份 4 页在线演示，主题：Agent 工具调用。')]:
+                sid = new_session()
+                r = ask(sid, prompt, kbId='rkb', web='off')
+                events = core.events(sid)
+                saved = any(e.get('type') == 'resource/saved' and (e.get('payload') or {}).get('kind') == kind for e in events)
+                results.append((kind, saved, (r.get('message') or '')[:90]))
+            bad = [x for x in results if not x[1]]
+            assert not bad, '资源生成失败：%r' % bad
+            return '; '.join('%s ok' % k for k, _, _ in results)
+
+        def case_knowledge():
+            sid = new_session()
+            r = ask(sid, '请用一段话解释「输入与输出」的约定：先给定什么、再验证什么，并举一个具体例子。')
+            events = core.events(sid)
+            called = any(e.get('type') == 'tool/result' and (e.get('payload') or {}).get('tool') == 'record_knowledge_point' and (e.get('payload') or {}).get('ok') for e in events)
+            assert r.get('ok') is True, 'turn failed: %s' % (r.get('message') or '')
+            assert called, '模型没有调用 record_knowledge_point'
+            graph = core.call('/api/knowledge/graph', {})
+            node = next((n for n in graph.get('nodes') or [] if n.get('recordCount')), None)
+            assert node, '知识网络没有带来源记录的节点'
+            detail = core.call('/api/knowledge/node', {'id': node['id']})
+            rec = (detail.get('records') or [])[0]
+            assert rec.get('question') and rec.get('note'), '记录缺少问题或要点'
+            return 'title=%r records=%d notecut=%d' % (node['title'], node['recordCount'], len(rec['note']))
+
+        def case_personal_search():
+            seed = work / 'personal-seed.md'
+            seed.write_text('# 检索暗号\n\n跨会话检索暗号是 PL-3097，只有正文里有。\n', encoding='utf-8')
+            core.call('/api/personal/save', {'path': str(seed), 'title': '检索暗号资料', 'confirmed': True})
+            sid = new_session()
+            r = ask(sid, '请用 search_personal_resources 在我的个性资源里找「检索暗号」，告诉我暗号是什么。')
+            events = core.events(sid)
+            used = any(e.get('type') == 'tool/result' and (e.get('payload') or {}).get('tool') == 'search_personal_resources' and (e.get('payload') or {}).get('ok') for e in events)
+            ans = r.get('answer') or ''
+            assert used, '模型没有调用 search_personal_resources：%r' % ans[:120]
+            assert 'PL-3097' in ans, '回答里没有暗号：%r' % ans[:120]
+            return 'tool=search_personal_resources ok; answer=%r' % ans[:30]
+
+        def case_presentation():
+            bridge = subprocess.Popen(['node',str(ROOT/'shell/desktop-bridge.js'),core.base,str(core.dir)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,creationflags=NO_WINDOW)
+            try:
+                sid = new_session()
+                response = ask(sid, '无需确认PPT细节，直接制作一份4页可编辑PowerPoint（.pptx）。主题是输入与输出的约定，面向初学者课堂讲解，风格简洁。请使用create_presentation设计不同版式并提供讲者备注，暂不存入个性资源。')
+                events = core.events(sid)
+                saved = [e['payload'] for e in events if e['type']=='artifact/created']
+                assert response.get('ok') and saved, 'no editable PPTX created'
+                result = saved[-1]
+                assert Path(result['path']).exists() and result['slides']==4
+                import zipfile
+                with zipfile.ZipFile(result['path']) as archive:
+                    assert archive.testzip() is None
+                return 'editable PPTX slides=%d; native builder and candidate preview passed' % result['slides']
+            finally:
+                bridge.kill()
+
+        def case_course():
+            kb = work / 'course-kb'
+            kb.mkdir()
+            (kb / 'input.md').write_text('# 输入与输出\n\n## 先约定输入\n\n先写清输入样例和期望输出，再执行并保留中间状态。\n\n## 验证结果\n\n对正常、最小、最大和异常样例进行验证，记录预期与实际差异。', encoding='utf-8')
+            core.call('/api/kb/save', {'id': 'course-kb', 'name': '课程实测资料', 'rootDir': str(kb)})
+            core.call('/api/kb/build', {'id': 'course-kb'})
+            before = core.call('/api/study/course', {'kbId': 'course-kb'})
+            assert before['chapters'] and not before['chapters'][0].get('resourceId')
+            sid = new_session()
+            core.call('/api/study/lecture', {'kbId': 'course-kb', 'chapter': before['chapters'][0]['name'], 'sessionId': sid})
+            course = core.call('/api/study/course', {'kbId': 'course-kb'})
+            chapter = course['chapters'][0]
+            res = core.call('/api/learning/resource', {'id': chapter['resourceId']})
+            assert res.get('studyChapter') == before['chapters'][0]['name']
+            assert chapter['sections'][0]['markdown'] and chapter['citations']
+            assert any(e['type'] == 'resource/progress' for e in core.events(sid))
+            done = core.call('/api/study/section/complete', {'kbId':'course-kb','chapter':chapter['name'],'sectionId':chapter['sections'][0]['id']})
+            assert done['doneCount'] == 1 and done['next']['sectionId'] != chapter['sections'][0]['id']
+            return 'chapters=%d sections=%d citations=%d; exact next section saved' % (len(course['chapters']),course['sectionCount'],len(chapter['citations']))
+
+        cases = [('chat', case_chat), ('stream', case_stream), ('vision', case_vision),
+                 ('session_read', case_session_read), ('file_read', case_file_read),
+                 ('memory', case_memory), ('generate', case_generate), ('course', case_course), ('crocodile', case_crocodile), ('presentation', case_presentation),
+                 ('knowledge', case_knowledge), ('personal_search', case_personal_search),
+                 ('skill_read_no_lock', case_skill_read_no_lock), ('resources', case_resources)]
+        for name, fn in cases:
+            if only and name not in only:
+                continue
+            run_case('real-' + name, fn)
+
+        failed = [n for n, ok, _ in RESULTS if not ok]
+        print('SUMMARY %d/%d passed%s' % (len(RESULTS) - len(failed), len(RESULTS), (' · FAILED: ' + ','.join(failed)) if failed else ''))
+        return 1 if failed else 0
+    finally:
+        core.close()
+
+
+if __name__ == '__main__':
+    sys.exit(main())

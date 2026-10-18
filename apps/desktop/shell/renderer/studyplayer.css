@@ -1,0 +1,77 @@
+/* 学·练资源单独打开页（studyplayer.js）。只做这一页自己的版式，颜色全部走主题变量。 */
+body[data-page="study"] .view{ padding:18px 22px 40px; }
+.sp-page{ max-width:980px; margin:0 auto; display:flex; flex-direction:column; gap:14px; }
+.sp-crumb{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.sp-crumb-trail{ color:var(--muted); font-size:13px; overflow-wrap:anywhere; }
+.sp-head{ display:flex; align-items:flex-start; gap:14px; border:1px solid var(--line); border-radius:16px; background:var(--panel); padding:16px 18px; }
+.sp-head-main{ flex:1; min-width:0; display:flex; flex-direction:column; gap:8px; }
+.sp-title{ margin:0; font-size:22px; line-height:1.35; overflow-wrap:anywhere; }
+.sp-chips{ display:flex; gap:8px; flex-wrap:wrap; }
+.sp-chip{ border:1px solid var(--line); border-radius:999px; padding:2px 10px; font-size:13px; color:var(--ink-2); background:var(--panel-soft); }
+.sp-chip-warn{ border-color:color-mix(in srgb,#c05e54 45%,var(--line)); color:#c05e54; }
+.sp-head-side{ display:flex; align-items:center; gap:10px; flex:none; }
+.sp-progress{ color:var(--muted); font-size:13px; white-space:nowrap; }
+.sp-intro{ border:1px solid var(--line); border-radius:14px; background:color-mix(in srgb,var(--panel-soft) 60%,transparent); padding:14px 16px; display:flex; flex-direction:column; gap:8px; }
+.sp-objective{ margin:0; font-size:14.5px; line-height:1.8; }
+.sp-objectives{ margin:4px 0 0; padding-left:20px; line-height:1.9; }
+.sp-sec-title{ margin:0 0 8px; font-size:13px; font-weight:600; color:var(--muted); letter-spacing:.02em; }
+.sp-block{ border:1px solid var(--line); border-radius:16px; background:var(--panel); padding:16px 18px; }
+.sp-block-head{ display:flex; align-items:flex-start; gap:12px; }
+.sp-num{ flex:none; width:38px; height:38px; border-radius:11px; display:flex; align-items:center; justify-content:center; background:var(--brand-soft); color:var(--brand); font-weight:600; font-size:13px; }
+.sp-block-text{ flex:1; min-width:0; }
+.sp-eyebrow{ font-size:13px; color:var(--muted); letter-spacing:.03em; }
+.sp-block-title{ margin:2px 0 0; font-size:17px; line-height:1.4; overflow-wrap:anywhere; }
+.sp-mark{ flex:none; }
+.sp-mark.on{ border-color:color-mix(in srgb,var(--brand) 40%,var(--line)); color:var(--brand); background:var(--brand-soft); }
+.sp-body{ margin-top:10px; }
+.sp-body > :first-child{ margin-top:0; }
+.sp-body > :last-child{ margin-bottom:0; }
+.sp-safety{ display:inline-block; margin-top:6px; font-size:13px; border-radius:999px; padding:2px 9px; border:1px solid var(--line); color:var(--muted); }
+.sp-safety-danger{ border-color:color-mix(in srgb,#c05e54 50%,var(--line)); color:#c05e54; }
+.sp-safety-caution{ border-color:color-mix(in srgb,#b17818 50%,var(--line)); color:#b17818; }
+.sp-code{ margin:10px 0 0; padding:12px 14px; border-radius:12px; background:var(--panel-sunk); border:1px solid var(--line); overflow:auto; font-size:13px; line-height:1.7; }
+.sp-expected{ margin:10px 0 0; font-size:13.5px; color:var(--ink-2); }
+.sp-warning{ margin:8px 0 0; font-size:13px; color:#b17818; }
+.sp-accept{ display:flex; flex-direction:column; gap:6px; }
+.sp-check{ display:flex; align-items:center; gap:10px; text-align:left; border:1px solid var(--line); border-radius:12px; background:var(--panel-soft); padding:9px 12px; cursor:pointer; font-size:13.5px; color:var(--ink); }
+.sp-check.on{ border-color:color-mix(in srgb,var(--brand) 40%,var(--line)); background:var(--brand-soft); }
+.sp-check-box{ flex:none; }
+.sp-sources{ border:1px solid var(--line); border-radius:14px; padding:12px 16px; background:color-mix(in srgb,var(--panel-soft) 55%,transparent); }
+.sp-source{ margin:4px 0; font-size:13px; }
+.sp-hint{ margin:0; color:var(--muted); font-size:13px; }
+
+/* 分阶测试 */
+.sp-qbar{ height:6px; border-radius:999px; background:var(--panel-sunk); overflow:hidden; }
+.sp-qbar-fill{ display:block; height:100%; width:0; border-radius:999px; background:color-mix(in srgb,var(--brand) 70%,transparent); transition:width .25s ease; }
+.sp-q{ border:1px solid var(--line); border-radius:16px; background:var(--panel); padding:18px 20px; display:flex; flex-direction:column; gap:12px; }
+.sp-q-meta{ display:flex; align-items:center; gap:10px; color:var(--muted); font-size:13px; }
+.sp-q-stem{ margin:0; font-size:17.5px; line-height:1.65; }
+.sp-diff-easy{ color:#287a62; border-color:color-mix(in srgb,#287a62 40%,var(--line)); }
+.sp-diff-medium{ color:#b17818; border-color:color-mix(in srgb,#b17818 40%,var(--line)); }
+.sp-diff-hard{ color:#b94f45; border-color:color-mix(in srgb,#b94f45 40%,var(--line)); }
+.sp-options{ display:flex; flex-direction:column; gap:8px; }
+.sp-opt{ display:flex; align-items:center; gap:12px; text-align:left; border:1px solid var(--line); border-radius:12px; background:var(--panel-soft); padding:11px 14px; cursor:pointer; font-size:14px; color:var(--ink); transition:border-color .15s ease, background-color .15s ease; }
+.sp-opt:hover:not(:disabled){ border-color:color-mix(in srgb,var(--brand) 35%,var(--line)); }
+.sp-opt-letter{ flex:none; width:24px; height:24px; border-radius:8px; display:flex; align-items:center; justify-content:center; background:var(--panel-sunk); font-size:13px; font-weight:600; }
+.sp-opt.chosen{ border-color:color-mix(in srgb,var(--brand) 45%,var(--line)); }
+.sp-opt.right{ border-color:color-mix(in srgb,#287a62 55%,var(--line)); background:color-mix(in srgb,#287a62 12%,var(--panel-soft)); }
+.sp-opt.wrong{ border-color:color-mix(in srgb,#b94f45 55%,var(--line)); background:color-mix(in srgb,#b94f45 10%,var(--panel-soft)); }
+.sp-feedback{ min-height:20px; font-size:13.5px; line-height:1.7; color:var(--muted); }
+.sp-feedback.right{ color:#287a62; }
+.sp-q-foot{ display:flex; justify-content:flex-end; gap:10px; }
+.sp-summary{ border:1px solid var(--line); border-radius:16px; background:var(--panel); padding:20px; display:flex; flex-direction:column; gap:10px; }
+.sp-summary-actions{ display:flex; gap:10px; flex-wrap:wrap; }
+
+/* 在线演示（交互导学） */
+.sp-slides{ border:1px solid var(--line); border-radius:18px; background:var(--panel); padding:18px; display:flex; flex-direction:column; gap:12px; }
+.sp-slide{ min-height:320px; border-radius:14px; background:radial-gradient(ellipse at 18% 0%,rgba(169,159,198,.10),transparent 58%),var(--panel-soft); border:1px solid var(--line); padding:28px 30px; display:flex; flex-direction:column; gap:10px; }
+.sp-slide-title{ margin:0; font-size:24px; line-height:1.4; }
+.sp-slide-bullets{ margin:6px 0 0; padding-left:22px; display:flex; flex-direction:column; gap:6px; font-size:14.5px; line-height:1.8; }
+.sp-slide-body{ margin-top:4px; }
+.sp-notes{ border:1px dashed var(--line); border-radius:12px; padding:10px 14px; font-size:13px; color:var(--ink-2); line-height:1.8; background:color-mix(in srgb,var(--panel-soft) 50%,transparent); }
+.sp-slide-controls{ display:flex; align-items:center; gap:12px; }
+.sp-slide-pos{ flex:1; text-align:center; color:var(--muted); font-size:13px; }
+.sp-dots{ display:flex; gap:6px; flex-wrap:wrap; justify-content:center; }
+.sp-dot{ width:8px; height:8px; border-radius:999px; border:1px solid var(--line); background:var(--panel-sunk); padding:0; cursor:pointer; }
+.sp-dot.on{ background:var(--brand); border-color:var(--brand); }
+.sp-foot{ display:flex; align-items:center; gap:12px; justify-content:space-between; padding-bottom:8px; }
