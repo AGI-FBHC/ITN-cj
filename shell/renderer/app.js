@@ -865,6 +865,7 @@ let currentSection = "";
 
 async function go(page, section, opts) {
   if(page==="settings"&&section==="kb"){page="kb";section="manage";}
+  if(page==="resources"&&section==="files")section="";
   const navigation = state.navigationGeneration = (state.navigationGeneration || 0) + 1;
   state.knowledgeObserver?.disconnect();state.knowledgeObserver=null;
   state.notesListObserver?.disconnect(); state.notesListObserver = null;

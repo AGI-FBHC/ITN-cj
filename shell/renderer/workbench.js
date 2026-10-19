@@ -43,13 +43,13 @@ function decorateWorkspace() {
   const nav = el('nav', 'workspace-tabs' + (learning ? ' center-links' : ''));
   nav.setAttribute('aria-label', learning ? '学习功能' : '学习成果分类');
   const selected = learning ? (current === 'calibrate' ? 'report' : current)
-    : current === 'resources' ? (currentSection === 'files' ? 'files' : 'generated') : (state.resTab || 'notes');
+    : current === 'resources' ? 'generated' : (state.resTab || 'notes');
   const tabs = learning ? [['home', '知识网络'], ['learn', '学 · 练'], ['report', '我的成长']]
-    : [['generated', '个性资源'], ['notes', '笔记'], ['wrong', '错题'], ['files', '本地文件'], ['network', '收集资料']];
+    : [['generated', '个性资源'], ['notes', '笔记'], ['wrong', '错题'], ['network', '收集资料']];
   for (const [key, label] of tabs) {
     const button = btn(label, 'workspace-tab' + (key === selected ? ' active' : ''), () => {
       if (learning) go(key);
-      else if (key === 'generated' || key === 'files') go('resources', key === 'files' ? 'files' : '');
+      else if (key === 'generated') go('resources');
       else { state.resTab = key; go('notes'); }
     });
     button.dataset.page = key;
@@ -600,19 +600,8 @@ function syncWorkbenchEvents(events) {
   }
 }
 
-const originalResources = PAGES.resources.render;
 PAGES.resources.render = async function() {
   const generation=state.navigationGeneration,view=$('view');view.replaceChildren();
-  if(currentSection==='files') {
-    const toolbar=el('div','outcome-toolbar');
-    const open=async kind=>{
-      const api=window.itnWindow;if(!api){toast('请在桌面窗口选择文件');return;}
-      const file=kind==='deck'?await api.pickDeck():kind==='doc'?await api.pickDoc():await api.pickFile();if(file)await openFilePreview(file);
-    };
-    toolbar.append(btn('打开本地文件…','primary',()=>open('any')),btn('打开演示文稿…','',()=>open('deck')),btn('打开文档…','',()=>open('doc')));view.appendChild(toolbar);
-    view.appendChild(el('p','muted','本地文件先预览；满意后可选择存入个性资源。'));
-    const reader=el('section','local-file-reader');reader.id='outcome-reader';reader.appendChild(el('p','muted','选择要预览的网页、演示文稿、文档、PDF或图片。'));view.appendChild(reader);return;
-  }
   const toolbar=el('div','outcome-toolbar'),search=inputOf('learning-resource-search','搜索个性资源标题或正文',state.outcomeQuery || ''),kind=el('select');
   search.setAttribute('aria-label','搜索个性资源');kind.setAttribute('aria-label','筛选成果类型');kind.appendChild(option('','全部格式'));
   for(const [value,label] of [['pptx','PowerPoint'],['html','网页'],['md','Markdown / 讲义'],['quiz','测验'],['docx','Word'],['pdf','PDF'],['png','图片']])kind.appendChild(option(value,label));kind.value=state.outcomeKind || '';
@@ -635,14 +624,6 @@ PAGES.resources.render = async function() {
   };
   search.oninput=()=>{clearTimeout(timer);seq++;timer=setTimeout(()=>paint().catch(e=>toast(e.message)),220);};kind.onchange=()=>paint();await paint();
 };
-async function openLocalOutcome(kind) {
-  const a = window.itnWindow;
-  if (!a) { toast('只在桌面应用窗口里可用'); return; }
-  const file = kind === 'deck' ? await a.pickDeck?.() : await a.pickDoc?.();
-  if (!file) return;
-  const name = String(file).replace(/\\/g, '/').split('/').pop();
-  openSlidePlayer(name, undefined, undefined, file);
-}
 const originalResourcesPanel = PANELS.resources;
 PANELS.resources = {
   title: '学习成果',
