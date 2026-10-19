@@ -4618,4 +4618,10 @@ read_chunk 读得到原文并带回库标识与正文。
 - 版本与发布：
   - `shell/package.json`、`shell/package-lock.json` 从 `0.8.20` 升级到 `0.8.21`。
   - 两份原有未跟踪调研文档 `docs/知识库改进清单-v2.md`、`docs/非对话页面改造方案-v1.md` 继续保留，不纳入本轮提交。
-  - 下一步用 `scripts/package-app.ps1` 生成 `dist/Lumin-0.8.21` 与 `dist/Lumin-0.8.21.zip`，文件名不得包含 `x64/win-x64`，随后做隔离解压、manifest 哈希和启动冒烟。
+  - 下一步用 `scripts/package-app.ps1` 生成 `dist/Lumin-0.8.21` 与 `dist/Lumin-0.8.21.zip`，文件名不得包含 `x64/win-x64`，随后做隔离解压、manifest 哈希和启动冒烟。### 0.8.21 打包结果（2026-10-19）
+- 从功能提交 `673c8d8` 执行 `pwsh -NoProfile -File scripts/package-app.ps1`，成功生成版本化产物。
+- 应用目录：`dist/Lumin-0.8.21`；压缩包：`dist/Lumin-0.8.21.zip`，大小 219.9 MB，SHA256 `D0EEAA54D7BF71C8FB38440406A7D6BDF6167AF4127C80657642C1CB4BF99D41`。
+- `release.json`：`version=0.8.21`、`build=lumin-0.8.21-673c8d8`、`sourceCommit=673c8d8e0ff69a767edbf4b38de8cf18e2bf1fd5`。
+- 将 ZIP 实际解压到独立临时目录后复算 manifest：19/19 个资产 SHA256 一致，0 个缺失；包顶层不存在 `x64/win-x64` 名称，启动器为 `Lumin.exe`，内核为 `resources/kernel/lumin-core.exe`，随包 PPT Python 运行时存在。
+- 解压包启动冒烟：空数据目录启动输出 `PRELOAD=ok`、`TITLEBAR=ok`、`STATUS=Lumin 0.8.21 · 已连接`、`DOCX=ok`、`RESULT=OK`。
+- 使用包内 `python-pptx` 重新打开真实模型样例 `tmp/real-ppt-resource-check/input-output-acceptance.pptx`：4 页，每页 1 张全幅背景图，讲者备注分别为 142/68/152/140 字符；样例 SHA256 `FA31454D96E3848813D215F535C028087BDCF99E5671ECD5D35F43C981846CF6`。
