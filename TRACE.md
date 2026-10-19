@@ -4799,3 +4799,14 @@ read_chunk 读得到原文并带回库标识与正文。
   - 前批 MiMo Flash 4次真实模型对话7/7 PASS沿用 tmp/real-memory-check.log，本次图片修复不更改记忆流程，因此未无理由重复模型费用。
   - node --check app.js/workbench.js/knowledge-images-check.cjs、git diff --check 均通过。既有两份未跟踪调研文档继续不纳入提交，没有引入 Python 业务或测试夹具。
 - 本段与图片功能本地提交；接下来使用版本名 dist/Lumin-0.8.25 与 Lumin-0.8.25.zip 打包，核对资产哈希与包内启动，结果继续追加本文件。
+
+## 2026-10-20 · Lumin 0.8.25 打包交付
+- 功能来源：`5d20a9d feat: clarify library controls and structure learning memory` 与 `3974a0e fix: render knowledge document images with local fallback`。
+- 运行 scripts/package-app.ps1 成功，日志 tmp/package-lumin-0.8.25.log。产物 dist/Lumin-0.8.25/Lumin.exe 与 dist/Lumin-0.8.25.zip，版本包名不含 x64；ZIP 231,932,414 字节（221.2 MB）、2,759 条目。
+- release.json：version=0.8.25，build=lumin-0.8.25-3974a0e，sourceCommit 指向图片功能提交。33 项资产逐一 SHA256 校验一致，ZIP 存在 Lumin.exe、release.json、包内内核与修改后的 renderer 文件及桌宠 PNG。
+- 包内验收使用 tmp/verify-lumin-0.8.25.ps1（PowerShell 7，无 Python，临时脚本不入库），日志 tmp/verify-lumin-0.8.25.log：
+  - 实际启动包内 Lumin.exe --smoke --ui-check，LOCALAPPDATA/APPDATA/TEMP/TMP 全部指向全新临时目录；PRELOAD=ok、TITLEBAR=ok、NAV=5、VIEW_NODES=2、RESULT=OK。STATUS 文字为空符合本版仅显示连接灯的设计；DOCX 样张未提供，因此这一项明确跳过，未宣称 Office 生成回归。
+  - 再启动包内 resources/kernel/lumin-core.exe，核对 /health 与静态 /release.json；用仓颉真实 API 注册并索引临时文档，再调用 /api/kb/image，成功定位真实 8-1.png 的本地副本，kind=local、140,133 字节、data:image/png;base64 正常。
+  - 隔离数据根：C:/Users/GeJie/AppData/Local/Temp/lumin-0.8.25-package-6edabaa75f6043719feb2dc3c22ad715，所有验收子进程结束，真实用户库未修改。
+- 本段为打包记录，单独本地文档提交；包内 sourceCommit 保留已验收的功能提交 3974a0e，无需因追加 trace 再生成相同二进制与 ZIP。
+- 最终 Git 仅保留两份先前存在的未跟踪调研文档，均未纳入本次提交。0.8.25 已可交付。
