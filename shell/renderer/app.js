@@ -4658,9 +4658,12 @@ async function renderPanel(force) {
  * 内容变化走 PANELS.chat.refresh 就地改字，行与滚动位置都留着。
  * 顺序（内核按最后一条事件排）算结构：位置变了要重排。
  */
-/** 会话行按最后活动时间倒序；时间相同用 id 稳定兜底。 */
+/** 会话行按最后活动时间倒序；时间相同用 id 稳定兜底。
+ * 不能直接比较 ISO 字符串：内核可能返回 +08:00，前端即时活动时间则是 Z，
+ * 同一时刻附近按字典序会把较旧的一条误判为更新。 */
 function railSessionCompare(a, b) {
-  const byTime = String(b.lastAt || "").localeCompare(String(a.lastAt || ""));
+  const ta = Date.parse(a.lastAt || ""), tb = Date.parse(b.lastAt || "");
+  const byTime = (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
   return byTime || String(a.sessionId || "").localeCompare(String(b.sessionId || ""));
 }
 /** 只把“组内顺序”纳入结构指纹：时间文字变化仍走 refresh，顺序变了才重建。 */
@@ -6701,6 +6704,8 @@ PAGES.chat = {
 
     /* ---- 需要批准的动作用户确认（写工作区外 / 跑命令 / 联网） ---- */
     const APPROVAL_LABEL = {
+      "file-read": "读取文件",
+      "file-write": "写入文件",
       "path-outside": "写入工作区外的目录",
       command: "运行命令",
       "command-dangerous": "运行有风险的命令",
@@ -6732,8 +6737,9 @@ PAGES.chat = {
 
     async function pollApprovals() {
       try {
-        const d = await api("/api/agent/approvals", {});
-        const pend = (d.requests || []).filter((x) => !x.decision);
+        const sid = state.chatSessionId;
+        const d = await api("/api/agent/approvals", sid ? { sessionId: sid } : {});
+        const pend = (d.requests || []).filter((x) => !x.decision && (!sid || x.sessionId === sid));
         const changed = pend.length !== (state.approvals || []).length ||
           pend.some((x, i) => (state.approvals[i] || {}).id !== x.id);
         state.approvals = pend;
@@ -6848,7 +6854,8 @@ PAGES.chat = {
       }
       // 待批准的动作可能来自任何一轮：同一张请求复用同一个节点，避免每 200ms 重建一次卡片
       const aliveApprovals = new Set();
-      for (const req of (state.approvals || [])) {
+      const approvalRequests = (state.approvals || []).filter((req) => !req.sessionId || req.sessionId === state.chatSessionId);
+      for (const req of approvalRequests) {
         aliveApprovals.add(req.id);
         let node = approvalCache.get(req.id);
         if (!node) {
@@ -6864,7 +6871,7 @@ PAGES.chat = {
         }
       }
       reconcileThread(keep);
-      for (const req of (state.approvals || [])) thread.appendChild(approvalCache.get(req.id));
+      for (const req of approvalRequests) thread.appendChild(approvalCache.get(req.id));
       paintActionBtn();
       if (typeof state.chatRepaintUsage === "function") state.chatRepaintUsage();
       if (state.stickBottom !== false) thread.scrollTop = thread.scrollHeight;

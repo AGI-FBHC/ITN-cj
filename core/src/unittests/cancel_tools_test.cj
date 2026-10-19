@@ -5,6 +5,7 @@ import std.unittest.testmacro.*
 import std.time.*
 import std.fs.*
 import stdx.net.http.*
+import stdx.encoding.json.*
 import itn_desktop_core.tools.fetchPageWithCancel
 import itn_desktop_core.tools.WebSearchClient
 import itn_desktop_core.pi_app.ApprovalHub
@@ -15,6 +16,7 @@ import itn_desktop_core.pi.scriptTool
 import itn_desktop_core.pi.scriptText
 import itn_desktop_core.pi.boolOf
 import itn_desktop_core.pi.strOf
+import itn_desktop_core.pi.objOf
 import itn_desktop_core.store.Store
 import itn_desktop_core.store.ModelConfig
 import itn_desktop_core.llm.LlmClient
@@ -97,6 +99,45 @@ func cancelReleasesAnApprovalWait(): Unit {
     @Expect(answer, "n")
     @Expect(hub.pendingCount(), 0)
     @Expect((DateTime.now() - started).toMilliseconds() < 1500, true)
+}
+
+@Test
+func approvalRequestsStayScopedToTheirSessions(): Unit {
+    let hub = ApprovalHub()
+    hub.waitSec = 5
+    let first = spawn {
+        hub.askWithCancelFor("file-read", "notes.md", "读取学习资料", "read", "sid-a", { => false })
+    }
+    let second = spawn {
+        hub.askWithCancelFor("file-write", "draft.md", "保存学习笔记", "write", "sid-b", { => false })
+    }
+    var waited: Int64 = 0
+    while ((hub.pendingCountFor("sid-a") < 1 || hub.pendingCountFor("sid-b") < 1) && waited < 100) {
+        sleep(Duration.millisecond * 20)
+        waited += 1
+    }
+    @Expect(hub.pendingCount(), 2)
+    @Expect(hub.pendingCountFor("sid-a"), 1)
+    @Expect(hub.pendingCountFor("sid-b"), 1)
+    @Expect(hub.pendingCountFor("sid-other"), 0)
+
+    let listA = hub.listFor("sid-a")
+    let listB = hub.listFor("sid-b")
+    @Expect(listA.size(), 1)
+    @Expect(listB.size(), 1)
+    @Expect(hub.listFor("sid-other").size(), 0)
+    let requestA = objOf(listA[0]).getOrThrow()
+    let requestB = objOf(listB[0]).getOrThrow()
+    @Expect(strOf(requestA, "sessionId"), "sid-a")
+    @Expect(strOf(requestA, "kind"), "file-read")
+    @Expect(strOf(requestB, "sessionId"), "sid-b")
+    @Expect(strOf(requestB, "kind"), "file-write")
+
+    @Expect(hub.answer(strOf(requestA, "id"), "once"), true)
+    @Expect(hub.answer(strOf(requestB, "id"), "deny"), true)
+    @Expect(first.get(), "y")
+    @Expect(second.get(), "n")
+    @Expect(hub.pendingCount(), 0)
 }
 
 @Test

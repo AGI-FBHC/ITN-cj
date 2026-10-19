@@ -160,6 +160,52 @@ class WorkspaceManagementTest {
     }
 
     @TestCase
+    func guidedFileApprovalClassifiesWorkspaceReadsAndWrites(): Unit {
+        let rootAbs = absPath(freshDir("guided-cls-root"))
+        let (readKind, readValue, _) = classifyGuidedTool("read", strObj("path", "notes.md"), rootAbs)
+        @Expect(readKind, "file-read")
+        @Expect(readValue, "notes.md")
+        let (lsKind, lsValue, _) = classifyGuidedTool("ls", JsonObject(), rootAbs)
+        @Expect(lsKind, "file-read")
+        @Expect(lsValue, ".")
+        let grepArgs = strObj("pattern", "Agent")
+        grepArgs.put("path", JsonString("notes"))
+        let (grepKind, grepValue, grepDetail) = classifyGuidedTool("grep", grepArgs, rootAbs)
+        @Expect(grepKind, "file-read")
+        @Expect(grepValue, "notes")
+        @Expect(containsSub(grepDetail, "Agent"), true)
+        let (writeKind, writeValue, _) = classifyGuidedTool("write", strObj("path", "draft.md"), rootAbs)
+        @Expect(writeKind, "file-write")
+        @Expect(writeValue, "draft.md")
+        let (editKind, editValue, _) = classifyGuidedTool("edit", strObj("path", "draft.md"), rootAbs)
+        @Expect(editKind, "file-write")
+        @Expect(editValue, "draft.md")
+        // 工作区外的写仍保留更严重的 path-outside 分类。
+        let (outsideKind, _, _) = classifyGuidedTool("write", strObj("path", "../outside.md"), rootAbs)
+        @Expect(outsideKind, "path-outside")
+    }
+
+    @TestCase
+    func guidedFileApprovalCannotBeBypassedByFullPermission(): Unit {
+        let denied = Approver(freshDir("guided-appr-deny"), "full")
+        denied.requireFileApproval = true
+        denied.autoAnswer = "n"
+        let denial = denied.decide("file-read", "notes.md", "读取学习资料")
+        @Expect(containsSub(denial, "拒绝"), true)
+        @Expect(denied.askCount, 1)
+        @Expect(denied.denyCount, 1)
+        @Expect(denied.allowCount, 0)
+
+        let allowed = Approver(freshDir("guided-appr-allow"), "full")
+        allowed.requireFileApproval = true
+        allowed.autoAnswer = "y"
+        @Expect(allowed.decide("file-write", "draft.md", "保存学习笔记"), "")
+        @Expect(allowed.askCount, 1)
+        @Expect(allowed.allowCount, 1)
+        @Expect(allowed.denyCount, 0)
+    }
+
+    @TestCase
     func approvingAnOutsideWriteActuallyUnlocksTheSandbox(): Unit {
         let data = freshDir("appr-data")
         let ws = Workspace(freshDir("appr-ws"), ArrayList<String>(), ArrayList<String>(), "ask")

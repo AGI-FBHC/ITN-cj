@@ -48,6 +48,8 @@ public class Approver {
      * （关闭 / 自动 / 允许），再问一次是重复。桌面宿主建 Approver 时把它置 false。
      */
     public var askWeb: Bool = true
+    /** true = 文件读写每一步都等用户确认；用于导学侧栏的严格模式。 */
+    public var requireFileApproval: Bool = false
     /** 测试用：非空就不读键盘，直接拿它当回答 */
     public var autoAnswer: String = ""
     public let rules = ArrayList<ApprovalRule>()
@@ -184,6 +186,12 @@ public class Approver {
         if (kind == "web") {
             return "联网：" + value
         }
+        if (kind == "file-read") {
+            return "读取文件：" + value
+        }
+        if (kind == "file-write") {
+            return "写入文件：" + value
+        }
         return kind + " " + value
     }
 
@@ -194,6 +202,17 @@ public class Approver {
     public func decide(kind: String, value: String, detail: String): String {
         if (kind.size == 0) {
             return ""
+        }
+        // 导学侧栏开启严格文件模式：即使 full 档或命中规则，也必须由用户点一次。
+        if (requireFileApproval && (kind == "file-read" || kind == "file-write" || kind == "path-outside")) {
+            askCount = askCount + 1
+            let ans = prompt(kind, value, detail)
+            if (ans == "y" || ans == "s" || ans == "a") {
+                allowCount = allowCount + 1
+                return ""
+            }
+            denyCount = denyCount + 1
+            return "用户拒绝了这一步（" + describe(kind, value) + "）"
         }
         // 桌面版：联网由界面上的"联网档位"管，不在审批层重复问
         if (kind == "web" && !askWeb) {
@@ -315,7 +334,13 @@ public class Approver {
      * 只捕获一个不可变对象（仓颉不允许 lambda 捕获可变变量）。
      */
     public func checkTool(agent: Agent, name: String, args: JsonObject): String {
-        let (kind, value, detail) = classifyTool(name, args, agent.workspaceRoot)
+        let cls = classifyTool(name, args, agent.workspaceRoot)
+        return checkToolClassified(agent, name, args, cls[0], cls[1], cls[2])
+    }
+
+    /** 已由调用方完成分类的版本；导学的严格文件审批走这里，避免二次分类把 file-read 丢掉。 */
+    public func checkToolClassified(agent: Agent, name: String, args: JsonObject,
+        kind: String, value: String, detail: String): String {
         if (kind.size == 0) {
             return ""
         }
@@ -339,6 +364,25 @@ public class Approver {
 }
 
 /** 把一次工具调用分类成审批动作：(kind, value, detail)；kind 为空 = 不用问。 */
+/** 导学严格模式：文件读写即使发生在工作区内也要进入审批。 */
+public func classifyGuidedTool(name: String, args: JsonObject, wsRoot: String): (String, String, String) {
+    let base = classifyTool(name, args, wsRoot)
+    if (base[0].size > 0) {
+        return base
+    }
+    if (name == "read" || name == "ls" || name == "find" || name == "grep") {
+        let path = strOf(args, "path")
+        let value = if (path.size > 0) { path } else { "." }
+        let detail = if (name == "grep") { "搜索内容：" + strOf(args, "pattern") } else { "读取文件：" + value }
+        return ("file-read", value, detail)
+    }
+    if (name == "write" || name == "edit") {
+        let path = strOf(args, "path")
+        return ("file-write", if (path.size > 0) { path } else { "." }, "写入文件：" + path)
+    }
+    return ("", "", "")
+}
+
 public func classifyTool(name: String, args: JsonObject, wsRoot: String): (String, String, String) {
     // （下面是实现，checkTool 也走它）
 

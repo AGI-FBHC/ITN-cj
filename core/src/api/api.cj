@@ -1268,9 +1268,19 @@ public class Api {
 
         // 待批准的动作用户确认（界面显示批准卡，用户点四个按钮之一）
         if (path == "/api/agent/approvals" && method == "POST") {
+            var sessionId = ""
+            match (bodyJson(ctx)) {
+                case Some(b) => sessionId = strOf(b, "sessionId")
+                case None => ()
+            }
             let o = JsonObject()
-            o.put("requests", approvalHub().list())
-            o.put("pending", JsonInt(approvalHub().pendingCount()))
+            if (sessionId.size > 0) {
+                o.put("requests", approvalHub().listFor(sessionId))
+                o.put("pending", JsonInt(approvalHub().pendingCountFor(sessionId)))
+            } else {
+                o.put("requests", approvalHub().list())
+                o.put("pending", JsonInt(approvalHub().pendingCount()))
+            }
             ok(ctx, o)
             return
         }
@@ -3163,6 +3173,7 @@ func workContextOf(store: Store, b: JsonObject): WorkContext {
     let db = DbHub.open(store.dataDir)
     let work = WorkContext()
     work.attachments = validatedAttachments(b.get("attachments"))
+    work.confirmFileAccess = boolOf(b, "confirmFileAccess")
     work.dir = db.getKv("settings", "agent_work_dir", "")
     // 会话挂在项目下时，工作目录跟着项目走（项目 = 用户自己选的那个文件夹）
     let projectRoot = ProjectStore(store.dataDir).rootOf(strOf(b, "sessionId"))

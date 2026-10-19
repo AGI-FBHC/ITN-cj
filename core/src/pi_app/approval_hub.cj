@@ -27,6 +27,7 @@ public class ApprovalRequest {
     public var value: String = ""
     public var detail: String = ""
     public var tool: String = ""
+    public var sessionId: String = ""
     /** "" = 还没答；once / session / always / deny / timeout */
     public var decision: String = ""
     public var at: String = ""
@@ -38,6 +39,7 @@ public class ApprovalRequest {
         o.put("value", JsonString(value))
         o.put("detail", JsonString(detail))
         o.put("tool", JsonString(tool))
+        o.put("sessionId", JsonString(sessionId))
         o.put("decision", JsonString(decision))
         o.put("at", JsonString(at))
         return o
@@ -80,8 +82,14 @@ public class ApprovalHub {
         return askWithCancel(kind, value, detail, tool, { => false })
     }
 
+    /** 兼容旧调用：不带会话归属，界面只能看到它自己的全局请求。 */
     public func askWithCancel(kind: String, value: String, detail: String, tool: String,
         shouldAbort: () -> Bool): String {
+        return askWithCancelFor(kind, value, detail, tool, "", shouldAbort)
+    }
+
+    public func askWithCancelFor(kind: String, value: String, detail: String, tool: String,
+        sessionId: String, shouldAbort: () -> Bool): String {
         lock.lock()
         seq = seq + 1
         let req = ApprovalRequest()
@@ -90,6 +98,7 @@ public class ApprovalHub {
         req.value = value
         req.detail = detail
         req.tool = tool
+        req.sessionId = sessionId
         req.at = stamp()
         items.add(req)
         lock.unlock()
@@ -122,6 +131,11 @@ public class ApprovalHub {
 
     /** 给界面轮询：最近 20 条（含已决的，便于显示"刚批准了什么"）。 */
     public func list(): JsonArray {
+        return listFor("")
+    }
+
+    /** 按会话过滤；sessionId 为空时返回全部（普通对话仍可显示全局待批）。 */
+    public func listFor(sessionId: String): JsonArray {
         let arr = JsonArray()
         lock.lock()
         var i = items.size - 20
@@ -129,7 +143,9 @@ public class ApprovalHub {
             i = 0
         }
         while (i < items.size) {
-            arr.add(items[i].toJson())
+            if (sessionId.size == 0 || items[i].sessionId == sessionId) {
+                arr.add(items[i].toJson())
+            }
             i = i + 1
         }
         lock.unlock()
@@ -151,10 +167,15 @@ public class ApprovalHub {
 
     /** 有没有还没人答的（界面据此决定要不要显示批准卡）。 */
     public func pendingCount(): Int64 {
+        return pendingCountFor("")
+    }
+
+    /** 按会话统计未决请求。 */
+    public func pendingCountFor(sessionId: String): Int64 {
         var n: Int64 = 0
         lock.lock()
         for (it in items) {
-            if (it.decision.size == 0) {
+            if (it.decision.size == 0 && (sessionId.size == 0 || it.sessionId == sessionId)) {
                 n = n + 1
             }
         }

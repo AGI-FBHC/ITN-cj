@@ -317,35 +317,66 @@ function spRenderPpt(page,res,asset){
   const chat=el('aside','sp-study-chat');
   chat.setAttribute('aria-label','演示对话');
   const chatHead=el('header','sp-chat-head');
+  const chatTitle=el('div','sp-chat-title','交互导学');
+  chatTitle.title=res.title||'交互导学';
   const sessionSelect=el('select','sp-chat-session');
   sessionSelect.setAttribute('aria-label','切换导学会话');
   const newSessionBtn=spGuideIconButton('新建会话','','',()=>createSession());
   newSessionBtn.innerHTML=icon('plus');
   const noteBtn=spGuideIconButton('记笔记','','',()=>openGuidedNote());
   noteBtn.innerHTML=icon('pencil');
-  chatHead.append(sessionSelect,newSessionBtn,noteBtn);
+  chatHead.append(chatTitle,sessionSelect,newSessionBtn,noteBtn);
   const thread=el('div','sp-chat-thread');
   const composer=el('footer','sp-chat-composer');
+  const attachBar=el('div','attachment-strip sp-chat-attachments');attachBar.hidden=true;
+  const attachMenu=el('div','sp-chat-attach-menu');attachMenu.hidden=true;
   const input=el('textarea','sp-chat-input');
   input.rows=2;input.placeholder='问这一页';input.setAttribute('aria-label','问这一页');
   const composeRow=el('div','sp-chat-compose-row');
+  const attachBtn=spGuideIconButton('添加附件','plus','sp-chat-attach-btn');
   const scope=el('span','sp-chat-scope','第 1 页');
   const send=el('button','sp-chat-send','');
   send.type='button';send.setAttribute('aria-label','发送');send.title='发送';
   const ICON_SEND='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
   const ICON_STOP='<svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>';
   send.innerHTML=ICON_SEND;
-  composeRow.append(scope,send);composer.append(input,composeRow);
+  composeRow.append(attachBtn,scope,send);composer.append(attachMenu,attachBar,input,composeRow);
   chat.append(chatHead,thread,composer);
   const scrim=el('div','sp-chat-scrim');scrim.hidden=true;
   layout.append(deck,chat);page.append(layout,scrim);
 
+  const guidedAttachmentChip=(item,editable,entry=activeEntry())=>{
+    const chip=el('div','attachment-chip');chip.title=item.path||item.name||'附件';
+    if(item.kind==='image'&&item.dataUrl){const image=el('img');image.src=item.dataUrl;image.alt=item.name||'图片附件';chip.appendChild(image);}
+    else {const mark=el('span','attachment-kind');mark.innerHTML=icon(item.kind==='directory'?'folder':'file');chip.appendChild(mark);}
+    chip.appendChild(el('span','attachment-name',item.name||'附件'));
+    if(editable){
+      const remove=btn('×','attachment-remove',()=>{
+        const list=entry.attachments||[];const index=list.indexOf(item);if(index>=0)list.splice(index,1);syncComposer();
+      });
+      remove.type='button';remove.title='移除';remove.setAttribute('aria-label','移除附件 '+(item.name||''));chip.appendChild(remove);
+    }
+    return chip;
+  };
+  const paintGuidedAttachments=()=>{
+    const entry=activeEntry(),items=entry.attachments||[];
+    attachBar.replaceChildren();attachBar.hidden=!items.length;
+    for(const item of items)attachBar.appendChild(guidedAttachmentChip(item,true,entry));
+  };
+  const addGuidedAttachments=items=>{
+    const entry=activeEntry(),draft=entry.attachments||=[];const incoming=Array.isArray(items)?items:[];
+    if(entry.busy){toast('请等当前任务结束后添加附件');return;}
+    if(draft.length+incoming.length>8||draft.filter(a=>a.kind==='image').length+incoming.filter(a=>a.kind==='image').length>4){toast('每轮最多8个附件，其中图片最多4张');return;}
+    if([...draft,...incoming].reduce((n,a)=>n+(a.dataUrl?.length||0),0)>12*1024*1024){toast('图片总量不能超过12MiB');return;}
+    for(const item of incoming){if(!draft.some(a=>a.kind===item.kind&&(item.path?a.path===item.path:a.dataUrl===item.dataUrl)))draft.push(item);}
+    syncComposer();
+  };
   const currentSlide=()=>fallbackSlides[state.idx]||{};
   const currentTitle=()=>state.previewTitles[state.idx]||currentSlide().title||('第 '+(state.idx+1)+' 页');
   const entryFor=id=>{
-    if(!id)return {id:'',events:[],lastId:0,loaded:true,busy:false,stopping:false,pendingUser:'',error:'',notices:[],draft:'',controller:null,pollTimer:0,polling:false,context:null};
+    if(!id)return {id:'',events:[],lastId:0,loaded:true,busy:false,stopping:false,pendingUser:'',error:'',notices:[],draft:'',attachments:[],pendingAttachments:[],approvals:[],controller:null,pollTimer:0,polling:false,approvalTimer:0,approvalPolling:false,context:null};
     let e=state.entries.get(id);
-    if(!e){e={id,events:[],lastId:0,loaded:false,busy:false,stopping:false,pendingUser:'',error:'',notices:[],draft:'',controller:null,pollTimer:0,polling:false,context:null};state.entries.set(id,e);}
+    if(!e){e={id,events:[],lastId:0,loaded:false,busy:false,stopping:false,pendingUser:'',error:'',notices:[],draft:'',attachments:[],pendingAttachments:[],approvals:[],controller:null,pollTimer:0,polling:false,approvalTimer:0,approvalPolling:false,context:null};state.entries.set(id,e);}
     return e;
   };
   const activeEntry=()=>entryFor(state.sessionId);
@@ -360,7 +391,7 @@ function spRenderPpt(page,res,asset){
     const e=activeEntry(),busy=!!e.busy;
     input.value=e.draft||'';
     input.disabled=!state.sessionId||busy;
-    send.disabled=!state.sessionId||(!busy&&!input.value.trim());
+    send.disabled=!state.sessionId||(!busy&&!input.value.trim()&&!(e.attachments||[]).length);
     send.classList.toggle('stop',busy);
     send.innerHTML=busy?ICON_STOP:ICON_SEND;
     send.setAttribute('aria-label',busy?'停止':(e.stopping?'正在停止':'发送'));
@@ -368,7 +399,92 @@ function spRenderPpt(page,res,asset){
     noteBtn.disabled=!state.sessionId;
     newSessionBtn.disabled=state.creating||!state.ready;
     sessionSelect.disabled=!state.sessions.length||state.sessionsLoading;
+    attachBtn.disabled=!state.sessionId||busy;
+    paintGuidedAttachments();
     scope.textContent='第 '+(state.idx+1)+' 页';
+  };
+
+  const closeAttachMenu=()=>{attachMenu.hidden=true;};
+  const toggleAttachMenu=()=>{attachMenu.hidden=!attachMenu.hidden;};
+  const attachItem=(label,iconName,onPick)=>{
+    const item=el('button','sp-chat-attach-item');item.type='button';
+    const mark=el('span','sp-chat-attach-icon');mark.innerHTML=icon(iconName);
+    item.append(mark,el('span',null,label));
+    item.addEventListener('click',async event=>{event.stopPropagation();closeAttachMenu();await onPick();});
+    return item;
+  };
+  const pickGuidedFile=async isDir=>{
+    const a=window.itnWindow,fn=isDir?(a&&a.pickDirectory):(a&&a.pickFile);
+    if(typeof fn!=='function'){toast('选文件只在桌面应用窗口里可用');return;}
+    try{
+      const picked=await (isDir?a.pickDirectory():a.pickFile());
+      if(!picked)return;
+      if(!isDir&&/\.(png|jpe?g|webp|gif)$/i.test(picked)&&typeof a.readSelectedImage==='function'){
+        if(typeof ensureImageSupport==='function'&&!(await ensureImageSupport()))return;
+        const result=await a.readSelectedImage(picked);if(!result?.ok){toast(result?.error||'读取图片失败');return;}
+        addGuidedAttachments([result.image]);return;
+      }
+      addGuidedAttachments([{kind:isDir?'directory':'file',name:String(picked).replace(/\\/g,'/').split('/').pop(),path:picked}]);
+    }catch(e){toast('选择附件失败：'+e.message);}
+  };
+  const pickGuidedImage=async()=>{
+    const a=window.itnWindow;
+    if(typeof a?.pickImage!=='function'){toast('选图片只在桌面应用窗口里可用');return;}
+    if(typeof ensureImageSupport==='function'&&!(await ensureImageSupport()))return;
+    try{const result=await a.pickImage();if(!result?.ok){toast(result?.error||'读取图片失败');return;}addGuidedAttachments(result.images||[]);}
+    catch(e){toast('选择图片失败：'+e.message);}
+  };
+  attachMenu.append(attachItem('文件','file',()=>pickGuidedFile(false)),attachItem('文件夹','folder',()=>pickGuidedFile(true)),attachItem('图片','file',pickGuidedImage));
+  attachBtn.addEventListener('click',event=>{event.stopPropagation();if(!attachBtn.disabled)toggleAttachMenu();});
+  attachMenu.addEventListener('click',event=>event.stopPropagation());
+  document.addEventListener('click',closeAttachMenu);
+
+  const guidedApprovalTitle=req=>{
+    if(req?.kind==='file-read')return '读取文件';
+    if(req?.kind==='file-write')return '写入文件';
+    if(req?.kind==='path-outside')return '写入工作区外';
+    return '需要你的确认';
+  };
+  const guidedApprovalCard=(req,entry)=>{
+    const card=el('article','sp-chat-approval');card.dataset.id=req.id||'';
+    const head=el('div','sp-chat-approval-head');
+    head.append(el('strong','sp-chat-approval-title',guidedApprovalTitle(req)),el('span','sp-chat-approval-tag','确认'));
+    card.appendChild(head);
+    if(req.value)card.appendChild(el('div','sp-chat-approval-path',req.value));
+    if(req.detail)card.appendChild(el('p','sp-chat-approval-detail',spGuideClip(req.detail,240)));
+    const actions=el('div','sp-chat-approval-actions');
+    const answer=async decision=>{
+      try{
+        await api('/api/agent/approvals/answer',{id:req.id,decision});
+        entry.approvals=(entry.approvals||[]).filter(x=>x.id!==req.id);
+        if(state.sessionId===entry.id)paintMessages();
+      }catch(e){toast('提交失败：'+e.message);}
+    };
+    actions.append(btn('允许一次','primary sm',()=>answer('once')),btn('拒绝','ghost sm',()=>answer('deny')));
+    card.appendChild(actions);return card;
+  };
+  const pollApprovals=async entry=>{
+    entry=entry||activeEntry();
+    const sid=entry?.id;
+    if(!sid||state.cleaned||entry.approvalPolling)return;
+    entry.approvalPolling=true;
+    try{
+      const d=await api('/api/agent/approvals',{sessionId:sid});
+      const pending=(d.requests||[]).filter(req=>!req.decision&&(!req.sessionId||req.sessionId===sid));
+      const before=(entry.approvals||[]).map(req=>req.id).join('|');
+      const after=pending.map(req=>req.id).join('|');
+      entry.approvals=pending;
+      if(before!==after&&state.sessionId===sid&&!state.cleaned)paintMessages();
+    }catch(e){/* 审批轮询失败不打断对话 */}
+    finally{entry.approvalPolling=false;}
+  };
+  const startApprovalPolling=entry=>{
+    if(!entry||entry.approvalTimer||state.cleaned)return;
+    pollApprovals(entry).catch(()=>{});
+    entry.approvalTimer=setInterval(()=>pollApprovals(entry).catch(()=>{}),450);
+  };
+  const stopApprovalPolling=entry=>{
+    if(entry?.approvalTimer){clearInterval(entry.approvalTimer);entry.approvalTimer=0;}
   };
 
   const paintSessionOptions=()=>{
@@ -377,11 +493,13 @@ function spRenderPpt(page,res,asset){
       const o=document.createElement('option');o.textContent='正在准备会话…';o.value='';sessionSelect.appendChild(o);
       return;
     }
-    for(const item of state.sessions){
+    for(const [index,item] of state.sessions.entries()){
       const o=document.createElement('option');o.value=item.sessionId||'';
       const title=item.title||'导学会话';
       const stamp=item.lastAt?String(item.lastAt).replace('T',' ').slice(5,16):'';
-      o.textContent=stamp?title+' · '+stamp:title;
+      const label='会话 '+String(index+1).padStart(2,'0');
+      o.textContent=stamp?label+' · '+stamp:label;
+      o.title=title;
       sessionSelect.appendChild(o);
     }
     if(state.sessionId&&!state.sessions.some(x=>x.sessionId===state.sessionId)){
@@ -423,9 +541,18 @@ function spRenderPpt(page,res,asset){
       }
       if(t.ok===false&&t.message)thread.appendChild(el('p','sp-chat-error',t.message));
     }
-    if(e.pendingUser)thread.appendChild(el('article','sp-chat-msg user',e.pendingUser));
+    if(e.pendingUser){
+      const bubble=el('article','sp-chat-msg user',e.pendingUser);
+      if((e.pendingAttachments||[]).length){
+        const strip=el('div','attachment-strip message-attachments');
+        for(const item of e.pendingAttachments)strip.appendChild(guidedAttachmentChip(item,false,e));
+        bubble.appendChild(strip);
+      }
+      thread.appendChild(bubble);
+    }
     for(const n of e.notices){const box=el('article','sp-chat-note');box.append(el('strong',null,n.title||'笔记'),el('p',null,n.text));thread.appendChild(box);}
     if(e.error)thread.appendChild(el('p','sp-chat-error',e.error));
+    for(const req of (e.approvals||[]))thread.appendChild(guidedApprovalCard(req,e));
     if(e.busy&&!turns.some(t=>(t.items||[]).some(it=>it.t==='a'&&it.streaming))){
       const typing=el('div','sp-chat-typing');typing.append(el('span'),el('span'),el('span'));thread.appendChild(typing);
     }
@@ -551,6 +678,7 @@ function spRenderPpt(page,res,asset){
     state.idx=slide-1;state.focusedSlide=slide;
     if(loadHistory&&!entry.loaded)await loadEntry(entry).catch(e=>{entry.error=e.message;});
     paintAll();
+    pollApprovals(entry).catch(()=>{});
     if(typeof reloadSessions==='function')reloadSessions().catch(()=>{});
   };
 
@@ -576,28 +704,33 @@ function spRenderPpt(page,res,asset){
   };
 
   const submitQuestion=async raw=>{
-    const text=spGuideText(raw===undefined?input.value:raw).trim();
     const entry=activeEntry(),sid=state.sessionId;
+    const attachments=(entry.attachments||[]).slice();
+    const text=spGuideText(raw===undefined?input.value:raw).trim()||(attachments.length?'请查看这些附件。':'');
     if(!text||!sid||entry.busy)return;
     const chapter=currentTitle();
-    entry.draft='';entry.error='';entry.pendingUser=text;entry.busy=true;entry.stopping=false;
+    entry.draft='';entry.error='';entry.pendingUser=text;entry.pendingAttachments=attachments;entry.busy=true;entry.stopping=false;entry.attachments=[];
     input.value='';syncComposer();paintMessages();
     await focusFor(sid,state.idx+1,entry).catch(()=>{});
     entry.controller=new AbortController();
     entry.pollTimer=setInterval(()=>pollEntry(entry),280);
+    startApprovalPolling(entry);
     try{
       const result=await api('/api/agent/ask-pi',{
-        kbId:'',question:text,attachments:[],sessionId:sid,web:'auto',mode:'chat',skill:'',
-        perm:state.cfg?.agentPerm||'auto',ctxChapter:chapter
+        kbId:'',question:text,attachments,sessionId:sid,web:'auto',mode:'chat',skill:'',
+        perm:state.cfg?.agentPerm||'auto',ctxChapter:chapter,confirmFileAccess:true
       },entry.controller.signal);
       if(result?.ok===false)throw new Error(result.message||'这一轮没有完成');
     }catch(e){
+      entry.attachments=attachments;
       if(e.name!=='AbortError'&&!entry.stopping)entry.error=e.message||'这一轮没有完成';
     }finally{
       if(entry.pollTimer){clearInterval(entry.pollTimer);entry.pollTimer=0;}
       await pollEntry(entry).catch(()=>{});
+      await pollApprovals(entry).catch(()=>{});
+      stopApprovalPolling(entry);
       await loadEntry(entry).catch(()=>{});
-      entry.busy=false;entry.stopping=false;entry.controller=null;entry.pendingUser='';
+      entry.busy=false;entry.stopping=false;entry.controller=null;entry.pendingUser='';entry.pendingAttachments=[];
       if(state.sessionId===sid&&!state.cleaned){syncComposer();paintMessages();}
       if(typeof reloadSessions==='function')reloadSessions().catch(()=>{});
     }
@@ -714,7 +847,8 @@ function spRenderPpt(page,res,asset){
     if(state.cleaned)return;state.cleaned=true;
     observer.disconnect();slideObserver.disconnect();window.removeEventListener('keydown',onKey);window.removeEventListener('resize',onResize);
     if(state.saveTimer)clearTimeout(state.saveTimer);if(state.focusTimer)clearTimeout(state.focusTimer);
-    for(const entry of state.entries.values())if(entry.pollTimer){clearInterval(entry.pollTimer);entry.pollTimer=0;}
+    document.removeEventListener('click',closeAttachMenu);
+    for(const entry of state.entries.values()){if(entry.pollTimer){clearInterval(entry.pollTimer);entry.pollTimer=0;}stopApprovalPolling(entry);}
     state.noteDialog?.close?.();persistProgress(true);
   };
   const observer=new MutationObserver(()=>{if(!page.isConnected)cleanup();});

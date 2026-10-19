@@ -4704,3 +4704,28 @@ read_chunk 读得到原文并带回库标识与正文。
   - `node tools/session-list-check.cjs`：10/10 PASS。大会话夹具冷列表和缓存性能没有回退；UI 切页 report/chat/home 分别 86/127/63ms。
   - `node --check shell/renderer/app.js`、`node --check tools/session-switch-check.cjs`、`git diff --check` 通过。
 - 本地提交：见本段所在提交；两份既有未跟踪调研文档继续不纳入提交。
+## 2026-10-19 · 导学附件、严格文件审批、会话隔离与排序竞态
+- 用户要求：右侧导学标题保持简洁；附加文件能力接入导学对话；导学中的文件读写必须逐次由用户确认；会话之间不能串附件或审批；同时修复更新会话置顶与日期显示。
+- 导学标题与附件：
+  - 标题固定为“交互导学”，完整学习资源名只放 tooltip；会话选择器使用“会话 01 · MM-DD HH:mm”短标签，避免资源名撑坏布局。
+  - 输入框新增 `＋`，支持文件、文件夹、图片；附件草稿按导学会话独立保存，支持预览、移除，上限 8 个附件、4 张图片、12MiB 图片总量。
+  - 仅发送附件时自动使用“请查看这些附件。”；请求发送结构化 `attachments` 与 `confirmFileAccess:true`，成功后清空，失败时恢复草稿。
+  - 涉及 `shell/renderer/studyplayer.js`、`shell/renderer/studyplayer.css`。
+- 文件权限：
+  - `/api/agent/ask-pi` 新增 `confirmFileAccess`；导学工具分类把 `read/ls/find/grep` 归为 `file-read`，`write/edit` 归为 `file-write`，工作区外写仍为 `path-outside`。
+  - `Approver.requireFileApproval=true` 时，即使会话权限为 full，文件读写也必须逐次询问；`checkToolClassified()` 保留预分类，避免二次分类丢失读写类型。
+  - 涉及 `core/src/api/api.cj`、`core/src/lumin_cli/approvals.cj`、`core/src/pi_app/pi_ask.cj`、`docs/02-接口契约.md`。
+- 审批会话隔离：
+  - `ApprovalRequest` 增加 `sessionId`，审批中心新增按会话取消、列表和计数能力；`/api/agent/approvals` 支持 `{sessionId}`，只返回当前会话请求。
+  - 导学审批卡只显示当前会话；导学轮询只在一轮运行期间开启，空闲后停止。普通对话审批轮询也按 `state.chatSessionId` 过滤。
+  - 涉及 `core/src/pi_app/approval_hub.cj`、`core/src/pi_app/pi_ask.cj`、`core/src/api/api.cj`、`shell/renderer/app.js`、`shell/renderer/studyplayer.js`。
+- 测试发现的真实排序竞态：
+  - `session-switch-check` 新增审批 scoped 断言后，稳定暴露“新更新会话置顶”失败。诊断显示内核时间形如 `2026-10-19T23:01:39+08:00`，浏览器即时活动时间形如 `2026-10-19T15:01:41Z`，旧比较器直接按字符串字典序比较，跨时区格式下把较旧会话误判为更新。
+  - 修复 `railSessionCompare()`：先用 `Date.parse()` 转毫秒再倒序，时间相同才按 session id 稳定兜底；测试同时强制要求 A、B 两行都存在，不能用缺失行导致索引 `-1` 偶然通过。
+- 测试方法、断言和结果：
+  - `cjpm test --no-progress --no-color`：163/163 PASS。覆盖导学工具读写分类、严格审批不能借 full 权限绕过、不同会话审批隔离。
+  - `node tools/guided-files-check.cjs`：21/21 PASS。真实 Edge 中覆盖文件/文件夹/图片添加、预览、移除，A/B 附件隔离，结构化附件与 `confirmFileAccess:true`，请求绑定 sessionId，成功清空、失败恢复，只显示当前会话审批，轮询在结束后停止，无 JS/内核异常。
+  - `node tools/guided-check.cjs`：35/35 PASS。覆盖导学布局等高、无横向滚动、笔记弹窗、普通会话事件流、后台会话切换不中断、窄屏抽屉、重启恢复等。
+  - `node tools/session-switch-check.cjs`：18/18 PASS。真实浏览器验证 A 长任务运行中新建 B、B 正常回答、A/B 不串话、A 后台插话仍生效、审批轮询只请求当前会话、跨时区时间排序正确、无 JS 异常。
+  - `node --check shell/renderer/app.js`、`node --check shell/renderer/studyplayer.js`、`git diff --check`：通过。
+- 本地提交：见本段所在提交。两份既有未跟踪调研文档 `docs/知识库改进清单-v2.md`、`docs/非对话页面改造方案-v1.md` 仍未纳入提交。

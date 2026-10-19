@@ -45,6 +45,7 @@ import itn_desktop_core.pi_tools.registerWorkspaceTools
 import itn_desktop_core.lumin_cli.Approver
 import itn_desktop_core.lumin_cli.permissionModeText
 import itn_desktop_core.lumin_cli.classifyTool
+import itn_desktop_core.lumin_cli.classifyGuidedTool
 // strOf / objOf / intOf / boolOf / byteSafePrefix 用 pi 包自带的那份（与 util 同名，通配 pi 已经带进来）：
 // 两个包的同名函数同时具名导入会歧义，这是踩过的坑
 import itn_desktop_core.kb.stamp
@@ -213,6 +214,8 @@ public class WorkContext {
     /** 界面此刻在看什么（例如正在学的那一章）。空 = 没有可用上下文；只影响提示词里的一句指代说明。 */
     public var ctxChapter: String = ""
     public var attachments: JsonArray = JsonArray()
+    /** 导学侧栏：文件读写每一步都必须经过用户确认，即使权限档为 full。 */
+    public var confirmFileAccess: Bool = false
 
     public init() {}
 }
@@ -515,6 +518,10 @@ public class PiAgent {
         opts.getSteering = Some({ => sessionHub().takeSteering(sidForSteer) })
         let agent = Agent(provider, session, registry, mode, opts)
         match (work) { case Some(w) => agent.initialAttachments = w.attachments; case None => () }
+        let confirmFileAccess = match (work) {
+            case Some(w) => w.confirmFileAccess
+            case None => false
+        }
         match (ws) {
             case Some(w0) =>
                 agent.workspaceRoot = w0.root
@@ -522,6 +529,7 @@ public class PiAgent {
                 // lumin 那套（四答、记住规则、批了把目录记进沙箱白名单）原样复用。
                 let approver = Approver(store.dataDir, perm)
                 approver.ws = Some(w0)
+                approver.requireFileApproval = confirmFileAccess
                 // 联网归界面上的"联网档位"管，审批层不再问一次（桌面版的既有语义）
                 approver.askWeb = false
                 match (work) {
@@ -533,16 +541,16 @@ public class PiAgent {
                 }
                 let holder = ApprovalPrompt()
                 approver.nextLine = Some({ =>
-                    approvalHub().askWithCancel(holder.kind, holder.value, holder.detail, holder.tool,
-                        { => sessionHub().isAborted(sid) })
+                    approvalHub().askWithCancelFor(holder.kind, holder.value, holder.detail, holder.tool,
+                        sid, { => sessionHub().isAborted(sid) })
                 })
                 opts.beforeToolCall = Some({ callId: String, name: String, args: JsonObject =>
-                    let cls = classifyTool(name, args, w0.root)
+                    let cls = if (confirmFileAccess) { classifyGuidedTool(name, args, w0.root) } else { classifyTool(name, args, w0.root) }
                     holder.kind = cls[0]
                     holder.value = cls[1]
                     holder.detail = cls[2]
                     holder.tool = name
-                    approver.checkTool(agent, name, args)
+                    approver.checkToolClassified(agent, name, args, cls[0], cls[1], cls[2])
                 })
             case None => ()
         }
