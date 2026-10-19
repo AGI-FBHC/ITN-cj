@@ -744,10 +744,10 @@ async function revealLibrarySearchHit(hit) {
   if (!host || current !== 'kb') return;
   const card = cardOf({title:hit.docTitle || '资料原文',cls:'document-preview search-focus'});
   card.appendChild(el('p','muted sm',hit.headingPath || '正文'));
-  const article = el('article','md'); article.innerHTML=md(hit.text || hit.caption || '此处没有可显示的原文。');
+  const article = el('article','md'); article.innerHTML=md(hit.text || hit.caption || '此处没有可显示的原文。',{document:true,kbId:hit.kbId||state.kb,docPath:hit.docPath});
   card.appendChild(article);
   card.querySelector('.card-head').appendChild(btn('收起原文','ghost sm',()=>host.replaceChildren()));
-  host.replaceChildren(card); card.scrollIntoView({block:'nearest'});
+  host.replaceChildren(card); hydrateKnowledgeImages(article); card.scrollIntoView({block:'nearest'});
 }
 PAGES.kb.render = async function() {
   const generation = state.navigationGeneration;

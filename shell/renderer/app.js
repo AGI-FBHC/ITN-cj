@@ -221,19 +221,85 @@ function icon(name, box) {
 
 /* ---------- Markdown（够用就好，不做完整实现） ---------- */
 
-function md(src) {
+function decodeMarkdownAttribute(value) {
+  const node = document.createElement("textarea"); node.innerHTML = value; return node.value;
+}
+
+function documentImageTag(source, alt, options, width) {
+  const src = decodeMarkdownAttribute(source || "").trim();
+  const remote = /^(https?:)?\/\//i.test(src);
+  const embedded = /^data:image\/(png|jpeg|gif|webp);base64,[a-z0-9+/=\s]+$/i.test(src);
+  if (!src || (!remote && !embedded && (!options.kbId || /^[a-z][\w+.-]*:/i.test(src)))) return esc(alt || "图片");
+  const img = document.createElement("img");
+  img.className = "kb-document-image";
+  img.alt = decodeMarkdownAttribute(alt || "资料配图");
+  img.loading = "lazy"; img.decoding = "async"; img.referrerPolicy = "no-referrer";
+  if (width && /^(?:[1-9]\d{0,3})(?:%|px)?$/.test(width)) {
+    const amount = parseInt(width, 10);
+    if (width.endsWith("%") ? amount <= 100 : amount <= 4000) img.style.width = /^\d+$/.test(width) ? width + "px" : width;
+  }
+  if (embedded || !options.kbId) img.src = src.startsWith("//") ? "https:" + src : src;
+  else { img.dataset.kbImage = src; img.dataset.kbId = options.kbId; img.dataset.docPath = options.docPath || ""; }
+  return img.outerHTML;
+}
+
+function safeDocumentTag(escapedTag, options) {
+  const match = escapedTag.match(/^&lt;(\/?)([a-z]+)\b/i);
+  if (!match) return escapedTag;
+  const name = match[2].toLowerCase();
+  if (!["strong", "b", "em", "i", "u", "s", "sup", "sub", "br", "div", "p", "figure", "figcaption", "img"].includes(name)) return escapedTag;
+  if (match[1]) return ["img", "br"].includes(name) ? "" : "</" + name + ">";
+  const template = document.createElement("template"); template.innerHTML = decodeMarkdownAttribute(escapedTag);
+  const original = template.content.firstElementChild;
+  if (!original) return "";
+  if (name === "img") return documentImageTag(original.getAttribute("src"), original.getAttribute("alt"), options, original.getAttribute("width"));
+  const node = document.createElement(name);
+  if (["left", "center", "right"].includes(original.getAttribute("align"))) node.className = "doc-align-" + original.getAttribute("align");
+  return node.outerHTML.replace(new RegExp("</" + name + ">$"), "");
+}
+
+function hydrateKnowledgeImages(root) {
+  for (const img of root.querySelectorAll("img[data-kb-image]")) {
+    const load = async () => {
+      img.onerror = () => {
+        if (!img.isConnected) return;
+        const fallback = el("div", "kb-image-unavailable");
+        fallback.append(el("span", null, (img.alt || "图片") + " · 暂不可用"), btn("重试", "ghost sm", () => { fallback.replaceWith(img); img.removeAttribute("src"); load(); }));
+        img.replaceWith(fallback);
+      };
+      try {
+        const data = await api("/api/kb/image", { id: img.dataset.kbId, docPath: img.dataset.docPath, source: img.dataset.kbImage });
+        if (img.isConnected) img.src = data.dataUrl || data.url;
+      } catch (e) { img.onerror(); }
+    };
+    load();
+  }
+}
+
+function md(src, options = {}) {
   const text = String(src == null ? "" : src);
   const lines = esc(text).split("\n");
   const out = [];
   let inCode = false, listType = null;
   const closeList = () => { if (listType) { out.push(listType === "ul" ? "</ul>" : "</ol>"); listType = null; } };
-  const inline = (s) => s
-    .replace(/!\[([^\]]*)\]\(([^)]*)\)/g, '<span class="md-img">图片 · $1</span>')
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
+  const inline = (s) => {
+    const held = [];
+    const hold = html => { const key = held.push(html) - 1; return "\uE000" + key + "\uE001"; };
+    s = s.replace(/`([^`]+)`/g, (_, code) => hold("<code>" + code + "</code>"));
+    if (options.document) {
+      s = s.replace(/&lt;\/?(?:strong|b|em|i|u|s|sup|sub|br|div|p|figure|figcaption|img)\b.*?&gt;/gi, tag => hold(safeDocumentTag(tag, options)));
+      s = s.replace(/!\[([^\]]*)\]\(([^)]*)\)/g, (_, alt, target) => {
+        const source = target.match(/^&lt;(.*?)&gt;(?:\s+.*)?$/)?.[1] || target.replace(/\s+&quot;.*&quot;$/, "");
+        return hold(documentImageTag(source, alt, options));
+      });
+    }
+    return s.replace(/!\[([^\]]*)\]\(([^)]*)\)/g, '<span class="md-img">图片 · $1</span>')
     .replace(/\[([^\]\n]+)\]\((https?:[^)\s]+|mailto:[^)\s]+|lumin:[^)\s]+)\)/g, '<a class="md-link" href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
     .replace(/~~([^~\n]+)~~/g, "<s>$1</s>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\[(\d+)\]/g, '<span class="cite">[$1]</span>');
+    .replace(/\[(\d+)\]/g, '<span class="cite">[$1]</span>')
+    .replace(/\uE000(\d+)\uE001/g, (_, key) => held[Number(key)] || "");
+  };
   /* GFM 表格的单元格切分：\| 是转义竖线，不当分隔符（结构对照 pi-studio 的 MarkdownBody + remark-gfm，MIT）。 */
   const cells = (row) => {
     let r = row.trim();
@@ -266,6 +332,7 @@ function md(src) {
     const line = raw.replace(/\s+$/, "");
     if (/^\s*```/.test(line)) { closeList(); out.push(inCode ? "</code></pre>" : "<pre><code>"); inCode = !inCode; continue; }
     if (inCode) { out.push(raw); continue; }
+    if (options.document && /^\s*&lt;\/?(?:div|p|figure|figcaption)\b/i.test(line)) { closeList(); out.push(inline(line)); continue; }
     const h = line.match(/^(#{1,6})\s+(.*)$/);
     if (h) { closeList(); const n = h[1].length; out.push("<h" + n + ">" + inline(h[2]) + "</h" + n + ">"); continue; }
     if (/^\s*$/.test(line)) { closeList(); continue; }
@@ -4436,7 +4503,7 @@ PAGES.kb = {
         try {
           const d = await api("/api/kb/document", {id, path, offset, limit: 12}); if (request !== previewRequest) return;
           box.querySelector("h2").textContent = d.title || "资料原文";
-          for (const c of d.chunks) { const item = el("article", "preview-chunk"); item.appendChild(el("p", "muted sm", c.headingPath || "正文")); const body = el("div", "md"); body.innerHTML = md(c.text); item.appendChild(body); content.appendChild(item); }
+          for (const c of d.chunks) { const item = el("article", "preview-chunk"); item.appendChild(el("p", "muted sm", c.headingPath || "正文")); const body = el("div", "md"); body.innerHTML = md(c.text, {document:true,kbId:id,docPath:path}); item.appendChild(body); content.appendChild(item); hydrateKnowledgeImages(body); }
           offset = d.nextOffset; more.hidden = offset < 0; more.textContent = "加载更多"; more.title = "共 " + d.total + " 个片段";
         } catch(e) { if (request !== previewRequest) return; more.textContent = "读取失败，点击重试"; toast(e.message); }
         finally { more.disabled = false; }

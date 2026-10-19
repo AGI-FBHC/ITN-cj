@@ -12,6 +12,7 @@ import itn_desktop_core.resource.generateResourceWithCancel
 import itn_desktop_core.resource.resultJson
 import itn_desktop_core.resource.isResourceKind
 import itn_desktop_core.util.*
+import itn_desktop_core.kb.resolveKnowledgeImage
 
 func learningResult(body: JsonObject, summary: String): DomainToolRun {
     let r = DomainToolRun()
@@ -26,6 +27,12 @@ public func learningTools(store: Store, kbId: String, shouldAbort: () -> Bool, s
     userText: String, emit: (String, JsonObject) -> Unit): ArrayList<DomainTool> {
     let ls = LearningStore(store.dataDir)
     let out = ArrayList<DomainTool>()
+    out.add(makeTool("resolve_knowledge_image", "定位知识库图片", "读取文档配图的实际来源、路径与格式",
+        "doc_path 来自知识库文档或切片，source 来自原文 img src 或 Markdown 图片链接。优先定位同库本地配图，返回本地路径或原网络链接及大小；不返回 base64，定位成功不代表已理解图像内容。",
+        "{\"type\":\"object\",\"properties\":{\"kb_id\":{\"type\":\"string\"},\"doc_path\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"}},\"required\":[\"doc_path\",\"source\"]}", "read", { args: JsonObject =>
+            let id = if (strOf(args,"kb_id").size > 0) { strOf(args,"kb_id") } else { kbId }
+            return learningResult(resolveKnowledgeImage(store,id,strOf(args,"doc_path"),strOf(args,"source"),false), "已定位知识库配图")
+        }))
     out.add(makeTool("list_knowledge_bases", "查看知识库", "读取知识库名称、稳定标识与索引状态",
         "列出已登记知识库的 id、名称、资料路径和索引数量。改名之前先核对 id，不重新导入。",
         "{\"type\":\"object\",\"properties\":{}}", "read", { args: JsonObject =>

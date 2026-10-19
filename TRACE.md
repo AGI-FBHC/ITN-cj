@@ -4783,3 +4783,19 @@ read_chunk 读得到原文并带回库标识与正文。
   - 驱动存储定向回归：Engine 34/34、DefragmentOverlap 1/1、FreeblockPointer 1/1 PASS，日志 tmp/test-sqlite-storage-focused.log。曾启动617项全量，因仓库 VENDOR.md 已记录45项依赖外部 Python/SQLite 参照环境的问题，且运行数分钟没有结果，已停止，未宣称全量通过。
   - 构建与 JS 语法、git diff --check 通过。版本准备升至0.8.25；本段与代码本地提交，后续还需完成用户追加的知识库图片/HTML渲染修复再统一打包。
 - 最新追加需求：用户截图里的 img/strong/div/sup 均被显示成源码，先修正文档 HTML 渲染，再核对网络/本地图片；用户明确要求手头任务完成后接着处理，已进入后续工作。
+
+## 2026-10-20 · 知识库原文图片、HTML 与离线配图修复
+- 接续上一段功能提交 `5d20a9d`，按用户顺序完成知识库图片追加需求，本次统一交付 0.8.25；实际工作仓库仍为 D:/Desktop/ITN/ITN-Desktop（main），不是环境默认的 bf21 工作树。
+- 原因：原文 Markdown 渲染器把 HTML 全部转义，截图内的 img/strong/div/sup 因此以源码显示；即使开放 img，raw.githubusercontent.com 的网络可用性仍会影响图片。已核实真实文档 chapter8/第八章 记忆与检索.md 和本地 images/8-figures/8-1.png 均存在于 D:/Desktop/Projects/resource/hello-agents/docs。
+- 文档渲染：仅知识库原文与搜索命中的原文使用 document 模式，支持 Markdown 图片及有限 HTML 标签；重新构造允许的元素与属性，不接受事件、脚本或任意 style。保留图片百分比宽度、居中、懒加载及失败后的“重试”；代码围栏与行内代码里的 HTML 继续显示为源码。普通对话没有全局开放 HTML。
+- 仓颉定位：先更新 docs/02-接口契约.md，再实现 POST /api/kb/image 与 core/src/kb/images.cj。相对路径按原文目录解析，拒绝越出资料目录；仓库 URL 能与已导入目录对应时优先使用本地图片，没有本地副本时由浏览器加载原 HTTP/HTTPS 链接；服务端不做代理抓取。支持 png/jpg/jpeg/gif/webp/bmp/svg，单图最多 8 MiB。
+- Lumin 工具：resolve_knowledge_image 与界面使用同一定位逻辑，返回本地路径或原网络地址、格式和大小；模型工具不返回 base64，不把“定位成功”描述为已理解图像内容。新增仓颉测试实际调用该工具并检查结果无 base64。
+- 验收测试失败的原因也已核实：最初脚本截取原章节前48行，恰好截在未结束的 Python 代码围栏中，后续追加图片被正确地渲染为代码。已改用完整的 8.1.1 小节；分页等待改为真实请求结束后继续，失败重试项同时接受图片已被错误占位替换的时序。没有为让测试通过修改产品渲染语义或放松图片解码断言。
+- 验证方法与结果（全用隔离临时库，不接触真实用户数据库）：
+  - 构建成功，tmp/build-knowledge-images.log；核心 cjpm test 176/176 PASS，0 skipped/error/failed，tmp/test-knowledge-images.log，新增相对路径、仓库本地镜像、越界/编码越界、远程回退及真实工具调用覆盖。
+  - tools/knowledge-images-check.cjs 最终14/14 PASS，tmp/ui-knowledge-images.log。真实 Cangjie/SQLite/Edge、真实章节及真实 PNG；主动禁用 raw GitHub 请求，仍断言截图那张图 complete 且 naturalWidth>0，并确认走本地 dataUrl；本地相对图、HTTP 图、404 后重试恢复、HTML强调/上标、代码保护、表格回归、脚本/事件/危险协议过滤、无 JS runtime 异常均通过。
+  - 图片浏览器验收成功两次，最终数据 C:/Users/GeJie/AppData/Local/Temp/lumin-kb-images-IE4vLo；截图 tmp/knowledge-images-shots/hello-agents-chapter8.png 已实际查看，原图居中可见、图注与强调正常，未显示 HTML 源码。远程图片用本地 HTTP 提供真实 PNG 验证，未宣称验证了所有外部网站的可达性。
+  - 前批 tools/clarity-memory-check.cjs 再次27/27 PASS，tmp/ui-clarity-memory-final.log。改名后索引仍在、单文件复制/文件夹原地使用、连接断线恢复、8字标题/全称、窄窗深浅色任务浮层均无回退。
+  - 前批 MiMo Flash 4次真实模型对话7/7 PASS沿用 tmp/real-memory-check.log，本次图片修复不更改记忆流程，因此未无理由重复模型费用。
+  - node --check app.js/workbench.js/knowledge-images-check.cjs、git diff --check 均通过。既有两份未跟踪调研文档继续不纳入提交，没有引入 Python 业务或测试夹具。
+- 本段与图片功能本地提交；接下来使用版本名 dist/Lumin-0.8.25 与 Lumin-0.8.25.zip 打包，核对资产哈希与包内启动，结果继续追加本文件。

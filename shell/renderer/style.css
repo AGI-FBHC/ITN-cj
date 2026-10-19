@@ -3137,3 +3137,8 @@ html[data-theme="dark"] .composer {
 .kb-source-mode:empty, .kb-form-error:empty { display: none; }
 .kb-form-error { margin: 10px 0; color: var(--danger); font-size: 14px; }
 .kb-import-actions { margin-top: 2px; }
+.document-preview .kb-document-image { display: block; max-width: 100%; height: auto; margin: 20px auto; border-radius: 8px; }
+.doc-align-center { text-align: center; }
+.doc-align-right { text-align: right; }
+.doc-align-left { text-align: left; }
+.kb-image-unavailable { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 18px 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink-2); font-size: 14px; }

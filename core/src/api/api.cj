@@ -761,6 +761,17 @@ public class Api {
             return
         }
 
+        if (path == "/api/kb/image" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => try {
+                    if (store.load().findKb(strOf(b,"id")).isNone()) { fail(ctx,404,"找不到知识库"); return }
+                    ok(ctx, resolveKnowledgeImage(store, strOf(b,"id"), strOf(b,"docPath"), strOf(b,"source"), true))
+                } catch (e: Exception) { fail(ctx,400,e.message) }
+                case None => fail(ctx,400,"请求体不是合法 JSON")
+            }
+            return
+        }
+
         if (path == "/api/kb/document" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) =>
@@ -3365,6 +3376,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/kb/build",
         "/api/kb/stats",
         "/api/kb/document",
+        "/api/kb/image",
         "/api/kb/search",
         "/api/agent/ask",
         "/api/agent/ask-pi",
