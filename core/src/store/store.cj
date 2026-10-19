@@ -14,6 +14,10 @@ public class ModelConfig {
     public var model: String = ""
     public var visionModel: String = ""
     public var embeddingModel: String = ""
+    public var ttsModel: String = ""
+    public var ttsVoice: String = ""
+    public var ttsFormat: String = ""
+    public var ttsProtocol: String = ""
     public var capabilities: ArrayList<String> = ArrayList<String>()
 
     public init() {}
@@ -27,6 +31,10 @@ public class ModelConfig {
         o.put("model", JsonString(model))
         o.put("visionModel", JsonString(visionModel))
         o.put("embeddingModel", JsonString(embeddingModel))
+        o.put("ttsModel", JsonString(ttsModel))
+        o.put("ttsVoice", JsonString(ttsVoice))
+        o.put("ttsFormat", JsonString(ttsFormat))
+        o.put("ttsProtocol", JsonString(ttsProtocol))
         let caps = JsonArray()
         for (c in capabilities) {
             caps.add(JsonString(c))
@@ -54,6 +62,10 @@ public class ModelConfig {
                 m.model = strOf(vj, "model")
                 m.visionModel = strOf(vj, "visionModel")
                 m.embeddingModel = strOf(vj, "embeddingModel")
+                m.ttsModel = strOf(vj, "ttsModel")
+                m.ttsVoice = strOf(vj, "ttsVoice")
+                m.ttsFormat = strOf(vj, "ttsFormat")
+                m.ttsProtocol = strOf(vj, "ttsProtocol")
                 m.capabilities = strArrayOf(vj, "capabilities")
             case None => ()
         }
@@ -111,6 +123,7 @@ public class Settings {
     public var chunkModelId: String = ""
     public var embedModelId: String = ""
     public var chatModelId: String = ""
+    public var ttsModelId: String = ""
 
     public init() {}
 
@@ -147,6 +160,7 @@ public class Settings {
         o.put("chunkModelId", JsonString(chunkModelId))
         o.put("embedModelId", JsonString(embedModelId))
         o.put("chatModelId", JsonString(chatModelId))
+        o.put("ttsModelId", JsonString(ttsModelId))
         return o
     }
 
@@ -157,6 +171,7 @@ public class Settings {
                 s.chunkModelId = strOf(vj, "chunkModelId")
                 s.embedModelId = strOf(vj, "embedModelId")
                 s.chatModelId = strOf(vj, "chatModelId")
+                s.ttsModelId = strOf(vj, "ttsModelId")
                 match (vj.get("knowledgeBases")) {
                     case Some(kv) =>
                         match (kv) {
@@ -215,6 +230,13 @@ public class Store {
         } catch (e: Exception) {
             ()
         }
+        for (col in ["tts_model", "tts_voice", "tts_format", "tts_protocol"]) {
+            try {
+                db().exec("ALTER TABLE models ADD COLUMN " + col + " TEXT")
+            } catch (e: Exception) {
+                ()
+            }
+        }
     }
 
     public func load(): Settings {
@@ -224,7 +246,8 @@ public class Store {
         s.chatModelId = roleOf("chat")
         s.embedModelId = roleOf("embed")
         s.chunkModelId = roleOf("chunk")
-        for (r in db().querySql("SELECT id, name, base_url, api_key, model, vision_model, embedding_model, capabilities " +
+        s.ttsModelId = roleOf("tts")
+        for (r in db().querySql("SELECT id, name, base_url, api_key, model, vision_model, embedding_model, capabilities, tts_model, tts_voice, tts_format, tts_protocol " +
             "FROM models ORDER BY ord")) {
             let m = ModelConfig()
             m.id = r.text(0)
@@ -235,6 +258,10 @@ public class Store {
             m.visionModel = r.text(5)
             m.embeddingModel = r.text(6)
             m.capabilities = splitCsv(r.text(7))
+            m.ttsModel = r.text(8)
+            m.ttsVoice = r.text(9)
+            m.ttsFormat = r.text(10)
+            m.ttsProtocol = r.text(11)
             s.models.add(m)
         }
         for (r in db().querySql("SELECT id, name, root_dir, source_path, doc_count, chunk_count, image_count, built_at " +
@@ -259,10 +286,10 @@ public class Store {
         ops.add(DbOp("DELETE FROM models", ArrayList<DbValue>()))
         var ord: Int64 = 0
         for (m in s.models) {
-            ops.add(DbOp("INSERT INTO models (id, name, base_url, api_key, model, vision_model, embedding_model, capabilities, ord) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ops.add(DbOp("INSERT INTO models (id, name, base_url, api_key, model, vision_model, embedding_model, capabilities, tts_model, tts_voice, tts_format, tts_protocol, ord) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 va([tv(m.id), tv(m.name), tv(m.baseUrl), tv(m.apiKey), tv(m.model), tv(m.visionModel), tv(m.embeddingModel),
-                    tv(joinCsv(m.capabilities)), nv(ord)])))
+                    tv(joinCsv(m.capabilities)), tv(m.ttsModel), tv(m.ttsVoice), tv(m.ttsFormat), tv(m.ttsProtocol), nv(ord)])))
             ord += 1
         }
         ops.add(DbOp("DELETE FROM knowledge_bases", ArrayList<DbValue>()))
@@ -282,6 +309,9 @@ public class Store {
         }
         if (s.chunkModelId.size > 0) {
             ops.add(DbOp("INSERT INTO roles (kind, model_id) VALUES (?, ?)", va([tv("chunk"), tv(s.chunkModelId)])))
+        }
+        if (s.ttsModelId.size > 0) {
+            ops.add(DbOp("INSERT INTO roles (kind, model_id) VALUES (?, ?)", va([tv("tts"), tv(s.ttsModelId)])))
         }
         db().batch(ops)
     }

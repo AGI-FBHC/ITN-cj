@@ -381,6 +381,19 @@ function spRenderPpt(page,res,asset){
   };
   const activeEntry=()=>entryFor(state.sessionId);
 
+  const petActivity=(activity,busyCount)=>{
+    if(typeof window.luminMascotActivity==='function'){window.luminMascotActivity(activity,busyCount||0);return;}
+    window.dispatchEvent(new CustomEvent('lumin:activity',{detail:{state:activity,busyCount:Number(busyCount||0)}}));
+  };
+  const runningEntries=()=>[...state.entries.values()].filter(item=>item?.busy);
+  const syncPetActivity=()=>{
+    const running=runningEntries();
+    if(!running.length){petActivity('idle',0);return;}
+    const currentEntry=activeEntry();
+    const phase=(currentEntry.busy&&currentEntry.phase)||running.find(item=>item.phase)?.phase||'thinking';
+    petActivity(phase,running.length);
+  };
+
   const setChatOpen=open=>{
     state.chatOpen=!!open;
     chat.classList.toggle('open',state.chatOpen);
@@ -649,7 +662,15 @@ function spRenderPpt(page,res,asset){
     try{
       const d=await api('/api/sessions/events',{sessionId:entry.id,sinceId:entry.lastId||0});
       const fresh=d.events||[];
-      if(fresh.length)entry.events=entry.events.concat(fresh);
+      if(fresh.length){
+        entry.events=entry.events.concat(fresh);
+        for(const event of fresh){
+          if(event.type==='tool/call'||event.type==='tool/result')entry.phase='working';
+          else if(event.type==='assistant/delta')entry.phase='speaking';
+          else if(event.type==='assistant/thinking')entry.phase='thinking';
+        }
+        syncPetActivity();
+      }
       entry.lastId=Number(d.lastId||entry.lastId||0);
       if(entry.pendingUser&&entry.events.some(e=>e.type==='user/message'&&spGuideText(e.payload?.text)===entry.pendingUser))entry.pendingUser='';
       if(state.sessionId===entry.id&&!state.cleaned)paintMessages();
@@ -709,12 +730,13 @@ function spRenderPpt(page,res,asset){
     const text=spGuideText(raw===undefined?input.value:raw).trim()||(attachments.length?'请查看这些附件。':'');
     if(!text||!sid||entry.busy)return;
     const chapter=currentTitle();
-    entry.draft='';entry.error='';entry.pendingUser=text;entry.pendingAttachments=attachments;entry.busy=true;entry.stopping=false;entry.attachments=[];
-    input.value='';syncComposer();paintMessages();
+    entry.draft='';entry.error='';entry.pendingUser=text;entry.pendingAttachments=attachments;entry.busy=true;entry.stopping=false;entry.phase='thinking';entry.attachments=[];
+    input.value='';syncComposer();paintMessages();syncPetActivity();
     await focusFor(sid,state.idx+1,entry).catch(()=>{});
     entry.controller=new AbortController();
     entry.pollTimer=setInterval(()=>pollEntry(entry),280);
     startApprovalPolling(entry);
+    let failure='';
     try{
       const result=await api('/api/agent/ask-pi',{
         kbId:'',question:text,attachments,sessionId:sid,web:'auto',mode:'chat',skill:'',
@@ -723,8 +745,9 @@ function spRenderPpt(page,res,asset){
       if(result?.ok===false)throw new Error(result.message||'这一轮没有完成');
     }catch(e){
       entry.attachments=attachments;
-      if(e.name!=='AbortError'&&!entry.stopping)entry.error=e.message||'这一轮没有完成';
+      if(e.name!=='AbortError'&&!entry.stopping){failure=e.message||'这一轮没有完成';entry.error=failure;}
     }finally{
+      const stopped=entry.stopping;
       if(entry.pollTimer){clearInterval(entry.pollTimer);entry.pollTimer=0;}
       await pollEntry(entry).catch(()=>{});
       await pollApprovals(entry).catch(()=>{});
@@ -732,6 +755,8 @@ function spRenderPpt(page,res,asset){
       await loadEntry(entry).catch(()=>{});
       entry.busy=false;entry.stopping=false;entry.controller=null;entry.pendingUser='';entry.pendingAttachments=[];
       if(state.sessionId===sid&&!state.cleaned){syncComposer();paintMessages();}
+      const remaining=runningEntries().length;
+      petActivity(!failure&&!stopped?(remaining?'working':'success'):(remaining?'working':'idle'),remaining);
       if(typeof reloadSessions==='function')reloadSessions().catch(()=>{});
     }
   };

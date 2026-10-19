@@ -27,7 +27,8 @@ let ddl = [
     "CREATE TABLE IF NOT EXISTS settings (k TEXT PRIMARY KEY, v TEXT)",
     "CREATE TABLE IF NOT EXISTS profile (k TEXT PRIMARY KEY, v TEXT)",
     "CREATE TABLE IF NOT EXISTS models (id TEXT PRIMARY KEY, name TEXT, base_url TEXT, api_key TEXT, model TEXT, " +
-    "vision_model TEXT, embedding_model TEXT, capabilities TEXT, ord INTEGER)",
+    "vision_model TEXT, embedding_model TEXT, capabilities TEXT, tts_model TEXT, tts_voice TEXT, tts_format TEXT, " +
+    "tts_protocol TEXT, ord INTEGER)",
     "CREATE TABLE IF NOT EXISTS roles (kind TEXT PRIMARY KEY, model_id TEXT)",
     "CREATE TABLE IF NOT EXISTS knowledge_bases (id TEXT PRIMARY KEY, name TEXT, root_dir TEXT, source_path TEXT, " +
     "doc_count INTEGER, " +

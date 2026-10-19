@@ -1,0 +1,161 @@
+/* 小鼋龙桌宠：复用旧网页版 362×362 透明动作帧。 */
+.lumin-mascot-root {
+  position: fixed;
+  width: 116px;
+  height: 126px;
+  z-index: 45;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.lumin-mascot-root[hidden] { display: none !important; }
+body:has(#player:not([hidden])) .lumin-mascot-root { display: none !important; }
+
+.lumin-mascot-actor {
+  position: relative;
+  display: block;
+  width: 116px;
+  height: 126px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: grab;
+  outline: none;
+}
+.lumin-mascot-actor:active { cursor: grabbing; }
+.lumin-mascot-actor:focus-visible {
+  border-radius: 26px;
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--ink-2);
+}
+
+.lumin-mascot-float {
+  display: grid;
+  width: 116px;
+  height: 116px;
+  place-items: center;
+  transform-origin: 50% 78%;
+  animation: lumin-pet-float 4.8s ease-in-out infinite;
+  filter: drop-shadow(0 12px 14px rgba(22, 36, 29, .17));
+}
+.lumin-mascot-image {
+  display: block;
+  width: 112px;
+  height: 112px;
+  object-fit: contain;
+  pointer-events: none;
+  transition: transform .22s ease, filter .22s ease;
+}
+.lumin-mascot-root:hover .lumin-mascot-image { transform: translateY(-2px) scale(1.018); }
+.lumin-mascot-root[data-state="working"] .lumin-mascot-image { filter: saturate(1.05) contrast(1.02); }
+.lumin-mascot-root[data-state="success"] .lumin-mascot-image { filter: drop-shadow(0 0 9px rgba(67, 159, 108, .30)); }
+
+.lumin-mascot-dot {
+  position: absolute;
+  right: 19px;
+  bottom: 13px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--bg);
+  border-radius: 999px;
+  background: #67b88c;
+  box-shadow: 0 0 0 1px rgba(20, 34, 26, .13);
+  transition: background .2s ease;
+}
+.lumin-mascot-root[data-state="thinking"] .lumin-mascot-dot,
+.lumin-mascot-root[data-state="working"] .lumin-mascot-dot { background: #d7a34a; }
+.lumin-mascot-root[data-state="speaking"] .lumin-mascot-dot { background: #5a9ed3; }
+.lumin-mascot-root[data-state="success"] .lumin-mascot-dot { background: #43a66e; }
+.lumin-mascot-root[data-state="listening"] .lumin-mascot-dot { background: #74b6df; }
+
+.lumin-mascot-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 4px);
+  width: 232px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  box-shadow: 0 18px 48px rgba(12, 21, 16, .16), 0 2px 8px rgba(12, 21, 16, .07);
+  backdrop-filter: blur(16px) saturate(1.15);
+  transform-origin: right bottom;
+  animation: lumin-pet-menu-in .18s cubic-bezier(.2, .8, .2, 1);
+}
+.lumin-mascot-menu[hidden] { display: none; }
+.lumin-mascot-menu.below {
+  top: calc(100% + 4px);
+  bottom: auto;
+  transform-origin: right top;
+}
+.lumin-mascot-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 1px 2px 9px;
+}
+.lumin-mascot-title {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: .01em;
+}
+.lumin-mascot-state {
+  color: var(--muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .04em;
+}
+.lumin-mascot-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.lumin-mascot-actions button,
+.lumin-mascot-hide {
+  min-height: 31px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel-soft);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color .16s ease, background .16s ease, color .16s ease;
+}
+.lumin-mascot-actions button:first-child { grid-column: span 2; }
+.lumin-mascot-actions button:hover,
+.lumin-mascot-hide:hover {
+  border-color: var(--brand-line);
+  background: var(--brand-soft);
+  color: var(--ink);
+}
+.lumin-mascot-hide {
+  width: 100%;
+  margin-top: 6px;
+  min-height: 28px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+.lumin-mascot-hide:hover { color: var(--danger); border-color: var(--danger-soft); background: var(--danger-soft); }
+
+@keyframes lumin-pet-float {
+  0%, 100% { transform: translateY(0) rotate(-.35deg); }
+  50% { transform: translateY(-4px) rotate(.35deg); }
+}
+@keyframes lumin-pet-menu-in {
+  from { opacity: 0; transform: translateY(5px) scale(.975); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 980px) {
+  .lumin-mascot-root { transform: scale(.94); transform-origin: right bottom; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lumin-mascot-float,
+  .lumin-mascot-menu { animation: none !important; }
+  .lumin-mascot-image { transition: none; }
+}

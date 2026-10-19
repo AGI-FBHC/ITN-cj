@@ -33,6 +33,7 @@ import itn_desktop_core.harvest.*
 import std.fs.*
 import itn_desktop_core.util.*
 import itn_desktop_core.pi.validatedAttachments
+import itn_desktop_core.tts.*
 
 public class Api {
     let store: Store
@@ -239,6 +240,7 @@ public class Api {
                     if (s.chatModelId == id) { s.chatModelId = "" }
                     if (s.embedModelId == id) { s.embedModelId = "" }
                     if (s.chunkModelId == id) { s.chunkModelId = "" }
+                    if (s.ttsModelId == id) { s.ttsModelId = "" }
                     store.save(s)
                     ok(ctx, settingsJson())
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
@@ -250,9 +252,11 @@ public class Api {
             match (bodyJson(ctx)) {
                 case Some(b) =>
                     let s = store.load()
-                    s.chatModelId = strOf(b, "chatModelId")
-                    s.embedModelId = strOf(b, "embedModelId")
-                    s.chunkModelId = strOf(b, "chunkModelId")
+                    // roles 是补丁式更新：旧页面或命令只带其中一项时，不能把其它绑定清空。
+                    match (b.get("chatModelId")) { case Some(_) => s.chatModelId = strOf(b, "chatModelId"); case None => () }
+                    match (b.get("embedModelId")) { case Some(_) => s.embedModelId = strOf(b, "embedModelId"); case None => () }
+                    match (b.get("chunkModelId")) { case Some(_) => s.chunkModelId = strOf(b, "chunkModelId"); case None => () }
+                    match (b.get("ttsModelId")) { case Some(_) => s.ttsModelId = strOf(b, "ttsModelId"); case None => () }
                     store.save(s)
                     ok(ctx, settingsJson())
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
@@ -266,6 +270,7 @@ public class Api {
                     let id = strOf(b, "id")
                     match (store.load().findModel(id)) {
                         case Some(cfg) =>
+                            if (cfg.model.size == 0) { fail(ctx, 400, "这个配置没有填写对话模型，不能测试对话连通"); return }
                             try {
                                 LlmClient(cfg).selfTest()
                                 ok(ctx, JsonString("连通"))
@@ -273,6 +278,47 @@ public class Api {
                                 fail(ctx, 502, "连接失败：" + e.message)
                             }
                         case None => fail(ctx, 404, "找不到模型配置：" + id)
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        // TTS：设置页试听与 Lumin 工具共用同一条纯仓颉合成链路。
+        if (path == "/api/models/tts-test" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let s = store.load()
+                    var modelId = strOf(b, "id")
+                    if (modelId.size == 0) { modelId = s.ttsModelId }
+                    if (modelId.size == 0) { fail(ctx, 400, "请先绑定朗读模型"); return }
+                    match (s.findModel(modelId)) {
+                        case Some(cfg) =>
+                            var text = trimStr(strOf(b, "text"))
+                            if (text.size == 0) { text = "你好，我是小鼋龙。欢迎继续学习。" }
+                            try { ok(ctx, speechJson(store, cfg, text, strOf(b, "voice"))) }
+                            catch (e: Exception) { fail(ctx, 502, "试听失败：" + e.message) }
+                        case None => fail(ctx, 404, "找不到模型配置：" + modelId)
+                    }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/tts/synthesize" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let s = store.load()
+                    var modelId = strOf(b, "modelId")
+                    if (modelId.size == 0) { modelId = s.ttsModelId }
+                    if (modelId.size == 0) { fail(ctx, 400, "请先在模型配置里绑定朗读模型"); return }
+                    let text = trimStr(strOf(b, "text"))
+                    if (text.size == 0) { fail(ctx, 400, "要朗读的文本为空"); return }
+                    match (s.findModel(modelId)) {
+                        case Some(cfg) =>
+                            try { ok(ctx, speechJson(store, cfg, text, strOf(b, "voice"))) }
+                            catch (e: Exception) { fail(ctx, 502, "语音合成失败：" + e.message) }
+                        case None => fail(ctx, 404, "找不到模型配置：" + modelId)
                     }
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -1357,13 +1403,19 @@ public class Api {
             let o = JsonObject()
             let arr = Agent(store).toolsJson()
             for (d in buildDomainToolDefs(store, "", true)) {
-                if (d.name == "kb_stage" || d.name == "kb_ingest") {
+                if (d.name == "kb_stage" || d.name == "kb_ingest" || d.name == "synthesize_speech") {
                     let t = JsonObject()
                     t.put("name", JsonString(d.name))
                     t.put("title", JsonString(d.label))
                     t.put("desc", JsonString(d.description))
                     t.put("usage", JsonString(d.schema))
-                    t.put("available", JsonBool(webMode(store.dataDir) != "off"))
+                    let available = if (d.name == "synthesize_speech") {
+                        let s = store.load()
+                        s.ttsModelId.size > 0 && s.findModel(s.ttsModelId).isSome()
+                    } else {
+                        webMode(store.dataDir) != "off"
+                    }
+                    t.put("available", JsonBool(available))
                     arr.add(t)
                 }
             }
@@ -3063,14 +3115,35 @@ func contentTypeOf(name: String): String {
     if (ext == "css") { return "text/css; charset=utf-8" }
     if (ext == "svg") { return "image/svg+xml" }
     if (ext == "json") { return "application/json; charset=utf-8" }
+    if (ext == "png") { return "image/png" }
+    if (ext == "webp") { return "image/webp" }
+    if (ext == "jpg" || ext == "jpeg") { return "image/jpeg" }
     return "application/octet-stream"
 }
 
+/** 把一次合成结果整理成前端可播放、可落盘复用的统一结构。 */
+func speechJson(store: Store, cfg: ModelConfig, text: String, voice: String): JsonObject {
+    let audio = synthesizeSpeech(cfg, text, voice)
+    let path = saveSpeech(store.dataDir, audio)
+    let o = JsonObject()
+    o.put("path", JsonString(path))
+    o.put("dataUrl", JsonString(speechDataUrl(audio)))
+    o.put("format", JsonString(audio.format))
+    o.put("mimeType", JsonString(audio.mimeType))
+    o.put("voice", JsonString(audio.voice))
+    o.put("protocol", JsonString(audio.protocol))
+    o.put("bytes", JsonInt(Int64(audio.bytes.size)))
+    return o
+}
 /* 界面静态资源白名单：serveStatic 校验与静态路由注册共用这一份。
    曾经是两份清单（白名单一份、路由注册一份），新增 studyplayer.js 时只改了一份 → 页面 404。
    只留一个来源，杜绝再次走偏。 */
-let uiAssets = ["index.html", "app.js", "style.css", "workbench.js", "workbench.css", "coursemap.js", "coursemap.css", "studyplayer.js", "studyplayer.css", "tasks.js", "tasks.css", "release.json",
-    "logo-mark.png", "logo-light.png", "logo-dark.png"]
+let uiAssets = ["index.html", "app.js", "style.css", "workbench.js", "workbench.css", "coursemap.js", "coursemap.css", "studyplayer.js", "studyplayer.css", "tasks.js", "tasks.css", "mascot.js", "mascot.css", "release.json",
+    "logo-mark.png", "logo-light.png", "logo-dark.png",
+    "mascot/xiaoyuanlong-idle.png", "mascot/xiaoyuanlong-breathe.png", "mascot/xiaoyuanlong-blink.png",
+    "mascot/xiaoyuanlong-wake.png", "mascot/xiaoyuanlong-listen-1.png", "mascot/xiaoyuanlong-listen-2.png",
+    "mascot/xiaoyuanlong-think-1.png", "mascot/xiaoyuanlong-think-2.png", "mascot/xiaoyuanlong-speak-1.png",
+    "mascot/xiaoyuanlong-speak-2.png", "mascot/xiaoyuanlong-working.png", "mascot/xiaoyuanlong-success.png"]
 
 func serveStatic(ctx: HttpContext, uiDir: String, rel: String): Unit {
     let name = if (rel == "/") { "index.html" } else { String.fromUtf8(rel.toArray()[1..rel.toArray().size]) }
@@ -3239,8 +3312,10 @@ func chatModelOf(store: Store): ?ModelConfig {
             case None => ()
         }
     }
-    if (s.models.size > 0) {
-        return s.models[0]
+    for (m in s.models) {
+        if (m.model.size > 0) {
+            return m
+        }
     }
     return None
 }
@@ -3264,8 +3339,10 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/models/delete",
         "/api/models/roles",
         "/api/models/test",
+        "/api/models/tts-test",
         "/api/models/diagnose",
         "/api/models/vision-test",
+        "/api/tts/synthesize",
         "/api/chat",
         "/api/kb/save",
         "/api/kb/import",

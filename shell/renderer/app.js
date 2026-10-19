@@ -449,7 +449,7 @@ function citationBox(citations, report) {
 /* ---------- 全局状态 ---------- */
 
 const state = {
-  cfg: { models: [], knowledgeBases: [], chatModelId: "", embedModelId: "", chunkModelId: "" },
+  cfg: { models: [], knowledgeBases: [], chatModelId: "", embedModelId: "", chunkModelId: "", ttsModelId: "" },
   profile: {}, report: {}, artifacts: [], sessions: [],
   kb: "", chapter: null, artifactQuery: "", wrongTab: "due", wrongQuery: "",
   chatSessionId: "", chatTurns: [], chatEvents: [], tools: null, chatQuery: "", artifactFocus: "",
@@ -461,6 +461,17 @@ const state = {
 };
 
 let current = "home";
+let ttsPreviewAudio = null;
+
+/** 桌宠只接收“状态摘要”，不参与业务；没有桌宠时事件也不会影响页面。 */
+function mascotActivity(activityState, busyCount) {
+  window.dispatchEvent(new CustomEvent("lumin:activity", {
+    detail: { state: activityState, busyCount: Number(busyCount || 0) },
+  }));
+}
+
+// 独立脚本（导学页、任务面板）也能上报同一套状态，不复制桌宠逻辑。
+window.luminMascotActivity = mascotActivity;
 
 async function loadCfg() {
   state.cfg = await api("/api/settings");
@@ -3295,7 +3306,7 @@ async function slashModel(arg) {
   const hit = models.find((m) => m.id === arg || (m.name || "").toLowerCase() === arg.toLowerCase()
     || (m.model || "").toLowerCase() === arg.toLowerCase());
   if (!hit) { toast("没有这个模型：" + arg + "（用 /model 不带参数看清单）"); return; }
-  await api("/api/models/roles", { chatModelId: hit.id, embedModelId: state.cfg.embedModelId, chunkModelId: state.cfg.chunkModelId });
+  await api("/api/models/roles", { chatModelId: hit.id, embedModelId: state.cfg.embedModelId, chunkModelId: state.cfg.chunkModelId, ttsModelId: state.cfg.ttsModelId });
   await loadCfg();
   toast("对话模型已切到「" + (hit.name || hit.id) + "」");
   renderPanel();
@@ -4456,10 +4467,10 @@ const TOOL_GROUP = {
   kb_search: "知识库", list_documents: "知识库", read_chunk: "知识库",
   web_search: "联网", web_fetch: "联网",
   save_note: "笔记与产物", save_artifact: "笔记与产物",
-  current_time: "其他", calc: "其他", skill_read: "技能",
+  current_time: "其他", calc: "其他", skill_read: "技能", synthesize_speech: "语音",
   read: "本机文件", write: "本机文件", edit: "本机文件", ls: "本机文件", find: "本机文件", grep: "本机文件", powershell: "本机文件",
 };
-const TOOL_GROUP_ORDER = ["知识库", "联网", "笔记与产物", "技能", "本机文件", "其他"];
+const TOOL_GROUP_ORDER = ["知识库", "联网", "语音", "笔记与产物", "技能", "本机文件", "其他"];
 
 const TOOL_LABEL = {
   kb_stage: "暂存知识资料", kb_ingest: "请求并入确认",
@@ -4472,7 +4483,7 @@ const TOOL_LABEL = {
   current_time: "当前时间",
   calc: "计算",
   save_note: "写笔记",
-  save_artifact: "写产物",
+  save_artifact: "写产物", synthesize_speech: "生成朗读音频",
   skill_read: "读技能说明",
   read_course_map: "读取导图", generate_course_map: "生成导图", publish_course_map: "切换导图",
   manage_course_node: "管理节点", list_course_resources: "节点资源", read_course_resource: "读取资源",
@@ -4582,6 +4593,14 @@ function markSessionActivity(sessionId, at) {
 function syncChatBusy() {
   state.chatRequest = state.chatRequests.get(state.chatSessionId) || null;
   state.busyTurn = !!state.chatRequest;
+  const running = [...state.chatRequests.values()];
+  if (running.length) {
+    const currentPhase = state.chatRequest && state.chatRequest.phase;
+    const phase = currentPhase || running.find((r) => r.phase)?.phase || "thinking";
+    mascotActivity(phase, running.length);
+  } else {
+    mascotActivity("idle", 0);
+  }
   if (typeof state.chatRepaintBusy === "function") state.chatRepaintBusy();
 }
 
@@ -6522,7 +6541,7 @@ PAGES.chat = {
         b.onclick = async () => {
           closeMenu();
           try {
-            await api("/api/models/roles", { chatModelId: m.id, embedModelId: state.cfg.embedModelId, chunkModelId: state.cfg.chunkModelId });
+            await api("/api/models/roles", { chatModelId: m.id, embedModelId: state.cfg.embedModelId, chunkModelId: state.cfg.chunkModelId, ttsModelId: state.cfg.ttsModelId });
             await loadCfg();
             paintModelChip();
             state.chatRepaintChips();
@@ -6901,7 +6920,7 @@ PAGES.chat = {
       grow();
       state.lastQuestion = text;
       markSessionActivity(sid);
-      const request = { sessionId: sid, controller: new AbortController(), baseline: (state.chatEvents || []).length, turnId: "", endedByEvents: false };
+      const request = { sessionId: sid, controller: new AbortController(), baseline: (state.chatEvents || []).length, turnId: "", endedByEvents: false, phase: "thinking" };
       state.chatRequests.set(sid, request);
       syncChatBusy();
       renderPanel();   // 会话列表立刻给这一段挂上"正在回复"的转圈
@@ -6929,14 +6948,20 @@ PAGES.chat = {
           const d = await api("/api/sessions/events", { sessionId: sid, sinceId: request.lastId || 0 });
           if (d.lastId) request.lastId = d.lastId;
           const fresh = d.events || [];
-          if (state.chatSessionId !== sid) return;
-          if(d.lastId)state.lastEventId=d.lastId;
           if (fresh.length) {
             /* 取 fresh 里最后一个 turn/start：带游标时它就是本轮的，
                不带游标（老内核回全量）时最后一条同样是本轮的，两种情况都对。 */
             for (const e of fresh) {
               if (e.type === "turn/start") request.turnId = e.turnId;
+              if (e.type === "tool/call" || e.type === "tool/result") request.phase = "working";
+              else if (e.type === "assistant/delta") request.phase = "speaking";
+              else if (e.type === "assistant/thinking") request.phase = "thinking";
             }
+            mascotActivity(request.phase, state.chatRequests.size);
+          }
+          if (state.chatSessionId !== sid) return;
+          if(d.lastId)state.lastEventId=d.lastId;
+          if (fresh.length) {
             state.chatEvents = (state.chatEvents || []).concat(fresh);
             state.chatTurns = turnsFromEvents(state.chatEvents);
             paint();
@@ -7002,6 +7027,7 @@ PAGES.chat = {
         if(attachments.length && current==='chat' && state.chatSessionId===sid && !chatAttachments().length) { addChatAttachments(attachments); if(!ta.value){ta.value=text;grow();} }
         toast(String(failure).indexOf("取消") >= 0 ? "已取消" : ("生成失败：" + failure));
       }
+      mascotActivity(stopped || failure ? "idle" : "success", state.chatRequests.size);
       await reloadSessions();
       /* 这一轮跑完了再给这段对话起名：起名是**另一次模型请求**，
          和正文生成抢同一个模型（本地单线程服务甚至会直接撞超时），
@@ -7298,6 +7324,21 @@ const MODEL_PRESETS = [
     note: "DeepSeek 提供对话与推理；要读图里的内容，需要另配一个多模态服务。",
   },
   {
+    key: "mimo-tts",
+    label: "MiMo 语音",
+    id: "mimo-tts",
+    name: "MiMo 语音",
+    base: "https://api.xiaomimimo.com/v1",
+    model: "",
+    vision: "",
+    embed: "",
+    ttsModel: "mimo-v2.5-tts",
+    ttsVoice: "苏打",
+    ttsFormat: "wav",
+    ttsProtocol: "mimo",
+    note: "独立朗读配置：使用 MiMo 语音服务的密钥；不要和 TokenPlan 对话密钥混用。保存后到「用途绑定」设为语音朗读。",
+  },
+  {
     key: "custom",
     label: "兼容服务",
     id: "",
@@ -7340,6 +7381,10 @@ async function settingsModels() {
         $("m-model").value = p.model;
         $("m-vision").value = p.vision;
         $("m-embed").value = p.embed;
+        $("m-tts-model").value = p.ttsModel || "";
+        $("m-tts-voice").value = p.ttsVoice || "";
+        $("m-tts-format").value = p.ttsFormat || "wav";
+        $("m-tts-protocol").value = p.ttsProtocol || "";
         hint.textContent = p.note;
         document.querySelectorAll(".chip").forEach((x) => x.classList.remove("active"));
         b.classList.add("active");
@@ -7364,13 +7409,36 @@ async function settingsModels() {
     f3.appendChild(fieldOf("多模态模型（图片描述，可留空）", inputOf("m-vision", "mimo-v2.6-pro")));
     f3.appendChild(fieldOf("向量模型（可留空）", inputOf("m-embed", "")));
     mcard.appendChild(f3);
+    const f4 = el("div", "row");
+    f4.appendChild(fieldOf("朗读模型（可留空）", inputOf("m-tts-model", "mimo-v2.5-tts")));
+    const voiceInput = inputOf("m-tts-voice", "苏打 / alloy");
+    voiceInput.setAttribute("list", "tts-voices");
+    const voiceField = fieldOf("音色", voiceInput);
+    const voices = el("datalist");
+    voices.id = "tts-voices";
+    for (const voice of ["冰糖", "茉莉", "苏打", "白桦", "Mia", "Chloe", "Milo", "Dean", "alloy", "nova", "shimmer"]) {
+      const option = el("option");
+      option.value = voice;
+      voices.appendChild(option);
+    }
+    voiceField.appendChild(voices);
+    f4.appendChild(voiceField);
+    f4.appendChild(fieldOf("音频格式", selectOf("m-tts-format", [
+      { value: "", label: "自动" }, { value: "wav", label: "WAV" }, { value: "mp3", label: "MP3" },
+      { value: "opus", label: "Opus" }, { value: "aac", label: "AAC" }, { value: "flac", label: "FLAC" },
+    ], "wav")));
+    f4.appendChild(fieldOf("接口协议", selectOf("m-tts-protocol", [
+      { value: "", label: "自动判断" }, { value: "openai", label: "OpenAI /audio/speech" }, { value: "mimo", label: "MiMo 语音" },
+    ], "")));
+    mcard.appendChild(f4);
     const mact = el("div", "row");
     mact.appendChild(btn("保存模型", "primary", async () => {
       const id = $("m-id").value.trim();
       if (!id) { toast("请填写标识"); return; }
       const base = $("m-base").value.trim();
       const model = $("m-model").value.trim();
-      if (!base || !model) { toast("接口地址与对话模型不能为空"); return; }
+      const ttsModel = $("m-tts-model").value.trim();
+      if (!base || (!model && !ttsModel)) { toast("接口地址以及对话模型或朗读模型不能为空"); return; }
       try {
         await api("/api/models/save", {
           id: id,
@@ -7380,6 +7448,10 @@ async function settingsModels() {
           model: model,
           visionModel: $("m-vision").value.trim(),
           embeddingModel: $("m-embed").value.trim(),
+          ttsModel: ttsModel,
+          ttsVoice: $("m-tts-voice").value.trim(),
+          ttsFormat: $("m-tts-format").value,
+          ttsProtocol: $("m-tts-protocol").value,
         });
         toast("模型已保存");
         go("settings", "models");
@@ -7411,33 +7483,68 @@ async function settingsModels() {
         const main = el("div", "grow");
         main.appendChild(el("div", "item-title", m.name || m.id));
         main.appendChild(el("div", "meta",
-          m.baseUrl + " · " + m.model + (m.visionModel ? " · 多模态 " + m.visionModel : "") +
+          m.baseUrl + " · " + (m.model || "无对话模型") + (m.visionModel ? " · 多模态 " + m.visionModel : "") +
           (m.embeddingModel ? " · 向量 " + m.embeddingModel : "") +
+          (m.ttsModel ? " · 朗读 " + m.ttsModel + (m.ttsVoice ? "/" + m.ttsVoice : "") : "") +
           (m.hasApiKey ? " · 已设置密钥" : " · 未设置密钥")));
         row.appendChild(main);
         if (state.cfg.chatModelId === m.id) row.appendChild(tag("主模型", "ok"));
+        if (state.cfg.ttsModelId === m.id) row.appendChild(tag("朗读", "ok"));
         if (!m.hasApiKey) row.appendChild(tag("缺密钥", "warn"));
         it.appendChild(row);
         const acts = el("div", "row item-actions");
-        acts.appendChild(btn("测试连通", "sm primary", async (ev) => {
-          const b = ev.target;
-          b.disabled = true;
-          b.textContent = "测试中…";
-          try {
-            await api("/api/models/test", { id: m.id });
-            b.textContent = "连通 ✓";
-            toast("模型连通");
-          } catch (e) {
-            b.textContent = "测试连通";
-            toast("失败：" + e.message);
-          }
-          b.disabled = false;
-        }));
-        acts.appendChild(btn("设为对话模型", "sm", async () => {
-          await api("/api/models/roles", { chatModelId: m.id, embedModelId: state.cfg.embedModelId, chunkModelId: state.cfg.chunkModelId });
-          toast("已绑定「对话与生成」");
-          go("settings", "models");
-        }));
+        if (m.model) {
+          acts.appendChild(btn("测试连通", "sm primary", async (ev) => {
+            const b = ev.target;
+            b.disabled = true;
+            b.textContent = "测试中…";
+            try {
+              await api("/api/models/test", { id: m.id });
+              b.textContent = "连通 ✓";
+              toast("模型连通");
+            } catch (e) {
+              b.textContent = "测试连通";
+              toast("失败：" + e.message);
+            }
+            b.disabled = false;
+          }));
+          acts.appendChild(btn("设为对话模型", "sm", async () => {
+            await api("/api/models/roles", { chatModelId: m.id, embedModelId: state.cfg.embedModelId, chunkModelId: state.cfg.chunkModelId, ttsModelId: state.cfg.ttsModelId });
+            toast("已绑定「对话与生成」");
+            go("settings", "models");
+          }));
+        }
+        if (m.ttsModel) {
+          acts.appendChild(btn("设为朗读模型", "sm", async () => {
+            await api("/api/models/roles", { chatModelId: state.cfg.chatModelId, embedModelId: state.cfg.embedModelId, chunkModelId: state.cfg.chunkModelId, ttsModelId: m.id });
+            toast("已绑定「语音朗读」");
+            go("settings", "models");
+          }));
+          if (m.hasApiKey) acts.appendChild(btn("试听", "sm ghost", async (ev) => {
+            const b = ev.currentTarget;
+            b.disabled = true;
+            b.textContent = "合成中…";
+            if (ttsPreviewAudio) { ttsPreviewAudio.pause(); ttsPreviewAudio = null; }
+            try {
+              const data = await api("/api/models/tts-test", { id: m.id });
+              ttsPreviewAudio = new Audio(data.dataUrl);
+              ttsPreviewAudio.onplay = () => mascotActivity("speaking", 1);
+              ttsPreviewAudio.onended = () => {
+                const busy = state.chatRequests.size;
+                mascotActivity(busy ? "working" : "success", busy);
+                b.textContent = "试听"; b.disabled = false;
+              };
+              ttsPreviewAudio.onerror = () => { mascotActivity(state.chatRequests.size ? "working" : "idle", state.chatRequests.size); b.textContent = "试听"; b.disabled = false; toast("音频无法播放"); };
+              b.textContent = "播放中…";
+              await ttsPreviewAudio.play();
+            } catch (e) {
+              mascotActivity("idle", 0);
+              b.textContent = "试听";
+              b.disabled = false;
+              toast("试听失败：" + e.message);
+            }
+          }));
+        }
         acts.appendChild(btn("填到表单", "sm ghost", () => {
           $("m-id").value = m.id;
           $("m-name").value = m.name || "";
@@ -7445,10 +7552,14 @@ async function settingsModels() {
           $("m-model").value = m.model || "";
           $("m-vision").value = m.visionModel || "";
           $("m-embed").value = m.embeddingModel || "";
+          $("m-tts-model").value = m.ttsModel || "";
+          $("m-tts-voice").value = m.ttsVoice || "";
+          $("m-tts-format").value = m.ttsFormat || "";
+          $("m-tts-protocol").value = m.ttsProtocol || "";
           $("m-key").value = "";
           $("view").scrollTop = 0;
         }));
-        if (m.hasApiKey) {
+        if (m.hasApiKey && m.model) {
           acts.appendChild(btn("诊断连接", "sm ghost", async (ev) => {
             const b = ev.target;
             b.disabled = true;
@@ -7474,19 +7585,26 @@ async function settingsModels() {
     }
     v.appendChild(list);
 
-    const role = cardOf({ title: "用途绑定", sub: "三个用途可以指向同一个模型，也可以分开" });
+    const role = cardOf({ title: "用途绑定", sub: "四个用途可以指向同一个模型，也可以分开" });
     const rr = el("div", "row");
-    const mk = (id, label, val, desc) => {
+    const mk = (id, label, val, desc, candidates) => {
       const f = el("div", "field");
       f.appendChild(el("label", null, label));
-      const sel = selectOf(id, [{ value: "", label: "（未指定）" }].concat(state.cfg.models.map((m) => ({ value: m.id, label: m.name || m.id }))), val || "");
+      const options = (candidates || state.cfg.models).map((m) => ({ value: m.id, label: m.name || m.id }));
+      // 当前绑定即使不满足筛选条件也要保留，避免打开设置时被静默清空。
+      if (val && !options.some((x) => x.value === val)) {
+        const bound = state.cfg.models.find((m) => m.id === val);
+        if (bound) options.unshift({ value: bound.id, label: (bound.name || bound.id) + "（当前绑定）" });
+      }
+      const sel = selectOf(id, [{ value: "", label: "（未指定）" }].concat(options), val || "");
       f.appendChild(sel);
       f.appendChild(el("div", "field-hint", desc));
       return f;
     };
-    rr.appendChild(mk("role-chat", "对话与生成", state.cfg.chatModelId, "主对话模型"));
-    rr.appendChild(mk("role-embed", "向量检索", state.cfg.embedModelId, "留空则用关键词检索"));
-    rr.appendChild(mk("role-chunk", "切片与图片描述", state.cfg.chunkModelId, "用于图片与截图"));
+    rr.appendChild(mk("role-chat", "对话与生成", state.cfg.chatModelId, "主对话模型", state.cfg.models.filter((m) => m.model)));
+    rr.appendChild(mk("role-embed", "向量检索", state.cfg.embedModelId, "留空则用关键词检索", state.cfg.models.filter((m) => m.embeddingModel)));
+    rr.appendChild(mk("role-chunk", "切片与图片描述", state.cfg.chunkModelId, "用于图片与截图", state.cfg.models.filter((m) => m.model || m.visionModel)));
+    rr.appendChild(mk("role-tts", "语音朗读", state.cfg.ttsModelId, "试听、朗读与 Lumin 语音工具", state.cfg.models.filter((m) => m.ttsModel)));
     role.appendChild(rr);
     role.appendChild(btn("保存绑定", "primary", async () => {
       try {
@@ -7494,6 +7612,7 @@ async function settingsModels() {
           chatModelId: $("role-chat").value,
           embedModelId: $("role-embed").value,
           chunkModelId: $("role-chunk").value,
+          ttsModelId: $("role-tts").value,
         });
         toast("已保存");
         go("settings", "models");
@@ -7943,6 +8062,26 @@ function settingsAppearance() {
     go("settings", "appearance");
   }, state.panelHidden ? "展开" : "收起"));
   g.appendChild(railCard);
+
+  const petCard = cardOf({
+    title: "小鼋龙",
+    sub: "桌宠会跟随对话状态变化，可拖动到任意位置；隐藏后可在这里恢复",
+  });
+  let petHidden = false;
+  try { petHidden = localStorage.getItem("lumin.mascot.hidden") === "1"; } catch (e) { /* 浏览器禁用存储时仍允许本次显示 */ }
+  const petRow = el("div", "row switch-row");
+  petRow.appendChild(el("div", "grow switch-label", petHidden ? "当前已隐藏" : "当前显示在窗口右下角"));
+  petRow.appendChild(btn(petHidden ? "显示小鼋龙" : "隐藏小鼋龙", "sm", () => {
+    window.dispatchEvent(new CustomEvent("lumin:mascot-visibility", { detail: { visible: petHidden } }));
+    go("settings", "appearance");
+  }));
+  petRow.appendChild(btn("回到右下角", "sm ghost", () => {
+    window.dispatchEvent(new CustomEvent("lumin:mascot-reset"));
+    toast("小鼋龙已回到右下角");
+    go("settings", "appearance");
+  }));
+  petCard.appendChild(petRow);
+  g.appendChild(petCard);
   return g;
 }
 

@@ -4729,3 +4729,25 @@ read_chunk 读得到原文并带回库标识与正文。
   - `node tools/session-switch-check.cjs`：18/18 PASS。真实浏览器验证 A 长任务运行中新建 B、B 正常回答、A/B 不串话、A 后台插话仍生效、审批轮询只请求当前会话、跨时区时间排序正确、无 JS 异常。
   - `node --check shell/renderer/app.js`、`node --check shell/renderer/studyplayer.js`、`git diff --check`：通过。
 - 本地提交：见本段所在提交。两份既有未跟踪调研文档 `docs/知识库改进清单-v2.md`、`docs/非对话页面改造方案-v1.md` 仍未纳入提交。
+## 2026-10-19 · 小鼋龙桌宠、TTS 模型与语音工具
+- 用户目标：把旧网页版的“小鼋龙”动画带进 Desktop；在模型配置中加入可独立绑定的 TTS 模型；新增能力必须能被 Lumin 直接调用，并做真实功能测试。
+- 旧网页资产来源：`D:\Desktop\ITN\ITN\src\front\public\mascot` 的 12 张 362×362 透明 PNG。已复制到 `shell/renderer/mascot/`，由仓颉内核静态白名单提供，不依赖联网或旧网页运行时。
+- 桌宠实现：`shell/renderer/mascot.js`、`mascot.css`。支持待机呼吸/眨眼、思考、工具执行、流式回答、完成、倾听状态；可拖动并持久化位置；单击打开对话/知识网络/学习资源快捷菜单；支持隐藏、设置页恢复、回到右下角、播放器或全屏时自动隐藏，并尊重 `prefers-reduced-motion`。
+- 桌宠状态接入：普通对话和交互导学都上报真实事件阶段（请求开始 thinking、工具 working、正文 delta speaking、成功 success、取消/失败 idle），TTS 试听播放同样驱动 speaking/success；不是定时假动画。
+- 模型配置：新增 `ttsModel/ttsVoice/ttsFormat/ttsProtocol` 与用途绑定 `ttsModelId`；SQLite `models` 表增加 `tts_model/tts_voice/tts_format/tts_protocol`，旧库启动时自动补列且不丢原行。只有 TTS 字段的模型是合法配置，不会被误当成聊天模型。
+- 设置页：新增朗读模型、音色、格式、协议字段；“设为朗读模型”“试听”“语音朗读”用途绑定；模型能力过滤会保留已有绑定；TTS-only 模型不显示对话连通/诊断按钮；新增独立“MiMo 语音”预设，明确不要把 TokenPlan 对话密钥和 MiMo 语音密钥混用。
+- TTS 接口：新增 `POST /api/models/tts-test {id?,text?,voice?}` 与 `POST /api/tts/synthesize {modelId?,text,voice?}`；文本上限 4000 字；结果包含 `path/dataUrl/format/mimeType/voice/protocol/bytes`，音频落 `<dataDir>/audio`。
+- TTS 协议：OpenAI 使用 `POST {baseUrl}/audio/speech`；MiMo 使用 `POST {baseUrl}/chat/completions` 的 SSE base64 PCM16，仓颉内核拼接并封装为 24kHz、单声道、16bit WAV。
+- Lumin 工具：新增 `synthesize_speech {text,voice?,model_id?}`，直接执行同一套仓颉合成与落盘逻辑；`/api/tools/list` 在未绑定朗读模型时返回 `available:false`。工具结果只给本机路径与元数据，不把音频二进制塞进正文。
+- 兼容修复：`POST /api/models/roles` 改为补丁语义，漏传角色不会清空其它绑定；删除模型会清理第四个 TTS 绑定；聊天兜底只选真正有对话模型字段的配置。
+- 实测发现并修复：点击“MiMo 语音”预设时误引用了不存在的 `mimo` 变量，浏览器会抛运行时错误且协议字段不生效。已删除错误行，并在桌面验收中增加“预设点击后四个 TTS 字段全部正确”的回归断言。
+- 测试方法：
+  - `pwsh -NoProfile -File scripts/build.ps1`：成功；日志 `tmp/build-mascot-tts-final.log`。
+  - `cjpm test --no-progress --no-color`：169/169 PASS，0 skipped/error/failed；日志 `tmp/cjpm-test-mascot-tts-final.log`。新增 6 个 TTS 单测覆盖字段/角色往返、旧表迁移、OpenAI 落盘与工具调用、MiMo SSE PCM 转 WAV、缺密钥/未绑定提示、roles 补丁不丢绑定。
+  - `. scripts/env.ps1; node tools/mascot-tts-check.cjs`：真实仓颉内核 + SQLite + Edge + 本地流式聊天/TTS mock，41/41 PASS；日志 `tmp/mascot-tts-check-final.log`，截图 `tmp/mascot-tts-shots/`。断言包括 12 帧均 200 且尺寸 362×362、桌宠拖动/刷新位置、菜单路由、状态链、播放器隐藏、设置恢复、reduced-motion、TTS-only 模型 UI、用途过滤、预设点击、真实 TTS HTTP 请求、Audio 创建、普通/导学会话状态链、无浏览器 runtime/console 错误、无内核 API 异常。
+  - 真实 MiMo TTS：使用隔离库 `tmp/tts-real-e2e-20261019` 和真实语音服务，不接触真实用户库、不打印密钥。当前最终二进制请求成功：1,220ms，WAV 115,244 字节，24,000Hz、单声道、16bit，响应 bytes 与磁盘文件一致；文件 `tmp/tts-real-e2e-20261019/audio/tts-1792424967605.wav`。
+  - `node --check shell/renderer/app.js`、`shell/renderer/mascot.js`、`shell/renderer/studyplayer.js`、`tools/mascot-tts-check.cjs` 与 `git diff --check`：通过。
+- 打包：`scripts/package-app.ps1` 的 release manifest 资产清单加入 `mascot.js/mascot.css` 和 12 张动作帧，避免打包后静态资源存在但清单漏校验。版本升至 `0.8.24`。
+- 当前限制：本批只实现 OpenAI `/audio/speech` 与 MiMo 两种 TTS 协议；旧网页版若另有 Qwen 专有 TTS 协议，需要单列适配，不能用现有 OpenAI 字段冒充。
+- 真实用户数据库 `%LOCALAPPDATA%\Lumin\itn.db` 未修改；全部迁移与真实 TTS 验证都在临时副本中完成。
+- 本地提交：本段与上述代码、文档、测试同一提交（见本次 `git log -1`）；两份既有未跟踪调研文档继续不纳入提交。

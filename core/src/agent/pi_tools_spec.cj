@@ -7,6 +7,7 @@ import itn_desktop_core.store.*
 import itn_desktop_core.tools.*
 import itn_desktop_core.harvest.*
 import itn_desktop_core.util.*
+import itn_desktop_core.tts.*
 
 /*
  * 领域工具的"中立定义"。
@@ -174,6 +175,56 @@ public func buildDomainToolDefsWithCancel(store: Store, kbId: String, allowWeb: 
             return fromResult(tools.saveArtifact(strOf(args, "name"), strOf(args, "content")))
         }))
 
+    out.add(makeTool("synthesize_speech", "生成朗读音频", "把文字合成可播放音频",
+        "把文字用已绑定的朗读模型合成为音频文件。返回本机音频路径、格式和音色；需要播放时交给界面或系统播放器，不要把二进制塞进正文。",
+        "{\"type\":\"object\",\"properties\":{\"text\":{\"type\":\"string\",\"description\":\"要朗读的文字，最多 4000 字\"},\"voice\":{\"type\":\"string\",\"description\":\"可选，覆盖已配置音色\"},\"model_id\":{\"type\":\"string\",\"description\":\"可选，默认使用用途绑定里的朗读模型\"}},\"required\":[\"text\"]}",
+        "external",
+        { args: JsonObject =>
+            let r = DomainToolRun()
+            let text = trimStr(strOf(args, "text"))
+            if (text.size == 0) {
+                r.ok = false
+                r.summary = "要朗读的文本为空"
+                r.content = r.summary
+                return r
+            }
+            let s = store.load()
+            var modelId = trimStr(strOf(args, "model_id"))
+            if (modelId.size == 0) { modelId = s.ttsModelId }
+            if (modelId.size == 0) {
+                r.ok = false
+                r.summary = "还没有绑定朗读模型，请到设置 → 模型与接口配置"
+                r.content = r.summary
+                return r
+            }
+            match (s.findModel(modelId)) {
+                case Some(cfg) =>
+                    try {
+                        let audio = synthesizeSpeech(cfg, text, strOf(args, "voice"))
+                        let path = saveSpeech(store.dataDir, audio)
+                        let o = JsonObject()
+                        o.put("path", JsonString(path))
+                        o.put("format", JsonString(audio.format))
+                        o.put("mimeType", JsonString(audio.mimeType))
+                        o.put("voice", JsonString(audio.voice))
+                        o.put("protocol", JsonString(audio.protocol))
+                        o.put("bytes", JsonInt(Int64(audio.bytes.size)))
+                        r.ok = true
+                        r.summary = "已生成朗读音频"
+                        r.content = r.summary + "\npath: " + path + "\nformat: " + audio.format + "\nvoice: " + audio.voice
+                        r.details = o
+                    } catch (e: Exception) {
+                        r.ok = false
+                        r.summary = "语音合成失败：" + e.message
+                        r.content = r.summary
+                    }
+                case None =>
+                    r.ok = false
+                    r.summary = "找不到朗读模型配置：" + modelId
+                    r.content = r.summary
+            }
+            return r
+        }))
     out.add(makeTool("skill_read", "读技能正文", "按 id 读技能的用法说明",
         "按 id 读取一个技能的正文（这件事该怎么做），然后照着里面的步骤、用它声明的工具去做。",
         "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"]}", "read",
