@@ -4625,3 +4625,21 @@ read_chunk 读得到原文并带回库标识与正文。
 - 将 ZIP 实际解压到独立临时目录后复算 manifest：19/19 个资产 SHA256 一致，0 个缺失；包顶层不存在 `x64/win-x64` 名称，启动器为 `Lumin.exe`，内核为 `resources/kernel/lumin-core.exe`，随包 PPT Python 运行时存在。
 - 解压包启动冒烟：空数据目录启动输出 `PRELOAD=ok`、`TITLEBAR=ok`、`STATUS=Lumin 0.8.21 · 已连接`、`DOCX=ok`、`RESULT=OK`。
 - 使用包内 `python-pptx` 重新打开真实模型样例 `tmp/real-ppt-resource-check/input-output-acceptance.pptx`：4 页，每页 1 张全幅背景图，讲者备注分别为 142/68/152/140 字符；样例 SHA256 `FA31454D96E3848813D215F535C028087BDCF99E5671ECD5D35F43C981846CF6`。
+
+## 2026-10-19 · 流式回复改为最新正文呼吸（0.8.22）
+- 用户要求：去掉对话流式输出末尾的闪烁竖线光标，改成只让“最底下正在输出的那一段内容”柔和呼吸；效果参考启动加载动画里 logo 的慢节奏呼吸。
+- 根因：
+  - 普通对话由 `caretInto` 插入独立 `<span class="caret">`，使用 `steps(2)` 硬闪；导学对话另有一套 `sp-chat-caret`，同样会闪。
+  - 对话轮次在流式 delta 到达时会重建当前轮次 DOM；若直接给最后正文块加普通 CSS 动画，每次重建都会从 0 重播，看起来会卡在同一个亮度而不是持续呼吸。
+- 实现：
+  - `shell/renderer/app.js` 删除 caret 注入，新增 `markStreamTail`/`latestStreamBlock`，只标记当前回复的最后一个正文块；段落、列表项、代码块、表格末格都能定位。
+  - `shell/renderer/style.css` 删除 `caretblink`，新增 `stream-line`：`stream-breathe 2.8s ease-in-out infinite`，透明度在 `1 → .66 → 1` 之间缓慢变化。
+  - 动画相位使用 `performance.now() % 2800` 写入负 `animation-delay`，流式重建节点时延续同一相位，不会每次从头闪。
+  - `shell/renderer/studyplayer.js` 导学普通对话复用同一个 `markStreamTail`；删除 `sp-chat-caret` 及其闪烁 CSS，避免两个对话入口表现不一致。
+  - `prefers-reduced-motion` 下关闭呼吸、保持 `.72` 透明度。
+- 测试（说明测什么、怎么触发、能抓住什么）：
+  - `node --check shell/renderer/app.js`、`node --check shell/renderer/studyplayer.js`、`node --check tools/busy-caret-check.cjs`：语法通过。
+  - `node tools/busy-caret-check.cjs`：8/8，通过慢速 mock 流式触发真实 DOM；确认运行中没有 `.caret`、仅有一个 `.stream-line`、它是最新正文块、计算样式为 `stream-breathe / 2.8s / infinite / 负延迟`、结束后动画和转圈都移除、无 JS 错误。
+  - `node tools/guided-check.cjs`：35/35，通过导学页普通会话、新建/切换/恢复、API、窄屏、主题及内核重启回归，无浏览器/内核异常。
+  - 视觉截图：`tmp/streaming-line-shots/live.png`、`tmp/streaming-line-shots/idle.png`；live 只有最后一行处于呼吸低透明度，idle 恢复完整正文。
+- 版本：`shell/package.json`、`shell/package-lock.json` 从 `0.8.21` 升级到 `0.8.22`；两份原有未跟踪调研文档继续排除。

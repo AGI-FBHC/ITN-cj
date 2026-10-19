@@ -25,28 +25,44 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const clockAfter=await page.locator('.live-elapsed').textContent();
   check('elapsed clock advances during a silent upstream response',clockAfter!==clockBefore);
   check('clock updates text without rebuilding the turn',await page.locator('.live-elapsed').getAttribute('data-clock-probe')==='original');
-  // 等：轮次在跑 + 正文光标在 + 会话行转圈在，三个同时在场再做断言（否则抓不到中间态）
-  await page.waitForFunction(()=>state.busyTurn&&document.querySelector('#chat-thread .caret')&&document.querySelector('.panel-item-row.rail-session .panel-item-spin'),null,{timeout:20000});
+  // 等：轮次在跑 + 最后正文块在呼吸 + 会话行转圈在，三个同时在场再做断言。
+  await page.waitForFunction(()=>state.busyTurn&&document.querySelector('#chat-thread .stream-line')&&document.querySelector('.panel-item-row.rail-session .panel-item-spin'),null,{timeout:20000});
   const live=await page.evaluate(()=>{
-    const caret=document.querySelector('#chat-thread .caret');
-    const caretRect=caret.getBoundingClientRect(),parent=caret.parentElement,parentRect=parent.getBoundingClientRect();
-    const body=caret.closest('.msg-body');
+    const line=document.querySelector('#chat-thread .stream-line');
+    const body=line&&line.closest('.msg-body');
+    const root=body&&body.querySelector('.md');
+    const last=root&&root.children.length?root.children[root.children.length-1]:null;
+    let expected=last;
+    if(last&&last.matches('ul,ol'))expected=last.lastElementChild;
+    else if(last&&last.matches('.md-table-wrap'))expected=last.querySelector('tbody tr:last-child td:last-child')||last.querySelector('thead th:last-child');
+    const style=line&&getComputedStyle(line);
     const sid=state.chatSessionId;
     const activeSpin=!!document.querySelector('.panel-item-row.rail-session .panel-item[data-id="'+sid+'"] .panel-item-spin');
-    return {sameBlock:caretRect.top>=parentRect.top-1&&caretRect.bottom<=parentRect.bottom+1,
-            inside:!!(body&&parent!==body&&body.contains(parent)),
-            caretParent:parent.tagName+'/'+(parent.className||''),
+    return {count:document.querySelectorAll('#chat-thread .stream-line').length,
+            noCaret:!document.querySelector('#chat-thread .caret'),
+            inside:!!(body&&line&&body.contains(line)),
+            tail:!!line&&line===expected,
+            label:line?line.tagName+'/'+(line.className||''):'',
+            animation:style?style.animationName:'',
+            duration:style?style.animationDuration:'',
+            iterations:style?style.animationIterationCount:'',
+            delay:style?style.animationDelay:'',
             rowSpin:document.querySelectorAll('.panel-item-row.rail-session .panel-item-spin').length,
             running:isSessionRunning(sid),sid,activeSpin};
   });
-  check('caret sits at the end of the current text block instead of starting a new line',live.sameBlock&&live.inside);
-  check('the running session row shows a spinner ('+live.caretParent+')',live.rowSpin>=1&&live.activeSpin&&live.running===true);
+  check('streaming output has no blinking caret',live.noCaret&&live.count===1);
+  check('only the latest text block is marked ('+live.label+')',live.tail&&live.inside);
+  check('latest line uses the smooth breathing animation',live.animation==='stream-breathe'&&live.duration==='2.8s'&&live.iterations==='infinite'&&live.delay.startsWith('-'));
+  check('the running session row shows a spinner',live.rowSpin>=1&&live.activeSpin&&live.running===true);
+  const shots=path.join(root,'tmp/streaming-line-shots');fs.mkdirSync(shots,{recursive:true});
+  await page.screenshot({path:path.join(shots,'live.png'),fullPage:true});
   await page.waitForFunction(()=>!state.busyTurn,null,{timeout:30000});
-  await page.waitForFunction(()=>!document.querySelector('#chat-thread .caret'),null,{timeout:5000});
+  await page.waitForFunction(()=>!document.querySelector('#chat-thread .stream-line')&&!document.querySelector('#chat-thread .caret'),null,{timeout:5000});
   // 会话栏的 spinner 与运行状态由面板刷新异步收尾：等最终空闲态，避免单次读取的时序抖动
   await page.waitForFunction(()=>document.querySelectorAll('.panel-item-row.rail-session .panel-item-spin').length===0&&isSessionRunning(state.chatSessionId)===false,null,{timeout:15000});
-  const idle=await page.evaluate(()=>({rowSpin:document.querySelectorAll('.panel-item-row.rail-session .panel-item-spin').length,caret:!!document.querySelector('#chat-thread .caret'),running:isSessionRunning(state.chatSessionId)}));
-  check('spinner disappears and caret is removed after the turn finishes',idle.rowSpin===0&&idle.running===false&&!idle.caret);
+  const idle=await page.evaluate(()=>({rowSpin:document.querySelectorAll('.panel-item-row.rail-session .panel-item-spin').length,streamLine:!!document.querySelector('#chat-thread .stream-line'),caret:!!document.querySelector('#chat-thread .caret'),running:isSessionRunning(state.chatSessionId)}));
+  check('spinner and streaming animation are removed after the turn finishes',idle.rowSpin===0&&idle.running===false&&!idle.streamLine&&!idle.caret);
+  await page.screenshot({path:path.join(shots,'idle.png'),fullPage:true});
   check('no JavaScript errors',errors.length===0);
-  console.log('RESULT '+passed+' passed; '+dir);
+  console.log('RESULT '+passed+' passed; '+dir+' shots='+shots);
  }finally{if(browser)await browser.close();core.kill();mock.kill();}})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -407,7 +407,7 @@ function spRenderPpt(page,res,asset){
         if(it.t==='a'){
           const bubble=el('article','sp-chat-msg assistant'+(it.streaming?' streaming':''));
           const body=el('div','md');body.innerHTML=md(it.text||'');bubble.appendChild(body);
-          if(it.streaming)bubble.appendChild(el('span','sp-chat-caret'));
+          if(it.streaming&&typeof markStreamTail==='function')markStreamTail(body);
           thread.appendChild(bubble);
         }else if(it.t==='tool'){
           const d=el('details','sp-chat-tool');

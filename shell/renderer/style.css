@@ -639,12 +639,13 @@ body.chat-mode .view.chat-blank .chat-thread { flex: 0 1 auto; overflow: auto; }
 .tool-row .tool-name { color: var(--ink-2); }
 .tool-row .tool-sum { margin-left: auto; text-align: right; }
 @keyframes pulsedot { 50% { opacity: .25; } }
-.caret {
-  display: inline-block; width: 7px; height: 15px; margin-left: 2px;
-  background: var(--brand); vertical-align: -2px;
-  animation: caretblink 1s steps(2) infinite;
+/* 流式输出不插竖线光标：最后一段正文以与启动 logo 相近的节奏柔和呼吸。 */
+.stream-line {
+  animation: stream-breathe 2.8s ease-in-out infinite;
+  animation-delay: var(--stream-delay, 0ms);
+  will-change: opacity;
 }
-@keyframes caretblink { 50% { opacity: 0; } }
+@keyframes stream-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .66; } }
 .msg-actions { margin-top: 8px; }
 .err-text { color: var(--danger); }
 .tool-sheet { margin-bottom: 0; }
@@ -1086,7 +1087,7 @@ body.win-maximized .tb-btn .icon-restore { display: block; }
 /* 减少动态：保留透明度/颜色这类帮助理解的过渡，去掉位移动画 */
 @media (prefers-reduced-motion: reduce) {
   .spinner { animation-duration: 1.4s; }
-  .caret { animation: none; opacity: .6; }
+  .stream-line { animation: none; opacity: .72; }
   .tb-btn:active, .btn:active, .nav-item:active, .seg-item:active, .chip:active, .toc-item:active, .palette-item:active { transform: none; }
   .view > * { animation: none; }
 }

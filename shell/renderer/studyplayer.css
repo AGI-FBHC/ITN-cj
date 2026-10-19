@@ -196,11 +196,7 @@ body[data-page="study"] .sp-page.sp-page-guided{
 .sp-chat-msg .md{ font-size:14px; line-height:1.7; }
 .sp-chat-msg .md > :first-child{ margin-top:0; }
 .sp-chat-msg .md > :last-child{ margin-bottom:0; }
-.sp-chat-caret{
-  display:inline-block; width:2px; height:15px; margin-left:2px; vertical-align:-2px;
-  background:var(--brand); animation:sp-chat-caret 1s steps(2,end) infinite;
-}
-@keyframes sp-chat-caret{ 50%{ opacity:0; } }
+
 .sp-chat-tool{
   align-self:stretch; border:1px solid var(--line-soft); border-radius:9px;
   background:var(--panel-soft); color:var(--ink-2); overflow:hidden;
@@ -305,5 +301,5 @@ body[data-page="study"] .sp-page.sp-page-guided{
   .sp-study-chat{ top:6px; right:6px; bottom:6px; width:calc(100% - 12px); }
 }
 @media (prefers-reduced-motion:reduce){
-  .sp-chat-caret,.sp-chat-typing span{ animation:none; }
+  .sp-chat-typing span{ animation:none; }
 }

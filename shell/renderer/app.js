@@ -5564,23 +5564,31 @@ function assistantBlock(text, live) {
   const a = el("div", "msg msg-ai");
   const b = el("div", "msg-body");
   b.innerHTML = md(text);
-  if (live) caretInto(b);
+  if (live) markStreamTail(b);
   a.appendChild(b);
   return a;
 }
 
-/**
- * 把闪烁光标塞进正文最后一个文字块的末尾（段落/列表项/代码块……）。
- * 以前直接挂在 msg-body 上：md() 输出的是块级 <div class="md">，光标就成了它下面
- * 的独立一行 —— 看起来像"光标总是另起一行"。光标属于正在写的那一句话，不属于下一行。
- */
-function caretInto(host) {
-  const caret = el("span", "caret");
-  let target = host;
-  while (target.lastElementChild && !["IMG", "BR", "HR", "INPUT", "BUTTON", "SVG"].includes(target.lastElementChild.tagName)) {
-    target = target.lastElementChild;
+/* 流式输出只让最后一段正文呼吸。动画相位跟全局时钟走，重建当前轮次时不会每次从 0 重播。 */
+const STREAM_BREATH_MS = 2800;
+function latestStreamBlock(host) {
+  const root = host.querySelector(".md") || host;
+  const last = root.children.length ? root.children[root.children.length - 1] : null;
+  if (!last) return null;
+  if (last.matches("ul, ol")) return last.lastElementChild;
+  if (last.matches(".md-table-wrap")) {
+    return last.querySelector("tbody tr:last-child td:last-child") ||
+      last.querySelector("thead th:last-child");
   }
-  target.appendChild(caret);
+  return last.matches("p, h1, h2, h3, h4, h5, h6, blockquote, pre") ? last : null;
+}
+
+function markStreamTail(host) {
+  const target = latestStreamBlock(host);
+  if (!target || !target.textContent.trim()) return;
+  target.classList.add("stream-line");
+  const phase = Math.round(performance.now() % STREAM_BREATH_MS);
+  target.style.setProperty("--stream-delay", "-" + phase + "ms");
 }
 
 /** 工具调用：一行，左边一个点（跑着时是转圈），右边一行摘要。点一下展开参数。 */
