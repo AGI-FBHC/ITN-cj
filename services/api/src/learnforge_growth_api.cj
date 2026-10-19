@@ -130,7 +130,7 @@ func growthJson(gstore: LearnForgeGrowthStore, userId: Array<Byte>,
 /* ---- GET /api/v1/learner-profile/growth ---- */
 
 func handleGrowth(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (openDb(cfg)) {
@@ -239,7 +239,7 @@ func knowledgeGraphJson(gstore: LearnForgeGrowthStore): String {
  * pathRoadmap is knowledgeGraph().edges().
  */
 func handleReport(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (openDb(cfg)) {

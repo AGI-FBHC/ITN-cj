@@ -88,7 +88,7 @@ public func registerLearnForgeRoutes(app: WebHost, cfg: AppConfig): Unit {
 /* ---- handlers ---- */
 
 func handleListLearners(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (openDb(cfg)) {
@@ -113,7 +113,7 @@ func handleListLearners(ctx: HttpContext, cfg: AppConfig): Unit {
 }
 
 func handleGetLearner(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (parseRouteUuid(ctx, "learnerId")) {
@@ -152,7 +152,7 @@ func handleGetLearner(ctx: HttpContext, cfg: AppConfig): Unit {
  * updatedAt are null on that path (the transient never hits @PrePersist).
  */
 func handleGetProfile(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (openDb(cfg)) {

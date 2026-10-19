@@ -157,14 +157,18 @@ func pythonRound2(v: Float64): Float64 {
     Float64(pythonRoundInt(v * 100.0)) / 100.0
 }
 
-/* Python _clamp: max(12, min(96, round(value))) with banker's rounding. */
+/*
+ * Unified clamp (§17.4 step 2): 0-100, identical to the W4 whole-column
+ * writer. Before this step W5/W6 used 12-96 while W4 used 0-100, so the same
+ * dimension could land on different values depending on which writer won.
+ */
 private func clampAbilityScore(v: Float64): Int64 {
     let r = pythonRoundInt(v)
-    if (r < 12) {
-        return 12
+    if (r < 0) {
+        return 0
     }
-    if (r > 96) {
-        return 96
+    if (r > 100) {
+        return 100
     }
     return r
 }
@@ -380,7 +384,20 @@ public class AbilityRewardStore {
         let scoresJson = scoresW.toJson()
 
         let now = mysqlDatetime(nowUtcParts())
-        match (conn.query("UPDATE learners SET scores_json=" + sqlQuote(scoresJson) +
+        /* Single atomic UPDATE + JSON_SET (§17.4 step 2): only the rewarded
+         * dimensions are touched, so a concurrent W4 write can no longer wipe
+         * dimensions this writer added (the old read-modify-write replaced the
+         * whole column and lost keys). */
+        var setExpr = "COALESCE(NULLIF(scores_json,''),'{}')"
+        for (dim in deltaOrder) {
+            match (deltaTo.get(dim)) {
+                case Some(v) =>
+                    setExpr = "JSON_SET(" + setExpr + ", '$.\"" + dim + "\"', " +
+                        v.toString() + ")"
+                case None => ()
+            }
+        }
+        match (conn.query("UPDATE learners SET scores_json=" + setExpr +
                           ",updated_at=" + sqlQuote(now) +
                           " WHERE id=" + sqlBinary(learnerId) +
                           " AND user_id=" + sqlBinary(userId) + " AND status=1")) {
@@ -388,6 +405,16 @@ public class AbilityRewardStore {
             case QueryOutcome.Ok(ok) =>
                 if (ok.affectedRows <= 0) {
                     return rewardFalse("update-failed")
+                }
+        }
+        /* Report the state that actually landed, not our pre-update snapshot. */
+        var actualScores = scoresJson
+        match (conn.query("SELECT scores_json FROM learners WHERE id=" + sqlBinary(learnerId) +
+                          " AND user_id=" + sqlBinary(userId) + " AND status=1 LIMIT 1")) {
+            case QueryOutcome.Ok(_) => ()
+            case QueryOutcome.ResultSet(rs) =>
+                if (!rs.rows.isEmpty()) {
+                    actualScores = cellText(rs.rows[0], 0)
                 }
         }
         let rewardPoints = pythonRound2(primaryPoints + secondaryPoints)
@@ -421,7 +448,7 @@ public class AbilityRewardStore {
         obj.putStr("primaryDimension", primary)
         obj.putStr("secondaryDimension", secondary)
         obj.putRaw("deltas", deltasW.toJson())
-        obj.putRaw("scores", scoresJson)
+        obj.putRaw("scores", actualScores)
         return obj.toJson()
     }
 
