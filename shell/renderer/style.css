@@ -246,13 +246,13 @@ body {
 
 /* 内核连接状态（放在标题栏右侧） */
 .status {
-  display: flex; align-items: center; gap: 6px; white-space: nowrap;
-  font-size: calc(13px * var(--fs, 1)); color: var(--muted);
+  display: inline-grid; place-items: center; width: 20px; height: 26px;
 }
 .status::before {
-  content: ""; width: 6px; height: 6px; border-radius: 50%;
-  background: var(--brand-2); box-shadow: 0 0 0 3px var(--brand-soft);
+  content: ""; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--muted);
 }
+.status[data-connection="online"]::before { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 15%, transparent); }
 .status.err { color: var(--danger); }
 .status.err::before { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
 
@@ -1157,7 +1157,7 @@ body.win-maximized .tb-btn .icon-restore { display: block; }
 }
 /* 第二层面板收起时，折叠按钮保持一个按下态，用户知道去哪儿找回来 */
 body.panel-hidden #rail-toggle { background: var(--rail-hi); color: var(--brand); }
-@media (max-width: 1020px) { .tb-status { display: none; } }
+@media (max-width: 1020px) { .tb-status { display: flex; } }
 
 /* ============================================================
    设置页：左侧分区 + 右侧内容（对标用户给的设置页截图）
@@ -1697,7 +1697,7 @@ body::before {
 }
 /* 面板都要落到光场之上（.app 的直子是 flex item，不用 position 也能吃 z-index） */
 .app { z-index: 1; }
-.titlebar { z-index: 2; }
+.titlebar { z-index: 200; }
 .toast { z-index: 80; }
 
 /* ---------- 1 · 承重面：标题栏 / 窄侧栏 / 第二层面板 ---------- */
@@ -3129,3 +3129,11 @@ html[data-theme="dark"] .composer {
 .resource-dock .file-preview-body .ppt-preview-unavailable { margin: 18px; }
 
 .sp-ppt-image { display: block; width: 100%; height: 100%; object-fit: contain; background: #fff; }
+
+/* 资料添加只显示选择与动作，不再叠加一份手动登记表单。 */
+.kb-form { display: grid; gap: 16px; }
+.kb-form .field { margin: 0; }
+.kb-source-mode { color: var(--ink-2); font-size: 14px; }
+.kb-source-mode:empty, .kb-form-error:empty { display: none; }
+.kb-form-error { margin: 10px 0; color: var(--danger); font-size: 14px; }
+.kb-import-actions { margin-top: 2px; }

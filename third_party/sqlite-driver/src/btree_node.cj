@@ -393,10 +393,17 @@ func defragmentPage(page: Page, pageSize: Int64, usableSize: Int64): Unit {
  * 先试空闲链 (首次适配), 不行再用间隙, 还不行就整理后重试。
  */
 func allocateCellSpace(page: Page, size: Int64, pageSize: Int64, usableSize: Int64): Int64 {
-    if (let Some(off) <- takeFromFreeblocks(page, size)) {
+    let ptrEnd = cellPointerArrayOffset(page) + cellCount(page) * 2 + 2
+    // 空闲链里有内容空间不等于页头还有 2 字节指针槽。若间隙只剩 0/1 字节，
+    // 先整理再分配，否则 insertCellBytes 会用新指针覆盖首个 cell 或 freeblock 头。
+    if (contentStart(page, pageSize) < ptrEnd) {
+        if (totalFreeBytes(page, pageSize, usableSize) < size + 2) { return -1 }
+        defragmentPage(page, pageSize, usableSize)
+        if (contentStart(page, pageSize) < ptrEnd) { return -1 }
+    }
+    if (let Some(off) <- takeFromFreeblocks(page, size, usableSize)) {
         return off
     }
-    let ptrEnd = cellPointerArrayOffset(page) + cellCount(page) * 2 + 2
     var cstart = contentStart(page, pageSize)
     if (cstart - ptrEnd >= size) {
         cstart -= size
@@ -418,11 +425,18 @@ func allocateCellSpace(page: Page, size: Int64, pageSize: Int64, usableSize: Int
 }
 
 /** 从空闲链里摘一块 >= size 的; 摘不到返回 None。 */
-func takeFromFreeblocks(page: Page, size: Int64): Option<Int64> {
+func takeFromFreeblocks(page: Page, size: Int64, usableSize: Int64): Option<Int64> {
     var prev = 0
     var cur = firstFreeblock(page)
+    var visited = 0
     while (cur != 0) {
+        visited += 1
+        if (visited > usableSize / FREEBLOCK_HEADER + 1) { throw SqliteFormatException("page ${page.pageNo} has a circular freeblock chain") }
+        requireFreeblockFits(page, cur, usableSize)
         let blockSize = readU16(page.data, cur + 2)
+        if (blockSize < FREEBLOCK_HEADER || cur + blockSize > usableSize) {
+            throw SqliteFormatException("page ${page.pageNo}: invalid freeblock at ${cur}, size ${blockSize}")
+        }
         if (blockSize >= size) {
             let next = readU16(page.data, cur)
             let leftover = blockSize - size

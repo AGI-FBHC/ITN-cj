@@ -1,6 +1,6 @@
 /* 任务中心：右上角常驻按钮 + 浮层。
    聚合三类真实任务来源（对话轮次 / 导图生成 / 桌面任务），提供进度、停止与跳转。
-   非聊天页挂在页面 topbar 右侧；聊天页 topbar 会隐藏，改挂到对话工具条（wb-toolbar）。
+   固定挂在窗口标题栏，位于连接指示灯右侧。
    不复制任何状态：列表来自 /api/tasks/list，停止走 /api/tasks/cancel（转发到原有取消路径）。 */
 (function(){
   const state={box:null,button:null,badge:null,pop:null,list:null,data:null,open:false,mountedIn:'',timer:null};
@@ -13,7 +13,7 @@
     if(state.box)return;
     const box=mk('div','task-center');
     const b=mk('button','task-btn');b.type='button';b.title='任务中心';b.setAttribute('aria-label','任务中心');b.setAttribute('aria-expanded','false');
-    b.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h2.5M11 6h9"/><path d="M4 12h2.5M11 12h9"/><path d="M4 18h2.5M11 18h6"/><circle cx="5.2" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="5.2" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="5.2" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg><span class="task-label">任务</span><span class="task-badge" hidden>0</span>';
+    b.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h2.5M11 6h9"/><path d="M4 12h2.5M11 12h9"/><path d="M4 18h2.5M11 18h6"/><circle cx="5.2" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="5.2" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="5.2" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg><span class="task-badge" hidden>0</span>';
     b.addEventListener('click',e=>{e.stopPropagation();toggle(!state.open);});
     const pop=mk('div','task-pop');pop.hidden=true;pop.setAttribute('role','dialog');pop.setAttribute('aria-label','任务中心');
     const head=mk('div','task-pop-head');head.append(mk('strong',null,'任务中心'),btnRefresh());
@@ -24,12 +24,8 @@
   function btnRefresh(){const b=mk('button','task-refresh','刷新');b.type='button';b.addEventListener('click',async e=>{e.stopPropagation();await refresh(true);});return b;}
   function mount(){
     ensureDom();
-    const wb=document.querySelector('.wb-toolbar'),top=document.querySelector('.topbar');
-    const onChat=document.body.dataset.page==='chat'&&!!wb;
-    const target=onChat?wb:top;if(!target)return;
-    const where=onChat?'toolbar':'topbar';
-    if(state.box.parentElement!==target){target.appendChild(state.box);state.mountedIn=where;}
-    state.box.classList.toggle('in-toolbar',onChat);
+    const target=document.getElementById('titlebar-tasks');if(!target)return;
+    if(state.box.parentElement!==target)target.appendChild(state.box);
   }
   async function refresh(force){
     if(!state.list)return;
@@ -44,6 +40,7 @@
     const n=running.length;
     state.badge.hidden=n===0;state.badge.textContent=String(n);
     state.button.classList.toggle('has-running',n>0);
+    state.button.setAttribute('aria-label',n?'任务中心，'+n+' 个进行中':'任务中心');
     state.list.replaceChildren();
     const sec1=mk('div','task-section',n?('进行中 · '+n):'进行中');
     state.list.appendChild(sec1);

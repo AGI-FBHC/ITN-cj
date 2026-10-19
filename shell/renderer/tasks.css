@@ -1,14 +1,13 @@
 /* 任务中心（右上角）。颜色全走主题变量，深浅色自适应。 */
-.task-center{position:relative;display:flex;align-items:center;margin-left:10px}
-.task-btn{position:relative;display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink-2);cursor:pointer;font-size:13px}
+.task-center{position:relative;display:flex;align-items:center;margin-left:4px;-webkit-app-region:no-drag}
+.task-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;width:32px;height:28px;padding:0;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--ink-2);cursor:pointer}
 .task-btn:hover{border-color:color-mix(in srgb,var(--brand) 30%,var(--line));background:var(--panel-soft)}
 .task-btn svg{width:16px;height:16px}
+.task-btn:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 .task-btn.has-running{border-color:color-mix(in srgb,var(--brand) 40%,var(--line));color:var(--ink)}
 .task-btn.has-running svg{color:var(--brand)}
 .task-badge{position:absolute;top:-6px;right:-6px;min-width:17px;height:17px;padding:0 5px;border-radius:999px;background:#2f9d78;color:#fff;font-size:13px;line-height:17px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.18)}
 .task-badge[hidden]{display:none}
-.task-center.in-toolbar .task-btn{height:30px;padding:0 8px}
-.task-center.in-toolbar .task-label{display:none}
 .task-pop{position:absolute;right:0;top:calc(100% + 8px);width:390px;max-width:min(390px,calc(100vw - 40px));max-height:min(560px,calc(100vh - 120px));overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 24px 64px -28px rgba(0,0,0,.45);z-index:1400;padding:12px}
 .task-pop[hidden]{display:none}
 .task-pop-head{display:flex;align-items:center;justify-content:space-between;padding:2px 4px 10px}
@@ -40,4 +39,4 @@
 .task-act:hover{border-color:color-mix(in srgb,var(--brand) 35%,var(--line))}
 .task-act.primary{background:var(--brand);color:var(--brand-ink);border-color:var(--brand)}
 .task-act:disabled{opacity:.5;cursor:default}
-@media(max-width:760px){.task-label{display:none}.task-pop{width:min(340px,calc(100vw - 24px))}}
+@media(max-width:760px){.task-pop{width:min(340px,calc(100vw - 24px))}}

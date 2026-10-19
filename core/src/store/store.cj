@@ -217,6 +217,20 @@ public class Store {
         this.dataDir = dataDir
     }
 
+    /** 仅修改名称，不用整份 settings 的读改写覆盖并行更新。 */
+    public func renameKb(id: String, name: String): JsonObject {
+        let clean = trimStr(name)
+        var chars: Int64 = 0
+        for (b in clean.toArray()) { if ((b & 0xC0) != 0x80) { chars += 1 } }
+        if (chars == 0 || chars > 80) { throw Exception("名称请填写 1–80 个字") }
+        ensure()
+        if (db().scalarInt("SELECT COUNT(*) FROM knowledge_bases WHERE id = ?", va([tv(id)])) == 0) {
+            throw Exception("找不到知识库")
+        }
+        db().run("UPDATE knowledge_bases SET name = ? WHERE id = ?", va([tv(clean), tv(id)]))
+        return load().findKb(id).getOrThrow().toJson()
+    }
+
     private func db(): Db {
         return DbHub.open(dataDir)
     }

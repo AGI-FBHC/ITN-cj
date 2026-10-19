@@ -594,7 +594,9 @@ public class PiAgent {
         preamble = preamble + "\n你是个人学习 Agent。四类学习资源通过 generate_learning_resource 工具生成；不需要时正常交流，不默认一次生成四份。" +
             "已有资源用 read_learning_resource 读取，用 revise_learning_resource 修改并保留版本。工具失败时如实说明，不能声称已生成。" +
             "目标、偏好可用记忆工具记录，必须引用本轮明确原话，不推测能力。下方当前学习记忆是权威状态，已删除的记忆不得从历史重新采用。" +
-            "需要更多资源或测验证据时调用 get_learning_context。\n当前学习上下文：" + byteSafePrefix(LearningStore(store.dataDir).context(kbId).toString(), 9000)
+            "用户明确提到学习阶段、困难或当前进度时，用 remember_learning_fact 的 status 类型记录原话；长期通用目标/偏好可设 scope=global，课程专属信息保留课程范围。" +
+            "回答前参考下方 learningState 的最近阅读位置、当前完成标记、needsPractice 和 reviewQueue；按真实状态调整解释难度与例子，不重复询问已有目标/偏好，不把自述或阅读量当成实测掌握。" +
+            "需要更多资源或测验证据时调用 get_learning_context。\n当前学习上下文：" + LearningStore(store.dataDir).agentContext(kbId).toString()
         if (uiChapter.size > 0) {
             preamble = preamble + "\n用户此刻在应用里正在学《" + uiChapter + "》这一章；" +
                 "他说「这一章 / 这章 / 这节」时指的就是它 —— 直接按这一章处理，不要再让他重复说是哪一章。"

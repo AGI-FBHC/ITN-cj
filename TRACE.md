@@ -4764,3 +4764,22 @@ read_chunk 读得到原文并带回库标识与正文。
 - 修复 `scripts/package-app.ps1`：打包前校验输出路径不是仓库根/磁盘根；只有目录内同时存在 `Lumin.exe` 和 `resources/app`、能识别为 Lumin 旧包时才递归清理；同时删除旧 ZIP。该方法避免误删普通目录，同时保证重复打包幂等。
 - 修复后第一次清理重打：ZIP 恢复到 231,890,381 字节（221.15 MB），manifest 仍为 33 个资产，其中 12 张小鼋龙动作帧。
 - 本轮修复随本段所在提交同步；随后对同一版本再执行一次打包作为幂等性验收，要求 ZIP 大小不增长且源提交更新为该提交。
+
+## 2026-10-20 · 简化知识库入口、顶部状态与任务图标、结构化学习记忆
+- 用户要求：界面靠操作结构表达，不堆说明小字；知识库支持改名；顶部仅保留一盏连接灯和右侧任务 icon，替换版本连接文案；会话顶栏名称最多 8 字并悬浮显示全称；Agent 要以结构化学习状态提供个性化回答。
+- 知识库：合并导入和手动登记两份表单，保留名称、资料选择、“添加并索引 / 仅添加”；选择后用“文件夹 · 原地使用 / 文件 · 保存副本”表示行为。相同来源同时匹配 sourcePath/rootDir，兼容旧手动库，避免重复建库。去掉废弃手动表单和未使用目录选择函数。
+- 改名：新增 POST /api/kb/rename、Store.renameKb、list_knowledge_bases / rename_knowledge_base 工具。名称 1–80 字，只 UPDATE 名称，不重写目录、索引、课程或进度；工具校验本轮用户明确指定目标和新名；弹窗支持回车保存、空值行内提示。
+- 顶部：连接灯先前使用有效但为灰色的品牌变量（过程里曾误说变量不存在，已纠正），现在使用主题成功绿/失败红；5 秒健康检查、4 秒超时，断线和恢复自动更新 tooltip/可访问名称。任务中心固定挂在 titlebar-tasks，去掉文字标签，保持数量徽标、键盘焦点和深浅色适配；窄窗口不再隐藏连接区。
+- 会话标题：按 Unicode grapheme 最多 8 个字，超长加省略号；title 和 aria-label 保留全名，不修改实际会话标题。浏览器验收第一次使用了未落盘的临时空会话，标题兜底“新对话”，已改为真实完成一轮后再重命名测试，产品截断逻辑无需放松。
+- 学习记忆：context schemaVersion=2，新增 learningState：最近阅读位置、章节/小节/阅读数量、当前导图完成记录、资源当前版本完成标记、最近测验和导学检查点、需巩固条目、到期错题；首次样本与最新作答分开，重复检查点不增加首次样本，阅读与本人完成标记不等同掌握。所有状态直接聚合原表，不另存过期的影子画像。
+- 自述记忆：新增 kind=status、scope 和稳定 topic，保留原话与会话/轮次来源；同主题更新、完全重复复用 id；用户可以在学习记忆页编辑/遗忘。全局目标偏好与课程状态区分，自动积累开关继续生效。
+- 每轮自动注入完整、有界 JSON：长远目标/偏好按类型保留配额，事实不会挤掉目标；工具仍可读取完整上下文。抽出 StudyStore.loadProfile，避免每轮读取档案时把全部笔记、错题和阅读记录先加载一遍。
+- 真实模型暴露的数据库错误：第三个全新会话在完成后保存 checkpoint 时抛“array length 4096, index 7193”。保留临时库并用只读原生 SQLite 验证，确认 sessions_meta 页 94 的指针区结束于18而内容区从17开始，空闲链已损坏。根因是纯仓颉驱动 allocateCellSpace 先复用空闲块，未保证新增指针有2字节间隙。
+- 驱动修复：先为指针槽整理页面，空间不足走原分裂；增加空闲链范围/环检测。新增 FreeblockPointerTest 用只有1字节间隙、但有200字节中间空闲块的合法页面复现，验证插入后两份原始 payload 完整。
+- 验证（全部临时数据，真实用户库未修改；未输出或提交密钥）：
+  - 核心 cjpm test：175/175 PASS，日志 tmp/test-clarity-memory-final.log。覆盖范围隔离、去重/更新、遗忘后新会话不召回、首次证据、当前标记/归档过滤、复习计划、改名数据不丢。
+  - 浏览器 tools/clarity-memory-check.cjs：27/27 PASS，真实内核/SQLite/Edge。触发文件夹与单文件添加、索引搜索、改名后索引仍可用、空名错误、旧手动库复用、8字标题/全称、健康断线恢复、深浅色窄窗口任务浮层。仅系统文件选择与断线被模拟，业务 HTTP 真实执行；截图 tmp/clarity-shots/knowledge-settings.png。
+  - tools/real-memory-check.cjs：MiMo mimo-v2.6-flash 4 次真实对话，7/7 PASS；记录用户偏好与 status、新会话按借书类比且照顾未学类的阶段、真实忘记工具、又一新会话不召回已忘偏好、PRAGMA integrity_check=ok。成功数据 C:/Users/GeJie/AppData/Local/Temp/lumin-real-memory-vga5Sq，日志 tmp/real-memory-check.log。修复前失败样本保留于 lumin-real-memory-zih5tQ，不作为交付数据。
+  - 驱动存储定向回归：Engine 34/34、DefragmentOverlap 1/1、FreeblockPointer 1/1 PASS，日志 tmp/test-sqlite-storage-focused.log。曾启动617项全量，因仓库 VENDOR.md 已记录45项依赖外部 Python/SQLite 参照环境的问题，且运行数分钟没有结果，已停止，未宣称全量通过。
+  - 构建与 JS 语法、git diff --check 通过。版本准备升至0.8.25；本段与代码本地提交，后续还需完成用户追加的知识库图片/HTML渲染修复再统一打包。
+- 最新追加需求：用户截图里的 img/strong/div/sup 均被显示成源码，先修正文档 HTML 渲染，再核对网络/本地图片；用户明确要求手头任务完成后接着处理，已进入后续工作。

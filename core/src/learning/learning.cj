@@ -13,6 +13,7 @@ import itn_desktop_core.util.*
 
 let resourceLock = Mutex()
 let legacyLock = Mutex()
+let memoryLock = Mutex()
 
 func uid(prefix: String): String { return prefix + Random().nextUInt64().toString() }
 func parsed(raw: String): JsonObject { return objOf(JsonValue.fromStr(raw)).getOrThrow() }
@@ -149,10 +150,34 @@ public class LearningStore {
 
     public func remember(idIn: String, kbId: String, kind: String, text: String, sourceQuote: String,
         sid: String, turnId: String, origin: String): JsonObject {
+        return remember(idIn, kbId, kind, text, sourceQuote, sid, turnId, origin, "")
+    }
+
+    public func remember(idIn: String, kbId: String, kind: String, text: String, sourceQuote: String,
+        sid: String, turnId: String, origin: String, topic: String): JsonObject {
+        synchronized(memoryLock) {
         if (trimStr(text).size == 0 || text.size > 2000) { throw Exception("记忆内容不能为空且不能超过 2000 字节") }
-        if (kind != "preference" && kind != "goal" && kind != "fact") { throw Exception("记忆类型必须为 preference/goal/fact") }
+        if (!["preference", "goal", "fact", "status"].contains(kind)) { throw Exception("记忆类型必须为 preference/goal/fact/status") }
         if (origin != "user" && (sourceQuote.size == 0 || sid.size == 0 || turnId.size == 0)) { throw Exception("自动记忆必须附带用户原话与会话来源") }
-        let id = if (idIn.size > 0) { idIn } else { uid("mem-") }
+        if (topic.size > 160) { throw Exception("记忆主题过长") }
+        var id = idIn
+        var memoryTopic = trimStr(topic)
+        if (id.size > 0 && memoryTopic.size == 0) {
+            let old = db().scalarText("SELECT body FROM learning_memories WHERE id = ?", va([tv(id)]))
+            if (old.size > 0) { memoryTopic = strOf(parsed(old), "topic") }
+        }
+        if (id.size > 0 && origin != "user") {
+            let old = db().scalarText("SELECT body FROM learning_memories WHERE id = ? AND kb_id = ?", va([tv(id), tv(kbId)]))
+            if (old.size == 0) { throw Exception("只能更新当前范围内已有的记忆") }
+        }
+        if (id.size == 0) {
+            for (r in db().query("SELECT id, body FROM learning_memories WHERE kb_id = ? ORDER BY updated_at DESC", va([tv(kbId)]))) {
+                let old = parsed(r.text(1))
+                if (strOf(old, "kind") == kind && (trimStr(strOf(old, "text")) == trimStr(text) ||
+                    (memoryTopic.size > 0 && strOf(old, "topic") == memoryTopic))) { id = r.text(0); break }
+            }
+        }
+        if (id.size == 0) { id = uid("mem-") }
         let o = JsonObject()
         o.put("id", JsonString(id))
         o.put("kbId", JsonString(kbId))
@@ -162,9 +187,13 @@ public class LearningStore {
         o.put("sessionId", JsonString(sid))
         o.put("turnId", JsonString(turnId))
         o.put("origin", JsonString(origin))
+        o.put("topic", JsonString(memoryTopic))
+        o.put("scope", JsonString(if (kbId.size > 0) { "knowledge_base" } else { "global" }))
+        o.put("basis", JsonString("用户自述，不代表实测掌握度"))
         o.put("updatedAt", JsonString(stamp()))
         db().run("INSERT OR REPLACE INTO learning_memories (id, kb_id, body, updated_at) VALUES (?, ?, ?, ?)", va([tv(id), tv(kbId), tv(o.toString()), tv(stamp())]))
         return o
+        }
     }
 
     public func forget(id: String): Unit { db().run("DELETE FROM learning_memories WHERE id = ?", va([tv(id)])) }
@@ -177,20 +206,22 @@ public class LearningStore {
 
     public func context(kbId: String): JsonObject {
         let o = JsonObject()
-        o.put("profile", StudyStore(dataDir).load().profile.toJson())
+        o.put("schemaVersion", JsonInt(2))
+        o.put("scope", JsonString(kbId))
+        o.put("profile", StudyStore(dataDir).loadProfile().toJson())
         o.put("memories", memories(kbId))
         o.put("autoRemember", JsonBool(autoRemember()))
         let topics = JsonArray()
         var total: Int64 = 0
         var right: Int64 = 0
-        for (r in db().querySql("SELECT kb_id, topic, COUNT(*), SUM(correct) FROM learning_events WHERE kind = 'quiz' AND first_attempt = 1 GROUP BY kb_id, topic")) {
+        for (r in db().querySql("SELECT e.kb_id, e.topic, COUNT(*), SUM(e.correct) FROM learning_events e WHERE e.kind IN ('quiz','guided-checkpoint') AND e.first_attempt = 1 AND NOT EXISTS (SELECT 1 FROM learning_events p WHERE p.resource_id=e.resource_id AND p.version=e.version AND p.item_key=e.item_key AND p.kind=e.kind AND p.first_attempt=1 AND p.rowid<e.rowid) GROUP BY e.kb_id, e.topic")) {
             if (kbId.size > 0 && r.text(0) != kbId) { continue }
             let x = JsonObject()
             x.put("kbId", JsonString(r.text(0)))
             x.put("topic", JsonString(r.text(1)))
             x.put("attempts", JsonInt(r.int(2)))
             x.put("correct", JsonInt(r.int(3)))
-            x.put("basis", JsonString("资源测验首次作答；样本有限，不代表完整掌握度"))
+            x.put("basis", JsonString("测验与导学检查点首次作答；样本有限，不代表完整掌握度"))
             topics.add(x)
             total = total + r.int(2)
             right = right + r.int(3)
@@ -199,7 +230,40 @@ public class LearningStore {
         o.put("quizAttempts", JsonInt(total))
         o.put("quizCorrect", JsonInt(right))
         o.put("mastery", JsonNull())
+        o.put("learningState", structuredLearningState(dataDir, kbId))
         o.put("basis", JsonString("目标、偏好为本人提供；测验为服务端答案核验；阅读、生成和手动完成记录不换算成能力分数。无证据时掌握度未知。"))
+        return o
+    }
+
+    /** 系统提示词使用完整、有界的 JSON，不能按字节截断 JSON 文档。 */
+    public func agentContext(kbId: String): JsonObject {
+        let o = context(kbId)
+        let bounded = JsonArray()
+        let all = arrOf(o, "memories")
+        let quotas = HashMap<String, Int64>()
+        quotas["goal"] = 4; quotas["preference"] = 4; quotas["status"] = 6; quotas["fact"] = 2
+        var i = 0
+        while (i < all.size()) {
+            let m = objOf(all[i]).getOrThrow()
+            i += 1
+            let kind = strOf(m, "kind")
+            let left = quotas.get(kind).getOrDefault({ => 0 })
+            if (left <= 0) { continue }
+            quotas[kind] = left - 1
+            let item = JsonObject()
+            for (key in ["id", "kbId", "kind", "scope", "topic", "updatedAt"]) {
+                item.put(key, JsonString(strOf(m, key)))
+            }
+            item.put("text", JsonString(byteSafePrefix(strOf(m, "text"), 600)))
+            bounded.add(item)
+        }
+        o.put("memories", bounded)
+        o.put("memoryTotal", JsonInt(all.size()))
+        let topics = arrOf(o, "quizTopics")
+        let recent = JsonArray()
+        i = 0
+        while (i < topics.size() && i < 12) { recent.add(topics[i]); i += 1 }
+        o.put("quizTopics", recent)
         return o
     }
 

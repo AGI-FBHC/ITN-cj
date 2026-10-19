@@ -528,11 +528,10 @@ public class StudyStore {
         return DbHub.open(dataDir)
     }
 
-    public func load(): StudyData {
+    public func loadProfile(): LearnerProfile {
         ensureDir(dataDir)
         migrateFromJson()
-        let d = StudyData()
-        let p = d.profile
+        let p = LearnerProfile()
         p.nickname = db().getKv("profile", "nickname", "")
         p.goal = db().getKv("profile", "goal", "")
         p.updatedAt = db().getKv("profile", "updatedAt", "")
@@ -564,6 +563,12 @@ public class StudyStore {
                 ()
             }
         }
+        return p
+    }
+
+    public func load(): StudyData {
+        let d = StudyData()
+        d.profile = loadProfile()
         for (r in db().querySql("SELECT kb_id, item_key, at FROM progress WHERE kind = 'chunk' ORDER BY kb_id, item_key")) {
             d.progress.markRead(r.text(0) + "|" + r.text(1), r.text(2))
         }

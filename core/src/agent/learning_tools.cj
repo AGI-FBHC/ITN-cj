@@ -26,6 +26,29 @@ public func learningTools(store: Store, kbId: String, shouldAbort: () -> Bool, s
     userText: String, emit: (String, JsonObject) -> Unit): ArrayList<DomainTool> {
     let ls = LearningStore(store.dataDir)
     let out = ArrayList<DomainTool>()
+    out.add(makeTool("list_knowledge_bases", "查看知识库", "读取知识库名称、稳定标识与索引状态",
+        "列出已登记知识库的 id、名称、资料路径和索引数量。改名之前先核对 id，不重新导入。",
+        "{\"type\":\"object\",\"properties\":{}}", "read", { args: JsonObject =>
+            let o = JsonObject()
+            let rows = JsonArray()
+            for (kb in store.load().knowledgeBases) { rows.add(kb.toJson()) }
+            o.put("knowledgeBases", rows)
+            return learningResult(o, "已读取知识库列表")
+        }))
+    out.add(makeTool("rename_knowledge_base", "重命名知识库", "仅修改显示名称，保留索引和学习进度",
+        "仅在本轮用户明确要求将指定知识库改为某个名称时使用。id 从 list_knowledge_bases 获取；name 必须逐字来自本轮用户原话。",
+        "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"}},\"required\":[\"id\",\"name\"]}", "write", { args: JsonObject =>
+            let id = strOf(args, "id")
+            let name = trimStr(strOf(args, "name"))
+            let kb = store.load().findKb(id).getOrThrow()
+            var requested = false
+            for (word in ["改名", "重命名", "改成", "改为", "名称改", "名字改"]) { if (userText.contains(word)) { requested = true } }
+            if (!requested || name.size == 0 || !userText.contains(name) ||
+                (!userText.contains(id) && (kb.name.size == 0 || !userText.contains(kb.name)))) {
+                throw Exception("请由用户明确指定要改名的知识库和新名称")
+            }
+            return learningResult(store.renameKb(id, name), "知识库已重命名，索引和学习进度保留")
+        }))
     out.add(makeTool("get_learning_context", "读取学习上下文", "目标、偏好、知识网络、资源和真实测验记录",
         "读取当前学习档案、可编辑记忆、知识网络概况（知识点总数与最近节点）、资源列表和首次作答证据。掌握度未知时不得推断分数。回答知识网络/知识点相关询问前先读本工具；节点详情用 read_knowledge_point。",
         "{\"type\":\"object\",\"properties\":{}}", "read", { args: JsonObject =>
@@ -35,13 +58,17 @@ public func learningTools(store: Store, kbId: String, shouldAbort: () -> Bool, s
             o.put("resources", ls.resourcesForSession(kbId,sid))
             return learningResult(o, "已读取学习上下文")
         }))
-    out.add(makeTool("remember_learning_fact", "记住学习偏好", "保存本人明确表达的目标、偏好或事实",
-        "仅记录本轮用户明确表达且有长期价值的学习偏好、目标或事实，不记录猜测、敏感信息、模型自评掌握度。quote 必须逐字来自当前用户消息；可带已有 id 更新。",
-        "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"kind\":{\"type\":\"string\",\"enum\":[\"preference\",\"goal\",\"fact\"]},\"text\":{\"type\":\"string\"},\"quote\":{\"type\":\"string\"}},\"required\":[\"kind\",\"text\",\"quote\"]}", "write", { args: JsonObject =>
+    out.add(makeTool("remember_learning_fact", "记住学习状态", "保存本人明确表达的目标、偏好、阶段或困难",
+        "仅记录本轮用户明确表达且有长期价值的学习信息，status 代表用户自述的阶段/困难，不是实测能力。quote 必须逐字来自当前用户消息；可带已有 id 更新。scope=global 用于通用偏好/目标，knowledge_base 只用于当前课程。topic 是稳定主题（如讲解方式/当前阶段），同范围同主题更新旧值。",
+        "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"kind\":{\"type\":\"string\",\"enum\":[\"preference\",\"goal\",\"fact\",\"status\"]},\"text\":{\"type\":\"string\"},\"quote\":{\"type\":\"string\"},\"scope\":{\"type\":\"string\",\"enum\":[\"global\",\"knowledge_base\"]},\"topic\":{\"type\":\"string\"}},\"required\":[\"kind\",\"text\",\"quote\"]}", "write", { args: JsonObject =>
             let sourceQuote = strOf(args, "quote")
             if (!ls.autoRemember() && !userText.contains("记住") && !userText.contains("remember")) { throw Exception("自动积累记忆已关闭；仅在用户明确要求记住时记录") }
             if (sourceQuote.size == 0 || !userText.contains(sourceQuote)) { throw Exception("记忆必须引用本轮用户的明确原话") }
-            return learningResult(ls.remember(strOf(args, "id"), kbId, strOf(args, "kind"), sourceQuote, sourceQuote, sid, turnId, "agent"), "已记住用户原话，可在学习记忆中编辑或删除")
+            let scope = strOf(args, "scope")
+            if (scope.size > 0 && scope != "global" && scope != "knowledge_base") { throw Exception("记忆范围无效") }
+            if (scope == "knowledge_base" && kbId.size == 0) { throw Exception("当前没有绑定知识库，课程状态需先指定课程") }
+            let memoryKb = if (scope == "global") { "" } else { kbId }
+            return learningResult(ls.remember(strOf(args, "id"), memoryKb, strOf(args, "kind"), sourceQuote, sourceQuote, sid, turnId, "agent", strOf(args, "topic")), "已记住用户原话，可在学习记忆中编辑或删除")
         }))
     out.add(makeTool("forget_learning_fact", "忘记学习记忆", "按用户要求删除指定记忆",
         "仅当用户明确要求忘记/删除记忆时使用，id 来自 get_learning_context。",

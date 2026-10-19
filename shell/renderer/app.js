@@ -61,8 +61,28 @@ function toast(msg) {
 
 function setStatus(text, isErr) {
   const s = $("status");
-  s.textContent = text;
+  s.textContent = "";
+  s.title = text;
+  s.setAttribute("aria-label", text);
+  s.dataset.connection = isErr ? "offline" : "online";
   s.classList.toggle("err", !!isErr);
+}
+
+let connectionTimer = null;
+async function refreshKernelConnection() {
+  try {
+    const h = await api("/health", undefined, AbortSignal.timeout(4000));
+    if (h.status !== "ok") throw new Error("内核未就绪");
+    state.kernel = h;
+    setStatus("内核已连接");
+  } catch (e) { setStatus("内核未连接", true); }
+}
+
+function startConnectionMonitor() {
+  clearInterval(connectionTimer);
+  connectionTimer = setInterval(() => {
+    if (!document.hidden) refreshKernelConnection();
+  }, 5000);
 }
 
 /* ---------- 启动动画收尾 ----------
@@ -3663,9 +3683,13 @@ function sessionCrumb() {
   wrap.appendChild(el("span", "wb-crumb-sep", "|"));
   const meta = sessionMetaOf();
   const hint = (state.chatTitleHint || {})[state.chatSessionId] || "";
-  const title = el("span", "wb-crumb-title",
-    (meta && meta.title) || hint || (state.chatSessionId ? "新对话" : "还没有对话"));
-  title.title = "这段对话的名字（右上角 ⋯ 可以改）";
+  const fullTitle = (meta && meta.title) || hint || (state.chatSessionId ? "新对话" : "还没有对话");
+  const letters = typeof Intl.Segmenter === "function"
+    ? [...new Intl.Segmenter("zh", { granularity: "grapheme" }).segment(fullTitle)].map(x => x.segment)
+    : Array.from(fullTitle);
+  const title = el("span", "wb-crumb-title", letters.slice(0, 8).join("") + (letters.length > 8 ? "…" : ""));
+  title.title = fullTitle;
+  title.setAttribute("aria-label", fullTitle);
   wrap.appendChild(title);
   return wrap;
 }
@@ -8085,41 +8109,6 @@ function settingsAppearance() {
   return g;
 }
 
-/**
- * 选资料目录。
- *
- * 只有桌面窗口有"读本机绝对路径"的能力（Electron 的目录对话框，见 preload/main）；
- * 在浏览器里打开同一份界面时，按钮不假装能用，而是说清楚原因。
- * 选完顺手把「标识」补上（目录名的英文短名）：这一步本来也要用户打一遍。
- */
-async function pickKbDir() {
-  const a = window.itnWindow;
-  if (!a || typeof a.pickDirectory !== "function") {
-    toast("选目录只在桌面应用窗口里可用；这里可以直接粘贴路径");
-    const el0 = $("kb-dir");
-    if (el0) el0.focus();
-    return;
-  }
-  let dir = "";
-  try {
-    dir = await a.pickDirectory();
-  } catch (e) {
-    toast("打开目录对话框失败：" + e.message);
-    return;
-  }
-  if (!dir) return; // 用户取消：不是错误，什么都不做
-  $("kb-dir").value = dir;
-  const base = dir.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "";
-  const idEl = $("kb-id");
-  if (idEl && !idEl.value.trim() && base) {
-    const slug = base.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24);
-    if (slug) idEl.value = slug;
-  }
-  const nameEl = $("kb-name");
-  if (nameEl && !nameEl.value.trim() && base) nameEl.value = base;
-  toast("已选：" + dir);
-}
-
 /** 上游报错很长时只留第一句（界面上的琥珀提示不该是一条小字报）。 */
 function shortReason(msg) {
   const t = String(msg || "").split("；")[0].trim();
@@ -8152,6 +8141,8 @@ async function pickImportPath(kind) {
   if (el0) {
     el0.value = picked;
     el0.dataset.kind = kind;
+    const mode = $("kb-source-mode");
+    if (mode) mode.textContent = kind === "dir" ? "文件夹 · 原地使用" : "文件 · 保存副本";
   }
   const base = picked.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "";
   const nameEl = $("kb-import-name");
@@ -8166,6 +8157,9 @@ async function importKbMaterial(withIndex) {
   if (!path) { toast("先选一个文件夹或一份文件"); return; }
   const nameEl = $("kb-import-name");
   const payload = { path: path, kind: (el0 && el0.dataset.kind) || "auto", name: (nameEl && nameEl.value.trim()) || "" };
+  const buttons = [...document.querySelectorAll(".kb-import-actions button")];
+  if (buttons.some(b => b.disabled)) return;
+  buttons.forEach(b => { b.disabled = true; });
   try {
     const r = await api("/api/kb/import", payload);
     const info = (r && r.imported) || {};
@@ -8181,7 +8175,33 @@ async function importKbMaterial(withIndex) {
     }
   } catch (e) {
     toast("导入失败：" + e.message);
+  } finally {
+    buttons.forEach(b => { b.disabled = false; });
   }
+}
+
+function renameKnowledgeBase(kb) {
+  const dialog = courseDialog("重命名知识库");
+  const name = inputOf("kb-rename-name", "知识库名称", kb.name || kb.id);
+  name.maxLength = 80;
+  const error = el("p", "kb-form-error");
+  error.setAttribute("role", "alert");
+  const save = btn("保存", "primary", async () => {
+    if (!name.value.trim()) { error.textContent = "请输入名称"; name.focus(); return; }
+    save.disabled = true;
+    try {
+      await api("/api/kb/rename", { id: kb.id, name: name.value.trim() });
+      await loadCfg();
+      dialog.close();
+      await go("settings", "kb");
+      toast("已重命名");
+    } catch (e) { error.textContent = e.message; save.disabled = false; }
+  });
+  name.addEventListener("keydown", e => { if (e.key === "Enter" && !e.isComposing && !save.disabled) save.click(); });
+  const actions = el("div", "course-dialog-actions");
+  actions.append(btn("取消", "ghost", dialog.close), save);
+  dialog.body.append(fieldOf("名称", name), error, actions);
+  name.focus(); name.select();
 }
 
 /* ---------- 设置 · 知识库 ---------- */
@@ -8190,80 +8210,43 @@ function settingsKb() {
   /* 「导入资料」放在最上面：这才是用户真正要做的事。
      文件夹与单文件是两种形态，界面各给一个按钮，用户不用自己判断路径该怎么解析。 */
   const impCard = cardOf({
-    title: "导入资料",
-    tag: state.cfg.knowledgeBases.length + " 个知识库",
+    title: "添加知识库",
   });
   const impForm = el("div", "kb-form");
   const nameRow = el("div", "row");
-  nameRow.appendChild(fieldOf("名称（可以不填）", inputOf("kb-import-name", "这门课的名字")));
+  nameRow.appendChild(fieldOf("名称（可选）", inputOf("kb-import-name", "默认使用文件或文件夹名")));
   impForm.appendChild(nameRow);
   const pickRow = el("div", "row dir-row");
-  const pickInput = inputOf("kb-import-path", "点右边的按钮选一个文件夹或一份文件");
+  const pickInput = inputOf("kb-import-path", "选择文件夹、文件，或粘贴路径");
   pickInput.className = "grow";
+  pickInput.setAttribute("aria-label", "资料路径");
+  pickInput.addEventListener("input", () => { pickInput.dataset.kind = "auto"; $("kb-source-mode").textContent = ""; });
   pickRow.appendChild(pickInput);
-  pickRow.appendChild(btn("选文件夹…", "", () => pickImportPath("dir")));
-  pickRow.appendChild(btn("选文件…", "ghost", () => pickImportPath("file")));
-  impForm.appendChild(pickRow);
-  const impFacts = el("div", "row");
-  impFacts.appendChild(btn("导入并建立索引", "primary", () => importKbMaterial(true)));
-  impFacts.appendChild(btn("只导入", "", () => importKbMaterial(false)));
+  pickRow.appendChild(btn("选择文件夹", "", () => pickImportPath("dir")));
+  pickRow.appendChild(btn("选择文件", "ghost", () => pickImportPath("file")));
+  impForm.appendChild(fieldOf("资料", pickRow));
+  const sourceMode = el("span", "kb-source-mode"); sourceMode.id = "kb-source-mode";
+  impForm.appendChild(sourceMode);
+  const impFacts = el("div", "row kb-import-actions");
+  impFacts.appendChild(btn("添加并索引", "primary", () => importKbMaterial(true)));
+  const addOnly = btn("仅添加", "ghost", () => importKbMaterial(false));
+  addOnly.title = "先保存资料，稍后建立索引";
+  impFacts.appendChild(addOnly);
   impForm.appendChild(impFacts);
-  impForm.appendChild(el("p", "muted sm", "文件夹原地使用；单个文件会复制到资料目录。章节自动识别。"));
   impCard.appendChild(impForm);
   g.appendChild(impCard);
 
   const kbCard = cardOf({
-    title: "手动添加",
+    title: "我的知识库",
+    tag: state.cfg.knowledgeBases.length + " 个",
   });
-  const form = el("div", "kb-form");
-  const fr = el("div", "row");
-  fr.appendChild(fieldOf("标识", inputOf("kb-id", "course")));
-  fr.appendChild(fieldOf("显示名称", inputOf("kb-name", "我的课程资料")));
-  form.appendChild(fr);
-  // 目录靠系统对话框选，不用手打路径（手打很容易错在盘符、反斜杠、中文目录名上）
-  const dirRow = el("div", "row dir-row");
-  const dirInput = inputOf("kb-dir", "点右边「选择…」，或直接粘贴路径");
-  dirInput.className = "grow";
-  dirRow.appendChild(dirInput);
-  dirRow.appendChild(btn("选择…", "", () => pickKbDir()));
-  form.appendChild(fieldOf("资料目录", dirRow));
-  const facts = el("div", "row");
-  facts.appendChild(btn("保存知识库", "primary", async () => {
-    const id = $("kb-id").value.trim();
-    if (!id) { toast("请填写标识"); return; }
-    const dir = $("kb-dir").value.trim();
-    if (!dir) { toast("请填写目录绝对路径"); return; }
-    try {
-      await api("/api/kb/save", { id: id, name: $("kb-name").value.trim(), rootDir: dir });
-      toast("已保存，接着建立索引");
-      state.kb = id;
-      go("settings", "kb");
-    } catch (e) { toast("保存失败：" + e.message); }
-  }));
-  facts.appendChild(btn("保存并建立索引", "", async () => {
-    const id = $("kb-id").value.trim();
-    const dir = $("kb-dir").value.trim();
-    if (!id || !dir) { toast("标识与目录都要填"); return; }
-    try {
-      await api("/api/kb/save", { id: id, name: $("kb-name").value.trim(), rootDir: dir });
-      state.kb = id;
-      await buildIndex(id);
-    } catch (e) { toast("失败：" + e.message); }
-  }));
-  form.appendChild(facts);
-  kbCard.appendChild(form);
-
   if (!state.cfg.knowledgeBases.length) {
     kbCard.appendChild(emptyState({
       inline: true,
       art: "db",
       title: "还没有知识库",
-      text: "填一个英文标识（例如 course）、一个显示名称和资料目录的绝对路径，保存后建立索引。",
-      actions: [btn("填一个示例", "ghost", () => {
-        $("kb-id").value = "course";
-        $("kb-name").value = "我的课程资料";
-        $("kb-dir").focus();
-      })],
+      text: "选择上方的文件夹或文件，开始添加。",
+      actions: [btn("选择文件夹", "ghost", () => pickImportPath("dir"))],
     }));
   } else {
     const kbox = el("div", "list");
@@ -8282,6 +8265,7 @@ function settingsKb() {
       it.appendChild(row);
       const acts = el("div", "row item-actions");
       acts.appendChild(btn((k.chunkCount || 0) > 0 ? "重建索引" : "建立索引", "sm primary", () => buildIndex(k.id)));
+      acts.appendChild(btn("重命名", "sm ghost", () => renameKnowledgeBase(k)));
       // 资料散乱时让模型读一遍、给出一份教学目录；建索引时按它组织（结果可清除）
       acts.appendChild(btn("整理", "sm", () => organizeKb(k.id)));
       if (state.kb !== k.id) acts.appendChild(btn("设为当前", "sm", () => { state.kb = k.id; toast("已切换为当前知识库"); go("learn"); }));
@@ -8787,9 +8771,11 @@ async function boot() {
     const h = await api("/health");
     state.kernel = h;
     try { state.release = await fetch('/release.json').then(r=>r.ok?r.json():null); } catch(e) {state.release=null;}
-    setStatus("Lumin " + (state.release?.version || h.version || '0.4.2') + " · 已连接");
+    setStatus("内核已连接");
+    startConnectionMonitor();
   } catch (e) {
     setStatus("内核未连接", true);
+    startConnectionMonitor();
     const v = $("view");
     v.innerHTML = "";
     v.appendChild(emptyState({

@@ -671,7 +671,7 @@ PAGES.memory = {
     overview.appendChild(autoLabel);
     const form = cardOf({title: '记住一件事', sub: '仅存本机，可随时更改或删除'});
     const kind = el('select'); kind.id = 'memory-kind';
-    for (const [value, label] of [['preference', '学习偏好'], ['goal', '学习目标'], ['fact', '个人学习事实']]) {const option = el('option', null, label); option.value = value; kind.appendChild(option);}
+    for (const [value, label] of [['preference', '学习偏好'], ['goal', '学习目标'], ['status', '学习状态'], ['fact', '个人学习事实']]) {const option = el('option', null, label); option.value = value; kind.appendChild(option);}
     const text = el('textarea'); text.id = 'memory-text'; text.rows = 3;
     form.appendChild(fieldOf('类型', kind)); form.appendChild(fieldOf('内容', text));
     const scope = el('select'); scope.id = 'memory-scope';

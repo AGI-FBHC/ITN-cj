@@ -410,7 +410,7 @@ public class Api {
                     if (id.size == 0) {
                         // 同一处资料再导入一次：认出来（sourcePath 相同）就用回原来的库，别又建一个
                         for (k in s.knowledgeBases) {
-                            if (k.sourcePath.size > 0 && k.sourcePath == src) {
+                            if (k.sourcePath == src || k.rootDir == src) {
                                 id = k.id
                             }
                         }
@@ -478,6 +478,19 @@ public class Api {
                     ij.put("id", JsonString(id))
                     o.put("imported", ij)
                     ok(ctx, o)
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
+        if (path == "/api/kb/rename" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) =>
+                    let id = trimStr(strOf(b, "id"))
+                    if (id.size == 0) { fail(ctx, 400, "请选择知识库"); return }
+                    if (store.load().findKb(id).isNone()) { fail(ctx, 404, "找不到知识库"); return }
+                    try { ok(ctx, store.renameKb(id, strOf(b, "name"))) }
+                    catch (e: Exception) { fail(ctx, 400, e.message) }
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
             return
@@ -1562,7 +1575,7 @@ public class Api {
         if (path == "/api/learning/memory/save" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) => try {
-                    ok(ctx, LearningStore(store.dataDir).remember(strOf(b, "id"), strOf(b, "kbId"), strOf(b, "kind"), strOf(b, "text"), "", "", "", "user"))
+                    ok(ctx, LearningStore(store.dataDir).remember(strOf(b, "id"), strOf(b, "kbId"), strOf(b, "kind"), strOf(b, "text"), "", "", "", "user", strOf(b, "topic")))
                 } catch (e: Exception) { fail(ctx, 400, e.message) }
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -3345,6 +3358,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/tts/synthesize",
         "/api/chat",
         "/api/kb/save",
+        "/api/kb/rename",
         "/api/kb/import",
         "/api/kb/organize",
         "/api/kb/delete",
