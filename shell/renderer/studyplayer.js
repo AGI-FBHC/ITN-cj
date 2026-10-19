@@ -265,60 +265,415 @@ function spQuizSummary(host,res,asset,qs,paint,state,rerender){
 
 /* ---------- 在线演示（交互导学） ---------- */
 
+function spGuideIconButton(label,iconName,cls,onClick){
+  const b=el('button','sp-guide-icon-btn'+(cls?' '+cls:''),'');
+  b.type='button';b.title=label;b.setAttribute('aria-label',label);b.innerHTML=icon(iconName);
+  if(onClick)b.addEventListener('click',onClick);
+  return b;
+}
+
+function spGuideTruth(value){return value===true||value==='true'||value===1||value==='1';}
+function spGuideText(value){return value==null?'':String(value);}
+function spGuideClip(value,max){const s=spGuideText(value).replace(/\s+/g,' ').trim();return s.length>max?s.slice(0,max).trimEnd()+'…':s;}
+
 function spRenderPpt(page,res,asset){
-  const slides=res.content?.slides||[];
-  page.appendChild(spBreadcrumb(res,asset));const head=spHead(res,asset,'',[]);page.appendChild(head);
-  const counter=el('span','sp-progress');head.querySelector('.sp-head-side').insertBefore(counter,head.querySelector('.sp-head-side').firstChild);
+  page.classList.add('sp-page-guided');
+  const slides=Array.isArray(res.content?.slides)?res.content.slides:[];
+  const counter=el('span','sp-progress');
+  const state={
+    idx:0,sessionId:'',context:null,events:[],lastId:0,busy:false,pendingUser:'',error:'',
+    requests:[],answered:{},answering:'',notices:[],open:innerWidth>940,wasNarrow:innerWidth<=940,
+    saveTimer:0,focusTimer:0,focusSeq:0,focusPromise:null,focusedSlide:0,userNavigated:false,requestController:null,
+    pollInFlight:false,cleaned:false,noteDialog:null
+  };
+  const toggle=btn('收起','ghost sm');
+  toggle.classList.add('sp-guide-toggle');toggle.setAttribute('aria-expanded','true');
+  page.appendChild(spBreadcrumb(res,asset));
+  const head=spHead(res,asset,'',[toggle]);page.appendChild(head);
+  head.querySelector('.sp-head-side').insertBefore(counter,head.querySelector('.sp-head-side').firstChild);
   if(!slides.length){page.appendChild(el('p','sp-hint','这份演示没有可播放的页面。'));return{countText:()=>0};}
-  const key='resource:'+res.id+':v'+res.version;const state={idx:0,saveTimer:0};
-  const stage=el('section','sp-slides');const canvas=el('div','sp-slide');const notes=el('aside','sp-notes');notes.hidden=true;
+
+  const key='resource:'+res.id+':v'+res.version;
+  const shell=el('div','sp-guided-layout guide-open');
+  const main=el('section','sp-guided-main');
+  const panel=el('aside','sp-guide-panel');
+  panel.setAttribute('aria-label','交互导学侧栏');
+  const scrim=el('div','sp-guide-scrim');scrim.hidden=true;
+  shell.append(main,panel);page.append(shell,scrim);
+
+  const stage=el('section','sp-slides');
+  const canvas=el('div','sp-slide');
+  const notes=el('aside','sp-notes');notes.hidden=true;
   const controls=el('div','sp-slide-controls');
-  const prev=btn('‹ 上一页','ghost',()=>jump(state.idx-1)),next=btn('下一页 ›','primary',()=>jump(state.idx+1));
-  const pos=el('span','sp-slide-pos');const notesBtn=btn('讲稿','ghost sm',()=>{notes.hidden=!notes.hidden;notesBtn.classList.toggle('on',!notes.hidden);});
-  controls.append(prev,pos,next,notesBtn);
+  const prev=btn('‹ 上一页','ghost',()=>jump(state.idx-1));
+  const next=btn('下一页 ›','primary',()=>jump(state.idx>=slides.length-1?0:state.idx+1));
+  const pos=el('span','sp-slide-pos');
+  const notesBtn=btn('讲稿','ghost sm',()=>{notes.hidden=!notes.hidden;notesBtn.classList.toggle('on',!notes.hidden);});
   const dots=el('div','sp-dots');
-  stage.append(canvas,notes,dots,controls);page.appendChild(stage);
+  controls.append(prev,pos,next,notesBtn);
+  stage.append(canvas,notes,dots,controls);
+  main.appendChild(stage);
+  main.appendChild(el('p','sp-hint','← → 或空格翻页。右侧导学与当前页同步，打开页面不会自动调用模型。'));
+
+  const panelHead=el('header','sp-guide-head');
+  const panelTitleBox=el('div','sp-guide-title-box');
+  const panelTitle=el('div','sp-guide-title-line');
+  const panelMark=el('span','sp-guide-mark');panelMark.innerHTML=icon('book');
+  panelTitle.append(panelMark,el('strong',null,'导学'));
+  const panelMeta=el('div','sp-guide-meta');
+  const pageTitle=el('h3','sp-guide-page-title');
+  const pageSummary=el('p','sp-guide-page-summary');
+  panelMeta.append(pageTitle,pageSummary);panelTitleBox.append(panelTitle,panelMeta);
+  const noteButton=spGuideIconButton('记笔记','pencil','sp-guide-note-button',()=>openGuidedNote());
+  const collapseButton=spGuideIconButton('收起导学','close','sp-guide-collapse',()=>setPanelOpen(false));
+  panelHead.append(panelTitleBox,noteButton,collapseButton);
+
+  const scroll=el('div','sp-guide-scroll');
+  const contextCard=el('section','sp-guide-context');
+  const contextLabel=el('div','sp-guide-context-label','本页');
+  const checkHost=el('div','sp-guide-checks');
+  contextCard.append(contextLabel,checkHost);
+  const chatHead=el('div','sp-guide-chat-head');
+  chatHead.append(el('span',null,'问答'),el('span','sp-guide-live',''));
+  const thread=el('div','sp-guide-thread');
+  scroll.append(contextCard,chatHead,thread);
+
+  const composer=el('footer','sp-guide-composer');
+  const input=el('textarea','sp-guide-input');
+  input.rows=2;input.placeholder='问当前页的问题';
+  input.setAttribute('aria-label','问当前页的问题');
+  const composerRow=el('div','sp-guide-compose-row');
+  const scope=el('span','sp-guide-scope','第 1 / '+slides.length+' 页');
+  const send=el('button','sp-guide-send','');
+  send.type='button';send.setAttribute('aria-label','发送');send.title='发送';
+  send.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+  composerRow.append(scope,send);composer.append(input,composerRow);
+  panel.append(panelHead,scroll,composer);
+
+  const currentSlide=()=>slides[state.idx]||{};
+  const currentMoments=()=>Array.isArray(currentSlide().teachingMoments)?currentSlide().teachingMoments:[];
+  const sourceQuote=(moment)=>{
+    const anchor=spGuideText(moment?.anchorText).trim();if(anchor)return anchor;
+    const bullets=Array.isArray(currentSlide().bullets)?currentSlide().bullets:[];
+    if(bullets.length)return spGuideText(bullets[0]);
+    return spGuideText(currentSlide().title);
+  };
+  const answeredFor=(momentId)=>{
+    const all=state.context?.answeredCheckpoints;
+    if(all&&typeof all==='object'&&all[momentId])return all[momentId];
+    return state.answered[momentId]||null;
+  };
+
+  const setPanelOpen=open=>{
+    state.open=!!open;
+    shell.classList.toggle('guide-open',state.open);
+    shell.classList.toggle('guide-closed',!state.open);
+    panel.setAttribute('aria-hidden',state.open?'false':'true');
+    toggle.textContent=state.open?'收起':'导学';
+    toggle.setAttribute('aria-expanded',state.open?'true':'false');
+    scrim.hidden=!(state.open&&innerWidth<=940);
+    if(state.open)requestAnimationFrame(()=>scroll.scrollTop=scroll.scrollHeight);
+  };
+
+  const syncComposer=()=>{
+    send.disabled=state.busy||!input.value.trim();
+    send.classList.toggle('busy',state.busy);
+    input.disabled=state.busy;
+    noteButton.disabled=state.busy;
+  };
+
+  const guidedIntro=()=>{
+    const s=currentSlide();const box=el('div','sp-guide-intro');
+    box.append(el('p','sp-guide-intro-kicker','当前页'));
+    box.append(el('p','sp-guide-intro-text',spGuideClip(s.speakerNote||(Array.isArray(s.bullets)?s.bullets[0]:'')||'先看这一页，遇到不懂的可以直接问。',180)));
+    const actions=el('div','sp-guide-starters');
+    actions.append(btn('解释本页','ghost sm',()=>submitGuideQuestion('请解释当前页的核心内容，并指出最容易混淆的一点。')),btn('举个例子','ghost sm',()=>submitGuideQuestion('请结合当前页内容举一个具体例子，并说明它为什么适用。')));
+    box.appendChild(actions);return box;
+  };
+
+  const paintThread=()=>{
+    thread.replaceChildren();
+    const turns=typeof turnsFromEvents==='function'?turnsFromEvents(state.events||[]):[];
+    if(!turns.length&&!state.notices.length&&!state.pendingUser&&!state.busy)thread.appendChild(guidedIntro());
+    for(const t of turns){
+      if(t.user){const bubble=el('article','sp-guide-msg user');bubble.textContent=t.user;thread.appendChild(bubble);}
+      for(const it of t.items||[]){
+        if(it.t==='a'){
+          const bubble=el('article','sp-guide-msg assistant'+(it.streaming?' streaming':''));
+          const body=el('div','md');body.innerHTML=md(it.text||'');bubble.appendChild(body);
+          if(it.streaming)bubble.appendChild(el('span','sp-guide-caret'));thread.appendChild(bubble);
+        }else if(it.t==='tool'){
+          const d=el('details','sp-guide-tool');
+          const sum=el('summary','sp-guide-tool-sum');
+          sum.append(el('span','sp-guide-tool-dot'+(it.ok===false?' failed':'')),el('span','grow',it.name||'工具'),el('span','sp-guide-tool-state',it.running?'运行':(it.ok===false?'失败':'完成')));
+          d.appendChild(sum);
+          if(it.args&&Object.keys(it.args).length)d.appendChild(el('pre','sp-guide-tool-detail',JSON.stringify(it.args,null,2)));
+          if(it.summary)d.appendChild(el('pre','sp-guide-tool-detail',spGuideClip(it.summary,1600)));
+          thread.appendChild(d);
+        }else if(it.t==='think'&&it.text){
+          const d=el('details','sp-guide-think');d.append(el('summary',null,'思考'),el('p',null,it.text));thread.appendChild(d);
+        }
+      }
+      if(t.ok===false&&t.message)thread.appendChild(el('p','sp-guide-error',t.message));
+    }
+    if(state.pendingUser)thread.appendChild(el('article','sp-guide-msg user',state.pendingUser));
+    for(const n of state.notices){const box=el('article','sp-guide-note-notice');box.append(el('strong',null,n.title||'笔记'),el('p',null,n.text));thread.appendChild(box);}
+    if(state.error)thread.appendChild(el('p','sp-guide-error',state.error));
+    if(state.busy&&!turns.some(t=>(t.items||[]).some(it=>it.t==='a'&&it.streaming))){
+      const typing=el('div','sp-guide-typing');typing.append(el('span'),el('span'),el('span'));thread.appendChild(typing);
+    }
+    requestAnimationFrame(()=>{if(state.open)scroll.scrollTop=scroll.scrollHeight;});
+  };
+
+  const submitAnswer=async(moment,index)=>{
+    if(!state.sessionId||state.answering)return;
+    await focusNow().catch(e=>toast(e.message));
+    state.answering=moment.momentId;paintChecks();
+    try{
+      const result=await api('/api/guided/checkpoint',{sessionId:state.sessionId,momentId:moment.momentId,answerIndex:index});
+      state.answered[moment.momentId]=result;
+      if(!state.context)state.context={};
+      if(!state.context.answeredCheckpoints||typeof state.context.answeredCheckpoints!=='object')state.context.answeredCheckpoints={};
+      state.context.answeredCheckpoints[moment.momentId]=result;
+    }catch(e){toast(e.message);}
+    finally{state.answering='';paintChecks();}
+  };
+
+  const paintChecks=()=>{
+    checkHost.replaceChildren();
+    checkHost.hidden=true;
+    const moments=currentMoments().filter(m=>m&&(m.type==='quiz'||m.type==='summary'));
+    if(!moments.length)return;
+    checkHost.hidden=false;
+    for(const m of moments){
+      const card=el('section','sp-guide-check '+(m.type==='quiz'?'quiz':'summary'));
+      const top=el('div','sp-guide-check-top');
+      top.append(el('span','sp-guide-check-kind',m.type==='quiz'?'检查':'小结'),el('strong',null,m.title||(m.type==='quiz'?'检查理解':'本页小结')));
+      card.appendChild(top);
+      if(m.type==='quiz'){
+        if(m.prompt)card.appendChild(el('p','sp-guide-prompt',m.prompt));
+        const options=el('div','sp-guide-options');
+        const result=answeredFor(m.momentId);const locked=!!result||state.answering===m.momentId;
+        const values=Array.isArray(m.options)?m.options:[];
+        values.forEach((text,i)=>{
+          const o=el('button','sp-guide-option'+(locked?' locked':''),'');
+          o.type='button';o.disabled=locked;
+          o.append(el('span','sp-guide-option-letter',String.fromCharCode(65+i)),el('span','grow',spGuideText(text)));
+          if(result){
+            if(i===Number(result.correctIndex))o.classList.add('right');
+            if(!spGuideTruth(result.correct)&&i===Number(result.answerIndex))o.classList.add('wrong');
+            if(i===Number(result.answerIndex))o.classList.add('chosen');
+          }
+          if(!result)o.addEventListener('click',()=>submitAnswer(m,i));
+          options.appendChild(o);
+        });
+        card.appendChild(options);
+        if(result){
+          const ok=spGuideTruth(result.correct);const fb=el('div','sp-guide-feedback '+(ok?'right':'wrong'));
+          fb.appendChild(el('strong',null,ok?'回答正确':'需要再看'));
+          fb.appendChild(el('p',null,spGuideText(result.explanation)||('正确答案是 '+String.fromCharCode(65+Number(result.correctIndex))+'：'+spGuideText(result.correctText))));
+          fb.appendChild(el('span','sp-guide-recorded',spGuideTruth(result.repeated)?'首次结果已保存，本次不重复计分。':'首次作答已记录。'));
+          card.appendChild(fb);
+        }
+      }else{
+        const points=Array.isArray(m.points)?m.points:[];
+        if(points.length){const ul=el('ul','sp-guide-points');for(const p of points)ul.appendChild(el('li',null,p));card.appendChild(ul);}
+        if(m.notePrompt)card.appendChild(el('p','sp-guide-note-prompt',m.notePrompt));
+        card.appendChild(btn('记笔记','ghost sm',()=>openGuidedNote(m)));
+      }
+      checkHost.appendChild(card);
+    }
+  };
+
   const paint=()=>{
-    const s=slides[state.idx]||{};
+    const s=currentSlide();
     canvas.replaceChildren();
     if(s.eyebrow)canvas.appendChild(el('div','sp-eyebrow',s.eyebrow));
     canvas.appendChild(el('h2','sp-slide-title',s.title||('第 '+(state.idx+1)+' 页')));
     const bullets=Array.isArray(s.bullets)?s.bullets:[];
     if(bullets.length){const ul=el('ul','sp-slide-bullets');for(const b of bullets)ul.appendChild(el('li',null,b));canvas.appendChild(ul);}
-    if(s.body){const b=el('article','md sp-slide-body');b.innerHTML=md(s.body);canvas.appendChild(b);}
+    if(s.body){const body=el('article','md sp-slide-body');body.innerHTML=md(s.body);canvas.appendChild(body);}
     notes.textContent=s.speakerNote?('讲稿：'+s.speakerNote):'这一页没有讲稿。';
     pos.textContent='第 '+(state.idx+1)+' / '+slides.length+' 页';
     counter.textContent='导学 '+(state.idx+1)+' / '+slides.length+' 页';
-    prev.disabled=state.idx<=0;next.textContent=state.idx>=slides.length-1?'回到第一页':'下一页 ›';
+    scope.textContent='第 '+(state.idx+1)+' / '+slides.length+' 页';
+    prev.disabled=state.idx<=0;
+    next.textContent=state.idx>=slides.length-1?'回到第一页':'下一页 ›';
     dots.querySelectorAll('button').forEach((b,i)=>b.classList.toggle('on',i===state.idx));
-    saveProgress(false);
+    pageTitle.textContent=s.title||('第 '+(state.idx+1)+' 页');
+    pageSummary.textContent=spGuideClip(bullets[0]||s.speakerNote||'可以直接问不懂的地方。',120);
+    contextLabel.textContent='第 '+(state.idx+1)+' 页 · 本页';
+    paintChecks();
+    persistProgress(false);
+    queueFocus();
   };
-  const jump=i=>{state.idx=Math.max(0,Math.min(slides.length-1,i));paint();};
-  const saveProgress=immediate=>{
+
+  const jump=i=>{
+    const next=Math.max(0,Math.min(slides.length-1,i));
+    if(next!==state.idx)state.userNavigated=true;
+    state.idx=next;state.answering='';paint();
+  };
+
+  const persistProgress=immediate=>{
     if(state.saveTimer){clearTimeout(state.saveTimer);state.saveTimer=0;}
     const body={name:key,page:state.idx+1,pageCount:slides.length};
     if(immediate)return api('/api/artifacts/progress/save',body).catch(()=>{});
-    state.saveTimer=setTimeout(()=>{state.saveTimer=0;api('/api/artifacts/progress/save',body).catch(()=>{});},400);
+    state.saveTimer=setTimeout(()=>{state.saveTimer=0;api('/api/artifacts/progress/save',body).catch(()=>{});},380);
     return Promise.resolve();
   };
+
+  const focusNow=async()=>{
+    if(!state.sessionId)return null;
+    if(state.focusTimer){clearTimeout(state.focusTimer);state.focusTimer=0;}
+    const target=state.idx+1;
+    if(state.focusedSlide===target&&state.context)return state.context;
+    if(state.focusPromise&&state.focusPromise.target===target)return state.focusPromise.promise;
+    const seq=++state.focusSeq;
+    const promise=api('/api/guided/focus',{sessionId:state.sessionId,slide:target}).then(context=>{
+      if(seq===state.focusSeq&&state.idx+1===target){state.context=context;state.focusedSlide=target;paintChecks();}
+      return context;
+    }).finally(()=>{if(state.focusPromise?.promise===promise)state.focusPromise=null;});
+    state.focusPromise={target,promise};return promise;
+  };
+
+  const queueFocus=()=>{
+    if(!state.sessionId)return;
+    if(state.focusTimer)clearTimeout(state.focusTimer);
+    state.focusTimer=setTimeout(()=>{state.focusTimer=0;focusNow().catch(()=>{});},140);
+  };
+
+  const ensureLastEvent=async()=>{
+    if(!state.sessionId)return;
+    const d=await api('/api/sessions/events',{sessionId:state.sessionId});
+    state.events=d.events||[];state.lastId=Number(d.lastId||0);
+    state.pendingUser='';paintThread();
+  };
+
+  const pollEvents=async()=>{
+    if(!state.sessionId||state.pollInFlight)return;
+    state.pollInFlight=true;
+    try{
+      const d=await api('/api/sessions/events',{sessionId:state.sessionId,sinceId:state.lastId||0});
+      const fresh=d.events||[];
+      if(fresh.length)state.events=state.events.concat(fresh);
+      state.lastId=Number(d.lastId||state.lastId||0);
+      if(state.events.some(e=>e.type==='user/message'&&spGuideText(e.payload?.text)===state.pendingUser))state.pendingUser='';
+      paintThread();
+    }catch(e){}finally{state.pollInFlight=false;}
+  };
+
+  const submitGuideQuestion=async(raw)=>{
+    const text=spGuideText(raw===undefined?input.value:raw).trim();
+    if(!text||state.busy||!state.sessionId)return;
+    input.value='';state.error='';state.busy=true;state.pendingUser=text;state.requestController=new AbortController();
+    syncComposer();paintThread();await focusNow().catch(()=>{});
+    let timer=setInterval(pollEvents,280);
+    try{
+      const result=await api('/api/agent/ask-pi',{
+        kbId:'',question:text,attachments:[],sessionId:state.sessionId,web:'auto',mode:'chat',
+        skill:'',perm:state.cfg?.agentPerm||'auto',ctxChapter:spGuideText(currentSlide().title)
+      },state.requestController.signal);
+      if(result?.ok===false)throw new Error(result.message||'这一轮没有完成');
+    }catch(e){
+      if(!state.cleaned)state.error=e.message||'这一轮没有完成';
+    }finally{
+      clearInterval(timer);timer=0;
+      await pollEvents().catch(()=>{});
+      await ensureLastEvent().catch(()=>{});
+      state.busy=false;state.requestController=null;state.pendingUser='';syncComposer();paintThread();
+    }
+  };
+
+  const openGuidedNote=async(moment)=>{
+    if(!state.sessionId){toast('导学会话还没有准备好');return;}
+    await focusNow().catch(e=>toast(e.message));
+    const source=sourceQuote(moment);
+    const d=courseDialog('记笔记',(currentSlide().title||'当前页')+' · 第 '+(state.idx+1)+' 页');
+    state.noteDialog=d;
+    const body=el('div','sp-guide-note-form');
+    const quote=el('p','sp-guide-note-source','来源：'+(source||'当前页'));
+    const area=el('textarea','sp-guide-note-textarea');
+    area.rows=7;area.placeholder=spGuideText(moment?.notePrompt)||'写下你的理解、疑问或例子…';
+    const actions=el('div','sp-guide-note-actions');
+    const cancel=btn('取消','ghost',()=>d.close());
+    const save=btn('保存笔记','primary',async()=>{
+      const text=area.value.trim();if(!text){area.focus();return;}
+      save.disabled=true;
+      try{
+        const note=await api('/api/guided/note',{sessionId:state.sessionId,title:'',text,quote:source});
+        state.notices.push({title:note?.title||'笔记已保存',text});
+        d.close();state.noteDialog=null;toast('笔记已保存并关联到当前页');paintThread();
+      }catch(e){toast(e.message);save.disabled=false;}
+    });
+    actions.append(cancel,save);body.append(quote,area,actions);d.body.appendChild(body);area.focus();
+  };
+
   for(const[i]of slides.entries()){const dot=btn('','sp-dot',()=>jump(i));dot.setAttribute('aria-label','第 '+(i+1)+' 页');dots.appendChild(dot);}
-  page.appendChild(el('p','sp-hint','交互导学：← → 或空格翻页，PgUp/PgDn 也是；「讲稿」按钮显示讲者备注。离开后按断点继续。'));
+  input.addEventListener('input',syncComposer);
+  input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();submitGuideQuestion();}});
+  send.addEventListener('click',()=>submitGuideQuestion());
+  toggle.addEventListener('click',()=>setPanelOpen(!state.open));
+  scrim.addEventListener('click',()=>setPanelOpen(false));
+
   const onKey=e=>{
     if(current!=='study'||!stage.isConnected)return;
-    if(['INPUT','TEXTAREA','SELECT'].includes(e.target?.tagName))return;
+    const target=e.target;
+    if(target?.closest?.('.sp-guide-panel,.course-modal-overlay'))return;
+    if(['INPUT','TEXTAREA','SELECT'].includes(target?.tagName)||target?.isContentEditable||target?.closest?.('button,a,[role="button"]'))return;
+    if(e.key==='Escape'&&state.open&&innerWidth<=940){e.preventDefault();setPanelOpen(false);return;}
     if(e.key==='ArrowRight'||e.key==='ArrowDown'||e.key===' '||e.key==='PageDown'){e.preventDefault();jump(state.idx+1);}
     else if(e.key==='ArrowLeft'||e.key==='ArrowUp'||e.key==='PageUp'){e.preventDefault();jump(state.idx-1);}
     else if(e.key==='Home'){e.preventDefault();jump(0);}else if(e.key==='End'){e.preventDefault();jump(slides.length-1);}
   };
-  window.addEventListener('keydown',onKey);
-  // 离开这一页时保存断点并解绑按键
-  const observer=new MutationObserver(()=>{if(!stage.isConnected){observer.disconnect();window.removeEventListener('keydown',onKey);saveProgress(true);}});
-  observer.observe(document.getElementById('view'),{childList:true});
-  paint();
-  api('/api/artifacts/progress',{name:key}).then(p=>{const page=Number(p?.page||0);if(page>1&&page<=slides.length){state.idx=page-1;paint();toast('从上次看到的第 '+page+' 页继续');}}).catch(()=>{});
-  return {countText:()=>{}};
-}
+  const onResize=()=>{
+    const narrow=innerWidth<=940;
+    if(narrow&&!state.wasNarrow)state.open=false;
+    state.wasNarrow=narrow;setPanelOpen(state.open);
+  };
+  window.addEventListener('keydown',onKey);window.addEventListener('resize',onResize);
 
+  const cleanup=()=>{
+    if(state.cleaned)return;state.cleaned=true;
+    observer.disconnect();window.removeEventListener('keydown',onKey);window.removeEventListener('resize',onResize);
+    if(state.saveTimer)clearTimeout(state.saveTimer);if(state.focusTimer)clearTimeout(state.focusTimer);
+    state.requestController?.abort();state.noteDialog?.close?.();persistProgress(true);
+  };
+  const observer=new MutationObserver(()=>{if(!page.isConnected)cleanup();});
+  observer.observe(document.getElementById('view'),{childList:true});
+
+  const loadGuided=async()=>{
+    try{
+      const resolved=await api('/api/guided/session/resolve',{resourceId:res.id,version:res.version});
+      if(state.cleaned||!page.isConnected)return;
+      state.sessionId=resolved.sessionId;
+      state.context=resolved.context||null;
+      const resumed=Math.max(1,Math.min(slides.length,Number(resolved.slide||1)));
+      // 初始化请求可能比用户第一次翻页更慢；用户操作优先，避免把第 2 页悄悄改回第 1 页。
+      const keepNavigation=state.userNavigated;
+      if(!keepNavigation){state.idx=resumed-1;state.focusedSlide=resumed;
+        const legacy=await api('/api/artifacts/progress',{name:key}).catch(()=>null);
+        if(spGuideTruth(resolved.created)&&Number(legacy?.page||0)>1&&Number(legacy.page)<=slides.length){
+          state.idx=Number(legacy.page)-1;
+          await focusNow().catch(()=>{});
+        }
+      }
+      await ensureLastEvent().catch(()=>{});
+      paint();setPanelOpen(state.open);
+    }catch(e){
+      if(state.cleaned)return;
+      contextCard.hidden=false;checkHost.replaceChildren(el('p','sp-guide-error','导学会话暂不可用：'+e.message));
+      thread.replaceChildren(el('p','sp-guide-empty','课件仍可正常翻页；右侧导学恢复后才能提问和记笔记。'));
+    }
+  };
+
+  paint();syncComposer();setPanelOpen(state.open);
+  api('/api/artifacts/progress',{name:key}).then(p=>{
+    const page=Number(p?.page||0);
+    if(!state.sessionId&&page>1&&page<=slides.length){state.idx=page-1;paint();toast('从上次看到的第 '+page+' 页继续');}
+  }).catch(()=>{});
+  loadGuided();
+  return{countText:()=>{}};
+}
 /* ---------- 页面装配 ---------- */
 
 async function renderStudyPlayer(){
@@ -336,7 +691,7 @@ async function renderStudyPlayer(){
   if(res.kind==='lecture')spRenderLecture(page,res,asset);
   else if(res.kind==='practice')spRenderPractice(page,res,asset);
   else if(res.kind==='quiz')spRenderQuiz(page,res,asset);
-  else if(res.kind==='ppt')spRenderPpt(page,res,asset);
+  else if(res.kind==='ppt')await spRenderPpt(page,res,asset);
   else{
     page.appendChild(spBreadcrumb(res,asset));page.appendChild(spHead(res,asset,'',[]));
     const article=el('article','md sp-body');article.innerHTML=md(res.markdown||'');page.appendChild(article);

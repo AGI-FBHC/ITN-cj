@@ -187,6 +187,13 @@ public class StudyNote {
     public var title: String = ""
     public var text: String = ""
     public var createdAt: String = ""
+    /** 以下字段是学习资源/导学来源元数据；正文表结构不变，兼容旧数据库。 */
+    public var updatedAt: String = ""
+    public var resourceId: String = ""
+    public var resourceVersion: Int64 = 0
+    public var page: Int64 = 0
+    public var slideTitle: String = ""
+    public var sourceQuote: String = ""
 
     public init() {}
 
@@ -198,6 +205,12 @@ public class StudyNote {
         o.put("title", JsonString(title))
         o.put("text", JsonString(text))
         o.put("createdAt", JsonString(createdAt))
+        o.put("updatedAt", JsonString(updatedAt))
+        o.put("resourceId", JsonString(resourceId))
+        o.put("resourceVersion", JsonInt(resourceVersion))
+        o.put("page", JsonInt(page))
+        o.put("slideTitle", JsonString(slideTitle))
+        o.put("sourceQuote", JsonString(sourceQuote))
         return o
     }
 
@@ -211,6 +224,12 @@ public class StudyNote {
                 n.title = strOf(o, "title")
                 n.text = strOf(o, "text")
                 n.createdAt = strOf(o, "createdAt")
+                n.updatedAt = strOf(o, "updatedAt")
+                n.resourceId = strOf(o, "resourceId")
+                n.resourceVersion = intOf(o, "resourceVersion")
+                n.page = intOf(o, "page")
+                n.slideTitle = strOf(o, "slideTitle")
+                n.sourceQuote = strOf(o, "sourceQuote")
             case None => ()
         }
         return n
@@ -559,6 +578,7 @@ public class StudyStore {
             n.title = r.text(3)
             n.text = r.text(4)
             n.createdAt = r.text(5)
+            loadNoteMeta(n)
             d.notes.add(n)
         }
         for (r in db().querySql("SELECT id, kb_id, chapter, question, my_answer, reference, correct, created_at " +
@@ -575,6 +595,40 @@ public class StudyStore {
             d.quizRecords.add(q)
         }
         return d
+    }
+
+    /** 笔记来源元数据不新增表列，老数据库直接可用；只按 note id 读回。 */
+    private func loadNoteMeta(n: StudyNote): Unit {
+        let raw = db().getKv("meta", "study-note-meta:" + n.id, "")
+        if (raw.size == 0) {
+            return
+        }
+        try {
+            let o = objOf(JsonValue.fromStr(raw)).getOrDefault({ => JsonObject() })
+            n.updatedAt = strOf(o, "updatedAt")
+            n.resourceId = strOf(o, "resourceId")
+            n.resourceVersion = intOf(o, "resourceVersion")
+            n.page = intOf(o, "page")
+            n.slideTitle = strOf(o, "slideTitle")
+            n.sourceQuote = strOf(o, "sourceQuote")
+        } catch (e: Exception) {
+            ()
+        }
+    }
+
+    public func saveNoteMeta(n: StudyNote): Unit {
+        let o = JsonObject()
+        o.put("updatedAt", JsonString(if (n.updatedAt.size > 0) { n.updatedAt } else { nowStamp() }))
+        o.put("resourceId", JsonString(n.resourceId))
+        o.put("resourceVersion", JsonInt(n.resourceVersion))
+        o.put("page", JsonInt(n.page))
+        o.put("slideTitle", JsonString(n.slideTitle))
+        o.put("sourceQuote", JsonString(n.sourceQuote))
+        db().putKv("meta", "study-note-meta:" + n.id, o.toString())
+    }
+
+    public func deleteNoteMeta(id: String): Unit {
+        db().delKv("meta", "study-note-meta:" + id)
     }
 
     public func save(d: StudyData): Unit {

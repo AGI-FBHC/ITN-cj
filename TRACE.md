@@ -4548,3 +4548,33 @@ read_chunk 读得到原文并带回库标识与正文。
 
 - 补充提交 `08a436a`：`detailLevel` 支持中文/英文归一化（精简/均衡/详细 → concise/balanced/detailed），准备运行时脚本增加仓库边界保护；重新打包后 `release.json` 的 `sourceCommit=08a436a`，19 项资产 SHA256 BAD=0，打包内核 + renderer 的 `presentation-agent-check` 11/11 通过。
 - 文档校正 dad6f17：接口契约同步 designPath，移除已不再返回的 outlineSlides 字段。
+
+## 2026-10-19 · 桌面端交互导学侧栏（资源版本绑定会话）
+- 用户目标：把桌面版在线演示从“只能翻页的课件”升级为默认打开的交互导学侧栏；导学 Agent 必须知道当前正在学习的课件页，并能围绕该页提问、做检查点和记关联笔记。用户此前明确要求：后续每新增一项 harness 能力，都要提供 Lumin 可直接调用的工具，并用真实状态变化重复测试，不能只测 HTTP 200 或工具名存在。
+- 架构与数据：
+  - 新增 `core/src/guided/guided.cj`。导学会话按 `resourceId + version` 稳定绑定；同版本重复进入恢复同一 session，新版本另建 session，旧版本笔记/检查点/访问记录保留。导学会话通过 `sessions_meta / guided:<sid>` 标记，并从普通 `/api/sessions/list` 中隐藏。
+  - 新增 `/api/guided/session/resolve`、`/focus`、`/context`、`/checkpoint`、`/note`。打开侧栏只组装本地上下文，不自动调用模型；翻页更新当前页与 `visitedSlides`，不会把翻页当成掌握。
+  - 检查点答案只由服务端从资源结构核验；首次作答写一条 `learning_events(kind=guided-checkpoint)`，重复提交返回第一次结果并带 `repeated=true`，不重复增加证据。
+  - 笔记复用现有学习笔记存储，不新增表；通过现有 JSON 元数据补 `resourceId/resourceVersion/page/slideTitle/sourceQuote/updatedAt`，保证笔记可追溯到具体课件版本与页面原文。
+  - 新增 `core/src/agent/guided_tools.cj`，仅在导学会话中出现 `read_guided_lesson`、`submit_guided_checkpoint`、`save_guided_note`、`open_guided_lesson`。检查点必须能逐字找到用户本轮 quote 且出现选项字母/原文；笔记必须出现“记笔记/记下/记录/保存”等明确意图，模型不能代答或擅自落库。
+  - `/api/agent/ask-pi` 对导学会话注入实时课件页、前后页、目录、检查点与访问记录；给模型的上下文剥离 `answerIndex/explanation`，避免答案泄露。
+- 前端：
+  - `shell/renderer/studyplayer.js/.css` 改成左侧课件、右侧导学双栏。桌面默认展开，可折叠；宽度 ≤940px 改为右侧抽屉，最大 460px，保留可点击的左侧遮罩，≤620px 再缩边距。
+  - 侧栏展示当前页标题/摘要、检查点、访问进度和问答线程；quiz 四选一提交后锁定第一次结果并显示解析；summary 展示要点与笔记提示。
+  - 顶部铅笔 icon 打开记笔记弹窗，自动带入资源、版本、页码、页标题和当前页原文来源；保存后线程显示关联提示。
+  - 翻页同步 `/api/guided/focus` 与旧版 `artifacts/progress`；离开页面清理键盘/resize 监听、请求、轮询与弹窗。
+  - 修复实测竞态：用户第一次翻页可能早于导学 `resolve` 返回，延迟初始化曾把页码回滚到旧页。加入 `state.userNavigated`，用户导航优先；测试用 450ms 人为延迟复现并验证。
+  - 修复实测窄屏交互：原先抽屉铺满学习区，`.sp-guide-scrim` 只剩 12px 边距，Playwright 默认点击会被面板拦截。改为右对齐最大 460px 抽屉，遮罩外侧可真实点击关闭。
+- PPT 检查点生成：
+  - `core/src/resource/generate.cj` 增加服务端 `teachingMoments` 规范化与质量回填：quiz 恰好 4 个不重复选项、合法 answerIndex、prompt/explanation/anchorText；summary 2–4 个要点与 notePrompt；缺失时在合适页回填，旧 PPT 仍兼容。
+- 测试（说明测什么、怎么触发、能抓住什么）：
+  - `core/src/unittests/guided_test.cj` 覆盖版本恢复/隔离、Agent 上下文不泄答案、重复检查点不重复写证据、笔记来源、四个导学工具出现，以及直接执行 `DomainTool.run` 验证读页焦点、防代答、防无意图落库、深链正确；新增执行测试先出现一次 `.size()` 编译错误，已修正为仓颉属性 `.size`。
+  - `cjpm test --no-progress --no-color`：160/160 PASS，耗时 93.5s；日志 `tmp/cjpm-test-guided-final.log`。过滤单测 `guidedToolsExecuteStatefulOperationsWithConsentGuards`：1/1 PASS，日志 `tmp/cjpm-guided-tools.log`。
+  - `node tools/guided-check.cjs` 使用最终 `dist/core` 连跑两遍：均 35/35 PASS，单次 9.6s；日志 `tmp/guided-check-final-1.log`、`tmp/guided-check-final-2.log`。覆盖同版本恢复、普通会话过滤、翻页 focus/访问页、quiz 正误、重复提交不重复计数、笔记来源、刷新恢复、桌面折叠、深色主题、窄屏抽屉/遮罩、真实 `ask-pi` mock 回复、离开停止轮询、内核重启恢复、浏览器/API 无异常。
+  - 回归：`tools/course-check.cjs` 81/81；`tools/learning-check.cjs` 45/45；`tools/session-switch-check.cjs` 12/12。日志分别在 `tmp/course-check-guided-final.log`、`tmp/learning-check-guided-final.log`、`tmp/session-switch-guided-final.log`。
+  - `pwsh -File scripts/build.ps1` 与 `scripts/package.ps1` 均成功；最终 `dist/core/itn-desktop-core.exe` 18.55MB。截图：`tmp/guided-shots/guided-desktop-light.png`、`guided-desktop-dark.png`、`guided-narrow.png`，已目视检查窄屏抽屉和遮罩区域。
+- 已知限制/交接：
+  - 本轮导学问答使用仓库 mock 模型验证完整 HTTP/事件/渲染链路，没有消耗真实模型额度；真实模型教学质量仍取决于 provider，但页面上下文与工具边界由服务端保证。
+  - 导学侧栏不自动生成对话，只有用户提问、提交检查点或明确记笔记时才产生模型/写入动作。
+  - 旧 PPT 没有 `teachingMoments` 时仍可播放，只是没有结构化 quiz/summary；要获得交互检查点需重新生成或由生成服务补齐。
+  - 两份原有未跟踪调研文档 `docs/知识库改进清单-v2.md`、`docs/非对话页面改造方案-v1.md` 继续保留，不纳入本次提交。

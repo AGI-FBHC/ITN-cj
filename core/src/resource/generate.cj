@@ -275,9 +275,18 @@ func quizQuestionsPrompt(topic: String, count: Int64, kps: String, context: Stri
 }
 
 func pptPrompt(topic: String, count: Int64, digest: String, context: String): String {
-    return "你是演示稿设计者。只输出一个 JSON 对象：{\"title\":\"\",\"subtitle\":\"\",\"slides\":[{\"title\":\"\"," +
-        "\"bullets\":[\"\",\"\"],\"speakerNote\":\"\"}]}。\n" +
-        "要求：正好 " + count.toString() + " 页；每页 2~5 条要点，每条一行、不超过 40 字；标题不重复；speakerNote 写这一页怎么讲（30 字以上）。" +
+    return "你是演示稿设计者，同时负责设计课堂中的即时检查点。只输出一个 JSON 对象：" +
+        "{\"title\":\"\",\"subtitle\":\"\",\"slides\":[{\"title\":\"\",\"eyebrow\":\"\",\"kind\":\"concept|process|summary\"," +
+        "\"bullets\":[\"\",\"\"],\"speakerNote\":\"\",\"teachingMoments\":[" +
+        "{\"momentId\":\"s3-quiz-1\",\"type\":\"quiz\",\"title\":\"检查理解\",\"prompt\":\"\",\"options\":[\"\",\"\",\"\",\"\"]," +
+        "\"answerIndex\":0,\"explanation\":\"\",\"anchorText\":\"\"}," +
+        "{\"momentId\":\"s8-summary-1\",\"type\":\"summary\",\"title\":\"本页小结\",\"points\":[\"\",\"\"]," +
+        "\"notePrompt\":\"\",\"anchorText\":\"\"}]}]}。\n" +
+        "要求：正好 " + count.toString() + " 页；每页 2~5 条要点，每条一行、不超过 40 字；标题不重复；speakerNote 写这一页怎么讲（30 字以上）。\n" +
+        "teachingMoments 可以为空数组；从第 3 页起，任意连续 3 页内至少有一道 quiz。最后一页必须至少有一个 summary。" +
+        "quiz 必须能仅凭当前页内容作答，prompt 是具体情境题，options 恰好 4 个且互不重复，answerIndex 为 0~3 的整数，" +
+        "explanation 至少 30 字并说明正确项与错误项；summary 的 points 为 2~4 条可复述要点，notePrompt 引导用户用自己的话写笔记。" +
+        "momentId 全篇唯一；anchorText 必须逐字来自本页某条 bullets。不要在其他字段里泄露 answerIndex 或 explanation。\n" +
         "主题：" + topic + "\n已有资料线索：\n" + digest + "\n\n资料原文：\n" + context
 }
 
@@ -615,6 +624,266 @@ func generateStructured(run: Run, req: ResourceRequest, hits: JsonArray): ?JsonO
     return out
 }
 
+/* ---------- 演示稿教学检查点：服务端规范化 ---------- */
+
+func jsonObjectValue(v: JsonValue): JsonObject {
+    match (objOf(v)) {
+        case Some(o) => return o
+        case None => return JsonObject()
+    }
+}
+
+func jsonArrayField(o: JsonObject, key: String): JsonArray {
+    match (o.get(key)) {
+        case Some(v) => match (arrOf(v)) {
+            case Some(a) => return a
+            case None => return JsonArray()
+        }
+        case None => return JsonArray()
+    }
+}
+
+func momentAnswerIndex(m: JsonObject): Int64 {
+    match (m.get("answerIndex")) {
+        case Some(v) => match (v) {
+            case j: JsonInt => return j.getValue()
+            case _ => return -1
+        }
+        case None => return -1
+    }
+}
+
+func uniqueMomentId(baseIn: String, used: HashSet<String>): String {
+    var base = trimStr(baseIn)
+    if (base.size == 0) {
+        base = "moment"
+    }
+    var id = base
+    var n: Int64 = 1
+    while (used.contains(id)) {
+        n = n + 1
+        id = base + "-" + n.toString()
+    }
+    used.add(id)
+    return id
+}
+
+func momentOptions(values: ArrayList<String>): JsonArray {
+    let out = JsonArray()
+    for (x in values) {
+        out.add(JsonString(x))
+    }
+    return out
+}
+
+func fallbackQuiz(allSlides: ArrayList<JsonObject>, slide: JsonObject, slideNo: Int64,
+    used: HashSet<String>): JsonObject {
+    let title = strOf(slide, "title")
+    let bullets = strListIn(slide, "bullets")
+    var correct = if (bullets.size > 0) { bullets[0] } else { "本页的标题与讲解要点" }
+    if (trimStr(correct).size == 0) {
+        correct = "本页的标题与讲解要点"
+    }
+    let options = JsonArray()
+    let seen = HashSet<String>()
+    options.add(JsonString(correct))
+    seen.add(correct)
+    var i = 0
+    while (i < bullets.size && options.size() < 4) {
+        let x = bullets[i]
+        if (!seen.contains(x)) {
+            seen.add(x)
+            options.add(JsonString(x))
+        }
+        i = i + 1
+    }
+    i = 0
+    while (i < allSlides.size && options.size() < 4) {
+        if (i != slideNo - 1) {
+            for (x in strListIn(allSlides[i], "bullets")) {
+                if (options.size() >= 4) { break }
+                if (!seen.contains(x)) {
+                    seen.add(x)
+                    options.add(JsonString(x))
+                }
+            }
+        }
+        i = i + 1
+    }
+    let distractors = ["只需记住结论，不必说明依据", "跳过示例，直接记下答案", "所有情况都使用同一种做法"]
+    for (x in distractors) {
+        if (options.size() >= 4) { break }
+        if (!seen.contains(x)) {
+            seen.add(x)
+            options.add(JsonString(x))
+        }
+    }
+    let m = JsonObject()
+    m.put("momentId", JsonString(uniqueMomentId("s" + slideNo.toString() + "-quiz-fallback", used)))
+    m.put("type", JsonString("quiz"))
+    m.put("title", JsonString("检查理解"))
+    m.put("prompt", JsonString("关于「" + (if (title.size > 0) { title } else { "本页内容" }) + "」，以下哪一项是本页明确列出的要点？"))
+    m.put("options", options)
+    m.put("answerIndex", JsonInt(0))
+    m.put("explanation", JsonString("本页把「" + correct + "」列为明确要点；其余选项并非这一页的内容。判断时应回到本页要点，而不是凭印象选择。"))
+    m.put("anchorText", JsonString(correct))
+    return m
+}
+
+func fallbackSummary(slide: JsonObject, slideNo: Int64, used: HashSet<String>): JsonObject {
+    let title = strOf(slide, "title")
+    let points = JsonArray()
+    let bullets = strListIn(slide, "bullets")
+    var i = 0
+    while (i < bullets.size && points.size() < 4) {
+        points.add(JsonString(bullets[i]))
+        i = i + 1
+    }
+    if (points.size() < 2) {
+        points.add(JsonString("本页主题：" + (if (title.size > 0) { title } else { "第 " + slideNo.toString() + " 页" })))
+    }
+    if (points.size() < 2) {
+        points.add(JsonString("能用自己的话复述本页的核心判断"))
+    }
+    let m = JsonObject()
+    m.put("momentId", JsonString(uniqueMomentId("s" + slideNo.toString() + "-summary-fallback", used)))
+    m.put("type", JsonString("summary"))
+    m.put("title", JsonString("本页小结"))
+    m.put("points", points)
+    m.put("notePrompt", JsonString("用一句话写下你对「" + (if (title.size > 0) { title } else { "本页内容" }) + "」的理解。"))
+    m.put("anchorText", JsonString(if (bullets.size > 0) { bullets[0] } else { title }))
+    return m
+}
+
+/**
+ * 模型输出是草稿，结构化导学元数据必须过一遍服务端规范化：
+ * - 去掉缺题干、选项重复、答案越界的 quiz；
+ * - 统一 2~4 条 summary 要点与笔记提示；
+ * - 全篇 momentId 去重；
+ * - 模型漏检查点时，按本页原文补一个最小可用检查点，并在质量警告里如实说明。
+ */
+public func normalizePptTeachingMoments(content: JsonObject, warnings: ArrayList<String>): Unit {
+    let slides = objsIn(content, "slides")
+    if (slides.size == 0) {
+        return
+    }
+    let usedIds = HashSet<String>()
+    let cleaned = ArrayList<JsonArray>()
+    let quizCounts = ArrayList<Int64>()
+    var si = 0
+    while (si < slides.size) {
+        let slide = slides[si]
+        let source = jsonArrayField(slide, "teachingMoments")
+        let kept = JsonArray()
+        let defaultAnchor = if (strListIn(slide, "bullets").size > 0) { strListIn(slide, "bullets")[0] } else { strOf(slide, "title") }
+        var quizzes: Int64 = 0
+        var mi = 0
+        while (mi < source.size()) {
+            let m = jsonObjectValue(source[mi])
+            let typ = strOf(m, "type")
+            if (typ == "quiz") {
+                let options = strListIn(m, "options")
+                let uniq = HashSet<String>()
+                for (x in options) { uniq.add(x) }
+                let answer = momentAnswerIndex(m)
+                let prompt = trimStr(strOf(m, "prompt"))
+                if (options.size == 4 && uniq.size == 4 && answer >= 0 && answer <= 3 && prompt.size > 0) {
+                    let title = trimStr(strOf(m, "title"))
+                    let explanation = trimStr(strOf(m, "explanation"))
+                    let anchor = trimStr(strOf(m, "anchorText"))
+                    m.put("momentId", JsonString(uniqueMomentId(strOf(m, "momentId"), usedIds)))
+                    m.put("title", JsonString(if (title.size > 0) { title } else { "检查理解" }))
+                    m.put("options", momentOptions(options))
+                    m.put("answerIndex", JsonInt(answer))
+                    m.put("explanation", JsonString(if (explanation.size >= 10) { explanation } else {
+                        "正确选项与本页要点一致；其余选项不是这一页的讲解内容。判断时应回到本页原文。"
+                    }))
+                    m.put("anchorText", JsonString(if (anchor.size > 0) { anchor } else { defaultAnchor }))
+                    kept.add(m)
+                    quizzes = quizzes + 1
+                }
+            } else if (typ == "summary") {
+                let rawPoints = strListIn(m, "points")
+                if (rawPoints.size > 0) {
+                    let points = JsonArray()
+                    var pi = 0
+                    while (pi < rawPoints.size && points.size() < 4) {
+                        points.add(JsonString(rawPoints[pi]))
+                        pi = pi + 1
+                    }
+                    if (points.size() < 2) {
+                        points.add(JsonString("能用自己的话复述本页的核心判断"))
+                    }
+                    let title = trimStr(strOf(m, "title"))
+                    let notePrompt = trimStr(strOf(m, "notePrompt"))
+                    let anchor = trimStr(strOf(m, "anchorText"))
+                    m.put("momentId", JsonString(uniqueMomentId(strOf(m, "momentId"), usedIds)))
+                    m.put("title", JsonString(if (title.size > 0) { title } else { "本页小结" }))
+                    m.put("points", points)
+                    m.put("notePrompt", JsonString(if (notePrompt.size > 0) { notePrompt } else {
+                        "用一句话写下你对本页内容的理解。"
+                    }))
+                    m.put("anchorText", JsonString(if (anchor.size > 0) { anchor } else { defaultAnchor }))
+                    kept.add(m)
+                }
+            }
+            mi = mi + 1
+        }
+        cleaned.add(kept)
+        quizCounts.add(quizzes)
+        si = si + 1
+    }
+
+    var injectedQuiz: Int64 = 0
+    var lastQuizSlide: Int64 = 0
+    si = 0
+    while (si < slides.size) {
+        let slideNo = si + 1
+        if (quizCounts[si] > 0) {
+            lastQuizSlide = slideNo
+        } else {
+            let overdue = (lastQuizSlide == 0 && slideNo >= 3) || (lastQuizSlide > 0 && slideNo - lastQuizSlide >= 3)
+            if (overdue) {
+                cleaned[si].add(fallbackQuiz(slides, slides[si], slideNo, usedIds))
+                lastQuizSlide = slideNo
+                injectedQuiz = injectedQuiz + 1
+            }
+        }
+        si = si + 1
+    }
+    if (lastQuizSlide == 0 && slides.size > 0) {
+        let last = slides.size - 1
+        cleaned[last].add(fallbackQuiz(slides, slides[last], slides.size, usedIds))
+        injectedQuiz = injectedQuiz + 1
+    }
+
+    let lastIndex = slides.size - 1
+    var hasLastSummary = false
+    var li = 0
+    while (li < cleaned[lastIndex].size()) {
+        if (strOf(jsonObjectValue(cleaned[lastIndex][li]), "type") == "summary") {
+            hasLastSummary = true
+            break
+        }
+        li = li + 1
+    }
+    var injectedSummary: Int64 = 0
+    if (!hasLastSummary) {
+        cleaned[lastIndex].add(fallbackSummary(slides[lastIndex], slides.size, usedIds))
+        injectedSummary = 1
+    }
+
+    si = 0
+    while (si < slides.size) {
+        slides[si].put("teachingMoments", cleaned[si])
+        si = si + 1
+    }
+    if (injectedQuiz > 0 || injectedSummary > 0) {
+        warnings.add("为保证交互导学可用，服务端按本页要点补充了 " + injectedQuiz.toString() + " 道检查题、" +
+            injectedSummary.toString() + " 个总结检查点")
+    }
+}
+
 /** 分阶测试：先定知识点，再按三档难度分批出题。 */
 func generateQuiz(run: Run, req: ResourceRequest, hits: JsonArray): ?JsonObject {
     stepStart(run, 2, "questions")
@@ -893,6 +1162,10 @@ public func generateResourceWithCancel(store: Store, reqIn: ResourceRequest, sho
             content = repairContent(run, kind, content, req.detail, req.count, hits, req.maxRepair)
         } catch (e: CancelException) { res.ok = false; res.message = "已取消"; return res }
         rounds = run.repairRounds
+    }
+
+    if (kind == "ppt") {
+        normalizePptTeachingMoments(content, run.warnings)
     }
 
     let issues = checkContent(kind, content, req.detail, req.count, hits)

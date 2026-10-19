@@ -1,6 +1,7 @@
 package itn_desktop_core.api
 
 import itn_desktop_core.learning.*
+import itn_desktop_core.guided.GuidedStore
 import itn_desktop_core.course.*
 import itn_desktop_core.pi_app.TaskFeed
 import itn_desktop_core.project.ProjectStore
@@ -1532,6 +1533,54 @@ public class Api {
             return
         }
 
+        // ---------- 交互导学：课件绑定会话、页面焦点、检查点与关联笔记 ----------
+
+        if (path == "/api/guided/session/resolve" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => try {
+                    ok(ctx, GuidedStore(store.dataDir).resolve(strOf(b, "resourceId"), intOf(b, "version")))
+                } catch (e: Exception) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/guided/focus" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => try {
+                    ok(ctx, GuidedStore(store.dataDir).focus(strOf(b, "sessionId"), intOf(b, "slide")))
+                } catch (e: Exception) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/guided/context" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => try {
+                    ok(ctx, GuidedStore(store.dataDir).context(strOf(b, "sessionId")))
+                } catch (e: Exception) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/guided/checkpoint" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => try {
+                    ok(ctx, GuidedStore(store.dataDir).checkpoint(strOf(b, "sessionId"), strOf(b, "momentId"), intOf(b, "answerIndex")))
+                } catch (e: Exception) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/guided/note" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => try {
+                    ok(ctx, GuidedStore(store.dataDir).saveNote(strOf(b, "sessionId"), strOf(b, "title"), strOf(b, "text"), strOf(b, "quote")))
+                } catch (e: Exception) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+
         // ---------- 会话与产物 ----------
 
         if (path == "/api/sessions/new" && method == "POST") {
@@ -1900,9 +1949,12 @@ public class Api {
 
         if (path == "/api/sessions/list" && method == "POST") {
             let ss = SessionStore(store.dataDir)
+            let guided = GuidedStore(store.dataDir)
             let arr = JsonArray()
             for (sm in ss.list()) {
-                arr.add(sm)
+                if (!guided.isGuided(strOf(sm, "sessionId"))) {
+                    arr.add(sm)
+                }
             }
             let o = JsonObject()
             o.put("sessions", arr)
@@ -2649,25 +2701,44 @@ public class Api {
                     let ss = StudyStore(store.dataDir)
                     let d = ss.load()
                     let id = strOf(b, "id")
+                    var noteId = id
                     var found = false
                     for (n in d.notes) {
                         if (n.id == id && id.size > 0) {
                             n.title = strOf(b, "title")
                             n.text = strOf(b, "text")
+                            n.updatedAt = nowStamp()
+                            if (strOf(b, "resourceId").size > 0) { n.resourceId = strOf(b, "resourceId") }
+                            if (intOf(b, "resourceVersion") > 0) { n.resourceVersion = intOf(b, "resourceVersion") }
+                            if (intOf(b, "page") > 0) { n.page = intOf(b, "page") }
+                            if (strOf(b, "slideTitle").size > 0) { n.slideTitle = strOf(b, "slideTitle") }
+                            if (b.get("sourceQuote").isSome()) { n.sourceQuote = strOf(b, "sourceQuote") }
                             found = true
                         }
                     }
                     if (!found) {
                         let n = StudyNote()
                         n.id = "n" + nowStamp() + d.notes.size.toString()
+                        noteId = n.id
                         n.kbId = strOf(b, "kbId")
                         n.chapter = strOf(b, "chapter")
                         n.title = strOf(b, "title")
                         n.text = strOf(b, "text")
                         n.createdAt = nowStamp()
+                        n.updatedAt = n.createdAt
+                        n.resourceId = strOf(b, "resourceId")
+                        n.resourceVersion = intOf(b, "resourceVersion")
+                        n.page = intOf(b, "page")
+                        n.slideTitle = strOf(b, "slideTitle")
+                        n.sourceQuote = strOf(b, "sourceQuote")
                         d.notes.add(n)
                     }
                     ss.save(d)
+                    for (n in d.notes) {
+                        if (n.id == noteId) {
+                            ss.saveNoteMeta(n)
+                        }
+                    }
                     ok(ctx, JsonString("ok"))
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -2688,6 +2759,7 @@ public class Api {
                     }
                     d.notes = kept
                     ss.save(d)
+                    ss.deleteNoteMeta(id)
                     ok(ctx, JsonString("ok"))
                 case None => fail(ctx, 400, "请求体不是合法 JSON")
             }
@@ -3226,6 +3298,11 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/learning/memory/forget",
         "/api/learning/answer",
         "/api/learning/progress",
+        "/api/guided/session/resolve",
+        "/api/guided/focus",
+        "/api/guided/context",
+        "/api/guided/checkpoint",
+        "/api/guided/note",
         "/api/projects/list",
         "/api/projects/save",
         "/api/projects/delete",

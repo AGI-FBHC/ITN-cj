@@ -10,6 +10,7 @@ import itn_desktop_core.db.*
 import itn_desktop_core.store.*
 import itn_desktop_core.kb.*
 import itn_desktop_core.learning.arrOf
+import itn_desktop_core.learning.LearningStore
 import itn_desktop_core.course.courseId
 import itn_desktop_core.util.*
 
@@ -41,7 +42,32 @@ func fixtureBody(): String{var s="";for(i in 0..12){s+="先明确工具调用的
 func fixtureLecture(): JsonObject{let o=JsonObject();o.put("title",JsonString("工具调用学习讲义"));o.put("objective",JsonString("理解工具调用并验证输入输出"));o.put("objectives",fixtureArray(["明确输入输出约定","完成一次调用","识别失败与重试"]));let chapters=JsonArray();for(i in 0..2){let c=JsonObject();c.put("title",JsonString(if(i==0){"输入输出的设计"}else{"执行与反馈的验证"}));c.put("introduction",JsonString("从具体样例学习工具调用"));let sections=JsonArray();for(j in 0..2){let s=JsonObject();s.put("title",JsonString("学习步骤 "+(i*2+j+1).toString()));s.put("content",JsonString(fixtureBody()));sections.add(s)};c.put("sections",sections);chapters.add(c)};o.put("chapters",chapters);return o}
 func fixturePractice(): JsonObject{let o=JsonObject();o.put("title",JsonString("工具调用实操指南"));o.put("objective",JsonString("独立完成并验证一次工具调用"));o.put("prerequisites",fixtureArray(["了解输入输出"]));o.put("environment",fixtureArray(["本地练习目录"]));let steps=JsonArray();for(i in 0..4){let s=JsonObject();s.put("title",JsonString("实操步骤 "+(i+1).toString()));s.put("instruction",JsonString("打开练习目录，创建输入与预期输出说明，然后执行样例并检查结果。"+fixtureBody()));s.put("code",JsonString(""));s.put("expectedOutput",JsonString("看到输入、输出和验证记录且逐项一致。[1]"));s.put("safety",JsonString("safe"));steps.add(s)};o.put("steps",steps);o.put("acceptanceCriteria",fixtureArray(["输入有记录","输出可核对","边界能解释"]));let trouble=JsonArray();for(i in 0..2){let t=JsonObject();t.put("problem",JsonString("样例问题 "+i.toString()));t.put("solution",JsonString("检查输入与观察结果后重试"));trouble.add(t)};o.put("troubleshooting",trouble);o.put("safetyChecklist",fixtureArray(["只操作练习副本"]));return o}
 func fixtureQuiz(): JsonObject{let o=JsonObject();o.put("title",JsonString("工具调用分阶测试"));let points=JsonArray();let kp=JsonObject();kp.put("id",JsonString("kp-1"));kp.put("name",JsonString("输入输出与观察"));kp.put("description",JsonString("判断工具调用是否可验证"));points.add(kp);o.put("knowledgePoints",points);let qs=JsonArray();for(i in 0..3){let q=JsonObject();q.put("id",JsonString("q-"+(i+1).toString()));q.put("knowledgePointId",JsonString("kp-1"));q.put("difficulty",JsonString(["easy","medium","hard"][i]));q.put("stem",JsonString("场景 "+(i+1).toString()+"：执行工具后输出不符合预期，应该先做什么？"));let choices=fixtureArray(["核对输入与观察记录","伪造成功结果","忽略原始问题","删除全部资料"]);q.put("options",choices);q.put("correctIndex",JsonInt(0));q.put("explanation",JsonString("核对输入与观察记录能区分参数错误与执行失败，保留真实证据并支持复现；伪造结果掩盖问题，忽略问题无法完成目标，删除资料会破坏原始证据。[1]"));qs.add(q)};o.put("questions",qs);return o}
-func fixturePpt(): JsonObject{let o=JsonObject();o.put("title",JsonString("工具调用演示"));let slides=JsonArray();for(i in 0..4){let s=JsonObject();s.put("title",JsonString(["明确输入输出","执行并观察结果","验证与复盘","独立实践与验收"][i]));s.put("bullets",fixtureArray(["先确认输入、预期结果与边界。[1]","保留观察记录，核对真实输出。[1]"]));s.put("speakerNote",JsonString("用最小工具调用样例演示输入、执行和反馈之间的关系，说明如何区分真实成功与未经核对的假设。先展示预期，再带领学习者逐项验证输出。[1]"));slides.add(s)};o.put("slides",slides);return o}
+func fixturePpt(): JsonObject{
+    let o=JsonObject();o.put("title",JsonString("工具调用演示"))
+    let slides=JsonArray()
+    for(i in 0..4){
+        let s=JsonObject()
+        s.put("title",JsonString(["明确输入输出","执行并观察结果","验证与复盘","独立实践与验收"][i]))
+        s.put("bullets",fixtureArray(["先确认输入、预期结果与边界。[1]","保留观察记录，核对真实输出。[1]"]))
+        s.put("speakerNote",JsonString("用最小工具调用样例演示输入、执行和反馈之间的关系，说明如何区分真实成功与未经核对的假设。先展示预期，再带领学习者逐项验证输出。[1]"))
+        if(i==2){
+            let moments=JsonArray();let q=JsonObject()
+            q.put("momentId",JsonString("s3-quiz-1"));q.put("type",JsonString("quiz"));q.put("title",JsonString("检查理解"))
+            q.put("prompt",JsonString("执行工具后输出与预期不一致时，最可靠的第一步是什么？"))
+            q.put("options",fixtureArray(["保留观察记录，核对真实输出。[1]","跳过核对直接重复调用","修改输出让它看起来符合预期","只记录最终成功结果"]))
+            q.put("answerIndex",JsonInt(0));q.put("explanation",JsonString("先保留真实输出并核对输入与观察记录，才能判断问题来自参数、权限还是执行过程；其余做法都会掩盖真实状态。"))
+            q.put("anchorText",JsonString("保留观察记录，核对真实输出。[1]"));moments.add(q);s.put("teachingMoments",moments)
+        }
+        if(i==3){
+            let moments=JsonArray();let m=JsonObject()
+            m.put("momentId",JsonString("s4-summary-1"));m.put("type",JsonString("summary"));m.put("title",JsonString("本页小结"))
+            m.put("points",fixtureArray(["用可复现的输入和观察记录验证工具调用","先核对真实输出，再决定修正或重试","把边界样例与验收结果一起保留"]))
+            m.put("notePrompt",JsonString("用自己的话写下你会怎样验证一次工具调用。"));m.put("anchorText",JsonString("保留观察记录，核对真实输出。[1]"));moments.add(m);s.put("teachingMoments",moments)
+        }
+        slides.add(s)
+    }
+    o.put("slides",slides);return o
+}
 func fixtureDocRefs(text: String): ArrayList<String>{
     let out=ArrayList<String>();let parts=text.split("\"id\":\"D");var k=1
     while(k<parts.size){let bytes=parts[k].toArray();var n: Int64=0;while(n<bytes.size&&bytes[n]>=48&&bytes[n]<=57){n+=1};if(n>0){out.add("D"+String.fromUtf8(bytes[0..n]))};k+=1}
@@ -56,6 +82,7 @@ func fixtureTreeFor(text: String): String{
 func fixtureReply(b: JsonObject): (String,?JsonObject){
     let messages=arrOf(b,"messages");var user="";var system="";var lastRole="";var i=0
     while(i<messages.size()){let m=objOf(messages[i]).getOrThrow();i+=1;lastRole=strOf(m,"role");if(lastRole=="user"){user=strOf(m,"content")};if(lastRole=="system"){system+=strOf(m,"content")}}
+    if(system.contains("当前交互导学")){return("这一页先抓住一个判断：真实输出要能被观察和复核。请先用自己的话说说，你会保留哪两项证据？",None)}
     if(arrOf(b,"tools").size()>0){
         if(lastRole=="tool"){return("候选学习资源已生成，请预览；满意后点击加入我的学习资源。",None)}
         if(user.contains("活跃度")){
@@ -91,6 +118,12 @@ public func seedCourseFixture(dir: String): Unit{
         for(i in 0..2){let c=KbChunk();c.id="source-"+i.toString();c.docPath="文档"+i.toString()+".md";c.docTitle=if(i==0){"输入输出工具调用"}else{"观察与验证"};c.headingPath=c.docTitle;c.ordinal=i;c.text="# "+c.docTitle+"\n"+fixtureBody();writeText(root+Path.Separator+c.docPath,c.text);index.chunks.add(c)}
         saveIndex(dir,id,index);let kb=KnowledgeBase();kb.id=id;kb.name=if(id=="course-alpha"){"Agent 入门"}else{"Python 编程"};kb.rootDir=root;kb.chunkCount=2;kb.docCount=2;kb.builtAt=stamp();settings.knowledgeBases.add(kb)
     };Store(dir).save(settings)
+}
+/** 交互导学独立夹具：真实数据库 + 已确认 PPT 资源，不依赖模型生成或思维导图。 */
+public func seedGuidedFixture(dir: String): Unit{
+    seedCourseFixture(dir)
+    let content=fixturePpt();let body=JsonObject();body.put("kind",JsonString("ppt"));body.put("title",JsonString(strOf(content,"title")));body.put("content",content);body.put("markdown",JsonString(""));body.put("citations",JsonArray())
+    LearningStore(dir).saveResource(body,"course-alpha","guided-fixture","guided", "",0)
 }
 /** Uses a private database copy prepared by the verifier, never the live user database. */
 public func useCopiedCourseModel(dir: String,copyDir: String): Unit{
