@@ -4681,3 +4681,26 @@ read_chunk 读得到原文并带回库标识与正文。
 - 隔离启动复烟：用解压后的 `Lumin.exe --smoke` 和全新空数据目录运行，输出 `PRELOAD=ok`、`TITLEBAR=ok`、`TITLE=Lumin`、`STATUS=Lumin 0.8.23 · 已连接`、`NAV=5`、`VIEW_NODES=2`、`DOCX=ok paragraphs=4`、`RESULT=OK`。说明发布包在当前机器可从空用户数据启动，预加载、标题栏、内核状态和 DOCX 预览链路正常。
 - 视觉复核：`tmp\ppt-preview-0.8.23-first.png` 为真实封面幻灯片；`tmp\workbench-shots\02-workbench-artifact.png` 显示右侧成果栏的真实 PPT 预览和分页器；`tmp\workbench-shots\03-presentation.png` 显示导学页同一份 PPTX 的真实页面。
 - 结论：底层 PPTX 生成链路未回退；本轮修复的是成果侧栏和播放器曾把真实 PPTX 的内容摘要当成 Markdown 显示。0.8.23 已把成果预览、播放/导学入口统一到真实幻灯片。
+
+## 2026-10-19 · 会话栏更新时间置顶与日期、最大化输入框宽度
+- 用户要求：
+  - 每次有更新的会话移动到会话列表组内第一条。
+  - 会话列表补日期：当天只保留时分，非当天显示日期。
+  - 新对话窗口最大化时输入框不要无限变宽。
+- 根因：
+  - 会话栏渲染时虽然按 `lastAt` 排序，但 `chatRailSig()` 只包含会话 id/projectId，不包含排序结果。时间变化后只走 `PANELS.chat.refresh` 改文字，不会重建并重排行。
+  - `railMetaOf()` 使用 `fmtStamp(...).slice(6)`，把日期部分硬截掉，所以所有会话都只剩时分。
+  - `.composer` 是 `#view` 的 flex 子项，本身 `width:auto` 吃满可用宽度；窗口最大化后没有 `max-width`。
+- 实现：
+  - 新增 `fmtRailStamp()`：同一天只显示 `HH:mm`；同年非当天显示 `MM-DD HH:mm`；跨年显示 `YYYY-MM-DD HH:mm`。
+  - `railMetaOf()` 改用 `fmtRailStamp()`，其它页面原有 `fmtStamp()` 行为不变。
+  - 新增 `railSessionCompare()` 和 `railSessionOrderSig()`：按 `lastAt` 倒序、id 稳定兜底；组内顺序进入结构指纹，但时间文字本身不进入，避免每轮无意义重建。
+  - 发送普通消息和插话成功后调用 `markSessionActivity()`，立即把该会话活动时间刷新并重排到组内首位；内核完成后再用真实 `lastAt` 覆盖。
+  - 新会话尚未写入列表时，`markSessionActivity()` 会先补一条临时会话元信息，项目归属沿用当前 `chatProject`。
+  - 新增 `body.chat-mode .view > .composer { width:100%; max-width:920px; margin-inline:auto; }`，普通对话和新对话共用 920px 阅读列。
+- 测试（真实浏览器，不用截图目测代替断言）：
+  - `node tools/session-switch-check.cjs`：17/17 PASS。新增断言包括当天只显示 `09:05`、昨天显示 `MM-DD 09:05`、2200px 视口下输入框宽度不超过 921px 且左右对称、B 会话开始后排在 A 前、A 插话后重新排到 B 前。
+  - 原有并发测试继续通过：A/B 同时运行、插话只进入 A、A/B 事件不串、无 JS 异常。
+  - `node tools/session-list-check.cjs`：10/10 PASS。大会话夹具冷列表和缓存性能没有回退；UI 切页 report/chat/home 分别 86/127/63ms。
+  - `node --check shell/renderer/app.js`、`node --check tools/session-switch-check.cjs`、`git diff --check` 通过。
+- 本地提交：见本段所在提交；两份既有未跟踪调研文档继续不纳入提交。

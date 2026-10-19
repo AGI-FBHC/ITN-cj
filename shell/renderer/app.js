@@ -100,6 +100,17 @@ function fmtStamp(s) {
   return m[2] + "-" + m[3] + " " + m[4] + ":" + m[5];
 }
 
+/** 会话栏时间：今天只显示时分；非今天补日期，跨年再补年份。 */
+function fmtRailStamp(s) {
+  const d = new Date(s);
+  if (!Number.isFinite(d.getTime())) return fmtStamp(s);
+  const p = (x) => String(x).padStart(2, "0");
+  const now = new Date();
+  const hm = p(d.getHours()) + ":" + p(d.getMinutes());
+  if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()) return hm;
+  const md = p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + hm;
+  return d.getFullYear() === now.getFullYear() ? md : d.getFullYear() + "-" + md;
+}
 function plural(n, unit) { return Number(n || 0) + " " + unit; }
 
 /** 毫秒时间戳 → 08-16 14:30（错题的下次复习时间用它）。 */
@@ -4547,6 +4558,26 @@ function panelItem(opt) {
 /** 每一段会话自己跑自己的：按会话记正在执行的轮次（同会话最多一轮，跨会话可以同时跑）。
  * 列表行转圈、删除保护、“Enter 是插话”都看这份状态，不再用一个全局布尔碰全部。 */
 function isSessionRunning(sid) { return !!sid && state.chatRequests.has(sid); }
+/** 用户一发出内容，先在本地把该会话推到组内首位；真实数据回来后由内核时间覆盖。 */
+function markSessionActivity(sessionId, at) {
+  if (!sessionId) return;
+  const stamp = at || new Date().toISOString();
+  let item = (state.sessions || []).find((x) => x.sessionId === sessionId);
+  if (!item) {
+    item = {
+      sessionId,
+      title: state.lastQuestion || "新对话",
+      projectId: sessionId === state.chatSessionId ? (state.chatProject || "") : "",
+      kind: "ask",
+      lastAt: stamp,
+      eventCount: 0,
+    };
+    state.sessions.unshift(item);
+  } else {
+    item.lastAt = stamp;
+  }
+}
+
 /** 把"当前会话是否正在跑"同步到全局镜像：busyTurn/chatRequest 只代表当前会话。 */
 function syncChatBusy() {
   state.chatRequest = state.chatRequests.get(state.chatSessionId) || null;
@@ -4627,8 +4658,26 @@ async function renderPanel(force) {
  * 内容变化走 PANELS.chat.refresh 就地改字，行与滚动位置都留着。
  * 顺序（内核按最后一条事件排）算结构：位置变了要重排。
  */
+/** 会话行按最后活动时间倒序；时间相同用 id 稳定兜底。 */
+function railSessionCompare(a, b) {
+  const byTime = String(b.lastAt || "").localeCompare(String(a.lastAt || ""));
+  return byTime || String(a.sessionId || "").localeCompare(String(b.sessionId || ""));
+}
+/** 只把“组内顺序”纳入结构指纹：时间文字变化仍走 refresh，顺序变了才重建。 */
+function railSessionOrderSig(sessions) {
+  const groups = new Map();
+  for (const s of sessions || []) {
+    const key = s.projectId || "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(s);
+  }
+  return [...groups.entries()]
+    .sort(([a], [b]) => String(a).localeCompare(String(b)))
+    .map(([key, items]) => key + ":" + items.slice().sort(railSessionCompare).map((x) => x.sessionId).join(","))
+    .join("|");
+}
 function chatRailSig() {
-  const sessions = (state.sessions || []).map((x) => x.sessionId + ":" + (x.projectId || "")).join(",");
+  const sessions = railSessionOrderSig(state.sessions || []);
   const projects = (state.projects || []).map((x) => x.id + (x.pinned ? "1" : "")).join(",");
   // 搜索过滤用的是标题：带着搜索词时标题也算结构（过滤结果会跟着变）
   const q = String(state.chatQuery || "").trim().toLowerCase();
@@ -4639,7 +4688,7 @@ function chatRailSig() {
 
 /** 会话行下面那行小字：类型 + 最后活动时间。渲染与就地刷新共用同一份拼法。 */
 function railMetaOf(x) {
-  return ((x.kind && x.kind !== "ask") ? (KIND_LABEL[x.kind] || "对话") + " · " : "") + fmtStamp(x.lastAt).slice(6);
+  return ((x.kind && x.kind !== "ask") ? (KIND_LABEL[x.kind] || "对话") + " · " : "") + fmtRailStamp(x.lastAt);
 }
 
 /* ---------- 我的学习：开始 + 最近产物 ---------- */
@@ -5066,7 +5115,7 @@ PANELS.chat = {
       if (collapsed) continue;
 
       const sorted = mine.slice()
-        .sort((a, b) => String(b.lastAt || "").localeCompare(String(a.lastAt || "")));
+        .sort(railSessionCompare);
       const expanded = !!state.railExpanded[key];
       const shown = expanded ? sorted : sorted.slice(0, RAIL_OPEN_DEFAULT);
       for (const x of shown) {
@@ -6639,6 +6688,8 @@ PAGES.chat = {
       grow();
       try {
         await api("/api/agent/steer", { sessionId: sid, text: text });
+        markSessionActivity(sid);
+        renderPanel();
         // 先在正文里显示出来（内核把它注进这一轮时会再写一条 user/message 事件，正好对上）
         state.chatTurns.push({ id: "steer-" + Date.now(), kind: "ask", user: text, items: [], report: null, citations: [], ok: null, message: "", steer: true });
         paint();
@@ -6842,6 +6893,7 @@ PAGES.chat = {
       ta.value = "";
       grow();
       state.lastQuestion = text;
+      markSessionActivity(sid);
       const request = { sessionId: sid, controller: new AbortController(), baseline: (state.chatEvents || []).length, turnId: "", endedByEvents: false };
       state.chatRequests.set(sid, request);
       syncChatBusy();

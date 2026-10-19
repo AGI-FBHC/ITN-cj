@@ -21,6 +21,20 @@ const freePort=()=>new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.
   const page=await browser.newPage({viewport:{width:1440,height:960}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(base);await page.waitForSelector('#chat-input');
 
+  const timeLabels=await page.evaluate(()=>{
+    const now=new Date(),today=new Date(now.getFullYear(),now.getMonth(),now.getDate(),9,5),yesterday=new Date(now.getFullYear(),now.getMonth(),now.getDate()-1,9,5);
+    const p=x=>String(x).padStart(2,'0');
+    return {today:railMetaOf({kind:'ask',lastAt:today.toISOString()}),yesterday:railMetaOf({kind:'ask',lastAt:yesterday.toISOString()}),wantYesterday:p(yesterday.getMonth()+1)+'-'+p(yesterday.getDate())+' 09:05'};
+  });
+  check('today session time omits the date',timeLabels.today==='09:05');
+  check('older session time includes its date',timeLabels.yesterday===timeLabels.wantYesterday);
+
+  await page.setViewportSize({width:2200,height:1200});
+  await sleep(120);
+  const fullWidth=await page.evaluate(()=>{const c=document.querySelector('.composer').getBoundingClientRect(),v=document.querySelector('#view').getBoundingClientRect();return {width:c.width,left:c.left-v.left,right:v.right-c.right};});
+  check('composer is capped on a maximized window',fullWidth.width<=921&&Math.abs(fullWidth.left-fullWidth.right)<=2);
+  await page.setViewportSize({width:1440,height:960});
+
   // A 段开始一段慢任务（mock 每段模型请求睡 10 秒）
   await page.locator('#chat-input').fill('慢速任务测试：开始一段长任务');
   await page.locator('.composer-send').click();
@@ -41,6 +55,9 @@ const freePort=()=>new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.
   await page.locator('.composer-send').click();
   await sleep(300);
   check('the new session sends a normal turn instead of steering',await page.evaluate(()=>!document.querySelector('#chat-thread .msg-flag')&&state.chatTurns.some(t=>t.user==='B 会话的普通问题'&&!t.steer)));
+  await until(async()=>await page.locator('#panel-body .rail-session .panel-item[data-id="'+sidB+'"]').count()===1,10000);
+  const orderAfterB=await page.evaluate(()=>[...document.querySelectorAll('#panel-body .rail-session .panel-item')].map(x=>x.dataset.id).filter(Boolean));
+  check('a newly updated conversation moves to the first row',orderAfterB.indexOf(sidB)>=0&&orderAfterB.indexOf(sidB)<orderAfterB.indexOf(sidA));
 
   // 立刻切回 A 并插话：保证插话落在 A 第一段模型请求的等待窗内（慢速 mock 每段睡 10 秒）
   await page.evaluate(id=>openChatSession(id),sidA);
@@ -49,6 +66,8 @@ const freePort=()=>new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.
   await page.locator('#chat-input').press('Enter');
   await page.waitForFunction(()=>!!document.querySelector('#chat-thread .msg-flag'),null,{timeout:10000});
   check('steering into the running turn still works',(await page.locator('#chat-thread .msg-flag').first().innerText()).includes('插话'));
+  await until(async()=>{const order=await page.evaluate(()=>[...document.querySelectorAll('#panel-body .rail-session .panel-item')].map(x=>x.dataset.id).filter(Boolean));return order.indexOf(sidA)>=0&&order.indexOf(sidA)<order.indexOf(sidB);},10000);
+  check('steering updates the conversation order too',true);
 
   // B 在后台照常跑完（A 还在跑）
   await until(async()=>{const d=await post('/api/sessions/events',{sessionId:sidB});return (d.events||[]).some(e=>e.type==='turn/end'&&(e.payload||{}).ok!==false);},40000);
