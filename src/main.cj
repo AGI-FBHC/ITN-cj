@@ -62,6 +62,8 @@ main(): Int64 {
     registerAdminResourceRoutes(app, cfg)
     /* P4-F1 管理员知识服务代理 — literal catch-all，同样必须早于 gateway。 */
     registerAdminKnowledgeProxyRoutes(app, cfg)
+    /* home-dock course-resource candidates — literal /v1 route before the catch-all. */
+    registerCourseRecRoutes(app, cfg)
     /* P3/P2 catch-all forwarders — MUST be last so literal routes win. */
     registerGatewayRoutes(app, cfg)
 

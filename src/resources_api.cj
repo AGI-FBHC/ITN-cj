@@ -28,6 +28,7 @@ import soulsoft_extensions_injection.*
  * Batch 3 (Phase 1 close-out, no LLM):
  *   POST /v1/learning-resources/{resource_id}/ability-reward
  *   GET  /v1/learning-resources/{resource_id}/messages
+ *   GET  /v1/learning-resources/{resource_id}/next-question
  *
  * Phase 2 (still Python): generation, regenerate, chat, _record_memory_event,
  * _refresh_adaptive_task_after_answer.
@@ -68,6 +69,9 @@ public func registerResourceRoutes(app: WebHost, cfg: AppConfig): Unit {
     }
     app.mapGet("v1/learning-resources/{resource_id}/messages") {
         ctx => handleListResourceMessages(ctx, cfg)
+    }
+    app.mapGet("v1/learning-resources/{resource_id}/next-question") {
+        ctx => handleNextAdaptiveQuestion(ctx, cfg)
     }
 }
 
@@ -831,6 +835,235 @@ private func loadResource(ctx: HttpContext, cfg: AppConfig,
 private func loadQuizRow(ctx: HttpContext, cfg: AppConfig,
                          userId: Array<Byte>, resourceId: Array<Byte>): ?String {
     loadResourceWith(ctx, cfg, userId, resourceId, "Quiz not found")
+}
+
+/* -------- next adaptive question -------- */
+
+/*
+ * GET /v1/learning-resources/{resource_id}/next-question — public.py:6416-6426.
+ *
+ *   resource = store.get(resource_id, principal.user_id)
+ *   if resource is None or resource.get("type") != "quiz": 404 "Quiz not found"
+ *   question = LearningContentService.choose_next(resource["content"], resource.get("state") or {})
+ *   if question is None:
+ *       return {"completed": True, "question": None, "state": resource.get("state") or {}}
+ *   public_question = {k: v for k, v in question.items() if k not in {"correctIndex","explanation"}}
+ *   return {"completed": False, "question": public_question, "state": resource.get("state") or {}}
+ *
+ * Field order is completed, question, state. `state` is echoed verbatim from
+ * the resource row (Python returns the same dict it just read).
+ */
+func handleNextAdaptiveQuestion(ctx: HttpContext, cfg: AppConfig): Unit {
+    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+        case None => return
+        case Some(userId) =>
+            match (parseRouteUuid(ctx, "resource_id")) {
+                case None => return
+                case Some(resourceId) =>
+                    match (loadQuizRow(ctx, cfg, userId, resourceId)) {
+                        case None => return
+                        case Some(row) =>
+                            let resource = parseObject(row)
+                            if ((jsonGetString(resource, "type") ?? "") != "quiz") {
+                                writeDetail(ctx.response, 404, "Quiz not found")
+                                return
+                            }
+                            let content = match (jsonGetObject(resource, "content")) {
+                                case Some(c) => c
+                                case None => emptyObject()
+                            }
+                            /* Python echoes resource.get("state") or {} — the same
+                             * object choose_next just read. serializeDetail always
+                             * emits an object here; anything else collapses to {}. */
+                            var stateObj = emptyObject()
+                            var stateRaw = "{}"
+                            match (resource.get("state")) {
+                                case Some(v) =>
+                                    if (isJsObject(v)) {
+                                        stateObj = v.asObject()
+                                        stateRaw = valueToRaw(v)
+                                    }
+                                case None => ()
+                            }
+                            let w = JsonWriter()
+                            match (chooseNextQuestion(content, stateObj)) {
+                                case None =>
+                                    w.putBool("completed", true)
+                                    w.putRaw("question", "null")
+                                case Some(q) =>
+                                    w.putBool("completed", false)
+                                    w.putRaw("question", publicQuestionJson(q))
+                            }
+                            w.putRaw("state", stateRaw)
+                            writeJson(ctx.response, 200, w.toJson())
+                    }
+            }
+    }
+}
+
+/*
+ * LearningContentService.choose_next — public.py / learning_content.py:2378-2392.
+ * Ported verbatim; do NOT swap in pickAdaptiveQuestion: that one normalizes
+ * difficulty labels via adaptiveLabel and drops the mastery tiebreak, while
+ * Python here compares the RAW difficulty string and uses
+ *   rank.get(q.get("difficulty"), 0)   (unknown difficulty -> 0, not 1).
+ *
+ *   answered = {item["questionId"] for item in state.get("answered", [])}
+ *   remaining = [q for q in content.get("questions", []) if q.get("id") not in answered]
+ *   if not remaining: return None
+ *   target = easy|medium|hard from state.get("ability", 0.35)
+ *   matching = [q for q in remaining if q.get("difficulty") == target]
+ *   candidates = matching or remaining
+ *   return min(candidates, key=(abs(rank[d]-rank[target]), mastery.get(str(kpid), .35)))
+ *
+ * Python `min()` is stable: a tie keeps the earliest candidate, which is the
+ * order of content.questions. The loop below therefore only replaces `best`
+ * on a strict improvement.
+ */
+private func chooseNextQuestion(content: JsonObject, state: JsonObject): ?JsonValue {
+    let answered = HashSet<String>()
+    match (jsonGetArray(state, "answered")) {
+        case Some(arr) =>
+            var ai: Int64 = 0
+            while (ai < arr.size()) {
+                match (arr.get(ai)) {
+                    case Some(item) =>
+                        if (isJsObject(item)) {
+                            answered.add(jsonGetString(item.asObject(), "questionId") ?? "")
+                        }
+                    case None => ()
+                }
+                ai += 1
+            }
+        case None => ()
+    }
+
+    let questions = match (jsonGetArray(content, "questions")) {
+        case Some(a) => a
+        case None => JsonArray()
+    }
+    let remaining = ArrayList<JsonValue>()
+    var qi: Int64 = 0
+    while (qi < questions.size()) {
+        match (questions.get(qi)) {
+            case Some(q) =>
+                if (isJsObject(q)) {
+                    let id = jsonGetString(q.asObject(), "id") ?? ""
+                    if (!answered.contains(id)) {
+                        remaining.add(q)
+                    }
+                }
+            case None => ()
+        }
+        qi += 1
+    }
+    if (remaining.isEmpty()) {
+        return None
+    }
+
+    /* state.get("ability", 0.35): absent -> 0.35. Non-numeric ability is not
+     * representable in the Python source either (it would TypeError), so it
+     * falls back to the same default here. */
+    let ability = jsonGetFloat(state, "ability") ?? 0.35
+    var target = "hard"
+    if (ability < 0.45) {
+        target = "easy"
+    } else if (ability < 0.72) {
+        target = "medium"
+    }
+    let targetRank = chooseDiffRank(target)
+
+    let mastery = match (jsonGetObject(state, "mastery")) {
+        case Some(m) => m
+        case None => emptyObject()
+    }
+
+    /* matching = [q for q in remaining if q.get("difficulty") == target];
+     * candidates = matching or remaining. */
+    let matching = ArrayList<JsonValue>()
+    for (q in remaining) {
+        if (isJsObject(q) && (jsonGetString(q.asObject(), "difficulty") ?? "") == target) {
+            matching.add(q)
+        }
+    }
+    let candidates = if (matching.isEmpty()) { remaining } else { matching }
+
+    return chooseMinBy(candidates, targetRank, mastery)
+}
+
+/*
+ * min(candidates, key=(abs(rank[d]-rank[target]), mastery[str(kpid)])).
+ * Python `min()` is stable — a tie keeps the earlier element — so only a
+ * strictly better key replaces the incumbent.
+ */
+private func chooseMinBy(candidates: ArrayList<JsonValue>, targetRank: Int64,
+                         mastery: JsonObject): ?JsonValue {
+    var best: ?JsonValue = None
+    var bestDist: Int64 = 0
+    var bestMastery: Float64 = 0.0
+    for (q in candidates) {
+        if (isJsObject(q)) {
+            let obj = q.asObject()
+            var dist = chooseDiffRank(jsonGetString(obj, "difficulty")) - targetRank
+            if (dist < 0) {
+                dist = -dist
+            }
+            let mKey = choosePyStr(obj.get("knowledgePointId"))
+            /* mastery.get(str(kpid), .35) — absent key -> 0.35. */
+            let mVal = jsonGetFloat(mastery, mKey) ?? 0.35
+            var take = false
+            match (best) {
+                case None => take = true
+                case Some(_) =>
+                    if (dist < bestDist) {
+                        take = true
+                    } else if (dist == bestDist && mVal < bestMastery) {
+                        take = true
+                    }
+            }
+            if (take) {
+                best = Some(q)
+                bestDist = dist
+                bestMastery = mVal
+            }
+        }
+    }
+    return best
+}
+
+/*
+ * Python rank = {"easy": 0, "medium": 1, "hard": 2} with rank.get(x, 0).
+ * Missing / unknown difficulty ranks as 0 — NOT adaptiveRank's default of 1.
+ */
+private func chooseDiffRank(label: ?String): Int64 {
+    match (label) {
+        case None => return 0
+        case Some(d) =>
+            if (d == "easy") { return 0 }
+            if (d == "medium") { return 1 }
+            if (d == "hard") { return 2 }
+            return 0
+    }
+}
+
+/*
+ * Python str(q.get("knowledgePointId")) used as a mastery dict key.
+ * Missing or JSON null -> "None" (Python str(None)); ints keep their decimal
+ * spelling; floats keep the ".0" (str(3.0) == "3.0", unlike jsonFloatText).
+ */
+private func choosePyStr(v: ?JsonValue): String {
+    match (v) {
+        case None => return "None"
+        case Some(x) =>
+            match (x.kind()) {
+                case JsonKind.JsString => return x.asString().getValue()
+                case JsonKind.JsInt => return x.asInt().getValue().toString()
+                case JsonKind.JsFloat => return x.asFloat().getValue().toString()
+                case JsonKind.JsBool => return if (x.asBool().getValue()) { "True" } else { "False" }
+                case JsonKind.JsNull => return "None"
+                case _ => return valueToRaw(x)
+            }
+    }
 }
 
 /* -------- grading (LearningContentService.answer) -------- */

@@ -36,6 +36,12 @@ import soulsoft_extensions_injection.*
  * GET /api/v1/learner-profile and /learner-profile/journal were batch 2 and
  * now live in learnforge_analytics_api.cj. The POST/PUT /events, /quiz and
  * /journal/summary writes are still Spring Boot's.
+ *
+ * GET /api/v1/search is LearnForgeSupportController.java:103-106 +
+ * LearnForgeSupportService.java:216-247. SecurityConfig.anyRequest().
+ * authenticated() covers it even though the method has no
+ * @AuthenticationPrincipal, so it needs requireUserApi like every other
+ * /api/v1 route.
  */
 
 /* ---- ApiResponse envelope (web/dto/ApiResponse.java) ---- */
@@ -83,6 +89,129 @@ public func registerLearnForgeRoutes(app: WebHost, cfg: AppConfig): Unit {
     app.mapGet("api/v1/profile") {
         ctx => handleGetProfile(ctx, cfg)
     }
+    app.mapGet("api/v1/search") {
+        ctx => handleSearch(ctx, cfg)
+    }
+}
+
+/* ---- GET /api/v1/search ---- */
+
+/*
+ * LearnForgeSupportService.search (216-247):
+ *
+ *   q = query.trim().toLowerCase(Locale.ROOT); if q.isBlank(): total 0, []
+ *   for each KnowledgePoint (status=ENABLED, sort_order asc, id asc):
+ *       match name / code / description / core_topics_json  -> item, stop at 20
+ *   if items.size() < 20:
+ *       for each KnowledgeCategory (status==1):
+ *           match name / full_path  -> item, stop at 20
+ *   return SearchResponse(items.size(), items)
+ *
+ * SearchItem: type, id, title, excerpt, url — record component order.
+ *   knowledge: id = code, title = name, excerpt = description, url = "/learn/"+code
+ *   category:  id = String.valueOf(id), title = name, excerpt = description,
+ *              url = "/knowledge"
+ * SearchItem has no @JsonInclude, so a null description IS emitted as JSON
+ * null (same rule as learnerToJson's header note).
+ *
+ * Category matching deliberately does NOT look at description.
+ *
+ * Java's category loop is findAll() with no ORDER BY; MySQL returns the
+ * clustered-index order, so id ASC is the deterministic equivalent and keeps
+ * the item order stable across runs.
+ */
+func handleSearch(ctx: HttpContext, cfg: AppConfig): Unit {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
+        case None => return
+        case Some(_) =>
+            let raw = queryParam(ctx.request, "q") ?? ""
+            let q = raw.trimAscii().toAsciiLower()
+            if (q.isEmpty()) {
+                writeJson(ctx.response, 200, apiOk("{\"total\":0,\"items\":[]}"))
+                return
+            }
+            match (openDb(cfg)) {
+                case None =>
+                    writeApiErr(ctx.response, 500, CODE_INTERNAL_ERROR, "服务器内部错误")
+                case Some(conn) =>
+                    try {
+                        writeJson(ctx.response, 200, apiOk(searchItemsJson(conn, q)))
+                        conn.close()
+                    } catch (e: Exception) {
+                        conn.close()
+                        writeApiErr(ctx.response, 500, CODE_INTERNAL_ERROR, "服务器内部错误")
+                    }
+            }
+    }
+}
+
+private func searchItemsJson(conn: MyConnection, q: String): String {
+    let items = JsonArrWriter()
+    var count: Int64 = 0
+
+    let kpSql = "SELECT code, name, description, core_topics_json FROM knowledge_point" +
+        " WHERE status=1 ORDER BY sort_order ASC, id ASC"
+    match (conn.query(kpSql)) {
+        case QueryOutcome.Ok(_) => ()
+        case QueryOutcome.ResultSet(rs) =>
+            for (row in rs.rows) {
+                if (count >= 20) {
+                    break
+                }
+                let code = cellText(row, 0)
+                if (searchHit(optCellText(row, 1), q) || searchHit(Some(code), q) ||
+                    searchHit(optCellText(row, 2), q) || searchHit(optCellText(row, 3), q)) {
+                    items.addRaw(searchItemJson("knowledge", code, optCellText(row, 1),
+                                                optCellText(row, 2), "/learn/" + code))
+                    count += 1
+                }
+            }
+    }
+
+    if (count < 20) {
+        let catSql = "SELECT id, name, description, full_path FROM knowledge_category" +
+            " WHERE status=1 ORDER BY id ASC"
+        match (conn.query(catSql)) {
+            case QueryOutcome.Ok(_) => ()
+            case QueryOutcome.ResultSet(rs) =>
+                for (row in rs.rows) {
+                    if (count >= 20) {
+                        break
+                    }
+                    if (searchHit(optCellText(row, 1), q) || searchHit(optCellText(row, 3), q)) {
+                        items.addRaw(searchItemJson("category", cellText(row, 0),
+                                                    optCellText(row, 1),
+                                                    optCellText(row, 2), "/knowledge"))
+                        count += 1
+                    }
+                }
+        }
+    }
+
+    let w = JsonWriter()
+    w.putInt("total", count)
+    w.putRaw("items", items.toJson())
+    return w.toJson()
+}
+
+/* Java String.toLowerCase(Locale.ROOT).contains(q); None (SQL NULL) never matches. */
+private func searchHit(haystack: ?String, needle: String): Bool {
+    match (haystack) {
+        case None => return false
+        case Some(s) => return s.toAsciiLower().contains(needle)
+    }
+}
+
+/* SearchItem record component order: type, id, title, excerpt, url. */
+private func searchItemJson(kind: String, id: String, title: ?String,
+                            excerpt: ?String, url: String): String {
+    let w = JsonWriter()
+    w.putStr("type", kind)
+    w.putStr("id", id)
+    w.putOptStr("title", title)
+    w.putOptStr("excerpt", excerpt)
+    w.putStr("url", url)
+    return w.toJson()
 }
 
 /* ---- handlers ---- */
