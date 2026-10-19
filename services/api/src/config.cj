@@ -14,6 +14,15 @@ public struct AppConfig {
     /* Spring Boot origin for the not-yet-migrated /api/v1 surface, e.g.
      * "http://127.0.0.1:8080". Same relay, different service. */
     public let javaUpstream: String
+    /* agents-service 内部 HMAC secret（AGENT_INTERNAL_SECRET）。未配置时
+     * 管理员彻底删除/分组删除的 agents 调用按 502 处理（与 Java 一致）。 */
+    public let agentInternalSecret: ?String
+    /* 管理员知识服务代理目标（AdminKnowledgeProxyController 的迁移）。 */
+    public let knowledgeCoreUrl: String
+    public let questionBankUrl: String
+    /* 知识服务内部 HMAC secret；未配置时不附加签名头（与 Java 一致）。 */
+    public let kcInternalSecret: ?String
+    public let qbInternalSecret: ?String
 
     public init() {
         jwtSecret = getVariable("JWT_SECRET")
@@ -21,6 +30,11 @@ public struct AppConfig {
         httpUrl = getVariable("SPIRE_HTTP_URL") ?? "http://127.0.0.1:8100"
         agentsUpstream = getVariable("AGENTS_UPSTREAM") ?? "http://127.0.0.1:8000"
         javaUpstream = getVariable("JAVA_UPSTREAM") ?? "http://127.0.0.1:8080"
+        agentInternalSecret = getVariable("AGENT_INTERNAL_SECRET")
+        knowledgeCoreUrl = getVariable("KNOWLEDGE_CORE_URL") ?? "http://127.0.0.1:8010"
+        questionBankUrl = getVariable("QUESTIONBANK_URL") ?? "http://127.0.0.1:8030"
+        kcInternalSecret = getVariable("KC_INTERNAL_SECRET")
+        qbInternalSecret = getVariable("QB_INTERNAL_SECRET")
     }
 }
 

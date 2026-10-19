@@ -58,7 +58,7 @@ public func registerLearnerProfileRoutes(app: WebHost, cfg: AppConfig): Unit {
  * =================================================================== */
 
 func handleGetLearnerProfile(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             match (openDb(cfg)) {
@@ -387,7 +387,7 @@ func recentQuizzesToJson(analytics: LearnForgeAnalyticsStore, userId: Array<Byte
  * =================================================================== */
 
 func handleGetLearnerProfileJournal(ctx: HttpContext, cfg: AppConfig): Unit {
-    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+    match (requireUserApi(ctx.request, ctx.response, cfg)) {
         case None => return
         case Some(userId) =>
             /*
