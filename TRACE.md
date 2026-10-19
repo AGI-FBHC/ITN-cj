@@ -4751,3 +4751,11 @@ read_chunk 读得到原文并带回库标识与正文。
 - 当前限制：本批只实现 OpenAI `/audio/speech` 与 MiMo 两种 TTS 协议；旧网页版若另有 Qwen 专有 TTS 协议，需要单列适配，不能用现有 OpenAI 字段冒充。
 - 真实用户数据库 `%LOCALAPPDATA%\Lumin\itn.db` 未修改；全部迁移与真实 TTS 验证都在临时副本中完成。
 - 本地提交：本段与上述代码、文档、测试同一提交（见本次 `git log -1`）；两份既有未跟踪调研文档继续不纳入提交。
+## 2026-10-19 · Lumin 0.8.24 打包与包内冒烟
+- 功能提交：`5f6d0cd feat: add Xiaoyuanlong companion and TTS models`。
+- 打包产物：`dist/Lumin-0.8.24/` 与 `dist/Lumin-0.8.24.zip`；版本名不含 `x64`。
+- manifest：`version=0.8.24`，构建首次为 `lumin-0.8.24-5f6d0cd`；33 个资产 SHA256 全部与磁盘一致，其中 12 个是小鼋龙动作帧。
+- ZIP：2,759 个条目，包含 `Lumin.exe`、包内 `lumin-core.exe`、`mascot.js/mascot.css`、12 张 PNG 和 `release.json`。
+- 包内冒烟：直接启动 `dist/Lumin-0.8.24/resources/kernel/lumin-core.exe`（隔离临时数据目录），`/health` 返回 `status=ok`、Cangjie `1.2.0`；`/mascot.js` 返回 200 JavaScript，`/mascot/xiaoyuanlong-idle.png` 返回 200 PNG、101,642 字节；`/release.json` 返回 0.8.24。
+- 打包日志：`tmp/package-lumin-0.8.24.log`；构建日志：`tmp/build-mascot-tts-package.log`。
+- 本段打包记录随本段所在提交同步到本地 Git；zip 内 manifest 使用该记录的提交哈希。
