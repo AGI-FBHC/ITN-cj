@@ -224,8 +224,10 @@ function renderFilePreview(dock,file) {
   }else if(file.kind==='image' || file.kind==='svg'){
     const img=el('img','artifact-image');img.alt=file.title || file.name;img.src=file.dataUrl || 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(file.text);body.appendChild(img);
   }else if(file.kind==='pptx'){
-    body.appendChild(el('p','muted sm','文字预览；完整排版可用PowerPoint打开。'));
-    for(const slide of file.slides || []){const section=el('article','deck-text-slide');section.append(el('span','muted sm','第'+slide.index+'页'),el('pre',null,slide.text || '此页没有可提取文字'));body.appendChild(section);}
+    const box=el('div','ppt-preview-unavailable');
+    box.append(el('strong',null,'这份 PPT 没有版面预览'),el('p',null,'不再用文字提纲冒充幻灯片。用 PowerPoint 打开可查看完整排版。'));
+    if(window.itnWindow?.openPath)box.appendChild(btn('用 PowerPoint 打开','primary sm',async()=>{const result=await window.itnWindow.openPath(file.path);if(result&&result.ok===false)toast(result.error||'无法打开 PPT');}));
+    body.appendChild(box);
   }else{const article=el('article',file.kind==='markdown'?'md':'plain-document');if(file.kind==='markdown')article.innerHTML=md(file.text || '');else article.textContent=file.text || file.error || '';body.appendChild(article);}
 }
 
@@ -275,17 +277,27 @@ function renderResourceDock() {
   meta.appendChild(tag(issues.length ? '需检查' : '结构质检通过', issues.length ? 'warn' : 'ok'));
   body.appendChild(meta);
   const actions = el('div', 'row resource-actions');
-  actions.appendChild(btn('修改', 'sm', () => {
-    promptLearning('请先读取学习资源 ' + res.id + ' 的最新版本，再按以下要求修改并保存新版本：');
-  }));
-  actions.appendChild(copyButton(() => res.markdown || '', '复制 Markdown'));
-  /* 学习成果是 Markdown，但要交给别人 / 自己接着改的时候，得有 Office 文件。
-     导出在壳里做（离线、零依赖，见 shell/deck-export.js），这里只负责给入口与结果提示。 */
-  if (window.itnWindow && typeof window.itnWindow.exportResource === 'function') {
-    actions.appendChild(btn('制作 PPT', 'sm ghost', () => exportResourceAs(res, 'pptx')));
-    actions.appendChild(btn('导出 docx', 'sm ghost', () => exportResourceAs(res, 'docx')));
+  if (res.kind === 'ppt') {
+    actions.appendChild(btn('播放', 'primary sm', () => openResourcePresentation(res)));
+    if (res.artifactPath && window.itnWindow?.openPath) actions.appendChild(btn('打开 PPT', 'ghost sm', async () => {
+      const result = await window.itnWindow.openPath(res.artifactPath);
+      if (result && result.ok === false) toast(result.error || '无法打开 PPT');
+    }));
+    actions.appendChild(btn('修改', 'ghost sm', () => {
+      promptLearning('请先读取学习资源 ' + res.id + ' 的最新版本，再按以下要求修改并保存新版本：');
+    }));
+  } else {
+    actions.appendChild(btn('修改', 'sm', () => {
+      promptLearning('请先读取学习资源 ' + res.id + ' 的最新版本，再按以下要求修改并保存新版本：');
+    }));
+    actions.appendChild(copyButton(() => res.markdown || '', '复制 Markdown'));
+    /* 学习成果是 Markdown，但要交给别人 / 自己接着改的时候，得有 Office 文件。
+       导出在壳里做（离线、零依赖，见 shell/deck-export.js），这里只负责给入口与结果提示。 */
+    if (window.itnWindow && typeof window.itnWindow.exportResource === 'function') {
+      actions.appendChild(btn('制作 PPT', 'sm ghost', () => exportResourceAs(res, 'pptx')));
+      actions.appendChild(btn('导出 docx', 'sm ghost', () => exportResourceAs(res, 'docx')));
+    }
   }
-  if (res.kind === 'ppt') actions.appendChild(btn('开始演示', 'primary sm', () => openResourcePresentation(res)));
   if (res.version > 1) actions.appendChild(btn('查看修改差异', 'sm ghost', async () => {
     try {
       const previous = await api('/api/learning/resource', {id: res.id, version: res.version - 1});
@@ -299,13 +311,14 @@ function renderResourceDock() {
       diff.appendChild(pre); body.insertBefore(diff, body.querySelector('.resource-content')); diff.scrollIntoView({block: 'nearest'});
     } catch(e) {toast('比较失败：' + e.message);}
   }));
-  if(res.id)actions.appendChild(btn('全屏打开','ghost sm',()=>go('study',res.id+'@'+res.version)));
+  if(res.id && res.kind !== 'ppt')actions.appendChild(btn('全屏打开','ghost sm',()=>go('study',res.id+'@'+res.version)));
   actions.appendChild(btn(res.courseTarget?.nodeId?'加入我的学习资源':'存入个性资源','sm',()=>offerPersonalSave({path:res.artifactPath,title:res.title,text:res.markdown,learningId:res.id,learningVersion:res.version,sessionId:res.sessionId,turnId:res.turnId})));
   body.appendChild(actions);
   if ((res.warnings || []).length) body.appendChild(el('p', 'resource-notice', res.warnings.join('；')));
   const content = el('div', 'resource-content');
   if (res.kind === 'quiz') renderResourceQuiz(content, res);
   else if (res.kind === 'practice') renderResourcePractice(content, res);
+  else if (res.kind === 'ppt') renderPptResourcePreview(content, res);
   else {
     const article = el('article', 'md'); article.innerHTML = md(res.markdown || '');
     if (article.querySelector('h1')?.textContent === res.title) article.querySelector('h1').remove();
@@ -338,18 +351,68 @@ function renderResourceDock() {
   body.appendChild(provenance);
 }
 
-async function openResourcePresentation(res) {
-  playerState.resourceForPpt=res;
-  const slides = res.content?.slides || [];
-  if (!slides.length) {toast('这份资源没有演示页面'); return;}
-  playerState.slides = slides.map(s => ({title: s.title || '', body: (s.bullets || []).map(t => '- ' + t).join('\n') + (s.speakerNote ? '\n\n> 讲稿：' + s.speakerNote : '')}));
-  playerState.name = res.title;
-  playerState.key = 'resource:' + res.id + ':v' + res.version;
-  playerState.tocOpen = false;
-  let resume = 0;
-  try {resume = Number((await api('/api/artifacts/progress', {name: playerState.key})).page || 0);} catch(e) { /* First play has no progress. */ }
-  playerState.index = Math.max(0, Math.min(slides.length - 1, resume - 1));
-  $('player').hidden = false; document.body.classList.add('player-open'); applyPlayerFont(); renderPlayer();
+function renderPptResourcePreview(container, res) {
+  container.classList.add('resource-ppt-preview');
+  const stage = el('div', 'resource-ppt-stage');
+  const loading = el('div', 'resource-ppt-loading', '正在载入幻灯片…');
+  stage.appendChild(loading);
+  const pager = el('div', 'resource-ppt-pager');
+  container.append(stage, pager);
+  const unavailable = message => {
+    stage.replaceChildren();
+    const box = el('div', 'ppt-preview-unavailable');
+    box.append(el('strong', null, '幻灯片预览暂不可用'), el('p', null, message));
+    if (res.artifactPath && window.itnWindow?.openPath) box.appendChild(btn('用 PowerPoint 打开', 'primary sm', async () => {
+      const result = await window.itnWindow.openPath(res.artifactPath);
+      if (result && result.ok === false) toast(result.error || '无法打开 PPT');
+    }));
+    stage.appendChild(box);
+    pager.replaceChildren();
+  };
+  if (!res.artifactPath || !window.itnWindow?.readResourceFile) {
+    unavailable('这份资源没有可读取的 PPT 文件，请从生成记录重新打开。');
+    return;
+  }
+  const token = workbench.loadToken;
+  window.itnWindow.readResourceFile(res.artifactPath).then(data => {
+    if (token !== workbench.loadToken || !container.isConnected) return;
+    if (!data?.ok || !data.html) { unavailable(data?.error || '文件里没有版面预览，不会再用文字提纲冒充 PPT。'); return; }
+    const doc = new DOMParser().parseFromString(data.html, 'text/html');
+    const sections = Array.from(doc.querySelectorAll('.slide'));
+    if (!sections.length) { unavailable('这份 PPT 缺少页级预览，请用 PowerPoint 查看完整版式。'); return; }
+    const css = Array.from(doc.querySelectorAll('style')).map(node => node.textContent || '').join('\n');
+    const override = 'html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent}body{padding:0!important;display:grid;place-items:center}.slide{width:100%!important;max-width:none!important;height:100%!important;margin:0!important;border-radius:0!important;box-shadow:none!important;box-sizing:border-box}.slide img{width:100%!important;height:100%!important;object-fit:contain!important}';
+    const docs = sections.map(section => '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>' + css + '\n' + override + '</style></head><body>' + section.outerHTML + '</body></html>');
+    let index = 0;
+    const pos = el('span', 'resource-ppt-pos');
+    const prev = btn('上一页', 'ghost sm', () => paint(index - 1));
+    const next = btn('下一页', 'ghost sm', () => paint(index + 1));
+    const paint = target => {
+      if (target === index && stage.querySelector('.resource-ppt-frame')) return;
+      index = Math.max(0, Math.min(docs.length - 1, target));
+      const title = (sections[index].querySelector('h2')?.textContent || sections[index].dataset.title || '幻灯片') + ' · 第 ' + (index + 1) + ' 页';
+      const image = sections[index].querySelector('img')?.getAttribute('src');
+      let surface;
+      if (image) {
+        surface = el('img', 'resource-ppt-frame');
+        surface.src = image; surface.alt = title;
+      } else {
+        surface = el('iframe', 'resource-ppt-frame');
+        surface.title = title; surface.setAttribute('sandbox', ''); surface.srcdoc = docs[index];
+      }
+      stage.replaceChildren(surface);
+      pos.textContent = (index + 1) + ' / ' + docs.length;
+      prev.disabled = index <= 0; next.disabled = index >= docs.length - 1;
+    };
+    pager.replaceChildren(prev, pos, next);
+    paint(0);
+  }).catch(error => {
+    if (token === workbench.loadToken && container.isConnected) unavailable(error.message || '读取 PPT 预览失败');
+  });
+}
+
+function openResourcePresentation(res) {
+  return go('study', res.id + '@' + res.version);
 }
 
 /** Line LCS; very long documents use a truthful coarse replacement block. */

@@ -1,5 +1,7 @@
 const path=require('node:path');
 const fs=require('node:fs');
+const os=require('node:os');
+const {execFileSync}=require('node:child_process');
 const {chromium}=require(process.env.ITN_PLAYWRIGHT_DIR ? path.join(process.env.ITN_PLAYWRIGHT_DIR,'playwright') : 'D:/Desktop/ITN/ITN/src/frontend/agent-demo/node_modules/playwright');
 
 module.exports=async function({base,post,check,dir}) {
@@ -18,6 +20,19 @@ module.exports=async function({base,post,check,dir}) {
     await page.waitForFunction(n=>state.chatTurns.length>n&&state.chatTurns[state.chatTurns.length-1].ok!==null&&!state.busyTurn,count,{timeout:30000});
   };
   try {
+    // 真正的版面预览由 render_ppt.py 生成；浏览器测试通过一个最小 IPC 桥读取它，
+    // 从而同时覆盖“磁盘预览文件 -> 侧栏 iframe -> 学习播放器”这条链路。
+    const previewDeck=path.join(dir,'ui-resource-preview.pptx');
+    const python=path.resolve(__dirname,'../shell/renderer/ppt-renderer/python/python.exe');
+    const renderer=path.resolve(__dirname,'../shell/renderer/ppt-renderer/render_ppt.py');
+    execFileSync(python,[renderer,path.resolve(__dirname,'fixtures/ppt-preview-sample.json'),previewDeck],{encoding:'utf8',windowsHide:true,timeout:90000,env:{...process.env,PYTHONIOENCODING:'utf-8'}});
+    const pptPreviewHtml=fs.readFileSync(previewDeck+'.preview.html','utf8');
+    await page.addInitScript(({html})=>{
+      window.itnWindow=Object.assign(window.itnWindow||{},{
+        readResourceFile:async input=>({ok:true,path:String(input||''),name:'ui-resource-preview.pptx',kind:'pptx',html}),
+        openPath:async()=>({ok:true})
+      });
+    },{html:pptPreviewHtml});
     await page.goto(base);
     await page.waitForSelector('#chat-input');
     await page.waitForSelector('.wb-toolbar');
@@ -31,14 +46,20 @@ module.exports=async function({base,post,check,dir}) {
     await page.waitForSelector('.chat-thread [data-resource]');
     check('conversation has clickable resource card',await page.locator('.chat-thread [data-resource]').count()===1,JSON.stringify(await page.evaluate(()=>({cards:[...document.querySelectorAll('.chat-thread [data-resource]')].map(n=>n.dataset.resource),turns:state.chatTurns.map(t=>({id:t.id,resources:t.resources?.map(r=>r.id)}))}))));
     check('no horizontal overflow with split panes',await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+    await page.waitForSelector('#resource-dock .resource-ppt-frame',{timeout:30000});
+    check('PPT resource dock renders slide pixels instead of Markdown',await page.locator('#resource-dock .resource-content .md').count()===0);
+    check('PPT resource dock exposes page navigation',await page.locator('#resource-dock .resource-ppt-pos').innerText().then(t=>/^1 \/ \d+$/.test(t)));
     await page.screenshot({path:path.join(shots,'02-workbench-artifact.png')});
-    await page.getByRole('button',{name:'开始演示',exact:true}).click();
-    await page.waitForSelector('#player:not([hidden])');
-    check('online presentation player opens',await page.locator('#player .slide').count()>0 || await page.locator('#player').isVisible());
-    check('presentation has exactly four real slides',await page.evaluate(()=>playerState.slides.length===4));
+    await page.getByRole('button',{name:'播放',exact:true}).click();
+    await page.waitForSelector('.sp-study-layout');
+    await page.waitForSelector('.sp-ppt-image',{timeout:30000});
+    check('play action opens the guided PPT study page',await page.evaluate(()=>current==='study')&&await page.locator('.sp-ppt-image').count()===1);
+    check('guided PPT page uses the same rendered slide preview',await page.locator('.sp-stage-pos').innerText().then(t=>/^1 \/ \d+$/.test(t)));
     await page.keyboard.press('ArrowRight');
+    await page.waitForFunction(()=>document.querySelector('.sp-stage-pos')?.textContent.trim().startsWith('2 /'));
     await page.screenshot({path:path.join(shots,'03-presentation.png')});
-    await page.keyboard.press('Escape');
+    await page.evaluate(()=>go('chat'));
+    await page.waitForSelector('#resource-dock');
     await page.locator('#resource-dock').getByRole('button',{name:'关闭',exact:true}).click();
     await nav('resources');
     const rows=(await post('/api/learning/resources',{})).resources;

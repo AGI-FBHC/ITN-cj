@@ -4643,3 +4643,29 @@ read_chunk 读得到原文并带回库标识与正文。
   - `node tools/guided-check.cjs`：35/35，通过导学页普通会话、新建/切换/恢复、API、窄屏、主题及内核重启回归，无浏览器/内核异常。
   - 视觉截图：`tmp/streaming-line-shots/live.png`、`tmp/streaming-line-shots/idle.png`；live 只有最后一行处于呼吸低透明度，idle 恢复完整正文。
 - 版本：`shell/package.json`、`shell/package-lock.json` 从 `0.8.21` 升级到 `0.8.22`；两份原有未跟踪调研文档继续排除。
+## 2026-10-19 · PPT 成果改为真实幻灯片预览（0.8.23）
+- 用户反馈：成果侧栏标题写着“PPT 演示”，实际却显示“1. 标题 / 2. 目录”这类 Markdown 提纲；用户强调这不是之前投入大量工作做出来的真实 PPT。
+- 根因（两个独立入口，另有预览质量问题）：
+  - `shell/renderer/workbench.js` 的 `renderResourceDock()` 只对 quiz/practice 做结构化渲染，`kind=ppt` 落到 Markdown 分支，直接把 `res.markdown` 当文章显示。
+  - 同一文件的 `openResourcePresentation()` 仍是旧文本播放器，把 `content.slides` 拼成标题+项目符号，再交给 `renderPlayer()`；即使底层 `.pptx` 是真的，用户看到的仍是演讲稿。
+  - `render_ppt.py` 的 HTML 预览色值来自 `backgrounds.py`（不带 `#`），直接拼进 CSS 后背景色无效；同时旧预览只画 CSS 卡片且把讲者备注放到页面上，视觉上更像文档而不像幻灯片。
+- 实现：
+  - `shell/renderer/ppt-renderer/render_ppt.py`：真实 `.pptx` 渲染后，在 Windows + Microsoft PowerPoint 可用时通过隐藏 COM 导出每页 1600×900 JPEG，并将逐页图片以 `data:image/jpeg;base64` 内嵌进 `<pptx>.preview.html`。没有 PowerPoint 的机器自动回退到使用同一套全幅背景资源生成的 16:9 幻灯片预览，不再输出文字提纲。两种预览均不再在页面正文中覆盖讲者备注。
+  - `shell/renderer/workbench.js`：PPT 成果新增 `renderPptResourcePreview()`，读取真实预览 HTML，按页显示实际幻灯片，支持上一页/下一页；`kind=ppt` 不再进入 Markdown 分支。
+  - `openResourcePresentation()` 改为直接进入 `go('study', id@version)`，复用专用导学页；PPT 操作精简为“播放 / 打开 PPT / 修改”，不再展示“复制 Markdown”“制作 PPT”等误导入口。
+  - 外部 `.pptx` 没有随附预览时，侧栏明确提示“没有版面预览”，并提供“用 PowerPoint 打开”，不再把提取出的文字冒充幻灯片。
+  - `shell/renderer/studyplayer.js`：导学页读取到逐页图片预览时，直接切换 `<img class="sp-ppt-image">`，不再为每页重建 iframe；消除翻页短暂空白并降低切换延迟。没有图片时仍保留结构化 iframe/内容兜底。
+  - `shell/renderer/style.css`：增加实际幻灯片舞台、图片、分页器、缺失预览提示样式，沿用现有主题变量和圆角/描边体系。
+  - 新增测试夹具 `tools/fixtures/ppt-preview-sample.json`，让 UI 测试不依赖 `tmp/` 中的临时文件。
+- 测试（说明测什么、怎么触发、能抓住什么）：
+  - 直接运行随包 Python 渲染 `tools/fixtures/ppt-preview-sample.json`：成功生成 7 页 PPTX；预览 HTML 含 7 个 `.slide`、7 个 JPEG data URL；用 Edge 打开预览并截图 `tmp/ppt-preview-0.8.23-first.png`，首屏确认是全幅背景的封面页，不是 Markdown 标题。
+  - `node tools/presentation-agent-check.cjs`：13/13 PASS；mock 子 Agent 连跑两次，均生成独立真实 PPTX、7 页渲染结果、7 张全幅背景图片、设计 JSON、自包含视觉预览；验证预览中每页是视觉页且无“讲者备注”覆盖层。
+  - `node tools/learning-check.cjs --ui`：94/94 PASS；覆盖真实内核/HTTP/浏览器链路。新增断言确认右侧成果栏不含 Markdown、含幻灯片分页器，“播放”进入 `.sp-study-layout`，导学页显示 `.sp-ppt-image` 且第 2 页可切换；截图 `tmp/workbench-shots/02-workbench-artifact.png`、`tmp/workbench-shots/03-presentation.png` 已目视确认第 1/2 页都是真实 PPT 画面。
+  - `node tools/guided-check.cjs`：35/35 PASS；回归导学会话、翻页、笔记、普通对话、新建/切换、重启恢复和窄屏行为。
+  - `node tools/busy-caret-check.cjs`：8/8 PASS，确认本轮没有破坏流式呼吸效果。
+  - `node -e` 直接调用 `shell/resource-reader.readResourceFile()`：返回 `slides=7`、HTML 572230 字符且包含 JPEG data URL，证明 Electron IPC 读取链路会拿到真实预览。
+  - `node --check`：`workbench.js`、`studyplayer.js`、`presentation-agent-check.cjs`、`workbench-ui.cjs` 均通过；Python `py_compile` 通过。
+- 版本与发布：
+  - `shell/package.json`、`shell/package-lock.json` 从 `0.8.22` 升级到 `0.8.23`。
+  - 两份原有未跟踪调研文档 `docs/知识库改进清单-v2.md`、`docs/非对话页面改造方案-v1.md` 继续排除，不纳入提交。
+  - 下一步提交本功能，再从该提交执行 `scripts/package-app.ps1`，打包结果、manifest 哈希和隔离启动冒烟将追加到本段。

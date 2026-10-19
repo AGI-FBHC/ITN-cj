@@ -18,7 +18,12 @@ const freePort=()=>new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.
   const script="import sys,zipfile,json;from pptx import Presentation;from xml.dom import minidom;p=sys.argv[1];z=zipfile.ZipFile(p);assert z.testzip() is None;[minidom.parseString(z.read(n)) for n in z.namelist() if n.endswith('.xml')];r=Presentation(p);print(json.dumps({'slides':len(r.slides),'notes':sum(1 for n in z.namelist() if n.startswith('ppt/notesSlides/notesSlide') and n.endswith('.xml')),'pictures':sum(1 for slide in r.slides for shape in slide.shapes if shape.shape_type==13),'media':len([n for n in z.namelist() if n.startswith('ppt/media/')]),'text':''.join(s.text for slide in r.slides for s in slide.shapes if s.has_text_frame)},ensure_ascii=False))";
   const parsed=JSON.parse(execFileSync('python',['-X','utf8','-c',script,a.path],{encoding:'utf8',windowsHide:true}));
   check('rendered PPTX is structurally valid and contains content',parsed.slides===9&&parsed.notes===9&&parsed.text.includes('输入与输出'));check('every slide embeds a full-bleed background image',parsed.pictures===9&&parsed.media>=4);
-  const preview=fs.readFileSync(a.previewPath,'utf8');check('preview is slide-shaped and includes normalized section pages',preview.includes('CHAPTER')&&preview.includes('09 / 09'));
+  const preview=fs.readFileSync(a.previewPath,'utf8');
+  const slideSections=(preview.match(/class="slide /g)||[]).length;
+  const exactRendered=preview.includes('class="slide ppt-rendered"')&&preview.includes('data:image/jpeg;base64');
+  const backgroundFallback=preview.includes('background-image:linear-gradient')&&preview.includes('data:image/jpeg;base64');
+  check('preview contains one visual slide per rendered page',slideSections===9&&!preview.includes('讲者备注</b>'));
+  check('preview uses exact PowerPoint renders when available, with a visual background fallback',exactRendered||backgroundFallback);
   console.log('RESULT='+passed+' checks; data='+dir);
  }finally{core.kill();mock.kill();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

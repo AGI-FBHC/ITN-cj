@@ -1,0 +1,29 @@
+{
+  "request": {
+    "requirement": "输入、输出与验收",
+    "title": "输入、输出与验收",
+    "audience": "students",
+    "purpose": "courseware",
+    "style": "education",
+    "backgroundStyle": "clean-minimal",
+    "language": "zh-CN",
+    "slideCount": 5,
+    "aspectRatio": "16:9",
+    "detailLevel": "detailed",
+    "includeSpeakerNotes": true,
+    "modelProvider": "mimo",
+    "generationMode": "template"
+  },
+  "outline": {
+    "title": "输入、输出与验收",
+    "subtitle": "从最小样例到可判断的验收标准",
+    "agendaPlan": [{"title":"认识输入输出","objective":"理解基本约定","keyTopics":["输入","输出"]},{"title":"验收与边界","objective":"学会判断结果","keyTopics":["边界","复盘"]}],
+    "slides": [
+      {"kind":"title","title":"输入、输出与验收","points":[],"speakerNotes":"欢迎开始今天的学习。我们先明确输入、处理和输出之间的关系。"},
+      {"kind":"agenda","title":"本讲路线","points":[{"heading":"认识输入输出","detail":"从最小样例理解任务、规则与结果之间的关系。"},{"heading":"验收与边界","detail":"用正常、边界和异常样例判断结果是否可信。"}],"speakerNotes":"本讲先建立输入输出的约定，再用验收标准检查结果。"},
+      {"kind":"concept","title":"输入输出的约定","points":[{"heading":"输入","detail":"输入必须写清数据范围、来源和允许的格式。"},{"heading":"输出","detail":"输出要包含结果、关键中间状态和可复现的证据。"},{"heading":"验收","detail":"验收标准应能客观判断结果是否满足要求。"}],"speakerNotes":"输入、输出和验收不是三张清单，而是一条完整的任务链。先约定输入，再执行处理，最后保存结果和证据。"},
+      {"kind":"comparison","title":"正常样例与边界样例","points":[{"heading":"正常样例","detail":"验证主流程能按预期完成。"},{"heading":"边界样例","detail":"验证空值、极值和异常输入的失败方式。"}],"speakerNotes":"正常样例说明主流程可用，边界样例说明失败时也能被看见和定位。"},
+      {"kind":"conclusion","title":"结论","points":[{"heading":"先约定","detail":"写清输入、输出和验收标准。"},{"heading":"再验证","detail":"保留正常、边界和异常证据。"}],"speakerNotes":"把可复现当作交付标准，下一次就能从证据继续改进。"}
+    ]
+  }
+}

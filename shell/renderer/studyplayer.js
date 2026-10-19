@@ -281,7 +281,7 @@ function spRenderPpt(page,res,asset){
   const fallbackSlides=Array.isArray(res.content?.slides)?res.content.slides:[];
   const artifactKey='resource:'+res.id+':v'+res.version;
   const state={
-    idx:0,total:fallbackSlides.length,previewDocs:[],previewTitles:[],ready:false,loadingPreview:true,
+    idx:0,total:fallbackSlides.length,previewDocs:[],previewImages:[],previewTitles:[],ready:false,loadingPreview:true,
     sessionId:'',sessions:[],sessionsLoading:false,creating:false,cleaned:false,
     saveTimer:0,focusTimer:0,focusSeq:0,focusPromise:null,focusedSlide:0,userNavigated:false,
     notesOpen:false,chatOpen:innerWidth>980,wasNarrow:innerWidth<=980,noteDialog:null,entries:new Map()
@@ -445,9 +445,11 @@ function spRenderPpt(page,res,asset){
   };
 
   const paintSlide=()=>{
-    const doc=state.previewDocs[state.idx];
+    const image=state.previewImages[state.idx],doc=state.previewDocs[state.idx];
     frameHost.replaceChildren();
-    if(doc){
+    if(image){
+      const slide=el('img','sp-ppt-image');slide.src=image;slide.alt=currentTitle();frameHost.appendChild(slide);
+    }else if(doc){
       const frame=el('iframe','sp-ppt-frame');frame.title=currentTitle();frame.setAttribute('sandbox','');frame.srcdoc=doc;frameHost.appendChild(frame);
     }else{
       const s=currentSlide(),fallback=el('article','sp-slide-fallback');
@@ -647,8 +649,9 @@ function spRenderPpt(page,res,asset){
       const sections=Array.from(doc.querySelectorAll('.slide'));
       if(!sections.length)return;
       const override='html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent}body{padding:0!important;display:grid;place-items:center}.slide{width:100%!important;max-width:none!important;height:100%!important;margin:0!important;border-radius:0!important;box-shadow:none!important}';
+      state.previewImages=sections.map(section=>section.querySelector('img')?.getAttribute('src')||'');
       state.previewDocs=sections.map(section=>'<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>'+css+'\n'+override+'</style></head><body>'+section.outerHTML+'</body></html>');
-      state.previewTitles=sections.map((section,i)=>section.querySelector('h2')?.textContent?.trim()||fallbackSlides[i]?.title||('第 '+(i+1)+' 页'));
+      state.previewTitles=sections.map((section,i)=>section.querySelector('h2')?.textContent?.trim()||section.dataset.title||fallbackSlides[i]?.title||('第 '+(i+1)+' 页'));
       state.total=state.previewDocs.length;
     }catch(e){}
     finally{
