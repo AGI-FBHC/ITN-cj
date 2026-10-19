@@ -4585,3 +4585,10 @@ read_chunk 读得到原文并带回库标识与正文。
 - 打包脚本新增目标版本运行占用预检：若 `dist/Lumin-<version>` 下已有 Electron/内核进程，提前给出 PID 和明确错误，避免复制后才发现启动器无法改名。
 - 首次从 `0.8.20` 目录打包时，用户外部启动了尚未完成的 `electron.exe`，导致 `Lumin.exe` 重命名被占用；已只结束该未完成版本目录下的进程并补充上述预检，不影响其他 Lumin 版本。
 - 最终产物目标固定为 `dist/Lumin-0.8.20` 和 `dist/Lumin-0.8.20.zip`。
+### 0.8.20 打包结果（2026-10-19）
+- 从提交 `e756e38` 执行 `pwsh -NoProfile -File scripts/package-app.ps1`，成功生成版本化产物。
+- 应用目录：`dist/Lumin-0.8.20`；压缩包：`dist/Lumin-0.8.20.zip`，大小 244.9 MB，SHA256 `4F0CAFAC77A9482BAB51102666AB1F5F1721161472AAF5DD2F0BF52D8414691A`。
+- `release.json`：`version=0.8.20`、`build=lumin-0.8.20-e756e38`、`sourceCommit=e756e386e5a5f86ad6657ee66259ecf9444d239d`。
+- 将压缩包实际解压到隔离目录后复算 manifest：19/19 个资产 SHA256 一致，0 个缺失；包顶层不存在带 `x64` 的发布名，启动器为 `Lumin.exe`，内核为 `resources/kernel/lumin-core.exe`。
+- 解压包启动冒烟：`Lumin.exe` 主进程与 `lumin-core.exe` 均正常启动并保持运行，测试后仅结束该隔离实例的 5 个进程。
+- 注意：`dist/Lumin-win-x64.zip` 是本次发布前遗留的旧产物，不是 0.8.20 交付包；本次新产物文件名不含 `x64/win-x64`。
