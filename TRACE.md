@@ -4824,3 +4824,11 @@ read_chunk 读得到原文并带回库标识与正文。
 - 用户说“学习成功页面里的那个本地文件功能不需要，删掉”，按界面实际名称“学习成果”执行：移除顶部本地文件分类、独立打开本地文件/PPT/文档页面及无调用的 openLocalOutcome；旧 #/resources/files 归一到 #/resources。已有保存资源、导入文件功能、聊天附件、资源预览与PPT播放继续保留。
 - 真实浏览器验证已通过：tools/knowledge-tables-check.cjs 修复前测试中的“本地文件分类/专用页面消失”“旧路由进入个性资源”两项均 PASS；日志 tmp/knowledge-tables-before.log。该脚本同时复现了README表格与代码跨片段错误（6项失败），正继续修复，不将其误报为全通过。
 - app.js/workbench.js 语法检查通过。此删除是现有UI入口精简，不删除用户文件，不新增内核接口。与本段独立提交。
+
+## 2026-10-20 · 原文跨片段表格与代码块
+- 用户截图显示Hello-Agents README的章节表被拆成多个内容片段，只有第一个片段含表头/分隔线，其余行显示为原始管道文本。确认为前端逐片段独立调用Markdown造成，不是源文档表格语法错误。
+- 预览新增 knowledgeDocumentRenderer，将连续且标题路径相同的快照片段按换行拼回完整小节，再渲染；下一页继续补全当前小节，因此跨页表格和代码围栏均可保持连续。原始分页、索引和快照接口未修改，无需用户重建索引。
+- 文档相对链接按原文目录解析，中文与percent编码路径可打开同库已准备的原文；搜索预览中的相对链接也交给同一原文容器处理。未开放任意本机文件读取。
+- tools/knowledge-tables-check.cjs：修复前7项通过/6项失败，tmp/knowledge-tables-before.log；最终14/14 PASS，tmp/knowledge-tables-after.log。真实README先索引再移走源文件，确认仍读快照；章节表22行完整且只出现一次、加载多页后仍一张表、第十六章仍在表内；章节链接可打开；65行表跨页不丢/重复；代码围栏跨片段仍为一个literal代码块且不执行HTML；转义竖线正确。脚本初版行数统计把表头尾部多计了一行，核对原文后修为排除完整表头与分隔行，不改变产品结果。
+- 图片回归 tools/knowledge-images-check.cjs 14/14 PASS，tmp/knowledge-images-after-tables.log；真实README截图 tmp/knowledge-tables-shots/real-readme.png 已目视检查，表格单元格/章节链接正常。JS语法与git diff --check通过。
+- 工作中用户继续追加：收集资料全流程验收并修卡点；启动动画 powered by cangjie；内部运行时目录命名规范化（提交说明只按功能/维护范围表述）；依据2026仓颉杯官方要求优化 D:/Desktop/仓颉杯/创新原型赛道/01-项目说明.docx。后续继续完成，不丢失前述交付项。

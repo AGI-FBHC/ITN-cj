@@ -258,6 +258,42 @@ function safeDocumentTag(escapedTag, options) {
   return node.outerHTML.replace(new RegExp("</" + name + ">$"), "");
 }
 
+function documentLinkTag(match, label, target, options) {
+  const source = decodeMarkdownAttribute(target).trim();
+  if (!options.kbId || /^(?:[a-z][\w+.-]*:|\/\/|#)/i.test(source)) return match;
+  try {
+    const url = new URL(source, new URL("/" + options.docPath, location.origin));
+    const path = decodeURIComponent(url.pathname.slice(1));
+    const link = document.createElement("a");
+    link.className = "md-link"; link.href = "#"; link.dataset.kbDocument = path;
+    link.innerHTML = label;
+    return link.outerHTML;
+  } catch (e) { return match; }
+}
+
+function knowledgeDocumentRenderer(container, options) {
+  let currentGroup = null;
+  return chunks => {
+    const changed = new Set();
+    for (const chunk of chunks) {
+      if (!currentGroup || currentGroup.heading !== chunk.headingPath) {
+        const article = el("article", "preview-chunk"), body = el("div", "md");
+        article.append(el("p", "muted sm", chunk.headingPath || "正文"), body);
+        container.appendChild(article);
+        currentGroup = { heading: chunk.headingPath, parts: [], body };
+      }
+      currentGroup.parts.push(chunk.text);
+      changed.add(currentGroup);
+    }
+    for (const group of changed) {
+      // Indexed chunks can end in the middle of a table or code fence.
+      // Keep rendering the whole section, including when the next page extends it.
+      group.body.innerHTML = md(group.parts.join("\n"), options);
+      hydrateKnowledgeImages(group.body);
+    }
+  };
+}
+
 function hydrateKnowledgeImages(root) {
   for (const img of root.querySelectorAll("img[data-kb-image]")) {
     const load = async () => {
@@ -292,6 +328,7 @@ function md(src, options = {}) {
         const source = target.match(/^&lt;(.*?)&gt;(?:\s+.*)?$/)?.[1] || target.replace(/\s+&quot;.*&quot;$/, "");
         return hold(documentImageTag(source, alt, options));
       });
+      s = s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (match, label, target) => documentLinkTag(match, label, target, options));
     }
     return s.replace(/!\[([^\]]*)\]\(([^)]*)\)/g, '<span class="md-img">图片 · $1</span>')
     .replace(/\[([^\]\n]+)\]\((https?:[^)\s]+|mailto:[^)\s]+|lumin:[^)\s]+)\)/g, '<a class="md-link" href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
@@ -4491,6 +4528,14 @@ PAGES.kb = {
     };
     filter.oninput = () => { if (st) paint(); }; status.onchange = () => { if (st) paint(); };
     let previewRequest = 0;
+    previewHost.addEventListener("click", event => {
+      const link = event.target.closest("a[data-kb-document]");
+      if (!link) return;
+      event.preventDefault();
+      const path = link.dataset.kbDocument;
+      const origin = [...list.querySelectorAll(".library-document")].find(node => node.dataset.path === path)?.querySelector("button");
+      preview(path, origin);
+    });
     async function preview(path, origin) {
       const request = ++previewRequest; previewHost.innerHTML = "";
       list.querySelectorAll(".library-document").forEach(node => node.classList.toggle("selected", node.dataset.path === path));
@@ -4498,13 +4543,14 @@ PAGES.kb = {
       const close = btn("收起原文", "ghost sm", () => { ++previewRequest; previewHost.innerHTML = ""; origin?.focus(); }); box.querySelector(".card-head").appendChild(close);
       box.appendChild(el("p", "muted sm", "这里展示上次准备资料时保存的内容，按片段顺序排列。"));
       const content = el("div"); box.appendChild(content); const more = btn("加载更多", "sm", () => read()); box.appendChild(more);
+      const appendChunks = knowledgeDocumentRenderer(content, {document:true,kbId:id,docPath:path});
       let offset = 0;
       async function read() {
         more.disabled = true; more.textContent = "正在读取…";
         try {
           const d = await api("/api/kb/document", {id, path, offset, limit: 12}); if (request !== previewRequest) return;
           box.querySelector("h2").textContent = d.title || "资料原文";
-          for (const c of d.chunks) { const item = el("article", "preview-chunk"); item.appendChild(el("p", "muted sm", c.headingPath || "正文")); const body = el("div", "md"); body.innerHTML = md(c.text, {document:true,kbId:id,docPath:path}); item.appendChild(body); content.appendChild(item); hydrateKnowledgeImages(body); }
+          appendChunks(d.chunks);
           offset = d.nextOffset; more.hidden = offset < 0; more.textContent = "加载更多"; more.title = "共 " + d.total + " 个片段";
         } catch(e) { if (request !== previewRequest) return; more.textContent = "读取失败，点击重试"; toast(e.message); }
         finally { more.disabled = false; }
