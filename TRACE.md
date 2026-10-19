@@ -4759,3 +4759,8 @@ read_chunk 读得到原文并带回库标识与正文。
 - 包内冒烟：直接启动 `dist/Lumin-0.8.24/resources/kernel/lumin-core.exe`（隔离临时数据目录），`/health` 返回 `status=ok`、Cangjie `1.2.0`；`/mascot.js` 返回 200 JavaScript，`/mascot/xiaoyuanlong-idle.png` 返回 200 PNG、101,642 字节；`/release.json` 返回 0.8.24。
 - 打包日志：`tmp/package-lumin-0.8.24.log`；构建日志：`tmp/build-mascot-tts-package.log`。
 - 本段打包记录随本段所在提交同步到本地 Git；zip 内 manifest 使用该记录的提交哈希。
+## 2026-10-19 · 0.8.24 打包幂等性修复
+- 复测发现：对同一个 `dist/Lumin-0.8.24` 连续打包时，旧输出目录未先清理，`Copy-Item -Destination` 会把生产依赖重复套进已有模块目录，ZIP 从 221.15 MB 异常膨胀到 246.2 MB。
+- 修复 `scripts/package-app.ps1`：打包前校验输出路径不是仓库根/磁盘根；只有目录内同时存在 `Lumin.exe` 和 `resources/app`、能识别为 Lumin 旧包时才递归清理；同时删除旧 ZIP。该方法避免误删普通目录，同时保证重复打包幂等。
+- 修复后第一次清理重打：ZIP 恢复到 231,890,381 字节（221.15 MB），manifest 仍为 33 个资产，其中 12 张小鼋龙动作帧。
+- 本轮修复随本段所在提交同步；随后对同一版本再执行一次打包作为幂等性验收，要求 ZIP 大小不增长且源提交更新为该提交。

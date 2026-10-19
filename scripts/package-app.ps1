@@ -27,6 +27,19 @@ if ($running.Count -gt 0) {
     throw "目标目录中的 Lumin 正在运行（PID: $pids）。请先关闭该版本，再重新打包。"
 }
 
+# 0) 同一版本重复打包必须从空目录开始，避免 Copy-Item 把模块再次套进已有目录。
+$outFull = [IO.Path]::GetFullPath($OutDir).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+$rootFull = [IO.Path]::GetFullPath($repo).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+if ($outFull -eq $rootFull -or $outFull -eq [IO.Path]::GetPathRoot($outFull).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)) {
+    throw "拒绝把仓库根目录或磁盘根目录当作打包输出目录：$OutDir"
+}
+if (Test-Path -LiteralPath $OutDir) {
+    $looksLikeLumin = (Test-Path -LiteralPath (Join-Path $OutDir "Lumin.exe")) -and (Test-Path -LiteralPath (Join-Path $OutDir "resources\app"))
+    if (-not $looksLikeLumin) { throw "输出目录已存在但不是可识别的 Lumin 包，拒绝递归清理：$OutDir" }
+    Remove-Item -LiteralPath $OutDir -Recurse -Force
+}
+if (Test-Path -LiteralPath $ZipPath) { Remove-Item -LiteralPath $ZipPath -Force }
+
 # 1) 先确保内核产物是最新的
 & "$PSScriptRoot\package.ps1" | Out-Host
 
