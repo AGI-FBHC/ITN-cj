@@ -1,5 +1,5 @@
 /* Personal learning workspace. Data and task truth come from the Cangjie API. */
-const RESOURCE_LABEL = {lecture: '定制讲义', practice: '实操指南', quiz: '分阶测试', ppt: '在线演示', legacy:'历史资料'};
+const RESOURCE_LABEL = {lecture: '定制讲义', practice: '实操指南', quiz: '分阶测试', ppt: 'PPT 演示', legacy:'历史资料'};
 const TASK_LABEL = {running: '正在执行', cancelling: '正在停止', completed: '已完成', failed: '未完成', cancelled: '已取消', interrupted: '上次任务已中断'};
 const workbench = {selected: null, open: false, loadToken: 0, seenSaved: new Set(), task: null};
 

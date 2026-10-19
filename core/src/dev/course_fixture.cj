@@ -68,6 +68,23 @@ func fixturePpt(): JsonObject{
     }
     o.put("slides",slides);return o
 }
+func fixturePresentationPoint(heading: String,detail: String): JsonObject{
+    let point=JsonObject();point.put("heading",JsonString(heading));point.put("detail",JsonString(detail));return point
+}
+/** PPT 子 Agent 的新提纲协议。测试夹具仍生成真实 4 页，交给旧网页版渲染器补章节页。 */
+func fixturePresentationOutline(): JsonObject{
+    let o=JsonObject();o.put("title",JsonString("输入与输出的约定"));o.put("subtitle",JsonString("从可复现样例到可靠验收"))
+    let agenda=JsonArray()
+    let a1=JsonObject();a1.put("title",JsonString("先约定输入"));a1.put("objective",JsonString("让任务边界可检查"));a1.put("keyTopics",fixtureArray(["输入样例","范围"]));agenda.add(a1)
+    let a2=JsonObject();a2.put("title",JsonString("最后验收结果"));a2.put("objective",JsonString("让结果可以被判断"));a2.put("keyTopics",fixtureArray(["证据","复盘"]));agenda.add(a2)
+    o.put("agendaPlan",agenda)
+    let slides=JsonArray()
+    let title=JsonObject();title.put("title",JsonString("输入与输出的约定"));title.put("kind",JsonString("title"));title.put("points",JsonArray());title.put("speakerNotes",JsonString("大家好，今天我们从一次可以复现的工具调用开始，先约定输入和预期输出，再保留执行过程中的观察证据，最后用正常、边界和异常样例逐项验收。整节课不追求一次成功，而是让每次结果都能解释、能复查，也能在失败时快速定位到具体环节。"));slides.add(title)
+    let agendaSlide=JsonObject();agendaSlide.put("title",JsonString("本讲路线"));agendaSlide.put("kind",JsonString("agenda"));let agendaPoints=JsonArray();agendaPoints.add(fixturePresentationPoint("先约定输入","写清数据来源、格式、范围和预期输出。"));agendaPoints.add(fixturePresentationPoint("再保留证据","记录关键中间状态和完整错误信息。"));agendaPoints.add(fixturePresentationPoint("最后做验收","用正常、边界和异常样例逐项核对。"));agendaSlide.put("points",agendaPoints);agendaSlide.put("speakerNotes",JsonString("这次分享按三步推进。第一步把输入和完成标准写成可以检查的样例，第二步在执行时保留中间状态，第三步用三类样例验收结果。每一步都对应一个实际动作，完成后都能留下可复查的证据，而不是只凭印象判断成功。"));slides.add(agendaSlide)
+    let concept=JsonObject();concept.put("title",JsonString("把处理过程留下证据"));concept.put("kind",JsonString("process"));let process=JsonArray();for(pair in [("读取","校验字段与版本"),("执行","保存关键中间状态"),("校验","对照预期输出"),("复盘","记录失败与改进")]){let item=JsonObject();item.put("label",JsonString(pair[0]));item.put("detail",JsonString(pair[1]));process.add(item)};concept.put("process",process);let conceptPoints=JsonArray();conceptPoints.add(fixturePresentationPoint("先校验","读取后立即检查字段、类型和允许范围。"));conceptPoints.add(fixturePresentationPoint("留证据","保存输入、中间状态、输出和错误信息。"));conceptPoints.add(fixturePresentationPoint("再复盘","说明偏差出现的具体步骤和修正动作。"));concept.put("points",conceptPoints);let notes=JsonString("处理阶段最重要的不是看起来跑通，而是留下能够追溯的证据。先用最小样例校验输入字段，再执行并保存关键中间状态，随后对照预期输出检查结果。出现偏差时，从第一处不一致开始定位，最后写下失败原因和下一次改法。这样换一个人也能复现，不必把整个过程当成黑盒重新开始。");concept.put("speakerNotes",notes);let moments=JsonArray();let quiz=JsonObject();quiz.put("momentId",JsonString("fixture-quiz-1"));quiz.put("type",JsonString("quiz"));quiz.put("title",JsonString("检查理解"));quiz.put("prompt",JsonString("执行结果与预期不一致时，最可靠的第一步是什么？"));quiz.put("options",fixtureArray(["保留观察记录并核对输入","直接伪造成功输出","删除全部原始资料","跳过验证重复执行"]));quiz.put("answerIndex",JsonInt(0));quiz.put("explanation",JsonString("先保留真实观察并核对输入，才能判断问题来自参数、权限还是执行过程；其他做法都会掩盖证据。"));quiz.put("anchorText",JsonString("先用最小样例校验输入字段"));moments.add(quiz);concept.put("teachingMoments",moments);slides.add(concept)
+    let conclusion=JsonObject();conclusion.put("title",JsonString("结论与下一步"));conclusion.put("kind",JsonString("conclusion"));let endPoints=JsonArray();endPoints.add(fixturePresentationPoint("先写样例","把正常、边界和异常输入写出来。"));endPoints.add(fixturePresentationPoint("再做验证","保存结果和证据，按约定复盘。"));conclusion.put("points",endPoints);let endNotes=JsonString("最后把方法压缩成两个动作：先把正常、边界和异常样例写清楚，再用可复现的证据验证结果。下一次面对新的工具调用时，不必凭感觉判断，只要按同一套输入、观察和验收约定执行，就能知道问题出在哪里，也能把改进留给下一位使用者。");conclusion.put("speakerNotes",endNotes);let summaries=JsonArray();let summary=JsonObject();summary.put("momentId",JsonString("fixture-summary-1"));summary.put("type",JsonString("summary"));summary.put("title",JsonString("本页小结"));summary.put("points",fixtureArray(["输入、观察和输出都要可检查","失败时从第一处偏差定位","边界样例属于验收的一部分"]));summary.put("notePrompt",JsonString("写下你会怎样验证一次工具调用。"));summary.put("anchorText",JsonString("先把正常、边界和异常样例写清楚"));summaries.add(summary);conclusion.put("teachingMoments",summaries);slides.add(conclusion)
+    o.put("slides",slides);return o
+}
 func fixtureDocRefs(text: String): ArrayList<String>{
     let out=ArrayList<String>();let parts=text.split("\"id\":\"D");var k=1
     while(k<parts.size){let bytes=parts[k].toArray();var n: Int64=0;while(n<bytes.size&&bytes[n]>=48&&bytes[n]<=57){n+=1};if(n>0){out.add("D"+String.fromUtf8(bytes[0..n]))};k+=1}
@@ -83,6 +100,7 @@ func fixtureReply(b: JsonObject): (String,?JsonObject){
     let messages=arrOf(b,"messages");var user="";var system="";var lastRole="";var i=0
     while(i<messages.size()){let m=objOf(messages[i]).getOrThrow();i+=1;lastRole=strOf(m,"role");if(lastRole=="user"){user=strOf(m,"content")};if(lastRole=="system"){system+=strOf(m,"content")}}
     if(system.contains("当前交互导学")){return("这一页先抓住一个判断：真实输出要能被观察和复核。请先用自己的话说说，你会保留哪两项证据？",None)}
+    if(system.contains("演示文稿信息架构师")&&(user.contains("请设计一份内容充实")||user.contains("上一次输出不是可用JSON提纲"))){return(fixturePresentationOutline().toString(),None)}
     if(arrOf(b,"tools").size()>0){
         if(lastRole=="tool"){return("候选学习资源已生成，请预览；满意后点击加入我的学习资源。",None)}
         if(user.contains("活跃度")){

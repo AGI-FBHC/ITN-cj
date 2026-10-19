@@ -4592,3 +4592,30 @@ read_chunk 读得到原文并带回库标识与正文。
 - 将压缩包实际解压到隔离目录后复算 manifest：19/19 个资产 SHA256 一致，0 个缺失；包顶层不存在带 `x64` 的发布名，启动器为 `Lumin.exe`，内核为 `resources/kernel/lumin-core.exe`。
 - 解压包启动冒烟：`Lumin.exe` 主进程与 `lumin-core.exe` 均正常启动并保持运行，测试后仅结束该隔离实例的 5 个进程。
 - 注意：`dist/Lumin-win-x64.zip` 是本次发布前遗留的旧产物，不是 0.8.20 交付包；本次新产物文件名不含 `x64/win-x64`。
+## 2026-10-19 · 真实 PPT 学习资源 + 简约交互导学收口（0.8.21）
+- 用户本轮重点：思维导图“在线演示”必须生成真实可编辑 `.pptx`，加载播放的也必须是实际演示文件，不能再是 Markdown 演讲稿；导学页只保留“PPT 演示 + 右侧普通对话”，复用普通会话的切换/新建能力，去掉多余顶部模块和空侧栏；背景版式要达到旧网页版 PPT 子 Agent 的效果。用户要求尽快交付，mock 不做无意义扩测，真实模型必须认真验收。
+- 导学页与会话：
+  - 学习页收敛为左侧真实 PPTX 页预览、右侧普通对话框；顶部全局 `#titlebar` 未改。
+  - 导学会话写入普通会话列表并带资源标签；同一 PPT 支持多会话切换和新建，后台回复不因切换页面而中断。
+  - 修复 `spGuideIconButton` 四处回调参数错误；原实现按钮收到的实参不匹配，表现为控件存在但点击无动作。
+  - 保留翻页、当前页上下文、检查点与学习证据能力，但移除复杂卡片式导学布局和无效学习资源侧栏。
+- PPT 固定子 Agent：
+  - 新增 `core/src/agent/ppt_resource.cj`，`generate_learning_resource` 的 PPT 类型进入固定流水线：节点范围与知识库证据 → 真实对话模型结构化提纲 → 校验页数/标题 → 随包 `python-pptx` 渲染 → 候选资源。
+  - 仓颉控制流水线、模型调用、校验和资源落库；Python 仅负责最终文件输出，不在 Python 内重新编排 Agent 流程。
+  - 生成真实全幅背景、完整页型与讲者备注；`content.slides` 只作为导学/索引镜像，`.pptx` 是文件真相。
+  - PPT 目标页数统一至少 4 页；新版提纲协议同步到课程夹具和测试脚本。
+- 测试与真实模型验收：
+  - `node tools/course-check.cjs`：81/81。
+  - `node tools/session-switch-check.cjs`：12/12。
+  - `node tools/learning-check.cjs`：45/45。
+  - `node tools/guided-check.cjs`：35/35。
+  - `node tools/presentation-agent-check.cjs`：12/12。
+  - `node tools/presentation-check.cjs`：9/9。
+  - `cjpm test --no-progress --no-color`：160/160 PASS。
+  - 使用 `%LOCALAPPDATA%\Lumin\itn.db` 的真实模型配置执行 `tools/real-learning-check.ps1 -OnlyPpt`；首次失败原因是测试启动内核漏传 `--ui-dir`，修正后才真正进入渲染链路，正式桌面启动 `shell/main.js` 原本会传该参数。
+  - 修正后真实模型成功调用 `generate_learning_resource`：4/4 页，质量检查 0 问题、0 次返修；每页均有全幅背景图和讲者备注；PPTX ZIP 结构与 `python-pptx` 打开复验均通过。
+  - 真实样例：`tmp/real-ppt-resource-check/input-output-acceptance.pptx`，SHA256 `FA31454D96E3848813D215F535C028087BDCF99E5671ECD5D35F43C981846CF6`。
+- 版本与发布：
+  - `shell/package.json`、`shell/package-lock.json` 从 `0.8.20` 升级到 `0.8.21`。
+  - 两份原有未跟踪调研文档 `docs/知识库改进清单-v2.md`、`docs/非对话页面改造方案-v1.md` 继续保留，不纳入本轮提交。
+  - 下一步用 `scripts/package-app.ps1` 生成 `dist/Lumin-0.8.21` 与 `dist/Lumin-0.8.21.zip`，文件名不得包含 `x64/win-x64`，随后做隔离解压、manifest 哈希和启动冒烟。

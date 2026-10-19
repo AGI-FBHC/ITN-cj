@@ -236,7 +236,7 @@ def main():
             results = []
             for kind, prompt in [('quiz', '请根据资料生成一套 3 题的分阶测试，主题：Agent 工具调用。'),
                                  ('practice', '请根据资料生成一份实操练习，主题：Agent 工具调用，3 个步骤。'),
-                                 ('ppt', '请根据资料生成一份 4 页在线演示，主题：Agent 工具调用。')]:
+                                 ('ppt', '请根据资料生成一份 4 页 PPT 演示，主题：Agent 工具调用。')]:
                 sid = new_session()
                 r = ask(sid, prompt, kbId='rkb', web='off')
                 events = core.events(sid)

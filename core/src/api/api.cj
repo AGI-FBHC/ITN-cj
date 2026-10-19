@@ -1535,6 +1535,35 @@ public class Api {
 
         // ---------- 交互导学：课件绑定会话、页面焦点、检查点与关联笔记 ----------
 
+        if (path == "/api/guided/sessions" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => try {
+                    let o = JsonObject()
+                    o.put("sessions", GuidedStore(store.dataDir).sessions(strOf(b, "resourceId"), intOf(b, "version")))
+                    ok(ctx, o)
+                } catch (e: Exception) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/guided/session/new" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => try {
+                    ok(ctx, GuidedStore(store.dataDir).createSession(strOf(b, "resourceId"), intOf(b, "version"), intOf(b, "slide")))
+                } catch (e: Exception) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
+        if (path == "/api/guided/session/select" && method == "POST") {
+            match (bodyJson(ctx)) {
+                case Some(b) => try {
+                    ok(ctx, GuidedStore(store.dataDir).select(strOf(b, "resourceId"), intOf(b, "version"), strOf(b, "sessionId")))
+                } catch (e: Exception) { fail(ctx, 400, e.message) }
+                case None => fail(ctx, 400, "请求体不是合法 JSON")
+            }
+            return
+        }
         if (path == "/api/guided/session/resolve" && method == "POST") {
             match (bodyJson(ctx)) {
                 case Some(b) => try {
@@ -1948,14 +1977,9 @@ public class Api {
         }
 
         if (path == "/api/sessions/list" && method == "POST") {
-            let ss = SessionStore(store.dataDir)
-            let guided = GuidedStore(store.dataDir)
+            // 导学会话也是普通会话：仍然出现在侧栏，并带 resource 标签供界面识别。
             let arr = JsonArray()
-            for (sm in ss.list()) {
-                if (!guided.isGuided(strOf(sm, "sessionId"))) {
-                    arr.add(sm)
-                }
-            }
+            for (sm in SessionStore(store.dataDir).list()) { arr.add(sm) }
             let o = JsonObject()
             o.put("sessions", arr)
             ok(ctx, o)
@@ -3298,6 +3322,9 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/learning/memory/forget",
         "/api/learning/answer",
         "/api/learning/progress",
+        "/api/guided/sessions",
+        "/api/guided/session/new",
+        "/api/guided/session/select",
         "/api/guided/session/resolve",
         "/api/guided/focus",
         "/api/guided/context",

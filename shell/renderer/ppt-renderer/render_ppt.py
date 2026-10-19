@@ -136,15 +136,20 @@ def main() -> int:
     preview_path.write_text(preview_html(normalized, request), encoding="utf-8", newline="\n")
     design_path = Path(str(output_path) + ".json")
     design_path.write_text(json.dumps({"request": packet.get("request") or {}, "outline": normalized}, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
+    normalized_slides = [s for s in (normalized.get("slides") or []) if isinstance(s, dict)]
+    requested_slides = len(outline.get("slides") or [])
+    rendered_slides = len(normalized_slides)
     result = {
         "ok": True,
         "path": str(output_path),
         "previewPath": str(preview_path),
         "designPath": str(design_path),
-        "slides": len(outline.get("slides") or []),
-        "title": str(outline.get("title") or request.title or request.requirement),
-        "kinds": [str(s.get("kind") or "content") for s in (outline.get("slides") or []) if isinstance(s, dict)],
-        "notes": sum(1 for s in (outline.get("slides") or []) if isinstance(s, dict) and str(s.get("speakerNotes") or "").strip()),
+        "requestedSlides": requested_slides,
+        "renderedSlides": rendered_slides,
+        "slides": rendered_slides,
+        "title": str(normalized.get("title") or outline.get("title") or request.title or request.requirement),
+        "kinds": [str(s.get("kind") or "content") for s in normalized_slides],
+        "notes": sum(1 for s in normalized_slides if str(s.get("speakerNotes") or "").strip()),
     }
     print(json.dumps(result, ensure_ascii=False))
     return 0

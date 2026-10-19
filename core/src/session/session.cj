@@ -59,6 +59,18 @@ var sessionListCache: ?ArrayList<JsonObject> = None
 var sessionListCacheDir: String = ""
 var sessionListCacheEpoch: Int64 = -1
 
+func resourceMetaField(raw: String): JsonValue {
+    if (raw.size == 0) { return JsonNull() }
+    try {
+        match (JsonValue.fromStr(raw)) {
+            case o: JsonObject => return o
+            case _ => return JsonNull()
+        }
+    } catch (e: Exception) {
+        return JsonNull()
+    }
+}
+
 public class SessionStore {
     public let dataDir: String
 
@@ -752,6 +764,8 @@ public class SessionStore {
         o.put("kbId", JsonString(kbId))
         // 会话挂在哪个项目下（侧栏按项目分组用；''=未归档）
         o.put("projectId", JsonString(db().getKv("sessions_meta", "project:" + sessionId, "")))
+        // 导学等资源会话同时属于普通对话；resource 标签供列表显示和播放器筛选。
+        o.put("resource", resourceMetaField(db().getKv("sessions_meta", "resource:" + sessionId, "")))
         return o
     }
 
@@ -957,6 +971,8 @@ public class SessionStore {
         db().delKv("sessions_meta", "context:" + sessionId)
         db().delKv("sessions_meta", "state:" + sessionId)
         db().delKv("sessions_meta", "project:" + sessionId)
+        db().delKv("sessions_meta", "resource:" + sessionId)
+        db().delKv("sessions_meta", "guided:" + sessionId)
     }
 
     /**
@@ -1058,6 +1074,7 @@ public class SessionStore {
 
         let customTitles = HashMap<String, String>()
         let projectOf = HashMap<String, String>()
+        let resourceOf = HashMap<String, JsonValue>()
         // 顺手把 leaf/tree 标记也读出来：行的循环里就不用每个会话再单独 getKv 一次
         //（纯仓颉引擎上每多一条语句都是毫秒级开销，56 个会话就是几百毫秒）
         let leafMap = HashMap<String, Int64>()
@@ -1069,6 +1086,8 @@ public class SessionStore {
                 customTitles[k.replace("title:", "")] = v
             } else if (hasPrefix(k, "project:")) {
                 projectOf[k.replace("project:", "")] = v
+            } else if (hasPrefix(k, "resource:")) {
+                resourceOf[k.replace("resource:", "")] = resourceMetaField(v)
             } else if (hasPrefix(k, "leaf:")) {
                 try { leafMap[k.replace("leaf:", "")] = Int64.parse(v) } catch (e: Exception) { () }
             } else if (hasPrefix(k, "tree:")) {
@@ -1108,6 +1127,7 @@ public class SessionStore {
             o.put("kind", JsonString(kinds.get(sid) ?? ""))
             o.put("kbId", JsonString(kbs.get(sid) ?? ""))
             o.put("projectId", JsonString(projectOf.get(sid) ?? ""))
+            o.put("resource", resourceOf.get(sid) ?? JsonNull())
             out.add(o)
         }
         sessionListCacheLock.lock()

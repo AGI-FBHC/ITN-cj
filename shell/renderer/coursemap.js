@@ -1,6 +1,6 @@
 /* Knowledge-base course maps. All ownership, versions and lifecycle decisions are authoritative in Cangjie. */
 const courseUi={data:null,kb:'',selected:'',views:new Map(),jobs:new Map(),targets:new Map()};
-const COURSE_KINDS=[['lecture','定制讲义','file'],['practice','实操指南','code'],['quiz','分阶测试','check'],['ppt','在线演示','play']];
+const COURSE_KINDS=[['lecture','定制讲义','file'],['practice','实操指南','code'],['quiz','分阶测试','check'],['ppt','PPT 演示','play']];
 const courseApi=(name,body={})=>api('/api/course/'+name,body);
 
 function courseDialog(title,subtitle=''){
@@ -30,7 +30,7 @@ async function courseStartResource(node,kind,regenerate=false){
   document.querySelector('.course-modal-overlay')?.remove();
   if(target.existing){state.chatSessionId=target.sessionId;state.chatProject=target.projectId||'';state.chatMode=state.chatProject?'work':'chat';await go('chat');return;}
   state.chatSessionId=target.sessionId;state.chatProject=target.projectId||'';state.chatMode=state.chatProject?'work':'chat';await go('chat');
-  const label=RESOURCE_LABEL[kind];const question='我想围绕思维导图节点「'+node.title+'」制作一份'+label+'。请先结合所选知识库和节点范围，问清必要的学习程度、用途、篇幅或题量等要求，再开始制作；已有要求不重复问。生成后先给我预览，满意并确认后再加入我的学习资源。';
+  const label=RESOURCE_LABEL[kind];const question=kind==='ppt'?('我想围绕思维导图节点「'+node.title+'」制作一份 PPT 演示（真实可编辑的 .pptx）。请先结合所选知识库和节点范围，问清必要的学习程度、用途、页数、风格等要求，再开始制作；已有要求不重复问。生成后先在应用内逐页预览，我明确确认满意后再加入学习资源。'):('我想围绕思维导图节点「'+node.title+'」制作一份'+label+'。请先结合所选知识库和节点范围，问清必要的学习程度、用途、篇幅或题量等要求，再开始制作；已有要求不重复问。生成后先给我预览，满意并确认后再加入我的学习资源。');
   const input=$('chat-input');input.value=question;input.dispatchEvent(new Event('input'));document.querySelector('.composer-send[aria-label="发送"]')?.click();
 }
 async function openCourseAsset(asset){

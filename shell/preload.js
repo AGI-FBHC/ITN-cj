@@ -20,7 +20,7 @@ contextBridge.exposeInMainWorld("itnWindow", {
   openPath: (p) => ipcRenderer.invoke("shell:open-path", String(p || "")),
   /** 打开系统的"选演示文稿"对话框（.pptx / .ppt）。 */
   pickDeck: () => ipcRenderer.invoke("dlg:pick-deck"),
-  /** 读一份演示文稿（.pptx / .ppt）的文字，给"在线演示"做离线预览。 */
+  /** 读一份演示文稿（.pptx / .ppt）的文字，给"PPT 演示"做离线预览。 */
   readDeck: (p) => ipcRenderer.invoke("deck:read", String(p || "")),
   /** 打开系统的"选文档"对话框（.docx / .doc）。 */
   pickDoc: () => ipcRenderer.invoke("dlg:pick-doc"),

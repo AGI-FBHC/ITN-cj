@@ -17,7 +17,8 @@ import itn_desktop_core.util.*
  *
  * 这里不运行模型，也不相信前端传来的“当前页正文”。资源、页码、教学检查点
  * 每次都从 LearningStore 的确认版本重新读取；会话与资源版本之间的绑定放在
- * sessions_meta，普通会话列表会把它隐藏起来，但学习页仍可按资源恢复。
+ * sessions_meta。导学会话同时属于普通对话列表，并带 resource 标签；学习页按
+ * 资源版本筛出这些会话，记住最近一次选择，并在重启后恢复。
  */
 
 func objectOf(v: JsonValue): JsonObject {
@@ -112,7 +113,7 @@ public class GuidedStore {
         }
         let res = LearningStore(dataDir).resource(resourceId, version)
         if (strOf(res, "kind") != "ppt") {
-            throw Exception("只有在线演示资源可以开启交互导学")
+            throw Exception("只有 PPT 演示资源可以开启交互导学")
         }
         let slides = arrOf(objectField(res, "content"), "slides")
         if (slides.size() == 0) {
@@ -135,6 +136,123 @@ public class GuidedStore {
     private func putBinding(sessionId: String, binding: JsonObject): Unit {
         binding.put("updatedAt", JsonString(stamp()))
         db().putKv("sessions_meta", "guided:" + sessionId, binding.toString())
+    }
+
+    private func metaObject(raw: String): JsonObject {
+        if (raw.size == 0) { return JsonObject() }
+        try { return objectOf(JsonValue.fromStr(raw)) } catch (e: Exception) { return JsonObject() }
+    }
+
+    private func resourceMetaOf(sessionId: String): JsonObject {
+        return metaObject(db().getKv("sessions_meta", "resource:" + sessionId, ""))
+    }
+
+    private func putResourceMeta(sessionId: String, resource: JsonObject, version: Int64): Unit {
+        let meta = JsonObject()
+        meta.put("resourceId", JsonString(strOf(resource, "id")))
+        meta.put("resourceVersion", JsonInt(version))
+        meta.put("resourceTitle", JsonString(strOf(resource, "title")))
+        db().putKv("sessions_meta", "resource:" + sessionId, meta.toString())
+    }
+
+    private func matchesResource(sessionId: String, resourceId: String, version: Int64): Bool {
+        let meta = resourceMetaOf(sessionId)
+        return strOf(meta, "resourceId") == resourceId && intOf(meta, "resourceVersion") == version &&
+            isGuided(sessionId)
+    }
+
+    private func selectSession(resourceId: String, version: Int64, sessionId: String): Unit {
+        db().putKv("meta", guidedKey(resourceId, version), sessionId)
+    }
+
+    private func latestResourceSession(resourceId: String, version: Int64): String {
+        let dbh = db()
+        var latest = ""
+        var latestAt = ""
+        for (r in dbh.querySql("SELECT k, v FROM sessions_meta")) {
+            let key = r.text(0)
+            if (hasPrefix(key, "resource:")) {
+                let sid = key.replace("resource:", "")
+                if (matchesResource(sid, resourceId, version)) {
+                    match (dbh.one("SELECT updated_at FROM sessions WHERE id = ?", va([tv(sid)]))) {
+                        case Some(row) =>
+                            let at = row.text(0)
+                            if (latestAt.size == 0 || at > latestAt) { latest = sid; latestAt = at }
+                        case None => ()
+                    }
+                }
+            }
+        }
+        return latest
+    }
+
+    private func createResourceSession(resourceId: String, resource: JsonObject, version: Int64, slideIn: Int64): String {
+        let sessions = SessionStore(dataDir)
+        let sessionId = sessions.newId()
+        let now = stamp()
+        db().run(
+            "INSERT OR IGNORE INTO sessions (id, created_at, updated_at) VALUES (?, ?, ?)",
+            va([tv(sessionId), tv(now), tv(now)])
+        )
+        let count = arrOf(objectField(resource, "content"), "slides").size()
+        var slide = if (slideIn > 0) { slideIn } else { 1 }
+        if (slide > count) { slide = count }
+        let binding = JsonObject()
+        binding.put("sessionId", JsonString(sessionId))
+        binding.put("resourceId", JsonString(resourceId))
+        binding.put("version", JsonInt(version))
+        binding.put("kbId", JsonString(strOf(resource, "kbId")))
+        binding.put("title", JsonString(strOf(resource, "title")))
+        binding.put("slide", JsonInt(slide))
+        binding.put("slideCount", JsonInt(count))
+        binding.put("visitedSlides", JsonArray())
+        binding.put("answeredCheckpoints", JsonObject())
+        binding.put("createdAt", JsonString(now))
+        putBinding(sessionId, binding)
+        putResourceMeta(sessionId, resource, version)
+        var total = 0
+        for (r in db().querySql("SELECT k, v FROM sessions_meta")) {
+            let key = r.text(0)
+            if (hasPrefix(key, "resource:")) {
+                let meta = metaObject(r.text(1))
+                if (strOf(meta, "resourceId") == resourceId && intOf(meta, "resourceVersion") == version) { total += 1 }
+            }
+        }
+        let suffix = if (total > 1) { " · " + total.toString() } else { "" }
+        db().putKv("sessions_meta", "title:" + sessionId, "导学 · " + strOf(resource, "title") + suffix)
+        selectSession(resourceId, version, sessionId)
+        return sessionId
+    }
+
+    private func resolvedOutput(resource: JsonObject, resourceId: String, version: Int64, sessionId: String,
+        createdNow: Bool): JsonObject {
+        let binding = bindingOf(sessionId)
+        let content = objectField(resource, "content")
+        let count = arrOf(content, "slides").size()
+        binding.put("resourceId", JsonString(resourceId))
+        binding.put("version", JsonInt(version))
+        binding.put("kbId", JsonString(strOf(resource, "kbId")))
+        binding.put("title", JsonString(strOf(resource, "title")))
+        binding.put("slideCount", JsonInt(count))
+        var slide = intOf(binding, "slide")
+        if (slide < 1) { slide = 1 }
+        if (slide > count) { slide = count }
+        binding.put("slide", JsonInt(slide))
+        let visited = arrOf(binding, "visitedSlides")
+        addIntOnce(visited, slide)
+        binding.put("visitedSlides", visited)
+        putBinding(sessionId, binding)
+        putResourceMeta(sessionId, resource, version)
+        let out = JsonObject()
+        out.put("sessionId", JsonString(sessionId))
+        out.put("resourceId", JsonString(resourceId))
+        out.put("version", JsonInt(version))
+        out.put("title", JsonString(strOf(resource, "title")))
+        out.put("slide", JsonInt(slide))
+        out.put("slideCount", JsonInt(count))
+        out.put("created", JsonBool(createdNow))
+        out.put("context", context(sessionId))
+        return out
     }
 
     private func slideAt(content: JsonObject, index: Int64): JsonObject {
@@ -220,7 +338,8 @@ public class GuidedStore {
         if (sessionId.size == 0) {
             return false
         }
-        return db().getKv("sessions_meta", "guided:" + sessionId, "").size > 0
+        return db().getKv("sessions_meta", "guided:" + sessionId, "").size > 0 ||
+            db().getKv("sessions_meta", "resource:" + sessionId, "").size > 0
     }
 
     public func resolve(resourceId: String, versionIn: Int64): JsonObject {
@@ -228,64 +347,50 @@ public class GuidedStore {
         let version = intOf(resource, "version")
         let key = guidedKey(resourceId, version)
         var sessionId = db().getKv("meta", key, "")
-        var usable = sessionId.size > 0 && isGuided(sessionId)
         var createdNow = false
-        if (!usable) {
+        if (sessionId.size == 0 || !matchesResource(sessionId, resourceId, version)) {
+            sessionId = latestResourceSession(resourceId, version)
+        }
+        if (sessionId.size == 0) {
             createdNow = true
-            let sessions = SessionStore(dataDir)
-            sessionId = sessions.newId()
-            let now = stamp()
-            db().run(
-                "INSERT OR IGNORE INTO sessions (id, created_at, updated_at) VALUES (?, ?, ?)",
-                va([tv(sessionId), tv(now), tv(now)])
-            )
-            let binding = JsonObject()
-            binding.put("sessionId", JsonString(sessionId))
-            binding.put("resourceId", JsonString(resourceId))
-            binding.put("version", JsonInt(version))
-            binding.put("kbId", JsonString(strOf(resource, "kbId")))
-            binding.put("title", JsonString(strOf(resource, "title")))
-            binding.put("slide", JsonInt(1))
-            binding.put("slideCount", JsonInt(arrOf(objectField(resource, "content"), "slides").size()))
-            binding.put("visitedSlides", JsonArray())
-            binding.put("answeredCheckpoints", JsonObject())
-            binding.put("createdAt", JsonString(now))
-            putBinding(sessionId, binding)
-            db().putKv("meta", key, sessionId)
-            db().putKv("sessions_meta", "title:" + sessionId,
-                "导学 · " + strOf(resource, "title"))
+            sessionId = createResourceSession(resourceId, resource, version, 1)
+        } else {
+            selectSession(resourceId, version, sessionId)
         }
-        let binding = bindingOf(sessionId)
-        let content = objectField(resource, "content")
-        let count = arrOf(content, "slides").size()
-        // 兼容资源被重新读写后的标题/页数变化，但版本绑定本身不变。
-        binding.put("resourceId", JsonString(resourceId))
-        binding.put("version", JsonInt(version))
-        binding.put("kbId", JsonString(strOf(resource, "kbId")))
-        binding.put("title", JsonString(strOf(resource, "title")))
-        binding.put("slideCount", JsonInt(count))
-        var slide = intOf(binding, "slide")
-        if (slide < 1) {
-            slide = 1
+        return resolvedOutput(resource, resourceId, version, sessionId, createdNow)
+    }
+
+    public func sessions(resourceId: String, versionIn: Int64): JsonArray {
+        let resource = resourceOf(resourceId, versionIn)
+        let version = intOf(resource, "version")
+        let out = JsonArray()
+        let dbh = db()
+        for (r in dbh.querySql("SELECT id FROM sessions ORDER BY updated_at DESC")) {
+            let sid = r.text(0)
+            if (matchesResource(sid, resourceId, version)) {
+                let summary = SessionStore(dataDir).summary(sid)
+                summary.put("resource", resourceMetaOf(sid))
+                out.add(summary)
+            }
         }
-        if (slide > count) {
-            slide = count
-        }
-        binding.put("slide", JsonInt(slide))
-        let visited = arrOf(binding, "visitedSlides")
-        addIntOnce(visited, slide)
-        binding.put("visitedSlides", visited)
-        putBinding(sessionId, binding)
-        let out = JsonObject()
-        out.put("sessionId", JsonString(sessionId))
-        out.put("resourceId", JsonString(resourceId))
-        out.put("version", JsonInt(version))
-        out.put("title", JsonString(strOf(resource, "title")))
-        out.put("slide", JsonInt(slide))
-        out.put("slideCount", JsonInt(count))
-        out.put("created", JsonBool(createdNow))
-        out.put("context", context(sessionId))
         return out
+    }
+
+    public func createSession(resourceId: String, versionIn: Int64, slideIn: Int64): JsonObject {
+        let resource = resourceOf(resourceId, versionIn)
+        let version = intOf(resource, "version")
+        let sessionId = createResourceSession(resourceId, resource, version, slideIn)
+        return resolvedOutput(resource, resourceId, version, sessionId, true)
+    }
+
+    public func select(resourceId: String, versionIn: Int64, sessionId: String): JsonObject {
+        let resource = resourceOf(resourceId, versionIn)
+        let version = intOf(resource, "version")
+        if (!matchesResource(sessionId, resourceId, version)) {
+            throw Exception("这个会话不属于当前演示")
+        }
+        selectSession(resourceId, version, sessionId)
+        return resolvedOutput(resource, resourceId, version, sessionId, false)
     }
 
     public func focus(sessionId: String, slideIn: Int64): JsonObject {

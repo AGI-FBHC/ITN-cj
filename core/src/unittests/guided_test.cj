@@ -92,6 +92,30 @@ func guidedSessionRestoresAndKeepsAgentContextAnswerSafe(): Unit {
     @Expect(boolOf(second, "created"), false)
     @Expect(strOf(second, "sessionId"), firstSid)
 
+    // 导学会话不藏在独立空间：普通列表能看到它，并带资源标签。
+    var listedResource = false
+    for (item in SessionStore(dir).list()) {
+        if (strOf(item, "sessionId") == firstSid) {
+            let tag = objOf(item.get("resource").getOrThrow()).getOrDefault({ => JsonObject() })
+            listedResource = strOf(tag, "resourceId") == resourceId
+        }
+    }
+    @Expect(listedResource, true)
+
+    // 同一份 PPT 可以有多条导学会话；最近选择跨实例（应用重启）恢复。
+    let extra = guided.createSession(resourceId, 1, 3)
+    let extraSid = strOf(extra, "sessionId")
+    @Expect(extraSid != firstSid, true)
+    @Expect(intOf(extra, "slide"), 3)
+    @Expect(guided.sessions(resourceId, 1).size(), 2)
+    @Expect(strOf(guided.select(resourceId, 1, firstSid), "sessionId"), firstSid)
+    @Expect(strOf(guided.resolve(resourceId, 1), "sessionId"), firstSid)
+    @Expect(strOf(guided.select(resourceId, 1, extraSid), "sessionId"), extraSid)
+    let reopened = GuidedStore(dir).resolve(resourceId, 1)
+    @Expect(strOf(reopened, "sessionId"), extraSid)
+    @Expect(intOf(reopened, "slide"), 3)
+    @Expect(strOf(guided.select(resourceId, 1, firstSid), "sessionId"), firstSid)
+
     let context = guided.focus(firstSid, 3)
     @Expect(intOf(context, "currentSlide"), 3)
     @Expect(arrOf(context, "visitedSlides").size(), 2)

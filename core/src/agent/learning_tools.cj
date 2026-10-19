@@ -55,9 +55,9 @@ public func learningTools(store: Store, kbId: String, shouldAbort: () -> Bool, s
         "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"},\"version\":{\"type\":\"integer\"}},\"required\":[\"id\"]}", "read", { args: JsonObject =>
             return learningResult(ls.resource(strOf(args, "id"), intOf(args, "version")), "已读取资源")
         }))
-    out.add(makeTool("generate_learning_resource", "生成学习资源", "讲义、实操、分阶测试或在线演示",
-        "仅在用户需要学习资料或你判断确有教学价值时生成一种资源。kind 取 lecture（讲义）/ practice（练习册）/ quiz（测试）/ ppt（演示）；count 为题量或页数。内部执行结构化生成、质检和有限返修，失败如实返回，不要声称生成成功。返回稳定资源 id 和版本，可在工作台预览、作答或播放。",
-        "{\"type\":\"object\",\"properties\":{\"kind\":{\"type\":\"string\",\"enum\":[\"lecture\",\"practice\",\"quiz\",\"ppt\"]},\"topic\":{\"type\":\"string\"},\"detail\":{\"type\":\"string\",\"enum\":[\"concise\",\"balanced\",\"detailed\"]},\"count\":{\"type\":\"integer\"}},\"required\":[\"kind\",\"topic\"]}", "write", { args: JsonObject =>
+    out.add(makeTool("generate_learning_resource", "生成学习资源", "讲义、实操、分阶测试或真实 PPTX",
+        "仅在用户需要学习资料或你判断确有教学价值时生成一种资源。kind=ppt 会生成真实可编辑 .pptx，并同时留下应用内预览；不是 Markdown 演讲稿。先确认用途、受众、页数/篇幅和风格，已明确的不要重复问。count 对 quiz 是题量、对 ppt 是目标页数；章节页可能由渲染器自动补充，因此最终页数以 renderedSlides 为准。生成结果是候选，只有用户明确确认后才可调用 save_course_resource 收录。",
+        "{\"type\":\"object\",\"properties\":{\"kind\":{\"type\":\"string\",\"enum\":[\"lecture\",\"practice\",\"quiz\",\"ppt\"]},\"topic\":{\"type\":\"string\"},\"detail\":{\"type\":\"string\",\"enum\":[\"concise\",\"balanced\",\"detailed\"]},\"count\":{\"type\":\"integer\"},\"audience\":{\"type\":\"string\"},\"purpose\":{\"type\":\"string\"},\"style\":{\"type\":\"string\"},\"backgroundStyle\":{\"type\":\"string\"},\"language\":{\"type\":\"string\"},\"aspectRatio\":{\"type\":\"string\"}},\"required\":[\"kind\",\"topic\"]}", "write", { args: JsonObject =>
             let req = ResourceRequest()
             req.kind = strOf(args, "kind")
             if (!isResourceKind(req.kind)) { throw Exception("资源类型不支持") }
@@ -66,7 +66,14 @@ public func learningTools(store: Store, kbId: String, shouldAbort: () -> Bool, s
             req.count = intOf(args, "count")
             req.kbId = kbId
             req.learningContext = ls.context(kbId).toString()
-            let res = generateResourceWithCancel(store, req, shouldAbort, emit)
+            req.courseTarget = CourseStore(store.dataDir).target(sid)
+            for (key in ["audience", "purpose", "style", "backgroundStyle", "language", "aspectRatio"]) {
+                match (args.get(key)) {
+                    case Some(v) => req.presentation.put(key, v)
+                    case None => ()
+                }
+            }
+            let res = if (req.kind == "ppt") { generatePptLearningResource(store, req, shouldAbort, emit) } else { generateResourceWithCancel(store, req, shouldAbort, emit) }
             let body = resultJson(res)
             body.put("topic", JsonString(req.topic))
             if (strOf(args, "studyChapter").size > 0) { body.put("studyChapter", JsonString(strOf(args, "studyChapter"))) }
@@ -79,8 +86,8 @@ public func learningTools(store: Store, kbId: String, shouldAbort: () -> Bool, s
             let saved = ls.saveResource(body, kbId, sid, turnId, "", 0)
             emit("resource/saved", saved)
             let brief = JsonObject()
-            for (key in ["id", "version", "kind", "title", "quality", "citations", "artifactPath", "message"]) { brief.put(key, saved.get(key).getOrDefault({ => JsonNull() })) }
-            return learningResult(brief, res.message)
+            for (key in ["id", "version", "kind", "title", "quality", "citations", "artifactPath", "format", "previewPath", "designPath", "requestedSlides", "renderedSlides", "message"]) { brief.put(key, saved.get(key).getOrDefault({ => JsonNull() })) }
+            return learningResult(brief, strOf(saved, "message"))
         }))
     out.add(makeTool("revise_learning_resource", "修改学习资源", "根据要求创建新版本，保留旧版本",
         "先读资源，再按用户修改要求重新生成并质检新版本。baseVersion 必须为已读的最新版本；旧版本保留。instruction 写具体修改要求。默认沿用生成时的来源；用户要求更新资料时设 refreshSources=true。",
@@ -100,6 +107,13 @@ public func learningTools(store: Store, kbId: String, shouldAbort: () -> Bool, s
             if (!boolOf(args, "refreshSources")) { req.sourceSnapshots = arrOf(old, "citations") }
             req.learningContext = ls.context(req.kbId).toString()
             req.revision = strOf(args, "instruction") + "\n上一版内容：" + byteSafePrefix(strOf(old, "markdown"), 14000)
+            req.courseTarget = CourseStore(store.dataDir).target(sid)
+            for (key in ["audience", "purpose", "style", "backgroundStyle", "language", "aspectRatio"]) {
+                match (args.get(key)) {
+                    case Some(v) => req.presentation.put(key, v)
+                    case None => ()
+                }
+            }
             match (old.get("content")) {
                 case Some(v) => match (objOf(v)) {
                     case Some(o) =>
@@ -109,8 +123,12 @@ public func learningTools(store: Store, kbId: String, shouldAbort: () -> Bool, s
                 }
                 case None => ()
             }
-            let res = generateResourceWithCancel(store, req, shouldAbort, emit)
-            if (!res.ok || shouldAbort()) { let r = learningResult(resultJson(res), res.message); r.ok = false; return r }
+            let res = if (req.kind == "ppt") { generatePptLearningResource(store, req, shouldAbort, emit) } else { generateResourceWithCancel(store, req, shouldAbort, emit) }
+            if (!res.ok || shouldAbort()) {
+                let r = learningResult(resultJson(res), res.message)
+                r.ok = false
+                return r
+            }
             let body = resultJson(res)
             body.put("topic", JsonString(req.topic))
             if (strOf(old, "studyChapter").size > 0) { body.put("studyChapter", JsonString(strOf(old, "studyChapter"))) }
@@ -122,7 +140,11 @@ public func learningTools(store: Store, kbId: String, shouldAbort: () -> Bool, s
             brief.put("version", saved.get("version").getOrThrow())
             brief.put("title", saved.get("title").getOrThrow())
             brief.put("artifactPath", saved.get("artifactPath").getOrDefault({ => JsonString("") }))
-            brief.put("quality", saved.get("quality").getOrThrow())
+            brief.put("format", saved.get("format").getOrDefault({ => JsonString("") }))
+            brief.put("previewPath", saved.get("previewPath").getOrDefault({ => JsonString("") }))
+            brief.put("designPath", saved.get("designPath").getOrDefault({ => JsonString("") }))
+            brief.put("requestedSlides", saved.get("requestedSlides").getOrDefault({ => JsonInt(0) }))
+            brief.put("renderedSlides", saved.get("renderedSlides").getOrDefault({ => JsonInt(0) }))
             return learningResult(brief, "已创建资源新版本，旧版本保留")
         }))
     return out

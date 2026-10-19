@@ -73,7 +73,7 @@ const root=path.resolve(__dirname,'..'),sleep=ms=>new Promise(r=>setTimeout(r,ms
    const shots=path.join(root,'tmp/course-shots');fs.mkdirSync(shots,{recursive:true});await page.screenshot({path:path.join(shots,'growth.png')});
    await goLearn();await page.screenshot({path:path.join(shots,'mindmap-light.png')});await openNode();await page.screenshot({path:path.join(shots,'resource-dialog-light.png')});await close();await page.evaluate(()=>applyZoom(1.3));await openNode();const box=await page.locator('.course-modal').boundingBox();check('resource dialog fits at 130% application zoom',box.x>=0&&box.x+box.width<=1501&&box.y>=0&&box.y+box.height<=1001);await close();await page.evaluate(()=>applyZoom(1));await page.emulateMedia({colorScheme:'dark'});await openNode();await page.screenshot({path:path.join(shots,'resource-dialog-dark.png')});await close();
    // —— 资源单独打开页（studyplayer）：四类资源各自的页面、深链与续播
-    const goStudy=async(asset,kind)=>{await page.evaluate(a=>go('study',a.learningId+'@'+a.learningVersion),asset);await page.waitForSelector('.sp-page');if(kind!=='quiz')await page.waitForSelector('.sp-block, .sp-slides',{timeout:15000});};
+    const goStudy=async(asset,kind)=>{await page.evaluate(a=>go('study',a.learningId+'@'+a.learningVersion),asset);await page.waitForSelector('.sp-page');if(kind==='ppt')await page.waitForSelector('.sp-slide-fallback, .sp-ppt-frame',{timeout:15000});else if(kind!=='quiz')await page.waitForSelector('.sp-block',{timeout:15000});};
     await goStudy(lecture.asset);
     check('lecture opens as a dedicated reading page with breadcrumb and sections',await page.locator('.sp-crumb').count()===1&&await page.locator('.sp-block').count()>=2&&await page.locator('#resource-dock').evaluate(e=>e.hidden));
     await page.locator('.sp-block .sp-mark').first().click();
@@ -134,19 +134,20 @@ const root=path.resolve(__dirname,'..'),sleep=ms=>new Promise(r=>setTimeout(r,ms
     await page.screenshot({path:path.join(root,'tmp/course-shots','study-quiz.png')});
     await goStudy(quiz.asset,'quiz');
     await page.waitForSelector('.sp-q');await page.screenshot({path:path.join(root,'tmp/course-shots','study-quiz-question.png')});
-    await goStudy(ppt.asset);
-    check('ppt opens as an interactive guide page instead of the dock player',await page.locator('.sp-slides').count()===1&&await page.evaluate(()=>document.getElementById('player')?.hidden!==false));
-    const firstSlide=await page.locator('.sp-slide-title').innerText();
+    await goStudy(ppt.asset,'ppt');
+    check('ppt opens as an interactive guide page instead of the dock player',await page.locator('.sp-slide-frame').count()===1&&await page.locator('.sp-study-layout').count()===1&&await page.evaluate(()=>document.getElementById('player')?.hidden!==false));
+    const slideTitle=async()=>{const frame=page.locator('.sp-ppt-frame');if(await frame.count())return await frame.getAttribute('title');return await page.locator('.sp-slide-fallback h2').innerText();};
+    const firstSlide=await slideTitle();
     await page.keyboard.press('ArrowRight');
-    await until(async()=>(await page.locator('.sp-slide-pos').innerText()).includes('2 /'));
-    check('arrow keys page through the interactive guide',(await page.locator('.sp-slide-title').innerText())!==firstSlide);
+    await until(async()=>(await page.locator('.sp-stage-pos').innerText()).includes('2 /'));
+    check('arrow keys page through the interactive guide',(await slideTitle())!==firstSlide);
     await page.getByRole('button',{name:'讲稿',exact:true}).click();
-    check('speaker notes can be revealed',await page.locator('.sp-notes').evaluate(e=>!e.hidden));
+    check('speaker notes can be revealed',await page.locator('.sp-stage-notes').evaluate(e=>!e.hidden));
     await page.screenshot({path:path.join(root,'tmp/course-shots','study-ppt.png')});
     const pptKey='resource:'+ppt.saved.id+':v'+ppt.saved.version;
     await until(async()=>(await post('artifacts/progress',{name:pptKey})).page===2);
-    await page.reload({waitUntil:'load'});await page.waitForSelector('.sp-slides');
-    check('interactive guide resumes from the saved slide after reload',(await page.locator('.sp-slide-pos').innerText()).includes('2 /'));
+    await page.reload({waitUntil:'load'});await page.waitForSelector('.sp-slide-fallback, .sp-ppt-frame');
+    check('interactive guide resumes from the saved slide after reload',(await page.locator('.sp-stage-pos').innerText()).includes('2 /'));
     await goLearn();
     await page.keyboard.press('ArrowRight');
     await sleep(200);

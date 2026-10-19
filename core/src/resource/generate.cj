@@ -50,6 +50,10 @@ public class ResourceRequest {
     public var revision: String = ""
     public var provider: ?ChatProvider = None
     public var sourceSnapshots: JsonArray = JsonArray()
+    /** 当前会话绑定的思维导图目标；普通资源生成时为空。 */
+    public var courseTarget: JsonObject = JsonObject()
+    /** PPT 展示参数：audience/purpose/style/backgroundStyle/language/aspectRatio。 */
+    public var presentation: JsonObject = JsonObject()
 }
 
 /** 一次生成的结果。 */
@@ -63,6 +67,11 @@ public class ResourceResult {
     public var quality: JsonObject = JsonObject()
     public var artifactName: String = ""
     public var artifactPath: String = ""
+    public var format: String = ""
+    public var previewPath: String = ""
+    public var designPath: String = ""
+    public var requestedSlides: Int64 = 0
+    public var renderedSlides: Int64 = 0
     public var message: String = ""
     public var warnings: ArrayList<String> = ArrayList<String>()
     /** 结构化内容是不是"兜底骨架"（没有模型输出时） */
@@ -215,7 +224,7 @@ func evidenceDigest(hits: JsonArray): String {
     return sb.toString()
 }
 
-func retrieveHits(store: Store, kbId: String, topic: String, topK: Int64, shouldAbort: () -> Bool): JsonArray {
+public func retrieveHits(store: Store, kbId: String, topic: String, topK: Int64, shouldAbort: () -> Bool): JsonArray {
     if (topic.size == 0) {
         return JsonArray()
     }
@@ -1249,6 +1258,11 @@ public func resultJson(res: ResourceResult): JsonObject {
     o.put("quality", res.quality)
     o.put("artifactName", JsonString(res.artifactName))
     o.put("artifactPath", JsonString(res.artifactPath))
+    o.put("format", JsonString(res.format))
+    o.put("previewPath", JsonString(res.previewPath))
+    o.put("designPath", JsonString(res.designPath))
+    o.put("requestedSlides", JsonInt(res.requestedSlides))
+    o.put("renderedSlides", JsonInt(res.renderedSlides))
     o.put("fallback", JsonBool(res.fallback))
     let ws = JsonArray()
     for (w in res.warnings) {

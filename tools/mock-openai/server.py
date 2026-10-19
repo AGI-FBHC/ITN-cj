@@ -311,6 +311,57 @@ def _res_count(prompt, default):
     return int(m.group(1)) if m else default
 
 
+def ppt_agent_requested_count(prompt):
+    patterns = [r'"slideCount"\s*:\s*(\d+)', r"必须恰好有\s*(\d+)\s*页"]
+    for pattern in patterns:
+        match = re.search(pattern, prompt)
+        if match:
+            return int(match.group(1))
+    return len(PPT_AGENT_OUTLINE["slides"])
+
+
+def ppt_agent_outline(count):
+    count = max(4, count)
+    if count == len(PPT_AGENT_OUTLINE["slides"]):
+        return PPT_AGENT_OUTLINE
+    content_count = count - 3
+    slides = [
+        {"title": "输入与输出的约定", "kind": "title", "points": [],
+         "speakerNotes": "大家好，今天我们围绕输入、输出和验收建立一套可以复现的约定。"},
+        {"title": "本讲路线", "kind": "agenda", "points": [
+            {"heading": "明确约定", "detail": "写清输入、输出和完成标准。"},
+            {"heading": "验证结果", "detail": "保留证据并用边界样例复核。"},
+        ], "speakerNotes": "这次分享先明确约定，再验证结果，最后说明怎样复盘。"},
+    ]
+    for index in range(content_count):
+        slides.append({
+            "title": "关键做法 " + str(index + 1),
+            "kind": "concept",
+            "points": [
+                {"heading": "先约定", "detail": "把输入、输出和完成标准写成可检查的样例。"},
+                {"heading": "留证据", "detail": "保留执行过程与中间状态，便于定位问题。"},
+                {"heading": "做验收", "detail": "用正常、边界和异常样例逐项核对结果。"},
+            ],
+            "speakerNotes": "这一页说明第 " + str(index + 1) + " 个关键做法：先约定，再保留证据，最后逐项验收。",
+        })
+    slides.append({
+        "title": "结论与下一步",
+        "kind": "conclusion",
+        "points": [
+            {"heading": "先写样例", "detail": "把正常、边界和异常输入写出来。"},
+            {"heading": "再做验证", "detail": "保存结果和证据，按约定复盘。"},
+        ],
+        "speakerNotes": "最后先把样例写清楚，再用可复现的证据验证结果。",
+    })
+    return {
+        "title": "输入与输出的约定",
+        "subtitle": "从可复现样例到可靠验收",
+        "agendaPlan": [
+            {"title": "明确约定", "objective": "让任务边界可检查", "keyTopics": ["输入", "输出"]},
+            {"title": "验证结果", "objective": "让结果可以被判断", "keyTopics": ["证据", "边界"]},
+        ],
+        "slides": slides,
+    }
 # 自检开关：ITN_MOCK_THIN_FIRST=1 时，讲义大纲第一次故意给薄（1 章 1 节），
 # 用来验证内核的质检→返修链路真的会跑（而不是摆设）。
 _THIN_LEFT = 1 if os.environ.get("ITN_MOCK_THIN_FIRST") else 0
@@ -351,8 +402,8 @@ def reply_for(body):
         if "resourceType: ppt" in joined:
             return json.dumps(res_ppt(_res_count(joined, 8), "返修主题"), ensure_ascii=False)
         return json.dumps(res_lecture_full(), ensure_ascii=False)
-    if "请设计一份内容充实、可直接授课或汇报的交互课件" in joined:
-        return json.dumps(PPT_AGENT_OUTLINE, ensure_ascii=False)
+    if "请设计一份内容充实、可直接授课或汇报的交互课件" in joined or "上一次输出不是可用JSON提纲" in joined:
+        return json.dumps(ppt_agent_outline(ppt_agent_requested_count(joined)), ensure_ascii=False)
     if "你是课程设计者" in joined:
         global _THIN_LEFT
         if _THIN_LEFT > 0:
@@ -507,14 +558,17 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path.endswith("/chat/completions"):
             model = body.get("model", "mock")
+            content = native_reply(body)
             logpath = os.environ.get("ITN_MOCK_LOG")
             if logpath:
                 msgs = body.get("messages") or []
                 rec = {"model": model, "stream": bool(body.get("stream")),
                        "roles": [m.get("role") for m in msgs], "n": len(msgs)}
+                if os.environ.get("ITN_MOCK_LOG_PROMPTS"):
+                    rec["prompt"] = all_text(msgs)
+                    rec["response"] = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
                 with open(logpath, "a", encoding="utf-8") as fh:
                     fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
-            content = native_reply(body)
             if body.get("stream"):
                 self.sse(model, content)
             else:

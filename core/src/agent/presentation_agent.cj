@@ -194,7 +194,8 @@ func requestJson(args: JsonObject, requirement: String, title: String, slideCoun
         let count = chooseSlideCount(args)
         let request = requestJson(args, requirement, title, count)
         let kbId = trimStr(presentationText(args, "kbId"))
-        let context = LearningStore(store.dataDir).context(kbId).toString()
+        var context = trimStr(presentationText(args, "context"))
+        if (context.size == 0) { context = LearningStore(store.dataDir).context(kbId).toString() }
         let outline = generateOutline(request, context, shouldAbort)
         if (shouldAbort()) { throw Exception("已取消PPT生成") }
         let result = DesktopJobs(store.dataDir).renderPresentationWithPython(request, outline, sid, tid)
