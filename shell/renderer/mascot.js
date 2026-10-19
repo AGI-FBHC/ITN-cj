@@ -12,7 +12,7 @@
     success: ["working", "wake", "success", "success", "wake"],
     listening: ["wake", "listen-1", "listen-1", "listen-2", "listen-2"]
   };
-  const SPEED = { idle: 620, wake: 220, thinking: 330, speaking: 190, working: 350, success: 260, listening: 280 };
+  const SPEED = { idle: 1100, wake: 440, thinking: 660, speaking: 520, working: 700, success: 520, listening: 560 };
   const LABELS = { idle: "待机", wake: "唤醒", thinking: "思考", speaking: "回答", working: "执行中", success: "完成", listening: "倾听" };
   const ACTIVITY_STATES = new Set(["idle", "wake", "thinking", "speaking", "working", "success", "listening"]);
 
@@ -78,8 +78,11 @@
   }
 
   function clampPosition(next) {
-    const maxX = Math.max(8, window.innerWidth - root.offsetWidth - 10);
-    const maxY = Math.max(64, window.innerHeight - root.offsetHeight - 14);
+    // offsetWidth/Height become zero while hidden; CSS dimensions remain stable.
+    const style = getComputedStyle(root);
+    const width = parseFloat(style.width), height = parseFloat(style.height);
+    const maxX = Math.max(8, window.innerWidth - width - 10);
+    const maxY = Math.max(64, window.innerHeight - height - 14);
     return {
       x: Math.min(Math.max(8, next.x), maxX),
       y: Math.min(Math.max(64, next.y), maxY)
@@ -90,7 +93,23 @@
     position = clampPosition(next);
     root.style.left = Math.round(position.x) + "px";
     root.style.top = Math.round(position.y) + "px";
-    menu.classList.toggle("below", position.y < 330);
+    placeMenu();
+  }
+
+  function placeMenu() {
+    if (menu.hidden || root.hidden) return;
+    const bounds = root.getBoundingClientRect();
+    const scale = bounds.width / root.offsetWidth;
+    const width = menu.offsetWidth * scale, height = menu.offsetHeight * scale;
+    const topEdge = Math.max(8, (document.getElementById("titlebar")?.getBoundingClientRect().bottom || 0) + 8);
+    const x = Math.max(8, Math.min(bounds.right - width, window.innerWidth - width - 8));
+    const above = bounds.top - height - 4;
+    const y = Math.max(topEdge, Math.min(above >= topEdge ? above : bounds.bottom + 4, window.innerHeight - height - 8));
+    menu.style.left = (x - bounds.left) / scale + "px";
+    menu.style.top = (y - bounds.top) / scale + "px";
+    menu.style.right = "auto";
+    menu.style.bottom = "auto";
+    menu.classList.toggle("below", y >= bounds.bottom);
   }
 
   function defaultPosition() {
@@ -99,6 +118,7 @@
 
   function setState(next, autoReturnMs) {
     const normalized = ACTIVITY_STATES.has(next) ? next : "idle";
+    if (normalized === petState && frameTimer) return;
     petState = normalized;
     root.dataset.state = normalized;
     stateText.textContent = LABELS[normalized];
@@ -122,8 +142,8 @@
     menu.hidden = !open;
     root.classList.toggle("menu-open", open);
     if (open) {
-      setState("wake", 900);
-      menu.classList.toggle("below", position.y < 330);
+      setState("wake", SPEED.wake * FRAMES.wake.length);
+      placeMenu();
     }
   }
 
@@ -131,6 +151,7 @@
     try { localStorage.setItem(HIDDEN_KEY, hidden ? "1" : "0"); } catch (e) { /* ignore */ }
     root.hidden = !!hidden || playerVisible();
     if (hidden) openMenu(false);
+    else { place(position || defaultPosition()); savePosition(); }
   }
 
   function playerVisible() {
@@ -142,6 +163,8 @@
     let hidden = false;
     try { hidden = localStorage.getItem(HIDDEN_KEY) === "1"; } catch (e) { /* ignore */ }
     root.hidden = hidden || playerVisible();
+    place(position || defaultPosition());
+    savePosition();
   }
 
   function navigate(page) {
@@ -156,35 +179,39 @@
 
   const initial = position || defaultPosition();
   place(initial);
+  savePosition();
 
   actor.addEventListener("pointerdown", (event) => {
     if (event.button !== undefined && event.button !== 0) return;
-    pointerStart = { x: event.clientX, y: event.clientY, left: position.x, top: position.y };
+    pointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY, left: position.x, top: position.y };
     dragged = false;
     actor.setPointerCapture?.(event.pointerId);
     event.preventDefault();
   });
 
   actor.addEventListener("pointermove", (event) => {
-    if (!pointerStart) return;
+    if (!pointerStart || event.pointerId !== pointerStart.id) return;
     const dx = event.clientX - pointerStart.x;
     const dy = event.clientY - pointerStart.y;
     if (!dragged && Math.abs(dx) + Math.abs(dy) < 5) return;
     dragged = true;
+    root.classList.add("dragging");
     openMenu(false);
     place({ x: pointerStart.left + dx, y: pointerStart.top + dy });
   });
 
   const finishPointer = (event) => {
-    if (!pointerStart) return;
-    actor.releasePointerCapture?.(event.pointerId);
+    if (!pointerStart || event.pointerId !== pointerStart.id) return;
     pointerStart = null;
+    if (actor.hasPointerCapture?.(event.pointerId)) actor.releasePointerCapture(event.pointerId);
+    root.classList.remove("dragging");
     if (dragged) savePosition();
-    else openMenu(menu.hidden);
+    else if (event.type === "pointerup") openMenu(menu.hidden);
     if (dragged) dragged = false;
   };
   actor.addEventListener("pointerup", finishPointer);
   actor.addEventListener("pointercancel", finishPointer);
+  actor.addEventListener("lostpointercapture", finishPointer);
 
   menu.querySelectorAll("[data-page]").forEach((button) => {
     button.addEventListener("click", () => navigate(button.dataset.page));
@@ -195,7 +222,7 @@
     if (!menu.hidden && !root.contains(event.target)) openMenu(false);
   });
 
-  window.addEventListener("resize", () => place(position || defaultPosition()));
+  window.addEventListener("resize", () => { place(position || defaultPosition()); savePosition(); });
   window.addEventListener("dblclick", (event) => {
     if (!root.contains(event.target)) return;
     place(defaultPosition());
@@ -205,7 +232,7 @@
     const detail = event.detail || {};
     busyCount = Math.max(0, Number(detail.busyCount || 0));
     const next = ACTIVITY_STATES.has(detail.state) ? detail.state : (busyCount > 0 ? "working" : "idle");
-    if (next === "success" && busyCount === 0) setState("success", 1500);
+    if (next === "success" && busyCount === 0) setState("success", SPEED.success * FRAMES.success.length);
     else setState(next);
     dispatchPetState(next);
   });
@@ -219,7 +246,7 @@
   });
   window.addEventListener("lumin:pet-wake", () => {
     if (root.hidden) return;
-    setState("wake", 900);
+    setState("wake", SPEED.wake * FRAMES.wake.length);
   });
   document.addEventListener("fullscreenchange", syncVisibility);
   const player = document.getElementById("player");

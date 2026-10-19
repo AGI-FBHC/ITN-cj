@@ -34,7 +34,7 @@ body:has(#player:not([hidden])) .lumin-mascot-root { display: none !important; }
   height: 116px;
   place-items: center;
   transform-origin: 50% 78%;
-  animation: lumin-pet-float 4.8s ease-in-out infinite;
+  animation: lumin-pet-float 9.6s ease-in-out infinite;
   filter: drop-shadow(0 12px 14px rgba(22, 36, 29, .17));
 }
 .lumin-mascot-image {
@@ -46,6 +46,8 @@ body:has(#player:not([hidden])) .lumin-mascot-root { display: none !important; }
   transition: transform .22s ease, filter .22s ease;
 }
 .lumin-mascot-root:hover .lumin-mascot-image { transform: translateY(-2px) scale(1.018); }
+.lumin-mascot-root.dragging .lumin-mascot-float { animation-play-state: paused; }
+.lumin-mascot-root.dragging .lumin-mascot-image { transform: none; }
 .lumin-mascot-root[data-state="working"] .lumin-mascot-image { filter: saturate(1.05) contrast(1.02); }
 .lumin-mascot-root[data-state="success"] .lumin-mascot-image { filter: drop-shadow(0 0 9px rgba(67, 159, 108, .30)); }
 
@@ -143,8 +145,8 @@ body:has(#player:not([hidden])) .lumin-mascot-root { display: none !important; }
 .lumin-mascot-hide:hover { color: var(--danger); border-color: var(--danger-soft); background: var(--danger-soft); }
 
 @keyframes lumin-pet-float {
-  0%, 100% { transform: translateY(0) rotate(-.35deg); }
-  50% { transform: translateY(-4px) rotate(.35deg); }
+  0%, 100% { transform: translateY(0) rotate(-.2deg); }
+  50% { transform: translateY(-3px) rotate(.2deg); }
 }
 @keyframes lumin-pet-menu-in {
   from { opacity: 0; transform: translateY(5px) scale(.975); }
