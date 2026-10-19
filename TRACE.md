@@ -4578,3 +4578,10 @@ read_chunk 读得到原文并带回库标识与正文。
   - 导学侧栏不自动生成对话，只有用户提问、提交检查点或明确记笔记时才产生模型/写入动作。
   - 旧 PPT 没有 `teachingMoments` 时仍可播放，只是没有结构化 quiz/summary；要获得交互检查点需重新生成或由生成服务补齐。
   - 两份原有未跟踪调研文档 `docs/知识库改进清单-v2.md`、`docs/非对话页面改造方案-v1.md` 继续保留，不纳入本次提交。
+## 2026-10-19 · Lumin 0.8.20 版本化打包
+- 用户要求：以后按版本号升级打包，不再使用带 `x64/win-x64` 的产物名。
+- `shell/package.json` 与 `shell/package-lock.json` 从 `0.8.19` 升级到 `0.8.20`。
+- `scripts/package-app.ps1` 的输出参数改为可选：默认读取 `shell/package.json`，生成 `dist/Lumin-<version>` 与 `dist/Lumin-<version>.zip`；构建标识留空时自动生成 `lumin-<version>-<commitShort>`。
+- 打包脚本新增目标版本运行占用预检：若 `dist/Lumin-<version>` 下已有 Electron/内核进程，提前给出 PID 和明确错误，避免复制后才发现启动器无法改名。
+- 首次从 `0.8.20` 目录打包时，用户外部启动了尚未完成的 `electron.exe`，导致 `Lumin.exe` 重命名被占用；已只结束该未完成版本目录下的进程并补充上述预检，不影响其他 Lumin 版本。
+- 最终产物目标固定为 `dist/Lumin-0.8.20` 和 `dist/Lumin-0.8.20.zip`。

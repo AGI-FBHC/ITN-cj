@@ -1,13 +1,31 @@
 # 组装可独立分发的桌面应用（绿色压缩包，目标机器无需安装仓颉或 Node）
 param(
-    [string]$OutDir = "$PSScriptRoot\..\dist\Lumin",
-    [string]$ZipPath = "$PSScriptRoot\..\dist\Lumin-win-x64.zip",
-    # 包内 release.json 的构建标识（版本号取 shell/package.json）
-    [string]$Build = 'lumin-rebrand-20261015'
+    [string]$OutDir = '',
+    [string]$ZipPath = '',
+    # 包内 release.json 的构建标识；留空时自动使用版本号 + 提交短哈希
+    [string]$Build = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $repo = Resolve-Path "$PSScriptRoot\.."
+$sourcePackage = Get-Content -LiteralPath (Join-Path $repo 'shell/package.json') -Raw | ConvertFrom-Json
+
+if ([string]::IsNullOrWhiteSpace($OutDir)) {
+    $OutDir = Join-Path $repo ("dist\Lumin-" + $sourcePackage.version)
+}
+if ([string]::IsNullOrWhiteSpace($ZipPath)) {
+    $ZipPath = Join-Path $repo ("dist\Lumin-" + $sourcePackage.version + ".zip")
+}
+$OutDir = [IO.Path]::GetFullPath($OutDir)
+$ZipPath = [IO.Path]::GetFullPath($ZipPath)
+$outDirRoot = $OutDir.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+$running = @(Get-CimInstance Win32_Process | Where-Object {
+    $_.ExecutablePath -and [IO.Path]::GetFullPath($_.ExecutablePath).StartsWith($outDirRoot, [StringComparison]::OrdinalIgnoreCase)
+})
+if ($running.Count -gt 0) {
+    $pids = ($running | Select-Object -ExpandProperty ProcessId) -join ', '
+    throw "目标目录中的 Lumin 正在运行（PID: $pids）。请先关闭该版本，再重新打包。"
+}
 
 # 1) 先确保内核产物是最新的
 & "$PSScriptRoot\package.ps1" | Out-Host
@@ -62,7 +80,7 @@ if (Test-Path -LiteralPath (Join-Path $repo "shell\skills")) {
     Copy-Item -Path (Join-Path $repo "shell\skills") -Destination $appDir -Recurse -Force
 }
 
-$sourcePackage = Get-Content -LiteralPath (Join-Path $repo 'shell/package.json') -Raw | ConvertFrom-Json
+
 $pkgJson = @{ name = 'lumin'; version = $sourcePackage.version; private = $true; main = 'main.js' } | ConvertTo-Json
 Set-Content -LiteralPath (Join-Path $appDir "package.json") -Value $pkgJson -Encoding utf8
 
@@ -86,6 +104,10 @@ Copy-Item -LiteralPath (Join-Path $repo "third_party\pi-studio-LICENSE.txt") -De
 
 # 5) 压缩
 $sourceCommit = (git -C $repo rev-parse HEAD).Trim()
+if ([string]::IsNullOrWhiteSpace($Build)) {
+    $shortCommit = if ($sourceCommit.Length -ge 7) { $sourceCommit.Substring(0, 7) } else { $sourceCommit }
+    $Build = "lumin-" + $sourcePackage.version + "-" + $shortCommit
+}
 $assetHashes = [ordered]@{}
 $assetFiles = @(
     'resources/app/main.js', 'resources/app/preload.js', 'resources/app/pptx.js',
