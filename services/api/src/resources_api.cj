@@ -60,6 +60,9 @@ public func registerResourceRoutes(app: WebHost, cfg: AppConfig): Unit {
     app.mapPost("v1/learning-resources/{resource_id}/answers") {
         ctx => handleAnswerQuestion(ctx, cfg)
     }
+    app.mapGet("v1/learning-resources/{resource_id}/next-question") {
+        ctx => handleNextQuestion(ctx, cfg)
+    }
     app.mapPost("v1/learning-resources/{resource_id}/source-feedback") {
         ctx => handleSourceFeedback(ctx, cfg)
     }
@@ -1960,5 +1963,224 @@ private func firstString(obj: JsonObject, a: String, b: String): ?String {
     match (jsonGetString(obj, a)) {
         case Some(s) => return Some(s)
         case None => return jsonGetString(obj, b)
+    }
+}
+
+/* ==================== GET /v1/learning-resources/{id}/next-question ==================== */
+
+/*
+ * public.py:6377-6387。纯读 + 纯计算：
+ *   resource = store.get(id, user)         -> 无/非 quiz 一律 404 "Quiz not found"
+ *   question = LearningContentService.choose_next(content, state)
+ *   返回 {"completed": bool, "question": 对外的题面, "state": 原状态}
+ * 题面剔除 correctIndex / explanation（复用 adaptive 路径的 publicQuestionJson）。
+ */
+func handleNextQuestion(ctx: HttpContext, cfg: AppConfig): Unit {
+    match (requireUser(ctx.request, ctx.response, cfg.jwtSecret)) {
+        case None => return
+        case Some(userId) =>
+            match (parseRouteUuid(ctx, "resource_id")) {
+                case None => return
+                case Some(resourceId) =>
+                    if (storageUnavailable(cfg)) {
+                        writeDetail(ctx.response, 503, "Learning resource storage is unavailable")
+                        return
+                    }
+                    match (openDb(cfg)) {
+                        case None =>
+                            writeInternalDebug(ctx.response, "openDb failed: " + lastDbError)
+                        case Some(conn) =>
+                            try {
+                                let store = ResourcesStore(conn)
+                                match (store.get(userId, resourceId)) {
+                                    case None =>
+                                        conn.close()
+                                        writeDetail(ctx.response, 404, "Quiz not found")
+                                    case Some(detail) =>
+                                        conn.close()
+                                        nextQuestionRespond(ctx, detail)
+                                }
+                            } catch (e: Exception) {
+                                conn.close()
+                                writeInternalDebug(ctx.response, "nextQuestion: " + e.message)
+                            }
+                    }
+            }
+    }
+}
+
+private func nextQuestionRespond(ctx: HttpContext, detail: String): Unit {
+    let resource = parseObject(detail)
+    if ((jsonGetString(resource, "type") ?? "") != "quiz") {
+        writeDetail(ctx.response, 404, "Quiz not found")
+        return
+    }
+    let content = match (jsonGetObject(resource, "content")) {
+        case Some(c) => c
+        case None => emptyObject()
+    }
+    let state = match (jsonGetObject(resource, "state")) {
+        case Some(s) => s
+        case None => emptyObject()
+    }
+    let stateRaw = match (resource.get("state")) {
+        case Some(v) => valueToRaw(v)
+        case None => "{}"
+    }
+    let w = JsonWriter()
+    match (chooseNextQuestion(content, state)) {
+        case None =>
+            w.putBool("completed", true)
+            w.putRaw("question", "null")
+        case Some(q) =>
+            w.putBool("completed", false)
+            w.putRaw("question", publicQuestionJson(q))
+    }
+    w.putRaw("state", stateRaw)
+    writeJson(ctx.response, 200, w.toJson())
+}
+
+/*
+ * LearningContentService.choose_next 逐句移植：
+ *   answered = {str(aq["questionId"])}
+ *   remaining = questions 中 id 未被答过的
+ *   ability < .45 -> easy；< .72 -> medium；否则 hard
+ *   candidates = 难度等于 target 的；没有就退回全部 remaining
+ *   min by (abs(rank(difficulty) - rank(target)), mastery.get(str(kpId), .35))
+ * Python 的 min 在并列时取第一个，所以这里只在严格更小时替换。
+ */
+private func chooseNextQuestion(content: JsonObject, state: JsonObject): ?JsonValue {
+    let answered = HashSet<String>()
+    match (jsonGetArray(state, "answered")) {
+        case Some(arr) =>
+            var i: Int64 = 0
+            while (i < arr.size()) {
+                match (arr.get(i)) {
+                    case Some(item) =>
+                        if (isJsObject(item)) {
+                            match (item.asObject().get("questionId")) {
+                                case Some(qid) => answered.add(pyStrValue(qid))
+                                case None => ()
+                            }
+                        }
+                    case None => ()
+                }
+                i += 1
+            }
+        case None => ()
+    }
+    let remaining = ArrayList<JsonValue>()
+    match (jsonGetArray(content, "questions")) {
+        case Some(questions) =>
+            var i: Int64 = 0
+            while (i < questions.size()) {
+                match (questions.get(i)) {
+                    case Some(q) =>
+                        if (isJsObject(q)) {
+                            let qid = match (q.asObject().get("id")) {
+                                case Some(v) => pyStrValue(v)
+                                case None => "None"
+                            }
+                            if (!answered.contains(qid)) {
+                                remaining.add(q)
+                            }
+                        }
+                    case None => ()
+                }
+                i += 1
+            }
+        case None => ()
+    }
+    if (remaining.size == 0) {
+        return None
+    }
+    let ability = jsonGetFloat(state, "ability") ?? 0.35
+    let target = if (ability < 0.45) {
+        "easy"
+    } else if (ability < 0.72) {
+        "medium"
+    } else {
+        "hard"
+    }
+    let targetRank = lcDiffRank(target)
+    let matching = ArrayList<JsonValue>()
+    for (q in remaining) {
+        let diff = match (q.asObject().get("difficulty")) {
+            case Some(v) => pyStrValue(v)
+            case None => "None"
+        }
+        if (diff == target) {
+            matching.add(q)
+        }
+    }
+    let candidates = if (matching.size > 0) { matching } else { remaining }
+    let mastery = match (jsonGetObject(state, "mastery")) {
+        case Some(m) => m
+        case None => emptyObject()
+    }
+    var best: ?JsonValue = None
+    var bestRank: Int64 = 0
+    var bestMastery: Float64 = 0.0
+    for (q in candidates) {
+        let obj = q.asObject()
+        let diff = match (obj.get("difficulty")) {
+            case Some(v) => pyStrValue(v)
+            case None => "None"
+        }
+        let rankVal = if (lcDiffRank(diff) >= 0) { lcDiffRank(diff) } else { 0 }
+        let kpKey = match (obj.get("knowledgePointId")) {
+            case Some(v) => pyStrValue(v)
+            case None => "None"
+        }
+        let masteryVal = match (mastery.get(kpKey)) {
+            case Some(v) => jsonNumber(v) ?? 0.35
+            case None => 0.35
+        }
+        let delta = if (rankVal > targetRank) { rankVal - targetRank } else { targetRank - rankVal }
+        match (best) {
+            case None =>
+                best = Some(q)
+                bestRank = delta
+                bestMastery = masteryVal
+            case Some(_) =>
+                if (delta < bestRank || (delta == bestRank && masteryVal < bestMastery)) {
+                    best = Some(q)
+                    bestRank = delta
+                    bestMastery = masteryVal
+                }
+        }
+    }
+    return best
+}
+
+/* rank 表；未知难度按 Python 的 rank.get(..., 0) 取 0。 */
+private func lcDiffRank(diff: String): Int64 {
+    if (diff == "easy") {
+        return 0
+    } else if (diff == "medium") {
+        return 1
+    } else if (diff == "hard") {
+        return 2
+    }
+    return 0
+}
+
+/* Python str(value)：字符串原样，数字/布尔/null 用 Python 的文本形态。 */
+private func pyStrValue(v: JsonValue): String {
+    match (v.kind()) {
+        case JsonKind.JsString => return v.asString().getValue()
+        case JsonKind.JsInt => return v.asInt().getValue().toString()
+        case JsonKind.JsFloat => return v.asFloat().getValue().toString()
+        case JsonKind.JsBool => return if (v.asBool().getValue()) { "True" } else { "False" }
+        case JsonKind.JsNull => return "None"
+        case _ => return ""
+    }
+}
+
+private func jsonNumber(v: JsonValue): ?Float64 {
+    match (v.kind()) {
+        case JsonKind.JsInt => return Some(floatFromInt(v.asInt().getValue()))
+        case JsonKind.JsFloat => return Some(v.asFloat().getValue())
+        case _ => return None
     }
 }

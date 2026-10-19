@@ -62,6 +62,18 @@ main(): Int64 {
     registerAdminResourceRoutes(app, cfg)
     /* P4-F1 管理员知识服务代理 — literal catch-all，同样必须早于 gateway。 */
     registerAdminKnowledgeProxyRoutes(app, cfg)
+    /* 知识库读侧（KnowledgeController）— literal /api/v1 路由，早于 gateway。 */
+    registerKnowledgeRoutes(app, cfg)
+    /* 机构与成员管理（OrganizationController）— 同上。 */
+    registerOrganizationRoutes(app, cfg)
+    /* 全局搜索（LearnForgeSupportController /search）— 同上。 */
+    registerSearchRoutes(app, cfg)
+    /* /v1 纯数据库端点（批量删除 + 教研组运行）— 同上。 */
+    registerLearningExtrasRoutes(app, cfg)
+    /* /v1 课程候选 + 学习上下文（纯 SQL）— 同上。 */
+    registerLearnContextRoutes(app, cfg)
+    /* /api/v1/auth 的 me / logout / bind-identity（不涉及签发与 bcrypt）。 */
+    registerAuthRoutes(app, cfg)
     /* P3/P2 catch-all forwarders — MUST be last so literal routes win. */
     registerGatewayRoutes(app, cfg)
 

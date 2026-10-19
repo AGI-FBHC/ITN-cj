@@ -1,9 +1,10 @@
 {
-  "python_route_count": 149,
-  "spire_local_count": 61,
+  "python_route_count": 147,
+  "spire_local_count": 84,
   "catchalls": [
     "/v1/{*rest}",
-    "/internal/v1/{*rest}"
+    "/internal/v1/{*rest}",
+    "/api/v1/{*rest}"
   ],
   "uncovered_count": 0,
   "uncovered": [],
@@ -18,6 +19,14 @@
     {
       "method": "ANY",
       "path": "/internal/v1/{*rest}"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/learners/scores"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/learning-resources/{resource_id}/ability-reward"
     }
   ],
   "rows": [
@@ -36,14 +45,14 @@
     {
       "method": "GET",
       "path": "/v1/teaching-group/runs",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/teaching-group/runs"
     },
     {
       "method": "GET",
       "path": "/v1/teaching-group/runs/{run_id}",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/teaching-group/runs/{run_id}"
     },
     {
       "method": "POST",
@@ -132,26 +141,26 @@
     {
       "method": "POST",
       "path": "/v1/presentations/{task_id}/chat/sessions",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/presentations/{task_id}/chat/sessions"
     },
     {
       "method": "GET",
       "path": "/v1/presentations/{task_id}/chat/sessions",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/presentations/{task_id}/chat/sessions"
     },
     {
       "method": "GET",
       "path": "/v1/presentations/{task_id}/chat/sessions/{session_id}/messages",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/presentations/{task_id}/chat/sessions/{session_id}/messages"
     },
     {
       "method": "DELETE",
       "path": "/v1/presentations/{task_id}/chat/sessions/{session_id}",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/presentations/{task_id}/chat/sessions/{session_id}"
     },
     {
       "method": "POST",
@@ -522,26 +531,26 @@
     {
       "method": "GET",
       "path": "/v1/learning-context",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/learning-context"
     },
     {
       "method": "GET",
       "path": "/v1/memories",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/memories"
     },
     {
       "method": "POST",
       "path": "/v1/memory/context",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/memory/context"
     },
     {
       "method": "PUT",
       "path": "/v1/memories",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/memories"
     },
     {
       "method": "GET",
@@ -556,22 +565,16 @@
       "local_pattern": null
     },
     {
-      "method": "PUT",
-      "path": "/v1/learners/scores",
-      "owner": "FWD",
-      "local_pattern": null
-    },
-    {
       "method": "DELETE",
       "path": "/v1/memories/{memory_id}",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/memories/{memory_id}"
     },
     {
       "method": "GET",
       "path": "/v1/course-recommendations",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/course-recommendations"
     },
     {
       "method": "GET",
@@ -606,8 +609,8 @@
     {
       "method": "POST",
       "path": "/v1/learning-resources/batch-delete",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/learning-resources/batch-delete"
     },
     {
       "method": "POST",
@@ -654,14 +657,14 @@
     {
       "method": "GET",
       "path": "/v1/admin-generation-groups",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/admin-generation-groups"
     },
     {
       "method": "GET",
       "path": "/v1/admin-generation-resources/{resource_id}",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/admin-generation-resources/{resource_id}"
     },
     {
       "method": "GET",
@@ -726,8 +729,8 @@
     {
       "method": "GET",
       "path": "/v1/learning-resources/{resource_id}/next-question",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/learning-resources/{resource_id}/next-question"
     },
     {
       "method": "POST",
@@ -740,12 +743,6 @@
       "path": "/v1/learning-resources/{resource_id}/reset",
       "owner": "LOCAL",
       "local_pattern": "/v1/learning-resources/{resource_id}/reset"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/learning-resources/{resource_id}/ability-reward",
-      "owner": "LOCAL",
-      "local_pattern": "/v1/learning-resources/{resource_id}/ability-reward"
     },
     {
       "method": "POST",
@@ -804,38 +801,38 @@
     {
       "method": "POST",
       "path": "/v1/chat/sessions",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/chat/sessions"
     },
     {
       "method": "GET",
       "path": "/v1/chat/sessions",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/chat/sessions"
     },
     {
       "method": "GET",
       "path": "/v1/chat/sessions/{session_id}/messages",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/chat/sessions/{session_id}/messages"
     },
     {
       "method": "PUT",
       "path": "/v1/chat/sessions/{session_id}/rename",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/chat/sessions/{session_id}/rename"
     },
     {
       "method": "PUT",
       "path": "/v1/chat/sessions/{session_id}/archive",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/chat/sessions/{session_id}/archive"
     },
     {
       "method": "DELETE",
       "path": "/v1/chat/sessions/{session_id}",
-      "owner": "FWD",
-      "local_pattern": null
+      "owner": "LOCAL",
+      "local_pattern": "/v1/chat/sessions/{session_id}"
     },
     {
       "method": "POST",

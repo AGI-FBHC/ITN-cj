@@ -4,9 +4,9 @@
 
 | 口径 | 数值 |
 | --- | --- |
-| Python `/v1` + `/internal/v1` 路由 | 149 |
-| Spire 本地注册 (不含 health) | 61 |
-| 转发兜底 `v1/{*rest}` / `internal/v1/{*rest}` | 2 |
+| Python `/v1` + `/internal/v1` 路由 | 147 |
+| Spire 本地注册 (不含 health) | 84 |
+| 转发兜底 `v1/{*rest}` / `internal/v1/{*rest}` | 3 |
 | **未覆盖 (uncovered)** | **0** |
 | 归属错误 (生成生命周期被本地接管) | 0 |
 
@@ -16,8 +16,8 @@
 | --- | --- | --- | --- |
 | GET | `/v1/agents` | FWD | — |
 | GET | `/v1/teaching-group/agents` | FWD | — |
-| GET | `/v1/teaching-group/runs` | FWD | — |
-| GET | `/v1/teaching-group/runs/{run_id}` | FWD | — |
+| GET | `/v1/teaching-group/runs` | LOCAL | `/v1/teaching-group/runs` |
+| GET | `/v1/teaching-group/runs/{run_id}` | LOCAL | `/v1/teaching-group/runs/{run_id}` |
 | POST | `/v1/teaching-group/runs/stream` | FWD | — |
 | POST | `/v1/presentations` | FWD | — |
 | POST | `/v1/presentations/{task_id}/restart` | FWD | — |
@@ -32,10 +32,10 @@
 | GET | `/v1/presentations/{task_id}/slides` | LOCAL | `/v1/presentations/{task_id}/slides` |
 | GET | `/v1/presentations/{task_id}/slides/{slide_index}` | LOCAL | `/v1/presentations/{task_id}/slides/{slide_index}` |
 | GET | `/v1/presentations/{task_id}/audio/{slide_index}` | FWD | — |
-| POST | `/v1/presentations/{task_id}/chat/sessions` | FWD | — |
-| GET | `/v1/presentations/{task_id}/chat/sessions` | FWD | — |
-| GET | `/v1/presentations/{task_id}/chat/sessions/{session_id}/messages` | FWD | — |
-| DELETE | `/v1/presentations/{task_id}/chat/sessions/{session_id}` | FWD | — |
+| POST | `/v1/presentations/{task_id}/chat/sessions` | LOCAL | `/v1/presentations/{task_id}/chat/sessions` |
+| GET | `/v1/presentations/{task_id}/chat/sessions` | LOCAL | `/v1/presentations/{task_id}/chat/sessions` |
+| GET | `/v1/presentations/{task_id}/chat/sessions/{session_id}/messages` | LOCAL | `/v1/presentations/{task_id}/chat/sessions/{session_id}/messages` |
+| DELETE | `/v1/presentations/{task_id}/chat/sessions/{session_id}` | LOCAL | `/v1/presentations/{task_id}/chat/sessions/{session_id}` |
 | POST | `/v1/presentations/{task_id}/chat/stream` | FWD | — |
 | POST | `/v1/presentations/{task_id}/progress` | LOCAL | `/v1/presentations/{task_id}/progress` |
 | POST | `/v1/presentations/{task_id}/chat/tts` | FWD | — |
@@ -97,21 +97,20 @@
 | DELETE | `/v1/courses/{course_id}` | FWD | — |
 | GET | `/v1/learning-resources` | LOCAL | `/v1/learning-resources` |
 | POST | `/v1/learning-resources/{resource_id}/regenerate` | FWD | — |
-| GET | `/v1/learning-context` | FWD | — |
-| GET | `/v1/memories` | FWD | — |
-| POST | `/v1/memory/context` | FWD | — |
-| PUT | `/v1/memories` | FWD | — |
+| GET | `/v1/learning-context` | LOCAL | `/v1/learning-context` |
+| GET | `/v1/memories` | LOCAL | `/v1/memories` |
+| POST | `/v1/memory/context` | LOCAL | `/v1/memory/context` |
+| PUT | `/v1/memories` | LOCAL | `/v1/memories` |
 | GET | `/v1/memory/profile-analysis` | FWD | — |
 | POST | `/v1/profile/llm-score` | FWD | — |
-| PUT | `/v1/learners/scores` | FWD | — |
-| DELETE | `/v1/memories/{memory_id}` | FWD | — |
-| GET | `/v1/course-recommendations` | FWD | — |
+| DELETE | `/v1/memories/{memory_id}` | LOCAL | `/v1/memories/{memory_id}` |
+| GET | `/v1/course-recommendations` | LOCAL | `/v1/course-recommendations` |
 | GET | `/v1/learning-resources/{resource_id}` | LOCAL | `/v1/learning-resources/{resource_id}` |
 | GET | `/v1/learning-resources/{resource_id}/traceability` | LOCAL | `/v1/learning-resources/{resource_id}/traceability` |
 | POST | `/v1/learning-resources/{resource_id}/complete` | LOCAL | `/v1/learning-resources/{resource_id}/complete` |
 | PATCH | `/v1/learning-resources/{resource_id}/progress` | LOCAL | `/v1/learning-resources/{resource_id}/progress` |
 | POST | `/v1/learning-resources/{resource_id}/source-feedback` | LOCAL | `/v1/learning-resources/{resource_id}/source-feedback` |
-| POST | `/v1/learning-resources/batch-delete` | FWD | — |
+| POST | `/v1/learning-resources/batch-delete` | LOCAL | `/v1/learning-resources/batch-delete` |
 | POST | `/v1/learning-resource-tasks/{resource_type}` | FWD | — |
 | GET | `/v1/learning-resource-tasks` | LOCAL | `/v1/learning-resource-tasks` |
 | POST | `/v1/admin-generation-batches` | FWD | — |
@@ -119,8 +118,8 @@
 | GET | `/v1/customize-tasks` | LOCAL | `/v1/customize-tasks` |
 | GET | `/v1/customize-tasks/{task_id}` | LOCAL | `/v1/customize-tasks/{task_id}` |
 | GET | `/v1/customize-tasks/{task_id}/slides` | LOCAL | `/v1/customize-tasks/{task_id}/slides` |
-| GET | `/v1/admin-generation-groups` | FWD | — |
-| GET | `/v1/admin-generation-resources/{resource_id}` | FWD | — |
+| GET | `/v1/admin-generation-groups` | LOCAL | `/v1/admin-generation-groups` |
+| GET | `/v1/admin-generation-resources/{resource_id}` | LOCAL | `/v1/admin-generation-resources/{resource_id}` |
 | GET | `/v1/learning-resource-tasks/{task_id}` | LOCAL | `/v1/learning-resource-tasks/{task_id}` |
 | POST | `/v1/learning-resource-tasks/{task_id}/restart` | FWD | — |
 | POST | `/v1/learning-resource-tasks/{task_id}/cancel` | FWD | — |
@@ -131,10 +130,9 @@
 | POST | `/v1/learning-resources/lectures` | FWD | — |
 | POST | `/v1/learning-resources/quizzes` | FWD | — |
 | POST | `/v1/learning-resources/practices` | FWD | — |
-| GET | `/v1/learning-resources/{resource_id}/next-question` | FWD | — |
+| GET | `/v1/learning-resources/{resource_id}/next-question` | LOCAL | `/v1/learning-resources/{resource_id}/next-question` |
 | POST | `/v1/learning-resources/{resource_id}/answers` | LOCAL | `/v1/learning-resources/{resource_id}/answers` |
 | POST | `/v1/learning-resources/{resource_id}/reset` | LOCAL | `/v1/learning-resources/{resource_id}/reset` |
-| POST | `/v1/learning-resources/{resource_id}/ability-reward` | LOCAL | `/v1/learning-resources/{resource_id}/ability-reward` |
 | POST | `/v1/learning-resources/{resource_id}/answers/grade` | LOCAL | `/v1/learning-resources/{resource_id}/answers/grade` |
 | GET | `/v1/learning-resources/{resource_id}/messages` | LOCAL | `/v1/learning-resources/{resource_id}/messages` |
 | POST | `/v1/learning-resources/{resource_id}/chat` | FWD | — |
@@ -144,12 +142,12 @@
 | GET | `/v1/agent-runs/{run_id}` | FWD | — |
 | POST | `/v1/chat/attachments` | FWD | — |
 | GET | `/v1/chat/attachments/{attachment_id}` | FWD | — |
-| POST | `/v1/chat/sessions` | FWD | — |
-| GET | `/v1/chat/sessions` | FWD | — |
-| GET | `/v1/chat/sessions/{session_id}/messages` | FWD | — |
-| PUT | `/v1/chat/sessions/{session_id}/rename` | FWD | — |
-| PUT | `/v1/chat/sessions/{session_id}/archive` | FWD | — |
-| DELETE | `/v1/chat/sessions/{session_id}` | FWD | — |
+| POST | `/v1/chat/sessions` | LOCAL | `/v1/chat/sessions` |
+| GET | `/v1/chat/sessions` | LOCAL | `/v1/chat/sessions` |
+| GET | `/v1/chat/sessions/{session_id}/messages` | LOCAL | `/v1/chat/sessions/{session_id}/messages` |
+| PUT | `/v1/chat/sessions/{session_id}/rename` | LOCAL | `/v1/chat/sessions/{session_id}/rename` |
+| PUT | `/v1/chat/sessions/{session_id}/archive` | LOCAL | `/v1/chat/sessions/{session_id}/archive` |
+| DELETE | `/v1/chat/sessions/{session_id}` | LOCAL | `/v1/chat/sessions/{session_id}` |
 | POST | `/v1/graph-suggest` | FWD | — |
 | POST | `/v1/chat` | FWD | — |
 | POST | `/v1/chat/stream` | FWD | — |
@@ -168,4 +166,6 @@
 
 - `ANY /v1/{*rest}`
 - `ANY /internal/v1/{*rest}`
+- `PUT /v1/learners/scores`
+- `POST /v1/learning-resources/{resource_id}/ability-reward`
 

@@ -20,7 +20,10 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-BETA = r"D:\cangjie\ITN-Beta"
+# 老工作副本（D:\cangjie\ITN-Beta）与合并后的 monorepo 二选一。
+_LEGACY_BETA = r"D:\cangjie\ITN-Beta"
+_MONOREPO = os.path.abspath(os.path.join(ROOT, "..", "..", ".."))
+BETA = _LEGACY_BETA if os.path.isdir(_LEGACY_BETA) else _MONOREPO
 
 PUBLIC = os.path.join(BETA, "src", "agents", "app", "routers", "public.py")
 INTERNAL = os.path.join(BETA, "src", "agents", "app", "routers", "internal.py")

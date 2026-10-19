@@ -1504,8 +1504,7 @@ func loadTutoringScriptsText(): ?String {
         "resources/tutoring_scripts.json",
         "../resources/tutoring_scripts.json",
         "../../resources/tutoring_scripts.json",
-        "../../../resources/tutoring_scripts.json",
-        "D:/cangjie/zyqprojects/itn_spire/resources/tutoring_scripts.json"
+        "../../../resources/tutoring_scripts.json"
     ]
     for (p in candidates) {
         match (readWholeFile(p)) {

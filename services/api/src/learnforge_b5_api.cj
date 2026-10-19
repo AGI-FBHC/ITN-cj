@@ -232,7 +232,7 @@ func loadQuizBank(): String {
         "resources/onboarding/quiz-bank.json",
         "src/main/resources/onboarding/quiz-bank.json",
         "../resources/onboarding/quiz-bank.json",
-        "D:/cangjie/zyqprojects/itn_spire/resources/onboarding/quiz-bank.json"
+        "../../../resources/onboarding/quiz-bank.json"
     ]
     for (p in paths) {
         match (readWholeFile(p)) {
