@@ -7,9 +7,9 @@ import itn_desktop_core.db.*
 import itn_desktop_core.store.*
 import itn_desktop_core.learning.*
 import itn_desktop_core.agent.learningTools
-import itn_desktop_core.pi.ScriptedProvider
-import itn_desktop_core.pi.scriptText
-import itn_desktop_core.pi_app.PiAgent
+import itn_desktop_core.runtime.ScriptedProvider
+import itn_desktop_core.runtime.scriptText
+import itn_desktop_core.runtime_host.LuminAgent
 import itn_desktop_core.util.*
 
 @Test
@@ -113,12 +113,12 @@ func newSessionsReceiveCurrentLearningStateWithoutCallingMemoryTool(): Unit {
     let ls = LearningStore(dir)
     let memory = ls.remember("", "", "preference", "例子暗号松鼠", "", "", "", "user")
     let first = ScriptedProvider([scriptText("已参考学习偏好")])
-    PiAgent(store).runFull(first, "", "解释函数", "", "off", "", None, "", "")
+    LuminAgent(store).runFull(first, "", "解释函数", "", "off", "", None, "", "")
     @Expect(first.seenSystems[0].contains("例子暗号松鼠"), true)
     @Expect(first.seenSystems[0].contains("learningState"), true)
     ls.forget(strOf(memory, "id"))
     let next = ScriptedProvider([scriptText("已按当前档案回答")])
-    PiAgent(store).runFull(next, "", "解释函数", "", "off", "", None, "", "")
+    LuminAgent(store).runFull(next, "", "解释函数", "", "off", "", None, "", "")
     @Expect(next.seenSystems[0].contains("例子暗号松鼠"), false)
 }
 

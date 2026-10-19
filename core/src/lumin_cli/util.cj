@@ -5,7 +5,7 @@ import std.env.*
 import std.fs.*
 import std.io.*
 import stdx.encoding.json.*
-import itn_desktop_core.pi.*
+import itn_desktop_core.runtime.*
 
 /* CLI 这一层的小工具：URL / JSON / 配置文件 / 家目录。 */
 

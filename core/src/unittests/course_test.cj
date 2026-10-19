@@ -13,10 +13,10 @@ import itn_desktop_core.learning.LearningStore
 import itn_desktop_core.learning.arrOf
 import itn_desktop_core.personal.PersonalStore
 import itn_desktop_core.session.*
-import itn_desktop_core.pi.ChatProvider
-import itn_desktop_core.pi.StepContext
-import itn_desktop_core.pi.EventStream
-import itn_desktop_core.pi.ModelReply
+import itn_desktop_core.runtime.ChatProvider
+import itn_desktop_core.runtime.StepContext
+import itn_desktop_core.runtime.EventStream
+import itn_desktop_core.runtime.ModelReply
 import itn_desktop_core.agent.courseTools
 import itn_desktop_core.dev.seedGrowthActivity
 import itn_desktop_core.kb.stamp

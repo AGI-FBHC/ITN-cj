@@ -3,16 +3,16 @@ package itn_desktop_core.api
 import itn_desktop_core.learning.*
 import itn_desktop_core.guided.GuidedStore
 import itn_desktop_core.course.*
-import itn_desktop_core.pi_app.TaskFeed
+import itn_desktop_core.runtime_host.TaskFeed
 import itn_desktop_core.project.ProjectStore
 import itn_desktop_core.presentation.DesktopJobs
 import itn_desktop_core.personal.PersonalStore
 import itn_desktop_core.knowledge.KnowledgeStore
 import itn_desktop_core.agent.learningTools
-import itn_desktop_core.pi_app.taskTools
+import itn_desktop_core.runtime_host.taskTools
 import itn_desktop_core.agent.sharedSkillRoots
 import itn_desktop_core.agent.userHomeDir
-import itn_desktop_core.pi_tools.DraftStore
+import itn_desktop_core.workspace_tools.DraftStore
 import itn_desktop_core.resource.isResourceKind
 
 import stdx.net.http.*
@@ -25,14 +25,14 @@ import itn_desktop_core.db.*
 import itn_desktop_core.llm.*
 import itn_desktop_core.kb.*
 import itn_desktop_core.agent.*
-import itn_desktop_core.pi_app.*
+import itn_desktop_core.runtime_host.*
 import itn_desktop_core.session.*
 import itn_desktop_core.study.*
 import itn_desktop_core.tools.*
 import itn_desktop_core.harvest.*
 import std.fs.*
 import itn_desktop_core.util.*
-import itn_desktop_core.pi.validatedAttachments
+import itn_desktop_core.runtime.validatedAttachments
 import itn_desktop_core.tts.*
 
 public class Api {
@@ -911,7 +911,7 @@ public class Api {
                         return
                     }
                     try {
-                        ok(ctx, PiAgent(store).askTask(strOf(b, "kbId"), question,
+                        ok(ctx, LuminAgent(store).askTask(strOf(b, "kbId"), question,
                             strOf(b, "sessionId"), strOf(b, "web"), trimStr(strOf(b, "skill")),
                             Some(workContextOf(store, b))))
                     } catch (e: Exception) {
@@ -939,7 +939,7 @@ public class Api {
                     let reqCount = intOf(b, "count")
                     if (reqCount > 0) { count = reqCount }
                     try {
-                        ok(ctx, PiAgent(store).make(kind, strOf(b, "kbId"), topic, count,
+                        ok(ctx, LuminAgent(store).make(kind, strOf(b, "kbId"), topic, count,
                             strOf(b, "sessionId"), strOf(b, "web"), Some(workContextOf(store, b))))
                     } catch (e: Exception) {
                         fail(ctx, 500, "生成失败（lumin）：" + e.message)

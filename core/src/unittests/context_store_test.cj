@@ -5,8 +5,8 @@ import std.unittest.testmacro.*
 import std.collection.*
 import std.time.*
 import stdx.encoding.json.*
-import itn_desktop_core.pi.*
-import itn_desktop_core.pi_app.*
+import itn_desktop_core.runtime.*
+import itn_desktop_core.runtime_host.*
 import itn_desktop_core.session.SessionStore
 import itn_desktop_core.store.Store
 import itn_desktop_core.presentation.DesktopJobs
@@ -24,7 +24,7 @@ class CaptureContext <: ChatProvider {
 @Test
 func hostRestoresToolsAndMoreThanFourTurnsWithoutDuplicatingQuestion(): Unit {
     let dir = freshDir("full-context")
-    let host = PiAgent(Store(dir))
+    let host = LuminAgent(Store(dir))
     host.askWithProvider(ScriptedProvider([scriptTool("calc", "{\"expr\":\"7*8\"}"), scriptText("56")]), "", "计算", "stable", "off", "")
     var i = 0
     while (i < 6) {

@@ -3,8 +3,8 @@ package itn_desktop_core.unittests
 import std.unittest.*
 import std.unittest.testmacro.*
 import stdx.encoding.json.*
-import itn_desktop_core.pi.*
-import itn_desktop_core.pi_app.*
+import itn_desktop_core.runtime.*
+import itn_desktop_core.runtime_host.*
 import itn_desktop_core.store.Store
 import itn_desktop_core.session.*
 import itn_desktop_core.agent.sessionTools
@@ -40,7 +40,7 @@ func applicationSessionReadingDoesNotDependOnWorkDirectory(): Unit {
     let tool = sessionTools(store)[0]; let args = JsonObject(); args.put("session_id", JsonString("lumin://thread/target"))
     @Expect(tool.run(args).content.contains("感知、决策与行动"), true)
     let work = WorkContext(); work.dir = dir; work.chatMode = false; work.allowExec = false
-    let result = PiAgent(store).askFull(ScriptedProvider([scriptTool("read_session", "{\"session_id\":\"lumin://thread/target\"}"),scriptText("已读到第一章记录")]), "", "读一下lumin://thread/target", "work-reader", "off", "", Some(work))
+    let result = LuminAgent(store).askFull(ScriptedProvider([scriptTool("read_session", "{\"session_id\":\"lumin://thread/target\"}"),scriptText("已读到第一章记录")]), "", "读一下lumin://thread/target", "work-reader", "off", "", Some(work))
     @Expect(boolOf(result,"ok",false), true)
     var got = false
     for(e in sessions.events("work-reader")) { if(strOf(e,"type")=="tool/result") { got = e.toString().contains("第一章介绍") } }

@@ -4841,3 +4841,12 @@ read_chunk 读得到原文并带回库标识与正文。
 - 真实外网：GitHub octocat/Spoon-Knife，固定 d0dd1f61b33d64e29d8bc1372a94ef6a2fee76a9，2个文本文件；https://example.com 真正读到 Example Domain。两类资料均在界面勾选确认、选择目标库、并入并建立索引，再调用真实检索查到内容。
 - 最终27/27 PASS，tmp/harvest-final.log；结构整理后再次27/27 PASS，tmp/harvest-runtime-final.log。采用隔离临时库和本地HTTP服务器复现失败；联网对照使用agent-reach的网页/GitHub路径，Jina连通失败后依据实际官网路由读取官方HTML，未使用Python测试夹具或修改真实用户库。
 - 核心全量176/176 PASS，tmp/test-runtime-final.log。收集恢复功能与本段独立本地提交。
+
+## 2026-10-20 · 桌面运行层结构与启动署名
+- 按用户要求统一桌面运行层的目录和公共类型表述，当前模块为 runtime、runtime_host、model_provider、workspace_tools；桥接、工具规格与相关检查脚本采用运行层/Agent名称。已有会话数据、数据库结构与外部兼容接口保持原有契约。
+- 相应导入和引用已统一，运行层类型使用 LuminAgent、AgentEvent、AgentException。随包参考组件许可统一为 workspace-LICENSE.txt，许可正文完整保留；历史设计记录继续保留，未改写Git历史或既有TRACE段落。
+- 冷启动动画与应用内启动遮罩均新增用户指定的“powered by cangjie”，位置、字号与主题保持一致；两个阶段均覆盖。
+- 验证：scripts/build.ps1 成功（tmp/build-runtime-alignment.log）；核心176/176 PASS（tmp/test-runtime-final.log）；MiMo Flash四次真实对话7/7 PASS（tmp/real-runtime-final.log），实际调用记忆/遗忘工具、跨新会话使用学情、遗忘后不召回，SQLite integrity_check=ok；资料收集真实外网27/27再次通过；tools/splash-check.cjs 真实Electron+Edge9/9 PASS（tmp/splash-final.log），覆盖两阶段署名、logo解码、动画交接及无JS异常。
+- 版本更新为0.8.26，准备统一打包。docs/05-仓颉杯提交说明.md更新为创新原型赛道的当前技术范围，移除过期版本与源码行数，明确仓颉运行层、Electron界面、外部模型与PPT文件处理的职责。
+- 官方依据：已读 https://chinasoft.ccf.org.cn/2026/#competition/cangjie 对应的官方 competition/cangjie.html。创新原型要求项目背景/应用场景/核心功能/创新点/技术方案、源码、可运行产物、演示视频、第三方使用说明；评分为30/25/20/15/10，仓颉深度使用另有上限5分且总分不超过100；要求披露AI工具、既有基础和新增贡献。
+- 项目说明书原件19页，备份为 D:/Desktop/仓颉杯/材料备份/01-项目说明-20261020-015420.docx。采用用户偏好的非Python路径：受管Node读取/修改OOXML，Word原生导出PDF并用Poppler渲染后检查；保留原排版和第三方/AI/团队分工说明，当前继续更新内容与版面。

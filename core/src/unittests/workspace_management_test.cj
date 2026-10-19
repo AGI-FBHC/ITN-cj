@@ -4,9 +4,9 @@ import std.collection.*
 import std.fs.*
 import std.posix.*
 import stdx.encoding.json.*
-import itn_desktop_core.pi.*
+import itn_desktop_core.runtime.*
 import itn_desktop_core.lumin_cli.*
-import itn_desktop_core.pi_tools.*
+import itn_desktop_core.workspace_tools.*
 import std.unittest.*
 import std.unittest.testmacro.*
 

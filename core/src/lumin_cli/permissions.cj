@@ -3,7 +3,7 @@ package itn_desktop_core.lumin_cli
 import std.collection.*
 import std.fs.*
 import stdx.encoding.json.*
-import itn_desktop_core.pi.*
+import itn_desktop_core.runtime.*
 
 /*
  * 权限档位（照 Codex 那三档）：

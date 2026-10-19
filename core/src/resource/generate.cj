@@ -6,14 +6,14 @@ import stdx.encoding.json.*
 import itn_desktop_core.store.*
 import itn_desktop_core.llm.*
 import itn_desktop_core.tools.*
-import itn_desktop_core.pi_provider.OpenAiChatProvider
-import itn_desktop_core.pi.ChatProvider
-import itn_desktop_core.pi.StepContext
-import itn_desktop_core.pi.Message
-import itn_desktop_core.pi.MsgRole
-import itn_desktop_core.pi.EventStream
-import itn_desktop_core.pi.PiEvent
-import itn_desktop_core.pi.kindText
+import itn_desktop_core.model_provider.OpenAiChatProvider
+import itn_desktop_core.runtime.ChatProvider
+import itn_desktop_core.runtime.StepContext
+import itn_desktop_core.runtime.Message
+import itn_desktop_core.runtime.MsgRole
+import itn_desktop_core.runtime.EventStream
+import itn_desktop_core.runtime.AgentEvent
+import itn_desktop_core.runtime.kindText
 import itn_desktop_core.util.*
 
 /*
@@ -385,7 +385,7 @@ func resourceModel(run: Run, system: String, user: String, delta: (String) -> Un
     m.text = user
     ctx.messages.add(m)
     let stream = EventStream()
-    stream.on({ e: PiEvent =>
+    stream.on({ e: AgentEvent =>
         if (kindText(e.kind) == "message_update") {
             match (e.payload.get("assistantEvent")) {
                 case Some(v) => match (objOf(v)) {

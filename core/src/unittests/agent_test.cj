@@ -3,7 +3,7 @@ package itn_desktop_core.unittests
 import std.collection.*
 import std.time.*
 import stdx.encoding.json.*
-import itn_desktop_core.pi.*
+import itn_desktop_core.runtime.*
 import std.unittest.*
 import std.unittest.testmacro.*
 
@@ -14,7 +14,7 @@ import std.unittest.testmacro.*
 @Test
 class AgentLoopTest {
     @TestCase
-    func oneToolCallThenAnswerProducesThePiEventSequence(): Unit {
+    func oneToolCallThenAnswerProducesTheAgentEventSequence(): Unit {
         let d = freshDir("loop-basic")
         let s = newSession(d, "cwd", "", "")
         let reg = ToolRegistry()

@@ -8,15 +8,15 @@ import stdx.net.http.*
 import stdx.encoding.json.*
 import itn_desktop_core.tools.fetchPageWithCancel
 import itn_desktop_core.tools.WebSearchClient
-import itn_desktop_core.pi_app.ApprovalHub
-import itn_desktop_core.pi_app.PiAgent
-import itn_desktop_core.pi_app.sessionHub
-import itn_desktop_core.pi.ScriptedProvider
-import itn_desktop_core.pi.scriptTool
-import itn_desktop_core.pi.scriptText
-import itn_desktop_core.pi.boolOf
-import itn_desktop_core.pi.strOf
-import itn_desktop_core.pi.objOf
+import itn_desktop_core.runtime_host.ApprovalHub
+import itn_desktop_core.runtime_host.LuminAgent
+import itn_desktop_core.runtime_host.sessionHub
+import itn_desktop_core.runtime.ScriptedProvider
+import itn_desktop_core.runtime.scriptTool
+import itn_desktop_core.runtime.scriptText
+import itn_desktop_core.runtime.boolOf
+import itn_desktop_core.runtime.strOf
+import itn_desktop_core.runtime.objOf
 import itn_desktop_core.store.Store
 import itn_desktop_core.store.ModelConfig
 import itn_desktop_core.llm.LlmClient
@@ -145,7 +145,7 @@ func cancellingTheLuminTurnStopsTheActualToolAndNextModelCall(): Unit {
     let server = slowToolServer()
     let dir = freshDir("cancel-agent-tool")
     let sid = "cancel-tool-turn"
-    PiAgent(Store(dir)).askWithProvider(ScriptedProvider([scriptText("previous completed answer")]),
+    LuminAgent(Store(dir)).askWithProvider(ScriptedProvider([scriptText("previous completed answer")]),
         "", "previous question", sid, "off", "")
     let model = ScriptedProvider([
         scriptTool("web_fetch", "{\"url\":\"http://127.0.0.1:" + server.port.toString() + "/slow\"}"),
@@ -153,7 +153,7 @@ func cancellingTheLuminTurnStopsTheActualToolAndNextModelCall(): Unit {
     ])
     let canceller = spawn { sleep(Duration.millisecond * 350); sessionHub().abort(sid) }
     let started = DateTime.now()
-    let result = PiAgent(Store(dir)).askWithProvider(model, "", "read a page", sid, "auto", "")
+    let result = LuminAgent(Store(dir)).askWithProvider(model, "", "read a page", sid, "auto", "")
     canceller.get()
     @Expect(boolOf(result, "ok", true), false)
     @Expect(strOf(result, "answer"), "")

@@ -113,7 +113,7 @@ if (Test-Path -LiteralPath $srcExe) {
 # 4.5) 随包附带说明书，让解压的人不必翻仓库
 Copy-Item -LiteralPath (Join-Path $repo "docs\07-使用说明.md") -Destination (Join-Path $OutDir "Lumin-使用说明.md") -Force
 Copy-Item -LiteralPath (Join-Path $repo "docs\05-仓颉杯提交说明.md") -Destination (Join-Path $OutDir "Lumin-系统说明.md") -Force
-Copy-Item -LiteralPath (Join-Path $repo "third_party\pi-studio-LICENSE.txt") -Destination (Join-Path $OutDir "pi-studio-LICENSE.txt") -Force
+Copy-Item -LiteralPath (Join-Path $repo "third_party\workspace-LICENSE.txt") -Destination (Join-Path $OutDir "workspace-LICENSE.txt") -Force
 
 # 5) 压缩
 $sourceCommit = (git -C $repo rev-parse HEAD).Trim()

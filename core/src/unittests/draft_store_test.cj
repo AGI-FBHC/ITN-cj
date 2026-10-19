@@ -4,7 +4,7 @@ import std.collection.*
 import std.fs.*
 import std.unittest.*
 import std.unittest.testmacro.*
-import itn_desktop_core.pi_tools.DraftStore
+import itn_desktop_core.workspace_tools.DraftStore
 import itn_desktop_core.util.*
 
 /*

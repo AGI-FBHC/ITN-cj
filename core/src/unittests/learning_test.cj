@@ -8,8 +8,8 @@ import itn_desktop_core.learning.*
 import itn_desktop_core.store.Store
 import itn_desktop_core.resource.ResourceRequest
 import itn_desktop_core.resource.generateResourceWithCancel
-import itn_desktop_core.pi.ScriptedProvider
-import itn_desktop_core.pi.scriptText
+import itn_desktop_core.runtime.ScriptedProvider
+import itn_desktop_core.runtime.scriptText
 import itn_desktop_core.agent.learningTools
 import itn_desktop_core.util.*
 

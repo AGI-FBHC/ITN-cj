@@ -2,7 +2,7 @@ package itn_desktop_core.unittests
 
 import std.collection.*
 import stdx.encoding.json.*
-import itn_desktop_core.pi.*
+import itn_desktop_core.runtime.*
 import std.unittest.*
 import std.unittest.testmacro.*
 
@@ -12,7 +12,7 @@ class EventStreamTest {
     func pushNotifiesListenersInOrderAndDrainTakesEachEventOnce(): Unit {
         let s = EventStream()
         let seen = ArrayList<String>()
-        s.on({ e: PiEvent => seen.add(kindText(e.kind)) })
+        s.on({ e: AgentEvent => seen.add(kindText(e.kind)) })
         s.push(evAgentStart())
         s.push(evTurnStart(1))
         s.push(evAgentEnd("stop", 1))
@@ -31,7 +31,7 @@ class EventStreamTest {
         let s = EventStream()
         s.push(evAgentStart())
         let seen = ArrayList<String>()
-        s.on({ e: PiEvent => seen.add(kindText(e.kind)) })
+        s.on({ e: AgentEvent => seen.add(kindText(e.kind)) })
         @Expect(seen.size, 0)
         @Expect(s.drain().size, 1)
     }

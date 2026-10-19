@@ -5,11 +5,11 @@ import std.sync.*
 import std.time.*
 import stdx.net.http.*
 import stdx.encoding.json.*
-import itn_desktop_core.pi.*
-import itn_desktop_core.pi_provider.*
+import itn_desktop_core.runtime.*
+import itn_desktop_core.model_provider.*
 import itn_desktop_core.store.*
-import itn_desktop_core.pi_app.PiAgent
-import itn_desktop_core.pi_app.sessionHub
+import itn_desktop_core.runtime_host.LuminAgent
+import itn_desktop_core.runtime_host.sessionHub
 import itn_desktop_core.session.SessionStore
 import itn_desktop_core.util.readAllString
 import std.unittest.*
@@ -123,7 +123,7 @@ class ProviderTest {
             }
         }
         let started = DateTime.now()
-        let result = PiAgent(Store(dir)).askWithProvider(provider, "", "hello", "", "off", "")
+        let result = LuminAgent(Store(dir)).askWithProvider(provider, "", "hello", "", "off", "")
         canceller.get()
         @Expect(boolOf(result, "ok", true), false)
         @Expect(strOf(result, "message").contains("取消"), true)

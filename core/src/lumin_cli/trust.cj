@@ -3,7 +3,7 @@ package itn_desktop_core.lumin_cli
 import std.collection.*
 import std.fs.*
 import stdx.encoding.json.*
-import itn_desktop_core.pi.*
+import itn_desktop_core.runtime.*
 
 /*
  * 项目信任（照 Pi 的 project trust）：

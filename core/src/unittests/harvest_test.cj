@@ -9,10 +9,10 @@ import itn_desktop_core.agent.buildDomainToolDefs
 import itn_desktop_core.agent.listSkills
 import itn_desktop_core.agent.listSkillsWithHome
 import itn_desktop_core.store.Store
-import itn_desktop_core.pi.ScriptedProvider
-import itn_desktop_core.pi.scriptTool
-import itn_desktop_core.pi.scriptText
-import itn_desktop_core.pi_app.PiAgent
+import itn_desktop_core.runtime.ScriptedProvider
+import itn_desktop_core.runtime.scriptTool
+import itn_desktop_core.runtime.scriptText
+import itn_desktop_core.runtime_host.LuminAgent
 import itn_desktop_core.util.boolOf
 import itn_desktop_core.util.intOf
 import itn_desktop_core.util.strOf
@@ -78,7 +78,7 @@ func luminBridgeHonorsHostIngestGuard(): Unit {
         scriptTool("kb_ingest", "{\"id\":\"source-123\",\"confirmed\":true}"),
         scriptText("资料尚未并入，请在界面确认。")
     ])
-    let result = PiAgent(Store(dir)).askWithProvider(model, "", "把资料并入", "", "auto", "")
+    let result = LuminAgent(Store(dir)).askWithProvider(model, "", "把资料并入", "", "auto", "")
     @Expect(boolOf(result, "ok"), true)
     @Expect(intOf(result, "turns"), 2)
     var guarded = false
@@ -104,7 +104,7 @@ func luminDiscoversSkillsAndEnforcesTheirTools(): Unit {
         scriptTool("save_artifact", "{\"name\":\"must-not-exist.md\",\"content\":\"blocked\"}"),
         scriptText("这项技能只允许查看文档。")
     ])
-    let result = PiAgent(Store(dir)).askWithProvider(model, "", "看看资料", "", "off", "read-only")
+    let result = LuminAgent(Store(dir)).askWithProvider(model, "", "看看资料", "", "off", "read-only")
     @Expect(boolOf(result, "ok"), true)
     @Expect(model.seenSystems[0].contains("read-only"), true)
     @Expect(exists(dir + "/drafts/must-not-exist.md"), false)
@@ -132,7 +132,7 @@ func skillReadDoesNotLockTheToolset(): Unit {
         scriptTool("save_artifact", "{\"name\":\"allowed-now.md\",\"content\":\"ok\"}"),
         scriptText("读技能只是看说明，工具不受它限制。")
     ])
-    let result = PiAgent(Store(dir)).askWithProvider(model, "", "看看资料", "", "off", "")
+    let result = LuminAgent(Store(dir)).askWithProvider(model, "", "看看资料", "", "off", "")
     @Expect(boolOf(result, "ok"), true)
     @Expect(exists(dir + "/drafts/allowed-now.md"), true)
     var denied = false
@@ -149,7 +149,7 @@ func luminRejectsUnavailableBoundSkills(): Unit {
     File.writeTo(dir + "/skills/network/SKILL.md",
         "---\nname: network\ntools: [web_fetch]\nrequires_consent: web\n---\nRead a page.".toArray())
     let model = ScriptedProvider([scriptText("不应调用模型")])
-    let result = PiAgent(Store(dir)).askWithProvider(model, "", "读网页", "", "off", "network")
+    let result = LuminAgent(Store(dir)).askWithProvider(model, "", "读网页", "", "off", "network")
     @Expect(boolOf(result, "ok"), false)
     @Expect(model.seenSystems.size, 0)
 }

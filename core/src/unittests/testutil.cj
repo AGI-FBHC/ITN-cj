@@ -4,8 +4,8 @@ import std.collection.*
 import std.fs.*
 import std.time.*
 import stdx.encoding.json.*
-import itn_desktop_core.pi.*
-import itn_desktop_core.pi_tools.*
+import itn_desktop_core.runtime.*
+import itn_desktop_core.workspace_tools.*
 
 /* 测试公用夹具。 */
 
@@ -17,7 +17,7 @@ func orEmpty(o: ?String): String {
 }
 
 /** 事件序列 -> 类型名列表（断言顺序用）。 */
-func kindsOf(events: ArrayList<PiEvent>): ArrayList<String> {
+func kindsOf(events: ArrayList<AgentEvent>): ArrayList<String> {
     let out = ArrayList<String>()
     for (e in events) {
         out.add(kindText(e.kind))
@@ -115,7 +115,7 @@ func slurp(path: String): String {
 }
 
 /** 收集一次流里的事件，供断言用。 */
-func collect(run: (EventStream) -> Unit): ArrayList<PiEvent> {
+func collect(run: (EventStream) -> Unit): ArrayList<AgentEvent> {
     let s = EventStream()
     run(s)
     return s.drain()
