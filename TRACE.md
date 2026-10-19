@@ -4669,3 +4669,15 @@ read_chunk 读得到原文并带回库标识与正文。
   - `shell/package.json`、`shell/package-lock.json` 从 `0.8.22` 升级到 `0.8.23`。
   - 两份原有未跟踪调研文档 `docs/知识库改进清单-v2.md`、`docs/非对话页面改造方案-v1.md` 继续排除，不纳入提交。
   - 下一步提交本功能，再从该提交执行 `scripts/package-app.ps1`，打包结果、manifest 哈希和隔离启动冒烟将追加到本段。
+
+### 0.8.23 独立发布包复核与交付
+- 复核时间：2026-10-19（Asia/Shanghai）。
+- 打包命令：`.\scripts\package-app.ps1`，从功能提交 `d63e16a95b7ac3c01e6d76297094bc00f2ab68cd` 构建；打包进程正常退出，未复用旧包。
+- 发布目录：`D:\Desktop\ITN\ITN-Desktop\dist\Lumin-0.8.23`。
+- 发布 ZIP：`D:\Desktop\ITN\ITN-Desktop\dist\Lumin-0.8.23.zip`；文件名不含 `win-x64/x64`。大小 `230,609,406` bytes（`219.93 MB`），SHA256 `F26D0D51FC7D57BC948F0741F26859CB6ECDAF41A087B798B8937B75E4A542C6`。
+- manifest：`version=0.8.23`，`build=lumin-0.8.23-d63e16a`，`sourceCommit=d63e16a95b7ac3c01e6d76297094bc00f2ab68cd`。
+- 独立解压复核：没有检查打包工作目录本身，而是把 ZIP 重新解压到 `tmp\package-verify-0.8.23-20261019220546448`；对 `release.json.assets` 中全部 19 个资产重新计算 SHA256，逐项与 manifest 对比，`hashFailures=[]`。确认 `Lumin.exe`、`resources/kernel/lumin-core.exe`、PPT 渲染器、随包 `python.exe` 均存在。
+- 随包 PPT 实跑：使用解压包内 `resources\app\renderer\ppt-renderer\python\python.exe` 和包内 `render_ppt.py`，输入 `tools\fixtures\ppt-preview-sample.json`，实际生成 `tmp\package-verify-0.8.23-ppt\packaged-preview-test.pptx`。结果 `ok=true`、`renderedSlides=7`、PPTX `118,729` bytes；预览 HTML `561,814` bytes，含 7 个 `.slide.ppt-rendered` 和 7 个 `data:image/jpeg;base64`，确认是 PowerPoint 导出的逐页真实幻灯片，不是 Markdown 提纲；同时断言无讲者备注覆盖层、无缺少 `#` 的 CSS 色值。
+- 隔离启动复烟：用解压后的 `Lumin.exe --smoke` 和全新空数据目录运行，输出 `PRELOAD=ok`、`TITLEBAR=ok`、`TITLE=Lumin`、`STATUS=Lumin 0.8.23 · 已连接`、`NAV=5`、`VIEW_NODES=2`、`DOCX=ok paragraphs=4`、`RESULT=OK`。说明发布包在当前机器可从空用户数据启动，预加载、标题栏、内核状态和 DOCX 预览链路正常。
+- 视觉复核：`tmp\ppt-preview-0.8.23-first.png` 为真实封面幻灯片；`tmp\workbench-shots\02-workbench-artifact.png` 显示右侧成果栏的真实 PPT 预览和分页器；`tmp\workbench-shots\03-presentation.png` 显示导学页同一份 PPTX 的真实页面。
+- 结论：底层 PPTX 生成链路未回退；本轮修复的是成果侧栏和播放器曾把真实 PPTX 的内容摘要当成 Markdown 显示。0.8.23 已把成果预览、播放/导学入口统一到真实幻灯片。
