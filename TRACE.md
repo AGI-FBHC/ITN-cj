@@ -4832,3 +4832,12 @@ read_chunk 读得到原文并带回库标识与正文。
 - tools/knowledge-tables-check.cjs：修复前7项通过/6项失败，tmp/knowledge-tables-before.log；最终14/14 PASS，tmp/knowledge-tables-after.log。真实README先索引再移走源文件，确认仍读快照；章节表22行完整且只出现一次、加载多页后仍一张表、第十六章仍在表内；章节链接可打开；65行表跨页不丢/重复；代码围栏跨片段仍为一个literal代码块且不执行HTML；转义竖线正确。脚本初版行数统计把表头尾部多计了一行，核对原文后修为排除完整表头与分隔行，不改变产品结果。
 - 图片回归 tools/knowledge-images-check.cjs 14/14 PASS，tmp/knowledge-images-after-tables.log；真实README截图 tmp/knowledge-tables-shots/real-readme.png 已目视检查，表格单元格/章节链接正常。JS语法与git diff --check通过。
 - 工作中用户继续追加：收集资料全流程验收并修卡点；启动动画 powered by cangjie；内部运行时目录命名规范化（提交说明只按功能/维护范围表述）；依据2026仓颉杯官方要求优化 D:/Desktop/仓颉杯/创新原型赛道/01-项目说明.docx。后续继续完成，不丢失前述交付项。
+
+## 2026-10-20 · 资料收集全流程与索引失败恢复
+- 用户要求实际打通“收集资料”，发现卡点直接修复。首轮既有验收21项全通过（包含真实GitHub抓取），tmp/harvest-before.log；随后扩展到输入、错误、确认、索引重试与真实外网入库检索。
+- 先复现后修复：在真实浏览器中只令并入后的 /api/kb/build 返回500，文件已复制但来源卡片缺少索引未完成提示，tmp/harvest-index-failure-before.log 明确失败。修复 renderHarvest：保留本轮失败状态，在对应来源旁显示“资料已并入，索引未完成”，可重建此库索引；重建成功移除失败提示，不重复复制或并入。
+- 仓库解析接受完整链接结尾的斜杠，随后仍解析并固定完整commit，不降低快照追溯要求。相同内核函数供既有kb_stage工具与界面使用；无新增权限或业务接口。
+- tools/harvest-check.cjs 升级为从真实UI填写链接开始：空链接提示、HTTP404后可重试、长网页完整保存、暂存不进入检索、未确认不可并入、预览路径隔离、确认后索引失败可重试、检索命中、重复并入拒绝、重抓保留旧快照、不并入后不可再确认、重启持久化、窄窗及无JS异常。
+- 真实外网：GitHub octocat/Spoon-Knife，固定 d0dd1f61b33d64e29d8bc1372a94ef6a2fee76a9，2个文本文件；https://example.com 真正读到 Example Domain。两类资料均在界面勾选确认、选择目标库、并入并建立索引，再调用真实检索查到内容。
+- 最终27/27 PASS，tmp/harvest-final.log；结构整理后再次27/27 PASS，tmp/harvest-runtime-final.log。采用隔离临时库和本地HTTP服务器复现失败；联网对照使用agent-reach的网页/GitHub路径，Jina连通失败后依据实际官网路由读取官方HTML，未使用Python测试夹具或修改真实用户库。
+- 核心全量176/176 PASS，tmp/test-runtime-final.log。收集恢复功能与本段独立本地提交。

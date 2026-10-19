@@ -1553,6 +1553,7 @@ PAGES.notes = {
 
 async function renderHarvest(v, embedded) {
   v.innerHTML = "";
+  const indexFailures = new Set();
   const explanation = "先存本机，检查文件后再并入知识库。暂存资料不会出现在检索结果里。";
   const card = embedded ? el("div") : cardOf({ title: "收集资料", sub: explanation });
   if (embedded) card.appendChild(el("p", "muted sm", explanation));
@@ -1636,7 +1637,7 @@ async function renderHarvest(v, embedded) {
           try {
             await api("/api/kb/ingest", { id: s.id, kbId: target.value, confirmed: checked.checked });
             feedback.textContent = "资料已并入，正在重建索引…";
-            await buildIndex(target.value);
+            if (!await buildIndex(target.value)) indexFailures.add(s.id);
             await listSources();
           } catch (e) { feedback.textContent = "并入失败：" + e.message; ingest.disabled = false; }
         });
@@ -1649,7 +1650,15 @@ async function renderHarvest(v, embedded) {
           catch (e) { feedback.textContent = e.message; }
         }));
       } else {
-        actions.appendChild(btn("重建此库索引", "sm", () => buildIndex(s.kbId)));
+        if (indexFailures.has(s.id)) feedback.textContent = "资料已并入，索引未完成。请重建此库索引。";
+        const rebuild = btn("重建此库索引", "sm", async () => {
+          rebuild.disabled = true;
+          try {
+            if (await buildIndex(s.kbId)) { indexFailures.delete(s.id); feedback.textContent = "索引已完成。"; }
+            else { indexFailures.add(s.id); feedback.textContent = "资料已并入，索引未完成。请重建此库索引。"; }
+          } finally { rebuild.disabled = false; }
+        });
+        actions.appendChild(rebuild);
       }
       const refetch = btn("重新抓取", "sm ghost", async () => {
         refetch.disabled = true; feedback.textContent = "重新抓取中；原版本保留…";

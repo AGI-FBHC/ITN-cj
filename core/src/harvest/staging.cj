@@ -139,6 +139,7 @@ public func harvestStage(dataDir: String, kind: String, urlIn: String, refIn: St
     } else {
         var spec = trimStr(urlIn)
         if (hasPrefix(spec, "https://github.com/")) { spec = spec[19..spec.size] }
+        while (hasSuffix(spec, "/")) { spec = spec[0..spec.size - 1] }
         if (hasSuffix(spec, ".git")) { spec = spec[0..spec.size - 4] }
         let parts = spec.split("/")
         if (parts.size != 2 || !validId(parts[0].toAsciiLower().replace("_", "-")) ||
