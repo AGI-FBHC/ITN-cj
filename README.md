@@ -115,7 +115,9 @@ node --test --test-concurrency=1 tests/*.test.mjs
 - `apps/web/src/admin/`：管理端页面与接口层，与用户端共用同一份构建。
 - `services/learning/`：原生仓颉学习后端。
 - `schema.sql`：隔离开发库结构，位于 `services/learning/schema.sql`。
-- `services/learning/migrations/`：已执行的一次性结构变更，按序号记录。
+- `services/learning/migrations/`：已执行的一次性结构变更，按序号记录（001 管理端字段、002 知识库）。
+- `apps/web/src/tutor.js`：用户端 AI 导师的请求封装，由阅读页提问面板调用。
+- `tools/mock-model-server.py`：本地 mock 模型服务，只用于开发自检，不参与运行。
 - `tools/`、`scripts/`：静态源码恢复、课程导入、启动与管理员账号脚本。
 - `deployed/`：线上发布产物原件，保持逐字节不变。
 - `TRACE.md`：跨会话操作记录。
