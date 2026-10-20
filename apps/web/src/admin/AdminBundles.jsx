@@ -24,7 +24,7 @@ export default function AdminBundles({ onNeedModel }) {
     setUploading(file.name);
     try {
       await adminApi.uploadKbBundle(file);
-      setMessage(`《${file.name}》已上传，将自动整理原文、生成切片与摘要，原文就绪后即可预览并发布。`);
+      setMessage(`《${file.name}》已上传，将自动整理原文、生成切片与摘要，原文就绪后即可预览。`);
       state.reload();
     } catch (failure) {
       setError(failure.message);
@@ -56,7 +56,7 @@ export default function AdminBundles({ onNeedModel }) {
         </label>
       </h2>
       <div className="zx-card-hint">
-        上传包含文档和图片的 zip（最大 256MB），保留原文和图片，自动生成切片、摘要、关键词与课程图标。预览后即可发布为课程。
+        上传包含文档和图片的 zip（最大 256MB），保留原文和图片，自动生成切片、摘要、关键词与课程图标。课件在「课件管理」里生成与发布。
       </div>
 
       {error ? <Notice kind="error">{error}</Notice> : null}
@@ -101,7 +101,7 @@ export default function AdminBundles({ onNeedModel }) {
                       disabled={!bundleReadable(bundle)}
                       onClick={() => navigate(`/admin/knowledge/bundles/${bundle.id}`)}
                     >
-                      预览与发布
+                      预览
                     </button>
                     <button
                       type="button"

@@ -111,11 +111,7 @@ export default function AdminBundlePreview() {
         </div>
         <div className="zx-preview-bar-actions">
           <button type="button" className="zx-btn zx-btn-sm zx-btn-ghost" onClick={() => setShowLog(!showLog)}>{showLog ? '隐藏日志' : '运行日志'}</button>
-          {published ? <button type="button" className="zx-btn zx-btn-sm zx-btn-ghost" disabled={Boolean(busy)} onClick={() => run('unpublish', () => adminApi.unpublishKbBundle(bundle.id), '课程已下架，资料仍保留在知识库。')}>{busy === 'unpublish' ? '下架中…' : '下架课程'}</button> : null}
-          <button type="button" className="zx-btn zx-btn-sm zx-btn-primary" disabled={Boolean(busy) || docs.length === 0}
-            onClick={() => run('publish', () => adminApi.publishKbBundle(bundle.id), (result) => `课程已发布，共 ${result.lessonCount ?? docs.length} 节课，学习端可直接查看。`)}>
-            {busy === 'publish' ? '发布中…' : published ? '更新课程' : bundle.courseId ? '重新发布' : '发布为课程'}
-          </button>
+          
           <button type="button" className="zx-btn zx-btn-sm zx-btn-danger" disabled={Boolean(busy)} onClick={() => {
             if (!window.confirm(`删除《${bundle.name}》的资料与切片？已发布的课程也会下架。`)) return;
             run('delete', async () => { await adminApi.deleteKbBundle(bundle.id); navigate('/admin/knowledge'); }, '');

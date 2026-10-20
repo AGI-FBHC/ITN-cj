@@ -6,6 +6,7 @@ import AdminOverview from './AdminOverview.jsx';
 import AdminUsers from './AdminUsers.jsx';
 import AdminKnowledge from './AdminKnowledge.jsx';
 import AdminBundlePreview from './AdminBundlePreview.jsx';
+import AdminCourseware from './AdminCourseware.jsx';
 import AdminSettings from './AdminSettings.jsx';
 
 function navClass({ isActive }) {
@@ -44,6 +45,7 @@ export default function AdminApp() {
         <nav className="zx-admin-nav">
           <NavLink to="/admin" end className={navClass}>概览</NavLink>
           <NavLink to="/admin/knowledge" className={navClass}>知识库</NavLink>
+          <NavLink to="/admin/courseware" className={navClass}>课件管理</NavLink>
           <NavLink to="/admin/users" className={navClass}>用户</NavLink>
           <NavLink to="/admin/settings" className={navClass}>设置</NavLink>
         </nav>
@@ -71,6 +73,7 @@ export default function AdminApp() {
           />
           <Route path="/admin/knowledge" element={<AdminKnowledge />} />
           <Route path="/admin/knowledge/bundles/:bundleId" element={<AdminBundlePreview />} />
+          <Route path="/admin/courseware" element={<AdminCourseware />} />
           <Route path="/admin/users" element={<AdminUsers />} />
           <Route path="/admin/settings" element={<AdminSettings />} />
           <Route path="/admin/courses/*" element={<Navigate to="/admin/knowledge" replace />} />
