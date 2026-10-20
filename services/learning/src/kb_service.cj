@@ -225,7 +225,8 @@ func kbLoadIndex(cfg: Config): Array<KbIndexEntry> {
     } finally {
         kbCacheLock.unlock()
     }
-    let rows = query(cfg,
+    // 索引加载要读几千条切片和向量，走独立连接，避免占住共享连接把登录和详情一起堵死。
+    let rows = queryIndependent(cfg,
         "SELECT c.id,c.document_id,c.heading_path,c.text,COALESCE(c.summary,'') summary," +
         "COALESCE(c.keywords_json,'[]') keywords,d.title doc_title,e.vec_hex,e.model,e.dim,e.space_key," +
         "COALESCE(NULLIF(d.course_id,''),b.course_id,'') course_id,COALESCE(p.status,'') course_status " +

@@ -603,3 +603,15 @@
 - 按用户要求把「练习题」与「测验题」合并为「题库」，并新增「实操指南」作为第二项；顺序为：讲义文稿 / 实操指南 / 题库 / 教学幻灯片。
 - 早期本地演示数据里的 `practice`、`quiz` 两种类型在展示时统一映射为「题库」，不会出现未知类型。
 - 浏览器实测：弹窗四张卡顺序与名称正确，选中「实操指南 + 题库」后生成，课件库列出两条，类型显示为「实操指南」「题库」，控制台无报错。
+
+## 2026-10-21 课件生成接入真实后端：移植旧仓库四类资源生成 + 多智能体流程
+
+- 用户要求参考 `AGI-FBHB/ITN-cj`（本地检出 `D:\Downloads\ITN-cj-analysis-20261020`，cc2e6208）里四类资源的生成实现，尽可能复用其代码。核对后确认对应关系：`lecture`→讲义文稿、`practice`→实操指南、`quiz`→题库、`ppt`→教学幻灯片。
+- 复用的部分：四个提示词（`lecturePlanPrompt`/`lectureSectionPrompt`/`practicePrompt`/`quizKnowledgePrompt`+`quizQuestionsPrompt`/`pptPrompt`）逐条移植到 `kb_courseware.cj`；`validate.cj` 的结构校验阈值（讲义分节与字数、实操步骤数/风险等级/验收标准/故障排查、题库选项唯一与答案索引/解析长度、幻灯片要点数量与讲稿长度）一并移植；修复提示词沿用 `repairPrompt` 的形态，只返修一轮。
+- 与旧版差异：旧版按整门课出章节大纲再逐节撰写；这里以「一章原文」为输入，所以讲义把规划与撰写拆成两次调用（先大纲后正文），课件以单章为单位。
+- 多智能体流程显性化：规划 → 检索 → 撰写 → 质检 → 仲裁（按需返修）。每一步写入 `kb_courseware.steps_json`，管理端预览里以角色标签展示，失败时保留问题清单。检索这一步复用知识库混合检索（向量+关键词融合）取跨章证据，并把证据编号注入撰写提示词。
+- 数据层：`migrations/009_courseware.sql` 新建 `kb_courseware`（bundle_id、doc_id、kind、title、status、published、content_json、steps_json、model、error_message），外键随资料包/章节级联删除。
+- 接口：`POST /api/admin/kb/courseware` 提交生成（后台线程跑）、`GET /api/admin/kb/courseware`、`GET .../{id}`（含 steps 与 content）、`POST .../{id}/publish|unpublish`、`DELETE .../{id}`；服务启动时把上次没跑完的 `generating` 记录标记为失败。
+- 前端：`AdminCourseware.jsx` 从 localStorage 假数据改为真实接口；生成弹窗保留四类资源选择；课件库按状态展示（生成中/待发布/已发布/失败），预览里按类型渲染讲义、实操指南（步骤+代码+预期结果+验收+故障排查）、题库（选项高亮正确答案+解析）、幻灯片（要点+讲稿），顶部展示五角色流程标签。
+- 迁移中踩到的两个真问题：`where` 是仓颉关键字（变量改名）；索引缓存加载原本走共享连接，几千条向量会占住连接把登录堵死，已改为 `queryIndependent` 独立连接。
+- 真实验收：用数据库已保存的 `deepseek-flash`（无 mock）对「前言」章节生成实操指南，61 秒完成，产出 6 个步骤、首步 instruction 204 字，流程为规划→检索→撰写→质检全部通过（未触发仲裁）；浏览器打开课件库能看到 2 条记录与流程标签，预览渲染正常，控制台无报错。

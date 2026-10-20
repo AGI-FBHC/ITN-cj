@@ -1092,3 +1092,98 @@
   .zx-cw-main { height: auto; max-height: none; }
   .zx-cw-scroll { overflow: visible; }
 }
+/* 课件产物展示 */
+.zx-cw-doc { font-size: 13.5px; line-height: 1.8; color: #2b2737; }
+.zx-cw-lead { margin: 0 0 10px; color: #4b4560; font-size: 13px; }
+.zx-cw-meta-row { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 12px; color: var(--zx-muted); font-size: 11.5px; }
+.zx-cw-meta-row span { white-space: nowrap; }
+.zx-cw-objectives { margin: 0 0 14px; padding-left: 20px; color: #4b4560; list-style: disc; }
+.zx-cw-objectives li::marker { color: #a99cd0; }
+
+.zx-cw-section { padding-top: 12px; border-top: 1px solid var(--zx-line); }
+.zx-cw-section:first-of-type { border-top: 0; padding-top: 0; }
+.zx-cw-section h3 { margin: 6px 0 8px; font-size: 15px; font-weight: 800; }
+
+.zx-cw-step, .zx-cw-question, .zx-cw-slide {
+  border: 1px solid var(--zx-line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #fdfcff;
+}
+.zx-cw-step + .zx-cw-step, .zx-cw-question + .zx-cw-question, .zx-cw-slide + .zx-cw-slide { margin-top: 10px; }
+
+.zx-cw-step header, .zx-cw-question-head, .zx-cw-slide header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13.5px;
+}
+
+.zx-cw-step-index {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--zx-accent-soft);
+  color: var(--zx-accent);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.zx-cw-code {
+  margin: 8px 0;
+  border-radius: 10px;
+  background: #17141f;
+  padding: 10px 12px;
+  color: #e9e5f5;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  overflow: auto;
+}
+
+.zx-cw-expect { margin: 8px 0 0; color: #0f7b52; font-size: 12.5px; }
+.zx-cw-warn { margin: 6px 0 0; color: #8a5a13; font-size: 12.5px; }
+
+.zx-cw-points { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.zx-cw-points span {
+  border-radius: 999px;
+  background: var(--zx-accent-soft);
+  padding: 3px 10px;
+  color: var(--zx-accent);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.zx-cw-difficulty { margin-left: auto; color: var(--zx-muted); font-size: 11px; }
+.zx-cw-options { margin: 8px 0 0; padding-left: 22px; list-style: upper-alpha; }
+.zx-cw-options li { margin: 3px 0; }
+.zx-cw-options li.correct { color: #0f7b52; font-weight: 700; }
+.zx-cw-explain { margin: 8px 0 0; color: #4b4560; font-size: 12.5px; }
+.zx-cw-trouble { margin: 4px 0; font-size: 12.5px; color: #4b4560; }
+.zx-cw-slide ul { margin: 6px 0 0; padding-left: 20px; list-style: disc; }
+.zx-cw-note { margin: 8px 0 0; color: var(--zx-muted); font-size: 12px; }
+
+/* 多智能体流程 */
+.zx-cw-steps { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.zx-cw-stepchip {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  max-width: 100%;
+  border: 1px solid var(--zx-line);
+  border-radius: 10px;
+  padding: 6px 10px;
+  background: #fdfcff;
+  font-size: 11.5px;
+}
+.zx-cw-stepchip-role { flex: none; font-weight: 800; color: #4b4560; }
+.zx-cw-stepchip-text { color: var(--zx-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+.zx-cw-stepchip.done { border-color: rgba(15, 123, 82, .3); background: #f2fbf7; }
+.zx-cw-stepchip.done .zx-cw-stepchip-role { color: #0f7b52; }
+.zx-cw-stepchip.failed { border-color: rgba(192, 43, 70, .3); background: #fff6f7; }
+.zx-cw-stepchip.failed .zx-cw-stepchip-role { color: var(--zx-danger); }
+.zx-cw-stepchip.running { border-color: rgba(96, 56, 239, .35); background: #f8f5ff; }
+.zx-cw-stepchip.running .zx-cw-stepchip-role { color: var(--zx-accent); }

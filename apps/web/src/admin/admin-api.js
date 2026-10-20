@@ -135,6 +135,12 @@ export const adminApi = {
     }
   },
   deleteKbBundle: (id) => request(`/kb/bundles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  cwList: (bundleId) => request(`/kb/courseware${bundleId ? `?bundleId=${encodeURIComponent(bundleId)}` : ''}`),
+  cwDetail: (id) => request(`/kb/courseware/${encodeURIComponent(id)}`),
+  cwGenerate: (body) => request('/kb/courseware', { method: 'POST', body }),
+  cwPublish: (id) => request(`/kb/courseware/${encodeURIComponent(id)}/publish`, { method: 'POST', body: {} }),
+  cwUnpublish: (id) => request(`/kb/courseware/${encodeURIComponent(id)}/unpublish`, { method: 'POST', body: {} }),
+  cwDelete: (id) => request(`/kb/courseware/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   uploadKbBundle: async (file) => {
     const response = await fetch('/api/admin/kb/bundles', {
       method: 'POST',

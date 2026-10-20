@@ -494,3 +494,46 @@ func chatWithTools(ep: ModelEndpoint, messagesJson: String, toolsJson: String): 
     }
     ChatTurn(content, calls)
 }
+
+/** 非流式纯文本对话：结构化内容（JSON）生成用，避免 SSE 解析干扰。 */
+func chatPlain(ep: ModelEndpoint, systemPrompt: String, userPrompt: String, temperature: Float64): String {
+    if (!ep.hasChat()) { throw Exception("还没有配置对话模型") }
+    let messages = JsonArrWriter()
+    let systemPart = JsonWriter()
+    systemPart.putStr("role", "system")
+    systemPart.putStr("content", systemPrompt)
+    messages.addRaw(systemPart.toJson())
+    let userPart = JsonWriter()
+    userPart.putStr("role", "user")
+    userPart.putStr("content", userPrompt)
+    messages.addRaw(userPart.toJson())
+    let payload = JsonWriter()
+    payload.putStr("model", ep.chatModel)
+    payload.putRaw("messages", messages.toJson())
+    payload.putFloat("temperature", temperature)
+    payload.putBool("stream", false)
+    let text = httpPostJson(ep, "/chat/completions", payload.toJson(), 3)
+    let root = match (jsonParse(text)) {
+        case Some(value) => value
+        case None => throw Exception("模型返回的不是合法 JSON")
+    }
+    let object = match (root.kind()) {
+        case JsonKind.JsObject => root.asObject()
+        case _ => throw Exception("模型返回的顶层不是对象")
+    }
+    let choices = match (jsonGetArray(object, "choices")) {
+        case Some(list) => list
+        case None => throw Exception("模型返回缺少 choices")
+    }
+    if (choices.size() == 0) { throw Exception("模型返回了空的 choices") }
+    let first = choices[0]
+    let choice = match (first.kind()) {
+        case JsonKind.JsObject => first.asObject()
+        case _ => throw Exception("choices 结构不正确")
+    }
+    let message = match (jsonGetObject(choice, "message")) {
+        case Some(value) => value
+        case None => throw Exception("模型返回缺少 message")
+    }
+    jsonGetString(message, "content") ?? ""
+}

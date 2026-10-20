@@ -4,44 +4,178 @@ import { ErrorBlock, Loading, Notice, PageHead, useLoad } from './admin-ui.jsx';
 import { bundleReadable, BundleLogo } from './BundlePipeline.jsx';
 import Markdown from './Markdown.jsx';
 
-const STORE_KEY = 'zhixun-courseware-mock';
-
-// 四类课件资源。
 const RESOURCES = [
   { key: 'lecture', label: '讲义文稿', badge: '讲', desc: '把章节原文整理成可阅读的讲解稿', meta: '约 2000–3000 字' },
   { key: 'guide', label: '实操指南', badge: '操', desc: '可跟着做的步骤、命令与检查点', meta: '8–15 步' },
-  { key: 'bank', label: '题库', badge: '题', desc: '随堂练习与章节测验，统一进题库', meta: '15–25 题' },
-  { key: 'slides', label: '教学幻灯片', badge: '播', desc: '按小节拆页，可在学习端播放', meta: '10–16 页' },
+  { key: 'bank', label: '题库', badge: '题', desc: '随堂练习与章节测验，统一进题库', meta: '8 题' },
+  { key: 'slides', label: '教学幻灯片', badge: '播', desc: '按小节拆页，可在学习端播放', meta: '10 页' },
 ];
 
-const TYPE_LABEL = { ...Object.fromEntries(RESOURCES.map((item) => [item.key, item.label])), practice: '题库', quiz: '题库' };
+const TYPE_LABEL = Object.fromEntries(RESOURCES.map((item) => [item.key, item.label]));
 
 const STATUS = {
   generating: { label: '生成中', kind: 'draft' },
-  draft: { label: '草稿', kind: 'draft' },
+  ready: { label: '待发布', kind: 'draft' },
   published: { label: '已发布', kind: 'live' },
+  failed: { label: '失败', kind: 'draft' },
 };
 
-function loadStore() {
-  try {
-    const raw = localStorage.getItem(STORE_KEY);
-    const list = raw ? JSON.parse(raw) : [];
-    return Array.isArray(list) ? list : [];
-  } catch {
-    return [];
-  }
+const STEP_ORDER = ['规划', '检索', '撰写', '质检', '仲裁'];
+
+function readJson(text) {
+  try { return text ? JSON.parse(text) : null; } catch { return null; }
 }
 
-function saveStore(list) {
-  try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(list.slice(0, 200)));
-  } catch {
-    /* 本地缓存写入失败不影响使用 */
-  }
+/* ---------- 各类产物的展示 ---------- */
+
+function LectureView({ data }) {
+  return (
+    <div className="zx-cw-doc">
+      {Array.isArray(data.objectives) && data.objectives.length > 0 ? (
+        <ul className="zx-cw-objectives">
+          {data.objectives.map((item, index) => <li key={index}>{item}</li>)}
+        </ul>
+      ) : null}
+      {(data.sections || []).map((section, index) => (
+        <section key={index} className="zx-cw-section">
+          <h3>{section.heading || `第 ${index + 1} 节`}</h3>
+          <Markdown text={section.body || ''} />
+        </section>
+      ))}
+    </div>
+  );
 }
+
+function GuideView({ data }) {
+  const steps = data.steps || [];
+  return (
+    <div className="zx-cw-doc">
+      {data.objective ? <p className="zx-cw-lead">{data.objective}</p> : null}
+      <div className="zx-cw-meta-row">
+        {data.estimatedMinutes ? <span>预计 {data.estimatedMinutes} 分钟</span> : null}
+        {Array.isArray(data.environment) && data.environment.length ? <span>环境：{data.environment.join('、')}</span> : null}
+      </div>
+      {steps.map((step, index) => (
+        <article key={index} className="zx-cw-step">
+          <header>
+            <span className="zx-cw-step-index">{index + 1}</span>
+            <strong>{step.title || `第 ${index + 1} 步`}</strong>
+            {step.safety && step.safety !== 'safe' ? (
+              <span className={`zx-pill ${step.safety === 'danger' ? 'zx-pill-draft' : 'zx-pill-draft'}`}>
+                {step.safety === 'danger' ? '高风险' : '注意'}
+              </span>
+            ) : null}
+          </header>
+          <Markdown text={step.instruction || ''} />
+          {step.code ? <pre className="zx-cw-code"><code>{step.code}</code></pre> : null}
+          {step.expectedOutput ? <p className="zx-cw-expect">预期结果：{step.expectedOutput}</p> : null}
+          {step.warning ? <p className="zx-cw-warn">{step.warning}</p> : null}
+        </article>
+      ))}
+      {Array.isArray(data.acceptanceCriteria) && data.acceptanceCriteria.length ? (
+        <section className="zx-cw-section">
+          <h3>验收标准</h3>
+          <ul>{data.acceptanceCriteria.map((item, index) => <li key={index}>{item}</li>)}</ul>
+        </section>
+      ) : null}
+      {Array.isArray(data.troubleshooting) && data.troubleshooting.length ? (
+        <section className="zx-cw-section">
+          <h3>常见问题</h3>
+          {data.troubleshooting.map((item, index) => (
+            <p key={index} className="zx-cw-trouble"><strong>{item.problem}</strong>：{item.solution}</p>
+          ))}
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function BankView({ data }) {
+  const points = data.knowledgePoints || [];
+  const questions = data.questions || [];
+  return (
+    <div className="zx-cw-doc">
+      {points.length ? (
+        <div className="zx-cw-points">
+          {points.map((point) => (
+            <span key={point.id}>{point.name || point.id}</span>
+          ))}
+        </div>
+      ) : null}
+      {questions.map((question, index) => (
+        <article key={question.id || index} className="zx-cw-question">
+          <div className="zx-cw-question-head">
+            <span className="zx-cw-step-index">{index + 1}</span>
+            <strong>{question.stem || '（缺题干）'}</strong>
+            {question.difficulty ? <span className="zx-cw-difficulty">{question.difficulty}</span> : null}
+          </div>
+          <ol className="zx-cw-options">
+            {(question.options || []).map((option, optionIndex) => (
+              <li key={optionIndex} className={optionIndex === question.correctIndex ? 'correct' : ''}>
+                {option}
+              </li>
+            ))}
+          </ol>
+          {question.explanation ? <p className="zx-cw-explain">解析：{question.explanation}</p> : null}
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function SlidesView({ data }) {
+  const slides = data.slides || [];
+  return (
+    <div className="zx-cw-slides">
+      {data.subtitle ? <p className="zx-cw-lead">{data.subtitle}</p> : null}
+      {slides.map((slide, index) => (
+        <article key={index} className="zx-cw-slide">
+          <header>
+            <span className="zx-cw-step-index">{index + 1}</span>
+            <strong>{slide.title || `第 ${index + 1} 页`}</strong>
+          </header>
+          <ul>{(slide.bullets || []).map((bullet, bulletIndex) => <li key={bulletIndex}>{bullet}</li>)}</ul>
+          {slide.speakerNote ? <p className="zx-cw-note">讲稿：{slide.speakerNote}</p> : null}
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function CoursewareContent({ kind, content }) {
+  const data = typeof content === 'string' ? readJson(content) : content;
+  if (!data) return <Notice kind="info">还没有产出内容。</Notice>;
+  if (kind === 'guide') return <GuideView data={data} />;
+  if (kind === 'bank') return <BankView data={data} />;
+  if (kind === 'slides') return <SlidesView data={data} />;
+  return <LectureView data={data} />;
+}
+
+function StepTimeline({ steps }) {
+  if (!Array.isArray(steps) || steps.length === 0) return null;
+  return (
+    <div className="zx-cw-steps">
+      {steps.map((step, index) => (
+        <div key={index} className={`zx-cw-stepchip ${step.status}`}>
+          <span className="zx-cw-stepchip-role">{step.role}</span>
+          <span className="zx-cw-stepchip-text">{step.error || step.summary || '…'}</span>
+        </div>
+      ))}
+      {steps.length < STEP_ORDER.length && steps.some((step) => step.status === 'running') ? (
+        <div className="zx-cw-stepchip running">
+          <span className="zx-cw-stepchip-role">{STEP_ORDER[steps.length] || '…'}</span>
+          <span className="zx-cw-stepchip-text">进行中…</span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/* ---------- 页面 ---------- */
 
 export default function AdminCourseware() {
   const bundlesState = useLoad(() => adminApi.kbBundles(), []);
+  const listState = useLoad(() => adminApi.cwList(), []);
   const [bundleId, setBundleId] = React.useState('');
   const [activeDocId, setActiveDocId] = React.useState('');
   const [doc, setDoc] = React.useState(null);
@@ -50,9 +184,11 @@ export default function AdminCourseware() {
   const [view, setView] = React.useState('chapters');
   const [showPicker, setShowPicker] = React.useState(false);
   const [picked, setPicked] = React.useState([]);
-  const [items, setItems] = React.useState(loadStore);
   const [message, setMessage] = React.useState('');
-  const [previewing, setPreviewing] = React.useState(null);
+  const [error, setError] = React.useState('');
+  const [previewId, setPreviewId] = React.useState('');
+  const [preview, setPreview] = React.useState(null);
+  const pollTimer = React.useRef(null);
 
   const bundles = (bundlesState.data?.bundles || []).filter((item) => bundleReadable(item));
   const selectedBundle = bundles.find((item) => item.id === bundleId) || null;
@@ -62,23 +198,31 @@ export default function AdminCourseware() {
   );
   const chapters = chaptersState.data?.docs || [];
   const activeChapter = chapters.find((item) => item.id === activeDocId) || null;
+  const items = listState.data?.items || [];
+  const generating = items.some((item) => item.status === 'generating');
 
-  React.useEffect(() => { saveStore(items); }, [items]);
+  // 有生成中的任务就轮询
+  React.useEffect(() => {
+    if (!generating) {
+      if (pollTimer.current) { window.clearTimeout(pollTimer.current); pollTimer.current = null; }
+      return undefined;
+    }
+    pollTimer.current = window.setTimeout(() => listState.reload(), 3000);
+    return () => {
+      if (pollTimer.current) { window.clearTimeout(pollTimer.current); pollTimer.current = null; }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generating, listState.data]);
 
-  // 默认选中第一个知识库
   React.useEffect(() => {
     if (!bundleId && bundles.length > 0 && !bundlesState.loading) setBundleId(bundles[0].id);
   }, [bundles, bundleId, bundlesState.loading]);
 
-  // 换资料包时清掉章节选择
   React.useEffect(() => {
     setActiveDocId('');
     setDoc(null);
-    setShowPicker(false);
-    setPicked([]);
   }, [bundleId]);
 
-  // 选章节后按需拉正文
   React.useEffect(() => {
     if (!bundleId || !activeDocId) return undefined;
     let alive = true;
@@ -92,42 +236,44 @@ export default function AdminCourseware() {
     return () => { alive = false; };
   }, [bundleId, activeDocId]);
 
+  // 打开预览时拉详情（含流程）
+  React.useEffect(() => {
+    if (!previewId) { setPreview(null); return undefined; }
+    let alive = true;
+    setPreview({ loading: true });
+    adminApi
+      .cwDetail(previewId)
+      .then((result) => { if (alive) setPreview({ loading: false, ...result }); })
+      .catch((failure) => { if (alive) setPreview({ loading: false, error: failure.message }); });
+    return () => { alive = false; };
+  }, [previewId, listState.data]);
+
   function togglePick(key) {
     setPicked((current) => (current.includes(key) ? current.filter((item) => item !== key) : [...current, key]));
   }
 
-  function generate() {
+  async function generate() {
     if (picked.length === 0 || !doc) return;
-    const stamp = Date.now();
-    const created = picked.map((key, index) => ({
-      id: `${stamp}-${key}`,
-      type: key,
-      title: `${doc.title} · ${TYPE_LABEL[key]}`,
-      bundleId,
-      bundleTitle: selectedBundle?.title || selectedBundle?.name || '',
-      docId: doc.id,
-      docTitle: doc.title,
-      status: 'generating',
-      updatedAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
-    }));
-    setItems((current) => [...created, ...current]);
     setShowPicker(false);
-    setPicked([]);
-    setMessage(`已提交 ${created.length} 份课件的生成任务。`);
-    created.forEach((item, index) => {
-      window.setTimeout(() => {
-        setItems((current) => current.map((entry) => (entry.id === item.id ? { ...entry, status: 'draft' } : entry)));
-      }, 900 + index * 400);
-    });
+    setError('');
+    try {
+      await adminApi.cwGenerate({ bundleId, docId: doc.id, kinds: picked });
+      setMessage(`已提交 ${picked.length} 份课件的生成任务。`);
+      setPicked([]);
+      listState.reload();
+    } catch (failure) {
+      setError(failure.message);
+    }
   }
 
-  function setStatus(id, status) {
-    setItems((current) => current.map((entry) => (entry.id === id ? { ...entry, status } : entry)));
-  }
-
-  function remove(id) {
-    if (!window.confirm('删除这份课件？')) return;
-    setItems((current) => current.filter((entry) => entry.id !== id));
+  async function act(task) {
+    setError('');
+    try {
+      await task();
+      listState.reload();
+    } catch (failure) {
+      setError(failure.message);
+    }
   }
 
   if (bundlesState.loading && !bundlesState.data) return <Loading label="正在读取知识库…" />;
@@ -145,11 +291,12 @@ export default function AdminCourseware() {
                 课件库{items.length > 0 ? ` · ${items.length}` : ''}
               </button>
             </div>
-            <button type="button" className="zx-btn zx-btn-ghost" onClick={bundlesState.reload}>刷新</button>
+            <button type="button" className="zx-btn zx-btn-ghost" onClick={() => { bundlesState.reload(); listState.reload(); }}>刷新</button>
           </>
         }
       />
 
+      {error ? <Notice kind="error">{error}</Notice> : null}
       {message ? <Notice kind="ok">{message}</Notice> : null}
 
       {view === 'chapters' ? (
@@ -157,7 +304,7 @@ export default function AdminCourseware() {
           <aside className="zx-cw-col">
             <div className="zx-cw-col-title">知识库</div>
             {bundles.length === 0 ? (
-              <div className="zx-empty">还没有可用的知识库，先在「知识库」上传压缩包。</div>
+              <div className="zx-empty">还没有可用的知识库</div>
             ) : (
               bundles.map((item) => (
                 <button
@@ -227,7 +374,7 @@ export default function AdminCourseware() {
       ) : (
         <div className="zx-card">
           {items.length === 0 ? (
-            <div className="zx-empty">还没有课件。</div>
+            <div className="zx-empty">还没有课件</div>
           ) : (
             <table className="zx-table">
               <thead>
@@ -242,22 +389,25 @@ export default function AdminCourseware() {
               </thead>
               <tbody>
                 {items.map((item) => {
-                  const status = STATUS[item.status] || STATUS.draft;
+                  const status = item.published ? STATUS.published : (STATUS[item.status] || STATUS.draft);
                   return (
                     <tr key={item.id}>
-                      <td><div className="zx-cell-title">{item.title}</div></td>
-                      <td>{TYPE_LABEL[item.type] || item.type}</td>
-                      <td className="zx-cell-sub">{item.bundleTitle || '—'} · {item.docTitle}</td>
-                      <td><span className={`zx-pill ${status.kind === 'live' ? 'zx-pill-live' : 'zx-pill-draft'}`}>{status.label}</span></td>
+                      <td><div className="zx-cell-title">{item.title || item.kindLabel}</div></td>
+                      <td>{item.kindLabel}</td>
+                      <td className="zx-cell-sub">{item.bundleTitle} · {item.docTitle}</td>
+                      <td>
+                        <span className={`zx-pill ${status.kind === 'live' ? 'zx-pill-live' : 'zx-pill-draft'}`}>{status.label}</span>
+                        {item.status === 'failed' && item.errorMessage ? <div className="zx-cell-sub">{item.errorMessage}</div> : null}
+                      </td>
                       <td className="zx-num">{item.updatedAt}</td>
                       <td className="zx-actions">
-                        <button type="button" className="zx-btn zx-btn-sm zx-btn-ghost" disabled={item.status === 'generating'} onClick={() => setPreviewing(item)}>预览</button>
-                        {item.status === 'published' ? (
-                          <button type="button" className="zx-btn zx-btn-sm" onClick={() => setStatus(item.id, 'draft')}>下架</button>
+                        <button type="button" className="zx-btn zx-btn-sm zx-btn-ghost" disabled={item.status !== 'ready'} onClick={() => setPreviewId(item.id)}>预览</button>
+                        {item.published ? (
+                          <button type="button" className="zx-btn zx-btn-sm" onClick={() => act(() => adminApi.cwUnpublish(item.id))}>下架</button>
                         ) : (
-                          <button type="button" className="zx-btn zx-btn-sm" disabled={item.status === 'generating'} onClick={() => setStatus(item.id, 'published')}>发布</button>
+                          <button type="button" className="zx-btn zx-btn-sm" disabled={item.status !== 'ready'} onClick={() => act(() => adminApi.cwPublish(item.id))}>发布</button>
                         )}
-                        <button type="button" className="zx-btn zx-btn-sm zx-btn-danger" onClick={() => remove(item.id)}>删除</button>
+                        <button type="button" className="zx-btn zx-btn-sm zx-btn-danger" onClick={() => { if (window.confirm('删除这份课件？')) act(() => adminApi.cwDelete(item.id)); }}>删除</button>
                       </td>
                     </tr>
                   );
@@ -283,7 +433,6 @@ export default function AdminCourseware() {
               </div>
               <button type="button" className="zx-cw-modal-close" aria-label="关闭" onClick={() => setShowPicker(false)}>×</button>
             </header>
-
             <div className="zx-cw-modal-content">
               <div className="zx-cw-picker">
                 {RESOURCES.map((item) => {
@@ -308,7 +457,6 @@ export default function AdminCourseware() {
                 })}
               </div>
             </div>
-
             <footer className="zx-cw-modal-foot">
               <span className="zx-cw-modal-meta">{picked.length === 0 ? '可多选' : `已选 ${picked.length} 项`}</span>
               <span className="zx-cw-modal-actions">
@@ -320,15 +468,23 @@ export default function AdminCourseware() {
         </div>
       ) : null}
 
-      {previewing ? (
-        <div className="zx-cw-modal" role="dialog" aria-modal="true">
+      {previewId ? (
+        <div className="zx-cw-modal" role="dialog" aria-modal="true" onClick={(event) => { if (event.target === event.currentTarget) setPreviewId(''); }}>
           <div className="zx-cw-modal-body">
             <header className="zx-cw-modal-head">
-              <strong>{previewing.title}</strong>
-              <button type="button" className="zx-btn zx-btn-sm zx-btn-ghost" onClick={() => setPreviewing(null)}>关闭</button>
+              <div className="zx-cw-modal-titles">
+                <strong>{preview?.item?.title || '课件预览'}</strong>
+                <span>{preview?.item ? `${preview.item.kindLabel} · ${preview.item.docTitle}` : ''}</span>
+              </div>
+              <button type="button" className="zx-cw-modal-close" aria-label="关闭" onClick={() => setPreviewId('')}>×</button>
             </header>
             <div className="zx-cw-modal-content">
-              <Markdown text={`## ${previewing.docTitle}\n\n### ${TYPE_LABEL[previewing.type] || previewing.type}\n\n- 知识库：${previewing.bundleTitle || '—'}\n- 章节：${previewing.docTitle}\n- 状态：${(STATUS[previewing.status] || STATUS.draft).label}`} />
+              {preview?.loading ? <Loading label="正在读取课件…" /> : null}
+              {preview?.error ? <ErrorBlock message={preview.error} /> : null}
+              {preview?.steps ? <StepTimeline steps={preview.steps} /> : null}
+              {preview?.item && !preview.loading ? (
+                <CoursewareContent kind={preview.item.kind} content={preview.content} />
+              ) : null}
             </div>
           </div>
         </div>

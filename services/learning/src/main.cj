@@ -1001,6 +1001,65 @@ func kbBundleDetailBody(cfg: Config, bundleId: String, includeContent: Bool): ?S
     out.toJson()
 }
 
+/* ---------- 课件（生成 / 列表 / 发布） ---------- */
+
+func cwSelect(): String {
+    "SELECT c.id,c.bundle_id,c.doc_id,c.kind,c.title,c.status,c.published,c.model,c.error_message," +
+    "COALESCE(DATE_FORMAT(c.updated_at,'%Y-%m-%d %H:%i'),'') updated_at," +
+    "COALESCE(d.title,'') doc_title,COALESCE(b.title,b.name,'') bundle_title " +
+    "FROM kb_courseware c LEFT JOIN kb_bundle_docs d ON d.id=c.doc_id " +
+    "LEFT JOIN kb_bundles b ON b.id=c.bundle_id "
+}
+
+func cwRowJson(row: Row): String {
+    let out = JsonWriter()
+    out.putStr("id", row.text("id"))
+    out.putStr("bundleId", row.text("bundle_id"))
+    out.putStr("docId", row.text("doc_id"))
+    out.putStr("kind", row.text("kind"))
+    out.putStr("kindLabel", cwLabel(row.text("kind")))
+    out.putStr("title", row.text("title"))
+    out.putStr("status", row.text("status"))
+    out.putBool("published", row.int("published") == 1)
+    out.putStr("docTitle", row.text("doc_title"))
+    out.putStr("bundleTitle", row.text("bundle_title"))
+    out.putStr("model", row.text("model"))
+    out.putStr("errorMessage", row.text("error_message"))
+    out.putStr("updatedAt", row.text("updated_at"))
+    out.toJson()
+}
+
+func cwListBody(cfg: Config, bundleId: String): String {
+    var filter = ""
+    if (bundleId.size > 0) { filter = "WHERE c.bundle_id=" + sqlQuote(bundleId) + " " }
+    let rows = query(cfg, cwSelect() + filter + "ORDER BY c.created_at DESC LIMIT 100")
+    let arr = JsonArrWriter()
+    for (row in rows) { arr.addRaw(cwRowJson(row)) }
+    let out = JsonWriter()
+    out.putRaw("items", arr.toJson())
+    out.toJson()
+}
+
+func cwDetailBody(cfg: Config, id: String): ?String {
+    let rows = query(cfg, cwSelect() + "WHERE c.id=" + sqlQuote(id) + " LIMIT 1")
+    if (rows.size == 0) { return None }
+    let content = query(cfg, "SELECT COALESCE(content_json,'') content_json,COALESCE(steps_json,'[]') steps_json FROM kb_courseware WHERE id=" + sqlQuote(id))
+    let out = JsonWriter()
+    out.putRaw("item", cwRowJson(rows[0]))
+    out.putRaw("steps", if (content.size > 0 && content[0].text("steps_json").size > 0) {
+        content[0].text("steps_json")
+    } else {
+        "[]"
+    })
+    out.putRaw("content", if (content.size > 0 && content[0].text("content_json").size > 0) {
+        content[0].text("content_json")
+    } else {
+        "null"
+    })
+    out.toJson()
+}
+
+
 func kbDocumentJson(row: Row): String {
     let out = JsonWriter()
     out.putStr("id", row.text("id"))
@@ -1227,6 +1286,11 @@ main(): Int64 {
     let cfg = loadConfig()
     let initial = connect(cfg)
     sharedDatabase = Some(initial)
+    // 服务重启后，上次没跑完的课件任务不会再被推进，直接标记失败，避免一直显示「生成中」。
+    try {
+        execute(cfg, "UPDATE kb_courseware SET status='failed',error_message='服务重启，生成中断',updated_at=NOW(6) WHERE status='generating'")
+    } catch (_: Exception) {}
+
     let builder = WebHost.createBuilder([])
     builder.configureServer { server => server.maxRequestBodySize(256 * 1024 * 1024) }
     builder.services.addRouting()
@@ -2619,6 +2683,134 @@ main(): Int64 {
     kbStartIngestWorkers(cfg)
     kbStartLogoWorker(cfg)
     kbRestoreBundleJobs(cfg)
+    app.mapPost("api/admin/kb/courseware") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                match (parseObject(ctx.request)) {
+                    case None => writeError(ctx.response, 400, "课件参数格式不正确")
+                    case Some(body) =>
+                        let bundleId = (jsonGetString(body, "bundleId") ?? "").trimAscii()
+                        let docId = (jsonGetString(body, "docId") ?? "").trimAscii()
+                        let kinds = jsonGetArray(body, "kinds") ?? JsonArray()
+                        let docs = query(cfg,
+                            "SELECT id,title FROM kb_bundle_docs WHERE id=" + sqlQuote(docId) +
+                            " AND bundle_id=" + sqlQuote(bundleId))
+                        if (docs.size == 0) {
+                            writeError(ctx.response, 404, "这个章节不属于所选知识库")
+                        } else if (kinds.size() == 0) {
+                            writeError(ctx.response, 400, "请选择要生成的资源")
+                        } else {
+                            let settings = loadKbSettings(cfg)
+                            if (!slotEndpoint(cfg, settings.chat).hasChat()) {
+                                writeError(ctx.response, 400, "还没有配置对话模型")
+                            } else {
+                                let created = ArrayList<String>()
+                                let items = JsonArrWriter()
+                                var i: Int64 = 0
+                                while (i < kinds.size()) {
+                                    let kind = match (kinds[i].kind()) {
+                                        case JsonKind.JsString => kinds[i].asString().getValue()
+                                        case _ => ""
+                                    }
+                                    if (cwValidKind(kind)) {
+                                        let id = uuidFormat(uuidV4())
+                                        execute(cfg,
+                                            "INSERT INTO kb_courseware(id,bundle_id,doc_id,kind,title,status,model,created_at) VALUES(" +
+                                            sqlQuote(id) + "," + sqlQuote(bundleId) + "," + sqlQuote(docId) + "," +
+                                            sqlQuote(kind) + ",''," + sqlQuote("generating") + "," +
+                                            sqlQuote(settings.chat.model) + ",NOW(6))")
+                                        created.add(id)
+                                        let item = JsonWriter()
+                                        item.putStr("id", id)
+                                        item.putStr("kind", kind)
+                                        item.putStr("status", "generating")
+                                        items.addRaw(item.toJson())
+                                    }
+                                    i += 1
+                                }
+                                if (created.size == 0) {
+                                    writeError(ctx.response, 400, "没有可生成的资源类型")
+                                } else {
+                                    cwLaunch(cfg, created.toArray())
+                                    let out = JsonWriter()
+                                    out.putRaw("items", items.toJson())
+                                    writeJson(ctx.response, 200, out.toJson())
+                                }
+                            }
+                        }
+                }
+        }
+    }
+
+    app.mapGet("api/admin/kb/courseware") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let bundleId = (ctx.request.query.get("bundleId") ?? "").trimAscii()
+                writeJson(ctx.response, 200, cwListBody(cfg, bundleId))
+        }
+    }
+
+    app.mapGet("api/admin/kb/courseware/{courseware_id}") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                match (cwDetailBody(cfg, routeText(ctx, "courseware_id"))) {
+                    case Some(body) => writeJson(ctx.response, 200, body)
+                    case None => writeError(ctx.response, 404, "没有找到这份课件")
+                }
+        }
+    }
+
+    app.mapPost("api/admin/kb/courseware/{courseware_id}/publish") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let id = routeText(ctx, "courseware_id")
+                let rows = query(cfg, "SELECT status FROM kb_courseware WHERE id=" + sqlQuote(id))
+                if (rows.size == 0) {
+                    writeError(ctx.response, 404, "没有找到这份课件")
+                } else if (rows[0].text("status") != "ready") {
+                    writeError(ctx.response, 409, "只有生成完成的课件可以发布")
+                } else {
+                    execute(cfg, "UPDATE kb_courseware SET published=1,updated_at=NOW(6) WHERE id=" + sqlQuote(id))
+                    let out = JsonWriter()
+                    out.putBool("published", true)
+                    writeJson(ctx.response, 200, out.toJson())
+                }
+        }
+    }
+
+    app.mapPost("api/admin/kb/courseware/{courseware_id}/unpublish") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let id = routeText(ctx, "courseware_id")
+                execute(cfg, "UPDATE kb_courseware SET published=0,updated_at=NOW(6) WHERE id=" + sqlQuote(id))
+                let out = JsonWriter()
+                out.putBool("published", false)
+                writeJson(ctx.response, 200, out.toJson())
+        }
+    }
+
+    app.mapDelete("api/admin/kb/courseware/{courseware_id}") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let id = routeText(ctx, "courseware_id")
+                let rows = query(cfg, "SELECT id FROM kb_courseware WHERE id=" + sqlQuote(id))
+                if (rows.size == 0) {
+                    writeError(ctx.response, 404, "没有找到这份课件")
+                } else {
+                    execute(cfg, "DELETE FROM kb_courseware WHERE id=" + sqlQuote(id))
+                    let out = JsonWriter()
+                    out.putBool("deleted", true)
+                    writeJson(ctx.response, 200, out.toJson())
+                }
+        }
+    }
+
     app.run(cfg.listen)
     return 0
 }
