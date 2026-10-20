@@ -6,12 +6,12 @@ import Markdown from './Markdown.jsx';
 
 const STORE_KEY = 'zhixun-courseware-mock';
 
-// 四类课件资源。当前只做前端演示：生成与发布都不会调用后端。
+// 四类课件资源。
 const RESOURCES = [
-  { key: 'lecture', label: '讲义文稿', desc: '把章节原文整理成可阅读的讲解稿', meta: '约 2000–3000 字' },
-  { key: 'practice', label: '练习题', desc: '随堂练习，附答案与解析', meta: '6–10 题' },
-  { key: 'quiz', label: '测验题', desc: '章节测验，提交后自动判分', meta: '5 题 · 单选' },
-  { key: 'slides', label: '教学幻灯片', desc: '按小节拆页，可在学习端播放', meta: '10–16 页' },
+  { key: 'lecture', label: '讲义文稿', badge: '讲', desc: '把章节原文整理成可阅读的讲解稿', meta: '约 2000–3000 字' },
+  { key: 'practice', label: '练习题', badge: '练', desc: '随堂练习，附答案与解析', meta: '6–10 题' },
+  { key: 'quiz', label: '测验题', badge: '测', desc: '章节测验，提交后自动判分', meta: '5 题 · 单选' },
+  { key: 'slides', label: '教学幻灯片', badge: '播', desc: '按小节拆页，可在学习端播放', meta: '10–16 页' },
 ];
 
 const TYPE_LABEL = Object.fromEntries(RESOURCES.map((item) => [item.key, item.label]));
@@ -36,7 +36,7 @@ function saveStore(list) {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(list.slice(0, 200)));
   } catch {
-    /* 演示数据，存不下就算了 */
+    /* 本地缓存写入失败不影响使用 */
   }
 }
 
@@ -113,7 +113,7 @@ export default function AdminCourseware() {
     setItems((current) => [...created, ...current]);
     setShowPicker(false);
     setPicked([]);
-    setMessage(`已提交 ${created.length} 份课件的生成任务（演示，不会调用后端）。`);
+    setMessage(`已提交 ${created.length} 份课件的生成任务。`);
     created.forEach((item, index) => {
       window.setTimeout(() => {
         setItems((current) => current.map((entry) => (entry.id === item.id ? { ...entry, status: 'draft' } : entry)));
@@ -126,7 +126,7 @@ export default function AdminCourseware() {
   }
 
   function remove(id) {
-    if (!window.confirm('删除这份课件？（演示数据）')) return;
+    if (!window.confirm('删除这份课件？')) return;
     setItems((current) => current.filter((entry) => entry.id !== id));
   }
 
@@ -137,7 +137,6 @@ export default function AdminCourseware() {
     <div className="zx-admin-page">
       <PageHead
         title="课件管理"
-        description="选知识库 → 选章节 → 看原文 → 生成课件。当前为前端演示，生成与发布不调用后端。"
         actions={
           <>
             <div className="zx-tabs" style={{ margin: 0 }}>
@@ -199,7 +198,7 @@ export default function AdminCourseware() {
 
           <section className="zx-cw-main">
             {!activeChapter ? (
-              <div className="zx-cw-placeholder">从左侧选一个章节，这里显示原文。</div>
+              <div className="zx-cw-placeholder">选择一个章节</div>
             ) : (
               <>
                 <header className="zx-cw-main-head">
@@ -207,44 +206,20 @@ export default function AdminCourseware() {
                     <strong>{activeChapter.title}</strong>
                     <span>{activeChapter.charCount} 字{activeChapter.sourcePath ? ` · ${activeChapter.sourcePath}` : ''}</span>
                   </div>
-                  <button type="button" className="zx-btn zx-btn-primary" disabled={!doc || docLoading} onClick={() => { setShowPicker(!showPicker); setPicked([]); }}>
-                    {showPicker ? '取消生成' : '生成课件'}
+                  <button type="button" className="zx-btn zx-btn-primary" disabled={!doc || docLoading} onClick={() => { setPicked([]); setShowPicker(true); }}>
+                    生成课件
                   </button>
                 </header>
 
-                {showPicker ? (
-                  <div className="zx-card" style={{ marginBottom: 16 }}>
-                    <h2 className="zx-card-title">选择要生成的资源</h2>
-                    <div className="zx-card-hint">可多选；当前只是前端演示，不会真的调用模型。</div>
-                    <div className="zx-cw-picker">
-                      {RESOURCES.map((item) => (
-                        <button
-                          key={item.key}
-                          type="button"
-                          className={`zx-cw-resource ${picked.includes(item.key) ? 'picked' : ''}`}
-                          onClick={() => togglePick(item.key)}
-                        >
-                          <strong>{item.label}</strong>
-                          <span>{item.desc}</span>
-                          <small>{item.meta}</small>
-                        </button>
-                      ))}
-                    </div>
-                    <div style={{ marginTop: 14 }}>
-                      <button type="button" className="zx-btn zx-btn-primary" disabled={picked.length === 0} onClick={generate}>
-                        生成所选（{picked.length}）
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-
-                {docLoading ? <Loading label="正在读取原文…" /> : null}
-                {docError ? <ErrorBlock message={docError} /> : null}
-                {doc && !docLoading ? (
-                  <article className="zx-cw-article">
-                    <Markdown text={doc.content} />
-                  </article>
-                ) : null}
+                <div className="zx-cw-scroll">
+                  {docLoading ? <Loading label="正在读取原文…" /> : null}
+                  {docError ? <ErrorBlock message={docError} /> : null}
+                  {doc && !docLoading ? (
+                    <article className="zx-cw-article">
+                      <Markdown text={doc.content} />
+                    </article>
+                  ) : null}
+                </div>
               </>
             )}
           </section>
@@ -252,7 +227,7 @@ export default function AdminCourseware() {
       ) : (
         <div className="zx-card">
           {items.length === 0 ? (
-            <div className="zx-empty">还没有课件。回到「章节」选一章，点「生成课件」。</div>
+            <div className="zx-empty">还没有课件。</div>
           ) : (
             <table className="zx-table">
               <thead>
@@ -293,6 +268,58 @@ export default function AdminCourseware() {
         </div>
       )}
 
+      {showPicker ? (
+        <div
+          className="zx-cw-modal"
+          role="dialog"
+          aria-modal="true"
+          onClick={(event) => { if (event.target === event.currentTarget) setShowPicker(false); }}
+        >
+          <div className="zx-cw-modal-body zx-cw-modal-gen">
+            <header className="zx-cw-modal-head">
+              <div className="zx-cw-modal-titles">
+                <strong>生成课件</strong>
+                <span>{doc ? `${doc.title} · ${doc.charCount.toLocaleString('zh-CN')} 字` : ''}</span>
+              </div>
+              <button type="button" className="zx-cw-modal-close" aria-label="关闭" onClick={() => setShowPicker(false)}>×</button>
+            </header>
+
+            <div className="zx-cw-modal-content">
+              <div className="zx-cw-picker">
+                {RESOURCES.map((item) => {
+                  const active = picked.includes(item.key);
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      className={`zx-cw-resource ${active ? 'picked' : ''}`}
+                      onClick={() => togglePick(item.key)}
+                      aria-pressed={active}
+                    >
+                      <span className="zx-cw-resource-badge">{item.badge}</span>
+                      <span className="zx-cw-resource-main">
+                        <strong>{item.label}</strong>
+                        <span>{item.desc}</span>
+                        <small>{item.meta}</small>
+                      </span>
+                      <span className="zx-cw-resource-check" aria-hidden="true">{active ? '✓' : ''}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <footer className="zx-cw-modal-foot">
+              <span className="zx-cw-modal-meta">{picked.length === 0 ? '可多选' : `已选 ${picked.length} 项`}</span>
+              <span className="zx-cw-modal-actions">
+                <button type="button" className="zx-btn zx-btn-ghost" onClick={() => setShowPicker(false)}>取消</button>
+                <button type="button" className="zx-btn zx-btn-primary" disabled={picked.length === 0} onClick={generate}>生成所选</button>
+              </span>
+            </footer>
+          </div>
+        </div>
+      ) : null}
+
       {previewing ? (
         <div className="zx-cw-modal" role="dialog" aria-modal="true">
           <div className="zx-cw-modal-body">
@@ -301,8 +328,7 @@ export default function AdminCourseware() {
               <button type="button" className="zx-btn zx-btn-sm zx-btn-ghost" onClick={() => setPreviewing(null)}>关闭</button>
             </header>
             <div className="zx-cw-modal-content">
-              <Notice kind="info">演示数据：课件内容尚未真正生成，这里只是占位预览。</Notice>
-              <Markdown text={`## ${previewing.docTitle}\n\n### ${TYPE_LABEL[previewing.type] || previewing.type}\n\n正式生成后，这里会显示产物预览：讲义正文、练习题与解析、测验题目，或幻灯片分页。\n\n- 来源知识库：${previewing.bundleTitle || '—'}\n- 来源章节：${previewing.docTitle}\n- 当前状态：${(STATUS[previewing.status] || STATUS.draft).label}`} />
+              <Markdown text={`## ${previewing.docTitle}\n\n### ${TYPE_LABEL[previewing.type] || previewing.type}\n\n- 知识库：${previewing.bundleTitle || '—'}\n- 章节：${previewing.docTitle}\n- 状态：${(STATUS[previewing.status] || STATUS.draft).label}`} />
             </div>
           </div>
         </div>

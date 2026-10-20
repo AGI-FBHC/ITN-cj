@@ -41,7 +41,6 @@ export default function AdminKnowledge() {
     <div className="zx-admin-page">
       <PageHead
         title="知识库"
-        description="上传资料后自动整理原文、切片与摘要，预览后即可发布课程。"
         actions={<button type="button" className="zx-btn zx-btn-ghost" onClick={state.reload}>刷新</button>}
       />
 

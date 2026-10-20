@@ -181,7 +181,7 @@ export default function AdminSettings() {
                 onChange={(event) => editSlot({ baseUrl: event.target.value })}
                 placeholder="https://api.openai.com/v1 或 http://127.0.0.1:11434/v1"
               />
-              <small>填到 /v1 这一层即可。</small>
+              <small>填到 /v1 这一层。</small>
             </div>
             <div className="zx-field">
               <label htmlFor={`${slotMeta.key}-model`}>模型名</label>
