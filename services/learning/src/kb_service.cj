@@ -139,7 +139,20 @@ func resolveKey(cfg: Config, slot: ModelSlot): String {
     legacyEnvKey()
 }
 
+/**
+ * 解析一个槽位的真实端点。
+ *
+ * 设置了 ZHIXUN_MODEL_OVERRIDE_BASE_URL + ZHIXUN_MODEL_OVERRIDE_KEY 时（仅开发/自检用），
+ * 直接使用环境变量里的端点，不读也不写数据库里的配置——避免自检脚本覆盖管理端已保存的配置。
+ */
 func slotEndpoint(cfg: Config, slot: ModelSlot): ModelEndpoint {
+    let overrideBase = envOr("ZHIXUN_MODEL_OVERRIDE_BASE_URL", "")
+    let overrideKey = envOr("ZHIXUN_MODEL_OVERRIDE_KEY", "")
+    if (overrideBase.size > 0 && overrideKey.size > 0) {
+        let model = envOr("ZHIXUN_MODEL_OVERRIDE_MODEL", "")
+        let chosen = if (model.size > 0) { model } else { slot.model }
+        return ModelEndpoint(overrideBase, overrideKey, chosen, chosen)
+    }
     ModelEndpoint(slot.baseUrl, resolveKey(cfg, slot), slot.model, slot.model)
 }
 
