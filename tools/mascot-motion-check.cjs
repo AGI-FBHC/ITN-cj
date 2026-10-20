@@ -15,6 +15,25 @@ const root=path.resolve(__dirname,'..'),sleep=ms=>new Promise(r=>setTimeout(r,ms
     const actor=page.locator('.lumin-mascot-actor'),pet=page.locator('.lumin-mascot-root'),menu=page.locator('.lumin-mascot-menu');
     const inBounds=async locator=>locator.evaluate(e=>{const r=e.getBoundingClientRect();return r.left>=0&&r.top>=0&&r.right<=innerWidth+.5&&r.bottom<=innerHeight+.5;});
     const drag=async(x,y)=>{const b=await actor.boundingBox();await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(x,y,{steps:8});await page.mouse.up();};
+    for(const key of ['Enter','Space']){
+      await actor.focus();await page.keyboard.press(key);await sleep(80);
+      check(key+' opens the mascot menu without a pointer',await menu.isVisible());
+      check(key+' moves focus into the menu and announces expansion',await menu.evaluate(e=>e.contains(document.activeElement))&&await actor.getAttribute('aria-expanded')==='true');
+      await page.keyboard.press('Escape');
+      check('Escape closes the '+key+' menu and restores focus',await menu.isHidden()&&await actor.evaluate(e=>document.activeElement===e));
+    }
+    for(const theme of ['light','dark']){
+      await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);await actor.click();
+      const small=await menu.locator('span,button').evaluateAll(items=>items.filter(e=>parseFloat(getComputedStyle(e).fontSize)<12.5).map(e=>e.textContent));
+      check(theme+' mascot menu has readable status and button text',small.length===0);
+      await actor.click();
+    }
+    await actor.click();await page.locator('.lumin-mascot-hide').click();
+    check('the actual hide button removes the mascot from layout and visibility',await pet.isHidden()&&await pet.evaluate(e=>getComputedStyle(e).display==='none'&&e.getClientRects().length===0));
+    await page.reload();await page.waitForFunction(()=>!document.getElementById('boot'));
+    check('hidden preference survives reload with no visible mascot',await pet.isHidden()&&await page.evaluate(()=>localStorage.getItem('lumin.mascot.hidden'))==='1');
+    await page.evaluate(()=>go('settings','appearance'));await page.getByRole('button',{name:'显示小鼋龙',exact:true}).click();
+    check('the appearance setting visibly restores the hidden mascot',await pet.isVisible()&&await page.evaluate(()=>localStorage.getItem('lumin.mascot.hidden'))==='0');
     for(const [name,x,y] of [['top left',-300,-300],['top right',1800,-300],['bottom right',1800,1200],['bottom left',-300,1200]]){
       await drag(x,y);check('drag cannot leave '+name+' boundary',await inBounds(pet));
       await actor.click();await sleep(250);check('menu fits at '+name+' boundary',await inBounds(menu));await actor.click();

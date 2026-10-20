@@ -4886,3 +4886,14 @@ read_chunk 读得到原文并带回库标识与正文。
 - 提示词要求先读最新消息和本TRACE、核对现有进程、从断点继续；轮换检查会话/导学、知识库/资料收集、学情/成长、运行包/文档；发现真实问题才修，随后回归并本地提交，无新问题保持安静；不改Web端、不动真实库、不打印密钥。
 - 下一次接手应先核对哪一轮已执行并追加实际结论。尚未到定时执行时间，不能标记整个持续复验目标完成；本轮程序包和优化稿已可交付。
 - Git只提交本轮追加TRACE；两份原有未跟踪调研文档继续排除。未推送远程，本地仓库无origin。
+
+## 2026-10-20 · 接续复验发现的键盘操作与浮层字号（0.8.27）
+- 本轮先核对main/ededa28、真实进程与四个定时任务。08:18时四轮均未到执行时间；用户0.8.25实例仍在运行，未关闭或操作。上一轮是有效进展，优化稿与0.8.26运行包已交付，不重做此前模型生成。
+- 测试入口选自上一轮真实导学截图的桌宠隐藏疑点：不只检查hidden属性，而是点击实际“隐藏小鼋龙”按钮，确认computed display:none、无布局矩形、刷新后仍不可见，再从外观页实际恢复。此路径全部通过，未复现产品隐藏失效，不为截图疑点修改显示逻辑。
+- 扩展tools/mascot-motion-check.cjs，实测Enter/Space、焦点、Escape、展开状态，以及浅/深色菜单实际可见字号。修前22项通过/6项失败，tmp/mascot-interaction-before.log：键盘无法打开菜单，状态10.5px和按钮11.5px不满足用户字号要求。旧ui-audit只检查主内容根且未展开桌宠，确有覆盖缺口。
+- 依ui-ux-pro-max交互与可读性规则修复：先在docs/02补展示约定；mascot.js增加键盘激活（detail=0），打开后聚焦第一个菜单动作，Escape关闭并回到桌宠，aria-controls/haspopup/expanded反映状态。原有pointerup点击与拖动不重复开关，动作速度不改。mascot.css状态/按钮均13px。
+- 进一步静态检查发现近期导学样式有12/12.5px文字：studyplayer.css的页号、审批标签、路径和原因均统一为13px。属于已有呈现层修正，不增加业务数据/接口，不需要额外Agent工具。
+- 验证：mascot-motion修后28/28，tmp/mascot-interaction-after.log；新增键盘、焦点、展开语义、深浅字号、实际隐藏/重启恢复通过；旧四角拖动/菜单边界、隐藏缩窗/播放器恢复、521–524ms帧间隔、9.6秒漂浮、reduced-motion全部通过。
+- 相关链路回归tools/mascot-tts-check.cjs 41/41（tmp/mascot-tts-followup.log），TTS设置/试听、普通与导学状态链无回退；tools/guided-files-check.cjs 21/21（tmp/guided-files-followup.log），附件草稿隔离、请求强制确认、当前会话审批、失败恢复与结束停止轮询通过。TTS和审批响应使用确定性临时服务/夹具，不宣称本轮再次外呼收费模型。截图tmp/mascot-motion-shots/top-left-menu.png、tmp/guided-files-shots/approval.png已目视检查。
+- node --check mascot.js/mascot-motion-check.cjs、git diff --check通过。仓颉内核未改，本轮不无理由重跑176项内核或已有6次真实模型对话。所有数据写临时目录，无Python夹具、无真实用户库写入。
+- 版本升为0.8.27，功能、接口呈现约定、专项检查与本段同提交；随后打包、检查包内真实键盘/隐藏画面并同步项目说明书中的版本与哈希。两份原有未跟踪调研文档排除。

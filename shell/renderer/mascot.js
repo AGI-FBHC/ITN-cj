@@ -20,7 +20,7 @@
   root.className = "lumin-mascot-root";
   root.dataset.state = "idle";
   root.innerHTML = `
-    <section class="lumin-mascot-menu" role="dialog" aria-label="小鼋龙快捷菜单" hidden>
+    <section id="lumin-mascot-menu" class="lumin-mascot-menu" role="dialog" aria-label="小鼋龙快捷菜单" hidden>
       <div class="lumin-mascot-menu-head">
         <span class="lumin-mascot-title">小鼋龙</span>
         <span class="lumin-mascot-state">待机</span>
@@ -32,7 +32,7 @@
       </div>
       <button type="button" class="lumin-mascot-hide">隐藏小鼋龙</button>
     </section>
-    <button class="lumin-mascot-actor" type="button" aria-label="小鼋龙，待机" title="小鼋龙 · 可拖动">
+    <button class="lumin-mascot-actor" type="button" aria-label="小鼋龙，待机" aria-haspopup="dialog" aria-controls="lumin-mascot-menu" aria-expanded="false" title="小鼋龙 · 可拖动">
       <span class="lumin-mascot-float">
         <img class="lumin-mascot-image" src="/mascot/xiaoyuanlong-idle.png" alt="" draggable="false">
       </span>
@@ -140,6 +140,7 @@
 
   function openMenu(open) {
     menu.hidden = !open;
+    actor.setAttribute("aria-expanded", String(open));
     root.classList.toggle("menu-open", open);
     if (open) {
       setState("wake", SPEED.wake * FRAMES.wake.length);
@@ -212,6 +213,20 @@
   actor.addEventListener("pointerup", finishPointer);
   actor.addEventListener("pointercancel", finishPointer);
   actor.addEventListener("lostpointercapture", finishPointer);
+
+  actor.addEventListener("click", (event) => {
+    if (event.detail !== 0) return;
+    const open = menu.hidden;
+    openMenu(open);
+    if (open) menu.querySelector("button")?.focus();
+  });
+  root.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || menu.hidden) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openMenu(false);
+    actor.focus();
+  });
 
   menu.querySelectorAll("[data-page]").forEach((button) => {
     button.addEventListener("click", () => navigate(button.dataset.page));
