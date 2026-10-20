@@ -4994,3 +4994,15 @@ read_chunk 读得到原文并带回库标识与正文。
 - 使用Word COM只读打开并导出 tmp/proposal-story-v6.pdf，页面统计29页；Poppler以120dpi渲染 tmp/proposal-story-v6-pages/page-01.png至page-29.png，并生成 tmp/proposal-story-v6-contact.png总览。实际打开检查封面、竞品表、产业痛点、项目边界、架构图页21、拓扑图页24、运行验证页26及全页缩略图：无空白页、无文字裁切、无图片溢出；两张技术图均为白底且内容完整。日志 tmp/proposal-story-v6-export.log、tmp/proposal-story-v6-render.log。
 - 交付文件：D:/Desktop/仓颉杯/创新原型赛道/01-项目说明-优化版-产业叙事.docx，17,838,586 bytes，SHA256=227431A10FD747DA34C095C060167D2C6745910E8C59F87E3D032B4E79CE358F；同名PDF预览2,123,835 bytes，SHA256=AA1C262743E143A8142FDAAA1615541EA09D9C01644BE4093C08A1BF7D898C6B。源文件与交付文件哈希一致，记录 tmp/proposal-story-v6-delivery.json。
 - 本轮全部使用受管Node、Sharp、JSZip、Word COM与Poppler，无Python，不修改Web端、真实用户数据库、0.8.28程序包或用户正在运行的应用。工具脚本和本TRACE同步到本地Git；两份既有未跟踪调研文档 docs/知识库改进清单-v2.md、docs/非对话页面改造方案-v1.md继续排除。
+
+## 2026-10-20 · 项目说明正式口径清理（AI式命名与宣传式表达）
+- 用户明确否定“代表产品公开能力与本项目判断”和“四个未被接通的断点”等命名，要求全文扫描，改成正式、自然、不过度营销的产品说明书语气；不要只改单句，要保持标题、表头、图注和正文口径一致。
+- 在 tools/revise-proposal-story.cjs 增加集中式 wordingReplacements，保留原始事实与证据，只清理内部讨论/咨询式/宣传式表达。代表性替换包括：`行业判断`→`行业背景`，`AI学习产品发展现状`替换“从内容生成走向过程支持”，`现有学习流程的主要问题`替换“四个未被接通的断点”，`关键设计与创新点`替换“把四个断点做成结构设计”，`测试结果与验证范围`替换“实际验证与证据范围”，`平台账号与学习档案集成计划`替换“衔接规划”。
+- 表题改为“表 1-1  代表性 AI 学习产品能力概览”；表头由“公开能力/本项目判断”改为“主要能力/能力边界”；竞品单元格去掉“闭环、团队判断、能力很强”等主观或方案式措辞，改为产品定位、能力覆盖和边界说明。
+- 正文同时清理“市场不缺…真正稀缺…”“团队选择…”“我们的判断”“项目从真实动作出发而不是功能菜单”“用户从看见答案推进到…”“把流程搬运/拼接”等句子，改为直接陈述产品现状、数据对象、用户操作和验证范围。保留“知识点作为组织单位”“可核验产物”“会话隔离与审批”等可落地机制，不改变事实和真实截图。
+- 章节标题同步统一为：`三、Web 平台课程学习与教学组织`、`四、Lumin 个人资料学习与任务执行`、`五、关键设计与创新点`、`六、技术架构与实现`、`八、验证结果与后续建设`。图注“真实 PPT/实践清单任务”等改为“PPT 演示与页面问答”“MCP 实践任务”“7 天学习计划”等名称。
+- 重生成中间稿 tmp/proposal-story-v8.docx，SHA256=EA15A4108EB39659107CC974846A77EC77357C92807186143C02852D5C4120A2；报告 tmp/proposal-story-v8-report.json，全文 tmp/proposal-story-v8-text.txt，日志 tmp/proposal-story-v8-build.log。全文8,416→12,204字符，重写54段、新增29段；只改word/document.xml，图片、关系、样式和附录保持。
+- 再次运行 tools/apply-proposal-diagram-white.cjs，仅替换架构图 word/media/image5.png与拓扑图 word/media/image19.png；最终稿 tmp/proposal-story-v9.docx，SHA256=94548A3DFC04F3E1C3FC6C55413844A0E5E9CEC3E22B306DB9DF38B771A2C560，报告 tmp/proposal-story-v9-report.json，日志 tmp/proposal-story-v9-white.log；文档正文XML与图片框未改，白底图高亮浅绿色污染仍为0。
+- Word COM导出 tmp/proposal-story-v9.pdf为29页；Poppler渲染 tmp/proposal-story-v9-pages/page-01至page-29并生成 tmp/proposal-story-v9-contact.png。实际打开检查页1-5、页19（关键设计与创新点）、页21（架构图）、页24（拓扑图）、页26（验证结果）与全页总览：标题、表题、表头、图注和正文无裁切、无溢出、无空白页，架构图与拓扑图仍为纯白背景。
+- 原 D:/Desktop/仓颉杯/创新原型赛道/01-项目说明-优化版-产业叙事.docx 正被其他进程占用，Copy-Item无法取得写句柄；未强制关闭Word或覆盖用户正在查看的文件。另存正式版本 D:/Desktop/仓颉杯/创新原型赛道/01-项目说明-优化版-产业叙事-20261020.docx，17,838,276 bytes，SHA256=94548A3DFC04F3E1C3FC6C55413844A0E5E9CEC3E22B306DB9DF38B771A2C560；PDF为2,118,758 bytes，SHA256=EAA8C1872259719FCD061392559A787EB9325538239DE4917F66AD2988692FEC。交付报告 tmp/proposal-story-v9-delivery.json，源/目标哈希一致。
+- 本轮仍使用受管Node、Sharp、JSZip、Word COM、Poppler，无Python；不改Web端、真实数据库、0.8.28程序包或正在运行的应用。新的正式文档、脚本和本TRACE同步到本地Git；两份既有未跟踪调研文档继续排除。
