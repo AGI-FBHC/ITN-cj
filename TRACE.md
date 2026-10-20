@@ -522,3 +522,18 @@
 - 新tests/ingestion-v2.test.mjs通过6/6，82.7秒：真实2文档7片全文offset、3风格Logo选择与再生成、摘要关键词、真实1024维相同空间、幂等重试、原文发布及学员配图权限；测试数据清理完成，原有资料包与配置hash保持一致。前一轮仅测试归一化漏了输入相对图替换，误报已修，属于测试断言问题。全程无mock。
 - 用户指定原包D:/Downloads/hello-agents-main.zip保持逐字节上传，166920355字节、1736文件、275支持文本、展开185972682字节。当前保留bundle=35517bee-70b2-49fe-b7de-a74afd722e2d，URL http://localhost:3006/admin/knowledge/bundles/35517bee-70b2-49fe-b7de-a74afd722e2d，source已275份全部保存并组织完成，正在切片/摘要/向量，Logo独立排队。验收脚本tools/verify-archive-ingestion.py进程session59502还在运行，进度在ignored data/ingest-progress-<id>.jsonl、run信息data/full-archive-run.json；完成后将生成data/full-archive-report.json。不要把此里程碑当原包全验收已完成。
 - 当前后端本地8312、Vite3006正常，未部署/修改线上。root仍需完成原包实际结果核对、重启恢复实测、浏览器图文/摘要/Logo验收、回归及最终本地Git收尾；本次先提交可回滚的功能里程碑。
+
+## 2026-10-21 内置 Agent 通用切片修正：按正文内容成组，避免标题和短碎片独立入库
+- 用户连续指出：页面中FEATURES.md的“工作流功能/前端功能”纯标题切片只是例子，全文还有很多类似问题；随后明确“不是要检查和重构，而是要内置的luminAgent切片逻辑做得好一点”，并要求尽快修正。本次落点为每次导入都会自动调用的生产逻辑，不对特定教材、文件名、四个样例或数据库行做特殊修补。
+- 实际调用链：资料包Agent原样组织文档 -> kbMapBundleDocuments -> kbQueueBundleBuilds -> kbSeedBuildChunks -> kbChunksFor。当前仓颉服务的入口文件是kb_agent.cj/kb_bundle.cj，切片实现是kb_chunk.cj；用户所说LuminAgent的导入加工行为由这条内置链路承担。保持统一规则，不增加全文LLM改写或人工审核。
+- kbBlocks/kbAttachHeadingBodies把连续标题、空行与后续正文/完整列表项绑定，不再逢标题就产生独立切片；短小节按约800字目标组合，headingPath取实际共有章节。代码围栏、公式、表格、图片与图注继续整体保护；新增列表项及其缩进续行保护，长列表可在条目之间分开。
+- kbCoalesceSmallPieces作为每次导入的内置质量修复：少于目标1/4的短片优先与相邻片合并，合并软上限1.5倍目标；空白、分隔线、标题链必须归入邻片，不单独索引。若邻居是超长保护块，允许保留有正文的短片，避免把检索片无限增大；不把最小字数当机械硬阈值。
+- 合并直接取原文连续UTF8字节范围，不拼接带重叠的文本；自动检查原文全覆盖、边界合法、每片与source_start/source_end一致，含正文文档不得产生无正文的独立切片。检查在摘要/向量请求之前运行，不依靠管理员事后逐片检查。
+- 加工快照加入content-blocks-v4版本，使同一份旧资料重试时建立新切片构建。旧活动版本在新构建完整后切换，原文/图片不修改。相同原文、heading、摘要、关键词和模型端点/维度的已有向量可复用；空间校验仍严格，禁止混维度/不同端点余弦计算。
+- 原包实测过程中曾有真实模型返回items数量不足，原有严格校验拒绝保存，不能当作成功。补充通用自动退让：失败批次后续从16片降至8片、再到单片；成功批次重置连续作业失败计数，各片三次上限仍保留。不改模型地址、密钥或配置，不写假摘要。
+- 模型/Logo进程中断不额外消耗一次失败额度；恢复时清除纯重启提示。Logo选择状态优先采用资料包当前selection，修正图标已切换但标签仍显示旧样式的问题；无generationId的历史pending状态允许点击生成。保留用户当前flat样式选择。
+- 原生测试6/6通过：中文/多语言UTF8范围、UTF16、重叠、保护块、列表续行、标题/分隔线/尾部空白自动归并、严格JSON/向量/SVG。原ZIP全部275个文本经相同生产kbChunksFor执行，报告4457片、纯标题/空白/分隔线问题0、完整保护块0拆断、原文覆盖无缺口；43个短片可能因相邻超长保护块保留，未声称所有片必须达到某字数。记录在ignored data/corpus-audit/report.json与data/chunk-v4-tests.log。
+- scripts/build-backend.ps1通过，已重启原生后端8312，当前PID168728；验收进程临时ZHIXUN_INGEST_WORKERS=8，默认4，范围1..8；不改.env.local。Vite3006保持运行。已通过现有retry API为整个35517bee-70b2-49fe-b7de-a74afd722e2d安排新规则，完整原包原文与129图保留，Logo无需重画。
+- 账号/管理端/学习端回归本轮最新结果：11项中10通过、1跳过（尚无已发布课程），不能把跳过算通过。旧knowledge-base同步用例尚未适配202异步契约，未运行也不宣称通过。
+- 全原包真实模型、向量最终验收仍在运行（session82392，tools/verify-archive-ingestion.py --bundle-id；日志data/full-archive-v4.log），后续需看实际报告再宣布完成。此前session59502因严格摘要数量不符结束，原文及已成功数据未删除。不得把275文档纯函数切片通过说成全原包LLM/向量已完成。
+- 本次所有改动与本TRACE同步本地Git供回滚；不推送远程，不修改线上28801，不引入Docker/额外向量服务，不手工改动用户保存的模型设置。

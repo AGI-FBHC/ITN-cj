@@ -43,12 +43,14 @@ class KbBlock {
     let start: Int64
     let end: Int64
     let indivisible: Bool
+    let isHeading: Bool
 
     init(headingPath: String, start: Int64, end: Int64) {
         this.headingPath = headingPath
         this.start = start
         this.end = end
         this.indivisible = false
+        this.isHeading = false
     }
 
     init(headingPath: String, start: Int64, end: Int64, indivisible: Bool) {
@@ -56,7 +58,13 @@ class KbBlock {
         this.start = start
         this.end = end
         this.indivisible = indivisible
+        this.isHeading = false
     }
+    init(headingPath: String, start: Int64, end: Int64, indivisible: Bool, isHeading: Bool) {
+        this.headingPath = headingPath; this.start = start; this.end = end
+        this.indivisible = indivisible; this.isHeading = isHeading
+    }
+
 }
 
 class KbSourceLine {
@@ -202,6 +210,16 @@ func kbIsCaptionLine(line: String): Bool {
         text.startsWith("<p ") || text.startsWith("<p>") || text.startsWith("</figure>") || text.startsWith("</div>")
 }
 
+/** Keep each list item and its continuation together, while long lists may span slices. */
+func kbIsListLine(line: String): Bool {
+    let text = line.trimAscii().toArray()
+    if (text.size < 2) { return false }
+    if ((text[0] == 45 || text[0] == 43 || text[0] == 42) && (text[1] == 32 || text[1] == 9)) { return true }
+    var i: Int64 = 0
+    while (i < text.size && text[i] >= 48 && text[i] <= 57) { i += 1 }
+    i > 0 && i + 1 < text.size && (text[i] == 46 || text[i] == 41) && (text[i + 1] == 32 || text[i + 1] == 9)
+}
+
 /** Semantic spans cover every byte, including blank lines and a leading BOM. */
 func kbBlocks(title: String, bytes: Array<Byte>): ArrayList<KbBlock> {
     let lines = kbSourceLines(bytes)
@@ -279,8 +297,18 @@ func kbBlocks(title: String, bytes: Array<Byte>): ArrayList<KbBlock> {
             var probe = finish
             while (probe < lines.size && lines[probe].text.trimAscii().size == 0) { probe += 1 }
             if (probe < lines.size && kbIsCaptionLine(lines[probe].text)) { finish = probe + 1 }
+        } else if (kbIsListLine(line.text)) {
+            indivisible = true
+            let indent = kbLeadingSpaces(line.text)
+            while (finish < lines.size) {
+                let next = lines[finish]
+                if (next.text.trimAscii().size == 0 || kbLeadingSpaces(next.text) <= indent ||
+                    kbIsListLine(next.text) || kbHeadingLevel(next.text) > 0 || kbFenceOf(next.text).size > 0 ||
+                    kbTexCloser(next.text).size > 0 || kbIsImageLine(next.text) || next.text.contains("|")) { break }
+                finish += 1
+            }
         }
-        blocks.add(KbBlock(currentPath, line.start, lines[finish - 1].end, indivisible))
+        blocks.add(KbBlock(currentPath, line.start, lines[finish - 1].end, indivisible, level > 0))
         i = finish
     }
     blocks
@@ -369,23 +397,118 @@ func kbValidatePieces(body: String, pieces: Array<KbPiece>): Unit {
     if (covered != bytes.size) { throw Exception("切片未覆盖原文结尾") }
 }
 
-/** Soft target and overlap; semantic atoms may exceed the target without truncation. */
+/** A heading chain belongs to its following paragraph/list, never to a standalone index slice. */
+func kbAttachHeadingBodies(bytes: Array<Byte>, blocks: ArrayList<KbBlock>): ArrayList<KbBlock> {
+    let out = ArrayList<KbBlock>()
+    var i: Int64 = 0
+    while (i < blocks.size) {
+        if (!blocks[i].isHeading) { out.add(blocks[i]); i += 1; continue }
+        let start = blocks[i].start
+        var finish = i + 1
+        var path = blocks[i].headingPath
+        while (finish < blocks.size) {
+            let block = blocks[finish]
+            let blank = String.fromUtf8(bytes.slice(block.start, block.end - block.start)).trimAscii().size == 0
+            if (!block.isHeading && !blank) { break }
+            if (block.isHeading) { path = block.headingPath }
+            finish += 1
+        }
+        if (finish < blocks.size) {
+            let first = blocks[finish]
+            path = first.headingPath
+            finish += 1
+            if (!first.indivisible) {
+                while (finish < blocks.size && !blocks[finish].isHeading && !blocks[finish].indivisible) {
+                    let block = blocks[finish]
+                    if (String.fromUtf8(bytes.slice(block.start, block.end - block.start)).trimAscii().size == 0) { break }
+                    finish += 1
+                }
+            }
+        }
+        out.add(KbBlock(path, start, blocks[finish - 1].end, true, false))
+        i = finish
+    }
+    out
+}
+
+func kbSharedHeading(left: String, right: String, fallback: String): String {
+    let a = left.split(" > ")
+    let b = right.split(" > ")
+    var i: Int64 = 0
+    let out = StringBuilder()
+    while (i < a.size && i < b.size && a[i] == b[i]) {
+        if (i > 0) { out.append(" > ") }
+        out.append(a[i]); i += 1
+    }
+    if (i == 0) { fallback } else { out.toString() }
+}
+
+/** An empty separator or heading chain is context, not an independent retrieval unit. */
+func kbHasChunkBody(text: String): Bool {
+    for (line in kbSourceLines(text.toArray())) {
+        let value = line.text.trimAscii()
+        if (value.size == 0 || kbHeadingLevel(line.text) > 0 || kbSetextLevel(line.text) > 0) { continue }
+        if (value == "***" || value == "---" || value == "___") { continue }
+        return true
+    }
+    false
+}
+
+/** Quality repair is part of every import, before summaries and embeddings are requested. */
+func kbCoalesceSmallPieces(title: String, bytes: Array<Byte>, pieces: ArrayList<KbPiece>, target: Int64): Array<KbPiece> {
+    let minimum = target / 4
+    let maximum = target + target / 2
+    var i: Int64 = 0
+    while (i < pieces.size && pieces.size > 1) {
+        let piece = pieces[i]
+        let contextOnly = !kbHasChunkBody(piece.text)
+        if (!contextOnly && piece.charCount() >= minimum) { i += 1; continue }
+        let leftSize = if (i > 0) { kbCharsBetween(bytes, pieces[i - 1].startOffset, piece.endOffset) } else { bytes.size + maximum }
+        let rightSize = if (i + 1 < pieces.size) { kbCharsBetween(bytes, piece.startOffset, pieces[i + 1].endOffset) } else { bytes.size + maximum }
+        let canLeft = i > 0 && (contextOnly || leftSize <= maximum)
+        let canRight = i + 1 < pieces.size && (contextOnly || rightSize <= maximum)
+        if (!canLeft && !canRight) { i += 1; continue }
+        let left = if (canLeft && (!canRight || leftSize <= rightSize)) { i - 1 } else { i }
+        let first = pieces[left]
+        let last = pieces[left + 1]
+        pieces[left] = KbPiece(kbSharedHeading(first.headingPath, last.headingPath, title),
+            String.fromUtf8(bytes.slice(first.startOffset, last.endOffset - first.startOffset)), first.startOffset, last.endOffset)
+        pieces.remove(at: left + 1)
+        i = left
+    }
+    pieces.toArray()
+}
+
+/** Pack complete content blocks toward the target instead of forcing a split at every heading. */
 func kbChunksFor(title: String, body: String, target: Int64, overlap: Int64): Array<KbPiece> {
     let bytes = body.toArray()
     let out = ArrayList<KbPiece>()
     if (bytes.size == 0) { return out.toArray() }
     let safeTarget = if (target < 200) { 200 } else { target }
     let safeOverlap = if (overlap < 0) { 0 } else if (overlap >= safeTarget / 2) { safeTarget / 4 } else { overlap }
-    let blocks = kbBlocks(title, bytes)
-    var i: Int64 = 0
-    while (i < blocks.size) {
-        var finish = i + 1
-        while (finish < blocks.size && blocks[finish].headingPath == blocks[i].headingPath) { finish += 1 }
-        kbCutSpan(bytes, blocks[i].headingPath, blocks[i].start, blocks[finish - 1].end,
-            safeTarget, safeOverlap, blocks, out)
-        i = finish
+    let blocks = kbAttachHeadingBodies(bytes, kbBlocks(title, bytes))
+    let raw = ArrayList<KbPiece>()
+    kbCutSpan(bytes, title, 0, bytes.size, safeTarget, safeOverlap, blocks, raw)
+    var firstBlock: Int64 = 0
+    for (piece in raw) {
+        while (firstBlock < blocks.size && blocks[firstBlock].end <= piece.startOffset) { firstBlock += 1 }
+        var path = ""
+        var i = firstBlock
+        while (i < blocks.size && blocks[i].start < piece.endOffset) {
+            let block = blocks[i]
+            if (String.fromUtf8(bytes.slice(block.start, block.end - block.start)).trimAscii().size > 0) {
+                path = if (path.size == 0) { block.headingPath } else { kbSharedHeading(path, block.headingPath, title) }
+            }
+            i += 1
+        }
+        out.add(KbPiece(if (path.size > 0) { path } else { title }, piece.text, piece.startOffset, piece.endOffset))
     }
-    let pieces = out.toArray()
+    let pieces = kbCoalesceSmallPieces(title, bytes, out, safeTarget)
     kbValidatePieces(body, pieces)
+    if (pieces.size > 1 && kbHasChunkBody(body)) {
+        for (piece in pieces) {
+            if (!kbHasChunkBody(piece.text)) { throw Exception("切片缺少正文，应与相邻内容自动合并") }
+        }
+    }
     pieces
 }

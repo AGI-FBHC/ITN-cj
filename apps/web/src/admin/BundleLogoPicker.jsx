@@ -13,16 +13,19 @@ export default function BundleLogoPicker({ bundle, onChanged }) {
   const generationId = createdId || bundle.logo?.generationId;
   const state = useLoad(() => generationId ? adminApi.logoGeneration(generationId) : Promise.resolve(null), [generationId]);
   const result = state.data?.id === generationId ? state.data : null;
-  const working = !state.error && WORKING.has(result?.status || (createdId && !result ? 'queued' : bundle.logo?.status));
+  const working = Boolean(generationId) && !state.error && WORKING.has(result?.status || (createdId && !result ? 'queued' : bundle.logo?.status));
   useProcessingPoll(state, working);
   const variants = result?.variants || (bundle.logo?.generationId === generationId ? bundle.logo.variants : []) || [];
-  const selected = result?.selectedVariantId || bundle.logo?.selectedVariantId;
+  const selected = bundle.logo?.generationId === generationId
+    ? bundle.logo.selectedVariantId || result?.selectedVariantId
+    : result?.selectedVariantId;
   const changed = React.useRef(onChanged);
   changed.current = onChanged;
   React.useEffect(() => {
     if (result && ['done', 'ready', 'completed'].includes(result.status)) changed.current?.();
   }, [generationId, result?.status]);
   React.useEffect(() => { setCreatedId(''); setError(''); }, [bundle.id]);
+  React.useEffect(() => { if (createdId && bundle.logo?.generationId === createdId) setCreatedId(''); }, [createdId, bundle.logo?.generationId]);
 
   async function generate() {
     setBusy('generate');

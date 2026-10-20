@@ -423,7 +423,7 @@ func kbStartLogoWorker(cfg: Config): Unit {
     kbLogoStartLock.lock()
     try {
         if (kbLogoWorkerStarted) { return }
-        execute(cfg, "UPDATE logo_generations SET status='queued' WHERE status='running' AND attempts<3")
+        execute(cfg, "UPDATE logo_generations SET status='queued',attempts=IF(attempts>0,attempts-1,0),error_message='' WHERE status='running'")
         execute(cfg, "UPDATE logo_generations SET status='failed',error_message='服务重启前已达到三次尝试上限' WHERE status='running' AND attempts>=3")
         execute(cfg, "UPDATE kb_bundles b JOIN logo_generations l ON b.logo_generation_id=l.id " +
             "SET b.logo_status=l.status,b.logo_attempts=l.attempts,b.logo_error=LEFT(l.error_message,500) WHERE l.resource_type='kb_bundle'")

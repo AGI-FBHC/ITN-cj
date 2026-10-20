@@ -2,6 +2,8 @@ package zhixun_learning
 
 import std.collection.*
 import std.core.*
+import std.env.*
+import std.fs.*
 import std.unittest.*
 import std.unittest.testmacro.*
 
@@ -34,6 +36,58 @@ func kbPrimitiveAtomCovered(body: String, pieces: Array<KbPiece>, atom: String):
     kbPrimitiveCheck(contained, "A protected Markdown atom was not preserved whole")
 }
 
+func kbAuditHasBody(text: String): Bool {
+    for (line in kbSourceLines(text.toArray())) {
+        let value = line.text.trimAscii()
+        if (value.size == 0 || kbHeadingLevel(line.text) > 0 || kbSetextLevel(line.text) > 0) { continue }
+        if (value == "***" || value == "---" || value == "___") { continue }
+        return true
+    }
+    false
+}
+
+func kbOptionalCorpusAudit(): Unit {
+    let directory = match (getVariable("ZHIXUN_TEST_CORPUS")) { case Some(value) => value; case None => return }
+    let files = ArrayList<String>()
+    kbWalkFiles(directory.replace("\\", "/"), "", files, 0)
+    var documents: Int64 = 0
+    var chunks: Int64 = 0
+    var shortChunks: Int64 = 0
+    let issues = JsonArrWriter()
+    for (file in files) {
+        if (!kbIsSourceDocument(file)) { continue }
+        let body = String.fromUtf8(File.readFrom(Path(directory + "/" + file)))
+        let pieces = kbChunksFor(file, body, 800, 120)
+        kbValidatePieces(body, pieces)
+        documents += 1; chunks += pieces.size
+        for (piece in pieces) {
+            if (kbAuditHasBody(body) && !kbAuditHasBody(piece.text)) {
+                let issue = JsonWriter(); issue.putStr("file", file); issue.putInt("start", piece.sourceStart)
+                issue.putInt("end", piece.sourceEnd); issue.putStr("kind", "heading-only")
+                issues.addRaw(issue.toJson())
+            }
+            if (piece.charCount() < 120 && pieces.size > 1) { shortChunks += 1 }
+        }
+        let original = body.toArray()
+        for (block in kbBlocks(file, original)) {
+            if (!block.indivisible || block.isHeading) { continue }
+            var contained = false
+            for (piece in pieces) {
+                if (piece.sourceStart <= block.start && piece.sourceEnd >= block.end) { contained = true }
+                kbPrimitiveCheck(!(block.start < piece.sourceStart && piece.sourceStart < block.end), "Protected source block split: " + file)
+                kbPrimitiveCheck(!(block.start < piece.sourceEnd && piece.sourceEnd < block.end), "Protected source block split: " + file)
+            }
+            kbPrimitiveCheck(contained, "Protected block lost: " + file)
+        }
+    }
+    let report = JsonWriter()
+    report.putInt("documents", documents); report.putInt("chunks", chunks); report.putInt("shortChunks", shortChunks)
+    report.putRaw("issues", issues.toJson())
+    File.writeTo(Path(directory + "/report.json"), report.toJson().toArray())
+    println("CORPUS_AUDIT " + documents.toString() + " documents, " + chunks.toString() + " chunks; see report.json")
+    kbPrimitiveCheck(issues.toJson() == "[]", "Whole-corpus heading-only chunks found; see corpus audit report")
+}
+
 @Test
 class KbPrimitiveTests {
     @TestCase
@@ -57,6 +111,7 @@ class KbPrimitiveTests {
         kbPrimitiveAtomCovered(body, pieces, tex)
         kbPrimitiveAtomCovered(body, pieces, table)
         kbPrimitiveAtomCovered(body, pieces, image)
+        kbOptionalCorpusAudit()
     }
 
     @TestCase
@@ -86,6 +141,38 @@ class KbPrimitiveTests {
             "{\"data\":[{\"index\":0,\"embedding\":[1e9999]},{\"index\":1,\"embedding\":[2]}]}"
         ]) { kbPrimitiveRejects({ => let _value = parseEmbeddingArray(invalid, 2) }) }
         kbPrimitiveRejects({ => let _value = kbQuantizedCosine([1.0, 0.0], [255]) })
+    }
+
+    @TestCase
+    func nestedHeadingsStayWithTheirContent(): Unit {
+        let body = "# 功能清单\n\n## 已实现功能\n\n### 工作流功能\n\n#### 完整工作流\n- 搜索论文\n- 分析内容\n- 生成引用\n\n#### 简化工作流\n- 搜索加分析\n- 展示结果\n\n### 前端功能\n\n#### 界面\n- 响应式设计\n- 参数配置\n"
+        let pieces = kbChunksFor("通用资源", body, 800, 120)
+        kbPrimitiveCheck(pieces.size == 1, "Small nested sections must be packed, not indexed as headings only")
+        kbPrimitiveCheck(pieces[0].text == body, "Packing changed the original source")
+        let large = body + "\n" + kbPrimitiveRepeated("另一段完整正文，包含独立的解释和例子。\n", 150)
+        for (piece in kbChunksFor("通用资源", large, 200, 40)) {
+            kbPrimitiveCheck(kbHasChunkBody(piece.text), "A heading-only retrieval chunk was emitted")
+        }
+        let code = "```text\n" + kbPrimitiveRepeated("这是必须保持完整的保护块。\n", 80) + "```\n"
+        let separators = "# 开始\n\n正文说明。\n" + code + "\n---\n\n" + code + "\n\n## 结束标题\n\n"
+        let guarded = kbChunksFor("通用资源", separators, 800, 120)
+        for (piece in guarded) {
+            kbPrimitiveCheck(kbHasChunkBody(piece.text), "Separator, blank or trailing heading became a retrieval slice")
+        }
+        kbValidatePieces(separators, guarded)
+        let item = "- 一条较长的列表项，" + kbPrimitiveRepeated("同一条内容及补充说明不能在中间切开。", 12) + "\n  这仍然是该条内容的补充。\n"
+        let list = "# 连贯列表\n\n" + kbPrimitiveRepeated(item, 12)
+        let listPieces = kbChunksFor("通用资源", list, 800, 120)
+        for (piece in listPieces) {
+            kbPrimitiveCheck(!piece.text.startsWith("同一条") && !piece.text.startsWith("  这仍然"), "A list item was split in the middle")
+        }
+        for (block in kbBlocks("通用资源", list.toArray())) {
+            if (!block.indivisible || block.isHeading) { continue }
+            for (piece in listPieces) {
+                kbPrimitiveCheck(!(block.start < piece.sourceStart && piece.sourceStart < block.end), "List item start was split")
+                kbPrimitiveCheck(!(block.start < piece.sourceEnd && piece.sourceEnd < block.end), "List item end was split")
+            }
+        }
     }
 
     @TestCase
