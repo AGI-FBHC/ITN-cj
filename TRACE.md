@@ -543,3 +543,17 @@
 - 对新缓存复用谓词补充BINARY比较：MySQL默认不区分大小写的文本相等不能证明heading/summary/keywords/model/baseUrl的输入完全一致。仅在原文字节哈希、标题、摘要、关键词、模型标识及端点严格一致时复用；向量空间检查保留。此补丁不改变content-blocks-v4的切片范围，不需要再次重建资料包。
 - 已在实际MySQL只读SELECT验证默认大小写不敏感比较与BINARY严格比较的差别，包含JSON_EXTRACT端点路径，测试通过；未写入模型配置。仓颉6/6测试再次通过，日志ignored data/chunk-v4-exact-tests.log。
 - 为避免中断正在进行的真实整包验收与小包回归，先本地提交该严格性补丁；本轮完整模型任务结束后构建/短暂重启部署，并用独立临时文档验证新SQL实际执行后只清理该临时文档。当前服务仍是befa4f3编译版本，勿把源代码已提交与运行二进制已更新混为一谈。
+
+## 2026-10-21 02:06 +08:00 收尾：通用切片已在全原包生效，真实模型/向量/Logo验收完成
+- 本轮用户的最终重点为改善内置Agent每次导入使用的切片逻辑，不做针对几个例子的手工修复，也未要求改为LLM决定切片边界。最终实现仍是结构规则 + 内置质量归并 + 独立LLM摘要/关键词；后续若要模型语义边界判断，需另行设计与授权，不能把当前规则包装成LLM判断。
+- 当前实际工作项目D:/Downloads/zhixun-yunshu-28801-20261020，分支codex/native-learning-v1。功能提交6d402c8，通用分组修正befa4f3，字节严格复用补丁3c8c2f1。Codex环境附着的C:/Users/GeJie/.codex/worktrees/13e7/ITN不是当前应用的源码目录，不要在那个旧目录里修复此功能。
+- unchanged原包D:/Downloads/hello-agents-main.zip（166920355字节）完成真实全量验收，未重新打包、未替换成章节小包：275份原文，4467切片，4467摘要，4467向量，实际维度1024，失败0、待加工0；完整原文逐一与ZIP比对，切片UTF8范围与正文一致且全覆盖；129张包内引用图逐字节SHA核验通过。原包本身有1处指向作者Mac绝对路径的缺图引用，保留warning，不编造图片。
+- active_build全部275个均为content-blocks-v4，不是只处理FEATURES.md等少数样例。原文ZIP标准化文本的原生规则测试4457片，与运行时4467片的差别来自实际资料正文中的持久图片URL替换等字节长度变化，不应把二者混为同一输入计数。两条链路都验证完整覆盖；生产逻辑在摘要/向量请求之前自动合并上下文-only碎片并拒绝仍无正文的孤立片。
+- 独立Logo生成已完成line/flat/geometric三款；当前资料包选中flat，用户选择保留。真实小包测试再次6/6通过：原文/图片私有权限、完整块和UTF8来源范围、幂等重试不更改已完成切片、三款Logo选择与重新生成、完整原文发布和下架权限。新一轮用例运行约19分12秒，包含排在全原包队列之后的等待，不能宣称是独立小包处理耗时；日志tests/ingestion-v2-ba310e69-44f8-463f-9402-11d551a43d91.log，主输出data/ingestion-v4-real-tests.log，测试仅清理自己的包/Logo/课程。
+- tools/verify-archive-ingestion.py --bundle-id完整验收退出0（原session82392）；报告data/full-archive-report.json，进度data/full-archive-v4.log。真实小包session70765退出0；仓颉纯函数6/6通过（含全语料结构运行），前端构建此前通过；账号/管理员回归10通过、学习流程1因无已发布课程跳过。未运行尚依赖同步旧API语义的tests/knowledge-base.test.mjs，后续若维护它，应改202异步等待与源文发布断言，不能把它记为已通过。
+- 全量验收收尾时加载3c8c2f1严格复用补丁，scripts/build-backend.ps1成功，新后端PID172708，8312端口；Vite继续3006。当前临时进程workers=8、产品默认4（有界1..8），.env.local字节哈希与本轮前基线一致，未修改用户的模型端点、密钥或设置。
+- 最后新二进制真实冒烟：创建独立“内置切片回归-随机ID”原文，含多层标题、列表、代码、分隔线与结尾标题，自动合成一个有正文的切片，真实LLM摘要/关键词和1024维向量完成；新BINARY复用SQL实际执行成功，API设置哈希前后一致；仅删除自己的临时文档。结果data/ingestion-v4-production-smoke.json，session94279退出0。
+- 重启前后在MySQL端对4467片的原文范围、正文、摘要、关键词、维度、向量hex和空间做结构化JSON SHA256，所有ID和哈希完全一致（data/recovery-v4-baseline-sql.json / recovery-v4-report.json）。这是完成数据的重启持久性检查；本轮早期99片处理中断并恢复的实测仍独立成立，不把这次已完成后的重启冒充一次处理中断测试。
+- 操作教训：初次可选快照直接读取全部vec_hex到本地，MySQL长时间处于Sending to client。已仅取消该只读查询406593，Python报1317是主动取消可选大结果传输，不是生产加工失败；随后换为数据库内SHA2(JSON_ARRAY(...))只取短哈希，约2秒完成。旧大结果快照data/recovery-v4-baseline.json未生成，不应引用它。后续全量向量持久性对比应沿用数据库端哈希，避免再次拉取全量向量hex。
+- 当前API最终确认：pipeline.ready，275文档、4467片/摘要/向量、pending0、failed0；Logo flat；1条原包缺图warning；没有发布此完整资料包为公共课程。浏览器预览URL http://localhost:3006/admin/knowledge/bundles/35517bee-70b2-49fe-b7de-a74afd722e2d，刷新即可查看全局新切片。
+- 功能与本TRACE均已同步本地Git，未push、未改线上28801、不使用Docker、不接入独立向量数据库；未用mock，未替换真实provider端点，未改保存的API配置。所有本轮运行会话已结束，前后端服务正常保留给用户查看。
