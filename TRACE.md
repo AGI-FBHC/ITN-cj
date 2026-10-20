@@ -4941,3 +4941,16 @@ read_chunk 读得到原文并带回库标识与正文。
 - 补充导学附件回归21/21（tmp/guided-files-storage-regression.log），覆盖草稿隔离、逐次确认、审批归属、错误恢复、结束与离开停止轮询；仅审批响应使用确定性夹具，实际模型证据见前段。
 - docs/05补本次实际验证范围，docs/04和VENDOR说明独立格式检查及历史页规范化边界。无业务接口新增，文件权限策略和学习工具清单不变。
 - shell/package.json与package-lock.json同步0.8.28。执行JS语法及git diff --check，先本地提交修复、测试与trace，再按此提交打包。排除两份既有未跟踪调研文档。外部优化稿在包哈希确定后同步；原始Word/备份不覆盖。
+
+### 09:13 0.8.28运行包与项目说明交付验收
+- 修复提交7b3e49c（fix: preserve database page layout during repeated updates），main。本轮功能、探针/独立验证、真实会话脚本、说明与TRACE均在此提交；未推送远程。
+- scripts/package-app.ps1成功，包dist/Lumin-0.8.28/Lumin.exe和dist/Lumin-0.8.28.zip；231,932,690 bytes，2,759项。SHA256=8A712E7816D73DE4B67F61E83139985F8706CFD85DEFE387282D6564A0F557C3。manifest build=lumin-0.8.28-7b3e49c，sourceCommit=7b3e49c437cead6915976b76f03ea37c4c4bcf66。
+- tmp/verify-lumin-0.8.28.ps1与tmp/verify-lumin-0.8.28.log：33项资产哈希一致；Electron新profile隔离启动PRELOAD/TITLEBAR/RESULT=OK，正确显示初次模型配置入口。DOCX样张探测为skipped，不能据此宣称Office导入已重测。包内health/release、本地镜像解析真实图片140,133 bytes通过。
+- 另外核对包内内核SHA256等于刚完成176核心/23真实并发检查的二进制；index.html与splash.html均含powered by cangjie且与源码哈希一致。tmp/check-package-databases.cjs只读检查实际Electron启动库和包内内核图片验收库，两个PRAGMA integrity_check均ok。所有验收子进程已退出；进程清单仍仅见用户原0.8.25实例，未关闭。
+- 本轮新增通过范围：41项驱动、5项独立原生SQLite、176项核心、35项导学回归、23项真实并发、21项导学附件，共301项；包内资产/启动/图片/数据库另有具体断言，未凑入301。之前有效的桌宠/收集/Markdown测试仍保留证据，未因存储修复重复外呼大库/PPT生成。
+- 官方要求复核使用fetch读取 https://chinasoft.ccf.org.cn/2026/pages/competition/cangjie.html，内容确认创新原型材料与评分。外部说明书保留智训云枢平台+Lumin主线、第三方依赖/既有基础/AI辅助说明，账号与学情跨端同步仍是后续规划；没有把未实现能力写成已落地。
+- tmp/update-proposal.cjs动态读取0.8.28包大小与哈希，并更新运行验证段，明确23项真实模型并发使用仓颉课件夹具，不冒充新生成PPT；已有真实PPT和随页问答截图继续使用。受管Node生成tmp/proposal-updated.docx，Word COM导出tmp/proposal-0.8.28.pdf，Poppler -scale-to 1600渲染至tmp/proposal-0.8.28-pages。仍21页；第17、18、19页PNG已实际打开检查，文字/哈希/图无裁切；其余18页PNG与此前目视验收版SHA256完全相同。未使用Python渲染。
+- 一次试调用pdftotext发现命令不在PATH，未把其当作检查通过；使用既有OOXML文本、Word分页和逐页PNG完成验证。确认生成文本无0.8.26/0.8.27旧版本，包大小和64位哈希匹配。
+- tmp/deliver-proposal-0.8.28.ps1独占打开现有优化稿，核对仍为前版A45CC047...、备份至tmp/proposal-optimized-0.8.27.docx后写入验证过的新字节并Flush(true)；无用户编辑冲突。最终D:/Desktop/仓颉杯/创新原型赛道/01-项目说明-优化版.docx，17,748,945 bytes，SHA256=70AA46F1C00042C7F06F65029C23A5F7E721237F2A9938B7B86E312CBD67BC76，源与目标一致。tmp/proposal-delivery-0.8.28.json保留结果。原始01-项目说明.docx和材料备份不动。
+- 本批交付完成；四个定时复验09:40/11:10/12:40/14:10仍未到时，持续复验目标保持active，不重复创建。后续接手从0.8.28与本段继续，复验新问题才改代码/重打包。保留历史坏库样本但不对真实用户数据库执行修复；当前规范化不等于全库修复承诺。
+- 本段只记录交付，不因trace提交再次打相同包。原有两份未跟踪调研文档继续排除。
