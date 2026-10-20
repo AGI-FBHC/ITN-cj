@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { adminApi } from './admin-api.js';
 import { ErrorBlock, Loading, Notice, useLoad } from './admin-ui.jsx';
 
@@ -14,9 +15,9 @@ function statusOf(status) {
 }
 
 export default function AdminBundles({ onNeedModel }) {
+  const navigate = useNavigate();
   const state = useLoad(() => adminApi.kbBundles(), []);
   const [uploading, setUploading] = React.useState('');
-  const [detail, setDetail] = React.useState(null);
   const [error, setError] = React.useState('');
   const [message, setMessage] = React.useState('');
   const pollTimer = React.useRef(null);
@@ -54,16 +55,6 @@ export default function AdminBundles({ onNeedModel }) {
       if (failure.message.includes('对话模型') && onNeedModel) onNeedModel();
     } finally {
       setUploading('');
-    }
-  }
-
-  async function openDetail(bundleId) {
-    setError('');
-    try {
-      const body = await adminApi.kbBundle(bundleId);
-      setDetail(detail?.bundle?.id === bundleId ? null : body);
-    } catch (failure) {
-      setError(failure.message);
     }
   }
 
@@ -131,9 +122,9 @@ export default function AdminBundles({ onNeedModel }) {
                       type="button"
                       className="zx-btn zx-btn-sm zx-btn-ghost"
                       disabled={bundle.status !== 'ready'}
-                      onClick={() => openDetail(bundle.id)}
+                      onClick={() => navigate(`/admin/knowledge/bundles/${bundle.id}`)}
                     >
-                      {detail?.bundle?.id === bundle.id ? '收起结果' : '查看结果'}
+                      预览
                     </button>
                     <button
                       type="button"
@@ -142,7 +133,6 @@ export default function AdminBundles({ onNeedModel }) {
                         if (!window.confirm(`删除《${bundle.name}》的整理结果？`)) return;
                         try {
                           await adminApi.deleteKbBundle(bundle.id);
-                          if (detail?.bundle?.id === bundle.id) setDetail(null);
                           setMessage('已删除资料包。');
                           state.reload();
                         } catch (failure) {
@@ -160,34 +150,6 @@ export default function AdminBundles({ onNeedModel }) {
         </table>
       )}
 
-      {detail ? (
-        <div style={{ marginTop: 16 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 800, margin: '0 0 10px' }}>
-            《{detail.bundle.title || detail.bundle.name}》整理结果（{detail.docs.length} 章，共 {detail.bundle.steps} 步）
-          </h3>
-          {detail.docs.map((doc) => (
-            <div className="zx-lesson-block" key={doc.order}>
-              <div className="zx-lesson-block-head">
-                <span>{doc.order}. {doc.title}</span>
-                <span style={{ color: '#8b8f99', fontWeight: 700 }}>{doc.charCount} 字</span>
-              </div>
-              <div style={{ fontSize: 13, color: '#4b4560', whiteSpace: 'pre-wrap', lineHeight: 1.75 }}>
-                {doc.content.length > 400 ? `${doc.content.slice(0, 400)}…` : doc.content}
-              </div>
-            </div>
-          ))}
-          {detail.log ? (
-            <details style={{ marginTop: 10 }}>
-              <summary style={{ cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: '#6f6a80' }}>
-                智能体运行日志
-              </summary>
-              <pre style={{ marginTop: 8, padding: 12, background: '#f7f6fb', borderRadius: 10, fontSize: 12, whiteSpace: 'pre-wrap', maxHeight: 260, overflow: 'auto' }}>
-                {detail.log}
-              </pre>
-            </details>
-          ) : null}
-        </div>
-      ) : null}
     </div>
   );
 }

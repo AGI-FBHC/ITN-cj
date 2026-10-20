@@ -5,6 +5,7 @@ import AdminLogin from './AdminLogin.jsx';
 import AdminOverview from './AdminOverview.jsx';
 import AdminUsers from './AdminUsers.jsx';
 import AdminKnowledge from './AdminKnowledge.jsx';
+import AdminBundlePreview from './AdminBundlePreview.jsx';
 import AdminSettings from './AdminSettings.jsx';
 
 function navClass({ isActive }) {
@@ -69,6 +70,7 @@ export default function AdminApp() {
             element={<AdminOverview onOpenCourse={(courseId) => navigate(courseId ? `/admin/courses/${courseId}` : '/admin/courses')} />}
           />
           <Route path="/admin/knowledge" element={<AdminKnowledge />} />
+          <Route path="/admin/knowledge/bundles/:bundleId" element={<AdminBundlePreview />} />
           <Route path="/admin/users" element={<AdminUsers />} />
           <Route path="/admin/settings" element={<AdminSettings />} />
           <Route path="/admin/courses/*" element={<Navigate to="/admin/knowledge" replace />} />
