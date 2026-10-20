@@ -42,10 +42,14 @@ export default function AdminCourseware() {
   const bundles = (bundlesState.data?.bundles || []).filter((item) => bundleReadable(item));
   const selectedBundle = bundles.find((item) => item.id === bundleId) || null;
   const chaptersState = useLoad(
-    () => (bundleId ? adminApi.kbBundle(bundleId) : Promise.resolve({ docs: [] })),
+    () => (bundleId
+      ? adminApi.kbBundle(bundleId).then((data) => ({ ...data, forBundle: bundleId }))
+      : Promise.resolve({ docs: [], forBundle: '' })),
     [bundleId],
   );
-  const chapters = chaptersState.data?.docs || [];
+  // 只认当前资料包返回的章节，避免切换瞬间拿上一个包的章节去请求正文（会 404）
+  const chaptersReady = chaptersState.data?.forBundle === bundleId;
+  const chapters = chaptersReady ? (chaptersState.data?.docs || []) : [];
   const activeChapter = chapters.find((item) => item.id === activeDocId) || null;
   const items = listState.data?.items || [];
   const generating = items.some((item) => item.status === 'generating');
@@ -71,6 +75,15 @@ export default function AdminCourseware() {
     setActiveDocId('');
     setDoc(null);
   }, [bundleId]);
+
+  // 章节默认落在第一项，省掉一次点击；切换资料包后同样自动选新包的第一章。
+  React.useEffect(() => {
+    if (chapters.length === 0) {
+      if (activeDocId !== '') setActiveDocId('');
+      return;
+    }
+    if (!chapters.some((item) => item.id === activeDocId)) setActiveDocId(chapters[0].id);
+  }, [chapters, activeDocId]);
 
   React.useEffect(() => {
     if (!bundleId || !activeDocId) return undefined;
@@ -162,7 +175,7 @@ export default function AdminCourseware() {
 
           <aside className="zx-cw-col">
             <div className="zx-cw-col-title">章节</div>
-            {chaptersState.loading ? <div className="zx-cw-hint">正在读取章节…</div> : null}
+            {chaptersState.loading || !chaptersReady ? <div className="zx-cw-hint">正在读取章节…</div> : null}
             {chapters.map((item) => (
               <button
                 key={item.id}
@@ -177,7 +190,7 @@ export default function AdminCourseware() {
                 </span>
               </button>
             ))}
-            {!chaptersState.loading && chapters.length === 0 ? <div className="zx-cw-hint">这个知识库还没有章节。</div> : null}
+            {chaptersReady && chapters.length === 0 ? <div className="zx-cw-hint">这个知识库还没有章节。</div> : null}
           </aside>
 
           <section className="zx-cw-main">
