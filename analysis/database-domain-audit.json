@@ -1,0 +1,244 @@
+{
+  "domains": [
+    {
+      "id": 1,
+      "code": "agent",
+      "name": "智能体",
+      "status": 1
+    },
+    {
+      "id": 3,
+      "code": "cs-base",
+      "name": "计算机基础",
+      "status": 1
+    },
+    {
+      "id": 4,
+      "code": "mcp",
+      "name": "MCP 规范",
+      "status": 0
+    }
+  ],
+  "catalog_roots": [
+    {
+      "id": 1,
+      "domain_id": 1,
+      "parent_id": null,
+      "node_code": "concepts",
+      "name": "概念与基础",
+      "level": 1,
+      "node_type": "category"
+    },
+    {
+      "id": 2,
+      "domain_id": 1,
+      "parent_id": null,
+      "node_code": "construction",
+      "name": "智能体构建",
+      "level": 1,
+      "node_type": "category"
+    },
+    {
+      "id": 3,
+      "domain_id": 1,
+      "parent_id": null,
+      "node_code": "capabilities",
+      "name": "核心能力",
+      "level": 1,
+      "node_type": "category"
+    },
+    {
+      "id": 4,
+      "domain_id": 1,
+      "parent_id": null,
+      "node_code": "advanced",
+      "name": "进阶技术",
+      "level": 1,
+      "node_type": "category"
+    },
+    {
+      "id": 5,
+      "domain_id": 1,
+      "parent_id": null,
+      "node_code": "practice",
+      "name": "实战应用",
+      "level": 1,
+      "node_type": "category"
+    }
+  ],
+  "category_counts": [
+    {
+      "domain_id": 1,
+      "level": 1,
+      "count": 5
+    },
+    {
+      "domain_id": 1,
+      "level": 2,
+      "count": 21
+    },
+    {
+      "domain_id": 1,
+      "level": 3,
+      "count": 119
+    }
+  ],
+  "resource_types": [
+    {
+      "resource_type": "practice",
+      "is_template": 0,
+      "review_status": null,
+      "count": 9
+    },
+    {
+      "resource_type": "practice",
+      "is_template": 0,
+      "review_status": "DRAFT",
+      "count": 69
+    },
+    {
+      "resource_type": "quiz",
+      "is_template": 0,
+      "review_status": "PUBLISHED",
+      "count": 28
+    },
+    {
+      "resource_type": "practice",
+      "is_template": 0,
+      "review_status": "PUBLISHED",
+      "count": 37
+    },
+    {
+      "resource_type": "lecture",
+      "is_template": 0,
+      "review_status": "PUBLISHED",
+      "count": 33
+    },
+    {
+      "resource_type": "quiz",
+      "is_template": 1,
+      "review_status": "DRAFT",
+      "count": 48
+    },
+    {
+      "resource_type": "quiz",
+      "is_template": 0,
+      "review_status": "DRAFT",
+      "count": 58
+    },
+    {
+      "resource_type": "lecture",
+      "is_template": 1,
+      "review_status": "DRAFT",
+      "count": 80
+    },
+    {
+      "resource_type": "lecture",
+      "is_template": 0,
+      "review_status": "DRAFT",
+      "count": 70
+    },
+    {
+      "resource_type": "practice",
+      "is_template": 1,
+      "review_status": "DRAFT",
+      "count": 81
+    },
+    {
+      "resource_type": "quiz",
+      "is_template": 0,
+      "review_status": null,
+      "count": 11
+    },
+    {
+      "resource_type": "lecture",
+      "is_template": 0,
+      "review_status": null,
+      "count": 21
+    }
+  ],
+  "courses": [
+    {
+      "course_count": 8,
+      "owner_count": 3,
+      "learner_count": 5
+    }
+  ],
+  "learner_multiplicity": [
+    {
+      "users_with_learners": 15,
+      "users_with_multiple_learners": "3"
+    }
+  ],
+  "resource_association": [
+    {
+      "total": 545,
+      "with_course": "39",
+      "with_chapter": "39",
+      "with_legacy_kp": "363",
+      "with_category": "406"
+    }
+  ],
+  "flyway": [
+    {
+      "version": "42",
+      "description": "rename hello agents to self built agents",
+      "success": 1
+    },
+    {
+      "version": "41",
+      "description": "hide legacy mcp domain",
+      "success": 1
+    },
+    {
+      "version": "40",
+      "description": "add generation task slides",
+      "success": 1
+    },
+    {
+      "version": "39",
+      "description": "resource templates",
+      "success": 1
+    },
+    {
+      "version": "38",
+      "description": "repair admin restored resources",
+      "success": 1
+    },
+    {
+      "version": "37",
+      "description": "restore interactive courseware bindings",
+      "success": 1
+    },
+    {
+      "version": "36",
+      "description": "restore knowledge map resource bindings",
+      "success": 1
+    },
+    {
+      "version": "35",
+      "description": "bind managed resources to knowledge tree",
+      "success": 1
+    }
+  ],
+  "schema_versions": [
+    {
+      "service_name": "KnowledgeCore",
+      "legacy_version": "7c2f9a1d3b6e",
+      "platform_migration": "V31",
+      "migrated_at": "2026-08-24 03:24:44.017684"
+    },
+    {
+      "service_name": "predeal",
+      "legacy_version": "2026_08_18_graph_review_pending",
+      "platform_migration": "V31",
+      "migrated_at": "2026-08-24 03:24:44.017684"
+    },
+    {
+      "service_name": "QuestionBank",
+      "legacy_version": "2026_08_18_user_knowledge_state",
+      "platform_migration": "V31",
+      "migrated_at": "2026-08-24 03:24:44.017684"
+    }
+  ]
+}
