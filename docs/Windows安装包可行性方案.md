@@ -68,3 +68,15 @@
 - Inno Setup压缩算法说明，用于对照ZIP与LZMA/LZMA2的区别：https://jrsoftware.org/ishelp/topic_setup_compression.htm
 
 已尝试agent-reach网页路径Jina读取electron-builder资料，15秒超时；改用官方NSIS与Inno文档核对。没有据无法读取的electron-builder页面承诺自动升级或精确包大小。
+
+## 实施结果 2026年10月20日
+
+已实施为 Lumin 0.8.29。安装验收发现旧版本在中文目录下会因仓颉 Windows argv 编码而在进入 main 前退出；发布内核现通过应用清单启用进程级 UTF-8，最低支持 Windows 10 1903 或 Windows 11。安装版与新版 ZIP 同时包含修复，不更改用户的系统代码页。
+
+- 安装器：155613977 字节，148.4 MiB，SHA256 `C14E1F4F6D0450BB8F9BDDBB78A765B90CB19F5A1F854607F4D7010E6AE04B2C`。
+- 同版本 ZIP：231228212 字节，220.5 MiB，SHA256 `FB9EDE188B93691BADC23D832A28F4DDE1722E1F75483810190B2D37BBB49C79`。
+- 实际安装版比同版本 ZIP 小约 32.7%。这是最终 EXE 结果，取代前述样本估计。
+- 安装验收24项通过，2735个文件与发布目录哈希一致；真实启动、PPT/DOCX导出读取、PDF读取、PPT依赖和独立SQLite检查通过；升级、卸载、重装时实际学习数据库保持逐字节不变。
+- 发布服务22项专项检查通过，公网浏览器21项检查通过，包含桌面、平板和手机宽度。
+- 下载页：http://113.249.102.41:6025/ 。安装器为主入口，ZIP便携版为次入口，0.8.28旧ZIP链接保留。
+- 用户手动编辑的V1.1项目说明保持不动。

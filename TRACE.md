@@ -5077,3 +5077,18 @@ read_chunk 读得到原文并带回库标识与正文。
 - 增加core/windows-runtime.manifest和package.ps1嵌入/读回校验，使发布内核支持中文argv；原编译裸EXE不覆写。外壳版本升0.8.29，新ZIP和安装器同一套修复产物，旧0.8.28 ZIP/链接保留；V1.1说明不动。
 - 安装器增加Windows build>=18362检查、文件解压错误中止、仅清理由安装器选项创建的桌面快捷方式；避免未勾选桌面选项时删用户既有同名快捷方式。将验收版本改为读取当前package版本，并保留中文路径实际启动检查。
 - 两次诊断程序都仅运行TEMP中的产品，已使用保存的reg文件恢复原lumin协议。自动审批曾拦下“嵌入清单并立即启动”的组合命令；改为公开清单源文件、独立SDK构建和独立验收步骤，均获工具执行，没有规避系统限制或改全局UTF8选项。
+
+
+## 2026-10-20 15:29 · 0.8.29安装版上线与最终验收
+- 用户目标已落实到现有113.249.102.41:6025下载服务：主下载为Lumin-Setup-0.8.29-x64.exe，两个ZIP便携入口为Lumin-0.8.29.zip；历史0.8.28 ZIP链接保留。源码功能提交5af1686，新包manifest build=lumin-0.8.29-5af1686。
+- 正式安装器155613977bytes（148.4MiB），SHA256=C14E1F4F6D0450BB8F9BDDBB78A765B90CB19F5A1F854607F4D7010E6AE04B2C；同版本ZIP231228212bytes（220.5MiB），SHA256=FB9EDE188B93691BADC23D832A28F4DDE1722E1F75483810190B2D37BBB49C79。实际安装器较ZIP减小约32.7%，不再使用前轮7z样本充当EXE体积。
+- 对比0.8.28和0.8.29完整目录，没有缺失旧文件；变化仅为发布清单、app版本、内核EXE，以及新增内核清单XML。PE逐节SHA256比对确认原有所有节内容完全相同，仅增加.rsrc清单资源，修复作用是进程级UTF8而非重写业务实现。mt工具重排资源后文件大小变化，不据此虚构业务删减。
+- tools/kernel-path-check.ps1成功：可执行文件、工作目录、命令行参数、界面目录、技能目录、SQLite数据目录与端口文件均含中文/空格，内核实际启动、健康检查、界面文件读取及仓颉seed-guided夹具落盘通过。仅TEMP写入。
+- 最终安装器tools/check-installer.ps1 24/24，日志tmp/installer-0.8.29-acceptance.log、报告tmp/installer-acceptance-0.8.29.json。安装目录和模拟用户数据根均含中文；2735个安装文件全部SHA256匹配；真实启动PRELOAD/TITLEBAR/RESULT=OK；另通过产品导出/读取PPT与DOCX、读取PDF10069字符、随包PPT Python模块导入、原生SQLite只读integrity_check。没有新增付费模型调用，也不把DOCX启动自检中的skipped当作通过，Office导出另有实际产品函数检查。
+- 实际覆盖升级、运行文件独占锁拦截、卸载、重装均通过；初始化后的真实隔离学习数据库在升级/卸载/重装前后字节哈希一致；安装目录额外文件保留。相关原HKCU产品注册项/协议和快捷方式均先保存后恢复，没有修改真实用户库、关闭用户Office或更改系统全局代码页。所有诊断应用子进程已退出。
+- 下载服务修前对EXE HEAD返回404，tmp/release-server-before.log保留失败；修后22/22，tmp/release-server-after.log。覆盖真实字节、HEAD、普通/开放尾部/后缀Range、非法Range416、未知EXE404、同版本优先安装器、新版只有ZIP时回退、旧ZIP保留。正式网页公网浏览器21/21：1440/768/390无溢出，logo/真实预览、所有安装和便携链接、预览点击/键盘、FAQ、控制台均正常；tmp/installer-public-browser.log及tmp/release-page-check/。
+- 设计lint 0失败0警告，inspect三档0失败1警告（无视频，沿用实际产品截图，无现成视频不添无关素材）。本地/公网最新首屏已目视检查，148.4MiB主按钮和220.5MiB便携入口清晰。网页系统要求补Windows10 1903及以上/Windows11，与安装器build18362门槛一致。
+- 上传先以隐藏.upload文件暂存，逐项核对SHA256才发布；node语法检查通过，备份原服务/页面到/opt/lumin-release/deploy-backups/20261020151558，部署脚本tmp/deploy-installer-0.8.29.sh包含错误回退。systemd停止后切换文件并启动，首个健康轮询连接拒绝属于进程启动间隙，随后健康、页面两种链接、安装器HEAD200均通过，active/enabled正常。远端服务和模板SHA256与本地一致，ZIP与EXE远端SHA256与本地一致。
+- 0.8.28旧ZIP远端SHA256仍8A712E7816D73DE4B67F61E83139985F8706CFD85DEFE387282D6564A0F557C3。用户V1.1 DOCX最后修改时间仍13:33:55、16975303bytes，本轮没有写入。
+- 公网整包下载受当前线路速度影响，首轮180秒超时于87546200bytes；未将其称通过，正在通过标准Range断点续传继续下载并核对最终SHA256。上线和公网浏览器验收已完成，整包传输终检结果另行追加。
+- Windows安装与发布工具不属于桌面学习业务内核API变更；NSIS、PowerShell、Node仅用于既有发布基础设施和平台原生安装操作，未增加非仓颉业务内核或直接写数据库夹具。原176项核心测试证据沿用，不冒充本轮重跑。

@@ -6,7 +6,7 @@ if(!$Installer){$Installer=Join-Path $repo "dist\Lumin-Setup-$version-x64.exe"}
 if(!$SourceDir){$SourceDir=Join-Path $repo "dist\Lumin-$version"}
 $Installer=(Resolve-Path -LiteralPath $Installer).Path
 $SourceDir=(Resolve-Path -LiteralPath $SourceDir).Path
-$root=Join-Path $env:TEMP ('lumin-install-check-'+[guid]::NewGuid().ToString('N'))
+$root=Join-Path $env:TEMP ('lumin-install-check-'+[guid]::NewGuid().ToString('N')+'-学员')
 $installed=Join-Path $root '应用安装 验收'
 New-Item -ItemType Directory -Path $root | Out-Null
 $desktop=Join-Path ([Environment]::GetFolderPath('Desktop')) 'Lumin.lnk'
@@ -74,15 +74,21 @@ try {
   $runtime='C:\Users\GeJie\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe'
   & $runtime "$PSScriptRoot\check-installed-resources.cjs" $installed $root "$repo\tmp\proposal-0.8.28.pdf"
   Check ($LASTEXITCODE -eq 0) 'installed PPT DOCX PDF runtime and isolated database pass'
+  $database=Join-Path $data 'itn.db'
+  $databaseHash=(Get-FileHash -LiteralPath $database).Hash
+  Check ((Install) -eq 0) 'upgrade succeeds with an existing initialized database'
+  Check ((Get-FileHash -LiteralPath $database).Hash -eq $databaseHash) 'upgrade leaves the actual learning database byte-identical'
   $u=Start-Process -FilePath (Join-Path $installed 'Uninstall Lumin.exe') -ArgumentList '/S' -WindowStyle Hidden -PassThru -Wait
   $deadline=[DateTime]::UtcNow.AddSeconds(30)
   while((Test-Path -LiteralPath (Join-Path $installed 'Lumin.exe')) -and [DateTime]::UtcNow -lt $deadline){Start-Sleep -Milliseconds 100}
   Check (!(Test-Path -LiteralPath (Join-Path $installed 'Lumin.exe'))) 'uninstall removes owned application files'
   Check (Test-Path -LiteralPath $extra) 'uninstall preserves unrelated files in chosen directory'
   Check ((Get-Content -LiteralPath $marker -Raw) -eq 'keep learning data') 'uninstall retains learning data'
+  Check ((Get-FileHash -LiteralPath $database).Hash -eq $databaseHash) 'uninstall leaves the actual learning database byte-identical'
   Check (!(Test-Path -LiteralPath $uninstallKey)) 'uninstall removes its registration'
   Check ((Install) -eq 0) 'reinstall succeeds after uninstall'
   Check ((Get-Content -LiteralPath $marker -Raw) -eq 'keep learning data') 'reinstall retains previous data'
+  Check ((Get-FileHash -LiteralPath $database).Hash -eq $databaseHash) 'reinstall leaves the actual learning database byte-identical'
   Start-Process -FilePath (Join-Path $installed 'Uninstall Lumin.exe') -ArgumentList '/S' -WindowStyle Hidden -Wait
   $deadline=[DateTime]::UtcNow.AddSeconds(30)
   while((Test-Path -LiteralPath $uninstallKey) -and [DateTime]::UtcNow -lt $deadline){Start-Sleep -Milliseconds 100}
@@ -102,3 +108,4 @@ try {
   }
   if((Test-Path -LiteralPath $menu) -and @(Get-ChildItem -LiteralPath $menu -Force).Count -eq 0){Remove-Item -LiteralPath $menu}
 }
+[ordered]@{version=$version;installerSha256=(Get-FileHash -LiteralPath $Installer).Hash;passed=$script:checks;payloadFiles=$files.Count;evidence=$root}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $repo "tmp\installer-acceptance-$version.json") -Encoding utf8
