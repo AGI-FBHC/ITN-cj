@@ -4850,3 +4850,39 @@ read_chunk 读得到原文并带回库标识与正文。
 - 版本更新为0.8.26，准备统一打包。docs/05-仓颉杯提交说明.md更新为创新原型赛道的当前技术范围，移除过期版本与源码行数，明确仓颉运行层、Electron界面、外部模型与PPT文件处理的职责。
 - 官方依据：已读 https://chinasoft.ccf.org.cn/2026/#competition/cangjie 对应的官方 competition/cangjie.html。创新原型要求项目背景/应用场景/核心功能/创新点/技术方案、源码、可运行产物、演示视频、第三方使用说明；评分为30/25/20/15/10，仓颉深度使用另有上限5分且总分不超过100；要求披露AI工具、既有基础和新增贡献。
 - 项目说明书原件19页，备份为 D:/Desktop/仓颉杯/材料备份/01-项目说明-20261020-015420.docx。采用用户偏好的非Python路径：受管Node读取/修改OOXML，Word原生导出PDF并用Poppler渲染后检查；保留原排版和第三方/AI/团队分工说明，当前继续更新内容与版面。
+
+## 2026-10-20 · 0.8.26 程序包与比赛说明书交付
+- 接续本轮工作，实际仓库为 D:/Desktop/ITN/ITN-Desktop（main），不在默认 bf21 工作树操作。上轮为有效进展：已提交启动署名、结构整理、桌宠、表格、成果页面与收集恢复，并生成程序包；本轮完成最终文档和交付验收。
+- 本批清单与状态：
+  1. [完成] 桌宠边界与减速：4ef8c64；17/17 真实浏览器检查。
+  2. [完成] 移除学习成果“本地文件”独立页面：09c0e5b；旧路由归一，保留聊天附件与资源导入。
+  3. [完成] 知识库跨切片/跨页表格与代码：0e3ccad；14/14，真实 README 和 65 行表格，不需要重建索引。
+  4. [完成] 收集资料 UI→暂存→确认→索引→检索→重启，以及索引失败恢复：55822e5；27/27，真实 GitHub 固定 commit 和 HTTPS 网页均入库命中。
+  5. [完成] 两阶段启动署名 powered by cangjie、桌面运行层结构、0.8.26：e611c3a；176 核心、4 次 MiMo 真实对话的 7 项记忆检查、启动 9/9。
+  6. [完成] 按官网更新项目说明，补当前功能、产品故事线、真实导学截图、仓颉职责与账号互通规划，渲染并保存用户目录。
+  7. [已安排，尚未执行] 四轮相隔 90 分钟的接续复验，见本段末尾。目标继续保持 active，不能将定时任务已创建误报为四轮测试已完成。
+- 版本包：dist/Lumin-0.8.26/Lumin.exe 与 dist/Lumin-0.8.26.zip。ZIP 为 231,929,695 bytes（221.2 MB），2,759 项；SHA256=142D3CA61803CDBE253537D70BFA7D31008E17AE8E9C533F97C25CA4B2D1B5EB。
+- release.json：version=0.8.26，build=lumin-0.8.26-e611c3a，sourceCommit=e611c3a。33 个资产逐项哈希一致。实际包内 Electron 隔离启动 PRELOAD/TITLEBAR/RESULT=OK；包内仓颉内核 health/release 正常，真实 PNG 本地定位与读取 140,133 bytes。日志 tmp/package-lumin-0.8.26.log、tmp/verify-lumin-0.8.26.log；复验脚本 tmp/verify-lumin-0.8.26.ps1。Office 样张未提供，本次包内 DOCX 项明确 skipped，不宣称全 Office 链路本轮重新测试。仅追加文档不重打已验收的程序包。
+- 本轮验证的直接日志复核：tmp/test-runtime-final.log 为176/176、0 skipped/error/failed；tmp/real-runtime-final.log 为4次真实MiMo对话7项通过且SQLite integrity_check=ok；tmp/harvest-runtime-final.log 为27项通过，真实来源确认并入后检索命中；tmp/splash-final.log 为9项通过。图片与表格14/14、桌宠17/17见前段日志。
+- 官方来源：用户给出的 https://chinasoft.ccf.org.cn/2026/#competition/cangjie，已根据官网路由读取 https://chinasoft.ccf.org.cn/2026/pages/competition/cangjie.html。创新原型材料包含背景/场景/功能/创新/技术方案、源码、运行产物或部署体验、演示视频和第三方说明；评分30/25/20/15/10，仓颉深度使用另有最多5分且总分不超过100。既有基础、新增贡献、第三方许可、学生分工和AI辅助范围均保留披露。
+- 文档内容：以“智训云枢学习平台 + 子产品Lumin桌面学习工作台”组织主线，补全本地资料→任务→预览收录→随课会话→学习记忆与复习的关系；明确仓颉执行/数据核心、Electron窗口、外部模型、Python/Node课件组件各自职责。平台账号、学习画像与记忆互通作为“后续集成规划”写入，不声称本版已登录同步。没有修改同事维护的Web代码。
+- 文档图示：知识库原文及本地配图、当前深色表格、TTS用途配置、实际PPT和两轮真实导学问答；既有MCP清单与7天学习计划保留为当次实机案例，其26/30秒不作为当前版性能承诺。移除重复截图、冗余任务表及导致两行独占整页的重复交付说明。
+- 原稿备份：D:/Desktop/仓颉杯/材料备份/01-项目说明-20261020-015420.docx。用户指定的01-项目说明.docx仍被其他进程占用，无法取得独占读写句柄；没有强关用户应用、没有覆盖可能未保存的内容。最终另存 D:/Desktop/仓颉杯/创新原型赛道/01-项目说明-优化版.docx，17,769,798 bytes，SHA256=733EA94E2CBEAEC9DEA972AF15064D896CC776F4D41600D4BF5B377A20F1E27D，复制后与生成源哈希一致。
+- 排版：原稿19页，最终21页；受管Node+JSZip修改OOXML，Word COM原生导出PDF，受管Poppler pdftoppm转PNG。最终PDF为tmp/proposal-accepted.pdf，页图tmp/proposal-accepted-pages/page-01.png至page-21.png。全部页面已目视核对；未改变页面通过PNG SHA256与已检查版本逐页比对，最终变更页重新打开，确认无裁切、重叠、残缺表格和额外空页。PDF/页图只用于QA，不作为用户交付。
+- 文档脚本：tmp/update-proposal.cjs、tmp/export-proposal.ps1。受管Node路径 C:/Users/GeJie/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe，Poppler路径同依赖根/native/poppler/Library/bin/pdftoppm.exe。本轮未用Python处理文档或生成测试夹具，authoring marker前轮已运行一次，不重复运行。
+
+### 当前包的真实随课问答与截图
+- 为补足代表性导学案例，使用0.8.26包内Lumin.exe，复制先前真实模型生成PPT的临时数据库到全新隔离根；只读取已隔离测试库中的模型配置，不写真实用户%LOCALAPPDATA%/Lumin/itn.db。
+- 实际课件为此前真实模型输出的“输入、输出与验收”4页PPT，PPTX本身未修改。它的旧预览是早期HTML；本轮通过PowerPoint COM导出该文件的真实PNG页面，临时重建历史测试文件的预览伴随文件，让当前包以实际页图显示；每次结束均恢复旧伴随文件。没有把摘要或手绘网页冒充真实幻灯片。
+- 第一次真实提问在第3页：“我只做了一次2+3=5的测试，能说验收通过了吗？”MiMo回答必须补边界和异常样例，并围绕当前页追问。7项检查通过，含真实模型回答、正常会话事件、资源标签、服务端页码、无页面JS异常。
+- 第二次翻到第4页真实追问：“三个例子都通过后，删记录只留运行成功可以吗？”MiMo根据末页“另一人可复现”的标准指出要保留输入、预期和实际等证据。该模型调用成功；初次截图超时属于Playwright截图通道，不能把整脚本记成14/14。随后不再重复收费请求，而是重开同一隔离数据，核对两条真实assistant记录、页4上下文和问答留存，用Electron capturePage完成截图。
+- 工具层遇到的测试问题：首次Electron共用缓存导致启动退出，添加独立--user-data-dir后成功；一次capturePage脚本误在evaluate沙箱调用require，改为返回PNG字节后由脚本保存。它们均是验收脚本问题，未为放行而修改产品代码或放松业务断言。
+- 最终截图tmp/proposal-guided-real-final.png已打开并嵌入说明书；原图与两轮真实回复保留。日志tmp/proposal-guided-real.log、tmp/proposal-guided-followup.log、tmp/proposal-guided-capture.log；结构报告tmp/proposal-guided-real-report.json、tmp/proposal-guided-followup-report.json；脚本tmp/proposal-guided-check.cjs、tmp/proposal-guided-capture.cjs、tmp/proposal-guided-export.ps1。数据 C:/Users/GeJie/AppData/Local/Temp/lumin-guided-real-review-U3hXCl。
+- 本批真实模型总计：前段4次记忆对话 + 此处2次导学问答；没有为文档反复生成大库导图或新的PPT。
+
+### 四轮接续复验安排
+- 按原目标创建本聊天heartbeat，目标threadId=01a1442a-5772-7bd3-a04b-b85bdde66636；首次工具缺destination=thread被参数校验拒绝，补全后4项均创建成功，并调用view确认。
+- Asia/Shanghai，2026-10-20：09:40（lumin-1-4）、11:10（lumin-2-4）、12:40（lumin-3-4）、14:10（lumin-4-4）。均ACTIVE、单次，不是每天无限重复。
+- 提示词要求先读最新消息和本TRACE、核对现有进程、从断点继续；轮换检查会话/导学、知识库/资料收集、学情/成长、运行包/文档；发现真实问题才修，随后回归并本地提交，无新问题保持安静；不改Web端、不动真实库、不打印密钥。
+- 下一次接手应先核对哪一轮已执行并追加实际结论。尚未到定时执行时间，不能标记整个持续复验目标完成；本轮程序包和优化稿已可交付。
+- Git只提交本轮追加TRACE；两份原有未跟踪调研文档继续排除。未推送远程，本地仓库无origin。
