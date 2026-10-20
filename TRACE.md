@@ -5006,3 +5006,19 @@ read_chunk 读得到原文并带回库标识与正文。
 - Word COM导出 tmp/proposal-story-v9.pdf为29页；Poppler渲染 tmp/proposal-story-v9-pages/page-01至page-29并生成 tmp/proposal-story-v9-contact.png。实际打开检查页1-5、页19（关键设计与创新点）、页21（架构图）、页24（拓扑图）、页26（验证结果）与全页总览：标题、表题、表头、图注和正文无裁切、无溢出、无空白页，架构图与拓扑图仍为纯白背景。
 - 原 D:/Desktop/仓颉杯/创新原型赛道/01-项目说明-优化版-产业叙事.docx 正被其他进程占用，Copy-Item无法取得写句柄；未强制关闭Word或覆盖用户正在查看的文件。另存正式版本 D:/Desktop/仓颉杯/创新原型赛道/01-项目说明-优化版-产业叙事-20261020.docx，17,838,276 bytes，SHA256=94548A3DFC04F3E1C3FC6C55413844A0E5E9CEC3E22B306DB9DF38B771A2C560；PDF为2,118,758 bytes，SHA256=EAA8C1872259719FCD061392559A787EB9325538239DE4917F66AD2988692FEC。交付报告 tmp/proposal-story-v9-delivery.json，源/目标哈希一致。
 - 本轮仍使用受管Node、Sharp、JSZip、Word COM、Poppler，无Python；不改Web端、真实数据库、0.8.28程序包或正在运行的应用。新的正式文档、脚本和本TRACE同步到本地Git；两份既有未跟踪调研文档继续排除。
+
+## 2026-10-20 · 第2轮复验中止与知识库测试维护
+- 用户明确要求关闭 Lumin 接续复验定时任务。已通过应用自动化删除 `lumin-2-4`、`lumin-3-4`、`lumin-4-4` 三项，后续不再自动唤醒；不要重新创建这组复验任务。中断前没有启动新的付费大库导图、PPT 或真实模型任务。
+- 中断前已执行的隔离确定性回归：并发会话 `tools/session-switch-check.cjs` 18/18；随课导学 `tools/guided-check.cjs` 35/35；导学附件审批 `tools/guided-files-check.cjs` 21/21；成长活跃度 `tools/growth-activity-check.cjs` 21/21；知识网络 `tools/knowledge-check.cjs` 92/92；Markdown `tools/markdown-check.cjs` 14/14；全页面 UI 审计 `tools/ui-audit.cjs` 120 个页面/宽度/主题组合全部通过，报告 tmp/ui-audit-r2/report.json。以上均为当前 dist/core 与真实仓颉 HTTP/SQLite 链路；会话和导学使用隔离临时库及既有 deterministic mock，未冒充真实模型结果。
+- `tools/nonchat-check.cjs` 首轮发现测试仍在查找已被产品文案替换的旧按钮“  只导入”。核对当前契约后确认现行入口为“添加并索引 / 仅添加”，不是产品回归；已把测试更新为当前正式文案并增加“两个动作清晰且互不混淆”的断言。复跑 26/26 通过，日志 tmp/r2-nonchat-rerun.log。知识库表格和图片两个长测与四条并发 E2E 同时运行时在初始化等待处超时，未计为通过，也未据此修改产品；后续单独重跑前不能把它们写成已验证。
+- 本轮没有改真实用户数据库、Web 端或程序包；未删除用户正在使用的 Edge 进程。当前工作区只新增本段的测试维护文件与 TRACE。
+
+## 2026-10-20 · 项目说明补充仓库、6025 下载入口与下载验证
+- 最新交付文档以 `D:/Desktop/仓颉杯/创新原型赛道/项目说明.docx` 为源，修改前 16,976,460 bytes，SHA256=7DECAB12068CB80257A2E7B53BD4EF1A3E18F65DB7C404AC37980912793DB5A5。先在 `D:/Desktop/仓颉杯/材料备份/` 保留链接前备份 `项目说明-链接前-20261020-113222.docx`，替换时再由 Windows File.Replace 生成自动备份 `项目说明-链接替换自动备份-20261020-113422.docx`。
+- 新增 `tools/add-release-links.cjs`，使用受管 Node、JSZip 直接修改 OOXML：只变更 `word/document.xml` 与 `word/_rels/document.xml.rels`，写入仓库、desktop 分支和运行包三个外部超链接；其余媒体、样式、关系、分页与表格内容逐项保持。新增 `tools/serve-release.cjs`，以 Node 原生 HTTP 提供 ZIP 文件列表、完整下载、HEAD 与 Range 断点续传，不依赖 Python。
+- 6025 服务已以隐藏后台进程启动，PID=128028，监听 `0.0.0.0:6025`，目录为 `D:/Desktop/ITN/ITN-Desktop/dist`；日志 tmp/lumin-6025.stdout.log、tmp/lumin-6025.stderr.log，PID 记录 tmp/lumin-6025.pid。下载入口为 `http://172.22.64.189:6025/Lumin-0.8.28.zip`，目录页为 `http://172.22.64.189:6025/`。
+- 实际完整下载验证：从局域网地址 GET 到 `tmp/download-test-Lumin-0.8.28.zip`，HTTP 200、231,932,690 bytes，与 `dist/Lumin-0.8.28.zip` 大小一致，SHA256 均为 8A712E7816D73DE4B67F61E83139985F8706CFD85DEFE387282D6564A0F557C3；HEAD 返回 200，Range `bytes=0-1023` 返回 206 与 `Content-Range: bytes 0-1023/231932690`。该地址是当前主机局域网地址，不等同于公网或天翼云地址。
+- 仓库 SSH 端点 `git@github.com:AGI-FBHC/ITN-cj.git` 的 desktop 分支由 `git ls-remote` 确认存在；未登录的 HTTPS 仓库地址返回 404，说明仓库当前并非公开可访问。文档中的链接已写入，但提交评审前必须由团队开放只读权限或改为公开仓库，否则评审无法直接打开。
+- 生成稿 `tmp/proposal-links-r2.docx` 经 JSZip 检查三个 relationship target、正文 URL、文件大小与 SHA256 均存在；Word COM 导出 `tmp/proposal-links-r2.pdf` 为 29 页。Poppler 渲染页 25 并实际查看：来源链接、下载 URL、文件大小和 SHA256 完整显示，无裁切、重叠或横向溢出；页 26 的验证章节正常衔接。
+- 最终已写回 `D:/Desktop/仓颉杯/创新原型赛道/项目说明.docx`，16,871,573 bytes，SHA256=A3523445FA15D826EEB8333317DAC2B30DEEA8C171607EEDD7E6760D9D78660C；同目录 `项目说明.pdf` 2,102,192 bytes，SHA256=3955F1E8835E0AB8395EC02EE7F8316F3A46957A1E6888C283B5B5FA333C1B12。根目录 `D:/Desktop/仓颉杯/项目说明.docx` 当时仍被 Word 占用，未强制覆盖；以创新原型赛道目录的 `项目说明.docx` 为准。
+- 天翼云上传需要另行登录账号并生成分享链接，本轮未伪造云端地址，也未把局域网入口宣称为公网可访问。所有链接与下载服务均未使用 Python，未修改真实用户数据库、Web 端或 0.8.28 压缩包。
