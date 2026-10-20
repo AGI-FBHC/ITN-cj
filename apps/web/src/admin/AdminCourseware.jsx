@@ -9,12 +9,12 @@ const STORE_KEY = 'zhixun-courseware-mock';
 // 四类课件资源。
 const RESOURCES = [
   { key: 'lecture', label: '讲义文稿', badge: '讲', desc: '把章节原文整理成可阅读的讲解稿', meta: '约 2000–3000 字' },
-  { key: 'practice', label: '练习题', badge: '练', desc: '随堂练习，附答案与解析', meta: '6–10 题' },
-  { key: 'quiz', label: '测验题', badge: '测', desc: '章节测验，提交后自动判分', meta: '5 题 · 单选' },
+  { key: 'guide', label: '实操指南', badge: '操', desc: '可跟着做的步骤、命令与检查点', meta: '8–15 步' },
+  { key: 'bank', label: '题库', badge: '题', desc: '随堂练习与章节测验，统一进题库', meta: '15–25 题' },
   { key: 'slides', label: '教学幻灯片', badge: '播', desc: '按小节拆页，可在学习端播放', meta: '10–16 页' },
 ];
 
-const TYPE_LABEL = Object.fromEntries(RESOURCES.map((item) => [item.key, item.label]));
+const TYPE_LABEL = { ...Object.fromEntries(RESOURCES.map((item) => [item.key, item.label])), practice: '题库', quiz: '题库' };
 
 const STATUS = {
   generating: { label: '生成中', kind: 'draft' },
