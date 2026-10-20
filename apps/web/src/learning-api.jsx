@@ -86,6 +86,21 @@ export async function authenticate(mode, credentials) {
   emit({ ready: true, loading: false, error: '', data: bootstrapData });
   return bootstrapData;
 }
+export async function sendEmailCode(email) {
+  return request('/auth/send-code', { method: 'POST', body: { email, purpose: 'LOGIN' } });
+}
+export async function loginWithEmailCode(email, verificationCode) {
+  const data = await request('/auth/email-login', {
+    method: 'POST',
+    body: { email, verificationCode },
+  });
+  if (!data.token) throw new Error('登录服务未返回学习会话');
+  localStorage.setItem(TOKEN_KEY, data.token);
+  localStorage.setItem('zhixun-display-name', data.displayName || email);
+  const bootstrapData = await request('/bootstrap');
+  emit({ ready: true, loading: false, error: '', data: bootstrapData });
+  return bootstrapData;
+}
 export const api = (path, method = 'GET', body) => request(path, { method, body });
 export async function saveProfile(profile) {
   const saved = await api('/profile', 'PUT', profile);

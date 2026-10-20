@@ -18,14 +18,32 @@ struct Config {
     let password: String
     let database: String
     let listen: String
+    let authSecret: String
+    let smtpHost: String
+    let smtpPort: UInt16
+    let smtpUser: String
+    let smtpPassword: String
+    let emailFrom: String
+    let emailFromName: String
+    let subjectPrefix: String
 
-    init(host: String, port: UInt16, user: String, password: String, database: String, listen: String) {
+    init(host: String, port: UInt16, user: String, password: String, database: String, listen: String,
+         authSecret: String, smtpHost: String, smtpPort: UInt16, smtpUser: String,
+         smtpPassword: String, emailFrom: String, emailFromName: String, subjectPrefix: String) {
         this.host = host
         this.port = port
         this.user = user
         this.password = password
         this.database = database
         this.listen = listen
+        this.authSecret = authSecret
+        this.smtpHost = smtpHost
+        this.smtpPort = smtpPort
+        this.smtpUser = smtpUser
+        this.smtpPassword = smtpPassword
+        this.emailFrom = emailFrom
+        this.emailFromName = emailFromName
+        this.subjectPrefix = subjectPrefix
     }
 }
 
@@ -47,7 +65,15 @@ func loadConfig(): Config {
         envOr("ZHIXUN_DB_USER", ""),
         envOr("ZHIXUN_DB_PASSWORD", ""),
         database,
-        envOr("ZHIXUN_API_LISTEN", "http://127.0.0.1:8312")
+        envOr("ZHIXUN_API_LISTEN", "http://127.0.0.1:8312"),
+        envOr("ZHIXUN_AUTH_SECRET", ""),
+        envOr("SMTP_HOST", ""),
+        UInt16(Int64.parse(envOr("SMTP_PORT", "465"))),
+        envOr("SMTP_USERNAME", ""),
+        envOr("SMTP_PASSWORD", ""),
+        envOr("EMAIL_FROM", envOr("SMTP_USERNAME", "")),
+        envOr("MAIL_FROM_NAME", "智训云枢"),
+        envOr("MAIL_SUBJECT_PREFIX", "[ITN]")
     )
 }
 
@@ -402,6 +428,10 @@ func passwordDigest(salt: String, password: String): String {
     bytesToHex(sha256Bytes((salt + ":" + password).toArray()))
 }
 
+func codeDigest(cfg: Config, email: String, purpose: String, code: String): String {
+    bytesToHex(sha256Bytes((email + ":" + purpose + ":" + code + ":" + cfg.authSecret).toArray()))
+}
+
 func issueSession(cfg: Config, userId: String, displayName: String, profile: String): String {
     let token = uuidFormat(uuidV4())
     execute(cfg,
@@ -574,6 +604,89 @@ main(): Int64 {
                         let profile = if (found[0].isNull("profile_json")) { "null" } else { found[0].text("profile_json") }
                         writeJson(ctx.response, 200,
                             issueSession(cfg, found[0].text("id"), found[0].text("display_name"), profile))
+                    }
+                }
+        }
+    }
+
+    app.mapPost("api/auth/send-code") { ctx =>
+        match (parseObject(ctx.request)) {
+            case None => writeError(ctx.response, 400, "邮箱信息格式不正确")
+            case Some(body) =>
+                let email = normalizeEmail(jsonGetString(body, "email") ?? "")
+                if (!validEmail(email)) {
+                    writeError(ctx.response, 400, "请填写有效的邮箱")
+                } else {
+                    let recent = query(cfg,
+                        "SELECT COALESCE(TIMESTAMPDIFF(SECOND,created_at,NOW(6)),9999) elapsed " +
+                        "FROM email_verification_codes WHERE email=" + sqlQuote(email) +
+                        " AND purpose='LOGIN' ORDER BY created_at DESC LIMIT 1")
+                    if (recent.size > 0 && recent[0].int("elapsed") < 60) {
+                        writeError(ctx.response, 429, "请求过于频繁，请稍后重试")
+                    } else {
+                        let code = verificationCode()
+                        try {
+                            sendVerificationEmail(cfg, email, code, 300)
+                        } catch (_: Exception) {
+                            writeError(ctx.response, 502, "验证码邮件发送失败，请检查 SMTP 配置")
+                            return
+                        }
+                        execute(cfg,
+                            "INSERT INTO email_verification_codes(id,email,purpose,code_hash,created_at,expires_at) VALUES(" +
+                            sqlQuote(uuidFormat(uuidV4())) + "," + sqlQuote(email) +
+                            ",'LOGIN'," + sqlQuote(codeDigest(cfg, email, "LOGIN", code)) +
+                            ",NOW(6),DATE_ADD(NOW(6),INTERVAL 5 MINUTE))")
+                        let out = JsonWriter()
+                        out.putStr("email", email)
+                        out.putInt("expiresInSeconds", 300)
+                        out.putInt("retryAfterSeconds", 60)
+                        writeJson(ctx.response, 200, out.toJson())
+                    }
+                }
+        }
+    }
+
+    app.mapPost("api/auth/email-login") { ctx =>
+        match (parseObject(ctx.request)) {
+            case None => writeError(ctx.response, 400, "验证码信息格式不正确")
+            case Some(body) =>
+                let email = normalizeEmail(jsonGetString(body, "email") ?? "")
+                let code = (jsonGetString(body, "verificationCode") ?? "").trimAscii()
+                if (!validEmail(email) || code.size != 6) {
+                    writeError(ctx.response, 400, "请填写有效的邮箱和 6 位验证码")
+                } else {
+                    let codes = query(cfg,
+                        "SELECT id,code_hash FROM email_verification_codes WHERE email=" + sqlQuote(email) +
+                        " AND purpose='LOGIN' AND consumed_at IS NULL AND expires_at>NOW(6) " +
+                        "ORDER BY created_at DESC LIMIT 1")
+                    if (codes.size == 0 || codes[0].text("code_hash") != codeDigest(cfg, email, "LOGIN", code)) {
+                        writeError(ctx.response, 400, "验证码错误或已失效")
+                    } else {
+                        execute(cfg,
+                            "UPDATE email_verification_codes SET consumed_at=NOW(6) WHERE id=" +
+                            sqlQuote(codes[0].text("id")) + " AND consumed_at IS NULL")
+                        let users = query(cfg,
+                            "SELECT id,display_name,profile_json FROM users WHERE login_key=" + sqlQuote(email) + " LIMIT 1")
+                        let userId: String
+                        let displayName: String
+                        var profile = "null"
+                        if (users.size > 0) {
+                            userId = users[0].text("id")
+                            displayName = users[0].text("display_name")
+                            if (!users[0].isNull("profile_json") && users[0].text("profile_json").size > 0) {
+                                profile = users[0].text("profile_json")
+                            }
+                        } else {
+                            userId = uuidFormat(uuidV4())
+                            let at = email.indexOf("@")
+                            let candidate = match (at) { case Some(position) => email[0..position]; case None => "学习者" }
+                            displayName = if (candidate.size > 0) { candidate } else { "学习者" }
+                            execute(cfg,
+                                "INSERT INTO users(id,login_key,display_name,created_at) VALUES(" +
+                                sqlQuote(userId) + "," + sqlQuote(email) + "," + sqlQuote(displayName) + ",NOW(6))")
+                        }
+                        writeJson(ctx.response, 200,
+                            issueSession(cfg, userId, displayName, profile))
                     }
                 }
         }

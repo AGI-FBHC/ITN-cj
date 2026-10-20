@@ -1,17 +1,32 @@
 import React from "react";
-import { authenticate, useLearning } from "./learning-api.jsx";
+import {
+  authenticate,
+  loginWithEmailCode,
+  sendEmailCode,
+  useLearning,
+} from "./learning-api.jsx";
 
 const STEPS = ["填写资料", "选择目标", "开始学习"];
 
 export default function LoginPage({ onBack, onAuthenticated }) {
   const learning = useLearning();
   const [registering, setRegistering] = React.useState(false);
+  const [tab, setTab] = React.useState("account");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
   const [account, setAccount] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [displayName, setDisplayName] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
+  const [email, setEmail] = React.useState("");
+  const [verificationCode, setVerificationCode] = React.useState("");
+  const [countdown, setCountdown] = React.useState(0);
+
+  React.useEffect(() => {
+    if (countdown <= 0) return;
+    const timer = window.setTimeout(() => setCountdown((value) => value - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [countdown]);
 
   const enter = async (mode) => {
     setError("");
@@ -36,6 +51,38 @@ export default function LoginPage({ onBack, onAuthenticated }) {
   const enterGuest = () => {
     const profile = learning.data?.profile;
     onAuthenticated?.(profile, profile?.name || "游客");
+  };
+
+  const requestCode = async () => {
+    setError("");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setError("请填写有效的邮箱");
+      return;
+    }
+    setBusy(true);
+    try {
+      await sendEmailCode(email.trim());
+      setCountdown(60);
+    } catch (reason) {
+      setError(reason.message || "验证码发送失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const enterWithCode = async () => {
+    setError("");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return setError("请填写有效的邮箱");
+    if (!/^\d{6}$/.test(verificationCode.trim())) return setError("请输入 6 位邮箱验证码");
+    setBusy(true);
+    try {
+      const data = await loginWithEmailCode(email.trim(), verificationCode.trim());
+      onAuthenticated?.(data.profile, data.profile?.name || email.trim().split("@")[0]);
+    } catch (reason) {
+      setError(reason.message || "验证码登录失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -72,54 +119,89 @@ export default function LoginPage({ onBack, onAuthenticated }) {
               <p>{registering ? "CREATE ACCOUNT" : "WELCOME BACK"}</p>
               <h2>{registering ? "创建学习账号" : "登录"}</h2>
             </div>
-            <button type="button" onClick={() => { setRegistering((value) => !value); setError(""); }}>
-              {registering ? "返回登录" : "注册"}
-            </button>
+            {tab === "account" && (
+              <button type="button" onClick={() => { setRegistering((value) => !value); setError(""); }}>
+                {registering ? "返回登录" : "注册"}
+              </button>
+            )}
           </div>
 
+          {!registering && (
+            <div className="zhixun-login-tabs" role="tablist" aria-label="登录方式">
+              <button type="button" className={tab === "account" ? "active" : ""} onClick={() => { setTab("account"); setError(""); }}>账号登录</button>
+              <button type="button" className={tab === "email" ? "active" : ""} onClick={() => { setTab("email"); setError(""); }}>邮箱验证码</button>
+            </div>
+          )}
+
           <div className="zhixun-login-form">
-            <label>
-              <span>工号 / 邮箱</span>
-              <input
-                autoComplete="username"
-                value={account}
-                onChange={(event) => setAccount(event.target.value)}
-                placeholder="如 LF-0917 或 user@example.com"
-              />
-            </label>
-            {registering && (
-              <label>
-                <span>昵称</span>
-                <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="我们该怎么称呼你" />
-              </label>
-            )}
-            <label>
-              <span>密码</span>
-              <input
-                type="password"
-                autoComplete={registering ? "new-password" : "current-password"}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                onKeyDown={(event) => event.key === "Enter" && enter(registering ? "register" : "login")}
-                placeholder={registering ? "至少 8 位" : "请输入密码"}
-              />
-            </label>
-            {registering && (
-              <label>
-                <span>确认密码</span>
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  value={confirmPassword}
-                  onChange={(event) => setConfirmPassword(event.target.value)}
-                  onKeyDown={(event) => event.key === "Enter" && enter("register")}
-                  placeholder="再次输入密码"
-                />
-              </label>
+            {tab === "email" ? (
+              <>
+                <label>
+                  <span>邮箱</span>
+                  <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="user@example.com" autoComplete="email" />
+                </label>
+                <label>
+                  <span>验证码</span>
+                  <div className="zhixun-login-code-row">
+                    <input
+                      value={verificationCode}
+                      onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                      onKeyDown={(event) => event.key === "Enter" && enterWithCode()}
+                      placeholder="6 位验证码"
+                      inputMode="numeric"
+                    />
+                    <button type="button" disabled={busy || countdown > 0} onClick={requestCode}>
+                      {countdown > 0 ? `${countdown}s 后重发` : "获取验证码"}
+                    </button>
+                  </div>
+                </label>
+              </>
+            ) : (
+              <>
+                <label>
+                  <span>工号 / 邮箱</span>
+                  <input
+                    autoComplete="username"
+                    value={account}
+                    onChange={(event) => setAccount(event.target.value)}
+                    placeholder="如 LF-0917 或 user@example.com"
+                  />
+                </label>
+                {registering && (
+                  <label>
+                    <span>昵称</span>
+                    <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="我们该怎么称呼你" />
+                  </label>
+                )}
+                <label>
+                  <span>密码</span>
+                  <input
+                    type="password"
+                    autoComplete={registering ? "new-password" : "current-password"}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    onKeyDown={(event) => event.key === "Enter" && enter(registering ? "register" : "login")}
+                    placeholder={registering ? "至少 8 位" : "请输入密码"}
+                  />
+                </label>
+                {registering && (
+                  <label>
+                    <span>确认密码</span>
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      value={confirmPassword}
+                      onChange={(event) => setConfirmPassword(event.target.value)}
+                      onKeyDown={(event) => event.key === "Enter" && enter("register")}
+                      placeholder="再次输入密码"
+                    />
+                  </label>
+                )}
+              </>
             )}
             {error && <p className="zhixun-login-error" role="alert">{error}</p>}
-            <button type="button" className="zhixun-login-primary" disabled={busy} onClick={() => enter(registering ? "register" : "login")}>
-              {busy ? "正在登录…" : registering ? "注册并登录" : "登录"}
+            <button type="button" className="zhixun-login-primary" disabled={busy} onClick={() => tab === "email" ? enterWithCode() : enter(registering ? "register" : "login")}>
+              {busy ? "正在处理…" : tab === "email" ? "验证并登录" : registering ? "注册并登录" : "登录"}
             </button>
             {!registering && (
               <button type="button" className="zhixun-login-guest" disabled={busy} onClick={enterGuest}>

@@ -15,6 +15,9 @@
 ## API约定（/api，JSON；失败非2xx且返回message）
 - `GET /health`：运行状态。
 - `POST /session`：创建独立访客学习账号，返回`{token,userId,profile}`。前端只在没有token时调用；后续Authorization: Bearer token。没有真实账号密码表单要求，不冒充正式注册登录。
+- `POST /auth/register` / `POST /auth/login`：账号注册与密码登录。
+- `POST /auth/send-code`：向邮箱发送6位登录验证码，60秒限频、5分钟有效。
+- `POST /auth/email-login`：消费验证码并登录；首次邮箱用户自动建立空档案。
 - `GET /bootstrap`：`{profile,courses,favorites,bookmarks,stats,recent}`。profile初始null，填写问卷后保存。courses沿用原UI：`{id,name,icon,description,level,duration,chapters:[{title,done}]}`，可增加sourceLabel。
 - `PUT /profile`：完整问卷/个人资料对象，返回保存后的profile（前端原有shape保留）。
 - `GET /courses`：`{courses:[...]}`；带token时包含个人进度。
@@ -47,4 +50,5 @@ content_json沿用原阅读内容结构；root会提供`data/catalog-seed.json`�
 - 浏览器已验证：建档、首页真实课程、仓颉讲义、3题测验、刷新恢复档案/进度/收藏；页面无控制台错误。
 - `npm run build`通过。使用一条进程内复用的MySQL连接，开发环境首页请求约0.7秒。
 - 登录页复用ITN-cj的账号卡片布局，新增学习账号注册、再次登录和首次登录建档分流。
+- 登录页增加邮箱验证码入口；实际 SMTP 发送、限频和一次性消费已验证。
 - 遗留：管理员端、AI导师、其余四门课正式内容、生产库迁移和Linux部署尚未完成。

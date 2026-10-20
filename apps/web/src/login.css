@@ -169,6 +169,31 @@
   gap: 14px;
   margin-top: 20px;
 }
+.zhixun-login-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  margin-top: 16px;
+  border: 1px solid #e5e3d7;
+  border-radius: 11px;
+  background: #f7f5ee;
+  padding: 3px;
+}
+.zhixun-login-tabs button {
+  min-height: 35px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #7b8472;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.zhixun-login-tabs button.active {
+  background: #fff;
+  color: #4e7860;
+  box-shadow: 0 2px 7px rgba(70, 100, 80, .10);
+}
 .zhixun-login-form label {
   display: grid;
   gap: 7px;
@@ -190,6 +215,27 @@
 .zhixun-login-form input:focus {
   border-color: rgba(78, 120, 96, .62);
   box-shadow: 0 0 0 3px rgba(78, 120, 96, .08);
+}
+.zhixun-login-code-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.zhixun-login-code-row button {
+  min-width: 96px;
+  border: 1px solid rgba(78, 120, 96, .35);
+  border-radius: 10px;
+  background: #e9f2ec;
+  color: #4e7860;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.zhixun-login-code-row button:disabled {
+  border-color: #e5e3d7;
+  background: #f2f0e8;
+  color: #9a9e92;
+  cursor: default;
 }
 .zhixun-login-primary,
 .zhixun-login-guest {
