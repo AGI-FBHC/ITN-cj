@@ -23,6 +23,17 @@ export default function AdminBundlePreview() {
   const body = React.useRef(null);
   const bundle = state.data?.bundle;
   const docs = state.data?.docs || [];
+  const selectedDoc = docs[Math.min(active, Math.max(0, docs.length - 1))];
+  const chapterCache = React.useRef(new Map());
+  const chapter = useLoad(() => {
+    if (view !== 'original' || !selectedDoc?.id) return Promise.resolve(null);
+    const key = `${bundleId}:${bundle?.status}:${selectedDoc.id}`;
+    if (chapterCache.current.has(key)) return Promise.resolve(chapterCache.current.get(key));
+    return adminApi.kbBundleDocument(bundleId, selectedDoc.id).then((result) => {
+      chapterCache.current.set(key, result);
+      return result;
+    });
+  }, [bundleId, bundle?.status, view, selectedDoc?.id]);
   const totalChars = docs.reduce((sum, doc) => sum + (doc.charCount || 0), 0);
   const warningData = bundle?.warnings || state.data?.warnings;
   const warnings = Array.isArray(warningData) ? warningData.filter((item) => typeof item === 'string') : [];
@@ -86,7 +97,7 @@ export default function AdminBundlePreview() {
   if (state.loading && !state.data) return <Loading label="正在读取资料包…" />;
   if (state.error && !state.data) return <ErrorBlock message={state.error} onRetry={state.reload} />;
   if (!bundle) return <ErrorBlock message="没有找到这个资料包" onRetry={state.reload} />;
-  const currentDoc = docs[Math.min(active, Math.max(0, docs.length - 1))];
+  const currentDoc = chapter.data?.doc?.id === selectedDoc?.id ? chapter.data.doc : null;
   const chunkData = chunks.data?.offset === offset ? chunks.data : null;
   const chunkTotal = chunkData?.total || 0;
 
@@ -140,6 +151,8 @@ export default function AdminBundlePreview() {
             ))}
           </aside>
           <article className="zx-preview-body" ref={body}>
+            {chapter.error ? <ErrorBlock message={chapter.error} onRetry={chapter.reload} /> : null}
+            {!currentDoc && !chapter.error && selectedDoc ? <Loading label="正在读取当前章节…" /> : null}
             {currentDoc ? <section className="zx-preview-chapter" key={currentDoc.id || currentDoc.order || active}>
               <h2 className="zx-preview-chapter-title">{currentDoc.title}</h2>
               {currentDoc.sourcePath ? <p className="zx-preview-source">源文件：{currentDoc.sourcePath}</p> : null}
@@ -149,7 +162,7 @@ export default function AdminBundlePreview() {
                 <span>{active + 1} / {docs.length}</span>
                 <button type="button" className="zx-btn zx-btn-sm zx-btn-ghost" disabled={active >= docs.length - 1} onClick={() => selectChapter(active + 1)}>下一章</button>
               </div>
-            </section> : <Notice kind="info">原文正在整理，就绪后会自动显示。</Notice>}
+            </section> : !selectedDoc ? <Notice kind="info">原文正在整理，就绪后会自动显示。</Notice> : null}
           </article>
         </div>
       ) : (

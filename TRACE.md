@@ -557,3 +557,16 @@
 - 操作教训：初次可选快照直接读取全部vec_hex到本地，MySQL长时间处于Sending to client。已仅取消该只读查询406593，Python报1317是主动取消可选大结果传输，不是生产加工失败；随后换为数据库内SHA2(JSON_ARRAY(...))只取短哈希，约2秒完成。旧大结果快照data/recovery-v4-baseline.json未生成，不应引用它。后续全量向量持久性对比应沿用数据库端哈希，避免再次拉取全量向量hex。
 - 当前API最终确认：pipeline.ready，275文档、4467片/摘要/向量、pending0、failed0；Logo flat；1条原包缺图warning；没有发布此完整资料包为公共课程。浏览器预览URL http://localhost:3006/admin/knowledge/bundles/35517bee-70b2-49fe-b7de-a74afd722e2d，刷新即可查看全局新切片。
 - 功能与本TRACE均已同步本地Git，未push、未改线上28801、不使用Docker、不接入独立向量数据库；未用mock，未替换真实provider端点，未改保存的API配置。所有本轮运行会话已结束，前后端服务正常保留给用户查看。
+
+## 2026-10-21 登录超时紧急修复：预览只读当前章节，大文本读取与登录连接隔离
+- 用户在全量切片完成后反馈“后端像挂了”“登录都登不上”，并连续要求尽快处理；本轮只处理登录/预览阻塞，不继续改切片算法，也不重新调用LLM或重建4467片。
+- 首次检查原后端PID172708、8312监听正常，直连/api/health与3006代理健康检查均200、错误日志无崩溃。但进一步真正调用/admin/login超时20秒，不能仅凭health就宣布后端正常。远程MySQL只读SELECT1约1.09秒可返回，排除数据库整体不可达。
+- 现场数据库看到连接406598的kb_bundle_docs全文SELECT长时间Sending to client；主程序query()在databaseLock内复用唯一sharedDatabase，该资料包275篇全文读取占住锁，后续登录查询一起排队，前端20秒超时。此前虽然只渲染当前章节，初始API仍下载整本资料，这是本轮确认并修复的遗漏。
+- 先短暂重启恢复登录（临时PID155292），经3006真实登录返回token，约2.65秒。随后实施正式补丁并重新构建，当前原生后端PID173456，8312正常，Vite3006正常，worker进程改回4；没有改.env.local或用户保存的模型设置。
+- main.cj新增queryIndependent，只为大文本读取开启独立MySQL连接并finally关闭，不持有登录使用的databaseLock；旧整包全文详情API保留兼容行为，但其正文读取改用独立连接，不能再独占登录连接。其余共享数据库事务机制保留，没有重写整套连接池。
+- 详情和retry API新增兼容参数metadata=1，仅返回全部章节目录/字数/来源，不返回各篇content；新增鉴权GET /api/admin/kb/bundles/{bundle_id}/docs/{doc_id}只读指定章节，SQL同时约束bundle_id与doc_id，防止串包。
+- 前端admin-api.kbBundle与retryKbBundle明确请求metadata=1；AdminBundlePreview先加载目录，再按需读取当前章节，已经读过的章节在页面内缓存；切章节显示加载/重试状态，不将旧章节正文错显示到新标题下。原文、图片、切片、摘要、向量均不变。
+- scripts/build-backend.ps1构建通过并启动新后端；npm run build --prefix apps/web通过（63模块，约3.11秒，保留原KaTeX大包提示）。没有再次全量处理ZIP，因为本补丁不改变导入结果。
+- 使用前端代理http://localhost:3006/api实际验证：目录metadata=1为82834字节、275章、全部没有content字段，约2.48秒；选132417字的最大章节（251114字节）并同时发起登录，登录2.24秒返回token，章节3.00秒返回完整正文。冷启动后的第一次登录为6.47秒，亦未超时；不能把2.24秒宣称为所有环境恒定延迟。
+- 此验证没有mock、没有改provider、没有模型调用或测试数据导入，只产生正常登录会话。原资料包35517bee-70b2-49fe-b7de-a74afd722e2d仍在原地址，用户刷新页面即可走新按章加载逻辑。
+- 本轮将3个功能文件与本段TRACE一并本地Git提交，不push、不改线上服务。后续若其他功能仍有大结果读取，应按现场慢SQL评估隔离，不把此次修复误记为整个数据库连接层已全面重构。

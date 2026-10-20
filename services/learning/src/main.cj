@@ -158,6 +158,12 @@ func query(cfg: Config, sql: String): Array<Row> {
     } finally { databaseLock.unlock() }
 }
 
+/** Bulk source reads must not hold the connection used by login and small requests. */
+func queryIndependent(cfg: Config, sql: String): Array<Row> {
+    let connection = connect(cfg)
+    try { rowsOf(connection.query(sql)) } finally { connection.close() }
+}
+
 func ignoreOk(outcome: QueryOutcome): Unit {
     match (outcome) {
         case Ok(_) => ()
@@ -961,23 +967,30 @@ func kbBundlesBody(cfg: Config): String {
 }
 
 func kbBundleDetailBody(cfg: Config, bundleId: String): ?String {
+    kbBundleDetailBody(cfg, bundleId, true)
+}
+
+func kbBundleSourceJson(row: Row, includeContent: Bool): String {
+    let item = JsonWriter()
+    item.putStr("id", row.text("id"))
+    item.putStr("documentId", row.text("document_id"))
+    item.putInt("order", row.int("order_index") + 1)
+    item.putStr("title", row.text("title"))
+    item.putInt("charCount", row.int("char_count"))
+    if (includeContent) { item.putStr("content", row.text("content")) }
+    item.putStr("sourcePath", row.text("source_path"))
+    item.toJson()
+}
+
+func kbBundleDetailBody(cfg: Config, bundleId: String, includeContent: Bool): ?String {
     let rows = query(cfg, kbBundleSelect() + "WHERE b.id=" + sqlQuote(bundleId) + " LIMIT 1")
     if (rows.size == 0) { return None }
-    let docs = query(cfg,
-        "SELECT id,COALESCE(document_id,'') document_id,order_index,title,char_count,content,COALESCE(source_path,'') source_path FROM kb_bundle_docs WHERE bundle_id=" +
-        sqlQuote(bundleId) + " ORDER BY order_index")
+    let docsSql = "SELECT id,COALESCE(document_id,'') document_id,order_index,title,char_count," +
+        (if (includeContent) { "content," } else { "" }) + "COALESCE(source_path,'') source_path FROM kb_bundle_docs WHERE bundle_id=" +
+        sqlQuote(bundleId) + " ORDER BY order_index"
+    let docs = if (includeContent) { queryIndependent(cfg, docsSql) } else { query(cfg, docsSql) }
     let arr = JsonArrWriter()
-    for (row in docs) {
-        let item = JsonWriter()
-        item.putStr("id", row.text("id"))
-        item.putStr("documentId", row.text("document_id"))
-        item.putInt("order", row.int("order_index") + 1)
-        item.putStr("title", row.text("title"))
-        item.putInt("charCount", row.int("char_count"))
-        item.putStr("content", row.text("content"))
-        item.putStr("sourcePath", row.text("source_path"))
-        arr.addRaw(item.toJson())
-    }
+    for (row in docs) { arr.addRaw(kbBundleSourceJson(row, includeContent)) }
     let logRows = query(cfg, "SELECT COALESCE(log_text,'') log_text FROM kb_bundles WHERE id=" + sqlQuote(bundleId))
     let out = JsonWriter()
     out.putRaw("bundle", kbBundleJson(rows[0]))
@@ -2414,9 +2427,25 @@ main(): Int64 {
         match (adminUserId(ctx, cfg)) {
             case None => ()
             case Some(_) =>
-                match (kbBundleDetailBody(cfg, routeText(ctx, "bundle_id"))) {
+                match (kbBundleDetailBody(cfg, routeText(ctx, "bundle_id"), (ctx.request.query.get("metadata") ?? "") != "1")) {
                     case Some(body) => writeJson(ctx.response, 200, body)
                     case None => writeError(ctx.response, 404, "没有找到这个资料包")
+                }
+        }
+    }
+
+    app.mapGet("api/admin/kb/bundles/{bundle_id}/docs/{doc_id}") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let docs = queryIndependent(cfg, "SELECT id,COALESCE(document_id,'') document_id,order_index,title,char_count,content," +
+                    "COALESCE(source_path,'') source_path FROM kb_bundle_docs WHERE bundle_id=" + sqlQuote(routeText(ctx, "bundle_id")) +
+                    " AND id=" + sqlQuote(routeText(ctx, "doc_id")) + " LIMIT 1")
+                if (docs.size == 0) { writeError(ctx.response, 404, "没有找到这个章节") }
+                else {
+                    let out = JsonWriter()
+                    out.putRaw("doc", kbBundleSourceJson(docs[0], true))
+                    writeJson(ctx.response, 200, out.toJson())
                 }
         }
     }
@@ -2466,7 +2495,7 @@ main(): Int64 {
                 if (stage != "all" && stage != "summaries" && stage != "embeddings" && stage != "logo") {
                     writeError(ctx.response, 400, "重试阶段不正确")
                 } else if (kbRetryBundle(cfg, routeText(ctx, "bundle_id"), stage)) {
-                    match (kbBundleDetailBody(cfg, routeText(ctx, "bundle_id"))) {
+                    match (kbBundleDetailBody(cfg, routeText(ctx, "bundle_id"), (ctx.request.query.get("metadata") ?? "") != "1")) {
                         case Some(result) => writeJson(ctx.response, 202, result)
                         case None => writeError(ctx.response, 404, "没有找到这个资料包")
                     }
