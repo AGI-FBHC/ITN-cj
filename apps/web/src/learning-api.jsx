@@ -157,4 +157,4 @@ export function useLesson(course, index) {
   }, [course.id, index, revision]);
   return { ...state, retry };
 }
-export const AI_UNAVAILABLE = 'AI 导师服务尚未接入。你可以先阅读讲义、查看题目解析并完成测验；当前消息不会提交给模型。';
+export const AI_UNAVAILABLE = '导师暂时无法回答，请稍后再试。';

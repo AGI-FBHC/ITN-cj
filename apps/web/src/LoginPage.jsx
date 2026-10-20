@@ -244,8 +244,7 @@ export default function LoginPage({ onBack, onAuthenticated }) {
               </button>
             )}
           </div>
-          <p className="zhixun-login-note">体验版使用本地隔离的学习档案，登录后会自动恢复已有进度。</p>
-          <p className="zhixun-login-admin">课程内容维护？<a href="/admin/login">进入管理端</a></p>
+          <p className="zhixun-login-admin"><a href="/admin/login">管理员登录</a></p>
         </div>
       </main>
     </div>

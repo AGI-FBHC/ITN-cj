@@ -37,7 +37,7 @@ export default function AdminOverview({ onOpenCourse }) {
 
       <div className="zx-card" style={{ marginTop: 16 }}>
         <h2 className="zx-card-title">接下来可以做什么</h2>
-        <div className="zx-card-hint">管理端只保留必要环节：改完保存即生效，不设审核链，也不要反复确认。</div>
+        <div className="zx-card-hint">保存后立即对学习者生效。</div>
         <ul className="zx-admin-tips">
           <li>在「课程」里新建课程，上传或粘贴讲义后直接发布。</li>
           <li>课时内容支持结构化编辑，也可以切到 JSON 模式批量替换。</li>
