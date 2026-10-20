@@ -4897,3 +4897,16 @@ read_chunk 读得到原文并带回库标识与正文。
 - 相关链路回归tools/mascot-tts-check.cjs 41/41（tmp/mascot-tts-followup.log），TTS设置/试听、普通与导学状态链无回退；tools/guided-files-check.cjs 21/21（tmp/guided-files-followup.log），附件草稿隔离、请求强制确认、当前会话审批、失败恢复与结束停止轮询通过。TTS和审批响应使用确定性临时服务/夹具，不宣称本轮再次外呼收费模型。截图tmp/mascot-motion-shots/top-left-menu.png、tmp/guided-files-shots/approval.png已目视检查。
 - node --check mascot.js/mascot-motion-check.cjs、git diff --check通过。仓颉内核未改，本轮不无理由重跑176项内核或已有6次真实模型对话。所有数据写临时目录，无Python夹具、无真实用户库写入。
 - 版本升为0.8.27，功能、接口呈现约定、专项检查与本段同提交；随后打包、检查包内真实键盘/隐藏画面并同步项目说明书中的版本与哈希。两份原有未跟踪调研文档排除。
+
+### 0.8.27 发布与说明书同步验收
+- 功能提交8059037，scripts/package-app.ps1正常完成；包为dist/Lumin-0.8.27/Lumin.exe与dist/Lumin-0.8.27.zip，231,929,819 bytes、2,759项，SHA256=FADFF02C10D1B6801CD33610D584E408EF808015D0A1A3AFE2DFC319FF9439F8。manifest build=lumin-0.8.27-8059037，33项资产哈希一致。
+- tmp/verify-lumin-0.8.27.ps1成功，日志tmp/verify-lumin-0.8.27.log：独立Electron profile与空数据启动PRELOAD/TITLEBAR/RESULT=OK；包内内核health/release、真实PNG定位读取140,133 bytes通过。DOCX无样张仍明确skipped，没有新宣称Office或模型全量复测。
+- 包内专项tmp/companion-package-check.cjs：8/8，tmp/companion-package-check.log。实际Enter/Space打开并聚焦首项、Escape关闭回焦、13px文字、隐藏后display与命中目标消失、刷新继续隐藏、外观页恢复、无JS异常均通过。原脚本在空数据下等#chat-input超时，因为首次启动正确显示模型配置提示；改为等主界面#view与桌宠就绪后再测，不改产品来迁就脚本。
+- 原生画面复核：隐藏后等两个requestAnimationFrame及200ms，再调用Electron capturePage；tmp/companion-package-hidden.png已目视确认桌宠消失。沿用此前两轮真实导学会话与实际PPT，在0.8.27包中重开并检查页4/两条assistant记录，tmp/proposal-guided-capture-27.log成功。未新增收费模型调用，历史PPT预览伴随文件在退出时恢复。
+- 更新代表性图tmp/proposal-guided-real-final.png，此次画面已等待重绘，桌宠不再覆盖输入区；正文仍为此前真实模型回答，没有改写/拼接回复。由此可确认此前文档截图捕获了隐藏前的画面，产品隐藏功能无需改变。
+- tmp/update-proposal.cjs改为读取shell版本并从对应ZIP生成大小/哈希。项目说明同步0.8.27、桌宠28项检查、最新导学图与TTS配置截图，平台故事线和账号互通后续规划保持原有范围。
+- 通过受管Node+Word COM+Poppler重新渲染21页，tmp/proposal-0.8.27.pdf与tmp/proposal-0.8.27-pages/；第8、11、17、18、19页变动已逐页打开检查，其余16页PNG与此前目视验收版SHA256相同，无新分页/裁切问题。未使用Python。
+- 最终仍保存D:/Desktop/仓颉杯/创新原型赛道/01-项目说明-优化版.docx。写回前独占读取并核对其哈希仍为前轮733EA94E...，确认期间没有用户新编辑后更新。新文件17,748,952 bytes，SHA256=A45CC0475F1B3DBEFA0061E1FB2C7852D14C978459FF7D1BFB32EB0C257B9705，源/目标哈希一致；原始01-项目说明.docx与材料备份不动。结果tmp/proposal-delivery-0.8.27.json。
+- 本轮共有28+41+21+8=98项专项/回归检查通过；其中真实产品HTTP、数据库、UI与包内事件均有状态断言，模型/TTS/审批确定性响应的范围已分别说明。176项内核与6次真实模型对话的证据沿用此前日志，本轮未把沿用证据冒充新增调用。
+- 这是定时器之前的主动接续复验，四个计划时点09:40/11:10/12:40/14:10尚未到，不计为某个定时轮已执行。整体持续复验目标保持active。没有操作用户仍运行中的0.8.25实例；验收子进程均由脚本关闭。
+- 本段仅记录已验收功能和外部说明书的交付，不因记录提交再次重打相同程序包。两份既有未跟踪调研文档继续排除。
