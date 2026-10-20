@@ -21,24 +21,23 @@ export default function AdminBundlePreview() {
 
   return (
     <div className="zx-admin-page">
-      <button type="button" className="zx-back" onClick={() => navigate('/admin/knowledge')}>
-        ← 返回知识库
-      </button>
-
-      <header className="zx-admin-head">
-        <div>
-          <h1>{bundle.title || bundle.name}</h1>
-          <p>
+      <header className="zx-preview-bar">
+        <button type="button" className="zx-preview-back" onClick={() => navigate('/admin/knowledge')}>
+          ← 返回知识库
+        </button>
+        <div className="zx-preview-bar-title">
+          <strong title={bundle.title || bundle.name}>{bundle.title || bundle.name}</strong>
+          <span>
             {bundle.name} · {docs.length} 章 · {totalChars.toLocaleString('zh-CN')} 字 · 智能体 {bundle.steps} 条工具记录
-          </p>
+          </span>
         </div>
-        <div className="zx-admin-actions">
-          <button type="button" className="zx-btn zx-btn-ghost" onClick={() => setShowLog(!showLog)}>
-            {showLog ? '隐藏运行日志' : '运行日志'}
+        <div className="zx-preview-bar-actions">
+          <button type="button" className="zx-btn zx-btn-sm zx-btn-ghost" onClick={() => setShowLog(!showLog)}>
+            {showLog ? '隐藏日志' : '运行日志'}
           </button>
           <button
             type="button"
-            className="zx-btn zx-btn-danger"
+            className="zx-btn zx-btn-sm zx-btn-danger"
             onClick={async () => {
               if (!window.confirm(`删除《${bundle.name}》的整理结果？`)) return;
               try {
@@ -55,10 +54,7 @@ export default function AdminBundlePreview() {
       </header>
 
       {bundle.errorMessage ? <Notice kind="error">{bundle.errorMessage}</Notice> : null}
-
-      {showLog ? (
-        <pre className="zx-bundle-log">{state.data.log || '（没有日志）'}</pre>
-      ) : null}
+      {showLog ? <pre className="zx-bundle-log">{state.data.log || '（没有日志）'}</pre> : null}
 
       <div className="zx-preview">
         <aside className="zx-preview-toc">
