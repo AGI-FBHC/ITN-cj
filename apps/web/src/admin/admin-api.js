@@ -95,6 +95,35 @@ export const adminApi = {
   testKbModel: (target = 'embedding', extra = {}) => request('/kb/test', { method: 'POST', body: { target, ...extra } }),
   kbBundles: () => request('/kb/bundles'),
   kbBundle: (id) => request(`/kb/bundles/${encodeURIComponent(id)}`),
+  kbBundleAsset: async (path, { signal } = {}) => {
+    const url = new URL(path, window.location.origin);
+    if (url.origin !== window.location.origin || !/^\/api\/admin\/kb\/bundles\/[^/]+\/assets\/[^/]+$/.test(url.pathname)) {
+      throw new AdminError('图片地址不可用', 0);
+    }
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) controller.abort();
+    const timeout = setTimeout(abort, 20000);
+    try {
+      const token = adminToken();
+      const response = await fetch(`${url.pathname}${url.search}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        signal: controller.signal,
+      });
+      if (response.status === 401) {
+        clearAdminSession();
+        throw new AdminError('管理会话已失效，请重新登录后查看图片', 401);
+      }
+      if (!response.ok) throw new AdminError('图片文件不存在或暂时无法读取', response.status);
+      const blob = await response.blob();
+      if (!blob.type.toLowerCase().startsWith('image/')) throw new AdminError('该文件不是可显示的图片', 0);
+      return blob;
+    } finally {
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', abort);
+    }
+  },
   deleteKbBundle: (id) => request(`/kb/bundles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   uploadKbBundle: async (file) => {
     const response = await fetch('/api/admin/kb/bundles', {

@@ -15,6 +15,8 @@ import stdx.encoding.json.*
  */
 class KbWorkspace {
     let root: String
+    // 输出文件与原文一一关联，图片按源文件所在目录解析。
+    let documentSources = HashMap<String, String>()
 
     init(root: String) {
         this.root = root
@@ -39,12 +41,12 @@ class KbWorkspace {
         kbWalkFiles(base, "", out, 0)
         let result = StringBuilder()
         var i: Int64 = 0
-        while (i < out.size && i < 600) {
+        out.sort()
+        while (i < out.size) {
             result.append(out[i])
             result.append("\n")
             i += 1
         }
-        if (out.size > 600) { result.append("…（共 " + out.size.toString() + " 个文件，已截断）\n") }
         result.toString()
     }
 
@@ -60,15 +62,158 @@ class KbWorkspace {
         String.fromUtf8(data.slice(0, take)) + "\n…（已截断）"
     }
 
-    func writeFile(relative: String, content: String): Unit {
-        let full = resolve(relative, true)
-        kbWriteTextDeep(full, content)
+    func copyDocument(source: String, destination: String): String {
+        let input = kbInputDocumentPath(source)
+        var output = kbPathNormalize(destination)
+        if (output.startsWith("out/")) { output = output[4..output.size] }
+        if (!output.toAsciiLower().endsWith(".md")) { throw Exception("输出章节须使用 .md 后缀") }
+        if (!kbIsSourceDocument(input)) { throw Exception("只把 Markdown、文本和 RST 文件作为章节，图片由资源处理保留") }
+        for ((saved, original) in documentSources) {
+            if (saved.toAsciiLower() == output.toAsciiLower() && (saved != output || original != input)) {
+                throw Exception("输出文件已占用，请使用不同的章节文件名：" + output)
+            }
+            if (original == input && saved != output) { throw Exception("原文已经保存在 " + saved + "，不应重复生成") }
+        }
+        let full = root + "/in/" + input
+        if (!exists(Path(full))) { throw Exception("原文件不存在：" + input) }
+        let bytes = File.readFrom(Path(full))
+        // 校验文本编码，但复制完整文件，不受 read_file 的预览长度限制。
+        let _text = String.fromUtf8(bytes)
+        kbWriteFileDeep(root + "/out/" + output, bytes)
+        documentSources[output] = input
+        "已原样保留 " + input + " → " + output + "（" + bytes.size.toString() + " 字节）"
     }
 
-    func deleteFile(relative: String): Unit {
-        let full = resolve(relative, false)
-        if (exists(Path(full))) { try { remove(Path(full)) } catch (_: Exception) {} }
+    func formatDocument(relative: String, before: String, after: String): String {
+        var output = kbPathNormalize(relative)
+        if (output.startsWith("out/")) { output = output[4..output.size] }
+        if (!documentSources.contains(output)) { throw Exception("请先用 copy_document / organize_documents 保留原文") }
+        if (before.size == 0 || before == after) { throw Exception("请提供实际需要修复的格式片段") }
+        // 只允许增加/去除 Markdown 标记与排版空白；词句、标点、数字和 URL 不可改写。
+        if (kbFormatFingerprint(before) != kbFormatFingerprint(after)) {
+            throw Exception("拒绝修改：只能修复 Markdown 格式，不能改变原文措辞、标点或链接")
+        }
+        let full = root + "/out/" + output
+        let content = String.fromUtf8(File.readFrom(Path(full)))
+        if (!content.contains(before)) { throw Exception("没有找到该原文片段") }
+        let next = content.replace(before, after)
+        if (kbProtectedLiterals(content) != kbProtectedLiterals(next)) {
+            throw Exception("拒绝修改：代码和数学公式须保留原样")
+        }
+        kbWriteTextDeep(full, next)
+        "已修复格式，原文措辞保持不变：" + output
     }
+
+    func missingDocuments(): String {
+        let files = ArrayList<String>()
+        kbWalkFiles(root + "/in", "", files, 0)
+        files.sort()
+        let included = HashSet<String>()
+        for ((_, original) in documentSources) { included.add(original) }
+        let missing = StringBuilder()
+        for (file in files) {
+            if (kbIsSourceDocument(file) && !included.contains(file)) { missing.append(file + "\n") }
+        }
+        missing.toString()
+    }
+}
+
+func kbInputDocumentPath(raw: String): String {
+    let path = kbPathNormalize(raw)
+    if (path.startsWith("out/")) { throw Exception("源文件必须来自 in/ 目录") }
+    if (path.startsWith("in/")) { path[3..path.size] } else { path }
+}
+
+func kbIsSourceDocument(path: String): Bool {
+    let lower = path.toAsciiLower()
+    lower.endsWith(".md") || lower.endsWith(".markdown") || lower.endsWith(".mdx") ||
+        lower.endsWith(".txt") || lower.endsWith(".rst")
+}
+
+func kbFormatWord(byte: Byte): Bool {
+    byte >= 128 || (byte >= 48 && byte <= 57) || (byte >= 65 && byte <= 90) || (byte >= 97 && byte <= 122)
+}
+
+func kbFormatFingerprint(text: String): String {
+    let bytes = text.toArray()
+    let result = ArrayList<Byte>()
+    var i: Int64 = 0
+    while (i < bytes.size) {
+        let byte = bytes[i]
+        if (byte == 9 || byte == 10 || byte == 13 || byte == 32) {
+            var next = i + 1
+            while (next < bytes.size && (bytes[next] == 9 || bytes[next] == 10 || bytes[next] == 13 || bytes[next] == 32)) { next += 1 }
+            if (result.size > 0 && next < bytes.size && kbFormatWord(result[result.size - 1]) && kbFormatWord(bytes[next])) { result.add(32) }
+            i = next
+            continue
+        }
+        if (byte == 35 || byte == 42 || byte == 95 || byte == 96 || byte == 126) {
+            var end = i + 1
+            while (end < bytes.size && bytes[end] == byte) { end += 1 }
+            // An underscore/star inside a name or expression is content, not a formatting marker.
+            if (end == i + 1 && i > 0 && end < bytes.size && kbFormatWord(bytes[i - 1]) && kbFormatWord(bytes[end])) { result.add(byte) }
+            i = end
+            continue
+        }
+        result.add(byte)
+        i += 1
+    }
+    String.fromUtf8(result.toArray())
+}
+
+// Fenced blocks, inline code and all supported TeX delimiters are immutable.
+func kbProtectedLiterals(text: String): String {
+    let out = ArrayList<Byte>()
+    var fence = ""
+    var marker: Byte = 0
+    var markerLength: Int64 = 0
+    var bracket: Byte = 0
+    for (line in text.split("\n")) {
+        let trimmed = line.trimAscii()
+        if (fence.size > 0) {
+            for (byte in (line + "\n").toArray()) { out.add(byte) }
+            if (trimmed.startsWith(fence)) { fence = "" }
+            continue
+        }
+        if (marker == 0 && (trimmed.startsWith("```") || trimmed.startsWith("~~~"))) {
+            fence = trimmed[0..3]
+            for (byte in (line + "\n").toArray()) { out.add(byte) }
+            continue
+        }
+        let bytes = line.toArray()
+        var i: Int64 = 0
+        while (i < bytes.size) {
+            let byte = bytes[i]
+            if (marker == 92) {
+                out.add(byte)
+                if (byte == 92 && i + 1 < bytes.size && bytes[i + 1] == bracket) {
+                    out.add(bytes[i + 1]); i += 2; marker = 0; continue
+                }
+            } else if (byte == 96 || byte == 36) {
+                var run: Int64 = 1
+                while (i + run < bytes.size && bytes[i + run] == byte) { run += 1 }
+                if (marker == 0) {
+                    marker = byte; markerLength = run; out.add(124)
+                    var n: Int64 = 0
+                    while (n < run) { out.add(byte); n += 1 }
+                } else if (marker == byte && run == markerLength) {
+                    var n: Int64 = 0
+                    while (n < run) { out.add(byte); n += 1 }
+                    marker = 0
+                } else if (marker != 0) {
+                    var n: Int64 = 0
+                    while (n < run) { out.add(byte); n += 1 }
+                }
+                i += run; continue
+            } else if (marker == 0 && byte == 92 && i + 1 < bytes.size && (bytes[i + 1] == 40 || bytes[i + 1] == 91)) {
+                marker = 92; bracket = if (bytes[i + 1] == 40) { 41 } else { 93 }
+                out.add(124); out.add(byte); out.add(bytes[i + 1]); i += 2; continue
+            } else if (marker != 0) { out.add(byte) }
+            i += 1
+        }
+        if (marker != 0) { out.add(10) }
+    }
+    String.fromUtf8(out.toArray())
 }
 
 func kbPathNormalize(raw: String): String {
@@ -114,7 +259,7 @@ func kbWriteFileDeep(full: String, data: Array<Byte>): Unit {
 }
 
 func kbWalkFiles(base: String, prefix: String, out: ArrayList<String>, depth: Int64): Unit {
-    if (depth > 8 || out.size >= 400) { return }
+    if (depth > 32 || out.size > 4000) { throw Exception("资料目录过深或文件数超过 4000，未截断内容，请拆分上传") }
     let entries = try {
         Directory.readFrom(Path(base))
     } catch (_: Exception) {
@@ -161,105 +306,81 @@ class KbAgentLog {
     }
 }
 
+func kbToolProperty(description: String): String {
+    let out = JsonWriter()
+    out.putStr("type", "string")
+    out.putStr("description", description)
+    out.toJson()
+}
+
+func kbAgentTool(name: String, description: String, properties: JsonWriter, required: Array<String>): String {
+    let params = JsonWriter()
+    params.putStr("type", "object")
+    params.putRaw("properties", properties.toJson())
+    let mandatory = JsonArrWriter()
+    for (key in required) { mandatory.addRaw(jsonQuote(key)) }
+    params.putRaw("required", mandatory.toJson())
+    let fn = JsonWriter()
+    fn.putStr("name", name)
+    fn.putStr("description", description)
+    fn.putRaw("parameters", params.toJson())
+    let tool = JsonWriter()
+    tool.putStr("type", "function")
+    tool.putRaw("function", fn.toJson())
+    tool.toJson()
+}
+
 func kbAgentToolsJson(): String {
     let tools = JsonArrWriter()
-    let listTool = JsonWriter()
-    listTool.putStr("type", "function")
-    let listFn = JsonWriter()
-    listFn.putStr("name", "list_files")
-    listFn.putStr("description", "列出工作目录里的文件（相对路径）")
-    let listParams = JsonWriter()
-    listParams.putStr("type", "object")
-    let listProps = JsonWriter()
-    let dirProp = JsonWriter()
-    dirProp.putStr("type", "string")
-    dirProp.putStr("description", "要列出的目录，例如 in 或 in/ch01，留空表示全部")
-    listProps.putRaw("dir", dirProp.toJson())
-    listParams.putRaw("properties", listProps.toJson())
-    listFn.putRaw("parameters", listParams.toJson())
-    listTool.putRaw("function", listFn.toJson())
-    tools.addRaw(listTool.toJson())
+    let list = JsonWriter()
+    list.putRaw("dir", kbToolProperty("相对目录，例如 in 或 in/docs，留空列出全部"))
+    tools.addRaw(kbAgentTool("list_files", "列出资料目录的完整文件清单，包含文档与图片", list, []))
 
-    let readTool = JsonWriter()
-    readTool.putStr("type", "function")
-    let readFn = JsonWriter()
-    readFn.putStr("name", "read_file")
-    readFn.putStr("description", "读取一个文本文件的内容")
-    let readParams = JsonWriter()
-    readParams.putStr("type", "object")
-    let readProps = JsonWriter()
-    let pathProp = JsonWriter()
-    pathProp.putStr("type", "string")
-    pathProp.putStr("description", "相对路径，例如 in/01.md")
-    readProps.putRaw("path", pathProp.toJson())
-    let limitProp = JsonWriter()
-    limitProp.putStr("type", "integer")
-    limitProp.putStr("description", "最多读取多少字节，默认 20000")
-    readProps.putRaw("limit", limitProp.toJson())
-    readParams.putRaw("properties", readProps.toJson())
-    let readRequired = JsonArrWriter()
-    readRequired.addRaw("\"path\"")
-    readParams.putRaw("required", readRequired.toJson())
-    readFn.putRaw("parameters", readParams.toJson())
-    readTool.putRaw("function", readFn.toJson())
-    tools.addRaw(readTool.toJson())
+    let read = JsonWriter()
+    read.putRaw("path", kbToolProperty("源文件相对路径，例如 in/docs/章节.md"))
+    let limit = JsonWriter()
+    limit.putStr("type", "integer")
+    limit.putStr("description", "预览的最大字节数，默认20000；整理复制完整原文，不受预览截断影响")
+    read.putRaw("limit", limit.toJson())
+    tools.addRaw(kbAgentTool("read_file", "预览原文以判断章节顺序；图片无需读取二进制", read, ["path"]))
 
-    let writeTool = JsonWriter()
-    writeTool.putStr("type", "function")
-    let writeFn = JsonWriter()
-    writeFn.putStr("name", "write_file")
-    writeFn.putStr("description", "把整理后的 Markdown 写入 out/ 目录，文件名以两位序号开头，例如 out/01-第一章.md")
-    let writeParams = JsonWriter()
-    writeParams.putStr("type", "object")
-    let writeProps = JsonWriter()
-    let writePath = JsonWriter()
-    writePath.putStr("type", "string")
-    writePath.putStr("description", "out/ 下的相对路径")
-    writeProps.putRaw("path", writePath.toJson())
-    let writeContent = JsonWriter()
-    writeContent.putStr("type", "string")
-    writeContent.putStr("description", "这一节的完整 Markdown 正文")
-    writeProps.putRaw("content", writeContent.toJson())
-    writeParams.putRaw("properties", writeProps.toJson())
-    let writeRequired = JsonArrWriter()
-    writeRequired.addRaw("\"path\"")
-    writeRequired.addRaw("\"content\"")
-    writeParams.putRaw("required", writeRequired.toJson())
-    writeFn.putRaw("parameters", writeParams.toJson())
-    writeTool.putRaw("function", writeFn.toJson())
-    tools.addRaw(writeTool.toJson())
+    let copy = JsonWriter()
+    copy.putRaw("source", kbToolProperty("in/下的原文路径，完整原文由工具直接复制"))
+    copy.putRaw("path", kbToolProperty("out/下输出Markdown路径，序号+原章节名，例如 out/01-前言.md"))
+    tools.addRaw(kbAgentTool("copy_document", "完整保留一篇原文，仅指定输出位置与顺序；自动保留图片引用关联", copy, ["source", "path"]))
 
-    let finishTool = JsonWriter()
-    finishTool.putStr("type", "function")
-    let finishFn = JsonWriter()
-    finishFn.putStr("name", "finish")
-    finishFn.putStr("description", "整理完成后调用，给出资料标题")
-    let finishParams = JsonWriter()
-    finishParams.putStr("type", "object")
-    let finishProps = JsonWriter()
-    let titleProp = JsonWriter()
-    titleProp.putStr("type", "string")
-    titleProp.putStr("description", "整理后的资料标题")
-    finishProps.putRaw("title", titleProp.toJson())
-    finishParams.putRaw("properties", finishProps.toJson())
-    let finishRequired = JsonArrWriter()
-    finishRequired.addRaw("\"title\"")
-    finishParams.putRaw("required", finishRequired.toJson())
-    finishFn.putRaw("parameters", finishParams.toJson())
-    finishTool.putRaw("function", finishFn.toJson())
-    tools.addRaw(finishTool.toJson())
+    let items = JsonWriter()
+    items.putStr("type", "object")
+    items.putRaw("properties", copy.toJson())
+    items.putRaw("required", "[\"source\",\"path\"]")
+    let documentList = JsonWriter()
+    documentList.putStr("type", "array")
+    documentList.putRaw("items", items.toJson())
+    let batch = JsonWriter()
+    batch.putRaw("documents", documentList.toJson())
+    tools.addRaw(kbAgentTool("organize_documents", "一次安排多篇原文的章节顺序并完整复制，推荐批量调用以尽快完成；禁止遗漏或概括原文", batch, ["documents"]))
+
+    let format = JsonWriter()
+    format.putRaw("path", kbToolProperty("已复制到out/下的Markdown文件"))
+    format.putRaw("before", kbToolProperty("需要微调的原文格式片段，必须精确匹配"))
+    format.putRaw("after", kbToolProperty("仅修Markdown标记/空白后的片段；所有措辞、标点、数字、链接和代码须不变"))
+    tools.addRaw(kbAgentTool("format_document", "可选：微调排版，禁止改写、总结、翻译、增删正文；图片相对路径由系统自动修复", format, ["path", "before", "after"]))
+
+    let finish = JsonWriter()
+    finish.putRaw("title", kbToolProperty("保留原资料标题，不能自行概括内容"))
+    tools.addRaw(kbAgentTool("finish", "全部原文组织完后结束；遗漏文档会退回继续处理，不能丢弃图片", finish, ["title"]))
     tools.toJson()
 }
 
 func kbAgentSystemPrompt(): String {
-    "你是一个资料整理智能体，负责把一个结构混乱的资料包整理成规范的课程讲义。\n" +
-    "工作目录里：in/ 是用户上传的原始文件（可能层级混乱、命名随意），out/ 是你的输出目录。\n" +
-    "要求：\n" +
-    "1. 先用 list_files 看清 in/ 的全貌，再挑关键文件用 read_file 读取（不要一次读太多，注意 limit）。\n" +
-    "2. 判断内容的主线，把资料整理成有序的章节：每一节写成 out/ 下的一个 Markdown 文件，文件名形如 01-章节标题.md。\n" +
-    "3. 合并重复与碎片，剔除与主题无关的素材；保留原文的事实与表述，不要编造内容，也不要加你自己的评论。\n" +
-    "4. 每节正文用 Markdown，标题层级从 ## 开始；图片、附件等无法读取的文件忽略即可。\n" +
-    "5. 全部写完后调用 finish，给出整理后的资料标题。不要询问用户，也不要中途停下等确认。"
+    "你是资料整理智能体，只负责组织原文和微调格式，不是课程作者，也不是摘要或翻译工具。\n" +
+    "in/是原始文件，out/是结果。你的组织决策由工具执行，正文必须来自对应源文件。\n" +
+    "1. list_files查看全部目录，选取必要的文件用read_file了解章节与顺序，不必逐篇完整阅读或在回答里重复原文。\n" +
+    "2. 使用organize_documents批量安排全部Markdown、txt、rst文件，或用copy_document逐篇复制。输出名称为out/01-原章节名.md。复制保留完整原文，即使read_file只显示了开头，也不会截断最终正文。\n" +
+    "3. 必须保留原文措辞、语言、章节、例子、公式、代码、表格、图片和链接。不得总结、重写、翻译、合并删减、去重或新增解释；不同语言版本与看似重复的文档也分别保留。\n" +
+    "4. 图片无需用read_file读取或重新生成。网页图片保持原URL；包内图片按源文档的相对目录自动搬运并修复访问路径，../、中文及空格均支持。不得移除或改写图片标记和alt文字。\n" +
+    "5. 仅确有格式错误才用format_document做小幅修复，不能改变词句、标点、数字、代码或链接。优先原样保留，已有的Markdown和TeX公式不需要转译。\n" +
+    "6. 全部文件组织完后调用finish。系统会检查是否有遗漏，若退回就继续纳入。不要询问用户，不要等确认，不要编造缺失资源。"
 }
 
 class KbAgentResult {
@@ -342,12 +463,18 @@ func kbRunAgent(endpoint: ModelEndpoint, workspace: KbWorkspace, log: KbAgentLog
         messages.add(assistant.toJson())
 
         for (call in turn.calls) {
+            var outcome = ""
             if (call.name == "finish") {
-                let title = kbJsonField(call.arguments, "title")
-                log.add("[" + step.toString() + "] finish：" + title)
-                return KbAgentResult(true, title, "")
+                let missing = workspace.missingDocuments()
+                if (missing.size == 0) {
+                    let title = kbJsonField(call.arguments, "title")
+                    log.add("[" + step.toString() + "] finish：" + title + "（原文已完整保留）")
+                    return KbAgentResult(true, title, "")
+                }
+                outcome = "尚未完成。以下原文尚未保留，请用organize_documents全部纳入，不得删除或总结：\n" + missing
+            } else {
+                outcome = kbRunTool(workspace, call.name, call.arguments)
             }
-            let outcome = kbRunTool(workspace, call.name, call.arguments)
             log.add("[" + step.toString() + "] " + call.name + " -> " + kbTruncate(outcome, 160))
             let toolMessage = JsonWriter()
             toolMessage.putStr("role", "tool")
@@ -387,18 +514,24 @@ func kbRunTool(workspace: KbWorkspace, name: String, arguments: String): String 
             let limit = Int64.tryParse(kbJsonField(arguments, "limit")) ?? 20000
             return workspace.readFile(path, limit)
         }
-        if (name == "write_file") {
-            let path = kbJsonField(arguments, "path")
-            let content = kbJsonField(arguments, "content")
-            if (content.size == 0) { return "写入失败：content 为空" }
-            if (content.size > 200000) { return "写入失败：内容超过 200KB" }
-            workspace.writeFile(path, content)
-            return "已写入 " + path + "（" + content.size.toString() + " 字节）"
+        if (name == "copy_document") {
+            return workspace.copyDocument(kbJsonField(arguments, "source"), kbJsonField(arguments, "path"))
         }
-        if (name == "delete_file") {
-            let path = kbJsonField(arguments, "path")
-            workspace.deleteFile(path)
-            return "已删除 " + path
+        if (name == "organize_documents") {
+            let parsed = jsonParse(arguments).getOrThrow()
+            let documents = jsonGetArray(parsed.asObject(), "documents").getOrThrow()
+            var index: Int64 = 0
+            let result = StringBuilder()
+            while (index < documents.size()) {
+                let doc = documents[index].asObject()
+                result.append(workspace.copyDocument(jsonGetString(doc, "source") ?? "", jsonGetString(doc, "path") ?? "") + "\n")
+                index += 1
+            }
+            return result.toString()
+        }
+        if (name == "format_document") {
+            return workspace.formatDocument(kbJsonField(arguments, "path"),
+                kbJsonField(arguments, "before"), kbJsonField(arguments, "after"))
         }
         "未知工具：" + name
     } catch (error: Exception) {

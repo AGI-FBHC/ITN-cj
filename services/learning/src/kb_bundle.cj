@@ -7,15 +7,17 @@ import std.sync.*
 
 /**
  * 资料包流水线：解包 → Agent 整理 → 只保存成品。
- * 工作目录在跑完后整目录删除，磁盘上不留原始文件和中间产物。
+ * 工作目录在跑完后整目录删除；成品文档和引用图片持久化，不留原始包和中间产物。
  */
 class KbBundleDoc {
     let title: String
     let content: String
+    let sourcePath: String
 
-    init(title: String, content: String) {
+    init(title: String, content: String, sourcePath: String) {
         this.title = title
         this.content = content
+        this.sourcePath = sourcePath
     }
 }
 
@@ -66,17 +68,18 @@ func kbTitleFromFile(fileName: String): String {
     }
     // 去掉 01- / 01_ / 1. 这类排序前缀
     var cut: Int64 = 0
-    while (cut < name.size) {
-        let ch = name[cut..cut + 1]
-        if (ch >= "0" && ch <= "9") {
+    let bytes = name.toArray()
+    while (cut < bytes.size) {
+        let ch = bytes[cut]
+        if (ch >= 48 && ch <= 57) {
             cut += 1
         } else {
             break
         }
     }
     if (cut > 0 && cut < name.size) {
-        let ch = name[cut..cut + 1]
-        if (ch == "-" || ch == "_" || ch == "." || ch == " ") {
+        let ch = bytes[cut]
+        if (ch == 45 || ch == 95 || ch == 46 || ch == 32) {
             name = name[cut + 1..name.size]
         }
     }
@@ -85,8 +88,8 @@ func kbTitleFromFile(fileName: String): String {
 }
 
 /** 收集 out/ 下整理好的 Markdown，按文件名顺序作为章节顺序。 */
-func kbCollectResult(workDir: String): ArrayList<KbBundleDoc> {
-    let outDir = workDir + "/out"
+func kbCollectResult(workspace: KbWorkspace): ArrayList<KbBundleDoc> {
+    let outDir = workspace.root + "/out"
     let files = ArrayList<String>()
     kbWalkFiles(outDir, "", files, 0)
     let docs = ArrayList<String>()
@@ -105,22 +108,28 @@ func kbCollectResult(workDir: String): ArrayList<KbBundleDoc> {
         } else {
             file
         }
-        result.add(KbBundleDoc(kbTitleFromFile(baseName), text))
+        result.add(KbBundleDoc(kbTitleFromFile(baseName), text, workspace.documentSources.get(file) ?? ""))
     }
     result
 }
 
-func kbSaveBundleDocs(cfg: Config, bundleId: String, docs: ArrayList<KbBundleDoc>): Unit {
+func kbSaveBundleDocs(cfg: Config, bundleId: String, docs: ArrayList<KbBundleDoc>, workDir: String, log: KbAgentLog): Unit {
     execute(cfg, "DELETE FROM kb_bundle_docs WHERE bundle_id=" + sqlQuote(bundleId))
+    let assets = KbAssetFinalizer(cfg, bundleId, workDir + "/in", log)
     var index: Int64 = 0
     for (doc in docs) {
+        let content = assets.document(doc.sourcePath, doc.content)
         execute(cfg,
-            "INSERT INTO kb_bundle_docs(id,bundle_id,order_index,title,content,char_count) VALUES(" +
+            "INSERT INTO kb_bundle_docs(id,bundle_id,order_index,title,content,char_count,source_path) VALUES(" +
             sqlQuote(uuidFormat(uuidV4())) + "," + sqlQuote(bundleId) + "," + index.toString() + "," +
-            sqlQuote(doc.title) + "," + sqlQuote(doc.content) + "," +
-            kbCharsBetween(doc.content.toArray(), 0, doc.content.toArray().size).toString() + ")")
+            sqlQuote(doc.title) + "," + sqlQuote(content) + "," +
+            kbCharsBetween(content.toArray(), 0, content.toArray().size).toString() + "," + sqlQuote(doc.sourcePath) + ")")
         index += 1
     }
+    let warnings = JsonArrWriter()
+    for (warning in assets.warnings) { warnings.addRaw(jsonQuote(warning)) }
+    execute(cfg, "UPDATE kb_bundles SET warnings_json=" + sqlQuote(warnings.toJson()) + " WHERE id=" + sqlQuote(bundleId))
+    log.add("成品已保存：" + docs.size.toString() + " 篇文档，" + assets.saved.size.toString() + " 张包内图片")
 }
 
 func kbSetBundle(cfg: Config, bundleId: String, status: String, steps: Int64, title: String,
@@ -141,6 +150,7 @@ func kbProcessBundle(cfg: Config, bundleId: String): Unit {
     let log = KbAgentLog()
     let zipPath = kbBundleZipPath(cfg, bundleId)
     let workDir = kbBundleWorkDir(cfg, bundleId)
+    var saved = false
     try {
         if (!endpoint.hasChat()) {
             kbSetBundle(cfg, bundleId, "failed", 0, "", "还没有配置对话模型，无法整理资料包", log.text())
@@ -155,7 +165,7 @@ func kbProcessBundle(cfg: Config, bundleId: String): Unit {
         if (!exists(Path(workDir + "/in"))) { Directory.create(Path(workDir + "/in"), recursive: true) }
         if (!exists(Path(workDir + "/out"))) { Directory.create(Path(workDir + "/out"), recursive: true) }
         let count = try {
-            kbZipExtractAll(zipBytes, workDir + "/in", 800)
+            kbZipExtractAll(zipBytes, workDir + "/in", 2000)
         } catch (error: Exception) {
             kbSetBundle(cfg, bundleId, "failed", 0, "", "解压失败：" + error.message, log.text())
             return
@@ -171,16 +181,22 @@ func kbProcessBundle(cfg: Config, bundleId: String): Unit {
             kbSetBundle(cfg, bundleId, "failed", log.steps(), "", result.message, log.text())
             return
         }
-        let docs = kbCollectResult(workDir)
+        let docs = kbCollectResult(workspace)
         if (docs.size == 0) {
             kbSetBundle(cfg, bundleId, "failed", log.steps(), result.title, "整理完成但没有产出任何章节文件", log.text())
             return
         }
-        kbSaveBundleDocs(cfg, bundleId, docs)
+        kbSaveBundleDocs(cfg, bundleId, docs, workDir, log)
         kbSetBundle(cfg, bundleId, "ready", log.steps(), result.title, "", log.text())
+        saved = true
     } catch (error: Exception) {
         kbSetBundle(cfg, bundleId, "failed", log.steps(), "", "处理失败：" + error.message, log.text())
     } finally {
+        if (!saved) {
+            kbRemoveTree(kbAssetBundleDir(bundleId))
+            try { execute(cfg, "DELETE FROM kb_bundle_assets WHERE bundle_id=" + sqlQuote(bundleId)) } catch (_: Exception) {}
+            try { execute(cfg, "DELETE FROM kb_bundle_docs WHERE bundle_id=" + sqlQuote(bundleId)) } catch (_: Exception) {}
+        }
         kbRemoveTree(workDir)
         try { if (exists(Path(zipPath))) { remove(Path(zipPath)) } } catch (_: Exception) {}
     }

@@ -896,10 +896,11 @@ func kbUrlDecode(raw: String): String {
 }
 
 func kbBundleSelect(): String {
-    "SELECT b.id,b.name,b.bytes,b.status,b.steps,b.model,b.title,b.error_message," +
+    "SELECT b.id,b.name,b.bytes,b.status,b.steps,b.model,b.title,b.error_message,COALESCE(b.warnings_json,'[]') warnings_json," +
     "COALESCE(DATE_FORMAT(b.created_at,'%Y-%m-%d %H:%i'),'') created_at," +
     "COALESCE(DATE_FORMAT(b.updated_at,'%Y-%m-%d %H:%i'),'') updated_at," +
-    "(SELECT COUNT(*) FROM kb_bundle_docs d WHERE d.bundle_id=b.id) doc_count " +
+    "(SELECT COUNT(*) FROM kb_bundle_docs d WHERE d.bundle_id=b.id) doc_count," +
+    "(SELECT COUNT(*) FROM kb_bundle_assets a WHERE a.bundle_id=b.id) asset_count " +
     "FROM kb_bundles b "
 }
 
@@ -916,6 +917,7 @@ func kbBundleJson(row: Row): String {
     out.putStr("createdAt", row.text("created_at"))
     out.putStr("updatedAt", row.text("updated_at"))
     out.putInt("docCount", row.int("doc_count"))
+    out.putInt("assetCount", row.int("asset_count"))
     out.toJson()
 }
 
@@ -932,7 +934,7 @@ func kbBundleDetailBody(cfg: Config, bundleId: String): ?String {
     let rows = query(cfg, kbBundleSelect() + "WHERE b.id=" + sqlQuote(bundleId) + " LIMIT 1")
     if (rows.size == 0) { return None }
     let docs = query(cfg,
-        "SELECT order_index,title,char_count,content FROM kb_bundle_docs WHERE bundle_id=" +
+        "SELECT order_index,title,char_count,content,COALESCE(source_path,'') source_path FROM kb_bundle_docs WHERE bundle_id=" +
         sqlQuote(bundleId) + " ORDER BY order_index")
     let arr = JsonArrWriter()
     for (row in docs) {
@@ -941,13 +943,16 @@ func kbBundleDetailBody(cfg: Config, bundleId: String): ?String {
         item.putStr("title", row.text("title"))
         item.putInt("charCount", row.int("char_count"))
         item.putStr("content", row.text("content"))
+        item.putStr("sourcePath", row.text("source_path"))
         arr.addRaw(item.toJson())
     }
     let logRows = query(cfg, "SELECT COALESCE(log_text,'') log_text FROM kb_bundles WHERE id=" + sqlQuote(bundleId))
     let out = JsonWriter()
     out.putRaw("bundle", kbBundleJson(rows[0]))
     out.putRaw("docs", arr.toJson())
-    out.putStr("log", if (logRows.size > 0) { logRows[0].text("log_text") } else { "" })
+    let log = if (logRows.size > 0) { logRows[0].text("log_text") } else { "" }
+    out.putStr("log", log)
+    out.putRaw("warnings", rows[0].text("warnings_json"))
     out.toJson()
 }
 
@@ -2356,17 +2361,27 @@ main(): Int64 {
         }
     }
 
+    app.mapGet("api/admin/kb/bundles/{bundle_id}/assets/{asset_id}") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) => kbWriteBundleAsset(ctx.response, cfg, routeText(ctx, "bundle_id"), routeText(ctx, "asset_id"))
+        }
+    }
+
     app.mapDelete("api/admin/kb/bundles/{bundle_id}") { ctx =>
         match (adminUserId(ctx, cfg)) {
             case None => ()
             case Some(_) =>
                 let bundleId = routeText(ctx, "bundle_id")
-                let rows = query(cfg, "SELECT id FROM kb_bundles WHERE id=" + sqlQuote(bundleId))
+                let rows = query(cfg, "SELECT id,status FROM kb_bundles WHERE id=" + sqlQuote(bundleId))
                 if (rows.size == 0) {
                     writeError(ctx.response, 404, "没有找到这个资料包")
+                } else if (rows[0].text("status") == "queued" || rows[0].text("status") == "running") {
+                    writeError(ctx.response, 409, "资料包正在处理中，请完成后再删除")
                 } else {
                     execute(cfg, "DELETE FROM kb_bundles WHERE id=" + sqlQuote(bundleId))
                     kbRemoveTree(kbBundleWorkDir(cfg, bundleId))
+                    kbRemoveTree(kbAssetBundleDir(bundleId))
                     let out = JsonWriter()
                     out.putBool("deleted", true)
                     writeJson(ctx.response, 200, out.toJson())

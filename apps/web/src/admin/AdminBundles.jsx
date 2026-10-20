@@ -48,7 +48,7 @@ export default function AdminBundles({ onNeedModel }) {
     setUploading(file.name);
     try {
       await adminApi.uploadKbBundle(file);
-      setMessage(`《${file.name}》已上传，智能体正在整理，完成后这里会显示章节。`);
+      setMessage(`《${file.name}》已上传，正在整理章节与格式，完成后可预览原文和图片。`);
       state.reload();
     } catch (failure) {
       setError(failure.message);
@@ -80,8 +80,7 @@ export default function AdminBundles({ onNeedModel }) {
         </label>
       </h2>
       <div className="zx-card-hint">
-        把整理好的或结构混乱的 zip 丢进来，智能体在独立工作目录里自行读取、合并、重排，
-        产出有序章节；原始文件与中间产物处理完即删除，只保留结果。
+        上传包含文档和图片的 zip，保留原文和图片，整理章节与格式，完成后可直接预览。
       </div>
 
       {error ? <Notice kind="error">{error}</Notice> : null}

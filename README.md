@@ -55,26 +55,22 @@
 
 ## 模型与检索
 
-向量化与 AI 导师都走 OpenAI 兼容接口，密钥只放服务端环境变量：
-
-```text
-# .env.local
-ZHIXUN_MODEL_API_KEY=sk-...
-# 兼容 OPENAI_API_KEY
-```
+向量、对话与语音模型在管理端三个表单里分别配置，可先测试再保存。
+密钥加密入库，后续只显示是否配置及尾号，不能读回明文。
 
 接口地址、模型名和切片参数在「设置」页里填，存在 `kb_settings` 表。向量检索是
 本机余弦（向量以 int8 量化后存十六进制），检索时把候选切片取进内存算分；没有配置
 向量模型时自动退化成字符二元组关键词检索，上传和检索都照常可用。
 
-想在本地把整条链路跑通又不花钱，可以起一个 mock 模型服务：
+资料包支持上传 ZIP，由管理员保存的对话模型安排章节，完整保留每篇源文档。
+只允许微调 Markdown 标记和排版，禁止总结、翻译或改写正文；有遗漏会继续处理。
+网页图片保留原 URL，包内相对图片自动归档；中文、空格、`../`、引用式图片和 HTML
+图片均可预览。缺失图片会给出提示。处理结束清理原 ZIP 与中间文件，保留成品文档和
+图片；删除资料包会同时清理图片。旧的整理结果不会自动重写，需重新上传原 ZIP。
 
-```powershell
-python tools\mock-model-server.py --port 8790
-```
-
-然后在「设置」里把接口地址填成 `http://127.0.0.1:8790/v1`，向量模型 `mock-embed`，
-对话模型 `mock-chat`。这个 mock 只用于开发自检，不参与运行。
+ZIP 上限 50MB、2000 个文件，展开后合计 256MB；单张图片不超过 20MB。
+资料包目前只整理、存储与预览，尚未接入切片、索引或课程发布。
+模型相关验收使用真实接口，不使用 mock，也不会覆盖已保存的模型配置。
 
 发布即生效，没有多级审核。课时只允许删除最后一节，避免打乱已发布编号和
 学习记录。
@@ -101,12 +97,19 @@ AI 导师需要配置模型接口后才能回答，其余功能不依赖外部�
 
 ## 测试
 
-接口测试直接打本机的仓颉服务，三个测试文件共用同一个隔离开发库，必须串行执行：
+接口测试直接访问本机仓颉服务，共用隔离开发库，必须串行执行：
 
 ```powershell
 $env:ZHIXUN_TEST_API = 'http://127.0.0.1:8312/api'
 $env:ZHIXUN_ADMIN_PASSWORD = '<管理员密码>'
 node --test --test-concurrency=1 tests/*.test.mjs
+```
+
+资料包图片验收会调用已保存的真实对话模型，需显式开启：
+
+```powershell
+$env:ZHIXUN_TEST_REAL_MODEL = '1'
+node --test --test-concurrency=1 tests/bundle-images.test.mjs
 ```
 
 并行执行（默认行为）会互相干扰：管理端用例增删课时时，学习端用例正在比较
@@ -118,9 +121,8 @@ node --test --test-concurrency=1 tests/*.test.mjs
 - `apps/web/src/admin/`：管理端页面与接口层，与用户端共用同一份构建。
 - `services/learning/`：原生仓颉学习后端。
 - `schema.sql`：隔离开发库结构，位于 `services/learning/schema.sql`。
-- `services/learning/migrations/`：已执行的一次性结构变更，按序号记录（001 管理端字段、002 知识库）。
+- `services/learning/migrations/`：已执行的一次性结构变更，按序号记录（007 增加资料包图片与原文路径）。
 - `apps/web/src/tutor.js`：用户端 AI 导师的请求封装，由阅读页提问面板调用。
-- `tools/mock-model-server.py`：本地 mock 模型服务，只用于开发自检，不参与运行。
 - `tools/`、`scripts/`：静态源码恢复、课程导入、启动与管理员账号脚本。
 - `deployed/`：线上发布产物原件，保持逐字节不变。
 - `TRACE.md`：跨会话操作记录。

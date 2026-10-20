@@ -124,16 +124,19 @@ func kbZipExtract(bytes: Array<Byte>, entry: ZipEntry): Array<Byte> {
 /** 解压到目标目录；拒绝绝对路径、.. 与超量文件。 */
 func kbZipExtractAll(bytes: Array<Byte>, targetDir: String, maxFiles: Int64): Int64 {
     let entries = kbZipList(bytes)
+    if (entries.size > maxFiles) { throw Exception("压缩包文件数超过 " + maxFiles.toString() + "，请拆分上传，未截断处理") }
     var written: Int64 = 0
+    var totalBytes: Int64 = 0
     for (entry in entries) {
-        if (written >= maxFiles) { break }
         let name = entry.name
-        if (name.startsWith("/") || name.contains("..") || name.contains(":\\")) { continue }
         let lower = name.toAsciiLower()
         if (lower.startsWith("__macosx/") || lower.contains("/.ds_store") || lower == ".ds_store") { continue }
-        let relative = name.replace("\\", "/")
+        let relative = kbPathNormalize(name)
+        if (entry.uncompressedSize > 64 * 1024 * 1024) { throw Exception("单个文件解压后超过64MB：" + name) }
         let full = targetDir + "/" + relative
         let data = kbZipExtract(bytes, entry)
+        totalBytes += data.size
+        if (totalBytes > 256 * 1024 * 1024) { throw Exception("压缩包展开后超过256MB，请拆分上传") }
         kbWriteFileDeep(full, data)
         written += 1
     }

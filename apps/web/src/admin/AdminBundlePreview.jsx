@@ -14,6 +14,8 @@ export default function AdminBundlePreview() {
   const bundle = state.data?.bundle;
   const docs = state.data?.docs || [];
   const totalChars = docs.reduce((sum, doc) => sum + (doc.charCount || 0), 0);
+  const warningData = bundle?.warnings || state.data?.warnings;
+  const warnings = Array.isArray(warningData) ? warningData.filter((item) => typeof item === 'string') : [];
 
   if (state.loading && !state.data) return <Loading label="正在读取整理结果…" />;
   if (state.error) return <ErrorBlock message={state.error} onRetry={state.reload} />;
@@ -28,7 +30,8 @@ export default function AdminBundlePreview() {
         <div className="zx-preview-bar-title">
           <strong title={bundle.title || bundle.name}>{bundle.title || bundle.name}</strong>
           <span>
-            {bundle.name} · {docs.length} 章 · {totalChars.toLocaleString('zh-CN')} 字 · 智能体 {bundle.steps} 条工具记录
+            {bundle.name} · {docs.length} 章 · {totalChars.toLocaleString('zh-CN')} 字
+            {Number.isFinite(bundle.assetCount) ? ` · ${bundle.assetCount} 张图片` : ''}
           </span>
         </div>
         <div className="zx-preview-bar-actions">
@@ -54,6 +57,12 @@ export default function AdminBundlePreview() {
       </header>
 
       {bundle.errorMessage ? <Notice kind="error">{bundle.errorMessage}</Notice> : null}
+      {warnings.length > 0 ? (
+        <Notice kind="info">
+          <strong>资料提示</strong>
+          <ul className="zx-preview-warnings">{warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>
+        </Notice>
+      ) : null}
       {showLog ? <pre className="zx-bundle-log">{state.data.log || '（没有日志）'}</pre> : null}
 
       <div className="zx-preview">
@@ -82,6 +91,7 @@ export default function AdminBundlePreview() {
             docs.map((doc, index) => (
               <section key={doc.order} id={`chapter-${index}`} className="zx-preview-chapter">
                 <h2 className="zx-preview-chapter-title">{doc.title}</h2>
+                {doc.sourcePath ? <p className="zx-preview-source">源文件：{doc.sourcePath}</p> : null}
                 <Markdown text={doc.content} />
               </section>
             ))

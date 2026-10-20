@@ -421,3 +421,47 @@
 - 原因：CommonMark 的强调夹逼规则要求右闭合的 `**` 不能「前面是标点、后面是文字」；中文全角括号 `）` 与句号正好命中，于是 `**` 变成普通字符。这不是模型输出错误，是渲染器按规范拒绝。
 - 修法：在 `Markdown.jsx` 里加一层强调归一化——先把行内代码与公式摘成占位符，再按行把成对的 `**…**` / `*…*` / `__…__` 换成 `<strong>`/`<em>`，围栏代码块整段跳过；随后交给 marked，最后统一过 DOMPurify 并还原占位符。
 - 自检：临时资料包覆盖了中文括号加粗、句号结尾加粗、英文加粗、斜体、`__` 加粗、行内代码里的 `**`、代码块里的 `**`、行内与块级公式——加粗 4 处、斜体 1 处、代码块与行内代码原样、公式正常，控制台无报错；测试包已删除。
+
+
+## 2026-10-20 23:54:04 +08:00 Codex 接回 MiMo 会话：保留原文 + 支持资料包图片
+
+### 用户本轮重点与接手依据
+- 用户因额度用尽转由 MiMo Desktop 继续开发，要求读取 `ses_ffe5ea71ec6c1ffe2bk47pgY02` 会话，接着完成其中最新任务，并强调尽可能快完成。
+- 按链接中的项目目录定位本地 MiMo SQLite，使用只读连接读取该指定会话的实际用户与助手消息，不修改 MiMo 的记录/设置。过滤 runtime/system-reminder，核对 43 条用户请求及仓库 TRACE 和 Git。
+- 实际开发目录是 `D:\Downloads\zhixun-yunshu-28801-20261020`、分支 `codex/native-learning-v1`；Codex 当前挂载的旧 ITN worktree 不作为本次功能目录。接手时 Git 干净，HEAD `4ae1acc`。
+- MiMo 已完成管理端、知识库、模型分槽加密配置、ZIP Agent 整理、Markdown/公式预览；用户最新要求未实现：网页图片与包内相对图片都保留、原文只做格式微调，禁止擅自改写措辞。
+- 延续限制：PS7、纯仓颉1.2+Spire、无Docker、不用Open Design插件、不使用模型mock、不覆盖管理员保存的配置，旧资料包与源目录不动。用户此前已要求前后端子agent并行，因此本次分出图片后端、预览前端、真实接口验收，root负责原文工具与集成。
+
+### 功能与接口
+- `kb_agent.cj`：用 `copy_document` 和 `organize_documents` 让模型决定章节名称与顺序，正文由服务端完整复制原文件，避免模型重写或 read_file 预览截断造成丢失。每篇输出关联 `documentSources`。
+- 移除任意 `write_file`/`delete_file` 工具；新增受限 `format_document`，只允许 Markdown 标记与排版微调，校验文字/标点/数字，保护代码和 TeX 公式。finish 检查全部支持文档的覆盖，遗漏则反馈模型继续，不能规则兜底或悄悄跳过。
+- 工作目录读取不再在400文件处静默截断；ZIP上限2000文件，展开总计256MB，单文件64MB，超限明确失败；压缩条目路径使用工作区规范化，拒绝越界。
+- `kb_assets.cj`：按每篇原文所在目录解析图片，支持 `../`、中文、空格、percent编码、行内/引用式/折叠/快捷 Markdown、HTML img；代码里的图片示例不参与替换。网页 URL 原样保留、不做后端下载。
+- 包内真实图片保存至 `data/kb_assets/<bundleId>/<assetId>`（可用 `ZHIXUN_ASSET_ROOT` 调整）与 `kb_bundle_assets` 元数据；只替换文档图片目标地址，不改 alt、title 或正文。缺图/越界等写入 warnings 并在预览显示。
+- 新增 `GET /api/admin/kb/bundles/{bundleId}/assets/{assetId}`：管理员 Bearer 鉴权、图片 MIME/字节、nosniff/private cache；学员403、未登录401、删除后404。
+- 详情新增 `docs[].sourcePath`、顶层 `warnings:string[]`、`bundle.assetCount`。处理中禁止删除409，失败清理部分成品，完成清理上传ZIP与临时目录，删除资料包同时清理成品图片与元数据。
+- 前端 Markdown 本地图使用管理员鉴权 fetch → blob；接近视窗再读，重复引用复用请求，卸载取消请求并释放URL；网络图直接显示，失败显示保留alt的占位。
+- 保留中文强调符与KaTeX，围栏代码在公式/强调处理前保护；渲染时去掉开头BOM，存储原文保持不变。窄屏长公式和表格只在自身容器滚动，页面不横向溢出。
+- README 移除已不存在的mock启动说明，补充真实模型验收、原文保留/图片生命周期与限制。
+
+### 数据与构建操作
+- 新增迁移 `007_kb_bundle_assets.sql`，只给 `kb_bundle_docs` 加 `source_path`、`kb_bundles` 加 `warnings_json`，新建资产元数据表；未修改旧业务库。
+- 先从当前 `.env.local` 核实运行目标是远程的隔离库 `itn_learning_v2_dev`。运行账号ALTER被拒绝1142，因此使用用户此前提供的数据库管理员凭据完成该库的增量DDL，不扩大运行账号权限，不改 `.env.local`。
+- 迁移前后比较 `kb_settings` 全行哈希与 `.env.local` 字节哈希：一致。密钥/密码不写入日志、文档或Git。
+- 首次构建遇到图片解析局部变量 `quote` 为仓颉关键字，改名 `quoteByte` 后通过；最终 `scripts/build-backend.ps1` 再次通过，原生后端已重启8312，Vite继续3006。
+- `npm run build --prefix apps/web` 通过，61 modules；现有KaTeX主包gzip约262.7KB，仍有Vite单chunk>500KB提示。本轮未做无关打包重构。
+
+### 真实验收与保留结果
+- `ZHIXUN_TEST_REAL_MODEL=1 node --test --test-concurrency=1 tests/bundle-images.test.mjs`：5/5通过，约13秒，使用数据库已保存的 `deepseek-flash`。测试含完整真实前言、3张真实图片、7种本地引用方式与网页URL；原文/代码保留、图片SHA256、临时目录清除、管理员鉴权与删包清理均通过；测试包已删，原有两包与模型配置保留。
+- 账号/管理端/学习端回归：11项中10通过、1跳过；学习闭环跳过原因是当前没有已发布课程（符合用户先清空课程、改走知识库上架的决定），不是把跳过计为通过。未运行可能调用不相关向量模型的知识库用例。
+- 额外用真实第三章验证完整79691字节原文中的网络图片URL不变。为验证离线图，再仅在内存测试ZIP中把原有6个图片URL改为指向同目录真实图片的相对路径，生产代码无特定语料规则。
+- 最终保留包：`eece4ad5-b968-4f33-b4ff-fc294a1e5f36`，标题“第三章 大语言模型基础”，原文约43011字，6张真实本地配图，真实模型工具记录6条。逐字反向核验：除图片目标URL外，整篇内容完全一致；6图字节SHA256均与源文件一致，warnings为空，上传与临时目录已清除。
+- 早期用于核对网络图片的本轮临时包 `df74c818-e21d-4f6c-9038-b77b9bf92365` 已清理；接手前的两份历史结果未改。
+- 浏览器真实验证：本地图已携带鉴权加载，66个KaTeX节点，围栏代码保持原样，控制台无错误；窄屏document宽度/scrollWidth均464，无整页横向溢出。图片按视窗懒加载，未接近视窗的图片尚不发请求。
+- 预览URL：`http://localhost:3006/admin/knowledge/bundles/eece4ad5-b968-4f33-b4ff-fc294a1e5f36`，截图 `analysis/bundle-images-preview.jpg`。浏览器标签保留供用户查看。
+
+### 后续接手边界
+- 已完成本轮“图片支持 + 原文保留”任务；旧的模型改写结果不会自动恢复，需重新上传原ZIP使用新规则。
+- 不要重新清空或写入模型配置，不要再引入mock。资料包目前仍只做组织/存储/预览，后续接索引与发布不在本轮范围。
+- 数据库资产元数据与 `data/kb_assets` 成品文件需一起备份；原有两包没有图片素材，不能凭空恢复。
+- 所有功能改动与本段TRACE一并本地Git提交，未推送远程，未部署或修改线上28801。
