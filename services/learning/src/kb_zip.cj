@@ -35,7 +35,12 @@ func kbU32(bytes: Array<Byte>, offset: Int64): Int64 {
 
 func kbUtf8(bytes: Array<Byte>, start: Int64, count: Int64): String {
     if (start < 0 || count <= 0 || start + count > bytes.size) { return "" }
-    String.fromUtf8(bytes.slice(start, count))
+    try {
+        String.fromUtf8(bytes.slice(start, count))
+    } catch (_: Exception) {
+        // 非 UTF-8 文件名（例如 Windows 上用 GBK 打包）直接跳过，不让整包失败
+        ""
+    }
 }
 
 /** 列出 zip 内的文件项，跳过目录与系统垃圾文件。 */

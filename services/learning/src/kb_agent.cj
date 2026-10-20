@@ -24,12 +24,13 @@ class KbWorkspace {
         let cleaned = kbPathNormalize(relative)
         if (cleaned.size == 0) { throw Exception("路径为空") }
         let first = kbFirstSegment(cleaned)
+        // 模型经常直接用 list_files 看到的相对路径，这里自动补上 in//out/ 前缀，仍然锁在工作区内。
         if (allowWrite) {
-            if (first != "out") { throw Exception("只能写 out/ 目录") }
-        } else if (first != "in" && first != "out") {
-            throw Exception("只能读 in/ 与 out/ 目录")
+            if (first == "out") { return root + "/" + cleaned }
+            return root + "/out/" + cleaned
         }
-        root + "/" + cleaned
+        if (first == "in" || first == "out") { return root + "/" + cleaned }
+        root + "/in/" + cleaned
     }
 
     func listFiles(relative: String): String {
@@ -52,8 +53,11 @@ class KbWorkspace {
         if (!exists(Path(full))) { throw Exception("文件不存在：" + relative) }
         let data = File.readFrom(Path(full))
         let maxBytes = if (limit <= 0) { 20000 } else if (limit > 60000) { 60000 } else { limit }
-        let take = if (data.size > maxBytes) { maxBytes } else { data.size }
-        String.fromUtf8(data.slice(0, take))
+        if (data.size <= maxBytes) { return String.fromUtf8(data) }
+        // 按 UTF-8 边界回退，切在半个汉字上会直接抛异常
+        var take = maxBytes
+        while (take > 0 && !kbIsLeadByte(data[take])) { take -= 1 }
+        String.fromUtf8(data.slice(0, take)) + "\n…（已截断）"
     }
 
     func writeFile(relative: String, content: String): Unit {
@@ -144,7 +148,7 @@ class KbAgentLog {
         count += 1
         buffer += line + "\n"
         if (buffer.size > 40000) {
-            buffer = buffer[buffer.size - 30000..buffer.size]
+            buffer = kbTailText(buffer, 30000)
         }
     }
 
@@ -355,9 +359,21 @@ func kbRunAgent(endpoint: ModelEndpoint, workspace: KbWorkspace, log: KbAgentLog
     KbAgentResult(false, "", "达到步数上限仍未完成（" + maxSteps.toString() + " 步）")
 }
 
+/** 按 UTF-8 字符边界截断；直接按字节切会切出半个汉字并抛异常。 */
 func kbTruncate(text: String, limit: Int64): String {
-    if (text.size <= limit) { return text }
-    text[0..limit] + "…"
+    let bytes = text.toArray()
+    if (bytes.size <= limit) { return text }
+    var end = limit
+    while (end > 0 && !kbIsLeadByte(bytes[end])) { end -= 1 }
+    String.fromUtf8(bytes.slice(0, end)) + "…"
+}
+
+func kbTailText(text: String, keepBytes: Int64): String {
+    let bytes = text.toArray()
+    if (bytes.size <= keepBytes) { return text }
+    var start = bytes.size - keepBytes
+    while (start < bytes.size && !kbIsLeadByte(bytes[start])) { start += 1 }
+    String.fromUtf8(bytes.slice(start, bytes.size - start))
 }
 
 func kbRunTool(workspace: KbWorkspace, name: String, arguments: String): String {

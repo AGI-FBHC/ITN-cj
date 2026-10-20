@@ -380,3 +380,15 @@
 - 整理质量完全取决于对话模型；模型崩了会停在 failed 并保留错误与日志，不会回退到规则排序（用户明确要求全部交给模型）。
 - 上传是 raw body，没有断点续传；单包 50MB、单文件解压 64MB 为硬上限。
 - 整理结果目前只落 `kb_bundle_docs`，还没有接成 kb_documents / 课程 / 索引；下一步再把 bundle 接到「建索引 → 发布课程」。
+
+### 真实文件夹测试（hello-agents）与两处真 bug
+
+- 用户明确规则：涉及模型接口的验证一律走真实接口，不允许 mock。已删除 `tools/mock-model-server.py`、依赖它的 `tests/model-chain.test.mjs`，并移除此前为自检加的 `ZHIXUN_MODEL_OVERRIDE_*` 端点覆盖开关——那个开关导致过一次「看起来走真模型、实际走桩」的误判。
+- 用用户配置的 `deepseek-flash`（https://api.deepseek.com）通过 HTTP 接口真实跑了两轮：
+  - `hello-agents-docs.zip`（239 个 md/txt，1.5MB）：22 步对话 / 65 条工具记录，产出 20 章、43,586 字，标题「Hello-Agents：从零开始构建智能体（课程讲义整理版）」。
+  - `hello-agents-subset.zip`（24 个 md，469KB）：31 条工具记录，产出 10 章、85,499 字。
+- 这轮测试暴露两个真 bug，均已修：
+  1. **Invalid utf8 byte sequence**：日志与工具返回值按固定字节数截断，切在汉字中间导致 `String.fromUtf8` 抛异常、整个包失败。改为按 UTF-8 字符边界截断（`kbTruncate` / `kbTailText` / `readFile`），并对 zip 内非 UTF-8 文件名做容错跳过。
+  2. **沙箱路径过严**：模型习惯用 `list_files` 看到的 `docs/xx.md`，而原实现要求 `in/docs/xx.md`，首轮出现 3 次「只能读 in/ 与 out/ 目录」。现在读取时自动补 `in/`、写入时自动补 `out/`，仍然锁在工作目录内。
+- 修复后复跑小样本：0 次工具失败，第一次 read_file 即成功。
+- 顺带确认：管理端「测试连接」用的是页面当前值（可测未保存），资料包流水线用的是已保存配置，两条路径现在一致地走 DB 里的配置。
