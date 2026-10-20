@@ -14,11 +14,41 @@
 
 浏览器打开 `http://localhost:3006/`。停止时在终端按 `Ctrl+C`。
 
+也可以后台启动（日志写入 `backend.log` / `frontend.log`，加 `-Stop` 停止）：
+
+```powershell
+.\scripts\build-backend.ps1      # 首次或改过后端后构建；构建前必须先停服
+.\scripts\start-backend.ps1
+.\scripts\start-frontend.ps1
+```
+
 数据库连接只从项目根目录已忽略的 `.env.local` 读取。后端启动时会拒绝连接
 `itn_learning_v2_dev` 以外的数据库。
 
 邮箱验证码使用 `.env.local` 中的 `SMTP_HOST`、`SMTP_PORT`、`SMTP_USERNAME`、
 `SMTP_PASSWORD`、`EMAIL_FROM` 等变量。真实值不进入 Git。
+
+## 管理端
+
+访问 `http://127.0.0.1:3006/admin`，用管理员账号登录。管理员账号存在同一张
+`users` 表里，靠 `role='admin'` 区分，密码规则与学习账号一致。
+
+首次创建或重置管理员：
+
+```powershell
+.\scripts\create-admin.ps1                       # 生成随机密码并输出一次
+.\scripts\create-admin.ps1 -Account admin -Password '新密码'
+```
+
+管理端现有能力：
+
+- 概览：学习账号数、建档率、课程与课时数、测验提交与平均分、近 7 天活跃。
+- 课程：新建、修改、发布/下架、删除（仅限从未被学习过的课程）。
+- 课时：追加、结构化编辑讲义分节/幻灯片/测验题，或切到 JSON 模式批量替换。
+- 用户：只读查看建档状态、完成课时、平均分与最近活跃，可过滤空的游客账号。
+
+发布即生效，没有多级审核。课时只允许删除最后一节，避免打乱已发布编号和
+学习记录。
 
 ## 已验证范围
 
@@ -31,15 +61,19 @@
 - 5 门课程、24 个课时。Agent 课程复用了隔离开发库中的公开讲义和题目；
   其余计算机基础课程是已标注来源的演示内容。
 - 界面保持原页面结构，增加加载失败重试与同步状态提示。
+- 管理端全流程：登录、概览、课程发布与下架、课时编辑保存、用户列表；
+  草稿课程及其课时对学习者不可见。
 
-AI 导师和管理员端尚未接入；当前 AI 入口会明确显示服务未接入。
+AI 导师尚未接入；当前 AI 入口会明确显示服务未接入。
 
 ## 目录
 
 - `apps/web/`：可从构建产物恢复的开发前端。
+- `apps/web/src/admin/`：管理端页面与接口层，与用户端共用同一份构建。
 - `services/learning/`：原生仓颉学习后端。
 - `schema.sql`：隔离开发库结构，位于 `services/learning/schema.sql`。
-- `tools/`、`scripts/`：静态源码恢复、课程导入和启动脚本。
+- `services/learning/migrations/`：已执行的一次性结构变更，按序号记录。
+- `tools/`、`scripts/`：静态源码恢复、课程导入、启动与管理员账号脚本。
 - `deployed/`：线上发布产物原件，保持逐字节不变。
 - `TRACE.md`：跨会话操作记录。
 

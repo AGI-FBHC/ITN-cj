@@ -299,7 +299,7 @@ func courseArrayBody(cfg: Config, userId: String): String {
     let progress = progressMap(cfg, userId, None)
     let courseRows = query(cfg,
         "SELECT id,name,icon,description,level,duration,chapters_json,source_label FROM courses " +
-        "ORDER BY FIELD(id,'ds','co','os','cn','agent')")
+        "WHERE status='published' ORDER BY sort_order,name")
     let arr = JsonArrWriter()
     for (row in courseRows) { arr.addRaw(courseJson(row, progress)) }
     arr.toJson()
@@ -385,8 +385,9 @@ func publicQuestion(raw: JsonValue): String {
 
 func courseLesson(cfg: Config, courseId: String, index: Int64): ?Row {
     let lessonRows = query(cfg,
-        "SELECT course_id,lesson_index,title,content_json,quiz_json,sources_json FROM lessons WHERE course_id=" +
-        sqlQuote(courseId) + " AND lesson_index=" + index.toString())
+        "SELECT l.course_id,l.lesson_index,l.title,l.content_json,l.quiz_json,l.sources_json FROM lessons l " +
+        "JOIN courses c ON c.id=l.course_id WHERE l.course_id=" +
+        sqlQuote(courseId) + " AND l.lesson_index=" + index.toString() + " AND c.status='published'")
     if (lessonRows.size == 0) { return None }
     Some(lessonRows[0])
 }
@@ -512,6 +513,360 @@ func jsonArrayFromText(text: String): JsonArray {
             }
         case None => JsonArray()
     }
+}
+
+/* ---------- admin console ---------- */
+
+func adminUserId(ctx: HttpContext, cfg: Config): ?String {
+    let authorization = match (ctx.request.headers.get("Authorization")) {
+        case Some(value) => value
+        case None => ""
+    }
+    if (!authorization.startsWith("Bearer ")) {
+        writeError(ctx.response, 401, "请先登录管理端")
+        return None
+    }
+    let token = authorization[7..authorization.size].trimAscii()
+    if (token.size < 20 || token.size > 200) {
+        writeError(ctx.response, 401, "管理会话无效")
+        return None
+    }
+    let rows = query(cfg,
+        "SELECT s.user_id,u.role FROM user_sessions s JOIN users u ON u.id=s.user_id " +
+        "WHERE s.token_hash=" + sqlQuote(tokenHash(token)) + " AND s.expires_at>NOW(6) LIMIT 1")
+    if (rows.size == 0) {
+        writeError(ctx.response, 401, "管理会话已失效，请重新登录")
+        return None
+    }
+    if (rows[0].text("role") != "admin") {
+        writeError(ctx.response, 403, "该账号没有管理权限")
+        return None
+    }
+    Some(rows[0].text("user_id"))
+}
+
+func validCourseSlug(value: String): Bool {
+    if (value.size < 2 || value.size > 40) { return false }
+    let bytes = value.toArray()
+    var i: Int64 = 0
+    while (i < bytes.size) {
+        let code = Int64(bytes[i])
+        let allowed = (code >= 97 && code <= 122) || (code >= 48 && code <= 57) || code == 45 || code == 95
+        if (!allowed) { return false }
+        i += 1
+    }
+    true
+}
+
+func adminStatusOk(value: String): Bool {
+    if (value == "published") { return true }
+    value == "draft"
+}
+
+func adminCourseSelect(): String {
+    "SELECT c.id,c.name,c.icon,c.description,c.level,c.duration,c.source_label,c.status,c.sort_order," +
+    "COALESCE(DATE_FORMAT(c.updated_at,'%Y-%m-%d %H:%i'),'') updated_at," +
+    "(SELECT COUNT(*) FROM lessons l WHERE l.course_id=c.id) lesson_count," +
+    "(SELECT COUNT(*) FROM lessons l WHERE l.course_id=c.id AND JSON_LENGTH(l.quiz_json)>0) quiz_lesson_count " +
+    "FROM courses c "
+}
+
+func adminCourseJson(row: Row): String {
+    let out = JsonWriter()
+    out.putStr("id", row.text("id"))
+    out.putStr("name", row.text("name"))
+    out.putStr("icon", row.text("icon"))
+    out.putStr("description", row.text("description"))
+    out.putStr("level", row.text("level"))
+    out.putInt("duration", row.int("duration"))
+    out.putStr("sourceLabel", row.text("source_label"))
+    out.putStr("status", row.text("status"))
+    out.putInt("sortOrder", row.int("sort_order"))
+    out.putInt("lessonCount", row.int("lesson_count"))
+    out.putInt("quizLessonCount", row.int("quiz_lesson_count"))
+    out.putStr("updatedAt", row.text("updated_at"))
+    out.toJson()
+}
+
+func adminCoursesBody(cfg: Config): String {
+    let rows = query(cfg, adminCourseSelect() + "ORDER BY c.sort_order,c.name")
+    let arr = JsonArrWriter()
+    for (row in rows) { arr.addRaw(adminCourseJson(row)) }
+    arr.toJson()
+}
+
+func adminCourseBody(cfg: Config, courseId: String): ?String {
+    let rows = query(cfg, adminCourseSelect() + "WHERE c.id=" + sqlQuote(courseId) + " LIMIT 1")
+    if (rows.size == 0) { return None }
+    let lessons = query(cfg,
+        "SELECT lesson_index,title,JSON_LENGTH(quiz_json) question_count," +
+        "JSON_LENGTH(content_json,'$.sections') section_count," +
+        "COALESCE(DATE_FORMAT(updated_at,'%Y-%m-%d %H:%i'),'') updated_at " +
+        "FROM lessons WHERE course_id=" + sqlQuote(courseId) + " ORDER BY lesson_index")
+    let lessonArr = JsonArrWriter()
+    for (row in lessons) {
+        let item = JsonWriter()
+        item.putInt("index", row.int("lesson_index"))
+        item.putStr("title", row.text("title"))
+        item.putInt("questionCount", row.int("question_count"))
+        item.putInt("sectionCount", row.int("section_count"))
+        item.putStr("updatedAt", row.text("updated_at"))
+        lessonArr.addRaw(item.toJson())
+    }
+    let out = JsonWriter()
+    out.putRaw("course", adminCourseJson(rows[0]))
+    out.putRaw("lessons", lessonArr.toJson())
+    out.toJson()
+}
+
+func adminLessonBody(cfg: Config, courseId: String, index: Int64): ?String {
+    let rows = query(cfg,
+        "SELECT title,content_json,quiz_json,sources_json," +
+        "COALESCE(DATE_FORMAT(updated_at,'%Y-%m-%d %H:%i'),'') updated_at " +
+        "FROM lessons WHERE course_id=" + sqlQuote(courseId) + " AND lesson_index=" + index.toString())
+    if (rows.size == 0) { return None }
+    let out = JsonWriter()
+    out.putStr("courseId", courseId)
+    out.putInt("lessonIndex", index)
+    out.putStr("title", rows[0].text("title"))
+    out.putStr("contentJson", rows[0].text("content_json"))
+    out.putStr("quizJson", rows[0].text("quiz_json"))
+    out.putStr("sourcesJson", rows[0].text("sources_json"))
+    out.putStr("updatedAt", rows[0].text("updated_at"))
+    out.toJson()
+}
+
+func adminOverviewBody(cfg: Config): String {
+    let users = query(cfg,
+        "SELECT COUNT(*) total," +
+        "COALESCE(SUM(CASE WHEN profile_json IS NULL THEN 0 ELSE 1 END),0) profiled," +
+        "COALESCE(SUM(CASE WHEN created_at>DATE_SUB(NOW(6),INTERVAL 7 DAY) THEN 1 ELSE 0 END),0) recent " +
+        "FROM users WHERE role<>'admin'")
+    let courses = query(cfg,
+        "SELECT COUNT(*) total,COALESCE(SUM(CASE WHEN status='published' THEN 1 ELSE 0 END),0) published FROM courses")
+    let lessons = query(cfg, "SELECT COUNT(*) total FROM lessons")
+    let attempts = query(cfg,
+        "SELECT COUNT(*) total,COALESCE(ROUND(AVG(score)),0) average," +
+        "COALESCE(SUM(CASE WHEN created_at>DATE_SUB(NOW(6),INTERVAL 7 DAY) THEN 1 ELSE 0 END),0) recent " +
+        "FROM quiz_attempts")
+    let learning = query(cfg,
+        "SELECT COALESCE(SUM(CASE WHEN completed=1 THEN 1 ELSE 0 END),0) completed," +
+        "COUNT(DISTINCT CASE WHEN updated_at>DATE_SUB(NOW(6),INTERVAL 7 DAY) THEN user_id END) active_users " +
+        "FROM lesson_progress")
+    let userOut = JsonWriter()
+    userOut.putInt("total", if (users.size > 0) { users[0].int("total") } else { 0 })
+    userOut.putInt("profiled", if (users.size > 0) { users[0].int("profiled") } else { 0 })
+    userOut.putInt("recent", if (users.size > 0) { users[0].int("recent") } else { 0 })
+    let courseOut = JsonWriter()
+    courseOut.putInt("total", if (courses.size > 0) { courses[0].int("total") } else { 0 })
+    courseOut.putInt("published", if (courses.size > 0) { courses[0].int("published") } else { 0 })
+    let lessonOut = JsonWriter()
+    lessonOut.putInt("total", if (lessons.size > 0) { lessons[0].int("total") } else { 0 })
+    let attemptOut = JsonWriter()
+    attemptOut.putInt("total", if (attempts.size > 0) { attempts[0].int("total") } else { 0 })
+    attemptOut.putInt("averageScore", if (attempts.size > 0) { attempts[0].int("average") } else { 0 })
+    attemptOut.putInt("recent", if (attempts.size > 0) { attempts[0].int("recent") } else { 0 })
+    let learningOut = JsonWriter()
+    learningOut.putInt("completed", if (learning.size > 0) { learning[0].int("completed") } else { 0 })
+    learningOut.putInt("activeUsers", if (learning.size > 0) { learning[0].int("active_users") } else { 0 })
+    let out = JsonWriter()
+    out.putRaw("users", userOut.toJson())
+    out.putRaw("courses", courseOut.toJson())
+    out.putRaw("lessons", lessonOut.toJson())
+    out.putRaw("quiz", attemptOut.toJson())
+    out.putRaw("learning", learningOut.toJson())
+    out.toJson()
+}
+
+func adminUsersBody(cfg: Config): String {
+    let rows = query(cfg,
+        "SELECT u.id,u.login_key,u.display_name,u.created_at," +
+        "CASE WHEN u.profile_json IS NULL THEN 0 ELSE 1 END has_profile," +
+        "COUNT(p.lesson_index) progress_count," +
+        "COALESCE(SUM(CASE WHEN p.completed=1 THEN 1 ELSE 0 END),0) completed_count," +
+        "COALESCE(ROUND(AVG(p.score)),0) average_score," +
+        "COALESCE(DATE_FORMAT(MAX(p.updated_at),'%Y-%m-%d %H:%i'),'') last_active " +
+        "FROM users u LEFT JOIN lesson_progress p ON p.user_id=u.id " +
+        "WHERE u.role<>'admin' GROUP BY u.id,u.login_key,u.display_name,u.created_at,u.profile_json " +
+        "ORDER BY u.created_at DESC LIMIT 200")
+    let arr = JsonArrWriter()
+    for (row in rows) {
+        let item = JsonWriter()
+        item.putStr("id", row.text("id"))
+        item.putStr("account", row.text("login_key"))
+        item.putStr("displayName", row.text("display_name"))
+        item.putBool("profiled", row.int("has_profile") == 1)
+        item.putInt("progressCount", row.int("progress_count"))
+        item.putInt("completedCount", row.int("completed_count"))
+        item.putInt("averageScore", row.int("average_score"))
+        item.putStr("lastActive", row.text("last_active"))
+        item.putStr("createdAt", row.text("created_at"))
+        arr.addRaw(item.toJson())
+    }
+    arr.toJson()
+}
+
+func chaptersArray(cfg: Config, courseId: String): JsonArray {
+    let rows = query(cfg, "SELECT chapters_json FROM courses WHERE id=" + sqlQuote(courseId))
+    if (rows.size == 0) { return JsonArray() }
+    match (jsonParse(rows[0].text("chapters_json"))) {
+        case Some(value) =>
+            match (value.kind()) {
+                case JsonKind.JsArray => return value.asArray()
+                case _ => return JsonArray()
+            }
+        case None => return JsonArray()
+    }
+}
+
+func chapterTitles(cfg: Config, courseId: String): Array<String> {
+    let chapters = chaptersArray(cfg, courseId)
+    let titles = ArrayList<String>()
+    var i: Int64 = 0
+    while (i < chapters.size()) {
+        let item = chapters[i]
+        var title = "未命名课时"
+        match (item.kind()) {
+            case JsonKind.JsObject =>
+                match (jsonGetString(item.asObject(), "title")) {
+                    case Some(value) => title = value
+                    case None => ()
+                }
+            case _ => ()
+        }
+        titles.add(title)
+        i += 1
+    }
+    titles.toArray()
+}
+
+func chaptersJsonText(titles: Array<String>): String {
+    let arr = JsonArrWriter()
+    for (title in titles) {
+        let item = JsonWriter()
+        item.putStr("title", title)
+        arr.addRaw(item.toJson())
+    }
+    arr.toJson()
+}
+
+func writeChapters(cfg: Config, courseId: String, titles: Array<String>): Unit {
+    execute(cfg, "UPDATE courses SET chapters_json=" + sqlQuote(chaptersJsonText(titles)) +
+        ",updated_at=NOW(6) WHERE id=" + sqlQuote(courseId))
+}
+
+func chapterTitlesRenamed(cfg: Config, courseId: String, index: Int64, title: String): Array<String> {
+    let current = chapterTitles(cfg, courseId)
+    let out = ArrayList<String>()
+    var i: Int64 = 0
+    while (i < current.size) {
+        var value = current[i]
+        if (i == index) { value = title }
+        out.add(value)
+        i += 1
+    }
+    if (index >= current.size) { out.add(title) }
+    out.toArray()
+}
+
+func chapterTitlesAppended(cfg: Config, courseId: String, title: String): Array<String> {
+    let current = chapterTitles(cfg, courseId)
+    let out = ArrayList<String>()
+    for (value in current) { out.add(value) }
+    out.add(title)
+    out.toArray()
+}
+
+func chapterTitlesWithoutLast(cfg: Config, courseId: String): Array<String> {
+    let current = chapterTitles(cfg, courseId)
+    let out = ArrayList<String>()
+    var i: Int64 = 0
+    while (i + 1 < current.size) {
+        out.add(current[i])
+        i += 1
+    }
+    out.toArray()
+}
+
+func validateLessonContent(raw: String): ?String {
+    if (raw.size > 512000) { return Some("讲义内容过长，请拆分为多个课时") }
+    match (jsonParse(raw)) {
+        case None => return Some("讲义内容不是合法的 JSON")
+        case Some(value) =>
+            match (value.kind()) {
+                case JsonKind.JsObject => return None
+                case _ => return Some("讲义内容必须是 JSON 对象")
+            }
+    }
+}
+
+func validateLessonQuiz(raw: String): ?String {
+    if (raw.size > 256000) { return Some("测验内容过长") }
+    match (jsonParse(raw)) {
+        case None => return Some("测验内容不是合法的 JSON")
+        case Some(value) =>
+            match (value.kind()) {
+                case JsonKind.JsArray => ()
+                case _ => return Some("测验内容必须是题目数组")
+            }
+            let quiz = value.asArray()
+            var i: Int64 = 0
+            while (i < quiz.size()) {
+                let label = "第 " + (i + 1).toString() + " 题"
+                match (quiz[i].kind()) {
+                    case JsonKind.JsObject => ()
+                    case _ => return Some(label + "格式不正确")
+                }
+                let question = quiz[i].asObject()
+                if ((jsonGetString(question, "question") ?? "").trimAscii().size == 0) {
+                    return Some(label + "缺少题干")
+                }
+                var options = JsonArray()
+                match (jsonGetArray(question, "options")) {
+                    case Some(list) => options = list
+                    case None => return Some(label + "缺少选项")
+                }
+                if (options.size() < 2) { return Some(label + "至少需要两个选项") }
+                var o: Int64 = 0
+                while (o < options.size()) {
+                    match (options[o].kind()) {
+                        case JsonKind.JsString => ()
+                        case _ => return Some(label + "的选项必须是文字")
+                    }
+                    o += 1
+                }
+                var correct: Int64 = 0
+                match (jsonGetInt(question, "correct")) {
+                    case Some(number) => correct = number
+                    case None => return Some(label + "未设置正确答案")
+                }
+                if (correct < 0 || correct >= options.size()) {
+                    return Some(label + "的正确答案超出选项范围")
+                }
+                i += 1
+            }
+            return None
+    }
+}
+
+func validateLessonSources(raw: String): ?String {
+    if (raw.size > 128000) { return Some("来源标注过长") }
+    match (jsonParse(raw)) {
+        case None => return Some("来源标注不是合法的 JSON")
+        case Some(value) =>
+            match (value.kind()) {
+                case JsonKind.JsArray => return None
+                case _ => return Some("来源标注必须是数组")
+            }
+    }
+}
+
+func emptyLessonContent(): String {
+    let out = JsonWriter()
+    out.putRaw("sections", "[]")
+    out.putRaw("slides", "[]")
+    out.putStr("sourceLabel", "管理员创建")
+    out.toJson()
 }
 
 main(): Int64 {
@@ -883,6 +1238,361 @@ main(): Int64 {
                         out.putRaw("bookmarks", bookmarks)
                         writeJson(ctx.response, 200, out.toJson())
                 }
+        }
+    }
+
+    app.mapPost("api/admin/login") { ctx =>
+        match (parseObject(ctx.request)) {
+            case None => writeError(ctx.response, 400, "登录信息格式不正确")
+            case Some(body) =>
+                let account = (jsonGetString(body, "account") ?? "").trimAscii()
+                let password = jsonGetString(body, "password") ?? ""
+                if (account.size == 0 || password.size == 0) {
+                    writeError(ctx.response, 400, "请填写管理员账号和密码")
+                } else {
+                    let found = query(cfg,
+                        "SELECT id,password_salt,password_hash,display_name,role FROM users WHERE login_key=" +
+                        sqlQuote(account.toAsciiLower()) + " LIMIT 1")
+                    if (found.size == 0 || found[0].isNull("password_hash")) {
+                        writeError(ctx.response, 401, "账号或密码不正确")
+                    } else if (passwordDigest(found[0].text("password_salt"), password) != found[0].text("password_hash")) {
+                        writeError(ctx.response, 401, "账号或密码不正确")
+                    } else if (found[0].text("role") != "admin") {
+                        writeError(ctx.response, 403, "该账号没有管理权限")
+                    } else {
+                        let token = uuidFormat(uuidV4())
+                        execute(cfg, "INSERT INTO user_sessions(token_hash,user_id,expires_at) VALUES(" +
+                            sqlQuote(tokenHash(token)) + "," + sqlQuote(found[0].text("id")) +
+                            ",DATE_ADD(NOW(6),INTERVAL 12 HOUR))")
+                        let out = JsonWriter()
+                        out.putStr("token", token)
+                        out.putStr("displayName", found[0].text("display_name"))
+                        out.putStr("role", "admin")
+                        writeJson(ctx.response, 200, out.toJson())
+                    }
+                }
+        }
+    }
+
+    app.mapGet("api/admin/overview") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) => writeJson(ctx.response, 200, adminOverviewBody(cfg))
+        }
+    }
+
+    app.mapGet("api/admin/courses") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let out = JsonWriter()
+                out.putRaw("courses", adminCoursesBody(cfg))
+                writeJson(ctx.response, 200, out.toJson())
+        }
+    }
+
+    app.mapPost("api/admin/courses") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                match (parseObject(ctx.request)) {
+                    case None => writeError(ctx.response, 400, "课程信息格式不正确")
+                    case Some(body) =>
+                        let id = (jsonGetString(body, "id") ?? "").trimAscii()
+                        let name = (jsonGetString(body, "name") ?? "").trimAscii()
+                        let description = jsonGetString(body, "description") ?? ""
+                        let level = (jsonGetString(body, "level") ?? "").trimAscii()
+                        let icon = (jsonGetString(body, "icon") ?? "").trimAscii()
+                        let sourceLabel = (jsonGetString(body, "sourceLabel") ?? "").trimAscii()
+                        let duration = jsonGetInt(body, "duration") ?? 0
+                        if (!validCourseSlug(id)) {
+                            writeError(ctx.response, 400, "课程编号只能用 2–40 位小写字母、数字、横线或下划线")
+                        } else if (name.size == 0 || name.size > 160) {
+                            writeError(ctx.response, 400, "课程名称需要 1–160 个字符")
+                        } else if (description.size > 4000) {
+                            writeError(ctx.response, 400, "课程简介过长")
+                        } else if (level.size > 40) {
+                            writeError(ctx.response, 400, "难度标签过长")
+                        } else {
+                            let existing = query(cfg, "SELECT id FROM courses WHERE id=" + sqlQuote(id))
+                            if (existing.size > 0) {
+                                writeError(ctx.response, 409, "这个课程编号已经存在")
+                            } else {
+                                execute(cfg,
+                                    "INSERT INTO courses(id,name,icon,description,level,duration,chapters_json,source_label,status,sort_order) VALUES(" +
+                                    sqlQuote(id) + "," + sqlQuote(name) + "," + sqlQuote(icon) + "," + sqlQuote(description) + "," +
+                                    sqlQuote(if (level.size == 0) { "入门" } else { level }) + "," +
+                                    maxInt(0, duration).toString() + ",'[]'," +
+                                    sqlQuote(if (sourceLabel.size == 0) { "管理员创建" } else { sourceLabel }) +
+                                    ",'draft',100)")
+                                match (adminCourseBody(cfg, id)) {
+                                    case Some(body2) => writeJson(ctx.response, 200, body2)
+                                    case None => writeError(ctx.response, 500, "课程已保存，但读取失败，请刷新列表")
+                                }
+                            }
+                        }
+                }
+        }
+    }
+
+    app.mapPut("api/admin/courses/{course_id}") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let courseId = routeText(ctx, "course_id")
+                match (parseObject(ctx.request)) {
+                    case None => writeError(ctx.response, 400, "课程信息格式不正确")
+                    case Some(body) =>
+                        let name = (jsonGetString(body, "name") ?? "").trimAscii()
+                        let description = jsonGetString(body, "description") ?? ""
+                        let level = (jsonGetString(body, "level") ?? "").trimAscii()
+                        let icon = (jsonGetString(body, "icon") ?? "").trimAscii()
+                        let sourceLabel = (jsonGetString(body, "sourceLabel") ?? "").trimAscii()
+                        let duration = jsonGetInt(body, "duration") ?? 0
+                        let existing = query(cfg, "SELECT id FROM courses WHERE id=" + sqlQuote(courseId))
+                        if (existing.size == 0) {
+                            writeError(ctx.response, 404, "没有找到这门课程")
+                        } else if (name.size == 0 || name.size > 160) {
+                            writeError(ctx.response, 400, "课程名称需要 1–160 个字符")
+                        } else if (description.size > 4000) {
+                            writeError(ctx.response, 400, "课程简介过长")
+                        } else if (level.size > 40) {
+                            writeError(ctx.response, 400, "难度标签过长")
+                        } else {
+                            execute(cfg,
+                                "UPDATE courses SET name=" + sqlQuote(name) + ",icon=" + sqlQuote(icon) +
+                                ",description=" + sqlQuote(description) +
+                                ",level=" + sqlQuote(if (level.size == 0) { "入门" } else { level }) +
+                                ",duration=" + maxInt(0, duration).toString() +
+                                ",source_label=" + sqlQuote(if (sourceLabel.size == 0) { "管理员创建" } else { sourceLabel }) +
+                                ",updated_at=NOW(6) WHERE id=" + sqlQuote(courseId))
+                            match (adminCourseBody(cfg, courseId)) {
+                                case Some(body2) => writeJson(ctx.response, 200, body2)
+                                case None => writeError(ctx.response, 500, "课程已保存，但读取失败，请刷新列表")
+                            }
+                        }
+                }
+        }
+    }
+
+    app.mapPost("api/admin/courses/{course_id}/status") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let courseId = routeText(ctx, "course_id")
+                match (parseObject(ctx.request)) {
+                    case None => writeError(ctx.response, 400, "状态信息格式不正确")
+                    case Some(body) =>
+                        let status = (jsonGetString(body, "status") ?? "").trimAscii()
+                        if (!adminStatusOk(status)) {
+                            writeError(ctx.response, 400, "状态只能是 published 或 draft")
+                        } else {
+                            let existing = query(cfg, "SELECT id FROM courses WHERE id=" + sqlQuote(courseId))
+                            if (existing.size == 0) {
+                                writeError(ctx.response, 404, "没有找到这门课程")
+                            } else {
+                                execute(cfg, "UPDATE courses SET status=" + sqlQuote(status) +
+                                    ",updated_at=NOW(6) WHERE id=" + sqlQuote(courseId))
+                                match (adminCourseBody(cfg, courseId)) {
+                                    case Some(body2) => writeJson(ctx.response, 200, body2)
+                                    case None => writeError(ctx.response, 500, "状态已保存，但读取失败，请刷新列表")
+                                }
+                            }
+                        }
+                }
+        }
+    }
+
+    app.mapGet("api/admin/courses/{course_id}") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                match (adminCourseBody(cfg, routeText(ctx, "course_id"))) {
+                    case Some(body) => writeJson(ctx.response, 200, body)
+                    case None => writeError(ctx.response, 404, "没有找到这门课程")
+                }
+        }
+    }
+
+    app.mapPost("api/admin/courses/{course_id}/lessons") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let courseId = routeText(ctx, "course_id")
+                let courses = query(cfg, "SELECT id FROM courses WHERE id=" + sqlQuote(courseId))
+                if (courses.size == 0) {
+                    writeError(ctx.response, 404, "没有找到这门课程")
+                } else {
+                    let maxRows = query(cfg,
+                        "SELECT COALESCE(MAX(lesson_index),-1) max_index FROM lessons WHERE course_id=" + sqlQuote(courseId))
+                    let nextIndex = if (maxRows.size > 0) { maxRows[0].int("max_index") + 1 } else { 0 }
+                    let title = "新课时 " + (nextIndex + 1).toString()
+                    transaction(cfg, [
+                        "INSERT INTO lessons(course_id,lesson_index,title,content_json,quiz_json,sources_json) VALUES(" +
+                        sqlQuote(courseId) + "," + nextIndex.toString() + "," + sqlQuote(title) + "," +
+                        sqlQuote(emptyLessonContent()) + ",'[]','[]')"
+                    ])
+                    writeChapters(cfg, courseId, chapterTitlesAppended(cfg, courseId, title))
+                    let out = JsonWriter()
+                    out.putInt("index", nextIndex)
+                    out.putStr("title", title)
+                    writeJson(ctx.response, 200, out.toJson())
+                }
+        }
+    }
+
+    app.mapGet("api/admin/courses/{course_id}/lessons/{lesson_index}") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let index = Int64.tryParse(routeText(ctx, "lesson_index")) ?? -1
+                if (index < 0) {
+                    writeError(ctx.response, 400, "课时编号不正确")
+                } else {
+                    match (adminLessonBody(cfg, routeText(ctx, "course_id"), index)) {
+                        case Some(body) => writeJson(ctx.response, 200, body)
+                        case None => writeError(ctx.response, 404, "没有找到这个课时")
+                    }
+                }
+        }
+    }
+
+    app.mapPut("api/admin/courses/{course_id}/lessons/{lesson_index}") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let courseId = routeText(ctx, "course_id")
+                let index = Int64.tryParse(routeText(ctx, "lesson_index")) ?? -1
+                if (index < 0) {
+                    writeError(ctx.response, 400, "课时编号不正确")
+                } else {
+                    let existing = query(cfg,
+                        "SELECT title FROM lessons WHERE course_id=" + sqlQuote(courseId) +
+                        " AND lesson_index=" + index.toString())
+                    if (existing.size == 0) {
+                        writeError(ctx.response, 404, "没有找到这个课时")
+                    } else {
+                        match (parseObject(ctx.request)) {
+                            case None => writeError(ctx.response, 400, "课时内容格式不正确")
+                            case Some(body) =>
+                                let title = (jsonGetString(body, "title") ?? "").trimAscii()
+                                let contentJson = jsonGetString(body, "contentJson") ?? ""
+                                let quizJson = jsonGetString(body, "quizJson") ?? "[]"
+                                let sourcesJson = jsonGetString(body, "sourcesJson") ?? "[]"
+                                var problem = ""
+                                if (title.size == 0 || title.size > 200) {
+                                    problem = "课时标题需要 1–200 个字符"
+                                } else {
+                                    match (validateLessonContent(contentJson)) {
+                                        case Some(message) => problem = message
+                                        case None => ()
+                                    }
+                                    if (problem.size == 0) {
+                                        match (validateLessonQuiz(quizJson)) {
+                                            case Some(message) => problem = message
+                                            case None => ()
+                                        }
+                                    }
+                                    if (problem.size == 0) {
+                                        match (validateLessonSources(sourcesJson)) {
+                                            case Some(message) => problem = message
+                                            case None => ()
+                                        }
+                                    }
+                                }
+                                if (problem.size > 0) {
+                                    writeError(ctx.response, 400, problem)
+                                } else {
+                                    let chapters = chaptersJsonText(chapterTitlesRenamed(cfg, courseId, index, title))
+                                    transaction(cfg, [
+                                        "UPDATE lessons SET title=" + sqlQuote(title) +
+                                        ",content_json=" + sqlQuote(contentJson) +
+                                        ",quiz_json=" + sqlQuote(quizJson) +
+                                        ",sources_json=" + sqlQuote(sourcesJson) +
+                                        " WHERE course_id=" + sqlQuote(courseId) + " AND lesson_index=" + index.toString(),
+                                        "UPDATE courses SET chapters_json=" + sqlQuote(chapters) +
+                                        ",updated_at=NOW(6) WHERE id=" + sqlQuote(courseId)
+                                    ])
+                                    match (adminLessonBody(cfg, courseId, index)) {
+                                        case Some(body2) => writeJson(ctx.response, 200, body2)
+                                        case None => writeError(ctx.response, 500, "课时已保存，但读取失败，请刷新")
+                                    }
+                                }
+                        }
+                    }
+                }
+        }
+    }
+
+    app.mapDelete("api/admin/courses/{course_id}/lessons/{lesson_index}") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let courseId = routeText(ctx, "course_id")
+                let index = Int64.tryParse(routeText(ctx, "lesson_index")) ?? -1
+                let maxRows = query(cfg,
+                    "SELECT COALESCE(MAX(lesson_index),-1) max_index FROM lessons WHERE course_id=" + sqlQuote(courseId))
+                let maxIndex = if (maxRows.size > 0) { maxRows[0].int("max_index") } else { -1 }
+                if (index < 0 || maxIndex < 0) {
+                    writeError(ctx.response, 404, "没有找到这个课时")
+                } else if (index != maxIndex) {
+                    writeError(ctx.response, 409, "只能删除最后一节课时，避免打乱已发布课时编号")
+                } else {
+                    transaction(cfg, [
+                        "DELETE FROM quiz_attempts WHERE course_id=" + sqlQuote(courseId) +
+                        " AND lesson_index=" + index.toString(),
+                        "DELETE FROM lesson_progress WHERE course_id=" + sqlQuote(courseId) +
+                        " AND lesson_index=" + index.toString(),
+                        "DELETE FROM lessons WHERE course_id=" + sqlQuote(courseId) +
+                        " AND lesson_index=" + index.toString()
+                    ])
+                    writeChapters(cfg, courseId, chapterTitlesWithoutLast(cfg, courseId))
+                    let out = JsonWriter()
+                    out.putBool("deleted", true)
+                    out.putInt("index", index)
+                    writeJson(ctx.response, 200, out.toJson())
+                }
+        }
+    }
+
+    app.mapDelete("api/admin/courses/{course_id}") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let courseId = routeText(ctx, "course_id")
+                let existing = query(cfg, "SELECT id FROM courses WHERE id=" + sqlQuote(courseId))
+                if (existing.size == 0) {
+                    writeError(ctx.response, 404, "没有找到这门课程")
+                } else {
+                    let progress = query(cfg,
+                        "SELECT COUNT(*) n FROM lesson_progress WHERE course_id=" + sqlQuote(courseId))
+                    let attempts = query(cfg,
+                        "SELECT COUNT(*) n FROM quiz_attempts WHERE course_id=" + sqlQuote(courseId))
+                    let used = (if (progress.size > 0) { progress[0].int("n") } else { 0 }) +
+                        (if (attempts.size > 0) { attempts[0].int("n") } else { 0 })
+                    if (used > 0) {
+                        writeError(ctx.response, 409, "这门课程已经有学习记录，请改用下架，不要删除")
+                    } else {
+                        transaction(cfg, [
+                            "DELETE FROM lessons WHERE course_id=" + sqlQuote(courseId),
+                            "DELETE FROM courses WHERE id=" + sqlQuote(courseId)
+                        ])
+                        let out = JsonWriter()
+                        out.putBool("deleted", true)
+                        out.putStr("id", courseId)
+                        writeJson(ctx.response, 200, out.toJson())
+                    }
+                }
+        }
+    }
+
+    app.mapGet("api/admin/users") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let out = JsonWriter()
+                out.putRaw("users", adminUsersBody(cfg))
+                writeJson(ctx.response, 200, out.toJson())
         }
     }
 
