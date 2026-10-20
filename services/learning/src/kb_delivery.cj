@@ -6,62 +6,17 @@ import soulsoft_web_http.*
 
 /** Publish from complete source documents, never concatenate overlapping search chunks. */
 func kbPublishBundle(cfg: Config, bundleId: String): ?KbPublishResult {
+    // 课程内容不再直接取原文：只建课程壳，课时来自「已上架章节 + 已发布课件」。
     let bundles = query(cfg, "SELECT title,name,status,course_id FROM kb_bundles WHERE id=" + sqlQuote(bundleId))
     if (bundles.size == 0 || bundles[0].text("status") != "ready") { return None }
-    let docs = query(cfg, "SELECT id,document_id,title,content,source_path FROM kb_bundle_docs WHERE bundle_id=" +
-        sqlQuote(bundleId) + " ORDER BY order_index,id")
-    if (docs.size == 0) { return None }
     let existing = bundles[0].text("course_id")
-    let courseId = if (existing.size > 0) { existing } else { "kb-" + bundleId.replace("-", "") }
-    let title = if (bundles[0].text("title").size > 0) { bundles[0].text("title") } else { bundles[0].text("name") }
-    let chapters = JsonArrWriter()
-    let statements = ArrayList<String>()
-    var index: Int64 = 0
-    for (doc in docs) {
-        let chapter = JsonWriter()
-        chapter.putStr("title", doc.text("title"))
-        chapters.addRaw(chapter.toJson())
-    }
-    let icon = "/api/kb/bundles/" + bundleId + "/logo"
-    statements.add("INSERT INTO courses(id,name,icon,description,level,duration,chapters_json,source_label,status,sort_order) VALUES(" +
-        sqlQuote(courseId) + "," + sqlQuote(title) + "," + sqlQuote(icon) + "," +
-        sqlQuote(kbSummaryOf(docs[0].text("content"), 120)) + ",'入门'," + (docs.size * 10).toString() + "," +
-        sqlQuote(chapters.toJson()) + "," + sqlQuote("知识库《" + title + "》") + ",'published',100) " +
-        "ON DUPLICATE KEY UPDATE name=VALUES(name),icon=VALUES(icon),description=VALUES(description)," +
-        "duration=VALUES(duration),chapters_json=VALUES(chapters_json),source_label=VALUES(source_label),status='published',updated_at=NOW(6)")
-    var rows = ""
-    for (doc in docs) {
-        let section = JsonWriter()
-        section.putStr("id", "source-" + doc.text("id"))
-        section.putStr("eyebrow", "课程讲义")
-        section.putStr("heading", doc.text("title"))
-        section.putStr("text", doc.text("content"))
-        section.putBool("markdown", true)
-        let content = JsonWriter()
-        content.putRaw("sections", "[" + section.toJson() + "]")
-        content.putRaw("slides", "[]")
-        content.putStr("sourceLabel", doc.text("source_path"))
-        let source = JsonWriter()
-        source.putStr("id", doc.text("document_id"))
-        source.putStr("title", doc.text("title"))
-        source.putStr("kind", "kb-document")
-        source.putStr("sourcePath", doc.text("source_path"))
-        if (rows.size > 0) { rows += "," }
-        rows += "(" + sqlQuote(courseId) + "," + index.toString() + "," + sqlQuote(doc.text("title")) + "," +
-            sqlQuote(content.toJson()) + ",'[]'," + sqlQuote("[" + source.toJson() + "]") + ")"
-        index += 1
-        if (index % 15 == 0 || index == docs.size) {
-            statements.add("INSERT INTO lessons(course_id,lesson_index,title,content_json,quiz_json,sources_json) VALUES " + rows +
-                " ON DUPLICATE KEY UPDATE title=VALUES(title),content_json=VALUES(content_json),sources_json=VALUES(sources_json)")
-            rows = ""
-        }
-    }
-    // Stable source ordering keeps existing learner progress on an idempotent publish.
-    statements.add("UPDATE kb_bundles SET course_id=" + sqlQuote(courseId) + " WHERE id=" + sqlQuote(bundleId))
-    statements.add("UPDATE kb_documents SET course_id=" + sqlQuote(courseId) + " WHERE bundle_id=" + sqlQuote(bundleId))
-    transaction(cfg, statements.toArray())
-    kbBumpVersion()
-    Some(KbPublishResult(courseId, docs.size, existing.size == 0))
+    cwRebuildBundleCourse(cfg, bundleId, "published")
+    let rows = query(cfg, "SELECT course_id FROM kb_bundles WHERE id=" + sqlQuote(bundleId))
+    if (rows.size == 0 || rows[0].text("course_id").size == 0) { return None }
+    let courseId = rows[0].text("course_id")
+    let lessons = query(cfg, "SELECT COUNT(*) n FROM lessons WHERE course_id=" + sqlQuote(courseId))
+    let count = if (lessons.size > 0) { lessons[0].int("n") } else { 0 }
+    Some(KbPublishResult(courseId, count, existing.size == 0))
 }
 
 func kbSetBundleCourseStatus(cfg: Config, bundleId: String, status: String): Bool {

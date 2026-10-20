@@ -141,6 +141,9 @@ export const adminApi = {
   cwPublish: (id) => request(`/kb/courseware/${encodeURIComponent(id)}/publish`, { method: 'POST', body: {} }),
   cwUnpublish: (id) => request(`/kb/courseware/${encodeURIComponent(id)}/unpublish`, { method: 'POST', body: {} }),
   cwDelete: (id) => request(`/kb/courseware/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  cwChapters: (bundleId) => request(`/kb/courseware/chapters?bundleId=${encodeURIComponent(bundleId)}`),
+  cwPublishChapter: (docId, bundleId, order) => request(`/kb/courseware/chapters/${encodeURIComponent(docId)}/publish`, { method: 'POST', body: { bundleId, order } }),
+  cwUnpublishChapter: (docId, bundleId) => request(`/kb/courseware/chapters/${encodeURIComponent(docId)}/unpublish`, { method: 'POST', body: { bundleId } }),
   orgInfo: () => request('/org'),
   updateOrg: (body) => request('/org', { method: 'PUT', body }),
   uploadOrgLogo: async (file) => {

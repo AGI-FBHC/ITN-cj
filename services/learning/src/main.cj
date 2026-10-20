@@ -306,7 +306,8 @@ func courseArrayBody(cfg: Config, userId: String): String {
     let progress = progressMap(cfg, userId, None)
     let courseRows = query(cfg,
         "SELECT id,name,icon,description,level,duration,chapters_json,source_label FROM courses " +
-        "WHERE status='published' ORDER BY sort_order,name")
+        "WHERE status='published' AND EXISTS(SELECT 1 FROM lessons l WHERE l.course_id=courses.id) " +
+        "ORDER BY sort_order,name")
     let arr = JsonArrWriter()
     for (row in courseRows) { arr.addRaw(courseJson(row, progress)) }
     arr.toJson()
@@ -1081,7 +1082,9 @@ func orgWriteLogo(response: HttpResponse, cfg: Config): Unit {
 func cwSelect(): String {
     "SELECT c.id,c.bundle_id,c.doc_id,c.kind,c.title,c.status,c.published,c.model,c.error_message," +
     "COALESCE(DATE_FORMAT(c.updated_at,'%Y-%m-%d %H:%i'),'') updated_at," +
-    "COALESCE(d.title,'') doc_title,COALESCE(b.title,b.name,'') bundle_title " +
+    "COALESCE(d.title,'') doc_title,COALESCE(b.title,b.name,'') bundle_title," +
+    "COALESCE((SELECT ch.order_no FROM kb_courseware_chapters ch WHERE ch.bundle_id=c.bundle_id " +
+    "AND ch.doc_id=c.doc_id),0) chapter_order " +
     "FROM kb_courseware c LEFT JOIN kb_bundle_docs d ON d.id=c.doc_id " +
     "LEFT JOIN kb_bundles b ON b.id=c.bundle_id "
 }
@@ -1100,6 +1103,7 @@ func cwRowJson(row: Row): String {
     out.putStr("bundleTitle", row.text("bundle_title"))
     out.putStr("model", row.text("model"))
     out.putStr("errorMessage", row.text("error_message"))
+    out.putInt("chapterOrder", row.int("chapter_order"))
     out.putStr("updatedAt", row.text("updated_at"))
     out.toJson()
 }
@@ -2850,6 +2854,7 @@ main(): Int64 {
                     writeError(ctx.response, 409, "只有生成完成的课件可以发布")
                 } else {
                     execute(cfg, "UPDATE kb_courseware SET published=1,updated_at=NOW(6) WHERE id=" + sqlQuote(id))
+                    cwSyncCoursewareCourse(cfg, id)
                     let out = JsonWriter()
                     out.putBool("published", true)
                     writeJson(ctx.response, 200, out.toJson())
@@ -2863,6 +2868,7 @@ main(): Int64 {
             case Some(_) =>
                 let id = routeText(ctx, "courseware_id")
                 execute(cfg, "UPDATE kb_courseware SET published=0,updated_at=NOW(6) WHERE id=" + sqlQuote(id))
+                cwSyncCoursewareCourse(cfg, id)
                 let out = JsonWriter()
                 out.putBool("published", false)
                 writeJson(ctx.response, 200, out.toJson())
@@ -2878,7 +2884,9 @@ main(): Int64 {
                 if (rows.size == 0) {
                     writeError(ctx.response, 404, "没有找到这份课件")
                 } else {
+                    let owner = query(cfg, "SELECT bundle_id,doc_id FROM kb_courseware WHERE id=" + sqlQuote(id))
                     execute(cfg, "DELETE FROM kb_courseware WHERE id=" + sqlQuote(id))
+                    for (row in owner) { cwSyncChapterCourse(cfg, row.text("bundle_id"), row.text("doc_id")) }
                     let out = JsonWriter()
                     out.putBool("deleted", true)
                     writeJson(ctx.response, 200, out.toJson())
@@ -2955,6 +2963,60 @@ main(): Int64 {
 
     app.mapGet("api/org/logo") { ctx =>
         orgWriteLogo(ctx.response, cfg)
+    }
+
+    app.mapGet("api/admin/kb/courseware/chapters") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let bundleId = (ctx.request.query.get("bundleId") ?? "").trimAscii()
+                if (bundleId.size == 0) {
+                    writeError(ctx.response, 400, "请先选择知识库")
+                } else {
+                    writeJson(ctx.response, 200, cwChaptersBody(cfg, bundleId))
+                }
+        }
+    }
+
+    app.mapPost("api/admin/kb/courseware/chapters/{doc_id}/publish") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                match (parseObject(ctx.request)) {
+                    case None => writeError(ctx.response, 400, "发布参数格式不正确")
+                    case Some(body) =>
+                        let bundleId = (jsonGetString(body, "bundleId") ?? "").trimAscii()
+                        let order = jsonGetInt(body, "order") ?? 0
+                        if (bundleId.size == 0) {
+                            writeError(ctx.response, 400, "请先选择知识库")
+                        } else {
+                            let problem = cwPublishChapter(cfg, bundleId, routeText(ctx, "doc_id"), order)
+                            if (problem.size > 0) {
+                                writeError(ctx.response, 409, problem)
+                            } else {
+                                writeJson(ctx.response, 200, cwChaptersBody(cfg, bundleId))
+                            }
+                        }
+                }
+        }
+    }
+
+    app.mapPost("api/admin/kb/courseware/chapters/{doc_id}/unpublish") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                match (parseObject(ctx.request)) {
+                    case None => writeError(ctx.response, 400, "参数格式不正确")
+                    case Some(body) =>
+                        let bundleId = (jsonGetString(body, "bundleId") ?? "").trimAscii()
+                        if (bundleId.size == 0) {
+                            writeError(ctx.response, 400, "请先选择知识库")
+                        } else {
+                            cwUnpublishChapter(cfg, bundleId, routeText(ctx, "doc_id"))
+                            writeJson(ctx.response, 200, cwChaptersBody(cfg, bundleId))
+                        }
+                }
+        }
     }
 
     app.run(cfg.listen)

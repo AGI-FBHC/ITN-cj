@@ -21,6 +21,33 @@ const STATUS = {
   failed: { label: '失败', kind: 'draft' },
 };
 
+const KIND_ORDER = Object.fromEntries(RESOURCES.map((item, index) => [item.key, index]));
+
+function rankOf(item) {
+  if (item.status === 'ready') return 3;
+  if (item.status === 'generating') return 2;
+  return 1;
+}
+
+/** 每个类型只取一份代表：能用的优先，同条件下取最新。 */
+function resourceByKind(list) {
+  const map = {};
+  for (const item of list) {
+    const current = map[item.kind];
+    if (!current) { map[item.kind] = item; continue; }
+    const delta = rankOf(item) - rankOf(current);
+    if (delta > 0 || (delta === 0 && String(item.updatedAt) > String(current.updatedAt))) map[item.kind] = item;
+  }
+  return map;
+}
+
+function resourceState(item) {
+  if (!item) return '未生成';
+  if (item.status === 'generating') return '生成中';
+  if (item.status === 'failed') return '生成失败';
+  return item.published ? '已发布' : '待发布';
+}
+
 /* ---------- 页面 ---------- */
 
 export default function AdminCourseware() {
@@ -35,22 +62,40 @@ export default function AdminCourseware() {
   const [view, setView] = React.useState('chapters');
   const [showPicker, setShowPicker] = React.useState(false);
   const [picked, setPicked] = React.useState([]);
+  const [publishDocId, setPublishDocId] = React.useState('');
+  const [order, setOrder] = React.useState(1);
   const [message, setMessage] = React.useState('');
   const [error, setError] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
   const pollTimer = React.useRef(null);
 
   const bundles = (bundlesState.data?.bundles || []).filter((item) => bundleReadable(item));
   const selectedBundle = bundles.find((item) => item.id === bundleId) || null;
+  const courseLive = selectedBundle?.courseStatus === 'published';
   const chaptersState = useLoad(
     () => (bundleId
       ? adminApi.kbBundle(bundleId).then((data) => ({ ...data, forBundle: bundleId }))
       : Promise.resolve({ docs: [], forBundle: '' })),
     [bundleId],
   );
+  const liveState = useLoad(
+    () => (bundleId
+      ? adminApi.cwChapters(bundleId).then((data) => ({ ...data, forBundle: bundleId }))
+      : Promise.resolve({ published: [], nextFree: 1, publishedCount: 0, forBundle: '' })),
+    [bundleId],
+  );
   // 只认当前资料包返回的章节，避免切换瞬间拿上一个包的章节去请求正文（会 404）
   const chaptersReady = chaptersState.data?.forBundle === bundleId;
   const chapters = chaptersReady ? (chaptersState.data?.docs || []) : [];
+  const liveReady = liveState.data?.forBundle === bundleId;
+  const liveChapters = liveReady ? (liveState.data?.published || []) : [];
+  const nextFree = liveReady ? (liveState.data?.nextFree || 1) : 1;
+  const liveByDoc = React.useMemo(
+    () => new Map(liveChapters.map((item) => [item.docId, item])),
+    [liveChapters],
+  );
   const activeChapter = chapters.find((item) => item.id === activeDocId) || null;
+  const activeLive = activeDocId ? liveByDoc.get(activeDocId) : null;
   const items = listState.data?.items || [];
   const generating = items.some((item) => item.status === 'generating');
 
@@ -74,6 +119,7 @@ export default function AdminCourseware() {
   React.useEffect(() => {
     setActiveDocId('');
     setDoc(null);
+    setPublishDocId('');
   }, [bundleId]);
 
   // 章节默认落在第一项，省掉一次点击；切换资料包后同样自动选新包的第一章。
@@ -102,6 +148,12 @@ export default function AdminCourseware() {
     setPicked((current) => (current.includes(key) ? current.filter((item) => item !== key) : [...current, key]));
   }
 
+  function reloadAll() {
+    bundlesState.reload();
+    listState.reload();
+    liveState.reload();
+  }
+
   async function generate() {
     if (picked.length === 0 || !doc) return;
     setShowPicker(false);
@@ -126,8 +178,76 @@ export default function AdminCourseware() {
     }
   }
 
+  async function runGuarded(task) {
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await task();
+      reloadAll();
+    } catch (failure) {
+      setError(failure.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function publishCourse() {
+    runGuarded(async () => {
+      const result = await adminApi.publishKbBundle(bundleId);
+      setMessage(result.lessonCount > 0
+        ? `课程已上架，学员端可以学习 ${result.lessonCount} 个课时。`
+        : '课程已上架，还没有上架课件，学员端暂时看不到内容。');
+    });
+  }
+
+  function takeDownCourse() {
+    if (!window.confirm('下架这门课程？已上架的课件会保留，再次上架后仍然可用。')) return;
+    runGuarded(async () => {
+      await adminApi.unpublishKbBundle(bundleId);
+      setMessage('课程已下架，课件与章节都保留在库里。');
+    });
+  }
+
+  function openPublish(docId) {
+    const live = liveByDoc.get(docId);
+    setPublishDocId(docId);
+    setOrder(live ? live.orderNo : nextFree);
+    setError('');
+    setMessage('');
+  }
+
+  async function toggleResource(item) {
+    await act(() => (item.published ? adminApi.cwUnpublish(item.id) : adminApi.cwPublish(item.id)));
+  }
+
+  async function confirmPublish() {
+    if (!publishDocId) return;
+    await runGuarded(async () => {
+      await adminApi.cwPublishChapter(publishDocId, bundleId, order);
+      setPublishDocId('');
+      setMessage(`课件已上架，学员端第 ${order} 个章节更新完成。`);
+    });
+  }
+
+  async function unpublishChapter(docId) {
+    await runGuarded(async () => {
+      await adminApi.cwUnpublishChapter(docId, bundleId);
+      setPublishDocId('');
+      setMessage('这个章节已下架，课件仍然保留。');
+    });
+  }
+
   if (bundlesState.loading && !bundlesState.data) return <Loading label="正在读取知识库…" />;
   if (bundlesState.error) return <ErrorBlock message={bundlesState.error} onRetry={bundlesState.reload} />;
+
+  const publishDoc = chapters.find((item) => item.id === publishDocId) || null;
+  const publishDocLive = publishDocId ? liveByDoc.get(publishDocId) : null;
+  const publishResources = resourceByKind(items.filter((item) => item.docId === publishDocId));
+  const publishedCount = RESOURCES.filter((resource) => publishResources[resource.key]?.published).length;
+  const orderTaken = liveChapters.find((item) => item.orderNo === order && item.docId !== publishDocId);
+  const orderSlots = Math.max(12, liveChapters.length + 6);
 
   return (
     <div className="zx-admin-page">
@@ -141,7 +261,7 @@ export default function AdminCourseware() {
                 课件库{items.length > 0 ? ` · ${items.length}` : ''}
               </button>
             </div>
-            <button type="button" className="zx-btn zx-btn-ghost" onClick={() => { bundlesState.reload(); listState.reload(); }}>刷新</button>
+            <button type="button" className="zx-btn zx-btn-ghost" onClick={reloadAll}>刷新</button>
           </>
         }
       />
@@ -166,7 +286,10 @@ export default function AdminCourseware() {
                   <BundleLogo bundle={item} size={28} />
                   <span className="zx-cw-item-text">
                     <strong>{item.title || item.name}</strong>
-                    <small>{item.docCount || 0} 章</small>
+                    <small className="zx-cw-item-sub">
+                      {item.docCount || 0} 章
+                      {item.courseStatus === 'published' ? <span className="zx-cw-live-badge">已上架</span> : null}
+                    </small>
                   </span>
                 </button>
               ))
@@ -175,21 +298,39 @@ export default function AdminCourseware() {
 
           <aside className="zx-cw-col">
             <div className="zx-cw-col-title">章节</div>
+            {selectedBundle ? (
+              <div className={`zx-cw-bar ${courseLive ? 'live' : ''}`}>
+                <div className="zx-cw-bar-text">
+                  <strong>{courseLive ? '课程已上架' : '课程未上架'}</strong>
+                  <small>{courseLive
+                    ? `已上架 ${liveChapters.length} 个章节`
+                    : '上架后学员端才可见'}</small>
+                </div>
+                {courseLive ? (
+                  <button type="button" className="zx-btn zx-btn-sm zx-btn-ghost" disabled={busy} onClick={takeDownCourse}>下架</button>
+                ) : (
+                  <button type="button" className="zx-btn zx-btn-sm zx-btn-primary" disabled={busy} onClick={publishCourse}>上架课程</button>
+                )}
+              </div>
+            ) : null}
             {chaptersState.loading || !chaptersReady ? <div className="zx-cw-hint">正在读取章节…</div> : null}
-            {chapters.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={`zx-cw-item ${item.id === activeDocId ? 'active' : ''}`}
-                onClick={() => setActiveDocId(item.id)}
-              >
-                <span className="zx-cw-index">{item.order}</span>
-                <span className="zx-cw-item-text">
-                  <strong>{item.title}</strong>
-                  <small>{item.charCount} 字</small>
-                </span>
-              </button>
-            ))}
+            {chapters.map((item) => {
+              const live = liveByDoc.get(item.id);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`zx-cw-item ${item.id === activeDocId ? 'active' : ''}`}
+                  onClick={() => setActiveDocId(item.id)}
+                >
+                  <span className={`zx-cw-index ${live ? 'live' : ''}`}>{live ? `#${live.orderNo}` : item.order}</span>
+                  <span className="zx-cw-item-text">
+                    <strong>{item.title}</strong>
+                    <small>{live ? '已上架 · ' : ''}{item.charCount} 字</small>
+                  </span>
+                </button>
+              );
+            })}
             {chaptersReady && chapters.length === 0 ? <div className="zx-cw-hint">这个知识库还没有章节。</div> : null}
           </aside>
 
@@ -203,9 +344,20 @@ export default function AdminCourseware() {
                     <strong>{activeChapter.title}</strong>
                     <span>{activeChapter.charCount} 字{activeChapter.sourcePath ? ` · ${activeChapter.sourcePath}` : ''}</span>
                   </div>
-                  <button type="button" className="zx-btn zx-btn-primary" disabled={!doc || docLoading} onClick={() => { setPicked([]); setShowPicker(true); }}>
-                    生成课件
-                  </button>
+                  <div className="zx-cw-main-actions">
+                    <button type="button" className="zx-btn zx-btn-ghost" disabled={!doc || docLoading} onClick={() => { setPicked([]); setShowPicker(true); }}>
+                      生成课件
+                    </button>
+                    <button
+                      type="button"
+                      className={`zx-btn ${activeLive ? 'zx-btn-ghost' : 'zx-btn-primary'}`}
+                      disabled={!courseLive || busy}
+                      title={courseLive ? '' : '先上架课程'}
+                      onClick={() => openPublish(activeChapter.id)}
+                    >
+                      {activeLive ? `已上架 #${activeLive.orderNo}` : '上架课件'}
+                    </button>
+                  </div>
                 </header>
 
                 <div className="zx-cw-scroll">
@@ -233,27 +385,30 @@ export default function AdminCourseware() {
                   <th>类型</th>
                   <th>来源章节</th>
                   <th>状态</th>
+                  <th>章节上架</th>
                   <th>更新时间</th>
                   <th aria-label="操作" />
                 </tr>
               </thead>
               <tbody>
                 {items.map((item) => {
-                  const status = item.published ? STATUS.published : (STATUS[item.status] || STATUS.draft);
+                  const status = item.published ? STATUS.published : (STATUS[item.status] || STATUS.ready);
+                  const liveOrder = item.chapterOrder || 0;
                   return (
                     <tr key={item.id}>
                       <td><div className="zx-cell-title">{item.title || item.kindLabel}</div></td>
-                      <td>{item.kindLabel}</td>
+                      <td className="zx-nowrap">{item.kindLabel}</td>
                       <td className="zx-cell-sub">{item.bundleTitle} · {item.docTitle}</td>
                       <td>
                         <span className={`zx-pill ${status.kind === 'live' ? 'zx-pill-live' : 'zx-pill-draft'}`}>{status.label}</span>
                         {item.status === 'failed' && item.errorMessage ? <div className="zx-cell-sub">{item.errorMessage}</div> : null}
                       </td>
+                      <td>{liveOrder && item.published ? <span className="zx-cw-live-badge">#{liveOrder}</span> : <span className="zx-cell-sub">—</span>}</td>
                       <td className="zx-num">{item.updatedAt}</td>
                       <td className="zx-actions">
                         <button type="button" className="zx-btn zx-btn-sm zx-btn-ghost" disabled={item.status !== 'ready'} onClick={() => navigate(`/admin/courseware/${item.id}`)}>预览</button>
                         {item.published ? (
-                          <button type="button" className="zx-btn zx-btn-sm" onClick={() => act(() => adminApi.cwUnpublish(item.id))}>下架</button>
+                          <button type="button" className="zx-btn zx-btn-sm" onClick={() => act(() => adminApi.cwUnpublish(item.id))}>取消发布</button>
                         ) : (
                           <button type="button" className="zx-btn zx-btn-sm" disabled={item.status !== 'ready'} onClick={() => act(() => adminApi.cwPublish(item.id))}>发布</button>
                         )}
@@ -312,6 +467,98 @@ export default function AdminCourseware() {
               <span className="zx-cw-modal-actions">
                 <button type="button" className="zx-btn zx-btn-ghost" onClick={() => setShowPicker(false)}>取消</button>
                 <button type="button" className="zx-btn zx-btn-primary" disabled={picked.length === 0} onClick={generate}>生成所选</button>
+              </span>
+            </footer>
+          </div>
+        </div>
+      ) : null}
+
+      {publishDocId ? (
+        <div
+          className="zx-cw-modal"
+          role="dialog"
+          aria-modal="true"
+          onClick={(event) => { if (event.target === event.currentTarget) setPublishDocId(''); }}
+        >
+          <div className="zx-cw-modal-body zx-cw-modal-gen">
+            <header className="zx-cw-modal-head">
+              <div className="zx-cw-modal-titles">
+                <strong>上架课件</strong>
+                <span>{publishDoc ? publishDoc.title : ''}</span>
+              </div>
+              <button type="button" className="zx-cw-modal-close" aria-label="关闭" onClick={() => setPublishDocId('')}>×</button>
+            </header>
+            <div className="zx-cw-modal-content">
+              <div className="zx-cw-pub-section">
+                <div className="zx-cw-pub-label">这一章的课件</div>
+                <div className="zx-cw-pub-list">
+                  {RESOURCES.map((resource) => {
+                    const item = publishResources[resource.key];
+                    return (
+                      <div key={resource.key} className={`zx-cw-pub-row ${item?.published ? 'live' : ''}`}>
+                        <span className="zx-cw-resource-badge">{resource.badge}</span>
+                        <span className="zx-cw-pub-main">
+                          <strong>{resource.label}</strong>
+                          <small>{resourceState(item)}</small>
+                        </span>
+                        {item && item.status === 'ready' ? (
+                          item.published ? (
+                            <button type="button" className="zx-btn zx-btn-sm zx-btn-ghost" onClick={() => toggleResource(item)}>撤回</button>
+                          ) : (
+                            <button type="button" className="zx-btn zx-btn-sm" onClick={() => toggleResource(item)}>发布</button>
+                          )
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="zx-cw-pub-section">
+                <div className="zx-cw-pub-label">
+                  学员端章节序号
+                  <span>{liveChapters.length > 0 ? `已占用 ${liveChapters.length} 个` : '还没有章节占用序号'}</span>
+                </div>
+                <div className="zx-cw-orders">
+                  {Array.from({ length: orderSlots }, (_, index) => index + 1).map((slot) => {
+                    const takenBy = liveChapters.find((item) => item.orderNo === slot && item.docId !== publishDocId);
+                    const mine = publishDocLive && publishDocLive.orderNo === slot;
+                    return (
+                      <button
+                        key={slot}
+                        type="button"
+                        className={`zx-cw-order ${order === slot ? 'selected' : ''} ${takenBy ? 'taken' : ''} ${mine && !takenBy ? 'mine' : ''}`}
+                        disabled={Boolean(takenBy)}
+                        title={takenBy ? `已被「${takenBy.docTitle}」占用` : `选第 ${slot} 章`}
+                        onClick={() => setOrder(slot)}
+                      >
+                        <strong>{slot}</strong>
+                        {takenBy ? <small>已占用</small> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            <footer className="zx-cw-modal-foot">
+              <span className="zx-cw-modal-meta">
+                {publishedCount === 0
+                  ? '至少发布一份课件才能上架这一章'
+                  : `已发布 ${publishedCount} 份课件 · 序号 #${order}${orderTaken ? '（已被占用）' : ''}`}
+              </span>
+              <span className="zx-cw-modal-actions">
+                {publishDocLive ? (
+                  <button type="button" className="zx-btn zx-btn-sm zx-btn-danger" disabled={busy} onClick={() => unpublishChapter(publishDocId)}>下架这一章</button>
+                ) : null}
+                <button type="button" className="zx-btn zx-btn-ghost" onClick={() => setPublishDocId('')}>取消</button>
+                <button
+                  type="button"
+                  className="zx-btn zx-btn-primary"
+                  disabled={busy || publishedCount === 0 || Boolean(orderTaken)}
+                  onClick={confirmPublish}
+                >
+                  {publishDocLive ? '更新上架' : '上架这一章'}
+                </button>
               </span>
             </footer>
           </div>

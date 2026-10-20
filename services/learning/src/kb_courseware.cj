@@ -576,3 +576,221 @@ func cwLaunch(cfg: Config, ids: Array<String>): Unit {
         }
     }
 }
+
+/* ---------- 章节上架：用户端只看到已上架章节的已发布课件 ---------- */
+
+func cwChapterOrderTaken(cfg: Config, bundleId: String, order: Int64, exceptDocId: String): Bool {
+    let rows = query(cfg,
+        "SELECT doc_id FROM kb_courseware_chapters WHERE bundle_id=" + sqlQuote(bundleId) +
+        " AND order_no=" + order.toString())
+    if (rows.size == 0) { return false }
+    if (rows[0].text("doc_id") == exceptDocId) { return false }
+    true
+}
+
+func cwMarkDocCoursewarePublished(cfg: Config, docId: String, published: Bool): Unit {
+    execute(cfg, "UPDATE kb_courseware SET published=" + (if (published) { "1" } else { "0" }) +
+        ",updated_at=NOW(6) WHERE doc_id=" + sqlQuote(docId) + " AND status='ready'")
+}
+
+func cwPublishChapter(cfg: Config, bundleId: String, docId: String, order: Int64): String {
+    if (order < 1 || order > 999) { return "序号需要在 1–999 之间" }
+    if (!kbBundlePublished(cfg, bundleId)) { return "课程还没有上架，先上架课程再发布课件" }
+    let docs = query(cfg, "SELECT id,title FROM kb_bundle_docs WHERE id=" + sqlQuote(docId) +
+        " AND bundle_id=" + sqlQuote(bundleId))
+    if (docs.size == 0) { return "这个章节不属于所选知识库" }
+    let ready = query(cfg,
+        "SELECT COUNT(*) n FROM kb_courseware WHERE doc_id=" + sqlQuote(docId) +
+        " AND status='ready' AND published=1")
+    if (ready.size == 0 || ready[0].int("n") == 0) { return "这个章节还没有已发布的资源" }
+    if (cwChapterOrderTaken(cfg, bundleId, order, docId)) { return "序号 " + order.toString() + " 已被占用" }
+    transaction(cfg, [
+        "DELETE FROM kb_courseware_chapters WHERE bundle_id=" + sqlQuote(bundleId) +
+            " AND doc_id=" + sqlQuote(docId),
+        "INSERT INTO kb_courseware_chapters(bundle_id,doc_id,order_no,updated_at) VALUES(" +
+            sqlQuote(bundleId) + "," + sqlQuote(docId) + "," + order.toString() + ",NOW(6))"
+    ])
+    cwRebuildBundleCourse(cfg, bundleId, "")
+    ""
+}
+
+func cwUnpublishChapter(cfg: Config, bundleId: String, docId: String): Unit {
+    execute(cfg, "DELETE FROM kb_courseware_chapters WHERE bundle_id=" + sqlQuote(bundleId) +
+        " AND doc_id=" + sqlQuote(docId))
+    cwRebuildBundleCourse(cfg, bundleId, "")
+}
+
+/** 从已上架章节重建课程课时：讲义/实操/幻灯片进 sections+slides，题库进 quiz_json。
+ *  forceStatus 非空时覆盖课程状态；为空表示保留课程当前的上架状态。 */
+func cwRebuildBundleCourse(cfg: Config, bundleId: String, forceStatus: String): Unit {
+    let bundles = query(cfg, "SELECT title,name,course_id FROM kb_bundles WHERE id=" + sqlQuote(bundleId))
+    if (bundles.size == 0) { return }
+    let title = if (bundles[0].text("title").size > 0) { bundles[0].text("title") } else { bundles[0].text("name") }
+    let existingCourse = bundles[0].text("course_id")
+    let courseId = if (existingCourse.size > 0) { existingCourse } else { "kb-" + bundleId.replace("-", "") }
+    let chapters = query(cfg,
+        "SELECT c.doc_id,c.order_no,d.title doc_title FROM kb_courseware_chapters c " +
+        "JOIN kb_bundle_docs d ON d.id=c.doc_id WHERE c.bundle_id=" + sqlQuote(bundleId) +
+        " AND EXISTS(SELECT 1 FROM kb_courseware w WHERE w.doc_id=c.doc_id AND w.published=1 AND w.status='ready') " +
+        "ORDER BY c.order_no")
+
+    let statements = ArrayList<String>()
+    statements.add("DELETE FROM quiz_attempts WHERE course_id=" + sqlQuote(courseId))
+    statements.add("DELETE FROM lesson_progress WHERE course_id=" + sqlQuote(courseId))
+    statements.add("DELETE FROM lessons WHERE course_id=" + sqlQuote(courseId))
+    let keepStatusSql = if (forceStatus.size > 0) { "status=VALUES(status)," } else { "" }
+    if (chapters.size == 0) {
+        let emptyStatus = if (forceStatus.size > 0) { forceStatus } else { "draft" }
+        statements.add("INSERT INTO courses(id,name,icon,description,level,duration,chapters_json,source_label,status,sort_order) VALUES(" +
+            sqlQuote(courseId) + "," + sqlQuote(title) + "," + sqlQuote("/api/kb/bundles/" + bundleId + "/logo") +
+            ",'','入门',0,'[]'," + sqlQuote("知识库《" + title + "》") + "," + sqlQuote(emptyStatus) + ",100) " +
+            "ON DUPLICATE KEY UPDATE " + keepStatusSql + "chapters_json='[]',updated_at=NOW(6)")
+        statements.add("UPDATE kb_bundles SET course_id=" + sqlQuote(courseId) + " WHERE id=" + sqlQuote(bundleId))
+        transaction(cfg, statements.toArray())
+        kbBumpVersion()
+        return
+    }
+
+    let liveStatus = if (forceStatus.size > 0) { forceStatus } else { "published" }
+    let chapterArr = JsonArrWriter()
+    var lessonIndex: Int64 = 0
+    for (chapter in chapters) {
+        let docId = chapter.text("doc_id")
+        let docTitle = chapter.text("doc_title")
+        let chapterJson = JsonWriter()
+        chapterJson.putStr("title", docTitle)
+        chapterArr.addRaw(chapterJson.toJson())
+
+        let resources = query(cfg,
+            "SELECT kind,content_json FROM kb_courseware WHERE doc_id=" + sqlQuote(docId) +
+            " AND status='ready' AND published=1 ORDER BY CASE kind WHEN 'lecture' THEN 1 WHEN 'guide' THEN 2 " +
+            "WHEN 'slides' THEN 3 ELSE 4 END")
+        let sections = JsonArrWriter()
+        let slides = JsonArrWriter()
+        let quiz = JsonArrWriter()
+        var sectionIndex: Int64 = 0
+        for (resource in resources) {
+            let kind = resource.text("kind")
+            let parsed = match (cwJsonObjectFrom(resource.text("content_json"))) {
+                case Some(value) => value
+                case None => continue
+            }
+            if (kind == "lecture") {
+                for (item in cwObjectList(parsed, "sections")) {
+                    let section = JsonWriter()
+                    section.putStr("id", "cw-" + sectionIndex.toString())
+                    section.putStr("eyebrow", "讲义")
+                    section.putStr("heading", cwField(item, "heading"))
+                    section.putStr("text", cwField(item, "body"))
+                    sections.addRaw(section.toJson())
+                    sectionIndex += 1
+                }
+            } else if (kind == "guide") {
+                for (step in cwObjectList(parsed, "steps")) {
+                    let section = JsonWriter()
+                    section.putStr("id", "cw-" + sectionIndex.toString())
+                    section.putStr("eyebrow", "实操")
+                    section.putStr("heading", cwField(step, "title"))
+                    var body = cwField(step, "instruction")
+                    let code = cwField(step, "code")
+                    if (code.size > 0) { body = body + "\n\n```\n" + code + "\n```" }
+                    let expect = cwField(step, "expectedOutput")
+                    if (expect.size > 0) { body = body + "\n\n预期结果：" + expect }
+                    section.putStr("text", body)
+                    sections.addRaw(section.toJson())
+                    sectionIndex += 1
+                }
+            } else if (kind == "slides") {
+                for (slide in cwObjectList(parsed, "slides")) {
+                    let slideJson = JsonWriter()
+                    slideJson.putStr("title", cwField(slide, "title"))
+                    slideJson.putStr("subtitle", "课程课件")
+                    let bullets = JsonArrWriter()
+                    for (bullet in cwStringList(slide, "bullets")) {
+                        bullets.addRaw(jsonQuote(bullet))
+                    }
+                    slideJson.putRaw("bullets", bullets.toJson())
+                    slideJson.putStr("notes", cwField(slide, "speakerNote"))
+                    slides.addRaw(slideJson.toJson())
+                }
+            } else if (kind == "bank") {
+                for (question in cwObjectList(parsed, "questions")) {
+                    let quizItem = JsonWriter()
+                    quizItem.putStr("id", cwField(question, "id"))
+                    quizItem.putStr("question", cwField(question, "stem"))
+                    let options = JsonArrWriter()
+                    for (option in cwStringList(question, "options")) {
+                        options.addRaw(jsonQuote(option))
+                    }
+                    quizItem.putRaw("options", options.toJson())
+                    quizItem.putInt("correct", jsonGetInt(question, "correctIndex") ?? 0)
+                    quizItem.putStr("explanation", cwField(question, "explanation"))
+                    quizItem.putStr("theoryTitle", cwField(question, "knowledgePointId"))
+                    quiz.addRaw(quizItem.toJson())
+                }
+            }
+        }
+        let content = JsonWriter()
+        content.putRaw("sections", sections.toJson())
+        content.putRaw("slides", slides.toJson())
+        content.putStr("sourceLabel", "知识库《" + title + "》")
+        let sources = JsonArrWriter()
+        let source = JsonWriter()
+        source.putStr("id", docId)
+        source.putStr("title", docTitle)
+        source.putStr("kind", "kb-courseware")
+        sources.addRaw(source.toJson())
+        statements.add("INSERT INTO lessons(course_id,lesson_index,title,content_json,quiz_json,sources_json) VALUES(" +
+            sqlQuote(courseId) + "," + lessonIndex.toString() + "," + sqlQuote(docTitle) + "," +
+            sqlQuote(content.toJson()) + "," + sqlQuote(quiz.toJson()) + "," + sqlQuote(sources.toJson()) + ")")
+        lessonIndex += 1
+    }
+    statements.add("INSERT INTO courses(id,name,icon,description,level,duration,chapters_json,source_label,status,sort_order) VALUES(" +
+        sqlQuote(courseId) + "," + sqlQuote(title) + "," + sqlQuote("/api/kb/bundles/" + bundleId + "/logo") +
+        ",'','入门'," + (chapters.size * 15).toString() + "," + sqlQuote(chapterArr.toJson()) + "," +
+        sqlQuote("知识库《" + title + "》") + "," + sqlQuote(liveStatus) + ",100) " +
+        "ON DUPLICATE KEY UPDATE name=VALUES(name),icon=VALUES(icon),duration=VALUES(duration)," +
+        "chapters_json=VALUES(chapters_json),source_label=VALUES(source_label)," + keepStatusSql + "updated_at=NOW(6)")
+    statements.add("UPDATE kb_bundles SET course_id=" + sqlQuote(courseId) + " WHERE id=" + sqlQuote(bundleId))
+    transaction(cfg, statements.toArray())
+    kbBumpVersion()
+}
+
+/** 单份资源的发布状态变化后，同步它所属章节的课程内容（章节未上架时无需重建）。 */
+func cwSyncCoursewareCourse(cfg: Config, coursewareId: String): Unit {
+    let rows = query(cfg, "SELECT bundle_id,doc_id FROM kb_courseware WHERE id=" + sqlQuote(coursewareId))
+    if (rows.size == 0) { return }
+    cwSyncChapterCourse(cfg, rows[0].text("bundle_id"), rows[0].text("doc_id"))
+}
+
+func cwSyncChapterCourse(cfg: Config, bundleId: String, docId: String): Unit {
+    if (query(cfg, "SELECT doc_id FROM kb_courseware_chapters WHERE bundle_id=" + sqlQuote(bundleId) +
+        " AND doc_id=" + sqlQuote(docId)).size == 0) { return }
+    cwRebuildBundleCourse(cfg, bundleId, "")
+}
+
+func cwChaptersBody(cfg: Config, bundleId: String): String {
+    let published = query(cfg,
+        "SELECT c.doc_id,c.order_no,d.title doc_title," +
+        "(SELECT COUNT(*) FROM kb_courseware w WHERE w.doc_id=c.doc_id AND w.published=1 AND w.status='ready') live_count " +
+        "FROM kb_courseware_chapters c JOIN kb_bundle_docs d ON d.id=c.doc_id " +
+        "WHERE c.bundle_id=" + sqlQuote(bundleId) + " ORDER BY c.order_no")
+    let arr = JsonArrWriter()
+    var used = HashSet<Int64>()
+    for (row in published) {
+        let item = JsonWriter()
+        item.putStr("docId", row.text("doc_id"))
+        item.putStr("docTitle", row.text("doc_title"))
+        item.putInt("orderNo", row.int("order_no"))
+        item.putInt("liveCount", row.int("live_count"))
+        arr.addRaw(item.toJson())
+        used.add(row.int("order_no"))
+    }
+    var nextFree: Int64 = 1
+    while (used.contains(nextFree)) { nextFree += 1 }
+    let out = JsonWriter()
+    out.putRaw("published", arr.toJson())
+    out.putInt("nextFree", nextFree)
+    out.putInt("publishedCount", published.size)
+    out.toJson()
+}
