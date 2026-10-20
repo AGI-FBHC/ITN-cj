@@ -4960,3 +4960,14 @@ read_chunk 读得到原文并带回库标识与正文。
 - 最新明确要求的启动署名、桌面运行层命名整理、按官网优化说明书已完成；前述桌宠、表格/配图、本地文件入口删除、资料收集等本批任务有逐项提交与验证记录。0.8.28增加存储修复，301项当前检查已通过，不能扩张为“所有接口本轮都逐一外呼真实模型”。
 - 未结束范围明确告知：四轮后续复验尚未到时（今天09:40、11:10、12:40、14:10，Asia/Shanghai），automation.toml四项仍ACTIVE；平台登录及跨端画像/记忆同步按原约定只纳入后续规划，未实现。原始Word未覆盖，交付文件为01-项目说明-优化版.docx。
 - get_goal当前返回paused，未调用update_goal或自行恢复/标记complete；状态核对不等同恢复持续目标。不修改程序包、真实数据或Web代码。
+
+## 2026-10-20 09:28 · 仅将说明书图4-3替换为浅色主题截图
+- 用户明确要求：“图4-3 Desktop真实PPT与当前页导学问答”用浅色主题重新截图并替换，页面其他内容保持不变。本轮仅处理该图和文档交付，不恢复已暂停的持续目标，不修改Lumin代码、不重打包、不新增模型调用。
+- 继续documents技能的受管Node+Word COM+Poppler流程（无Python）；既有authoring marker已执行过，不重复。实际源为用户已收到的 D:/Desktop/仓颉杯/创新原型赛道/01-项目说明-优化版.docx，SHA256=70AA46F1C00042C7F06F65029C23A5F7E721237F2A9938B7B86E312CBD67BC76。
+- tmp/proposal-guided-light-capture.cjs复制历史真实导学临时数据库到新的TEMP目录 lumin-proposal-light-TCW0AS，运行包内0.8.28 Electron，通过prefs/save设为light并重新加载，保持同一课件、当前第4页、同一会话与两条真实assistant记录。原PPT的PowerPoint原生导出页用于实际播放器预览，历史临时预览文件在finally恢复；真实用户库/正在运行的0.8.25与历史源数据库不写入。没有发送新问题或外呼模型，未改写、拼接问答。
+- 浅色图 tmp/proposal-guided-light.png，1360×900，288,854 bytes；已打开检查，主题、实际课件和问答一致，桌宠隐藏不遮挡。保留可回滚截图 docs/screenshots/ui-guided-light.png，随本轮Git提交。捕获报告 tmp/proposal-guided-light-capture.json，日志同名.log。
+- tmp/replace-proposal-figure-4-3.cjs读取当前完整DOCX，按唯一图注找到相邻图片关系，仅替换 word/media/image3.png；不从旧原稿重建文档。逐一比较全部OOXML包条目的未压缩字节，只有该图片不同，word/document.xml、其他图片、关系、样式、正文/图注与图片框尺寸均逐字节保持相同。截图新旧像素尺寸一致，无需改图片版式。替换报告 tmp/proposal-light-replacement.json。
+- 受管Node输出tmp/proposal-light.docx，Word原生导出tmp/proposal-light.pdf，Poppler渲染tmp/proposal-light-pages，仍21页。与此前已验收0.8.28页图逐页SHA256对照：只有page-08.png变化，其余20页完全相同；第8页已实际打开检查，图4-2、段落、图4-3图注/位置不变，浅色新图无裁切。
+- 现有优化版被其他进程占用，无法取得独占读写；未关闭用户应用、未强行覆盖。已将验证结果另存 D:/Desktop/仓颉杯/创新原型赛道/01-项目说明-优化版-浅色图.docx，17,832,465 bytes，SHA256=2A4E335851C84EE5DEC6261FB6F12226C6D1D9DDBF504E0E802981582E2E24BD，保存后哈希与验证源一致。tmp/deliver-proposal-light.ps1和tmp/proposal-light-delivery.json记录原因与结果。替换前精确副本tmp/proposal-light-before.docx保留；被占用原文件未改。
+- tmp/update-proposal.cjs未来图4-3素材入口同步到持久化的docs/screenshots/ui-guided-light.png，避免后续版本更新时退回深色；本轮没有运行该全量生成器，不改变当前文档其他内容。后续接手需以浅色图交付稿为最新版本，不能只读取旧0.8.28交付JSON并当作最新文档。
+- 仅提交截图与本TRACE。原有两份未跟踪调研文档继续排除，程序包0.8.28保持已验收版本。
