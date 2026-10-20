@@ -230,24 +230,24 @@ func kbSeedBuildChunks(cfg: Config, job: Row, title: String, content: String, se
     // Match source, heading and chat endpoint/model; never copy another document's metadata.
     execute(cfg, "UPDATE kb_chunks n JOIN kb_documents d ON d.id=n.document_id " +
         "JOIN kb_chunks oldc ON oldc.document_id=n.document_id AND oldc.build_id=d.active_build_id " +
-        "AND oldc.content_hash=n.content_hash AND oldc.heading_path=n.heading_path " +
+        "AND oldc.content_hash=n.content_hash AND BINARY oldc.heading_path=BINARY n.heading_path " +
         "JOIN kb_ingest_jobs oldj ON oldj.id=oldc.build_id SET n.summary=oldc.summary,n.keywords_json=oldc.keywords_json," +
         "n.summary_model=oldc.summary_model,n.summary_status='ready',n.summary_error='' " +
         "WHERE n.build_id=" + sqlQuote(buildId) + " AND n.summary_status<>'ready' AND oldc.summary_status='ready' " +
-        "AND oldc.summary_model=" + sqlQuote(settings.chat.model) +
-        " AND JSON_UNQUOTE(JSON_EXTRACT(oldj.settings_json,'$.chat.baseUrl'))=" + sqlQuote(settings.chat.baseUrl))
+        "AND BINARY oldc.summary_model=BINARY " + sqlQuote(settings.chat.model) +
+        " AND BINARY JSON_UNQUOTE(JSON_EXTRACT(oldj.settings_json,'$.chat.baseUrl'))=BINARY " + sqlQuote(settings.chat.baseUrl))
     // A rule upgrade only recomputes changed slices. Reuse vectors solely when the
     // complete embedding input and the model endpoint are identical.
     execute(cfg, "INSERT INTO kb_embeddings(chunk_id,model,dim,vec_hex,space_key) " +
         "SELECT n.id,e.model,e.dim,e.vec_hex,e.space_key FROM kb_chunks n " +
         "JOIN kb_documents d ON d.id=n.document_id " +
         "JOIN kb_chunks oldc ON oldc.document_id=n.document_id AND oldc.build_id=d.active_build_id " +
-        "AND oldc.content_hash=n.content_hash AND oldc.heading_path=n.heading_path " +
-        "AND oldc.summary=n.summary AND oldc.keywords_json=n.keywords_json " +
+        "AND oldc.content_hash=n.content_hash AND BINARY oldc.heading_path=BINARY n.heading_path " +
+        "AND BINARY oldc.summary=BINARY n.summary AND BINARY oldc.keywords_json=BINARY n.keywords_json " +
         "JOIN kb_ingest_jobs oldj ON oldj.id=oldc.build_id JOIN kb_embeddings e ON e.chunk_id=oldc.id " +
         "WHERE n.build_id=" + sqlQuote(buildId) + " AND n.summary_status='ready' AND e.dim>0 " +
-        "AND e.model=" + sqlQuote(settings.embedding.model) +
-        " AND JSON_UNQUOTE(JSON_EXTRACT(oldj.settings_json,'$.embedding.baseUrl'))=" + sqlQuote(settings.embedding.baseUrl) +
+        "AND BINARY e.model=BINARY " + sqlQuote(settings.embedding.model) +
+        " AND BINARY JSON_UNQUOTE(JSON_EXTRACT(oldj.settings_json,'$.embedding.baseUrl'))=BINARY " + sqlQuote(settings.embedding.baseUrl) +
         (if (settings.embeddingDim > 0) { " AND e.dim=" + settings.embeddingDim.toString() } else { "" }) +
         " ON DUPLICATE KEY UPDATE chunk_id=VALUES(chunk_id)")
     // Switch a first build only after every slice is durable. Later rebuilds retain the old active version.
