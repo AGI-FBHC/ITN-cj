@@ -52,16 +52,16 @@ function esc(value) {
 
 function releaseFiles() {
   return fs.readdirSync(releaseRoot, {withFileTypes: true})
-    .filter(entry => entry.isFile() && entry.name.toLowerCase().endsWith('.zip'))
+    .filter(entry => entry.isFile() && releaseIdentity(entry.name))
     .map(entry => {
       const file = path.join(releaseRoot, entry.name);
       const stat = fs.statSync(file);
-      const version = entry.name.match(/^Lumin-(\d+(?:\.\d+){2})\.zip$/i)?.[1] || '';
-      return {name: entry.name, file, size: stat.size, modified: stat.mtime, version};
+      return {name: entry.name, file, size: stat.size, modified: stat.mtime, ...releaseIdentity(entry.name)};
     })
     .sort((left, right) => {
       if (left.version && right.version) {
-        return right.version.localeCompare(left.version, undefined, {numeric: true});
+        return right.version.localeCompare(left.version, undefined, {numeric: true}) ||
+          Number(right.kind === 'installer') - Number(left.kind === 'installer');
       }
       if (left.version) return -1;
       if (right.version) return 1;
@@ -69,8 +69,15 @@ function releaseFiles() {
     });
 }
 
+function releaseIdentity(name) {
+  const installer = name.match(/^Lumin-Setup-(\d+\.\d+\.\d+)-x64\.exe$/i);
+  if (installer) return {version: installer[1], kind: 'installer'};
+  const portable = name.match(/^Lumin-(\d+\.\d+\.\d+)\.zip$/i);
+  return portable ? {version: portable[1], kind: 'portable'} : null;
+}
+
 function fileSize(bytes) {
-  return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+  return (bytes / 1024 / 1024).toFixed(1) + ' MiB';
 }
 
 function downloadHref(fileName) {
@@ -89,7 +96,9 @@ function archiveSection(archived) {
 function renderIndex() {
   const releases = releaseFiles();
   const latest = releases.find(item => item.version) || releases[0];
-  const archived = releases.filter(item => item !== latest);
+  const archived = releases.filter(item => item.version !== latest?.version);
+  const portable = releases.find(item => item.version === latest?.version && item.kind === 'portable');
+  const installer = latest?.kind === 'installer';
   const version = latest?.version || '—';
   const file = latest?.name || '暂无可下载版本';
   const size = latest ? fileSize(latest.size) : '—';
@@ -100,6 +109,10 @@ function renderIndex() {
     DOWNLOAD_URL: esc(url),
     FILE_NAME: esc(file),
     FILE_SIZE: esc(size),
+    DOWNLOAD_LABEL: installer ? '下载 Windows 安装版' : '下载 Windows 便携版',
+    FILE_FORMAT: installer ? 'EXE 安装程序' : 'ZIP 便携包',
+    INSTALL_INSTRUCTIONS: installer ? '运行安装程序，按提示完成安装。首次启动请在“模型与接口”中配置自己的模型服务。' : '解压后运行 Lumin.exe。首次启动请在“模型与接口”中配置自己的模型服务。',
+    PORTABLE_LINK: installer && portable ? '<a class="portable-download" href="' + esc(downloadHref(portable.name)) + '" download>ZIP 便携版 · ' + esc(fileSize(portable.size)) + '</a>' : '',
     RELEASE_DATE: esc(releaseDate),
     ARCHIVE_SECTION: archiveSection(archived),
   };
@@ -207,14 +220,15 @@ const server = http.createServer((request, response) => {
     return;
   }
   const target = safeNamedFile(releaseRoot, name);
-  if (!target || !target.file.toLowerCase().endsWith('.zip')) {
+  const identity = releaseIdentity(name);
+  if (!target || !identity) {
     sendText(response, 404, 'Not Found');
     return;
   }
 
   const headers = {
     ...securityHeaders(),
-    'Content-Type': 'application/zip',
+    'Content-Type': identity.kind === 'installer' ? 'application/octet-stream' : 'application/zip',
     'Content-Disposition': 'attachment; filename="' + target.file.split(path.sep).pop() + '"',
     'Accept-Ranges': 'bytes',
     'Cache-Control': 'public, max-age=3600',
@@ -223,19 +237,21 @@ const server = http.createServer((request, response) => {
   const range = request.headers.range;
   if (range) {
     const match = /^bytes=(\d*)-(\d*)$/.exec(range);
-    if (!match) {
+    if (!match || (!match[1] && !match[2])) {
       response.writeHead(416, {...securityHeaders(), 'Content-Range': 'bytes */' + target.stat.size});
       response.end();
       return;
     }
-    const start = match[1] ? Number(match[1]) : 0;
+    const start = match[1] ? Number(match[1]) : Math.max(0, target.stat.size - Number(match[2]));
     const end = match[2] ? Number(match[2]) : target.stat.size - 1;
-    if (start > end || start >= target.stat.size) {
+    const rangeEnd = match[1] ? end : target.stat.size - 1;
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(rangeEnd) ||
+        (!match[1] && Number(match[2]) <= 0) || start > rangeEnd || start >= target.stat.size) {
       response.writeHead(416, {...securityHeaders(), 'Content-Range': 'bytes */' + target.stat.size});
       response.end();
       return;
     }
-    const boundedEnd = Math.min(end, target.stat.size - 1);
+    const boundedEnd = Math.min(rangeEnd, target.stat.size - 1);
     headers['Content-Range'] = 'bytes ' + start + '-' + boundedEnd + '/' + target.stat.size;
     headers['Content-Length'] = boundedEnd - start + 1;
     response.writeHead(206, headers);

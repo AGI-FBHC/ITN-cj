@@ -47,5 +47,17 @@ foreach ($a in $artifacts) {
     if ($srcHash -ne $dstHash) { throw "拷贝后哈希不一致：$dest" }
 }
 
+# Cangjie's Windows CRT argv uses the process ANSI code page. Make it UTF-8 so
+# Chinese user/install/data paths reach main() intact, without changing OS settings.
+$manifest=Join-Path $repo 'core/windows-runtime.manifest'
+$mt=Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\x64\mt.exe' -File | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+if(!$mt){throw 'Windows SDK Manifest Tool (mt.exe) is required to package the UTF-8 kernel'}
+$kernelExe=Join-Path $dist 'itn-desktop-core.exe'
+& $mt -nologo -manifest $manifest ('-outputresource:'+$kernelExe+';#1')
+if($LASTEXITCODE -ne 0){throw 'Failed to embed the UTF-8 application manifest'}
+$verification=Join-Path $dist 'kernel-manifest.xml'
+& $mt -nologo ('-inputresource:'+$kernelExe+';#1') ('-out:'+$verification)
+if($LASTEXITCODE -ne 0 -or (Get-Content -LiteralPath $verification -Raw) -notmatch 'activeCodePage[^>]*>UTF-8'){throw 'Packaged kernel UTF-8 manifest validation failed'}
+
 Write-Output "packaged to $dist"
 Get-ChildItem $dist -File | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,2)}}

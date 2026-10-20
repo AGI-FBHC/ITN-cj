@@ -200,6 +200,7 @@
       font-weight: 500;
     }
 
+    .portable-download { display: block; width: fit-content; margin: 14px 0; font-size: 15px; text-underline-offset: 4px; }
     .release-meta {
       margin: 14px 0 0;
       color: var(--muted);
@@ -957,9 +958,10 @@
         <h1 id="hero-title">桌面学习<br>以资料为本</h1>
         <p class="lead">Lumin 把个人知识库、课件、随页问答和知识网络放进同一个桌面工作台。资料、笔记与学习记录保存在本机。</p>
         <a class="download-primary" href="{{DOWNLOAD_URL}}" download>
-          <span>下载 Windows 版</span>
+          <span>{{DOWNLOAD_LABEL}}</span>
           <span>{{FILE_SIZE}}</span>
         </a>
+        {{PORTABLE_LINK}}
         <p class="release-meta">v{{VERSION}} · {{RELEASE_DATE}} · Windows 10 / 11 64 位</p>
       </div>
 
@@ -1040,8 +1042,8 @@
     <section class="download-band" id="download">
       <div class="shell download-layout">
         <div class="download-copy reveal">
-          <h2>下载后解压即可使用</h2>
-          <p>压缩包内包含桌面应用与仓颉业务内核，目标电脑不需要另行安装仓颉 SDK。</p>
+          <h2>下载 Lumin 桌面版</h2>
+          <p>安装版与便携版均包含桌面应用和仓颉业务内核，无需另行安装仓颉 SDK。</p>
         </div>
         <div class="release-panel reveal">
           <div class="release-version">
@@ -1049,16 +1051,17 @@
             <span>{{RELEASE_DATE}} 发布</span>
           </div>
           <a class="download-primary" href="{{DOWNLOAD_URL}}" download>
-            <span>下载 Windows 版</span>
+            <span>{{DOWNLOAD_LABEL}}</span>
             <span>{{FILE_SIZE}}</span>
           </a>
+          {{PORTABLE_LINK}}
           <dl class="file-details">
             <div><dt>文件</dt><dd>{{FILE_NAME}}</dd></div>
             <div><dt>平台</dt><dd>Windows 10 / 11 64 位</dd></div>
-            <div><dt>格式</dt><dd>ZIP 压缩包</dd></div>
+            <div><dt>格式</dt><dd>{{FILE_FORMAT}}</dd></div>
             <div><dt>版本</dt><dd>v{{VERSION}}</dd></div>
           </dl>
-          <p class="install-note">解压后运行 Lumin.exe。首次启动请在“模型与接口”中配置自己的模型服务。</p>
+          <p class="install-note">{{INSTALL_INSTRUCTIONS}}</p>
         </div>
       </div>
     </section>
@@ -1067,7 +1070,7 @@
       <div class="shell requirement-grid">
         <div class="requirement reveal">
           <strong>系统</strong>
-          <p>Windows 10 或 Windows 11，64 位系统。当前版本以 ZIP 便携包提供。</p>
+          <p>Windows 10 或 Windows 11，64 位系统。可使用安装版，或选择 ZIP 便携版。</p>
         </div>
         <div class="requirement reveal" style="--delay:70ms">
           <strong>模型</strong>
@@ -1084,17 +1087,17 @@
       <div class="shell faq-layout">
         <div class="faq-heading reveal">
           <h2>安装前确认</h2>
-          <p>下载、解压和首次配置都在本地完成。</p>
+          <p>按所选版本安装或解压，然后配置自己的模型服务。</p>
         </div>
         <div>
           <div class="faq-list reveal">
             <details class="faq-item" name="download-faq">
-              <summary>这是安装程序吗？</summary>
-              <div class="faq-answer"><p>不是。当前版本是 ZIP 便携包，下载后解压到固定目录，再运行其中的 Lumin.exe。</p></div>
+              <summary>安装版和便携版有什么区别？</summary>
+              <div class="faq-answer"><p>安装版运行 EXE 后按提示安装，提供开始菜单入口和卸载功能；便携版解压后运行 Lumin.exe。两种版本功能相同。</p></div>
             </details>
             <details class="faq-item" name="download-faq">
               <summary>需要单独安装仓颉吗？</summary>
-              <div class="faq-answer"><p>不需要。压缩包已经包含应用运行所需的仓颉业务内核。</p></div>
+              <div class="faq-answer"><p>不需要。两个版本均已包含应用运行所需的仓颉业务内核。</p></div>
             </details>
             <details class="faq-item" name="download-faq">
               <summary>首次启动要配置什么？</summary>

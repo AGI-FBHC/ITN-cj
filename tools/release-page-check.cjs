@@ -2,6 +2,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const {chromium} = require('playwright');
+const version = require('../shell/package.json').version;
 
 const url = process.env.RELEASE_PAGE_URL || 'http://127.0.0.1:6026/';
 const outputDir = path.join(__dirname, '..', 'tmp', 'release-page-check');
@@ -51,7 +52,7 @@ function assert(condition, message) {
     );
 
     assert(await browserPage.title() === 'Lumin 桌面版下载', '页面标题正确');
-    assert((await browserPage.locator('body').innerText()).includes('Lumin 0.8.28'), '页面显示当前版本');
+    assert((await browserPage.locator('body').innerText()).includes('Lumin ' + version), '页面显示当前版本');
 
     const imageState = await browserPage.locator('img').evaluateAll(images =>
       images.map(image => ({src: image.getAttribute('src'), complete: image.complete, width: image.naturalWidth}))
@@ -63,7 +64,11 @@ function assert(condition, message) {
       links.map(link => ({href: link.href, download: link.hasAttribute('download')}))
     );
     assert(downloadState.length >= 4, '所有下载入口均存在');
-    assert(downloadState.every(link => link.download && link.href.endsWith('/Lumin-0.8.28.zip')), '下载入口均指向当前安装包');
+    assert(downloadState.filter(link => link.href.endsWith('/Lumin-Setup-' + version + '-x64.exe')).length >= 4, '主要下载入口均指向当前 EXE 安装包');
+    assert(downloadState.filter(link => link.href.endsWith('/Lumin-' + version + '.zip')).length === 2, '两个便携版入口仍指向当前 ZIP');
+    assert((await browserPage.locator('.file-details').innerText()).includes('EXE 安装程序'), '文件信息显示安装包格式');
+    const installerHead = await browserPage.request.head(new URL('/Lumin-Setup-' + version + '-x64.exe', url).href);
+    assert(installerHead.ok() && Number(installerHead.headers()['content-length']) > 100000000, '页面安装包真实可下载且大小合理');
 
     await browserPage.locator('#tab-network').click();
     assert(await browserPage.locator('#view-network').isVisible(), '点击“知识网络”可切换预览');
@@ -95,6 +100,7 @@ function assert(condition, message) {
         path: path.join(outputDir, viewport.name + '.png'),
         fullPage: true,
       });
+      await browserPage.screenshot({path: path.join(outputDir, viewport.name + '-fold.png')});
     }
 
     assert(pageErrors.length === 0, '页面无 JavaScript 异常');
