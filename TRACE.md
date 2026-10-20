@@ -286,3 +286,36 @@
 - TTS 目前只做到「配置可保存」，朗读仍走浏览器 speechSynthesis；接 `/audio/speech` 播放是下一步。
 - 密钥加密依赖 `ZHIXUN_AUTH_SECRET`：该值变更后旧密文将无法解密，需要重新录入密钥。
 - 未做密钥轮换与使用审计。
+
+## 2026-10-20 向量 / 对话 / 语音 三套模型配置彻底拆开
+
+### 需求
+- 用户要求三类模型分别配置，不要揉在一起；密钥仍加密入库，只在保存前可见。
+
+### 数据层
+- `migrations/005_model_slots.sql`：`kb_settings` 新增 `embedding_*`、`chat_*`、`tts_*` 三组 `base_url / api_key_cipher / api_key_hint`；原有的单套 `base_url`、`api_key_*` 保留为兜底列，并把旧值一次性复制到三个槽位。
+
+### 后端
+- `KbSettings` 从平铺字段改成 `embedding` / `chat` / `tts` 三个 `ModelSlot`（各自 baseUrl、model、密文、尾号），加 `ttsVoice` 与切片参数；`slotEndpoint(cfg, slot)` 统一产出 `ModelEndpoint`。
+- 检索只用 embedding 槽位，导师只用 chat 槽位，语音用 tts 槽位；`encoding` 与 `chat` 的密钥互不影响。
+- 设置接口改为接收 `embeddingBaseUrl/Model/ApiKey/ClearKey`、`chat*`、`tts*` 三组扁平字段，逐槽位加密：留空保留原密文，勾选清除则置 NULL。
+- 配置响应改成三组 `{baseUrl, model, keyHint, keyConfigured, configured}`，任何一组都不回显明文。
+- `POST api/admin/kb/test` 支持 `target`：`embedding` 调 `/embeddings`、`chat` 走一次最小对话、`tts` 调 `/audio/speech` 只看状态码。
+- 补回被路由替换脚本误删的 `api/tutor/chat` 与 `api/tutor/history`。
+
+### 前端
+- 设置页重写为三张独立卡片（向量模型 / 对话模型 / 语音合成），每张卡各自的地址、模型、密钥、测试连接；语音卡多一个音色；卡片右上角显示「已配置 · 尾号 xxxx」或「未配置密钥」。
+- 切片与检索参数单独一张卡，避免和模型凭据混在一起。
+
+### 实际验证（对接本地 mock，仅用于自检）
+- 三组密钥分别保存后，各自尾号独立（1111 / 2222 / 3333），响应里没有任何明文。
+- 三个 `target` 的测试分别返回：向量 64 维、对话 256 字、语音 200。
+- 清除后三条槽位同时回到未配置。
+
+### 收尾
+- 按用户要求停掉 mock 服务，清空库里的 mock 配置并把切片参数恢复默认（800/120/16/6），留待用户填真实密钥自行测试。
+- `tools/mock-model-server.py` 补了 `/audio/speech`，仍只是开发自检工具。
+
+### 限制
+- TTS 只有「配置 + 连通性测试」，朗读仍走浏览器 speechSynthesis，未接播放。
+- 密钥加密依赖 `ZHIXUN_AUTH_SECRET`，该值变更后旧密文无法解密。

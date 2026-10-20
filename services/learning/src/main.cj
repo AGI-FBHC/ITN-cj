@@ -898,21 +898,47 @@ func kbDocumentSelect(): String {
     "FROM kb_documents d "
 }
 
+/* ---------- 管理端模型配置 ---------- */
+
+func kbKeyCipherValue(cfg: Config, apiKey: String, clear: Bool, current: String): String {
+    if (clear) { return "NULL" }
+    if (apiKey.size > 0) { return sqlQuote(encryptSecret(cfg.authSecret, apiKey)) }
+    if (current.size > 0) { return sqlQuote(current) }
+    "NULL"
+}
+
+func kbKeyHintValue(apiKey: String, clear: Bool, current: String): String {
+    if (clear) { return "" }
+    if (apiKey.size > 0) {
+        if (apiKey.size <= 4) { return "已保存" }
+        return "尾号 " + apiKey[apiKey.size - 4..apiKey.size]
+    }
+    current
+}
+
+func slotSettingsJson(slot: ModelSlot, keyReady: Bool): String {
+    let out = JsonWriter()
+    out.putStr("baseUrl", slot.baseUrl)
+    out.putStr("model", slot.model)
+    out.putStr("keyHint", slot.hint)
+    out.putBool("keyConfigured", keyReady)
+    out.putBool("configured", slot.configured())
+    out.toJson()
+}
+
 func kbSettingsJson(cfg: Config, settings: KbSettings): String {
     let out = JsonWriter()
-    out.putStr("baseUrl", settings.baseUrl)
-    out.putStr("embeddingModel", settings.embeddingModel)
-    out.putStr("chatModel", settings.chatModel)
-    out.putStr("ttsModel", settings.ttsModel)
+    out.putRaw("embedding", slotSettingsJson(settings.embedding, resolveKey(cfg, settings.embedding).size > 0))
+    out.putRaw("chat", slotSettingsJson(settings.chat, resolveKey(cfg, settings.chat).size > 0))
+    out.putRaw("tts", slotSettingsJson(settings.tts, resolveKey(cfg, settings.tts).size > 0))
     out.putStr("ttsVoice", settings.ttsVoice)
     out.putInt("embeddingDim", settings.embeddingDim)
     out.putInt("batchSize", settings.batchSize)
     out.putInt("chunkSize", settings.chunkSize)
     out.putInt("chunkOverlap", settings.chunkOverlap)
     out.putInt("topK", settings.topK)
-    out.putStr("keyHint", settings.apiKeyHint)
-    out.putBool("keyConfigured", effectiveApiKey(cfg, settings).size > 0)
-    out.putStr("keySource", if (settings.apiKeyCipher.size > 0) { "admin" } else if (legacyEnvKey().size > 0) { "env" } else { "" })
+    let anyAdmin = settings.embedding.cipher.size > 0 || settings.chat.cipher.size > 0 || settings.tts.cipher.size > 0
+    out.putStr("keySource", if (anyAdmin) { "admin" } else if (legacyEnvKey().size > 0) { "env" } else { "" })
     out.toJson()
 }
 
@@ -1947,63 +1973,72 @@ main(): Int64 {
                 match (parseObject(ctx.request)) {
                     case None => writeError(ctx.response, 400, "配置格式不正确")
                     case Some(body) =>
-                        let baseUrl = (jsonGetString(body, "baseUrl") ?? "").trimAscii()
+                        let current = loadKbSettings(cfg)
+                        let chunkSize = jsonGetInt(body, "chunkSize") ?? current.chunkSize
+                        let overlap = jsonGetInt(body, "chunkOverlap") ?? current.chunkOverlap
+                        let batch = jsonGetInt(body, "batchSize") ?? current.batchSize
+                        let topK = jsonGetInt(body, "topK") ?? current.topK
+                        let dim = jsonGetInt(body, "embeddingDim") ?? current.embeddingDim
+                        let embeddingBase = (jsonGetString(body, "embeddingBaseUrl") ?? "").trimAscii()
                         let embeddingModel = (jsonGetString(body, "embeddingModel") ?? "").trimAscii()
+                        let embeddingKey = (jsonGetString(body, "embeddingApiKey") ?? "").trimAscii()
+                        let embeddingClear = jsonGetBool(body, "embeddingClearKey") ?? false
+                        let chatBase = (jsonGetString(body, "chatBaseUrl") ?? "").trimAscii()
                         let chatModel = (jsonGetString(body, "chatModel") ?? "").trimAscii()
+                        let chatKey = (jsonGetString(body, "chatApiKey") ?? "").trimAscii()
+                        let chatClear = jsonGetBool(body, "chatClearKey") ?? false
+                        let ttsBase = (jsonGetString(body, "ttsBaseUrl") ?? "").trimAscii()
                         let ttsModel = (jsonGetString(body, "ttsModel") ?? "").trimAscii()
                         let ttsVoice = (jsonGetString(body, "ttsVoice") ?? "").trimAscii()
-                        let apiKey = (jsonGetString(body, "apiKey") ?? "").trimAscii()
-                        let clearApiKey = jsonGetBool(body, "clearApiKey") ?? false
-                        let current = loadKbSettings(cfg)
-                        let dim = jsonGetInt(body, "embeddingDim") ?? 0
-                        let batch = jsonGetInt(body, "batchSize") ?? 16
-                        let chunkSize = jsonGetInt(body, "chunkSize") ?? 800
-                        let overlap = jsonGetInt(body, "chunkOverlap") ?? 120
-                        let topK = jsonGetInt(body, "topK") ?? 6
-                        if (baseUrl.size > 0 && !baseUrl.startsWith("http")) {
-                            writeError(ctx.response, 400, "接口地址需要以 http:// 或 https:// 开头")
-                        } else if (baseUrl.size > 300) {
-                            writeError(ctx.response, 400, "接口地址过长")
-                        } else if (embeddingModel.size > 160 || chatModel.size > 160 || ttsModel.size > 160 || ttsVoice.size > 80) {
-                            writeError(ctx.response, 400, "模型名过长")
-                        } else if (apiKey.size > 400) {
-                            writeError(ctx.response, 400, "密钥过长")
-                        } else if (apiKey.size > 0 && cfg.authSecret.size == 0) {
-                            writeError(ctx.response, 400, "服务端缺少 ZHIXUN_AUTH_SECRET，无法加密保存密钥")
-                        } else if (chunkSize < 200 || chunkSize > 4000) {
-                            writeError(ctx.response, 400, "切片长度需要在 200–4000 字之间")
-                        } else if (overlap < 0 || overlap * 2 >= chunkSize) {
-                            writeError(ctx.response, 400, "重叠长度要小于切片长度的一半")
-                        } else if (batch < 1 || batch > 64) {
-                            writeError(ctx.response, 400, "批量条数需要在 1–64 之间")
-                        } else if (topK < 1 || topK > 20) {
-                            writeError(ctx.response, 400, "默认召回条数需要在 1–20 之间")
+                        let ttsKey = (jsonGetString(body, "ttsApiKey") ?? "").trimAscii()
+                        let ttsClear = jsonGetBool(body, "ttsClearKey") ?? false
+                        var problem = ""
+                        for (url in [embeddingBase, chatBase, ttsBase]) {
+                            if (url.size > 0 && !url.startsWith("http")) { problem = "接口地址需要以 http:// 或 https:// 开头" }
+                            if (url.size > 300) { problem = "接口地址过长" }
+                        }
+                        if (problem.size == 0 && (embeddingModel.size > 160 || chatModel.size > 160 || ttsModel.size > 160)) {
+                            problem = "模型名过长"
+                        }
+                        if (problem.size == 0 && ttsVoice.size > 80) { problem = "音色名过长" }
+                        if (problem.size == 0 && (embeddingKey.size > 400 || chatKey.size > 400 || ttsKey.size > 400)) {
+                            problem = "密钥过长"
+                        }
+                        if (problem.size == 0 && (embeddingKey.size > 0 || chatKey.size > 0 || ttsKey.size > 0)
+                            && cfg.authSecret.size == 0) {
+                            problem = "服务端缺少 ZHIXUN_AUTH_SECRET，无法加密保存密钥"
+                        }
+                        if (problem.size == 0 && (chunkSize < 200 || chunkSize > 4000)) {
+                            problem = "切片长度需要在 200–4000 字之间"
+                        }
+                        if (problem.size == 0 && (overlap < 0 || overlap * 2 >= chunkSize)) {
+                            problem = "重叠长度要小于切片长度的一半"
+                        }
+                        if (problem.size == 0 && (batch < 1 || batch > 64)) { problem = "批量条数需要在 1–64 之间" }
+                        if (problem.size == 0 && (topK < 1 || topK > 20)) { problem = "默认召回条数需要在 1–20 之间" }
+                        if (problem.size > 0) {
+                            writeError(ctx.response, 400, problem)
                         } else {
-                            // 密钥只在提交时可见：入库即加密，只保留尾号提示。
-                            let keyCipher = if (clearApiKey) {
-                                "NULL"
-                            } else if (apiKey.size > 0) {
-                                sqlQuote(encryptSecret(cfg.authSecret, apiKey))
-                            } else if (current.apiKeyCipher.size > 0) {
-                                sqlQuote(current.apiKeyCipher)
-                            } else {
-                                "NULL"
-                            }
-                            let keyHint = if (clearApiKey) {
-                                ""
-                            } else if (apiKey.size > 0) {
-                                if (apiKey.size <= 4) { "已保存" } else { "尾号 " + apiKey[apiKey.size - 4..apiKey.size] }
-                            } else {
-                                current.apiKeyHint
-                            }
+                            let embeddingCipher = kbKeyCipherValue(cfg, embeddingKey, embeddingClear, current.embedding.cipher)
+                            let embeddingHint = kbKeyHintValue(embeddingKey, embeddingClear, current.embedding.hint)
+                            let chatCipher = kbKeyCipherValue(cfg, chatKey, chatClear, current.chat.cipher)
+                            let chatHint = kbKeyHintValue(chatKey, chatClear, current.chat.hint)
+                            let ttsCipher = kbKeyCipherValue(cfg, ttsKey, ttsClear, current.tts.cipher)
+                            let ttsHint = kbKeyHintValue(ttsKey, ttsClear, current.tts.hint)
                             execute(cfg,
-                                "UPDATE kb_settings SET base_url=" + sqlQuote(baseUrl) +
+                                "UPDATE kb_settings SET embedding_base_url=" + sqlQuote(embeddingBase) +
                                 ",embedding_model=" + sqlQuote(embeddingModel) +
+                                ",embedding_api_key_cipher=" + embeddingCipher +
+                                ",embedding_api_key_hint=" + sqlQuote(embeddingHint) +
+                                ",chat_base_url=" + sqlQuote(chatBase) +
                                 ",chat_model=" + sqlQuote(chatModel) +
+                                ",chat_api_key_cipher=" + chatCipher +
+                                ",chat_api_key_hint=" + sqlQuote(chatHint) +
+                                ",tts_base_url=" + sqlQuote(ttsBase) +
                                 ",tts_model=" + sqlQuote(ttsModel) +
                                 ",tts_voice=" + sqlQuote(ttsVoice) +
-                                ",api_key_cipher=" + keyCipher +
-                                ",api_key_hint=" + sqlQuote(keyHint) +
+                                ",tts_api_key_cipher=" + ttsCipher +
+                                ",tts_api_key_hint=" + sqlQuote(ttsHint) +
                                 ",embedding_dim=" + maxInt(0, dim).toString() +
                                 ",batch_size=" + batch.toString() +
                                 ",chunk_size=" + chunkSize.toString() +
@@ -2022,16 +2057,59 @@ main(): Int64 {
             case None => ()
             case Some(_) =>
                 let settings = loadKbSettings(cfg)
-                let endpoint = endpointOf(cfg, settings)
-                if (!endpoint.hasEmbedding()) {
-                    writeError(ctx.response, 400,
-                        "还没有配置向量模型：需要接口地址、向量模型名，以及环境变量 ZHIXUN_MODEL_API_KEY")
+                let body = match (parseObject(ctx.request)) {
+                    case Some(value) => value
+                    case None => JsonObject()
+                }
+                let target = (jsonGetString(body, "target") ?? "embedding").trimAscii()
+                let slot = if (target == "chat") { settings.chat } else if (target == "tts") { settings.tts } else { settings.embedding }
+                let label = if (target == "chat") { "对话模型" } else if (target == "tts") { "语音合成" } else { "向量模型" }
+                let endpoint = slotEndpoint(cfg, slot)
+                if (!slot.configured()) {
+                    writeError(ctx.response, 400, "还没有配置" + label + "：需要接口地址和模型名")
+                } else if (resolveKey(cfg, slot).size == 0) {
+                    writeError(ctx.response, 400, "还没有配置" + label + "的密钥")
+                } else if (target == "chat") {
+                    try {
+                        let messages = JsonArrWriter()
+                        let systemPart = JsonWriter()
+                        systemPart.putStr("role", "system")
+                        systemPart.putStr("content", "只回复：ok")
+                        messages.addRaw(systemPart.toJson())
+                        let userPart = JsonWriter()
+                        userPart.putStr("role", "user")
+                        userPart.putStr("content", "连接测试")
+                        messages.addRaw(userPart.toJson())
+                        let answer = chatStreamText(endpoint, messages.toJson(), 0.0, { piece: String => () })
+                        let out = JsonWriter()
+                        out.putBool("ok", true)
+                        out.putStr("model", slot.model)
+                        out.putInt("replyLength", answer.size)
+                        writeJson(ctx.response, 200, out.toJson())
+                    } catch (error: Exception) {
+                        writeError(ctx.response, 502, "对话模型连接失败：" + error.message)
+                    }
+                } else if (target == "tts") {
+                    try {
+                        let status = ttsCheck(endpoint, settings.ttsVoice, "连接测试")
+                        if (status == 200) {
+                            let out = JsonWriter()
+                            out.putBool("ok", true)
+                            out.putStr("model", slot.model)
+                            out.putStr("voice", settings.ttsVoice)
+                            writeJson(ctx.response, 200, out.toJson())
+                        } else {
+                            writeError(ctx.response, 502, "语音合成接口返回 " + status.toString())
+                        }
+                    } catch (error: Exception) {
+                        writeError(ctx.response, 502, "语音合成连接失败：" + error.message)
+                    }
                 } else {
                     try {
                         let vectors = embedTexts(endpoint, ["知识库连接测试"])
                         let out = JsonWriter()
                         out.putBool("ok", true)
-                        out.putStr("model", settings.embeddingModel)
+                        out.putStr("model", slot.model)
                         out.putInt("dim", vectors[0].size)
                         writeJson(ctx.response, 200, out.toJson())
                     } catch (error: Exception) {
@@ -2059,11 +2137,11 @@ main(): Int64 {
                             writeError(ctx.response, 413, "问题请精简到 2000 字以内")
                         } else {
                             let settings = loadKbSettings(cfg)
-                            let endpoint = endpointOf(cfg, settings)
-                            if (!endpoint.hasChat()) {
+                            let chatSlot = settings.chat
+                            let endpoint = slotEndpoint(cfg, chatSlot)
+                            if (!chatSlot.configured() || !endpoint.hasChat()) {
                                 writeError(ctx.response, 503,
-                                    "AI 导师还没有接入模型：请管理员在「设置」里填写接口地址和对话模型，" +
-                                    "并在服务端配置 ZHIXUN_MODEL_API_KEY")
+                                    "AI 导师还没有接入对话模型：请管理员在「设置」里填写对话模型的接口地址、模型名和密钥")
                             } else {
                                 let searchQuery = if (quoted.size > 0) { quoted + "\n" + message } else { message }
                                 let result = kbSearch(cfg, settings, searchQuery, settings.topK)

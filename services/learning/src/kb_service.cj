@@ -7,35 +7,47 @@ import std.sync.*
 import stdx.crypto.crypto.SecureRandom
 
 /** 知识库与模型配置。Key 只放在环境变量里，其他项可在管理端调整。 */
-class KbSettings {
+class ModelSlot {
     let baseUrl: String
-    let embeddingModel: String
-    let chatModel: String
-    let ttsModel: String
+    let model: String
+    let cipher: String
+    let hint: String
+
+    init(baseUrl: String, model: String, cipher: String, hint: String) {
+        this.baseUrl = baseUrl
+        this.model = model
+        this.cipher = cipher
+        this.hint = hint
+    }
+
+    func configured(): Bool {
+        baseUrl.size > 0 && model.size > 0
+    }
+}
+
+/** 对话 / 向量 / 语音三套配置完全独立：各自的地址、模型和密钥。 */
+class KbSettings {
+    let embedding: ModelSlot
+    let chat: ModelSlot
+    let tts: ModelSlot
     let ttsVoice: String
     let embeddingDim: Int64
     let batchSize: Int64
     let chunkSize: Int64
     let chunkOverlap: Int64
     let topK: Int64
-    let apiKeyCipher: String
-    let apiKeyHint: String
 
-    init(baseUrl: String, embeddingModel: String, chatModel: String, ttsModel: String, ttsVoice: String,
-         embeddingDim: Int64, batchSize: Int64, chunkSize: Int64, chunkOverlap: Int64, topK: Int64,
-         apiKeyCipher: String, apiKeyHint: String) {
-        this.baseUrl = baseUrl
-        this.embeddingModel = embeddingModel
-        this.chatModel = chatModel
-        this.ttsModel = ttsModel
+    init(embedding: ModelSlot, chat: ModelSlot, tts: ModelSlot, ttsVoice: String,
+         embeddingDim: Int64, batchSize: Int64, chunkSize: Int64, chunkOverlap: Int64, topK: Int64) {
+        this.embedding = embedding
+        this.chat = chat
+        this.tts = tts
         this.ttsVoice = ttsVoice
         this.embeddingDim = embeddingDim
         this.batchSize = batchSize
         this.chunkSize = chunkSize
         this.chunkOverlap = chunkOverlap
         this.topK = topK
-        this.apiKeyCipher = apiKeyCipher
-        this.apiKeyHint = apiKeyHint
     }
 }
 
@@ -115,36 +127,9 @@ func legacyEnvKey(): String {
     envOr("OPENAI_API_KEY", "")
 }
 
-func loadKbSettings(cfg: Config): KbSettings {
-    let rows = query(cfg,
-        "SELECT base_url,embedding_model,chat_model,tts_model,tts_voice,embedding_dim,batch_size," +
-        "chunk_size,chunk_overlap,top_k,api_key_cipher,api_key_hint FROM kb_settings WHERE id=1")
-    if (rows.size == 0) {
-        return KbSettings("", "", "", "", "", 0, 16, 800, 120, 6, "", "")
-    }
-    let row = rows[0]
-    let batch = row.int("batch_size")
-    let size = row.int("chunk_size")
-    KbSettings(
-        row.text("base_url"),
-        row.text("embedding_model"),
-        row.text("chat_model"),
-        row.text("tts_model"),
-        row.text("tts_voice"),
-        row.int("embedding_dim"),
-        if (batch <= 0) { 16 } else if (batch > 64) { 64 } else { batch },
-        if (size < 200) { 800 } else if (size > 4000) { 4000 } else { size },
-        if (row.int("chunk_overlap") < 0) { 0 } else { row.int("chunk_overlap") },
-        if (row.int("top_k") < 1) { 6 } else if (row.int("top_k") > 20) { 20 } else { row.int("top_k") },
-        if (row.isNull("api_key_cipher")) { "" } else { row.text("api_key_cipher") },
-        row.text("api_key_hint")
-    )
-}
-
-/** 优先用管理端保存的密钥，其次兼容环境变量里配置过的密钥。 */
-func effectiveApiKey(cfg: Config, settings: KbSettings): String {
-    if (settings.apiKeyCipher.size > 0) {
-        match (decryptSecret(cfg.authSecret, settings.apiKeyCipher)) {
+func resolveKey(cfg: Config, slot: ModelSlot): String {
+    if (slot.cipher.size > 0) {
+        match (decryptSecret(cfg.authSecret, slot.cipher)) {
             case Some(value) => return value
             case None => ()
         }
@@ -152,11 +137,42 @@ func effectiveApiKey(cfg: Config, settings: KbSettings): String {
     legacyEnvKey()
 }
 
-func endpointOf(cfg: Config, settings: KbSettings): ModelEndpoint {
-    ModelEndpoint(settings.baseUrl, effectiveApiKey(cfg, settings), settings.embeddingModel, settings.chatModel)
+func slotEndpoint(cfg: Config, slot: ModelSlot): ModelEndpoint {
+    ModelEndpoint(slot.baseUrl, resolveKey(cfg, slot), slot.model, slot.model)
 }
 
-/** 进程内索引缓存：任何写操作把版本号加一，下次检索重建。 */
+func loadKbSettings(cfg: Config): KbSettings {
+    let rows = query(cfg,
+        "SELECT embedding_base_url,embedding_model,embedding_api_key_cipher,embedding_api_key_hint," +
+        "chat_base_url,chat_model,chat_api_key_cipher,chat_api_key_hint," +
+        "tts_base_url,tts_model,tts_voice,tts_api_key_cipher,tts_api_key_hint," +
+        "embedding_dim,batch_size,chunk_size,chunk_overlap,top_k FROM kb_settings WHERE id=1")
+    if (rows.size == 0) {
+        let empty = ModelSlot("", "", "", "")
+        return KbSettings(empty, empty, empty, "", 0, 16, 800, 120, 6)
+    }
+    let row = rows[0]
+    let batch = row.int("batch_size")
+    let size = row.int("chunk_size")
+    KbSettings(
+        ModelSlot(row.text("embedding_base_url"), row.text("embedding_model"),
+            if (row.isNull("embedding_api_key_cipher")) { "" } else { row.text("embedding_api_key_cipher") },
+            row.text("embedding_api_key_hint")),
+        ModelSlot(row.text("chat_base_url"), row.text("chat_model"),
+            if (row.isNull("chat_api_key_cipher")) { "" } else { row.text("chat_api_key_cipher") },
+            row.text("chat_api_key_hint")),
+        ModelSlot(row.text("tts_base_url"), row.text("tts_model"),
+            if (row.isNull("tts_api_key_cipher")) { "" } else { row.text("tts_api_key_cipher") },
+            row.text("tts_api_key_hint")),
+        row.text("tts_voice"),
+        row.int("embedding_dim"),
+        if (batch <= 0) { 16 } else if (batch > 64) { 64 } else { batch },
+        if (size < 200) { 800 } else if (size > 4000) { 4000 } else { size },
+        if (row.int("chunk_overlap") < 0) { 0 } else { row.int("chunk_overlap") },
+        if (row.int("top_k") < 1) { 6 } else if (row.int("top_k") > 20) { 20 } else { row.int("top_k") }
+    )
+}
+
 class KbIndexEntry {
     let hit: KbHit
     let vector: Array<Byte>
@@ -167,7 +183,7 @@ class KbIndexEntry {
     }
 }
 
-let kbCacheLock = Mutex()
+/** 进程内索引缓存：任何写操作把版本号加一，下次检索重建。 */let kbCacheLock = Mutex()
 var kbCacheEntries: Array<KbIndexEntry> = []
 var kbCacheVersion: Int64 = -1
 var kbWriteVersion: Int64 = 0
@@ -244,7 +260,7 @@ func kbSearch(cfg: Config, settings: KbSettings, queryText: String, topK: Int64)
     let parts = ArrayList<String>()
     var degraded = false
     var note = ""
-    let endpoint = endpointOf(cfg, settings)
+    let endpoint = slotEndpoint(cfg, settings.embedding)
     if (endpoint.hasEmbedding()) {
         try {
             let vectors = embedTexts(endpoint, [query])
@@ -366,7 +382,7 @@ func kbIngest(cfg: Config, documentId: String, title: String, content: String, s
     execute(cfg, "UPDATE kb_documents SET status='indexing',error_message='' WHERE id=" + sqlQuote(documentId))
     execute(cfg, "DELETE FROM kb_chunks WHERE document_id=" + sqlQuote(documentId))
     let chunkIds = kbInsertDocumentsChunks(cfg, documentId, pieces)
-    let endpoint = endpointOf(cfg, settings)
+    let endpoint = slotEndpoint(cfg, settings.embedding)
     var embedded: Int64 = 0
     var note = ""
     if (endpoint.hasEmbedding()) {
@@ -381,7 +397,7 @@ func kbIngest(cfg: Config, documentId: String, title: String, content: String, s
             if (inputs.size == 0) { break }
             try {
                 let vectors = embedTexts(endpoint, inputs.toArray())
-                embedded += kbSaveEmbeddings(cfg, chunkIds[start..i], vectors, settings.embeddingModel)
+                embedded += kbSaveEmbeddings(cfg, chunkIds[start..i], vectors, settings.embedding.model)
             } catch (error: Exception) {
                 note = "向量化失败，已保留关键词检索：" + error.message
                 break
@@ -393,7 +409,7 @@ func kbIngest(cfg: Config, documentId: String, title: String, content: String, s
     }
     execute(cfg,
         "UPDATE kb_documents SET chunk_count=" + pieces.size.toString() + ",embedded_count=" + embedded.toString() +
-        ",embedding_model=" + sqlQuote(if (embedded > 0) { settings.embeddingModel } else { "" }) +
+        ",embedding_model=" + sqlQuote(if (embedded > 0) { settings.embedding.model } else { "" }) +
         ",status='ready',indexed_at=NOW(6),error_message=" + sqlQuote(note) + " WHERE id=" + sqlQuote(documentId))
     kbBumpVersion()
     KbIngestResult(pieces.size, embedded, note)

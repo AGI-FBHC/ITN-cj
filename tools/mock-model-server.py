@@ -75,6 +75,14 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(b"data: [DONE]\n\n")
             self.wfile.flush()
             return
+        if self.path.endswith("/audio/speech"):
+            audio = b"ID3" + b"\x00" * 64
+            self.send_response(200)
+            self.send_header("Content-Type", "audio/mpeg")
+            self.send_header("Content-Length", str(len(audio)))
+            self.end_headers()
+            self.wfile.write(audio)
+            return
         self.send_error(404)
 
 

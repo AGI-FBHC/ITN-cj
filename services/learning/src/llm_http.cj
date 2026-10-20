@@ -283,3 +283,32 @@ func readSseStream(input: InputStream, onDelta: (String) -> Unit): String {
     }
     text.toString()
 }
+
+/** 语音合成连通性检查：只关心 HTTP 状态，不解析音频。 */
+func ttsCheck(ep: ModelEndpoint, voice: String, text: String): Int64 {
+    let payload = JsonWriter()
+    payload.putStr("model", ep.chatModel)
+    payload.putStr("voice", if (voice.size == 0) { "alloy" } else { voice })
+    payload.putStr("input", text)
+    payload.putStr("response_format", "mp3")
+    let url = ep.url("/audio/speech")
+    let client = modelClient(ep, 2)
+    try {
+        let request = HttpRequestBuilder()
+            .method("POST")
+            .url(url)
+            .header("Content-Type", "application/json")
+            .header("Authorization", "Bearer " + ep.apiKey)
+            .body(payload.toJson())
+            .build()
+        let response = client.send(request)
+        // 读掉响应体，避免连接挂住。
+        let drained = readStreamText(response.body)
+        if (response.status != 200) {
+            throw Exception("返回 " + response.status.toString() + "：" + briefBody(drained))
+        }
+        Int64(response.status)
+    } finally {
+        try { client.close() } catch (_: Exception) {}
+    }
+}
