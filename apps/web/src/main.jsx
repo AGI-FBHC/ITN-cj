@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {BrowserRouter} from 'react-router-dom';
 import App from './RecoveredApp.jsx';
 import AdminApp from './admin/AdminApp.jsx';
+import './tutor.js';
 import './styles.css';
 import './login.css';
 import './admin/admin.css';

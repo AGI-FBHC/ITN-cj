@@ -83,4 +83,12 @@ export const adminApi = {
   deleteLesson: (id, index) =>
     request(`/courses/${encodeURIComponent(id)}/lessons/${index}`, { method: 'DELETE' }),
   users: () => request('/users'),
+  kb: () => request('/kb'),
+  kbDocument: (id) => request(`/kb/documents/${encodeURIComponent(id)}`),
+  createKbDocument: (body) => request('/kb/documents', { method: 'POST', body }),
+  reindexKbDocument: (id) => request(`/kb/documents/${encodeURIComponent(id)}/reindex`, { method: 'POST', body: {} }),
+  deleteKbDocument: (id) => request(`/kb/documents/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  kbSearch: (query, topK) => request('/kb/search', { method: 'POST', body: { query, topK } }),
+  saveKbSettings: (settings) => request('/kb/settings', { method: 'PUT', body: settings }),
+  testKbModel: () => request('/kb/test', { method: 'POST', body: {} }),
 };

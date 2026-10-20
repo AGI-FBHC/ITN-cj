@@ -7,6 +7,8 @@ import AdminCourses from './AdminCourses.jsx';
 import AdminCourseDetail from './AdminCourseDetail.jsx';
 import AdminLessonEditor from './AdminLessonEditor.jsx';
 import AdminUsers from './AdminUsers.jsx';
+import AdminKnowledge from './AdminKnowledge.jsx';
+import AdminSettings from './AdminSettings.jsx';
 
 function navClass({ isActive }) {
   return isActive ? 'active' : undefined;
@@ -44,7 +46,7 @@ export default function AdminApp() {
         <nav className="zx-admin-nav">
           <NavLink to="/admin" end className={navClass}>概览</NavLink>
           <NavLink to="/admin/courses" className={navClass}>课程</NavLink>
-          <NavLink to="/admin/users" className={navClass}>用户</NavLink>
+          <NavLink to="/admin/knowledge" className={navClass}>知识库</NavLink>`n          <NavLink to="/admin/users" className={navClass}>用户</NavLink>`n          <NavLink to="/admin/settings" className={navClass}>设置</NavLink>
         </nav>
         <div className="zx-admin-sidebar-footer">
           <strong>{adminName()}</strong>
@@ -71,7 +73,7 @@ export default function AdminApp() {
           <Route path="/admin/courses" element={<AdminCourses />} />
           <Route path="/admin/courses/:courseId" element={<AdminCourseDetail />} />
           <Route path="/admin/courses/:courseId/lessons/:index" element={<AdminLessonEditor />} />
-          <Route path="/admin/users" element={<AdminUsers />} />
+          <Route path="/admin/knowledge" element={<AdminKnowledge />} />`n          <Route path="/admin/users" element={<AdminUsers />} />`n          <Route path="/admin/settings" element={<AdminSettings />} />
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Routes>
       </main>

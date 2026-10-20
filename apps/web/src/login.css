@@ -366,3 +366,16 @@
     font-weight: 800;
   }
 }
+
+.zhixun-login-admin {
+  margin: 14px 0 0;
+  text-align: center;
+  color: #8b859c;
+  font-size: 12px;
+}
+.zhixun-login-admin a {
+  color: #6038ef;
+  font-weight: 700;
+  text-decoration: none;
+}
+.zhixun-login-admin a:hover { text-decoration: underline; }

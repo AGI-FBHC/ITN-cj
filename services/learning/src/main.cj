@@ -869,6 +869,189 @@ func emptyLessonContent(): String {
     out.toJson()
 }
 
+/* ---------- knowledge base JSON ---------- */
+
+func kbDocumentJson(row: Row): String {
+    let out = JsonWriter()
+    out.putStr("id", row.text("id"))
+    out.putStr("title", row.text("title"))
+    out.putStr("sourceName", row.text("source_name"))
+    out.putStr("sourceType", row.text("source_type"))
+    out.putInt("charCount", row.int("char_count"))
+    out.putInt("byteSize", row.int("byte_size"))
+    out.putStr("status", row.text("status"))
+    out.putInt("chunkCount", row.int("chunk_count"))
+    out.putInt("embeddedCount", row.int("embedded_count"))
+    out.putStr("embeddingModel", row.text("embedding_model"))
+    out.putStr("errorMessage", row.text("error_message"))
+    out.putStr("updatedAt", row.text("updated_at"))
+    out.toJson()
+}
+
+func kbDocumentSelect(): String {
+    "SELECT id,title,source_name,source_type,byte_size,char_count,status,chunk_count,embedded_count," +
+    "embedding_model,error_message,COALESCE(DATE_FORMAT(updated_at,'%Y-%m-%d %H:%i'),'') updated_at " +
+    "FROM kb_documents "
+}
+
+func kbSettingsJson(settings: KbSettings): String {
+    let out = JsonWriter()
+    out.putStr("baseUrl", settings.baseUrl)
+    out.putStr("embeddingModel", settings.embeddingModel)
+    out.putStr("chatModel", settings.chatModel)
+    out.putInt("embeddingDim", settings.embeddingDim)
+    out.putInt("batchSize", settings.batchSize)
+    out.putInt("chunkSize", settings.chunkSize)
+    out.putInt("chunkOverlap", settings.chunkOverlap)
+    out.putInt("topK", settings.topK)
+    out.putBool("keyConfigured", modelApiKey().size > 0)
+    out.toJson()
+}
+
+func kbOverviewBody(cfg: Config): String {
+    let settings = loadKbSettings(cfg)
+    let rows = query(cfg, kbDocumentSelect() + "ORDER BY created_at DESC LIMIT 200")
+    let docs = JsonArrWriter()
+    for (row in rows) { docs.addRaw(kbDocumentJson(row)) }
+    let totals = query(cfg,
+        "SELECT COUNT(*) docs,COALESCE(SUM(chunk_count),0) chunks,COALESCE(SUM(embedded_count),0) embedded FROM kb_documents")
+    let stats = JsonWriter()
+    stats.putInt("documents", if (totals.size > 0) { totals[0].int("docs") } else { 0 })
+    stats.putInt("chunks", if (totals.size > 0) { totals[0].int("chunks") } else { 0 })
+    stats.putInt("embedded", if (totals.size > 0) { totals[0].int("embedded") } else { 0 })
+    let out = JsonWriter()
+    out.putRaw("documents", docs.toJson())
+    out.putRaw("settings", kbSettingsJson(settings))
+    out.putRaw("stats", stats.toJson())
+    out.toJson()
+}
+
+func kbDocumentDetailBody(cfg: Config, docId: String): ?String {
+    let rows = query(cfg, kbDocumentSelect() + "WHERE id=" + sqlQuote(docId) + " LIMIT 1")
+    if (rows.size == 0) { return None }
+    let chunks = query(cfg,
+        "SELECT c.chunk_index,c.heading_path,c.text,c.char_count," +
+        "CASE WHEN e.chunk_id IS NULL THEN 0 ELSE 1 END has_vector " +
+        "FROM kb_chunks c LEFT JOIN kb_embeddings e ON e.chunk_id=c.id " +
+        "WHERE c.document_id=" + sqlQuote(docId) + " ORDER BY c.chunk_index LIMIT 200")
+    let arr = JsonArrWriter()
+    for (row in chunks) {
+        let item = JsonWriter()
+        item.putInt("index", row.int("chunk_index"))
+        item.putStr("headingPath", row.text("heading_path"))
+        item.putStr("text", row.text("text"))
+        item.putInt("charCount", row.int("char_count"))
+        item.putBool("hasVector", row.int("has_vector") == 1)
+        arr.addRaw(item.toJson())
+    }
+    let out = JsonWriter()
+    out.putRaw("document", kbDocumentJson(rows[0]))
+    out.putRaw("chunks", arr.toJson())
+    out.toJson()
+}
+
+func kbSearchBody(cfg: Config, settings: KbSettings, queryText: String, topK: Int64): String {
+    let result = kbSearch(cfg, settings, queryText, topK)
+    let arr = JsonArrWriter()
+    for (hit in result.hits) {
+        let item = JsonWriter()
+        item.putStr("chunkId", hit.chunkId)
+        item.putStr("documentId", hit.documentId)
+        item.putStr("documentTitle", hit.docTitle)
+        item.putStr("headingPath", hit.headingPath)
+        item.putStr("text", hit.text)
+        item.putFloat("score", hit.score)
+        arr.addRaw(item.toJson())
+    }
+    let out = JsonWriter()
+    out.putRaw("hits", arr.toJson())
+    out.putStr("mode", result.mode)
+    out.putBool("degraded", result.degraded)
+    out.putStr("note", result.note)
+    out.toJson()
+}
+
+func kbIngestResponse(cfg: Config, docId: String, result: KbIngestResult): String {
+    let rows = query(cfg, kbDocumentSelect() + "WHERE id=" + sqlQuote(docId) + " LIMIT 1")
+    let out = JsonWriter()
+    if (rows.size > 0) {
+        out.putRaw("document", kbDocumentJson(rows[0]))
+    } else {
+        out.putRaw("document", "null")
+    }
+    out.putInt("chunkCount", result.chunkCount)
+    out.putInt("embeddedCount", result.embeddedCount)
+    out.putStr("note", result.note)
+    out.toJson()
+}
+
+/* ---------- AI tutor ---------- */
+
+func tutorSystemPrompt(): String {
+    "你是「智训云枢」的人工智能学习导师，服务对象是正在学习计算机课程的学生。\n" +
+    "要求：\n" +
+    "1. 用简体中文回答，先用一句话给结论，再展开解释；总长度控制在 400 字以内。\n" +
+    "2. 优先依据【参考资料】和【当前课时】回答，用到资料时在句末标注编号，例如 [1][2]。\n" +
+    "3. 资料没有覆盖的问题，可以基于通用知识回答，但必须说明「课程资料里没有直接讲到」。\n" +
+    "4. 不确定就说不确定，不要编造概念、数字或引用。\n" +
+    "5. 不要输出与问题无关的开场白。"
+}
+
+func tutorCitationsJson(hits: ArrayList<KbHit>): String {
+    let arr = JsonArrWriter()
+    var i: Int64 = 0
+    while (i < hits.size) {
+        let hit = hits[i]
+        let item = JsonWriter()
+        item.putInt("index", i + 1)
+        item.putStr("documentId", hit.documentId)
+        item.putStr("documentTitle", hit.docTitle)
+        item.putStr("headingPath", hit.headingPath)
+        item.putStr("text", hit.text)
+        item.putFloat("score", hit.score)
+        arr.addRaw(item.toJson())
+        i += 1
+    }
+    arr.toJson()
+}
+
+func tutorQuestionText(hits: ArrayList<KbHit>, quoted: String, courseLabel: String, lessonTitle: String, message: String): String {
+    var text = "【当前课时】" + (if (courseLabel.size > 0) { courseLabel } else { "未指定课程" })
+    if (lessonTitle.size > 0) { text += " · " + lessonTitle }
+    text += "\n"
+    if (hits.size > 0) {
+        text += "【参考资料】\n"
+        var i: Int64 = 0
+        while (i < hits.size) {
+            let hit = hits[i]
+            text += "[" + (i + 1).toString() + "] 《" + hit.docTitle + "》"
+            if (hit.headingPath.size > 0) { text += " · " + hit.headingPath }
+            text += "\n" + hit.text + "\n\n"
+            i += 1
+        }
+    } else {
+        text += "【参考资料】知识库里没有检索到相关内容。\n"
+    }
+    if (quoted.size > 0) {
+        text += "【学习者引用的原文】\n" + quoted + "\n"
+    }
+    text += "【问题】\n" + message
+    text
+}
+
+func saveTutorMessage(cfg: Config, userId: String, role: String, content: String, citations: String,
+                      courseId: String, lessonIndex: Int64): Unit {
+    try {
+        execute(cfg,
+            "INSERT INTO tutor_messages(id,user_id,role,content,citations_json,mode,course_id,lesson_index) VALUES(" +
+            sqlQuote(uuidFormat(uuidV4())) + "," + sqlQuote(userId) + "," + sqlQuote(role) + "," +
+            sqlQuote(content) + "," + sqlQuote(if (citations.size == 0) { "null" } else { citations }) +
+            ",'lesson'," + sqlQuote(courseId) + "," + lessonIndex.toString() + ")")
+    } catch (_: Exception) {
+        // 记录失败不影响本次回答。
+    }
+}
+
 main(): Int64 {
     let cfg = loadConfig()
     let initial = connect(cfg)
@@ -1592,6 +1775,264 @@ main(): Int64 {
             case Some(_) =>
                 let out = JsonWriter()
                 out.putRaw("users", adminUsersBody(cfg))
+                writeJson(ctx.response, 200, out.toJson())
+        }
+    }
+
+    app.mapGet("api/admin/kb") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) => writeJson(ctx.response, 200, kbOverviewBody(cfg))
+        }
+    }
+
+    app.mapPost("api/admin/kb/documents") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                match (parseObject(ctx.request)) {
+                    case None => writeError(ctx.response, 400, "文档内容格式不正确")
+                    case Some(body) =>
+                        let title = (jsonGetString(body, "title") ?? "").trimAscii()
+                        let content = jsonGetString(body, "content") ?? ""
+                        let sourceName = (jsonGetString(body, "sourceName") ?? "").trimAscii()
+                        let sourceType = (jsonGetString(body, "sourceType") ?? "paste").trimAscii()
+                        let bytes = content.toArray()
+                        if (title.size == 0 || title.size > 200) {
+                            writeError(ctx.response, 400, "标题需要 1–200 个字符")
+                        } else if (content.trimAscii().size == 0) {
+                            writeError(ctx.response, 400, "文档内容不能为空")
+                        } else if (bytes.size > 512000) {
+                            writeError(ctx.response, 413, "单个文档不要超过 500KB，请拆分后再上传")
+                        } else {
+                            let id = uuidFormat(uuidV4())
+                            execute(cfg,
+                                "INSERT INTO kb_documents(id,title,source_name,source_type,mime,byte_size,char_count,content,status) VALUES(" +
+                                sqlQuote(id) + "," + sqlQuote(title) + "," + sqlQuote(sourceName) + "," +
+                                sqlQuote(if (sourceType.size == 0) { "paste" } else { sourceType }) +
+                                ",'text/markdown'," + bytes.size.toString() + "," +
+                                kbCharsBetween(bytes, 0, bytes.size).toString() + "," + sqlQuote(content) + ",'pending')")
+                            let settings = loadKbSettings(cfg)
+                            let result = kbIngest(cfg, id, title, content, settings)
+                            writeJson(ctx.response, 200, kbIngestResponse(cfg, id, result))
+                        }
+                }
+        }
+    }
+
+    app.mapGet("api/admin/kb/documents/{document_id}") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                match (kbDocumentDetailBody(cfg, routeText(ctx, "document_id"))) {
+                    case Some(body) => writeJson(ctx.response, 200, body)
+                    case None => writeError(ctx.response, 404, "没有找到这个文档")
+                }
+        }
+    }
+
+    app.mapPost("api/admin/kb/documents/{document_id}/reindex") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let docId = routeText(ctx, "document_id")
+                let rows = query(cfg, "SELECT title,content FROM kb_documents WHERE id=" + sqlQuote(docId))
+                if (rows.size == 0) {
+                    writeError(ctx.response, 404, "没有找到这个文档")
+                } else {
+                    let settings = loadKbSettings(cfg)
+                    let result = kbIngest(cfg, docId, rows[0].text("title"), rows[0].text("content"), settings)
+                    writeJson(ctx.response, 200, kbIngestResponse(cfg, docId, result))
+                }
+        }
+    }
+
+    app.mapDelete("api/admin/kb/documents/{document_id}") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let docId = routeText(ctx, "document_id")
+                let rows = query(cfg, "SELECT id FROM kb_documents WHERE id=" + sqlQuote(docId))
+                if (rows.size == 0) {
+                    writeError(ctx.response, 404, "没有找到这个文档")
+                } else {
+                    execute(cfg, "DELETE FROM kb_documents WHERE id=" + sqlQuote(docId))
+                    kbBumpVersion()
+                    let out = JsonWriter()
+                    out.putBool("deleted", true)
+                    writeJson(ctx.response, 200, out.toJson())
+                }
+        }
+    }
+
+    app.mapPost("api/admin/kb/search") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                match (parseObject(ctx.request)) {
+                    case None => writeError(ctx.response, 400, "检索条件格式不正确")
+                    case Some(body) =>
+                        let queryText = (jsonGetString(body, "query") ?? "").trimAscii()
+                        let settings = loadKbSettings(cfg)
+                        let requested = jsonGetInt(body, "topK") ?? settings.topK
+                        let topK = if (requested < 1) { settings.topK } else if (requested > 20) { 20 } else { requested }
+                        if (queryText.size == 0) {
+                            writeError(ctx.response, 400, "请填写检索内容")
+                        } else {
+                            writeJson(ctx.response, 200, kbSearchBody(cfg, settings, queryText, topK))
+                        }
+                }
+        }
+    }
+
+    app.mapPut("api/admin/kb/settings") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                match (parseObject(ctx.request)) {
+                    case None => writeError(ctx.response, 400, "配置格式不正确")
+                    case Some(body) =>
+                        let baseUrl = (jsonGetString(body, "baseUrl") ?? "").trimAscii()
+                        let embeddingModel = (jsonGetString(body, "embeddingModel") ?? "").trimAscii()
+                        let chatModel = (jsonGetString(body, "chatModel") ?? "").trimAscii()
+                        let dim = jsonGetInt(body, "embeddingDim") ?? 0
+                        let batch = jsonGetInt(body, "batchSize") ?? 16
+                        let chunkSize = jsonGetInt(body, "chunkSize") ?? 800
+                        let overlap = jsonGetInt(body, "chunkOverlap") ?? 120
+                        let topK = jsonGetInt(body, "topK") ?? 6
+                        if (baseUrl.size > 0 && !baseUrl.startsWith("http")) {
+                            writeError(ctx.response, 400, "接口地址需要以 http:// 或 https:// 开头")
+                        } else if (baseUrl.size > 300) {
+                            writeError(ctx.response, 400, "接口地址过长")
+                        } else if (embeddingModel.size > 160 || chatModel.size > 160) {
+                            writeError(ctx.response, 400, "模型名过长")
+                        } else if (chunkSize < 200 || chunkSize > 4000) {
+                            writeError(ctx.response, 400, "切片长度需要在 200–4000 字之间")
+                        } else if (overlap < 0 || overlap * 2 >= chunkSize) {
+                            writeError(ctx.response, 400, "重叠长度要小于切片长度的一半")
+                        } else if (batch < 1 || batch > 64) {
+                            writeError(ctx.response, 400, "批量条数需要在 1–64 之间")
+                        } else if (topK < 1 || topK > 20) {
+                            writeError(ctx.response, 400, "默认召回条数需要在 1–20 之间")
+                        } else {
+                            execute(cfg,
+                                "UPDATE kb_settings SET base_url=" + sqlQuote(baseUrl) +
+                                ",embedding_model=" + sqlQuote(embeddingModel) +
+                                ",chat_model=" + sqlQuote(chatModel) +
+                                ",embedding_dim=" + maxInt(0, dim).toString() +
+                                ",batch_size=" + batch.toString() +
+                                ",chunk_size=" + chunkSize.toString() +
+                                ",chunk_overlap=" + overlap.toString() +
+                                ",top_k=" + topK.toString() + " WHERE id=1")
+                            let out = JsonWriter()
+                            out.putRaw("settings", kbSettingsJson(loadKbSettings(cfg)))
+                            writeJson(ctx.response, 200, out.toJson())
+                        }
+                }
+        }
+    }
+
+    app.mapPost("api/admin/kb/test") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let settings = loadKbSettings(cfg)
+                let endpoint = endpointOf(settings)
+                if (!endpoint.hasEmbedding()) {
+                    writeError(ctx.response, 400,
+                        "还没有配置向量模型：需要接口地址、向量模型名，以及环境变量 ZHIXUN_MODEL_API_KEY")
+                } else {
+                    try {
+                        let vectors = embedTexts(endpoint, ["知识库连接测试"])
+                        let out = JsonWriter()
+                        out.putBool("ok", true)
+                        out.putStr("model", settings.embeddingModel)
+                        out.putInt("dim", vectors[0].size)
+                        writeJson(ctx.response, 200, out.toJson())
+                    } catch (error: Exception) {
+                        writeError(ctx.response, 502, "向量模型连接失败：" + error.message)
+                    }
+                }
+        }
+    }
+
+    app.mapPost("api/tutor/chat") { ctx =>
+        match (authenticate(ctx, cfg)) {
+            case None => ()
+            case Some(userId) =>
+                match (parseObject(ctx.request)) {
+                    case None => writeError(ctx.response, 400, "提问格式不正确")
+                    case Some(body) =>
+                        let message = (jsonGetString(body, "message") ?? "").trimAscii()
+                        let quoted = (jsonGetString(body, "quote") ?? "").trimAscii()
+                        let courseId = (jsonGetString(body, "courseId") ?? "").trimAscii()
+                        let lessonTitle = (jsonGetString(body, "lessonTitle") ?? "").trimAscii()
+                        let lessonIndex = jsonGetInt(body, "lessonIndex") ?? -1
+                        if (message.size == 0) {
+                            writeError(ctx.response, 400, "请先输入问题")
+                        } else if (message.size > 2000) {
+                            writeError(ctx.response, 413, "问题请精简到 2000 字以内")
+                        } else {
+                            let settings = loadKbSettings(cfg)
+                            let endpoint = endpointOf(settings)
+                            if (!endpoint.hasChat()) {
+                                writeError(ctx.response, 503,
+                                    "AI 导师还没有接入模型：请管理员在「设置」里填写接口地址和对话模型，" +
+                                    "并在服务端配置 ZHIXUN_MODEL_API_KEY")
+                            } else {
+                                let searchQuery = if (quoted.size > 0) { quoted + "\n" + message } else { message }
+                                let result = kbSearch(cfg, settings, searchQuery, settings.topK)
+                                let messages = JsonArrWriter()
+                                let systemPart = JsonWriter()
+                                systemPart.putStr("role", "system")
+                                systemPart.putStr("content", tutorSystemPrompt())
+                                messages.addRaw(systemPart.toJson())
+                                let userPart = JsonWriter()
+                                userPart.putStr("role", "user")
+                                userPart.putStr("content", tutorQuestionText(result.hits, quoted, courseId, lessonTitle, message))
+                                messages.addRaw(userPart.toJson())
+                                try {
+                                    let answer = chatStreamText(endpoint, messages.toJson(), 0.3, { piece: String => () })
+                                    let citations = tutorCitationsJson(result.hits)
+                                    saveTutorMessage(cfg, userId, "user", message, "", courseId, lessonIndex)
+                                    saveTutorMessage(cfg, userId, "assistant", answer, citations, courseId, lessonIndex)
+                                    let out = JsonWriter()
+                                    out.putStr("answer", answer)
+                                    out.putRaw("citations", citations)
+                                    out.putStr("mode", result.mode)
+                                    out.putStr("note", result.note)
+                                    writeJson(ctx.response, 200, out.toJson())
+                                } catch (error: Exception) {
+                                    writeError(ctx.response, 502, "模型调用失败：" + error.message)
+                                }
+                            }
+                        }
+                }
+        }
+    }
+
+    app.mapGet("api/tutor/history") { ctx =>
+        match (authenticate(ctx, cfg)) {
+            case None => ()
+            case Some(userId) =>
+                let rows = query(cfg,
+                    "SELECT role,content,citations_json,COALESCE(DATE_FORMAT(created_at,'%Y-%m-%d %H:%i'),'') created_at " +
+                    "FROM tutor_messages WHERE user_id=" + sqlQuote(userId) +
+                    " ORDER BY created_at DESC LIMIT 20")
+                let arr = JsonArrWriter()
+                var i = rows.size
+                while (i > 0) {
+                    i -= 1
+                    let row = rows[i]
+                    let item = JsonWriter()
+                    item.putStr("role", row.text("role"))
+                    item.putStr("content", row.text("content"))
+                    item.putRaw("citations", if (row.isNull("citations_json")) { "null" } else { row.text("citations_json") })
+                    item.putStr("createdAt", row.text("created_at"))
+                    arr.addRaw(item.toJson())
+                }
+                let out = JsonWriter()
+                out.putRaw("messages", arr.toJson())
                 writeJson(ctx.response, 200, out.toJson())
         }
     }

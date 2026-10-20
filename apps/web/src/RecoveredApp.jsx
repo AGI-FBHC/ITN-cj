@@ -6667,23 +6667,45 @@ function Lecture({
       if (!be) return;
       const ke = Date.now(),
         se = h,
-        fe = AI_UNAVAILABLE;
-      if (
-        (E((xe) => [
-          ...xe,
-          { id: ke, role: "user", text: be, quote: se ?? void 0 },
-          { id: ke + 1, role: "assistant", text: fe },
-        ]),
-        j(""),
-        x(null),
-        ne)
-      ) {
-        const xe = new SpeechSynthesisUtterance(fe);
-        ((xe.lang = "zh-CN"),
-          (xe.rate = 1.15),
-          window.speechSynthesis.cancel(),
-          window.speechSynthesis.speak(xe));
+        settle = (text) =>
+          E((xe) => xe.map((item) => (item.id === ke + 1 ? { ...item, text } : item))),
+        speak = (text) => {
+          if (!ne || !("speechSynthesis" in window) || !text) return;
+          const xe = new SpeechSynthesisUtterance(text);
+          ((xe.lang = "zh-CN"),
+            (xe.rate = 1.15),
+            window.speechSynthesis.cancel(),
+            window.speechSynthesis.speak(xe));
+        };
+      E((xe) => [
+        ...xe,
+        { id: ke, role: "user", text: be, quote: se ?? void 0 },
+        { id: ke + 1, role: "assistant", text: "正在查阅课程资料…" },
+      ]);
+      (j(""), x(null));
+      if (!window.zxTutorAsk) {
+        settle(AI_UNAVAILABLE);
+        speak(AI_UNAVAILABLE);
+        return;
       }
+      window
+        .zxTutorAsk({
+          message: be,
+          quote: se && se.text ? (se.heading ? se.heading + "：" : "") + se.text : "",
+          courseId: n.id,
+          lessonIndex: u,
+          lessonTitle: r,
+        })
+        .then((result) => {
+          const text = result.answer || "这次没有拿到回答，请再问一次。";
+          settle(text);
+          speak(text);
+        })
+        .catch((error) => {
+          const text = "暂时无法回答：" + error.message;
+          settle(text);
+          speak(text);
+        });
     },
     { listening: $, supported: O, toggleListening: P } = mu((G) => H(G, !0));
   if (remote.loading || remote.error)
