@@ -4971,3 +4971,26 @@ read_chunk 读得到原文并带回库标识与正文。
 - 现有优化版被其他进程占用，无法取得独占读写；未关闭用户应用、未强行覆盖。已将验证结果另存 D:/Desktop/仓颉杯/创新原型赛道/01-项目说明-优化版-浅色图.docx，17,832,465 bytes，SHA256=2A4E335851C84EE5DEC6261FB6F12226C6D1D9DDBF504E0E802981582E2E24BD，保存后哈希与验证源一致。tmp/deliver-proposal-light.ps1和tmp/proposal-light-delivery.json记录原因与结果。替换前精确副本tmp/proposal-light-before.docx保留；被占用原文件未改。
 - tmp/update-proposal.cjs未来图4-3素材入口同步到持久化的docs/screenshots/ui-guided-light.png，避免后续版本更新时退回深色；本轮没有运行该全量生成器，不改变当前文档其他内容。后续接手需以浅色图交付稿为最新版本，不能只读取旧0.8.28交付JSON并当作最新文档。
 - 仅提交截图与本TRACE。原有两份未跟踪调研文档继续排除，程序包0.8.28保持已验收版本。
+
+## 2026-10-20 · 项目说明逻辑与叙事修订进行中
+- 用户在浅色图交付后继续要求通读文档、加强逻辑与故事性，文字可稍增。本轮明确授权修改正文与必要结构，保留图4-3浅色图；以01-项目说明-优化版-浅色图.docx为最新源，不回退旧深色稿。
+- 已提取完整256段、8416字符（含表格/图注）的正文并通读，源SHA256=2A4E335851C84EE5DEC6261FB6F12226C6D1D9DDBF504E0E802981582E2E24BD；索引tmp/proposal-story-paragraphs.json、全文tmp/proposal-story-before.txt。发现主要是各页功能罗列，产品组成到学习流程的承接不足、真实案例作用未展开、账号规划插在功能章节中打断现状介绍。
+- 计划：以Agent入门学习场景解释资料/实操/反馈断点；先交代智训云枢平台和Lumin各自服务的场景，再按课程进入→资源→练习→反馈推进Web章节；Lumin串联个人资料、课件与真实随页问答、MCP实践清单、学习计划及跨会话记忆。技术章节解释上述行为如何由仓颉内核与工具/数据实现。账号与跨端档案规划移到运行验证之后，明确未实现。
+- 用户希望略增篇幅，新增内容以因果/承接与已有真实案例为主，不编造用户访谈、学习成效、性能对照或账号同步能力。全部截图、第三方/既有基础/AI辅助/团队分工等事实保留；程序包0.8.28不改。
+- 本轮采用documents与stop-slop技能；受管Node编辑OOXML，Word COM及Poppler渲染检查，无Python。持续目标先前为paused，本轮文档任务按用户新授权独立推进；若定时器到点，优先接续本轮文档，不并行启动重复测试或覆盖稿件。
+
+## 2026-10-20 · 项目说明产业叙事重构与架构/拓扑纯白背景交付
+- 用户要求继续优化项目说明，不要只讲功能，要先交代行业现状、代表竞品和真实痛点，再说明产品定位与解决方式，最后让创新点逐项回扣痛点；写完需解释完整叙事逻辑。用户随后追加：架构图、拓扑图背景改为纯白色，去掉泛绿色，但必须在手上正文任务完成后再处理。
+- 以最新浅色图交付稿 D:/Desktop/仓颉杯/创新原型赛道/01-项目说明-优化版-浅色图.docx 为源，SHA256=2A4E335851C84EE5DEC6261FB6F12226C6D1D9DDBF504E0E802981582E2E24BD；未回退深色图版本，也未覆盖原始01-项目说明.docx、备份稿和该浅色图交付稿。
+- 新增/更新 tools/revise-proposal-story.cjs，用受管Node+JSZip直接修改OOXML。正文由8,416字符增至12,372字符（增加47%），重写54段、新增29段、新增1张五类竞品表；恢复8个一级章节/表格分页并移除17个旧硬分页。报告 tmp/proposal-story-v5-report.json，全文 tmp/proposal-story-v5-text.txt，生成日志 tmp/proposal-story-v5-build.log。
+- 第一章现在的论证顺序是：生成式AI从内容生成走向过程支持→公开产品能力分工→四个未接通断点→以知识点连接学习链的产品定位→两周Agent入门案例与验证边界。竞品表覆盖通用助手（ChatGPT/Claude/Gemini）、AI学习辅导（Khanmigo/Coursera Coach）、资料研究（Gemini Notebook）、Agent/工作流（Dify/Coze/n8n）和课程平台（Moodle/Canvas/雨课堂）；只比较公开能力分工，不写市场份额、用户量或学习成效。
+- 竞品依据使用官方产品页/帮助页：https://www.khanmigo.ai/、https://www.coursera.org/explore/coach/、https://support.google.com/gemininotebook/answer/16206563?hl=en、https://www.anthropic.com/news/projects、https://dify.ai/、https://n8n.io/、https://moodle.com/products/lms/、https://www.instructure.com/canvas、https://www.yuketang.cn/。文档明确写出资料核对日期2026-10-20和“本项目判断”属性，避免把竞品分析写成未经验证的市场结论。
+- 第四章按学习动作重排：个人资料建库→知识网络/导图→真实PPT生成与当前页导学问答→MCP实践清单→7天时间约束计划→模型/TTS配置→跨会话学习记忆。真实案例、图片、第三方组件、既有基础、AI辅助披露、团队分工和“平台账号/学习档案跨端同步尚未实现”的边界均保留。
+- 第五章改为“把四个断点做成结构设计”，四项创新分别回扣：知识点连接课程/资料/反馈；可检查产物回应生成结果难核验；会话隔离、任务状态和逐次审批回应长任务打断；仓颉学习运行时回应通用Agent缺少学习语义。账号与跨端档案规划移到运行验证后，避免在现状章节宣称已实现。
+- 中间稿 tmp/proposal-story-v5.docx，SHA256=3B913921357D90EEA186C62C79DC6BE781FDC735DDCB2533BDA17BEFD8C08873；该步只改变word/document.xml，原有19张媒体图、关系、样式和附录未变。
+- 新增 tools/apply-proposal-diagram-white.cjs：按图注“图6-1”和“图7-1”定位相邻图片关系，只替换word/media/image5.png（ITN总体架构，1800×1100）和word/media/image19.png（ITN部署拓扑，1800×1080）。脚本将接近纯白的绿色底色清为#FFFFFF，并把浅绿色卡片边框中性化；深绿色文字/箭头保持原色，不改变图片尺寸、图注、段落或版式。
+- 第一次白底转换的严格断言发现202个浅绿色高亮像素，未写出DOCX；调整浅色边缘中性化条件后复跑。最终架构图清除1,854,716像素、中性化19,868像素、白色占比93.67%；拓扑图清除1,790,409像素、中性化17,982像素、白色占比92.10%；两张图高亮浅绿色污染均为0。预览为 tmp/proposal-diagrams-after/architecture.png 与 topology.png。
+- 最终DOCX包仅 word/media/image5.png 和 word/media/image19.png 与v5不同，word/document.xml逐字节不变；报告 tmp/proposal-story-v6-report.json，日志 tmp/proposal-story-v6-white.log。最终中间稿 tmp/proposal-story-v6.docx，SHA256=227431A10FD747DA34C095C060167D2C6745910E8C59F87E3D032B4E79CE358F。
+- 使用Word COM只读打开并导出 tmp/proposal-story-v6.pdf，页面统计29页；Poppler以120dpi渲染 tmp/proposal-story-v6-pages/page-01.png至page-29.png，并生成 tmp/proposal-story-v6-contact.png总览。实际打开检查封面、竞品表、产业痛点、项目边界、架构图页21、拓扑图页24、运行验证页26及全页缩略图：无空白页、无文字裁切、无图片溢出；两张技术图均为白底且内容完整。日志 tmp/proposal-story-v6-export.log、tmp/proposal-story-v6-render.log。
+- 交付文件：D:/Desktop/仓颉杯/创新原型赛道/01-项目说明-优化版-产业叙事.docx，17,838,586 bytes，SHA256=227431A10FD747DA34C095C060167D2C6745910E8C59F87E3D032B4E79CE358F；同名PDF预览2,123,835 bytes，SHA256=AA1C262743E143A8142FDAAA1615541EA09D9C01644BE4093C08A1BF7D898C6B。源文件与交付文件哈希一致，记录 tmp/proposal-story-v6-delivery.json。
+- 本轮全部使用受管Node、Sharp、JSZip、Word COM与Poppler，无Python，不修改Web端、真实用户数据库、0.8.28程序包或用户正在运行的应用。工具脚本和本TRACE同步到本地Git；两份既有未跟踪调研文档 docs/知识库改进清单-v2.md、docs/非对话页面改造方案-v1.md继续排除。
