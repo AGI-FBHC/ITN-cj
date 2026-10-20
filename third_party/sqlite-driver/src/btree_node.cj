@@ -329,6 +329,38 @@ func requireFreeblockFits(page: Page, off: Int64, usableSize: Int64): Unit {
     }
 }
 
+/** SQLite 要求相邻空闲块之间至少留 4 字节；1–3 字节零头须并入块并扣除碎片计数。 */
+func coalesceFreeblocks(page: Page, usableSize: Int64): Unit {
+    var cur = firstFreeblock(page)
+    var visited = 0
+    while (cur != 0) {
+        visited += 1
+        if (visited > usableSize / FREEBLOCK_HEADER + 1) {
+            throw SqliteFormatException("page ${page.pageNo} has a circular freeblock chain")
+        }
+        requireFreeblockFits(page, cur, usableSize)
+        let size = readU16(page.data, cur + 2)
+        if (size < FREEBLOCK_HEADER || cur + size > usableSize) {
+            throw SqliteFormatException("page ${page.pageNo}: invalid freeblock at ${cur}, size ${size}")
+        }
+        let next = readU16(page.data, cur)
+        if (next == 0) { return }
+        requireFreeblockFits(page, next, usableSize)
+        if (next < cur + size) {
+            throw SqliteFormatException("page ${page.pageNo}: overlapping or unordered freeblocks at ${cur} and ${next}")
+        }
+        let gap = next - cur - size
+        if (gap >= FREEBLOCK_HEADER) { cur = next; continue }
+        let nextSize = readU16(page.data, next + 2)
+        if (nextSize < FREEBLOCK_HEADER || next + nextSize > usableSize || gap > fragmentedBytes(page)) {
+            throw SqliteFormatException("page ${page.pageNo}: invalid fragments between freeblocks at ${cur} and ${next}")
+        }
+        writeU16(page.data, cur, readU16(page.data, next))
+        writeU16(page.data, cur + 2, size + gap + nextSize)
+        setFragmentedBytes(page, fragmentedBytes(page) - gap)
+    }
+}
+
 /** 页内剩余可用字节: 未分配的间隙 + 空闲链 + 碎片。 */
 func totalFreeBytes(page: Page, pageSize: Int64, usableSize: Int64): Int64 {
     let gap = contentStart(page, pageSize) - (cellPointerArrayOffset(page) + cellCount(page) * 2)
@@ -393,6 +425,8 @@ func defragmentPage(page: Page, pageSize: Int64, usableSize: Int64): Unit {
  * 先试空闲链 (首次适配), 不行再用间隙, 还不行就整理后重试。
  */
 func allocateCellSpace(page: Page, size: Int64, pageSize: Int64, usableSize: Int64): Int64 {
+    // 写入旧版本产生的页时，先规范化已有链；不改变任何存活 cell 的字节与偏移。
+    coalesceFreeblocks(page, usableSize)
     let ptrEnd = cellPointerArrayOffset(page) + cellCount(page) * 2 + 2
     // 空闲链里有内容空间不等于页头还有 2 字节指针槽。若间隙只剩 0/1 字节，
     // 先整理再分配，否则 insertCellBytes 会用新指针覆盖首个 cell 或 freeblock 头。
@@ -468,7 +502,6 @@ func takeFromFreeblocks(page: Page, size: Int64, usableSize: Int64): Option<Int6
  * "页明明是空的却报页满"。
  */
 func releaseCellSpace(page: Page, off: Int64, size: Int64, usableSize: Int64): Unit {
-    let _ = usableSize
     if (size < FREEBLOCK_HEADER) {
         setFragmentedBytes(page, fragmentedBytes(page) + size)
         return
@@ -487,21 +520,7 @@ func releaseCellSpace(page: Page, off: Int64, size: Int64, usableSize: Int64): U
     } else {
         writeU16(page.data, prev, off)
     }
-    // 与后继合并。
-    var mergedSize = size
-    if (cur != 0 && off + mergedSize == cur) {
-        mergedSize += readU16(page.data, cur + 2)
-        writeU16(page.data, off, readU16(page.data, cur))
-        writeU16(page.data, off + 2, mergedSize)
-    }
-    // 与前驱合并。
-    if (prev != 0) {
-        let prevSize = readU16(page.data, prev + 2)
-        if (prev + prevSize == off) {
-            writeU16(page.data, prev + 2, prevSize + mergedSize)
-            writeU16(page.data, prev, readU16(page.data, off))
-        }
-    }
+    coalesceFreeblocks(page, usableSize)
 }
 
 /**

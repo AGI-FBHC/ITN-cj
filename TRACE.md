@@ -4910,3 +4910,34 @@ read_chunk 读得到原文并带回库标识与正文。
 - 本轮共有28+41+21+8=98项专项/回归检查通过；其中真实产品HTTP、数据库、UI与包内事件均有状态断言，模型/TTS/审批确定性响应的范围已分别说明。176项内核与6次真实模型对话的证据沿用此前日志，本轮未把沿用证据冒充新增调用。
 - 这是定时器之前的主动接续复验，四个计划时点09:40/11:10/12:40/14:10尚未到，不计为某个定时轮已执行。整体持续复验目标保持active。没有操作用户仍运行中的0.8.25实例；验收子进程均由脚本关闭。
 - 本段仅记录已验收功能和外部说明书的交付，不因记录提交再次重打相同程序包。两份既有未跟踪调研文档继续排除。
+
+## 2026-10-20 · 真实并发导学复验与数据库页布局诊断（进行中）
+- 08:33接续：复验并发会话、审批等待、停止、重试、重启恢复。普通对话stop-check13/13（tmp/stop-current.log），真实仓颉内核/SQLite/Edge、本地受控慢工具，无Python。
+- 新增tools/real-session-check.cjs：使用MiMo真实模型、包内0.8.27内核/renderer；文件选择器只返回隔离文件路径，模型、审批、读文件与会话记录真实执行。A请求read后等待审批，B新建无附件会话独立回答，A停止并在重启后重试，批准后读到提示中未出现的LUMIN-R4Q8；UI与工具事件均证实，不串会话、不借用取消的权限。
+- 验收脚本修正：B用“return把结果交回调用方”正常作答，原关键词只认“返回/输出”误判，已核对并接受语义等价回答；UI恢复早于取消终态落盘，改为限时等服务端turn/end；首次测试文件误放在应用数据根下，被保护规则正确拒绝，改为独立TEMP工作目录；read工具事件只记摘要/路径，不含正文，实读断言使用成功的read路径+模型返回未知校验码。没有改产品以迁就检查。
+- 初始样本UqNUW9两轮、成功并发样本y5NEfL中的A/B及两次重试均有真实模型调用；因脚本与后续数据库问题，不将整套检查冒充全通过。关键逻辑和截图在tmp/real-session-check/，初始断言/取消时序/受保护夹具的失败样本已分别保留。
+- 最后native SQLite只读PRAGMA integrity_check失败。只读检查证实：历史源lumin-guided-real-review-U3hXCl/Lumin/itn.db本来就有settings页4错误；新样本lumin-real-session-y5NEfL/itn.db还出现meta树页8127错误。不是仅由旧样本导致，因此继续定位，不交付“无问题”的结论。
+- 文件页诊断：页4空闲链有17字节freeblock后隔2字节再接下一块；页8127有65字节块后隔3字节再接下一块。碎片计数分别21/4，均未超60。根因定位到btree_node.cj releaseCellSpace只合并严格相邻块，未把1–3字节碎片并入；native SQLite因此认为free space corruption，继而报对应自动索引条目数错误。
+- 新增third_party/sqlite-driver/src/unittests/freeblock_fragment_test.cj五个仓颉最小用例。修前1通过/4失败（其余617是过滤跳过），tmp/freeblock-fragment-before.log；覆盖前驱/后继/双侧碎片合并、保留4字节活区、既有碎片间隙再分配。
+- 新增third_party/probe的--freeblock-churn模式：纯仓颉建立48行、240次变长更新/删除再插入，并逐行自验；tools/sqlite-freeblock-check.cjs用native SQLite只读验证文件格式、48行实际值和主键索引。probe修前已构建，正取得独立格式错误的复现，然后修驱动并回归。
+- 所有写入均在TEMP，真实用户数据库与正在运行的0.8.25实例未触碰。暂不改项目说明书和0.8.27包中的既有验收范围；等待根因修复与新包验收后同步。四个定时检查仍保留，不能把本轮进行中工作当已完成。
+
+### 09:01 接续与底层修复复核（尚在验收）
+- 按交接继续数据库页布局问题，工作位置仍为 D:/Desktop/ITN/ITN-Desktop；不操作 bf21 工作树、Web 同事目录、真实用户库和用户正在运行的0.8.25。启动两阶段均已有 powered by cangjie，保持已完成范围，不重复实现。
+- 原组合过滤命令含非法竖线，cjpm输出错误后仍驻留；经核对进程归属，仅通过原session60655发送Ctrl+C终止。其结果不计通过。一次重试环境脚本写成依赖目录相对路径，未实际启动测试；改用仓库绝对路径并核对运行数量。
+- 修后 FreeblockFragmentTest 5/5（其余617项为过滤跳过）；独立运行FreeblockPointerTest 1/1、DefragmentOverlapTest 1/1、Engine*Test 34/34。共41项实际执行成功，不把622总清单当通过数。日志 tmp/freeblock-fragment-after.log、tmp/driver-*-after.log。
+- probe构建成功。第一次从未加载仓颉DLL环境的终端调用时，子程序退出且没有stdout；不是修复失败。加载scripts/env.ps1后重跑：仓颉写入49项自验通过，原生SQLite只读验证5/5（tmp/sqlite-freeblock-after.log）；240次churn、48行最新值及主键、fragment_gap相邻删除均正确。新增脚本记录writer退出码、信号和错误，便于定位启动环境问题。
+- 修前独立证据为 tmp/sqlite-freeblock-before-targeted.log：三行80字符→前两行缩短2字节→删除前两行，仓颉仍能读存活值，但native SQLite报告Tree7/page7 free space corruption；普通240次churn单独最终未复现，不将其说成修前必失败。修后同例原生integrity_check=ok。
+- 核心全量176/176、0 skipped/error/failed（tmp/core-storage-regression.log），随后scripts/build.ps1成功（tmp/build-storage-fix.log）。驱动测试、probe和core编译依次运行，避免同一依赖编译冲突。
+- 修改tools/real-session-check.cjs：不复制历史损坏数据库，由--seed-guided-fixture=1纯仓颉建空数据库，API导入专用TEMP库中的MiMo配置（仅只读取该行，不输出密钥）。baseline和配置后均先用native SQLite只读确认ok，再发收费请求。PPT是确定性测试夹具，kbId=course-alpha，不能当成本轮模型新生成PPT；实读文件放独立TEMP工作目录。
+- 首次干净真实复验已实际完成两轮：A真实read等待审批，B同时新建并正常回答return；A停止持久化ok:false、read ok:false，库完整性ok。随后测试的pending函数错误地把接口保留的cancelled历史也当成待审批，导致断言失败；核对approval_hub.cj和落库事件后仅修脚本为过滤decision为空。该失败日志/报告已保留 tmp/real-session-clean-approval-history.log、tmp/real-session-check/approval-history-failure.json，未改产品审批逻辑迁就检查。正在新库重跑完整含重启链路。
+- 导学常规回归tools/guided-check.cjs使用当前新内核，35/35，tmp/guided-storage-regression.log：资源标签、切换、窄屏、主题、轮询离开、笔记与重启恢复通过；确定性模型响应范围不算收费真实模型。
+- 文档继续documents技能的受管Node、Word COM、Poppler流程，不用Python；已有authoring marker不重复。agent-reach/Jina读取官网再次失败，改用fetch读取官方cangjie.html成功。确认创新原型五项材料、至少一条可运行闭环、30/25/20/15/10评分及AI辅助/既有基础/第三方披露要求；当前说明书主线吻合。账号登录与跨端学情仍明确后续规划，截图沿用真实已有生成和问答，不能伪造效果。
+- 补VENDOR.md和docs/04说明修复与复现方法；不新增业务API或用户功能，不需要额外Lumin工具。版本准备升0.8.28，等待真实并发和包内验收后提交/交付。四个单次接续检查仍按原时点保留，不重复创建。
+
+### 09:10 修后真实并发验收与0.8.28源码收口
+- tools/real-session-check.cjs最终23/23 PASS，tmp/real-session-clean-after.log、tmp/real-session-check/report.json；新库 lumin-real-session-sbq39I。3个前端轮次、5次实际模型请求，turn/usage合计输入53,069、输出481 tokens；不把一个轮次等同一次HTTP请求。之前失败的干净样本另有两次真实前端轮次，日志保留，不计入成功这23项。
+- A真实read等待期间，B新建并正常回答，无A附件/审批；A停止后取消状态落盘且没有成功read。native SQLite中间检查ok。关闭验收子进程并以同库重启，恢复B历史与A空闲状态；A重试出现新审批，允许一次后真正读到提示未含的LUMIN-R4Q8。刷新后答案、普通会话资源标签保留，最终原生integrity_check=ok，无UI/API异常。
+- 补充导学附件回归21/21（tmp/guided-files-storage-regression.log），覆盖草稿隔离、逐次确认、审批归属、错误恢复、结束与离开停止轮询；仅审批响应使用确定性夹具，实际模型证据见前段。
+- docs/05补本次实际验证范围，docs/04和VENDOR说明独立格式检查及历史页规范化边界。无业务接口新增，文件权限策略和学习工具清单不变。
+- shell/package.json与package-lock.json同步0.8.28。执行JS语法及git diff --check，先本地提交修复、测试与trace，再按此提交打包。排除两份既有未跟踪调研文档。外部优化稿在包哈希确定后同步；原始Word/备份不覆盖。

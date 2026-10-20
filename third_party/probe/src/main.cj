@@ -87,8 +87,66 @@ func strCount(conn: Connection, sql: String, args: Array<String>): Int64 {
     } finally { st.close() }
 }
 
-main(): Int64 {
+func churnValue(key: Int64, round: Int64): String {
+    let text = StringBuilder()
+    text.append("记录 ${key} 第 ${round} 轮 ")
+    for (_ in 0..(8 + (round * 37 + key * 17) % 180)) { text.append("a") }
+    return text.toString()
+}
+
+/** A pure Cangjie writer; the caller checks its file with an independent SQLite reader. */
+func runFreeblockChurn(file: String): Int64 {
+    if (!file.contains("lumin-freeblock-probe-") || !file.endsWith(".db")) {
+        println("Use a new .db inside a lumin-freeblock-probe- temporary directory")
+        return 2
+    }
+    let driver = DriverManager.getDriver("sqlite").getOrThrow()
+    let ds = driver.open(file, Array<(String, String)>())
+    let conn = ds.connect()
+    try {
+        exec(conn, "CREATE TABLE churn (k TEXT PRIMARY KEY, v TEXT)")
+        let expected = Array<String>(48, repeat: "")
+        for (i in 0..48) {
+            let value = churnValue(i, 0)
+            expected[i] = value
+            execBound(conn, "INSERT INTO churn (k,v) VALUES (?,?)", ["key-${i}", value])
+        }
+        for (round in 1..241) {
+            let key = (round * 13) % 48
+            let value = churnValue(key, round)
+            expected[key] = value
+            if (round % 11 == 0) {
+                execBound(conn, "DELETE FROM churn WHERE k=?", ["key-${key}"])
+                execBound(conn, "INSERT INTO churn (k,v) VALUES (?,?)", ["key-${key}", value])
+            } else {
+                execBound(conn, "UPDATE churn SET v=? WHERE k=?", [value, "key-${key}"])
+            }
+        }
+        for (i in 0..48) {
+            check("churn row ${i} roundtrip", str(conn, "SELECT v FROM churn WHERE k=?", ["key-${i}"]) == expected[i], "payload changed")
+        }
+        // Shrink neighboring records by two bytes, then delete them. The two-byte
+        // fragments must be absorbed when their adjacent free blocks join.
+        exec(conn, "CREATE TABLE fragment_gap (k TEXT PRIMARY KEY, v TEXT)")
+        let longValue = StringBuilder()
+        let shortValue = StringBuilder()
+        for (_ in 0..80) { longValue.append("x") }
+        for (_ in 0..78) { shortValue.append("x") }
+        for (i in 0..3) { execBound(conn, "INSERT INTO fragment_gap (k,v) VALUES (?,?)", ["k${i}", longValue.toString()]) }
+        for (i in 0..2) { execBound(conn, "UPDATE fragment_gap SET v=? WHERE k=?", [shortValue.toString(), "k${i}"]) }
+        for (i in 0..2) { execBound(conn, "DELETE FROM fragment_gap WHERE k=?", ["k${i}"]) }
+        check("fragment-gap survivor is unchanged", str(conn, "SELECT v FROM fragment_gap WHERE k=?", ["k2"]) == longValue.toString(), "surviving payload changed")
+        println("CHURN_FILE=${file}")
+        println("PASS=${pass} FAIL=${fail}")
+        return if (fail == 0) { 0 } else { 1 }
+    } finally { conn.close(); ds.close() }
+}
+
+main(args: Array<String>): Int64 {
     registerSqliteDriver()
+    for (i in 0..args.size) {
+        if (args[i] == "--freeblock-churn" && i + 1 < args.size) { return runFreeblockChurn(args[i+1]) }
+    }
     let driver = DriverManager.getDriver("sqlite").getOrThrow()
     removeIfExists(Path("battery.db"))
     let ds = driver.open("battery.db", Array<(String, String)>())
