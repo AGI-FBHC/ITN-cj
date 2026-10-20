@@ -92,5 +92,5 @@ export const adminApi = {
   saveKbSettings: (settings) => request('/kb/settings', { method: 'PUT', body: settings }),
   publishKbDocument: (id, body = {}) => request(`/kb/documents/${encodeURIComponent(id)}/publish`, { method: 'POST', body }),
   unpublishKbDocument: (id) => request(`/kb/documents/${encodeURIComponent(id)}/unpublish`, { method: 'POST', body: {} }),
-  testKbModel: (target = 'embedding') => request('/kb/test', { method: 'POST', body: { target } }),
+  testKbModel: (target = 'embedding', extra = {}) => request('/kb/test', { method: 'POST', body: { target, ...extra } }),
 };

@@ -76,7 +76,12 @@ export default function AdminSettings() {
     setError('');
     setMessage('');
     try {
-      const result = await adminApi.testKbModel(slotMeta.key);
+      const result = await adminApi.testKbModel(slotMeta.key, {
+        baseUrl: value.baseUrl.trim(),
+        model: value.model.trim(),
+        apiKey: value.apiKey.trim(),
+        voice: value.voice ? value.voice.trim() : '',
+      });
       const detail = slotMeta.key === 'embedding'
         ? `返回 ${result.dim} 维向量`
         : slotMeta.key === 'chat'

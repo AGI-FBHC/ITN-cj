@@ -2062,12 +2062,25 @@ main(): Int64 {
                     case None => JsonObject()
                 }
                 let target = (jsonGetString(body, "target") ?? "embedding").trimAscii()
-                let slot = if (target == "chat") { settings.chat } else if (target == "tts") { settings.tts } else { settings.embedding }
+                let saved = if (target == "chat") { settings.chat } else if (target == "tts") { settings.tts } else { settings.embedding }
                 let label = if (target == "chat") { "对话模型" } else if (target == "tts") { "语音合成" } else { "向量模型" }
-                let endpoint = slotEndpoint(cfg, slot)
+                // 优先用页面上刚填、还没保存的值进行测试。
+                let inputBase = (jsonGetString(body, "baseUrl") ?? "").trimAscii()
+                let inputModel = (jsonGetString(body, "model") ?? "").trimAscii()
+                let inputKey = (jsonGetString(body, "apiKey") ?? "").trimAscii()
+                let inputVoice = (jsonGetString(body, "voice") ?? "").trimAscii()
+                let slot = ModelSlot(
+                    if (inputBase.size > 0) { inputBase } else { saved.baseUrl },
+                    if (inputModel.size > 0) { inputModel } else { saved.model },
+                    saved.cipher,
+                    saved.hint
+                )
+                let key = if (inputKey.size > 0) { inputKey } else { resolveKey(cfg, saved) }
+                let endpoint = ModelEndpoint(slot.baseUrl, key, slot.model, slot.model)
+                let voice = if (inputVoice.size > 0) { inputVoice } else { settings.ttsVoice }
                 if (!slot.configured()) {
                     writeError(ctx.response, 400, "还没有配置" + label + "：需要接口地址和模型名")
-                } else if (resolveKey(cfg, slot).size == 0) {
+                } else if (key.size == 0) {
                     writeError(ctx.response, 400, "还没有配置" + label + "的密钥")
                 } else if (target == "chat") {
                     try {
@@ -2091,12 +2104,12 @@ main(): Int64 {
                     }
                 } else if (target == "tts") {
                     try {
-                        let status = ttsCheck(endpoint, settings.ttsVoice, "连接测试")
+                        let status = ttsCheck(endpoint, voice, "连接测试")
                         if (status == 200) {
                             let out = JsonWriter()
                             out.putBool("ok", true)
                             out.putStr("model", slot.model)
-                            out.putStr("voice", settings.ttsVoice)
+                            out.putStr("voice", voice)
                             writeJson(ctx.response, 200, out.toJson())
                         } else {
                             writeError(ctx.response, 502, "语音合成接口返回 " + status.toString())
