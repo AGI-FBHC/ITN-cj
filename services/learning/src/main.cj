@@ -897,11 +897,29 @@ func kbUrlDecode(raw: String): String {
 
 func kbBundleSelect(): String {
     "SELECT b.id,b.name,b.bytes,b.status,b.steps,b.model,b.title,b.error_message,COALESCE(b.warnings_json,'[]') warnings_json," +
+    "b.source_saved,COALESCE(b.course_id,'') course_id,COALESCE(bc.status,'') course_status," +
+    "b.logo_status,COALESCE(b.logo_svg,'') logo_svg,b.logo_error,COALESCE(b.logo_generation_id,'') logo_generation_id," +
+    "COALESCE(lg.variants_json,'[]') logo_variants,COALESCE(lg.selected_variant_id,'') selected_variant_id," +
     "COALESCE(DATE_FORMAT(b.created_at,'%Y-%m-%d %H:%i'),'') created_at," +
     "COALESCE(DATE_FORMAT(b.updated_at,'%Y-%m-%d %H:%i'),'') updated_at," +
     "(SELECT COUNT(*) FROM kb_bundle_docs d WHERE d.bundle_id=b.id) doc_count," +
-    "(SELECT COUNT(*) FROM kb_bundle_assets a WHERE a.bundle_id=b.id) asset_count " +
-    "FROM kb_bundles b "
+    "(SELECT COUNT(*) FROM kb_bundle_assets a WHERE a.bundle_id=b.id) asset_count," +
+    "COALESCE(p.process_docs,0) process_docs,COALESCE(p.ready_docs,0) ready_docs,COALESCE(p.failed_docs,0) failed_docs," +
+    "COALESCE(p.running_docs,0) running_docs,COALESCE(p.queued_docs,0) queued_docs,COALESCE(p.total_chunks,0) total_chunks," +
+    "COALESCE(p.summary_chunks,0) summary_chunks,COALESCE(p.embedded_chunks,0) embedded_chunks,COALESCE(p.failed_chunks,0) failed_chunks," +
+    "COALESCE(p.chunking_jobs,0) chunking_jobs,COALESCE(p.job_error,'') job_error " +
+    "FROM kb_bundles b LEFT JOIN courses bc ON bc.id=b.course_id LEFT JOIN logo_generations lg ON lg.id=b.logo_generation_id " +
+    "LEFT JOIN (SELECT d.bundle_id,COUNT(DISTINCT d.id) process_docs," +
+    "COUNT(DISTINCT CASE WHEN j.status='ready' THEN d.id END) ready_docs," +
+    "COUNT(DISTINCT CASE WHEN j.status='failed' THEN d.id END) failed_docs," +
+    "COUNT(DISTINCT CASE WHEN j.status='running' THEN d.id END) running_docs," +
+    "COUNT(DISTINCT CASE WHEN j.status='queued' THEN d.id END) queued_docs," +
+    "COUNT(c.id) total_chunks,SUM(c.summary_status='ready') summary_chunks,COUNT(e.chunk_id) embedded_chunks," +
+    "SUM(c.summary_status='failed' OR (j.status='failed' AND e.chunk_id IS NULL)) failed_chunks," +
+    "SUM(j.phase='chunking') chunking_jobs,MAX(j.error_message) job_error " +
+    "FROM kb_documents d LEFT JOIN kb_ingest_jobs j ON j.id=IF(d.pending_build_id<>'',d.pending_build_id,d.active_build_id) " +
+    "LEFT JOIN kb_chunks c ON c.document_id=d.id AND c.build_id=IF(d.pending_build_id<>'',d.pending_build_id,d.active_build_id) " +
+    "LEFT JOIN kb_embeddings e ON e.chunk_id=c.id GROUP BY d.bundle_id) p ON p.bundle_id=b.id "
 }
 
 func kbBundleJson(row: Row): String {
@@ -918,6 +936,18 @@ func kbBundleJson(row: Row): String {
     out.putStr("updatedAt", row.text("updated_at"))
     out.putInt("docCount", row.int("doc_count"))
     out.putInt("assetCount", row.int("asset_count"))
+    out.putBool("sourceSaved", row.int("source_saved") == 1)
+    out.putStr("courseId", row.text("course_id"))
+    out.putStr("courseStatus", row.text("course_status"))
+    out.putRaw("pipeline", kbBundlePipelineJson(row))
+    let logo = JsonWriter()
+    logo.putStr("status", row.text("logo_status"))
+    logo.putStr("svg", row.text("logo_svg"))
+    logo.putStr("errorMessage", row.text("logo_error"))
+    logo.putStr("generationId", row.text("logo_generation_id"))
+    logo.putRaw("variants", row.text("logo_variants"))
+    logo.putStr("selectedVariantId", row.text("selected_variant_id"))
+    out.putRaw("logo", logo.toJson())
     out.toJson()
 }
 
@@ -934,11 +964,13 @@ func kbBundleDetailBody(cfg: Config, bundleId: String): ?String {
     let rows = query(cfg, kbBundleSelect() + "WHERE b.id=" + sqlQuote(bundleId) + " LIMIT 1")
     if (rows.size == 0) { return None }
     let docs = query(cfg,
-        "SELECT order_index,title,char_count,content,COALESCE(source_path,'') source_path FROM kb_bundle_docs WHERE bundle_id=" +
+        "SELECT id,COALESCE(document_id,'') document_id,order_index,title,char_count,content,COALESCE(source_path,'') source_path FROM kb_bundle_docs WHERE bundle_id=" +
         sqlQuote(bundleId) + " ORDER BY order_index")
     let arr = JsonArrWriter()
     for (row in docs) {
         let item = JsonWriter()
+        item.putStr("id", row.text("id"))
+        item.putStr("documentId", row.text("document_id"))
         item.putInt("order", row.int("order_index") + 1)
         item.putStr("title", row.text("title"))
         item.putInt("charCount", row.int("char_count"))
@@ -1030,7 +1062,7 @@ func kbSettingsJson(cfg: Config, settings: KbSettings): String {
 
 func kbOverviewBody(cfg: Config): String {
     let settings = loadKbSettings(cfg)
-    let rows = query(cfg, kbDocumentSelect() + "ORDER BY d.created_at DESC LIMIT 200")
+    let rows = query(cfg, kbDocumentSelect() + "WHERE d.bundle_id IS NULL ORDER BY d.created_at DESC LIMIT 200")
     let docs = JsonArrWriter()
     for (row in rows) { docs.addRaw(kbDocumentJson(row)) }
     let totals = query(cfg,
@@ -1050,18 +1082,24 @@ func kbDocumentDetailBody(cfg: Config, docId: String): ?String {
     let rows = query(cfg, kbDocumentSelect() + "WHERE d.id=" + sqlQuote(docId) + " LIMIT 1")
     if (rows.size == 0) { return None }
     let chunks = query(cfg,
-        "SELECT c.chunk_index,c.heading_path,c.text,c.char_count," +
+        "SELECT c.id,c.chunk_index,c.heading_path,c.text,c.char_count,c.summary,c.keywords_json,c.summary_status,c.source_start,c.source_end," +
         "CASE WHEN e.chunk_id IS NULL THEN 0 ELSE 1 END has_vector " +
-        "FROM kb_chunks c LEFT JOIN kb_embeddings e ON e.chunk_id=c.id " +
-        "WHERE c.document_id=" + sqlQuote(docId) + " ORDER BY c.chunk_index LIMIT 200")
+        "FROM kb_chunks c JOIN kb_documents d ON d.id=c.document_id LEFT JOIN kb_embeddings e ON e.chunk_id=c.id " +
+        "WHERE c.document_id=" + sqlQuote(docId) + " AND c.build_id=IF(d.pending_build_id<>'',d.pending_build_id,d.active_build_id) ORDER BY c.chunk_index LIMIT 200")
     let arr = JsonArrWriter()
     for (row in chunks) {
         let item = JsonWriter()
+        item.putStr("id", row.text("id"))
         item.putInt("index", row.int("chunk_index"))
         item.putStr("headingPath", row.text("heading_path"))
         item.putStr("text", row.text("text"))
         item.putInt("charCount", row.int("char_count"))
         item.putBool("hasVector", row.int("has_vector") == 1)
+        item.putStr("summary", row.text("summary"))
+        item.putRaw("keywords", if (row.isNull("keywords_json")) { "[]" } else { row.text("keywords_json") })
+        item.putStr("summaryStatus", row.text("summary_status"))
+        item.putInt("startOffset", row.int("source_start"))
+        item.putInt("endOffset", row.int("source_end"))
         arr.addRaw(item.toJson())
     }
     let out = JsonWriter()
@@ -1177,6 +1215,7 @@ main(): Int64 {
     let initial = connect(cfg)
     sharedDatabase = Some(initial)
     let builder = WebHost.createBuilder([])
+    builder.configureServer { server => server.maxRequestBodySize(256 * 1024 * 1024) }
     builder.services.addRouting()
     let app = builder.build()
 
@@ -1933,8 +1972,8 @@ main(): Int64 {
                                 ",'text/markdown'," + bytes.size.toString() + "," +
                                 kbCharsBetween(bytes, 0, bytes.size).toString() + "," + sqlQuote(content) + ",'pending')")
                             let settings = loadKbSettings(cfg)
-                            let result = kbIngest(cfg, id, title, content, settings)
-                            writeJson(ctx.response, 200, kbIngestResponse(cfg, id, result))
+                            let jobId = kbQueueDocumentBuild(cfg, id, settings)
+                            writeJson(ctx.response, 202, kbQueuedIngestBody(cfg, id, jobId))
                         }
                 }
         }
@@ -1961,8 +2000,8 @@ main(): Int64 {
                     writeError(ctx.response, 404, "没有找到这个文档")
                 } else {
                     let settings = loadKbSettings(cfg)
-                    let result = kbIngest(cfg, docId, rows[0].text("title"), rows[0].text("content"), settings)
-                    writeJson(ctx.response, 200, kbIngestResponse(cfg, docId, result))
+                    let jobId = kbQueueDocumentBuild(cfg, docId, settings)
+                    writeJson(ctx.response, 202, kbQueuedIngestBody(cfg, docId, jobId))
                 }
         }
     }
@@ -2247,7 +2286,7 @@ main(): Int64 {
                                     "AI 导师还没有接入对话模型：请管理员在「设置」里填写对话模型的接口地址、模型名和密钥")
                             } else {
                                 let searchQuery = if (quoted.size > 0) { quoted + "\n" + message } else { message }
-                                let result = kbSearch(cfg, settings, searchQuery, settings.topK)
+                                let result = kbSearch(cfg, settings, searchQuery, settings.topK, courseId, true)
                                 let messages = JsonArrWriter()
                                 let systemPart = JsonWriter()
                                 systemPart.putStr("role", "system")
@@ -2306,39 +2345,60 @@ main(): Int64 {
     app.mapPost("api/admin/kb/bundles") { ctx =>
         match (adminUserId(ctx, cfg)) {
             case None => ()
-            case Some(_) =>
+            case Some(ownerId) =>
                 let nameHeader = match (ctx.request.headers.get("X-Bundle-Name")) {
                     case Some(value) => value
                     case None => ""
                 }
                 let name = kbUrlDecode(nameHeader)
-                let payload = readBodyBytes(ctx.request)
+                let bundleId = uuidFormat(uuidV4())
+                let received = try { kbReceiveBundleUpload(ctx.request, bundleId) }
+                catch (error: Exception) {
+                    kbRemoveBundleZip(cfg, bundleId)
+                    writeError(ctx.response, if (error.message.contains("256MB")) { 413 } else { 400 }, error.message)
+                    return
+                }
                 let settings = loadKbSettings(cfg)
-                if (payload.size < 100) {
+                if (received.size < 100) {
+                    kbRemoveBundleZip(cfg, bundleId)
                     writeError(ctx.response, 400, "压缩包为空或不是有效的 zip")
-                } else if (payload.size > 50 * 1024 * 1024) {
-                    writeError(ctx.response, 413, "压缩包不要超过 50MB")
-                } else if (!slotEndpoint(cfg, settings.chat).hasChat()) {
-                    writeError(ctx.response, 400, "还没有配置对话模型，无法用智能体整理资料")
                 } else {
-                    let bundleId = uuidFormat(uuidV4())
-                    let safeName = if (name.size == 0) { "资料包.zip" } else if (name.size > 200) { name[0..200] } else { name }
-                    execute(cfg,
-                        "INSERT INTO kb_bundles(id,name,bytes,status,model,created_at) VALUES(" +
-                        sqlQuote(bundleId) + "," + sqlQuote(safeName) + "," + payload.size.toString() +
-                        ",'queued'," + sqlQuote(settings.chat.model) + ",NOW(6))")
+                    let existing = query(cfg, "SELECT id,status FROM kb_bundles WHERE upload_hash=" + sqlQuote(received.hash) + " LIMIT 1")
+                    if (existing.size > 0) {
+                        kbRemoveBundleZip(cfg, bundleId)
+                        let out = JsonWriter()
+                        out.putStr("id", existing[0].text("id"))
+                        out.putStr("status", existing[0].text("status"))
+                        out.putBool("reused", true)
+                        writeJson(ctx.response, 200, out.toJson())
+                        return
+                    }
+                    let safeName = if (name.size == 0) { "资料包.zip" } else { kbTruncate(name, 230) }
                     try {
-                        kbWriteFileDeep(kbBundleZipPath(cfg, bundleId), payload)
+                        execute(cfg,
+                            "INSERT INTO kb_bundles(id,name,bytes,status,model,owner_id,upload_hash,created_at) VALUES(" +
+                            sqlQuote(bundleId) + "," + sqlQuote(safeName) + "," + received.size.toString() +
+                            ",'queued'," + sqlQuote(settings.chat.model) + "," + sqlQuote(ownerId) + "," + sqlQuote(received.hash) + ",NOW(6))")
                     } catch (error: Exception) {
-                        kbSetBundle(cfg, bundleId, "failed", 0, "", "写入工作目录失败：" + error.message, "")
-                        writeError(ctx.response, 500, "写入工作目录失败：" + error.message)
+                        kbRemoveBundleZip(cfg, bundleId)
+                        let duplicate = query(cfg, "SELECT id,status FROM kb_bundles WHERE upload_hash=" + sqlQuote(received.hash) + " LIMIT 1")
+                        if (duplicate.size > 0) {
+                            let out = JsonWriter()
+                            out.putStr("id", duplicate[0].text("id"))
+                            out.putStr("status", duplicate[0].text("status"))
+                            out.putBool("reused", true)
+                            writeJson(ctx.response, 200, out.toJson())
+                            return
+                        }
+                        writeError(ctx.response, 500, "保存资料包失败：" + error.message)
                         return
                     }
                     kbLaunchBundle(cfg, bundleId)
                     let out = JsonWriter()
                     out.putStr("id", bundleId)
                     out.putStr("status", "queued")
-                    writeJson(ctx.response, 200, out.toJson())
+                    out.putBool("reused", false)
+                    writeJson(ctx.response, 202, out.toJson())
                 }
         }
     }
@@ -2361,10 +2421,135 @@ main(): Int64 {
         }
     }
 
+    app.mapGet("api/admin/kb/bundles/{bundle_id}/status") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let rows = query(cfg, kbBundleSelect() + "WHERE b.id=" + sqlQuote(routeText(ctx, "bundle_id")) + " LIMIT 1")
+                if (rows.size == 0) { writeError(ctx.response, 404, "没有找到这个资料包") }
+                else {
+                    let out = JsonWriter()
+                    out.putRaw("bundle", kbBundleJson(rows[0]))
+                    writeJson(ctx.response, 200, out.toJson())
+                }
+        }
+    }
+
     app.mapGet("api/admin/kb/bundles/{bundle_id}/assets/{asset_id}") { ctx =>
         match (adminUserId(ctx, cfg)) {
             case None => ()
             case Some(_) => kbWriteBundleAsset(ctx.response, cfg, routeText(ctx, "bundle_id"), routeText(ctx, "asset_id"))
+        }
+    }
+
+    app.mapGet("api/admin/kb/bundles/{bundle_id}/chunks") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let offsetRaw = Int64.tryParse(ctx.request.query.get("offset") ?? "0") ?? 0
+                let limitRaw = Int64.tryParse(ctx.request.query.get("limit") ?? "30") ?? 30
+                let offset = if (offsetRaw < 0) { 0 } else { offsetRaw }
+                let limit = if (limitRaw < 1) { 30 } else if (limitRaw > 100) { 100 } else { limitRaw }
+                match (kbBundleChunksBody(cfg, routeText(ctx, "bundle_id"), offset, limit)) {
+                    case Some(body) => writeJson(ctx.response, 200, body)
+                    case None => writeError(ctx.response, 404, "没有找到这个资料包")
+                }
+        }
+    }
+
+    app.mapPost("api/admin/kb/bundles/{bundle_id}/retry") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let body = parseObject(ctx.request)
+                let stage = match (body) { case Some(value) => jsonGetString(value, "stage") ?? "all"; case None => "all" }
+                if (stage != "all" && stage != "summaries" && stage != "embeddings" && stage != "logo") {
+                    writeError(ctx.response, 400, "重试阶段不正确")
+                } else if (kbRetryBundle(cfg, routeText(ctx, "bundle_id"), stage)) {
+                    match (kbBundleDetailBody(cfg, routeText(ctx, "bundle_id"))) {
+                        case Some(result) => writeJson(ctx.response, 202, result)
+                        case None => writeError(ctx.response, 404, "没有找到这个资料包")
+                    }
+                } else { writeError(ctx.response, 404, "没有找到这个资料包") }
+        }
+    }
+
+    app.mapPost("api/admin/kb/bundles/{bundle_id}/publish") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                match (kbPublishBundle(cfg, routeText(ctx, "bundle_id"))) {
+                    case Some(result) =>
+                        let out = JsonWriter()
+                        out.putStr("courseId", result.courseId)
+                        out.putInt("lessonCount", result.lessonCount)
+                        out.putBool("created", result.created)
+                        writeJson(ctx.response, 200, out.toJson())
+                    case None => writeError(ctx.response, 409, "原文尚未保存或资料包不存在，暂时无法发布")
+                }
+        }
+    }
+
+    app.mapPost("api/admin/kb/bundles/{bundle_id}/unpublish") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                if (kbSetBundleCourseStatus(cfg, routeText(ctx, "bundle_id"), "draft")) { writeJson(ctx.response, 200, "{\"unpublished\":true}") }
+                else { writeError(ctx.response, 404, "这个资料包还没有发布课程") }
+        }
+    }
+
+    app.mapPost("api/admin/logos/generate") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(ownerId) =>
+                match (parseObject(ctx.request)) {
+                    case None => writeError(ctx.response, 400, "Logo生成参数不正确")
+                    case Some(body) =>
+                        let title = (jsonGetString(body, "title") ?? "").trimAscii()
+                        let resourceType = jsonGetString(body, "resourceType") ?? ""
+                        let resourceId = jsonGetString(body, "resourceId") ?? ""
+                        if (title.size == 0 || kbCharsBetween(title.toArray(), 0, title.size) > 240) { writeError(ctx.response, 400, "请输入不超过240字的资源标题") }
+                        else if (resourceType == "kb_bundle" && query(cfg, "SELECT id FROM kb_bundles WHERE id=" + sqlQuote(resourceId)).size == 0) {
+                            writeError(ctx.response, 404, "没有找到关联的资料包")
+                        } else {
+                            let id = kbQueueLogoGeneration(cfg, title, ownerId, resourceType, resourceId)
+                            let out = JsonWriter()
+                            out.putStr("generationId", id)
+                            out.putStr("status", "queued")
+                            writeJson(ctx.response, 202, out.toJson())
+                        }
+                }
+        }
+    }
+
+    app.mapGet("api/admin/logos/{generation_id}") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                match (kbLogoGenerationBody(cfg, routeText(ctx, "generation_id"))) {
+                    case Some(body) => writeJson(ctx.response, 200, body)
+                    case None => writeError(ctx.response, 404, "没有找到这次Logo生成记录")
+                }
+        }
+    }
+
+    app.mapPost("api/admin/logos/{generation_id}/select") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                match (parseObject(ctx.request)) {
+                    case None => writeError(ctx.response, 400, "请选择一个Logo")
+                    case Some(body) =>
+                        let id = routeText(ctx, "generation_id")
+                        let variant = jsonGetString(body, "variantId") ?? ""
+                        if (kbSelectLogoVariant(cfg, id, variant)) {
+                            match (kbLogoGenerationBody(cfg, id)) {
+                                case Some(result) => writeJson(ctx.response, 200, result)
+                                case None => writeError(ctx.response, 404, "没有找到这次Logo生成记录")
+                            }
+                        } else { writeError(ctx.response, 404, "Logo尚未完成或所选样式不存在") }
+                }
         }
     }
 
@@ -2379,9 +2564,7 @@ main(): Int64 {
                 } else if (rows[0].text("status") == "queued" || rows[0].text("status") == "running") {
                     writeError(ctx.response, 409, "资料包正在处理中，请完成后再删除")
                 } else {
-                    execute(cfg, "DELETE FROM kb_bundles WHERE id=" + sqlQuote(bundleId))
-                    kbRemoveTree(kbBundleWorkDir(cfg, bundleId))
-                    kbRemoveTree(kbAssetBundleDir(bundleId))
+                    kbDeleteBundleContent(cfg, bundleId)
                     let out = JsonWriter()
                     out.putBool("deleted", true)
                     writeJson(ctx.response, 200, out.toJson())
@@ -2389,6 +2572,24 @@ main(): Int64 {
         }
     }
 
+    app.mapGet("api/kb/bundles/{bundle_id}/assets/{asset_id}") { ctx =>
+        match (authenticate(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let id = routeText(ctx, "bundle_id")
+                if (kbBundlePublished(cfg, id)) { kbWriteBundleAsset(ctx.response, cfg, id, routeText(ctx, "asset_id")) }
+                else { writeError(ctx.response, 404, "这份课程资料尚未发布") }
+        }
+    }
+    app.mapGet("api/kb/bundles/{bundle_id}/logo") { ctx =>
+        let id = routeText(ctx, "bundle_id")
+        if (kbBundlePublished(cfg, id)) { kbWriteBundleLogo(ctx.response, cfg, id) }
+        else { writeError(ctx.response, 404, "这份课程资料尚未发布") }
+    }
+
+    kbStartIngestWorkers(cfg)
+    kbStartLogoWorker(cfg)
+    kbRestoreBundleJobs(cfg)
     app.run(cfg.listen)
     return 0
 }

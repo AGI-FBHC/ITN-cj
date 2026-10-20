@@ -44,11 +44,13 @@ export function useLoad(loader, deps = []) {
     setState((current) => ({ ...current, loading: true, error: '' }));
     loader()
       .then((data) => { if (active) setState({ loading: false, error: '', data }); })
-      .catch((error) => { if (active) setState({ loading: false, error: error.message, data: null }); });
+      .catch((error) => { if (active) setState((current) => ({ ...current, loading: false, error: error.message })); });
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, revision]);
-  return { ...state, reload: () => setRevision((value) => value + 1) };
+  const reload = React.useCallback(() => setRevision((value) => value + 1), []);
+  const updateData = React.useCallback((update) => setState((current) => ({ ...current, data: update(current.data) })), []);
+  return { ...state, reload, updateData };
 }
 
 export function Loading({ label = '正在加载…' }) {

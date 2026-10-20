@@ -17,13 +17,16 @@ func uuidV4(): Array<Byte> {
 }
 
 func bytesToHex(bytes: Array<Byte>): String {
-    let digits = "0123456789abcdef"
-    var result = ""
-    for (byte in bytes) {
-        let value = Int64(byte)
-        result = result + charAt(digits, (value >> 4) & 0x0f) + charAt(digits, value & 0x0f)
+    let digits = "0123456789abcdef".toArray()
+    let out = Array<Byte>(bytes.size * 2, repeat: 0)
+    var i: Int64 = 0
+    while (i < bytes.size) {
+        let value = Int64(bytes[i])
+        out[i * 2] = digits[(value >> 4) & 15]
+        out[i * 2 + 1] = digits[value & 15]
+        i += 1
     }
-    result
+    String.fromUtf8(out)
 }
 
 func uuidFormat(bytes: Array<Byte>): String {

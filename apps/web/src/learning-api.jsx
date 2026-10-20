@@ -1,6 +1,34 @@
 import React from 'react';
 
 const TOKEN_KEY = 'zhixun-learning-v2-token';
+
+export async function readLearningBundleAsset(path, { signal } = {}) {
+  const url = new URL(path, window.location.origin);
+  if (url.origin !== window.location.origin || !/^\/api\/kb\/bundles\/[^/]+\/assets\/[^/]+$/.test(url.pathname)) {
+    throw new Error('图片地址不可用');
+  }
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  signal?.addEventListener('abort', abort, { once: true });
+  if (signal?.aborted) controller.abort();
+  const timeout = setTimeout(abort, 20000);
+  try {
+    const token = localStorage.getItem(TOKEN_KEY);
+    const response = await fetch(`${url.pathname}${url.search}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: controller.signal,
+    });
+    if (response.status === 401) throw new Error('学习会话已失效，请重新登录后查看图片');
+    if (!response.ok) throw new Error('图片不存在或该课程暂未发布');
+    const blob = await response.blob();
+    if (!blob.type.toLowerCase().startsWith('image/')) throw new Error('该文件不是可显示的图片');
+    return blob;
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', abort);
+  }
+}
+
 const listeners = new Set();
 let snapshot = { ready: false, loading: true, error: '', data: null, pending: 0, saveError: '' };
 let sessionPromise;

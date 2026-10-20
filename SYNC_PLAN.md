@@ -52,3 +52,16 @@ content_json沿用原阅读内容结构；root会提供`data/catalog-seed.json`�
 - 登录页复用ITN-cj的账号卡片布局，新增学习账号注册、再次登录和首次登录建档分流。
 - 登录页增加邮箱验证码入口；实际 SMTP 发送、限频和一次性消费已验证。
 - 遗留：管理员端、AI导师、其余四门课正式内容、生产库迁移和Linux部署尚未完成。
+
+
+## 2026-10-21 已授权：统一导入、摘要关键词、向量与独立Logo
+- 全部支持文档同一流程；原文保存、规则切片、LLM摘要关键词、真实向量接口；不按教材清晰度分支。
+- 迁移契约唯一来源：`services/learning/migrations/008_robust_ingestion.sql`。root维护，运行配置与kb_settings不变。
+- backend(bundle_assets)：kb_ingest.cj / kb_bundle.cj / main.cj的bundle与文档入库API和启动worker。core(bundle_checks)：kb_chunk.cj / llm_http.cj / kb_vector.cj / kb_logo.cj与纯函数测试。frontend(bundle_preview)：apps/web。root：008迁移、kb_service搜索/发布兼容、流式上传/ZIP、集成验收、TRACE与本地Git。
+- jobs.id == build_id。KbPiece公开sourceStart/sourceEnd（可兼容startOffset/endOffset），为原文UTF8字节范围；kbValidatePieces验证完整覆盖。worker保存源文与已加密模型槽位快照，逐批落库，源文和配置hash幂等，启动恢复队列，两个加工worker、一个Logo worker；不调用mock。
+- kbVectorSpaceKey(slot,actualDim)由root提供，按baseURL+model+真实维度+量化算法形成空间，检索只比较同空间。未完成/失败重试保留原文和已完成批次。
+- 列表/详情bundle新增pipeline进度、logo（status/svg/generationId/variants/selectedVariantId/errorMessage）、courseId/courseStatus；docs新增id/documentId。
+- GET /api/admin/kb/bundles/{id}/chunks?offset=0&limit=30，分页返回chunks及total/offset/limit。POST retry {stage:all|summaries|embeddings|logo}；POST publish/unpublish。源文已保存即可预览，后台阶段轮询。
+- 独立Logo：POST /api/admin/logos/generate {title,resourceType:kb_bundle,resourceId} -> generationId；GET /api/admin/logos/{id}；POST /api/admin/logos/{id}/select {variantId}。按资源标题真实模型生成line/flat/geometric三种SVG，严格白名单；导入与重新生成复用同一函数。未来资源可复用，不把逻辑写死在bundle导入。
+- Hello-Agents验收使用D:/Downloads/hello-agents-main.zip原包：166920355字节，1736文件，275支持文本（4347350字节），展开185972682字节；上传流式256MB上限，展开512MB/4000文件上限，不再只取子集。
+- 学员资源：GET /api/kb/bundles/{id}/assets/{assetId}需学习Bearer且课程已发布；公开发布后的Logo GET /api/kb/bundles/{id}/logo。正式课时从完整原文生成，避免重叠切片拼接。

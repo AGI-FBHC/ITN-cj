@@ -50,6 +50,15 @@ class KbWorkspace {
         result.toString()
     }
 
+    func listDocuments(): String {
+        let files = ArrayList<String>()
+        kbWalkFiles(root + "/in", "", files, 0)
+        files.sort()
+        let out = StringBuilder()
+        for (file in files) { if (kbIsSourceDocument(file)) { out.append(file + "\n") } }
+        out.toString()
+    }
+
     func readFile(relative: String, limit: Int64): String {
         let full = resolve(relative, false)
         if (!exists(Path(full))) { throw Exception("文件不存在：" + relative) }
@@ -336,6 +345,8 @@ func kbAgentToolsJson(): String {
     list.putRaw("dir", kbToolProperty("相对目录，例如 in 或 in/docs，留空列出全部"))
     tools.addRaw(kbAgentTool("list_files", "列出资料目录的完整文件清单，包含文档与图片", list, []))
 
+    tools.addRaw(kbAgentTool("list_documents", "列出全部支持文档的原始路径；图片会自动保留，无需逐个查看附件", JsonWriter(), []))
+
     let read = JsonWriter()
     read.putRaw("path", kbToolProperty("源文件相对路径，例如 in/docs/章节.md"))
     let limit = JsonWriter()
@@ -346,7 +357,7 @@ func kbAgentToolsJson(): String {
 
     let copy = JsonWriter()
     copy.putRaw("source", kbToolProperty("in/下的原文路径，完整原文由工具直接复制"))
-    copy.putRaw("path", kbToolProperty("out/下输出Markdown路径，序号+原章节名，例如 out/01-前言.md"))
+    copy.putRaw("path", kbToolProperty("out/下输出Markdown路径，序号+原章节名，例如 out/0001-前言.md"))
     tools.addRaw(kbAgentTool("copy_document", "完整保留一篇原文，仅指定输出位置与顺序；自动保留图片引用关联", copy, ["source", "path"]))
 
     let items = JsonWriter()
@@ -375,8 +386,8 @@ func kbAgentToolsJson(): String {
 func kbAgentSystemPrompt(): String {
     "你是资料整理智能体，只负责组织原文和微调格式，不是课程作者，也不是摘要或翻译工具。\n" +
     "in/是原始文件，out/是结果。你的组织决策由工具执行，正文必须来自对应源文件。\n" +
-    "1. list_files查看全部目录，选取必要的文件用read_file了解章节与顺序，不必逐篇完整阅读或在回答里重复原文。\n" +
-    "2. 使用organize_documents批量安排全部Markdown、txt、rst文件，或用copy_document逐篇复制。输出名称为out/01-原章节名.md。复制保留完整原文，即使read_file只显示了开头，也不会截断最终正文。\n" +
+    "1. list_documents查看全部文档清单，选取必要的文件用read_file了解章节与顺序，不必逐篇完整阅读或在回答里重复原文。\n" +
+    "2. 使用organize_documents批量安排全部Markdown、txt、rst文件，或用copy_document逐篇复制。输出名称为out/0001-原章节名.md。序号统一四位（0001、0002……）以保持大资料包的排序。复制保留完整原文，即使read_file只显示了开头，也不会截断最终正文。\n" +
     "3. 必须保留原文措辞、语言、章节、例子、公式、代码、表格、图片和链接。不得总结、重写、翻译、合并删减、去重或新增解释；不同语言版本与看似重复的文档也分别保留。\n" +
     "4. 图片无需用read_file读取或重新生成。网页图片保持原URL；包内图片按源文档的相对目录自动搬运并修复访问路径，../、中文及空格均支持。不得移除或改写图片标记和alt文字。\n" +
     "5. 仅确有格式错误才用format_document做小幅修复，不能改变词句、标点、数字、代码或链接。优先原样保留，已有的Markdown和TeX公式不需要转译。\n" +
@@ -415,7 +426,7 @@ func kbRunAgent(endpoint: ModelEndpoint, workspace: KbWorkspace, log: KbAgentLog
     messages.add(systemPart.toJson())
     let userPart = JsonWriter()
     userPart.putStr("role", "user")
-    userPart.putStr("content", "请整理工作目录里的资料。先 list_files 查看 in/ 的内容。")
+    userPart.putStr("content", "请整理工作目录里的全部文档。先 list_documents 查看清单，图片会自动保留。")
     messages.add(userPart.toJson())
     let tools = kbAgentToolsJson()
 
@@ -505,6 +516,7 @@ func kbTailText(text: String, keepBytes: Int64): String {
 
 func kbRunTool(workspace: KbWorkspace, name: String, arguments: String): String {
     try {
+        if (name == "list_documents") { return workspace.listDocuments() }
         if (name == "list_files") {
             let dir = kbJsonField(arguments, "dir")
             return workspace.listFiles(dir)

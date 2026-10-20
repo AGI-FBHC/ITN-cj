@@ -23,6 +23,7 @@ import {
   useLesson,
 } from "./learning-api.jsx";
 import LoginPage from "./LoginPage.jsx";
+import Markdown from "./admin/Markdown.jsx";
 function ProductLogo({
   className: n = "",
   animated: r = !1,
@@ -2690,6 +2691,7 @@ function serverSections(lesson) {
       eyebrow: section.eyebrow || (index < 2 ? "核心概念" : "练习与总结"),
       heading: section.heading,
       text: section.text,
+      markdown: true,
     }));
 }
 
@@ -6853,11 +6855,11 @@ function Lecture({
                                   "mt-2 text-2xl font-black text-[#111318]",
                                 children: G.heading,
                               }),
-                              jsxRuntime.jsx("p", {
+                              jsxRuntime.jsx(G.markdown ? "div" : "p", {
                                 "code-path": "src\\pages\\Lecture.tsx:196:21",
                                 className:
                                   "mt-4 text-[17px] font-medium leading-[1.95] text-[#30333a]",
-                                children: G.text,
+                                children: G.markdown ? jsxRuntime.jsx(Markdown, { text: G.text, audience: "learner" }) : G.text,
                               }),
                               jsxRuntime.jsxs("div", {
                                 "code-path": "src\\pages\\Lecture.tsx:197:21",

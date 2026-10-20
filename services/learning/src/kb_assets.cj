@@ -318,9 +318,25 @@ class KbAssetFinalizer {
     let saved = HashMap<String, String>()
     let warned = HashSet<String>()
     let warnings = ArrayList<String>()
+    let deferMetadata: Bool
+    let metadataRows = ArrayList<String>()
 
     init(cfg: Config, bundleId: String, inputDir: String, log: KbAgentLog) {
         this.cfg = cfg; this.bundleId = bundleId; this.inputDir = inputDir; this.log = log
+        this.deferMetadata = false
+    }
+
+    init(cfg: Config, bundleId: String, inputDir: String, log: KbAgentLog, deferMetadata: Bool) {
+        this.cfg = cfg; this.bundleId = bundleId; this.inputDir = inputDir; this.log = log
+        this.deferMetadata = deferMetadata
+    }
+
+    func flushMetadata(): Unit {
+        if (metadataRows.size == 0) { return }
+        var rows = ""
+        for (row in metadataRows) { if (rows.size > 0) { rows += "," }; rows += row }
+        transaction(cfg, ["INSERT INTO kb_bundle_assets(id,bundle_id,source_path,mime_type,byte_size) VALUES " + rows])
+        metadataRows.clear()
     }
 
     func warning(message: String): Unit {
@@ -349,9 +365,10 @@ class KbAssetFinalizer {
             let mime = kbImageMime(relative, data)
             let assetId = uuidFormat(uuidV4())
             kbWriteFileDeep(kbAssetFile(bundleId, assetId), data)
+            let metadata = "(" + sqlQuote(assetId) + "," + sqlQuote(bundleId) + "," + sqlQuote(relative) + "," + sqlQuote(mime) + "," + data.size.toString() + ")"
             try {
-                execute(cfg, "INSERT INTO kb_bundle_assets(id,bundle_id,source_path,mime_type,byte_size) VALUES(" +
-                    sqlQuote(assetId) + "," + sqlQuote(bundleId) + "," + sqlQuote(relative) + "," + sqlQuote(mime) + "," + data.size.toString() + ")")
+                if (deferMetadata) { metadataRows.add(metadata) }
+                else { execute(cfg, "INSERT INTO kb_bundle_assets(id,bundle_id,source_path,mime_type,byte_size) VALUES " + metadata) }
             } catch (error: Exception) {
                 try { remove(Path(kbAssetFile(bundleId, assetId))) } catch (_: Exception) {}
                 throw error

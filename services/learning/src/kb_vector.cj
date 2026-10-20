@@ -74,7 +74,8 @@ func kbQuantizeUnit(vec: Array<Float64>): Array<Byte> {
 
 /** 查询向量与量化向量的余弦：查询已归一化，量化向量解压成 [-1,1]。 */
 func kbQuantizedCosine(query: Array<Float64>, quantized: Array<Byte>): Float64 {
-    let n = if (query.size < quantized.size) { query.size } else { quantized.size }
+    if (query.size == 0 || query.size != quantized.size) { throw Exception("查询与索引向量维度不一致，请重新建立索引") }
+    let n = query.size
     var dot = 0.0
     var qa = 0.0
     var ba = 0.0

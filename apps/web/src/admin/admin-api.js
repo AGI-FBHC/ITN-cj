@@ -95,6 +95,15 @@ export const adminApi = {
   testKbModel: (target = 'embedding', extra = {}) => request('/kb/test', { method: 'POST', body: { target, ...extra } }),
   kbBundles: () => request('/kb/bundles'),
   kbBundle: (id) => request(`/kb/bundles/${encodeURIComponent(id)}`),
+  kbBundleStatus: (id) => request(`/kb/bundles/${encodeURIComponent(id)}/status`),
+  kbBundleChunks: (id, offset = 0, limit = 30) =>
+    request(`/kb/bundles/${encodeURIComponent(id)}/chunks?offset=${offset}&limit=${limit}`),
+  retryKbBundle: (id, stage = 'all') => request(`/kb/bundles/${encodeURIComponent(id)}/retry`, { method: 'POST', body: { stage } }),
+  publishKbBundle: (id) => request(`/kb/bundles/${encodeURIComponent(id)}/publish`, { method: 'POST', body: {} }),
+  unpublishKbBundle: (id) => request(`/kb/bundles/${encodeURIComponent(id)}/unpublish`, { method: 'POST', body: {} }),
+  generateLogos: (title, bundleId) => request('/logos/generate', { method: 'POST', body: { title, resourceType: 'kb_bundle', resourceId: bundleId } }),
+  logoGeneration: (id) => request(`/logos/${encodeURIComponent(id)}`),
+  selectLogo: (id, variantId) => request(`/logos/${encodeURIComponent(id)}/select`, { method: 'POST', body: { variantId } }),
   kbBundleAsset: async (path, { signal } = {}) => {
     const url = new URL(path, window.location.origin);
     if (url.origin !== window.location.origin || !/^\/api\/admin\/kb\/bundles\/[^/]+\/assets\/[^/]+$/.test(url.pathname)) {

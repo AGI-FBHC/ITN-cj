@@ -4,13 +4,14 @@ import DOMPurify from 'dompurify';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { adminApi } from './admin-api.js';
+import { readLearningBundleAsset } from '../learning-api.jsx';
 
 marked.setOptions({ gfm: true, breaks: true });
 
 // 公式：先抽成占位符，Markdown 渲染并净化后再换成 KaTeX 的 HTML。
 const MATH_PATTERN = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\$([^\s$][^$\n]*?)\$|\\\(([\s\S]+?)\\\)/g;
 const CODE_PATTERN = /`([^`\n]+)`/g;
-const ASSET_PATH = /^\/api\/admin\/kb\/bundles\/[^/]+\/assets\/[^/]+$/;
+const ASSET_PATH = /^\/api\/(?:admin\/)?kb\/bundles\/[^/]+\/assets\/[^/]+$/;
 
 function escapeHtml(value) {
   return value.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
@@ -59,7 +60,7 @@ function protectFencedCode(text, placeholders) {
   return result.join('\n');
 }
 
-function prepareImages(html) {
+function prepareImages(html, audience) {
   const template = document.createElement('template');
   template.innerHTML = html;
   for (const image of template.content.querySelectorAll('img')) {
@@ -75,7 +76,10 @@ function prepareImages(html) {
       const url = new URL(source, window.location.href);
       if (source && url.origin === window.location.origin && ASSET_PATH.test(url.pathname)) {
         image.removeAttribute('src');
-        image.setAttribute('data-zx-asset', `${url.pathname}${url.search}`);
+        const path = audience === 'learner'
+          ? url.pathname.replace('/api/admin/', '/api/')
+          : url.pathname.replace(/^\/api\/kb\//, '/api/admin/kb/');
+        image.setAttribute('data-zx-asset', `${path}${url.search}`);
       } else if (/^https?:\/\//i.test(source) || /^\/\//.test(source)) {
         // 网络图由浏览器直接读取，不把管理员令牌传给外部站点。
         image.setAttribute('referrerpolicy', 'no-referrer');
@@ -129,7 +133,7 @@ function normalizeEmphasis(text) {
   return out.join('\n');
 }
 
-export default function Markdown({ text }) {
+export default function Markdown({ text, audience = 'admin' }) {
   const root = React.useRef(null);
   const html = React.useMemo(() => {
     if (!text) return '';
@@ -164,8 +168,8 @@ export default function Markdown({ text }) {
       clean = clean.split(item.token).join(item.html);
     }
     // 本地图先移除 src，避免浏览器发出没有鉴权的自动请求。
-    return prepareImages(clean);
-  }, [text]);
+    return prepareImages(clean, audience);
+  }, [text, audience]);
   const markup = React.useMemo(() => ({ __html: html }), [html]);
 
   React.useEffect(() => {
@@ -199,7 +203,8 @@ export default function Markdown({ text }) {
         const load = () => {
           if (!active) return;
           if (!requests.has(path)) {
-            requests.set(path, adminApi.kbBundleAsset(path, { signal: controller.signal }).then((blob) => {
+            const readAsset = audience === 'learner' ? readLearningBundleAsset : adminApi.kbBundleAsset;
+            requests.set(path, readAsset(path, { signal: controller.signal }).then((blob) => {
               if (!active) return '';
               const url = URL.createObjectURL(blob);
               objectUrls.add(url);
@@ -229,9 +234,9 @@ export default function Markdown({ text }) {
       listeners.forEach((remove) => remove());
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
-  }, [html]);
+  }, [html, audience]);
 
   if (!html) return null;
   // eslint-disable-next-line react/no-danger
-  return <div ref={root} className="zx-md" dangerouslySetInnerHTML={markup} />;
+  return <div ref={root} className={`zx-md${audience === 'learner' ? ' zx-md-learner' : ''}`} dangerouslySetInnerHTML={markup} />;
 }

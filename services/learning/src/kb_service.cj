@@ -177,13 +177,27 @@ func loadKbSettings(cfg: Config): KbSettings {
     )
 }
 
+/** A vector space includes endpoint, model, dimension and the encoding algorithm. */
+func kbVectorSpaceKey(slot: ModelSlot, dim: Int64): String {
+    var base = slot.baseUrl.trimAscii()
+    while (base.endsWith("/")) { base = base[0..base.size - 1] }
+    bytesToHex(sha256Bytes((base + "\n" + slot.model + "\n" + dim.toString() + "\nint8-unit-v1").toArray()))
+}
+
 class KbIndexEntry {
     let hit: KbHit
     let vector: Array<Byte>
-
-    init(hit: KbHit, vector: Array<Byte>) {
-        this.hit = hit
-        this.vector = vector
+    let searchText: String
+    let vectorModel: String
+    let vectorDim: Int64
+    let spaceKey: String
+    let courseId: String
+    let published: Bool
+    init(hit: KbHit, vector: Array<Byte>, searchText: String, vectorModel: String, vectorDim: Int64,
+         spaceKey: String, courseId: String, published: Bool) {
+        this.hit = hit; this.vector = vector; this.searchText = searchText
+        this.vectorModel = vectorModel; this.vectorDim = vectorDim; this.spaceKey = spaceKey
+        this.courseId = courseId; this.published = published
     }
 }
 
@@ -212,17 +226,25 @@ func kbLoadIndex(cfg: Config): Array<KbIndexEntry> {
         kbCacheLock.unlock()
     }
     let rows = query(cfg,
-        "SELECT c.id,c.document_id,c.heading_path,c.text,d.title doc_title,e.vec_hex " +
+        "SELECT c.id,c.document_id,c.heading_path,c.text,COALESCE(c.summary,'') summary," +
+        "COALESCE(c.keywords_json,'[]') keywords,d.title doc_title,e.vec_hex,e.model,e.dim,e.space_key," +
+        "COALESCE(NULLIF(d.course_id,''),b.course_id,'') course_id,COALESCE(p.status,'') course_status " +
         "FROM kb_chunks c JOIN kb_documents d ON d.id=c.document_id " +
         "LEFT JOIN kb_embeddings e ON e.chunk_id=c.id " +
-        "WHERE d.status<>'failed' ORDER BY c.document_id,c.chunk_index")
+        "LEFT JOIN kb_bundles b ON b.id=d.bundle_id " +
+        "LEFT JOIN courses p ON p.id=COALESCE(NULLIF(d.course_id,''),b.course_id) " +
+        "WHERE ((d.active_build_id<>'' AND c.build_id=d.active_build_id) OR " +
+        "(d.active_build_id='' AND c.build_id='')) ORDER BY c.document_id,c.chunk_index")
     let entries = ArrayList<KbIndexEntry>()
     for (row in rows) {
         let hit = KbHit(row.text("id"), row.text("document_id"), row.text("doc_title"),
             row.text("heading_path"), row.text("text"), 0.0)
         let hex = row.text("vec_hex")
         let vector = if (hex.size > 0) { kbHexDecode(hex) } else { Array<Byte>(0, repeat: 0) }
-        entries.add(KbIndexEntry(hit, vector))
+        let searchText = row.text("heading_path") + "\n" + row.text("summary") + "\n" +
+            row.text("keywords") + "\n" + row.text("text")
+        entries.add(KbIndexEntry(hit, vector, searchText, row.text("model"), row.int("dim"),
+            row.text("space_key"), row.text("course_id"), row.text("course_status") == "published"))
     }
     let loaded = entries.toArray()
     kbCacheLock.lock()
@@ -254,7 +276,18 @@ class KbSearchResult {
  * 没有向量模型时不报错，直接退化成关键词检索。
  */
 func kbSearch(cfg: Config, settings: KbSettings, queryText: String, topK: Int64): KbSearchResult {
-    let entries = kbLoadIndex(cfg)
+    kbSearch(cfg, settings, queryText, topK, "", false)
+}
+
+func kbSearch(cfg: Config, settings: KbSettings, queryText: String, topK: Int64,
+              courseId: String, publishedOnly: Bool): KbSearchResult {
+    let available = kbLoadIndex(cfg)
+    let entries = ArrayList<KbIndexEntry>()
+    for (entry in available) {
+        if (publishedOnly && !entry.published) { continue }
+        if (courseId.size > 0 && entry.courseId != courseId) { continue }
+        entries.add(entry)
+    }
     let query = queryText.trimAscii()
     if (query.size == 0 || entries.size == 0) {
         return KbSearchResult(ArrayList<KbHit>(), "无内容", false, "")
@@ -271,7 +304,9 @@ func kbSearch(cfg: Config, settings: KbSettings, queryText: String, topK: Int64)
             let queryVector = kbNormalize(vectors[0])
             let scored = ArrayList<KbHit>()
             for (entry in entries) {
-                if (entry.vector.size == 0) { continue }
+                if (entry.vector.size != queryVector.size || entry.vectorDim != queryVector.size ||
+                    entry.vectorModel != settings.embedding.model ||
+                    entry.spaceKey != kbVectorSpaceKey(settings.embedding, queryVector.size)) { continue }
                 let score = kbQuantizedCosine(queryVector, entry.vector)
                 scored.add(KbHit(entry.hit.chunkId, entry.hit.documentId, entry.hit.docTitle,
                     entry.hit.headingPath, entry.hit.text, score))
@@ -294,7 +329,7 @@ func kbSearch(cfg: Config, settings: KbSettings, queryText: String, topK: Int64)
     let grams = kbGramSet(query)
     let keywordPool = ArrayList<KbHit>()
     for (entry in entries) {
-        let score = kbKeywordScore(grams, entry.hit.headingPath + "\n" + entry.hit.text)
+        let score = kbKeywordScore(grams, entry.searchText)
         if (score > 0.0) {
             keywordPool.add(KbHit(entry.hit.chunkId, entry.hit.documentId, entry.hit.docTitle,
                 entry.hit.headingPath, entry.hit.text, score))
@@ -382,41 +417,7 @@ class KbIngestResult {
 
 /** 切块写库；配了向量模型就顺手把向量补上，失败不影响关键词检索。 */
 func kbIngest(cfg: Config, documentId: String, title: String, content: String, settings: KbSettings): KbIngestResult {
-    let pieces = kbChunksFor(title, content, settings.chunkSize, settings.chunkOverlap)
-    execute(cfg, "UPDATE kb_documents SET status='indexing',error_message='' WHERE id=" + sqlQuote(documentId))
-    execute(cfg, "DELETE FROM kb_chunks WHERE document_id=" + sqlQuote(documentId))
-    let chunkIds = kbInsertDocumentsChunks(cfg, documentId, pieces)
-    let endpoint = slotEndpoint(cfg, settings.embedding)
-    var embedded: Int64 = 0
-    var note = ""
-    if (endpoint.hasEmbedding()) {
-        var start: Int64 = 0
-        while (start < pieces.size) {
-            let inputs = ArrayList<String>()
-            var i = start
-            while (i < pieces.size && i < start + settings.batchSize) {
-                inputs.add(pieces[i].indexText())
-                i += 1
-            }
-            if (inputs.size == 0) { break }
-            try {
-                let vectors = embedTexts(endpoint, inputs.toArray())
-                embedded += kbSaveEmbeddings(cfg, chunkIds[start..i], vectors, settings.embedding.model)
-            } catch (error: Exception) {
-                note = "向量化失败，已保留关键词检索：" + error.message
-                break
-            }
-            start = i
-        }
-    } else {
-        note = "未配置向量模型，本次只建立关键词索引"
-    }
-    execute(cfg,
-        "UPDATE kb_documents SET chunk_count=" + pieces.size.toString() + ",embedded_count=" + embedded.toString() +
-        ",embedding_model=" + sqlQuote(if (embedded > 0) { settings.embedding.model } else { "" }) +
-        ",status='ready',indexed_at=NOW(6),error_message=" + sqlQuote(note) + " WHERE id=" + sqlQuote(documentId))
-    kbBumpVersion()
-    KbIngestResult(pieces.size, embedded, note)
+    kbQueueIngest(cfg, documentId, title, content, settings)
 }
 
 /* ---------- 由知识库文档生成课程 ---------- */
@@ -518,43 +519,36 @@ func kbCourseIdFor(documentId: String): String {
  */
 func kbPublishCourse(cfg: Config, documentId: String, name: String, level: String,
                      duration: Int64, description: String): ?KbPublishResult {
-    let docs = query(cfg, "SELECT title,course_id FROM kb_documents WHERE id=" + sqlQuote(documentId))
+    let docs = query(cfg, "SELECT title,course_id,content,bundle_id FROM kb_documents WHERE id=" + sqlQuote(documentId))
     if (docs.size == 0) { return None }
+    if (docs[0].text("bundle_id").size > 0) { return kbPublishBundle(cfg, docs[0].text("bundle_id")) }
     let title = docs[0].text("title")
     let existingCourse = docs[0].text("course_id")
-    let chunkRows = query(cfg,
-        "SELECT heading_path,text FROM kb_chunks WHERE document_id=" + sqlQuote(documentId) +
-        " ORDER BY chunk_index")
-    if (chunkRows.size == 0) { return None }
-
+    let original = docs[0].text("content")
+    if (original.trimAscii().size == 0) { return None }
+    let sourceBytes = original.toArray()
+    let sourceBlocks = kbBlocks(title, sourceBytes)
     let groupKeys = ArrayList<String>()
     let groupSections = ArrayList<ArrayList<String>>()
     let groupHeadings = ArrayList<ArrayList<String>>()
-    for (row in chunkRows) {
-        let path = row.text("heading_path")
-        let parts = kbSplitPath(path)
-        var key = title
-        if (parts.size >= 2) { key = parts[1] }
-        let heading = if (parts.size >= 1) { parts[parts.size - 1] } else { title }
+    for (block in sourceBlocks) {
+        let parts = kbSplitPath(block.headingPath)
+        let key = if (parts.size >= 2) { parts[1] } else { title }
+        let heading = if (parts.size > 0) { parts[parts.size - 1] } else { title }
         var index: Int64 = -1
         var i: Int64 = 0
         while (i < groupKeys.size) {
-            if (groupKeys[i] == key) {
-                index = i
-                break
-            }
+            if (groupKeys[i] == key) { index = i; break }
             i += 1
         }
         if (index < 0) {
-            groupKeys.add(key)
-            groupSections.add(ArrayList<String>())
-            groupHeadings.add(ArrayList<String>())
+            groupKeys.add(key); groupSections.add(ArrayList<String>()); groupHeadings.add(ArrayList<String>())
             index = groupKeys.size - 1
         }
-        groupSections[index].add(row.text("text"))
+        groupSections[index].add(String.fromUtf8(sourceBytes.slice(block.start, block.end - block.start)))
         groupHeadings[index].add(heading)
     }
-
+    if (groupKeys.size == 0) { return None }
     let courseId = if (existingCourse.size > 0) { existingCourse } else { kbCourseIdFor(documentId) }
     let created = existingCourse.size == 0
     let statements = ArrayList<String>()
@@ -577,7 +571,7 @@ func kbPublishCourse(cfg: Config, documentId: String, name: String, level: Strin
         "INSERT INTO courses(id,name,icon,description,level,duration,chapters_json,source_label,status,sort_order) VALUES(" +
         sqlQuote(courseId) + "," + sqlQuote(if (name.size == 0) { title } else { name }) + "," +
         sqlQuote(kbDefaultCourseIcon()) + "," +
-        sqlQuote(if (description.size == 0) { kbSummaryOf(chunkRows[0].text("text"), 80) } else { description }) + "," +
+        sqlQuote(if (description.size == 0) { kbSummaryOf(original, 80) } else { description }) + "," +
         sqlQuote(safeLevel) + "," + safeDuration.toString() + "," +
         sqlQuote(chapters.toJson()) + "," + sqlQuote("知识库《" + title + "》") + ",'published',100) " +
         "ON DUPLICATE KEY UPDATE name=VALUES(name),icon=VALUES(icon),description=VALUES(description)," +
@@ -596,6 +590,7 @@ func kbPublishCourse(cfg: Config, documentId: String, name: String, level: Strin
             section.putStr("eyebrow", "课程讲义")
             section.putStr("heading", headings[s])
             section.putStr("text", texts[s])
+            section.putBool("markdown", true)
             sections.addRaw(section.toJson())
             s += 1
         }
@@ -626,6 +621,7 @@ func kbSetCourseStatus(cfg: Config, documentId: String, status: String): Bool {
     if (docs.size == 0 || docs[0].text("course_id").size == 0) { return false }
     execute(cfg, "UPDATE courses SET status=" + sqlQuote(status) + ",updated_at=NOW(6) WHERE id=" +
         sqlQuote(docs[0].text("course_id")))
+    kbBumpVersion()
     true
 }
 

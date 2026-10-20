@@ -2,17 +2,7 @@ import * as React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { adminApi } from './admin-api.js';
 import { ErrorBlock, Loading, Notice, useLoad } from './admin-ui.jsx';
-
-const STATUS = {
-  queued: { label: '排队中', kind: 'draft' },
-  running: { label: '智能体整理中', kind: 'draft' },
-  ready: { label: '已整理', kind: 'live' },
-  failed: { label: '失败', kind: 'draft' },
-};
-
-function statusOf(status) {
-  return STATUS[status] || { label: status, kind: 'draft' };
-}
+import BundlePipeline, { BundleLogo, bundleBusy, bundleReadable, useProcessingPoll } from './BundlePipeline.jsx';
 
 export default function AdminBundles({ onNeedModel }) {
   const navigate = useNavigate();
@@ -20,22 +10,8 @@ export default function AdminBundles({ onNeedModel }) {
   const [uploading, setUploading] = React.useState('');
   const [error, setError] = React.useState('');
   const [message, setMessage] = React.useState('');
-  const pollTimer = React.useRef(null);
-
   const bundles = state.data?.bundles || [];
-  const busyCount = bundles.filter((bundle) => bundle.status === 'queued' || bundle.status === 'running').length;
-
-  React.useEffect(() => {
-    if (busyCount === 0) {
-      if (pollTimer.current) { window.clearTimeout(pollTimer.current); pollTimer.current = null; }
-      return undefined;
-    }
-    pollTimer.current = window.setTimeout(() => state.reload(), 2500);
-    return () => {
-      if (pollTimer.current) { window.clearTimeout(pollTimer.current); pollTimer.current = null; }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busyCount, state.data]);
+  useProcessingPoll(state, bundles.some(bundleBusy));
 
   async function upload(file) {
     if (!file) return;
@@ -48,7 +24,7 @@ export default function AdminBundles({ onNeedModel }) {
     setUploading(file.name);
     try {
       await adminApi.uploadKbBundle(file);
-      setMessage(`《${file.name}》已上传，正在整理章节与格式，完成后可预览原文和图片。`);
+      setMessage(`《${file.name}》已上传，将自动整理原文、生成切片与摘要，原文就绪后即可预览并发布。`);
       state.reload();
     } catch (failure) {
       setError(failure.message);
@@ -80,7 +56,7 @@ export default function AdminBundles({ onNeedModel }) {
         </label>
       </h2>
       <div className="zx-card-hint">
-        上传包含文档和图片的 zip，保留原文和图片，整理章节与格式，完成后可直接预览。
+        上传包含文档和图片的 zip（最大 256MB），保留原文和图片，自动生成切片、摘要、关键词与课程图标。预览后即可发布为课程。
       </div>
 
       {error ? <Notice kind="error">{error}</Notice> : null}
@@ -93,37 +69,39 @@ export default function AdminBundles({ onNeedModel }) {
           <thead>
             <tr>
               <th>压缩包</th>
-              <th>状态</th>
+              <th>处理进度</th>
               <th>章节</th>
-              <th>步数</th>
               <th>更新时间</th>
               <th aria-label="操作" />
             </tr>
           </thead>
           <tbody>
             {bundles.map((bundle) => {
-              const status = statusOf(bundle.status);
               return (
                 <tr key={bundle.id}>
                   <td>
-                    <div className="zx-cell-title">{bundle.title || bundle.name}</div>
-                    <div className="zx-cell-sub">
-                      {bundle.name} · {Math.round(bundle.bytes / 1024)} KB
-                      {bundle.errorMessage ? ` · ${bundle.errorMessage}` : ''}
+                    <div className="zx-bundle-name">
+                      <BundleLogo bundle={bundle} />
+                      <div>
+                        <div className="zx-cell-title">{bundle.title || bundle.name}</div>
+                        <div className="zx-cell-sub">
+                          {bundle.name} · {Math.round(bundle.bytes / 1024)} KB
+                          {bundle.errorMessage ? ` · ${bundle.errorMessage}` : ''}
+                        </div>
+                      </div>
                     </div>
                   </td>
-                  <td><span className={`zx-pill zx-pill-${status.kind}`}>{status.label}</span></td>
-                  <td className="zx-num">{bundle.status === 'ready' ? bundle.docCount : '—'}</td>
-                  <td className="zx-num">{bundle.steps || '—'}</td>
+                  <td><BundlePipeline bundle={bundle} compact /></td>
+                  <td className="zx-num">{bundle.docCount || '—'}</td>
                   <td className="zx-num">{bundle.updatedAt || '—'}</td>
                   <td className="zx-actions">
                     <button
                       type="button"
                       className="zx-btn zx-btn-sm zx-btn-ghost"
-                      disabled={bundle.status !== 'ready'}
+                      disabled={!bundleReadable(bundle)}
                       onClick={() => navigate(`/admin/knowledge/bundles/${bundle.id}`)}
                     >
-                      预览
+                      预览与发布
                     </button>
                     <button
                       type="button"

@@ -2,11 +2,20 @@ import * as React from 'react';
 import { adminApi } from './admin-api.js';
 import { ErrorBlock, Loading, Notice, PageHead, StatCard, useLoad } from './admin-ui.jsx';
 import AdminBundles from './AdminBundles.jsx';
+import { useProcessingPoll } from './BundlePipeline.jsx';
+
+const PROCESSING = new Set(['pending', 'queued', 'running', 'indexing', 'chunking', 'summarizing', 'embedding']);
 
 const STATUS_TEXT = {
   ready: { label: '已索引', kind: 'live' },
   indexing: { label: '索引中', kind: 'draft' },
-  pending: { label: '待索引', kind: 'draft' },
+  pending: { label: '等待处理', kind: 'draft' },
+  queued: { label: '排队中', kind: 'draft' },
+  running: { label: '处理中', kind: 'draft' },
+  chunking: { label: '生成切片中', kind: 'draft' },
+  summarizing: { label: '生成摘要中', kind: 'draft' },
+  embedding: { label: '建立向量中', kind: 'draft' },
+  partial: { label: '部分完成', kind: 'draft' },
   failed: { label: '索引失败', kind: 'draft' },
 };
 
@@ -28,6 +37,7 @@ export default function AdminKnowledge() {
   const settings = state.data?.settings;
   const stats = state.data?.stats;
   const documents = state.data?.documents || [];
+  useProcessingPoll(state, documents.some((doc) => PROCESSING.has(doc.status)));
 
   async function run(key, task, okMessage) {
     setBusy(key);
@@ -71,7 +81,7 @@ export default function AdminKnowledge() {
     <div className="zx-admin-page">
       <PageHead
         title="知识库"
-        description="上传 Markdown / 纯文本，或直接丢一个 zip 让智能体整理；整理好的内容按标题切块并建立检索索引。"
+        description="上传资料后自动整理原文、切片与摘要，预览后即可发布课程。"
         actions={
           <>
             <button type="button" className="zx-btn zx-btn-ghost" onClick={state.reload}>刷新</button>
@@ -119,11 +129,9 @@ export default function AdminKnowledge() {
                 content: upload.content,
               });
               setUpload(null);
-              setMessage(
-                created.note
-                  ? `《${created.document.title}》已入库：${created.chunkCount} 个切片。${created.note}`
-                  : `《${created.document.title}》已入库：${created.chunkCount} 个切片，${created.embeddedCount} 个已向量化。`,
-              );
+              setMessage(PROCESSING.has(created.document?.status || created.status) || created.queued || created.async
+                ? `《${created.document?.title || upload.title}》已保存，后台正在生成切片与摘要，进度会自动更新。`
+                : `《${created.document?.title || upload.title}》已入库：${created.chunkCount ?? 0} 个切片，${created.embeddedCount ?? 0} 个已向量化。${created.note || ''}`);
             }, '');
           }}
         >
@@ -147,7 +155,7 @@ export default function AdminKnowledge() {
                 accept=".md,.markdown,.txt,text/markdown,text/plain"
                 onChange={(event) => pickFile(event.target.files?.[0])}
               />
-              <small>文件只在浏览器里读成文本，不会上传到别的地方。</small>
+              <small>支持 Markdown 和纯文本，读取后可在下方检查正文。</small>
             </div>
             <div className="zx-field zx-field-full">
               <label htmlFor="kb-content">正文（也可直接粘贴）</label>
@@ -164,7 +172,7 @@ export default function AdminKnowledge() {
           </div>
           <div style={{ marginTop: 14 }}>
             <button type="submit" className="zx-btn zx-btn-primary" disabled={busy === 'upload'}>
-              {busy === 'upload' ? '正在切片与建索引…' : '入库并建立索引'}
+              {busy === 'upload' ? '提交中…' : '保存并自动处理'}
             </button>
           </div>
         </form>
@@ -275,10 +283,12 @@ export default function AdminKnowledge() {
                     <button
                       type="button"
                       className="zx-btn zx-btn-sm zx-btn-ghost"
-                      disabled={busy === `reindex-${doc.id}`}
+                      disabled={busy === `reindex-${doc.id}` || PROCESSING.has(doc.status)}
                       onClick={() => run(`reindex-${doc.id}`, async () => {
                         const result = await adminApi.reindexKbDocument(doc.id);
-                        setMessage(`已重建索引：${result.chunkCount} 个切片，${result.embeddedCount} 个已向量化。${result.note || ''}`);
+                        setMessage(PROCESSING.has(result.document?.status || result.status) || result.queued || result.async
+                          ? '已提交重建任务，进度会自动更新。'
+                          : `已重建索引：${result.chunkCount ?? 0} 个切片，${result.embeddedCount ?? 0} 个已向量化。${result.note || ''}`);
                       }, '')}
                     >
                       重建索引

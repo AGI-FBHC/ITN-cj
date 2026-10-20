@@ -88,8 +88,7 @@ func readStreamText(input: InputStream): String {
 
 func briefBody(text: String): String {
     let trimmed = text.trimAscii()
-    if (trimmed.size <= 300) { return trimmed }
-    trimmed[0..300] + "…"
+    kbTruncate(trimmed, 300)
 }
 
 func modelClient(ep: ModelEndpoint, readMinutes: Int64): Client {
@@ -131,6 +130,10 @@ func httpPostJson(ep: ModelEndpoint, path: String, payload: String, readMinutes:
 
 /** 把嵌入响应解析成向量数组；顺序与输入一致。 */
 func parseEmbeddingArray(text: String): Array<Array<Float64>> {
+    parseEmbeddingArray(text, -1)
+}
+
+func parseEmbeddingArray(text: String, expectedCount: Int64): Array<Array<Float64>> {
     let root = match (jsonParse(text)) {
         case Some(value) => value
         case None => throw Exception("嵌入接口返回的不是合法 JSON")
@@ -143,36 +146,57 @@ func parseEmbeddingArray(text: String): Array<Array<Float64>> {
         case Some(list) => list
         case None => throw Exception("嵌入接口没有返回 data 数组")
     }
-    let out = ArrayList<Array<Float64>>()
+    if (data.size() == 0) { throw Exception("嵌入接口没有返回任何向量") }
+    if (expectedCount >= 0 && data.size() != expectedCount) { throw Exception("嵌入向量数量与输入数量不一致") }
+    let out = Array<Array<Float64>>(data.size(), repeat: Array<Float64>(0, repeat: 0.0))
+    let seen = Array<Bool>(data.size(), repeat: false)
+    var dimension: Int64 = -1
     var i: Int64 = 0
     while (i < data.size()) {
         let item = data[i]
-        match (item.kind()) {
-            case JsonKind.JsObject =>
-                let row = item.asObject()
-                match (jsonGetArray(row, "embedding")) {
-                    case Some(values) =>
-                        let vec = Array<Float64>(values.size(), repeat: 0.0)
-                        var k: Int64 = 0
-                        while (k < values.size()) {
-                            match (values[k].kind()) {
-                                case JsonKind.JsFloat => vec[k] = values[k].asFloat().getValue()
-                                case JsonKind.JsInt => vec[k] = Float64(values[k].asInt().getValue())
-                                case _ => vec[k] = 0.0
-                            }
-                            k += 1
-                        }
-                        if (vec.size > 0) { out.add(vec) }
-                    case None => ()
-                }
-            case _ => ()
+        let row = match (item.kind()) {
+            case JsonKind.JsObject => item.asObject()
+            case _ => throw Exception("嵌入 data 条目不是对象")
         }
+        let indexValue = match (row.get("index")) {
+            case Some(value) => value
+            case None => throw Exception("嵌入向量缺少 index")
+        }
+        let index = match (indexValue.kind()) {
+            case JsonKind.JsInt => indexValue.asInt().getValue()
+            case _ => throw Exception("嵌入 index 必须是整数")
+        }
+        if (index < 0 || index >= data.size() || seen[index]) { throw Exception("嵌入 index 重复或超出输入范围") }
+        let values = match (jsonGetArray(row, "embedding")) {
+            case Some(value) => value
+            case None => throw Exception("嵌入向量缺少 embedding 数组")
+        }
+        if (values.size() == 0) { throw Exception("嵌入向量为空") }
+        if (dimension < 0) { dimension = values.size() }
+        if (values.size() != dimension) { throw Exception("同批嵌入向量维度不一致") }
+        let vec = Array<Float64>(values.size(), repeat: 0.0)
+        var nonzero = false
+        var k: Int64 = 0
+        while (k < values.size()) {
+            let value = match (values[k].kind()) {
+                case JsonKind.JsFloat => values[k].asFloat().getValue()
+                case JsonKind.JsInt => Float64(values[k].asInt().getValue())
+                case _ => throw Exception("嵌入向量包含非数值")
+            }
+            if (value != value || value > 1.7976931348623157e308 || value < -1.7976931348623157e308) {
+                throw Exception("嵌入向量包含非有限数值")
+            }
+            if (value != 0.0) { nonzero = true }
+            vec[k] = value
+            k += 1
+        }
+        if (!nonzero) { throw Exception("嵌入向量不能全为零") }
+        out[index] = vec
+        seen[index] = true
         i += 1
     }
-    if (out.size == 0) {
-        throw Exception("嵌入接口没有返回任何向量")
-    }
-    out.toArray()
+    for (visited in seen) { if (!visited) { throw Exception("嵌入响应缺少输入的向量") } }
+    out
 }
 
 /** 调 /embeddings。provider 不支持时抛出带说明的异常，由调用方决定是否降级。 */
@@ -180,13 +204,84 @@ func embedTexts(ep: ModelEndpoint, inputs: Array<String>): Array<Array<Float64>>
     if (!ep.hasEmbedding()) {
         throw Exception("还没有配置向量模型")
     }
+    if (inputs.size == 0) { throw Exception("嵌入输入不能为空") }
     let list = JsonArrWriter()
     for (input in inputs) { list.addRaw(jsonQuote(input)) }
     let payload = JsonWriter()
     payload.putStr("model", ep.embeddingModel)
     payload.putRaw("input", list.toJson())
     let text = httpPostJson(ep, "/embeddings", payload.toJson(), 2)
-    parseEmbeddingArray(text)
+    parseEmbeddingArray(text, inputs.size)
+}
+
+/** Only bare JSON or one complete JSON Markdown fence is accepted. */
+func kbParseChatJson(content: String): JsonObject {
+    var text = content.trimAscii()
+    if (text.startsWith("```")) {
+        let newline = match (text.indexOf("\n")) {
+            case Some(index) => index
+            case None => throw Exception("模型 JSON 代码围栏不完整")
+        }
+        let label = text[3..newline].trimAscii().toAsciiLower()
+        if (label.size > 0 && label != "json") { throw Exception("模型返回的代码围栏不是 JSON") }
+        if (!text.endsWith("```")) { throw Exception("模型 JSON 代码围栏未闭合") }
+        text = text[newline + 1..text.size - 3].trimAscii()
+    }
+    let value = match (jsonParse(text)) {
+        case Some(parsed) => parsed
+        case None => throw Exception("模型没有返回有效 JSON 对象：" + briefBody(text))
+    }
+    match (value.kind()) {
+        case JsonKind.JsObject => value.asObject()
+        case _ => throw Exception("模型 JSON 顶层必须是对象")
+    }
+}
+
+/** A real non-streaming JSON conversation without provider-specific response_format. */
+func kbChatJson(ep: ModelEndpoint, system: String, user: String): JsonObject {
+    if (!ep.hasChat()) { throw Exception("还没有配置对话模型") }
+    let messages = JsonArrWriter()
+    let systemMessage = JsonWriter()
+    systemMessage.putStr("role", "system")
+    systemMessage.putStr("content", system + "\n只返回一个合法 JSON 对象，不要解释。")
+    messages.addRaw(systemMessage.toJson())
+    let userMessage = JsonWriter()
+    userMessage.putStr("role", "user")
+    userMessage.putStr("content", user)
+    messages.addRaw(userMessage.toJson())
+    let payload = JsonWriter()
+    payload.putStr("model", ep.chatModel)
+    payload.putRaw("messages", messages.toJson())
+    payload.putBool("stream", false)
+    let response = match (jsonParse(httpPostJson(ep, "/chat/completions", payload.toJson(), 3))) {
+        case Some(value) => value
+        case None => throw Exception("模型接口响应不是有效 JSON")
+    }
+    let root = match (response.kind()) {
+        case JsonKind.JsObject => response.asObject()
+        case _ => throw Exception("模型接口响应顶层必须是对象")
+    }
+    let choices = match (jsonGetArray(root, "choices")) {
+        case Some(value) => value
+        case None => throw Exception("模型接口响应缺少 choices")
+    }
+    if (choices.size() == 0) { throw Exception("模型接口返回空 choices") }
+    let first = match (choices[0].kind()) {
+        case JsonKind.JsObject => choices[0].asObject()
+        case _ => throw Exception("模型 choices 结构不正确")
+    }
+    let message = match (jsonGetObject(first, "message")) {
+        case Some(value) => value
+        case None => throw Exception("模型接口响应缺少 message")
+    }
+    let content = match (message.get("content")) {
+        case Some(value) => match (value.kind()) {
+            case JsonKind.JsString => value.asString().getValue()
+            case _ => throw Exception("模型 message.content 必须是字符串")
+        }
+        case None => throw Exception("模型接口响应缺少 content")
+    }
+    kbParseChatJson(content)
 }
 
 /** 流式对话：每收到一段正文回调一次，返回完整文本。 */
