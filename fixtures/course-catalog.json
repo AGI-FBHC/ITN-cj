@@ -1,0 +1,177 @@
+{
+  "courses": [
+    {
+      "id": "ds",
+      "name": "数据结构",
+      "icon": "/courses/data-structures.png",
+      "description": "从线性表、树与图出发，理解数据组织方式，逐步掌握算法分析与问题建模。",
+      "level": "入门到进阶",
+      "duration": 12,
+      "chapters": [
+        {
+          "title": "线性表与顺序存储",
+          "done": false
+        },
+        {
+          "title": "栈与队列",
+          "done": false
+        },
+        {
+          "title": "树的基本概念",
+          "done": false
+        },
+        {
+          "title": "树与图的遍历",
+          "done": false
+        },
+        {
+          "title": "图的最短路径",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "co",
+      "name": "计算机组成原理",
+      "icon": "/courses/computer-organization.png",
+      "description": "理解处理器、存储器与输入输出系统，建立计算机硬件协同工作的整体认识。",
+      "level": "中等",
+      "duration": 14,
+      "chapters": [
+        {
+          "title": "数据的机器级表示",
+          "done": false
+        },
+        {
+          "title": "运算方法与运算器",
+          "done": false
+        },
+        {
+          "title": "存储器层次结构",
+          "done": false
+        },
+        {
+          "title": "指令系统与 CPU",
+          "done": false
+        },
+        {
+          "title": "总线与输入输出",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "os",
+      "name": "操作系统",
+      "icon": "/courses/operating-systems.png",
+      "description": "学习进程调度、内存管理与文件系统，理解操作系统如何协调和管理资源。",
+      "level": "中等",
+      "duration": 16,
+      "chapters": [
+        {
+          "title": "操作系统概述",
+          "done": false
+        },
+        {
+          "title": "进程与线程",
+          "done": false
+        },
+        {
+          "title": "处理机调度与死锁",
+          "done": false
+        },
+        {
+          "title": "内存管理",
+          "done": false
+        },
+        {
+          "title": "文件系统与 IO",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "cn",
+      "name": "计算机网络",
+      "icon": "/courses/computer-networks.png",
+      "description": "从分层模型到 TCP/IP 协议，理解数据如何在网络中可靠、高效地传输。",
+      "level": "中等",
+      "duration": 14,
+      "chapters": [
+        {
+          "title": "体系结构与物理层",
+          "done": false
+        },
+        {
+          "title": "数据链路层",
+          "done": false
+        },
+        {
+          "title": "网络层与 IP",
+          "done": false
+        },
+        {
+          "title": "传输层 TCP/UDP",
+          "done": false
+        },
+        {
+          "title": "应用层协议",
+          "done": false
+        }
+      ]
+    },
+    {
+      "id": "agent",
+      "name": "智能体（Agent）",
+      "icon": "/courses/intelligent-agents.png",
+      "description": "认识智能体的感知、规划与协作机制，逐步掌握多智能体系统的核心方法。",
+      "level": "进阶",
+      "duration": 10,
+      "chapters": [
+        {
+          "title": "智能体基础概念",
+          "done": false
+        },
+        {
+          "title": "提示工程与工具调用",
+          "done": false
+        },
+        {
+          "title": "规划与记忆机制",
+          "done": false
+        },
+        {
+          "title": "多智能体协同",
+          "done": false
+        }
+      ]
+    }
+  ],
+  "courseFacts": {
+    "ds": [
+      "数据结构描述了数据之间的逻辑关系，以及这些关系在计算机中的存储方式。",
+      "选择结构时，需要同时考虑访问、插入、删除和排序等操作的成本。",
+      "时间复杂度与空间复杂度能够帮助我们在不同方案之间做出可解释的选择。"
+    ],
+    "co": [
+      "计算机组成关注指令如何经过数据通路，最终由硬件完成运算。",
+      "处理器、存储器与输入输出设备通过总线和控制信号协同工作。",
+      "理解层次化设计，是分析现代计算机性能差异的关键。"
+    ],
+    "os": [
+      "操作系统在应用程序与硬件之间建立了安全、统一的资源抽象。",
+      "进程调度、内存管理和文件系统共同决定程序的执行体验。",
+      "并发问题需要从共享资源、执行顺序和同步机制三个角度分析。"
+    ],
+    "cn": [
+      "网络协议通过分层来降低复杂度，每一层都提供清晰的服务边界。",
+      "数据传输需要同时处理寻址、路由、差错控制与拥塞控制。",
+      "理解封装与解封装过程，可以快速定位实际网络故障。"
+    ],
+    "agent": [
+      "智能体通过感知环境、形成计划并调用工具来完成目标。",
+      "记忆机制让智能体能够保留上下文，并利用历史经验修正下一步行动。",
+      "多智能体协作需要明确角色、共享状态与冲突解决机制。"
+    ]
+  }
+}

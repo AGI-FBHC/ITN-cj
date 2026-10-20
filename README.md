@@ -1,32 +1,48 @@
-# 智训云枢 28801 线上版本本地预览
+# 智训云枢
 
-这是线上部署产物的原样副本，**不是原始 React 开发工程**。
+当前用户端以 28801 线上页面为基线，使用 React/Vite；学习服务使用仓颉
+1.2.0 + Spire。开发环境不使用 Docker。
 
 ## 启动
 
-使用 PowerShell 7：
+分别打开两个 PowerShell 7 终端：
 
 ```powershell
-cd D:\Downloads\zhixun-yunshu-28801-20261020
+.\scripts\run-backend.ps1
+.\scripts\run-frontend.ps1
+```
+
+浏览器打开 `http://localhost:3006/`。停止时在终端按 `Ctrl+C`。
+
+数据库连接只从项目根目录已忽略的 `.env.local` 读取。后端启动时会拒绝连接
+`itn_learning_v2_dev` 以外的数据库。
+
+## 已验证范围
+
+- 自动建立独立访客学习账号，不共享其他用户的数据。
+- 建档、课程目录、课时阅读、服务端判题、测验提交、课程进度。
+- 课程收藏与片段书签刷新后恢复。
+- 5 门课程、24 个课时。Agent 课程复用了隔离开发库中的公开讲义和题目；
+  其余计算机基础课程是已标注来源的演示内容。
+- 界面保持原页面结构，增加加载失败重试与同步状态提示。
+
+AI 导师和管理员端尚未接入；当前 AI 入口会明确显示服务未接入。
+
+## 目录
+
+- `apps/web/`：可从构建产物恢复的开发前端。
+- `services/learning/`：原生仓颉学习后端。
+- `schema.sql`：隔离开发库结构，位于 `services/learning/schema.sql`。
+- `tools/`、`scripts/`：静态源码恢复、课程导入和启动脚本。
+- `deployed/`：线上发布产物原件，保持逐字节不变。
+- `TRACE.md`：跨会话操作记录。
+
+## 原始页面
+
+要查看未修改的 28801 线上产物：
+
+```powershell
 python preview_server.py --port 3005
 ```
 
-打开 http://localhost:3005/ 。终端 Ctrl+C 停止服务。
-
-## 文件来源
-
-- 线上页面：http://113.249.110.108:28801/
-- SSH 主机：43.160.236.121，账号 ubuntu；本地文件不保存凭据。
-- 下载目录：/var/www/zhixun-yunshu/releases/20260803-112502
-- Nginx 的 current 软链接指向以上发布目录。
-- `deployed/`：下载的8个静态文件，2,552,751字节。
-- `nginx-28801.conf`：原站 Nginx 配置参考。
-- `SHA256SUMS.txt`：下载文件的 SHA-256 清单。
-- `preview_server.py`：本地静态服务与单页路由回退，不修改原站 JS/CSS。
-- `TRACE.md`：本地恢复、启动与验证记录，持续追加。
-
-入口 HTML 与主 JS 已核对外网、服务器磁盘、本地副本的 SHA-256，一致。
-
-## 开发边界
-
-部署目录没有 `src/`、`package.json` 或 source map。已检查服务器常见项目目录、部署压缩包及本机两个 front 压缩包，尚未找到这份部署对应的原始 React 源码。此包可直接预览、备份和重部署；后续按原工程开发需要找回源码。若重建源码，应明确标记为重建版本，并用本副本核对页面和交互。
+浏览器打开 `http://localhost:3005/`。
