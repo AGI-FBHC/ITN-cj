@@ -31,18 +31,20 @@ class KbSettings {
     let chat: ModelSlot
     let tts: ModelSlot
     let ttsVoice: String
+    let ttsPath: String
     let embeddingDim: Int64
     let batchSize: Int64
     let chunkSize: Int64
     let chunkOverlap: Int64
     let topK: Int64
 
-    init(embedding: ModelSlot, chat: ModelSlot, tts: ModelSlot, ttsVoice: String,
+    init(embedding: ModelSlot, chat: ModelSlot, tts: ModelSlot, ttsVoice: String, ttsPath: String,
          embeddingDim: Int64, batchSize: Int64, chunkSize: Int64, chunkOverlap: Int64, topK: Int64) {
         this.embedding = embedding
         this.chat = chat
         this.tts = tts
         this.ttsVoice = ttsVoice
+        this.ttsPath = ttsPath
         this.embeddingDim = embeddingDim
         this.batchSize = batchSize
         this.chunkSize = chunkSize
@@ -145,11 +147,11 @@ func loadKbSettings(cfg: Config): KbSettings {
     let rows = query(cfg,
         "SELECT embedding_base_url,embedding_model,embedding_api_key_cipher,embedding_api_key_hint," +
         "chat_base_url,chat_model,chat_api_key_cipher,chat_api_key_hint," +
-        "tts_base_url,tts_model,tts_voice,tts_api_key_cipher,tts_api_key_hint," +
+        "tts_base_url,tts_model,tts_voice,tts_path,tts_api_key_cipher,tts_api_key_hint," +
         "embedding_dim,batch_size,chunk_size,chunk_overlap,top_k FROM kb_settings WHERE id=1")
     if (rows.size == 0) {
         let empty = ModelSlot("", "", "", "")
-        return KbSettings(empty, empty, empty, "", 0, 16, 800, 120, 6)
+        return KbSettings(empty, empty, empty, "", "/audio/speech", 0, 16, 800, 120, 6)
     }
     let row = rows[0]
     let batch = row.int("batch_size")
@@ -165,6 +167,7 @@ func loadKbSettings(cfg: Config): KbSettings {
             if (row.isNull("tts_api_key_cipher")) { "" } else { row.text("tts_api_key_cipher") },
             row.text("tts_api_key_hint")),
         row.text("tts_voice"),
+        if (row.text("tts_path").size == 0) { "/audio/speech" } else { row.text("tts_path") },
         row.int("embedding_dim"),
         if (batch <= 0) { 16 } else if (batch > 64) { 64 } else { batch },
         if (size < 200) { 800 } else if (size > 4000) { 4000 } else { size },

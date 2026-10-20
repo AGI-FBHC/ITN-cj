@@ -333,3 +333,11 @@
 - 后端 `POST api/admin/kb/test` 现在优先使用请求里带上的 `baseUrl` / `model` / `apiKey` / `voice`；没带的字段才回退到库里已保存的值，密钥为空时用已保存的密钥。
 - 前端「测试连接」把当前表单值一起提交，因此先测后存、改完再测都能生效。
 - 实测：库内为空时用未保存输入测试，返回的是真实的连接失败（502 Failed to connect），不再是「还没有配置」。
+
+### 语音合成路径改为可配置
+
+- 用户提供 `https://api.xiaomimimo.com/v1` + `mimo-v2.5-tts`，测试返回 openresty 404：该网关没有 OpenAI 的 `/audio/speech` 路由。
+- 探测结果：`/v1/models` 不带 Key 返回 401（路径存在），而 `/v1/audio/speech`、`/v1/audio/tts`、`/v1/tts`、`/audio/speech`、`/v1/audio/generations`、`/v1/audio/synthesize` 用 GET 与 POST 均返回 404，说明这些路径在该网关不存在。
+- 因此新增 `kb_settings.tts_path`（默认 `/audio/speech`），管理端「语音合成」标签多一个「合成路径」字段；测试与以后的实际合成都用它拼 URL。
+- `ttsCheck` 的报错现在包含完整 URL，方便确认到底请求了哪个地址。
+- 尚未接入实际朗读：需要确认 MiMo 的语音接口路径与请求体形态后再补。

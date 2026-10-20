@@ -37,7 +37,7 @@ function initialForm(settings) {
   return {
     embedding: slot('embedding'),
     chat: slot('chat'),
-    tts: { ...slot('tts'), voice: settings.ttsVoice || '' },
+    tts: { ...slot('tts'), voice: settings.ttsVoice || '', path: settings.ttsPath || '/audio/speech' },
     chunkSize: settings.chunkSize || 800,
     chunkOverlap: settings.chunkOverlap || 120,
     batchSize: settings.batchSize || 16,
@@ -81,6 +81,7 @@ export default function AdminSettings() {
         model: value.model.trim(),
         apiKey: value.apiKey.trim(),
         voice: value.voice ? value.voice.trim() : '',
+        ttsPath: value.path ? value.path.trim() : '',
       });
       const detail = slotMeta.key === 'embedding'
         ? `返回 ${result.dim} 维向量`
@@ -113,6 +114,7 @@ export default function AdminSettings() {
         ttsBaseUrl: form.tts.baseUrl.trim(),
         ttsModel: form.tts.model.trim(),
         ttsVoice: form.tts.voice.trim(),
+        ttsPath: form.tts.path.trim(),
         ttsApiKey: form.tts.apiKey.trim(),
         ttsClearKey: form.tts.clearKey,
         embeddingDim: form.embeddingDim,
@@ -191,15 +193,27 @@ export default function AdminSettings() {
               />
             </div>
             {slotMeta.withVoice ? (
-              <div className="zx-field">
-                <label htmlFor="tts-voice">默认音色</label>
-                <input
-                  id="tts-voice"
-                  value={value.voice}
-                  onChange={(event) => editSlot({ voice: event.target.value })}
-                  placeholder="例如 alloy / nova"
-                />
-              </div>
+              <>
+                <div className="zx-field">
+                  <label htmlFor="tts-voice">默认音色</label>
+                  <input
+                    id="tts-voice"
+                    value={value.voice}
+                    onChange={(event) => editSlot({ voice: event.target.value })}
+                    placeholder="例如 alloy / nova"
+                  />
+                </div>
+                <div className="zx-field">
+                  <label htmlFor="tts-path">合成路径</label>
+                  <input
+                    id="tts-path"
+                    value={value.path}
+                    onChange={(event) => editSlot({ path: event.target.value })}
+                    placeholder="/audio/speech"
+                  />
+                  <small>各服务商路径不同，常见 /audio/speech、/audio/tts、/tts。</small>
+                </div>
+              </>
             ) : null}
             <div className="zx-field zx-field-full">
               <label htmlFor={`${slotMeta.key}-key`}>密钥</label>

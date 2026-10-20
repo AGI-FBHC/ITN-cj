@@ -932,6 +932,7 @@ func kbSettingsJson(cfg: Config, settings: KbSettings): String {
     out.putRaw("chat", slotSettingsJson(settings.chat, resolveKey(cfg, settings.chat).size > 0))
     out.putRaw("tts", slotSettingsJson(settings.tts, resolveKey(cfg, settings.tts).size > 0))
     out.putStr("ttsVoice", settings.ttsVoice)
+    out.putStr("ttsPath", settings.ttsPath)
     out.putInt("embeddingDim", settings.embeddingDim)
     out.putInt("batchSize", settings.batchSize)
     out.putInt("chunkSize", settings.chunkSize)
@@ -1990,6 +1991,7 @@ main(): Int64 {
                         let ttsBase = (jsonGetString(body, "ttsBaseUrl") ?? "").trimAscii()
                         let ttsModel = (jsonGetString(body, "ttsModel") ?? "").trimAscii()
                         let ttsVoice = (jsonGetString(body, "ttsVoice") ?? "").trimAscii()
+                        let ttsPath = (jsonGetString(body, "ttsPath") ?? "").trimAscii()
                         let ttsKey = (jsonGetString(body, "ttsApiKey") ?? "").trimAscii()
                         let ttsClear = jsonGetBool(body, "ttsClearKey") ?? false
                         var problem = ""
@@ -2037,6 +2039,7 @@ main(): Int64 {
                                 ",tts_base_url=" + sqlQuote(ttsBase) +
                                 ",tts_model=" + sqlQuote(ttsModel) +
                                 ",tts_voice=" + sqlQuote(ttsVoice) +
+                                ",tts_path=" + sqlQuote(if (ttsPath.size == 0) { "/audio/speech" } else { ttsPath }) +
                                 ",tts_api_key_cipher=" + ttsCipher +
                                 ",tts_api_key_hint=" + sqlQuote(ttsHint) +
                                 ",embedding_dim=" + maxInt(0, dim).toString() +
@@ -2104,7 +2107,9 @@ main(): Int64 {
                     }
                 } else if (target == "tts") {
                     try {
-                        let status = ttsCheck(endpoint, voice, "连接测试")
+                        let speechPath = (jsonGetString(body, "ttsPath") ?? "").trimAscii()
+                let effectivePath = if (speechPath.size > 0) { speechPath } else { settings.ttsPath }
+                        let status = ttsCheck(endpoint, voice, "连接测试", effectivePath)
                         if (status == 200) {
                             let out = JsonWriter()
                             out.putBool("ok", true)
