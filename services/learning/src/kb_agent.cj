@@ -38,12 +38,12 @@ class KbWorkspace {
         kbWalkFiles(base, "", out, 0)
         let result = StringBuilder()
         var i: Int64 = 0
-        while (i < out.size && i < 400) {
+        while (i < out.size && i < 600) {
             result.append(out[i])
             result.append("\n")
             i += 1
         }
-        if (out.size > 400) { result.append("…（共 " + out.size.toString() + " 个文件，已截断）\n") }
+        if (out.size > 600) { result.append("…（共 " + out.size.toString() + " 个文件，已截断）\n") }
         result.toString()
     }
 

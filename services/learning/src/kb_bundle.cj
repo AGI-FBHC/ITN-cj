@@ -155,7 +155,7 @@ func kbProcessBundle(cfg: Config, bundleId: String): Unit {
         if (!exists(Path(workDir + "/in"))) { Directory.create(Path(workDir + "/in"), recursive: true) }
         if (!exists(Path(workDir + "/out"))) { Directory.create(Path(workDir + "/out"), recursive: true) }
         let count = try {
-            kbZipExtractAll(zipBytes, workDir + "/in", 400)
+            kbZipExtractAll(zipBytes, workDir + "/in", 800)
         } catch (error: Exception) {
             kbSetBundle(cfg, bundleId, "failed", 0, "", "解压失败：" + error.message, log.text())
             return
@@ -166,7 +166,7 @@ func kbProcessBundle(cfg: Config, bundleId: String): Unit {
             return
         }
         let workspace = KbWorkspace(workDir)
-        let result = kbRunAgent(endpoint, workspace, log, 60)
+        let result = kbRunAgent(endpoint, workspace, log, 80)
         if (!result.finished) {
             kbSetBundle(cfg, bundleId, "failed", log.steps(), "", result.message, log.text())
             return
