@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { adminApi } from './admin-api.js';
 import { ErrorBlock, Loading, Notice, PageHead, StatCard, useLoad } from './admin-ui.jsx';
+import AdminBundles from './AdminBundles.jsx';
 
 const STATUS_TEXT = {
   ready: { label: '已索引', kind: 'live' },
@@ -70,7 +71,7 @@ export default function AdminKnowledge() {
     <div className="zx-admin-page">
       <PageHead
         title="知识库"
-        description="上传 Markdown 或纯文本，系统按标题切块并建立检索索引；AI 导师回答时会引用这里的片段。"
+        description="上传 Markdown / 纯文本，或直接丢一个 zip 让智能体整理；整理好的内容按标题切块并建立检索索引。"
         actions={
           <>
             <button type="button" className="zx-btn zx-btn-ghost" onClick={state.reload}>刷新</button>
@@ -97,6 +98,8 @@ export default function AdminKnowledge() {
           hint={settings?.keyConfigured ? `模型 ${settings.embeddingModel || '未填写'}` : '未配置模型，当前仅关键词检索'}
         />
       </div>
+
+      <AdminBundles />
 
       {upload ? (
         <form

@@ -313,3 +313,89 @@ func ttsCheck(ep: ModelEndpoint, voice: String, text: String, speechPath: String
         try { client.close() } catch (_: Exception) {}
     }
 }
+/* ---------- 带工具调用的对话（非流式） ---------- */
+
+class ToolCall {
+    let id: String
+    let name: String
+    let arguments: String
+
+    init(id: String, name: String, arguments: String) {
+        this.id = id
+        this.name = name
+        this.arguments = arguments
+    }
+}
+
+class ChatTurn {
+    let content: String
+    let calls: ArrayList<ToolCall>
+
+    init(content: String, calls: ArrayList<ToolCall>) {
+        this.content = content
+        this.calls = calls
+    }
+}
+
+/**
+ * 一次非流式对话，允许模型返回 tool_calls。
+ * Agent 循环需要完整的工具调用列表，流式反而更难解析，所以这里用非流式。
+ */
+func chatWithTools(ep: ModelEndpoint, messagesJson: String, toolsJson: String): ChatTurn {
+    let payload = JsonWriter()
+    payload.putStr("model", ep.chatModel)
+    payload.putRaw("messages", messagesJson)
+    payload.putRaw("tools", toolsJson)
+    payload.putStr("tool_choice", "auto")
+    payload.putBool("stream", false)
+    let text = httpPostJson(ep, "/chat/completions", payload.toJson(), 3)
+    let root = match (jsonParse(text)) {
+        case Some(value) => value
+        case None => throw Exception("模型返回的不是合法 JSON")
+    }
+    let object = match (root.kind()) {
+        case JsonKind.JsObject => root.asObject()
+        case _ => throw Exception("模型返回的顶层不是对象")
+    }
+    let choices = match (jsonGetArray(object, "choices")) {
+        case Some(list) => list
+        case None => throw Exception("模型返回缺少 choices")
+    }
+    if (choices.size() == 0) { throw Exception("模型返回了空的 choices") }
+    let first = choices[0]
+    let choice = match (first.kind()) {
+        case JsonKind.JsObject => first.asObject()
+        case _ => throw Exception("choices 结构不正确")
+    }
+    let message = match (jsonGetObject(choice, "message")) {
+        case Some(value) => value
+        case None => throw Exception("模型返回缺少 message")
+    }
+    let content = jsonGetString(message, "content") ?? ""
+    let calls = ArrayList<ToolCall>()
+    match (jsonGetArray(message, "tool_calls")) {
+        case Some(list) =>
+            var i: Int64 = 0
+            while (i < list.size()) {
+                let item = list[i]
+                match (item.kind()) {
+                    case JsonKind.JsObject =>
+                        let call = item.asObject()
+                        let id = jsonGetString(call, "id") ?? ""
+                        var name = ""
+                        var arguments = ""
+                        match (jsonGetObject(call, "function")) {
+                            case Some(function) =>
+                                name = jsonGetString(function, "name") ?? ""
+                                arguments = jsonGetString(function, "arguments") ?? ""
+                            case None => ()
+                        }
+                        if (id.size > 0 && name.size > 0) { calls.add(ToolCall(id, name, arguments)) }
+                    case _ => ()
+                }
+                i += 1
+            }
+        case None => ()
+    }
+    ChatTurn(content, calls)
+}

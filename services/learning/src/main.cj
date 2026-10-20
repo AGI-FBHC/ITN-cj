@@ -871,6 +871,86 @@ func emptyLessonContent(): String {
 
 /* ---------- knowledge base JSON ---------- */
 
+/* ---------- 资料包（zip + Agent 整理） ---------- */
+
+func kbUrlDecode(raw: String): String {
+    if (raw.size == 0) { return "" }
+    let bytes = raw.toArray()
+    let out = ArrayList<Byte>()
+    var i: Int64 = 0
+    while (i < bytes.size) {
+        if (Int64(bytes[i]) == 37 && i + 2 < bytes.size) {
+            let high = kbHexDigit(raw[i + 1..i + 2])
+            let low = kbHexDigit(raw[i + 2..i + 3])
+            out.add(UInt8((high << 4) | low))
+            i += 3
+        } else if (Int64(bytes[i]) == 43) {
+            out.add(UInt8(32))
+            i += 1
+        } else {
+            out.add(bytes[i])
+            i += 1
+        }
+    }
+    String.fromUtf8(out.toArray())
+}
+
+func kbBundleSelect(): String {
+    "SELECT b.id,b.name,b.bytes,b.status,b.steps,b.model,b.title,b.error_message," +
+    "COALESCE(DATE_FORMAT(b.created_at,'%Y-%m-%d %H:%i'),'') created_at," +
+    "COALESCE(DATE_FORMAT(b.updated_at,'%Y-%m-%d %H:%i'),'') updated_at," +
+    "(SELECT COUNT(*) FROM kb_bundle_docs d WHERE d.bundle_id=b.id) doc_count " +
+    "FROM kb_bundles b "
+}
+
+func kbBundleJson(row: Row): String {
+    let out = JsonWriter()
+    out.putStr("id", row.text("id"))
+    out.putStr("name", row.text("name"))
+    out.putInt("bytes", row.int("bytes"))
+    out.putStr("status", row.text("status"))
+    out.putInt("steps", row.int("steps"))
+    out.putStr("model", row.text("model"))
+    out.putStr("title", row.text("title"))
+    out.putStr("errorMessage", row.text("error_message"))
+    out.putStr("createdAt", row.text("created_at"))
+    out.putStr("updatedAt", row.text("updated_at"))
+    out.putInt("docCount", row.int("doc_count"))
+    out.toJson()
+}
+
+func kbBundlesBody(cfg: Config): String {
+    let rows = query(cfg, kbBundleSelect() + "ORDER BY b.created_at DESC LIMIT 50")
+    let arr = JsonArrWriter()
+    for (row in rows) { arr.addRaw(kbBundleJson(row)) }
+    let out = JsonWriter()
+    out.putRaw("bundles", arr.toJson())
+    out.toJson()
+}
+
+func kbBundleDetailBody(cfg: Config, bundleId: String): ?String {
+    let rows = query(cfg, kbBundleSelect() + "WHERE b.id=" + sqlQuote(bundleId) + " LIMIT 1")
+    if (rows.size == 0) { return None }
+    let docs = query(cfg,
+        "SELECT order_index,title,char_count,content FROM kb_bundle_docs WHERE bundle_id=" +
+        sqlQuote(bundleId) + " ORDER BY order_index")
+    let arr = JsonArrWriter()
+    for (row in docs) {
+        let item = JsonWriter()
+        item.putInt("order", row.int("order_index") + 1)
+        item.putStr("title", row.text("title"))
+        item.putInt("charCount", row.int("char_count"))
+        item.putStr("content", row.text("content"))
+        arr.addRaw(item.toJson())
+    }
+    let logRows = query(cfg, "SELECT COALESCE(log_text,'') log_text FROM kb_bundles WHERE id=" + sqlQuote(bundleId))
+    let out = JsonWriter()
+    out.putRaw("bundle", kbBundleJson(rows[0]))
+    out.putRaw("docs", arr.toJson())
+    out.putStr("log", if (logRows.size > 0) { logRows[0].text("log_text") } else { "" })
+    out.toJson()
+}
+
 func kbDocumentJson(row: Row): String {
     let out = JsonWriter()
     out.putStr("id", row.text("id"))
@@ -2215,6 +2295,82 @@ main(): Int64 {
                 let out = JsonWriter()
                 out.putRaw("messages", arr.toJson())
                 writeJson(ctx.response, 200, out.toJson())
+        }
+    }
+
+    app.mapPost("api/admin/kb/bundles") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let nameHeader = match (ctx.request.headers.get("X-Bundle-Name")) {
+                    case Some(value) => value
+                    case None => ""
+                }
+                let name = kbUrlDecode(nameHeader)
+                let payload = readBodyBytes(ctx.request)
+                let settings = loadKbSettings(cfg)
+                if (payload.size < 100) {
+                    writeError(ctx.response, 400, "压缩包为空或不是有效的 zip")
+                } else if (payload.size > 50 * 1024 * 1024) {
+                    writeError(ctx.response, 413, "压缩包不要超过 50MB")
+                } else if (!slotEndpoint(cfg, settings.chat).hasChat()) {
+                    writeError(ctx.response, 400, "还没有配置对话模型，无法用智能体整理资料")
+                } else {
+                    let bundleId = uuidFormat(uuidV4())
+                    let safeName = if (name.size == 0) { "资料包.zip" } else if (name.size > 200) { name[0..200] } else { name }
+                    execute(cfg,
+                        "INSERT INTO kb_bundles(id,name,bytes,status,model,created_at) VALUES(" +
+                        sqlQuote(bundleId) + "," + sqlQuote(safeName) + "," + payload.size.toString() +
+                        ",'queued'," + sqlQuote(settings.chat.model) + ",NOW(6))")
+                    try {
+                        kbWriteFileDeep(kbBundleZipPath(cfg, bundleId), payload)
+                    } catch (error: Exception) {
+                        kbSetBundle(cfg, bundleId, "failed", 0, "", "写入工作目录失败：" + error.message, "")
+                        writeError(ctx.response, 500, "写入工作目录失败：" + error.message)
+                        return
+                    }
+                    kbLaunchBundle(cfg, bundleId)
+                    let out = JsonWriter()
+                    out.putStr("id", bundleId)
+                    out.putStr("status", "queued")
+                    writeJson(ctx.response, 200, out.toJson())
+                }
+        }
+    }
+
+    app.mapGet("api/admin/kb/bundles") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) => writeJson(ctx.response, 200, kbBundlesBody(cfg))
+        }
+    }
+
+    app.mapGet("api/admin/kb/bundles/{bundle_id}") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                match (kbBundleDetailBody(cfg, routeText(ctx, "bundle_id"))) {
+                    case Some(body) => writeJson(ctx.response, 200, body)
+                    case None => writeError(ctx.response, 404, "没有找到这个资料包")
+                }
+        }
+    }
+
+    app.mapDelete("api/admin/kb/bundles/{bundle_id}") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let bundleId = routeText(ctx, "bundle_id")
+                let rows = query(cfg, "SELECT id FROM kb_bundles WHERE id=" + sqlQuote(bundleId))
+                if (rows.size == 0) {
+                    writeError(ctx.response, 404, "没有找到这个资料包")
+                } else {
+                    execute(cfg, "DELETE FROM kb_bundles WHERE id=" + sqlQuote(bundleId))
+                    kbRemoveTree(kbBundleWorkDir(cfg, bundleId))
+                    let out = JsonWriter()
+                    out.putBool("deleted", true)
+                    writeJson(ctx.response, 200, out.toJson())
+                }
         }
     }
 

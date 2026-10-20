@@ -341,3 +341,42 @@
 - 因此新增 `kb_settings.tts_path`（默认 `/audio/speech`），管理端「语音合成」标签多一个「合成路径」字段；测试与以后的实际合成都用它拼 URL。
 - `ttsCheck` 的报错现在包含完整 URL，方便确认到底请求了哪个地址。
 - 尚未接入实际朗读：需要确认 MiMo 的语音接口路径与请求体形态后再补。
+
+## 2026-10-20 资料包上传：zip + 智能体整理（只做组织与存储）
+
+### 需求
+- 用户要求支持上传文件夹（只收 zip），把结构混乱的包交给「Lumin 那个智能体内核」整理成规范结构再落库；本期不切片、不建索引、不挂课程。
+- 明确约束：智能体在给定目录有完整读写权限、中途不与用户交互、一气呵成；处理完成后丢弃原始上传与中间产物，只保留最终结果。
+
+### 技术前提（已实测）
+- `stdx.compress.zlib` 可用：用 `DecompressInputStream` 对 raw deflate 实测 56 字节还原 4000 字节，因此 zip 可以纯仓颉解，不需要外部程序。
+- RAR 没有开源实现，放弃；上一版方案已确认只支持 zip。
+- Lumin 是桌面 Agent 运行时（工具循环 + SQLite + 审批 + Pi provider），整套搬进 Web 后端会引入进程链路与状态存储，因此只抽它的内核形态：工具循环 + 沙箱工作区，用管理员端配置的对话模型驱动。
+
+### 数据层
+- `migrations/006_kb_bundles.sql`：`kb_bundles`（包名、字节数、状态 queued/running/ready/failed、步数、模型、标题、错误、运行日志）+ `kb_bundle_docs`（章节顺序、标题、正文、字数）。
+- 磁盘只临时存放：`data/kb_work/<bundleId>.zip` 与 `<bundleId>/{in,out}`，处理结束在 `finally` 里整目录删除。
+
+### 后端
+- `kb_zip.cj`：手写 zip 目录解析（EOCD → 中央目录 → 本地头），支持 store/deflate，拒绝 `..`、绝对路径、`__MACOSX`/.DS_Store，单文件解压上限 64MB、单包 400 个文件。
+- `kb_agent.cj`：Agent 内核。四个工具 `list_files` / `read_file` / `write_file` / `finish`，配合 OpenAI 兼容的 function calling；`KbWorkspace` 做路径沙箱（读只允许 in/ 与 out/，写只允许 out/，拒绝绝对路径与 `..`）；循环上限 60 步，每步写日志，模型报错即终止并记录原因。
+- `kb_bundle.cj`：流水线 = 建工作区 → 解包到 in/ → 跑 Agent → 收集 out/*.md（按文件名排序，去掉 `01-` 这类前缀作为章节标题）→ 写 `kb_bundle_docs` → 清工作区与 zip。整个流程 `spawn` 到后台线程，HTTP 立刻返回。
+- 新接口：`POST api/admin/kb/bundles`（raw zip，`X-Bundle-Name` 头，50MB 上限）、`GET .../bundles`、`GET .../bundles/{id}`、`DELETE .../bundles/{id}`。未配置对话模型时上传直接 400。
+- `http_util.cj` 增加 `readBodyBytes` 读取二进制请求体。
+
+### 前端
+- 知识库页新增「资料包（zip）」区块：上传按钮、状态标签（排队/整理中/已整理/失败）、章节数与步数、查看结果（章节正文 + 可折叠的智能体运行日志）、删除。
+- 有任务在处理时每 2.5 秒轮询一次状态。
+
+### 实际验证
+- 用 Python 造了一个包含中文目录、乱命名文件与假图片的测试 zip（5 个文件）。
+- 用本地脚本化桩模型（`tools/mock-model-server.py` 增加 tools 回放，仅自检用）跑通全链路：7 步完成（list → read → 2 次 write → finish），落库 2 章，工作目录与 zip 均无残留。
+- 浏览器实测：上传 → 状态变为「已整理」→ 展开看到 2 章正文与运行日志，控制台无报错。
+- 未配置对话模型时上传返回 400「还没有配置对话模型，无法用智能体整理资料」。
+- 测试数据与桩服务均已清理，模型配置回到空。
+
+### 未完成与限制
+- 只支持 zip（store/deflate），不支持 zip64、加密包、rar/7z。
+- 整理质量完全取决于对话模型；模型崩了会停在 failed 并保留错误与日志，不会回退到规则排序（用户明确要求全部交给模型）。
+- 上传是 raw body，没有断点续传；单包 50MB、单文件解压 64MB 为硬上限。
+- 整理结果目前只落 `kb_bundle_docs`，还没有接成 kb_documents / 课程 / 索引；下一步再把 bundle 接到「建索引 → 发布课程」。

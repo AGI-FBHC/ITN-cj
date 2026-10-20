@@ -56,6 +56,39 @@ class Handler(BaseHTTPRequestHandler):
             })
             return
         if self.path.endswith("/chat/completions"):
+            # 带 tools 的请求按脚本回放工具调用，用来验证 Agent 循环。
+            if body.get("tools"):
+                tool_msgs = [m for m in body.get("messages", []) if m.get("role") == "tool"]
+                step = len(tool_msgs)
+                plan = [
+                    ("list_files", {"dir": "in"}),
+                    ("read_file", {"path": "in/01-概述.md"}),
+                    ("write_file", {"path": "out/01-整理后的第一章.md", "content": "## 整理后的第一章\n\n合并后的正文内容。"}),
+                    ("write_file", {"path": "out/02-整理后的第二章.md", "content": "## 整理后的第二章\n\n第二部分正文。"}),
+                    ("finish", {"title": "示例资料整理"}),
+                ]
+                if step >= len(plan):
+                    step = len(plan) - 1
+                name, args = plan[step]
+                self._json({
+                    "id": "mock-tool",
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "" if name != "finish" else "整理完成",
+                            "tool_calls": [{
+                                "id": f"call_{step}",
+                                "type": "function",
+                                "function": {"name": name, "arguments": json.dumps(args, ensure_ascii=False)},
+                            }],
+                        },
+                        "finish_reason": "tool_calls",
+                    }],
+                })
+                return
+        if self.path.endswith("/chat/completions"):
+            pass
             if not body.get("stream"):
                 self._json({
                     "id": "mock",

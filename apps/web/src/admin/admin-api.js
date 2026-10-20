@@ -93,4 +93,22 @@ export const adminApi = {
   publishKbDocument: (id, body = {}) => request(`/kb/documents/${encodeURIComponent(id)}/publish`, { method: 'POST', body }),
   unpublishKbDocument: (id) => request(`/kb/documents/${encodeURIComponent(id)}/unpublish`, { method: 'POST', body: {} }),
   testKbModel: (target = 'embedding', extra = {}) => request('/kb/test', { method: 'POST', body: { target, ...extra } }),
+  kbBundles: () => request('/kb/bundles'),
+  kbBundle: (id) => request(`/kb/bundles/${encodeURIComponent(id)}`),
+  deleteKbBundle: (id) => request(`/kb/bundles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  uploadKbBundle: async (file) => {
+    const response = await fetch('/api/admin/kb/bundles', {
+      method: 'POST',
+      headers: {
+        'X-Bundle-Name': encodeURIComponent(file.name),
+        ...(adminToken() ? { Authorization: `Bearer ${adminToken()}` } : {}),
+      },
+      body: file,
+    });
+    const text = await response.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch { throw new AdminError('服务返回格式异常', response.status); }
+    if (!response.ok) throw new AdminError(data.message || `上传失败（${response.status}）`, response.status);
+    return data;
+  },
 };
