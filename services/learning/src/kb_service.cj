@@ -303,3 +303,188 @@ func kbIngest(cfg: Config, documentId: String, title: String, content: String, s
     kbBumpVersion()
     KbIngestResult(pieces.size, embedded, note)
 }
+
+/* ---------- 由知识库文档生成课程 ---------- */
+
+class KbPublishResult {
+    let courseId: String
+    let lessonCount: Int64
+    let created: Bool
+
+    init(courseId: String, lessonCount: Int64, created: Bool) {
+        this.courseId = courseId
+        this.lessonCount = lessonCount
+        this.created = created
+    }
+}
+
+func kbSplitPath(path: String): Array<String> {
+    let out = ArrayList<String>()
+    var rest = path
+    while (true) {
+        match (rest.indexOf(" > ")) {
+            case Some(position) =>
+                out.add(rest[0..position])
+                rest = rest[position + 3..rest.size]
+            case None =>
+                out.add(rest)
+                break
+        }
+    }
+    out.toArray()
+}
+
+func kbCourseIdFor(documentId: String): String {
+    var hex = ""
+    var i: Int64 = 0
+    for (value in documentId.toArray()) {
+        if (i >= 8) { break }
+        let code = Int64(value)
+        if ((code >= 48 && code <= 57) || (code >= 97 && code <= 102)) {
+            hex += documentId[i..i + 1]
+            i += 1
+        } else if (code >= 65 && code <= 70) {
+            hex += documentId[i..i + 1].toAsciiLower()
+            i += 1
+        }
+    }
+    "kb-" + hex
+}
+
+/**
+ * 把文档的切片按顶层章节聚成课时，一次生成/刷新课程。
+ * 重新发布会清掉这门课原有的课时与学习记录——内容换了，旧进度没有意义。
+ */
+func kbPublishCourse(cfg: Config, documentId: String, name: String, level: String,
+                     duration: Int64, description: String): ?KbPublishResult {
+    let docs = query(cfg, "SELECT title,course_id FROM kb_documents WHERE id=" + sqlQuote(documentId))
+    if (docs.size == 0) { return None }
+    let title = docs[0].text("title")
+    let existingCourse = docs[0].text("course_id")
+    let chunkRows = query(cfg,
+        "SELECT heading_path,text FROM kb_chunks WHERE document_id=" + sqlQuote(documentId) +
+        " ORDER BY chunk_index")
+    if (chunkRows.size == 0) { return None }
+
+    let groupKeys = ArrayList<String>()
+    let groupSections = ArrayList<ArrayList<String>>()
+    let groupHeadings = ArrayList<ArrayList<String>>()
+    for (row in chunkRows) {
+        let path = row.text("heading_path")
+        let parts = kbSplitPath(path)
+        var key = title
+        if (parts.size >= 2) { key = parts[1] }
+        let heading = if (parts.size >= 1) { parts[parts.size - 1] } else { title }
+        var index: Int64 = -1
+        var i: Int64 = 0
+        while (i < groupKeys.size) {
+            if (groupKeys[i] == key) {
+                index = i
+                break
+            }
+            i += 1
+        }
+        if (index < 0) {
+            groupKeys.add(key)
+            groupSections.add(ArrayList<String>())
+            groupHeadings.add(ArrayList<String>())
+            index = groupKeys.size - 1
+        }
+        groupSections[index].add(row.text("text"))
+        groupHeadings[index].add(heading)
+    }
+
+    let courseId = if (existingCourse.size > 0) { existingCourse } else { kbCourseIdFor(documentId) }
+    let created = existingCourse.size == 0
+    let statements = ArrayList<String>()
+    statements.add("DELETE FROM quiz_attempts WHERE course_id=" + sqlQuote(courseId))
+    statements.add("DELETE FROM lesson_progress WHERE course_id=" + sqlQuote(courseId))
+    statements.add("DELETE FROM lessons WHERE course_id=" + sqlQuote(courseId))
+
+    let chapters = JsonArrWriter()
+    var lessonIndex: Int64 = 0
+    while (lessonIndex < groupKeys.size) {
+        let chapterTitle = groupKeys[lessonIndex]
+        let chapter = JsonWriter()
+        chapter.putStr("title", chapterTitle)
+        chapters.addRaw(chapter.toJson())
+        lessonIndex += 1
+    }
+    let safeLevel = if (level.size == 0) { "入门" } else { level }
+    let safeDuration = if (duration > 0) { duration } else { groupKeys.size * 5 }
+    statements.add(
+        "INSERT INTO courses(id,name,icon,description,level,duration,chapters_json,source_label,status,sort_order) VALUES(" +
+        sqlQuote(courseId) + "," + sqlQuote(if (name.size == 0) { title } else { name }) + ",''," +
+        sqlQuote(description) + "," + sqlQuote(safeLevel) + "," + safeDuration.toString() + "," +
+        sqlQuote(chapters.toJson()) + "," + sqlQuote("知识库《" + title + "》") + ",'published',100) " +
+        "ON DUPLICATE KEY UPDATE name=VALUES(name),description=VALUES(description),level=VALUES(level)," +
+        "duration=VALUES(duration),chapters_json=VALUES(chapters_json),source_label=VALUES(source_label)," +
+        "status='published',updated_at=NOW(6)")
+
+    lessonIndex = 0
+    while (lessonIndex < groupKeys.size) {
+        let sections = JsonArrWriter()
+        let texts = groupSections[lessonIndex]
+        let headings = groupHeadings[lessonIndex]
+        var s: Int64 = 0
+        while (s < texts.size) {
+            let section = JsonWriter()
+            section.putStr("id", "section-" + s.toString())
+            section.putStr("eyebrow", "课程讲义")
+            section.putStr("heading", headings[s])
+            section.putStr("text", texts[s])
+            sections.addRaw(section.toJson())
+            s += 1
+        }
+        let content = JsonWriter()
+        content.putRaw("sections", sections.toJson())
+        content.putRaw("slides", "[]")
+        content.putStr("sourceLabel", "知识库《" + title + "》")
+        let sources = JsonArrWriter()
+        let source = JsonWriter()
+        source.putStr("id", documentId)
+        source.putStr("title", title)
+        source.putStr("kind", "kb-document")
+        sources.addRaw(source.toJson())
+        statements.add(
+            "INSERT INTO lessons(course_id,lesson_index,title,content_json,quiz_json,sources_json) VALUES(" +
+            sqlQuote(courseId) + "," + lessonIndex.toString() + "," + sqlQuote(groupKeys[lessonIndex]) + "," +
+            sqlQuote(content.toJson()) + ",'[]'," + sqlQuote(sources.toJson()) + ")")
+        lessonIndex += 1
+    }
+    statements.add("UPDATE kb_documents SET course_id=" + sqlQuote(courseId) + " WHERE id=" + sqlQuote(documentId))
+    transaction(cfg, statements.toArray())
+    kbBumpVersion()
+    KbPublishResult(courseId, groupKeys.size, created)
+}
+
+func kbSetCourseStatus(cfg: Config, documentId: String, status: String): Bool {
+    let docs = query(cfg, "SELECT course_id FROM kb_documents WHERE id=" + sqlQuote(documentId))
+    if (docs.size == 0 || docs[0].text("course_id").size == 0) { return false }
+    execute(cfg, "UPDATE courses SET status=" + sqlQuote(status) + ",updated_at=NOW(6) WHERE id=" +
+        sqlQuote(docs[0].text("course_id")))
+    true
+}
+
+func kbCourseInUse(cfg: Config, courseId: String): Bool {
+    let progress = query(cfg, "SELECT COUNT(*) n FROM lesson_progress WHERE course_id=" + sqlQuote(courseId))
+    let attempts = query(cfg, "SELECT COUNT(*) n FROM quiz_attempts WHERE course_id=" + sqlQuote(courseId))
+    let used = (if (progress.size > 0) { progress[0].int("n") } else { 0 }) +
+        (if (attempts.size > 0) { attempts[0].int("n") } else { 0 })
+    used > 0
+}
+
+/** 删除文档时顺带处理它生成的课程：没人学过就删掉，有人学过就只下架。 */
+func kbDropDocumentCourse(cfg: Config, documentId: String): String {
+    let docs = query(cfg, "SELECT course_id FROM kb_documents WHERE id=" + sqlQuote(documentId))
+    if (docs.size == 0) { return "" }
+    let courseId = docs[0].text("course_id")
+    if (courseId.size == 0) { return "" }
+    if (kbCourseInUse(cfg, courseId)) {
+        execute(cfg, "UPDATE courses SET status='draft',updated_at=NOW(6) WHERE id=" + sqlQuote(courseId))
+        return "课程已有学习记录，已改为下架"
+    }
+    execute(cfg, "DELETE FROM lessons WHERE course_id=" + sqlQuote(courseId))
+    execute(cfg, "DELETE FROM courses WHERE id=" + sqlQuote(courseId))
+    "课程已一并删除"
+}

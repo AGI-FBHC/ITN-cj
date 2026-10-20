@@ -3,9 +3,6 @@ import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from
 import { adminName, adminToken, clearAdminSession } from './admin-api.js';
 import AdminLogin from './AdminLogin.jsx';
 import AdminOverview from './AdminOverview.jsx';
-import AdminCourses from './AdminCourses.jsx';
-import AdminCourseDetail from './AdminCourseDetail.jsx';
-import AdminLessonEditor from './AdminLessonEditor.jsx';
 import AdminUsers from './AdminUsers.jsx';
 import AdminKnowledge from './AdminKnowledge.jsx';
 import AdminSettings from './AdminSettings.jsx';
@@ -45,8 +42,9 @@ export default function AdminApp() {
         </Link>
         <nav className="zx-admin-nav">
           <NavLink to="/admin" end className={navClass}>概览</NavLink>
-          <NavLink to="/admin/courses" className={navClass}>课程</NavLink>
-          <NavLink to="/admin/knowledge" className={navClass}>知识库</NavLink>`n          <NavLink to="/admin/users" className={navClass}>用户</NavLink>`n          <NavLink to="/admin/settings" className={navClass}>设置</NavLink>
+          <NavLink to="/admin/knowledge" className={navClass}>知识库</NavLink>
+          <NavLink to="/admin/users" className={navClass}>用户</NavLink>
+          <NavLink to="/admin/settings" className={navClass}>设置</NavLink>
         </nav>
         <div className="zx-admin-sidebar-footer">
           <strong>{adminName()}</strong>
@@ -70,10 +68,10 @@ export default function AdminApp() {
             path="/admin"
             element={<AdminOverview onOpenCourse={(courseId) => navigate(courseId ? `/admin/courses/${courseId}` : '/admin/courses')} />}
           />
-          <Route path="/admin/courses" element={<AdminCourses />} />
-          <Route path="/admin/courses/:courseId" element={<AdminCourseDetail />} />
-          <Route path="/admin/courses/:courseId/lessons/:index" element={<AdminLessonEditor />} />
-          <Route path="/admin/knowledge" element={<AdminKnowledge />} />`n          <Route path="/admin/users" element={<AdminUsers />} />`n          <Route path="/admin/settings" element={<AdminSettings />} />
+          <Route path="/admin/knowledge" element={<AdminKnowledge />} />
+          <Route path="/admin/users" element={<AdminUsers />} />
+          <Route path="/admin/settings" element={<AdminSettings />} />
+          <Route path="/admin/courses/*" element={<Navigate to="/admin/knowledge" replace />} />
           <Route path="*" element={<Navigate to="/admin" replace />} />
         </Routes>
       </main>

@@ -11,6 +11,7 @@ const account = process.env.ZHIXUN_ADMIN_ACCOUNT || 'admin';
 const password = process.env.ZHIXUN_ADMIN_PASSWORD || '';
 // 共享开发库里可能已经有别的文档，用随机标记保证排序断言只对本轮文档生效。
 const MARK = randomUUID().slice(0, 8);
+const lessonPath = (courseId, index) => `/courses/${encodeURIComponent(courseId)}/lessons/${index}`;
 
 async function raw(path, { token, method = 'GET', body } = {}) {
   const response = await fetch(`${api}${path}`, {
@@ -189,12 +190,61 @@ test('knowledge base ingests, chunks and retrieves documents', { timeout: 180000
     const empty = await raw('/tutor/chat', { token: visitor.token, method: 'POST', body: { message: '   ' } });
     assert.equal(empty.status, 400);
   });
-  await t.test('deleting a document removes it from retrieval', async () => {
-    const removed = await ok(`/admin/kb/documents/${created[1]}`, { token, method: 'DELETE' });
+  await t.test('a document becomes a purchasable course once published', async () => {
+    const docId = created[0];
+    const visitor = await ok('/session', { method: 'POST', body: {} });
+    const beforePublish = await ok('/courses', { token: visitor.token });
+    assert.ok(!beforePublish.courses.some((course) => course.id.startsWith('kb-')), 'nothing published yet');
+
+    const published = await ok(`/admin/kb/documents/${docId}/publish`, { token, method: 'POST', body: {} });
+    assert.ok(published.lessonCount >= 2, `expected one lesson per chapter, got ${published.lessonCount}`);
+    assert.equal(published.created, true);
+    const courseId = published.courseId;
+    assert.ok(courseId.startsWith('kb-'));
+
+    const catalog = await ok('/courses', { token: visitor.token });
+    const course = catalog.courses.find((item) => item.id === courseId);
+    assert.ok(course, 'published course must show up for learners');
+    assert.equal(course.chapters.length, published.lessonCount);
+    assert.ok(course.chapters.some((chapter) => chapter.title.includes('栈与队列')), JSON.stringify(course.chapters));
+
+    const lesson = await ok(lessonPath(courseId, 0), { token: visitor.token });
+    assert.ok(lesson.title.length > 0);
+    assert.ok(Array.isArray(lesson.content.sections) && lesson.content.sections.length > 0);
+    assert.ok(lesson.content.sections[0].text.length > 0);
+
+    const detail = await ok(`/admin/kb/documents/${docId}`, { token });
+    assert.equal(detail.document.courseId, courseId);
+    assert.equal(detail.document.courseStatus, 'published');
+
+    const again = await ok(`/admin/kb/documents/${docId}/publish`, { token, method: 'POST', body: {} });
+    assert.equal(again.created, false, 'republishing reuses the same course');
+    assert.equal(again.courseId, courseId);
+  });
+
+  await t.test('unpublishing hides the generated course from learners', async () => {
+    const docId = created[0];
+    const detail = await ok(`/admin/kb/documents/${docId}`, { token });
+    await ok(`/admin/kb/documents/${docId}/unpublish`, { token, method: 'POST', body: {} });
+    const visitor = await ok('/session', { method: 'POST', body: {} });
+    const catalog = await ok('/courses', { token: visitor.token });
+    assert.ok(!catalog.courses.some((course) => course.id === detail.document.courseId));
+    const after = await ok(`/admin/kb/documents/${docId}`, { token });
+    assert.equal(after.document.courseStatus, 'draft');
+    assert.equal((await raw(`/admin/kb/documents/${docId}/unpublish`, { token, method: 'POST', body: {} })).status, 200);
+  });
+
+  await t.test('deleting a document removes it and its course from retrieval', async () => {
+    const docId = created[1];
+    const published = await ok(`/admin/kb/documents/${docId}/publish`, { token, method: 'POST', body: {} });
+    const removed = await ok(`/admin/kb/documents/${docId}`, { token, method: 'DELETE' });
     assert.equal(removed.deleted, true);
+    assert.ok(removed.courseNote.includes('删除'), removed.courseNote);
+    const courses = await ok('/admin/courses', { token });
+    assert.ok(!courses.courses.some((course) => course.id === published.courseId), 'unused course should be removed with the document');
     const result = await ok('/admin/kb/search', { token, method: 'POST', body: { query: `Bellman-Ford 负权边 ${MARK}`, topK: 4 } });
     assert.ok(!result.hits.some((hit) => hit.documentTitle === '图算法笔记'), 'deleted document must not be retrieved');
-    assert.equal((await raw(`/admin/kb/documents/${created[1]}`, { token })).status, 404);
+    assert.equal((await raw(`/admin/kb/documents/${docId}`, { token })).status, 404);
     created.pop();
   });
 

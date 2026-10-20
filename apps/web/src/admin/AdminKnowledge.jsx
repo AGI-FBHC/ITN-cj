@@ -17,6 +17,7 @@ export default function AdminKnowledge() {
   const state = useLoad(() => adminApi.kb(), []);
   const [upload, setUpload] = React.useState(null);
   const [detail, setDetail] = React.useState(null);
+  const [courseForm, setCourseForm] = React.useState(null);
   const [query, setQuery] = React.useState('');
   const [results, setResults] = React.useState(null);
   const [error, setError] = React.useState('');
@@ -221,13 +222,17 @@ export default function AdminKnowledge() {
 
       <div className="zx-card">
         <h2 className="zx-card-title">文档</h2>
+        <div className="zx-card-hint">
+          上传文档 → 建索引 → 发布课程 就是完整的上架流程。发布后学习者能在课程列表里看到它，
+          每个顶层章节变成一节课；重新发布会重置这门课的学习记录。
+        </div>
         <table className="zx-table">
           <thead>
             <tr>
               <th>文档</th>
               <th>切片</th>
-              <th>已向量化</th>
-              <th>状态</th>
+              <th>索引</th>
+              <th>课程</th>
               <th>更新时间</th>
               <th aria-label="操作" />
             </tr>
@@ -235,6 +240,7 @@ export default function AdminKnowledge() {
           <tbody>
             {documents.map((doc) => {
               const status = statusOf(doc.status);
+              const published = doc.courseStatus === 'published';
               return (
                 <tr key={doc.id}>
                   <td>
@@ -245,8 +251,12 @@ export default function AdminKnowledge() {
                     </div>
                   </td>
                   <td className="zx-num">{doc.chunkCount}</td>
-                  <td className="zx-num">{doc.embeddedCount}</td>
                   <td><span className={`zx-pill zx-pill-${status.kind}`}>{status.label}</span></td>
+                  <td>
+                    {doc.courseId
+                      ? <span className={`zx-pill ${published ? 'zx-pill-live' : 'zx-pill-draft'}`}>{published ? '已上架' : '已下架'}</span>
+                      : <span className="zx-cell-sub">未发布</span>}
+                  </td>
                   <td className="zx-num">{doc.updatedAt || '—'}</td>
                   <td className="zx-actions">
                     <button
@@ -257,11 +267,11 @@ export default function AdminKnowledge() {
                         setDetail(detail?.document?.id === doc.id ? null : body);
                       }, '')}
                     >
-                      {detail?.document?.id === doc.id ? '收起切片' : '查看切片'}
+                      {detail?.document?.id === doc.id ? '收起切片' : '看切片'}
                     </button>
                     <button
                       type="button"
-                      className="zx-btn zx-btn-sm"
+                      className="zx-btn zx-btn-sm zx-btn-ghost"
                       disabled={busy === `reindex-${doc.id}`}
                       onClick={() => run(`reindex-${doc.id}`, async () => {
                         const result = await adminApi.reindexKbDocument(doc.id);
@@ -270,16 +280,62 @@ export default function AdminKnowledge() {
                     >
                       重建索引
                     </button>
+                    {published ? (
+                      <button
+                        type="button"
+                        className="zx-btn zx-btn-sm"
+                        disabled={busy === `unpublish-${doc.id}`}
+                        onClick={() => run(`unpublish-${doc.id}`, async () => {
+                          await adminApi.unpublishKbDocument(doc.id);
+                          setMessage(`《${doc.title}》已下架，学习者看不到这门课。`);
+                        }, '')}
+                      >
+                        下架
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="zx-btn zx-btn-sm zx-btn-primary"
+                        disabled={busy === `publish-${doc.id}` || doc.chunkCount === 0}
+                        onClick={() => run(`publish-${doc.id}`, async () => {
+                          const result = await adminApi.publishKbDocument(doc.id, {});
+                          setMessage(`《${doc.title}》已发布为课程，共 ${result.lessonCount} 节课。`);
+                        }, '')}
+                      >
+                        {doc.courseId ? '重新发布' : '发布为课程'}
+                      </button>
+                    )}
+                    {doc.courseId ? (
+                      <button
+                        type="button"
+                        className="zx-btn zx-btn-sm"
+                        onClick={() => run(`course-${doc.id}`, async () => {
+                          const body = await adminApi.course(doc.courseId);
+                          setCourseForm({
+                            docId: doc.id,
+                            id: body.course.id,
+                            name: body.course.name,
+                            level: body.course.level,
+                            duration: body.course.duration,
+                            description: body.course.description,
+                          });
+                        }, '')}
+                      >
+                        课程设置
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="zx-btn zx-btn-sm zx-btn-danger"
                       disabled={busy === `delete-${doc.id}`}
                       onClick={() => {
-                        if (!window.confirm(`删除《${doc.title}》及其全部切片？检索里会立刻消失。`)) return;
+                        if (!window.confirm(`删除《${doc.title}》及其全部切片？由它生成的课程也会一并下架。`)) return;
                         run(`delete-${doc.id}`, async () => {
-                          await adminApi.deleteKbDocument(doc.id);
+                          const result = await adminApi.deleteKbDocument(doc.id);
                           if (detail?.document?.id === doc.id) setDetail(null);
-                        }, '已删除文档。');
+                          setCourseForm(null);
+                          setMessage(result.courseNote ? `已删除文档。${result.courseNote}。` : '已删除文档。');
+                        }, '');
                       }}
                     >
                       删除
@@ -293,6 +349,55 @@ export default function AdminKnowledge() {
             ) : null}
           </tbody>
         </table>
+
+        {courseForm ? (
+          <form
+            className="zx-lesson-block"
+            style={{ marginTop: 16 }}
+            onSubmit={(event) => {
+              event.preventDefault();
+              run('save-course', async () => {
+                await adminApi.updateCourse(courseForm.id, {
+                  name: courseForm.name,
+                  level: courseForm.level,
+                  duration: Number(courseForm.duration) || 0,
+                  description: courseForm.description,
+                  sourceLabel: '知识库',
+                });
+                setCourseForm(null);
+                setMessage('课程信息已更新。');
+              }, '');
+            }}
+          >
+            <div className="zx-lesson-block-head">
+              <span>课程设置 · {courseForm.id}</span>
+              <button type="button" className="zx-btn zx-btn-sm zx-btn-ghost" onClick={() => setCourseForm(null)}>收起</button>
+            </div>
+            <div className="zx-form">
+              <div className="zx-field">
+                <label htmlFor="kb-course-name">课程名称</label>
+                <input id="kb-course-name" value={courseForm.name} onChange={(event) => setCourseForm({ ...courseForm, name: event.target.value })} required />
+              </div>
+              <div className="zx-field">
+                <label htmlFor="kb-course-level">难度</label>
+                <input id="kb-course-level" value={courseForm.level} onChange={(event) => setCourseForm({ ...courseForm, level: event.target.value })} />
+              </div>
+              <div className="zx-field">
+                <label htmlFor="kb-course-duration">建议时长（分钟）</label>
+                <input id="kb-course-duration" type="number" min="0" value={courseForm.duration} onChange={(event) => setCourseForm({ ...courseForm, duration: event.target.value })} />
+              </div>
+              <div className="zx-field zx-field-full">
+                <label htmlFor="kb-course-description">课程简介</label>
+                <textarea id="kb-course-description" value={courseForm.description} onChange={(event) => setCourseForm({ ...courseForm, description: event.target.value })} />
+              </div>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <button type="submit" className="zx-btn zx-btn-primary" disabled={busy === 'save-course'}>
+                {busy === 'save-course' ? '保存中…' : '保存课程信息'}
+              </button>
+            </div>
+          </form>
+        ) : null}
 
         {detail ? (
           <div style={{ marginTop: 18 }}>

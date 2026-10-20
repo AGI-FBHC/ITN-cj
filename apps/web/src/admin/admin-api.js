@@ -90,5 +90,7 @@ export const adminApi = {
   deleteKbDocument: (id) => request(`/kb/documents/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   kbSearch: (query, topK) => request('/kb/search', { method: 'POST', body: { query, topK } }),
   saveKbSettings: (settings) => request('/kb/settings', { method: 'PUT', body: settings }),
+  publishKbDocument: (id, body = {}) => request(`/kb/documents/${encodeURIComponent(id)}/publish`, { method: 'POST', body }),
+  unpublishKbDocument: (id) => request(`/kb/documents/${encodeURIComponent(id)}/unpublish`, { method: 'POST', body: {} }),
   testKbModel: () => request('/kb/test', { method: 'POST', body: {} }),
 };

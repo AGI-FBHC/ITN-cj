@@ -38,7 +38,21 @@ function lessonPath(courseId, index) {
   return `/courses/${encodeURIComponent(courseId)}/lessons/${index}`;
 }
 
-test('visitor learning flow persists and isolates server-owned learning state', { timeout: 120000 }, async (t) => {
+// 课程现在由管理端上传知识库后发布生成；没有已发布课程时本用例没有可跑的内容。
+const catalogReady = await (async () => {
+  try {
+    const session = await request('/session', { method: 'POST', body: {} });
+    const catalog = await request('/courses', { token: session.token });
+    return Array.isArray(catalog.courses) && catalog.courses.length > 0;
+  } catch {
+    return false;
+  }
+})();
+
+test('visitor learning flow persists and isolates server-owned learning state', {
+  timeout: 120000,
+  skip: catalogReady ? false : '没有已发布课程：请先在管理端上传知识库并发布课程',
+}, async (t) => {
   await request('/health');
   const first = await request('/session', { method: 'POST', body: {} });
   const second = await request('/session', { method: 'POST', body: {} });

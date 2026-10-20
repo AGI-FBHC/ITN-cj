@@ -885,13 +885,17 @@ func kbDocumentJson(row: Row): String {
     out.putStr("embeddingModel", row.text("embedding_model"))
     out.putStr("errorMessage", row.text("error_message"))
     out.putStr("updatedAt", row.text("updated_at"))
+    out.putStr("courseId", row.text("course_id"))
+    out.putStr("courseStatus", row.text("course_status"))
     out.toJson()
 }
 
 func kbDocumentSelect(): String {
-    "SELECT id,title,source_name,source_type,byte_size,char_count,status,chunk_count,embedded_count," +
-    "embedding_model,error_message,COALESCE(DATE_FORMAT(updated_at,'%Y-%m-%d %H:%i'),'') updated_at " +
-    "FROM kb_documents "
+    "SELECT d.id,d.title,d.source_name,d.source_type,d.byte_size,d.char_count,d.status,d.chunk_count," +
+    "d.embedded_count,d.embedding_model,d.error_message,d.course_id," +
+    "COALESCE(DATE_FORMAT(d.updated_at,'%Y-%m-%d %H:%i'),'') updated_at," +
+    "COALESCE((SELECT c.status FROM courses c WHERE c.id=d.course_id),'') course_status " +
+    "FROM kb_documents d "
 }
 
 func kbSettingsJson(settings: KbSettings): String {
@@ -910,7 +914,7 @@ func kbSettingsJson(settings: KbSettings): String {
 
 func kbOverviewBody(cfg: Config): String {
     let settings = loadKbSettings(cfg)
-    let rows = query(cfg, kbDocumentSelect() + "ORDER BY created_at DESC LIMIT 200")
+    let rows = query(cfg, kbDocumentSelect() + "ORDER BY d.created_at DESC LIMIT 200")
     let docs = JsonArrWriter()
     for (row in rows) { docs.addRaw(kbDocumentJson(row)) }
     let totals = query(cfg,
@@ -927,7 +931,7 @@ func kbOverviewBody(cfg: Config): String {
 }
 
 func kbDocumentDetailBody(cfg: Config, docId: String): ?String {
-    let rows = query(cfg, kbDocumentSelect() + "WHERE id=" + sqlQuote(docId) + " LIMIT 1")
+    let rows = query(cfg, kbDocumentSelect() + "WHERE d.id=" + sqlQuote(docId) + " LIMIT 1")
     if (rows.size == 0) { return None }
     let chunks = query(cfg,
         "SELECT c.chunk_index,c.heading_path,c.text,c.char_count," +
@@ -972,7 +976,7 @@ func kbSearchBody(cfg: Config, settings: KbSettings, queryText: String, topK: In
 }
 
 func kbIngestResponse(cfg: Config, docId: String, result: KbIngestResult): String {
-    let rows = query(cfg, kbDocumentSelect() + "WHERE id=" + sqlQuote(docId) + " LIMIT 1")
+    let rows = query(cfg, kbDocumentSelect() + "WHERE d.id=" + sqlQuote(docId) + " LIMIT 1")
     let out = JsonWriter()
     if (rows.size > 0) {
         out.putRaw("document", kbDocumentJson(rows[0]))
@@ -1847,6 +1851,51 @@ main(): Int64 {
         }
     }
 
+    app.mapPost("api/admin/kb/documents/{document_id}/publish") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let docId = routeText(ctx, "document_id")
+                let body = match (parseObject(ctx.request)) {
+                    case Some(value) => value
+                    case None => JsonObject()
+                }
+                let name = (jsonGetString(body, "name") ?? "").trimAscii()
+                let level = (jsonGetString(body, "level") ?? "").trimAscii()
+                let description = jsonGetString(body, "description") ?? ""
+                let duration = jsonGetInt(body, "duration") ?? 0
+                match (kbPublishCourse(cfg, docId, name, level, duration, description)) {
+                    case None => writeError(ctx.response, 400, "这个文档还没有切片，请先建立索引再发布")
+                    case Some(result) =>
+                        let out = JsonWriter()
+                        out.putStr("courseId", result.courseId)
+                        out.putInt("lessonCount", result.lessonCount)
+                        out.putBool("created", result.created)
+                        match (kbDocumentDetailBody(cfg, docId)) {
+                            case Some(detail) => out.putRaw("document", detail)
+                            case None => out.putRaw("document", "null")
+                        }
+                        writeJson(ctx.response, 200, out.toJson())
+                }
+        }
+    }
+
+    app.mapPost("api/admin/kb/documents/{document_id}/unpublish") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let docId = routeText(ctx, "document_id")
+                if (kbSetCourseStatus(cfg, docId, "draft")) {
+                    let out = JsonWriter()
+                    out.putBool("ok", true)
+                    out.putStr("courseStatus", "draft")
+                    writeJson(ctx.response, 200, out.toJson())
+                } else {
+                    writeError(ctx.response, 404, "这个文档还没有发布过课程")
+                }
+        }
+    }
+
     app.mapDelete("api/admin/kb/documents/{document_id}") { ctx =>
         match (adminUserId(ctx, cfg)) {
             case None => ()
@@ -1856,10 +1905,12 @@ main(): Int64 {
                 if (rows.size == 0) {
                     writeError(ctx.response, 404, "没有找到这个文档")
                 } else {
+                    let courseNote = kbDropDocumentCourse(cfg, docId)
                     execute(cfg, "DELETE FROM kb_documents WHERE id=" + sqlQuote(docId))
                     kbBumpVersion()
                     let out = JsonWriter()
                     out.putBool("deleted", true)
+                    out.putStr("courseNote", courseNote)
                     writeJson(ctx.response, 200, out.toJson())
                 }
         }
