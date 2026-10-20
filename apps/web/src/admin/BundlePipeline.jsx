@@ -61,7 +61,7 @@ export default function BundlePipeline({ bundle, compact = false, busy = '', onR
       <div className="zx-bundle-progress-head">
         <span className={`zx-pill ${status === 'ready' ? 'zx-pill-live' : 'zx-pill-draft'}`}>{label}</span>
         {logo ? <span className="zx-cell-sub">{logoLabel}</span> : null}
-        {bundle.courseStatus === 'published' ? <span className="zx-pill zx-pill-live">课程已发布</span> : null}
+        {bundle.courseStatus === 'published' ? <span className="zx-pill zx-pill-live">课程已上架</span> : null}
       </div>
       {pipeline ? (
         <div className="zx-bundle-counts" aria-live="polite">

@@ -75,8 +75,8 @@ export default function AdminCoursewarePreview() {
           <span className={`zx-pill ${status.kind === 'live' ? 'zx-pill-live' : 'zx-pill-draft'}`}>{status.label}</span>
           {item.published ? (
             <button type="button" className="zx-btn zx-btn-sm zx-btn-ghost" disabled={busy === 'status'}
-              onClick={() => act('status', () => adminApi.cwUnpublish(item.id), '已下架。')}>
-              下架
+              onClick={() => act('status', () => adminApi.cwUnpublish(item.id), '已取消发布。')}>
+              取消发布
             </button>
           ) : (
             <button type="button" className="zx-btn zx-btn-sm zx-btn-primary" disabled={busy === 'status' || item.status !== 'ready'}

@@ -56,7 +56,7 @@ export default function AdminBundles({ onNeedModel }) {
         </label>
       </h2>
       <div className="zx-card-hint">
-        上传包含文档和图片的 zip（最大 256MB），保留原文和图片，自动生成切片、摘要、关键词与课程图标。课件在「课件管理」里生成与发布。
+        上传包含文档和图片的 zip（最大 256MB），保留原文和图片，自动生成切片、摘要、关键词与课程图标。课件在「课件管理」里生成与上架。
       </div>
 
       {error ? <Notice kind="error">{error}</Notice> : null}
