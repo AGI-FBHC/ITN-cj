@@ -66,6 +66,19 @@
 
 AI 导师尚未接入；当前 AI 入口会明确显示服务未接入。
 
+## 测试
+
+接口测试直接打本机的仓颉服务，三个测试文件共用同一个隔离开发库，必须串行执行：
+
+```powershell
+$env:ZHIXUN_TEST_API = 'http://127.0.0.1:8312/api'
+$env:ZHIXUN_ADMIN_PASSWORD = '<管理员密码>'
+node --test --test-concurrency=1 tests/*.test.mjs
+```
+
+并行执行（默认行为）会互相干扰：管理端用例增删课时时，学习端用例正在比较
+`stats.totalLessons` 的前后值。
+
 ## 目录
 
 - `apps/web/`：可从构建产物恢复的开发前端。
