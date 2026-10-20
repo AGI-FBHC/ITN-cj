@@ -1,0 +1,22 @@
+[Unit]
+Description=Lumin desktop release download
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lumin-release
+Group=lumin-release
+WorkingDirectory=/opt/lumin-release
+ExecStart=/usr/local/bin/node /opt/lumin-release/serve-release.cjs /opt/lumin-release/releases 6025
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/opt/lumin-release
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

@@ -5043,3 +5043,11 @@ read_chunk 读得到原文并带回库标识与正文。
 - Word COM实际打开并导出内部预览，Poppler 90dpi渲染29页；逐页打开检查，随后修正表格与附录分页并复查16-18及27-29页，其余页内容/布局未变。最终无文字溢出、表格裁切或标题落单；不向用户交PDF。没有使用Python。术语“本轮所需学情”指当前对话轮次，属技术正文，不是编辑记录，人工核对后保留。
 - 交付 D:/Desktop/仓颉杯/创新原型赛道/V1.1 项目说明.docx，SHA256=4F07533D74210DB36F91A58C24B45F46FA72E1A59CD7CFD0C5CBAC444ECF36D4。原V1.0不覆盖；docs/submission/V1.1 项目说明.docx同步存本地Git以便回滚。
 - 下载页当前公网GET实际200且为带Lumin logo和真实预览的新版；本轮尚未修改页面。之前遗留的serve-release.cjs、release-site、release-page-check.cjs、service未提交，后续应校验后单独提交；两份既有未跟踪调研文档继续排除。
+
+## 2026-10-20 13:30 · 文档已先交付与公网下载页复核收口
+- 时间更正：上一段标题13:35为记录时误写，V1.1交付及a91f1f0提交实际已在13:28前完成；本段使用当前Asia/Shanghai时间。用户已在聊天收到可直接打开的V1.1 DOCX链接。
+- 直接访问113.249.102.41:6025，公网HTML 200且Cache-Control:no-store。已用SSH核对远端实际运行/opt/lumin-release、systemd active，服务器与本地serve-release.cjs、release-site/index.html SHA256逐项相同。本轮无须重复上传相同内容，也没有使用隧道或本地转发。
+- tools/release-page-check.cjs 18/18，直接打开公网；1440/768/390宽度均无横向溢出，滚动内容全部显示，全部9张图加载，4个下载入口均指0.8.28；鼠标/键盘切换预览、FAQ展开、浏览器错误检查均通过。完整截图tmp/release-page-check/已目视复查。将原脚本依赖另一个项目绝对路径的Playwright改为正常require，运行时NODE_PATH指向受管工作区依赖。
+- 设计静态lint 0 FAIL/0 WARN；真实浏览器inspect三个宽度0 FAIL/1 WARN。该WARN为没有视频，页面使用当前产品真实截图，无现成适合的产品视频，不为清警告添加无关素材；截图显示logo、主视图、功能说明与实际下载入口完整。输出tmp/release-design-final/，首屏三档截图已目视检查。
+- 公网ZIP HEAD=200，231932690 bytes；Range 0-1023=206，Content-Range准确，实际响应1024bytes。远端ZIP SHA256=8a712e7816d73de4b67f61e83139985f8706cfd85defe387282d6564a0f557c3，与文档一致。本轮没有再次全量下载221MB，不能冒充重新做过整包传输验证。
+- 将前会话已部署但未提交的下载页模板、5张原有logo/截图资产、serve-release.cjs、systemd定义与浏览器验收脚本同步本地Git；不改桌面业务功能、不重打0.8.28、不改Web平台服务与真实用户数据。两份既有未跟踪调研文档及生成的.taste-skill保持原状，不纳入提交。
