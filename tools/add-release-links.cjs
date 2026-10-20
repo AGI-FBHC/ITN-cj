@@ -17,7 +17,8 @@ if (!source || !output || path.resolve(source) === path.resolve(output)) {
 
 const repository = 'https://github.com/AGI-FBHC/ITN-cj';
 const desktopBranch = repository + '/tree/desktop';
-const download = 'http://172.22.64.189:6025/Lumin-0.8.28.zip';
+const download = process.env.LUMIN_RELEASE_URL ||
+  'http://113.249.102.41:6025/Lumin-0.8.28.zip';
 const sha = bytes => crypto.createHash('sha256').update(bytes).digest('hex').toUpperCase();
 const xmlEscape = value => String(value)
   .replace(/&/g, '&amp;')
@@ -93,7 +94,7 @@ function makeParagraph(baseParagraph, runs) {
   const downloadParagraph = makeParagraph(base,
     run('运行包下载：', normalProperties) +
     hyperlinkRun(download, downloadId, linkProperties) +
-    run('（231,932,690 字节；当前为局域网地址，访问设备需与下载主机处于同一网络）。SHA256：', normalProperties));
+    run('（231,932,690 字节；公网地址可直接访问）。SHA256：', normalProperties));
   documentXml = documentXml.replace(base, repoParagraph + downloadParagraph);
 
   const relationshipXml = [
