@@ -23,38 +23,17 @@ import {
   useLesson,
 } from "./learning-api.jsx";
 import LoginPage from "./LoginPage.jsx";
+import { orgLogoUrl, orgShortName } from "./org-brand.js";
 import Markdown from "./admin/Markdown.jsx";
-function ProductLogo({
-  className: n = "",
-  animated: r = !1,
-  color: u = "#111318",
-}) {
-  return jsxRuntime.jsxs("svg", {
+function ProductLogo({ className: n = "", animated: r = !1, color: u = "#111318" }) {
+  const src = orgLogoUrl();
+  return jsxRuntime.jsx("img", {
     "code-path": "src\\components\\ProductLogo.tsx:12:5",
-    viewBox: "0 0 120 120",
-    className: n,
-    fill: "none",
+    src: src || "/brand/logo-light.png",
+    alt: "",
     "aria-hidden": !0,
-    children: [
-      jsxRuntime.jsx("path", {
-        "code-path": "src\\components\\ProductLogo.tsx:13:7",
-        className: r ? "logo-piece-a" : void 0,
-        d: "M18 35 38 15h27v18L48 50v20H18z",
-        fill: u,
-      }),
-      jsxRuntime.jsx("path", {
-        "code-path": "src\\components\\ProductLogo.tsx:18:7",
-        className: r ? "logo-piece-b" : void 0,
-        d: "M55 50 72 33V15h30v35H82L65 67H55z",
-        fill: u,
-      }),
-      jsxRuntime.jsx("path", {
-        "code-path": "src\\components\\ProductLogo.tsx:23:7",
-        className: r ? "logo-piece-c" : void 0,
-        d: "M38 77h17l17-17h30v25l-20 20H55V87H38z",
-        fill: u,
-      }),
-    ],
+    className: n,
+    style: { objectFit: "contain" },
   });
 }
 
@@ -80,7 +59,7 @@ function Navbar({ onGetStarted: n }) {
             jsxRuntime.jsx("span", {
               "code-path": "src\\components\\Navbar.tsx:9:11",
               className: "text-xl font-extrabold tracking-wide text-[#111318]",
-              children: "智训云枢",
+              children: orgShortName(),
             }),
           ],
         }),
@@ -874,7 +853,7 @@ function Footer() {
             "code-path": "src\\sections\\Footer.tsx:14:9",
             className:
               "mt-10 text-4xl font-extrabold tracking-[0.2em] md:text-5xl",
-            children: "智训云枢",
+            children: orgShortName(),
           }),
           jsxRuntime.jsx("p", {
             "code-path": "src\\sections\\Footer.tsx:15:9",
@@ -2336,7 +2315,7 @@ function AppNavigation({
               "code-path": "src\\components\\AppNavigation.tsx:44:11",
               className:
                 "hidden text-xl font-black tracking-wide text-[#111318] sm:inline xl:text-2xl",
-              children: "智训云枢",
+              children: orgShortName(),
             }),
           ],
         }),
@@ -10129,7 +10108,7 @@ function ProfileEditor({ profile: n, onBack: r, onSave: u, onNavigate: i }) {
                       jsxRuntime.jsx("p", {
                         "code-path": "src\\pages\\ProfileEditor.tsx:107:15",
                         className: "mt-1 text-sm font-bold text-[#858995]",
-                        children: "智训云枢学习者",
+                        children: orgShortName() + "学习者",
                       }),
                       jsxRuntime.jsxs("div", {
                         "code-path": "src\\pages\\ProfileEditor.tsx:109:15",

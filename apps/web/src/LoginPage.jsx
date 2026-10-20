@@ -1,4 +1,5 @@
 import React from "react";
+import { orgLogoUrl, orgShortName } from './org-brand.js';
 import {
   authenticate,
   loginWithEmailCode,
@@ -117,8 +118,13 @@ export default function LoginPage({ onBack, onAuthenticated }) {
         <div className="zhixun-login-orbit zhixun-login-orbit-a" />
         <div className="zhixun-login-orbit zhixun-login-orbit-b" />
         <button type="button" className="zhixun-login-logo" onClick={onBack} aria-label="返回首页">
-          <FlameLogo size={38} />
-          <span>智训云枢</span>
+          <img
+            src={orgLogoUrl() || '/brand/logo-transparent.png'}
+            alt=""
+            aria-hidden="true"
+            style={{ width: 38, height: 38, objectFit: 'contain' }}
+          />
+          <span>{orgShortName()}</span>
         </button>
         <div className="zhixun-login-editorial">
           <p className="zhixun-login-kicker">ZHIXUN · INTELLIGENT LEARNING</p>
@@ -147,7 +153,15 @@ export default function LoginPage({ onBack, onAuthenticated }) {
       </section>
 
       <main className="zhixun-login-main">
-        <div className="zhixun-login-mobile-logo"><FlameLogo size={30} />智训云枢</div>
+        <div className="zhixun-login-mobile-logo">
+          <img
+            src={orgLogoUrl() || '/brand/logo-transparent.png'}
+            alt=""
+            aria-hidden="true"
+            style={{ width: 30, height: 30, objectFit: 'contain' }}
+          />
+          {orgShortName()}
+        </div>
         <div className="zhixun-login-card">
           <div className="zhixun-login-card-head">
             <div>

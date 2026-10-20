@@ -141,6 +141,24 @@ export const adminApi = {
   cwPublish: (id) => request(`/kb/courseware/${encodeURIComponent(id)}/publish`, { method: 'POST', body: {} }),
   cwUnpublish: (id) => request(`/kb/courseware/${encodeURIComponent(id)}/unpublish`, { method: 'POST', body: {} }),
   cwDelete: (id) => request(`/kb/courseware/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  orgInfo: () => request('/org'),
+  updateOrg: (body) => request('/org', { method: 'PUT', body }),
+  uploadOrgLogo: async (file) => {
+    const response = await fetch('/api/admin/org/logo', {
+      method: 'POST',
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+        ...(adminToken() ? { Authorization: `Bearer ${adminToken()}` } : {}),
+      },
+      body: file,
+    });
+    const text = await response.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch { throw new AdminError('服务返回格式异常', response.status); }
+    if (!response.ok) throw new AdminError(data.message || `上传失败（${response.status}）`, response.status);
+    return data;
+  },
+  deleteOrgLogo: () => request('/org/logo', { method: 'DELETE' }),
   uploadKbBundle: async (file) => {
     const response = await fetch('/api/admin/kb/bundles', {
       method: 'POST',

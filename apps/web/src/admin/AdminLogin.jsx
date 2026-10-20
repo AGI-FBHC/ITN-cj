@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { adminApi } from './admin-api.js';
+import BrandLogo from './BrandLogo.jsx';
 
 export default function AdminLogin({ onDone }) {
   const [account, setAccount] = React.useState('admin');
@@ -25,7 +26,7 @@ export default function AdminLogin({ onDone }) {
   return (
     <div className="zx-admin-login">
       <section className="zx-admin-login-card">
-        <div className="zx-admin-mark" aria-hidden="true">智</div>
+        <BrandLogo size={40} />
         <h1>管理端</h1>
         <p>维护课程、课时与测验内容，保存后立即对学习者生效。</p>
         <form className="zx-admin-login-form" onSubmit={submit}>

@@ -615,3 +615,13 @@
 - 前端：`AdminCourseware.jsx` 从 localStorage 假数据改为真实接口；生成弹窗保留四类资源选择；课件库按状态展示（生成中/待发布/已发布/失败），预览里按类型渲染讲义、实操指南（步骤+代码+预期结果+验收+故障排查）、题库（选项高亮正确答案+解析）、幻灯片（要点+讲稿），顶部展示五角色流程标签。
 - 迁移中踩到的两个真问题：`where` 是仓颉关键字（变量改名）；索引缓存加载原本走共享连接，几千条向量会占住连接把登录堵死，已改为 `queryIndependent` 独立连接。
 - 真实验收：用数据库已保存的 `deepseek-flash`（无 mock）对「前言」章节生成实操指南，61 秒完成，产出 6 个步骤、首步 instruction 204 字，流程为规划→检索→撰写→质检全部通过（未触发仲裁）；浏览器打开课件库能看到 2 条记录与流程标签，预览渲染正常，控制台无报错。
+
+## 2026-10-21 系统 Logo 换新 + 机构设置（名称/简称/Logo）迁移
+
+- 系统 Logo：把 `D:\Downloads` 的 `浅色背景.png`、`暗色背景.png`、`透明背景.png` 放入 `apps/web/public/brand/`（分别命名 logo-light / logo-dark / logo-transparent，另生成 64px 的 favicon.png），统一缩到 256px、38KB 左右。旧的紫焰 SVG（ProductLogo 原实现、登录页插画）没有删除，仍在代码/页面里保留。
+- 使用位置：管理端侧栏与登录卡（`BrandLogo`，机构上传 Logo 后优先显示机构的）、`index.html` favicon、学员端 `ProductLogo`（改为图片，机构 Logo 优先，其次系统浅色版）、学员端登录页左上角与移动端品牌位（透明版）。
+- 机构设置：`migrations/010_org_settings.sql` 新建 `org_settings`（机构全称、简称、logo_mime），默认「智训云枢」；Logo 文件存 `data/org/logo.bin`，MIME 落库。
+- 接口：`GET/PUT api/admin/org`（读、改名称与简称）、`POST api/admin/org/logo`（原始图片体，按魔数校验 PNG/JPEG/WebP/GIF/SVG，≤4MB）、`DELETE api/admin/org/logo`；公开的 `GET api/org` 与 `GET api/org/logo` 供学员端取品牌（logoUrl 带内容哈希做缓存失效）。
+- 管理端新增「机构设置」页面（侧栏第 5 项）：机构全称、机构简称、Logo 上传/预览/移除，保存后有成功提示。
+- 学员端体现：新增 `org-brand.js`，启动时拉 `/api/org` 写入 localStorage 并广播事件；`RecoveredApp` 的导航、页脚、AppNavigation 三处品牌名改为读机构简称（缺省仍是「智训云枢」），ProductLogo 改为图片，ProfileEditor 的「智训云枢学习者」也改为机构简称 + 学习者。
+- 实测：管理端侧栏/登录卡显示新 Logo；「机构设置」上传 `透明背景.png` 后立即预览并可移除；学员端登录页左上角与移动端显示新 Logo 与机构简称；游客进入建档页右上角也是新 Logo；控制台无报错。

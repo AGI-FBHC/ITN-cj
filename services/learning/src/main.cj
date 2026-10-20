@@ -4,6 +4,7 @@ import std.collection.*
 import std.convert.*
 import std.core.*
 import std.env.*
+import std.fs.*
 import std.sync.*
 import stdx.encoding.json.*
 import soulsoft_web_http.*
@@ -1000,6 +1001,80 @@ func kbBundleDetailBody(cfg: Config, bundleId: String, includeContent: Bool): ?S
     out.putRaw("warnings", rows[0].text("warnings_json"))
     out.toJson()
 }
+
+/* ---------- 机构配置 ---------- */
+
+func orgLogoDir(): String {
+    let dir = "data/org"
+    if (!exists(Path(dir))) { Directory.create(Path(dir), recursive: true) }
+    dir
+}
+
+func orgLogoPath(): String {
+    orgLogoDir() + "/logo.bin"
+}
+
+func orgRow(cfg: Config): Row {
+    let rows = query(cfg, "SELECT name,short_name,logo_mime FROM org_settings WHERE id=1")
+    if (rows.size > 0) { return rows[0] }
+    query(cfg, "SELECT '智训云枢' name,'智训云枢' short_name,'' logo_mime")[0]
+}
+
+func orgLogoUrl(cfg: Config): String {
+    let row = orgRow(cfg)
+    let mime = row.text("logo_mime")
+    if (mime.size == 0) { return "" }
+    "/api/org/logo?v=" + kbHashText(mime + row.text("name") + row.text("short_name"))[0..8]
+}
+
+func orgBrandJson(cfg: Config, withAdminFields: Bool): String {
+    let row = orgRow(cfg)
+    let logo = orgLogoUrl(cfg)
+    let out = JsonWriter()
+    out.putStr("name", row.text("name"))
+    out.putStr("shortName", row.text("short_name"))
+    out.putStr("logoUrl", logo)
+    out.putBool("hasLogo", logo.size > 0)
+    out.toJson()
+}
+
+func kbHashText(text: String): String {
+    bytesToHex(sha256Bytes(text.toArray()))
+}
+
+func orgLogoMime(data: Array<Byte>): String {
+    if (data.size > 8) {
+        if (Int64(data[0]) == 0x89 && Int64(data[1]) == 0x50) { return "image/png" }
+        if (Int64(data[0]) == 0xFF && Int64(data[1]) == 0xD8) { return "image/jpeg" }
+        if (Int64(data[0]) == 0x52 && Int64(data[1]) == 0x49 && Int64(data[8]) == 0x57) { return "image/webp" }
+        if (Int64(data[0]) == 0x47 && Int64(data[1]) == 0x49) { return "image/gif" }
+    }
+    let head = String.fromUtf8(data.slice(0, if (data.size > 200) { 200 } else { data.size })).trimAscii()
+    if (head.startsWith("<svg") || head.startsWith("<?xml")) { return "image/svg+xml" }
+    ""
+}
+
+func orgWriteLogo(response: HttpResponse, cfg: Config): Unit {
+    let row = orgRow(cfg)
+    let mime = row.text("logo_mime")
+    if (mime.size == 0) {
+        writeError(response, 404, "还没有设置机构 Logo")
+        return
+    }
+    let path = orgLogoPath()
+    if (!exists(Path(path))) {
+        writeError(response, 404, "机构 Logo 文件已丢失，请重新上传")
+        return
+    }
+    let data = File.readFrom(Path(path))
+    response.statusCode = 200
+    response.contentType = mime
+    response.contentLength = data.size
+    response.headers.add("X-Content-Type-Options", "nosniff")
+    response.headers.add("Cache-Control", "public, max-age=600")
+    response.write(data)
+}
+
 
 /* ---------- 课件（生成 / 列表 / 发布） ---------- */
 
@@ -2809,6 +2884,77 @@ main(): Int64 {
                     writeJson(ctx.response, 200, out.toJson())
                 }
         }
+    }
+
+    app.mapGet("api/admin/org") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) => writeJson(ctx.response, 200, orgBrandJson(cfg, true))
+        }
+    }
+
+    app.mapPut("api/admin/org") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                match (parseObject(ctx.request)) {
+                    case None => writeError(ctx.response, 400, "机构信息格式不正确")
+                    case Some(body) =>
+                        let name = (jsonGetString(body, "name") ?? "").trimAscii()
+                        let shortName = (jsonGetString(body, "shortName") ?? "").trimAscii()
+                        if (name.size == 0 || name.size > 128) {
+                            writeError(ctx.response, 400, "机构全称需要 1–128 个字符")
+                        } else if (shortName.size == 0 || shortName.size > 64) {
+                            writeError(ctx.response, 400, "机构简称需要 1–64 个字符")
+                        } else {
+                            execute(cfg, "UPDATE org_settings SET name=" + sqlQuote(name) +
+                                ",short_name=" + sqlQuote(shortName) + ",updated_at=NOW(6) WHERE id=1")
+                            writeJson(ctx.response, 200, orgBrandJson(cfg, true))
+                        }
+                }
+        }
+    }
+
+    app.mapPost("api/admin/org/logo") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let data = readBodyBytes(ctx.request)
+                if (data.size < 32) {
+                    writeError(ctx.response, 400, "图片内容为空")
+                } else if (data.size > 4 * 1024 * 1024) {
+                    writeError(ctx.response, 413, "Logo 图片不要超过 4MB")
+                } else {
+                    let mime = orgLogoMime(data)
+                    if (mime.size == 0) {
+                        writeError(ctx.response, 415, "只支持 PNG / JPEG / WebP / GIF / SVG")
+                    } else {
+                        orgLogoDir()
+                        kbWriteFileDeep(orgLogoPath(), data)
+                        execute(cfg, "UPDATE org_settings SET logo_mime=" + sqlQuote(mime) +
+                            ",updated_at=NOW(6) WHERE id=1")
+                        writeJson(ctx.response, 200, orgBrandJson(cfg, true))
+                    }
+                }
+        }
+    }
+
+    app.mapDelete("api/admin/org/logo") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                execute(cfg, "UPDATE org_settings SET logo_mime='',updated_at=NOW(6) WHERE id=1")
+                try { if (exists(Path(orgLogoPath()))) { remove(Path(orgLogoPath())) } } catch (_: Exception) {}
+                writeJson(ctx.response, 200, orgBrandJson(cfg, true))
+        }
+    }
+
+    app.mapGet("api/org") { ctx =>
+        writeJson(ctx.response, 200, orgBrandJson(cfg, false))
+    }
+
+    app.mapGet("api/org/logo") { ctx =>
+        orgWriteLogo(ctx.response, cfg)
     }
 
     app.run(cfg.listen)
