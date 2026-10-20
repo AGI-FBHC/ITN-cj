@@ -22,6 +22,7 @@ import {
   useLearning,
   useLesson,
 } from "./learning-api.jsx";
+import LoginPage from "./LoginPage.jsx";
 function ProductLogo({
   className: n = "",
   animated: r = !1,
@@ -10870,7 +10871,7 @@ function Dashboard({ profile: n }) {
                                     className: "h-4 w-4",
                                   }),
                                   " 角色：",
-                                  n.roleLabel || "大学生",
+                                  n.roleLabel || n.education || "大学生",
                                 ],
                               }),
                               jsxRuntime.jsxs("p", {
@@ -10884,7 +10885,7 @@ function Dashboard({ profile: n }) {
                                     className: "h-4 w-4",
                                   }),
                                   " 目标：",
-                                  n.goalLabel || "技能提升",
+                                  n.goalLabel || n.goal || "技能提升",
                                 ],
                               }),
                             ],
@@ -11426,36 +11427,46 @@ function Dashboard({ profile: n }) {
 }
 
 function Home() {
-  const [n, r] = React.useState(!1),
-    [u, i] = React.useState(null);
-  const learning = useLearning();
-  React.useEffect(() => {
-    if (learning.data?.profile) i(learning.data.profile);
-  }, [learning.data?.profile]);
+  const [n, r] = React.useState("hero"),
+    [u, i] = React.useState(null),
+    [displayName, setDisplayName] = React.useState("");
   return u
     ? jsxRuntime.jsx(Dashboard, {
         "code-path": "src\\pages\\Home.tsx:13:12",
         profile: u,
       })
-    : jsxRuntime.jsxs("div", {
+    : n === "login"
+      ? jsxRuntime.jsx(LoginPage, {
+          onBack: () => r("hero"),
+          onAuthenticated: (profile, name) => {
+            setDisplayName(name || "");
+            if (profile) {
+              i({ ...profile, name: profile.name || name || "学习者" });
+            } else {
+              r("onboarding");
+            }
+          },
+        })
+      : jsxRuntime.jsxs("div", {
         "code-path": "src\\pages\\Home.tsx:17:5",
         className: "min-h-screen bg-white",
         children: [
           jsxRuntime.jsx(Navbar, {
             "code-path": "src\\pages\\Home.tsx:18:7",
-            onGetStarted: () => r(!0),
+            onGetStarted: () => r("login"),
           }),
           jsxRuntime.jsx(Hero, {
             "code-path": "src\\pages\\Home.tsx:19:7",
-            onGetStarted: () => r(!0),
+            onGetStarted: () => r("login"),
           }),
           jsxRuntime.jsx(Footer, { "code-path": "src\\pages\\Home.tsx:20:7" }),
-          n &&
+          n === "onboarding" &&
             jsxRuntime.jsx(OnboardingWizard, {
               "code-path": "src\\pages\\Home.tsx:22:9",
-              onClose: () => r(!1),
+              onClose: () => r("login"),
               onFinish: (d) => {
-                (r(!1), i(d), saveProfile(d).catch(() => undefined));
+                const profile = { ...d, name: d.name || displayName || "学习者" };
+                (r("hero"), i(profile), saveProfile(profile).catch(() => undefined));
               },
             }),
         ],

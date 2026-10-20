@@ -398,6 +398,23 @@ func questionById(raw: JsonArray, id: String): ?JsonObject {
     None
 }
 
+func passwordDigest(salt: String, password: String): String {
+    bytesToHex(sha256Bytes((salt + ":" + password).toArray()))
+}
+
+func issueSession(cfg: Config, userId: String, displayName: String, profile: String): String {
+    let token = uuidFormat(uuidV4())
+    execute(cfg,
+        "INSERT INTO user_sessions(token_hash,user_id,expires_at) VALUES(" +
+        sqlQuote(tokenHash(token)) + "," + sqlQuote(userId) + ",DATE_ADD(NOW(6),INTERVAL 30 DAY))")
+    let out = JsonWriter()
+    out.putStr("token", token)
+    out.putStr("userId", userId)
+    out.putStr("displayName", displayName)
+    out.putRaw("profile", profile)
+    out.toJson()
+}
+
 func choiceOf(question: JsonObject): Int64 {
     jsonGetInt(question, "correct") ?? 0
 }
@@ -496,6 +513,70 @@ main(): Int64 {
         out.putStr("userId", userId)
         out.putRaw("profile", "null")
         writeJson(ctx.response, 200, out.toJson())
+    }
+
+    app.mapPost("api/auth/guest") { ctx =>
+        let userId = uuidFormat(uuidV4())
+        transaction(cfg, [
+            "INSERT INTO users(id,display_name,created_at) VALUES(" +
+                sqlQuote(userId) + ", '游客', NOW(6))"
+        ])
+        writeJson(ctx.response, 200, issueSession(cfg, userId, "游客", "null"))
+    }
+
+    app.mapPost("api/auth/register") { ctx =>
+        match (parseObject(ctx.request)) {
+            case None => writeError(ctx.response, 400, "注册信息格式不正确")
+            case Some(body) =>
+                let account = (jsonGetString(body, "account") ?? "").trimAscii()
+                let password = jsonGetString(body, "password") ?? ""
+                let displayName = (jsonGetString(body, "displayName") ?? "").trimAscii()
+                if (account.size < 3 || account.size > 200) {
+                    writeError(ctx.response, 400, "学习账号需要 3—200 个字符")
+                } else if (password.size < 8) {
+                    writeError(ctx.response, 400, "密码至少需要 8 位")
+                } else {
+                    let loginKey = account.toAsciiLower()
+                    let existing = query(cfg, "SELECT id FROM users WHERE login_key=" + sqlQuote(loginKey))
+                    if (existing.size > 0) {
+                        writeError(ctx.response, 409, "该账号已存在，请直接登录")
+                    } else {
+                        let userId = uuidFormat(uuidV4())
+                        let salt = bytesToHex(uuidV4())
+                        let name = if (displayName.size == 0) { account } else { displayName }
+                        execute(cfg,
+                            "INSERT INTO users(id,login_key,password_salt,password_hash,display_name,created_at) VALUES(" +
+                            sqlQuote(userId) + "," + sqlQuote(loginKey) + "," + sqlQuote(salt) + "," +
+                            sqlQuote(passwordDigest(salt, password)) + "," + sqlQuote(name) + ",NOW(6))")
+                        writeJson(ctx.response, 200,
+                            issueSession(cfg, userId, name, "null"))
+                    }
+                }
+        }
+    }
+
+    app.mapPost("api/auth/login") { ctx =>
+        match (parseObject(ctx.request)) {
+            case None => writeError(ctx.response, 400, "登录信息格式不正确")
+            case Some(body) =>
+                let account = (jsonGetString(body, "account") ?? "").trimAscii()
+                let password = jsonGetString(body, "password") ?? ""
+                let found = query(cfg,
+                    "SELECT id,password_salt,password_hash,display_name,profile_json FROM users WHERE login_key=" +
+                    sqlQuote(account.toAsciiLower()) + " LIMIT 1")
+                if (found.size == 0 || found[0].isNull("password_hash")) {
+                    writeError(ctx.response, 401, "账号或密码不正确")
+                } else {
+                    let expected = passwordDigest(found[0].text("password_salt"), password)
+                    if (expected != found[0].text("password_hash")) {
+                        writeError(ctx.response, 401, "账号或密码不正确")
+                    } else {
+                        let profile = if (found[0].isNull("profile_json")) { "null" } else { found[0].text("profile_json") }
+                        writeJson(ctx.response, 200,
+                            issueSession(cfg, found[0].text("id"), found[0].text("display_name"), profile))
+                    }
+                }
+        }
     }
 
     app.mapGet("api/bootstrap") { ctx =>
