@@ -129,6 +129,11 @@ export default function AdminSettings() {
       <PageHead
         title="设置"
         description="向量、对话、语音三类模型各自独立配置地址、模型和密钥，保存后立即生效。"
+        actions={
+          <button type="submit" form="settings-form" className="zx-btn zx-btn-primary" disabled={busy === 'save'}>
+            {busy === 'save' ? '保存中…' : '保存全部配置'}
+          </button>
+        }
       />
 
       {error ? <Notice kind="error">{error}</Notice> : null}
@@ -151,7 +156,7 @@ export default function AdminSettings() {
         })}
       </div>
 
-      <form onSubmit={save}>
+      <form id="settings-form" onSubmit={save}>
         <div className="zx-card">
           <h2 className="zx-card-title">
             {slotMeta.title}
@@ -254,11 +259,7 @@ export default function AdminSettings() {
           </div>
         ) : null}
 
-        <div style={{ marginTop: 16 }}>
-          <button type="submit" className="zx-btn zx-btn-primary" disabled={busy === 'save'}>
-            {busy === 'save' ? '保存中…' : '保存全部配置'}
-          </button>
-        </div>
+
       </form>
     </div>
   );
