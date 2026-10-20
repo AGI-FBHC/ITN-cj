@@ -1,9 +1,10 @@
 .zhixun-login {
   min-height: 100dvh;
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(420px, 1fr);
-  background: #f7f5ee;
-  color: #3d4a3a;
+  grid-template-columns: minmax(0, 1.04fr) minmax(420px, 0.96fr);
+  overflow: hidden;
+  background: #f7f6fb;
+  color: #1b1a23;
   font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
 }
 .zhixun-login-brand {
@@ -13,106 +14,175 @@
   flex-direction: column;
   justify-content: space-between;
   overflow: hidden;
-  border-right: 1px solid #e5e3d7;
+  border-right: 1px solid rgba(80, 51, 130, .08);
   background:
-    radial-gradient(circle at 82% 12%, rgba(231, 180, 90, .19), transparent 25%),
-    radial-gradient(circle at 16% 82%, rgba(78, 120, 96, .16), transparent 29%),
-    #fbfaf5;
-  padding: 42px 58px;
+    radial-gradient(circle at 10% 12%, rgba(167, 139, 250, .18), transparent 26%),
+    radial-gradient(circle at 80% 78%, rgba(109, 40, 217, .11), transparent 30%),
+    linear-gradient(145deg, #fbfaff 0%, #f4f0fe 100%);
+  padding: 34px 56px;
 }
-.zhixun-login-brand::after {
+.zhixun-login-brand::before {
   position: absolute;
-  right: -35px;
-  bottom: 58px;
-  width: 270px;
-  height: 270px;
+  right: -140px;
+  top: -150px;
+  width: 430px;
+  height: 430px;
   border-radius: 50%;
-  background: radial-gradient(circle at 38% 35%, #d8e8dc, #92b9a0 58%, rgba(78,120,96,.08) 70%);
-  opacity: .55;
+  background: radial-gradient(circle, rgba(167, 139, 250, .13), transparent 68%);
   content: "";
 }
 .zhixun-login-logo {
   position: relative;
-  z-index: 2;
+  z-index: 3;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  align-self: flex-start;
   border: 0;
   background: transparent;
-  color: #3d4a3a;
-  font-family: "Noto Serif SC", SimSun, serif;
-  font-size: 20px;
-  font-weight: 700;
+  color: #292632;
+  font-size: 18px;
+  font-weight: 800;
   cursor: pointer;
-}
-.zhixun-login-logo-mark,
-.zhixun-login-mobile-logo span {
-  display: inline-flex;
-  width: 36px;
-  height: 36px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 11px 11px 11px 4px;
-  background: #4e7860;
-  color: #fff;
-  font-family: "Noto Serif SC", SimSun, serif;
 }
 .zhixun-login-editorial {
   position: relative;
   z-index: 2;
-  max-width: 470px;
+  max-width: 540px;
 }
 .zhixun-login-kicker {
-  margin: 0 0 16px;
-  color: #8a967f;
-  font: 600 10px/1.4 "Courier New", monospace;
-  letter-spacing: .18em;
+  margin: 0 0 14px;
+  color: #7c6f90;
+  font: 650 10px/1.4 "Courier New", monospace;
+  letter-spacing: .17em;
 }
 .zhixun-login-editorial h1 {
   margin: 0;
-  color: #3d4a3a;
-  font-family: "Noto Serif SC", SimSun, serif;
-  font-size: clamp(34px, 3vw, 46px);
-  line-height: 1.22;
-  letter-spacing: .01em;
+  color: #292632;
+  font-size: clamp(38px, 4vw, 54px);
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -.035em;
+}
+.zhixun-login-editorial h1 span {
+  color: #6c0ef2;
 }
 .zhixun-login-editorial > p:not(.zhixun-login-kicker) {
-  max-width: 430px;
-  margin: 19px 0 0;
-  color: #66725e;
+  max-width: 460px;
+  margin: 17px 0 0;
+  color: #777283;
   font-size: 14px;
   line-height: 1.9;
 }
+.zhixun-login-figure {
+  position: relative;
+  width: min(100%, 500px);
+  height: 315px;
+  margin: 10px auto 0;
+}
+.zhixun-login-orbit-shape {
+  position: absolute;
+  left: 50%;
+  top: 49%;
+  width: 430px;
+  height: 205px;
+  translate: -50% -50%;
+  rotate: -8deg;
+  border: 1.5px dashed #d9d0f8;
+  border-radius: 50%;
+}
+.zhixun-login-orbit-shape::before,
+.zhixun-login-orbit-shape::after {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #a78bfa;
+  content: "";
+}
+.zhixun-login-orbit-shape::before { right: -4px; top: 82px; }
+.zhixun-login-orbit-shape::after { left: 24px; top: 26px; background: #c4b5fd; }
+.zhixun-login-flame {
+  position: absolute;
+  left: 50%;
+  top: 37%;
+  translate: -50% -50%;
+  filter: drop-shadow(0 18px 28px rgba(109, 40, 217, .24));
+}
+.zhixun-login-stage {
+  position: absolute;
+  left: 50%;
+  top: 56%;
+  width: 225px;
+  height: 60px;
+  translate: -50% 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at 50% 20%, #c4b5fd, #6d28d9 62%, transparent 64%);
+  filter: blur(.2px);
+  opacity: .82;
+}
+.zhixun-login-stage::after {
+  position: absolute;
+  left: 50%;
+  top: 15px;
+  width: 292px;
+  height: 42px;
+  translate: -50% 0;
+  border-radius: 50%;
+  background: #ede9fe;
+  content: "";
+  z-index: -1;
+}
+.zhixun-login-chip {
+  position: absolute;
+  display: inline-flex;
+  min-width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(108, 14, 242, .08);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, .86);
+  box-shadow: 0 8px 20px rgba(71, 39, 116, .13);
+  color: #6c0ef2;
+  font: 800 13px/1 "Courier New", monospace;
+  backdrop-filter: blur(8px);
+}
+.zhixun-login-chip.chip-a { left: 4%; top: 20%; }
+.zhixun-login-chip.chip-b { right: 5%; top: 25%; padding: 0 12px; }
+.zhixun-login-chip.chip-c { left: 10%; bottom: 13%; }
+.zhixun-login-chip.chip-d { right: 8%; bottom: 18%; }
 .zhixun-login-steps {
   display: flex;
   align-items: center;
   gap: 7px;
-  margin-top: 30px;
+  margin-top: 2px;
 }
 .zhixun-login-steps span {
-  border: 1px solid #e5e3d7;
+  border: 1px solid #e4dff0;
   border-radius: 9px;
-  background: #fff;
+  background: rgba(255, 255, 255, .72);
   padding: 7px 10px;
-  color: #5a6553;
+  color: #746e7e;
   font-size: 12px;
   font-weight: 600;
 }
 .zhixun-login-steps span.active {
-  border-color: rgba(78, 120, 96, .35);
-  background: #e9f2ec;
-  color: #4e7860;
+  border-color: rgba(108, 14, 242, .3);
+  background: #f1ebff;
+  color: #6c0ef2;
 }
 .zhixun-login-steps i {
   width: 18px;
   height: 1px;
-  background: #ddd8c9;
+  background: #dcd5eb;
 }
 .zhixun-login-editorial small,
 .zhixun-login-quote {
   display: block;
-  margin-top: 12px;
-  color: #899180;
+  margin-top: 11px;
+  color: #8c859b;
   font-size: 11px;
 }
 .zhixun-login-quote {
@@ -120,7 +190,7 @@
   z-index: 2;
   margin: 0;
   font-family: "Courier New", monospace;
-  letter-spacing: .04em;
+  letter-spacing: .03em;
 }
 .zhixun-login-main {
   position: relative;
@@ -128,93 +198,93 @@
   min-height: 100dvh;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at 90% 8%, rgba(78,120,96,.08), transparent 24%), #f7f5ee;
-  padding: 35px;
+  background: radial-gradient(circle at 92% 8%, rgba(167, 139, 250, .12), transparent 26%), #f7f6fb;
+  padding: 36px;
 }
 .zhixun-login-card {
   width: min(100%, 410px);
-  border: 1px solid #e5e3d7;
-  border-radius: 20px;
-  background: rgba(255, 254, 249, .95);
+  border: 1px solid rgba(80, 51, 130, .08);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, .96);
   padding: 28px;
-  box-shadow: 0 20px 48px -16px rgba(70, 100, 80, .22);
+  box-shadow: 0 24px 70px rgba(74, 42, 115, .14);
 }
 .zhixun-login-card-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  border-bottom: 1px solid #ebe8dc;
-  padding-bottom: 18px;
 }
 .zhixun-login-card-head p {
   margin: 0 0 4px;
-  color: #9aa18f;
-  font: 600 9px/1.4 "Courier New", monospace;
-  letter-spacing: .16em;
+  color: #9b94a7;
+  font: 650 9px/1.4 "Courier New", monospace;
+  letter-spacing: .15em;
 }
 .zhixun-login-card-head h2 {
   margin: 0;
-  font-family: "Noto Serif SC", SimSun, serif;
-  font-size: 24px;
+  color: #24212d;
+  font-size: 25px;
+  font-weight: 800;
 }
 .zhixun-login-card-head button {
   border: 0;
   background: transparent;
-  color: #4e7860;
+  color: #6c0ef2;
   font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
-}
-.zhixun-login-form {
-  display: grid;
-  gap: 14px;
-  margin-top: 20px;
 }
 .zhixun-login-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 3px;
-  margin-top: 16px;
-  border: 1px solid #e5e3d7;
+  margin-top: 17px;
+  border: 1px solid #ece9f2;
   border-radius: 11px;
-  background: #f7f5ee;
+  background: #f7f5fb;
   padding: 3px;
 }
 .zhixun-login-tabs button {
-  min-height: 35px;
+  min-height: 36px;
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: #7b8472;
-  font-size: 12px;
-  font-weight: 600;
+  color: #8b8595;
+  font-size: 12.5px;
+  font-weight: 650;
   cursor: pointer;
 }
 .zhixun-login-tabs button.active {
   background: #fff;
-  color: #4e7860;
-  box-shadow: 0 2px 7px rgba(70, 100, 80, .10);
+  color: #6c0ef2;
+  box-shadow: 0 2px 8px rgba(74, 42, 115, .09);
+}
+.zhixun-login-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 19px;
 }
 .zhixun-login-form label {
   display: grid;
   gap: 7px;
-  color: #5a6553;
+  color: #5f596a;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 650;
 }
 .zhixun-login-form input {
-  height: 43px;
-  border: 1px solid #dedcd0;
-  border-radius: 10px;
+  height: 44px;
+  border: 1px solid #e4e0eb;
+  border-radius: 11px;
   outline: none;
   background: #fff;
   padding: 0 13px;
-  color: #3d4a3a;
+  color: #292632;
   font-size: 14px;
   transition: border-color .18s, box-shadow .18s;
 }
 .zhixun-login-form input:focus {
-  border-color: rgba(78, 120, 96, .62);
-  box-shadow: 0 0 0 3px rgba(78, 120, 96, .08);
+  border-color: rgba(108, 14, 242, .48);
+  box-shadow: 0 0 0 4px rgba(108, 14, 242, .07);
 }
 .zhixun-login-code-row {
   display: grid;
@@ -222,80 +292,77 @@
   gap: 8px;
 }
 .zhixun-login-code-row button {
-  min-width: 96px;
-  border: 1px solid rgba(78, 120, 96, .35);
-  border-radius: 10px;
-  background: #e9f2ec;
-  color: #4e7860;
+  min-width: 100px;
+  border: 1px solid rgba(108, 14, 242, .24);
+  border-radius: 11px;
+  background: #f3edff;
+  color: #6c0ef2;
   font-size: 11.5px;
   font-weight: 700;
   cursor: pointer;
 }
 .zhixun-login-code-row button:disabled {
-  border-color: #e5e3d7;
-  background: #f2f0e8;
-  color: #9a9e92;
+  border-color: #e7e3eb;
+  background: #f7f5f9;
+  color: #aba5b3;
   cursor: default;
 }
 .zhixun-login-primary,
 .zhixun-login-guest {
-  min-height: 43px;
-  border-radius: 10px;
+  min-height: 44px;
+  border-radius: 11px;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 750;
   cursor: pointer;
 }
 .zhixun-login-primary {
-  border: 1px solid #4e7860;
-  background: #4e7860;
+  border: 1px solid #6c0ef2;
+  background: #6c0ef2;
   color: #fff;
-  box-shadow: 0 8px 18px -7px rgba(78, 120, 96, .65);
+  box-shadow: 0 9px 22px rgba(108, 14, 242, .24);
 }
 .zhixun-login-primary:disabled,
-.zhixun-login-guest:disabled { cursor: wait; opacity: .6; }
+.zhixun-login-guest:disabled {
+  cursor: wait;
+  opacity: .6;
+}
 .zhixun-login-guest {
-  border: 1px solid #dedcd0;
+  border: 1px solid #e4e0eb;
   background: #fff;
-  color: #5a6553;
+  color: #625d6c;
 }
 .zhixun-login-error {
   margin: 0;
   border-radius: 8px;
-  background: #f8e8e3;
+  background: #fff0f3;
   padding: 9px 11px;
-  color: #9b4d3b;
+  color: #a52746;
   font-size: 12px;
   line-height: 1.6;
 }
 .zhixun-login-note {
   margin: 18px 0 0;
-  color: #92998a;
+  color: #9b95a4;
   font-size: 10.5px;
   line-height: 1.7;
   text-align: center;
 }
-.zhixun-login-mobile-logo { display: none; }
-.zhixun-login-orbit {
-  position: absolute;
-  border: 1px solid rgba(78, 120, 96, .12);
-  border-radius: 50%;
+.zhixun-login-mobile-logo {
+  display: none;
 }
-.zhixun-login-orbit-a { width: 520px; height: 520px; left: -210px; bottom: -170px; }
-.zhixun-login-orbit-b { width: 310px; height: 310px; right: -115px; top: -90px; }
-
-@media (max-width: 900px) {
-  .zhixun-login { display: block; }
+@media (max-width: 980px) {
+  .zhixun-login { grid-template-columns: 1fr; }
   .zhixun-login-brand { display: none; }
-  .zhixun-login-main { padding: 72px 20px 28px; }
+  .zhixun-login-main { min-height: 100dvh; padding: 76px 20px 28px; }
   .zhixun-login-mobile-logo {
     position: absolute;
-    top: 22px;
     left: 22px;
+    top: 20px;
     display: flex;
     align-items: center;
-    gap: 9px;
-    font-family: "Noto Serif SC", SimSun, serif;
-    font-weight: 700;
+    gap: 8px;
+    color: #292632;
+    font-size: 17px;
+    font-weight: 800;
   }
-  .zhixun-login-mobile-logo span { width: 30px; height: 30px; }
 }

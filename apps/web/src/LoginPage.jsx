@@ -8,6 +8,32 @@ import {
 
 const STEPS = ["填写资料", "选择目标", "开始学习"];
 
+function FlameLogo({ size = 118 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="login-flame" x1="32" y1="4" x2="32" y2="60" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#A78BFA" />
+          <stop offset="1" stopColor="#6D28D9" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M32 3C34 12 46 16 46 30c0 4-1.4 7-3.4 9.6C47 36 49 31 48.6 27 54 32 56 38.5 56 44c0 11-10.7 18-24 18S8 55 8 44c0-8 4.6-13.4 9-18-.4 5 1 9 3.4 11.4C19 34 18 28 22 22c3-4.5 8-7 10-19Z"
+        fill="url(#login-flame)"
+      />
+      <g stroke="#EDE9FE" strokeWidth="2.4" strokeLinecap="round">
+        <path d="M32 58V38M32 46l-7-6M32 42l7-6M32 50l-9-2" />
+      </g>
+      <g fill="#EDE9FE">
+        <circle cx="32" cy="36" r="2.6" />
+        <circle cx="24" cy="39" r="2.2" />
+        <circle cx="40" cy="35" r="2.2" />
+        <circle cx="22" cy="47.5" r="2" />
+      </g>
+    </svg>
+  );
+}
+
 export default function LoginPage({ onBack, onAuthenticated }) {
   const learning = useLearning();
   const [registering, setRegistering] = React.useState(false);
@@ -91,13 +117,22 @@ export default function LoginPage({ onBack, onAuthenticated }) {
         <div className="zhixun-login-orbit zhixun-login-orbit-a" />
         <div className="zhixun-login-orbit zhixun-login-orbit-b" />
         <button type="button" className="zhixun-login-logo" onClick={onBack} aria-label="返回首页">
-          <span className="zhixun-login-logo-mark">智</span>
+          <FlameLogo size={38} />
           <span>智训云枢</span>
         </button>
         <div className="zhixun-login-editorial">
-          <p className="zhixun-login-kicker">ZHIXUN LEARNING SPACE</p>
-          <h1>从适合你的内容<br />开始学习</h1>
-          <p>设定目标，查看学习建议，再按自己的进度完成课程和练习。</p>
+          <p className="zhixun-login-kicker">ZHIXUN · INTELLIGENT LEARNING</p>
+          <h1>智启<span>未来</span><br />训见<span>成长</span></h1>
+          <p>智训云枢致力于为每一位计算机学习者，提供专业、高效、个性化的学习体验。</p>
+          <div className="zhixun-login-figure" aria-hidden="true">
+            <i className="zhixun-login-orbit-shape" />
+            <span className="zhixun-login-flame"><FlameLogo /></span>
+            <span className="zhixun-login-stage" />
+            <span className="zhixun-login-chip chip-a">&lt;/&gt;</span>
+            <span className="zhixun-login-chip chip-b">讲义</span>
+            <span className="zhixun-login-chip chip-c">▥</span>
+            <span className="zhixun-login-chip chip-d">&gt;_</span>
+          </div>
           <div className="zhixun-login-steps">
             {STEPS.map((step, index) => (
               <React.Fragment key={step}>
@@ -106,13 +141,13 @@ export default function LoginPage({ onBack, onAuthenticated }) {
               </React.Fragment>
             ))}
           </div>
-          <small>首次使用先填写基本信息；再次登录可以继续上次的学习。</small>
+          <small>首次使用先填写基本信息，再次登录可以继续上次的学习。</small>
         </div>
-        <p className="zhixun-login-quote">学习、练习与复习，都可以在这里继续。</p>
+        <p className="zhixun-login-quote">学习、练习与复习，在这里形成完整闭环。</p>
       </section>
 
       <main className="zhixun-login-main">
-        <div className="zhixun-login-mobile-logo"><span>智</span>智训云枢</div>
+        <div className="zhixun-login-mobile-logo"><FlameLogo size={30} />智训云枢</div>
         <div className="zhixun-login-card">
           <div className="zhixun-login-card-head">
             <div>
