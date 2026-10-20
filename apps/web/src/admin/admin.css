@@ -778,3 +778,47 @@
   .zx-preview-toc { top: 0; }
   .zx-preview-chapter { scroll-margin-top: 120px; }
 }
+
+/* 检索结果：单条限高 + 内部滚动 */
+.zx-search-result { margin-top: 14px; }
+
+.zx-search-meta {
+  margin: 0 0 10px;
+  color: var(--zx-muted);
+  font-size: 12px;
+}
+
+.zx-hit {
+  border: 1px solid var(--zx-line);
+  border-radius: 14px;
+  background: #fdfcff;
+  padding: 12px 14px;
+}
+
+.zx-hit + .zx-hit { margin-top: 10px; }
+
+.zx-hit-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #4b4560;
+}
+
+.zx-hit-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zx-hit-score { flex: none; color: var(--zx-accent); font-variant-numeric: tabular-nums; }
+
+.zx-hit-body {
+  max-height: 260px;
+  overflow: auto;
+  padding-right: 6px;
+}
+
+.zx-hit-body .zx-md { font-size: 13px; line-height: 1.8; }
+.zx-hit-body .zx-md h1 { font-size: 16px; }
+.zx-hit-body .zx-md h2 { font-size: 15px; }
+.zx-hit-body .zx-md h3 { font-size: 14px; }
+.zx-hit-body .zx-md pre { margin: 8px 0; }
