@@ -57,7 +57,7 @@ export async function bootstrap() {
     try {
       await ensureSession();
       const data = await request('/bootstrap');
-      if (!Array.isArray(data.courses) || !data.courses.length) throw new Error('课程目录暂未准备好，请稍后重试');
+      if (!Array.isArray(data.courses)) throw new Error('课程目录读取失败，请重试');
       localStorage.setItem('zhixun-course-favorites', JSON.stringify(data.favorites || []));
       localStorage.setItem('zhixun-lecture-bookmarks', JSON.stringify(data.bookmarks || []));
       emit({ ready: true, loading: false, data });

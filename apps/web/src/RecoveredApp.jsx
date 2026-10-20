@@ -2677,7 +2677,7 @@ let $t = [
 ];
 
 function setCourseCatalog(courses) {
-  if (Array.isArray(courses) && courses.length > 0) $t = courses;
+  if (Array.isArray(courses)) $t = courses;
 }
 
 function serverSections(lesson) {
@@ -9270,7 +9270,30 @@ function i3({ course: n, node: r, onClose: u, onReview: i, onRetest: d }) {
   });
 }
 
-function LearningProgress({ onNavigate: n }) {
+function LearningProgress(props) {
+  const tracked = $t.some((course) => o3[course.id] !== void 0);
+  if (!tracked) {
+    return jsxRuntime.jsxs("div", {
+      className:
+        "flex min-h-screen flex-col items-center justify-center gap-2 bg-[#f7f7fa] px-6 text-center",
+      children: [
+        jsxRuntime.jsx("p", {
+          className: "text-lg font-extrabold text-[#111318]",
+          children: $t.length === 0 ? "还没有已发布的课程" : "暂无进度明细",
+        }),
+        jsxRuntime.jsx("p", {
+          className: "text-sm font-semibold text-[#8b8f99]",
+          children: $t.length === 0
+            ? "管理员在管理端上传知识库并发布课程后，这里会显示学习进度。"
+            : "课程页的章节完成情况会随阅读与测验逐步更新。",
+        }),
+      ],
+    });
+  }
+  return jsxRuntime.jsx(LearningProgressInner, props);
+}
+
+function LearningProgressInner({ onNavigate: n }) {
   const [r, u] = React.useState("co"),
     [i, d] = React.useState(null),
     [p, m] = React.useState(1),

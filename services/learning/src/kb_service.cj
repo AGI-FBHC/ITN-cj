@@ -4,32 +4,112 @@ import std.collection.*
 import std.core.*
 import std.env.*
 import std.sync.*
+import stdx.crypto.crypto.SecureRandom
 
 /** 知识库与模型配置。Key 只放在环境变量里，其他项可在管理端调整。 */
 class KbSettings {
     let baseUrl: String
     let embeddingModel: String
     let chatModel: String
+    let ttsModel: String
+    let ttsVoice: String
     let embeddingDim: Int64
     let batchSize: Int64
     let chunkSize: Int64
     let chunkOverlap: Int64
     let topK: Int64
+    let apiKeyCipher: String
+    let apiKeyHint: String
 
-    init(baseUrl: String, embeddingModel: String, chatModel: String, embeddingDim: Int64,
-         batchSize: Int64, chunkSize: Int64, chunkOverlap: Int64, topK: Int64) {
+    init(baseUrl: String, embeddingModel: String, chatModel: String, ttsModel: String, ttsVoice: String,
+         embeddingDim: Int64, batchSize: Int64, chunkSize: Int64, chunkOverlap: Int64, topK: Int64,
+         apiKeyCipher: String, apiKeyHint: String) {
         this.baseUrl = baseUrl
         this.embeddingModel = embeddingModel
         this.chatModel = chatModel
+        this.ttsModel = ttsModel
+        this.ttsVoice = ttsVoice
         this.embeddingDim = embeddingDim
         this.batchSize = batchSize
         this.chunkSize = chunkSize
         this.chunkOverlap = chunkOverlap
         this.topK = topK
+        this.apiKeyCipher = apiKeyCipher
+        this.apiKeyHint = apiKeyHint
     }
 }
 
-func modelApiKey(): String {
+/* ---------- 密钥加密存储 ---------- */
+
+/**
+ * 用服务器密钥（ZHIXUN_AUTH_SECRET）派生的密钥流加密，并附完整性校验。
+ * 标准库暂无可用的 AES 接口，这里用 SHA-256 派生密钥流 + 校验和：
+ * 能保证密钥不以明文落库、被篡改能被发现；但它不是 KMS 的替代品。
+ */
+func secretStreamKey(authSecret: String): Array<Byte> {
+    sha256Bytes((authSecret + ":zhixun-secret-v1").toArray())
+}
+
+func xorStream(plain: Array<Byte>, key: Array<Byte>, nonce: Array<Byte>): Array<Byte> {
+    let out = Array<Byte>(plain.size, repeat: 0)
+    var block: Int64 = 0
+    var offset: Int64 = 0
+    while (offset < plain.size) {
+        let seed = ArrayList<Byte>()
+        for (value in key) { seed.add(value) }
+        for (value in nonce) { seed.add(value) }
+        for (value in block.toString().toArray()) { seed.add(value) }
+        let digest = sha256Bytes(seed.toArray())
+        var i: Int64 = 0
+        while (i < digest.size && offset + i < plain.size) {
+            out[offset + i] = UInt8((Int64(plain[offset + i]) ^ Int64(digest[i])) & 255)
+            i += 1
+        }
+        offset += digest.size
+        block += 1
+    }
+    out
+}
+
+func encryptSecret(authSecret: String, plain: String): String {
+    let key = secretStreamKey(authSecret)
+    let nonce = Array<Byte>(16, repeat: 0)
+    let random = SecureRandom()
+    let drawn = random.nextBytes(16)
+    var i: Int64 = 0
+    while (i < 16 && i < drawn.size) {
+        nonce[i] = drawn[i]
+        i += 1
+    }
+    let cipher = xorStream(plain.toArray(), key, nonce)
+    let tagged = ArrayList<Byte>()
+    for (value in nonce) { tagged.add(value) }
+    for (value in cipher) { tagged.add(value) }
+    let tag = sha256Bytes(tagged.toArray())
+    for (value in tag) { tagged.add(value) }
+    bytesToHex(tagged.toArray())
+}
+
+func decryptSecret(authSecret: String, stored: String): ?String {
+    if (authSecret.size == 0 || stored.size < 96) { return None }
+    let raw = kbHexDecode(stored)
+    if (raw.size <= 48) { return None }
+    let nonce = raw.slice(0, 16)
+    let cipher = raw.slice(16, raw.size - 48)
+    let tag = raw.slice(raw.size - 32, 32)
+    let check = ArrayList<Byte>()
+    for (value in nonce) { check.add(value) }
+    for (value in cipher) { check.add(value) }
+    let expected = sha256Bytes(check.toArray())
+    var i: Int64 = 0
+    while (i < 32) {
+        if (expected[i] != tag[i]) { return None }
+        i += 1
+    }
+    Some(String.fromUtf8(xorStream(cipher, secretStreamKey(authSecret), nonce)))
+}
+
+func legacyEnvKey(): String {
     let primary = envOr("ZHIXUN_MODEL_API_KEY", "")
     if (primary.size > 0) { return primary }
     envOr("OPENAI_API_KEY", "")
@@ -37,10 +117,10 @@ func modelApiKey(): String {
 
 func loadKbSettings(cfg: Config): KbSettings {
     let rows = query(cfg,
-        "SELECT base_url,embedding_model,chat_model,embedding_dim,batch_size,chunk_size,chunk_overlap,top_k " +
-        "FROM kb_settings WHERE id=1")
+        "SELECT base_url,embedding_model,chat_model,tts_model,tts_voice,embedding_dim,batch_size," +
+        "chunk_size,chunk_overlap,top_k,api_key_cipher,api_key_hint FROM kb_settings WHERE id=1")
     if (rows.size == 0) {
-        return KbSettings("", "", "", 0, 16, 800, 120, 6)
+        return KbSettings("", "", "", "", "", 0, 16, 800, 120, 6, "", "")
     }
     let row = rows[0]
     let batch = row.int("batch_size")
@@ -49,16 +129,31 @@ func loadKbSettings(cfg: Config): KbSettings {
         row.text("base_url"),
         row.text("embedding_model"),
         row.text("chat_model"),
+        row.text("tts_model"),
+        row.text("tts_voice"),
         row.int("embedding_dim"),
         if (batch <= 0) { 16 } else if (batch > 64) { 64 } else { batch },
         if (size < 200) { 800 } else if (size > 4000) { 4000 } else { size },
         if (row.int("chunk_overlap") < 0) { 0 } else { row.int("chunk_overlap") },
-        if (row.int("top_k") < 1) { 6 } else if (row.int("top_k") > 20) { 20 } else { row.int("top_k") }
+        if (row.int("top_k") < 1) { 6 } else if (row.int("top_k") > 20) { 20 } else { row.int("top_k") },
+        if (row.isNull("api_key_cipher")) { "" } else { row.text("api_key_cipher") },
+        row.text("api_key_hint")
     )
 }
 
-func endpointOf(settings: KbSettings): ModelEndpoint {
-    ModelEndpoint(settings.baseUrl, modelApiKey(), settings.embeddingModel, settings.chatModel)
+/** 优先用管理端保存的密钥，其次兼容环境变量里配置过的密钥。 */
+func effectiveApiKey(cfg: Config, settings: KbSettings): String {
+    if (settings.apiKeyCipher.size > 0) {
+        match (decryptSecret(cfg.authSecret, settings.apiKeyCipher)) {
+            case Some(value) => return value
+            case None => ()
+        }
+    }
+    legacyEnvKey()
+}
+
+func endpointOf(cfg: Config, settings: KbSettings): ModelEndpoint {
+    ModelEndpoint(settings.baseUrl, effectiveApiKey(cfg, settings), settings.embeddingModel, settings.chatModel)
 }
 
 /** 进程内索引缓存：任何写操作把版本号加一，下次检索重建。 */
@@ -149,7 +244,7 @@ func kbSearch(cfg: Config, settings: KbSettings, queryText: String, topK: Int64)
     let parts = ArrayList<String>()
     var degraded = false
     var note = ""
-    let endpoint = endpointOf(settings)
+    let endpoint = endpointOf(cfg, settings)
     if (endpoint.hasEmbedding()) {
         try {
             let vectors = embedTexts(endpoint, [query])
@@ -271,7 +366,7 @@ func kbIngest(cfg: Config, documentId: String, title: String, content: String, s
     execute(cfg, "UPDATE kb_documents SET status='indexing',error_message='' WHERE id=" + sqlQuote(documentId))
     execute(cfg, "DELETE FROM kb_chunks WHERE document_id=" + sqlQuote(documentId))
     let chunkIds = kbInsertDocumentsChunks(cfg, documentId, pieces)
-    let endpoint = endpointOf(settings)
+    let endpoint = endpointOf(cfg, settings)
     var embedded: Int64 = 0
     var note = ""
     if (endpoint.hasEmbedding()) {
@@ -316,6 +411,52 @@ class KbPublishResult {
         this.lessonCount = lessonCount
         this.created = created
     }
+}
+
+func kbDefaultCourseIcon(): String {
+    // 没有配图时用内联 SVG，避免 <img src=""> 让浏览器重新请求整页。
+    "data:image/svg+xml;utf8," +
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236038ef' stroke-width='1.6'>" +
+    "<path d='M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z'/><path d='M8 7h8M8 11h8'/></svg>"
+}
+
+func kbCutText(bytes: Array<Byte>, start: Int64, end: Int64, limit: Int64): String {
+    var count: Int64 = 0
+    var i = start
+    var cut = start
+    while (i < end) {
+        if (kbIsLeadByte(bytes[i])) {
+            if (count >= limit) { break }
+            count += 1
+        }
+        i += 1
+        cut = i
+    }
+    let text = String.fromUtf8(bytes.slice(start, cut - start)).trimAscii()
+    if (cut < end) { text + "…" } else { text }
+}
+
+/** 课程简介：跳过 Markdown 标题行，取第一行足够长的正文。 */
+func kbSummaryOf(text: String, limit: Int64): String {
+    let bytes = text.toArray()
+    var start: Int64 = 0
+    var i: Int64 = 0
+    while (i <= bytes.size) {
+        let atEnd = i == bytes.size
+        if (atEnd || Int64(bytes[i]) == 10) {
+            var lineEnd = i
+            if (lineEnd > start && Int64(bytes[lineEnd - 1]) == 13) { lineEnd -= 1 }
+            var k = start
+            while (k < lineEnd && Int64(bytes[k]) <= 32) { k += 1 }
+            let heading = k < lineEnd && Int64(bytes[k]) == 35
+            if (!heading && kbCharsBetween(bytes, k, lineEnd) >= 8) {
+                return kbCutText(bytes, k, lineEnd, limit)
+            }
+            start = i + 1
+        }
+        i += 1
+    }
+    kbCutText(bytes, 0, bytes.size, limit)
 }
 
 func kbSplitPath(path: String): Array<String> {
@@ -414,10 +555,12 @@ func kbPublishCourse(cfg: Config, documentId: String, name: String, level: Strin
     let safeDuration = if (duration > 0) { duration } else { groupKeys.size * 5 }
     statements.add(
         "INSERT INTO courses(id,name,icon,description,level,duration,chapters_json,source_label,status,sort_order) VALUES(" +
-        sqlQuote(courseId) + "," + sqlQuote(if (name.size == 0) { title } else { name }) + ",''," +
-        sqlQuote(description) + "," + sqlQuote(safeLevel) + "," + safeDuration.toString() + "," +
+        sqlQuote(courseId) + "," + sqlQuote(if (name.size == 0) { title } else { name }) + "," +
+        sqlQuote(kbDefaultCourseIcon()) + "," +
+        sqlQuote(if (description.size == 0) { kbSummaryOf(chunkRows[0].text("text"), 80) } else { description }) + "," +
+        sqlQuote(safeLevel) + "," + safeDuration.toString() + "," +
         sqlQuote(chapters.toJson()) + "," + sqlQuote("知识库《" + title + "》") + ",'published',100) " +
-        "ON DUPLICATE KEY UPDATE name=VALUES(name),description=VALUES(description),level=VALUES(level)," +
+        "ON DUPLICATE KEY UPDATE name=VALUES(name),icon=VALUES(icon),description=VALUES(description)," +
         "duration=VALUES(duration),chapters_json=VALUES(chapters_json),source_label=VALUES(source_label)," +
         "status='published',updated_at=NOW(6)")
 

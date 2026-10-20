@@ -5,6 +5,8 @@ import { ErrorBlock, Loading, Notice, PageHead, useLoad } from './admin-ui.jsx';
 export default function AdminSettings() {
   const state = useLoad(() => adminApi.kb(), []);
   const [form, setForm] = React.useState(null);
+  const [apiKey, setApiKey] = React.useState('');
+  const [clearKey, setClearKey] = React.useState(false);
   const [error, setError] = React.useState('');
   const [message, setMessage] = React.useState('');
   const [busy, setBusy] = React.useState('');
@@ -17,13 +19,15 @@ export default function AdminSettings() {
       baseUrl: settings.baseUrl || '',
       embeddingModel: settings.embeddingModel || '',
       chatModel: settings.chatModel || '',
+      ttsModel: settings.ttsModel || '',
+      ttsVoice: settings.ttsVoice || '',
       embeddingDim: settings.embeddingDim || 0,
       batchSize: settings.batchSize || 16,
       chunkSize: settings.chunkSize || 800,
       chunkOverlap: settings.chunkOverlap || 120,
       topK: settings.topK || 6,
     });
-  }, [settings?.baseUrl, settings?.embeddingModel, settings?.chatModel, settings?.chunkSize, settings?.chunkOverlap, settings?.topK, settings?.batchSize, settings?.embeddingDim]);
+  }, [settings?.baseUrl, settings?.embeddingModel, settings?.chatModel, settings?.ttsModel, settings?.ttsVoice, settings?.chunkSize, settings?.chunkOverlap, settings?.topK, settings?.batchSize, settings?.embeddingDim]);
 
   if (state.loading && !state.data) return <Loading label="正在读取配置…" />;
   if (state.error) return <ErrorBlock message={state.error} onRetry={state.reload} />;
@@ -36,7 +40,7 @@ export default function AdminSettings() {
     <div className="zx-admin-page">
       <PageHead
         title="设置"
-        description="配置 OpenAI 兼容的模型接口。密钥只放在服务端环境变量，不进数据库也不下发到浏览器。"
+        description="在这里统一配置模型密钥、向量与对话模型、语音合成，保存后立即生效。"
       />
 
       {error ? <Notice kind="error">{error}</Notice> : null}
@@ -45,11 +49,13 @@ export default function AdminSettings() {
       <div className="zx-card">
         <h2 className="zx-card-title">密钥状态</h2>
         <div className="zx-card-hint" style={{ marginBottom: 10 }}>
-          向量化与 AI 导师共用同一把密钥。在项目根目录的 <code>.env.local</code> 里设置
-          {' '}<code>ZHIXUN_MODEL_API_KEY</code>（也兼容 <code>OPENAI_API_KEY</code>），改完重启后端生效。
+          密钥提交后立即加密入库，页面只保留尾号提示，任何接口都不会再返回明文。
+          {settings.keySource === 'env' ? ' 当前还在使用环境变量里的旧密钥，保存一次新的即可切过来。' : ''}
         </div>
         <Notice kind={settings.keyConfigured ? 'ok' : 'error'}>
-          {settings.keyConfigured ? '已检测到模型密钥。' : '还没有检测到模型密钥，现在只能做关键词检索，AI 导师也无法回答。'}
+          {settings.keyConfigured
+            ? `已配置密钥${settings.keyHint ? `（${settings.keyHint}）` : ''}${settings.keySource === 'env' ? '（来自环境变量）' : ''}。`
+            : '还没有配置模型密钥，关键词检索可用，向量检索与 AI 导师不可用。'}
         </Notice>
       </div>
 
@@ -66,9 +72,15 @@ export default function AdminSettings() {
               baseUrl: form.baseUrl.trim(),
               embeddingModel: form.embeddingModel.trim(),
               chatModel: form.chatModel.trim(),
+              ttsModel: form.ttsModel.trim(),
+              ttsVoice: form.ttsVoice.trim(),
+              apiKey: apiKey.trim(),
+              clearApiKey: clearKey,
             })
             .then((saved) => {
-              setMessage(`配置已保存（切片 ${saved.settings.chunkSize} 字 / 重叠 ${saved.settings.chunkOverlap} 字）。已入库的文档需要点「重建索引」才会用新参数。`);
+              setApiKey('');
+              setClearKey(false);
+              setMessage(`配置已保存（切片 ${saved.settings.chunkSize} 字 / 重叠 ${saved.settings.chunkOverlap} 字）。已入库的文档需要「重建索引」才会用新参数。`);
               state.reload();
             })
             .catch((failure) => setError(failure.message))
@@ -77,6 +89,30 @@ export default function AdminSettings() {
       >
         <h2 className="zx-card-title">模型接口</h2>
         <div className="zx-form">
+          <div className="zx-field zx-field-full">
+            <label htmlFor="api-key">模型密钥</label>
+            <input
+              id="api-key"
+              type="password"
+              autoComplete="new-password"
+              value={apiKey}
+              onChange={(event) => { setApiKey(event.target.value); setClearKey(false); }}
+              placeholder={settings.keyConfigured ? '已保存，留空表示不修改' : '粘贴 API Key，保存后不再显示'}
+            />
+            <small>向量、对话、语音共用这把密钥；提交即加密，服务端也只以密文落库。</small>
+          </div>
+          {settings.keyConfigured ? (
+            <label htmlFor="clear-key" style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12.5, fontWeight: 600, color: '#4b4560' }}>
+              <input
+                id="clear-key"
+                type="checkbox"
+                checked={clearKey}
+                onChange={(event) => { setClearKey(event.target.checked); if (event.target.checked) setApiKey(''); }}
+                style={{ accentColor: '#6038ef', width: 15, height: 15 }}
+              />
+              清除已保存的密钥
+            </label>
+          ) : null}
           <div className="zx-field zx-field-full">
             <label htmlFor="base-url">接口地址</label>
             <input
@@ -106,6 +142,25 @@ export default function AdminSettings() {
               placeholder="例如 gpt-4o-mini 或 qwen-plus"
             />
             <small>AI 导师用它组织回答。</small>
+          </div>
+          <div className="zx-field">
+            <label htmlFor="tts-model">语音合成模型</label>
+            <input
+              id="tts-model"
+              value={form.ttsModel}
+              onChange={field('ttsModel')}
+              placeholder="例如 gpt-4o-mini-tts 或 tts-1"
+            />
+            <small>朗读讲义时使用；留空则回退到浏览器自带语音。</small>
+          </div>
+          <div className="zx-field">
+            <label htmlFor="tts-voice">默认音色</label>
+            <input
+              id="tts-voice"
+              value={form.ttsVoice}
+              onChange={field('ttsVoice')}
+              placeholder="例如 alloy / nova / zh-CN-XiaoxiaoNeural"
+            />
           </div>
           <div className="zx-field">
             <label htmlFor="embedding-dim">向量维度</label>

@@ -253,3 +253,36 @@
 - 目前不生成测验题：课程只有讲义。测验题仍需另做（未来可由模型生成或单独上传题库）。
 - 重新发布不保留任何学习记录，界面上有提示但没有二次确认以外的保护。
 - 课程只保留一份（一文档一课程），不支持一个文档拆成多门课。
+
+## 2026-10-20 模型密钥搬到管理端，加密入库
+
+### 需求与决策
+- 用户要求 API Key 改在管理员端配置，加密存储到数据库，只有保存前能看到明文；对话模型、TTS 模型也统一在这里配置。
+- 决定：密钥不再依赖 `.env.local`。提交时用服务器密钥（`ZHIXUN_AUTH_SECRET`）加密后落库，接口只返回尾号提示；环境变量里若有旧密钥仍作为兜底。
+- 标准库暂无可用的 AES 接口（`std.crypto.cipher` 只暴露 `BlockCipher` 接口，没有 AEAD 实现），因此用 SHA-256 派生密钥流做异或加密，并附 SHA-256 校验和防篡改。这能保证密钥不以明文落库、被改写能被发现，但它不是 KMS 的替代品——这点在代码注释里写清了。
+
+### 数据层
+- `migrations/004_model_credentials.sql`：`kb_settings` 增加 `api_key_cipher`（密文）、`api_key_hint`（尾号提示）、`tts_model`、`tts_voice`。
+
+### 后端
+- `kb_service.cj` 新增 `encryptSecret` / `decryptSecret`：16 字节随机数 + SHA-256 密钥流异或 + 尾部 32 字节校验和，整体十六进制存储。
+- `effectiveApiKey`：优先解密库里的密钥，失败或为空时回退 `ZHIXUN_MODEL_API_KEY` / `OPENAI_API_KEY`。
+- `endpointOf` 改为接收 `cfg`，所有调用点同步；设置接口新增 `ttsModel`、`ttsVoice`、`apiKey`、`clearApiKey`，并校验密钥长度与 `ZHIXUN_AUTH_SECRET` 是否存在。
+- 配置响应新增 `keyHint`、`keySource`（`admin` / `env` / 空），任何接口都不返回明文。
+
+### 前端
+- 设置页新增：密钥输入框（密码框，已配置时占位提示「已保存，留空表示不修改」）、清除密钥勾选、语音合成模型、默认音色。
+- 保存成功后清空输入框，只显示「已配置密钥（尾号 xxxx）」。
+- 顺手修掉页面顶部「密钥只放在服务端环境变量」这句已过时的说明。
+
+### 实际验证
+- 保存 `sk-test-ABCD1234`：响应与第二次读取都不含明文，只返回「尾号 1234」，`keySource=admin`。
+- 用保存后的密钥调 `/admin/kb/test`：返回 200 与 64 维向量，说明解密链路可用（对接本地 mock 模型服务）。
+- 勾选清除后 `keyConfigured=false`、提示清空。
+- 浏览器实测：密钥框 type=password、保存后输入框为空、提示为「已配置密钥（尾号 7d6c）」、控制台无报错。
+- 验证用的假配置已清空，数据库目前没有密钥。
+
+### 未完成与限制
+- TTS 目前只做到「配置可保存」，朗读仍走浏览器 speechSynthesis；接 `/audio/speech` 播放是下一步。
+- 密钥加密依赖 `ZHIXUN_AUTH_SECRET`：该值变更后旧密文将无法解密，需要重新录入密钥。
+- 未做密钥轮换与使用审计。

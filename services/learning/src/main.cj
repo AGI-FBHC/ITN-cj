@@ -898,17 +898,21 @@ func kbDocumentSelect(): String {
     "FROM kb_documents d "
 }
 
-func kbSettingsJson(settings: KbSettings): String {
+func kbSettingsJson(cfg: Config, settings: KbSettings): String {
     let out = JsonWriter()
     out.putStr("baseUrl", settings.baseUrl)
     out.putStr("embeddingModel", settings.embeddingModel)
     out.putStr("chatModel", settings.chatModel)
+    out.putStr("ttsModel", settings.ttsModel)
+    out.putStr("ttsVoice", settings.ttsVoice)
     out.putInt("embeddingDim", settings.embeddingDim)
     out.putInt("batchSize", settings.batchSize)
     out.putInt("chunkSize", settings.chunkSize)
     out.putInt("chunkOverlap", settings.chunkOverlap)
     out.putInt("topK", settings.topK)
-    out.putBool("keyConfigured", modelApiKey().size > 0)
+    out.putStr("keyHint", settings.apiKeyHint)
+    out.putBool("keyConfigured", effectiveApiKey(cfg, settings).size > 0)
+    out.putStr("keySource", if (settings.apiKeyCipher.size > 0) { "admin" } else if (legacyEnvKey().size > 0) { "env" } else { "" })
     out.toJson()
 }
 
@@ -925,7 +929,7 @@ func kbOverviewBody(cfg: Config): String {
     stats.putInt("embedded", if (totals.size > 0) { totals[0].int("embedded") } else { 0 })
     let out = JsonWriter()
     out.putRaw("documents", docs.toJson())
-    out.putRaw("settings", kbSettingsJson(settings))
+    out.putRaw("settings", kbSettingsJson(cfg, settings))
     out.putRaw("stats", stats.toJson())
     out.toJson()
 }
@@ -1946,6 +1950,11 @@ main(): Int64 {
                         let baseUrl = (jsonGetString(body, "baseUrl") ?? "").trimAscii()
                         let embeddingModel = (jsonGetString(body, "embeddingModel") ?? "").trimAscii()
                         let chatModel = (jsonGetString(body, "chatModel") ?? "").trimAscii()
+                        let ttsModel = (jsonGetString(body, "ttsModel") ?? "").trimAscii()
+                        let ttsVoice = (jsonGetString(body, "ttsVoice") ?? "").trimAscii()
+                        let apiKey = (jsonGetString(body, "apiKey") ?? "").trimAscii()
+                        let clearApiKey = jsonGetBool(body, "clearApiKey") ?? false
+                        let current = loadKbSettings(cfg)
                         let dim = jsonGetInt(body, "embeddingDim") ?? 0
                         let batch = jsonGetInt(body, "batchSize") ?? 16
                         let chunkSize = jsonGetInt(body, "chunkSize") ?? 800
@@ -1955,8 +1964,12 @@ main(): Int64 {
                             writeError(ctx.response, 400, "接口地址需要以 http:// 或 https:// 开头")
                         } else if (baseUrl.size > 300) {
                             writeError(ctx.response, 400, "接口地址过长")
-                        } else if (embeddingModel.size > 160 || chatModel.size > 160) {
+                        } else if (embeddingModel.size > 160 || chatModel.size > 160 || ttsModel.size > 160 || ttsVoice.size > 80) {
                             writeError(ctx.response, 400, "模型名过长")
+                        } else if (apiKey.size > 400) {
+                            writeError(ctx.response, 400, "密钥过长")
+                        } else if (apiKey.size > 0 && cfg.authSecret.size == 0) {
+                            writeError(ctx.response, 400, "服务端缺少 ZHIXUN_AUTH_SECRET，无法加密保存密钥")
                         } else if (chunkSize < 200 || chunkSize > 4000) {
                             writeError(ctx.response, 400, "切片长度需要在 200–4000 字之间")
                         } else if (overlap < 0 || overlap * 2 >= chunkSize) {
@@ -1966,17 +1979,38 @@ main(): Int64 {
                         } else if (topK < 1 || topK > 20) {
                             writeError(ctx.response, 400, "默认召回条数需要在 1–20 之间")
                         } else {
+                            // 密钥只在提交时可见：入库即加密，只保留尾号提示。
+                            let keyCipher = if (clearApiKey) {
+                                "NULL"
+                            } else if (apiKey.size > 0) {
+                                sqlQuote(encryptSecret(cfg.authSecret, apiKey))
+                            } else if (current.apiKeyCipher.size > 0) {
+                                sqlQuote(current.apiKeyCipher)
+                            } else {
+                                "NULL"
+                            }
+                            let keyHint = if (clearApiKey) {
+                                ""
+                            } else if (apiKey.size > 0) {
+                                if (apiKey.size <= 4) { "已保存" } else { "尾号 " + apiKey[apiKey.size - 4..apiKey.size] }
+                            } else {
+                                current.apiKeyHint
+                            }
                             execute(cfg,
                                 "UPDATE kb_settings SET base_url=" + sqlQuote(baseUrl) +
                                 ",embedding_model=" + sqlQuote(embeddingModel) +
                                 ",chat_model=" + sqlQuote(chatModel) +
+                                ",tts_model=" + sqlQuote(ttsModel) +
+                                ",tts_voice=" + sqlQuote(ttsVoice) +
+                                ",api_key_cipher=" + keyCipher +
+                                ",api_key_hint=" + sqlQuote(keyHint) +
                                 ",embedding_dim=" + maxInt(0, dim).toString() +
                                 ",batch_size=" + batch.toString() +
                                 ",chunk_size=" + chunkSize.toString() +
                                 ",chunk_overlap=" + overlap.toString() +
                                 ",top_k=" + topK.toString() + " WHERE id=1")
                             let out = JsonWriter()
-                            out.putRaw("settings", kbSettingsJson(loadKbSettings(cfg)))
+                            out.putRaw("settings", kbSettingsJson(cfg, loadKbSettings(cfg)))
                             writeJson(ctx.response, 200, out.toJson())
                         }
                 }
@@ -1988,7 +2022,7 @@ main(): Int64 {
             case None => ()
             case Some(_) =>
                 let settings = loadKbSettings(cfg)
-                let endpoint = endpointOf(settings)
+                let endpoint = endpointOf(cfg, settings)
                 if (!endpoint.hasEmbedding()) {
                     writeError(ctx.response, 400,
                         "还没有配置向量模型：需要接口地址、向量模型名，以及环境变量 ZHIXUN_MODEL_API_KEY")
@@ -2025,7 +2059,7 @@ main(): Int64 {
                             writeError(ctx.response, 413, "问题请精简到 2000 字以内")
                         } else {
                             let settings = loadKbSettings(cfg)
-                            let endpoint = endpointOf(settings)
+                            let endpoint = endpointOf(cfg, settings)
                             if (!endpoint.hasChat()) {
                                 writeError(ctx.response, 503,
                                     "AI 导师还没有接入模型：请管理员在「设置」里填写接口地址和对话模型，" +
