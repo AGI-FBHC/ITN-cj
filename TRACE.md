@@ -5051,3 +5051,15 @@ read_chunk 读得到原文并带回库标识与正文。
 - 设计静态lint 0 FAIL/0 WARN；真实浏览器inspect三个宽度0 FAIL/1 WARN。该WARN为没有视频，页面使用当前产品真实截图，无现成适合的产品视频，不为清警告添加无关素材；截图显示logo、主视图、功能说明与实际下载入口完整。输出tmp/release-design-final/，首屏三档截图已目视检查。
 - 公网ZIP HEAD=200，231932690 bytes；Range 0-1023=206，Content-Range准确，实际响应1024bytes。远端ZIP SHA256=8a712e7816d73de4b67f61e83139985f8706cfd85defe387282d6564a0f557c3，与文档一致。本轮没有再次全量下载221MB，不能冒充重新做过整包传输验证。
 - 将前会话已部署但未提交的下载页模板、5张原有logo/截图资产、serve-release.cjs、systemd定义与浏览器验收脚本同步本地Git；不改桌面业务功能、不重打0.8.28、不改Web平台服务与真实用户数据。两份既有未跟踪调研文档及生成的.taste-skill保持原状，不纳入提交。
+
+
+## 2026-10-20 13:50 · Windows安装包可行性审阅与无删减压缩测量
+- 用户要求先详细了解之前会话，再提供最新桌面版安装包可行性方案，关注下载体积，未来放入现有下载页；明确其刚编辑的V1.1说明暂时不动。此次范围只有方案、只读检查及TEMP压缩样本，没有构建/安装/部署正式安装器，没有操作V1.1 DOCX。
+- 补读原始桌面版交接01a14383、上游01a14302，以及本聊天已读01a1442a需求，检查PRODUCT、TRACE早期与近期打包发布段、main.js数据/启动路径、package-app.ps1与package.ps1、实际dist/release.json和下载服务。记忆检索未找到专门的桌面安装包方案条目，结论以当前文件和测量为准。
+- 当前版本仍0.8.28，功能构建7b3e49c437cead6915976b76f03ea37c4c4bcf66；33项manifest资产哈希均匹配，无新业务功能更新。完整目录2734文件、556433419bytes=530.66MiB；ZIP231932690bytes=221.19MiB。
+- 按实际ZIP条目统计压缩占用：Electron等155.0MiB、Node生产依赖25.3、PPT自带Python22.2、仓颉内核9.6、其余界面/渲染8.3。主要体积源是Electron，而非仓颉内核。12个source map原始18.1MiB、ZIP仅3.6MiB，删调试资源不是主要缩包路径。
+- 已有electron-builder缓存中的7za与NSIS可用。使用7za对原完整目录做TEMP样本，LZMA2/级别7/solid/2线程；输出C:/Users/GeJie/AppData/Local/Temp/lumin-compression-probe-20261020-134422.7z，152744104bytes=145.67MiB，比ZIP减少79188586bytes=75.52MiB、34.14%。7za t通过：322文件夹、2734文件、原始总字节556433419一致。没有删除、覆盖或清理原程序文件/ZIP，也没使用Python。
+- 该结果是7z压缩对照，不是NSIS安装EXE测量；LZMA2样本与NSIS压缩方法/参数有差异，正式安装器大小仍须实构建确认。安装后文件量约531MiB，不因压缩自动减少；小联网安装器只是后移下载，不能据其启动器大小声称总流量更小。
+- 方案建议：NSIS完整离线EXE、当前用户安装、Lumin标识与中文向导、可选目录/桌面快捷方式、开始菜单和卸载信息、覆盖升级检测运行进程；保留resources布局，沿用%LOCALAPPDATA%/Lumin数据及legacy迁移，卸载默认保留用户数据。Lumin.exe签名实查NotSigned，不能承诺生成EXE自动消除发布者提示。
+- 公网health当前200且发布仍只有0.8.28 ZIP。serve-release.cjs目录扫描、版本匹配、响应白名单和MIME均仅ZIP，后续需要支持明确的EXE文件名，按版本关联安装包/便携包，页面主推EXE、保留ZIP直链，FAQ与体积同步。此次未改页面和服务。
+- 官方资料已核对NSIS Features/Chapter4及Inno压缩说明。agent-reach Jina路径读取electron-builder资料15秒超时，没有用无法读取页面的内容承诺自动升级。详细方案保存docs/Windows安装包可行性方案.md。本次只提交方案与TRACE，无功能代码、用户数据或V1.1文件改动。
