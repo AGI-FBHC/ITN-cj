@@ -71,6 +71,12 @@ async function main() {
     gates.push(g);
     return g;
   };
+  /* 在请求真正发往内核之前卡住：用来制造"后一次保存先到内核"的确定性场景 */
+  const gateBefore = (pathname) => {
+    const g = gate(pathname);
+    g.before = true;
+    return g;
+  };
   const ready = () => page.waitForFunction(() => document.querySelector('#view')?.getAttribute('aria-busy') === 'false');
   const rail = (name) => page.locator('#rail [data-page="' + name + '"]');
   const nav = async (name) => { await rail(name).click(); await ready(); };
@@ -104,14 +110,14 @@ async function main() {
         for await (const chunk of req) chunks.push(chunk);
         const g = gates.find((x) => !x.used && x.pathname === req.url.split('?')[0]);
         if (req.url.split('?')[0] === '/api/sessions/events') counters.events += 1;
-        if (g) { g.used = true; g.start(); }
+        if (g) { g.used = true; g.start(); if (g.before) await g.wait; }
         const response = await fetch(upstream + req.url, {
           method: req.method,
           headers: {'Content-Type': req.headers['content-type'] || 'application/json'},
           body: ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(chunks),
         });
         const bytes = Buffer.from(await response.arrayBuffer());
-        if (g) await g.wait;
+        if (g && !g.before) await g.wait;
         if (!res.destroyed) {
           res.writeHead(response.status, {'Content-Type': response.headers.get('content-type') || 'application/octet-stream'});
           res.end(bytes);
@@ -191,6 +197,20 @@ async function main() {
 
     // D) 面板在请求还没回来时被折叠/展开，不能把页面搞坏
     await nav('chat');
+    // 记录这一段里每一次偏好保存的先后与结果，便于区分"用户操作没生效"和"旧响应把它改回去"
+    await page.evaluate(() => {
+      window.__prefsLog = [];
+      const original = window.savePrefs;
+      window.savePrefs = async (patch) => {
+        const result = await original(patch);
+        window.__prefsLog.push({
+          patch,
+          hiddenAfter: document.body.classList.contains('panel-hidden'),
+          seq: window.__prefsLog.length + 1,
+        });
+        return result;
+      };
+    });
     // 面板渲染时一定会拉项目清单（会话列表有 1.5s 缓存，门可能碰不到）
     const g1 = gate('/api/projects/list');
     await rail('chat').click();
@@ -198,14 +218,56 @@ async function main() {
     await page.evaluate(() => togglePanel(false));
     await page.evaluate(() => togglePanel(true));
     g1.release();
-    await sleep(400);
-    const duringLoad = await page.evaluate(() => ({
-      current,
-      title: document.getElementById('panel-title')?.textContent || '',
-      hidden: document.body.classList.contains('panel-hidden'),
-      items: document.querySelectorAll('#panel-body .panel-item').length,
-    }));
-    check('加载中折叠/展开后页面与面板仍然正确', duringLoad.current === 'chat' && duringLoad.title === '对话' && duringLoad.hidden === false && duringLoad.items >= 2, JSON.stringify(duringLoad));
+    // 保存是异步的：界面状态和落库偏好都要在 5 秒内收敛到"可见"
+    const settledPrefs = await (async () => {
+      const end = Date.now() + 5000;
+      let duringLoad = null, storedPrefs = null;
+      while (Date.now() < end) {
+        duringLoad = await page.evaluate(() => ({
+          current,
+          title: document.getElementById('panel-title')?.textContent || '',
+          hidden: document.body.classList.contains('panel-hidden'),
+          items: document.querySelectorAll('#panel-body .panel-item').length,
+          panelHiddenState: state.panelHidden,
+        }));
+        storedPrefs = await post('prefs/get', {});
+        if (duringLoad.hidden === false && storedPrefs.sessionRail !== '0') break;
+        await sleep(150);
+      }
+      return {duringLoad, storedPrefs};
+    })();
+    const {duringLoad, storedPrefs} = settledPrefs;
+    check('加载中折叠/展开后最终可见且与落库偏好一致',
+      duringLoad.current === 'chat' && duringLoad.title === '对话' && duringLoad.hidden === false &&
+      duringLoad.items >= 2 && storedPrefs.sessionRail !== '0',
+      JSON.stringify({duringLoad, sessionRail: storedPrefs.sessionRail}));
+
+    // D2) 确定性验证"偏好保存必须串行"：第一次保存卡在内核之前，
+    //     如果没有排队，第二次"展开"会先到内核，随后旧"折叠"再落库 —— 重启又变折叠。
+    await nav('chat');
+    const holdSave = gateBefore('/api/prefs/save');
+    await page.evaluate(() => togglePanel(false));
+    await Promise.race([holdSave.started, sleep(8000).then(() => { throw Error('prefs gate not reached'); })]);
+    await page.evaluate(() => togglePanel(true));
+    await sleep(350);
+    holdSave.release();
+    const serialized = await (async () => {
+      const end = Date.now() + 5000;
+      let pref = null, ui = null;
+      while (Date.now() < end) {
+        pref = await post('prefs/get', {});
+        ui = await page.evaluate(() => ({
+          hidden: document.body.classList.contains('panel-hidden'),
+          visible: !!document.getElementById('panel')?.offsetParent,
+        }));
+        if (pref.sessionRail !== '0' && ui.hidden === false) break;
+        await sleep(150);
+      }
+      return {sessionRail: pref?.sessionRail, ui};
+    })();
+    check('折叠→展开后落库偏好最终仍是展开（保存串行，不让旧请求后落库）',
+      serialized.sessionRail !== '0' && serialized.ui.hidden === false,
+      JSON.stringify(serialized));
 
     // E) 右侧资源栏：跨页必须收起，回到对话再恢复
     await nav('chat');
@@ -238,15 +300,27 @@ async function main() {
     if (sidList.length >= 2) {
       const [a, b] = sidList;
       for (const sid of [a, b, a, b, a]) {
-        await page.locator('#panel-body .panel-item[data-id="' + sid + '"]').click({force: true});
+      await page.locator('#panel-body .panel-item[data-id="' + sid + '"]').click({force: true});
       }
-      await until(() => page.evaluate((sid) => state.chatSessionId === sid, a));
-      const selected = await page.evaluate(() => ({
+      // 连点之后给切换一个收敛窗口：看的是最终三方是否一致，不是"发出点击那一刻"的 DOM
+      const readSelected = () => page.evaluate(() => ({
         open: state.chatSessionId,
+        thread: document.getElementById('chat-thread')?.dataset.session || '',
         highlighted: document.querySelector('#panel-body .panel-item.active')?.dataset.id || '',
         headers: document.querySelectorAll('#panel-body .panel-group-title').length,
+        panelTitle: document.getElementById('panel-title')?.textContent || '',
+        current,
+        section: currentSection,
+        items: [...document.querySelectorAll('#panel-body .panel-item')].slice(0, 4)
+          .map((n) => n.dataset.id + (n.classList.contains('active') ? '*' : '')),
       }));
-      check('快速切换会话后高亮与打开的是同一条', selected.open === selected.highlighted && selected.open !== '', JSON.stringify(selected));
+      let selected = await readSelected();
+      const settleEnd = Date.now() + 5000;
+      while (Date.now() < settleEnd && !(selected.open === a && selected.thread === a && selected.highlighted === a)) {
+        await sleep(120);
+        selected = await readSelected();
+      }
+      check('快速切换会话后高亮/正文/打开在 5 秒内收敛为同一条', selected.open === a && selected.thread === a && selected.highlighted === a, JSON.stringify(selected));
       check('会话栏没有重复分组标题', selected.headers <= 4, JSON.stringify(selected));
 
       // H) 慢响应乱序：先点 A 再点 B，让 A 的响应最后才回来。

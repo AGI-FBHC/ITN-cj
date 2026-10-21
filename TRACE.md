@@ -5175,3 +5175,11 @@ read_chunk 读得到原文并带回库标识与正文。
 - 修复 2（偏好保存慢响应竞态）：savePrefs 把每次 /api/prefs/save 的响应（全量偏好）无条件 applyPrefs 回写界面，先发出的旧响应后到就会覆盖用户刚做的操作 —— 实测"折叠 → 立刻展开"后，旧响应把面板又折叠回去。现在用递增序号，只有最后一次保存的响应能回写（内核按 patch 合并，后一次响应含前一次结果，不会丢字段）。修复前 sidebar 用例该项 FAIL(hidden:true)，修复后 PASS(hidden:false)。
 - 隐藏问题（测试基建）：tools/ui-e2e.cjs（2100 行全链路自检）已经跑不动 —— 它停在旧信息架构上（等"学习中心"入口、要求 6 个左栏入口、用旧设置分区名"知识库"、旧预设名"MiMo TokenPlan · v2.6 flash"、已下线的首页清单与星云图）。本轮把它对齐到当前 IA：5 个左栏入口（对话/学习/知识库/成果/设置）、学 · 练与我的成长走学习页二级标签、笔记/错题走成果页二级标签、设置分区名改为"资料来源/学习档案"、预设改 MiMo Flash，并把已下线的"首次使用清单""星云图"两步换成当前的知识网络检查。现在能连续通过到"模型连通性测试"（6 步），下一个断点是知识库段：旧用例用 #kb-id/#kb-dir/.ok-dialog("索引完成")/#view .grid .stat/.kb-docs/"让 Lumin 整理"，这些选择器在当前界面已不存在（现在是 #kb-import-path + 添加并索引 + .ok-dialog("资料准备完成")，详情在知识库页的功能切换里）。已记录，下一轮继续。
 - 回归（全部通过）：sidebar-torture 40/40×3；session-switch-check 18；chat-ux-check 18；team-panel-check 34；route-lifecycle-check 18/18；session-list-check 10；clarity-memory-check 27；pages-audit 13；knowledge-check 92；growth-activity-check 21；nonchat-check 26。未改内核与接口契约，未访问真实用户数据库、未调付费模型、未改 Web 端。
+
+### 2026-10-22 07:10 · 侧边栏压测收敛与偏好保存串行化
+
+- 打包版侧边栏用例连续压测时发现两类不一致，先如实区分：①"快速切会话后高亮为空/停在旧行"在 5 次里出现 2 次，读取快照时 reapply.after 已等于 state.chatSessionId，说明状态正确、只是断言取在响应落地前 —— 属测试取样时机；改为有上限的收敛断言（5 秒内 打开/正文/高亮 必须一致），修复后 5/5。②"折叠→展开后界面是展开、落库偏好仍是 0"出现 1 次，界面状态正确、内核存储为旧值，属跨请求顺序问题。
+- 偏好保存进一步改为串行队列（prefsSaveChain）：同一时刻只发一个 /api/prefs/save，后一次在成功后发出，配合"只回写最后一次响应"的序号守卫，保证最后一次操作既是界面状态也是落库状态。新增确定性用例 D2：第一次保存卡在内核之前，再触发第二次保存，释放后 5 秒内落库必须是展开。当前实现 41/41；用 git HEAD 版（只有序号守卫、无串行）跑同一用例也是 41/41 —— 说明"内核处理顺序反转"没有被这条门控稳定复现，串行化按防御性改进记录，不宣称修复了已证明的落库反转。
+- sidebar-torture-check 现为 41 项；当前源码 5 连跑全 41/41；本轮新增的确定性慢响应用例（H）在修复前必定失败（open=seed-53/thread=seed-53/highlighted=seed-26），修复后三方一致。
+- 回归：clarity-memory 27、route-lifecycle 18/18、session-switch 18 均通过；上一轮记录的其他套件（chat-ux 18、team-panel 34、session-list 10、pages-audit 13、knowledge 92、growth-activity 21、nonchat 26）未受本轮改动影响，沿用同次会话证据。
+- 清理：4 个由本轮后台 ui-e2e 运行遗留的 node+内核进程（占用 dist/core 导致打包失败）已按命令行确认后终止；用户自己的桌面实例不在其中。

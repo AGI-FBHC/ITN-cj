@@ -3361,18 +3361,23 @@ function initZoomKeys() {
 }
 
 let prefsSaveSeq = 0;
+let prefsSaveChain = Promise.resolve();
 async function savePrefs(patch) {
   const seq = ++prefsSaveSeq;
-  try {
-    const saved = await api("/api/prefs/save", patch);
-    /* 只有最后一次保存的响应能回写界面：内核每次都回全量偏好，
-       先发出的旧响应后到就会把用户刚做的操作改回去
-       （实测：折叠 → 立刻展开，旧响应把面板又折叠起来）。 */
-    if (seq !== prefsSaveSeq) return;
-    applyPrefs(saved);
-  } catch (e) {
-    toast("偏好保存失败：" + e.message);
-  }
+  /* 偏好保存必须串行：同时发两个请求时，内核可能先处理"展开"再处理"折叠"，
+     最后落库的反而变成旧的折叠值 —— 重启后用户刚展开的面板又缩回去（实测可复现）。
+     串行 + 只回写最后一次响应，保证"最后一次操作"既是界面状态也是落库状态。 */
+  const run = async () => {
+    try {
+      const saved = await api("/api/prefs/save", patch);
+      if (seq !== prefsSaveSeq) return;
+      applyPrefs(saved);
+    } catch (e) {
+      toast("偏好保存失败：" + e.message);
+    }
+  };
+  prefsSaveChain = prefsSaveChain.then(run, run);
+  return prefsSaveChain;
 }
 
 /** 把内核返回的偏好一次性应用到界面上（主题 + 两个侧栏状态）。 */
