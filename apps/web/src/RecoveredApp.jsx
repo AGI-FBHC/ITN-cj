@@ -6,6 +6,7 @@ import {
   Routes,
   Route,
   useNavigate,
+  useLocation,
   useParams,
   Link,
   NavLink,
@@ -9203,22 +9204,19 @@ function i3({ course: n, node: r, onClose: u, onReview: i, onRetest: d }) {
 function LearningProgress(props) {
   const tracked = $t.some((course) => o3[course.id] !== void 0);
   if (!tracked) {
-    return jsxRuntime.jsxs("div", {
-      className:
-        "flex min-h-screen flex-col items-center justify-center gap-2 bg-[#f7f7fa] px-6 text-center",
-      children: [
-        jsxRuntime.jsx("p", {
-          className: "text-lg font-extrabold text-[#111318]",
-          children: $t.length === 0 ? "还没有已发布的课程" : "暂无进度明细",
-        }),
-        jsxRuntime.jsx("p", {
-          className: "text-sm font-semibold text-[#8b8f99]",
-          children: $t.length === 0
-            ? "管理员在管理端上传知识库并发布课程后，这里会显示学习进度。"
-            : "课程页的章节完成情况会随阅读与测验逐步更新。",
-        }),
-      ],
-    });
+    return <div className="min-h-screen bg-[#f7f7fa]">
+      <AppNavigation active="progress" onNavigate={props.onNavigate} />
+      <main className="mx-auto flex max-w-xl flex-col items-center gap-4 px-6 py-24 text-center">
+        <h1 className="text-2xl font-extrabold text-[#111318]">{$t.length === 0 ? "还没有已发布的课程" : "暂无进度明细"}</h1>
+        <p className="text-sm font-semibold leading-7 text-[#8b8f99]">{$t.length === 0
+          ? "管理员发布课程后，这里会显示学习进度。"
+          : "课程页的章节完成情况会随阅读与测验逐步更新。"}</p>
+        <div className="mt-3 flex flex-wrap justify-center gap-3">
+          <button type="button" className="rounded-xl bg-[#6038ef] px-6 py-3 font-bold text-white" onClick={() => props.onNavigate?.("courses")}>查看课程</button>
+          <button type="button" className="rounded-xl border border-[#e3dcec] bg-white px-6 py-3 font-bold text-[#6038ef]" onClick={() => props.onNavigate?.("home")}>返回学习首页</button>
+        </div>
+      </main>
+    </div>;
   }
   return jsxRuntime.jsx(LearningProgressInner, props);
 }
@@ -10673,6 +10671,8 @@ function g3({ done: n, total: r }) {
 }
 
 function Dashboard({ profile: n }) {
+  const location = useLocation();
+  const navigate = useNavigate();
   const learning = useLearning(),
     stats = learning.data?.stats ?? {},
     dashboardMetrics = [
@@ -10706,7 +10706,10 @@ function Dashboard({ profile: n }) {
       [r],
     ),
     [i, d] = React.useState(0),
-    [p, m] = React.useState("home"),
+    p = location.state?.learnerView || "home",
+    m = (view) => {
+      if (view !== p) navigate(location.pathname + location.search, { state: { ...location.state, learnerView: view } });
+    },
     [b, h] = React.useState(!1),
     [x, y] = React.useState({
       avatar: "",
@@ -11422,8 +11425,9 @@ function Dashboard({ profile: n }) {
 }
 
 function Home({ initialLogin = false }) {
+  const learning = useLearning();
   const [n, r] = React.useState(initialLogin ? "login" : "hero"),
-    [u, i] = React.useState(null),
+    [u, i] = React.useState(() => initialLogin ? null : learning.data?.profile || null),
     [displayName, setDisplayName] = React.useState("");
   return u
     ? jsxRuntime.jsx(Dashboard, {

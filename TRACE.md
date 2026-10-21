@@ -833,3 +833,11 @@
 - LessonStartModal 增加 named export，用于在临时 Vite 验证页直接挂载真实组件，免于更改实际用户、课程和发布数据。
 - 验证：前端 Vite production build 通过（既有 bundle-size 警告）；真实浏览器挂载验证仅发布 guide 时固定四项、三个按钮 disabled 且显示“暂未发布”，guide 选择返回正确模式；全部发布时四项启用，讲义/幻灯片/测验分别返回 lecture/presentation/quiz，guide 模式亦验证；全部未发布时四项均禁用并显示本章提示。实看灰色徽标和紫色已发布选项正常，临时验证页与标签已删除/关闭，用户端首页保持正常。未执行真实课件发布/下架或生成操作，未重启后端。
 - 功能更新与本条 TRACE 一起本地提交，未推送远端。
+
+## 2026-10-21 紧急修复学习进度空页面返回管理员登录
+- 用户在忘记密码功能开发过程中追加：在“暂无进度明细”页面点击返回竟回到管理员登录，需要优先修复。忘记密码任务保留继续，未取消。
+- 定位 RecoveredApp.jsx：LearningProgress 在新知识库课程没有旧版固定进度图时直接返回全屏纯文案，没有 AppNavigation 或站内返回入口；Dashboard 的标签切换全部是 useState，不产生浏览器历史，所以浏览器返回会跨出学习界面到之前访问过的管理员登录页。
+- 修复空状态保留学习端 AppNavigation，补“查看课程”和“返回学习首页”明确入口；使用 onNavigate 跳转学习端，不读取来源页面或通用 history.back。
+- Dashboard 标签状态改为 React Router location.state.learnerView，每次实际切换通过 navigate 记录一条站内历史，相同标签不重复压栈。浏览器返回/前进会恢复对应学习标签。Home 在已有学习会话且 bootstrap 返回画像时恢复 Dashboard，避免从独立 /progress 返回 / 后丢失当前学习页面。
+- 真实浏览器验证：直接访问 /progress 显示学习端导航与返回按钮；“返回学习首页”回到 / 的个人档案/课程学习页；从该页点击“学习进度”后使用浏览器 back，回到学习首页且没有进入 /admin/login。构建通过，浏览器没有错误。
+- 本条修复及 trace 单独提交，忘记密码的其他未提交文件保留继续开发；无数据库操作或服务重启。
