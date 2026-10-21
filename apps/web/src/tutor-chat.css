@@ -322,6 +322,9 @@
 .zx-tutor-answer-tools svg { width: 13px; height: 13px; }
 .zx-tutor-answer-tools button:hover { background: #eee8ff; color: #6038ef; }
 .zx-tutor-citations { margin-top: 8px; border: 1px solid #e2deeb; border-radius: 10px; background: #faf9fd; padding: 8px 10px; text-align: left; }
+.zx-tutor-tool-trace { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 10px 0; color: #746a81; font-size: 11px; font-weight: 700; }
+.zx-tutor-tool-trace > span { color: #6038ef; }
+.zx-tutor-tool-trace i { border: 1px solid #ddd4f2; border-radius: 999px; padding: 3px 8px; background: #f7f4ff; color: #5f5274; font-style: normal; }
 .zx-tutor-citations > p { margin: 0 0 4px; color: #746a81; font-size: 10px; font-weight: 750; }
 .zx-tutor-citations ol { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
 .zx-tutor-citations summary, .zx-tutor-citation-label { min-height: 26px; overflow-wrap: anywhere; color: #5e5274; font-size: 11px; line-height: 1.5; }

@@ -363,6 +363,7 @@ function ChatSession({ courseId = '', lessonIndex = -1, courseName = '', lessonT
   const [contextEnabled, setContextEnabled] = React.useState(true);
   const [copiedId, setCopiedId] = React.useState('');
   const [copyError, setCopyError] = React.useState('');
+  const [toolTrace, setToolTrace] = React.useState([]);
   const [speechError, setSpeechError] = React.useState('');
   const [previewImage, setPreviewImage] = React.useState(null);
   const fileInput = React.useRef(null);
@@ -518,6 +519,7 @@ function ChatSession({ courseId = '', lessonIndex = -1, courseName = '', lessonT
         if (event.type === 'meta') {
           setMessages((current) => current.map((item) => (item.id === answerId
             ? { ...item, model: event.model } : item)));
+          setToolTrace(Array.isArray(event.toolTrace) ? event.toolTrace : []);
         } else if (event.type === 'delta') {
           streamed += event.text || '';
           schedule();
@@ -620,6 +622,7 @@ function ChatSession({ courseId = '', lessonIndex = -1, courseName = '', lessonT
       {!loading && !messages.length && !!suggestions.length && !archived && <div className="zx-tutor-suggestions">{suggestions.map((text) => <button key={text} type="button" onClick={() => send(null, text)} disabled={!canCompose || preparing}>{text}</button>)}</div>}
       {lastAnswer?.text && !lastAnswer.streaming && !lastAnswer.interrupted && !sending && !archived && <div className="zx-tutor-followups"><p>继续学习</p><div className="zx-tutor-suggestions">{followUps.map((text, index) => <button type="button" key={text} title={text} disabled={!canCompose || preparing} onClick={() => send(null, text)}>{['举个例子', '总结要点', '出一道练习题'][index]}</button>)}</div></div>}
       {sending && !lastAnswer?.text?.trim() && <div className="flex items-center gap-2 text-xs font-bold text-[#7a7f8c]" role="status"><span className="zx-tutor-dot" />Lumin 正在查看资料并思考…</div>}
+      {!!toolTrace.length && !sending && <div className="zx-tutor-tool-trace" aria-label="Agent 工具调用记录"><span>Agent 已调用</span>{toolTrace.map((item, index) => <i key={`${item}-${index}`}>{item}</i>)}</div>}
       {failed && <div className="zx-tutor-inline-error" role="alert"><span>未能回答：{failed.error}</span><button type="button" onClick={() => send(failed)} disabled={sending}>重新发送</button></div>}
       {copyError && <p className="zx-tutor-image-error" role="alert">{copyError}</p>}
       <div ref={bottom} />

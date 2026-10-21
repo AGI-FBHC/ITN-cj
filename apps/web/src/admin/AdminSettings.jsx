@@ -44,6 +44,13 @@ function initialForm(settings) {
     topK: settings.topK || 6,
     embeddingDim: settings.embeddingDim || 0,
     maxCoursewareParallel: settings.maxCoursewareParallel || 10,
+    tavily: {
+      enabled: settings.tavily?.enabled === true,
+      apiKey: '',
+      clearKey: false,
+      maxResults: settings.tavily?.maxResults || 5,
+      searchDepth: settings.tavily?.searchDepth === 'advanced' ? 'advanced' : 'basic',
+    },
   };
 }
 
@@ -71,6 +78,8 @@ export default function AdminSettings() {
   const current = settings[slotMeta.key] || {};
   const editSlot = (patch) => setForm({ ...form, [slotMeta.key]: { ...form[slotMeta.key], ...patch } });
   const number = (field) => (event) => setForm({ ...form, [field]: Number(event.target.value) || 0 });
+  const tavilyCurrent = settings.tavily || {};
+  const editTavily = (patch) => setForm({ ...form, tavily: { ...form.tavily, ...patch } });
 
   async function testSlot() {
     setBusy('test');
@@ -124,6 +133,11 @@ export default function AdminSettings() {
         chunkOverlap: form.chunkOverlap,
         topK: form.topK,
         maxCoursewareParallel: form.maxCoursewareParallel,
+        tavilyEnabled: form.tavily.enabled,
+        tavilyApiKey: form.tavily.apiKey.trim(),
+        tavilyClearKey: form.tavily.clearKey,
+        tavilyMaxResults: Math.min(10, Math.max(1, Number(form.tavily.maxResults) || 5)),
+        tavilySearchDepth: form.tavily.searchDepth === 'advanced' ? 'advanced' : 'basic',
       })
       .then(() => {
         setMessage('配置已保存。已入库的文档需要「重建索引」才会用新的向量模型。');
@@ -136,8 +150,8 @@ export default function AdminSettings() {
   return (
     <div className="zx-admin-page">
       <PageHead
-        title="设置"
-        description="向量、对话、语音三类模型各自独立配置地址、模型和密钥，保存后立即生效。"
+        title="模型配置"
+        description="向量、对话、语音三类模型与 Tavily 联网检索各自独立配置，保存后立即生效。"
         actions={
           <button type="submit" form="settings-form" className="zx-btn zx-btn-primary" disabled={busy === 'save'}>
             {busy === 'save' ? '保存中…' : '保存全部配置'}
@@ -246,6 +260,80 @@ export default function AdminSettings() {
             <button type="button" className="zx-btn zx-btn-ghost" disabled={busy === 'test'} onClick={testSlot}>
               {busy === 'test' ? '测试中…' : '测试连接'}
             </button>
+          </div>
+        </div>
+
+        <div className="zx-card">
+          <h2 className="zx-card-title">
+            Tavily 联网检索
+            {tavilyCurrent.keyConfigured
+              ? <span className="zx-pill zx-pill-live">已配置{tavilyCurrent.keyHint ? ` · ${tavilyCurrent.keyHint}` : ''}</span>
+              : <span className="zx-pill zx-pill-draft">未配置密钥</span>}
+          </h2>
+          <div className="zx-card-hint">开启后 Lumin 在回答前可联网检索最新资料，补充讲义之外的信息；关闭时只用站内知识库。</div>
+          <div className="zx-form">
+            <label
+              className="zx-field-full"
+              htmlFor="tavily-enabled"
+              style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12.5, fontWeight: 600, color: '#4b4560' }}
+            >
+              <input
+                id="tavily-enabled"
+                type="checkbox"
+                checked={form.tavily.enabled}
+                onChange={(event) => editTavily({ enabled: event.target.checked })}
+                style={{ accentColor: '#6038ef', width: 15, height: 15 }}
+              />
+              启用 Tavily 联网检索
+            </label>
+            <div className="zx-field zx-field-full">
+              <label htmlFor="tavily-key">API Key</label>
+              <input
+                id="tavily-key"
+                type="password"
+                autoComplete="new-password"
+                value={form.tavily.apiKey}
+                onChange={(event) => editTavily({ apiKey: event.target.value, clearKey: false })}
+                placeholder={tavilyCurrent.keyConfigured ? '已保存，留空表示不修改' : '粘贴 Tavily API Key，保存后不再显示'}
+              />
+              <small>提交即加密入库，任何接口都不会再返回明文。</small>
+            </div>
+            {tavilyCurrent.keyConfigured ? (
+              <label htmlFor="tavily-clear" style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12.5, fontWeight: 600, color: '#4b4560' }}>
+                <input
+                  id="tavily-clear"
+                  type="checkbox"
+                  checked={form.tavily.clearKey}
+                  onChange={(event) => editTavily({ clearKey: event.target.checked, apiKey: event.target.checked ? '' : form.tavily.apiKey })}
+                  style={{ accentColor: '#6038ef', width: 15, height: 15 }}
+                />
+                清除 Tavily 密钥
+              </label>
+            ) : null}
+            <div className="zx-field">
+              <label htmlFor="tavily-max-results">最大结果数</label>
+              <input
+                id="tavily-max-results"
+                type="number"
+                min="1"
+                max="10"
+                value={form.tavily.maxResults}
+                onChange={(event) => editTavily({ maxResults: Number(event.target.value) || 0 })}
+              />
+              <small>每次检索返回的网页条数（1–10），默认 5。</small>
+            </div>
+            <div className="zx-field">
+              <label htmlFor="tavily-search-depth">搜索深度</label>
+              <select
+                id="tavily-search-depth"
+                value={form.tavily.searchDepth}
+                onChange={(event) => editTavily({ searchDepth: event.target.value })}
+              >
+                <option value="basic">basic（更快，适合日常问答）</option>
+                <option value="advanced">advanced（更全，适合深入调研）</option>
+              </select>
+              <small>advanced 结果更全，但检索耗时更长。</small>
+            </div>
           </div>
         </div>
 

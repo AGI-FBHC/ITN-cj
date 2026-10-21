@@ -1441,6 +1441,7 @@ func kbSettingsJson(cfg: Config, settings: KbSettings): String {
     out.putInt("maxCoursewareParallel", settings.maxCoursewareParallel)
     let anyAdmin = settings.embedding.cipher.size > 0 || settings.chat.cipher.size > 0 || settings.tts.cipher.size > 0
     out.putStr("keySource", if (anyAdmin) { "admin" } else if (legacyEnvKey().size > 0) { "env" } else { "" })
+    out.putRaw("tavily", tavilySettingsJson(cfg, loadTavilySettings(cfg)))
     out.toJson()
 }
 
@@ -2645,6 +2646,7 @@ main(): Int64 {
                     case None => writeError(ctx.response, 400, "配置格式不正确")
                     case Some(body) =>
                         let current = loadKbSettings(cfg)
+                        let currentTavily = loadTavilySettings(cfg)
                         let chunkSize = jsonGetInt(body, "chunkSize") ?? current.chunkSize
                         let overlap = jsonGetInt(body, "chunkOverlap") ?? current.chunkOverlap
                         let batch = jsonGetInt(body, "batchSize") ?? current.batchSize
@@ -2665,6 +2667,11 @@ main(): Int64 {
                         let ttsPath = (jsonGetString(body, "ttsPath") ?? "").trimAscii()
                         let ttsKey = (jsonGetString(body, "ttsApiKey") ?? "").trimAscii()
                         let ttsClear = jsonGetBool(body, "ttsClearKey") ?? false
+                        let tavilyEnabled = jsonGetBool(body, "tavilyEnabled") ?? currentTavily.enabled
+                        let tavilyKey = (jsonGetString(body, "tavilyApiKey") ?? "").trimAscii()
+                        let tavilyClear = jsonGetBool(body, "tavilyClearKey") ?? false
+                        let tavilyMax = jsonGetInt(body, "tavilyMaxResults") ?? currentTavily.maxResults
+                        let tavilyDepthInput = (jsonGetString(body, "tavilySearchDepth") ?? "").trimAscii()
                         var problem = ""
                         for (url in [embeddingBase, chatBase, ttsBase]) {
                             if (url.size > 0 && !url.startsWith("http")) { problem = "接口地址需要以 http:// 或 https:// 开头" }
@@ -2692,6 +2699,16 @@ main(): Int64 {
                         if (problem.size == 0 && (maxCoursewareParallel < 1 || maxCoursewareParallel > 50)) {
                             problem = "课件最大并行数需要在 1–50 之间"
                         }
+                        if (problem.size == 0 && tavilyKey.size > 400) { problem = "联网检索密钥过长" }
+                        if (problem.size == 0 && tavilyDepthInput.size > 0 && !tavilyValidDepth(tavilyDepthInput)) {
+                            problem = "联网检索深度只支持 basic 或 advanced"
+                        }
+                        if (problem.size == 0 && (tavilyMax < 1 || tavilyMax > 10)) {
+                            problem = "联网检索条数需要在 1–10 之间"
+                        }
+                        if (problem.size == 0 && tavilyEnabled && tavilyKey.size == 0 && !tavilyClear && currentTavily.cipher.size == 0 && tavilyEnvKey().size == 0) {
+                            problem = "启用联网检索前需要先填写 Tavily 密钥"
+                        }
                         if (problem.size > 0) {
                             writeError(ctx.response, 400, problem)
                         } else {
@@ -2701,6 +2718,9 @@ main(): Int64 {
                             let chatHint = kbKeyHintValue(chatKey, chatClear, current.chat.hint)
                             let ttsCipher = kbKeyCipherValue(cfg, ttsKey, ttsClear, current.tts.cipher)
                             let ttsHint = kbKeyHintValue(ttsKey, ttsClear, current.tts.hint)
+                            let tavilyCipher = kbKeyCipherValue(cfg, tavilyKey, tavilyClear, currentTavily.cipher)
+                            let tavilyHint = kbKeyHintValue(tavilyKey, tavilyClear, currentTavily.hint)
+                            let tavilyDepth = if (tavilyDepthInput.size == 0) { currentTavily.searchDepth } else { tavilyNormalizeDepth(tavilyDepthInput) }
                             execute(cfg,
                                 "UPDATE kb_settings SET embedding_base_url=" + sqlQuote(embeddingBase) +
                                 ",embedding_model=" + sqlQuote(embeddingModel) +
@@ -2721,7 +2741,12 @@ main(): Int64 {
                                 ",chunk_size=" + chunkSize.toString() +
                                 ",chunk_overlap=" + overlap.toString() +
                                 ",top_k=" + topK.toString() +
-                                ",max_courseware_parallel=" + maxCoursewareParallel.toString() + " WHERE id=1")
+                                ",max_courseware_parallel=" + maxCoursewareParallel.toString() +
+                                ",tavily_enabled=" + (if (tavilyEnabled) { "1" } else { "0" }) +
+                                ",tavily_api_key_cipher=" + tavilyCipher +
+                                ",tavily_api_key_hint=" + sqlQuote(tavilyHint) +
+                                ",tavily_max_results=" + tavilyMax.toString() +
+                                ",tavily_search_depth=" + sqlQuote(tavilyDepth) + " WHERE id=1")
                             let out = JsonWriter()
                             out.putRaw("settings", kbSettingsJson(cfg, loadKbSettings(cfg)))
                             writeJson(ctx.response, 200, out.toJson())
@@ -2740,6 +2765,36 @@ main(): Int64 {
                     case None => JsonObject()
                 }
                 let target = (jsonGetString(body, "target") ?? "embedding").trimAscii()
+                if (target == "tavily") {
+                    // 允许用页面上刚填、还没保存的密钥先试一次；错误文本已抹掉密钥。
+                    let tavilySaved = loadTavilySettings(cfg)
+                    let typedKey = (jsonGetString(body, "apiKey") ?? "").trimAscii()
+                    let probe = (jsonGetString(body, "query") ?? "").trimAscii()
+                    let keyword = if (probe.size > 0) { probe } else { "Cangjie 编程语言" }
+                    let key = if (typedKey.size > 0) { typedKey } else { resolveTavilyKey(cfg, tavilySaved) }
+                    try {
+                        let result = tavilySearchWithKey(key, tavilySaved, keyword, 3)
+                        var count: Int64 = 0
+                        match (jsonParse(result)) {
+                            case Some(value) =>
+                                if (isJsObject(value)) {
+                                    match (jsonGetArray(value.asObject(), "results")) {
+                                        case Some(items) => count = items.size()
+                                        case None => ()
+                                    }
+                                }
+                            case None => ()
+                        }
+                        let out = JsonWriter()
+                        out.putBool("ok", true)
+                        out.putStr("query", keyword)
+                        out.putInt("resultCount", count)
+                        writeJson(ctx.response, 200, out.toJson())
+                    } catch (error: Exception) {
+                        writeError(ctx.response, 502, "联网检索连接失败：" + error.message)
+                    }
+                    return
+                }
                 let saved = if (target == "chat") { settings.chat } else if (target == "tts") { settings.tts } else { settings.embedding }
                 let label = if (target == "chat") { "对话模型" } else if (target == "tts") { "语音合成" } else { "向量模型" }
                 // 优先用页面上刚填、还没保存的值进行测试。

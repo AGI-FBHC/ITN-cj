@@ -1082,3 +1082,12 @@
 - 前端改为调用现有 `askTutor`：发送时携带用户问题，并把当前题目、全部选项、用户选择、正确答案、判定结果、题目解析拼成引用上下文，同时传 courseId/lessonIndex/lessonTitle 和稳定 conversationId `lesson:{courseId}:{lessonIndex}`；回复使用现有 Markdown 渲染。发送中显示“Lumin 正在结合题目解析回答…”，失败显示真实错误并提供重试，不再用占位文案。
 - 浏览器实测：在“前言”章节测验解析页打开 Lumin，询问“为什么这道题选这个答案？”，成功收到带题目依据和选项逐项分析的真实模型回答；无模型配置时仍会显示后端返回的具体错误。
 - 验证：Vite build 成功，现有前端 15/15 测试通过；未重启后端、未迁移数据库、未修改模型配置或用户未跟踪脚本。本批本地提交，不推送。
+
+## 2026-10-22 Tavily 配置与真实检索 Agent
+
+- 用户要求管理员端增加 Tavily 配置，并让学员 Agent 成为会实际检索的真实 Agent，而不是单次 LLM 包装。新增 migration 024_tavily_settings.sql，为 kb_settings 增加 tavily_enabled、tavily_api_key_cipher、tavily_api_key_hint、tavily_max_results、tavily_search_depth；已在本地 13307 库执行。密钥复用现有 encryptSecret 加密落库，管理员 GET 只返回 enabled/keyConfigured/keyHint/maxResults/searchDepth，任何接口都不返回明文；验证密文长度为 210 且不以 tvly- 开头。
+- 管理员“模型配置”新增 Tavily 联网检索卡片：启用开关、API Key 密码输入、清除密钥、最大结果数 1–10、搜索深度 basic/advanced；保存后只显示尾号。已通过管理员页面保存用户提供的 Key 并开启检索，接口复核 keyConfigured=true、hint 为尾号 7zgC，响应体不含明文 Key；本 TRACE 和仓库文件均不记录 Key。
+- 新增 tavily.cj：管理端密文优先、TAVILY_API_KEY 环境变量兜底；Tavily POST /search 使用 TLS/SNI、api_key payload、include_answer，统一收敛为 {answer,results:[{title,url,content,score}]}；参数限制、超时和上游错误均不会回显密钥。
+- 新增 tutor_agent.cj，把学员 Agent 从“预取章节 + 单次 chatStreamText”改为真实工具循环：系统提示明确 Agent 必须自行判断检索；暴露 search_course_material（lesson/course/all 范围，调用现有 tutorLessonHits 或 kbSearch 混合向量+关键词检索）和 search_web（Tavily）；最多 4 步 tool_calls，按 assistant.tool_calls / role=tool 消息回填，工具结果带稳定来源编号，最终 citations 与 toolTrace 返回。Tutor SSE meta 和普通响应均包含 toolTrace；前端 Agent 显示“Agent 已调用”工具轨迹，保留引用列表和 Markdown 回答。
+- 真实回归：关闭课程上下文询问“2025 年 AI Agent 最新发展趋势”，模型实际调用 2 次 Tavily 检索，返回 mode=Agent 工具调用、12 条 citation、1738 字回答；课程问题询问“TCP 为什么能在 IP 不可靠时提供可靠传输”，模型实际连续调用 3 次课程检索，返回 18 条 citation、781 字回答。临时匿名测试用户已清理。
+- 验证：仓颉 56/56、前端 Node 15/15 通过；后端 release 和前端 Vite build 成功；8312 health 正常，运行 itn_learning_v2_dev。新增 tutor_agent_test.cj 覆盖工具 schema、参数边界、引用编号、工具轨迹、Tavily 参数和密钥脱敏。迁移、管理员配置、真实 Agent 回归均已完成；后续可继续优化工具重试、网页引用质量与多轮记忆压缩。本批本地提交，不推送；用户未跟踪 tools/build_course_resource_packs.py 保持不动。

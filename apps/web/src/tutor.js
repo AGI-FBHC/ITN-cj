@@ -106,7 +106,7 @@ export async function askTutorStream(payload = {}, onEvent, { signal } = {}) {
     });
     if (response.status === 404 || response.status === 405 || !response.body) {
       const result = await askTutor({ ...payload, signal: controller.signal });
-      onEvent?.({ type: 'meta', model: result.model, mode: result.mode, citations: result.citations, conversationId: result.conversationId });
+      onEvent?.({ type: 'meta', model: result.model, mode: result.mode, citations: result.citations, toolTrace: result.toolTrace, conversationId: result.conversationId });
       onEvent?.({ type: 'done', answer: result.answer, conversationId: result.conversationId });
       return result;
     }
