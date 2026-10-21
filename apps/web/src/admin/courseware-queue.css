@@ -81,3 +81,40 @@
 .zx-cw-detail-icon:hover { border-color:#9f88ed; background:#eee8ff; }
 .zx-cw-detail-icon:focus-visible { outline:3px solid rgb(96 56 239 / 22%); outline-offset:2px; }
 .zx-cw-detail-icon svg { width:16px; height:16px; }
+
+.zx-cw-library-card { overflow: hidden; }
+.zx-cw-library-filters {
+  display: grid;
+  grid-template-columns: minmax(210px,1.6fr) repeat(3,minmax(130px,.7fr)) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 14px 16px 15px;
+  border-bottom: 1px solid #eee9f2;
+  background: linear-gradient(180deg,#fff,#fbfafc);
+}
+.zx-cw-library-filters label { display:grid; gap:5px; min-width:0; }
+.zx-cw-library-filters label > span { color:#817889; font-size:9px; font-weight:800; letter-spacing:.04em; }
+.zx-cw-library-filters input,
+.zx-cw-library-filters select {
+  width:100%;
+  height:36px;
+  min-width:0;
+  padding:0 10px;
+  border:1px solid #e3dde9;
+  border-radius:9px;
+  background:#fff;
+  color:#3c3544;
+  font-size:11px;
+  outline:none;
+}
+.zx-cw-library-filters input:focus,
+.zx-cw-library-filters select:focus { border-color:#9f88ed; box-shadow:0 0 0 3px rgb(96 56 239 / 10%); }
+.zx-cw-library-filter-meta { display:flex; align-items:center; gap:8px; height:36px; white-space:nowrap; }
+.zx-cw-library-filter-meta span { color:#918899; font-size:9px; font-weight:700; }
+.zx-cw-library-filter-meta button { border:0; padding:5px 2px; background:transparent; color:#6038ef; font-size:9px; font-weight:800; cursor:pointer; }
+.zx-cw-library-filter-meta button:disabled { color:#bbb4c2; cursor:default; }
+.zx-cw-library-no-match { display:grid; place-items:center; gap:9px; padding:52px 20px; color:#817889; text-align:center; font-size:11px; }
+.zx-cw-library-no-match strong { color:#443c4d; font-size:13px; }
+.zx-cw-library-no-match button { border:1px solid #d8cbed; border-radius:8px; padding:7px 12px; background:#f7f3ff; color:#6038ef; font-size:10px; font-weight:800; cursor:pointer; }
+@media(max-width:980px){.zx-cw-library-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.zx-cw-library-search{grid-column:1/-1}.zx-cw-library-filter-meta{justify-content:flex-end}}
+@media(max-width:560px){.zx-cw-library-filters{grid-template-columns:1fr}.zx-cw-library-search{grid-column:auto}.zx-cw-library-filter-meta{justify-content:space-between}}

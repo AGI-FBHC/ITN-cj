@@ -113,6 +113,10 @@ export default function AdminCourseware() {
   const [error, setError] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [queueOpen, setQueueOpen] = React.useState(false);
+  const [libraryQuery, setLibraryQuery] = React.useState('');
+  const [libraryKind, setLibraryKind] = React.useState('all');
+  const [libraryStatus, setLibraryStatus] = React.useState('all');
+  const [libraryPublished, setLibraryPublished] = React.useState('all');
   const pollTimer = React.useRef(null);
 
   const bundles = (bundlesState.data?.bundles || []).filter((item) => bundleReadable(item));
@@ -143,6 +147,25 @@ export default function AdminCourseware() {
   const activeChapter = chapters.find((item) => item.id === activeDocId) || null;
   const activeLive = activeDocId ? liveByDoc.get(activeDocId) : null;
   const items = listState.data?.items || [];
+  const libraryItems = React.useMemo(() => {
+    const keyword = libraryQuery.trim().toLocaleLowerCase();
+    return items.filter((item) => {
+      if (libraryKind !== 'all' && item.kind !== libraryKind) return false;
+      if (libraryStatus !== 'all' && item.status !== libraryStatus) return false;
+      if (libraryPublished === 'published' && !item.published) return false;
+      if (libraryPublished === 'unpublished' && item.published) return false;
+      if (!keyword) return true;
+      return [item.title, item.kindLabel, item.bundleTitle, item.docTitle, item.errorMessage]
+        .some((value) => String(value || '').toLocaleLowerCase().includes(keyword));
+    });
+  }, [items, libraryKind, libraryPublished, libraryQuery, libraryStatus]);
+  const libraryFiltered = libraryQuery.trim() || libraryKind !== 'all' || libraryStatus !== 'all' || libraryPublished !== 'all';
+  const clearLibraryFilters = () => {
+    setLibraryQuery('');
+    setLibraryKind('all');
+    setLibraryStatus('all');
+    setLibraryPublished('all');
+  };
   const generating = items.some((item) => item.status === 'generating' || item.status === 'queued')
     || Number(queueState.data?.running || 0) + Number(queueState.data?.queued || 0) > 0;
 
@@ -426,9 +449,55 @@ export default function AdminCourseware() {
           </section>
         </div>
       ) : (
-        <div className="zx-card">
+        <div className="zx-card zx-cw-library-card">
+          <section className="zx-cw-library-filters" aria-label="课件库筛选">
+            <label className="zx-cw-library-search">
+              <span>搜索</span>
+              <input
+                type="search"
+                aria-label="搜索课件"
+                value={libraryQuery}
+                onChange={(event) => setLibraryQuery(event.target.value)}
+                placeholder="课件、知识库或来源章节"
+              />
+            </label>
+            <label>
+              <span>类型</span>
+              <select aria-label="资源类型" value={libraryKind} onChange={(event) => setLibraryKind(event.target.value)}>
+                <option value="all">全部类型</option>
+                {RESOURCES.map((resource) => <option key={resource.key} value={resource.key}>{resource.label}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>生成状态</span>
+              <select aria-label="生成状态" value={libraryStatus} onChange={(event) => setLibraryStatus(event.target.value)}>
+                <option value="all">全部状态</option>
+                <option value="queued">排队中</option>
+                <option value="generating">生成中</option>
+                <option value="ready">已完成</option>
+                <option value="failed">生成失败</option>
+              </select>
+            </label>
+            <label>
+              <span>上架状态</span>
+              <select aria-label="上架状态" value={libraryPublished} onChange={(event) => setLibraryPublished(event.target.value)}>
+                <option value="all">全部</option>
+                <option value="published">已发布</option>
+                <option value="unpublished">未发布</option>
+              </select>
+            </label>
+            <div className="zx-cw-library-filter-meta">
+              <span>显示 {libraryItems.length} / {items.length}</span>
+              <button type="button" disabled={!libraryFiltered} onClick={clearLibraryFilters}>清除筛选</button>
+            </div>
+          </section>
           {items.length === 0 ? (
             <div className="zx-empty">还没有课件</div>
+          ) : libraryItems.length === 0 ? (
+            <div className="zx-cw-library-no-match">
+              <strong>没有符合条件的课件</strong>
+              <button type="button" onClick={clearLibraryFilters}>清除筛选条件</button>
+            </div>
           ) : (
             <table className="zx-table">
               <thead>
@@ -443,7 +512,7 @@ export default function AdminCourseware() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((item) => {
+                {libraryItems.map((item) => {
                   const status = item.published ? STATUS.published : (STATUS[item.status] || STATUS.ready);
                   const liveOrder = item.chapterOrder || 0;
                   return (
