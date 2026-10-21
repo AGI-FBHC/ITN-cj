@@ -26,15 +26,9 @@ export default function AdminBundlePreview() {
   const bundle = state.data?.bundle;
   const docs = state.data?.docs || [];
   const selectedDoc = docs[Math.min(active, Math.max(0, docs.length - 1))];
-  const chapterCache = React.useRef(new Map());
   const chapter = useLoad(() => {
     if (view !== 'original' || !selectedDoc?.id) return Promise.resolve(null);
-    const key = `${bundleId}:${bundle?.status}:${selectedDoc.id}`;
-    if (chapterCache.current.has(key)) return Promise.resolve(chapterCache.current.get(key));
-    return adminApi.kbBundleDocument(bundleId, selectedDoc.id).then((result) => {
-      chapterCache.current.set(key, result);
-      return result;
-    });
+    return adminApi.kbBundleDocument(bundleId, selectedDoc.id);
   }, [bundleId, bundle?.status, view, selectedDoc?.id]);
   const totalChars = docs.reduce((sum, doc) => sum + (doc.charCount || 0), 0);
   const warningData = bundle?.warnings || state.data?.warnings;

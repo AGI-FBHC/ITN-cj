@@ -304,7 +304,7 @@ export default function AdminCourseware() {
   const courseLive = selectedBundle?.courseStatus === 'published';
   const chaptersState = useLoad(
     () => (bundleId
-      ? adminApi.kbBundle(bundleId).then((data) => ({ ...data, forBundle: bundleId }))
+      ? adminApi.kbBundleSources(bundleId).then((data) => ({ ...data, forBundle: bundleId }))
       : Promise.resolve({ docs: [], forBundle: '' })),
     [bundleId],
   );
@@ -527,6 +527,7 @@ export default function AdminCourseware() {
   React.useEffect(() => {
     if (!bundleId || !activeDocId) return undefined;
     let alive = true;
+    setDoc(null);
     setDocLoading(true);
     setDocError('');
     adminApi

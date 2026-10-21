@@ -70,7 +70,7 @@ export default function AdminApp() {
           </button>
         </div>
       </aside>
-      <main className="zx-admin-main">
+      <main className={`zx-admin-main${path === '/admin/courseware' ? ' zx-admin-main-workspace' : ''}`}>
         <Routes>
           <Route
             path="/admin"

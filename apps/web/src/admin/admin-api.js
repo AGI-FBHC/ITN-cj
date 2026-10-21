@@ -1,6 +1,23 @@
+import { bundlePreviewCache } from './bundle-preview-cache.js';
+
 const TOKEN_KEY = 'zhixun-admin-token';
 const NAME_KEY = 'zhixun-admin-name';
 const orgQuery = (id) => id ? `?orgId=${encodeURIComponent(id)}` : '';
+let previewScopeToken;
+let previewScopePromise;
+
+function previewScope() {
+  const token = adminToken();
+  if (!token) return Promise.resolve('');
+  if (token !== previewScopeToken) {
+    previewScopeToken = token;
+    previewScopePromise = Promise.resolve().then(async () => {
+      const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
+      return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, '0')).join('');
+    }).catch(() => '');
+  }
+  return previewScopePromise;
+}
 
 export function adminToken() {
   return localStorage.getItem(TOKEN_KEY) || '';
@@ -94,13 +111,43 @@ export const adminApi = {
   publishKbDocument: (id, body = {}) => request(`/kb/documents/${encodeURIComponent(id)}/publish`, { method: 'POST', body }),
   unpublishKbDocument: (id) => request(`/kb/documents/${encodeURIComponent(id)}/unpublish`, { method: 'POST', body: {} }),
   testKbModel: (target = 'embedding', extra = {}) => request('/kb/test', { method: 'POST', body: { target, ...extra } }),
-  kbBundles: () => request('/kb/bundles'),
+  kbBundles: async () => {
+    const result = await request('/kb/bundles');
+    const scope = await previewScope();
+    if (scope && Array.isArray(result.bundles)) {
+      await bundlePreviewCache.reconcile(scope, result.bundles.map((bundle) => bundle.id));
+    }
+    return result;
+  },
   kbBundle: (id) => request(`/kb/bundles/${encodeURIComponent(id)}?metadata=1`),
-  kbBundleDocument: (id, docId) => request(`/kb/bundles/${encodeURIComponent(id)}/docs/${encodeURIComponent(docId)}`),
+  kbBundleSources: async (id) => {
+    const token = adminToken();
+    const scope = await previewScope();
+    const load = async () => {
+      const result = await adminApi.kbBundle(id);
+      return { docs: result.docs || [], ready: result.bundle?.status === 'ready' };
+    };
+    return scope ? bundlePreviewCache.read(scope, id, 'directory', load,
+      (value) => value.ready && adminToken() === token) : load();
+  },
+  kbBundleDocument: async (id, docId) => {
+    const token = adminToken();
+    const scope = await previewScope();
+    const load = () => request(`/kb/bundles/${encodeURIComponent(id)}/docs/${encodeURIComponent(docId)}`);
+    return scope ? bundlePreviewCache.read(scope, id, `doc:${docId}`, load,
+      (value) => typeof value.doc?.content === 'string' && adminToken() === token) : load();
+  },
   kbBundleStatus: (id) => request(`/kb/bundles/${encodeURIComponent(id)}/status`),
   kbBundleChunks: (id, offset = 0, limit = 30) =>
     request(`/kb/bundles/${encodeURIComponent(id)}/chunks?offset=${offset}&limit=${limit}`),
-  retryKbBundle: (id, stage = 'all') => request(`/kb/bundles/${encodeURIComponent(id)}/retry?metadata=1`, { method: 'POST', body: { stage } }),
+  retryKbBundle: async (id, stage = 'all') => {
+    const scope = await previewScope();
+    const result = await request(`/kb/bundles/${encodeURIComponent(id)}/retry?metadata=1`, { method: 'POST', body: { stage } });
+    if (scope && stage === 'all' && result.bundle?.status !== 'ready') {
+      await bundlePreviewCache.remove(scope, id);
+    }
+    return result;
+  },
   publishKbBundle: (id) => request(`/kb/bundles/${encodeURIComponent(id)}/publish`, { method: 'POST', body: {} }),
   unpublishKbBundle: (id) => request(`/kb/bundles/${encodeURIComponent(id)}/unpublish`, { method: 'POST', body: {} }),
   generateLogos: (title, bundleId) => request('/logos/generate', { method: 'POST', body: { title, resourceType: 'kb_bundle', resourceId: bundleId } }),
@@ -135,7 +182,12 @@ export const adminApi = {
       signal?.removeEventListener('abort', abort);
     }
   },
-  deleteKbBundle: (id) => request(`/kb/bundles/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  deleteKbBundle: async (id) => {
+    const scope = await previewScope();
+    const result = await request(`/kb/bundles/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (scope) await bundlePreviewCache.remove(scope, id);
+    return result;
+  },
   cwList: (bundleId) => request(`/kb/courseware${bundleId ? `?bundleId=${encodeURIComponent(bundleId)}` : ''}`),
   cwDetail: (id) => request(`/kb/courseware/${encodeURIComponent(id)}`),
   cwGenerate: (body) => request('/kb/courseware', { method: 'POST', body }),

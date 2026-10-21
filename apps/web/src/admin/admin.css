@@ -110,6 +110,27 @@
 
 .zx-admin-page { max-width: 1120px; margin: 0 auto; }
 
+.zx-admin-main-workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 0;
+  padding: clamp(12px, 1.6vw, 24px);
+  overflow: auto;
+}
+.zx-admin-main-workspace > .zx-admin-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  margin: 0;
+}
+.zx-admin-main-workspace .zx-admin-head { flex-shrink: 0; margin-bottom: 14px; }
+.zx-admin-main-workspace .zx-notice { flex-shrink: 0; }
+.zx-admin-main-workspace .zx-cw-library-card { flex-shrink: 0; }
+
 .zx-admin-head {
   display: flex;
   align-items: flex-end;
@@ -874,14 +895,14 @@
 .zx-hit-body .zx-md h3 { font-size: 14px; }
 .zx-hit-body .zx-md pre { margin: 8px 0; }
 /* 课件管理：三栏 */
-/* 三栏等高：高度按视口算一次，列内部各自滚动 */
+/* The three columns share the space remaining below the page header. */
 .zx-cw {
   display: grid;
-  grid-template-columns: 216px 236px minmax(0, 1fr);
+  grid-template-columns: minmax(180px, 19fr) minmax(190px, 21fr) minmax(0, 60fr);
   gap: 14px;
   align-items: stretch;
-  height: calc(100dvh - 208px);
-  min-height: 460px;
+  flex: 1;
+  min-height: 0;
 }
 
 .zx-cw-col {
@@ -1134,12 +1155,14 @@
 .zx-cw-modal-actions { display: flex; gap: 8px; }
 
 @media (max-width: 1180px) {
-  .zx-cw { grid-template-columns: 200px 200px minmax(0, 1fr); }
+  .zx-cw { grid-template-columns: minmax(150px, 19fr) minmax(160px, 21fr) minmax(0, 60fr); }
 }
 
 @media (max-width: 900px) {
+  .zx-admin-main.zx-admin-main-workspace { height: auto; min-height: 0; padding: 16px; }
+  .zx-admin-main-workspace > .zx-admin-page { flex: auto; }
   .zx-cw { grid-template-columns: minmax(0, 1fr); height: auto; }
-  .zx-cw-col { height: auto; max-height: 260px; }
+  .zx-cw-col { height: auto; max-height: 32dvh; }
   .zx-cw-main { height: auto; max-height: none; }
   .zx-cw-scroll { overflow: visible; }
 }
