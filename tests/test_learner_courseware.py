@@ -18,7 +18,7 @@ import pymysql
 
 ROOT = Path(__file__).resolve().parent.parent
 API = os.environ.get('ZHIXUN_TEST_API', 'http://localhost:3006/api').rstrip('/')
-KINDS = ('lecture', 'guide', 'bank', 'slides')
+KINDS = ('lecture', 'bank', 'slides')
 
 
 @unittest.skipUnless(os.environ.get('ZHIXUN_ADMIN_PASSWORD'), 'Set ZHIXUN_ADMIN_PASSWORD')
@@ -95,20 +95,6 @@ class LearnerCoursewareTest(unittest.TestCase):
                     'objectives': ['Identify the input.', 'Describe the result.'],
                     'sections': [{'heading': 'Manual input ' + letter, 'body': 'Lecture body ' + letter + ' [1].'},
                                  {'heading': 'Manual result ' + letter, 'body': 'Second lecture section ' + letter + '.'}]}
-        if kind == 'guide':
-            return {'title': 'Guide ' + letter, 'objective': 'Execute two documented steps.', 'estimatedMinutes': 15,
-                    'prerequisites': ['Read the lecture.'], 'environment': ['A terminal with Python 3.'],
-                    'steps': [{'title': 'Create fixture ' + letter, 'instruction': '在终端执行命令，并记录输出。\n逐字对照结果。',
-                               'code': 'print("manual-fixture-' + letter + '")\nassert "quoted text" == "quoted text"',
-                               'expectedOutput': 'manual-fixture-' + letter,
-                               'safety': 'safe', 'warning': ''},
-                              {'title': 'Verify fixture ' + letter, 'instruction': 'Compare the terminal output with the expected text.',
-                               'code': 'assert 1 + 1 == 2', 'expectedOutput': 'The command exits successfully.',
-                               'safety': 'caution', 'warning': 'Run only in the temporary fixture directory.'}],
-                    'acceptanceCriteria': ['Both commands exit successfully.', 'Output matches the expected text.'],
-                    'safetyChecklist': ['Use a temporary directory.'], 'safetyNotice': 'No privileged operations.',
-                    'troubleshooting': [{'problem': 'Python is not found.', 'solution': 'Choose the installed Python executable.'}],
-                    'challenge': 'Change the output text and repeat the check.'}
         if kind == 'slides':
             return {'title': 'Slides ' + letter, 'subtitle': 'Manual content',
                     'slides': [{'title': 'Slide one ' + letter, 'bullets': ['Manual input', 'Manual action'],
@@ -170,7 +156,7 @@ class LearnerCoursewareTest(unittest.TestCase):
         self.publish_chapter('D', 20, expect=409)
         for kind in KINDS:
             self.publish_resource('A', kind)
-        for kind in ('lecture', 'guide'):
+        for kind in ('lecture',):
             self.publish_resource('B', kind)
         self.publish_resource('C', 'slides')
         # Intentionally non-contiguous numbers; learners address visible indices.
@@ -180,7 +166,7 @@ class LearnerCoursewareTest(unittest.TestCase):
         self.assertIsNotNone(course)
         self.assertEqual([chapter['title'] for chapter in course['chapters']], ['Manual chapter ' + s for s in 'ABC'])
         self.assertEqual([chapter['orderNo'] for chapter in course['chapters']], [2, 7, 11])
-        for chapter, kinds in zip(course['chapters'], (KINDS, ('lecture', 'guide'), ('slides',))):
+        for chapter, kinds in zip(course['chapters'], (KINDS, ('lecture',), ('slides',))):
             self.assertEqual(set(chapter['resources']), set(kinds))
         self.lesson(3, expect=404)
         self.checkpoint('catalog exposes only published resources and preserves administrator order numbers')
@@ -191,15 +177,6 @@ class LearnerCoursewareTest(unittest.TestCase):
         lecture = all_resources['resources']['lecture']
         self.assertEqual(len(lecture['sections']), 2)
         self.assertIn('Lecture body A', json.dumps(lecture))
-        guide = all_resources['resources']['guide']
-        self.assertEqual(len(guide['steps']), 2)
-        self.assertEqual(guide['steps'][0]['code'], self.fixture('A', 'guide')['steps'][0]['code'])
-        self.assertEqual(guide['steps'][0]['instruction'], self.fixture('A', 'guide')['steps'][0]['instruction'])
-        self.assertEqual(guide['steps'][0]['expectedOutput'], 'manual-fixture-A')
-        for field in ('environment', 'prerequisites', 'acceptanceCriteria', 'troubleshooting', 'safetyChecklist', 'challenge'):
-            self.assertEqual(guide[field], self.fixture('A', 'guide')[field])
-        self.assertEqual(guide['steps'][1]['warning'], self.fixture('A', 'guide')['steps'][1]['warning'])
-        self.assertGreaterEqual(len(guide['sections']), 2)
         slides = all_resources['resources']['slides']['slides']
         self.assertEqual(len(slides), 2)
         self.assertEqual(slides[0]['title'], 'Slide one A')
@@ -210,10 +187,10 @@ class LearnerCoursewareTest(unittest.TestCase):
         self.assertEqual(all_resources['questions'], all_resources['resources']['bank']['questions'])
         self.assert_public(all_resources)
         self.assertNotIn('PRIVATE_EXPLANATION', json.dumps(all_resources))
-        self.checkpoint('four resource payloads contain authored content and no quiz answer leakage')
+        self.checkpoint('three supported resource payloads contain authored content and no quiz answer leakage')
 
         reading = self.lesson(1)
-        self.assertEqual(set(reading['resourceTypes']), {'lecture', 'guide'})
+        self.assertEqual(set(reading['resourceTypes']), {'lecture'})
         self.assertEqual(reading['questions'], [])
         self.assertEqual(reading['completion'], {'requiresQuiz': False, 'passScore': 60, 'canMarkComplete': True})
         self.assertFalse(self.progress(1)['completed'])
@@ -262,7 +239,6 @@ class LearnerCoursewareTest(unittest.TestCase):
         self.sql('UPDATE courses SET chapters_json=%s WHERE id=%s', (json.dumps(legacy_chapters), self.cid))
         recovered = self.lesson(0)
         self.assertEqual(set(recovered['resourceTypes']), set(KINDS))
-        self.assertEqual(len(recovered['resources']['guide']['steps']), 2)
         self.assertEqual(len(recovered['resources']['slides']['slides']), 2)
         self.assert_public(recovered)
         self.assertEqual(set(self.catalog_course()['chapters'][0]['resources']), set(KINDS))
@@ -270,15 +246,16 @@ class LearnerCoursewareTest(unittest.TestCase):
         self.checkpoint('already published legacy lessons receive the new learner resource contract')
 
         before = self.history()
-        self.publish_resource('A', 'guide', False)
+        self.publish_resource('A', 'lecture', False)
         withdrawn = self.lesson(0)
+        self.assertNotIn('lecture', withdrawn['resourceTypes'])
+        self.assertNotIn('lecture', withdrawn['resources'])
         self.assertNotIn('guide', withdrawn['resourceTypes'])
         self.assertNotIn('guide', withdrawn['resources'])
-        self.assertNotIn('manual-fixture-A', json.dumps(withdrawn))
-        self.assertNotIn('guide', self.catalog_course()['chapters'][0]['resources'])
+        self.assertNotIn('lecture', self.catalog_course()['chapters'][0]['resources'])
         self.assertEqual(self.history(), before)
-        self.publish_resource('A', 'guide')
-        self.assertEqual(len(self.lesson(0)['resources']['guide']['steps']), 2)
+        self.publish_resource('A', 'lecture')
+        self.assertEqual(len(self.lesson(0)['resources']['lecture']['sections']), 2)
         self.assertEqual(self.history(), before)
         self.checkpoint('withdrawn resources disappear without clearing saved progress or quiz attempts')
 

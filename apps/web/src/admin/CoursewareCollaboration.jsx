@@ -14,7 +14,6 @@ import './courseware-collaboration.css';
 
 const TYPE_LABEL = {
   lecture: '讲义文稿',
-  guide: '实操指南',
   bank: '题库',
   slides: '教学幻灯片',
 };

@@ -1,10 +1,8 @@
 import React from 'react';
 import { api, refreshLearning } from './learning-api.jsx';
-import { guideExampleMarkdown } from './guide-example.js';
 
 export const RESOURCE_OPTIONS = [
   { type: 'lecture', mode: 'lecture', label: '阅读讲义', detail: '阅读概念、案例与知识要点' },
-  { type: 'guide', mode: 'guide', label: '动手实操', detail: '按步骤操作，查看代码和预期结果' },
   { type: 'slides', mode: 'presentation', label: '幻灯片学习', detail: '逐页浏览本章重点' },
   { type: 'bank', mode: 'quiz', label: '章节测验', detail: '完成题目，查看判分与解析' },
 ];
@@ -30,42 +28,12 @@ export function lessonSections(lesson, type = 'lecture') {
   const raw = resource?.sections ?? (type === 'lecture' ? lesson?.content?.sections : []);
   const sections = (Array.isArray(raw) ? raw : []).filter((item) => item && textValue(item.text).trim()).map((item, index) => ({
     id: item.id || `${type}-${index}`,
-    eyebrow: item.eyebrow || (type === 'guide' ? '实操指南' : '本章讲义'),
+    eyebrow: item.eyebrow || '本章讲义',
     heading: item.heading || `内容 ${index + 1}`,
     text: textValue(item.text),
     markdown: true,
   }));
-  if (type !== 'guide' || !resource) return sections;
-  const details = [];
-  const add = (id, heading, text, eyebrow = '实操准备') => {
-    if (text?.trim()) details.push({ id, heading, text, eyebrow, markdown: true });
-  };
-  add('guide-objective', '本次目标', textValue(resource.objective));
-  add('guide-prerequisites', '开始之前', bulletList(resource.prerequisites));
-  add('guide-environment', '运行环境', bulletList(resource.environment));
-  add('guide-safety-notice', '操作提醒', textValue(resource.safetyNotice));
-  add('guide-safety-checklist', '操作前检查', bulletList(resource.safetyChecklist));
-  // Generated guide sections already contain the steps in some resource versions.
-  // Prefer structured steps when supplied, so instructions, code and expected output
-  // remain together in the same reader card.
-  if (Array.isArray(resource.steps) && resource.steps.length) {
-    resource.steps.forEach((step, index) => {
-      const parts = [textValue(step.instruction ?? step.description ?? step.content)];
-      if (step.code) {
-        parts.push(guideExampleMarkdown(textValue(step.code), step.language));
-      }
-      if (step.expectedOutput || step.expectedResult) parts.push(`**预期结果**\n\n${textValue(step.expectedOutput ?? step.expectedResult)}`);
-      if (step.warning) parts.push(`**操作提醒**\n\n${textValue(step.warning)}`);
-      add(`guide-step-${step.id || index}`, step.title || `步骤 ${index + 1}`, parts.filter(Boolean).join('\n\n'), `步骤 ${index + 1}`);
-    });
-  } else {
-    details.push(...sections);
-  }
-  add('guide-acceptance', '验收清单', bulletList(resource.acceptanceCriteria), '操作验证');
-  const troubleshooting = asList(resource.troubleshooting).map((item) => typeof item === 'string' ? `- ${item}` : `- **${textValue(item.problem ?? item.symptom ?? item.title)}**：${textValue(item.solution ?? item.fix ?? item.description)}`).join('\n');
-  add('guide-troubleshooting', '遇到问题时', troubleshooting, '操作提示');
-  add('guide-challenge', '进阶挑战', textValue(resource.challenge), '拓展实践');
-  return details;
+  return sections;
 }
 
 export function lessonSlides(lesson) {

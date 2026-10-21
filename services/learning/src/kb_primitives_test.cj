@@ -167,12 +167,11 @@ class KbPrimitiveTests {
     }
     @TestCase
     func coursewareOptionsNormalizeAndReachPrompts(): Unit {
-        let input = cwJsonObjectFrom("{\"lectureDetailLevel\":\"detailed\",\"guideDetailLevel\":\"concise\",\"questionCount\":10," +
+        let input = cwJsonObjectFrom("{\"lectureDetailLevel\":\"detailed\",\"questionCount\":10," +
             "\"slideCount\":14,\"backgroundStyle\":\"watercolor\",\"includeSpeakerNotes\":false," +
-            "\"note\":\"面向零基础学生，侧重本章实操。\"}").getOrThrow()
+            "\"note\":\"面向零基础学生，侧重本章讲解。\"}").getOrThrow()
         let options = cwNormalizeGenerationOptions(Some(input))
         kbPrimitiveCheck(options.lectureDetailLevel == "detailed", "Lecture detail level was not preserved")
-        kbPrimitiveCheck(options.guideDetailLevel == "concise", "Guide detail level was not preserved")
         kbPrimitiveCheck(options.questionCount == 10, "Question count was not preserved")
         kbPrimitiveCheck(options.slideCount == 14, "Slide count was not preserved")
         kbPrimitiveCheck(options.backgroundStyle == "watercolor", "Background style was not preserved")
@@ -193,8 +192,8 @@ class KbPrimitiveTests {
             "The UI standard level must map to the legacy balanced renderer level")
         let legacy = cwNormalizeGenerationOptions(cwJsonObjectFrom(
             "{\"detailLevel\":\"concise\",\"questionCount\":8,\"slideCount\":12}").getOrThrow())
-        kbPrimitiveCheck(legacy.lectureDetailLevel == "concise" && legacy.guideDetailLevel == "concise",
-            "Legacy shared detail level must still load for both text resources")
+        kbPrimitiveCheck(legacy.lectureDetailLevel == "concise",
+            "Legacy shared detail level must still load for lecture resources")
         let clamped = cwNormalizeGenerationOptions(cwJsonObjectFrom(
             "{\"detailLevel\":\"unknown\",\"questionCount\":99,\"slideCount\":1," +
             "\"backgroundStyle\":\"not-a-style\"}").getOrThrow())
@@ -208,13 +207,12 @@ class KbPrimitiveTests {
     }
     @TestCase
     func learnerResourceContainersPreserveQuotedCode(): Unit {
-        let text = "{\"guide\":{\"steps\":[{\"code\":\"print(\\\"[中文]\\\")\\n{a: 1}\",\"expectedOutput\":\"值 ] }\"}]}}"
-        let guide = lrObject(text, "guide")
-        let steps = lrArray(guide, "steps")
-        let parsed = jsonArrayFromText(steps)
+        let text = "{\"lecture\":{\"sections\":[{\"text\":\"print(\\\"[中文]\\\")\\n{a: 1}\"}]}}"
+        let lecture = lrObject(text, "lecture")
+        let sections = lrArray(lecture, "sections")
+        let parsed = jsonArrayFromText(sections)
         kbPrimitiveCheck(parsed.size() == 1, "Escaped brackets must not cut a published resource")
-        kbPrimitiveCheck((jsonGetString(parsed[0].asObject(), "code") ?? "") == "print(\"[中文]\")\n{a: 1}", "Resource code lost quoting or Unicode")
-        kbPrimitiveCheck(jsonArrayFromText(lrMergeArrays(steps, steps)).size() == 2, "Published guide steps did not merge")
+        kbPrimitiveCheck((jsonGetString(parsed[0].asObject(), "text") ?? "") == "print(\"[中文]\")\n{a: 1}", "Resource text lost quoting or Unicode")
         kbPrimitiveCheck(lrObject(text, "missing").size == 0, "Missing resources must stay unavailable")
     }
     @TestCase
@@ -351,5 +349,37 @@ class KbPrimitiveTests {
         kbPrimitiveCheck(!kbBundleTitleValid("   "), "Whitespace-only bundle title must be rejected")
         kbPrimitiveCheck(!kbBundleTitleValid("bad\nname"), "Control characters must be rejected")
         kbPrimitiveCheck(!kbBundleTitleValid(kbPrimitiveRepeated("长", 161)), "Bundle title must be bounded")
+    }
+
+    @TestCase
+    func slidePlannerParsingSurvivesProseAndProvidesFallback(): Unit {
+        let parsed = cwPlanObjectFrom(
+            "以下是规划：\n```json\n{\"title\":\"含 } 的标题\",\"slides\":[{\"title\":\"第一页\",\"kind\":\"title\"}]}\n```\n完成。",
+            "slides")
+        kbPrimitiveCheck(parsed.isSome(), "A valid balanced object after prose was not extracted")
+        match (parsed) {
+            case Some(value) => kbPrimitiveCheck((jsonGetString(value, "title") ?? "") == "含 } 的标题",
+                "Quoted braces must not end JSON extraction")
+            case None => ()
+        }
+        let multiple = cwPlanObjectFrom(
+            "调试信息 {\"foo\":1}\n首次坏对象 {\"slides\":[}]\n" +
+            "最终规划 {\"title\":\"有效\",\"slides\":[{\"title\":\"首页\",\"kind\":\"title\"},{\"title\":\"尾页\",\"kind\":\"conclusion\"}]}",
+            "slides")
+        kbPrimitiveCheck(multiple.isSome(), "A later valid plan must be selected after unrelated or invalid objects")
+        match (multiple) {
+            case Some(value) => kbPrimitiveCheck((jsonGetString(value, "title") ?? "") == "有效",
+                "Planner extraction selected an unrelated object")
+            case None => ()
+        }
+        let fallbackJson = cwFallbackSlidePlanJson("计算机网络资料包说明", 12)
+        let fallback = cwPlanObjectFrom(fallbackJson, "slides")
+        kbPrimitiveCheck(fallback.isSome(), "Fallback JSON must parse as a valid slide plan")
+        let slides = cwObjectList(fallback.getOrThrow(), "slides")
+        kbPrimitiveCheck(slides.size == 12, "Fallback slide plan must use the configured page count")
+        kbPrimitiveCheck((jsonGetString(slides[0], "kind") ?? "") == "title",
+            "Fallback plan must start with a title slide")
+        kbPrimitiveCheck((jsonGetString(slides[slides.size - 1], "kind") ?? "") == "conclusion",
+            "Fallback plan must end with a conclusion slide")
     }
 }

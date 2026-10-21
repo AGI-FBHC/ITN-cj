@@ -69,7 +69,6 @@ func cwBookmarkKind(item: JsonObject): String {
     if (cwValidKind(specified)) { return specified }
     let id = cwField(item, "id")
     if (id.startsWith("quiz-")) { return "bank" }
-    if (id.contains("-guide-")) { return "guide" }
     "lecture"
 }
 

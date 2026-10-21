@@ -21,7 +21,6 @@ export const PPT_BACKGROUNDS = [
 
 export const DEFAULT_GENERATION_OPTIONS = Object.freeze({
   lectureDetailLevel: 'standard',
-  guideDetailLevel: 'standard',
   questionCount: 8,
   slideCount: 12,
   backgroundStyle: '',
@@ -39,7 +38,7 @@ function clampNumber(value, minimum, maximum, fallback) {
 }
 
 function detailLevelOf(source, kind) {
-  const specific = kind === 'guide' ? source.guideDetailLevel : source.lectureDetailLevel;
+  const specific = source.lectureDetailLevel;
   const legacy = source.detailLevel;
   const candidate = specific || legacy;
   return DETAIL_LABEL[candidate] ? candidate : DEFAULT_GENERATION_OPTIONS[`${kind}DetailLevel`];
@@ -49,7 +48,6 @@ export function normalizeGenerationOptions(raw) {
   const source = raw && typeof raw === 'object' ? raw : {};
   return {
     lectureDetailLevel: detailLevelOf(source, 'lecture'),
-    guideDetailLevel: detailLevelOf(source, 'guide'),
     questionCount: clampNumber(source.questionCount, 5, 20, DEFAULT_GENERATION_OPTIONS.questionCount),
     slideCount: clampNumber(source.slideCount, 8, 20, DEFAULT_GENERATION_OPTIONS.slideCount),
     backgroundStyle: typeof source.backgroundStyle === 'string'
@@ -64,8 +62,8 @@ export function normalizeGenerationOptions(raw) {
 
 export function generationOptionChips(kind, raw) {
   const options = normalizeGenerationOptions(raw);
-  if (kind === 'lecture' || kind === 'guide') {
-    const level = kind === 'guide' ? options.guideDetailLevel : options.lectureDetailLevel;
+  if (kind === 'lecture') {
+    const level = options.lectureDetailLevel;
     return [`详细程度：${DETAIL_LABEL[level]}`];
   }
   if (kind === 'bank') {
@@ -84,7 +82,6 @@ export function generationOptionChips(kind, raw) {
 export function resourceOptionSummary(kind, raw) {
   const options = normalizeGenerationOptions(raw);
   if (kind === 'lecture') return DETAIL_LABEL[options.lectureDetailLevel];
-  if (kind === 'guide') return DETAIL_LABEL[options.guideDetailLevel];
   if (kind === 'bank') return `${options.questionCount} 题`;
   if (kind === 'slides') {
     return `${options.slideCount} 页 · ${options.includeSpeakerNotes ? '含讲稿' : '不含讲稿'}`;
@@ -95,7 +92,6 @@ export function resourceOptionSummary(kind, raw) {
 export function generationOptionsAreDefault(raw) {
   const options = normalizeGenerationOptions(raw);
   return options.lectureDetailLevel === DEFAULT_GENERATION_OPTIONS.lectureDetailLevel
-    && options.guideDetailLevel === DEFAULT_GENERATION_OPTIONS.guideDetailLevel
     && options.questionCount === DEFAULT_GENERATION_OPTIONS.questionCount
     && options.slideCount === DEFAULT_GENERATION_OPTIONS.slideCount
     && options.backgroundStyle === DEFAULT_GENERATION_OPTIONS.backgroundStyle

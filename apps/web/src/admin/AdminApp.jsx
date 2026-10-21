@@ -46,12 +46,15 @@ export default function AdminApp() {
           </span>
         </Link>
         <nav className="zx-admin-nav">
+          <span className="zx-admin-nav-label">工作台</span>
           <NavLink to="/admin" end className={navClass}>概览</NavLink>
+          <span className="zx-admin-nav-label">内容管理</span>
           <NavLink to="/admin/knowledge" className={navClass}>知识库</NavLink>
           <NavLink to="/admin/courseware" className={navClass}>课件管理</NavLink>
-          <NavLink to="/admin/users" className={navClass}>用户</NavLink>
+          <span className="zx-admin-nav-label">系统管理</span>
+          <NavLink to="/admin/users" className={navClass}>用户管理</NavLink>
           <NavLink to="/admin/org" className={navClass}>机构设置</NavLink>
-          <NavLink to="/admin/settings" className={navClass}>设置</NavLink>
+          <NavLink to="/admin/settings" className={navClass}>模型配置</NavLink>
         </nav>
         <div className="zx-admin-sidebar-footer">
           <strong>{adminName()}</strong>

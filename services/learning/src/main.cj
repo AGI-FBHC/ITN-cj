@@ -274,6 +274,7 @@ func courseJson(row: Row, progress: HashMap<String, Bool>, availability: HashMap
     out.putStr("description", row.text("description"))
     out.putStr("level", row.text("level"))
     out.putInt("duration", row.int("duration"))
+    out.putInt("learnerCount", row.int("learner_count"))
     out.putStr("sourceLabel", row.text("source_label"))
     let chapters = JsonArrWriter()
     match (jsonParse(row.text("chapters_json"))) {
@@ -312,7 +313,10 @@ func courseArrayBody(cfg: Config, userId: String): String {
     let progress = progressMap(cfg, userId, None)
     let availability = lrAvailability(cfg)
     let courseRows = query(cfg,
-        "SELECT id,name,icon,description,level,duration,chapters_json,source_label FROM courses " +
+        "SELECT courses.id,courses.name,courses.icon,courses.description,courses.level,courses.duration," +
+        "courses.chapters_json,courses.source_label," +
+        "(SELECT COUNT(DISTINCT p.user_id) FROM lesson_progress p WHERE p.course_id=courses.id) learner_count " +
+        "FROM courses " +
         "WHERE status='published' AND EXISTS(SELECT 1 FROM lessons l WHERE l.course_id=courses.id AND l.is_visible=1) " +
         "ORDER BY sort_order,name")
     let arr = JsonArrWriter()

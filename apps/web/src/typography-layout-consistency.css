@@ -474,21 +474,42 @@ button.text-base {
   .zx-dashboard-grid {
     grid-template-columns: 300px minmax(0, 1fr) 380px;
     grid-template-rows: auto;
+    align-items: stretch;
   }
 
   .zx-dashboard-profile {
+    height: 100%;
     grid-column: 1;
     grid-row: 1;
   }
 
   .zx-dashboard-center {
+    display: grid;
+    height: 100%;
     grid-column: 2;
     grid-row: 1;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-width: 0;
   }
 
   .zx-dashboard-side {
+    display: grid;
+    height: 100%;
     grid-column: 3;
     grid-row: 1;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-width: 0;
+  }
+
+  .zx-dashboard-center > *,
+  .zx-dashboard-side > * {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .zx-dashboard-center > div:last-child,
+  .zx-dashboard-side > div:last-child {
+    height: 100%;
   }
 }
 

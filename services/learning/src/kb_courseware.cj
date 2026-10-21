@@ -211,11 +211,10 @@ class CwTrace {
 }
 
 func cwValidKind(kind: String): Bool {
-    kind == "lecture" || kind == "guide" || kind == "bank" || kind == "slides"
+    kind == "lecture" || kind == "bank" || kind == "slides"
 }
 
 func cwLabel(kind: String): String {
-    if (kind == "guide") { return "实操指南" }
     if (kind == "bank") { return "题库" }
     if (kind == "slides") { return "教学幻灯片" }
     "讲义文稿"
@@ -238,30 +237,89 @@ func cwStripFences(text: String): String {
 }
 
 func cwSliceJson(text: String, open: String, close: String): String {
-    let start = text.indexOf(open)
-    let end = text.lastIndexOf(close)
-    match (start) {
-        case Some(begin) =>
-            match (end) {
-                case Some(last) => if (last > begin) { text[begin..last + 1] } else { "" }
-                case None => ""
+    if (open.size != 1 || close.size != 1) { return "" }
+    let bytes = text.toArray()
+    let opening = open.toArray()[0]
+    let closing = close.toArray()[0]
+    var begin: Int64 = -1
+    var depth: Int64 = 0
+    var inString = false
+    var escaped = false
+    var i: Int64 = 0
+    while (i < bytes.size) {
+        let ch = bytes[i]
+        if (begin < 0) {
+            if (ch == opening) { begin = i; depth = 1 }
+            i += 1
+            continue
+        }
+        if (escaped) {
+            escaped = false
+        } else if (ch == UInt8(92)) {
+            escaped = true
+        } else if (ch == UInt8(34)) {
+            inString = !inString
+        } else if (!inString) {
+            if (ch == opening) { depth += 1 }
+            if (ch == closing) {
+                depth -= 1
+                if (depth == 0) { return text[begin..i + 1] }
             }
-        case None => ""
+        }
+        i += 1
     }
+    ""
+}
+
+func cwJsonObjectEnd(bytes: Array<UInt8>, begin: Int64): Int64 {
+    var depth: Int64 = 1
+    var inString = false
+    var escaped = false
+    var i = begin + 1
+    while (i < bytes.size) {
+        let ch = bytes[i]
+        if (escaped) {
+            escaped = false
+        } else if (ch == UInt8(92)) {
+            escaped = true
+        } else if (ch == UInt8(34)) {
+            inString = !inString
+        } else if (!inString) {
+            if (ch == UInt8(123)) { depth += 1 }
+            if (ch == UInt8(125)) {
+                depth -= 1
+                if (depth == 0) { return i + 1 }
+            }
+        }
+        i += 1
+    }
+    -1
 }
 
 func cwJsonObjectFrom(text: String): ?JsonObject {
     let cleaned = cwStripFences(text)
-    let slice = if (cleaned.startsWith("{")) { cleaned } else { cwSliceJson(cleaned, "{", "}") }
-    if (slice.size == 0) { return None }
-    match (jsonParse(slice)) {
-        case Some(value) =>
-            match (value.kind()) {
-                case JsonKind.JsObject => Some(value.asObject())
-                case _ => None
+    let bytes = cleaned.toArray()
+    var begin: Int64 = 0
+    while (begin < bytes.size) {
+        if (bytes[begin] != UInt8(123)) {
+            begin += 1
+            continue
+        }
+        let end = cwJsonObjectEnd(bytes, begin)
+        if (end > begin) {
+            match (jsonParse(cleaned[begin..end])) {
+                case Some(value) =>
+                    match (value.kind()) {
+                        case JsonKind.JsObject => return Some(value.asObject())
+                        case _ => ()
+                    }
+                case None => ()
             }
-        case None => None
+        }
+        // Invalid outer braces may contain a later valid object.
+        begin += 1
     }
+    None
 }
 
 func cwTextOf(text: String, limit: Int64): String {
@@ -317,6 +375,79 @@ func cwPlanPrompt(kind: String, title: String, digest: String, options: CwGenera
     "要求：" + sectionRange + " 节，小节标题要具体（写清对象与范围），不要出现「概述」「小结」这类空标题；objectives 写 3 条可检验的学习目标。" +
     "详细程度为「" + options.detailLabel(lectureDetail) + "」。\n主题：" + title + "\n资料线索：\n" + digest +
     cwOptionNoteInstruction(options)
+}
+
+/** A local structural plan keeps PPT generation moving when the planner returns malformed JSON. */
+func cwFallbackSlidePlanJson(title: String, count: Int64): String {
+    let slides = JsonArrWriter()
+    let bodyKinds = ["overview", "concept", "process", "comparison", "case", "checklist"]
+    var i: Int64 = 0
+    while (i < count) {
+        let pageKind = if (i == 0) {
+            "title"
+        } else if (i == 1) {
+            "agenda"
+        } else if (i == count - 1) {
+            "conclusion"
+        } else {
+            bodyKinds[(i - 2) % bodyKinds.size]
+        }
+        let pageTitle = if (i == 0) {
+            title
+        } else if (i == 1) {
+            "本章导览"
+        } else if (i == count - 1) {
+            "总结与下一步"
+        } else {
+            "核心内容 " + i.toString()
+        }
+        let item = JsonWriter()
+        item.putStr("title", pageTitle)
+        item.putStr("kind", pageKind)
+        item.putStr("brief", "")
+        slides.addRaw(item.toJson())
+        i += 1
+    }
+    let out = JsonWriter()
+    out.putStr("title", title)
+    out.putStr("subtitle", "")
+    out.putRaw("slides", slides.toJson())
+    out.toJson()
+}
+
+func cwPlanShapeValid(kind: String, obj: JsonObject): Bool {
+    if (kind == "slides") { return cwObjectList(obj, "slides").size > 0 }
+    if (kind == "bank") {
+        return match (jsonGetArray(obj, "knowledgePoints")) { case Some(values) => values.size() > 0; case None => false }
+    }
+    cwObjectList(obj, "sections").size > 0
+}
+
+func cwPlanObjectFrom(text: String, kind: String): ?JsonObject {
+    let cleaned = cwStripFences(text)
+    let bytes = cleaned.toArray()
+    var begin: Int64 = 0
+    while (begin < bytes.size) {
+        if (bytes[begin] != UInt8(123)) {
+            begin += 1
+            continue
+        }
+        let end = cwJsonObjectEnd(bytes, begin)
+        if (end > begin) {
+            match (jsonParse(cleaned[begin..end])) {
+                case Some(value) =>
+                    match (value.kind()) {
+                        case JsonKind.JsObject =>
+                            let obj = value.asObject()
+                            if (cwPlanShapeValid(kind, obj)) { return Some(obj) }
+                        case _ => ()
+                    }
+                case None => ()
+            }
+        }
+        begin += 1
+    }
+    None
 }
 
 /* ---------- ③ 撰写：按大纲与证据写正文 ---------- */
@@ -663,14 +794,33 @@ func cwRunOne(cfg: Config, id: String): Unit {
         // ① 规划
         let planStep = trace.add(CW_ROLE_PLANNER, "running", "", "")
         cwPersistTrace(cfg, id, trace)
-        let planText = chatPlain(endpoint, CW_STRUCTURED_SYSTEM, cwPlanPrompt(kind, title, digest, options), 0.2)
-        let planObj = match (cwJsonObjectFrom(planText)) {
+        let planPrompt = cwPlanPrompt(kind, title, digest, options)
+        var planText = chatPlain(endpoint, CW_STRUCTURED_SYSTEM, planPrompt, 0.2)
+        var planParsed = cwPlanObjectFrom(planText, kind)
+        match (planParsed) {
+            case None =>
+                planText = chatPlain(endpoint, CW_STRUCTURED_SYSTEM,
+                    planPrompt + "\n上一次输出无法解析。请重新输出，只输出一个合法 JSON 对象，禁止解释、Markdown 围栏或任何额外文字。",
+                    0.05)
+                planParsed = cwPlanObjectFrom(planText, kind)
+            case Some(_) => ()
+        }
+        match (planParsed) {
+            case None =>
+                if (kind == "slides") {
+                    let fallbackJson = cwFallbackSlidePlanJson(title, options.slideCount)
+                    planParsed = cwPlanObjectFrom(fallbackJson, kind)
+                    planText = fallbackJson
+                }
+            case Some(_) => ()
+        }
+        let planObj = match (planParsed) {
             case Some(value) => value
             case None =>
                 planStep.status = "failed"
-                planStep.error = "规划结果无法解析为 JSON"
+                planStep.error = "规划结果无法解析为 JSON：" + cwTextOf(planText, 240)
                 cwPersistTrace(cfg, id, trace)
-                cwSetRow(cfg, id, "failed", "", "", "规划阶段失败：无法解析大纲")
+                cwSetRow(cfg, id, "failed", "", "", "规划阶段失败：模型返回的大纲不是合法 JSON")
                 return
         }
         planStep.status = "done"
@@ -689,13 +839,22 @@ func cwRunOne(cfg: Config, id: String): Unit {
         // ③ 撰写
         let writeStep = trace.add(CW_ROLE_WRITER, "running", "", "")
         cwPersistTrace(cfg, id, trace)
-        var written = chatPlain(endpoint, CW_STRUCTURED_SYSTEM,
-            cwWritePrompt(kind, title, cwStripFences(planText), evidence, context, options), 0.35)
-        var obj = match (cwJsonObjectFrom(written)) {
+        let writePrompt = cwWritePrompt(kind, title, cwStripFences(planText), evidence, context, options)
+        var written = chatPlain(endpoint, CW_STRUCTURED_SYSTEM, writePrompt, 0.35)
+        var writeParsed = cwJsonObjectFrom(written)
+        match (writeParsed) {
+            case None =>
+                written = chatPlain(endpoint, CW_STRUCTURED_SYSTEM,
+                    writePrompt + "\n上一次输出无法解析。请重新输出，只输出一个完整合法 JSON 对象，禁止解释、Markdown 围栏或额外文字。",
+                    0.15)
+                writeParsed = cwJsonObjectFrom(written)
+            case Some(_) => ()
+        }
+        var obj = match (writeParsed) {
             case Some(value) => value
             case None =>
                 writeStep.status = "failed"
-                writeStep.error = "正文无法解析为 JSON"
+                writeStep.error = "正文无法解析为 JSON：" + cwTextOf(written, 240)
                 cwPersistTrace(cfg, id, trace)
                 cwSetRow(cfg, id, "failed", "", "", "撰写阶段失败：正文不是合法 JSON")
                 return
@@ -839,7 +998,8 @@ func cwQueuePump(cfg: Config): Unit {
             return
         }
         let queued = query(cfg,
-            "SELECT id FROM kb_courseware WHERE status='queued' ORDER BY created_at,id LIMIT 1")
+            "SELECT id FROM kb_courseware WHERE status='queued' " +
+            "AND kind IN('lecture','bank','slides') ORDER BY created_at,id LIMIT 1")
         if (queued.size == 0) {
             cwQueueLock.unlock()
             return
@@ -871,7 +1031,7 @@ func cwLaunch(cfg: Config, ids: Array<String>): Unit {
 func cwRecoverQueue(cfg: Config): Unit {
     execute(cfg,
         "UPDATE kb_courseware SET status='queued',error_message='服务重启，任务已恢复排队',updated_at=NOW(6) " +
-        "WHERE status='generating'")
+        "WHERE status='generating' AND kind IN('lecture','bank','slides')")
     cwQueuePump(cfg)
 }
 

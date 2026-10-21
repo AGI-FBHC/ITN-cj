@@ -2575,7 +2575,6 @@ function zs({ onComplete: n }) {
 function ResourceOptionIcon({ type }) {
   const paths = {
     lecture: "M12 7v14m0-14C9 4 5 4 3 5v14c3-1 6-1 9 2m0-14c3-3 7-3 9-2v14c-3-1-6-1-9 2",
-    guide: "m8 7-5 5 5 5m8-10 5 5-5 5m-3-13-2 16",
     slides: "M3 4h18v13H3zM12 17v4m-4 0h8M7 8h10m-10 4h6",
     bank: "m8 12 3 3 5-6M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0",
   };
@@ -6719,7 +6718,7 @@ function Lecture({
       message: `正在加载“${r}”…`,
     });
   if (!resourceTypes(remote.lesson).includes(resourceKind) || !p.length)
-    return jsxRuntime.jsx(LoadPanel, { error: resourceKind === "guide" ? "本章实操暂未发布，返回课程选择其他资料。" : "本章讲义暂未发布，返回课程选择其他资料。", onRetry: remote.retry, onBack: i });
+    return jsxRuntime.jsx(LoadPanel, { error: "本章讲义暂未发布，返回课程选择其他资料。", onRetry: remote.retry, onBack: i });
   return z
     ? jsxRuntime.jsx(dc, {
         "code-path": "src\\pages\\Lecture.tsx:158:12",
@@ -6812,7 +6811,7 @@ function Lecture({
                           "code-path": "src\\pages\\Lecture.tsx:178:15",
                           className:
                             "rounded-lg bg-[#f0ebff] px-3 py-1 text-xs font-extrabold text-[#6038ef]",
-                          children: resourceKind === "guide" ? "实操指南" : "章节讲义",
+                          children: "章节讲义",
                         }),
                       ],
                     }),
@@ -6826,7 +6825,7 @@ function Lecture({
                           type: "button",
                           className:
                             "shrink-0 whitespace-nowrap rounded-xl bg-[#6038ef] px-6 py-3.5 text-sm font-black text-white shadow-[0_7px_18px_rgba(96,56,239,0.22)]",
-                          children: resourceKind === "guide" ? "动手实操" : "阅读讲义",
+                          children: "阅读讲义",
                         }),
                         jsxRuntime.jsxs("span", {
                           "code-path": "src\\pages\\Lecture.tsx:185:15",
@@ -7457,7 +7456,6 @@ function CourseDetail({
   onNavigate: i,
   onBack: d,
   initialLectureIndex: p,
-  initialGuideIndex: guideIndex,
   initialPresentationIndex: m,
   initialQuizIndex: b,
 }) {
@@ -7466,10 +7464,8 @@ function CourseDetail({
     y = n.chapters.findIndex((O) => !O.done),
     j = y >= 0 ? y : 0,
     [z, R] = React.useState(null),
-    [readingKind, setReadingKind] = React.useState(guideIndex !== void 0 ? "guide" : "lecture"),
     [N, E] = React.useState(() => {
-      const index = guideIndex ?? p;
-      return index !== void 0 && n.chapters[index] ? index : null;
+      return p !== void 0 && n.chapters[p] ? p : null;
     }),
     [_, M] = React.useState(null),
     [B, Q] = React.useState(() => (m !== void 0 && n.chapters[m] ? m : null)),
@@ -7504,7 +7500,6 @@ function CourseDetail({
               course: n,
               lessonTitle: n.chapters[N].title,
               lessonIndex: N,
-              resourceKind: readingKind,
               onBack: () => E(null),
               onNavigate: i,
             })
@@ -7719,7 +7714,7 @@ function CourseDetail({
                                     "src\\pages\\CourseDetail.tsx:174:15",
                                   className:
                                     "mt-4 text-sm font-semibold leading-7 text-[#777b85]",
-                                  children: "选择章节，按需要阅读讲义、动手实操、查看幻灯片或完成测验。",
+                                  children: "选择章节，按需要阅读讲义、查看幻灯片或完成测验。",
                                 }),
                                 jsxRuntime.jsx("div", {
                                   "code-path":
@@ -7891,7 +7886,7 @@ function CourseDetail({
                     onSelectResource: (mode) => {
                       if (mode === "quiz") $(z);
                       else if (mode === "presentation") Q(z);
-                      else { setReadingKind(mode === "guide" ? "guide" : "lecture"); E(z); }
+                      else E(z);
                       R(null);
                     },
                   }),
@@ -8460,7 +8455,6 @@ function Courses({
   onNavigate: n,
   initialCourseId: r,
   initialLectureIndex: u,
-  initialGuideIndex: guideIndex,
   initialPresentationIndex: i,
   initialQuizIndex: d,
 }) {
@@ -8529,7 +8523,6 @@ function Courses({
             onNavigate: M,
             onBack: () => z(null),
             initialLectureIndex: u,
-            initialGuideIndex: guideIndex,
             initialPresentationIndex: i,
             initialQuizIndex: d,
           })
@@ -10278,7 +10271,11 @@ function Dashboard({ profile: n }) {
       return O.length > 0 ? O : $t;
     }, [n.subjectValues, learning.data?.courses]),
     u = React.useMemo(
-      () => $t.filter((O) => !r.some((P) => P.id === O.id)).slice(0, 2),
+      () => $t
+        .filter((O) => !r.some((P) => P.id === O.id))
+        .sort((O, P) => (Number(P.learnerCount) || 0) - (Number(O.learnerCount) || 0)
+          || String(O.name).localeCompare(String(P.name), "zh-CN"))
+        .slice(0, 2),
       [r],
     ),
     [i, d] = React.useState(0),
@@ -10341,11 +10338,10 @@ function Dashboard({ profile: n }) {
         onNavigate: $,
       };
     if (E.mode === "quiz") return jsxRuntime.jsx(dc, { ...P, onExit: () => _(null) });
-    return E.mode === "lecture" || E.mode === "guide"
+    return E.mode === "lecture"
       ? jsxRuntime.jsx(Lecture, {
           "code-path": "src\\pages\\Dashboard.tsx:152:7",
           ...P,
-          resourceKind: E.mode === "guide" ? "guide" : "lecture",
         })
       : jsxRuntime.jsx(Presentation, {
           "code-path": "src\\pages\\Dashboard.tsx:154:7",
@@ -11072,7 +11068,6 @@ function Po() {
     "code-path": "src\\App.tsx:10:5",
     initialCourseId: r,
     initialLectureIndex: u === void 0 || i !== void 0 ? void 0 : Number(u),
-    initialGuideIndex: i === "guide" && u !== void 0 ? Number(u) : void 0,
     initialPresentationIndex:
       i === "presentation" && u !== void 0 ? Number(u) : void 0,
     initialQuizIndex: i === "quiz" && u !== void 0 ? Number(u) : void 0,

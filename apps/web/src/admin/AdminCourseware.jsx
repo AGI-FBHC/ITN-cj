@@ -16,7 +16,6 @@ import {
 
 const RESOURCES = [
   { key: 'lecture', label: '讲义文稿', badge: '讲', desc: '把章节原文整理成可阅读的讲解稿', meta: '支持精简 / 标准 / 详细' },
-  { key: 'guide', label: '实操指南', badge: '操', desc: '可跟着做的步骤、命令与检查点', meta: '支持精简 / 标准 / 详细' },
   { key: 'bank', label: '题库', badge: '题', desc: '随堂练习与章节测验，统一进题库', meta: '可选 5–20 题' },
   { key: 'slides', label: '教学幻灯片', badge: '播', desc: '旧版预设模板，按章节自动生成', meta: '可调页数、背景和讲稿' },
 ];
@@ -146,8 +145,8 @@ function GenerationSettingsPanel({ picked, active, onActive, options, onChange }
   if (picked.length === 0) return null;
   const activeKind = picked.includes(active) ? active : picked[0];
   const resource = RESOURCES.find((item) => item.key === activeKind);
-  const detailField = activeKind === 'guide' ? 'guideDetailLevel' : 'lectureDetailLevel';
-  const activeDetailLevel = activeKind === 'guide' ? options.guideDetailLevel : options.lectureDetailLevel;
+  const detailField = 'lectureDetailLevel';
+  const activeDetailLevel = options.lectureDetailLevel;
   const update = (key, value) => onChange((current) => ({ ...current, [key]: value }));
   return <section className="zx-cw-gen-settings" aria-label="生成设置">
     <header>
@@ -174,7 +173,7 @@ function GenerationSettingsPanel({ picked, active, onActive, options, onChange }
       })}
     </div>
     <div className="zx-cw-settings-panel" role="tabpanel" aria-label={`${resource?.label || '资源'}设置`}>
-      {(activeKind === 'lecture' || activeKind === 'guide') ? <div className="zx-cw-detail-levels">
+      {activeKind === 'lecture' ? <div className="zx-cw-detail-levels">
         <span className="zx-cw-settings-label">详细程度</span>
         <div role="group" aria-label="详细程度">
           {DETAIL_LEVELS.map((level) => <button
@@ -295,7 +294,6 @@ export default function AdminCourseware() {
   const [sourcePickerOpen, setSourcePickerOpen] = React.useState(false);
   const [sourceQuery, setSourceQuery] = React.useState('');
   const [moreFiltersOpen, setMoreFiltersOpen] = React.useState(false);
-  const [collapsedGroups, setCollapsedGroups] = React.useState([]);
   const [generationOptions, setGenerationOptions] = React.useState({ ...DEFAULT_GENERATION_OPTIONS });
   const [settingsTab, setSettingsTab] = React.useState('lecture');
   const sourcePickerRef = React.useRef(null);
@@ -451,9 +449,6 @@ export default function AdminCourseware() {
   const selectVisibleSources = () => {
     const ids = visibleSourceGroups.flatMap((bundle) => bundle.docs.map((doc) => doc.id));
     setLibraryDocIds((current) => [...new Set([...current, ...ids])]);
-  };
-  const toggleGroup = (key) => {
-    setCollapsedGroups((current) => toggleArrayValue(current, key));
   };
   const generating = items.some((item) => item.status === 'generating' || item.status === 'queued')
     || Number(queueState.data?.running || 0) + Number(queueState.data?.queued || 0) > 0;
@@ -956,29 +951,9 @@ export default function AdminCourseware() {
                 </tr>
               </thead>
               {libraryGroups.map((group) => {
-                const collapsed = collapsedGroups.includes(group.key);
                 const sourceLabel = group.sourceOrder > 0 ? `第 ${group.sourceOrder} 章` : '章节';
                 return <tbody key={group.key}>
-                  <tr className="zx-cw-library-group">
-                    <td colSpan={5}>
-                      <div>
-                        <button type="button" className="zx-cw-library-group-toggle" aria-expanded={!collapsed} onClick={() => toggleGroup(group.key)}>
-                          <svg className={collapsed ? '' : 'open'} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m7 5 5 5-5 5"/></svg>
-                          <span>
-                            <strong>{group.bundleTitle}</strong>
-                            <small>{sourceLabel} · {group.docTitle}</small>
-                          </span>
-                        </button>
-                        <em>{group.items.length} 个资源</em>
-                        <button
-                          type="button"
-                          className="zx-cw-source-link"
-                          onClick={() => navigate(`/admin/knowledge/bundles/${group.bundleId}?docId=${encodeURIComponent(group.docId)}`)}
-                        >查看原文</button>
-                      </div>
-                    </td>
-                  </tr>
-                  {!collapsed ? group.items.map((item) => {
+                  {group.items.map((item) => {
                     const status = item.published ? STATUS.published : (STATUS[item.status] || STATUS.ready);
                     const liveOrder = item.chapterOrder || 0;
                     const itemSource = item.sourceOrder ? `第 ${item.sourceOrder} 章` : sourceLabel;
@@ -1019,7 +994,7 @@ export default function AdminCourseware() {
                         </td>
                       </tr>
                     );
-                  }) : null}
+                  })}
                 </tbody>;
               })}
             </table>

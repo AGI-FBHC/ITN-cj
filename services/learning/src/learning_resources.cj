@@ -123,14 +123,8 @@ func lrPresentationForViewer(coursewareId: String, raw: String): String {
 
 /** Typed published payloads reuse the existing renderers, without quiz answers. */
 func lrTypedResources(rows: Array<Row>): String {
-    let lectures = JsonArrWriter(); let guides = JsonArrWriter(); let slides = JsonArrWriter()
-    var lectureCount: Int64 = 0; var guideCount: Int64 = 0; var slideCount: Int64 = 0
-    var steps = "[]"
-    let extras = HashMap<String, String>()
-    var objective = ""
-    var notice = ""
-    var challenge = ""
-    var minutes: Int64 = 0
+    let lectures = JsonArrWriter(); let slides = JsonArrWriter()
+    var lectureCount: Int64 = 0; var slideCount: Int64 = 0
     var presentation = ""
     var deckTitle = ""
     var deckSubtitle = ""
@@ -146,28 +140,6 @@ func lrTypedResources(rows: Array<Row>): String {
                 section.putStr("heading", cwField(item, "heading"))
                 section.putStr("text", cwField(item, "body"))
                 lectures.addRaw(section.toJson()); lectureCount += 1
-            }
-        } else if (kind == "guide") {
-            steps = lrMergeArrays(steps, lrArray(raw, "steps"))
-            if (objective.size == 0) { objective = cwField(parsed, "objective") }
-            if (notice.size == 0) { notice = cwField(parsed, "safetyNotice") }
-            if (challenge.size == 0) { challenge = cwField(parsed, "challenge") }
-            minutes += maxInt(0, jsonGetInt(parsed, "estimatedMinutes") ?? 0)
-            for (key in ["prerequisites", "environment", "acceptanceCriteria", "troubleshooting", "safetyChecklist"]) {
-                extras[key] = lrMergeArrays(extras.get(key) ?? "[]", lrArray(raw, key))
-            }
-            for (step in cwObjectList(parsed, "steps")) {
-                let section = JsonWriter()
-                section.putStr("id", "guide-" + guideCount.toString())
-                section.putStr("eyebrow", "实操")
-                section.putStr("heading", cwField(step, "title"))
-                var text = cwField(step, "instruction")
-                let code = cwField(step, "code")
-                if (code.size > 0) { text += "\n\n```\n" + code + "\n```" }
-                let expected = cwField(step, "expectedOutput")
-                if (expected.size > 0) { text += "\n\n预期结果：" + expected }
-                section.putStr("text", text)
-                guides.addRaw(section.toJson()); guideCount += 1
             }
         } else if (kind == "slides") {
             if (deckTitle.size == 0) { deckTitle = cwField(parsed, "title") }
@@ -186,14 +158,6 @@ func lrTypedResources(rows: Array<Row>): String {
     }
     let out = JsonWriter()
     if (lectureCount > 0) { let value = JsonWriter(); value.putRaw("sections", lectures.toJson()); out.putRaw("lecture", value.toJson()) }
-    if (guideCount > 0) {
-        let value = JsonWriter()
-        value.putRaw("sections", guides.toJson()); value.putRaw("steps", steps)
-        value.putStr("objective", objective); value.putStr("safetyNotice", notice)
-        value.putStr("challenge", challenge); value.putInt("estimatedMinutes", minutes)
-        for (key in ["prerequisites", "environment", "acceptanceCriteria", "troubleshooting", "safetyChecklist"]) { value.putRaw(key, extras.get(key) ?? "[]") }
-        out.putRaw("guide", value.toJson())
-    }
     if (slideCount > 0) {
         let value = JsonWriter()
         value.putStr("title", deckTitle)
@@ -248,7 +212,6 @@ func lrLessonTypes(row: Row): Array<String> {
     let raw = lrObject(row.text("content_json"), "resources")
     let kinds = ArrayList<String>()
     if (jsonArrayFromText(lrArray(lrObject(raw, "lecture"), "sections")).size() > 0) { kinds.add("lecture") }
-    if (jsonArrayFromText(lrArray(lrObject(raw, "guide"), "steps")).size() > 0) { kinds.add("guide") }
     if (lessonQuestions(row.text("quiz_json")).size() > 0) { kinds.add("bank") }
     if (jsonArrayFromText(lrArray(lrObject(raw, "slides"), "slides")).size() > 0) { kinds.add("slides") }
     kinds.toArray()
@@ -257,7 +220,7 @@ func lrLessonTypes(row: Row): Array<String> {
 func lrPublicResources(row: Row): String {
     let raw = lrObject(row.text("content_json"), "resources")
     let out = JsonWriter()
-    for (kind in ["lecture", "guide", "slides"]) {
+    for (kind in ["lecture", "slides"]) {
         let value = lrObject(raw, kind)
         if (value.size > 0) { out.putRaw(kind, value) }
     }
@@ -292,7 +255,7 @@ func lrAvailableKinds(row: Row): Array<String> {
     let out = ArrayList<String>()
     let managed = row.int("managed") == 1 || row.text("source_kind") == "kb-courseware"
     let kinds = row.text("kinds").split(",")
-    for (kind in ["lecture", "guide", "bank", "slides"]) {
+    for (kind in ["lecture", "bank", "slides"]) {
         var has = false
         if (managed) { for (saved in kinds) { if (saved == kind) { has = true } } }
         else {
