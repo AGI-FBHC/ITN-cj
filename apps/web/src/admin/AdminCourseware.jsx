@@ -51,7 +51,27 @@ function resourceState(item) {
   return item.published ? '已发布' : '待发布';
 }
 
-function CoursewareQueueIndicator({ queue, open, onToggle }) {
+function CoursewareQueueIndicator({ queue, open, onToggle, onClose }) {
+  const containerRef = React.useRef(null);
+  const triggerRef = React.useRef(null);
+  React.useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event) => {
+      if (!containerRef.current?.contains(event.target)) onClose();
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onClose();
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open, onClose]);
   const running = Number(queue?.running || 0);
   const queued = Number(queue?.queued || 0);
   const limit = Number(queue?.maxParallel || 10);
@@ -62,8 +82,8 @@ function CoursewareQueueIndicator({ queue, open, onToggle }) {
     || items.find((item) => item.status === 'queued')
     || null;
   const liveMessage = liveItem?.latestMessage || (liveItem?.status === 'queued' ? '等待并发槽位' : '当前没有新的执行消息');
-  return <div className="zx-cw-queue">
-    <button type="button" className={`zx-cw-queue-trigger${active ? ' is-active' : ''}`} onClick={onToggle} aria-expanded={open} aria-label={`课件生成队列，${running} 个生成中，${queued} 个排队中`}>
+  return <div className="zx-cw-queue" ref={containerRef}>
+    <button ref={triggerRef} type="button" className={`zx-cw-queue-trigger${active ? ' is-active' : ''}`} onClick={onToggle} aria-expanded={open} aria-label={`课件生成队列，${running} 个生成中，${queued} 个排队中`}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14"/><circle cx="3" cy="6" r=".8" fill="currentColor"/><circle cx="3" cy="12" r=".8" fill="currentColor"/><circle cx="3" cy="18" r=".8" fill="currentColor"/></svg>
       <strong>任务队列</strong>
       {active ? <span>{active > 99 ? '99+' : active}</span> : null}
@@ -113,6 +133,7 @@ export default function AdminCourseware() {
   const [error, setError] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [queueOpen, setQueueOpen] = React.useState(false);
+  const closeQueue = React.useCallback(() => setQueueOpen(false), []);
   const [libraryQuery, setLibraryQuery] = React.useState('');
   const [libraryKind, setLibraryKind] = React.useState('all');
   const [libraryStatus, setLibraryStatus] = React.useState('all');
@@ -329,7 +350,7 @@ export default function AdminCourseware() {
         title="课件管理"
         actions={
           <>
-            <CoursewareQueueIndicator queue={queueState.data} open={queueOpen} onToggle={() => setQueueOpen((value) => !value)} />
+            <CoursewareQueueIndicator queue={queueState.data} open={queueOpen} onToggle={() => setQueueOpen((value) => !value)} onClose={closeQueue} />
             <div className="zx-tabs" style={{ margin: 0 }}>
               <button type="button" className={`zx-tab ${view === 'chapters' ? 'active' : ''}`} onClick={() => setView('chapters')}>章节</button>
               <button type="button" className={`zx-tab ${view === 'library' ? 'active' : ''}`} onClick={() => setView('library')}>
