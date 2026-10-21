@@ -35,6 +35,7 @@ import { lessonReferences } from "./courseware-references.js";
 import PresentationArtifact from "./PresentationArtifact.jsx";
 import TutorChat from "./TutorChat.jsx";
 import SystemLogo from "./SystemLogo.jsx";
+import { LearningActivityGrid, PopularLearningResources, useDashboardInsights } from "./HomeLearningWidgets.jsx";
 import { RESOURCE_OPTIONS, resourceTypes, lessonSections, lessonSlides, ChapterCompletion } from "./LearnerResources.jsx";
 import "./lesson-start-modal.css";
 function ProductLogo({ className: n = "", animated: r = !1, color: u = "#111318" }) {
@@ -10247,10 +10248,11 @@ function g3({ done: n, total: r }) {
 function Dashboard({ profile: n }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const learning = useLearning(),
-    stats = learning.data?.stats ?? {},
+  const learning = useLearning();
+  const insights = useDashboardInsights(learning.data);
+  const stats = learning.data?.stats ?? {},
     dashboardMetrics = [
-      { icon: Rm, label: "学习天数", value: String(stats.learningDays ?? 0), unit: "天" },
+      { icon: Rm, label: "学习天数", value: insights.data ? String(insights.data.activity.learningDays) : "—", unit: "天" },
       { icon: z2, label: "已完成课时", value: String(stats.completedTasks ?? 0), unit: "个" },
       { icon: Tm, label: "课程总数", value: String($t.length), unit: "门" },
       { icon: m2, label: "测验累计分", value: String(stats.totalScore ?? 0), unit: "分" },
@@ -10275,14 +10277,6 @@ function Dashboard({ profile: n }) {
       const O = zy(n.subjectValues);
       return O.length > 0 ? O : $t;
     }, [n.subjectValues, learning.data?.courses]),
-    u = React.useMemo(
-      () => $t
-        .filter((O) => !r.some((P) => P.id === O.id))
-        .sort((O, P) => (Number(P.learnerCount) || 0) - (Number(O.learnerCount) || 0)
-          || String(O.name).localeCompare(String(P.name), "zh-CN"))
-        .slice(0, 2),
-      [r],
-    ),
     [i, d] = React.useState(0),
     p = location.state?.learnerView || "home",
     m = (view) => {
@@ -10425,12 +10419,12 @@ function Dashboard({ profile: n }) {
                           }),
                           jsxRuntime.jsxs("div", {
                             "code-path": "src\\pages\\Dashboard.tsx:203:11",
-                            className: "mt-6 flex flex-col items-center",
+                            className: "zx-dashboard-profile-identity mt-4 flex flex-col items-center",
                             children: [
                               jsxRuntime.jsx("div", {
                                 "code-path": "src\\pages\\Dashboard.tsx:204:13",
                                 className:
-                                  "flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-[#5aa832] text-4xl font-extrabold text-white",
+                                  "flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-[#5aa832] text-3xl font-extrabold text-white",
                                 style: x.avatarBackground ? { backgroundColor: x.avatarBackground } : undefined,
                                 children: x.avatar
                                   ? jsxRuntime.jsx("img", {
@@ -10445,14 +10439,14 @@ function Dashboard({ profile: n }) {
                               jsxRuntime.jsx("p", {
                                 "code-path": "src\\pages\\Dashboard.tsx:211:13",
                                 className:
-                                  "mt-4 text-2xl font-extrabold text-[#111318]",
+                                  "mt-2 text-2xl font-extrabold text-[#111318]",
                                 children: x.name,
                               }),
                             ],
                           }),
                           jsxRuntime.jsxs("div", {
                             "code-path": "src\\pages\\Dashboard.tsx:213:11",
-                            className: "mt-6 space-y-3",
+                            className: "zx-dashboard-profile-details mt-4 space-y-2",
                             children: [
                               jsxRuntime.jsxs("p", {
                                 "code-path": "src\\pages\\Dashboard.tsx:214:13",
@@ -10489,13 +10483,13 @@ function Dashboard({ profile: n }) {
                             type: "button",
                             onClick: () => h(!0),
                             className:
-                              "mt-6 w-full rounded-full bg-[#111318] py-3 text-sm font-extrabold text-white transition-transform hover:-translate-y-0.5",
+                              "mt-4 w-full rounded-full bg-[#111318] py-2 text-sm font-extrabold text-white transition-transform hover:-translate-y-0.5",
                             children: "编辑资料",
                           }),
                           jsxRuntime.jsx("div", {
                             "code-path": "src\\pages\\Dashboard.tsx:229:11",
                             className:
-                              "mt-8 grid grid-cols-2 gap-y-6 border-t border-black/5 pt-6",
+                              "zx-dashboard-profile-metrics mt-4 grid grid-cols-2 gap-y-3 border-t border-black/5 pt-4",
                             children: dashboardMetrics.map((O) =>
                               jsxRuntime.jsxs(
                                 "div",
@@ -10540,6 +10534,7 @@ function Dashboard({ profile: n }) {
                               ),
                             ),
                           }),
+                          jsxRuntime.jsx(LearningActivityGrid, { insights }),
                         ],
                       }),
                       jsxRuntime.jsxs("section", {
@@ -10549,7 +10544,7 @@ function Dashboard({ profile: n }) {
                           jsxRuntime.jsxs("div", {
                             "code-path": "src\\pages\\Dashboard.tsx:246:11",
                             className:
-                              "rounded-3xl border border-black/5 bg-white p-6",
+                              "zx-dashboard-continue rounded-3xl border border-black/5 bg-white p-6",
                             children: [
                               jsxRuntime.jsx("h3", {
                                 "code-path": "src\\pages\\Dashboard.tsx:247:13",
@@ -10587,7 +10582,7 @@ function Dashboard({ profile: n }) {
                                                 "code-path":
                                                   "src\\pages\\Dashboard.tsx:259:25",
                                                 className:
-                                                  "flex h-48 w-48 shrink-0 items-center justify-center rounded-2xl bg-[#f4f5f7]",
+                                                  "zx-dashboard-course-art flex h-48 w-48 shrink-0 items-center justify-center rounded-2xl bg-[#f4f5f7]",
                                                 children: jsxRuntime.jsx(
                                                   "img",
                                                   {
@@ -10596,7 +10591,7 @@ function Dashboard({ profile: n }) {
                                                     src: O.icon,
                                                     alt: O.name,
                                                     className:
-                                                      "h-36 w-36 object-contain",
+                                                      "zx-dashboard-course-icon h-36 w-36 object-contain",
                                                   },
                                                 ),
                                               }),
@@ -10760,91 +10755,11 @@ function Dashboard({ profile: n }) {
                                 }),
                             ],
                           }),
-                          jsxRuntime.jsxs("div", {
-                            "code-path": "src\\pages\\Dashboard.tsx:331:11",
-                            className:
-                              "rounded-3xl border border-black/5 bg-white p-6",
-                            children: [
-                              jsxRuntime.jsxs("div", {
-                                "code-path": "src\\pages\\Dashboard.tsx:332:13",
-                                className: "flex items-center justify-between",
-                                children: [
-                                  jsxRuntime.jsx("h3", {
-                                    "code-path":
-                                      "src\\pages\\Dashboard.tsx:333:15",
-                                    className:
-                                      "text-lg font-extrabold text-[#111318]",
-                                    children: "为您推荐",
-                                  }),
-                                  jsxRuntime.jsx("button", {
-                                    "code-path":
-                                      "src\\pages\\Dashboard.tsx:334:15",
-                                    type: "button",
-                                    onClick: () => $("courses"),
-                                    className:
-                                      "text-sm font-bold text-[#6c0ef2] hover:underline",
-                                    children: "查看全部 >",
-                                  }),
-                                ],
-                              }),
-                              u.length > 0
-                                ? jsxRuntime.jsx("div", {
-                                    "code-path":
-                                      "src\\pages\\Dashboard.tsx:343:15",
-                                    className:
-                                      "mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2",
-                                    children: u.map((O) =>
-                                      jsxRuntime.jsxs(
-                                        "div",
-                                        {
-                                          "code-path":
-                                            "src\\pages\\Dashboard.tsx:345:19",
-                                          className:
-                                            "relative rounded-2xl border border-black/5 bg-[#fafbfc] p-4 transition-all hover:-translate-y-0.5 hover:shadow-md",
-                                          children: [
-                                            jsxRuntime.jsx("div", {
-                                              "code-path":
-                                                "src\\pages\\Dashboard.tsx:346:21",
-                                              className:
-                                                "flex h-36 items-center justify-center rounded-xl bg-[#f4f5f7]",
-                                              children: jsxRuntime.jsx("img", {
-                                                "code-path":
-                                                  "src\\pages\\Dashboard.tsx:347:23",
-                                                src: O.icon,
-                                                alt: O.name,
-                                                className:
-                                                  "h-28 w-28 object-contain",
-                                              }),
-                                            }),
-                                            jsxRuntime.jsx("p", {
-                                              "code-path":
-                                                "src\\pages\\Dashboard.tsx:349:21",
-                                              className:
-                                                "mt-3 text-xs font-semibold text-[#8a8e9c]",
-                                              children: "课程",
-                                            }),
-                                            jsxRuntime.jsx("p", {
-                                              "code-path":
-                                                "src\\pages\\Dashboard.tsx:350:21",
-                                              className:
-                                                "text-base font-extrabold text-[#111318]",
-                                              children: O.name,
-                                            }),
-                                          ],
-                                        },
-                                        O.id,
-                                      ),
-                                    ),
-                                  })
-                                : jsxRuntime.jsx("p", {
-                                    "code-path":
-                                      "src\\pages\\Dashboard.tsx:355:15",
-                                    className:
-                                      "mt-4 text-sm font-semibold text-[#8a8e9c]",
-                                    children:
-                                      "你已开启全部课程，智能体将持续为你推荐拓展内容。",
-                                  }),
-                            ],
+                          jsxRuntime.jsx(PopularLearningResources, {
+                            insights,
+                            catalog: $t,
+                            onOpen: _,
+                            onViewAll: () => $("courses"),
                           }),
                         ],
                       }),

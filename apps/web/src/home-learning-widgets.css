@@ -1,0 +1,76 @@
+.zx-home-activity {
+  --zx-activity-0: #eeeaf5;
+  --zx-activity-1: #ded2fa;
+  --zx-activity-2: #b9a1ed;
+  --zx-activity-3: #9470dd;
+  --zx-activity-4: #6038c9;
+  margin-top: 16px;
+  border-top: 1px solid #eeeaf3;
+  padding-top: 12px;
+}
+.zx-home-activity > header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.zx-home-activity h4 { color: #292432; font-size: 13px; font-weight: 800; }
+.zx-home-activity > header > span { color: #837a90; font-size: 10px; }
+.zx-home-activity-calendar { display: grid; max-width: 260px; grid-template-columns: 12px minmax(0, 1fr); gap: 5px; }
+.zx-home-activity-weekdays { display: grid; grid-template-rows: repeat(7, minmax(0, 1fr)); gap: 3px; color: #81788d; font-size: 8px; line-height: 1; text-align: center; }
+.zx-home-activity-weekdays span { display: grid; align-items: center; }
+.zx-home-activity-cells { display: grid; min-width: 0; grid-auto-flow: column; grid-template-columns: repeat(20, minmax(0, 1fr)); grid-template-rows: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.zx-home-activity-day { display: block; width: 100%; aspect-ratio: 1; border: 0; border-radius: 2px; padding: 0; cursor: pointer; }
+.zx-home-activity-day.is-unavailable { background: transparent; cursor: default; }
+.zx-home-activity :is(.level-0) { background: var(--zx-activity-0); }
+.zx-home-activity :is(.level-1) { background: var(--zx-activity-1); }
+.zx-home-activity :is(.level-2) { background: var(--zx-activity-2); }
+.zx-home-activity :is(.level-3) { background: var(--zx-activity-3); }
+.zx-home-activity :is(.level-4) { background: var(--zx-activity-4); }
+.zx-home-activity-day:hover { box-shadow: 0 0 0 1px #7250b7; }
+.zx-home-activity-day:focus-visible { position: relative; z-index: 1; outline: 2px solid #6038ef; outline-offset: 2px; }
+.zx-home-activity-legend { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; color: #837a90; font-size: 9px; }
+.zx-home-activity-legend > div { display: flex; align-items: center; gap: 3px; }
+.zx-home-activity-legend i { width: 8px; aspect-ratio: 1; border-radius: 2px; }
+.zx-home-activity-caption { margin-top: 8px; color: #766c84; font-size: 10px; line-height: 1.5; }
+.zx-home-insights-state { margin: 14px 0; color: #81788d; font-size: 12px; line-height: 1.75; }
+.zx-home-insights-error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; color: #a23a50; font-size: 11px; line-height: 1.6; }
+.zx-home-insights-error button { min-height: 28px; border: 1px solid #eac3cb; border-radius: 7px; padding: 2px 9px; background: #fff7f8; color: inherit; font-weight: 700; cursor: pointer; }
+.zx-home-popular { display: flex; min-width: 0; min-height: 0; flex-direction: column; }
+.zx-home-popular-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.zx-home-popular-head p { margin-top: 3px; color: #847b91; font-size: 11px; line-height: 1.6; }
+.zx-home-popular-head > button { flex: 0 0 auto; min-height: 30px; padding: 2px 0 2px 8px; color: #6038ef; font-size: 12px; font-weight: 700; cursor: pointer; }
+.zx-home-popular-list { max-height: min(44dvh, 28rem); margin: 12px -6px 0; padding: 0 6px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #d4c9e8 transparent; list-style: none; }
+.zx-home-popular-list > li + li { border-top: 1px solid #f0edf5; }
+@media (min-width: 1280px) {
+  .zx-dashboard-continue { padding-block: 16px; }
+  .zx-dashboard-continue > .relative { margin-top: 12px; }
+  .zx-dashboard-continue h4 { font-size: 22px; line-height: 1.25; }
+  .zx-dashboard-continue button.mt-5 { margin-top: 12px; padding-block: 10px; }
+  .zx-home-popular { padding-block: 16px; }
+  .zx-home-popular-list { flex: 1; min-height: 0; max-height: none; }
+  .zx-home-popular .zx-home-resource-row { padding-block: 10px; }
+}
+.zx-home-resource-row { display: flex; width: 100%; min-width: 0; align-items: center; gap: 12px; border-radius: 10px; padding: 12px 6px; text-align: left; transition: background-color 150ms ease; cursor: pointer; }
+.zx-home-resource-row:hover:enabled { background: #f8f5fe; }
+.zx-home-resource-row:disabled { cursor: not-allowed; }
+.zx-home-resource-row:disabled .zx-home-resource-copy { opacity: .65; }
+.zx-home-resource-rank { display: grid; width: 30px; flex: 0 0 30px; justify-items: center; border: 1px solid transparent; border-radius: 8px; padding: 3px 0; color: #8b8297; font-size: 14px; font-weight: 800; line-height: 1.3; }
+.zx-home-resource-rank svg { width: 18px; height: 18px; }
+.zx-home-resource-rank:has(svg) > span { font-size: 10px; }
+.zx-home-resource-rank.is-gold { border-color: #ecd296; border-radius: 50%; background: #fff2d4; color: #996513; }
+.zx-home-resource-rank.is-silver { border-color: #d7dfe8; border-radius: 50%; background: #edf1f6; color: #637087; }
+.zx-home-resource-rank.is-bronze { border-color: #e3c9b6; border-radius: 50%; background: #f6e8db; color: #956443; }
+.zx-home-resource-copy { display: grid; min-width: 0; flex: 1; gap: 5px; }
+.zx-home-resource-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 7px; }
+.zx-home-resource-title strong { overflow-wrap: anywhere; color: #34303e; font-size: 13px; font-weight: 800; line-height: 1.6; }
+.zx-home-resource-kind { flex: 0 0 auto; border-radius: 5px; padding: 1px 5px; background: #eee8fb; color: #7953b5; font-size: 9px; font-weight: 700; line-height: 1.6; }
+.zx-home-resource-kind.kind-presentation { background: #eaf1fc; color: #5377a8; }
+.zx-home-resource-kind.kind-quiz { background: #fcf0e2; color: #997043; }
+.zx-home-resource-context { overflow-wrap: anywhere; color: #82788e; font-size: 10px; line-height: 1.6; }
+.zx-home-resource-unavailable { color: #93636c; font-size: 10px; }
+.zx-home-resource-count { display: grid; flex: 0 0 auto; justify-items: end; color: #8a8096; font-size: 10px; line-height: 1.6; }
+.zx-home-resource-count strong { color: #5f5274; font-size: 15px; font-variant-numeric: tabular-nums; font-weight: 800; }
+.zx-home-popular :is(button):focus-visible, .zx-home-insights-error button:focus-visible { outline: 2px solid #6038ef; outline-offset: 2px; }
+@media (max-width: 639px) {
+  .zx-home-resource-row { gap: 9px; }
+  .zx-home-popular-list { max-height: 50dvh; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .zx-home-resource-row { transition: none; }
+}

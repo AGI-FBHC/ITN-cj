@@ -396,7 +396,7 @@ func statsBody(cfg: Config, userId: String): String {
         "FROM lesson_progress WHERE user_id=" + sqlQuote(userId))
     let total = query(cfg, "SELECT COUNT(*) n FROM lessons WHERE is_visible=1")
     let out = JsonWriter()
-    out.putInt("learningDays", if (done.size > 0 && done[0].int("n") > 0) { 1 } else { 0 })
+    out.putInt("learningDays", learnerLearningDays(cfg, userId))
     out.putInt("completedTasks", if (done.size > 0) { done[0].int("complete_count") } else { 0 })
     out.putInt("totalLessons", if (total.size > 0) { total[0].int("n") } else { 0 })
     out.putInt("totalScore", if (done.size > 0) { done[0].int("total_score") } else { 0 })
@@ -1898,6 +1898,18 @@ main(): Int64 {
         }
     }
 
+    app.mapGet("api/learner/dashboard") { ctx =>
+        match (authenticate(ctx, cfg)) {
+            case None => ()
+            case Some(userId) =>
+                try {
+                    writeJson(ctx.response, 200, learnerDashboardBody(cfg, userId))
+                } catch (_: Exception) {
+                    writeError(ctx.response, 503, "学习活跃记录和热门资源暂时无法加载，请重试")
+                }
+        }
+    }
+
     app.mapGet("api/courses") { ctx =>
         match (authenticate(ctx, cfg)) {
             case None => ()
@@ -1976,13 +1988,15 @@ main(): Int64 {
                                 } else if (complete && lrLessonTypes(row).size == 0) {
                                     writeError(ctx.response, 409, "本章暂无已发布的学习内容")
                                 } else {
+                                    let statements = ArrayList<String>()
                                     if (resourceKind.size > 0) {
                                         let version = cwResourceVersion(cfg, row, resourceKind)
-                                        let statements = ArrayList<String>()
                                         statements.add(cwResourceProgressSql(userId, courseId, row.int("lesson_index"),
                                             resourceKind, version, "NULL", if (complete) { "1" } else { "0" }))
-                                        transaction(cfg, statements.toArray())
                                     }
+                                    statements.add(learnerActivityRecordSql(userId, courseId, row.int("lesson_index"),
+                                        if (resourceKind.size > 0) { resourceKind } else { "lesson" }))
+                                    transaction(cfg, statements.toArray())
                                     saveProgress(cfg, userId, courseId, row.int("lesson_index"), None, complete)
                                     writeJson(ctx.response, 200, progressJson(cfg, userId, courseId, row.int("lesson_index")))
                                 }
@@ -2069,7 +2083,8 @@ main(): Int64 {
                                                     "completed=GREATEST(completed,VALUES(completed)),updated_at=NOW(6)",
                                                 cwResourceProgressSql(userId, courseId, stableIndex, "bank",
                                                     cwResourceVersion(cfg, row, "bank"), score.toString(),
-                                                    if (score >= 60) { "1" } else { "0" })
+                                                    if (score >= 60) { "1" } else { "0" }),
+                                                learnerActivityRecordSql(userId, courseId, stableIndex, "bank")
                                             ])
                                         }
                                         let saved = if (existing.size > 0) { existing } else { query(cfg,

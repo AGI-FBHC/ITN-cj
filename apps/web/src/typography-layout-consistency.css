@@ -64,6 +64,32 @@ button.text-base {
   min-width: 0;
 }
 
+.zx-dashboard-profile {
+  padding: 20px;
+}
+
+.zx-dashboard-profile-identity {
+  flex-direction: row;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.zx-dashboard-profile-identity > p {
+  min-width: 0;
+  margin-top: 0;
+  overflow-wrap: anywhere;
+}
+
+.zx-dashboard-profile-details,
+.zx-dashboard-profile > button,
+.zx-dashboard-profile-metrics {
+  margin-top: 12px;
+}
+
+.zx-dashboard-profile-metrics {
+  padding-top: 12px;
+}
+
 .zx-account-menu {
   position: absolute;
   top: calc(100% + 10px);
@@ -511,9 +537,48 @@ button.text-base {
 }
 
 @media (min-width: 1280px) {
+  .zx-dashboard-page {
+    height: 100dvh;
+  }
+
   .zx-dashboard-grid {
+    flex: 1 1 0;
+    min-height: 0;
     grid-template-columns: 300px minmax(0, 1fr) 380px;
-    grid-template-rows: minmax(min-content, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .zx-dashboard-profile {
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .zx-dashboard-center,
+  .zx-dashboard-side {
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .zx-dashboard-center > :first-child,
+  .zx-dashboard-side > :first-child {
+    min-height: 0;
+    max-height: 52dvh;
+    overflow-y: auto;
+  }
+
+  .zx-dashboard-course-art {
+    width: clamp(116px, 18dvh, 176px);
+    height: clamp(116px, 18dvh, 176px);
+  }
+
+  .zx-dashboard-course-icon {
+    width: 78%;
+    height: 78%;
+  }
+
+  .zx-dashboard-side > :last-child {
+    min-height: 0;
+    overflow-y: auto;
   }
 
   .zx-dashboard-profile {

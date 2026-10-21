@@ -1043,3 +1043,14 @@
 - 用户追加首页填满可视高度：使用 100dvh 父容器及 flex/grid 分配导航下剩余空间，三列底部对齐，内容过高自然滚动。浏览器默认可视高度 720 时首页 720、卡片底边均为 696，保留 24px 页面内边距。随后用户继续要求学习活跃网格和热门资源榜，接下一个提交实现。
 - 验证：后端 48/48 单测通过，前端 11/11 Node 测试通过，后端 release 和 Vite build 成功；022 真实 HTTP/MySQL 回归 3/3 通过（未发消息会话、课程重复进入不同ID、中文命名、归档恢复、owner隔离、删除）。真实网络分层讲义返回 6 节和 10,180 bytes 原文章节，编号每段最多一次；浏览器已验证编号定位后仍在讲义页、真实原文展开、3 次进课形成 3 个会话。后端已替换并通过 8312 health，前端 3006 保持运行。
 - 本轮未调用模型生成新的讲义/PPT或学习回答；保持用户未跟踪 tools/build_course_resource_packs.py 不动。所有功能更改和本 TRACE 本地提交，不推送。
+
+## 2026-10-22 首页学习活跃网格、热门资源榜与视口布局
+
+- 用户在首页自适应高度的初版基础上，要求个人档案增加类似 GitHub 的活跃网格，并将“为您推荐”改成按学习人数排序的课程资源列表，前三名使用冠军/亚军/季军风格，其余普通序号。前后端继续并行，主 agent 统一接线、部署、验收和提交。
+- 新增 migration 023_learning_activity.sql：learner_activity_days 按 user_id/北京时间日期/course_id/稳定 lesson_index/kind 去重，重复打开同日同资源不重复增加活跃强度；无课程/资源外键，以便删除或重生成课件后仍保留学习天数，用户删除则级联清理。仅从现存 lesson_resource_progress.updated_at、quiz_attempts.created_at、旧 lesson_progress.updated_at 可核验时间回填，不展开虚构历史日期。已使用本地 13307 DDL 账号完整执行。
+- 学习进度写入与活动日志同事务，章节测验提交也记录 bank；旧无 resourceKind 请求记 lesson。statsBody 的 learningDays 从原来“有进度则固定 1”修正为真实 COUNT(DISTINCT activity_date)。新增认证 GET /api/learner/dashboard，一次一致性只读事务返回近 140 天日期/count、累计学习天数及最多 8 条热门资源。
+- 热门资源仅取已发布课程、可见课时、当前 ready/published 代次的 lecture/bank/slides；按匹配当前 generation 的 lesson_resource_progress 去重用户人数降序，保留稳定课时身份并返回学员端显示索引。不会把重复访问数当人数，不显示测验答案，也不因为用户已学过全部课程而显示空推荐。
+- 前端新增 HomeLearningWidgets.jsx、home-learning-widgets.css、dashboard-insights.js：个人档案展示 20 周 x 7 天网格，真实零值为空格、未来日期不可选，悬停/键盘可读日期与去重资源学习次数；排行榜前三浅金/银/铜圆徽，其余普通序号，显示资源类型、课程/章节及真实人数。点击榜单通过现有课程对象进入讲义、幻灯片或测验。压缩头像与冗余间距，保持现有视觉。
+- 首页宽屏使用 100dvh 高度和剩余空间 grid/flex 分配；榜单超长内部滚动，档案和最近记录在极小高度下独立滚动，避免整页因资源数量被撑高。课程图标随可视高度缩放。浏览器实测默认高度 720 时页面 720、三列卡片底边均 696；1440x1000 时页面 1000、三列底边均 976，均留 24px 页面边距。已恢复临时视口设置，并保留首页交付标签。
+- 验证：仓颉 52/52、Node 15/15 通过；后端 release、前端 Vite build 通过。test_dashboard_activity_http.py 使用临时匿名用户验证真实 progress 两次学习仅 1 次活跃/1 名用户、第二用户人数 +1、排行榜降序、跨日累计 2 天与 bootstrap stats 一致；fixture 用户已清理。此前会话管理真实 HTTP/MySQL 3/3 也已通过。浏览器确认 140 格、仅前三有奖牌，榜单首项直接进入网络分层讲义。
+- 当前后端 PID 195652，8312 health 正常，前端 3006 正常；替换前 binary 备份在 data/chat-upgrade-backup/20261022-044007-home/。本次不调用模型、不修改其配置；用户 tools/build_course_resource_packs.py 继续保持未跟踪且未修改。
