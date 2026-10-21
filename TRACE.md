@@ -5142,3 +5142,9 @@ read_chunk 读得到原文并带回库标识与正文。
 - 原生启动夹具排障如实记录：第一次仅隔离APPDATA环境，Electron自身profile仍与运行实例争锁，退出0；改为明确 --user-data-dir 后正常创建独立profile。第二次错误地等待空数据库不存在的输入框超时；实际页面已完整显示“还没有可用的对话模型”，无脚本错误。改为断言产品在无模型配置时应有的空状态，未修改产品去迎合测试。lumin协议注册项测试前导出，结束后恢复；未使用Python样张。临时脚本 tmp/package-branding-check.cjs、tmp/verify-package-0.8.31.ps1 保留。
 - 用户追加截图，仍为原目录中运行的窄侧栏：树与详情被压缩、点击节点退出。已说明新包恢复居中宽弹窗，截图中旧实例尚未替换；不擅自关闭仍在工作中的用户实例。
 - 在整合两项修复时补查协作树弹窗自身的导航生命周期：真实浏览器后退后，旧team-modal遮罩仍在新页并拦截下一次左栏点击；tmp/route-team-cleanup-before.log记录断言失败及pointer interception，属实际遗漏，不当作无关测试噪声。clearRouteUi现在调用协作面板立即关闭API，切页不等待消失动画；普通关闭仍保留动画。重新执行原17项加该场景，18/18通过，记录C:/Users/GeJie/AppData/Local/Temp/lumin-route-La5qaM/result.json；协作树自身34/34再次通过。因有这3行产品改动，下面按新提交重新打包，不将上一ZIP冒充最终包。
+
+### 2026-10-22 05:05 · 0.8.31 最终包复验
+
+- 最终提交 34ac448，build=lumin-0.8.31-34ac448；ZIP dist/Lumin-0.8.31.zip，231326788 bytes，SHA256=2EBDFEADC5D0F78888BEF72D74CD6CBC4ED1CDB9208FC5723E32846C3D4C8776；解压目录 dist/portable/Lumin-0.8.31。文件名保持 0.8.31，无额外后缀；未发布线上、未推送远端、未替换用户正在运行的旧 dist/Lumin-0.8.31 实例。
+- 包内复验全部通过：38 项 manifest 资产哈希与关键 ZIP 条目一致、2763 条目、EXE 图标为 16/32/48/64/128/256 且产品信息为 Lumin 0.8.31；原生启动/关闭/再次启动 9/9（独立数据根，默认隐藏小鼋龙、外观设置可显示、再次启动仍隐藏、窗口文件图标存在）；包内 renderer 协作弹窗 34/34（点击节点不关闭、关闭后从对应回复重开、历史与多 run、快速完成）；包内 renderer+内核切页 18/18（旧响应不覆盖新页、旧遮罩与预览随切页清理、后台任务继续完成）。
+- 临时验收脚本 tmp/verify-package-0.8.31.ps1、tmp/package-branding-check.cjs 及日志保留；不进入提交。未跟踪的 .taste-skill 与两份既有调研文档继续排除。
