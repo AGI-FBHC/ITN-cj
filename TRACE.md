@@ -5183,3 +5183,9 @@ read_chunk 读得到原文并带回库标识与正文。
 - sidebar-torture-check 现为 41 项；当前源码 5 连跑全 41/41；本轮新增的确定性慢响应用例（H）在修复前必定失败（open=seed-53/thread=seed-53/highlighted=seed-26），修复后三方一致。
 - 回归：clarity-memory 27、route-lifecycle 18/18、session-switch 18 均通过；上一轮记录的其他套件（chat-ux 18、team-panel 34、session-list 10、pages-audit 13、knowledge 92、growth-activity 21、nonchat 26）未受本轮改动影响，沿用同次会话证据。
 - 清理：4 个由本轮后台 ui-e2e 运行遗留的 node+内核进程（占用 dist/core 导致打包失败）已按命令行确认后终止；用户自己的桌面实例不在其中。
+
+### 2026-10-22 07:20 · 侧边栏竞态修复后的本地包复验
+
+- 提交 f509695；build=lumin-0.8.31-f509695。ZIP dist/Lumin-0.8.31.zip，231329168 bytes，SHA256=CF31D0B1D013D1C6131893FEFB7865263C5969C9631B5937062B2A43202D4640。
+- 包内复验：原生启动/关闭/再次启动 9/9（独立数据根、默认隐藏小鼋龙、图标与产品信息）；包内 renderer + 包内内核的 sidebar-torture-check 连续 3 次 41/41（左栏 / 第二层面板 / 会话栏 / 右侧资源栏、12 次连续切页、折叠展开落库、慢响应乱序、确定性保存门控）。文件名仍为 0.8.31，无额外后缀；未发布线上、未推送远端。
+- 本轮目标仍在进行（用户要求持续测试、不要轻易收尾）：ui-e2e 全链路自检已对齐到当前 IA 并跑到知识库段，剩余断点在知识库导入/详情段（需要按 #kb-import-path + 添加并索引 + .ok-dialog("资料准备完成") + 知识库页功能切换重写）。下一轮继续。
