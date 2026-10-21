@@ -3360,9 +3360,16 @@ function initZoomKeys() {
   });
 }
 
+let prefsSaveSeq = 0;
 async function savePrefs(patch) {
+  const seq = ++prefsSaveSeq;
   try {
-    applyPrefs(await api("/api/prefs/save", patch));
+    const saved = await api("/api/prefs/save", patch);
+    /* 只有最后一次保存的响应能回写界面：内核每次都回全量偏好，
+       先发出的旧响应后到就会把用户刚做的操作改回去
+       （实测：折叠 → 立刻展开，旧响应把面板又折叠起来）。 */
+    if (seq !== prefsSaveSeq) return;
+    applyPrefs(saved);
   } catch (e) {
     toast("偏好保存失败：" + e.message);
   }
@@ -7446,12 +7453,17 @@ PAGES.chat = {
       paintOrder = "";
       try {
         const d = await api("/api/sessions/events", { sessionId: id });
+        /* 慢响应竞态：这期间用户可能已经点了另一条会话、或者切去了别的页面。
+           只有"仍然是当前会话且仍在对话页"才落地 —— 否则正文会是 A 的内容、
+           面板高亮停在 A，而输入框和后续提问都发往 B（实测可复现）。 */
+        if (state.chatSessionId !== id || current !== "chat") return;
         state.chatEvents = d.events || [];
         state.lastEventId = d.lastId || 0;
         state.chatTree = d.tree || null;
         state.chatTurns = turnsFromEvents(state.chatEvents);
         window.LuminTeamPanel?.syncSession(id, state.chatEvents);
       } catch (e) {
+        if (state.chatSessionId !== id || current !== "chat") return;
         toast("读取会话失败：" + e.message);
       }
       state.stickBottom = true;

@@ -265,6 +265,18 @@ fs.writeFileSync(singleFile, [
     shots.push(path.relative(process.cwd(), file));
   };
 
+  /* 当前信息架构：左栏只有 对话 / 学习 / 知识库 / 成果 / 设置 五个入口；
+     「学 · 练」「我的成长」是学习页里的二级标签，笔记 / 错题本 / 收集资料在成果页里。
+     旧用例里的名字保留成别名，免得每一处调用都改。 */
+  const RAIL_PAGE = {
+    '对话': 'chat', '伴学助手': 'chat', '智能体工作台': 'chat', '会话记录': 'chat',
+    '学习': 'home', '学习中心': 'home', '首页': 'home', '知识网络': 'home',
+    '知识库': 'kb', '领域知识库': 'kb',
+    '成果': 'resources', '个性化资源': 'resources', '学习资源': 'resources', '我的资源': 'resources',
+    '设置': 'settings',
+  };
+  const LEARN_TAB = {'学 · 练': 'learn', '我的成长': 'report'};
+  const OUTCOME_TAB = {'笔记': 'notes', '错题本': 'wrong', '收集资料': 'network'};
   const nav = async (label) => {
     // 播放器是全屏遮罩：任何导航前先把它收起来，否则点击会被它挡住
     await page.evaluate(() => {
@@ -272,29 +284,28 @@ fs.writeFileSync(singleFile, [
       if (p) p.hidden = true;
       document.body.classList.remove('player-open');
     });
-    const aliases = {'首页':'学习中心','伴学助手':'智能体工作台','领域知识库':'知识库','个性化资源':'学习资源'};
-    if (['学 · 练','我的成长','我的资源'].includes(label)) {
+    if (LEARN_TAB[label]) {
       await page.locator('#rail .nav-item[data-page="home"]').click();
       await page.waitForSelector('.center-links');
       await page.locator('.center-links button', {hasText:label}).click();
+    } else if (OUTCOME_TAB[label]) {
+      await page.locator('#rail .nav-item[data-page="resources"]').click();
+      await page.waitForSelector('.workspace-tabs');
+      await page.locator('.workspace-tabs button', {hasText:label}).click();
     } else {
-      await page.locator('#rail .nav-item', {hasText:aliases[label]||label}).first().click();
+      const target = RAIL_PAGE[label];
+      if (!target) throw new Error('nav 不认识这个入口：' + label);
+      await page.locator('#rail .nav-item[data-page="' + target + '"]').click();
     }
     await page.waitForTimeout(500);
     await page.waitForFunction(() => !document.querySelector('#view .empty .spinner'), null, { timeout: 20000 }).catch(() => {});
     await page.waitForTimeout(200);
     await page.waitForFunction(()=>!state.busyTurn,null,{timeout:60000});
-    if (label === '个性化资源') {
-      await page.waitForSelector('.legacy-artifacts');
-      await page.locator('.legacy-artifacts').evaluate(e=>e.open=true);
-    }
   };
 
-  /** 笔记与错题本已合成一个根「我的资源」，页内用分段切换：测试里统一走这个助手。 */
+  /** 笔记与错题本在「成果」页里用二级标签切换：测试里统一走这个助手。 */
   const openRes = async (tab) => {
-    await nav('我的资源');
-    await page.waitForSelector('#view .res-tabs', { timeout: 15000 });
-    await page.locator('#view .res-tabs button', { hasText: tab === 'wrong' ? '错题本' : '笔记' }).first().click();
+    await nav(tab === 'wrong' ? '错题本' : '笔记');
     await page.waitForTimeout(700);
   };
 
@@ -331,16 +342,18 @@ fs.writeFileSync(singleFile, [
   await page.waitForSelector('.nav-item', { timeout: 20000 });
   await page.waitForTimeout(800);
 
-  await step('默认工作台 + 五个产品区与设置', async () => {
+  await step('默认工作台 + 四个去处与设置', async () => {
     const items = await page.$$eval('.nav-item', (els) => els.map((e) => {
       const tip = e.querySelector('.rail-tip');
       return tip ? tip.textContent.trim() : e.textContent.trim();
     }));
-    assert(items.length === 6, '侧栏入口应为 6 个，实际 ' + items.length + '：' + items.join('/'));
-    assert(items.indexOf('智能体工作台') >= 0 && items.indexOf('会话记录') < 0,
-      '「会话记录」应已并入「伴学助手」，实际：' + items.join('/'));
+    assert(items.length === 5, '侧栏入口应为 5 个（对话/学习/知识库/成果/设置），实际 ' + items.length + '：' + items.join('/'));
+    assert(items.indexOf('对话') >= 0 && items.indexOf('会话记录') < 0,
+      '「会话记录」应已并入「对话」，实际：' + items.join('/'));
     assert(items.indexOf('画像校准') < 0 && items.indexOf('错题本') < 0 && items.indexOf('我的笔记') < 0,
-      '校准应并入「我的成长」、笔记与错题本应并入「我的资源」，实际：' + items.join('/'));
+      '校准应并入「学习 · 我的成长」、笔记与错题本应并入「成果」，实际：' + items.join('/'));
+    assert(items.indexOf('学习') >= 0 && items.indexOf('知识库') >= 0 && items.indexOf('成果') >= 0,
+      '学习 / 知识库 / 成果 三个去处应齐全，实际：' + items.join('/'));
     assert(items.some((x) => x.indexOf('设置') === 0), '左下角应是设置，实际：' + items.join('/'));
     return items.join('/');
   });
@@ -364,40 +377,34 @@ fs.writeFileSync(singleFile, [
       };
     });
     assert(geo.w >= 48 && geo.w <= 72, '窄侧栏宽度应在 48~72px，实际 ' + geo.w);
-    assert(geo.items === 6, '侧栏页面入口应为 6 个，实际 ' + geo.items);
+    assert(geo.items === 5, '侧栏页面入口应为 5 个，实际 ' + geo.items);
     assert(geo.seps >= 2, '分组之间应有分隔线，实际 ' + geo.seps);
     assert(geo.actions === 2, '侧栏底部应有两个动作按钮（主题 / 齿轮之外只有检索），实际 ' + geo.actions);
     return geo.w + 'px · ' + geo.items + ' 入口 · ' + geo.seps + ' 条分隔线';
   });
 
   await nav('首页');
-  await step('首页首次使用清单 5 步且都未完成', async () => {
-    const total = await page.locator('.check-item').count();
-    const done = await page.locator('.check-item.done').count();
-    assert(total === 5, '清单应有 5 项，实际 ' + total);
-    assert(done === 0, '此时不应有已完成项');
-    await shot('01-首次使用清单');
-    return '5 项，0 完成';
-  });
-
-  await step('清单第 1 步直接跳到设置里的「模型与接口」分区', async () => {
-    await page.locator('.check-item', { hasText: '配置模型接口' }).getByRole('button', { name: '去配置' }).click();
-    await page.waitForSelector('#m-id', { timeout: 10000 });
-    const title = await page.textContent('#page-title');
-    assert(title.indexOf('设置') >= 0, '应跳到设置页，实际 ' + title);
-    const active = await page.locator('.settings-nav button.active').innerText();
-    assert(active.indexOf('模型与接口') >= 0, '设置页应停在「模型与接口」分区，实际 ' + active);
-    assert((await page.evaluate(() => location.hash)) === '#/settings/models',
-      '设置分区要写进 hash，实际 ' + (await page.evaluate(() => location.hash)));
+  await step('首页就是知识网络（总览与首次使用清单已下线）', async () => {
+    assert(await page.locator('.check-item').count() === 0, '首次使用清单已下线，首页不该再出现');
+    await page.waitForSelector('#knowledge-workspace', { timeout: 20000 });
+    await page.waitForTimeout(700);
+    const info = await page.evaluate(() => ({
+      canvases: document.querySelectorAll('.knowledge-canvas').length,
+      count: (document.getElementById('knowledge-count') || {}).textContent || '',
+    }));
+    assert(info.canvases === 1, '首页应只有一块知识网络画布，实际 ' + info.canvases);
+    await shot('01-知识网络');
+    return '画布 1 块 · 计数「' + info.count.trim() + '」';
   });
 
   /* ---------- 模型：预设 + 保存 + 绑定 ---------- */
   await step('模型页预设按钮能填好地址与模型名', async () => {
-    await page.locator('.chip', { hasText: 'MiMo TokenPlan · v2.6 flash' }).click();
+    await settings('模型与接口');
+    await page.locator('.chip', { hasText: 'MiMo Flash' }).first().click();
     const base = await page.inputValue('#m-base');
     const model = await page.inputValue('#m-model');
     assert(base.indexOf('xiaomimimo') >= 0, '预设 base 应指向 token-plan，实际 ' + base);
-    assert(model === 'mimo-v2.6-flash', '预设模型名应为 v2.6 flash，实际 ' + model);
+    assert(model === 'mimo-v2.6-flash', '预设模型名应为 mimo-v2.6-flash，实际 ' + model);
     await shot('02-模型预设');
     return base + ' / ' + model;
   });
@@ -1703,11 +1710,11 @@ fs.writeFileSync(singleFile, [
     await openRes('notes');
     assert(await page.evaluate(() => !document.querySelector('#nav-back').disabled), '走过一页之后「后退」应可点');
     await page.locator('#nav-back').click();
-    await page.waitForFunction(() => (document.querySelector('#page-title') || {}).textContent === '学习中心', null, { timeout: 10000 });
+    await page.waitForFunction(() => (document.querySelector('#page-title') || {}).textContent === '知识网络', null, { timeout: 10000 });
     assert(await page.evaluate(() => !document.querySelector('#nav-forward').disabled), '后退之后「前进」应可点');
     await page.locator('#nav-forward').click();
-    await page.waitForFunction(() => (document.querySelector('#page-title') || {}).textContent === '我的资源', null, { timeout: 10000 });
-    return '后退 → 首页，前进 → 我的资源';
+    await page.waitForFunction(() => (document.querySelector('#page-title') || {}).textContent === '学习成果', null, { timeout: 10000 });
+    return '后退 → 知识网络，前进 → 学习成果';
   });
 
   await step('折叠的是第二层：窄栏固定不动，收起后仍可点、重载仍保持', async () => {
@@ -1784,69 +1791,28 @@ fs.writeFileSync(singleFile, [
     return '面板点「' + want.trim() + '」→ 主区滚动并高亮';
   });
 
-  await step('首页星云图：一库一团，点章节出动作卡', async () => {
+  await step('知识网络：画布在、切页回来还在、没有遗留浮层', async () => {
     await nav('首页');
-    await page.waitForSelector('.graph-canvas', { timeout: 20000 });
-    await page.waitForTimeout(1000);
-    const tree = await page.evaluate(() => fetch('/api/study/tree', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kbId: 'course' }) }).then((r) => r.json()).then((j) => (j.data.chapters || []).length));
-    const info = await page.evaluate(() => (window.itnGraphInfo ? window.itnGraphInfo() : null));
-    assert(!!info, '应有星云图自检接缝 itnGraphInfo');
-    assert(info.clusters >= 1, '至少一团星云，实际 ' + info.clusters);
-    assert(info.perCluster['course'] === tree, '这一团的章节数应等于章节数（每库 ≤200 的折叠规则之外），实际 ' + JSON.stringify(info.perCluster) + ' vs ' + tree);
-    // 点星云中心 → 切当前库（这一团就是当前库时，侧卡上应写"当前知识库"）
-    const cpos = await page.evaluate(() => window.itnGraphPick('course'));
-    assert(cpos, '应能定位到 course 这团星云的中心');
-    await clickGraphPoint(cpos);
-    await page.waitForSelector('.graph-side:not([hidden])', { timeout: 8000 });
-    let side = await page.locator('.graph-side').innerText();
-    assert(side.indexOf('章节') >= 0 && side.indexOf('当前知识库') >= 0, '点星云中心应给出这一团的概览，实际：' + side.replace(/\s+/g, ' ').slice(0, 80));
-    await shot('46-星云图-一团');
-    // 点章节 → 侧卡（继续学 / 出练习 / 生成讲义）
-    const name = await page.evaluate(() => fetch('/api/graph', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kbId: 'course' }) }).then((r) => r.json()).then((j) => j.data.nodes.slice().sort((a, b) => b.chunkCount - a.chunkCount)[0].name));
-    const pos = await page.evaluate((nm) => window.itnGraphPick('course', nm), name);
-    assert(pos, '应能拿到章节「' + name + '」在画布上的坐标');
-    await clickGraphPoint(pos);
-    await page.waitForSelector('.graph-side:not([hidden])', { timeout: 8000 });
-    side = await page.locator('.graph-side').innerText();
-    assert(side.indexOf(name) >= 0, '侧卡应显示章节名，实际：' + side.replace(/\s+/g, ' ').slice(0, 60));
-    for (const label of ['继续学', '出练习', '生成讲义']) {
-      assert(side.indexOf(label) >= 0, '侧卡里应有「' + label + '」，实际：' + side.replace(/\s+/g, ' ').slice(0, 80));
-    }
-    await shot('47-星云图-章节侧卡');
-    return '一团 ' + info.perCluster['course'] + ' 章 · 点星云出概览 · 点章节出动作卡';
-  });
-
-  await step('星云图：点另一个星云切库、切页不残留、减少动态时不呼吸', async () => {
-    // 点 course2 那团星云中心 → 当前库跟着切
-    const c2 = await page.evaluate(() => window.itnGraphPick('course2'));
-    assert(c2, '应能定位到第二团的中心');
-    await clickGraphPoint(c2);
-    let side = await page.locator('.graph-side').innerText();
-    assert(side.indexOf('当前知识库') >= 0, '点了第二团之后，侧卡应显示它为当前库，实际：' + side.replace(/\s+/g, ' ').slice(0, 80));
-    await shot('48-星云图-切库');
-    // 切回第一个库，别影响后面的步骤
-    await clickGraphPoint(await page.evaluate(() => window.itnGraphPick('course')));
-
+    await page.waitForSelector('#knowledge-workspace', { timeout: 20000 });
+    await page.waitForTimeout(800);
+    const info = await page.evaluate(() => ({
+      canvases: document.querySelectorAll('.knowledge-canvas').length,
+      count: (document.getElementById('knowledge-count') || {}).textContent || '',
+    }));
+    assert(info.canvases === 1, '知识网络应只有一块画布，实际 ' + info.canvases);
+    await shot('46-知识网络');
     await openRes('notes');
     await page.waitForTimeout(400);
     await nav('首页');
-    await page.waitForSelector('.graph-canvas', { timeout: 20000 });
-    await page.waitForTimeout(900);
-    const again = await page.evaluate(() => Number(document.querySelector('.graph-canvas').dataset.nodes || 0));
-    assert(again > 0, '切回来还能画出星云，实际节点 ' + again);
-    // 减少动态：呼吸静止（两次采样坐标应当一致）
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    await nav('首页');
-    await page.waitForSelector('.graph-canvas', { timeout: 20000 });
-    await page.waitForTimeout(1200);
-    const who = await page.evaluate(() => fetch('/api/graph', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kbId: 'course' }) }).then((r) => r.json()).then((j) => j.data.nodes[0].name));
-    const a1 = await page.evaluate((nm) => window.itnGraphPick('course', nm), who);
-    await page.waitForTimeout(1500);
-    const a2 = await page.evaluate((nm) => window.itnGraphPick('course', nm), who);
-    assert(Math.abs(a1.x - a2.x) < 0.5 && Math.abs(a1.y - a2.y) < 0.5,
-      'prefers-reduced-motion 下不该呼吸位移，实际 ' + JSON.stringify([a1.x, a2.x]));
-    await page.emulateMedia({ reducedMotion: 'no-preference' });
-    return '切页回来 ' + again + ' 点 · 减少动态时坐标稳定';
+    await page.waitForSelector('#knowledge-workspace', { timeout: 20000 });
+    await page.waitForTimeout(700);
+    const again = await page.evaluate(() => ({
+      canvases: document.querySelectorAll('.knowledge-canvas').length,
+      overlays: document.querySelectorAll('.course-modal-overlay, .task-modal').length,
+    }));
+    assert(again.canvases === 1, '切页回来还应有且只有一块画布，实际 ' + again.canvases);
+    assert(again.overlays === 0, '切页回来不该留下别的页面弹层，实际 ' + again.overlays);
+    return '画布 1 块 · 计数「' + info.count.trim() + '」';
   });
 
   await step('登记知识库：目录用系统对话框选，浏览器里如实说明', async () => {

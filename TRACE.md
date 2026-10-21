@@ -5165,3 +5165,13 @@ read_chunk 读得到原文并带回库标识与正文。
 - 提交 ac8887b；build=lumin-0.8.31-ac8887b。ZIP dist/Lumin-0.8.31.zip，231328742 bytes，SHA256=49ADCA8EAC13EF249A4044196E057C4000AB2663FC78312CEC3F6C293BD71565；解压目录 dist/portable/Lumin-0.8.31。文件名仍为 0.8.31，不加后缀；未发布线上、未推送远端。
 - 包内复验（全部使用打包后的文件，不是源码目录）：manifest 38 项哈希 + ZIP 2763 条目一致；原生启动/关闭/再次启动 9/9（独立数据根，默认隐藏小鼋龙、外观可显示、再次启动仍隐藏、窗口文件图标存在）；tools/branch-guard-check.cjs 指向包内 renderer 9/9（连点只发一次分支请求、导出只写一次）；team-panel-check 指向包内 renderer 34/34；route-lifecycle-check 指向包内 renderer + 包内核 18/18。
 - 本轮只改界面防抖与测试夹具，未改内核接口或 Lumin 工具契约，未访问真实用户数据库、未调付费模型。
+
+## 2026-10-22 06:40 · 目标模式：侧边栏专项测试与两处异步竞态修复
+
+- 本轮目标（用户设定，持续进行）：在桌面端持续测试此前提到过的 bug 与隐藏 bug 并修复，尽量测详细，侧边栏多测。本轮聚焦侧边栏（左栏 / 第二层面板 / 会话栏 / 右侧资源栏），不轻易收尾。
+- 新增 tools/sidebar-torture-check.cjs（40 项，真实 Edge + 真实 renderer + 真实仓颉内核 + seed 夹具 + mock 模型）：八个页面的面板标题与左栏高亮一一对应、12 次连续快速切页后的收敛（面板/工具栏/加载态/浮层）、折叠展开在切页与重载后的保持、加载中折叠展开、右侧资源栏跨页收起、左栏可见性与遮挡、会话栏快速切换、慢响应乱序。连跑 3 次均 40/40（artifacts: lumin-sidebar-B2Di5d / 8n2Xj2 / RfGTG7）。
+- 该用例对旧 renderer（9a2afe8）有区分度：38/39，真实复现"快速切换会话后高亮与实际打开的会话不是同一条"（open=seed-26 / highlighted=seed-53）。
+- 修复 1（会话切换慢响应竞态）：state.chatOpenSession 在 await /api/sessions/events 之后没有校验会话是否已经切换，旧响应会把正文、会话树、面板高亮改回上一条会话，而 state.chatSessionId 与输入框仍是新的 —— 用户看到 A 的内容、下一条消息却发给 B。现在 await 后校验 state.chatSessionId === id && current === 'chat'，不满足直接返回。确定性复现（两个 /api/sessions/events 门控，先放行 B 再放行 A）：修复前 raced={open:seed-53, thread:seed-53, highlighted:seed-26}，修复后三者一致为 seed-53。
+- 修复 2（偏好保存慢响应竞态）：savePrefs 把每次 /api/prefs/save 的响应（全量偏好）无条件 applyPrefs 回写界面，先发出的旧响应后到就会覆盖用户刚做的操作 —— 实测"折叠 → 立刻展开"后，旧响应把面板又折叠回去。现在用递增序号，只有最后一次保存的响应能回写（内核按 patch 合并，后一次响应含前一次结果，不会丢字段）。修复前 sidebar 用例该项 FAIL(hidden:true)，修复后 PASS(hidden:false)。
+- 隐藏问题（测试基建）：tools/ui-e2e.cjs（2100 行全链路自检）已经跑不动 —— 它停在旧信息架构上（等"学习中心"入口、要求 6 个左栏入口、用旧设置分区名"知识库"、旧预设名"MiMo TokenPlan · v2.6 flash"、已下线的首页清单与星云图）。本轮把它对齐到当前 IA：5 个左栏入口（对话/学习/知识库/成果/设置）、学 · 练与我的成长走学习页二级标签、笔记/错题走成果页二级标签、设置分区名改为"资料来源/学习档案"、预设改 MiMo Flash，并把已下线的"首次使用清单""星云图"两步换成当前的知识网络检查。现在能连续通过到"模型连通性测试"（6 步），下一个断点是知识库段：旧用例用 #kb-id/#kb-dir/.ok-dialog("索引完成")/#view .grid .stat/.kb-docs/"让 Lumin 整理"，这些选择器在当前界面已不存在（现在是 #kb-import-path + 添加并索引 + .ok-dialog("资料准备完成")，详情在知识库页的功能切换里）。已记录，下一轮继续。
+- 回归（全部通过）：sidebar-torture 40/40×3；session-switch-check 18；chat-ux-check 18；team-panel-check 34；route-lifecycle-check 18/18；session-list-check 10；clarity-memory-check 27；pages-audit 13；knowledge-check 92；growth-activity-check 21；nonchat-check 26。未改内核与接口契约，未访问真实用户数据库、未调付费模型、未改 Web 端。
