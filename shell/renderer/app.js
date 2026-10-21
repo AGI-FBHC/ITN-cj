@@ -723,7 +723,7 @@ async function loadSessions(force) {
       state.sessions.unshift({
         sessionId: running,
         title: state.lastQuestion || "新对话",
-        projectId: "",
+        projectId: state.chatSessionId === running ? (state.chatProject || "") : "",
         kind: "ask",
         lastAt: new Date().toISOString(),
         eventCount: 0,
@@ -5755,6 +5755,7 @@ function turnsFromEvents(events) {
     const t = byKey[key];
     const p = e.payload || {};
     if (e.type === "turn/start") { t.kind = p.kind || ""; t.startedAt = e.at; }
+    else if (e.type === "team/run_started") { t.teamRunId = p.runId || ""; t.teamTitle = p.goal || "协作流程"; }
     else if (e.type === "turn/usage") { t.usageIn = Number(p["in"] || 0); t.usageOut = Number(p.out || 0); }
     else if (e.type === "assistant/activity") { t.activity = p.phase || ""; t.activityTool=p.tool || ''; t.toolInputBytes=Number(p.receivedBytes || 0); }
     else if (e.type === 'model/retry') t.activity='retrying';
@@ -6058,6 +6059,9 @@ function renderTurnBlock(t, live) {
   };
   for(const item of processBlocks){if(item.t==='think'||item.t==='tool')pending.push(item);else{flushProcess();appendContent(item);}}
   flushProcess();answerBlocks.forEach(appendContent);
+  if (t.teamRunId) {
+    box.appendChild(btn('打开协作流程','ghost sm team-open-btn',()=>window.LuminTeamPanel?.open(t.teamRunId)));
+  }
   // 这一轮改了哪些文件：一张小卡（逐文件 +/-），有就显示，没有就不占地方
   if (t.fileChanges && t.fileChanges.length) {
     const card = el("details", "file-card");

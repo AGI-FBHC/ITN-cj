@@ -1046,7 +1046,9 @@ function knowledgeDialog(title,build,wide){
   const overlay=el('div','task-modal knowledge-dialog'),panel=el('section','task-modal-card'+(wide?' wide':''));panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label',title);panel.appendChild(el('h2',null,title));overlay.appendChild(panel);document.body.appendChild(overlay);
   const close=()=>overlay.remove();overlay.onkeydown=e=>{if(e.key==='Escape')close();};overlay.onclick=e=>{if(e.target===overlay)close();};build(panel,close);return overlay;
 }
-async function openKnowledgeLinkSuggestions(){
+async function openKnowledgeLinkSuggestions(button){
+  if(button?.dataset.loading==='1')return;
+  if(button){button.dataset.loading='1';button.disabled=true;button.textContent='分析中…';}
   try{
     const data=await api('/api/knowledge/suggest-links',{});
     const nodes=new Map((data.nodes||[]).map(n=>[n.id,n.title]));
@@ -1075,6 +1077,7 @@ async function openKnowledgeLinkSuggestions(){
       panel.appendChild(actions);
     },true);
   }catch(e){toast('生成连线建议失败：'+e.message);}
+  finally{if(button){button.dataset.loading='0';button.disabled=false;button.textContent='连线建议';}}
 }
 async function refreshKnowledgeNetwork(){
   knowledgeNet.data=await api('/api/knowledge/graph',{});knowledgeNet.visible=null;
@@ -1385,7 +1388,8 @@ PAGES.home.render=async function(){
     const reset=btn('','ghost sm knowledge-reset',()=>{knowledgeNet.yaw=.28;knowledgeNet.pitch=.12;knowledgeNet.zoom=1;knowledgeNet.draw?.();});reset.innerHTML=icon('refresh');reset.title='重置视角';reset.setAttribute('aria-label','重置视角');
     actions.append(labelToggle,reset);
   }
-  actions.appendChild(btn('连线建议','ghost sm',()=>openKnowledgeLinkSuggestions()));
+  const suggestLinks=btn('连线建议','ghost sm',()=>openKnowledgeLinkSuggestions(suggestLinks));
+  actions.appendChild(suggestLinks);
   actions.appendChild(btn('＋ 添加知识点','primary sm',()=>editKnowledgePoint()));
   toolbar.appendChild(actions);page.appendChild(toolbar);
   const workspace=el('div','knowledge-workspace');workspace.id='knowledge-workspace';

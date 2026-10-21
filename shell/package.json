@@ -1,6 +1,6 @@
 {
   "name": "lumin",
-  "version": "0.8.30",
+  "version": "0.8.31",
   "private": true,
   "description": "Lumin 本地个人学习助手",
   "main": "main.js",

@@ -9,6 +9,7 @@
   const title = document.getElementById("team-panel-title");
   const meta = document.getElementById("team-panel-meta");
   const closeBtn = document.getElementById("team-panel-close");
+  const collapseBtn = document.getElementById("team-panel-collapse");
   if (!panel || !scrim || !tree || !lines || !detail) return;
 
   const runs = new Map();
@@ -339,6 +340,9 @@
   closeBtn?.addEventListener("click", () => {
     if (activeRunId) dismissed.add(activeRunId);
     hide();
+  });
+  collapseBtn?.addEventListener("click", () => {
+    panel.classList.toggle("collapsed");
   });
   scrim?.addEventListener("click", () => {
     if (activeRunId) dismissed.add(activeRunId);
