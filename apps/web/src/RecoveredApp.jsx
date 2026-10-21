@@ -2454,9 +2454,9 @@ function ResourceOptionIcon({ type }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[type]} /></svg>;
 }
 
-function LessonStartModal({ course, lessonTitle, lessonIndex, onClose, onSelectResource }) {
+export function LessonStartModal({ course, lessonTitle, lessonIndex, onClose, onSelectResource }) {
   const dialogRef = React.useRef(null);
-  const choices = RESOURCE_OPTIONS.filter((item) => resourceTypes(course.chapters[lessonIndex]).includes(item.type));
+  const availableTypes = resourceTypes(course.chapters[lessonIndex]);
   const keepFocus = (event) => {
     if (event.key !== "Tab") return;
     const controls = Array.from(dialogRef.current?.querySelectorAll("button:not([disabled])") ?? []);
@@ -2487,12 +2487,15 @@ function LessonStartModal({ course, lessonTitle, lessonIndex, onClose, onSelectR
         <p id="lesson-start-description">选择一种方式，开始本章学习</p>
       </header>
       <div className="lesson-start-options">
-        {choices.map((choice) => <button key={choice.type} type="button" onClick={() => onSelectResource(choice.mode)} className={`lesson-start-option${choices.length === 1 ? " lesson-start-option-primary" : ""}`}>
+        {RESOURCE_OPTIONS.map((choice) => {
+          const available = availableTypes.includes(choice.type);
+          return <button key={choice.type} type="button" disabled={!available} onClick={() => { if (available) onSelectResource(choice.mode); }} className={`lesson-start-option${available && availableTypes.length === 1 ? " lesson-start-option-primary" : ""}`}>
           <span className="lesson-start-option-icon"><ResourceOptionIcon type={choice.type} /></span>
           <span className="lesson-start-option-copy"><span className="lesson-start-option-label">{choice.label}</span><span className="lesson-start-option-detail">{choice.detail}</span></span>
-          <svg className="lesson-start-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5" /></svg>
-        </button>)}
-        {!choices.length && <p className="lesson-start-empty">本章资源暂未发布，请稍后再来。</p>}
+          {available ? <svg className="lesson-start-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5" /></svg> : <span className="lesson-start-unpublished">暂未发布</span>}
+        </button>;
+        })}
+        {!availableTypes.length && <p className="lesson-start-empty">本章资源暂未发布，请稍后再来。</p>}
       </div>
     </section>
   </div>;

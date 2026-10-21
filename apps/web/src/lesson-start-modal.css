@@ -111,7 +111,7 @@
   cursor: pointer;
   transition: border-color 140ms, background 140ms, box-shadow 140ms;
 }
-.lesson-start-option:hover { border-color: #b9a5f8; background: #faf8ff; box-shadow: 0 4px 14px rgb(96 56 239 / 6%); }
+.lesson-start-option:enabled:hover { border-color: #b9a5f8; background: #faf8ff; box-shadow: 0 4px 14px rgb(96 56 239 / 6%); }
 .lesson-start-option-icon { display: grid; place-items: center; flex: 0 0 42px; width: 42px; height: 42px; border-radius: 12px; background: #f0ebff; color: #6a43e8; }
 .lesson-start-option-icon svg { width: 23px; height: 23px; }
 .lesson-start-option-copy { display: block; min-width: 0; flex: 1; }
@@ -123,6 +123,10 @@
 .lesson-start-option-primary .lesson-start-option-icon { background: rgb(255 255 255 / 15%); color: #fff; }
 .lesson-start-option-primary .lesson-start-option-detail { color: rgb(255 255 255 / 82%); }
 .lesson-start-option-primary .lesson-start-arrow { color: #fff; }
+.lesson-start-option:disabled { border-color: #e8e7ec; background: #f6f6f8; color: #93909c; cursor: not-allowed; box-shadow: none; }
+.lesson-start-option:disabled .lesson-start-option-icon { background: #ececf0; color: #a09ba9; }
+.lesson-start-option:disabled .lesson-start-option-detail { color: #96929e; }
+.lesson-start-unpublished { flex: 0 0 auto; padding: 4px 8px; border-radius: 7px; background: #eae9ef; color: #7a7486; font-size: 11px; font-weight: 650; white-space: nowrap; }
 .lesson-start-close:focus-visible, .lesson-start-option:focus-visible { outline: 3px solid #a78bfa; outline-offset: 3px; }
 .lesson-start-empty { margin: 0; padding: 20px 8px; text-align: center; font-size: 14px; line-height: 24px; color: #817b8c; }
 @keyframes lesson-start-enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }

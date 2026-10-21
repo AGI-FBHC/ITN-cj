@@ -824,3 +824,12 @@
 - 在浏览器运行临时 QA 页面，直接调用真实 adminApi 并计数目录/原文 fetch：已访问章节跨新页面、整页刷新后的目录/原文请求数均为 0；真实 IndexedDB 合成测试确认持久化跨实例可读，删除后读取走新 loader。临时测试页已移除，未删除真实知识库或提交生成任务。
 - 响应式真实页面 iframe 验证：1920x1080 下三栏宽约 1625、底部留白 24；390x844 下内容宽 343、底部留白 16；两者均无水平溢出。当前实际浏览器页面三栏同底，高度随窗口，默认窗口底部约 20px 留白；浏览器无 error 日志。所有临时 QA 标签已关闭，原课件管理标签保留。
 - 本轮完全是前端缓存与布局，无数据库变更、无后端重启；生成流程和正在执行任务不受影响。功能及 trace 一并本地提交，未推送。
+
+## 2026-10-21 学员端章节固定展示四种资源及未发布状态
+- 用户要求：点击章节后始终出现四个学习选项，管理员没有发布的对应资源显示灰色并注明“暂未发布”。
+- 核对既有链路：LearnerResources.jsx 已定义 lecture/guide/slides/bank 及学习模式 lecture/guide/presentation/quiz；后端 learning_resources.cj 的 lrAvailability/lrAvailableKinds 对受管理的章节仅以 status=ready 且 published=1 的资源生成 resourceTypes。本轮无需后端或数据库变更。
+- 修改 RecoveredApp.jsx 的 LessonStartModal：移除过滤未发布资源的逻辑，改为固定遍历四种资源；根据当前章节 resourceTypes 判断按钮 available。未发布按钮使用原生 disabled、灰色样式及“暂未发布”徽标，不触发模式选择；已发布继续跳转原有对应学习模式。只有一种已发布资源时仍保留该项的紫色突出显示；四项全未发布时全部禁用并显示原有提示。
+- lesson-start-modal.css 新增禁用态文字/图标/底色/鼠标样式，hover 样式仅用于启用按钮。保留原有弹窗布局、滚动、Esc 关闭和键盘焦点循环；禁用按钮自然从 Tab 顺序排除。
+- LessonStartModal 增加 named export，用于在临时 Vite 验证页直接挂载真实组件，免于更改实际用户、课程和发布数据。
+- 验证：前端 Vite production build 通过（既有 bundle-size 警告）；真实浏览器挂载验证仅发布 guide 时固定四项、三个按钮 disabled 且显示“暂未发布”，guide 选择返回正确模式；全部发布时四项启用，讲义/幻灯片/测验分别返回 lecture/presentation/quiz，guide 模式亦验证；全部未发布时四项均禁用并显示本章提示。实看灰色徽标和紫色已发布选项正常，临时验证页与标签已删除/关闭，用户端首页保持正常。未执行真实课件发布/下架或生成操作，未重启后端。
+- 功能更新与本条 TRACE 一起本地提交，未推送远端。
