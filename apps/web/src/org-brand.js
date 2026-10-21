@@ -1,49 +1,83 @@
-// 机构品牌：管理员在「机构设置」里配的名称/简称/Logo，登录后的用户端沿用。
-const CACHE_KEY = 'zhixun-org-brand';
+// A brand is rendered only after the server resolves the current learning session.
+// Persisted entries are separated by organization and never used to guess a new
+// account's organization, so account switching cannot flash the previous logo.
+const TOKEN_KEY = 'zhixun-learning-v2-token';
+const CACHE_PREFIX = 'zhixun-org-brand-v2:';
+let resolvedToken;
+let currentBrand = null;
+let pending;
+let revision = 0;
 
-function readCache() {
-  try {
-    const raw = localStorage.getItem(CACHE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
+const token = () => localStorage.getItem(TOKEN_KEY) || '';
+function notify() {
+  window.__zxOrg = currentBrand;
+  document.title = currentBrand?.shortName || '智训云枢';
+  window.dispatchEvent(new Event('zx-org-updated'));
 }
 
-// 同步读取，供渲染直接用；首次使用会先落一次网络结果到缓存。
+export function resetOrgBrand() {
+  revision += 1;
+  resolvedToken = undefined;
+  currentBrand = null;
+  pending = undefined;
+  localStorage.removeItem('zhixun-org-brand');
+  notify();
+}
+
 export function orgBrand() {
-  const cached = readCache();
-  if (cached && cached.shortName) return cached;
-  return null;
+  return resolvedToken === token() ? currentBrand : null;
 }
 
 export function orgName() {
   const brand = orgBrand();
-  return (brand && (brand.name || brand.shortName)) || '智训云枢';
+  return brand?.name || brand?.shortName || '智训云枢';
 }
 
 export function orgShortName() {
   const brand = orgBrand();
-  return (brand && (brand.shortName || brand.name)) || '智训云枢';
+  return brand?.shortName || brand?.name || '智训云枢';
 }
 
 export function orgLogoUrl() {
-  const brand = orgBrand();
-  return (brand && brand.logoUrl) || '';
+  return orgBrand()?.logoUrl || '';
 }
 
-export async function loadOrgBrand() {
-  try {
-    const response = await fetch('/api/org');
-    if (!response.ok) return null;
-    const data = await response.json();
-    if (!data || !data.shortName) return null;
-    localStorage.setItem(CACHE_KEY, JSON.stringify(data));
-    window.__zxOrg = data;
-    if (typeof document !== 'undefined' && data.shortName) document.title = data.shortName;
-    window.dispatchEvent(new Event('zx-org-updated'));
-    return data;
-  } catch {
-    return null;
-  }
+export async function loadOrgBrand({ force = false } = {}) {
+  const sessionToken = token();
+  if (!force && pending?.token === sessionToken) return pending.promise;
+  if (resolvedToken !== sessionToken) resetOrgBrand();
+  const requestRevision = ++revision;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  const promise = (async () => {
+    try {
+      const response = await fetch('/api/org', {
+        headers: sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {},
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      if (!response.ok) return null;
+      const data = await response.json();
+      if (!data?.id || !data.shortName || sessionToken !== token() || requestRevision !== revision) return null;
+      const brand = { id: data.id, name: data.name || data.shortName, shortName: data.shortName, logoUrl: data.logoUrl || '', hasLogo: Boolean(data.hasLogo) };
+      resolvedToken = sessionToken;
+      currentBrand = brand;
+      try { localStorage.setItem(`${CACHE_PREFIX}${encodeURIComponent(brand.id)}`, JSON.stringify(brand)); } catch { /* Branding still works when storage is full. */ }
+      notify();
+      return brand;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timeout);
+      if (pending?.revision === requestRevision) pending = undefined;
+    }
+  })();
+  pending = { token: sessionToken, promise, revision: requestRevision };
+  return promise;
 }
+
+window.addEventListener('storage', (event) => {
+  if (event.key !== TOKEN_KEY && event.key !== null) return;
+  resetOrgBrand();
+  loadOrgBrand();
+});

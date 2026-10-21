@@ -54,7 +54,7 @@ func kbIngestReadSettings(raw: String): KbSettings {
     let obj = parsed.asObject()
     KbSettings(kbIngestReadSlot(obj, "embedding"), kbIngestReadSlot(obj, "chat"), ModelSlot("", "", "", ""), "", "",
         jsonGetInt(obj, "embeddingDim") ?? 0, jsonGetInt(obj, "batchSize") ?? 16,
-        jsonGetInt(obj, "chunkSize") ?? 800, jsonGetInt(obj, "chunkOverlap") ?? 120, 6)
+        jsonGetInt(obj, "chunkSize") ?? 800, jsonGetInt(obj, "chunkOverlap") ?? 120, 6, 10)
 }
 
 func kbBuildWhere(documentId: String, buildId: String): String {

@@ -43,6 +43,7 @@ function initialForm(settings) {
     batchSize: settings.batchSize || 16,
     topK: settings.topK || 6,
     embeddingDim: settings.embeddingDim || 0,
+    maxCoursewareParallel: settings.maxCoursewareParallel || 10,
   };
 }
 
@@ -122,6 +123,7 @@ export default function AdminSettings() {
         chunkSize: form.chunkSize,
         chunkOverlap: form.chunkOverlap,
         topK: form.topK,
+        maxCoursewareParallel: form.maxCoursewareParallel,
       })
       .then(() => {
         setMessage('配置已保存。已入库的文档需要「重建索引」才会用新的向量模型。');
@@ -268,6 +270,11 @@ export default function AdminSettings() {
               <div className="zx-field">
                 <label htmlFor="top-k">默认召回条数</label>
                 <input id="top-k" type="number" min="1" max="20" value={form.topK} onChange={number('topK')} />
+              </div>
+              <div className="zx-field">
+                <label htmlFor="courseware-parallel">课件最大并行数</label>
+                <input id="courseware-parallel" type="number" min="1" max="50" value={form.maxCoursewareParallel} onChange={number('maxCoursewareParallel')} />
+                <small>同一时刻最多生成的任务数（1–50），默认 10；超出的任务自动排队。</small>
               </div>
               <div className="zx-field">
                 <label htmlFor="embedding-dim">向量维度</label>

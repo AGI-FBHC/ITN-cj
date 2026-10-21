@@ -1016,37 +1016,134 @@ func kbBundleDetailBody(cfg: Config, bundleId: String, includeContent: Bool): ?S
 
 /* ---------- 机构配置 ---------- */
 
-func orgLogoDir(): String {
-    let dir = "data/org"
+const DEFAULT_ORG_ID = "00000000-0000-0000-0000-000000000001"
+
+func orgLogoDir(orgId: String): String {
+    let dir = "data/org/" + orgId
     if (!exists(Path(dir))) { Directory.create(Path(dir), recursive: true) }
     dir
 }
 
-func orgLogoPath(): String {
-    orgLogoDir() + "/logo.bin"
+func orgLogoPath(orgId: String): String {
+    orgLogoDir(orgId) + "/logo.bin"
 }
 
-func orgRow(cfg: Config): Row {
-    let rows = query(cfg, "SELECT name,short_name,logo_mime FROM org_settings WHERE id=1")
-    if (rows.size > 0) { return rows[0] }
-    query(cfg, "SELECT '智训云枢' name,'智训云枢' short_name,'' logo_mime")[0]
+func orgNormalizeInvite(value: String): String {
+    let lower = value.trimAscii().toAsciiLower()
+    let letters = "abcdefghijklmnopqrstuvwxyz"
+    let upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    let out = StringBuilder()
+    var i: Int64 = 0
+    while (i < lower.size) {
+        let ch = lower[i..i + 1]
+        let position = letters.indexOf(ch)
+        match (position) {
+            case Some(index) => out.append(upper[index..index + 1])
+            case None => out.append(ch)
+        }
+        i += 1
+    }
+    out.toString()
 }
 
-func orgLogoUrl(cfg: Config): String {
-    let row = orgRow(cfg)
+func orgInviteValid(value: String): Bool {
+    let code = orgNormalizeInvite(value)
+    code.size >= 6 && code.size <= 64
+}
+
+func orgRow(cfg: Config, orgId: String): ?Row {
+    let rows = query(cfg,
+        "SELECT id,name,short_name,COALESCE(invite_code,'') invite_code,logo_mime,updated_at FROM organizations " +
+        "WHERE id=" + sqlQuote(if (orgId.size == 0) { DEFAULT_ORG_ID } else { orgId }) + " LIMIT 1")
+    if (rows.size > 0) { return Some(rows[0]) }
+    None
+}
+
+func defaultOrgId(cfg: Config): String {
+    match (orgRow(cfg, "")) {
+        case Some(row) => row.text("id")
+        case None => DEFAULT_ORG_ID
+    }
+}
+
+func orgRowByInvite(cfg: Config, invite: String): ?Row {
+    let code = orgNormalizeInvite(invite)
+    if (!orgInviteValid(code)) { return None }
+    let rows = query(cfg,
+        "SELECT id,name,short_name,invite_code,logo_mime,updated_at FROM organizations WHERE invite_code=" +
+        sqlQuote(code) + " LIMIT 1")
+    if (rows.size > 0) { return Some(rows[0]) }
+    None
+}
+
+func orgIdForInvite(cfg: Config, invite: String): String {
+    match (orgRowByInvite(cfg, invite)) {
+        case Some(row) => row.text("id")
+        case None => ""
+    }
+}
+
+func orgExists(cfg: Config, orgId: String): Bool {
+    query(cfg, "SELECT id FROM organizations WHERE id=" +
+        sqlQuote(if (orgId.size == 0) { DEFAULT_ORG_ID } else { orgId }) + " LIMIT 1").size > 0
+}
+
+func orgUserOrgId(ctx: HttpContext, cfg: Config): String {
+    let authorization = match (ctx.request.headers.get("Authorization")) {
+        case Some(value) => value
+        case None => ""
+    }
+    if (!authorization.startsWith("Bearer ")) { return "" }
+    let token = authorization[7..authorization.size].trimAscii()
+    if (token.size < 20 || token.size > 200) { return "" }
+    let rows = query(cfg,
+        "SELECT u.org_id FROM user_sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=" +
+        sqlQuote(tokenHash(token)) + " AND s.expires_at>NOW(6) LIMIT 1")
+    if (rows.size == 0) { return "" }
+    rows[0].text("org_id")
+}
+
+func orgLogoUrl(cfg: Config, row: Row): String {
     let mime = row.text("logo_mime")
     if (mime.size == 0) { return "" }
-    "/api/org/logo?v=" + kbHashText(mime + row.text("name") + row.text("short_name"))[0..8]
+    "/api/org/logo?orgId=" + row.text("id") + "&v=" +
+        kbHashText(mime + row.text("name") + row.text("short_name") + row.text("id") + row.text("updated_at"))[0..8]
 }
 
-func orgBrandJson(cfg: Config, withAdminFields: Bool): String {
-    let row = orgRow(cfg)
-    let logo = orgLogoUrl(cfg)
+func orgBrandRowJson(cfg: Config, row: Row, withAdminFields: Bool): String {
+    let logo = orgLogoUrl(cfg, row)
     let out = JsonWriter()
+    out.putStr("id", row.text("id"))
     out.putStr("name", row.text("name"))
     out.putStr("shortName", row.text("short_name"))
     out.putStr("logoUrl", logo)
     out.putBool("hasLogo", logo.size > 0)
+    if (withAdminFields) { out.putStr("inviteCode", row.text("invite_code")) }
+    out.toJson()
+}
+
+func orgBrandJson(cfg: Config, orgId: String, withAdminFields: Bool): String {
+    match (orgRow(cfg, orgId)) {
+        case Some(row) => orgBrandRowJson(cfg, row, withAdminFields)
+        case None =>
+            let out = JsonWriter()
+            out.putStr("id", if (orgId.size == 0) { DEFAULT_ORG_ID } else { orgId })
+            out.putStr("name", "江南大学")
+            out.putStr("shortName", "江南大学")
+            out.putStr("logoUrl", "")
+            out.putBool("hasLogo", false)
+            if (withAdminFields) { out.putStr("inviteCode", "") }
+            out.toJson()
+    }
+}
+
+func orgListBody(cfg: Config): String {
+    let rows = query(cfg,
+        "SELECT id,name,short_name,COALESCE(invite_code,'') invite_code,logo_mime,updated_at FROM organizations ORDER BY created_at,id")
+    let items = JsonArrWriter()
+    for (row in rows) { items.addRaw(orgBrandRowJson(cfg, row, true)) }
+    let out = JsonWriter()
+    out.putRaw("organizations", items.toJson())
     out.toJson()
 }
 
@@ -1066,14 +1163,22 @@ func orgLogoMime(data: Array<Byte>): String {
     ""
 }
 
-func orgWriteLogo(response: HttpResponse, cfg: Config): Unit {
-    let row = orgRow(cfg)
+func orgWriteLogo(response: HttpResponse, cfg: Config, orgId: String): Unit {
+    let row = match (orgRow(cfg, orgId)) {
+        case Some(value) => value
+        case None =>
+            writeError(response, 404, "没有找到这个机构")
+            return
+    }
     let mime = row.text("logo_mime")
     if (mime.size == 0) {
         writeError(response, 404, "还没有设置机构 Logo")
         return
     }
-    let path = orgLogoPath()
+    var path = orgLogoPath(row.text("id"))
+    if (!exists(Path(path)) && row.text("id") == DEFAULT_ORG_ID && exists(Path("data/org/logo.bin"))) {
+        path = "data/org/logo.bin"
+    }
     if (!exists(Path(path))) {
         writeError(response, 404, "机构 Logo 文件已丢失，请重新上传")
         return
@@ -1217,6 +1322,7 @@ func kbSettingsJson(cfg: Config, settings: KbSettings): String {
     out.putInt("chunkSize", settings.chunkSize)
     out.putInt("chunkOverlap", settings.chunkOverlap)
     out.putInt("topK", settings.topK)
+    out.putInt("maxCoursewareParallel", settings.maxCoursewareParallel)
     let anyAdmin = settings.embedding.cipher.size > 0 || settings.chat.cipher.size > 0 || settings.tts.cipher.size > 0
     out.putStr("keySource", if (anyAdmin) { "admin" } else if (legacyEnvKey().size > 0) { "env" } else { "" })
     out.toJson()
@@ -1378,7 +1484,7 @@ main(): Int64 {
     sharedDatabase = Some(initial)
     // 服务重启后，上次没跑完的课件任务不会再被推进，直接标记失败，避免一直显示「生成中」。
     try {
-        execute(cfg, "UPDATE kb_courseware SET status='failed',error_message='服务重启，生成中断',updated_at=NOW(6) WHERE status='generating'")
+        cwRecoverQueue(cfg)
     } catch (_: Exception) {}
 
     let builder = WebHost.createBuilder([])
@@ -1397,8 +1503,10 @@ main(): Int64 {
     app.mapPost("api/session") { ctx =>
         let userId = uuidFormat(uuidV4())
         let token = uuidFormat(uuidV4())
+        let defaultOrg = defaultOrgId(cfg)
         transaction(cfg, [
-            "INSERT INTO users(id,created_at) VALUES(" + sqlQuote(userId) + ",NOW(6))",
+            "INSERT INTO users(id,org_id,created_at) VALUES(" + sqlQuote(userId) + "," +
+                sqlQuote(defaultOrg) + ",NOW(6))",
             "INSERT INTO user_sessions(token_hash,user_id,expires_at) VALUES(" +
                 sqlQuote(tokenHash(token)) + "," + sqlQuote(userId) + ",DATE_ADD(NOW(6),INTERVAL 30 DAY))"
         ])
@@ -1411,9 +1519,10 @@ main(): Int64 {
 
     app.mapPost("api/auth/guest") { ctx =>
         let userId = uuidFormat(uuidV4())
+        let defaultOrg = defaultOrgId(cfg)
         transaction(cfg, [
-            "INSERT INTO users(id,display_name,created_at) VALUES(" +
-                sqlQuote(userId) + ", '游客', NOW(6))"
+            "INSERT INTO users(id,display_name,org_id,created_at) VALUES(" +
+                sqlQuote(userId) + ", '游客', " + sqlQuote(defaultOrg) + ", NOW(6))"
         ])
         writeJson(ctx.response, 200, issueSession(cfg, userId, "游客", "null"))
     }
@@ -1425,10 +1534,13 @@ main(): Int64 {
                 let account = (jsonGetString(body, "account") ?? "").trimAscii()
                 let password = jsonGetString(body, "password") ?? ""
                 let displayName = (jsonGetString(body, "displayName") ?? "").trimAscii()
+                let inviteOrgId = orgIdForInvite(cfg, jsonGetString(body, "inviteCode") ?? "")
                 if (account.size < 3 || account.size > 200) {
                     writeError(ctx.response, 400, "学习账号需要 3—200 个字符")
                 } else if (password.size < 8) {
                     writeError(ctx.response, 400, "密码至少需要 8 位")
+                } else if (inviteOrgId.size == 0) {
+                    writeError(ctx.response, 400, "机构邀请码无效，请向机构管理员确认")
                 } else {
                     let loginKey = account.toAsciiLower()
                     let existing = query(cfg, "SELECT id FROM users WHERE login_key=" + sqlQuote(loginKey))
@@ -1439,9 +1551,10 @@ main(): Int64 {
                         let salt = bytesToHex(uuidV4())
                         let name = if (displayName.size == 0) { account } else { displayName }
                         execute(cfg,
-                            "INSERT INTO users(id,login_key,password_salt,password_hash,display_name,created_at) VALUES(" +
+                            "INSERT INTO users(id,login_key,password_salt,password_hash,display_name,org_id,created_at) VALUES(" +
                             sqlQuote(userId) + "," + sqlQuote(loginKey) + "," + sqlQuote(salt) + "," +
-                            sqlQuote(passwordDigest(salt, password)) + "," + sqlQuote(name) + ",NOW(6))")
+                            sqlQuote(passwordDigest(salt, password)) + "," + sqlQuote(name) + "," +
+                            sqlQuote(inviteOrgId) + ",NOW(6))")
                         writeJson(ctx.response, 200,
                             issueSession(cfg, userId, name, "null"))
                     }
@@ -1526,11 +1639,8 @@ main(): Int64 {
                     if (codes.size == 0 || codes[0].text("code_hash") != codeDigest(cfg, email, "LOGIN", code)) {
                         writeError(ctx.response, 400, "验证码错误或已失效")
                     } else {
-                        execute(cfg,
-                            "UPDATE email_verification_codes SET consumed_at=NOW(6) WHERE id=" +
-                            sqlQuote(codes[0].text("id")) + " AND consumed_at IS NULL")
                         let users = query(cfg,
-                            "SELECT id,display_name,profile_json FROM users WHERE login_key=" + sqlQuote(email) + " LIMIT 1")
+                            "SELECT id,display_name,profile_json,org_id FROM users WHERE login_key=" + sqlQuote(email) + " LIMIT 1")
                         let userId: String
                         let displayName: String
                         var profile = "null"
@@ -1541,14 +1651,23 @@ main(): Int64 {
                                 profile = users[0].text("profile_json")
                             }
                         } else {
+                            let inviteOrgId = orgIdForInvite(cfg, jsonGetString(body, "inviteCode") ?? "")
+                            if (inviteOrgId.size == 0) {
+                                writeError(ctx.response, 400, "首次使用该邮箱需要有效的机构邀请码")
+                                return
+                            }
                             userId = uuidFormat(uuidV4())
                             let at = email.indexOf("@")
                             let candidate = match (at) { case Some(position) => email[0..position]; case None => "学习者" }
-                            displayName = if (candidate.size > 0) { candidate } else { "学习者" }
+                            displayName = if (candidate.size > 0) { kbTruncate(candidate, 60) } else { "学习者" }
                             execute(cfg,
-                                "INSERT INTO users(id,login_key,display_name,created_at) VALUES(" +
-                                sqlQuote(userId) + "," + sqlQuote(email) + "," + sqlQuote(displayName) + ",NOW(6))")
+                                "INSERT INTO users(id,login_key,display_name,org_id,created_at) VALUES(" +
+                                sqlQuote(userId) + "," + sqlQuote(email) + "," + sqlQuote(displayName) + "," +
+                                sqlQuote(inviteOrgId) + ",NOW(6))")
                         }
+                        execute(cfg,
+                            "UPDATE email_verification_codes SET consumed_at=NOW(6) WHERE id=" +
+                            sqlQuote(codes[0].text("id")) + " AND consumed_at IS NULL")
                         writeJson(ctx.response, 200,
                             issueSession(cfg, userId, displayName, profile))
                     }
@@ -2305,6 +2424,7 @@ main(): Int64 {
                         let overlap = jsonGetInt(body, "chunkOverlap") ?? current.chunkOverlap
                         let batch = jsonGetInt(body, "batchSize") ?? current.batchSize
                         let topK = jsonGetInt(body, "topK") ?? current.topK
+                        let maxCoursewareParallel = jsonGetInt(body, "maxCoursewareParallel") ?? current.maxCoursewareParallel
                         let dim = jsonGetInt(body, "embeddingDim") ?? current.embeddingDim
                         let embeddingBase = (jsonGetString(body, "embeddingBaseUrl") ?? "").trimAscii()
                         let embeddingModel = (jsonGetString(body, "embeddingModel") ?? "").trimAscii()
@@ -2344,6 +2464,9 @@ main(): Int64 {
                         }
                         if (problem.size == 0 && (batch < 1 || batch > 64)) { problem = "批量条数需要在 1–64 之间" }
                         if (problem.size == 0 && (topK < 1 || topK > 20)) { problem = "默认召回条数需要在 1–20 之间" }
+                        if (problem.size == 0 && (maxCoursewareParallel < 1 || maxCoursewareParallel > 50)) {
+                            problem = "课件最大并行数需要在 1–50 之间"
+                        }
                         if (problem.size > 0) {
                             writeError(ctx.response, 400, problem)
                         } else {
@@ -2372,7 +2495,8 @@ main(): Int64 {
                                 ",batch_size=" + batch.toString() +
                                 ",chunk_size=" + chunkSize.toString() +
                                 ",chunk_overlap=" + overlap.toString() +
-                                ",top_k=" + topK.toString() + " WHERE id=1")
+                                ",top_k=" + topK.toString() +
+                                ",max_courseware_parallel=" + maxCoursewareParallel.toString() + " WHERE id=1")
                             let out = JsonWriter()
                             out.putRaw("settings", kbSettingsJson(cfg, loadKbSettings(cfg)))
                             writeJson(ctx.response, 200, out.toJson())
@@ -2843,13 +2967,13 @@ main(): Int64 {
                                         execute(cfg,
                                             "INSERT INTO kb_courseware(id,bundle_id,doc_id,kind,title,status,model,created_at) VALUES(" +
                                             sqlQuote(id) + "," + sqlQuote(bundleId) + "," + sqlQuote(docId) + "," +
-                                            sqlQuote(kind) + ",''," + sqlQuote("generating") + "," +
+                                            sqlQuote(kind) + ",''," + sqlQuote("queued") + "," +
                                             sqlQuote(settings.chat.model) + ",NOW(6))")
                                         created.add(id)
                                         let item = JsonWriter()
                                         item.putStr("id", id)
                                         item.putStr("kind", kind)
-                                        item.putStr("status", "generating")
+                                        item.putStr("status", "queued")
                                         items.addRaw(item.toJson())
                                     }
                                     i += 1
@@ -2874,6 +2998,13 @@ main(): Int64 {
             case Some(_) =>
                 let bundleId = (ctx.request.query.get("bundleId") ?? "").trimAscii()
                 writeJson(ctx.response, 200, cwListBody(cfg, bundleId))
+        }
+    }
+
+    app.mapGet("api/admin/kb/courseware/queue") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) => writeJson(ctx.response, 200, cwQueueStatusJson(cfg))
         }
     }
 
@@ -2940,10 +3071,52 @@ main(): Int64 {
         }
     }
 
+    app.mapGet("api/admin/orgs") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) => writeJson(ctx.response, 200, orgListBody(cfg))
+        }
+    }
+
+    app.mapPost("api/admin/orgs") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                match (parseObject(ctx.request)) {
+                    case None => writeError(ctx.response, 400, "机构信息格式不正确")
+                    case Some(body) =>
+                        let name = (jsonGetString(body, "name") ?? "").trimAscii()
+                        let shortName = (jsonGetString(body, "shortName") ?? "").trimAscii()
+                        let invite = orgNormalizeInvite(jsonGetString(body, "inviteCode") ?? "")
+                        if (name.size == 0 || name.size > 128) {
+                            writeError(ctx.response, 400, "机构全称需要 1–128 个字符")
+                        } else if (shortName.size == 0 || shortName.size > 64) {
+                            writeError(ctx.response, 400, "机构简称需要 1–64 个字符")
+                        } else if (!orgInviteValid(invite)) {
+                            writeError(ctx.response, 400, "邀请码需要 6–64 位字母、数字、短横线或下划线")
+                        } else if (query(cfg, "SELECT id FROM organizations WHERE invite_code=" + sqlQuote(invite)).size > 0) {
+                            writeError(ctx.response, 409, "该邀请码已被其他机构使用")
+                        } else {
+                            let orgId = uuidFormat(uuidV4())
+                            execute(cfg,
+                                "INSERT INTO organizations(id,name,short_name,invite_code) VALUES(" +
+                                sqlQuote(orgId) + "," + sqlQuote(name) + "," + sqlQuote(shortName) + "," +
+                                sqlQuote(invite) + ")")
+                            writeJson(ctx.response, 200, orgBrandJson(cfg, orgId, true))
+                        }
+                }
+        }
+    }
+
     app.mapGet("api/admin/org") { ctx =>
         match (adminUserId(ctx, cfg)) {
             case None => ()
-            case Some(_) => writeJson(ctx.response, 200, orgBrandJson(cfg, true))
+            case Some(_) =>
+                let orgId = (ctx.request.query.get("orgId") ?? "").trimAscii()
+                match (orgRow(cfg, orgId)) {
+                    case Some(_) => writeJson(ctx.response, 200, orgBrandJson(cfg, orgId, true))
+                    case None => writeError(ctx.response, 404, "没有找到这个机构")
+                }
         }
     }
 
@@ -2954,16 +3127,26 @@ main(): Int64 {
                 match (parseObject(ctx.request)) {
                     case None => writeError(ctx.response, 400, "机构信息格式不正确")
                     case Some(body) =>
+                        let orgId = (ctx.request.query.get("orgId") ?? "").trimAscii()
                         let name = (jsonGetString(body, "name") ?? "").trimAscii()
                         let shortName = (jsonGetString(body, "shortName") ?? "").trimAscii()
+                        let invite = orgNormalizeInvite(jsonGetString(body, "inviteCode") ?? "")
                         if (name.size == 0 || name.size > 128) {
                             writeError(ctx.response, 400, "机构全称需要 1–128 个字符")
                         } else if (shortName.size == 0 || shortName.size > 64) {
                             writeError(ctx.response, 400, "机构简称需要 1–64 个字符")
+                        } else if (!orgInviteValid(invite)) {
+                            writeError(ctx.response, 400, "邀请码需要 6–64 位字母、数字、短横线或下划线")
+                        } else if (!orgExists(cfg, orgId)) {
+                            writeError(ctx.response, 404, "没有找到这个机构")
+                        } else if (query(cfg, "SELECT id FROM organizations WHERE invite_code=" + sqlQuote(invite) +
+                            " AND id<>" + sqlQuote(if (orgId.size == 0) { DEFAULT_ORG_ID } else { orgId })).size > 0) {
+                            writeError(ctx.response, 409, "该邀请码已被其他机构使用")
                         } else {
-                            execute(cfg, "UPDATE org_settings SET name=" + sqlQuote(name) +
-                                ",short_name=" + sqlQuote(shortName) + ",updated_at=NOW(6) WHERE id=1")
-                            writeJson(ctx.response, 200, orgBrandJson(cfg, true))
+                            execute(cfg, "UPDATE organizations SET name=" + sqlQuote(name) +
+                                ",short_name=" + sqlQuote(shortName) + ",invite_code=" + sqlQuote(invite) +
+                                ",updated_at=NOW(6) WHERE id=" + sqlQuote(if (orgId.size == 0) { DEFAULT_ORG_ID } else { orgId }))
+                            writeJson(ctx.response, 200, orgBrandJson(cfg, orgId, true))
                         }
                 }
         }
@@ -2973,8 +3156,11 @@ main(): Int64 {
         match (adminUserId(ctx, cfg)) {
             case None => ()
             case Some(_) =>
+                let orgId = (ctx.request.query.get("orgId") ?? "").trimAscii()
                 let data = readBodyBytes(ctx.request)
-                if (data.size < 32) {
+                if (!orgExists(cfg, orgId)) {
+                    writeError(ctx.response, 404, "没有找到这个机构")
+                } else if (data.size < 32) {
                     writeError(ctx.response, 400, "图片内容为空")
                 } else if (data.size > 4 * 1024 * 1024) {
                     writeError(ctx.response, 413, "Logo 图片不要超过 4MB")
@@ -2983,11 +3169,12 @@ main(): Int64 {
                     if (mime.size == 0) {
                         writeError(ctx.response, 415, "只支持 PNG / JPEG / WebP / GIF / SVG")
                     } else {
-                        orgLogoDir()
-                        kbWriteFileDeep(orgLogoPath(), data)
-                        execute(cfg, "UPDATE org_settings SET logo_mime=" + sqlQuote(mime) +
-                            ",updated_at=NOW(6) WHERE id=1")
-                        writeJson(ctx.response, 200, orgBrandJson(cfg, true))
+                        let targetId = if (orgId.size == 0) { DEFAULT_ORG_ID } else { orgId }
+                        orgLogoDir(targetId)
+                        kbWriteFileDeep(orgLogoPath(targetId), data)
+                        execute(cfg, "UPDATE organizations SET logo_mime=" + sqlQuote(mime) +
+                            ",updated_at=NOW(6) WHERE id=" + sqlQuote(targetId))
+                        writeJson(ctx.response, 200, orgBrandJson(cfg, targetId, true))
                     }
                 }
         }
@@ -2997,18 +3184,24 @@ main(): Int64 {
         match (adminUserId(ctx, cfg)) {
             case None => ()
             case Some(_) =>
-                execute(cfg, "UPDATE org_settings SET logo_mime='',updated_at=NOW(6) WHERE id=1")
-                try { if (exists(Path(orgLogoPath()))) { remove(Path(orgLogoPath())) } } catch (_: Exception) {}
-                writeJson(ctx.response, 200, orgBrandJson(cfg, true))
+                let orgId = (ctx.request.query.get("orgId") ?? "").trimAscii()
+                if (!orgExists(cfg, orgId)) {
+                    writeError(ctx.response, 404, "没有找到这个机构")
+                } else {
+                    let targetId = if (orgId.size == 0) { DEFAULT_ORG_ID } else { orgId }
+                    execute(cfg, "UPDATE organizations SET logo_mime='',updated_at=NOW(6) WHERE id=" + sqlQuote(targetId))
+                    try { if (exists(Path(orgLogoPath(targetId)))) { remove(Path(orgLogoPath(targetId))) } } catch (_: Exception) {}
+                    writeJson(ctx.response, 200, orgBrandJson(cfg, targetId, true))
+                }
         }
     }
 
     app.mapGet("api/org") { ctx =>
-        writeJson(ctx.response, 200, orgBrandJson(cfg, false))
+        writeJson(ctx.response, 200, orgBrandJson(cfg, orgUserOrgId(ctx, cfg), false))
     }
 
     app.mapGet("api/org/logo") { ctx =>
-        orgWriteLogo(ctx.response, cfg)
+        orgWriteLogo(ctx.response, cfg, (ctx.request.query.get("orgId") ?? "").trimAscii())
     }
 
     app.mapGet("api/admin/kb/courseware/chapters") { ctx =>

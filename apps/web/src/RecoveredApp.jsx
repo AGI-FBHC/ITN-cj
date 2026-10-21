@@ -26,6 +26,7 @@ import LoginPage from "./LoginPage.jsx";
 import { orgLogoUrl, orgShortName } from "./org-brand.js";
 import Markdown from "./admin/Markdown.jsx";
 import { RESOURCE_OPTIONS, resourceTypes, lessonSections, lessonSlides, ChapterCompletion } from "./LearnerResources.jsx";
+import "./lesson-start-modal.css";
 function ProductLogo({ className: n = "", animated: r = !1, color: u = "#111318" }) {
   const src = orgLogoUrl();
   return jsxRuntime.jsx("img", {
@@ -2292,6 +2293,8 @@ function AppNavigation({
   searchValue: u,
   onSearchChange: i,
 }) {
+  const displayName = localStorage.getItem("zhixun-display-name") || "学习者";
+  const avatarText = Array.from(displayName.trim())[0] || "学";
   return jsxRuntime.jsx("header", {
     "code-path": "src\\components\\AppNavigation.tsx:35:5",
     className:
@@ -2379,7 +2382,8 @@ function AppNavigation({
               "code-path": "src\\components\\AppNavigation.tsx:89:11",
               className:
                 "flex h-11 w-11 items-center justify-center rounded-full bg-[#449729] text-lg font-black text-white shadow-sm sm:h-12 sm:w-12",
-              children: "李",
+              children: avatarText,
+              title: displayName,
             }),
           ],
         }),
@@ -2439,6 +2443,16 @@ function zs({ onComplete: n }) {
   );
 }
 
+function ResourceOptionIcon({ type }) {
+  const paths = {
+    lecture: "M12 7v14m0-14C9 4 5 4 3 5v14c3-1 6-1 9 2m0-14c3-3 7-3 9-2v14c-3-1-6-1-9 2",
+    guide: "m8 7-5 5 5 5m8-10 5 5-5 5m-3-13-2 16",
+    slides: "M3 4h18v13H3zM12 17v4m-4 0h8M7 8h10m-10 4h6",
+    bank: "m8 12 3 3 5-6M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0",
+  };
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[type]} /></svg>;
+}
+
 function LessonStartModal({ course, lessonTitle, lessonIndex, onClose, onSelectResource }) {
   const dialogRef = React.useRef(null);
   const choices = RESOURCE_OPTIONS.filter((item) => resourceTypes(course.chapters[lessonIndex]).includes(item.type));
@@ -2461,16 +2475,23 @@ function LessonStartModal({ course, lessonTitle, lessonIndex, onClose, onSelectR
       previousFocus?.focus();
     };
   }, [onClose]);
-  return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#30313a]/40 px-5 backdrop-blur-[1px]" onMouseDown={(event) => event.target === event.currentTarget && onClose()} role="presentation">
-    <section ref={dialogRef} onKeyDown={keepFocus} className="relative mt-12 w-full max-w-[410px] rounded-[22px] bg-white px-5 pb-6 pt-[76px] text-center shadow-[0_28px_80px_rgba(14,13,20,0.28)]" role="dialog" aria-modal="true" aria-labelledby="lesson-start-title">
-      <div className="absolute left-1/2 top-0 flex h-[112px] w-[112px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-[#f7f7f8] ring-[10px] ring-white"><img src={course.icon} alt="" className="h-20 w-20 object-contain" /></div>
-      <button type="button" autoFocus onClick={onClose} className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full text-[#696d77] hover:bg-[#f2f2f4]" aria-label="关闭课时弹窗">{jsxRuntime.jsx(uc, { className: "h-5 w-5" })}</button>
-      <p className="text-xs font-extrabold text-[#8c909a]">{course.name} · 课时 {course.chapters[lessonIndex]?.orderNo ?? lessonIndex + 1}</p>
-      <h2 id="lesson-start-title" className="mt-2 text-2xl font-black tracking-tight text-[#111318]">{lessonTitle}</h2>
-      <p className="mt-3 text-sm font-semibold leading-6 text-[#747883]">选择适合你的学习方式</p>
-      <div className="mt-5 max-h-[48dvh] space-y-2.5 overflow-y-auto border-t border-black/[0.07] pt-4">
-        {choices.map((choice, index) => <button key={choice.type} type="button" onClick={() => onSelectResource(choice.mode)} className={`min-h-14 w-full rounded-xl px-4 py-3 text-left transition ${index === 0 ? "bg-[#5f38ef] text-white shadow-[0_7px_20px_rgba(95,56,239,0.2)] hover:bg-[#512bdc]" : "bg-[#f7f5fc] text-[#6038ef] hover:bg-[#f0ebff]"}`}><span className="block text-base font-extrabold">{choice.label}</span><span className={`mt-1 block text-xs leading-5 ${index === 0 ? "text-white/80" : "text-[#747883]"}`}>{choice.detail}</span></button>)}
-        {!choices.length && <p className="py-4 text-sm leading-6 text-[#747883]">本章资源暂未发布，请稍后再来。</p>}
+  return <div className="lesson-start-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()} role="presentation">
+    <section ref={dialogRef} onKeyDown={keepFocus} className="lesson-start-dialog" role="dialog" aria-modal="true" aria-labelledby="lesson-start-title" aria-describedby="lesson-start-description">
+      <button type="button" autoFocus onClick={onClose} className="lesson-start-close" aria-label="关闭课时弹窗">{jsxRuntime.jsx(uc, { className: "h-5 w-5" })}</button>
+      <header className="lesson-start-header">
+        <div className="lesson-start-artwork"><img src={course.icon} alt="" /></div>
+        <p className="lesson-start-course" title={course.name}>{course.name}</p>
+        <div className="lesson-start-caption">课时 {course.chapters[lessonIndex]?.orderNo ?? lessonIndex + 1}</div>
+        <h2 id="lesson-start-title" title={lessonTitle}>{lessonTitle}</h2>
+        <p id="lesson-start-description">选择一种方式，开始本章学习</p>
+      </header>
+      <div className="lesson-start-options">
+        {choices.map((choice) => <button key={choice.type} type="button" onClick={() => onSelectResource(choice.mode)} className={`lesson-start-option${choices.length === 1 ? " lesson-start-option-primary" : ""}`}>
+          <span className="lesson-start-option-icon"><ResourceOptionIcon type={choice.type} /></span>
+          <span className="lesson-start-option-copy"><span className="lesson-start-option-label">{choice.label}</span><span className="lesson-start-option-detail">{choice.detail}</span></span>
+          <svg className="lesson-start-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5" /></svg>
+        </button>)}
+        {!choices.length && <p className="lesson-start-empty">本章资源暂未发布，请稍后再来。</p>}
       </div>
     </section>
   </div>;
@@ -9574,16 +9595,6 @@ const u3 = [
   "根据我的进度推荐课程",
 ];
 
-function d3(n) {
-  return n.includes("计划")
-    ? "当然可以。建议先用 25 分钟复习正在学习的章节，再用 20 分钟完成对应测试，最后留 10 分钟整理错题。你也可以告诉我今天能学习多久，我会进一步细化安排。"
-    : n.includes("推荐") || n.includes("课程")
-      ? "我建议优先继续当前未完成的课程，再根据知识图谱中的薄弱节点补充学习。你可以告诉我目标方向或最想提升的能力，我会给出更具体的课程顺序。"
-      : n.includes("解释") || n.includes("知识点") || n.includes("不懂")
-        ? "可以。请把知识点名称、题目或让你困惑的那句话发给我，我会先用直观例子解释，再带你梳理概念和解题步骤。"
-        : `关于“${n}”，我们可以先明确你的目标，再把问题拆成几个容易验证的小步骤。请补充一点背景或你已经尝试过的方法，我会陪你逐步分析。`;
-}
-
 function AIChat({ onNavigate: n }) {
   const [r, u] = React.useState(""),
     [i, d] = React.useState([
@@ -9593,29 +9604,40 @@ function AIChat({ onNavigate: n }) {
         text: "你好！我是你的人工智能学习导师。你可以向我提问知识点、制定学习计划，或者让我根据学习进度提供建议。",
       },
     ]),
+    [thinking, setThinking] = React.useState(!1),
     p = React.useRef(null);
   React.useEffect(() => {
     p.current?.scrollIntoView({ behavior: "smooth" });
-  }, [i]);
-  const m = (y, j = !1) => {
+  }, [i, thinking]);
+  const m = async (y, j = !1) => {
       const z = (y ?? r).trim();
-      if (!z) return;
-      const R = d3(z),
-        N = Date.now();
-      if (
-        (d((E) => [
-          ...E,
-          { id: N, role: "user", text: z },
-          { id: N + 1, role: "assistant", text: R },
-        ]),
-        u(""),
-        j && "speechSynthesis" in window)
-      ) {
-        const E = new SpeechSynthesisUtterance(R);
-        ((E.lang = "zh-CN"),
-          (E.rate = 1.1),
-          window.speechSynthesis.cancel(),
-          window.speechSynthesis.speak(E));
+      if (!z || thinking) return;
+      const N = Date.now();
+      d((E) => [...E, { id: N, role: "user", text: z }]);
+      u("");
+      setThinking(!0);
+      try {
+        if (!window.zxTutorAsk) throw new Error("导师服务还没有加载完成，请稍后再试");
+        const result = await window.zxTutorAsk({
+          message: z,
+          quote: "",
+          courseId: "",
+          lessonIndex: -1,
+          lessonTitle: "",
+        });
+        const R = result.answer || "这次没有拿到回答，请再问一次。";
+        d((E) => [...E, { id: N + 1, role: "assistant", text: R }]);
+        if (j && "speechSynthesis" in window) {
+          const E = new SpeechSynthesisUtterance(R);
+          E.lang = "zh-CN";
+          E.rate = 1.1;
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(E);
+        }
+      } catch (error) {
+        d((E) => [...E, { id: N + 1, role: "assistant", text: "暂时无法回答：" + error.message }]);
+      } finally {
+        setThinking(!1);
       }
     },
     { listening: b, supported: h, toggleListening: x } = mu((y) => m(y, !0));
@@ -9735,6 +9757,22 @@ function AIChat({ onNavigate: n }) {
                       y.id,
                     ),
                   ),
+                  thinking && jsxRuntime.jsxs("div", {
+                    className: "flex justify-start",
+                    children: jsxRuntime.jsxs("div", {
+                      className: "max-w-[85%] sm:max-w-[76%]",
+                      children: [
+                        jsxRuntime.jsxs("p", {
+                          className: "mb-1.5 flex items-center gap-2 text-xs font-extrabold text-[#4d83d1]",
+                          children: [jsxRuntime.jsx(fn, { className: "h-4 w-4" }), "AI导师"],
+                        }),
+                        jsxRuntime.jsx("div", {
+                          className: "rounded-2xl rounded-tl-sm bg-[#eef2ff] px-4 py-3.5 text-sm font-semibold text-[#555a75]",
+                          children: "正在查阅课程资料…",
+                        }),
+                      ],
+                    }),
+                  }),
                   i.length === 1 &&
                     jsxRuntime.jsx("div", {
                       "code-path": "src\\pages\\AIChat.tsx:117:17",
@@ -9778,10 +9816,13 @@ function AIChat({ onNavigate: n }) {
                       "code-path": "src\\pages\\AIChat.tsx:137:15",
                       value: r,
                       onChange: (y) => u(y.target.value),
+                      disabled: thinking,
                       onKeyDown: (y) => {
                         y.key === "Enter" && m();
                       },
-                      placeholder: b
+                      placeholder: thinking
+                        ? "导师正在回答…"
+                        : b
                         ? "正在聆听，请说话..."
                         : "发送消息或按住语音提问...",
                       className:
@@ -11335,8 +11376,8 @@ function Dashboard({ profile: n }) {
               });
 }
 
-function Home() {
-  const [n, r] = React.useState("hero"),
+function Home({ initialLogin = false }) {
+  const [n, r] = React.useState(initialLogin ? "login" : "hero"),
     [u, i] = React.useState(null),
     [displayName, setDisplayName] = React.useState("");
   return u
@@ -11445,6 +11486,10 @@ function RecoveredApp() {
         "code-path": "src\\App.tsx:38:7",
         path: "/",
         element: jsxRuntime.jsx(Home, { "code-path": "src\\App.tsx:38:32" }),
+      }),
+      jsxRuntime.jsx(Route, {
+        path: "/login",
+        element: jsxRuntime.jsx(Home, { initialLogin: true }),
       }),
       jsxRuntime.jsx(Route, {
         "code-path": "src\\App.tsx:39:7",

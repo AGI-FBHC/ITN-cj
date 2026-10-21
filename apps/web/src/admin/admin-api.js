@@ -1,5 +1,6 @@
 const TOKEN_KEY = 'zhixun-admin-token';
 const NAME_KEY = 'zhixun-admin-name';
+const orgQuery = (id) => id ? `?orgId=${encodeURIComponent(id)}` : '';
 
 export function adminToken() {
   return localStorage.getItem(TOKEN_KEY) || '';
@@ -138,16 +139,19 @@ export const adminApi = {
   cwList: (bundleId) => request(`/kb/courseware${bundleId ? `?bundleId=${encodeURIComponent(bundleId)}` : ''}`),
   cwDetail: (id) => request(`/kb/courseware/${encodeURIComponent(id)}`),
   cwGenerate: (body) => request('/kb/courseware', { method: 'POST', body }),
+  cwQueue: () => request('/kb/courseware/queue'),
   cwPublish: (id) => request(`/kb/courseware/${encodeURIComponent(id)}/publish`, { method: 'POST', body: {} }),
   cwUnpublish: (id) => request(`/kb/courseware/${encodeURIComponent(id)}/unpublish`, { method: 'POST', body: {} }),
   cwDelete: (id) => request(`/kb/courseware/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   cwChapters: (bundleId) => request(`/kb/courseware/chapters?bundleId=${encodeURIComponent(bundleId)}`),
   cwPublishChapter: (docId, bundleId, order) => request(`/kb/courseware/chapters/${encodeURIComponent(docId)}/publish`, { method: 'POST', body: { bundleId, order } }),
   cwUnpublishChapter: (docId, bundleId) => request(`/kb/courseware/chapters/${encodeURIComponent(docId)}/unpublish`, { method: 'POST', body: { bundleId } }),
-  orgInfo: () => request('/org'),
-  updateOrg: (body) => request('/org', { method: 'PUT', body }),
-  uploadOrgLogo: async (file) => {
-    const response = await fetch('/api/admin/org/logo', {
+  orgs: () => request('/orgs'),
+  createOrg: (body) => request('/orgs', { method: 'POST', body }),
+  orgInfo: (orgId) => request(`/org${orgQuery(orgId)}`),
+  updateOrg: (body, orgId) => request(`/org${orgQuery(orgId)}`, { method: 'PUT', body }),
+  uploadOrgLogo: async (file, orgId) => {
+    const response = await fetch(`/api/admin/org/logo${orgQuery(orgId)}`, {
       method: 'POST',
       headers: {
         'Content-Type': file.type || 'application/octet-stream',
@@ -161,7 +165,7 @@ export const adminApi = {
     if (!response.ok) throw new AdminError(data.message || `上传失败（${response.status}）`, response.status);
     return data;
   },
-  deleteOrgLogo: () => request('/org/logo', { method: 'DELETE' }),
+  deleteOrgLogo: (orgId) => request(`/org/logo${orgQuery(orgId)}`, { method: 'DELETE' }),
   uploadKbBundle: async (file) => {
     const response = await fetch('/api/admin/kb/bundles', {
       method: 'POST',

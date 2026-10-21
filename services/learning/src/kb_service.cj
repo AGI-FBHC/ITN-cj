@@ -37,9 +37,11 @@ class KbSettings {
     let chunkSize: Int64
     let chunkOverlap: Int64
     let topK: Int64
+    let maxCoursewareParallel: Int64
 
     init(embedding: ModelSlot, chat: ModelSlot, tts: ModelSlot, ttsVoice: String, ttsPath: String,
-         embeddingDim: Int64, batchSize: Int64, chunkSize: Int64, chunkOverlap: Int64, topK: Int64) {
+         embeddingDim: Int64, batchSize: Int64, chunkSize: Int64, chunkOverlap: Int64, topK: Int64,
+         maxCoursewareParallel: Int64) {
         this.embedding = embedding
         this.chat = chat
         this.tts = tts
@@ -50,6 +52,7 @@ class KbSettings {
         this.chunkSize = chunkSize
         this.chunkOverlap = chunkOverlap
         this.topK = topK
+        this.maxCoursewareParallel = maxCoursewareParallel
     }
 }
 
@@ -149,10 +152,10 @@ func loadKbSettings(cfg: Config): KbSettings {
         "SELECT embedding_base_url,embedding_model,embedding_api_key_cipher,embedding_api_key_hint," +
         "chat_base_url,chat_model,chat_api_key_cipher,chat_api_key_hint," +
         "tts_base_url,tts_model,tts_voice,tts_path,tts_api_key_cipher,tts_api_key_hint," +
-        "embedding_dim,batch_size,chunk_size,chunk_overlap,top_k FROM kb_settings WHERE id=1")
+        "embedding_dim,batch_size,chunk_size,chunk_overlap,top_k,max_courseware_parallel FROM kb_settings WHERE id=1")
     if (rows.size == 0) {
         let empty = ModelSlot("", "", "", "")
-        return KbSettings(empty, empty, empty, "", "/audio/speech", 0, 16, 800, 120, 6)
+        return KbSettings(empty, empty, empty, "", "/audio/speech", 0, 16, 800, 120, 6, 10)
     }
     let row = rows[0]
     let batch = row.int("batch_size")
@@ -173,7 +176,8 @@ func loadKbSettings(cfg: Config): KbSettings {
         if (batch <= 0) { 16 } else if (batch > 64) { 64 } else { batch },
         if (size < 200) { 800 } else if (size > 4000) { 4000 } else { size },
         if (row.int("chunk_overlap") < 0) { 0 } else { row.int("chunk_overlap") },
-        if (row.int("top_k") < 1) { 6 } else if (row.int("top_k") > 20) { 20 } else { row.int("top_k") }
+        if (row.int("top_k") < 1) { 6 } else if (row.int("top_k") > 20) { 20 } else { row.int("top_k") },
+        if (row.int("max_courseware_parallel") < 1) { 10 } else if (row.int("max_courseware_parallel") > 50) { 50 } else { row.int("max_courseware_parallel") }
     )
 }
 

@@ -5,6 +5,7 @@ import { ErrorBlock, Loading, Notice } from './admin-ui.jsx';
 import { CoursewareContent, StepTimeline } from './CoursewareView.jsx';
 
 const STATUS = {
+  queued: { label: '排队中', kind: 'draft' },
   generating: { label: '生成中', kind: 'draft' },
   ready: { label: '待发布', kind: 'draft' },
   failed: { label: '失败', kind: 'draft' },
@@ -31,7 +32,7 @@ export default function AdminCoursewarePreview() {
 
   // 生成中继续轮询
   React.useEffect(() => {
-    if (state.item?.status !== 'generating') {
+    if (state.item?.status !== 'generating' && state.item?.status !== 'queued') {
       if (timer.current) { window.clearTimeout(timer.current); timer.current = null; }
       return undefined;
     }
@@ -104,7 +105,7 @@ export default function AdminCoursewarePreview() {
       <div className="zx-card">
         <h2 className="zx-card-title">生成流程</h2>
         <StepTimeline steps={state.steps} />
-        {item.status === 'generating' ? <div className="zx-card-hint">生成中，页面会自动刷新。</div> : null}
+        {item.status === 'generating' || item.status === 'queued' ? <div className="zx-card-hint">{item.status === 'queued' ? '队列等待中，轮到时自动开始并刷新页面。' : '生成中，页面会自动刷新。'}</div> : null}
         {item.model ? <div className="zx-card-hint">模型：{item.model}</div> : null}
       </div>
 
@@ -112,7 +113,7 @@ export default function AdminCoursewarePreview() {
         {state.content ? (
           <CoursewareContent kind={item.kind} content={state.content} />
         ) : (
-          <Notice kind="info">{item.status === 'generating' ? '还在生成，稍候刷新。' : '没有产物内容。'}</Notice>
+          <Notice kind="info">{item.status === 'queued' || item.status === 'generating' ? (item.status === 'queued' ? '正在等待可用的生成槽位。' : '还在生成，稍候刷新。') : '没有产物内容。'}</Notice>
         )}
       </div>
     </div>

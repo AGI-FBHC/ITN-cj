@@ -1,0 +1,19 @@
+.zx-org-select-row { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 14px; }
+.zx-org-select-field { flex: 1 1 280px; min-width: 0; max-width: 560px; }
+.zx-org-select-row .zx-btn { min-height: 40px; }
+.zx-org-create { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--zx-line); }
+.zx-org-save-row { display: flex; gap: 10px; margin-top: 16px; }
+.zx-org-invite-saved { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; color: var(--zx-muted); font-size: 13px; }
+.zx-org-invite-saved code { max-width: 100%; overflow-wrap: anywhere; padding: 5px 9px; border-radius: 7px; color: var(--zx-ink); background: #f2eefb; user-select: all; }
+.zx-org-list-error { margin-top: 14px; }
+.zx-org-list-error .zx-btn { margin-top: 8px; }
+.zx-org-logo-actions > label { position: relative; cursor: pointer; overflow: hidden; }
+.zx-org-logo-actions > label:focus-within { outline: 2px solid var(--zx-accent); outline-offset: 3px; }
+.zx-org-file { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.zx-org-upload-busy { opacity: .6; cursor: wait !important; }
+@media (max-width: 600px) {
+  .zx-org-select-row { align-items: stretch; }
+  .zx-org-select-field { flex-basis: 100%; }
+  .zx-org-select-row > .zx-btn { width: 100%; }
+  .zx-org-invite-saved { align-items: flex-start; }
+}

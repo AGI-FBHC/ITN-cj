@@ -17,6 +17,8 @@ const CW_ROLE_WRITER = "撰写"
 const CW_ROLE_REVIEWER = "质检"
 const CW_ROLE_ARBITER = "仲裁"
 let cwCourseSyncLock = Mutex()
+let cwQueueLock = Mutex()
+var cwActiveWorkers: Int64 = 0
 
 const CW_WRITER_SYSTEM = "你是教培内容作者。只能依据给定资料写作，每个论断后用 [编号] 标注出处，不要编造资料之外的内容。输出 Markdown 正文，不要重复小节标题。"
 const CW_STRUCTURED_SYSTEM = "你是严谨的学习内容作者。严格按用户给出的结构输出一个合法 JSON 对象，不输出解释或 Markdown 围栏。文字字段可含 Markdown，换行必须转义。依据给定资料，用 [编号] 标注真实来源，不编造编号。"
@@ -570,12 +572,85 @@ func cwSetRow(cfg: Config, id: String, status: String, title: String, content: S
         ",error_message=" + sqlQuote(error) + ",updated_at=NOW(6) WHERE id=" + sqlQuote(id))
 }
 
-func cwLaunch(cfg: Config, ids: Array<String>): Unit {
-    for (id in ids) {
+/** Claim durable queued rows up to the configured concurrency limit. */
+func cwQueuePump(cfg: Config): Unit {
+    while (true) {
+        cwQueueLock.lock()
+        let settings = loadKbSettings(cfg)
+        if (cwActiveWorkers >= settings.maxCoursewareParallel) {
+            cwQueueLock.unlock()
+            return
+        }
+        let queued = query(cfg,
+            "SELECT id FROM kb_courseware WHERE status='queued' ORDER BY created_at,id LIMIT 1")
+        if (queued.size == 0) {
+            cwQueueLock.unlock()
+            return
+        }
+        let id = queued[0].text("id")
+        execute(cfg, "UPDATE kb_courseware SET status='generating',error_message='',updated_at=NOW(6) " +
+            "WHERE id=" + sqlQuote(id) + " AND status='queued'")
+        cwActiveWorkers += 1
+        cwQueueLock.unlock()
         spawn {
-            try { cwRunOne(cfg, id) } catch (_: Exception) {}
+            try { cwRunOne(cfg, id) }
+            catch (error: Exception) {
+                try { cwSetRow(cfg, id, "failed", "", "", "生成失败：" + kbTruncate(error.message, 300)) }
+                catch (_: Exception) {}
+            } finally {
+                cwQueueLock.lock()
+                cwActiveWorkers = maxInt(0, cwActiveWorkers - 1)
+                cwQueueLock.unlock()
+                cwQueuePump(cfg)
+            }
         }
     }
+}
+
+func cwLaunch(cfg: Config, ids: Array<String>): Unit {
+    spawn { try { cwQueuePump(cfg) } catch (_: Exception) {} }
+}
+
+func cwRecoverQueue(cfg: Config): Unit {
+    execute(cfg,
+        "UPDATE kb_courseware SET status='queued',error_message='服务重启，任务已恢复排队',updated_at=NOW(6) " +
+        "WHERE status='generating'")
+    cwQueuePump(cfg)
+}
+
+func cwQueueStatusJson(cfg: Config): String {
+    let queued = query(cfg, "SELECT COUNT(*) n FROM kb_courseware WHERE status='queued'")
+    let running = query(cfg, "SELECT COUNT(*) n FROM kb_courseware WHERE status='generating'")
+    let rows = query(cfg,
+        "SELECT c.id,c.kind,c.status,c.title,COALESCE(d.title,'') doc_title,COALESCE(b.title,b.name,'') bundle_title," +
+        "COALESCE(DATE_FORMAT(c.created_at,'%Y-%m-%d %H:%i'),'') created_at," +
+        "COALESCE(DATE_FORMAT(c.updated_at,'%Y-%m-%d %H:%i'),'') updated_at " +
+        "FROM kb_courseware c LEFT JOIN kb_bundle_docs d ON d.id=c.doc_id " +
+        "LEFT JOIN kb_bundles b ON b.id=c.bundle_id " +
+        "WHERE c.status IN('queued','generating') ORDER BY c.created_at,c.id LIMIT 20")
+    let items = JsonArrWriter()
+    for (row in rows) {
+        let item = JsonWriter()
+        item.putStr("id", row.text("id"))
+        item.putStr("kind", row.text("kind"))
+        item.putStr("status", row.text("status"))
+        item.putStr("title", row.text("title"))
+        item.putStr("docTitle", row.text("doc_title"))
+        item.putStr("bundleTitle", row.text("bundle_title"))
+        item.putStr("createdAt", row.text("created_at"))
+        item.putStr("updatedAt", row.text("updated_at"))
+        items.addRaw(item.toJson())
+    }
+    cwQueueLock.lock()
+    let active = cwActiveWorkers
+    cwQueueLock.unlock()
+    let out = JsonWriter()
+    out.putInt("queued", if (queued.size > 0) { queued[0].int("n") } else { 0 })
+    out.putInt("running", if (running.size > 0) { running[0].int("n") } else { 0 })
+    out.putInt("activeWorkers", active)
+    out.putInt("maxParallel", loadKbSettings(cfg).maxCoursewareParallel)
+    out.putRaw("items", items.toJson())
+    out.toJson()
 }
 
 /* ---------- 章节上架：用户端只看到已上架章节的已发布课件 ---------- */

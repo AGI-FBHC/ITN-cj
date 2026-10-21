@@ -32,8 +32,8 @@ $loginKey = $Account.ToLowerInvariant().Replace("'", "''")
 $escapedName = $DisplayName.Replace("'", "''")
 
 $sql = @"
-INSERT INTO users(id,login_key,password_salt,password_hash,display_name,role,created_at)
-VALUES('$userId','$loginKey','$salt','$hash','$escapedName','admin',NOW(6))
+INSERT INTO users(id,login_key,password_salt,password_hash,display_name,role,org_id,created_at)
+VALUES('$userId','$loginKey','$salt','$hash','$escapedName','admin','00000000-0000-0000-0000-000000000001',NOW(6))
 ON DUPLICATE KEY UPDATE password_salt=VALUES(password_salt),password_hash=VALUES(password_hash),display_name=VALUES(display_name),role='admin';
 "@
 

@@ -1,4 +1,5 @@
 import React from 'react';
+import { loadOrgBrand, resetOrgBrand } from './org-brand.js';
 
 const TOKEN_KEY = 'zhixun-learning-v2-token';
 
@@ -39,6 +40,7 @@ const emit = (patch) => {
   snapshot = { ...snapshot, ...patch };
   listeners.forEach((listener) => listener());
 };
+window.addEventListener('zx-org-updated', () => emit({ brandRevision: (snapshot.brandRevision || 0) + 1 }));
 export function useLearning() {
   return React.useSyncExternalStore((listener) => {
     listeners.add(listener);
@@ -84,7 +86,7 @@ export async function bootstrap() {
   bootstrapPromise = (async () => {
     try {
       await ensureSession();
-      const data = await request('/bootstrap');
+      const [data] = await Promise.all([request('/bootstrap'), loadOrgBrand()]);
       if (!Array.isArray(data.courses)) throw new Error('课程目录读取失败，请重试');
       localStorage.setItem('zhixun-course-favorites', JSON.stringify(data.favorites || []));
       localStorage.setItem('zhixun-lecture-bookmarks', JSON.stringify(data.bookmarks || []));
@@ -109,23 +111,25 @@ export async function authenticate(mode, credentials) {
   });
   if (!data.token) throw new Error('登录服务未返回学习会话');
   localStorage.setItem(TOKEN_KEY, data.token);
+  resetOrgBrand();
   localStorage.setItem('zhixun-display-name', data.displayName || credentials.account || '学习者');
-  const bootstrapData = await request('/bootstrap');
+  const [bootstrapData] = await Promise.all([request('/bootstrap'), loadOrgBrand()]);
   emit({ ready: true, loading: false, error: '', data: bootstrapData });
   return bootstrapData;
 }
 export async function sendEmailCode(email) {
   return request('/auth/send-code', { method: 'POST', body: { email, purpose: 'LOGIN' } });
 }
-export async function loginWithEmailCode(email, verificationCode) {
+export async function loginWithEmailCode(email, verificationCode, inviteCode = '') {
   const data = await request('/auth/email-login', {
     method: 'POST',
-    body: { email, verificationCode },
+    body: { email, verificationCode, ...(inviteCode.trim() ? { inviteCode: inviteCode.trim() } : {}) },
   });
   if (!data.token) throw new Error('登录服务未返回学习会话');
   localStorage.setItem(TOKEN_KEY, data.token);
+  resetOrgBrand();
   localStorage.setItem('zhixun-display-name', data.displayName || email);
-  const bootstrapData = await request('/bootstrap');
+  const [bootstrapData] = await Promise.all([request('/bootstrap'), loadOrgBrand()]);
   emit({ ready: true, loading: false, error: '', data: bootstrapData });
   return bootstrapData;
 }

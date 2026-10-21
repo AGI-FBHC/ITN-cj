@@ -4,6 +4,7 @@ import { ErrorBlock, Loading, Notice, PageHead, useLoad } from './admin-ui.jsx';
 import { bundleReadable, BundleLogo } from './BundlePipeline.jsx';
 import Markdown from './Markdown.jsx';
 import { useNavigate } from 'react-router-dom';
+import './courseware-queue.css';
 
 const RESOURCES = [
   { key: 'lecture', label: '讲义文稿', badge: '讲', desc: '把章节原文整理成可阅读的讲解稿', meta: '约 2000–3000 字' },
@@ -15,6 +16,7 @@ const RESOURCES = [
 const TYPE_LABEL = Object.fromEntries(RESOURCES.map((item) => [item.key, item.label]));
 
 const STATUS = {
+  queued: { label: '排队中', kind: 'draft' },
   generating: { label: '生成中', kind: 'draft' },
   ready: { label: '待发布', kind: 'draft' },
   published: { label: '已发布', kind: 'live' },
@@ -25,7 +27,7 @@ const KIND_ORDER = Object.fromEntries(RESOURCES.map((item, index) => [item.key, 
 
 function rankOf(item) {
   if (item.status === 'ready') return 3;
-  if (item.status === 'generating') return 2;
+  if (item.status === 'generating' || item.status === 'queued') return 2;
   return 1;
 }
 
@@ -43,9 +45,32 @@ function resourceByKind(list) {
 
 function resourceState(item) {
   if (!item) return '未生成';
+  if (item.status === 'queued') return '排队中';
   if (item.status === 'generating') return '生成中';
   if (item.status === 'failed') return '生成失败';
   return item.published ? '已发布' : '待发布';
+}
+
+function CoursewareQueueIndicator({ queue, open, onToggle }) {
+  const running = Number(queue?.running || 0);
+  const queued = Number(queue?.queued || 0);
+  const limit = Number(queue?.maxParallel || 10);
+  const active = running + queued;
+  const items = queue?.items || [];
+  return <div className="zx-cw-queue">
+    <button type="button" className={`zx-cw-queue-trigger${active ? ' is-active' : ''}`} onClick={onToggle} aria-expanded={open} aria-label={`课件生成队列，${running} 个生成中，${queued} 个排队中`}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14"/><circle cx="3" cy="6" r=".8" fill="currentColor"/><circle cx="3" cy="12" r=".8" fill="currentColor"/><circle cx="3" cy="18" r=".8" fill="currentColor"/></svg>
+      {active ? <span>{active > 99 ? '99+' : active}</span> : null}
+    </button>
+    {open ? <section className="zx-cw-queue-popover" aria-label="课件生成任务进度">
+      <header><div><strong>生成任务</strong><p>{running} 个进行中 · {queued} 个排队中</p></div><span>{running}/{limit}</span></header>
+      <div className="zx-cw-queue-meter"><i style={{ width: `${limit ? Math.min(100, running / limit * 100) : 0}%` }} /></div>
+      {items.length ? <div className="zx-cw-queue-list">{items.slice(0, 8).map((item) => <div key={item.id}>
+        <span className={`zx-cw-queue-dot is-${item.status}`} />
+        <div><strong>{item.docTitle || item.title || '未命名章节'}</strong><small>{item.bundleTitle || '知识库'} · {item.status === 'queued' ? '等待开始' : '正在生成'}</small></div>
+      </div>)}</div> : <p className="zx-cw-queue-empty">当前没有生成任务</p>}
+    </section> : null}
+  </div>;
 }
 
 /* ---------- 页面 ---------- */
@@ -54,6 +79,7 @@ export default function AdminCourseware() {
   const navigate = useNavigate();
   const bundlesState = useLoad(() => adminApi.kbBundles(), []);
   const listState = useLoad(() => adminApi.cwList(), []);
+  const queueState = useLoad(() => adminApi.cwQueue(), []);
   const [bundleId, setBundleId] = React.useState('');
   const [activeDocId, setActiveDocId] = React.useState('');
   const [doc, setDoc] = React.useState(null);
@@ -67,6 +93,7 @@ export default function AdminCourseware() {
   const [message, setMessage] = React.useState('');
   const [error, setError] = React.useState('');
   const [busy, setBusy] = React.useState(false);
+  const [queueOpen, setQueueOpen] = React.useState(false);
   const pollTimer = React.useRef(null);
 
   const bundles = (bundlesState.data?.bundles || []).filter((item) => bundleReadable(item));
@@ -97,7 +124,8 @@ export default function AdminCourseware() {
   const activeChapter = chapters.find((item) => item.id === activeDocId) || null;
   const activeLive = activeDocId ? liveByDoc.get(activeDocId) : null;
   const items = listState.data?.items || [];
-  const generating = items.some((item) => item.status === 'generating');
+  const generating = items.some((item) => item.status === 'generating' || item.status === 'queued')
+    || Number(queueState.data?.running || 0) + Number(queueState.data?.queued || 0) > 0;
 
   // 有生成中的任务就轮询
   React.useEffect(() => {
@@ -105,12 +133,15 @@ export default function AdminCourseware() {
       if (pollTimer.current) { window.clearTimeout(pollTimer.current); pollTimer.current = null; }
       return undefined;
     }
-    pollTimer.current = window.setTimeout(() => listState.reload(), 3000);
+    pollTimer.current = window.setTimeout(() => {
+      listState.reload();
+      queueState.reload();
+    }, 3000);
     return () => {
       if (pollTimer.current) { window.clearTimeout(pollTimer.current); pollTimer.current = null; }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [generating, listState.data]);
+  }, [generating, listState.data, queueState.data]);
 
   React.useEffect(() => {
     if (!bundleId && bundles.length > 0 && !bundlesState.loading) setBundleId(bundles[0].id);
@@ -152,6 +183,7 @@ export default function AdminCourseware() {
     bundlesState.reload();
     listState.reload();
     liveState.reload();
+    queueState.reload();
   }
 
   async function generate() {
@@ -255,6 +287,7 @@ export default function AdminCourseware() {
         title="课件管理"
         actions={
           <>
+            <CoursewareQueueIndicator queue={queueState.data} open={queueOpen} onToggle={() => setQueueOpen((value) => !value)} />
             <div className="zx-tabs" style={{ margin: 0 }}>
               <button type="button" className={`zx-tab ${view === 'chapters' ? 'active' : ''}`} onClick={() => setView('chapters')}>章节</button>
               <button type="button" className={`zx-tab ${view === 'library' ? 'active' : ''}`} onClick={() => setView('library')}>

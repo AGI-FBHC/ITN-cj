@@ -45,6 +45,7 @@ export default function LoginPage({ onBack, onAuthenticated }) {
   const [password, setPassword] = React.useState("");
   const [displayName, setDisplayName] = React.useState("");
   const [confirmPassword, setConfirmPassword] = React.useState("");
+  const [inviteCode, setInviteCode] = React.useState("");
   const [email, setEmail] = React.useState("");
   const [verificationCode, setVerificationCode] = React.useState("");
   const [countdown, setCountdown] = React.useState(0);
@@ -56,16 +57,20 @@ export default function LoginPage({ onBack, onAuthenticated }) {
   }, [countdown]);
 
   const enter = async (mode) => {
+    if (busy) return;
     setError("");
     if (!account.trim()) return setError("请输入工号或邮箱");
     if (!password.trim()) return setError("请输入密码");
     if (mode === "register" && password !== confirmPassword) return setError("两次输入的密码不一致");
+    if (mode === "register" && !inviteCode.trim()) return setError("请输入机构提供的邀请码");
+    if (mode === "register" && !/^[a-z0-9_-]{6,64}$/i.test(inviteCode.trim())) return setError("邀请码应为 6–64 位字母、数字、短横线或下划线");
     setBusy(true);
     try {
       const data = await authenticate(mode, {
         account: account.trim(),
         password,
         displayName: displayName.trim(),
+        ...(mode === "register" ? { inviteCode: inviteCode.trim() } : {}),
       });
       onAuthenticated?.(data.profile, data.profile?.name || displayName.trim() || account.trim());
     } catch (reason) {
@@ -81,6 +86,7 @@ export default function LoginPage({ onBack, onAuthenticated }) {
   };
 
   const requestCode = async () => {
+    if (busy) return;
     setError("");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       setError("请填写有效的邮箱");
@@ -98,12 +104,13 @@ export default function LoginPage({ onBack, onAuthenticated }) {
   };
 
   const enterWithCode = async () => {
+    if (busy) return;
     setError("");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return setError("请填写有效的邮箱");
     if (!/^\d{6}$/.test(verificationCode.trim())) return setError("请输入 6 位邮箱验证码");
     setBusy(true);
     try {
-      const data = await loginWithEmailCode(email.trim(), verificationCode.trim());
+      const data = await loginWithEmailCode(email.trim(), verificationCode.trim(), inviteCode);
       onAuthenticated?.(data.profile, data.profile?.name || email.trim().split("@")[0]);
     } catch (reason) {
       setError(reason.message || "验证码登录失败，请稍后重试");
@@ -169,7 +176,12 @@ export default function LoginPage({ onBack, onAuthenticated }) {
               <h2>{registering ? "创建学习账号" : "登录"}</h2>
             </div>
             {tab === "account" && (
-              <button type="button" onClick={() => { setRegistering((value) => !value); setError(""); }}>
+              <button type="button" onClick={() => {
+                setRegistering((value) => !value);
+                setPassword("");
+                setConfirmPassword("");
+                setError("");
+              }}>
                 {registering ? "返回登录" : "注册"}
               </button>
             )}
@@ -248,6 +260,22 @@ export default function LoginPage({ onBack, onAuthenticated }) {
                 )}
               </>
             )}
+            {(registering || tab === "email") && <label>
+              <span>机构邀请码{tab === "email" ? '（首次使用必填）' : ''}</span>
+              <input
+                value={inviteCode}
+                onChange={(event) => setInviteCode(event.target.value)}
+                onKeyDown={(event) => event.key === "Enter" && (tab === "email" ? enterWithCode() : enter("register"))}
+                placeholder="请输入机构提供的邀请码"
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                maxLength={64}
+                aria-describedby="login-invite-hint"
+                required={registering}
+              />
+              <small id="login-invite-hint" className="zhixun-login-field-hint">{tab === "email" ? '首次使用此邮箱时填写；已有账号可直接登录。' : '注册后加入对应机构，邀请码请向机构管理员获取。'}</small>
+            </label>}
             {error && <p className="zhixun-login-error" role="alert">{error}</p>}
             <button type="button" className="zhixun-login-primary" disabled={busy} onClick={() => tab === "email" ? enterWithCode() : enter(registering ? "register" : "login")}>
               {busy ? "正在处理…" : tab === "email" ? "验证并登录" : registering ? "注册并登录" : "登录"}
