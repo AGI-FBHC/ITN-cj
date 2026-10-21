@@ -376,6 +376,16 @@ async function createWindow() {
     }
   });
 
+  ipcMain.handle("shell:open-url", async (_e, url) => {
+    if (!/^https?:\/\//i.test(url)) return { ok: false, error: "只允许打开 http(s) 链接" };
+    try {
+      await shell.openExternal(url);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String((e && e.message) || e) };
+    }
+  });
+
   /**
    * 读演示文稿的文字（离线，只读）。
    *

@@ -3,6 +3,9 @@ body[data-page="study"] .view{ padding:18px 22px 40px; }
 .sp-page{ max-width:980px; margin:0 auto; display:flex; flex-direction:column; gap:14px; }
 .sp-crumb{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .sp-crumb-trail{ color:var(--muted); font-size:13px; overflow-wrap:anywhere; }
+.sp-head-main > .sp-crumb { margin-top:8px; }
+.sp-head-main > .sp-crumb .btn { padding-left:0; }
+body[data-page="study"] .panel { display:none !important; }
 .sp-head{ display:flex; align-items:flex-start; gap:14px; border:1px solid var(--line); border-radius:16px; background:var(--panel); padding:16px 18px; }
 .sp-head-main{ flex:1; min-width:0; display:flex; flex-direction:column; gap:8px; }
 .sp-title{ margin:0; font-size:22px; line-height:1.35; overflow-wrap:anywhere; }

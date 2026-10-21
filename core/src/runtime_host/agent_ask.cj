@@ -16,6 +16,7 @@ import itn_desktop_core.session.SessionStore
 import itn_desktop_core.learning.LearningStore
 import itn_desktop_core.resource.labelOf
 import itn_desktop_core.agent.learningTools
+import itn_desktop_core.agent.learningTeamTools
 import itn_desktop_core.agent.presentationTools
 import itn_desktop_core.agent.personalTools
 import itn_desktop_core.agent.knowledgeTools
@@ -451,6 +452,8 @@ public class LuminAgent {
                     log("assistant/activity", p)
                 }
             })) { defs.add(d) }
+        for (d in learningTeamTools(store, kbId, { => sessionHub().isAborted(sid) }, sid, turnId, question,
+            { kind: String, payload: JsonObject => log(kind, payload) })) { defs.add(d) }
         let records = ArrayList<ToolRecord>()
         for(d in presentationTools(store,sid,turnId,question,{ => sessionHub().isAborted(sid) },{kind: String,payload: JsonObject => log(kind,payload)})){defs.add(d)}
         for(d in personalTools(store,sid,turnId,question)){defs.add(d)}
@@ -628,6 +631,7 @@ public class LuminAgent {
         agent.preamble += "\nPPT 演示目标使用 generate_learning_resource(kind=ppt) 走课程资源流水线，它会生成真实可编辑的 .pptx、页级预览和与 PPTX 对齐的 content.slides，不是 Markdown 演讲稿。独立个性资源制作可继续使用 create_presentation；两者都先询问受众、用途、页数、风格，用户明确无需确认或已提供并确认细节时直接制作。用户明确不需要测试时，不运行验证/测试命令；完成后直接展示候选产物的 path/previewPath 并说明可预览；不要复制或移动候选文件，也不要调用 powershell 处理它。满意后再询问是否存入个性资源。"
         agent.preamble += "\n个性资源是用户确认后存放在指定目录的副本。生成/迭代完成不等于用户满意，满意也不等于已授权入库。先提供候选文件让用户看；明确满意后询问是否存入，用户明确要求存入才调用save_personal_resource。需要以前的个人内容时优先search_personal_resources，按结果id读取，笔记、错题、知识点也能检索。"
         agent.preamble += "\n当用户围绕概念、方法或原理展开讨论（解释、讲解、什么是、为什么、怎么理解等），在给出回答时必须调用record_knowledge_point，把主知识点、简明定义和本次要点记入知识网络，quote逐字引用本轮问题。记录是回答的附带动作，不能替代正文回答；记录后必须继续直接、完整地回答用户问题，给出资料中的结论、定义或步骤，绝不能只回复“已记录”。闲聊、寒暄、一次性制作或改文件不记录，同一轮只记一个主知识点。只记本轮真正讲过的内容，不臆造用户掌握程度、相关关系或子节点；同义概念用确切别名合并。用户可以在知识网络中查看、修改、写笔记和手动连线。"
+        agent.preamble += "\n当用户需要多角度主题研究、资料综述、概念对比，或需要根据目标和时间制定多阶段学习计划时，分别优先使用 research_topic_team 或 plan_study_team。它们是学习型多智能体协作工具，会自动规划多级协作树并在界面右侧展示；简单问题不要调用，不要为了展示协作而滥用。"
 
         // ---- 事件翻译 + 正文累积 ----
         let stream = EventStream()

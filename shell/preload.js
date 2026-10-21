@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld("itnWindow", {
   readSelectedImage: (p) => ipcRenderer.invoke("image:read-selected", String(p || "")),
   /** 用系统默认程序打开一个路径（文件夹 → 资源管理器，文件 → 关联的应用）。 */
   openPath: (p) => ipcRenderer.invoke("shell:open-path", String(p || "")),
+  /** 用系统默认浏览器打开 http(s) 链接。 */
+  openUrl: (url) => ipcRenderer.invoke("shell:open-url", String(url || "")),
   /** 打开系统的"选演示文稿"对话框（.pptx / .ppt）。 */
   pickDeck: () => ipcRenderer.invoke("dlg:pick-deck"),
   /** 读一份演示文稿（.pptx / .ppt）的文字，给"PPT 演示"做离线预览。 */

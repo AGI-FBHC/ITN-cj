@@ -16,8 +16,10 @@ class ActivityBucket {
     var quiz: Int64 = 0
     var node: Int64 = 0
     var completion: Int64 = 0
+    var question: Int64 = 0
+    var token: Int64 = 0
     init(date: String) { this.date = date }
-    func total(): Int64 { return quiz + node + completion }
+    func total(): Int64 { return quiz + node + completion + question + (if (token > 0) { 1 } else { 0 }) }
     func json(): JsonObject {
         let o = JsonObject()
         o.put("date", JsonString(date))
@@ -25,6 +27,8 @@ class ActivityBucket {
         o.put("quiz", JsonInt(quiz))
         o.put("node", JsonInt(node))
         o.put("completion", JsonInt(completion))
+        o.put("question", JsonInt(question))
+        o.put("token", JsonInt(token))
         return o
     }
 }
@@ -138,6 +142,31 @@ public func courseActivity(dataDir: String, kb: String): JsonObject {
         if (strOf(body, "kind") != "node-complete" || !boolOf(body, "done")) { continue }
         let key = date + "|" + r.text(0)
         if (!nodeSeen.contains(key)) { nodeSeen.add(key); bucketOf(days, date).node += 1 }
+    }
+
+    // Conversation turns are learning activity too. The session store keeps
+    // kbId on turn/start; use that as the boundary so another course's chat
+    // cannot inflate this course's daily activity.
+    let matchingTurns = HashSet<String>()
+    for (r in db.query("SELECT session_id,turn_id,payload FROM session_events WHERE kind='turn/start' AND ts>=? ORDER BY ts", va([tv(from)]))) {
+        let payload = try { courseJson(r.text(2)) } catch (e: Exception) { JsonObject() }
+        let turnKb = strOf(payload, "kbId")
+        if (kb.size == 0 || turnKb == kb) {
+            matchingTurns.add(r.text(0) + "|" + r.text(1))
+        }
+    }
+    for (r in db.query("SELECT session_id,turn_id,kind,payload,ts FROM session_events WHERE ts>=? AND kind IN ('user/message','turn/usage') ORDER BY ts", va([tv(from)]))) {
+        let date = eventDate(r.text(4))
+        if (date.size == 0 || date < from || date > to) { continue }
+        let key = r.text(0) + "|" + r.text(1)
+        if (!matchingTurns.contains(key)) { continue }
+        let kind = r.text(2)
+        if (kind == "user/message") {
+            bucketOf(days, date).question += 1
+        } else if (kind == "turn/usage") {
+            let payload = try { courseJson(r.text(3)) } catch (e: Exception) { JsonObject() }
+            bucketOf(days, date).token += intOf(payload, "in") + intOf(payload, "out")
+        }
     }
 
     var activeDays: Int64 = 0

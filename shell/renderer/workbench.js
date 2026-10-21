@@ -36,7 +36,7 @@ Object.assign(PAGE_META, {
 });
 function decorateWorkspace() {
   const view = $('view');
-  document.querySelector('.topbar .workspace-tabs')?.remove();
+  document.querySelector(current === 'kb' ? '.topbar .workspace-tabs:not(.kb-workspace-tabs)' : '.topbar .workspace-tabs')?.remove();
   const learning = ['home', 'learn', 'report', 'calibrate'].includes(current);
   const outcomes = ['resources', 'notes', 'wrong'].includes(current);
   if (!learning && !outcomes) return;
@@ -193,8 +193,19 @@ async function openPersonalEntry(item) {
 function personalResourceCard(item) {
   const button=btn('','resource-entry personal-entry',()=>openPersonalEntry(item));button.dataset.personalId=item.id;
   if(item.learningId)button.dataset.resource=item.learningId;
-  button.append(el('span','resource-entry-type',(RESOURCE_LABEL[item.learningKind] || PERSONAL_FORMAT[item.kind] || item.kind.toUpperCase())+' · 确认版本 '+item.version),el('strong',null,item.title),el('span','muted sm',fmtStamp(item.createdAt)),el('span','resource-entry-open','打开预览'));
+  button.title=String(item.title || '');
+  button.append(el('span','resource-entry-type',(RESOURCE_LABEL[item.learningKind] || PERSONAL_FORMAT[item.kind] || item.kind.toUpperCase())+' · v'+item.version),el('strong',null,personalResourceTitle(item)),el('span','muted sm',fmtStamp(item.createdAt)),el('span','resource-entry-open','打开预览'));
   return button;
+}
+
+function personalResourceTitle(item) {
+  let title = String(item.title || item.name || '未命名资源').trim()
+    .replace(/^#{1,6}\s*/, '').replace(/\*\*/g, '').trim();
+  const firstLine = title.split(/\r?\n/).map(part => part.trim()).find(Boolean) || title;
+  const sentence = firstLine.match(/^(.{8,54}?[。！？；：:])/);
+  title = sentence ? sentence[1] : firstLine;
+  if (title.length > 58) title = title.slice(0, 56).replace(/[，、；：:\s]+$/, '') + '…';
+  return title || '未命名资源';
 }
 async function openPersonalSearchHit(hit) {
   if(hit.type==='note' || hit.type==='wrong'){state.resTab=hit.type==='note'?'notes':'wrong';await go('notes','',{focus:hit.id});return;}
@@ -602,15 +613,21 @@ function syncWorkbenchEvents(events) {
 
 PAGES.resources.render = async function() {
   const generation=state.navigationGeneration,view=$('view');view.replaceChildren();
-  const toolbar=el('div','outcome-toolbar'),search=inputOf('learning-resource-search','搜索个性资源标题或正文',state.outcomeQuery || ''),kind=el('select');
+  const pageShell=el('section','outcome-page');
+  const toolbar=el('div','outcome-toolbar outcome-toolbar-clean'),search=inputOf('learning-resource-search','搜索个性资源标题或正文',state.outcomeQuery || ''),kind=el('select');
+  const toolbarText=el('div','outcome-toolbar-title');
+  toolbarText.append(el('h2',null,'个性资源'),el('p','muted','保存过的讲义、练习、课件和文件都在这里。'));
   search.setAttribute('aria-label','搜索个性资源');kind.setAttribute('aria-label','筛选成果类型');kind.appendChild(option('','全部格式'));
   for(const [value,label] of [['pptx','PowerPoint'],['html','网页'],['md','Markdown / 讲义'],['quiz','测验'],['docx','Word'],['pdf','PDF'],['png','图片']])kind.appendChild(option(value,label));kind.value=state.outcomeKind || '';
   const create=el('details','outcome-create');create.appendChild(el('summary','btn primary','+ 添加资源'));
   const menu=el('div','outcome-menu');menu.append(btn('制作 PPT','ghost',()=>openPresentationBrief()),btn('导入文件','ghost',async()=>{if(!window.itnWindow?.pickFile)return toast('请在桌面窗口选择文件');const file=await window.itnWindow.pickFile();if(file){const data=await window.itnWindow.readResourceFile(file);if(data.ok)offerPersonalSave(data);else toast(data.error);}}),btn('设置目录','ghost',async()=>{const directory=await window.itnWindow?.pickDirectory?.();if(directory){await api('/api/personal/settings',{directory});await go('resources');}}));create.appendChild(menu);
-  toolbar.append(search,kind,create);view.appendChild(toolbar);
-  const status=el('p','muted sm');status.setAttribute('role','status');view.appendChild(status);
-  const split=el('div','outcome-workspace'),grid=el('div','resource-grid outcome-grid outcome-list'),reader=el('section','outcome-reader');reader.id='outcome-reader';reader.setAttribute('aria-label','个性资源阅读区');
-  reader.append(el('h2',null,'选择一份个性资源'),el('p','muted','确认保存的副本会显示在这里。'));split.append(grid,reader);view.appendChild(split);
+  toolbar.append(toolbarText,search,kind,create);pageShell.appendChild(toolbar);
+  const split=el('div','outcome-workspace'),listPanel=el('aside','outcome-list-panel'),listHead=el('div','outcome-list-head'),grid=el('div','resource-grid outcome-grid outcome-list'),reader=el('section','outcome-reader');reader.id='outcome-reader';reader.setAttribute('aria-label','个性资源阅读区');
+  const status=el('span','outcome-count');status.setAttribute('role','status');listHead.append(el('strong',null,'资源列表'),status);listPanel.append(listHead,grid);
+  const placeholder=el('div','outcome-placeholder');
+  placeholder.append(el('div','outcome-placeholder-mark','◌'),el('h2',null,'从左侧选择一份资源'),el('p','muted','确认保存的副本会显示在这里，并保留对应的学习上下文。'));
+  const placeholderActions=el('div','outcome-placeholder-actions');placeholderActions.append(btn('制作 PPT','sm',()=>openPresentationBrief()),btn('导入文件','ghost sm',async()=>{if(!window.itnWindow?.pickFile)return toast('请在桌面窗口选择文件');const file=await window.itnWindow.pickFile();if(file){const data=await window.itnWindow.readResourceFile(file);if(data.ok)offerPersonalSave(data);else toast(data.error);}}));placeholder.appendChild(placeholderActions);
+  reader.appendChild(placeholder);split.append(listPanel,reader);pageShell.appendChild(split);view.appendChild(pageShell);
   const data=await api('/api/personal/list',{});if(generation!==state.navigationGeneration)return;let all=data.resources || [],timer,seq=0;
   status.title=data.directory;
   const paint=async()=>{
@@ -618,9 +635,10 @@ PAGES.resources.render = async function() {
     let ids;
     if(q){const found=await api('/api/personal/search',{query:q});if(token!==seq||generation!==state.navigationGeneration)return;ids=new Set(found.hits.filter(h=>h.type==='resource').map(h=>h.id));}
     const rows=all.filter(r=>(!kind.value||r.kind===kind.value||r.learningKind===kind.value)&&(!ids||ids.has(r.id)));
-    grid.replaceChildren();status.textContent=rows.length+' 份个性资源';status.title=data.directory;
+    grid.replaceChildren();status.textContent=rows.length+' 份';status.title=data.directory;
     if(!rows.length)grid.appendChild(emptyState({inline:true,art:'layers',title:all.length?'没有匹配的资源':'还没有个性资源',text:all.length?'换个关键词或格式再试。':'生成或导入文件后，确认保存即可在这里查看。'}));
     rows.forEach(r=>grid.appendChild(personalResourceCard(r)));
+    reader.classList.toggle('has-selection', !!workbench.open);
   };
   search.oninput=()=>{clearTimeout(timer);seq++;timer=setTimeout(()=>paint().catch(e=>toast(e.message)),220);};kind.onchange=()=>paint();await paint();
 };
@@ -754,11 +772,25 @@ PAGES.kb.render=async function(){
   const view=$('view'),management=el('details','card kb-management');management.id='kb-management';
   management.appendChild(el('summary','item-title','添加与管理知识库'));
   const content=el('section','kb-management-content');content.appendChild(settingsKb());management.appendChild(content);
-  management.open=currentSection==='manage'||!hasKb();
+  const section=(currentSection==='harvest'||currentSection==='manage')?currentSection:'view';
+  management.open=section==='manage';
   if(!hasKb())view.replaceChildren(management);else view.appendChild(management);
-  const toolbar=view.querySelector('.library-toolbar');if(toolbar)toolbar.appendChild(btn('管理知识库','ghost sm',()=>{management.open=true;management.scrollIntoView({block:'start'});}));
-  if(currentSection==='manage')management.scrollIntoView({block:'start'});
-  if(currentSection==='harvest'){const harvest=view.querySelector('.harvest-entry');if(harvest){harvest.open=true;harvest.scrollIntoView({block:'start'});}}
+  const topbar=document.querySelector('.topbar');
+  topbar?.querySelector('.kb-workspace-tabs')?.remove();
+  const tabs=el('nav','workspace-tabs kb-workspace-tabs');tabs.setAttribute('aria-label','知识库功能区');
+  for(const [key,label] of [['view','查看知识库'],['harvest','收集资料'],['manage','资料管理']]){
+    const tab=btn(label,'workspace-tab'+(section===key?' active':''),()=>go('kb',key==='view'?'':key));
+    tab.dataset.kbTab=key;if(section===key)tab.setAttribute('aria-current','page');tabs.appendChild(tab);
+  }
+  if(topbar)topbar.insertBefore(tabs,$('top-actions'));
+  const browser=view.querySelector('.document-browser'),search=view.querySelector('.library-search'),toolbar=view.querySelector('.library-toolbar'),harvest=view.querySelector('.harvest-entry'),info=view.querySelector('.library-info');
+  const showLibrary=section==='view';
+  if(browser)browser.hidden=!showLibrary;if(search)search.hidden=!showLibrary;if(toolbar)toolbar.hidden=!showLibrary;if(info)info.hidden=true;
+  if(harvest){harvest.hidden=section!=='harvest';if(section==='harvest')harvest.open=true;}
+  management.hidden=hasKb()&&section!=='manage';
+  if(toolbar)toolbar.appendChild(btn('管理知识库','ghost sm',()=>{management.open=true;management.scrollIntoView({block:'start'});}));
+  if(section==='manage')management.scrollIntoView({block:'start'});
+  if(section==='harvest'&&harvest)harvest.scrollIntoView({block:'start'});
 };
 
 /* A course is read one lecture section at a time; source material stays in citations. */
@@ -1002,7 +1034,7 @@ boot();
 /* Main-node knowledge network: visual language adapted from the existing web KnowledgeGraph3D.
    The desktop projection keeps its soft purple orbs and spatial orbit, with no inferred edges.
    这一页现在是"知识网络"主页：网络图 / 时间线两种视图共用右侧宽抽屉与编辑弹层。 */
-const knowledgeNet={data:{nodes:[],links:[]},selected:'',yaw:.28,pitch:.12,zoom:1,canvas:null,draw:null,projected:[],visible:null,showLinkLabels:true,linkLabels:[],view:'graph',range:0,timeline:null,timelineQuery:''};
+const knowledgeNet={data:{nodes:[],links:[]},selected:'',yaw:.28,pitch:.12,zoom:1,canvas:null,draw:null,projected:[],visible:null,showLinkLabels:true,linkLabels:[],view:'graph',range:0,timeline:null,timelineQuery:'',introSpinRequested:false,autoSpinStart:0,autoSpinUntil:0,userInteracted:false};
 const KNOWLEDGE_SWATCHES=['#8B7DA8','#5A8DEE','#2FB8A6','#E4B363','#E07A5F','#C77DFF','#7BC96F','#E5679B'];
 function normalizeKnowledgeColor(v){const m=/^#?([0-9a-f]{6})$/i.exec(String(v||'').trim());return m?('#'+m[1].toUpperCase()):'';}
 function knowledgeRgb(node){const c=normalizeKnowledgeColor(node?.color);if(!c)return null;const n=parseInt(c.slice(1),16);return[(n>>16)&255,(n>>8)&255,n&255];}
@@ -1013,6 +1045,36 @@ function knowledgeDay(at){const d=new Date(at),t=new Date(),y=new Date(Date.now(
 function knowledgeDialog(title,build,wide){
   const overlay=el('div','task-modal knowledge-dialog'),panel=el('section','task-modal-card'+(wide?' wide':''));panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label',title);panel.appendChild(el('h2',null,title));overlay.appendChild(panel);document.body.appendChild(overlay);
   const close=()=>overlay.remove();overlay.onkeydown=e=>{if(e.key==='Escape')close();};overlay.onclick=e=>{if(e.target===overlay)close();};build(panel,close);return overlay;
+}
+async function openKnowledgeLinkSuggestions(){
+  try{
+    const data=await api('/api/knowledge/suggest-links',{});
+    const nodes=new Map((data.nodes||[]).map(n=>[n.id,n.title]));
+    knowledgeDialog('连线建议',(panel,close)=>{
+      panel.appendChild(el('p','muted','模型只提出可解释的关系建议。勾选后才会写入知识网络，已有连线会被标出。'));
+      const list=el('div','knowledge-link-suggestions');
+      (data.suggestions||[]).forEach((s,index)=>{
+        const row=el('label','knowledge-link-suggestion');
+        const input=el('input');input.type='checkbox';input.value=String(index);input.disabled=!!s.exists;
+        const body=el('span','knowledge-link-suggestion-body');
+        body.append(el('strong',null,(nodes.get(s.from)||s.from)+' → '+(nodes.get(s.to)||s.to)),el('span','muted sm',s.label+' · '+(s.reason||'可建立关联')));
+        row.append(input,body,el('span','knowledge-link-suggestion-status'+(s.exists?' exists':''),s.exists?'已存在连线':'可采纳'));
+        list.appendChild(row);
+      });
+      if(!data.suggestions?.length)list.appendChild(el('p','muted','这次没有发现新的连线建议。'));
+      panel.appendChild(list);
+      const actions=el('div','row');
+      actions.append(btn('关闭','ghost',close),btn('采纳选中项','primary',async()=>{
+        const selected=[...list.querySelectorAll('input:checked')].map((input)=>data.suggestions[Number(input.value)]).filter(Boolean);
+        if(!selected.length){toast('请先勾选至少一条建议');return;}
+        try{
+          for(const s of selected)await api('/api/knowledge/link',{from:s.from,to:s.to,label:s.label});
+          close();await refreshKnowledgeNetwork();toast('已采纳 '+selected.length+' 条连线建议');
+        }catch(e){toast('建立连线失败：'+e.message);}
+      }));
+      panel.appendChild(actions);
+    },true);
+  }catch(e){toast('生成连线建议失败：'+e.message);}
 }
 async function refreshKnowledgeNetwork(){
   knowledgeNet.data=await api('/api/knowledge/graph',{});knowledgeNet.visible=null;
@@ -1207,7 +1269,7 @@ function installKnowledgeCanvas(canvas){
       if(dx*dx+dy*dy<r*r){return true;}
       return p.labelW>0&&dx<=p.labelW/2+8&&dy<=13;
     });};
-  canvas.onpointerdown=e=>{drag={x:e.clientX,y:e.clientY,moved:false,dist:0};canvas.setPointerCapture(e.pointerId);};
+  canvas.onpointerdown=e=>{knowledgeNet.userInteracted=true;knowledgeNet.autoSpinUntil=0;drag={x:e.clientX,y:e.clientY,moved:false,dist:0};canvas.setPointerCapture(e.pointerId);};
   canvas.onpointermove=e=>{if(drag){
       const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag.dist+=Math.abs(dx)+Math.abs(dy);
       // 4px 死区：手抖不转相机（否则每次想点节点都会把视角蹭偏，"定位飘"就是这么来的）
@@ -1216,12 +1278,12 @@ function installKnowledgeCanvas(canvas){
     }else{const p=hit(e);if((p?.id || '')!==hovered){hovered=p?.id || '';canvas.style.cursor=p?'pointer':'grab';canvas.title=p?.title || '拖动旋转，滚轮缩放';draw();}}};
   // 6px 以内的抖动仍算"点击"（选节点优先于转视角）；超过 6px 才认定是拖拽
   canvas.onpointerup=e=>{const wasDrag=drag&&drag.dist>6;drag=null;if(!wasDrag){const node=hit(e);if(node)openKnowledgePoint(node.id).catch(err=>toast(err.message));}};canvas.onpointercancel=()=>{drag=null;};
-  canvas.addEventListener('wheel',e=>{e.preventDefault();knowledgeNet.zoom=Math.max(.55,Math.min(1.8,knowledgeNet.zoom*Math.exp(-e.deltaY*.001)));draw();},{passive:false});
+  canvas.addEventListener('wheel',e=>{e.preventDefault();knowledgeNet.userInteracted=true;knowledgeNet.autoSpinUntil=0;knowledgeNet.zoom=Math.max(.55,Math.min(1.8,knowledgeNet.zoom*Math.exp(-e.deltaY*.001)));draw();},{passive:false});
   knowledgeNet.stop?.();
   state.knowledgeObserver?.disconnect();state.knowledgeObserver=new ResizeObserver(draw);state.knowledgeObserver.observe(host);knowledgeNet.draw=draw;
   const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
   if(reduced){draw();}
-  else{let raf=0;const frame=()=>{raf=0;if(!canvas.isConnected){return;}draw();raf=requestAnimationFrame(frame);};raf=requestAnimationFrame(frame);knowledgeNet.stop=()=>{if(raf)cancelAnimationFrame(raf);raf=0;};}
+  else{let raf=0;const frame=()=>{raf=0;if(!canvas.isConnected){return;}const now=performance.now();if(!knowledgeNet.userInteracted && knowledgeNet.autoSpinUntil>now){const progress=Math.max(0,Math.min(1,(now-knowledgeNet.autoSpinStart)/3200));knowledgeNet.yaw+=.0042*Math.pow(1-progress,1.8);}draw();raf=requestAnimationFrame(frame);};raf=requestAnimationFrame(frame);knowledgeNet.stop=()=>{if(raf)cancelAnimationFrame(raf);raf=0;};}
 }
 function renderKnowledgeGraphStage(stage){
   const scene=el('div','knowledge-scene'),canvas=el('canvas','knowledge-canvas');canvas.setAttribute('aria-hidden','true');scene.appendChild(canvas);
@@ -1299,6 +1361,10 @@ async function setKnowledgeView(view){
 const homeBeforeKnowledgeNetwork=PAGES.home.render;
 PAGES.home.render=async function(){
   const generation=state.navigationGeneration;await homeBeforeKnowledgeNetwork.call(this);if(generation!==state.navigationGeneration)return;
+  if(knowledgeNet.introSpinRequested){
+    state.knowledgeView='graph';knowledgeNet.introSpinRequested=false;knowledgeNet.userInteracted=false;
+    knowledgeNet.yaw=.28;knowledgeNet.autoSpinStart=performance.now();knowledgeNet.autoSpinUntil=knowledgeNet.autoSpinStart+3200;
+  }
   knowledgeNet.view=state.knowledgeView==='timeline'?'timeline':'graph';
   knowledgeNet.showLinkLabels=state.knowledgeLinkLabels!==false;knowledgeNet.linkLabels=[];
   knowledgeNet.data=await api('/api/knowledge/graph',{});if(generation!==state.navigationGeneration)return;knowledgeNet.visible=null;knowledgeNet.timelineQuery='';
@@ -1319,6 +1385,7 @@ PAGES.home.render=async function(){
     const reset=btn('','ghost sm knowledge-reset',()=>{knowledgeNet.yaw=.28;knowledgeNet.pitch=.12;knowledgeNet.zoom=1;knowledgeNet.draw?.();});reset.innerHTML=icon('refresh');reset.title='重置视角';reset.setAttribute('aria-label','重置视角');
     actions.append(labelToggle,reset);
   }
+  actions.appendChild(btn('连线建议','ghost sm',()=>openKnowledgeLinkSuggestions()));
   actions.appendChild(btn('＋ 添加知识点','primary sm',()=>editKnowledgePoint()));
   toolbar.appendChild(actions);page.appendChild(toolbar);
   const workspace=el('div','knowledge-workspace');workspace.id='knowledge-workspace';

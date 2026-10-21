@@ -8,6 +8,7 @@ import itn_desktop_core.project.ProjectStore
 import itn_desktop_core.presentation.DesktopJobs
 import itn_desktop_core.personal.PersonalStore
 import itn_desktop_core.knowledge.KnowledgeStore
+import itn_desktop_core.knowledge.suggestKnowledgeLinks
 import itn_desktop_core.agent.learningTools
 import itn_desktop_core.runtime_host.taskTools
 import itn_desktop_core.agent.sharedSkillRoots
@@ -1492,6 +1493,9 @@ public class Api {
         }
         if (path == "/api/knowledge/link" && method == "POST") {
             match(bodyJson(ctx)){case Some(b)=>try{KnowledgeStore(store.dataDir).link(strOf(b,"from"),strOf(b,"to"),strOf(b,"label"),boolOf(b,"remove"));ok(ctx,JsonObject())}catch(e: Exception){fail(ctx,400,e.message)};case None=>fail(ctx,400,"请求体不是合法JSON")};return
+        }
+        if (path == "/api/knowledge/suggest-links" && method == "POST") {
+            try{ok(ctx,suggestKnowledgeLinks(store))}catch(e: Exception){fail(ctx,400,e.message)};return
         }
         if (path == "/api/knowledge/delete" && method == "POST") {
             match(bodyJson(ctx)){case Some(b)=>KnowledgeStore(store.dataDir).delete(strOf(b,"id"));ok(ctx,JsonObject());case None=>fail(ctx,400,"请求体不是合法JSON")};return
@@ -3162,7 +3166,7 @@ func speechJson(store: Store, cfg: ModelConfig, text: String, voice: String): Js
 /* 界面静态资源白名单：serveStatic 校验与静态路由注册共用这一份。
    曾经是两份清单（白名单一份、路由注册一份），新增 studyplayer.js 时只改了一份 → 页面 404。
    只留一个来源，杜绝再次走偏。 */
-let uiAssets = ["index.html", "app.js", "style.css", "workbench.js", "workbench.css", "coursemap.js", "coursemap.css", "studyplayer.js", "studyplayer.css", "tasks.js", "tasks.css", "mascot.js", "mascot.css", "release.json",
+let uiAssets = ["index.html", "app.js", "style.css", "workbench.js", "workbench.css", "coursemap.js", "coursemap.css", "studyplayer.js", "studyplayer.css", "tasks.js", "tasks.css", "team-panel.js", "team-panel.css", "mascot.js", "mascot.css", "release.json",
     "logo-mark.png", "logo-light.png", "logo-dark.png",
     "mascot/xiaoyuanlong-idle.png", "mascot/xiaoyuanlong-breathe.png", "mascot/xiaoyuanlong-blink.png",
     "mascot/xiaoyuanlong-wake.png", "mascot/xiaoyuanlong-listen-1.png", "mascot/xiaoyuanlong-listen-2.png",
@@ -3419,6 +3423,7 @@ public func buildServer(dataDir: String, uiDir: String): Server {
         "/api/knowledge/save",
         "/api/knowledge/note",
         "/api/knowledge/link",
+        "/api/knowledge/suggest-links",
         "/api/knowledge/delete",
         "/api/personal/settings",
         "/api/personal/save",

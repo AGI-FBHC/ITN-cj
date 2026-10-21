@@ -5099,3 +5099,26 @@ read_chunk 读得到原文并带回库标识与正文。
 - 首次180秒超时的87546200bytes已通过Range续传补齐：HTTP206，Content-Range bytes 87546200-155613976/155613977，剩余68067777bytes准确。另实际下载Range100-199，100bytes与本地源文件相同区段逐字节匹配。旧0.8.28 ZIP公网HEAD200、231932690bytes，仍可正常使用。
 - 网页安装入口、便携入口、三个宽度的截图与真实交互均验收完成；本地临时6028验收服务已关闭，服务器systemd常驻服务保持active/enabled。未保留测试应用进程；TEMP证据保留，不擅自清理用户文件。
 - 功能源提交5af1686，验收与发布记录提交c59ce97；本段补充公网完整传输证据。用户已收到下载页和安装器直链，本任务交付完成，V1.1说明未改动。
+
+## 2026-10-22 · 学习型多智能体协作树与右侧执行面板
+
+- 用户要求将学习场景的多智能体能力做成工具接入 Lumin，并明确不要泛化 Agent 平台；第一版只提供 `research_topic_team` 与 `plan_study_team`。工具调用后右侧自动弹出树形侧栏，点击节点查看简化执行流程和最终回答。
+- 新增 `core/src/agent/learning_team.cj`：仓颉负责模型规划、树结构校验、节点上限/深度限制、叶子节点读取学习上下文与知识库检索、并行执行、内部节点按深度汇总、取消检查和 `team/*` 事件持久化。模型只负责树规划与节点内容，调度与权限边界由仓颉控制。
+- `runtime_host/agent_ask.cj` 注册两个学习型工具，并在主 Agent preamble 中加入使用边界：复杂研究和学习计划优先调用，简单问答不调用。
+- 新增 `shell/renderer/team-panel.js` 与 `team-panel.css`：右侧固定侧栏、三级以上树形布局、节点状态、运行中呼吸节点、节点详情抽屉式区域、简化流程时间线、最终回答 Markdown、关闭/重开和 reduced-motion 支持。`index.html` 引入资源，`api.cj` 静态白名单同步加入两个文件。
+- 工具参数：`goal` 必填，`max_depth` 默认3且限制1–4，`max_nodes` 默认9且限制4–12，`max_concurrency` 默认3且限制1–4。事件包括 `team/run_started`、`team/node_created`、`team/node_started`、`team/node_stage`、`team/node_completed`、`team/node_failed`、`team/run_completed`。
+- 浏览器面板测试 `tools/team-panel-check.cjs`：9/9通过，覆盖自动弹出、三级节点、点击节点、流程/回答展示、无横向溢出和关闭。
+- 真实仓颉内核 + 真实 HTTP + 确定性模型端到端测试 `tools/learning-team-check.cjs --ui`：15/15通过，连续运行两次；覆盖两个工具被模型选择、树节点创建/执行/完成、多级深度、节点过程事件，以及真实 Lumin 聊天页自动打开右侧协作树。
+- 同套端到端测试使用 `dist/Lumin-0.8.30/resources/kernel/lumin-core.exe` 与打包后的 renderer 再跑一次，15/15通过。核心全量回归 `cjpm test`：176/176通过（0 skipped/error/failed），日志 `tmp/team-core-test.log`。
+- 使用复制出的用户模型数据库做真实模型 smoke test `tools/real-learning-team-check.cjs`：模型 `deepseek-flash`，实际选择 `research_topic_team`，创建5个节点、36个团队事件、最终回答799字；测试数据库仅使用临时副本，未打印密钥，未触碰真实用户库。
+- 版本升至 0.8.30。`scripts/package-app.ps1` 生成 `dist/Lumin-0.8.30` 与 `dist/Lumin-0.8.30.zip`，ZIP 231,270,986 bytes，SHA256=41DA8C390B7EBB7A6C5A984DE792BC8B7A12ED52755066AF21E79537EE9651C9；安装器 `dist/Lumin-Setup-0.8.30-x64.exe`，155,699,198 bytes，SHA256=C95729601B9474B79221B93927481EE2D7C9EFBDF101028C8FD5535E589B58BD。
+- 文档同步：`docs/02-接口契约.md` 增加工具、参数、事件和面板契约；`docs/07-使用说明.md` 增加使用方式；`docs/05-仓颉杯提交说明.md` 增加 0.8.30 实现范围。发布页测试已改为从实际页面读取版本，不硬编码旧版本。
+
+## 2026-10-22 · 交互收口、知识网络与最终本地包
+
+- 协作树改为资源预览风格的弹窗容器，内部改为横向多级拓扑和 SVG 连线；节点点击显示简化流程与最终回答。Markdown 链接增加悬浮提示和默认浏览器打开桥接；生成中不在底部时显示三点跳动/悬停箭头回到底部。
+- 个性资源页改为左侧可扫列表 + 右侧阅读区，长标题两行截断、空状态和筛选层级重排。知识库页增加“查看知识库 / 收集资料 / 资料管理”右上功能切换。
+- 知识网络新增“连线建议”：仓颉调用 LLM，校验节点与已有边，前端多选采纳；已有边显示“已存在连线”并禁用。增加 Lumin 工具 `suggest_knowledge_links`。学习页默认网络图，相机入场先快后慢并自动收敛。
+- 活跃度新增每日会话提问与可用 turn token 事件统计，保留答题/完成/节点事件，跨知识库隔离；说明统一为“以每日真实学习时长来算”。实操指南保留。
+- 回归：`chat-ux-check` 18/18；协作树弹窗/多级树 16/16；核心 `cjpm test` 176/176；活跃度 `growth-activity-check` 21/21。
+- 最终本地包：`dist/Lumin-0.8.30-final.zip`，231,287,029 bytes，SHA256=7FA6862151A9A41F4DA0C5BA5A4D62B2F0C59D34F29359312A7F0DEA6085649B；未发布线上。

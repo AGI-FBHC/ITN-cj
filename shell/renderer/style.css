@@ -417,6 +417,113 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--brand-soft)
 .md .ta-c { text-align: center; }
 .md .ta-r { text-align: right; }
 .md a.md-link { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; }
+
+.md a.md-external-link {
+  cursor: pointer;
+  text-decoration-thickness: 1px;
+}
+
+.md-link-tip {
+  position: fixed;
+  z-index: 120;
+  max-width: 220px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--ink);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  font-size: 11px;
+  line-height: 1.35;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(3px);
+  transition: opacity .14s ease, transform .14s ease;
+}
+
+.md-link-tip.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+body.chat-mode .view {
+  position: relative;
+}
+
+.chat-jump-latest {
+  position: absolute;
+  left: 50%;
+  bottom: 94px;
+  z-index: 24;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--ink);
+  background: var(--panel);
+  box-shadow: 0 8px 26px rgba(20, 34, 24, .16);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 8px) scale(.92);
+  transition: opacity .18s ease, transform .18s ease, background .18s ease, border-color .18s ease;
+}
+
+.chat-jump-latest.show {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0) scale(1);
+}
+
+.chat-jump-latest:hover {
+  border-color: var(--brand-line);
+  background: var(--panel-soft);
+  transform: translate(-50%, -2px) scale(1);
+}
+
+.jump-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.jump-dots i {
+  width: 5px;
+  height: 5px;
+  display: block;
+  border-radius: 50%;
+  background: var(--ink);
+  animation: jump-dot 1.15s ease-in-out infinite;
+}
+
+.jump-dots i:nth-child(2) { animation-delay: .14s; }
+.jump-dots i:nth-child(3) { animation-delay: .28s; }
+
+.jump-arrow {
+  display: none;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.chat-jump-latest:hover .jump-dots {
+  display: none;
+}
+
+.chat-jump-latest:hover .jump-arrow {
+  display: block;
+}
+
+@keyframes jump-dot {
+  0%, 100% { opacity: .45; transform: translateY(0); }
+  45% { opacity: 1; transform: translateY(-3px); }
+}
 .md s { opacity: .72; }
 .md li.md-task { list-style: none; display: flex; gap: 8px; align-items: flex-start; margin-left: -22px; }
 .md .md-task-box { flex: none; width: 14px; height: 14px; margin-top: 4px; border: 1.5px solid var(--line); border-radius: 4px; }

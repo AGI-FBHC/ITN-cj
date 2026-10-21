@@ -163,6 +163,67 @@ MC_QUESTIONS = [
     },
 ]
 
+TEAM_RESEARCH_TREE = {
+    "role": "协作调度员",
+    "title": "MCP 与 A2A 研究",
+    "objective": "比较两种智能体通信协议的定位、机制和适用场景",
+    "children": [
+        {
+            "role": "概念研究员",
+            "title": "核心概念",
+            "objective": "梳理 MCP 与 A2A 的定义、术语和范围",
+            "children": [
+                {"role": "定义研究员", "title": "定义与术语", "objective": "解释两个协议分别解决什么问题", "children": []},
+                {"role": "边界研究员", "title": "范围与边界", "objective": "说明两个协议不负责什么", "children": []},
+            ],
+        },
+        {"role": "机制研究员", "title": "运行机制", "objective": "比较连接、消息和工具调用流程", "children": []},
+        {"role": "实践研究员", "title": "实践与选型", "objective": "给出适用场景和选择建议", "children": []},
+    ],
+}
+
+TEAM_STUDY_TREE = {
+    "role": "协作调度员",
+    "title": "两周 Agent 学习计划",
+    "objective": "根据基础、目标和时间制定可执行学习计划",
+    "children": [
+        {"role": "学情分析员", "title": "现状与差距", "objective": "分析已有基础和待补能力", "children": []},
+        {
+            "role": "目标拆解员",
+            "title": "能力目标",
+            "objective": "把目标拆成可检查的能力点",
+            "children": [
+                {"role": "概念目标员", "title": "概念目标", "objective": "列出必须理解的核心概念", "children": []},
+                {"role": "实践目标员", "title": "实践目标", "objective": "列出必须完成的动手任务", "children": []},
+            ],
+        },
+        {"role": "计划设计员", "title": "学习节奏", "objective": "安排每周任务、练习和复习", "children": []},
+        {"role": "质量审查员", "title": "验收与调整", "objective": "给出验收标准和调整机制", "children": []},
+    ],
+}
+
+TEAM_LEAF_MD = """## 节点结论
+
+这个节点围绕自己的任务整理了关键事实、机制和适用条件。[1]
+
+### 要点
+
+1. 先明确概念范围，再讨论具体实现。
+2. 关键结论要保留资料依据，方便回到原文核对。
+3. 需要结合学习目标决定内容深度。
+"""
+
+TEAM_AGGREGATE_MD = """# 协作树汇总
+
+各子节点分别完成了概念、机制、实践和审查任务。综合结果如下：
+
+- 先理解概念边界，再比较实现机制。
+- 用真实案例验证结论，不只停留在定义。
+- 对存在差异的部分保留条件和适用场景。
+
+本结论只用于本地链路自测，不代表真实模型效果。[1]
+"""
+
 
 def text_of(messages):
     """把请求里的最后一条用户消息取成纯文本，用于判断这次要什么。"""
@@ -388,6 +449,21 @@ def reply_for(body):
         return "MOCK 图片描述：这是一张教学资料里的示意图，画的是提示词与输出之间的对应关系。"
     joined = all_text(messages)
     ask = text_of(messages)
+    if "ITN 学习型多智能体调度器" in joined or "学习型多智能体协作树" in joined:
+        if "个性化学习计划" in joined:
+            return json.dumps(TEAM_STUDY_TREE, ensure_ascii=False)
+        return json.dumps(TEAM_RESEARCH_TREE, ensure_ascii=False)
+    if "学习研究协作树中的" in joined or "学习计划协作树中的" in joined:
+        return TEAM_LEAF_MD
+    if "学习协作树的汇总节点" in joined:
+        return TEAM_AGGREGATE_MD
+    if "知识图谱编辑" in joined:
+        ids = re.findall(r"- ([^|\n]+) \|", joined)
+        if len(ids) >= 2:
+            return json.dumps({"suggestions": [
+                {"from": ids[0].strip(), "to": ids[1].strip(), "label": "相关", "reason": "两个概念在课程学习中存在关联。"}
+            ]}, ensure_ascii=False)
+        return '{"suggestions":[]}'
     # ---- 四种资源（桌面版内核的新链路）----
     if "你是内容质检员" in joined:
         # 返修：按 resourceType 回一份"肯定能过质检"的内容
@@ -519,6 +595,10 @@ def native_reply(body):
         match = re.search(r"res-\d+", ask)
         if match:
             return call("revise_learning_resource", {"id": match.group(), "baseVersion": 1, "instruction": ask})
+    if ("研究" in ask or "对比" in ask) and ("MCP" in ask or "A2A" in ask):
+        return call("research_topic_team", {"goal": ask, "max_depth": 3, "max_nodes": 9, "max_concurrency": 3})
+    if "学习计划" in ask and any(token in ask for token in ("制定", "生成", "安排", "规划")):
+        return call("plan_study_team", {"goal": ask, "max_depth": 3, "max_nodes": 9, "max_concurrency": 3})
     kind = None
     for token, value in [("lecture", "lecture"), ("practice", "practice"), ("quiz", "quiz"), ("ppt", "ppt"), ("讲义", "lecture"), ("实操", "practice"), ("分阶测试", "quiz"), ("练习册", "quiz"), ("演示", "ppt")]:
         if token in ask:

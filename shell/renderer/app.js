@@ -331,7 +331,7 @@ function md(src, options = {}) {
       s = s.replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, (match, label, target) => documentLinkTag(match, label, target, options));
     }
     return s.replace(/!\[([^\]]*)\]\(([^)]*)\)/g, '<span class="md-img">图片 · $1</span>')
-    .replace(/\[([^\]\n]+)\]\((https?:[^)\s]+|mailto:[^)\s]+|lumin:[^)\s]+)\)/g, '<a class="md-link" href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/\[([^\]\n]+)\]\((https?:[^)\s]+|mailto:[^)\s]+|lumin:[^)\s]+)\)/g, '<a class="md-link md-external-link" href="$2" target="_blank" rel="noopener noreferrer" data-external-link="1">$1</a>')
     .replace(/~~([^~\n]+)~~/g, "<s>$1</s>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\[(\d+)\]/g, '<span class="cite">[$1]</span>')
@@ -415,6 +415,57 @@ function md(src, options = {}) {
   if (inCode) out.push("</code></pre>");
   return '<div class="md">' + out.join("\n") + "</div>";
 }
+
+function markdownLinkTip() {
+  let tip = document.getElementById("md-link-tip");
+  if (!tip) {
+    tip = document.createElement("div");
+    tip.id = "md-link-tip";
+    tip.className = "md-link-tip";
+    tip.setAttribute("role", "tooltip");
+    document.body.appendChild(tip);
+  }
+  return tip;
+}
+
+function openMarkdownExternalLink(anchor) {
+  const href = String(anchor?.getAttribute("href") || "");
+  if (!/^https?:\/\//i.test(href)) return false;
+  if (window.itnWindow && typeof window.itnWindow.openUrl === "function") {
+    window.itnWindow.openUrl(href).then(result => {
+      if (result && result.ok === false) toast(result.error || "无法打开链接");
+    }).catch(() => toast("无法打开链接"));
+  } else {
+    window.open(href, "_blank", "noopener,noreferrer");
+  }
+  return true;
+}
+
+function installMarkdownLinkInteractions() {
+  const tip = markdownLinkTip();
+  const hide = () => { tip.classList.remove("show"); tip.textContent = ""; };
+  document.addEventListener("pointerover", (event) => {
+    const anchor = event.target.closest?.("a.md-external-link");
+    if (!anchor) return;
+    const href = String(anchor.getAttribute("href") || "");
+    let host = href;
+    try { host = new URL(href, location.href).hostname || href; } catch (e) { /* keep raw */ }
+    tip.textContent = host + " · Ctrl + 点击打开";
+    const rect = anchor.getBoundingClientRect();
+    tip.style.left = Math.max(10, Math.min(window.innerWidth - 230, rect.left)) + "px";
+    tip.style.top = Math.max(10, rect.top - 38) + "px";
+    tip.classList.add("show");
+  });
+  document.addEventListener("pointerout", (event) => {
+    if (event.target.closest?.("a.md-external-link")) hide();
+  });
+  document.addEventListener("click", (event) => {
+    const anchor = event.target.closest?.("a.md-external-link");
+    if (!anchor) return;
+    if (openMarkdownExternalLink(anchor)) event.preventDefault();
+  });
+}
+installMarkdownLinkInteractions();
 
 /* ---------- 通用组件 ---------- */
 
@@ -552,7 +603,6 @@ function citationBox(citations, report) {
   if (report) {
     // 一切正常时不摆统计（"段落 N · 带引用 M" 这类小字只是噪声）；只有真有问题才提醒
     const bad = (report.outOfRange || 0) + (report.outOfRangeWeb || 0);
-    if (bad > 0) box.appendChild(tag("有 " + bad + " 处引用越界，正文编号可能对不上", "warn"));
   }
   if (citations && citations.length) {
     const ul = el("ul", "cite-list");
@@ -823,7 +873,13 @@ function railButton(item) {
   b.innerHTML = icon(item.icon) + '<span class="rail-caption">' + esc(item.label) + '</span>' +
     (n > 0 ? '<span class="nav-badge">' + (n > 99 ? "99+" : n) + "</span>" : "") +
     '<span class="rail-tip">' + esc(item.label) + (n > 0 ? " · " + n : "") + "</span>";
-  b.onclick = () => go(item.id);
+  b.onclick = () => {
+    if (item.id === "home" && typeof knowledgeNet !== "undefined") {
+      state.knowledgeView = "graph";
+      knowledgeNet.introSpinRequested = true;
+    }
+    go(item.id);
+  };
   return b;
 }
 
@@ -4639,6 +4695,7 @@ const TOOL_LABEL = {
   restore_course_library: "恢复知识库", record_knowledge_point: "记录知识点", read_knowledge_point: "读取知识点",
   get_learning_context: "学习上下文", remember_learning_fact: "记住偏好", forget_learning_fact: "删除记忆",
   read_learning_resource: "读取学习资源", generate_learning_resource: "生成学习资源", revise_learning_resource: "修改学习资源",
+  research_topic_team: "主题研究小组", plan_study_team: "学习计划小组",
   search_personal_resources: "搜索个人内容", read_personal_resource: "读取个人内容", save_personal_resource: "保存个人内容",
   create_presentation: "制作演示", list_activity_tasks: "查看任务", cancel_activity_task: "停止任务",
   // pi 运行时的本机工具：工具卡标题直接显示这个名字，缺了就露出 read / powershell 这种英文
@@ -5667,6 +5724,7 @@ async function newChat(projectId, mode) {
     state.chatEvents = [];
     state.lastEventId = 0;
     state.chatTurns = [];
+    window.LuminTeamPanel?.syncSession("", []);
     if (current === "chat" && currentSection !== "overview" && typeof state.chatOpenSession === "function") {
       await state.chatOpenSession(state.chatSessionId);
       return;
@@ -6486,10 +6544,31 @@ PAGES.chat = {
     const thread = el("div", "chat-thread");
     thread.id = "chat-thread";
     v.appendChild(thread);
+    const jumpToLatest = el("button", "chat-jump-latest");
+    jumpToLatest.type = "button";
+    jumpToLatest.setAttribute("aria-label", "回到最新生成内容");
+    jumpToLatest.title = "回到最新生成内容";
+    jumpToLatest.innerHTML = '<span class="jump-dots"><i></i><i></i><i></i></span><svg class="jump-arrow" viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v12M5.5 10.5 10 15l4.5-4.5" /></svg>';
+    v.appendChild(jumpToLatest);
     /* 用户往上翻的时候就别再把他拽回底部（原来每 200ms 强拉一次，翻历史根本翻不动） */
     state.stickBottom = true;
+    const jumpThreshold = 80;
+    const updateJumpLatest = () => {
+      const distance = thread.scrollHeight - thread.scrollTop - thread.clientHeight;
+      const show = !!state.busyTurn && distance > jumpThreshold;
+      jumpToLatest.classList.toggle("show", show);
+      jumpToLatest.setAttribute("aria-hidden", String(!show));
+      jumpToLatest.tabIndex = show ? 0 : -1;
+    };
+    jumpToLatest.onclick = () => {
+      state.stickBottom = true;
+      thread.scrollTo({top: thread.scrollHeight, behavior: "smooth"});
+      updateJumpLatest();
+      thread.focus({preventScroll: true});
+    };
     thread.addEventListener("scroll", () => {
-      state.stickBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 80;
+      state.stickBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < jumpThreshold;
+      updateJumpLatest();
     });
 
     /* 对话框：Codex 那种"一整块输入区"。一行控件只留三样：
@@ -7039,6 +7118,7 @@ PAGES.chat = {
       reconcileThread(keep);
       for (const req of approvalRequests) thread.appendChild(approvalCache.get(req.id));
       paintActionBtn();
+      updateJumpLatest();
       if (typeof state.chatRepaintUsage === "function") state.chatRepaintUsage();
       if (state.stickBottom !== false) thread.scrollTop = thread.scrollHeight;
     }
@@ -7111,6 +7191,7 @@ PAGES.chat = {
           if (fresh.length) {
             state.chatEvents = (state.chatEvents || []).concat(fresh);
             state.chatTurns = turnsFromEvents(state.chatEvents);
+            window.LuminTeamPanel?.ingest(fresh, sid, {autoOpen: true});
             paint();
           }
           if (request.turnId && state.chatEvents.some((e) => e.type === "turn/end" && e.turnId === request.turnId)) {
@@ -7234,7 +7315,7 @@ PAGES.chat = {
     }, 2000);
 
     state.chatPaint = paint;
-    state.chatRepaintBusy = paintActionBtn;
+    state.chatRepaintBusy = () => { paintActionBtn(); updateJumpLatest(); };
     /* 就地换会话：只换对话区那一段正文，不整页重建、也不重拉会话列表。
        会话栏只把高亮挪过去 —— 点一次就闪一次"加载中…"的问题就出在原来走的是整页 go()。 */
     state.chatOpenSession = async (id) => {
@@ -7272,6 +7353,7 @@ PAGES.chat = {
         state.lastEventId = d.lastId || 0;
         state.chatTree = d.tree || null;
         state.chatTurns = turnsFromEvents(state.chatEvents);
+        window.LuminTeamPanel?.syncSession(state.chatSessionId, state.chatEvents);
         syncChatBusy();
         paint();
       } catch (e) {

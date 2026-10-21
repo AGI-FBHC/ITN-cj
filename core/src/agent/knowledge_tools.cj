@@ -4,6 +4,7 @@ import std.collection.*
 import stdx.encoding.json.*
 import itn_desktop_core.store.Store
 import itn_desktop_core.knowledge.KnowledgeStore
+import itn_desktop_core.knowledge.suggestKnowledgeLinks
 import itn_desktop_core.util.*
 
 public func knowledgeTools(store: Store,sid: String,tid: String,userText: String,workspace: String,emit: (String,JsonObject)->Unit): ArrayList<DomainTool>{
@@ -18,5 +19,8 @@ public func knowledgeTools(store: Store,sid: String,tid: String,userText: String
     out.add(makeTool("read_knowledge_point","读取知识记录","知识点详情、来源会话与笔记",
         "id来自search_personal_resources中type=knowledge的结果。读取概念、每次提问与AI记录、时间、会话/工作区和本人笔记。不要把自动记录当作掌握度证明。",
         "{\"type\":\"object\",\"properties\":{\"id\":{\"type\":\"string\"}},\"required\":[\"id\"]}","read",{args: JsonObject=>return learningResult(ks.read(strOf(args,"id")),"已读取知识点及来源记录")}))
+    out.add(makeTool("suggest_knowledge_links","建议知识点连线","分析知识网络并提出可解释的关系建议",
+        "当用户需要整理知识网络、发现概念关系或主动要求连线建议时使用。只返回建议，不直接建边；已有边会用 exists=true 标出，必须由用户确认后另行创建。",
+        "{\"type\":\"object\",\"properties\":{}}","read",{args: JsonObject=>return learningResult(suggestKnowledgeLinks(store),"已生成连线建议，等待用户确认")}))
     return out
 }

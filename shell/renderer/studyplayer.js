@@ -53,7 +53,7 @@ function spHead(res,asset,progressText,extraActions){
   chips.appendChild(el('span','sp-chip',spKindLabel(res.kind)));
   chips.appendChild(el('span','sp-chip','v'+res.version));
   if(asset&&asset.status&&asset.status!=='current')chips.appendChild(el('span','sp-chip sp-chip-warn',asset.status==='archive'?'历史版本':'已移除'));
-  main.append(title,chips);
+  main.append(title,chips,spBreadcrumb(res,asset));
   const side=el('div','sp-head-side');
   if(progressText)side.appendChild(el('span','sp-progress',progressText));
   const more=btn('更多','ghost sm',()=>spMoreMenu(res,asset));
@@ -106,7 +106,6 @@ function spLectureBlocks(res){
 function spRenderLecture(page,res,asset){
   const c=res.content||{},marks=spProgressSet(res),blocks=spLectureBlocks(res);
   const counter=el('span','sp-progress');
-  page.appendChild(spBreadcrumb(res,asset));
   const head=spHead(res,asset,'',[]);page.appendChild(head);
   head.querySelector('.sp-head-side').insertBefore(counter,head.querySelector('.sp-head-side').firstChild);
   const introBits=[];
@@ -142,7 +141,6 @@ function spRenderPractice(page,res,asset){
   const steps=(c.steps||[]).map((s,i)=>({key:'step-'+(i+1),s,i}));
   const acceptance=(c.acceptanceCriteria||[]).map((t,i)=>({key:'acceptance-'+(i+1),text:t,i}));
   const counter=el('span','sp-progress');
-  page.appendChild(spBreadcrumb(res,asset));
   const head=spHead(res,asset,'',[]);page.appendChild(head);
   head.querySelector('.sp-head-side').insertBefore(counter,head.querySelector('.sp-head-side').firstChild);
   const paint=()=>{const done=steps.filter(x=>marks.has(x.key)).length,acc=acceptance.filter(x=>marks.has(x.key)).length;counter.textContent='步骤 '+done+' / '+steps.length+(acceptance.length?(' · 验收 '+acc+' / '+acceptance.length):'');};
@@ -188,9 +186,9 @@ function spRenderPractice(page,res,asset){
 function spRenderQuiz(page,res,asset){
   const qs=res.content?.questions||[];
   const saved=res.answers||{};
-  if(!qs.length){page.appendChild(spBreadcrumb(res,asset));page.appendChild(spHead(res,asset,'',[]));page.appendChild(el('p','sp-hint','这份测试里没有题目。'));return{countText:()=>0};}
+  if(!qs.length){page.appendChild(spHead(res,asset,'',[]));page.appendChild(el('p','sp-hint','这份测试里没有题目。'));return{countText:()=>0};}
   const counter=el('span','sp-progress');
-  page.appendChild(spBreadcrumb(res,asset));const head=spHead(res,asset,'',[]);page.appendChild(head);
+  const head=spHead(res,asset,'',[]);page.appendChild(head);
   head.querySelector('.sp-head-side').insertBefore(counter,head.querySelector('.sp-head-side').firstChild);
   const state={idx:Math.min(qs.findIndex(q=>!saved[q.id])<0?qs.length-1:qs.findIndex(q=>!saved[q.id]),qs.length-1),local:{},fresh:false};
   const prevAnswer=q=>state.local[q.id]||(state.fresh?null:saved[q.id]);
@@ -903,7 +901,7 @@ async function renderStudyPlayer(){
   else if(res.kind==='quiz')spRenderQuiz(page,res,asset);
   else if(res.kind==='ppt')await spRenderPpt(page,res,asset);
   else{
-    page.appendChild(spBreadcrumb(res,asset));page.appendChild(spHead(res,asset,'',[]));
+    page.appendChild(spHead(res,asset,'',[]));
     const article=el('article','md sp-body');article.innerHTML=md(res.markdown||'');page.appendChild(article);
     const sources=spSources(res);if(sources)page.appendChild(sources);
   }
