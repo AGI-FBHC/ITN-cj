@@ -5159,3 +5159,9 @@ read_chunk 读得到原文并带回库标识与正文。
 - 既有套件回归：team-panel-check 34/34；route-lifecycle-check 18/18（与另一套并发运行时出现过一次 gate 超时，单独重跑 18/18，判定为并发负载导致的测试超时，不是产品竞态）；knowledge-check 92 项 OK；session-list-check 10 项 OK；pages-audit 13 项 OK。
 - chat-ux-check 修夹具：新增断言暴露了既有测试的不稳定 —— 它把 1800px 夹具直接塞进 #chat-thread，而生成期间每 220ms 重画会冲掉夹具（实测 scrollHeight 1925→572、dist 1353→0），按钮随之隐藏，悬停断言变成和重画赛跑。改为 MutationObserver 把夹具补回来，「点一下回到最新」改为等待真正到底（4s 上限）而不是固定 350ms。修后新旧 renderer 都 18/18，没有把断言迁就成本轮改动。
 - 未改内核与工具契约，因此未跑仓颉核心测试；未访问真实用户数据库、未调付费模型、未改 Web 端。
+
+### 2026-10-22 06:05 · 防抖修复后的本地 0.8.31 包复验
+
+- 提交 ac8887b；build=lumin-0.8.31-ac8887b。ZIP dist/Lumin-0.8.31.zip，231328742 bytes，SHA256=49ADCA8EAC13EF249A4044196E057C4000AB2663FC78312CEC3F6C293BD71565；解压目录 dist/portable/Lumin-0.8.31。文件名仍为 0.8.31，不加后缀；未发布线上、未推送远端。
+- 包内复验（全部使用打包后的文件，不是源码目录）：manifest 38 项哈希 + ZIP 2763 条目一致；原生启动/关闭/再次启动 9/9（独立数据根，默认隐藏小鼋龙、外观可显示、再次启动仍隐藏、窗口文件图标存在）；tools/branch-guard-check.cjs 指向包内 renderer 9/9（连点只发一次分支请求、导出只写一次）；team-panel-check 指向包内 renderer 34/34；route-lifecycle-check 指向包内 renderer + 包内核 18/18。
+- 本轮只改界面防抖与测试夹具，未改内核接口或 Lumin 工具契约，未访问真实用户数据库、未调付费模型。
