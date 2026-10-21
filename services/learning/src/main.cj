@@ -1647,19 +1647,28 @@ main(): Int64 {
             case None => writeError(ctx.response, 400, "邮箱信息格式不正确")
             case Some(body) =>
                 let email = normalizeEmail(jsonGetString(body, "email") ?? "")
+                let purpose = (jsonGetString(body, "purpose") ?? "LOGIN").trimAscii().toAsciiUpper()
                 if (!validEmail(email)) {
                     writeError(ctx.response, 400, "请填写有效的邮箱")
+                } else if (purpose != "LOGIN" && purpose != PASSWORD_RESET_PURPOSE) {
+                    writeError(ctx.response, 400, "不支持的验证码用途")
                 } else {
                     let recent = query(cfg,
                         "SELECT COALESCE(TIMESTAMPDIFF(SECOND,created_at,NOW(6)),9999) elapsed " +
                         "FROM email_verification_codes WHERE email=" + sqlQuote(email) +
-                        " AND purpose='LOGIN' ORDER BY created_at DESC LIMIT 1")
+                        " AND purpose=" + sqlQuote(purpose) + " ORDER BY created_at DESC LIMIT 1")
                     if (recent.size > 0 && recent[0].int("elapsed") < 60) {
                         writeError(ctx.response, 429, "请求过于频繁，请稍后重试")
                     } else {
                         let code = verificationCode()
+                        let users = if (purpose == PASSWORD_RESET_PURPOSE) {
+                            query(cfg, "SELECT id FROM users WHERE login_key=" + sqlQuote(email) + " LIMIT 1")
+                        } else { Array<Row>() }
                         try {
-                            sendVerificationEmail(cfg, email, code, 300)
+                            // Unregistered email addresses receive the same response without creating an account.
+                            if (purpose == "LOGIN" || users.size > 0) {
+                                sendVerificationEmail(cfg, email, code, 300, purpose)
+                            }
                         } catch (_: Exception) {
                             writeError(ctx.response, 502, "验证码邮件发送失败，请检查 SMTP 配置")
                             return
@@ -1667,14 +1676,38 @@ main(): Int64 {
                         execute(cfg,
                             "INSERT INTO email_verification_codes(id,email,purpose,code_hash,created_at,expires_at) VALUES(" +
                             sqlQuote(uuidFormat(uuidV4())) + "," + sqlQuote(email) +
-                            ",'LOGIN'," + sqlQuote(codeDigest(cfg, email, "LOGIN", code)) +
+                            "," + sqlQuote(purpose) + "," + sqlQuote(codeDigest(cfg, email, purpose, code)) +
                             ",NOW(6),DATE_ADD(NOW(6),INTERVAL 5 MINUTE))")
                         let out = JsonWriter()
                         out.putStr("email", email)
                         out.putInt("expiresInSeconds", 300)
                         out.putInt("retryAfterSeconds", 60)
+                        if (purpose == PASSWORD_RESET_PURPOSE) {
+                            out.putStr("message", "若该邮箱已注册，重置验证码将发送至邮箱，请查收。")
+                        }
                         writeJson(ctx.response, 200, out.toJson())
                     }
+                }
+        }
+    }
+
+    app.mapPost("api/auth/reset-password") { ctx =>
+        match (parseObject(ctx.request)) {
+            case None => writeError(ctx.response, 400, "密码重置信息格式不正确")
+            case Some(body) =>
+                let email = normalizeEmail(jsonGetString(body, "email") ?? "")
+                let code = (jsonGetString(body, "verificationCode") ?? "").trimAscii()
+                let password = jsonGetString(body, "password") ?? ""
+                if (!validEmail(email) || !validVerificationCode(code)) {
+                    writeError(ctx.response, 400, "请填写有效的邮箱和 6 位验证码")
+                } else if (password.size < 8 || password.size > 256) {
+                    writeError(ctx.response, 400, "新密码至少 8 位且长度不能超过 256 字节")
+                } else if (!resetPasswordWithCode(cfg, email, code, password)) {
+                    writeError(ctx.response, 400, "验证码错误、已失效或尝试次数过多，请重新获取")
+                } else {
+                    let out = JsonWriter()
+                    out.putStr("message", "密码已重置，请使用新密码登录。")
+                    writeJson(ctx.response, 200, out.toJson())
                 }
         }
     }

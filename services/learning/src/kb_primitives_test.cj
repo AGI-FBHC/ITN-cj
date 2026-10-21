@@ -7,6 +7,7 @@ import std.fs.*
 import std.unittest.*
 import std.unittest.testmacro.*
 import stdx.encoding.json.*
+import stdx.encoding.base64.toBase64String
 
 func kbPrimitiveCheck(condition: Bool, message: String): Unit {
     if (!condition) { throw Exception(message) }
@@ -119,6 +120,17 @@ func kbOptionalCorpusAudit(): Unit {
 
 @Test
 class KbPrimitiveTests {
+    @TestCase
+    func passwordResetCodesAndMailStaySeparateFromLogin(): Unit {
+        kbPrimitiveCheck(validVerificationCode("012345"), "Numeric verification codes must preserve leading zeros")
+        kbPrimitiveCheck(!validVerificationCode("12345a") && !validVerificationCode("12345"), "Verification codes must contain six digits")
+        kbPrimitiveCheck(!validEmail("person\r\n@example.com") && !validEmail("a@b@example.com"), "Unsafe email addresses must be rejected")
+        let cfg = Config("localhost", 3306, "", "", "itn_learning_v2_dev", "", "test-secret", "", 465, "", "", "sender@example.test", "Test", "[TEST]")
+        kbPrimitiveCheck(codeDigest(cfg, "reader@example.test", "LOGIN", "123456") !=
+            codeDigest(cfg, "reader@example.test", PASSWORD_RESET_PURPOSE, "123456"), "Login and reset digests must differ")
+        let message = emailMessage(cfg, "reader@example.test", "123456", 300, PASSWORD_RESET_PURPOSE)
+        kbPrimitiveCheck(message.contains(toBase64String("[TEST] 密码重置验证码".toArray())), "Reset messages must identify the password reset purpose")
+    }
     @TestCase
     func coursewareEvidenceStaysInsideTheSourceChapter(): Unit {
         let evidence = cwEvidence("第一章 示例", "# 本章正文\n只允许使用这段原文。")

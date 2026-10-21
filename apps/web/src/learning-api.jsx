@@ -117,8 +117,11 @@ export async function authenticate(mode, credentials) {
   emit({ ready: true, loading: false, error: '', data: bootstrapData });
   return bootstrapData;
 }
-export async function sendEmailCode(email) {
-  return request('/auth/send-code', { method: 'POST', body: { email, purpose: 'LOGIN' } });
+export async function sendEmailCode(email, purpose = 'LOGIN') {
+  return request('/auth/send-code', { method: 'POST', body: { email, purpose } });
+}
+export async function resetPassword(email, verificationCode, password) {
+  return request('/auth/reset-password', { method: 'POST', body: { email, verificationCode, password } });
 }
 export async function loginWithEmailCode(email, verificationCode, inviteCode = '') {
   const data = await request('/auth/email-login', {

@@ -31,6 +31,14 @@ func normalizeEmail(value: String): String {
 }
 
 func validEmail(value: String): Bool {
+    let bytes = value.toArray()
+    if (bytes.size > 254) { return false }
+    var atCount: Int64 = 0
+    for (byte in bytes) {
+        if (byte <= 32 || byte >= 127) { return false }
+        if (byte == 64) { atCount += 1 }
+    }
+    if (atCount != 1) { return false }
     let at = value.indexOf("@")
     let dot = value.lastIndexOf(".")
     match (at) {
@@ -44,6 +52,10 @@ func validEmail(value: String): Bool {
 }
 
 func sendVerificationEmail(cfg: Config, recipient: String, code: String, ttlSeconds: Int64): Unit {
+    sendVerificationEmail(cfg, recipient, code, ttlSeconds, "LOGIN")
+}
+
+func sendVerificationEmail(cfg: Config, recipient: String, code: String, ttlSeconds: Int64, purpose: String): Unit {
     if (cfg.smtpHost.size == 0 || cfg.smtpUser.size == 0 || cfg.smtpPassword.size == 0 || cfg.emailFrom.size == 0) {
         throw Exception("SMTP configuration is incomplete")
     }
@@ -69,7 +81,7 @@ func sendVerificationEmail(cfg: Config, recipient: String, code: String, ttlSeco
             commandSmtp(tls, "MAIL FROM:<${cfg.emailFrom}>", 250)
             commandSmtp(tls, "RCPT TO:<${recipient}>", 250)
             commandSmtp(tls, "DATA", 354)
-            tls.write(emailMessage(cfg, recipient, code, ttlSeconds).toArray())
+            tls.write(emailMessage(cfg, recipient, code, ttlSeconds, purpose).toArray())
             expectSmtp(tls, 250)
             try { commandSmtp(tls, "QUIT", 221) } catch (_: Exception) {}
         } finally {
@@ -95,9 +107,16 @@ func connectSmtp(cfg: Config): TcpSocket {
 }
 
 func emailMessage(cfg: Config, recipient: String, code: String, ttlSeconds: Int64): String {
-    let subject = "=?UTF-8?B?" + toBase64String((cfg.subjectPrefix + " 登录验证码").toArray()) + "?="
+    emailMessage(cfg, recipient, code, ttlSeconds, "LOGIN")
+}
+
+func emailMessage(cfg: Config, recipient: String, code: String, ttlSeconds: Int64, purpose: String): String {
+    let resetting = purpose == PASSWORD_RESET_PURPOSE
+    let label = if (resetting) { "密码重置" } else { "登录" }
+    let subject = "=?UTF-8?B?" + toBase64String((cfg.subjectPrefix + " " + label + "验证码").toArray()) + "?="
     let name = "=?UTF-8?B?" + toBase64String(cfg.emailFromName.toArray()) + "?="
-    let text = "您的登录验证码是：${code}。验证码将在 ${ttlSeconds / 60} 分钟后失效，请勿泄露给他人。"
+    let text = "您的${label}验证码是：${code}。验证码将在 ${ttlSeconds / 60} 分钟后失效，请勿泄露给他人。" +
+        (if (resetting) { "若非本人操作，请忽略此邮件，您的密码不会改变。" } else { "" })
     let encoded = toBase64String(text.toArray()).toArray()
     var body = ""
     var offset: Int64 = 0

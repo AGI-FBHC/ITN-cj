@@ -1,4 +1,5 @@
 import React from "react";
+import ForgotPasswordForm from './ForgotPasswordForm.jsx';
 import { orgLogoUrl, orgShortName } from './org-brand.js';
 import {
   authenticate,
@@ -38,6 +39,8 @@ function FlameLogo({ size = 118 }) {
 export default function LoginPage({ onBack, onAuthenticated }) {
   const learning = useLearning();
   const [registering, setRegistering] = React.useState(false);
+  const [recovering, setRecovering] = React.useState(false);
+  const [success, setSuccess] = React.useState('');
   const [tab, setTab] = React.useState("account");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
@@ -172,29 +175,43 @@ export default function LoginPage({ onBack, onAuthenticated }) {
         <div className="zhixun-login-card">
           <div className="zhixun-login-card-head">
             <div>
-              <p>{registering ? "CREATE ACCOUNT" : "WELCOME BACK"}</p>
-              <h2>{registering ? "创建学习账号" : "登录"}</h2>
+              <p>{recovering ? 'RESET PASSWORD' : registering ? "CREATE ACCOUNT" : "WELCOME BACK"}</p>
+              <h2>{recovering ? '忘记密码' : registering ? "创建学习账号" : "登录"}</h2>
             </div>
-            {tab === "account" && (
+            {!recovering && tab === "account" && (
               <button type="button" onClick={() => {
                 setRegistering((value) => !value);
                 setPassword("");
                 setConfirmPassword("");
                 setError("");
+                setSuccess('');
               }}>
                 {registering ? "返回登录" : "注册"}
               </button>
             )}
           </div>
 
-          {!registering && (
+          {!registering && !recovering && (
             <div className="zhixun-login-tabs" role="tablist" aria-label="登录方式">
               <button type="button" className={tab === "account" ? "active" : ""} onClick={() => { setTab("account"); setError(""); }}>账号登录</button>
               <button type="button" className={tab === "email" ? "active" : ""} onClick={() => { setTab("email"); setError(""); }}>邮箱验证码</button>
             </div>
           )}
 
-          <div className="zhixun-login-form">
+          {recovering ? <ForgotPasswordForm
+            initialEmail={/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(account.trim()) ? account.trim() : email}
+            onCancel={() => setRecovering(false)}
+            onDone={(resetEmail) => {
+              setRecovering(false);
+              setRegistering(false);
+              setTab('account');
+              setAccount(resetEmail);
+              setPassword('');
+              setConfirmPassword('');
+              setError('');
+              setSuccess('密码已重置，请使用新密码登录。');
+            }}
+          /> : <div className="zhixun-login-form">
             {tab === "email" ? (
               <>
                 <label>
@@ -277,6 +294,8 @@ export default function LoginPage({ onBack, onAuthenticated }) {
               <small id="login-invite-hint" className="zhixun-login-field-hint">{tab === "email" ? '首次使用此邮箱时填写；已有账号可直接登录。' : '注册后加入对应机构，邀请码请向机构管理员获取。'}</small>
             </label>}
             {error && <p className="zhixun-login-error" role="alert">{error}</p>}
+            {success && <p className="zhixun-login-success" role="status">{success}</p>}
+            {!registering && <button type="button" className="zhixun-login-forgot" disabled={busy} onClick={() => { setRecovering(true); setError(''); setSuccess(''); }}>忘记密码？</button>}
             <button type="button" className="zhixun-login-primary" disabled={busy} onClick={() => tab === "email" ? enterWithCode() : enter(registering ? "register" : "login")}>
               {busy ? "正在处理…" : tab === "email" ? "验证并登录" : registering ? "注册并登录" : "登录"}
             </button>
@@ -285,7 +304,7 @@ export default function LoginPage({ onBack, onAuthenticated }) {
                 游客体验
               </button>
             )}
-          </div>
+          </div>}
           <p className="zhixun-login-admin"><a href="/admin/login">管理员登录</a></p>
         </div>
       </main>
