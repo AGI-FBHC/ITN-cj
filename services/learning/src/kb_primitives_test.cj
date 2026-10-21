@@ -91,6 +91,16 @@ func kbOptionalCorpusAudit(): Unit {
 @Test
 class KbPrimitiveTests {
     @TestCase
+    func coursewareIdentityIgnoresDisplayOrder(): Unit {
+        let refs = HashMap<String, String>()
+        refs["source-document"] = "stable-chapter"
+        refs["stable-chapter"] = "stable-chapter"
+        kbPrimitiveCheck(cwLessonSourceId("", "[{\"id\":\"source-document\"}]", refs) == "stable-chapter", "Legacy source must bind to the chapter identity")
+        kbPrimitiveCheck(cwLessonSourceId("", "[{\"id\":\"stable-chapter\"}]", refs) == "stable-chapter", "Current source identity must survive reordering")
+        kbPrimitiveCheck(cwLessonSourceId("bound-chapter", "[{\"id\":\"other\"}]", refs) == "bound-chapter", "A bound lesson must not be reassigned")
+        kbPrimitiveCheck(cwLessonSourceId("", "[]", refs) == "", "Unknown legacy lessons must be retained without guessing a chapter")
+    }
+    @TestCase
     func sourceCoverageAndProtectedBlocks(): Unit {
         let code = "```python\n# code is not a heading\n" + kbPrimitiveRepeated("print('中文🐱')\n", 60) + "```\n"
         let tex = "$$\n" + kbPrimitiveRepeated("x_{i+1}=x_i+1\\\\\n", 40) + "$$\n"

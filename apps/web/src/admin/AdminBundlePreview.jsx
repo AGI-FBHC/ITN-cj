@@ -113,7 +113,7 @@ export default function AdminBundlePreview() {
           <button type="button" className="zx-btn zx-btn-sm zx-btn-ghost" onClick={() => setShowLog(!showLog)}>{showLog ? '隐藏日志' : '运行日志'}</button>
           
           <button type="button" className="zx-btn zx-btn-sm zx-btn-danger" disabled={Boolean(busy)} onClick={() => {
-            if (!window.confirm(`删除《${bundle.name}》的资料与切片？已发布的课程也会下架。`)) return;
+            if (!window.confirm(`删除《${bundle.name}》？对应课程、课件和学习记录将一并删除，无法恢复。`)) return;
             run('delete', async () => { await adminApi.deleteKbBundle(bundle.id); navigate('/admin/knowledge'); }, '');
           }}>删除</button>
         </div>

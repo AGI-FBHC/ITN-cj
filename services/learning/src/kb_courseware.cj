@@ -16,6 +16,7 @@ const CW_ROLE_RETRIEVER = "检索"
 const CW_ROLE_WRITER = "撰写"
 const CW_ROLE_REVIEWER = "质检"
 const CW_ROLE_ARBITER = "仲裁"
+let cwCourseSyncLock = Mutex()
 
 const CW_WRITER_SYSTEM = "你是教培内容作者。只能依据给定资料写作，每个论断后用 [编号] 标注出处，不要编造资料之外的内容。输出 Markdown 正文，不要重复小节标题。"
 const CW_STRUCTURED_SYSTEM = "你是严谨的学习内容作者。严格按用户给出的结构输出一个合法 JSON 对象，不输出解释或 Markdown 围栏。文字字段可含 Markdown，换行必须转义。依据给定资料，用 [编号] 标注真实来源，不编造编号。"
@@ -623,6 +624,19 @@ func cwUnpublishChapter(cfg: Config, bundleId: String, docId: String): Unit {
 /** 从已上架章节重建课程课时：讲义/实操/幻灯片进 sections+slides，题库进 quiz_json。
  *  forceStatus 非空时覆盖课程状态；为空表示保留课程当前的上架状态。 */
 func cwRebuildBundleCourse(cfg: Config, bundleId: String, forceStatus: String): Unit {
+    cwCourseSyncLock.lock()
+    try { cwSyncBundleCourseLocked(cfg, bundleId, forceStatus) } finally { cwCourseSyncLock.unlock() }
+}
+
+/** Resolve legacy source metadata once; a bound identity never follows a display number. */
+func cwLessonSourceId(bound: String, sources: String, refs: HashMap<String, String>): String {
+    if (bound.size > 0) { return bound }
+    let values = jsonArrayFromText(sources)
+    if (values.size() == 0 || !isJsObject(values[0])) { return "" }
+    refs.get(jsonGetString(values[0].asObject(), "id") ?? "") ?? ""
+}
+
+func cwSyncBundleCourseLocked(cfg: Config, bundleId: String, forceStatus: String): Unit {
     let bundles = query(cfg, "SELECT title,name,course_id FROM kb_bundles WHERE id=" + sqlQuote(bundleId))
     if (bundles.size == 0) { return }
     let title = if (bundles[0].text("title").size > 0) { bundles[0].text("title") } else { bundles[0].text("name") }
@@ -634,10 +648,25 @@ func cwRebuildBundleCourse(cfg: Config, bundleId: String, forceStatus: String): 
         " AND EXISTS(SELECT 1 FROM kb_courseware w WHERE w.doc_id=c.doc_id AND w.published=1 AND w.status='ready') " +
         "ORDER BY c.order_no")
 
+    let refs = HashMap<String, String>()
+    for (doc in query(cfg, "SELECT id,COALESCE(document_id,'') document_id FROM kb_bundle_docs WHERE bundle_id=" + sqlQuote(bundleId))) {
+        refs[doc.text("id")] = doc.text("id")
+        if (doc.text("document_id").size > 0) { refs[doc.text("document_id")] = doc.text("id") }
+    }
+    let slots = HashMap<String, Int64>()
+    var nextSlot: Int64 = 0
+    for (lesson in query(cfg, "SELECT lesson_index,COALESCE(source_doc_id,'') source_doc_id,sources_json FROM lessons WHERE course_id=" + sqlQuote(courseId))) {
+        let slot = lesson.int("lesson_index")
+        if (slot >= nextSlot) { nextSlot = slot + 1 }
+        let source = cwLessonSourceId(lesson.text("source_doc_id"), lesson.text("sources_json"), refs)
+        if (source.size == 0) { continue }
+        if (slots.contains(source)) { throw Exception("章节学习记录对应重复，原记录已保留，请先检查课程内容") }
+        slots[source] = slot
+    }
     let statements = ArrayList<String>()
-    statements.add("DELETE FROM quiz_attempts WHERE course_id=" + sqlQuote(courseId))
-    statements.add("DELETE FROM lesson_progress WHERE course_id=" + sqlQuote(courseId))
-    statements.add("DELETE FROM lessons WHERE course_id=" + sqlQuote(courseId))
+    // Hide retained lessons first, then upsert the current content atomically.
+    // Never delete their FK identities: progress and quiz history stay attached.
+    statements.add("UPDATE lessons SET is_visible=0,display_index=NULL WHERE course_id=" + sqlQuote(courseId))
     let keepStatusSql = if (forceStatus.size > 0) { "status=VALUES(status)," } else { "" }
     if (chapters.size == 0) {
         let emptyStatus = if (forceStatus.size > 0) { forceStatus } else { "draft" }
@@ -657,6 +686,9 @@ func cwRebuildBundleCourse(cfg: Config, bundleId: String, forceStatus: String): 
     for (chapter in chapters) {
         let docId = chapter.text("doc_id")
         let docTitle = chapter.text("doc_title")
+        let savedSlot = slots.get(docId)
+        let stableIndex = savedSlot ?? nextSlot
+        if (savedSlot == None) { nextSlot += 1; slots[docId] = stableIndex }
         let chapterJson = JsonWriter()
         chapterJson.putStr("title", docTitle)
         chapterArr.addRaw(chapterJson.toJson())
@@ -740,9 +772,12 @@ func cwRebuildBundleCourse(cfg: Config, bundleId: String, forceStatus: String): 
         source.putStr("title", docTitle)
         source.putStr("kind", "kb-courseware")
         sources.addRaw(source.toJson())
-        statements.add("INSERT INTO lessons(course_id,lesson_index,title,content_json,quiz_json,sources_json) VALUES(" +
-            sqlQuote(courseId) + "," + lessonIndex.toString() + "," + sqlQuote(docTitle) + "," +
-            sqlQuote(content.toJson()) + "," + sqlQuote(quiz.toJson()) + "," + sqlQuote(sources.toJson()) + ")")
+        statements.add("INSERT INTO lessons(course_id,lesson_index,title,content_json,quiz_json,sources_json,source_doc_id,display_index,is_visible) VALUES(" +
+            sqlQuote(courseId) + "," + stableIndex.toString() + "," + sqlQuote(docTitle) + "," +
+            sqlQuote(content.toJson()) + "," + sqlQuote(quiz.toJson()) + "," + sqlQuote(sources.toJson()) + "," +
+            sqlQuote(docId) + "," + lessonIndex.toString() + ",1) ON DUPLICATE KEY UPDATE " +
+            "title=VALUES(title),content_json=VALUES(content_json),quiz_json=VALUES(quiz_json),sources_json=VALUES(sources_json)," +
+            "source_doc_id=VALUES(source_doc_id),display_index=VALUES(display_index),is_visible=1,updated_at=NOW(6)")
         lessonIndex += 1
     }
     statements.add("INSERT INTO courses(id,name,icon,description,level,duration,chapters_json,source_label,status,sort_order) VALUES(" +

@@ -14,7 +14,7 @@ func kbPublishBundle(cfg: Config, bundleId: String): ?KbPublishResult {
     let rows = query(cfg, "SELECT course_id FROM kb_bundles WHERE id=" + sqlQuote(bundleId))
     if (rows.size == 0 || rows[0].text("course_id").size == 0) { return None }
     let courseId = rows[0].text("course_id")
-    let lessons = query(cfg, "SELECT COUNT(*) n FROM lessons WHERE course_id=" + sqlQuote(courseId))
+    let lessons = query(cfg, "SELECT COUNT(*) n FROM lessons WHERE is_visible=1 AND course_id=" + sqlQuote(courseId))
     let count = if (lessons.size > 0) { lessons[0].int("n") } else { 0 }
     Some(KbPublishResult(courseId, count, existing.size == 0))
 }
@@ -47,7 +47,7 @@ func kbWriteBundleLogo(response: HttpResponse, cfg: Config, bundleId: String): U
     response.write(svg)
 }
 
-/** Cancel derived work before removing source metadata. Preserve studied courses as drafts. */
+/** Explicit bundle deletion also removes its course and learning records. */
 func kbDeleteBundleContent(cfg: Config, bundleId: String): Unit {
     let rows = query(cfg, "SELECT course_id FROM kb_bundles WHERE id=" + sqlQuote(bundleId))
     let statements = ArrayList<String>()
@@ -55,12 +55,10 @@ func kbDeleteBundleContent(cfg: Config, bundleId: String): Unit {
     statements.add("DELETE FROM logo_generations WHERE resource_type='kb_bundle' AND resource_id=" + sqlQuote(bundleId))
     if (rows.size > 0 && rows[0].text("course_id").size > 0) {
         let courseId = rows[0].text("course_id")
-        if (kbCourseInUse(cfg, courseId)) {
-            statements.add("UPDATE courses SET status='draft',updated_at=NOW(6) WHERE id=" + sqlQuote(courseId))
-        } else {
-            statements.add("DELETE FROM lessons WHERE course_id=" + sqlQuote(courseId))
-            statements.add("DELETE FROM courses WHERE id=" + sqlQuote(courseId))
-        }
+        statements.add("DELETE FROM quiz_attempts WHERE course_id=" + sqlQuote(courseId))
+        statements.add("DELETE FROM lesson_progress WHERE course_id=" + sqlQuote(courseId))
+        statements.add("DELETE FROM lessons WHERE course_id=" + sqlQuote(courseId))
+        statements.add("DELETE FROM courses WHERE id=" + sqlQuote(courseId))
     }
     statements.add("DELETE FROM kb_bundles WHERE id=" + sqlQuote(bundleId))
     transaction(cfg, statements.toArray())

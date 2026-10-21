@@ -107,7 +107,7 @@ export default function AdminBundles({ onNeedModel }) {
                       type="button"
                       className="zx-btn zx-btn-sm zx-btn-danger"
                       onClick={async () => {
-                        if (!window.confirm(`删除《${bundle.name}》的整理结果？`)) return;
+                        if (!window.confirm(`删除《${bundle.name}》？对应课程、课件和学习记录将一并删除，无法恢复。`)) return;
                         try {
                           await adminApi.deleteKbBundle(bundle.id);
                           setMessage('已删除资料包。');

@@ -256,9 +256,10 @@ func authenticate(ctx: HttpContext, cfg: Config): ?String {
 
 func progressMap(cfg: Config, userId: String, courseId: ?String): HashMap<String, Bool> {
     let result = HashMap<String, Bool>()
-    var filterSql = " WHERE user_id=" + sqlQuote(userId)
-    if (courseId != None) { filterSql = filterSql + " AND course_id=" + sqlQuote(courseId.getOrThrow()) }
-    let progressRows = query(cfg, "SELECT course_id,lesson_index,completed FROM lesson_progress" + filterSql)
+    var filterSql = " WHERE p.user_id=" + sqlQuote(userId) + " AND l.is_visible=1"
+    if (courseId != None) { filterSql = filterSql + " AND p.course_id=" + sqlQuote(courseId.getOrThrow()) }
+    let progressRows = query(cfg, "SELECT p.course_id,COALESCE(l.display_index,l.lesson_index) lesson_index,p.completed " +
+        "FROM lesson_progress p JOIN lessons l ON l.course_id=p.course_id AND l.lesson_index=p.lesson_index" + filterSql)
     for (row in progressRows) {
         result[row.text("course_id") + ":" + row.int("lesson_index").toString()] = row.int("completed") == 1
     }
@@ -306,7 +307,7 @@ func courseArrayBody(cfg: Config, userId: String): String {
     let progress = progressMap(cfg, userId, None)
     let courseRows = query(cfg,
         "SELECT id,name,icon,description,level,duration,chapters_json,source_label FROM courses " +
-        "WHERE status='published' AND EXISTS(SELECT 1 FROM lessons l WHERE l.course_id=courses.id) " +
+        "WHERE status='published' AND EXISTS(SELECT 1 FROM lessons l WHERE l.course_id=courses.id AND l.is_visible=1) " +
         "ORDER BY sort_order,name")
     let arr = JsonArrWriter()
     for (row in courseRows) { arr.addRaw(courseJson(row, progress)) }
@@ -340,7 +341,7 @@ func statsBody(cfg: Config, userId: String): String {
         "SELECT COUNT(*) n, COALESCE(SUM(CASE WHEN completed=1 THEN 1 ELSE 0 END),0) complete_count, " +
         "COALESCE(SUM(CASE WHEN score IS NOT NULL THEN score ELSE 0 END),0) total_score " +
         "FROM lesson_progress WHERE user_id=" + sqlQuote(userId))
-    let total = query(cfg, "SELECT COUNT(*) n FROM lessons")
+    let total = query(cfg, "SELECT COUNT(*) n FROM lessons WHERE is_visible=1")
     let out = JsonWriter()
     out.putInt("learningDays", if (done.size > 0 && done[0].int("n") > 0) { 1 } else { 0 })
     out.putInt("completedTasks", if (done.size > 0) { done[0].int("complete_count") } else { 0 })
@@ -351,9 +352,10 @@ func statsBody(cfg: Config, userId: String): String {
 
 func recentBody(cfg: Config, userId: String): String {
     let recentRows = query(cfg,
-        "SELECT p.course_id,p.lesson_index,p.updated_at,l.title " +
+        "SELECT p.course_id,COALESCE(l.display_index,l.lesson_index) lesson_index,p.updated_at,l.title " +
         "FROM lesson_progress p JOIN lessons l ON l.course_id=p.course_id AND l.lesson_index=p.lesson_index " +
-        "WHERE p.user_id=" + sqlQuote(userId) + " ORDER BY p.updated_at DESC LIMIT 5")
+        "JOIN courses c ON c.id=l.course_id WHERE l.is_visible=1 AND c.status='published' AND p.user_id=" +
+        sqlQuote(userId) + " ORDER BY p.updated_at DESC LIMIT 5")
     let arr = JsonArrWriter()
     for (row in recentRows) {
         let out = JsonWriter()
@@ -395,7 +397,8 @@ func courseLesson(cfg: Config, courseId: String, index: Int64): ?Row {
     let lessonRows = query(cfg,
         "SELECT l.course_id,l.lesson_index,l.title,l.content_json,l.quiz_json,l.sources_json FROM lessons l " +
         "JOIN courses c ON c.id=l.course_id WHERE l.course_id=" +
-        sqlQuote(courseId) + " AND l.lesson_index=" + index.toString() + " AND c.status='published'")
+        sqlQuote(courseId) + " AND COALESCE(l.display_index,l.lesson_index)=" + index.toString() +
+        " AND l.is_visible=1 AND c.status='published'")
     if (lessonRows.size == 0) { return None }
     Some(lessonRows[0])
 }
@@ -1616,7 +1619,7 @@ main(): Int64 {
                             }
                             out.putRaw("questions", questions.toJson())
                             out.putRaw("sources", row.text("sources_json"))
-                            out.putRaw("progress", progressJson(cfg, userId, courseId, index))
+                            out.putRaw("progress", progressJson(cfg, userId, courseId, row.int("lesson_index")))
                             writeJson(ctx.response, 200, out.toJson())
                     }
                 }
@@ -1632,8 +1635,8 @@ main(): Int64 {
                 match (courseLesson(cfg, courseId, index)) {
                     case None => writeError(ctx.response, 404, "没有找到这个课时")
                     case Some(row) =>
-                        saveProgress(cfg, userId, courseId, index, None, false)
-                        writeJson(ctx.response, 200, progressJson(cfg, userId, courseId, index))
+                        saveProgress(cfg, userId, courseId, row.int("lesson_index"), None, false)
+                        writeJson(ctx.response, 200, progressJson(cfg, userId, courseId, row.int("lesson_index")))
                 }
         }
     }
@@ -1685,32 +1688,46 @@ main(): Int64 {
                                 if (attemptId.size < 8 || attemptId.size > 64) {
                                     writeError(ctx.response, 400, "测验提交编号不正确")
                                 } else {
+                                    let stableIndex = row.int("lesson_index")
                                     let existing = query(cfg,
-                                        "SELECT answers_json FROM quiz_attempts WHERE user_id=" + sqlQuote(userId) +
+                                        "SELECT course_id,lesson_index,answers_json,score,correct_count,question_count FROM quiz_attempts WHERE user_id=" + sqlQuote(userId) +
                                         " AND id=" + sqlQuote(attemptId))
-                                    var answers = jsonGetArray(body, "answers") ?? JsonArray()
-                                    if (existing.size > 0) {
-                                        answers = jsonArrayFromText(existing[0].text("answers_json"))
+                                    if (existing.size > 0 && (existing[0].text("course_id") != courseId || existing[0].int("lesson_index") != stableIndex)) {
+                                        writeError(ctx.response, 409, "测验对应的章节已变化，请返回课程后重新开始测验")
+                                    } else {
+                                        var answers = jsonGetArray(body, "answers") ?? JsonArray()
+                                        if (existing.size > 0) { answers = jsonArrayFromText(existing[0].text("answers_json")) }
+                                        let quiz = lessonQuestions(row.text("quiz_json"))
+                                        let (correct, total) = quizResult(quiz, answers)
+                                        let score = if (total == 0) { 0 } else { correct * 100 / total }
+                                        if (existing.size == 0) {
+                                            let duration = jsonGetInt(body, "durationSeconds") ?? 0
+                                            transaction(cfg, [
+                                                "INSERT IGNORE INTO quiz_attempts(id,user_id,course_id,lesson_index,answers_json,score,duration_seconds,created_at,correct_count,question_count) VALUES(" +
+                                                    sqlQuote(attemptId) + "," + sqlQuote(userId) + "," + sqlQuote(courseId) + "," +
+                                                    stableIndex.toString() + "," + sqlQuote(answers.toJsonString()) + "," + score.toString() + "," +
+                                                    maxInt(0, duration).toString() + ",NOW(6)," + correct.toString() + "," + total.toString() + ")",
+                                                "INSERT INTO lesson_progress(user_id,course_id,lesson_index,is_read,score,completed,updated_at) " +
+                                                    "SELECT user_id,course_id,lesson_index,1,score,IF(score>=60,1,0),NOW(6) FROM quiz_attempts " +
+                                                    "WHERE id=" + sqlQuote(attemptId) + " AND user_id=" + sqlQuote(userId) + " AND course_id=" + sqlQuote(courseId) +
+                                                    " AND lesson_index=" + stableIndex.toString() + " ON DUPLICATE KEY UPDATE is_read=1,score=VALUES(score)," +
+                                                    "completed=GREATEST(completed,VALUES(completed)),updated_at=NOW(6)"
+                                            ])
+                                        }
+                                        let saved = if (existing.size > 0) { existing } else { query(cfg,
+                                            "SELECT course_id,lesson_index,score,correct_count,question_count FROM quiz_attempts WHERE id=" + sqlQuote(attemptId) +
+                                            " AND user_id=" + sqlQuote(userId) + " AND course_id=" + sqlQuote(courseId) + " AND lesson_index=" + stableIndex.toString()) }
+                                        if (saved.size == 0) { writeError(ctx.response, 409, "测验提交编号已使用，请重新开始测验") }
+                                        else {
+                                            let result = saved[0]
+                                            let out = JsonWriter()
+                                            out.putInt("score", result.int("score"))
+                                            out.putInt("correctCount", if (result.isNull("correct_count")) { correct } else { result.int("correct_count") })
+                                            out.putInt("total", if (result.isNull("question_count")) { total } else { result.int("question_count") })
+                                            out.putBool("completed", result.int("score") >= 60)
+                                            writeJson(ctx.response, 200, out.toJson())
+                                        }
                                     }
-                                    let quiz = lessonQuestions(row.text("quiz_json"))
-                                    let (correct, total) = quizResult(quiz, answers)
-                                    let score = if (total == 0) { 0 } else { correct * 100 / total }
-                                    let completed = score >= 60
-                                    if (existing.size == 0) {
-                                        let duration = jsonGetInt(body, "durationSeconds") ?? 0
-                                        execute(cfg,
-                                            "INSERT IGNORE INTO quiz_attempts(id,user_id,course_id,lesson_index,answers_json,score,duration_seconds,created_at) VALUES(" +
-                                            sqlQuote(attemptId) + "," + sqlQuote(userId) + "," + sqlQuote(courseId) + "," +
-                                            index.toString() + "," + sqlQuote(answers.toJsonString()) + "," + score.toString() + "," +
-                                            maxInt(0, duration).toString() + ",NOW(6))")
-                                    }
-                                    saveProgress(cfg, userId, courseId, index, Some(score), completed)
-                                    let out = JsonWriter()
-                                    out.putInt("score", score)
-                                    out.putInt("correctCount", correct)
-                                    out.putInt("total", total)
-                                    out.putBool("completed", completed)
-                                    writeJson(ctx.response, 200, out.toJson())
                                 }
                         }
                 }
