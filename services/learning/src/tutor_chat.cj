@@ -211,6 +211,14 @@ func tutorHistoryJson(body: JsonObject): String {
     result.toJson()
 }
 
+func tutorUseContext(body: JsonObject): Bool {
+    if (!jsonHas(body, "useContext")) { return true }
+    match (jsonGetBool(body, "useContext")) {
+        case Some(value) => value
+        case None => tutorReject(400, "课程上下文开关必须为布尔值")
+    }
+}
+
 func tutorUserMessageJson(text: String, images: Array<TutorImage>): String {
     let message = JsonWriter(); message.putStr("role", "user")
     if (images.size == 0) { message.putStr("content", text); return message.toJson() }
@@ -245,8 +253,7 @@ func tutorValidConversationId(value: String): Bool {
 }
 
 func tutorDefaultConversationId(courseId: String, lessonIndex: Int64): String {
-    if (courseId.size == 0) { return "agent-" + uuidFormat(uuidV4()) }
-    "lesson:" + courseId + ":" + lessonIndex.toString()
+    "agent-" + uuidFormat(uuidV4())
 }
 
 func tutorConversationId(body: JsonObject, courseId: String, lessonIndex: Int64): String {
@@ -401,13 +408,17 @@ func tutorChatPlan(cfg: Config, userId: String, body: JsonObject): TutorChatPlan
     let images = tutorImages(body)
     if (message.size == 0 && images.size == 0) { tutorReject(400, "请输入问题或选择图片") }
     let history = tutorHistoryJson(body)
-    let hits = tutorLessonHits(cfg, courseId, index, message + "\n" + quoted)
+    let useContext = tutorUseContext(body)
+    let hits = if (useContext) {
+        tutorLessonHits(cfg, courseId, index, message + "\n" + quoted)
+    } else { ArrayList<KbHit>() }
     let memorySnapshot = learnerMemoryPromptSnapshot(learnerMemoryLoadOrCreate(cfg, userId))
     let settings = loadKbSettings(cfg)
     let endpoint = slotEndpoint(cfg, settings.chat)
     if (!settings.chat.configured() || !endpoint.hasChat()) {
         tutorReject(503, "Lumin老师还没有接入对话模型，请管理员先在设置中配置")
     }
+    tutorConversationEnsure(cfg, userId, conversationId)
     let messages = JsonArrWriter()
     let system = JsonWriter(); system.putStr("role", "system")
     system.putStr("content", tutorSystemPrompt(memorySnapshot) + "\n图片是学员提供的学习材料，结合可见内容作答；看不清的内容明确说明，禁止猜测。" +
@@ -420,7 +431,10 @@ func tutorChatPlan(cfg: Config, userId: String, body: JsonObject): TutorChatPlan
         messages.addRaw(item.toJson())
     }
     let question = if (message.size > 0) { message } else { "请结合当前课程解释这些图片中的内容，并指出学习重点。" }
-    messages.addRaw(tutorUserMessageJson(tutorQuestionText(hits, quoted, courseId, lessonTitle, question), images))
+    messages.addRaw(tutorUserMessageJson(tutorQuestionText(hits,
+        if (useContext) { quoted } else { "" },
+        if (useContext) { courseId } else { "" },
+        if (useContext) { lessonTitle } else { "" }, question), images))
     TutorChatPlan(endpoint, messages.toJson(), tutorCitationsJson(hits), message, images, courseId, index, conversationId,
         if (hits.size > 0) { "章节资料" } else { "对话" })
 }

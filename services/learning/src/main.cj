@@ -1534,7 +1534,7 @@ func tutorSystemPrompt(memorySnapshot: String): String {
     "你是用户的个人学习助手——Lumin老师。\n" +
     "要求：\n" +
     "1. 用简体中文回答，先用一句话给结论，再展开解释；总长度控制在 400 字以内。\n" +
-    "2. 优先依据【参考资料】和【当前课时】回答，用到资料时在句末标注编号，例如 [1][2]。\n" +
+    "2. 优先依据【参考资料】和【当前课时】回答。确需引用时仅在该段结尾标一次对应编号，例如 [1]；同段同来源不要反复标注，不要每句话都加编号。只用实际给出的来源编号，未给来源时不输出编号。\n" +
     "3. 资料没有覆盖的问题，可以基于通用知识回答，但必须说明「课程资料里没有直接讲到」。\n" +
     "4. 不确定就说不确定，不要编造概念、数字或引用。\n" +
     "5. 不要输出与问题无关的开场白。\n" +
@@ -2850,9 +2850,53 @@ main(): Int64 {
             case None => ()
             case Some(userId) =>
                 try {
-                    writeJson(ctx.response, 200, tutorConversationsBody(cfg, userId))
+                    let archivedText = ctx.request.query.get("archived") ?? "false"
+                    if (archivedText != "true" && archivedText != "false") {
+                        tutorReject(400, "归档筛选必须为 true 或 false")
+                    }
+                    writeJson(ctx.response, 200, tutorManagedConversationsBody(cfg, userId, archivedText == "true"))
                 } catch (error: Exception) {
-                    writeError(ctx.response, 503, "会话列表暂时无法加载，请稍后重试")
+                    writeError(ctx.response, UInt16(tutorErrorStatus(error.message)), tutorErrorText(error.message))
+                }
+        }
+    }
+
+    app.mapPost("api/tutor/conversations") { ctx =>
+        match (authenticate(ctx, cfg)) {
+            case None => ()
+            case Some(userId) =>
+                try {
+                    let body = tutorParseBody(ctx.request)
+                    writeJson(ctx.response, 200, tutorConversationCreateBody(cfg, userId, body))
+                } catch (error: Exception) {
+                    writeError(ctx.response, UInt16(tutorErrorStatus(error.message)), tutorErrorText(error.message))
+                }
+        }
+    }
+
+    app.mapPut("api/tutor/conversations/{conversation_id}") { ctx =>
+        match (authenticate(ctx, cfg)) {
+            case None => ()
+            case Some(userId) =>
+                try {
+                    let body = tutorParseBody(ctx.request)
+                    writeJson(ctx.response, 200, tutorConversationUpdateBody(cfg, userId,
+                        routeText(ctx, "conversation_id"), body))
+                } catch (error: Exception) {
+                    writeError(ctx.response, UInt16(tutorErrorStatus(error.message)), tutorErrorText(error.message))
+                }
+        }
+    }
+
+    app.mapDelete("api/tutor/conversations/{conversation_id}") { ctx =>
+        match (authenticate(ctx, cfg)) {
+            case None => ()
+            case Some(userId) =>
+                try {
+                    writeJson(ctx.response, 200, tutorConversationDeleteBody(cfg, userId,
+                        routeText(ctx, "conversation_id")))
+                } catch (error: Exception) {
+                    writeError(ctx.response, UInt16(tutorErrorStatus(error.message)), tutorErrorText(error.message))
                 }
         }
     }

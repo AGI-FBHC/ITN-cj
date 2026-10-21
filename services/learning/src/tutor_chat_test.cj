@@ -31,6 +31,13 @@ func tutorTestRepeat(value: String, count: Int64): String {
 @Test
 class TutorChatTests {
     @TestCase
+    func courseContextSwitchIsExplicitAndTyped(): Unit {
+        kbPrimitiveCheck(tutorUseContext(cwJsonObjectFrom("{}").getOrThrow()), "Existing clients must keep course context enabled")
+        kbPrimitiveCheck(!tutorUseContext(cwJsonObjectFrom("{\"useContext\":false}").getOrThrow()), "The learner must be able to disable course context")
+        kbPrimitiveRejects({ => let _value = tutorUseContext(cwJsonObjectFrom("{\"useContext\":\"false\"}").getOrThrow()) })
+    }
+
+    @TestCase
     func imagesUseRealContainerAndDimensions(): Unit {
         let png = tutorImages(tutorTestBody("data:image/png;base64," + tutorTestPng(), "image/png"))
         kbPrimitiveCheck(png.size == 1 && png[0].mimeType == "image/png", "Valid PNG must be accepted")
@@ -98,8 +105,10 @@ class TutorChatTests {
         kbPrimitiveCheck(first.startsWith("agent-") && tutorValidConversationId(first),
             "A general chat must receive a valid random agent conversation ID")
         kbPrimitiveCheck(first != second, "Every new general chat must get its own conversation ID")
-        kbPrimitiveCheck(tutorConversationId(noBody, "ds", 3) == "lesson:ds:3",
-            "Course chats must default to the stable lesson conversation ID")
+        let firstCourse = tutorConversationId(noBody, "ds", 3)
+        let secondCourse = tutorConversationId(noBody, "ds", 3)
+        kbPrimitiveCheck(firstCourse.startsWith("agent-") && firstCourse != secondCourse,
+            "Each fresh course entry must receive its own conversation ID")
         let custom = cwJsonObjectFrom("{\"conversationId\":\"agent-custom_01.test\"}").getOrThrow()
         kbPrimitiveCheck(tutorConversationId(custom, "", -1) == "agent-custom_01.test",
             "A valid client conversation ID must be preserved")

@@ -27,8 +27,8 @@ let cwCourseSyncLock = Mutex()
 let cwQueueLock = Mutex()
 var cwActiveWorkers: Int64 = 0
 
-const CW_WRITER_SYSTEM = "你是教培内容作者。只能依据给定资料写作，每个论断后用 [编号] 标注出处，不要编造资料之外的内容。输出 Markdown 正文，不要重复小节标题。"
-const CW_STRUCTURED_SYSTEM = "你是严谨的学习内容作者。严格按用户给出的结构输出一个合法 JSON 对象，不输出解释或 Markdown 围栏。文字字段可含 Markdown，换行必须转义。依据给定资料，用 [编号] 标注真实来源，不编造编号。"
+const CW_WRITER_SYSTEM = "你是教培内容作者。只能依据给定资料写作，只在需要核验的事实或原文转述处引用真实 [编号]，同一来源每段末最多标注一次，严禁每句重复引用。没有来源编号时不标注。[1] 是上传章节原文，不代表外部参考文献；不得编造作者或网址。输出 Markdown 正文，不要重复小节标题。"
+const CW_STRUCTURED_SYSTEM = "你是严谨的学习内容作者。严格按用户给出的结构输出一个合法 JSON 对象，不输出解释或 Markdown 围栏。文字字段可含 Markdown，换行必须转义。只在需要核验的事实或原文转述处标注给定的真实 [编号]，同一来源每段末最多一次，严禁每句重复；规划标题、教学建议和一般过渡句无需编号。没有来源时不标注，不编造编号、作者或网址。[1] 仅表示上传章节原文，不代表外部参考文献。"
 
 class CwGenerationOptions {
     let lectureDetailLevel: String
@@ -874,7 +874,7 @@ func cwIssuesOf(kind: String, obj: JsonObject, options: CwGenerationOptions): Ar
 func cwEvidence(title: String, sourceContent: String): String {
     // A courseware item belongs to exactly one chapter. The retrieval step prepares
     // only that chapter's source and must never load or search the whole vector library.
-    "[1] 《" + title + "》本章原文\n" + cwTextOf(sourceContent, 16000)
+    "[1] 《" + title + "》本章原文（上传章节，唯一给定来源；不代表外部作者或外部文献）\n" + cwTextOf(sourceContent, 16000)
 }
 
 /* ---------- 流水线 ---------- */
@@ -1075,6 +1075,9 @@ func cwRunOne(cfg: Config, id: String): Unit {
                 " 页，带讲者备注 " + presentation.speakerNoteCount.toString() + " 页；设计 JSON 与网页预览已同步输出。"
             cwPersistTrace(cfg, id, trace)
             contentJson = presentationWithMetadata(contentJson, presentation.metadataJson)
+        }
+        if (kind == "lecture") {
+            contentJson = cwAttachReferences(contentJson, cwChapterReferences(cfg, row.text("doc_id")))
         }
         cwSetRow(cfg, id, "ready", finalTitle, contentJson, "")
     } catch (error: Exception) {
@@ -1353,6 +1356,7 @@ func cwSyncBundleCourseLocked(cfg: Config, bundleId: String, forceStatus: String
     for (chapter in chapters) {
         let docId = chapter.text("doc_id")
         let docTitle = chapter.text("doc_title")
+        let references = cwChapterReferences(cfg, docId)
         let savedSlot = slots.get(docId)
         let stableIndex = savedSlot ?? nextSlot
         if (savedSlot == None) { nextSlot += 1; slots[docId] = stableIndex }
@@ -1443,13 +1447,23 @@ func cwSyncBundleCourseLocked(cfg: Config, bundleId: String, forceStatus: String
         let content = JsonWriter()
         content.putRaw("sections", sections.toJson())
         content.putRaw("slides", slides.toJson())
-        content.putRaw("resources", lrTypedResources(resources))
+        content.putRaw("resources", lrTypedResources(resources, references))
+        content.putRaw("references", references)
+        content.putRaw("sources", references)
         content.putStr("sourceLabel", "知识库《" + title + "》")
         let sources = JsonArrWriter()
         let source = JsonWriter()
         source.putStr("id", docId)
         source.putStr("title", docTitle)
         source.putStr("kind", "kb-courseware")
+        let referenceItems = cwRawObjectItems(references)
+        if (referenceItems.size > 0) {
+            let reference = cwJsonObjectFrom(referenceItems[0]).getOrThrow()
+            source.putInt("number", 1)
+            source.putStr("label", "上传章节原文")
+            source.putStr("excerpt", cwField(reference, "excerpt"))
+            source.putStr("sourcePath", cwField(reference, "sourcePath"))
+        }
         sources.addRaw(source.toJson())
         statements.add("INSERT INTO lessons(course_id,lesson_index,title,content_json,quiz_json,sources_json,source_doc_id,display_index,is_visible) VALUES(" +
             sqlQuote(courseId) + "," + stableIndex.toString() + "," + sqlQuote(docTitle) + "," +

@@ -30,6 +30,8 @@ import LoginPage from "./LoginPage.jsx";
 import { orgShortName } from "./org-brand.js";
 import { useOrgBrand } from "./BrandText.jsx";
 import Markdown from "./admin/Markdown.jsx";
+import CoursewareReferences, { CoursewareMarkdown } from "./CoursewareReferences.jsx";
+import { lessonReferences } from "./courseware-references.js";
 import PresentationArtifact from "./PresentationArtifact.jsx";
 import TutorChat from "./TutorChat.jsx";
 import SystemLogo from "./SystemLogo.jsx";
@@ -6668,6 +6670,8 @@ function Lecture({
   onNavigate: d,
 }) {
   const remote = useLesson(n, u);
+  const references = React.useMemo(() => lessonReferences(remote.lesson, resourceKind), [remote.lesson, resourceKind]);
+  const referencePrefix = `lecture-${React.useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const p = React.useMemo(() => lessonSections(remote.lesson, resourceKind), [remote.lesson, resourceKind]),
     [m, b] = React.useState(pu),
     [h, x] = React.useState(null),
@@ -6861,7 +6865,7 @@ function Lecture({
                                 "code-path": "src\\pages\\Lecture.tsx:196:21",
                                 className:
                                   "mt-4 text-[17px] font-medium leading-[1.95] text-[#30333a]",
-                                children: G.markdown ? jsxRuntime.jsx(Markdown, { text: G.text, audience: "learner" }) : G.text,
+                                children: G.markdown ? jsxRuntime.jsx(CoursewareMarkdown, { text: G.text, references, prefix: referencePrefix, audience: "learner" }) : G.text,
                               }),
                               jsxRuntime.jsxs("div", {
                                 "code-path": "src\\pages\\Lecture.tsx:197:21",
@@ -6907,6 +6911,7 @@ function Lecture({
                         );
                       }),
                     }),
+                    jsxRuntime.jsx(CoursewareReferences, { references, prefix: referencePrefix }),
                     jsxRuntime.jsx(ChapterCompletion, { course: n, index: u, lesson: remote.lesson, resourceKind, onQuiz: () => R(!0) }),
                   ],
                 }),
@@ -10396,7 +10401,7 @@ function Dashboard({ profile: n }) {
               })
             : jsxRuntime.jsxs("div", {
                 "code-path": "src\\pages\\Dashboard.tsx:195:5",
-                className: "min-h-screen bg-[#f5f6f8]",
+                className: "zx-dashboard-page min-h-screen bg-[#f5f6f8]",
                 children: [
                   jsxRuntime.jsx(AppNavigation, {
                     "code-path": "src\\pages\\Dashboard.tsx:196:7",
@@ -10411,7 +10416,7 @@ function Dashboard({ profile: n }) {
                       jsxRuntime.jsxs("aside", {
                         "code-path": "src\\pages\\Dashboard.tsx:201:9",
                         className:
-                          "zx-dashboard-profile h-fit rounded-3xl border border-black/5 bg-white p-6",
+                          "zx-dashboard-profile rounded-3xl border border-black/5 bg-white p-6",
                         children: [
                           jsxRuntime.jsx("h3", {
                             "code-path": "src\\pages\\Dashboard.tsx:202:11",
@@ -10845,7 +10850,7 @@ function Dashboard({ profile: n }) {
                       }),
                       jsxRuntime.jsxs("aside", {
                         "code-path": "src\\pages\\Dashboard.tsx:363:9",
-                        className: "zx-dashboard-side flex h-fit flex-col gap-6",
+                        className: "zx-dashboard-side flex flex-col gap-6",
                         children: [
                           jsxRuntime.jsxs("div", {
                             "code-path": "src\\pages\\Dashboard.tsx:364:11",

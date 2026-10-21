@@ -1033,3 +1033,13 @@
 - 修复过程中发现前端 Vite 进程意外退出，导致浏览器报 `Failed to fetch`；已用隐藏 PowerShell 重新启动 `npm run dev`，3006 恢复监听。后端重新构建 `main-next.exe`、备份旧 binary 到 `data/backend-backups/20261022-031740/` 并替换启动，8312 health ok。
 - 真实重跑资源 `6d6d4cea-cd81-11f1-af12-005056c00001` 最终状态 `ready`；结构 JSON 12 页，渲染元数据 17 页、17 页讲者备注，renderer `lumin-python-pptx-v1`。落盘文件：`presentation.pptx` 152,349 bytes、`presentation.pptx.preview.html` 1,843,159 bytes、`presentation.pptx.json` 29,391 bytes；PPTX ZIP 头为 `PK`。已通过管理员 publish 接口恢复上架。
 - 本轮修改 `services/learning/src/kb_courseware.cj`、`services/learning/src/kb_primitives_test.cj` 和本 TRACE；未跟踪的 `tools/build_course_resource_packs.py` 继续保留不动。
+
+## 2026-10-22 学习对话迁移、课程新会话与真实来源
+
+- 用户要求参考 `git@github.com:AGI-FBHC/ITN-cj.git` 迁移学习对话功能。通过 GitHub CLI 核对 main `cc2e6208ec9fc670639813970abfe5d68d1a0408` 的 ChatStream.tsx、AgentContext.tsx、chat_api.cj、chat_store.cj；适配会话重命名/归档/恢复/删除、课程上下文开关、原文来源、学习追问及多行输入；保留当前 Lumin 身份与每次请求的个人学习记忆。新增停止输出和复制回答，停止只终止客户端接收，未实现上游模型取消协议。
+- 用户追加每次进入课程侧栏必须新建会话：CourseChatSession 挂载时调用真实 POST /api/tutor/conversations，课程/章节信息由服务端验证并持久化，未发送消息也列入 session list；同次挂载保持会话。StrictMode 用可取消微任务避免重复创建；旧会话继续保留。默认缺省 conversationId 也改为随机 agent UUID。
+- 新增 022_tutor_conversations.sql，组合主键 user_id/conversation_id，支持空会话和原始课程坐标，回填既有消息但不覆盖自定义名称/归档状态。GET/POST/PUT/DELETE 全部按认证用户隔离。开发 DML 账号无 CREATE 权限，已使用 gitignore 下 data/local-mysql/admin.json 的本实例 DDL 账号执行完整 022；未改变数据库账号权限。执行前备份在 data/chat-upgrade-backup/20261022-041355/。
+- 用户贴出讲义每句 [1] 而无参考条目的问题：确认 cwEvidence 只给本章原文 [1]。新增 references 原文快照，包含真实章节 ID、文件路径、原文摘录；生成时持久化，旧讲义读取时即时适配，无需重新生成。学员讲义与管理员预览加入参考资料及原文展开；同段同源编号压缩、未知编号移除，保护代码块/行内代码/链接/数组下标。正文引用使用页内滚动，防止 URL hash 触发应用跳回首页。没有虚构外部作者或文献链接。
+- 用户追加首页填满可视高度：使用 100dvh 父容器及 flex/grid 分配导航下剩余空间，三列底部对齐，内容过高自然滚动。浏览器默认可视高度 720 时首页 720、卡片底边均为 696，保留 24px 页面内边距。随后用户继续要求学习活跃网格和热门资源榜，接下一个提交实现。
+- 验证：后端 48/48 单测通过，前端 11/11 Node 测试通过，后端 release 和 Vite build 成功；022 真实 HTTP/MySQL 回归 3/3 通过（未发消息会话、课程重复进入不同ID、中文命名、归档恢复、owner隔离、删除）。真实网络分层讲义返回 6 节和 10,180 bytes 原文章节，编号每段最多一次；浏览器已验证编号定位后仍在讲义页、真实原文展开、3 次进课形成 3 个会话。后端已替换并通过 8312 health，前端 3006 保持运行。
+- 本轮未调用模型生成新的讲义/PPT或学习回答；保持用户未跟踪 tools/build_course_resource_packs.py 不动。所有功能更改和本 TRACE 本地提交，不推送。

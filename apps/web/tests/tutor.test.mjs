@@ -1,6 +1,6 @@
 import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { askTutor, getTutorHistory, tutorHistory } from '../src/tutor.js';
+import { askTutor, askTutorStream, createTutorConversation, updateTutorConversation, deleteTutorConversation, getTutorConversations, getTutorHistory, tutorHistory } from '../src/tutor.js';
 
 const originalFetch = globalThis.fetch;
 const originalStorage = globalThis.localStorage;
@@ -57,4 +57,46 @@ test('unsupported images and model failures remain explicit', async () => {
   globalThis.localStorage = { getItem: () => '' };
   globalThis.fetch = async () => new Response(JSON.stringify({ message: '当前对话模型不支持图片' }), { status: 400 });
   await assert.rejects(askTutor({ message: '看图', attachments: [{ type: 'image', name: 'a.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,YQ==' }] }), /不支持图片/);
+});
+
+test('conversation management uses authenticated owner-scoped endpoints', async () => {
+  globalThis.localStorage = { getItem: () => 'learner-session' };
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, method: options.method, headers: options.headers, body: options.body && JSON.parse(options.body) });
+    return new Response(JSON.stringify({ conversationId: 'agent-a', items: [] }));
+  };
+  await createTutorConversation();
+  await updateTutorConversation('lesson:a:0', { title: '网络分层' });
+  await updateTutorConversation('lesson:a:0', { archived: true });
+  await getTutorConversations({ archived: true });
+  await deleteTutorConversation('lesson:a:0');
+  assert.deepEqual(calls.map(({ url, method }) => [url, method]), [
+    ['/api/tutor/conversations', 'POST'],
+    ['/api/tutor/conversations/lesson%3Aa%3A0', 'PUT'],
+    ['/api/tutor/conversations/lesson%3Aa%3A0', 'PUT'],
+    ['/api/tutor/conversations?archived=true', 'GET'],
+    ['/api/tutor/conversations/lesson%3Aa%3A0', 'DELETE'],
+  ]);
+  assert.ok(calls.every(({ headers }) => headers.Authorization === 'Bearer learner-session'));
+  assert.equal(calls[1].body.title, '网络分层');
+});
+
+test('disabled context reaches SSE while interrupted messages stay out of model history', async () => {
+  globalThis.localStorage = { getItem: () => 'learner-session' };
+  let body;
+  globalThis.fetch = async (_url, options) => {
+    body = JSON.parse(options.body);
+    return new Response('data: {"type":"delta","text":"回答"}\n\ndata: {"type":"done","answer":"回答"}\n\n');
+  };
+  const result = await askTutorStream({ message: '解释', useContext: false, history: [
+    { role: 'assistant', text: '部分输出', interrupted: true },
+    { role: 'assistant', text: '尚未完成', streaming: true },
+    { role: 'user', text: '此前问题' },
+  ] });
+  assert.equal(body.useContext, false);
+  assert.deepEqual(body.history, [{ role: 'user', content: '此前问题' }]);
+  assert.equal(result.answer, '回答');
+  globalThis.fetch = async () => new Response('data: {"type":"delta","text":"未完成"}\n\n');
+  await assert.rejects(askTutorStream({ message: '再试' }), /连接中断/);
 });

@@ -1,14 +1,35 @@
 import * as React from 'react';
 import { Notice } from './admin-ui.jsx';
-import Markdown from './Markdown.jsx';
 import { adminToken } from './admin-api.js';
 import PresentationArtifact from '../PresentationArtifact.jsx';
+import { useParams } from 'react-router-dom';
+import { adminApi } from './admin-api.js';
+import CoursewareReferences, { CoursewareMarkdown } from '../CoursewareReferences.jsx';
+import { chapterReference, coursewareReferences, normalizeCoursewareCitations } from '../courseware-references.js';
 
 function readJson(text) {
   try { return text ? JSON.parse(text) : null; } catch { return null; }
 }
 
 function LectureView({ data }) {
+  const { coursewareId } = useParams();
+  const savedReferences = React.useMemo(() => coursewareReferences(data), [data]);
+  const [loaded, setLoaded] = React.useState(null);
+  const prefix = `preview-${React.useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  const references = savedReferences.length ? savedReferences : loaded?.id === coursewareId ? loaded.references : [];
+  React.useEffect(() => {
+    if (savedReferences.length || !coursewareId) return undefined;
+    let active = true;
+    // Old artifacts have no snapshot: resolve their real bound chapter read-only.
+    adminApi.cwDetail(coursewareId).then(async ({ item }) => {
+      if (!item?.bundleId || !item?.docId) return [];
+      const { doc } = await adminApi.kbBundleDocument(item.bundleId, item.docId);
+      return chapterReference(doc, item.bundleId);
+    }).then((sources) => {
+      if (active) setLoaded({ id: coursewareId, references: sources });
+    }).catch(() => { if (active) setLoaded({ id: coursewareId, references: [] }); });
+    return () => { active = false; };
+  }, [coursewareId, savedReferences]);
   return (
     <div className="zx-cw-doc">
       {Array.isArray(data.objectives) && data.objectives.length > 0 ? (
@@ -18,10 +39,11 @@ function LectureView({ data }) {
       ) : null}
       {(data.sections || []).map((section, index) => (
         <section key={index} className="zx-cw-section">
-          <h3>{section.heading || `第 ${index + 1} 节`}</h3>
-          <Markdown text={section.body || ''} />
+          <h3>{normalizeCoursewareCitations(section.heading || `第 ${index + 1} 节`, [])}</h3>
+          <CoursewareMarkdown text={section.body || ''} references={references} prefix={prefix} audience="admin" />
         </section>
       ))}
+      <CoursewareReferences references={references} prefix={prefix} />
     </div>
   );
 }

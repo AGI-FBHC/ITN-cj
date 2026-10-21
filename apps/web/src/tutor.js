@@ -10,7 +10,7 @@ export function tutorHistory(messages = []) {
   let bytes = 0;
   const history = [];
   for (const item of [...messages].reverse()) {
-    if (!['user', 'assistant'].includes(item.role) || item.pending || item.error || item.greeting) continue;
+    if (!['user', 'assistant'].includes(item.role) || item.pending || item.streaming || item.interrupted || item.error || item.greeting) continue;
     const content = Array.from(String(item.content ?? item.text ?? '')).slice(0, 4000).join('').trim();
     if (!content) continue;
     const size = encoder.encode(content).length;
@@ -56,11 +56,11 @@ async function tutorRequest(path, { method = 'GET', body, signal, timeout = 1200
   }
 }
 
-export async function askTutor({ message = '', quote = '', courseId = '', lessonIndex = -1, lessonTitle = '', conversationId = '', history = [], attachments = [], signal } = {}) {
+export async function askTutor({ message = '', quote = '', courseId = '', lessonIndex = -1, lessonTitle = '', conversationId = '', useContext = true, history = [], attachments = [], signal } = {}) {
   const images = validateTutorAttachments(attachments);
   return tutorRequest('chat', {
     method: 'POST', signal,
-    body: { message, quote, courseId, lessonIndex, lessonTitle, conversationId, history: tutorHistory(history), attachments: images },
+    body: { message, quote, courseId, lessonIndex, lessonTitle, conversationId, useContext, history: tutorHistory(history), attachments: images },
   });
 }
 
@@ -94,6 +94,7 @@ export async function askTutorStream(payload = {}, onEvent, { signal } = {}) {
     courseId: payload.courseId || '', lessonIndex: payload.lessonIndex ?? -1,
     lessonTitle: payload.lessonTitle || '',
     conversationId: payload.conversationId || '',
+    useContext: payload.useContext !== false,
     history: tutorHistory(payload.history || []), attachments: images,
   };
   try {
@@ -105,8 +106,8 @@ export async function askTutorStream(payload = {}, onEvent, { signal } = {}) {
     });
     if (response.status === 404 || response.status === 405 || !response.body) {
       const result = await askTutor({ ...payload, signal: controller.signal });
-      onEvent?.({ type: 'meta', model: result.model, mode: result.mode, citations: result.citations });
-      onEvent?.({ type: 'done', answer: result.answer });
+      onEvent?.({ type: 'meta', model: result.model, mode: result.mode, citations: result.citations, conversationId: result.conversationId });
+      onEvent?.({ type: 'done', answer: result.answer, conversationId: result.conversationId });
       return result;
     }
     if (!response.ok) {
@@ -119,6 +120,7 @@ export async function askTutorStream(payload = {}, onEvent, { signal } = {}) {
     const decoder = new TextDecoder();
     let buffer = '';
     let answer = '';
+    let completed = false;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -133,11 +135,15 @@ export async function askTutorStream(payload = {}, onEvent, { signal } = {}) {
         let event;
         try { event = JSON.parse(data); } catch { continue; }
         if (event.type === 'delta') answer += event.text || '';
-        if (event.type === 'done' && event.answer) answer = event.answer;
+        if (event.type === 'done') {
+          completed = true;
+          if (event.answer) answer = event.answer;
+        }
         if (event.type === 'error') throw new Error(event.message || '回答中断，请重试');
         onEvent?.(event);
       }
     }
+    if (!completed) throw new Error('回答连接中断，请重新发送');
     return { answer };
   } catch (error) {
     if (error.name === 'AbortError' && !signal?.aborted) throw new Error('回答超时，请重试');
@@ -155,9 +161,21 @@ export async function getTutorHistory({ courseId = '', lessonIndex = -1, convers
   return (data.items || data.messages || []).filter((message) => ['user', 'assistant'].includes(message.role));
 }
 
-export async function getTutorConversations({ signal } = {}) {
-  const data = await tutorRequest('conversations', { signal, timeout: 20000 });
+export async function getTutorConversations({ archived = false, signal } = {}) {
+  const data = await tutorRequest(`conversations?archived=${archived ? 'true' : 'false'}`, { signal, timeout: 20000 });
   return Array.isArray(data.items) ? data.items : [];
+}
+
+export function createTutorConversation({ courseId = '', lessonIndex = -1, lessonTitle = '', signal } = {}) {
+  return tutorRequest('conversations', { method: 'POST', body: { courseId, lessonIndex, lessonTitle }, signal, timeout: 20000 });
+}
+
+export function updateTutorConversation(conversationId, changes, { signal } = {}) {
+  return tutorRequest(`conversations/${encodeURIComponent(conversationId)}`, { method: 'PUT', body: changes, signal, timeout: 20000 });
+}
+
+export function deleteTutorConversation(conversationId, { signal } = {}) {
+  return tutorRequest(`conversations/${encodeURIComponent(conversationId)}`, { method: 'DELETE', signal, timeout: 20000 });
 }
 
 export function createTutorConversationId() {

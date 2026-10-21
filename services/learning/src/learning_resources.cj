@@ -123,22 +123,30 @@ func lrPresentationForViewer(coursewareId: String, raw: String): String {
 
 /** Typed published payloads reuse the existing renderers, without quiz answers. */
 func lrTypedResources(rows: Array<Row>): String {
+    lrTypedResources(rows, "[]")
+}
+
+func lrTypedResources(rows: Array<Row>, chapterReferences: String): String {
     let lectures = JsonArrWriter(); let slides = JsonArrWriter()
     var lectureCount: Int64 = 0; var slideCount: Int64 = 0
     var presentation = ""
     var deckTitle = ""
     var deckSubtitle = ""
+    var lectureReferences = "[]"
     for (resource in rows) {
         let kind = resource.text("kind")
         let raw = resource.text("content_json")
         let parsed = match (cwJsonObjectFrom(raw)) { case Some(value) => value; case None => continue }
         if (kind == "lecture") {
+            let savedReferences = lrArray(raw, "references")
+            let references = if (savedReferences != "[]") { savedReferences } else { chapterReferences }
+            lectureReferences = references
             for (item in cwObjectList(parsed, "sections")) {
                 let section = JsonWriter()
                 section.putStr("id", "lecture-" + lectureCount.toString())
                 section.putStr("eyebrow", "讲义")
-                section.putStr("heading", cwField(item, "heading"))
-                section.putStr("text", cwField(item, "body"))
+                section.putStr("heading", cwNormalizeCoursewareCitations(cwField(item, "heading"), "[]"))
+                section.putStr("text", cwNormalizeCoursewareCitations(cwField(item, "body"), references))
                 lectures.addRaw(section.toJson()); lectureCount += 1
             }
         } else if (kind == "slides") {
@@ -157,7 +165,13 @@ func lrTypedResources(rows: Array<Row>): String {
         }
     }
     let out = JsonWriter()
-    if (lectureCount > 0) { let value = JsonWriter(); value.putRaw("sections", lectures.toJson()); out.putRaw("lecture", value.toJson()) }
+    if (lectureCount > 0) {
+        let value = JsonWriter()
+        value.putRaw("sections", lectures.toJson())
+        value.putRaw("references", lectureReferences)
+        value.putRaw("sources", lectureReferences)
+        out.putRaw("lecture", value.toJson())
+    }
     if (slideCount > 0) {
         let value = JsonWriter()
         value.putStr("title", deckTitle)
@@ -183,17 +197,23 @@ func lrAdaptLesson(cfg: Config, row: Row): ?Row {
         }
     }
     var typed = ""
+    var references = lrArray(raw, "references")
     if (managed) {
+        let chapterReferences = cwChapterReferences(cfg, docId)
         let records = queryIndependent(cfg, "SELECT id,kind,content_json FROM kb_courseware WHERE doc_id=" + sqlQuote(docId) +
             " AND is_current=1" +
             " AND status='ready' AND published=1 ORDER BY created_at,id")
         if (records.size == 0) { return None }
-        typed = lrTypedResources(records)
+        typed = lrTypedResources(records, chapterReferences)
+        references = lrArray(lrObject(typed, "lecture"), "references")
     } else {
         let out = JsonWriter()
-        let sections = lrArray(raw, "sections")
+        let adapted = cwAttachReferences(raw, references)
+        let sections = lrArray(adapted, "sections")
         let slides = lrArray(raw, "slides")
-        if (jsonArrayFromText(sections).size() > 0) { out.putRaw("lecture", "{\"sections\":" + sections + "}") }
+        if (jsonArrayFromText(sections).size() > 0) {
+            out.putRaw("lecture", "{\"sections\":" + sections + ",\"references\":" + references + ",\"sources\":" + references + "}")
+        }
         if (jsonArrayFromText(slides).size() > 0) { out.putRaw("slides", "{\"slides\":" + slides + "}") }
         typed = out.toJson()
     }
@@ -204,7 +224,7 @@ func lrAdaptLesson(cfg: Config, row: Row): ?Row {
     content.putStr("sourceLabel", match (parsed) { case Some(value) => cwField(value, "sourceLabel"); case None => "" })
     let names = ["course_id", "lesson_index", "title", "content_json", "quiz_json", "sources_json", "source_doc_id"]
     let cells = ArrayList<MyCell>()
-    for (name in names) { cells.add(MyCell.of((if (name == "content_json") { content.toJson() } else { row.text(name) }).toArray())) }
+    for (name in names) { cells.add(MyCell.of((if (name == "content_json") { cwAttachReferences(content.toJson(), references) } else { row.text(name) }).toArray())) }
     Some(Row(names, cells.toArray()))
 }
 

@@ -1,5 +1,6 @@
 import React from 'react';
 import { api, refreshLearning } from './learning-api.jsx';
+import { lessonReferences, normalizeCoursewareCitations } from './courseware-references.js';
 
 export const RESOURCE_OPTIONS = [
   { type: 'lecture', mode: 'lecture', label: '阅读讲义', detail: '阅读概念、案例与知识要点' },
@@ -24,13 +25,14 @@ const asList = (value) => Array.isArray(value) ? value : value ? [value] : [];
 const bulletList = (value) => asList(value).map((item) => `- ${textValue(item)}`).join('\n');
 
 export function lessonSections(lesson, type = 'lecture') {
+  const references = lessonReferences(lesson, type);
   const resource = lesson?.resources?.[type];
   const raw = resource?.sections ?? (type === 'lecture' ? lesson?.content?.sections : []);
   const sections = (Array.isArray(raw) ? raw : []).filter((item) => item && textValue(item.text).trim()).map((item, index) => ({
     id: item.id || `${type}-${index}`,
     eyebrow: item.eyebrow || '本章讲义',
-    heading: item.heading || `内容 ${index + 1}`,
-    text: textValue(item.text),
+    heading: normalizeCoursewareCitations(item.heading || `内容 ${index + 1}`, []),
+    text: normalizeCoursewareCitations(textValue(item.text), references),
     markdown: true,
   }));
   return sections;
