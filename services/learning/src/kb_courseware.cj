@@ -660,16 +660,35 @@ func cwRecoverQueue(cfg: Config): Unit {
     cwQueuePump(cfg)
 }
 
+func cwLatestQueueMessage(raw: String): String {
+    let steps = jsonArrayFromText(raw)
+    if (steps.size() == 0) { return "" }
+    let value = steps[steps.size() - 1]
+    if (!isJsObject(value)) { return "" }
+    let step = value.asObject()
+    let role = jsonGetString(step, "role") ?? ""
+    let status = jsonGetString(step, "status") ?? ""
+    let error = jsonGetString(step, "error") ?? ""
+    let summary = jsonGetString(step, "summary") ?? ""
+    let text = if (error.size > 0) { error } else if (summary.size > 0) { summary } else {
+        if (status == "running") { "正在执行" } else if (status == "done") { "已完成" } else { status }
+    }
+    let prefix = if (role.size > 0) { role + " · " } else { "" }
+    kbTruncate(prefix + text, 180)
+}
+
 func cwQueueStatusJson(cfg: Config): String {
     let queued = query(cfg, "SELECT COUNT(*) n FROM kb_courseware WHERE status='queued'")
     let running = query(cfg, "SELECT COUNT(*) n FROM kb_courseware WHERE status='generating'")
     let rows = query(cfg,
         "SELECT c.id,c.kind,c.status,c.title,COALESCE(d.title,'') doc_title,COALESCE(b.title,b.name,'') bundle_title," +
+        "COALESCE(c.steps_json,'[]') steps_json," +
         "COALESCE(DATE_FORMAT(c.created_at,'%Y-%m-%d %H:%i'),'') created_at," +
         "COALESCE(DATE_FORMAT(c.updated_at,'%Y-%m-%d %H:%i'),'') updated_at " +
         "FROM kb_courseware c LEFT JOIN kb_bundle_docs d ON d.id=c.doc_id " +
         "LEFT JOIN kb_bundles b ON b.id=c.bundle_id " +
-        "WHERE c.status IN('queued','generating') ORDER BY c.created_at,c.id LIMIT 20")
+        "WHERE c.status IN('queued','generating') " +
+        "ORDER BY CASE WHEN c.status='generating' THEN 0 ELSE 1 END,c.updated_at DESC,c.created_at,c.id LIMIT 20")
     let items = JsonArrWriter()
     for (row in rows) {
         let item = JsonWriter()
@@ -681,6 +700,14 @@ func cwQueueStatusJson(cfg: Config): String {
         item.putStr("bundleTitle", row.text("bundle_title"))
         item.putStr("createdAt", row.text("created_at"))
         item.putStr("updatedAt", row.text("updated_at"))
+        let latest = cwLatestQueueMessage(row.text("steps_json"))
+        item.putStr("latestMessage", if (latest.size > 0) {
+            latest
+        } else if (row.text("status") == "queued") {
+            "等待并发槽位"
+        } else {
+            "正在准备生成"
+        })
         items.addRaw(item.toJson())
     }
     cwQueueLock.lock()

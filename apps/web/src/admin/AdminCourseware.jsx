@@ -57,17 +57,36 @@ function CoursewareQueueIndicator({ queue, open, onToggle }) {
   const limit = Number(queue?.maxParallel || 10);
   const active = running + queued;
   const items = queue?.items || [];
+  const liveItem = items.find((item) => item.status === 'generating' && item.latestMessage)
+    || items.find((item) => item.status === 'generating')
+    || items.find((item) => item.status === 'queued')
+    || null;
+  const liveMessage = liveItem?.latestMessage || (liveItem?.status === 'queued' ? '等待并发槽位' : '当前没有新的执行消息');
   return <div className="zx-cw-queue">
     <button type="button" className={`zx-cw-queue-trigger${active ? ' is-active' : ''}`} onClick={onToggle} aria-expanded={open} aria-label={`课件生成队列，${running} 个生成中，${queued} 个排队中`}>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 6h14M5 12h14M5 18h14"/><circle cx="3" cy="6" r=".8" fill="currentColor"/><circle cx="3" cy="12" r=".8" fill="currentColor"/><circle cx="3" cy="18" r=".8" fill="currentColor"/></svg>
+      <strong>任务队列</strong>
       {active ? <span>{active > 99 ? '99+' : active}</span> : null}
     </button>
     {open ? <section className="zx-cw-queue-popover" aria-label="课件生成任务进度">
-      <header><div><strong>生成任务</strong><p>{running} 个进行中 · {queued} 个排队中</p></div><span>{running}/{limit}</span></header>
+      <header><div><strong>任务队列</strong><p>{running} 个进行中 · {queued} 个排队中</p></div><span>{running}/{limit}</span></header>
+      <div className="zx-cw-queue-live" role="status" aria-live="polite">
+        <div>
+          <span>最新过程</span>
+          <strong title={liveItem?.docTitle || liveItem?.title || '暂无任务'}>
+            {liveItem?.docTitle || liveItem?.title || '暂无任务'}
+          </strong>
+        </div>
+        <p title={liveMessage}>{liveMessage}</p>
+      </div>
       <div className="zx-cw-queue-meter"><i style={{ width: `${limit ? Math.min(100, running / limit * 100) : 0}%` }} /></div>
-      {items.length ? <div className="zx-cw-queue-list">{items.slice(0, 8).map((item) => <div key={item.id}>
+      {items.length ? <div className="zx-cw-queue-list">{items.slice(0, 6).map((item) => <div key={item.id}>
         <span className={`zx-cw-queue-dot is-${item.status}`} />
-        <div><strong>{item.docTitle || item.title || '未命名章节'}</strong><small>{item.bundleTitle || '知识库'} · {item.status === 'queued' ? '等待开始' : '正在生成'}</small></div>
+        <div>
+          <strong>{item.docTitle || item.title || '未命名章节'}</strong>
+          <small>{item.bundleTitle || '知识库'} · {item.status === 'queued' ? '等待开始' : '正在生成'}</small>
+          <em title={item.latestMessage || ''}>{item.latestMessage || (item.status === 'queued' ? '等待并发槽位' : '正在准备生成')}</em>
+        </div>
       </div>)}</div> : <p className="zx-cw-queue-empty">当前没有生成任务</p>}
     </section> : null}
   </div>;

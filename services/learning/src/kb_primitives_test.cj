@@ -135,6 +135,13 @@ class KbPrimitiveTests {
         kbPrimitiveCheck(cwSlidesIssues(repetitive, CW_PRESENTATION_SLIDE_COUNT).size > 0, "A repetitive Markdown-like deck must be rejected")
     }
     @TestCase
+    func queueFeedUsesOnlyTheLatestStepMessage(): Unit {
+        let steps = "[{\"role\":\"规划\",\"status\":\"done\",\"summary\":\"已锁定结构\",\"error\":\"\"}," +
+            "{\"role\":\"撰写\",\"status\":\"running\",\"summary\":\"\",\"error\":\"\"}]"
+        kbPrimitiveCheck(cwLatestQueueMessage(steps) == "撰写 · 正在执行", "Queue feed must use only the latest step")
+        kbPrimitiveCheck(cwLatestQueueMessage("[]") == "", "Queue feed must stay empty for a new task")
+    }
+    @TestCase
     func learnerResourceContainersPreserveQuotedCode(): Unit {
         let text = "{\"guide\":{\"steps\":[{\"code\":\"print(\\\"[中文]\\\")\\n{a: 1}\",\"expectedOutput\":\"值 ] }\"}]}}"
         let guide = lrObject(text, "guide")
