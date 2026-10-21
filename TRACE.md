@@ -723,3 +723,14 @@
 - 用户明确要求“用户画像的设计后面讨论”，本轮未改 profile_json 或画像结构，后续单独立项讨论用户画像字段、来源、可用边界和前端呈现，不能在未确认前把行为日志或敏感推断直接做成画像。
 - 验证：仓颉 release 构建成功；原生 `cjpm test -j1` 8/8 通过；前端 Vite build 成功，保留既有单包大于 500KB 提示。`tests/test_org_invites.py` 真实 HTTP/MySQL 10 个检查点全部通过，覆盖邀请码、机构 Logo 隔离与缓存版本、已有账号、邮件首次登录、换码与清理；报告 `data/org-invites-report.json`。测试临时机构、用户和 Logo 已精确清理；最终数据库仅 1 个江南大学机构、无空 org_id 用户。
 - 当前本地后端 PID 154964，8312；Vite PID 160368，3006；管理员页与队列弹层已浏览器实看。所有功能与 TRACE 提交本地 Git，供回滚，不推送远端。
+
+## 2026-10-21 11:07:23 +08:00 多智能体协作泳道与生成范围纠正
+- 用户要求在正在执行的课件任务完成后，把旧版多智能体协作泳道迁入当前紫色管理端；课件库项目增加详情 icon，进入协作页查看各 Agent 如何生成资源。
+- 旧版参考：`ITN/src/front/src/components/agents/SwimlaneBoard.tsx`、`RealTeachingRunView.tsx`、`CollaborationWorkbench.tsx`。当前实现不复用旧仓库的全套页面/依赖，只迁移五 Agent 泳道、路径、实时状态、执行详情、证据和产物预览这些核心表达。
+- 新页面 `CoursewareCollaboration.jsx` + `courseware-collaboration.css`，路由 `/admin/courseware/:coursewareId/collaboration`。课件库每行新增可访问详情 icon（所有状态均可点，包括生成中、失败）；页面展示规划、检索、撰写、质检、仲裁五条泳道，运行中自动 2.5 秒轮询，点击泳道显示完整摘要和最终资源产物。桌面为泳道+执行详情双栏，窄屏自动上下排列。
+- 后端原有 `steps_json` 已含五角色记录，但部分 running 状态只在网络调用结束后才写入。已修复：规划、检索、撰写、质检、仲裁在调用前立即持久化 running；异常时把当前运行步骤标为 failed；不再把任意异常错误地归到仲裁 Agent。
+- 用户指出：“生成资源为什么要传这些，只需对应该章节的原文去做”。确认正确：课件资源属于单章节，生成时不应加载整库、切片或向量。`cwEvidence` 已改为仅使用当前章节原文，检索 Agent 的职责变成锁定/整理本章原文；彻底移除课件生成对 `kbSearch`/`kbLoadIndex` 的调用。
+- 现场诊断：原任务 133bac40-5c19-49a3-a111-1d5f20f75d1a 在规划完成后持续 8-11 分钟卡在 `kbLoadIndex` 的全量查询；数据库 processlist 显示 `Sending to client`，目标是 9,529 个 chunks / 9,206 个向量 / 约 18MB，实际仅约 5-8 行/秒。它没有异常退出，但按该速度还会卡十几分钟，判定为功能性阻塞。
+- 修复方式不丢记录：停止服务触发既有恢复逻辑，把 generating 自动改回 queued；仅使用本章原文的新构建重启后，该任务约 50 秒完成，状态 ready，步骤为规划 done、检索 done、撰写 done（2261 字）、质检 done（结构通过），仲裁无需返修。
+- 验证：前端 Vite build 成功；后端 Cangjie build 成功；历史原生测试 8/8 通过，另补充 `coursewareEvidenceStaysInsideTheSourceChapter` 回归用例。真实 Chrome 已打开协作页，确认五条泳道、执行详情切换、完整 10 页教学幻灯片产物、课件库详情 icon 与返回路径正常。
+- 当前后端 PID 88388/重启后以实际端口进程为准，8312；Vite 3006。功能、测试与本 TRACE 本地 Git 提交，不推送远端。

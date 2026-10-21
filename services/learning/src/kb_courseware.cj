@@ -50,6 +50,19 @@ class CwTrace {
         step
     }
 
+    func failRunning(message: String): Bool {
+        var i = steps.size
+        while (i > 0) {
+            i -= 1
+            if (steps[i].status == "running") {
+                steps[i].status = "failed"
+                steps[i].error = message
+                return true
+            }
+        }
+        false
+    }
+
     func toJson(): String {
         let arr = JsonArrWriter()
         for (step in steps) {
@@ -362,29 +375,10 @@ func cwIssuesOf(kind: String, obj: JsonObject): ArrayList<String> {
 
 /* ---------- ② 检索：从知识库取跨章证据 ---------- */
 
-func cwEvidence(cfg: Config, settings: KbSettings, title: String, plan: String): String {
-    let queryText = title + " " + cwTextOf(plan, 300)
-    let result = kbSearch(cfg, settings, queryText, 4)
-    if (result.hits.size == 0) { return "（知识库中没有可引用的其他片段，仅按本章原文撰写）" }
-    let sb = StringBuilder()
-    var i: Int64 = 0
-    while (i < result.hits.size) {
-        let hit = result.hits[i]
-        sb.append("[")
-        sb.append((i + 1).toString())
-        sb.append("] 《")
-        sb.append(hit.docTitle)
-        sb.append("》")
-        if (hit.headingPath.size > 0) {
-            sb.append(" · ")
-            sb.append(hit.headingPath)
-        }
-        sb.append("\n")
-        sb.append(cwTextOf(hit.text, 500))
-        sb.append("\n\n")
-        i += 1
-    }
-    sb.toString()
+func cwEvidence(title: String, sourceContent: String): String {
+    // A courseware item belongs to exactly one chapter. The retrieval step prepares
+    // only that chapter's source and must never load or search the whole vector library.
+    "[1] 《" + title + "》本章原文\n" + cwTextOf(sourceContent, 16000)
 }
 
 /* ---------- 流水线 ---------- */
@@ -442,6 +436,7 @@ func cwRunOne(cfg: Config, id: String): Unit {
 
         // ① 规划
         let planStep = trace.add(CW_ROLE_PLANNER, "running", "", "")
+        cwPersistTrace(cfg, id, trace)
         let planText = chatPlain(endpoint, CW_STRUCTURED_SYSTEM, cwPlanPrompt(kind, title, digest), 0.2)
         let planObj = match (cwJsonObjectFrom(planText)) {
             case Some(value) => value
@@ -458,13 +453,15 @@ func cwRunOne(cfg: Config, id: String): Unit {
 
         // ② 检索
         let searchStep = trace.add(CW_ROLE_RETRIEVER, "running", "", "")
-        let evidence = cwEvidence(cfg, settings, title, planText)
+        cwPersistTrace(cfg, id, trace)
+        let evidence = cwEvidence(title, content)
         searchStep.status = "done"
-        searchStep.summary = if (evidence.startsWith("（知识库")) { "没有额外的可引用片段" } else { cwTextOf(evidence, 300) }
+        searchStep.summary = "已锁定本章原文，共 " + content.size.toString() + " 字；不使用跨章节向量检索。"
         cwPersistTrace(cfg, id, trace)
 
         // ③ 撰写
         let writeStep = trace.add(CW_ROLE_WRITER, "running", "", "")
+        cwPersistTrace(cfg, id, trace)
         var written = chatPlain(endpoint, CW_STRUCTURED_SYSTEM,
             cwWritePrompt(kind, title, cwStripFences(planText), evidence, context), 0.35)
         var obj = match (cwJsonObjectFrom(written)) {
@@ -482,6 +479,7 @@ func cwRunOne(cfg: Config, id: String): Unit {
 
         // ④ 质检
         let reviewStep = trace.add(CW_ROLE_REVIEWER, "running", "", "")
+        cwPersistTrace(cfg, id, trace)
         var issues = cwIssuesOf(kind, obj)
         reviewStep.status = if (issues.size == 0) { "done" } else { "failed" }
         reviewStep.summary = if (issues.size == 0) { "结构校验通过" } else { cwJoinIssues(issues) }
@@ -490,6 +488,7 @@ func cwRunOne(cfg: Config, id: String): Unit {
         // ⑤ 仲裁：不通过则带问题清单返修一次
         if (issues.size > 0) {
             let fixStep = trace.add(CW_ROLE_ARBITER, "running", "", "")
+            cwPersistTrace(cfg, id, trace)
             let repaired = chatPlain(endpoint, CW_STRUCTURED_SYSTEM, cwRepairPrompt(kind, issues, written), 0.2)
             match (cwJsonObjectFrom(repaired)) {
                 case Some(value) =>
@@ -525,9 +524,10 @@ func cwRunOne(cfg: Config, id: String): Unit {
         }
         cwSetRow(cfg, id, "ready", finalTitle, contentJson, "")
     } catch (error: Exception) {
-        trace.add(CW_ROLE_ARBITER, "failed", "", kbTruncate(error.message, 300))
+        let message = "生成失败：" + kbTruncate(error.message, 300)
+        if (!trace.failRunning(message)) { trace.add("系统", "failed", "", message) }
         cwPersistTrace(cfg, id, trace)
-        cwSetRow(cfg, id, "failed", "", "", "生成失败：" + kbTruncate(error.message, 300))
+        cwSetRow(cfg, id, "failed", "", "", message)
     }
 }
 

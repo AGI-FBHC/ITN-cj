@@ -91,6 +91,13 @@ func kbOptionalCorpusAudit(): Unit {
 @Test
 class KbPrimitiveTests {
     @TestCase
+    func coursewareEvidenceStaysInsideTheSourceChapter(): Unit {
+        let evidence = cwEvidence("第一章 示例", "# 本章正文\n只允许使用这段原文。")
+        kbPrimitiveCheck(evidence.contains("本章原文"), "Chapter evidence must identify the source chapter")
+        kbPrimitiveCheck(evidence.contains("只允许使用这段原文"), "Chapter evidence lost the source text")
+        kbPrimitiveCheck(!evidence.contains("跨章节"), "Courseware generation must not include cross-chapter retrieval")
+    }
+    @TestCase
     func learnerResourceContainersPreserveQuotedCode(): Unit {
         let text = "{\"guide\":{\"steps\":[{\"code\":\"print(\\\"[中文]\\\")\\n{a: 1}\",\"expectedOutput\":\"值 ] }\"}]}}"
         let guide = lrObject(text, "guide")

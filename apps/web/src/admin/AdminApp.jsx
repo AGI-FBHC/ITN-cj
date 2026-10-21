@@ -8,6 +8,7 @@ import AdminKnowledge from './AdminKnowledge.jsx';
 import AdminBundlePreview from './AdminBundlePreview.jsx';
 import AdminCourseware from './AdminCourseware.jsx';
 import AdminCoursewarePreview from './AdminCoursewarePreview.jsx';
+import CoursewareCollaboration from './CoursewareCollaboration.jsx';
 import AdminOrg from './AdminOrg.jsx';
 import BrandLogo from './BrandLogo.jsx';
 import AdminSettings from './AdminSettings.jsx';
@@ -79,6 +80,7 @@ export default function AdminApp() {
           <Route path="/admin/knowledge/bundles/:bundleId" element={<AdminBundlePreview />} />
           <Route path="/admin/courseware" element={<AdminCourseware />} />
           <Route path="/admin/courseware/:coursewareId" element={<AdminCoursewarePreview />} />
+          <Route path="/admin/courseware/:coursewareId/collaboration" element={<CoursewareCollaboration />} />
           <Route path="/admin/users" element={<AdminUsers />} />
           <Route path="/admin/org" element={<AdminOrg />} />
           <Route path="/admin/settings" element={<AdminSettings />} />
