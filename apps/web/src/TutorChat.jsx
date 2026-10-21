@@ -94,8 +94,8 @@ function ChatSession({ courseId = '', lessonIndex = -1, lessonTitle = '', quote,
   const historyRequest = React.useRef(null);
 
   const greeting = lessonTitle
-    ? `你好！我是本节课的人工智能导师。学习“${lessonTitle}”时遇到任何问题，都可以引用课程内容或上传图片来问我。`
-    : '你好！我是人工智能导师，可以提问知识点，也可以上传截图或题目图片一起讨论。';
+    ? `你好！我是你的个人学习助手——Lumin老师。学习“${lessonTitle}”时遇到任何问题，都可以引用课程内容或上传图片来问我。`
+    : '你好！我是你的个人学习助手——Lumin老师，可以提问知识点，也可以上传截图或题目图片一起讨论。';
 
   const loadHistory = React.useCallback(async () => {
     historyRequest.current?.abort();
@@ -233,7 +233,7 @@ function ChatSession({ courseId = '', lessonIndex = -1, lessonTitle = '', quote,
   const shownMessages = messages.length ? messages : loading ? [] : [{ id: 'greeting', role: 'assistant', text: greeting }];
   const canSend = !loading && !sending && !preparing && (draft.trim() || images.length);
 
-  return <aside className={`flex h-full flex-col bg-[#fcfcfd]${fullPage ? ' zx-tutor-full' : ''}`} aria-label="人工智能导师对话">
+  return <aside className={`flex h-full flex-col bg-[#fcfcfd]${fullPage ? ' zx-tutor-full' : ''}`} aria-label="Lumin 学习助手对话">
     <div className="flex h-[76px] shrink-0 items-end justify-around border-b border-black/[0.08] px-5">
       <button type="button" className="flex h-12 items-center gap-2 px-6 text-sm font-bold text-[#8a8e98]" disabled>笔记</button>
       <button type="button" className="flex h-12 items-center gap-2 border-b-[3px] border-[#111318] px-6 text-sm font-black text-[#111318]" aria-current="page">对话</button>
@@ -241,7 +241,7 @@ function ChatSession({ courseId = '', lessonIndex = -1, lessonTitle = '', quote,
     <div className="flex items-center gap-2 border-b border-black/[0.06] px-6 py-3 text-sm font-extrabold text-[#444852]">
       <span className="h-2.5 w-2.5 rounded-full bg-[#358ff2]" />
       <span className="rounded bg-[#e9f4ff] px-2 py-0.5 text-xs text-[#2879cf]">Q&amp;A</span>
-      人工智能导师
+      Lumin
     </div>
     <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-6 sm:px-7" role="log" aria-label="对话记录" aria-live="polite" aria-busy={sending || loading}>
       {loading && <p className="text-xs font-bold text-[#9297a3]">正在读取对话记录…</p>}
@@ -250,7 +250,7 @@ function ChatSession({ courseId = '', lessonIndex = -1, lessonTitle = '', quote,
         <div className={`max-w-[88%] ${item.role === 'user' ? 'text-right' : ''}`}>
           <p className={`mb-1.5 flex items-center gap-2 text-xs font-extrabold ${item.role === 'user' ? 'justify-end text-[#6038ef]' : 'text-[#4d83d1]'}`}>
             {item.role === 'assistant' && <SparkIcon className="h-4 w-4" />}
-            {item.role === 'user' ? '你' : 'AI导师'}
+            {item.role === 'user' ? '你' : 'Lumin 老师'}
           </p>
           {item.quote && <div className="mb-2 rounded-xl border-l-[3px] border-[#6038ef] bg-[#f2effc] px-3 py-2 text-left text-xs font-semibold leading-5 text-[#686c77]"><strong className="block text-[#454852]">引用：</strong>{quoteText(item.quote).slice(0, 80)}…</div>}
           {!!item.attachments?.length && <div className="zx-tutor-sent-images">{item.attachments.map((image, index) => image.dataUrl
@@ -262,7 +262,7 @@ function ChatSession({ courseId = '', lessonIndex = -1, lessonTitle = '', quote,
         </div>
       </div>)}
       {!loading && !messages.length && !!suggestions.length && <div className="zx-tutor-suggestions">{suggestions.map((text) => <button key={text} type="button" onClick={() => send(null, text)} disabled={sending}>{text}</button>)}</div>}
-      {sending && <div className="flex items-center gap-2 text-xs font-bold text-[#7a7f8c]" role="status"><span className="zx-tutor-dot" />导师正在查看资料并思考…</div>}
+      {sending && <div className="flex items-center gap-2 text-xs font-bold text-[#7a7f8c]" role="status"><span className="zx-tutor-dot" />Lumin 正在查看资料并思考…</div>}
       {failed && <div className="zx-tutor-inline-error" role="alert"><span>未能回答：{failed.error}</span><button type="button" onClick={() => send(failed)} disabled={sending}>重新发送</button></div>}
       <div ref={bottom} />
     </div>
@@ -276,7 +276,7 @@ function ChatSession({ courseId = '', lessonIndex = -1, lessonTitle = '', quote,
       <div className={`flex items-center gap-3 bg-white px-4 py-3 shadow-[0_8px_28px_rgba(17,19,24,0.13)] ${quote ? 'rounded-b-2xl border border-[#dcd6f2]' : 'rounded-2xl border border-black/[0.07]'}`}>
         <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={(event) => { addImages(event.target.files); event.target.value = ''; }} />
         <button type="button" className="zx-tutor-attach" aria-label="添加图片" title="添加图片，最多 3 张" disabled={sending || preparing || images.length >= TUTOR_MAX_IMAGES} onClick={() => fileInput.current?.click()}><ImageIcon className="h-6 w-6" /></button>
-        <input ref={(node) => { composer.current = node; if (inputRef) inputRef.current = node; }} value={draft} maxLength={12000} aria-label="向人工智能导师提问" disabled={loading || sending} placeholder={preparing ? '正在压缩图片…' : sending ? '导师正在回答…' : quote ? '针对引用内容提问...' : '发送消息或引用讲义提问...'} className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:text-[#a1a4ad]" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); send(); } }} onPaste={(event) => { const files = Array.from(event.clipboardData?.files || []).filter((file) => file.type.startsWith('image/')); if (files.length) { event.preventDefault(); addImages(files); } }} />
+        <input ref={(node) => { composer.current = node; if (inputRef) inputRef.current = node; }} value={draft} maxLength={12000} aria-label="向 Lumin 老师提问" disabled={loading || sending} placeholder={preparing ? '正在压缩图片…' : sending ? 'Lumin 正在回答…' : quote ? '针对引用内容提问...' : '发送消息或引用讲义提问...'} className="min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:text-[#a1a4ad]" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); send(); } }} onPaste={(event) => { const files = Array.from(event.clipboardData?.files || []).filter((file) => file.type.startsWith('image/')); if (files.length) { event.preventDefault(); addImages(files); } }} />
         <button type="button" onClick={speech.toggle} disabled={!speech.supported || sending} className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition ${speech.listening ? 'animate-pulse bg-[#6038ef] text-white' : 'text-[#666b76] hover:bg-[#f0ebff] hover:text-[#6038ef]'} disabled:cursor-not-allowed disabled:opacity-30`} aria-label={speech.listening ? '停止语音输入' : '开始语音输入'} title={speech.supported ? '语音提问' : '当前浏览器不支持语音识别'}><MicIcon className="h-5 w-5" /></button>
         <button type="button" onClick={() => send()} disabled={!canSend} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#6038ef] text-white shadow-[0_6px_16px_rgba(96,56,239,0.28)] transition hover:bg-[#512bdc] disabled:cursor-not-allowed disabled:opacity-35" aria-label="发送消息" title="发送消息"><SendIcon className="h-5 w-5" /></button>
       </div>

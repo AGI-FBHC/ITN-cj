@@ -137,6 +137,7 @@ export async function loginWithEmailCode(email, verificationCode, inviteCode = '
   return bootstrapData;
 }
 export const api = (path, method = 'GET', body) => request(path, { method, body });
+export const getLearnerMemory = () => api('/learner/memory');
 export function clearLearningSession() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem('zhixun-display-name');
@@ -197,4 +198,4 @@ export function useLesson(course, index) {
   }, [course.id, index, revision]);
   return { ...state, retry };
 }
-export const AI_UNAVAILABLE = '导师暂时无法回答，请稍后再试。';
+export const AI_UNAVAILABLE = 'Lumin 暂时无法回答，请稍后再试。';

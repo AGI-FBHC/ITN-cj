@@ -9,6 +9,7 @@ import { loadOrgBrand } from './org-brand.js';
 import './styles.css';
 import './login.css';
 import './admin/admin.css';
+import './typography-layout-consistency.css';
 
 // The admin console is a separate route tree so the recovered learner bundle stays untouched.
 const isAdmin = window.location.pathname === '/admin' || window.location.pathname.startsWith('/admin/');

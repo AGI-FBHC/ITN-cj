@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { adminName, adminToken, clearAdminSession } from './admin-api.js';
-import AdminLogin from './AdminLogin.jsx';
 import AdminOverview from './AdminOverview.jsx';
 import AdminUsers from './AdminUsers.jsx';
 import AdminKnowledge from './AdminKnowledge.jsx';
@@ -17,6 +16,13 @@ function navClass({ isActive }) {
   return isActive ? 'active' : undefined;
 }
 
+function AdminLoginRedirect() {
+  React.useLayoutEffect(() => {
+    window.location.replace('/login?admin=1');
+  }, []);
+  return null;
+}
+
 export default function AdminApp() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -25,14 +31,7 @@ export default function AdminApp() {
   const isLoginPath = path === '/admin/login';
 
   if (isLoginPath) {
-    return (
-      <AdminLogin
-        onDone={() => {
-          setToken(adminToken());
-          navigate('/admin', { replace: true });
-        }}
-      />
-    );
+    return <AdminLoginRedirect />;
   }
   if (!token) return <Navigate to="/admin/login" replace />;
 

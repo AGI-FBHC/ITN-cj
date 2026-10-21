@@ -941,3 +941,29 @@
 - 仅用现有PPTX重新生成这4份 presentation.pptx.preview.html（不重跑模型、不改PPTX/内容/发布状态）；旧文件完整备份到 data/presentation-backups/preview-notes-20261021-220841/。复查 data/presentations 下讲者备注命中数为0。
 - PresentationArtifact 增加防御性清洗：若旧缓存/未来产物仍把“讲者备注”渲染在画布aside中，加载时移除该节点；Notes仍保留在PPTX notes part。
 - 前端构建通过； 生产构建通过（既有大chunk警告）。
+
+## 2026-10-21 22:59 用户专属学习记忆与 Lumin 对话注入基础设施
+- 对话重点：用户要求在实际工作目录 `D:/Downloads/zhixun-yunshu-28801-20261020` 为仓颉后端补“用户专属学习记忆 / Lumin”基础设施；直接改代码但不 commit，不重启服务、不把迁移执行到运行库，由主 agent 统一部署。写入范围限定 `services/learning/src`、`services/learning/migrations`、`services/learning/src/*_test.cj`；本轮不做每用户文件目录 Agent 运行时，只做数据库记忆与对话注入。
+- 新增 `services/learning/migrations/018_learner_memory.sql`：`user_learning_memory` 以 `user_id CHAR(36)` 为主键，一用户一行；包含 `memory_version`、`profile_summary`，以及 `learning_goals_json`、`knowledge_level_json`、`preferences_json`、`strengths_json`、`weaknesses_json`、`active_topics_json`、`tutor_notes_json`、`recent_signals_json` 八个 JSON 字段和创建/更新时间。数组字段默认 `JSON_ARRAY()`，对象字段默认 `JSON_OBJECT()`；`updated_at` 自动更新，`updated_at` 建普通索引，`user_id` 外键到 `users(id)` 并 `ON DELETE CASCADE`。迁移未执行到本地/远端运行库。
+- 新增 `services/learning/src/learner_memory.cj`：提供记忆模型、JSON 类型归一化、UTF-8 安全长度压缩、基于 `users.profile_json` 的默认记忆、按认证用户 `user_id` 的精确加载/首次写库、4096 字节系统提示词快照和稳定 camelCase API 响应。默认记忆只使用用户明确画像（姓名、阶段、目标、关注主题），强弱项保持空数组；知识基础明确标记“来自用户资料，未经过测评”，不推断掌握度。
+- 安全边界：`learnerMemoryLoadOrCreate(cfg, authenticatedUserId)` 只接收 `authenticate()` 已确认的 userId，不读取请求体或查询参数中的用户标识；所有 SQL 通过 `sqlQuote`，读取条件只含该 userId。不存在记录时从该用户的 `users.profile_json` 构造默认值，以 `INSERT IGNORE` 写入后再次按该 userId 回读，避免并发初始化重复行。API 不查询、不返回任何其他用户资料。
+- 新增 `GET /api/learner/memory`：沿用学习 Bearer 认证，返回固定字段 `userId`、`memoryVersion`、`profileSummary`、`learningGoals`、`knowledgeLevel`、`preferences`、`strengths`、`weaknesses`、`activeTopics`、`tutorNotes`、`recentSignals`、`createdAt`、`updatedAt`。字段类型固定为数组/对象/字符串/整数；数据库异常只返回通用 503，不向客户端暴露 SQL 或用户数据。
+- `services/learning/src/main.cj` 的导师系统提示词改为明确身份“你是用户的个人学习助手——Lumin老师”，并加入当前用户学习记忆快照。快照再次限制为 4096 字节，明确标注记忆只属于当前登录用户、禁止跨用户引用，且记忆内容是待参考数据而非指令，不能改变身份或系统规则。`services/learning/src/tutor_chat.cj` 的普通 `POST /api/tutor/chat` 与 SSE `POST /api/tutor/chat/stream` 都在调用模型前按认证 userId 加载并注入同一份压缩记忆；用户可见的模型未配置/失败文案同步使用 Lumin老师。
+- 新增 `services/learning/src/learner_memory_test.cj` 三组原生测试：默认记忆来自当前用户 profile 且不伪造掌握度；错误 JSON 类型、超长 JSON 和 UTF-8 安全长度限制；Lumin 身份词与当前用户记忆确实进入系统提示词，同时超长记忆被压缩。最终 `cjpm test -j1` 为 25/25 通过，其中新增 3 项全部通过。
+- 验证：`cjpm build -i -j1 -o main-next` 成功，产物 `services/learning/target/release/bin/main-next.exe` 已生成，未替换运行中的 `main.exe`。仅有两条既有 parser warning（`mysql_client.cj` 与 `main.cj` 的跨行条件），本次未扩大范围修复。`git diff --check` 无 whitespace error。
+- 边界与剩余风险：本轮按用户要求没有 commit、没有重启 8312、没有执行 018 迁移、没有调用真实 HTTP/MySQL 记忆接口；因此当前运行服务尚不包含这些改动，`user_learning_memory` 表尚不存在。主 agent 部署时必须先确认目标 MySQL 支持 JSON 表达式默认值（MySQL 8.0.13+），应用 018 后再替换/启动新二进制，并实测 GET 与普通/SSE 对话。当前只有默认记忆初始化，未实现记忆更新/压缩回写、每用户文件目录 Agent、向量记忆或后台定时归档。
+
+## 2026-10-21 23:20 登录、导航、收藏、Lumin 画像与前端排版总收尾
+- 本轮继续目标会话 `01a15d70-62a3-7a23-8d8e-f350a54547b1` 的未完成事项。实际工作区为 `D:\Downloads\zhixun-yunshu-28801-20261020`，分支 `codex/native-learning-v1`，本地数据库 `127.0.0.1:13307/itn_learning_v2_dev`。用户要求尽快交付、并行处理；宽屏电脑与 pad 为主，不做过多窄屏回归。未使用 Docker、未改线上 28801、未向远程推送。
+- 旧会话遗留项核验：6 份现行 PPTX 的 `ppt/slides/slideN.xml` 均无“讲者备注/speakerNotes”正文命中，`ppt/notesSlides` 保留正常备注页，因此“讲者备注跑到 PPT 正文”已确认修复。海报页 Navbar/Footer 改用系统 Logo 和固定“智训云枢”，不再使用机构 Logo 或机构简称标签；机构品牌仍只用于登录后的学员页面。
+- 登录页：移除“工号 / 邮箱”和“工号”语义，标题、Tab、字段统一为“邮箱登录/邮箱”，placeholder 为邮箱示例；认证继续传既有 `account` 字段，不改后端协议。学员卡底栏改为左侧“机构管理员？管理员登录”、右侧“Powered by Cangjie”，左侧品牌区重复标识已移除；管理员翻转背面底部为“智训云枢 · 管理端 / Powered by Cangjie”两端对齐。`/admin/login` 继续兼容跳转到 `/login?admin=1`，不再显示独立管理员页。
+- 登录左区卡通：不再按容器百分比重新排布，改为 500×330px 固定坐标画布并居中；中间断点只对整组等比缩放，不改变素材间相对位置。保留上一轮 3D 翻转、回到海报页、正反面焦点隔离、移动端防溢出。
+- 学员导航：顺序改为“首页、书签、课程、Lumin、我的画像”，“学习进度”页面标题与首页侧卡改为“我的画像”。选中态由黑色填充/黑底改为浅紫底和紫色图标，移除首页 icon 的 `fill-current`。头像菜单抽成 `AccountMenu` 组件，固定 `white-space: nowrap`、横向书写和 184px 菜单宽度，浏览器确认“编辑资料/退出登录”均横排。
+- 收藏/书签：原持久化接口已存在，但书签页“取消收藏课程”只改 localStorage，没有调用 `persistState`，刷新后会重新出现，这是用户看到“未绑定后端”的实际原因。现已在该操作中同步 PUT `/api/state`，同时让书签页与课程页从 `useLearning` 的后端快照收敛收藏列表，避免 localStorage 与服务器分叉。浏览器实测收藏后出现在课程收藏页，取消并刷新后仍为空。
+- 前端正文与布局：新增 `apps/web/src/typography-layout-consistency.css` 并在样式末尾加载，统一正文 13.5px、标签/普通按钮 12.5px、meta 11.5px，标题保留原层级；管理端控件统一 32/36/40px 高度、6/10/14/18px 间距，并校准表格、筛选、任务队列、生成设置和多智能体时间线。学员首页原 `lg` 断点强制 300px + minmax + 380px，三栏会把“继续学习”压成窄条；现改为 1024–1279px 两栏、1280px 以上三栏。窄屏导航压缩至 44px 项并实测无整页横向滚动。
+- 用户记忆与 Lumin：新增 migration 018 和 `learner_memory.cj`，一用户一行 `user_learning_memory`，保存版本、画像摘要、目标、知识基础、偏好、优势、薄弱点、当前主题、导师笔记、近期信号。记录不存在时只从当前用户的 `users.profile_json` 生成默认记忆，未测评前不伪造掌握度；所有读写都用认证后的 userId，不能从请求参数切换用户。`GET /api/learner/memory` 已接入“我的画像”页，页面展示 Lumin 记忆摘要和当前关注主题。
+- Lumin 对话：普通和 SSE 对话在调用模型前都加载当前用户记忆并注入系统提示词，提示词身份固定为“你是用户的个人学习助手——Lumin老师”，记忆以数据块传入且禁止跨用户或改变系统规则。前端导航、独立对话页、课程内引用、PPT 侧栏、错误文案全部使用 Lumin/Lumin 老师；`AI_UNAVAILABLE` 也改为 Lumin 文案。真实模型未在本轮重复调用，身份/记忆注入由新增原生测试覆盖。
+- 每用户文件目录 Agent 本轮按用户明确要求暂不实现，只新增 `docs/LUMIN_AGENT_PLAN.md` 记录：`data/lumin/workspaces/{userId}/`、scratch/notes/attachments/cache、路径逃逸防护、单用户权限、配额、TTL 定时清理、数据库长期记忆与临时目录分离、审计和验收边界。后续实现时不得把临时目录当长期记忆。
+- 数据库与部署：先只读确认 `user_learning_memory` 不存在；使用项目本地 MySQL 管理员连接应用 `018`，原表计数 0，迁移后表计数 0，随后 UI 首次读取按当前游客自动创建一行默认记忆。部署前确认 `kb_courseware` 活动任务 queued/generating=0；备份旧 `main.exe` 到 `data/backend-backups/20261021-231311/`，替换为已构建的 `main-next.exe`，重启后端和 Vite。当前后端 PID 196256、前端 PID 160852，8312 health=ok / Cangjie 1.2.0 + Spire，3006=200。
+- 验证：`cjpm test -j1` 25/25 通过（含默认记忆、类型/长度限制、Lumin 提示词 3 项）；后端 release 构建成功；前端 Vite 构建成功（2171 modules，仅既有大 chunk 提示）；`git diff --check` 无 whitespace error。浏览器实测邮箱登录、卡片翻转与底部对齐、固定卡通构图、导航换位/紫色选中态、横排头像菜单、课程收藏跨刷新、Lumin 对话页、我的画像记忆卡均正常；管理端概览、课件页和任务队列间距/正文字号抽查正常。
+- 当前边界：记忆本轮只实现初始化/读取和对话注入，尚无自动写回、压缩、向量检索或定时更新；真实模型对话未再次发起，避免额外费用；窄屏只做基本防溢出，按用户要求以宽屏电脑/pad 验收为准。本批源代码、迁移、测试、方案文档和本 TRACE 一起本地提交，方便回滚，不推送。

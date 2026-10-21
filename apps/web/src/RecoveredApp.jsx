@@ -16,6 +16,7 @@ import {
   api,
   bootstrap,
   clearLearningSession,
+  getLearnerMemory,
   LoadPanel,
   persistState,
   refreshLearning,
@@ -61,14 +62,14 @@ function Navbar({ onGetStarted: n }) {
           href: "#hero",
           className: "flex items-center gap-2.5 select-none",
           children: [
-            jsxRuntime.jsx(ProductLogo, {
+            jsxRuntime.jsx(SystemLogo, {
               "code-path": "src\\components\\Navbar.tsx:8:11",
               className: "h-8 w-8",
             }),
             jsxRuntime.jsx("span", {
               "code-path": "src\\components\\Navbar.tsx:9:11",
               className: "text-xl font-extrabold tracking-wide text-[#111318]",
-              children: jsxRuntime.jsx(BrandText, {}),
+              children: "智训云枢",
             }),
           ],
         }),
@@ -857,17 +858,16 @@ function Footer() {
         className: "anim-pop-in relative z-10 flex flex-col items-center",
         style: { animationDelay: "0.1s" },
         children: [
-          jsxRuntime.jsx(ProductLogo, {
+          jsxRuntime.jsx(SystemLogo, {
             "code-path": "src\\sections\\Footer.tsx:13:9",
             className: "h-32 w-32 md:h-44 md:w-44",
-            color: "#ffffff",
-            animated: !0,
+            tone: "light",
           }),
           jsxRuntime.jsx("h2", {
             "code-path": "src\\sections\\Footer.tsx:14:9",
             className:
               "mt-10 text-4xl font-extrabold tracking-[0.2em] md:text-5xl",
-            children: jsxRuntime.jsx(BrandText, { inverse: true }),
+            children: "智训云枢",
           }),
           jsxRuntime.jsx("p", {
             "code-path": "src\\sections\\Footer.tsx:15:9",
@@ -2295,9 +2295,33 @@ const Sy = [
     { id: "home", icon: B2, label: "首页" },
     { id: "bookmarks", icon: bn, label: "书签" },
     { id: "courses", icon: $a, label: "课程" },
-    { id: "progress", icon: gy, label: "学习进度" },
-    { id: "coach", icon: Lm, label: "AI智训" },
+    { id: "coach", icon: Lm, label: "Lumin" },
+    { id: "progress", icon: gy, label: "我的画像" },
   ];
+
+function AccountMenu({ open, onEdit, onLogout }) {
+  if (!open) return null;
+  return jsxRuntime.jsxs("div", {
+    role: "menu",
+    className: "zx-account-menu",
+    children: [
+      jsxRuntime.jsx("button", {
+        type: "button",
+        role: "menuitem",
+        className: "zx-account-menu-item",
+        onClick: onEdit,
+        children: "编辑资料",
+      }),
+      jsxRuntime.jsx("button", {
+        type: "button",
+        role: "menuitem",
+        className: "zx-account-menu-item is-danger",
+        onClick: onLogout,
+        children: "退出登录",
+      }),
+    ],
+  });
+}
 
 function AppNavigation({
   active: n,
@@ -2329,13 +2353,13 @@ function AppNavigation({
     children: jsxRuntime.jsxs("div", {
       "code-path": "src\\components\\AppNavigation.tsx:36:7",
       className:
-        "mx-auto flex h-[84px] max-w-[1680px] items-center justify-between gap-5 px-5 sm:px-8",
+        "zx-app-navigation-inner mx-auto flex h-[84px] max-w-[1680px] items-center justify-between gap-5 px-5 sm:px-8",
       children: [
         jsxRuntime.jsxs("button", {
           "code-path": "src\\components\\AppNavigation.tsx:37:9",
           type: "button",
           onClick: () => r("home"),
-          className: "flex shrink-0 items-center gap-2.5 text-left",
+          className: "zx-app-navigation-brand flex shrink-0 items-center gap-2.5 text-left",
           "aria-label": "返回首页",
           children: [
             jsxRuntime.jsx(ProductLogo, {
@@ -2352,7 +2376,7 @@ function AppNavigation({
         }),
         jsxRuntime.jsx("nav", {
           "code-path": "src\\components\\AppNavigation.tsx:49:9",
-          className: "flex h-full items-center gap-0.5 sm:gap-1",
+          className: "zx-app-navigation-nav flex h-full items-center gap-0.5 sm:gap-1",
           "aria-label": "主导航",
           children: ky.map((d) => {
             const p = d.id === n;
@@ -2362,12 +2386,12 @@ function AppNavigation({
                 "code-path": "src\\components\\AppNavigation.tsx:53:15",
                 type: "button",
                 onClick: () => r(d.id),
-                className: `group relative flex h-[66px] min-w-[52px] flex-col items-center justify-center gap-1 rounded-xl px-2 transition-all sm:min-w-[68px] sm:px-3 xl:min-w-[88px] ${p ? "bg-[#f5f5f6] text-[#111318] shadow-[inset_0_0_0_1px_rgba(17,19,24,0.06)]" : "text-[#535762] hover:bg-[#f8f8f9] hover:text-[#111318]"}`,
+                className: `group relative flex h-[66px] min-w-[52px] flex-col items-center justify-center gap-1 rounded-xl px-2 transition-all sm:min-w-[68px] sm:px-3 xl:min-w-[88px] ${p ? "bg-[#f7f4ff] text-[#6038ef] shadow-[inset_0_0_0_1px_rgba(96,56,239,0.12)]" : "text-[#535762] hover:bg-[#f8f8f9] hover:text-[#111318]"}`,
                 "aria-current": p ? "page" : void 0,
                 children: [
                   jsxRuntime.jsx(d.icon, {
                     "code-path": "src\\components\\AppNavigation.tsx:64:17",
-                    className: `h-[22px] w-[22px] sm:h-6 sm:w-6 ${p && d.id === "home" ? "fill-current" : ""}`,
+                    className: "h-[22px] w-[22px] sm:h-6 sm:w-6",
                     strokeWidth: p ? 2.35 : 2.05,
                   }),
                   jsxRuntime.jsx("span", {
@@ -2383,7 +2407,7 @@ function AppNavigation({
         }),
         jsxRuntime.jsxs("div", {
           "code-path": "src\\components\\AppNavigation.tsx:78:9",
-          className: "flex shrink-0 items-center gap-3 sm:gap-5",
+          className: "zx-app-navigation-actions flex shrink-0 items-center gap-3 sm:gap-5",
           children: [
             jsxRuntime.jsxs("label", {
               "code-path": "src\\components\\AppNavigation.tsx:79:11",
@@ -2424,14 +2448,11 @@ function AppNavigation({
                 ? jsxRuntime.jsx("img", { src: profile.avatar, alt: "", className: "h-full w-full object-cover" })
                 : avatarText,
               }),
-              menuOpen ? jsxRuntime.jsxs("div", {
-                role: "menu",
-                className: "absolute right-0 top-[calc(100%+10px)] z-[80] w-44 overflow-hidden rounded-2xl border border-black/10 bg-white p-1.5 shadow-[0_18px_45px_rgba(24,18,40,0.16)]",
-                children: [
-                  jsxRuntime.jsx("button", { type: "button", role: "menuitem", className: "flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm font-bold text-[#34313d] hover:bg-[#f6f3ff] hover:text-[#6038ef]", onClick: () => { setMenuOpen(false); r("profile"); }, children: "编辑资料" }),
-                  jsxRuntime.jsx("button", { type: "button", role: "menuitem", className: "flex w-full items-center rounded-xl px-3 py-2.5 text-left text-sm font-bold text-[#a23a50] hover:bg-[#fff1f4]", onClick: () => { clearLearningSession(); window.location.assign("/login"); }, children: "退出登录" }),
-                ],
-              }) : null,
+              jsxRuntime.jsx(AccountMenu, {
+                open: menuOpen,
+                onEdit: () => { setMenuOpen(false); r("profile"); },
+                onLogout: () => { clearLearningSession(); window.location.assign("/login"); },
+              }),
             ]}),
           ],
         }),
@@ -6013,7 +6034,7 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
         ($((K) => [
           ...K,
           `你：${D}`,
-          `AI导师：${AI_UNAVAILABLE}`,
+          AI_UNAVAILABLE,
         ]),
         Q(""));
     };
@@ -6232,7 +6253,7 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
                         "code-path": "src\\pages\\QuizFlow.tsx:182:224",
                         className: "h-5 w-5",
                       }),
-                      "人工智能导师",
+                      "Lumin",
                     ],
                   }),
                 ],
@@ -6272,7 +6293,7 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
                           value: B,
                           onChange: (D) => Q(D.target.value),
                           onKeyDown: (D) => D.key === "Enter" && xe(),
-                          placeholder: "引用本题解析向 AI 导师提问...",
+                          placeholder: "引用本题解析向 Lumin 老师提问...",
                           className:
                             "min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none",
                         }),
@@ -6816,7 +6837,7 @@ function Lecture({
                                           "src\\pages\\Lecture.tsx:211:25",
                                         className: "h-[18px] w-[18px]",
                                       }),
-                                      " 人工智能导师",
+                                      " Lumin 老师",
                                     ],
                                   }),
                                 ],
@@ -6984,7 +7005,7 @@ function Presentation({
                   children: [
                     "实际 PPTX · ",
                     presentation.slideCount ? `${presentation.slideCount} 页` : "可下载",
-                    " · 支持 AI 导师随时提问",
+                    " · 支持 Lumin 老师随时提问",
                   ],
                 }),
                 jsxRuntime.jsxs("div", {
@@ -7168,7 +7189,7 @@ function Presentation({
                   onClick: be,
                   className:
                     "ml-2 rounded-lg bg-[#f0ebff] px-3 py-2 text-xs font-black text-[#6038ef]",
-                  title: "调节 AI 导师讲解语速",
+                  title: "调节 Lumin 老师讲解语速",
                   children: [y, "X"],
                 }),
               ],
@@ -7207,7 +7228,7 @@ function Presentation({
                     "code-path": "src\\pages\\Presentation.tsx:260:88",
                     className: "h-4 w-4",
                   }),
-                  "AI导师",
+                  "Lumin 老师",
                 ],
               }),
               jsxRuntime.jsx("p", {
@@ -7830,6 +7851,7 @@ function a3() {
 }
 
 function Bookmarks({ onNavigate: n }) {
+  const learning = useLearning();
   const [r, u] = React.useState("practice"),
     [i, d] = React.useState(pu),
     [p, m] = React.useState(a3),
@@ -7846,10 +7868,23 @@ function Bookmarks({ onNavigate: n }) {
         return (
           z.delete(y),
           localStorage.setItem(vx, JSON.stringify([...z])),
+          persistState({ favorites: [...z] }),
           z
         );
       });
     };
+  React.useEffect(() => {
+    if (Array.isArray(learning.data?.bookmarks)) {
+      d((current) => JSON.stringify(current) === JSON.stringify(learning.data.bookmarks) ? current : learning.data.bookmarks);
+    }
+  }, [learning.data?.bookmarks]);
+  React.useEffect(() => {
+    if (!Array.isArray(learning.data?.favorites)) return;
+    m((current) => {
+      const next = new Set(learning.data.favorites);
+      return current.size === next.size && [...current].every((id) => next.has(id)) ? current : next;
+    });
+  }, [learning.data?.favorites]);
   return jsxRuntime.jsxs("div", {
     "code-path": "src\\pages\\Bookmarks.tsx:54:5",
     className: "min-h-screen bg-[#fbfbfd]",
@@ -8335,6 +8370,13 @@ function Courses({
     [j, z] = React.useState(() => $t.find((B) => B.id === r) ?? null),
     [R, N] = React.useState(!1);
   React.useEffect(() => {
+    if (!Array.isArray(learning.data?.favorites)) return;
+    m((current) => {
+      const next = new Set(learning.data.favorites);
+      return current.size === next.size && [...current].every((id) => next.has(id)) ? current : next;
+    });
+  }, [learning.data?.favorites]);
+  React.useEffect(() => {
     localStorage.setItem(wx, JSON.stringify([...p]));
     persistState({ favorites: [...p] });
   }, [p]);
@@ -8740,16 +8782,61 @@ function i3({ course: n, node: r, onClose: u, onReview: i, onRetest: d }) {
   });
 }
 
+function LearnerMemoryCard({ memory }) {
+  const topics = Array.isArray(memory?.activeTopics) ? memory.activeTopics.slice(0, 8) : [];
+  const strengths = Array.isArray(memory?.strengths) ? memory.strengths.slice(0, 4) : [];
+  return jsxRuntime.jsxs("section", {
+    className: "zx-memory-card",
+    children: [
+      jsxRuntime.jsxs("div", { className: "zx-memory-card-head", children: [
+        jsxRuntime.jsx("div", { className: "zx-memory-card-mark", children: "L" }),
+        jsxRuntime.jsxs("div", { children: [
+          jsxRuntime.jsx("span", { children: "LUMIN MEMORY" }),
+          jsxRuntime.jsx("h2", { children: "我的专属学习画像" }),
+        ] }),
+      ] }),
+      jsxRuntime.jsx("p", {
+        className: "zx-memory-summary",
+        children: memory?.profileSummary || "Lumin 会在你开始学习后，结合课程、练习和对话逐步建立个人学习记忆。",
+      }),
+      topics.length > 0 && jsxRuntime.jsxs("div", { className: "zx-memory-row", children: [
+        jsxRuntime.jsx("strong", { children: "当前关注" }),
+        jsxRuntime.jsx("div", { className: "zx-memory-tags", children: topics.map((topic) =>
+          jsxRuntime.jsx("span", { children: String(topic?.label || topic?.value || topic) }, String(topic?.label || topic?.value || topic))
+        ) }),
+      ] }),
+      strengths.length > 0 && jsxRuntime.jsxs("div", { className: "zx-memory-row", children: [
+        jsxRuntime.jsx("strong", { children: "已确认优势" }),
+        jsxRuntime.jsx("div", { className: "zx-memory-tags", children: strengths.map((item, index) =>
+          jsxRuntime.jsx("span", { children: String(item?.label || item?.text || item) }, `strength-${index}`)
+        ) }),
+      ] }),
+    ],
+  });
+}
+
 function LearningProgress(props) {
+  const [memory, setMemory] = React.useState(null);
+  React.useEffect(() => {
+    let active = true;
+    getLearnerMemory()
+      .then((value) => { if (active) setMemory(value); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
   const tracked = $t.some((course) => o3[course.id] !== void 0);
+  const hasMemory = Boolean(memory?.profileSummary);
   if (!tracked) {
     return <div className="min-h-screen bg-[#f7f7fa]">
       <AppNavigation active="progress" onNavigate={props.onNavigate} />
       <main className="mx-auto flex max-w-xl flex-col items-center gap-4 px-6 py-24 text-center">
-        <h1 className="text-2xl font-extrabold text-[#111318]">{$t.length === 0 ? "还没有已发布的课程" : "暂无进度明细"}</h1>
+        <h1 className="text-2xl font-extrabold text-[#111318]">{$t.length === 0 ? "还没有已发布的课程" : hasMemory ? "我的画像" : "暂无画像记忆"}</h1>
         <p className="text-sm font-semibold leading-7 text-[#8b8f99]">{$t.length === 0
-          ? "管理员发布课程后，这里会显示学习进度。"
-          : "课程页的章节完成情况会随阅读与测验逐步更新。"}</p>
+          ? "管理员发布课程后，Lumin 会开始建立你的学习画像。"
+          : hasMemory
+            ? "Lumin 会结合阅读、测验与对话记录，持续完善你的个人学习画像。"
+            : "Lumin 会结合阅读、测验与对话记录，逐步完善你的个人学习画像。"}</p>
+        <div className="w-full text-left"><LearnerMemoryCard memory={memory} /></div>
         <div className="mt-3 flex flex-wrap justify-center gap-3">
           <button type="button" className="rounded-xl bg-[#6038ef] px-6 py-3 font-bold text-white" onClick={() => props.onNavigate?.("courses")}>查看课程</button>
           <button type="button" className="rounded-xl border border-[#e3dcec] bg-white px-6 py-3 font-bold text-[#6038ef]" onClick={() => props.onNavigate?.("home")}>返回学习首页</button>
@@ -8757,10 +8844,10 @@ function LearningProgress(props) {
       </main>
     </div>;
   }
-  return jsxRuntime.jsx(LearningProgressInner, props);
+  return jsxRuntime.jsx(LearningProgressInner, { ...props, memory });
 }
 
-function LearningProgressInner({ onNavigate: n }) {
+function LearningProgressInner({ onNavigate: n, memory }) {
   const [r, u] = React.useState("co"),
     [i, d] = React.useState(null),
     [p, m] = React.useState(1),
@@ -8842,15 +8929,16 @@ function LearningProgressInner({ onNavigate: n }) {
                     "code-path": "src\\pages\\LearningProgress.tsx:154:11",
                     className:
                       "text-4xl font-black tracking-tight text-[#111318]",
-                    children: "学习进度",
+                    children: "我的画像",
                   }),
                   jsxRuntime.jsx("p", {
                     "code-path": "src\\pages\\LearningProgress.tsx:155:11",
                     className: "mt-2 font-semibold text-[#878b95]",
-                    children: "通过知识图谱，查看掌握情况与下一步学习路径",
+                    children: "Lumin 根据学习记录与对话记忆，持续更新你的掌握情况与下一步路径",
                   }),
                 ],
               }),
+              jsxRuntime.jsx(LearnerMemoryCard, { memory }),
               jsxRuntime.jsx("div", {
                 "code-path": "src\\pages\\LearningProgress.tsx:158:9",
                 className: "mt-5 flex flex-wrap justify-center gap-2.5",
@@ -9367,7 +9455,7 @@ function ProfileEditor({ profile: n, onBack: r, onSave: u, onNavigate: i }) {
                 "code-path": "src\\pages\\ProfileEditor.tsx:92:11",
                 className: "mt-2 font-semibold text-[#858995]",
                 children:
-                  "完善个人信息，让智能导师为你提供更贴合目标的学习建议。",
+                  "完善个人信息，让 Lumin 老师为你提供更贴合目标的学习建议。",
               }),
             ],
           }),
@@ -10127,12 +10215,12 @@ function Dashboard({ profile: n }) {
                   jsxRuntime.jsxs("main", {
                     "code-path": "src\\pages\\Dashboard.tsx:199:7",
                     className:
-                      "mx-auto grid max-w-[1560px] grid-cols-1 gap-6 p-6 lg:grid-cols-[300px_minmax(0,1fr)_380px]",
+                      "zx-dashboard-grid mx-auto grid max-w-[1560px] grid-cols-1 gap-6 p-6 lg:grid-cols-[300px_minmax(0,1fr)_380px]",
                     children: [
                       jsxRuntime.jsxs("aside", {
                         "code-path": "src\\pages\\Dashboard.tsx:201:9",
                         className:
-                          "h-fit rounded-3xl border border-black/5 bg-white p-6",
+                          "zx-dashboard-profile h-fit rounded-3xl border border-black/5 bg-white p-6",
                         children: [
                           jsxRuntime.jsx("h3", {
                             "code-path": "src\\pages\\Dashboard.tsx:202:11",
@@ -10260,7 +10348,7 @@ function Dashboard({ profile: n }) {
                       }),
                       jsxRuntime.jsxs("section", {
                         "code-path": "src\\pages\\Dashboard.tsx:245:9",
-                        className: "flex flex-col gap-6",
+                        className: "zx-dashboard-center flex flex-col gap-6",
                         children: [
                           jsxRuntime.jsxs("div", {
                             "code-path": "src\\pages\\Dashboard.tsx:246:11",
@@ -10566,7 +10654,7 @@ function Dashboard({ profile: n }) {
                       }),
                       jsxRuntime.jsxs("aside", {
                         "code-path": "src\\pages\\Dashboard.tsx:363:9",
-                        className: "flex h-fit flex-col gap-6",
+                        className: "zx-dashboard-side flex h-fit flex-col gap-6",
                         children: [
                           jsxRuntime.jsxs("div", {
                             "code-path": "src\\pages\\Dashboard.tsx:364:11",
@@ -10586,7 +10674,7 @@ function Dashboard({ profile: n }) {
                                           "src\\pages\\Dashboard.tsx:367:17",
                                         className:
                                           "text-lg font-extrabold text-[#111318]",
-                                        children: "学习进度",
+                                        children: "我的画像",
                                       }),
                                       jsxRuntime.jsx("p", {
                                         "code-path":
