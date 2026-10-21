@@ -5210,3 +5210,10 @@ read_chunk 读得到原文并带回库标识与正文。
 - 真实模型：使用 `%LOCALAPPDATA%\Lumin\itn.db` 的 TEMP 只读副本（仅读取 mimo 配置，未打印密钥）运行 real-session-check。结果不是产品失败：会话事件明确记录 `turn/end {"ok":false,"message":"模型接口返回 429：… quota exhausted"}`，即 MiMo 账号配额耗尽。该轮真实模型验收因此无法继续，未反复重试烧配额；凭据副本已截断为 0 字节（Remove-Item 被自动审批策略拦截，改用文件截断清除密钥内容）。
 - 侧边栏专项扩展到 44 项，新增：协作树弹窗打开时导航到别的页面 → 面板与遮罩在 280ms 收尾后都 hidden、JS 状态为关闭；回到对话页不会自动重弹旧协作树；任务中心浮层打开时切页 → 浮层关闭且 aria-expanded=false。当前源码连跑 2 次均 44/44（lumin-sidebar-QBUqnN / Nc2cac）。
 - 说明：协作树是模态遮罩，打开时鼠标点击左栏会被正确拦截，测试用强制点击模拟"导航仍发生"的清理路径；这不是产品缺陷。
+
+### 2026-10-22 08:35 · 真实模型链路验收（DeepSeek 可用，MiMo 配额耗尽）
+
+- MiMo：real-session-check 因上游 `429 quota exhausted` 失败（会话事件里的 turn/end 原文记录），非产品缺陷；未反复重试烧配额。
+- DeepSeek：从本机数据库 TEMP 只读副本取出 `deepseek-flash` 配置，经仓颉内核单问单答 → ASK_OK=true / TURN_OK=true / 95 字真实回答（「函数返回值就是函数执行完毕后交给调用者的那个结果…」）。凭据副本结束清零（0 字节）。
+- 真实模型 + 会话栏：新建 A 问「变量」、新建 B 问「循环」，再点回 A —— 打开会话、面板高亮、正文三者都回到 A，A 正文含「变量」且不含 B 的「循环」，0 页面异常。这是对之前"慢响应乱序导致高亮/正文错位"修复的真实模型复核。
+- 新增 tools/real-chat-smoke.cjs（单次真实问答）与 tools/real-chat-ui-smoke.cjs（真实模型 A/B 会话切换），均只从 TEMP 副本读取凭据并在 finally 清零，不打印密钥。
