@@ -16,13 +16,14 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(base);await page.waitForSelector('#chat-input');
   await page.evaluate(()=>go('learn'));
-  await page.waitForSelector('.study-workspace');
-  check('no-KB keeps the same two-column shell',await page.locator('.study-workspace .study-side').count()===1&&await page.locator('.study-detail .empty').count()>=1);
-  check('no-KB guidance stays inside the page',await page.locator('.study-side button').filter({hasText:'添加资料目录'}).count()===1&&await page.getByRole('button',{name:'去指定资料目录',exact:true}).count()===1);
+  // 学 · 练现在是思维导图工作区（旧的 study-workspace 两栏壳已被替换）
+  await page.waitForSelector('.course-workspace');
+  check('no-KB keeps the course workspace shell',await page.locator('.course-workspace .course-toolbar').count()===1&&await page.locator('.course-stage').count()===1);
+  check('no-KB guidance stays inside the page',(await page.locator('.course-stage').innerText()).includes('先选择一个知识库')&&await page.getByRole('button',{name:'去知识库',exact:true}).count()>=1);
   await post('/api/kb/save',{id:'kb',name:'测试资料',rootDir:kb});
   await page.evaluate(()=>go('learn'));
-  await page.waitForSelector('.study-workspace');
-  check('unindexed KB shows the same shell with a build action',await page.locator('.study-side button').filter({hasText:'建立索引'}).count()===1&&await page.getByRole('button',{name:'建立索引',exact:true}).count()>=1);
+  await page.waitForSelector('.course-workspace');
+  check('unindexed KB shows the map prompt and a generate action',(await page.locator('.course-stage').innerText()).includes('生成思维导图')&&await page.locator('#course-generate').count()===1);
   check('no JavaScript errors',errors.length===0);
   console.log('RESULT '+passed+' passed');
  }finally{if(browser)await browser.close();core.kill();mock.kill();}})().catch(e=>{console.error(e);process.exitCode=1;});

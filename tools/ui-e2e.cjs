@@ -445,12 +445,18 @@ fs.writeFileSync(singleFile, [
   });
   /* ---------- 知识库：登记 + 建立索引 ---------- */
   await step('登记知识库并建立索引', async () => {
-    await settings('知识库');
-    await page.fill('#kb-id', 'course');
-    await page.fill('#kb-name', '自测课程资料');
-    await page.fill('#kb-dir', kbDir);
-    await page.getByRole('button', { name: '保存并建立索引' }).click();
-    await page.waitForSelector('.ok-dialog:has-text("索引完成")', { timeout: 60000 });
+    // 固定 id 'course'（后面的接口断言都用它）；界面导入会按同一路径复用这个库
+    await page.evaluate((dir) => fetch('/api/kb/save', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({id: 'course', name: '自测课程资料', rootDir: dir}),
+    }), kbDir);
+    await nav('知识库');
+    await page.locator('.kb-workspace-tabs [data-kb-tab="manage"]').click();
+    await page.waitForSelector('#kb-import-path', { timeout: 15000 });
+    await page.fill('#kb-import-name', '自测课程资料');
+    await page.fill('#kb-import-path', kbDir);
+    await page.getByRole('button', { name: '添加并索引' }).click();
+    await page.waitForSelector('.ok-dialog:has-text("资料准备完成")', { timeout: 90000 });
     const detail = await page.locator('.ok-dialog').innerText();
     const nums = (detail.match(/(\d+)\s*(篇|片|张)/g) || []).join(' ');
     assert(/\d+\s*篇/.test(detail) && /\d+\s*片/.test(detail), '索引结果应含篇/片统计，实际：' + detail.replace(/\s+/g, ' '));
@@ -478,52 +484,45 @@ fs.writeFileSync(singleFile, [
     return '章节含「网页讲义」；style 被剥掉';
   });
 
-  await step('领域知识库：这个库里有什么（统计 / 来源 / 文档清单 / 动作都在这一页）', async () => {
-    await nav('领域知识库');
-    await page.waitForSelector('#view .grid .stat', { timeout: 20000 });
-    const head = await page.locator('#view .card').first().innerText();
-    for (const want of ['文档', '切片', '图片', '来源', '检索方式']) {
-      assert(head.indexOf(want) >= 0, '知识库详情里应有「' + want + '」，实际：' + head.replace(/\s+/g, ' ').slice(0, 120));
-    }
-    // 统计与接口同口径
+  await step('知识库：文档清单、检索与重建入口都在当前页', async () => {
+    await nav('知识库');
+    await page.waitForSelector('#view .library-documents', { timeout: 20000 });
     const api = await page.evaluate(() => fetch('/api/kb/stats', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 'course' }) }).then((r) => r.json()).then((j) => j.data));
-    const nums = await page.$$eval('#view .grid .stat .v', (els) => els.map((e) => parseInt(e.textContent, 10) || 0));
-    assert(nums[0] === api.docCount, '文档数应与接口一致（界面 ' + nums[0] + ' / 接口 ' + api.docCount + '）');
-    assert(nums[1] === api.chunkCount, '切片数应与接口一致（界面 ' + nums[1] + ' / 接口 ' + api.chunkCount + '）');
-    // 文档清单（折叠块）里应有真实文件名，且每篇带切片数
-    const sum = await page.locator('#view .kb-docs summary').innerText();
-    assert(sum.indexOf('文档') >= 0, '应有文档清单折叠块，实际 ' + sum);
-    await page.locator('#view .kb-docs summary').click();
-    await page.waitForTimeout(400);
-    const first = await page.locator('#view .kb-docs .item').first().innerText();
-    assert(first.indexOf('片') >= 0, '每篇文档应带切片数，实际 ' + first.replace(/\s+/g, ' '));
-    const titles = await page.$$eval('#view .kb-docs .item-title', (els) => els.map((e) => e.textContent.trim()));
-    assert(titles.join('/').indexOf('提示词') >= 0, '文档清单里应有 E2E 造的 01-提示词.md，实际 ' + titles.join('/'));
-    // 动作就三个：重建索引 / 让 lumin 整理 / 设置里改
-    const acts = await page.$$eval('#view .card-head button', (els) => els.map((e) => e.textContent.trim()));
-    assert(acts.join('/').indexOf('重建索引') >= 0 && acts.join('/').indexOf('让 Lumin 整理') >= 0, '详情卡上应有这两个动作，实际 ' + acts.join('/'));
-    // 接口也把文档清单回出来了（界面不自己拼）
-    assert((api.docs || []).length === api.docCount, '接口的 docs 数与 docCount 应一致，实际 ' + (api.docs || []).length + ' vs ' + api.docCount);
-    await shot('56-知识库详情');
-    return titles.length + ' 篇文档 · ' + nums[0] + ' 篇 / ' + nums[1] + ' 片 · 动作 ' + acts.join('/');
+    const docs = await page.$$eval('#view .library-document', (els) => els.map((e) => ({
+      title: e.querySelector('.item-title')?.textContent.trim() || '',
+      text: e.innerText,
+    })));
+    assert(docs.length === api.docCount, '文档清单条数应与接口一致（界面 ' + docs.length + ' / 接口 ' + api.docCount + '）');
+    assert(docs.some((d) => d.title.indexOf('提示词') >= 0), '文档清单里应有 01-提示词.md，实际：' + docs.map((d) => d.title).join('/'));
+    assert(docs.every((d) => /\d+\s*个内容片段|\d+\s*片/.test(d.text)), '每篇文档应带切片数，实际：' + JSON.stringify(docs.map((d) => d.text.slice(0, 40))));
+    // 就资料提问的搜索框真的能检索出命中
+    await page.fill('#view input[aria-label="搜索资料内容"]', '智能体');
+    await page.getByRole('button', { name: '搜索' }).first().click();
+    await page.waitForSelector('#view .library-results .item', { timeout: 15000 });
+    const hits = await page.locator('#view .library-results .item').count();
+    assert(hits >= 1, '搜索应至少命中一条，实际 ' + hits);
+    // 资料管理里能重建索引
+    await page.locator('.kb-workspace-tabs [data-kb-tab="manage"]').click();
+    await page.waitForSelector('#kb-management', { timeout: 15000 });
+    const manageText = await page.locator('#kb-management').innerText();
+    assert(manageText.indexOf('重建索引') >= 0 || manageText.indexOf('建立索引') >= 0,
+      '资料管理里应有建索引入口，实际：' + manageText.replace(/\s+/g, ' ').slice(0, 140));
+    await shot('56-知识库');
+    return docs.length + ' 篇文档 · 搜索命中 ' + hits;
   });
 
   await step('读不了的文件会被如实报出来（不是静默跳过）', async () => {
-    await settings('知识库');
-    // 这个知识库已经建过索引，按钮叫「重建索引」；用 exact 免得匹配到表单里的「保存并建立索引」
+    await nav('知识库');
+    await page.locator('.kb-workspace-tabs [data-kb-tab="manage"]').click();
+    await page.waitForSelector('#kb-management', { timeout: 15000 });
     await page.getByRole('button', { name: '重建索引', exact: true }).first().click();
-    await page.waitForSelector('.ok-dialog:has-text("索引完成")', { timeout: 60000 });
+    await page.waitForSelector('.ok-dialog:has-text("资料准备完成")', { timeout: 90000 });
     const text = await page.locator('.ok-dialog').innerText();
     assert(text.indexOf('未纳入') >= 0 || text.indexOf('没纳入') >= 0, '索引完成弹层应说明未纳入的文件，实际：' + text.replace(/\s+/g, ' ').slice(0, 160));
-    assert(text.indexOf('pdf') >= 0, '应点名 pdf，实际：' + text.replace(/\s+/g, ' ').slice(0, 160));
+    assert(text.toLowerCase().indexOf('pdf') >= 0, '应点名 pdf，实际：' + text.replace(/\s+/g, ' ').slice(0, 160));
     await shot('28-未纳入的文件');
     await page.locator('.ok-dialog').getByRole('button', { name: '收起' }).click();
-    await nav('领域知识库');
-    await page.waitForSelector('.skip-note', { timeout: 15000 });
-    const note = await page.locator('.skip-note').innerText();
-    assert(note.indexOf('pdf') >= 0, '领域知识库页应能回看未纳入的文件，实际：' + note.replace(/\s+/g, ' '));
-    await shot('29-知识库漏读提示');
-    return note.replace(/\s+/g, ' ').slice(0, 60);
+    return text.replace(/\s+/g, ' ').slice(0, 60);
   });
 
   /* ---------- 学 · 练：读章节 + 标记已读 ---------- */

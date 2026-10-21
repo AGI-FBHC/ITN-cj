@@ -28,6 +28,8 @@ const freePort=()=>new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.
   check('alignment markers map to classes',await page.locator('#chat-thread thead th.ta-l').count()===1&&await page.locator('#chat-thread thead th.ta-c').count()===1&&await page.locator('#chat-thread thead th.ta-r').count()===1);
   check('inline code inside a cell still renders',await page.locator('#chat-thread tbody td code').count()===1);
   check('task list boxes render with done state',await page.locator('#chat-thread .md-task-box.done').count()===1&&await page.locator('#chat-thread .md-task-box:not(.done)').count()===1);
+  // 表格在前面、~~删除线~~在最后一段：流式还没写完尾段时断言会误报，先等文字到齐
+  await until(async()=> (await page.locator('#chat-thread').innerText()).includes('旧版本已废弃'),15000);
   check('strikethrough renders',await page.locator('#chat-thread .md s').count()===1);
   const link=page.locator('#chat-thread a.md-link');
   check('safe links render as anchors with target/rel',await link.count()===1&&await link.getAttribute('href')==='https://example.com/docs'&&await link.getAttribute('target')==='_blank'&&(await link.getAttribute('rel')||'').includes('noopener'));

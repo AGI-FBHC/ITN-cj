@@ -689,7 +689,7 @@ body[data-page="home"] .view { padding:14px 18px 14px; min-height:0; }
   border-radius:999px;
   color:var(--muted);
   background:var(--panel);
-  font-size:11px;
+  font-size:12.5px;
   font-variant-numeric:tabular-nums;
 }
 

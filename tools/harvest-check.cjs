@@ -78,10 +78,13 @@ async function startKernel() {
   // 0.8.4 起首页不再有旧星云卡片；等应用壳就绪后直接按路由进入知识库页
   await page.waitForFunction(() => !document.querySelector('#boot'));
   await page.waitForSelector('.rail .nav-item');
-  await page.evaluate(() => go('kb'));
+  // 知识库页现在是三个功能切换：收集资料在「收集资料」标签里（默认是查看知识库）
+  await page.evaluate(() => go('kb', 'harvest'));
   await page.waitForSelector('.harvest-entry');
   await page.waitForFunction(() => !document.querySelector('#view .spinner'));
-  await page.locator('.harvest-entry summary').first().click();
+  // 进入「收集资料」标签时内核侧已经默认展开；再点一次反而会收起
+  const entry = page.locator('.harvest-entry').first();
+  if (!(await entry.evaluate((node) => node.open))) await entry.locator('summary').first().click();
   const source = page.locator('.harvest-source', { hasText: '收集验收资料' }).first();
   await source.waitFor();
   check('real navigation reaches source and confirmation starts disabled', await source.getByRole('button', { name: '确认并入并建索引' }).isDisabled());

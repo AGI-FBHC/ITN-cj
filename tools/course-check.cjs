@@ -14,12 +14,20 @@ const root=path.resolve(__dirname,'..'),sleep=ms=>new Promise(r=>setTimeout(r,ms
  const close=async()=>{if(await page.locator('.course-modal-overlay').count())await page.locator('.course-close').click();};
  const goLearn=async()=>{await page.evaluate(()=>go('learn'));await page.waitForSelector('#course-kb');if(await page.locator('#course-kb').inputValue()!=='course-alpha'){await page.selectOption('#course-kb','course-alpha');await page.waitForFunction(()=>courseUi.kb==='course-alpha'&&courseUi.data?.map);}};
  const openNode=async()=>{await page.locator('.course-node').filter({hasText:'工具调用'}).click();await page.waitForSelector('.course-resource-grid');};
- const send=async text=>{await page.fill('#chat-input',text);await page.locator('.composer-send[aria-label="发送"]').click();await until(async()=>await page.evaluate(()=>!isSessionRunning(state.chatSessionId)),60000);};
+ /* 发送后必须先等到"真的进入运行"，否则 !isSessionRunning 会在请求注册之前立刻为真，
+    测试随后读到的是上一轮的事件 —— 生成类步骤会误报"没有候选资源"。 */
+ const waitTurn=async(sid,ms=60000)=>{
+   await until(async()=>await page.evaluate(s=>isSessionRunning(s),sid),15000).catch(()=>{});
+   await until(async()=>await page.evaluate(s=>!isSessionRunning(s),sid),ms);
+ };
+ const send=async text=>{const sid=await page.evaluate(()=>state.chatSessionId);await page.fill('#chat-input',text);await page.locator('.composer-send[aria-label="发送"]').click();await waitTurn(sid);};
  const produce=async(kind,regenerate=false)=>{
    await goLearn();await openNode();const tile=page.locator('.course-resource-tile[data-kind="'+kind+'"]');
    if(regenerate){await tile.getByRole('button',{name:'更多',exact:true}).click();await page.getByRole('button',{name:'重新生成',exact:true}).click();}
    else await tile.getByRole('button',{name:'去对话生成',exact:true}).click();
-   await page.waitForSelector('#chat-input');await until(async()=>await page.evaluate(()=>!isSessionRunning(state.chatSessionId)),30000);
+   await page.waitForSelector('#chat-input');
+   const startedSid=await page.evaluate(()=>state.chatSessionId);
+   await waitTurn(startedSid,30000);
    const sid=await page.evaluate(()=>state.chatSessionId),target=await post('course/target',{sessionId:sid});check('node session binds exact KB/node/kind '+kind,target.kbId==='course-alpha'&&target.kind===kind&&target.valid);
    await page.evaluate(()=>state.kb='course-beta');
    await send('要求已说明，面向入门者，内容简短，直接生成这类学习资源。');

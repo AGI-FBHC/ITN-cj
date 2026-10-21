@@ -5189,3 +5189,11 @@ read_chunk 读得到原文并带回库标识与正文。
 - 提交 f509695；build=lumin-0.8.31-f509695。ZIP dist/Lumin-0.8.31.zip，231329168 bytes，SHA256=CF31D0B1D013D1C6131893FEFB7865263C5969C9631B5937062B2A43202D4640。
 - 包内复验：原生启动/关闭/再次启动 9/9（独立数据根、默认隐藏小鼋龙、图标与产品信息）；包内 renderer + 包内内核的 sidebar-torture-check 连续 3 次 41/41（左栏 / 第二层面板 / 会话栏 / 右侧资源栏、12 次连续切页、折叠展开落库、慢响应乱序、确定性保存门控）。文件名仍为 0.8.31，无额外后缀；未发布线上、未推送远端。
 - 本轮目标仍在进行（用户要求持续测试、不要轻易收尾）：ui-e2e 全链路自检已对齐到当前 IA 并跑到知识库段，剩余断点在知识库导入/详情段（需要按 #kb-import-path + 添加并索引 + .ok-dialog("资料准备完成") + 知识库页功能切换重写）。下一轮继续。
+
+### 2026-10-22 07:55 · 当前界面测试套件全量巡检与两处界面修正
+
+- 目标继续（持续测试 + 修复）。本轮把 ui-e2e 的知识库段按当前界面重写（#kb-import-path + 添加并索引 + .ok-dialog「资料准备完成」；知识库页用文档清单 + 搜索 + 资料管理标签校验）。旧「学 · 练/生成产物」整段属于上一代章节树界面（.chapter-idx/.path-track/出题练习按钮均已移除），后续由 course-check / guided-check / learning-check 等当前套件覆盖，ui-e2e 只保留到知识库段并注明。
+- 测试基建修正（均为取样时序或旧选择器，不是产品行为变更）：course-check 的 send 改为"先等进入运行、再等结束"（原写法会在请求注册前就判定空闲，读上一轮事件，误报没有候选资源），修复后 81/81；harvest-check 进「收集资料」标签（go('kb','harvest')）且不重复折叠已展开的 details，修复后 23/23；markdown-check 先等流式尾段文字到齐再断言删除线，14 checks OK；learn-empty-check 按当前 course-workspace 重写，4 passed；zh-audit 排除会话标题里用户自己的英文首句（产品按 8 字截断，属用户内容），RESULT=OK。
+- 产品界面修正：ui-audit 发现个性资源计数「0 份」为 11px 小字（用户明确讨厌细碎小字），.outcome-count 提升到 12.5px；再跑 ui-audit 全部 PASS（无小字/低对比/整句按钮/无标签图标/横向溢出/页面异常）。
+- 本轮巡检通过：course-check 81、guided-check 35、learning-check 45、personal-check 23、kb-general all、stop-check 13、tasks-check 22、attachments 16、markdown 14、scrollbar、panel-sticky 3、busy-caret 8、splash 9、tray 4、text-menu 6、course-speed 18、presentation 9、presentation-agent 13、deck-export all、docx all、knowledge-images 14、knowledge-tables 14、knowledge-hit 281、palette-chip 14、guided-files 21、ui-audit 全 PASS、zh-audit OK。
+- 未通过且未当作产品的：sqlite-freeblock-check 报"Cangjie writer preserves rows through 240 updates…"失败（third_party/sqlite-driver 压测探针，涉及驱动数据完整性，下一步单独深查）；check-installed-resources 需要显式参数（用法问题）。real-* 需要真实密钥/模型，未运行。

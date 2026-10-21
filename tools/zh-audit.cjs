@@ -149,7 +149,11 @@ const freePort = () => new Promise((res, rej) => {
   for (const [w, k, s] of hits) console.log(w, k, JSON.stringify(s));
   console.log("==== 工具名英文命中（" + toolColon.length + "） ====");
   for (const [w, k, s] of toolColon) console.log(w, k, JSON.stringify(s));
-  const badLeft = bad.filter(([w, k, s]) => !/^(title|aria-label|placeholder)=/.test(s) && !/^[\d\s.,:%+\-\/·()]+$/.test(s));
+  /* chat-running 里会出现会话标题：它按产品要求把用户自己的第一句截成 8 个字，
+     本用例的触发词是英文（make:quiz …），截断后自然只剩英文 —— 那是用户内容，不是界面文案。 */
+  const badLeft = bad.filter(([w, k, s]) => !/^(title|aria-label|placeholder)=/.test(s)
+    && !/^[\d\s.,:%+\-\/·()]+$/.test(s)
+    && !(w === 'chat-running' && /^make:qui/.test(s)));
   if (hits.length || toolColon.length || badLeft.length) {
     console.log("RESULT=FAILED");
     for (const [w, k, s] of badLeft) console.log("  纯英文:", w, k, JSON.stringify(s));
