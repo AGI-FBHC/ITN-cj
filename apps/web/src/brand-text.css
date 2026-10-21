@@ -21,7 +21,9 @@
   font-weight: 600;
   line-height: 1.5;
   letter-spacing: normal;
+  text-decoration: none;
 }
+a.zx-learner-org-badge { cursor: pointer; }
 .zx-learner-brand-text-inverse .zx-learner-org-badge {
   border-color: #75638d;
   background: #2c223d;

@@ -6,8 +6,9 @@ import stdx.encoding.json.*
 
 let LEARNER_MEMORY_SUMMARY_BYTES: Int64 = 1800
 let LEARNER_MEMORY_JSON_BYTES: Int64 = 6000
-let LEARNER_MEMORY_PROMPT_BYTES: Int64 = 4096
+let LEARNER_MEMORY_PROMPT_BYTES: Int64 = 16384
 let LEARNER_MEMORY_PROMPT_FIELD_BYTES: Int64 = 420
+let LEARNER_MEMORY_CUSTOM_BYTES: Int64 = 12000
 
 class LearnerMemory {
     let userId: String
@@ -163,6 +164,7 @@ func learnerMemoryDefault(userId: String, profileJson: String): LearnerMemory {
     let notes = JsonWriter()
     notes.putStr("source", "users.profile_json")
     notes.putStr("note", "初始记忆由用户画像生成；掌握程度和强弱项在获得真实学习证据前保持未知。")
+    notes.putStr("userCustomMemory", "")
 
     LearnerMemory(userId, 1, summary, learnerStringArrayJson(goals), knowledge.toJson(),
         preferences.toJson(), "[]", "[]", learnerStringArrayJson(topics), notes.toJson(), "[]", "", "")
@@ -221,6 +223,32 @@ func learnerMemoryLoadOrCreate(cfg: Config, authenticatedUserId: String): Learne
     learnerMemoryFromRow(userId, created[0])
 }
 
+/** Extract the learner-authored long-term memory from the controlled notes object. */
+func learnerMemoryCustomText(notesJson: String): String {
+    let text = notesJson.trimAscii()
+    if (text.size == 0) { return "" }
+    match (jsonParse(text)) {
+        case Some(value) =>
+            if (isJsObject(value)) {
+                learnerMemoryLimit(jsonGetString(value.asObject(), "userCustomMemory") ?? "", LEARNER_MEMORY_CUSTOM_BYTES)
+            } else {
+                ""
+            }
+        case None => ""
+    }
+}
+
+func learnerMemoryUpdateCustom(cfg: Config, authenticatedUserId: String, text: String): LearnerMemory {
+    let memory = learnerMemoryLoadOrCreate(cfg, authenticatedUserId)
+    let value = learnerMemoryLimit(text.trimAscii(), LEARNER_MEMORY_CUSTOM_BYTES)
+    let path = "'$." + "userCustomMemory'"
+    execute(cfg,
+        "UPDATE user_learning_memory SET memory_version=memory_version+1," +
+        "tutor_notes_json=JSON_SET(COALESCE(tutor_notes_json,JSON_OBJECT())," + path + "," +
+        sqlQuote(value) + "),updated_at=NOW(6) WHERE user_id=" + sqlQuote(memory.userId))
+    learnerMemoryLoadOrCreate(cfg, memory.userId)
+}
+
 /** Compact, explicitly labelled data block for the model system prompt. */
 func learnerMemoryPromptSnapshot(memory: LearnerMemory): String {
     let text = "画像摘要：" + learnerMemoryLimitOneLine(memory.profileSummary, 700) + "\n" +
@@ -231,7 +259,10 @@ func learnerMemoryPromptSnapshot(memory: LearnerMemory): String {
         "薄弱点：" + learnerMemoryLimit(memory.weaknessesJson, LEARNER_MEMORY_PROMPT_FIELD_BYTES) + "\n" +
         "当前主题：" + learnerMemoryLimit(memory.activeTopicsJson, LEARNER_MEMORY_PROMPT_FIELD_BYTES) + "\n" +
         "导师笔记：" + learnerMemoryLimit(memory.tutorNotesJson, LEARNER_MEMORY_PROMPT_FIELD_BYTES) + "\n" +
-        "近期信号：" + learnerMemoryLimit(memory.recentSignalsJson, LEARNER_MEMORY_PROMPT_FIELD_BYTES)
+        "近期信号：" + learnerMemoryLimit(memory.recentSignalsJson, LEARNER_MEMORY_PROMPT_FIELD_BYTES) + "\n" +
+        "用户自定义长期记忆：" + (if (learnerMemoryCustomText(memory.tutorNotesJson).size > 0) {
+            learnerMemoryCustomText(memory.tutorNotesJson)
+        } else { "无" })
     learnerMemoryLimit(text, LEARNER_MEMORY_PROMPT_BYTES)
 }
 
@@ -248,6 +279,7 @@ func learnerMemoryResponseBody(memory: LearnerMemory): String {
     out.putRaw("weaknesses", memory.weaknessesJson)
     out.putRaw("activeTopics", memory.activeTopicsJson)
     out.putRaw("tutorNotes", memory.tutorNotesJson)
+    out.putStr("userCustomMemory", learnerMemoryCustomText(memory.tutorNotesJson))
     out.putRaw("recentSignals", memory.recentSignalsJson)
     out.putStr("createdAt", memory.createdAt)
     out.putStr("updatedAt", memory.updatedAt)

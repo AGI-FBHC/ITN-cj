@@ -39,9 +39,9 @@ export class AdminError extends Error {
   }
 }
 
-async function request(path, { method = 'GET', body } = {}) {
+async function request(path, { method = 'GET', body, timeoutMs = 20000 } = {}) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const token = adminToken();
     const response = await fetch(`/api/admin${path}`, {
@@ -225,6 +225,11 @@ export const adminApi = {
   createOrg: (body) => request('/orgs', { method: 'POST', body }),
   orgInfo: (orgId) => request(`/org${orgQuery(orgId)}`),
   updateOrg: (body, orgId) => request(`/org${orgQuery(orgId)}`, { method: 'PUT', body }),
+  generateOrgOnboarding: (orgId) => request(`/org/generate-onboarding${orgQuery(orgId)}`, {
+    method: 'POST',
+    body: {},
+    timeoutMs: 120000,
+  }),
   uploadOrgLogo: async (file, orgId) => {
     const response = await fetch(`/api/admin/org/logo${orgQuery(orgId)}`, {
       method: 'POST',

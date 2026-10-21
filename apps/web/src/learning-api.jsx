@@ -138,6 +138,7 @@ export async function loginWithEmailCode(email, verificationCode, inviteCode = '
 }
 export const api = (path, method = 'GET', body) => request(path, { method, body });
 export const getLearnerMemory = () => api('/learner/memory');
+export const updateLearnerCustomMemory = (text) => api('/learner/memory/custom', 'PUT', { text });
 export function clearLearningSession() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem('zhixun-display-name');

@@ -22,12 +22,13 @@ import {
   refreshLearning,
   saveProfile,
   SyncStatus,
+  updateLearnerCustomMemory,
   useLearning,
   useLesson,
 } from "./learning-api.jsx";
 import LoginPage from "./LoginPage.jsx";
 import { orgShortName } from "./org-brand.js";
-import BrandText, { useOrgBrand } from "./BrandText.jsx";
+import { useOrgBrand } from "./BrandText.jsx";
 import Markdown from "./admin/Markdown.jsx";
 import PresentationArtifact from "./PresentationArtifact.jsx";
 import TutorChat from "./TutorChat.jsx";
@@ -1106,7 +1107,7 @@ function GeneratingPlan({ answers: n, onClose: r, onComplete: u }) {
   }, [i, p]);
   const b = Bi[i],
     h = React.useMemo(
-      () => Object.values(n).find((y) => y.title.includes("科目"))?.items ?? [],
+      () => Object.values(n).find((y) => y.key === "subjects" || y.title.includes("科目"))?.items ?? [],
       [n],
     ),
     x = React.useMemo(
@@ -1427,14 +1428,41 @@ const sn = [
   },
 ];
 
+function normalizeOnboardingQuestions(configured) {
+  if (!Array.isArray(configured) || configured.length === 0) return sn;
+  const normalized = configured.map((question, index) => {
+    const options = Array.isArray(question?.options) ? question.options : [];
+    const type = question?.type === "multi" ? "multi" : "single";
+    const hasEmoji = options.some((option) => option?.emoji);
+    return {
+      key: String(question?.id || `question-${index + 1}`),
+      title: String(question?.title || `问题 ${index + 1}`),
+      subtitle: String(question?.subtitle || ""),
+      required: question?.required !== false,
+      multi: type === "multi",
+      noneOption: options.some((option) => option?.value === "none") ? "none" : undefined,
+      layout: type === "multi" ? "chips" : hasEmoji ? "rows" : "grid",
+      options: options.map((option, optionIndex) => ({
+        value: String(option?.value || `option-${optionIndex + 1}`),
+        label: String(option?.label || `选项 ${optionIndex + 1}`),
+        emoji: option?.emoji ? String(option.emoji) : "",
+        feedback: option?.feedback ? String(option.feedback) : "",
+      })),
+    };
+  }).filter((question) => question.options.length > 0);
+  return normalized.length > 0 ? normalized : sn;
+}
+
 function OnboardingWizard({ onClose: n, onFinish: r }) {
+  const brand = useOrgBrand();
+  const questions = React.useMemo(() => normalizeOnboardingQuestions(brand?.onboardingQuestions), [brand?.onboardingQuestions]);
   const [u, i] = React.useState(0),
     [d, p] = React.useState({}),
     [m, b] = React.useState(!1),
     [h, x] = React.useState(!1),
-    y = sn[u],
+    y = questions[u],
     j = d[y?.key ?? ""] ?? [],
-    z = React.useMemo(() => (m ? !0 : j.length >= 1), [j, m]),
+    z = React.useMemo(() => (m ? !0 : y?.required === false || j.length >= 1), [j, m, y?.required]),
     R = (H) => {
       if (!y.multi) {
         p(($) => ({ ...$, [y.key]: [H] }));
@@ -1457,7 +1485,7 @@ function OnboardingWizard({ onClose: n, onFinish: r }) {
       });
     },
     N = () => {
-      z && (u < sn.length - 1 ? i((H) => H + 1) : b(!0));
+      z && (u < questions.length - 1 ? i((H) => H + 1) : b(!0));
     },
     E = () => {
       if (m) {
@@ -1484,7 +1512,7 @@ function OnboardingWizard({ onClose: n, onFinish: r }) {
       ),
       [],
     ));
-  const _ = m ? 1 : (u + (z ? 1 : 0)) / sn.length,
+  const _ = m ? 1 : (u + (z ? 1 : 0)) / questions.length,
     M = React.useMemo(
       () =>
         !y || y.multi || j.length === 0
@@ -1494,16 +1522,17 @@ function OnboardingWizard({ onClose: n, onFinish: r }) {
     ),
     B = React.useMemo(
       () =>
-        sn.map((H) => ({
+        questions.map((H) => ({
+          key: H.key,
           title: H.title,
           items: (d[H.key] ?? [])
             .map(($) => H.options.find((O) => O.value === $)?.label)
             .filter(Boolean),
         })),
-      [d],
+      [d, questions],
     ),
     Q = React.useMemo(
-      () => Object.fromEntries(sn.map((H, $) => [H.key, B[$]])),
+      () => Object.fromEntries(questions.map((H, $) => [H.key, B[$]])),
       [B],
     );
   if (h) {
@@ -1511,6 +1540,7 @@ function OnboardingWizard({ onClose: n, onFinish: r }) {
       roleLabel: Q.role?.items[0] ?? "",
       goalLabel: Q.goal?.items[0] ?? "",
       subjectValues: d.subjects ?? [],
+      onboardingAnswers: Q,
     };
     return jsxRuntime.jsx(GeneratingPlan, {
       "code-path": "src\\components\\OnboardingWizard.tsx:210:7",
@@ -1742,7 +1772,7 @@ function OnboardingWizard({ onClose: n, onFinish: r }) {
                   onClick: N,
                   disabled: !z,
                   className: `rounded-full px-8 py-3 text-sm font-extrabold transition-all ${z ? "bg-[#6c0ef2] text-white shadow-[0_4px_14px_rgba(108,14,242,0.35)] hover:-translate-y-0.5 hover:bg-[#5a0bd2]" : "cursor-not-allowed bg-[#eef0f4] text-[#b6bac6]"}`,
-                  children: u === sn.length - 1 ? "完成" : "继续",
+                  children: u === questions.length - 1 ? "完成" : "继续",
                 }),
               ],
             }),
@@ -2293,10 +2323,10 @@ const Sy = [
   uc = ie("x", Sy),
   ky = [
     { id: "home", icon: B2, label: "首页" },
-    { id: "bookmarks", icon: bn, label: "书签" },
+    { id: "bookmarks", icon: bn, label: "收藏夹" },
     { id: "courses", icon: $a, label: "课程" },
     { id: "coach", icon: Lm, label: "Agent" },
-    { id: "progress", icon: gy, label: "我的画像" },
+    { id: "progress", icon: yy, label: "我的画像" },
   ];
 
 function AccountMenu({ open, onEdit, onLogout }) {
@@ -2330,6 +2360,7 @@ function AppNavigation({
   onSearchChange: i,
 }) {
   const learning = useLearning();
+  const brand = useOrgBrand();
   const profile = learning.data?.profile;
   const [menuOpen, setMenuOpen] = React.useState(false);
   const menuRef = React.useRef(null);
@@ -2355,23 +2386,52 @@ function AppNavigation({
       className:
         "zx-app-navigation-inner mx-auto flex h-[84px] max-w-[1680px] items-center justify-between gap-5 px-5 sm:px-8",
       children: [
-        jsxRuntime.jsxs("button", {
+        jsxRuntime.jsxs("div", {
           "code-path": "src\\components\\AppNavigation.tsx:37:9",
-          type: "button",
-          onClick: () => r("home"),
           className: "zx-app-navigation-brand flex shrink-0 items-center gap-2.5 text-left",
-          "aria-label": "返回首页",
           children: [
-            jsxRuntime.jsx(ProductLogo, {
-              "code-path": "src\\components\\AppNavigation.tsx:43:11",
-              className: "h-9 w-9 sm:h-10 sm:w-10",
-            }),
+            brand?.websiteUrl
+              ? jsxRuntime.jsx("a", {
+                  href: brand.websiteUrl,
+                  target: "_blank",
+                  rel: "noreferrer",
+                  className: "zx-app-navigation-logo-link",
+                  "aria-label": `打开${brand.name || brand.shortName || "机构"}官网`,
+                  children: jsxRuntime.jsx(ProductLogo, {
+                    "code-path": "src\\components\\AppNavigation.tsx:43:11",
+                    className: "h-9 w-9 sm:h-10 sm:w-10",
+                  }),
+                })
+              : jsxRuntime.jsx("button", {
+                  type: "button",
+                  onClick: () => r("home"),
+                  className: "zx-app-navigation-logo-link",
+                  "aria-label": "返回首页",
+                  children: jsxRuntime.jsx(ProductLogo, {
+                    "code-path": "src\\components\\AppNavigation.tsx:43:11",
+                    className: "h-9 w-9 sm:h-10 sm:w-10",
+                  }),
+                }),
             jsxRuntime.jsx("span", {
               "code-path": "src\\components\\AppNavigation.tsx:44:11",
               className:
-                "hidden text-xl font-black tracking-wide text-[#111318] sm:inline xl:text-2xl",
-              children: jsxRuntime.jsx(BrandText, {}),
+                "zx-app-navigation-system-name hidden text-xl font-black tracking-wide text-[#111318] sm:inline xl:text-2xl",
+              children: "智训云枢",
             }),
+            brand?.shortName && (brand.websiteUrl
+              ? jsxRuntime.jsx("a", {
+                  href: brand.websiteUrl,
+                  target: "_blank",
+                  rel: "noreferrer",
+                  className: "zx-learner-org-badge",
+                  title: `打开${brand.name || brand.shortName}官网`,
+                  children: brand.shortName,
+                })
+              : jsxRuntime.jsx("span", {
+                  className: "zx-learner-org-badge",
+                  title: brand.shortName,
+                  children: brand.shortName,
+                })),
           ],
         }),
         jsxRuntime.jsx("nav", {
@@ -7852,10 +7912,12 @@ function a3() {
 
 function Bookmarks({ onNavigate: n }) {
   const learning = useLearning();
-  const [r, u] = React.useState("practice"),
+  const [r, u] = React.useState("courses"),
     [i, d] = React.useState(pu),
     [p, m] = React.useState(a3),
     b = React.useMemo(() => $t.filter((y) => p.has(y.id)), [p]),
+    practiceBookmarks = React.useMemo(() => i.filter((item) => String(item.id).startsWith("quiz-")), [i]),
+    noteBookmarks = React.useMemo(() => i.filter((item) => !String(item.id).startsWith("quiz-")), [i]),
     h = (y) => {
       d((j) => {
         const z = j.filter((R) => R.id !== y);
@@ -7905,12 +7967,12 @@ function Bookmarks({ onNavigate: n }) {
               jsxRuntime.jsx("h1", {
                 "code-path": "src\\pages\\Bookmarks.tsx:59:11",
                 className: "text-4xl font-black tracking-tight text-[#111318]",
-                children: "书签",
+                children: "收藏夹",
               }),
               jsxRuntime.jsx("p", {
                 "code-path": "src\\pages\\Bookmarks.tsx:60:11",
                 className: "mt-2 font-semibold text-[#8a8e98]",
-                children: "浏览您最喜欢的学习资源。",
+                children: "集中查看收藏课程、个人笔记和练习记录。",
               }),
               jsxRuntime.jsxs("div", {
                 "code-path": "src\\pages\\Bookmarks.tsx:61:11",
@@ -7918,18 +7980,24 @@ function Bookmarks({ onNavigate: n }) {
                   "mt-5 inline-flex rounded-xl border border-black/[0.08] bg-white p-1 shadow-sm",
                 children: [
                   jsxRuntime.jsx("button", {
-                    "code-path": "src\\pages\\Bookmarks.tsx:62:13",
-                    type: "button",
-                    onClick: () => u("practice"),
-                    className: `rounded-lg px-5 py-2 text-sm font-extrabold transition ${r === "practice" ? "bg-[#f0ebff] text-[#6038ef]" : "text-[#696d77] hover:bg-[#f6f6f8]"}`,
-                    children: "练习",
-                  }),
-                  jsxRuntime.jsx("button", {
                     "code-path": "src\\pages\\Bookmarks.tsx:69:13",
                     type: "button",
                     onClick: () => u("courses"),
                     className: `rounded-lg px-5 py-2 text-sm font-extrabold transition ${r === "courses" ? "bg-[#f0ebff] text-[#6038ef]" : "text-[#696d77] hover:bg-[#f6f6f8]"}`,
                     children: "课程",
+                  }),
+                  jsxRuntime.jsx("button", {
+                    type: "button",
+                    onClick: () => u("notes"),
+                    className: `rounded-lg px-5 py-2 text-sm font-extrabold transition ${r === "notes" ? "bg-[#f0ebff] text-[#6038ef]" : "text-[#696d77] hover:bg-[#f6f6f8]"}`,
+                    children: "笔记",
+                  }),
+                  jsxRuntime.jsx("button", {
+                    "code-path": "src\\pages\\Bookmarks.tsx:62:13",
+                    type: "button",
+                    onClick: () => u("practice"),
+                    className: `rounded-lg px-5 py-2 text-sm font-extrabold transition ${r === "practice" ? "bg-[#f0ebff] text-[#6038ef]" : "text-[#696d77] hover:bg-[#f6f6f8]"}`,
+                    children: "练习",
                   }),
                 ],
               }),
@@ -7940,11 +8008,11 @@ function Bookmarks({ onNavigate: n }) {
             className: "mt-7 border-t border-black/[0.07] pt-7",
             children: [
               r === "practice" &&
-                (i.length > 0
+                (practiceBookmarks.length > 0
                   ? jsxRuntime.jsx("div", {
                       "code-path": "src\\pages\\Bookmarks.tsx:82:15",
                       className: "grid gap-4 lg:grid-cols-2",
-                      children: i.map((y) => {
+                      children: practiceBookmarks.map((y) => {
                         const j = y.id.startsWith("quiz-");
                         return jsxRuntime.jsx(
                           "article",
@@ -8200,6 +8268,39 @@ function Bookmarks({ onNavigate: n }) {
                       action: "浏览课程",
                       onAction: () => n("courses"),
                     })),
+              r === "notes" && (noteBookmarks.length > 0
+                ? jsxRuntime.jsx("div", {
+                    className: "grid gap-4 lg:grid-cols-2",
+                    children: noteBookmarks.map((item) => jsxRuntime.jsxs("article", {
+                      className: "group rounded-2xl border border-black/[0.08] bg-white p-6 shadow-[0_4px_18px_rgba(17,19,24,0.035)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(47,33,82,0.08)]",
+                      children: [
+                        jsxRuntime.jsxs("div", { className: "flex items-start justify-between gap-5", children: [
+                          jsxRuntime.jsxs("div", { className: "min-w-0 flex-1", children: [
+                            jsxRuntime.jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [
+                              jsxRuntime.jsx("span", { className: "inline-flex items-center rounded-full bg-[#eef2ff] px-3 py-1 text-xs font-extrabold text-[#4b72cc]", children: "学习笔记" }),
+                              jsxRuntime.jsxs("span", { className: "text-xs font-bold text-[#9498a1]", children: [item.courseName, " · ", item.lessonTitle] }),
+                            ] }),
+                            jsxRuntime.jsx("h2", { className: "mt-4 text-xl font-black text-[#111318]", children: item.heading || "重点摘录" }),
+                            jsxRuntime.jsx("p", { className: "mt-3 line-clamp-4 text-sm font-semibold leading-7 text-[#676b76]", children: item.text }),
+                          ] }),
+                          jsxRuntime.jsx("button", {
+                            type: "button",
+                            onClick: () => h(item.id),
+                            className: "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#8a8e98] transition hover:bg-[#fff0f0] hover:text-[#e34c4c]",
+                            "aria-label": "删除笔记",
+                            children: jsxRuntime.jsx(my, { className: "h-5 w-5" }),
+                          }),
+                        ] }),
+                      ],
+                    }, item.id)),
+                  })
+                : jsxRuntime.jsx(nm, {
+                    icon: jsxRuntime.jsx($a, { className: "h-10 w-10" }),
+                    title: "还没有学习笔记",
+                    description: "阅读讲义或实操时，点击“书签”即可把重点段落收进笔记。",
+                    action: "浏览课程",
+                    onAction: () => n("courses"),
+                  })),
             ],
           }),
         ],
@@ -8782,34 +8883,128 @@ function i3({ course: n, node: r, onClose: u, onReview: i, onRetest: d }) {
   });
 }
 
-function LearnerMemoryCard({ memory }) {
-  const topics = Array.isArray(memory?.activeTopics) ? memory.activeTopics.slice(0, 8) : [];
-  const strengths = Array.isArray(memory?.strengths) ? memory.strengths.slice(0, 4) : [];
+function memoryText(value) {
+  if (value === null || value === undefined || value === "") return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(memoryText).filter(Boolean).join("、");
+  if (typeof value === "object") return Object.values(value).map(memoryText).filter(Boolean).join("、");
+  return String(value);
+}
+
+function MemoryTags({ items, empty = "等待学习记录" }) {
+  const values = Array.isArray(items) ? items.map(memoryText).filter(Boolean).slice(0, 8) : [];
+  if (!values.length) return jsxRuntime.jsx("span", { className: "zx-memory-empty", children: empty });
+  return jsxRuntime.jsx("div", { className: "zx-memory-tags", children: values.map((value, index) =>
+    jsxRuntime.jsx("span", { children: value }, `${value}-${index}`)
+  ) });
+}
+
+function MemoryFacts({ value, labels = {} }) {
+  const entries = value && typeof value === "object" && !Array.isArray(value) ? Object.entries(value) : [];
+  const visible = entries.filter(([, item]) => memoryText(item)).slice(0, 6);
+  if (!visible.length) return jsxRuntime.jsx("span", { className: "zx-memory-empty", children: "暂无结构化记录" });
+  return jsxRuntime.jsx("dl", { className: "zx-memory-facts", children: visible.map(([key, item]) =>
+    jsxRuntime.jsxs("div", { children: [
+      jsxRuntime.jsx("dt", { children: labels[key] || key }),
+      jsxRuntime.jsx("dd", { children: memoryText(item) }),
+    ] }, key)
+  ) });
+}
+
+function LearnerMemoryCard({ memory, onSaved }) {
+  const [customMemory, setCustomMemory] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [status, setStatus] = React.useState("");
+  const [statusError, setStatusError] = React.useState(false);
+  React.useEffect(() => {
+    setCustomMemory(memory?.userCustomMemory || "");
+  }, [memory?.userCustomMemory]);
+  const saveCustomMemory = async (event) => {
+    event.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    setStatus("");
+    setStatusError(false);
+    try {
+      const saved = await updateLearnerCustomMemory(customMemory.trim());
+      onSaved?.(saved);
+      setStatus("长期记忆已保存，Agent 下次回复会立即使用。");
+    } catch (error) {
+      setStatusError(true);
+      setStatus(error.message || "长期记忆保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
   return jsxRuntime.jsxs("section", {
     className: "zx-memory-card",
     children: [
-      jsxRuntime.jsxs("div", { className: "zx-memory-card-head", children: [
-        jsxRuntime.jsx("div", { className: "zx-memory-card-mark", children: "L" }),
-        jsxRuntime.jsxs("div", { children: [
-          jsxRuntime.jsx("span", { children: "LUMIN MEMORY" }),
-          jsxRuntime.jsx("h2", { children: "我的专属学习画像" }),
+      jsxRuntime.jsxs("header", { className: "zx-memory-hero", children: [
+        jsxRuntime.jsxs("div", { className: "zx-memory-hero-copy", children: [
+          jsxRuntime.jsx("div", { className: "zx-memory-card-mark", children: "L" }),
+          jsxRuntime.jsxs("div", { children: [
+            jsxRuntime.jsx("h2", { children: "学习画像" }),
+            jsxRuntime.jsx("p", { children: "用于个性化 Agent 回复。" }),
+          ] }),
+        ] }),
+        jsxRuntime.jsxs("div", { className: "zx-memory-meta", children: [
+          jsxRuntime.jsx("span", { children: `记忆版本 v${memory?.memoryVersion || 1}` }),
+          jsxRuntime.jsx("span", { children: memory?.updatedAt ? `更新于 ${memory.updatedAt}` : "等待首次更新" }),
         ] }),
       ] }),
-      jsxRuntime.jsx("p", {
-        className: "zx-memory-summary",
-        children: memory?.profileSummary || "Lumin 会在你开始学习后，结合课程、练习和对话逐步建立个人学习记忆。",
-      }),
-      topics.length > 0 && jsxRuntime.jsxs("div", { className: "zx-memory-row", children: [
-        jsxRuntime.jsx("strong", { children: "当前关注" }),
-        jsxRuntime.jsx("div", { className: "zx-memory-tags", children: topics.map((topic) =>
-          jsxRuntime.jsx("span", { children: String(topic?.label || topic?.value || topic) }, String(topic?.label || topic?.value || topic))
-        ) }),
-      ] }),
-      strengths.length > 0 && jsxRuntime.jsxs("div", { className: "zx-memory-row", children: [
-        jsxRuntime.jsx("strong", { children: "已确认优势" }),
-        jsxRuntime.jsx("div", { className: "zx-memory-tags", children: strengths.map((item, index) =>
-          jsxRuntime.jsx("span", { children: String(item?.label || item?.text || item) }, `strength-${index}`)
-        ) }),
+      jsxRuntime.jsxs("div", { className: "zx-memory-layout", children: [
+        jsxRuntime.jsxs("div", { className: "zx-memory-content", children: [
+          jsxRuntime.jsxs("section", { className: "zx-memory-panel zx-memory-summary-panel", children: [
+            jsxRuntime.jsx("h3", { children: "学习概况" }),
+            jsxRuntime.jsx("p", { className: "zx-memory-summary", children: memory?.profileSummary || "尚未形成画像摘要。完成资料填写并开始学习后，Lumin 会逐步补充。" }),
+          ] }),
+          jsxRuntime.jsxs("div", { className: "zx-memory-panel-grid", children: [
+            jsxRuntime.jsxs("section", { className: "zx-memory-panel", children: [
+              jsxRuntime.jsx("h3", { children: "学习目标" }),
+              jsxRuntime.jsx(MemoryTags, { items: memory?.learningGoals, empty: "还没有明确目标" }),
+            ] }),
+            jsxRuntime.jsxs("section", { className: "zx-memory-panel", children: [
+              jsxRuntime.jsx("h3", { children: "当前关注" }),
+              jsxRuntime.jsx(MemoryTags, { items: memory?.activeTopics, empty: "等待关注主题" }),
+            ] }),
+            jsxRuntime.jsxs("section", { className: "zx-memory-panel", children: [
+              jsxRuntime.jsx("h3", { children: "知识基础" }),
+              jsxRuntime.jsx(MemoryFacts, { value: memory?.knowledgeLevel, labels: { selfReportedLevel: "自评阶段", basis: "依据" } }),
+            ] }),
+            jsxRuntime.jsxs("section", { className: "zx-memory-panel", children: [
+              jsxRuntime.jsx("h3", { children: "学习偏好" }),
+              jsxRuntime.jsx(MemoryFacts, { value: memory?.preferences, labels: { language: "语言", responseStyle: "讲解方式", basis: "依据" } }),
+            ] }),
+            jsxRuntime.jsxs("section", { className: "zx-memory-panel", children: [
+              jsxRuntime.jsx("h3", { children: "已确认优势" }),
+              jsxRuntime.jsx(MemoryTags, { items: memory?.strengths, empty: "暂无足够学习证据" }),
+            ] }),
+            jsxRuntime.jsxs("section", { className: "zx-memory-panel", children: [
+              jsxRuntime.jsx("h3", { children: "待加强" }),
+              jsxRuntime.jsx(MemoryTags, { items: memory?.weaknesses, empty: "暂无薄弱项记录" }),
+            ] }),
+          ] }),
+        ] }),
+        jsxRuntime.jsxs("aside", { className: "zx-memory-custom", children: [
+          jsxRuntime.jsx("h3", { children: "长期记忆" }),
+          jsxRuntime.jsx("p", { children: "Agent 每次回复都会参考这里的内容。" }),
+          jsxRuntime.jsx("form", { onSubmit: saveCustomMemory, children: [
+            jsxRuntime.jsx("label", { htmlFor: "zx-custom-memory", children: "自定义内容" }),
+            jsxRuntime.jsx("textarea", {
+              id: "zx-custom-memory",
+              value: customMemory,
+              maxLength: 4000,
+              onChange: (event) => setCustomMemory(event.target.value),
+              placeholder: "例如：讲解代码时先给结论；我正在准备智能体竞赛…",
+              rows: 6,
+            }),
+            jsxRuntime.jsxs("div", { className: "zx-memory-form-foot", children: [
+              jsxRuntime.jsx("span", { children: `${customMemory.length}/4000` }),
+              jsxRuntime.jsx("button", { type: "submit", disabled: saving, children: saving ? "保存中…" : "保存长期记忆" }),
+            ] }),
+          ] }),
+          status ? jsxRuntime.jsx("p", { className: `zx-memory-save-status${statusError ? " is-error" : ""}`, role: "status", children: status }) : null,
+        ] }),
       ] }),
     ],
   });
@@ -8829,14 +9024,14 @@ function LearningProgress(props) {
   if (!tracked) {
     return <div className="min-h-screen bg-[#f7f7fa]">
       <AppNavigation active="progress" onNavigate={props.onNavigate} />
-      <main className="mx-auto flex max-w-xl flex-col items-center gap-4 px-6 py-24 text-center">
+      <main className="zx-memory-page-main mx-auto flex w-full flex-col items-center gap-4 px-6 py-14 text-center">
         <h1 className="text-2xl font-extrabold text-[#111318]">{$t.length === 0 ? "还没有已发布的课程" : hasMemory ? "我的画像" : "暂无画像记忆"}</h1>
         <p className="text-sm font-semibold leading-7 text-[#8b8f99]">{$t.length === 0
           ? "管理员发布课程后，Lumin 会开始建立你的学习画像。"
           : hasMemory
-            ? "Lumin 会结合阅读、测验与对话记录，持续完善你的个人学习画像。"
-            : "Lumin 会结合阅读、测验与对话记录，逐步完善你的个人学习画像。"}</p>
-        <div className="w-full text-left"><LearnerMemoryCard memory={memory} /></div>
+            ? "目标、偏好与长期记忆。"
+            : "开始学习后，Lumin 会逐步完善这里。"}</p>
+        <div className="w-full text-left"><LearnerMemoryCard memory={memory} onSaved={setMemory} /></div>
         <div className="mt-3 flex flex-wrap justify-center gap-3">
           <button type="button" className="rounded-xl bg-[#6038ef] px-6 py-3 font-bold text-white" onClick={() => props.onNavigate?.("courses")}>查看课程</button>
           <button type="button" className="rounded-xl border border-[#e3dcec] bg-white px-6 py-3 font-bold text-[#6038ef]" onClick={() => props.onNavigate?.("home")}>返回学习首页</button>
@@ -8844,10 +9039,10 @@ function LearningProgress(props) {
       </main>
     </div>;
   }
-  return jsxRuntime.jsx(LearningProgressInner, { ...props, memory });
+  return jsxRuntime.jsx(LearningProgressInner, { ...props, memory, onMemorySaved: setMemory });
 }
 
-function LearningProgressInner({ onNavigate: n, memory }) {
+function LearningProgressInner({ onNavigate: n, memory, onMemorySaved }) {
   const [r, u] = React.useState("co"),
     [i, d] = React.useState(null),
     [p, m] = React.useState(1),
@@ -8934,11 +9129,11 @@ function LearningProgressInner({ onNavigate: n, memory }) {
                   jsxRuntime.jsx("p", {
                     "code-path": "src\\pages\\LearningProgress.tsx:155:11",
                     className: "mt-2 font-semibold text-[#878b95]",
-                    children: "Lumin 根据学习记录与对话记忆，持续更新你的掌握情况与下一步路径",
+                    children: "目标、偏好与长期记忆",
                   }),
                 ],
               }),
-              jsxRuntime.jsx(LearnerMemoryCard, { memory }),
+              jsxRuntime.jsx(LearnerMemoryCard, { memory, onSaved: onMemorySaved }),
               jsxRuntime.jsx("div", {
                 "code-path": "src\\pages\\LearningProgress.tsx:158:9",
                 className: "mt-5 flex flex-wrap justify-center gap-2.5",

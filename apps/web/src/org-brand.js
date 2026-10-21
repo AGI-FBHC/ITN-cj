@@ -42,6 +42,19 @@ export function orgLogoUrl() {
   return orgBrand()?.logoUrl || '';
 }
 
+export function orgWebsiteUrl() {
+  return orgBrand()?.websiteUrl || '';
+}
+
+export function safeHttpUrl(value) {
+  try {
+    const url = new URL(String(value || '').trim());
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
 export async function loadOrgBrand({ force = false } = {}) {
   const sessionToken = token();
   if (!force && pending?.token === sessionToken) return pending.promise;
@@ -59,7 +72,15 @@ export async function loadOrgBrand({ force = false } = {}) {
       if (!response.ok) return null;
       const data = await response.json();
       if (!data?.id || !data.shortName || sessionToken !== token() || requestRevision !== revision) return null;
-      const brand = { id: data.id, name: data.name || data.shortName, shortName: data.shortName, logoUrl: data.logoUrl || '', hasLogo: Boolean(data.hasLogo) };
+      const brand = {
+        id: data.id,
+        name: data.name || data.shortName,
+        shortName: data.shortName,
+        logoUrl: data.logoUrl || '',
+        hasLogo: Boolean(data.hasLogo),
+        websiteUrl: safeHttpUrl(data.websiteUrl),
+        onboardingQuestions: Array.isArray(data.onboardingQuestions) ? data.onboardingQuestions : [],
+      };
       resolvedToken = sessionToken;
       currentBrand = brand;
       try { localStorage.setItem(`${CACHE_PREFIX}${encodeURIComponent(brand.id)}`, JSON.stringify(brand)); } catch { /* Branding still works when storage is full. */ }

@@ -56,11 +56,11 @@ async function tutorRequest(path, { method = 'GET', body, signal, timeout = 1200
   }
 }
 
-export async function askTutor({ message = '', quote = '', courseId = '', lessonIndex = -1, lessonTitle = '', history = [], attachments = [], signal } = {}) {
+export async function askTutor({ message = '', quote = '', courseId = '', lessonIndex = -1, lessonTitle = '', conversationId = '', history = [], attachments = [], signal } = {}) {
   const images = validateTutorAttachments(attachments);
   return tutorRequest('chat', {
     method: 'POST', signal,
-    body: { message, quote, courseId, lessonIndex, lessonTitle, history: tutorHistory(history), attachments: images },
+    body: { message, quote, courseId, lessonIndex, lessonTitle, conversationId, history: tutorHistory(history), attachments: images },
   });
 }
 
@@ -93,6 +93,7 @@ export async function askTutorStream(payload = {}, onEvent, { signal } = {}) {
     message: payload.message || '', quote: payload.quote || '',
     courseId: payload.courseId || '', lessonIndex: payload.lessonIndex ?? -1,
     lessonTitle: payload.lessonTitle || '',
+    conversationId: payload.conversationId || '',
     history: tutorHistory(payload.history || []), attachments: images,
   };
   try {
@@ -147,10 +148,21 @@ export async function askTutorStream(payload = {}, onEvent, { signal } = {}) {
   }
 }
 
-export async function getTutorHistory({ courseId = '', lessonIndex = -1, signal } = {}) {
+export async function getTutorHistory({ courseId = '', lessonIndex = -1, conversationId = '', signal } = {}) {
   const params = new URLSearchParams({ courseId, lessonIndex: String(lessonIndex) });
+  if (conversationId) params.set('conversationId', conversationId);
   const data = await tutorRequest(`history?${params}`, { signal, timeout: 20000 });
   return (data.items || data.messages || []).filter((message) => ['user', 'assistant'].includes(message.role));
+}
+
+export async function getTutorConversations({ signal } = {}) {
+  const data = await tutorRequest('conversations', { signal, timeout: 20000 });
+  return Array.isArray(data.items) ? data.items : [];
+}
+
+export function createTutorConversationId() {
+  const id = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `agent-${id}`;
 }
 
 export async function prepareTutorImage(file) {

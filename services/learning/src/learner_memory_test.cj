@@ -68,4 +68,25 @@ class LearnerMemoryTests {
             "Oversized memory must be compressed before prompt injection")
         kbPrimitiveCheck(!hugePrompt.contains("user-b"), "Prompt construction must not add other users")
     }
+
+    @TestCase
+    func customMemoryIsExtractedInjectedAndBounded(): Unit {
+        let custom = "我正在准备智能体竞赛。\n讲解代码时先给结论，再解释原因。"
+        let notes = JsonWriter()
+        notes.putStr("source", "users.profile_json")
+        notes.putStr("userCustomMemory", custom)
+        let memory = LearnerMemory("user-a", 3, "画像摘要", "[]", "{}", "{}", "[]", "[]", "[]",
+            notes.toJson(), "[]", "", "")
+        kbPrimitiveCheck(learnerMemoryCustomText(memory.tutorNotesJson) == custom,
+            "User-authored memory must preserve its multiline text")
+        let snapshot = learnerMemoryPromptSnapshot(memory)
+        kbPrimitiveCheck(snapshot.contains("用户自定义长期记忆：") && snapshot.contains("智能体竞赛"),
+            "Every tutor prompt snapshot must include the user's custom memory")
+        let response = learnerMemoryResponseBody(memory)
+        kbPrimitiveCheck(response.contains("\"userCustomMemory\"") && response.contains("先给结论"),
+            "The learner memory API must return the editable custom memory")
+        let bounded = learnerMemoryLimit(kbPrimitiveRepeated("长期记忆", 3000), LEARNER_MEMORY_CUSTOM_BYTES)
+        kbPrimitiveCheck(bounded.size <= LEARNER_MEMORY_CUSTOM_BYTES,
+            "Custom memory must respect its byte budget")
+    }
 }

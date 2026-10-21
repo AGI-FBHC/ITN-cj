@@ -1096,7 +1096,8 @@ func orgInviteValid(value: String): Bool {
 
 func orgRow(cfg: Config, orgId: String): ?Row {
     let rows = query(cfg,
-        "SELECT id,name,short_name,COALESCE(invite_code,'') invite_code,logo_mime,updated_at FROM organizations " +
+        "SELECT id,name,short_name,COALESCE(invite_code,'') invite_code,logo_mime,website_url," +
+        "onboarding_questions_json,updated_at FROM organizations " +
         "WHERE id=" + sqlQuote(if (orgId.size == 0) { DEFAULT_ORG_ID } else { orgId }) + " LIMIT 1")
     if (rows.size > 0) { return Some(rows[0]) }
     None
@@ -1161,7 +1162,11 @@ func orgBrandRowJson(cfg: Config, row: Row, withAdminFields: Bool): String {
     out.putStr("shortName", row.text("short_name"))
     out.putStr("logoUrl", logo)
     out.putBool("hasLogo", logo.size > 0)
-    if (withAdminFields) { out.putStr("inviteCode", row.text("invite_code")) }
+    out.putStr("websiteUrl", row.text("website_url"))
+    out.putRaw("onboardingQuestions", orgStoredOnboardingQuestionsJson(row.text("onboarding_questions_json")))
+    if (withAdminFields) {
+        out.putStr("inviteCode", row.text("invite_code"))
+    }
     out.toJson()
 }
 
@@ -1175,14 +1180,19 @@ func orgBrandJson(cfg: Config, orgId: String, withAdminFields: Bool): String {
             out.putStr("shortName", "江南大学")
             out.putStr("logoUrl", "")
             out.putBool("hasLogo", false)
-            if (withAdminFields) { out.putStr("inviteCode", "") }
+            out.putStr("websiteUrl", "")
+            out.putRaw("onboardingQuestions", "[]")
+            if (withAdminFields) {
+                out.putStr("inviteCode", "")
+            }
             out.toJson()
     }
 }
 
 func orgListBody(cfg: Config): String {
     let rows = query(cfg,
-        "SELECT id,name,short_name,COALESCE(invite_code,'') invite_code,logo_mime,updated_at FROM organizations ORDER BY created_at,id")
+        "SELECT id,name,short_name,COALESCE(invite_code,'') invite_code,logo_mime,website_url," +
+        "onboarding_questions_json,updated_at FROM organizations ORDER BY created_at,id")
     let items = JsonArrWriter()
     for (row in rows) { items.addRaw(orgBrandRowJson(cfg, row, true)) }
     let out = JsonWriter()
@@ -1572,13 +1582,13 @@ func tutorQuestionText(hits: ArrayList<KbHit>, quoted: String, courseLabel: Stri
 }
 
 func saveTutorMessage(cfg: Config, userId: String, role: String, content: String, citations: String,
-                      courseId: String, lessonIndex: Int64): Unit {
+                      courseId: String, lessonIndex: Int64, conversationId: String): Unit {
     try {
         execute(cfg,
-            "INSERT INTO tutor_messages(id,user_id,role,content,citations_json,mode,course_id,lesson_index) VALUES(" +
+            "INSERT INTO tutor_messages(id,user_id,role,content,citations_json,mode,course_id,lesson_index,conversation_id) VALUES(" +
             sqlQuote(uuidFormat(uuidV4())) + "," + sqlQuote(userId) + "," + sqlQuote(role) + "," +
             sqlQuote(content) + "," + sqlQuote(if (citations.size == 0) { "null" } else { citations }) +
-            ",'lesson'," + sqlQuote(courseId) + "," + lessonIndex.toString() + ")")
+            ",'lesson'," + sqlQuote(courseId) + "," + lessonIndex.toString() + "," + sqlQuote(conversationId) + ")")
     } catch (_: Exception) {
         // 记录失败不影响本次回答。
     }
@@ -1858,6 +1868,28 @@ main(): Int64 {
                     writeJson(ctx.response, 200, learnerMemoryResponseBody(learnerMemoryLoadOrCreate(cfg, userId)))
                 } catch (_: Exception) {
                     writeError(ctx.response, 503, "学习记忆暂时不可用")
+                }
+        }
+    }
+
+    app.mapPut("api/learner/memory/custom") { ctx =>
+        match (authenticate(ctx, cfg)) {
+            case None => ()
+            case Some(userId) =>
+                match (parseObject(ctx.request)) {
+                    case None => writeError(ctx.response, 400, "长期记忆格式不正确")
+                    case Some(body) =>
+                        let text = (jsonGetString(body, "text") ?? "").trimAscii()
+                        if (text.size > LEARNER_MEMORY_CUSTOM_BYTES) {
+                            writeError(ctx.response, 413, "长期记忆请控制在 4000 个中文字符以内")
+                        } else {
+                            try {
+                                writeJson(ctx.response, 200,
+                                    learnerMemoryResponseBody(learnerMemoryUpdateCustom(cfg, userId, text)))
+                            } catch (_: Exception) {
+                                writeError(ctx.response, 503, "长期记忆保存失败，请稍后重试")
+                            }
+                        }
                 }
         }
     }
@@ -2798,12 +2830,25 @@ main(): Int64 {
             case None => ()
             case Some(userId) =>
                 try {
+                    let conversationId = ctx.request.query.get("conversationId") ?? ""
                     let courseId = (ctx.request.query.get("courseId") ?? "").trimAscii()
                     let index = Int64.tryParse(ctx.request.query.get("lessonIndex") ?? "-1") ?? -1
                     let scoped = ctx.request.query.get("courseId") != None || ctx.request.query.get("lessonIndex") != None
-                    writeJson(ctx.response, 200, tutorHistoryBody(cfg, userId, courseId, index, scoped))
+                    writeJson(ctx.response, 200, tutorHistoryBody(cfg, userId, conversationId, courseId, index, scoped))
                 } catch (error: Exception) {
                     writeError(ctx.response, UInt16(tutorErrorStatus(error.message)), tutorErrorText(error.message))
+                }
+        }
+    }
+
+    app.mapGet("api/tutor/conversations") { ctx =>
+        match (authenticate(ctx, cfg)) {
+            case None => ()
+            case Some(userId) =>
+                try {
+                    writeJson(ctx.response, 200, tutorConversationsBody(cfg, userId))
+                } catch (error: Exception) {
+                    writeError(ctx.response, 503, "会话列表暂时无法加载，请稍后重试")
                 }
         }
     }
@@ -3295,17 +3340,61 @@ main(): Int64 {
                             writeError(ctx.response, 400, "机构简称需要 1–64 个字符")
                         } else if (!orgInviteValid(invite)) {
                             writeError(ctx.response, 400, "邀请码需要 6–64 位字母、数字、短横线或下划线")
-                        } else if (!orgExists(cfg, orgId)) {
-                            writeError(ctx.response, 404, "没有找到这个机构")
-                        } else if (query(cfg, "SELECT id FROM organizations WHERE invite_code=" + sqlQuote(invite) +
-                            " AND id<>" + sqlQuote(if (orgId.size == 0) { DEFAULT_ORG_ID } else { orgId })).size > 0) {
-                            writeError(ctx.response, 409, "该邀请码已被其他机构使用")
                         } else {
-                            execute(cfg, "UPDATE organizations SET name=" + sqlQuote(name) +
-                                ",short_name=" + sqlQuote(shortName) + ",invite_code=" + sqlQuote(invite) +
-                                ",updated_at=NOW(6) WHERE id=" + sqlQuote(if (orgId.size == 0) { DEFAULT_ORG_ID } else { orgId }))
-                            writeJson(ctx.response, 200, orgBrandJson(cfg, orgId, true))
+                            match (orgRow(cfg, orgId)) {
+                                case None => writeError(ctx.response, 404, "没有找到这个机构")
+                                case Some(existing) =>
+                                    let targetId = if (orgId.size == 0) { DEFAULT_ORG_ID } else { orgId }
+                                    if (query(cfg, "SELECT id FROM organizations WHERE invite_code=" + sqlQuote(invite) +
+                                        " AND id<>" + sqlQuote(targetId)).size > 0) {
+                                        writeError(ctx.response, 409, "该邀请码已被其他机构使用")
+                                    } else {
+                                        var update: ?OrgOnboardingUpdate = None
+                                        try {
+                                            update = Some(orgOnboardingUpdateFrom(body,
+                                                existing.text("website_url"),
+                                                existing.text("onboarding_questions_json")))
+                                        } catch (error: Exception) {
+                                            writeError(ctx.response, 400, error.message)
+                                        }
+                                        match (update) {
+                                            case Some(value) =>
+                                                execute(cfg, orgOnboardingUpdateSql(targetId, name, shortName, invite,
+                                                    value.websiteUrl, value.questionsJson))
+                                                writeJson(ctx.response, 200, orgBrandJson(cfg, targetId, true))
+                                            case None => ()
+                                        }
+                                    }
+                            }
                         }
+                }
+        }
+    }
+
+    app.mapPost("api/admin/org/generate-onboarding") { ctx =>
+        match (adminUserId(ctx, cfg)) {
+            case None => ()
+            case Some(_) =>
+                let orgId = (ctx.request.query.get("orgId") ?? "").trimAscii()
+                if (!orgExists(cfg, orgId)) {
+                    writeError(ctx.response, 404, "没有找到这个机构")
+                } else {
+                    let endpoint = slotEndpoint(cfg, loadKbSettings(cfg).chat)
+                    if (!endpoint.hasChat()) {
+                        writeError(ctx.response, 503, "管理员尚未配置可用的对话模型")
+                    } else {
+                        let courses = orgPublishedCourses(cfg)
+                        if (courses.size == 0) {
+                            writeError(ctx.response, 409, "当前没有已发布课程，无法生成注册问题")
+                        } else {
+                            try {
+                                writeJson(ctx.response, 200, orgGenerateOnboardingBody(endpoint, courses))
+                            } catch (error: Exception) {
+                                writeError(ctx.response, 502,
+                                    "注册问题生成失败：" + kbTruncate(error.message, 400))
+                            }
+                        }
+                    }
                 }
         }
     }

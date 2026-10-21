@@ -970,3 +970,29 @@
 
 ## 2026-10-21 23:24 导航中的 Agent 标题
 - 用户要求 Lumin 导航图标下方只显示“Agent”，标题不要使用 Lumin。已仅将主导航 `coach` 项文案由 `Lumin` 改为 `Agent`；对话页内的助手身份仍为“个人学习助手——Lumin老师”，两者语义分离。
+
+## 2026-10-22 00:16 后端 Lumin 多会话、会话列表与历史隔离
+- 对话重点：用户要求在 `D:\Downloads\zhixun-yunshu-28801-20261020` 负责后端多会话对话，直接改代码但不 commit、不重启服务、不迁移运行库；写入范围限定 `services/learning/src`、`services/learning/migrations`、`tests`，不改前端。主 agent 同时修改 `RecoveredApp.jsx`、`TutorChat.jsx`、`tutor.js`、`learning-api.jsx`、`tutor-chat.css` 实现 Agent 双栏、书签笔记和“用户自定义长期记忆”，这些并发前端改动已完整保留，本 agent 未修改。用户明确本轮不扩展“用户自定义长期记忆”。
+- 新增 `services/learning/migrations/019_tutor_conversation_id.sql`。迁移先用 `information_schema.COLUMNS` 判断并动态添加可空 `conversation_id VARCHAR(96)`，随后仅回填 `NULL/''` 的存量行：`course_id` 为空写 `general`，否则写 `CONCAT('lesson:',course_id,':',lesson_index)`；之后 `MODIFY` 为 `VARCHAR(96) NOT NULL DEFAULT 'general'`。这种先可空回填的方式保证重复运行时不会覆盖迁移后新产生的自定义 conversationId。索引通过 `information_schema.STATISTICS` 检查后动态创建 `ix_tutor_conversation(user_id,conversation_id,created_at,id)`，整份迁移可重复执行。按用户要求未对本地或远端运行库执行该迁移。
+- `services/learning/src/tutor_chat.cj` 增加 conversationId 规则：可选值必须以 ASCII 字母或数字开头，后续仅允许字母、数字、`-`、`_`、`.`、`:`，总长 1–96；非法类型/字符/长度返回 400。缺省时普通对话生成 `agent-{uuid}`，课程对话生成稳定的 `lesson:{courseId}:{lessonIndex}`。随机值只在本次请求生成一次，写入同一请求的 user 和 assistant 两条记录。
+- `POST /api/tutor/chat` 和 SSE `POST /api/tutor/chat/stream` 均把 conversationId 纳入 `TutorChatPlan`，两条历史消息使用同一 ID。普通响应新增 `conversationId`，SSE 的 `meta` 与 `done` 帧也返回该值，便于前端在服务端生成普通会话 ID 后继续同一会话。`main.cj` 的 `saveTutorMessage` 增加 conversationId 参数并显式写入新列。
+- `GET /api/tutor/history` 增加可选 `conversationId` 查询。提供 conversationId 时只按“当前认证 userId + conversationId”过滤，不再因课程当前下架而阻断旧会话读取；未提供时完整保留原有 `courseId/lessonIndex/scoped` 行为。每条历史消息新增 conversationId，响应在有过滤值时也回传顶层 conversationId。
+- 新增认证接口 `GET /api/tutor/conversations`。SQL 的 `scoped` CTE 第一层只从当前认证用户读取，随后按 conversation_id 聚合消息数/更新时间，用 `ROW_NUMBER` 取最新消息和最新 user 消息，关联 courses/lessons 得到课程名与章节名，最终按 `updated_at DESC` 返回最多 50 条。输出字段为 `conversationId`、`title`、`preview`、`courseId`、`lessonIndex`、`courseName`、`lessonTitle`、`messageCount`、`updatedAt`；课程标题优先 `课程名 · 章节名`，普通会话取最新 user 消息 Unicode 前 60 字，空内容回退“新的学习对话”，preview 取最新 user/assistant 内容 Unicode 前 120 字。
+- 集成时只读检查了主 agent 的并发前端实现：`apps/web/src/tutor.js` 的 `getTutorConversations()` 读取响应 `data.items`。因此后端会话列表响应同时提供语义字段 `conversations` 和学习端实际消费的 `items`，两处指向同一数组；没有修改前端文件。
+- 新增/扩展 `services/learning/src/tutor_chat_test.cj` 测试：普通对话随机 agent ID 合法且互不相同；课程 ID 稳定；自定义合法 ID 保留；空/空白字符、非法首字符、中文、非字符串、97 字符均拒绝；课程名 · 章节名优先级、普通标题 60 个 Unicode 字符、preview 120 个 Unicode 字符、最低回退文案；conversation 列表 SQL 对恶意 userId 做转义且包含用户隔离、分组排序和 LIMIT 50；响应同时包含 `conversations` 与 `items`。
+- 最终验证：`cjpm test -j1` 成功，28/28 通过；`cjpm build -i -j1 -o main-next` 成功，产物 `services/learning/target/release/bin/main-next.exe`（18,044,928 bytes，2026-10-22 00:15:47 更新，SHA-256 `45F8AD736C499F004147D97A5162C7470111E922BC4F4630FFC6824593934A5B`）。仅有两条既有 parser warning：`mysql_client.cj:351` 与 `main.cj:2629` 的跨行 `&&`，本轮未扩大范围修复。`git diff --check` 无 whitespace error。
+- 为检查 CTE 语法，曾尝试用 `.env.local` 只读连接 13307 并在会话内创建 `TEMPORARY TABLE tutor_messages` 做跨用户隔离冒烟；MySQL 返回 `ERROR 1044 Access denied ... to database 'itn_learning_v2_dev'`，因此没有创建任何持久表或执行迁移，也未继续尝试其他账号。实际会话接口 SQL 的运行库冒烟留给主 agent 在应用 019 后完成。
+- 边界：本轮没有 commit、没有重启后端/MySQL/前端、没有替换运行中的 `main.exe`、没有执行 019、没有调用真实聊天模型，也没有实现用户自定义长期记忆。主 agent 部署顺序应为：核对 MySQL 版本和 `tutor_messages` 现状 → 应用 019 并复核列/索引/回填结果 → 用 `main-next.exe` 替换并启动 → 实测普通/课程/SSE 对话、conversationId 历史过滤和会话列表跨用户隔离。
+
+## 2026-10-22 01:20 Agent 双栏、收藏夹、结构化画像、官网与动态注册问题
+- 用户连续补充需求：Agent 页改成左侧会话列表、右侧对话，删除顶部“笔记/对话”选项；笔记移入收藏页；原“书签”改名并调整顺序；画像 icon 改成人物；画像卡过于扁平，要求结构化表单并支持用户自定义长期记忆；收藏页最终定名“收藏夹”，Tab 顺序为“课程、笔记、练习”；管理员端在 Logo 下新增机构官网，在下方新增注册问题预设和“自动生成”；用户端 Logo 与机构简称标签外链官网，“智训云枢”文字不加链接。
+- Agent 多会话：新增 migration 019 和 `GET /api/tutor/conversations`。`tutor_messages.conversation_id` 回填存量历史，普通对话默认 `agent-{uuid}`，课程对话默认 `lesson:{courseId}:{lessonIndex}`；普通与 SSE 对话、历史查询都按当前认证 userId + conversationId 隔离。`TutorChat.jsx` 新增 AgentWorkspace：左侧最多 50 个会话，支持新建、切换、预览和更新时间排序；右侧保留原聊天、图片、语音、流式输出。顶部旧“笔记/对话”双 Tab 已删除，课程内对话也复用精简标题栏。
+- 收藏夹：主导航“书签”改为“收藏夹”，人物图标用于“我的画像”。页面默认进入“课程”，Tab 顺序固定为“课程、笔记、练习”；练习只显示题目解析类书签，笔记只显示讲义/实操重点书签，课程收藏仍读取后端状态。取消课程收藏继续同步 PUT `/api/state`，刷新后不回流。
+- 画像页：原来的大渐变、英文 kicker、重复说明和大留白已压缩为紧凑工作台。顶部只保留“学习画像 / 用于个性化 Agent 回复”和版本时间；主体为学习概况、目标、关注、知识基础、偏好、优势、待加强七块；右侧为长期记忆表单，textarea 最多 4000 字，保存后立即重新读取返回画像。
+- 用户自定义长期记忆：复用 `user_learning_memory.tutor_notes_json` 的 `userCustomMemory` 字段，不额外建表。新增 PUT `/api/learner/memory/custom`，只使用认证 userId，更新时保留其他导师笔记并递增 memoryVersion；`learnerMemoryPromptSnapshot` 新增显式“用户自定义长期记忆”段，普通与 SSE 对话每次调用模型前都会注入。提示词上限从 4096 扩到 16384 bytes，自定义文本独立限制 12000 bytes。浏览器实测保存后返回“长期记忆已保存”，随后已清空测试文本，未留下测试偏好。
+- 机构官网：migration 020 为 `organizations` 增加 `website_url` 和 `onboarding_questions_json`。管理端机构设置新增官网字段；公开 `/api/org` 也返回官网和问题预设。用户端左上角 Logo 与机构简称标签在存在合法 http/https 官网时打开新窗口，固定文字“智训云枢”仍是纯文本，不是链接。
+- 注册问题预设：AdminOrg 新增可增删的题目/选项编辑器，支持单选/多选、必填、副标题、Emoji、选择反馈，最多 12 题、每题最多 12 选项。`POST /api/admin/org/generate-onboarding` 使用管理员已配置 chat 模型和当前数据库已发布课程生成 5–7 题；至少一题 id=`subjects`，其后端会用真实课程 ID 覆盖模型生成的课程选项；接口只返回表单数据，不自动落库。浏览器真实点击“自动生成”成功返回题目，随后通过“保存全部设置”持久化；当前机构预设已保存 6 道动态问题。
+- 用户注册问卷：`OnboardingWizard` 从当前机构品牌加载 `onboardingQuestions`；管理员未配置时才回退原有内置问题。字段结构统一为 id/title/subtitle/type/required/options，并在 profile 中写入 `onboardingAnswers`，不再在用户注册时调用 LLM 现场生成。
+- 数据库与部署：应用 019、020，复核 `tutor_messages` 空 conversation_id=0、organizations 空官网/问题字段=0。构建 `main-next.exe` 后确认 queued/generating=0，备份旧 binary 到 `data/backend-backups/20261022-005125/`，替换并重启后端与 Vite；8312 health ok，3006 正常。
+- 验证：`cjpm test -j1` 36/36 通过（含多会话、官网校验、问题 schema、真实课程覆盖、Lumin 身份、自定义长期记忆注入）；后端 release 构建和前端 Vite 构建通过。浏览器实测：Agent 双栏空态与新建按钮、收藏夹三栏顺序、紧凑画像表单、自定义记忆保存、管理端官网/问题编辑器、LLM 自动生成并保存 6 道注册问题。
+- 剩余边界：自动生成接口按当前全局已发布课程列表取课程；当前部署为单机构，因此等同当前机构课程，未来多机构隔离需给 courses 增加 org_id 并统一所有课程查询。注册问题的实际新用户流程未重新注册账号测试；生成/校验/保存链路已实测。

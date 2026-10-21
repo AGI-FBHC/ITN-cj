@@ -1,6 +1,15 @@
 import * as React from 'react';
 import Markdown from './admin/Markdown.jsx';
-import { askTutor, askTutorStream, getTutorHistory, prepareTutorImage, TUTOR_MAX_IMAGES, TUTOR_MAX_TOTAL_BYTES } from './tutor.js';
+import {
+  askTutor,
+  askTutorStream,
+  createTutorConversationId,
+  getTutorConversations,
+  getTutorHistory,
+  prepareTutorImage,
+  TUTOR_MAX_IMAGES,
+  TUTOR_MAX_TOTAL_BYTES,
+} from './tutor.js';
 import './tutor-chat.css';
 
 function SparkIcon({ className = '' }) {
@@ -30,6 +39,20 @@ function SendIcon({ className = '' }) {
 
 function CloseIcon({ className = '' }) {
   return <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6" /></svg>;
+}
+
+function NewChatIcon({ className = '' }) {
+  return <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+    <path d="M8 12h8M12 8v8M19 3v6M16 6h6" />
+  </svg>;
+}
+
+function ConversationIcon({ className = '' }) {
+  return <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z" />
+    <path d="M8 9h8M8 13h5" />
+  </svg>;
 }
 
 function ImagePreview({ image, onClose }) {
@@ -70,10 +93,97 @@ function quoteText(quote) {
 }
 
 export default function TutorChat(props) {
-  return <ChatSession key={`${props.courseId || 'general'}:${props.lessonIndex ?? -1}`} {...props} />;
+  if (props.fullPage) return <AgentWorkspace {...props} />;
+  const conversationId = props.conversationId
+    || (props.courseId ? `lesson:${props.courseId}:${props.lessonIndex ?? 0}` : 'general');
+  return <ChatSession key={conversationId} {...props} conversationId={conversationId} />;
 }
 
-function ChatSession({ courseId = '', lessonIndex = -1, lessonTitle = '', quote, onClearQuote, inputRef, context = '', onSend, fullPage = false, suggestions = [] }) {
+function AgentWorkspace(props) {
+  const [conversations, setConversations] = React.useState([]);
+  const [selectedId, setSelectedId] = React.useState('');
+  const [listLoading, setListLoading] = React.useState(true);
+  const [listError, setListError] = React.useState('');
+  const listRequest = React.useRef(null);
+  const alive = React.useRef(true);
+
+  const loadConversations = React.useCallback(async () => {
+    listRequest.current?.abort();
+    const controller = new AbortController();
+    listRequest.current = controller;
+    setListError('');
+    try {
+      const items = await getTutorConversations({ signal: controller.signal });
+      if (!alive.current || controller.signal.aborted) return;
+      setConversations(items);
+      setSelectedId((current) => current || items[0]?.conversationId || createTutorConversationId());
+    } catch (error) {
+      if (alive.current && !controller.signal.aborted) setListError(error.message || '会话列表读取失败');
+    } finally {
+      if (alive.current && !controller.signal.aborted) setListLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    alive.current = true;
+    loadConversations();
+    return () => {
+      alive.current = false;
+      listRequest.current?.abort();
+    };
+  }, [loadConversations]);
+
+  const selected = conversations.find((item) => item.conversationId === selectedId);
+  const startNew = () => setSelectedId(createTutorConversationId());
+  return <div className="zx-agent-workspace">
+    <aside className="zx-agent-conversation-rail" aria-label="对话列表">
+      <header className="zx-agent-conversation-head">
+        <div>
+          <span>AGENT WORKSPACE</span>
+          <strong>学习对话</strong>
+        </div>
+        <button type="button" onClick={startNew} title="新建对话" aria-label="新建对话">
+          <NewChatIcon className="h-5 w-5" />
+        </button>
+      </header>
+      <div className="zx-agent-conversation-list">
+        {listLoading ? <p className="zx-agent-conversation-state">正在读取会话…</p> : null}
+        {listError ? <div className="zx-agent-conversation-state is-error">
+          <span>{listError}</span>
+          <button type="button" onClick={loadConversations}>重试</button>
+        </div> : null}
+        {!listLoading && !listError && conversations.length === 0 ? <p className="zx-agent-conversation-state">还没有历史对话，直接开始提问吧。</p> : null}
+        {conversations.map((item) => <button
+          key={item.conversationId}
+          type="button"
+          className={`zx-agent-conversation-item${selectedId === item.conversationId ? ' is-active' : ''}`}
+          onClick={() => setSelectedId(item.conversationId)}
+          aria-current={selectedId === item.conversationId ? 'page' : undefined}
+        >
+          <span className="zx-agent-conversation-icon"><ConversationIcon className="h-[18px] w-[18px]" /></span>
+          <span className="zx-agent-conversation-copy">
+            <strong>{item.title || '学习对话'}</strong>
+            <small>{item.preview || '继续这次对话'}</small>
+          </span>
+        </button>)}
+      </div>
+      <footer className="zx-agent-conversation-foot">
+        <span>{conversations.length} 个历史会话</span>
+      </footer>
+    </aside>
+    <section className="zx-agent-chat-pane">
+      {selectedId ? <ChatSession
+        key={selectedId}
+        {...props}
+        conversationId={selectedId}
+        conversationTitle={selected?.title || '新的学习对话'}
+        onConversationUsed={loadConversations}
+      /> : <div className="zx-agent-chat-loading">正在准备 Agent…</div>}
+    </section>
+  </div>;
+}
+
+function ChatSession({ courseId = '', lessonIndex = -1, lessonTitle = '', quote, onClearQuote, inputRef, context = '', onSend, fullPage = false, suggestions = [], conversationId = '', conversationTitle = '', onConversationUsed }) {
   const [messages, setMessages] = React.useState([]);
   const [draft, setDraft] = React.useState('');
   const [images, setImages] = React.useState([]);
@@ -104,7 +214,7 @@ function ChatSession({ courseId = '', lessonIndex = -1, lessonTitle = '', quote,
     setLoading(true);
     setHistoryError('');
     try {
-      const items = await getTutorHistory({ courseId, lessonIndex, signal: controller.signal });
+      const items = await getTutorHistory({ courseId, lessonIndex, conversationId, signal: controller.signal });
       if (alive.current && !controller.signal.aborted) {
         setMessages(items.map((item, index) => ({ ...item, id: item.id || `history-${index}`, text: item.content || item.text || '' })));
       }
@@ -113,7 +223,7 @@ function ChatSession({ courseId = '', lessonIndex = -1, lessonTitle = '', quote,
     } finally {
       if (alive.current && !controller.signal.aborted) setLoading(false);
     }
-  }, [courseId, lessonIndex]);
+  }, [conversationId, courseId, lessonIndex]);
 
   React.useEffect(() => {
     alive.current = true;
@@ -168,6 +278,7 @@ function ChatSession({ courseId = '', lessonIndex = -1, lessonTitle = '', quote,
       message: text,
       quote: quoteText(quote) || context,
       courseId, lessonIndex, lessonTitle,
+      conversationId,
       history: messages.filter((item) => ['user', 'assistant'].includes(item.role) && !item.pending).slice(-12).map((item) => ({ role: item.role, content: item.text || '' })),
       attachments: images,
     };
@@ -225,7 +336,10 @@ function ChatSession({ courseId = '', lessonIndex = -1, lessonTitle = '', quote,
       }
     } finally {
       sendLock.current = false;
-      if (alive.current) setSending(false);
+      if (alive.current) {
+        setSending(false);
+        onConversationUsed?.();
+      }
     }
   };
 
@@ -234,14 +348,15 @@ function ChatSession({ courseId = '', lessonIndex = -1, lessonTitle = '', quote,
   const canSend = !loading && !sending && !preparing && (draft.trim() || images.length);
 
   return <aside className={`flex h-full flex-col bg-[#fcfcfd]${fullPage ? ' zx-tutor-full' : ''}`} aria-label="Lumin 学习助手对话">
-    <div className="flex h-[76px] shrink-0 items-end justify-around border-b border-black/[0.08] px-5">
-      <button type="button" className="flex h-12 items-center gap-2 px-6 text-sm font-bold text-[#8a8e98]" disabled>笔记</button>
-      <button type="button" className="flex h-12 items-center gap-2 border-b-[3px] border-[#111318] px-6 text-sm font-black text-[#111318]" aria-current="page">对话</button>
-    </div>
-    <div className="flex items-center gap-2 border-b border-black/[0.06] px-6 py-3 text-sm font-extrabold text-[#444852]">
-      <span className="h-2.5 w-2.5 rounded-full bg-[#358ff2]" />
-      <span className="rounded bg-[#e9f4ff] px-2 py-0.5 text-xs text-[#2879cf]">Q&amp;A</span>
-      Lumin
+    <div className="zx-agent-chat-head">
+      <div className="zx-agent-chat-identity">
+        <span className="zx-agent-chat-mark"><SparkIcon className="h-5 w-5" /></span>
+        <div>
+          <span>LUMIN · PERSONAL AGENT</span>
+          <strong>{conversationTitle || lessonTitle || '学习对话'}</strong>
+        </div>
+      </div>
+      <span className="zx-agent-chat-status"><i />在线</span>
     </div>
     <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-6 sm:px-7" role="log" aria-label="对话记录" aria-live="polite" aria-busy={sending || loading}>
       {loading && <p className="text-xs font-bold text-[#9297a3]">正在读取对话记录…</p>}

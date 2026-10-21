@@ -18,6 +18,16 @@ func tutorTestBody(dataUrl: String, mime: String): JsonObject {
     cwJsonObjectFrom(body.toJson()).getOrThrow()
 }
 
+func tutorTestRepeat(value: String, count: Int64): String {
+    let out = StringBuilder()
+    var i: Int64 = 0
+    while (i < count) {
+        out.append(value)
+        i += 1
+    }
+    out.toString()
+}
+
 @Test
 class TutorChatTests {
     @TestCase
@@ -78,6 +88,63 @@ class TutorChatTests {
         let safe = tutorModelFailure("模型接口返回 400：data:image/png;base64,secret", true)
         kbPrimitiveCheck(!safe.contains("base64") && !safe.contains("secret"), "Provider errors must not echo image data")
         kbPrimitiveCheck(tutorErrorStatus("413|too big") == 413 && tutorErrorText("413|too big") == "too big", "Input errors must preserve HTTP status")
+    }
+
+    @TestCase
+    func conversationIdsAreValidatedAndDefaulted(): Unit {
+        let noBody = cwJsonObjectFrom("{}").getOrThrow()
+        let first = tutorConversationId(noBody, "", -1)
+        let second = tutorConversationId(noBody, "", -1)
+        kbPrimitiveCheck(first.startsWith("agent-") && tutorValidConversationId(first),
+            "A general chat must receive a valid random agent conversation ID")
+        kbPrimitiveCheck(first != second, "Every new general chat must get its own conversation ID")
+        kbPrimitiveCheck(tutorConversationId(noBody, "ds", 3) == "lesson:ds:3",
+            "Course chats must default to the stable lesson conversation ID")
+        let custom = cwJsonObjectFrom("{\"conversationId\":\"agent-custom_01.test\"}").getOrThrow()
+        kbPrimitiveCheck(tutorConversationId(custom, "", -1) == "agent-custom_01.test",
+            "A valid client conversation ID must be preserved")
+        let maxId = tutorTestRepeat("a", 96)
+        let tooLong = tutorTestRepeat("a", 97)
+        kbPrimitiveCheck(tutorValidConversationId(maxId) && !tutorValidConversationId(tooLong),
+            "Conversation ID length must be bounded at 96 ASCII characters")
+        kbPrimitiveRejects({ => let _value = tutorConversationId(
+            cwJsonObjectFrom("{\"conversationId\":\"bad id\"}").getOrThrow(), "", -1) })
+        kbPrimitiveRejects({ => let _value = tutorConversationId(
+            cwJsonObjectFrom("{\"conversationId\":\"-bad\"}").getOrThrow(), "", -1) })
+        kbPrimitiveRejects({ => let _value = tutorConversationId(
+            cwJsonObjectFrom("{\"conversationId\":\"会话\"}").getOrThrow(), "", -1) })
+        kbPrimitiveRejects({ => let _value = tutorConversationId(
+            cwJsonObjectFrom("{\"conversationId\":123}").getOrThrow(), "", -1) })
+    }
+
+    @TestCase
+    func conversationTitlesAndPreviewsUseUnicodeLimits(): Unit {
+        kbPrimitiveCheck(tutorConversationTitle("数据结构", "栈与队列", "怎么判断队满") == "数据结构 · 栈与队列",
+            "Course and lesson names must take precedence in conversation titles")
+        kbPrimitiveCheck(tutorConversationTitle("", "", "  ") == "新的学习对话",
+            "An empty ordinary conversation needs a stable neutral title")
+        let userText = "问题" + tutorTestRepeat("课", 70)
+        let title = tutorConversationTitle("", "", userText)
+        kbPrimitiveCheck(charCount(title) == 60 && title.startsWith("问题课"),
+            "Ordinary titles must be the newest user message's first 60 Unicode characters")
+        let preview = tutorConversationPreview(tutorTestRepeat("答", 125))
+        kbPrimitiveCheck(charCount(preview) == 120 && preview.startsWith("答"),
+            "Previews must be bounded by Unicode characters, not UTF-8 bytes")
+    }
+
+    @TestCase
+    func conversationListSqlIsUserScopedAndGrouped(): Unit {
+        let sql = tutorConversationsSql("u' OR 1=1 --")
+        kbPrimitiveCheck(sql.contains("WHERE user_id='u\\' OR 1=1 --'"),
+            "The authenticated user ID must be SQL-escaped in the scoped conversation query")
+        kbPrimitiveCheck(sql.contains("GROUP BY conversation_id") &&
+            sql.contains("PARTITION BY conversation_id ORDER BY created_at DESC,id DESC"),
+            "Conversation summaries must group and rank only rows from the authenticated user")
+        kbPrimitiveCheck(sql.contains("ORDER BY g.updated_at DESC") && sql.contains("LIMIT 50"),
+            "Conversation summaries must be newest first and capped at fifty")
+        let payload = cwJsonObjectFrom(tutorConversationsPayload("[]")).getOrThrow()
+        kbPrimitiveCheck(jsonHas(payload, "conversations") && jsonHas(payload, "items"),
+            "Conversation responses must expose both the semantic wrapper and the learner client's items alias")
     }
 
     @TestCase

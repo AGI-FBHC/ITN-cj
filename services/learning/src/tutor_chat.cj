@@ -10,6 +10,7 @@ import soulsoft_web_http.*
 let TUTOR_IMAGE_BYTES: Int64 = 2 * 1024 * 1024
 let TUTOR_TOTAL_IMAGE_BYTES: Int64 = 4 * 1024 * 1024
 let TUTOR_BODY_BYTES: Int64 = 6 * 1024 * 1024
+let TUTOR_CONVERSATION_ID_MAX: Int64 = 96
 
 class TutorImage {
     let name: String
@@ -225,6 +226,72 @@ func tutorUserMessageJson(text: String, images: Array<TutorImage>): String {
     message.toJson()
 }
 
+func tutorValidConversationId(value: String): Bool {
+    if (value.size == 0 || value.size > TUTOR_CONVERSATION_ID_MAX) { return false }
+    let bytes = value.toArray()
+    var i: Int64 = 0
+    while (i < bytes.size) {
+        let code = Int64(bytes[i])
+        let letter = (code >= 65 && code <= 90) || (code >= 97 && code <= 122)
+        let digit = code >= 48 && code <= 57
+        if (i == 0) {
+            if (!letter && !digit) { return false }
+        } else if (!letter && !digit && code != 45 && code != 95 && code != 46 && code != 58) {
+            return false
+        }
+        i += 1
+    }
+    true
+}
+
+func tutorDefaultConversationId(courseId: String, lessonIndex: Int64): String {
+    if (courseId.size == 0) { return "agent-" + uuidFormat(uuidV4()) }
+    "lesson:" + courseId + ":" + lessonIndex.toString()
+}
+
+func tutorConversationId(body: JsonObject, courseId: String, lessonIndex: Int64): String {
+    let requested = tutorString(body, "conversationId")
+    if (requested.size > 0) {
+        if (!tutorValidConversationId(requested)) {
+            tutorReject(400, "conversationId 需为 1–96 位字母、数字或 -_.:，且必须以字母或数字开头")
+        }
+        return requested
+    }
+    let generated = tutorDefaultConversationId(courseId, lessonIndex)
+    if (!tutorValidConversationId(generated)) { tutorReject(400, "课程信息不正确") }
+    generated
+}
+
+/** Truncate by Unicode code points so Chinese titles never split mid-character. */
+func tutorConversationExcerpt(text: String, limit: Int64): String {
+    if (limit <= 0) { return "" }
+    let clean = text.trimAscii()
+    let runes = clean.toRuneArray()
+    if (runes.size <= limit) { return clean }
+    let out = StringBuilder()
+    var i: Int64 = 0
+    while (i < limit) {
+        out.append(runes[i].toString())
+        i += 1
+    }
+    out.toString()
+}
+
+func tutorConversationTitle(courseName: String, lessonTitle: String, latestUser: String): String {
+    let course = courseName.trimAscii()
+    let lesson = lessonTitle.trimAscii()
+    if (course.size > 0 && lesson.size > 0) { return course + " · " + lesson }
+    if (course.size > 0) { return course }
+    if (lesson.size > 0) { return lesson }
+    let fallback = tutorConversationExcerpt(latestUser, 60)
+    if (fallback.size > 0) { return fallback }
+    "新的学习对话"
+}
+
+func tutorConversationPreview(latestMessage: String): String {
+    tutorConversationExcerpt(latestMessage, 120)
+}
+
 /** Scope retrieval to the visible lesson; ordinary conversation never loads the global vector cache. */
 func tutorLessonHits(cfg: Config, courseId: String, index: Int64, search: String): ArrayList<KbHit> {
     let hits = ArrayList<KbHit>()
@@ -304,10 +371,11 @@ class TutorChatPlan {
     let images: Array<TutorImage>
     let courseId: String
     let index: Int64
+    let conversationId: String
     let mode: String
 
     init(endpoint: ModelEndpoint, messagesJson: String, citations: String, message: String,
-         images: Array<TutorImage>, courseId: String, index: Int64, mode: String) {
+         images: Array<TutorImage>, courseId: String, index: Int64, conversationId: String, mode: String) {
         this.endpoint = endpoint
         this.messagesJson = messagesJson
         this.citations = citations
@@ -315,6 +383,7 @@ class TutorChatPlan {
         this.images = images
         this.courseId = courseId
         this.index = index
+        this.conversationId = conversationId
         this.mode = mode
     }
 }
@@ -328,6 +397,7 @@ func tutorChatPlan(cfg: Config, userId: String, body: JsonObject): TutorChatPlan
     if (message.size > 6000) { tutorReject(413, "问题请精简到 2000 字以内") }
     if (quoted.size > 12000) { tutorReject(413, "引用内容请精简到 4000 字以内") }
     if (courseId.size > 100 || lessonTitle.size > 600 || index < -1) { tutorReject(400, "课程信息不正确") }
+    let conversationId = tutorConversationId(body, courseId, index)
     let images = tutorImages(body)
     if (message.size == 0 && images.size == 0) { tutorReject(400, "请输入问题或选择图片") }
     let history = tutorHistoryJson(body)
@@ -351,7 +421,7 @@ func tutorChatPlan(cfg: Config, userId: String, body: JsonObject): TutorChatPlan
     }
     let question = if (message.size > 0) { message } else { "请结合当前课程解释这些图片中的内容，并指出学习重点。" }
     messages.addRaw(tutorUserMessageJson(tutorQuestionText(hits, quoted, courseId, lessonTitle, question), images))
-    TutorChatPlan(endpoint, messages.toJson(), tutorCitationsJson(hits), message, images, courseId, index,
+    TutorChatPlan(endpoint, messages.toJson(), tutorCitationsJson(hits), message, images, courseId, index, conversationId,
         if (hits.size > 0) { "章节资料" } else { "对话" })
 }
 
@@ -362,12 +432,14 @@ func tutorChatAnswer(cfg: Config, userId: String, body: JsonObject): String {
             throw Exception(tutorModelFailure(error.message, plan.images.size > 0))
         }
     if (answer.trimAscii().size == 0) { throw Exception("模型返回了空回答，请重试") }
-    saveTutorMessage(cfg, userId, "user", tutorAttachmentSummary(plan.message, plan.images), "", plan.courseId, plan.index)
-    saveTutorMessage(cfg, userId, "assistant", answer, plan.citations, plan.courseId, plan.index)
+    saveTutorMessage(cfg, userId, "user", tutorAttachmentSummary(plan.message, plan.images), "",
+        plan.courseId, plan.index, plan.conversationId)
+    saveTutorMessage(cfg, userId, "assistant", answer, plan.citations, plan.courseId, plan.index, plan.conversationId)
     let result = JsonWriter()
     result.putStr("answer", answer); result.putRaw("citations", plan.citations)
     result.putStr("model", plan.endpoint.chatModel)
     result.putStr("mode", plan.mode)
+    result.putStr("conversationId", plan.conversationId)
     result.putStr("note", "")
     result.toJson()
 }
@@ -392,6 +464,7 @@ func tutorChatStream(ctx: HttpContext, cfg: Config, userId: String, body: JsonOb
     let meta = JsonWriter()
     meta.putStr("type", "meta"); meta.putStr("model", plan.endpoint.chatModel)
     meta.putStr("mode", plan.mode); meta.putRaw("citations", plan.citations)
+    meta.putStr("conversationId", plan.conversationId)
     response.write(tutorSseFrame(meta.toJson()))
     let answer = try {
         chatStreamText(plan.endpoint, plan.messagesJson, 0.3, { piece: String =>
@@ -407,31 +480,42 @@ func tutorChatStream(ctx: HttpContext, cfg: Config, userId: String, body: JsonOb
         return
     }
     try {
-        saveTutorMessage(cfg, userId, "user", tutorAttachmentSummary(plan.message, plan.images), "", plan.courseId, plan.index)
-        saveTutorMessage(cfg, userId, "assistant", answer, plan.citations, plan.courseId, plan.index)
+        saveTutorMessage(cfg, userId, "user", tutorAttachmentSummary(plan.message, plan.images), "",
+            plan.courseId, plan.index, plan.conversationId)
+        saveTutorMessage(cfg, userId, "assistant", answer, plan.citations,
+            plan.courseId, plan.index, plan.conversationId)
     } catch (_: Exception) {
         // The answer already streamed; a history write failure must not truncate it.
     }
     let done = JsonWriter(); done.putStr("type", "done"); done.putStr("answer", answer)
+    done.putStr("conversationId", plan.conversationId)
     response.write(tutorSseFrame(done.toJson()))
 }
 
-func tutorHistoryBody(cfg: Config, userId: String, courseId: String, index: Int64, scoped: Bool): String {
-    if (courseId.size > 100 || index < -1) { tutorReject(400, "课程信息不正确") }
+func tutorHistoryBody(cfg: Config, userId: String, conversationId: String, courseId: String,
+                      index: Int64, scoped: Bool): String {
     var filter = ""
-    if (scoped) {
-        if (courseId.size == 0 && index >= 0) { tutorReject(400, "请先选择课程") }
-        if (courseId.size > 0) {
-            let lessonFilter = if (index >= 0) {
-                " AND EXISTS(SELECT 1 FROM lessons l WHERE l.course_id=c.id AND l.is_visible=1 AND COALESCE(l.display_index,l.lesson_index)=" + index.toString() + ")"
-            } else { "" }
-            let courses = queryIndependent(cfg, "SELECT c.id FROM courses c WHERE c.id=" + sqlQuote(courseId) +
-                " AND c.status='published'" + lessonFilter + " LIMIT 1")
-            if (courses.size == 0) { tutorReject(404, "该课程或章节暂未发布或已下架") }
+    if (conversationId.size > 0) {
+        if (!tutorValidConversationId(conversationId)) {
+            tutorReject(400, "conversationId 需为 1–96 位字母、数字或 -_.:，且必须以字母或数字开头")
         }
-        filter = " AND course_id=" + sqlQuote(courseId) + " AND lesson_index=" + index.toString()
+        filter = " AND conversation_id=" + sqlQuote(conversationId)
+    } else {
+        if (courseId.size > 100 || index < -1) { tutorReject(400, "课程信息不正确") }
+        if (scoped) {
+            if (courseId.size == 0 && index >= 0) { tutorReject(400, "请先选择课程") }
+            if (courseId.size > 0) {
+                let lessonFilter = if (index >= 0) {
+                    " AND EXISTS(SELECT 1 FROM lessons l WHERE l.course_id=c.id AND l.is_visible=1 AND COALESCE(l.display_index,l.lesson_index)=" + index.toString() + ")"
+                } else { "" }
+                let courses = queryIndependent(cfg, "SELECT c.id FROM courses c WHERE c.id=" + sqlQuote(courseId) +
+                    " AND c.status='published'" + lessonFilter + " LIMIT 1")
+                if (courses.size == 0) { tutorReject(404, "该课程或章节暂未发布或已下架") }
+            }
+            filter = " AND course_id=" + sqlQuote(courseId) + " AND lesson_index=" + index.toString()
+        }
     }
-    let rows = queryIndependent(cfg, "SELECT id,role,content,citations_json,course_id,lesson_index," +
+    let rows = queryIndependent(cfg, "SELECT id,role,content,citations_json,course_id,lesson_index,conversation_id," +
         "COALESCE(DATE_FORMAT(created_at,'%Y-%m-%d %H:%i:%s'),'') created_at FROM tutor_messages WHERE user_id=" +
         sqlQuote(userId) + filter + " ORDER BY created_at DESC,id DESC LIMIT 20")
     let items = JsonArrWriter()
@@ -441,9 +525,65 @@ func tutorHistoryBody(cfg: Config, userId: String, courseId: String, index: Int6
         let row = rows[i]; let item = JsonWriter()
         item.putStr("id", row.text("id")); item.putStr("role", row.text("role")); item.putStr("content", row.text("content"))
         item.putStr("courseId", row.text("course_id")); item.putInt("lessonIndex", row.int("lesson_index"))
+        item.putStr("conversationId", row.text("conversation_id"))
         item.putRaw("citations", if (row.isNull("citations_json")) { "null" } else { row.text("citations_json") })
         item.putStr("createdAt", row.text("created_at")); items.addRaw(item.toJson())
     }
     let result = JsonWriter(); result.putRaw("messages", items.toJson()); result.putRaw("items", items.toJson())
+    if (conversationId.size > 0) { result.putStr("conversationId", conversationId) }
     result.toJson()
+}
+
+func tutorConversationsSql(userId: String): String {
+    "WITH scoped AS (" +
+        "SELECT id,role,content,course_id,lesson_index,conversation_id,created_at FROM tutor_messages WHERE user_id=" +
+        sqlQuote(userId) +
+        "), ranked AS (" +
+        "SELECT scoped.*," +
+        "ROW_NUMBER() OVER (PARTITION BY conversation_id ORDER BY created_at DESC,id DESC) last_rank," +
+        "ROW_NUMBER() OVER (PARTITION BY conversation_id,role ORDER BY created_at DESC,id DESC) role_rank " +
+        "FROM scoped" +
+        "), grouped AS (" +
+        "SELECT conversation_id,COUNT(*) message_count,MAX(created_at) updated_at " +
+        "FROM scoped GROUP BY conversation_id" +
+        ") " +
+        "SELECT g.conversation_id,g.message_count," +
+        "DATE_FORMAT(g.updated_at,'%Y-%m-%d %H:%i:%s') updated_at," +
+        "m.course_id,m.lesson_index,m.content latest_content," +
+        "COALESCE(u.content,'') latest_user_content," +
+        "COALESCE(c.name,'') course_name,COALESCE(l.title,'') lesson_title " +
+        "FROM grouped g " +
+        "JOIN ranked m ON m.conversation_id=g.conversation_id AND m.last_rank=1 " +
+        "LEFT JOIN ranked u ON u.conversation_id=g.conversation_id AND u.role='user' AND u.role_rank=1 " +
+        "LEFT JOIN courses c ON c.id=m.course_id " +
+        "LEFT JOIN lessons l ON l.course_id=m.course_id AND COALESCE(l.display_index,l.lesson_index)=m.lesson_index " +
+        "ORDER BY g.updated_at DESC,g.conversation_id DESC LIMIT 50"
+}
+
+func tutorConversationsPayload(itemsJson: String): String {
+    let result = JsonWriter()
+    result.putRaw("conversations", itemsJson)
+    // The learner client consumes `items`; keep the semantic alias for other callers.
+    result.putRaw("items", itemsJson)
+    result.toJson()
+}
+
+func tutorConversationsBody(cfg: Config, userId: String): String {
+    let rows = queryIndependent(cfg, tutorConversationsSql(userId))
+    let items = JsonArrWriter()
+    for (row in rows) {
+        let item = JsonWriter()
+        item.putStr("conversationId", row.text("conversation_id"))
+        item.putStr("title", tutorConversationTitle(row.text("course_name"), row.text("lesson_title"),
+            row.text("latest_user_content")))
+        item.putStr("preview", tutorConversationPreview(row.text("latest_content")))
+        item.putStr("courseId", row.text("course_id"))
+        item.putInt("lessonIndex", row.int("lesson_index"))
+        item.putStr("courseName", row.text("course_name"))
+        item.putStr("lessonTitle", row.text("lesson_title"))
+        item.putInt("messageCount", row.int("message_count"))
+        item.putStr("updatedAt", row.text("updated_at"))
+        items.addRaw(item.toJson())
+    }
+    tutorConversationsPayload(items.toJson())
 }
