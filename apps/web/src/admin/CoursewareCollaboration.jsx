@@ -180,7 +180,8 @@ export default function CoursewareCollaboration() {
           {item.published ? '已发布' : (STATUS_LABEL[item.status] || item.status)}
         </div>
       </div>
-      <section className="zx-collab-path" aria-label="多智能体协作路径">
+      <section className="zx-collab-path" aria-label="本次协同路径">
+        <strong className="zx-collab-path-label">本次协同路径</strong>
         <div className="zx-collab-path-progress"><i style={{ width: `${progress}%` }} /></div>
         {states.map(({ agent, lane }, index) => <React.Fragment key={agent.role}>
           {index ? <span className={`zx-collab-path-arrow is-${lane.key}`} aria-hidden="true">→</span> : null}
@@ -196,7 +197,7 @@ export default function CoursewareCollaboration() {
     <main className="zx-collab-layout">
       <section className="zx-collab-board" aria-label="Agent 协作泳道">
         <header>
-          <div><p>AGENT SWIMLANES</p><h2>五体协同泳道</h2></div>
+          <div><p>AGENT SWIMLANES</p><h2>Agents 教研组协作泳道</h2></div>
           <span>{completed}/{AGENTS.length} 已完成 · {formatTime(item.updatedAt)} 更新</span>
         </header>
         <div className="zx-collab-lanes">
@@ -227,6 +228,7 @@ export default function CoursewareCollaboration() {
       </section>
 
       <aside className="zx-collab-inspector">
+        <div className="zx-collab-inspector-title"><strong>执行详情</strong><span>操作、结论、依据与产物</span></div>
         <header className={`is-${selected?.agent.tone}`}>
           <span className="zx-collab-inspector-icon">{selected ? iconPath(selected.agent.icon) : null}</span>
           <div><p>{selected?.agent.code} · EXECUTION DETAIL</p><h2>{selected?.agent.name}</h2></div>

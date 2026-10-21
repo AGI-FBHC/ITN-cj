@@ -60,5 +60,9 @@
 @media (max-width: 640px) {
   .zx-cw-queue-popover { position: fixed; top: 76px; right: 16px; left: 16px; width: auto; }
 }
-.zx-cw-detail-icon { display:inline-grid; place-items:center; width:32px; min-width:32px; padding:0; color:#6038ef; }
+.zx-cw-title-with-detail { display:flex; align-items:center; gap:9px; min-width:0; }
+.zx-cw-title-with-detail .zx-cell-title { min-width:0; }
+.zx-cw-detail-icon { display:inline-grid; place-items:center; flex:0 0 30px; width:30px; height:30px; padding:0; border:1px solid #ddd4f6; border-radius:9px; background:#f7f3ff; color:#6038ef; cursor:pointer; transition:background .15s,border-color .15s; }
+.zx-cw-detail-icon:hover { border-color:#9f88ed; background:#eee8ff; }
+.zx-cw-detail-icon:focus-visible { outline:3px solid rgb(96 56 239 / 22%); outline-offset:2px; }
 .zx-cw-detail-icon svg { width:16px; height:16px; }

@@ -429,7 +429,18 @@ export default function AdminCourseware() {
                   const liveOrder = item.chapterOrder || 0;
                   return (
                     <tr key={item.id}>
-                      <td><div className="zx-cell-title">{item.title || item.kindLabel}</div></td>
+                      <td><div className="zx-cw-title-with-detail">
+                        <div className="zx-cell-title">{item.title || item.kindLabel}</div>
+                        <button
+                          type="button"
+                          className="zx-cw-detail-icon"
+                          title="查看该资源生成过程"
+                          aria-label={`查看 ${item.title || item.kindLabel} 的多智能体生成过程`}
+                          onClick={() => navigate(`/admin/courseware/${item.id}/collaboration`)}
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></svg>
+                        </button>
+                      </div></td>
                       <td className="zx-nowrap">{item.kindLabel}</td>
                       <td className="zx-cell-sub">{item.bundleTitle} · {item.docTitle}</td>
                       <td>
@@ -439,15 +450,6 @@ export default function AdminCourseware() {
                       <td>{liveOrder && item.published ? <span className="zx-cw-live-badge">#{liveOrder}</span> : <span className="zx-cell-sub">—</span>}</td>
                       <td className="zx-num">{item.updatedAt}</td>
                       <td className="zx-actions">
-                        <button
-                          type="button"
-                          className="zx-btn zx-btn-sm zx-btn-ghost zx-cw-detail-icon"
-                          title="查看多智能体协作过程"
-                          aria-label={`查看 ${item.title || item.kindLabel} 的多智能体协作过程`}
-                          onClick={() => navigate(`/admin/courseware/${item.id}/collaboration`)}
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8v.01"/></svg>
-                        </button>
                         <button type="button" className="zx-btn zx-btn-sm zx-btn-ghost" disabled={item.status !== 'ready'} onClick={() => navigate(`/admin/courseware/${item.id}`)}>预览</button>
                         {item.published ? (
                           <button type="button" className="zx-btn zx-btn-sm" onClick={() => act(() => adminApi.cwUnpublish(item.id))}>取消发布</button>

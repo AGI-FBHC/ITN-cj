@@ -12,7 +12,8 @@
 .zx-collab-status.is-generating i,.zx-collab-status.is-queued i { background:#d78f28; box-shadow:0 0 0 4px rgb(215 143 40 / 12%); animation:zx-collab-pulse 1.3s infinite; }
 .zx-collab-status.is-ready i,.zx-collab-status.is-published i { background:#199a72; }
 .zx-collab-status.is-failed i { background:#d94c62; }
-.zx-collab-path { position:relative; display:flex; align-items:center; gap:8px; margin-top:21px; padding-top:15px; border-top:1px solid #ede8f1; }
+.zx-collab-path { position:relative; display:flex; align-items:center; gap:8px; margin-top:21px; padding-top:27px; border-top:1px solid #ede8f1; }
+.zx-collab-path-label { position:absolute; top:8px; left:0; color:#8f8798; font-size:9px; letter-spacing:.08em; }
 .zx-collab-path-progress { position:absolute; top:30px; left:17px; right:17px; height:2px; overflow:hidden; border-radius:99px; background:#ebe6f0; }
 .zx-collab-path-progress i { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,#6038ef,#248fd4,#159b79); transition:width .35s ease; }
 .zx-collab-path-node { position:relative; z-index:1; display:flex; align-items:center; gap:6px; flex:1; border:0; background:transparent; color:#8b8394; cursor:pointer; }
@@ -55,6 +56,8 @@
 .zx-collab-detail-link:hover { text-decoration:underline; }
 .zx-collab-lane.is-running .zx-collab-work { background:linear-gradient(90deg,color-mix(in srgb,var(--lane) 5%,transparent),transparent 72%); }
 .zx-collab-inspector { position:sticky; top:16px; max-height:calc(100vh - 32px); display:flex; flex-direction:column; }
+.zx-collab-inspector-title { display:flex; align-items:baseline; justify-content:space-between; gap:10px; padding:14px 16px 10px; border-bottom:1px solid #f0ecf3; }
+.zx-collab-inspector-title strong { font-size:13px; }.zx-collab-inspector-title span { color:#948c9e; font-size:9px; }
 .zx-collab-inspector > header { display:flex; align-items:center; gap:11px; padding:16px; border-bottom:1px solid #eee9f2; background:linear-gradient(110deg,color-mix(in srgb,var(--lane) 7%,#fff),#fff); }
 .zx-collab-inspector > header > div { min-width:0; flex:1; }
 .zx-collab-inspector > header .zx-collab-lane-state { margin-left:auto; }

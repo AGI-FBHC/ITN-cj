@@ -734,3 +734,9 @@
 - 修复方式不丢记录：停止服务触发既有恢复逻辑，把 generating 自动改回 queued；仅使用本章原文的新构建重启后，该任务约 50 秒完成，状态 ready，步骤为规划 done、检索 done、撰写 done（2261 字）、质检 done（结构通过），仲裁无需返修。
 - 验证：前端 Vite build 成功；后端 Cangjie build 成功；历史原生测试 8/8 通过，另补充 `coursewareEvidenceStaysInsideTheSourceChapter` 回归用例。真实 Chrome 已打开协作页，确认五条泳道、执行详情切换、完整 10 页教学幻灯片产物、课件库详情 icon 与返回路径正常。
 - 当前后端 PID 88388/重启后以实际端口进程为准，8312；Vite 3006。功能、测试与本 TRACE 本地 Git 提交，不推送远端。
+
+## 2026-10-21 11:15:24 +08:00 明确协作泳道入口与旧版核心面板对齐
+- 用户进一步明确：参考源是 `git@github.com:AGI-FBHC/ITN-cj.git`，入口必须来自任务列表项目，通过详情 icon 进入对应资源生成泳道；不应另加侧栏一级入口。
+- 已移除临时尝试的侧栏“协作泳道”入口与通用 Hub，不保留无关路由；在“课件管理 → 课件库”的资源标题旁放置明显详情 icon，任何状态（待发布、已发布、失败、生成中）都可点击进入该资源对应的协作页。
+- 泳道页按 ITN-cj 的 `CollaborationWorkbench.tsx`、`CollaborationRounds`、`ExecutionDetailPanel` 核心结构对齐：顶部“本次协同路径”，中间“Agents 教研组协作泳道”，右侧独立“执行详情”面板，显示操作结论、原始 Agent 摘要和最终资源产物。使用当前紫色管理端视觉体系，没有引入旧仓库的依赖或运行框架。
+- 实看通过：任务列表标题旁 icon 清楚可见，点击后 URL 进入对应 `coursewareId` 的 `/admin/courseware/{id}/collaboration`；五 Agent 状态、详情切换和完整 10 页幻灯片预览正常。前端生产构建通过。
