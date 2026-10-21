@@ -765,6 +765,7 @@ func cwSyncBundleCourseLocked(cfg: Config, bundleId: String, forceStatus: String
         let content = JsonWriter()
         content.putRaw("sections", sections.toJson())
         content.putRaw("slides", slides.toJson())
+        content.putRaw("resources", lrTypedResources(resources))
         content.putStr("sourceLabel", "知识库《" + title + "》")
         let sources = JsonArrWriter()
         let source = JsonWriter()

@@ -1,0 +1,225 @@
+package zhixun_learning
+
+import std.collection.*
+import std.core.*
+
+/** Preserve validated JSON strings verbatim; stdx serialization can lose escapes. */
+func lrContainer(raw: String, key: String, opening: Byte, closing: Byte): String {
+    let marker = "\"" + key + "\""
+    let found = raw.indexOf(marker)
+    if (found == None) { return "" }
+    let bytes = raw.toArray()
+    var start = found.getOrThrow() + marker.size
+    while (start < bytes.size && (bytes[start] == 32 || bytes[start] == 9 || bytes[start] == 10 || bytes[start] == 13)) { start += 1 }
+    if (start >= bytes.size || bytes[start] != 58) { return "" }
+    start += 1
+    while (start < bytes.size && (bytes[start] == 32 || bytes[start] == 9 || bytes[start] == 10 || bytes[start] == 13)) { start += 1 }
+    if (start >= bytes.size || bytes[start] != opening) { return "" }
+    var i = start
+    var depth: Int64 = 0
+    var quoted = false
+    var escaped = false
+    while (i < bytes.size) {
+        let b = bytes[i]
+        if (quoted) {
+            if (escaped) { escaped = false }
+            else if (b == 92) { escaped = true }
+            else if (b == 34) { quoted = false }
+        } else if (b == 34) { quoted = true }
+        else if (b == opening) { depth += 1 }
+        else if (b == closing) {
+            depth -= 1
+            if (depth == 0) { return raw[start..i + 1] }
+        }
+        i += 1
+    }
+    ""
+}
+
+func lrObject(raw: String, key: String): String { lrContainer(raw, key, 123, 125) }
+func lrArray(raw: String, key: String): String {
+    let value = lrContainer(raw, key, 91, 93)
+    if (value.size > 0) { value } else { "[]" }
+}
+func lrMergeArrays(left: String, right: String): String {
+    let a = left.trimAscii(); let b = right.trimAscii()
+    if (a.size <= 2) { return b }
+    if (b.size <= 2) { return a }
+    a[0..a.size - 1] + "," + b[1..b.size]
+}
+func lrTypesJson(types: Array<String>): String {
+    let out = JsonArrWriter()
+    for (kind in types) { out.addRaw(jsonQuote(kind)) }
+    out.toJson()
+}
+
+/** Typed published payloads reuse the existing renderers, without quiz answers. */
+func lrTypedResources(rows: Array<Row>): String {
+    let lectures = JsonArrWriter(); let guides = JsonArrWriter(); let slides = JsonArrWriter()
+    var lectureCount: Int64 = 0; var guideCount: Int64 = 0; var slideCount: Int64 = 0
+    var steps = "[]"
+    let extras = HashMap<String, String>()
+    var objective = ""
+    var notice = ""
+    var challenge = ""
+    var minutes: Int64 = 0
+    for (resource in rows) {
+        let kind = resource.text("kind")
+        let raw = resource.text("content_json")
+        let parsed = match (cwJsonObjectFrom(raw)) { case Some(value) => value; case None => continue }
+        if (kind == "lecture") {
+            for (item in cwObjectList(parsed, "sections")) {
+                let section = JsonWriter()
+                section.putStr("id", "lecture-" + lectureCount.toString())
+                section.putStr("eyebrow", "讲义")
+                section.putStr("heading", cwField(item, "heading"))
+                section.putStr("text", cwField(item, "body"))
+                lectures.addRaw(section.toJson()); lectureCount += 1
+            }
+        } else if (kind == "guide") {
+            steps = lrMergeArrays(steps, lrArray(raw, "steps"))
+            if (objective.size == 0) { objective = cwField(parsed, "objective") }
+            if (notice.size == 0) { notice = cwField(parsed, "safetyNotice") }
+            if (challenge.size == 0) { challenge = cwField(parsed, "challenge") }
+            minutes += maxInt(0, jsonGetInt(parsed, "estimatedMinutes") ?? 0)
+            for (key in ["prerequisites", "environment", "acceptanceCriteria", "troubleshooting", "safetyChecklist"]) {
+                extras[key] = lrMergeArrays(extras.get(key) ?? "[]", lrArray(raw, key))
+            }
+            for (step in cwObjectList(parsed, "steps")) {
+                let section = JsonWriter()
+                section.putStr("id", "guide-" + guideCount.toString())
+                section.putStr("eyebrow", "实操")
+                section.putStr("heading", cwField(step, "title"))
+                var text = cwField(step, "instruction")
+                let code = cwField(step, "code")
+                if (code.size > 0) { text += "\n\n```\n" + code + "\n```" }
+                let expected = cwField(step, "expectedOutput")
+                if (expected.size > 0) { text += "\n\n预期结果：" + expected }
+                section.putStr("text", text)
+                guides.addRaw(section.toJson()); guideCount += 1
+            }
+        } else if (kind == "slides") {
+            for (slide in cwObjectList(parsed, "slides")) {
+                let item = JsonWriter()
+                item.putStr("title", cwField(slide, "title"))
+                item.putStr("subtitle", "课程课件")
+                let bullets = JsonArrWriter()
+                for (bullet in cwStringList(slide, "bullets")) { bullets.addRaw(jsonQuote(bullet)) }
+                item.putRaw("bullets", bullets.toJson())
+                item.putStr("notes", cwField(slide, "speakerNote"))
+                slides.addRaw(item.toJson()); slideCount += 1
+            }
+        }
+    }
+    let out = JsonWriter()
+    if (lectureCount > 0) { let value = JsonWriter(); value.putRaw("sections", lectures.toJson()); out.putRaw("lecture", value.toJson()) }
+    if (guideCount > 0) {
+        let value = JsonWriter()
+        value.putRaw("sections", guides.toJson()); value.putRaw("steps", steps)
+        value.putStr("objective", objective); value.putStr("safetyNotice", notice)
+        value.putStr("challenge", challenge); value.putInt("estimatedMinutes", minutes)
+        for (key in ["prerequisites", "environment", "acceptanceCriteria", "troubleshooting", "safetyChecklist"]) { value.putRaw(key, extras.get(key) ?? "[]") }
+        out.putRaw("guide", value.toJson())
+    }
+    if (slideCount > 0) { let value = JsonWriter(); value.putRaw("slides", slides.toJson()); out.putRaw("slides", value.toJson()) }
+    out.toJson()
+}
+
+/** Existing published lessons acquire typed resources without republishing or generation. */
+func lrAdaptLesson(cfg: Config, row: Row): ?Row {
+    let raw = row.text("content_json")
+    if (lrObject(raw, "resources").size > 0) { return Some(row) }
+    let sources = jsonArrayFromText(row.text("sources_json"))
+    var docId = row.text("source_doc_id")
+    var managed = docId.size > 0
+    if (sources.size() > 0 && isJsObject(sources[0])) {
+        let source = sources[0].asObject()
+        if ((jsonGetString(source, "kind") ?? "") == "kb-courseware") {
+            managed = true
+            if (docId.size == 0) { docId = jsonGetString(source, "id") ?? "" }
+        }
+    }
+    var typed = ""
+    if (managed) {
+        let records = queryIndependent(cfg, "SELECT kind,content_json FROM kb_courseware WHERE doc_id=" + sqlQuote(docId) +
+            " AND status='ready' AND published=1 ORDER BY created_at,id")
+        if (records.size == 0) { return None }
+        typed = lrTypedResources(records)
+    } else {
+        let out = JsonWriter()
+        let sections = lrArray(raw, "sections")
+        let slides = lrArray(raw, "slides")
+        if (jsonArrayFromText(sections).size() > 0) { out.putRaw("lecture", "{\"sections\":" + sections + "}") }
+        if (jsonArrayFromText(slides).size() > 0) { out.putRaw("slides", "{\"slides\":" + slides + "}") }
+        typed = out.toJson()
+    }
+    let content = JsonWriter()
+    content.putRaw("sections", lrArray(raw, "sections")); content.putRaw("slides", lrArray(raw, "slides"))
+    content.putRaw("resources", typed)
+    let parsed = cwJsonObjectFrom(raw)
+    content.putStr("sourceLabel", match (parsed) { case Some(value) => cwField(value, "sourceLabel"); case None => "" })
+    let names = ["course_id", "lesson_index", "title", "content_json", "quiz_json", "sources_json", "source_doc_id"]
+    let cells = ArrayList<MyCell>()
+    for (name in names) { cells.add(MyCell.of((if (name == "content_json") { content.toJson() } else { row.text(name) }).toArray())) }
+    Some(Row(names, cells.toArray()))
+}
+
+func lrLessonTypes(row: Row): Array<String> {
+    let raw = lrObject(row.text("content_json"), "resources")
+    let kinds = ArrayList<String>()
+    if (jsonArrayFromText(lrArray(lrObject(raw, "lecture"), "sections")).size() > 0) { kinds.add("lecture") }
+    if (jsonArrayFromText(lrArray(lrObject(raw, "guide"), "steps")).size() > 0) { kinds.add("guide") }
+    if (lessonQuestions(row.text("quiz_json")).size() > 0) { kinds.add("bank") }
+    if (jsonArrayFromText(lrArray(lrObject(raw, "slides"), "slides")).size() > 0) { kinds.add("slides") }
+    kinds.toArray()
+}
+
+func lrPublicResources(row: Row): String {
+    let raw = lrObject(row.text("content_json"), "resources")
+    let out = JsonWriter()
+    for (kind in ["lecture", "guide", "slides"]) {
+        let value = lrObject(raw, kind)
+        if (value.size > 0) { out.putRaw(kind, value) }
+    }
+    let questions = lessonQuestions(row.text("quiz_json"))
+    if (questions.size() > 0) {
+        let list = JsonArrWriter()
+        var i: Int64 = 0
+        while (i < questions.size()) { list.addRaw(publicQuestion(questions[i])); i += 1 }
+        out.putRaw("bank", "{\"questions\":" + list.toJson() + "}")
+    }
+    out.toJson()
+}
+
+func lrAvailability(cfg: Config): HashMap<String, Row> {
+    let sourceId = "COALESCE(NULLIF(l.source_doc_id,''),JSON_UNQUOTE(JSON_EXTRACT(l.sources_json,'$[0].id')))"
+    let records = query(cfg, "SELECT l.course_id,COALESCE(l.display_index,l.lesson_index) display_index," +
+        "COALESCE(JSON_UNQUOTE(JSON_EXTRACT(l.sources_json,'$[0].kind')),'') source_kind," +
+        "IF(COALESCE(l.source_doc_id,'')<>'',1,0) managed," +
+        "COALESCE(JSON_LENGTH(l.content_json,'$.sections'),0) sections,COALESCE(JSON_LENGTH(l.content_json,'$.slides'),0) slides," +
+        "JSON_LENGTH(l.quiz_json) questions," +
+        "COALESCE((SELECT GROUP_CONCAT(DISTINCT w.kind) FROM kb_courseware w WHERE w.doc_id=" + sourceId +
+        " AND w.status='ready' AND w.published=1),'') kinds," +
+        "COALESCE((SELECT c.order_no FROM kb_courseware_chapters c WHERE c.doc_id=" + sourceId + " LIMIT 1)," +
+        "COALESCE(l.display_index,l.lesson_index)+1) order_no FROM lessons l JOIN courses c ON c.id=l.course_id " +
+        "WHERE l.is_visible=1 AND c.status='published'")
+    let out = HashMap<String, Row>()
+    for (record in records) { out[record.text("course_id") + ":" + record.int("display_index").toString()] = record }
+    out
+}
+
+func lrAvailableKinds(row: Row): Array<String> {
+    let out = ArrayList<String>()
+    let managed = row.int("managed") == 1 || row.text("source_kind") == "kb-courseware"
+    let kinds = row.text("kinds").split(",")
+    for (kind in ["lecture", "guide", "bank", "slides"]) {
+        var has = false
+        if (managed) { for (saved in kinds) { if (saved == kind) { has = true } } }
+        else {
+            has = (kind == "lecture" && row.int("sections") > 0) || (kind == "slides" && row.int("slides") > 0) ||
+                (kind == "bank" && row.int("questions") > 0)
+        }
+        if (has) { out.add(kind) }
+    }
+    out.toArray()
+}

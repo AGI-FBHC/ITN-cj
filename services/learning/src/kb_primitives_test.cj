@@ -91,6 +91,17 @@ func kbOptionalCorpusAudit(): Unit {
 @Test
 class KbPrimitiveTests {
     @TestCase
+    func learnerResourceContainersPreserveQuotedCode(): Unit {
+        let text = "{\"guide\":{\"steps\":[{\"code\":\"print(\\\"[中文]\\\")\\n{a: 1}\",\"expectedOutput\":\"值 ] }\"}]}}"
+        let guide = lrObject(text, "guide")
+        let steps = lrArray(guide, "steps")
+        let parsed = jsonArrayFromText(steps)
+        kbPrimitiveCheck(parsed.size() == 1, "Escaped brackets must not cut a published resource")
+        kbPrimitiveCheck((jsonGetString(parsed[0].asObject(), "code") ?? "") == "print(\"[中文]\")\n{a: 1}", "Resource code lost quoting or Unicode")
+        kbPrimitiveCheck(jsonArrayFromText(lrMergeArrays(steps, steps)).size() == 2, "Published guide steps did not merge")
+        kbPrimitiveCheck(lrObject(text, "missing").size == 0, "Missing resources must stay unavailable")
+    }
+    @TestCase
     func coursewareIdentityIgnoresDisplayOrder(): Unit {
         let refs = HashMap<String, String>()
         refs["source-document"] = "stable-chapter"

@@ -25,6 +25,7 @@ import {
 import LoginPage from "./LoginPage.jsx";
 import { orgLogoUrl, orgShortName } from "./org-brand.js";
 import Markdown from "./admin/Markdown.jsx";
+import { RESOURCE_OPTIONS, resourceTypes, lessonSections, lessonSlides, ChapterCompletion } from "./LearnerResources.jsx";
 function ProductLogo({ className: n = "", animated: r = !1, color: u = "#111318" }) {
   const src = orgLogoUrl();
   return jsxRuntime.jsx("img", {
@@ -2438,140 +2439,41 @@ function zs({ onComplete: n }) {
   );
 }
 
-function LessonStartModal({
-  course: n,
-  lessonTitle: r,
-  lessonIndex: u,
-  onClose: i,
-  onReadTheory: d,
-  onStartCourse: p,
-}) {
-  const m = 20 + u * 5,
-    b = 8 + u * 2;
-  return (
-    React.useEffect(() => {
-      const h = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
-      const x = (y) => {
-        y.key === "Escape" && i();
-      };
-      return (
-        window.addEventListener("keydown", x),
-        () => {
-          ((document.body.style.overflow = h),
-            window.removeEventListener("keydown", x));
-        }
-      );
-    }, [i]),
-    jsxRuntime.jsx("div", {
-      "code-path": "src\\components\\LessonStartModal.tsx:37:5",
-      className:
-        "fixed inset-0 z-[100] flex items-center justify-center bg-[#30313a]/40 px-5 backdrop-blur-[1px]",
-      onMouseDown: (h) => {
-        h.target === h.currentTarget && i();
-      },
-      role: "presentation",
-      children: jsxRuntime.jsxs("section", {
-        "code-path": "src\\components\\LessonStartModal.tsx:44:7",
-        className:
-          "relative mt-12 w-full max-w-[410px] rounded-[22px] bg-white px-4 pb-5 pt-[82px] text-center shadow-[0_28px_80px_rgba(14,13,20,0.28)]",
-        role: "dialog",
-        "aria-modal": "true",
-        "aria-labelledby": "lesson-start-title",
-        children: [
-          jsxRuntime.jsx("div", {
-            "code-path": "src\\components\\LessonStartModal.tsx:50:9",
-            className:
-              "absolute left-1/2 top-0 flex h-[124px] w-[124px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-[#f7f7f8] shadow-[0_12px_34px_rgba(17,19,24,0.08)] ring-[10px] ring-white",
-            children: jsxRuntime.jsx("img", {
-              "code-path": "src\\components\\LessonStartModal.tsx:51:11",
-              src: n.icon,
-              alt: n.name,
-              className: "h-[88px] w-[88px] object-contain",
-            }),
-          }),
-          jsxRuntime.jsx("button", {
-            "code-path": "src\\components\\LessonStartModal.tsx:54:9",
-            type: "button",
-            onClick: i,
-            className:
-              "absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full text-[#696d77] transition hover:bg-[#f2f2f4] hover:text-[#111318]",
-            "aria-label": "关闭课时弹窗",
-            children: jsxRuntime.jsx(uc, {
-              "code-path": "src\\components\\LessonStartModal.tsx:60:11",
-              className: "h-5 w-5",
-            }),
-          }),
-          jsxRuntime.jsxs("p", {
-            "code-path": "src\\components\\LessonStartModal.tsx:63:9",
-            className: "text-xs font-extrabold text-[#8c909a]",
-            children: [n.name, " · 课时 ", u + 1],
-          }),
-          jsxRuntime.jsx("h2", {
-            "code-path": "src\\components\\LessonStartModal.tsx:64:9",
-            id: "lesson-start-title",
-            className: "mt-2 text-2xl font-black tracking-tight text-[#111318]",
-            children: r,
-          }),
-          jsxRuntime.jsxs("div", {
-            "code-path": "src\\components\\LessonStartModal.tsx:67:9",
-            className:
-              "mt-3 flex items-center justify-center gap-4 text-sm font-semibold text-[#747883]",
-            children: [
-              jsxRuntime.jsxs("span", {
-                "code-path": "src\\components\\LessonStartModal.tsx:68:11",
-                className: "flex items-center gap-1.5",
-                children: [
-                  jsxRuntime.jsx(yl, {
-                    "code-path": "src\\components\\LessonStartModal.tsx:69:13",
-                    className: "h-[17px] w-[17px]",
-                  }),
-                  " ",
-                  m,
-                  "分钟",
-                ],
-              }),
-              jsxRuntime.jsxs("span", {
-                "code-path": "src\\components\\LessonStartModal.tsx:71:11",
-                className: "flex items-center gap-1.5",
-                children: [
-                  jsxRuntime.jsx($a, {
-                    "code-path": "src\\components\\LessonStartModal.tsx:72:13",
-                    className: "h-[17px] w-[17px]",
-                  }),
-                  " ",
-                  b,
-                  "项练习",
-                ],
-              }),
-            ],
-          }),
-          jsxRuntime.jsxs("div", {
-            "code-path": "src\\components\\LessonStartModal.tsx:76:9",
-            className: "mt-7 border-t border-black/[0.07] pt-4",
-            children: [
-              jsxRuntime.jsx("button", {
-                "code-path": "src\\components\\LessonStartModal.tsx:77:11",
-                type: "button",
-                onClick: p,
-                className:
-                  "w-full rounded-xl bg-[#5f38ef] py-3.5 text-base font-black text-white shadow-[0_7px_20px_rgba(95,56,239,0.24)] transition hover:-translate-y-0.5 hover:bg-[#512bdc]",
-                children: "开始课程",
-              }),
-              jsxRuntime.jsx("button", {
-                "code-path": "src\\components\\LessonStartModal.tsx:84:11",
-                type: "button",
-                onClick: d,
-                className:
-                  "mt-2.5 w-full rounded-xl py-2.5 text-base font-extrabold text-[#666a75] transition hover:bg-[#f6f5f8] hover:text-[#5f38ef]",
-                children: "阅读理论",
-              }),
-            ],
-          }),
-        ],
-      }),
-    })
-  );
+function LessonStartModal({ course, lessonTitle, lessonIndex, onClose, onSelectResource }) {
+  const dialogRef = React.useRef(null);
+  const choices = RESOURCE_OPTIONS.filter((item) => resourceTypes(course.chapters[lessonIndex]).includes(item.type));
+  const keepFocus = (event) => {
+    if (event.key !== "Tab") return;
+    const controls = Array.from(dialogRef.current?.querySelectorAll("button:not([disabled])") ?? []);
+    const first = controls[0], last = controls.at(-1);
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  };
+  React.useEffect(() => {
+    const overflow = document.body.style.overflow;
+    const previousFocus = document.activeElement;
+    document.body.style.overflow = "hidden";
+    const close = (event) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", close);
+    return () => {
+      document.body.style.overflow = overflow;
+      window.removeEventListener("keydown", close);
+      previousFocus?.focus();
+    };
+  }, [onClose]);
+  return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#30313a]/40 px-5 backdrop-blur-[1px]" onMouseDown={(event) => event.target === event.currentTarget && onClose()} role="presentation">
+    <section ref={dialogRef} onKeyDown={keepFocus} className="relative mt-12 w-full max-w-[410px] rounded-[22px] bg-white px-5 pb-6 pt-[76px] text-center shadow-[0_28px_80px_rgba(14,13,20,0.28)]" role="dialog" aria-modal="true" aria-labelledby="lesson-start-title">
+      <div className="absolute left-1/2 top-0 flex h-[112px] w-[112px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-[#f7f7f8] ring-[10px] ring-white"><img src={course.icon} alt="" className="h-20 w-20 object-contain" /></div>
+      <button type="button" autoFocus onClick={onClose} className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full text-[#696d77] hover:bg-[#f2f2f4]" aria-label="关闭课时弹窗">{jsxRuntime.jsx(uc, { className: "h-5 w-5" })}</button>
+      <p className="text-xs font-extrabold text-[#8c909a]">{course.name} · 课时 {course.chapters[lessonIndex]?.orderNo ?? lessonIndex + 1}</p>
+      <h2 id="lesson-start-title" className="mt-2 text-2xl font-black tracking-tight text-[#111318]">{lessonTitle}</h2>
+      <p className="mt-3 text-sm font-semibold leading-6 text-[#747883]">选择适合你的学习方式</p>
+      <div className="mt-5 max-h-[48dvh] space-y-2.5 overflow-y-auto border-t border-black/[0.07] pt-4">
+        {choices.map((choice, index) => <button key={choice.type} type="button" onClick={() => onSelectResource(choice.mode)} className={`min-h-14 w-full rounded-xl px-4 py-3 text-left transition ${index === 0 ? "bg-[#5f38ef] text-white shadow-[0_7px_20px_rgba(95,56,239,0.2)] hover:bg-[#512bdc]" : "bg-[#f7f5fc] text-[#6038ef] hover:bg-[#f0ebff]"}`}><span className="block text-base font-extrabold">{choice.label}</span><span className={`mt-1 block text-xs leading-5 ${index === 0 ? "text-white/80" : "text-[#747883]"}`}>{choice.detail}</span></button>)}
+        {!choices.length && <p className="py-4 text-sm leading-6 text-[#747883]">本章资源暂未发布，请稍后再来。</p>}
+      </div>
+    </section>
+  </div>;
 }
 
 let $t = [
@@ -2660,31 +2562,19 @@ function setCourseCatalog(courses) {
   if (Array.isArray(courses)) $t = courses;
 }
 
-function serverSections(lesson) {
-  const content = lesson?.content;
-  const sections = Array.isArray(content?.sections) ? content.sections : [];
-  return sections
-    .filter((section) => section && section.heading && section.text)
-    .map((section, index) => ({
-      id: section.id || `server-${index}`,
-      eyebrow: section.eyebrow || (index < 2 ? "核心概念" : "练习与总结"),
-      heading: section.heading,
-      text: section.text,
-      markdown: true,
-    }));
-}
 
 function zy(n) {
   return $t.filter((r) => n.includes(r.id));
 }
 
 function bs(n) {
-  const r = n.chapters.filter((u) => u.done).length;
+  const chapters = n?.chapters ?? [];
+  const r = chapters.filter((u) => u.done).length;
   return {
     done: r,
-    total: n.chapters.length,
-    percent: Math.round((r / n.chapters.length) * 100),
-    current: n.chapters.find((u) => !u.done)?.title ?? "全部完成",
+    total: chapters.length,
+    percent: chapters.length ? Math.round((r / chapters.length) * 100) : 0,
+    current: chapters.find((u) => !u.done)?.title ?? "全部完成",
   };
 }
 
@@ -5722,6 +5612,13 @@ function xx(...n) {
 }
 
 function gx({ className: n, ...r }) {
+  const [stacked, setStacked] = React.useState(() => window.matchMedia("(max-width: 767px)").matches);
+  React.useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px)");
+    const update = () => setStacked(query.matches);
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
   return jsxRuntime.jsx(ex, {
     "code-path": "src\\components\\ui\\resizable.tsx:12:5",
     "data-slot": "resizable-panel-group",
@@ -5730,6 +5627,7 @@ function gx({ className: n, ...r }) {
       n,
     ),
     ...r,
+    orientation: stacked ? "vertical" : r.orientation,
   });
 }
 
@@ -5746,7 +5644,7 @@ function bx({ withHandle: n, className: r, ...u }) {
     "code-path": "src\\components\\ui\\resizable.tsx:37:5",
     "data-slot": "resizable-handle",
     className: xx(
-      "bg-border focus-visible:ring-ring relative flex w-px items-center justify-center after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:outline-hidden data-[panel-group-direction=vertical]:h-px data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:after:left-0 data-[panel-group-direction=vertical]:after:h-1 data-[panel-group-direction=vertical]:after:w-full data-[panel-group-direction=vertical]:after:translate-x-0 data-[panel-group-direction=vertical]:after:-translate-y-1/2 [&[data-panel-group-direction=vertical]>div]:rotate-90",
+      "bg-border focus-visible:ring-ring relative flex w-px max-md:h-2 max-md:w-full items-center justify-center after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:outline-hidden data-[panel-group-direction=vertical]:h-px data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:after:left-0 data-[panel-group-direction=vertical]:after:h-1 data-[panel-group-direction=vertical]:after:w-full data-[panel-group-direction=vertical]:after:translate-x-0 data-[panel-group-direction=vertical]:after:-translate-y-1/2 [&[data-panel-group-direction=vertical]>div]:rotate-90",
       r,
     ),
     ...u,
@@ -5954,8 +5852,8 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
       0,
     remote = useLesson(n, resolvedIndex),
     i = React.useMemo(
-      () => (remote.lesson?.questions?.length ? remote.lesson.questions : $v(n, r)),
-      [n, r, remote.lesson],
+      () => (remote.lesson?.resources?.bank?.questions ?? remote.lesson?.questions ?? []).map((question) => ({ ...question, question: question.question || question.stem, theoryTitle: question.theoryTitle || "本题解析" })),
+      [remote.lesson],
     ),
     [d, p] = React.useState(0),
     [m, b] = React.useState(null),
@@ -5970,7 +5868,9 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
     answersRef = React.useRef([]),
     attemptRef = React.useRef(null),
     submittedRef = React.useRef(false),
-    G = i[d],
+    [answerState, setAnswerState] = React.useState({ pending: false, error: "" }),
+    [quizSave, setQuizSave] = React.useState({ pending: false, error: "", result: null }),
+    G = i[d] ?? {},
     ne = m === G.correct,
     be =
       h === "complete"
@@ -5982,9 +5882,11 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
     return () => window.clearInterval(D);
   }, [h]);
   const ke = async () => {
-      if (m === null || h !== "answering") return;
-      let D = m === G.correct;
-      if (remote.lesson?.questions?.length && G.id) {
+      if (m === null || h !== "answering" || answerState.pending) return;
+      if (!G.id) { setAnswerState({ pending: false, error: "题目暂不可用，请返回课程后重新打开。" }); return; }
+      setAnswerState({ pending: true, error: "" });
+      let D = false;
+      if (G.id) {
         try {
           const result = await api(
             `/courses/${encodeURIComponent(n.id)}/lessons/${resolvedIndex}/answer`,
@@ -5994,10 +5896,12 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
           G.correct = result.correctIndex;
           G.explanation = result.explanation;
           D = result.correct;
-        } catch {
-          D = false;
+        } catch (error) {
+          setAnswerState({ pending: false, error: error.message });
+          return;
         }
       }
+      setAnswerState({ pending: false, error: "" });
       answersRef.current = [...answersRef.current, { questionId: G.id, choice: m }];
       (j((K) => [...K, D]), x(D ? "correct" : "wrong"));
     },
@@ -6038,20 +5942,31 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
         ]),
         Q(""));
     };
-  React.useEffect(() => {
-    if (h !== "complete" || !remote.lesson?.questions?.length || submittedRef.current) return;
+  const saveQuiz = React.useCallback(async () => {
+    if (submittedRef.current || !i.length) return;
     submittedRef.current = true;
     attemptRef.current ||= crypto.randomUUID();
-    api(`/courses/${encodeURIComponent(n.id)}/lessons/${resolvedIndex}/quiz`, "POST", {
-      attemptId: attemptRef.current,
-      answers: answersRef.current,
-      durationSeconds: O,
-    })
-      .then(() => refreshLearning())
-      .catch(() => {
-        submittedRef.current = false;
+    setQuizSave({ pending: true, error: "", result: null });
+    try {
+      const result = await api(`/courses/${encodeURIComponent(n.id)}/lessons/${resolvedIndex}/quiz`, "POST", {
+        attemptId: attemptRef.current,
+        answers: answersRef.current,
+        durationSeconds: O,
       });
-  }, [h, n.id, O, remote.lesson?.questions?.length, resolvedIndex]);
+      await refreshLearning();
+      setQuizSave({ pending: false, error: "", result });
+    } catch (error) {
+      submittedRef.current = false;
+      setQuizSave({ pending: false, error: error.message, result: null });
+    }
+  }, [n.id, resolvedIndex, O, i.length]);
+  React.useEffect(() => {
+    if (h === "complete") saveQuiz();
+  }, [h, saveQuiz]);
+  if (remote.loading || remote.error)
+    return jsxRuntime.jsx(LoadPanel, { error: remote.error, onRetry: remote.retry, onBack: u, message: "正在加载章节测验…" });
+  if (!resourceTypes(remote.lesson).includes("bank") || !i.length)
+    return jsxRuntime.jsx(LoadPanel, { error: "本章测验暂未发布，返回课程选择其他资料。", onRetry: remote.retry, onBack: u });
   if (h === "complete") {
     const D = y.filter(Boolean).length,
       K = Math.round((D / i.length) * 100),
@@ -6099,8 +6014,9 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
               jsxRuntime.jsx("p", {
                 "code-path": "src\\pages\\QuizFlow.tsx:159:13",
                 className: "mt-3 text-lg font-semibold text-[#777b85]",
-                children: "做得不错，你已经完成了本节知识检验！",
+                children: quizSave.pending ? "正在保存测验结果…" : quizSave.result?.completed ? "测验已通过，本章学习进度已保存。" : "达到 60 分即可完成本章，可以复习后再次测验。",
               }),
+              quizSave.error && jsxRuntime.jsxs("div", { role: "alert", className: "mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-700", children: [quizSave.error, jsxRuntime.jsx("button", { type: "button", onClick: saveQuiz, className: "ml-3 min-h-11 font-bold underline", children: "重新保存成绩" })] }),
               jsxRuntime.jsxs("div", {
                 "code-path": "src\\pages\\QuizFlow.tsx:160:13",
                 className: "mt-10 flex flex-wrap justify-center gap-12",
@@ -6462,15 +6378,16 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
                 : jsxRuntime.jsx("span", {
                     "code-path": "src\\pages\\QuizFlow.tsx:225:382",
                   }),
+            answerState.error && jsxRuntime.jsx("p", { role: "alert", className: "max-w-sm text-sm font-semibold text-red-600", children: answerState.error }),
             h === "answering"
               ? jsxRuntime.jsx("button", {
                   "code-path": "src\\pages\\QuizFlow.tsx:227:13",
                   type: "button",
-                  disabled: m === null,
+                  disabled: m === null || answerState.pending,
                   onClick: ke,
                   className:
                     "rounded-xl bg-[#5f38ef] px-7 py-3.5 font-black text-white shadow-md transition disabled:bg-[#eef0f3] disabled:text-[#b4b8c0] disabled:shadow-none",
-                  children: "提交答案",
+                  children: answerState.pending ? "正在判分…" : "提交答案",
                 })
               : jsxRuntime.jsxs("div", {
                   "code-path": "src\\pages\\QuizFlow.tsx:229:13",
@@ -6589,14 +6506,12 @@ function Lecture({
   course: n,
   lessonTitle: r,
   lessonIndex: u,
+  resourceKind = "lecture",
   onBack: i,
   onNavigate: d,
 }) {
   const remote = useLesson(n, u);
-  const p = React.useMemo(() => {
-      const sections = serverSections(remote.lesson);
-      return sections.length > 0 ? sections : Wv(n, r);
-    }, [n, r, remote.lesson]),
+  const p = React.useMemo(() => lessonSections(remote.lesson, resourceKind), [remote.lesson, resourceKind]),
     [m, b] = React.useState(pu),
     [h, x] = React.useState(null),
     [y, j] = React.useState(""),
@@ -6696,6 +6611,8 @@ function Lecture({
       onBack: i,
       message: `正在加载“${r}”…`,
     });
+  if (!resourceTypes(remote.lesson).includes(resourceKind) || !p.length)
+    return jsxRuntime.jsx(LoadPanel, { error: resourceKind === "guide" ? "本章实操暂未发布，返回课程选择其他资料。" : "本章讲义暂未发布，返回课程选择其他资料。", onRetry: remote.retry, onBack: i });
   return z
     ? jsxRuntime.jsx(dc, {
         "code-path": "src\\pages\\Lecture.tsx:158:12",
@@ -6767,8 +6684,8 @@ function Lecture({
                               "code-path": "src\\pages\\Lecture.tsx:176:59",
                               className: "h-4 w-4",
                             }),
-                            "阅读时间：",
-                            20 + u * 5,
+                            "预计阅读：",
+                            Math.max(1, Math.ceil(p.reduce((sum, item) => sum + item.text.length, 0) / 400)),
                             "分钟",
                           ],
                         }),
@@ -6780,34 +6697,34 @@ function Lecture({
                               "code-path": "src\\pages\\Lecture.tsx:177:59",
                               className: "h-4 w-4",
                             }),
-                            8 + u * 2,
-                            "项练习",
+                            p.length,
+                            "个内容段落",
                           ],
                         }),
                         jsxRuntime.jsx("span", {
                           "code-path": "src\\pages\\Lecture.tsx:178:15",
                           className:
                             "rounded-lg bg-[#f0ebff] px-3 py-1 text-xs font-extrabold text-[#6038ef]",
-                          children: "250 PX",
+                          children: resourceKind === "guide" ? "实操指南" : "章节讲义",
                         }),
                       ],
                     }),
                     jsxRuntime.jsxs("div", {
                       "code-path": "src\\pages\\Lecture.tsx:181:13",
                       className:
-                        "mt-7 flex items-center justify-between border-b border-black/[0.08] pb-7",
+                        "mt-7 flex flex-wrap items-center justify-between gap-3 border-b border-black/[0.08] pb-7",
                       children: [
                         jsxRuntime.jsx("button", {
                           "code-path": "src\\pages\\Lecture.tsx:182:15",
                           type: "button",
                           className:
-                            "rounded-xl bg-[#6038ef] px-6 py-3.5 text-sm font-black text-white shadow-[0_7px_18px_rgba(96,56,239,0.22)]",
-                          children: "讲课模式",
+                            "shrink-0 whitespace-nowrap rounded-xl bg-[#6038ef] px-6 py-3.5 text-sm font-black text-white shadow-[0_7px_18px_rgba(96,56,239,0.22)]",
+                          children: resourceKind === "guide" ? "动手实操" : "阅读讲义",
                         }),
                         jsxRuntime.jsxs("span", {
                           "code-path": "src\\pages\\Lecture.tsx:185:15",
                           className: "text-sm font-bold text-[#92959e]",
-                          children: [n.name, " · 第 ", u + 1, " 课"],
+                          children: [n.name, " · 第 ", n.chapters[u]?.orderNo ?? u + 1, " 课"],
                         }),
                       ],
                     }),
@@ -6884,36 +6801,7 @@ function Lecture({
                         );
                       }),
                     }),
-                    jsxRuntime.jsxs("section", {
-                      "code-path": "src\\pages\\Lecture.tsx:219:13",
-                      className:
-                        "mt-6 rounded-3xl bg-[#f7f5fc] px-7 py-10 text-center sm:px-10",
-                      children: [
-                        jsxRuntime.jsx(pn, {
-                          "code-path": "src\\pages\\Lecture.tsx:220:15",
-                          className: "mx-auto h-11 w-11 text-[#25ad4d]",
-                        }),
-                        jsxRuntime.jsx("h2", {
-                          "code-path": "src\\pages\\Lecture.tsx:221:15",
-                          className: "mt-4 text-3xl font-black text-[#111318]",
-                          children: "本节讲义已阅读完成",
-                        }),
-                        jsxRuntime.jsx("p", {
-                          "code-path": "src\\pages\\Lecture.tsx:222:15",
-                          className: "mt-3 font-semibold text-[#777b85]",
-                          children:
-                            "接下来通过测试题检验理解程度，完成后将更新课程进度。",
-                        }),
-                        jsxRuntime.jsx("button", {
-                          "code-path": "src\\pages\\Lecture.tsx:223:15",
-                          type: "button",
-                          onClick: () => R(!0),
-                          className:
-                            "mt-7 w-full max-w-md rounded-xl bg-[#6038ef] py-4 text-lg font-black text-white shadow-[0_8px_22px_rgba(96,56,239,0.24)] transition hover:-translate-y-0.5 hover:bg-[#512bdc]",
-                          children: "开始测试",
-                        }),
-                      ],
-                    }),
+                    jsxRuntime.jsx(ChapterCompletion, { course: n, index: u, lesson: remote.lesson, onQuiz: () => R(!0) }),
                   ],
                 }),
               }),
@@ -7241,7 +7129,8 @@ function Presentation({
   onBack: i,
   onNavigate: d,
 }) {
-  const p = React.useMemo(() => Fv(n, r), [n, r]),
+  const remote = useLesson(n, u);
+  const p = React.useMemo(() => lessonSlides(remote.lesson), [remote.lesson]),
     [m, b] = React.useState(0),
     [h, x] = React.useState(!1),
     [y, j] = React.useState(1.5),
@@ -7258,9 +7147,9 @@ function Presentation({
       },
     ]),
     G = React.useRef(null),
-    ne = p[m];
+    ne = p[m] ?? { title: "", subtitle: "", kicker: "", points: [], narration: "", accent: "#b8a3ff" };
   (React.useEffect(() => {
-    if (!h) {
+    if (!h || !ne.narration || !("speechSynthesis" in window)) {
       window.speechSynthesis?.cancel();
       return;
     }
@@ -7310,17 +7199,14 @@ function Presentation({
     ke = (W) => {
       const ae = (W ?? B).trim();
       if (!ae) return;
-      const S = Date.now(),
-        Y = `结合当前第 ${m + 1} 页“${ne.title}”来看，${ae}可以从目标、过程和约束三个角度理解。你希望我重点展开哪一个角度？`;
-      (x(!1),
-        window.speechSynthesis.cancel(),
-        P((J) => [
-          ...J,
-          { id: S, role: "user", text: ae },
-          { id: S + 1, role: "assistant", text: Y },
-        ]),
-        $({ id: S + 1, text: Y }),
-        Q(""));
+      const S = Date.now();
+      x(!1);
+      window.speechSynthesis?.cancel();
+      P((messages) => [...messages, { id: S, role: "user", text: ae }, { id: S + 1, role: "assistant", text: "正在思考…" }]);
+      Q("");
+      api("/tutor/chat", "POST", { message: ae, quote: `${ne.title}\n${ne.points.join("\n")}`, courseId: n.id, lessonIndex: u, lessonTitle: r })
+        .then((result) => P((messages) => messages.map((item) => item.id === S + 1 ? { ...item, text: result.answer || "这次没有拿到回答，请再问一次。" } : item)))
+        .catch((error) => P((messages) => messages.map((item) => item.id === S + 1 ? { ...item, text: `暂时无法回答：${error.message}` } : item)));
     },
     { listening: se, supported: fe, toggleListening: xe } = mu((W) => ke(W)),
     Se = () => {
@@ -7330,7 +7216,8 @@ function Presentation({
       (x(!1), E(!1), b((W) => Math.max(0, W - 1)));
     },
     K = () => {
-      (x(!1), E(!1), b((W) => Math.min(p.length - 1, W + 1)));
+      if (m >= p.length - 1) { x(!1); E(!0); }
+      else (x(!1), E(!1), b((W) => Math.min(p.length - 1, W + 1)));
     },
     Z = jsxRuntime.jsxs("div", {
       "code-path": "src\\pages\\Presentation.tsx:217:5",
@@ -7478,10 +7365,9 @@ function Presentation({
                   "code-path": "src\\pages\\Presentation.tsx:250:11",
                   type: "button",
                   onClick: K,
-                  disabled: m === p.length - 1,
                   className:
                     "flex h-9 w-9 items-center justify-center rounded-full text-[#555a65] transition hover:bg-[#f0ebff] disabled:opacity-25",
-                  "aria-label": "下一页 PPT",
+                  "aria-label": m === p.length - 1 ? "完成幻灯片阅读" : "下一页 PPT",
                   children: jsxRuntime.jsx(Am, {
                     "code-path": "src\\pages\\Presentation.tsx:250:246",
                     className: "h-5 w-5",
@@ -7561,22 +7447,7 @@ function Presentation({
                   className: "mt-4 text-3xl font-black text-[#111318]",
                   children: "本节 PPT 讲解已完成",
                 }),
-                jsxRuntime.jsx("p", {
-                  "code-path": "src\\pages\\Presentation.tsx:270:13",
-                  className: "mt-3 font-semibold leading-7 text-[#777b85]",
-                  children:
-                    "接下来通过测试题检验理解程度，完成后将更新课程进度。",
-                }),
-                jsxRuntime.jsx("button", {
-                  "code-path": "src\\pages\\Presentation.tsx:271:13",
-                  type: "button",
-                  onClick: () => {
-                    (R(!1), M(!0));
-                  },
-                  className:
-                    "mt-7 w-full rounded-xl bg-[#6038ef] py-4 text-lg font-black text-white shadow-[0_8px_22px_rgba(96,56,239,0.24)] transition hover:-translate-y-0.5 hover:bg-[#512bdc]",
-                  children: "开始测试",
-                }),
+                jsxRuntime.jsx(ChapterCompletion, { course: n, index: u, lesson: remote.lesson, onQuiz: () => { R(!1); M(!0); } }),
                 jsxRuntime.jsx("button", {
                   "code-path": "src\\pages\\Presentation.tsx:274:13",
                   type: "button",
@@ -7590,6 +7461,10 @@ function Presentation({
           }),
       ],
     });
+  if (remote.loading || remote.error)
+    return jsxRuntime.jsx(LoadPanel, { error: remote.error, onRetry: remote.retry, onBack: i, message: "正在加载本章幻灯片…" });
+  if (!resourceTypes(remote.lesson).includes("slides") || !p.length)
+    return jsxRuntime.jsx(LoadPanel, { error: "本章幻灯片暂未发布，返回课程选择其他资料。", onRetry: remote.retry, onBack: i });
   return _
     ? jsxRuntime.jsx(dc, {
         "code-path": "src\\pages\\Presentation.tsx:284:12",
@@ -7664,7 +7539,7 @@ function Presentation({
                             "code-path": "src\\pages\\Presentation.tsx:302:15",
                             className:
                               "shrink-0 rounded-lg bg-[#f0ebff] px-3 py-2 text-xs font-extrabold text-[#6038ef]",
-                            children: [n.name, " · 第 ", u + 1, " 课"],
+                            children: [n.name, " · 第 ", n.chapters[u]?.orderNo ?? u + 1, " 课"],
                           }),
                         ],
                       }),
@@ -7895,15 +7770,20 @@ function CourseDetail({
   onNavigate: i,
   onBack: d,
   initialLectureIndex: p,
+  initialGuideIndex: guideIndex,
   initialPresentationIndex: m,
   initialQuizIndex: b,
 }) {
   const h = bs(n),
-    x = Iv[n.id],
+    x = n.updatedAt,
     y = n.chapters.findIndex((O) => !O.done),
     j = y >= 0 ? y : 0,
     [z, R] = React.useState(null),
-    [N, E] = React.useState(() => (p !== void 0 && n.chapters[p] ? p : null)),
+    [readingKind, setReadingKind] = React.useState(guideIndex !== void 0 ? "guide" : "lecture"),
+    [N, E] = React.useState(() => {
+      const index = guideIndex ?? p;
+      return index !== void 0 && n.chapters[index] ? index : null;
+    }),
     [_, M] = React.useState(null),
     [B, Q] = React.useState(() => (m !== void 0 && n.chapters[m] ? m : null)),
     [H, $] = React.useState(() => (b !== void 0 && n.chapters[b] ? b : null));
@@ -7937,6 +7817,7 @@ function CourseDetail({
               course: n,
               lessonTitle: n.chapters[N].title,
               lessonIndex: N,
+              resourceKind: readingKind,
               onBack: () => E(null),
               onNavigate: i,
             })
@@ -8045,7 +7926,7 @@ function CourseDetail({
                                 }),
                               ],
                             }),
-                            jsxRuntime.jsxs("p", {
+                            x && jsxRuntime.jsxs("p", {
                               "code-path":
                                 "src\\pages\\CourseDetail.tsx:140:13",
                               className:
@@ -8057,7 +7938,7 @@ function CourseDetail({
                                   className: "h-[18px] w-[18px]",
                                 }),
                                 " 更新于",
-                                x.updated,
+                                x,
                               ],
                             }),
                             jsxRuntime.jsxs("div", {
@@ -8122,7 +8003,7 @@ function CourseDetail({
                                   "code-path":
                                     "src\\pages\\CourseDetail.tsx:169:15",
                                   className: "text-xs font-bold text-[#9a9da6]",
-                                  children: "第一章",
+                                  children: "课程目录",
                                 }),
                                 jsxRuntime.jsxs("div", {
                                   "code-path":
@@ -8135,7 +8016,7 @@ function CourseDetail({
                                         "src\\pages\\CourseDetail.tsx:171:17",
                                       className:
                                         "text-2xl font-black text-[#111318]",
-                                      children: [n.name, "核心基础"],
+                                      children: "已上架章节",
                                     }),
                                     jsxRuntime.jsxs("span", {
                                       "code-path":
@@ -8151,7 +8032,7 @@ function CourseDetail({
                                     "src\\pages\\CourseDetail.tsx:174:15",
                                   className:
                                     "mt-4 text-sm font-semibold leading-7 text-[#777b85]",
-                                  children: e3[n.id],
+                                  children: "选择章节，按需要阅读讲义、动手实操、查看幻灯片或完成测验。",
                                 }),
                                 jsxRuntime.jsx("div", {
                                   "code-path":
@@ -8205,10 +8086,9 @@ function CourseDetail({
                                                   "mt-1 block text-xs font-semibold text-[#989ba4]",
                                                 children: [
                                                   "课程 ",
-                                                  P + 1,
+                                                  O.orderNo ?? P + 1,
                                                   " · ",
-                                                  20 + P * 5,
-                                                  " 分钟",
+                                                  RESOURCE_OPTIONS.filter((item) => resourceTypes(O).includes(item.type)).map((item) => item.label).join(" / "),
                                                 ],
                                               }),
                                             ],
@@ -8220,7 +8100,7 @@ function CourseDetail({
                                               "shrink-0 text-sm font-bold text-[#8a8e98]",
                                             children: O.done
                                               ? "已完成"
-                                              : "250 PX",
+                                              : "开始学习",
                                           }),
                                         ],
                                       },
@@ -8321,11 +8201,11 @@ function CourseDetail({
                     lessonTitle: n.chapters[z].title,
                     lessonIndex: z,
                     onClose: () => R(null),
-                    onReadTheory: () => {
-                      (E(z), R(null));
-                    },
-                    onStartCourse: () => {
-                      (M(z), R(null));
+                    onSelectResource: (mode) => {
+                      if (mode === "quiz") $(z);
+                      else if (mode === "presentation") Q(z);
+                      else { setReadingKind(mode === "guide" ? "guide" : "lecture"); E(z); }
+                      R(null);
                     },
                   }),
               ],
@@ -8838,9 +8718,11 @@ function Courses({
   onNavigate: n,
   initialCourseId: r,
   initialLectureIndex: u,
+  initialGuideIndex: guideIndex,
   initialPresentationIndex: i,
   initialQuizIndex: d,
 }) {
+  const learning = useLearning();
   const [p, m] = React.useState(sm),
     [b, h] = React.useState(""),
     [x, y] = React.useState(null),
@@ -8859,7 +8741,7 @@ function Courses({
               .includes(B),
           )
         : $t;
-    }, [b]),
+    }, [b, learning.data?.courses]),
     _ = (B) => {
       m((Q) => {
         const H = new Set(Q);
@@ -8892,12 +8774,13 @@ function Courses({
       : j
         ? jsxRuntime.jsx(CourseDetail, {
             "code-path": "src\\pages\\Courses.tsx:170:7",
-            course: j,
+            course: $t.find((course) => course.id === j.id) ?? j,
             favorite: p.has(j.id),
             onToggleFavorite: () => _(j.id),
             onNavigate: M,
             onBack: () => z(null),
             initialLectureIndex: u,
+            initialGuideIndex: guideIndex,
             initialPresentationIndex: i,
             initialQuizIndex: d,
           })
@@ -10731,7 +10614,7 @@ function Dashboard({ profile: n }) {
   const r = React.useMemo(() => {
       const O = zy(n.subjectValues);
       return O.length > 0 ? O : $t;
-    }, [n.subjectValues]),
+    }, [n.subjectValues, learning.data?.courses]),
     u = React.useMemo(
       () => $t.filter((O) => !r.some((P) => P.id === O.id)).slice(0, 2),
       [r],
@@ -10755,7 +10638,7 @@ function Dashboard({ profile: n }) {
     M = r[Math.min(i, r.length - 1)],
     B = bs(M),
     Q = Math.max(
-      M.chapters.findIndex((O) => !O.done),
+      M?.chapters.findIndex((O) => !O.done) ?? 0,
       0,
     ),
     H = (O) => {
@@ -10770,6 +10653,7 @@ function Dashboard({ profile: n }) {
         O === "coach") &&
         (_(null), N(null), z(!1), h(!1), m(O));
     };
+  if (!$t.length) return <div className="min-h-screen bg-[#fbfbfd]"><AppNavigation active={p} onNavigate={$} /><main className="mx-auto max-w-xl px-6 py-24 text-center"><h1 className="text-2xl font-black text-[#111318]">课程准备中</h1><p className="mt-4 text-sm leading-7 text-[#747883]">目前还没有上架课程，发布后即可开始学习。</p></main></div>;
   if (R)
     return jsxRuntime.jsx(zs, {
       "code-path": "src\\pages\\Dashboard.tsx:132:7",
@@ -10786,10 +10670,12 @@ function Dashboard({ profile: n }) {
         onBack: () => _(null),
         onNavigate: $,
       };
-    return E.mode === "lecture"
+    if (E.mode === "quiz") return jsxRuntime.jsx(dc, { ...P, onExit: () => _(null) });
+    return E.mode === "lecture" || E.mode === "guide"
       ? jsxRuntime.jsx(Lecture, {
           "code-path": "src\\pages\\Dashboard.tsx:152:7",
           ...P,
+          resourceKind: E.mode === "guide" ? "guide" : "lecture",
         })
       : jsxRuntime.jsx(Presentation, {
           "code-path": "src\\pages\\Dashboard.tsx:154:7",
@@ -11440,12 +11326,9 @@ function Dashboard({ profile: n }) {
                       lessonTitle: M.chapters[Q]?.title ?? M.name,
                       lessonIndex: Q,
                       onClose: () => z(!1),
-                      onReadTheory: () => {
-                        (z(!1),
-                          _({ course: M, lessonIndex: Q, mode: "lecture" }));
-                      },
-                      onStartCourse: () => {
-                        (z(!1), N({ course: M, lessonIndex: Q }));
+                      onSelectResource: (mode) => {
+                        z(!1);
+                        _({ course: M, lessonIndex: Q, mode });
                       },
                     }),
                 ],
@@ -11506,6 +11389,7 @@ function Po() {
     "code-path": "src\\App.tsx:10:5",
     initialCourseId: r,
     initialLectureIndex: u === void 0 || i !== void 0 ? void 0 : Number(u),
+    initialGuideIndex: i === "guide" && u !== void 0 ? Number(u) : void 0,
     initialPresentationIndex:
       i === "presentation" && u !== void 0 ? Number(u) : void 0,
     initialQuizIndex: i === "quiz" && u !== void 0 ? Number(u) : void 0,
@@ -11542,7 +11426,7 @@ function RecoveredApp() {
     load();
   }, [load]);
   React.useEffect(() => {
-    if (!learning.data?.courses?.length) return;
+    if (!Array.isArray(learning.data?.courses)) return;
     setCourseCatalog(learning.data.courses);
     refreshCatalogView((value) => value + 1);
   }, [learning.data?.courses]);

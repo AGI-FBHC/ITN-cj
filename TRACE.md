@@ -688,3 +688,24 @@
 - 章节完成条件仅为待讨论建议：有题库沿用当前60分通过标准，无题库由学习者点“学完本章”完成，不强制把四类资源逐项全部做完。该规则当前尚未实现或获用户逐项确认；不要把讨论草案当作已上线行为。
 - 建议首轮范围只有资源入口、四类内容适配、完成状态及上下架反馈。TTS/朗读和新题型等扩展不顺手加入，待用户后续明确。后端继续纯仓颉1.2+Spire、无Docker，模型设置不变。
 - 本轮仅追加同一TRACE并本地Git记录讨论依据；未改应用功能或业务数据（正常登录验证产生会话除外），未推送远端。
+
+## 2026-10-21 学员端接入已上架课件（用户批准最小适配方案）
+- 对话重点：用户希望以当前紫色前端为主，只做微调和加法，部分复用旧 ITN-cj 的资源渲染逻辑；在上一轮简洁方案后明确回复“可以 帮我实现，尽快”。本轮按该授权实现资源入口、真实四类内容和学习完成状态，不加入新工作台、额外审核或 Docker。
+- 实际工作目录仍为 D:/Downloads/zhixun-yunshu-28801-20261020，分支 codex/native-learning-v1；环境挂载的 ITN 工作树不是当前网页源码。沿用本地 Vite 3006 与仓颉1.2/Spire服务8312、既有隔离开发数据库；未更改远端28801网站。
+- 沿用用户此前明确的前后端并行授权：learner_resource_ui 负责 apps/web，learner_resource_tests 负责独立契约验收脚本，主 agent 负责仓颉接口、兼容与集成；前端使用 ui-ux-pro-max 做现有应用屏幕的最小交互适配，不使用 OpenDesign 插件。
+- 新增 services/learning/src/learning_resources.cj：统一按已发布课件生成 lecture/guide/slides 的类型化内容；题库只通过 publicQuestion 提供题目和选项。保留旧 sections/slides/questions 字段，现有知识库课时通过独立连接读取已发布 kb_courseware 自动适配，无需重新生成、重新上架或清空课程。
+- 课程列表每章补 resources/resourceTypes 和管理员 orderNo；支持不连续的章节序号。课程/章节上架与资源发布的原有闸门继续生效。cwSyncBundleCourseLocked 同步时把类型化 resources 落进课程内容；稳定 lesson_index 身份及 display_index 排序方案沿用 feb5b04。
+- 实操完整保留 objective、prerequisites、environment、steps（instruction/code/expectedOutput）、acceptanceCriteria、troubleshooting、safetyNotice、safetyChecklist、challenge、estimatedMinutes；原始数组使用字符串容器提取保留 JSON 中的中文、换行、引号和代码，不经存在转义问题的 stdx 重新序列化。新增原生单测覆盖带引号、括号和 Unicode 代码。
+- 学员 GET 课时补 resources 与 completion（requiresQuiz、passScore=60、canMarkComplete）。内容中不包含题库正确答案或提前解析；公开选项用 JsonArrWriter 正确转义。没有已发布题库时拒绝提交空测验。
+- 完成规则：阅读只更新 read，不自动完成；没有题库时由“学完本章”PUT complete:true 保存；有题库时该操作返回409，必须服务端判分达到60分。重试、刷新和课程上下架沿用已有进度、成绩和答题记录；不新建迁移、不删除用户记录。
+- 前端新增 apps/web/src/LearnerResources.jsx：四类资源描述与数据适配、实操内容卡、统一章节完成按钮；切换章节重置本地状态并避免旧保存请求覆盖新章；从真实 progress.completed/chapters.done 恢复完成显示。
+- RecoveredApp.jsx 保留当前布局、导航、紫色样式、阅读器、题库界面和幻灯片界面。学习方式弹窗仅列已发布资源，新增动手实操；讲义/实操共用阅读器；幻灯片读取真实内容；真实路径移除样例讲义/题目/幻灯片回退，旧样例函数声明未扩大清理。空资源/下架/网络错误提供可读提示和返回、重试入口。
+- 测验逐题网络错误保留选择并允许重试，不再按答错处理；最后成绩保存失败支持原 attemptId 重试。幻灯片导师提问接既有 /api/tutor/chat，使用 message 与字符串 quote 参数，不保留本地拼接的假回答。
+- 浏览器发现并修复课程详情的旧样例元数据依赖：新课程ID不在 Iv 映射时读取 updated 导致白屏，改为仅在真实 updatedAt 存在时显示日期，并把固定“第一章/核心基础”调整为课程目录/已上架章节。
+- 验证：仓颉 release 构建成功，原生 cjpm test -j1 共8项全部通过；最终前端 vite build 成功（70 modules）。Vite 仍提示既有单包体积大于500KB，不在本次扩大重构。
+- 真实 HTTP/MySQL 集成：tests/test_learner_courseware.py 11个检查点全部通过，166.780秒，报告 data/learner-courseware-report.json。覆盖四类内容、2/7/11序号、代码保真、答案不泄漏、无题库/仅幻灯片完成、40分失败/60分通过与禁止绕过、旧课程兼容、资源撤回/空章隐藏/课程下架再上架后保留学习记录。
+- 验收数据为明确标记的人工编写课件，用于发布与学员契约测试；未伪造模型服务，也未调用模型生成或改动用户保存的模型配置。测试前后 provider settings 与 .env.local 哈希一致；finally 清理自建资料包/资源/课程/访客，SQL确认测试资料包、课件、课程剩余0。
+- 已对真实现有 Hello-Agents 课程只读核对：前言可用实操、README_EN 可用讲义，未发布题库/幻灯片不暴露。没有为真实用户点完成或提交测验；UI浏览会正常写阅读状态。后端进程 PID152592（本轮记录，仅供交接，后续需查实时状态）。
+- 浏览器实际验收通过：课程详情可打开，目录仅显示前言（动手实操）/README_EN（阅读讲义），前言弹窗只有已发布实操入口；实操阅读器实际呈现准备、6步指令/代码/预期结果、验收、排错与挑战，底部显示“学完本章”。没有点击真实用户的完成按钮或提交答案。
+- 窄窗口实测发现既有左右分栏把阅读器挤成半屏，已让阅读/演示的可拖动面板在767px以下上下排列，保留导师入口；桌面仍是原左右布局。实操模式标签保持单行、课程名可换行。最终前端构建成功，日志 data/learner-resources-web-build-final.log，git diff --check 通过。
+- 交付入口 http://localhost:3006/courses；本轮功能与本TRACE一起提交到本地Git，方便回滚。未推送远端；当前使用的管理员/模型密钥仍只在既有忽略配置或数据库中。

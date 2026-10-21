@@ -266,7 +266,7 @@ func progressMap(cfg: Config, userId: String, courseId: ?String): HashMap<String
     result
 }
 
-func courseJson(row: Row, progress: HashMap<String, Bool>): String {
+func courseJson(row: Row, progress: HashMap<String, Bool>, availability: HashMap<String, Row>): String {
     let out = JsonWriter()
     out.putStr("id", row.text("id"))
     out.putStr("name", row.text("name"))
@@ -290,6 +290,11 @@ func courseJson(row: Row, progress: HashMap<String, Bool>): String {
                                 chapterOut.putStr("title", jsonGetString(chapter, "title") ?? "未命名课时")
                                 chapterOut.putInt("index", i)
                                 chapterOut.putBool("done", progress.get(row.text("id") + ":" + i.toString()) ?? false)
+                                let available = availability.get(row.text("id") + ":" + i.toString())
+                                let kinds = match (available) { case Some(value) => lrAvailableKinds(value); case None => Array<String>() }
+                                chapterOut.putRaw("resources", lrTypesJson(kinds))
+                                chapterOut.putRaw("resourceTypes", lrTypesJson(kinds))
+                                chapterOut.putInt("orderNo", match (available) { case Some(value) => value.int("order_no"); case None => i + 1 })
                                 chapters.addRaw(chapterOut.toJson())
                             case _ => ()
                         }
@@ -305,12 +310,13 @@ func courseJson(row: Row, progress: HashMap<String, Bool>): String {
 
 func courseArrayBody(cfg: Config, userId: String): String {
     let progress = progressMap(cfg, userId, None)
+    let availability = lrAvailability(cfg)
     let courseRows = query(cfg,
         "SELECT id,name,icon,description,level,duration,chapters_json,source_label FROM courses " +
         "WHERE status='published' AND EXISTS(SELECT 1 FROM lessons l WHERE l.course_id=courses.id AND l.is_visible=1) " +
         "ORDER BY sort_order,name")
     let arr = JsonArrWriter()
-    for (row in courseRows) { arr.addRaw(courseJson(row, progress)) }
+    for (row in courseRows) { arr.addRaw(courseJson(row, progress, availability)) }
     arr.toJson()
 }
 
@@ -386,7 +392,9 @@ func publicQuestion(raw: JsonValue): String {
             let question = raw.asObject()
             out.putStr("id", jsonGetString(question, "id") ?? "")
             out.putStr("question", jsonGetString(question, "question") ?? "")
-            out.putRaw("options", jsonGetArray(question, "options")?.toJsonString() ?? "[]")
+            let options = JsonArrWriter()
+            for (option in cwStringList(question, "options")) { options.addRaw(jsonQuote(option)) }
+            out.putRaw("options", options.toJson())
             out.putStr("theoryTitle", jsonGetString(question, "theoryTitle") ?? "核心概念")
         case _ => ()
     }
@@ -395,12 +403,12 @@ func publicQuestion(raw: JsonValue): String {
 
 func courseLesson(cfg: Config, courseId: String, index: Int64): ?Row {
     let lessonRows = query(cfg,
-        "SELECT l.course_id,l.lesson_index,l.title,l.content_json,l.quiz_json,l.sources_json FROM lessons l " +
+        "SELECT l.course_id,l.lesson_index,l.title,l.content_json,l.quiz_json,l.sources_json,COALESCE(l.source_doc_id,'') source_doc_id FROM lessons l " +
         "JOIN courses c ON c.id=l.course_id WHERE l.course_id=" +
         sqlQuote(courseId) + " AND COALESCE(l.display_index,l.lesson_index)=" + index.toString() +
         " AND l.is_visible=1 AND c.status='published'")
     if (lessonRows.size == 0) { return None }
-    Some(lessonRows[0])
+    lrAdaptLesson(cfg, lessonRows[0])
 }
 
 func progressJson(cfg: Config, userId: String, courseId: String, index: Int64): String {
@@ -1619,6 +1627,14 @@ main(): Int64 {
                             }
                             out.putRaw("questions", questions.toJson())
                             out.putRaw("sources", row.text("sources_json"))
+                            let types = lrLessonTypes(row)
+                            out.putRaw("resourceTypes", lrTypesJson(types))
+                            out.putRaw("resources", lrPublicResources(row))
+                            let completion = JsonWriter()
+                            completion.putBool("requiresQuiz", quiz.size() > 0)
+                            completion.putInt("passScore", 60)
+                            completion.putBool("canMarkComplete", quiz.size() == 0 && types.size > 0)
+                            out.putRaw("completion", completion.toJson())
                             out.putRaw("progress", progressJson(cfg, userId, courseId, row.int("lesson_index")))
                             writeJson(ctx.response, 200, out.toJson())
                     }
@@ -1635,8 +1651,19 @@ main(): Int64 {
                 match (courseLesson(cfg, courseId, index)) {
                     case None => writeError(ctx.response, 404, "没有找到这个课时")
                     case Some(row) =>
-                        saveProgress(cfg, userId, courseId, row.int("lesson_index"), None, false)
-                        writeJson(ctx.response, 200, progressJson(cfg, userId, courseId, row.int("lesson_index")))
+                        match (parseObject(ctx.request)) {
+                            case None => writeError(ctx.response, 400, "学习状态格式不正确")
+                            case Some(body) =>
+                                let complete = jsonGetBool(body, "complete") ?? false
+                                if (complete && lessonQuestions(row.text("quiz_json")).size() > 0) {
+                                    writeError(ctx.response, 409, "请先通过本章测验，再完成本章学习")
+                                } else if (complete && lrLessonTypes(row).size == 0) {
+                                    writeError(ctx.response, 409, "本章暂无已发布的学习内容")
+                                } else {
+                                    saveProgress(cfg, userId, courseId, row.int("lesson_index"), None, complete)
+                                    writeJson(ctx.response, 200, progressJson(cfg, userId, courseId, row.int("lesson_index")))
+                                }
+                        }
                 }
         }
     }
@@ -1687,6 +1714,8 @@ main(): Int64 {
                                 let attemptId = jsonGetString(body, "attemptId") ?? ""
                                 if (attemptId.size < 8 || attemptId.size > 64) {
                                     writeError(ctx.response, 400, "测验提交编号不正确")
+                                } else if (lessonQuestions(row.text("quiz_json")).size() == 0) {
+                                    writeError(ctx.response, 409, "本章暂无已发布题库，请返回课程")
                                 } else {
                                     let stableIndex = row.int("lesson_index")
                                     let existing = query(cfg,
