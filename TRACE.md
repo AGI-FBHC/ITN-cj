@@ -740,3 +740,10 @@
 - 已移除临时尝试的侧栏“协作泳道”入口与通用 Hub，不保留无关路由；在“课件管理 → 课件库”的资源标题旁放置明显详情 icon，任何状态（待发布、已发布、失败、生成中）都可点击进入该资源对应的协作页。
 - 泳道页按 ITN-cj 的 `CollaborationWorkbench.tsx`、`CollaborationRounds`、`ExecutionDetailPanel` 核心结构对齐：顶部“本次协同路径”，中间“Agents 教研组协作泳道”，右侧独立“执行详情”面板，显示操作结论、原始 Agent 摘要和最终资源产物。使用当前紫色管理端视觉体系，没有引入旧仓库的依赖或运行框架。
 - 实看通过：任务列表标题旁 icon 清楚可见，点击后 URL 进入对应 `coursewareId` 的 `/admin/courseware/{id}/collaboration`；五 Agent 状态、详情切换和完整 10 页幻灯片预览正常。前端生产构建通过。
+
+## 2026-10-21 11:28:00 +08:00 从 ITN-cj 直接翻译并复用核心泳道组件
+- 用户再次纠正：不是只按旧版外观自行重画，而是要复用 `AGI-FBHC/ITN-cj` 的核心前端面板。已定位实际本地克隆 `D:/Downloads/ITN-cj-analysis-20261020`（origin `https://github.com/AGI-FBHC/ITN-cj.git`，HEAD `8e9fdf5`），读取 `apps/web/src/pages/CollaborationWorkbench.tsx` 与 `apps/web/src/components/admin/ExecutionDetailPanel.tsx`。
+- 新增 `CollaborationPanels.jsx`，将旧版 `CollaborationRounds`、`AgentWorkflowSummary`、`FlowLink`、`ExecutionDetailPanel` 及 JsonTree 的核心算法从 TypeScript/Tailwind 翻译到当前 React JSX/CSS。保留旧版的关键机制：五 Agent 固定列头、事件按时间向下推进、跨列贝塞尔数据流、仲裁返修轮标记、选择 Agent/事件联动、执行摘要和原始 JSON；图标与颜色适配当前紫色 UI。
+- 当前 `steps_json` 结构与旧版事件流不同，因此在适配层将规划/检索/撰写/质检/仲裁步骤转换为统一的 workbench event；生成中第一个缺失步骤会显示当前执行 Agent，质检通过而未触发仲裁时补一条“无需返修”事件，避免路径缺项。
+- 入口仍只来自课件库任务行的资源标题旁 detail icon，不加侧栏或全局页面入口；点击进入当前 `coursewareId` 对应泳道。浏览器实看确认事件卡片跨列连接、Agent 列头、右侧执行摘要、原始 JSON、产物预览正常。
+- 验证：前端 Vite 生产构建通过；后端生成链路本阶段无改动。
