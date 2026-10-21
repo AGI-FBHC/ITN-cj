@@ -6000,7 +6000,7 @@ function Jv({ onContinue: n, onExit: r }) {
   });
 }
 
-function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit: u }) {
+function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit: u, initialQuestionIndex = 0, focusQuestionId = "" }) {
   const resolvedIndex =
       lessonNumber ??
       $t.find((course) => course.id === n.id)?.chapters.findIndex((chapter) => chapter.title === r) ??
@@ -6010,7 +6010,13 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
       () => (remote.lesson?.resources?.bank?.questions ?? remote.lesson?.questions ?? []).map((question) => ({ ...question, question: question.question || question.stem, theoryTitle: question.theoryTitle || "本题解析" })),
       [remote.lesson],
     ),
-    [d, p] = React.useState(0),
+    [d, p] = React.useState(() => {
+      const requested = focusQuestionId
+        ? i.findIndex((question) => question.id === focusQuestionId)
+        : -1;
+      if (requested >= 0) return requested;
+      return Math.min(Math.max(Number.isInteger(initialQuestionIndex) ? initialQuestionIndex : 0, 0), Math.max(i.length - 1, 0));
+    }),
     [m, b] = React.useState(null),
     [h, x] = React.useState("answering"),
     [y, j] = React.useState([]),
@@ -6078,7 +6084,15 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
                 id: D,
                 courseId: n.id,
                 courseName: n.name,
+                lessonIndex: resolvedIndex,
                 lessonTitle: r,
+                questionId: G.id,
+                questionIndex: d,
+                question: G.question,
+                options: G.options,
+                selectedIndex: m,
+                correctIndex: G.correct,
+                correct: ne,
                 heading: G.theoryTitle,
                 text: G.explanation,
                 resourceKind: "bank",
@@ -6582,7 +6596,7 @@ function QuizFlow({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit
   });
 }
 
-function dc({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit: u }) {
+function dc({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit: u, initialQuestionIndex = 0, focusQuestionId = "" }) {
   const [i, d] = React.useState(!0);
   return i
     ? jsxRuntime.jsx(zs, {
@@ -6595,6 +6609,8 @@ function dc({ course: n, lessonTitle: r, lessonIndex: lessonNumber, onExit: u })
         lessonTitle: r,
         lessonIndex: lessonNumber,
         onExit: u,
+        initialQuestionIndex,
+        focusQuestionId,
       });
 }
 
@@ -6667,6 +6683,7 @@ function Lecture({
   lessonTitle: r,
   lessonIndex: u,
   resourceKind = "lecture",
+  focusSectionId = "",
   onBack: i,
   onNavigate: d,
 }) {
@@ -6688,6 +6705,11 @@ function Lecture({
       () => undefined,
     );
   }, [n.id, u, remote.lesson]);
+  React.useEffect(() => {
+    if (!focusSectionId || !p.length) return;
+    const target = document.getElementById(`lecture-section-${u}-${focusSectionId}`);
+    target?.scrollIntoView({ block: "start" });
+  }, [focusSectionId, p.length, u]);
   const B = (G) => {
       const ne = `${n.id}-${u}-${G.id}`;
       b((be) => {
@@ -6698,6 +6720,8 @@ function Lecture({
                 id: ne,
                 courseId: n.id,
                 courseName: n.name,
+                lessonIndex: u,
+                sectionId: G.id,
                 lessonTitle: r,
                 heading: G.heading,
                 text: G.text,
@@ -6850,6 +6874,7 @@ function Lecture({
                           {
                             "code-path": "src\\pages\\Lecture.tsx:193:19",
                             className: "py-9",
+                            id: `lecture-section-${u}-${G.id}`,
                             children: [
                               jsxRuntime.jsx("p", {
                                 "code-path": "src\\pages\\Lecture.tsx:194:21",
@@ -7911,14 +7936,14 @@ function a3() {
   }
 }
 
-function Bookmarks({ onNavigate: n }) {
+function Bookmarks({ onNavigate: n, onOpenBookmark: o }) {
   const learning = useLearning();
   const [r, u] = React.useState("courses"),
     [i, d] = React.useState(pu),
     [p, m] = React.useState(a3),
     b = React.useMemo(() => $t.filter((y) => p.has(y.id)), [p]),
-    practiceBookmarks = React.useMemo(() => i.filter((item) => String(item.id).startsWith("quiz-")), [i]),
-    noteBookmarks = React.useMemo(() => i.filter((item) => !String(item.id).startsWith("quiz-")), [i]),
+    practiceBookmarks = React.useMemo(() => i.filter((item) => item.resourceKind === "bank" || String(item.id).startsWith("quiz-")), [i]),
+    noteBookmarks = React.useMemo(() => i.filter((item) => item.resourceKind !== "bank" && !String(item.id).startsWith("quiz-")), [i]),
     h = (y) => {
       d((j) => {
         const z = j.filter((R) => R.id !== y);
@@ -7973,7 +7998,7 @@ function Bookmarks({ onNavigate: n }) {
               jsxRuntime.jsx("p", {
                 "code-path": "src\\pages\\Bookmarks.tsx:60:11",
                 className: "mt-2 font-semibold text-[#8a8e98]",
-                children: "集中查看收藏课程、个人笔记和练习记录。",
+                children: "集中查看收藏课程、个人笔记和习题记录。",
               }),
               jsxRuntime.jsxs("div", {
                 "code-path": "src\\pages\\Bookmarks.tsx:61:11",
@@ -7998,7 +8023,7 @@ function Bookmarks({ onNavigate: n }) {
                     type: "button",
                     onClick: () => u("practice"),
                     className: `rounded-lg px-5 py-2 text-sm font-extrabold transition ${r === "practice" ? "bg-[#f0ebff] text-[#6038ef]" : "text-[#696d77] hover:bg-[#f6f6f8]"}`,
-                    children: "练习",
+                    children: "习题",
                   }),
                 ],
               }),
@@ -8015,12 +8040,29 @@ function Bookmarks({ onNavigate: n }) {
                       className: "grid gap-4 lg:grid-cols-2",
                       children: practiceBookmarks.map((y) => {
                         const j = y.id.startsWith("quiz-");
+                        const legacyQuestionIndex = Number.parseInt(String(y.id).split("-").pop(), 10);
+                        const openQuestion = () => o?.({
+                          view: "quiz",
+                          courseId: y.courseId,
+                          lessonIndex: y.lessonIndex ?? 0,
+                          questionId: y.questionId,
+                          questionIndex: y.questionIndex ?? (Number.isFinite(legacyQuestionIndex) ? legacyQuestionIndex : 0),
+                        });
                         return jsxRuntime.jsx(
                           "article",
                           {
                             "code-path": "src\\pages\\Bookmarks.tsx:86:21",
                             className:
                               "group rounded-2xl border border-black/[0.08] bg-white p-6 shadow-[0_4px_18px_rgba(17,19,24,0.035)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(47,33,82,0.08)]",
+                            role: "button",
+                            tabIndex: 0,
+                            onClick: openQuestion,
+                            onKeyDown: (event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                openQuestion();
+                              }
+                            },
                             children: jsxRuntime.jsxs("div", {
                               "code-path": "src\\pages\\Bookmarks.tsx:87:23",
                               className:
@@ -8067,6 +8109,10 @@ function Bookmarks({ onNavigate: n }) {
                                             y.lessonTitle,
                                           ],
                                         }),
+                                        jsxRuntime.jsx("span", {
+                                          className: `rounded-full px-3 py-1 text-xs font-extrabold ${y.correct === true ? "bg-[#e9f8ed] text-[#23853a]" : y.correct === false ? "bg-[#fff0ed] text-[#d54b3a]" : "bg-[#f1f2f5] text-[#7b818c]"}`,
+                                          children: y.correct === true ? "回答正确" : y.correct === false ? "回答错误" : "作答结果未记录",
+                                        }),
                                       ],
                                     }),
                                     jsxRuntime.jsx("h2", {
@@ -8074,14 +8120,14 @@ function Bookmarks({ onNavigate: n }) {
                                         "src\\pages\\Bookmarks.tsx:96:27",
                                       className:
                                         "mt-4 text-xl font-black text-[#111318]",
-                                      children: y.heading,
+                                      children: y.question || y.heading || "收藏的题目",
                                     }),
                                     jsxRuntime.jsx("p", {
                                       "code-path":
                                         "src\\pages\\Bookmarks.tsx:97:27",
                                       className:
                                         "mt-3 line-clamp-4 text-sm font-semibold leading-7 text-[#676b76]",
-                                      children: y.text,
+                                      children: y.text || "点击卡片重新打开这道题。",
                                     }),
                                   ],
                                 }),
@@ -8089,7 +8135,7 @@ function Bookmarks({ onNavigate: n }) {
                                   "code-path":
                                     "src\\pages\\Bookmarks.tsx:99:25",
                                   type: "button",
-                                  onClick: () => h(y.id),
+                                  onClick: (event) => { event.stopPropagation(); h(y.id); },
                                   className:
                                     "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#8a8e98] transition hover:bg-[#fff0f0] hover:text-[#e34c4c]",
                                   "aria-label": "删除书签",
@@ -8112,9 +8158,9 @@ function Bookmarks({ onNavigate: n }) {
                         "code-path": "src\\pages\\Bookmarks.tsx:114:23",
                         className: "h-10 w-10",
                       }),
-                      title: "还没有收藏练习内容",
+                      title: "还没有收藏习题",
                       description:
-                        "阅读讲义或查看题目解析时，可以收藏重要段落。",
+                        "在章节测验的题目解析页点击书签，即可把单道题收藏到这里。",
                       action: "浏览课程",
                       onAction: () => n("courses"),
                     })),
@@ -8132,6 +8178,15 @@ function Bookmarks({ onNavigate: n }) {
                             "code-path": "src\\pages\\Bookmarks.tsx:129:21",
                             className:
                               "group overflow-hidden rounded-2xl border border-black/[0.10] bg-white p-2 shadow-[0_3px_16px_rgba(17,19,24,0.035)] transition hover:-translate-y-1 hover:shadow-[0_16px_34px_rgba(49,31,87,0.10)]",
+                            role: "button",
+                            tabIndex: 0,
+                            onClick: () => o?.({ view: "course", courseId: y.id }),
+                            onKeyDown: (event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                o?.({ view: "course", courseId: y.id });
+                              }
+                            },
                             children: [
                               jsxRuntime.jsxs("div", {
                                 "code-path": "src\\pages\\Bookmarks.tsx:130:23",
@@ -8150,7 +8205,7 @@ function Bookmarks({ onNavigate: n }) {
                                     "code-path":
                                       "src\\pages\\Bookmarks.tsx:132:25",
                                     type: "button",
-                                    onClick: () => x(y.id),
+                                    onClick: (event) => { event.stopPropagation(); x(y.id); },
                                     className:
                                       "absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-[#eee6ff] text-[#6038ef] transition hover:bg-[#e2d5ff]",
                                     "aria-label": `取消收藏${y.name}`,
@@ -8274,6 +8329,15 @@ function Bookmarks({ onNavigate: n }) {
                     className: "grid gap-4 lg:grid-cols-2",
                     children: noteBookmarks.map((item) => jsxRuntime.jsxs("article", {
                       className: "group rounded-2xl border border-black/[0.08] bg-white p-6 shadow-[0_4px_18px_rgba(17,19,24,0.035)] transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(47,33,82,0.08)]",
+                      role: "button",
+                      tabIndex: 0,
+                      onClick: () => o?.({ view: "lecture", courseId: item.courseId, lessonIndex: item.lessonIndex ?? 0, sectionId: item.sectionId }),
+                      onKeyDown: (event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          o?.({ view: "lecture", courseId: item.courseId, lessonIndex: item.lessonIndex ?? 0, sectionId: item.sectionId });
+                        }
+                      },
                       children: [
                         jsxRuntime.jsxs("div", { className: "flex items-start justify-between gap-5", children: [
                           jsxRuntime.jsxs("div", { className: "min-w-0 flex-1", children: [
@@ -8283,10 +8347,16 @@ function Bookmarks({ onNavigate: n }) {
                             ] }),
                             jsxRuntime.jsx("h2", { className: "mt-4 text-xl font-black text-[#111318]", children: item.heading || "重点摘录" }),
                             jsxRuntime.jsx("p", { className: "mt-3 line-clamp-4 text-sm font-semibold leading-7 text-[#676b76]", children: item.text }),
+                            jsxRuntime.jsx("button", {
+                              type: "button",
+                              onClick: (event) => { event.stopPropagation(); o?.({ view: "lecture", courseId: item.courseId, lessonIndex: item.lessonIndex ?? 0, sectionId: item.sectionId }); },
+                              className: "mt-3 rounded-lg border border-[#d8cff5] px-3 py-2 text-xs font-extrabold text-[#6038ef] hover:bg-[#f4efff]",
+                              children: "打开讲义",
+                            }),
                           ] }),
                           jsxRuntime.jsx("button", {
                             type: "button",
-                            onClick: () => h(item.id),
+                            onClick: (event) => { event.stopPropagation(); h(item.id); },
                             className: "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#8a8e98] transition hover:bg-[#fff0f0] hover:text-[#e34c4c]",
                             "aria-label": "删除笔记",
                             children: jsxRuntime.jsx(my, { className: "h-5 w-5" }),
@@ -8498,6 +8568,10 @@ function Courses({
       });
     },
     M = (B) => {
+      if (B && typeof B === "object") {
+        n(B);
+        return;
+      }
       if (B === "courses") {
         (N(!1), m(sm()), z(null), y(null), h(""));
         return;
@@ -8512,6 +8586,7 @@ function Courses({
     ? jsxRuntime.jsx(Bookmarks, {
         "code-path": "src\\pages\\Courses.tsx:153:12",
         onNavigate: M,
+        onOpenBookmark: M,
       })
     : x
       ? jsxRuntime.jsx(zs, {
@@ -10295,6 +10370,7 @@ function Dashboard({ profile: n }) {
       email: n.email || "",
     }),
     [j, z] = React.useState(!1),
+    [courseTarget, setCourseTarget] = React.useState(""),
     [R, N] = React.useState(null),
     [E, _] = React.useState(null),
     M = r[Math.min(i, r.length - 1)],
@@ -10308,10 +10384,35 @@ function Dashboard({ profile: n }) {
       return Math.max(Math.round((P.total - P.done) * 1.2), 1);
     },
     $ = (O) => {
+      if (O && typeof O === "object") {
+        const course = $t.find((item) => item.id === O.courseId);
+        if (!course) return;
+        if (O.view === "course") {
+          (setCourseTarget(course.id), _(null), N(null), z(!1), h(!1), m("courses"));
+          return;
+        }
+        const lessonIndex = Number.isInteger(O.lessonIndex) ? O.lessonIndex : 0;
+        if (O.view === "lecture") {
+          (_({ course, lessonIndex, mode: "lecture", focusSectionId: O.sectionId || "" }), m("courses"));
+          return;
+        }
+        if (O.view === "quiz") {
+          (_({
+            course,
+            lessonIndex,
+            mode: "quiz",
+            initialQuestionIndex: Number.isInteger(O.questionIndex) ? O.questionIndex : 0,
+            focusQuestionId: O.questionId || "",
+          }), m("courses"));
+          return;
+        }
+        return;
+      }
       if (O === "profile") {
         (_(null), N(null), z(!1), h(!0));
         return;
       }
+      if (O === "courses") setCourseTarget("");
       (O === "home" ||
         O === "courses" ||
         O === "bookmarks" ||
@@ -10333,10 +10434,16 @@ function Dashboard({ profile: n }) {
         course: E.course,
         lessonTitle: O,
         lessonIndex: E.lessonIndex,
+        focusSectionId: E.focusSectionId,
         onBack: () => _(null),
         onNavigate: $,
       };
-    if (E.mode === "quiz") return jsxRuntime.jsx(dc, { ...P, onExit: () => _(null) });
+    if (E.mode === "quiz") return jsxRuntime.jsx(dc, {
+      ...P,
+      initialQuestionIndex: E.initialQuestionIndex,
+      focusQuestionId: E.focusQuestionId,
+      onExit: () => _(null),
+    });
     return E.mode === "lecture"
       ? jsxRuntime.jsx(Lecture, {
           "code-path": "src\\pages\\Dashboard.tsx:152:7",
@@ -10377,11 +10484,14 @@ function Dashboard({ profile: n }) {
       ? jsxRuntime.jsx(Bookmarks, {
           "code-path": "src\\pages\\Dashboard.tsx:179:12",
           onNavigate: $,
+          onOpenBookmark: $,
         })
       : p === "courses"
         ? jsxRuntime.jsx(Courses, {
             "code-path": "src\\pages\\Dashboard.tsx:183:12",
+            key: courseTarget || "courses",
             onNavigate: $,
+            initialCourseId: courseTarget || undefined,
           })
         : p === "progress"
           ? jsxRuntime.jsx(LearningProgress, {
