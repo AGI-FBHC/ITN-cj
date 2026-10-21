@@ -13,6 +13,8 @@ Get-Content -LiteralPath $zhixunEnv | ForEach-Object {
     }
 }
 
+. (Join-Path $PSScriptRoot 'ensure-local-mysql.ps1')
+
 $zhixunService = Join-Path $zhixunRoot 'services/learning'
 Push-Location $zhixunService
 try {

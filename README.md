@@ -25,6 +25,28 @@
 数据库连接只从项目根目录已忽略的 `.env.local` 读取。后端启动时会拒绝连接
 `itn_learning_v2_dev` 以外的数据库。
 
+### 本地数据库与资源文件（2026-10-21）
+
+当前开发环境已从服务器的独立开发库完整迁至本机 MySQL：
+
+- 地址：`127.0.0.1:13307`，数据库：`itn_learning_v2_dev`。
+- 使用项目专用实例，配置和数据在 `data/local-mysql/`；本机已有的 3306 实例不受影响。
+- 两个后端启动脚本都会先检查并启动该实例，再预热应用账号认证缓存；不使用 Docker。
+- 数据库账号凭据只保存在已忽略的 `.env.local`；本地管理凭据位于已忽略的
+  `data/local-mysql/admin.json`，均不得提交或复制到公开文档。
+- 知识库原文、切片、摘要、向量、课程 Logo 和业务记录在本地数据库；
+  知识库图片在 `data/kb_assets/`，机构 Logo 在 `data/org/`，PPT 产物在
+  `data/presentations/`，登录角色图在 `apps/web/public/login-characters/`。
+
+迁移备份、原远程连接配置和验证报告在 `data/db-migration/`，具体批次由
+`data/db-migration-current.txt` 记录。迁移切换前已校验全部 23 张表的字段、行数与
+逐行 SHA-256 内容摘要一致，129 张知识库图片和当前 PPT 文件均存在。
+
+远程数据库保留，切换后的新数据仅写本地，两边不会自动同步。
+如果需要回滚，先停止后端并备份本地新增数据，再恢复批次内的 `.env.remote.local`
+为项目 `.env.local`，最后启动后端；直接切回会看不到迁移后的本地新增记录。
+对比工具 `tools/verify-local-db.py` 只读检查两个库，输出报告不含凭据。
+
 邮箱验证码使用 `.env.local` 中的 `SMTP_HOST`、`SMTP_PORT`、`SMTP_USERNAME`、
 `SMTP_PASSWORD`、`EMAIL_FROM` 等变量。真实值不进入 Git。
 

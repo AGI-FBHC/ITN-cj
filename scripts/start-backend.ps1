@@ -27,6 +27,8 @@ Get-Content -LiteralPath $envFile | ForEach-Object {
     }
 }
 
+. (Join-Path $PSScriptRoot 'ensure-local-mysql.ps1')
+
 $log = Join-Path $root 'backend.log'
 $err = Join-Path $root 'backend.err.log'
 $process = Start-Process -FilePath $exe -WorkingDirectory $root -RedirectStandardOutput $log -RedirectStandardError $err -PassThru -WindowStyle Hidden
