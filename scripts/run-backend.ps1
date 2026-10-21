@@ -1,6 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $zhixunRoot = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'env.ps1')
+$env:ZHIXUN_PROJECT_ROOT = $zhixunRoot
 
 $zhixunEnv = Join-Path $zhixunRoot '.env.local'
 if (-not (Test-Path -LiteralPath $zhixunEnv)) {

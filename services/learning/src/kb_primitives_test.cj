@@ -6,6 +6,7 @@ import std.env.*
 import std.fs.*
 import std.unittest.*
 import std.unittest.testmacro.*
+import stdx.encoding.json.*
 
 func kbPrimitiveCheck(condition: Bool, message: String): Unit {
     if (!condition) { throw Exception(message) }
@@ -22,6 +23,34 @@ func kbPrimitiveRepeated(text: String, count: Int64): String {
     var i: Int64 = 0
     while (i < count) { out.append(text); i += 1 }
     out.toString()
+}
+
+func cwStructuredSlidesFixture(kinds: Array<String>): JsonObject {
+    let slides = JsonArrWriter()
+    var index: Int64 = 0
+    while (index < kinds.size) {
+        let kind = kinds[index]
+        let slide = JsonWriter()
+        slide.putStr("title", "第 " + (index + 1).toString() + " 页")
+        slide.putStr("kind", kind)
+        let points = JsonArrWriter()
+        var pointIndex: Int64 = 0
+        while (pointIndex < 3) {
+            let point = JsonWriter()
+            point.putStr("heading", "要点 " + (pointIndex + 1).toString())
+            point.putStr("detail", "这是对 " + kind + " 页面的完整说明，学习者可以据此理解概念、方法与应用边界。")
+            points.addRaw(point.toJson())
+            pointIndex += 1
+        }
+        slide.putRaw("points", points.toJson())
+        slide.putStr("speakerNotes", kbPrimitiveRepeated("请结合本章原文理解这一页的核心概念、操作方法和实际应用。", 4))
+        slides.addRaw(slide.toJson())
+        index += 1
+    }
+    let deck = JsonWriter()
+    deck.putStr("title", "结构化演示文稿")
+    deck.putRaw("slides", slides.toJson())
+    cwJsonObjectFrom(deck.toJson()).getOrThrow()
 }
 
 func kbPrimitiveAtomCovered(body: String, pieces: Array<KbPiece>, atom: String): Unit {
@@ -96,6 +125,14 @@ class KbPrimitiveTests {
         kbPrimitiveCheck(evidence.contains("本章原文"), "Chapter evidence must identify the source chapter")
         kbPrimitiveCheck(evidence.contains("只允许使用这段原文"), "Chapter evidence lost the source text")
         kbPrimitiveCheck(!evidence.contains("跨章节"), "Courseware generation must not include cross-chapter retrieval")
+    }
+    @TestCase
+    func presentationOutlineRequiresARealNarrativeDeck(): Unit {
+        let kinds = ["title", "agenda", "overview", "concept", "code", "comparison", "process", "table", "case", "conclusion"]
+        let valid = cwStructuredSlidesFixture(kinds)
+        kbPrimitiveCheck(cwSlidesIssues(valid, 10).size == 0, "A complete structured deck must pass validation")
+        let repetitive = cwStructuredSlidesFixture(Array<String>(10, repeat: "overview"))
+        kbPrimitiveCheck(cwSlidesIssues(repetitive, 10).size > 0, "A repetitive Markdown-like deck must be rejected")
     }
     @TestCase
     func learnerResourceContainersPreserveQuotedCode(): Unit {

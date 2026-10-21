@@ -747,3 +747,16 @@
 - 当前 `steps_json` 结构与旧版事件流不同，因此在适配层将规划/检索/撰写/质检/仲裁步骤转换为统一的 workbench event；生成中第一个缺失步骤会显示当前执行 Agent，质检通过而未触发仲裁时补一条“无需返修”事件，避免路径缺项。
 - 入口仍只来自课件库任务行的资源标题旁 detail icon，不加侧栏或全局页面入口；点击进入当前 `coursewareId` 对应泳道。浏览器实看确认事件卡片跨列连接、Agent 列头、右侧执行摘要、原始 JSON、产物预览正常。
 - 验证：前端 Vite 生产构建通过；后端生成链路本阶段无改动。
+
+## 2026-10-21 12:05:00 +08:00 PPT 专用生成链、真实产物与交付 Agent 泳道
+- 对话重点：用户指出当前“PPT”仍只是 Markdown 卡片，要求复用 ITN-cj/Lumin 的专用 PPT 制作接口；同时明确可以把流程包装成泳道里的 Agent，但核心生成流程不能变，泳道只能观测，不得阻塞或重排规划、检索、撰写、质检、按需仲裁。
+- 核对 ITN-cj 检出 `D:/Downloads/ITN-cj-analysis-20261020`（HEAD `8e9fdf5`）：`presentation_agent.cj` 由模型生成结构化演示提纲；`render_ppt.py`/`legacy_agent.py` 使用 `python-pptx` 生成真实可编辑 `.pptx`，同时写入 `.pptx.preview.html` 与 `.pptx.json`。因此本实现只迁移渲染与数据契约，不把 Markdown 内容冒充 PPT，也不改变现有五步内容生成链。
+- 新增 `services/learning/renderer/ppt-renderer/`：复制并适配 Lumin 的 `render_ppt.py`、`legacy_agent.py`、`backgrounds.py`。该渲染器接收结构化 outline，输出真实 PPTX、16:9 网页预览和设计 JSON；页面预览来自同一份归一化提纲，自动章节页会同时进入 PPTX 与预览，避免候选页数误报。
+- 新增 `services/learning/src/presentation_pipeline.cj`：`renderPresentationPptx()` 调用本地 Python 渲染器；解析渲染器返回的实际 `slides`/`notes` 数写回元数据；产物存放在 `data/presentations/{coursewareId}/presentation.pptx` 及同名 `.preview.html`、`.json`。启动脚本设置 `ZHIXUN_PROJECT_ROOT` 并显式指定工作目录，渲染器路径不再依赖从哪个目录启动后端，修复了此前路径重复拼接导致的 `python: can't open file ...`。
+- `kb_courseware.cj` 将 slides 提示词升级为可直接交给演示渲染器的结构化 JSON：10 页分镜、封面/目录/结论固定、正文至少 5 种页面类型、每页结构化 points 与 100–220 字 speakerNotes；校验仍保留在质检和按需返修中。PPTX 渲染发生在原有审核通过之后，新增 `CW_ROLE_LAYOUT="排版"` 的观测步骤，先写 running 再渲染，成功后记录“实际页数、讲稿页数、设计 JSON 与网页预览已输出”。该步骤不调用模型、不改变提示词、审核顺序、队列或失败策略。
+- 后端新增受 Bearer 会话保护的 `GET /api/presentation/{id}/download.pptx` 与 `/preview`；管理员可访问，学习者仅能访问已发布资源。`learning_resources.cj` 保留既有降级字段，同时公开 `presentation` 元数据；旧任务读取时从真实 `.json` 侧车回填实际页数和讲稿数，修复过期元数据把 15 页误显示为 10 页的问题。已移除 typed resources 的永久早退，确保既有课程再次读取时也会获得修正后的产物信息。
+- 前端新增共享 `PresentationArtifact.jsx` 与 `presentation-artifact.css`，管理员预览和用户学习页都渲染真实 PPTX 网页预览，支持带会话鉴权下载真实文件。学习页只在 `remote.lesson.resources.slides.presentation` 存在时替换旧假幻灯片画布，继续保留原课程导航、右侧 AI 导师、语音提问、全屏、下载和章节完成；没有新产物时仍保留原有兼容展示。
+- 泳道翻译面板扩展为六个 Agent：规划、检索、撰写、质检、仲裁、演示交付。演示交付只在 slides 产物上出现；非幻灯片资源显示“无需 PPT 排版”，历史已生成幻灯片根据现有预览补全交付状态。六列在现有双栏宽度内完整显示，窄屏横向滚动；协作页仍从课件库任务行详情 icon 进入，没有新增全局入口。
+- 实际测试：`python-pptx` 可打开真实产物；测试任务 `38f167b9-e640-4f17-b1e0-a4435331fdef` 的 10 页结构化分镜经章节页归一化后得到 15 张实际幻灯片、15 页讲者备注；管理员课件页和协作页均显示真实排版，不再显示 Markdown 卡片。用户端临时发布后验证了 `01 / 15`、下载文件名、页数回填、AI 导师与完成按钮，随后立即取消该测试课件发布并恢复原有 `133bac40-...` 已发布状态。
+- 验证记录：后端 `cjpm build -i -j1` 成功；原生 `cjpm test -j1` 10/10 通过，新增结构化演示稿必须包含封面/目录/结论且至少 5 类页面的回归用例；前端 `npm run build --prefix apps/web` 成功；健康检查返回 Cangjie 1.2.0 + Spire，后端 8312、Vite 3006 正常。构建仍有既有的 `mysql_client.cj`、`main.cj` 换行歧义警告和前端 bundle 大于 500KB 提示，不是本轮引入的功能错误。
+- 本轮未推送远端，未操作 Docker；未改动用户画像结构。后续若再次生成 PPT，核心顺序应保持“规划 → 检索 → 撰写 → 质检 → 按需仲裁 → 已通过内容交给演示交付渲染”，泳道仅做状态观测与详情展示。

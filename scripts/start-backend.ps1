@@ -19,6 +19,7 @@ if (-not (Test-Path -LiteralPath $exe)) { throw "Missing $exe. Run scripts/run-b
 if (-not (Test-Path -LiteralPath $envFile)) { throw "Missing $envFile" }
 
 . (Join-Path $PSScriptRoot 'env.ps1')
+$env:ZHIXUN_PROJECT_ROOT = $root
 
 Get-Content -LiteralPath $envFile | ForEach-Object {
     if ($_ -match '^\s*([^#=]+)=(.*)$') {
@@ -28,7 +29,7 @@ Get-Content -LiteralPath $envFile | ForEach-Object {
 
 $log = Join-Path $root 'backend.log'
 $err = Join-Path $root 'backend.err.log'
-$process = Start-Process -FilePath $exe -RedirectStandardOutput $log -RedirectStandardError $err -PassThru -WindowStyle Hidden
+$process = Start-Process -FilePath $exe -WorkingDirectory $root -RedirectStandardOutput $log -RedirectStandardError $err -PassThru -WindowStyle Hidden
 Start-Sleep -Seconds 2
 if ($process.HasExited) {
     Write-Output "后端启动失败，错误日志: $err"

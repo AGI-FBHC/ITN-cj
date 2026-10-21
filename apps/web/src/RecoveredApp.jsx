@@ -25,6 +25,7 @@ import {
 import LoginPage from "./LoginPage.jsx";
 import { orgLogoUrl, orgShortName } from "./org-brand.js";
 import Markdown from "./admin/Markdown.jsx";
+import PresentationArtifact from "./PresentationArtifact.jsx";
 import { RESOURCE_OPTIONS, resourceTypes, lessonSections, lessonSlides, ChapterCompletion } from "./LearnerResources.jsx";
 import "./lesson-start-modal.css";
 function ProductLogo({ className: n = "", animated: r = !1, color: u = "#111318" }) {
@@ -7151,6 +7152,7 @@ function Presentation({
   onNavigate: d,
 }) {
   const remote = useLesson(n, u);
+  const presentation = remote.lesson?.resources?.slides?.presentation || null;
   const p = React.useMemo(() => lessonSlides(remote.lesson), [remote.lesson]),
     [m, b] = React.useState(0),
     [h, x] = React.useState(!1),
@@ -7240,7 +7242,47 @@ function Presentation({
       if (m >= p.length - 1) { x(!1); E(!0); }
       else (x(!1), E(!1), b((W) => Math.min(p.length - 1, W + 1)));
     },
-    Z = jsxRuntime.jsxs("div", {
+    Z = presentation
+      ? jsxRuntime.jsxs("div", {
+          className: "flex min-h-0 flex-1 flex-col",
+          children: [
+            jsxRuntime.jsx(PresentationArtifact, {
+              presentation,
+              className: "zx-presentation-learner",
+              downloadName: `${n.name}-${r}.pptx`.replace(/[\\/:*?"<>|]+/g, "-"),
+            }),
+            jsxRuntime.jsxs("div", {
+              className: "zx-presentation-learning-bar",
+              children: [
+                jsxRuntime.jsxs("span", {
+                  children: [
+                    "实际 PPTX · ",
+                    presentation.slideCount ? `${presentation.slideCount} 页` : "可下载",
+                    " · 支持 AI 导师随时提问",
+                  ],
+                }),
+                jsxRuntime.jsxs("div", {
+                  className: "zx-presentation-learning-actions",
+                  children: [
+                    jsxRuntime.jsx("button", {
+                      type: "button",
+                      className: "is-secondary",
+                      onClick: () => R((W) => !W),
+                      children: z ? "退出全屏" : "全屏阅读",
+                    }),
+                    jsxRuntime.jsx("button", {
+                      type: "button",
+                      className: "is-primary",
+                      onClick: () => E(!0),
+                      children: "完成本节",
+                    }),
+                  ],
+                }),
+              ],
+            }),
+          ],
+        })
+      : jsxRuntime.jsxs("div", {
       "code-path": "src\\pages\\Presentation.tsx:217:5",
       className: `relative flex min-h-0 flex-1 flex-col ${z ? "bg-[#f4f4f7] p-5 sm:p-8" : ""}`,
       children: [

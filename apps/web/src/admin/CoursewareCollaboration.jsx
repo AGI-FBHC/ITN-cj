@@ -4,6 +4,7 @@ import { adminApi } from './admin-api.js';
 import { ErrorBlock, Loading, Notice } from './admin-ui.jsx';
 import { CoursewareContent } from './CoursewareView.jsx';
 import {
+  COLLAB_AGENTS,
   AgentWorkflowSummary,
   buildCoursewareEvents,
   CollaborationRounds,
@@ -120,7 +121,7 @@ export default function CoursewareCollaboration() {
       <section className="zx-collab-board" aria-label="Agents 教研组协作泳道">
         <header>
           <div><p>AGENT SWIMLANES</p><h2>Agents 教研组协作泳道</h2></div>
-          <span>{completed}/5 已完成 · {item.updatedAt || '正在执行'}</span>
+          <span>{completed}/{COLLAB_AGENTS.length} 已完成 · {item.updatedAt || '正在执行'}</span>
         </header>
         <div className="zx-core-board">
           <AgentWorkflowSummary events={events} running={item.status === 'generating'} />

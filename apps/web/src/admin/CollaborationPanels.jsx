@@ -5,11 +5,12 @@ import Markdown from './Markdown.jsx';
 // apps/web/src/pages/CollaborationWorkbench.tsx and
 // apps/web/src/components/admin/ExecutionDetailPanel.tsx.
 export const COLLAB_AGENTS = [
-  { role: '规划', code: 'DIA-01', name: '教学策划 Agent', duty: '分析章节结构，规划资源目标、内容层次与生成要求。', tone: 'violet' },
-  { role: '检索', code: 'RET-02', name: '知识检索 Agent', duty: '锁定本章原文，整理生成所需的依据与内容边界。', tone: 'blue' },
-  { role: '撰写', code: 'GEN-03', name: '内容生成 Agent', duty: '严格依据规划与本章原文完成初稿生成。', tone: 'amber' },
-  { role: '质检', code: 'VER-04', name: '质量核验 Agent', duty: '检查结构、引用、完整性与输出格式是否达标。', tone: 'teal' },
-  { role: '仲裁', code: 'ARB-05', name: '发布仲裁 Agent', duty: '根据质检结论返修一次，并给出最终通过结论。', tone: 'rose' },
+  { role: '规划', code: 'DIA-01', name: '教学策划 Agent', short: '教学策划', duty: '分析章节结构，规划资源目标、内容层次与生成要求。', tone: 'violet' },
+  { role: '检索', code: 'RET-02', name: '知识检索 Agent', short: '知识检索', duty: '锁定本章原文，整理生成所需的依据与内容边界。', tone: 'blue' },
+  { role: '撰写', code: 'GEN-03', name: '内容生成 Agent', short: '内容生成', duty: '严格依据规划与本章原文完成初稿生成。', tone: 'amber' },
+  { role: '质检', code: 'VER-04', name: '质量核验 Agent', short: '质量核验', duty: '检查结构、引用、完整性与输出格式是否达标。', tone: 'teal' },
+  { role: '仲裁', code: 'ARB-05', name: '发布仲裁 Agent', short: '发布仲裁', duty: '根据质检结论返修一次，并给出最终通过结论。', tone: 'rose' },
+  { role: '排版', code: 'LAY-06', name: '演示交付 Agent', short: '演示交付', duty: '把已通过审核的结构化内容渲染为可编辑 PPTX、讲者备注和网页预览。', tone: 'slate' },
 ];
 
 const AGENT_BY_ROLE = Object.fromEntries(COLLAB_AGENTS.map((agent) => [agent.role, agent]));
@@ -55,6 +56,8 @@ export function buildCoursewareEvents(item, steps) {
             ? '已锁定本章原文'
             : agent.role === '仲裁'
               ? '返修与最终确认'
+              : agent.role === '排版'
+                ? 'PPTX 与预览生成完成'
               : `${agent.role}阶段完成`;
       events.push({
         seq: index + 1,
@@ -99,6 +102,36 @@ export function buildCoursewareEvents(item, steps) {
         executionSummary: '质量核验通过，本轮无需进入返修流程。',
         snapshot: { role: agent.role, status: 'skipped', reason: '质检直接通过' },
       });
+      return;
+    }
+    if (item.status === 'ready' && agent.role === '排版' && item.kind !== 'slides') {
+      events.push({
+        seq: index + 1,
+        time: item.updatedAt,
+        agent: agent.role,
+        agentName: agent.name,
+        phase: 'skipped',
+        status: 'skipped',
+        title: '当前资源无需 PPT 排版',
+        detail: '只有教学幻灯片会进入 PPTX 渲染，其他资源在审核通过后直接交付。',
+        executionSummary: '当前资源类型不包含 PPTX 交付产物。',
+        snapshot: { role: agent.role, status: 'skipped', resourceKind: item.kind },
+      });
+      return;
+    }
+    if (item.status === 'ready' && agent.role === '排版' && item.kind === 'slides') {
+      events.push({
+        seq: index + 1,
+        time: item.updatedAt,
+        agent: agent.role,
+        agentName: agent.name,
+        phase: 'done',
+        status: 'done',
+        title: 'PPTX 与预览已生成',
+        detail: '历史任务没有单独保存排版步骤，已根据现有结构化幻灯片产物补全交付状态。',
+        executionSummary: '可编辑 PPTX、讲者备注、设计 JSON 和网页预览均已进入资源预览。',
+        snapshot: { role: agent.role, status: 'done', compatibility: 'legacy-ready-task' },
+      });
     }
   });
   return events;
@@ -129,7 +162,7 @@ export function AgentWorkflowSummary({ events, running }) {
   </section>;
 }
 
-function FlowLink({ fromCol, toCol }) {
+function FlowLink({ fromCol, toCol, columnCount }) {
   const ref = React.useRef(null);
   const [geometry, setGeometry] = React.useState(null);
   React.useLayoutEffect(() => {
@@ -138,10 +171,10 @@ function FlowLink({ fromCol, toCol }) {
     const width = node.clientWidth;
     const height = node.clientHeight;
     const gap = 8;
-    const columnWidth = (width - gap * 4) / 5;
+    const columnWidth = (width - gap * (columnCount - 1)) / columnCount;
     const center = (column) => column * (columnWidth + gap) + columnWidth / 2;
     setGeometry({ width, height, x1: center(fromCol), x2: center(toCol) });
-  }, [fromCol, toCol]);
+  }, [columnCount, fromCol, toCol]);
   const x1 = geometry?.x1 ?? 20;
   const x2 = geometry?.x2 ?? 20;
   const height = geometry?.height ?? 38;
@@ -161,13 +194,13 @@ export function CollaborationRounds({ events, selectedSeq, selectedAgent, runnin
     isRoundStart: event.agent === '仲裁',
     key: `${event.agent}-${event.seq}-${index}`,
   }));
-  return <div className="zx-core-rounds">
+  return <div className="zx-core-rounds" style={{ '--zx-agent-count': String(COLLAB_AGENTS.length) }}>
     <div className="zx-core-round-head">
       {COLLAB_AGENTS.map((agent) => {
         const own = events.some((event) => event.agent === agent.role);
         const live = runningAgent === agent.role;
         return <button key={agent.role} type="button" className={classNames('zx-core-agent-head', `is-${agent.tone}`, live && 'is-live', selectedAgent === agent.role && 'is-selected', own && 'has-events')} onClick={() => onSelectAgent(agent.role)} title={agent.duty}>
-          <span>{agent.code.slice(0, 3)}</span><strong>{agent.name}</strong>{live ? <i /> : null}
+          <span>{agent.code.slice(0, 3)}</span><strong>{agent.short || agent.name}</strong>{live ? <i /> : null}
         </button>;
       })}
     </div>
@@ -179,7 +212,7 @@ export function CollaborationRounds({ events, selectedSeq, selectedAgent, runnin
         const event = unit.events[0];
         const live = running && runningAgent === unit.agent;
         return <React.Fragment key={unit.key}>
-          {index > 0 ? <FlowLink fromCol={previousLane} toCol={lane} /> : null}
+          {index > 0 ? <FlowLink fromCol={previousLane} toCol={lane} columnCount={COLLAB_AGENTS.length} /> : null}
           <div className="zx-core-round-row" style={{ gridColumnStart: lane + 1 }}>
             {unit.isRoundStart ? <span className="zx-core-round-tag">仲裁轮</span> : null}
             <button type="button" className={classNames('zx-core-event', `is-${AGENT_BY_ROLE[unit.agent]?.tone || 'violet'}`, `is-${event.status}`, event.seq === selectedSeq && 'is-selected', live && 'is-live')} onClick={() => onSelect(event)} title={event.detail || event.title}>

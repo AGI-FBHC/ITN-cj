@@ -16,6 +16,7 @@ const CW_ROLE_RETRIEVER = "检索"
 const CW_ROLE_WRITER = "撰写"
 const CW_ROLE_REVIEWER = "质检"
 const CW_ROLE_ARBITER = "仲裁"
+const CW_ROLE_LAYOUT = "排版"
 let cwCourseSyncLock = Mutex()
 let cwQueueLock = Mutex()
 var cwActiveWorkers: Int64 = 0
@@ -156,9 +157,10 @@ func cwPlanPrompt(kind: String, title: String, digest: String): String {
         "要求：4~7 步，每步目标一句话说清「做完能得到什么」。\n主题：" + title + "\n资料线索：\n" + digest
     }
     if (kind == "slides") {
-        return "你是演示稿设计者，只设计分页结构（先不写要点）。只输出一个 JSON 对象：\n" +
-        "{\"title\":\"\",\"subtitle\":\"\",\"slides\":[{\"title\":\"\"}]}\n" +
-        "要求：正好 10 页，标题不重复，顺序遵循「问题→概念→方法→案例→小结」。\n主题：" + title + "\n资料线索：\n" + digest
+        return "你是演示文稿信息架构师，只设计可制作的 10 页叙事分镜，不写正文。只输出一个 JSON 对象：\n" +
+        "{\"title\":\"\",\"subtitle\":\"\",\"slides\":[{\"title\":\"\",\"kind\":\"\"}]}\n" +
+        "要求：第1页 title，第2页 agenda，最后1页 conclusion；正文页要从 overview/concept/code/comparison/process/table/timeline/roadmap/spotlight/checklist/case/practice 中选择至少 5 种，避免连续同构页面。" +
+        "内容顺序必须具体体现问题、机制、示例和总结。\n主题：" + title + "\n资料线索：\n" + digest
     }
     if (kind == "bank") {
         return "你是测评设计者。只输出一个 JSON 对象：{\"knowledgePoints\":[{\"id\":\"kp-1\",\"name\":\"\",\"description\":\"\"}]}，" +
@@ -183,10 +185,15 @@ func cwWritePrompt(kind: String, title: String, plan: String, evidence: String, 
         "主题：" + title + "\n已确定结构：\n" + plan + "\n可引用证据：\n" + evidence + "\n资料原文：\n" + context
     }
     if (kind == "slides") {
-        return "你是演示稿设计者。按下面已确定的分页写完整内容，只输出一个 JSON 对象：\n" +
-        "{\"title\":\"\",\"subtitle\":\"\",\"slides\":[{\"title\":\"\",\"bullets\":[\"\",\"\"],\"speakerNote\":\"\"}]}\n" +
-        "要求：每页 2~5 条要点，每条不超过 40 字；speakerNote 写这一页怎么讲（30 字以上）。\n" +
-        "主题：" + title + "\n已确定分页：\n" + plan + "\n可引用证据：\n" + evidence + "\n资料原文：\n" + context
+        return "你是由教学策划、内容生成和质量核验共同约束的 PPT 制作 Agent。请生成可以直接送进 python-pptx 排版器的结构化演示提纲，而不是 Markdown。" +
+        "只输出一个合法 JSON 对象，不要解释或围栏。结构：\n" +
+        "{\"title\":\"\",\"subtitle\":\"\",\"slides\":[{\"title\":\"\",\"kind\":\"\",\"points\":[{\"heading\":\"\",\"detail\":\"\"}],\"speakerNotes\":\"\"," +
+        "\"code\":{\"language\":\"\",\"caption\":\"\",\"content\":\"\",\"annotations\":[],\"output\":\"\"}," +
+        "\"process\":[{\"label\":\"\",\"detail\":\"\"}],\"table\":{\"headers\":[\"\"],\"rows\":[[\"\"]]}}]}\n" +
+        "硬性要求：正好 10 页；第1页 kind=title，第2页 kind=agenda，最后1页 kind=conclusion；正文页 kind 从 overview/concept/code/comparison/process/table/timeline/roadmap/spotlight/checklist/case/practice 选择，至少覆盖 5 类。" +
+        "每页必须有 title、kind、points、speakerNotes；除 title 外 points 为 3~5 项，heading 精简，detail 是完整、具体的句子；code 页再给 code，process/timeline 页再给 process，table 页再给 table。" +
+        "speakerNotes 必须是 100~220 字可直接朗读的口播稿，不能出现“介绍本页/展开讲解/引导听众”等导演词。内容只能依据本章原文，不得编造。\n" +
+        "主题：" + title + "\n已确定分镜：\n" + plan + "\n本章证据：\n" + evidence + "\n章节原文：\n" + context
     }
     if (kind == "bank") {
         return "你是测评设计者。按下面的知识点出题，只输出一个 JSON 对象：\n" +
@@ -349,20 +356,34 @@ func cwSlidesIssues(obj: JsonObject, expected: Int64): ArrayList<String> {
     if (slides.size != expected) {
         issues.add("页数不正确（当前 " + slides.size.toString() + " 页，应为 " + expected.toString() + " 页）")
     }
-    var badBullets = 0
-    var longBullets = 0
+    let allowedKinds = HashSet<String>(["title", "agenda", "overview", "concept", "code", "comparison", "process",
+        "table", "timeline", "roadmap", "spotlight", "checklist", "case", "practice", "conclusion"])
+    let usedKinds = HashSet<String>()
+    var badPoints = 0
+    var shortDetails = 0
     var shortNote = 0
-    for (slide in slides) {
-        let bullets = cwStringList(slide, "bullets")
-        if (bullets.size < 2 || bullets.size > 5) { badBullets += 1 }
-        for (bullet in bullets) {
-            if (cwCharCount(bullet) > 40) { longBullets += 1 }
+    var i: Int64 = 0
+    while (i < slides.size) {
+        let slide = slides[i]
+        let rawKind = cwField(slide, "kind")
+        let kind = (if (rawKind.size == 0) { "overview" } else { rawKind }).toAsciiLower()
+        if (!allowedKinds.contains(kind)) { issues.add("第 " + (i + 1).toString() + " 页使用了不支持的页面类型：" + kind) }
+        usedKinds.add(kind)
+        if (i == 0 && kind != "title") { issues.add("第 1 页必须是 title 封面") }
+        if (i == 1 && kind != "agenda") { issues.add("第 2 页必须是 agenda 目录") }
+        if (i == slides.size - 1 && kind != "conclusion") { issues.add("最后 1 页必须是 conclusion 总结") }
+        let points = cwObjectList(slide, "points")
+        if (kind != "title" && points.size < 3) { badPoints += 1 }
+        for (point in points) {
+            if (cwField(point, "heading").size == 0 || cwCharCount(cwField(point, "detail")) < 12) { shortDetails += 1 }
         }
-        if (cwCharCount(cwField(slide, "speakerNote")) < 30) { shortNote += 1 }
+        if (cwCharCount(cwField(slide, "speakerNotes")) < 70) { shortNote += 1 }
+        i += 1
     }
-    if (badBullets > 0) { issues.add("有 " + badBullets.toString() + " 页要点数量不在 2~5 条之间") }
-    if (longBullets > 0) { issues.add("有 " + longBullets.toString() + " 条要点超过 40 字") }
-    if (shortNote > 0) { issues.add("有 " + shortNote.toString() + " 页缺少讲稿（30 字以上）") }
+    if (badPoints > 0) { issues.add("有 " + badPoints.toString() + " 页缺少至少 3 个结构化要点") }
+    if (shortDetails > 0) { issues.add("有 " + shortDetails.toString() + " 个要点缺少完整说明") }
+    if (shortNote > 0) { issues.add("有 " + shortNote.toString() + " 页缺少可朗读讲稿（70 字以上）") }
+    if (usedKinds.size < 5) { issues.add("页面类型不足 5 种，演示结构过于单一") }
     issues
 }
 
@@ -521,6 +542,16 @@ func cwRunOne(cfg: Config, id: String): Unit {
             merged.putRaw("knowledgePoints", if (kpRaw.size > 0) { kpRaw } else { "[]" })
             merged.putRaw("questions", if (questionRaw.size > 0) { questionRaw } else { "[]" })
             contentJson = merged.toJson()
+        }
+        if (kind == "slides") {
+            let layoutStep = trace.add(CW_ROLE_LAYOUT, "running", "", "")
+            cwPersistTrace(cfg, id, trace)
+            let presentation = renderPresentationPptx(id, finalTitle, title, contentJson)
+            layoutStep.status = "done"
+            layoutStep.summary = "已生成可编辑 PPTX：" + presentation.slideCount.toString() +
+                " 页，带讲者备注 " + presentation.speakerNoteCount.toString() + " 页；设计 JSON 与网页预览已同步输出。"
+            cwPersistTrace(cfg, id, trace)
+            contentJson = presentationWithMetadata(contentJson, presentation.metadataJson)
         }
         cwSetRow(cfg, id, "ready", finalTitle, contentJson, "")
     } catch (error: Exception) {
@@ -813,11 +844,21 @@ func cwSyncBundleCourseLocked(cfg: Config, bundleId: String, forceStatus: String
                     slideJson.putStr("title", cwField(slide, "title"))
                     slideJson.putStr("subtitle", "课程课件")
                     let bullets = JsonArrWriter()
-                    for (bullet in cwStringList(slide, "bullets")) {
-                        bullets.addRaw(jsonQuote(bullet))
+                    let legacyBullets = cwStringList(slide, "bullets")
+                    if (legacyBullets.size > 0) {
+                        for (bullet in legacyBullets) { bullets.addRaw(jsonQuote(bullet)) }
+                    } else {
+                        for (point in cwObjectList(slide, "points")) {
+                            let heading = cwField(point, "heading")
+                            let detail = cwField(point, "detail")
+                            let value = if (heading.size > 0 && detail.size > 0) { heading + "：" + detail } else { heading + detail }
+                            if (value.size > 0) { bullets.addRaw(jsonQuote(value)) }
+                        }
                     }
                     slideJson.putRaw("bullets", bullets.toJson())
-                    slideJson.putStr("notes", cwField(slide, "speakerNote"))
+                    let notes = cwField(slide, "speakerNotes")
+                    slideJson.putStr("notes", if (notes.size > 0) { notes } else { cwField(slide, "speakerNote") })
+                    slideJson.putStr("kind", cwField(slide, "kind"))
                     slides.addRaw(slideJson.toJson())
                 }
             } else if (kind == "bank") {

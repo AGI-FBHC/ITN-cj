@@ -2,6 +2,8 @@ package zhixun_learning
 
 import std.collection.*
 import std.core.*
+import std.fs.*
+import stdx.encoding.json.*
 
 /** Preserve validated JSON strings verbatim; stdx serialization can lose escapes. */
 func lrContainer(raw: String, key: String, opening: Byte, closing: Byte): String {
@@ -53,6 +55,70 @@ func lrTypesJson(types: Array<String>): String {
     out.toJson()
 }
 
+func lrSlidesForViewer(parsed: JsonObject): String {
+    let slides = JsonArrWriter()
+    for (slide in cwObjectList(parsed, "slides")) {
+        let item = JsonWriter()
+        item.putStr("title", cwField(slide, "title"))
+        item.putStr("kind", cwField(slide, "kind"))
+        item.putStr("subtitle", "课程课件")
+        let bullets = JsonArrWriter()
+        let oldBullets = cwStringList(slide, "bullets")
+        if (oldBullets.size > 0) {
+            for (bullet in oldBullets) { bullets.addRaw(jsonQuote(bullet)) }
+        } else {
+            for (point in cwObjectList(slide, "points")) {
+                let heading = cwField(point, "heading")
+                let detail = cwField(point, "detail")
+                let text = if (heading.size > 0 && detail.size > 0) { heading + "：" + detail } else { heading + detail }
+                if (text.size > 0) { bullets.addRaw(jsonQuote(text)) }
+            }
+        }
+        item.putRaw("bullets", bullets.toJson())
+        let notes = cwField(slide, "speakerNotes")
+        item.putStr("notes", if (notes.size > 0) { notes } else { cwField(slide, "speakerNote") })
+        slides.addRaw(item.toJson())
+    }
+    slides.toJson()
+}
+
+func lrPresentationForViewer(coursewareId: String, raw: String): String {
+    let metadata = match (cwJsonObjectFrom(raw)) {
+        case Some(value) => value
+        case None => return raw
+    }
+    let designPath = "data/presentations/" + coursewareId + "/presentation.pptx.json"
+    if (!exists(Path(designPath))) { return raw }
+    let design = match (cwJsonObjectFrom(String.fromUtf8(File.readFrom(Path(designPath))))) {
+        case Some(value) => value
+        case None => return raw
+    }
+    let outline = match (jsonGetObject(design, "outline")) {
+        case Some(value) => value
+        case None => return raw
+    }
+    let outlineSlides = jsonGetArray(outline, "slides") ?? JsonArray()
+    var noteCount: Int64 = 0
+    var i: Int64 = 0
+    while (i < outlineSlides.size()) {
+        if (isJsObject(outlineSlides[i]) &&
+            cwField(outlineSlides[i].asObject(), "speakerNotes").size > 0) {
+            noteCount += 1
+        }
+        i += 1
+    }
+    let out = JsonWriter()
+    out.putStr("kind", jsonGetString(metadata, "kind") ?? "pptx")
+    out.putStr("downloadUrl", jsonGetString(metadata, "downloadUrl") ??
+        ("/api/presentation/" + coursewareId + "/download.pptx"))
+    out.putStr("previewUrl", jsonGetString(metadata, "previewUrl") ??
+        ("/api/presentation/" + coursewareId + "/preview"))
+    out.putInt("slideCount", outlineSlides.size())
+    out.putInt("speakerNoteCount", noteCount)
+    out.putStr("renderer", jsonGetString(metadata, "renderer") ?? "lumin-python-pptx-v1")
+    out.toJson()
+}
+
 /** Typed published payloads reuse the existing renderers, without quiz answers. */
 func lrTypedResources(rows: Array<Row>): String {
     let lectures = JsonArrWriter(); let guides = JsonArrWriter(); let slides = JsonArrWriter()
@@ -63,6 +129,9 @@ func lrTypedResources(rows: Array<Row>): String {
     var notice = ""
     var challenge = ""
     var minutes: Int64 = 0
+    var presentation = ""
+    var deckTitle = ""
+    var deckSubtitle = ""
     for (resource in rows) {
         let kind = resource.text("kind")
         let raw = resource.text("content_json")
@@ -99,15 +168,17 @@ func lrTypedResources(rows: Array<Row>): String {
                 guides.addRaw(section.toJson()); guideCount += 1
             }
         } else if (kind == "slides") {
-            for (slide in cwObjectList(parsed, "slides")) {
-                let item = JsonWriter()
-                item.putStr("title", cwField(slide, "title"))
-                item.putStr("subtitle", "课程课件")
-                let bullets = JsonArrWriter()
-                for (bullet in cwStringList(slide, "bullets")) { bullets.addRaw(jsonQuote(bullet)) }
-                item.putRaw("bullets", bullets.toJson())
-                item.putStr("notes", cwField(slide, "speakerNote"))
-                slides.addRaw(item.toJson()); slideCount += 1
+            if (deckTitle.size == 0) { deckTitle = cwField(parsed, "title") }
+            if (deckSubtitle.size == 0) { deckSubtitle = cwField(parsed, "subtitle") }
+            if (presentation.size == 0) {
+                presentation = lrPresentationForViewer(resource.text("id"), lrObject(raw, "presentation"))
+            }
+            let publicSlides = jsonArrayFromText(lrSlidesForViewer(parsed))
+            var slideIndex: Int64 = 0
+            while (slideIndex < publicSlides.size()) {
+                slides.addRaw(publicSlides[slideIndex].toJsonString())
+                slideCount += 1
+                slideIndex += 1
             }
         }
     }
@@ -121,14 +192,20 @@ func lrTypedResources(rows: Array<Row>): String {
         for (key in ["prerequisites", "environment", "acceptanceCriteria", "troubleshooting", "safetyChecklist"]) { value.putRaw(key, extras.get(key) ?? "[]") }
         out.putRaw("guide", value.toJson())
     }
-    if (slideCount > 0) { let value = JsonWriter(); value.putRaw("slides", slides.toJson()); out.putRaw("slides", value.toJson()) }
+    if (slideCount > 0) {
+        let value = JsonWriter()
+        value.putStr("title", deckTitle)
+        value.putStr("subtitle", deckSubtitle)
+        value.putRaw("slides", slides.toJson())
+        if (presentation.size > 0) { value.putRaw("presentation", presentation) }
+        out.putRaw("slides", value.toJson())
+    }
     out.toJson()
 }
 
 /** Existing published lessons acquire typed resources without republishing or generation. */
 func lrAdaptLesson(cfg: Config, row: Row): ?Row {
     let raw = row.text("content_json")
-    if (lrObject(raw, "resources").size > 0) { return Some(row) }
     let sources = jsonArrayFromText(row.text("sources_json"))
     var docId = row.text("source_doc_id")
     var managed = docId.size > 0
@@ -141,7 +218,7 @@ func lrAdaptLesson(cfg: Config, row: Row): ?Row {
     }
     var typed = ""
     if (managed) {
-        let records = queryIndependent(cfg, "SELECT kind,content_json FROM kb_courseware WHERE doc_id=" + sqlQuote(docId) +
+        let records = queryIndependent(cfg, "SELECT id,kind,content_json FROM kb_courseware WHERE doc_id=" + sqlQuote(docId) +
             " AND status='ready' AND published=1 ORDER BY created_at,id")
         if (records.size == 0) { return None }
         typed = lrTypedResources(records)

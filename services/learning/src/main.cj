@@ -1192,6 +1192,49 @@ func orgWriteLogo(response: HttpResponse, cfg: Config, orgId: String): Unit {
     response.write(data)
 }
 
+/* ---------- 专用 PPTX 产物 ---------- */
+
+func presentationCanRead(ctx: HttpContext, cfg: Config, coursewareId: String): Bool {
+    let authorization = match (ctx.request.headers.get("Authorization")) {
+        case Some(value) => value
+        case None => ""
+    }
+    if (!authorization.startsWith("Bearer ")) { return false }
+    let token = authorization[7..authorization.size].trimAscii()
+    if (token.size < 20 || token.size > 200) { return false }
+    let users = query(cfg,
+        "SELECT u.role FROM user_sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=" +
+        sqlQuote(tokenHash(token)) + " AND s.expires_at>NOW(6) LIMIT 1")
+    if (users.size == 0) { return false }
+    if (users[0].text("role") == "admin") { return true }
+    query(cfg, "SELECT id FROM kb_courseware WHERE id=" + sqlQuote(coursewareId) +
+        " AND status='ready' AND published=1 LIMIT 1").size > 0
+}
+
+func writePresentationAsset(ctx: HttpContext, response: HttpResponse, cfg: Config, coursewareId: String,
+                            fileName: String, contentType: String, attachment: Bool): Unit {
+    if (!presentationCanRead(ctx, cfg, coursewareId)) {
+        writeError(response, 403, "该课件尚未发布或学习会话已失效")
+        return
+    }
+    let file = presentationFilePath(coursewareId, fileName)
+    if (file == None) {
+        writeError(response, 404, "PPT产物还没有生成")
+        return
+    }
+    let data = File.readFrom(Path(file.getOrThrow()))
+    response.statusCode = 200
+    response.contentType = contentType
+    response.contentLength = data.size
+    response.headers.add("X-Content-Type-Options", "nosniff")
+    response.headers.add("Cache-Control", "private, no-store")
+    if (attachment) {
+        response.headers.add("Content-Disposition",
+            "attachment; filename=\"presentation-" + coursewareId + ".pptx\"")
+    }
+    response.write(data)
+}
+
 
 /* ---------- 课件（生成 / 列表 / 发布） ---------- */
 
@@ -2990,6 +3033,16 @@ main(): Int64 {
                         }
                 }
         }
+    }
+
+    app.mapGet("api/presentation/{courseware_id}/download.pptx") { ctx =>
+        writePresentationAsset(ctx, ctx.response, cfg, routeText(ctx, "courseware_id"),
+            "presentation.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", true)
+    }
+
+    app.mapGet("api/presentation/{courseware_id}/preview") { ctx =>
+        writePresentationAsset(ctx, ctx.response, cfg, routeText(ctx, "courseware_id"),
+            "presentation.pptx.preview.html", "text/html; charset=utf-8", false)
     }
 
     app.mapGet("api/admin/kb/courseware") { ctx =>

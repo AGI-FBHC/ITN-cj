@@ -1,6 +1,8 @@
 import * as React from 'react';
 import { Notice } from './admin-ui.jsx';
 import Markdown from './Markdown.jsx';
+import { adminToken } from './admin-api.js';
+import PresentationArtifact from '../PresentationArtifact.jsx';
 
 function readJson(text) {
   try { return text ? JSON.parse(text) : null; } catch { return null; }
@@ -106,8 +108,9 @@ function SlidesView({ data }) {
   const slides = data.slides || [];
   return (
     <div className="zx-cw-slides">
+      {data.presentation ? <PresentationArtifact presentation={data.presentation} token={adminToken()} /> : null}
       {data.subtitle ? <p className="zx-cw-lead">{data.subtitle}</p> : null}
-      {slides.map((slide, index) => (
+      {!data.presentation ? slides.map((slide, index) => (
         <article key={index} className="zx-cw-slide">
           <header>
             <span className="zx-cw-step-index">{index + 1}</span>
@@ -116,7 +119,7 @@ function SlidesView({ data }) {
           <ul>{(slide.bullets || []).map((bullet, bulletIndex) => <li key={bulletIndex}>{bullet}</li>)}</ul>
           {slide.speakerNote ? <p className="zx-cw-note">讲稿：{slide.speakerNote}</p> : null}
         </article>
-      ))}
+      )) : <details className="zx-cw-slide-data"><summary>查看结构化页面数据</summary>{slides.map((slide, index) => <article key={index} className="zx-cw-slide"><header><span className="zx-cw-step-index">{index + 1}</span><strong>{slide.title || `第 ${index + 1} 页`}</strong></header><ul>{(slide.bullets || slide.points || []).map((bullet, bulletIndex) => <li key={bulletIndex}>{typeof bullet === 'string' ? bullet : bullet.heading ? `${bullet.heading}：${bullet.detail || ''}` : JSON.stringify(bullet)}</li>)}</ul>{slide.speakerNotes || slide.notes || slide.speakerNote ? <p className="zx-cw-note">讲稿：{slide.speakerNotes || slide.notes || slide.speakerNote}</p> : null}</article>)}</details>}
     </div>
   );
 }
