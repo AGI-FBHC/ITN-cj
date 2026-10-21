@@ -21,6 +21,17 @@ const PAGED_STYLE = [
   '.slide.zx-preview-active{display:block!important}',
 ].join('');
 
+function stripSpeakerNotes(html) {
+  // Notes belong to the PPTX notes part, never to the canvas. Older preview
+  // files rendered them in an aside; drop those nodes defensively.
+  if (!html.includes('讲者备注')) return html;
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('aside, .speaker-notes, .zx-speaker-notes').forEach((node) => {
+    if ((node.textContent || '').includes('讲者备注')) node.remove();
+  });
+  return '<!doctype html>' + doc.documentElement.outerHTML;
+}
+
 function ArrowIcon({ direction }) {
   return <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     {direction === 'prev' ? <path d="m15 18-6-6 6-6" /> : <path d="m9 18 6-6-6-6" />}
@@ -61,7 +72,7 @@ export default function PresentationArtifact({
     })
       .then(async (response) => {
         if (!response.ok) throw new Error('PPT 预览加载失败');
-        const html = await response.text();
+        const html = stripSpeakerNotes(await response.text());
         if (active) setState({ loading: false, error: '', html, downloading: false });
       })
       .catch((error) => {

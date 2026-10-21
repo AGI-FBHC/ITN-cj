@@ -935,3 +935,9 @@
 - 对话流式输出：新增 POST /api/tutor/chat/stream（SSE，data: {type:meta|delta|done|error}），复用 tutorChatPlan 的检索/鉴权/模型配置；仅在参数校验和检索完成后建立流，失败保留原JSON错误状态。chatStreamText增量回调直接写SSE帧，完成后再落库。前端 askTutorStream 增量解析（跨chunk分帧、多帧、CRLF），404/405自动回退非流式；TutorChat以requestAnimationFrame合帧渲染，未完成时显示光标，中断保留已收到内容。
 - 验证：真实SSE请求返回82帧，首delta 2.2s、总4.48s；前端/后端重新构建成功；node测试9/9通过；重启本地MySQL(13307)、仓颉后端(8312,PID187568)与Vite(3006,PID179340)，health正常，/login与/200。
 - 本批改动与TRACE一并本地提交，未推送。
+
+## 2026-10-21 22:09 清除PPT预览里残留的讲者备注
+- 用户指出预览仍显示“讲者备注”。核查发现最新两份已由PPTX几何预览重生成，另有4份较早的current/历史课件仍保留旧 preview_html（aside含讲者备注）：38f167b9、39ce9f72、9d784c70、e9ac5f63。
+- 仅用现有PPTX重新生成这4份 presentation.pptx.preview.html（不重跑模型、不改PPTX/内容/发布状态）；旧文件完整备份到 data/presentation-backups/preview-notes-20261021-220841/。复查 data/presentations 下讲者备注命中数为0。
+- PresentationArtifact 增加防御性清洗：若旧缓存/未来产物仍把“讲者备注”渲染在画布aside中，加载时移除该节点；Notes仍保留在PPTX notes part。
+- 前端构建通过； 生产构建通过（既有大chunk警告）。
