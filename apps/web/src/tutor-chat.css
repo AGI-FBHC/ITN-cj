@@ -1,68 +1,49 @@
-.zx-tutor { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width: 0; background: #fcfcfd; color: #30333a; }
-.zx-tutor-heading { display: flex; flex: 0 0 auto; align-items: center; gap: 11px; border-bottom: 1px solid #eeecf3; padding: 20px 24px; }
-.zx-tutor-heading-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 13px; color: #6038ef; background: #f0ebff; }
-.zx-tutor svg { display: block; width: 20px; height: 20px; flex: 0 0 auto; }
-.zx-tutor-heading h2 { margin: 0; font-size: 16px; font-weight: 800; line-height: 1.4; }
-.zx-tutor-heading p { margin: 3px 0 0; color: #898592; font-size: 12px; line-height: 1.4; }
-.zx-tutor-messages { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 24px; }
-.zx-tutor-message { display: flex; flex-direction: column; align-items: flex-start; margin-bottom: 23px; }
-.zx-tutor-message-user { align-items: flex-end; }
-.zx-tutor-role { margin-bottom: 6px; font-size: 11px; font-weight: 750; color: #7a6ba8; }
-.zx-tutor-message-user .zx-tutor-role { color: #6038ef; }
-.zx-tutor-bubble { min-width: 0; max-width: 94%; padding: 12px 15px; border-radius: 3px 16px 16px; background: #f0edfa; }
-.zx-tutor-message-user .zx-tutor-bubble { background: #6038ef; color: white; border-radius: 16px 3px 16px 16px; }
-.zx-tutor-bubble .zx-md { font-size: 14px; line-height: 1.75; font-weight: 450; }
-.zx-tutor-bubble .zx-md > :first-child { margin-top: 0; }
-.zx-tutor-bubble .zx-md > :last-child { margin-bottom: 0; }
-.zx-tutor-bubble .zx-md h1 { font-size: 20px; }
-.zx-tutor-bubble .zx-md h2 { font-size: 18px; }
-.zx-tutor-bubble .zx-md h3 { font-size: 16px; }
-.zx-tutor-user-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.75; }
-.zx-tutor-quote { margin: 0 0 10px; border-left: 2px solid currentColor; padding-left: 10px; opacity: .8; font-size: 11px; line-height: 1.6; max-height: 70px; overflow: hidden; }
-.zx-tutor-citations { max-width: 94%; margin-top: 7px; color: #96909e; font-size: 10px; line-height: 1.6; overflow-wrap: anywhere; }
-.zx-tutor-sent-images { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 7px; }
-.zx-tutor-sent-images button { padding: 0; border: 0; border-radius: 8px; background: none; cursor: zoom-in; }
-.zx-tutor-sent-images img { width: 110px; height: 100px; border-radius: 8px; object-fit: contain; background: #fff; }
-.zx-tutor-image-dialog { max-width: 90vw; max-height: 90dvh; border: 0; border-radius: 16px; padding: 40px 16px 16px; background: #fff; box-shadow: 0 20px 70px #24124033; }
-.zx-tutor-image-dialog::backdrop { background: #24124066; }
-.zx-tutor-image-dialog img { max-width: 85vw; max-height: 78dvh; object-fit: contain; }
-.zx-tutor-image-dialog > button { position: absolute; top: 9px; right: 9px; display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 50%; color: #786a91; background: #f1ecff; cursor: pointer; }
-.zx-tutor-suggestions { display: flex; flex-wrap: wrap; gap: 8px; }
-.zx-tutor-suggestions button { border: 1px solid #e4ddfa; border-radius: 18px; padding: 8px 12px; color: #6f5a9c; background: white; font-size: 12px; text-align: left; cursor: pointer; }
-.zx-tutor-status, .zx-tutor-thinking { color: #91869f; font-size: 12px; line-height: 1.65; }
-.zx-tutor-thinking { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
-.zx-tutor-thinking span { width: 7px; height: 7px; border-radius: 50%; background: #8964eb; animation: zx-tutor-pulse 1.4s ease-in-out infinite; }
-.zx-tutor-error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border: 1px solid #f1d7d2; border-radius: 10px; background: #fff8f6; color: #9c5043; padding: 10px 12px; margin-bottom: 14px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
-.zx-tutor-error button { display: inline-flex; align-items: center; gap: 5px; color: #6038ef; font-weight: 700; background: none; border: none; cursor: pointer; white-space: nowrap; }
-.zx-tutor-error button svg { width: 14px; height: 14px; }
-.zx-tutor-composer-wrap { flex: 0 0 auto; padding: 8px 20px 14px; }
-.zx-tutor-selected-quote { display: flex; align-items: flex-start; gap: 8px; background: #f1ecff; border: 1px solid #e5ddf8; border-radius: 12px 12px 0 0; padding: 10px 12px; margin: 0 6px; font-size: 11px; color: #786a91; }
-.zx-tutor-selected-quote > div { flex: 1; min-width: 0; }
-.zx-tutor-selected-quote strong { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #625575; }
-.zx-tutor-selected-quote p { margin: 3px 0 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.6; }
-.zx-tutor-selected-quote button { padding: 0; border: 0; color: inherit; background: transparent; cursor: pointer; }
-.zx-tutor-selected-quote svg { width: 15px; height: 15px; }
-.zx-tutor-image-previews { display: flex; gap: 10px; padding: 10px 4px; }
+/* Additive styles only. The panel layout itself reuses the recovered app's
+   original Tailwind classes so the chat UI matches the pre-existing design. */
+.zx-tutor-full { height: 100%; }
+.zx-tutor-rich .zx-md { margin: 0; font-size: 14px; line-height: 1.65; font-weight: 600; color: #555a75; }
+.zx-tutor-rich .zx-md > :first-child { margin-top: 0; }
+.zx-tutor-rich .zx-md > :last-child { margin-bottom: 0; }
+.zx-tutor-rich .zx-md h1,
+.zx-tutor-rich .zx-md h2,
+.zx-tutor-rich .zx-md h3 { font-size: 15px; line-height: 1.5; color: #3f4360; }
+.zx-tutor-rich .zx-md pre { font-size: 12px; }
+.zx-tutor-rich .zx-md table { font-size: 12px; }
+.zx-tutor-attach {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #666b76;
+  background: transparent;
+  cursor: pointer;
+}
+.zx-tutor-attach:hover { color: #6038ef; background: #f0ebff; }
+.zx-tutor-attach:disabled { opacity: .3; cursor: not-allowed; }
+.zx-tutor-image-previews { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 4px 10px; }
 .zx-tutor-image-previews > div { position: relative; }
-.zx-tutor-image-previews img { width: 68px; height: 68px; border: 1px solid #e6dff5; border-radius: 10px; object-fit: cover; background: white; }
-.zx-tutor-image-previews button { position: absolute; right: -5px; top: -5px; display: grid; place-items: center; width: 21px; height: 21px; border: 1px solid #e7e0f1; border-radius: 50%; background: white; color: #665a78; cursor: pointer; }
-.zx-tutor-image-previews button svg { width: 12px; height: 12px; }
-.zx-tutor-image-error { margin: 4px 0 9px; color: #ae584d; font-size: 12px; }
-.zx-tutor-composer { display: flex; align-items: flex-end; gap: 9px; padding: 12px; border: 1px solid #e9e4f1; border-radius: 16px; background: white; box-shadow: 0 4px 18px #2b165b0a; }
-.zx-tutor-composer:focus-within { border-color: #c3b3f6; box-shadow: 0 0 0 3px #6038ef09; }
-.zx-tutor-composer textarea { flex: 1; min-width: 0; resize: none; border: 0; outline: 0; padding: 4px 0; margin: 0; min-height: 38px; max-height: 144px; background: transparent; color: #30333a; font: inherit; font-size: 14px; line-height: 1.5; }
-.zx-tutor-composer textarea::placeholder { color: #a29aa9; }
-.zx-tutor-image-button, .zx-tutor-send { display: grid; place-items: center; flex: 0 0 auto; width: 34px; height: 34px; border: 0; border-radius: 11px; cursor: pointer; }
-.zx-tutor-image-button { color: #8d819e; background: #f7f5fb; }
-.zx-tutor-image-button:hover { background: #f0ebff; color: #6038ef; }
-.zx-tutor-send { color: white; background: #6038ef; }
-.zx-tutor button:disabled { opacity: .4; cursor: default; }
-.zx-tutor button:focus-visible, .zx-tutor a:focus-visible { outline: 2px solid #9a7cef; outline-offset: 3px; }
-.zx-tutor-footnote { margin: 8px 0 0; text-align: center; color: #aaa2b3; font-size: 10px; line-height: 1.6; }
-.zx-tutor-full { background: white; border-radius: 24px; border: 1px solid #eeebf4; box-shadow: 0 12px 40px #24124006; }
-.zx-tutor-full .zx-tutor-messages { padding: 28px clamp(20px, 5vw, 65px); }
-.zx-tutor-full .zx-tutor-composer-wrap { padding: 8px clamp(20px, 5vw, 65px) 20px; }
-.zx-tutor-full .zx-tutor-bubble { max-width: 88%; }
-@keyframes zx-tutor-pulse { 50% { opacity: .35; } }
-@media (max-width: 600px) { .zx-tutor-heading { padding: 14px 16px; } .zx-tutor-messages { padding: 16px; } .zx-tutor-composer-wrap { padding: 8px 12px 12px; } .zx-tutor-bubble { max-width: 100%; } .zx-tutor-composer { gap: 7px; padding: 10px; } .zx-tutor-footnote { font-size: 9px; } }
-@media (prefers-reduced-motion: reduce) { .zx-tutor-thinking span { animation: none; } }
+.zx-tutor-image-previews img { display: block; width: 72px; height: 64px; border: 1px solid #e3ddec; border-radius: 10px; object-fit: contain; background: #fff; }
+.zx-tutor-image-previews button { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 1px solid #e3ddec; border-radius: 50%; background: #fff; color: #6b6377; cursor: pointer; }
+.zx-tutor-sent-images { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-bottom: 7px; }
+.zx-tutor-sent-images button { padding: 0; border: 0; border-radius: 10px; background: none; cursor: zoom-in; }
+.zx-tutor-sent-images img { display: block; width: 104px; height: 86px; border-radius: 10px; object-fit: contain; background: #fff; }
+.zx-tutor-inline-error { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 10px 0; padding: 10px 12px; border-radius: 12px; background: #fff2f4; color: #b63d52; font-size: 12px; font-weight: 700; }
+.zx-tutor-inline-error button { min-height: 32px; padding: 0 12px; border: 1px solid #f0bcc6; border-radius: 8px; background: #fff; color: #b63d52; font-size: 12px; font-weight: 800; cursor: pointer; }
+.zx-tutor-image-error { margin: 0 4px 8px; color: #b63d52; font-size: 12px; font-weight: 700; }
+.zx-tutor-dot { width: 7px; height: 7px; border-radius: 50%; background: #6038ef; animation: zx-tutor-pulse 1s ease-in-out infinite; }
+@keyframes zx-tutor-pulse { 0%,100% { opacity: .25; transform: scale(.8); } 50% { opacity: 1; transform: scale(1); } }
+.zx-tutor-suggestions { display: flex; flex-wrap: wrap; gap: 8px; }
+.zx-tutor-suggestions button { min-height: 34px; padding: 0 12px; border: 1px solid #e3ddec; border-radius: 999px; background: #fff; color: #5b5570; font-size: 12px; font-weight: 700; cursor: pointer; }
+.zx-tutor-suggestions button:hover { border-color: #c9b8f5; color: #6038ef; }
+.zx-tutor-image-dialog { max-width: 90vw; max-height: 90dvh; padding: 40px 16px 16px; border: 0; border-radius: 16px; background: #fff; box-shadow: 0 20px 70px #24124033; }
+.zx-tutor-image-dialog::backdrop { background: #24124066; }
+.zx-tutor-image-dialog img { display: block; max-width: 85vw; max-height: 78dvh; object-fit: contain; }
+.zx-tutor-image-dialog > button { position: absolute; top: 9px; right: 9px; display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 50%; background: #f1ecff; color: #786a91; cursor: pointer; }
+.zx-tutor-pending { color: #8b90a0; font-weight: 600; }
+.zx-tutor-caret { display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -2px; background: #6038ef; animation: zx-tutor-blink 1s steps(1) infinite; }
+@keyframes zx-tutor-blink { 50% { opacity: 0; } }

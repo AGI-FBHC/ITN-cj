@@ -2758,6 +2758,25 @@ main(): Int64 {
         }
     }
 
+    app.mapPost("api/tutor/chat/stream") { ctx =>
+        match (authenticate(ctx, cfg)) {
+            case None => ()
+            case Some(userId) =>
+                try {
+                    let body = tutorParseBody(ctx.request)
+                    tutorChatStream(ctx, cfg, userId, body)
+                } catch (error: Exception) {
+                    // Retrieval/setup errors happen before the stream starts and keep
+                    // their real HTTP status; later failures become an SSE error frame.
+                    if (ctx.response.hasStarted) {
+                        ctx.response.write(tutorSseError(tutorErrorText(error.message)))
+                    } else {
+                        writeError(ctx.response, UInt16(tutorErrorStatus(error.message)), tutorErrorText(error.message))
+                    }
+                }
+        }
+    }
+
     app.mapGet("api/tutor/history") { ctx =>
         match (authenticate(ctx, cfg)) {
             case None => ()

@@ -296,7 +296,30 @@ func tutorModelFailure(message: String, hasImages: Bool): String {
     "模型调用失败，请稍后重试。" + detail
 }
 
-func tutorChatAnswer(cfg: Config, userId: String, body: JsonObject): String {
+class TutorChatPlan {
+    let endpoint: ModelEndpoint
+    let messagesJson: String
+    let citations: String
+    let message: String
+    let images: Array<TutorImage>
+    let courseId: String
+    let index: Int64
+    let mode: String
+
+    init(endpoint: ModelEndpoint, messagesJson: String, citations: String, message: String,
+         images: Array<TutorImage>, courseId: String, index: Int64, mode: String) {
+        this.endpoint = endpoint
+        this.messagesJson = messagesJson
+        this.citations = citations
+        this.message = message
+        this.images = images
+        this.courseId = courseId
+        this.index = index
+        this.mode = mode
+    }
+}
+
+func tutorChatPlan(cfg: Config, body: JsonObject): TutorChatPlan {
     let message = tutorString(body, "message").trimAscii()
     let quoted = tutorString(body, "quote").trimAscii()
     let courseId = tutorString(body, "courseId").trimAscii()
@@ -327,20 +350,69 @@ func tutorChatAnswer(cfg: Config, userId: String, body: JsonObject): String {
     }
     let question = if (message.size > 0) { message } else { "请结合当前课程解释这些图片中的内容，并指出学习重点。" }
     messages.addRaw(tutorUserMessageJson(tutorQuestionText(hits, quoted, courseId, lessonTitle, question), images))
-    let answer = try { chatStreamText(endpoint, messages.toJson(), 0.3, { _: String => () }) }
+    TutorChatPlan(endpoint, messages.toJson(), tutorCitationsJson(hits), message, images, courseId, index,
+        if (hits.size > 0) { "章节资料" } else { "对话" })
+}
+
+func tutorChatAnswer(cfg: Config, userId: String, body: JsonObject): String {
+    let plan = tutorChatPlan(cfg, body)
+    let answer = try { chatStreamText(plan.endpoint, plan.messagesJson, 0.3, { _: String => () }) }
         catch (error: Exception) {
-            throw Exception(tutorModelFailure(error.message, images.size > 0))
+            throw Exception(tutorModelFailure(error.message, plan.images.size > 0))
         }
     if (answer.trimAscii().size == 0) { throw Exception("模型返回了空回答，请重试") }
-    let citations = tutorCitationsJson(hits)
-    saveTutorMessage(cfg, userId, "user", tutorAttachmentSummary(message, images), "", courseId, index)
-    saveTutorMessage(cfg, userId, "assistant", answer, citations, courseId, index)
+    saveTutorMessage(cfg, userId, "user", tutorAttachmentSummary(plan.message, plan.images), "", plan.courseId, plan.index)
+    saveTutorMessage(cfg, userId, "assistant", answer, plan.citations, plan.courseId, plan.index)
     let result = JsonWriter()
-    result.putStr("answer", answer); result.putRaw("citations", citations)
-    result.putStr("model", endpoint.chatModel)
-    result.putStr("mode", if (hits.size > 0) { "章节资料" } else { "对话" })
+    result.putStr("answer", answer); result.putRaw("citations", plan.citations)
+    result.putStr("model", plan.endpoint.chatModel)
+    result.putStr("mode", plan.mode)
     result.putStr("note", "")
     result.toJson()
+}
+
+/** Server-sent events stream. Each frame is `data: <json>\n\n`. */
+func tutorSseFrame(payload: String): String { "data: " + payload + "\n\n" }
+
+func tutorSseError(message: String): String {
+    let event = JsonWriter(); event.putStr("type", "error"); event.putStr("message", message)
+    tutorSseFrame(event.toJson())
+}
+
+func tutorChatStream(ctx: HttpContext, cfg: Config, userId: String, body: JsonObject): Unit {
+    // Validation and retrieval finish before the response starts, so failures
+    // still return a normal JSON status instead of a half-open stream.
+    let plan = tutorChatPlan(cfg, body)
+    let response = ctx.response
+    response.statusCode = 200
+    response.contentType = "text/event-stream; charset=utf-8"
+    response.headers.add("Cache-Control", "no-cache, no-transform")
+    response.headers.add("X-Accel-Buffering", "no")
+    let meta = JsonWriter()
+    meta.putStr("type", "meta"); meta.putStr("model", plan.endpoint.chatModel)
+    meta.putStr("mode", plan.mode); meta.putRaw("citations", plan.citations)
+    response.write(tutorSseFrame(meta.toJson()))
+    let answer = try {
+        chatStreamText(plan.endpoint, plan.messagesJson, 0.3, { piece: String =>
+            let event = JsonWriter(); event.putStr("type", "delta"); event.putStr("text", piece)
+            response.write(tutorSseFrame(event.toJson()))
+        })
+    } catch (error: Exception) {
+        response.write(tutorSseError(tutorModelFailure(error.message, plan.images.size > 0)))
+        return
+    }
+    if (answer.trimAscii().size == 0) {
+        response.write(tutorSseError("模型返回了空回答，请重试"))
+        return
+    }
+    try {
+        saveTutorMessage(cfg, userId, "user", tutorAttachmentSummary(plan.message, plan.images), "", plan.courseId, plan.index)
+        saveTutorMessage(cfg, userId, "assistant", answer, plan.citations, plan.courseId, plan.index)
+    } catch (_: Exception) {
+        // The answer already streamed; a history write failure must not truncate it.
+    }
+    let done = JsonWriter(); done.putStr("type", "done"); done.putStr("answer", answer)
+    response.write(tutorSseFrame(done.toJson()))
 }
 
 func tutorHistoryBody(cfg: Config, userId: String, courseId: String, index: Int64, scoped: Bool): String {

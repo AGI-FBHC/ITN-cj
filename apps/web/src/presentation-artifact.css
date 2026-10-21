@@ -108,3 +108,23 @@
   .zx-presentation-learning-actions { width: 100%; }
   .zx-presentation-learning-actions button { flex: 1; }
 }
+/* Viewer controls for the generated slide deck. */
+.zx-cw-presentation-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.zx-cw-presentation-modes { display: inline-flex; padding: 2px; border: 1px solid #e2daee; border-radius: 9px; background: #f7f4fb; }
+.zx-cw-presentation-modes button { min-height: 30px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: #766d85; font-size: 11px; font-weight: 800; cursor: pointer; white-space: nowrap; }
+.zx-cw-presentation-modes button.is-active { background: #fff; color: #6038ef; box-shadow: 0 1px 4px rgb(53 33 95 / 12%); }
+.zx-cw-presentation-modes button:focus-visible,
+.zx-cw-presentation-pager button:focus-visible,
+.zx-cw-presentation-download:focus-visible { outline: 2px solid #6038ef; outline-offset: 2px; }
+.zx-cw-presentation-pager { display: inline-flex; align-items: center; gap: 4px; color: #5f586b; font-size: 11px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.zx-cw-presentation-pager button { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid #e2daee; border-radius: 8px; background: #fff; color: #6038ef; cursor: pointer; }
+.zx-cw-presentation-pager button:disabled { opacity: .35; cursor: default; }
+.zx-cw-presentation-pager span { min-width: 52px; text-align: center; }
+.zx-cw-presentation-download { min-height: 34px; padding: 0 13px; border: 1px solid #cdbdf2; border-radius: 9px; background: #f2edff; color: #6038ef; font-size: 10px; font-weight: 800; cursor: pointer; }
+.zx-cw-presentation-download:hover { background: #e9e1ff; }
+.zx-cw-presentation-download:disabled { opacity: .5; cursor: default; }
+.zx-cw-presentation-stage { position: relative; }
+.zx-cw-presentation-stage:focus-visible { outline: 2px solid #6038ef; outline-offset: -2px; }
+@media (max-width: 720px) {
+  .zx-cw-presentation-actions { width: 100%; justify-content: flex-start; }
+}

@@ -57,17 +57,94 @@ async function tutorRequest(path, { method = 'GET', body, signal, timeout = 1200
 }
 
 export async function askTutor({ message = '', quote = '', courseId = '', lessonIndex = -1, lessonTitle = '', history = [], attachments = [], signal } = {}) {
-  const images = attachments.map(({ type, name, mimeType, dataUrl }) => ({ type, name, mimeType, dataUrl }));
-  if (images.length > TUTOR_MAX_IMAGES || images.some((image) => !IMAGE_TYPES.has(image.mimeType))) {
-    throw new Error('最多添加 3 张 PNG、JPEG 或 WebP 图片');
-  }
-  if (images.some((image) => image.dataUrl?.length > TUTOR_MAX_IMAGE_BYTES) || images.reduce((total, image) => total + (image.dataUrl?.length || 0), 0) > TUTOR_MAX_TOTAL_BYTES) {
-    throw new Error('图片过大，请重新选择图片');
-  }
+  const images = validateTutorAttachments(attachments);
   return tutorRequest('chat', {
     method: 'POST', signal,
     body: { message, quote, courseId, lessonIndex, lessonTitle, history: tutorHistory(history), attachments: images },
   });
+}
+
+function validateTutorAttachments(attachments = []) {
+  const images = attachments.map(({ type, name, mimeType, dataUrl }) => ({ type, name, mimeType, dataUrl }));
+  if (images.length > TUTOR_MAX_IMAGES || images.some((image) => !IMAGE_TYPES.has(image.mimeType))) {
+    throw new Error('最多添加 3 张 PNG、JPEG 或 WebP 图片');
+  }
+  if (images.some((image) => image.dataUrl?.length > TUTOR_MAX_IMAGE_BYTES)
+    || images.reduce((total, image) => total + (image.dataUrl?.length || 0), 0) > TUTOR_MAX_TOTAL_BYTES) {
+    throw new Error('图片过大，请重新选择图片');
+  }
+  return images;
+}
+
+/**
+ * Streams the tutor answer over SSE. Calls onEvent for every parsed frame
+ * (meta/delta/done/error). Falls back to the non-streaming endpoint when the
+ * server predates this route.
+ */
+export async function askTutorStream(payload = {}, onEvent, { signal } = {}) {
+  const images = validateTutorAttachments(payload.attachments);
+  const token = localStorage.getItem(TOKEN_KEY) || '';
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  signal?.addEventListener('abort', cancel, { once: true });
+  if (signal?.aborted) controller.abort();
+  const timer = setTimeout(cancel, 120000);
+  const body = {
+    message: payload.message || '', quote: payload.quote || '',
+    courseId: payload.courseId || '', lessonIndex: payload.lessonIndex ?? -1,
+    lessonTitle: payload.lessonTitle || '',
+    history: tutorHistory(payload.history || []), attachments: images,
+  };
+  try {
+    const response = await fetch(`/api/tutor/${'chat/stream'}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (response.status === 404 || response.status === 405 || !response.body) {
+      const result = await askTutor({ ...payload, signal: controller.signal });
+      onEvent?.({ type: 'meta', model: result.model, mode: result.mode, citations: result.citations });
+      onEvent?.({ type: 'done', answer: result.answer });
+      return result;
+    }
+    if (!response.ok) {
+      const text = await response.text();
+      let message = `请求失败（${response.status}）`;
+      try { message = JSON.parse(text).message || message; } catch { /* keep default */ }
+      throw new Error(message);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let answer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let match;
+      while ((match = buffer.match(/\r?\n\r?\n/))) {
+        const index = match.index;
+        const frame = buffer.slice(0, index);
+        buffer = buffer.slice(index + match[0].length);
+        const data = frame.split(/\r?\n/).filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trimStart()).join('\n');
+        if (!data) continue;
+        let event;
+        try { event = JSON.parse(data); } catch { continue; }
+        if (event.type === 'delta') answer += event.text || '';
+        if (event.type === 'done' && event.answer) answer = event.answer;
+        if (event.type === 'error') throw new Error(event.message || '回答中断，请重试');
+        onEvent?.(event);
+      }
+    }
+    return { answer };
+  } catch (error) {
+    if (error.name === 'AbortError' && !signal?.aborted) throw new Error('回答超时，请重试');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', cancel);
+  }
 }
 
 export async function getTutorHistory({ courseId = '', lessonIndex = -1, signal } = {}) {

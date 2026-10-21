@@ -927,3 +927,11 @@
 - 登录/品牌：官方旧Logo来源于 D:/Downloads/ITN-purple-4acfb19-preview-20261020/src/front/src/components/Logo.tsx 的原FlameLogo（紫色火焰+科技树），与git历史1091524^登录页相同。直接抽出SystemLogo复用原SVG路径/渐变，没有新画。登录桌面/手机及管理端系统Logo使用它，登录品牌固定“智训云枢”不读机构；学员已有机构Logo仍优先机构图，无机构时用旧官方Logo。左侧闭环文案换成Powered by Cangjie，删除填写资料/选择目标/开始学习步骤与首次使用引导。删除两处顶栏Cangjie徽标，新CangjieWatermark以低对比小字fixed右下背景层，pointer-events:none，已登录建档页面显示，登录页和打印隐藏。保留其他页面的机构简称标签规则，不把登录页需求扩散为取消学员机构品牌。
 - 验证：仓颉原生22/22（含本次真实教研Agent调用）、guide示例4/4、对话客户端5/5、PPTX预览几何/正文/表格/Notes隔离回归1/1；后端main-next旁路release构建通过；前端生产构建通过（既有大chunk提示）。最终部署前确认queued/generating=0，备份旧main.exe后仅替换本地8312进程，新PID161488、health正常且继续连接本地库；Vite3006保持运行。运行中的用户生成任务没有被打断，不调用用户资源重新生成或发布接口。登录页真实DOM确认官方品牌、无机构名称/步骤引导；浏览器测试临时页/标签清理由对应子agent负责，所有截图/报告均在忽略数据目录。
 - 本批源代码、测试、协作方案与本TRACE一起提交本地Git方便回滚，不推送；API密钥、SQL备份、用户资源、测试会话token不进入Git。后续可讨论用户画像，本轮不擅自扩展画像字段或推断用户隐私。
+
+## 2026-10-21 22:04 Logo、PPT双模式与对话流式、原版对话UI恢复
+- 用户指出登录/管理端Logo认错，直接采用其粘贴的黑色几何ITN标记：从附件裁剪透明边距、生成暗/亮两个256px变体 apps/web/public/brand/logo-mark.png 与 logo-mark-light.png；SystemLogo改为图片实现（tone=dark/light），登录页、管理端、学员端无机构Logo时的回退统一使用该标记，不再使用紫色火焰/波纹。
+- PPT预览增加两种播放形式：连续滚动（默认）与单页翻页。单页模式显示上一页/下一页按钮、当前页/总页数，支持键盘←/→与滚轮翻页；通过同源srcDoc直接控制真实PPTX预览页的显隐，不改后端产物。新增工具栏样式，44px触控与focus-visible可访问性处理。
+- 对话恢复原有UI结构：移除上一版自定义的对话头/气泡样式，TutorChat重新使用恢复版前端原有Tailwind类（76px 笔记/对话标签、Q&A状态条、左右对齐气泡、原输入栏阴影圆角），仅新增图片附件、历史、错误重试与流式光标等必要元素；原有布局、字号、配色、间距保持不变。新增样式只在 tutor-chat.css 中做最小补充。
+- 对话流式输出：新增 POST /api/tutor/chat/stream（SSE，data: {type:meta|delta|done|error}），复用 tutorChatPlan 的检索/鉴权/模型配置；仅在参数校验和检索完成后建立流，失败保留原JSON错误状态。chatStreamText增量回调直接写SSE帧，完成后再落库。前端 askTutorStream 增量解析（跨chunk分帧、多帧、CRLF），404/405自动回退非流式；TutorChat以requestAnimationFrame合帧渲染，未完成时显示光标，中断保留已收到内容。
+- 验证：真实SSE请求返回82帧，首delta 2.2s、总4.48s；前端/后端重新构建成功；node测试9/9通过；重启本地MySQL(13307)、仓颉后端(8312,PID187568)与Vite(3006,PID179340)，health正常，/login与/200。
+- 本批改动与TRACE一并本地提交，未推送。
