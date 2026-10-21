@@ -333,11 +333,12 @@ func cwWritePrompt(kind: String, title: String, plan: String, evidence: String,
             else { "90" }
         return "你是实训导师。按下面已确定的结构写完整实操指南，只输出一个 JSON 对象（不要解释、不要围栏），结构：\n" +
         "{\"title\":\"\",\"objective\":\"\",\"estimatedMinutes\":60,\"prerequisites\":[\"\"],\"environment\":[\"\"]," +
-        "\"steps\":[{\"title\":\"\",\"instruction\":\"\",\"code\":\"\",\"expectedOutput\":\"\",\"safety\":\"safe\",\"warning\":\"\"}]," +
+        "\"steps\":[{\"title\":\"\",\"instruction\":\"\",\"code\":\"\",\"language\":\"\",\"expectedOutput\":\"\",\"safety\":\"safe\",\"warning\":\"\"}]," +
         "\"safetyChecklist\":[\"\"],\"safetyNotice\":\"\",\"acceptanceCriteria\":[\"\"],\"troubleshooting\":[{\"problem\":\"\",\"solution\":\"\"}],\"challenge\":\"\"}\n" +
         "详细程度为「" + options.detailLabel(guideDetail) + "」，最终保持 " + stepRange + " 步；每步 instruction " +
         instructionLength + " 字以上并含明确动作词；expectedOutput 写清「看到什么算成功」；safety 只能是 safe/caution/danger；" +
-        "acceptanceCriteria 至少 3 条可客观判定；troubleshooting 至少 2 条。\n" +
+        "acceptanceCriteria 至少 3 条可客观判定；troubleshooting 至少 2 条。" +
+        "code只有真实程序/命令时才填，并标明language（如python/bash）；Markdown表格、清单和填写模板放instruction中直接写Markdown，不要塞入代码字段；流程图使用mermaid围栏。\n" +
         "主题：" + title + "\n已确定结构：\n" + plan + "\n可引用证据：\n" + evidence +
         "\n资料原文：\n" + context + cwOptionNoteInstruction(options)
     }
@@ -350,8 +351,10 @@ func cwWritePrompt(kind: String, title: String, plan: String, evidence: String,
         "硬性要求：正好 " + options.slideCount.toString() + " 页；第1页 kind=title，第2页 kind=agenda，最后1页 kind=conclusion。" +
         "目录必须概括正文章节顺序，至少 3 章；系统会自动插入章节页，不要输出 section 页。" +
         "正文页 kind 只能从 overview/concept/code/comparison/process/table/timeline/roadmap/spotlight/checklist/case/practice 选择，至少覆盖 5 类。" +
-        "每页必须有 title、kind、points、speakerNotes；除 title 外 points 为 3~5 项，每项含 heading 和 detail，detail 完整、具体并以句号结尾。" +
-        "technical/编程/算法主题至少四分之一正文页用 code/case/practice；code 页再给 code，代码 8~22 行；process/timeline 页再给 process；table 页再给 table；comparison 用两列或四卡片。" +
+        "每页必须有 title、kind、points、speakerNotes；除 title 外 points 为 3~4 项（目录可3~6项），每项含 heading 和 detail，" +
+        "heading尽量16字以内，detail约25~90字，保持完整、具体；长说明移到speakerNotes，绝不能用小字号堆满页面。" +
+        "technical/编程/算法主题至少四分之一正文页用 code/case/practice；code 页再给 code，代码8~18行、每行不超过72字符，完整可读；" +
+        "process/timeline 页再给 process，最多5节点且节点说明约40字以内；table 页再给 table，最多4列5行且单元格约40字以内；comparison 用两列或四卡片。" +
         (if (options.includeSpeakerNotes) {
             "speakerNotes 必须是可逐字朗读的中文口播稿，120~240 字；禁止写“介绍本页/说明本章/展开讲解/引导听众”等导演词，也不要机械重复页面要点。"
         } else {
@@ -396,7 +399,8 @@ func cwRepairPrompt(kind: String, issues: ArrayList<String>, bad: String): Strin
         sb.append("\n")
     }
     sb.append("\n原内容：\n")
-    sb.append(cwTextOf(bad, 12000))
+    // A full deck exceeds 12KB; truncating it here used to discard later pages.
+    sb.append(cwTextOf(bad, if (kind == "slides") { 180000 } else { 12000 }))
     sb.toString()
 }
 
@@ -578,6 +582,7 @@ func cwSlidesIssuesWithNotes(obj: JsonObject, expected: Int64, includeSpeakerNot
     if (shortNote > 0) { issues.add("有 " + shortNote.toString() + " 页缺少可朗读讲稿（70 字以上）") }
     if (agendaPoints < 3) { issues.add("目录至少需要概括 3 个正文章节") }
     if (usedKinds.size < 5) { issues.add("页面类型不足 5 种，演示结构过于单一") }
+    for (issue in cwSlideDensityIssues(obj)) { issues.add(issue) }
     issues
 }
 
@@ -703,8 +708,13 @@ func cwRunOne(cfg: Config, id: String): Unit {
         let reviewStep = trace.add(CW_ROLE_REVIEWER, "running", "", "")
         cwPersistTrace(cfg, id, trace)
         var issues = cwIssuesOf(kind, obj, options)
+        if (kind == "slides") {
+            for (issue in cwSlideAgentIssues(endpoint, written, context)) { issues.add(issue) }
+        }
         reviewStep.status = if (issues.size == 0) { "done" } else { "failed" }
-        reviewStep.summary = if (issues.size == 0) { "结构校验通过" } else { cwJoinIssues(issues) }
+        reviewStep.summary = if (issues.size == 0) {
+            if (kind == "slides") { "结构、页面容量与教研Agent质检通过" } else { "结构校验通过" }
+        } else { cwJoinIssues(issues) }
         cwPersistTrace(cfg, id, trace)
 
         // ⑤ 仲裁：不通过则带问题清单返修一次
@@ -721,6 +731,9 @@ func cwRunOne(cfg: Config, id: String): Unit {
                 case None => ()
             }
             issues = cwIssuesOf(kind, obj, options)
+            if (kind == "slides" && issues.size == 0) {
+                for (issue in cwSlideAgentIssues(endpoint, written, context)) { issues.add(issue) }
+            }
             fixStep.status = if (issues.size == 0) { "done" } else { "failed" }
             fixStep.summary = if (issues.size == 0) { "返修后通过质检" } else { cwJoinIssues(issues) }
             cwPersistTrace(cfg, id, trace)

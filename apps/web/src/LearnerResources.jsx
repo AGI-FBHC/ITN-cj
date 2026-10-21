@@ -1,5 +1,6 @@
 import React from 'react';
 import { api, refreshLearning } from './learning-api.jsx';
+import { guideExampleMarkdown } from './guide-example.js';
 
 export const RESOURCE_OPTIONS = [
   { type: 'lecture', mode: 'lecture', label: '阅读讲义', detail: '阅读概念、案例与知识要点' },
@@ -51,10 +52,7 @@ export function lessonSections(lesson, type = 'lecture') {
     resource.steps.forEach((step, index) => {
       const parts = [textValue(step.instruction ?? step.description ?? step.content)];
       if (step.code) {
-        const code = textValue(step.code);
-        const ticks = Math.max(3, ...(code.match(/`+/g) || []).map((part) => part.length + 1));
-        const fence = '`'.repeat(ticks);
-        parts.push(`${fence}${/^[a-z0-9_+-]+$/i.test(step.language || '') ? step.language : ''}\n${code}\n${fence}`);
+        parts.push(guideExampleMarkdown(textValue(step.code), step.language));
       }
       if (step.expectedOutput || step.expectedResult) parts.push(`**预期结果**\n\n${textValue(step.expectedOutput ?? step.expectedResult)}`);
       if (step.warning) parts.push(`**操作提醒**\n\n${textValue(step.warning)}`);

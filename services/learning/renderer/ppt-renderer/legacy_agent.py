@@ -2052,6 +2052,19 @@ class PptAgent:
                 self._add_image_background(
                     slide, background_path, prs.slide_width, prs.slide_height,
                 )
+                # Keep the selected template, with a calm reading surface over
+                # its decorative center. The original artwork remains visible
+                # around the canvas instead of competing with small type.
+                panel = slide.shapes.add_shape(
+                    MSO_SHAPE.ROUNDED_RECTANGLE, Inches(.45), Inches(.32),
+                    Inches(width - .9), Inches(6.45),
+                )
+                panel.fill.solid(); panel.fill.fore_color.rgb = self._rgb("FFFFFF")
+                panel.line.fill.background()
+                from pptx.oxml.xmlchemy import OxmlElement
+                alpha = OxmlElement('a:alpha'); alpha.set('val', '92000')
+                panel._element.spPr.solidFill.srgbClr.append(alpha)
+                background_text, background_muted = primary, primary
             if is_edge:
                 if is_section:
                     section_number = int(item.get("sectionNumber", 1))
@@ -2338,20 +2351,20 @@ class PptAgent:
 
     def _render_code_slide(self, slide, item: dict, width: float, primary: str, accent: str) -> None:
         code = item.get("code") or {}
-        panel = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(.7), Inches(1.35), Inches(width * .61), Inches(4.95))
+        panel = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(.7), Inches(1.35), Inches(width * .585), Inches(5.35))
         panel.fill.solid(); panel.fill.fore_color.rgb = self._rgb("111827"); panel.line.color.rgb = self._rgb("263449")
         language = str(code.get("language", "code")).upper()
         self._add_text(slide, f"{language}｜{code.get('caption', '示例代码')}", .98, 1.58, width * .56, .35, 10, "8ED8C4", True)
         raw_code = str(code.get("content", ""))
         line_count = max(1, raw_code.count("\n") + 1)
-        font_size = 9 if line_count > 18 else 10 if line_count > 13 else 11
-        code_height = min(3.65, .32 * line_count)
+        font_size = 12
+        code_height = min(4.0, max(1.0, .22 * line_count))
         self._add_code_text(slide, raw_code, .98, 2.0, width * .56, code_height, font_size)
         output = re.sub(r"\s*\n+\s*", "；", str(code.get("output", "")).strip())
         code_bottom_y = 2.0 + code_height
         if output:
-            self._add_text(slide, f"运行结果  ›  {output}", .98, code_bottom_y + .1, width * .56, .34, 8, "A7F3D0", True)
-            code_bottom_y += .5
+            self._add_text(slide, f"运行结果  ›  {output}", .98, code_bottom_y + .08, width * .56, .62, 11, "A7F3D0", True)
+            code_bottom_y += .7
         right_x = width * .65
         self._add_text(slide, "逐段讲解", right_x, 1.43, width * .30, .38, 15, primary, True)
         annotations = _as_list(code.get("annotations"), "annotations", "items")
@@ -2365,7 +2378,7 @@ class PptAgent:
             badge.fill.solid(); badge.fill.fore_color.rgb = self._rgb(accent); badge.line.fill.background()
             self._add_text(slide, str(idx + 1), right_x, y, .35, .35, 8, primary, True, PP_ALIGN.CENTER, MSO_ANCHOR.MIDDLE)
             annotation_text = str(annotation).rstrip("。.;；")
-            self._add_text(slide, annotation_text, right_x + .48, y - .02, width * .27, .52, 9, primary)
+            self._add_text(slide, annotation_text, right_x + .48, y - .02, width * .27, .62, 12, primary)
         takeaway = str(item.get("takeaway", ""))
         takeaway_y = max(code_bottom_y + .2, 2.0 + annot_height + .1)
         if takeaway and takeaway_y + .62 < 7.2:
@@ -2392,14 +2405,14 @@ class PptAgent:
         for col, header in enumerate(headers):
             cell = table.cell(0, col); cell.text = header; cell.fill.solid(); cell.fill.fore_color.rgb = self._rgb(primary)
             for paragraph in cell.text_frame.paragraphs:
-                paragraph.font.name = "Microsoft YaHei"; paragraph.font.size = Pt(11); paragraph.font.bold = True; paragraph.font.color.rgb = self._rgb("FFFFFF")
+                    paragraph.font.name = "Microsoft YaHei"; paragraph.font.size = Pt(14); paragraph.font.bold = True; paragraph.font.color.rgb = self._rgb("FFFFFF")
             cell.vertical_anchor = MSO_ANCHOR.MIDDLE
         for row_index, row in enumerate(rows, start=1):
             for col in range(len(headers)):
                 cell = table.cell(row_index, col); cell.text = row[col] if col < len(row) else ""
                 cell.fill.solid(); cell.fill.fore_color.rgb = self._rgb("FFFFFF" if row_index % 2 else "F2F5F3")
                 for paragraph in cell.text_frame.paragraphs:
-                    paragraph.font.name = "Microsoft YaHei"; paragraph.font.size = Pt(10); paragraph.font.color.rgb = self._rgb(primary)
+                    paragraph.font.name = "Microsoft YaHei"; paragraph.font.size = Pt(12); paragraph.font.color.rgb = self._rgb(primary)
                 cell.vertical_anchor = MSO_ANCHOR.MIDDLE
         # The table already occupies the full content area; placing a takeaway at
         # the legacy y=5.72 overlays the final row. Keep the conclusion in notes.
@@ -2415,8 +2428,8 @@ class PptAgent:
             process = [{"label": heading, "detail": detail} for heading, detail in map(self._point_parts, points)]
         process = process[:5]
         node_w = (width - 2.1) / max(1, len(process))
-        label_font = 14
-        detail_font = 10
+        label_font = 16
+        detail_font = 13
         node_info = []
         for idx, step in enumerate(process):
             x = .7 + idx * (node_w + .18)
@@ -2435,8 +2448,8 @@ class PptAgent:
             node = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(n["x"]), Inches(y), Inches(node_w), Inches(n["h"]))
             node.fill.solid(); node.fill.fore_color.rgb = self._rgb("FFFFFF"); node.line.color.rgb = self._rgb("D7DFDA")
             self._add_text(slide, f"{n['idx'] + 1:02d}", n["x"] + .2, y + .24, .48, .38, 12, accent, True)
-            self._add_text(slide, n["label"], n["x"] + .2, y + .78, node_w - .4, .55, label_font, primary, True)
-            self._add_text(slide, n["detail"], n["x"] + .2, y + 1.4, node_w - .4, n["h"] - 1.6, detail_font, primary)
+            self._add_text(slide, n["label"], n["x"] + .2, y + .72, node_w - .4, .78, label_font, primary, True)
+            self._add_text(slide, n["detail"], n["x"] + .2, y + 1.55, node_w - .4, n["h"] - 1.75, detail_font, primary)
         for n in node_info[:-1]:
             arrow = slide.shapes.add_shape(MSO_SHAPE.CHEVRON, Inches(n["x"] + node_w + .025), Inches(2.95), Inches(.13), Inches(.42))
             arrow.fill.solid(); arrow.fill.fore_color.rgb = self._rgb(accent); arrow.line.fill.background()
@@ -2505,8 +2518,8 @@ class PptAgent:
                 col, row_idx = idx % 2, idx // 2
                 x, y, cw, ch = .7 + col * (card_w + .4), 1.45 + row_idx * 2.18, card_w, 1.8
             detail_w = cw - .5
-            detail_h = self._estimate_text_height(detail, detail_w, 10)
-            heading_h = self._estimate_text_height(heading, detail_w, 14)
+            detail_h = self._estimate_text_height(detail, detail_w, 14)
+            heading_h = self._estimate_text_height(heading, detail_w, 18)
             text_total = heading_h + .15 + detail_h
             min_card_h = max(ch, text_total + .3)
             card_info.append({"x": x, "y": y, "w": cw, "h": ch, "min_h": min_card_h,
@@ -2537,13 +2550,13 @@ class PptAgent:
             card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(c["x"]), Inches(c["y"]), Inches(c["w"]), Inches(c["h"]))
             card.fill.solid(); card.fill.fore_color.rgb = self._rgb("FFFFFF")
             card.line.color.rgb = self._rgb(accent if comparison else "D8E0DB")
-            self._add_text(slide, c["heading"], c["x"] + .25, c["y"] + .22, c["w"] - .5, .4, 14, accent if comparison else primary, True)
-            self._add_text(slide, c["detail"], c["x"] + .25, c["y"] + .72, c["w"] - .5, max(.5, c["h"] - .92), 10, primary)
+            self._add_text(slide, c["heading"], c["x"] + .25, c["y"] + .16, c["w"] - .5, .58, 18, accent if comparison else primary, True)
+            self._add_text(slide, c["detail"], c["x"] + .25, c["y"] + .82, c["w"] - .5, max(.5, c["h"] - 1.02), 14, primary)
         bottom = max(c["y"] + c["h"] for c in card_info) + .2
         if bottom < 6.2 and item.get("takeaway"):
             self._add_takeaway(slide, item, width, primary, accent, bottom + .4)
-        elif item.get("takeaway"):
-            self._add_takeaway(slide, item, width, primary, accent, 5.72)
+        # An optional takeaway must never cover the final card row.
+        # The complete takeaway is retained in the structured outline/notes.
 
     def _add_takeaway(self, slide, item: dict, width: float, primary: str, accent: str, y_pos: float = 5.72) -> None:
         takeaway = str(item.get("takeaway", "")).strip()

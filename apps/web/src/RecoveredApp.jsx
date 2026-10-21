@@ -29,13 +29,16 @@ import { orgShortName } from "./org-brand.js";
 import BrandText, { useOrgBrand } from "./BrandText.jsx";
 import Markdown from "./admin/Markdown.jsx";
 import PresentationArtifact from "./PresentationArtifact.jsx";
+import TutorChat from "./TutorChat.jsx";
+import SystemLogo from "./SystemLogo.jsx";
 import { RESOURCE_OPTIONS, resourceTypes, lessonSections, lessonSlides, ChapterCompletion } from "./LearnerResources.jsx";
 import "./lesson-start-modal.css";
 function ProductLogo({ className: n = "", animated: r = !1, color: u = "#111318" }) {
   const src = useOrgBrand()?.logoUrl;
+  if (!src) return jsxRuntime.jsx(SystemLogo, { className: n });
   return jsxRuntime.jsx("img", {
     "code-path": "src\\components\\ProductLogo.tsx:12:5",
-    src: src || "/brand/logo-light.png",
+    src,
     alt: "",
     "aria-hidden": !0,
     className: n,
@@ -72,10 +75,6 @@ function Navbar({ onGetStarted: n }) {
         jsxRuntime.jsxs("div", {
           className: "flex items-center gap-3",
           children: [
-            jsxRuntime.jsx("span", {
-              className: "zx-powered-badge zx-powered-badge-light",
-              children: "Powered by Cangjie",
-            }),
             jsxRuntime.jsx("button", {
               "code-path": "src\\components\\Navbar.tsx:12:9",
               onClick: n,
@@ -2410,7 +2409,6 @@ function AppNavigation({
               ref: menuRef,
               className: "relative",
               children: [
-              jsxRuntime.jsx("span", { className: "zx-powered-badge zx-powered-badge-light hidden lg:inline-flex", children: "Powered by Cangjie" }),
               jsxRuntime.jsxs("button", {
               "code-path": "src\\components\\AppNavigation.tsx:89:11",
               type: "button",
@@ -6593,20 +6591,8 @@ function Lecture({
   const p = React.useMemo(() => lessonSections(remote.lesson, resourceKind), [remote.lesson, resourceKind]),
     [m, b] = React.useState(pu),
     [h, x] = React.useState(null),
-    [y, j] = React.useState(""),
     [z, R] = React.useState(!1),
-    [N, E] = React.useState([
-      {
-        id: 1,
-        role: "assistant",
-        text: `你好！我是本节课的人工智能导师。阅读“${r}”时遇到任何问题，都可以引用讲义段落来问我。`,
-      },
-    ]),
-    _ = React.useRef(null),
-    M = React.useRef(null);
-  React.useEffect(() => {
-    M.current?.scrollIntoView({ behavior: "smooth" });
-  }, [N]);
+    _ = React.useRef(null);
   React.useEffect(() => {
     if (!remote.lesson) return;
     api(`/courses/${encodeURIComponent(n.id)}/lessons/${u}/progress`, "PUT", {
@@ -6643,53 +6629,7 @@ function Lecture({
     Q = (G) => {
       (x({ heading: G.heading, text: G.text }),
         window.setTimeout(() => _.current?.focus(), 0));
-    },
-    H = (G, ne = !1) => {
-      const be = (G ?? y).trim();
-      if (!be) return;
-      const ke = Date.now(),
-        se = h,
-        settle = (text) =>
-          E((xe) => xe.map((item) => (item.id === ke + 1 ? { ...item, text } : item))),
-        speak = (text) => {
-          if (!ne || !("speechSynthesis" in window) || !text) return;
-          const xe = new SpeechSynthesisUtterance(text);
-          ((xe.lang = "zh-CN"),
-            (xe.rate = 1.15),
-            window.speechSynthesis.cancel(),
-            window.speechSynthesis.speak(xe));
-        };
-      E((xe) => [
-        ...xe,
-        { id: ke, role: "user", text: be, quote: se ?? void 0 },
-        { id: ke + 1, role: "assistant", text: "正在查阅课程资料…" },
-      ]);
-      (j(""), x(null));
-      if (!window.zxTutorAsk) {
-        settle(AI_UNAVAILABLE);
-        speak(AI_UNAVAILABLE);
-        return;
-      }
-      window
-        .zxTutorAsk({
-          message: be,
-          quote: se && se.text ? (se.heading ? se.heading + "：" : "") + se.text : "",
-          courseId: n.id,
-          lessonIndex: u,
-          lessonTitle: r,
-        })
-        .then((result) => {
-          const text = result.answer || "这次没有拿到回答，请再问一次。";
-          settle(text);
-          speak(text);
-        })
-        .catch((error) => {
-          const text = "暂时无法回答：" + error.message;
-          settle(text);
-          speak(text);
-        });
-    },
-    { listening: $, supported: O, toggleListening: P } = mu((G) => H(G, !0));
+    };
   if (remote.loading || remote.error)
     return jsxRuntime.jsx(LoadPanel, {
       error: remote.error,
@@ -6901,248 +6841,7 @@ function Lecture({
                 "code-path": "src\\pages\\Lecture.tsx:232:9",
                 defaultSize: "44%",
                 minSize: "28%",
-                children: jsxRuntime.jsxs("aside", {
-                  "code-path": "src\\pages\\Lecture.tsx:233:11",
-                  className: "flex h-full flex-col bg-[#fcfcfd]",
-                  children: [
-                    jsxRuntime.jsxs("div", {
-                      "code-path": "src\\pages\\Lecture.tsx:234:13",
-                      className:
-                        "flex h-[76px] shrink-0 items-end justify-around border-b border-black/[0.08] px-5",
-                      children: [
-                        jsxRuntime.jsxs("button", {
-                          "code-path": "src\\pages\\Lecture.tsx:235:15",
-                          type: "button",
-                          className:
-                            "flex h-12 items-center gap-2 px-6 text-sm font-bold text-[#8a8e98]",
-                          children: [
-                            jsxRuntime.jsx($a, {
-                              "code-path": "src\\pages\\Lecture.tsx:235:116",
-                              className: "h-5 w-5",
-                            }),
-                            "笔记",
-                          ],
-                        }),
-                        jsxRuntime.jsxs("button", {
-                          "code-path": "src\\pages\\Lecture.tsx:236:15",
-                          type: "button",
-                          className:
-                            "flex h-12 items-center gap-2 border-b-[3px] border-[#111318] px-6 text-sm font-black text-[#111318]",
-                          children: [
-                            jsxRuntime.jsx(cc, {
-                              "code-path": "src\\pages\\Lecture.tsx:236:149",
-                              className: "h-5 w-5",
-                            }),
-                            "对话",
-                          ],
-                        }),
-                      ],
-                    }),
-                    jsxRuntime.jsxs("div", {
-                      "code-path": "src\\pages\\Lecture.tsx:238:13",
-                      className:
-                        "flex items-center gap-2 border-b border-black/[0.06] px-6 py-3 text-sm font-extrabold text-[#444852]",
-                      children: [
-                        jsxRuntime.jsx("span", {
-                          "code-path": "src\\pages\\Lecture.tsx:239:15",
-                          className: "h-2.5 w-2.5 rounded-full bg-[#358ff2]",
-                        }),
-                        jsxRuntime.jsx("span", {
-                          "code-path": "src\\pages\\Lecture.tsx:240:15",
-                          className:
-                            "rounded bg-[#e9f4ff] px-2 py-0.5 text-xs text-[#2879cf]",
-                          children: "Q&A",
-                        }),
-                        "人工智能导师",
-                      ],
-                    }),
-                    jsxRuntime.jsxs("div", {
-                      "code-path": "src\\pages\\Lecture.tsx:244:13",
-                      className:
-                        "min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-6 sm:px-7",
-                      children: [
-                        N.map((G) =>
-                          jsxRuntime.jsx(
-                            "div",
-                            {
-                              "code-path": "src\\pages\\Lecture.tsx:246:17",
-                              className: `flex ${G.role === "user" ? "justify-end" : "justify-start"}`,
-                              children: jsxRuntime.jsxs("div", {
-                                "code-path": "src\\pages\\Lecture.tsx:247:19",
-                                className: `max-w-[88%] ${G.role === "user" ? "text-right" : ""}`,
-                                children: [
-                                  jsxRuntime.jsxs("p", {
-                                    "code-path":
-                                      "src\\pages\\Lecture.tsx:248:21",
-                                    className: `mb-1.5 flex items-center gap-2 text-xs font-extrabold ${G.role === "user" ? "justify-end text-[#6038ef]" : "text-[#4d83d1]"}`,
-                                    children: [
-                                      G.role === "assistant" &&
-                                        jsxRuntime.jsx(fn, {
-                                          "code-path":
-                                            "src\\pages\\Lecture.tsx:249:56",
-                                          className: "h-4 w-4",
-                                        }),
-                                      G.role === "user" ? "你" : "AI导师",
-                                    ],
-                                  }),
-                                  G.quote &&
-                                    jsxRuntime.jsxs("div", {
-                                      "code-path":
-                                        "src\\pages\\Lecture.tsx:253:23",
-                                      className:
-                                        "mb-2 rounded-xl border-l-[3px] border-[#6038ef] bg-[#f2effc] px-3 py-2 text-left text-xs font-semibold leading-5 text-[#686c77]",
-                                      children: [
-                                        jsxRuntime.jsxs("strong", {
-                                          "code-path":
-                                            "src\\pages\\Lecture.tsx:254:25",
-                                          className: "block text-[#454852]",
-                                          children: ["引用：", G.quote.heading],
-                                        }),
-                                        G.quote.text.slice(0, 80),
-                                        "...",
-                                      ],
-                                    }),
-                                  jsxRuntime.jsx("div", {
-                                    "code-path":
-                                      "src\\pages\\Lecture.tsx:258:21",
-                                    className: `rounded-2xl px-4 py-3 text-left text-sm font-semibold leading-6 ${G.role === "user" ? "rounded-tr-sm bg-[#6038ef] text-white" : "rounded-tl-sm bg-[#eef2ff] text-[#555a75]"}`,
-                                    children: G.text,
-                                  }),
-                                ],
-                              }),
-                            },
-                            G.id,
-                          ),
-                        ),
-                        jsxRuntime.jsx("div", {
-                          "code-path": "src\\pages\\Lecture.tsx:264:15",
-                          ref: M,
-                        }),
-                      ],
-                    }),
-                    jsxRuntime.jsxs("div", {
-                      "code-path": "src\\pages\\Lecture.tsx:267:13",
-                      className: "shrink-0 p-5 pt-2",
-                      children: [
-                        h &&
-                          jsxRuntime.jsxs("div", {
-                            "code-path": "src\\pages\\Lecture.tsx:269:17",
-                            className:
-                              "mx-2 flex items-start gap-3 rounded-t-xl border border-b-0 border-[#dcd6f2] bg-[#f3f0fc] px-4 py-3 text-xs font-semibold text-[#626672]",
-                            children: [
-                              jsxRuntime.jsx(hn, {
-                                "code-path": "src\\pages\\Lecture.tsx:270:19",
-                                className:
-                                  "mt-0.5 h-4 w-4 shrink-0 text-[#6038ef]",
-                              }),
-                              jsxRuntime.jsxs("div", {
-                                "code-path": "src\\pages\\Lecture.tsx:271:19",
-                                className: "min-w-0 flex-1",
-                                children: [
-                                  jsxRuntime.jsxs("strong", {
-                                    "code-path":
-                                      "src\\pages\\Lecture.tsx:272:21",
-                                    className: "block truncate text-[#3d4048]",
-                                    children: ["正在引用：", h.heading],
-                                  }),
-                                  jsxRuntime.jsx("p", {
-                                    "code-path":
-                                      "src\\pages\\Lecture.tsx:273:21",
-                                    className: "mt-1 line-clamp-2 leading-5",
-                                    children: h.text,
-                                  }),
-                                ],
-                              }),
-                              jsxRuntime.jsx("button", {
-                                "code-path": "src\\pages\\Lecture.tsx:275:19",
-                                type: "button",
-                                onClick: () => x(null),
-                                "aria-label": "取消引用",
-                                children: jsxRuntime.jsx(uc, {
-                                  "code-path": "src\\pages\\Lecture.tsx:275:94",
-                                  className: "h-4 w-4",
-                                }),
-                              }),
-                            ],
-                          }),
-                        jsxRuntime.jsxs("div", {
-                          "code-path": "src\\pages\\Lecture.tsx:278:15",
-                          className: `flex items-center gap-3 bg-white px-4 py-3 shadow-[0_8px_28px_rgba(17,19,24,0.13)] ${h ? "rounded-b-2xl border border-[#dcd6f2]" : "rounded-2xl border border-black/[0.07]"}`,
-                          children: [
-                            jsxRuntime.jsx(vs, {
-                              "code-path": "src\\pages\\Lecture.tsx:279:17",
-                              className: "h-6 w-6 shrink-0 text-[#111318]",
-                            }),
-                            jsxRuntime.jsx("input", {
-                              "code-path": "src\\pages\\Lecture.tsx:280:17",
-                              ref: _,
-                              value: y,
-                              onChange: (G) => j(G.target.value),
-                              onKeyDown: (G) => {
-                                G.key === "Enter" && H();
-                              },
-                              placeholder: h
-                                ? "针对引用内容提问..."
-                                : "发送消息或引用讲义提问...",
-                              className:
-                                "min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:text-[#a1a4ad]",
-                            }),
-                            jsxRuntime.jsx("button", {
-                              "code-path": "src\\pages\\Lecture.tsx:290:17",
-                              type: "button",
-                              onClick: P,
-                              disabled: !O,
-                              className: `flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition ${$ ? "animate-pulse bg-[#6038ef] text-white" : "text-[#666b76] hover:bg-[#f0ebff] hover:text-[#6038ef]"} disabled:cursor-not-allowed disabled:opacity-30`,
-                              "aria-label": $ ? "停止语音输入" : "开始语音输入",
-                              title: O
-                                ? $
-                                  ? "正在聆听，点击停止"
-                                  : "语音提问"
-                                : "当前浏览器不支持语音识别",
-                              children: $
-                                ? jsxRuntime.jsx(su, {
-                                    "code-path":
-                                      "src\\pages\\Lecture.tsx:298:32",
-                                    className: "h-5 w-5",
-                                  })
-                                : jsxRuntime.jsx(ou, {
-                                    "code-path":
-                                      "src\\pages\\Lecture.tsx:298:65",
-                                    className: "h-5 w-5",
-                                  }),
-                            }),
-                            y.trim()
-                              ? jsxRuntime.jsx("button", {
-                                  "code-path": "src\\pages\\Lecture.tsx:301:19",
-                                  type: "button",
-                                  onClick: () => H(),
-                                  className:
-                                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#6038ef] text-white",
-                                  "aria-label": "发送消息",
-                                  children: jsxRuntime.jsx(ic, {
-                                    "code-path":
-                                      "src\\pages\\Lecture.tsx:301:188",
-                                    className: "h-4 w-4",
-                                  }),
-                                })
-                              : jsxRuntime.jsx("button", {
-                                  "code-path": "src\\pages\\Lecture.tsx:303:19",
-                                  type: "button",
-                                  className:
-                                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[#111318]",
-                                  "aria-label": "添加附件",
-                                  children: jsxRuntime.jsx(rc, {
-                                    "code-path":
-                                      "src\\pages\\Lecture.tsx:303:160",
-                                    className: "h-5 w-5",
-                                  }),
-                                }),
-                          ],
-                        }),
-                      ],
-                    }),
-                  ],
-                }),
+                children: jsxRuntime.jsx(TutorChat, { courseId: n.id, lessonIndex: u, lessonTitle: r, quote: h, onClearQuote: () => x(null), inputRef: _ }),
               }),
             ],
           }),
@@ -7224,16 +6923,6 @@ function Presentation({
     [z, R] = React.useState(!1),
     [N, E] = React.useState(!1),
     [_, M] = React.useState(!1),
-    [B, Q] = React.useState(""),
-    [H, $] = React.useState(null),
-    [O, P] = React.useState([
-      {
-        id: 1,
-        role: "assistant",
-        text: `大家好，我是本节课的 AI 导师。接下来我会结合 PPT 讲解“${r}”，你可以随时在这里提问。`,
-      },
-    ]),
-    G = React.useRef(null),
     ne = p[m] ?? { title: "", subtitle: "", kicker: "", points: [], narration: "", accent: "#b8a3ff" };
   (React.useEffect(() => {
     if (!h || !ne.narration || !("speechSynthesis" in window)) {
@@ -7263,39 +6952,12 @@ function Presentation({
         window.addEventListener("keydown", W),
         () => window.removeEventListener("keydown", W)
       );
-    }, [p.length]),
-    React.useEffect(() => {
-      G.current?.scrollIntoView({ behavior: "smooth" });
-    }, [O]),
-    React.useEffect(() => {
-      if (!H) return;
-      const W = new SpeechSynthesisUtterance(H.text);
-      return (
-        (W.lang = "zh-CN"),
-        (W.rate = 1.15),
-        window.speechSynthesis.cancel(),
-        window.speechSynthesis.speak(W),
-        () => window.speechSynthesis.cancel()
-      );
-    }, [H]));
+    }, [p.length]));
   const be = () => {
       const W = [1, 1.25, 1.5, 2],
         ae = W.indexOf(y);
       j(W[(ae + 1) % W.length]);
     },
-    ke = (W) => {
-      const ae = (W ?? B).trim();
-      if (!ae) return;
-      const S = Date.now();
-      x(!1);
-      window.speechSynthesis?.cancel();
-      P((messages) => [...messages, { id: S, role: "user", text: ae }, { id: S + 1, role: "assistant", text: "正在思考…" }]);
-      Q("");
-      api("/tutor/chat", "POST", { message: ae, quote: `${ne.title}\n${ne.points.join("\n")}`, courseId: n.id, lessonIndex: u, lessonTitle: r })
-        .then((result) => P((messages) => messages.map((item) => item.id === S + 1 ? { ...item, text: result.answer || "这次没有拿到回答，请再问一次。" } : item)))
-        .catch((error) => P((messages) => messages.map((item) => item.id === S + 1 ? { ...item, text: `暂时无法回答：${error.message}` } : item)));
-    },
-    { listening: se, supported: fe, toggleListening: xe } = mu((W) => ke(W)),
     Se = () => {
       (window.speechSynthesis.cancel(), x((W) => !W));
     },
@@ -7684,190 +7346,7 @@ function Presentation({
                   "code-path": "src\\pages\\Presentation.tsx:310:9",
                   defaultSize: "38%",
                   minSize: "28%",
-                  children: jsxRuntime.jsxs("aside", {
-                    "code-path": "src\\pages\\Presentation.tsx:311:11",
-                    className: "flex h-full flex-col bg-[#fcfcfd]",
-                    children: [
-                      jsxRuntime.jsxs("div", {
-                        "code-path": "src\\pages\\Presentation.tsx:312:13",
-                        className:
-                          "flex h-[72px] shrink-0 items-end justify-around border-b border-black/[0.08] px-5",
-                        children: [
-                          jsxRuntime.jsx("button", {
-                            "code-path": "src\\pages\\Presentation.tsx:313:15",
-                            type: "button",
-                            className:
-                              "flex h-12 items-center gap-2 px-5 text-sm font-bold text-[#8a8e98]",
-                            children: "笔记",
-                          }),
-                          jsxRuntime.jsxs("button", {
-                            "code-path": "src\\pages\\Presentation.tsx:314:15",
-                            type: "button",
-                            className:
-                              "flex h-12 items-center gap-2 border-b-[3px] border-[#111318] px-5 text-sm font-black text-[#111318]",
-                            children: [
-                              jsxRuntime.jsx(cc, {
-                                "code-path":
-                                  "src\\pages\\Presentation.tsx:314:149",
-                                className: "h-5 w-5",
-                              }),
-                              "对话",
-                            ],
-                          }),
-                        ],
-                      }),
-                      jsxRuntime.jsxs("div", {
-                        "code-path": "src\\pages\\Presentation.tsx:316:13",
-                        className:
-                          "flex items-center gap-2 border-b border-black/[0.06] px-6 py-3 text-sm font-extrabold text-[#444852]",
-                        children: [
-                          jsxRuntime.jsx("span", {
-                            "code-path": "src\\pages\\Presentation.tsx:317:15",
-                            className: "h-2.5 w-2.5 rounded-full bg-[#358ff2]",
-                          }),
-                          jsxRuntime.jsx("span", {
-                            "code-path": "src\\pages\\Presentation.tsx:317:73",
-                            className:
-                              "rounded bg-[#e9f4ff] px-2 py-0.5 text-xs text-[#2879cf]",
-                            children: "Q&A",
-                          }),
-                          "人工智能导师",
-                        ],
-                      }),
-                      jsxRuntime.jsxs("div", {
-                        "code-path": "src\\pages\\Presentation.tsx:319:13",
-                        className:
-                          "min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-6",
-                        children: [
-                          O.map((W) =>
-                            jsxRuntime.jsx(
-                              "div",
-                              {
-                                "code-path":
-                                  "src\\pages\\Presentation.tsx:321:17",
-                                className: `flex ${W.role === "user" ? "justify-end" : "justify-start"}`,
-                                children: jsxRuntime.jsxs("div", {
-                                  "code-path":
-                                    "src\\pages\\Presentation.tsx:322:19",
-                                  className: "max-w-[88%]",
-                                  children: [
-                                    jsxRuntime.jsxs("p", {
-                                      "code-path":
-                                        "src\\pages\\Presentation.tsx:323:21",
-                                      className: `mb-1.5 flex items-center gap-2 text-xs font-extrabold ${W.role === "user" ? "justify-end text-[#6038ef]" : "text-[#4d83d1]"}`,
-                                      children: [
-                                        W.role === "assistant" &&
-                                          jsxRuntime.jsx(fn, {
-                                            "code-path":
-                                              "src\\pages\\Presentation.tsx:323:202",
-                                            className: "h-4 w-4",
-                                          }),
-                                        W.role === "user" ? "你" : "AI导师",
-                                      ],
-                                    }),
-                                    jsxRuntime.jsx("div", {
-                                      "code-path":
-                                        "src\\pages\\Presentation.tsx:324:21",
-                                      className: `rounded-2xl px-4 py-3 text-left text-sm font-semibold leading-6 ${W.role === "user" ? "rounded-tr-sm bg-[#6038ef] text-white" : "rounded-tl-sm bg-[#eef2ff] text-[#555a75]"}`,
-                                      children: W.text,
-                                    }),
-                                  ],
-                                }),
-                              },
-                              W.id,
-                            ),
-                          ),
-                          jsxRuntime.jsx("div", {
-                            "code-path": "src\\pages\\Presentation.tsx:328:15",
-                            ref: G,
-                          }),
-                        ],
-                      }),
-                      jsxRuntime.jsx("div", {
-                        "code-path": "src\\pages\\Presentation.tsx:330:13",
-                        className: "shrink-0 p-5 pt-2",
-                        children: jsxRuntime.jsxs("div", {
-                          "code-path": "src\\pages\\Presentation.tsx:331:15",
-                          className:
-                            "flex items-center gap-3 rounded-2xl border border-black/[0.07] bg-white px-4 py-3 shadow-[0_8px_28px_rgba(17,19,24,0.13)]",
-                          children: [
-                            jsxRuntime.jsx(vs, {
-                              "code-path":
-                                "src\\pages\\Presentation.tsx:332:17",
-                              className: "h-6 w-6 shrink-0",
-                            }),
-                            jsxRuntime.jsx("input", {
-                              "code-path":
-                                "src\\pages\\Presentation.tsx:333:17",
-                              value: B,
-                              onChange: (W) => Q(W.target.value),
-                              onKeyDown: (W) => W.key === "Enter" && ke(),
-                              placeholder: se
-                                ? "正在聆听，请说话..."
-                                : "发送消息或询问当前 PPT...",
-                              className:
-                                "min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none placeholder:text-[#a1a4ad]",
-                            }),
-                            jsxRuntime.jsx("button", {
-                              "code-path":
-                                "src\\pages\\Presentation.tsx:334:17",
-                              type: "button",
-                              onClick: xe,
-                              disabled: !fe,
-                              className: `flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition ${se ? "animate-pulse bg-[#6038ef] text-white" : "text-[#666b76] hover:bg-[#f0ebff] hover:text-[#6038ef]"} disabled:cursor-not-allowed disabled:opacity-30`,
-                              "aria-label": se
-                                ? "停止语音输入"
-                                : "开始语音输入",
-                              title: fe
-                                ? se
-                                  ? "正在聆听，点击停止"
-                                  : "语音提问"
-                                : "当前浏览器不支持语音识别",
-                              children: se
-                                ? jsxRuntime.jsx(su, {
-                                    "code-path":
-                                      "src\\pages\\Presentation.tsx:342:32",
-                                    className: "h-5 w-5",
-                                  })
-                                : jsxRuntime.jsx(ou, {
-                                    "code-path":
-                                      "src\\pages\\Presentation.tsx:342:65",
-                                    className: "h-5 w-5",
-                                  }),
-                            }),
-                            B.trim()
-                              ? jsxRuntime.jsx("button", {
-                                  "code-path":
-                                    "src\\pages\\Presentation.tsx:345:19",
-                                  type: "button",
-                                  onClick: () => ke(),
-                                  className:
-                                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#6038ef] text-white",
-                                  "aria-label": "发送消息",
-                                  children: jsxRuntime.jsx(ic, {
-                                    "code-path":
-                                      "src\\pages\\Presentation.tsx:345:188",
-                                    className: "h-4 w-4",
-                                  }),
-                                })
-                              : jsxRuntime.jsx("button", {
-                                  "code-path":
-                                    "src\\pages\\Presentation.tsx:347:19",
-                                  type: "button",
-                                  className:
-                                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[#111318]",
-                                  "aria-label": "添加附件",
-                                  children: jsxRuntime.jsx(rc, {
-                                    "code-path":
-                                      "src\\pages\\Presentation.tsx:347:160",
-                                    className: "h-5 w-5",
-                                  }),
-                                }),
-                          ],
-                        }),
-                      }),
-                    ],
-                  }),
+                  children: jsxRuntime.jsx(TutorChat, { courseId: n.id, lessonIndex: u, lessonTitle: r, context: presentation ? "" : `${ne.title}\n${ne.points.join("\n")}`, onSend: () => { x(!1); window.speechSynthesis?.cancel(); } }),
                 }),
               ],
             }),
@@ -9699,303 +9178,13 @@ const u3 = [
 ];
 
 function AIChat({ onNavigate: n }) {
-  const [r, u] = React.useState(""),
-    [i, d] = React.useState([
-      {
-        id: 1,
-        role: "assistant",
-        text: "你好！我是你的人工智能学习导师。你可以向我提问知识点、制定学习计划，或者让我根据学习进度提供建议。",
-      },
-    ]),
-    [thinking, setThinking] = React.useState(!1),
-    p = React.useRef(null);
-  React.useEffect(() => {
-    p.current?.scrollIntoView({ behavior: "smooth" });
-  }, [i, thinking]);
-  const m = async (y, j = !1) => {
-      const z = (y ?? r).trim();
-      if (!z || thinking) return;
-      const N = Date.now();
-      d((E) => [...E, { id: N, role: "user", text: z }]);
-      u("");
-      setThinking(!0);
-      try {
-        if (!window.zxTutorAsk) throw new Error("导师服务还没有加载完成，请稍后再试");
-        const result = await window.zxTutorAsk({
-          message: z,
-          quote: "",
-          courseId: "",
-          lessonIndex: -1,
-          lessonTitle: "",
-        });
-        const R = result.answer || "这次没有拿到回答，请再问一次。";
-        d((E) => [...E, { id: N + 1, role: "assistant", text: R }]);
-        if (j && "speechSynthesis" in window) {
-          const E = new SpeechSynthesisUtterance(R);
-          E.lang = "zh-CN";
-          E.rate = 1.1;
-          window.speechSynthesis.cancel();
-          window.speechSynthesis.speak(E);
-        }
-      } catch (error) {
-        d((E) => [...E, { id: N + 1, role: "assistant", text: "暂时无法回答：" + error.message }]);
-      } finally {
-        setThinking(!1);
-      }
-    },
-    { listening: b, supported: h, toggleListening: x } = mu((y) => m(y, !0));
   return jsxRuntime.jsxs("div", {
-    "code-path": "src\\pages\\AIChat.tsx:78:5",
     className: "flex h-screen flex-col overflow-hidden bg-[#f7f7fa]",
     children: [
-      jsxRuntime.jsx(AppNavigation, {
-        "code-path": "src\\pages\\AIChat.tsx:79:7",
-        active: "coach",
-        onNavigate: n,
-      }),
+      jsxRuntime.jsx(AppNavigation, { active: "coach", onNavigate: n }),
       jsxRuntime.jsx("main", {
-        "code-path": "src\\pages\\AIChat.tsx:81:7",
-        className:
-          "mx-auto flex min-h-0 w-full max-w-[1180px] flex-1 flex-col px-4 py-5 sm:px-7 sm:py-7",
-        children: jsxRuntime.jsxs("section", {
-          "code-path": "src\\pages\\AIChat.tsx:82:9",
-          className:
-            "flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-black/[0.07] bg-white shadow-[0_18px_60px_rgba(24,20,38,0.08)]",
-          children: [
-            jsxRuntime.jsxs("header", {
-              "code-path": "src\\pages\\AIChat.tsx:83:11",
-              className:
-                "flex shrink-0 items-center justify-between border-b border-black/[0.07] px-5 py-4 sm:px-8",
-              children: [
-                jsxRuntime.jsxs("div", {
-                  "code-path": "src\\pages\\AIChat.tsx:84:13",
-                  className: "flex items-center gap-3",
-                  children: [
-                    jsxRuntime.jsx("div", {
-                      "code-path": "src\\pages\\AIChat.tsx:85:15",
-                      className:
-                        "flex h-11 w-11 items-center justify-center rounded-2xl bg-[#eee9ff] text-[#6038ef]",
-                      children: jsxRuntime.jsx(fn, {
-                        "code-path": "src\\pages\\AIChat.tsx:86:17",
-                        className: "h-6 w-6",
-                      }),
-                    }),
-                    jsxRuntime.jsxs("div", {
-                      "code-path": "src\\pages\\AIChat.tsx:88:15",
-                      children: [
-                        jsxRuntime.jsx("h1", {
-                          "code-path": "src\\pages\\AIChat.tsx:89:17",
-                          className: "text-lg font-black text-[#111318]",
-                          children: "人工智能导师",
-                        }),
-                        jsxRuntime.jsxs("p", {
-                          "code-path": "src\\pages\\AIChat.tsx:90:17",
-                          className:
-                            "mt-0.5 flex items-center gap-1.5 text-xs font-bold text-[#7d818c]",
-                          children: [
-                            jsxRuntime.jsx("span", {
-                              "code-path": "src\\pages\\AIChat.tsx:91:19",
-                              className: "h-2 w-2 rounded-full bg-[#29b765]",
-                            }),
-                            " 随时为你提供学习帮助",
-                          ],
-                        }),
-                      ],
-                    }),
-                  ],
-                }),
-                jsxRuntime.jsxs("div", {
-                  "code-path": "src\\pages\\AIChat.tsx:95:13",
-                  className:
-                    "hidden items-center gap-2 rounded-full bg-[#f3f0fc] px-4 py-2 text-xs font-extrabold text-[#6038ef] sm:flex",
-                  children: [
-                    jsxRuntime.jsx(hn, {
-                      "code-path": "src\\pages\\AIChat.tsx:96:15",
-                      className: "h-4 w-4",
-                    }),
-                    " AI 智训对话",
-                  ],
-                }),
-              ],
-            }),
-            jsxRuntime.jsx("div", {
-              "code-path": "src\\pages\\AIChat.tsx:100:11",
-              className:
-                "min-h-0 flex-1 overflow-y-auto px-5 py-6 sm:px-10 sm:py-8",
-              children: jsxRuntime.jsxs("div", {
-                "code-path": "src\\pages\\AIChat.tsx:101:13",
-                className: "mx-auto flex max-w-[820px] flex-col gap-6",
-                children: [
-                  i.map((y) =>
-                    jsxRuntime.jsx(
-                      "div",
-                      {
-                        "code-path": "src\\pages\\AIChat.tsx:103:17",
-                        className: `flex ${y.role === "user" ? "justify-end" : "justify-start"}`,
-                        children: jsxRuntime.jsxs("div", {
-                          "code-path": "src\\pages\\AIChat.tsx:104:19",
-                          className: "max-w-[85%] sm:max-w-[76%]",
-                          children: [
-                            jsxRuntime.jsxs("p", {
-                              "code-path": "src\\pages\\AIChat.tsx:105:21",
-                              className: `mb-1.5 flex items-center gap-2 text-xs font-extrabold ${y.role === "user" ? "justify-end text-[#6038ef]" : "text-[#4d83d1]"}`,
-                              children: [
-                                y.role === "assistant" &&
-                                  jsxRuntime.jsx(fn, {
-                                    "code-path":
-                                      "src\\pages\\AIChat.tsx:106:56",
-                                    className: "h-4 w-4",
-                                  }),
-                                y.role === "user" ? "你" : "AI导师",
-                              ],
-                            }),
-                            jsxRuntime.jsx("div", {
-                              "code-path": "src\\pages\\AIChat.tsx:109:21",
-                              className: `rounded-2xl px-4 py-3.5 text-sm font-semibold leading-7 sm:text-[15px] ${y.role === "user" ? "rounded-tr-sm bg-[#6038ef] text-white shadow-[0_7px_18px_rgba(96,56,239,0.18)]" : "rounded-tl-sm bg-[#eef2ff] text-[#555a75]"}`,
-                              children: y.text,
-                            }),
-                          ],
-                        }),
-                      },
-                      y.id,
-                    ),
-                  ),
-                  thinking && jsxRuntime.jsxs("div", {
-                    className: "flex justify-start",
-                    children: jsxRuntime.jsxs("div", {
-                      className: "max-w-[85%] sm:max-w-[76%]",
-                      children: [
-                        jsxRuntime.jsxs("p", {
-                          className: "mb-1.5 flex items-center gap-2 text-xs font-extrabold text-[#4d83d1]",
-                          children: [jsxRuntime.jsx(fn, { className: "h-4 w-4" }), "AI导师"],
-                        }),
-                        jsxRuntime.jsx("div", {
-                          className: "rounded-2xl rounded-tl-sm bg-[#eef2ff] px-4 py-3.5 text-sm font-semibold text-[#555a75]",
-                          children: "正在查阅课程资料…",
-                        }),
-                      ],
-                    }),
-                  }),
-                  i.length === 1 &&
-                    jsxRuntime.jsx("div", {
-                      "code-path": "src\\pages\\AIChat.tsx:117:17",
-                      className: "flex flex-wrap gap-2.5 pl-0 sm:pl-6",
-                      children: u3.map((y) =>
-                        jsxRuntime.jsx(
-                          "button",
-                          {
-                            "code-path": "src\\pages\\AIChat.tsx:119:21",
-                            type: "button",
-                            onClick: () => m(y),
-                            className:
-                              "rounded-full border border-[#6038ef]/15 bg-white px-4 py-2 text-xs font-extrabold text-[#656977] shadow-sm transition hover:-translate-y-0.5 hover:border-[#6038ef]/35 hover:bg-[#f5f1ff] hover:text-[#6038ef]",
-                            children: y,
-                          },
-                          y,
-                        ),
-                      ),
-                    }),
-                  jsxRuntime.jsx("div", {
-                    "code-path": "src\\pages\\AIChat.tsx:130:15",
-                    ref: p,
-                  }),
-                ],
-              }),
-            }),
-            jsxRuntime.jsxs("div", {
-              "code-path": "src\\pages\\AIChat.tsx:134:11",
-              className: "shrink-0 px-5 pb-5 pt-2 sm:px-10 sm:pb-7",
-              children: [
-                jsxRuntime.jsxs("div", {
-                  "code-path": "src\\pages\\AIChat.tsx:135:13",
-                  className:
-                    "mx-auto flex max-w-[860px] items-center gap-3 rounded-2xl border border-black/[0.08] bg-white px-4 py-3 shadow-[0_10px_32px_rgba(17,19,24,0.12)]",
-                  children: [
-                    jsxRuntime.jsx(vs, {
-                      "code-path": "src\\pages\\AIChat.tsx:136:15",
-                      className: "h-6 w-6 shrink-0 text-[#30333a]",
-                    }),
-                    jsxRuntime.jsx("input", {
-                      "code-path": "src\\pages\\AIChat.tsx:137:15",
-                      value: r,
-                      onChange: (y) => u(y.target.value),
-                      disabled: thinking,
-                      onKeyDown: (y) => {
-                        y.key === "Enter" && m();
-                      },
-                      placeholder: thinking
-                        ? "导师正在回答…"
-                        : b
-                        ? "正在聆听，请说话..."
-                        : "发送消息或按住语音提问...",
-                      className:
-                        "min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#292c33] outline-none placeholder:text-[#a1a4ad]",
-                      "aria-label": "向人工智能导师提问",
-                    }),
-                    jsxRuntime.jsx("button", {
-                      "code-path": "src\\pages\\AIChat.tsx:147:15",
-                      type: "button",
-                      onClick: x,
-                      disabled: !h,
-                      className: `flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition ${b ? "animate-pulse bg-[#6038ef] text-white" : "text-[#666b76] hover:bg-[#f0ebff] hover:text-[#6038ef]"} disabled:cursor-not-allowed disabled:opacity-30`,
-                      "aria-label": b ? "停止语音输入" : "开始语音输入",
-                      title: h
-                        ? b
-                          ? "正在聆听，点击停止"
-                          : "语音提问"
-                        : "当前浏览器不支持语音识别",
-                      children: b
-                        ? jsxRuntime.jsx(su, {
-                            "code-path": "src\\pages\\AIChat.tsx:155:30",
-                            className: "h-5 w-5",
-                          })
-                        : jsxRuntime.jsx(ou, {
-                            "code-path": "src\\pages\\AIChat.tsx:155:63",
-                            className: "h-5 w-5",
-                          }),
-                    }),
-                    r.trim()
-                      ? jsxRuntime.jsx("button", {
-                          "code-path": "src\\pages\\AIChat.tsx:158:17",
-                          type: "button",
-                          onClick: () => m(),
-                          className:
-                            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#6038ef] text-white transition hover:bg-[#512bdc]",
-                          "aria-label": "发送消息",
-                          children: jsxRuntime.jsx(ic, {
-                            "code-path": "src\\pages\\AIChat.tsx:164:19",
-                            className: "h-4 w-4",
-                          }),
-                        })
-                      : jsxRuntime.jsx("button", {
-                          "code-path": "src\\pages\\AIChat.tsx:167:17",
-                          type: "button",
-                          className:
-                            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-[#111318]",
-                          "aria-label": "添加附件",
-                          children: jsxRuntime.jsx(rc, {
-                            "code-path": "src\\pages\\AIChat.tsx:168:19",
-                            className: "h-5 w-5",
-                          }),
-                        }),
-                  ],
-                }),
-                jsxRuntime.jsxs("p", {
-                  "code-path": "src\\pages\\AIChat.tsx:172:13",
-                  className:
-                    "mt-3 flex items-center justify-center gap-1.5 text-[11px] font-semibold text-[#9699a3]",
-                  children: [
-                    jsxRuntime.jsx(cc, {
-                      "code-path": "src\\pages\\AIChat.tsx:173:15",
-                      className: "h-3.5 w-3.5",
-                    }),
-                    " AI 回复仅供学习参考，请结合课程内容进行判断",
-                  ],
-                }),
-              ],
-            }),
-          ],
-        }),
+        className: "mx-auto flex min-h-0 w-full max-w-[1180px] flex-1 flex-col px-4 py-5 sm:px-7 sm:py-7",
+        children: jsxRuntime.jsx(TutorChat, { fullPage: true, suggestions: u3 }),
       }),
     ],
   });

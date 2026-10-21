@@ -1,6 +1,6 @@
 import React from "react";
 import ForgotPasswordForm from './ForgotPasswordForm.jsx';
-import BrandText, { useOrgBrand } from './BrandText.jsx';
+import SystemLogo from './SystemLogo.jsx';
 import {
   authenticate,
   loginWithEmailCode,
@@ -8,36 +8,7 @@ import {
   useLearning,
 } from "./learning-api.jsx";
 
-const STEPS = ["填写资料", "选择目标", "开始学习"];
-
-function FlameLogo({ size = 118 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" aria-hidden="true">
-      <defs>
-        <linearGradient id="login-flame" x1="32" y1="4" x2="32" y2="60" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#A78BFA" />
-          <stop offset="1" stopColor="#6D28D9" />
-        </linearGradient>
-      </defs>
-      <path
-        d="M32 3C34 12 46 16 46 30c0 4-1.4 7-3.4 9.6C47 36 49 31 48.6 27 54 32 56 38.5 56 44c0 11-10.7 18-24 18S8 55 8 44c0-8 4.6-13.4 9-18-.4 5 1 9 3.4 11.4C19 34 18 28 22 22c3-4.5 8-7 10-19Z"
-        fill="url(#login-flame)"
-      />
-      <g stroke="#EDE9FE" strokeWidth="2.4" strokeLinecap="round">
-        <path d="M32 58V38M32 46l-7-6M32 42l7-6M32 50l-9-2" />
-      </g>
-      <g fill="#EDE9FE">
-        <circle cx="32" cy="36" r="2.6" />
-        <circle cx="24" cy="39" r="2.2" />
-        <circle cx="40" cy="35" r="2.2" />
-        <circle cx="22" cy="47.5" r="2" />
-      </g>
-    </svg>
-  );
-}
-
 export default function LoginPage({ onBack, onAuthenticated }) {
-  const brand = useOrgBrand();
   const learning = useLearning();
   const [registering, setRegistering] = React.useState(false);
   const [recovering, setRecovering] = React.useState(false);
@@ -129,13 +100,8 @@ export default function LoginPage({ onBack, onAuthenticated }) {
         <div className="zhixun-login-orbit zhixun-login-orbit-a" />
         <div className="zhixun-login-orbit zhixun-login-orbit-b" />
         <button type="button" className="zhixun-login-logo" onClick={onBack} aria-label="返回首页">
-          <img
-            src={brand?.logoUrl || '/brand/logo-transparent.png'}
-            alt=""
-            aria-hidden="true"
-            style={{ width: 38, height: 38, objectFit: 'contain' }}
-          />
-          <BrandText />
+          <SystemLogo size={38} />
+          <span>智训云枢</span>
         </button>
         <div className="zhixun-login-editorial">
           <p className="zhixun-login-kicker">ZHIXUN · INTELLIGENT LEARNING</p>
@@ -157,31 +123,16 @@ export default function LoginPage({ onBack, onAuthenticated }) {
             <span className="zhixun-login-mascot-note note-a">今天也要元气满满</span>
             <span className="zhixun-login-mascot-note note-b">开始你的学习旅程</span>
           </div>
-          <div className="zhixun-login-steps">
-            {STEPS.map((step, index) => (
-              <React.Fragment key={step}>
-                <span className={index === 0 ? "active" : ""}>{step}</span>
-                {index < STEPS.length - 1 && <i />}
-              </React.Fragment>
-            ))}
-          </div>
-          <small>首次使用先填写基本信息，再次登录可以继续上次的学习。</small>
         </div>
         <div className="zhixun-login-footer">
-          <p className="zhixun-login-quote">学习、练习与复习，在这里形成完整闭环。</p>
-          <span className="zx-powered-badge zx-powered-badge-dark">Powered by Cangjie</span>
+          <span className="zhixun-login-powered">Powered by Cangjie</span>
         </div>
       </section>
 
       <main className="zhixun-login-main">
         <div className="zhixun-login-mobile-logo">
-          <img
-            src={brand?.logoUrl || '/brand/logo-transparent.png'}
-            alt=""
-            aria-hidden="true"
-            style={{ width: 30, height: 30, objectFit: 'contain' }}
-          />
-          <BrandText />
+          <SystemLogo size={30} />
+          <span>智训云枢</span>
         </div>
         <div className="zhixun-login-card">
           <div className="zhixun-login-card-head">

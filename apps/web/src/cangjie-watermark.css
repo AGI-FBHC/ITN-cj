@@ -1,0 +1,15 @@
+.zx-cangjie-watermark {
+  position: fixed;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(10px, env(safe-area-inset-bottom));
+  z-index: 1;
+  pointer-events: none;
+  user-select: none;
+  color: rgb(94 82 119 / 48%);
+  font: 500 10px/1.4 "Courier New", monospace;
+  letter-spacing: .025em;
+  white-space: nowrap;
+}
+/* /login may remain open with an existing learning session. */
+body:has(.zhixun-login) .zx-cangjie-watermark { display: none; }
+@media print { .zx-cangjie-watermark { display: none; } }

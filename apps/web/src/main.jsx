@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {BrowserRouter} from 'react-router-dom';
 import App from './RecoveredApp.jsx';
 import AdminApp from './admin/AdminApp.jsx';
+import CangjieWatermark from './CangjieWatermark.jsx';
 import './tutor.js';
 import { loadOrgBrand } from './org-brand.js';
 import './styles.css';
@@ -14,6 +15,6 @@ const isAdmin = window.location.pathname === '/admin' || window.location.pathnam
 if (!isAdmin) loadOrgBrand();
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <BrowserRouter>{isAdmin ? <AdminApp /> : <App />}</BrowserRouter>
+    <BrowserRouter>{isAdmin ? <AdminApp /> : <><App /><CangjieWatermark /></>}</BrowserRouter>
   </React.StrictMode>
 );

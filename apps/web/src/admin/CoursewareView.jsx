@@ -3,6 +3,7 @@ import { Notice } from './admin-ui.jsx';
 import Markdown from './Markdown.jsx';
 import { adminToken } from './admin-api.js';
 import PresentationArtifact from '../PresentationArtifact.jsx';
+import { guideExampleMarkdown } from '../guide-example.js';
 
 function readJson(text) {
   try { return text ? JSON.parse(text) : null; } catch { return null; }
@@ -46,7 +47,7 @@ function GuideView({ data }) {
             ) : null}
           </header>
           <Markdown text={step.instruction || ''} />
-          {step.code ? <pre className="zx-cw-code"><code>{step.code}</code></pre> : null}
+          {step.code ? <Markdown text={guideExampleMarkdown(step.code, step.language)} /> : null}
           {step.expectedOutput ? <p className="zx-cw-expect">预期结果：{step.expectedOutput}</p> : null}
           {step.warning ? <p className="zx-cw-warn">{step.warning}</p> : null}
         </article>

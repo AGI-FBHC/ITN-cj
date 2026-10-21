@@ -153,45 +153,6 @@
 .zhixun-login-chip.chip-b { right: 5%; top: 25%; padding: 0 12px; }
 .zhixun-login-chip.chip-c { left: 10%; bottom: 13%; }
 .zhixun-login-chip.chip-d { right: 8%; bottom: 18%; }
-.zhixun-login-steps {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-top: 2px;
-}
-.zhixun-login-steps span {
-  border: 1px solid #e4dff0;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, .72);
-  padding: 7px 10px;
-  color: #746e7e;
-  font-size: 12px;
-  font-weight: 600;
-}
-.zhixun-login-steps span.active {
-  border-color: rgba(108, 14, 242, .3);
-  background: #f1ebff;
-  color: #6c0ef2;
-}
-.zhixun-login-steps i {
-  width: 18px;
-  height: 1px;
-  background: #dcd5eb;
-}
-.zhixun-login-editorial small,
-.zhixun-login-quote {
-  display: block;
-  margin-top: 11px;
-  color: #8c859b;
-  font-size: 11px;
-}
-.zhixun-login-quote {
-  position: relative;
-  z-index: 2;
-  margin: 0;
-  font-family: "Courier New", monospace;
-  letter-spacing: .03em;
-}
 .zhixun-login-main {
   position: relative;
   display: flex;
@@ -390,8 +351,13 @@
   text-decoration: none;
 }
 .zhixun-login-admin a:hover { text-decoration: underline; }
-.zhixun-login-footer { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
-.zhixun-login-footer .zhixun-login-quote { margin-bottom: 0; }
+.zhixun-login-footer { position: relative; z-index: 2; }
+.zhixun-login-powered {
+  color: #857694;
+  font: 500 11px/1.5 "Courier New", monospace;
+  letter-spacing: .025em;
+  white-space: nowrap;
+}
 .zx-powered-badge {
   display: inline-flex;
   align-items: center;

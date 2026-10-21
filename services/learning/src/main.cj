@@ -2749,53 +2749,11 @@ main(): Int64 {
         match (authenticate(ctx, cfg)) {
             case None => ()
             case Some(userId) =>
-                match (parseObject(ctx.request)) {
-                    case None => writeError(ctx.response, 400, "提问格式不正确")
-                    case Some(body) =>
-                        let message = (jsonGetString(body, "message") ?? "").trimAscii()
-                        let quoted = (jsonGetString(body, "quote") ?? "").trimAscii()
-                        let courseId = (jsonGetString(body, "courseId") ?? "").trimAscii()
-                        let lessonTitle = (jsonGetString(body, "lessonTitle") ?? "").trimAscii()
-                        let lessonIndex = jsonGetInt(body, "lessonIndex") ?? -1
-                        if (message.size == 0) {
-                            writeError(ctx.response, 400, "请先输入问题")
-                        } else if (message.size > 2000) {
-                            writeError(ctx.response, 413, "问题请精简到 2000 字以内")
-                        } else {
-                            let settings = loadKbSettings(cfg)
-                            let chatSlot = settings.chat
-                            let endpoint = slotEndpoint(cfg, chatSlot)
-                            if (!chatSlot.configured() || !endpoint.hasChat()) {
-                                writeError(ctx.response, 503,
-                                    "AI 导师还没有接入对话模型：请管理员在「设置」里填写对话模型的接口地址、模型名和密钥")
-                            } else {
-                                let searchQuery = if (quoted.size > 0) { quoted + "\n" + message } else { message }
-                                let result = kbSearch(cfg, settings, searchQuery, settings.topK, courseId, true)
-                                let messages = JsonArrWriter()
-                                let systemPart = JsonWriter()
-                                systemPart.putStr("role", "system")
-                                systemPart.putStr("content", tutorSystemPrompt())
-                                messages.addRaw(systemPart.toJson())
-                                let userPart = JsonWriter()
-                                userPart.putStr("role", "user")
-                                userPart.putStr("content", tutorQuestionText(result.hits, quoted, courseId, lessonTitle, message))
-                                messages.addRaw(userPart.toJson())
-                                try {
-                                    let answer = chatStreamText(endpoint, messages.toJson(), 0.3, { piece: String => () })
-                                    let citations = tutorCitationsJson(result.hits)
-                                    saveTutorMessage(cfg, userId, "user", message, "", courseId, lessonIndex)
-                                    saveTutorMessage(cfg, userId, "assistant", answer, citations, courseId, lessonIndex)
-                                    let out = JsonWriter()
-                                    out.putStr("answer", answer)
-                                    out.putRaw("citations", citations)
-                                    out.putStr("mode", result.mode)
-                                    out.putStr("note", result.note)
-                                    writeJson(ctx.response, 200, out.toJson())
-                                } catch (error: Exception) {
-                                    writeError(ctx.response, 502, "模型调用失败：" + error.message)
-                                }
-                            }
-                        }
+                try {
+                    let body = tutorParseBody(ctx.request)
+                    writeJson(ctx.response, 200, tutorChatAnswer(cfg, userId, body))
+                } catch (error: Exception) {
+                    writeError(ctx.response, UInt16(tutorErrorStatus(error.message)), tutorErrorText(error.message))
                 }
         }
     }
@@ -2804,25 +2762,14 @@ main(): Int64 {
         match (authenticate(ctx, cfg)) {
             case None => ()
             case Some(userId) =>
-                let rows = query(cfg,
-                    "SELECT role,content,citations_json,COALESCE(DATE_FORMAT(created_at,'%Y-%m-%d %H:%i'),'') created_at " +
-                    "FROM tutor_messages WHERE user_id=" + sqlQuote(userId) +
-                    " ORDER BY created_at DESC LIMIT 20")
-                let arr = JsonArrWriter()
-                var i = rows.size
-                while (i > 0) {
-                    i -= 1
-                    let row = rows[i]
-                    let item = JsonWriter()
-                    item.putStr("role", row.text("role"))
-                    item.putStr("content", row.text("content"))
-                    item.putRaw("citations", if (row.isNull("citations_json")) { "null" } else { row.text("citations_json") })
-                    item.putStr("createdAt", row.text("created_at"))
-                    arr.addRaw(item.toJson())
+                try {
+                    let courseId = (ctx.request.query.get("courseId") ?? "").trimAscii()
+                    let index = Int64.tryParse(ctx.request.query.get("lessonIndex") ?? "-1") ?? -1
+                    let scoped = ctx.request.query.get("courseId") != None || ctx.request.query.get("lessonIndex") != None
+                    writeJson(ctx.response, 200, tutorHistoryBody(cfg, userId, courseId, index, scoped))
+                } catch (error: Exception) {
+                    writeError(ctx.response, UInt16(tutorErrorStatus(error.message)), tutorErrorText(error.message))
                 }
-                let out = JsonWriter()
-                out.putRaw("messages", arr.toJson())
-                writeJson(ctx.response, 200, out.toJson())
         }
     }
 
