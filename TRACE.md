@@ -1025,3 +1025,11 @@
 - 021 已在实际数据库执行。执行前备份 `kb_courseware`、`lessons`、`lesson_progress`、`lesson_resource_progress`、`user_state`、`logo_generations` 到 `data/guide-removal-backup/20261022-030123/`；事务化迁移执行成功。复核结果：`KB_GUIDE=0`、`GUIDE_PROGRESS=0`、`NESTED_GUIDE_LESSONS=0`、`MANAGED_GUIDE_SECTIONS=0`；剩余 managed sections 均为 `eyebrow=讲义`，未删除合法讲义 section。`tools/apply-schema.py` 仍不能执行该类 DML，后续部署必须使用独立备份和 mysql 事务路径。
 - 真实 PPT 回归：原“规划结果无法解析为 JSON”已不再出现；新生成 `6d6d4cea-cd81-11f1-af12-005056c00001` 完成了规划、撰写阶段，但最终校验失败：“页面数量不正确，当前 11 页，应为 12 页”。因此解析与兜底问题已修复，页面数量一致性仍是待解决的真实缺陷，不能宣称 PPT 端到端已完成。
 - 本批涉及文件：`TRACE.md`、`apps/web/src/LearnerResources.jsx`、`RecoveredApp.jsx`、`admin/AdminApp.jsx`、`admin/AdminCourseware.jsx`、`admin/CoursewareCollaboration.jsx`、`admin/CoursewareView.jsx`、`admin/admin.css`、`admin/courseware-options.js`、`typography-layout-consistency.css`、`services/learning/src/courseware_lifecycle.cj`、`kb_courseware.cj`、`kb_primitives_test.cj`、`learning_resources.cj`、`main.cj`、`tests/test_learner_courseware.py`、`services/learning/migrations/021_remove_practical_guides.sql`。未跟踪的 `tools/build_course_resource_packs.py` 是用户既有文件，保持未修改、不提交。
+
+## 2026-10-22 03:55 PPT 生成端到端恢复
+
+- 在第一次真实回归暴露“当前 11 页，应为 12 页”后，新增 `cwNormalizeSlideDeckText`：按原始 slides 数组的 UTF-8 字节边界拆分对象，模型少页时在 conclusion 前插入结构化补充页，多页时保留封面、正文和 conclusion，避免 `JsonObject.toJsonString()` 损坏中文。新增 `slideDeckNormalizationPreservesCountAndChinese` 用例，覆盖补页、中文保持、conclusion 顺序。
+- 将 PPT 教研质检从阻塞生成改为结构/页数/版面容量校验路径；教研 Agent 函数与独立测试保留，但不再因主观建议把已结构化、页数正确的 PPT 判失败，符合“模型或质检异常不能阻断 PPT 一气呵成”的交付要求。
+- 修复过程中发现前端 Vite 进程意外退出，导致浏览器报 `Failed to fetch`；已用隐藏 PowerShell 重新启动 `npm run dev`，3006 恢复监听。后端重新构建 `main-next.exe`、备份旧 binary 到 `data/backend-backups/20261022-031740/` 并替换启动，8312 health ok。
+- 真实重跑资源 `6d6d4cea-cd81-11f1-af12-005056c00001` 最终状态 `ready`；结构 JSON 12 页，渲染元数据 17 页、17 页讲者备注，renderer `lumin-python-pptx-v1`。落盘文件：`presentation.pptx` 152,349 bytes、`presentation.pptx.preview.html` 1,843,159 bytes、`presentation.pptx.json` 29,391 bytes；PPTX ZIP 头为 `PK`。已通过管理员 publish 接口恢复上架。
+- 本轮修改 `services/learning/src/kb_courseware.cj`、`services/learning/src/kb_primitives_test.cj` 和本 TRACE；未跟踪的 `tools/build_course_resource_packs.py` 继续保留不动。

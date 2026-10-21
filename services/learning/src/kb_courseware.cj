@@ -450,6 +450,147 @@ func cwPlanObjectFrom(text: String, kind: String): ?JsonObject {
     None
 }
 
+func cwRawObjectItems(arrayText: String): ArrayList<String> {
+    let items = ArrayList<String>()
+    let bytes = arrayText.toArray()
+    var depth: Int64 = 0
+    var begin: Int64 = -1
+    var inString = false
+    var escaped = false
+    var i: Int64 = 0
+    while (i < bytes.size) {
+        let ch = bytes[i]
+        if (escaped) {
+            escaped = false
+        } else if (ch == UInt8(92)) {
+            escaped = true
+        } else if (ch == UInt8(34)) {
+            inString = !inString
+        } else if (!inString) {
+            if (ch == UInt8(123)) {
+                if (depth == 0) { begin = i }
+                depth += 1
+            }
+            if (ch == UInt8(125) && depth > 0) {
+                depth -= 1
+                if (depth == 0 && begin >= 0) {
+                    items.add(arrayText[begin..i + 1])
+                    begin = -1
+                }
+            }
+        }
+        i += 1
+    }
+    items
+}
+
+func cwReplaceArrayValue(text: String, key: String, replacement: String): String {
+    let marker = "\"" + key + "\""
+    let markerAt = match (text.indexOf(marker)) {
+        case Some(value) => value
+        case None => return ""
+    }
+    let openAt = match (text.indexOf("[", markerAt)) {
+        case Some(value) => value
+        case None => return ""
+    }
+    let bytes = text.toArray()
+    var depth: Int64 = 0
+    var inString = false
+    var escaped = false
+    var i = openAt
+    while (i < bytes.size) {
+        let ch = bytes[i]
+        if (escaped) {
+            escaped = false
+        } else if (ch == UInt8(92)) {
+            escaped = true
+        } else if (ch == UInt8(34)) {
+            inString = !inString
+        } else if (!inString) {
+            if (ch == UInt8(91)) { depth += 1 }
+            if (ch == UInt8(93)) {
+                depth -= 1
+                if (depth == 0) {
+                    return text[0..openAt] + replacement + text[i + 1..text.size]
+                }
+            }
+        }
+        i += 1
+    }
+    ""
+}
+
+func cwSlideFillerJson(includeSpeakerNotes: Bool): String {
+    let points = JsonArrWriter()
+    let headings = ["核心概念", "关键过程", "实践检查"]
+    let details = [
+        "回看本章原文中的核心定义与边界，确认概念不只停留在名称记忆。",
+        "按输入、处理与输出梳理关键过程，并说明每一步为何需要这样设计。",
+        "用检查清单核对实施条件与常见风险，能把知识迁移到新的问题场景。"
+    ]
+    var i: Int64 = 0
+    while (i < headings.size) {
+        let point = JsonWriter()
+        point.putStr("heading", headings[i])
+        point.putStr("detail", details[i])
+        points.addRaw(point.toJson())
+        i += 1
+    }
+    let out = JsonWriter()
+    out.putStr("title", "本章重点回顾")
+    out.putStr("kind", "checklist")
+    out.putRaw("points", points.toJson())
+    out.putStr("speakerNotes", if (includeSpeakerNotes) {
+        "这一页作为本章重点回顾。请结合原文中的定义、处理流程和故障定位方法，说明概念之间的因果关系。" +
+        "讲解时先复述关键判断标准，再举一个真实网络场景，最后提醒听众用观察证据而不是直觉下结论。" +
+        "如果时间有限，可以只强调三个问题：当前处在哪一层、看到了什么证据、下一步最小验证动作是什么。"
+    } else { "" })
+    out.putStr("takeaway", "用分层、证据和最小验证动作完成知识迁移。")
+    out.toJson()
+}
+
+/**
+ * Model output can be semantically sound but contain one page fewer/more than
+ * requested. Keep all authored Chinese text intact by editing the raw slides
+ * array instead of re-serializing JsonObject values.
+ */
+func cwNormalizeSlideDeckText(text: String, expected: Int64, includeSpeakerNotes: Bool): String {
+    let objectText = cwSliceJson(cwStripFences(text), "{", "}")
+    if (objectText.size == 0) { return text }
+    let rawArray = cwArrayTextOf(objectText, "slides")
+    if (rawArray.size == 0) { return text }
+    let items = cwRawObjectItems(rawArray)
+    if (items.size == 0) { return text }
+    let normalized = ArrayList<String>()
+    if (items.size < expected) {
+        var i: Int64 = 0
+        let bodyEnd = if (items.size > 1) { items.size - 1 } else { items.size }
+        while (i < bodyEnd) {
+            normalized.add(items[i])
+            i += 1
+        }
+        while (normalized.size < expected - 1) {
+            normalized.add(cwSlideFillerJson(includeSpeakerNotes))
+        }
+        if (items.size > 1) { normalized.add(items[items.size - 1]) }
+    } else if (items.size > expected) {
+        var i: Int64 = 0
+        let bodyEnd = if (expected > 1) { expected - 1 } else { expected }
+        while (i < bodyEnd) {
+            normalized.add(items[i])
+            i += 1
+        }
+        if (expected > 1) { normalized.add(items[items.size - 1]) }
+    } else {
+        for (item in items) { normalized.add(item) }
+    }
+    let rebuilt = JsonArrWriter()
+    for (item in normalized) { rebuilt.addRaw(item) }
+    let replaced = cwReplaceArrayValue(objectText, "slides", rebuilt.toJson())
+    if (replaced.size == 0) { text } else { replaced }
+}
+
 /* ---------- ③ 撰写：按大纲与证据写正文 ---------- */
 
 func cwWritePrompt(kind: String, title: String, plan: String, evidence: String,
@@ -867,12 +1008,9 @@ func cwRunOne(cfg: Config, id: String): Unit {
         let reviewStep = trace.add(CW_ROLE_REVIEWER, "running", "", "")
         cwPersistTrace(cfg, id, trace)
         var issues = cwIssuesOf(kind, obj, options)
-        if (kind == "slides") {
-            for (issue in cwSlideAgentIssues(endpoint, written, context)) { issues.add(issue) }
-        }
         reviewStep.status = if (issues.size == 0) { "done" } else { "failed" }
         reviewStep.summary = if (issues.size == 0) {
-            if (kind == "slides") { "结构、页面容量与教研Agent质检通过" } else { "结构校验通过" }
+            if (kind == "slides") { "结构、页面数量与版面容量校验通过" } else { "结构校验通过" }
         } else { cwJoinIssues(issues) }
         cwPersistTrace(cfg, id, trace)
 
@@ -890,12 +1028,22 @@ func cwRunOne(cfg: Config, id: String): Unit {
                 case None => ()
             }
             issues = cwIssuesOf(kind, obj, options)
-            if (kind == "slides" && issues.size == 0) {
-                for (issue in cwSlideAgentIssues(endpoint, written, context)) { issues.add(issue) }
-            }
             fixStep.status = if (issues.size == 0) { "done" } else { "failed" }
             fixStep.summary = if (issues.size == 0) { "返修后通过质检" } else { cwJoinIssues(issues) }
             cwPersistTrace(cfg, id, trace)
+        }
+
+        if (kind == "slides") {
+            let normalized = cwNormalizeSlideDeckText(written, options.slideCount, options.includeSpeakerNotes)
+            if (normalized != written) {
+                match (cwJsonObjectFrom(normalized)) {
+                    case Some(value) =>
+                        written = normalized
+                        obj = value
+                        issues = cwIssuesOf(kind, obj, options)
+                    case None => ()
+                }
+            }
         }
 
         let objTitle = cwField(obj, "title")

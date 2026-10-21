@@ -382,4 +382,29 @@ class KbPrimitiveTests {
         kbPrimitiveCheck((jsonGetString(slides[slides.size - 1], "kind") ?? "") == "conclusion",
             "Fallback plan must end with a conclusion slide")
     }
+
+    @TestCase
+    func slideDeckNormalizationPreservesCountAndChinese(): Unit {
+        let shortDeck = "{\"title\":\"网络分层\",\"slides\":[" +
+            "{\"title\":\"封面\",\"kind\":\"title\",\"points\":[]}," +
+            "{\"title\":\"目录\",\"kind\":\"agenda\",\"points\":[{\"heading\":\"甲\",\"detail\":\"目录一\"}," +
+            "{\"heading\":\"乙\",\"detail\":\"目录二\"},{\"heading\":\"丙\",\"detail\":\"目录三\"}]}," +
+            "{\"title\":\"正文\",\"kind\":\"overview\",\"points\":[{\"heading\":\"定义\",\"detail\":\"定义说明\"}," +
+            "{\"heading\":\"过程\",\"detail\":\"过程说明\"},{\"heading\":\"例子\",\"detail\":\"例子说明\"}]," +
+            "\"speakerNotes\":\"这一页用于说明网络分层的关键概念与判断依据，讲者可以结合真实抓包结果展开。" +
+            "先说明每层解决的问题，再沿着数据路径复述封装与解封装过程，最后请听众用证据判断故障边界。\"}," +
+            "{\"title\":\"总结\",\"kind\":\"conclusion\",\"points\":[{\"heading\":\"回顾\",\"detail\":\"回顾说明\"}," +
+            "{\"heading\":\"下一步\",\"detail\":\"下一步说明\"},{\"heading\":\"练习\",\"detail\":\"练习说明\"}]," +
+            "\"speakerNotes\":\"总结页应带着听众回看分层分析工具，并说明课后练习如何验证理解，避免只复述名词。" +
+            "讲者可以提出一个故障场景，要求听众先说出证据，再决定要检查的层级和最小验证动作。\"}]}"
+        let normalized = cwNormalizeSlideDeckText(shortDeck, 5, true)
+        let parsed = cwJsonObjectFrom(normalized).getOrThrow()
+        let slides = cwObjectList(parsed, "slides")
+        kbPrimitiveCheck(slides.size == 5, "Normalization must fill a missing slide")
+        kbPrimitiveCheck((jsonGetString(parsed, "title") ?? "") == "网络分层", "Chinese title was corrupted")
+        kbPrimitiveCheck((jsonGetString(slides[slides.size - 1], "kind") ?? "") == "conclusion",
+            "Normalization must keep the conclusion last")
+        kbPrimitiveCheck((jsonGetString(slides[slides.size - 2], "title") ?? "") == "本章重点回顾",
+            "Missing slide must be inserted before the conclusion")
+    }
 }
