@@ -2295,7 +2295,7 @@ const Sy = [
     { id: "home", icon: B2, label: "首页" },
     { id: "bookmarks", icon: bn, label: "书签" },
     { id: "courses", icon: $a, label: "课程" },
-    { id: "coach", icon: Lm, label: "Lumin" },
+    { id: "coach", icon: Lm, label: "Agent" },
     { id: "progress", icon: gy, label: "我的画像" },
   ];
 
