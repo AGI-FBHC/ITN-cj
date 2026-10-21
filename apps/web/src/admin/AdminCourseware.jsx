@@ -10,7 +10,7 @@ const RESOURCES = [
   { key: 'lecture', label: '讲义文稿', badge: '讲', desc: '把章节原文整理成可阅读的讲解稿', meta: '约 2000–3000 字' },
   { key: 'guide', label: '实操指南', badge: '操', desc: '可跟着做的步骤、命令与检查点', meta: '8–15 步' },
   { key: 'bank', label: '题库', badge: '题', desc: '随堂练习与章节测验，统一进题库', meta: '8 题' },
-  { key: 'slides', label: '教学幻灯片', badge: '播', desc: '按小节拆页，可在学习端播放', meta: '10 页' },
+  { key: 'slides', label: '教学幻灯片', badge: '播', desc: '旧版预设模板，按章节自动生成', meta: '12 页分镜 + 章节页' },
 ];
 
 const TYPE_LABEL = Object.fromEntries(RESOURCES.map((item) => [item.key, item.label]));

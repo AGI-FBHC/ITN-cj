@@ -949,7 +949,14 @@ class PptAgent:
                             code_lines.append("# 示例聚焦核心步骤，完整收尾逻辑见讲解")
                     code["content"] = "\n".join(code_lines)
                 annotations = _as_list(code.get("annotations"), "annotations", "items")
-                code["annotations"] = [shorten(value, 200) for value in annotations[:4]]
+                normalized_annotations = []
+                for value in annotations[:4]:
+                    if isinstance(value, dict):
+                        line = str(value.get("line") or "").strip()
+                        label = str(value.get("text") or value.get("label") or "").strip()
+                        value = f"第{line}行：{label}" if line and label else label
+                    normalized_annotations.append(shorten(value, 200))
+                code["annotations"] = normalized_annotations
                 code["output"] = keep_full(code.get("output", ""))
             process = slide.get("process")
             if isinstance(process, dict):
@@ -2016,8 +2023,9 @@ class PptAgent:
         width = prs.slide_width / 914400
         primary, surface, accent = palette_for(request.background_style)
         slides = outline.get("slides", [])
-        seed = int(hashlib.sha256(output.stem.encode()).hexdigest()[:16], 16)
-        backgrounds = select_backgrounds(request.background_style, output.stem)
+        background_seed = output.parent.name or output.stem
+        seed = int(hashlib.sha256(background_seed.encode()).hexdigest()[:16], 16)
+        backgrounds = select_backgrounds(request.background_style, background_seed)
         layout_random = random.Random(seed)
         recent_layouts: list[str] = []
         for index, item in enumerate(slides):

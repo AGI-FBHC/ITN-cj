@@ -17,6 +17,7 @@ const CW_ROLE_WRITER = "撰写"
 const CW_ROLE_REVIEWER = "质检"
 const CW_ROLE_ARBITER = "仲裁"
 const CW_ROLE_LAYOUT = "排版"
+const CW_PRESENTATION_SLIDE_COUNT: Int64 = 12
 let cwCourseSyncLock = Mutex()
 let cwQueueLock = Mutex()
 var cwActiveWorkers: Int64 = 0
@@ -157,10 +158,12 @@ func cwPlanPrompt(kind: String, title: String, digest: String): String {
         "要求：4~7 步，每步目标一句话说清「做完能得到什么」。\n主题：" + title + "\n资料线索：\n" + digest
     }
     if (kind == "slides") {
-        return "你是演示文稿信息架构师，只设计可制作的 10 页叙事分镜，不写正文。只输出一个 JSON 对象：\n" +
-        "{\"title\":\"\",\"subtitle\":\"\",\"slides\":[{\"title\":\"\",\"kind\":\"\"}]}\n" +
-        "要求：第1页 title，第2页 agenda，最后1页 conclusion；正文页要从 overview/concept/code/comparison/process/table/timeline/roadmap/spotlight/checklist/case/practice 中选择至少 5 种，避免连续同构页面。" +
-        "内容顺序必须具体体现问题、机制、示例和总结。\n主题：" + title + "\n资料线索：\n" + digest
+        return "你是 ITN 的资深课程设计师与演示文稿信息架构师。先建立叙事，再选择最适合信息的页面类型。只设计结构，不写正文，只输出一个 JSON 对象：" +
+        "{\"title\":\"\",\"subtitle\":\"\",\"slides\":[{\"title\":\"\",\"kind\":\"\",\"brief\":\"\"}]}\n" +
+        "页数必须严格等于 " + CW_PRESENTATION_SLIDE_COUNT.toString() + "。第1页 title，第2页 agenda，最后1页 conclusion；目录概括至少 3 个正文章节。" +
+        "系统会自动在章节前插入章节页，所以不要自行生成 section 页。正文页 kind 只能使用 overview/concept/code/comparison/process/table/timeline/roadmap/spotlight/checklist/case/practice，" +
+        "至少使用 5 种不同页面，避免每页都是同样的三条要点。technical/编程/算法主题至少四分之一正文页用 code/case/practice。" +
+        "页面叙事要给事实、例子、代码、对比、步骤或练习，不能只有口号或三段式套话。\n主题：" + title + "\n资料线索：\n" + digest
     }
     if (kind == "bank") {
         return "你是测评设计者。只输出一个 JSON 对象：{\"knowledgePoints\":[{\"id\":\"kp-1\",\"name\":\"\",\"description\":\"\"}]}，" +
@@ -185,14 +188,19 @@ func cwWritePrompt(kind: String, title: String, plan: String, evidence: String, 
         "主题：" + title + "\n已确定结构：\n" + plan + "\n可引用证据：\n" + evidence + "\n资料原文：\n" + context
     }
     if (kind == "slides") {
-        return "你是由教学策划、内容生成和质量核验共同约束的 PPT 制作 Agent。请生成可以直接送进 python-pptx 排版器的结构化演示提纲，而不是 Markdown。" +
+        return "你是 ITN 的资深课程设计师与演示文稿信息架构师。请生成可以直接送进旧版 python-pptx 模板渲染器的结构化演示提纲，而不是 Markdown。" +
         "只输出一个合法 JSON 对象，不要解释或围栏。结构：\n" +
-        "{\"title\":\"\",\"subtitle\":\"\",\"slides\":[{\"title\":\"\",\"kind\":\"\",\"points\":[{\"heading\":\"\",\"detail\":\"\"}],\"speakerNotes\":\"\"," +
+        "{\"title\":\"\",\"subtitle\":\"\",\"slides\":[{\"title\":\"\",\"kind\":\"\",\"points\":[{\"heading\":\"\",\"detail\":\"\"}],\"speakerNotes\":\"\",\"takeaway\":\"\"," +
         "\"code\":{\"language\":\"\",\"caption\":\"\",\"content\":\"\",\"annotations\":[],\"output\":\"\"}," +
         "\"process\":[{\"label\":\"\",\"detail\":\"\"}],\"table\":{\"headers\":[\"\"],\"rows\":[[\"\"]]}}]}\n" +
-        "硬性要求：正好 10 页；第1页 kind=title，第2页 kind=agenda，最后1页 kind=conclusion；正文页 kind 从 overview/concept/code/comparison/process/table/timeline/roadmap/spotlight/checklist/case/practice 选择，至少覆盖 5 类。" +
-        "每页必须有 title、kind、points、speakerNotes；除 title 外 points 为 3~5 项，heading 精简，detail 是完整、具体的句子；code 页再给 code，process/timeline 页再给 process，table 页再给 table。" +
-        "speakerNotes 必须是 100~220 字可直接朗读的口播稿，不能出现“介绍本页/展开讲解/引导听众”等导演词。内容只能依据本章原文，不得编造。\n" +
+        "硬性要求：正好 " + CW_PRESENTATION_SLIDE_COUNT.toString() + " 页；第1页 kind=title，第2页 kind=agenda，最后1页 kind=conclusion。" +
+        "目录必须概括正文章节顺序，至少 3 章；系统会自动插入章节页，不要输出 section 页。" +
+        "正文页 kind 只能从 overview/concept/code/comparison/process/table/timeline/roadmap/spotlight/checklist/case/practice 选择，至少覆盖 5 类。" +
+        "每页必须有 title、kind、points、speakerNotes；除 title 外 points 为 3~5 项，每项含 heading 和 detail，detail 完整、具体并以句号结尾。" +
+        "technical/编程/算法主题至少四分之一正文页用 code/case/practice；code 页再给 code，代码 8~22 行；process/timeline 页再给 process；table 页再给 table；comparison 用两列或四卡片。" +
+        "speakerNotes 必须是可逐字朗读的中文口播稿，120~240 字；禁止写“介绍本页/说明本章/展开讲解/引导听众”等导演词，也不要机械重复页面要点。" +
+        "约三分之一关键页可使用 takeaway。每 3~4 页至少安排 1 道 teachingMoments quiz，每章最后一页安排 1 个 summary；quiz 为 4 个同主题选项，anchorText 必须逐字来自本页 speakerNotes。" +
+        "请优先使用视觉上不同的页面类型，避免每页都是同样的三条要点。内容只能依据本章原文，不得编造。\n" +
         "主题：" + title + "\n已确定分镜：\n" + plan + "\n本章证据：\n" + evidence + "\n章节原文：\n" + context
     }
     if (kind == "bank") {
@@ -362,6 +370,7 @@ func cwSlidesIssues(obj: JsonObject, expected: Int64): ArrayList<String> {
     var badPoints = 0
     var shortDetails = 0
     var shortNote = 0
+    var agendaPoints: Int64 = 0
     var i: Int64 = 0
     while (i < slides.size) {
         let slide = slides[i]
@@ -374,6 +383,7 @@ func cwSlidesIssues(obj: JsonObject, expected: Int64): ArrayList<String> {
         if (i == slides.size - 1 && kind != "conclusion") { issues.add("最后 1 页必须是 conclusion 总结") }
         let points = cwObjectList(slide, "points")
         if (kind != "title" && points.size < 3) { badPoints += 1 }
+        if (kind == "agenda") { agendaPoints = points.size }
         for (point in points) {
             if (cwField(point, "heading").size == 0 || cwCharCount(cwField(point, "detail")) < 12) { shortDetails += 1 }
         }
@@ -383,6 +393,7 @@ func cwSlidesIssues(obj: JsonObject, expected: Int64): ArrayList<String> {
     if (badPoints > 0) { issues.add("有 " + badPoints.toString() + " 页缺少至少 3 个结构化要点") }
     if (shortDetails > 0) { issues.add("有 " + shortDetails.toString() + " 个要点缺少完整说明") }
     if (shortNote > 0) { issues.add("有 " + shortNote.toString() + " 页缺少可朗读讲稿（70 字以上）") }
+    if (agendaPoints < 3) { issues.add("目录至少需要概括 3 个正文章节") }
     if (usedKinds.size < 5) { issues.add("页面类型不足 5 种，演示结构过于单一") }
     issues
 }
@@ -390,7 +401,7 @@ func cwSlidesIssues(obj: JsonObject, expected: Int64): ArrayList<String> {
 func cwIssuesOf(kind: String, obj: JsonObject): ArrayList<String> {
     if (kind == "guide") { return cwGuideIssues(obj) }
     if (kind == "bank") { return cwBankIssues(obj, 8) }
-    if (kind == "slides") { return cwSlidesIssues(obj, 10) }
+    if (kind == "slides") { return cwSlidesIssues(obj, CW_PRESENTATION_SLIDE_COUNT) }
     cwLectureIssues(obj)
 }
 

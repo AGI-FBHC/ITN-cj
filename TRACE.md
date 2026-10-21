@@ -760,3 +760,14 @@
 - 实际测试：`python-pptx` 可打开真实产物；测试任务 `38f167b9-e640-4f17-b1e0-a4435331fdef` 的 10 页结构化分镜经章节页归一化后得到 15 张实际幻灯片、15 页讲者备注；管理员课件页和协作页均显示真实排版，不再显示 Markdown 卡片。用户端临时发布后验证了 `01 / 15`、下载文件名、页数回填、AI 导师与完成按钮，随后立即取消该测试课件发布并恢复原有 `133bac40-...` 已发布状态。
 - 验证记录：后端 `cjpm build -i -j1` 成功；原生 `cjpm test -j1` 10/10 通过，新增结构化演示稿必须包含封面/目录/结论且至少 5 类页面的回归用例；前端 `npm run build --prefix apps/web` 成功；健康检查返回 Cangjie 1.2.0 + Spire，后端 8312、Vite 3006 正常。构建仍有既有的 `mysql_client.cj`、`main.cj` 换行歧义警告和前端 bundle 大于 500KB 提示，不是本轮引入的功能错误。
 - 本轮未推送远端，未操作 Docker；未改动用户画像结构。后续若再次生成 PPT，核心顺序应保持“规划 → 检索 → 撰写 → 质检 → 按需仲裁 → 已通过内容交给演示交付渲染”，泳道仅做状态观测与详情展示。
+
+## 2026-10-21 13:20:00 +08:00 纠正 PPT 模板复用：补回旧版背景与旧版执行参数
+- 用户指出前一版 PPT 不是旧系统的预设模板，并质疑生成流程被重新设计。该判断成立：上一版只迁移了 `backgrounds.py` 与 `legacy_agent.py`，却漏掉 `assets/presentation_backgrounds`；同时后端硬编码了 10 页 balanced 模式，因此视觉上退化成纯色布局。`backgrounds.py` 和 `legacy_agent.py` 的源文件哈希随后与原仓库一致，但缺少资产使模板能力实际失效。
+- 已从 `D:/Downloads/ITN-cj-analysis-20261020/apps/desktop/shell/renderer/ppt-renderer/assets/presentation_backgrounds` 完整复制 10 套风格、59 个背景文件，共 7,121,503 字节：abstract-gradient、blue-conference、blue-white-minimal、business-gray、cartoon-doodle、clean-minimal、colorful-ink、morandi-blue-gray、sunset-mountains、watercolor。素材按旧版的标题、目录、正文用途目录保留。
+- 课程资源默认参数已恢复为旧版 `useTopicResourceActions` 的课程链路：`clean-minimal`、12 页、detailed、16:9、template 模式。`ZHIXUN_PPT_BACKGROUND_STYLE` 可切换其余预设；非法值回退到旧课程默认 `clean-minimal`。renderer seed 改为 coursewareId，因此不同课件会稳定抽取不同背景，同一课件重渲染不会跳图。
+- `kb_courseware.cj` 的幻灯片规划/撰写提示词已按旧 `PresentationAgent.outlinePrompt` 的核心执行规则恢复：封面、目录、总结固定，至少 3 个章节，系统自动插入章节页，正文强调不同页面类型、代码/案例/练习、120–240 字讲稿、课堂 quiz 与章节 summary。质检改为原目录 12 页，而不是上一版自造的 10 页。
+- 网页预览现在读取与 PPTX 相同的背景资产并内嵌到 iframe；封面/目录/章节/正文按旧 `select_backgrounds` 角色取图，不再只显示纯色。渲染器返回的页数改为归一化后的真实页数，修复“结构 12 页、实际因章节页变成 16 页却仍显示 12”的统计问题。
+- 代码页的 annotations 兼容旧模型常见的 `{line,text}` 对象，并在可见页渲染为“第 N 行：说明”，修复直接打印 Python dict 的问题。共享 PPT 组件明确显示“旧版模板 · 极简留白 / ITN Presentation Template”，管理员生成入口文案改为“12 页分镜 + 章节页”。
+- 重新通过系统中的真实课件任务生成样张：`9d784c70-a888-4e40-b5ad-5867193e963f`。结构化分镜 12 页，自动插入 4 张章节页后实际 PPTX 16 页；用 `python-pptx` 复核为 16 页、16 页讲者备注；元数据记录 `clean-minimal` + `template`。导出 PDF/逐页图片人工检查，封面与正文使用旧版浅蓝留白背景，章节页使用旧包的柔和渐变模板，目录、表格、代码、练习与总结页版式正常。
+- 对照图保存在忽略目录 `data/qa/old-template-9d/contact-sheet.jpg`，可逐页查看套用旧模板后的全部 16 页；样张在管理端为待发布状态，未覆盖用户原有已发布课件。
+- 验证：前端 Vite build 成功；Python 三文件 `py_compile` 通过；仓颉原生测试 10/10 通过；后端构建和重启成功。原仓库已经确认本风格，后续 PPT 应继续使用该资产包和旧执行参数，不应重新发明模板或改成纯 Markdown/纯色卡片。

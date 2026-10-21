@@ -115,6 +115,8 @@ func lrPresentationForViewer(coursewareId: String, raw: String): String {
         ("/api/presentation/" + coursewareId + "/preview"))
     out.putInt("slideCount", outlineSlides.size())
     out.putInt("speakerNoteCount", noteCount)
+    out.putStr("backgroundStyle", jsonGetString(metadata, "backgroundStyle") ?? "clean-minimal")
+    out.putStr("generationMode", jsonGetString(metadata, "generationMode") ?? "template")
     out.putStr("renderer", jsonGetString(metadata, "renderer") ?? "lumin-python-pptx-v1")
     out.toJson()
 }

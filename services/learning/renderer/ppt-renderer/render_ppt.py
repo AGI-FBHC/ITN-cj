@@ -6,6 +6,7 @@ engine to produce a real .pptx file.
 """
 from __future__ import annotations
 
+import base64
 import html
 import json
 import sys
@@ -14,7 +15,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from backgrounds import palette_for
+from backgrounds import palette_for, select_backgrounds
 from legacy_agent import PptAgent
 
 
@@ -39,7 +40,11 @@ def make_request(raw: dict) -> SimpleNamespace:
     )
 
 
-def preview_html(outline: dict, request: SimpleNamespace | None = None) -> str:
+def preview_html(
+    outline: dict,
+    request: SimpleNamespace | None = None,
+    backgrounds: dict[str, Path | None] | None = None,
+) -> str:
     """Render a slide-shaped HTML preview for the candidate, not a text report."""
     slides = outline.get("slides") or []
     title = html.escape(str(outline.get("title") or "交互课件"))
@@ -47,6 +52,20 @@ def preview_html(outline: dict, request: SimpleNamespace | None = None) -> str:
     primary_css = f"#{primary}"
     surface_css = f"#{surface}"
     accent_css = f"#{accent}"
+    image_cache: dict[Path, str] = {}
+
+    def image_data_uri(path: Path) -> str:
+        if path not in image_cache:
+            mime = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
+            image_cache[path] = f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode('ascii')}"
+        return image_cache[path]
+
+    def surface_style(role: str, fallback: str, text_color: str) -> str:
+        path = (backgrounds or {}).get(role)
+        style = f"background:{fallback};color:{text_color}"
+        if path:
+            style += f";background-image:url('{image_data_uri(path)}');background-size:cover;background-position:center"
+        return style
 
     def point_html(point, index):
         if isinstance(point, dict):
@@ -62,10 +81,17 @@ def preview_html(outline: dict, request: SimpleNamespace | None = None) -> str:
             continue
         kind = str(slide.get("kind") or "content").lower()
         is_edge = i == 1 or kind in ("section", "conclusion")
-        bg, ink = (primary_css, "#ffffff") if is_edge else (surface_css, primary_css)
+        role = (
+            "cover" if i == 1 else
+            "section" if kind == "section" or i == len(slides) else
+            "agenda" if kind == "agenda" else "content"
+        )
+        background_path = (backgrounds or {}).get(role)
+        ink = primary_css if background_path else ("#ffffff" if is_edge else primary_css)
+        slide_style = surface_style(role, primary_css if is_edge else surface_css, ink)
         if kind == "section":
             body.append(
-                '<section class="slide edge section" style="background:' + bg + ';color:' + ink + '">'
+                '<section class="slide edge section" style="' + slide_style + '">'
                 '<div class="kicker">CHAPTER ' + str(slide.get("sectionNumber") or 1).zfill(2) + '</div>'
                 '<h2>' + html.escape(str(slide.get("title") or "本章")) + '</h2>'
                 '<p class="section-topics">本章包括：' + html.escape("、".join(str(x) for x in (slide.get("sectionTopics") or [])[:4])) + '</p>'
@@ -73,7 +99,7 @@ def preview_html(outline: dict, request: SimpleNamespace | None = None) -> str:
             )
             continue
         if i == 1:
-            body.append('<section class="slide edge cover" style="background:' + bg + ';color:' + ink + '">'
+            body.append('<section class="slide edge cover" style="' + slide_style + '">'
                         '<div class="kicker">' + html.escape(str((request.title if request else '') or title)) + '</div>'
                         '<h2>' + html.escape(str(slide.get("title") or title)) + '</h2>'
                         '<p class="subtitle">' + html.escape(str(outline.get("subtitle") or "核心概念、关键方法与实践应用")) + '</p>'
@@ -93,7 +119,7 @@ def preview_html(outline: dict, request: SimpleNamespace | None = None) -> str:
         elif slide.get("process"):
             extra = '<div class="process">' + ''.join('<div><b>' + html.escape(str(p.get("label") or "")) + '</b><span>' + html.escape(str(p.get("detail") or "")) + '</span></div>' for p in slide["process"][:5] if isinstance(p, dict)) + '</div>'
         notes = html.escape(str(slide.get("speakerNotes") or ""))
-        body.append('<section class="slide ' + kind + '" style="background:' + bg + ';color:' + ink + '">'
+        body.append('<section class="slide ' + kind + '" style="' + slide_style + '">'
                     '<div class="kicker">' + str(i).zfill(2) + ' / ' + str(len(slides)).zfill(2) + ' · ' + html.escape(kind) + '</div>'
                     '<h2>' + html.escape(str(slide.get("title") or f"第 {i} 页")) + '</h2>' + point_markup + extra +
                     ('<aside><b>讲者备注</b><p>' + notes + '</p></aside>' if notes else '') +
@@ -135,8 +161,14 @@ def main() -> int:
     normalized = PptAgent.normalize_outline_for_layout(outline)
     agent = PptAgent(None, None, output_path.parent)
     agent.render(request, normalized, output_path)
+    background_seed = output_path.parent.name or output_path.stem
+    selected_backgrounds = select_backgrounds(request.background_style, background_seed)
     preview_path = Path(str(output_path) + ".preview.html")
-    preview_path.write_text(preview_html(normalized, request), encoding="utf-8", newline="\n")
+    preview_path.write_text(
+        preview_html(normalized, request, selected_backgrounds),
+        encoding="utf-8",
+        newline="\n",
+    )
     design_path = Path(str(output_path) + ".json")
     design_path.write_text(json.dumps({"request": packet.get("request") or {}, "outline": normalized}, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
     result = {
@@ -144,10 +176,11 @@ def main() -> int:
         "path": str(output_path),
         "previewPath": str(preview_path),
         "designPath": str(design_path),
-        "slides": len(outline.get("slides") or []),
+        "slides": len(normalized.get("slides") or []),
         "title": str(outline.get("title") or request.title or request.requirement),
-        "kinds": [str(s.get("kind") or "content") for s in (outline.get("slides") or []) if isinstance(s, dict)],
-        "notes": sum(1 for s in (outline.get("slides") or []) if isinstance(s, dict) and str(s.get("speakerNotes") or "").strip()),
+        "kinds": [str(s.get("kind") or "content") for s in (normalized.get("slides") or []) if isinstance(s, dict)],
+        "notes": sum(1 for s in (normalized.get("slides") or []) if isinstance(s, dict) and str(s.get("speakerNotes") or "").strip()),
+        "backgroundStyle": request.background_style,
     }
     print(json.dumps(result, ensure_ascii=False))
     return 0

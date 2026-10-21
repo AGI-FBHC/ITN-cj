@@ -1,6 +1,20 @@
 import * as React from 'react';
 import './presentation-artifact.css';
 
+const BACKGROUND_LABELS = {
+  'clean-minimal': '极简留白',
+  'blue-white-minimal': '蓝白简约',
+  'blue-conference': '蓝色会议',
+  'abstract-gradient': '抽象渐变',
+  'business-gray': '商务灰',
+  'cartoon-doodle': '卡通涂鸦',
+  'colorful-ink': '彩色水墨',
+  'morandi-blue-gray': '莫兰迪蓝灰',
+  'sunset-mountains': '橙红山脉',
+  watercolor: '水彩',
+  none: '纯色',
+};
+
 export default function PresentationArtifact({
   presentation,
   token = '',
@@ -63,7 +77,10 @@ export default function PresentationArtifact({
 
   return <section className={['zx-cw-presentation', className].filter(Boolean).join(' ')}>
     <header>
-      <div><span>编辑级 PPTX</span><strong>{presentation?.renderer === 'lumin-python-pptx-v1' ? 'Lumin Presentation Pipeline' : '演示文稿'}</strong></div>
+      <div>
+        <span>旧版模板 · {BACKGROUND_LABELS[presentation?.backgroundStyle] || '预设背景'}</span>
+        <strong>{presentation?.renderer === 'lumin-python-pptx-v1' ? 'ITN Presentation Template' : '演示文稿'}</strong>
+      </div>
       <button type="button" disabled={state.downloading || !presentation?.downloadUrl} onClick={download}>{state.downloading ? '下载中…' : '下载 PPTX'}</button>
     </header>
     {state.loading ? <div className="zx-cw-presentation-state">正在加载实际幻灯片预览…</div> : null}

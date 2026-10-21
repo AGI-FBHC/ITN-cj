@@ -128,11 +128,11 @@ class KbPrimitiveTests {
     }
     @TestCase
     func presentationOutlineRequiresARealNarrativeDeck(): Unit {
-        let kinds = ["title", "agenda", "overview", "concept", "code", "comparison", "process", "table", "case", "conclusion"]
+        let kinds = ["title", "agenda", "overview", "concept", "code", "comparison", "process", "table", "timeline", "case", "practice", "conclusion"]
         let valid = cwStructuredSlidesFixture(kinds)
-        kbPrimitiveCheck(cwSlidesIssues(valid, 10).size == 0, "A complete structured deck must pass validation")
-        let repetitive = cwStructuredSlidesFixture(Array<String>(10, repeat: "overview"))
-        kbPrimitiveCheck(cwSlidesIssues(repetitive, 10).size > 0, "A repetitive Markdown-like deck must be rejected")
+        kbPrimitiveCheck(cwSlidesIssues(valid, CW_PRESENTATION_SLIDE_COUNT).size == 0, "A complete structured deck must pass validation")
+        let repetitive = cwStructuredSlidesFixture(Array<String>(CW_PRESENTATION_SLIDE_COUNT, repeat: "overview"))
+        kbPrimitiveCheck(cwSlidesIssues(repetitive, CW_PRESENTATION_SLIDE_COUNT).size > 0, "A repetitive Markdown-like deck must be rejected")
     }
     @TestCase
     func learnerResourceContainersPreserveQuotedCode(): Unit {
